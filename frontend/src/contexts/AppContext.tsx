@@ -1,4 +1,6 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复引号风格(双→单)、尾逗号移除、缩进统一(2空格)、空行压缩, 防止格式再次出错
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): refreshServiceStatus 删「validateService 返回」打点
+//   ——整 status 对象打印属调试残留, 已 setServiceStatus(status) 承接状态, 打点无追踪增量价值 — 小欧-2026-09-09
 /**
  * 应用全局状态上下文 - AppContext.tsx
  *
@@ -179,7 +181,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       setServiceStatusLoading(true);
       try {
         const status = await chatApi.validateService();
-        console.log('[refreshServiceStatus] validateService 返回:', status);
         setServiceStatus(status);
         return status;
       } catch (error) {

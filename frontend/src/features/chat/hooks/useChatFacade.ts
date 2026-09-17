@@ -1,6 +1,15 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 7Hook组合入口整合(8.1~8.14 统一暴露)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-8透传setIsReceiving/12 hasSteps/13复用Options类型/14 memo依赖onError
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定回归总原则): onError 包装器不再把 SSEError 压成 string,
+//   改构 LiveError{text, requestLevel} 上抛(P3 数据源对象形态); options.onError 签名同步升级;
+//   内部 chatCallbacks.onError 仍先调(后端分道早退不影响 P3 写入) — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B6: :355 useMemo有意只列字段级依赖(整体对象入deps每次重建级联渲染),
+//   eslint-disable注释移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: shared.executionStepsRef改从chatStreaming取(useSSE单一真源),
+//   deps同步改源(341/413行) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): shared.executionStepsRef 维持从 chatStreaming 取,
+//   useChatCallbacks 不再需要 executionStepsRef(读点用 sseParser 三参、清空点归 useSSE.clearSteps) — 小欧-2026-09-10
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -33,6 +42,7 @@ import { useChatSend } from './useChatSend';
 import { useChatTaskControl } from './useChatTaskControl';
 import type { Message } from '../../../types/chat';
 import type { ExecutionStep } from '../../../types/execution';
+import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: P3 数据源对象形态 — 小欧-2026-09-08
 
 /**
  * useChatFacade 返回类型定义
@@ -150,7 +160,7 @@ export interface UseChatFacadeReturn {
 export const useChatFacade = (options?: {
   baseURL?: string;
   sessionId?: string | null;
-  onError?: (message: string) => void;
+  onError?: (liveError: LiveError) => void;
 }): UseChatFacadeReturn => {
   const { baseURL = '', sessionId } = options || {};
   const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
@@ -165,18 +175,22 @@ export const useChatFacade = (options?: {
     setIsReceiving: (v: boolean) => receivingSetterRef.current?.(v),
   });
 
-  // 2.1 透传 SSE 错误给上层（RightViewer liveErrorText 红字直显，8.10）
+  // 2.1 透传 SSE 错误给上层（P3 数据源对象形态，6.3.4——不再压 string）
   const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
     () => ({
       ...chatCallbacks,
       onError: (error: Parameters<typeof chatCallbacks.onError>[0]) => {
+        // 2026-09-08 小欧 6.3.3 Q级: 内部先调(后端业务错误分道早退只清refs; 本地错误走弹窗+P2),
+        //   P3 写入不因早退而跳过 —— 由构造 LiveError 继续完成
         chatCallbacks.onError(error);
         if (onError) {
-          const msg =
+          const text =
             typeof error === 'string'
               ? error
               : error.error_message || '未知错误';
-          onError(msg);
+          const requestLevel =
+            typeof error === 'string' ? false : error.request_level === true;
+          onError({ text, requestLevel });
         }
       },
     }),
@@ -328,7 +342,7 @@ export const useChatFacade = (options?: {
       // ===== 共享Refs =====
       shared: {
         waitTimerRef: chatState.waitTimerRef,
-        executionStepsRef: chatState.executionStepsRef,
+        executionStepsRef: chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: 改从 chatStreaming 取（useSSE 单一真源）
         isPausedRef: chatState.isPausedRef,
         hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
         cancelInProgressRef: chatState.cancelInProgressRef,
@@ -342,8 +356,8 @@ export const useChatFacade = (options?: {
       chatPersistence,
       chatSend,
       chatTaskControl,
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- facade单次组装: 底层各hook各自精确依赖, 整体入deps会全量重建级联渲染 — 小欧-2026-09-09
     [
       // ===== 会话状态 =====
       chatState.sessionId,
@@ -400,7 +414,7 @@ export const useChatFacade = (options?: {
       chatPersistence.saveMessagesToStorage,
       // ===== Refs =====
       chatState.waitTimerRef,
-      chatState.executionStepsRef,
+      chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: deps 同步改源
       chatState.isPausedRef,
       chatState.hasReceivedCancelEventRef,
       chatState.cancelInProgressRef,

@@ -35,10 +35,53 @@
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 showGreenCircle正向判断替代6条件否定式
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 ToolCallLine从segments数组按step找obs传入(修复obs独立后扳手一直转)
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 waiting变量改名showGreenCircle语义更清晰
+// 编辑历史: 2026-09-04 小欧 - 修复 observation 重复显示(单/多工具并行时孤儿与 ToolCallLine 重复): toolStepSet 抑制已消费孤儿渲染 - 小欧-2026-09-04
+// 编辑历史: 2026-09-06 小欧 - B2时序(北京老陈定案: action先于弹窗发): blocked 工具也进 action.tools(无 obs), toolDenied 判定纳入 blocked 停齿轮防空转 - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2三思三省修订(北京老陈驱动): interrupted 由"任一error存在"改"整批计数判定"——未执行工具数(blocked/user_rejected/timeout)>=tools总数才停齿轮; 修"1拒+1执行中"短暂误灰字缝隙 - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 拒绝独立type="user_rejected"事件+error blocked/timeout两路实时聚合deniedSteps(Map step→计数),
+//   interrupted 整批计数判定数据源从"error段"换deniedSteps(erro事件不入liveSteps=原计数永远0=死代码); ToolCallLine传replay=!streaming(回放免齿轮) - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2(J1缝隙修复, 北京老陈核验): tool段新增candidateCount(预览全量候选数), buildSegments去重时预览先到
+//   canonical后覆盖, candidateCount取预览候选总数并保留; allDenied分母由seg.action.tools(被canonical覆盖后缩为执行集)改为
+//   candidateCount —— 原代码2工具1拒+1执行中: denied=1>=执行集长度1 误判全拒停齿轮(违"1拒+1执行中→齿轮保持"裁定), 改后1<2齿轮保持 — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.2 thought-start→waiting 段(时序根治 前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.2):
+//   ①union 新增 {kind:'waiting', step?} 段——thought-start 由"break 丢弃"改为落段(信号真正驱动图标, 取代条件推断);
+//   ②appendToLast 就地覆盖 waiting——首个内容(chunk/thought)到达, waiting 段原位变 thinking/text, 图标位变文字(内容覆盖制);
+//   ③渲染分支门控: waiting 仅"末段+taskActive"亮圈(非末段/历史回放 taskActive=false 自动灭, 杜绝常驻);
+//   UI 观感机制不变(该亮照亮、内容到即消失), showGreenCircle 保留(空容器/obs 窗口), waiting 为末段时其条件不成立无双圈 — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - 4.4.2 DRY 重构(北京老陈审查, 10大规范): 等待图标 SVG markup 两处重复
+//   (waiting 段渲染分支 + showGreenCircle 兜底) → 抽唯一 WaitingIcon 组件共用; 行为零变化(测试全绿前提下, 设计3.4原则七) — 小欧-2026-09-07
+// 编辑历史: 2026-09-07 小欧 - 4.4.2 旧逻辑清理(北京老陈定案, 设计3.4原则七"showGreenCircle 去留"):
+//   删除 showGreenCircle 双条件推断(!lastSeg || lastSeg.kind==='obs')整段 —— 等待图标改由 thought-start 信号唯一驱动
+//   (每可见轮 LLM 请求前必发, 产 waiting 段, 内容覆盖制); 空容器首圈由首信号到达即亮, obs 后等待由紧邻 thought-start
+//   (waiting 段)承接, 同批 SSE 无缝隙, 不再双机制并行; 相关旧注释块一并清除 — 小欧-2026-09-07
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedEntries prop, tool 段按 step
+//   取出被拒工具点名条传入 ToolCallLine(部分拒/全拒对被拒工具显橘红灰字点名单) — 小欧-2026-09-06
+// 编辑历史: 2026-09-09 小欧 - A2修复(跨任务 step 号回绕互踩): buildSegments tool 段去重升级——同 step 仅允许
+//   preview+canonical 各一次合一(保持 UI 一行契约, candidateCount 以预览全量为准), 第三次起的同 step action
+//   (跨任务/异常残留)独立追加不覆盖历史段, 杜绝"旧任务工具行被新任务同 step 覆盖篡改" — 小欧-2026-09-09
+// 编辑历史: 2026-09-11 小欧 - 修复reasoning/thought重复: thought步骤的reasoning字段与chunk步骤(is_reasoning=true)内容重叠时去重, 防appendToLast拼接致双倍文本 - 小欧-2026-09-11
+// 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - [35]thought-action等待状态实施: 内联WaitingIcon拆为WaitingIcons控件ThoughtWaitingIcon; 新增action-waiting段
+//   (thinking末段+taskActive时组件体内追加ActionWaitingIcon段, 北京老陈令选G波纹扩散样式, action到达/任务结束自动消失);
+//   union加action-waiting类型, 渲染分支加ActionWaitingIcon; 注释统一用组件名(ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon) — 小欧-2026-09-13
+// 编辑历史: 2026-09-14 小欧 [36]改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive 纯函数
+//   (删 streaming 条件, highlight/badge 双权威信号), import viewState — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - [35]蓝色圈圈显示逻辑停用(北京老陈令, 定义/CSS/import保留为将来新方案启用):
+//   删 union {kind:'action-waiting'} 类型; 删组件体内末段thinking+taskActive时追加action-waiting段逻辑;
+//   删渲染分支 action-waiting段渲染; 绿ThoughtWaitingIcon/橙ToolWaitingIcon及蓝色定义与CSS一律不动 — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - [37]思考光标不显示问题修复(北京老陈驱动, 文档[37]): 删渲染函数体内
+//   CURSOR T/CURSOR F 两处 console.log(render 副作用+StrictMode 双渲染致 2~4 倍虚假重复, 且条件 isLive
+//   与 UI 光标真实条件 shown<clean.length 不同步); 打点已下放至 TextStream/ThinkingStream 内部翻转检测;
+//   formatDebugTime import 同步删除 — 小欧-2026-09-14
+//   2026-09-14 小欧 - [37]lint清理: 删 [35] 遗留未使用 import ActionWaitingIcon(仅 import+注释, 无实际使用) — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 步骤摘要段去📋emoji前缀, 只留 summary/content 文本 — 小欧-2026-09-15
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": PipelineRendererProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
- * 【小欧 2026-08-26 8.4.9 / R1-B1 修正】按事件到达序产出"段"，相邻同类合并，
+ * 【小欧 2026-08-26 8.4.9 / 修正】按事件到达序产出"段"，相邻同类合并，
  * 不做分组重排（4.4.2① 流水线顺序=事件 seq 顺序）；实时与回放共用（3.7.6）。
  * 段类型：thinking / text / final / tool(含挂接 observations) / obs(孤儿观察) / error。
  *
@@ -54,6 +97,8 @@ import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
+import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 import {
   Colors,
   BorderWidth,
@@ -61,14 +106,21 @@ import {
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
+import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
   | { kind: 'text'; text: string; sameStep?: boolean }
   | { kind: 'final'; step: ExecutionStep }
-  | { kind: 'tool'; action: ExecutionStep; observations: ExecutionStep[] }
+  | {
+      kind: 'tool';
+      action: ExecutionStep;
+      observations: ExecutionStep[];
+      candidateCount: number; // 2026-09-06 小欧 B2(J1修复): 该step候选工具总数(预览全量), 供allDenied整批判定 —— canonical覆盖后action.tools缩为执行集, 不得作分母(1拒+1执行中会误停齿轮) — 小欧-2026-09-06
+    }
   | { kind: 'obs'; step: ExecutionStep }
-  | { kind: 'error'; step: ExecutionStep };
+  | { kind: 'error'; step: ExecutionStep }
+  | { kind: 'waiting'; step?: number }; // 4.4.2(2026-09-07 小欧): thought-start 落段, 可被首个内容覆盖接管
 
 // 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
@@ -76,11 +128,22 @@ type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   const segs: PipelineSegment[] = [];
+  // A2(2026-09-09 小欧): preview 槽位制——后端 B2 时序约定"每个 action 必先发 preview(tools=全量候选)、
+  //   再发 canonical(tools=执行集, 落库)", 二者同 step 属同一轮双保险, 合一为单 tool 段:
+  //   canonical 仅允许覆盖"最后一个未配对的 preview 段", 覆盖后槽位清空;
+  //   无 preview 配对的 action(跨任务/回绕/异常残留)直接新增独立 tool 段, 兜底绝不让历史段被篡改 — 小欧-2026-09-09
+  let pendingPreviewToolIdx = -1;
   const appendToLast = (
     kind: 'thinking' | 'text',
     text: string
   ): TextishSegment => {
     const last = segs[segs.length - 1];
+    // 4.4.2(2026-09-07 小欧): 末段为 waiting(首列等待图标)时, 首个内容就地覆盖接管(图标位变文字)
+    if (last && last.kind === 'waiting') {
+      const updated = { kind, text } as TextishSegment;
+      segs[segs.length - 1] = updated;
+      return updated;
+    }
     if (last && last.kind === kind) {
       const updated = { ...last, text: last.text + text } as TextishSegment;
       segs[segs.length - 1] = updated;
@@ -93,7 +156,8 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   for (const s of steps) {
     switch (s.type) {
       case 'thought-start':
-        break; // 光标信号由 streaming prop 承载，不产出内容
+        segs.push({ kind: 'waiting', step: s.step }); // 4.4.2(2026-09-07 小欧): 产 waiting 段, 首个内容到达被覆盖
+        break;
       case 'chunk':
         if (s.is_reasoning) appendToLast('thinking', s.content ?? '');
         else appendToLast('text', s.content ?? '');
@@ -106,8 +170,25 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         // reasoning 合并进旧段(跨 step 相邻 thinking)时非本 step 新建 → 不标 compact, 保持 step 间 MD(8)
         const prevThinkWasLast =
           segs.length > 0 && segs[segs.length - 1].kind === 'thinking';
-        if (hasReasoning && s.reasoning) appendToLast('thinking', s.reasoning);
-        const thoughtSeg = s.thought ? appendToLast('text', s.thought) : null;
+        // 2026-09-11 小欧 去重: chunk(is_reasoning=true)已流式累积thinking段, thought.reasoning与之重叠时不再追加防双倍
+        if (hasReasoning && s.reasoning) {
+          const lastSeg = segs[segs.length - 1];
+          const alreadyHas =
+            lastSeg &&
+            lastSeg.kind === 'thinking' &&
+            lastSeg.text.endsWith(s.reasoning);
+          if (!alreadyHas) appendToLast('thinking', s.reasoning);
+        }
+        // 2026-09-11 小欧 去重: chunk已流式累积text段, thought字段与之重叠时不再追加防双倍
+        let thoughtSeg: TextishSegment | null = null;
+        if (s.thought) {
+          const lastTextSeg = segs[segs.length - 1];
+          const textAlreadyHas =
+            lastTextSeg &&
+            lastTextSeg.kind === 'text' &&
+            lastTextSeg.text.endsWith(s.thought);
+          if (!textAlreadyHas) thoughtSeg = appendToLast('text', s.thought);
+        }
         if (hasBoth && thoughtSeg) {
           thoughtSeg.sameStep = true;
           if (!prevThinkWasLast) {
@@ -122,15 +203,42 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
       case 'action': {
         // 2026-09-03 小欧 P3/P4/P5修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
         // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与BUG-18修复原则一致(防污染调用方缓存)
-        const existingIdx = segs.findIndex(
-          (seg): seg is Extract<PipelineSegment, { kind: 'tool' }> =>
-            seg.kind === 'tool' && seg.action.step === s.step
-        );
-        if (existingIdx >= 0) {
-          const existing = segs[existingIdx] as Extract<PipelineSegment, { kind: 'tool' }>;
-          segs[existingIdx] = { kind: 'tool', action: s, observations: existing.observations };
+        // 2026-09-06 小欧 B2(J1修复): 预览action(tools=全量候选)先到, canonical(tools=执行集)后覆盖——
+        //   candidateCount取以致小者优先的预览候选总数, canonical覆盖时保留, 供allDenied作分母(不得用执行集) — 小欧-2026-09-06
+        // A2(2026-09-09 小欧): preview 槽位制——preview action 登记"待正式化槽位"并新增 tool 段;
+        //   canonical action 仅当存在未配对 preview 槽位时覆盖之(合一为单 tool 段), 覆盖后槽位清空;
+        //   无 preview 配对的 action(跨任务/回绕/异常残留)直接新增独立 tool 段, 历史 tool 段永不被篡改 — 小欧-2026-09-09
+        if (s.preview) {
+          // 登记槽位: 即将 push 的 tool 段索引
+          pendingPreviewToolIdx = segs.length;
+          segs.push({
+            kind: 'tool',
+            action: s,
+            observations: [],
+            // 候选总数以预览全量为准(canonical tools=执行集只减不增, 覆盖时保留预览值)
+            candidateCount: s.tools?.length ?? 0,
+          });
+        } else if (pendingPreviewToolIdx >= 0) {
+          const idx = pendingPreviewToolIdx;
+          const existing = segs[idx] as Extract<
+            PipelineSegment,
+            { kind: 'tool' }
+          >;
+          pendingPreviewToolIdx = -1; // 槽位配对完成, 清空防后续 canonical 再覆盖
+          segs[idx] = {
+            kind: 'tool',
+            action: s,
+            observations: existing.observations ?? [],
+            candidateCount: existing.candidateCount ?? s.tools?.length ?? 0,
+          };
         } else {
-          segs.push({ kind: 'tool', action: s, observations: [] });
+          // 无 preview 配对(跨任务/回绕/异常残留): 独立新增, 绝不篡改历史段
+          segs.push({
+            kind: 'tool',
+            action: s,
+            observations: [],
+            candidateCount: s.tools?.length ?? 0,
+          });
         }
         break;
       }
@@ -151,12 +259,27 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   return segs;
 };
 
+// 2026-09-11 小欧 复用优先(北京老陈): 终态细节行样式工厂——final段 reasoning/取消来源行/红字错误行
+//   结构完全同式仅色异, 抽共用免三处内联重复, 颜色按态传(取消ORANGE_RED/失败ERROR/reasoning灰) — 小欧-2026-09-11
+const terminalDetailStyle = (color: string): React.CSSProperties => ({
+  color,
+  fontSize: FontSize.TERTIARY,
+  lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
+  margin: stepMargin(false),
+});
+
 interface PipelineRendererProps {
   steps: ExecutionStep[];
   streaming?: boolean; // 实时流进行中（思考流尾随光标）
   highlightToolName?: string | null; // HITL 弹窗联动高亮（4.7）
   headerNode?: React.ReactNode; // 头部·模型标识
   badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
+  deniedSteps?: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 供停齿轮判定 — 小欧-2026-09-06
+  deniedEntries?: ReadonlyMap<
+    number,
+    Array<{ tool: string; reason: string; reject_type?: string }>
+  >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
+  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -165,8 +288,21 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   highlightToolName = null,
   headerNode,
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
+  deniedSteps, // 2026-09-06 小欧 B2(方案C)
+  deniedEntries, // 2026-09-06 小欧 B2(6.4)
+  waitClock, // 2026-09-17 小欧 [46]第五章
 }) => {
   const segs = buildSegments(steps);
+  const taskActive = computeTaskActive(highlightToolName, badge);
+  // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
+  const toolStepSet = new Set(
+    segs
+      .filter(
+        (s): s is Extract<PipelineSegment, { kind: 'tool' }> =>
+          s.kind === 'tool'
+      )
+      .map((s) => s.action.step)
+  );
   // 2026-08-27 小欧 三堂会审: 预计算最后一个思考段索引, 消除map内自增副作用与额外filter
   const lastThink = segs.reduce(
     (a, s, i) => (s.kind === 'thinking' ? i : a),
@@ -174,20 +310,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   );
   // 13.8 打字机: 最后一个 text 段为实时累积段(打字), 前序已完成段静态呈现
   const lastText = segs.reduce((a, s, i) => (s.kind === 'text' ? i : a), -1);
-  // 2026-09-02 小欧 · 北京老陈定案: 等待 thought——streaming 且末段无 content 段
-  // (thinking/text)时, 说明处于 action 执行/新 thought 未到, 在流水线内容输出位置
-  // (末段之下; 无任何段时即容器首列)渲染 ↻ 型 SVG 缺口圆弧; 首 chunk 到达,
-  // 末段变 thinking/text, waiting 即消失, 内容从同一首列打字机输出——等待符号
-  // 禁止常驻, 由内容覆盖接管
-  // 2026-09-02 小欧 HIT三处修复C: HIT高亮时保持等待可见, 消确认后圈闪消
-  // 2026-09-03 小欧/北京老陈 v5.1 - 正向判断, 一句搞定
-  const lastSeg = segs[segs.length - 1];
-  const taskActive =
-    streaming ||
-    !!highlightToolName ||
-    badge === 'running' ||
-    badge === 'paused';
-  const showGreenCircle = taskActive && (!lastSeg || lastSeg.kind === 'obs');
   return (
     <div
       style={{
@@ -200,6 +322,17 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
     >
       {headerNode}
       {segs.map((seg, i) => {
+        if (seg.kind === 'waiting') {
+          // 4.4.2(2026-09-07 小欧): thinking段首列亮ThoughtWaitingIcon; 仅"末段+taskActive"才显示,
+          //   final/error/停止后非末段自动灭, 杜绝常驻
+          if (i !== segs.length - 1 || !taskActive) return null;
+          return (
+            <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
+              <ThoughtWaitingIcon waitClock={waitClock} />{' '}
+              {/* 2026-09-17 小欧 [46]: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
+            </div>
+          );
+        }
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
           const cursor = streaming && i === lastThink && i === segs.length - 1;
@@ -222,6 +355,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               typing={isLive}
               cursor={isLive}
               compact={seg.sameStep}
+              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
             />
           );
         }
@@ -230,72 +364,74 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           //   历史回放无chunks, final是唯一载体, 需渲染reasoning+response两个字段
           if (streaming) return null;
           const reasoning = seg.step.reasoning;
-          // 小欧 2026-09-02: 终态三态显式分支（completed/failed/cancelled）——
-          //   cancelled 弱化小字"已取消"、failed 红字原因行(error_type/error_message)、
-          //   completed 正常 response；三者互斥走齐不留默认吞掉
+          // 2026-09-11 小欧 北京老陈定案(最终): 终态三态平铺统一——首行 ResponseStream 共用(completed/failed/cancelled 全是response),
+          //   细节行按态条件渲染: cancelled="! 取消来源: cancel_source"橘红(ORANGE_RED)、failed="⚠️ [error_type] error_message"红字,
+          //   行样式共用 terminalDetailStyle 工厂, 不复用无中间态嵌套 — 小欧-2026-09-11
           const isFailed = seg.step.outcome === 'failed';
           const isCancelled = seg.step.outcome === 'cancelled';
           return (
             <React.Fragment key={`final-${i}-${seg.step.step ?? i}`}>
               {reasoning && (
-                <div
-                  style={{
-                    color: Colors.TEXT.SECONDARY,
-                    fontStyle: 'italic',
-                    fontSize: FontSize.TERTIARY,
-                    lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
-                    margin: stepMargin(false),
-                  }}
-                >
+                <div style={terminalDetailStyle(Colors.TEXT.SECONDARY)}>
                   {reasoning}
                 </div>
               )}
-              {isFailed ? (
-                <React.Fragment>
-                  <ResponseStream
-                    text={seg.step.response || seg.step.content || ''}
-                  />
-                  {(seg.step.error_message || seg.step.error_type) && (
-                    <div
-                      style={{
-                        color: Colors.ERROR,
-                        fontSize: FontSize.TERTIARY,
-                        lineHeight: `${FontSize.TERTIARY + Spacing.XS}px`,
-                        margin: stepMargin(false),
-                      }}
-                    >
-                      ⚠️ [{seg.step.error_type || 'error'}]{' '}
-                      {seg.step.error_message}
-                    </div>
-                  )}
-                </React.Fragment>
-              ) : (
-                <ResponseStream
-                  text={seg.step.response || seg.step.content || ''}
-                  cancelled={isCancelled}
-                />
+              <ResponseStream
+                text={seg.step.response || seg.step.content || ''}
+              />
+              {isCancelled && seg.step.cancel_source && (
+                <div style={terminalDetailStyle(Colors.ORANGE_RED)}>
+                  ! 取消来源: {seg.step.cancel_source}
+                </div>
+              )}
+              {isFailed && (seg.step.error_message || seg.step.error_type) && (
+                <div style={terminalDetailStyle(Colors.ERROR)}>
+                  ⚠️ [{seg.step.error_type || 'error'}] {seg.step.error_message}
+                </div>
               )}
             </React.Fragment>
           );
         }
         if (seg.kind === 'tool') {
           const toolObs = segs
-            .filter((s): s is Extract<PipelineSegment, { kind: 'obs' }> => s.kind === 'obs' && s.step.step === seg.action.step)
+            .filter(
+              (s): s is Extract<PipelineSegment, { kind: 'obs' }> =>
+                s.kind === 'obs' && s.step.step === seg.action.step
+            )
             .map((s) => s.step);
+          // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): action 先于弹窗发→被拒/拦截/超时工具无 observation, 齿轮需停转;
+          //   interrupted 由 deniedSteps 实时聚合判定(step→denied计数, 两路来源: 独立 user_rejected 事件 + error
+          //   blocked/timeout), 整批计数语义与 09-06 三思三省修订一致——denied 计数 >= 候选工具总数才停齿轮防空转,
+          //   部分拒+部分执行中 -> denied 数 < 候选总数 -> 齿轮保持(还有工具在跑), 有 obs 则真实执行不停转;
+          //   分母用 tool 段保留的 candidateCount(预览全量候选数), 不用 seg.action.tools(预览被 canonical 覆盖后
+          //   缩为执行集, 例 2工具1拒1执行中: denied=1>=执行集长度1 → 误判全拒停齿轮; candidateCount=2 → 1<2 齿轮保持)
+          //   — 小欧-2026-09-06
+          //   数据源从"error 段计数"(error 不入 liveSteps→恒空=死代码) 换为 deniedSteps 实时聚合 — 小欧-2026-09-06
+          const toolDeniedCount =
+            deniedSteps?.get(seg.action.step as number) ?? 0;
+          const allDenied =
+            toolDeniedCount >=
+            (seg.candidateCount ?? seg.action.tools?.length ?? 0);
           return (
             <ToolCallLine
-              key={seg.action.step ?? i}
+              key={`tool-${i}-${seg.action.step ?? i}`}
               action={seg.action}
               observations={toolObs}
+              interrupted={toolObs.length === 0 && allDenied}
+              replay={!streaming} // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放加了标志就自然不需要齿轮转动, 更简单 — 小欧-2026-09-06
               highlight={
                 highlightToolName != null &&
                 !!seg.action.tools?.some((t) => t.tool === highlightToolName)
               }
+              deniedTools={// 2026-09-06 小欧 B2(6.4): 本执行轮被拒工具点名条(橘红灰字数据源, 按 step 取) — 小欧-2026-09-06
+              deniedEntries?.get(seg.action.step as number)}
+              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
             />
           );
         }
         if (seg.kind === 'obs') {
-          // 孤儿观察：无前置 action，独立弱化行展示摘要
+          // 2026-09-04 小欧 - 已被 ToolCallLine 消费的 observation 不再渲孤儿，防重复
+          if (toolStepSet.has(seg.step.step as number)) return null;
           return (
             <div
               key={`obs-${i}-${seg.step.step ?? i}`}
@@ -306,7 +442,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 margin: stepMargin(false),
               }}
             >
-              📋 {seg.step.summary || seg.step.content || ''}
+              {seg.step.summary || seg.step.content || ''}
             </div>
           );
         }
@@ -317,27 +453,6 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           />
         );
       })}
-      {showGreenCircle && (
-        <div
-          style={{
-            margin: stepMargin(false),
-          }}
-        >
-          <span className="waiting-cursor" aria-label="等待下一个思考内容">
-            <svg
-              width="1.4em"
-              height="1.4em"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#52c41a"
-              strokeWidth={2}
-              strokeLinecap="round"
-            >
-              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-            </svg>
-          </span>
-        </div>
-      )}
     </div>
   );
 };

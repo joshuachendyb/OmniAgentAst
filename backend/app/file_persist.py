@@ -16,6 +16,8 @@
 #       purge_task+purge_session(H7 GC备函数,挂接待物理删除入口)/_files_root(调试分流)
 #   2026-08-24 - 小欧 - 目录前导(北京老陈裁定): session/task 目录名加 Sion_/Task_ 前缀
 #       (常量唯一源, 物理目录与 files_dir 落库锚同源; 旧目录不迁移不兼容, 禁止backward)
+#   2026-09-04 - 小健 - 新增 make_fp_callback(第2阶段拆分): 文件A 落盘回调工厂从 action_handler._fp_factory 下沉,
+#       action_handler 不再持有文件落盘细节; 函数体完整复制不改逻辑(闭包捕获 agent/step/exec_calls)
 # ============================================================================
 from __future__ import annotations
 
@@ -243,6 +245,38 @@ class TaskFileWriter:
 # ---------------------------------------------------------------------------
 # 工厂: orchestrator 创建后挂载 agent.file_persist; 失败返回 None(降级无文件) — 尽力而为
 # ---------------------------------------------------------------------------
+def make_fp_callback(agent: Any, step: int, exec_calls: List[Dict[str, Any]]) -> Any:
+    """文件A 落盘回调工厂(从 action_handler._fp_factory 下沉) — 小健 2026-09-04
+
+    返回一个按全局工具序号闭包注入 tool_no 的工厂函数, 用法与原 _fp_factory 完全一致:
+    on_attempt_recorded=make_fp_callback(agent, step, _exec_calls)。引擎每次尝试回调时
+    (action, attempt, params, res_or_exc, ok) 内调用 write_tool_block 实时落盘(11.7.9-2 闭环)。
+    """
+    def _fp_factory(_tno: int):
+        _call = exec_calls[_tno - 1] if 0 < _tno <= len(exec_calls) else {}
+        # #16 修正(2026-08-23): params_raw 权威源=_call["params_raw_str"](D0→D0b→D3b 链路的 LLM 原始 arguments 串),
+        #   必须由本闭包携带——引擎不持有原始串; or 回退防空串击穿(#16 同轮修正口径) — 小欧 2026-08-23
+        def _cb(_action, _attempt, _params, _res_or_exc, _ok):
+            _fp = getattr(agent, "file_persist", None)
+            if _fp is None:
+                return
+            if isinstance(_res_or_exc, dict):
+                _fp_llm = _res_or_exc.get("llm_data") if isinstance(_res_or_exc.get("llm_data"), dict) else {}
+                _fp_other = _res_or_exc.get("other_data") if isinstance(_res_or_exc.get("other_data"), dict) else None
+                _fp_data = _res_or_exc
+            else:
+                _fp_llm, _fp_other, _fp_data = {}, None, {"exception": str(_res_or_exc)}
+            _fp.write_tool_block(
+                step=step, tool_no=_tno, retry_no=_attempt,
+                tool_name=_action,
+                params_raw=(_call.get("params_raw_str") or _call.get("tool_params")),
+                params_final=_params,
+                llm_data=_fp_llm, data=_fp_data, other_data=_fp_other,
+            )
+        return _cb
+    return _fp_factory
+
+
 def create_task_writer(session_id: str, task_id: str, ai_message_id: int,
                        start_time_iso: str, model: Optional[Dict[str, Any]]) -> Optional[TaskFileWriter]:
     """H1: assistant 消息分配时调用——建目录+双header+挂载 agent.file_persist(stream_orchestrator 调用)"""

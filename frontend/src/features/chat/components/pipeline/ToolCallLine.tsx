@@ -25,6 +25,22 @@
 // 编辑历史: 2026-09-03 小欧 BUG-19修复: 并行工具子行按tool_name配对查找结果, 乱序到达不串味, 无tool_name回退索引
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删timedOut状态和超时分支, 扳手只靠!hasResult&&tools.length>0
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 删超时文案"工具执行等待超时(30s)"分支, 只保留扳手动画
+// 编辑历史: 2026-09-06 小欧 - B2时序(北京老陈定案): interrupted 语义覆盖 blocked(被安全拦截也无 obs), 灰字文案改"未获用户允许/被安全拦截/确认超时" - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): 新增 replay prop(回放免齿轮动画——历史数据不需要齿轮转动), 齿轮分支条件补 !replay - 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): 占位与中断两处提示文字改 Colors.ORANGE_RED 火山橘红#fa541c(未执行/被安全拦截/确认超时), 与 AuthorizationModal 告急色一致, 与齿轮橘同色带 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": 等待动画 SVG 由"齿轮+扳手组合"改标准单齿轮(Feather settings)——
+//   stroke线框风格/橙#fa8c16/1em旋转CSS(.tool-waiting-cursor)全部不变, 仅去掉扳手 path 换纯齿轮图标 — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字): 新增 deniedTools prop(本执行轮被拒
+//   工具点名条 [{tool,reason}]), 对被拒工具显火山橘红灰字点名单(对齐子行缩进/分支线, reason=拒绝理由);
+//   有结果时在 tools.map 后收尾、无结果时独立成行——全拒/部分拒被拒工具均点名留痕; 点名接管时占位/聚合灰字隐藏不重复 — 小欧-2026-09-06
+// 编辑历史: 2026-09-08 小欧 - 图标换型(北京老陈令): 齿轮(settings)旋转视觉不明显→换Feather loader弧段,
+//   三段弧非对称旋转位置变化幅度大, 感知清晰; stroke线框橙#fa8c16/1s逆时针不变, 尺寸由index.css统一控 1.1em(≈15px) — 小欧-2026-09-08
+// 编辑历史: 2026-09-13 小欧 - 内联橙色loader SVG提取为WaitingIcons/ToolWaitingIcon控件, 行为零变化(同SVG同CSS类), 注释统一用组件名 — 小欧-2026-09-13
+// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S7: 三级折叠三角▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消三角字符 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 老杨 - 水滴图标 DropletIcon/DropletStatus 替代成功/失败字符符号, 复用组件消字符 — 老杨-2026-09-15
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedTools 类型新增 reject_type 字段; ②根据 reject_type 显示不同图标+文字标签(🔒[安全]/⏱️[超时]/🚫[拒绝]/🛡️[沙箱]); ③拒绝工具不再显示水滴图标; ④视觉分层优化(标签橘红/工具名深灰加粗/原因浅灰弱化) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3整改(#6/#8): 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop, 齿轮 ToolWaitingIcon 挂钟面并存(回放/中断/有结果守卫条件不变) - 小欧-2026-09-17
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -40,24 +56,63 @@ import React, { useEffect, useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
+import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 [40]①S7: 复用折叠箭头组件 — 小欧-2026-09-15
+import { DropletIcon } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
+import { GearIcon } from '@/components/GearIcon'; // 2026-09-15 老杨: 齿轮图标替代🔧emoji — 老杨-2026-09-15
+import {
+  LockOutlined,
+  ClockCircleOutlined,
+  StopOutlined,
+  SafetyCertificateOutlined,
+} from '@ant-design/icons'; // 2026-09-17 小欧 会审V3(#6): 拒绝图标按全局定案用 antd SVG — 小欧-2026-09-17
 import {
   Colors,
   BorderWidth,
   FontSize,
+  FontWeight,
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
+import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
   observations?: ExecutionStep[]; // type=observation
   highlight?: boolean; // HITL 联动高亮
+  interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
+  replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
+  deniedTools?: Array<{ tool: string; reason: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(与齿轮并存) — 小欧-2026-09-17
 }
+
+// 2026-09-17 小欧 会审V3(#8): 拒绝标签/图标从 .map 内联提取为模块级持久常量(避免每次拒绝行渲染重建对象),
+//   (#6): 按项目全局定案(infoMaps.tsx 注释"过程事件统一 antd SVG 图标、禁 emoji")emoji 换 antd SVG 图标,
+//   无圆底(开发文档声称的圆底从未实现, 以实际实现为准) — 小欧-2026-09-17
+// 导出版本供测试断言真实映射(替代测试内本地模拟, 防实现与断言脱钩)
+export const REJECT_LABEL_MAP: Readonly<Record<string, string>> = {
+  safety: '安全',
+  timeout: '超时',
+  user: '拒绝',
+  sandbox: '沙箱',
+};
+export const REJECT_DEFAULT_LABEL = '拒绝';
+export const REJECT_ICON_MAP: Readonly<Record<string, React.ReactNode>> = {
+  safety: <LockOutlined />,
+  timeout: <ClockCircleOutlined />,
+  user: <StopOutlined />,
+  sandbox: <SafetyCertificateOutlined />,
+};
+export const REJECT_DEFAULT_ICON = <StopOutlined />;
 
 const ToolCallLine: React.FC<ToolCallLineProps> = ({
   action,
   observations = [],
   highlight = false,
+  interrupted = false,
+  replay = false,
+  deniedTools, // 2026-09-06 小欧 B2(6.4)
+  waitClock, // 2026-09-17 小欧 [46]第五章
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
@@ -89,8 +144,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     : `调用 1 个工具`;
   const toolNameList = tools.map((t) => t.tool).join(', ');
   const firstLine = `${collectionLabel}  [${toolNameList}]`;
+  // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(本执行轮被拒工具名+理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  const deniedList = Array.isArray(deniedTools) ? deniedTools : [];
+  const deniedCount = deniedList.length;
   // 2026-09-03 小欧 BUG-19修复: 并行工具结果按tool_name配对(非索引), 防乱序到达时A工具显示B结果; 无tool_name则回退索引
-  const getResultForIndex = (idx: number): Record<string, unknown> | undefined => {
+  const getResultForIndex = (
+    idx: number
+  ): Record<string, unknown> | undefined => {
     const toolName = tools[idx]?.tool;
     if (toolName) {
       const hit = results.find((r) => {
@@ -98,8 +158,15 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         if ((rr.tool as string) === toolName) return true;
         if ((rr.tool_name as string) === toolName) return true;
         if ((rr.name as string) === toolName) return true;
-        const llm = (rr.llm_data || rr.llmData) as Record<string, unknown> | undefined;
-        if (llm && ((llm.tool as string) === toolName || (llm.tool_name as string) === toolName)) return true;
+        const llm = (rr.llm_data || rr.llmData) as
+          | Record<string, unknown>
+          | undefined;
+        if (
+          llm &&
+          ((llm.tool as string) === toolName ||
+            (llm.tool_name as string) === toolName)
+        )
+          return true;
         return false;
       });
       if (hit) return hit;
@@ -138,20 +205,14 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const retryCount = action.action_retry_count;
   const attemptLabel =
     retryCount != null && retryCount > 0 ? `(重试${retryCount})` : '';
-  const statusColorMap = {
-    success: Colors.SUCCESS,
-    error: Colors.ERROR,
-    warning: Colors.WARNING,
-  } as const;
-  const statusIconMap = { success: '✔', error: '✖', warning: '⚠' } as const;
 
   return (
     <div
       className={highlight ? 'hitl-border' : undefined}
       style={{
-        fontSize: 13,
+        fontSize: FontSize.PRIMARY,
         color: Colors.TEXT.PRIMARY,
-        lineHeight: `${13 + Spacing.XS}px`,
+        lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
         // 2026-09-03 小欧 Bug-8/10/31: minHeight 占位稳定高度, 动画与子行切换(0行→N行/整批涌入)不引起页面高度突变晃动
         minHeight: 32,
         margin: stepMargin(false),
@@ -166,47 +227,57 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
     >
       {/* 2026-09-01 小欧(北京老陈定案: 完全独立展开+独立观察): 第一行集合行纯文本展示, 无全局展开按钮; 每工具子行独立展开/收起, 点子行任意位置toggle该工具; 展开区只显示该工具完整observation(ToolResultRenderer), 不再有"参数:全集"重复 */}
       <div>
-        <span>
-          🔧 {firstLine} {attemptLabel}
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: Spacing.SM,
+          }}
+        >
+          <GearIcon />
+          {firstLine} {attemptLabel}
         </span>
         {/* 2026-09-03 小欧(北京老陈定案): 摘要头先显; action 等待期摘要头下同容器挂齿轮+扳手组合动画; 工具子行(参数+结果+展开)等 observation 到达(全部N个结果一起)才渲染; 单/并行统一 */}
         <div style={{ marginTop: Spacing.XS }}>
           {/* 执行等待动画(results 空=action 已到未执行完); observation 到即卸载, 同容器被子行盖住 */}
           {/* 2026-09-03 小欧 Bug-3/4: 动画仅 tools 非空且结果未达(results空)显示; 超时降级灰字提示; tools 空/结果空显占位防空壳 */}
-          {!hasResult && tools.length === 0 && (
-            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
+          {!hasResult && tools.length === 0 && deniedCount === 0 && (
+            <span
+              style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}
+            >
               工具调用无结果(已全部被安全拦截或未返回)
             </span>
           )}
-          {!hasResult && tools.length > 0 && (
-            <span className="tool-waiting-cursor" aria-label="工具执行中">
-              <svg
-                width="1.4em"
-                height="1.4em"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#fa8c16"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+          {!hasResult &&
+            tools.length > 0 &&
+            interrupted &&
+            deniedCount === 0 && (
+              <span
+                style={{
+                  color: Colors.ORANGE_RED,
+                  fontSize: FontSize.SECONDARY,
+                }}
               >
-                <g>
-                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-                  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.07-3.07a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z" />
-                </g>
-              </svg>
-            </span>
+                未执行：未获用户允许／被安全拦截／确认超时
+              </span>
+            )}
+          {!hasResult && tools.length > 0 && !interrupted && !replay && (
+            <ToolWaitingIcon waitClock={waitClock} /> /* 2026-09-17 小欧 [46]: 齿轮与钟面并存(追加) — 小欧-2026-09-17 */
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
           {hasResult && tools.length === 0 && (
-            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: 12 }}>
+            <span
+              style={{
+                color: Colors.TEXT.SECONDARY,
+                fontSize: FontSize.SECONDARY,
+              }}
+            >
               收到 {results.length || 1} 条观察结果但无工具定义
             </span>
           )}
           {hasResult &&
             tools.length > 0 &&
             tools.map((t, i) => {
-              // L139-L248: tools.map 函数体一字不改(参数/展开/结果行逻辑保持原样)
               let tParamText: string;
               try {
                 tParamText = JSON.stringify(t.params ?? {});
@@ -215,91 +286,92 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               }
               const sum = getResultSummary(i);
               const st = getResultStatus(i);
-              // 三堂会审(2026-09-01): 状态缺失时用中性文字色、不显图标, 防误报成功
-              const color = st ? statusColorMap[st] : Colors.TEXT.PRIMARY;
-              const icon = st ? `${statusIconMap[st]} ` : '';
-              const isLast = i === tools.length - 1;
-              const branch = isLast ? '└─' : '├─';
-              const sub = isLast ? '   ' : '│  ';
               const isOpen = !!expanded[i];
-              // 2026-09-03 小欧 BUG-19修复: 单工具观察按tool_name取结果, 非索引 - 小欧-2026-09-03
               const _resForTool = getResultForIndex(i);
               const singleResult = _resForTool ? [_resForTool] : [];
               const singleStep = {
                 ...(obsStep as ExecutionStep),
                 tool_result: singleResult,
               };
+              const toggleTool = () => {
+                setExpanded((prev) => {
+                  const next = [...prev];
+                  next[i] = !prev[i];
+                  return next;
+                });
+              };
               return (
                 <div
                   key={t.tool ? `${t.tool}-${i}` : `tool-${i}`}
                   style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
                 >
-                  {/* 2026-09-01 小欧(北京老陈定案, 修复"点击好几次才有效"根因): 收起/展开onClick放在折叠区(工具行+结果摘要)容器, 点这两行toggle该工具; 展开区移出onClick容器, 内部独立交互(GeneericResultRenderer的Paragraph ellipsis展开按钮/目录树节点/CollapsibleText链接)不被误触发收起 */}
-                  {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
                   <div
                     role="button"
                     tabIndex={0}
                     aria-expanded={isOpen}
                     style={{ cursor: 'pointer' }}
-                    onClick={() => {
-                      setExpanded((prev) => {
-                        const next = [...prev];
-                        next[i] = !prev[i];
-                        return next;
-                      });
-                    }}
+                    onClick={toggleTool}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        setExpanded((prev) => {
-                          const next = [...prev];
-                          next[i] = !prev[i];
-                          return next;
-                        });
+                        toggleTool();
                       }
                     }}
                   >
-                    {/* 工具行：随折叠区toggle; cursor提示可点 */}
+                    {/* 水滴图标+工具名+结果摘要：左右对齐 */}
                     <div
                       style={{
-                        fontSize: 13,
-                        lineHeight: `${13 + Spacing.XS}px`,
-                        color: Colors.TEXT.PRIMARY,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: Spacing.SM,
                       }}
                     >
-                      {branch} {t.tool}{' '}
-                      <span style={{ color: Colors.TEXT.SECONDARY }}>
-                        参数：{tParamText.slice(0, 60)}
-                        {tParamText.length > 60 ? '…' : ''}
-                      </span>
+                      {/* 水滴图标：成功绿/失败红/警告黄 */}
+                      <DropletIcon status={st ?? 'success'} size={10} />
+                      {/* 工具名：左列 */}
                       <span
-                        style={{
-                          marginLeft: Spacing.SM,
-                          color: Colors.PRIMARY,
-                          fontSize: FontSize.PRIMARY,
-                        }}
+                        style={{ color: Colors.TEXT.PRIMARY, flexShrink: 0 }}
                       >
-                        {isOpen ? '▲' : '▼'}
+                        {t.tool}
                       </span>
+                      {/* 结果摘要：右列，flexGrow填满 */}
+                      {sum && (
+                        <span
+                          style={{
+                            color: Colors.TEXT.SECONDARY,
+                            flexGrow: 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: FontSize.SECONDARY,
+                          }}
+                        >
+                          {sum.slice(0, 60)}
+                        </span>
+                      )}
+                      {/* 展开箭头 */}
+                      <CircleArrow
+                        size={16}
+                        color={Colors.TEXT.PRIMARY}
+                        expanded={isOpen}
+                        animated={false}
+                      />
                     </div>
-                    {/* 折叠态：结果摘要独立一行缩进（2026-09-01 小欧） */}
-                    {/* 三堂会审(2026-09-01): 去掉结果行自身 paddingLeft, 使其前导 │ 与上方工具行 ├─/└─ 竖线同列对齐(北京老陈反馈"绿线前移与黑竖线对齐更好看") */}
-                    {sum && (
+                    {/* 参数：默认隐藏，展开后显示 */}
+                    {isOpen && (
                       <div
                         style={{
-                          marginTop: Spacing.XS - 2 /* 段内折不折 2=XS-2 */,
-                          lineHeight: `${13 + Spacing.XS}px`,
-                          color,
-                          fontSize: 13,
+                          marginTop: Spacing.XS,
+                          paddingLeft: Spacing.LG,
+                          fontSize: FontSize.SECONDARY,
+                          color: Colors.TEXT.SECONDARY,
                         }}
                       >
-                        {sub} {icon}
-                        {sum.slice(0, 60)}
+                        参数：{tParamText}
                       </div>
                     )}
                   </div>
-                  {/* 展开区：该工具完整 observation（只显示观察，不显示参数全文，北京老陈定案 2026-09-01） */}
-                  {/* 无onClick: 内部GeneericResultRenderer的Paragraph ellipsis"展开/收起"按钮、目录树节点、CollapsibleText链接各自独立交互, 不被折叠区toggle误触发(北京老陈定案 2026-09-01) */}
+                  {/* 展开区：该工具完整 observation */}
                   {isOpen && (
                     <div
                       style={{
@@ -308,8 +380,6 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       }}
                     >
                       {typeof obsStep?.tool_result === 'string' ? (
-                        // 2026-09-03 小欧 Bug#22 守护: 字符串 tool_result → 优先 CollapsibleText 渲染原文
-                        //  (改前 {data_text} 包入 results 后走 ToolResultRenderer, 字符串被丢弃; 现字符串优先, 恢复 2026-08-29/09-01 逻辑)
                         obsStep.tool_result ? (
                           <CollapsibleText
                             text={obsStep.tool_result as string}
@@ -324,6 +394,70 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       )}
                     </div>
                   )}
+                </div>
+              );
+            })}
+          {/* 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名橘红灰字行——tools.map 之后收尾(有结果时),
+            全拒无结果时独立成行; 与执行工具子行同缩进/分支线, reason=拒绝理由链(用户拒绝/拦截/超时) — 小欧-2026-09-06 */}
+          {deniedCount > 0 &&
+            deniedList.map((d) => {
+              // 2026-09-17 小欧 会审V3(#8): 由模块级常量映射取标签/图标(不再每次渲染重建) — 小欧-2026-09-17
+              const rejectLabel =
+                REJECT_LABEL_MAP[d.reject_type ?? ''] ?? REJECT_DEFAULT_LABEL;
+              const rejectIcon =
+                REJECT_ICON_MAP[d.reject_type ?? ''] ?? REJECT_DEFAULT_ICON;
+              return (
+                <div
+                  key={`denied-${d.tool}`}
+                  style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
+                >
+                  <div
+                    style={{
+                      fontSize: FontSize.PRIMARY,
+                      lineHeight: `${FontSize.PRIMARY + Spacing.XS}px`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: Spacing.SM,
+                    }}
+                  >
+                    {/* 图标：橘红色 antd SVG */}
+                    <span
+                      style={{
+                        color: Colors.ORANGE_RED,
+                        fontSize: FontSize.PRIMARY,
+                      }}
+                    >
+                      {rejectIcon}
+                    </span>
+                    {/* 标签：橘红色小字 */}
+                    <span
+                      style={{
+                        color: Colors.ORANGE_RED,
+                        fontSize: FontSize.SECONDARY,
+                        fontWeight: FontWeight.MEDIUM,
+                      }}
+                    >
+                      [{rejectLabel}]
+                    </span>
+                    {/* 工具名：深色加粗 */}
+                    <span
+                      style={{
+                        color: Colors.TEXT.STRONG,
+                        fontWeight: FontWeight.MEDIUM,
+                      }}
+                    >
+                      {d.tool}
+                    </span>
+                    {/* 未执行+原因：灰色弱化 */}
+                    <span
+                      style={{
+                        color: Colors.TEXT.SECONDARY,
+                        fontSize: FontSize.SECONDARY,
+                      }}
+                    >
+                      未执行：{d.reason}
+                    </span>
+                  </div>
                 </div>
               );
             })}

@@ -2,6 +2,14 @@
 /* 编辑历史: 2026-09-02 小欧 - 北京老陈定案(流水线等待光标UI设计 v1.6): 新增.waiting-cursor SVG缺口圆弧等待符号(1.4em≈20px, #52c41a, stroke-width2, 逆时针1s转圈), 与 PipelineRenderer 等待态配合, 首chunk到达由内容覆盖接管禁止常驻 */
 /* 编辑历史: 2026-09-03 小欧 - 工具执行等待动画(设计文档v1.8): 新增.tool-waiting-cursor 齿轮+扳手组合橙#fa8c16, 复用waiting-spin, 挂ToolCallLine摘要头下 - 小欧-2026-09-03 */
 /* 编辑历史: 2026-09-03 小欧 - 北京老陈定案: .tool-waiting-cursor 图标尺寸 1.4em→1em(≈14px), 缩小齿轮+扳手组合, 尺寸与文字更协调 - 小欧-2026-09-03 */
+/* 编辑历史: 2026-09-06 小欧 - 北京老陈要求"去掉扳手留齿轮": ToolCallLine 等待动画图标由"齿轮+扳手组合"改标准单齿轮(Feather settings),
+   本 CSS 类只管旋转动画(1em 尺寸/逆时针1s转), 图标 SVG 内容变更在 ToolCallLine.tsx 内, 此处零改动 - 小欧-2026-09-06 */
+/* 编辑历史: 2026-09-08 小欧 - 标题图标(北京老陈令): 新增.title-spin-icon(D三色弧段loader, 复用waiting-spin逆时针1s常转, 20px),
+   .tool-waiting-cursor 尺寸 1em→1.1em - 小欧-2026-09-08 */
+/* 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 新增.task-list-item:hover悬浮态/.active选中态/.task-text-block相对定位/.task-copy-btn复制按钮(绝对定位右上角hover显示) - 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-13 小欧 - action等待图标(北京老陈令选G波纹扩散): 新增@keyframes action-ripple与.action-ripple-1/.action-ripple-2(1.8s交替scale0.5→1.4+opacity1→0), .action-waiting-cursor去waiting-spin改静态容器(图标SVG在WaitingIcons/ToolWaitingIcon之下) — 小欧-2026-09-13 */
+/* 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①新建.logo-gridwave-icon(3x3九色点阵, 新增@keyframes gridwave斜向波浪2s波动, 尺寸36px, 复用原html 70号图标); ②新建.brand-title-text(右侧顶栏动画圈圈后品牌名, 16px/600/#1677ff与左侧一致) — 小欧-2026-09-15 */
+/* 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 文件末尾新增心跳等待感知微型钟面样式——@keyframes clock-beat + .clock-stopwatch(inline-flex并存) + .clock-stopwatch-note(12px) + .clock-beat-wave(外圈单次光波) - 小欧-2026-09-17 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -44,6 +52,50 @@
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.2);
 }
 
+/* 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 悬浮态极浅灰背景，交互反馈更流畅 */
+.task-list-item:hover {
+  background-color: #fafafa !important;
+}
+
+/* 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 选中态极浅蓝背景，与内联style.backgroundColor双保险 */
+.task-list-item.active {
+  background-color: #e6f4ff !important;
+}
+
+/* 2026-09-09 小欧 - 复制按钮样式: 文本块相对定位, 按钮绝对定位右上角, hover时显示 */
+.task-text-block {
+  position: relative;
+}
+.task-copy-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #999;
+  opacity: 0;
+  transition: all 0.15s ease;
+}
+.task-copy-btn:hover {
+  background: #f5f5f5;
+  color: #1677ff;
+  border-color: #1677ff;
+}
+.task-copy-btn:active {
+  background: #e6f4ff;
+}
+.task-text-block:hover .task-copy-btn {
+  opacity: 1;
+}
+
 @keyframes thinking-blink {
   50% {
     opacity: 0;
@@ -79,6 +131,160 @@
 }
 .tool-waiting-cursor svg {
   display: block;
-  width: 1em;
-  height: 1em;
+  /* 2026-09-08 小欧 - 图标换型(北京老陈令): 尺寸1em→1.1em(≈15px), 与loader弧段视觉更协调 — 小欧-2026-09-08 */
+  width: 1.1em;
+  height: 1.1em;
+}
+
+/* 2026-09-08 小欧 - 标题图标(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader, 复用waiting-spin逆时针1s常转, 尺寸20px — 小欧-2026-09-08 */
+.title-spin-icon {
+  display: inline-block;
+  animation: waiting-spin 1s linear infinite;
+}
+.title-spin-icon svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+}
+
+/* 2026-09-15 小欧 - 左侧Logo图形化(北京老陈令选title-icon-compare 70号斜向波浪): 
+   3x3九色点阵Svg, 每格 gridwave 2s 斜向波动动画, 尺寸36px 与侧栏等宽 — 小欧-2026-09-15 */
+.logo-gridwave-icon {
+  display: inline-block;
+}
+.logo-gridwave-icon svg {
+  display: block;
+  width: 36px;
+  height: 36px;
+}
+@keyframes gridwave {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.gridwave {
+  animation: gridwave 2s ease-in-out infinite;
+}
+
+/* 2026-09-15 小欧 - 右侧顶栏品牌文字(北京老陈令): 左侧"OmniAgentAst."移位至此, 动画圈圈之后, 样式与原左侧一致 — 小欧-2026-09-15 */
+.brand-title-text {
+  margin-left: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1677ff;
+  white-space: nowrap;
+  line-height: 43px;
+}
+
+/* 2026-09-13 小欧 - action等待图标: 蓝色波纹扩散(G样式), scale 0.5→1.4 + opacity 1→0, 1.8s周期, 不旋转 — 小欧-2026-09-13 */
+@keyframes action-ripple {
+  0% {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+.action-waiting-cursor {
+  display: inline-block;
+  vertical-align: baseline;
+}
+.action-waiting-cursor svg {
+  display: block;
+}
+.action-ripple-1 {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: action-ripple 1.8s ease-out infinite;
+}
+.action-ripple-2 {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: action-ripple 1.8s ease-out infinite;
+  animation-delay: 0.9s;
+}
+
+/* 编辑历史: 2026-09-09 小欧 - [16]3.9 浮层入口热区样式落盘(hover 规格 2 + 展开态 rotate + :focus-visible)(见 6.5.1) — 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#1: .taskinfo-entry:hover 注入 --taskinfo-entry-active(PRIMARY 蓝),
+ *   供 MetricItem 数值/图标 var() 消费 → G6 任意 tone 数值 hover 统一变 PRIMARY(3.1.3), 无分支无 !important — 小欧-2026-09-09 */
+/* 编辑历史: 2026-09-09 小欧 - [16]v4.5 三堂会审裁定(北京老陈拍板): 删 .taskinfo-token-inner 死 CSS
+ *   (省略唯一真源=EllipsisTip 组件, CSS 层再省略=双机制打架 DRY/SRP 违; 断点矩阵收窄走"明细进浮层"不硬截断;
+ *   G5 基础行恒短无溢出场景 YAGNI; .taskinfo-bar 已 flex-wrap 换行兜底)。.taskinfo-token 语义澄清=第一行左组(G1~G4) — 小欧-2026-09-09 */
+/* 外层容器允许换行（G5 Token 区最小宽度不为 0，断点矩阵兜底） */
+.taskinfo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+/* 第一行左组（G1~G4 信息位）：min-height 保高 ≥20px 不与中组错位 */
+.taskinfo-token {
+  min-width: 0;
+  min-height: 20px;
+}
+/* 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(恒一行): 信息带已恒定1行(P0-3), 其余信息全收弹框;
+ *   浮层入口热区 min-height 32→20 与 .taskinfo-token 对齐, 整条压回一行高度(原32撑高成"像2行") — 小欧-2026-09-15 */
+/* 浮层入口热区（hover 规格 2；已展开态 rotate 180°） */
+.taskinfo-entry {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #999;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+.taskinfo-entry:hover {
+  background: #f0f0f0;
+  color: #1677ff;
+  --taskinfo-entry-active: #1677ff; /* #1: 注入数值 hover 色(3.1.3 G6) */
+}
+.taskinfo-entry[data-open='true'] svg {
+  transform: rotate(180deg);
+}
+/* 键盘焦点可见性（3.8：无鼠标纯键盘可操作，2px PRIMARY 蓝 outline） */
+.taskinfo-entry:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+
+/* 2026-09-17 小欧 - 心跳等待感知微型钟面([46]第四章定案):
+   .clock-stopwatch 与等待图标并存(inline-flex 追加); .clock-beat-wave 心跳到达重放单次光波 — 小欧-2026-09-17 */
+@keyframes clock-beat {
+  0% {
+    transform: scale(0.92);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+.clock-stopwatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+}
+.clock-stopwatch svg {
+  display: block;
+}
+.clock-stopwatch-note {
+  font-size: 12px; /* 与 FontSize.SECONDARY 同档 */
+  white-space: nowrap;
+}
+.clock-beat-wave {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: clock-beat 0.6s ease-out 1;
 }

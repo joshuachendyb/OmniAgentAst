@@ -6,11 +6,17 @@
 // 编辑历史: 2026-08-30 小欧 - 修复: 展开全文/收起链接onClick/onKeyDown加stopPropagation阻断冒泡(左列任务response折叠按钮误触外层onSelect→右栏自动展开, 北京老陈反馈) - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CT-01移除text变化强制setExpanded(false)防打断展开②CT-02 Typography.Link补onKeyDown Enter/Space键盘展开(无障碍) — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 BUG-16修复: text首100字符做key, 跨消息切换时重置expanded防状态残留
+// 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 折叠切换由 Typography.Link 改 span role=button
+//   (aria-expanded+Enter/Space 键盘), 支持展开/收起双向切换; 字号/间距令牌化(FontSize.SECONDARY/Spacing.SM/XS) — 小欧-2026-09-15
+// 编辑历史: 2026-09-17 小沈 - 折叠按钮从左侧独占一行改为右侧对齐: 外层包 flex justifyContent:flex-end,
+//   去掉 display:block/marginLeft, 按钮置于文本末行右侧, 视觉更协调 — 小沈-2026-09-17
+// 编辑历史: 2026-09-17 小沈 - 折叠按钮改为内联跟在文本末尾不另起新行: 去掉外层 flex div,
+//   span display:inline + whiteSpace:nowrap 直接跟在 shown 文本流末尾(最后一行右侧尾巴) — 小沈-2026-09-17
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
- * 【小欧 2026-08-26 8.11】长 AI 消息 >30 行/2000 字默认折叠为首2行摘要 +
- * "展开全文"；点击展开完整内容。ResponseStream 正文与 ToolCallLine 展开区长文本
+ * 【小欧 2026-08-26 8.11】长 AI 消息 >5 行/200 字默认折叠为首2行摘要 +
+ * "展开"；点击展开完整内容。ResponseStream 正文与 ToolCallLine 展开区长文本
  * 共用本组件（4.4.3 全局一份）。
  *
  * @author 小欧
@@ -18,18 +24,19 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { Typography } from 'antd';
+import { CircleArrow } from '@/components/CircleArrow';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 
 interface CollapsibleTextProps {
   text: string;
-  maxLines?: number; // 默认 30 行阈值
-  maxChars?: number; // 默认 2000 字阈值
+  maxLines?: number; // 默认 5 行阈值
+  maxChars?: number; // 默认 200 字阈值
 }
 
 const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   text,
-  maxLines = 30,
-  maxChars = 2000,
+  maxLines = 5,
+  maxChars = 200,
 }) => {
   const [expanded, setExpanded] = useState(false);
   // 2026-09-03 小欧 BUG-16修复: text变化(跨消息切换)时重置expanded, 用首100字符做key区分同消息内流式追加
@@ -59,48 +66,45 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
     return text;
   }, [text, overflow, expanded, maxChars]);
 
+  const toggle = () => setExpanded((prev) => !prev);
+
   return (
     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {shown}
-      {overflow && !expanded && (
-        <Typography.Link
+      {overflow && (
+        <span
+          role="button"
+          tabIndex={0}
+          aria-expanded={expanded}
           onClick={(e) => {
             e.stopPropagation();
-            setExpanded(true);
+            toggle();
           }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               e.stopPropagation();
-              setExpanded(true);
+              toggle();
             } else {
               e.stopPropagation();
             }
           }}
-          style={{ fontSize: 12, marginLeft: 8 }}
-        >
-          展开全文
-        </Typography.Link>
-      )}
-      {overflow && expanded && (
-        <Typography.Link
-          onClick={(e) => {
-            e.stopPropagation();
-            setExpanded(false);
+          style={{
+            fontSize: FontSize.SECONDARY,
+            marginLeft: Spacing.XS,
+            color: Colors.PRIMARY,
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
           }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              setExpanded(false);
-            } else {
-              e.stopPropagation();
-            }
-          }}
-          style={{ fontSize: 12, marginLeft: 8 }}
         >
-          收起
-        </Typography.Link>
+          <CircleArrow
+            size={14}
+            color={Colors.PRIMARY}
+            expanded={expanded}
+            animated={false}
+          />
+          {expanded ? ' 收起' : ' 展开'}
+        </span>
       )}
     </div>
   );

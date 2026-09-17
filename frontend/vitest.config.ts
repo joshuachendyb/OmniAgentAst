@@ -21,7 +21,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/tests/setup.ts'],
     include: ['src/tests/**/*.{test,spec}.{ts,tsx}'], // 只运行我们自己的测试
-    exclude: ['tests/e2e/**', 'node_modules/**'], // 排除E2E测试和node_modules
+    exclude: ['e2e_case/**', 'node_modules/**'], // 排除E2E测试和node_modules
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],

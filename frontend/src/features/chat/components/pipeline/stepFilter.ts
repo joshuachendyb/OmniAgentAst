@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4/8.10 实施: 权威过滤业务内容步骤, meta/统计类归信息条(4.4.4)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: META_STEP_TYPES补入cancelled(6)/取消thought-start特判统一二分(7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删META_STEP_TYPES的cancelled条目(取消收尾单一由final+cancelled承担)
 /**
  * pipeline 分流工具
  *
@@ -26,7 +27,6 @@ export const META_STEP_TYPES = [
   'final_stats',
   'context_overview',
   'truncated',
-  'cancelled',
 ] as const;
 
 export const isBusinessStep = (s: ExecutionStep): boolean =>

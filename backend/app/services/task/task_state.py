@@ -1,3 +1,13 @@
+# 编辑历史:
+# 2026-09-06 - 小欧 - 步骤1落盘(文档[6]5.2): StreamBuffer 新增 publish 生产者直写——dict()拷贝防调用方副作用
+#   + seq=len单调递增 + 持锁cond.notify_all原子唤醒(与agent_runner._append行199-210同模式), 为事件总线
+#   paused/resumed 唯一写入入口, 供 C5A真HITL / C1B bypass / C1C沙盘网关 三网关链调用, 支撑文档[6]路径1
+# 2026-09-06 - 小欧 - VULN-006加固(task006漏洞分析报告, 北京老陈同意): publish 的 seq=len+event_log.append 移入
+#   async with cond 锁内, 与 agent_runner._append 同步收紧, "seq分配+append+notify 持锁原子"注释声明名副其实;
+#   防 4C 阶段多生产者直写事件总线时 seq 分配被插入 await 导致重复序号(当前 asyncio 单线程单生产者无实际竞态,
+#   seq=len与append间无await点不会协程插队, 属防御性加固零行为变化)
+# 2026-09-13 - 小欧 - [30]§8.2 TDD P4(行46 docstring): 改述删除已退役 _append 引用——publish 是 event_log
+#   唯一写入口(agent_runner _publish → buffer.publish 同源), _append 全仓已无定义(09-06 退役), 扫码注释残留清理
 """
 task_state — 运行态任务数据存储 + 只读查询
 
@@ -32,6 +42,18 @@ class StreamBuffer:
     event_log: List[Dict] = field(default_factory=list)
     cond: asyncio.Condition = field(default_factory=asyncio.Condition)
     done: asyncio.Event = field(default_factory=asyncio.Event)
+
+    async def publish(self, step_dict: dict) -> int:
+        """生产者直写：append + seq + 唤醒消费者。返回seq。
+        经 agent_runner._publish 统一走 StreamBuffer.publish(唯一写入口) 同模式：先dict()拷贝防调用方副作用，
+        seq分配+append+notify 均须持锁原子完成；cond.notify_all 未持锁调用抛 RuntimeError。
+        — 小健-2026-09-05；2026-09-06 小欧 步骤1落盘(文档[6]5.2)；2026-09-06 小欧 VULN-006加固(seq+append入锁)"""
+        step_dict = dict(step_dict)
+        async with self.cond:
+            step_dict["seq"] = len(self.event_log)
+            self.event_log.append(step_dict)
+            self.cond.notify_all()
+        return step_dict["seq"]
 
 
 # 流态缓冲表: task_id -> StreamBuffer(独立于 running_tasks 的生命周期)

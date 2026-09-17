@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-09-01 10:52:51
-**最近更新**: 2026-09-01 10:52:51 小欧 新增 3.4 服务模型配置解析 app/services/lifecycle/service.py — parse_model_params(provider_cfg, model)->(extra_body_params, context_limit), model_params 解析唯一权威(DRY 归一, create_service_instance 与 stream_orchestrator L2 快照同用)
+**最后更新时间**: 2026-09-16 07:04:06
+**最近更新**: 2026-09-16 07:04:06 小欧 新增 4.4 信任机制辅助(app/tools/trust_db.py) — norm_trust_path 函数化单一来源(文件域 resolve / 非文件信任域 strip, insert/check/delete 落库·查询·撤销双侧一致; DRY 消除 storage 层双份副本)
 
 ---
 
@@ -229,7 +229,24 @@
 
 ---
 
+### 4.4 信任机制辅助（app/tools/trust_db.py + app/tools/trust.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `norm_trust_path` | 信任路径规范化: 文件域 Path.resolve() 绝对化; 非文件信任域(registry/sql)原样 strip(信任落库/查询/撤销双侧一致的单一来源) | path: Optional[str], tool_name: Optional[str]=None | Optional[str] |
+| `extract_trust_path` | 从工具调用提取信任落库/查询的目标路径(文件域经 _parse_paths, 非文件信任域定向别名仅认规范 path) | name: str, params: Dict | Optional[str] |
+
+> `norm_trust_path` 定义于 `app/tools/trust_db.py`：trust_db.insert_session_trust/check_session_trust 内部复用，storage.delete_session_trust 撤销侧经此函数消费（2026-09-16 函数化，消除 storage 层双份副本；非文件信任域集合见 tool_constants.NON_FILE_TRUST_TOOLS）。`extract_trust_path` 定义于 `app/tools/trust.py`：hitl_gateway.hitl_confirm 直接调用（KISS 无透传层），resolve_skip 信任跳过查询同用。
+
+---
+
 ## 五、LLM核心层（app/llm/）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `create_payload_chunk` | 元事件载荷工厂: meta事件(retrying/error/usage/停顿)统一经 payload 随 chunk 直送, 废弃二元tuple协议(文档[6]2.5.1/5.9); 与取消/错误族工厂同列单行构造 | chunk_model: ModelRef, payload: Dict | StreamChunk |
+| `create_cancelled_chunk` | 取消响应工厂(取消语义, payload恒None) | chunk_model: ModelRef | StreamChunk |
+| `create_error_chunk` | 错误响应工厂(流异常/出错, payload恒None) | chunk_model, error, error_type="http_error" | StreamChunk |
 
 ---
 
@@ -322,6 +339,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v3.15 | 2026-09-16 07:04:06 | 新增 4.4 信任机制辅助(app/tools/trust_db.py+trust.py): norm_trust_path 函数化公开(文件域 resolve / 非文件信任域 strip, insert/check/delete 落库·查询·撤销统一单一来源, DRY 消除 storage 层双份逐字副本); extract_trust_path 补登记(hitl_gateway 直调 + resolve_skip 复用) | 小欧 |
 | v3.14 | 2026-08-30 14:50:00 | 13.11 空行规约(北京老陈 2026-08-30 批准): 1.7 text_utils 新增 normalize_blank_lines(连续空行折叠为一个空行+段首尾trim, 幂等, 后端落库收口入口, 与前端 normalizeBlankLines 同一张规则表); format_tool_call_markup 末尾压缩收敛复用(行为逐字节等价, DRY); agent_runner._persist 与 storage.load_steps_by_task 的 C2/规约逻辑为模块内私有改动不单列条目 | 小欧 |
 | v3.13 | 2026-08-30 08:05:00 | 新增 1.11 控制台镜像(app/logger/console_writer.py): console_put 非阻塞控制台写(全局queue+daemon写线程, 满则丢弃, 事件循环零同步stdout写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起) | 小欧 |
 | v3.12 | 2026-08-25 16:30:00 | 合规重构(北京老陈驱动): ①新增 3.3 Agent层 handlers/sandbox_gate.py(sandbox_precheck/sandbox_resolve, 从 action_handler 嵌套闭包拆出, 去隐式耦合/分层落点); ②1.2 display_utils.py 新增 format_llm_data_text(从 action_handler.build_observation 内嵌闭包拆出的纯展示格式化函数, 全局层复用优先); 两处均逻辑零改动(复制不重写)、登记本清单、action_handler 去内联与死 import | 小欧 |

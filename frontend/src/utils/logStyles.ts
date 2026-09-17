@@ -69,20 +69,14 @@ export const logDivider = (style: string = LOG_STYLES.debug) => {
  * AI响应完成的日志
  */
 export const logAIComplete = (responseLength: number) => {
-  console.log('%c┌─────', LOG_STYLES.success);
-  console.log('%c│ ✅ AI响应完成 END', LOG_STYLES.success);
-  console.log('%c│ 完整回复长度: ' + responseLength, LOG_STYLES.successSmall);
-  console.log('%c└─────', LOG_STYLES.success);
+  console.log(`✅ AI响应完成, 长度: ${responseLength}`);
 };
 
 /**
  * AI响应错误的日志
  */
 export const logAIError = (errorMessage: string) => {
-  console.log('%c┌─────', LOG_STYLES.error);
-  console.log('%c│ ❌ AI响应错误 END', LOG_STYLES.error);
-  console.log('%c│ 错误信息: ' + errorMessage, LOG_STYLES.errorSmall);
-  console.log('%c└─────', LOG_STYLES.error);
+  console.error(`❌ AI响应错误: ${errorMessage}`);
 };
 
 /**
@@ -90,10 +84,7 @@ export const logAIError = (errorMessage: string) => {
  */
 export const logUserSend = (content: string) => {
   const truncated = content.substring(0, 100);
-  console.log('%c┌─────', LOG_STYLES.user);
-  console.log('%c│ 🚀 用户发送消息 START', LOG_STYLES.user);
-  console.log('%c│ 内容: ' + truncated, LOG_STYLES.userSmall);
-  console.log('%c└─────', LOG_STYLES.user);
+  console.log(`🚀 用户发送: ${truncated}`);
 };
 
 /**
@@ -103,13 +94,8 @@ export const logHistoryLoad = (
   messageCount: number,
   fromCache: boolean = false
 ) => {
-  const source = fromCache ? '从缓存恢复' : '从数据库读取';
-  console.log('%c┌─────', LOG_STYLES.debug);
-  console.log(
-    '%c│ ' + source + ': ' + messageCount + ' 条消息',
-    LOG_STYLES.debugSmall
-  );
-  console.log('%c└─────', LOG_STYLES.debug);
+  const source = fromCache ? '缓存' : '数据库';
+  console.log(`📥 ${source}加载: ${messageCount} 条消息`);
 };
 
 /**

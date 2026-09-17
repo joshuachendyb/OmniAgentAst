@@ -1,36 +1,36 @@
 # -*- coding: utf-8 -*-
-# 编辑历史: 2026-09-03 小欧 - 新建: 冲突检测三函数下沉，解耦 action_handler - 小欧-2026-09-03
-# 编辑历史: 2026-09-04 小健 - 修正: 复用 trust._parse_paths，禁止重写简化退化 - 小健-2026-09-04
-# 编辑历史: 2026-09-04 小健 - 修正: trust_utils已合并为trust.py，import路径同步更新 - 小健-2026-09-04
-# 编辑历史: 2026-09-04 小健 - 修正: 从action_handler.py精确复制完整版_has_conflict/_partition_calls,
-#   补全窗口工具支持(WINDOW_TARGET_TOOLS)/计数版冲突判定(count>=2)/索引返回(List[List[int]]) - 小健-2026-09-04
-"""冲突检测: 路径/窗口冲突判定与调用分组（精确复制自action_handler.py:552-616）
-
-职责: 纯函数，无副作用
-- _has_conflict: 检测路径/窗口冲突（计数版，支持窗口工具）
-- _partition_calls: 按路径/窗口相关性分组（并查集，返回索引列表）
+# 编辑历史:
+# 2026-09-04 小健 - 新建: 冲突检测下沉, 解耦 action_handler - 小健-2026-09-04
 """
-from typing import Any, Dict, List
+conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并查集分组
+
+从 action_handler.py 提取:
+- _has_conflict: 检测同批调用是否存在文件路径/窗口冲突（计数版）
+- _partition_calls: 并查集连通分量分组（冲突组内串行，无冲突组并行）
+
+原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
+"""
+from typing import Dict, List, Any
 from app.tools.trust import _parse_paths, WINDOW_TARGET_TOOLS
 from app.tools.tool_constants import FILE_OPERATION_TOOLS
 from app.logger import logger
 
-# 写操作工具集: FILE_OPERATION_TOOLS - 只读工具（精确复制自 action_handler.py:230-232）
+# 工具文件读操作集合（冲突检测用）— 小欧 2026-08-13
+# 同路径多次调用判定: 读-读无竞态不冲突(仍并行), 仅需从写集合排除, 防 read_xlsx 等被误判写操作致并行退化串行
 _READ_TOOLS = {"readtext", "read_xlsx", "read_docx", "read_pdf", "read_pptx"}
+# 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
 _WRITE_OPS = FILE_OPERATION_TOOLS - _READ_TOOLS
 
+
+# ════════════════════════════════════════════════════════════
+# 冲突检测（复制自 action_handler.py:590-621）
+# ════════════════════════════════════════════════════════════
 
 def _has_conflict(all_calls: List[Dict]) -> bool:
     """检测路径/窗口冲突 — 北京老陈 2026-07-04 初版; 小欧 2026-08-09 计数版; 小欧 2026-08-11 窗口工具纳入
     冲突：同一键(文件路径/窗口标题)被>=2次调用访问, 且(至少一个文件写操作 或 含窗口工具)
     有冲突→顺序执行, 无冲突→并行
-    [2026-08-09 小欧] BUG修复: 旧实现用 set 存工具名不计数, 同名工具多次写
-    同一路径漏检(3×edittext 同文件)→误走并行→read-modify-write 竞态致内容丢失。
-    改为 path→(调用次数, 工具名set), 复用 _parse_paths 解析(与 _partition_calls 一致, DRY)。
-    [2026-08-11 小欧] 扩展: 窗口工具(window_focus/window_resize/set_window_state)同标题即冲突,
-    消除 task002 实测 P2(restore+resize 同批并行→resize 0.00s 莫名失败)的并行竞态。
-    注: 文件路径键与 "window:" 键空间不重叠, 同一 entry 的 tools 不会混合文件与窗口工具。
-    精确复制自 action_handler.py:552-582 — 小健-2026-09-04
+    完整复制自 action_handler.py:590-621
     """
     path_ops: Dict[str, Dict[str, Any]] = {}
 
@@ -54,11 +54,14 @@ def _has_conflict(all_calls: List[Dict]) -> bool:
     return False
 
 
+# ════════════════════════════════════════════════════════════
+# 并查集分组（复制自 action_handler.py:623-655）
+# ════════════════════════════════════════════════════════════
+
 def _partition_calls(all_calls: List[Dict]) -> List[List[int]]:
     """按路径/窗口相关性分组(并查集连通分量): 共享路径或同标题窗口的调用归一组, 组间无共享→可并行
     返回: 组列表, 每组是 all_calls 的索引列表 — 小欧 2026-08-09 — 小欧 2026-08-11 窗口工具自动纳入
-    (窗口工具经 _parse_paths 返回 "window:标题" 冲突键, 同标题自动并组串行, 分组本体逻辑零改动)
-    精确复制自 action_handler.py:585-616 — 小健-2026-09-04
+    完整复制自 action_handler.py:623-655
     """
     n = len(all_calls)
     parent = list(range(n))

@@ -15,10 +15,16 @@ Author: 小沈 - 2026-05-31
 2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
 2026-08-28 小欧 - yield日志审计: emit()统一入口加 logger.debug("[StepEmit] type step"), 覆盖全部~50个Step yield(KISS+DRY, 单一日志出口), 三堂会审无逻辑修正
 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): emit_final_with_stats 由 async def 改 sync 返回 (final, stats) 二元组; 原 async 体内零await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码; 调用点 async for→for, 行为等价无backward
-2026-09-04 小健 - SLAP修复: emit_final_with_stats加outcome参数,显式透传终态给build_final_stats_step,消除发射层依赖遥测层隐式读agent.status的SLAP违规 - 小健-2026-09-04
+2026-09-04 小健 - SLAP修复: emit_final_with_stats 从 final_step 提取 outcome 并透传给 build_final_stats_step(outcome=...), 消除发射层对遥测层隐式依赖 — 小健-2026-09-04
+# 2026-09-05 小健 - answer_focus第一阶段(10.3)搬二(8.2): 新增终态工厂 emit_completed_final/emit_failed_final,
+#   收口handler侧5处终态分产(顺序敏感set_failed内聚一步) - 小健-2026-09-05
+# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
+# 2026-09-11 小欧 - [27] 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
+#   根因: emit_completed_final/emit_failed_final 未传 final_model/duration 致 DB step_json 三字段 null — 小欧-2026-09-11
 """
 
 from typing import Any, Dict, Optional
+import time
 
 from app.services.agent.steps import FinalStep
 from app.logger import logger
@@ -44,6 +50,15 @@ class StepEmitter:
                 step._session_accumulated_tokens = dict(getattr(self.agent, "session_accumulated_tokens", {}))
             if step._chain_accumulated_tokens is None:
                 step._chain_accumulated_tokens = dict(getattr(self.agent, "chain_accumulated_tokens", {}))
+            # [27] 注入 model/provider: 任务快照优先(三堂会审 P1 防还原竞态) — 小欧-2026-09-11
+            if step._step_model is None:
+                step._step_model = getattr(self.agent, "_task_llm_model", None) or getattr(getattr(self.agent, "llm_client", None), "llm_model", None)
+            # [27] 注入 duration: now - telemetry._run_start_ts(同源 build_final_stats_step) — 小欧-2026-09-11
+            if step._duration is None:
+                _tele = getattr(self.agent, "telemetry", None)
+                _start = getattr(_tele, "_run_start_ts", None) if _tele else None
+                if _start:
+                    step._duration = round(time.time() - _start, 1)
         self.agent.steps.append(step)
         # 2026-08-28 小欧 yield日志审计: Step emit统一入口(覆盖全部~50个Step yield, KISS+DRY)
         logger.debug(f"[StepEmit] {getattr(step, 'type', '?')} step={getattr(step, 'step', '?')}")
@@ -56,11 +71,29 @@ class StepEmitter:
             self.agent._last_error = (_et, step.get_content())
         return step
 
-    def emit_final_with_stats(self, final_step, outcome: str = ""):
-        """final 后单独 emit 终态统计事件 —— 先 .emit(final) 再 .emit(final_stats)，两事件分开、不塞进 final 键体。
-        2026-08-28 小欧 KISS修正: sync 返回 (final_step, stats_step) 二元组。
-        outcome参数: 显式透传终态给build_final_stats_step, 消除SLAP违规 - 小健-2026-09-04"""
-        return (self.emit(final_step), self.emit(self.agent.telemetry.build_final_stats_step(outcome=outcome)))
+    def emit_final_with_stats(self, final_step):
+        """[27] v1.2 2026-09-11 小欧: 返回一元组 (final,); final_stats 不再由此构建/发布, 改由 runner 延后单发。
+        2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
+        改为 sync 返回 (final_step,) 一元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。
+        2026-09-04 小健 SLAP修复: outcome从final_step显式提取并透传给build_final_stats_step, 消除隐式依赖 — 小健-2026-09-04"""
+        return (self.emit(final_step),)
+
+    def emit_completed_final(self, step, response, reasoning=""):
+        """终态工厂(completed) — 小健 2026-09-05：收口 handler 侧 2 处 completed 分产；
+        状态沿用既有机制（dispatch 外层 seen_types→set_completed，本工厂不提前置状态），行为逐字节等价"""
+        return self.emit_final_with_stats(FinalStep(
+            step=step, response=response, outcome="completed", reasoning=reasoning,
+        ))
+
+    def emit_failed_final(self, step, response, error_type="", error_message="", reasoning=""):
+        """终态工厂(failed) — 小健 2026-09-05：收口 handler 侧 3 处 failed 分产；
+        09-03 顺序铁律内聚于此：set_failed 先行再 emit，使 build_final_stats_step 读到 FAILED"""
+        from app.services.agent.status_table import set_failed  # 延迟 import，随 answer_handler.py:127 既有惯例，防循环依赖 — 小健 2026-09-05
+        set_failed(self.agent, error_message or response)
+        return self.emit_final_with_stats(FinalStep(
+            step=step, response=response, outcome="failed",
+            error_type=error_type, error_message=error_message, reasoning=reasoning,
+        ))
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""

@@ -1,5 +1,18 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离SSE专属类型归一至横切层; ExecutionStep已居types/execution.ts故不重复导出 - 小欧-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 13.14 新增 roundUsage/taskAccumulated/sessionAccumulated/chainAccumulated 四字段（后端直发P/C/T三数字，废止前端累加） - 小欧-2026-08-30
+// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): error 事件补充可选 step 字段(blocked/timeout 带 step 供 sseOnError 聚合 deniedStepSet 停齿轮) — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): SSEError 补可选 tool_name(被拒工具名)——blocked/timeout 错误
+//   携带, 供 sseOnError 聚合被拒工具点名条(deniedEntries: tool+reason)承灰字链路数据源 — 小欧-2026-09-06
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.1(北京老陈裁定回归总原则): SSEError 补可选 from_backend(后端业务错误来源标记,
+//   useChatCallbacks 据此分道只进P3不弹窗); 6.3.4 补可选 request_level(请求级step=0标记, 位4图标分层);
+//   新增 LiveError 接口(P3数据源对象形态) — 小欧-2026-09-08
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: ReconnectConfig接口删enabled字段; 阶段二S2提前实施:
+//   UseSSEReturn新增executionStepsRef可选字段(供外部直接读取ref) — 小欧-2026-09-10
+// 编辑历史: 2026-09-11 小欧 - 三堂会审P1-2: FinalStatsFrame.artifacts补tool_name?(与后端4字段契约对齐, 见handle_action.py 11.6.2; 原3字段漏tool_name致产出物编译错) — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: TaskMetaFrames 删 usage 死字段(与 taskAccumulated 完全同值的 P/C/T 映射, 消费已归一 taskAccumulated, sseParser/useTaskInfo 同步收敛) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P0-3三堂会审修复: SSEConfig删taskId死字段(全仓无config.taskId消费点, useSSE只读baseURL/sessionId/token) — 小欧-2026-09-12
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 ClockSignals 信号打包类型(heartbeatTs/lastBizTsRef/lastDataTsRef) + UseSSEReturn 新增 waitClock 字段 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章对齐设计: ClockSignals 移至 UseSSEReturn 前(与 5.4.2 一致), 字段序 lastBizTsRef/lastDataTsRef/heartbeatTs, 注释改行内式 - 小欧-2026-09-17
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -19,9 +32,20 @@ export interface StatsFrame {
 export interface FinalStatsFrame {
   duration?: number;
   tool_stats?: Record<string, number>;
-  artifacts?: Array<{ name: string; path: string; type: string }> | null;
+  // 2026-09-11 小欧 三堂会审P1-2: artifacts 补 tool_name?——后端 final_stats 实为 4 字段契约
+  //   (tool_name/name/path/type, 见 backend/app/services/agent/handlers/handle_action.py 11.6.2),
+  //   原 3 字段漏 tool_name 致 StaticStatsBlock 产出物列表编译错(TS2339) — 小欧-2026-09-11
+  artifacts?: Array<{
+    tool_name?: string;
+    name: string;
+    path: string;
+    type: string;
+  }> | null;
   final_status?: 'completed' | 'failed' | 'cancelled';
   retry_count?: number;
+  // 小欧 2026-09-11 第七章 M5a(finalStats补全): 补全统计键——与后端 build_final_stats_step 7 键对齐(3.4 FinalStatsStep._extra_fields) — 小欧-2026-09-11
+  step_count?: number;
+  llm_call_count?: number;
 }
 export interface ContextOverviewFrame {
   summary: string;
@@ -34,7 +58,7 @@ export interface TaskMetaFrames {
   contextSummary: string; // start.content
   startInfo: StartInfoFrame | null;
   startTimestamp: number; // start 事件时间戳（供 useTaskInfo 过程条首行使用）
-  usage: { prompt: number; completion: number; total: number }; // 兼容：现为 taskAccumulated 的 P/C/T 映射（后端直发）
+  // 2026-09-12 小欧 P1-11: 删 usage 死字段(与 taskAccumulated 完全同值的 P/C/T 映射, useTaskInfo 已归一到 taskAccumulated) — 小欧-2026-09-12
   roundUsage?: { prompt: number; completion: number; total: number } | null; // 本轮三值（后端 prompt_tokens 直取）
   taskAccumulated?: {
     prompt_tokens: number;
@@ -60,7 +84,6 @@ export const emptyMetaFrames = (): TaskMetaFrames => ({
   contextSummary: '',
   startInfo: null,
   startTimestamp: 0,
-  usage: { prompt: 0, completion: 0, total: 0 },
   roundUsage: null,
   taskAccumulated: null,
   sessionAccumulated: null,
@@ -83,7 +106,9 @@ export interface SSEError {
   error_message: string; // 用户友好的错误信息 【修改2026-04-15】message → error_message
   // 必填字段（1个）
   timestamp: string; // 时间戳
-  // 可选字段（8个）
+  // 可选字段（11个）
+  step?: number; // 2026-09-06 小欧 B2(方案C): 事件所属工具执行轮 step 号, 供 blocked/timeout 错误聚合 deniedStepSet 停齿轮 — 小欧-2026-09-06
+  tool_name?: string; // 2026-09-06 小欧 B2(6.4): 被拒工具名(blocked/timeout 由后端事件带), 供被拒工具点名条灰字 — 小欧-2026-09-06
   model?: string; // 模型名称
   provider?: string; // 提供商名称
   details?: string; // 详细错误信息
@@ -97,6 +122,19 @@ export interface SSEError {
     provider?: string;
     thought_content?: string;
   };
+  from_backend?: boolean; // 2026-09-08 小欧 6.3.1: 后端业务错误来源标记(sseParser onError 无条件 true), useChatCallbacks 据此分道只进P3不弹窗 — 小欧-2026-09-08
+  request_level?: boolean; // 2026-09-08 小欧 6.3.4: 请求级错误标记(sseParser 读原始 step===0), 位4图标请求级⛔区分执行级红圆底白× — 小欧-2026-09-08
+}
+
+/**
+ * P3 页面级实时错误数据源对象形态
+ * 文档：[10]前端消息分类处理分析及设计 6.3.4（北京老陈 2026-09-08 裁定）
+ * useChatFacade onError 包装器不再把 SSEError 压成 string, 改构 LiveError{text, requestLevel} 上抛;
+ * 前端本地错误(string) 缺 requestLevel → false, 位4 沿用执行级样式。
+ */
+export interface LiveError {
+  text: string;
+  requestLevel: boolean;
 }
 
 /**
@@ -115,17 +153,25 @@ export interface SSEConfig {
   baseURL: string;
   sessionId: string;
   token?: string;
-  taskId?: string;
+  // 2026-09-12 小欧 P0-3三堂会审修复: 删 taskId 死字段(YAGNI, 全仓无任何 config.taskId 消费点, useSSE 只读 baseURL/sessionId/token) — 小欧-2026-09-12
 }
 
 /**
  * SSE重连配置
  */
 export interface ReconnectConfig {
-  enabled: boolean;
   maxAttempts: number;
   baseDelay: number;
   maxDelay: number;
+}
+
+/**
+ * 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面数据信号(打包透传, 链路只走单一 prop waitClock)
+ */
+export interface ClockSignals {
+  lastBizTsRef: React.MutableRefObject<number>; // 最近一次业务事件到达(ms)
+  lastDataTsRef: React.MutableRefObject<number>; // 最近一次任意数据到达(含心跳, ms)
+  heartbeatTs: number; // 心跳到达时刻(ms), 0=未收到
 }
 
 /**
@@ -136,6 +182,7 @@ export interface UseSSEReturn {
   isReceiving: boolean;
   setIsReceiving?: (value: boolean) => void; // 【方案3】暴露setter用于中断时立即更新状态
   executionSteps: ExecutionStep[];
+  executionStepsRef: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S2: 暴露 ref 供外部直接读取（必填，useSSE 总会返回）
   currentResponse: string;
   sendMessage: (
     content: string,
@@ -156,6 +203,8 @@ export interface UseSSEReturn {
   reconnect: () => void;
   /** 任务元信息帧快照（usage/stats/final_stats/context_overview/truncated/startInfo/上下文摘要） */
   metaFrames: TaskMetaFrames;
+  /** 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号(业务静默/数据静默/心跳) — 小欧-2026-09-17 */
+  waitClock: ClockSignals;
 }
 
 /**

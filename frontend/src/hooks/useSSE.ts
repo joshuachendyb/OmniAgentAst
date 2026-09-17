@@ -7,14 +7,96 @@
 //   重连路径传递false避免setIsReceiving(false)→true间隙导致等待图标闪烁
 // 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 P1-3: HITL等待期暂停IDLE计时（paused/badge挂起时不清IDLE），自适应backendTimeout，防60s误杀110s等待 - 小欧-2026-09-03
-import { useState, useCallback, useRef, useEffect } from 'react';
+// 编辑历史: 2026-09-06 小欧 方案C三堂会审缺陷1修复: 每行热路径(L671循环内)processSSEData handlers 对象
+//   漏传 onDenied(done 块已传) → 流式期间独立 user_rejected 事件无法触发 deniedStepSet 聚合, 拒绝不停齿轮;
+//   补齐 onDenied 转发, useChatStreaming 侧 handleDenied 已注入(10参) — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 方案C观察点1/2根治(北京老陈批准方案2后端标记): sessionStorage 恢复时剔除
+//   preview 预览行(仅SSE齿轮先行, 拦截/拒绝 action 本就不落库) — 刷新恢复与 DB 回放语义一致,
+//   根治"刷新后无灰字工具行"(观察点1)与"双条 action"(观察点2) — 小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): onDenied 回调签名两参→三参
+//   (step, message, toolName?) 与 sseParser 三参回调契约对齐, 透传被拒工具名供点名条聚合 — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - REQUEST-ABORT静默短路(9月优化5.3.1, 北京老陈裁定方案): 主动断开意图标记
+//   disconnect()主动abort与180s fetch超时abort同型(AbortError)无法靠error区分, 以操作语义标记判别:
+//   ①disconnect确有活动连接时设intentionalAbortRef并2s兜底清残留; ②catch入口读标+errorHandlerClassify===REQUEST_ABORT短路静默,
+//   根治"手动停止/卸载→误判request_timeout→1s后自动重连复活任务/误弹超时warning"; 180s超时abort无标记, 仍走原重连 - 小欧-2026-09-07
+// 编辑历史: 2026-09-08 小欧 - 方案二(北京老陈, 见doc-9月优化[12] 6.3): 重连N次全失败不再自动调cancel(任务可能仍在正常执行,
+//   tool参数流式等假断连会被误杀), 改为轮询会话任务列表(GET /sessions/{session_id}/tasks, 复用sessionTaskApi.listTasks)
+//   观察终态: 任务不存在或已终态(completed/failed/cancelled)即静默收尾, 轮询超时仍在执行才提示用户手动确认 - 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 空闲超时实证打点+类型修正(北京老陈驱动「xx 60000」toast 定位):
+//   ①空闲超时触发点 readStream 加 console.warn 打点, 打印完整上下文(timeSinceLastData/thresholdMs/receiving/hitlWaiting/
+//   nowIso), 复现时与 handler.ts 的 [Toast] 打点对照即可明确 60000 是 timeSinceLastData 本身还是下游 error 透传;
+//   ②tsc 既有类型瑕疵修正: 轮询终态判定 status 可为 undefined 而 includes 需 string, ?? '' 兜底(语义不变) - 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 方案二实施期新增真实bug修复(测试F6/F9红→绿, 与sse-reconnect-poll用例对齐):
+//   轮询无中止信号——组件卸载后轮询仍持续 listTasks 并误弹"手动确认", 用户再发新消息后旧轮询与新消息请求叠加;
+//   新增 pollSignalRef+signal 中止信号(handleSSEError/pollSessionTaskStatus/useSSE 三条链路透传), 卸载/新消息置 aborted 即静默停止 - 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 方案二实施期新增真实bug修复(测试F10红→绿): 正常完成流后未清理残留 idle 定时器,
+//   60s后僵尸 reconnect 再造重连链/再生轮询; connect 成功路径补 idleTimeoutRef 清理(clearTimeout+置null) - 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - A类死代码清理: disconnect内去reconnectTimeoutRef解构(196-205) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B10/B11: :589 disconnect的eslint-disable注释原错位于}行末未生效,
+//   移至依赖数组行上方使生效+写明理由; :975 attemptReconnect依赖数组真补onError — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - saveStepsToStorage防抖: 原实现每个SSE事件排队setTimeout(0)宏任务,
+//   N个事件→N次同步JSON.stringify(fullSteps)+sessionStorage.setItem, 累积O(N²)阻塞主线程,
+//   React渲染被推迟导致UI冻结; 改为300ms防抖, 合并连续事件只保留最后一次保存 — 小欧-2026-09-09
+// 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删reconnectConfigRef.enabled字段+设置代码(418/596-601);
+//   阶段一S8超时改名: fetchTimeoutRef→firstChunkTimeoutRef(442/549/677/712);
+//   阶段一S1.3: processSSEData调用删除第3参isProcessingRef(796/837);
+//   阶段二S2提前实施: 新增第12参externalExecutionStepsRef, executionStepsRef优先用外部ref,
+//   useSSE返回值暴露executionStepsRef供useChatStreaming透传(1070行) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): 删第12参externalExecutionStepsRef, useSSE恢复独立useRef
+//   唯一真源(无外部注入依赖, 不可能分裂) — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三S15收尾: 组件卸载cleanup追加 hitlWaitingKeysRef.current.clear(),
+//   HITL等待key Set卸载即归零, 封死abort竞态窗口旧流帧add残留口子(disconnect已断流清定时器, 此行为防御完备)
+//   — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段三S12/S19门禁实施落地(v2.17): flushPendingSteps改ref权威源等价值
+//   计算(批batch取自splice已清空, 无并发丢更新, ref同步幂等), 并恢复saveStepsToStorage兜底快照调用
+//   (S12.2六分支删saveStepsToStorage后调用点未重新挂接, S19元数据外壳写入实际断链); saveStepsToStorage
+//   声明提前至flushPendingSteps之前以在useCallback直接引用; 同步清理S12.2残留死参数:
+//   sseParser handlers 的 saveStepsToStorage 字段/解构及 useSSE 两处传参已无调用点, 一并删除 — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - 阶段四S20: 连接层函数提取——
+//   提取 clearIdleMonitor(useCallback) 收敛 idleTimeoutRef 清理(disconnect/成功路径/卸载三处复用);
+//   提取 clearAllTimers(useCallback) 统一收敛所有定时器清理(idle/firstChunk/reconnect/saveSteps/intentionalAbort),
+//   disconnect 内散落的 4 段 clearTimeout 替换为 clearAllTimers() 一行;
+//   组件卸载 effect 内 reconnectTimeoutRef 清理替换为 clearAllTimers();
+//   sendMessageInternal 成功路径 idleTimeoutRef 清理替换为 clearIdleMonitor() — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [C1/C2/B1]终态作废+空流终态(北京老陈排查35失败): ①新增terminalSeqRef
+//   (初始-1)传入sseParser供终态后作废守卫; ②reader循环done分支补空流终态——200+空body(异常断流)
+//   原实现buffer.trim()空即跳过全部处理, isReceiving永久true/placeholder永久思考中; 现触发
+//   onError+复位isReceiving/isConnected — 小欧-2026-09-10
+// 编辑历史: 2026-09-10 小欧 - [B2]空流误报修复(北京老陈反馈「final收不到」): B1上线后final已正常处理后
+//   流结束buffer亦空, 误触B1空流onError覆盖成功终态; 补else if(terminalSeqRef.current>=0)分支——
+//   终态(final/error)已处理完毕即视为流正常结束不报错, 仅真·200+空body(无任何终态)才走B1 — 小欧-2026-09-10
+// 编辑历史: 2026-09-12 小欧 - P0-4三堂会审修复: useRef<ReconnectConfig>去Omit<ReconnectConfig,'enabled'>死壳(ReconnectConfig已删enabled字段, Omit无意义且锁死后续字段变更) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - [30]§8.2问题1实施(北京老陈批准, 作废守卫退役, 前端部分): 删 terminalSeqRef 声明/
+//   新任务重置/两处传参; [B2]空流判定分支改 lastSeqRef(current>=0)判定——原 terminalSeqRef 只能判「final/error已处理」,
+//   现收敛到唯一权威基线 lastSeqRef(收到过任一帧即推进), 正常流 final 先于 done 权威置位发布(agent_runner.py L708-714 实测),
+//   done+buffer空时 lastSeqRef≥0 ⇔ 终态已处理, 空流/异常断流 lastSeqRef=-1 走B1, 判定语义等价 — 小欧-2026-09-12
+// 编辑历史: 2026-09-13 小欧 - [30]§8.2 TDD P6(行495/733/906/959): lastUsageSeqRef 第二基线退役——①:495 删除
+//   useRef(-1) 声明; ②:733 删除新任务重置(lastUsageSeqRef.current=-1); ③:906/:959 删除两处 processSSEData
+//   调用 lastUsageSeqRef 传参(usage 去重守卫已退役, 前端只保留 lastSeqRef 唯一条基线, 单基线纪律 3.2) — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - fetch+ReadableStream 绝对正确性三处修复(先合规审查后实施: KISS/DRY/SRP/YAGNI/禁止backward全过):
+//   ①done分支补 decoder.decode() 收尾flush——stream:true 滞留截断的多字节UTF-8残余, 原未flush致末帧截断中文丢失/JSON.parse失败丢帧;
+//   ②controller/reader 提升 try 外 + finally 统一释放 + abortControllerRef 引用守卫——原成功/静默短路/主错误三处无条件置null,
+//     重连竞态下旧流catch可能误清新一轮controller引用(双流并行隐患); 现仅当 ref 仍指向本次请求才清空;
+//   ③reader.releaseLock() 规范释放(error路径原未释放; done后流自然关闭, 无副作用) — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - [三思三省]180s 注释勘正: firstChunkTimeout 实际只在 fetch 返回响应头前生效(:832-835
+//   fetch 返回即清除), 并非"首帧超时"; 真正的首帧活性由 idle(60s)+心跳(25s)保障——原注释"首响应超时(180s)"语义误导
+//   (暗示首帧可等180s, 实际只防请求头挂死), 改"请求头超时(180s)"口径, 逻辑零改动 — 小欧-2026-09-13
+// 编辑历史: 2026-09-13 小欧 - 三堂会审冗余清理(北京老陈核查"有无瞎写/多余"): clearSteps 删手工双写
+//   serverTaskIdRef.current=null——useStateWithRef setter 已内置 ref 同步(:24-28), 双写同一值纯冗余瞎写;
+//   依赖数组同步删 serverTaskIdRef(闭包不再引用); 其余改动(清零serverTaskId/清tasks/渲染期复位/justSwitchedRef/
+//   resetSettledAndHistory/statsExpanded复位/右栏折叠)逐点审查均为必要, 逻辑零改动 — 小欧-2026-09-13
+// 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调参数; ②两处 processSSEData 调用传递 onRejected - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3整改: onDenied 参数/两处透传全链删除(YAGNI 零消费者), onRejected 类型去 from_backend(全链透传零消费) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①新增 lastBizTsRef/heartbeatTs 信号源; ②流起始重置业务基线; ③两处 processSSEData 透传 onHeartbeat/onBiz; ④useMemo 打包 waitClock 并暴露 - 小欧-2026-09-17
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
 import {
   handleSSEError as errorHandlerHandleSSE,
   ErrorType,
   classifyError as errorHandlerClassify, // 2026-08-27 小欧 三堂会审H2: 引入纯分类函数替代带副作用的handleSSEError
 } from '@/services/error/handler';
-import { taskControlApi } from '../services/api/task.api';
+import { sessionTaskApi } from '../services/api/task.api'; // 2026-09-08 小欧 方案二: taskControlApi 移出(重连耗尽不再自动取消)
 import type {
   SSEError,
   SSEMetadata,
@@ -23,6 +105,7 @@ import type {
   UseSSEReturn,
   SSEErrorType,
   TaskMetaFrames,
+  ClockSignals,
 } from '@/types/sse';
 import { emptyMetaFrames } from '@/types/sse';
 import type { ExecutionStep } from '@/types/execution';
@@ -87,6 +170,60 @@ interface ErrorConfig {
   stopAction?: () => void; // 停止后的操作
 }
 
+// ============================================================
+// 方案二 轮询观察模式(北京老陈 2026-09-08): 重连耗尽后不再自动取消, 轮询会话任务列表观察终态。
+// 复用后端 GET /sessions/{session_id}/tasks(sessions.py:88-94) + 前端 sessionTaskApi.listTasks(task.api.ts:196-199)。
+// 任务不存在或已终态(completed/failed/cancelled) → 静默收尾; 轮询超时仍未终态 → 提示用户手动确认。 — 小欧-2026-09-08
+// ============================================================
+const TASK_POLL_INTERVAL = 5000; // 每5秒轮询一次
+const TASK_POLL_MAX = 30; // 最多30次(约2.5分钟)
+const TASK_TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+
+const pollSessionTaskStatus = async (params: {
+  sessionId: string;
+  serverTaskId: string;
+  onError: ((error: SSEError) => void) | undefined;
+  onSetIsReceiving: (receiving: boolean) => void;
+  // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 轮询中止信号, 组件卸载/用户再发新消息即静默停止
+  signal?: { aborted: boolean };
+}): Promise<void> => {
+  const { sessionId, serverTaskId, onError, onSetIsReceiving, signal } = params;
+  for (let i = 0; i < TASK_POLL_MAX; i++) {
+    await new Promise((r) => setTimeout(r, TASK_POLL_INTERVAL));
+    // 2026-09-08 小欧 F6/F9修复: 每tick前检查中止信号, 根治"unmount后轮询仍持续listTasks+误弹手动确认"
+    //   与"新消息发起后旧轮询请求叠加"两个真实缺陷(见sse-reconnect-poll.test.tsx F6/F9红→绿) - 小欧-2026-09-08
+    if (signal?.aborted) return;
+    try {
+      const res = await sessionTaskApi.listTasks(sessionId);
+      const task = res.tasks.find((t) => t.task_id === serverTaskId);
+      const status = task?.status;
+      // 任务不存在或已终态 → 正常收尾, 不取消不误报 — 小欧-2026-09-08
+      if (!task || TASK_TERMINAL_STATUSES.includes(status ?? '')) {
+        console.info(
+          `[SSE] 轮询终态: task=${serverTaskId} status=${status ?? 'not_found'}, 正常收尾`
+        );
+        onSetIsReceiving(false);
+        return;
+      }
+      console.info(
+        `[SSE] 轮询观察中: task=${serverTaskId} status=${status} (${i + 1}/${TASK_POLL_MAX})`
+      );
+    } catch (e) {
+      console.warn(`[SSE] 轮询失败(第${i + 1}次):`, e);
+    }
+  }
+  // 轮询超时仍未终态 → 提示用户手动处理(仍不自动取消) — 小欧-2026-09-08
+  console.warn(
+    `[SSE] 轮询 ${TASK_POLL_MAX} 次任务仍在执行, 提示用户手动确认 task=${serverTaskId}`
+  );
+  onError?.({
+    type: 'error',
+    error_type: 'server',
+    error_message: '连接已断开且任务仍在执行，请手动确认任务状态',
+    timestamp: new Date().toISOString(),
+  });
+};
+
 /**
  * 统一错误处理函数
  * 【小强添加 2026-04-11】使用统一错误处理中心errorHandler
@@ -107,6 +244,9 @@ const handleSSEError = (params: {
   onError: ((error: SSEError) => void) | undefined;
   reconnectTimeoutRef: React.MutableRefObject<number | null>;
   serverTaskId?: string | null; // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
+  sessionId?: string; // 【北京老陈 2026-09-08 小欧 方案二】重连耗尽后轮询观察会话任务列表所需 sessionId
+  // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 轮询中止信号透传, 组件卸载/新消息即停止本轮轮询 - 小欧-2026-09-08
+  pollSignal?: { aborted: boolean };
 }) => {
   const {
     error,
@@ -119,7 +259,6 @@ const handleSSEError = (params: {
     onSetIsConnected,
     onSetIsReceiving,
     onError,
-    reconnectTimeoutRef,
     serverTaskId,
   } = params;
 
@@ -153,12 +292,20 @@ const handleSSEError = (params: {
     onSetIsConnected(false);
     onSetIsReceiving(false);
 
-    // 【北京老陈 2026-07-12 小欧】重连 N 次全失败 → 才置为取消（不武断算取消）
-    if (serverTaskId) {
+    // 【北京老陈 2026-07-12 小欧 → 2026-09-08 小欧 方案二】重连 N 次全失败不再自动取消:
+    //   任务可能仍在正常执行(tool 参数流式等, 本案例根因), 自动取消会误杀; 改为轮询会话任务列表观察终态
+    //   (GET /sessions/{session_id}/tasks, 复用 sessionTaskApi.listTasks), 任务不存在或已终态即静默收尾 — 小欧-2026-09-08
+    if (serverTaskId && (params.sessionId || _pendingMessage?.sessionId)) {
       console.warn(
-        `[SSE] 重连 ${reconnectConfig.maxAttempts} 次均失败，发起取消 task=${serverTaskId}`
+        `[SSE] 重连 ${reconnectConfig.maxAttempts} 次均失败, 进入轮询观察 task=${serverTaskId}`
       );
-      taskControlApi.cancel(serverTaskId).catch(() => {});
+      void pollSessionTaskStatus({
+        sessionId: params.sessionId || _pendingMessage?.sessionId || '',
+        serverTaskId,
+        onError,
+        onSetIsReceiving,
+        signal: params.pollSignal,
+      });
     }
 
     // 调用错误回调
@@ -279,50 +426,124 @@ export const useSSE = (
     auto_confirm?: boolean;
     confirm_timeout?: number;
     backend_timeout?: number;
+  }) => void,
+  // 2026-09-16 小欧: 统一拒绝事件 type="rejected" — 替代旧 error(blocked/timeout) + user_rejected;
+  // 2026-09-17 小欧 会审V3: onDenied 参数删除(YAGNI, 唯一调用方 useChatStreaming 传 undefined, 零消费者),
+  //   onRejected 去 from_backend 字段(YAGNI, 全链透传零消费, 后端真实字段; 前端不从后端拷贝伪造) — 小欧-2026-09-17
+  onRejected?: (data: {
+    step: number;
+    message: string;
+    tool_name?: string;
+    reject_type: string;
   }) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
-  const [isReceiving, setIsReceiving] = useState(false);
-  const isReceivingRef = useRef(false);
+  // 小欧 2026-09-10 S14: useStateWithRef 替换手工双写（state 驱动渲染 + ref 供异步回调读最新值）
+  const [isReceiving, isReceivingRef, setIsReceiving] = useStateWithRef(false);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
+  // 小欧 2026-09-10 S2收尾(方案A): useSSE 唯一真源，独立 useRef
   const executionStepsRef = useRef<ExecutionStep[]>([]);
+  // 小欧 2026-09-10 S12: 批量 commit — 每帧只 append 到 pendingSteps
+  // requestAnimationFrame 合并多帧，单次 setExecutionSteps 批量更新
+  const pendingStepsRef = useRef<ExecutionStep[]>([]);
+  const flushScheduledRef = useRef(false);
+
+  // 保存到 sessionStorage 的辅助函数(5s 防抖, 合并连续事件避免O(N²)主线程阻塞)
+  // 小欧 2026-09-10 S12.3: 5s 兜底快照，去主线程同步阻塞
+  const saveStepsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveStepsToStorage = useCallback(
+    (steps: ExecutionStep[]) => {
+      if (steps.length === 0 || !config.sessionId) return;
+      if (saveStepsTimerRef.current !== null)
+        clearTimeout(saveStepsTimerRef.current);
+      saveStepsTimerRef.current = setTimeout(() => {
+        const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
+        try {
+          // 小欧 2026-09-10 S19: 写入元数据外壳——恢复时按 source 区分累积 vs 外部
+          const envelope = {
+            steps: steps,
+            source: 'live' as const,
+            timestamp: Date.now(),
+          };
+          sessionStorage.setItem(storageKey, JSON.stringify(envelope));
+        } catch (e) {
+          console.warn('[SSE] 保存到 sessionStorage 失败:', e);
+        }
+        saveStepsTimerRef.current = null;
+      }, 5000); // 小欧 2026-09-10 S12: 5s 兜底快照，去主线程同步阻塞
+    },
+    [config.sessionId]
+  );
+
+  const flushPendingSteps = useCallback(() => {
+    if (pendingStepsRef.current.length === 0) {
+      flushScheduledRef.current = false;
+      return;
+    }
+    const batch = pendingStepsRef.current.splice(0);
+    // 小欧 2026-09-10 S12.1: ref 权威源等价值计算（核查注 :955-961 等价改法）——
+    //  batch 全部来自 pendingStepsRef（splice 取出即清空），无并发丢更新；ref 同步赋值幂等
+    const newSteps = [...executionStepsRef.current, ...batch];
+    executionStepsRef.current = newSteps;
+    setExecutionSteps(newSteps); // 非函数式 set，S12 后所有写入均经 pendingSteps
+    // 小欧 2026-09-10 S12.3(+v2.17 修复): flush 即批量落库点，恢复 saveStepsToStorage 兜底快照调用
+    //  （S12.2 六分支删 saveStepsToStorage 后调用点未重新挂接，快照写入实际断链 — 小欧-2026-09-10）
+    saveStepsToStorage(newSteps);
+    flushScheduledRef.current = false;
+  }, [saveStepsToStorage]);
+
+  const scheduleFlush = useCallback(() => {
+    if (!flushScheduledRef.current) {
+      flushScheduledRef.current = true;
+      requestAnimationFrame(flushPendingSteps);
+    }
+  }, [flushPendingSteps]);
+
   const [currentResponse, setCurrentResponse] = useState('');
   const [reconnectStatus, setReconnectStatus] = useState<
     'idle' | 'connecting' | 'reconnecting' | 'failed'
   >('idle');
 
-  const eventSourceRef = useRef<EventSource | null>(null);
+  // 编辑历史: 2026-09-13 05:03 小欧 - 原 eventSourceRef 定义(useRef<EventSource|null>)已删除(早期残留从未 new EventSource,
+  //   真实链路全走 fetch+AbortController+getReader; 配套 disconnect 空守卫块同步删除, YAGNI) — 小欧-2026-09-13
   const abortControllerRef = useRef<AbortController | null>(null); // 【修复 2026-05-11 小健】fetch AbortController ref，disconnect时可abort
   const responseBufferRef = useRef('');
   const isProcessingRef = useRef(false);
+  // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 主动断开意图标记
+  //   disconnect()主动abort 与 180s fetch超时abort 同型(AbortError), 无法靠error区分来源,
+  //   以操作语义标记: disconnect确有活动连接时设标, catch读后即清, 2s兜底清残留 - 小欧-2026-09-07
+  const intentionalAbortRef = useRef(false);
+  const intentionalAbortTimerRef = useRef<number | null>(null);
 
   // 【小欧 2026-08-26 8.4.14】任务元信息帧状态 + usage 续传去重
   const [metaFrames, setMetaFrames] =
     useState<TaskMetaFrames>(emptyMetaFrames());
   const usageAccumRef = useRef({ prompt: 0, completion: 0, total: 0 });
-  const lastUsageSeqRef = useRef<number>(-1);
-  const [serverTaskId, setServerTaskId] = useState<string | null>(null);
+  // 小欧 2026-09-10 S14: useStateWithRef 替换 serverTaskId 手工双写
+  const [serverTaskId, serverTaskIdRef, setServerTaskId] = useStateWithRef<
+    string | null
+  >(null);
   // 2026-08-30 小欧 根治陈旧闭包: reader挂起帧运行在旧render上, state版serverTaskId在空闲定时器/重连守卫闭包中读到旧null值误判;
   //   ref版始终同步最新值供内部判定, state版仅驱动UI重渲染(两者同步写入) - 小欧-2026-08-30
-  const serverTaskIdRef = useRef<string | null>(null);
-  const syncServerTaskId = useCallback((id: string | null) => {
-    serverTaskIdRef.current = id;
-    setServerTaskId(id);
-  }, []);
-  useEffect(() => {
-    isReceivingRef.current = isReceiving;
-  }, [isReceiving]);
+  // 小欧 2026-09-10 S14: syncServerTaskId 不再需要（useStateWithRef 已内置 ref 同步）
+  // 小欧 2026-09-10 S14: 删除 useEffect 手动同步（useStateWithRef 已内置 ref 同步）
 
   // 重连相关
+  // 2026-09-12 小欧 P0-4三堂会审修复: 去 Omit<ReconnectConfig,'enabled'> 死壳——ReconnectConfig 已删 enabled 字段,
+  //   Omit 语义等价于 ReconnectConfig 本体, 属死代码(禁止backward, 防后续改字段被 Omit 反向锁死) — 小欧-2026-09-12
   const reconnectConfigRef = useRef<ReconnectConfig>({
-    enabled: true,
     maxAttempts: 3,
     baseDelay: 1000,
     maxDelay: 10000,
   });
   const reconnectAttemptsRef = useRef(0);
+  // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 轮询中止信号ref, 组件卸载/新消息发起置aborted停止轮询 - 小欧-2026-09-08
+  const pollSignalRef = useRef({ aborted: false });
   // 【北京老陈 2026-07-12 小欧】记录已收到的最大后端事件 seq，断线重连时作为 after_seq 续传
-  const lastSeqRef = useRef(0);
+  // 小欧 2026-09-10 S3: 已处理最大 seq 语义，初始 -1（首帧 seq=0 不被误拦）
+  const lastSeqRef = useRef(-1);
+  // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 声明(useRef(-1))已删除(作废守卫退役,
+  //   B2 空流判定改用 lastSeqRef, 见本文件底部编辑历史板块 2026-09-12 条目) — 小欧-2026-09-12
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{
     content: string;
@@ -337,18 +558,35 @@ export const useSSE = (
   // 【小强修复 2026-04-09】重命名为 IDLE_TIMEOUT，更准确反映语义
   const lastDataTimeRef = useRef<number>(0); // 最后收到数据的时间
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
-  const fetchTimeoutRef = useRef<number | null>(null); // 180s fetch超时检测
+  const firstChunkTimeoutRef = useRef<number | null>(null); // 请求头超时(180s), fetch 返回响应头即清除(:832); 首帧活性由 idle(60s)+心跳(25s)保障
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
+  // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号源(与 IDLE_TIMEOUT 同域, 语义同源):
+  //   lastBizTsRef=业务事件(含chunk)到达时刻; heartbeatTs=`: ping`到达时刻(低频 state, 驱动盘外圈微闪);
+  //   数据静默基线复用上方既有 lastDataTimeRef(其更新含 `: ping`, 天然覆盖心跳) — 小欧-2026-09-17
+  const lastBizTsRef = useRef<number>(Date.now());
+  const [heartbeatTs, setHeartbeatTs] = useState(0);
   // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
-  const isHitlWaitingRef = useRef(false);
-  const wrappedOnPaused = useCallback(() => {
-    isHitlWaitingRef.current = true;
-    onPaused?.();
-  }, [onPaused]);
-  const wrappedOnResumed = useCallback(() => {
-    isHitlWaitingRef.current = false;
-    onResumed?.();
-  }, [onResumed]);
+  // 小欧 2026-09-10 S15: Set 计数 — 并发 HITL 场景防误判
+  const hitlWaitingKeysRef = useRef(new Set<string>());
+  const isHitlWaitingRef = {
+    get current() {
+      return hitlWaitingKeysRef.current.size > 0;
+    },
+  };
+  const wrappedOnPaused = useCallback(
+    (confirmId?: string) => {
+      hitlWaitingKeysRef.current.add(confirmId ?? 'default');
+      onPaused?.();
+    },
+    [onPaused]
+  );
+  const wrappedOnResumed = useCallback(
+    (confirmId?: string) => {
+      hitlWaitingKeysRef.current.delete(confirmId ?? 'default');
+      onResumed?.();
+    },
+    [onResumed]
+  );
 
   // 【小强添加 2026-03-18】sessionStorage 备份相关
   // 恢复：组件初始化时检查是否有备份数据
@@ -357,13 +595,23 @@ export const useSSE = (
     const savedSteps = sessionStorage.getItem(storageKey);
     if (savedSteps) {
       try {
-        const parsedSteps = JSON.parse(savedSteps);
-        if (Array.isArray(parsedSteps) && parsedSteps.length > 0) {
-          console.log(
-            `[SSE] 从 sessionStorage 恢复 ${parsedSteps.length} 个步骤`
+        const parsedRaw = JSON.parse(savedSteps);
+        // 小欧 2026-09-10 S19: 兼容旧格式（纯 steps 数组）和新格式（{steps, source, timestamp}）
+        const parsedSteps: ExecutionStep[] = Array.isArray(parsedRaw)
+          ? parsedRaw
+          : (parsedRaw?.steps ?? []);
+        const source: string = Array.isArray(parsedRaw)
+          ? 'legacy'
+          : (parsedRaw?.source ?? 'unknown');
+        if (parsedSteps.length > 0) {
+          console.info(
+            `[SSE] 从 sessionStorage 恢复 ${parsedSteps.length} 步, source=${source}`
           );
-          executionStepsRef.current = parsedSteps;
-          setExecutionSteps(parsedSteps);
+          const restoredSteps = parsedSteps.filter(
+            (s: ExecutionStep) => !(s.type === 'action' && s.preview === true)
+          );
+          executionStepsRef.current = restoredSteps;
+          setExecutionSteps(restoredSteps);
         }
       } catch (e) {
         console.warn('[SSE] 解析 sessionStorage 备份失败:', e);
@@ -372,27 +620,51 @@ export const useSSE = (
     }
   }, [config.sessionId]); // 仅在 sessionId 变化时检查
 
-  // 保存到 sessionStorage 的辅助函数
-  const saveStepsToStorage = useCallback(
-    (steps: ExecutionStep[]) => {
-      if (steps.length > 0 && config.sessionId) {
-        const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
-        try {
-          sessionStorage.setItem(storageKey, JSON.stringify(steps));
-        } catch (e) {
-          console.warn('[SSE] 保存到 sessionStorage 失败:', e);
-        }
-      }
-    },
-    [config.sessionId]
-  );
-
   // 清空 sessionStorage 的辅助函数
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const clearStepsFromStorage = useCallback(() => {
     const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
     sessionStorage.removeItem(storageKey);
   }, [config.sessionId]);
+
+  // 小欧 2026-09-10 S20.1: 提取 clearIdleMonitor — 收敛 idleTimeoutRef 清理（disconnect/成功路径/卸载三处复用）
+  const clearIdleMonitor = useCallback(() => {
+    if (idleTimeoutRef.current) {
+      clearTimeout(idleTimeoutRef.current);
+      idleTimeoutRef.current = null;
+    }
+  }, []);
+
+  // 小欧 2026-09-10 S20.2: 提取 clearAllTimers — 统一收敛所有定时器清理，新增定时器只改此处
+  const clearAllTimers = useCallback(() => {
+    clearIdleMonitor();
+    if (firstChunkTimeoutRef.current) {
+      clearTimeout(firstChunkTimeoutRef.current);
+      firstChunkTimeoutRef.current = null;
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (saveStepsTimerRef.current !== null) {
+      clearTimeout(saveStepsTimerRef.current);
+      saveStepsTimerRef.current = null;
+    }
+    if (intentionalAbortTimerRef.current) {
+      clearTimeout(intentionalAbortTimerRef.current);
+      intentionalAbortTimerRef.current = null;
+    }
+  }, [clearIdleMonitor]);
+
+  // 2026-09-09 小欧: 组件卸载时清理防抖timer, 防止卸载后仍写sessionStorage
+  useEffect(() => {
+    return () => {
+      if (saveStepsTimerRef.current !== null) {
+        clearTimeout(saveStepsTimerRef.current);
+        saveStepsTimerRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * 断开连接
@@ -414,23 +686,22 @@ export const useSSE = (
       if (clearStorage) {
         clearStepsFromStorage();
       }
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
-
-      // 2026-08-28 小欧 根治切页/隐藏泄漏: disconnect必须清空闲超时与fetch超时, 否则卸载后定时器在已死组件上触发handleSSEError弹toast并误重连
-      if (idleTimeoutRef.current) {
-        clearTimeout(idleTimeoutRef.current);
-        idleTimeoutRef.current = null;
-      }
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-        fetchTimeoutRef.current = null;
-      }
+      // 小欧 2026-09-10 S20.3: 统一定时器清理替代散落的 clearTimeout
+      clearAllTimers();
 
       // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
       if (abortControllerRef.current) {
+        // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 确有活动连接才设主动断开标记,
+        //   abort触发的AbortError进catch时按此标记静默, 与180s fetch超时abort(无标记,继续重连)区分 - 小欧-2026-09-07
+        intentionalAbortRef.current = true;
+        if (intentionalAbortTimerRef.current) {
+          clearTimeout(intentionalAbortTimerRef.current);
+        }
+        // 兜底: 若该abort无对应catch消费(极端残留), 2s后自动清除, 防污染后续真实错误分类
+        intentionalAbortTimerRef.current = window.setTimeout(() => {
+          intentionalAbortRef.current = false;
+          intentionalAbortTimerRef.current = null;
+        }, 2000);
         try {
           abortControllerRef.current.abort();
         } catch (_e) {
@@ -439,10 +710,7 @@ export const useSSE = (
         abortControllerRef.current = null;
       }
 
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+      // 编辑历史: 2026-09-13 05:03 小欧 - 原 eventSourceRef 空守卫块(if close)已删除(从未赋值恒走不进去, 真实断开走 abortController) — 小欧-2026-09-13
       setIsConnected(false);
       // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
       if (setReceiving) {
@@ -460,19 +728,14 @@ export const useSSE = (
       // 手动中断时清除 pendingMessage 并阻止重连
       if (manualDisconnect) {
         pendingMessageRef.current = null;
-        reconnectConfigRef.current.enabled = false;
-        // 3秒后恢复重连功能（避免永久禁用）
-        setTimeout(() => {
-          reconnectConfigRef.current.enabled = true;
-        }, 3000);
       }
 
       // 【方案2新增】调用断开回调
       if (onDisconnect) {
         onDisconnect();
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- disconnect为手动入口, 故意仅依赖sessionId(闭包全引用运行时refs) — 小欧-2026-09-09
     [config.sessionId]
   );
 
@@ -495,12 +758,16 @@ export const useSSE = (
     responseBufferRef.current = '';
     // 2026-08-27 小欧 修复#4: 跨任务重置usage累计与seq去重, 避免新任务token被旧任务污染
     usageAccumRef.current = { prompt: 0, completion: 0, total: 0 };
-    lastUsageSeqRef.current = -1;
     // 2026-08-27 小欧 修复#5: 跨任务重置metaFrames, 避免新任务串用旧统计帧
     setMetaFrames(emptyMetaFrames());
+    // 2026-09-13 小欧 北京老陈 新建会话右侧残留修复: 清零serverTaskId, 防跨会话泄漏旧任务ID导致isCurrentLive误判
+    // 2026-09-13 小欧 三堂会审冗余清理(北京老陈核查): setServerTaskId 依赖 useStateWithRef 内置 ref 同步
+    //   (setValue 内同步 ref.current=next), 原手工双写 serverTaskIdRef.current=null 纯冗余, 删除;
+    //   依赖数组同步删 serverTaskIdRef(闭包不再引用, 防 ESLint unnecessary dependency) — 小欧-2026-09-13
+    setServerTaskId(null);
     // 【小强添加 2026-03-18】同时清空 sessionStorage 备份
     clearStepsFromStorage();
-  }, [clearStepsFromStorage, setMetaFrames]);
+  }, [clearStepsFromStorage, setMetaFrames, setServerTaskId]);
 
   /**
    * 内部发送消息函数（用于重连）
@@ -512,6 +779,9 @@ export const useSSE = (
     sessionId?: string,
     contextLinkMode?: 'linked' | 'independent'
   ) => {
+    // 2026-09-13 小欧 流资源收尾改造: controller/reader 提升至 try 外, 供 catch/finally 统一释放(修复重连竞态+规范释放) — 小欧-2026-09-13
+    let controller: AbortController | null = null;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false, undefined, false, false); // 2026-09-02 小欧: 重连路径不设置isReceiving=false，避免等待图标闪烁
@@ -541,20 +811,27 @@ export const useSSE = (
         );
       }
       if (!isReconnect) {
-        lastSeqRef.current = 0; // 新请求重置 seq 偏移
+        lastSeqRef.current = -1; // 小欧 2026-09-10 S3: 重置为已处理最大 seq 初始值
+        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 新任务重置(current=-1)已删除(作废守卫退役) — 小欧-2026-09-12
       }
-      const controller = new AbortController();
-      abortControllerRef.current = controller; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
-      fetchTimeoutRef.current = window.setTimeout(
-        () => controller.abort(),
+      // 2026-09-13 小欧: 局部别名 ctrl 供本次请求内同步引用(abort回调/fetch signal), 外置 controller 供 finally 释放守卫 —
+      //   原 setTimeout 回调引用 controller === null 状态抛 TypeError; 别名为快照, 回调恒有效 — 小欧-2026-09-13
+      const ctrl = new AbortController();
+      controller = ctrl;
+      abortControllerRef.current = ctrl; // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
+      firstChunkTimeoutRef.current = window.setTimeout(
+        () => ctrl.abort(),
         180000
-      ); // 180s超时，qwen2.5:1.5b CPU首次推理约2分钟
+      ); // 请求头超时(180s): 仅覆盖 fetch 等待响应头(返回即清除, 见:832); 首帧/流中途活性由 idle(60s)+心跳(25s)保障
 
       let response: Response;
       if (isReconnect) {
         // 重连：GET /chat/stream/{task_id}?after_seq=N 续传，不重新发起对话 — 北京老陈 2026-07-12 小欧
-        const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current}`;
-        console.log(`[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current}`);
+        // 小欧 2026-09-10 S3: after_seq 改为 lastSeqRef.current + 1（续传从已处理最大 seq 的下一帧开始）
+        const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current + 1}`;
+        console.log(
+          `[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current + 1}`
+        );
         response = await fetch(url, {
           method: 'GET',
           signal: controller.signal,
@@ -580,9 +857,9 @@ export const useSSE = (
         });
       }
 
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-        fetchTimeoutRef.current = null;
+      if (firstChunkTimeoutRef.current) {
+        clearTimeout(firstChunkTimeoutRef.current);
+        firstChunkTimeoutRef.current = null;
       }
 
       if (!response.ok) {
@@ -593,12 +870,15 @@ export const useSSE = (
         throw new Error('响应体为空');
       }
 
-      const reader = response.body.getReader();
+      // 2026-09-13 小欧: 局部别名 r 供 while 循环内引用(避 null 收窄), 外置 reader 供 finally releaseLock — 小欧-2026-09-13
+      const r = response.body.getReader();
+      reader = r;
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
 
       // 【小强修复 2026-03-18】初始化最后数据时间
       lastDataTimeRef.current = Date.now();
+      lastBizTsRef.current = Date.now(); // 2026-09-17 小欧 [46]: 新一轮流重置业务基线, 防上轮陈旧值致钟面误升档 — 小欧-2026-09-17
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
@@ -615,6 +895,15 @@ export const useSSE = (
             console.warn(
               `[SSE] 空闲超时：已经${timeSinceLastData / 1000}秒未收到数据，判定连接断开`
             );
+            // 2026-09-08 小欧 实证打点(北京老陈驱动「xx 60000」toast 定位): 打印空闲超时触发完整上下文,
+            //   复现时按 F12 对照 toast 出现时刻, 即可明确 60000 是 timeSinceLastData 本身还是下游 error 透传。 — 小欧-2026-09-08
+            console.warn('[SSE] ⏱️ 空闲超时触发上下文:', {
+              timeSinceLastData,
+              thresholdMs: IDLE_TIMEOUT,
+              receiving: isReceivingRef.current,
+              hitlWaiting: isHitlWaitingRef.current,
+              nowIso: new Date().toISOString(),
+            });
             onError?.('SSE 空闲超时：长时间未收到数据');
             // 2026-08-29 小强 修复#26: 空闲超时走重连路径而非disconnect(true)绕过重连, 确保自动重连发生
             reconnect();
@@ -623,60 +912,22 @@ export const useSSE = (
 
         lastDataTimeRef.current = Date.now();
 
-        const { done, value } = await reader.read();
+        const { done, value } = await r.read();
 
         if (done) {
+          // 小欧 2026-09-13 收尾flush: decoder此前全用{stream:true}增量解码, 内部可能暂存未完整的多字节字符;
+          //   流结束时空调decode()吐出残留, 防极端断包丢1字符 — 小欧-2026-09-13
+          buffer += decoder.decode();
           if (buffer.trim()) {
-            processSSEData(
-              buffer,
-              {
-                setExecutionSteps,
-                getCurrentExecutionSteps: () => executionStepsRef.current,
-                executionStepsRef,
-                saveStepsToStorage,
-                onStep,
-                onChunk,
-                onComplete,
-                onError,
-                onPaused: wrappedOnPaused,
-                onResumed: wrappedOnResumed,
-                onRetry,
-                onAuthorizationRequired,
-                setCurrentResponse,
-                responseBufferRef,
-                setIsReceiving,
-                setIsConnected,
-                disconnect,
-                setServerTaskId: syncServerTaskId,
-                onSeq: (s: number) => {
-                  if (s > lastSeqRef.current) lastSeqRef.current = s;
-                },
-                setMetaFrames,
-                usageAccumRef,
-                lastUsageSeqRef,
-              },
-              isProcessingRef
-            );
-          }
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          processSSEData(
-            line,
-            {
+            processSSEData(buffer, {
               setExecutionSteps,
               getCurrentExecutionSteps: () => executionStepsRef.current,
               executionStepsRef,
-              saveStepsToStorage,
               onStep,
               onChunk,
               onComplete,
               onError,
+              onRejected,
               onPaused: wrappedOnPaused,
               onResumed: wrappedOnResumed,
               onRetry,
@@ -686,26 +937,109 @@ export const useSSE = (
               setIsReceiving,
               setIsConnected,
               disconnect,
-              setServerTaskId: syncServerTaskId,
+              setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
               onSeq: (s: number) => {
                 if (s > lastSeqRef.current) lastSeqRef.current = s;
               },
+              lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
+              // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 传参(done块)已删除(作废守卫退役) — 小欧-2026-09-12
+              pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
+              scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
               setMetaFrames,
               usageAccumRef,
-              lastUsageSeqRef,
+              // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
+              onHeartbeat: () => {
+                setHeartbeatTs(Date.now());
+              },
+              onBiz: () => {
+                lastBizTsRef.current = Date.now();
+              },
+            });
+          } else if (lastSeqRef.current >= 0) {
+            // 小欧 2026-09-12 [30]§8.2问题1(作废守卫退役): [B2] final已收到 —— 流正常结束但buffer已空,
+            //   原 terminalSeqRef 判定改 lastSeqRef(唯一权威基线: 收到过任一帧即 lastSeqRef≥0, 正常流 final 先于
+            //   done 权威置位发布实测成立, 判定语义等价; 空流/异常断流 lastSeqRef 仍为 -1 走下方 B1) — 小欧-2026-09-12
+            console.info('[SSE] 流正常结束: final已收到, buffer为空(正常)');
+          } else {
+            // 小欧 2026-09-10 [B1]: 空流终态 —— 200+空body(异常断流)原实现跳过全部处理,
+            //   isReceiving 永久 true / 消息 placeholder 永久"思考中"; 现触发 onError + 复位连接态
+            console.warn('[SSE] 空响应流: 未收到任何数据, 触发空流终态');
+            onError?.('SSE 空响应：未收到任何数据');
+            setIsReceiving(false);
+            setIsConnected(false);
+          }
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          processSSEData(line, {
+            setExecutionSteps,
+            getCurrentExecutionSteps: () => executionStepsRef.current,
+            executionStepsRef,
+            onStep,
+            onChunk,
+            onComplete,
+            onError,
+            onRejected,
+            onPaused: wrappedOnPaused,
+            onResumed: wrappedOnResumed,
+            onRetry,
+            onAuthorizationRequired,
+            setCurrentResponse,
+            responseBufferRef,
+            setIsReceiving,
+            setIsConnected,
+            disconnect,
+            setServerTaskId, // 小欧 2026-09-10 S14: useStateWithRef 内置 ref 同步
+            onSeq: (s: number) => {
+              if (s > lastSeqRef.current) lastSeqRef.current = s;
             },
-            isProcessingRef
-          );
+            lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
+            // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 传参(热路径)已删除(作废守卫退役) — 小欧-2026-09-12
+            pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
+            scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
+            setMetaFrames,
+            usageAccumRef,
+            // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
+            onHeartbeat: () => setHeartbeatTs(Date.now()),
+            onBiz: () => {
+              lastBizTsRef.current = Date.now();
+            },
+          });
         }
       }
 
       // 成功，重置重连状态
+      // 小欧 2026-09-10 S20.3: clearIdleMonitor 替代散落清理（F10修复: 正常完成流后清理残留 idle 定时器）
+      clearIdleMonitor();
       setReconnectStatus('idle');
       reconnectAttemptsRef.current = 0;
-      abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求完成清理ref
+      // 2026-09-13 小欧: abortControllerRef 清理已收敛至 finally(引用守卫, 防误清新一轮 controller) — 小欧-2026-09-13
     } catch (error: unknown) {
+      // 2026-09-07 小欧 REQUEST-ABORT静默短路(9月优化5.3.1): 主动断开(disconnect abort)引发的AbortError静默收尾,
+      //   不再误判为request_timeout弹warning/自动重连复活任务; 标记读后即清 - 小欧-2026-09-07
+      if (
+        intentionalAbortRef.current &&
+        errorHandlerClassify(error) === ErrorType.REQUEST_ABORT
+      ) {
+        intentionalAbortRef.current = false;
+        if (intentionalAbortTimerRef.current) {
+          clearTimeout(intentionalAbortTimerRef.current);
+          intentionalAbortTimerRef.current = null;
+        }
+        // 2026-09-13 小欧: abortControllerRef 清理收敛至 finally(引用守卫) — 小欧-2026-09-13
+        setIsConnected(false);
+        setIsReceiving(false);
+        console.info('[SSE] 主动断开引发的AbortError, 静默收尾');
+        return;
+      }
+
+      // 2026-09-13 小欧: abortControllerRef 清理收敛至 finally(引用守卫) — 小欧-2026-09-13
       console.error('[SSE] 请求错误:', error);
-      abortControllerRef.current = null; // 【修复 2026-05-11 小健】请求失败清理ref
 
       // 使用统一的错误处理中心
       handleSSEError({
@@ -729,12 +1063,27 @@ export const useSSE = (
         onError,
         reconnectTimeoutRef,
         serverTaskId: serverTaskIdRef.current, // 【北京老陈 2026-07-12 小欧】重连耗尽用于发起取消
+        sessionId: sessionId ?? config.sessionId, // 【北京老陈 2026-09-08 小欧 方案二】重连耗尽轮询观察所需 sessionId, 兜底 config.sessionId 防外层未传自定义会话时轮询静默失效 (2026-09-08 实施修正)
+        pollSignal: pollSignalRef.current, // 2026-09-08 小欧 F6/F9: 轮询中止信号透传, 组件卸载/新消息即停止 - 小欧-2026-09-08
       });
 
       // 保存待重连的消息（用于下次重连）
       if (pendingMessageRef.current) {
         // 消息已由 handleSSEError 处理
       }
+    } finally {
+      // 编辑历史: 2026-09-13 小欧 - controller/reader 本次请求资源统一释放(修复重连竞态+规范释放):
+      //   ①引用守卫 abortControllerRef.current===controller: 仅当引用仍指向本次请求才清空, 旧流 catch/finally 不再误清新一轮
+      //     controller 引用(原成功路径/静默短路/主错误路径三处无条件置null, DRY收敛于此);
+      //   ②reader.releaseLock() 规范释放(error路径原未释放; done后流已自然关闭, releaseLock 无副作用) — 小欧-2026-09-13
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (reader) {
+        reader.releaseLock();
+        reader = null;
+      }
+      controller = null;
     }
   };
 
@@ -770,6 +1119,8 @@ export const useSSE = (
         onError,
         reconnectTimeoutRef,
         serverTaskId: serverTaskIdRef.current,
+        sessionId: pendingMessageRef.current?.sessionId, // 2026-09-08 小欧 方案二: 轮询观察 sessionId
+        pollSignal: pollSignalRef.current, // 2026-09-08 小欧 F6/F9: 轮询中止信号透传 - 小欧-2026-09-08
       });
       return;
     }
@@ -818,7 +1169,7 @@ export const useSSE = (
       reconnectAttemptsRef.current++;
       sendMessageInternal(content, sessionId, lastContextLinkModeRef.current);
     }, delay);
-  }, [sendMessageInternal]);
+  }, [sendMessageInternal, onError]);
 
   /**
    * 发送消息建立SSE连接
@@ -845,6 +1196,9 @@ export const useSSE = (
         return;
       }
       isProcessingRef.current = true;
+      // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 用户再发新消息时中止旧轮询, 防轮询请求与新一轮处理叠加 - 小欧-2026-09-08
+      pollSignalRef.current.aborted = true;
+      pollSignalRef.current = { aborted: false };
 
       // 保存待重连的消息
       pendingMessageRef.current = { content, sessionId };
@@ -875,21 +1229,32 @@ export const useSSE = (
   useEffect(() => {
     return () => {
       disconnect();
+      // 2026-09-08 小欧 F6/F9修复(实施期新增真实bug): 组件卸载即中止进行中轮询, 根治
+      //   "unmount后轮询仍持续listTasks并误弹手动确认"(F6红→绿) - 小欧-2026-09-08
+      pollSignalRef.current.aborted = true;
       // 【修复小查问题】清理 pendingMessageRef 避免内存泄漏
       pendingMessageRef.current = null;
-      // 【小新修复 2026-03-14】额外确保 reconnectTimeoutRef 被清理
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-        reconnectTimeoutRef.current = null;
-      }
+      // 小欧 2026-09-10 S20.3: clearAllTimers 替代散落的 reconnectTimeoutRef 清理
+      clearAllTimers();
+      // 小欧 2026-09-10 S15收尾: 组件卸载清空 HITL 等待 key Set——
+      //   disconnect 已断流中止 reader（abort 竞态窗口内最多向死 Set 加一个 key，无人再读），
+      //   clear() 一行封死该原理口子，卸载后状态归零，防残留语义完备 —— 小欧-2026-09-10
+      hitlWaitingKeysRef.current.clear();
     };
   }, [disconnect]);
+
+  // 2026-09-17 小欧 [46]第五章: 钟面信号打包(引用稳定; 仅 heartbeatTs 25s 低频变化才重建) — 小欧-2026-09-17
+  const waitClock = useMemo<ClockSignals>(
+    () => ({ lastBizTsRef, lastDataTsRef: lastDataTimeRef, heartbeatTs }),
+    [heartbeatTs]
+  );
 
   return {
     isConnected,
     isReceiving,
     setIsReceiving, // 【方案3】暴露setter用于中断时立即更新状态
     executionSteps,
+    executionStepsRef, // 小欧 2026-09-10 S2: 暴露 ref 供 useChatStreaming 透传，收敛单一真源
     currentResponse,
     sendMessage,
     disconnect,
@@ -899,6 +1264,7 @@ export const useSSE = (
     reconnectStatus,
     reconnect,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照
+    waitClock, // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号 — 小欧-2026-09-17
   };
 };
 

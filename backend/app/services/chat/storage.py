@@ -71,6 +71,14 @@
 #   list_session_trust: 返回增 path 字段(D1 信任清单带 path 展示);
 #   delete_session_trust(conn, session_id, tool_name, path=None): (tool,path)精确撤销, path=None仅删工具级通配行(D3);
 #   新增 _norm_trust_path 路径规范化(resolve绝对化, 落库/查询双侧一致); 文件首增 from pathlib import Path
+# 2026-09-05 - 小欧 - 架构边界修正(三堂会审): insert_session_trust/check_session_trust/get_session_id_by_task
+#   三函数迁往 app/tools/trust_db.py(逐字复制不改逻辑)——修复 trust.py(app/tools) 越层 import app.services.chat.storage
+#   违反"app/tools 禁 app.services"依赖方向守护(test_architecture_boundaries.py)。唯一调用方 trust.py 已改引 trust_db;
+#   _norm_trust_path 本层保留(delete/list 仍用)。该项与本仓库既有 2-5 层存储分离无关, 是 09-04 resolve_skip 重构残址。
+# 2026-09-16 - 小欧 - 问题B修复(文档[44]5.4): _norm_trust_path 增 tool_name 参数, 与 trust_db.py:17 同位同步
+#   非文件信任域(registry/sql)跳过 Path.resolve() —— 撤销侧一致性, 防 registry 原样键路径再被臆造 resolve 致撤消失配; — 小欧-2026-09-16
+# 2026-09-16 - 小欧 - 函数化(DRY/KISS核查): 删除本层 _norm_trust_path 双份副本, 撤销侧改消费
+#   trust_db.norm_trust_path 单一来源(services→tools 合法单向); 同步删仅被其使用的 from pathlib import Path — 小欧-2026-09-16
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -80,7 +88,6 @@ storage — 会话存储业务逻辑
 import json
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
-from pathlib import Path  # v1.5(2026-09-02 小欧): 信任路径 resolve 绝对化(前缀递归基础) — 小欧 2026-09-02
 from typing import Any, Dict, Optional, Tuple
 from sqlite3 import Connection
 
@@ -92,6 +99,8 @@ from app.db import db
 from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
+from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 撤销侧规范化同位(与 trust_db:15 同步)
+from app.tools.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧-2026-09-16
 
 # 存储每个session的消息ID
 # key: session_id, value: user_message_id 或 assistant_message_id
@@ -553,50 +562,6 @@ def get_session_model(conn: Connection, session_id: str) -> Optional[SessionMode
 
 # ---- ②-5 chat_session_trust 落库 ----
 
-def _norm_trust_path(path: Optional[str]) -> Optional[str]:
-    """信任路径规范化(resolve 绝对化, 供落库/查询双侧一致) — 小欧 2026-09-02"""
-    if not path:
-        return None
-    try:
-        return str(Path(path).resolve())
-    except Exception:
-        return None
-
-
-def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> None:
-    """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name, path) 幂等）— 小欧 2026-08-16; v1.5 增 path 参数
-    path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免"""
-    conn.execute(
-        "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, path, created_at) VALUES (?,?,?,?)",
-        (session_id, tool_name, _norm_trust_path(path), get_local_iso_timestamp()),
-    )
-
-
-def check_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
-    """工具安全检查豁免查询：会话已信任该 tool+path 则免二次 HITL 确认 — 小欧 2026-08-16; v1.5 增 path 前缀递归匹配
-    匹配规则(北京老陈 2026-09-02 定案):
-      path=None: 仅命中工具级通配行(path IS NULL);
-      path 给定: 命中工具级通配行, 或任一行信任路径等于/为目标的父目录(前缀递归, 与 temp_auth 语义对齐)。"""
-    rows = conn.execute(
-        "SELECT path FROM chat_session_trust WHERE session_id=? AND tool_name=?",
-        (session_id, tool_name),
-    ).fetchall()
-    if path is None:
-        return any(r["path"] is None for r in rows)
-    target = _norm_trust_path(path)
-    if target is None:
-        return False
-    target_p = Path(target)
-    for r in rows:
-        p = r["path"]
-        if p is None:
-            return True  # 工具级通配行: 任意路径命中
-        trusted_p = Path(p)
-        if trusted_p == target_p or trusted_p in target_p.parents:
-            return True  # 前缀递归: 信任根等于目标 或 为目标祖先目录
-    return False
-
-
 def list_session_trust(conn: Connection, session_id: str) -> list:
     """D1(10.5 问题4): 会话已信任对象清单（tool+path, path 可为 NULL=工具级通配）— 小欧 2026-08-20; v1.5 增 path 返回"""
     rows = conn.execute(
@@ -616,18 +581,9 @@ def delete_session_trust(conn: Connection, session_id: str, tool_name: str, path
     else:
         cur = conn.execute(
             "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=? AND path=?",
-            (session_id, tool_name, _norm_trust_path(path)),
+            (session_id, tool_name, norm_trust_path(path, tool_name)),
         )
     return cur.rowcount > 0
-
-
-def get_session_id_by_task(conn: Connection, task_id: str) -> Optional[str]:
-    """按 task_id 反查 session_id（chat_tasks 已建行时）— HITL trust 落库/豁免用, 禁止伪 agent.session_id — 小欧 2026-08-16"""
-    row = conn.execute(
-        "SELECT session_id FROM chat_tasks WHERE task_id=?",
-        (task_id,),
-    ).fetchone()
-    return row["session_id"] if row else None
 
 
 # ---- ②-6 token_usage 四维度查询 API ----

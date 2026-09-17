@@ -76,6 +76,77 @@
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整删finalize_message回调及其调用——删除stream_orchestrator.db_ops.finalize=传参与agent_runner行446-461的finalize调用块(原写chat_messages终态); 终态content/status/thought由append_execution_step(step_json)与_finalize_task_db(update_task+回填chat_user_message)承载, 系统对该表零写依赖
 # 2026-08-30 - 小欧 - 第十三章13.11 落库收口(设计文档[2]13.12.10, 北京老陈 2026-08-30 批准): _persist 内对 thought 步骤仅规约 content/thought/reasoning 三字段文本(调公用 normalize_blank_lines, 新数据入库即净), 其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤); import 补 normalize_blank_lines
 # 2026-08-30 - 小欧 - _finalize_task_db accumulated_usage双重编码修复: 去掉外层safe_json_dumps(根因: query_task_acc已返回dict, update_task内已调safe_json_dumps, 外层再包一次致双重编码前端解析失败显null)
+# 2026-09-06 小欧 4C(5.8.5, 与5.8.1-5.8.4同commit齐发): run_react_cycle 收敛普通 async(5.8.3)后, 本层由
+#   "async-for yield 逐条处理"改"订阅消费"——run_react_cycle 内事件已由 react_step/react_loop publish 直写
+#   event_log(带 seq), 完成后取缓冲快照(list)逐条走既有的通道路由(_persist 落库/SSE 标记/current_content)不变;
+#   SSE 实时性不受影响(stream_reader 独立协程按 seq 实时读), DB 落库由本层扫描完成(崩溃前已 publish 事件含
+#   异常路径 error/final 全量可读不丢); 双发修正(doc[6]5.8.5): 订阅体内已 publish 事件不再 _append(否则 SSE 双发
+#   违反 6.5 event_log 单一 seq), _append 仅保留自产事件(startinfo/异常final/守卫补发); 订阅体补 prompt-log
+#   log_step_yield(原 _append 内记录, publish 不记, 订阅侧补齐); buffer 缺省 create_stream_buffer ensure
+#   (react_loop/react_step 需缓冲 publish) — 小欧-2026-09-06
+# 2026-09-06 小欧 4C(5.8.6): 终态 SSE 单发根治——publish 终态(final/final_stats)实时已被 stream_reader
+#   按 seq 读走(完整条), finally 统一补发的剥离(短信号)/统计条改为"覆写 publish 原位(保 seq)", 不再 _append
+#   新增 seq: 原实现 event_log 内 final 双条(publish 完整 + 补发短/完整)致 SSE final 双发(bug, P4 专项测试捕获);
+#   覆写后 event_log 每种终态单条: 短信号场景前端仅见剥离条, 完整场景原位即完整, 守卫补发(无 publish 原条)仍 _append;
+#   零新增抽象, 覆写幂等(同内容覆写等价); final_stats 同法去重 — 小欧-2026-09-06
+# 2026-09-06 小欧 方案C三堂会审缺陷2修复(独立user_rejected不落库):
+#   独立 type="user_rejected" 后, 该事件不在仅SSE集合 {error,usage,paused,resumed,retrying,cancelled} 内 →
+#   通道路由落 else _persist 写库, total_steps 虚增 + 违反"拒绝仅SSE不落库"设计(全拒步 DB 出现无观察配对残步)。
+#   [修复] 该集合补 "user_rejected"(按 §10.4.4 P3 精神: 拒绝/拦截类均非业务步, 不落库不计数)
+#   blocked/timeout 走 error 已仅SSE; 前端 deniedStepSet 靠 SSE 独立事件聚合(不受落库影响) — 小欧-2026-09-06
+# 2026-09-06 小欧 B2方案C核心(北京老陈裁定, 与 handle_action 预览/规范/拒绝独立事件同commit):
+#   通道路由 action 分支识别 _live_only 预览标记(handle_action 早发, tools=all_calls 仅SSE齿轮先行)——
+#   带标记跳过 _persist 落库(prev 不落), 无标记 canonical(tools=_exec_calls 真实执行集)照常 _persist;
+#   恢复 09-04"拦截/拒绝的action不落库"不变式 + 全拒步无"有action无observation"DB残步; total_steps 口径不变 — 小欧-2026-09-06
+# 2026-09-06 小欧 单写入口退役(_append→_publish 统一, 85214690a):
+#   startinfo/异常final/守卫补发/终态补发四处自产事件原 _append 直接追加 event_log, 与 publish
+#   (经 merge_meta_seq 分配 seq)并存为双写路径 → seq 分配竞态且同序事件来源分裂;
+#   [修复] 四处改走 _publish(buffer.publish 同源同序, stream_reader 按 seq 流读无破绽), _append 退役 — 小欧-2026-09-06
+# 2026-09-06 小欧 preview 不入 Prompt 日志(6009edc1b, P0-02 DB-Prompt 对账 2x 二次根因):
+#   B2方案C每轮双 action(preview 齿轮先行 + canonical), 订阅体对 preview(_live_only) 也调 log_step_yield →
+#   Prompt 日志比 DB 多 preview 行(2x 误报, P0-02 表 5.3);
+#   [修复] 订阅体补 `if not event_dict.get("_live_only")` 才 log_step_yield(Prompt 仅记业务 canonical 步) — 小欧-2026-09-06
+# 2026-09-07 小欧 4.4.3(前端消息分类处理分析及设计-小欧-2026-09-06.md, 北京老陈批准):
+#   start/startinfo 双信号拆分——startinfo 合并入 start:
+#   [1] run_agent_in_background 入口将 eager ai_message_id 透传挂到 agent._ai_message_id(供 react_loop start 发布前装配);
+#   [2] 删 start 分支 startinfo 派生构造 13 行, 仅保留 _persist 落库(start 已自带 ai_message_id);
+#   [3] 通道路由注释同步(start/startinfo 不再双发, startinfo 事件从链路移除, 前端不再消费) — 小欧-2026-09-07
+# 2026-09-08 小欧 方案五(6.6.2 G路径, 北京老陈 2026-09-08, 见doc-9月优化[12] 6.6):
+#   ②CancelledError 取消分支(CancelledError 系 orchestrator 异常→bg_task.cancel() 触发, G路径):
+#   未标记来源时置 agent._cancel_source="orchestrator_error"; finally 守卫 CANCELLED 分支文案改
+#   cancel_terminal_text(source) 按来源出; 守卫 FinalStep 携带 cancel_source 落库/下发(A-G全覆盖)
+# 2026-09-08 小欧 补缺日志(北京老陈"新改代码需合理log"核查): G路径来源定级处补 logger.info
+#   ("未标记取消来源, 定为 orchestrator_error"), 取消终态文案出处排查不再无痕 — 小欧-2026-09-08
+# 2026-09-08 小欧 北京老陈指令(console可见性): G路径来源定级 logger.info→log_and_print 双写,
+#   后端命令行可见"未标记取消来源,定为orchestrator_error"; 另 B2 守卫兜底补发取消终态补 logger.info(仅文件)
+#   — 小欧-2026-09-08
+# 2026-09-11 小欧 - [27]方案: ①新增 _publish_final_stats 延后单发(门禁+兜底帧+先落库t3后发布t3'+落库失败照发);
+#   ②死码清理3处(_final_stats_publish_index/扫描循环收集/finally覆写); ③短信号补 duration — 小欧-2026-09-11
+# 2026-09-11 小欧 - BUG-A+B修复: _publish_final_stats 包裹 try/except ValueError, build 异常降级走兜底帧,
+#   防 outcome="" + agent.status=None 致 ValueError 崩溃 — 小欧-2026-09-11
+# 2026-09-11 小欧 - BUG-C修复: 兜底帧 step 从硬编码 0 改为 agent.llm_call_count, 与正常帧对齐 — 小欧-2026-09-11
+# 2026-09-12 小欧 - X2 终态长短信号分离(方案[31] §4.2): 扫描侧长短判定/终态缓冲机制退役, 收窄为"从发射侧缓存取长条落库":
+#   ①4.2.1 删扫描侧状态声明(_has_chunk_steps/_action_steps/_pending_terminal_events/_final_publish_index, L244-251);
+#   ②4.2.2 删扫描侧 chunk/action 登记(_has_chunk_steps.add/_action_steps.add, L405-417; action 落库逻辑 B2 方案C 原样保留);
+#   ③4.2.3 final 分支落库改取 agent._pending_final_db 长条(短条场景 DB 恒完整 response) + 消费即清(置 None 防重复落库),
+#     长条场景(failed/cancelled/return_direct)缓存在兜底 `_pending_final_db or event_dict` 下落现条完整件;
+#   ④4.2.4 finally 覆写/补发段整体删除(L642-653, _final_publish_index 覆写与 _pending_terminal_events 补发,
+#     event_log 原位即应转发形态, G2 根治); 保留 _persist_final 与 _publish_final_stats(延后单发 DB 就绪信号) — 小欧-2026-09-12
+# 2026-09-12 小欧 - X2 E2E-X2-01 竞态根因修复(方案[31] §5.4): 删除临时 [Diag] 诊断日志
+#   (final_stats before_publish/publish done), _publish_final_stats 还原为纯"先落库后发布";
+#   根因在 react_loop 内部两处过早 done.set()(详见 react_loop.py 编辑历史 2026-09-12 条目),
+#   本文件 done 权威置位 L708-713 唯一保留(所有事件含 final_stats 发布完成后) — 小欧-2026-09-12
+# 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): ①_publish_final_stats 发布后补 logger.info(seq/status),
+#   供比对 SSE 是否收全终态; ②done 置位后快照缓冲状态(last_type/has_final_stats), 监控"置位时终态是否已入队"
+#   (E2E-X2-01 竞态监控点, 若末类型非 final_stats 即 SSE 提前关闭根源) — 小欧-2026-09-12
+# 2026-09-13 小欧 - [30]§8.2 TDD P1(行338): _publish_final_stats 日志 status 由引用闭包变量 _fs_outcome
+#   改为本函数入参 outcome——_fs_outcome 仅在本函数外 finally 赋值, 闭包耦合潜在 NameError(free variable referenced
+#   before assignment), 现靠唯一调用点先赋值侥幸躲过; 改 outcome 消除闭包耦合(违 KISS-DIRECT/SLAP), 行为不变
+# 2026-09-13 小欧 - [30]§8.2 TDD P3(行258-259): X2 删除标记注释改述——原称"L244-251 删除", 但 L244-248
+#   (缓冲缺省 ensure create_stream_buffer) 仍是活代码, 注释与实际矛盾误导读者; 改为仅述"长短判定/终态缓冲/
+#   finally 覆写机制已删除", 明确缓冲 ensure 保留在役
+# 2026-09-17 小欧 - 统一拒绝事件 type="rejected": 行433 SSE集合新增 "rejected"(原 "user_rejected") - 小欧-2026-09-17
+# 2026-09-17 小欧 会审V3(#13): 行435 SSE仅转发集合注释更新(user_rejected 表述更正为已统一 rejected, 原注释过时) - 小欧-2026-09-17
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -104,9 +175,9 @@ from app.services.task.task_registry import task_cleanup
 from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
 from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
-    agent_streams, reclaim_stream_buffer,
+    agent_streams, create_stream_buffer, reclaim_stream_buffer,
 )
-from app.logger import logger
+from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见G路径定级) — 小欧-2026-09-08
 from app.logger.prompt_logger import get_prompt_logger
 from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
 from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
@@ -179,31 +250,100 @@ async def run_agent_in_background(
         _self_task.add_done_callback(_background_tasks.discard)
 
     buffer = agent_streams.get(task_id)
+    if buffer is None:
+        # 4C(5.8.5): 缓冲缺省 ensure —— react_loop/react_step 在 run_react_cycle 内经 publish 直写 event_log,
+        #   无缓冲时 react_loop 抛 RuntimeError; 此处确保既有直连入口(跳过 stream_orchestrator)亦可创建 — 小欧-2026-09-06
+        buffer = create_stream_buffer(task_id)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
     # 12.2-C4: ai_message_id 局部初始化删除(参数即初值, eager注入) — 小欧 2026-08-21
     # 12.2-C4: eager绑定prompt-logger(原惰性分支内update_ai_message_id迁至此) — 小欧 2026-08-21
     if ai_message_id is not None:
         get_prompt_logger().update_ai_message_id(str(ai_message_id))
-    _has_chunk_steps: set = set()  # 2026-08-18 小健 Bug#2: 按 step 记录已发正文 chunk(短信号仅当非action轮的正文chunk)
-    _action_steps: set = set() # 2026-08-18 小健 Bug#2 边界: 记录执行过action的step, 供return_direct final识别
-    # (旧任务级 _has_chunk_sent 结论被多轮 return_direct 边界推翻, 改 step 粒度更精确 — 小健)
+    # 4.4.3(2026-09-07 小欧): ai_message_id 透传 agent 层, 供 react_loop start 发布时携带;
+    #   startinfo 合并入 start 的前提(eager 值在 run_react_cycle 启动前已就绪, 无需延迟 publish)
+    agent._ai_message_id = ai_message_id
+    # X2(2026-09-12 小欧): 长短判定/登记上移 react_step 发射侧(_emit_publish, agent._final_short_ctx),
+    #   终态缓冲+finally 覆写机制整体移除(见 4.2.4); 上方 L244-248 缓冲缺省 ensure 保留在役(直连入口) — 小欧 2026-09-12
 
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
 
-    async def _append(event_dict: Dict) -> None:
-        # 注意: current_execution_steps 由各调用点(主循环/异常分支)显式追加,
-        # 此处仅负责写入 event_log + 唤醒消费者, 禁止再 append current_execution_steps,
-        # 否则会导致DB步骤被重复累积(实测 SSE=21/DB=42 翻倍) — 小欧 2026-07-13
-        d = dict(event_dict)
-        d["seq"] = len(buffer.event_log)
-        buffer.event_log.append(d)
-        get_prompt_logger().log_step_yield(d, round_number=d.get("step", 0))
-        # 唤醒等待中的消费者: Condition.notify_all 必须在持锁时调用,
-        # 否则抛 RuntimeError('cannot notify on un-acquired lock') — 小欧 2026-07-13
-        async with buffer.cond:
-            buffer.cond.notify_all()
+    async def _publish(event_dict: Dict) -> int:
+        # 4C 收尾(2026-09-06 小欧): 自产/边缘事件统一改经 StreamBuffer.publish 发射,
+        #   seq 分配+append+notify_all 持锁原子权威在 publish(task_state.StreamBuffer, 文档[6]5.2),
+        #   私有 _append 写 event_log 入口退役(5.8.1 "删事件转发入口"单一写入口收口) — 小欧-2026-09-06
+        # publish 不记 prompt-log(订阅侧补齐), 自产事件在此发布点补记, 保 log_step_yield 链不退化 — 小欧-2026-09-06
+        seq = await buffer.publish(event_dict)
+        get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
+        return seq
+
+    # [27] 2026-09-11 小欧: append_step 落库提取为 run_agent_in_background 级统一闭包(KISS 单一来源,
+    #   禁 backward)——扫描循环与 _publish_final_stats 共用(doc[27]3.5(1) 落库说明); 原 _persist 定义在
+    #   扫描循环体内(逐迭代重建), 本版提升至函数级仅一处定义, thought 规约判断由循环变量 event_type 改为
+    #   ed 自身 type(行为等价); 定义置于 try 之前, 保证异常/取消路径 finally 中亦可安全调用 — 小欧-2026-09-11
+    async def _persist(ed: Dict):
+        current_execution_steps.append(ed)
+        nonlocal ai_message_id
+        # ① 2026-08-19 小欧(改动8 补齐): 从 _usage_events 取本落库步骤所属 LLM 轮的 usage,
+        #   使 chat_task_steps.usage 列真正生效(设计: 每行一步、带所属轮 token {prompt/completion/total});
+        #   usage 事件本身仅 SSE 不落库(通道路由 P6), 本列承载同轮明细副本, 与 token_usage 同口径
+        _step_no = ed.get("step", 0)
+        _usage_json = None
+        if _step_no is not None:
+            for _u in (getattr(agent, "_usage_events", None) or []):
+                if int(_u.get("step") or 0) == int(_step_no):
+                    _usage_json = safe_json_dumps({
+                        "prompt_tokens": _u.get("prompt_tokens"),
+                        "completion_tokens": _u.get("completion_tokens"),
+                        "total_tokens": _u.get("total_tokens"),
+                    })
+                    break
+        # 12.2-C4: ai_message_id已eager注入,惰性分支移除 — 小欧 2026-08-21
+        # 13.11 落库收口: 仅 thought 步骤规约 content/thought/reasoning 三字段(新数据入库即净);
+        #   其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤) — 小欧 2026-08-30
+        if ed.get("type") == "thought":
+            for _k in ("content", "thought", "reasoning"):
+                _v = ed.get(_k)
+                if isinstance(_v, str):
+                    ed[_k] = normalize_blank_lines(_v)
+        # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+        await db.atxn("chat", lambda conn: db_ops.append_step(
+            conn, ai_message_id, session_id,
+            len(current_execution_steps) - 1, ed, usage=_usage_json))
+
+    # [27] v1.12 2026-09-11 小欧: final_stats 延后单发(发布铁律(0) + v1.9 方案A t3/t3' 落地)——统计在
+    #   react_loop 返回后已全齐; 门禁逐段校验 7 键(缺段绝不发), telemetry 缺失构造 7 键默认合法帧照发(兜底,
+    #   折叠必达); 先落库(t3, append_step)后发布(t3', DB 就绪信号); 落库失败记 ERROR 照发 publish(断链兜底) — 小欧-2026-09-11
+    async def _publish_final_stats(agent_ref, outcome):
+        _tel = getattr(agent_ref, "telemetry", None)
+        if _tel is not None:
+            try:
+                _fs_dict = _tel.build_final_stats_step(outcome=outcome).to_dict()
+            except (ValueError, TypeError) as _build_err:
+                logger.error(f"[Runner] final_stats build 失败(task={task_id})，降级走兜底帧: {_build_err}")
+                _tel = None  # 走下方兜底帧逻辑
+        if _tel is None:
+            # 极端兜底(telemetry 未初始化): 构造 7 键默认合法帧照发——折叠必达 + 每键有值两不误
+            _fs_dict = {
+                "type": "final_stats", "step": getattr(agent_ref, "llm_call_count", 0), "timestamp": get_local_iso_timestamp(),
+                "duration": 0.0, "artifacts": [], "final_status": outcome,
+                "tool_stats": {}, "llm_call_count": 0, "retry_count": 0, "step_count": 0,
+            }
+        _need = ("duration", "artifacts", "final_status", "tool_stats",
+                 "llm_call_count", "retry_count", "step_count")
+        _missing = [k for k in _need if _fs_dict.get(k) is None]
+        if _missing:  # build 层已用 getattr 兜底永不产 None 键; 此处抓到即代码 bug, 绝不残发
+            logger.error(f"[Runner] final_stats 缺段 {_missing}，拒绝发布(task={task_id})")
+            return
+        try:
+            await _persist(_fs_dict)  # 先落库(t3), append_step 落 chat_task_steps
+        except Exception as _e:
+            logger.error(f"[Runner] final_stats 落库失败(task={task_id})，照发折叠帧: {_e}")
+        # 2026-09-12 小欧 - 追踪关键点: final_stats 发布 seq 落日志(每次任务1条), 供核对"延后单发已完成、
+        #   done 置位前已入缓冲"——若后续发现 SSE 缺 final_stats, 查本行有无 + seq 与 reader 退出 offset 比对即可定位
+        _fs_seq = await _publish(_fs_dict)  # 后发布(t3')——DB 就绪信号, 折叠区/任务列表 refresh 以此统一信号读 DB
+        logger.info(f"[Runner] final_stats 已发布(task={task_id}, seq={_fs_seq}, status={outcome})")  # 小欧-2026-09-12 追踪点
 
     # 退出分支与DB保存保证 — 小欧 2026-07-13
     # 本函数有 3 个退出路径，无论哪条路径 finally 都会执行 DB 保存：
@@ -251,101 +391,69 @@ async def run_agent_in_background(
                 ctx["previous_messages"] = prev
         run_context = context or ctx or None
 
-        async for event in agent.run_react_cycle(
+        # 4C(5.8.5): run_react_cycle 收敛普通 async(5.8.3)——事件已在内部经 publish 直写 event_log,
+        #   本层订阅取完成快照逐条走通道路由(_persist 落库/SSE 标记/current_content); SSE 实时由
+        #   stream_reader(独立协程按 seq 实时读 publish 事件)负责, 实时性不受影响; DB 落库由本层扫描完成
+        #   (崩溃前已 publish 事件含异常路径 error/final 全量可读不丢); 订阅体内已 publish 事件不再 _append
+        #   防双发(doc[6]5.8.5, 违反 6.5 event_log 单一 seq); 自产事件(startinfo/异常final/守卫补发)统一经
+        #   _publish → StreamBuffer.publish 发射, 单一写入口(5.8.1) — 小欧-2026-09-06
+        await agent.run_react_cycle(
             task=last_message, context=run_context, task_id=task_id, start_time=start_time  # 11.2-B start_time 同源透传 — 小欧 2026-08-20
-        ):
-            # event 可能为 dict 或 Step，统一 to_dict — chendyg 2026-06-26
-            if isinstance(event, dict):
-                event_dict = event
-            elif hasattr(event, "to_dict"):
-                event_dict = event.to_dict()
-            else:
-                logger.warning(f"[Runner] 跳过非Step事件: {type(event)}")
-                continue
+        )
+        # publish 事件快照(全部已入缓冲), 循环体内自产 startinfo 经 publish 追加在后不入本快照, 不落库不双记 — 小欧-2026-09-06
+        for _scan_idx, event_dict in enumerate(list(buffer.event_log)):
             if not event_dict:
                 continue
             event_type = event_dict.get("type", "")
+            # prompt-log 生命周期(publish 不记, 订阅侧补齐替代原 _append 内 log_step_yield; 自产事件由 _publish 发布点补记) — 小欧-2026-09-06
+            # B2方案C(2026-09-06 小欧 根因修复): preview(action)仅SSE齿轮不落库, 禁止记 Prompt 日志
+            #   (否则 DB=8/Prompt日志=12 对账 2x 误报, verify_db_prompt_consistency 失败) — 小欧-2026-09-06
+            if not event_dict.get("_live_only"):
+                get_prompt_logger().log_step_yield(event_dict, round_number=event_dict.get("step", 0))
 
             # ── 通道路由（§10.3.3(1) + §10.4.3 P1）：thought 仅落库 / thought-start 仅SSE / chunk 仅SSE / 其余 SSE+落库 ──
             # 2026-08-18 小健 P1实施: chunk 与 thought-start 同类(仅实时、不可回放), 改仅SSE不落库,
             #   total_steps 自动剔除chunk虚高(stream_reader._log_task_end 按 current_execution_steps 统计);
             #   正文回放由 thought/final 承载(response 完整落库), 重连续传走 event_log 缓冲不受影响。
-            async def _persist(ed: Dict):
-                current_execution_steps.append(ed)
-                nonlocal ai_message_id
-                # ① 2026-08-19 小欧(改动8 补齐): 从 _usage_events 取本落库步骤所属 LLM 轮的 usage,
-                #   使 chat_task_steps.usage 列真正生效(设计: 每行一步、带所属轮 token {prompt/completion/total});
-                #   usage 事件本身仅 SSE 不落库(通道路由 P6), 本列承载同轮明细副本, 与 token_usage 同口径
-                _step_no = ed.get("step", 0)
-                _usage_json = None
-                if _step_no is not None:
-                    for _u in (getattr(agent, "_usage_events", None) or []):
-                        if int(_u.get("step") or 0) == int(_step_no):
-                            _usage_json = safe_json_dumps({
-                                "prompt_tokens": _u.get("prompt_tokens"),
-                                "completion_tokens": _u.get("completion_tokens"),
-                                "total_tokens": _u.get("total_tokens"),
-                            })
-                            break
-                # 12.2-C4: ai_message_id已eager注入,惰性分支移除 — 小欧 2026-08-21
-                # 13.11 落库收口: 仅 thought 步骤规约 content/thought/reasoning 三字段(新数据入库即净);
-                #   其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤) — 小欧 2026-08-30
-                if event_type == "thought":
-                    for _k in ("content", "thought", "reasoning"):
-                        _v = ed.get(_k)
-                        if isinstance(_v, str):
-                            ed[_k] = normalize_blank_lines(_v)
-                # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
-                await db.atxn("chat", lambda conn: db_ops.append_step(
-                    conn, ai_message_id, session_id,
-                    len(current_execution_steps) - 1, ed, usage=_usage_json))
-
+            # [27] 2026-09-11 小欧: 原循环体内 _persist 定义已提升为 run_agent_in_background 级统一闭包
+            #   (见 run_react_cycle 之后), 此处直接复用——KISS 单一来源, 禁 backward — 小欧-2026-09-11
             if event_type == "thought":
                 await _persist(event_dict)              # 仅落库（历史回放用, 实时不重复发）
             elif event_type == "thought-start":
-                await _append(event_dict)         # 仅 SSE（纯实时信号, 不落库）
+                pass  # 4C(5.8.5): 仅SSE, 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发 — 小欧-2026-09-06
             elif event_type == "chunk":
-                # 仅 SSE（§10.4.3 P1）: chunk 纯实时逐字流, 不落库; 仅维护正文chunk标记供 final 短信号判定
-                if not event_dict.get("is_reasoning"):
-                    _has_chunk_steps.add(event_dict.get("step", 0))
-                await _append(event_dict)
+                pass  # X2(2026-09-12 小欧): 仅 SSE 不落库; 正文chunk登记已上移发射侧(_emit_publish) — 小欧 2026-09-12
             elif event_type == "start":
-                await _persist(event_dict)   # P7: StartStep 落库, _persist 内惰性分配 ai_message_id — 小欧 2026-08-18
-                _startinfo = {
-                    "type": "startinfo", "step": event_dict.get("step", 0),
-                    "timestamp": event_dict.get("timestamp"),
-                    "content": "任务开始", "severity": "info",
-                    "task_id": event_dict.get("task_id"),
-                    # display_name 键消亡(归一设计要求2: 后端零依赖仅前端派生, 前端随 startinfo.provider/model 自行派生) — 小欧 2026-08-22
-                    "provider": event_dict.get("provider"),
-                    "model": event_dict.get("model"),
-                    "ai_message_id": ai_message_id,
-                }
-                await _append(_startinfo)   # 轻量 MetaStep 仅 SSE, 复用同一 ai_message_id — 小欧 2026-08-18
-            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled"}:
-                await _append(event_dict)   # P3(error)/P5(通知类)/P6(usage): 一律仅 SSE 不落库 — 小欧 2026-08-18
+                await _persist(event_dict)   # P7: StartStep 落库; 4.4.3: start 已自带 ai_message_id(react_loop 发布前装配), startinfo 删除
+            elif event_type == "action":
+                # X2(2026-09-12 小欧): _action_steps 登记删除(已上移发射侧); 落库逻辑(B2 方案C)原样保留 — 小欧 2026-09-12
+                # B2(方案C, 2026-09-06 小欧 三堂会审定案): 预览事件(tools=all_calls, _live_only=True)仅SSE齿轮先行不落库;
+                #   canonical(tools=_exec_calls 真实执行集, 无 _live_only 标记)走 _persist 落库——恢复 2026-09-04 小健
+                #   fix"拦截/拒绝的 action 不落库"不变式 + 消除全拒场景"有action无observation"DB残步
+                if not event_dict.get("_live_only"):
+                    await _persist(event_dict)
+            elif event_type in {"error", "usage", "paused", "resumed", "retrying", "cancelled", "rejected"}:
+                pass  # 4C(5.8.5): 仅SSE(§10.4.4 P3/P5/P6), 已 publish 入缓冲由 stream_reader 实时读, 订阅体不再 _append 防双发;
+                      # 2026-09-17 小欧 会审V3(#13): 上述集合与 _SSE_FORWARD_TYPES 闭合一致; 原独立 user_rejected 类型已于
+                      # 2026-09-16 统一为 rejected(此处即该项, 拒绝仅SSE不落库, total_steps 不虚增) — 小欧-2026-09-17
             else:
-                await _persist(event_dict)              # 落库（始终完整 dict）
-                # ── final & completed SSE 短信号（§10.3.3(4)）── 2026-08-18 小欧
-                # 2026-08-18 小健 三堂会审 Bug#2: 短信号前提是"chunk 已发正文"。
-                #   return_direct 等无 chunk 场景, final.response 是前端唯一正文载体,
-                #   剥离后前端正文丢失(测试 test_return_direct_response_lost 捕获)。
-                #   → 有 chunk 才短信号; 无 chunk 发完整(含 response)。
-                if event_type == "action":
-                    _action_steps.add(event_dict.get("step", 0))   # 工具执行轮标记
-                    await _append(event_dict)                      # §10.3.3 其余 SSE+落库: action 实时下发前端(yield 才到前端) — 小欧 2026-08-18
-                elif event_type == "final" and event_dict.get("outcome") == "completed":
-                    # 短信号仅当: 该 step 是普通answer轮且已发正文 chunk(非推理)。
-                    # 若该 step 是 action/return_direct 轮(final=工具结果,response即正文),
-                    #   一律完整发——即使该轮LLM曾先输出正文chunk("我来查询...")也不剥离真正的工具答案。
-                    _s = event_dict.get("step", 0)
-                    if _s not in _action_steps and _s in _has_chunk_steps:
-                        _short = {k: event_dict[k] for k in ("type", "step", "timestamp", "outcome")}
-                        await _append(_short)     # SSE：短信号（chunk已发正文, 不重复带response）
-                    else:
-                        await _append(event_dict) # SSE：完整（return_direct/action轮 或 无正文chunk, response 即正文）
+                # X2(2026-09-12 小欧): 长短分流已上移发射侧(4.1.1 _emit_publish), 此处 event_log 的 final 即「应转发形态」;
+                #   DB 落库取发射侧缓存的长条(完整 response, _pending_final_db), 保 DB=长条恒等式 +
+                #   current_execution_steps append 顺序=event_log 事件顺序(DB step 序号不乱) — 小欧 2026-09-12
+                #
+                # 缓存的真正服务对象 = 仅短条场景(老陈 2026-09-12 三问核实):
+                #   · 短条场景: event_log 里的 final 已是五键短条(无 response), DB 若落现条会丢正文 →
+                #     必须从 _pending_final_db 取完整长条落库。缓存必不可少(这正是 final 需缓存、thought 无
+                #     需缓存的分野: final 两形态/thought 单形态)。
+                #   · 长条场景(failed/error/cancelled/return_direct): event_log 的 final 本身就是完整长条,
+                #     _pending_final_db 与现条同源(同一份 dict), 落现条即完整——缓存流程正确但属冗余兜底。
+                if event_type == "final":
+                    _final_long = getattr(agent, "_pending_final_db", None) or event_dict  # 兜底(守卫/边缘路径未置缓存): 落 event_log 现条, DB 不丢终态
+                    await _persist(_final_long)
+                    agent._pending_final_db = None   # 消费即清, 防重复落库
                 else:
-                    await _append(event_dict)     # SSE：完整 / failed / cancelled 等
+                    await _persist(event_dict)              # 落库（始终完整 dict）
+                # else 其它类型: 已 publish 入缓冲, 订阅体不再 _append(防双发) — 小欧-2026-09-06
 
             # 更新 current_content / current_thought
             if event_type == "final":
@@ -374,6 +482,11 @@ async def run_agent_in_background(
                 set_cancelled(agent)
             except ValueError:
                 pass
+            if getattr(agent, "_cancel_source", None) is None:
+                # 方案五 G路径(6.6.2): CancelledError 系 orchestrator 异常→bg_task.cancel() 触发(BUG-32 链路),
+                #   非用户取消, 未标记来源则定为后端自保取消; A/B 若已标记则尊重原来源不覆盖 — 小欧 2026-09-08
+                agent._cancel_source = "orchestrator_error"
+                log_and_print(f"{time.strftime('%H:%M:%S')} [Runner] 任务 {task_id} 未标记取消来源, 定为 orchestrator_error(后端自保取消)")  # 2026-09-08 小欧: 双写(console可见) — 小欧-2026-09-08
 
     # ③ 异常分支 — 小欧 2026-07-13
     except Exception as e:
@@ -393,7 +506,7 @@ async def run_agent_in_background(
             await db.atxn("chat", lambda conn: db_ops.append_step(
                 conn, ai_message_id, session_id,
                 len(current_execution_steps) - 1, final_dict))
-        await _append(final_dict)
+        await _publish(final_dict)
         if stream_state is not None:
             stream_state.current_content = "任务执行失败"  # 兜底: ③路径 response_text 非空, 根治空 bug
         if agent is not None:
@@ -419,7 +532,10 @@ async def run_agent_in_background(
         ):
             _oc, _resp, _et, _em = "failed", "任务执行失败", "agent_operation_error", ""
             if agent and agent.status == AgentStatus.CANCELLED:
-                _oc, _resp, _et, _em = "cancelled", "任务已取消", "", ""
+                # 方案五 G路径(2026-09-08 小欧): 文案按来源出(orchestrator_error="服务内部异常，任务已终止"), 不再统一"任务已取消"
+                from app.services.task.task_runtime import cancel_terminal_text
+                _oc, _resp, _et, _em = "cancelled", cancel_terminal_text(getattr(agent, "_cancel_source", None)), "", ""
+                logger.info(f"[Runner] 守卫兜底补发取消终态(task={task_id}, source={getattr(agent, '_cancel_source', None)}, text={_resp})")  # 2026-09-08 小欧 北京老陈指令: 兜底补发留痕(仅文件, 不双写) — 小欧-2026-09-08
             elif agent and agent.status == AgentStatus.COMPLETED:
                 # 防御性: 正常流程成功必有 FinalStep, 此处仅兜底, 不误标 failed — 小欧 2026-07-18
                 _oc, _resp, _et, _em = "completed", "任务执行完成", "", ""
@@ -428,7 +544,8 @@ async def run_agent_in_background(
                 if _last_err:
                     _et, _em = _last_err[0] or "agent_operation_error", _last_err[1] or ""
             _fs = FinalStep(step=(agent.llm_call_count if agent else None) or 1, response=_resp, reasoning=_em or _resp,  # P2(§10.4.4): 弃 next_step, 统一 agent 轮数; 三堂会审复核(小欧): agent 空防御统一
-                            outcome=_oc, error_type=_et, error_message=_em)
+                            outcome=_oc, error_type=_et, error_message=_em,
+                            cancel_source=(getattr(agent, "_cancel_source", None) if _oc == "cancelled" else ""))  # 方案五: 取消终态带来源落库/下发 — 小欧 2026-09-08
             _fd = _fs.to_dict()
             current_execution_steps.append(_fd)
             if ai_message_id is not None:
@@ -438,7 +555,7 @@ async def run_agent_in_background(
                     len(current_execution_steps) - 1, _fd))
             if stream_state is not None and _oc != "completed":
                 stream_state.current_content = _resp or stream_state.current_content
-            await _append(_fd)
+            await _publish(_fd)
 
         # 从 agent.status 推导 end_type — 小欧 2026-07-12 从 stream.py 迁移
         if end_type == "unknown" and agent is not None:
@@ -525,7 +642,18 @@ async def run_agent_in_background(
                     except Exception as _um_e:
                         logger.warning(f"[Runner] 回填chat_user_message final失败(task={task_id}): {_um_e}")
                 # 终态必达防二次cancel(_persist_final 小欧 2026-08-24)
-                await _persist_final(db.atxn("chat", _finalize_task_db))
+                # 2026-09-04 小欧 方案一: try/finally 保证无论 status 落库成败, 终态 SSE 必达——
+                #   DB chat_tasks.status 落库(成功则已 terminal)后统一补发 final/final_stats,
+                #   根治"SSE final 先到、DB status 后到"致前端 StaticStatsBlock 读 detail.status 卡 executing 的竞态
+                try:
+                    await _persist_final(db.atxn("chat", _finalize_task_db))
+                finally:
+                    # X2(2026-09-12 小欧): L642-653 覆写/补发段整体删除——终态形态发射侧已定(event_log 原位
+                    #   =应转发形态, 实时 stream_reader 与重连回放读同一形态), 覆写失去作用对象且会逆转终态(G2 复发);
+                    #   _persist_final(status 落库) 与 final_stats 延后单发([27] DB 就绪信号)保留 — 小欧 2026-09-12
+                    _fs_outcome = getattr(agent, "status", None)
+                    _fs_outcome = _fs_outcome.value if _fs_outcome is not None else "failed"
+                    await _publish_final_stats(agent, _fs_outcome)
                 # 11.8-H5: 文件A/B footer(终态回填 end_time/status/record_count) — 11.9 P6 小欧 2026-08-23
                 #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
                 #   成功路径等价; 失败路径更稳——旧代码 footer 写失败会连坐回滚整个 update_task 事务,
@@ -592,9 +720,15 @@ async def run_agent_in_background(
         # Shell 池清理：关闭该任务的所有 PersistentShell 实例 — 小沈 2026-07-30
         cleanup_shell_pool_by_task(task_id)
 
-        # 标记生产者结束，唤醒消费者；延迟回收缓冲以支持重连窗口 — 小欧 2026-07-12
         if buffer is not None:
             buffer.done.set()
+            # 2026-09-12 小欧 - 追踪关键点: done 置位为本 SSE 流的"权威结束信号"(所有事件含 final_stats 已 publish);
+            #   done 置位后立即快照缓冲状态, 供后续核对——若置位时末类型非 final_stats 即 SSE 会被提前关闭,
+            #   对照 [Runner] final_stats 已发布 seq 定位根源(E2E-X2-01 竞态监控点) — 小欧-2026-09-12
+            _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
+            _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
+            logger.info(f"[Runner] done置位(task={task_id}, event_log_len={len(buffer.event_log or [])}, "
+                        f"last_type={_tail_type}, has_final_stats={_has_fs})")  # 小欧-2026-09-12 追踪点
             # 必须持锁调 notify_all(同 _append), 否则 RuntimeError — 小欧 2026-07-13
             async with buffer.cond:
                 buffer.cond.notify_all()

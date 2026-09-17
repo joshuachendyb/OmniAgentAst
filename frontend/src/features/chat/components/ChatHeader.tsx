@@ -4,6 +4,7 @@
 // 编辑历史: 2026-08-27 小欧 - 去头像-C1: 删ChatHeader内RobotOutlined代头像(顶栏"会话"标签), 仅留文字+渐变竖线锚点, 不扩至全局Layout
 // 编辑历史: 2026-08-28 小欧 - ②A/a1: 标题字号统一14+500/400, 分割线渐变→solid #f0f0f0令牌化, 令牌化去跳动
 // 编辑历史: 2026-08-28 小欧 - ②D/d1: 点击域收敛至标题段+Tooltip点击编辑, Input 200→min(280px,40vw)响应式, 去Space冗余
+// 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 顶栏标题显示截断用常量SESSION_TITLE_DISPLAY_MAX=10(超长…省略), 悬停仍"点击编辑标题"点进编辑框看全文; 同步生成端useChatSend取消截断改存全量标题
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  *
@@ -26,6 +27,11 @@ import {
   showSaveError,
   showSessionConflict,
 } from '../../../utils/chatMessages';
+
+/** 顶栏会话标题显示最大长度（北京老陈定案 2026-09-13：超长只显示前N字+…，点进编辑框看全文；生成端存全量标题不截断）
+ *  编辑历史: 2026-09-13 小欧 - 常量抽提名(替代裸露字面量10, 与生成端口径解耦) - 小欧-2026-09-13
+ *  编辑历史: 2026-09-17 小沈 - 截断字数 10→20→15, 顶栏标题截断15字 - 小沈-2026-09-17 */
+const SESSION_TITLE_DISPLAY_MAX = 15;
 
 interface ChatHeaderProps {
   // 核心状态
@@ -181,7 +187,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
               }
             }}
           >
-            {sessionTitle || '未命名会话'}
+            {sessionTitle
+              ? sessionTitle.length > SESSION_TITLE_DISPLAY_MAX
+                ? `${sessionTitle.slice(0, SESSION_TITLE_DISPLAY_MAX)}…`
+                : sessionTitle
+              : '未命名会话'}
             {!titleLocked ? (
               <Tooltip title="AI自动生成的标题">
                 <InfoCircleOutlined

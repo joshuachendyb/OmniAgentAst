@@ -14,12 +14,16 @@
  */
 
 import React, { Suspense, lazy } from 'react';
+// 编辑历史: 2026-09-09 小欧 - 根挂 ErrorBoundary 包住 RouterContent: 渲染期异常(含 dev HMR hook 变更崩溃)
+//   从整页白屏降级为 Result 提示 + 一键刷新 — 小欧-2026-09-09
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
 import ChatPage from './pages/ChatPage';
 import { AppProvider } from './contexts/AppContext';
 // 编辑历史: 2026-08-28 小欧 - 挂载AntdAppBridge桥接antd<App>上下文message/notification实例 - 小欧-2026-08-28
 import { AntdAppBridge } from './lib/antd/bridge';
+// 2026-09-09 小欧: 应用级错误边界(渲染异常白屏兜底)
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));
@@ -81,7 +85,9 @@ const App: React.FC = () => {
     <BrowserRouter unstable_useTransitions={false}>
       <AppProvider>
         <AntdAppBridge />
-        <RouterContent />
+        <ErrorBoundary>
+          <RouterContent />
+        </ErrorBoundary>
       </AppProvider>
     </BrowserRouter>
   );

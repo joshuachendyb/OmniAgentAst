@@ -4,6 +4,15 @@
 // 2026-08-27 小欧 - 修复step-5/step-6: 恢复getStep*/isValidStepType/getAllStepTypes(被误删), 以最小stepMeta映射替代已删colorSchemes(禁止backward), action_tool须被拒
 // 2026-08-28 小沈 - 修复review-bugs#6: isValidStepType改hasOwnProperty, 防toString/__proto__原型污染 - 小沈-2026-08-28
 // 2026-08-28 小欧 - 三堂会审v1.3(P0): Colors.TEXT扩5档灰(PRIMARY#595959/SECONDARY#8c8c8c/TERTIARY#999/WEAK#888/STRONG#333), 消灰阶硬码复发(H3); FontSize.SECONDARY 13→12 废13档统一14/12二档(M2) - 小欧-2026-08-28
+// 2026-09-06 小欧 - B2(北京老陈定案: 灰字不醒目): Colors 新增功能色 ORANGE_RED=#fa541c(AntD5 volcano-6 火山橘红)——工具"未执行/被安全拦截/确认超时"提示色, 替代灰字 T.SECONDARY(占位) 与 WARNING(中断)；与 AuthorizationModal 倒计时告急色(已用 #fa541c)一致, 与齿轮橘#fa8c16/警告橙#faad14 同色带不冲突 ERROR 红#ff4d4f - 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StepType/cancelled分支与stepMeta cancelled条目(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-09-09 小欧 - P1-6: WARNING #faad14→#AD6800(白底对比度≥4.5:1), 全链统一(6 处引用同步增强) — 小欧-2026-09-09
+// 编辑历史: 2026-09-11 小欧 - 第七章 M3b/M3c(title段独立+折叠区复合兜底): 新增公用 TokenLayer 类型 + formatTokenCompact/formatTokenFull(DRY)——TitleBlock/StaticStatsBlock 四组 token 格式化复用, 全层不重复实现 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 三堂会审P1-3/P1-4: TokenLayer 字段定为 number|undefined(null 不入类型), 三处 props 统一复用本类型; 补本条前漏记的历史记录 — 小欧-2026-09-11
+// 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
+// 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
+// 编辑历史: 2026-09-15 小欧 - [40]第一阶段S5/S6: Colors 新增 FOLD_COLLAPSED/FOLD_EXPANDED(主折叠箭头蓝/粉, 2026-09-13定案) 与 ERROR_BG/ERROR_BORDER(错误警示条), 消除 CircleArrow 双色与警示条硬编码 — 小欧-2026-09-15
+import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
  *
@@ -32,7 +41,6 @@ export type StepType =
   | 'truncated'
   | 'final'
   | 'error'
-  | 'cancelled'
   | 'paused'
   | 'resumed'
   | 'retrying'
@@ -126,12 +134,18 @@ export const Colors = {
     DEFAULT: '#d9d9d9', // 中边框（通用嵌套旧值，逐步收敛至 VERTICAL）
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
   },
-  // 功能颜色（5种）
+  // 功能颜色（6种）
   PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
-  WARNING: '#faad14', // 警告/思考状态 - 橙色(AntD5默认警告色, 收敛)
+  ERROR_BG: '#fff1f0', // 错误浅底(错误警示条背景, [40]第一阶段S6令牌化) — 小欧-2026-09-15
+  ERROR_BORDER: '#ffa39e', // 错误浅框(错误警示条边框, [40]第一阶段S6令牌化) — 小欧-2026-09-15
+  FOLD_COLLAPSED: '#4096ff', // 主折叠箭头-收起态蓝(2026-09-13定案, [40]第一阶段S5令牌化) — 小欧-2026-09-15
+  FOLD_EXPANDED: '#ff4d94', // 主折叠箭头-展开态粉(2026-09-13定案, [40]第一阶段S5令牌化) — 小欧-2026-09-15
+  WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, P1-6 定案 3.7)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
+  ORANGE_RED: '#fa541c', // 未执行/被安全拦截/确认超时提示 - 火山橘红(AntD5 volcano-6, 2026-09-06 北京老陈定案 替灰字不醒目) — 小欧-2026-09-06
+  WAIT_ACTION: '#fa8c16', // 工具执行等待齿轮橘(ToolWaitingIcon loader, 北京老陈钦定名 WAIT_ACTION, 与 ORANGE_RED/WARNING 同色带不冲突) — 小欧-2026-09-14
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
 } as const;
 
@@ -175,7 +189,6 @@ const stepMeta: Record<StepType, StepMeta> = {
   truncated: { label: '✂️ 截断', priority: 'secondary', layout: 'inline' },
   final: { label: '✅ 完成', priority: 'primary', layout: 'block' },
   error: { label: '❌ 错误', priority: 'primary', layout: 'block' },
-  cancelled: { label: '⚠️ 已取消', priority: 'primary', layout: 'block' },
   paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
   resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
   retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
@@ -226,4 +239,34 @@ export const shouldBreakLine = (stepType: StepType | string): boolean => {
 
 export const hasExpandableDetails = (stepType: StepType | string): boolean => {
   return getStepLayout(stepType) === 'inline-with-details';
+};
+
+// 2026-09-14 小欧 - DRY: ThinkingStream/TextStream 公共样式(whiteSpace/wordBreak/margin)提取, 消重复 — 小欧-2026-09-14
+export const getStreamStyle = (compact: boolean): CSSProperties => ({
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+  margin: stepMargin(compact),
+});
+
+// 2026-09-11 小欧: token四组公用格式化(DRY) — TitleBlock/StaticStatsBlock 复用
+export type TokenLayer =
+  | {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    }
+  | null
+  | undefined;
+
+export const formatTokenCompact = (
+  label: string,
+  t: TokenLayer
+): string | null => {
+  if (!t) return null;
+  return `${label} P:${t.prompt_tokens ?? '-'} C:${t.completion_tokens ?? '-'} T:${t.total_tokens ?? '-'}`;
+};
+
+export const formatTokenFull = (t: TokenLayer): string => {
+  if (!t) return '-';
+  return `P ${t.prompt_tokens ?? '-'} / C ${t.completion_tokens ?? '-'} / T ${t.total_tokens ?? '-'}`;
 };

@@ -1,6 +1,10 @@
 // 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 任务取消/暂停控制对齐final_cancel事件(7.7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-19删内层finally/20 抽callCancelApi/waitForCancelOrTimeout/resetUiFlags编排
 // 编辑历史: 2026-08-28 小强 - hooks修复#15: waitForCancelOrTimeout加5s超时兜底Promise.race, 防永久挂起
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「与后端消息不匹配的必须一致起来」): 3 处「cancelled 事件」文案
+//   对齐后端现行取消终态契约 type=final+outcome=cancelled(waitForCancelEvent 2处 + handleCancel 1处)——取消事件已不存在,
+//   取消收尾单一由 final+outcome=cancelled 承担(sseParser 4.4.1 所述), 日志反映系统实际 — 小欧-2026-09-09
+// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F2/F4'代号, 改描述性术语(与commit b79b79b清理口径一致) — 小欧-2026-09-15 20:13:04
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -115,39 +119,6 @@ export const useChatTaskControl = (
   const { disconnect } = functions;
 
   // =========================================================================
-  // 内部辅助函数
-  // =========================================================================
-
-  /**
-   * 智能等待取消事件函数
-   * 等待后端发送 cancelled 事件，最多等待 maxWaitTime
-   */
-  const waitForCancelEvent = useCallback(
-    async (maxWaitTime = 3000, checkInterval = 200): Promise<boolean> => {
-      const startTime = Date.now();
-      let hasReceivedEvent = false;
-
-      while (Date.now() - startTime < maxWaitTime) {
-        if (hasReceivedCancelEventRef.current) {
-          console.log('[waitForCancelEvent] 已收到 cancelled 事件');
-          hasReceivedEvent = true;
-          break;
-        }
-        await new Promise((resolve) => setTimeout(resolve, checkInterval));
-      }
-
-      if (!hasReceivedEvent) {
-        console.warn(
-          `[waitForCancelEvent] 在 ${maxWaitTime}ms 内未收到 cancelled 事件，继续执行`
-        );
-      }
-
-      return hasReceivedEvent;
-    },
-    [hasReceivedCancelEventRef]
-  );
-
-  // =========================================================================
   // 任务控制函数
   // =========================================================================
 
@@ -174,15 +145,6 @@ export const useChatTaskControl = (
     []
   );
 
-  // 2026-08-28 小强 修复#15: Promise.race加5s硬超时兜底, 防waitForCancelEvent内部轮询永久挂起
-  const waitForCancelOrTimeout = useCallback(async (): Promise<void> => {
-    const cancelPromise = waitForCancelEvent(3000, 200);
-    const timeoutPromise = new Promise<boolean>((resolve) => {
-      setTimeout(() => resolve(false), 5000);
-    });
-    await Promise.race([cancelPromise, timeoutPromise]);
-  }, [waitForCancelEvent]);
-
   /**
    * handleCancel - 取消正在执行的任务
    *
@@ -193,55 +155,41 @@ export const useChatTaskControl = (
    * 4. 断开SSE连接
    * 5. 更新UI状态
    */
+  // 2026-09-15 小欧 [41]v1.3: 删强断连病根+取消失败复位点唯一化
+  // 取消确认由 SSE 自然流到达的 final+cancelled 承载，前端不再主动 disconnect
   const handleCancel = useCallback(async () => {
     // 【防重复点击】如果正在取消中，忽略后续点击
     if (cancelInProgressRef.current) {
-      console.log('[handleCancel] 正在取消中，忽略重复点击');
       return;
     }
     cancelInProgressRef.current = true;
 
     const taskIdToCancel = serverTaskId;
-    console.log(
-      `[handleCancel] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`
-    );
 
     try {
       if (taskIdToCancel) {
         try {
           showTaskControlInfo('正在取消任务...');
-          console.log("[handleCancel] 已显示 '正在取消任务...' 提示");
 
           // ✅【方案1】立即更新UI状态，给用户即时反馈
           resetUiFlags();
 
           // ✅【关键修复】不立即断开连接！等待后端发送cancelled/final事件
           const result = await callCancelApi(taskIdToCancel, sessionId);
-          console.log('[handleCancel] cancel API 返回:', result);
 
-          // ✅ 使用智能等待策略等待后端发送cancelled事件
-          await waitForCancelOrTimeout();
+          // 删除多余等待: await waitForCancelOrTimeout() — 死代码（3s<5s，5s分支永不触发）
 
           // ✅ 停止所有进行中的倒计时
           if (waitTimerRef.current) {
             clearInterval(waitTimerRef.current);
             waitTimerRef.current = null;
-            console.log('[handleCancel] 已清除waitTimerRef倒计时');
           }
 
-          disconnect(true, true, () => {
-            console.log('[handleCancel] SSE已断开，状态已同步');
-            // 在断开连接完成后重置标记
-            hasReceivedCancelEventRef.current = false;
-          });
-          console.log('[handleCancel] 已调用 disconnect(true)');
+          // 删除强制断连 disconnect(true, true) — 病根（掐死SSE通道，丢final帧的唯一动作）
 
           // 显示后端返回的具体消息
           showTaskResultMessage('cancel', result.message);
-          console.log('[handleCancel] 已显示取消成功提示');
         } catch (error) {
-          console.error('[handleCancel] 错误:', error);
-
           // 【增强错误处理】区分错误类型并给出明确提示
           let errorMessage = '取消请求失败';
           if (error instanceof Error) {
@@ -265,45 +213,31 @@ export const useChatTaskControl = (
           // ✅ 即使出错也要确保UI状态更新
           resetUiFlags();
 
-          // 【重试机制】错误情况下也等待cancelled事件
-          let retries = 0;
-          while (retries < 3) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            if (hasReceivedCancelEventRef.current) {
-              console.log('[handleCancel] 异常情况下仍收到 cancelled 事件');
-              break;
-            }
-            retries++;
-          }
-          hasReceivedCancelEventRef.current = false;
-          // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
-          disconnect(true, true);
-
-          console.log('[handleCancel] 已处理异常，强制断开SSE连接');
+          // 取消失败/无取消终态帧路径兜底：显式复位闸，防取消闸永锁
+          cancelInProgressRef.current = false;
         }
       } else {
-        console.warn('[handleCancel] 没有有效的 taskId，可能任务尚未开始');
-
-        // 【问题4修复】即使没有taskId，也要更新UI状态并断开连接
+        // 【问题4修复】即使没有taskId，也要更新UI状态
         resetUiFlags();
 
-        // 断开SSE连接
-        // 2026-08-27 小欧 修复#10: 新签名 (stopServer, force), force=true 使 manualDisconnect=true 禁止自动重连
-        disconnect(true, true);
+        // 无taskId路径兜底：显式复位闸，防取消闸永锁
+        cancelInProgressRef.current = false;
 
         // 显示提示
         showTaskResultMessage('cancel', '任务尚未开始或已结束，请求已取消');
       }
     } finally {
-      // 兜底：确保取消标志重置（保留外层，删内层重复重置）
-      cancelInProgressRef.current = false;
+      // 复位点唯一化：finally不再无条件复位（成功取消路径由取消终态帧 isCancelEvent 分支复位）
+      // 仅保留兜底：若 try/catch 都未复位（极端异常），finally 兜底防永久锁死
+      if (cancelInProgressRef.current) {
+        cancelInProgressRef.current = false;
+      }
     }
   }, [
     serverTaskId,
     sessionId,
     resetUiFlags,
     callCancelApi,
-    waitForCancelOrTimeout,
     waitTimerRef,
     disconnect,
     hasReceivedCancelEventRef,
@@ -331,7 +265,6 @@ export const useChatTaskControl = (
           serverTaskId ?? undefined,
           sessionId ?? undefined
         );
-        console.log('⏸️ [handleTogglePause] 已发送暂停请求，后端返回:', result);
 
         // 更新前端暂停状态
         setIsPaused(true);
@@ -345,7 +278,6 @@ export const useChatTaskControl = (
           serverTaskId ?? undefined,
           sessionId ?? undefined
         );
-        console.log('▶️ [handleTogglePause] 已发送恢复请求，后端返回:', result);
 
         // 更新前端暂停状态
         setIsPaused(false);
@@ -355,7 +287,6 @@ export const useChatTaskControl = (
         showTaskResultMessage('resume', result.message);
       }
     } catch (error) {
-      console.error('❌ [handleTogglePause] 暂停/继续请求失败:', error);
       // 使用统一错误处理中心 - 任务控制失败
       handleError(error, { source: 'api' });
     }

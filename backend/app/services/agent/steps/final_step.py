@@ -19,6 +19,9 @@
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: FinalStep 新增 task/session/chain_accumulated_tokens 三参数+三@property+_extra_fields 三键输出, 承载四层 token 累计透传至前端
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.5: model/provider 分离入参 → final_model: Optional[ModelRef]
 #   单结构承载(不留裸 model/provider 委托 property, 与基类裁定一致); SSE 裸键由 _extra_fields 派生
+# 2026-09-08 小欧 - 方案五(6.6.2 A-G): FinalStep 新增 cancel_source 可选参数(缺省"" 向后兼容), 取消终态来源
+#   随 _extra_fields 落库/SSE下发, 前端据此展示取消原因文案(A-G 全覆盖) — 小欧-2026-09-08
+# 2026-09-11 小欧 — [27]方案: 新增 duration 可选字段, 运行时长实时唯一源(now - _run_start_ts, 与 DB update_task 同源), 随 _extra_fields 下发
 
 from typing import Any, Dict, Literal, Optional
 
@@ -45,7 +48,9 @@ class FinalStep(ReasoningStep):
         session_accumulated_tokens: Optional[Dict[str, int]] = None, # 11.1 新增
         chain_accumulated_tokens: Optional[Dict[str, int]] = None,   # 11.1 新增（计算派生，不落库）
         reasoning: str = "",
+        cancel_source: str = "",  # 方案五(6.6.2): 取消来源(user_requested/client_disconnect_timeout/config_limit/status_inconsistency/orchestrator_error) — 小欧-2026-09-08
         timestamp: Optional[str] = None,
+        duration: Optional[float] = None,  # [27] 运行时长实时唯一源 — 小欧 2026-09-11
     ):
         ReasoningStep.__init__(self, step, timestamp)
         self._response = response
@@ -58,6 +63,8 @@ class FinalStep(ReasoningStep):
         self._session_accumulated_tokens = session_accumulated_tokens # 11.1 新增
         self._chain_accumulated_tokens = chain_accumulated_tokens     # 11.1 新增
         self._reasoning = reasoning
+        self._cancel_source = cancel_source
+        self._duration = duration  # [27] 运行时长 — 小欧 2026-09-11
 
     def get_content(self) -> str:
         return self._response
@@ -81,6 +88,15 @@ class FinalStep(ReasoningStep):
     @property
     def reasoning(self) -> str:
         return self._reasoning
+
+    @property
+    def cancel_source(self) -> str:
+        return self._cancel_source
+
+    @property
+    def duration(self) -> Optional[float]:
+        """[27] 运行时长实时唯一源 — 小欧 2026-09-11"""
+        return self._duration
 
     @property
     def final_model(self) -> Optional[ModelRef]:
@@ -118,4 +134,6 @@ class FinalStep(ReasoningStep):
             "session_accumulated_tokens": self._session_accumulated_tokens, # 11.1 新增
             "chain_accumulated_tokens": self._chain_accumulated_tokens,     # 11.1 新增
             "reasoning": self._reasoning,
+            "cancel_source": self._cancel_source,
+            "duration": self._duration,  # [27] 运行时长实时唯一源 — 小欧 2026-09-11
         }

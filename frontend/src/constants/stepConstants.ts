@@ -5,6 +5,7 @@
  * @version 1.0
  * @since 2026-04-20
  */
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删STEP_LABEL_MAP/STEP_ICON_MAP的cancelled条目(取消收尾单一由final+cancelled承担)
 
 export const STEP_LABEL_MAP: Record<string, string> = {
   start: '开始',
@@ -16,7 +17,6 @@ export const STEP_LABEL_MAP: Record<string, string> = {
   error: '错误',
   paused: '暂停',
   resumed: '恢复',
-  cancelled: '已取消',
   retrying: '重试',
   rate_limit: '限流',
 };
@@ -31,7 +31,6 @@ export const STEP_ICON_MAP: Record<string, string> = {
   error: '❌',
   paused: '⏸️',
   resumed: '▶️',
-  cancelled: '⚠️',
   retrying: '🔄',
   rate_limit: '🚧',
 };

@@ -20,10 +20,30 @@
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 for循环改for...of去下标, 代码更简洁
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 thought/action/observation case简化: if(paused)running/if(failed)running+_badgeRecovered
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 保留_badgeRecovered守卫防liveErrorText覆盖回failed
+// 编辑历史: 2026-09-08 小欧 - 「前端UI静默10秒整批显示」修复(北京老陈批准): thought/action/observation 补
+//   idle→running 恢复——业务 step 到达即证执行中, 防 SSE receiving=false 窗内 startinfo 门(:207-208)
+//   每次重算把 badge 压回 idle 致 RightViewer.isCurrentLive(:125-129)翻 false(streaming=false 停齿轮 +
+//   displaySteps 切历史视图 + liveSteps 静默压栈 + 重连整批回放); 2026-09-02 三态并集修复被击穿的根治 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定): 第5参 liveErrorText✗ string 改 liveError?: LiveError|null
+//   (P3数据源对象形态) + LiveMeta 补 requestLevel(位4图标分层用; retrying/truncated 恒执行级false) +
+//   detail分支/兜底/candidates/依赖同步改造 — 小欧-2026-09-08
+// 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB
+//   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。badge 派生"业务step到达即证执行中"
+//   剔除 'thought'(thought-start/action/observation 仍实时, idle→running 恢复语义不变) — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: 实时分支usage兜底由frames.usage改{0,0,0}(frames.usage已删, taskAccumulated单一真源) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 补 thought-start badge 分支: 对齐 09-11 契约化注释(thought-start 仍实时兜住 idle→running),
+//   thought-start 系"开始思考"实时信号, 到达即证执行中, 防 RightViewer 误切历史视图 — 小欧-2026-09-12
+// 编辑历史: 2026-09-14 小欧 [36]删 receiving(方案A, 北京老陈批准): 签名五参→四参 (steps, frames, detail?, liveError?);
+//   改动点② startinfo 门去掉 receiving 依赖改无条件 running(断连窗不压 idle);
+//   deps 去 receiving; DBG-3c 日志同步去 receiving 槽位 — 小欧-2026-09-14
+// 编辑历史: 2026-09-17 小欧 会审V3整改(#2/#3): ProcessEvent.kind 去 'heartbeat'(SSE协议层:ping 永非事件), 删 steps 遍历 case 'rejected'(永不落库/不入steps 死代码), rejected 事件实时走 onRejected 点名条链路 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小沈 - 事件排序改为正序(最早在上): 去除 recentEvents.reverse(), processEvents 按时间正序输出 — 小沈-2026-09-17
+// 编辑历史: 2026-09-17 小欧 会审V3(#5)修复 复核三遍: failed 终态事件 kind: 'final' → 'error'(原用 final 对勾图标
+//   致失败任务事件列表显示成功绿勾, 成功/失败不可区分; 改 error 走 WarningOutlined 警告图标) — 小欧-2026-09-17
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
- * 【小欧 2026-08-26 8.6 / R1 修正】
+ * 【小欧 2026-08-26 8.6 / 修正】
  * - B2：输入=全量 executionSteps（final 是业务类型，此前只喂 meta 流导致
  *   completed/failed 徽标成死分支）+ metaFrames（统计类通知，见 8.4.14）；
  *   注：error 事件不入 executionSteps（8.4.5），失败徽标由 final.outcome='failed'
@@ -38,23 +58,35 @@
 
 import { useMemo } from 'react';
 import type { ExecutionStep } from '../../../types/execution'; // 编辑历史: 2026-08-28 小欧 - BUG16b修复: ExecutionStep统一从types/execution导入
-import type { TaskMetaFrames } from '@/types/sse';
+import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
 import type { TaskDetail } from '../../../services/api/task.api';
 
 /** 卡死预警阈值：llm_call_count ≥ step_count×STUCK_RATIO 视为疑似死循环（待定案） */
 export const STUCK_RATIO = 3;
 
 export interface ProcessEvent {
-  kind: 'started' | 'paused' | 'resumed' | 'retrying';
+  // 2026-09-17 小欧 会审V3(#2): kind 删除 'heartbeat'——后端心跳是 SSE 协议层 ":ping", 永不为 ProcessEvent;
+  //   'rejected' 保留(8类过程事件之一, 现无数据源仅为类型防御, 见下 case) — 小欧-2026-09-17
+  kind:
+    | 'started'
+    | 'paused'
+    | 'resumed'
+    | 'retrying'
+    | 'error'
+    | 'rejected'
+    | 'cancelled'
+    | 'final';
   text: string;
   time: number;
 }
 
-// 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级)
+// 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级);
+// 2026-09-08 小欧 6.3.4: 补 requestLevel(位4图标分层——error 请求级⛔/执行级红圆底白×; retrying/truncated 恒执行级false) — 小欧-2026-09-08
 export interface LiveMeta {
   kind: 'retrying' | 'error' | 'truncated';
   text: string;
   time: number;
+  requestLevel: boolean;
 }
 
 export type TaskBadge =
@@ -68,13 +100,17 @@ export type TaskBadge =
 export const useTaskInfo = (
   steps: ExecutionStep[],
   frames: TaskMetaFrames,
-  receiving: boolean,
   detail?: TaskDetail | null,
-  liveErrorText?: string | null // 小欧 2026-09-02: 位4 error 实时源(可选: TS1016 必选不能跟在可选后, 语义不变——undefined 时 candidates 不含 error)
+  // 小欧 2026-09-02+09-08: 位4 error 实时源(P3数据源对象形态; undefined 时 candidates 不含 error)
+  liveError?: LiveError | null
+  // 2026-09-14 小欧 [36]删 receiving 参数(方案A, 北京老陈批准): 断连窗已由 startinfo 门无条件 running
+  //   平滑承接, receiving=SSE连接级信号不再参与徽标派生; 新签名四参 (steps, frames, detail?, liveError?) — 小欧-2026-09-14
 ) => {
   return useMemo(() => {
     // 2026-09-03 小欧/北京老陈: 单真源 — hasFailedFinal 一处算(DRY)，detail/实时双分支复用
-    const hasFailedFinal = steps.some((s) => s.type === 'final' && s.outcome === 'failed') || frames.finalStats?.final_status === 'failed';
+    const hasFailedFinal =
+      steps.some((s) => s.type === 'final' && s.outcome === 'failed') ||
+      frames.finalStats?.final_status === 'failed';
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
     if (detail) {
       const map: Record<string, TaskBadge> = {
@@ -87,7 +123,19 @@ export const useTaskInfo = (
       const u = detail.accumulated_usage;
       // 2026-09-03 小欧/北京老陈: detail分支单真源 — detail.status滞后时以 final/liveError 为准强制 failed
       let badge: TaskBadge = map[detail.status] ?? 'idle';
-      if (hasFailedFinal || detail.status === 'failed' || detail.error_type || liveErrorText) badge = 'failed';
+      if (
+        hasFailedFinal ||
+        detail.status === 'failed' ||
+        detail.error_type ||
+        liveError
+      )
+        badge = 'failed';
+      // 2026-09-11 小欧 DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed - 小欧-2026-09-11
+      if (
+        badge === 'running' &&
+        ((detail.duration != null && detail.duration > 0) || detail.updated_at)
+      )
+        badge = 'completed';
       return {
         badge,
         elapsedSec: detail.duration ?? 0,
@@ -116,10 +164,12 @@ export const useTaskInfo = (
     let badge: TaskBadge = 'idle';
     const processEvents: ProcessEvent[] = [];
     // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
+    // 2026-09-08 小欧 6.3.4: retrying 恒执行级(requestLevel=false) — 小欧-2026-09-08
     let latestProcessEvent: {
       kind: 'retrying';
       text: string;
       time: number;
+      requestLevel: false;
     } | null = null;
     // 2026-09-03 小欧 P6修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
     let _badgeRecovered = false;
@@ -157,25 +207,64 @@ export const useTaskInfo = (
             kind: 'retrying',
             text: s.content || '正在重试',
             time: s.timestamp,
+            requestLevel: false, // 2026-09-08 小欧 6.3.4: 过程事件恒执行级 — 小欧-2026-09-08
           };
           break;
         case 'final':
-          if (s.outcome === 'cancelled') badge = 'cancelled';
-          else if (s.outcome === 'failed') badge = 'failed';
-          else badge = 'completed';
+          if (s.outcome === 'cancelled') {
+            badge = 'cancelled';
+            processEvents.push({
+              kind: 'cancelled',
+              text: s.content || '任务已取消',
+              time: s.timestamp,
+            });
+          } else if (s.outcome === 'failed') {
+            badge = 'failed';
+            // 2026-09-17 小欧 会审V3(#5): failed 终态事件用 error 图标(警告), 不再用 final 对勾(成功/失败区分) — 小欧-2026-09-17
+            processEvents.push({
+              kind: 'error',
+              text: s.content || '任务失败',
+              time: s.timestamp,
+            });
+          } else {
+            badge = 'completed';
+            processEvents.push({
+              kind: 'final',
+              text: s.content || '任务已完成',
+              time: s.timestamp,
+            });
+          }
           break;
         case 'error':
           // 防御遗留库数据（error 现不入 executionSteps，见 8.4.5）；实时失败走 final.outcome
           badge = 'failed';
+          processEvents.push({
+            kind: 'error',
+            text: s.content || '发生错误',
+            time: s.timestamp,
+          });
           break;
-        case 'thought':
+        // 2026-09-17 小欧 会审V3(#3): 原 case 'rejected' 已删除——rejected 不落库(库表无此 type)且
+        //   sseParser rejected 分支不入 executionSteps, steps 遍历永无 rejected, 判空分支死代码(YAGNI);
+        //   拒绝事件实时走 onRejected → deniedEntries 点名条链路, 不经 TaskInfoBar 事件列表 — 小欧-2026-09-17
+        // 2026-09-11 小欧 契约化(method2): thought=仅历史回显事件(DB), 实时 SSE 永不发,
+        //   执行中信号剔除 thought(thought-start/action/observation 仍实时兜住 idle→running) — 小欧-2026-09-11
+        case 'thought-start':
         case 'action':
         case 'observation':
+          // 2026-09-08 小欧 - 前端UI静默10秒整批显示修复(北京老陈批准, 文档:
+          //   doc-9月优化/前端UI静默10秒整批显示问题分析与修复方案-小欧-2026-09-08.md):
+          //   业务 step(thought/action/observation)到达即证任务执行中, 补 idle→running 恢复,
+          //   防 SSE receiving=false 窗内 startinfo 门(207-208)把 badge 压回 idle,
+          //   致 RightViewer.isCurrentLive 翻 false(停齿轮+切历史视图+整批回放)
+          //   ——2026-09-02 三态并集修复被击穿的根因 — 小欧-2026-09-08
+          if (badge === 'idle') badge = 'running';
           if (badge === 'paused') badge = 'running';
           if (badge === 'failed') {
             badge = 'running';
             _badgeRecovered = true;
           }
+          // [DEBUG-3b] 2026-09-09 北京老陈 badge fix 命中
           break;
         default:
           break;
@@ -186,7 +275,7 @@ export const useTaskInfo = (
     if (hasFailedFinal) {
       badge = 'failed';
     } else if (
-      liveErrorText &&
+      liveError &&
       !_badgeRecovered &&
       badge !== 'failed' &&
       badge !== 'cancelled' &&
@@ -196,8 +285,11 @@ export const useTaskInfo = (
     }
     // ② startinfo 帧 -> "任务已开始"过程条首行 + 执行中徽标（B33：有帧才亮）
     // startinfo 仅存在于 metaFrames（8.4.3），时间戳取 start 事件的 startTimestamp
-    if (hasStartInfo && badge === 'idle')
-      badge = receiving ? 'running' : 'idle';
+    // 2026-09-14 小欧 [36]改动点②(北京老陈批准): startinfo 门改无条件 running——SSE 断连窗(receiving 已删)
+    //   不再把 badge 压回 idle, RightViewer.isCurrentLive 不翻 false, 根治09-08「前端UI静默10秒整批显示」 — 小欧-2026-09-14
+    if (hasStartInfo && badge === 'idle') {
+      badge = 'running';
+    }
     if (hasStartInfo) {
       processEvents.unshift({
         kind: 'started',
@@ -222,11 +314,25 @@ export const useTaskInfo = (
     }
 
     // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
-    const now = Date.now();
+    // 2026-09-08 小欧 6.3.4: detail 分支直接入 candidates(旧文本丢入 meta, 语义]]), wait 2026年:
+    //   error 项用 liveError(LiveError 对象) 携带 requestLevel; truncated/retrying 恒执行级(false) — 小欧-2026-09-08
+    // 小欧 2026-09-09 P2-14: 时间源改从末条步骤/帧取(useMemo 幂等), 不再依赖 Date.now()
+    //   顺序: 末条业务 step 时间 → 帧 started 时间; 均无时回退 Date.now()(与现状等价)
+    //   注: 不取"帧 started 时间优先"(文档 6.5.5 字面)——旧时间会令新到的 error/truncated 在排序中输给近期过程事件,
+    //   G4 新信号被遮(退化); 且 startTimestamp 为 0 时 `??` 不穿透。末条步骤时间恒 ≥ latestProcessEvent 时间,
+    //   新信号 candidates 前置保序, 与现状 winner 等价 — 小欧-2026-09-09
+    const now =
+      steps[steps.length - 1]?.timestamp || frames.startTimestamp || Date.now();
     const candidates: LiveMeta[] = [
-      ...(latestProcessEvent ? [latestProcessEvent] : []),
-      ...(liveErrorText
-        ? [{ kind: 'error' as const, text: liveErrorText, time: now }]
+      ...(liveError
+        ? [
+            {
+              kind: 'error' as const,
+              text: liveError.text,
+              time: now,
+              requestLevel: liveError.requestLevel, // 位4 图标分层:S2 请求级 step=0 判定打标(S3 判定来源转"后端业务错误"再取) — 小欧-2026-09-08
+            },
+          ]
         : []),
       ...(frames.truncated?.content
         ? [
@@ -234,9 +340,11 @@ export const useTaskInfo = (
               kind: 'truncated' as const,
               text: frames.truncated.content,
               time: now,
+              requestLevel: false, // 截断提示恒执行级 — 小欧-2026-09-08
             },
           ]
         : []),
+      ...(latestProcessEvent ? [latestProcessEvent] : []),
     ];
     const liveMeta = candidates.sort((a, b) => b.time - a.time)[0] ?? null;
 
@@ -246,22 +354,23 @@ export const useTaskInfo = (
       stepCount,
       llmCallCount,
       retryCount: stats?.retry_count ?? 0,
+      // 2026-09-12 小欧 P1-11: usage 兜底由 frames.usage 改 {0,0,0}(frames.usage 已删, taskAccumulated 单一真源) — 小欧-2026-09-12
       usage: frames.taskAccumulated
         ? {
             prompt: frames.taskAccumulated.prompt_tokens ?? 0,
             completion: frames.taskAccumulated.completion_tokens ?? 0,
             total: frames.taskAccumulated.total_tokens ?? 0,
           }
-        : frames.usage,
+        : { prompt: 0, completion: 0, total: 0 },
       roundUsage: frames.roundUsage ?? null,
       taskAccumulated: frames.taskAccumulated ?? null,
       sessionAccumulated: frames.sessionAccumulated ?? null,
       chainAccumulated: frames.chainAccumulated ?? null,
       overview: frames.contextOverview,
       truncatedTip: frames.truncated?.content ?? null,
-      processEvents: recentEvents.reverse(), // 新事件插顶，保留最近20条
+      processEvents: recentEvents, // 最早事件在上，保留最近20条
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
-  }, [steps, frames, receiving, detail, liveErrorText]);
+  }, [steps, frames, detail, liveError]);
 };

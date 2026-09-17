@@ -61,6 +61,8 @@ export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
   return (
     <Modal
       open={visible}
+      transitionName="" // 2026-09-16 老杨S1禁入场动画; 2026-09-16 小欧:motion/role/aria-modal非合法ModalProps, motion改transitionName空串, role/aria删除(antd默认渲染role=dialog+aria-modal=true零退化) - 小欧-2026-09-16
+      maskTransitionName=""
       title={null}
       footer={null}
       closable={false}
@@ -144,12 +146,17 @@ export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
             fontSize: 14,
           }}
         >
-          ⚠️ 此操作可能对项目文件造成影响，请确认是否继续？
+          此操作可能对项目文件造成影响，请确认是否继续？
         </Text>
 
         {/* 按钮组 */}
         <Space size="middle">
-          <Button onClick={onCancel} size="large" disabled={loading}>
+          <Button
+            onClick={onCancel}
+            size="large"
+            disabled={loading}
+            aria-label="取消此操作"
+          >
             取消
           </Button>
           <Button
@@ -157,6 +164,7 @@ export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
             onClick={onConfirm}
             size="large"
             loading={loading}
+            aria-label="确认执行此危险操作"
             style={{
               backgroundColor: '#faad14',
               borderColor: '#faad14',

@@ -25,7 +25,10 @@ interface ChatInputProps {
   loading: boolean;
   isReceiving: boolean;
   isPaused: boolean;
-  onSend: (content: string, contextLinkMode?: 'linked' | 'independent') => void | Promise<void>;
+  onSend: (
+    content: string,
+    contextLinkMode?: 'linked' | 'independent'
+  ) => void | Promise<void>;
   onCancel: () => void;
   onTogglePause: () => void;
   modelPickerSlot?: React.ReactNode;

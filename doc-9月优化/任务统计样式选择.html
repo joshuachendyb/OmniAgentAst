@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>任务统计样式 - 最终确认版</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 24px; color: #333; }
+  .card { background: #fff; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .card h2 { margin: 0 0 12px; font-size: 15px; color: #262626; }
+  .card p { margin: 0 0 8px; font-size: 13px; color: #595959; line-height: 1.8; }
+  .spec { background: #f6f6f6; border-radius: 6px; padding: 12px 16px; margin: 12px 0; font-size: 12px; color: #595959; line-height: 2; }
+  .spec b { color: #262626; }
+  .demo-bar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-top: 1px solid #f0f0f0; font-size: 13px; }
+  .demo-label { font-weight: 600; font-size: 13px; color: #262626; }
+  .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 80px; height: 22px; border-radius: 11px; color: #fff; font-size: 12px; font-weight: 500; padding: 0 10px; }
+  .pill-completed { background: #52c41a; }
+  .pill-failed { background: #ff4d4f; }
+  .pill-cancelled { background: #bfbfbf; }
+
+  /* ===== 药丸扫光动画：白色高光从左到右 ===== */
+  @keyframes pillShine {
+    0% { background-position: 200% 0; }
+    100% { background-position: -100% 0; }
+  }
+  /* ===== 斜线扫光 45° ===== */
+  @keyframes pillShineDiag {
+    0% { background-position: 200% 200%; }
+    100% { background-position: -100% -100%; }
+  }
+  /* ===== 竖线扫光 上到下 ===== */
+  @keyframes pillShineVert {
+    0% { background-position: 0 200%; }
+    100% { background-position: 0 -100%; }
+  }
+  .pill-completed, .pill-failed, .pill-cancelled {
+    background-size: 200% 200%;
+    animation: pillShine 2.5s ease-in-out infinite;
+  }
+  .shine-diag { background-size: 200% 200% !important; animation: pillShineDiag 2.5s ease-in-out infinite !important; }
+  .shine-vert { background-size: 200% 200% !important; animation: pillShineVert 2.5s ease-in-out infinite !important; }
+  /* ===== 水波纹效果 ===== */
+  @keyframes ripple {
+    0% { box-shadow: 0 0 0 0 rgba(255,255,255,0.5); }
+    100% { box-shadow: 0 0 0 8px rgba(255,255,255,0); }
+  }
+  .shine-ripple { animation: ripple 1.5s ease-out infinite !important; }
+  .pill-completed { background-image: linear-gradient(135deg, #52c41a 0%, #52c41a 35%, rgba(255,255,255,0.6) 50%, #52c41a 65%, #52c41a 100%); }
+  .pill-failed { background-image: linear-gradient(135deg, #ff4d4f 0%, #ff4d4f 35%, rgba(255,255,255,0.6) 50%, #ff4d4f 65%, #ff4d4f 100%); }
+  .pill-cancelled { background-image: linear-gradient(135deg, #bfbfbf 0%, #bfbfbf 35%, rgba(255,255,255,0.6) 50%, #bfbfbf 65%, #bfbfbf 100%); }
+  .spacer-12 { display: inline-block; width: 12px; }
+  .spacer-15 { display: inline-block; width: 15px; }
+  .circle-arrow { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: #f0f0f0; margin-left: auto; flex-shrink: 0; cursor: pointer; transition: background 0.2s; }
+  .circle-arrow:hover { background: #e0e0e0; }
+  .circle-arrow svg { transition: transform 0.2s; transform: rotate(0deg); }
+  .circle-arrow.expanded svg { transform: rotate(180deg); }
+  .compare { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+  .compare th { background: #fafafa; padding: 8px 12px; text-align: left; font-weight: 600; border-bottom: 1px solid #f0f0f0; }
+  .compare td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+
+  /* ===== 动画：直接作用于圆形容器 ===== */
+  @keyframes pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.25);opacity:0.5} }
+  @keyframes glow { 0%,100%{box-shadow:0 0 4px #4096ff} 50%{box-shadow:0 0 14px #4096ff,0 0 24px #4096ff55} }
+  @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(4px)} }
+  .anim-pulse { animation: pulse 2s ease-in-out infinite; }
+  .anim-glow { animation: glow 1.5s ease-in-out infinite; }
+  .anim-bounce { animation: bounce 1s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h2>一、最终确认样式参数</h2>
+  <div class="spec">
+    <b>胶囊药丸 pill</b><br>
+    &nbsp;&nbsp;border-radius: 11px | min-width: 80px | height: 22px | 白字 #fff | padding: 0 10px | font-size: 12px | font-weight: 500<br>
+    <b>三态颜色</b><br>
+    &nbsp;&nbsp;completed = #52c41a | failed = #ff4d4f | cancelled = #bfbfbf<br>
+    <b>间距 spacer</b><br>
+    &nbsp;&nbsp;pill ↔ 运行时长 = <b>12px</b> | 运行时长 ↔ 模型 = <b>15px</b><br>
+    <b>SVG 圆形折叠箭头</b><br>
+    &nbsp;&nbsp;circle: 28×28px | bg: #f0f0f0 | hover: #e0e0e0<br>
+    &nbsp;&nbsp;triangle: 28×28px | 闭合实心 | 无stroke<br>
+    &nbsp;&nbsp;展开态: rotate(180deg) | transition: 0.2s<br>
+    &nbsp;&nbsp;配色: ↓收起 <b>#4096ff</b>蓝 / ↑展开 <b>#ff4d94</b>粉
+  </div>
+</div>
+
+<div class="card">
+  <h2>二、三态药丸预览</h2>
+  <table class="compare">
+    <thead><tr><th>状态</th><th>药丸颜色</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>completed</td>
+        <td style="color:#52c41a;font-weight:600">#52c41a</td>
+        <td><div class="demo-bar"><span class="demo-label">任务统计</span><span class="pill pill-completed">completed</span><span class="spacer-12"></span><span style="font-size:11px;color:#8c8c8c">运行 12s</span><span class="spacer-15"></span><span style="font-size:11px;color:#8c8c8c">openai / gpt-4o</span><span class="circle-arrow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+      <tr>
+        <td>failed</td>
+        <td style="color:#ff4d4f;font-weight:600">#ff4d4f</td>
+        <td><div class="demo-bar"><span class="demo-label">任务统计</span><span class="pill pill-failed">failed</span><span class="spacer-12"></span><span style="font-size:11px;color:#8c8c8c">运行 3s</span><span class="spacer-15"></span><span style="font-size:11px;color:#8c8c8c">openai / gpt-4o</span><span class="circle-arrow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+      <tr>
+        <td>cancelled</td>
+        <td style="color:#bfbfbf;font-weight:600">#bfbfbf</td>
+        <td><div class="demo-bar"><span class="demo-label">任务统计</span><span class="pill pill-cancelled">cancelled</span><span class="spacer-12"></span><span style="font-size:11px;color:#8c8c8c">运行 1s</span><span class="spacer-15"></span><span style="font-size:11px;color:#8c8c8c">openai / gpt-4o</span><span class="circle-arrow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>三、箭头配色确认版</h2>
+  <table class="compare">
+    <thead><tr><th>方向</th><th>颜色</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>↓ 收起态</td>
+        <td style="color:#4096ff;font-weight:600">#4096ff 蓝</td>
+        <td><div class="demo-bar"><span class="demo-label">任务统计</span><span class="pill pill-completed">completed</span><span class="spacer-12"></span><span style="font-size:11px;color:#8c8c8c">运行 12s</span><span class="spacer-15"></span><span style="font-size:11px;color:#8c8c8c">openai / gpt-4o</span><span class="circle-arrow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+      <tr>
+        <td>↑ 展开态</td>
+        <td style="color:#ff4d94;font-weight:600">#ff4d94 粉</td>
+        <td><div class="demo-bar"><span class="demo-label">任务统计</span><span class="pill pill-completed">completed</span><span class="spacer-12"></span><span style="font-size:11px;color:#8c8c8c">运行 12s</span><span class="spacer-15"></span><span style="font-size:11px;color:#8c8c8c">openai / gpt-4o</span><span class="circle-arrow expanded"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#ff4d94"/></svg></span></div></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>四、药丸扫光角度对比</h2>
+  <table class="compare">
+    <thead><tr><th>角度</th><th>方向</th><th>completed预览</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>竖线 ↓</b></td>
+        <td>上到下</td>
+        <td><div class="demo-bar"><span class="pill pill-completed shine-vert">completed</span></div></td>
+      </tr>
+      <tr>
+        <td><b>斜线 ↘</b></td>
+        <td>左上到右下 45°</td>
+        <td><div class="demo-bar"><span class="pill pill-completed shine-diag">completed</span></div></td>
+      </tr>
+      <tr>
+        <td><b>横线 →</b></td>
+        <td>左到右</td>
+        <td><div class="demo-bar"><span class="pill pill-completed">completed</span></div></td>
+      </tr>
+      <tr>
+        <td><b>水波纹 ◎</b></td>
+        <td>中心向外扩散光环</td>
+        <td><div class="demo-bar"><span class="pill pill-completed shine-ripple">completed</span></div></td>
+      </tr>
+    </tbody>
+  </table>
+  <p style="margin-top:12px;font-size:12px;color:#8c8c8c">竖线保留，斜线和横线二选一</p>
+</div>
+
+<div class="card">
+  <h2>五、箭头动画效果对比（看圆形框在动）</h2>
+  <table class="compare">
+    <thead><tr><th>动画</th><th>效果描述</th><th>预览</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>脉冲 pulse</b></td>
+        <td>圆形框缩放+透明度呼吸，2s周期</td>
+        <td><div class="demo-bar"><span class="circle-arrow anim-pulse"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+      <tr>
+        <td><b>发光 glow</b></td>
+        <td>圆形框外围蓝色光晕呼吸，1.5s周期</td>
+        <td><div class="demo-bar"><span class="circle-arrow anim-glow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+      <tr>
+        <td><b>弹跳 bounce</b></td>
+        <td>圆形框上下微弹，1s周期</td>
+        <td><div class="demo-bar"><span class="circle-arrow anim-bounce"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+      <tr>
+        <td><b>无动画</b></td>
+        <td>静态，仅hover变色+点击旋转</td>
+        <td><div class="demo-bar"><span class="circle-arrow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span></div></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>六、间距标注</h2>
+  <p>
+    <b>pill ↔ 运行时长 = 12px</b>（spacer-12）<br>
+    <b>运行时长 ↔ 模型/provider = 15px</b>（spacer-15）<br>
+    其余元素 gap: 8px（flex gap）
+  </p>
+</div>
+
+<div class="card" style="background:#fffbe6;border:1px solid #ffe58f;">
+  <h2>七、确认记录</h2>
+  <p>
+    确认时间：2026-09-13<br>
+    确认人：北京老陈<br>
+    pill↔time=<b>12px</b>，time↔model=<b>15px</b>，三色 pill，SVG圆形箭头 28×28<br>
+    箭头配色：↓收起=<b>#4096ff</b>蓝 / ↑展开=<b>#ff4d94</b>粉<br>
+    状态：<span style="color:#52c41a;font-weight:600">已确认</span>
+  </p>
+</div>
+
+<div class="card" style="background:#f6ffed;border:2px solid #52c41a;">
+  <h2 style="color:#52c41a;">八、定案（最终确认）</h2>
+  <table class="compare">
+    <thead><tr><th>#</th><th>项目</th><th>定案值</th><th>效果</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td>
+        <td><b>药丸扫光</b></td>
+        <td>竖线 ↓ 上到下</td>
+        <td><span class="pill pill-completed shine-vert">completed</span> <span class="pill pill-failed shine-vert">failed</span> <span class="pill pill-cancelled shine-vert">cancelled</span></td>
+      </tr>
+      <tr>
+        <td>2</td>
+        <td><b>箭头动画</b></td>
+        <td>发光 glow 1.5s周期</td>
+        <td><span class="circle-arrow anim-glow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#4096ff"/></svg></span> <span class="circle-arrow expanded anim-glow"><svg width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="M6 11L14 19L22 11Z" fill="#ff4d94"/></svg></span></td>
+      </tr>
+      <tr>
+        <td>3</td>
+        <td><b>间距</b></td>
+        <td>pill↔time <b>12px</b><br>time↔model <b>15px</b></td>
+        <td style="font-size:12px;color:#595959">药丸 ↔ 运行 = 12<br>运行 ↔ 模型 = 15</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

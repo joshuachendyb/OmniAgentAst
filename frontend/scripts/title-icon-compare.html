@@ -1,0 +1,2181 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>圆形标题图标对比 - 老陈选型</title>
+    <style>
+      body {
+        font-family: 'Microsoft YaHei', sans-serif;
+        background: #f5f5f5;
+        padding: 40px;
+      }
+      .card {
+        display: inline-block;
+        vertical-align: top;
+        width: 220px;
+        margin: 16px;
+        background: #fff;
+        border-radius: 12px;
+        padding: 24px 16px;
+        text-align: center;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        cursor: pointer;
+      }
+      .card:hover {
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      }
+      .card.selected {
+        box-shadow: 0 0 0 3px #1677ff;
+      }
+      .icon-box {
+        height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .icon-box svg {
+        width: 36px;
+        height: 36px;
+      }
+      .label {
+        margin-top: 16px;
+        font-size: 14px;
+        font-weight: 600;
+        color: #333;
+      }
+      .desc {
+        margin-top: 8px;
+        font-size: 12px;
+        color: #888;
+        line-height: 1.6;
+      }
+      h1 {
+        font-size: 22px;
+        color: #333;
+        margin-bottom: 8px;
+      }
+      p {
+        font-size: 14px;
+        color: #666;
+        margin-bottom: 24px;
+      }
+      .tag {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        margin-top: 10px;
+        background: #e6f7ff;
+        color: #1677ff;
+      }
+      .tag-old {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        margin-top: 10px;
+        background: #e8e8e8;
+        color: #666;
+      }
+
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(-360deg);
+        }
+      }
+      .spin1 {
+        display: inline-block;
+        animation: spin 1s linear infinite;
+      }
+      .spin15 {
+        display: inline-block;
+        animation: spin 1.5s linear infinite;
+      }
+      .spin2 {
+        display: inline-block;
+        animation: spin 2s linear infinite;
+      }
+      /* E: iOS式圆点依次亮 */
+      @keyframes dotfade {
+        0%,
+        100% {
+          opacity: 0.15;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .iosdot {
+        animation: dotfade 1.2s infinite;
+      }
+      /* G: 波纹扩散 */
+      @keyframes ripple {
+        0% {
+          transform: scale(0.5);
+          opacity: 1;
+        }
+        100% {
+          transform: scale(1.4);
+          opacity: 0;
+        }
+      }
+      .ripple1 {
+        transform-origin: center;
+        transform-box: fill-box;
+        animation: ripple 1.8s ease-out infinite;
+      }
+      .ripple2 {
+        transform-origin: center;
+        transform-box: fill-box;
+        animation: ripple 1.8s ease-out infinite;
+        animation-delay: 0.9s;
+      }
+      /* 2026-09-14 小欧 - 新增25种动画图标(M~AK)配套动画: 形状突破圆形改为多边形/星形/心形/表盘/波形/齿轮等,
+         动画新增呼吸/心跳/扫描/描边流动/追逐/轨道公转/均衡器/闪烁/弹跳/交替显示 — 小欧-2026-09-14 */
+      /* 呼吸缩放(星形/方块) */
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(0.85);
+          opacity: 0.7;
+        }
+        50% {
+          transform: scale(1);
+          opacity: 1;
+        }
+      }
+      .breathe {
+        display: inline-block;
+        animation: breathe 1.6s ease-in-out infinite;
+      }
+      /* 心跳脉动(心形) */
+      @keyframes heartbeat {
+        0%,
+        100% {
+          transform: scale(1);
+        }
+        25% {
+          transform: scale(1.12);
+        }
+        40% {
+          transform: scale(1);
+        }
+        60% {
+          transform: scale(1.08);
+        }
+      }
+      .heartbeat {
+        display: inline-block;
+        animation: heartbeat 1.4s ease-in-out infinite;
+      }
+      /* 雷达扇形扫描(绕viewBox中心旋转) */
+      .sweep {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: spin 1.5s linear infinite;
+      }
+      /* 时钟指针扫秒 */
+      .clock-hand {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: spin 2s linear infinite;
+      }
+      /* 心电图描边流动 */
+      @keyframes dashflow {
+        to {
+          stroke-dashoffset: -160;
+        }
+      }
+      .ecg {
+        stroke-dasharray: 40 40;
+        animation: dashflow 1.4s linear infinite;
+      }
+      /* 三点追逐(沿圆周运动路径) */
+      @keyframes chase {
+        from {
+          offset-distance: 0%;
+        }
+        to {
+          offset-distance: 100%;
+        }
+      }
+      .dot1,
+      .dot2,
+      .dot3 {
+        offset-path: circle(12px at 18px 18px);
+        animation: chase 2s linear infinite;
+      }
+      .dot2 {
+        animation-delay: -0.66s;
+      }
+      .dot3 {
+        animation-delay: -1.33s;
+      }
+      /* 轨道公转(椭圆行星) */
+      .orbit-dot {
+        offset-path: ellipse(14px 8px at 18px 18px);
+        animation: chase 2.4s ease-in-out infinite;
+      }
+      /* 双轨公转(内外两点) */
+      .dot-ak1 {
+        offset-path: circle(6px at 18px 18px);
+        animation: chase 1.8s linear infinite;
+      }
+      .dot-ak2 {
+        offset-path: circle(12px at 18px 18px);
+        animation: chase 2.4s linear infinite;
+      }
+      /* 波浪流动 */
+      @keyframes waveshift {
+        to {
+          stroke-dashoffset: -120;
+        }
+      }
+      .wave {
+        stroke-dasharray: 60 60;
+        animation: waveshift 2s linear infinite;
+      }
+      /* 嵌套环/渐变环呼吸(双相异步) */
+      @keyframes ringbreath {
+        0%,
+        100% {
+          transform: scale(1);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(0.88);
+          opacity: 0.55;
+        }
+      }
+      .ringb1 {
+        transform-origin: center;
+        transform-box: fill-box;
+        animation: ringbreath 1.8s ease-in-out infinite;
+      }
+      .ringb2 {
+        transform-origin: center;
+        transform-box: fill-box;
+        animation: ringbreath 1.8s ease-in-out infinite;
+        animation-delay: 0.9s;
+      }
+      /* 描边流动圆环 */
+      @keyframes flowring {
+        to {
+          stroke-dashoffset: -120;
+        }
+      }
+      .flowring {
+        stroke-dasharray: 45 71;
+        animation: flowring 1.2s linear infinite;
+      }
+      /* 均衡器竖条(scaleY) */
+      @keyframes eqbar {
+        0%,
+        100% {
+          transform: scaleY(0.3);
+        }
+        50% {
+          transform: scaleY(1);
+        }
+      }
+      .eq1,
+      .eq2,
+      .eq3 {
+        transform-box: fill-box;
+        transform-origin: center bottom;
+        animation: eqbar 1s ease-in-out infinite;
+      }
+      .eq2 {
+        animation-delay: 0.2s;
+      }
+      .eq3 {
+        animation-delay: 0.4s;
+      }
+      /* 四角星闪烁 */
+      @keyframes twinkle {
+        0%,
+        100% {
+          opacity: 0.4;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      .twinkle {
+        transform-origin: center;
+        transform-box: fill-box;
+        animation: twinkle 1.4s ease-in-out infinite;
+      }
+      /* 点弹跳 */
+      @keyframes bounceY {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-9px);
+        }
+      }
+      .bounce1,
+      .bounce2,
+      .bounce3 {
+        animation: bounceY 0.9s ease-in-out infinite;
+      }
+      .bounce2 {
+        animation-delay: 0.15s;
+      }
+      .bounce3 {
+        animation-delay: 0.3s;
+      }
+      /* 半圆交替显示 */
+      @keyframes flipseg {
+        0%,
+        49% {
+          opacity: 1;
+        }
+        50%,
+        100% {
+          opacity: 0;
+        }
+      }
+      .seg1,
+      .seg2 {
+        animation: flipseg 1.2s step-end infinite;
+      }
+      .seg2 {
+        animation-delay: 0.6s;
+      }
+      /* ===================== 2026-09-14 小欧 - 新增第二波30种动画图标(AL~BO)配套动画 ===================== */
+      /* 色相流动(整块变色) */
+      @keyframes hueflow {
+        to {
+          filter: hue-rotate(360deg);
+        }
+      }
+      .hueflow {
+        animation: hueflow 3s linear infinite;
+      }
+      /* 描边补全(弧/环从缺口画满) */
+      @keyframes drawin {
+        from {
+          stroke-dashoffset: -60;
+        }
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+      .drawarc {
+        stroke-dasharray: 60 60;
+        animation: drawin 1.6s ease-in-out infinite;
+      }
+      /* 竖条依次长高 */
+      @keyframes growY {
+        0%,
+        100% {
+          transform: scaleY(0.08);
+        }
+        50% {
+          transform: scaleY(1);
+        }
+      }
+      .grow1,
+      .grow2,
+      .grow3,
+      .grow4 {
+        transform-origin: center bottom;
+        transform-box: fill-box;
+        animation: growY 1.6s ease-in-out infinite;
+      }
+      .grow2 {
+        animation-delay: 0.2s;
+      }
+      .grow3 {
+        animation-delay: 0.4s;
+      }
+      .grow4 {
+        animation-delay: 0.6s;
+      }
+      /* 气泡上升 */
+      @keyframes rise {
+        0% {
+          transform: translateY(8px);
+          opacity: 0;
+        }
+        25% {
+          opacity: 1;
+        }
+        100% {
+          transform: translateY(-14px);
+          opacity: 0;
+        }
+      }
+      .bub1,
+      .bub2,
+      .bub3 {
+        animation: rise 2.2s ease-in infinite;
+      }
+      .bub2 {
+        animation-delay: 0.73s;
+      }
+      .bub3 {
+        animation-delay: 1.46s;
+      }
+      /* 流星坠/雪花飘落 */
+      @keyframes fall {
+        0% {
+          transform: translate(-5px, -13px);
+          opacity: 0;
+        }
+        20% {
+          opacity: 1;
+        }
+        100% {
+          transform: translate(5px, 13px);
+          opacity: 0;
+        }
+      }
+      .fall1,
+      .fall2,
+      .fall3 {
+        animation: fall 2.4s linear infinite;
+      }
+      .fall2 {
+        animation-delay: 0.8s;
+      }
+      .fall3 {
+        animation-delay: 1.6s;
+      }
+      /* 铃铛摇摆(顶部为轴) */
+      @keyframes wobble {
+        0%,
+        100% {
+          transform: rotate(-16deg);
+        }
+        50% {
+          transform: rotate(16deg);
+        }
+      }
+      .wobble {
+        transform-box: fill-box;
+        transform-origin: top center;
+        animation: wobble 1s ease-in-out infinite;
+      }
+      /* 括号弹簧压缩 */
+      @keyframes squash {
+        0%,
+        100% {
+          transform: scaleY(1);
+        }
+        50% {
+          transform: scaleY(0.55);
+        }
+      }
+      .squash {
+        transform-box: fill-box;
+        transform-origin: center bottom;
+        animation: squash 0.9s ease-in-out infinite;
+      }
+      /* 卡片翻页(横向压缩) */
+      @keyframes fold {
+        0%,
+        49% {
+          transform: scaleX(1);
+        }
+        50%,
+        100% {
+          transform: scaleX(0.06);
+        }
+      }
+      .fold1,
+      .fold2,
+      .fold3 {
+        transform-origin: left center;
+        transform-box: fill-box;
+        animation: fold 1.5s step-end infinite;
+      }
+      .fold2 {
+        animation-delay: 0.5s;
+      }
+      .fold3 {
+        animation-delay: 1s;
+      }
+      /* 沙漏周期翻转 */
+      @keyframes tumble {
+        0%,
+        45% {
+          transform: rotate(0deg);
+        }
+        55%,
+        100% {
+          transform: rotate(180deg);
+        }
+      }
+      .tumble {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: tumble 2s ease-in-out infinite;
+      }
+      /* 游标往返 */
+      @keyframes slideX {
+        0%,
+        100% {
+          transform: translateX(-6px);
+        }
+        50% {
+          transform: translateX(6px);
+        }
+      }
+      .slider {
+        animation: slideX 1.2s ease-in-out infinite;
+      }
+      /* 打字光标闪烁 */
+      @keyframes blinkf {
+        0%,
+        49% {
+          opacity: 1;
+        }
+        50%,
+        100% {
+          opacity: 0;
+        }
+      }
+      .caret {
+        animation: blinkf 1s step-end infinite;
+      }
+      /* 抖动 */
+      @keyframes shake {
+        0%,
+        100% {
+          transform: rotate(0deg);
+        }
+        20%,
+        60% {
+          transform: rotate(-8deg);
+        }
+        40%,
+        80% {
+          transform: rotate(8deg);
+        }
+      }
+      .shakey {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: shake 0.8s ease-in-out infinite;
+      }
+      /* 反向旋转 */
+      @keyframes spinrev {
+        from {
+          transform: rotate(360deg);
+        }
+        to {
+          transform: rotate(0deg);
+        }
+      }
+      .spinrev {
+        display: inline-block;
+        animation: spinrev 1.8s linear infinite;
+      }
+      /* svg内部环独立旋转(正/反向) */
+      .revring {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: spinrev 1.8s linear infinite;
+      }
+      .fwdring {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: spin 1.8s linear infinite;
+      }
+      .spinring {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: spin 2s linear infinite;
+      }
+      /* 脉冲跑点 */
+      @keyframes runner {
+        0% {
+          transform: translateX(0px);
+          opacity: 0;
+        }
+        15% {
+          opacity: 1;
+        }
+        85% {
+          opacity: 1;
+        }
+        100% {
+          transform: translateX(26px);
+          opacity: 0;
+        }
+      }
+      .runner {
+        animation: runner 1.6s linear infinite;
+      }
+      /* 下载条生长 */
+      @keyframes wipefill {
+        0% {
+          transform: scaleX(0);
+        }
+        100% {
+          transform: scaleX(1);
+        }
+      }
+      .wipebar {
+        transform-box: fill-box;
+        transform-origin: left center;
+        animation: wipefill 2s ease-in-out infinite;
+      }
+      /* 圆波发射弧 */
+      @keyframes beampulse {
+        0% {
+          transform: scale(0.4);
+          opacity: 0;
+        }
+        30% {
+          opacity: 0.7;
+        }
+        100% {
+          transform: scale(1.15);
+          opacity: 0;
+        }
+      }
+      .beam1,
+      .beam2,
+      .beam3 {
+        transform-box: view-box;
+        transform-origin: center;
+        animation: beampulse 1.8s ease-out infinite;
+      }
+      .beam2 {
+        animation-delay: 0.6s;
+      }
+      .beam3 {
+        animation-delay: 1.2s;
+      }
+      /* 对向双球 */
+      @keyframes meetA {
+        0%,
+        100% {
+          transform: translateX(0px);
+        }
+        50% {
+          transform: translateX(22px);
+        }
+      }
+      @keyframes meetB {
+        0%,
+        100% {
+          transform: translateX(22px);
+        }
+        50% {
+          transform: translateX(0px);
+        }
+      }
+      .meetA {
+        animation: meetA 2s ease-in-out infinite;
+      }
+      .meetB {
+        animation: meetB 2s ease-in-out infinite;
+      }
+      /* ===================== 2026-09-14 小欧 - 新增9宫格点阵系列(BP~BS)，沿用AO格子思路，4种点亮动画 ===================== */
+      /* BP: 蛇形扫描(依次逐格亮) */
+      @keyframes gridpulse {
+        0%,
+        100% {
+          opacity: 0.12;
+          transform: scale(1);
+        }
+        35%,
+        60% {
+          opacity: 1;
+          transform: scale(1.06);
+        }
+      }
+      .gridpulse {
+        animation: gridpulse 1.6s ease-in-out infinite;
+      }
+      /* BQ: 棋盘交错(奇偶格反相闪烁) */
+      @keyframes gridflip {
+        0%,
+        45% {
+          opacity: 1;
+        }
+        55%,
+        100% {
+          opacity: 0.12;
+        }
+      }
+      .gridflip {
+        animation: gridflip 1s step-end infinite;
+      }
+      /* BR: 斜向波浪(对角线逐格扫) */
+      @keyframes gridwave {
+        0%,
+        100% {
+          opacity: 0.12;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .gridwave {
+        animation: gridwave 2s ease-in-out infinite;
+      }
+      /* BS: 涟漪扩散(中心→边→角三圈) */
+      @keyframes gridripple {
+        0%,
+        100% {
+          opacity: 0.12;
+          transform: scale(1);
+        }
+        40% {
+          opacity: 1;
+          transform: scale(1.08);
+        }
+      }
+      .gridripple {
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: gridripple 1.4s ease-in-out infinite;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>圆形标题图标对比（替代“对话与任务”文字）</h1>
+    <p>1 是你觉得还行的参照，其他全是圆形。点卡片标记选中，告诉我编号。</p>
+
+    <div class="card" onclick="pick(this, 0)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M12 2v4" stroke="#1677ff" />
+            <path d="M16.24 7.76l2.83-2.83" stroke="#1677ff" />
+            <path d="M18 12h4" stroke="#1677ff" />
+            <path d="M16.24 16.24l2.83 2.83" stroke="#52c41a" />
+            <path d="M12 18v4" stroke="#52c41a" />
+            <path d="M4.93 19.07l2.83-2.83" stroke="#52c41a" />
+            <path d="M2 12h4" stroke="#fa8c16" />
+            <path d="M4.93 4.93l2.83 2.83" stroke="#fa8c16" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">1：弧段loader（参照）</div>
+      <div class="desc">三色版：蓝绿橙<br />1s 旋转</div>
+      <span class="tag-old">参照</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 1)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M21 12a9 9 0 1 1-6.2-8.56" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">2：单缺口圆环</div>
+      <div class="desc">C形缺口旋转<br />和底部绿圈同款，蓝版</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 2)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M21 12a9 9 0 1 1-6.2-8.56" opacity="1" />
+            <path d="M3 12a9 9 0 0 0 6.2 8.56" opacity="0.35" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">3：双弧圆环</div>
+      <div class="desc">一实一虚两段弧<br />1.5s，层次感</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 3)">
+      <div class="icon-box">
+        <span class="spin2">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <circle cx="12" cy="12" r="9" stroke-dasharray="5 4" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">4：虚线圆环</div>
+      <div class="desc">虚线圈 2s 慢转<br />柔和不晃眼</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 4)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <g fill="#1677ff">
+            <circle
+              cx="18"
+              cy="5"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0s"
+            />
+            <circle
+              cx="27.2"
+              cy="8.8"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0.15s"
+            />
+            <circle
+              cx="31"
+              cy="18"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0.3s"
+            />
+            <circle
+              cx="27.2"
+              cy="27.2"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0.45s"
+            />
+            <circle
+              cx="18"
+              cy="31"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0.6s"
+            />
+            <circle
+              cx="8.8"
+              cy="27.2"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0.75s"
+            />
+            <circle
+              cx="5"
+              cy="18"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 0.9s"
+            />
+            <circle
+              cx="8.8"
+              cy="8.8"
+              r="2.6"
+              class="iosdot"
+              style="animation-delay: 1.05s"
+            />
+          </g>
+        </svg>
+      </div>
+      <div class="label">5：圆点光环</div>
+      <div class="desc">iOS 菊花圈，8点依次亮<br />不转也有动感</div>
+      <span class="tag">推荐</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 5)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M21 12a9 9 0 1 1-9-9" />
+            <circle cx="12" cy="3" r="1.8" fill="#1677ff" stroke="none" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">6：彗星圆环</div>
+      <div class="desc">圆环 + 头部亮点<br />像彗星拖尾，方向感强</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 6)">
+      <div class="icon-box">
+        <svg
+          viewBox="0 0 36 36"
+          width="36"
+          height="36"
+          fill="none"
+          stroke-width="2"
+        >
+          <circle cx="18" cy="18" r="6" stroke="#1677ff" />
+          <circle
+            cx="18"
+            cy="18"
+            r="10"
+            opacity="0.6"
+            class="ripple1"
+            stroke="#52c41a"
+          />
+          <circle
+            cx="18"
+            cy="18"
+            r="10"
+            opacity="0.6"
+            class="ripple2"
+            stroke="#fa8c16"
+          />
+        </svg>
+      </div>
+      <div class="label">7：波纹扩散</div>
+      <div class="desc">三色版：蓝心绿波橙波<br />雷达感，不旋转</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 7)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-linecap="round"
+            stroke-width="3"
+          >
+            <path d="M12 3a9 9 0 0 1 9 9" opacity="1" />
+            <path
+              d="M12 3a9 9 0 0 1 9 9"
+              opacity="0.5"
+              transform="rotate(120 12 12)"
+            />
+            <path
+              d="M12 3a9 9 0 0 1 9 9"
+              opacity="0.25"
+              transform="rotate(240 12 12)"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">8：三弧渐变</div>
+      <div class="desc">三段弧明暗渐变旋转<br />1.5s，有拖尾感</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 8)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M3 12a9 9 0 0 1 18 0" stroke="#1677ff" />
+            <path d="M21 12a9 9 0 0 1-18 0" stroke="#52c41a" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">9：双色圆环</div>
+      <div class="desc">上蓝下绿，一蓝一绿分流<br />1.5s 旋转</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 9)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <defs>
+              <linearGradient id="gradJ" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1677ff" />
+                <stop offset="100%" stop-color="#1677ff" stop-opacity="0.1" />
+              </linearGradient>
+            </defs>
+            <path d="M21 12a9 9 0 1 1-6.2-8.56" stroke="url(#gradJ)" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">10：渐变拖尾</div>
+      <div class="desc">蓝色渐隐拖尾<br />1s，有速度感</div>
+      <span class="tag">推荐</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 10)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M12 3a9 9 0 0 1 9 9" stroke="#1677ff" />
+            <path d="M21 12a9 9 0 0 1-9 9" stroke="#52c41a" />
+            <path d="M12 21a9 9 0 0 1-9-9" stroke="#fa8c16" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">11：三色弧</div>
+      <div class="desc">蓝绿橙三段<br />1.5s，最花哨</div>
+    </div>
+
+    <div class="card" onclick="pick(this, 11)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <path d="M21 12a9 9 0 1 1-9-9" />
+            <circle cx="12" cy="3" r="1.8" fill="#ff4d4f" stroke="none" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">12：蓝环红点</div>
+      <div class="desc">蓝环 + 红色彗星头<br />1s，最醒目</div>
+    </div>
+
+    <!-- 2026-09-14 小欧 - 新增25种动画图标(M~AK)，保留原有A~L，点击选中沿用 pick() -->
+    <div class="card" onclick="pick(this, 12)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">13：方框旋转</div>
+      <div class="desc">圆角方框<br />1s 旋转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 13)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 4 L20 12 L12 20 L4 12 Z" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">14：菱形旋转</div>
+      <div class="desc">菱形环<br />1.5s 旋转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 14)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 4 L20 19 H4 Z" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">15：三角环旋转</div>
+      <div class="desc">三角环<br />1s 旋转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 15)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#52c41a"
+            stroke-width="2.5"
+            stroke-linejoin="round"
+          >
+            <polygon
+              points="19.36,7.75 12,3.5 4.64,7.75 4.64,16.25 12,20.5 19.36,16.25"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">16：六角环旋转</div>
+      <div class="desc">六角环<br />1.5s 旋转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 16)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#fa8c16"
+            stroke-width="2.5"
+            stroke-linejoin="round"
+          >
+            <polygon points="12,20.5 20.08,14.63 17,5.12 7,5.12 3.92,14.63" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">17：五角环旋转</div>
+      <div class="desc">五角环<br />1s 旋转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 17)">
+      <div class="icon-box">
+        <span class="spin2">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="#1677ff"
+            stroke-width="2.5"
+            stroke-linecap="round"
+          >
+            <rect
+              x="4"
+              y="4"
+              width="16"
+              height="16"
+              rx="2"
+              stroke-dasharray="6 4"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">18：虚线方框</div>
+      <div class="desc">虚线段方框<br />2s 慢转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 18)">
+      <div class="icon-box">
+        <span class="breathe">
+          <svg viewBox="0 0 24 24" fill="#fa8c16" stroke="none">
+            <path
+              d="M12 2 L14.17 14.99 L20.56 14.78 L15.52 10.86 L17.29 4.72 L12 8.3 L6.71 4.72 L8.48 10.86 L3.44 14.78 L9.83 14.99 Z"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">19：五角星呼吸</div>
+      <div class="desc">金星呼吸缩放<br />不旋转也动感</div>
+      <span class="tag">星形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 19)">
+      <div class="icon-box">
+        <span class="heartbeat">
+          <svg viewBox="0 0 24 24" fill="#ff4d4f" stroke="none">
+            <path
+              d="M12 21 C12 21 4 15.5 4 9.5 C4 6.5 6 4.5 8.6 4.5 C10.2 4.5 12 5.7 12 7.5 C12 5.7 13.8 4.5 15.4 4.5 C18 4.5 20 6.5 20 9.5 C20 15.5 12 21 12 21 Z"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">20：爱心心跳</div>
+      <div class="desc">红心心跳脉动<br />两连跳节奏</div>
+      <span class="tag">星形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 20)">
+      <div class="icon-box">
+        <span class="twinkle">
+          <svg viewBox="0 0 24 24" fill="#1677ff" stroke="none">
+            <path
+              d="M12 2 C13.2 8 16 10.8 22 12 C16 13.2 13.2 16 12 22 C10.8 16 8 13.2 2 12 C8 10.8 10.8 8 12 2 Z"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">21：四角星闪烁</div>
+      <div class="desc">星芒呼吸闪烁<br />像提示高亮</div>
+      <span class="tag">星形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 21)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle cx="18" cy="18" r="12" stroke="#1677ff" opacity="0.35" />
+          <circle
+            cx="18"
+            cy="18"
+            r="12"
+            stroke="#1677ff"
+            opacity="0.15"
+            stroke-dasharray="4 3"
+          />
+          <path
+            class="sweep"
+            d="M18 18 L18 6 A12 12 0 0 1 28.39 12.93 Z"
+            fill="#1677ff"
+            opacity="0.16"
+            stroke="none"
+          />
+          <circle cx="18" cy="18" r="2" fill="#ff4d4f" />
+        </svg>
+      </div>
+      <div class="label">22：雷达扫</div>
+      <div class="desc">扇形扫描+回波圈<br />1.5s 周扫</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 22)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle cx="18" cy="18" r="13" stroke="#1677ff" opacity="0.35" />
+          <path d="M18 5.5 V8" stroke="#1677ff" />
+          <path d="M28 18 H30.5" stroke="#1677ff" />
+          <path d="M18 28 V30.5" stroke="#1677ff" />
+          <path d="M5.5 18 H8" stroke="#1677ff" />
+          <path
+            class="clock-hand"
+            d="M18 18 L18 7.5"
+            stroke="#fa8c16"
+            stroke-width="2.5"
+          />
+          <circle cx="18" cy="18" r="1.8" fill="#1677ff" stroke="none" />
+        </svg>
+      </div>
+      <div class="label">23：时钟扫秒</div>
+      <div class="desc">表盘+橙针扫秒<br />2s 一圈</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 23)">
+      <div class="icon-box">
+        <svg
+          viewBox="0 0 36 36"
+          width="36"
+          height="36"
+          fill="none"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path
+            class="ecg"
+            d="M3 18 L9 18 L11 13 L15 23 L17 18 L33 18"
+            stroke="#ff4d4f"
+            style="stroke-dasharray: 8 8"
+          />
+        </svg>
+      </div>
+      <div class="label">24：心电图</div>
+      <div class="desc">生命线描边流动<br />红线左右跑</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 24)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none">
+          <circle cx="18" cy="18" r="11" stroke="#1677ff" opacity="0.2" />
+          <g fill="#1677ff">
+            <circle class="dot1" cx="18" cy="7" r="3" />
+            <circle class="dot2" cx="18" cy="7" r="3" />
+            <circle class="dot3" cx="18" cy="7" r="3" />
+          </g>
+        </svg>
+      </div>
+      <div class="label">25：三点追逐</div>
+      <div class="desc">三蓝点追圈跑<br />均速2s</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 25)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle cx="18" cy="18" r="4.5" fill="#fa8c16" stroke="none" />
+          <ellipse
+            cx="18"
+            cy="18"
+            rx="14"
+            ry="8"
+            stroke="#1677ff"
+            opacity="0.35"
+          />
+          <circle
+            class="orbit-dot"
+            cx="18"
+            cy="10"
+            r="2.8"
+            fill="#1677ff"
+            stroke="none"
+          />
+        </svg>
+      </div>
+      <div class="label">26：行星公转</div>
+      <div class="desc">橙太阳+蓝行星<br />椭圆公转2.4s</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 26)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none">
+          <circle cx="18" cy="18" r="2.5" fill="#fa8c16" />
+          <circle class="dot-ak1" cx="18" cy="12" r="3" fill="#1677ff" />
+          <circle class="dot-ak2" cx="18" cy="6" r="3" fill="#52c41a" />
+        </svg>
+      </div>
+      <div class="label">27：双星公转</div>
+      <div class="desc">内外双轨<br />蓝绿绕橙心</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 27)">
+      <div class="icon-box">
+        <svg
+          viewBox="0 0 36 36"
+          width="36"
+          height="36"
+          fill="none"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <path
+            class="wave"
+            d="M2 15 C7 8, 12 8, 17 15 S 27 22, 34 15"
+            stroke="#1677ff"
+            style="stroke-dashoffset: -20"
+          />
+          <path
+            class="wave"
+            d="M2 18 C7 11, 12 11, 17 18 S 27 25, 34 18"
+            stroke="#52c41a"
+            style="stroke-dashoffset: -60"
+          />
+          <path
+            class="wave"
+            d="M2 21 C7 14, 12 14, 17 21 S 27 28, 34 21"
+            stroke="#fa8c16"
+            style="stroke-dashoffset: -100"
+          />
+        </svg>
+      </div>
+      <div class="label">28：声波流动</div>
+      <div class="desc">三色波形齐流动<br />错位更有层次</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 28)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle class="ringb1" cx="18" cy="18" r="8" stroke="#fa8c16" />
+          <circle
+            class="ringb2"
+            cx="18"
+            cy="18"
+            r="13"
+            stroke="#1677ff"
+            opacity="0.7"
+          />
+        </svg>
+      </div>
+      <div class="label">29：双环呼吸</div>
+      <div class="desc">内外环此消彼长<br />异步呼吸1.8s</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 29)">
+      <div class="icon-box">
+        <svg
+          viewBox="0 0 36 36"
+          width="36"
+          height="36"
+          fill="none"
+          stroke-width="3"
+          stroke-linecap="round"
+        >
+          <circle class="flowring" cx="18" cy="18" r="12" stroke="#1677ff" />
+        </svg>
+      </div>
+      <div class="label">30：流光圆环</div>
+      <div class="desc">粗环流光循环<br />1.2s 一圈</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 30)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none">
+          <rect class="eq1" x="8" y="9" width="4.5" height="18" rx="2" fill="#1677ff" />
+          <rect
+            class="eq2"
+            x="15.75"
+            y="9"
+            width="4.5"
+            height="18"
+            rx="2"
+            fill="#52c41a"
+          />
+          <rect
+            class="eq3"
+            x="23.5"
+            y="9"
+            width="4.5"
+            height="18"
+            rx="2"
+            fill="#fa8c16"
+          />
+        </svg>
+      </div>
+      <div class="label">31：均衡器</div>
+      <div class="desc">三竖条错峰起伏<br />像播放音乐</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 31)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="#1677ff">
+          <circle class="bounce1" cx="10" cy="24" r="3.2" />
+          <circle class="bounce2" cx="18" cy="24" r="3.2" fill="#52c41a" />
+          <circle class="bounce3" cx="26" cy="24" r="3.2" fill="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">32：弹跳圆点</div>
+      <div class="desc">三点依次弹跳<br />活泼轻快</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 32)">
+      <div class="icon-box">
+        <svg
+          viewBox="0 0 36 36"
+          width="36"
+          height="36"
+          fill="none"
+          stroke-width="4"
+          stroke-linecap="round"
+        >
+          <path class="seg1" d="M11 18 A7 7 0 0 1 25 18" stroke="#1677ff" />
+          <path class="seg2" d="M25 18 A7 7 0 0 1 11 18" stroke="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">33：双半环交替</div>
+      <div class="desc">上下半环轮流闪现<br />1.2s 一格一格</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 33)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 4 L20 19 H4 Z" stroke="#1677ff" opacity="0.18" />
+            <path d="M12 4 L20 19 L4 19" stroke="#1677ff" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">34：三角缺口</div>
+      <div class="desc">三角亮边缺左棱<br />1s 旋转</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 34)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 3 L15.5 6 L12 9" stroke="#1677ff" />
+            <path
+              d="M12 3 L15.5 6 L12 9"
+              stroke="#52c41a"
+              transform="rotate(120 12 12)"
+            />
+            <path
+              d="M12 3 L15.5 6 L12 9"
+              stroke="#fa8c16"
+              transform="rotate(240 12 12)"
+            />
+          </svg>
+        </span>
+      </div>
+      <div class="label">35：三色箭头</div>
+      <div class="desc">三等分箭头旋转<br />1.5s 导航感</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 35)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle cx="18" cy="18" r="13" stroke="#1677ff" opacity="0.35" />
+          <path d="M18 5.5 V8" stroke="#1677ff" opacity="0.6" />
+          <path d="M28 18 H30.5" stroke="#1677ff" opacity="0.6" />
+          <path d="M18 28.5 V31" stroke="#1677ff" opacity="0.6" />
+          <path d="M5.5 18 H8" stroke="#1677ff" opacity="0.6" />
+          <path
+            class="sweep"
+            d="M18 18 L18 6 A13 13 0 0 1 29.26 11.5 Z"
+            fill="#52c41a"
+            opacity="0.14"
+            stroke="none"
+          />
+          <path d="M18 18 L18 6.5" stroke="#ff4d4f" stroke-width="2.5" />
+        </svg>
+      </div>
+      <div class="label">36：指南针</div>
+      <div class="desc">表盘+红针定向<br />绿扇扫描</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 36)">
+      <div class="icon-box">
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke-width="2.5"
+          stroke-linecap="round"
+        >
+          <path
+            class="flowring"
+            d="M12 3 A9 9 0 0 1 21 12"
+            stroke="#1677ff"
+            style="stroke-dasharray: 7 14"
+          />
+          <path
+            class="flowring"
+            d="M21 12 A9 9 0 0 1 12 21"
+            stroke="#52c41a"
+            style="stroke-dasharray: 7 14"
+          />
+          <path
+            class="flowring"
+            d="M12 21 A9 9 0 0 1 3 12"
+            stroke="#fa8c16"
+            style="stroke-dasharray: 7 14"
+          />
+        </svg>
+      </div>
+      <div class="label">37：三弧流光</div>
+      <div class="desc">三段弧描边齐流动<br />蓝绿橙循环</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <!-- 2026-09-14 小欧 - 新增第二波30种动画图标(AL~BO)，保留原有A~AK，不同样式与风格 -->
+    <div class="card" onclick="pick(this, 37)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none">
+          <circle cx="18" cy="18" r="13" stroke="#1677ff" opacity="0.15" stroke-width="2" />
+          <circle cx="18" cy="18" r="13" stroke="#1677ff" stroke-width="4" class="drawarc" />
+        </svg>
+      </div>
+      <div class="label">38：圆环补全</div>
+      <div class="desc">粗环从缺口画满<br />1.6s 充能感</div>
+      <span class="tag">进度</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 38)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="1.8">
+          <rect x="5" y="12" width="23" height="12" rx="3" stroke="#1677ff" fill="none" />
+          <rect x="28" y="15" width="3" height="6" rx="1" fill="#1677ff" />
+          <rect class="grow1" x="7" y="14" width="19" height="8" rx="1.5" fill="#52c41a" />
+        </svg>
+      </div>
+      <div class="label">39：电池充电</div>
+      <div class="desc">电量条从底长满<br />重复充电中</div>
+      <span class="tag">进度</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 39)">
+      <div class="icon-box">
+        <span class="hueflow">
+          <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2.5" stroke-linecap="round">
+            <defs>
+              <linearGradient id="gradAN" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#1677ff" />
+                <stop offset="50%" stop-color="#52c41a" />
+                <stop offset="100%" stop-color="#fa8c16" />
+              </linearGradient>
+            </defs>
+            <path d="M18 5 A13 13 0 0 1 31 18" stroke="url(#gradAN)" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">40：色相流弧</div>
+      <div class="desc">渐变弧全彩变色<br />3s 光谱循环</div>
+      <span class="tag">光谱</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 40)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <rect class="hueflow" x="6" y="6" width="10" height="10" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="hueflow" x="20" y="6" width="10" height="10" rx="2" fill="#52c41a" style="animation-delay: 1.5s" />
+          <rect class="hueflow" x="20" y="20" width="10" height="10" rx="2" fill="#fa8c16" style="animation-delay: 3s" />
+          <rect class="hueflow" x="6" y="20" width="10" height="10" rx="2" fill="#ff4d4f" style="animation-delay: 4.5s" />
+        </svg>
+      </div>
+      <div class="label">41：色相方块</div>
+      <div class="desc">四格错峰变色<br />像跑马灯光谱</div>
+      <span class="tag">光谱</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 41)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2" stroke-linecap="round">
+          <path class="drawarc" d="M4 20 A14 14 0 0 1 32 20" stroke="#1677ff" />
+          <path class="drawarc" d="M9 20 A9 9 0 0 1 27 20" stroke="#52c41a" style="animation-delay: 0.4s" />
+          <path class="drawarc" d="M14 20 A4 4 0 0 1 22 20" stroke="#fa8c16" style="animation-delay: 0.8s" />
+          <circle cx="18" cy="25" r="2" fill="#1677ff" />
+        </svg>
+      </div>
+      <div class="label">42：WIFI信号</div>
+      <div class="desc">三层弧依次画满<br />1.6s 波状</div>
+      <span class="tag">信号</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 42)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none">
+          <rect class="grow1" x="5.5" y="8" width="5" height="22" rx="1.5" fill="#1677ff" />
+          <rect class="grow2" x="12" y="8" width="5" height="22" rx="1.5" fill="#52c41a" />
+          <rect class="grow3" x="18.5" y="8" width="5" height="22" rx="1.5" fill="#fa8c16" />
+          <rect class="grow4" x="25" y="8" width="5" height="22" rx="1.5" fill="#ff4d4f" />
+        </svg>
+      </div>
+      <div class="label">43：信号柱</div>
+      <div class="desc">四柱错峰长高<br />像信号强度</div>
+      <span class="tag">信号</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 43)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="1.6">
+            <circle cx="18" cy="18" r="3" fill="#fa8c16" />
+            <ellipse cx="18" cy="18" rx="12" ry="5" stroke="#1677ff" opacity="0.5" />
+            <circle cx="30" cy="18" r="2" fill="#1677ff" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">44：星系自转</div>
+      <div class="desc">太阳+轨道星整体转<br />1.5s 自转</div>
+      <span class="tag">天体</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 44)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2.5" stroke-linecap="round">
+          <path class="fall1" d="M8 6 L14 10" stroke="#1677ff" />
+          <path class="fall2" d="M10 10 L16 14" stroke="#52c41a" />
+          <path class="fall3" d="M6 12 L12 16" stroke="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">45：流星雨</div>
+      <div class="desc">三线斜向滑落<br />2.4s 错峰</div>
+      <span class="tag">天体</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 45)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle class="bub1" cx="10" cy="26" r="3.5" stroke="#1677ff" />
+          <circle class="bub2" cx="18" cy="28" r="2.6" stroke="#52c41a" />
+          <circle class="bub3" cx="26" cy="26" r="4" stroke="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">46：泡泡上升</div>
+      <div class="desc">三泡依次上浮<br />2.2s 轻盈</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 46)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="1.5" stroke-linecap="round">
+          <g class="fall1" stroke="#1677ff">
+            <path d="M8 8 v6 M5 11 h6 M6.6 6.6 l2.8 2.8 M9.4 9.4 l2.8 -2.8" />
+          </g>
+          <g class="fall2" stroke="#52c41a">
+            <path d="M18 4 v6 M15 7 h6 M16.6 4.6 l2.8 2.8 M19.4 7.4 l2.8 -2.8" />
+          </g>
+          <circle class="fall3" cx="28" cy="11" r="2.6" fill="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">47：雪花飘</div>
+      <div class="desc">小雪花+圆心缓缓落<br />2.4s 飘落</div>
+      <span class="tag">天体</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 47)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2" stroke-linecap="round">
+          <circle cx="18" cy="7" r="2" fill="#1677ff" stroke="none" />
+          <path
+            class="wobble"
+            d="M12 9 C12 15 10 15.5 9 21 L27 21 C26 15.5 24 15 24 9 Z"
+            fill="#1677ff"
+            stroke="none"
+          />
+          <path d="M9 21 H27" stroke="#1677ff" stroke-width="2.5" />
+          <path d="M15 25 H21" stroke="#1677ff" opacity="0.6" />
+        </svg>
+      </div>
+      <div class="label">48：铃铛响</div>
+      <div class="desc">顶部悬挂摇摆<br />1s 叮当感</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 48)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <rect class="fold1" x="5" y="7" width="7" height="22" rx="2" fill="#1677ff" />
+          <rect class="fold2" x="14" y="7" width="7" height="22" rx="2" fill="#52c41a" />
+          <rect class="fold3" x="23" y="7" width="7" height="22" rx="2" fill="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">49：翻卡片</div>
+      <div class="desc">三卡依次横向收起<br />1.5s 翻页感</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 49)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path class="tumble" d="M10 6 H26 L18 18 L26 30 H10 L18 18 Z" stroke="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">50：沙漏</div>
+      <div class="desc">整只沙漏周期翻转<br />2s 倒计时感</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 50)">
+      <div class="icon-box">
+        <span class="spin1">
+          <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2" stroke-linejoin="round">
+            <path d="M9 28 L27 28 L27 10 L9 10 Z" stroke="#1677ff" />
+            <path d="M9 10 L15 5 L33 5 L27 10 Z" stroke="#52c41a" />
+            <path d="M27 10 L33 5 L33 23 L27 28 Z" stroke="#fa8c16" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">51：立方体</div>
+      <div class="desc">三维盒线框旋转<br />1s 立体感</div>
+      <span class="tag">多边形</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 51)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle cx="18" cy="18" r="12" stroke="#1677ff" stroke-dasharray="4 4" opacity="0.7" class="spinring" />
+          <path d="M18 6 V30" stroke="#1677ff" opacity="0.25" />
+          <path d="M6 18 H30" stroke="#1677ff" opacity="0.25" />
+          <circle cx="18" cy="18" r="2" fill="#ff4d4f" />
+        </svg>
+      </div>
+      <div class="label">52：瞄准镜</div>
+      <div class="desc">十字+虚线环旋转<br />红心居中</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 52)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2" stroke-linecap="round">
+          <rect class="caret" x="16.5" y="6" width="3" height="22" rx="1.5" fill="#1677ff" />
+          <rect x="5" y="13" width="8" height="3" rx="1.5" fill="#c8d8ff" />
+          <rect x="5" y="19" width="8" height="3" rx="1.5" fill="#e6eeff" />
+        </svg>
+      </div>
+      <div class="label">53：打字光标</div>
+      <div class="desc">竖光标闪烁<br />1s 打字感</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 53)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2.5" stroke-linecap="round">
+          <path
+            class="drawarc"
+            style="stroke-dasharray: 34 34"
+            d="M4 14 C10 8, 14 8, 18 14 S 28 22, 32 16"
+            stroke="#52c41a"
+          />
+        </svg>
+      </div>
+      <div class="label">54：画线</div>
+      <div class="desc">波浪线一笔画出<br />1.6s 手写感</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 54)">
+      <div class="icon-box">
+        <span class="breathe">
+          <svg viewBox="0 0 36 36" width="36" height="36" fill="none">
+            <circle cx="18" cy="18" r="14" fill="#1677ff" />
+            <path d="M15 11 L25 18 L15 25 Z" fill="#fff" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">55：播放脉动</div>
+      <div class="desc">蓝圆白三角呼吸<br />1.6s 播放中</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 55)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <circle cx="18" cy="18" r="14" stroke="#ff4d4f" opacity="0.5" class="ripple1" />
+          <circle cx="18" cy="18" r="14" stroke="#ff4d4f" opacity="0.5" class="ripple2" />
+          <circle cx="18" cy="18" r="5" fill="#ff4d4f" />
+        </svg>
+      </div>
+      <div class="label">56：录音脉冲</div>
+      <div class="desc">红点双波扩散<br />1.8s 录制中</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 56)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="18" cy="18" r="2.5" fill="#52c41a" />
+          <path class="beam1" d="M6 18 A13 13 0 0 1 30 18" stroke="#52c41a" />
+          <path class="beam2" d="M6 18 A13 13 0 0 1 30 18" stroke="#1677ff" style="animation-delay: 0.6s" />
+          <path class="beam3" d="M6 18 A13 13 0 0 1 30 18" stroke="#fa8c16" style="animation-delay: 1.2s" />
+        </svg>
+      </div>
+      <div class="label">57：信号发射</div>
+      <div class="desc">三弧渐次向外扩散<br />像广播发送</div>
+      <span class="tag">信号</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 57)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke="#fa8c16" stroke-width="2" stroke-linecap="round">
+            <circle cx="18" cy="18" r="5" fill="#fa8c16" stroke="none" />
+            <path d="M18 3.5 V7" />
+            <path d="M22.4 5.6 L20.4 8.2" />
+            <path d="M26.5 14.5 H23.5" />
+            <path d="M26.5 21.5 H23.5" />
+            <path d="M22.4 30.4 L20.4 27.8" />
+            <path d="M13.6 30.4 L15.6 27.8" />
+            <path d="M9.5 21.5 H12.5" />
+            <path d="M9.5 14.5 H12.5" />
+            <path d="M13.6 5.6 L15.6 8.2" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">58：太阳</div>
+      <div class="desc">光茫旋转 1.5s<br />金色暖阳</div>
+      <span class="tag">天体</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 58)">
+      <div class="icon-box">
+        <span class="spin15">
+          <svg viewBox="0 0 36 36" width="36" height="36" fill="#1677ff">
+            <path d="M23 5 A12 12 0 1 0 23 31 A9 9 0 1 1 23 5 Z" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">59：月亮</div>
+      <div class="desc">弯月旋转 1.5s<br />素净蓝月</div>
+      <span class="tag">天体</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 59)">
+      <div class="icon-box">
+        <span class="twinkle">
+          <svg viewBox="0 0 24 24" fill="#faad14" stroke="none">
+            <path d="M13 2 L5 14 H11 L9 22 L19 9 H13 Z" />
+          </svg>
+        </span>
+      </div>
+      <div class="label">60：闪电</div>
+      <div class="desc">金闪星芒脉动<br />1.4s 提神</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 60)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="1.6">
+          <path d="M4 22 H32" stroke="#1677ff" opacity="0.4" />
+          <path d="M4 15 V29 M11 15 V29 M18 15 V29 M25 15 V29 M32 15 V29" stroke="#1677ff" opacity="0.18" />
+          <path class="slider" d="M18 8 V24" stroke="#fa8c16" stroke-width="3" stroke-linecap="round" />
+        </svg>
+      </div>
+      <div class="label">61：游标均衡</div>
+      <div class="desc">橙游标左右往返<br />1.2s 调音台</div>
+      <span class="tag">数据</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 61)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="3" stroke-linecap="round">
+          <circle cx="18" cy="18" r="8" stroke="#1677ff" opacity="0.15" />
+          <circle class="drawarc" style="stroke-dasharray: 13 51" cx="18" cy="18" r="8" stroke="#1677ff" transform="rotate(-90 18 18)" />
+          <circle cx="18" cy="18" r="2" fill="#1677ff" />
+        </svg>
+      </div>
+      <div class="label">62：饼图画满</div>
+      <div class="desc">四分之一饼绘制<br />1.6s 统计感</div>
+      <span class="tag">进度</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 62)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path class="bounce1" d="M4 22 L12 12 L20 24 L32 10" stroke="#1677ff" />
+        </svg>
+      </div>
+      <div class="label">63：折线跳动</div>
+      <div class="desc">数据线上下跳动<br />0.9s 活跃行情</div>
+      <span class="tag">数据</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 63)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="6 4">
+          <circle class="revring" cx="18" cy="18" r="12" stroke="#1677ff" />
+          <circle class="fwdring" cx="18" cy="18" r="7" stroke="#fa8c16" stroke-width="3" />
+        </svg>
+      </div>
+      <div class="label">64：反向双环</div>
+      <div class="desc">内外环对向旋转<br />1.8s 齿轮咬合</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 64)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <path d="M4 20 H32" stroke="#1677ff" opacity="0.3" />
+          <circle class="meetA" cx="7" cy="20" r="3.5" fill="#1677ff" />
+          <circle class="meetB" cx="29" cy="20" r="3.5" fill="#fa8c16" />
+        </svg>
+      </div>
+      <div class="label">65：对向双球</div>
+      <div class="desc">蓝橙球相向相遇<br />撞回各自端</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 65)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="3" stroke-linecap="round">
+          <path class="squash" d="M13 8 Q10.5 18 13 28" stroke="#1677ff" />
+          <path d="M23 8 Q25.5 18 23 28" stroke="#fa8c16" />
+          <path d="M13 28 H23" stroke="#1677ff" opacity="0.5" />
+        </svg>
+      </div>
+      <div class="label">66：弹簧括号</div>
+      <div class="desc">左括号压缩弹跳<br />0.9s 弹性加载</div>
+      <span class="tag">动态</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 66)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36" fill="none" stroke-width="2">
+          <rect x="4" y="16" width="28" height="7" rx="3.5" stroke="#1677ff" opacity="0.3" fill="none" />
+          <rect class="wipebar" x="4" y="16" width="28" height="7" rx="3.5" fill="#1677ff" />
+        </svg>
+      </div>
+      <div class="label">67：下载进度</div>
+      <div class="desc">蓝条从左长满<br />2s 填满循环</div>
+      <span class="tag">进度</span>
+    </div>
+
+    <!-- 2026-09-14 小欧 - 新增9宫格点阵系列(BP~BS)，3x3 格子4种点亮动画，沿用AO色相方块思路 -->
+    <div class="card" onclick="pick(this, 67)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <rect class="gridpulse" x="4" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridpulse" x="13" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.16s" />
+          <rect class="gridpulse" x="22" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.32s" />
+          <rect class="gridpulse" x="22" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.48s" />
+          <rect class="gridpulse" x="13" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.64s" />
+          <rect class="gridpulse" x="4" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.8s" />
+          <rect class="gridpulse" x="4" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.96s" />
+          <rect class="gridpulse" x="13" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 1.12s" />
+          <rect class="gridpulse" x="22" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 1.28s" />
+        </svg>
+      </div>
+      <div class="label">68：矩阵扫描</div>
+      <div class="desc">3x3 蛇形逐格点亮<br />1.6s 像航显矩阵</div>
+      <span class="tag">点阵</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 68)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <rect class="gridflip" x="4" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridflip" x="13" y="4" width="8" height="8" rx="2" fill="#fa8c16" style="animation-delay: 0.5s" />
+          <rect class="gridflip" x="22" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridflip" x="4" y="13" width="8" height="8" rx="2" fill="#fa8c16" style="animation-delay: 0.5s" />
+          <rect class="gridflip" x="13" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridflip" x="22" y="13" width="8" height="8" rx="2" fill="#fa8c16" style="animation-delay: 0.5s" />
+          <rect class="gridflip" x="4" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridflip" x="13" y="22" width="8" height="8" rx="2" fill="#fa8c16" style="animation-delay: 0.5s" />
+          <rect class="gridflip" x="22" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+        </svg>
+      </div>
+      <div class="label">69：棋盘闪烁</div>
+      <div class="desc">蓝橙棋格错峰闪烁<br />1s 明暗节奏分明</div>
+      <span class="tag">点阵</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 69)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <rect class="gridwave" x="4" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridwave" x="13" y="4" width="8" height="8" rx="2" fill="#52c41a" style="animation-delay: 0.35s" />
+          <rect class="gridwave" x="22" y="4" width="8" height="8" rx="2" fill="#faad14" style="animation-delay: 0.7s" />
+          <rect class="gridwave" x="4" y="13" width="8" height="8" rx="2" fill="#fa8c16" style="animation-delay: 0.35s" />
+          <rect class="gridwave" x="13" y="13" width="8" height="8" rx="2" fill="#ff4d4f" style="animation-delay: 0.7s" />
+          <rect class="gridwave" x="22" y="13" width="8" height="8" rx="2" fill="#eb2f96" style="animation-delay: 1.05s" />
+          <rect class="gridwave" x="4" y="22" width="8" height="8" rx="2" fill="#722ed1" style="animation-delay: 0.7s" />
+          <rect class="gridwave" x="13" y="22" width="8" height="8" rx="2" fill="#13c2c2" style="animation-delay: 1.05s" />
+          <rect class="gridwave" x="22" y="22" width="8" height="8" rx="2" fill="#2f54eb" style="animation-delay: 1.4s" />
+        </svg>
+      </div>
+      <div class="label">70：斜向波浪</div>
+      <div class="desc">对角波浪逐格扫<br />九色光谱滚动</div>
+      <span class="tag">点阵</span>
+    </div>
+
+    <div class="card" onclick="pick(this, 70)">
+      <div class="icon-box">
+        <svg viewBox="0 0 36 36" width="36" height="36">
+          <rect class="gridripple" x="4" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.8s" />
+          <rect class="gridripple" x="13" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.4s" />
+          <rect class="gridripple" x="22" y="4" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.8s" />
+          <rect class="gridripple" x="4" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.4s" />
+          <rect class="gridripple" x="13" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0s" />
+          <rect class="gridripple" x="22" y="13" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.4s" />
+          <rect class="gridripple" x="4" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.8s" />
+          <rect class="gridripple" x="13" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.4s" />
+          <rect class="gridripple" x="22" y="22" width="8" height="8" rx="2" fill="#1677ff" style="animation-delay: 0.8s" />
+        </svg>
+      </div>
+      <div class="label">71：涟漪扩散</div>
+      <div class="desc">中心→边→角三圈<br />1.4s 水波扩散</div>
+      <span class="tag">点阵</span>
+    </div>
+
+    <script>
+      function pick(el, idx) {
+        document
+          .querySelectorAll('.card')
+          .forEach((c) => c.classList.remove('selected'));
+        el.classList.add('selected');
+        document.title =
+          '已选: ' +
+          [
+            '1参照',
+            '2单缺口',
+            '3双弧',
+            '4虚线',
+            '5圆点光环',
+            '6彗星',
+            '7波纹',
+            '8三弧',
+            '9双色',
+            '10渐变',
+            '11三色',
+            '12蓝环红点',
+            '13方框',
+            '14菱形',
+            '15三角环',
+            '16六角',
+            '17五角',
+            '18虚方框',
+            '19五角星',
+            '20爱心',
+            '21四角星',
+            '22雷达',
+            '23时钟',
+            '24心电图',
+            '25三点追',
+            '26行星',
+            '27双星',
+            '28声波',
+            '29双环',
+            '30流光',
+            '31均衡',
+            '32弹跳',
+            '33半环',
+            '34三角缺',
+            '35箭头',
+            '36指南',
+            '37三弧',
+            '38补环',
+            '39电池',
+            '40色相',
+            '41色块',
+            '42WiFi',
+            '43信号柱',
+            '44星系',
+            '45流星',
+            '46泡泡',
+            '47雪花',
+            '48铃铛',
+            '49翻卡',
+            '50沙漏',
+            '51立方',
+            '52瞄准',
+            '53光标',
+            '54画线',
+            '55播放',
+            '56录音',
+            '57发射',
+            '58太阳',
+            '59月亮',
+            '60闪电',
+            '61游标',
+            '62饼图',
+            '63折线',
+            '64反向环',
+            '65对向球',
+            '66弹簧',
+            '67下载',
+            '68扫描',
+            '69棋盘',
+            '70斜波',
+            '71涟漪',
+          ][idx];
+      }
+    </script>
+  </body>
+</html>

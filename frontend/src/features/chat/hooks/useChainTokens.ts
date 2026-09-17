@@ -2,16 +2,16 @@
 // 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.8 v1.103: 结束沿锚点加 latestTaskId 兜底(排序一义后 tasks[0]≈最旧, 原 DESC 首行=最新语义失效, 改显式最新锚点防 ASC 回归取错任务)
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 返回 { sessionTokens, chainTokens } 两组3字段结构, 前面会话累计(session)后面链累计(chain); 取数字段由 r.total_tokens 改为对应层 3 字段
 // 编辑历史: 2026-09-01 小欧 - 实时/静态双源合并(北京老陈"三思三省"): 运行中读 SSE metaFrames 实时值(每轮LLM调用推), 静止/历史/重进读 DB 拉取值; 实时优先覆盖静态
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-B3: 任务结束沿useEffect依赖数组真补serverTaskId/latestTaskId
+//   (原漏导致结束锚点陈旧, 结束沿拉取可能用旧任务ID), 功能增强无退化 — 小欧-2026-09-09
+// 编辑历史: 2026-09-11 小欧 - DB落库信号触发刷新修复: 删旧prevReceivingRef effect改hasFinalStats信号(final_stats到达=DB已落库才触发refreshTasks+拉token), 替代receiving翻false旧逻辑 — 小欧-2026-09-11
+// 编辑历史: 2026-09-11 小欧 - 三堂会审P1-5: hasFinalStats effect原deps含tasks, 体内refreshTasks更新tasks引用致自激无限循环; 改key型边界触发器(含session|anchor)防重入, 会话切/新任务到自动复位 — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - P1-1/P1-2三堂会审修复: ①删私有TokenTriple统一复用stepStyles.ts公用TokenLayer(DRY, 消类型碎片);
+//   ②抽fetchTokens内部函数消除L64-71/L89-97重复的getChainTokens+setState(DRY), 行为等价 — 小欧-2026-09-12
 import { useEffect, useRef, useState } from 'react';
 import { tokenUsageApi } from '../../../services/api/task.api';
 import type { TaskMetaFrames } from '../../../types/sse';
-
-// 2026-09-01 小欧: token 3 字段口径（后端 ChainTokenLayer {prompt_tokens,completion_tokens,total_tokens}）
-interface TokenTriple {
-  prompt_tokens: number;
-  completion_tokens: number;
-  total_tokens: number;
-}
+import { type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧 P1-1: 复用公用TokenLayer消重复私有形状 — 小欧-2026-09-12
 
 /**
  * 顶栏 token hook：实时/静态双源合并（北京老陈 2026-09-01 三思三省定案）
@@ -29,10 +29,25 @@ export function useChainTokens(
   refreshTasks: () => void,
   metaFrames: TaskMetaFrames // 2026-09-01 小欧: SSE 实时 token 帧源
 ) {
-  const [sessionTokens, setSessionTokens] = useState<TokenTriple | null>(null); // 2026-09-01 小欧: 会话累计 token
-  const [chainTokens, setChainTokens] = useState<TokenTriple | null>(null); // 2026-09-01 小欧: 链累计 token(原 number 改 3字段)
+  const [sessionTokens, setSessionTokens] = useState<TokenLayer>(null); // 2026-09-01 小欧: 会话累计 token (TokenLayer复用 P1-1) — 小欧-2026-09-12
+  const [chainTokens, setChainTokens] = useState<TokenLayer>(null); // 2026-09-01 小欧: 链累计 token(原 number 改 3字段, TokenLayer复用 P1-1) — 小欧-2026-09-12
   // 2026-09-01 小欧 修复: 会话切重置锚点去重标记（随 token 一同复位，防残留跨会话 key）
   const fetchedAnchorRef = useRef<string | null>(null);
+
+  // 2026-09-12 小欧 P1-2: 抽fetchTokens消除两处重复的getChainTokens+setState(DRY), 语义等价(静默失败) — 小欧-2026-09-12
+  const fetchTokens = async (sid: string, tid: string): Promise<void> => {
+    try {
+      const r = await tokenUsageApi.getChainTokens({
+        sessionId: sid,
+        taskId: tid,
+      });
+      // 2026-09-01 小欧: 会话累计在前, 链累计在后(北京老陈定案), 均为3字段; 无值时置null
+      setSessionTokens(r.session_accumulated_tokens ?? null);
+      setChainTokens(r.chain_accumulated_tokens ?? null);
+    } catch {
+      // 拉取失败静默保持现状(与原 .catch(() => undefined) 等价) — 小欧-2026-09-12
+    }
+  };
 
   // 2026-09-01 小欧 实时源: 运行中 SSE usage 帧有值 → 实时覆盖顶栏(会话/链累计每轮随 LLM 调用跳动)
   useEffect(() => {
@@ -57,40 +72,35 @@ export function useChainTokens(
     const key = `${sessionId}|${anchorTaskId}`;
     if (fetchedAnchorRef.current === key) return;
     fetchedAnchorRef.current = key;
-    tokenUsageApi
-      .getChainTokens({ sessionId, taskId: anchorTaskId })
-      .then((r) => {
-        // 2026-09-01 小欧: 会话累计在前, 链累计在后(北京老陈定案), 均为3字段; 无值时置null
-        setSessionTokens(r.session_accumulated_tokens ?? null);
-        setChainTokens(r.chain_accumulated_tokens ?? null);
-      })
-      .catch(() => undefined);
+    void fetchTokens(sessionId, anchorTaskId); // 2026-09-12 小欧 P1-2: 复用 fetchTokens — 小欧-2026-09-12
   }, [sessionId, serverTaskId, latestTaskId, tasks, isReceiving]);
 
-  // 任务结束沿统一刷新：任务列表 / 顶栏链累计 token
-  const prevReceivingRef = useRef(false);
+  // 小欧 2026-09-11 DB落库信号触发刷新: 刷新信号改 hasFinalStats(DB 已落库 t3')，替代 prevReceivingRef 旧逻辑 — 小欧-2026-09-11
+  // 2026-09-11 小欧 三堂会审P1-5: effect deps含tasks, 体内refreshTasks更新tasks引用致自激无限循环; 用key型边界触发器(含sessionId+anchor)防重入(会话切/新任务到复位) — 小欧-2026-09-11
+  const hasFinalStats = !!metaFrames?.finalStats;
+  // P1-5: key型边界触发器——hasFinalStats到达且session|anchor首次出现时触发一次, 后续tasks引用变化不重入; 会话切或新任务到时锚点变化自动复位 — 小欧-2026-09-11
+  const _handledFinalStatsKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    if (prevReceivingRef.current && !isReceiving) {
-      void refreshTasks();
-      if (sessionId) {
-        const anchorTaskId = serverTaskId ?? latestTaskId ?? tasks[0]?.task_id; // 2026-08-30 小欧 diff⑤: 显式最新锚点防 ASC 回归
-        // 2026-08-27 小欧 三堂会审: 空值守卫
-        if (!anchorTaskId) {
-          prevReceivingRef.current = isReceiving;
-          return;
-        }
-        tokenUsageApi
-          .getChainTokens({ sessionId, taskId: anchorTaskId })
-          .then((r) => {
-            // 2026-09-01 小欧: 会话累计在前, 链累计在后(北京老陈定案), 均为3字段; 无值时置null
-            setSessionTokens(r.session_accumulated_tokens ?? null);
-            setChainTokens(r.chain_accumulated_tokens ?? null);
-          })
-          .catch(() => undefined);
-      }
+    const anchor = serverTaskId ?? latestTaskId ?? tasks[0]?.task_id;
+    if (!hasFinalStats || !anchor) {
+      _handledFinalStatsKeyRef.current = null;
+      return;
     }
-    prevReceivingRef.current = isReceiving;
-  }, [isReceiving, refreshTasks, sessionId, tasks]);
+    const key = `${sessionId ?? ''}|${anchor}`;
+    if (_handledFinalStatsKeyRef.current === key) return; // 同一次final沿已处理, 防自激循环
+    _handledFinalStatsKeyRef.current = key;
+    void refreshTasks();
+    if (sessionId) {
+      void fetchTokens(sessionId, anchor); // 2026-09-12 小欧 P1-2: 复用 fetchTokens — 小欧-2026-09-12
+    }
+  }, [
+    hasFinalStats,
+    refreshTasks,
+    sessionId,
+    tasks,
+    serverTaskId,
+    latestTaskId,
+  ]);
 
   return { sessionTokens, chainTokens };
 }

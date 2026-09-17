@@ -9,6 +9,7 @@
 // 编辑历史: 2026-09-03 小欧 - 前端错误提示: 200+success False与网络/500均走公用handleError弹窗(WARNING)，改前仅console.error用户无感知 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧-2026-09-03
+// 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: 确认成功(confirmed=true)暂存 recentConfirmedTool(state)+recentTimerRef(2s自动清除, 卸载清timer), 返回扩展 recentConfirmedTool —— 小欧-2026-09-06
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -33,6 +34,19 @@ export function useAuthorization(sessionId: string | null) {
   React.useEffect(() => {
     pendingRef.current = authorizationPending;
   }, [authorizationPending]);
+
+  // 2026-09-06 小欧 B1「已放行」短时高亮: 用户确认(confirmed=true)后暂存工具名, 2s 后自动清除。
+  //   让 RightViewer highlightToolName 在确认瞬间仍命中(isCurrentLive 不断链), 补 F4 高亮空转缺口 — 小欧-2026-09-06
+  const [recentConfirmedTool, setRecentConfirmedTool] = useState<string | null>(
+    null
+  );
+  const recentTimerRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    return () => {
+      if (recentTimerRef.current !== null)
+        window.clearTimeout(recentTimerRef.current);
+    };
+  }, []);
 
   // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
   useEffect(() => {
@@ -118,6 +132,16 @@ export function useAuthorization(sessionId: string | null) {
       if (!confirmId) {
         return;
       }
+      // 2026-09-06 小欧 B1: confirmed=true 且取到工具名 → 记录「已放行」短时高亮(2s), 拒绝/超时不记录
+      if (confirmed && cur?.toolName) {
+        if (recentTimerRef.current !== null)
+          window.clearTimeout(recentTimerRef.current);
+        setRecentConfirmedTool(cur.toolName);
+        recentTimerRef.current = window.setTimeout(() => {
+          setRecentConfirmedTool(null);
+          recentTimerRef.current = null;
+        }, 2000);
+      }
       // 立即关弹窗, 不等API
       setAuthorizationPending(null);
       // API后台fire-and-forget — 成功/200+success False/网络500均走公用错误弹窗
@@ -128,7 +152,10 @@ export function useAuthorization(sessionId: string | null) {
           if (!ok) {
             const err = (res as { error?: string })?.error ?? '确认失败';
             console.warn('[Authorization] 确认返回错误:', res);
-            handleError({ message: `授权确认失败: ${err}`, error_type: ErrorType.WARNING });
+            handleError({
+              message: `授权确认失败: ${err}`,
+              error_type: ErrorType.WARNING,
+            });
             return;
           }
           if (trustSession && sessionId) {
@@ -139,12 +166,27 @@ export function useAuthorization(sessionId: string | null) {
         })
         .catch((error: unknown) => {
           console.error('[Authorization] 确认失败(fire-and-forget):', error);
-          const msg = (error as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error ?? (error as { message?: string })?.message ?? String(error);
-          handleError({ message: `授权确认异常: ${msg}`, error_type: ErrorType.WARNING });
+          const msg =
+            (
+              error as {
+                response?: { data?: { error?: string } };
+                message?: string;
+              }
+            )?.response?.data?.error ??
+            (error as { message?: string })?.message ??
+            String(error);
+          handleError({
+            message: `授权确认异常: ${msg}`,
+            error_type: ErrorType.WARNING,
+          });
         });
     },
     [sessionId]
   );
 
-  return { authorizationPending, handleAuthorizationConfirm };
+  return {
+    authorizationPending,
+    handleAuthorizationConfirm,
+    recentConfirmedTool,
+  };
 }

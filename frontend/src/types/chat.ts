@@ -6,6 +6,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数签名多行→单行(行长度超80字符), 防止格式再次出错
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StatusValue/StatusMessage的cancelled分支与isStatusMessage的cancelled判断(取消收尾单一由final+cancelled承担)
 /**
  * 流式API响应类型定义
  *
@@ -183,7 +184,7 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue = 'cancelled' | 'paused' | 'resumed' | 'retrying';
+export type StatusValue = 'paused' | 'resumed' | 'retrying';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
@@ -191,7 +192,7 @@ export type StatusValue = 'cancelled' | 'paused' | 'resumed' | 'retrying';
  * 【北京老陈 2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
 export interface StatusMessage {
-  type: 'cancelled' | 'paused' | 'retrying' | 'resumed';
+  type: 'paused' | 'retrying' | 'resumed';
   message: string;
   timestamp: string; // 必填，时间戳
   confirm_id?: string; // 仅 paused(HITL) 时可选
@@ -268,10 +269,7 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
   return (
-    msg.type === 'cancelled' ||
-    msg.type === 'paused' ||
-    msg.type === 'retrying' ||
-    msg.type === 'resumed'
+    msg.type === 'paused' || msg.type === 'retrying' || msg.type === 'resumed'
   );
 }
 

@@ -13,7 +13,7 @@ import { defineConfig, devices } from '@playwright/test';
  * @see https://playwright.dev/docs/test-configuration
  */
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: './e2e_case',
 
   /* Run tests in files in parallel */
   fullyParallel: true,
@@ -27,8 +27,17 @@ export default defineConfig({
   /* Opt out of parallel tests on CI */
   workers: process.env.CI ? 1 : undefined,
 
-  /* Reporter to use */
-  reporter: 'html',
+  /* Reporter to use: html 报告与测试产物统一落 e2e_case/output/（与 DIAG/代理日志同一根目录）
+     编辑历史: 2026-09-13 小欧 - 前端E2E日志/产物统一落盘规范: Playwright 产物根移入 e2e_case/output - 小欧-2026-09-13 */
+  reporter: [
+    [
+      'html',
+      { outputFolder: './e2e_case/output/playwright-report', open: 'never' },
+    ],
+  ],
+
+  /* 测试产物根(截图/视频/trace 等)统一落 e2e_case/output/ 编辑历史: 2026-09-13 小欧 */
+  outputDir: './e2e_case/output/test-results',
 
   /* Shared settings for all the projects below */
   use: {

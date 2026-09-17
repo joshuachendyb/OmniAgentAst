@@ -20,6 +20,9 @@
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
 # 2026-09-03 - 小欧/北京老陈 - HITL全链路补日志: create_confirmation/wait_for_confirmation/resolve_confirmation
 #   _cleanup_stale_confirmations 四处关键路径补info/warning日志, 改前静默返回False无法排查confirm_id去向
+# 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
+#   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
+#   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -183,19 +186,8 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
 
     if confirmed and trust_session and entry.tool_name and _task_id:
         try:
-            from app.db import db
-            from app.services.chat.storage import get_session_id_by_task, insert_session_trust
-            from app.tools.tools_alias_mapper import normalize_tool_name  # 落库用规范名, 与豁免查询(normalize)一致防别名漏配 — 小健 2026-08-17
-
-            def _do(conn):
-                _sid = get_session_id_by_task(conn, _task_id)
-                if not _sid:
-                    raise ValueError(f"[HITL] task_id={_task_id} 无 session_id 可反查,信任禁止落库")
-                # 5.5(v1.5): 带 path 落库(entry.path 经 create_confirmation 透传) — 小欧 2026-09-02
-                insert_session_trust(conn, _sid, normalize_tool_name(entry.tool_name), getattr(entry, "path", None))
-
-            await db.atxn("chat", _do)
-            logger.info(f"[HITL] 会话信任落库: task_id={_task_id}, tool_name={normalize_tool_name(entry.tool_name)}")
+            from app.tools.trust import save_session_trust
+            await save_session_trust(_task_id, entry.tool_name, getattr(entry, "path", None))
         except Exception as _te:
             logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
 

@@ -1,0 +1,102 @@
+import { test, expect } from '@playwright/test';
+import {
+  ChatPage,
+  attachStreamDiag,
+  findAdjacentDup,
+  getCaseId,
+  getTodayLogPath,
+  keepBrowserOpenIfRequested,
+  logBaseOf,
+  printDiag,
+  readLogSince,
+  runChatFlow,
+  startNormalUiEnv,
+} from '../e2e_front_lib';
+
+/**
+ * 查股票行情 UI 全链路 E2E — 小欧-2026-09-13
+ *
+ * 真实浏览器(chromium) + 真实后端(uvicorn:8000) + 真实LLM + 真实SQLite。
+ * 场景: 查询贵州茅台(600519)实时行情（联网类）。后端无专用股票工具, 依赖 UniversalAgent 动态工具注入:
+ *   FUNDAMENTAL.searchtool 命中"联网/搜索/股票"关键词 → 自动注入 NETWORK 整类 → LLM 真实联网取数并总结。
+ *
+ * 环境(普通会话流): 默认 vite dev(:5173) 服务页面, 前端 API 默认基址直连后端 :8000(跨域CORS放行)。
+ *
+ * 架构分层: 本 case 独立、场景内聚; 通用设施(环境/会话流)在 ../e2e_front_lib。
+ */
+test.describe('查股票行情 UI 全链路', () => {
+  const BACKEND_DIR = 'F:\\OmniAgentAs-repair\\backend';
+  const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+  const BLOG = getTodayLogPath(BACKEND_DIR);
+  // ============================================================
+  // 特例区 ① prompt —— 新普通 case 只需替换本行(场景输入); 以下均库通用调用
+  // 编辑历史: 2026-09-13 小欧 - 特例区标注, 便于照模板生成新case - 小欧-2026-09-13
+  // ============================================================
+  const PROMPT =
+    '请查询贵州茅台（股票代码 600519）今天的股票行情：当前价格、涨跌幅、成交量，并做简要分析。请先搜索合适的联网工具，再调用它获取实时数据后回答。';
+
+  test('发消息→真实联网查贵州茅台行情→终态正文含行情结论', async ({ page }) => {
+    test.setTimeout(600_000);
+
+    const chat = new ChatPage(page);
+    const diag = attachStreamDiag(page);
+
+    // 环境: 杀残留5173→起默认 vite dev(:5173)→等就绪; 前端API直连:8000(跨域CORS放行), 无9000代理
+    await startNormalUiEnv(FRONTEND_DIR);
+    await chat.gotoChat();
+    await expect(chat.input).toBeVisible({ timeout: 60_000 });
+
+    const logBase = logBaseOf(BLOG);
+    const text = await runChatFlow(chat, PROMPT, {
+      diag,
+      waitDoneTimeout: 420_000,
+    });
+    const tail = readLogSince(BLOG, logBase);
+
+    // ============================================================
+    // 特例区 ② 断言 —— 新普通 case 只需替换本段(按场景校验终态正文)
+    // 编辑历史: 2026-09-13 小欧 - 特例区标注, 便于照模板生成新case - 小欧-2026-09-13
+    // ============================================================
+    // 断言1: 正文非空有产出
+    expect(text.trim().length).toBeGreaterThan(30);
+    // 断言2: 主题结论命中(贵州茅台/代码 + 行情语义词)
+    const hitTheme =
+      (text.includes('贵州茅台') || text.includes('600519')) &&
+      /价格|行情|涨|跌|成交|股票|元/.test(text);
+    if (!hitTheme) {
+      console.log(
+        '[E2E] 正文未命中主题关键词(前300字):',
+        text.trim().slice(0, 300)
+      );
+    }
+    expect(hitTheme).toBe(true);
+    // 断言3(软): 行内相邻重复仅提示不 fail —— hasAdjacentDup 专查断连续传重叠, 普通会话无拼接来源,
+    //   LLM 手写报告天然重复表述会误报, 故折为 [DIAG] 提示供人工核对
+    const dupHits = findAdjacentDup(text);
+    if (dupHits.length > 0) {
+      console.log('[DIAG] run-on 命中提示(普通会话不fail, LLM天然重复?):');
+      dupHits.slice(0, 5).forEach((h) => console.log(`[DIAG]   ${h}`));
+    }
+
+    // ============================================================
+    // 通用区 ③ 诊断输出(库 printDiag, 不参与断言, 失败归因用) —— 非特例, 新 case 保留即可
+    // ============================================================
+    printDiag(
+      diag.streamReqs,
+      diag.reconnectLogs,
+      diag.sseErrors,
+      diag.consoleAll,
+      tail,
+      diag.allFailed,
+      getCaseId()
+    );
+    tail
+      .split('\n')
+      .filter((l) => l.includes('[tool_executor]'))
+      .slice(-8)
+      .forEach((l) => console.log(`[TOOL]  ${l.trim()}`));
+
+    // 特例保留: 双开关(命令行 KEEP_BROWSER=1 临时 / e2e.config.ts E2E_KEEP_BROWSER_OPEN=true)时完成后挂起不关浏览器(仅单 case 调试, Ctrl+C 结束)
+    await keepBrowserOpenIfRequested(page);
+  });
+});

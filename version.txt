@@ -1,41 +1,610 @@
-﻿v0.19.40.2
-更新时间: 2026-09-04 11:52:33 - 小欧-2026-09-04
-## v0.19.40.1以来 变更汇总(13个commit) - 小欧-2026-09-04
-[2026-09-04 11:52:33 小欧] 汇总范围=v0.19.40.1以来全部commit(本分支 optimize-0.19.17 自v0.19.40.1累积13个commit, 已打 tag v0.19.40.2)
+﻿v0.19.40.20
+更新时间: 2026-09-17 16:50:00 - 小欧-2026-09-17
+## v0.19.40.19以来 变更汇总(21个commit) - 小欧-2026-09-17
+[2026-09-17 16:50:00 小欧] 汇总范围=v0.19.40.19以来全部commit(共21个: feat4/fix5/docs4/test2/refactor0)
 
-### feat(3个):
-- conflict_detector.py 冲突检测下沉(_has_conflict+_partition_calls)复用trust._parse_paths
-- trust.py信任域三合一合并(trust_utils+trust_service+trust_repository)
-- event_emitter 统一转换层新建 handler业务结果→前端Step
+### feat(4个):
+- 92e0fbac7 feat:链路透传 useSSE→useChatStreaming→RightViewer→PipelineRenderer→图标 - 小欧-2026-09-17
+- 7c67fdb07 feat:sseParser/useSSE 心跳信号源+业务基线 - 小欧-2026-09-17
+- bf7b22f8c feat:clockStopwatch 心跳钟面控件+类型+样式 - 小欧-2026-09-17
+- 27c046e27 feat:[47]Zen免费无key模型接入系统集成设计方案 v2.7 - ID生成函数忠实复制opencode逻辑 - 小欧-2026-09-17
 
-### fix(4个):
-- 重构错误修复合集(6文件) set_completed/set_failed补全+event_emitter字段修正+conflict_detector退化修正+同工具名死循环防御+answer_handler字段修正
-- sandbox_resolve返回dict适配+编辑历史补全
-- react_cycle.py Phase4 _dispatch_handler从async generator→async function返回dict
-
-### refactor(5个):
-- SLAP修复 build_final_stats_step+emit_final_with_stats outcome参数显式传递
-- action_handler引用整合+sandbox_gate环依赖消除
-- sandbox_gate yield→return dict 纯业务改造+HITL暂停流修复
-- answer_handler yield→return dict 纯业务改造
+### fix(5个):
+- 6e9fef94b fix:清除clockStopwatch/useSSE临时debug日志 - 小欧-2026-09-17
+- 51a0f7eb8 fix:chat-page sendBtn选择器精确匹配 - 小欧-2026-09-17
+- 375e25fe9 fix:react_dispatch+steps+sseParser+useTaskInfo+PipelineRenderer+RightViewer 三堂会审6缺陷修复 - 小欧-2026-09-17
+- 07f59b74b fix:ChatHeader 标题截断20→15字 - 小沈-2026-09-17
+- 5ccd27e3e fix:CollapsibleText 折叠按钮内联跟在文本末尾不另起新行 - 小沈-2026-09-17
+- 9af1bce44 fix:CollapsibleText 折叠按钮改为右侧对齐 - 小沈-2026-09-17
+- bce6e9c48 fix:useTaskInfo 事件排序改正序(最早在上) - 小沈-2026-09-17
 
 ### docs(4个):
-- version.txt v0.19.40.1升级说明(26个commit)
-- 前后端优化分析v2.10 10.10审计内容合并至第11章(15小节) 消除重复保留全部信息
-- 前后端优化分析v2.9 新增第11章重构问题清单(8问题+1待确认)+更新第10章审计结论
+- 509a2aa24 test:fre2e_06_clock_wait+fre2e_07_quant_research E2E测试 - 小欧-2026-09-17
+- 4bbc97269 docs:[46]设计文档v2.16 T1~T4实施完成+链路贯通 - 小欧-2026-09-17
+- 057888227 docs:[47]Zen免费无key模型接入系统集成设计方案 验收标准v2.6(B1-B25/25bug) - 小欧-2026-09-17
+- a82485006 docs:[47]Zen免费无key模型接入系统集成设计方案 设计文档v2.5(TDD实施+22项验收标准) - 小欧-2026-09-17
+- 1bf59b2a1 docs:[46]10遍核查修正:H校正+术语统一+用例补全+计数修正 - 小欧-2026-09-17
+- 719849c67 docs:[46]新增第六章TDD实施步骤与26个测试用例 - 小欧-2026-09-17
+- 8824522c6 docs:[46]设计文档v2.13+stopwatch演示+多份文档更新 - 小欧-2026-09-17
+
+### test(2个):
+- 55f64a82a test:fre2e_05_history_switch E2E测试更新 - 小沈-2026-09-17
+
+### refactor(0个):
+
+---
+v0.19.40.19
+更新时间: 2026-09-17 06:34:45 - 小欧-2026-09-17
+## v0.19.40.18以来 变更汇总(26个commit) - 小欧-2026-09-17
+[2026-09-17 06:34:45 小欧] 汇总范围=v0.19.40.18以来全部commit(共26个: feat7/refactor1/fix4/docs14)
+
+### feat(7个):
+- 761cb9056 feat:拒绝可视化图标与类型契约(ToolCallLine/PipelineRenderer/RightViewer/infoMaps/execution) - 小欧-2026-09-17
+- 06ddf2f63 feat:rejected统一事件前端全链路(sseParser/useSSE/useChatStreaming/useTaskInfo) - 小欧-2026-09-17
+- 8b7f53e04 feat:统一拒绝事件rejected收口(executor/sandbox_gate/safety_gate/react_dispatch/react_inference/stream_orchestrator/agent_runner) - 小欧-2026-09-17
+- 8bf24a3be feat:AuthorizationModal index.tsx HITL工具名词参数显示优化v1.7(4行高+左对齐+box-sizing修正) - 小欧-2026-09-16
+- b6ba5eb76 feat:hitl_gateway 第11章T4.2参数摘要 _summarize_params(主键extract_trust_path优先+smart_truncate_text兜底80截断, 组装行包裹, 脱敏仍由_desensitize收口) - 小欧-2026-09-16
+- 5eace1cb0 feat:AuthorizationModal 第11章TDD T1-T7(统一Modal壳/去emoji/Bypass图标/Trust?图标/可访问性) - 老杨-2026-09-16
+- 023a3c84a feat:AuthorizationModal 第10章TDD S1-S5(motion/useMemo/CountdownRing隔离/Tooltip改title) - 老杨-2026-09-16
+
+### refactor(1个):
+- fc3512ed7 refactor:AuthorizationModal UI优化参数区纯文本+间距收紧 - 小欧-2026-09-16
+
+### fix(4个):
+- a6987957f fix:hitl_gateway.py HITL参数摘要截断改尾部+阈值140+换行压空格单行化 - 小欧-2026-09-16
+- b56a90509 fix:前端代码-HITLModalShell/DangerConfirm/CountdownRing ModalProps类型合法化+eslint清零(motion/role/aria-modal非antd ModalProps→transitionName空串/删除零退化, prop-types对齐惯例disable) - 小欧-2026-09-16
+- b0d35c9f3 fix:前端代码-文档[44]缺陷①③修复: AuthModal bypass勾选框禁用+registry/子目录文案区分/TrustPanel Tooltip精准化 - 小欧-2026-09-16
+- 7a1a78350 fix:后端代码-文档[44]缺陷修复+DRY重构: hitl_gateway同步def还原/trust非文件信任域提取/storage撤销侧消除双份副本 - 小欧-2026-09-16
+
+### docs(14个):
+- 3783d7b3c docs:46号文档v2.4实施状态与偏差说明 - 小欧-2026-09-17
+- c79ba33c2 docs:[46]工具执行拒绝与心跳显示优化方案-小欧-2026-09-16.md 工具执行拒绝与心跳显示优化方案 - 小欧-2026-09-16
+- aa1092dd9 docs:[43]/[44] 实施偏差修正记录 TDD落盘偏差同步(白屏根因/motion修正/norm_trust_path单源) - 小欧-2026-09-16
+- ac4f6e72f docs:[45]HITL窗口工具名词参数显示优化审核报告 v1.7(加序号+同步代码/4行/textAlign) - 小欧-2026-09-16
+- 5dff0b588 docs:FUNCTIONS.md更新 - 小欧-2026-09-16
+- dee25e8fe docs:[43]AuthorizationModal UI优化方案 新增第10/11章TDD实施流程10个用例(先红→绿) - 老杨-2026-09-16
+- 8a64c88ac docs:[44]信任机制现状分析 v1.3 TDD复核修正 - 小欧-2026-09-16
+- 1c2f7e7d9 docs:[43]AuthorizationModal UI优化方案 v1.9→v2.0 全文11章一致性核查10遍去重修正(8.6/9.2.2/9.2.3/10.2/10.4/10.5/11.1-11.5/8.2/8.5/8.6/9.1. naked path) - 老杨-2026-09-16
+- 611fa80e4 docs:[44]信任机制现状分析 v1.0 三思三省10遍核验重构第五章 - 小欧-2026-09-16
+- 55eb5dfdd docs:[44]信任机制现状分析 v0.7 第四章修改策略+第五章代码diff - 小欧-2026-09-16
+- bf93036c1 docs:[44]信任机制现状分析 v0.6 问题链路图解 - 小欧-2026-09-16
+- f452b84af docs:[44]信任机制现状分析 v0.5 全文重写: 严分确凿问题与已确认非问题 - 小欧-2026-09-16
+- 1125dcd1b docs:[43]AuthorizationModal UI优化方案重命名+v1.8老杨扩充 [44]信任机制现状分析 v0.3 - 小欧/老杨-2026-09-16
+- b5d960b1d docs:version.txt v0.19.40.17分层重置 + version_backup.txt备份入库 - 小欧-2026-09-16
+
+v0.19.40.18
+更新时间: 2026-09-15 20:54:03 - 小欧-2026-09-15
+## v0.19.40.17以来 变更汇总(18个commit) - 小欧-2026-09-15
+[2026-09-15 20:54:03 小欧] 汇总范围=v0.19.40.17以来全部commit(共18个: feat9/fix4/refactor3/docs3)
+
+### feat(9个):
+- 2dfd3811b feat:main.tsx 全站Tooltip白底浅卡片统一 ConfigProvider单点token - 小欧-2026-09-15
+- 9b0ad9d09 feat:Layout 左侧菜单栏优化 默认折叠+折叠Logo不显示修复+折叠tooltip黑框无字修复 - 小欧-2026-09-15
+- ba40c524d feat:AnimatedIcons 新建动画/渲染无关抽离组件组 LogoGridIcon点阵+TitleSpinIcon圈圈 - 小欧-2026-09-15
+- b20267ef6 feat:[38]TextStream 正文末位光标换型ActionWaitingIcon蓝色波纹扩散圈 - 小欧-2026-09-14
+- 7de92c5ec feat:RightViewer/useChatPanels/useSessionTasks/ChatPage [33]第七章左侧回复区数据来源铁命令落地 - 小欧-2026-09-15
+- 9e56dc5be feat:TaskInfoBar [33]taskinfo恒一行压缩+底色#fafafa通栏平铺+顶线1px闭环 - 小欧-2026-09-15
+- 198325715 feat:[40]统计面板令牌化收敛 TitleBlock/StaticStatsBlock间距字号全收敛 - 小欧-2026-09-15
+- 0b3bb250c feat:[42]Step页面视觉审查落地 状态行去emoji+ERROR_BG样式/水滴图标替代字符符号 - 小欧-2026-09-15
+- f1b8ead00 feat:[40]step面板统计条第一阶段UI优化 - 小欧-2026-09-15
+
+### fix(4个):
+- 286345bfb fix:ChatPage 新任务发送即展开右侧step面板 - 小欧-2026-09-15
+- aa38d31db fix:RightViewer 三思三省根治displaySteps跨任务settledSteps残留 - 小欧-2026-09-15
+- 6b215ba7e fix:前端chat hooks [41]cancel根治v1.3落地(F3闸复位唯一化/F4'finally不再无条件setLoading/F5 executeSend起点兜底复位) - 小欧-2026-09-15
+- 57ae1ac8a refactor:CollapsibleText+ToolCallLine+GearIcon 步骤3.3-3.6折叠箭头/齿轮图标/折叠阈值优化 - 小欧-2026-09-15
+
+### refactor(3个):
+- 57ae1ac8a refactor:CollapsibleText+ToolCallLine+GearIcon 步骤3.3-3.6折叠箭头/齿轮图标/折叠阈值优化 - 小欧-2026-09-15
+- 3d0e4e3ea refactor:hooks注释清理P-008 去除F2/F3/F4'/F5代号改描述性术语 - 小欧-2026-09-15
+- b79b79bd0 docs:前端注释清理去除R1-R9代号改用描述性术语 - 小欧-2026-09-15
+
+### docs(3个):
+- 56e89d613 docs:[41][42] cancel任务右键不渲染final根因分析+Step页面UI视觉审查报告 - 小欧-2026-09-15
+- 96e13119f docs:[33]左侧任务列表回复区数据来源分析v1.5+[42]Step页面UI视觉审查报告M5 - 小欧-2026-09-15
+- eb0f9c53d docs:[38][39] 左侧菜单栏优化分析+Tooltip样式分析与统一方案 - 小欧-2026-09-15
+
+v0.19.40.17
+更新时间: 2026-09-14 21:44:29 - 小欧-2026-09-14
+## v0.19.40.16以来 变更汇总(9个commit) - 小欧-2026-09-14
+[2026-09-14 21:44:29 小欧] 汇总范围=v0.19.40.16以来全部commit(共9个: fix4/refactor4/docs1)
+
+### fix(4个):
+- c988b7b24 fix:task_runtime.py 取消终态字段修正删content改response与FinalStep对齐 - 小欧-2026-09-14
+- f6a44fa4b fix: PipelineRenderer tool段key修复(并行step重复)+CURSOR T/F打点, RightViewer删CURSOR-A - 小欧-2026-09-14
+- bd452889c fix:fre2e_01 hasAdjacentDup硬断言改软提示-修复LLM并行调用同名工具误报 - 小欧-2026-09-14
+- 730956d3b fix:[37]光标翻转打点DRY抽取useRiseLog+PipelineRenderer console/import清理 - 小欧-2026-09-14
+
+### refactor(4个):
+- 907c2c32b refactor: DRY时间戳/流式样式公共函数提取(formatDebugTime+getStreamStyle) - 小欧-2026-09-14
+- 270342783 refactor: sseParser pushAndFlush提取+logTypeArrival统一打点(chunk独立片段T/F) - 小欧-2026-09-14
+- 270b6c882 refactor:前端console.log清理-删除重复无意义日志约50条(54%) - 小欧-2026-09-14
+- 183b7ef47 refactor:PipelineRenderer 蓝色圈圈显示逻辑停用(删action-waiting段三分支, 定义/CSS/import保留为将来新方案) - 小欧-2026-09-14
+
+### docs(1个):
+- 79838dda5 docs:[37]思考光标不显示问题分析 打印机光标不该消失时消失病根分析(TextStream光标绑打字机进度shown+日志打点位置校准) - 小欧-2026-09-14
 
 ---
 
-v0.19.40.1
-更新时间: 2026-09-04 11:50:29 - 小欧-2026-09-04
-## v0.19.40以来 变更汇总(26个commit) - 小欧-2026-09-04
-[2026-09-04 11:50:29 小欧] 汇总范围=v0.19.40以来全部commit(本分支 optimize-0.19.17 自v0.19.40累积26个commit, 已打 tag v0.19.40.1)
+v0.19.40.16
+更新时间: 2026-09-14 12:15:00 - 小欧-2026-09-14
+## v0.19.40.15以来 变更汇总(1个commit) - 小欧-2026-09-14
+[2026-09-14 12:15:00 小欧] 汇总范围=v0.19.40.15以来全部commit(共1个: docs1)
+
+### docs(1个):
+- 38724091f docs:[35]thought-action等待状态分析与实施方案 第六章等待图标代码梳理 - 小欧-2026-09-14
+
+---
+
+v0.19.40.15
+更新时间: 2026-09-14 10:57:17 - 小欧-2026-09-14
+## v0.19.40.14以来 变更汇总(6个commit) - 小欧-2026-09-14
+[2026-09-14 10:57:17 小欧] 汇总范围=v0.19.40.14以来全部commit(共6个: feat2/refactor1/test1/docs2)
+
+### feat(2个):
+- 38a0fdcc7 feat:title-icon-compare 新增25种动画图标(M~AK)形状与动画选型预览 - 小欧-2026-09-14
+- a714a339b feat:title-icon-compare新增20种动画图标(色相流动/描边补全等+配套动画) - 小欧-2026-09-14
+
+### refactor(1个):
+- 081106288 refactor: 前端3接收实时变量冗余重构(删receiving三变量收敛+秒表帧信号+viewState纯函数) - 小欧-2026-09-14
+
+### test(1个):
+- 110c58ae1 test: E2E断连重连修复(process v5+api-proxy resolve)+E5历史切换专项case(右栏锚点/B工具链/bId时序) - 小欧-2026-09-14
+
+### docs(2个):
+- 75d13872e docs:[36]前端3接收实时变量 更新 - 小欧-2026-09-14
+- 30a539ad2 docs: [36]前端3接收实时变量方案v1.7(E2E全链路实施记录/E5闭环取证) - 小欧-2026-09-14
+
+---
+
+v0.19.40.14
+更新时间: 2026-09-14 07:02:12 - 小欧-2026-09-14
+## v0.19.40.13以来 变更汇总(16个commit) - 小欧-2026-09-14
+[2026-09-14 07:02:12 小欧] 汇总范围=v0.19.40.13以来全部commit(共16个: feat5/fix4/docs7)
+
+### feat(5个):
+- 6ba78c6b3 feat:ChatHeader/useChatSend 会话标题策略调整(生成端取消截断存全量, 顶栏显示截断用常量SESSION_TITLE_DISPLAY_MAX=10省略, 点进编辑框看全文) - 小欧-2026-09-13
+- f8e5e38fb feat:新建会话右栏旧步骤残留根治+新会话右栏默认折叠(渲染期复位prevSessionId哨兵+justSwitchedRef跳过期自动选中+切会话同步清空tasks/latestTaskId+resetSettledAndHistory统一清理+setStatsExpanded/setRightOpen复位+clearSteps清serverTaskId并去冗余ref双写) - 小欧-2026-09-13
+- 3077df5a0 feat:CircleArrow/PillBadge可复用组件 - 小欧-2026-09-13
+- b0114e9ba feat:TitleBlock用CircleArrow/PillBadge替换Tag和▲▼ - 小欧-2026-09-13
+- f33cd90e7 feat:WaitingIcons+PipelineRenderer thought-action等待态CSS动画与渲染 - 小欧-2026-09-13
+
+### fix(4个):
+- fe88d378d fix:RightViewer 实时任务完成后点切历史任务右侧不切换回归修复(settledSteps终态快照仅当activeTaskId===serverTaskId回放时优先, 抽pickDisplaySteps纯函数供回归钉死, REST等长校验同守卫防快照覆盖污染) - 小欧-2026-09-13
+- d4af1d99c fix:RightViewer 切换历史任务右侧不切换根治版(北京老陈否决守卫治标责令重写): 渲染期复位prevActiveTaskIdRef哨兵切走即清展示态(无闪现无残留)+快照effect加activeTaskId===serverTaskId守卫deps补全切回即重固化+废弃pickDisplaySteps纯函数改组件级真场景回归+S13.4等长校验去冗余守卫(渲染期复位已保证语义) - 小欧-2026-09-13
+- 28af3dce1 fix:WaitingIcons+stepStyles 漏洞2 SVG硬编码色令牌化(5处色值+WAIT_ACTION令牌) - 小欧-2026-09-14
+- 67f5a1b42 fix:[34]布局底部被推出视口修复 外层100vh锁高+中部flex滚动输入条钉底 - 小欧-2026-09-14
+
+### docs(7个):
+- f8e885c92 docs:ChatPage/useSessionTasks 左侧回复区注释补充文件职责+代码实际逻辑说明 - 小欧-2026-09-13
+- 1c83b3f1e docs:[33]左侧任务列表回复区数据来源分析v1.4 可读性优化 - 小欧-2026-09-13
+- c4a3e40e7 docs:[34]浏览器布局底部被推出视口问题分析报告 - 小欧-2026-09-13
+- 1cf816b31 docs:任务统计样式定案HTML - 小欧-2026-09-13
+- c6bb1d52b docs:[35]thought-action等待状态分析与实施方案 - 小欧-2026-09-13
+- 620b617e1 docs:[33]左侧任务列表回复区数据来源分析 更新 - 小欧-2026-09-14
+- f6f266689 docs:[34]布局分析报告更新+[36]前端3接收实时变量 - 小欧-2026-09-14
+
+---
+v0.19.40.13
+更新时间: 2026-09-13 10:42:20 - 小欧-2026-09-13
+## v0.19.40.12以来 变更汇总(11个commit) - 小欧-2026-09-13
+[2026-09-13 10:42:20 小欧] 汇总范围=v0.19.40.12以来全部commit(共11个: feat7/docs3/chore1, E2E测试资产入库与前端用例编号化专项)
+
+### feat(7个):
+- d10db46b2 feat:e2e_case fre2e_01~04 接入浏览器退出双通道开关挂起钩子(keepBrowserOpenIfRequested, 单case调试保留页面) - 小欧-2026-09-13
+- 0b808fd75 feat:e2e_front_lib stream-diag 浏览器退出双通道开关(命令行KEEP_BROWSER=1临时覆盖优先 + e2e.config.ts E2E_KEEP_BROWSER_OPEN常驻开关, 跑完挂起保留页面单case调试/Ctrl+C结束) - 小欧-2026-09-13
+- d4e6faf8d feat:e2e_front_lib 新增normal-chat普通会话流POM(查天气/股票/目录分析普通case复用环境)+chat-page/index/process/stream-diag升级 - 小欧-2026-09-13
+- f91a5800a feat:前端E2E用例编号化重构(fre2e_01断线重连/02天气/03股票/04目录分析, 旧reconnect-ui.spec退役删除, api-proxy日志PROXY_LOG命名+playwright产物统一落e2e_case/output) - 小欧-2026-09-13
+- 68cc0afcd feat:e2e_front_lib升级(sendPrompt抗加载会话拦截重发/killPort杀全量listener修复静默空杀/stream-diag跳过纯符号行防表格线误报+DiagBundle加t0基准) - 小欧-2026-09-13
+- f18e54a27 feat:前端E2E案例迁移 tests/e2e→e2e_case目录(playwright testDir/vitest exclude同步切换, 案例含断线重连spec/后端代理/独立vite config) - 小欧-2026-09-13
+- 73121695a feat:e2etests E2E测试资产入库(e2e_front_lib前端Playwright公共库chat-page/process/stream-diag/index + 全链路E2E测试手册v2.11更新, 北京老陈特批测试资产入库) - 小欧-2026-09-13
+
+### docs(3个):
+- b759f32ea docs:全链路E2E测试手册 v2.15 9.2新增(6)浏览器退出双通道开关+(7)前端console日志采集原理,章节与版本记录同步 - 小欧-2026-09-13
+- 3e1961fbb docs:全链路E2E测试手册v2.13更新(前端用例编号化fre2e_01~04+普通会话POM+产物落盘规范) - 小欧-2026-09-13
+- 95c8c8509 docs:全链路E2E测试手册v2.12案例迁移章节更新+README十三章E2E路径同步(e2e_case目录/断流原理) - 小欧-2026-09-13
+
+### chore(1个):
+- 1b4225aec chore:.gitignore 补前端E2E产物忽略(frontend/test-results与playwright-report结果目录/e2e_case/output自落盘日志/tsconfig.node.tsbuildinfo增量缓存) - 小欧-2026-09-13
+
+---
+v0.19.40.12
+更新时间: 2026-09-13 08:16:15 - 小欧-2026-09-13
+## v0.19.40.11以来 变更汇总(28个commit) - 小欧-2026-09-13
+[2026-09-13 08:16:15 小欧] 汇总范围=v0.19.40.11以来全部commit(共28个: docs17/fix5/refactor4/feat2)
+
+### docs(17个):
+- 861f67d20 docs:README.md 重构收官(新增六配置文件说明/十三E2E案例编写参考手册, 配置模板移至backend/config.yaml.example, 删除遗留settings.yaml/config.json) - 小欧-2026-09-13
+- 187c1a9d1 docs:[30]重连重复发送问题分析与处理 新增第10章前后端链接与重连实现分析(10.1 fetch+ReadableStream与EventSource技术对比/10.2-10.9传输形态数据面首连断线重连幂等参数全链条代码实证, 原第10章顺延为第11章, 版本历史追加v4.18/v4.19) - 小欧-2026-09-13
+- 4002f94f7 docs:[30]重连重复发送问题分析与处理 新增第十章前后端链接与端点重连问题分析和讨论(断点续传核心理念沉淀, 仅已有实证再组织) - 小欧-2026-09-13
+- 85ac59397 docs:[30]重连重复发送分析 合并远端v4.15与本地v4.16(版本历史双保留,9.2验证列取并集) - 小欧-2026-09-12
+- 868c41c69 docs:[30]重连重复发送分析 第四章重写为新的概要设计及重连机制线条图 - 小欧-2026-09-12
+- 768068ce1 docs:[30]重连重复发送分析 第四章重写为新的概要设计及重连机制线条图 - 小欧-2026-09-12
+- 346576a56 docs:[30]重连重复发送分析 第4章设计原则第6章问题清单核查及B3白名单名修正 - 小欧-2026-09-12
+- 94a5d9460 docs:[30]重连重复发送分析 前六章及第七章清理与基线行号实测纠错 - 小欧-2026-09-12
+- a4bb4b39b docs:[30]重连重复发送分析更新 作废守卫退役同步 - 小欧-2026-09-12
+- 65e96266e docs:[32]重连重发移出问题记录与处置分析新增 - 小欧-2026-09-12
+- 63bc0389d docs:[29][30] 白名单实施定稿与重连分析更新 - 小欧-2026-09-12
+- b6c046668 docs:[30]重连重复发送问题分析与处理 更新 - 小欧-2026-09-12
+- 2e0d8c196 docs:[31]X2方案 v2.3+§5.6竞态根因修复节+§7改动面补充(done权威置位收敛, E2E-X2-01验证) - 小欧-2026-09-12
+- 565dc92ec docs:[31]X2方案 §4.4更新两场景对照(实时短条留空/历史回放DB有值) - 小欧-2026-09-12
+- 86ea39271 docs:useSessionTasks 铁命令注释(updateTaskResponse只能写final.response严禁兜底, refresh严禁作实时补response之用) - 小欧-2026-09-12
+- 99f5325eb docs:doc-9月优化 4篇09-12文档按建立时间顺序补序号[28]final/[29]4C通道路由缺口/[30]重连重复发送/[31]X2终态, 文内引用同步更新+[31]X2代码块补typing标注 - 小欧-2026-09-12
+- 9f74ed25d docs:文档整理归档 开发人员规则.md移入docs-项目规范/, 删过时日志分析报告(2026-09-07), 新增doc-9月优化4篇(4C通路缺口/X2终态长短信号分离/final三态字段渲染契约/重连重复发送分析) - 小欧-2026-09-12
+
+### fix(5个):
+- ac0c5a2d2 fix:useSSE/sseParser SSE绝对正确性三处修复+180s注释勘正+lastUsageSeqRef单基线退役(useSSE done分支decoder收尾flush防截断中文丢帧/controller-reader提升try外+finally统一释放+abortControllerRef引用守卫防重连竞态双流/releaseLock规范释放/180s注释改请求头超时口径; sseParser仅保留lastSeqRef唯一条基线,usage守卫退役YAGNI) - 小欧-2026-09-13
+- 3c4e195a9 fix:stream_orchestrator/steps SSE黑名单转白名单落地([29]7.3实施, ALL_STEP_TYPES登记源) - 小欧-2026-09-12
+- 9d9cf0dd1 fix:react_loop/agent_runner/stream_orchestrator E2E-X2-01竞态根因修复(done权威置位收敛唯一至runner finally, 删除react_loop两处过早done.set; 增追踪日志4点) - 小欧-2026-09-12
+- cc2a82e8b fix:useTaskInfo 补 thought-start badge分支对齐09-11契约化注释 - 小欧-2026-09-12
+- 1b2d0ca59 fix:ChatPage P1左卡草稿根治 R3数据源修正(chatState.messages尾部lastMsg.content→executionSteps中type=final的step.response, 无兜底非空校验, 杜绝流式正文草稿入task) - 小欧-2026-09-12
+
+### refactor(4个):
+- 6f8cd07d1 refactor:前端8文件 Prettier格式统一专项(纯格式零逻辑,附编辑历史留痕) - 小欧-2026-09-13
+- 6cd27d8b1 refactor:agent_runner/stream_orchestrator/task_state [30]§8.2 TDD P1-P4注释勘正与死代码清理(P1 final_stats日志改outcome入参消除闭包耦合/P2持锁死分支清理/P3注释与实际矛盾改述/P4 publish唯一写入口改述)+重连链路追踪补点A/B(重连请求接收与reader退出含is_reconnect/起点seq/续传帧数) - 小欧-2026-09-13
+- 979c911a3 refactor:sseParser/useSSE [30]8.2作废守卫退役(terminalSeqRef删除,B2改lastSeqRef判定) - 小欧-2026-09-12
+- 15de3baec refactor:ChatPage 删R4(hasFinalStats→refreshTasks DB兜底补左侧response)+R3处铁命令注释(左侧response只用final.response, 严禁其他数据源/兜底顶替) - 小欧-2026-09-12
+
+### feat(2个):
+- 992038e2b feat:e2etests E2E-30/31断线重连续传全链路测试(30后半场帧不重复+终态权威; 31双次断线链式续传不重不漏+reader退出三键日志闭环对账, 均真实后端真实LLM, 一次一case) - 小欧-2026-09-13
+- 97879f7ae feat:react_step.py X2终态长短信号分离发射侧改造(_emit_publish统一收口, 12处publish调用点全接入, 长短判定上移发射侧) - 小欧-2026-09-12
+
+---
+v0.19.40.11
+更新时间: 2026-09-12 05:52:52 - 小欧-2026-09-12
+## v0.19.40.10以来 变更汇总(55个commit) - 小欧-2026-09-12
+[2026-09-12 05:52:52 小欧] 汇总范围=v0.19.40.10以来全部commit(共55个: docs25/fix14/refactor9/feat7)
+
+### docs(25个):
+- d21caac59 docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.8小沈四轮核查修正8处实质矛盾 - 小欧-2026-09-10
+- 0d255009d docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.9+v2.10+v2.11三项修订(阶段门禁计数修正/S21对齐已落地S12/S4并入S12消除前后拉锯) - 小欧-2026-09-10
+- 8215ea613 docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.12+v2.13阶段一实施情况核查标注+step0基础设施落地 - 小欧-2026-09-10
+- 1f8456bef docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.14阶段一实施完成标注 - 小欧-2026-09-10
+- 23763001c docs:[25]前端SSE接收处理链路三份报告交叉核查与根治优化方案 v2.18阶段二测试门禁达成标注 - 小欧-2026-09-10
+- 036415d29 docs:[25]前端SSE优化方案 v2.19阶段四实施情况标注(S20✅/S21跳过/S22✅) - 小欧-2026-09-10
+- a48279d8d docs:[25]前端SSE优化方案 3.5/3.6/第4章/第5章落地情况核查标注 - 小沈-2026-09-10
+- b1d38a9ed docs:3.5问题清单三堂会审核查报告+S21handlers分组与IndexedDB迁移方案 新增文档 - 小沈-2026-09-10
+- 13eda911e docs:[26]事件落库与实时发送分流重构设计 新增设计文档 - 小欧-2026-09-11
+- f45a8e5e5 docs:备份-事件落库与实时发送分流重构设计 v59备份文档 - 小欧-2026-09-11
+- 677a726ff docs:[26]事件落库与实时发送分流重构设计 更新内容 - 小欧-2026-09-11
+- 716a9db1a docs:[27]final及相关前端的对应处理 新增设计文档 - 小欧-2026-09-11
+- 3ba3a057c docs:[27]final及相关前端的对应处理 更新内容 - 小欧-2026-09-11
+- 9235f50fd docs:[27]final及相关前端的对应处理 更新内容 - 小欧-2026-09-11
+- 278a70f8a docs:[27]final及相关前端的对应处理 更新内容 - 小欧-2026-09-11
+- 0fa63d1f0 docs:[27]final及相关前端的对应处理 v1.17:后端TDD实施流程+前端概要设计+详细diff - 小欧-2026-09-11
+- 5089db8ed docs:[27]final及相关前端的对应处理 v1.17备份 - 小欧-2026-09-11
+- 26c6eaf70 docs:[27]final及相关前端的对应处理 v1.22:全章diff化+一致性核查3修 - 小欧-2026-09-11
+- 6d9b87a2f docs:[27]final及相关前端的对应处理 v1.23:10轮代码核查2处缺陷修复 - 小欧-2026-09-11
+- 353a8f1f1 docs:[27]final及相关前端的对应处理 v1.24:第八章前端TDD实施计划 - 小欧-2026-09-11
+- 35bd54f73 docs:[27]final及相关前端的对应处理 v1.25:第八章核查6修 - 小欧-2026-09-11
+- 6c47f8e0a docs:[27]final及相关前端的对应处理 v1.26:第八章二次核查7修 - 小欧-2026-09-11
+- 33cc8e93e docs:[27]final及相关前端的对应处理 第八章v1.27三次核查5修 - 小欧-2026-09-11
+- ca34775c3 docs:[27]final及相关前端的对应处理 第七章前端处理定稿+三堂会审4bug核查记录 - 小欧-2026-09-11
+- e212bf332 docs:.gitignore 新增backend/output忽略(junit测试产物勿入库)+清理临时xml - 小欧-2026-09-11
+
+### fix(14个):
+- f5adc5456 fix:SSE前端阶段一零风险清障+S2透传提前 - 小欧-2026-09-10
+- 42f3ecb4e fix:useChatLifecycle executionStepsRef改从chatStreaming取(S2配套) - 小欧-2026-09-10
+- fff7c1763 fix:SSE阶段三门禁实施落地 - useSSE(ref权威源+saveStepsToStorage恢复)+sseParser(S12.2残留死参清理+编辑历史)+RightViewer(S13条件修正) - 小欧-2026-09-10
+- 64f3ccba0 fix:sseParser final分支ref权威源等价值计算(S12.2.1)+编辑历史补充 - 小欧-2026-09-10
+- 797dff48e fix:SSE阶段四 - useSSE(S20连接层定时器清理收敛)+useChatCallbacks(S22错误终态幂等清理) - 小欧-2026-09-10
+- 66cd546ed fix:sseParser C1/C2终态后作废守卫(防止终态后晚到帧污染pendingSteps) - 小欧-2026-09-10
+- ccb54debd fix:useChatCallbacks+useSSE 35失败根因修复(A1暂停累积/A2reasoning回带/A3并发暂停计数/A5取消检查/A8error回放/B1空流终态/C1C2终态作废) - 小欧-2026-09-10
+- 51ff200db fix:sseParser terminalSeqRef赋值改stepNum消除类型安全隐患(number|undefined→number) - 小沈-2026-09-10
+- c06d32492 fix:useChatCallbacks [A9]onResumed加hasReplayable守卫防final暂停期到达后重置接收态 - 小沈-2026-09-10
+- 164465882 fix:stream_orchestrator [26][27]事件落库与实时发送分流重构设计落地的后端对应处理 - 小欧-2026-09-11
+- 2d72e34fe fix:前端SSE核心链路 thought契约化+B2空流修复+cancel_source类型+DB滞后兜底 - 小欧-2026-09-11
+- 30a7d8594 fix:前端UI组件终态三态统一渲染+reasoning去重+DB延迟刷新 - 小欧-2026-09-11
+- 393e23ebf fix:agent_telemetry [27]恢复原注释+去重行+FinalStatsStep接线 - 小欧-2026-09-11
+- 63653a74f fix:agent_telemetry+agent_runner [27]final_stats 4bug+1设计缺陷修复 - 小欧-2026-09-11
+
+### refactor(9个):
+- 66b7e51d4 refactor:useSSE/SSE核心基础设施 - S2单一真源+S3 seq守卫+S12批量commit+S14 useStateWithRef+S15并发HITL - 小欧-2026-09-10
+- 3665bbf93 refactor:sseParser - S12批量commit零同步序列化+S15并发HITL confirmId+S3 seq守卫 - 小欧-2026-09-10
+- 66f2edf4d refactor:Chat Hooks - S2 executionStepsRef单一真源透传+S12防抖同步+S13 live→终态平滑交接 - 小欧-2026-09-10
+- 825050c3c refactor:operation_models.py TaskRecord字段注释残留会话字样清理为任务(零逻辑变更) - 小欧-2026-09-11
+- fe9c9a122 refactor:execution+sse 类型契约对齐+死字段清理(artifacts补tool_name统一4字段, 删code/final_status/usage/taskId死字段) - 小欧-2026-09-12
+- a99a88c5a refactor:sseParser P0-1/2 error分支step归一化+action补tool_name赋值, P1-4删code, P1-7/8 normalizeBoolean/toStepNumber DRY, P1-11 usage死字段收敛 - 小欧-2026-09-12
+- aca62727a refactor:useSSE P0-4 去Omit死壳(ReconnectConfig已无enabled字段)+prettier格式化对齐 - 小欧-2026-09-12
+- e8f160f44 refactor:TopbarStats+useChainTokens+useChatPanels+StaticStatsBlock+TitleBlock+RightViewer P1-1/2/3/6/9 TokenLayer统一复用+样式常量收敛+renderToken抽函数+BUSINESS_TYPES模块级 - 小欧-2026-09-12
+- 6274279a6 refactor:useTaskInfo+ChatPage P1-11 usage兜底改{0,0,0}(frames.usage已删)+P1-10 urlSessionId去重复取参 - 小欧-2026-09-12
+
+### feat(7个):
+- 4e9074ad1 feat:RightViewer - S13 live→终态单一真源平滑交接(根治Q13丢尾) - 小欧-2026-09-10
+- 6639e63c2 feat:agent [27]final_stats延后单发+emit_final一元组+FinalStep补duration - 小欧-2026-09-11
+- 5c9f8bd44 feat:monitoring [27]build_final_stats_step补全7键统计+删冗余键 - 小欧-2026-09-11
+- 2df5abd6e feat:execution+sse+stepStyles [27]token四层对象化+FinalStatsFrame7键对齐+TokenLayer公用格式化, 三堂会审P1-2/P1-3/P1-4类型契约对齐 - 小欧-2026-09-11
+- c344967b9 feat:sseParser+useSessionTasks+useChatPanels+ChatPage [27]R3即时updateTaskResponse+R4hasFinalStats统一信号+token透传 - 小欧-2026-09-11
+- 3801bb8e0 feat:StaticStatsBlock+TitleBlock+RightViewer+useChainTokens [27]title段拆分+折叠+4组token+三堂会审修复(P0-1 fmtTime/P1-4 TokenLayer统一/P1-5防自激循环/P2提供model顺序+cancelled色) - 小欧-2026-09-11
+- 2847cd6c3 feat:step_emitter [27]终态统一注入model/provider/duration(与react_step同源), set_failed先于emit_failed_final - 小欧-2026-09-11
+
+v0.19.40.10
+更新时间: 2026-09-10 14:20:41 - 小欧-2026-09-10
+## v0.19.40.9以来 变更汇总(44个commit) - 小欧-2026-09-10
+[2026-09-10 14:20:41 小欧] 汇总范围=v0.19.40.9以来全部commit(共44个: docs25/fix4/refactor10/feat4)
+
+### docs(25个):
+- [25]前端SSE接收处理链路三份报告交叉核查与根治优化方案-小欧-2026-09-10.md 副作用风险修复v2.4+v2.7三轮核查修正 - 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v修订(33行补+9行改) - 小欧-2026-09-10
+- [25]前端SSE三份报告交叉核查与根治优化方案 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v小修3(补12行) - 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v小修2(删除11行) - 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v小修(2行) - 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v三更(330行补充+142行修订) - 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v再次大幅更新(641行补充) - 小欧-2026-09-10
+- [25]三分报告交叉核查根治优化方案v大幅更新(559行补充) - 小欧-2026-09-10
+- [23][25]SSE处理架构分析与优化方案v更新(小沈+x小欧交叉核查) - 小欧-2026-09-10
+- [22][25]SSE接收处理链路核查实施说明v更新(小享+x小欧交叉核查) - 小欧-2026-09-10
+- [21][25]SSE处理架构报告v更新(小幸深度分析+小欧交叉核查追加) - 小欧-2026-09-10
+- [21]前端UI显示缺陷分析v1.1对照文档25标注9缺陷+5根因采纳状态 - 小欧-2026-09-10
+- [25]三分报告交叉核查v1.7补齐病根+新增3.5.2.5+重写结论②/④ - 小欧-2026-09-10
+- [21-25]前端SSE处理链路五份分析报告(深度/核查/缺陷/推荐/交叉根治) - 小欧-2026-09-10
+- pipeline chunk step重复显示问题分析与修复 补充Bug E/Bug I完整diff - 小欧-2026-09-10
+- pipeline chunk step重复显示问题分析与修复 v1.7 三堂会审第三轮 修正bug B/G/J描述+修订点1改到reconnect delay前abort+修订点8 chunk diff修正3处写法缺陷+补充bug K+修订点17+4.3 bug代码diff+4.2核查总结 - 小沈-2026-09-10
+- pipeline文档补2.4节setExecutionSteps无去重独立小节 - 小欧-2026-09-10
+- pipeline chunk step重复显示文档 补双流并存根因+chunk去重+修正章节号 - 小欧-2026-09-10
+- 改写--pipeline chunk step分析与修复v1.6(双流并存根因) - 小欧-2026-09-10
+- pipeline chunk step重复显示问题分析与修复v1.5-v1.6第二轮三堂会审 - 小欧-2026-09-10
+- pipeline chunk step重复显示问题分析与修复文档 - 小欧-2026-09-09
+- 前端step冻结丢失显示的实施解决说明 - 小欧-2026-09-09
+- [17]任务1任务2问题根因分析报告 v1.1修正任务1现象(北京老陈指正): 20秒冻结改约10多秒等待, 后端到达的action/observation/final均正常显示, final时间戳15:46:29证后端LLM慢非前端阻塞 - 小欧-2026-09-09
+- 9月优化 [17][18][19][20][21]+执行面板20秒冻结排查分析报告六篇(任务1/2问题根因/UI显示缺陷/渲染选型/优化架构/冻结现象说明) - 小欧-2026-09-09
+
+### fix(4个):
+- saveStepsToStorage防抖300ms+去掉6处setTimeout(0) - 小欧-2026-09-09
+- useChatCallbacks.ts bug-2修复task2 step5/step6丢失 - 小欧-2026-09-09
+- RightViewer.tsx isCurrentLive铁证兜底(hasBusinessSteps)根治HITL/空窗/重连下翻false致步骤压栈(含DBG-1/DBG-2排查打点) - 小欧-2026-09-09
+- useChatCallbacks.ts+useChatStreaming.ts+sseParser.ts 失败终态透传与等待心跳(北京老陈实证追问): sseParser final补解析outcome/error_type/error_message; onComplete前置判定失败终态展示final.response置isError杜绝思考草稿冒充完整回复(实证4333字); executeSend心跳每5秒console打点终结等待空白误判 - 小欧-2026-09-09
+
+### refactor(10个):
+- 删DBG-3(useTaskInfo badge路径) - 小欧-2026-09-09
+- 删DBG-5(PipelineRenderer)+DBG-7系列(useSSE),保留DBG-1/2/3/4/6 - 小欧-2026-09-09
+- DBG-4步数改轮次,thought-start触发R+1 - 小欧-2026-09-09
+- DBG探针-chunk只计总数不压缩,路径只列非chunk步骤 - 小欧-2026-09-09
+- DBG探针精简-路径压缩格式替代刷屏逐条输出 - 小欧-2026-09-09
+- frontend 20秒冻结排查打点DBG-3/4/5/6/7五个文件(useTaskInfo/PipelineRenderer/useChatCallbacks/sseParser/useSSE)保留现场 - 小欧-2026-09-09
+- frontend console日志治理-清理调试噪音+thought/action/observation时序准确打点 - 小欧-2026-09-09
+- frontend 补齐A类与B/C类代码编辑历史 - 小欧-2026-09-09
+- frontend 存量warning清零-B/C类13条三堂会审处理 - 小欧-2026-09-09
+- frontend 存量清零-死代码清理+Prettier批量格式 - 小欧-2026-09-09
 
 ### feat(4个):
+- TaskListPanel UI优化+formatTime修复+provider条件显示 - 小欧-2026-09-09
+- TaskInfoBar.tsx 位4错误信息60字符截断加…+宽/中屏Tooltip全文+第一行G6标签与浮层改历史上下文+摘要全文显示(北京老陈令) - 小欧-2026-09-09
+- frontend hooks/useChatPanels TaskListPanel导入路径同步layout - 小欧-2026-09-09
+- src/App.tsx ErrorBoundary根部渲染兜底 - 小欧-2026-09-09
+
+---
+v0.19.40.9
+更新时间: 2026-09-09 14:00:20 - 小欧-2026-09-09
+## v0.19.40.8以来 变更汇总(11个commit) - 小欧-2026-09-09
+[2026-09-09 14:00:20 小欧] 汇总范围=v0.19.40.8以来全部commit(共11个: docs9/fix1/feat1)
+
+### fix(1个):
+- useChatCallbacks/PipelineRenderer/RightViewer A1+A2+A3前端实时步骤渲染修复(356残留指纹去重/preview槽位防互踩/final历史300ms缓冲) - 小欧-2026-09-09
+
+### feat(1个):
+- TaskInfoBar/TaskInfoBar家属组件 [16]v4.x UI视觉优化实施+三堂会审第2轮修复 - 小欧-2026-09-09
+
+### docs(9个):
+- [16]TaskInfoBar-UI视觉优化设计方案-去重合并版 v4.5 三堂会审第2轮修复同步 - 小欧-2026-09-09
+- [16]TaskInfoBar去重合并版 v4.3 实施落盘7处校正 - 小欧-2026-09-09
+- [16]TaskInfoBar去重合并版 v4.2十遍核查补齐Esc焦点CSS落盘锚链 - 小欧-2026-09-09
+- [16]TaskInfoBar去重合并版 v4.2 FloatingEntry抽取+G8双写修复 - 小欧-2026-09-09
+- [16]TaskInfoBar-UI视觉优化设计方案-去重合并版 v4.1 精读10遍交叉核验修复6处 - 小欧-2026-09-09
+- [16]TaskInfoBar-UI视觉优化设计方案-去重合并版 v4.1 折叠交互定案变更 - 小欧-2026-09-09
+- [16]TaskInfoBar-UI视觉优化设计方案-去重合并版 v4.0 全量去重合并+第六章6.5 - 小欧-2026-09-09
+- [16]TaskInfoBar-UI视觉优化设计方案-去重合并版 v4.0 全量去重合并重写 - 小欧-2026-09-09
+- [16]TaskInfoBar-UI视觉优化设计方案 v3.7 核查10处落定 - 小欧-2026-09-09
+
+v0.19.40.8
+更新时间: 2026-09-08 23:00:04 - 小欧-2026-09-08
+## v0.19.40.7以来 变更汇总(6个commit) - 小欧-2026-09-08
+[2026-09-08 23:00:04 小欧] 汇总范围=v0.19.40.7以来全部commit(共6个: docs5/feat1)
+
+### docs(5个):
+- [16]TaskInfoBar-UI视觉优化设计方案-小欧-2026-09-08.md 全链优化至v3.6: 文档更名加[16]前缀+第十章代码复用与模块划分(10大规范剖析: DRY抽MetricItem/EllipsisTip/infoMaps三文件, YAGNI留confirmRevoke/G7样式在组件内, 先查后建判定规则)+第十一章实施计划与步骤(TDD模式: 判定可行=主体TDD+视觉类后置验证, 6阶段红绿重构=底座→复用层→P0→P1→P2→回归, 新增测试用例27项=纯函数8/组件交互11/E2E3条链路, DoD验收6条)+一致性修正4处 - 小欧-2026-09-08
+- [15]从后端到前端信息流程链路审查报告 + TaskInfoBar-UI视觉优化设计方案 全链路契约闭合审查(四大链路5项优化点) + TaskInfoBar UI视觉优化18项问题P0/P1/P2分级 - 小欧-2026-09-08
+- delete §八§九§十 推演章节(低概率未实证) - 小欧-2026-09-08
+- doc-9月优化 文档重命名加序号前缀 [13]前端UI静默10秒整批显示问题分析与修复方案/[14]HITL弹窗后taskinfo自动展开与step不自动滚底问题分析与修复方案-重写通俗版 - 小欧-2026-09-08
+- HITL弹窗后taskinfo自动展开与step不自动滚底问题分析与修复方案-重写通俗版 v1.1+第十章验证门槛与推翻条款(老陈定案:探针复现证伪则明写'分析不彻底,方法不对,不采纳') - 小欧-2026-09-08
+
+### feat(1个):
+- TaskInfoBar.tsx HITL排查探针(临时) mount/toggle触发console.log定位事件区自动展开真实成因 验证点击事件是否泄露到taskinfo 复现确认后删除 - 小欧-2026-09-08
+
+v0.19.40.7
+更新时间: 2026-09-08 16:22:01 - 小欧-2026-09-08
+## v0.19.40.6以来 变更汇总(13个commit) - 小欧-2026-09-08
+[2026-09-08 16:22:01 小欧] 汇总范围=v0.19.40.6以来全部commit(共13个: docs4/feat5/fix2/feat-fix1/style1)
+
+### docs(4个):
+- LLM重试通知空串静默丢弃问题分析与修复方案-小欧-2026-09-08.md v1.0 根因三层证据链(日志码点/httpcore/httpx源码/asyncio空TimeoutError实测)+修复方案+回归单测+三堂会审 - 小欧-2026-09-08
+- [10]前端消息分类处理分析及设计 6.7改写TDD实施计划与步骤+瑕疵修正(计数10-11/表B5图标) - 小欧-2026-09-08
+- 前端UI静默10秒整批显示问题分析与修复方案-小欧-2026-09-08.md v1.0 根因(badge idle回落击穿修复)+修复方案+三堂会审+验收口径 - 小欧-2026-09-08
+- 前端消息分类设计 六章回归总原则(请求级只进P3)+6.3.4错误图标UI区分+清理正文版本标记 - 小欧-2026-09-08
+
+### feat(5个):
+- 前端[10]6.7[TDD]C1~C8: 后端业务错误只进P3不弹窗+请求级/执行级位4图标区分(请求级判据step===0, 执行级CloseCircleFilled/请求级StopOutlined)+useChatFacade包装器(先onError再上抛LiveError)+sseParser BUG-7对象content承接 - 小欧-2026-09-08
+- [12]log-and-print 取消/心跳6文件 console双写可见(北京老陈指令): A2/A5/A6/B1/B3取消5点双写+心跳C1双写带计数 - 小欧-2026-09-08
+- [12]心跳/取消加固 constants.py HEARTBEAT_INTERVAL常量化+心跳带换行P1吞事件修复+E/F文案DRY走cancel_terminal_text - 小欧-2026-09-08
+- [12]方案二 useSSE.ts 重连耗尽改轮询会话任务列表观察终态不再自动取消(防误杀假断连) - 小欧-2026-09-08
+- [12]方案一+方案五 后端6文件(chat_routes/stream_orchestrator/task_runtime/agent_runner/handle_answer/react_loop/final_step) 心跳保活+取消来源cancel_source区分A-G文案 - 小欧-2026-09-08
+
+### fix(2个):
+- base_service.py L1重试通知空串被真值判定静默丢弃修复(前端永不收retrying) retry_notice=str(e) or type(e).__name__兜底 - 小欧-2026-09-08
+- useTaskInfo.ts 前端UI静默10秒整批显示修复 thought/action/observation补idle->running恢复 badge不再被receiving门压回idle - 小欧-2026-09-08
+
+### feat/fix(1个):
+- [12]60000加固 useSSE.ts空闲超时实证打点+轮询中止信号F6/F9+idle定时器清理F10+类型修正, handler.ts sanitizeDisplayMessage防裸数字上弹+Toast打点 - 小欧-2026-09-08
+
+### style(1个):
+- AuthorizationModal/ChatInput/useTaskInfo prettier格式清理(历史欠账,北京老陈批准) - 小欧-2026-09-08
+
+v0.19.40.6
+更新时间: 2026-09-08 12:04:00 - 小欧-2026-09-08
+## v0.19.40.5以来 变更汇总(20个commit) - 小欧-2026-09-08
+[2026-09-08 12:04:00 小欧] 汇总范围=v0.19.40.5以来全部commit(共20个: docs9/feat3/fix5/refactor3)
+
+### docs(9个):
+- [12]连接中断自动取消任务-问题处理分析与解决方案-小欧-2026-09-08.md - 小欧-2026-09-08
+- [10]前端消息分类处理分析及设计 增补表B9(taskinfo折叠区事件去向,实码核对) v3.7 - 小欧-2026-09-08
+- [10]前端消息分类处理分析及设计 六章P3唯一定稿+6.1.1逻辑思路+一致性修正(v3.6) - 小欧-2026-09-08
+- [12]连接中断自动取消任务 问题处理分析与解决方案 v1.2追加九/十章真实代码diff+TDD用例实施步骤(附[11]根因说明v.更新) - 小欧-2026-09-08
+- [11]连接中断自动取消任务-根因分析说明-小欧-2026-09-07.md 编号归档提交 - 小欧-2026-09-08
+- 前端消息分类处理分析及设计-小欧-2026-09-06.md 5.3.1意图标记修订(v3.1)+[10]编号归档 - 小欧-2026-09-08
+- 会话记录-小欧-2026-08-26.md 移动归档至doc-9月优化目录 - 小欧-2026-09-07
+- 日志分析报告-小欧-2026-09-07.md v1.1 3天日志7问题定论(3修/1证伪/3非bug)3b病根时间线证据 - 小欧-2026-09-07
+- 前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.1旧case清零-同步文档（已按指示恢复后提交） - 小欧-2026-09-07
+
+### feat(3个):
+- scripts loader/title图标对比预览页(UI选型用) - 小欧-2026-09-08
+- agent_runner/react_loop 4.4.3 start自带ai_message_id+startinfo合并入start - 小欧-2026-09-08
+- useSSE/ToolCallLine/Layout/index.css 意图标记短路+loader弧段换型+标题D三色图标 - 小欧-2026-09-08
+
+### fix(5个):
+- AuthorizationModal/sseParser B3 submitting防双发+startinfo分支删除 - 小欧-2026-09-08
+- llm_call.py/handle_answer.py 3b用户取消病根-L2放行元组补cancelled+取消中断异常承接+error分支cancelled终态特判 - 小欧-2026-09-07
+- e2e_helpers.py 4.4.1旧case清零-仅SSE集合移出cancelled - 小欧-2026-09-07
+- sseParser.ts/useChatCallbacks.ts 4.4.1取消收尾收敛-删type=cancelled链路与日志文案 - 小欧-2026-09-07
+- task_runtime.py/migrate_steps.py/db_initializer.py 4.4.1旧case清零-后端取消终态与行迁移 - 小欧-2026-09-07
+
+### refactor(3个):
+- PipelineRenderer.tsx showGreenCircle去留清理(北京老陈定案)-等待图标改thought-start信号唯一驱动 - 小欧-2026-09-07
+- handle_action.py/react_loop.py/PipelineRenderer.tsx 4.4.2 thought-start时序根治-发射点前移至请求前+waiting段落段覆盖 - 小欧-2026-09-07
+- chat.ts/execution.ts/stepStyles.ts/stepConstants.ts/stepFilter.ts 4.4.1旧case清零-前端类型防御层 - 小欧-2026-09-07
+
+v0.19.40.5
+更新时间: 2026-09-07 13:09:01 - 小欧-2026-09-07
+## v0.19.40.4以来 变更汇总(38个commit) - 小欧-2026-09-07
+[2026-09-07 13:09:01 小欧] 汇总范围=v0.19.40.4以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.4累积38个commit)
+
+### docs(11个):
+- 前端消息分类处理分析及设计-小欧-2026-09-06.md 完成4.4.1~4.4.3真实代码diff写入并核证修正4.4.3字段描述(api_base/display_name仅start携带,startinfo实际字段) - 小欧-2026-09-07
+- 错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案v2.0人话重排(总原则/错误值域12+3/R1已完成R3待审) - 小欧-2026-09-06
+- 错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案v1.2审核稿(错误源全景/Q14问题点清单/改动点边界) - 小欧-2026-09-06
+- 错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案(B1秒表清零停表情景+B3同源三通道实证case, R1方案) - 小欧-2026-09-06
+- 问题挖掘与分析-B2方案C-BUG1顺序与BUG2计数错键-小欧-2026-09-06.md v1.1取证汇总(2病根+12表象映射+对照PASS) - 小欧-2026-09-06
+- B2方案C最终设计说明-HITL弹窗顺序与齿轮根治+前端问题统一分析 v1.6(候选总数分母修正+前端指向追加) - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 6.2实施表删全部开发时长标注(0.5/1/1.5天共12处)+版本历史精简 - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 v1.14-v1.17 外部审计17项整改(遗留6项全修)+序号体系阿拉伯化+老陈D1/D12收口 - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 v1.10-v1.13 第四部分TDD缺陷修正+终验细化+老陈定案 - 小欧-2026-09-06
+- [6]事件总线与HITL网关设计 实施步骤拆细可独立验收(6.2八步三A三B四A四B五A五B+6.5严格实施要求) - 小健-2026-09-06
+- [6]事件总线与HITL网关设计 B8网关落点纠正task→handlers - 小健-2026-09-06
+
+### feat(4个):
+- useChatStreaming 被拒工具点名灰字本会话持久化(6.4A, 北京老陈裁定) - 小欧-2026-09-06
+- 前端 被拒工具UI灰字点名(文档6.4) sseParser/useSSE等10文件 - 小欧-2026-09-06
+- hitl_gateway.py 新建HITL确认网关唯一入口(固定时序publish paused→wait→resumed+单点resolve收口) - 小欧-2026-09-06
+- task_state.py StreamBuffer新增publish生产者直写(事件唯一入口, 文档[6]步骤1 5.2) - 小欧-2026-09-06
+
+### fix(9个):
+- TaskInfoBar 秒表与徽标解耦-R1(错误信号不再清零停表/恢复不回跳, interval条件改receiving&&!detail) - 小欧-2026-09-06
+- react_step.py 连续截断上限取消分支裸return→return[]防None迭代TypeError覆盖终态(4C遗漏,同返List契约,配全循环回归测试) - 小欧-2026-09-06
+- e2e_helpers.py/pytest.ini preview(action)不计SSE工具调用防SSE=2xDB翻倍误判+排除tests/output收集 - 小欧-2026-09-06
+- handle_action/safety_gate/sandbox_gate/react_dispatch BUG-1发布顺序+BUG-2拒绝计数错键修复 - 小欧-2026-09-06
+- safety_gate/sandbox_gate/agent_runner BUG-2拒绝计数错键修复(user_rejected补tool_name拒绝语义自包含) - 小欧-2026-09-06
+- agent_runner.py preview(action)不入Prompt日志(DB-Prompt对账2x误报) - 小欧-2026-09-06
+- PipelineRenderer/ToolCallLine/RightViewer/useAuthorization等9文件 B2方案C-前端deniedSteps整批计数齿轮判定 - 小欧-2026-09-06
+- agent_runner/handle_action/safety_gate/sandbox_gate/react_dispatch/sse_formatter B2方案C-HITL拒绝独立user_rejected事件+预览/落库分离 - 小欧-2026-09-06
+- RightViewer/useChatScroll 后台切回防自动滚失效(RG-1~RG-4) - 小欧-2026-09-06
+
+### refactor(14个):
+- agent_runner.py 自产事件统一经StreamBuffer.publish单写入口(_append退役) - 小欧-2026-09-06
+- summary.py 路径2-5E payload判别收口 - 小欧-2026-09-06
+- react_step.py 路径2-5D payload单判别 - 小欧-2026-09-06
+- llm_call.py 路径2-5C 出口统一(import+_resolve_chunk_model/create_payload_chunk+判别改payload载体) - 小欧-2026-09-06
+- llm_response_builder.py 路径2-5B 三装配函数改返回create_payload_chunk - 小欧-2026-09-06
+- llm/core.py 路径2-5A payload字段+create_payload_chunk工厂出厂 - 小欧-2026-09-06
+- agent 4C async收敛 六文件(react_loop/react_step/react_dispatch/base_agent/agent_runner/observation_builder 5.8.1-5.8.6) - 小欧-2026-09-06
+- react_dispatch 调度层await dict handler逐条yield(4B文档6 5.7) - 小欧-2026-09-06
+- handle_answer+handle_action handle纯函数化返dict(4A文档6 5.5-5.6) - 小欧-2026-09-06
+- hitl_gateway.py+safety_gate.py POT-001/POT-002低优优化 - 小欧-2026-09-06
+- safety_gate.py+handle_action.py 步骤3B门禁纯函数化收list(5.4.2终态) - 小欧-2026-09-06
+- task_state.py VULN-006 publish的seq+append移入cond持锁原子 - 小欧-2026-09-06
+- safety_gate.py+sandbox_gate.py 步骤3A门禁等待源头收网关(唯一暂停源头hitl_confirm) - 小欧-2026-09-06
+- hitl_gateway.py 编辑历史块残注归位 - 小欧-2026-09-06
+
+---
+v0.19.40.4
+更新时间: 2026-09-06 04:51:03 - 小欧-2026-09-06
+## v0.19.40.3以来 变更汇总(28个commit) - 小欧-2026-09-06
+[2026-09-06 04:51:03 小欧] 汇总范围=v0.19.40.3以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.3累积28个commit)
+
+### docs(23个):
+- [6]事件总线与HITL网关设计 15个diff对盘本地修正7实锤bug - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 新增1.4路径1与路径2消费端归属辨析 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 第5章5.8剔除收口 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 三章一致性审查修正 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 章节序号调整+尾部合并重写 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 第三部分重写(940行起按6标题) - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 老陈修订(第1-2章正文精简) - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 第1-2章一致性审查修复 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.4 三章对齐六文件清单 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.22后续章节更新(437行新增) - 小欧-2026-09-05
+- [6]事件总线与HITL网关设计 第一章整章核查定稿(十遍核查14修) - 小欧-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.20+v1.2.21 老陈定案统一publish+第一章整章重写 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.16-v1.2.19(十遍核查16修+9.1完备性2修+2.4问题总览表) - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.11-v1.2.15(第七章整编重写7.1~7.8) - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.9九章补全9.1代码清单8项+9.2双挂表+9.3TDD铁律 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.8行号重映射phase-2后实测 - 小健-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.7十五项对盘刷新 - 小欧-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.3-v1.2.6更新(diff硬验证8修+十遍一致性7修) - 小欧-2026-09-05
+- [6]事件总线与HITL网关设计 v1.2.2全面代码对盘7文件+活捉两缺陷 - 小健-2026-09-05
+- [8]action_answer内做重组分析与处理报告 新增 - 小欧-2026-09-05
+- [7]代码架构拆分重组设计 v1.1更新 - 小欧-2026-09-05
+- [6]事件总线与HITL网关注设计 更新 - 小欧-2026-09-05
+- docs 术语统一scheduler消亡 - 小健-2026-09-05
+
+### fix(2个):
+- action_handler.py+sandbox_gate.py ISS-001删除bypass旧沙箱双调用残留+ISS-002沙箱resumed补confirm_id - 小欧-2026-09-05
+- agent_telemetry.py task_model序列化防御加固 非Pydantic模型不再拖垮整表遥测落库 - 小欧-2026-09-05
+
+### refactor(3个):
+- handle_action.py+safety_gate.py 门禁整搬拆出safety_gate+action_handler改名handle_action(git mv保blame) - 小健-2026-09-05
+- answer_handler.py三件集中-搬一dedup_repeat迁text_utils/搬二终态工厂emit_failed_final+emit_completed_final收口/搬三reasoning_guard空转计数唯一写者+调用点切换 - 小健-2026-09-05
+- trust_db.py trust.py storage.py 会话信任读写外迁tools层修复架构越层 - 小欧-2026-09-05
+
+---
+
+v0.19.40.3
+更新时间: 2026-09-05 10:49:18 - 小沈-2026-09-05
+## v0.19.40.2以来 变更汇总(37个commit) - 小沈-2026-09-05
+[2026-09-05 10:49:18 小沈] 汇总范围=v0.19.40.2以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40.2累积37个commit: 24个已提交+换挡后13个, 含新打的v0.19.40.3)
+
+### refactor(13个):
+- agent react_cycle.py 一拆四: 新建react_inference(常量+守卫群)/react_dispatch(类型分派+状态推断)/react_loop(主循环薄调度), react_cycle改名react_step收缩为单步, __init__/base_agent引用切换react_loop
+- chat stream_reader.py 一拆三并删空壳
+- model resolver.py 新增resolve_session_client外迁sessionModel块
+- agent llm_stream.py 拆builder并改名llm_call.py
+- action_handler SRP拆分: 下沉_build_call_list/_build_observation/execute_tools至3个新文件(action_input_parser+observation_builder+tool_runner), 第2阶段(target/fp回调/遥测下沉), 信任域+冲突检测+文件工具下沉
+- agent_telemetry.py+step_emitter.py SLAP修复: outcome显式透传消除监控层隐式依赖核心状态(19调用点显式finalStep.outcome)
+- 补充编辑历史(action_handler+sandbox_gate+hitl_confirmation)
+- docs 术语统一scheduler消亡
+
+### fix(5个):
+- agent_runner.py 终态final/final_stats延迟到DB status落库后补发, 消除SSE final先到DB status后到致前端StaticStatsBlock detail.status卡executing竞态
+- action_handler.py 拦截action不emit不落库(仅正常执行action才ActionStep落库/yield)
+- action_input_parser+observation_builder+tool_runner 三个拆分文件补提交
+- PipelineRenderer.tsx observation重复显示修复(toolStepSet抑制已消费孤儿渲染)
+- docs [7]文档编码损坏修复(还原父提交版本+backup替换)
+
+### docs(19个):
+- action_handler拆分方案 v1.3-v1.7(沙箱DRY+函数下沉+第2阶段完成+bypass回归修复记录)
+- doc-9月优化文档 v2.6-v2.7+拆分方案
+- 前后端业务数据配合优化分析 v2.9-v2.10 yield发射点补全+3.3链路+删除旧版
+- [4]前后端配合架构重构评估+任务统计执行中卡死病根病因与修复方案, 分组提交两份文档
+- [3]yield链路简化设计 v1.5-v1.6(重设计5.2/5.3/5.4输出参数+ActionStep补遗)+AB全修+[OPI]改名+[5]v1.1+[6]v1.10 三档通读一致性全检
+- 三档改名[5]yield [6]HITL网关 [7]架构重组, 文件改名[3]→[7]
+- [7]第八章 v1.11-v1.13(新增TDD实施计划+52引用盘点修正/铁规对齐/按命令行重写-一代码一阶段11阶段) + 一致性修正+8.9改实施顺序表 + 备份目录统一backup/
+- version.txt v0.19.40.1升级说明(26个commit)
+
+v0.19.40.1
+更新时间: 2026-09-04 12:11:29 - 小欧-2026-09-04
+## v0.19.40以来 变更汇总(26个commit) - 小欧-2026-09-04
+[2026-09-04 12:11:29 小欧] 汇总范围=v0.19.40以来全部commit(本分支 optimize-0.19.40.1 自v0.19.40累积26个commit, 已打 tag v0.19.40.1)
+
+### feat(1个):
 - pipeline/useTaskInfo v5.1等待图标状态机重构
-- event_emitter 统一转换层新建 handler业务结果→前端Step
-- trust.py信任域三合一合并(trust_utils+trust_service+trust_repository)
-- conflict_detector.py冲突检测下沉(_has_conflict+_partition_calls)复用trust._parse_paths
 
 ### fix(14个):
 - PipelineRenderer.tsx thought/action等待图标不显示修复
@@ -53,13 +622,9 @@ v0.19.40.1
 - AuthorizationModal+useAuthorization bypass倒计时与API阻塞修复
 - token_usage+useTaskInfo badge执行中残留与链累计P0/C0/T0
 
-### refactor(6个):
+### refactor(3个):
 - useTaskInfo hasFailedFinal单源DRY重构
 - AuthorizationModal加key强制重建删6个guard简化370→230行
-- action_handler引用整合+sandbox_gate环依赖消除
-- answer_handler yield→return dict 纯业务改造
-- sandbox_gate yield→return dict 纯业务改造+HITL暂停流修复
-- SLAP修复 build_final_stats_step+emit_final_with_stats outcome参数显式传递
 
 ### docs(8个):
 - 后端全代码10规范审查与重构方案v1.2

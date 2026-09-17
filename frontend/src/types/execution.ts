@@ -1,4 +1,10 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 从utils/sse.ts抽ExecutionStep至此, 断 chat→sse→api→chat 类型环(sse↔api循环)
+// 编辑历史: 2026-09-06 小欧 - 方案C观察点1/2根治: action 增 preview?: boolean(仅SSE齿轮先行预览行标记,
+//   刷新恢复时剔除, 与DB回放语义一致) — 小欧-2026-09-06
+// 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删ExecutionStep.type的cancelled分支(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-09-12 小欧 - P0-5三堂会审修复: artifacts补tool_name?字段(与FinalStatsFrame(sse.ts)对齐后端4字段契约tool_name/name/path/type) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - P1-4/P1-5三堂会审修复: 删code死字段(只写不读, execution_status含同语义); 删final_status死字段(outcome为终态单一权威) — 小欧-2026-09-12
+// 编辑历史: 2026-09-17 小欧 会审V3(#14): ExecutionStep.type 成员补 'rejected'(统一拒绝事件契约, SSE协议真实存在, 当前不落库/不入执行步骤流, 类型防御) — 小欧-2026-09-17
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -28,10 +34,11 @@ export interface ExecutionStep {
     | 'final_stats'
     | 'context_overview'
     | 'truncated'
-    | 'cancelled'
     | 'paused'
     | 'resumed'
-    | 'retrying';
+    | 'retrying'
+    | 'rejected'; // 2026-09-17 小欧 会审V3(#14): 统一拒绝事件 type="rejected"。注明: 当前 rejected 不落库(库表无此 type)
+  //   且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
 
   // 【6-03-09】添加task_id字段，用于分页请求
@@ -57,7 +64,7 @@ export interface ExecutionStep {
   // 【小欧 2026-08-26 4.9.3】observation 新字段：工具结果数组，优先于 content/summary 读取
   tool_result?: unknown;
   result?: string;
-  code?: string; // 【新增2026-05-22】状态码（SUCCESS/ERROR/WARNING）
+  // 2026-09-12 小欧 P1-4: 删 code 死字段(只写不读, sseParser:721赋值无人消费; execution_status(L65)含同语义) — 小欧-2026-09-12
 
   // === 【小新重构】type=action 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
@@ -86,6 +93,8 @@ export interface ExecutionStep {
   outcome?: 'completed' | 'failed' | 'cancelled'; // 终态类型：完成/失败/取消
   error_type?: string; // 失败时的错误类型
   error_message?: string; // 失败/取消时的错误信息
+  // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, 前端补解析该字段(后端FinalStep.to_dict恒输出) — 小欧-2026-09-11
+  cancel_source?: string; // 取消来源(user_requested/client_disconnect_timeout/config_limit/status_inconsistency/orchestrator_error)
 
   // === type=observation 字段 【新增2026-04-15】===
   return_direct?: boolean; // 是否直接返回
@@ -129,18 +138,38 @@ export interface ExecutionStep {
     target?: string;
     params?: Record<string, unknown>;
   }>;
+  // 【小欧 2026-09-06 方案C观察点1/2根治】preview 仅SSE齿轮先行预览行标记(后端 preview=True):
+  //   拦截/拒绝的 action 本就不落库, 刷新恢复时剔除 preview 行与 DB 回放语义一致 — 小欧-2026-09-06
+  preview?: boolean;
 
   // === 【小欧 2026-08-26 8.4/8.6】MetaStep 扩展字段（旧任务 null 须 ?. 防空）===
   severity?: 'info' | 'warn' | 'error';
   ai_message_id?: string;
   // usage（每轮 LLM 响应 usage）+ 四维累计（final._extra_fields 同名）
+  accumulated_usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null; // 2026-09-11 小欧: TitleBlock/StaticStatsBlock 读取
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
   llm_call_count_token?: number;
-  task_accumulated_tokens?: number;
-  session_accumulated_tokens?: number;
-  chain_accumulated_tokens?: number;
+  task_accumulated_tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  session_accumulated_tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
+  chain_accumulated_tokens?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  } | null;
   // stats 流式统计
   step_count?: number;
   llm_call_count?: number;
@@ -148,8 +177,15 @@ export interface ExecutionStep {
   duration?: number; // 秒
   // final_stats 终态统计
   tool_stats?: Record<string, number>;
-  artifacts?: Array<{ name: string; path: string; type: string }> | null;
-  final_status?: 'completed' | 'failed' | 'cancelled';
+  // 2026-09-12 小欧 P0-5三堂会审修复: artifacts 补 tool_name? —— 与 FinalStatsFrame(sse.ts:34) 对齐后端 4 字段契约
+  //   (tool_name/name/path/type, 见 handle_action.py 11.6.2); 原 3 字段缺 tool_name 与 sse.ts 契约分裂 — 小欧-2026-09-12
+  artifacts?: Array<{
+    tool_name?: string;
+    name: string;
+    path: string;
+    type: string;
+  }> | null;
+  // 2026-09-12 小欧 P1-5: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12
   // context_overview
   message_count?: number;
   estimated_tokens?: number;

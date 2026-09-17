@@ -10,6 +10,20 @@
 // 编辑历史: 2026-09-03 小欧 - 根因修复: onConfirm接口加confirmId参数, auto-confirm不依赖pendingRef读confirmId(改前ref时序竞态致旧弹窗auto-confirm发旧ID到后端, 新ID从未被confirm→S1超时弹窗不消失) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 真根因修复: interval effect加request?.confirmId依赖+currentRequestRef追踪, 旧interval残留tick跳过(setCountdown(0)覆盖新请求countdown致auto-confirm立即触发弹窗不消失) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 简化重构: ChatPage加key={confirmId}强制重建, 删除autoHandledRef/countdownReadyRef/currentRequestRef/resetEffect, 组件从370行→230行 - 小欧-2026-09-03
+// 编辑历史: 2026-09-07 小欧 - B3 防御加固: countdown 归零 effect 加 submitting guard, 组件自体防双发;
+//   改前仅靠 ChatPage key={confirmId} 重建兜底, 本组件 countdown 走完归零后(未重挂)会重入代发,
+//   加固后手动确认/代发任一次即锁定, 消除对 key 重建的依赖(与回归守卫 BUG-13/BUG-11 断言对齐) - 小欧-2026-09-07
+// 编辑历史: 2026-09-16 小欧 - 文档[44]5.6 缺陷①③修复: 缺陷①bypass下disable勾选框(原仅handleConfirm强改false, UI仍可勾, 静默失效误导);
+//   缺陷③按工具域区分文案(registry工具路径含子键, 其余含子目录) — 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 浏览器白屏根因修复: 老杨T4 CollapsibleText误用default导入(命名导出)ES模块加载失败致React未挂载, 改命名导入;
+//   S2 request possibly null 改可选链 — 小欧-2026-09-16
+// 编辑历史: 2026-09-16 老陈 - UI微调: ①工具名称+工具名词label+值改为flex同行(去<br/>分行); ②底部拒绝/允许按钮size="large"→"middle"取消偏大 - 老陈-2026-09-16
+// 编辑历史: 2026-09-16 老陈 - 参数区去掉展开收起,超过2行直接出滚动条; paramsStr改Object.entries纯文本无花括号 - 老陈-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 文档v1.5定案实施(设计文档《HITL窗口工具名词参数显示优化审核报告》):
+//   ①参数格式化改key=value每参数一行(冒号改等号,禁JSON式) ②参数区固定3行高height:54+overflow滚动+超长wordBreak:break-all自动换行 ③参数区改单层轻量视觉容器(浅灰底#fafafa+细边框#e8e8e8+圆角4)取消与内层白底#fff的双层叠加 ④工具名称+执行参数标签合并flex同行 ⑤工具名称品牌蓝#1677ff高亮 - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 三堂会审修复(2项): ①参数容器height:54在antd5全局border-box下含padding(4×2)+border(1×2)致内容区仅44px≈2.4行不足定案3行, 补boxSizing:'content-box'保证内容高=54px(3行×18px); ②P2合并行外层div删textAlign:'left'死属性(flex容器下对flex item无效) - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 参数区居中对齐bug修复: 参数容器div补textAlign:'left'(外层textAlign:'center'继承至span致参数文本居中, 需在容器覆盖) - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 参数区高度3行→4行: 北京老陈目视验收"整体高度不错,参数区可设4行", height:54(3×18)→72(4×18) - 小欧-2026-09-16
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -29,20 +43,20 @@
  */
 
 import React from 'react';
-import {
-  Modal,
-  Button,
-  Typography,
-  Tag,
-  Checkbox,
-  Progress,
-  Tooltip,
-} from 'antd';
+import { Button, Typography, Tag, Checkbox, Tooltip } from 'antd';
 import {
   WarningOutlined,
   ExclamationCircleOutlined,
   StopOutlined,
+  ThunderboltOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
+// 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
+import { injectKeyframes } from '../AnimatedIcons/animations';
+// 2026-09-16 老杨 - S3:引入CountdownRing子组件,countdown/progress隔离 - 老杨-2026-09-16
+import CountdownRing from './CountdownRing';
+// 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16
+import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
 
 const { Text, Title } = Typography;
 
@@ -60,7 +74,11 @@ export interface AuthorizationRequest {
 interface AuthorizationModalProps {
   visible: boolean;
   request: AuthorizationRequest | null;
-  onConfirm: (confirmed: boolean, trustSession: boolean, confirmId?: string) => void;
+  onConfirm: (
+    confirmed: boolean,
+    trustSession: boolean,
+    confirmId?: string
+  ) => void;
 }
 
 const SAFETY_LEVEL_CONFIG: Record<
@@ -79,18 +97,15 @@ const SAFETY_LEVEL_CONFIG: Record<
 };
 
 // 2026-09-03 小欧 P3修复: @keyframes pulse移至组件外, 避免每次渲染重复注入<style>标签 — 小欧-2026-09-03
-const AUTH_MODAL_STYLE = `
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-`;
+// 2026-09-15 小欧 - pulse动画keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令), 组件仅调用注入 — 小欧-2026-09-15
 
 const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   visible,
   request,
   onConfirm,
 }) => {
+  // 2026-09-15 小欧 - 动画keyframes注入(AnimatedIcons/animations.ts 单例承载, DRY)
+  injectKeyframes('pulse');
   // 2026-09-03 小欧 Bug-11: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
   const [trustSession, setTrustSession] = React.useState(false);
   const [countdown, setCountdown] = React.useState(
@@ -101,6 +116,21 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   const [submitting, setSubmitting] = React.useState(false);
   const isBypass = Boolean(request?.autoConfirm);
   onConfirmRef.current = onConfirm;
+
+  // 2026-09-16 老陈 - 纯文本显示,去掉{}花括号
+  // 2026-09-16 小欧 - 修复: request?.params 可选链, 消除 tsc TS18047 possibly null - 小欧-2026-09-16
+  // 2026-09-16 小欧 - 文档v1.5定案: 参数禁JSON式, 改key=value每参数一行(\n连接) - 小欧-2026-09-16
+  const paramsStr = React.useMemo(() => {
+    try {
+      const p = request?.params;
+      if (!p || typeof p !== 'object') return String(p ?? '');
+      return Object.entries(p)
+        .map(([k, v]) => `${k}=${String(v ?? '')}`)
+        .join('\n');
+    } catch {
+      return '[参数序列化失败]';
+    }
+  }, [request?.params]);
 
   React.useEffect(() => {
     // 2026-09-03 小欧 Bug-21: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
@@ -115,7 +145,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   }, [visible, request]);
 
   React.useEffect(() => {
-    if (!visible || countdown !== 0 || !request) return;
+    // 2026-09-07 小欧 B3 防御加固: submitting 互斥入守卫——手动确认/已代发一次即锁定, 防 same 实例
+    //   countdown 归零重入双发(改前仅靠 ChatPage key={confirmId} 重建兜底, 组件自体无防护)
+    if (!visible || countdown !== 0 || !request || submitting) return;
     setSubmitting(true);
     // 2026-09-03 小欧/北京老陈: 传confirmId参数, 不依赖pendingRef时序(根因修复)
     if (isBypass) {
@@ -123,7 +155,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     } else {
       onConfirmRef.current(false, false, request.confirmId);
     }
-  }, [visible, countdown, isBypass, request]);
+  }, [visible, countdown, isBypass, request, submitting]);
 
   if (!request) {
     return null;
@@ -136,10 +168,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   };
 
   const confirmTimeout = request.confirmTimeout ?? 60;
-  const progressPercent =
-    confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
-  const strokeColor =
-    countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
 
   // 小欧 2026-09-03 三堂会审问题1方案A: bypass(安全开关绕开)模式下即使勾选"信任此操作"也不产生信任,
   //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
@@ -152,41 +180,32 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   };
 
   return (
-    <Modal
-      open={visible}
-      title={null}
-      footer={null}
-      closable={false}
-      maskClosable={false}
-      keyboard={false}
-      width={480}
-      style={{
-        border: isBypass ? '1.5px dashed #1677ff' : '1.5px solid #faad14',
-        borderRadius: '8px',
-        overflow: 'hidden',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
-      }}
-      styles={{
-        body: {
-          padding: '12px',
-        },
-      }}
-    >
+    <HITLModalShell open={visible} isBypass={isBypass}>
       <div style={{ textAlign: 'center' }}>
-        <WarningOutlined
-          style={{
-            fontSize: 32,
-            color: isBypass ? '#1677ff' : '#faad14',
-            marginBottom: 8,
-          }}
-        />
+        {isBypass ? (
+          <ThunderboltOutlined
+            style={{
+              fontSize: HITL_TOKENS.ICON_SIZE,
+              color: '#1677ff',
+              marginBottom: 4,
+            }}
+          />
+        ) : (
+          <WarningOutlined
+            style={{
+              fontSize: HITL_TOKENS.ICON_SIZE,
+              color: '#faad14',
+              marginBottom: 4,
+            }}
+          />
+        )}
 
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 8,
-            marginBottom: 4,
+            gap: 4,
+            marginBottom: 2,
           }}
         >
           <Title level={5} style={{ marginBottom: 0 }}>
@@ -200,39 +219,13 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Tag>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: 4 }}>
-          <Progress
-            type="circle"
-            size={60}
-            percent={progressPercent}
-            strokeColor={strokeColor}
-            strokeWidth={5}
-            format={() => (
-              <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 600,
-                    color: countdown <= 3 ? '#fa541c' : '#333',
-                    animation:
-                      countdown <= 3
-                        ? 'pulse 0.8s ease-in-out infinite'
-                        : 'none',
-                  }}
-                >
-                  {countdown}
-                </div>
-                <div style={{ fontSize: 11, color: '#8c8c8c' }}>秒</div>
-              </div>
-            )}
-          />
-        </div>
+        <CountdownRing countdown={countdown} confirmTimeout={confirmTimeout} />
         <div
           style={{
             fontSize: 13,
             fontWeight: 600,
             color: '#8c8c8c',
-            marginBottom: 4,
+            marginBottom: 2,
           }}
         >
           {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
@@ -241,84 +234,116 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             : `未响应将在 ${countdown}s 后自动拒绝`}
         </div>
 
+        {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
         <div
           style={{
-            backgroundColor: '#fafafa',
-            border: '1px solid #f0f0f0',
-            borderRadius: 4,
-            padding: 8,
-            marginBottom: 8,
-            textAlign: 'left',
-            maxHeight: 150,
-            overflow: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            marginBottom: 2,
           }}
         >
-          <div style={{ marginBottom: 4 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              工具名称：
-            </Text>
-            <br />
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
             <Text
-              strong
-              style={{ display: 'block', marginTop: 4, fontSize: 14 }}
+              type="secondary"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
             >
+              工具名称:
+            </Text>
+            <Text strong style={{ fontSize: 13, color: '#1677ff' }}>
               {request.toolName}
             </Text>
           </div>
-          <div>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              执行参数：
-            </Text>
-            <br />
+          {paramsStr && (
             <Text
-              code
-              style={{
-                display: 'block',
-                marginTop: 4,
-                fontSize: 12,
-                wordBreak: 'break-all',
-              }}
+              type="secondary"
+              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
             >
-              {JSON.stringify(request.params, null, 2)}
+              执行参数:
             </Text>
-          </div>
+          )}
+        </div>
+        {/* 参数值区域: 固定4行高(height:72=4×18) + 滚动条 + 超长自动换行 + 单层轻量视觉容器; boxSizing:content-box确保border-box下内容区=72px(62+8+2=72); textAlign:left覆盖外层继承的center(否则参数文本居中) — 小欧-2026-09-16 */}
+        <div
+          style={{
+            height: 72,
+            overflow: 'auto',
+            lineHeight: '18px',
+            borderRadius: 4,
+            padding: '4px 6px',
+            backgroundColor: '#fafafa',
+            border: '1px solid #e8e8e8',
+            marginBottom: 4,
+            boxSizing: 'content-box',
+            textAlign: 'left',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {paramsStr}
+          </span>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 6 }}>
           <Checkbox
             checked={trustSession}
-            disabled={submitting}
+            disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
             onChange={(e) => setTrustSession(e.target.checked)}
+            // 2026-09-16 老杨 - S5:Tooltip改原生title,消除Popover DOM层; 保留缺陷①③文案
+            title={
+              isBypass
+                ? '自动确认模式下信任不落库，勾选无效'
+                : request.trustPath
+                  ? `${request.toolName} › ${request.trustPath}${
+                      request.toolName.startsWith('registry')
+                        ? '，含子键'
+                        : '，含子目录'
+                    }`
+                  : undefined
+            }
           >
-            {request.trustPath ? (
-              <Tooltip
-                title={`${request.toolName} › ${request.trustPath}，含子目录`}
-              >
-                <span>信任此操作（本次会话）</span>
-              </Tooltip>
-            ) : (
-              '信任此操作（本次会话）'
-            )}
+            信任此操作（本次会话）
           </Checkbox>
+          {/* 2026-09-16 老杨 - T6:Trust checkbox加Tooltip解释信任含义/范围/撤销 */}
+          <Tooltip
+            title={
+              <div>
+                <div>信任后：同会话同工具+目标路径免弹框</div>
+                <div>范围：仅本次会话有效</div>
+                <div>撤销：TaskInfoBar → 信任(N) → Drawer → 点×</div>
+              </div>
+            }
+          >
+            <QuestionCircleOutlined
+              style={{ marginLeft: 4, color: '#8c8c8c' }}
+            />
+          </Tooltip>
         </div>
 
-        <div style={{ display: 'flex', gap: 12, width: '100%' }}>
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
           <Button
             onClick={() => handleConfirm(false)}
-            size="large"
+            size="middle"
             disabled={submitting}
             danger
             ghost
             style={{ flex: 1 }}
+            aria-label="拒绝执行此工具操作"
           >
             拒绝执行
           </Button>
           <Button
             type="primary"
             onClick={() => handleConfirm(true)}
-            size="large"
+            size="middle"
             loading={submitting}
             disabled={submitting}
+            aria-label="允许执行此工具操作"
             style={{
               backgroundColor: '#faad14',
               borderColor: '#faad14',
@@ -330,8 +355,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Button>
         </div>
       </div>
-      <style>{AUTH_MODAL_STYLE}</style>
-    </Modal>
+    </HITLModalShell>
   );
 };
 

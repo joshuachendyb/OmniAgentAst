@@ -11,6 +11,8 @@
 // 编辑历史: 2026-08-27 小欧 - 修复history-1/2/3/4/5: 清空守卫误用过滤后total、单条删除未清理选中、继续按钮loading未展示、总会话Badge误用过滤后total、刷新失败仍弹成功
 // 编辑历史: 2026-08-30 小欧 - 修复: handleDelete 单删后 setTotalSessions 加 !currentKeyword 守卫 — 过滤态下 list_sessions 返回的 total 为命中数而非真实总数，
 //           与 loadSessions 守卫对齐，防过滤态单删污染 totalSessions 致清空守卫误判"没有会话可清空"、总会话 Badge 显示错误数
+// 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): handleResume 删「✅ 跳转成功」打点——
+//   navigate 未抛异常即成功, 成功打点与「🔄 准备跳转」冗余; 保留准备/失败打点(追踪价值) — 小欧-2026-09-09
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -319,7 +321,6 @@ const HistoryPage: React.FC = () => {
     setLoadingSessionId(sessionId);
     try {
       navigate(`/?session_id=${sessionId}`, { replace: true });
-      console.log('✅ 跳转成功:', sessionId);
     } catch (error) {
       console.error('❌ 跳转失败:', error);
       handleError('跳转失败');

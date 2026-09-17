@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 8.12 实施: 输入框本体多行, 高度3-5行, 超5行内部滚动(4.3.6)
 // 编辑历史: 2026-08-28 小欧 - ①D/d1: 边框收敛至 Colors.BORDER.LIGHT #f0f0f0, 令牌化
+// 编辑历史: 2026-09-09 小欧 - [16]P1-11 定案 B: 顶部分隔线归属 input 区上沿(紧贴 TaskInfoBar 下沿) — 小欧-2026-09-09
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -42,7 +43,11 @@ const InputCore: React.FC<InputCoreProps> = ({
     placeholder="输入消息，Shift+Enter 换行"
     autoSize={{ minRows: 3, maxRows: 4 }}
     disabled={disabled}
-    style={{ borderColor: Colors.BORDER.LIGHT, borderRadius: Radius.SM }}
+    style={{
+      borderColor: Colors.BORDER.LIGHT,
+      borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // P1-11 定案 B: 顶部分隔线归属 input 区上沿
+      borderRadius: Radius.SM,
+    }}
   />
 );
 

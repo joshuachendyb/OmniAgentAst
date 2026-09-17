@@ -1,5 +1,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审: 选中模型卡片边框 #1890ff→#1677ff(AntD5主色收敛)
 // 编辑历史: 2026-08-27 小欧 - 修复review-bugs#1: 删除Provider按钮直接触发handleDeleteProvider以透传后端detail; 模型删除按钮文案改为"删除模型"避免与"删除"精确匹配歧义
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-C2: :169 editingProvider非空断言改前置守卫 if(!editingProvider)return;
+//   (逻辑等价, 消除non-null断言) — 小欧-2026-09-09
 /**
  * ProviderSettings — Provider/模型设置页
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改):
@@ -163,10 +165,10 @@ export const ProviderSettings: React.FC<{
   };
 
   const handleSaveProvider = async (values: Record<string, unknown>) => {
+    if (!editingProvider) return; // 2026-09-09 小欧 C2: 守卫替代non-null断言, 消除禁用注释既防运行时错误 — 小欧-2026-09-09
     try {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await configApi.updateProvider(
-        editingProvider!.name,
+        editingProvider.name,
         values as Record<string, unknown>
       );
 

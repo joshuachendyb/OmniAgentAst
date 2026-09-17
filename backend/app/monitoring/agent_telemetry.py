@@ -21,8 +21,22 @@
 #   task_model=llm_model.model_dump_json()(F1 补 task_metrics 写入源); import 补 ModelRef
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): finalize 的 task_model 改任务快照优先(_agent._task_llm_model,
 #   回退 llm_client.llm_model)——防共享单例被并发任务还原后记录到他人模型(既有竞态一并根治)
-# 2026-09-04 小健 - SLAP修复: build_final_stats_step加outcome参数,显式传入终态替代隐式读agent.status;
-#   outcome为空时fallback读agent.status(向后兼容),有值时直接用outcome - 小健-2026-09-04
+# 2026-09-04 - 小健 - 新增 collect_and_report(第2阶段拆分): 工具执行批后批量聚合从 action_handler.execute_tools 下沉,
+#   收敛到 telemetry 模块, action_handler 不再持有 duration/artifacts 收集细节; 函数体完整复制不改逻辑
+# 2026-09-04 - 小健 - SLAP修复: build_final_stats_step 加 outcome 参数(默认空串), 优先用传入的 outcome,
+#   为空时 fallback 到 agent.status.value; 消除监控层隐式依赖核心状态 — 小健-2026-09-04
+# 2026-09-05 - 小健 - [7]8.6 一拆三: _log_task_end 自 stream_reader.py 整份搬入(任务收尾日志+统计属遥测同类,
+#   仅改 import 归属零逻辑改动, 禁backward无垫片); 追加 log_and_print import(TASK_END console 打印)
+# 2026-09-05 - 小欧 - 防御加固(三堂会审): finalize 的 task_model 改走 _model_to_json 单向容错——原直呼
+#   _tm.model_dump_json(), 非Pydantic模型(SimpleNamespace等) AttributeError 致整表遥测落库失败(一行序列化拖垮
+#   全部指标, 与"降级不阻塞"声明相悖)。生产链路恒 ModelRef(Pydantic) 行为不变; 未来插件/轻量client出非Pydantic
+#   模型时该字段保全降级, 不再拖垮整表。来源线索: 回归测试以 SimpleNamespace 伪装模型触发 ERROR 日志 4 次。
+# 2026-09-11 - 小欧 - [27]方案: build_final_stats_step 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count),
+#   删 content=""、severity="info" 冗余键; 每键 getattr 默认值兜底结构上永不产 None 键 — 小欧-2026-09-11
+# 2026-09-11 - 小欧 - 设计缺陷修复: _log_task_end 的步骤剔除集由硬编码3种改为复用 _M_SKIP(单一来源),
+#   消除同文件同目的两套维护, 防后续加类型时漏改导致 total_steps 不一致 — 小欧-2026-09-11
+# 2026-09-11 - 小欧 - BUG-D修复: build_stats_step 的 _agent.steps 改为 getattr(_agent, "steps", []),
+#   与 build_final_stats_step L219 对齐防御风格, 防 agent 无 steps 属性时崩溃 — 小欧-2026-09-11
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -31,9 +45,10 @@
 """
 from typing import Dict, Any, Optional, List
 import time
+import json  # _model_to_json 单向容错序列化(vars 兜底) — 小欧 2026-09-05
 from datetime import datetime
 
-from app.logger import logger
+from app.logger import logger, log_and_print  # log_and_print: TASK_END console 打印 — 小健 2026-09-05
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.monitoring import storage  # 落库层（独立，storage 内部惰性导入 database 防环）
 
@@ -43,6 +58,25 @@ _M_SKIP = {
     "usage", "paused", "resumed", "retrying", "cancelled",
     "authorization_required", "start", "stats", "context_overview", "final_stats",
 }
+
+
+def _model_to_json(_m):
+    """模型身份结构→JSON串(单向容错): Pydantic 直调 model_dump_json; 其余取 vars 兜底;
+    不可序列化降 None——绝不因一行序列化拖垮整表遥测落库 — 小欧 2026-09-05
+    生产链路恒 ModelRef(Pydantic) 行为与原 `_tm.model_dump_json() if _tm else None` 逐字节等价。"""
+    if _m is None:
+        return None
+    _mjd = getattr(_m, "model_dump_json", None)
+    if callable(_mjd):
+        try:
+            return _mjd()
+        except Exception:
+            pass
+    _d = vars(_m) if hasattr(_m, "__dict__") else None
+    if _d:
+        return json.dumps({k: v for k, v in _d.items() if not k.startswith("_")},
+                          ensure_ascii=False, default=str)
+    return None
 
 
 class TaskTelemetry:
@@ -126,12 +160,38 @@ class TaskTelemetry:
         if len(self._artifacts) > 50:
             self._artifacts = self._artifacts[:50]
 
+    def collect_and_report(self, all_calls: List[Any], results: List[Any]) -> None:
+        """工具执行批后批量聚合遥测（从 action_handler.execute_tools 下沉）— 小健 2026-09-04
+
+        遍历 all_calls+results 配对, 逐条调用 on_tool_call(tool_name, success, duration, artifacts)。
+        逻辑与下沉前完全一致(完整复制), 收敛到 telemetry 模块, action_handler 不再持有收集细节。
+        """
+        for _call, _res in zip(all_calls, results):
+            _tname = _call.get("tool_name", "") if isinstance(_call, dict) else ""
+            _ok = not isinstance(_res, Exception)
+            _dur = 0.0
+            _arts = None
+            if _ok and isinstance(_res, dict):
+                _llm_d = (_res.get("llm_data") or {})
+                _dur = float(_llm_d.get("duration_ms", 0) or 0) / 1000.0
+                _act = _llm_d.get("action")
+                if isinstance(_act, dict):
+                    # 仅认写工具 with_artifacts 自声明；兜底派生已删(三堂会审F1: 读工具也构造action.target, 派生会把读取对象误落为伪产出物) — 小欧 2026-08-22 北京老陈定案
+                    _arts = _act.get("artifacts")
+                    # 注入 tool_name 到每个 artifact — 小欧 2026-08-22 设计补充（4字段: tool_name/name/path/type）
+                    if _arts and isinstance(_arts, list):
+                        for _a in _arts:
+                            if isinstance(_a, dict) and "tool_name" not in _a:
+                                _a["tool_name"] = _tname
+            self.on_tool_call(_tname, _ok, _dur, artifacts=_arts)
+
+
     # ── 产出（SSE 事件，独立计算）─────────────────────────
     def build_stats_step(self):
         """产出 MetaStep(type="stats") —— 与 11.2-B 字段口径一致"""
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
-        _step_count = len([s for s in _agent.steps if getattr(s, "TYPE", "") not in _M_SKIP])
+        _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
@@ -145,23 +205,31 @@ class TaskTelemetry:
         )
 
     def build_final_stats_step(self, outcome: str = ""):
-        """产出 MetaStep(type="final_stats") —— 终态统计单独事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
-        outcome参数: 显式传入终态(completed/failed/cancelled), 消除隐式读agent.status的SLAP违规 - 小健-2026-09-04"""
-        from app.services.agent.steps.base import MetaStep  # 局部导入防环
+        """产出 FinalStatsStep(type="final_stats") —— 终态统计独立事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
+        outcome参数: 调用方显式传入终态(completed/failed/cancelled), 优先使用; 为空时fallback到agent.status — 小健 2026-09-04
+        [27] v1.4 2026-09-11 北京老陈定案: MetaStep → FinalStatsStep 独立子类(接线②) — 小欧 2026-09-11;
+          steps/final_stats_step.py FinalStatsStep(7统计键强类型+构造门禁+TYPE="final_stats"+IS_DONE=True),
+          本 build 产出该子类 —— 7 统计键逐键等价 MetaStep 时代(零 backward), type 键由 TYPE 类常量承载(删键),
+          step 键怪癖(塞 llm_call_count)照单全收(零 backward, 前端逐键等价) — 小欧 2026-09-11
+        """
+        from app.services.agent.steps.final_stats_step import FinalStatsStep  # 局部导入防环 — 小欧 2026-09-11
         _agent = self.agent
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
-        if outcome:
-            _final_status = outcome
-        else:
-            _final_status = getattr(getattr(_agent, "status", None), "value", None)
-        return MetaStep(
-            step=getattr(_agent, "llm_call_count", 0),
-            type="final_stats",
-            content="",
-            duration=_duration,
-            artifacts=list(self._artifacts),
-            severity="info",
-            final_status=_final_status,
+        # 2026-09-03 小沈 修复: 增发final_status字段, 从agent.status.value派生,
+        #   前端frames.finalStats.final_status据此兜底badge=failed, 防executionSteps中final step丢失时badge卡running — 小沈-2026-09-03
+        # 2026-09-04 小健 SLAP修复: outcome显式传入优先, fallback到agent.status — 消除监控层隐式依赖核心状态
+        _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
+        # [27] 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
+        _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
+        return FinalStatsStep(
+            step=getattr(_agent, "llm_call_count", 0),    #  llm_call_count 而非 step 序号 — 小欧 2026-08-20
+            duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）— 小欧 2026-08-20
+            artifacts=list(self._artifacts) or [],         # 任务产出物：action_handler 经 on_tool_call 收集（内存态，单一来源）— 小欧 2026-08-21; or []兜底空表=合法终值 — 小欧 2026-09-11
+            step_count=_step_count or 0,                   # 算法同 build_stats_step L188（_M_SKIP 过滤后计数）— 小欧 2026-09-11
+            llm_call_count=getattr(_agent, "llm_call_count", 0) or 0,  # [27] 补全统计键 — 小欧 2026-09-11
+            retry_count=getattr(_agent, "_retry_count", 0) or 0,      # [27] 补全统计键 — 小欧 2026-09-11
+            tool_stats=dict(self._tool_stats) or {},       # 权威源 _tool_stats（空表=合法终值，照发）— 小欧 2026-09-11
+            final_status=_final_status or outcome,         # outcome 显式传入兜底，永不 None — 小欧 2026-09-11
         )
 
     def build_context_overview(self) -> Dict[str, Any]:
@@ -234,7 +302,7 @@ class TaskTelemetry:
             "outcome": _outcome,
             "error_type": _error_type,
             # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两键 → task_model JSON 串(F1 补写入源)
-            "task_model": _tm.model_dump_json() if _tm else None,
+            "task_model": _model_to_json(_tm),
             "total_steps": len([s for s in _agent.steps if getattr(s, "TYPE", "") not in _M_SKIP]),
             "llm_call_count": getattr(_agent, "llm_call_count", 0),
             "retry_count": getattr(_agent, "_retry_count", 0),
@@ -279,3 +347,56 @@ class TaskTelemetry:
             storage.persist_llm_calls(self._llm_calls)
         except Exception as _e:
             logger.error(f"[TaskTelemetry] 落库 monitoring.db 失败(降级不阻塞主链路, 监控数据缺失可凭此日志追溯): {_e!r}")  # 12.2-Q2: warning→error提级留痕 — 小欧 2026-08-21
+
+
+def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = None,
+                  steps: Optional[list] = None, agent: Any = None) -> None:
+    """输出 TASK_END 日志（结束方式+耗时+步骤统计+LLM调用次数+累计token消耗）— 一行完整
+    小健 2026-09-05 自 stream_reader.py 整份搬入(8.6 一拆三, 统计杂务归遥测同类), 逐字复制零改动"""
+    parts = [f"task_id={task_id}", f"end_type={end_type}"]
+    if start_time is not None:
+        elapsed = time.time() - start_time
+        parts.append(f"duration={elapsed:.2f}s")
+    if agent is not None:
+        parts.append(f"llm_calls={getattr(agent, 'llm_call_count', 0)}")
+        # 累计 token 消耗(真实用量) — 小欧 2026-08-09: 修正 steps 中 usage=N 仅为 step 计数而非 token
+        _au = getattr(agent, "accumulated_usage", None)
+        if _au and isinstance(_au, dict):
+            parts.append("usage_tokens=" + ",".join(
+                f"{k}={_au.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        # 11.1 token 四层同构：追加任务级/会话级/链级累计输出 — 小欧 2026-08-20
+        _tau = getattr(agent, "task_accumulated_tokens", None)
+        if _tau and isinstance(_tau, dict):
+            parts.append("task_acc=" + ",".join(
+                f"{k}={_tau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        _sau = getattr(agent, "session_accumulated_tokens", None)
+        if _sau and isinstance(_sau, dict):
+            parts.append("session_acc=" + ",".join(
+                f"{k}={_sau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+        _cau = getattr(agent, "chain_accumulated_tokens", None)
+        if _cau and isinstance(_cau, dict):
+            parts.append("chain_acc=" + ",".join(
+                f"{k}={_cau.get(k, 0)}" for k in ("prompt_tokens", "completion_tokens", "total_tokens")))
+    if steps:
+        counter: Dict[str, int] = {}
+        for s in steps:
+            t = s.get("type", "?") if isinstance(s, dict) else "?"
+            counter[t] = counter.get(t, 0) + 1
+        # 2026-08-09 - 小欧 - 三审收尾: usage 为非业务 Meta 步骤, 真实消耗由 usage_tokens 承担, 不混入业务统计;
+        #   同性质非业务 MetaStep(paused/resumed/retrying/cancelled/authorization_required/start) 一并剔除, 与
+        #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(action/thought/observation/final/error)不计入排除,
+        #   不误伤。total 必须在 pop 之后计算, 否则 total_steps 含排除项与注释声明矛盾。
+        # 2026-08-18 小欧 P1/P3/P5/P6: chunk/error/usage/paused/resumed/retrying/cancelled 均仅SSE不落库,
+        #   不入 current_execution_steps, total_steps 自然剔除; cancelled 经 task_runtime.task_cancel_check_and_yield(:90) append 进内存 steps 须显式剔除,
+        #   收敛剔除集={cancelled,authorization_required,start}与 agent_runner:388 口径一致(10.4.4 第0步) — 小欧 2026-08-18(修正)
+        # 2026-09-11 小欧: 剔除集改为复用 _M_SKIP(单一来源, 与 build_stats_step/build_final_stats_step 同源)
+        for _t in list(counter.keys()):
+            if _t in _M_SKIP:
+                counter.pop(_t)
+        total = sum(counter.values())
+        step_summary = ",".join(f"{k}={v}" for k, v in sorted(counter.items()))
+        if step_summary:
+            parts.append(f"steps=[{step_summary}]")
+        parts.append(f"total_steps={total}")
+    _msg = f"[TASK_END] {time.strftime('%H:%M:%S')} {' | '.join(parts)}"
+    log_and_print(_msg)

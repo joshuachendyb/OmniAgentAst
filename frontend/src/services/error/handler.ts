@@ -12,6 +12,13 @@
 // 编辑历史: 2026-08-28 小沈 - 修复review-bugs#1: extractErrorMessage优先级倒置——response.data.detail/message优先于e.message, 数组detail用JSON.stringify兜底 - 小沈-2026-08-28
 // 编辑历史: 2026-08-28 小沈 - 修复review-bugs#2: retryWithBackoff改async/await, 成功后停止递归, 加计数器防无限 - 小沈-2026-08-28
 // 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message改走antdApp.getMessage()上下文实例; showMessage增onClick点击消失 - 小欧-2026-08-28
+// 编辑历史: 2026-09-08 小欧 - 提示文案防裸值加固+实证打点(北京老陈驱动「xx 60000」裸数字 toast):
+//   ①新增 sanitizeDisplayMessage: showMessage 透传上弹窗前过滤纯数字/非字符串/空白/undefined/null/[object Object] 等
+//     垃圾值, 一律回退 ERROR_CONFIG_MAP[errorType] 固定中文文案, 杜绝 UI 裸弹 60000 之类数字(后端原始报文不受影响,
+//     console 仍完整可查);
+//   ②showMessage 弹前加 console.info("[Toast] errorType: 文案") 打点, 供复现时反查 60000 来源字段 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-C1: extractErrorMessage入参Record<string,any>→Record<string,unknown>+data双重收窄
+//   (消除lib用any与裸断言, 语义不变) — 小欧-2026-09-09
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -702,6 +709,20 @@ export function isSilentError(error: unknown): boolean {
 // 统一显示函数
 // ============================================
 
+// 2026-09-08 小欧 提示文案防裸值过滤(北京老陈驱动「xx 60000」裸数字 toast 实证加固):
+//   上游透传的 message 可能是纯数字(如后端毫秒值 60000)或垃圾占位值, 直接上弹窗用户无法理解且易误判为 Bug。
+//   非字符串/空白/纯数字/占位垃圾值一律返回 undefined → showMessage 回退该 errorType 的固定中文文案。
+//   真实报文排查仍走 console 完整 error 对象, 本过滤只防 UI 文案错乱, 不丢任何调试信息。 — 小欧-2026-09-08
+const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim();
+  if (!t) return undefined;
+  if (/^-?\d+(\.\d+)?$/.test(t)) return undefined; // 纯数字(含负数/小数), 如 "60000"
+  if (/^[0-9,.\s]+$/.test(t)) return undefined; // 纯数字字符集(防千分位 "60,000"), 排除科学记数/字母
+  if (/^(undefined|null|nan|\[object object\])$/i.test(t)) return undefined;
+  return raw;
+};
+
 /**
  * 统一显示错误/警告/成功提示
  * @param errorType 错误类型
@@ -721,7 +742,12 @@ export function showMessage(
     return;
   }
 
-  const displayMessage = customMessage || config.message;
+  // 2026-09-08 小欧 B加固: 透传文案过 sanitizeDisplayMessage 防裸数字/垃圾值上弹窗(如 "60000"), 非法即回退固定中文 — 小欧-2026-09-08
+  const displayMessage =
+    sanitizeDisplayMessage(customMessage) || config.message;
+
+  // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
+  console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}`);
 
   // 2026-08-27 小欧 修复Bug6: 空文案(如RETRY_WARNING)不弹空toast
   if (!displayMessage) {
@@ -774,10 +800,12 @@ export function showSuccess(msg: string = '操作成功'): void {
 function extractErrorMessage(error: unknown): string | undefined {
   if (typeof error === 'string') return error;
   if (error == null) return undefined;
-  const e = error as Record<string, any>;
+  const e = error as Record<string, unknown>;
   const resp = e.response;
   if (resp && typeof resp === 'object') {
-    const data = resp.data;
+    const data = (resp as Record<string, unknown>).data as
+      | Record<string, unknown>
+      | undefined;
     if (data && typeof data === 'object') {
       if (data.detail !== undefined && data.detail !== null) {
         if (Array.isArray(data.detail)) return JSON.stringify(data.detail);

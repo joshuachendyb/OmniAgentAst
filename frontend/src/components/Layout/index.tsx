@@ -5,6 +5,25 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: 删_sessionCount死状态/refreshModelList透传/unreadCount死值; 精简console.log; Option上移; 更正Header高度注释
 // 2026-08-27 小欧 - 三堂会审: #1890ff→#1677ff(头像背景/标题); 删5处console.log调试语句
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复注释行尾多余空白, 防止格式再次出错
+// 编辑历史: 2026-09-08 小欧 - 删顶部模型状态指示Tag(北京老陈令): 右侧已有独立模型Select+检查按钮, 左侧Tag功能完全冗余, 删除更简洁 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 删左侧Logo区Avatar(北京老陈令): 顶部仅保留文字标识"OmniAgentAst.", 更简洁 — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 标题图标化(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader(蓝绿橙, 与 title-icon-compare.html 的D三色版一致),
+//   复用 waiting-spin 逆时针1s常转, Tooltip 保留原标题; Title 组件仍被 Logo 区使用, import 保留 — 小欧-2026-09-08
+// 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去refreshAll解构; isManualRefreshing改[,setIsManualRefreshing]
+//   (保留setter调用防死状态:131注释, 仅弃读值) — 小欧-2026-09-09
+// 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①删左侧Logo区文字Title,
+//   换嗅title-icon-compare 70号斜向波浪3x3九色点阵(SVG36x36, gridwave动画); ②"OmniAgentAst."文字移右侧顶栏
+//   动画圈圈(title-spin-icon)之后(brand-title-text); ③Title组件随Logo区文字删除不再使用, 保留import防他处引用破坏 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 10大规范自查整改: ①删Typography/Title死import(禁止backward); ②9个rect抽
+//   LOGO_GRID_CELLS常量数组+map迭代渲染(DRY); ③行内width/height冗余删除由CSS定义(DRY) — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 动画图标抽离(北京老陈令): 左侧Logo点阵+右侧顶栏圈圈两段内联SVG统一移入
+//   新建 AnimatedIcons/index.tsx(LogoGridIcon/TitleSpinIcon, 数据+渲染随组件走), Layout改import引用, LOGO_GRID_CELLS随组件移走 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 折叠后Logo不显示修复+菜单栏优化落地(北京老陈令): ①折叠态Logo渲染条件去!collapsed(容器居中展示);
+//   ②[38]4.1 Logo区高度64→43与Topbar Header对齐; ③[38]4.2 Logo包Tooltip"OmniAgentAst"(折叠态可识别);
+//   ④[38]4.3 disabled项统一为"即将上线"预留样式(文件管理与知识库一致, opacity0.6+Tooltip);
+//   ⑤[38]4.4 展开态Logo左缘对齐菜单图象标中心(padding 5px); ⑥菜单栏默认折叠(useState true, 北京老陈令) — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 折叠态Tooltip黑框无字修复(北京老陈反馈): 折叠时AntD自动Tooltip取label文本,
+//   label为JSX(Badge/Tooltip包裹)取不到字符串→黑框无字, 所有菜单项显式加title字符串兜底 — 小欧-2026-09-15
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -22,7 +41,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   Layout,
   Menu,
-  Typography,
   Avatar,
   Badge,
   Tooltip,
@@ -52,6 +70,7 @@ import { configApi } from '../../services/api/config.api';
 import type { ValidateResponse } from '../../services/api/chat.api';
 import type { MenuProps } from 'antd';
 import ShortcutPanel from '../ShortcutPanel';
+import { LogoGridIcon, TitleSpinIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
 import { LayoutSkeleton } from '../Skeleton';
 import {
@@ -66,7 +85,6 @@ const { useBreakpoint } = Grid;
 
 const { Option } = Select;
 const { Sider, Content, Header } = Layout;
-const { Title } = Typography;
 
 // 2026-08-27 小欧 三堂会审B32: 版本号统一定义(DRY), 避免硬编码散落多处
 const APP_VERSION = 'v2.1.0';
@@ -100,7 +118,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 路由导航
   const navigate = useNavigate();
   // 导航折叠状态
-  const [collapsed, setCollapsed] = useState(false);
+  // 2026-09-15 小欧 - 默认折叠(北京老陈令): useState初始true, 用户可手动展开 — 小欧-2026-09-15
+  const [collapsed, setCollapsed] = useState(true);
   // 移动端抽屉显示状态
   const [drawerVisible, setDrawerVisible] = useState(false);
   // 快捷指令面板显示状态
@@ -116,7 +135,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     modelList,
     validationResult,
     initializeApp,
-    refreshAll,
     refreshServiceStatus,
     refreshAfterModelChange,
     refreshModelList: appRefreshModelList, // 获取AppContext的refreshModelList
@@ -125,7 +143,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   } = useApp();
 
   // 编辑历史: 2026-08-28 小欧 - [25] 恢复isManualRefreshing状态+setter调用(防死状态)
-  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [, setIsManualRefreshing] = useState(false);
   // 【修复问题1】检查服务状态 - 使用AppContext
   // 监听初始化状态，在初始化过程中显示loading
   const [checkingStatus, setCheckingStatus] = useState(false);
@@ -382,6 +400,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     {
       key: '/',
       icon: <MessageOutlined />,
+      // 2026-09-15 小欧 - 折叠态Tooltip文字修复: label为JSX(Badge包裹)AntD取不到字符串→黑框无字,
+      //   显式title兜底(折叠自动tooltip用title文本) — 小欧-2026-09-15
+      title: '对话任务',
       label: (
         <Badge size="small" offset={[6, -4]}>
           <span>对话任务</span>
@@ -391,12 +412,19 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     {
       key: '/files',
       icon: <FolderOutlined />,
-      label: '文件管理',
+      title: '文件管理',
+      // 2026-09-15 小欧 - [38]4.3 disabled项统一预留样式(与知识库一致): opacity0.6+Tooltip"即将上线" — 小欧-2026-09-15
+      label: (
+        <Tooltip title="即将上线" placement="right">
+          <span style={{ opacity: 0.6 }}>文件管理</span>
+        </Tooltip>
+      ),
       disabled: true,
     },
     {
       key: '/knowledge',
       icon: <BookOutlined />,
+      title: '知识库',
       label: (
         <Tooltip title="即将上线" placement="right">
           <span style={{ opacity: 0.6 }}>知识库</span>
@@ -408,6 +436,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     {
       key: '/history',
       icon: <HistoryOutlined />,
+      title: '历史会话',
       label: (
         <Badge
           count={sessionCount}
@@ -422,12 +451,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     {
       key: '/shortcuts',
       icon: <ThunderboltOutlined />,
+      title: '快捷指令',
       label: '快捷指令',
     },
     { type: 'divider' },
     {
       key: '/settings',
       icon: <SettingOutlined />,
+      title: '系统设置',
       label: '系统设置',
     },
   ];
@@ -490,34 +521,26 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       {/* Logo区域 */}
       <div
         style={{
-          height: 64,
+          // 2026-09-15 小欧 - [38]4.1 高度64→43: 与顶栏Header(43px)纵向对齐, 三态统一 — 小欧-2026-09-15
+          height: 43,
           display: 'flex',
           alignItems: 'center',
           justifyContent: isMobile || collapsed ? 'center' : 'flex-start',
-          padding: isMobile || collapsed ? 0 : '0 16px',
+          // 2026-09-15 小欧 - [38]4.4 展开态左缘5px(16px-11px): 使36px点阵中心对齐菜单项图标中心(图标14px距左16px),
+          //   消除视觉偏左重心; 折叠/移动端仍居中 — 小欧-2026-09-15
+          padding: isMobile || collapsed ? 0 : '0 5px',
           borderBottom: '1px solid #f0f0f0',
         }}
       >
-        <Avatar
-          size={40}
-          icon={<DesktopOutlined />}
-          style={{ background: '#1677ff', flexShrink: 0 }}
-        />
-        {!isMobile && !collapsed && (
-          <Title
-            level={5}
-            style={{
-              margin: '0 0 0 12px',
-              fontSize: 16,
-              fontWeight: 600,
-              color: '#1677ff',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            OmniAgentAst.
-          </Title>
+        {!isMobile && (
+          // 2026-09-15 小欧 - 左侧Logo图形化(北京老陈令选 title-icon-compare 70号斜向波浪):
+          //   原文字"OmniAgentAst."移右侧顶栏动画圈圈之后, 此处放 AnimatedIcons/LogoGridIcon(3x3九色点阵, 组件内数据+渲染)
+          //   2026-09-15 小欧 - 修复折叠后顶部Logo不显示: 原条件 !collapsed 使折叠态整块不渲染,
+          //   容器折叠态 justify-content:center 正好居中展示点阵 — 小欧-2026-09-15
+          // 2026-09-15 小欧 - [38]4.2 Logo包Tooltip"OmniAgentAst": 折叠态窄栏可识别品牌 — 小欧-2026-09-15
+          <Tooltip title="OmniAgentAst" placement="right">
+            <LogoGridIcon />
+          </Tooltip>
         )}
       </div>
 
@@ -569,7 +592,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   );
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       {/* 快捷指令弹窗 */}
       <ShortcutPanel
         visible={shortcutPanelVisible}
@@ -632,80 +655,16 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 />
               </Tooltip>
             )}
-            <Title
-              level={4}
-              style={{
-                margin: 0,
-                fontWeight: 500,
-                fontSize: isMobile ? 16 : 18,
-              }}
-            >
-              对话与任务
-            </Title>
-            {/* 服务状态显示 - 根据检查结果显示不同颜色 - 前端小新代修改 UX-L03: 可点击重试 */}
-            {checkingStatus ? (
-              <span style={{ color: '#999' }}>检查中...</span>
-            ) : (
-              (() => {
-                // 【2026-04-07修复】切换模型后serviceStatus不会更新，始终以modelList为准
-                const currentModel = modelList.find(
-                  (m) => m.current_model === true
-                );
-
-                if (serviceStatus && !serviceStatus.valid) {
-                  return (
-                    <Tag
-                      color="error"
-                      style={{ cursor: 'pointer' }}
-                      onClick={checkingStatus ? undefined : handleCheckService}
-                    >
-                      <CloseCircleOutlined />{' '}
-                      {serviceStatus.model_ref?.provider}{' '}
-                      {serviceStatus.model_ref?.model &&
-                        `(${serviceStatus.model_ref.model})`}
-                      <span style={{ marginLeft: 8, fontSize: 12 }}>
-                        (已失效)
-                      </span>
-                    </Tag>
-                  );
-                } else if (currentModel) {
-                  // 显示配置文件中的当前模型（从modelList获取，切换模型后会更新）
-                  const tagColor = serviceStatus?.valid
-                    ? serviceStatus.status === 'warning'
-                      ? 'warning'
-                      : 'success'
-                    : 'default';
-                  return (
-                    <Tag
-                      color={tagColor}
-                      onClick={checkingStatus ? undefined : handleCheckService}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <CheckCircleOutlined /> {currentModel.provider} (
-                      {currentModel.model})
-                      {serviceStatus?.status === 'warning' && (
-                        <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>
-                      )}
-                      {!serviceStatus && (
-                        <span style={{ marginLeft: 8, fontSize: 12 }}>
-                          (未验证)
-                        </span>
-                      )}
-                    </Tag>
-                  );
-                } else {
-                  return (
-                    <Tag
-                      color="error"
-                      onClick={checkingStatus ? undefined : handleCheckService}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      未配置 (点击检查)
-                    </Tag>
-                  );
-                }
-              })()
-            )}
+            {/* 2026-09-08 小欧 - 标题图标化(北京老陈令): "对话与任务"文字换D三色弧段loader(蓝绿橙),
+                与对比页 title-icon-compare.html 的 D 三色版一致, 1s逆时针常转; Tooltip 保留原标题, 无障碍 — 小欧-2026-09-08
+                2026-09-15 小欧 - 内联SVG抽离至 AnimatedIcons/TitleSpinIcon — 小欧-2026-09-15 */}
+            <Tooltip title="对话与任务" placement="bottom">
+              <TitleSpinIcon />
+            </Tooltip>
+            {/* 2026-09-15 小欧 - 品牌文字移此(北京老陈令): 左侧文字Logo挪到动画圈圈之后, 字号/粗细/色与左侧一致 — 小欧-2026-09-15 */}
+            <span className="brand-title-text" aria-label="OmniAgentAst">
+              OmniAgentAst.
+            </span>
             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
             {validationResult &&
               (!validationResult.success ||
@@ -781,7 +740,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             padding: '6px 6px 10px 6px',
             background: '#f8fafc',
             borderRadius: 12,
-            minHeight: 400,
+            minHeight: 0,
+            flex: 1,
             overflow: 'auto',
           }}
         >
