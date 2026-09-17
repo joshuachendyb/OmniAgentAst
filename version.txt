@@ -1,4 +1,37 @@
-﻿v0.19.40.20
+﻿v1.0.0
+更新时间: 2026-09-17 18:30:00 - 小欧-2026-09-17
+## v0.19.40.20以来 变更汇总(17个commit: feat3/fix4/refactor3/docs5/merge2) - 小欧-2026-09-17
+[2026-09-17 18:30:00 小欧] 里程碑版本: 合并 optimize-0.19.17(agent重构) + optimize-0.19.40.1(心跳钟面+[47]设计)
+
+### feat(3个):
+- 9eb787418 feat:conflict_detector.py 冲突检测下沉(_has_conflict+_partition_calls) - 小健-2026-09-04
+- 022475d43 feat:trust.py 信任域三合一合并(trust_utils+trust_service+trust_repository) - 小健-2026-09-04
+- f956af34c feat:event_emitter 统一转换层新建(handler业务结果→前端Step) - 小健-2026-09-04
+
+### fix(4个):
+- a853a6c43 fix:重构错误修复合集(6文件) set_completed/set_failed补全+event_emitter字段修正 - 小健-2026-09-04
+- 93e722414 fix:sandbox_resolve返回dict适配+编辑历史补全 - 小健-2026-09-04
+- e2a295f8c fix:react_cycle.py Phase4 _dispatch_handler从async generator→async function - 小健-2026-09-04
+- a938ea35c refactor:SLAP修复 build_final_stats_step+emit_final_with_stats outcome参数 - 小健-2026-09-04
+
+### refactor(3个):
+- 92b19ae83 refactor:answer_handler yield→return dict 纯业务改造 - 小健-2026-09-04
+- 6a4608373 refactor:sandbox_gate yield→return dict 纯业务改造+HITL暂停流修复 - 小健-2026-09-04
+- 9f5ab7c43 refactor:action_handler引用整合+sandbox_gate环依赖消除 - 小健-2026-09-04
+
+### docs(5个):
+- d16174efa docs:[47]设计文档更新+实施进度分析目录归档 - 小欧-2026-09-17
+- 0522ed994 docs:version.txt v0.19.40.2升级说明 - 小欧-2026-09-04
+- 115b815fb docs:version.txt v0.19.40.1升级说明 - 小欧-2026-09-04
+- 2a2482b07 docs:前后端优化分析v2.10 审计内容合并至第11章 - 小健-2026-09-04
+- b8234fc7d docs:前后端优化分析v2.9 新增第11章重构问题清单 - 小健-2026-09-04
+
+### merge(2个):
+- 47e8a1611 Merge branch 'optimize-0.19.40.1' - 小沈-2026-09-17
+- 131b46ae6 Merge branch 'optimize-0.19.17'
+
+---
+v0.19.40.20
 更新时间: 2026-09-17 16:50:00 - 小欧-2026-09-17
 ## v0.19.40.19以来 变更汇总(21个commit) - 小欧-2026-09-17
 [2026-09-17 16:50:00 小欧] 汇总范围=v0.19.40.19以来全部commit(共21个: feat4/fix5/docs4/test2/refactor0)
