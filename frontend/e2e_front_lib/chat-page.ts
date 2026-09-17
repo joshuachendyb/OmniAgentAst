@@ -9,7 +9,7 @@ import type { Page } from '@playwright/test';
 
 export class ChatPage {
   readonly input = this.page.getByPlaceholder('输入消息，Shift+Enter 换行');
-  readonly sendBtn = this.page.getByRole('button', { name: '发送' });
+  readonly sendBtn = this.page.locator('button.ant-btn-primary:has-text("发送")');
   readonly stopBtn = this.page.getByRole('button', { name: '停止' });
   readonly greenDot = this.page.locator('span.waiting-cursor[aria-label="等待下一个思考内容"]');
 
