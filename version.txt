@@ -1,4 +1,39 @@
-﻿v0.19.40.19
+﻿v0.19.40.20
+更新时间: 2026-09-17 16:50:00 - 小欧-2026-09-17
+## v0.19.40.19以来 变更汇总(21个commit) - 小欧-2026-09-17
+[2026-09-17 16:50:00 小欧] 汇总范围=v0.19.40.19以来全部commit(共21个: feat4/fix5/docs4/test2/refactor0)
+
+### feat(4个):
+- 92e0fbac7 feat:链路透传 useSSE→useChatStreaming→RightViewer→PipelineRenderer→图标 - 小欧-2026-09-17
+- 7c67fdb07 feat:sseParser/useSSE 心跳信号源+业务基线 - 小欧-2026-09-17
+- bf7b22f8c feat:clockStopwatch 心跳钟面控件+类型+样式 - 小欧-2026-09-17
+- 27c046e27 feat:[47]Zen免费无key模型接入系统集成设计方案 v2.7 - ID生成函数忠实复制opencode逻辑 - 小欧-2026-09-17
+
+### fix(5个):
+- 6e9fef94b fix:清除clockStopwatch/useSSE临时debug日志 - 小欧-2026-09-17
+- 51a0f7eb8 fix:chat-page sendBtn选择器精确匹配 - 小欧-2026-09-17
+- 375e25fe9 fix:react_dispatch+steps+sseParser+useTaskInfo+PipelineRenderer+RightViewer 三堂会审6缺陷修复 - 小欧-2026-09-17
+- 07f59b74b fix:ChatHeader 标题截断20→15字 - 小沈-2026-09-17
+- 5ccd27e3e fix:CollapsibleText 折叠按钮内联跟在文本末尾不另起新行 - 小沈-2026-09-17
+- 9af1bce44 fix:CollapsibleText 折叠按钮改为右侧对齐 - 小沈-2026-09-17
+- bce6e9c48 fix:useTaskInfo 事件排序改正序(最早在上) - 小沈-2026-09-17
+
+### docs(4个):
+- 509a2aa24 test:fre2e_06_clock_wait+fre2e_07_quant_research E2E测试 - 小欧-2026-09-17
+- 4bbc97269 docs:[46]设计文档v2.16 T1~T4实施完成+链路贯通 - 小欧-2026-09-17
+- 057888227 docs:[47]Zen免费无key模型接入系统集成设计方案 验收标准v2.6(B1-B25/25bug) - 小欧-2026-09-17
+- a82485006 docs:[47]Zen免费无key模型接入系统集成设计方案 设计文档v2.5(TDD实施+22项验收标准) - 小欧-2026-09-17
+- 1bf59b2a1 docs:[46]10遍核查修正:H校正+术语统一+用例补全+计数修正 - 小欧-2026-09-17
+- 719849c67 docs:[46]新增第六章TDD实施步骤与26个测试用例 - 小欧-2026-09-17
+- 8824522c6 docs:[46]设计文档v2.13+stopwatch演示+多份文档更新 - 小欧-2026-09-17
+
+### test(2个):
+- 55f64a82a test:fre2e_05_history_switch E2E测试更新 - 小沈-2026-09-17
+
+### refactor(0个):
+
+---
+v0.19.40.19
 更新时间: 2026-09-17 06:34:45 - 小欧-2026-09-17
 ## v0.19.40.18以来 变更汇总(26个commit) - 小欧-2026-09-17
 [2026-09-17 06:34:45 小欧] 汇总范围=v0.19.40.18以来全部commit(共26个: feat7/refactor1/fix4/docs14)
