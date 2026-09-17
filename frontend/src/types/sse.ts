@@ -11,6 +11,8 @@
 // 编辑历史: 2026-09-11 小欧 - 三堂会审P1-2: FinalStatsFrame.artifacts补tool_name?(与后端4字段契约对齐, 见handle_action.py 11.6.2; 原3字段漏tool_name致产出物编译错) — 小欧-2026-09-11
 // 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: TaskMetaFrames 删 usage 死字段(与 taskAccumulated 完全同值的 P/C/T 映射, 消费已归一 taskAccumulated, sseParser/useTaskInfo 同步收敛) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - P0-3三堂会审修复: SSEConfig删taskId死字段(全仓无config.taskId消费点, useSSE只读baseURL/sessionId/token) — 小欧-2026-09-12
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 ClockSignals 信号打包类型(heartbeatTs/lastBizTsRef/lastDataTsRef) + UseSSEReturn 新增 waitClock 字段 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章对齐设计: ClockSignals 移至 UseSSEReturn 前(与 5.4.2 一致), 字段序 lastBizTsRef/lastDataTsRef/heartbeatTs, 注释改行内式 - 小欧-2026-09-17
 import type { ExecutionStep } from './execution';
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
@@ -164,6 +166,15 @@ export interface ReconnectConfig {
 }
 
 /**
+ * 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面数据信号(打包透传, 链路只走单一 prop waitClock)
+ */
+export interface ClockSignals {
+  lastBizTsRef: React.MutableRefObject<number>; // 最近一次业务事件到达(ms)
+  lastDataTsRef: React.MutableRefObject<number>; // 最近一次任意数据到达(含心跳, ms)
+  heartbeatTs: number; // 心跳到达时刻(ms), 0=未收到
+}
+
+/**
  * SSE Hook返回值
  */
 export interface UseSSEReturn {
@@ -192,6 +203,8 @@ export interface UseSSEReturn {
   reconnect: () => void;
   /** 任务元信息帧快照（usage/stats/final_stats/context_overview/truncated/startInfo/上下文摘要） */
   metaFrames: TaskMetaFrames;
+  /** 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号(业务静默/数据静默/心跳) — 小欧-2026-09-17 */
+  waitClock: ClockSignals;
 }
 
 /**

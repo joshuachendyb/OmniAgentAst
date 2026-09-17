@@ -9,6 +9,7 @@
 /* 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): 新增.task-list-item:hover悬浮态/.active选中态/.task-text-block相对定位/.task-copy-btn复制按钮(绝对定位右上角hover显示) - 小欧-2026-09-09 */
 /* 编辑历史: 2026-09-13 小欧 - action等待图标(北京老陈令选G波纹扩散): 新增@keyframes action-ripple与.action-ripple-1/.action-ripple-2(1.8s交替scale0.5→1.4+opacity1→0), .action-waiting-cursor去waiting-spin改静态容器(图标SVG在WaitingIcons/ToolWaitingIcon之下) — 小欧-2026-09-13 */
 /* 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①新建.logo-gridwave-icon(3x3九色点阵, 新增@keyframes gridwave斜向波浪2s波动, 尺寸36px, 复用原html 70号图标); ②新建.brand-title-text(右侧顶栏动画圈圈后品牌名, 16px/600/#1677ff与左侧一致) — 小欧-2026-09-15 */
+/* 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 文件末尾新增心跳等待感知微型钟面样式——@keyframes clock-beat + .clock-stopwatch(inline-flex并存) + .clock-stopwatch-note(12px) + .clock-beat-wave(外圈单次光波) - 小欧-2026-09-17 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -255,4 +256,35 @@
 .taskinfo-entry:focus-visible {
   outline: 2px solid #1677ff;
   outline-offset: 2px;
+}
+
+/* 2026-09-17 小欧 - 心跳等待感知微型钟面([46]第四章定案):
+   .clock-stopwatch 与等待图标并存(inline-flex 追加); .clock-beat-wave 心跳到达重放单次光波 — 小欧-2026-09-17 */
+@keyframes clock-beat {
+  0% {
+    transform: scale(0.92);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+.clock-stopwatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+}
+.clock-stopwatch svg {
+  display: block;
+}
+.clock-stopwatch-note {
+  font-size: 12px; /* 与 FontSize.SECONDARY 同档 */
+  white-space: nowrap;
+}
+.clock-beat-wave {
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: clock-beat 0.6s ease-out 1;
 }
