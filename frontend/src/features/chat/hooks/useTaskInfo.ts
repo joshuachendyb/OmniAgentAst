@@ -37,6 +37,7 @@
 //   改动点② startinfo 门去掉 receiving 依赖改无条件 running(断连窗不压 idle);
 //   deps 去 receiving; DBG-3c 日志同步去 receiving 槽位 — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 会审V3整改(#2/#3): ProcessEvent.kind 去 'heartbeat'(SSE协议层:ping 永非事件), 删 steps 遍历 case 'rejected'(永不落库/不入steps 死代码), rejected 事件实时走 onRejected 点名条链路 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小沈 - 事件排序改为正序(最早在上): 去除 recentEvents.reverse(), processEvents 按时间正序输出 — 小沈-2026-09-17
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -364,9 +365,10 @@ export const useTaskInfo = (
       chainAccumulated: frames.chainAccumulated ?? null,
       overview: frames.contextOverview,
       truncatedTip: frames.truncated?.content ?? null,
-      processEvents: recentEvents.reverse(), // 新事件插顶，保留最近20条
+      processEvents: recentEvents, // 最早事件在上，保留最近20条
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
   }, [steps, frames, detail, liveError]);
 };
+
