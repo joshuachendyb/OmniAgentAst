@@ -8,6 +8,7 @@
 //   反转检测(false→true 才打, ref 去重 StrictMode 双渲染) — 小欧-2026-09-14
 //   2026-09-14 小欧 - [37]DRY: 反转检测打点抽取公用 hook useRiseLog(与 ThinkingStream 同款逻辑去重) — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - [38]正文末位光标换型(北京老陈驱动): 静态<span>▍</span>(无动画)→复用 WaitingIcons/ActionWaitingIcon(蓝#1677ff核心圆+双层波纹扩散, 复用既有CSS零新增, [37]清理后首次启用) — 小欧-2026-09-14
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop, 打字机末位波纹光标 ActionWaitingIcon 挂钟面并存 - 小欧-2026-09-17
 /**
  * TextStream - 正文打字机（真逐字 + 末位光标）
  *
@@ -23,12 +24,14 @@ import { getStreamStyle } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize';
 import { useRiseLog } from '@/features/chat/hooks/useRiseLog'; // 2026-09-14 小欧 [37]: CURSOR F 翻转打点(抽公用 hook) — 小欧-2026-09-14
 import { ActionWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-14 小欧 [38]: 正文末位光标换型(蓝色波纹扩散圈) — 小欧-2026-09-14
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 
 interface TextStreamProps {
   text: string;
   typing?: boolean; // 实时流且为本段累积中（打字机态）
   cursor?: boolean; // 末位闪烁光标
   compact?: boolean; // 同 step 内部(13.6 拆出的 reasoning→thought 相邻): 段距 SM(6)
+  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(与波纹光标并存) — 小欧-2026-09-17
 }
 
 const TextStream: React.FC<TextStreamProps> = ({
@@ -36,6 +39,7 @@ const TextStream: React.FC<TextStreamProps> = ({
   typing = false,
   cursor = false,
   compact = false,
+  waitClock, // 2026-09-17 小欧 [46]第五章
 }) => {
   const clean = normalizeBlankLines(text, { streaming: typing });
   const [shown, setShown] = useState(0);
@@ -75,7 +79,7 @@ const TextStream: React.FC<TextStreamProps> = ({
       style={getStreamStyle(compact)}
     >
       {clean.slice(0, typing ? shown : clean.length)}
-      {cursor && typing && <ActionWaitingIcon />}
+      {cursor && typing && <ActionWaitingIcon waitClock={waitClock} />} {/* 2026-09-17 小欧 [46]: 波纹与钟面并存(追加) — 小欧-2026-09-17 */}
     </div>
   );
 };

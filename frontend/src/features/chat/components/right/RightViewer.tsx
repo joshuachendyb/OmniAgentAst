@@ -105,6 +105,7 @@
 //   改四参签名 ③isCurrentLive 判定提纯复用 computeIsCurrentLive(改动点③, 删 receiving 条件)
 //   ④DBG-1 日志去 recv 槽位(5.5.3-(二) 只留 live/match/final/biz 前缀四字段) ⑤import viewState — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": RightViewerProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop(类型导入 ClockSignals/接口声明/解构/透传 PipelineRenderer) - 小欧-2026-09-17
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -131,7 +132,7 @@ import { StaticStatsBlock } from './StaticStatsBlock';
 import { TitleBlock } from './TitleBlock'; // 2026-09-11 小欧 第七章 M3a(TitleBlock拆分): title 段独立组件 — 小欧-2026-09-11
 import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: badge 权威派生(running/paused=任务进行), 撑 waiting 三处丢失窗口
 import { computeIsCurrentLive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点③(方案A): isCurrentLive 判定提纯复用 — 小欧-2026-09-14
-import type { TaskMetaFrames } from '@/types/sse';
+import type { TaskMetaFrames, ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 import { emptyMetaFrames } from '@/types/sse';
 
 // 2026-09-12 小欧 P1-9: 业务步骤类型集合提升模块级, 消组件体每次渲染重建 Set(性能+DRY) — 小欧-2026-09-12
@@ -160,6 +161,7 @@ interface RightViewerProps {
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
   deniedEntries: ReadonlyMap<number, Array<{ tool: string; reason: string; reject_type?: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
+  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号, 透传 PipelineRenderer — 小欧-2026-09-17
   // 2026-09-11 小欧 三堂会审P1-4: 复用公用 TokenLayer——原 {prompt_tokens?: number;...} | null 与 StaticStatsBlock 必选字段形状不匹配(TS2322), 统一后 DRY — 小欧-2026-09-11
   sessionTokens?: TokenLayer;
   chainTokens?: TokenLayer;
@@ -178,6 +180,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   frames,
   deniedSteps,
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
+  waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号
   sessionTokens, // 2026-09-11 小欧 三堂会审P1-4: 复用 TokenLayer(类型统一) — 小欧-2026-09-11
   chainTokens,
   updateTaskResponse, // 2026-09-15 小欧 [33]第七章: 历史任务 final.response 写入左侧唯一入口 — 小欧-2026-09-15
@@ -496,6 +499,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
             badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
+            waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
           />
         </div>
       )}

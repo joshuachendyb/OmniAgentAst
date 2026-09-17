@@ -76,6 +76,7 @@
 //   2026-09-14 小欧 - [37]lint清理: 删 [35] 遗留未使用 import ActionWaitingIcon(仅 import+注释, 无实际使用) — 小欧-2026-09-14
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 步骤摘要段去📋emoji前缀, 只留 summary/content 文本 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": PipelineRendererProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -96,6 +97,7 @@ import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
 import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 import {
   Colors,
   BorderWidth,
@@ -273,6 +275,7 @@ interface PipelineRendererProps {
   badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
   deniedSteps?: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 供停齿轮判定 — 小欧-2026-09-06
   deniedEntries?: ReadonlyMap<number, Array<{ tool: string; reason: string; reject_type?: string }>>; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
+  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -283,6 +286,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
   deniedSteps, // 2026-09-06 小欧 B2(方案C)
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
+  waitClock, // 2026-09-17 小欧 [46]第五章
 }) => {
   const segs = buildSegments(steps);
   const taskActive = computeTaskActive(highlightToolName, badge);
@@ -320,7 +324,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           if (i !== segs.length - 1 || !taskActive) return null;
           return (
             <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
-              <ThoughtWaitingIcon />
+              <ThoughtWaitingIcon waitClock={waitClock} /> {/* 2026-09-17 小欧 [46]: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
             </div>
           );
         }
@@ -346,6 +350,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               typing={isLive}
               cursor={isLive}
               compact={seg.sameStep}
+              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
             />
           );
         }
@@ -415,6 +420,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               }
               deniedTools={// 2026-09-06 小欧 B2(6.4): 本执行轮被拒工具点名条(橘红灰字数据源, 按 step 取) — 小欧-2026-09-06
               deniedEntries?.get(seg.action.step as number)}
+              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
             />
           );
         }

@@ -28,6 +28,7 @@
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F5代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedEntries 数据结构新增 reject_type 字段; ②markDenied 函数新增 reject_type 参数; ③删除旧 sseOnError/handleDenied; ④新增统一 handleRejected 函数 - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -126,6 +127,9 @@ export interface UseChatStreamingReturn {
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   executeSend: (userMessage: Message) => Promise<void>;
+
+  // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
+  waitClock: import('@/types/sse').ClockSignals;
 }
 
 // ============================================================================
@@ -278,6 +282,7 @@ export const useChatStreaming = (
     clearSteps,
     serverTaskId,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
+    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
   } = useSSE(
     {
       baseURL: config.baseURL,
@@ -521,6 +526,7 @@ export const useChatStreaming = (
     clearSteps,
     serverTaskId: serverTaskId || null,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
+    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号透传 — 小欧-2026-09-17
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合, 供流水线停齿轮 — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条集合, 供 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
 

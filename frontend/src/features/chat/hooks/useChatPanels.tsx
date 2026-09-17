@@ -30,6 +30,7 @@
 // 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   UseChatPanelsOptions 新增 updateTaskResponse prop, 解构并透传 RightViewer; 删除 onSettledRefresh(不再传) — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - TopbarStats 包 span 加 marginLeft:12, 标题与任务数间距加大到约20px(5字符留白) — 小沈-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -151,6 +152,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     serverTaskId,
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条透传 RightViewer → ToolCallLine — 小欧-2026-09-06
+    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号透传 RightViewer → PipelineRenderer — 小欧-2026-09-17
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
 
@@ -258,6 +260,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
+            waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
             sessionTokens={sessionTokens} // 2026-09-11 小欧: 折叠区4组token显示
             chainTokens={chainTokens}
             // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
@@ -341,6 +344,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       metaFrames,
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06
+      waitClock, // 2026-09-17 小欧 [46]第五章: heartbeatTs 变化需触发面板重渲 — 小欧-2026-09-17
       selectedDetail,
       loading,
       isPaused,

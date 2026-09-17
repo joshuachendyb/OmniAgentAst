@@ -40,6 +40,7 @@
 // 编辑历史: 2026-09-15 老杨 - 水滴图标 DropletIcon/DropletStatus 替代成功/失败字符符号, 复用组件消字符 — 老杨-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedTools 类型新增 reject_type 字段; ②根据 reject_type 显示不同图标+文字标签(🔒[安全]/⏱️[超时]/🚫[拒绝]/🛡️[沙箱]); ③拒绝工具不再显示水滴图标; ④视觉分层优化(标签橘红/工具名深灰加粗/原因浅灰弱化) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3整改(#6/#8): 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop, 齿轮 ToolWaitingIcon 挂钟面并存(回放/中断/有结果守卫条件不变) - 小欧-2026-09-17
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -73,6 +74,7 @@ import {
   stepMargin,
 } from '@/utils/stepStyles';
 import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 
 interface ToolCallLineProps {
   action: ExecutionStep; // type=action
@@ -81,6 +83,7 @@ interface ToolCallLineProps {
   interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
   replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
   deniedTools?: Array<{ tool: string; reason: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(与齿轮并存) — 小欧-2026-09-17
 }
 
 // 2026-09-17 小欧 会审V3(#8): 拒绝标签/图标从 .map 内联提取为模块级持久常量(避免每次拒绝行渲染重建对象),
@@ -109,6 +112,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   interrupted = false,
   replay = false,
   deniedTools, // 2026-09-06 小欧 B2(6.4)
+  waitClock, // 2026-09-17 小欧 [46]第五章
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
@@ -258,7 +262,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               </span>
             )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
-            <ToolWaitingIcon />
+            <ToolWaitingIcon waitClock={waitClock} /> /* 2026-09-17 小欧 [46]: 齿轮与钟面并存(追加) — 小欧-2026-09-17 */
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
           {hasResult && tools.length === 0 && (
