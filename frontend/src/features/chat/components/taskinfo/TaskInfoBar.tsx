@@ -45,6 +45,10 @@
 //   分隔线仍走输入框上沿(P1-11 定案B), 色块下沿即贴 1px #f0f0f0 线衔接 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - [33]北京老陈令(长方形封边): taskinfo 色块顶部补 1px #f0f0f0 上边框线,
 //   与输入框上沿线同色, 色块成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔 — 小欧-2026-09-15
+// 编辑历史: 2026-09-17 小沈 - 耗时+步轮从左组移至右组信任前面: 左组原 Badge+耗时+步轮+liveMeta 改为 Badge+liveMeta,
+//   耗时(G2)与步轮(G3)整块迁至右组 TrustPanel 前, 断点矩阵逻辑(xsmall/mid/narrow/wide)不变 — 小沈-2026-09-17
+// 编辑历史: 2026-09-17 小沈 - 事件列表两项优化: ①空列表时显示"暂无事件"提示(原 null 导致 Popover 弹空白);
+//   ②事件排序改为正序(最早在上), 配合 useTaskInfo 去除 .reverse() — 小沈-2026-09-17
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -201,7 +205,18 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           </div>
         ))}
       </div>
-    ) : null;
+    ) : (
+      <div
+        style={{
+          fontSize: FontSize.SECONDARY,
+          color: Colors.TEXT.TERTIARY,
+          textAlign: 'center',
+          padding: `${Spacing.MD}px 0`,
+        }}
+      >
+        暂无事件
+      </div>
+    );
 
   // renderLiveMeta(3.9 重用 + 2026-09-09 位4字符级截断): 文本超 LIVE_META_TEXT_MAX 截断加…,
   //   briefMeta() 一次性返回 {text(截断后), truncated(是否超长)}, renderLiveMeta 渲染截断文本,
@@ -284,44 +299,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           }}
         >
           <Badge status={b.status} text={b.text} />
-          {/* 3.9 断点矩阵: xsmall(<768) G2 合并进 G3; 其余档 G2 完整独立 */}
-          {!isXSmall && (
-            <span
-              style={{
-                fontSize: FontSize.SECONDARY,
-                color: Colors.TEXT.PRIMARY,
-                fontWeight: FontWeight.BOLD, // 3.1.2: G2 耗时 600
-                ...TABULAR_NUMS, // P2-16: 等宽数字, 位数不抖动
-              }}
-            >
-              耗时 {Math.round(shownElapsed)}s
-            </span>
-          )}
-          {/* 3.9 断点矩阵: 完整档(G3 全文本) / mid·narrow 收窄(仅留数字, Tooltip 展开全文本) / xsmall 合并(含耗时) */}
-          <span
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
-            }}
-          >
-            {isXSmall ? (
-              <>
-                {'耗时 '}
-                {Math.round(shownElapsed)}s·{info.stepCount}步·
-                {info.llmCallCount}轮
-              </>
-            ) : isNarrow || isMid ? (
-              <Tooltip title={`${info.stepCount}步·${info.llmCallCount}轮`}>
-                <span style={TABULAR_NUMS}>
-                  {info.stepCount}/{info.llmCallCount}
-                </span>
-              </Tooltip>
-            ) : (
-              <>
-                {info.stepCount}步·{info.llmCallCount}轮
-              </>
-            )}
-          </span>
+
           {/* 小欧 2026-09-02: 第一行位4(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
           {/* 3.9 断点矩阵: wide/mid 完整显示, narrow/xsmall 省略(maxWidth 200 + ellipsis + Tooltip 全文) — v4.4 修复#3 */}
           {info.liveMeta &&
@@ -478,6 +456,43 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
+          {/* 耗时+步轮 移至信任前(2026-09-17) */}
+          {!isXSmall && (
+            <span
+              style={{
+                fontSize: FontSize.SECONDARY,
+                color: Colors.TEXT.PRIMARY,
+                fontWeight: FontWeight.BOLD,
+                ...TABULAR_NUMS,
+              }}
+            >
+              耗时 {Math.round(shownElapsed)}s
+            </span>
+          )}
+          <span
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+            }}
+          >
+            {isXSmall ? (
+              <>
+                {'耗时 '}
+                {Math.round(shownElapsed)}s·{info.stepCount}步·
+                {info.llmCallCount}轮
+              </>
+            ) : isNarrow || isMid ? (
+              <Tooltip title={`${info.stepCount}步·${info.llmCallCount}轮`}>
+                <span style={TABULAR_NUMS}>
+                  {info.stepCount}/{info.llmCallCount}
+                </span>
+              </Tooltip>
+            ) : (
+              <>
+                {info.stepCount}步·{info.llmCallCount}轮
+              </>
+            )}
+          </span>
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
           <TrustPanel sessionId={sessionId} compact={isNarrow} />
           {/* G8 事件入口(v4.1/P0-2/P2-12, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
