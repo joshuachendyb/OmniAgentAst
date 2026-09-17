@@ -948,7 +948,9 @@ export const useSSE = (
               setMetaFrames,
               usageAccumRef,
               // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
-              onHeartbeat: () => setHeartbeatTs(Date.now()),
+              onHeartbeat: () => {
+                setHeartbeatTs(Date.now());
+              },
               onBiz: () => {
                 lastBizTsRef.current = Date.now();
               },

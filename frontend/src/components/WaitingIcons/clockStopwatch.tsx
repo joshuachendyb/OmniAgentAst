@@ -76,6 +76,7 @@ export const ClockStopwatch: React.FC<ClockStopwatchProps> = ({
     level = 'yellow';
   }
 
+
   const color = LEVEL_COLOR[level];
   const angle = (elapsedSec % 60) * 6; // 短针 60s 一圈归零重扫
 
