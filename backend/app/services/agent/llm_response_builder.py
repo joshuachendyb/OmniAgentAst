@@ -5,6 +5,7 @@
 #   原llm_stream.py余部只剩call_llm_stream+call_llm_with_fallback, git mv改名llm_call.py
 # 2026-09-06 小欧 文档[6]2.5.2/5.9落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
 #   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审P1同react_step判定)
+# 2026-09-17 小欧 [48]修改5: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
 """
 llm_response_builder — LLM响应组装纯函数
 
@@ -85,7 +86,7 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
 
 def _format_response_error(e: "LLMResponseError") -> str:
     """格式化LLM响应错误为前端友好信息 — 小沈 2026-07-17"""
-    return f"LLM响应解析失败: {e.message}"  # task007: 加LLM前缀明确来源 — 小欧 2026-07-23
+    return f"模型响应解析失败：{e.message}"  # 2026-09-17 小欧 [48]修改5: 去LLM前缀改口语, 与base_service tool_calls文案联动 — 小欧-2026-09-17
 
 
 def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = None, exc_type: str = ""):

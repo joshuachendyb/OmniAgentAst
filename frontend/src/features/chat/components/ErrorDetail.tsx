@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
 // 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
 // 编辑历史: 2026-08-28 小强 - 修复[17]: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
+// 编辑历史: 2026-09-17 小欧 - [48]修改6: 中文标签映射表导出并补 10 条(配额超限/响应超时/已取消/参数有误/服务繁忙/未知错误/服务暂不可用/调用出错/未知响应/智能体异常), 既有 10 条不动 — 小欧-2026-09-17
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
 import { Colors } from '@/utils/stepStyles';
@@ -26,7 +27,8 @@ interface ErrorDetailProps {
 
 // ========== 错误类型格式化纯函数（模块顶层，2026-08-27 小欧 三堂会审） ==========
 // 2026-08-27 小欧 三堂会审: 提到模块顶层保持纯函数, 与上方常量同区, 便于复用与测试
-const formatErrorType = (type?: string): string => {
+// 2026-09-17 小欧 [48]修改6: formatErrorType/ERROR_TYPE_LABELS 导出供 PipelineRenderer/StaticStatsBlock 复用(DRY), 不另起映射表 — 小欧-2026-09-17
+export const formatErrorType = (type?: string): string => {
   return ERROR_TYPE_LABELS[type || ''] || type || '未知';
 };
 
@@ -110,7 +112,8 @@ const ERROR_COLORS_MAP: Record<
 };
 
 // ========== Step 3: 外部类型标签映射常量 ==========
-const ERROR_TYPE_LABELS: Record<string, string> = {
+// 2026-09-17 小欧 [48]修改6: 补实际流通的 10 个错误类型中文标签(既有 10 条不动), 供失败细节行渲染 — 小欧-2026-09-17
+export const ERROR_TYPE_LABELS: Record<string, string> = {
   empty_response: '空响应',
   timeout: '请求超时',
   network_error: '网络错误',
@@ -121,6 +124,16 @@ const ERROR_TYPE_LABELS: Record<string, string> = {
   validation_error: '参数错误',
   not_found: '资源不存在',
   internal_error: '内部错误',
+  quota_exceeded: '配额超限',
+  idle_timeout: '响应超时',
+  cancelled: '已取消',
+  client: '参数有误',
+  server: '服务繁忙',
+  unknown: '未知错误',
+  circuit_open: '服务暂不可用',
+  llm_error: '调用出错',
+  unknown_response: '未知响应',
+  agent_operation_error: '智能体异常',
 };
 
 // ========== Step 4: 合并内联style常量 ==========

@@ -48,6 +48,8 @@
 #   根因: asyncio 读超时抛无参 TimeoutError() → httpcore/httpx map_exceptions 逐层包装 → httpx.ReadTimeout(""),
 #   str(e)==""→llm_call.py:93 真值判定丢弃。修复: retry_notice=str(e) or type(e).__name__ 兜底为类型名;
 #   日志行同改 {str(e) or type(e).__name__}。回归单测: tests/test_llm_retry_visibility.py §5.2b。
+# 2026-09-17 - 小欧 - [48]修改1/修改3用户可见文案通顺化: 429配额专支改"模型接口调用配额已用尽（HTTP 429），请稍后重试或升级配额";
+#   tool_calls全失败改"模型返回的所有工具调用（tool_calls）参数均解析失败"; 重试/路由语义零改动 — 小欧-2026-09-17
 """
 LLM 核心模块 — BaseAIService
 
@@ -386,7 +388,7 @@ class BaseAIService:
                     # 小欧 2026-06-25: 所有tool_calls都解析失败 → LLMResponseError
                     if tool_call_accumulator and not tool_calls_list:
                         raise LLMResponseError(
-                            message="所有tool_calls参数解析失败",
+                            message="模型返回的所有工具调用（tool_calls）参数均解析失败",
                             details={"failed_parses": failed_parses}
                         )
                     yield StreamChunk(content="", chunk_model=self.llm_model, is_done=False,
@@ -435,7 +437,7 @@ class BaseAIService:
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
                         yield StreamChunk(
                             content="", chunk_model=self.llm_model, is_done=True,
-                            stream_error="API配额/速率限制已耗尽(rpm exhausted)，请稍后重试或升级配额",
+                            stream_error="模型接口调用配额已用尽（HTTP 429），请稍后重试或升级配额",
                             stream_error_type="quota_exceeded",
                         )
                         return

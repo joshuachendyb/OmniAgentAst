@@ -35,6 +35,7 @@
 #   stream_error_type="cancelled")不再走L2重试2次+FC降级Text再调1次(取消一次白打3+次LLM, 约3分钟);
 #   直接yield error放行, 由handle_answer置CANCELLED; ②except Exception分支 _cancelled=True 时由静默return
 #   改yield error(cancelled)承接——杜绝下游空响应被set_failed标FAILED覆盖取消终态 — 小欧 2026-09-07
+# 2026-09-17 小欧 [48]修改4: 去"LLM流式错误:"前缀, stream_error直接透传(错误类别由前端中文标签呈现); 分流/重试语义零改动 — 小欧-2026-09-17
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -144,7 +145,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
         if tool_calls_result:
             logger.warning(f"[LLM] 流式错误, 丢弃{len(tool_calls_result)}个未完成的tool_calls")
             tool_calls_result = None
-        yield _yield_error_response(f"LLM流式错误: {stream_error}", agent, exc_type=chunk.stream_error_type or "")
+        yield _yield_error_response(stream_error, agent, exc_type=chunk.stream_error_type or "")
         return
 
     # ════════════════════════════════════════════════════

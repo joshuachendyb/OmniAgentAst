@@ -78,6 +78,7 @@
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": PipelineRendererProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - [48]修改7/修改8: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -92,12 +93,14 @@
 import React from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskBadge } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: waiting 取 badge 权威派生
+import { CloseCircleFilled, StopOutlined } from '@ant-design/icons'; // 2026-09-17 小欧 [48]修改8: 失败/取消行 emoji 改 antd SVG 内联图标 — 小欧-2026-09-17
 import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
 import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
+import { formatErrorType } from '@/features/chat/components/ErrorDetail'; // 2026-09-17 小欧 [48]修改6/修改7: 中文标签映射复用, 失败细节行英文枚举转中文 — 小欧-2026-09-17
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
 import {
   Colors,
@@ -381,12 +384,15 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               />
               {isCancelled && seg.step.cancel_source && (
                 <div style={terminalDetailStyle(Colors.ORANGE_RED)}>
-                  ! 取消来源: {seg.step.cancel_source}
+                  <StopOutlined style={{ color: Colors.ORANGE_RED }} />{' '}
+                  取消来源: {seg.step.cancel_source}
                 </div>
               )}
               {isFailed && (seg.step.error_message || seg.step.error_type) && (
                 <div style={terminalDetailStyle(Colors.ERROR)}>
-                  ⚠️ [{seg.step.error_type || 'error'}] {seg.step.error_message}
+                  <CloseCircleFilled style={{ color: Colors.ERROR }} />{' '}
+                  {formatErrorType(seg.step.error_type || 'error')}：
+                  {seg.step.error_message}
                 </div>
               )}
             </React.Fragment>

@@ -20,6 +20,7 @@
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 全板块间距/字号令牌化收敛——
 //   sectionStyle marginTop10→Spacing.MD/paddingTop8→MD; 标题 paddingLeft6→SM; 网格 columnGap12→LG/rowGap4→XS/marginTop6→SM;
 //   fontSize11→FontSize.CAPTION×2 处; lineHeight 18/22px→字号+Spacing派生; gap8→MD; marginTop 6/4/2→SM/XS/XS/2 — 小欧-2026-09-15
+// 编辑历史: 2026-09-17 小欧 - [48]修改7/修改8: 错误项英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled — 小欧-2026-09-17
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -34,6 +35,8 @@
 
 import React from 'react';
 import { Typography } from 'antd'; // Tag 已移至 TitleBlock，此处删除
+import { CloseCircleFilled } from '@ant-design/icons'; // 2026-09-17 小欧 [48]修改8: 错误项 emoji 改 antd SVG 内联图标 — 小欧-2026-09-17
+import { formatErrorType } from '@/features/chat/components/ErrorDetail'; // 2026-09-17 小欧 [48]修改6/修改7: 中文标签映射复用 — 小欧-2026-09-17
 import type { TaskDetail } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 第七章 M3c(final_stats帧复合兜底): 折叠区复合兜底数据源 — 小欧-2026-09-11
@@ -388,7 +391,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 display: 'inline-block',
               }}
             >
-              ⚠ [{detail.error_type}] {detail.error_message}
+              <CloseCircleFilled style={{ color: Colors.ERROR }} />{' '}
+              {formatErrorType(detail.error_type || '')}：{detail.error_message}
             </Typography.Text>
           </div>
         )}

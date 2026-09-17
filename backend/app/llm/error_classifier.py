@@ -30,7 +30,8 @@
     2026-08-14 小欧 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
      2026-08-29 小沈 修复#14: HTTP 状态分类改优先用异常对象真实响应状态码(httpx.HTTPStatusError.response.status_code)判定, 正则仅作文本补充; 消除 400/401/403 因 str(error) 无"status_code"语境致正则失配被误归 SERVER 可重试的缺陷, 4xx 正确归 CLIENT 不可重试
      2026-09-01 小欧 新增RATE_LIMIT枚举: 429限流单列为不可重试(RATE_LIMIT), 补to_status/description/SYSTEM_ERROR_TYPE_TO_MESSAGE四处映射, 429不再进L1重试直接走quota_exceeded快速失败 — 小欧 2026-09-01
-     2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省): _check_http_status_errors 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试, 杜绝404配错黑名单兜底误判SERVER导致L1×3→L2×2→FC降级×3=12次120秒放大 — 小欧 2026-09-02
+     2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省): _check_http_status_errors 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试,      杜绝404配错黑名单兜底误判SERVER导致L1×3→L2×2→FC降级×3=12次120秒放大 — 小欧 2026-09-02
+     2026-09-17 小欧 [48]修改2用户可见文案通顺化: SYSTEM_ERROR_TYPE_TO_MESSAGE 7条message改流畅中文+标准英文术语括号标注(配额/限流分开表述, idle_timeout去不准确数字); code/路由/重试语义一字不动 — 小欧-2026-09-17
 """
 
 import re
@@ -109,13 +110,13 @@ HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
 
 # 错误类型到用户友好消息的映射
 SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
-    SystemErrorCategory.CIRCUIT_OPEN: ("circuit_open", "服务暂时不可用,请稍后重试"),
-    SystemErrorCategory.CLIENT: ("client", "客户端错误:请求参数异常"),
-    SystemErrorCategory.SERVER: ("server", "服务器错误,请稍后重试或更换模型"),
-    SystemErrorCategory.UNKNOWN: ("unknown", "AI 处理异常,请稍后重试"),
-    SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "AI服务返回空响应,请稍后重试"),
-    SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "请求超时:AI模型30秒内未返回任何内容,已重试3次,请更换问题或稍后重试"),
-    SystemErrorCategory.RATE_LIMIT: ("rate_limit", "接口限流/配额已耗尽,请稍后重试"),
+    SystemErrorCategory.CIRCUIT_OPEN: ("circuit_open", "服务暂时不可用，请稍后重试"),
+    SystemErrorCategory.CLIENT: ("client", "请求参数有误（Client Error），请调整后重试"),
+    SystemErrorCategory.SERVER: ("server", "模型服务繁忙（Server Error），请稍后重试或更换模型"),
+    SystemErrorCategory.UNKNOWN: ("unknown", "模型处理返回异常（Unknown Error），请稍后重试"),
+    SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "模型没有返回内容（Empty Response），请稍后重试"),
+    SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "模型响应超时（Idle Timeout），请换个问法或稍后重试"),
+    SystemErrorCategory.RATE_LIMIT: ("rate_limit", "模型限流（Rate Limit），请稍后再试"),
 }
 
 
