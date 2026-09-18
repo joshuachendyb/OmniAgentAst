@@ -2,12 +2,14 @@
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
-| v1.7 | 2026-09-19 06:28:52 | 小欧 | 清理无关/冗余信息：精简每章编写人重复块、第一章背景去重、第三章连带确认与改动4详细逻辑精简、第四章删行动项、第七章过程表精简、第八章结论去重。 |
+| v1.9 | 2026-09-19 06:42:00 | 小欧 | 改动 2 diff 修正：content 逻辑彻底去掉 `_bypass`（违规），改为纯 `_msg or ""` 兜底。 |
 
 **历史版本（保留）：**
 
 | 版本 | 时间 | 作者 | 更新内容 |
 |------|------|------|---------|
+| v1.8 | 2026-09-19 06:35:40 | 小欧 | 三章补准确代码 diff。 |
+| v1.7 | 2026-09-19 06:28:52 | 小欧 | 清理冗余信息。 |
 | v1.6 | 2026-09-19 06:26:06 | 小欧 | 一致性核查：修正数字、去掉待拍板。 |
 | v1.5 | 2026-09-19 06:21:16 | 小欧 | 一章标题加"概念分组"并补展开说明，八章标题同步修正。 |
 | v1.4 | 2026-09-19 06:15:36 | 小欧 | 三章扩为 5 处；五章标已拍板；新增八章全仓逐行终审。 |
@@ -45,17 +47,80 @@
 
 ## 三、完整修改方案（5 处，三文件）
 
-> 更新人：小欧 2026-09-19 06:15:36
+> 更新人：小欧 2026-09-19 06:35:40
 
 | 改动 | 文件 | 行 | 状态 | 操作 |
 |------|------|---|------|------|
 | 1 | `tool_safety_checker.py` | 194-196 | ✅ 已实施 | bypass＋需确认分支 `message=""`（去 C2） |
-| 2 | `safety_gate.py` | 217 | ❌ 待实施 | bypass 时不兜底问句：`_content = (_msg or ("" if _bypass else f"是否允许执行工具: {_cn}")) + _suffix` |
-| 3 | `safety_gate.py` | 164 | ❌ 待实施 | 去掉 `not _bypass` 记忆守卫：`if _group_key in _rej_cache:` 无条件复用拒绝 |
-| 4 | `sandbox_gate.py` | 123-127 | ❌ 待实施 | 删 bypass 直放分支（3 行）；`run_sandbox_gate` 去掉 `main_confirmed` 参数，内部一律 `auto_confirm=False` 走网关 8s 到期自动过 |
-| 5 | `_get_needs_confirmation` 内 | — | ❌ 待实施 | shell 预检：延迟导入 `check_shell_command_risk`；HIGH 提前拦（直接 return）；MEDIUM desc 进 content；普通仍空；`protected_pids=None`，`shell_type` 默认 ps7 |
+| 2 | `safety_gate.py` | 217 | ❌ 待实施 | bypass 时不兜底问句（content 与 bypass 零关系） |
+| 3 | `safety_gate.py` | 164 | ❌ 待实施 | 去掉 `not _bypass` 记忆守卫 |
+| 4 | `sandbox_gate.py` | 123-127 | ❌ 待实施 | 删 bypass 直放分支 |
+| 5 | `tool_safety_checker.py` | `_get_needs_confirmation` 内 | ❌ 待实施 | shell 预检（HIGH 提前拦 / MEDIUM 带 desc） |
 
-**改动 4 详细逻辑：** `sandbox_gate:123` `auto_confirm=True` 时直接 `return True, []` 跳过网关。修正：删此 3 行；`run_sandbox_gate` 去掉 `main_confirmed` 参数，内部一律 `auto_confirm=False` 走网关 8s 到期自动过再直放。
+### 改动 1（已实施）`tool_safety_checker.py:194-196`
+
+```diff
+-                    return SafetyResult(requires_confirmation=True, auto_confirm=True,
+-                            blocked=False, message="安全开关已绕过，自动确认执行",
+-                            severity="destructive", sandbox_required=True)
++                    return SafetyResult(requires_confirmation=True, auto_confirm=True,
++                            blocked=False, message="",
++                            severity="destructive", sandbox_required=True)
+```
+
+### 改动 2 `safety_gate.py:217-219`
+
+```diff
+-                    _msg = _msg or f"是否允许执行工具: {_cn}"
+-                    _content = _msg + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
+-                                       if _group_size > 1 else "")
++                    _content = (_msg or "") + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
++                                               if _group_size > 1 else "")
+```
+
+> 原则：content 严禁与 bypass 有一毛钱关系。bypass 下 `_msg` 已由改动 1 清空（`message=""`），`_msg or ""` 恒为空串→前端隐藏；真 HITL 下 `_msg` 有值→正常显示。全程不出现 `_bypass`。
+
+### 改动 3 `safety_gate.py:164`
+
+```diff
+-                if _group_key in _rej_cache and not _bypass:
++                if _group_key in _rej_cache:
+```
+
+### 改动 4 `sandbox_gate.py:123-127` + `safety_gate.py:238-239`
+
+```diff
+ # sandbox_gate.py:123-127 — 删 bypass 直放分支
+-    if pre.needs_ruling and safety_result.auto_confirm:
+-        # bypass免打扰语义(v1.13 V2): security.enabled=false即用户要求全自动,
+-        # 未完成有效验证不得挂起等裁决(否则E2E自动化无人在线必卡死, 与checker历史P0-02同根)
+-        logger.info(f"[sandbox] bypass下未完成有效验证,按bypass语义直接放行: tool={tool_name}, reason={pre.blocked_reason}")
+-        return True, []
+
+ # safety_gate.py:238-239 — bypass 路径传 main_confirmed=False（走网关 8s 到期自动过）
+-                    _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied,
+-                                                         _bypass_confirmed)
++                    _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+```
+
+### 改动 5 `tool_safety_checker.py` `_get_needs_confirmation` 内（约 242 行后插入）
+
+```diff
+         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
+                 and _is_readonly_sql((params or {}).get("sql", "")):
+             return False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
++        if normalize_tool_name(tool_meta.name or "") in ("shell", "execute_command"):
++            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
++            _risk = check_shell_command_risk((params or {}).get("command", ""))
++            if _risk and _risk.blocked:
++                return True   # HIGH: 直接 return，不弹窗
++            if _risk and _risk.message:
++                self._shell_risk_desc = _risk.message  # MEDIUM: desc 进弹窗 content
++            else:
++                self._shell_risk_desc = None
+         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
+             return delete_risk.requires_confirmation      # R3→_PASS→False(免确认); R4/R5→True
+```
 
 ## 四、验证计划（落码后执行）
 
@@ -160,7 +225,7 @@
 | # | 位置 | 违规性质 | 修正方案（第三章改动编号） |
 |---|---|---|---|
 | ❌A | `safety_gate.py:164` | `not _bypass` 记忆守卫——bypass 覆盖拒绝记忆，记忆管"问不问"与倒计时正交 | 改动 3：去掉守卫 |
-| ❌B | `safety_gate.py:217` | `_msg or 兜底问句`——bypass 下"是否允许执行"＋"将自动确认"自相矛盾 | 改动 2：bypass 不兜底 |
+| ❌B | `safety_gate.py:217` | `_msg or 兜底问句`——bypass 下"是否允许执行"＋"将自动确认"自相矛盾，且 content 逻辑不应出现 `_bypass` | 改动 2：去兜底问句（content 与 bypass 零关系） |
 | ❌C | `sandbox_gate.py:123-127` | `auto_confirm` → 直接 return 跳过网关——不走倒计时，无声放行 | 改动 4：删直放分支 |
 
 **前端（全部合规，无违规）：**
