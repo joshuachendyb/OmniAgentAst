@@ -54,6 +54,7 @@
 //   "前端的毛病"), 现回归"真实产出正文"判断: final.response ∨ final.thought — 小欧-2026-09-11
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F3代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.2): onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -102,6 +103,7 @@ export interface UseChatCallbacksReturn {
     confirm_id: string;
     tool_name: string;
     params: Record<string, unknown>;
+    content?: string;
     safety_level: string;
     // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段(与 sseParser 下发契约一致), 防改代码时缺字段不自知
     trust_path?: string | null;
@@ -820,6 +822,7 @@ export const useChatCallbacks = (
       confirm_id: string;
       tool_name: string;
       params: Record<string, unknown>;
+      content?: string;
       safety_level: string;
       // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段, 全量透传 trust/计时字段保弹窗正确渲染
       trust_path?: string | null;

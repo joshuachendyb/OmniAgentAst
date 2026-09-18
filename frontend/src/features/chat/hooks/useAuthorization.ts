@@ -10,6 +10,7 @@
 // 编辑历史: 2026-09-03 小欧 - BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧-2026-09-03
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: 确认成功(confirmed=true)暂存 recentConfirmedTool(state)+recentTimerRef(2s自动清除, 卸载清timer), 返回扩展 recentConfirmedTool —— 小欧-2026-09-06
+// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.3): 组装 AuthorizationRequest 新增 content 字段(弹窗原因, 后端 ConfirmSpec.content 透传) — 小欧-2026-09-18
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -67,6 +68,7 @@ export function useAuthorization(sessionId: string | null) {
         confirmId: rawData.confirm_id as string,
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
+        content: (rawData.content as string) ?? '', // 7.4.3: 弹窗原因(后端 ConfirmSpec.content) — 小欧-2026-09-18
         safetyLevel: (rawData.safety_level as string) ?? 'unknown',
         // 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')
         autoConfirm:

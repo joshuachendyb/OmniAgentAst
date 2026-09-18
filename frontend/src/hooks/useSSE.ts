@@ -88,6 +88,7 @@
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调参数; ②两处 processSSEData 调用传递 onRejected - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3整改: onDenied 参数/两处透传全链删除(YAGNI 零消费者), onRejected 类型去 from_backend(全链透传零消费) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①新增 lastBizTsRef/heartbeatTs 信号源; ②流起始重置业务基线; ③两处 processSSEData 透传 onHeartbeat/onBiz; ④useMemo 打包 waitClock 并暴露 - 小欧-2026-09-17
+// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4): onAuthorizationRequired 类型补 content?: string(与 sseParser/useChatCallbacks 契约一致, 弹窗原因透传) — 小欧-2026-09-18
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -420,6 +421,7 @@ export const useSSE = (
     confirm_id: string;
     tool_name: string;
     params: Record<string, unknown>;
+    content?: string;
     safety_level: string;
     // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段(与 sseParser 下发契约一致)
     trust_path?: string | null;

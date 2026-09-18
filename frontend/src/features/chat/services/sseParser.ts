@@ -10,6 +10,7 @@
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字痕迹): ①onDenied 回调两参→三参
 //   (step,message,toolName)——user_rejected 事件透传 rawData.tool_name 供聚合被拒工具点名条; ②error blocked/timeout
 //   构造对象补 tool_name(rawData.tool_name, 后端 6.2 事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
+// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.1): paused帧透传新增 content 字段(后端 ConfirmSpec.content 弹窗原因) — 小欧-2026-09-18
 // 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
 //   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
 // 编辑历史: 2026-09-07 小欧 - 4.4.3 start/startinfo 双信号拆分(前端消息分类处理分析及设计-小欧-2026-09-06.md):
@@ -151,6 +152,7 @@ const processSSEData = (
       confirm_id: string;
       tool_name: string;
       params: Record<string, unknown>;
+      content?: string;
       safety_level: string;
       trust_path?: string | null;
       auto_confirm?: boolean;
@@ -874,6 +876,7 @@ const processSSEData = (
                 confirm_id: rawData.confirm_id,
                 tool_name: rawData.tool_name,
                 params: rawData.params,
+                content: rawData.content ?? '', // 7.4.1: 后端 ConfirmSpec.content 弹窗原因 — 小欧-2026-09-18
                 safety_level: rawData.safety_level,
                 trust_path: rawData.trust_path ?? null,
                 // 2026-09-03 小欧 D2-10: 改用normalizeAutoConfirm四态归一; 2026-09-12 P1-7: 函数更名normalizeBoolean — 小欧-2026-09-12
