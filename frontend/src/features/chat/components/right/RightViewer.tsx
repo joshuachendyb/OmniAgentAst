@@ -507,17 +507,16 @@ const RightViewer: React.FC<RightViewerProps> = ({
   //   浏览器把 scrollTop 夹回 0(显示顶部), 随后又被竞态误置的 userScrolledUpRef 拦住不再滚底;
   //   修: 当前任务(activeTaskId===serverTaskId 且非空)在快照未就绪时沿用 liveSteps(已含 final),
   //   消除塌陷帧; 非当前任务一律走 historySteps, 跨任务语义不变 — 小欧-2026-09-18
-  // 2026-09-18 小欧 bugfix(北京老陈实机复测): 切历史A时settledSteps已被reset清空,
-  //   liveSteps仍含B的残留数据→fallback到liveSteps→右栏显示B内容而非A。
-  //   根因: isCurrentLive=false分支内不该fallback到liveSteps(属前session数据),
-  //   只有isCurrentLive=true时liveSteps才是当前任务数据。
-  //   修: 去掉liveSteps fallback, settledSteps为空时直接走historySteps — 小欧-2026-09-18
+  //   切历史A时 activeTaskId!==serverTaskId, 必走 historySteps, 不会误用 liveSteps(B残留),
+  //   因为 liveSteps fallback 仅在 activeTaskId===serverTaskId 分支内生效 — 小欧-2026-09-18
   const displaySteps = isCurrentLive
     ? liveSteps
     : activeTaskId != null && activeTaskId === serverTaskId
       ? settledSteps.length > 0
         ? settledSteps
-        : historySteps
+        : liveSteps.length > 0
+          ? liveSteps
+          : historySteps
       : historySteps;
   // 小欧 2026-09-11 第七章 M3a(title段数据源=final帧): title 段数据源=final 帧——实时=settledSteps 快照(final 已入 ref 快照),
   //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读DB — 小欧-2026-09-11
