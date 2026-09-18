@@ -50,7 +50,6 @@ import {
   StopOutlined,
   ThunderboltOutlined,
   QuestionCircleOutlined,
-  FolderOutlined,
 } from '@ant-design/icons';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
@@ -66,7 +65,6 @@ export interface AuthorizationRequest {
   toolName: string;
   params: Record<string, unknown>;
   safetyLevel: string;
-  content?: string | null;
   trustPath?: string | null;
   autoConfirm?: boolean;
   confirmTimeout?: number;
@@ -87,19 +85,15 @@ const SAFETY_LEVEL_CONFIG: Record<
   string,
   { color: string; label: string; icon: React.ReactNode }
 > = {
-  path_auth: { color: 'orange', label: '需授权', icon: <WarningOutlined /> },
-  shellparam: {
-    color: 'orange',
-    label: '命令确认',
-    icon: <ExclamationCircleOutlined />,
-  },
-  tool_delete: { color: 'red', label: '删除确认', icon: <StopOutlined /> },
-  tool_execute: {
+  read_only: { color: 'green', label: '只读', icon: null },
+  safe: { color: 'blue', label: '安全', icon: null },
+  destructive: { color: 'orange', label: '破坏性', icon: <WarningOutlined /> },
+  dangerous_sandbox: {
     color: 'volcano',
-    label: '执行确认',
+    label: '沙箱危险',
     icon: <ExclamationCircleOutlined />,
   },
-  // 兜底：未知类型显示原始值
+  dangerous: { color: 'red', label: '系统危险', icon: <StopOutlined /> },
 };
 
 // 2026-09-03 小欧 P3修复: @keyframes pulse移至组件外, 避免每次渲染重复注入<style>标签 — 小欧-2026-09-03
@@ -239,45 +233,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             ? `将在 ${countdown}s 后自动确认（后端 ${request.backendTimeout ?? 60}s 兜底）`
             : `未响应将在 ${countdown}s 后自动拒绝`}
         </div>
-
-        {/* content 原因展示区: 倒计时下方, 告知用户"为什么要问" — 小欧-2026-09-18 */}
-        {request.content && (
-          <div
-            style={{
-              padding: '6px 10px',
-              marginBottom: 8,
-              borderLeft: `3px solid ${isBypass ? '#1677ff' : '#faad14'}`,
-              backgroundColor: isBypass ? '#e6f4ff' : '#fffbe6',
-              borderRadius: '0 4px 4px 0',
-              textAlign: 'left',
-            }}
-          >
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#262626' }}>
-              {request.content}
-            </span>
-          </div>
-        )}
-
-        {/* trust_path 信任范围展示: 操作目标路径 — 小欧-2026-09-18 */}
-        {request.trustPath && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-              marginBottom: 8,
-              fontSize: 12,
-              color: '#595959',
-            }}
-          >
-            <FolderOutlined style={{ color: '#faad14' }} />
-            <span>
-              操作范围: {request.toolName} › {request.trustPath}
-              {request.toolName.startsWith('registry') ? '，含子键' : '，含子目录'}
-            </span>
-          </div>
-        )}
 
         {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
         <div

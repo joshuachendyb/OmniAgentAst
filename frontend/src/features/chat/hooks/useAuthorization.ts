@@ -68,10 +68,6 @@ export function useAuthorization(sessionId: string | null) {
         toolName: rawData.tool_name as string,
         params: (rawData.params ?? {}) as Record<string, unknown>,
         safetyLevel: (rawData.safety_level as string) ?? 'unknown',
-        content:
-          typeof rawData.content === 'string' && rawData.content
-            ? (rawData.content as string)
-            : null,
         // 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')
         autoConfirm:
           rawData.auto_confirm === true ||
