@@ -114,6 +114,29 @@
 //   ③D2 visibilitychange 兜底effect同步去守卫 + 依赖收敛为 [scrollToBottomNow];
 //   ④D3 空态 Empty 移入 right-viewer-body 内层, 使 pipelineEndRef 恒挂载(锚点不再随空态卸载);
 //   渲染/打字机逻辑一律不变, 只修"未自动滚动到底部" — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - [49]北京老陈实机复测反馈"final+统计标题完成后仍不滚底":
+//   D1/D3 的 RO 锚点 pipelineEndRef 仅包 right-viewer-body, 而 TitleBlock/StaticStatsBlock 渲染在其后
+//   作为兄弟节点, 不在观察范围内——body 之后的任何增高不会触发滚底;
+//   修(D5): 外层包裹 div 作 pipelineEndRef, 包住 body 与统计区, RO 观察"滚动内容末端"整体;
+//   right-viewer-body class 与布局不变; AS-07 红→绿锁定 — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - [49]D6 真实浏览器取证根治"停在半空"(北京老陈实机复测):
+//   真实 Chromium 探针实测(任务终态)捕获: 程序滚底后内容再增高(settled 全量渲染)时, 一个滞后 scroll 事件
+//   读到 dist=1890>120 → userScrolledUpRef false->true 误判"用户上翻" → 随后 RO(锚点 h=5658) 触发的
+//   scrollToBottomNow 被 !userScrolledUpRef 拦截(BLOCKED) → 卷滚条停半空; 原实现靠一次偶然 dist=33 事件侥幸自愈;
+//   D5 锚点修正不触及此竞态(D5保留使观察范围更完整), 真因=D6;
+//   修(D6): isProgramScrollingRef 弃微任务复位(早于异步 scroll 事件), 改"真正移动才置标志 + handleScroll 消费一次";
+//   复用既有变量, 不新增任何状态; 复跑探针: 无误判、无 BLOCKED、dist=0 — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - [49]根治(取消归因, 北京老陈定案; 取代 D6 布尔归因路线):
+//   北京老陈指出"自动滚动本就该简单, 是代码复杂把问题搞复杂"; 复盘: D6 仍在用布尔
+//   isProgramScrollingRef 给 scroll 事件做"程序 vs 用户"归因, 而 scroll 事件异步/合并/滞后,
+//   布尔归因必然在某个时序判错(微任务过早复位、置位与消费次数不对齐) — 归因这个需求本身就是病根;
+//   根治: ①删 isProgramScrollingRef(净减1变量); scrollToBottomNow 纯滚底; 用户意图只由
+//   "真实干预事件"驱动——wheel 上滚 / pointerdown 按住拖拽(含滚动条) → userScrolledUpRef=true,
+//   scroll 触底 → false; 程序滚动无需被识别, 竞态按构造消失;
+//   ②修"渲染完成后反而回到顶部": 终态切换当帧 settledSteps 未就绪致 displaySteps 落到空 historySteps,
+//   内容塌陷 Empty → scrollTop 被夹回 0; 当前任务在快照未就绪时沿用 liveSteps, 消除塌陷帧;
+//   ③清2个只写不读的死变量 prevIsCurrentLiveRef / _prevSrcRef;
+//   验证: tsc 0 / eslint 0 / AS 7绿 / 真实浏览器带工具长任务 894 采样 longestDist>120=0(全程贴底) — 小欧-2026-09-18
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -199,7 +222,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const [detail, setDetail] = useState<TaskDetail | null>(null);
   const [historySteps, setHistorySteps] = useState<ExecutionStep[]>([]);
   const [loading, setLoading] = useState(false);
-  const prevIsCurrentLiveRef = useRef(false); // [DEBUG-1] 2026-09-09 北京老陈
   // 小欧 2026-09-10 S13: live→终态快照 — final 到达时固化 executionStepsRef 全量
   const [settledSteps, setSettledSteps] = useState<ExecutionStep[]>([]);
   const settledRef = useRef<ExecutionStep[]>([]);
@@ -260,11 +282,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
     hasBusinessSteps,
     liveBadge,
   });
-  // [DEBUG-1] 2026-09-09 北京老陈 冻结诊断：isCurrentLive 仅状态变化时打
-  // 2026-09-14 小欧 [36]5.5.3-(二): DBG-1 日志去 recv 槽位(接收变量已删, 只留 live/match/final/biz 前缀四字段) — 小欧-2026-09-14
-  if (isCurrentLive !== prevIsCurrentLiveRef.current) {
-    prevIsCurrentLiveRef.current = isCurrentLive;
-  }
 
   // 小欧 2026-09-10 S13.1: final 到达瞬时快照——用 ref（同步）而非 state（异步）
   // v2.17 修复(小欧 2026-09-10)：原条件 `_hasFinal && isCurrentLive` 恒假（isCurrentLive 定义含 !_hasFinal），
@@ -294,8 +311,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
   const pipelineEndRef = useRef<HTMLDivElement>(null);
   // 用户在滚动中距底>120px视为主动上翻; 上翻后自动滚失效, 滚回底部自动恢复; 首屏从未滚动→false→内容增长即滚底
   const userScrolledUpRef = useRef(false);
-  // 2026-09-02 小欧: 程序滚动标志，防止stickToBottom设置scrollTop触发scroll事件被误判为用户上翻
-  const isProgramScrollingRef = useRef(false);
+  // 2026-09-18 小欧 [49]根治(取消归因, 北京老陈定案): 按住拖拽(含滚动条)期间, 离底由 scroll 判为用户上翻 —
+  //   取代旧 isProgramScrollingRef(程序滚动标志); 程序滚动无需被识别, 归因竞态按构造消失 — 小欧-2026-09-18
+  const pointerHeldRef = useRef(false);
   // 2026-09-03 小欧 BUG-01/BUG-04修复: findScrollContainer仅遍历DOM找overflow容器, 不依赖liveSteps, 改[]防每chunk重挂载
   const findScrollContainer = useCallback(() => {
     let el: HTMLElement | null = pipelineEndRef.current;
@@ -314,33 +332,53 @@ const RightViewer: React.FC<RightViewerProps> = ({
     return null;
   }, []);
   // 2026-09-06 小欧 RG-1/RG-2: 抽统一滚底(scrollToBottomNow)——主effect(RO/首帧/切历史)与visibilitychange兜底共用, DRY — 小欧-2026-09-06
+  // 2026-09-18 小欧 [49]根治(取消归因, 北京老陈定案): 纯滚底, 不置任何"程序滚动"标志——
+  //   旧 isProgramScrollingRef(布尔归因)在 scroll 事件异步/合并/滞后下天然竞态(微任务过早复位、
+  //   置位次数与消费次数不对齐皆会误判), 已整体删除; 是否滚底仅由 userScrolledUpRef 把关,
+  //   而 userScrolledUpRef 只由真实用户意图事件驱动(见下方滚动 effect) — 小欧-2026-09-18
   const scrollToBottomNow = useCallback(() => {
     if (userScrolledUpRef.current) return;
     const container = findScrollContainer();
     if (!container) return;
-    isProgramScrollingRef.current = true;
     container.scrollTop = container.scrollHeight;
-    // microtask重置标志，让下一个scroll事件正常判断
-    Promise.resolve().then(() => {
-      isProgramScrollingRef.current = false;
-    });
   }, [findScrollContainer]);
   useEffect(() => {
     // [49]方案一(持久锚点): 移除守卫——RO 常驻观察恒挂载锚点(pipelineEndRef)。
     //   内容增长(live/settled/history)统一由 RO 驱动滚底, 不依赖任何业务状态;
     //   是否滚底仅由 scrollToBottomNow 内 !userScrolledUpRef 把关 — 小欧-2026-09-17
+    // [49]根治(取消归因, 北京老陈定案, 2026-09-18 小欧): scroll 事件异步/合并/滞后, 用布尔标志归因
+    //   "程序 vs 用户"天然竞态(旧 isProgramScrollingRef 已删)。改由"真实用户意图事件"直接驱动标志:
+    //   wheel 上滚 / 按住拖拽(pointerdown, 含滚动条) → 置 userScrolledUp; 触底 scroll → 置假。
+    //   程序滚底不再需要被识别, 竞态按构造消失 — 小欧-2026-09-18
     const container = findScrollContainer();
     const pipeline = pipelineEndRef.current;
     if (!container || !pipeline) return;
     const threshold = 120;
-    // 2026-09-02 小欧: scroll 事件维护上翻标志(仅用户真实滚动触发; 程序设置scrollTop时跳过判断)
     const handleScroll = () => {
-      if (isProgramScrollingRef.current) return; // 程序滚动跳过
-      userScrolledUpRef.current =
-        container.scrollHeight - container.scrollTop - container.clientHeight >
-        threshold;
+      const dist =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      if (dist <= threshold) {
+        userScrolledUpRef.current = false; // 回到底部 → 恢复自动滚底
+      } else if (pointerHeldRef.current) {
+        userScrolledUpRef.current = true; // 按住拖拽(含滚动条)离开底部 = 用户上翻
+      }
+    };
+    const handleWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) userScrolledUpRef.current = true; // 滚轮上滚 = 用户上翻
+    };
+    const handlePointerDown = () => {
+      pointerHeldRef.current = true;
+    };
+    const handlePointerUp = () => {
+      pointerHeldRef.current = false;
     };
     container.addEventListener('scroll', handleScroll, { passive: true });
+    container.addEventListener('wheel', handleWheel, { passive: true });
+    container.addEventListener('pointerdown', handlePointerDown, {
+      passive: true,
+    });
+    window.addEventListener('pointerup', handlePointerUp, { passive: true });
+    window.addEventListener('pointercancel', handlePointerUp, { passive: true });
     // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底(历史数据到达亦立即滚底)
     const ro = new ResizeObserver(scrollToBottomNow);
     ro.observe(pipeline);
@@ -348,6 +386,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
     return () => {
       ro.disconnect();
       container.removeEventListener('scroll', handleScroll);
+      container.removeEventListener('wheel', handleWheel);
+      container.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [findScrollContainer, scrollToBottomNow]);
   // RG-1: 浏览器后台节流后切回可见——visibilitychange 兜底重滚(左栏 useChatScroll.ts:93-103 已有, 右栏补对称) — 小欧-2026-09-06
@@ -460,73 +502,81 @@ const RightViewer: React.FC<RightViewerProps> = ({
   // 2026-09-15 小欧 三思三省根治: activeTaskId===serverTaskId 守卫——settledSteps 仅当前任务回放时优先,
   //   防同会话切历史任务时 settledSteps(A快照)残留且恒非空致右侧永远显示A的step; 渲染期复位清 historySteps
   //   防闪现, 两者互补不可缺一 — 小欧-2026-09-15
+  // 2026-09-18 小欧 [49]回顶根治(北京老陈实机复测"渲染完成后反而回到 step 顶部"): 终态切换当帧
+  //   settledSteps 尚未由快照 effect 写入, 原三选一落到空 historySteps → 内容塌陷(Empty) →
+  //   浏览器把 scrollTop 夹回 0(显示顶部), 随后又被竞态误置的 userScrolledUpRef 拦住不再滚底;
+  //   修: 当前任务(activeTaskId===serverTaskId 且非空)在快照未就绪时沿用 liveSteps(已含 final),
+  //   消除塌陷帧; 非当前任务一律走 historySteps, 跨任务语义不变 — 小欧-2026-09-18
   const displaySteps = isCurrentLive
     ? liveSteps
-    : activeTaskId === serverTaskId && settledSteps.length > 0
-      ? settledSteps
+    : activeTaskId != null && activeTaskId === serverTaskId
+      ? settledSteps.length > 0
+        ? settledSteps
+        : liveSteps.length > 0
+          ? liveSteps
+          : historySteps
       : historySteps;
   // 小欧 2026-09-11 第七章 M3a(title段数据源=final帧): title 段数据源=final 帧——实时=settledSteps 快照(final 已入 ref 快照),
   //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读DB — 小欧-2026-09-11
   const finalStep = displaySteps.find((s) => s.type === 'final');
   const hasSteps = displaySteps.length > 0;
-  // [DEBUG-2] 2026-09-09 北京老陈 displaySteps 切换侦测
-  const _prevSrcRef = useRef<string>('live');
-  const _src = isCurrentLive ? 'live' : 'hist';
-  if (_src !== _prevSrcRef.current) {
-    _prevSrcRef.current = _src;
-  }
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
-      {/* [49]方案一(D3 持久锚点): Empty 移入 right-viewer-body 内层使该 div 恒挂载,
-          RO 常驻观察此锚点; live/settled/history 内容增减都驱动滚底, 空态演示不卸载 — 小欧-2026-09-17 */}
-      <div ref={pipelineEndRef} className="right-viewer-body">
-        {!isCurrentLive && !loading && !hasSteps ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description={
-              <Typography.Text
-                type="secondary"
-                style={{ fontSize: 12, color: Colors.TEXT.SECONDARY }}
-              >
-                暂无执行记录
-              </Typography.Text>
-            }
-            style={{ padding: '24px 0' }}
-          />
-        ) : (
-          <PipelineRenderer
-            steps={splitSteps(displaySteps).business}
-            streaming={isCurrentLive}
-            highlightToolName={highlightToolName}
-            badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
-            deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
-            deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
-            waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
-          />
-        )}
-      </div>
-      {!isCurrentLive && (
-        // 小欧 2026-09-11 第七章 M3a(统计区分段渲染): 统计区拆两段两次独立渲染——TitleBlock(title 段,
-        //   final 帧驱动, 绝不读 DB)为每次渲染第二段; StaticStatsBlock(折叠区, final_stats 到达后
-        //   effect1 已读 DB, finalStats 帧复合兜底)为第三次渲染, 各自独立互不影响 — 小欧-2026-09-11
-        <>
-          <TitleBlock
-            finalStep={finalStep}
-            expanded={statsExpanded}
-            onToggle={() => setStatsExpanded((v) => !v)}
-          />
-          {statsExpanded && (
-            <StaticStatsBlock
-              detail={detail}
-              chainSteps={historySteps}
-              finalStats={frames.finalStats}
-              sessionTokens={sessionTokens}
-              chainTokens={chainTokens}
+      {/* [49]方案一(D5 持久锚点修正, 北京老陈实机复测): 锚点必须是"滚动内容末端"整体——
+          外层包裹 right-viewer-body(流水线/空态) 与其后的 TitleBlock/StaticStatsBlock 统计区。
+          RO 观察此包裹层: 任一子块增高(含 final 后统计标题渲染完成)都会触发滚底;
+          原锚点仅包 body, 统计标题在 body 之外(兄弟节点), 其增高不被 RO 观察 → 卷滚条停半空 — 小欧-2026-09-18 */}
+      <div ref={pipelineEndRef}>
+        {/* D3 持久锚点: Empty 移入 right-viewer-body 内层使该 div 恒挂载, 空态不卸载 — 小欧-2026-09-17 */}
+        <div className="right-viewer-body">
+          {!isCurrentLive && !loading && !hasSteps ? (
+            <Empty
+              image={Empty.PRESENTED_IMAGE_SIMPLE}
+              description={
+                <Typography.Text
+                  type="secondary"
+                  style={{ fontSize: 12, color: Colors.TEXT.SECONDARY }}
+                >
+                  暂无执行记录
+                </Typography.Text>
+              }
+              style={{ padding: '24px 0' }}
+            />
+          ) : (
+            <PipelineRenderer
+              steps={splitSteps(displaySteps).business}
+              streaming={isCurrentLive}
+              highlightToolName={highlightToolName}
+              badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
+              deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
+              deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
+              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
             />
           )}
-        </>
-      )}
+        </div>
+        {!isCurrentLive && (
+          // 小欧 2026-09-11 第七章 M3a(统计区分段渲染): 统计区拆两段两次独立渲染——TitleBlock(title 段,
+          //   final 帧驱动, 绝不读 DB)为每次渲染第二段; StaticStatsBlock(折叠区, final_stats 到达后
+          //   effect1 已读 DB, finalStats 帧复合兜底)为第三次渲染, 各自独立互不影响 — 小欧-2026-09-11
+          <>
+            <TitleBlock
+              finalStep={finalStep}
+              expanded={statsExpanded}
+              onToggle={() => setStatsExpanded((v) => !v)}
+            />
+            {statsExpanded && (
+              <StaticStatsBlock
+                detail={detail}
+                chainSteps={historySteps}
+                finalStats={frames.finalStats}
+                sessionTokens={sessionTokens}
+                chainTokens={chainTokens}
+              />
+            )}
+          </>
+        )}
+      </div>
     </Spin>
   );
 };
