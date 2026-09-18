@@ -187,6 +187,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     icon: null,
   };
 
+  // 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 恢复confirmTimeout供CountdownRing饼环算percent - 小欧-2026-09-18
+  const confirmTimeout = request.confirmTimeout ?? 60;
+
   // 小欧 2026-09-03 三堂会审问题1方案A: bypass(安全开关绕开)模式下即使勾选"信任此操作"也不产生信任,
   //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
   const handleConfirm = (confirmed: boolean) => {
@@ -229,7 +232,8 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Tag>
         </div>
 
-        <CountdownRing countdown={countdown} />
+        {/* 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 回传confirmTimeout供饼环进度 - 小欧-2026-09-18 */}
+        <CountdownRing countdown={countdown} confirmTimeout={confirmTimeout} />
         <div
           style={{
             fontSize: 13,
