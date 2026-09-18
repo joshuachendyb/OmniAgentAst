@@ -18,6 +18,8 @@
 #   【改法】PS HIGH新增两条字母flag规则: `-[rR][fF]`合并形态与`-[rR]\b.*?-[fF]\b`分离形态; desc含"递归"故临时目录降级逻辑同样生效; 与bash L57口径对齐
 #   【说明】文档方案第二条正则(?:Remove-Item|rm|ri|erase|del)\s+.*?\brm\s+-rf\b 需再次rm不成立(首rm已消费), 修正为`-[rR][fF]`合并flag形态
 # 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段+构造调用+比较全量重命名, 历史注释原文还原(勿改) — 小欧-2026-09-18
+# 2026-09-18 - 小欧 - 第7章实施([50]7.3.4 C18-C23): 6处用户可见message改写(逻辑/分级不变)——C18"高风险Shell操作，含路径穿越，不允许降级"/
+#   C19"高风险Shell操作，已阻止执行"/C20-C22"系统保护进程，禁止终止: PID {pid}"/C23"中风险Shell操作，需确认后执行"（半角逗号统一全角） — 小欧-2026-09-18
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -170,14 +172,14 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                     if '..' in normalized:
                         return SafetyResult(
                             blocked=True,
-                            message=f"高风险Shell操作: {desc}(临时目录清理含..路径穿越,不予降危)",
+                            message=f"高风险Shell操作: {desc}，含路径穿越，不允许降级",  # 7.3.4-C18: 括号句式→人话 — 小欧-2026-09-18
                             severity="dangerous",
                         )
                     medium_hits.append(desc)
                     continue
                 return SafetyResult(
                     blocked=True,
-                    message=f"高风险Shell操作: {desc}",
+                    message=f"高风险Shell操作: {desc}，已阻止执行",  # 7.3.4-C19: 补充"已阻止执行" — 小欧-2026-09-18
                     severity="dangerous",
                 )
             elif level == "MEDIUM" and desc not in medium_hits:
@@ -190,7 +192,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             logger.warning(f"[Shell安全] 安全拦截: Stop-Process 目标PID {blocked_pids} 为系统保护进程, 禁止杀死")
                             return SafetyResult(
                                 blocked=True,
-                                message=f"安全拦截: 目标PID {blocked_pids} 为系统保护进程, 禁止杀死",
+                                message=f"系统保护进程，禁止终止: PID {blocked_pids}",
                                 severity="dangerous",
                             )
                     if "强制杀进程" in desc:
@@ -200,7 +202,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             logger.warning(f"[Shell安全] 安全拦截: taskkill 目标PID {blocked_pids} 为系统保护进程, 禁止杀死")
                             return SafetyResult(
                                 blocked=True,
-                                message=f"安全拦截: 目标PID {blocked_pids} 为系统保护进程, 禁止杀死",
+                                message=f"系统保护进程，禁止终止: PID {blocked_pids}",
                                 severity="dangerous",
                             )
                     if "kill进程" in desc:
@@ -210,7 +212,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             logger.warning(f"[Shell安全] 安全拦截: kill 目标PID {blocked_pids} 为系统保护进程, 禁止杀死")
                             return SafetyResult(
                                 blocked=True,
-                                message=f"安全拦截: 目标PID {blocked_pids} 为系统保护进程, 禁止杀死",
+                                message=f"系统保护进程，禁止终止: PID {blocked_pids}",
                                 severity="dangerous",
                             )
                 medium_hits.append(desc)
@@ -220,7 +222,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
         return SafetyResult(
             blocked=False,
             requires_confirmation=True,
-            message=f"中风险Shell操作: {combined}",
+            message=f"中风险Shell操作: {combined}，需确认后执行",
             severity="destructive",
         )
     return None

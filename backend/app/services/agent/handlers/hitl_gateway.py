@@ -13,6 +13,8 @@
 # 2026-09-16 小欧 - 截断方式改尾部截断(老陈定案): smart_truncate_text"省略中间留头尾"诡异且head/tail双截断点增换行风险, 换公用truncate_text直接切尾巴(text[:140]+...[截断N字符], FUNCTIONS.md:83), re.sub单行化保留 - 小欧-2026-09-16
 # 2026-09-16 小欧 - 截断阈值80→140(老陈定案): 80字符对长命令过短, 140"差不多" - 小欧-2026-09-16
 # 2026-09-18 小欧 - severity/safety_level字段对调: paused帧severity改载安全分级(safe/destructive/dangerous), safety_level改载固定常量"attention"; ConfirmSpec.safety_level同步重命名为severity - 小欧-2026-09-18
+# 2026-09-18 小欧 - 第7章实施([50]7.1): ConfirmSpec新增safety_level字段(问题来源分类: path_auth/shellparam/command_block/tool_delete/tool_execute/data_guard/unregistered/forbidden_zone);
+#   paused帧safety_level由固定"attention"改透传spec.safety_level, 支撑前端按问题类型差异化展示 - 小欧-2026-09-18
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -30,7 +32,8 @@ class ConfirmSpec:
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
-    severity: str = ""
+    severity: str = ""           # 安全分级: safe / destructive / dangerous
+    safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
     auto_confirm: Optional[bool] = None
 
 
@@ -97,7 +100,7 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
         params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # [43]11.6-T4 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
         severity=spec.severity,
-        safety_level="attention", trust_path=_path, auto_confirm=_auto,
+        safety_level=spec.safety_level, trust_path=_path, auto_confirm=_auto,
         confirm_timeout=_ct, backend_timeout=_bt))
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认: {spec.tool_name}")
     await publish(paused.to_dict())

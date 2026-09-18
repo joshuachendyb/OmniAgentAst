@@ -47,6 +47,9 @@
 # 2026-09-18 小欧 偏差2修正(北京老陈审): :87主路闸与trusted闸合并为单一判据
 #   `pre.needs_ruling and (main_confirmed or (trusted and ruling_kind=="unsupported"))`, 与文档3.3合并式对齐 — 小欧-2026-09-18
 # 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段重命名同步更新 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 第7章实施([50]7.2.2/7.2.4/7.3.0-A3/7.3.1-B4/B5): ①沙箱裁决ConfirmSpec content改"预检未完成：{blocked_reason or 无法完成有效预检}，
+#   是否允许直接执行？{tool_name}"(去"沙箱"术语+携带blocked_reason), 新增safety_level="path_auth"; ②危险拦截blocked_reason截断80→140;
+#   ③用户拒绝content "用户拒绝执行"→"用户拒绝执行工具"(与safety_gate B3措辞统一) - 小欧-2026-09-18
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -108,7 +111,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         denied_list.append((tool_name, pre.blocked_reason, call))
         return False, [agent._step_emitter.emit(MetaStep(
             step=step, type="rejected",
-            content=pre.blocked_reason[:80],
+            content=pre.blocked_reason[:140],  # 7.3.1-B4: 截断80→140(长路径不再被截断) — 小欧-2026-09-18
             reject_type="sandbox",
             tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
@@ -121,8 +124,8 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         raise RuntimeError(f"[sandbox] StreamBuffer缺失(task={agent.task_id})")
     spec = ConfirmSpec(
         mode="hitl", tool_name=tool_name, params=params,
-        content=f"沙箱未能完成有效预检,需用户裁决是否直接执行: {tool_name}",
-        severity="destructive", auto_confirm=False)
+        content=f"预检未完成：{pre.blocked_reason or '无法完成有效预检'}，是否允许直接执行？{tool_name}",  # 7.3.0-A3: 去"沙箱"术语+携带blocked_reason — 小欧-2026-09-18
+        severity="destructive", safety_level="path_auth", auto_confirm=False)  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"]:
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
@@ -133,7 +136,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     # 2026-09-06 小欧 根因修复(b2 test_02/06/07): user_rejected 必须带被拒工具名 tool_name, 否则拒绝计数回退主工具致错键 — 小欧-2026-09-06
     return False, [agent._step_emitter.emit(MetaStep(
         step=step, type="rejected",
-        content=f"用户拒绝执行: {tool_name}", reject_type="user",
+        content=f"用户拒绝执行工具: {tool_name}", reject_type="user",  # 7.3.1-B5: 与safety_gate B3措辞统一 — 小欧-2026-09-18
         tool_name=tool_name))]
 
 

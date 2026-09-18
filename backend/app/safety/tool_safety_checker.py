@@ -50,6 +50,10 @@
 #   trust 豁免传参下沉函数内部(替代调用方 action_handler 在函数外预判), 命中已信任(tool+path)则本轮函数内不再产出确认请求; 豁免只跳确认不跳危险防护,
 #   系统禁区/路径越权/细粒度危险防护仍无条件 blocked(功能只增强不退化); 豁免保留信任判定所需 auth_path(与撤销资格、临时授权申请一致性)
 # 2026-09-18 小欧 - safety_level→severity全量重命名: SafetyResult字段+内部变量+构造调用+比较, 与SSE协议severity对齐 — 小欧-2026-09-18
+# 2026-09-18 - 小欧 - 第7章实施([50]7.3.2): 10处用户可见文案改写(文案仅可读性, 逻辑/分级/blocked/requires_confirmation/auth_path一律不变):
+#   C2"安全开关已绕过，自动确认执行"/C5"安全检查异常，已阻止执行"/C8"该路径在受保护区域，禁止删除"/C9"该路径在受保护区域，会话已信任，允许写入"/
+#   C10"该路径在受保护区域，写入需申请授权"/C11"该路径在系统禁区，禁止访问"/C12"该路径超出允许范围，会话已信任，允许操作"/
+#   C13"该路径超出允许范围，需临时授权"/C14"数据保护: 写入内容远小于原内容，已阻止"(去字节数,C14/C15半角逗号统一改全角) — 小欧-2026-09-18
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -160,7 +164,7 @@ class ToolSafetyChecker:
                 if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
                     logger.info(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                     return SafetyResult(requires_confirmation=True, auto_confirm=True,
-                            blocked=False, message="安全开关已绕过(提示照出)",
+                            blocked=False, message="安全开关已绕过，自动确认执行",
                             severity="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检
                 logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
                 return SafetyResult(requires_confirmation=False,
@@ -180,7 +184,7 @@ class ToolSafetyChecker:
             except Exception as e:
                 logger.error(f"[ToolSafetyChecker] check_fn异常,阻止执行: {e}")
                 return SafetyResult(blocked=True,
-                        message=f"安全检查异常(已阻止): {e}",
+                        message=f"安全检查异常，已阻止执行: {e}",
                         severity="dangerous")
 
         # ②-5 小健 2026-08-17 三堂会审-架构修复: 会话信任豁免逻辑已上移到调用方(action_handler, services层),
@@ -236,39 +240,39 @@ class ToolSafetyChecker:
                 from app.tools.tools_alias_mapper import normalize_tool_name  # P2: 防别名漏判 — 小欧 2026-08-10
                 if normalize_tool_name(tool_name) == "delete":
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)禁止删除(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
-                    return SafetyResult(blocked=True, message=f"该路径在受保护区域(非系统禁区),禁止删除: {msg}",
+                    return SafetyResult(blocked=True, message=f"该路径在受保护区域，禁止删除: {msg}",
                                         severity="dangerous", auth_path=failed_path)
                 if skip_confirmation:
                     # 5.3(2026-09-02 小欧, 病根3.4/3.5): 会话信任豁免——受保护区域写入不弹确认,
                     #   但须保留 auth_path 交 action_handler 豁免收口 grant_temp_auth, 否则工具 validate_path 拦截执行失败
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(requires_confirmation=False, blocked=False,
-                                        message=f"该路径在受保护区域(非系统禁区),会话已信任写入: {msg}",
+                                        message=f"该路径在受保护区域，会话已信任，允许写入: {msg}",
                                         severity="destructive",
                                         auth_path=failed_path, sandbox_required=True)
                 # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
                 log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入需任务级授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
                 return SafetyResult(requires_confirmation=True, blocked=False,
-                                    message=f"该路径在受保护区域(非系统禁区),写入需申请授权: {msg}",
+                                    message=f"该路径在受保护区域，写入需申请授权: {msg}",
                                     severity="destructive",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
             if category == "system":
                 # 系统禁区写/删 → 硬拦永不授权
                 log_and_print(f"[ToolSafetyChecker] 系统禁区拦截(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
-                return SafetyResult(blocked=True, message=f"该路径在系统禁区,禁止访问: {msg}",
+                return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {msg}",
                                     severity="dangerous", auth_path=failed_path)
             # category == None: 白名单外非禁区 → 临时授权请求
             # 5.3(2026-09-02 小欧, 病根3.4/3.5): 白名单外写——会话信任豁免不弹确认但保留 auth_path(语义同③)
             if skip_confirmation:
                 log_and_print(f"[ToolSafetyChecker] 白名单外路径-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(requires_confirmation=False, blocked=False,
-                                    message=f"该路径超出允许范围(白名单外),会话已信任及授权: {msg}",
+                                    message=f"该路径超出允许范围，会话已信任，允许操作: {msg}",
                                     severity="destructive",
                                     auth_path=failed_path, sandbox_required=True)
             # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
             log_and_print(f"[ToolSafetyChecker] 白名单外路径需临时授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
             return SafetyResult(requires_confirmation=True, blocked=False,
-                                message=f"该路径超出允许范围(白名单外),需临时授权: {msg}",
+                                message=f"该路径超出允许范围，需临时授权: {msg}",
                                 severity="destructive",
                                 auth_path=failed_path or (params.get("path") or params.get("dest")))
 
@@ -288,10 +292,10 @@ class ToolSafetyChecker:
                 if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
                     log_and_print(f"[ToolSafetyChecker] 数据保护硬拦(新内容远小于原内容): tool={tool_name}, path={file_path}, new={new_size}, old={old_size}")
                     return SafetyResult(blocked=True,
-                            message=f"数据保护:新内容({new_size}字节)远小于原始内容({old_size}字节)")
+                            message="数据保护: 写入内容远小于原内容，已阻止")
             except Exception as e:
                 logger.error(f"[ToolSafetyChecker] 写入检查异常,阻止执行: {e}")
-                return SafetyResult(blocked=True, message=f"安全检查异常(已阻止): {e}")
+                return SafetyResult(blocked=True, message=f"安全检查异常，已阻止执行: {e}")
 
 
         return None

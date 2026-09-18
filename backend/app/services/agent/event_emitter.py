@@ -6,6 +6,8 @@
 # 2026-09-04 小健 - 修复重构bug: completed分支补set_completed()调用,
 #   病根: 重构将handler的yield Step移到event_emitter, 但漏掉set_completed()副作用,
 #   致agent.status永远EXECUTING, 循环退出条件(agent.status in终态)永远不满足→死循环
+# 2026-09-18 - 小欧 - 第7章实施([50]7.3.5 D2/D3): blocked兜底文案"安全策略拦截"→"安全策略已拦截";
+#   confirmed文案"沙箱预检已确认执行"→"预检已确认，允许执行"(去"沙箱"技术术语) — 小欧-2026-09-18
 """
 event_emitter — 统一转换层：业务结果 → 前端Step
 
@@ -83,7 +85,7 @@ def emit_from_business_result(agent, step: int, result: dict):
         yield agent._step_emitter.emit(MetaStep(
             step=step,
             type="error",
-            content=result.get("reason", "安全策略拦截"),
+            content=result.get("reason", "安全策略已拦截"),  # 7.3.5-D2: "安全策略拦截"→"安全策略已拦截"(明确已完成) — 小欧-2026-09-18
             error_type="blocked",
             tool_name=result.get("tool_name", ""),
             severity="warn",
@@ -95,7 +97,7 @@ def emit_from_business_result(agent, step: int, result: dict):
         yield agent._step_emitter.emit(MetaStep(
             step=step,
             type="resumed",
-            content=f"沙箱预检已确认执行: {result.get('tool_name', '')}",
+            content=f"预检已确认，允许执行: {result.get('tool_name', '')}",  # 7.3.5-D3: 去"沙箱"术语 — 小欧-2026-09-18
             severity="info",
         ))
 

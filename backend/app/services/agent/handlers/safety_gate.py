@@ -35,6 +35,9 @@
 #   ③3.4 同批合并: 循环外_confirm_cache按(tool, auth/trust_path)组键, 组内首call弹窗其余复用verdict(确认1次/拒绝整组),
 #      grant_temp_auth组内仅首call授齐, content追加"另有N-1个同类调用同批一并裁决" - 小欧-2026-09-18
 # 2026-09-18 小欧 - safety_level→severity: getattr读取字符串+ConfirmSpec字段同步重命名 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 第7章实施([50]7.2.1/7.3.0): ConfirmSpec构造前按SafetyResult.message关键词分类safety_level(未注册→unregistered/系统禁区→forbidden_zone/
+#   受保护区域/超出允许范围→path_auth/高风险Shell/系统保护进程→command_block/中风险Shell→shellparam/删除需确认/禁止删除→tool_delete/数据保护→data_guard/
+#   安全检查异常→command_block/兜底tool_execute); content改载_message原样(去拼接问句), bypass改"安全开关已绕过，自动确认执行" - 小欧-2026-09-18
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -119,13 +122,36 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         if c.get("tool_name") == _cn
                         and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
+                    # 7.2.1 safety_level 分类: 按 content 关键词匹配问题来源 — 小欧-2026-09-18
+                    _msg = getattr(safety_result, "message", "")
+                    _sl = "tool_execute"  # 兜底
+                    if "未注册" in _msg:
+                        _sl = "unregistered"
+                    elif "系统禁区" in _msg:
+                        _sl = "forbidden_zone"
+                    elif "受保护区域" in _msg or "超出允许范围" in _msg:
+                        _sl = "path_auth"
+                    elif "高风险Shell" in _msg or "系统保护进程" in _msg:
+                        _sl = "command_block"
+                    elif "中风险Shell" in _msg:
+                        _sl = "shellparam"
+                    elif "删除需确认" in _msg or "禁止删除" in _msg:
+                        _sl = "tool_delete"
+                    elif "数据保护" in _msg:
+                        _sl = "data_guard"
+                    elif "安全检查异常" in _msg or "安全检查未通过" in _msg:
+                        _sl = "command_block"
+
+                    _content = (f"安全开关已绕过，自动确认执行: {_cn}" if _bypass
+                                else (_msg if _msg else f"是否允许执行工具: {_cn}")
+                                + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
+                                   if _group_size > 1 else ""))
+
                     _verdict = await hitl_confirm(agent, ConfirmSpec(
                         mode="bypass" if _bypass else "hitl", tool_name=_cn, params=_cp,
-                        content=(f"安全策略自动确认工具执行: {_cn}" if _bypass
-                                 else (f"是否允许执行工具: {_cn}"
-                                       + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
-                                          if _group_size > 1 else ""))),
-                        severity=getattr(safety_result, "severity", "")),
+                        content=_content,
+                        severity=getattr(safety_result, "severity", ""),
+                        safety_level=_sl),
                         _buf.publish)
                     _confirm_cache[_group_key] = _verdict
                 else:

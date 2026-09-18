@@ -7,6 +7,7 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#25: _get_allowed_roots 读取授权目录的 except pass 静默吞→logger.warning 留痕
 #   (授权目录读取失败致删除判定根集缺失无任何日志, 排查无迹)
 # 2026-09-18 小欧 - safety_level→severity: SafetyResult字段重命名同步更新 — 小欧-2026-09-18
+# 2026-09-18 - 小欧 - 第7章实施([50]7.3.3-C16): R6硬拦截文案"禁止删除项目根/授权目录外目录(递归)"→"禁止删除工作区外目录"(人话化, 逻辑不变) — 小欧-2026-09-18
 """
 delete_safety — delete 工具专属安全检查(差异层)
 
@@ -82,7 +83,7 @@ def check_delete_risk(params: dict) -> SafetyResult:
 
     # --- R6 全部允许根外递归 → 拒 ---
     if (not inside_proj) and recursive:
-        return SafetyResult(blocked=True, message=f"禁止删除项目根/授权目录外目录(递归): {path}", severity="dangerous")
+        return SafetyResult(blocked=True, message=f"禁止删除工作区外目录: {path}", severity="dangerous")  # 7.3.3-C16: "项目根/授权目录外目录(递归)"→"工作区外" — 小欧-2026-09-18
 
     # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 ---
     if (inside_proj and recursive) or (not inside_proj):
