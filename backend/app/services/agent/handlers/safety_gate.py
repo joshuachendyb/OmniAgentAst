@@ -161,7 +161,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 _rej_cache = _rejection_cache_of(agent)
                 if _skip:
                     _rej_cache.pop(_group_key, None)
-                if _group_key in _rej_cache and not _bypass:
+                if _group_key in _rej_cache:
                     _rej_content = _rej_cache[_group_key]
                     logger.warning(f"[action] step={step} rejected-cached: tool={_cn} (本任务内已有拒绝记录, 不再重复确认)")
                     _events.append(agent._step_emitter.emit(MetaStep(
@@ -214,9 +214,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
                     # 2026-09-18 小欧 - 去bypass写死content(北京老陈令): content恒载真实_message,
                     #   bypass仅由auto_confirm=True区分 — 小欧-2026-09-18
-                    _msg = _msg or f"是否允许执行工具: {_cn}"   # 2026-09-18 小欧 简化(北京老陈批准): 三元改or兜底, 语义等价去嵌套
-                    _content = _msg + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
-                                       if _group_size > 1 else "")
+                    _content = (_msg or "") + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
+                                               if _group_size > 1 else "")
 
                     _verdict = await hitl_confirm(agent, ConfirmSpec(
                         auto_confirm=_bypass, tool_name=_cn, params=_cp,
@@ -235,6 +234,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         except Exception as e:
                             logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
                     # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口) — 小健 2026-09-04/2026-09-06
+                    # 2026-09-19 小欧 Bug1修复: 恢复 _bypass_confirmed 透传(main_confirmed), 改动4误删导致bypass下sandbox走110s+超时拒绝
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied,
                                                          _bypass_confirmed)
                     _events.extend(_steps)  # 3B: 汇合事件併入返回列表(透传plumbing删除) — 小欧 2026-09-06

@@ -187,7 +187,14 @@ class ToolSafetyChecker:
 
         # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
-                if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
+                _needs = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
+                _shell_blocked = getattr(tool_meta, "_shell_risk_blocked", False) if tool_meta else False
+                if _shell_blocked:
+                    _shell_msg = getattr(tool_meta, "_shell_risk_desc", None) if tool_meta else None
+                    log_and_print(f"[ToolSafetyChecker] bypass下HIGH级Shell拦截: tool={tool_name}, {_shell_msg}")
+                    return SafetyResult(blocked=True, message=_shell_msg or "高风险Shell命令拦截",
+                                        severity="dangerous")
+                if _needs:
                     logger.info(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                     # 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): message保持空串不动,
                     #   bypass仅由auto_confirm=True区分(与hitl_gateway去mode同批), 内容/分级由safety_gate按真实来源组装 — 小欧-2026-09-18
@@ -228,9 +235,10 @@ class ToolSafetyChecker:
 
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         severity = "destructive" if needs_confirm else "safe"
+        _shell_msg = getattr(tool_meta, "_shell_risk_desc", None) if tool_meta else None
         # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
         return SafetyResult(requires_confirmation=needs_confirm,
-                blocked=False, message="", severity=severity,
+                blocked=False, message=_shell_msg or "", severity=severity,
                 sandbox_required=(severity == "destructive"))
 
     @staticmethod
@@ -240,6 +248,20 @@ class ToolSafetyChecker:
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
                 and _is_readonly_sql((params or {}).get("sql", "")):
             return False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
+        if normalize_tool_name(tool_meta.name or "") in ("shell", "execute_command"):
+            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
+            _risk = check_shell_command_risk((params or {}).get("command", ""))
+            if _risk:
+                if _risk.blocked:
+                    if tool_meta:
+                        tool_meta._shell_risk_desc = _risk.message
+                        tool_meta._shell_risk_blocked = True
+                    return True   # HIGH: 直接 return，不弹窗
+                if _risk.message:
+                    if tool_meta:
+                        tool_meta._shell_risk_desc = _risk.message  # MEDIUM: desc 进弹窗 content
+                elif tool_meta:
+                    tool_meta._shell_risk_desc = None
         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
             return delete_risk.requires_confirmation      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):

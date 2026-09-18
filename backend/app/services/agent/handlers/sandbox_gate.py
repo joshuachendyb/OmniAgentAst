@@ -120,11 +120,6 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     if pre.needs_ruling and (main_confirmed or (trusted and pre.ruling_kind == "unsupported")):
         logger.info(f"[sandbox] 跳过二次裁决直接放行: tool={tool_name}, reason={pre.blocked_reason[:200]}")
         return True, []
-    if pre.needs_ruling and safety_result.auto_confirm:
-        # bypass免打扰语义(v1.13 V2): security.enabled=false即用户要求全自动,
-        # 未完成有效验证不得挂起等裁决(否则E2E自动化无人在线必卡死, 与checker历史P0-02同根)
-        logger.info(f"[sandbox] bypass下未完成有效验证,按bypass语义直接放行: tool={tool_name}, reason={pre.blocked_reason}")
-        return True, []
     if not pre.needs_ruling:
         # 2026-09-17 小欧 会审V3(#11): 去"沙箱安全检查未通过:"前缀(结果语义已含"沙箱内执行失败",
         #   且 blocked_reason 现附 stderr 尾部供 LLM 自纠, 前缀只会重复冗长; denied_list 喂 LLM 与 content
@@ -144,13 +139,16 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     _buf = get_stream_buffer(agent.task_id)
     if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
         raise RuntimeError(f"[sandbox] StreamBuffer缺失(task={agent.task_id})")
+    # 2026-09-19 小欧 Bug2+5修复: auto_confirm从safety_result读取(不硬编码False); bypass超时→放行(与safety_gate层语义一致)
+    _sb = bool(getattr(safety_result, "auto_confirm", False))
     spec = ConfirmSpec(
-        auto_confirm=False, tool_name=tool_name, params=params,  # 2026-09-18 小欧 去mode改布尔单源(与safety_gate同批, 老陈令)
+        auto_confirm=_sb, tool_name=tool_name, params=params,  # 2026-09-18 小欧 去mode改布尔单源(与safety_gate同批, 老陈令) / 2026-09-19 小欧 读safety_result.auto_confirm
         content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",  # 7.3.0-A3精化: 去stderr英文尾部(stderr仅随denied_list喂LLM)+问句尾不再接工具名(工具名在弹窗头部) — 小欧-2026-09-18
         severity="destructive", safety_level="path_auth")  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
     verdict = await hitl_confirm(agent, spec, _buf.publish)
-    if verdict["confirmed"]:
-        logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
+    if verdict["confirmed"] or (verdict.get("expired") and _sb):
+        # 2026-09-19 小欧 Bug5修复: bypass超时→放行(与safety_gate层bypass超时语义一致: 到期=放行)
+        logger.info(f"[sandbox] {'bypass超时自动放行' if verdict.get('expired') else '用户裁决: 确认执行'}: tool={tool_name}")
         return True, []          # paused/resumed 已由网关publish, 此处不再组Step — 小健 2026-09-05
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "用户拒绝执行", call))
