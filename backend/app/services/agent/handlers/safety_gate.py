@@ -49,6 +49,10 @@
 #   (tool, reject_type) 计 3 次才 FAILED; 新增任务级 agent._user_rejected_cache {(tool, ref): content}(键与组键同口径,
 #   refusal_key() 供 sandbox_gate 复用): requires 检查点 A 命中不再弹直接复用拒绝, sandbox 检查点 B 覆盖豁免直通;
 #   信任清除记忆(_skip 即删), bypass 全自动不受约束, 主路刚确认不受历史约束; 复用仍走 denied 计数(3 次 FAILED 死胡同保护保留) — 小欧-2026-09-18
+# 2026-09-18 小欧 - 去bypass写死content(北京老陈令): content恒载真实_message, 删三元f"安全开关已绕过，自动确认执行: {_cn}",
+#   bypass识别改用(已提前上移的)_bypass布尔直传 auto_confirm=_bypass(与hitl_gateway去mode同批), content不再被bypass改写 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT, 与hitl_gateway同批): ConfirmSpec删mode="bypass" if _bypass else "hitl",
+#   改auto_confirm=_bypass布尔单源(唯一真相源), 避免"布尔→字符串→布尔"无意义往返 — 小欧-2026-09-18
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -208,13 +212,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         elif _cn == "delete_task":
                             _sl = "tool_delete"
 
-                    _content = (f"安全开关已绕过，自动确认执行: {_cn}" if _bypass
-                                else (_msg if _msg else f"是否允许执行工具: {_cn}")
-                                + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
-                                   if _group_size > 1 else ""))
+                    # 2026-09-18 小欧 - 去bypass写死content(北京老陈令): content恒载真实_message,
+                    #   bypass仅由auto_confirm=True区分 — 小欧-2026-09-18
+                    _msg = _msg or f"是否允许执行工具: {_cn}"   # 2026-09-18 小欧 简化(北京老陈批准): 三元改or兜底, 语义等价去嵌套
+                    _content = _msg + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
+                                       if _group_size > 1 else "")
 
                     _verdict = await hitl_confirm(agent, ConfirmSpec(
-                        mode="bypass" if _bypass else "hitl", tool_name=_cn, params=_cp,
+                        auto_confirm=_bypass, tool_name=_cn, params=_cp,
                         content=_content,
                         severity=getattr(safety_result, "severity", ""),
                         safety_level=_sl),

@@ -15,6 +15,9 @@
 # 2026-09-18 小欧 - severity/safety_level字段对调: paused帧severity改载安全分级(safe/destructive/dangerous), safety_level改载固定常量"attention"; ConfirmSpec.safety_level同步重命名为severity - 小欧-2026-09-18
 # 2026-09-18 小欧 - 第7章实施([50]7.1): ConfirmSpec新增safety_level字段(问题来源分类: path_auth/shellparam/command_block/tool_delete/tool_execute/data_guard/unregistered/forbidden_zone);
 #   paused帧safety_level由固定"attention"改透传spec.safety_level, 支撑前端按问题类型差异化展示 - 小欧-2026-09-18
+# 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT): 删ConfirmSpec.mode字符串(布尔→"bypass/hitl"→==bypass还原的无意义往返),
+#   bypass/真HITL身份全线只用布尔auto_confirm单字段(唯一真相源); _resolve_timeouts/resumed条件/mode推导随迁改读auto_confirm,
+#   调用方safety_gate传auto_confirm=_bypass/sandbox_gate传auto_confirm=False, 语义零变化 置顶safety_gate/sandbox_gate同步 - 小欧-2026-09-18
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -26,15 +29,15 @@ from app.services.agent.status_table import set_status, AgentStatus  # AgentStat
 
 @dataclass
 class ConfirmSpec:
-    """确认规格（与4.2同形，属性访问；auto_confirm默认None由mode推导） — 小健-2026-09-05"""
-    mode: str                    # "hitl" | "bypass"
+    """确认规格（与4.2同形，属性访问） — 小健-2026-09-05
+    auto_confirm: True=bypass全自动确认(倒计时自动代发) / False=真HITL人工裁决 — 小欧-2026-09-18"""
     tool_name: str
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
     severity: str = ""           # 安全分级: safe / destructive / dangerous
     safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
-    auto_confirm: Optional[bool] = None
+    auto_confirm: bool = False   # 2026-09-18 小欧 去mode改布尔单源(changed from None) — 小欧-2026-09-18
 
 
 def _desensitize(params) -> dict:
@@ -68,18 +71,17 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
     return _out
 
 
-async def _resolve_timeouts(mode):
+async def _resolve_timeouts(auto_confirm):
     """返回 (backend_timeout, confirm_timeout) 二元组（调用处双解包 — 小健-2026-09-05）。
-    点分扁平键（与三处同源，禁嵌套get("security")取法）+ 分mode公式：
-    hitl→security.hitl_timeout兜底HITL_TIMEOUT，confirm=max(MIN, backend-HITL_CONFIRM_LEAD)；
-    bypass→security.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
-     （见safety_gate行79/85/87/112、sandbox_gate行90-92；四常量均在app.constants）。"""
+    点分扁平键（与三处同源，禁嵌套get("security")取法）+ 分auto_confirm公式：
+    auto_confirm=False(真HITL)→security.hitl_timeout兜底HITL_TIMEOUT，confirm=max(MIN, backend-HITL_CONFIRM_LEAD)；
+    auto_confirm=True(bypass)→security.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
+     （见safety_gate行79/85/87/112、sandbox_gate行90-92；四常量均在app.constants）。
+     2026-09-18 小欧: 参数mode字符串→auto_confirm布尔(去mode字段同批, 唯一真相源)。"""
     from app.config import get_config                            # 延迟import防环
     from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT, BYPASS_AUTO_LEAD
-    if mode not in ("hitl", "bypass"):
-        raise ValueError(f"[hitl_gateway] 非法确认模式: {mode!r} (须为 hitl|bypass)")   # 会审minor - 小欧 2026-09-06
     cfg = get_config()
-    if mode == "hitl":
+    if not auto_confirm:
         _bt = int(float(cfg.get("security.hitl_timeout", HITL_TIMEOUT)))
         return _bt, max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
     _bt = max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD,
@@ -94,8 +96,8 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     from app.tools.trust import extract_trust_path    # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
     _path = spec.path or extract_trust_path(spec.tool_name, spec.params)
     confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path)
-    _bt, _ct = await _resolve_timeouts(spec.mode)
-    _auto = spec.auto_confirm if spec.auto_confirm is not None else (spec.mode == "bypass")
+    _bt, _ct = await _resolve_timeouts(spec.auto_confirm)
+    _auto = spec.auto_confirm
     paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
         params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # [43]11.6-T4 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
@@ -114,8 +116,8 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
                                    trust_session=bool(auth.get("trust_session", False)))
     except Exception as _e:
         logger.error(f"[hitl_gateway] resolve_confirmation({confirm_id})收口失败: {_e!r}")   # 不阻断 resumed/verdict
-    # resumed配对条件同4.2（confirmed必发；bypass+expired亦发，真HITL expired/rejected不发）。— 小健-2026-09-05
-    if auth.get("confirmed") or (spec.mode == "bypass" and auth.get("expired")):
+    # resumed配对条件同4.2（confirmed必发；bypass(auto_confirm=True)+expired亦发，真HITL expired/rejected不发）。— 小健-2026-09-05
+    if auth.get("confirmed") or (spec.auto_confirm and auth.get("expired")):
         resumed = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="resumed",
             content=f"已确认执行: {spec.tool_name}", severity="info", confirm_id=confirm_id))
         await publish(resumed.to_dict())

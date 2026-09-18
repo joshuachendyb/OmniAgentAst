@@ -56,6 +56,8 @@
 # 2026-09-18 小欧 - 毛病4精化(弹窗过宽核查): B5 用户裁决拒绝写入拒绝记忆(refusal_key 与 safety_gate 组键同口径, 延迟导入复用防环);
 #   sandbox_resolve 开头加检查点 B(覆盖豁免直通 requires=False 路径): 记忆命中不弹裁决窗直接 rejected(user),
 #   信任清除记忆, 主路刚确认(main_confirmed)不受历史约束 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT, 与hitl_gateway同批): ConfirmSpec删mode="hitl",
+#   改显式传auto_confirm=False(默认即False, 显式表意自明: 沙箱裁决恒真HITL人工) — 小欧-2026-09-18
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -143,9 +145,9 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
         raise RuntimeError(f"[sandbox] StreamBuffer缺失(task={agent.task_id})")
     spec = ConfirmSpec(
-        mode="hitl", tool_name=tool_name, params=params,
+        auto_confirm=False, tool_name=tool_name, params=params,  # 2026-09-18 小欧 去mode改布尔单源(与safety_gate同批, 老陈令)
         content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",  # 7.3.0-A3精化: 去stderr英文尾部(stderr仅随denied_list喂LLM)+问句尾不再接工具名(工具名在弹窗头部) — 小欧-2026-09-18
-        severity="destructive", safety_level="path_auth", auto_confirm=False)  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
+        severity="destructive", safety_level="path_auth")  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"]:
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")

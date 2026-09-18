@@ -62,6 +62,8 @@
 #   (与 shell 只读短路/readtext 等读工具免确认矛盾); _get_needs_confirmation 加纯读短路 _is_readonly_sql:
 #   首词 SELECT/SHOW/DESCRIBE/DESC/EXPLAIN/VALUES/TABLE + 单语句(无分号)才免, 注释头/WITH/PRAGMA/多语句/空串
 #   保守回弹窗(宁弹不错); 免确认后 severity 走 safe, 沙箱零开销直通 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): bypass需确认分支 message 由"安全开关已绕过，自动确认执行"改空串,
+#   content由safety_gate承载真实_message组装(不许bypass改写已设内容); auto_confirm=True仍为bypass唯一识别, 语义零变化 — 小欧-2026-09-18
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -187,8 +189,10 @@ class ToolSafetyChecker:
         if _is_skip_safety():
                 if self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk):
                     logger.info(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
+                    # 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): message保持空串不动,
+                    #   bypass仅由auto_confirm=True区分(与hitl_gateway去mode同批), 内容/分级由safety_gate按真实来源组装 — 小欧-2026-09-18
                     return SafetyResult(requires_confirmation=True, auto_confirm=True,
-                            blocked=False, message="安全开关已绕过，自动确认执行",
+                            blocked=False, message="",
                             severity="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检
                 logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
                 return SafetyResult(requires_confirmation=False,
