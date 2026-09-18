@@ -42,6 +42,13 @@
 #   无message确认类(needs_confirmation=True且无风险文案)原全落tool_execute兜底, 与§6.2.2归属不符:
 #   shell确认→shellparam(§6.2.3中风险弹窗即needs_confirmation驱动, 命令确认主场景)、create_task/writetext/edittext/writetool→tool_write、
 #   delete_task→tool_delete; execute_sql/registry_write/registry_delete保持tool_execute兜底(本就准确) — 小欧-2026-09-18
+# 2026-09-18 小欧 - 毛病3精化(弹窗过宽核查): 3.4同批合并组键 (tool, auth/trust_path) 对 shell 恒退化 ("shell", None)
+#   (shell 不在 trust FILE_OPERATION/NON_FILE_TRUST 两集合, extract_trust_path 恒 None),
+#   同批高低风险命令共用一次确认(仅展示首个命令); 组键改按 command 全文分组: 同命令合并, 不同命令各弹 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 毛病4精化(弹窗过宽核查): 用户拒绝记忆 — _confirm_cache 每轮重建, 用户拒绝后 LLM 换参重试同一工具每轮重弹,
+#   (tool, reject_type) 计 3 次才 FAILED; 新增任务级 agent._user_rejected_cache {(tool, ref): content}(键与组键同口径,
+#   refusal_key() 供 sandbox_gate 复用): requires 检查点 A 命中不再弹直接复用拒绝, sandbox 检查点 B 覆盖豁免直通;
+#   信任清除记忆(_skip 即删), bypass 全自动不受约束, 主路刚确认不受历史约束; 复用仍走 denied 计数(3 次 FAILED 死胡同保护保留) — 小欧-2026-09-18
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -54,6 +61,30 @@ from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
 from app.tools.security.temp_auth import grant_temp_auth  # POT-002: 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
 
 __all__ = ["check_safety_and_confirm"]
+
+
+def refusal_key(tool_name: str, params: dict, safety_result=None):
+    """用户拒绝记忆键 (tool, auth/trust_path/shell-command) — 与 3.4 组键同口径(毛病3/毛病4, 小欧-2026-09-18)。
+    shell 无 path 主键(trust 两集合皆无)时按 command 全文分组, 同命令合并、不同命令各弹。
+    sandbox_gate 函数内延迟导入复用(防 handlers→safety_gate→sandbox_gate 环)。"""
+    from app.tools.trust import extract_trust_path  # 延迟导入(与本函数内既有模式一致) — 小欧-2026-09-18
+    _ref = (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
+        or extract_trust_path(tool_name, params or {})
+    if _ref is None and tool_name == "shell":
+        _ref = "cmd:" + str((params or {}).get("command") or "")
+    return (tool_name, _ref)
+
+
+def _rejection_cache_of(agent) -> dict:
+    """取任务级用户拒绝记忆 dict(不存在即建, 存 agent 属性随任务消亡) — 毛病4, 小欧-2026-09-18"""
+    _c = getattr(agent, "_user_rejected_cache", None)
+    if _c is None or not isinstance(_c, dict):
+        _c = {}
+        try:
+            agent._user_rejected_cache = _c
+        except Exception:
+            pass
+    return _c if isinstance(_c, dict) else {}
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None) -> list:
         """安全检查+HITL确认 — 纯函数返回事件列表(MetaStep dict/replay), 3B终态(5.4.2收list) — 小欧 2026-09-06
@@ -116,15 +147,36 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
                     raise RuntimeError(f"[safety] StreamBuffer缺失(task={agent.task_id})")
                 # 3.4 同批合并: 组键(tool, auth_path或trust_path)归一; 组内首call弹窗, 其余复用裁决(拒绝整组/确认同放) — 小欧-2026-09-18
-                _group_ref = getattr(safety_result, "auth_path", None) or extract_trust_path(_cn, _cp)
-                _group_key = (_cn, _group_ref)
+                # 毛病3精化: shell 无 path 主键时 refusal_key 按 command 全文分组(同命令合并, 不同命令各弹) — 小欧-2026-09-18
+                _group_key = refusal_key(_cn, _cp, safety_result)
+                _group_ref = _group_key[1]
                 _group_lead = _group_key not in _confirm_cache
-                _bypass = bool(getattr(safety_result, "auto_confirm", False))
+                _bypass = bool(getattr(safety_result, "auto_confirm", False))  # 上移: 原在组首分支内, 复用分支 else 取不到(隐含未定义) — 小欧-2026-09-18
+                # 毛病4(2026-09-18 小欧): 用户拒绝记忆 — 同 (tool, path) 本任务内被用户拒绝过, 不再弹直接复用拒绝;
+                #   信任清除记忆(用户已显式信任, 拒绝让位); bypass 全自动语义不受记忆约束
+                _rej_cache = _rejection_cache_of(agent)
+                if _skip:
+                    _rej_cache.pop(_group_key, None)
+                if _group_key in _rej_cache and not _bypass:
+                    _rej_content = _rej_cache[_group_key]
+                    logger.warning(f"[action] step={step} rejected-cached: tool={_cn} (本任务内已有拒绝记录, 不再重复确认)")
+                    _events.append(agent._step_emitter.emit(MetaStep(
+                        step=step, type="rejected", content=_rej_content, reject_type="user",
+                        tool_name=_cn
+                    )))
+                    _denied.append((_cn, f"被用户拒绝执行(本任务内已有拒绝记录，不再重复确认): {_rej_content}", call))
+                    continue
                 if _group_lead:
-                    _group_size = sum(
-                        1 for c in all_calls
-                        if c.get("tool_name") == _cn
-                        and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
+                    if _cn == "shell":
+                        _group_size = sum(
+                            1 for c in all_calls
+                            if c.get("tool_name") == "shell"
+                            and str((c.get("tool_params") or {}).get("command") or "") == str(_cp.get("command") or ""))
+                    else:
+                        _group_size = sum(
+                            1 for c in all_calls
+                            if c.get("tool_name") == _cn
+                            and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
                     # 7.2.1 safety_level 分类: 按 content 关键词匹配问题来源 — 小欧-2026-09-18
                     _msg = getattr(safety_result, "message", "")
@@ -207,6 +259,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             tool_name=_cn
                         )))
                         _denied.append((_cn, "被用户拒绝执行", call))
+                        # 毛病4(2026-09-18 小欧): 记用户拒绝记忆(键与组键同口径), 同 (tool, path) 本任务内再派发不再弹
+                        _rejection_cache_of(agent)[_group_key] = f"用户拒绝执行工具: {_cn}"
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
                 # 用户已确认: 仅凭auth_path授权(不设trust_session门), 3.4组内去重仅首call授齐, grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06/2026-09-18

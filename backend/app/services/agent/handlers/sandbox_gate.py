@@ -53,6 +53,9 @@
 # 2026-09-18 小欧 - 7.3.0-A3/7.3.1-B4 精化(重查挖掘): executor blocked_reason 经 _attach_stderr_tail 附 " | 英文stderr尾部"(喂LLM自纠),
 #   A3弹窗content与B4拒绝content均改 split(" | ",1)[0] 只秀中文人话原因(英文tail仍随denied_list完整喂LLM, 前后端可读/LLM纠错职责分离);
 #   A3 问句尾不再接 {tool_name}(工具名在弹窗头部自有展示, 原"…直接执行？writetext"句读生硬) — 小欧-2026-09-18
+# 2026-09-18 小欧 - 毛病4精化(弹窗过宽核查): B5 用户裁决拒绝写入拒绝记忆(refusal_key 与 safety_gate 组键同口径, 延迟导入复用防环);
+#   sandbox_resolve 开头加检查点 B(覆盖豁免直通 requires=False 路径): 记忆命中不弹裁决窗直接 rejected(user),
+#   信任清除记忆, 主路刚确认(main_confirmed)不受历史约束 — 小欧-2026-09-18
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -94,6 +97,20 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     if pre.passed:
         logger.info(f"[sandbox] 放行执行: tool={tool_name}")
         return True, []
+    # 毛病4(2026-09-18 小欧): 用户拒绝记忆检查点 B(覆盖豁免直通 requires=False 路径, 主路 requires 路径已由检查点 A 拦截) —
+    #   同 (tool, path) 本任务内被用户拒绝过 → 不弹裁决窗直接拒绝; 信任清除记忆; 主路刚确认(main_confirmed)不受历史约束
+    from app.services.agent.handlers.safety_gate import refusal_key, _rejection_cache_of  # 延迟导入防环(同 hitl_gateway 模式) — 小欧-2026-09-18
+    _rk = refusal_key(tool_name, params, safety_result)
+    _rc = _rejection_cache_of(agent)
+    if trusted:
+        _rc.pop(_rk, None)
+    if _rk in _rc and not (trusted or main_confirmed):
+        logger.warning(f"[sandbox] 拒绝记忆命中直接拒绝: tool={tool_name} (本任务内已有拒绝记录, 不弹裁决窗)")
+        denied_list.append((tool_name, _rc[_rk], call))
+        return False, [agent._step_emitter.emit(MetaStep(
+            step=step, type="rejected",
+            content=_rc[_rk], reject_type="user",
+            tool_name=tool_name))]
     # 单paused(4.4双paused策略) + 3.3信任豁免合并判据: 主路已确认(main_confirmed) /
     #   受信且纯能力缺口(trusted and ruling_kind=="unsupported") → 跳过二次裁决直放;
     #   需带 needs_ruling 语境(危险型 blocked passed=False&needs_ruling=False 绝不触碰);
@@ -135,6 +152,8 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         return True, []          # paused/resumed 已由网关publish, 此处不再组Step — 小健 2026-09-05
     logger.warning(f"[sandbox] 用户裁决: 拒绝执行: tool={tool_name}")
     denied_list.append((tool_name, "用户拒绝执行", call))
+    # 毛病4(2026-09-18 小欧): 记用户拒绝记忆(键与 safety_gate 组键同口径), 下轮同 (tool, path) 主路/裁决均不再弹
+    _rejection_cache_of(agent)[refusal_key(tool_name, params, safety_result)] = f"用户拒绝执行工具: {tool_name}"
     # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发 (与 safety_gate 拒绝路径同构)
     # 2026-09-06 小欧 根因修复(b2 test_02/06/07): user_rejected 必须带被拒工具名 tool_name, 否则拒绝计数回退主工具致错键 — 小欧-2026-09-06
     return False, [agent._step_emitter.emit(MetaStep(

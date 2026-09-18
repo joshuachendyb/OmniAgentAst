@@ -58,6 +58,10 @@
 #   ("该路径在受保护区域，禁止删除: 路径位于受保护区域(项目代码库): C:\..." 双主语+双冒号+括号技术元数据;
 #    白名单外拼"仅允许:list"超长), 改拼 failed_path(真实越权路径, 读/删边界, 前缀关键词不变故safety_gate分类不受影响),
 #   failed_path为空(如空路径)兜底 display msg 保原因; 用户可见 message 干净, 日志仍留 {msg} 完整审计 — 小欧-2026-09-18
+# 2026-09-18 小欧 - 毛病1精化(弹窗过宽核查): execute_sql 注册 needs_confirmation=True 一刀切, 纯读 SELECT 也弹
+#   (与 shell 只读短路/readtext 等读工具免确认矛盾); _get_needs_confirmation 加纯读短路 _is_readonly_sql:
+#   首词 SELECT/SHOW/DESCRIBE/DESC/EXPLAIN/VALUES/TABLE + 单语句(无分号)才免, 注释头/WITH/PRAGMA/多语句/空串
+#   保守回弹窗(宁弹不错); 免确认后 severity 走 safe, 沙箱零开销直通 — 小欧-2026-09-18
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -97,6 +101,22 @@ from app.tools.security.path_safe_check import validate_tool_path as _validate_t
 from app.tools.security.safety_result import SafetyResult  # A1盲点四: SafetyResult 迁 tools/security — 小欧 2026-08-12
 
 _WRITE_RISK_TOOL = "writetext"
+
+_READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
+
+
+def _is_readonly_sql(sql: str) -> bool:
+    """execute_sql 纯读短路(毛病1, 2026-09-18 小欧): 首词纯读关键字 + 单语句(无分号)才免确认。
+    保守策略(宁弹不错): 注释头(--//*/#)/WITH(可藏写)/PRAGMA(部分可写)/多语句/空串一律不免, 回注册 True 弹窗"""
+    s = (sql or "").strip().lower()
+    if not s or s.startswith(("--", "/*", "#")):
+        return False
+    if ";" in s:
+        return False
+    parts = s.split(None, 1)
+    if not parts:
+        return False
+    return parts[0].lstrip("(") in _READONLY_SQL_FIRST
 
 
 def _is_skip_safety() -> bool:
@@ -212,6 +232,10 @@ class ToolSafetyChecker:
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> bool:
         """获取生效的确认策略：delete动态判定 > action级 > 工具级 — 小欧 2026-08-04"""
+        from app.tools.tools_alias_mapper import normalize_tool_name  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
+        if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
+                and _is_readonly_sql((params or {}).get("sql", "")):
+            return False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
             return delete_risk.requires_confirmation      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):

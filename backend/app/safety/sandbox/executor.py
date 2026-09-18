@@ -16,6 +16,9 @@
 # 2026-09-18 小欧 TDD过宽收敛(3.2.1/3.3): ①_READONLY_PREFIXES常量新增五项(echo/pwd/dir/whoami/hostname);
 #   @_is_readonly_whitelisted的startswith内联字面量改引用_READONLY_PREFIXES消除双源; ③PreCheckResult新增ruling_kind(默认risky);
 #   ④unsupported分支置ruling_kind="unsupported"(供沙箱trusted直放判据, 区分能力缺口与执行风险) - 小欧-2026-09-18
+# 2026-09-18 小欧 - 毛病2精化(弹窗过宽核查): _READONLY_PREFIXES 新增二十一项(git log/diff/show, python/node --version,
+#   npm --version/ls, pip list/show/--version, docker ps/images, tasklist, ipconfig /all, systeminfo, netstat, ver,
+#   test-path, kubectl get), 逐条过安全评审(任意无拼接符后缀仍只读); 否决 git branch/ipconfig裸前缀等可写口 - 小欧-2026-09-18
 import asyncio
 import os
 import re
@@ -48,7 +51,19 @@ class PreCheckResult:
 
 # —— 第四章判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
 _READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
-                      "echo", "pwd", "dir", "whoami", "hostname")     # 4.1#4 只读白名单前缀(3.2.1 过宽收敛新增五项) — 小欧-2026-09-18
+                      "echo", "pwd", "dir", "whoami", "hostname",
+                      "git log", "git diff", "git show",
+                      "python --version", "node --version", "node -v",
+                      "npm --version", "npm ls",
+                      "pip list", "pip show", "pip --version",
+                      "docker ps", "docker images",
+                      "tasklist", "ipconfig /all", "systeminfo", "netstat", "ver",
+                      "test-path", "kubectl get")     # 4.1#4 只读白名单前缀(3.2.1 五项 + 毛病2精化二十一项) — 小欧-2026-09-18
+    # 毛病2评审纪要(2026-09-18 小欧, 逐条过安全评审, 任意无拼接符后缀仍只读才准入):
+    #   准入: git log/diff/show(纯展示); python/node --version(打印即退); npm --version/ls, pip list/show/--version(只读查询);
+    #   docker ps/images(只读列表); tasklist/systeminfo/netstat/ver(系统只读展示); ipconfig /all(精确子命令, /flushdns等不匹配);
+    #   test-path(纯测试); kubectl get(只读API, 与 readtext 读敏感文件同政策).
+    #   否决: git branch(-D/-M可删分支); ipconfig裸前缀(/release//renew//flushdns可变更网络); gh/set/npm run/pip install/docker exec等(可写).
 _FAST_CHANNEL_FORBIDDEN = ("|", ";", "&", ">", ">>")                  # 单命令收紧(v1.10 FP1 管道/分号/调用符 + v1.17 N5 重定向)
 _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
                         "being used by another process", "找不到路径")  # 4.2 规则6 环境性失败识别(FP2)
