@@ -49,6 +49,10 @@
 //   耗时(G2)与步轮(G3)整块迁至右组 TrustPanel 前, 断点矩阵逻辑(xsmall/mid/narrow/wide)不变 — 小沈-2026-09-17
 // 编辑历史: 2026-09-17 小沈 - 事件列表两项优化: ①空列表时显示"暂无事件"提示(原 null 导致 Popover 弹空白);
 //   ②事件排序改为正序(最早在上), 配合 useTaskInfo 去除 .reverse() — 小沈-2026-09-17
+// 编辑历史: 2026-09-18 小欧 - 北京老陈令(taskinfo部分小改动): ①G5"累计"标签改"任务"(tooltip同步),
+//   ②耗时 G2 秒值改"时分秒"结构(formatDurationHMS, 如 00:07:43), ③G3 步轮组三档重排——
+//   宽: 轮数:N · 步骤:M / 窄: 轮:N · 步:M(或保持紧凑) / 极窄(xsmall): 随耗时合并为 耗时 h:mm:ss · 轮:N · 步:M,
+//   语义补正: 数3000+实为业务步骤数(后端total_steps, 非消息数/非发送次数) — 小欧-2026-09-18
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -73,7 +77,7 @@ import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames, LiveError } from '@/types/sse';
 import type { TaskDetail } from '../../../../services/api/task.api';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles'; // P2-12: 硬码数字全令牌化
-import { formatTimeHMS } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS
+import { formatTimeHMS, formatDurationHMS } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
 import { TrustPanel } from '../config/TrustPanel';
@@ -356,7 +360,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             ·
           </span>
           <MetricItem
-            label="累计"
+            label="任务" // 2026-09-18 小欧: 北京老陈令 "累计"→"任务" — 小欧-2026-09-18
             value={formatToken(
               info.taskAccumulated?.total_tokens ?? info.usage.total
             )}
@@ -365,7 +369,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 ? undefined
                 : `P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion}`
             }
-            tooltip="任务累计 P/C/T"
+            tooltip="任务 P/C/T" // 2026-09-18 小欧: 同步去"累计" — 小欧-2026-09-18
           />
           {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试 */}
           {(() => {
@@ -457,6 +461,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           }}
         >
           {/* 耗时+步轮 移至信任前(2026-09-17) */}
+          {/* 2026-09-18 小欧 北京老陈令: 秒值改时分秒(formatDurationHMS); G3 宽: 轮数:N · 步骤:M — 小欧-2026-09-18 */}
           {!isXSmall && (
             <span
               style={{
@@ -466,7 +471,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 ...TABULAR_NUMS,
               }}
             >
-              耗时 {Math.round(shownElapsed)}s
+              耗时 {formatDurationHMS(shownElapsed)}
             </span>
           )}
           <span
@@ -478,18 +483,20 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             {isXSmall ? (
               <>
                 {'耗时 '}
-                {Math.round(shownElapsed)}s·{info.stepCount}步·
-                {info.llmCallCount}轮
+                {formatDurationHMS(shownElapsed)}·轮:{info.llmCallCount} · 步:
+                {info.stepCount}
               </>
             ) : isNarrow || isMid ? (
-              <Tooltip title={`${info.stepCount}步·${info.llmCallCount}轮`}>
+              <Tooltip
+                title={`轮数: ${info.llmCallCount} · 步骤: ${info.stepCount}`}
+              >
                 <span style={TABULAR_NUMS}>
-                  {info.stepCount}/{info.llmCallCount}
+                  轮:{info.llmCallCount} · 步:{info.stepCount}
                 </span>
               </Tooltip>
             ) : (
               <>
-                {info.stepCount}步·{info.llmCallCount}轮
+                轮数: {info.llmCallCount} · 步骤: {info.stepCount}
               </>
             )}
           </span>

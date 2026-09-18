@@ -1,6 +1,11 @@
 // 编辑历史: 2026-08-28 小欧 - 合并 timestamp/timeFormatters/formatSafeTimestamp+组件内formatTime为单一源
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复toLocaleTimeString对象字面量多行→单行(行长度超80字符), 防止格式再次出错
+// 编辑历史: 2026-09-18 小欧 - 北京老陈定案"formatTimeHMS/formatDurationHMS/formatDebugTime 各自重写 padStart 管道, 太奇怪":
+//   抽模块私有 pad2 统一拼 HH:MM:SS, 三者共用, 语义各留各的不合并 — 小欧-2026-09-18
 // 合并来源: timestamp.ts(80行) + timeFormatters.ts(43行) + formatSafeTimestamp.ts(10行) + TaskListPanel.tsx:30 + History/index.tsx:285
+
+/** 两位补零辅助(模块私有, 避免三处重复 padStart 管道) — 小欧-2026-09-18 */
+const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 export const parseTimeSafe = (input: Date | string | number): Date | null => {
   try {
@@ -63,12 +68,18 @@ export const formatDate = (s?: string | number | Date): string => {
 export const formatTimeHMS = (date: Date | string | number): string => {
   const d = parseTimeSafe(date);
   if (!d) return '-';
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+};
+
+// 编辑历史: 2026-09-18 小欧 - 新增 formatDurationHMS(耗时秒 → 固定 HH:MM:SS, TaskInfoBar 耗时显示用,
+//   北京老陈令"秒值改时分秒结构显示 00:04:32") — 小欧-2026-09-18
+export const formatDurationHMS = (sec: number): string => {
+  const total = Math.max(0, Math.floor(sec || 0));
+  return `${pad2(Math.floor(total / 3600))}:${pad2(Math.floor((total % 3600) / 60))}:${pad2(total % 60)}`;
 };
 
 // 小欧 2026-09-14 DRY: console.log调试时间戳 [HH:MM:SS.mmm] — 小欧-2026-09-14
 export const formatDebugTime = (): string => {
   const d = new Date();
-  const p = (n: number) => String(n).padStart(2, '0');
-  return `[${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}]`;
+  return `[${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}]`;
 };
