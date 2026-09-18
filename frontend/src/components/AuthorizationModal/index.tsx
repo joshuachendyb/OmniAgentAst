@@ -37,6 +37,10 @@
 //   ⑤content卡padding6→5/marginBottom8→6、trust行8→6紧凑化 — 小欧-2026-09-18
 // 编辑历史: 2026-09-18 小欧 - 三思三省9类核查配套: SAFETY_LEVEL_CONFIG tool_write 由预留注释转激活条目
 //   (geekblue+EditOutlined+标签"写确认"), 与后端 safety_gate 工具名归属(create_task→tool_write)联动 — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 恢复confirmTimeout取request.confirmTimeout??60并回传CountdownRing饼环算percent,
+//   反向a59aaff8e扁平纯文本(与CountdownRing.tsx恢复同批) — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 对齐[50]§6.3.2确认稿(北京老陈令): ①信任勾选框搬回信任范围行之后、工具名称之前
+//   (勾选=信任上方范围, 语义连贯); ②content原因区补SAFETY_LEVEL_CONFIG等级图标(§6.3.3规格, 无图标等级不渲染) — 小欧-2026-09-18
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -274,6 +278,10 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
                 wordBreak: 'break-all',
               }}
             >
+              {/* §6.3.3规格: content区图标复用 SAFETY_LEVEL_CONFIG — 小欧-2026-09-18 */}
+              {safetyConfig.icon && (
+                <span style={{ marginRight: 6 }}>{safetyConfig.icon}</span>
+              )}
               {request.content}
             </span>
           </div>
@@ -315,6 +323,23 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             </span>
           </div>
         )}
+
+        {/* §6.3.2确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
+        <div style={{ marginBottom: 6 }}>
+          <Checkbox
+            checked={trustSession}
+            disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
+            onChange={(e) => setTrustSession(e.target.checked)}
+            // 2026-09-16 老杨 - S5:Tooltip改原生title,消除Popover DOM层; 保留缺陷①③文案
+            title={
+              isBypass
+                ? '自动确认模式下信任不落库，勾选无效'
+                : '信任后：同会话同工具+下方操作范围免弹框' // 7.4.3二选一: 范围已常驻展示于操作范围行 — 小欧-2026-09-18
+            }
+          >
+            信任此操作（本次会话）
+          </Checkbox>
+        </div>
 
         {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
         <div
@@ -364,22 +389,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           >
             {paramsStr}
           </span>
-        </div>
-
-        <div style={{ marginBottom: 6 }}>
-          <Checkbox
-            checked={trustSession}
-            disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
-            onChange={(e) => setTrustSession(e.target.checked)}
-            // 2026-09-16 老杨 - S5:Tooltip改原生title,消除Popover DOM层; 保留缺陷①③文案
-            title={
-              isBypass
-                ? '自动确认模式下信任不落库，勾选无效'
-                : '信任后：同会话同工具+下方操作范围免弹框' // 7.4.3二选一: 范围已常驻展示于操作范围行 — 小欧-2026-09-18
-            }
-          >
-            信任此操作（本次会话）
-          </Checkbox>
         </div>
 
         <div style={{ display: 'flex', gap: 8, width: '100%' }}>
