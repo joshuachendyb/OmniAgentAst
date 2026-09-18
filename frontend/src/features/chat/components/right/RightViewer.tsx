@@ -107,6 +107,13 @@
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": RightViewerProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop(类型导入 ClockSignals/接口声明/解构/透传 PipelineRenderer) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
+// 编辑历史: 2026-09-18 小欧 - [49]方案一(持久锚点, 北京老陈定案): 根治"Step页面快结束时自动滚动失效"——
+//   ①D0 删2个失去用途的中间变量(死代码) hasLiveSteps/hasHistorySteps(原仅用于驱动主滚动effect重跑; D3锚点恒挂载后不再需要);
+//   ②D1 主滚动effect去守卫 + 依赖收敛为 [findScrollContainer, scrollToBottomNow]——RO 常驻观察恒挂载锚点,
+//     不再因 isCurrentLive 翻转重跑而 disconnect(根治窗口期RO永久断开);
+//   ③D2 visibilitychange 兜底effect同步去守卫 + 依赖收敛为 [scrollToBottomNow];
+//   ④D3 空态 Empty 移入 right-viewer-body 内层, 使 pipelineEndRef 恒挂载(锚点不再随空态卸载);
+//   渲染/打字机逻辑一律不变, 只修"未自动滚动到底部" — 小欧-2026-09-18
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -236,10 +243,6 @@ const RightViewer: React.FC<RightViewerProps> = ({
   );
   // 2026-09-03 小欧 12.6修复: 若liveSteps已含final终态, 不再判live(及时切历史拉取), 防final丢失前永久卡live
   const _hasFinal = liveSteps.some((s) => s.type === 'final');
-  // 2026-09-03 小沈 BUG-01/04修复修正: hasLiveSteps仅0→1变化时触发effect重跑(首帧pipelineEndRef挂载), 后续chunk增长由ResizeObserver驱动不重挂载
-  const hasLiveSteps = liveSteps.length > 0;
-  // 2026-09-06 小欧 RG-2: 历史数据是否已就绪(0→1驱动主滚动effect重跑, 后台final切历史后滚底兜底) — 小欧-2026-09-06
-  const hasHistorySteps = historySteps.length > 0;
   // 小欧 2026-09-11 第七章 M1/M2(DB落库信号): hasFinalStats = frames.finalStats 非空 = final_stats 到达 =
   //   DB 已落库信号(t3', v1.9 方案 A)——折叠区 DB 读(effect1)与任务列表刷新(B16)以此统一信号读 DB — 小欧-2026-09-11
   const hasFinalStats = !!frames?.finalStats;
@@ -323,8 +326,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
     });
   }, [findScrollContainer]);
   useEffect(() => {
-    // RG-2: 守卫放宽——live 或 历史数据已就绪(后台任务final切历史后滚动兜底, 防右栏停半空) — 小欧-2026-09-06
-    if (!isCurrentLive && !hasHistorySteps) return;
+    // [49]方案一(持久锚点): 移除守卫——RO 常驻观察恒挂载锚点(pipelineEndRef)。
+    //   内容增长(live/settled/history)统一由 RO 驱动滚底, 不依赖任何业务状态;
+    //   是否滚底仅由 scrollToBottomNow 内 !userScrolledUpRef 把关 — 小欧-2026-09-17
     const container = findScrollContainer();
     const pipeline = pipelineEndRef.current;
     if (!container || !pipeline) return;
@@ -345,16 +349,10 @@ const RightViewer: React.FC<RightViewerProps> = ({
       ro.disconnect();
       container.removeEventListener('scroll', handleScroll);
     };
-  }, [
-    isCurrentLive,
-    hasLiveSteps,
-    hasHistorySteps,
-    findScrollContainer,
-    scrollToBottomNow,
-  ]);
+  }, [findScrollContainer, scrollToBottomNow]);
   // RG-1: 浏览器后台节流后切回可见——visibilitychange 兜底重滚(左栏 useChatScroll.ts:93-103 已有, 右栏补对称) — 小欧-2026-09-06
   useEffect(() => {
-    if (!isCurrentLive && !hasHistorySteps) return;
+    // [49]方案一: 移除守卫——visibilitychange 兜底与业务状态解耦, 切回可见即滚底 (内部已由 userScrolledUp 把关) — 小欧-2026-09-17
     const handleVisibility = () => {
       if (!document.hidden) scrollToBottomNow();
     };
@@ -362,7 +360,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [isCurrentLive, hasHistorySteps, scrollToBottomNow]);
+  }, [scrollToBottomNow]);
 
   // 拉取历史任务：C1+C2 并行；C2 空则 C3 按 message 降级（静态块降级为空，契约无通道）
   useEffect(() => {
@@ -480,22 +478,23 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
-      {!isCurrentLive && !loading && !hasSteps ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description={
-            <Typography.Text
-              type="secondary"
-              style={{ fontSize: 12, color: Colors.TEXT.SECONDARY }}
-            >
-              暂无执行记录
-            </Typography.Text>
-          }
-          style={{ padding: '24px 0' }}
-        />
-      ) : (
-        // 编辑历史: 2026-09-14 小欧 - 容器加 right-viewer-body 类名: E2E唯一正文定位锚点(getFinalText整页innerText在多任务/切历史下尾串脆弱), 零UI影响 - 小欧-2026-09-14
-        <div ref={pipelineEndRef} className="right-viewer-body">
+      {/* [49]方案一(D3 持久锚点): Empty 移入 right-viewer-body 内层使该 div 恒挂载,
+          RO 常驻观察此锚点; live/settled/history 内容增减都驱动滚底, 空态演示不卸载 — 小欧-2026-09-17 */}
+      <div ref={pipelineEndRef} className="right-viewer-body">
+        {!isCurrentLive && !loading && !hasSteps ? (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <Typography.Text
+                type="secondary"
+                style={{ fontSize: 12, color: Colors.TEXT.SECONDARY }}
+              >
+                暂无执行记录
+              </Typography.Text>
+            }
+            style={{ padding: '24px 0' }}
+          />
+        ) : (
           <PipelineRenderer
             steps={splitSteps(displaySteps).business}
             streaming={isCurrentLive}
@@ -505,8 +504,8 @@ const RightViewer: React.FC<RightViewerProps> = ({
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
             waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
           />
-        </div>
-      )}
+        )}
+      </div>
       {!isCurrentLive && (
         // 小欧 2026-09-11 第七章 M3a(统计区分段渲染): 统计区拆两段两次独立渲染——TitleBlock(title 段,
         //   final 帧驱动, 绝不读 DB)为每次渲染第二段; StaticStatsBlock(折叠区, final_stats 到达后
