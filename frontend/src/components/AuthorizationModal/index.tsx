@@ -24,6 +24,17 @@
 // 编辑历史: 2026-09-16 小欧 - 三堂会审修复(2项): ①参数容器height:54在antd5全局border-box下含padding(4×2)+border(1×2)致内容区仅44px≈2.4行不足定案3行, 补boxSizing:'content-box'保证内容高=54px(3行×18px); ②P2合并行外层div删textAlign:'left'死属性(flex容器下对flex item无效) - 小欧-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 参数区居中对齐bug修复: 参数容器div补textAlign:'left'(外层textAlign:'center'继承至span致参数文本居中, 需在容器覆盖) - 小欧-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 参数区高度3行→4行: 北京老陈目视验收"整体高度不错,参数区可设4行", height:54(3×18)→72(4×18) - 小欧-2026-09-16
+// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.3): ①AuthorizationRequest接口+config新增content(弹窗原因); ②SAFETY_LEVEL_CONFIG改后端safety_level 5类
+//   (path_auth需授权/shellparam命令确认/tool_delete删除确认/tool_execute执行确认, tool_write预留注释); ③新增content原因展示区+trust_path操作范围行;
+//   ④勾选title去trustPath展示(与新增信任范围行重复, 二选一) — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - content/trust_path显示布局(北京老陈定案): 两字段均折行显示(≤2行完整展示),
+//   超2行才截断(-webkit-line-clamp:2+省略号), 长路径wordBreak:break-all强制折行防溢出, title挂完整文本可查全文;
+//   改前两字段无防护: 中文折行但长ASCII路径水平溢出穿出弹窗 — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 审核整改(北京老陈验收要求: 美观紧凑/目标信息禁灰字/Tooltip禁用/窗口不撑长):
+//   ①HITL_TOKENS宽480→520令牌+内容折行后信息从容显示; ②倒计时文案#8c8c8c→#262626、trustPath#595959→#262626(目标信息禁灰字),
+//   辅助label(工具名称:/执行参数:)回灰type=secondary可灰(陈总许), 帮助图标?#8c8c8c删除; ③完全删除Tooltip控件及QuestionCircleOutlined
+//   (信任行仅保留Checkbox+原生title, 防叠加DOM层); ④图标与标题Tag合并单行flex(降嵌套层/紧凑), CountdownRing去confirmTimeout prop;
+//   ⑤content卡padding6→5/marginBottom8→6、trust行8→6紧凑化 — 小欧-2026-09-18
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -43,13 +54,13 @@
  */
 
 import React from 'react';
-import { Button, Typography, Tag, Checkbox, Tooltip } from 'antd';
+import { Button, Typography, Tag, Checkbox } from 'antd';
 import {
   WarningOutlined,
   ExclamationCircleOutlined,
   StopOutlined,
   ThunderboltOutlined,
-  QuestionCircleOutlined,
+  FolderOutlined, // 7.4.3: trust_path 操作范围图标 — 小欧-2026-09-18
 } from '@ant-design/icons';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
@@ -64,6 +75,7 @@ export interface AuthorizationRequest {
   confirmId: string;
   toolName: string;
   params: Record<string, unknown>;
+  content?: string; // 7.4.3: 弹窗原因(后端 ConfirmSpec.content) — 小欧-2026-09-18
   safetyLevel: string;
   trustPath?: string | null;
   autoConfirm?: boolean;
@@ -85,15 +97,19 @@ const SAFETY_LEVEL_CONFIG: Record<
   string,
   { color: string; label: string; icon: React.ReactNode }
 > = {
-  read_only: { color: 'green', label: '只读', icon: null },
-  safe: { color: 'blue', label: '安全', icon: null },
-  destructive: { color: 'orange', label: '破坏性', icon: <WarningOutlined /> },
-  dangerous_sandbox: {
-    color: 'volcano',
-    label: '沙箱危险',
+  path_auth: { color: 'orange', label: '需授权', icon: <WarningOutlined /> },
+  shellparam: {
+    color: 'orange',
+    label: '命令确认',
     icon: <ExclamationCircleOutlined />,
   },
-  dangerous: { color: 'red', label: '系统危险', icon: <StopOutlined /> },
+  // tool_write 预留(writetext/edittext 无确认 flag; create_task 走 CONFIRM_TOOLS 会触发, 见§6.2.2) — 小欧-2026-09-18
+  tool_delete: { color: 'red', label: '删除确认', icon: <StopOutlined /> },
+  tool_execute: {
+    color: 'volcano',
+    label: '执行确认',
+    icon: <ExclamationCircleOutlined />,
+  },
 };
 
 // 2026-09-03 小欧 P3修复: @keyframes pulse移至组件外, 避免每次渲染重复注入<style>标签 — 小欧-2026-09-03
@@ -167,8 +183,6 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     icon: null,
   };
 
-  const confirmTimeout = request.confirmTimeout ?? 60;
-
   // 小欧 2026-09-03 三堂会审问题1方案A: bypass(安全开关绕开)模式下即使勾选"信任此操作"也不产生信任,
   //   强制 trustSession=false(防绕过5.4防污染: bypass期间勾出的信任切回enabled:true后转正为长期豁免)
   const handleConfirm = (confirmed: boolean) => {
@@ -182,32 +196,24 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   return (
     <HITLModalShell open={visible} isBypass={isBypass}>
       <div style={{ textAlign: 'center' }}>
-        {isBypass ? (
-          <ThunderboltOutlined
-            style={{
-              fontSize: HITL_TOKENS.ICON_SIZE,
-              color: '#1677ff',
-              marginBottom: 4,
-            }}
-          />
-        ) : (
-          <WarningOutlined
-            style={{
-              fontSize: HITL_TOKENS.ICON_SIZE,
-              color: '#faad14',
-              marginBottom: 4,
-            }}
-          />
-        )}
-
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            justifyContent: 'center',
+            gap: 6,
             marginBottom: 2,
           }}
         >
+          {isBypass ? (
+            <ThunderboltOutlined
+              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff' }}
+            />
+          ) : (
+            <WarningOutlined
+              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#faad14' }}
+            />
+          )}
           <Title level={5} style={{ marginBottom: 0 }}>
             {isBypass ? '将自动确认（安全开关已绕开）' : '安全确认请求'}
           </Title>
@@ -219,13 +225,13 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </Tag>
         </div>
 
-        <CountdownRing countdown={countdown} confirmTimeout={confirmTimeout} />
+        <CountdownRing countdown={countdown} />
         <div
           style={{
             fontSize: 13,
             fontWeight: 600,
-            color: '#8c8c8c',
-            marginBottom: 2,
+            color: '#262626',
+            marginBottom: 6,
           }}
         >
           {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
@@ -234,26 +240,89 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             : `未响应将在 ${countdown}s 后自动拒绝`}
         </div>
 
+        {/* content 原因展示区: 倒计时下方, 告知用户"为什么要问" — 小欧-2026-09-18 */}
+        {request.content && (
+          <div
+            style={{
+              padding: '5px 10px',
+              marginBottom: 6,
+              borderLeft: `3px solid ${isBypass ? '#1677ff' : '#faad14'}`,
+              backgroundColor: isBypass ? '#e6f4ff' : '#fffbe6',
+              borderRadius: '0 4px 4px 0',
+              textAlign: 'left',
+            }}
+          >
+            {/* 7.4.3-layout: content折行显示(≤2行完整展示, 超2行截断省略号, title可查全文) — 小欧-2026-09-18 */}
+            <span
+              title={request.content}
+              style={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: '#262626',
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-all',
+              }}
+            >
+              {request.content}
+            </span>
+          </div>
+        )}
+
+        {/* trust_path 操作范围展示: 操作目标路径 — 小欧-2026-09-18 */}
+        {request.trustPath && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 4,
+              marginBottom: 6,
+              fontSize: 12,
+              color: '#262626',
+            }}
+          >
+            <FolderOutlined style={{ color: '#faad14' }} />
+            {/* 7.4.3-layout: trust_path折行显示(≤2行完整展示, 超2行截断省略号, title可查全文) — 小欧-2026-09-18 */}
+            <span
+              title={`操作范围: ${request.toolName} › ${request.trustPath}${
+                request.toolName.startsWith('registry')
+                  ? '，含子键'
+                  : '，含子目录'
+              }`}
+              style={{
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-all',
+              }}
+            >
+              操作范围: {request.toolName} › {request.trustPath}
+              {request.toolName.startsWith('registry')
+                ? '，含子键'
+                : '，含子目录'}
+            </span>
+          </div>
+        )}
+
         {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'baseline',
             gap: 8,
             marginBottom: 2,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-            <Text
-              type="secondary"
-              style={{ fontSize: 12, whiteSpace: 'nowrap' }}
-            >
-              工具名称:
-            </Text>
-            <Text strong style={{ fontSize: 13, color: '#1677ff' }}>
-              {request.toolName}
-            </Text>
-          </div>
+          <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+            工具名称:
+          </Text>
+          <Text strong style={{ fontSize: 13, color: '#1677ff' }}>
+            {request.toolName}
+          </Text>
           {paramsStr && (
             <Text
               type="secondary"
@@ -298,31 +367,11 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             title={
               isBypass
                 ? '自动确认模式下信任不落库，勾选无效'
-                : request.trustPath
-                  ? `${request.toolName} › ${request.trustPath}${
-                      request.toolName.startsWith('registry')
-                        ? '，含子键'
-                        : '，含子目录'
-                    }`
-                  : undefined
+                : '信任后：同会话同工具+下方操作范围免弹框' // 7.4.3二选一: 范围已常驻展示于操作范围行 — 小欧-2026-09-18
             }
           >
             信任此操作（本次会话）
           </Checkbox>
-          {/* 2026-09-16 老杨 - T6:Trust checkbox加Tooltip解释信任含义/范围/撤销 */}
-          <Tooltip
-            title={
-              <div>
-                <div>信任后：同会话同工具+目标路径免弹框</div>
-                <div>范围：仅本次会话有效</div>
-                <div>撤销：TaskInfoBar → 信任(N) → Drawer → 点×</div>
-              </div>
-            }
-          >
-            <QuestionCircleOutlined
-              style={{ marginLeft: 4, color: '#8c8c8c' }}
-            />
-          </Tooltip>
         </div>
 
         <div style={{ display: 'flex', gap: 8, width: '100%' }}>
