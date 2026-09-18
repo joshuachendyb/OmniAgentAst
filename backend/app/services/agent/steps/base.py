@@ -14,6 +14,7 @@
 #   MetaStep 补只读 .content property(返回 self._content)——对齐 ThoughtStep/ChunkStep 同型 property,
 #   TDD 验收(test_llm_retry_visibility:351)与 LLM 底层 retrying 事件消费方统一 .content 读取口;
 #   序列化不变(to_dict 仍走 get_content()), 纯增量零副作用 — 小欧 2026-09-02
+# 2026-09-18 小欧 - safety_level→severity: kwargs透传注释同步更新 — 小欧-2026-09-18
 """
 ReasoningStep 抽象基类
 
@@ -142,6 +143,6 @@ class MetaStep(ReasoningStep):
 
     def _extra_fields(self) -> Dict[str, Any]:
         # 【序列化规则】小欧 2026-07-13: content 已由基类 to_dict() 经 get_content() 输出,
-        # 此处仅透传构造时传入的其余 kw(confirm_id/tool_name/params/safety_level/wait_time/data 等),
+        # 此处仅透传构造时传入的其余 kw(confirm_id/tool_name/params/severity/wait_time/data 等),
         # 不再单独输出 message 键, 避免同值双字段(字段双份/错位)。
         return dict(self._kwargs)

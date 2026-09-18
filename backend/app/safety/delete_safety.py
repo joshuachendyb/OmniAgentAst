@@ -6,6 +6,7 @@
 # 2026-08-12 - 小欧 - A1盲点二/四: SafetyResult 与 _get_project_root_safety 均迁 app/tools/security, import 同步更新 — 小欧 2026-08-12
 # 2026-08-13 - 小欧 - 三堂会审修复#25: _get_allowed_roots 读取授权目录的 except pass 静默吞→logger.warning 留痕
 #   (授权目录读取失败致删除判定根集缺失无任何日志, 排查无迹)
+# 2026-09-18 小欧 - safety_level→severity: SafetyResult字段重命名同步更新 — 小欧-2026-09-18
 """
 delete_safety — delete 工具专属安全检查(差异层)
 
@@ -35,7 +36,7 @@ def _as_bool(v: Any) -> bool:
 
 
 _PASS = SafetyResult(blocked=False, requires_confirmation=False,
-                     message="", safety_level="safe")          # 放行统一产物 — 小欧 2026-08-04
+                     message="", severity="safe")          # 放行统一产物 — 小欧 2026-08-04
 
 
 def _get_allowed_roots() -> list:
@@ -81,12 +82,12 @@ def check_delete_risk(params: dict) -> SafetyResult:
 
     # --- R6 全部允许根外递归 → 拒 ---
     if (not inside_proj) and recursive:
-        return SafetyResult(blocked=True, message=f"禁止删除项目根/授权目录外目录(递归): {path}", safety_level="dangerous")
+        return SafetyResult(blocked=True, message=f"禁止删除项目根/授权目录外目录(递归): {path}", severity="dangerous")
 
     # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 ---
     if (inside_proj and recursive) or (not inside_proj):
         return SafetyResult(requires_confirmation=True, blocked=False,
-                            message=f"删除需确认: {path}", safety_level="destructive")
+                            message=f"删除需确认: {path}", severity="destructive")
 
     # --- R3 允许根内普通 → 放行(免确认), 恒非None ---
     return _PASS

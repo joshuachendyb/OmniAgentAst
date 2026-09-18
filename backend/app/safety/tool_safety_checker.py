@@ -49,6 +49,7 @@
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤③代理(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): _check_known_risks 增 skip_confirmation:
 #   trust 豁免传参下沉函数内部(替代调用方 action_handler 在函数外预判), 命中已信任(tool+path)则本轮函数内不再产出确认请求; 豁免只跳确认不跳危险防护,
 #   系统禁区/路径越权/细粒度危险防护仍无条件 blocked(功能只增强不退化); 豁免保留信任判定所需 auth_path(与撤销资格、临时授权申请一致性)
+# 2026-09-18 小欧 - safety_level→severity全量重命名: SafetyResult字段+内部变量+构造调用+比较, 与SSE协议severity对齐 — 小欧-2026-09-18
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -120,7 +121,7 @@ class ToolSafetyChecker:
             log_and_print(f"[ToolSafetyChecker] 工具未注册,拒绝执行: {tool_name}")
             return SafetyResult(blocked=True,
                     message=f"工具{tool_name}未注册",
-                    safety_level="dangerous")
+                    severity="dangerous")
 
         # ① delete 专属判定一次性计算, 供②③两处消费(DRY) — 小欧 2026-08-04
         delete_risk = None
@@ -147,10 +148,10 @@ class ToolSafetyChecker:
                 else:
                     log_and_print(f"[ToolSafetyChecker] 白名单外临时授权请求,转HITL确认: tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
                 # v1.25 M2-D: 白名单外 destructive 授权请求→沙箱预检; safe 级不触发(与 G1 唯一触发依据一致)
-                known_risk.sandbox_required = (known_risk.safety_level == "destructive")
+                known_risk.sandbox_required = (known_risk.severity == "destructive")
                 return known_risk
             # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
-            known_risk.safety_level = "dangerous"
+            known_risk.severity = "dangerous"
             log_and_print(f"[ToolSafetyChecker] 已知风险拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
             return known_risk
 
@@ -160,11 +161,11 @@ class ToolSafetyChecker:
                     logger.info(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                     return SafetyResult(requires_confirmation=True, auto_confirm=True,
                             blocked=False, message="安全开关已绕过(提示照出)",
-                            safety_level="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检
+                            severity="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检
                 logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
                 return SafetyResult(requires_confirmation=False,
                         blocked=False, message="安全开关已绕过",
-                        safety_level="safe")   # v1.25 M2-A: safe 级 bypass 不触发沙箱(与 G1 一致)
+                        severity="safe")   # v1.25 M2-A: safe 级 bypass 不触发沙箱(与 G1 一致)
 
         if tool_meta.check_fn:
             try:
@@ -174,13 +175,13 @@ class ToolSafetyChecker:
                     return SafetyResult(
                         blocked=True,
                         message=custom_result.get("message", "安全检查未通过"),
-                        safety_level=custom_result.get("safety_level", "dangerous"),
+                        severity=custom_result.get("severity", "dangerous"),
                     )
             except Exception as e:
                 logger.error(f"[ToolSafetyChecker] check_fn异常,阻止执行: {e}")
                 return SafetyResult(blocked=True,
                         message=f"安全检查异常(已阻止): {e}",
-                        safety_level="dangerous")
+                        severity="dangerous")
 
         # ②-5 小健 2026-08-17 三堂会审-架构修复: 会话信任豁免逻辑已上移到调用方(action_handler, services层),
         #   由调用方查 trust 后传 skip_confirmation=True; 危险防护(known_risk/check_fn blocked)不受豁免仍拦截。
@@ -191,14 +192,14 @@ class ToolSafetyChecker:
             logger.info(f"[ToolSafetyChecker] 会话信任豁免确认(跳HITL): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="会话已信任该工具",
-                    safety_level="safe", sandbox_required=_needs)   # v1.25 M2-B: destructive级仍进沙箱, safe级不触发(G1)
+                    severity="safe", sandbox_required=_needs)   # v1.25 M2-B: destructive级仍进沙箱, safe级不触发(G1)
 
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
-        safety_level = "destructive" if needs_confirm else "safe"
+        severity = "destructive" if needs_confirm else "safe"
         # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
         return SafetyResult(requires_confirmation=needs_confirm,
-                blocked=False, message="", safety_level=safety_level,
-                sandbox_required=(safety_level == "destructive"))
+                blocked=False, message="", severity=severity,
+                sandbox_required=(severity == "destructive"))
 
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> bool:
@@ -236,39 +237,39 @@ class ToolSafetyChecker:
                 if normalize_tool_name(tool_name) == "delete":
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)禁止删除(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(blocked=True, message=f"该路径在受保护区域(非系统禁区),禁止删除: {msg}",
-                                        safety_level="dangerous", auth_path=failed_path)
+                                        severity="dangerous", auth_path=failed_path)
                 if skip_confirmation:
                     # 5.3(2026-09-02 小欧, 病根3.4/3.5): 会话信任豁免——受保护区域写入不弹确认,
                     #   但须保留 auth_path 交 action_handler 豁免收口 grant_temp_auth, 否则工具 validate_path 拦截执行失败
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(requires_confirmation=False, blocked=False,
                                         message=f"该路径在受保护区域(非系统禁区),会话已信任写入: {msg}",
-                                        safety_level="destructive",
+                                        severity="destructive",
                                         auth_path=failed_path, sandbox_required=True)
                 # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
                 log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入需任务级授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
                 return SafetyResult(requires_confirmation=True, blocked=False,
                                     message=f"该路径在受保护区域(非系统禁区),写入需申请授权: {msg}",
-                                    safety_level="destructive",
+                                    severity="destructive",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
             if category == "system":
                 # 系统禁区写/删 → 硬拦永不授权
                 log_and_print(f"[ToolSafetyChecker] 系统禁区拦截(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(blocked=True, message=f"该路径在系统禁区,禁止访问: {msg}",
-                                    safety_level="dangerous", auth_path=failed_path)
+                                    severity="dangerous", auth_path=failed_path)
             # category == None: 白名单外非禁区 → 临时授权请求
             # 5.3(2026-09-02 小欧, 病根3.4/3.5): 白名单外写——会话信任豁免不弹确认但保留 auth_path(语义同③)
             if skip_confirmation:
                 log_and_print(f"[ToolSafetyChecker] 白名单外路径-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(requires_confirmation=False, blocked=False,
                                     message=f"该路径超出允许范围(白名单外),会话已信任及授权: {msg}",
-                                    safety_level="destructive",
+                                    severity="destructive",
                                     auth_path=failed_path, sandbox_required=True)
             # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
             log_and_print(f"[ToolSafetyChecker] 白名单外路径需临时授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
             return SafetyResult(requires_confirmation=True, blocked=False,
                                 message=f"该路径超出允许范围(白名单外),需临时授权: {msg}",
-                                safety_level="destructive",
+                                severity="destructive",
                                 auth_path=failed_path or (params.get("path") or params.get("dest")))
 
         # BUG-2 (三堂会审复核发现, v1.45): 写保护判定用归一化名 —

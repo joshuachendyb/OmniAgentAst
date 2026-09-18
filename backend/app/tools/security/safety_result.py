@@ -5,6 +5,7 @@
 #   消除 tools→safety 越层依赖。
 # 2026-08-25 - 小欧 - M1(设计文档 3.2.4): SafetyResult 新增 sandbox_required: bool = False 字段(沙箱预检触发唯一依据);
 #   由 tool_safety_checker 在 destructive 级(白名单外授权/路径越权/注册表写等)置位 True, 安全开关总闸在 executor.pre_execute 单点读取, 缺省 False 使存量调用方零感知
+# 2026-09-18 小欧 - safety_level→severity字段重命名: 与SSE输出severity对齐(后端内部+前端协议统一), 默认值不变 — 小欧-2026-09-18
 """
 safety_result — 安全检查结果数据契约(纯 dataclass)
 
@@ -23,7 +24,7 @@ class SafetyResult:
     blocked: bool = False
     requires_confirmation: bool = False
     message: str = ""
-    safety_level: str = "safe"
+    severity: str = "safe"
     auto_confirm: bool = False
     auth_path: Optional[str] = None
     # v1.25 M1: 沙箱预检触发标记 — 由 tool_safety_checker 四条置位路径点亮,

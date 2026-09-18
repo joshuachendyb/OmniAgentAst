@@ -12,6 +12,7 @@
 # 2026-09-16 小欧 - 参数摘要单行化: smart_truncate_text截断文本含\n(head/tail原值换行+省略标记三行), 前端pre-wrap逐参数分行致"参数占多行+中间空一行"(仅见shell多行命令), 违反"每参数一行"定案契约; 截断结果re.sub换行压空格单行化(命中源, 治本) - 小欧-2026-09-16
 # 2026-09-16 小欧 - 截断方式改尾部截断(老陈定案): smart_truncate_text"省略中间留头尾"诡异且head/tail双截断点增换行风险, 换公用truncate_text直接切尾巴(text[:140]+...[截断N字符], FUNCTIONS.md:83), re.sub单行化保留 - 小欧-2026-09-16
 # 2026-09-16 小欧 - 截断阈值80→140(老陈定案): 80字符对长命令过短, 140"差不多" - 小欧-2026-09-16
+# 2026-09-18 小欧 - severity/safety_level字段对调: paused帧severity改载安全分级(safe/destructive/dangerous), safety_level改载固定常量"attention"; ConfirmSpec.safety_level同步重命名为severity - 小欧-2026-09-18
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -29,7 +30,7 @@ class ConfirmSpec:
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
-    safety_level: str = ""
+    severity: str = ""
     auto_confirm: Optional[bool] = None
 
 
@@ -95,8 +96,8 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
         params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # [43]11.6-T4 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
-        safety_level=spec.safety_level,
-        severity="attention", trust_path=_path, auto_confirm=_auto,
+        severity=spec.severity,
+        safety_level="attention", trust_path=_path, auto_confirm=_auto,
         confirm_timeout=_ct, backend_timeout=_bt))
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认: {spec.tool_name}")
     await publish(paused.to_dict())

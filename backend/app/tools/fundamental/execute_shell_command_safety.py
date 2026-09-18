@@ -17,6 +17,7 @@
 #   【病根】PS HIGH规则(原L37-38)要求字面Recurse/Force词, MEDIUM L67也需Force词, `rm -rf`字母flag在ps7下无规则命中(bash规则L57被shell_type过滤)
 #   【改法】PS HIGH新增两条字母flag规则: `-[rR][fF]`合并形态与`-[rR]\b.*?-[fF]\b`分离形态; desc含"递归"故临时目录降级逻辑同样生效; 与bash L57口径对齐
 #   【说明】文档方案第二条正则(?:Remove-Item|rm|ri|erase|del)\s+.*?\brm\s+-rf\b 需再次rm不成立(首rm已消费), 修正为`-[rR][fF]`合并flag形态
+# 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段+构造调用+比较全量重命名, 历史注释原文还原(勿改) — 小欧-2026-09-18
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -170,14 +171,14 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                         return SafetyResult(
                             blocked=True,
                             message=f"高风险Shell操作: {desc}(临时目录清理含..路径穿越,不予降危)",
-                            safety_level="dangerous",
+                            severity="dangerous",
                         )
                     medium_hits.append(desc)
                     continue
                 return SafetyResult(
                     blocked=True,
                     message=f"高风险Shell操作: {desc}",
-                    safety_level="dangerous",
+                    severity="dangerous",
                 )
             elif level == "MEDIUM" and desc not in medium_hits:
                 # Shell池进程保护: Stop-Process/taskkill命中受保护PID时BLOCKED — 小欧 2026-07-31
@@ -190,7 +191,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             return SafetyResult(
                                 blocked=True,
                                 message=f"安全拦截: 目标PID {blocked_pids} 为系统保护进程, 禁止杀死",
-                                safety_level="dangerous",
+                                severity="dangerous",
                             )
                     if "强制杀进程" in desc:
                         target_pids = _extract_taskkill_pids(normalized)
@@ -200,7 +201,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             return SafetyResult(
                                 blocked=True,
                                 message=f"安全拦截: 目标PID {blocked_pids} 为系统保护进程, 禁止杀死",
-                                safety_level="dangerous",
+                                severity="dangerous",
                             )
                     if "kill进程" in desc:
                         target_pids = _extract_bash_kill_pids(normalized)
@@ -210,7 +211,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             return SafetyResult(
                                 blocked=True,
                                 message=f"安全拦截: 目标PID {blocked_pids} 为系统保护进程, 禁止杀死",
-                                safety_level="dangerous",
+                                severity="dangerous",
                             )
                 medium_hits.append(desc)
     if medium_hits:
@@ -220,7 +221,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
             blocked=False,
             requires_confirmation=True,
             message=f"中风险Shell操作: {combined}",
-            safety_level="destructive",
+            severity="destructive",
         )
     return None
 

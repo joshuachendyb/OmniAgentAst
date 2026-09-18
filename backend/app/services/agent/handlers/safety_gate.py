@@ -34,6 +34,7 @@
 #   ②3.3 site③ run_sandbox_gate 传 trusted=_skip(会话信任豁免能力缺口直放, risky仍弹);
 #   ③3.4 同批合并: 循环外_confirm_cache按(tool, auth/trust_path)组键, 组内首call弹窗其余复用verdict(确认1次/拒绝整组),
 #      grant_temp_auth组内仅首call授齐, content追加"另有N-1个同类调用同批一并裁决" - 小欧-2026-09-18
+# 2026-09-18 小欧 - safety_level→severity: getattr读取字符串+ConfirmSpec字段同步重命名 — 小欧-2026-09-18
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -124,7 +125,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                                  else (f"是否允许执行工具: {_cn}"
                                        + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
                                           if _group_size > 1 else ""))),
-                        safety_level=getattr(safety_result, "safety_level", "")),
+                        severity=getattr(safety_result, "severity", "")),
                         _buf.publish)
                     _confirm_cache[_group_key] = _verdict
                 else:

@@ -46,6 +46,7 @@
 #   纯能力缺口(ruling_kind=="unsupported")直放不二次弹窗; risky(执行风险)受信仍走网关 — 小欧-2026-09-18
 # 2026-09-18 小欧 偏差2修正(北京老陈审): :87主路闸与trusted闸合并为单一判据
 #   `pre.needs_ruling and (main_confirmed or (trusted and ruling_kind=="unsupported"))`, 与文档3.3合并式对齐 — 小欧-2026-09-18
+# 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段重命名同步更新 — 小欧-2026-09-18
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -121,7 +122,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     spec = ConfirmSpec(
         mode="hitl", tool_name=tool_name, params=params,
         content=f"沙箱未能完成有效预检,需用户裁决是否直接执行: {tool_name}",
-        safety_level="destructive", auto_confirm=False)
+        severity="destructive", auto_confirm=False)
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"]:
         logger.info(f"[sandbox] 用户裁决: 确认执行: tool={tool_name}")
