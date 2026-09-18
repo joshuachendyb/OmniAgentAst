@@ -98,11 +98,23 @@ const norm = (s: string): string => s.replace(/\s+/g, '');
 // 编辑历史: 2026-09-14 小欧 - readRightText: 右栏正文唯一锚点(right-viewer-body)。
 //   多任务/切历史下整页 innerText 尾串含输入工具栏等 UI 文字, aTail/正文增长断言脆弱(误判A历史未载),
 //   业务正文同源锁定右栏容器；空/未载返回 '' 由调用方 poll 等待 - 小欧-2026-09-14
-const readRightText = (page: Page): Promise<string> =>
-  page.evaluate(() => {
+// 编辑历史: 2026-09-18 小欧 - 历史回放长文被 CollapsibleText 折叠(>5行/>200字取首2行),
+//   innerText 取不到被折叠正文致 aTail 断言误红(实时有chunk全文/历史DB只存final被折叠);
+//   读取前先展开 body 内所有折叠块(span[role=button][aria-expanded=false])再取全文, 与当前折叠设计对齐 - 小欧-2026-09-18
+const readRightText = async (page: Page): Promise<string> => {
+  await page.evaluate(() => {
+    document
+      .querySelectorAll(
+        '.right-viewer-body span[role="button"][aria-expanded="false"]'
+      )
+      .forEach((b) => (b as HTMLElement).click());
+  });
+  await page.waitForTimeout(30); // 等折叠展开重渲染
+  return page.evaluate(() => {
     const el = document.querySelector('.right-viewer-body');
     return el ? (el as HTMLElement).innerText : '';
   });
+};
 
 /** 等右侧正文增长: 返回 poll 期间是否 len>baseLen */
 const waitBodyGrowth = async (
