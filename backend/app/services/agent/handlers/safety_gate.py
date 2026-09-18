@@ -38,6 +38,10 @@
 # 2026-09-18 小欧 - 第7章实施([50]7.2.1/7.3.0): ConfirmSpec构造前按SafetyResult.message关键词分类safety_level(未注册→unregistered/系统禁区→forbidden_zone/
 #   受保护区域/超出允许范围→path_auth/高风险Shell/系统保护进程→command_block/中风险Shell→shellparam/删除需确认/禁止删除→tool_delete/数据保护→data_guard/
 #   安全检查异常→command_block/兜底tool_execute); content改载_message原样(去拼接问句), bypass改"安全开关已绕过，自动确认执行" - 小欧-2026-09-18
+# 2026-09-18 小欧 - 三思三省精确化(9类全量核查): keyword链尾部补 `elif not _msg` 按工具名二次归属 —
+#   无message确认类(needs_confirmation=True且无风险文案)原全落tool_execute兜底, 与§6.2.2归属不符:
+#   shell确认→shellparam(§6.2.3中风险弹窗即needs_confirmation驱动, 命令确认主场景)、create_task/writetext/edittext/writetool→tool_write、
+#   delete_task→tool_delete; execute_sql/registry_write/registry_delete保持tool_execute兜底(本就准确) — 小欧-2026-09-18
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -141,6 +145,16 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         _sl = "data_guard"
                     elif "安全检查异常" in _msg or "安全检查未通过" in _msg:
                         _sl = "command_block"
+                    elif not _msg:
+                        # 三思三省(2026-09-18 小欧): 无message确认类(keyword无内容)按工具名精确归属 —
+                        #   §6.2.2 归属: shell确认→shellparam(命令确认主场景, §6.2.3中风险弹窗即needs_confirmation驱动),
+                        #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute兜底 ✓
+                        if _cn == "shell":
+                            _sl = "shellparam"
+                        elif _cn in ("create_task", "writetext", "edittext", "writetool"):
+                            _sl = "tool_write"
+                        elif _cn == "delete_task":
+                            _sl = "tool_delete"
 
                     _content = (f"安全开关已绕过，自动确认执行: {_cn}" if _bypass
                                 else (_msg if _msg else f"是否允许执行工具: {_cn}")

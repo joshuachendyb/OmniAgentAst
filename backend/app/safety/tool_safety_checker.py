@@ -54,6 +54,10 @@
 #   C2"安全开关已绕过，自动确认执行"/C5"安全检查异常，已阻止执行"/C8"该路径在受保护区域，禁止删除"/C9"该路径在受保护区域，会话已信任，允许写入"/
 #   C10"该路径在受保护区域，写入需申请授权"/C11"该路径在系统禁区，禁止访问"/C12"该路径超出允许范围，会话已信任，允许操作"/
 #   C13"该路径超出允许范围，需临时授权"/C14"数据保护: 写入内容远小于原内容，已阻止"(去字节数,C14/C15半角逗号统一改全角) — 小欧-2026-09-18
+# 2026-09-18 小欧 - [50]7.3.2-C8~C13 精化(重查挖掘, 人类可读性): message 尾拼 {msg} 会带出 path_safe_check 整句
+#   ("该路径在受保护区域，禁止删除: 路径位于受保护区域(项目代码库): C:\..." 双主语+双冒号+括号技术元数据;
+#    白名单外拼"仅允许:list"超长), 改拼 failed_path(真实越权路径, 读/删边界, 前缀关键词不变故safety_gate分类不受影响),
+#   failed_path为空(如空路径)兜底 display msg 保原因; 用户可见 message 干净, 日志仍留 {msg} 完整审计 — 小欧-2026-09-18
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -240,39 +244,39 @@ class ToolSafetyChecker:
                 from app.tools.tools_alias_mapper import normalize_tool_name  # P2: 防别名漏判 — 小欧 2026-08-10
                 if normalize_tool_name(tool_name) == "delete":
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)禁止删除(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
-                    return SafetyResult(blocked=True, message=f"该路径在受保护区域，禁止删除: {msg}",
+                    return SafetyResult(blocked=True, message=f"该路径在受保护区域，禁止删除: {failed_path or msg}",
                                         severity="dangerous", auth_path=failed_path)
                 if skip_confirmation:
                     # 5.3(2026-09-02 小欧, 病根3.4/3.5): 会话信任豁免——受保护区域写入不弹确认,
                     #   但须保留 auth_path 交 action_handler 豁免收口 grant_temp_auth, 否则工具 validate_path 拦截执行失败
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(requires_confirmation=False, blocked=False,
-                                        message=f"该路径在受保护区域，会话已信任，允许写入: {msg}",
+                                        message=f"该路径在受保护区域，会话已信任，允许写入: {failed_path or msg}",
                                         severity="destructive",
                                         auth_path=failed_path, sandbox_required=True)
                 # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
                 log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入需任务级授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
                 return SafetyResult(requires_confirmation=True, blocked=False,
-                                    message=f"该路径在受保护区域，写入需申请授权: {msg}",
+                                    message=f"该路径在受保护区域，写入需申请授权: {failed_path or msg}",
                                     severity="destructive",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
             if category == "system":
                 # 系统禁区写/删 → 硬拦永不授权
                 log_and_print(f"[ToolSafetyChecker] 系统禁区拦截(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
-                return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {msg}",
+                return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {failed_path or msg}",
                                     severity="dangerous", auth_path=failed_path)
             # category == None: 白名单外非禁区 → 临时授权请求
             # 5.3(2026-09-02 小欧, 病根3.4/3.5): 白名单外写——会话信任豁免不弹确认但保留 auth_path(语义同③)
             if skip_confirmation:
                 log_and_print(f"[ToolSafetyChecker] 白名单外路径-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(requires_confirmation=False, blocked=False,
-                                    message=f"该路径超出允许范围，会话已信任，允许操作: {msg}",
+                                    message=f"该路径超出允许范围，会话已信任，允许操作: {failed_path or msg}",
                                     severity="destructive",
                                     auth_path=failed_path, sandbox_required=True)
             # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
             log_and_print(f"[ToolSafetyChecker] 白名单外路径需临时授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
             return SafetyResult(requires_confirmation=True, blocked=False,
-                                message=f"该路径超出允许范围，需临时授权: {msg}",
+                                message=f"该路径超出允许范围，需临时授权: {failed_path or msg}",
                                 severity="destructive",
                                 auth_path=failed_path or (params.get("path") or params.get("dest")))
 

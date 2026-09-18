@@ -20,6 +20,8 @@
 # 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段+构造调用+比较全量重命名, 历史注释原文还原(勿改) — 小欧-2026-09-18
 # 2026-09-18 - 小欧 - 第7章实施([50]7.3.4 C18-C23): 6处用户可见message改写(逻辑/分级不变)——C18"高风险Shell操作，含路径穿越，不允许降级"/
 #   C19"高风险Shell操作，已阻止执行"/C20-C22"系统保护进程，禁止终止: PID {pid}"/C23"中风险Shell操作，需确认后执行"（半角逗号统一全角） — 小欧-2026-09-18
+# 2026-09-18 小欧 - 7.3.4-C18精化(重查挖掘): "不允许降级"为安全内部术语(降危/临时目录豁免机制), 普通用户看不懂;
+#   改"路径含穿越符号，已阻止"(说明=命令危险+穿越符号导致不放行+已阻止), 分级blocked不变, 所注参数#20语义保持 — 小欧-2026-09-18
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -172,7 +174,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                     if '..' in normalized:
                         return SafetyResult(
                             blocked=True,
-                            message=f"高风险Shell操作: {desc}，含路径穿越，不允许降级",  # 7.3.4-C18: 括号句式→人话 — 小欧-2026-09-18
+                            message=f"高风险Shell操作: {desc}，路径含穿越符号，已阻止",  # 7.3.4-C18精化: "不允许降级"术语→"路径含穿越符号，已阻止" — 小欧-2026-09-18
                             severity="dangerous",
                         )
                     medium_hits.append(desc)

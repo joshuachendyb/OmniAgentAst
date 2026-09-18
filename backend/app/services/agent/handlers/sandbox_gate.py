@@ -50,6 +50,9 @@
 # 2026-09-18 小欧 - 第7章实施([50]7.2.2/7.2.4/7.3.0-A3/7.3.1-B4/B5): ①沙箱裁决ConfirmSpec content改"预检未完成：{blocked_reason or 无法完成有效预检}，
 #   是否允许直接执行？{tool_name}"(去"沙箱"术语+携带blocked_reason), 新增safety_level="path_auth"; ②危险拦截blocked_reason截断80→140;
 #   ③用户拒绝content "用户拒绝执行"→"用户拒绝执行工具"(与safety_gate B3措辞统一) - 小欧-2026-09-18
+# 2026-09-18 小欧 - 7.3.0-A3/7.3.1-B4 精化(重查挖掘): executor blocked_reason 经 _attach_stderr_tail 附 " | 英文stderr尾部"(喂LLM自纠),
+#   A3弹窗content与B4拒绝content均改 split(" | ",1)[0] 只秀中文人话原因(英文tail仍随denied_list完整喂LLM, 前后端可读/LLM纠错职责分离);
+#   A3 问句尾不再接 {tool_name}(工具名在弹窗头部自有展示, 原"…直接执行？writetext"句读生硬) — 小欧-2026-09-18
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -111,7 +114,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         denied_list.append((tool_name, pre.blocked_reason, call))
         return False, [agent._step_emitter.emit(MetaStep(
             step=step, type="rejected",
-            content=pre.blocked_reason[:140],  # 7.3.1-B4: 截断80→140(长路径不再被截断) — 小欧-2026-09-18
+            content=pre.blocked_reason.split(" | ", 1)[0][:140],  # 7.3.1-B4精化: 截断80→140且去stderr尾部(_attach_stderr_tail的" | 英文tail"仅随denied_list供LLM自纠, content只展示人话原因) — 小欧-2026-09-18
             reject_type="sandbox",
             tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
@@ -124,7 +127,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         raise RuntimeError(f"[sandbox] StreamBuffer缺失(task={agent.task_id})")
     spec = ConfirmSpec(
         mode="hitl", tool_name=tool_name, params=params,
-        content=f"预检未完成：{pre.blocked_reason or '无法完成有效预检'}，是否允许直接执行？{tool_name}",  # 7.3.0-A3: 去"沙箱"术语+携带blocked_reason — 小欧-2026-09-18
+        content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",  # 7.3.0-A3精化: 去stderr英文尾部(stderr仅随denied_list喂LLM)+问句尾不再接工具名(工具名在弹窗头部) — 小欧-2026-09-18
         severity="destructive", safety_level="path_auth", auto_confirm=False)  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"]:

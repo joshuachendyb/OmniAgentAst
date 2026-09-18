@@ -35,6 +35,8 @@
 //   辅助label(工具名称:/执行参数:)回灰type=secondary可灰(陈总许), 帮助图标?#8c8c8c删除; ③完全删除Tooltip控件及QuestionCircleOutlined
 //   (信任行仅保留Checkbox+原生title, 防叠加DOM层); ④图标与标题Tag合并单行flex(降嵌套层/紧凑), CountdownRing去confirmTimeout prop;
 //   ⑤content卡padding6→5/marginBottom8→6、trust行8→6紧凑化 — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 三思三省9类核查配套: SAFETY_LEVEL_CONFIG tool_write 由预留注释转激活条目
+//   (geekblue+EditOutlined+标签"写确认"), 与后端 safety_gate 工具名归属(create_task→tool_write)联动 — 小欧-2026-09-18
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -61,6 +63,7 @@ import {
   StopOutlined,
   ThunderboltOutlined,
   FolderOutlined, // 7.4.3: trust_path 操作范围图标 — 小欧-2026-09-18
+  EditOutlined, // 2026-09-18: tool_write 写确认图标 — 小欧-2026-09-18
 } from '@ant-design/icons';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
@@ -103,7 +106,8 @@ const SAFETY_LEVEL_CONFIG: Record<
     label: '命令确认',
     icon: <ExclamationCircleOutlined />,
   },
-  // tool_write 预留(writetext/edittext 无确认 flag; create_task 走 CONFIRM_TOOLS 会触发, 见§6.2.2) — 小欧-2026-09-18
+  // 2026-09-18 小欧 三思三省: tool_write 由预留转激活(create_task CONFIRM_TOOLS 确认现归 tool_write, 后端已补) — 小欧-2026-09-18
+  tool_write: { color: 'geekblue', label: '写确认', icon: <EditOutlined /> },
   tool_delete: { color: 'red', label: '删除确认', icon: <StopOutlined /> },
   tool_execute: {
     color: 'volcano',
