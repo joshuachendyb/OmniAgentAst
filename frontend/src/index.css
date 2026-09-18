@@ -10,6 +10,7 @@
 /* 编辑历史: 2026-09-13 小欧 - action等待图标(北京老陈令选G波纹扩散): 新增@keyframes action-ripple与.action-ripple-1/.action-ripple-2(1.8s交替scale0.5→1.4+opacity1→0), .action-waiting-cursor去waiting-spin改静态容器(图标SVG在WaitingIcons/ToolWaitingIcon之下) — 小欧-2026-09-13 */
 /* 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①新建.logo-gridwave-icon(3x3九色点阵, 新增@keyframes gridwave斜向波浪2s波动, 尺寸36px, 复用原html 70号图标); ②新建.brand-title-text(右侧顶栏动画圈圈后品牌名, 16px/600/#1677ff与左侧一致) — 小欧-2026-09-15 */
 /* 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 文件末尾新增心跳等待感知微型钟面样式——@keyframes clock-beat + .clock-stopwatch(inline-flex并存) + .clock-stopwatch-note(12px) + .clock-beat-wave(外圈单次光波) - 小欧-2026-09-17 */
+/* 编辑历史: 2026-09-18 小欧 - 居中修复(北京老陈驱动): .waiting-cursor/.action-waiting-cursor 1.4em 盒子 baseline 对齐致等待圈上浮如上标，改 vertical-align:middle 与文字中线对齐(尺寸/动画/颜色不动) — 小欧-2026-09-18 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -107,7 +108,8 @@
    让出的位置被内容覆盖接管，禁止常驻） */
 .waiting-cursor {
   display: inline-block;
-  vertical-align: baseline;
+  /* 2026-09-18 小欧 - 居中修复: 1.4em 盒子 baseline 对齐致图标上浮如上标，改 middle 与文字中线对齐(尺寸/动画不动) — 小欧-2026-09-18 */
+  vertical-align: middle;
   animation: waiting-spin 1s linear infinite;
 }
 .waiting-cursor svg {
@@ -193,7 +195,8 @@
 }
 .action-waiting-cursor {
   display: inline-block;
-  vertical-align: baseline;
+  /* 2026-09-18 小欧 - 居中修复(北京老陈驱动): 蓝色波纹光标跟文字后呈上标状，根因 1.4em 盒子 baseline 对齐，改 middle 与文字中线对齐(尺寸/波纹动画不动) — 小欧-2026-09-18 */
+  vertical-align: middle;
 }
 .action-waiting-cursor svg {
   display: block;
