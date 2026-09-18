@@ -42,6 +42,10 @@
 #   事件亦未带 tool_name(计数回退主工具名, 同键跨拦截累计漂移); [修复] blocked 事件补 tool_name=tool_name — 小欧-2026-09-06
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行98 type="error"→"rejected", 新增 reject_type="sandbox"; ②行123 type="user_rejected"→"rejected", 新增 reject_type="user" - 小欧-2026-09-17
 # 2026-09-17 小欧 会审V3(#11): rejected content/denied_list 去"沙箱安全检查未通过:"前缀(重复冗长+双源不同长), 同源同文 - 小欧-2026-09-17
+# 2026-09-18 小欧 TDD过宽收敛(3.3): sandbox_resolve/run_sandbox_gate 新增 trusted 形参——受信(会话已信任)且
+#   纯能力缺口(ruling_kind=="unsupported")直放不二次弹窗; risky(执行风险)受信仍走网关 — 小欧-2026-09-18
+# 2026-09-18 小欧 偏差2修正(北京老陈审): :87主路闸与trusted闸合并为单一判据
+#   `pre.needs_ruling and (main_confirmed or (trusted and ruling_kind=="unsupported"))`, 与文档3.3合并式对齐 — 小欧-2026-09-18
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -72,10 +76,10 @@ async def sandbox_precheck(safety_result, tool_name, params):
 
 
 async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_result, denied_list,
-                          main_confirmed=False):
+                          main_confirmed=False, trusted=False):
     """预检结果处置(DRY: 三处插入点共用)。返回(放行bool, 待下发steps列表)
     危险型失败→denied登记+error步骤; 未完成有效验证(超时/环境性)→复用HITL原语请用户裁决;
-    杜绝LLM原样重发死循环"""
+    杜绝LLM原样重发死循环。trusted(3.3): 受信且纯能力缺口直放不弹 — 小欧-2026-09-18"""
     # 延迟导入(修复循环import回归, 见模块顶部注释)
     from app.services.agent.steps import MetaStep
     # 3A: 等待/暂停/恢复组装、计时、SUSPENDED/EXECUTING 全部收 hitl_gateway,
@@ -83,9 +87,12 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     if pre.passed:
         logger.info(f"[sandbox] 放行执行: tool={tool_name}")
         return True, []
-    # 单paused(4.4双paused策略): 主路已confirmed时信任主路裁决, 直接放行不再二次弹窗 — 小健 2026-09-05
-    if main_confirmed and pre.needs_ruling:
-        logger.info(f"[sandbox] 主路已确认, 跳过二次裁决直接放行: tool={tool_name}")
+    # 单paused(4.4双paused策略) + 3.3信任豁免合并判据: 主路已确认(main_confirmed) /
+    #   受信且纯能力缺口(trusted and ruling_kind=="unsupported") → 跳过二次裁决直放;
+    #   需带 needs_ruling 语境(危险型 blocked passed=False&needs_ruling=False 绝不触碰);
+    #   risky(执行风险)受信仍走网关 — 小健 2026-09-05 / 小欧-2026-09-18
+    if pre.needs_ruling and (main_confirmed or (trusted and pre.ruling_kind == "unsupported")):
+        logger.info(f"[sandbox] 跳过二次裁决直接放行: tool={tool_name}, reason={pre.blocked_reason[:200]}")
         return True, []
     if pre.needs_ruling and safety_result.auto_confirm:
         # bypass免打扰语义(v1.13 V2): security.enabled=false即用户要求全自动,
@@ -134,15 +141,16 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
 # ════════════════════════════════════════════════════════════
 
 async def run_sandbox_gate(agent, step, call, tool_name, params,
-                           safety_result, denied, main_confirmed=False) -> tuple:
+                           safety_result, denied, main_confirmed=False, trusted=False) -> tuple:
     """统一沙箱闸门: 预检+resolve, 返回 (ok, steps)
     消除 check_safety_and_confirm 中 ①auto_confirm ②用户确认 ③循环体兜底 三处重复调用。
     DRY: 三处20行重复代码→一处调用。 — 小健 2026-09-04
     3A: main_confirmed 透传(单paused, 4.4) — 小欧 2026-09-06
+    3.3: trusted 透传(会话信任豁免, 能力缺口直放) — 小欧 2026-09-18
     """
     pre = await sandbox_precheck(safety_result, tool_name, params)
     if pre is None:
         return True, []
     ok, steps = await sandbox_resolve(agent, step, call, tool_name, params,
-                                       pre, safety_result, denied, main_confirmed)
+                                       pre, safety_result, denied, main_confirmed, trusted)
     return ok, steps

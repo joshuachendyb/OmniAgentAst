@@ -13,6 +13,9 @@
 # 2026-08-29 - 小沈 - 修复#18: shell/file_op 预检的同步 backend.run(subprocess 最长300s)经 asyncio.to_thread 离载到子线程, 释放事件循环不被冻结; 返回结构 BackendResult 不变
 # 2026-09-17 小欧 会审V3(#10): 规则5/7 blocked_reason 落实 v1.22 W4 承诺——附带 stderr 尾部供 LLM 自纠(空则不加后缀, 截200字符) - 小欧-2026-09-17
 # 2026-09-17 小欧 - 优化reject原因文字可读性: ①类方法中5处reject原因简化(去技术术语/截断过长内容); ②shell预检中5处reject原因简化; ③file_op预检中6处reject原因简化 - 小欧-2026-09-17
+# 2026-09-18 小欧 TDD过宽收敛(3.2.1/3.3): ①_READONLY_PREFIXES常量新增五项(echo/pwd/dir/whoami/hostname);
+#   @_is_readonly_whitelisted的startswith内联字面量改引用_READONLY_PREFIXES消除双源; ③PreCheckResult新增ruling_kind(默认risky);
+#   ④unsupported分支置ruling_kind="unsupported"(供沙箱trusted直放判据, 区分能力缺口与执行风险) - 小欧-2026-09-18
 import asyncio
 import os
 import re
@@ -38,12 +41,14 @@ class PreCheckResult:
     needs_ruling: bool = False   # 未完成有效验证(超时/环境性失败: 工作区缺上下文找不到文件/目标被占用等)——
                                  # 转 HITL 用户裁决而非危险型 blocked 反馈, 不作为危险拒绝;
                                  # 即 v1.7 的 timed_out 字段更名扩展(v1.10 名实相符)
+    ruling_kind: str = "risky"   # 3.3  裁决类型: risky=执行风险(受信也仍弹) / unsupported=能力缺口(受信直放) — 小欧-2026-09-18
     impacts: List[FileImpact] = field(default_factory=list)   # 影响文件清单(喂给LLM辅助判断) — 可变默认必须用field工厂(v1.12 F7)
     stdout_tail: str = ""        # 输出尾部(截断4096字符)
     stderr_tail: str = ""        # 错误尾部(截断4096字符; v1.22 W4: 4.2 条件1/2"stderr 原文喂 LLM"的承载字段)
 
 # —— 第四章判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
-_READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status")      # 4.1#4 只读白名单前缀
+_READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
+                      "echo", "pwd", "dir", "whoami", "hostname")     # 4.1#4 只读白名单前缀(3.2.1 过宽收敛新增五项) — 小欧-2026-09-18
 _FAST_CHANNEL_FORBIDDEN = ("|", ";", "&", ">", ">>")                  # 单命令收紧(v1.10 FP1 管道/分号/调用符 + v1.17 N5 重定向)
 _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
                         "being used by another process", "找不到路径")  # 4.2 规则6 环境性失败识别(FP2)
@@ -135,7 +140,7 @@ def _scan_command_write_intent(command: str) -> bool:
 def _is_readonly_whitelisted(command: str) -> bool:
     """4.1#4 只读白名单快速通道判定(必须在 _scan_command_write_intent 之后调用, 定序防重定向逃逸绕过扫描)"""
     lowered = command.strip().lower()
-    if not lowered.startswith(("get-", "ls", "cat", "type", "git status")):
+    if not lowered.startswith(_READONLY_PREFIXES):                     # 3.2.1 与常量单源(消除双源双维护) — 小欧-2026-09-18
         return False
     return not any(op in command for op in _FAST_CHANNEL_FORBIDDEN)
 
@@ -293,6 +298,7 @@ class SandboxExecutor:
             # 重演副本, rc=0 产生虚假 passed=True 放行(预检形同虚设); 一律转用户裁决
             logger.warning(f"[sandbox][exec] 未支持操作类型转HITL: op={normalized}")
             return PreCheckResult(passed=False, needs_ruling=True,
+                                  ruling_kind="unsupported",           # 3.3 ①②: 能力缺口标记, 供沙箱受信直放判据 — 小欧-2026-09-18
                                   blocked_reason=f"沙箱预检器暂不支持此操作类型: {normalized}")
         # 参数别名归一(与真实工具分发一致: tools_alias_mapper.PARAM_ALIASES 将 src/file/target/source
         # 等映射到 path/dest)。不归一则读不到源路径, 会以 Path("") 退化为复制当前工作目录, 预检形同虚设(BUG-A)

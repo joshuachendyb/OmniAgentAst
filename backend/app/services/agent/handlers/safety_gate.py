@@ -29,6 +29,11 @@
 #   事件亦未带被拒工具名 tool_name, react_dispatch 计数同样回退主工具名;_deny_counts 同键跨拦截/超时累计漂移;
 #   [修复] blocked/timeout 事件均补 tool_name=_cn(拒绝语义自包含, react_dispatch 事件级优先取数) — 小欧-2026-09-06
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行82 type="error"→"rejected", 新增 reject_type="safety"; ②行125 type="error"→"rejected", 新增 reject_type="timeout"; ③行137 type="user_rejected"→"rejected", 新增 reject_type="user" - 小欧-2026-09-17
+# 2026-09-18 小欧 TDD过宽收敛(第3章3.2/3.2.1/3.3/3.4):
+#   ①3.2/3.2.1 只读短路: requires_confirmation 前判 shell 只读白名单(含新增五项), 命中不进网关落site③沙箱只读直通;
+#   ②3.3 site③ run_sandbox_gate 传 trusted=_skip(会话信任豁免能力缺口直放, risky仍弹);
+#   ③3.4 同批合并: 循环外_confirm_cache按(tool, auth/trust_path)组键, 组内首call弹窗其余复用verdict(确认1次/拒绝整组),
+#      grant_temp_auth组内仅首call授齐, content追加"另有N-1个同类调用同批一并裁决" - 小欧-2026-09-18
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -60,10 +65,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         """
         from app.safety.tool_safety_checker import get_tool_safety_checker
         from app.tools.trust import resolve_skip
+        from app.tools.trust import extract_trust_path        # 3.4 同组路径归一(trust.py:69主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
+        from app.safety.sandbox.executor import _is_readonly_whitelisted, _is_shell_tool  # 3.2 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18
         safety_checker = get_tool_safety_checker()
 
         _denied = []
         _events = []
+        _confirm_cache = {}      # 3.4 同批合并: 组键(tool, auth_path或trust_path)→首call裁决, 组内其余复用 — 小欧-2026-09-18
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
@@ -86,7 +94,12 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 #12 fix
 
-            if safety_result.requires_confirmation:
+            # 3.2/3.2.1 只读短路: shell 只读白名单(含新增五项)的 requires_confirmation 不进网关,
+            #   恒与真机放行并行(仍落 site③ 走沙箱只读直通), 仅收敛"只读也弹窗"的过宽 — 小欧-2026-09-18
+            _readonly = (safety_result.requires_confirmation
+                         and _is_shell_tool(_cn)
+                         and _is_readonly_whitelisted(str(_cp.get("command") or "")))
+            if safety_result.requires_confirmation and not _readonly:
                 # 3A: 等待源头全收 hitl_gateway——create/wait/S1窗口/三处独立计时/trust_path/引用信组装 全部删,
                 #   paused/resumed 由网关 publish(事件唯一入口); 3B: 本函数纯函数化收list — 小欧 2026-09-06
                 from app.services.agent.handlers.hitl_gateway import ConfirmSpec, hitl_confirm  # 同层调用(hitl→task单向, 无环) — 小欧 2026-09-06
@@ -94,17 +107,31 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 _buf = get_stream_buffer(agent.task_id)
                 if _buf is None:  # buffer仅编排层建(stream_orchestrator.py:273); 直调无缓冲即显式失败, 不静默 — 小健 2026-09-05
                     raise RuntimeError(f"[safety] StreamBuffer缺失(task={agent.task_id})")
+                # 3.4 同批合并: 组键(tool, auth_path或trust_path)归一; 组内首call弹窗, 其余复用裁决(拒绝整组/确认同放) — 小欧-2026-09-18
+                _group_ref = getattr(safety_result, "auth_path", None) or extract_trust_path(_cn, _cp)
+                _group_key = (_cn, _group_ref)
+                _group_lead = _group_key not in _confirm_cache
                 _bypass = bool(getattr(safety_result, "auto_confirm", False))
-                # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
-                _verdict = await hitl_confirm(agent, ConfirmSpec(
-                    mode="bypass" if _bypass else "hitl", tool_name=_cn, params=_cp,
-                    content=(f"安全策略自动确认工具执行: {_cn}" if _bypass
-                             else f"是否允许执行工具: {_cn}"),
-                    safety_level=getattr(safety_result, "safety_level", "")),
-                    _buf.publish)
+                if _group_lead:
+                    _group_size = sum(
+                        1 for c in all_calls
+                        if c.get("tool_name") == _cn
+                        and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
+                    # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
+                    _verdict = await hitl_confirm(agent, ConfirmSpec(
+                        mode="bypass" if _bypass else "hitl", tool_name=_cn, params=_cp,
+                        content=(f"安全策略自动确认工具执行: {_cn}" if _bypass
+                                 else (f"是否允许执行工具: {_cn}"
+                                       + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
+                                          if _group_size > 1 else ""))),
+                        safety_level=getattr(safety_result, "safety_level", "")),
+                        _buf.publish)
+                    _confirm_cache[_group_key] = _verdict
+                else:
+                    _verdict = _confirm_cache[_group_key]   # 组内复用首call裁决, 不发第二次弹窗 — 小欧-2026-09-18
                 if _bypass:
                     _bypass_confirmed = _verdict["confirmed"] or _verdict["expired"]  # S1超时bypass兜底放行(原119-120语义) — 小欧 2026-09-06
-                    if getattr(safety_result, "auth_path", None):                    # 原126语义: 仅凭auth_path, 不设trust_session门 — 小欧 2026-09-06
+                    if _group_lead and getattr(safety_result, "auth_path", None):    # 原126语义: 仅凭auth_path, 不设trust_session门; 3.4组内仅首call授齐 — 小欧-2026-09-06/2026-09-18
                         try:
                             grant_temp_auth(safety_result.auth_path, recursive=True)
                         except Exception as e:
@@ -141,8 +168,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         _denied.append((_cn, "被用户拒绝执行", call))
                     continue  # was: return  — 小欧 2026-07-18 #12 fix
 
-                # 用户已确认: 仅凭auth_path授权(不设trust_session门), grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06
-                if getattr(safety_result, "auth_path", None):
+                # 用户已确认: 仅凭auth_path授权(不设trust_session门), 3.4组内去重仅首call授齐, grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06/2026-09-18
+                if _group_lead and getattr(safety_result, "auth_path", None):
                     try:
                         grant_temp_auth(safety_result.auth_path, recursive=True)
                         # 2026-09-06 小欧 3B: 保留授权留痕日志(决策日志SRP, 语义沿用2026-08-28审计)
@@ -167,7 +194,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 logger.warning(f"[action] 豁免直通grant_temp_auth失败不阻断: {e!r}")
 
             # v1.25 M3 插入点③: 循环体末尾兜底(仅 safe 直通/会话信任豁免触达) — 2026-09-04 小健 DRY: 统一入口
-            _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied)
+            # 3.3: 传 trusted=_skip——会话信任豁免落此, 能力缺口(ruling_kind=unsupported)直放不二次弹窗 — 小欧-2026-09-18
+            _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied,
+                                                 trusted=_skip)
             _events.extend(_steps)  # 3B: 兜底汇合事件併入返回列表(透传plumbing删除) — 小欧 2026-09-06
             if not _ok:
                 continue
