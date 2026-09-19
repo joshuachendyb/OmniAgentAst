@@ -69,6 +69,11 @@
 #   HIGH拦截, 无风险直接放行, 现在恢复 — 北京老陈驱动(空content弹窗=逻辑错误)
 # 2026-09-19 小欧 - HIGH级shell blocked修复: check_before_execute 返回时读 tool_meta._shell_risk_blocked 设置 blocked,
 #   HIGH级不再 blocked=False 走弹窗, 改为 blocked=True 走拦截(reject消息用 message); MEDIUM/无风险 blocked=False 不变 — 北京老陈驱动
+# 2026-09-19 小欧 - Bug-2修复(北京老陈核查): 经tool_meta动态属性传递shell风险是隐藏副作用, 且 _shell_risk_blocked=True
+#   置位后永不重置, registry单例共享导致首个HIGH拦截后同进程任意后续无风险shell在:244读残留blocked=True被误拦;
+#   改 _get_needs_confirmation 返回三元组(needs_confirm, shell_msg, shell_blocked)直线传递, 三处调用点解包直接构造SafetyResult,
+#   彻底删除 tool_meta._shell_risk_* setattr/getattr; 同步修复skip_confirmation分支丢弃blocked(会话信任下HIGH shell被放行,
+#   违反"豁免只跳确认不跳危险防护") — 小欧-2026-09-19
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -192,10 +197,8 @@ class ToolSafetyChecker:
 
         # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
-                _needs = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
-                _shell_blocked = getattr(tool_meta, "_shell_risk_blocked", False) if tool_meta else False
+                _needs, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
                 if _shell_blocked:
-                    _shell_msg = getattr(tool_meta, "_shell_risk_desc", None) if tool_meta else None
                     log_and_print(f"[ToolSafetyChecker] bypass下HIGH级Shell拦截: tool={tool_name}, {_shell_msg}")
                     return SafetyResult(blocked=True, message=_shell_msg or "高风险Shell命令拦截",
                                         severity="dangerous")
@@ -232,54 +235,54 @@ class ToolSafetyChecker:
         #   本层不再 import app.services.chat.storage(消除 safety→services 反向依赖违规, test_layer_boundaries 护栏)
         if skip_confirmation:
             # v1.6 会审F1修复: 信任豁免只跳确认不跳沙箱; sandbox_required 按真实危险度(needs_confirmation)置位, 非恒True
-            _needs = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
+            _needs, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
+            # Bug-2: HIGH级shell(blocked) 不受会话信任豁免仍拦截("豁免只跳确认不跳危险防护"), 改前丢弃_blocked致HIGH shell被放行 — 小欧-2026-09-19
+            if _shell_blocked:
+                log_and_print(f"[ToolSafetyChecker] 会话信任下HIGH级Shell仍拦截: tool={tool_name}, {_shell_msg}")
+                return SafetyResult(blocked=True, message=_shell_msg or "高风险Shell命令拦截",
+                                    severity="dangerous")
             logger.info(f"[ToolSafetyChecker] 会话信任豁免确认(跳HITL): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="会话已信任该工具",
                     severity="safe", sandbox_required=_needs)   # v1.25 M2-B: destructive级仍进沙箱, safe级不触发(G1)
 
-        needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
+        needs_confirm, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         severity = "destructive" if needs_confirm else "safe"
-        _shell_msg = getattr(tool_meta, "_shell_risk_desc", None) if tool_meta else None
-        _shell_blocked = getattr(tool_meta, "_shell_risk_blocked", False) if tool_meta else False
         # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
         # 2026-09-19 小欧: HIGH级shell _shell_blocked=True → blocked=True 走拦截(reject消息用message), 不弹窗
+        # Bug-2: shell风险经三元组直线传递(不经tool_meta), 无风险shell不再读残留blocked误拦 — 小欧-2026-09-19
         return SafetyResult(requires_confirmation=needs_confirm,
                 blocked=_shell_blocked, message=_shell_msg or "", severity=severity,
                 sandbox_required=(severity == "destructive"))
 
     @staticmethod
-    def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> bool:
-        """获取生效的确认策略：delete动态判定 > action级 > 工具级 — 小欧 2026-08-04"""
+    def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> tuple:
+        """获取生效的确认策略：delete动态判定 > action级 > 工具级 — 小欧 2026-08-04
+        Bug-2(2026-09-19 小欧): 返回三元组 (needs_confirm, shell_msg, shell_blocked),
+        shell 风险本函数内计算直线返回, 不再经 tool_meta 动态属性传递(全局单例残留误拦)"""
         from app.tools.tools_alias_mapper import normalize_tool_name  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
                 and _is_readonly_sql((params or {}).get("sql", "")):
-            return False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
+            return False, "", False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
         if normalize_tool_name(tool_meta.name or "") in ("shell", "execute_command"):
             from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
             _risk = check_shell_command_risk((params or {}).get("command", ""))
             if _risk:
                 if _risk.blocked:
-                    if tool_meta:
-                        tool_meta._shell_risk_desc = _risk.message
-                        tool_meta._shell_risk_blocked = True
-                    return True   # HIGH: 直接 return，不弹窗
+                    return True, (_risk.message or "高风险Shell命令拦截"), True   # HIGH: 拦截, 不弹窗
                 if _risk.message:
-                    if tool_meta:
-                        tool_meta._shell_risk_desc = _risk.message  # MEDIUM: desc 进弹窗 content
-                elif tool_meta:
-                    tool_meta._shell_risk_desc = None
+                    return True, _risk.message, False  # MEDIUM: desc 进弹窗 content
+                return tool_meta.needs_confirmation, "", False
             else:
                 # 2026-09-19 小欧 修复: 无风险shell不弹HITL(原本设计: 只有MEDIUM才弹窗, HIGH拦截, 无风险直接放行)
                 #   _risk=None时不再穿透到return tool_meta.needs_confirmation, 否则无风险shell弹空content窗
-                return False
+                return False, "", False
         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
-            return delete_risk.requires_confirmation      # R3→_PASS→False(免确认); R4/R5→True
+            return delete_risk.requires_confirmation, "", False      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):
             return tool_meta.action_confirmation.get(
-                params["action"], tool_meta.needs_confirmation
-            )
-        return tool_meta.needs_confirmation
+                params["action"], tool_meta.needs_confirmation), "", False
+        return tool_meta.needs_confirmation, "", False
 
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict, delete_risk: Optional["SafetyResult"] = None,
