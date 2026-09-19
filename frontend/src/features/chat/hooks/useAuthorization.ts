@@ -11,6 +11,7 @@
 // 编辑历史: 2026-09-03 小欧 - 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧-2026-09-03
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: 确认成功(confirmed=true)暂存 recentConfirmedTool(state)+recentTimerRef(2s自动清除, 卸载清timer), 返回扩展 recentConfirmedTool —— 小欧-2026-09-06
 // 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.3): 组装 AuthorizationRequest 新增 content 字段(弹窗原因, 后端 ConfirmSpec.content 透传) — 小欧-2026-09-18
+// 编辑历史: 2026-09-19 小欧 - confirm_id已失效静默处理: 后端超时清理/重复confirm返回"not found/already processed"时仅log不弹toast(良性竞态) — 北京老陈驱动
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
@@ -153,6 +154,11 @@ export function useAuthorization(sessionId: string | null) {
           const ok = (res as { success?: boolean })?.success !== false;
           if (!ok) {
             const err = (res as { error?: string })?.error ?? '确认失败';
+            // 2026-09-19 小欧: confirm_id不存在或已处理(后端超时清理/重复confirm)属良性竞态, 仅log不弹toast — 北京老陈驱动
+            if (err.includes('not found') || err.includes('already processed') || err.includes('不存在') || err.includes('已处理')) {
+              console.warn('[Authorization] confirm_id已失效(良性):', confirmId);
+              return;
+            }
             console.warn('[Authorization] 确认返回错误:', res);
             handleError({
               message: `授权确认失败: ${err}`,
