@@ -64,6 +64,11 @@
 #   保守回弹窗(宁弹不错); 免确认后 severity 走 safe, 沙箱零开销直通 — 小欧-2026-09-18
 # 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): bypass需确认分支 message 由"安全开关已绕过，自动确认执行"改空串,
 #   content由safety_gate承载真实_message组装(不许bypass改写已设内容); auto_confirm=True仍为bypass唯一识别, 语义零变化 — 小欧-2026-09-18
+# 2026-09-19 小欧 - 无风险shell不弹HITL修复: _get_needs_confirmation 中 check_shell_command_risk 返回 None 时
+#   加 return False, 不再穿透到 return tool_meta.needs_confirmation(所有shell注册=True); 原本设计: 只有MEDIUM弹窗,
+#   HIGH拦截, 无风险直接放行, 现在恢复 — 北京老陈驱动(空content弹窗=逻辑错误)
+# 2026-09-19 小欧 - HIGH级shell blocked修复: check_before_execute 返回时读 tool_meta._shell_risk_blocked 设置 blocked,
+#   HIGH级不再 blocked=False 走弹窗, 改为 blocked=True 走拦截(reject消息用 message); MEDIUM/无风险 blocked=False 不变 — 北京老陈驱动
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -236,9 +241,11 @@ class ToolSafetyChecker:
         needs_confirm = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         severity = "destructive" if needs_confirm else "safe"
         _shell_msg = getattr(tool_meta, "_shell_risk_desc", None) if tool_meta else None
+        _shell_blocked = getattr(tool_meta, "_shell_risk_blocked", False) if tool_meta else False
         # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
+        # 2026-09-19 小欧: HIGH级shell _shell_blocked=True → blocked=True 走拦截(reject消息用message), 不弹窗
         return SafetyResult(requires_confirmation=needs_confirm,
-                blocked=False, message=_shell_msg or "", severity=severity,
+                blocked=_shell_blocked, message=_shell_msg or "", severity=severity,
                 sandbox_required=(severity == "destructive"))
 
     @staticmethod
@@ -262,6 +269,10 @@ class ToolSafetyChecker:
                         tool_meta._shell_risk_desc = _risk.message  # MEDIUM: desc 进弹窗 content
                 elif tool_meta:
                     tool_meta._shell_risk_desc = None
+            else:
+                # 2026-09-19 小欧 修复: 无风险shell不弹HITL(原本设计: 只有MEDIUM才弹窗, HIGH拦截, 无风险直接放行)
+                #   _risk=None时不再穿透到return tool_meta.needs_confirmation, 否则无风险shell弹空content窗
+                return False
         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
             return delete_risk.requires_confirmation      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):

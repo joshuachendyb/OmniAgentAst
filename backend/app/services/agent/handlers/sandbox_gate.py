@@ -58,6 +58,8 @@
 #   信任清除记忆, 主路刚确认(main_confirmed)不受历史约束 — 小欧-2026-09-18
 # 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT, 与hitl_gateway同批): ConfirmSpec删mode="hitl",
 #   改显式传auto_confirm=False(默认即False, 显式表意自明: 沙箱裁决恒真HITL人工) — 小欧-2026-09-18
+# 2026-09-19 小欧 - Bug2+5修复: sandbox HITL auto_confirm从safety_result读取(不硬编码False),
+#   bypass超时→放行(与safety_gate层语义一致: 到期=放行); verdict.get("expired")防御缺失键 — 北京老陈驱动(三堂会审Bug2+5)
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。

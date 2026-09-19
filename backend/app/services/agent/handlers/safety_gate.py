@@ -53,6 +53,8 @@
 #   bypass识别改用(已提前上移的)_bypass布尔直传 auto_confirm=_bypass(与hitl_gateway去mode同批), content不再被bypass改写 — 小欧-2026-09-18
 # 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT, 与hitl_gateway同批): ConfirmSpec删mode="bypass" if _bypass else "hitl",
 #   改auto_confirm=_bypass布尔单源(唯一真相源), 避免"布尔→字符串→布尔"无意义往返 — 小欧-2026-09-18
+# 2026-09-19 小欧 - bypass恢复_bypass_confirmed透传: 改动4误删run_sandbox_gate的_bypass_confirmed参数(main_confirmed),
+#   恢复透传, 避免bypass下sandbox走110s+超时拒绝; sandbox_gate同步修复auto_confirm读safety_result — 北京老陈驱动(三堂会审Bug1)
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
