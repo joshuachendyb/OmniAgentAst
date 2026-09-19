@@ -1,4 +1,88 @@
-﻿v1.0.0
+﻿v1.0.1
+更新时间: 2026-09-19 10:53:26 - 小欧-2026-09-19
+## v1.0.0以来 变更汇总(66个commit: feat11/fix16/refactor4/docs33/test1/revert1) - 小欧-2026-09-19
+[2026-09-19 10:53:26 小欧] 范围=v1.0.0以来全部commit(共66个); 主线: [48]LLM文案+[49]滚动+[50]HITL弹窗content/safety_level+去mode/bypass定案+[52][53]shell池半死+M1-M9+五bug+AuthorizationModal六项优化+truncateDir修正
+
+### feat(11个):
+- 623787d91 feat:executor/safety_gate/sandbox_gate TDD过宽收敛(第3章3.2~3.5落码) - 小欧-2026-09-18
+- f805d84f9 feat:time.ts+TaskInfoBar.tsx taskinfo小改动(累计标签改任务/耗时时分秒/formatDurationHMS) - 小欧-2026-09-18
+- 454c488a0 feat:AuthorizationModal加content原因展示区+trust_path操作范围+SAFETY_LEVEL_CONFIG改为8类弹窗4档 - 小欧-2026-09-18
+- 68716fb6c feat:后端第7章实施(33条content文案人话化+ConfirmSpec新增safety_level八类分类) - 小欧-2026-09-18
+- 3467b1ab7 feat:前端第7章实施(content字段全链透传SSE契约) - 小欧-2026-09-18
+- 7cdfc3c2b feat:AuthorizationModal 恢复圆圈倒计时+信任勾选框搬至信任范围行+content原因区加等级图标 - 小欧-2026-09-19
+- d0cd6ef1e feat:心跳事件记录到前端事件列表 - 小欧-2026-09-19
+- 8182bb993 feat:AuthorizationModal UI六项优化(路径截断/参数截断/信任提示常驻/bypass秒数) - 小欧-2026-09-19
+- 921d7a136 feat:useChatCallbacks+useChatFacade+ChatPage 任务成功完成回调清liveError - 小欧-2026-09-19
+- 6a7f2678c feat:shell_engine.py 落地[53]第四章M1-M8清理链防护 - 小欧-2026-09-19
+- ec0688c98 feat:AuthorizationModal/index.tsx 操作范围仅显目录+信任提示flex布局 - 小欧-2026-09-19
+
+### fix(16个):
+- 6851340d0 fix:[48]LLM错误文案通顺化与图标SVG化 后端5处+前端3处落码 - 小欧-2026-09-17
+- f19352ae1 fix:[49]RightViewer.tsx 修复Step页面快结束时自动滚动失效 - 小欧-2026-09-18
+- 4ae2bebb7 fix:index.css 等待圈上浮修复 baseline改middle - 小欧-2026-09-18
+- 67824d806 fix:RightViewer.tsx [49]根治自动滚动停半空与回顶(取消归因) - 小欧-2026-09-18
+- 2ce36c8d6 fix:安全文案精化与safety_level归属修正 - 小欧-2026-09-18
+- 58fc95ec0 fix:弹窗过宽4毛病精化 - 小欧-2026-09-18
+- d8fcc1d47 fix:RightViewer displaySteps切历史时liveSteps残留 - 小欧-2026-09-18
+- 3bf2bc2e0 fix:RightViewer 恢复[49] liveSteps fallback - 小欧-2026-09-18
+- 0c3ae99a4 fix:safety_gate/sandbox_gate/tool_safety_checker bypass弹窗与沙箱审批修复 - 小欧-2026-09-19
+- ffe928681 fix:shell安全检查三级行为修复 - 小欧-2026-09-19
+- 64d8b3846 fix:useAuthorization confirm_id已失效静默处理 - 小欧-2026-09-19
+- d22534760 fix:tool_safety_checker.py Bug-2修复(删tool_meta动态属性传播) - 小欧-2026-09-19
+- a9a1a06c7 fix:chat_routes+useAuthorization P-005契约化(confirm_id失效改读code=confirm_stale) - 小欧-2026-09-19
+- f46e12b8b fix:useChatCallbacks onSuccessRef解闭包陈旧 - 小欧-2026-09-19
+- e05795652 fix:shell_engine.py 五真实bug修复(BUG-1~BUG-5) - 小欧-2026-09-19
+- 3a7262d01 fix:AuthorizationModal truncateDir操作范围行只去掉文件名保留完整目录路径不再截断 - 小欧-2026-09-19
+
+### refactor(4个):
+- 78cad23a3 refactor:safety_level→severity全量重命名+hitl_gateway帧对调 - 小欧-2026-09-18
+- a59aaff8e refactor:HITL弹窗审核整改(去Progress/Tooltip+紧凑化+宽度480→520) - 小欧-2026-09-18
+- 2778f977b refactor:AuthorizationModal恢复圆圈倒计时(CountdownRing/index) - 小欧-2026-09-18
+- 567ac7136 refactor:hitl_gateway/safety_gate/sandbox_gate/tool_safety_checker 去mode字段+去bypass写死文案(北京老陈三堂会审定案KISS-DIRECT) - 小欧-2026-09-19
+
+### docs(33个):
+- 7c6b54f83 docs:[48]LLM错误文案梳理与图标设计 新增梳理修订方案与图标预览 - 小欧-2026-09-17
+- d31f20356 docs:[49]Step页面快结束时自动滚动失效问题分析与修复方案 v3.2重排 - 小欧-2026-09-17
+- 1dda69697 docs:[49]Step页面快结束时自动滚动失效问题分析与修复方案 v3.3复核修正 - 小欧-2026-09-17
+- d86cd96a8 docs:[49]Step页面快结束时自动滚动失效问题分析与修复方案 v3.5对照本地代码三遍核查修正 - 小欧-2026-09-18
+- 13ee77120 docs:[49]Step页面快结束时自动滚动失效问题分析与修复方案 v3.6~v3.8 - 小欧-2026-09-18
+- 4abfa6995 docs:[49]Step页面快结束时自动滚动失效问题分析与修复方案 v3.10(北京老陈定案取消归因) - 小欧-2026-09-18
+- 562d7e45b docs:[50]HITL弹框消息字段梳理 v1.26(章节结构重排) - 小欧-2026-09-18
+- d34faeb4c docs:[50]HITL弹框消息字段梳理 v1.27(基于代码实核的第3/4章实施说明修正10点) - 小欧-2026-09-18
+- cfdd91386 docs:[50]HITL弹框消息字段梳理 v1.28~v1.29(TDD红绿实录+三结论偏差收敛) - 小欧-2026-09-18
+- a5604a23b docs:[50]HITL弹框消息字段梳理 第4章全章重写(北京老陈令) - 小欧-2026-09-18
+- 9f407bd81 docs:[50] 4.3分类重构为后端安全语义三档 - 小欧-2026-09-18
+- d0a60bc25 docs:[50] 4.3字段语义交割内容由用户删除重写(提交用户改动版) - 小欧-2026-09-18
+- 1a11f46de docs:[50]HITL弹框消息字段梳理 severity/safety_level字段说明与最新代码对齐(14处修正) - 小欧-2026-09-18
+- f3cf791d7 docs:[50]HITL弹框消息字段梳理 第5-7章新增 - 小欧-2026-09-18
+- 3028f6b69 docs:[50]HITL弹框消息字段梳理 第4章简化 - 小欧-2026-09-18
+- 21e470f8d docs:[50]HITL弹框消息字段梳理 全文一致性修正 - 小欧-2026-09-18
+- 31881126e docs:[50]HITL弹框消息字段梳理 §7.4渲染区重写 - 小欧-2026-09-18
+- 584cd5c1a docs:[50]HITL弹框消息字段梳理 33条文案全部改前/改后独立完整 - 小欧-2026-09-18
+- b53f0e91b docs:[50]HITL弹框消息字段梳理 §7.2.0补33条content→safety_level映射表 - 小欧-2026-09-18
+- 79c01107d docs:[50]HITL弹框消息字段梳理 §7.2.2/§7.2.3 - 小欧-2026-09-18
+- 24886a8b1 docs:[50]HITL弹框消息字段梳理 修正第6/7章核查问题 - 小欧-2026-09-18
+- 3676e001b docs:[50]HITL弹框消息字段梳理 新增第8章弹窗过宽残留毛病核查与精化 - 小欧-2026-09-18
+- 4e862bf05 docs:[51]实时任务中切换查看历史任务分析 新建切换行为核查分析 - 小欧-2026-09-18
+- 423f4cdb3 docs:[52]Bypass错误耦合审计与shell弹窗原因完整方案+shell池半死实例探活超时链静默卡死根因分析报告 新建两篇9月优化文档 - 小欧-2026-09-19
+- 247a39b01 docs:[53]shell池半死实例探活超时链静默卡死根因分析报告 由[52]升级编号doc版本(重命名R100) - 小欧-2026-09-19
+- b91945be7 docs:[52]Bypass错误耦合审计与shell弹窗原因完整方案-小欧-2026-09-19
+- 02ae7d7bc docs:[52]Bypass错误耦合审计与shell弹窗原因完整方案 清理冗余-小欧-2026-09-19
+- b44e8280f docs:[53]shell池半死实例探活超时清理链静默卡死根因分析报告 新增第四章实施修复详细准确代码diff(M1-M9) - 小欧-2026-09-19
+- 7f2869082 docs:[53]shell池半死实例探活超时清理链静默卡死根因分析报告 v1.3按三堂会审7处问题修正第四章 - 小欧-2026-09-19
+- 764430b37 docs:[52]Bypass错误耦合审计与shell弹窗原因完整方案 改动2去bypass违规-小欧-2026-09-19
+- 7ec85114a docs:[53]shell池半死实例探活超时清理链静默卡死根因分析报告 v1.4补充环境污染遗传源头机制与探针 - 小欧-2026-09-19
+- 05b583805 docs:[53]shell池半死实例探活超时清理链静默卡死根因分析报告 v1.5核查M1-M9与本地代码diff逐字吻合无需修订 - 小欧-2026-09-19
+- 6b11e76bb docs:[53]shell池半死实例探活超时 v1.6新增第五章五真实bug修复记录 - 小欧-2026-09-19
+
+### test(1个):
+- e0d3d97b0 test:fre2e_05_history_switch.spec.ts readRightText读取前先展开折叠块 - 小欧-2026-09-18
+
+### revert(1个):
+- 3ba74b82d Revert "feat:AuthorizationModal加content原因展示区+trust_path操作范围+SAFETY_LEVEL_CONFIG改为8类弹窗4档 - 小欧-2026-09-18"
+
+---
+v1.0.0
 更新时间: 2026-09-17 18:30:00 - 小欧-2026-09-17
 ## v0.19.40.20以来 变更汇总(17个commit: feat3/fix4/refactor3/docs5/merge2) - 小欧-2026-09-17
 [2026-09-17 18:30:00 小欧] 里程碑版本: 合并 optimize-0.19.17(agent重构) + optimize-0.19.40.1(心跳钟面+[47]设计)
