@@ -8,9 +8,11 @@
 # 2026-08-10 - 小欧 - 步骤1实施(①⑤⑩②③④, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): ①get_project_root兜底改用户主目录(不再用代码位置当项目根); ⑩新增get_allowed_dirs授权目录列表(含代码库根/父子级边界约束); ②③④命名分离 _get_project_root→_get_code_root/get_default_project_root→get_code_root/get_config_path内部改调
 # 2026-08-17 - 小健 - 门限基准唯一化(北京老陈驱动): 删除 get_max_context_tokens 方法(唯一调用方 base_agent:68 已改默认构造, 且其值被 agent_runner 覆盖无实际作用); 上下文窗口基准收敛为 compaction_constants.DEFAULT_CONTEXT_LIMIT(配置优先)
 # 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
+# 2026-09-19 小欧 - exe打包frozen支持: 新增get_frozen_dir唯一源(DRY), _get_code_root frozen时改走exe所在目录 - 小欧-2026-09-19
 
 import functools
 import os
+import sys
 import yaml
 from collections import OrderedDict
 from typing import Dict, Any, Optional
@@ -217,14 +219,28 @@ def get_config() -> Config:
 _CODE_ROOT: Optional[Path] = None
 
 
+def get_frozen_dir() -> Optional[Path]:
+    """frozen打包(exe)运行时返回exe所在目录, 源码运行返回None — 小欧 2026-09-19
+    唯一源(DRY): 打包路径分流只此一处, _get_code_root/logger/file_persist运行期目录均调此函数。
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return None
+
+
 def _get_code_root() -> Path:
     """代码库根(程序安装/代码所在目录)计算入口 — 小欧 2026-08-10 ②改名(原_get_project_root)
     基于当前文件位置推算, 仅用于定位 config/config.yaml、version.txt、logs/、模板等程序自身资源。
     tool 禁区: 任何tool操作触达此根一律禁止(Safety层⑦硬拦截)。
+    frozen(exe)运行时改走exe所在目录(资源由spec datas布署至exe旁) — 小欧 2026-09-19
     """
     global _CODE_ROOT
     if _CODE_ROOT is None:
-        _CODE_ROOT = Path(__file__).parent.parent.parent
+        _frozen = get_frozen_dir()
+        if _frozen is not None:
+            _CODE_ROOT = _frozen
+        else:
+            _CODE_ROOT = Path(__file__).parent.parent.parent
     return _CODE_ROOT
 
 

@@ -18,6 +18,7 @@
 #       (常量唯一源, 物理目录与 files_dir 落库锚同源; 旧目录不迁移不兼容, 禁止backward)
 #   2026-09-04 - 小健 - 新增 make_fp_callback(第2阶段拆分): 文件A 落盘回调工厂从 action_handler._fp_factory 下沉,
 #       action_handler 不再持有文件落盘细节; 函数体完整复制不改逻辑(闭包捕获 agent/step/exec_calls)
+#   2026-09-19 - 小欧 - exe打包frozen支持: 调试分流 frozen时改走exe所在目录/files(源码保持backend/files不变) - 小欧-2026-09-19
 # ============================================================================
 from __future__ import annotations
 
@@ -29,16 +30,20 @@ from typing import Any, Dict, List, Optional
 
 from app.logger import logger                      # 与 prompt_logger 同源 logger
 from app.utils.time_utils import get_local_iso_timestamp
-from app.config import get_config
+from app.config import get_config, get_frozen_dir
 
 
 def _files_root() -> Path:
     """文件根目录环境分流(对齐 logger 惯例: debug→仓库内目录) — 小欧 2026-08-23
     调试(app.debug=True): backend/files/   —— 与 backend/logs/ 同级, 便于开发期查看
     正式(app.debug=False): ~/.omniagent/files/ —— 与 chat_history.db 同根用户级持久
+    frozen(exe)调试时改走exe所在目录/files — 小欧 2026-09-19
     """
     try:
         if get_config().get("app.debug", False):
+            _frozen = get_frozen_dir()
+            if _frozen is not None:
+                return _frozen / "files"
             return Path(__file__).resolve().parent.parent / "files"   # backend/files
     except Exception:
         pass

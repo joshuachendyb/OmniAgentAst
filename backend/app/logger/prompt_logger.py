@@ -15,6 +15,7 @@
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _user_id_from_db 查询由 chat_messages(role='user' AND 序) 改读 chat_user_message(与全系统改读新表一致, 不退化/不读 chat_messages)
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.4③: log_llm_call 形参 (model, provider) 分离 → llm_model:
 #   ModelRef 结构; 日志落盘"模型"/"提供商"键取 llm_model.model/.provider(展示派生); import 补 ModelRef
+# 2026-09-19 - 小欧 - exe打包frozen支持: log_dir frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -36,6 +37,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from app.utils.json_utils import safe_json_dumps
+from app.config import get_frozen_dir
 from app.services.chat.storage import get_user_message_id
 from app.db import db
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
@@ -50,8 +52,12 @@ class PromptLogger:
     
     def __init__(self):
         """初始化日志目录"""
-        # 日志目录:backend/logs/prompt-logs/
-        self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
+        # 日志目录:backend/logs/prompt-logs/(frozen打包时为exe所在目录/logs) — 小欧 2026-09-19
+        _frozen = get_frozen_dir()
+        if _frozen is not None:
+            self.log_dir = _frozen / "logs" / "prompt-logs"
+        else:
+            self.log_dir = Path(__file__).parent.parent.parent / "logs" / "prompt-logs"
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # contextvars - 每个协程独立的日志数据,避免 asyncio 协程间覆盖

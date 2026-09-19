@@ -46,6 +46,10 @@ backend/task_report/
 frontend/dist/
 frontend/backup/
 
+# PyInstaller build artifacts: 小欧-2026-09-19
+backend/build/
+backend/dist/
+
 # debug tools
 backend/tools/
 backend/verify_fixes.py

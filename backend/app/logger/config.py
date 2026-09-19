@@ -6,14 +6,16 @@
 """
 # 编辑历史:
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): _check_and_rotate_by_date 轮转提示 print→console_put(日志emit路径零同步stdout写)
+# 2026-09-19 - 小欧 - exe打包frozen支持: LOG_DIR frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
 
 import logging
 import logging.handlers
 from pathlib import Path
 from app.utils.time_utils import now_str
-from app.config import get_config
+from app.config import get_config, get_frozen_dir
 
-LOG_DIR = Path(__file__).parent.parent.parent / "logs"
+_frozen = get_frozen_dir()
+LOG_DIR = (_frozen / "logs") if _frozen is not None else Path(__file__).parent.parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 
