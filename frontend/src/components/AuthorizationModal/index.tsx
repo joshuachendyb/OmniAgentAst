@@ -45,6 +45,7 @@
 //   ②B-参数区超长value截断>80字符(truncateValue) ③C-操作范围行只显示目录去掉文件名+左对齐
 //   ④D-bypass信任勾选框加常驻灰色提示替代hover title ⑤E-倒计时文案去掉后端兜底
 //   ⑥F-bypass下允许按钮显示倒计时秒数"允许执行(Ns)" — 小欧-2026-09-19
+// 编辑历史: 2026-09-19 小欧 - 修正C-truncateDir: 操作范围行只去掉末尾文件名, 保留完整目录路径不再截断 — 小欧-2026-09-19
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -132,14 +133,11 @@ const truncatePath = (p: string): string => {
   return `…/${parts.slice(-3).join('/')}`;
 };
 
-// 操作范围行只显示目录(去掉文件名), 保留最后2级目录
+// 操作范围行只显示目录(去掉末尾文件名, 保留完整目录路径, 不截断)
 const truncateDir = (p: string): string => {
   if (!p) return p;
   const norm = p.replace(/\\/g, '/');
-  const dir = norm.replace(/\/[^/]*$/, ''); // 去掉末尾文件名, 取目录部分
-  const parts = dir.split('/').filter(Boolean);
-  if (parts.length <= 2) return dir || norm;
-  return `…/${parts.slice(-2).join('/')}`;
+  return norm.replace(/\/[^/]*$/, '') || norm;
 };
 
 const truncateValue = (v: string, max = 80): string =>
