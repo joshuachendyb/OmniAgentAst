@@ -4,6 +4,7 @@
 // 编辑历史: 2026-09-17 小欧 - 新增5个事件图标: error/rejected/cancelled/heartbeat/final - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3(#2): 删除 heartbeat 事件图标——后端心跳是 SSE 协议层 ":ping"(stream_orchestrator)，
 //   永不被前端解析成 ProcessEvent, EVENT_ICON_MAP 中 heartbeat 为死代码(YAGNI 清理); 事件清单实为8类 — 小欧-2026-09-17
+// 编辑历史: 2026-09-19 小欧: 恢复 heartbeat 事件图标(SyncOutlined)——心跳记录到事件列表(后端":ping" → ExecutionStep.heartbeat → processEvents) — 北京老陈驱动
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
@@ -13,6 +14,7 @@ import {
   StopOutlined,
   CloseCircleOutlined,
   CheckCircleOutlined,
+  SyncOutlined,
 } from '@ant-design/icons';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
 
@@ -97,6 +99,7 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   rejected: <StopOutlined />, // 2026-09-17 小欧: 拒绝事件 - 小欧-2026-09-17
   cancelled: <CloseCircleOutlined />, // 2026-09-17 小欧: 取消事件 - 小欧-2026-09-17
   final: <CheckCircleOutlined />, // 2026-09-17 小欧: 任务完成/失败 - 小欧-2026-09-17
+  heartbeat: <SyncOutlined />, // 2026-09-19 小欧: 心跳事件 — 北京老陈驱动
 };
 
 // ---------- formatToken（3.2：T 千分位，1234 → "T 1,234"；无值 → "–"） ----------

@@ -87,6 +87,7 @@
 // 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(6.6#1 校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
 //   同日会审V3已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
+// 编辑历史: 2026-09-19 小欧: 心跳:ping 除调用 onHeartbeat 外, 新增创建 ExecutionStep({type:'heartbeat'}) 并 pushAndFlush 记录到事件列表 — 北京老陈驱动
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -216,6 +217,10 @@ const processSSEData = (
   //   原被下行前缀判断静默丢弃(前端无任何 UI 可感知通路); 现上报心跳信号供钟面盘外圈微闪(存活确认, 不参与计时) — 小欧-2026-09-17
   if (trimmedLine === ': ping') {
     handlers.onHeartbeat?.();
+    // 2026-09-19 小欧: 心跳记录到事件列表 — 北京老陈驱动
+    const hbStep: ExecutionStep = { type: 'heartbeat', timestamp: Date.now() };
+    pushAndFlush(handlers, hbStep);
+    onStep?.(hbStep);
     return;
   }
   if (!trimmedLine || !trimmedLine.startsWith('data: ')) {

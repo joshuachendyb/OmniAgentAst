@@ -40,6 +40,7 @@
 // 编辑历史: 2026-09-17 小沈 - 事件排序改为正序(最早在上): 去除 recentEvents.reverse(), processEvents 按时间正序输出 — 小沈-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3(#5)修复 复核三遍: failed 终态事件 kind: 'final' → 'error'(原用 final 对勾图标
 //   致失败任务事件列表显示成功绿勾, 成功/失败不可区分; 改 error 走 WarningOutlined 警告图标) — 小欧-2026-09-17
+// 编辑历史: 2026-09-19 小欧: ProcessEvent.kind 恢复 'heartbeat', steps 遍历加 case 'heartbeat' 推入 processEvents — 北京老陈驱动
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -67,6 +68,7 @@ export const STUCK_RATIO = 3;
 export interface ProcessEvent {
   // 2026-09-17 小欧 会审V3(#2): kind 删除 'heartbeat'——后端心跳是 SSE 协议层 ":ping", 永不为 ProcessEvent;
   //   'rejected' 保留(8类过程事件之一, 现无数据源仅为类型防御, 见下 case) — 小欧-2026-09-17
+  // 2026-09-19 小欧: 恢复 'heartbeat'——心跳记录到事件列表(后端":ping" → ExecutionStep.heartbeat → processEvents) — 北京老陈驱动
   kind:
     | 'started'
     | 'paused'
@@ -75,7 +77,8 @@ export interface ProcessEvent {
     | 'error'
     | 'rejected'
     | 'cancelled'
-    | 'final';
+    | 'final'
+    | 'heartbeat';
   text: string;
   time: number;
 }
@@ -247,6 +250,13 @@ export const useTaskInfo = (
         // 2026-09-17 小欧 会审V3(#3): 原 case 'rejected' 已删除——rejected 不落库(库表无此 type)且
         //   sseParser rejected 分支不入 executionSteps, steps 遍历永无 rejected, 判空分支死代码(YAGNI);
         //   拒绝事件实时走 onRejected → deniedEntries 点名条链路, 不经 TaskInfoBar 事件列表 — 小欧-2026-09-17
+        case 'heartbeat':
+          processEvents.push({
+            kind: 'heartbeat',
+            text: s.content || '心跳',
+            time: s.timestamp,
+          });
+          break;
         // 2026-09-11 小欧 契约化(method2): thought=仅历史回显事件(DB), 实时 SSE 永不发,
         //   执行中信号剔除 thought(thought-start/action/observation 仍实时兜住 idle→running) — 小欧-2026-09-11
         case 'thought-start':
