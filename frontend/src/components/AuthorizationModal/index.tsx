@@ -51,7 +51,7 @@
  *
  * 功能：显示工具执行授权请求，用户可选择允许/拒绝/本会话信任
  *
- * 设计规范（参考DangerConfirmModal）：
+ * 设计规范：
  * - 宽度: 480px
  * - 边框: 1.5px solid #faad14 (橙色) / 1.5px dashed #1677ff (bypass) + boxShadow
  * - 图标: WarningOutlined (橙色, 32px)
