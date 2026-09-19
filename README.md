@@ -2,7 +2,7 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v0.19.40.12 | **更新时间**: 2026-09-13 08:16:15 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-13
+**版本**: v1.0.1 | **更新时间**: 2026-09-19 14:55:00 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-19
 
 ---
 
@@ -29,7 +29,7 @@
 | 后端 | Python / FastAPI / Uvicorn | 3.13 / ≥0.109.0 / ≥0.27.0 |
 | 前端 | React / TypeScript / Vite / Ant Design | 18 / 5 / — / 5 |
 | LLM 集成 | 多 Provider 适配层（OpenAI 兼容 API） | — |
-| 数据库 | SQLite 原生 `sqlite3`，3 个库：chat_history.db / operations.db / task_tracker.db | — |
+| 数据库 | SQLite 原生 `sqlite3`，5 个库：chat_history.db / operations.db / task_tracker.db / timers.db / monitoring.db | — |
 | 任务执行 | 请求内流式（SSE），`run_react_cycle` 单请求驱动，无独立任务队列/Redis | — |
 | 测试 | pytest / Vitest / Playwright | — |
 
@@ -51,7 +51,7 @@
         ▼
 安全层（app/safety）L0-L3：全局开关 → 安全级别 → 已知风险 → DB 事务编排
         ▼
-数据层：SQLite 3 库（chat_history / operations / task_tracker）
+数据层：SQLite 5 库（chat_history / operations / task_tracker / timers / monitoring）
 ```
 
 技术要点：
@@ -82,7 +82,7 @@ api/v1 ──> services ──> safety ──> tools ──> utils / db / logger
 | 限流 | 仅 LLM 429 检测 | 请求级/IP 限流 | 未做请求级 |
 | 任务队列 | 无，请求内流式执行 | Celery + Redis | 未引入 Redis |
 | 缓存 | 无 | Redis | 未引入 |
-| 数据存储 | SQLite 3 库 | PostgreSQL + Redis + MinIO + ES | 单机 SQLite |
+| 数据存储 | SQLite 5 库 | PostgreSQL + Redis + MinIO + ES | 单机 SQLite |
 
 以上取舍基于单机/单用户场景，属有意的范围收敛，而非技术债。
 
@@ -110,20 +110,21 @@ api/v1 ──> services ──> safety ──> tools ──> utils / db / logger
 
 ```
 backend/app/tools/
-├── registry.py              # ToolRegistry 单例 + ensure_tools_registered
+├── registry.py              # ToolRegistry 单例 + ensure_tools_registered（含工具名别名归一化）
+├── tools_alias_mapper.py    # 工具名别名映射（normalize_tool_name：LLM 变体名→注册名）
 ├── tool_types.py            # ToolCategory 枚举 / ToolMetadata
 ├── tool_constants.py        # CATEGORY_MODULES（分类→模块映射）
-├── tool_aliases.py          # 工具别名映射
-├── tool_loader.py           # 按 category 加载（per-agent 集合）
 ├── toolhelper/              # 工具辅助（错误提示/重试）
 ├── validate/                # 校验层（路径/URL/超时/注册表，非对外工具）
-├── security/                # 安全守卫（非对外工具）
+├── security/                # 安全守卫（path_safe_check / safety_result / temp_auth，非对外工具）
+├── trust.py trust_db.py     # 工具信任管理（会话级信任 / 路径级精确撤销）
 ├── file/ shell/ network/ system/ desktop/ document/
 ├── dataanalysis/ fundamental/ win_registry/ timer/   # 10 个工具分类目录
 └── {category}_schema.py     # Pydantic 参数模型（每个分类）
    {category}_register.py    # 注册入口
-   {category}_tools.py       # 具体实现
+   {category}_tools.py       # 具体实现（按原子文件散落，如 file/ 下 read_text_file.py 等）
 ```
+> `tool_loader.py`（按 category 加载、per-agent 集合）位于 `backend/app/services/agent/tool_loader.py`。
 
 ## 四、Agent 体系
 
@@ -142,7 +143,7 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 | 层 | 职责 |
 |----|------|
 | L0 | config.yaml `security.enabled` 全局开关 |
-| L1 | 工具安全级别（read_only / safe / destructive / dangerous） |
+| L1 | 工具安全级别（safe / destructive / dangerous） |
 | L2 | 已知风险检测：路径越权 / 写入污染 / 代码注入 / 删除安全（delete_safety R1-R6） |
 | L3 | DB 事务编排：操作记录 → 状态追踪 → 备份 → 文件 hash → 审计（operations.db，支持回滚） |
 | hooks | 安全 hooks 协议（ContextVar 注入，NoOpHooks 兜底） |
@@ -194,7 +195,7 @@ OmniAgentAs-desk/
 │   │   │   ├── chat/           # 聊天特性域（components/hooks/services/sseParser）
 │   │   │   └── settings/       # 设置特性域（ProviderSettings/SecuritySettings/GlobalConfigArea 等）
 │   │   ├── components/         # 通用 UI 组件（AuthorizationModal / Layout / SecurityAlert 等）
-│   │   ├── contexts/           # React Context（AppContext / SecurityContext）
+│   │   ├── contexts/           # React Context（AppContext）
 │   │   ├── hooks/              # 顶层 Hook（useSSE / useStateWithRef / useBeforeUnload 等）
 │   │   ├── lib/                # 库桥接（antd bridge）
 │   │   ├── pages/              # 页面（ChatPage）
@@ -217,9 +218,106 @@ OmniAgentAs-desk/
 
 ---
 
-## 六、配置文件说明
+## 六、前端功能特点
 
-### 6.1 配置文件位置
+> 前端为 React 18 + TypeScript + Vite + Ant Design 5 的单页应用，仅一个业务页面 `ChatPage.tsx`，其余为组件/hook 组合。以下为已落地且经代码核实的关键能力。
+
+### 6.1 页面与架构编排
+
+| 层 | 要点 |
+|----|------|
+| 唯一页面 | `ChatPage.tsx` 单页，聊天主流程全部在其内组合 |
+| 特性域 | `features/chat`（components/hooks/services/sseParser）+ `features/settings`（配置管理） |
+| 全局状态 | 单 Context `AppContext`（安全 Context 已并入） |
+| Hook 编排 | `useChatFacade` 聚合核心 hook：`useChatState` / `useChatCallbacks` / `useChatSession` / `useChatStreaming` / `useChatPersistence` / `useChatSend` / `useChatTaskControl`（另有 `useSSE` 流接收、`useAuthorization` 授权、`useTaskInfo` 等 20+ 个 hook） |
+
+### 6.2 实时执行流水线
+
+| 组件 | 职责 |
+|------|------|
+| `PipelineRenderer` | SSE 事件 → 步骤流（thought/action/observation/final）实时渲染 |
+| `ToolCallLine` | 工具单行卡：折叠 params/observation，HITL 等待时高亮 |
+| `ThinkingStream` / `TextStream` / `ResponseStream` | 推理过程与回复流式打字机 |
+| `RightViewer` | 右侧信息板（任务信息/链式 tokens 统计） |
+
+### 6.3 SSE 事件流契约
+
+| 事件 | 说明 |
+|------|------|
+| start / chunk / action / preview / usage / final | 主流程事件（preview 为齿轮动画先行、不落库） |
+| paused / resumed / rejected / error | 任务暂停（含 HITL）、恢复、拒绝、异常 |
+| severity | paused 帧携带安全分级（safe/destructive/dangerous），前端据此渲染授权态 |
+
+前端解析统一在 `frontend/src/features/chat/services/sseParser.ts`，事件结构与 `types/chat.ts` 对齐。
+
+### 6.4 任务控制与断线重连
+
+| 能力 | 实现 |
+|------|------|
+| 停止/取消 | `useChatTaskControl` + 后端 task_runtime 协作 |
+| 断线续传 | SSE 中断后退避重试 `GET /chat/stream/{task_id}?after_seq=` 断点续传，`useSSE` 维护 `lastSeqRef` |
+| HITL 等待态 | `hitlWaitingKeysRef` 集合追踪等待中的确认，避免超时竞态 |
+| run-on 防重 | 续传若重发事件，`hasAdjacentDup` 逐行检测相邻重复拼接（`2026-09-10 thought 重复 Bug` 根治） |
+
+### 6.5 HITL 人机授权闭环
+
+| 能力 | 实现 |
+|------|------|
+| 授权弹窗 | `AuthorizationModal`（path_auth/shell/delete/execute 多类确认，HITLModalShell 统一外壳） |
+| 授权流程 | paused 事件 → `useAuthorization` hook → 用户 confirm/deny → 后端 HITL 接口确认 |
+| 会话信任 | `TrustPanel` 展示/管理信任工具，`TrustedTool` 带 path 字段，路径级精确撤销（`revokeTrust ?path=`） |
+| 超时配置 | 与后端 `security.hitl_timeout`/`auto_confirm_delay` 对齐 |
+
+### 6.6 安全看护（真实机制）
+
+> 2026-09-19 核对：前端 `SecurityAlert` 组件已不在业务流程引用（仅测试）。危险操作的实际处置链路如下：
+
+| 环节 | 实现 |
+|------|------|
+| 后端判定 | `tool_safety_checker` 按 severity 分级（safe/destructive/dangerous），severity 9-10 分 blocked 直接拒绝执行（已知风险：路径越权/写入保护/注入） |
+| 危险可见化 | 危险操作 → `hitl_gateway`/`safety_gate` 发 paused 帧 → 前端 `AuthorizationModal` 授权弹窗 + `ToolCallLine` 高亮边框（hitl-border） |
+| 安全配置 UI | `SecuritySettings.tsx` 表单（内容过滤/敏感词级别/命令白黑名单/危险二次确认/文件上限）——仅透传保存至 config.yaml；**执行判定真正消费的 security 键仅 enabled / hitl_timeout / auto_confirm_delay** |
+| 信任会话 | TrustedTool 带 path 字段，路径级精确撤销 |
+| 401 统一登出 | axios 响应拦截清 localStorage + 跳 /login（client.ts） |
+
+### 6.7 模型/配置管理
+
+| 能力 | 实现 |
+|------|------|
+| 三态验证弹框 | success 绿✓ / warning 琥珀! / failed 红✕ + 自动回滚提示（Layout） |
+| 一键切换模型 | updateConfig 传 ai_model_ref 结构 → 失败后端回滚 + 刷新列表 |
+| Provider/Model CRUD | config.api.ts 端点（validate/models/full/provider/model/fix/open-folder/read） |
+| 配置运维台 | 配置文件路径展示、一键打开目录、在线查看、检测配置（GlobalConfigArea） |
+
+### 6.8 历史会话
+
+| 能力 | 实现 |
+|------|------|
+| 历史切换 | 跨会话切换，列表 + 搜索 |
+| 标题自动生成 | 消息首轮自动生成会话标题 |
+| 会话持久化 | `useChatPersistence` + 后端 message_service 写入 chat_history.db |
+
+### 6.9 视觉设计系统
+
+| 能力 | 实现 |
+|------|------|
+| 视觉令牌 | `theme/tokens.ts` 集中设计变量 |
+| 步骤配色 | `utils/stepStyles.ts` + `theme/Colors` 映射各状态（含 HITL 呼吸边框动画） |
+| 状态徽章 | TopbarStats / TaskInfoBar 实时展示运行计数 |
+
+### 6.10 工程化与测试
+
+| 能力 | 实现 |
+|------|------|
+| 单元测试 | Vitest（`frontend/src/tests/`） |
+| E2E | Playwright 真实浏览器 + 真实后端（`frontend/e2e_case/`，公共库 `e2e_front_lib/`） |
+| 质量门禁 | `npm run check`（lint + format:check），提交前必跑 |
+
+---
+
+## 七、配置文件说明
+
+### 7.1 配置文件位置
 
 | 文件 | 说明 |
 |------|------|
@@ -228,7 +326,7 @@ OmniAgentAs-desk/
 
 默认加载路径为代码库根下 `config/config.yaml`，可用环境变量 `OMNIAGENT_CONFIG_PATH` 覆盖。配置文件缺失时后端会报错并提示手动创建该文件（也可在前端设置页生成）。
 
-### 6.2 配置节总览
+### 7.2 配置节总览
 
 | 配置节 | 作用 |
 |--------|------|
@@ -238,7 +336,7 @@ OmniAgentAs-desk/
 | `security` | 安全开关与过滤策略（L0） |
 | `sandbox` | 沙箱预检（工具执行前资源约束） |
 
-### 6.3 `ai` — 模型与 Provider
+### 7.3 `ai` — 模型与 Provider
 
 顶层键：
 
@@ -258,7 +356,7 @@ OmniAgentAs-desk/
 | `timeout` | 请求超时（秒） |
 | `max_retries` | 失败重试次数 |
 
-### 6.4 `app` — 应用配置
+### 7.4 `app` — 应用配置
 
 | 键 | 说明 |
 |----|------|
@@ -272,7 +370,7 @@ OmniAgentAs-desk/
 | `app.project_root` | 项目根 = tool 工作区；留空回退用户主目录 |
 | `app.allowed_dirs` | 项目根之外额外授权的工作目录列表；禁止指向代码库根或其父/子级 |
 
-### 6.5 `logging` — 日志配置
+### 7.5 `logging` — 日志配置
 
 | 键 | 说明 |
 |----|------|
@@ -280,7 +378,7 @@ OmniAgentAs-desk/
 | `logging.max_file_size` | 单日志文件大小上限（字节） |
 | `logging.backup_count` | 轮转保留文件数 |
 
-### 6.6 `security` — 安全配置
+### 7.6 `security` — 安全配置
 
 | 键 | 说明 |
 |----|------|
@@ -293,7 +391,9 @@ OmniAgentAs-desk/
 | `security.hitl_timeout` | HITL 确认超时（秒） |
 | `security.strict_mode` | 严格模式（true/false） |
 
-### 6.7 `sandbox` — 沙箱预检
+> 2026-09-19 核实：**执行链路真正消费的 security 键仅 `enabled` / `hitl_timeout` / `auto_confirm_delay`**；`contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `confirmDangerousOps` / `maxFileSize` 当前仅透传保存至 config.yaml，尚未接入后端判定执行（详见 6.6 安全看护）。
+
+### 7.7 `sandbox` — 沙箱预检
 
 | 键 | 说明 |
 |----|------|
@@ -306,7 +406,7 @@ OmniAgentAs-desk/
 | `sandbox.default_timeout_sec` | 预检默认超时（秒） |
 | `sandbox.max_timeout_sec` | 预检硬上限（秒） |
 
-### 6.8 环境变量覆盖
+### 7.8 环境变量覆盖
 
 | 环境变量 | 覆盖项 |
 |----------|--------|
@@ -315,15 +415,15 @@ OmniAgentAs-desk/
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
 
-### 6.9 修改生效方式
+### 7.9 修改生效方式
 
 保存 `config.yaml` 后立即生效，**无需重启**：`get_config()` 每次调用按文件 mtime 检测，文件变化自动重读，下一工具/LLM 调用即用新值。也可在前端设置页修改（写回 config.yaml 并自动重载）。
 
 ---
 
-## 七、快速开始
+## 八、快速开始
 
-### 7.1 环境要求
+### 8.1 环境要求
 
 | 依赖 | 版本 | 说明 |
 |------|------|------|
@@ -333,7 +433,7 @@ OmniAgentAs-desk/
 
 > **虚拟环境建议**：Python 后端用虚拟环境隔离依赖，方便清理与复现（推荐）。
 
-### 7.2 安装与启动
+### 8.2 安装与启动
 
 后端和前端需**同时运行**，开**两个命令行窗口**。
 
@@ -369,7 +469,7 @@ npm run dev
 | http://127.0.0.1:8000 | 后端 API |
 | http://127.0.0.1:8000/docs | API 交互式文档 |
 
-### 7.3 可选依赖（二级工具）
+### 8.3 可选依赖（二级工具）
 
 多数已含于 `requirements.txt`，如需单独安装：
 
@@ -382,7 +482,7 @@ pip install mss imageio numpy
 
 ---
 
-## 八、开发命令
+## 九、开发命令
 
 ### 后端（在 backend/ 目录，虚拟环境需先 `.venv\Scripts\activate`）
 
@@ -394,7 +494,7 @@ pip install mss imageio numpy
 | `pytest -k test_name -v` | 按名称匹配运行测试 |
 | `pytest --cov=app` | 测试并生成覆盖率 |
 | `pytest --runxfail` | 运行所有测试（含标记为 xfail 的） |
-| `pytest tests/test_e2e_full_link.py -k "f01 or f03" -v --runxfail` | 指定 E2E 测试运行 |
+| `pytest e2etests/test_e2e_p0_02_tool_call.py -v --runxfail` | 指定 E2E 测试运行（e2etests 目录） |
 
 ### 前端（在 frontend/ 目录）
 
@@ -414,34 +514,36 @@ pip install mss imageio numpy
 
 ---
 
-## 九、数据库
+## 十、数据库
 
 | 数据库 | 路径 | 用途 |
 |--------|------|------|
 | 聊天历史 | `~/.omniagent/chat_history.db` | 会话与消息 |
 | 操作记录 | `~/.omniagent/operations.db` | 文件操作记录/回滚（L3） |
 | 任务追踪 | `~/.omniagent/task_tracker.db` | 任务状态与暂停/取消/恢复 |
+| 定时器 | `~/.omniagent/timers.db` | 定时器任务持久化 |
+| 系统监控 | `~/.omniagent/monitoring.db` | 运行监控指标采集 |
 
 ---
 
-## 十、版本变更记录
+## 十一、版本变更记录
 
 > 版本变更明细见 `version.txt`（append-only）。
 
 ---
 
-## 十一、故障排除
+## 十二、故障排除
 
 | 问题 | 解决方案 |
 |------|---------|
 | 后端启动失败 | 检查 Python ≥ 3.11，端口8000是否被占用 |
 | 前端启动失败 | 检查 Node.js ≥ 18，清除 node_modules 后重装 |
 | API连接失败 | 检查 config/config.yaml 中的 API 密钥是否有效 |
-| 二级工具不可用 | 安装对应依赖库（见7.3节可选依赖） |
+| 二级工具不可用 | 安装对应依赖库（见8.3节可选依赖） |
 
 ---
 
-## 十二、团队成员
+## 十三、团队成员
 
 | 角色 | 名称 | 职责 |
 |------|------|------|
@@ -455,7 +557,7 @@ pip install mss imageio numpy
 
 ---
 
-## 十三、E2E 测试
+## 十四、E2E 测试
 
 E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全链路：真实后端 + 真实 LLM + 真实工具 + 真实 SQLite + 真实浏览器。目的不是"跑通脚本"，而是**发现问题**。
 
@@ -463,23 +565,23 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 | 资产 | 位置 |
 |------|------|
-| 后端执行手册（用例/铁律/数据结构，v2.11） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
+| 后端执行手册（用例/铁律/数据结构，v2.15） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
-| 前端 UI 全链路用例（断线重连） | `frontend/e2e_case/reconnect-ui.spec.ts` |
+| 前端 UI 全链路用例（断线重连） | `frontend/e2e_case/fre2e_01_reconnect_ui.spec.ts` |
 
-### 13.1 总则与铁律
+### 14.1 总则与铁律
 
 | 铁律 | 说明 |
 |------|------|
 | 禁止 Mock | 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite，能看到什么测什么 |
 | 一次只跑一个 | 写完一个跑通验证后再写下一个；执行时一次一个 case，严禁批量 |
 | 测试代码不入提交 | 严禁 commit 任何测试相关的代码文件（按仓库提交规范） |
-| 通用逻辑只进公共库 | 逻辑严禁散落 case 脚本（详见 13.3.1） |
+| 通用逻辑只进公共库 | 逻辑严禁散落 case 脚本（详见 14.3.1） |
 | 失败不得跳过 | 任何 FAIL 都要闭环：定位 → 修复 → 复测，禁止跳过 |
 
-### 13.2 后端 E2E：环境与执行流程（4 步）
+### 14.2 后端 E2E：环境与执行流程（4 步）
 
 **第 1 步：重启后端（每次测试前必做）**：
 
@@ -491,12 +593,12 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 后端必须用**独立 PowerShell 窗口**启动（不走 OpenCode 的 bash 工具，避免日志混扰）；必须 `--reload`，修 Bug 后热重载免重启。
 
-**第 2 步：编写用例**：一次只写一个（编写规范见 13.3）。
+**第 2 步：编写用例**：一次只写一个（编写规范见 14.3）。
 
 **第 3 步：执行脚本**：真实 LLM 单次调用常超 120s，**必须 `subprocess.Popen` 后台跑**（命令行直接 pytest 会被 bash 工具 120s 强杀整棵进程树，pytest 自身 timeout=3000 来不及生效）：
 
 ```
-python -c "import subprocess; p=subprocess.Popen(['python','-m','pytest','tests/XXX.py','-x','--tb=long','-v','--timeout=2900','--junitxml=tests/output/YYY_result.xml'],stdout=open('tests/output/YYY_stdout.txt','w'),stderr=open('tests/output/YYY_stderr.txt','w'),cwd='backend'); print('PID:',p.pid)"
+python -c "import subprocess; p=subprocess.Popen(['python','-m','pytest','e2etests/XXX.py','-x','--tb=long','-v','--timeout=2900','--junitxml=tests/output/YYY_result.xml'],stdout=open('tests/output/YYY_stdout.txt','w'),stderr=open('tests/output/YYY_stderr.txt','w'),cwd='backend'); print('PID:',p.pid)"
 ```
 
 此后：轮询 Popen 的 PID 是否存活 → 读 `YYY_stdout.txt` / `YYY_stderr.txt` → 查 `YYY_result.xml`。**严禁再给启动脚本另设超时**。
@@ -509,18 +611,18 @@ python -c "import subprocess; p=subprocess.Popen(['python','-m','pytest','tests/
 | ② 调用链分析 | 工具选择/顺序、LLM 调用次数是否合理，输出 `[CALL CHAIN]` |
 | ③ 参数正确性 | tool_params 中路径/关键词是否正确 |
 
-### 13.3 后端 E2E：case 编写（重点）
+### 14.3 后端 E2E：case 编写（重点）
 
-#### 13.3.1 职责分层（核心原则）
+#### 14.3.1 职责分层（核心原则）
 
 | 层 | 文件 | 职责 |
 |----|------|------|
 | 核心脚本 | `e2e_helpers.py` | 全部通用逻辑：计时、SSE 流接收与解析、DB 校验、日志检查、测试记录写入、PASS/FAIL 判定 |
-| case 脚本 | `backend/tests/test_e2e_*.py` | 只做三件事：① 组装参数（用户输入/断言条件）② 调用核心函数 ③ 断言验证 |
+| case 脚本 | `backend/e2etests/test_e2e_*.py` | 只做三件事：① 组装参数（用户输入/断言条件）② 调用核心函数 ③ 断言验证 |
 
 **通用逻辑严禁散落 case 脚本**：历史教训——19 个 case 曾各自复制粘贴"取数块"，协议一变（action_tool→action）全部碎裂；现统一收敛到 `verify_db_tool_usage()` 等公共函数单点维护。
 
-#### 13.3.2 模板选型（backend/e2etests/e2emodel/，复制改场景，不重写框架）
+#### 14.3.2 模板选型（backend/e2etests/e2emodel/，复制改场景，不重写框架）
 
 | 模板 | 适用场景 | 验证重点 |
 |------|---------|---------|
@@ -529,7 +631,7 @@ python -c "import subprocess; p=subprocess.Popen(['python','-m','pytest','tests/
 | C — 多步推理 | 先读文件再回复 | 多 step 记录 + observation 存在 |
 | D — 数据持久化 | 目录列表等 | DB 三表完整 + steps 字段完整 |
 
-#### 13.3.3 脚本骨架（结构固定，只改业务）
+#### 14.3.3 脚本骨架（结构固定，只改业务）
 
 ```
 """用例头注释（手册第4章）：编号/用户输入/前置数据/预期调用链/通过标准/失败标准 + 铁律"""
@@ -575,7 +677,7 @@ async def test_e2e_p0_xx_xxx():
                           r or {}, db, ci, si, lc, passed, elapsed, error_info=error_info)
 ```
 
-#### 13.3.4 send_chat 返回值（写断言前必读）
+#### 14.3.4 send_chat 返回值（写断言前必读）
 
 | 字段 | 含义 | 断言用途 |
 |------|------|---------|
@@ -591,7 +693,7 @@ async def test_e2e_p0_xx_xxx():
 
 注意：`llm_call_count` 是 usage 事件数（每次 LLM 完成必带一个），**不是** `len(tool_calls)+1`（历史误区，批量工具会翻倍）；`preview=true` 的 action 是齿轮动画先行、不落库，send_chat 已跳过——防止 SSE=2×DB 一致性误判。
 
-#### 13.3.5 断言分层落地
+#### 14.3.5 断言分层落地
 
 | 层 | 写法 | 语义 |
 |----|------|------|
@@ -599,7 +701,7 @@ async def test_e2e_p0_xx_xxx():
 | SHOULD | `if cond: assert ...` | 有偏差但可容忍（如 `session_records_found` 确认性检查） |
 | MAY | `if cond: print(...)` | 仅记录，不判定（如回复含错误关键词） |
 
-#### 13.3.6 失败处理闭环
+#### 14.3.6 失败处理闭环
 
 | 类别 | 特征 | 归因路径 |
 |------|------|---------|
@@ -609,21 +711,21 @@ async def test_e2e_p0_xx_xxx():
 
 修复按 10 大规范，修复后必须复测同一 case，禁止跳过。
 
-### 13.4 后端 E2E：运行特殊情况
+### 14.4 后端 E2E：运行特殊情况
 
 | 特殊情况 | 说明与对策 |
 |----------|-----------|
-| bash 工具 120s 强杀进程树 | 见 13.2 第 3 步 `subprocess.Popen` 方案 |
+| bash 工具 120s 强杀进程树 | 见 14.2 第 3 步 `subprocess.Popen` 方案 |
 | 数据库未隔离 | 复用系统库 `~/.omniagent/chat_history.db`，污染生产数据；用例不删 DB 记录（保留供复盘） |
 | 独立测试配置 | 测试用 `E:\test_dir\test_config\config.yaml`（security.enabled=false），不改系统 `config/config.yaml` |
 | 测试数据目录 | 读写统一在 `E:\test_dir\`；用例后清理生成文件（报告/zip/新文档） |
 | 记录竞态 | 大任务 SSE 结束后后台仍在大体积写库，check_db 内置重试 8 次×2s，勿手动加 sleep |
 
-### 13.5 前端 E2E：case 编写（重点）
+### 14.5 前端 E2E：case 编写（重点）
 
 前端 E2E = Playwright **真实浏览器**（chromium）+ 真实后端（:8000）+ 真实 LLM + 真实 SQLite。用例 `frontend/e2e_case/*.spec.ts`，公共库唯一来源 `frontend/e2e_front_lib/`。
 
-#### 13.5.1 架构与断流原理（认识"进程分离"，写断线类 case 的前提）
+#### 14.5.1 架构与断流原理（认识"进程分离"，写断线类 case 的前提）
 
 | 角色 | 进程 | 职责 |
 |------|------|------|
@@ -637,7 +739,7 @@ async def test_e2e_p0_xx_xxx():
 
 **为什么不用 `context.setOffline`**：只拦截新请求，无法中断已建立的 in-flight SSE 流（已实测无效）。
 
-#### 13.5.2 三件套：POM / 进程 / 诊断（一律从 ../../e2e_front_lib 导入）
+#### 14.5.2 三件套：POM / 进程 / 诊断（一律从 ../../e2e_front_lib 导入）
 
 **页面对象 ChatPage（chat-page.ts，六方法）**：
 
@@ -654,7 +756,7 @@ async def test_e2e_p0_xx_xxx():
 
 **SSE 诊断 stream-diag.ts**：`attachStreamDiag(page)` 挂 /chat/stream REQ/RES/FAIL + 全 console + reload 探针，返回 `streamReqs/reconnectLogs/sseErrors/consoleAll/allFailed` 五数组；`printDiag(...)` 无条件打全量证据链；`logBaseOf/readLogSince` 日志基线与"本轮新增"读取；`getTodayLogPath(dir)` 当日后端日志 `app_YYYY-MM-DD.log`；`hasAdjacentDup(text)` run-on 检测。
 
-#### 13.5.3 脚本骨架（SOP，只改业务）
+#### 14.5.3 脚本骨架（SOP，只改业务）
 
 ```
 test.setTimeout(600_000);
@@ -675,7 +777,7 @@ const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } = attachSt
 // ⑫ printDiag(...) 无条件打印全量诊断（供失败归因，不参与断言）
 ```
 
-#### 13.5.4 关键机制详解
+#### 14.5.4 关键机制详解
 
 **① 日志对账防假通过（断线/重连类 case 必须）**：前端 console 出现"重连" ≠ 后端真收到重连。`logBaseOf` 记基线 → `readLogSince` 只读"本轮新增" → 断言补点日志 `重连请求接收...after_seq=(\d+)>0`。只对账本轮，防命中历史轮次遗留重连记录。
 
@@ -687,10 +789,10 @@ const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } = attachSt
 
 **⑤ 状态轮询禁 sleep**：等端口/按钮/console 就绪一律 `expect.poll`（500ms 间隔），断线感知等用带 deadline 的循环轮询；禁止固定 sleep 凑时序。
 
-#### 13.5.5 运行方式
+#### 14.5.5 运行方式
 
 ```
-npx playwright test reconnect-ui.spec.ts --headed --reporter=line   # 单 case
+npx playwright test fre2e_01_reconnect_ui.spec.ts --headed --reporter=line   # 单 case
 npm run test:e2e      # 整组（先 lint + format）
 ```
 
@@ -698,4 +800,4 @@ npm run test:e2e      # 整组（先 lint + format）
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-09-13 08:16:15 | **版本**: v0.19.40.12
+**许可**: 内部项目 | **最后更新**: 2026-09-19 14:55:00 | **版本**: v1.0.1
