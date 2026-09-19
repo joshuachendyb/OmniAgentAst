@@ -41,6 +41,10 @@
 //   反向a59aaff8e扁平纯文本(与CountdownRing.tsx恢复同批) — 小欧-2026-09-18
 // 编辑历史: 2026-09-18 小欧 - 对齐[50]§6.3.2确认稿(北京老陈令): ①信任勾选框搬回信任范围行之后、工具名称之前
 //   (勾选=信任上方范围, 语义连贯); ②content原因区补SAFETY_LEVEL_CONFIG等级图标(§6.3.3规格, 无图标等级不渲染) — 小欧-2026-09-18
+// 编辑历史: 2026-09-19 小欧 - UI六项优化(北京老陈验收): ①A-content区长路径截断显示…+最后2-3级目录+文件名(truncatePath)
+//   ②B-参数区超长value截断>80字符(truncateValue) ③C-操作范围行只显示目录去掉文件名+左对齐
+//   ④D-bypass信任勾选框加常驻灰色提示替代hover title ⑤E-倒计时文案去掉后端兜底
+//   ⑥F-bypass下允许按钮显示倒计时秒数"允许执行(Ns)" — 小欧-2026-09-19
 /**
  * AuthorizationModal - HITL人工确认弹窗
  *
@@ -120,8 +124,16 @@ const SAFETY_LEVEL_CONFIG: Record<
   },
 };
 
-// 2026-09-03 小欧 P3修复: @keyframes pulse移至组件外, 避免每次渲染重复注入<style>标签 — 小欧-2026-09-03
-// 2026-09-15 小欧 - pulse动画keyframes迁 AnimatedIcons/animations.ts 统一承载(北京老陈令), 组件仅调用注入 — 小欧-2026-09-15
+const truncatePath = (p: string): string => {
+  if (!p) return p;
+  const norm = p.replace(/\\/g, '/');
+  const parts = norm.split('/').filter(Boolean);
+  if (parts.length <= 3) return norm;
+  return `…/${parts.slice(-3).join('/')}`;
+};
+
+const truncateValue = (v: string, max = 80): string =>
+  v.length > max ? `${v.slice(0, max)}…` : v;
 
 const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   visible,
@@ -149,7 +161,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
       const p = request?.params;
       if (!p || typeof p !== 'object') return String(p ?? '');
       return Object.entries(p)
-        .map(([k, v]) => `${k}=${String(v ?? '')}`)
+        .map(([k, v]) => `${k}=${truncateValue(String(v ?? ''))}`)
         .join('\n');
     } catch {
       return '[参数序列化失败]';
@@ -248,7 +260,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         >
           {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
           {isBypass
-            ? `将在 ${countdown}s 后自动确认（后端 ${request.backendTimeout ?? 60}s 兜底）`
+            ? `将在 ${countdown}s 后自动确认`
             : `未响应将在 ${countdown}s 后自动拒绝`}
         </div>
 
@@ -287,21 +299,20 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </div>
         )}
 
-        {/* trust_path 操作范围展示: 操作目标路径 — 小欧-2026-09-18 */}
+        {/* trust_path 操作范围展示: 操作目标路径(仅目录, 去文件名) — 小欧-2026-09-18 */}
         {request.trustPath && (
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
               gap: 4,
               marginBottom: 6,
               fontSize: 12,
               color: '#262626',
+              textAlign: 'left',
             }}
           >
-            <FolderOutlined style={{ color: '#faad14' }} />
-            {/* 7.4.3-layout: trust_path折行显示(≤2行完整展示, 超2行截断省略号, title可查全文) — 小欧-2026-09-18 */}
+            <FolderOutlined style={{ color: '#faad14', flexShrink: 0 }} />
             <span
               title={`操作范围: ${request.toolName} › ${request.trustPath}${
                 request.toolName.startsWith('registry')
@@ -316,7 +327,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
                 wordBreak: 'break-all',
               }}
             >
-              操作范围: {request.toolName} › {request.trustPath}
+              操作范围: {truncatePath(request.trustPath)}
               {request.toolName.startsWith('registry')
                 ? '，含子键'
                 : '，含子目录'}
@@ -325,20 +336,24 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         )}
 
         {/* §6.3.2确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
-        <div style={{ marginBottom: 6 }}>
+        <div style={{ marginBottom: 6, textAlign: 'left' }}>
           <Checkbox
             checked={trustSession}
             disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
             onChange={(e) => setTrustSession(e.target.checked)}
-            // 2026-09-16 老杨 - S5:Tooltip改原生title,消除Popover DOM层; 保留缺陷①③文案
             title={
               isBypass
-                ? '自动确认模式下信任不落库，勾选无效'
-                : '信任后：同会话同工具+下方操作范围免弹框' // 7.4.3二选一: 范围已常驻展示于操作范围行 — 小欧-2026-09-18
+                ? undefined
+                : '信任后：同会话同工具+下方操作范围免弹框'
             }
           >
             信任此操作（本次会话）
           </Checkbox>
+          {isBypass && (
+            <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 2, paddingLeft: 22 }}>
+              自动确认模式下信任不生效
+            </div>
+          )}
         </div>
 
         {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
@@ -417,7 +432,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               flex: 1,
             }}
           >
-            允许执行
+            {isBypass && !submitting ? `允许执行 (${countdown}s)` : '允许执行'}
           </Button>
         </div>
       </div>
