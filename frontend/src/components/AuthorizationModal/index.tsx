@@ -132,6 +132,16 @@ const truncatePath = (p: string): string => {
   return `…/${parts.slice(-3).join('/')}`;
 };
 
+// 操作范围行只显示目录(去掉文件名), 保留最后2级目录
+const truncateDir = (p: string): string => {
+  if (!p) return p;
+  const norm = p.replace(/\\/g, '/');
+  const dir = norm.replace(/\/[^/]*$/, ''); // 去掉末尾文件名, 取目录部分
+  const parts = dir.split('/').filter(Boolean);
+  if (parts.length <= 2) return dir || norm;
+  return `…/${parts.slice(-2).join('/')}`;
+};
+
 const truncateValue = (v: string, max = 80): string =>
   v.length > max ? `${v.slice(0, max)}…` : v;
 
@@ -327,7 +337,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
                 wordBreak: 'break-all',
               }}
             >
-              操作范围: {truncatePath(request.trustPath)}
+              操作范围: {truncateDir(request.trustPath)}
               {request.toolName.startsWith('registry')
                 ? '，含子键'
                 : '，含子目录'}
@@ -336,7 +346,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         )}
 
         {/* §6.3.2确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
-        <div style={{ marginBottom: 6, textAlign: 'left' }}>
+        <div style={{ marginBottom: 6, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Checkbox
             checked={trustSession}
             disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
@@ -350,9 +360,9 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             信任此操作（本次会话）
           </Checkbox>
           {isBypass && (
-            <div style={{ fontSize: 11, color: '#8c8c8c', marginTop: 2, paddingLeft: 22 }}>
+            <span style={{ fontSize: 11, color: '#8c8c8c' }}>
               自动确认模式下信任不生效
-            </div>
+            </span>
           )}
         </div>
 
