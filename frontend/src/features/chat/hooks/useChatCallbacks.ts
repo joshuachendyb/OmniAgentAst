@@ -55,7 +55,7 @@
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F3代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.2): onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
-// 编辑历史: 2026-09-19 小欧: onComplete终态非failed时调streaming?.onSuccess?.(), 用于清liveError等上层状态 — 北京老陈驱动
+// 编辑历史: 2026-09-19 小欧: onComplete终态非failed时通过onSuccessRef调最新回调清liveError, 解闭包陈旧(streaming不在deps) — 北京老陈驱动
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -183,6 +183,10 @@ export const useChatCallbacks = (
   // 小欧 2026-09-10 [A3]: 并发暂停计数 —— 多个暂停来源(并发HITL/服务端)依次进入,
   //   仅当最后一个来源恢复才解除暂停; 单恢复不再误灭其他来源的暂停
   const pauseCountRef = useRef(0);
+
+  // 2026-09-19 小欧: onSuccessRef 持有最新回调引用, 解 onComplete 闭包陈旧(streaming 不在 deps) — 北京老陈驱动
+  const onSuccessRef = useRef<(() => void) | undefined>(streaming?.onSuccess);
+  onSuccessRef.current = streaming?.onSuccess;
 
   const onStep = useCallback(
     (step: ExecutionStep) => {
@@ -530,11 +534,11 @@ export const useChatCallbacks = (
       onStepFingerprintRef.current.clear();
 
       // 2026-09-19 小欧: 任务成功完成(终态非failed)清上层状态(如liveError) — 北京老陈驱动
+      //   通过 onSuccessRef 调用最新回调, 避免 onComplete 闭包陈旧(streaming 不在 deps)
       if (!isError) {
-        streaming?.onSuccess?.();
+        onSuccessRef.current?.();
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- streaming.onSuccess为稳定ref回调, 与现有setIsReceiving模式一致, 不入deps防重渲
     [
       setMessages,
       setLoading,
@@ -857,6 +861,6 @@ export const useChatCallbacks = (
     onResumed,
     onRetry,
     onAuthorizationRequired, // 【v3.4新增】
-    onSuccess: streaming?.onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
+    onSuccess: onSuccessRef.current, // 2026-09-19 小欧: 通过 ref 取最新回调(解闭包陈旧) — 北京老陈驱动
   };
 };
