@@ -22,6 +22,8 @@
 # 2026-09-08 - 小欧 - 北京老陈指令(console可见性): cancel 端点补 logger.info(仅文件, 不双写; 双写仅疑点5处)。
 #   [背景] cancel 链路可靠日志已有: task_runtime.cancel_task 双写 + http关闭 info; 本处补 API 层入口留痕
 #   (task_id/session_id/source), 排查"前端是否真发了取消"不再靠猜 — 小欧-2026-09-08
+# 2026-09-19 - 小欧 - P-005契约化(北京老陈批准): confirm端点 confirm_id失效响应补 code="confirm_stale" 稳定字段,
+#   前端改读 code 判定(替代字符串includes匹配), 从源头消除"后端message文案变更即前端失效"的脆弱链 — 小欧-2026-09-19
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -97,7 +99,7 @@ async def confirm_stream_endpoint(request: Request):
 
         if not ok:
             _log.warning(f"[HITL-confirm] confirm_id不存在或已处理: confirm_id={confirm_id}")
-            return {"success": False, "error": "confirm_id not found or already processed"}
+            return {"success": False, "error": "confirm_id not found or already processed", "code": "confirm_stale"}
 
         _log.info(f"[HITL-confirm] 确认成功: confirm_id={confirm_id}")
         return {"success": True}
