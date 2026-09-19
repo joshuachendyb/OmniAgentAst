@@ -10,6 +10,7 @@
 //   deps同步改源(341/413行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): shared.executionStepsRef 维持从 chatStreaming 取,
 //   useChatCallbacks 不再需要 executionStepsRef(读点用 sseParser 三参、清空点归 useSSE.clearSteps) — 小欧-2026-09-10
+// 编辑历史: 2026-09-19 小欧: options加onSuccess回调, 透传useChatCallbacks(任务成功完成→清liveError) — 北京老陈驱动
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -161,9 +162,11 @@ export const useChatFacade = (options?: {
   baseURL?: string;
   sessionId?: string | null;
   onError?: (liveError: LiveError) => void;
+  onSuccess?: () => void; // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError — 北京老陈驱动
 }): UseChatFacadeReturn => {
   const { baseURL = '', sessionId } = options || {};
   const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
+  const onSuccess = options?.onSuccess;
 
   // 1. 基础状态（始终加载）
   const chatState = useChatState();
@@ -173,6 +176,7 @@ export const useChatFacade = (options?: {
   const receivingSetterRef = useRef<(v: boolean) => void>();
   const chatCallbacks = useChatCallbacks(chatState, {
     setIsReceiving: (v: boolean) => receivingSetterRef.current?.(v),
+    onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
   });
 
   // 2.1 透传 SSE 错误给上层（P3 数据源对象形态，6.3.4——不再压 string）

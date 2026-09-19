@@ -55,6 +55,7 @@
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F3代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.2): onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
+// 编辑历史: 2026-09-19 小欧: onComplete终态非failed时调streaming?.onSuccess?.(), 用于清liveError等上层状态 — 北京老陈驱动
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -99,6 +100,8 @@ export interface UseChatCallbacksReturn {
   onPaused: () => void;
   onResumed: () => void;
   onRetry: (message: string, waitTime?: number) => void;
+  // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError等上层状态 — 北京老陈驱动
+  onSuccess?: () => void;
   onAuthorizationRequired: (data: {
     confirm_id: string;
     tool_name: string;
@@ -144,6 +147,7 @@ export const useChatCallbacks = (
   state: UseChatStateReturn,
   streaming?: {
     setIsReceiving: (receiving: boolean) => void;
+    onSuccess?: () => void; // 2026-09-19 小欧: 任务成功完成回调(终态非failed) — 北京老陈驱动
   }
 ): UseChatCallbacksReturn => {
   // 解构状态
@@ -524,7 +528,13 @@ export const useChatCallbacks = (
 
       // A1(2026-09-09 小欧): 终态清空任务内指纹去重Set, 供下一任务重新计数 — 小欧-2026-09-09
       onStepFingerprintRef.current.clear();
+
+      // 2026-09-19 小欧: 任务成功完成(终态非failed)清上层状态(如liveError) — 北京老陈驱动
+      if (!isError) {
+        streaming?.onSuccess?.();
+      }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- streaming.onSuccess为稳定ref回调, 与现有setIsReceiving模式一致, 不入deps防重渲
     [
       setMessages,
       setLoading,
@@ -847,5 +857,6 @@ export const useChatCallbacks = (
     onResumed,
     onRetry,
     onAuthorizationRequired, // 【v3.4新增】
+    onSuccess: streaming?.onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
   };
 };

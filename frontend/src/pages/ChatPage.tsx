@@ -38,6 +38,7 @@
 //   "点击任务展开"与"发送任务展开"两触发源调同一setter非重复实现(DRY合规), G2 effect恢复单一职责 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   useChatPanels 调用新增 updateTaskResponse 透传(供 RightViewer 历史任务加载 steps 后写 final.response 到左侧) — 小欧-2026-09-15
+// 编辑历史: 2026-09-19 小欧: useChatFacade加onSuccess: () => setLiveError(null), 任务成功完成时清LiveMeta — 北京老陈驱动
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -71,6 +72,8 @@ const ChatPage: React.FC = () => {
     baseURL: API_BASE_URL,
     sessionId: urlSessionId, // 2026-09-12 小欧 P1-10: 复用 L47 已取 urlSessionId, 消重复 searchParams.get(DRY) — 小欧-2026-09-12
     onError: (liveError: LiveError) => setLiveError(liveError),
+    // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
+    onSuccess: () => setLiveError(null),
   });
   const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
   const { sessionId } = chatState;
