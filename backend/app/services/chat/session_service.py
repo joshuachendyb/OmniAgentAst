@@ -228,7 +228,10 @@ def _cancel_cascade(session_id: str) -> None:
             if _meta.get("session_id") == session_id and _meta.get("status") in ("running", "paused"):
                 _task_obj = _meta.get("_task")
                 _loop = _task_obj.get_loop() if _task_obj is not None else asyncio.get_event_loop()
-                # 提交回任务原 loop, 不阻塞等待(级联取消是异步信号, 后台 agent 自行收尾)
+                # loop 已关闭则跳过: 不创建 coroutine, 防 never awaited 警告 — 小欧-2026-09-20
+                if _loop.is_closed():
+                    logger.info(f"[H1] 目标loop已关闭, 任务已终止: session={session_id}, task={_tid}")
+                    continue
                 asyncio.run_coroutine_threadsafe(
                     cancel_task(_tid, session_id, "session_deleted"), _loop)
                 logger.info(f"[H1] 会话删除级联取消任务: session={session_id}, task={_tid}")
