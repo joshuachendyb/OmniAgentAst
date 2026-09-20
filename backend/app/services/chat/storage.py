@@ -79,6 +79,13 @@
 #   非文件信任域(registry/sql)跳过 Path.resolve() —— 撤销侧一致性, 防 registry 原样键路径再被臆造 resolve 致撤消失配; — 小欧-2026-09-16
 # 2026-09-16 - 小欧 - 函数化(DRY/KISS核查): 删除本层 _norm_trust_path 双份副本, 撤销侧改消费
 #   trust_db.norm_trust_path 单一来源(services→tools 合法单向); 同步删仅被其使用的 from pathlib import Path — 小欧-2026-09-16
+# 2026-09-20 - 小欧 - D-2修复(删会话内存ID泄漏): allocator 增 forget_session(session_id) 双侧清空
+#   (_user_ids/_assistant_ids), 模块级 forget_session_message_ids 清 track 字典; delete_session 经 session_service 接入。
+# 2026-09-20 - 小欧 - E-4修复(一条消息拉到多 task 配对的重复气泡): fetch_session_user_message_pairs 按
+#   user_message_id 取 chat_tasks MAX(id) 行聚合, 陈旧 _user_msg_id 复用的一对多只剩最新终态一对。
+# 2026-09-20 - 小欧 - D-1修复(注入消息DB幽灵): update_user_message_final 对"注入吸收的新 uid(非任务登记首条)"补
+#   chat_tasks 配对行(同任务行同源复制 ai_message_id); fetch 侧 D-1兜底: 无配对(ct=NULL)时回退本会话最近任务行的
+#   ai_message_id, 消除前端渲染双栖/linked 误判未回答。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -128,6 +135,15 @@ def get_last_user_message_id(conn: Connection, session_id: str) -> Optional[int]
         (session_id,),
     ).fetchone()
     return row["id"] if row else None
+
+
+def forget_session_message_ids(session_id: str) -> None:
+    """删除会话时清理内存消息ID缓存(track 字典 + allocator 双缓存) — 小欧 2026-09-20 D-2修复:
+    delete_session 原从不清内存, 会话删除后 dict 无限驻留(长驻内存泄漏)且陈旧 id 可能复活。
+    allocator 与 track 同源同锁, 一并清; 供 session_service.delete_session 调用(DRY)。"""
+    with _message_ids_lock:
+        _user_message_ids.pop(session_id, None)
+    _allocator.forget_session(session_id)
 
 
 class ExecutionStepsUpdate(BaseModel):
@@ -187,8 +203,11 @@ class AssistantMessageIdAllocator:
         """
         with self._lock:
             user_id = self._user_ids.get(session_id)
-
-            if user_id is not None:
+            cached_aid = self._assistant_ids.get(session_id)  # D-2读缓存(2026-09-20 小欧): 缓存列优先当起点,
+            #   复用上轮分配结果, 免全局撞号校验时递增寻空位(原仅track入口, 缓存只写不读, 分配准确性受损)
+            if cached_aid is not None:
+                expected = cached_aid + 1
+            elif user_id is not None:
                 expected = user_id + 1
             else:
                 c = conn.cursor()
@@ -232,6 +251,13 @@ class AssistantMessageIdAllocator:
 
             self._assistant_ids[session_id] = expected
         return expected, True
+
+    def forget_session(self, session_id: str) -> None:
+        """删除会话时清理本 allocator 的内存缓存(_user_ids 与 _assistant_ids) — 小欧 2026-09-20 D-2修复:
+        防 cache 无限驻留 + 陈旧值复活(与会话同生命周期, 会话删除即应失效)"""
+        with self._lock:
+            self._user_ids.pop(session_id, None)
+            self._assistant_ids.pop(session_id, None)
 
 
 # 模块级单例:AssistantMessageIdAllocator复用实例(避免每次调用新建,缓存失效)
@@ -654,13 +680,17 @@ def insert_user_message(
 
 def update_user_message_final(
     conn: Connection, *,
-    user_message_id: int, task_id: str,
+    user_message_id: int, task_id: str, session_id: Optional[str] = None,
     response: str, reasoning: str = None,
     outcome: str = None, task_model: Optional[ModelRef] = None,
     accumulated_usage: str = None,
 ) -> None:
     """任务完成后回填 final 字段到 chat_user_message
-    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两分离入参 → task_model: ModelRef 落 chat_model JSON 单列"""
+    2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两分离入参 → task_model: ModelRef 落 chat_model JSON 单列
+    2026-09-20 小欧 D-1修复: 注入消息(B机制)被吸收并答复后, 若其 user_message_id 是该任务登记首条之外
+      的新 uid(chat_tasks 无其配对行), 则补一对——否则 fetch_session_user_message_pairs LEFT JOIN
+      成 DB 幽灵(ai_message_id=NULL, 前端渲染双栖/linked 误判未回答)。配对 ai_message_id 复用任务
+      同源地址(注入回复归属该任务), task 行全部配对列同源复制(禁止 backwar演进, 单点落库)。"""
     conn.execute(
         """UPDATE chat_user_message
            SET task_id=?, response=?, reasoning=?, outcome=?,
@@ -670,6 +700,27 @@ def update_user_message_final(
          task_model.model_dump_json() if task_model else None,
          accumulated_usage, user_message_id),
     )
+    if session_id:
+        _anchor = conn.execute(
+            "SELECT user_message_id FROM chat_tasks WHERE task_id=? LIMIT 1", (task_id,)
+        ).fetchone()
+        _first_uid = _anchor["user_message_id"] if _anchor else None
+        if _first_uid is not None and user_message_id != _first_uid:
+            _paired = conn.execute(
+                "SELECT 1 FROM chat_tasks WHERE user_message_id=? AND task_id=? LIMIT 1",
+                (user_message_id, task_id),
+            ).fetchone()
+            if not _paired:
+                conn.execute(
+                    """INSERT INTO chat_tasks (task_id, session_id, user_message_id, ai_message_id,
+                        user_input, context_link_mode, context_root_task_id, sessionModel, start_time,
+                        status, created_at, updated_at)
+                       SELECT task_id, session_id, ?, ai_message_id, user_input, context_link_mode,
+                              context_root_task_id, sessionModel, start_time, 'terminal', created_at, updated_at
+                       FROM chat_tasks WHERE task_id=? LIMIT 1""",
+                    (user_message_id, task_id),
+                )
+                logger.info(f"[D-1] 注入消息 {user_message_id} 补配对(归属任务 {task_id})")
 
 
 def load_user_message_by_task(conn: Connection, task_id: str) -> Optional[dict]:
@@ -714,13 +765,25 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
     返回 list[dict]: 每行一条 user 消息及其配对 assistant(ai_message_id 为 None 表示暂无 AI 回答),
     字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id
     2026-08-22 小欧 归一报告v1.25 6.3: cum.model/cum.provider 两列 → cum.chat_model JSON 单列,
-    返回 dict 的 model/provider 键由 chat_model 派生(键名不变, 旧列不再读取)"""
+    返回 dict 的 model/provider 键由 chat_model 派生(键名不变, 旧列不再读取)
+    2026-09-20 小欧 E-4修复: 一条 user 消息仅取最新 task 的配对(chat_tasks 按 user_message_id 取 MAX(id) 行),
+    杜绝陈旧 _user_msg_id 复用导致的一对多(前端重复气泡 + 旧终态被覆写)
+    2026-09-20 小欧 D-1兜底: 无配对(ct=NULL)但本会话存在任务时, 兜底取本会话最近任务行的 ai_message_id,
+    消除 B机制注入消息的 DB 幽灵(NULL)——根治链上已由 update_user_message_final 补真实配对, 此兜底仅服务历史缺口"""
     sql = """SELECT cum.id AS user_id, cum.content AS user_content, cum.response AS ai_content,
                     cum.reasoning AS ai_reasoning,
                     cum.chat_model AS chat_model, cum.task_id AS task_id,
-                    cum.created_at AS created_at, ct.ai_message_id AS ai_message_id
+                    cum.created_at AS created_at,
+                    COALESCE(ct.ai_message_id, fb.ai_message_id) AS ai_message_id
              FROM chat_user_message cum
-             LEFT JOIN chat_tasks ct ON ct.user_message_id = cum.id
+             LEFT JOIN (
+                 SELECT user_message_id, MAX(id) AS mid FROM chat_tasks GROUP BY user_message_id
+             ) tg ON tg.user_message_id = cum.id
+             LEFT JOIN chat_tasks ct ON ct.id = tg.mid
+             LEFT JOIN (
+                 SELECT session_id, MAX(id) AS lastid FROM chat_tasks GROUP BY session_id
+             ) tsl ON tsl.session_id = cum.session_id
+             LEFT JOIN chat_tasks fb ON fb.id = tsl.lastid
              WHERE cum.session_id = ?"""
     params: list = [session_id]
     if lower_id is not None:

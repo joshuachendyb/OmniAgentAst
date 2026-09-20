@@ -23,6 +23,9 @@
 #   收集全部 Future 等待 result(timeout=5) 落定, 杜绝 fire-and-forget 遗留后台写库窗口)。
 #   compliance: SRP(级联职责收口本服务)/KISS-DIRECT/禁止backward
 # 2026-09-20 - 小欧 - 三堂会审BUG-05修复: _cancel_cascade二次扫描补提交快照期间新注册任务(缩小漏取消窗口)
+# 2026-09-20 - 小欧 - D-2修复(删会话内存ID泄漏): delete_session 级联取消后调用 storage.forget_session_message_ids
+#   (内存 track 字典 + allocator _user_ids/_assistant_ids 双侧清空), 防同 session_id 复用/内存无限增长。
+#   compliance: SRP(历史归属 service)/禁止backward
 """
 session_service — 会话业务服务(services/chat)
 
@@ -41,7 +44,7 @@ from app.utils.time_utils import get_local_iso_timestamp, now_str, format_timest
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
 from app.services.chat.message_service import delete_session_display_names
-from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate, parse_session_model
+from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate, parse_session_model, forget_session_message_ids  # D-2(2026-09-20 小欧): forget_session_message_ids 内存ID清理
 
 
 class SessionUpdate(BaseModel):
@@ -217,6 +220,7 @@ def delete_session(session_id: str):
         )
 
     delete_session_display_names(session_id)
+    forget_session_message_ids(session_id)  # D-2(2026-09-20 小欧): 清理内存消息ID缓存, 防驻留/陈旧复活
     logger.info(f"删除会话成功: id={session_id}")
     return {"success": True, "message": "会话删除成功"}
 
