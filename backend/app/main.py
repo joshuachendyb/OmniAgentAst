@@ -38,6 +38,8 @@ import logging
 
 from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.config_routes import router as config_router
+from app.api.v1.settings_routes import router as settings_router
+from app.api.v1.model_routes import router as model_router
 from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测试路由迁出 health.py — 小欧 2026-08-12
 from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-6): token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
@@ -150,6 +152,8 @@ app.include_router(tool_routes_router, prefix="/api/v1", tags=["tools"])  # A4: 
 app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(config_router, prefix="/api/v1", tags=["config"])
+app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
+app.include_router(model_router, prefix="/api/v1", tags=["model"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 

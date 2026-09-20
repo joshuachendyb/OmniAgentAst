@@ -354,7 +354,7 @@ def _update_security(config_data: dict, update) -> None:
     logger.info("更新安全配置成功")
 
 FIELD_HANDLERS: Dict[str, Any] = {
-    "ai_model_ref": _update_model_ref,   # 归一: provider/model 两键合一(方案B) — 小欧 2026-08-22
+    "ai_model_ref": _update_model_ref,
     "provider_api_keys": _update_api_keys,
     "theme": lambda config_data, update: _set_app_field(config_data, "theme", update.theme, "主题"),
     "language": lambda config_data, update: _set_app_field(config_data, "language", update.language, "语言"),
@@ -362,3 +362,63 @@ FIELD_HANDLERS: Dict[str, Any] = {
     "security": _update_security,
     "project_root": lambda config_data, update: _set_app_field(config_data, "project_root", update.project_root, "项目根目录"),
 }
+
+
+# ====================================================================
+# 公共工具函数（settings_service/model_service 共用）
+# ====================================================================
+
+def _get_dotted(d: dict, key: str, default: Any = None) -> Any:
+    """点分路径取值（如 'ai.model_ref'）。"""
+    keys = key.split(".")
+    cur = d
+    for k in keys:
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        else:
+            return default
+        if cur is None:
+            return default
+    return cur
+
+
+def _config_mtime() -> float:
+    """返回 config.yaml 的 mtime（秒级浮点）。"""
+    import os
+    cp = Path(_get_config_path())
+    if cp.exists():
+        return os.path.getmtime(cp)
+    return 0.0
+
+
+def mask_secret_value(value: Any) -> str:
+    """脱敏：前3+后2 星号补中间。"""
+    if not value or not isinstance(value, str):
+        return "***"
+    if len(value) <= 5:
+        return value[0] + "***"
+    return value[:3] + "***" + value[-2:]
+
+
+def merge_region_patch(region: Dict[str, Any], scope: str = "settings") -> None:
+    """读→合→校验→写：单次落盘的 region 合并。
+    scope='settings' 走完整校验（_validate_config_integrity）。
+    小沈 2026-09-20 v4.19 9.3.3
+    """
+    config_path = str(_get_config_path())
+    current = read_yaml_config(Path(config_path))
+    for k, v in region.items():
+        _set_nested(current, k, v)
+    write_yaml_config(config_path, current)
+    logger.info(f"merge_region_patch({scope}) 落盘完成, keys={list(region.keys())}")
+
+
+def _set_nested(d: dict, key: str, value: Any) -> None:
+    """按点分路径设置值（如 'ai.provider' → d['ai']['provider'] = value）。"""
+    keys = key.split(".")
+    cur = d
+    for k in keys[:-1]:
+        if k not in cur or not isinstance(cur[k], dict):
+            cur[k] = {}
+        cur = cur[k]
+    cur[keys[-1]] = value
