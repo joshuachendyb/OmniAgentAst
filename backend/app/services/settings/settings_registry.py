@@ -3,7 +3,8 @@
 settings_registry — 设置页唯一 Schema 源（3.2 铁律1）
 key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局唯一，加载自检重复直接拒启。
 
-v4.19 2026-09-20 小沈: 从文档54 9.1.1 落盘；key→{type,default,range,secret,env_key,group}
+编辑历史:
+  2026-09-20 - 小沈 - 新建：v4.19 Phase 2 从文档54 9.1.1 落盘；key→{type,default,range,secret,env_key,group}
 """
 from typing import Any, Dict, List, Optional
 

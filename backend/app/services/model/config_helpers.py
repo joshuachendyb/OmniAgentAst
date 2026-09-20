@@ -12,6 +12,9 @@ F10合并: 小欧 - 2026-06-08
 #   _update_model_ref(provider+model+api_base 成对原子写入, 消除对 FIELD_HANDLERS 迭代顺序的耦合);
 #   FIELD_HANDLERS 键 "ai_provider"/"ai_model" → "ai_model_ref"; ②_auto_fix_and_validate 的 fail_result
 #   current_provider/current_model → current_model_ref 结构
+# 2026-09-20 - 小沈 - v4.19 Phase 1/2: 新增公共工具函数 _get_dotted/_config_mtime/mask_secret_value/merge_region_patch/_set_nested;
+#   write_yaml_config 改调 atomic_write 原子落盘; _write_system_yaml 改为返回 ordered data（不再直写文件）
+# 2026-09-20 - 小沈 - v4.19 Phase 2: 新增 _validate_config_integrity 校验（merge_region_patch 安全网）
 
 import shutil
 import yaml
