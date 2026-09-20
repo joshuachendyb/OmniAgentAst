@@ -65,6 +65,14 @@
 #   供文件A 排查副本 format 前直落盘(前端不可见铁律不变); execute_tool_with_retry 签名接收+:371 透传最后一跳(#21);
 #   实施修正: 失败回调置于 _should_retry 判定之前——中间可重试失败尝试也必须成块(11.7.9-2「每次尝试各写一块」),
 #   设计 diff 原只记末次失败与需求不符, 按需求权威执行
+# 2026-09-20 - 小欧 - E-3修复(结构化工具错误识别): 新增 StructuredToolError(携带 category 的标记异常) +
+#   _struct_error_category 提取; 错 dict 无 error_type 时回退读 other_data.category(字符串/枚举值均可);
+#   _should_retry 双通道判定: 分类器类别(category.value)或异常类型名命中 retryable 列表即重试,
+#   非字符串 error_type 不再被误拒。compliance: SRP/DIRECT
+# 2026-09-20 - 小欧 - E-3直线化(北京老陈 10大规范三堂会审, 修订上一条): 判定恢复唯一通道 category.value 匹配
+#   (TOOL_RETRY_CONFIG 的 retryable 全为 value, 类型名通道对真实配置是死通道→YAGNI); error dict 统一承载
+#   StructuredToolError(自带 category, 分类器 getattr 通道直判), 删 raise TimeoutError 绕回分支(KISS-DIRECT/DRY,
+#   分类器对 TimeoutError→TIMEOUT 映射本已存在, 重造无增量)。行为不变: error dict 可重试类别重试、耗尽返回失败。
 """
 统一工具重试引擎 — 工具的外部重试机制
 
@@ -159,6 +167,15 @@ def _build_invalid_param_hint(action: str, invalid_keys: list) -> str:
         _spec = _INVALID_PARAM_HINTS.get((action, _k))
         _parts.append(_spec if _spec else f"参数 '{_k}' 不是 {action} 的合法参数，请删除该参数或改用正确参数名(合法参数见详情)")
     return "；".join(_parts)
+
+
+class StructuredToolError(Exception):
+    """结构化工具错误 — 小欧 2026-09-20 E-3 修复
+    工具以 error dict(code/exec_code="error") 返回失败时构造, 自带分类 category(ToolErrorCategory),
+    分类器据此直接判定, 不依赖异常类型名/消息关键词猜测(见 tool_error_classifier.py)。"""
+    def __init__(self, message: str, category: ToolErrorCategory):
+        super().__init__(message)
+        self.category = category
 
 
 class ToolRetryEngine:
@@ -518,12 +535,32 @@ class ToolRetryEngine:
 
         return params
     
+    @staticmethod
+    def _struct_error_category(result: Dict[str, Any]) -> ToolErrorCategory:
+        """从 error dict 提取自我声明的错误类别(E-3, 2026-09-20 小欧) — 优先 other_data.category,
+        其次字典 message 关键词(timeout/timed out), 兜底 UNKNOWN(不重试, 保守不回退于无限循环)"""
+        _other = result.get("other_data")
+        if isinstance(_other, dict):
+            _cat = _other.get("category")
+            if isinstance(_cat, str):
+                try:
+                    return ToolErrorCategory(_cat)
+                except ValueError:
+                    pass
+        _msg = str(result.get("message", "")).lower()
+        for _kw in ("timeout", "timed out", "time out"):
+            if _kw in _msg:
+                return ToolErrorCategory.TIMEOUT
+        return ToolErrorCategory.UNKNOWN
+
     def _should_retry(self, e: Exception, retryable_errors: list, attempt: int, max_retries: int,
                        error_category: Optional[ToolErrorCategory] = None) -> bool:
-        """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29"""
+        """判断是否应该重试 — 只查 per-tool 配置，不查 is_retryable — 小欧 2026-06-29
+        2026-09-20 小欧 E-3直线化(北京老陈 10大规范三堂会审): 判定唯一通道 category.value 匹配——
+        TOOL_RETRY_CONFIG 的 retryable 全部为 ToolErrorCategory.value(如 "timeout"/"network"),
+        结构化错误经 StructuredToolError 自带 category 由分类器 getattr 通道直判, 不再需要异常类型名通道"""
         if error_category is None:
             error_category = ToolErrorClassifier.classify_tool_error(e)
-        # 使用 error_category.value 进行匹配，因为 TOOL_RETRY_CONFIG 中的字符串是 ToolErrorCategory.value
         is_retryable = error_category.value in retryable_errors
         return is_retryable and attempt < max_retries
 
@@ -571,6 +608,15 @@ class ToolRetryEngine:
                         other = {}
                     other["retry_count"] = attempt
                     result["other_data"] = other
+                    # 2026-09-20 小欧 E-3修复+直线化(北京老陈 10大规范三堂会审): 结构化错误签名
+                    #   (code/exec_code=error)识别为失败并触发重试——原"dict 一律当成功"吞掉工具返回的 error
+                    #   dict(联网超时等一次即过, 无重试机会); 统一承载 StructuredToolError(category 自声明,
+                    #   分类器 getattr 通道直判, 单一通道 category.value), 不再另 raise TimeoutError 绕回
+                    #   (KISS-DIRECT/DRY); 无 error 信号的正常 dict 语义保持不变(零退化)
+                    if result.get("code") == "error" or result.get("exec_code") == "error":
+                        raise StructuredToolError(
+                            f"tool {action} 返回结构化错误: {str(result)[:200]}",
+                            self._struct_error_category(result))
                 if on_attempt_recorded:
                     on_attempt_recorded(action, attempt, params, result, True)  # #B 本次尝试成功 — 小欧 2026-08-23
                 return result
