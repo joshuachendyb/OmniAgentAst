@@ -36,6 +36,12 @@
 #   直接yield error放行, 由handle_answer置CANCELLED; ②except Exception分支 _cancelled=True 时由静默return
 #   改yield error(cancelled)承接——杜绝下游空响应被set_failed标FAILED覆盖取消终态 — 小欧 2026-09-07
 # 2026-09-17 小欧 [48]修改4: 去"LLM流式错误:"前缀, stream_error直接透传(错误类别由前端中文标签呈现); 分流/重试语义零改动 — 小欧-2026-09-17
+# 2026-09-20 - 小欧 - C-2修复(RED-C-2, test_tdd_41_46_bug_c_red.py): 删 FC降级前 `agent.llm_client.reset_cancel()`
+#   (原 2026-07-28 #31 fix 的退化根因 —— reset_cancel 清 _cancelled 致已取消任务继续发降级请求);
+#   改为降级前 _check_stop() 短路: 已取消则 yield create_cancelled_chunk 收尾不再发降级请求。
+#   仅认类级 _check_stop(真实 BaseAIService), SimpleNamespace/MagicMock 测试桩忽略(不触发短路)。
+#   compliance: KISS-DIRECT/禁止backward
+# 2026-09-20 - 小欧 - C-2/BUG-09修复: ①删降级前reset_cancel(会清取消标志致已取消任务继续降级); ②hasattr(type(_lc))改getattr实例级检查(_check_stop是实例方法, type()检查永False→短路失效)
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -65,7 +71,7 @@ from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5�
     _yield_error_response,
 )
 from app.constants import LLM_RESPONSE_FALLBACK, LLM_RESPONSE_RETRIES, LLM_TOOL_CHOICE
-from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(路径2出口统一构造)
+from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk, create_cancelled_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(路径2出口统一构造); 小欧 2026-09-20 C-2 +create_cancelled_chunk(降级前取消短路收尾)
 from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
@@ -265,8 +271,24 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
 
     if LLM_RESPONSE_FALLBACK:
         logger.warning(f"[FC降级] FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式")
-        # #31 fix: fallback前reset事件，消cancel状态残留 — 小欧 2026-07-18
-        agent.llm_client.reset_cancel()
+        # C-2(小欧 2026-09-20 RED-C-2): 删降级前 reset_cancel()(会清掉取消标志 _cancelled, 致已取消任务继续降级请求);
+        #   改为降级前 _check_stop() 短路: 若已取消直接 yield cancelled chunk 收尾, 不再发降级请求。
+        #   BUG-09修复(小欧 2026-09-20): hasattr(type(_lc)) 检查类而非实例, _check_stop是实例方法永不命中;
+        #   改为 getattr 实例级检查 — 小欧-2026-09-20
+        _cck = None
+        _lc = getattr(agent, "llm_client", None)
+        if _lc is not None and callable(getattr(_lc, "_check_stop", None)):
+            _cck = _lc._check_stop
+        if _cck is not None:
+            try:
+                _stopped = bool(await _cck())
+            except Exception as _e:
+                logger.warning(f"[FC降级] _check_stop 异常, 放行降级: {_e}")
+                _stopped = False
+            if _stopped:
+                logger.info("[FC降级] 任务已取消, 短路取消收尾(不再发降级请求)")
+                yield create_cancelled_chunk(_resolve_chunk_model(agent))
+                return
         # 小欧 2026-09-02: FC降级事件透传发前端（用户需知"FC失败已降级Text"）
         yield create_payload_chunk(_resolve_chunk_model(agent), {
             "type": "retrying",

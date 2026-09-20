@@ -27,6 +27,9 @@
 #   v3.29 单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
 #   各 add_*/inject_history/trim_history 零改动(最小侵入)
 # 2026-08-29 - 小沈 - bug#1修复: _trim_fc_pairs 丢弃 tool_call_id 为空/None 的孤儿 tool 消息(原 elif not tool_call_id 分支误保留→发LLM 400); KISS仅删该分支
+# 2026-09-20 - 小欧 - B组修复(B-1/B-2锚演进): add_user_message 增可选 user_message_id 参数(未传自动合成负id, 内部维护
+#   current_user_msg_id 锚单点), __init__ 增 _synth_user_msg_id 合成计数与 current_user_msg_id 属性;
+#   prepare_messages_for_llm 浅拷贝后剥离 user_message_id 防泄漏 LLM wire(conversation_history 源保留锚)。compliance: SRP/DRY/KISS
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -99,6 +102,9 @@ class MessageBuilder:
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
         self._msg_id_counter: int = 0  # 自增计数器(#10 文件B 去重 — 文档[1]11.8.4.1 D2b v3.29 单点化) — 小欧 2026-08-23
+        # B组(B-1/B-2锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
+        self._synth_user_msg_id: int = 0
+        self._current_user_msg_id: Optional[int] = None
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""
@@ -116,10 +122,21 @@ class MessageBuilder:
         self.conversation_history.append(message_to_dict(msg))
         return msg
 
-    def add_user_message(self, content: str) -> UserMessage:
-        """添加user消息 — 北京老陈 2026-06-25"""
+    def add_user_message(self, content: str, *, user_message_id: Optional[int] = None) -> UserMessage:
+        """添加user消息 — 北京老陈 2026-06-25 — B组锚演进 2026-09-20 小欧
+        user_message_id 锚: 显式传入(真实落库uid)则用之并演进 _current_user_msg_id(供回填);
+        未传(注入吸收/init_history)自动合成负id占位锚(防漏wire一致性), 但**不演进** _current_user_msg_id,
+        避免 agent_runner 终态回填用合成负 id 对 chat_user_message UPDATE 命中 0 行(空操作)。
+        锚演进单点: 仅真实 uid 更新 _current_user_msg_id"""
         msg = UserMessage(content=content)
-        self.conversation_history.append(message_to_dict(msg))
+        if user_message_id is None:
+            self._synth_user_msg_id -= 1
+            user_message_id = self._synth_user_msg_id
+        else:
+            self._current_user_msg_id = user_message_id
+        d = message_to_dict(msg)
+        d["user_message_id"] = user_message_id
+        self.conversation_history.append(d)
         return msg
 
     def add_assistant_tool_call(self, tool_calls: list,
@@ -278,7 +295,9 @@ class MessageBuilder:
         # 2026-08-17 - 小健 - S5(compaction): 一并剥离 compaction 内部标记(_summary/_pruned/_compressed/_raw/_truncated),
         #   因 _pruned/_summary 现为短下划线而非 _temp_ 前缀(compaction 模块落地备用后这些标记留 bool/短名前缀),
         #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
-        _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated")
+        # 2026-09-20 - 小欧 - B组(B-1/B-2锚演进): 一并剥离 user_message_id(B-2 锚), conversation_history 源保留锚供 assistant 回复配对落库,
+        #   wire 层不携带该内部锚(对齐 __all__ 同源锚演进)。B-2 自检: 剥离后 message 纯 payload 无内部锚 — SRP(锚=状态域, wire=传输域)
+        _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated", "user_message_id")
         for msg in messages:
             for _k in [k for k in msg if k.startswith("_temp_") or k in _COMPACTION_TEMP_KEYS]:
                 msg.pop(_k, None)

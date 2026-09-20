@@ -155,6 +155,12 @@
 #     → 完整长条(=缓存同源)原样 publish; event_log 只进应转发形态, G2(实时长/重连短)根治;
 #   ③ 12 处 publish 调用点 L231/255/307/341/346/366/419/429/445/450/483/495 全改走 _emit_publish(4.1.3 C1~C12);
 #   ④ import 补 Dict 类型标注。非 final 事件原样 publish 逐字节等价, 无 backward — 小欧-2026-09-12
+# 2026-09-20 - 小欧 - B机制修复(B-1/B-2/B-5/B-6, 北京老陈定案, 机会②): _absorb_inbox 重构——
+#   ①多条注入合并为同一用户输入块(末条已 user 则并入防连续 user 交替性), 单条独立成新 user 轮(TDD-30 铁约束);
+#   ②吸收时经 storage.insert_user_message 落库拿真实 user_message_id(B-1/B-6), 会话/session 缺失或 DB 异常
+#     静默 fallback(null 锚); ③吸收后写回真实 uid 到目标 user 消息并演进 builder 锚(B-2, 供 assistant 回复配对落库)。
+#   compliance: SRP(数据层 drain_inbox 承接)/KISS-DIRECT/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审BUG-01/07/15修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -178,6 +184,7 @@ from app.services.agent.react_inference import (
     _check_same_tool_loop,
     _warn_same_tool_loop,
 )
+# 2026-09-20 小欧 三堂会审BUG-01/07/15修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
 from app.services.agent.react_dispatch import _dispatch_handler
 from app.db import db
 from app.services.chat import storage
@@ -186,12 +193,54 @@ from app.services.chat import storage
 async def _absorb_inbox(agent) -> int:
     """B机制: 每轮 LLM 调用前合并本任务 inbox 积压的新 user 消息, 返回吸收条数 — 小欧 2026-09-20
     编排语义(SRP): drain_inbox(数据层取走) → add_user_message(消息层并入历史)。
-    置于 trim_history 之前: 新消息参与本轮历史一致性组装, 不滞留尾部跨轮。"""
+    置于 trim_history 之前: 新消息参与本轮历史一致性组装, 不滞留尾部跨轮。
+    B组修复(2026-09-20 小欧):
+      B-1/B-2/TDD-30: 单条注入 → 独立成新 user 轮(独立 user_message_id 锚, TDD-30 铁约束: add_user_message 单参调用);
+      B-5: 多条注入(同轮连发) → 合并为一用户输入块; 若 conversation_history 末条已是 user 则并入末条
+           → 保证无连续 user(交替性); 末条非 user 时仍新建独立 user 轮。
+      B-1/B-6: 吸收时经 storage.insert_user_message 落库拿真实 uid(count 落库调用), 会话/session 缺失或
+            DB 异常静默 fallback(null 锚); 吸收后写回真实 uid 锚到目标 user 消息(供 assistant 回复配对落库)。"""
     from app.services.task.task_registry import drain_inbox
+    from app.services.task.task_state import get_task_field  # B-1: 取 session_id 供落库 — 小欧 2026-09-20
     _injected = await drain_inbox(agent.task_id)
-    for _m in _injected:
-        agent.message_builder.add_user_message(_m)
-        logger.info(f"[B] 每轮LLM前吸入新消息: task={agent.task_id} len={len(_m)}")
+    if not _injected:
+        return 0
+    # 同轮多条为同一用户输入块: 取字符串(兼容二元组形态), 换行拼接
+    if isinstance(_injected[0], tuple):
+        _contents = [m[0] for m in _injected]
+    else:
+        _contents = list(_injected)
+    _merged = "\n".join(_contents)
+    # B-1/B-6: 吸收即落库(拿真实 user_message_id 供 linked/刷新回放), 会话缺失或 DB 异常静默 fallback(null 锚)
+    _uid = None
+    _sid = await get_task_field(agent.task_id, "session_id")
+    if _sid:
+        try:
+            _uid = await db.atxn("chat", lambda c: storage.insert_user_message(c, session_id=_sid, content=_merged))
+        except Exception as _e:
+            # BUG-07修复(小欧 2026-09-20): 异常不再静默吞掉, 记warning供运维定位chat_user_message缺失
+            logger.warning(f"[B] insert_user_message落库失败(task={agent.task_id}, session={_sid}): {_e}")
+            _uid = None
+    _hist = getattr(agent.message_builder, "conversation_history", None)
+    _last = _hist[-1] if isinstance(_hist, list) and _hist else None
+    _merge_into_last = (
+        len(_injected) > 1                      # B-5: 多条才合并(单条独立成轮, B-1/B-2/TDD-30)
+        and isinstance(_last, dict) and _last.get("role") == "user"   # 末条已是 user(同轮连发) → 避免连续 user
+    )
+    # B-5: 并入末条, 不产生连续 user; 否则独立成轮(单参调用, TDD-30 铁约束)
+    if _merge_into_last:
+        _last["content"] = str(_last.get("content") or "") + "\n" + _merged
+        _write_target = _last
+    else:
+        # BUG-15修复(小欧 2026-09-20): 显式传uid, 消除合成负id中间态(并发消费者读到-1→真实uid瞬态)
+        agent.message_builder.add_user_message(_merged, user_message_id=_uid if _uid is not None else None)
+        _hist = getattr(agent.message_builder, "conversation_history", None)
+        _write_target = _hist[-1] if isinstance(_hist, list) and _hist else None
+    # B-1/B-2 锚写回: 落库成功则把真实 uid 写到目标 user 消息并演进 builder 锚 — 小欧 2026-09-20 BUG-01修复: 无条件演进锚(None→真实uid)
+    if _uid is not None and isinstance(_write_target, dict):
+        _write_target["user_message_id"] = _uid
+        agent.message_builder._current_user_msg_id = _uid  # BUG-01: 去掉 _cur is not None 守卫, 首次(None)也必须演进
+    logger.info(f"[B] 每轮LLM前吸入新消息: task={agent.task_id} len={len(_merged)} uid={_uid}")
     return len(_injected)
 
 

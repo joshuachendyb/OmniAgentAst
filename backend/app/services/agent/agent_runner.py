@@ -147,6 +147,10 @@
 #   finally 覆写机制已删除", 明确缓冲 ensure 保留在役
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": 行433 SSE集合新增 "rejected"(原 "user_rejected") - 小欧-2026-09-17
 # 2026-09-17 小欧 会审V3(#13): 行435 SSE仅转发集合注释更新(user_rejected 表述更正为已统一 rejected, 原注释过时) - 小欧-2026-09-17
+# 2026-09-20 - 小欧 - B-2锚回填修复(B组, 配合 message_builder 锚演进): 终态 update_user_message_final 的
+#   user_message_id 由 db_ops.user_msg_id 改为优先取 agent.message_builder.current_user_msg_id(B机制注入消息经
+#   _absorb_inbox 落库取真实 uid 演进锚), DB 层 db_ops.user_msg_id 仅兜底 —— B机制注入的 user 消息回填不再落空。
+#   compliance: SRP/DRY(锚单点在 message_builder)/禁止backward
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -618,6 +622,8 @@ async def run_agent_in_background(
                         artifacts=getattr(getattr(agent, "telemetry", None), "_artifacts", None))
 
                     # v2.0 改动2: 任务完成后回填 chat_user_message final 字段 — 小欧 2026-08-19
+                    # B组修复(2026-09-20 小欧): user_message_id 取锚演进后的 builder.current_user_msg_id
+                    #   (B机制注入消息经 _absorb_inbox 落库取真实 uid 演进锚), DB 层 db_ops.user_msg_id 仅兜底
                     try:
                         _last_final = None
                         for _s in (current_execution_steps or [])[::-1]:
@@ -627,18 +633,21 @@ async def run_agent_in_background(
                         # 归一(小欧 2026-08-22 报告v1.25 6.3): model/provider 两键 → task_model: ModelRef 结构
                         # 三堂会审修复(P0): 现网 FinalStep 均未传 final_model → 键值为 None,
                         #   ModelRef(provider=None) 必抛 ValidationError 致回填整体失败(response/reasoning 连带丢失),
-                        #   仅 provider/model 均非空才构造, 否则落 NULL(与旧行为等价)
+                        #  仅 provider/model 均非空才构造, 否则落 NULL(与旧行为等价)
                         _tf_p = _last_final.get("provider") if _last_final else None
                         _tf_m = _last_final.get("model") if _last_final else None
+                        _active_uid = getattr(
+                            getattr(agent, "message_builder", None), "current_user_msg_id", None)
+                        _final_uid = _active_uid if _active_uid is not None else db_ops.user_msg_id
                         update_user_message_final(
                             conn,
-                            user_message_id=db_ops.user_msg_id,
+                            user_message_id=_final_uid,
                             task_id=task_id,
                             response=saved_content or "",
                             reasoning=saved_thought or "",
                             outcome=_terminal_status,
                             task_model=ModelRef(provider=_tf_p, model=_tf_m)
-                                       if (_tf_p and _tf_m) else None,
+                                        if (_tf_p and _tf_m) else None,
                             accumulated_usage=safe_json_dumps(getattr(agent, "accumulated_usage", None)),
                         )
                     except Exception as _um_e:

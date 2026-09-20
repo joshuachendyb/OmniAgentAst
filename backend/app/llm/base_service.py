@@ -50,6 +50,15 @@
 #   日志行同改 {str(e) or type(e).__name__}。回归单测: tests/test_llm_retry_visibility.py §5.2b。
 # 2026-09-17 - 小欧 - [48]修改1/修改3用户可见文案通顺化: 429配额专支改"模型接口调用配额已用尽（HTTP 429），请稍后重试或升级配额";
 #   tool_calls全失败改"模型返回的所有工具调用（tool_calls）参数均解析失败"; 重试/路由语义零改动 — 小欧-2026-09-17
+# 2026-09-20 - 小欧 - P0+P1+C组RED修复(13.1+13.2无条件快照共享连接池 + C-1/C-2/C-5, test_tdd_41_46_bug_c_red.py 6红全转绿):
+#   ①P0+P1: snapshot 构造期注入 shared_client(httpx 连接池引用), 快照复用全局连接池不 new;
+#   ②C-1: request_stream 循环体顶部镜像 SDK 在飞响应到 _current_response, 供 cancel 直达HTTP层强关;
+#   ③C-1: cancel() 优先委托 SDK.cancel(), SDK 无 cancel(如FakeSDK)回落关闭镜像响应;
+#   ④C-2: reset_cancel() 只清 _current_response、绝不清 _cancelled(取消=终态语义, 根治降级前清取消吞取消);
+#   ⑤C-5: set_stop_check 累积去重入 _stop_checks + 同步 _stop_check 兼容既有直接赋值,
+#     _check_stop OR 迭代全部 stop_check —— 多任务共享单例/同快照多次注入时不再被后注册覆盖串号。
+#     compliance: SRP/KISS-DIRECT/禁止backward
+# 2026-09-20 小欧 三堂会审BUG-02/03修复: ①request_stream循环体_current_response fallback赋SDK对象致cancel对错误对象调aclose; ②reset_cancel后cancelled检查跳过无效HTTP请求(防竞态取消丢失)
 """
 LLM 核心模块 — BaseAIService
 
@@ -124,6 +133,7 @@ class BaseAIService:
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
         self._stop_check: Optional[Callable] = None
+        self._stop_checks: list = []  # C-5(小欧 2026-09-20): stop_check 累积去重列表, 防多任务共享单例时后注册任务覆盖前者(串号) — 小欧-2026-09-20
 
     def _ensure_client(self):
         if self._llm_sdk is None:
@@ -177,28 +187,52 @@ class BaseAIService:
     async def cancel(self):
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.llm_model.model}")
         self._cancelled = True
+        # C-1(小欧 2026-09-20): 优先委托 SDK 直达HTTP层强关(LLMClient.cancel), SDK 无 cancel 时回落关闭镜像响应
+        _sdk_cancel = getattr(self._llm_sdk, "cancel", None)
+        if _sdk_cancel is not None and callable(_sdk_cancel):
+            try:
+                await _sdk_cancel()
+                logger.info("[BaseAIService.cancel] 已委托 SDK 强制取消在飞流")
+                return
+            except Exception as e:
+                logger.error(f"[BaseAIService.cancel] SDK cancel 失败, 回落关闭镜像响应: {e}")
         if self._current_response:
             try:
                 if hasattr(self._current_response, 'aclose'):
                     await self._current_response.aclose()
                 else:
-                    self._current_response.close()
+                    _cl = self._current_response.close()
+                    if asyncio.iscoroutine(_cl):
+                        await _cl
                 logger.info("[BaseAIService.cancel] HTTP响应已强制关闭")
             except Exception as e:
                 logger.error(f"[BaseAIService.cancel] 关闭响应失败: {e}")
 
     def reset_cancel(self):
-        self._cancelled = False
+        # C-2(小欧 2026-09-20): 只清 _current_response 镜像, 绝不清 _cancelled ——
+        # 取消是终态语义, reset_cancel 不得吃掉取消标志(RED-C-2 病根: fallback 前清取消致已取消任务继续降级请求)
         self._current_response = None
 
     def set_stop_check(self, check_fn: Callable):
-        """设置停止检查回调 — 由调用方注入，消除llm→task反向依赖 — 小沈 2026-06-17"""
+        """设置停止检查回调 — 由调用方注入，消除llm→task反向依赖 — 小沈 2026-06-17
+        C-5(小欧 2026-09-20): 累积去重入 _stop_checks, 并同步最新到 _stop_check 兼容既有直接赋值调用 — 小欧-2026-09-20"""
         self._stop_check = check_fn
+        if check_fn not in self._stop_checks:
+            self._stop_checks.append(check_fn)
 
     async def _check_stop(self) -> bool:
-        """检查是否应该停止 — 优先调用注入的回调，否则检查本地_cancelled — 小沈 2026-06-17"""
-        if self._stop_check:
-            return await self._stop_check()
+        """检查是否应该停止 — 优先调用注入的回调，否则检查本地_cancelled — 小沈 2026-06-17
+        C-5(小欧 2026-09-20): OR 迭代全部累积 stop_check, 任一返回 True 即停 ——
+        多任务共享单例(或同快照多次注入)时不再被后注册覆盖串号; 双保险: _stop_check / _stop_checks 任一命中即停 — 小欧-2026-09-20"""
+        _checks = list(self._stop_checks or [])
+        if self._stop_check is not None and self._stop_check not in _checks:
+            _checks.append(self._stop_check)
+        for _fn in _checks:
+            try:
+                if _fn and await _fn():
+                    return True
+            except Exception as _e:
+                logger.warning(f"[_check_stop] stop_check 执行异常: {_e}")
         return self._cancelled
 
 
@@ -253,6 +287,10 @@ class BaseAIService:
     ) -> AsyncGenerator[StreamChunk, None]:
         """流式请求 — FC-only: tool_calls原生yield,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
         self.reset_cancel()
+        # BUG-03修复(小欧 2026-09-20): reset_cancel不清_cancelled(C-2), 若已取消则直接返回, 跳过无效HTTP请求
+        if self._cancelled:
+            logger.info("[request_stream] 已标记cancelled, 跳过流式请求")
+            return
         self._ensure_client()
 
         retry_count = 0
@@ -285,6 +323,10 @@ class BaseAIService:
                     request_timeout=effective_timeout,
                     extra_body=self.extra_body_params,
                 ):
+                    # C-1(小欧 2026-09-20): 循环体顶部镜像 SDK 在飞HTTP响应到 _current_response,
+                    #   供 cancel() 强关(真实 LLMClient 流期间持有 httpx.Response) — 小欧 BUG-02修复: None时直接None, 不回落SDK对象(防cancel对错误对象调aclose)
+                    _sdk_resp = getattr(self._llm_sdk, "_current_response", None)
+                    self._current_response = _sdk_resp
                     if await self._check_stop():
                         yield create_cancelled_chunk(self.llm_model)
                         return

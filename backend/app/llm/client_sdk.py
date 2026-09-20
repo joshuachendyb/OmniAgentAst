@@ -19,6 +19,11 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   self.llm_model.model 属裸单值调API场景(设计要求4允许并注释)
 编辑历史: 2026-08-23 小欧 三堂会审复核加固(P2): _base_url 回退链补 provider or "openai" 兜底——
   防空 provider 时 _DEFAULT_URLS.get("","") 返回空串致 httpx base_url 为空(防御性语义与归一前对齐, 不弱化)
+编辑历史: 2026-09-20 小欧 P5+C-1: ①P5(13.6) LLM软配额信号量(_soft_pool_semaphore, asyncio.Semaphore 惰性初始化,
+  排队超时保底放行, request_stream 入口自动获取/finally释放); ②C-1(RED-C-1) 新增 _current_response 追踪
+  在飞流式HTTP响应(request_stream 进入置位/finally清空) + cancel() 方法 aclose 强关在飞流
+  ——BaseAIService.cancel 优先委托此处直达HTTP层(原来 cancel 关闭的 _current_response 恒 None 假日志)
+编辑历史: 2026-09-20 小欧 三堂会审BUG-04修复: cancel()中aclose后立即清_current_response引用, 防finally/__aexit__二次关闭(double-close)
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
@@ -135,6 +140,7 @@ class LLMClient:
         read_timeout = float(timeout) if timeout else DEFAULT_READ_TIMEOUT
         self._default_timeout = read_timeout
         self._owns_client = shared_client is None   # 真连接池仅全局单例持有, 快照共享不重复建 — 小欧-2026-09-20
+        self._current_response: Optional[httpx.Response] = None  # C-1(小欧 2026-09-20): 在飞流式HTTP响应, 供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
         if shared_client is not None:
             self._client = shared_client
         else:
@@ -254,6 +260,8 @@ class LLMClient:
             logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
         try:
             async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
+                # C-1(小欧 2026-09-20): 记录在飞流式响应, BaseAIService 镜像后供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
+                self._current_response = response
                 # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
                 # 2026-07-17 小欧 修复: 可重试状态(429限流/5xx服务端瞬时错误)由 base_service 的 L1 重试处理,
                 #   降为 WARNING 避免污染 ERROR 日志(check_logs/测试据此误判 FAIL); 仅不可重试客户端错误(400/401/403等)记 ERROR
@@ -275,8 +283,23 @@ class LLMClient:
                             break
                         yield _body
         finally:
+            # C-1(小欧 2026-09-20): 流结束/异常清在飞响应(镜像随流清), 防悬挂旧HTTP响应 — 小欧-2026-09-20
+            self._current_response = None
             if _acquired:
                 _sem.release()
+
+    async def cancel(self):
+        """强制取消在飞流式请求 — C-1(小欧 2026-09-20): 直达HTTP层关闭流式响应, 供 BaseAIService.cancel 委托。
+        RED-C-1 根因: 此前 cancel() 关闭的 _current_response 恒 None(从未赋值), 取消只能等 chunk 级轮询, 假日志。
+        BUG-04修复(小欧 2026-09-20): aclose后立即清引用, 防finally/__aexit__二次关闭(double-close)。"""
+        resp = self._current_response
+        if resp is not None:
+            self._current_response = None  # BUG-04: 立即清空, 阻止finally块重复关闭
+            try:
+                await resp.aclose()
+                logger.info("[LLMClient.cancel] 流式HTTP响应已强制关闭")
+            except Exception as e:
+                logger.warning(f"[LLMClient.cancel] 关闭流式响应失败: {e}")
 
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""
