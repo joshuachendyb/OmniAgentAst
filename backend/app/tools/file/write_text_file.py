@@ -286,139 +286,149 @@ async def writetext(
         llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail="当前没有活跃任务ID", hint="系统内部错误，请重试", user_encoding=encoding, user_append=append)
         return build_error(data={}, llm_data=llm_data)
 
-    path = Path(file_path)
+    # 2026-09-20 小欧 X2/13.3.4: 跨任务写仲裁登记(冲突仅提示不阻断) — 小欧-2026-09-20
+    from app.tools.file.file_write_arbiter import acquire_write, release_write
+    _arb_warning = acquire_write(file_path, task_id)
+    _arb_released = False  # 13.3.4: 统一释放标记(全返回路径 finally 兜底)
 
-    # mtime 冲突检查 — 小欧 2026-07-05
-    conflict_warning = check_conflict(file_path)
-    if conflict_warning:
-        logger.warning(f"[writetext] {conflict_warning}")
+    try:   # 13.3.4 新增外层 try — 原主流程整体缩进+1(仅缩进改动, 逻辑零不变)
+        path = Path(file_path)
 
-    # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
-    old_content = None
-    if not append and Path(to_win_long_path(path)).exists():  # #5长路径 — 小欧 2026-08-13
+        # mtime 冲突检查 — 小欧 2026-07-05
+        conflict_warning = check_conflict(file_path)
+        if conflict_warning:
+            logger.warning(f"[writetext] {conflict_warning}")
+
+        # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
+        old_content = None
+        if not append and Path(to_win_long_path(path)).exists():  # #5长路径 — 小欧 2026-08-13
+            try:
+                old_raw = Path(to_win_long_path(path)).read_text(encoding=encoding)
+                old_content = old_raw
+                if is_unchanged(file_path, checked_content):
+                    record_write(file_path)  # 更新mtime缓存 — 小欧 2026-07-05
+                    duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+                    llm_data = _build_write_text_file_llm_data(
+                        "success", duration_ms, file_path=str(path),
+                        bytes_written=0, detail="内容未变化，跳过写入",
+                        mtime_warning=conflict_warning or "",
+                        user_encoding=encoding, user_append=append,
+                    )
+                    llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
+                    # ---- observation_formatter route -------------------------------------------
+                    # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                    # trigger: "content_preview" in data
+                    # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
+                    # file:    observation_formatter.py
+                    # ------------------------------------------------------------------------------
+                    return build_success(data={"content_preview": _build_content_preview(checked_content)}, llm_data=llm_data)
+            except Exception:
+                old_content = None
+
+        encoding_warning = None
+        if append and Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file():  # #5长路径 — 小欧 2026-08-13
+            original_encoding = _detect_file_encoding_for_write(file_path, True)
+            if encoding != original_encoding:
+                encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
+
         try:
-            old_raw = Path(to_win_long_path(path)).read_text(encoding=encoding)
-            old_content = old_raw
-            if is_unchanged(file_path, checked_content):
-                record_write(file_path)  # 更新mtime缓存 — 小欧 2026-07-05
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_write_text_file_llm_data(
-                    "success", duration_ms, file_path=str(path),
-                    bytes_written=0, detail="内容未变化，跳过写入",
-                    mtime_warning=conflict_warning or "",
-                    user_encoding=encoding, user_append=append,
-                )
-                llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
+            _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+            operation_id = _hooks.record_operation(
+                task_id=task_id,
+                operation_type=OperationType.CREATE,
+                destination_path=path,
+                sequence_number=0,
+            )
+
+            # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
+            if operation_id:
+                # 数据库可用，使用execute_with_safety
+                def _do_write():
+                    return _hooks.execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
+                write_result = await asyncio.to_thread(_do_write)
+            else:
+                # 数据库不可用，直接执行文件操作
+                logger.info("Database unavailable, executing file operation without recording")
+                def _do_write_direct():
+                    return _write_file_atomic(checked_content, path, encoding, append, create_parents)
+                write_result = await asyncio.to_thread(_do_write_direct)
+
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            if isinstance(write_result, tuple):
+                success, error_detail = write_result
+            else:
+                success, error_detail = bool(write_result), ""
+
+            if success:
+                # diff 生成 — 小欧 2026-07-05
+                diff_text = ""
+                if old_content is not None:
+                    try:
+                        new_content = checked_content
+                        if old_content != new_content:
+                            diff_text = "".join(difflib.unified_diff(
+                                old_content.splitlines(keepends=True),
+                                new_content.splitlines(keepends=True),
+                                fromfile=str(path), tofile=str(path), n=3,
+                            ))
+                    except Exception as e:
+                        logger.debug(f"diff生成失败: {e}")
+
+                record_write(file_path)
+
+                try:
+                    bytes_written = len(checked_content.encode(encoding))
+                except (UnicodeEncodeError, LookupError):
+                    bytes_written = len(checked_content.encode("utf-8"))
+                if syntax_warn:
+                    # 追加模式: 文件已写入, 但语法有问题需提示 LLM/用户 — 小欧 2026-07-21
+                    llm_data = _build_write_text_file_llm_data(
+                        "warning", duration_ms, file_path=str(path),
+                        bytes_written=bytes_written, detail=syntax_warn,
+                        mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append,
+                    )
+                    if diff_text:
+                        llm_data["diff"] = diff_text
+                    return build_warning(
+                        data={"content_preview": _build_content_preview(checked_content)},
+                        llm_data=llm_data,
+                    )
+                if encoding_warning:
+                    llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+                    if diff_text:
+                        llm_data["diff"] = diff_text
+                    return build_warning(
+                        data={"content_preview": _build_content_preview(checked_content)},
+                        llm_data=llm_data,
+                    )
+                llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
+                with_artifact_file(llm_data, file_path)
+                if auto_removed_pyeof:
+                    llm_data["summary"] += "（已自动移除末尾PYEOF标记）"
+                    llm_data["metrics"]["auto_removed_pyeof"] = {"value": True, "text": "已自动移除文件末尾的heredoc标记PYEOF"}
+                if diff_text:
+                    llm_data["diff"] = diff_text
                 # ---- observation_formatter route -------------------------------------------
                 # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
                 # trigger: "content_preview" in data
                 # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                 # file:    observation_formatter.py
                 # ------------------------------------------------------------------------------
-                return build_success(data={"content_preview": _build_content_preview(checked_content)}, llm_data=llm_data)
-        except Exception:
-            old_content = None
-
-    encoding_warning = None
-    if append and Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file():  # #5长路径 — 小欧 2026-08-13
-        original_encoding = _detect_file_encoding_for_write(file_path, True)
-        if encoding != original_encoding:
-            encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
-
-    try:
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
-        operation_id = _hooks.record_operation(
-            task_id=task_id,
-            operation_type=OperationType.CREATE,
-            destination_path=path,
-            sequence_number=0,
-        )
-
-        # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
-        if operation_id:
-            # 数据库可用，使用execute_with_safety
-            def _do_write():
-                return _hooks.execute_with_safety(operation_id, lambda: _write_file_atomic(checked_content, path, encoding, append, create_parents))
-            write_result = await asyncio.to_thread(_do_write)
-        else:
-            # 数据库不可用，直接执行文件操作
-            logger.info("Database unavailable, executing file operation without recording")
-            def _do_write_direct():
-                return _write_file_atomic(checked_content, path, encoding, append, create_parents)
-            write_result = await asyncio.to_thread(_do_write_direct)
-
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        if isinstance(write_result, tuple):
-            success, error_detail = write_result
-        else:
-            success, error_detail = bool(write_result), ""
-
-        if success:
-            # diff 生成 — 小欧 2026-07-05
-            diff_text = ""
-            if old_content is not None:
-                try:
-                    new_content = checked_content
-                    if old_content != new_content:
-                        diff_text = "".join(difflib.unified_diff(
-                            old_content.splitlines(keepends=True),
-                            new_content.splitlines(keepends=True),
-                            fromfile=str(path), tofile=str(path), n=3,
-                        ))
-                except Exception as e:
-                    logger.debug(f"diff生成失败: {e}")
-
-            record_write(file_path)
-
-            try:
-                bytes_written = len(checked_content.encode(encoding))
-            except (UnicodeEncodeError, LookupError):
-                bytes_written = len(checked_content.encode("utf-8"))
-            if syntax_warn:
-                # 追加模式: 文件已写入, 但语法有问题需提示 LLM/用户 — 小欧 2026-07-21
-                llm_data = _build_write_text_file_llm_data(
-                    "warning", duration_ms, file_path=str(path),
-                    bytes_written=bytes_written, detail=syntax_warn,
-                    mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append,
-                )
-                if diff_text:
-                    llm_data["diff"] = diff_text
-                return build_warning(
+                return build_success(
                     data={"content_preview": _build_content_preview(checked_content)},
                     llm_data=llm_data,
                 )
-            if encoding_warning:
-                llm_data = _build_write_text_file_llm_data("warning", duration_ms, file_path=str(path), bytes_written=bytes_written, detail=encoding_warning, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
-                if diff_text:
-                    llm_data["diff"] = diff_text
-                return build_warning(
-                    data={"content_preview": _build_content_preview(checked_content)},
-                    llm_data=llm_data,
-                )
-            llm_data = _build_write_text_file_llm_data("success", duration_ms, file_path=str(path), bytes_written=bytes_written, mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append)
-            with_artifact_file(llm_data, file_path)
-            if auto_removed_pyeof:
-                llm_data["summary"] += "（已自动移除末尾PYEOF标记）"
-                llm_data["metrics"]["auto_removed_pyeof"] = {"value": True, "text": "已自动移除文件末尾的heredoc标记PYEOF"}
-            if diff_text:
-                llm_data["diff"] = diff_text
-            # ---- observation_formatter route -------------------------------------------
-            # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
-            # trigger: "content_preview" in data
-            # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
-            # file:    observation_formatter.py
-            # ------------------------------------------------------------------------------
-            return build_success(
-                data={"content_preview": _build_content_preview(checked_content)},
-                llm_data=llm_data,
-            )
-        else:
-            detail = error_detail or "写入文件失败"
-            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail, hint="请检查文件路径和写入权限", user_encoding=encoding, user_append=append)
+            else:
+                detail = error_detail or "写入文件失败"
+                llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=detail, hint="请检查文件路径和写入权限", user_encoding=encoding, user_append=append)
+                return build_error(data={}, llm_data=llm_data)
+
+        except Exception as e:
+            logger.error(f"Failed to write file {file_path}: {e}")
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_write_error(e, Path(file_path).name), user_encoding=encoding, user_append=append)  # 统一错误提示 - 小欧 2026-07-12
             return build_error(data={}, llm_data=llm_data)
-
-    except Exception as e:
-        logger.error(f"Failed to write file {file_path}: {e}")
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_write_error(e, Path(file_path).name), user_encoding=encoding, user_append=append)  # 统一错误提示 - 小欧 2026-07-12
-        return build_error(data={}, llm_data=llm_data)
+    finally:                                        # 13.3.4 新增: 无论成功/失败/异常均释放仲裁登记 — 小欧-2026-09-20
+        if not _arb_released:
+            release_write(file_path, task_id)
+            _arb_released = True

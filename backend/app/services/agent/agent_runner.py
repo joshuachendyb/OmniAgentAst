@@ -520,6 +520,8 @@ async def run_agent_in_background(
         # 关闭本任务持有的独立客户端快照(若有), 释放其 httpx 连接池, 防覆盖会话累积泄漏 — 小沈 2026-08-29
         _snap_client = getattr(agent, "llm_client", None) if agent is not None else None
         if _snap_client is not None and getattr(_snap_client, "_is_snapshot", False):
+            # 2026-09-20 小欧 C1: 共享池快照 close 由 13.2.3 base_service.close 判据兜底(共享不真关),
+            #   独占池快照照常释放 — 完全兼容原逻辑 — 小欧-2026-09-20
             try:
                 await _snap_client.close()
                 logger.info(f"[Runner] 会话客户端快照已关闭(task={task_id})")
