@@ -1,4 +1,36 @@
-﻿v1.0.2
+﻿v1.0.3
+更新时间: 2026-09-21 06:41:06 - 小欧-2026-09-21
+## v1.0.2以来 变更汇总(21个commit: feat6/docs4/fix11) - 小欧-2026-09-21
+[2026-09-21 小欧] 范围=v1.0.2以来全部commit(共21个); 主线: [55]多Session并发P0-P5实现(TDD-01~33全绿)+B/C组/A/X三堂会审缺陷修复+E组直线化收敛+PAR并行专项(E2E-PAR-01~04 case+手册第十章v2.16); PATCH bump v1.0.2→v1.0.3
+
+### feat(6个):
+- 0e3a0481e feat:e2e_par_01-04 并行会话多任务E2E专项case(PAR-01纯对话/PAR-02文件20轮/PAR-03五领域/PAR-04研究报告) - 小欧-2026-09-21
+- 157117a81 feat:P5 13.6 LLM软配额信号量 TDD-26~29全绿 - 小欧-2026-09-20
+- 0d7d6fa3d feat:P4 13.5 删会话级联取消 TDD-21~25全绿 - 小欧-2026-09-20
+- 57cb8372e feat:P3 13.4 inbox注入B机制 TDD-14~20全绿 - 小欧-2026-09-20
+- eabf3bfd4 feat:P2 13.3 file_write_arbiter+X1/X4锁 TDD-09~13全绿 - 小欧-2026-09-20
+- 4e97ba082 feat:P0+P1 13.1补import asyncio+13.2无条件snapshot共享连接池 TDD-01~08全绿 - 小欧-2026-09-20
+
+### docs(4个):
+- ae7f271fa docs:全链路E2E测试手册 新增第十章PAR并行专项v2.16 - 小欧-2026-09-21
+- 091b32508 docs:[56]Agent用户交互方法综合设计 v1.2 六交互模式全览与辨析+多态HITL总设计+不能处理的问题重构 - 小欧-2026-09-20
+- 4967a29b5 docs:30项真实缺陷问题分析报告 v1.1 30项修改方案写入各问题下方(工具清单A-2修正5项) - 小欧-2026-09-20
+- abec7c456 docs:[54]设置新架构设计 v4.19终稿 22问题复核修复+第十一章TDD三堂会审修正 - 小沈-2026-09-20
+
+### fix(11个):
+- ce35f633c fix:agent_runner+message_builder+stream_orchestrator+task_runtime D-1注入消息配对接线+D-4 reasoning预算计入+D-8取消帧去重(_cancel_sent)+E-1锁内不yield单出口重构+B机制注入应答DRY - 小欧-2026-09-20
+- a457ee0f6 fix:storage+session_service D-1注入消息DB补配对(update_user_message_final)+D-2删除会话内存ID清理(forget_session_message_ids)+E-4一对多MAX(id)聚合杜绝重复气泡 - 小欧-2026-09-20
+- 6d3141b56 fix:registry_read+registry_write E-2写失败回滚安全网(reg import恢复+_backup_file落位)+直线化收敛_rollback_registry/ValueError零写入不回滚(DRY/SRP) - 小欧-2026-09-20
+- eca927258 fix:tool_error_classifier+tool_retry_engine E-3结构化工具错误识别(StructuredToolError+category直判通道)+直线化删类型名死通道/raise TimeoutError绕回(YAGNI/KISS-DIRECT/DRY三堂会审) - 小欧-2026-09-20
+- 1fe2b2228 fix:task_registry+stream_orchestrator+react_step B-3串行守卫改方案②(弃抛异常返占位tid,竞态改道注入不丢消息)+TDD-30单参约束回归 - 小欧-2026-09-20
+- ab3d27abe fix:registry_read 备份三原则(A-4/D-6/E-5)+X4锁+D-7失败显式None+BUG-14旧备份磁盘泄漏清理 - 小欧-2026-09-20
+- f5573f4e7 fix:file_write_arbiter+file_state+copy_delete_edit_move_rename_write 跨任务文件写仲裁接入(X2)+A-1冲突提示修复+BUG-13 TOCTOU自写误报 - 小欧-2026-09-20
+- d1cbfa858 fix:session_service+stream_orchestrator+lifecycle_service+resolver+task_registry+task_runtime 三堂会审16缺陷修复(BUG-05/06/08/10/11/12/16+H1级联取消+orphan机制) - 小欧-2026-09-20
+- 344369099 fix:base_service+client_sdk+llm_call+agent_runner+message_builder+react_step C组三堂会审16缺陷修复(BUG-01~07/09/15+锚演进B机制) - 小欧-2026-09-20
+- 506fa4d46 fix:13.3.4 writetext仲裁接入+13.2.6注释补全 TDD-33全绿 - 小欧-2026-09-20
+- c90e366c0 fix:P4+P5 修正loop关闭检查+信号量惰性初始化 - 小欧-2026-09-20
+
+v1.0.2
 更新时间: 2026-09-20 10:00:47 - 小欧-2026-09-20
 ## v1.0.1以来 变更汇总(28个commit: docs21/feat2/fix3/refactor1/version1) - 小欧-2026-09-20
 [2026-09-20 10:00:47 小欧] 范围=v1.0.1以来全部commit(共28个); 主线: [54]设置新架构设计(v4.3~v4.18.2)+[55]多Session并发架构(v1.8~v1.9.0+第14章32case)+[47]Zen免费模型接入v2.9+后端打包exe配套+README E2E新八章+前端死代码删除; 注: 09-19曾写v1.0.2块头(仅含1commit)但未建tag对象, 后被02fac32e3覆盖回退, 本次重写覆盖全部28个
