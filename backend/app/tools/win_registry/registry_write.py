@@ -3,10 +3,17 @@
 registry_write — 写入Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
 """
+# 编辑历史:
 # 2026-07-31 - 小欧 - CRITICAL: auto_detect 对负整数判定错误。value.isdigit() 对 "-1" 返回 False, 导致 -1(0xFFFFFFFF) 被存为 REG_SZ 而非 REG_DWORD。改用 value.lstrip('-').isdigit() 修复
 # 2026-08-06 - 小欧 - 核查7/31未实现项[03][02]修复: 新增_to_unsigned(REG_DWORD/QWORD负数转二补码无符号, 超限报错); REG_BINARY支持"0x1F 0x2A"0x前缀逐token清洗
 # 2026-08-06 - 小欧 - 三堂会审修复: BUG-1 _to_unsigned加负数下界校验(-2^(bits-1)..-1); BUG-2删_REG_CONVERTERS REG_BINARY死代码; BUG-6 auto_detect超32位正整数改REG_SZ兜底
 # 2026-08-08 - 小欧 - task002问题2修复: auto_detect 对 int() 失败的纯字符串/小数/hex 推断 REG_SZ 写入(原抛 ValueError 报错需显式指定类型), 三堂会审通过: 与整数字符串路径互斥, 无退化 | py_compile ✓
+# 2026-09-20 - 小欧 - E-2修复(写失败回滚): 写前 back 于 _backup_file(backup_before_write 分支), 写失败
+#   (PermissionError/ValueError/Exception 三分支)调用 registry_read._restore_registry_from_backup 回滚;
+#   原仅"备份返回成功即继续", 写失败无可恢复路径。compliance: SRP(回滚归属 registry_read)+禁止backward
+# 2026-09-20 - 小欧 - E-2直线化(10大规范三堂会审, 修订上一条): 回滚收敛为公共 helper _rollback_registry
+#   (PermissionError/Exception 两分支调用, 删三分支重复——DRY); ValueError 值转换在写盘前抛, 零写入,
+#   撤回多余回滚 IO(直线/SRP); 行为不变: 备份+半写回滚语义保留, E-2 红线(失败必须留恢复路径)仍满足。
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -14,13 +21,22 @@ registry_write — 写入Windows注册表键值
 
 import time as _time_mod
 import winreg
-from typing import Any, Callable, Dict  # 2026-07-31 小欧: 移除未使用 Optional; Dict 实际仍在使用, 已恢复
+from typing import Any, Callable, Dict, Optional  # 2026-07-31 小欧: 移除未使用 Optional; Dict 实际仍在使用, 已恢复 — 2026-09-20 小欧 E-2直线化: 恢复 Optional(_rollback_registry 形参 _backup_file)
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_REG_WRITE_FAILED, ERR_PARAMETER_INVALID
-from app.tools.win_registry.registry_read import _parse_path, _backup_registry, _validate_root_key  # 2026-07-31 小欧: 移除未使用 ROOT_KEY_MAP
+from app.tools.win_registry.registry_read import _parse_path, _backup_registry, _validate_root_key, _restore_registry_from_backup  # 2026-07-31 小欧: 移除未使用 ROOT_KEY_MAP — 小欧 2026-09-20 E-2: 引入 _restore_registry_from_backup(写失败回滚)
 from app.tools.validate.registry_path_checker import validate_registry_key
+
+def _rollback_registry(_backup_file: Optional[str]) -> None:
+    """写失败回滚(reg import 恢复写前快照) — 小欧 2026-09-20 E-2直线化(10大规范三堂会审):
+    仅对可能已发生写入的分支调用(PermissionError/Exception); 值转换 ValueError 在写盘前抛出, 不调此回滚
+    (零写入, 回滚=多余 IO); reg import 与写同权限, 失败仅留 warning(不掩盖原始错误)。SRP/DRY/直线"""
+    err = _restore_registry_from_backup(_backup_file)
+    if err:
+        logger.warning(f"[registry_write] 失败后回滚异常: {err}")
+
 
 _REG_TYPE_MAP: Dict[str, int] = {
     "REG_SZ": winreg.REG_SZ, "REG_DWORD": winreg.REG_DWORD, "REG_QWORD": winreg.REG_QWORD,
@@ -128,8 +144,9 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
             return build_error(data={}, llm_data=llm_data)
 
     try:
-        if backup_before_write:
-            _backup_registry(full_root_key, sub_key, "reg_write")
+        _backup_file = None
+        if backup_before_write:  # 2026-09-20 小欧 E-2: 备份文件落位供失败回滚(原忽略返回值, 写失败无法恢复)
+            _backup_file = _backup_registry(full_root_key, sub_key, "reg_write")
 
         actual_type = value_type
         if value_type == "auto_detect":
@@ -170,15 +187,18 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
         # ------------------------------------------------------------------------------
         return build_success(data={}, llm_data=llm_data)
     except PermissionError:
+        _rollback_registry(_backup_file)  # E-2(2026-09-20 小欧): 半写风险(权限失败), 回滚备份
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=f"权限不足: {path}", hint="请以管理员身份运行")
         return build_error(data={}, llm_data=llm_data)
     except ValueError as e:
         # 2026-08-05 小欧: 区分值转换错误(如REG_BINARY非法hex),给出准确hint而非通用"系统状态"
+        # 2026-09-20 小欧 E-2直线化: 值转换在写盘前(CreateKey/SetValueEx 之前)抛出, 零写入, 不回滚
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=str(e), hint="请检查值内容是否与注册表类型匹配")
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
+        _rollback_registry(_backup_file)  # E-2(2026-09-20 小欧): 通用异常(可能半写), 回滚备份
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=str(e), hint="写入注册表异常,请检查系统状态")
         return build_error(data={}, llm_data=llm_data)

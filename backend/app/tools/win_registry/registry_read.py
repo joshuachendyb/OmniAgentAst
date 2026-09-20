@@ -10,6 +10,9 @@
 #   ⑤D-7: 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
 #   compliance: SRP/禁止backward
 # 2026-09-20 - 小欧 - 三堂会审BUG-14修复: _backup_registry新建备份前清理同key旧备份文件(防temp目录磁盘泄漏)
+# 2026-09-20 - 小欧 - E-2修复(写失败回滚安全网): 新增 _restore_registry_from_backup(reg import 恢复), 供
+#   registry_write 在写失败(PermissionError/ValueError/Exception)分支回滚; _backup_registry 返回值缓存到
+#   _backup_file 供恢复定位。compliance: SRP(恢复职责归属读取侧备份)+禁止backward
 """
 registry_read — 读取Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -110,6 +113,28 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[s
     except Exception as e:
         logger.warning(f"[registry] 备份失败: {e}")
         return None
+
+
+def _restore_registry_from_backup(backup_file: str) -> Optional[str]:
+    """从备份恢复注册表键(reg import) — 小欧 2026-09-20 E-2修复(红case E2 驱动):
+    与 _backup_registry 对称的写回滚操作, 供 registry_write/registry_delete 写失败时恢复原值,
+    杜绝"写完失败/半改"留下不可逆破损。返回 None=恢复成功或无可恢复文件; 返回错误文本=恢复失败。
+    """
+    if not backup_file or not os.path.exists(backup_file):
+        return None
+    try:
+        result = subprocess.run(
+            ["reg", "import", backup_file],
+            capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
+        )
+        if result.returncode == 0:
+            logger.info(f"[registry] 回滚成功: {backup_file}")
+            return None
+        logger.warning(f"[registry] reg import 回滚失败(返回码{result.returncode}): {result.stderr.strip()}")
+        return result.stderr.strip() or f"reg import 返回码 {result.returncode}"
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"[registry] 回滚异常: {e}")
+        return str(e)
 
 
 def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "", hint: str = "") -> dict:
