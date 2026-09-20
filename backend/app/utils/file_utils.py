@@ -78,11 +78,10 @@ def backup_file(file_path: str, backup_dir: Optional[str] = None, suffix: str = 
     for i in range(keep, 1, -1):
         older = os.path.join(backup_dir, f"{file_name}{suffix}.{i}")
         newer_src = os.path.join(backup_dir, f"{file_name}{suffix}.{i - 1}")
-        if not os.path.exists(newer_src):
-            continue
         if os.path.exists(older):
             os.remove(older)
-        os.rename(newer_src, older)
+        if os.path.exists(newer_src):
+            os.rename(newer_src, older)
     backup_path = os.path.join(backup_dir, f"{file_name}{suffix}.1")
     shutil.copy2(file_path, backup_path)
     return {

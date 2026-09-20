@@ -173,20 +173,27 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
 # ====================================================================
 
 def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
-    """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表)"""
+    """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表) — 小沈 2026-09-20 v4.19 支持新设计 ai.model_ref"""
     errors = []
     warnings = []
     ai_config = config_data.get('ai', {})
 
-    if 'provider' not in ai_config:
-        errors.append("缺少 ai.provider 字段")
-    if 'model' not in ai_config:
-        errors.append("缺少 ai.model 字段")
-    if errors:
+    # v4.19: 新设计优先检查 ai.model_ref，回退检查旧设计 ai.provider/ai.model
+    model_ref = ai_config.get('model_ref')
+    has_new_design = isinstance(model_ref, dict) and model_ref.get('provider') and model_ref.get('model')
+    has_old_provider = 'provider' in ai_config
+    has_old_model = 'model' in ai_config
+
+    if not has_new_design and not (has_old_provider and has_old_model):
+        errors.append("缺少 ai.model_ref 结构或 ai.provider/ai.model 字段")
         return False, errors, warnings
 
-    selected_provider = ai_config['provider']
-    selected_model = ai_config['model']
+    if has_new_design:
+        selected_provider = model_ref['provider']
+        selected_model = model_ref['model']
+    else:
+        selected_provider = ai_config['provider']
+        selected_model = ai_config['model']
 
     if selected_provider not in ai_config:
         errors.append(f"provider '{selected_provider}' 不存在")
@@ -395,9 +402,13 @@ def _config_mtime() -> float:
 
 
 def mask_secret_value(value: Any) -> str:
-    """脱敏：前3+后2 星号补中间。"""
-    if not value or not isinstance(value, str):
+    """脱敏：前3+后2 星号补中间。小沈 2026-09-20 v4.19: 空字符串返回空"""
+    if value is None:
         return "***"
+    if not isinstance(value, str):
+        return "***"
+    if value == "":
+        return ""
     if len(value) <= 5:
         return value[0] + "***"
     return value[:3] + "***" + value[-2:]

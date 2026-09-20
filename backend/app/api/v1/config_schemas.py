@@ -107,6 +107,7 @@ class ModelAddRequest(BaseModel):
 class ProviderAddRequest(BaseModel):
     """添加Provider请求"""
     name: str = Field(..., description="Provider名称")
+    label: Optional[str] = Field(default=None, description="Provider名称")
     api_base: str = Field(..., description="API地址")
     api_key: str = Field("", description="API密钥")
     model: str = Field("", description="默认模型")
