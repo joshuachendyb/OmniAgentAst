@@ -16,6 +16,12 @@
 # 2026-09-05 - 小健 - 8.7 会话模型覆盖决议外迁(纯搬迁): 新增 resolve_session_client 独立函数,
 #   承接 orchestrator 编排⑥ sessionModel 块(原 stream_orchestrator.py 285-336),
 #   读会话覆盖→按 provider 查配置→构造独立客户端快照; 无覆盖返回 None, 由编排层赋值 agent.llm_client
+# 2026-09-20 - 小欧 - P0+P1+C-3/C-4(13.1+13.2无条件快照共享连接池 + RED-C-3/C-4):
+#   ①P0+P1: snapshot 构造注入 shared_client(全局共享连接池引用), 快照复用不 new;
+#   ②C-3/C-4: 会话决议失败路径(跨provider配置查找失败 / 读 sessionModel 异常)不再返回 None
+#     (破坏C1), 经 _default_snapshot 派生全局默认快照兜底(复用共享连接池)。
+#   compliance: DRY(两失败路径共用 helper)/KISS-DIRECT/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审BUG-12修复: resolve_session_client添加hasattr类型保护(防非ModelRef类型如dict导致AttributeError静默失效)
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -129,6 +135,16 @@ def get_ai_config_resolver() -> AIConfigResolver:
     return _global_resolver
 
 
+def _default_snapshot(ai_service) -> "BaseAIService":
+    """C3/C4(小欧 2026-09-20): 会话决议失败路径派生全局默认快照兜底(无条件快照)。
+    resolver 失败时绝不允许返回 None 让主流程回退全局单例(破坏C1'无条件快照'), 
+    统一返回 ai_service.snapshot(复用其共享连接池, 快照模型=全局默认)。"""
+    _shared_llm = getattr(ai_service, "_shared_client", None)  # 内部自取, 防 except 分支 L146 未执行 NameError(DRY)
+    _snap = ai_service.snapshot(shared_client=_shared_llm)
+    logger.warning(f"[chat] 会话决议失败, 派生全局默认快照兜底: model={_snap.llm_model.model}")
+    return _snap
+
+
 async def resolve_session_client(ai_service, session_id):
     """会话模型覆盖决议：返回独立客户端快照，无覆盖返回None。纯搬迁，逻辑零改动。
     # 2026-09-05 - 小健 - 自 stream_orchestrator 编排⑥(原 285-336)整块外迁, 逐字复制逻辑零改动。
@@ -144,7 +160,8 @@ async def resolve_session_client(ai_service, session_id):
         # 2026-09-20 小欧 C1(修正): 无条件快照——无论有无覆盖都构造独立 BaseAIService(状态分离),
         #   有覆盖按原路径查目标 provider 配置; 无覆盖仅派生全局默认, snapshot 复用全局共享连接池 — 小欧-2026-09-20
         _shared_llm = getattr(ai_service, "_shared_client", None)
-        if _ov and (_ov.model or _ov.provider):
+        # BUG-12修复(小欧 2026-09-20): 添加类型保护, 防非ModelRef类型(如dict)导致AttributeError静默失效
+        if _ov and hasattr(_ov, 'model') and hasattr(_ov, 'provider') and (_ov.model or _ov.provider):
             # 病根修复(小沈 2026-08-29): 旧实现直接改共享单例 ai_service.llm_model + reset_sdk,
             # 是"用全局副作用表达每会话模型", 单例还原时序竞态→断连后台任务误模/跨会话串模(#5)。
             # 改为构造本会话独立 LLM 客户端快照(携带覆盖模型), 与进程单例解耦: 会话流与后台任务均用快照,
@@ -171,8 +188,8 @@ async def resolve_session_client(ai_service, session_id):
                     _pv_ebp = None
                     _pv_ctx = None
             if _pv_cfg is None and _ov.provider and _ov.provider != ai_service.llm_model.provider:
-                logger.warning(f"[chat] 会话模型覆盖已跳过(配置查找失败), 使用全局默认模型: provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
-                return None
+                logger.warning(f"[chat] 会话模型覆盖已跳过(配置查找失败), 使用全局默认模型快照: provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
+                return _default_snapshot(ai_service)  # C-3(小欧 2026-09-20): 配置失败不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
             override_ref = ModelRef(
                 provider=_ov.provider or ai_service.llm_model.provider,
                 model=_ov.model or ai_service.llm_model.model,
@@ -199,4 +216,4 @@ async def resolve_session_client(ai_service, session_id):
         return ai_service.snapshot(shared_client=_shared_llm)   # 构造期注入共享池, _ensure_client 惰性复用(原 set_shared_client 后置注入已废弃)
     except Exception as _ov_e:
         logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
-    return None
+    return _default_snapshot(ai_service)  # C-4(小欧 2026-09-20): 读 sessionModel 异常不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20

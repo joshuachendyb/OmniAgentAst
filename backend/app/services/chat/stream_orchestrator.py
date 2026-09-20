@@ -143,6 +143,11 @@
 #   ②stream_reader done 退出日志追加 is_reconnect/起点seq/续传帧数, 首连(after_seq=0)与重连可区分,
 #   多 client 连同一 task 可分辨, 对账闭环(after_seq→续传帧数→已转发→含final_stats) — 小欧-2026-09-13
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": _SSE_FORWARD_TYPES 新增 "rejected", 删除 "user_rejected" - 小欧-2026-09-17
+# 2026-09-20 - 小欧 - P3 B机制编排接入(13.4, 北京老陈定案"机会②"): 同会话已有活跃任务时, 新消息经
+#   inject_message_to_task 注入该任务 inbox(可多条), 待下一轮 LLM 调用前合并吸收; 无活跃任务正常新建。
+#   工具执行不被打断(安全底线); 注入失败(目标任务已终态)降级新建, 不丢消息。
+#   compliance: SRP(编排仅负责路由/注入, 数据层在 task_registry)/KISS-DIRECT
+# 2026-09-20 - 小欧 - 三堂会审BUG-11修复: 注入成功改用retrying类型(非error语义, 注入成功是正常业务路径)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -323,7 +328,13 @@ async def chat_stream_orchestrator(
             _injected_ok = await inject_message_to_task(_active_tid, user_input)
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
-                yield create_error_response(error_type="injected", error_message="消息已注入当前执行中的任务，将在下一轮吸收")
+                # BUG-11修复(小欧 2026-09-20): 注入成功是正常业务路径, 非error语义, 改用retrying类型(已在白名单)
+                from app.llm.core import create_payload_chunk
+                yield create_payload_chunk(ai_service.llm_model, {
+                    "type": "retrying",
+                    "content": "消息已注入当前执行中的任务，将在下一轮吸收",
+                    "wait_time": None,
+                })
                 return
             # 注入失败(目标任务恰好终态): 降级新建任务(下述正常路径), 不丢消息
             logger.warning(f"[chat] 注入失败(目标任务finish), 降级新建任务: session={session_id}, target={_active_tid}")

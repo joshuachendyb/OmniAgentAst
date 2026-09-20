@@ -17,6 +17,12 @@
 #   SessionResponse 无此二字段, 查了不用); ②conn.cursor() 两步改为 conn.execute 直取, 与本文件 update/delete 路径风格一致;
 #   ③docstring 使用场景补顶栏时间悬浮(文档2 8.B 已知事项①), 与设置界面并列。pytest -k "task or session" 158 passed 回归通过。
 # 2026-08-29 - 小沈 - BugFix #8: update_session 的 WHERE 裸 `version = ?` 对 version 为 NULL 的行永远不匹配(SELECT 用 COALESCE(version,1), UPDATE 未对齐)→ 迁移库 version=NULL 行更新必 409。改为 WHERE `COALESCE(version,1) = ?` 与 SELECT 对齐; 同步 SET `COALESCE(version,1)+1` 防 NULL+1=NULL 使版本号退化为空。
+# 2026-09-20 - 小欧 - H1/A-5 会话删除级联取消(消除删除会话后孤儿任务继续写死数据的窗口):
+#   新增 _cancel_cascade + delete_session 入口级联: 删会话前收集该 session 全部 running/paused 任务,
+#   经任务原 loop run_coroutine_threadsafe 提交取消(A-5: 注册 loop 判定 + self-loop 内联同步置态防死锁 +
+#   收集全部 Future 等待 result(timeout=5) 落定, 杜绝 fire-and-forget 遗留后台写库窗口)。
+#   compliance: SRP(级联职责收口本服务)/KISS-DIRECT/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审BUG-05修复: _cancel_cascade二次扫描补提交快照期间新注册任务(缩小漏取消窗口)
 """
 session_service — 会话业务服务(services/chat)
 
@@ -219,22 +225,62 @@ def _cancel_cascade(session_id: str) -> None:
     """H1: 取消该会话下全部 running_tasks 中活跃任务 — 小欧 2026-09-20
     sync 函数(delete_session 走 API 线程池)不能直接 await cancel_task; 任务注册时已绑定自身 loop
     (_task 字段), 用 run_coroutine_threadsafe 把取消动作提交回该任务的原 loop —— asyncio.Lock 不跨 loop,
-    绝不在本线程新建 loop(asyncio.run 会新建 loop → running_tasks_lock 绑定错 loop → 状态写坏/卡死)。"""
+    绝不在本线程新建 loop(asyncio.run 会新建 loop → running_tasks_lock 绑定错 loop → 状态写坏/卡死)。
+    2026-09-20 小欧 A-5: 收集全部 Future 并等待完成 —— 级联取消先于删除会话落定, 杜绝 fire-and-forget
+    遗留后台写库窗口; f.result(timeout=5) 超时仅告警不阻断删除(KISS, 防死等)。
+    self-loop 分支(async 内联调 _cancel_cascade, 当前线程即目标 loop 线程): run_coroutine_threadsafe
+    提交的协程永得不到调度(future.result 阻塞 loop) → 死锁; 故直接同步置态(事件循环单线程, sync
+    函数不 yield, 与 loop 内协程互不并发, 等价于持 running_tasks_lock 的串行写), 并仍 create_task
+    调度 cancel_task 拿全 agent 取消信号。仅内联测试场景触发, 生产 delete_session 走线程池非 self-loop。"""
     import asyncio  # 2026-09-20 小欧 H1: run_coroutine_threadsafe/get_event_loop 需 asyncio — 小欧-2026-09-20
+    import threading  # 2026-09-20 小欧 A-5: _thread_id 判 self-loop — 小欧-2026-09-20
     try:
         from app.services.task.task_state import running_tasks
         from app.services.task.task_runtime import cancel_task
+        submitted = set()  # BUG-05修复(小欧 2026-09-20): 追踪已提交取消的task, 防快照间漏取消
+        futures = []
         for _tid, _meta in list(running_tasks.items()):
             if _meta.get("session_id") == session_id and _meta.get("status") in ("running", "paused"):
+                submitted.add(_tid)
                 _task_obj = _meta.get("_task")
                 _loop = _task_obj.get_loop() if _task_obj is not None else asyncio.get_event_loop()
                 # loop 已关闭则跳过: 不创建 coroutine, 防 never awaited 警告 — 小欧-2026-09-20
                 if _loop.is_closed():
                     logger.info(f"[H1] 目标loop已关闭, 任务已终止: session={session_id}, task={_tid}")
                     continue
-                asyncio.run_coroutine_threadsafe(
-                    cancel_task(_tid, session_id, "session_deleted"), _loop)
-                logger.info(f"[H1] 会话删除级联取消任务: session={session_id}, task={_tid}")
+                # A-5 self-loop 检测: 当前线程即目标 loop 运行线程(仅内联调用) — 小欧 2026-09-20
+                if getattr(_loop, "_thread_id", None) == threading.get_ident():
+                    _meta["cancelled"] = True
+                    _meta["status"] = "cancelled"
+                    _loop.create_task(cancel_task(_tid, session_id, "session_deleted"))
+                    logger.info(f"[H1] 会话删除级联取消(self-loop同步置态): session={session_id}, task={_tid}")
+                else:
+                    _future = asyncio.run_coroutine_threadsafe(
+                        cancel_task(_tid, session_id, "session_deleted"), _loop)
+                    futures.append((_tid, _future))
+                    logger.info(f"[H1] 会话删除级联取消任务: session={session_id}, task={_tid}")
+        # BUG-05修复(小欧 2026-09-20): 二次扫描, 补提交快照期间新注册的任务(缩小漏取消窗口)
+        for _tid2, _meta2 in list(running_tasks.items()):
+            if _tid2 not in submitted and _meta2.get("session_id") == session_id and _meta2.get("status") in ("running", "paused"):
+                _task_obj2 = _meta2.get("_task")
+                _loop2 = _task_obj2.get_loop() if _task_obj2 is not None else asyncio.get_event_loop()
+                if _loop2.is_closed():
+                    continue
+                if getattr(_loop2, "_thread_id", None) == threading.get_ident():
+                    _meta2["cancelled"] = True
+                    _meta2["status"] = "cancelled"
+                    _loop2.create_task(cancel_task(_tid2, session_id, "session_deleted"))
+                else:
+                    _future2 = asyncio.run_coroutine_threadsafe(
+                        cancel_task(_tid2, session_id, "session_deleted"), _loop2)
+                    futures.append((_tid2, _future2))
+                logger.info(f"[H1] 二次扫描补提交取消: session={session_id}, task={_tid2}")
+        # A-5: 等待全部取消完成(超时仅告警不阻断删除) — 小欧 2026-09-20
+        for _tid, _future in futures:
+            try:
+                _future.result(timeout=5.0)
+            except Exception as _e:  # TimeoutError/CancelledError/任务内异常均告警放行
+                logger.warning(f"[H1] 级联取消任务 {_tid} 等待超时/失败: {_e}")
     except Exception as _e:
         logger.warning(f"[H1] 级联取消遍历失败(session={session_id}): {_e}")
 

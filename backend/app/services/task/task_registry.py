@@ -1,6 +1,14 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 注释说明 TASK_TIMEOUT 兜底清理意义(防 running_tasks 内存注册表泄漏); 老陈裁定改为按终态+超时清理: 仅清非活跃(running/paused 外)且超1h任务, 避免误伤长任务/暂停任务
+# 2026-09-20 - 小欧 - B组修复(B-3并发守卫/B-4/B-7收尾窗口orphan兜底): ①register_task 锁内同会话活跃任务互斥守卫(TOCTOU根治, 同会话任务必须串行, 违反即抛RuntimeError);
+#   ②cleanup_task 删任务前把未吸收的 inbox 消息转入模块级 _orphaned_inbox(task_id→list), drain_inbox 任务已删时从 orphan 找回——收尾窗口注入不静默丢失(B-4/B-7)。
+#   compliance: SRP/KISS-DIRECT/DRY(复用inbox队列)/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审BUG-10修复: cleanup_expired_tasks过期清理前补orphan转移(与cleanup_task对齐, 防收尾窗口静默丢失)
+# 2026-09-20 - 小欧 - 提交前审查缺口补(3项): ①B-3串行守卫命中加专属log(编排泛化error看不清TOCTOU根因);
+#   ②drain_inbox orphan找回路径加warning log(B-4/B-7兜底命中可查); ③_orphaned_inbox加_ORPHAN_MAX_ITEMS=100上限
+#   与_trim_orphaned_inbox(终态任务无drain_inbox消费, 无上限即永久滞留内存), cleanup/过期两处转移后接入。
+#   compliance: KISS-DIRECT(上限防滞留即可, 不做TTL定时器)/禁止backward
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -13,7 +21,7 @@ Author: 小健 - 2026-05-31
 
 import asyncio
 from datetime import datetime
-from typing import Any, List, Optional   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需 — 小欧-2026-09-20
+from typing import Any, Dict, List, Optional   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需 — 小欧-2026-09-20
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
@@ -34,13 +42,45 @@ from app.services.task.task_state import (
 )
 
 
+# B组调制(B-4/B-7 2026-09-20 小欧): 任务被 cleanup 删除后, 未吸收的 inbox 消息转入此处,
+# drain_inbox 找不到任务时从 orphan 找回, 保证收尾窗口注入不静默丢失 — SRP: 孤儿缓存独立于 running_tasks 生命周期
+_orphaned_inbox: Dict[str, List[str]] = {}
+
+# 缺口补(2026-09-20 小欧): orphan 上限, 超出丢弃最旧 —— 终态任务不会再有 drain_inbox 消费, 无上限即永久滞留。
+# 受控: 上限100条(dict保持插入序, next(iter)即最旧), KISS不做TTL定时器(该场景值小, 定时器过度设计)
+_ORPHAN_MAX_ITEMS = 100
+
+
+def _trim_orphaned_inbox() -> None:
+    """孤儿缓存超上限丢弃最旧条目 — 2026-09-20 小欧(缺口补)"""
+    while len(_orphaned_inbox) > _ORPHAN_MAX_ITEMS:
+        _old_tid = next(iter(_orphaned_inbox))
+        _dropped = _orphaned_inbox.pop(_old_tid, None)
+        logger.warning(
+            f"[TaskRegistry] orphan缓存超限({_ORPHAN_MAX_ITEMS}), 丢弃最旧任务 {_old_tid} "
+            f"未吸收注入消息 {len(_dropped) if _dropped else 0} 条")
+
 # ============================================================
 # 注册 / 清理
 # ============================================================
 
 async def register_task(task_id: str, ai_service: Any, session_id: Optional[str] = None) -> None:
-    """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20"""
+    """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20
+    B-3 守卫(2026-09-20 小欧): 锁内检查同 session 已有活跃任务(running/paused), 存在即抛异常——
+    根治编排层 has_active_task_in_session 与 register_task 分离 await 的 TOCTOU(两会话并发双请求可注册双任务)。
+    同会话任务必须串行(北京老陈铁则), 违反即拒绝注册, 由编排层降级为新任务/排队。"""
     async with running_tasks_lock:
+        if session_id:
+            for _tid, _t in running_tasks.items():
+                if (_tid != task_id
+                        and _t.get("session_id") == session_id
+                        and _t.get("status") in ("running", "paused")):
+                    # 缺口补(2026-09-20 小欧): 守卫命中必须可查(编排层泛化error看不清TOCTOU根因)
+                    logger.warning(
+                        f"[B-3串行守卫] 会话 {session_id} 已有活跃任务 {_tid}, 拒绝并行注册 {task_id}"
+                        f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口)")
+                    raise RuntimeError(
+                        f"会话 {session_id} 已有活跃任务 {_tid}，同会话必须串行，禁止并行注册任务 {task_id}（B-3 串行守卫）")
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,
@@ -81,11 +121,18 @@ async def inject_message_to_task(task_id: str, content: str) -> bool:
 
 
 async def drain_inbox(task_id: str) -> List[str]:
-    """B机制: agent 侧取走 inbox 全部积压消息(每轮 LLM 调用前合并吸收)。返回消息列表(可为空)。 — 小欧 2026-09-20"""
+    """B机制: agent 侧取走 inbox 全部积压消息(每轮 LLM 调用前合并吸收)。返回消息列表(可为空)。
+    B-4/B-7 兜底(2026-09-20 小欧): 任务已被 cleanup 删除(收尾窗口)时, 从 _orphaned_inbox 找回未吸收注入消息,
+    保证注入成功即不静默丢失(编排可据此降级/续聊)。 — 小欧 2026-09-20"""
     async with running_tasks_lock:
         _t = running_tasks.get(task_id)
         if not _t:
-            return []
+            # 缺口补(2026-09-20 小欧): orphan 找回路径必须可查(收尾窗口兜底命中 = 注入后任务已终态)
+            _orphan = _orphaned_inbox.pop(task_id, [])
+            if _orphan:
+                logger.warning(
+                    f"[B-4/B-7] 任务 {task_id} 已从running_tasks删除, 从orphan找回未吸收注入消息 {len(_orphan)} 条")
+            return list(_orphan)
         _q = _t.get("_inbox")
         if _q is None:
             return []
@@ -99,11 +146,27 @@ async def drain_inbox(task_id: str) -> List[str]:
 
 
 async def cleanup_task(task_id: str) -> bool:
-    """清理非cancelled任务,返回True=已清理,False=保留(cancelled记录)"""
+    """清理非cancelled任务,返回True=已清理,False=保留(cancelled记录)
+    B-4/B-7 兜底(2026-09-20 小欧): 删除任务前把未吸收的 inbox 消息转入 _orphaned_inbox,
+    收尾窗口注入不随队列销毁丢失(drain_inbox 可找回)。"""
     async with running_tasks_lock:
         if task_id not in running_tasks:
             return False
         if running_tasks[task_id].get("status") != "cancelled":
+            _q = running_tasks[task_id].get("_inbox")
+            if _q is not None:
+                _leftover = []
+                while not _q.empty():
+                    try:
+                        _leftover.append(_q.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+                if _leftover:
+                    _orphaned_inbox[task_id] = _leftover
+                    _trim_orphaned_inbox()  # 缺口补(2026-09-20 小欧): 防 orphan 无上限滞留内存
+                    logger.warning(
+                        f"[TaskRegistry] 任务 {task_id} cleanup 时存在未吸收注入消息 {len(_leftover)} 条, "
+                        f"已转 orphan 供找回(防收尾窗口静默丢失)")
             del running_tasks[task_id]
             return True
         return False
@@ -129,6 +192,21 @@ async def cleanup_expired_tasks() -> None:
             and t.get("status") not in ("running", "paused")
         ]
         for tid in expired:
+            # BUG-10修复(小欧 2026-09-20): 过期清理前把未吸收inbox消息转入orphan, 与cleanup_task对齐(防收尾窗口静默丢失)
+            _q = running_tasks[tid].get("_inbox")
+            if _q is not None:
+                _leftover = []
+                while not _q.empty():
+                    try:
+                        _leftover.append(_q.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+                if _leftover:
+                    _orphaned_inbox[tid] = _leftover
+                    _trim_orphaned_inbox()  # 缺口补(2026-09-20 小欧): 防 orphan 无上限滞留内存
+                    logger.warning(
+                        f"[TaskRegistry] 过期任务 {tid} cleanup时存在未吸收注入消息 {len(_leftover)} 条, "
+                        f"已转orphan供找回")
             del running_tasks[tid]
         if expired:
             logger.info(f"[TaskRegistry] 清理了 {len(expired)} 个过期任务")

@@ -11,6 +11,11 @@
 # 2026-09-01 - 小欧 - DRY 归一: 新增 parse_model_params(provider_config, model)->(extra_body_params, context_limit)
 #   唯一权威解析 model_params; create_service_instance 与 stream_orchestrator(L2 跨 provider 快照)同用,
 #   消除 create_service_instance 内联 model_params 解析双份漂移
+# 2026-09-20 - 小欧 - P0+P1 无条件快照共享连接池落地(13.1+13.2): get_service 单例首次建池后惰性触发
+#   _ensure_client + 暴露 _shared_client(httpx.AsyncClient 连接池引用)供 resolver 快照构造期注入;
+#   快照经 create_llm_client(shared_client=...) 建独立 LLMClient 复用连接池(非 LLMClient 对象)。
+#   compliance: DRY(复用原 _ensure_client 路径)/KISS-DIRECT
+# 2026-09-20 - 小欧 - 三堂会审BUG-06/16修复: ①_ensure_client失败时回滚半初始化实例防缓存; ②get_service_for_model加_instance_lock防竞态
 """
 service — 服务创建与获取
 
@@ -145,10 +150,16 @@ def get_service() -> BaseAIService:
             # 2026-09-20 小欧 C1: 惰性触发单例首次建池(复用原 _ensure_client 路径),
             #   并暴露共享【底层 httpx.AsyncClient】引用供 resolver 快照构造期注入(存 httpx 连接池,
             #   非 LLMClient 对象 —— 快照经 create_llm_client(shared_client=...) 建自己的 LLMClient 复用连接池) — 小欧-2026-09-20
-            _instance._ensure_client()
-            _shared_llm_sdk = getattr(_instance, "_llm_sdk", None)
-            if _shared_llm_sdk is not None:
-                _instance._shared_client = _shared_llm_sdk._client
+            try:
+                _instance._ensure_client()
+                _shared_llm_sdk = getattr(_instance, "_llm_sdk", None)
+                if _shared_llm_sdk is not None:
+                    _instance._shared_client = _shared_llm_sdk._client
+            except Exception:
+                # BUG-06修复(小欧 2026-09-20): _ensure_client/共享池赋值失败时回滚, 防半初始化实例被缓存
+                _instance = None
+                _current_model_ref = None
+                raise
     except:
         # get_service 异常时消费并丢弃 _model_warning，防止残留到下一请求— 小欧 2026-07-22
         resolver.pop_model_warning()
@@ -187,6 +198,7 @@ def get_service_for_model(model_ref: ModelRef):
     """获取指定模型的服务实例 — 小沈 2026-06-08
     P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path
     【2026-08-22 小欧】归一: 入参 (provider, model) → model_ref: ModelRef(F8 无兼容 shim, 调用点随改)
+    BUG-16修复(小欧 2026-09-20): 整个操作加_instance_lock, 防并发竞态覆盖/丢失实例。
     """
     from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
@@ -194,15 +206,19 @@ def get_service_for_model(model_ref: ModelRef):
 
     provider_config = resolver.get_service_config(model_ref.provider, model_ref.model)
 
-    cleanup_old_instance(model_ref)
+    with _instance_lock:  # BUG-16: 加锁保护cleanup+create+set原子性
+        cleanup_old_instance(model_ref)
 
-    log_service_creation(model_ref.provider, model_ref.model)
+        log_service_creation(model_ref.provider, model_ref.model)
 
-    if not provider_config:
-        provider_config = {}
+        if not provider_config:
+            provider_config = {}
 
-    instance = create_service_instance(provider_config, model_ref.provider, model_ref.model)
-    set_instance(instance, model_ref)
+        instance = create_service_instance(provider_config, model_ref.provider, model_ref.model)
+        # BUG-16: 直接赋值(已在锁内), 不调set_instance(内部也加锁会死锁)
+        global _instance, _current_model_ref
+        _instance = instance
+        _current_model_ref = model_ref
 
     return instance
 

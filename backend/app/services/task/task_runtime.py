@@ -22,6 +22,12 @@
 #   双写后后端命令行(uvicorn窗口)直接可见取消请求(task/source) — 小欧-2026-09-08
 # 2026-09-14 小欧 - _cancel_final_dict 取消终态字段修正: 删 content 改 response, 与 FinalStep.to_dict() 对齐,
 #   前端 sseParser final 分支读 response 字段, content 无消费者 — 小欧-2026-09-14
+# 2026-09-20 - 小欧 - P0+P1+C-6: ①P0(13.1) 补 import asyncio(_pause_core 用 asyncio.wait_for/TimeoutError);
+#   ②P1(13.2) resolver 无条件快照(C3/C4 返回全局默认快照兜底, 绝不返回 None);
+#   ③C-6(RED-C-6) cancel_task 取消目标改优先 agent.llm_client(会话快照), 而非注册时的全局 ai_service ——
+#     取消全局单例作用在错误对象; 无 agent/无 llm_client 时回退注册 ai_service(兼容既路径)。
+#   compliance: KISS-DIRECT/禁止backward
+# 2026-09-20 - 小欧 - C-6/BUG-08修复: ①取消对象优先agent.llm_client(会话快照)而非全局ai_service; ②无agent/无llm_client时跳过cancel()(防误杀其他会话)
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -108,10 +114,16 @@ async def cancel_task(task_id: str, session_id=None, source: str = "user_request
     _agent = _task.get("agent")
     if _agent is not None:
         _agent._cancel_source = source
-    ai_service = await get_task_field(task_id, "ai_service")
-    if ai_service:
+    # C-6(小欧 2026-09-20 RED-C-6): 取消对象优先 agent 实际使用的 llm_client(会话快照),
+    #   而非注册时的全局 ai_service —— 编排 L345-347 已把快照赋给 agent.llm_client, 取消全局单例作用在错误对象。
+    #   无 agent / 无 llm_client 时跳过 cancel() — BUG-08修复(小欧 2026-09-20): 全局单例可能服务其他会话,
+    #   对其调cancel()会误杀, 仅标记cancelled(已由上方set_cancelled完成) — 小欧-2026-09-20
+    _cancel_target = None
+    if _agent is not None:
+        _cancel_target = getattr(_agent, "llm_client", None)
+    if _cancel_target is not None:
         try:
-            await ai_service.cancel()
+            await _cancel_target.cancel()
             logger.info(f"[Task Cancelled] 任务 {task_id} HTTP连接已强制关闭")
         except Exception as e:
             logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
