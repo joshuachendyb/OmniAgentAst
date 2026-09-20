@@ -39,8 +39,8 @@ from fastapi import HTTPException
 # YAML 有序写入（配置专用）
 # ====================================================================
 
-def _write_system_yaml(file_path: str, data: dict):
-    """系统配置专用 YAML 写入 — 小欧 2026-06-23
+def _write_system_yaml(data: dict) -> OrderedDict:
+    """系统配置专用 YAML 有序化 — 小欧 2026-06-23; 小沈 2026-09-20 v4.19 改为返回 ordered data
     - model/provider 排 ai 块最前面
     - provider 名字保留原始顺序（不字母序重排）
     """
@@ -68,8 +68,7 @@ def _write_system_yaml(file_path: str, data: dict):
         return dumper.represent_dict(data.items())
 
     yaml.add_representer(OrderedDict, _repr_ordered_dict)
-    with open(file_path, 'w', encoding='utf-8') as f:
-        yaml.dump(_order(data), f, allow_unicode=True, default_flow_style=False, indent=2)
+    return _order(data)
 
 # ====================================================================
 # 配置路径 / 读写
@@ -87,8 +86,10 @@ def read_yaml_config(config_path: Path) -> dict:
         return yaml.load(f, Loader=_make_safe_loader()) or {}
 
 def write_yaml_config(config_path: str, data: dict) -> None:
-    """使用有序 Key 写入 YAML 配置文件"""
-    _write_system_yaml(config_path, data)
+    """使用有序 Key 写入 YAML 配置文件 — 2026-09-20 小沈: 经 atomic_write 原子落盘(9.2)"""
+    ordered = _write_system_yaml(data)
+    from app.utils.file_utils import atomic_write
+    atomic_write(config_path, yaml.dump(ordered, allow_unicode=True, default_flow_style=False, indent=2))
 
 def reload_ai_config() -> None:
     """重新加载 AI 配置并重置缓存"""
