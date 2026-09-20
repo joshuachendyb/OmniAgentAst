@@ -193,6 +193,8 @@ def update_session(session_id: str, update_data: SessionUpdate):
 
 def delete_session(session_id: str):
     """删除会话(软删) + 清理 display_name 缓存 — 自 api/v1/sessions.py 迁入, 缓存清理改经 message_service 方法"""
+    # 2026-09-20 小欧 H1: 删会话前级联取消该会话名下活跃任务(防孤儿任务继续写死数据) — 小欧-2026-09-20
+    _cancel_cascade(session_id)
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -211,6 +213,27 @@ def delete_session(session_id: str):
     delete_session_display_names(session_id)
     logger.info(f"删除会话成功: id={session_id}")
     return {"success": True, "message": "会话删除成功"}
+
+
+def _cancel_cascade(session_id: str) -> None:
+    """H1: 取消该会话下全部 running_tasks 中活跃任务 — 小欧 2026-09-20
+    sync 函数(delete_session 走 API 线程池)不能直接 await cancel_task; 任务注册时已绑定自身 loop
+    (_task 字段), 用 run_coroutine_threadsafe 把取消动作提交回该任务的原 loop —— asyncio.Lock 不跨 loop,
+    绝不在本线程新建 loop(asyncio.run 会新建 loop → running_tasks_lock 绑定错 loop → 状态写坏/卡死)。"""
+    import asyncio  # 2026-09-20 小欧 H1: run_coroutine_threadsafe/get_event_loop 需 asyncio — 小欧-2026-09-20
+    try:
+        from app.services.task.task_state import running_tasks
+        from app.services.task.task_runtime import cancel_task
+        for _tid, _meta in list(running_tasks.items()):
+            if _meta.get("session_id") == session_id and _meta.get("status") in ("running", "paused"):
+                _task_obj = _meta.get("_task")
+                _loop = _task_obj.get_loop() if _task_obj is not None else asyncio.get_event_loop()
+                # 提交回任务原 loop, 不阻塞等待(级联取消是异步信号, 后台 agent 自行收尾)
+                asyncio.run_coroutine_threadsafe(
+                    cancel_task(_tid, session_id, "session_deleted"), _loop)
+                logger.info(f"[H1] 会话删除级联取消任务: session={session_id}, task={_tid}")
+    except Exception as _e:
+        logger.warning(f"[H1] 级联取消遍历失败(session={session_id}): {_e}")
 
 
 def get_session_titles_batch(session_ids: str):
