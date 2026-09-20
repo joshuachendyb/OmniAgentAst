@@ -12,6 +12,7 @@ registry_read — 读取Windows注册表键值
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 
 import os
+import threading  # 2026-09-20 小欧 X4: 多会话并行时 _registry_session_backup 跨任务读写竞态 — 小欧-2026-09-20
 import subprocess
 import tempfile
 import time as _time_mod
@@ -34,6 +35,7 @@ ROOT_KEY_MAP = {
 }
 
 _registry_session_backup = {}
+_registry_backup_lock = threading.Lock()  # 2026-09-20 小欧 X4: 保护备份缓存 — 小欧-2026-09-20
 
 
 def _validate_root_key(full_root_key: str):
@@ -56,8 +58,9 @@ def _parse_path(path: str, hive: str = "HKCU") -> tuple:
 def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
     """备份注册表键到临时文件 — 小健 2026-05-19"""
     backup_key = f"{root_key}\\{sub_key}"
-    if backup_key in _registry_session_backup:
-        return _registry_session_backup[backup_key]
+    with _registry_backup_lock:  # X4
+        if backup_key in _registry_session_backup:
+            return _registry_session_backup[backup_key]
 
     backup_dir = tempfile.gettempdir()
     backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{timestamp_for_filename()}.reg")
@@ -69,7 +72,8 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
             capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_DEFAULT
         )
         if result.returncode == 0 and os.path.exists(backup_file):
-            _registry_session_backup[backup_key] = backup_file
+            with _registry_backup_lock:  # X4
+                _registry_session_backup[backup_key] = backup_file
             logger.info(f"[registry] 备份成功: {backup_key} -> {backup_file}")
         else:
             logger.info(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
