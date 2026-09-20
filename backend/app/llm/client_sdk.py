@@ -21,6 +21,7 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   防空 provider 时 _DEFAULT_URLS.get("","") 返回空串致 httpx base_url 为空(防御性语义与归一前对齐, 不弱化)
 """
 
+import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
 import httpx
 import json
 from typing import Any, AsyncGenerator, Dict, List, Optional
@@ -100,6 +101,18 @@ def _extract_server_error_message(body_text: str) -> str:
     return body_text[:500]
 
 
+_soft_pool_semaphore = None  # 2026-09-20 小欧 P5: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
+_SOFT_POOL_WAIT_TIMEOUT = 30.0  # 软配额排队等待上限(秒): 超时保底放行(不拒绝不降级) — 小欧-2026-09-20
+
+
+def _get_soft_pool_semaphore():
+    """惰性获取软配额信号量(避免模块级创建绑定错误 loop) — 小欧 2026-09-20"""
+    global _soft_pool_semaphore
+    if _soft_pool_semaphore is None:
+        _soft_pool_semaphore = asyncio.Semaphore(LLM_MAX_CONNECTIONS)
+    return _soft_pool_semaphore
+
+
 class LLMClient:
     """LLM 客户端实例 - 小沈 2026-06-09
     2026-08-22 小欧 归一报告v1.25 6.4: (provider, model) 分离入参 → llm_model: ModelRef 单结构
@@ -177,7 +190,19 @@ class LLMClient:
             extra_body=extra_body,
         )
         _to = httpx.Timeout(request_timeout) if request_timeout else self._default_timeout
-        response = await self._client.post("/chat/completions", json=body, timeout=_to)
+        # 软配额: 排队超时保底放行(非硬闸不 503 不降级, 防长时间卡等) — 小欧-2026-09-20
+        _acquired = False
+        _sem = _get_soft_pool_semaphore()
+        try:
+            await asyncio.wait_for(_sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
+            _acquired = True
+        except asyncio.TimeoutError:
+            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
+        try:
+            response = await self._client.post("/chat/completions", json=body, timeout=_to)
+        finally:
+            if _acquired:
+                _sem.release()
         if response.status_code >= 400:
             body_text = response.text
             if response.status_code in _RETRYABLE_STATUS:
@@ -220,27 +245,38 @@ class LLMClient:
             write=DEFAULT_WRITE_TIMEOUT,
             pool=DEFAULT_POOL_TIMEOUT,
         )
-        async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
-            # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
-            # 2026-07-17 小欧 修复: 可重试状态(429限流/5xx服务端瞬时错误)由 base_service 的 L1 重试处理,
-            #   降为 WARNING 避免污染 ERROR 日志(check_logs/测试据此误判 FAIL); 仅不可重试客户端错误(400/401/403等)记 ERROR
-            if response.status_code >= 400:
-                response_body = await response.aread()
-                body_text = response_body.decode("utf-8", errors="replace")
-                if response.status_code in _RETRYABLE_STATUS:
-                    logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
-                else:
-                    logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
-                server_msg = _extract_server_error_message(body_text)
-                raise httpx.HTTPStatusError(
-                    f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
-                    request=response.request, response=response)
-            async for line in response.aiter_lines():
-                if line.startswith("data:"):  # #33 fix: 兼容无空格 data: — 小欧 2026-07-18
-                    _body = line[len("data:"):].lstrip()
-                    if _body.strip() == "[DONE]":
-                        break
-                    yield _body
+        _acquired = False
+        _sem = _get_soft_pool_semaphore()
+        try:
+            await asyncio.wait_for(_sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
+            _acquired = True
+        except asyncio.TimeoutError:
+            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
+        try:
+            async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
+                # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
+                # 2026-07-17 小欧 修复: 可重试状态(429限流/5xx服务端瞬时错误)由 base_service 的 L1 重试处理,
+                #   降为 WARNING 避免污染 ERROR 日志(check_logs/测试据此误判 FAIL); 仅不可重试客户端错误(400/401/403等)记 ERROR
+                if response.status_code >= 400:
+                    response_body = await response.aread()
+                    body_text = response_body.decode("utf-8", errors="replace")
+                    if response.status_code in _RETRYABLE_STATUS:
+                        logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
+                    else:
+                        logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
+                    server_msg = _extract_server_error_message(body_text)
+                    raise httpx.HTTPStatusError(
+                        f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
+                        request=response.request, response=response)
+                async for line in response.aiter_lines():
+                    if line.startswith("data:"):  # #33 fix: 兼容无空格 data: — 小欧 2026-07-18
+                        _body = line[len("data:"):].lstrip()
+                        if _body.strip() == "[DONE]":
+                            break
+                        yield _body
+        finally:
+            if _acquired:
+                _sem.release()
 
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09"""
