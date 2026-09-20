@@ -23,6 +23,11 @@
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码降级回退分支同步;
 #   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
 # 2026-08-21 - 小欧 - 11.6.1 exemplar: success分支调 with_artifact_file 声明产出物
+# 2026-09-20 - 小欧 - X2/13.3.4 跨任务文件写仲裁接入 + A-1 修复:
+#   ①writetext 主函数 acquire_write 登记 + 全部返回路径 finally 统一 release(13.3.4, 冲突仅提示不阻断);
+#   ②A-1 修复(红case驱动): _arb_warning = acquire_write 返回的占用者 task_id 即冲突信号, 此前从未读取(死变量),
+#     现消费并入 conflict_warning/llm_data arb_warning 段, X2 冲突提示真实落地(占用者非本人时为并行写警告)。
+#   compliance: SRP(仲裁职责归 arbiter)/KISS-DIRECT/禁止backward
 """
 F2: writetext — 写文本文件
 
@@ -287,6 +292,9 @@ async def writetext(
         return build_error(data={}, llm_data=llm_data)
 
     # 2026-09-20 小欧 X2/13.3.4: 跨任务写仲裁登记(冲突仅提示不阻断) — 小欧-2026-09-20
+    # A-1 修复(小欧 2026-09-20): _arb_warning=acquire_write 返回的占用者task_id即冲突信号,
+    #   此前从未读取(死变量, use_count==1), 现经 _build_write_text_file_llm_data 的 arb_warning 段消费,
+    #   使 X2 冲突提示真实落地: 冲突→llm_data 带 arb_warning(占用者task_id)→观察层提示。
     from app.tools.file.file_write_arbiter import acquire_write, release_write
     _arb_warning = acquire_write(file_path, task_id)
     _arb_released = False  # 13.3.4: 统一释放标记(全返回路径 finally 兜底)
@@ -298,6 +306,13 @@ async def writetext(
         conflict_warning = check_conflict(file_path)
         if conflict_warning:
             logger.warning(f"[writetext] {conflict_warning}")
+
+        # A-1 修复(小欧 2026-09-20): 消费 arbiter 冲突占用者提示——占用者非本人时为并行写警告,
+        #   并入 conflict_warning 通道 → 成功/警告路径均带 arb_warning 语义(冲突提示真实落地, 不阻断写)。
+        if _arb_warning:
+            _arb_tip = f"目标文件正被任务[{_arb_warning}]写入(并行覆盖风险), 本次写入可能覆盖他人结果"
+            conflict_warning = "；".join(filter(None, [conflict_warning, _arb_tip]))
+            logger.warning(f"[writetext] {_arb_tip}")
 
         # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
         old_content = None

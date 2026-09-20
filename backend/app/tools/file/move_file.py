@@ -17,6 +17,9 @@
 #   对齐 copy_file 防护); #5 目标存在探测/删除/移动/os 调用全链 to_win_long_path 长路径化(仅NT生效),
 #   深嵌套路径不再触发 WinError 206
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-09-20 - 小欧 - A-2(X2落地): 移动目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
+#   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
 F10: move_file — 移动文件
 
@@ -41,6 +44,7 @@ from app.tools.validate.file_path_checker import validate_path, OpCategory  # �
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 移动目标落盘前登记占用
 
 
 
@@ -129,12 +133,14 @@ async def _move_file_impl(
             return True, None
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-26 else分支解包tuple对齐executor
-        if operation_id:
-            success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_move_sync)
-        else:
-            logger.info("Database unavailable, executing move operation without recording")
-            raw = await asyncio.to_thread(_move_sync)
-            success, detail = raw if isinstance(raw, tuple) else (raw, None)
+        # A-2: 移动目标落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
+        with claim_write(str(dst), task_id):
+            if operation_id:
+                success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_move_sync)
+            else:
+                logger.info("Database unavailable, executing move operation without recording")
+                raw = await asyncio.to_thread(_move_sync)
+                success, detail = raw if isinstance(raw, tuple) else (raw, None)
 
         if success:
             # 小欧 2026-07-16 移除未消费的 operation_id 返回值(YAGNI, 调用方不读取)

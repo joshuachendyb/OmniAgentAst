@@ -2,6 +2,9 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - rename新增overwrite参数并透传_move_file_impl: 原硬编码overwrite=False且不向LLM暴露该参数, 目标已存在时FileExistsError无法被LLM用overwrite=True纠正。对齐move/copy新增overwrite字段(默认False, 向后兼容)。另修复执行失败时被execute_with_safety吞掉真因的问题。
 # 2026-08-21 - 小欧 - 11.6.1: 两个success分支调 with_artifact_file 声明产出物
+# 2026-09-20 - 小欧 - A-2(X2落地): 重命名目标 with claim_write 登记文件写仲裁(外层包裹显式声明重命名写意图,
+#   impl 内层同任务登记幂等), 防跨任务并行覆盖; 仅仲裁不强制, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
 F13: rename_file — 重命名文件
 
@@ -20,6 +23,8 @@ from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
 from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.tools.context import _current_task_id  # A-2: 写仲裁登记使用任务ID — 小欧 2026-09-20
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 重命名登记占用
 
 
 def _build_rename_file_llm_data(
@@ -103,7 +108,9 @@ async def rename(
         # ------------------------------------------------------------------------------
         return build_success(data={}, llm_data=llm_data)
 
-    result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=overwrite)
+    # A-2: 重命名目标登记写仲裁(impl 内层同任务登记幂等, 外层包裹保证rename层写意图显式) — 小欧 2026-09-20
+    with claim_write(str(dst), _current_task_id.get()):
+        result = await _move_file_impl(source_path=source, destination_path=str(dst), overwrite=overwrite)
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):

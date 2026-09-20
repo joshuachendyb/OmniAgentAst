@@ -22,6 +22,9 @@
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套路径不再 WinError 206; 主函数目标存在探测/成功stat
 #   同步长路径化, 探测与操作口径一致(超长路径不误报"目标已存在"或stat失败)
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-09-20 - 小欧 - A-2(X2落地): 拷贝目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
+#   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
 F7: copy_file — 复制文件
 
@@ -49,6 +52,7 @@ from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.db.models.operation_models import OperationType
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 拷贝目标落盘前登记占用
 
 
 
@@ -193,11 +197,13 @@ async def copy(
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
-        if operation_id:
-            success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
-        else:
-            logger.info("Database unavailable, executing copy operation without recording")
-            success = await asyncio.to_thread(_copy_sync)
+        # A-2: 拷贝目标落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
+        with claim_write(str(dst), task_id):
+            if operation_id:
+                success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)
+            else:
+                logger.info("Database unavailable, executing copy operation without recording")
+                success = await asyncio.to_thread(_copy_sync)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if success:

@@ -39,6 +39,9 @@
 #   【病根】from app.tools.validate.file_path_checker import validate_str_param 全文件零调用(grep仅导入处1处), 冗余导入
 #   【改法】从导入行移除, 保留validate_path/OpCategory
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-09-20 - 小欧 - A-2(X2落地): 精确替换落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
+#   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
 F4: edittext — 编辑文本文件
 
@@ -71,6 +74,7 @@ from app.tools.file.file_encoding import read_file_with_encodings as _try_read_f
 from app.tools.file.file_state import check_conflict_strict, record_write, record_read
 from app.tools.file.fuzzy_match import fuzzy_find_replace  # 小欧 2026-07-11
 from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 精确替换落盘前登记占用
 
 
 def _insert_line_after(content: str, match_end: int, new_string: str) -> str:
@@ -492,12 +496,14 @@ async def _precise_replace_in_file(
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
-        if operation_id:
-            raw = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_replace_sync)
-            success, _ = raw if isinstance(raw, tuple) else (raw, "")
-        else:
-            logger.info("Database unavailable, executing edit operation without recording")
-            success = await asyncio.to_thread(_replace_sync)
+        # A-2: 精确替换落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
+        with claim_write(file_path, task_id):
+            if operation_id:
+                raw = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_replace_sync)
+                success, _ = raw if isinstance(raw, tuple) else (raw, "")
+            else:
+                logger.info("Database unavailable, executing edit operation without recording")
+                success = await asyncio.to_thread(_replace_sync)
 
         count = replace_result.get('count', 0)
 

@@ -25,6 +25,9 @@
 #   【病根】p = raw.expanduser().resolve() 恒返回Path(异常已被前try捕获返回), resolve()绝不返回None, L58-59分支永不可达(死代码, 违KISS)
 #   【改法】删除该分支; 无任何行为变化(resolve成功则p恒为Path)
 # 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-09-20 - 小欧 - A-2(X2落地): 删除执行前 with claim_write 登记文件写仲裁(acquire_write/release_write
+#   上下文管理器), 防跨任务并行读改写覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
+#   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
 F12: delete_file — 删除文件
 
@@ -51,6 +54,7 @@ from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
+from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 
 
 def _guard_forbidden_delete(file_path: str) -> Optional[str]:
@@ -275,11 +279,13 @@ async def _delete_file_impl(
             return ok, detail  # 返回2-tuple兼容execute_with_safety
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回(bool,str)
-        if operation_id:
-            is_ok, error_detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_delete_sync)
-        else:
-            logger.info("Database unavailable, executing delete operation without recording")
-            is_ok, error_detail = await asyncio.to_thread(_delete_sync)
+        # A-2: 删除执行前登记文件写仲裁, 防跨任务并行读写覆盖 — 小欧 2026-09-20
+        with claim_write(str(path), task_id):
+            if operation_id:
+                is_ok, error_detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_delete_sync)
+            else:
+                logger.info("Database unavailable, executing delete operation without recording")
+                is_ok, error_detail = await asyncio.to_thread(_delete_sync)
 
         method = _deleted_container[1] if _deleted_container[1] else ("permanent" if force else "send2trash")  # 实际mode, fallback到force标记 — 小沈 2026-07-30
         deleted_files = _deleted_container[0]
