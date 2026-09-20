@@ -1,9 +1,19 @@
 # -*- coding: utf-8 -*-
 """
 model_service — 模型编排器（位于 model 域，与 config_service/config_helpers/resolver 同域聚合）
+读：解析 config.yaml 的 models[]/model_params/model_meta/provider_config 区域（动态遍历 provider，
+禁止硬编码 provider 名，与旧页铁律一致）；写：校验 → config_helpers.merge_region_patch（单次落盘）→ config.yaml。
+数据模型（v4.17）：models[] 保持字符串列表（旧链不变式）；模型参数写 ai.{provider}.model_params.{model}
+（运行时 parse_model_params 消费）；label/range/capabilities 写 ai.{provider}.model_meta.{model}（UI 元数据）。
+current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加法，不改旧逻辑）；空值不写空键。
 
 编辑历史:
-  2026-09-20 - 小沈 - 新建：5.2 模型管理契约
+  2026-09-20 - 小沈 - 新建：5.2 模型管理契约（合并返回/级联/switched_to/立即生效）
+  2026-09-20 - 小沈 - 核查 B1/B2/A2：掩码改调 config_helpers.mask_secret_value；合并写改调
+    config_helpers.merge_region_patch（消私有跨域）；delete_model 删光当前 provider 模型时跨
+    provider 回退，不写空 model_ref
+  2026-09-20 - 小欧 - v4.17：models[] 回字符串列表；模型参数/元数据分置 model_params/model_meta；
+    delete_provider 单次落盘 + 禁删最后一个 Provider；_sync_current 空值保护
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional

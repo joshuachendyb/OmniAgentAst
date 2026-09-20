@@ -4,7 +4,7 @@ settings_registry — 设置页唯一 Schema 源（3.2 铁律1）
 key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局唯一，加载自检重复直接拒启。
 
 编辑历史:
-  2026-09-20 - 小沈 - 新建：v4.19 Phase 2 从文档54 9.1.1 落盘；key→{type,default,range,secret,env_key,group}
+  2026-09-20 - 小沈 - 新建：v4.19 Phase 2 从文档54 9.1.1 逐字落盘
 """
 from typing import Any, Dict, List, Optional
 
@@ -98,12 +98,11 @@ OLD_KEY_MAP: Dict[str, str] = {
     "app.project_root": "project_root",
     "ai.model_ref": "ai_model_ref",
 }
+# v4.17 修正：安全 10 项全部逐键走通用 region 合并（security.* 逐行 merge，防整块覆盖丢键）。
+# 原 SECURITY_KNOWN 整块写 ConfigUpdate.security 的方案撤销——整块替换会覆盖未识别键造成丢数据。
+# v4.18 修正：app.max_steps 从 OLD_KEY_MAP 移除，统一走 merge_region_patch（与 app.debug/max_context_tokens/max_history_length/max_rounds 同路径，消除系统参数写路径分裂）；范围校验由 registry range_=[1,10000] + _validate_value 承接。
+# v4.18 修正：app.theme 从 OLD_KEY_MAP 移除——该键 readonly=True，_validate_value 恒先拒，映射不可达死代码。
 
-# v4.18 修正：app.max_steps 从 OLD_KEY_MAP 移除，统一走 merge_region_patch；范围校验由 registry range_=[1,10000] + _validate_value 承接
-# v4.18 修正：app.theme 从 OLD_KEY_MAP 移除——该键 readonly=True，_validate_value 恒先拒，映射不可达死代码
-
-# 全局 key→item 索引（加载时自检重复）
-INDEX: Dict[str, Dict[str, Any]] = {}
 
 def _build_index() -> Dict[str, Dict[str, Any]]:
     """模块加载自检：key 全局唯一，重复直接拒启（3.2 铁律1）。"""
@@ -117,32 +116,14 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
     return index
 
 
-def init_registry():
-    """初始化全局索引（模块导入时自动调用）"""
-    global INDEX
-    INDEX = _build_index()
-    return INDEX
+REGISTRY_INDEX = _build_index()
 
 
 def get_item(key: str) -> Optional[Dict[str, Any]]:
-    """根据 key 获取单项元数据"""
-    return INDEX.get(key)
+    """按 key 取 schema 项。"""
+    return REGISTRY_INDEX.get(key)
 
 
-def get_group(group_name: str) -> Optional[Dict[str, Any]]:
-    """获取分组配置"""
-    return GROUPS.get(group_name)
-
-
-def validate_key(key: str) -> bool:
-    """验证 key 是否在 registry 中"""
-    return key in INDEX
-
-
-def get_all_keys() -> List[str]:
-    """获取所有已注册的 key"""
-    return list(INDEX.keys())
-
-
-# 模块导入时自检
-init_registry()
+def group_items(group: str) -> List[Dict[str, Any]]:
+    """取某组全部 schema 项。"""
+    return GROUPS[group]["items"]

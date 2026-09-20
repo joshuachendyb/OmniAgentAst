@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.services.model.config_helpers import handle_config_errors
 from app.services.model import model_service as svc
+from app.api.v1.config_schemas import ProviderAddRequest
 
 
 router = APIRouter()
@@ -72,7 +73,7 @@ async def get_providers():
 
 @router.post("/providers")
 @handle_config_errors("添加 Provider")
-async def add_provider(req: BaseModel):
+async def add_provider(req: ProviderAddRequest):
     return svc.add_provider(req.name, req.label or req.name, req.api_base,
                             req.api_key, req.model, req.timeout)
 

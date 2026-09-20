@@ -1,10 +1,21 @@
 # -*- coding: utf-8 -*-
 """
 settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧链，YAML I/O 复用 config_helpers 同一套）
+读：经 read_yaml_config/get_config（与后端业务同源同批）→ {groups:{data,sources,mtime}} + env 标注 + secret 掩码
+写：全部 key 一次 merge_region_patch 单次落盘（v4.19：不再分旧/新键两次写，防部分成功）；
+    merge_region_patch 内部先 _validate_config_integrity 校验再原子写（安全网与 update_config 持平）。
+只读项 config_path/version 由本服务组装。
+注：v4.19 起 settings_service 不再直接调 update_config_service——旧链仅剩 ai.model_ref 一个映射键，
+    且其写语义（结构+扁平双写）已由 update_settings 内联等价实现（P0-2），避免两阶段写的半程失败风险；
+    写旧业务键（语言/项目根目录）与安全/新键同路径经 region 合并，字段语义由 registry schema 承接。
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：3.1 前门实现 + 5.2 env/secret 契约 + 5.3 get_setting
-  2026-09-20 - 小沈 - v4.19：update_settings 改单次落盘，ai.model_ref 内联双写
+  2026-09-20 - 小沈 - 核查 B1/B2/B5：掩码改调 config_helpers.mask_secret_value（消与 model_service 重复）；
+    通用合并上提 config_helpers.merge_region_patch（消私有跨域）；_app_version 公开为 app_version
+  2026-09-20 - 小欧 - v4.17：security 逐键走通用合并（去 SECURITY_KNOWN 整块写，防覆盖丢键）；
+    update_config 返回 fail_result 透传 errors（防假成功）；PUT 响应带 mtime
+  2026-09-20 - 小沈 - v4.19：update_settings 改单次落盘（弃 update_config 两阶段），ai.model_ref 内联双写
 """
 import os
 from pathlib import Path
