@@ -2,6 +2,14 @@
 # 编辑历史:
 # 2026-07-25 - 小欧 - 不存在的键reg export失败日志WARNING→INFO(正常业务场景不应报WARNING)
 # 2026-07-31 - 小欧 - CRITICAL: _backup_registry 失败路径不缓存备份路径(原在 returncode!=0/FileNotFoundError/Exception 3 处均缓存)。失败后续操作命中缓存跳过备份, 导致 registry_write/delete 丢失安全保障
+# 2026-09-20 - 小欧 - P2 X4锁+备份三原则(A-4/D-6/E-5)+D-7(红case A-4/D-6/D-7/E-5 驱动):
+#   ①X4: 新增 threading.Lock 保护 _registry_session_backup(多会话并行竞态);
+#   ②A-4: 缓存键含 session_id → 跨会话备份隔离, 不误复用它会话快照;
+#   ③D-6: 文件名加 uuid4 唯一后缀 → 同秒/同会话不再撞名互覆;
+#   ④E-5: 去掉"缓存命中即返回"短路 → 每次调用重新导出(备份=写前最新快照);
+#   ⑤D-7: 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
+#   compliance: SRP/禁止backward
+# 2026-09-20 - 小欧 - 三堂会审BUG-14修复: _backup_registry新建备份前清理同key旧备份文件(防temp目录磁盘泄漏)
 """
 registry_read — 读取Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -17,6 +25,7 @@ import subprocess
 import tempfile
 import time as _time_mod
 import winreg
+from uuid import uuid4  # 2026-09-20 小欧 D-6: 备份文件名唯一后缀 — 小欧-2026-09-20
 from app.utils.time_utils import timestamp_for_filename
 from typing import Optional, Any  # 2026-07-31 小欧: 移除未使用 Dict
 
@@ -55,15 +64,31 @@ def _parse_path(path: str, hive: str = "HKCU") -> tuple:
     return HIVE_MAP.get(hive, "HKEY_CURRENT_USER"), path
 
 
-def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
-    """备份注册表键到临时文件 — 小健 2026-05-19"""
-    backup_key = f"{root_key}\\{sub_key}"
-    with _registry_backup_lock:  # X4
-        if backup_key in _registry_session_backup:
-            return _registry_session_backup[backup_key]
-
+def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[str]:
+    """备份注册表键到临时文件 — 小健 2026-05-19
+    2026-09-20 小欧 备份三原则(A-4/D-6/E-5)+D-7 同源收敛(红case A-4/D-6/D-7/E-5 驱动):
+      A-4 缓存键含 session_id → 跨会话备份隔离, 不误复用它会话快照;
+      D-6 文件名加 uuid4 唯一后缀 → 同秒/同会话不再撞名互覆;
+      E-5 去掉"缓存命中即返回"短路 → 每次调用重新导出, 缓存仅登记供校验, 备份=写前最新快照;
+      D-7 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
+    BUG-14修复(小欧 2026-09-20): 新建备份前清理同key旧备份文件, 防temp目录磁盘泄漏。
+    """
+    backup_key = f"{session_id}::{root_key}\\{sub_key}"  # A-4: 会话级缓存键
     backup_dir = tempfile.gettempdir()
-    backup_file = os.path.join(backup_dir, f"reg_backup_{session_id}_{timestamp_for_filename()}.reg")
+
+    # BUG-14修复: 清理同key旧备份文件, 防磁盘泄漏
+    with _registry_backup_lock:
+        old_file = _registry_session_backup.get(backup_key)
+    if old_file and os.path.exists(old_file):
+        try:
+            os.unlink(old_file)
+        except OSError:
+            pass
+
+    backup_file = os.path.join(
+        backup_dir,
+        f"reg_backup_{session_id}_{timestamp_for_filename()}_{uuid4().hex[:8]}.reg",  # D-6: 唯一文件名
+    )
 
     try:
         export_key = f"{root_key}\\{sub_key}"
@@ -75,17 +100,16 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> str:
             with _registry_backup_lock:  # X4
                 _registry_session_backup[backup_key] = backup_file
             logger.info(f"[registry] 备份成功: {backup_key} -> {backup_file}")
-        else:
-            logger.info(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
-            # 2026-07-31 小欧: 失败路径不缓存, 避免后续操作命中缓存跳过备份
+            return backup_file
+        logger.info(f"[registry] reg export失败(返回码{result.returncode}): {result.stderr.strip()}")
+        # 2026-09-20 小欧 D-7: 失败显式返回 None, 不返回不可用路径(调用方据此中止)
+        return None
     except FileNotFoundError:
         logger.warning("[registry] reg命令不存在,跳过备份")
-        # 2026-07-31 小欧: 失败路径不缓存
+        return None
     except Exception as e:
         logger.warning(f"[registry] 备份失败: {e}")
-        # 2026-07-31 小欧: 失败路径不缓存
-
-    return backup_file
+        return None
 
 
 def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, value_name: str, value: Any = None, value_type: str = "", err_code: str = None, detail: str = "", hint: str = "") -> dict:
