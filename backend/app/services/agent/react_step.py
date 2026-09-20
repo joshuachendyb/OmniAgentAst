@@ -161,6 +161,8 @@
 #     静默 fallback(null 锚); ③吸收后写回真实 uid 到目标 user 消息并演进 builder 锚(B-2, 供 assistant 回复配对落库)。
 #   compliance: SRP(数据层 drain_inbox 承接)/KISS-DIRECT/禁止backward
 # 2026-09-20 - 小欧 - 三堂会审BUG-01/07/15修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
+# 2026-09-20 - 小欧 - TDD-30铁约束回归修正: _absorb_inbox单条注入改条件传参——落库成功传真实uid,
+#   落库失败(_uid=None)回退单参调用(合成负id占位, 行为等价), 兼容既有 add_user_message 单参铁约束断言。
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -232,8 +234,12 @@ async def _absorb_inbox(agent) -> int:
         _last["content"] = str(_last.get("content") or "") + "\n" + _merged
         _write_target = _last
     else:
-        # BUG-15修复(小欧 2026-09-20): 显式传uid, 消除合成负id中间态(并发消费者读到-1→真实uid瞬态)
-        agent.message_builder.add_user_message(_merged, user_message_id=_uid if _uid is not None else None)
+        # BUG-15修复(小欧 2026-09-20): 落库成功显式传真实uid(消除合成负id中间态); 落库失败(_uid=None)走 TDD-30
+        #   铁约束单参调用(合成负id占位, 行为等价, 兼容既有单参断言) — 2026-09-20 改动
+        if _uid is not None:
+            agent.message_builder.add_user_message(_merged, user_message_id=_uid)
+        else:
+            agent.message_builder.add_user_message(_merged)  # TDD-30 铁约束: 单参调用(内部合成负id占位锚)
         _hist = getattr(agent.message_builder, "conversation_history", None)
         _write_target = _hist[-1] if isinstance(_hist, list) and _hist else None
     # B-1/B-2 锚写回: 落库成功则把真实 uid 写到目标 user 消息并演进 builder 锚 — 小欧 2026-09-20 BUG-01修复: 无条件演进锚(None→真实uid)

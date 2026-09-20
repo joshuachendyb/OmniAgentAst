@@ -9,6 +9,9 @@
 #   ②drain_inbox orphan找回路径加warning log(B-4/B-7兜底命中可查); ③_orphaned_inbox加_ORPHAN_MAX_ITEMS=100上限
 #   与_trim_orphaned_inbox(终态任务无drain_inbox消费, 无上限即永久滞留内存), cleanup/过期两处转移后接入。
 #   compliance: KISS-DIRECT(上限防滞留即可, 不做TTL定时器)/禁止backward
+# 2026-09-20 - 小欧 - B-3守卫改方案②(北京老陈定案, 弃抛异常): register_task 守卫命中由 raise RuntimeError 改为
+#   返回占位活跃task_id(str), 注册成功返回 None —— 调用方(编排层)拿返回值改道注入占位任务, 竞态下消息不丢;
+#   签名 None → Optional[str]。compliance: 与B机制"注入不静默丢失"红线同哲学(KISS-DIRECT)
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -64,23 +67,23 @@ def _trim_orphaned_inbox() -> None:
 # 注册 / 清理
 # ============================================================
 
-async def register_task(task_id: str, ai_service: Any, session_id: Optional[str] = None) -> None:
+async def register_task(task_id: str, ai_service: Any, session_id: Optional[str] = None) -> Optional[str]:
     """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20
-    B-3 守卫(2026-09-20 小欧): 锁内检查同 session 已有活跃任务(running/paused), 存在即抛异常——
-    根治编排层 has_active_task_in_session 与 register_task 分离 await 的 TOCTOU(两会话并发双请求可注册双任务)。
-    同会话任务必须串行(北京老陈铁则), 违反即拒绝注册, 由编排层降级为新任务/排队。"""
+    B-3 守卫(2026-09-20 小欧, 北京老陈定案方案②): 锁内检查同 session 已有活跃任务(running/paused), 存在即
+    **返回该活跃任务 task_id** 而非抛异常 —— 根治编排层 has_active_task_in_session 与 register_task 分离 await
+    的 TOCTOU(两会话并发双请求可注册双任务), 且不丢消息: 调用方(编排层)拿返回值改道注入占位任务, 消息保住。
+    返回 None=注册成功(本任务已入表); 返回 str=同会话已占位(本任务未入表)。同会话任务必须串行(北京老陈铁则)。"""
     async with running_tasks_lock:
         if session_id:
             for _tid, _t in running_tasks.items():
                 if (_tid != task_id
                         and _t.get("session_id") == session_id
                         and _t.get("status") in ("running", "paused")):
-                    # 缺口补(2026-09-20 小欧): 守卫命中必须可查(编排层泛化error看不清TOCTOU根因)
+                    # B-3方案②(2026-09-20 小欧): 返回占位tid, 由调用方改道注入(不丢消息), 不再抛异常
                     logger.warning(
-                        f"[B-3串行守卫] 会话 {session_id} 已有活跃任务 {_tid}, 拒绝并行注册 {task_id}"
-                        f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口)")
-                    raise RuntimeError(
-                        f"会话 {session_id} 已有活跃任务 {_tid}，同会话必须串行，禁止并行注册任务 {task_id}（B-3 串行守卫）")
+                        f"[B-3串行守卫] 会话 {session_id} 已被占位 {_tid}, 拒绝并行注册 {task_id}"
+                        f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口, 返回占位tid供注入)")
+                    return _tid
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,

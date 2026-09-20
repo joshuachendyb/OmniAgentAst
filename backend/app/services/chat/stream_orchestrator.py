@@ -148,6 +148,10 @@
 #   工具执行不被打断(安全底线); 注入失败(目标任务已终态)降级新建, 不丢消息。
 #   compliance: SRP(编排仅负责路由/注入, 数据层在 task_registry)/KISS-DIRECT
 # 2026-09-20 - 小欧 - 三堂会审BUG-11修复: 注入成功改用retrying类型(非error语义, 注入成功是正常业务路径)
+# 2026-09-20 - 小欧 - B-3方案②落地(北京老陈定案): register_task 改返占位tid(弃抛异常); 调用点接返回值——
+#   守卫命中(TOCTOU并发占位)则改道 inject_message_to_task 注入占位任务 + reclaim_stream_buffer 回收预建缓冲,
+#   注入失败(占位者恰终态)重试注册一次, 双极端抛错交外层兜底。竞态下消息不再悬空/丢失。
+#   compliance: 与B机制"注入不静默丢失"红线同哲学/KISS-DIRECT
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -175,7 +179,7 @@ from app.services.task.task_runtime import (
 from app.utils.sse_formatter import format_agent_sse  # 8.6 消费转发并回本模块(SSE格式化) — 小健 2026-09-05
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
-from app.services.task.task_state import create_stream_buffer, get_stream_buffer
+from app.services.task.task_state import create_stream_buffer, get_stream_buffer, reclaim_stream_buffer  # 2026-09-20 小欧 +reclaim_stream_buffer(B-3方案②: 注入改道时回收预建缓冲)
 from app.constants import HEARTBEAT_INTERVAL  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py §6) — 小欧 2026-09-08
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
@@ -340,7 +344,27 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] 注入失败(目标任务finish), 降级新建任务: session={session_id}, target={_active_tid}")
 
         buffer = create_stream_buffer(task_id)
-        await register_task(task_id, ai_service, session_id=session_id)
+        # B-3方案②(2026-09-20 小欧, 北京老陈定案): register_task 不再抛异常, 守卫命中返回占位tid —
+        #   同会话活跃任务被并发请求抢先占位(TOCTOU窗口), 本消息改道注入占位任务, 不丢消息。
+        _reg_res = await register_task(task_id, ai_service, session_id=session_id)
+        if _reg_res:
+            logger.warning(f"[chat] B-3竞态守卫命中(session={session_id}, 占位={_reg_res}, 本task={task_id}作废), 改道注入")
+            _inj2 = await inject_message_to_task(_reg_res, user_input)
+            if _inj2:
+                reclaim_stream_buffer(task_id)  # 本任务不启动, 回收预建缓冲防残留
+                from app.llm.core import create_payload_chunk
+                yield create_payload_chunk(ai_service.llm_model, {
+                    "type": "retrying",
+                    "content": "消息已注入当前执行中的任务，将在下一轮吸收",
+                    "wait_time": None,
+                })
+                return
+            # 极端: 占位任务恰在守卫命中与注入之间终态(已清出活跃集) → 重试注册(此时守卫应放行), 消息仍不丢
+            logger.warning(f"[chat] B-3占位任务 {_reg_res} 已释出, 重试注册新建: session={session_id}")
+            _reg_retry = await register_task(task_id, ai_service, session_id=session_id)
+            if _reg_retry:
+                # 双极端(占位者再次抢先): 概率极低, 交给外层异常兜底(不再深挖, KISS)
+                raise RuntimeError(f"B-3 重试注册仍被占位: session={session_id}, 占位={_reg_retry}")
 
         is_cancelled, cancel_msg = await task_cancel_check(task_id)
         if is_cancelled:
