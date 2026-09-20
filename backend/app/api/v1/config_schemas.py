@@ -5,6 +5,7 @@
 #   ConfigResponse.ai_provider/ai_model、FullConfigResponse.current_provider/current_model 分离字段归一为
 #   ai_model_ref/current_model_ref: ModelRef 封装字段(前端 api.ts 契约同步改); FullConfigValidationResponse
 #   死DTO(全仓无引用)按 YAGNI 删除
+# 2026-09-21 - 小欧 - 三堂会审修复: ProviderAddRequest 添加 label 字段（model_routes.add_provider 依赖）
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field

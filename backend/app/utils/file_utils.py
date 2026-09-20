@@ -10,6 +10,7 @@
     消除 services/model/persistence.py→tools 实现依赖
   2026-09-20 小沈 v4.19 9.3.2: 新增 atomic_write（临时文件+os.replace 原子写入）;
     backup_file 改为编号链 backup.1~5 + FIFO（保留原签名兼容，suffix 透传）
+  2026-09-21 小欧 三堂会审修复: backup_file 轮转不跳过不存在的中间文件，防链断裂丢历史备份
 """
 
 import os

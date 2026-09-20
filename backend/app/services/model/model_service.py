@@ -14,6 +14,7 @@ current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加�
     provider 回退，不写空 model_ref
   2026-09-20 - 小欧 - v4.17：models[] 回字符串列表；模型参数/元数据分置 model_params/model_meta；
     delete_provider 单次落盘 + 禁删最后一个 Provider；_sync_current 空值保护
+  2026-09-21 - 小欧 - 三堂会审修复：delete_provider switched_to 返回模型名称而非 provider 名称
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -222,6 +223,6 @@ def delete_provider(name: str) -> Dict[str, Any]:
             ms = _models_of(ai, rest[0])
             target_p, target_m = rest[0], (ms[0]["name"] if ms else "")
         _sync_current(region, target_p, target_m)
-        switched_to = target_p or None
+        switched_to = target_m or None
     merge_region_patch(region, scope="model")
     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
