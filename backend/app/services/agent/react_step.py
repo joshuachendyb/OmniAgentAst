@@ -182,6 +182,19 @@ from app.services.agent.react_dispatch import _dispatch_handler
 from app.db import db
 from app.services.chat import storage
 
+
+async def _absorb_inbox(agent) -> int:
+    """B机制: 每轮 LLM 调用前合并本任务 inbox 积压的新 user 消息, 返回吸收条数 — 小欧 2026-09-20
+    编排语义(SRP): drain_inbox(数据层取走) → add_user_message(消息层并入历史)。
+    置于 trim_history 之前: 新消息参与本轮历史一致性组装, 不滞留尾部跨轮。"""
+    from app.services.task.task_registry import drain_inbox
+    _injected = await drain_inbox(agent.task_id)
+    for _m in _injected:
+        agent.message_builder.add_user_message(_m)
+        logger.info(f"[B] 每轮LLM前吸入新消息: task={agent.task_id} len={len(_m)}")
+    return len(_injected)
+
+
 async def _process_single_step(agent, chunk_buffer) -> List:
     """单步ReAct调度: LLM调用→响应处理→分发 — 小欧 2026-06-25 / 小欧 2026-07-09 加分区注释
     4C(5.8.2): 普通 async 返 List, 事件经 publish 直写 event_log(11处发射收口), 由主循环订阅消费 — 小欧 2026-09-06"""
@@ -231,6 +244,11 @@ async def _process_single_step(agent, chunk_buffer) -> List:
 
     # ── Phase 1: LLM 调用准备 ──────────────────────────────────
     agent.llm_call_count += 1
+    # 2026-09-20 小欧 B机制(北京老陈定案, 机会②): 每轮 LLM 调用前合并本任务 inbox 积压的新 user 消息
+    #   ——工具执行期间的新消息不打断工具(安全底线), 于下一轮 LLM 调用前并入本轮上下文, 全轮覆盖(含 answer 轮)不漏
+    #   [KISS] 单一吸收点(所有轮共用 _absorb_inbox 这一处), 无积压则零开销跳过;
+    #   置于 trim_history 之前: 新消息参与本轮 prepare 前的一致性组装, 不滞留尾部跨轮 — 小欧-2026-09-20
+    await _absorb_inbox(agent)
     agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01
     agent.telemetry.on_trim(
         getattr(agent.message_builder, "_trimmed_this_round", False),

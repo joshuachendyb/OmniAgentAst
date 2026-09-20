@@ -13,7 +13,7 @@ Author: 小健 - 2026-05-31
 
 import asyncio
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, List, Optional   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需 — 小欧-2026-09-20
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
@@ -38,19 +38,64 @@ from app.services.task.task_state import (
 # 注册 / 清理
 # ============================================================
 
-async def register_task(task_id: str, ai_service: Any) -> None:
-    """注册任务到 running_tasks"""
+async def register_task(task_id: str, ai_service: Any, session_id: Optional[str] = None) -> None:
+    """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20"""
     async with running_tasks_lock:
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,
             "paused": False,
+            "session_id": session_id,          # X5/X6 同会话判定
+            "_inbox": asyncio.Queue(),         # B机制: 运行中注入消息队列(多条), agent 侧每轮 LLM 调用前合并吸收
             "created_at": datetime.now(),
             "ai_service": ai_service,
             "_task": asyncio.current_task(),
             "_pause_event": asyncio.Event(),
         }
         running_tasks[task_id]["_pause_event"].set()
+
+
+async def has_active_task_in_session(session_id: str) -> Optional[str]:
+    """X5/B: 该会话是否已有活跃任务(running/paused)。返回活跃 task_id(供注入); 无则 None。 — 小欧 2026-09-20"""
+    if not session_id:
+        return None
+    async with running_tasks_lock:
+        for _tid, _t in running_tasks.items():
+            if _t.get("session_id") == session_id and _t.get("status") in ("running", "paused"):
+                return _tid
+    return None
+
+
+async def inject_message_to_task(task_id: str, content: str) -> bool:
+    """B机制: 向运行中任务 inbox 投递一条新用户消息(不打断工具执行, 由 agent 下一轮 LLM 调用前合并吸收)。
+    返回 True=已投递; False=任务不存在/已终态(投递失败, 由编排降级为新任务)。 — 小欧 2026-09-20"""
+    async with running_tasks_lock:
+        _t = running_tasks.get(task_id)
+        if not _t or _t.get("status") not in ("running", "paused"):
+            return False
+        _q = _t.get("_inbox")
+        if _q is None:
+            return False
+        _q.put_nowait(content)
+    return True
+
+
+async def drain_inbox(task_id: str) -> List[str]:
+    """B机制: agent 侧取走 inbox 全部积压消息(每轮 LLM 调用前合并吸收)。返回消息列表(可为空)。 — 小欧 2026-09-20"""
+    async with running_tasks_lock:
+        _t = running_tasks.get(task_id)
+        if not _t:
+            return []
+        _q = _t.get("_inbox")
+        if _q is None:
+            return []
+        _msgs = []
+        while not _q.empty():
+            try:
+                _msgs.append(_q.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+    return _msgs
 
 
 async def cleanup_task(task_id: str) -> bool:

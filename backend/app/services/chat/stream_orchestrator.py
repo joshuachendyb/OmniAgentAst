@@ -159,7 +159,11 @@ from app.services import get_service
 from app.services.model.resolver import get_ai_config_resolver, resolve_session_client  # 8.7 外迁: 会话模型覆盖决议 — 小健 2026-09-05
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
-from app.services.task.task_registry import register_task
+from app.services.task.task_registry import (
+    register_task,
+    has_active_task_in_session,   # 2026-09-20 小欧 13.4.3: B机制注入入口 — 小欧-2026-09-20
+    inject_message_to_task,
+)
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
 )
@@ -311,8 +315,21 @@ async def chat_stream_orchestrator(
 
     bg_task = None  # BUG-32修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
     try:
+
+        # 2026-09-20 小欧 B机制(北京老陈定案): 同会话已有活跃任务时, 新消息注入该任务 inbox(可多条),
+        #   待其下一轮 LLM 调用前合并吸收; 无活跃任务时走正常新建任务。工具执行不被打断(安全底线)。 — 小欧-2026-09-20
+        _active_tid = await has_active_task_in_session(session_id)
+        if _active_tid:
+            _injected_ok = await inject_message_to_task(_active_tid, user_input)
+            if _injected_ok:
+                logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
+                yield create_error_response(error_type="injected", error_message="消息已注入当前执行中的任务，将在下一轮吸收")
+                return
+            # 注入失败(目标任务恰好终态): 降级新建任务(下述正常路径), 不丢消息
+            logger.warning(f"[chat] 注入失败(目标任务finish), 降级新建任务: session={session_id}, target={_active_tid}")
+
         buffer = create_stream_buffer(task_id)
-        await register_task(task_id, ai_service)
+        await register_task(task_id, ai_service, session_id=session_id)
 
         is_cancelled, cancel_msg = await task_cancel_check(task_id)
         if is_cancelled:
