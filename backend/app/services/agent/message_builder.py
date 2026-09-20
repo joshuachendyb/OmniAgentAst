@@ -30,6 +30,8 @@
 # 2026-09-20 - 小欧 - B组修复(B-1/B-2锚演进): add_user_message 增可选 user_message_id 参数(未传自动合成负id, 内部维护
 #   current_user_msg_id 锚单点), __init__ 增 _synth_user_msg_id 合成计数与 current_user_msg_id 属性;
 #   prepare_messages_for_llm 浅拷贝后剥离 user_message_id 防泄漏 LLM wire(conversation_history 源保留锚)。compliance: SRP/DRY/KISS
+# 2026-09-20 - 小欧 - D-4修复: _total_chars 将 reasoning/reasoning_content 计入预算(DeepSeek 长 reasoning 20K字符
+#   原估0 token, 严重低估导致上下文越界); _estimate_tokens 复用 _total_chars 自动生效, 最小侵入。compliance: SRP/DRY/KISS
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -526,10 +528,12 @@ class MessageBuilder:
 
     @staticmethod
     def _total_chars(messages: List[Dict]) -> int:
-        """计算消息列表总字符数 — 含tool_calls JSON
+        """计算消息列表总字符数 — 含tool_calls JSON 与 reasoning
 
         FC模式下assistant消息content可为None(tool_calls协议),
         但tool_calls包含JSON负载(tool名/参数/id),必须计入预算。
+        # 2026-09-20 小欧 D-4修复: reasoning/reasoning_content 一并计入——
+        DeepSeek 推理模型长 reasoning 若不计量, 预算被严重低估(20K字符估算=0), 上下文越界。
         """
         total = 0
         for msg in messages:
@@ -538,6 +542,10 @@ class MessageBuilder:
             tool_calls = msg.get("tool_calls")
             if tool_calls:
                 total += len(json.dumps(tool_calls, ensure_ascii=False))
+            for _rk in ("reasoning", "reasoning_content"):
+                _rv = msg.get(_rk)
+                if _rv:
+                    total += len(_rv)
         return total
 
     @staticmethod

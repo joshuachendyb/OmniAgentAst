@@ -151,6 +151,11 @@
 #   user_message_id 由 db_ops.user_msg_id 改为优先取 agent.message_builder.current_user_msg_id(B机制注入消息经
 #   _absorb_inbox 落库取真实 uid 演进锚), DB 层 db_ops.user_msg_id 仅兜底 —— B机制注入的 user 消息回填不再落空。
 #   compliance: SRP/DRY(锚单点在 message_builder)/禁止backward
+# 2026-09-20 - 小欧 - C-1修复(共享池快照免误关): close 分支由 13.2.3 base_service.close 判据兜底——共享池快照
+#   仅"独占才真关", 快照 close 不再误杀同池其他会话(工作区代码 L527-528)。
+# 2026-09-20 - 小欧 - D-1修复(B机制注入消息DB幽灵): 终态 update_user_message_final 增传 session_id,
+#   由 storage 侧对该注入 user_message_id 补 chat_tasks 配对(注入消息答复归属任务), 消除 fetch 重建"user+AI"对时的
+#   NULL 幽灵(前端双栖渲染/linked 误判未回答)。compliance: KISS-DIRECT/禁止backward
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -643,6 +648,7 @@ async def run_agent_in_background(
                             conn,
                             user_message_id=_final_uid,
                             task_id=task_id,
+                            session_id=agent.session_id if getattr(agent, "session_id", None) else None,  # D-1(2026-09-20 小欧): 传 session 供注入消息补配对
                             response=saved_content or "",
                             reasoning=saved_thought or "",
                             outcome=_terminal_status,

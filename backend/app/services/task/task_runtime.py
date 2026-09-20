@@ -28,6 +28,9 @@
 #     取消全局单例作用在错误对象; 无 agent/无 llm_client 时回退注册 ai_service(兼容既路径)。
 #   compliance: KISS-DIRECT/禁止backward
 # 2026-09-20 - 小欧 - C-6/BUG-08修复: ①取消对象优先agent.llm_client(会话快照)而非全局ai_service; ②无agent/无llm_client时跳过cancel()(防误杀其他会话)
+# 2026-09-20 - 小欧 - D-8修复(F7重连终态重复下发): task_cancel_check_and_yield 增任务级 _cancel_sent 标记——
+#   重连编排层以空 execution_steps 进入时原列表扫描恒 False, cancelled 终态帧被重复下发; 本次下发置位标记,
+#   任务存活期为界(服务重启后任务即不在 running_tasks 无从重连), 非空列表含 DB 旧帧且未置位时保留原列表扫描。
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -147,18 +150,26 @@ async def task_cancel_check_and_yield(
         # 2026-09-07 小欧 4.4.1(B9): 去重只认 type=final+outcome=cancelled, 删 type=cancelled
         #   与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 迁移后亦无,
         #   运行任务只产新契约终态, 单条件即完备)
+        # 2026-09-20 小欧 D-8(F7): 去重信号增"任务级 cancelled 终态已下发"标记(_cancel_sent)——重连时
+        #   编排层以空 execution_steps 传入(_stream_with_control 每次循环), 原列表扫描恒False,
+        #   终态帧重复下发; sent 标记以任务存活期为界(重连必存活, 服务重启后任务即不在 running_tasks,
+        #   无从重连), 免 DB 查询, KISS-DIRECT; 非空列表含 DB 旧帧且 sent 未置时保留原列表扫描语义(不重复)
+        async with running_tasks_lock:
+            _sent = running_tasks.get(task_id, {}).get("_cancel_sent")
         has_cancelled = any(
             s.get('type') == 'final' and s.get('outcome') == 'cancelled'
             for s in current_execution_steps
         )
-        if has_cancelled:
-            logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled终态,跳过")
+        if _sent or (current_execution_steps and has_cancelled):
+            logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled终态(sent={_sent}),跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
         _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")  # 方案五: source 随落库值带出 — 小欧 2026-09-08
         step_dict = _cancel_final_dict(task_id, _cancel_source)
         logger.info(f"[Step] 发送 final(cancelled) 步骤")
         current_execution_steps.append(step_dict)
+        async with running_tasks_lock:
+            running_tasks[task_id]["_cancel_sent"] = True
         return format_agent_sse(step_dict)
     return None
 
