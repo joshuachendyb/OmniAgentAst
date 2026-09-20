@@ -93,6 +93,7 @@ class BaseAIService:
         seed: Optional[int] = None,
         extra_body_params: Optional[Dict] = None,
         context_limit: Optional[int] = None,
+        shared_client: Optional["httpx.AsyncClient"] = None,  # C1: 共享连接池, 快照复用不 new(仅在 snapshot 构造时传)
     ):
         if temperature is None:
             temperature = LLM_TEMPERATURE
@@ -114,6 +115,7 @@ class BaseAIService:
         self.extra_body_params = merged_params
         self.context_limit = context_limit
         self._llm_sdk = None
+        self._shared_client = shared_client  # 2026-09-20 小欧 C1: 构造期定论, 杜绝"先建独占池再注入"竞态 — 小欧-2026-09-20
         try:
             timeout_value = float(timeout) if timeout else float(DEFAULT_READ_TIMEOUT)
         except (ValueError, TypeError):
@@ -131,6 +133,7 @@ class BaseAIService:
                 llm_model=self.llm_model,
                 api_key=self.api_key,
                 timeout=self.timeout,
+                shared_client=self._shared_client,  # 2026-09-20 小欧 C1: 快照构造期已定共享地址 — 小欧-2026-09-20
             )
 
     def reset_sdk(self):
@@ -142,7 +145,8 @@ class BaseAIService:
     def snapshot(self, model_ref: Optional[ModelRef] = None,
                  api_key: Optional[str] = None,
                  extra_body_params: Optional[Dict] = None,
-                 context_limit: Optional[int] = None) -> "BaseAIService":
+                 context_limit: Optional[int] = None,
+                 shared_client: Optional["httpx.AsyncClient"] = None) -> "BaseAIService":
         """构造本实例的独立副本(携带 model_ref 或当前模型), 与进程级共享单例解耦 — 小沈 2026-08-29
         病根修复: sessionModel 覆盖此前直接改进程单例 llm_model + reset_sdk(全局副作用), 单例还原时序竞态
         导致"断连时后台任务误用旧模型"与"后续无覆盖会话串用错误模型"两类退化。改为后台任务/会话持有自身
@@ -164,6 +168,7 @@ class BaseAIService:
             if extra_body_params is not None else self.extra_body_params,
             context_limit=context_limit
             if context_limit is not None else self.context_limit,
+            shared_client=shared_client,  # C1: 共享与否由调用方(resolver)按 provider 判据定, 构造期定论
         )
         snap._is_snapshot = True
         logger.info(f"[BaseAIService.snapshot] 构造独立客户端快照: model={snap.llm_model.model}, provider={snap.llm_model.provider}")
@@ -551,6 +556,9 @@ class BaseAIService:
         return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
+        # 2026-09-20 小欧 C1: 共享池 snapshot 不关连接池(全局单例生命周期统一关), 仅独占池才真关 — 小欧-2026-09-20
+        if getattr(self, "_llm_sdk", None) is not None and getattr(self._llm_sdk, "_owns_client", False) is False:
+            return
         if self._llm_sdk:
             await self._llm_sdk.close()
 

@@ -29,6 +29,7 @@ task_runtime — 运行态任务管理（内存）
 小欧 2026-07-10
 """
 
+import asyncio  # 2026-09-20 小欧 X3修复: _pause_core 已用 asyncio.wait_for/TimeoutError 却未import, 暂停超时均NameError — 小欧-2026-09-20
 import time
 from datetime import datetime
 from typing import Optional, AsyncGenerator

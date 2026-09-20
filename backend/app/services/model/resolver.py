@@ -141,6 +141,9 @@ async def resolve_session_client(ai_service, session_id):
     try:
         # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
         _ov = await db.atxn("chat", lambda conn: get_session_model(conn, session_id))
+        # 2026-09-20 小欧 C1(修正): 无条件快照——无论有无覆盖都构造独立 BaseAIService(状态分离),
+        #   有覆盖按原路径查目标 provider 配置; 无覆盖仅派生全局默认, snapshot 复用全局共享连接池 — 小欧-2026-09-20
+        _shared_llm = getattr(ai_service, "_shared_client", None)
         if _ov and (_ov.model or _ov.provider):
             # 病根修复(小沈 2026-08-29): 旧实现直接改共享单例 ai_service.llm_model + reset_sdk,
             # 是"用全局副作用表达每会话模型", 单例还原时序竞态→断连后台任务误模/跨会话串模(#5)。
@@ -181,12 +184,19 @@ async def resolve_session_client(ai_service, session_id):
                 api_key=_pv_key,
                 extra_body_params=_pv_ebp,
                 context_limit=_pv_ctx,
+                shared_client=(_shared_llm
+                               if _shared_llm is not None
+                               and (not _ov.provider or _ov.provider == ai_service.llm_model.provider)
+                               else None),  # 2026-09-20 小欧 C1: 同 provider 复用全局共享池; 跨 provider(api_key 不同)保留独占池 — 小欧-2026-09-20
             )
             # 2026-09-01 小欧: 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry
             # 显示真实生效模型(而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神
             logger.info(f"[chat] L2 sessionModel 已生效(独立客户端快照): session={session_id}, "
                         f"provider={session_client.llm_model.provider}, model={session_client.llm_model.model}")
             return session_client
+        # ---- 无条件快照新增分支(无覆盖): 派生全局默认快照 + 复用全局共享连接池 ----
+        logger.info(f"[chat] C1 无覆盖会话快照(session={session_id})")
+        return ai_service.snapshot(shared_client=_shared_llm)   # 构造期注入共享池, _ensure_client 惰性复用(原 set_shared_client 后置注入已废弃)
     except Exception as _ov_e:
         logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
     return None

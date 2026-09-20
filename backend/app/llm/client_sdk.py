@@ -111,6 +111,7 @@ class LLMClient:
         api_key: str,
         base_url: Optional[str] = None,
         timeout: Optional[int] = None,
+        shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 C1: 共享连接池注入, 快照复用不 new — 小欧-2026-09-20
     ):
         self.llm_model = llm_model   # 前导+model 命名铁律 — 小欧 2026-08-22
         self._api_key = api_key
@@ -120,20 +121,24 @@ class LLMClient:
 
         read_timeout = float(timeout) if timeout else DEFAULT_READ_TIMEOUT
         self._default_timeout = read_timeout
-        self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(
-                connect=DEFAULT_CONNECT_TIMEOUT,
-                read=read_timeout,
-                write=DEFAULT_WRITE_TIMEOUT,
-                pool=DEFAULT_POOL_TIMEOUT,
-            ),
-            limits=httpx.Limits(
-                max_connections=LLM_MAX_CONNECTIONS,
-                max_keepalive_connections=LLM_MAX_KEEPALIVE,
-            ),
-            headers={"Authorization": f"Bearer {api_key}"},
-            base_url=self._base_url,
-        )
+        self._owns_client = shared_client is None   # 真连接池仅全局单例持有, 快照共享不重复建 — 小欧-2026-09-20
+        if shared_client is not None:
+            self._client = shared_client
+        else:
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(
+                    connect=DEFAULT_CONNECT_TIMEOUT,
+                    read=read_timeout,
+                    write=DEFAULT_WRITE_TIMEOUT,
+                    pool=DEFAULT_POOL_TIMEOUT,
+                ),
+                limits=httpx.Limits(
+                    max_connections=LLM_MAX_CONNECTIONS,
+                    max_keepalive_connections=LLM_MAX_KEEPALIVE,
+                ),
+                headers={"Authorization": f"Bearer {api_key}"},
+                base_url=self._base_url,
+            )
 
     _DEFAULT_URLS = {
         "openai": "https://api.openai.com/v1",
@@ -254,7 +259,8 @@ def create_llm_client(
     api_key: str,
     base_url: Optional[str] = None,
     timeout: Optional[int] = None,
+    shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 C1 透传 — 小欧-2026-09-20
 ) -> LLMClient:
     """创建 LLM 客户端 — 唯一入口 - 小沈 2026-06-09; 2026-08-22 小欧 归一: 入参 llm_model: ModelRef"""
-    return LLMClient(llm_model=llm_model, api_key=api_key, base_url=base_url, timeout=timeout)
+    return LLMClient(llm_model=llm_model, api_key=api_key, base_url=base_url, timeout=timeout, shared_client=shared_client)
 

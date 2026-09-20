@@ -141,6 +141,14 @@ def get_service() -> BaseAIService:
             provider_config = get_provider_config(ai_config, config_model.provider)
 
             _instance = create_service_instance(provider_config, config_model.provider, config_model.model)
+
+            # 2026-09-20 小欧 C1: 惰性触发单例首次建池(复用原 _ensure_client 路径),
+            #   并暴露共享【底层 httpx.AsyncClient】引用供 resolver 快照构造期注入(存 httpx 连接池,
+            #   非 LLMClient 对象 —— 快照经 create_llm_client(shared_client=...) 建自己的 LLMClient 复用连接池) — 小欧-2026-09-20
+            _instance._ensure_client()
+            _shared_llm_sdk = getattr(_instance, "_llm_sdk", None)
+            if _shared_llm_sdk is not None:
+                _instance._shared_client = _shared_llm_sdk._client
     except:
         # get_service 异常时消费并丢弃 _model_warning，防止残留到下一请求— 小欧 2026-07-22
         resolver.pop_model_warning()
