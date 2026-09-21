@@ -191,11 +191,15 @@ async def test_e2e_par_05_deep_research():
                     f.unlink()
 
         # 5会话真正并行发起; 按完成顺序逐个断言、逐个即时写记录(不等其他会话)
-        tasks = {asyncio.ensure_future(send_chat(inputs[tag])): tag
-                 for tag, _, _, _, _, _ in PAR_TASKS}
-        for fut in asyncio.as_completed(tasks):
-            tag = tasks[fut]
-            result = await fut
+        # 2026-09-21 小欧 as_completed修正: 不用dict查表(3.13内部包装致KeyError),
+        #   改包装协程自带tag, 完成即取(tag, result)
+        async def _run_one(_tag):
+            return _tag, await send_chat(inputs[_tag])
+
+        for fut in asyncio.as_completed(
+            [_run_one(tag) for tag, _, _, _, _, _ in PAR_TASKS]
+        ):
+            tag, result = await fut
             results[tag] = result
             subdir, keyword, user_input, filename = meta[tag]
             checked = _check_one(tag, subdir, keyword, user_input, filename,
