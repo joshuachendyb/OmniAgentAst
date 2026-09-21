@@ -26,6 +26,9 @@
 //   ⑤[38]4.4 展开态Logo左缘对齐菜单图象标中心(padding 5px); ⑥菜单栏默认折叠(useState true, 北京老陈令) — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 折叠态Tooltip黑框无字修复(北京老陈反馈): 折叠时AntD自动Tooltip取label文本,
 //   label为JSX(Badge/Tooltip包裹)取不到字符串→黑框无字, 所有菜单项显式加title字符串兜底 — 小欧-2026-09-15
+// 编辑历史: 2026-09-21 小强 - 顶栏Header优化: ①删写-only死状态isManualRefreshing(值从未被读, 收尾09-09半删YAGNI);
+//   ②配置验证Tag emoji改WarningOutlined(7.9.4禁emoji); ③#fff/fontSize14/gap12→Colors.BG.PRIMARY/FontSize.PRIMARY/Spacing.LG令牌零视觉差 — 小强-2026-09-21
+// 编辑历史: 2026-09-21 小强 - DRY收口: handleModelChange改经configApi.switchCurrentModel共用切全局模型唯一写链(去本地装配ai_model_ref) — 小强-2026-09-21
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -326,12 +329,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       });
 
       // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构
-      const result = await configApi.updateConfig({
-        ai_model_ref: {
-          provider: selectedModel.provider,
-          model: selectedModel.model,
-        },
-      });
+      // 2026-09-21 小强 - DRY收口: 改经configApi.switchCurrentModel共用切模型唯一写链(去本地装配ai_model_ref)
+      const result = await configApi.switchCurrentModel(
+        selectedModel.provider,
+        selectedModel.model
+      );
       if (!result.success) {
         handleError({
           message: result.message || '切换失败',

@@ -2,8 +2,9 @@
 // 2026-09-21 小欧 - 核查修复：硬编码琥珀色→Colors.BG.WARNING_LIGHT/Colors.WARNING 令牌（[58] v1.11 Step5.1）
 // 2026-09-21 小欧 - 全文逐章核查(第五章5.4/5.5)：补 capabilities tags、"使用中"徽标、S2/S3 文案对齐、来源徽标点击说明（[58] v1.12）
 // 2026-09-21 小欧 - 更换模型独立弹框：按钮改为打开 ModelSwitchModal，不再跳转模型Tab
-// 2026-09-21 小强 - 补 success 检查对齐顶栏：后端校验失败回 HTTP200+success:false，不查则假成功 toast（北京老陈定）
 // 2026-09-21 小欧 - 标题改为"当前系统全局使用模型"并移到卡片边框上方；删未使用的 Popover 导入
+// 2026-09-21 小强 - 补 success 检查对齐顶栏：后端校验失败回 HTTP200+success:false，不查则假成功 toast（北京老陈定）
+// 2026-09-21 小强 - DRY收口：onOk改经configApi.switchCurrentModel调共用切全局模型唯一写链
 import React, { useState } from 'react';
 import { Button, Tag } from 'antd';
 import {
@@ -197,9 +198,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
           try {
             // 2026-09-21 小强 - 补 success 检查（对齐顶栏 handleModelChange）：后端校验失败回 HTTP200+success:false，
             //   不查就弹"模型已切换"假成功；失败弹错、不关框（后端未落盘，当前展示仍有效）
-            const r = await configApi.updateConfig({
-              ai_model_ref: { provider: p, model: m },
-            });
+            const r = await configApi.switchCurrentModel(p, m);
             if (!r.success) {
               handleError({
                 message: r.message || '切换失败',

@@ -1,5 +1,8 @@
 // 编辑历史: 2026-09-21 小强 - 关于页功能：新增 readVersionFile（GET /config/version-file 返回 version.txt 全文）
 // 2026-09-21 小欧 - 删除无意义白/黑名单类型（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：后端 SecurityConfig 已删，无消费方（北京老陈裁定）
+// 编辑历史: 2026-09-21 小强 - 关于页功能：新增 readVersionFile（GET /config/version-file 返回 version.txt 全文）
+// 2026-09-21 小欧 - 删除无意义白/黑名单类型（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：后端 SecurityConfig 已删，无消费方（北京老陈裁定）
+// 2026-09-21 小强 - DRY收口：新增 configApi.switchCurrentModel 切全局模型唯一写链（Layout.handleModelChange 与 CurrentModelRefCard.onOk 共用，消除重复 updateConfig+ai_model_ref 装配）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -104,6 +107,19 @@ export const configApi = {
     config: ConfigUpdate
   ): Promise<{ success: boolean; message: string }> => {
     const response = await api.put('/config', config);
+    return response.data;
+  },
+
+  // 2026-09-21 小强 - 切全局模型共用(DRY收口): Layout.handleModelChange与CurrentModelRefCard.onOk
+  //   原先各自重复 updateConfig+ai_model_ref装配, 现统一唯一写链入口, 两调用方只传provider/model
+  switchCurrentModel: async (
+    provider: string,
+    model: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put<{ success: boolean; message: string }>(
+      '/config',
+      { ai_model_ref: { provider, model } }
+    );
     return response.data;
   },
 
@@ -219,16 +235,38 @@ export const configApi = {
     return response.data;
   },
 
-  readConfigFile: async (): Promise<{ config_content: string; path: string; size: number; lines: number; mtime: number }> => {
-    const response = await api.get<{ config_content: string; path: string; size: number; lines: number; mtime: number }>('/config/read');
+  readConfigFile: async (): Promise<{
+    config_content: string;
+    path: string;
+    size: number;
+    lines: number;
+    mtime: number;
+  }> => {
+    const response = await api.get<{
+      config_content: string;
+      path: string;
+      size: number;
+      lines: number;
+      mtime: number;
+    }>('/config/read');
     return response.data;
   },
 
   // 2026-09-21 小强 - 关于页"查看 version 文件全文"：后端 GET /config/version-file
-  readVersionFile: async (): Promise<{ version_content: string; path: string; size: number; lines: number; mtime: number }> => {
-    const response = await api.get<{ version_content: string; path: string; size: number; lines: number; mtime: number }>(
-      '/config/version-file'
-    );
+  readVersionFile: async (): Promise<{
+    version_content: string;
+    path: string;
+    size: number;
+    lines: number;
+    mtime: number;
+  }> => {
+    const response = await api.get<{
+      version_content: string;
+      path: string;
+      size: number;
+      lines: number;
+      mtime: number;
+    }>('/config/version-file');
     return response.data;
   },
 };
