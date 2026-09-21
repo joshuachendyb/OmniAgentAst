@@ -2,9 +2,10 @@
 // 2026-09-21 小欧 - P0-1：背景色→Colors.BG.PRIMARY（[58] P0-1）
 // 2026-09-21 小欧 - P1-3：保存本组按钮带本组待存计数（[58] P1-3）
 // 2026-09-21 小欧 - 第六章⑤⑥：危险保存确认 danger+⚠、重启通知结构化（[58] 第六章 6.2）
+// 2026-09-21 小欧 - 核查修复：⑤ content 包 span 加 secondary 色、⑥ 标题 fontWeight BOLD 内容 fontSize SECONDARY（[58] v1.11 Step6.5/6.6）
 import React from 'react';
 import { Button, Modal } from 'antd';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
 import { settingsShadow } from '@/theme/settingsTokens';
 
 interface Props {
@@ -36,7 +37,11 @@ export const SaveBar: React.FC<Props> = ({
     if (hasDangerousDirty) {
       Modal.confirm({
         title: '⚠ 含危险操作相关改动',
-        content: '本次保存涉及危险操作/黑白名单配置，确认提交吗？',
+        content: (
+          <span style={{ color: Colors.TEXT.SECONDARY }}>
+            本次保存涉及危险操作/黑白名单配置，确认提交吗？
+          </span>
+        ),
         okText: '确认保存',
         okButtonProps: { danger: true },
         cancelText: '取消',
@@ -77,18 +82,20 @@ export const SaveBar: React.FC<Props> = ({
       </Button>
       <Modal
         open={restartKeys.length > 0}
-        title="含重启生效项"
+        title={<span style={{ fontWeight: FontWeight.BOLD }}>含重启生效项</span>}
         onOk={onCloseRestart}
         onCancel={onCloseRestart}
         okText="知道了"
         cancelButtonProps={{ style: { display: 'none' } }}
       >
-        以下改动需重启后端生效：
-        <ul>
-          {restartKeys.map((k) => (
-            <li key={k} style={{ color: Colors.TEXT.SECONDARY }}>{k}</li>
-          ))}
-        </ul>
+        <div style={{ fontSize: FontSize.SECONDARY }}>
+          以下改动需重启后端生效：
+          <ul>
+            {restartKeys.map((k) => (
+              <li key={k} style={{ color: Colors.TEXT.SECONDARY }}>{k}</li>
+            ))}
+          </ul>
+        </div>
       </Modal>
     </div>
   );

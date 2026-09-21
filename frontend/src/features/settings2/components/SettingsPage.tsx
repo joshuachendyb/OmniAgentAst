@@ -6,9 +6,11 @@
 // 2026-09-21 小欧 - P1-3：保存本组按钮带本组待存计数（[58] P1-3）
 // 2026-09-21 小欧 - P1-4：重置按钮上移到②标题行右侧（方案B）+ 顺带修正：无params隐藏/无脏态disabled（[58] P1-4）
 // 2026-09-21 小欧 - 第五章：当前生效模型高占位状态卡集成（[58] 第五章 5.6）
+// 2026-09-21 小欧 - 第五章核查修复：小字可点跳模型 Tab；S2/S3 锚点滚动+高亮（Step 5.2/5.3）；第六章 6.4 重置确认弹窗 danger+⚠（[58] v1.11）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { chatTokens } from '@/theme/tokens';
 import { settingsSpacing } from '@/theme/settingsTokens';
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
@@ -60,6 +62,20 @@ const SettingsPage: React.FC = () => {
     s.setHighlightKey(key);
   };
 
+  // 第五章 S2/S3：滚动+高亮跳转（S2 复用 P1-2 的 2s TTL 消退）
+  const [flashSelector, setFlashSelector] = useState(false);
+  const scrollTo = (dataSection: string) => {
+    const el = document.querySelector(`[data-section="${dataSection}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+  const highlightJump = (dataSection: string) => {
+    scrollTo(dataSection);
+    setFlashSelector(true);
+    setTimeout(() => setFlashSelector(false), 2000);
+  };
+  const jumpToModels = () => highlightJump('selector');
+  const jumpToProviderConfig = () => scrollTo('provider-config');
+
   const dangerousDirty = Object.keys(state.dirtyKeys).some(
     (k) =>
       k.includes('confirmDangerousOps') ||
@@ -110,23 +126,30 @@ const SettingsPage: React.FC = () => {
       <CurrentModelRefCard
         currentRef={state.currentRef}
         providers={state.model.providers}
-        onSelectModel={() => {
-          s.setActiveTab('model');
-          const el = document.querySelector('[data-section="selector"]');
-          el?.scrollIntoView({ behavior: 'smooth' });
+        onSelectModel={jumpToModels}
+        onAddProvider={jumpToProviderConfig}
+      />
+      <div
+        data-section="selector"
+        style={{
+          background: flashSelector ? chatTokens.colorPrimaryBg : undefined,
+          transition: 'background 0.3s',
+          borderRadius: settingsSpacing.pagePadding,
+          padding: `0 ${Spacing.MD}px`,
+          margin: `0 -${Spacing.MD}px`,
         }}
-        onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
-      />
-      <SectionTitle title="── ① 选择器 ──" />
-      <ModelSelector
-        providers={state.model.providers}
-        selectedProvider={state.model.selectedProvider}
-        selectedModel={state.model.selectedModel}
-        onSelectProvider={s.selectProvider}
-        onSelectModel={s.selectModel}
-        onAddModel={() => s.patchModel({ addModelModalOpen: true })}
-        onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
-      />
+      >
+        <SectionTitle title="── ① 选择器 ──" />
+        <ModelSelector
+          providers={state.model.providers}
+          selectedProvider={state.model.selectedProvider}
+          selectedModel={state.model.selectedModel}
+          onSelectProvider={s.selectProvider}
+          onSelectModel={s.selectModel}
+          onAddModel={() => s.patchModel({ addModelModalOpen: true })}
+          onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
+        />
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
         {Object.keys(state.model.params).length > 0 && (
@@ -134,7 +157,20 @@ const SettingsPage: React.FC = () => {
             type="link"
             style={{ padding: 0, color: Colors.TEXT.SECONDARY }}
             disabled={!state.model.isDirty}
-            onClick={() => s.resetParams()}
+            onClick={() => {
+              Modal.confirm({
+                title: '⚠ 重置为默认',
+                content: (
+                  <span style={{ color: Colors.TEXT.SECONDARY }}>
+                    将恢复该模型全部参数为默认值，当前修改将丢失。
+                  </span>
+                ),
+                okText: '确认重置',
+                okButtonProps: { danger: true },
+                cancelText: '取消',
+                onOk: () => s.resetParams(),
+              });
+            }}
           >
             重置为默认
           </Button>
@@ -147,16 +183,17 @@ const SettingsPage: React.FC = () => {
         envOverride={state.model.envOverride}
         onChange={s.setParam}
       />
-      <SectionTitle title="── ③ Provider 配置 ──" />
-      <ProviderConfig
-        name={state.model.selectedProvider}
-        config={
-          state.model.providerConfig[state.model.selectedProvider] ?? {
-            api_key: { configured: false, suffix: '' },
-            base_url: '',
-            timeout: 60,
-            env: false,
-          }
+      <div data-section="provider-config">
+        <SectionTitle title="── ③ Provider 配置 ──" />
+        <ProviderConfig
+          name={state.model.selectedProvider}
+          config={
+            state.model.providerConfig[state.model.selectedProvider] ?? {
+              api_key: { configured: false, suffix: '' },
+              base_url: '',
+              timeout: 60,
+              env: false,
+            }
         }
         onSave={async (patch) => {
           try {
@@ -173,6 +210,7 @@ const SettingsPage: React.FC = () => {
           }
         }}
       />
+      </div>
       <SectionTitle title="── ④ 操作区 ──" />
       <ModelActions
         onDeleteModel={() =>
@@ -268,8 +306,16 @@ const SettingsPage: React.FC = () => {
     >
       <Card>
         {state.currentRef && (
-          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.SM }}>
-            当前生效模型：{state.currentRef.provider} / {state.currentRef.model}
+          <div
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+              marginBottom: Spacing.SM,
+              cursor: 'pointer',
+            }}
+            onClick={() => requestTab('model')}
+          >
+            当前生效模型：{state.currentRef.provider} / {state.currentRef.model}（点击切换）
           </div>
         )}
         <div

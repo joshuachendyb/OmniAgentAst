@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-21 小欧 - 新建：当前生效模型高占位状态卡（三态：正常/兜底推荐/无可用）（[58] 第五章 5.3~5.5）
+// 2026-09-21 小欧 - 核查修复：硬编码琥珀色→Colors.BG.WARNING_LIGHT/Colors.WARNING 令牌（[58] v1.11 Step5.1）
 import React from 'react';
 import { Button, Tag } from 'antd';
 import {
@@ -46,17 +47,17 @@ export const CurrentModelRefCard: React.FC<Props> = ({
   const bgColor = status === 'normal'
     ? Colors.BG.PRIMARY
     : status === 'fallback'
-      ? '#fff7e6'
+      ? Colors.BG.WARNING_LIGHT
       : Colors.BG.TERTIARY;
   const borderColor = status === 'normal'
     ? Colors.PRIMARY
     : status === 'fallback'
-      ? '#faad14'
+      ? Colors.WARNING
       : Colors.ERROR;
   const icon = status === 'normal'
     ? <CheckCircleOutlined style={{ color: Colors.PRIMARY }} />
     : status === 'fallback'
-      ? <WarningOutlined style={{ color: '#faad14' }} />
+      ? <WarningOutlined style={{ color: Colors.WARNING }} />
       : <CloseCircleOutlined style={{ color: Colors.ERROR }} />;
 
   return (
