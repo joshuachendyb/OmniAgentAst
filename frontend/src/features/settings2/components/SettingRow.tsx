@@ -6,8 +6,11 @@
 //   [59]F-1 修复: 只读复制不立即弹成功，await copyTextToClipboard 结果后再提示（剪贴板权限拒绝时不再假"已复制"）
 // 2026-09-21 小欧 - [59]F-1 补漏: showSuccess 在上轮 import 整理中被移除、但复制成功分支(line:52)仍引用,
 //   补回 import 消除 tsc 未定义引用错误（编辑历史纪律：错误的加同样不对，立即修正）
+// 2026-09-21 小强 - 设置页17问题复核修复：根部加 data-settings-key 搜索滚动锚点；
+//   窄屏 labelWidth→88、textarea→100%、行 flexWrap（[设置页UI审计] 问题1/16）
+// 2026-09-21 小欧 - notice 与生效方式分隔符 // → ·（与注释示例统一，三堂会审发现注释/实现不符）
 import React, { useState } from 'react';
-import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
+import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 import {
@@ -43,6 +46,11 @@ export const SettingRow: React.FC<Props> = ({
   const [editingSecret, setEditingSecret] = useState(false);
   const [secretInput, setSecretInput] = useState('');
   const disabled = item.readonly || source === 'env';
+  // 修正(2026-09-21 小强)：窄屏响应式 label/textarea——原 labelWidth 132 固定 + textarea 320 固定，
+  // 窄屏横向溢出（[设置页UI审计] 问题16）
+  const bp = Grid.useBreakpoint();
+  const isNarrow = !bp.md;
+  const labelWidth = isNarrow ? 88 : settingsSpacing.labelWidth;
 
   const renderControl = (): React.ReactNode => {
     if (item.readonly) {
@@ -190,7 +198,9 @@ export const SettingRow: React.FC<Props> = ({
             value={value as string}
             disabled={disabled}
             rows={3}
-            style={{ width: settingsControl.textareaWidth }}
+            style={{
+              width: isNarrow ? '100%' : settingsControl.textareaWidth,
+            }}
             onChange={(e) => onChange(e.target.value)}
           />
         );
@@ -214,9 +224,12 @@ export const SettingRow: React.FC<Props> = ({
 
   return (
     <div
+      // 修正(2026-09-21 小强)：data-settings-key 作为搜索跳转滚动锚点（[设置页UI审计] 问题1）
+      data-settings-key={item.key}
       style={{
         display: settingsRowLayout.display,
         alignItems: settingsRowLayout.alignItems,
+        flexWrap: 'wrap',
         minHeight: settingsRowLayout.minHeight,
         borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
         background: highlight ? chatTokens.colorPrimaryBg : undefined,
@@ -225,7 +238,7 @@ export const SettingRow: React.FC<Props> = ({
     >
       <span
         style={{
-          width: settingsSpacing.labelWidth,
+          width: labelWidth,
           fontSize: FontSize.PRIMARY,
           fontWeight: FontWeight.REGULAR,
         }}
@@ -243,7 +256,9 @@ export const SettingRow: React.FC<Props> = ({
           marginLeft: Spacing.MD,
         }}
       >
-        {item.notice || (item.restart ? '重启生效' : '即时生效')}
+        {/* 调整(2026-09-21 小强)：说明在前生效方式在后——如「同时运行的沙箱并发数，超出排队等待 · 即时生效」 */}
+        {item.notice && `${item.notice} · `}
+        {item.restart ? '重启生效' : '即时生效'}
       </span>
     </div>
   );

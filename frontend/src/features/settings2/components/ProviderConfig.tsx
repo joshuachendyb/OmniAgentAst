@@ -8,6 +8,8 @@
 // 2026-09-21 小欧 - 补 max_retries：config 类型+表单字段+doSave patch 全链路补齐（后端 update_provider_config 支持 max_retries 键）
 // 2026-09-21 小强 - 切 provider 表单值不跟随修复：Form 加 key={name} 重挂刷新（initialValues 只在挂载生效；KISS-DIRECT 一行直解，不加 effect 链条，北京老陈定）
 // 2026-09-21 小强 - 修正：内层 key 证伪（rc-field-form 源码：setInitialValues merge(新值,旧仓库)旧赢+默认preserve不清仓，form 实例常驻则重挂无效）；key 上移调用方，删内层冗余 key（北京老陈定）
+// 2026-09-21 小强 - 设置页17问题复核修复：base_url 留空=清空（后端支持空串落盘api_base=''）；保存成功复位 api_key
+//   防明文残留二次重复提交（失败父级 rethrow 保留输入）；env 接管补解除指引（[设置页UI审计] 问题5/6/14）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Form } from 'antd';
 import { Colors } from '@/utils/stepStyles';
@@ -42,14 +44,21 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     const patch: Record<string, unknown> = {};
     if (values.api_key !== undefined && String(values.api_key).trim() !== '')
       patch.api_key = values.api_key;
-    if (values.base_url !== undefined && String(values.base_url).trim() !== '')
-      patch.base_url = values.base_url;
+    // 修正(2026-09-21 小强)：base_url 留空=清空——原空串被跳过导致地址无法删除回退默认（[设置页UI审计] 问题5）；
+    // 后端 update_provider_config 对空串落盘 api_base=''，前端 model_dump(exclude_none=True) 不丢空串
+    if (values.base_url !== undefined)
+      patch.base_url = String(values.base_url).trim();
     if (values.timeout !== undefined) patch.timeout = values.timeout;
     if (values.max_retries !== undefined)
       patch.max_retries = values.max_retries;
     setSaving(true);
     try {
       await onSave(patch);
+      // 修正(2026-09-21 小强)：保存成功复位 api_key 输入——原明文残留 form store，
+      // 二次保存会把上次明文 key 重复提交（[设置页UI审计] 问题6）；失败则保留输入
+      form.resetFields(['api_key']);
+    } catch {
+      /* 保存失败：保留输入 */
     } finally {
       setSaving(false);
     }
@@ -60,8 +69,9 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       <div>
         <EnvTag />
         <span style={{ color: Colors.TEXT.SECONDARY }}>
+          {/* 修正(2026-09-21 小强)：补解除接管指引，原仅"页面只读"无任何方向（[设置页UI审计] 问题14） */}
           该 Provider 配置被 {name.toUpperCase()}_API_KEY
-          环境变量接管，页面只读。
+          环境变量接管，页面只读。如需解除，请删除该环境变量后重启后端。
         </span>
       </div>
     );
@@ -88,7 +98,11 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
           autoComplete="new-password"
         />
       </Form.Item>
-      <Form.Item label="base_url" name="base_url">
+      <Form.Item
+        label="base_url"
+        name="base_url"
+        extra="留空=清空地址（恢复默认直连）"
+      >
         <Input />
       </Form.Item>
       <Form.Item label="timeout" name="timeout">

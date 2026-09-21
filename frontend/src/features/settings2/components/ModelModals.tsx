@@ -5,6 +5,8 @@
 // 2026-09-21 小欧 - 第六章①②③：弹窗视觉优化——描述行/danger/⚠/后果说明（[58] 第六章 6.2）
 // 2026-09-21 小欧 - 全文逐章核查：①②表单弹窗显式 form 宽、③确认弹窗宽散落 480 → settingsModalWidth.form/confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
 // 2026-09-21 小欧 - 全文逐章核查：规范二落地——①②③弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD，弃用 antd 默认16px；描述行 marginBottom:12 → Spacing.LG（[58] v1.12 第六章 6.1 规范二）
+// 2026-09-21 小强 - 设置页17问题复核修复：删除标题剥离 model:/provider: 内部前缀；添加弹窗 busy+confirmLoading 防连点双发、
+//   失败不关窗不 reset（父级 rethrow）；onSubmitAddModel/Provider 类型改 Promise<void>（[设置页UI审计] 问题3/9）
 import React, { useEffect, useState } from 'react';
 import { Form, Input, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -26,13 +28,13 @@ interface Props {
     model: string;
     label: string;
     default_params?: Record<string, unknown>;
-  }) => void;
+  }) => Promise<void>;
   onSubmitAddProvider: (data: {
     name: string;
     label: string;
     api_base: string;
     api_key?: string;
-  }) => void;
+  }) => Promise<void>;
   onConfirmDelete: () => void;
 }
 
@@ -42,31 +44,80 @@ export const ModelModals: React.FC<Props> = (props) => {
   const [mForm] = Form.useForm();
   const [pForm] = Form.useForm();
   const [mProvider, setMProvider] = useState(props.selectedProvider);
+  // 修正(2026-09-21 小强)：busy 态驱动 Modal confirmLoading 防连点双发（原 onOk 走 .then() 无 loading，
+  // 双击触发两次提交）；失败父级 rethrow 不关窗，输入保留（[设置页UI审计] 问题9）
+  const [busy, setBusy] = useState<'model' | 'provider' | null>(null);
   // 2026-09-21 BUG-A 修复：父级切换所选 Provider 时联动弹窗内 Provider 下拉，防陈旧值
   useEffect(() => {
     setMProvider(props.selectedProvider);
   }, [props.selectedProvider]);
+
+  // 修正(2026-09-21 小强)：删除标题剥离 model:/provider: 内部前缀——原 deleteTarget 直接注入标题，
+  // 显示 "model:openai::gpt-4o" 泄漏内部格式（[设置页UI审计] 问题3）
+  const deleteLabel = (t: string | null): string => {
+    if (!t) return '';
+    const idx = t.indexOf(':');
+    return idx > 0 ? t.slice(idx + 1) : t;
+  };
+
+  const handleAddModel = async () => {
+    if (busy) return;
+    const v = await mForm.validateFields().catch(() => null);
+    if (!v) return;
+    setBusy('model');
+    try {
+      await props.onSubmitAddModel({
+        provider: mProvider,
+        model: v.model,
+        label: v.label ?? v.model,
+      });
+      mForm.resetFields();
+    } catch {
+      /* 保存失败：输入保留、弹窗不关（父级已弹错） */
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleAddProvider = async () => {
+    if (busy) return;
+    const v = await pForm.validateFields().catch(() => null);
+    if (!v) return;
+    setBusy('provider');
+    try {
+      await props.onSubmitAddProvider(v);
+      pForm.resetFields();
+    } catch {
+      /* 保存失败：输入保留、弹窗不关（父级已弹错） */
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <>
       <Modal
         open={addModelOpen}
-        title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>添加模型</span>}
-        width={settingsModalWidth.form}
-        onCancel={props.onCloseAddModel}
-        onOk={() =>
-          mForm.validateFields().then((v) => {
-            props.onSubmitAddModel({
-              provider: mProvider,
-              model: v.model,
-              label: v.label ?? v.model,
-            });
-            mForm.resetFields();
-          })
+        title={
+          <span
+            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
+          >
+            添加模型
+          </span>
         }
+        width={settingsModalWidth.form}
+        confirmLoading={busy === 'model'}
+        onCancel={props.onCloseAddModel}
+        onOk={() => void handleAddModel()}
         okText="保存"
         cancelText="取消"
       >
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.LG }}>
+        <div
+          style={{
+            fontSize: FontSize.SECONDARY,
+            color: Colors.TEXT.SECONDARY,
+            marginBottom: Spacing.LG,
+          }}
+        >
           为指定 Provider 添加新模型，创建后可在①选择器中选用
         </div>
         <Form form={mForm} layout="vertical">
@@ -93,19 +144,27 @@ export const ModelModals: React.FC<Props> = (props) => {
       </Modal>
       <Modal
         open={addProviderOpen}
-        title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>添加 Provider</span>}
-        width={settingsModalWidth.form}
-        onCancel={props.onCloseAddProvider}
-        onOk={() =>
-          pForm.validateFields().then((v) => {
-            props.onSubmitAddProvider(v);
-            pForm.resetFields();
-          })
+        title={
+          <span
+            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
+          >
+            添加 Provider
+          </span>
         }
+        width={settingsModalWidth.form}
+        confirmLoading={busy === 'provider'}
+        onCancel={props.onCloseAddProvider}
+        onOk={() => void handleAddProvider()}
         okText="保存"
         cancelText="取消"
       >
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.LG }}>
+        <div
+          style={{
+            fontSize: FontSize.SECONDARY,
+            color: Colors.TEXT.SECONDARY,
+            marginBottom: Spacing.LG,
+          }}
+        >
           创建后可在③Provider配置区修改 API Key / API 地址
         </div>
         <Form form={pForm} layout="vertical">
@@ -129,9 +188,13 @@ export const ModelModals: React.FC<Props> = (props) => {
       </Modal>
       <Modal
         open={deleteOpen}
-        title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>{`⚠ 确定要删除 "${deleteTarget ?? ''}"？`}</span>}
+        title={
+          <span
+            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
+          >{`⚠ 确定要删除 "${deleteLabel(deleteTarget)}"？`}</span>
+        }
         onCancel={props.onCloseDelete}
-        onOk={props.onConfirmDelete}
+        onOk={() => void props.onConfirmDelete()}
         okText="删除"
         okButtonProps={{ danger: true }}
         cancelText="取消"

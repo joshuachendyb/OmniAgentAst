@@ -23,6 +23,11 @@
 //   保存成功后跳转并高亮；②deleteTarget 解析改用首个 '::' 索引切片（原 split('::') 对含 '::' 的模型名截断误删）；
 //   ③onSaveGroup/onSaveAll 返回 Promise，SaveBar confirmThen 的 Modal onOk await 化——OK 按钮自带 loading 防连点双保存
 // 2026-09-21 小强 - 切 provider 表单值跟随真修复：key 加在 ProviderConfig 组件层（整体重挂→useForm 全新实例→空仓库→新 initialValues 落盘；内层 key 经 rc-field-form 源码证伪无效已删，北京老陈定）
+// 2026-09-21 小强 - 设置页17问题复核修复（[设置页UI审计] 问题1/4/7/8/9/11/12/13/17）：
+//   ①搜索跳转滚动到命中行(data-settings-key 锚点，双 rAF)；②切Tab确认文案与"保存并切换"行为对齐；
+//   ③危险确认拆分本组/全部(dangerousGroup/All)，危险键含 security.enabled；④模型组脏计数按实际参数数；
+//   ⑤添加/删除/Provider 保存失败不关窗并 rethrow（弹窗保留输入）；⑥添加 Provider toast 引导切换；
+//   ⑦jumpToProviderConfig 走脏确认闸口+保存后滚动锚点；⑧删模型Tab①"当前系统全局使用模型"冗余行
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -44,9 +49,11 @@ import { modelApi } from '@/services/api/model.api';
 import {
   ErrorType,
   handleApiError,
+  handleError,
   showMessage,
   showSuccess,
 } from '@/services/error/handler';
+import { isDirty } from '../utils/modelUtils';
 import type { TabKey } from '../types';
 
 const SettingsPage: React.FC = () => {
@@ -55,6 +62,7 @@ const SettingsPage: React.FC = () => {
   const [pendingJump, setPendingJump] = useState<{
     tab: TabKey;
     key: string;
+    anchor?: string | null;
   } | null>(null);
 
   // [59]F-6 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
@@ -68,12 +76,24 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  // 修正(2026-09-21 小强)：搜索跳转滚动到命中行——原仅高亮无 scrollIntoView，跨 Tab/长列表定位不到
+  // （[设置页UI审计] 问题1）；双 rAF 等目标 Tab DOM 挂载后滚动
+  const scrollToKey = (itemKey: string) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-settings-key="${itemKey}"]`);
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  };
+
   const jumpTo = (tab: TabKey, key: string) => {
     if (tab !== state.activeTab && s.isGroupDirty(state.activeTab)) {
       setPendingJump({ tab, key });
     } else {
       s.setActiveTab(tab);
       s.setHighlightKey(key);
+      scrollToKey(key);
     }
   };
 
@@ -82,20 +102,36 @@ const SettingsPage: React.FC = () => {
     const el = document.querySelector(`[data-section="${dataSection}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
+  // 修正(2026-09-21 小强)：jumpToProviderConfig 也走「当前组脏→确认」闸口——
+  // 原直调 setActiveTab 绕过确认切到模型 Tab（[设置页UI审计] 问题11）
   const jumpToProviderConfig = () => {
+    if (s.isGroupDirty(state.activeTab)) {
+      setPendingJump({ tab: 'model', key: '', anchor: 'provider-config' });
+      return;
+    }
     s.setActiveTab('model');
     requestAnimationFrame(() => scrollTo('provider-config'));
   };
 
-  const dangerousDirty = Object.keys(state.dirtyKeys).some((k) =>
-    k.includes('confirmDangerousOps')
-  );
+  // 修正(2026-09-21 小强)：危险判定拆分「保存本组/保存全部」——原全局判定致保存其它组误弹；
+  // 危险键=安全开关/危险操作确认的变更（含 security.enabled 关闭场景，原仅认 confirmDangerousOps）
+  // （[设置页UI审计] 问题7/8）
+  const DANGEROUS_KEYS = ['security.enabled', 'security.confirmDangerousOps'];
+  const dangerousGroup =
+    state.activeTab === 'security' &&
+    DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
+  const dangerousAll = DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
 
+  // 修正(2026-09-21 小强)：模型组脏计数按实际脏参数数（原是 isDirty?1:0 恒 1 项误导）（[设置页UI审计] 问题13）
   const groupDirtyCount =
     state.activeTab === 'model'
-      ? state.model.isDirty
-        ? 1
-        : 0
+      ? Object.values(
+          isDirty(
+            state.model.params,
+            state.model.defaults,
+            state.model.envOverride
+          )
+        ).filter(Boolean).length
       : Object.keys(state.dirtyKeys).filter(
           (k) => s.groupOfKey(k) === state.activeTab
         ).length;
@@ -170,18 +206,8 @@ const SettingsPage: React.FC = () => {
           margin: `0 -${Spacing.MD}px`,
         }}
       >
-        {state.currentRef && (
-          <div
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
-              marginBottom: Spacing.SM,
-            }}
-          >
-            当前系统全局使用模型：{state.currentRef.provider} /{' '}
-            {state.currentRef.model}
-          </div>
-        )}
+        {/* 修正(2026-09-21 小强)：删除「当前系统全局使用模型」冗余小字——该信息已由
+            通用 Tab CurrentModelRefCard 完整展示（标题+卡内文案），此处重复（[设置页UI审计] 问题17） */}
         <SectionTitle title="── ① 选择器 ──" />
         <ModelSelector
           providers={state.model.providers}
@@ -262,12 +288,22 @@ const SettingsPage: React.FC = () => {
                 state.model.selectedProvider,
                 patch
               );
+              // 修正(2026-09-21 小强)：查 ok——后端配置错误回 HTTP200+ok:false 时不查会弹假成功；
+              //   失败 rethrow，ProviderConfig 才不执行 api_key 复位（[设置页UI审计] 问题6）
+              if (!r.ok) {
+                handleError({
+                  message: 'Provider 配置保存失败',
+                  error_type: ErrorType.MODEL_CONFIG_ERROR,
+                });
+                throw new Error('provider-config-save-failed');
+              }
               showSuccess('Provider 配置已保存（立即生效）');
               // A7：同步落盘后 mtime
               s.syncMtime(r.mtime);
               await s.refreshModels();
             } catch (e) {
               handleApiError(e);
+              throw e;
             }
           }}
         />
@@ -327,21 +363,25 @@ const SettingsPage: React.FC = () => {
             s.syncMtime(res.mtime);
             showSuccess('模型已添加');
             await s.refreshModels({ provider: d.provider, model: d.model });
+            // 修正(2026-09-21 小强)：成功才关窗（原 catch 外统一关，保存失败也关+输入被清）；失败 rethrow 让弹窗保留输入（[设置页UI审计] 问题9）
+            s.patchModel({ addModelModalOpen: false });
           } catch (e) {
             handleApiError(e);
+            throw e;
           }
-          s.patchModel({ addModelModalOpen: false });
         }}
         onSubmitAddProvider={async (d) => {
           try {
             const res = await modelApi.addProvider(d);
             s.syncMtime(res.mtime);
-            showSuccess('Provider 已添加');
+            // 修正(2026-09-21 小强)：添加后引导切换新 Provider 配置区——原无任何引导、③区停留旧 Provider（[设置页UI审计] 问题12）
+            showSuccess('Provider 已添加，请在①选择器切换到新 Provider 配置');
             await s.refreshModels();
+            s.patchModel({ addProviderModalOpen: false });
           } catch (e) {
             handleApiError(e);
+            throw e;
           }
-          s.patchModel({ addProviderModalOpen: false });
         }}
         onConfirmDelete={async () => {
           const target = state.model.deleteTarget ?? '';
@@ -374,10 +414,11 @@ const SettingsPage: React.FC = () => {
             // v4.20(小欧 2026-09-21 方案A)：删除后整体 load()——焦点(selectedProvider/Model)/currentRef/参数区
             //   全部重载对齐后端，杜绝「删的是全局当前模型时前端仍停在已删模型上(悬空+保存报错)」
             await s.load();
+            // 修正(2026-09-21 小强)：成功才关删除确认（原 catch 外统一关，失败也关，用户看不到错因）（[设置页UI审计] 问题9）
+            s.patchModel({ deleteConfirmOpen: false, deleteTarget: null });
           } catch (e) {
             handleApiError(e);
           }
-          s.patchModel({ deleteConfirmOpen: false, deleteTarget: null });
         }}
       />
     </div>
@@ -443,7 +484,8 @@ const SettingsPage: React.FC = () => {
           groupDirtyCount={groupDirtyCount}
           saving={s.saving}
           restartKeys={s.restartKeys}
-          hasDangerousDirty={dangerousDirty}
+          dangerousGroup={dangerousGroup}
+          dangerousAll={dangerousAll}
           // [59]F-9 修复：直接透出 Promise，SaveBar 确认弹窗 onOk await 化后自带 loading 防连点
           onSaveGroup={() => s.saveGroup(state.activeTab)}
           onSaveAll={() => s.saveAll()}
@@ -467,7 +509,13 @@ const SettingsPage: React.FC = () => {
           void s.saveGroup(state.activeTab).then((r) => {
             if ((r as { ok: boolean }).ok) {
               s.setActiveTab(jump.tab);
-              if (jump.key) s.setHighlightKey(jump.key);
+              if (jump.key) {
+                s.setHighlightKey(jump.key);
+                scrollToKey(jump.key);
+              }
+              // 修正(2026-09-21 小强)：确认保存成功后滚动到待跳锚点（添加 Provider 引导场景）（[设置页UI审计] 问题11）
+              if (jump.anchor)
+                requestAnimationFrame(() => scrollTo(jump.anchor as string));
             }
             setPendingJump(null);
           });
@@ -476,7 +524,9 @@ const SettingsPage: React.FC = () => {
         cancelText="放弃切换"
       >
         <span style={{ color: Colors.TEXT.SECONDARY }}>
-          切换 Tab 后未保存的修改将丢失，需手动还原。
+          {/* 修正(2026-09-21 小强)：文案与行为对齐——原"修改将丢失"与"保存并切换"自相矛盾，
+              实际是保存后切换/取消则留在本页（修改不丢）（[设置页UI审计] 问题4） */}
+          当前组存在未保存修改：点击「保存并切换」将保存当前修改后跳转；点击「放弃切换」将留在本页，修改不会丢失。
         </span>
       </Modal>
     </div>

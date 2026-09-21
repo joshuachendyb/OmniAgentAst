@@ -11,7 +11,9 @@
 //   「本地修改已丢失」，不再静默覆盖脏态；②saveKeys 将「schema 已删键/值为 undefined/env 接管键」归 ghost 清脏并提示，
 //   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存(F-15)与 env 接管键假保存(F-16)；③有效键为空直接返回不调 API；
 //   ④后端 warnings 全为空文案时给固定兜底提示(F-14)
-import { useCallback, useEffect, useMemo, useState } from 'react';
+// 2026-09-21 小强 - 设置页17问题复核修复：高亮TTL 2000→4000+新跳转清旧timer；dirtyCount 模型按实际脏参数量计数；
+//   setParam ①env 接管键禁改（杜绝改假值静默丢失）②越界输入补校正提示（[设置页UI审计] 问题1/13/2/15）
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
   type SettingSchemaItem,
@@ -92,11 +94,19 @@ export function useSettings() {
   const [restartKeys, setRestartKeys] = useState<string[]>([]);
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
 
-  // P1-2：高亮 TTL 自动消退（2 秒后清除）
-  const HIGHLIGHT_TTL = 2000;
+  // P1-2 修正(2026-09-21 小强)：高亮 TTL(4s) + 新跳转生效前清旧 timer，
+  // 原 2s 且不清理 timer，连续搜索时旧 timer 提前熄灭新高亮（[设置页UI审计] 问题1）
+  const HIGHLIGHT_TTL = 4000;
+  const highlightTimer = useRef<number | null>(null);
   const setHighlightKeyTtl = useCallback((key: string | null) => {
+    if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
     setHighlightKey(key);
-    if (key) setTimeout(() => setHighlightKey(null), HIGHLIGHT_TTL);
+    if (key) {
+      highlightTimer.current = window.setTimeout(
+        () => setHighlightKey(null),
+        HIGHLIGHT_TTL
+      );
+    }
   }, []);
 
   const patchState = useCallback((p: Partial<SettingsState>) => {
@@ -257,10 +267,18 @@ export function useSettings() {
     [state.schema]
   );
 
-  const dirtyCount = useMemo(
-    () => Object.keys(state.dirtyKeys).length + (state.model.isDirty ? 1 : 0),
-    [state.dirtyKeys, state.model.isDirty]
-  );
+  // 修正(2026-09-21 小强)：脏计数模型按实际脏参数数计（原固定 +1，「保存全部(N 项)」对参数组恒 1 项误导）([设置页UI审计] 问题13)
+  const dirtyCount = useMemo(() => {
+    const modelDirty = Object.values(
+      isDirty(state.model.params, state.model.defaults, state.model.envOverride)
+    ).filter(Boolean).length;
+    return Object.keys(state.dirtyKeys).length + modelDirty;
+  }, [
+    state.dirtyKeys,
+    state.model.params,
+    state.model.defaults,
+    state.model.envOverride,
+  ]);
 
   const isGroupDirty = useCallback(
     (tab: TabKey) => {
@@ -523,24 +541,39 @@ export function useSettings() {
     [patchModel, state.model, ensureModelSaved]
   );
 
-  const setParam = useCallback((key: string, value: unknown) => {
-    setState((s) => {
-      const params = {
-        ...s.model.params,
-        [key]: clampToRange(value, s.model.ranges[key]),
-      };
-      return {
-        ...s,
-        model: {
-          ...s.model,
-          params,
-          isDirty: Object.values(
-            isDirty(params, s.model.defaults, s.model.envOverride)
-          ).some(Boolean),
-        },
-      };
-    });
-  }, []);
+  // 修正(2026-09-21 小强)：①env 接管键禁止修改——原 setParam 照写 params，isDirty 排除后
+  //   永不提交且无提示，造成「改了假值/静默丢失」（[设置页UI审计] 问题2）；②越界输入静默截断补提示（问题15）
+  const setParam = useCallback(
+    (key: string, value: unknown) => {
+      if (state.model.envOverride[key]) return;
+      const range = state.model.ranges[key];
+      const clamped =
+        typeof value === 'number' && range ? clampToRange(value, range) : value;
+      if (typeof value === 'number' && range && clamped !== value) {
+        showMessage(
+          ErrorType.WARNING,
+          `参数 ${key} 超出范围 [${range.min}, ${range.max}]，已自动校正为 ${clamped}`
+        );
+      }
+      setState((s) => {
+        const params = {
+          ...s.model.params,
+          [key]: clampToRange(value, s.model.ranges[key]),
+        };
+        return {
+          ...s,
+          model: {
+            ...s.model,
+            params,
+            isDirty: Object.values(
+              isDirty(params, s.model.defaults, s.model.envOverride)
+            ).some(Boolean),
+          },
+        };
+      });
+    },
+    [state.model.envOverride, state.model.ranges]
+  );
 
   const resetParams = useCallback(() => {
     patchModel({ params: { ...state.model.defaults }, isDirty: false });

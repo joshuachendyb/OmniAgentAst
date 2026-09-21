@@ -7,6 +7,7 @@
 // 2026-09-21 小欧 - 三堂会审修复：aboutIdx 计数器改为 item.key.includes('path') 判断（防 schema 顺序变化映射错）
 // 2026-09-21 小强 - 删死分支 group==='chat'：后端注册表已删 chat 组，该块永不渲染（分组对齐后端唯一源）
 // 2026-09-21 小欧 - [59]B-10 渲染: sources 缺键回退 ?? 'yaml' → ?? 'default'（后端缺省 source='default'，缺键=默认值语义）
+// 2026-09-21 小强 - 系统Tab 3 小节（运维日志/工程目录/关于）：sectionOf 按 logging./paths.logs→运维日志、paths.*→工程目录、app.*→系统参数、其余→关于（对齐后端 system 组 12 项结构）
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -30,8 +31,10 @@ interface Props {
 
 function sectionOf(group: string, key: string): string | null {
   if (group !== 'system') return null;
+  // 2026-09-21 小强 - 系统Tab 3 小节：运维日志(配置+日志目录只读) / 工程目录(6 只读) / 关于
+  if (key.startsWith('logging.') || key === 'paths.logs') return '运维日志';
+  if (key.startsWith('paths.')) return '工程目录';
   if (key.startsWith('app.')) return '系统参数';
-  if (key.startsWith('logging.')) return '运维日志';
   return '关于';
 }
 

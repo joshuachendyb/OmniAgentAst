@@ -7,6 +7,8 @@
 // 2026-09-21 小欧 - 全文逐章核查：规范二落地——⑤⑥弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD；marginTop/padding/marginLeft 裸数字 → Spacing.LG/MD 令牌（[58] v1.12 第六章 6.1 规范二）
 // 2026-09-21 小欧 - [59]F-9 修复：onSaveGroup/onSaveAll 改为返回 Promise；危险守卫 Modal.confirm 的 onOk 返回 async 函数，
 //   antd 确认框 OK 按钮携带 Promise 自动 loading，杜绝「保存中」连点 OK 双发保存
+// 2026-09-21 小强 - 设置页17问题复核修复：危险确认拆分 dangerousGroup/dangerousAll（保存其他组不再误弹）；
+//   content 去残留「黑白名单」文案（黑白名单键已从注册表删除）（[设置页UI审计] 问题7/8/10）
 import React from 'react';
 import { Button, Modal } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -19,7 +21,10 @@ interface Props {
   groupDirtyCount: number;
   saving: boolean;
   restartKeys: string[];
-  hasDangerousDirty: boolean;
+  // 修正(2026-09-21 小强)：危险确认拆分「保存本组/保存全部」两态——原 hasDangerousDirty 全局判定，
+  // 安全组危险键脏时保存其它组也误弹（[设置页UI审计] 问题7/8）
+  dangerousGroup: boolean;
+  dangerousAll: boolean;
   onSaveGroup: () => Promise<unknown>;
   onSaveAll: () => Promise<unknown>;
   onCloseRestart: () => void;
@@ -32,13 +37,14 @@ export const SaveBar: React.FC<Props> = ({
   groupDirtyCount,
   saving,
   restartKeys,
-  hasDangerousDirty,
+  dangerousGroup,
+  dangerousAll,
   onSaveGroup,
   onSaveAll,
   onCloseRestart,
 }) => {
-  const confirmThen = (fn: () => Promise<unknown>) => {
-    if (hasDangerousDirty) {
+  const confirmThen = (fn: () => Promise<unknown>, dangerous: boolean) => {
+    if (dangerous) {
       Modal.confirm({
         title: (
           <span
@@ -49,7 +55,8 @@ export const SaveBar: React.FC<Props> = ({
         ),
         content: (
           <span style={{ color: Colors.TEXT.SECONDARY }}>
-            本次保存涉及危险操作/黑白名单配置，确认提交吗？
+            {/* 修正(2026-09-21 小强)：去残留"黑白名单"文案（黑白名单键已从注册表删除）([设置页UI审计] 问题10) */}
+            本次保存涉及危险操作相关配置（安全开关/危险操作确认），确认提交吗？
           </span>
         ),
         okText: '确认保存',
@@ -81,7 +88,7 @@ export const SaveBar: React.FC<Props> = ({
       <Button
         disabled={!canSaveGroup || saving}
         loading={saving}
-        onClick={() => confirmThen(onSaveGroup)}
+        onClick={() => confirmThen(onSaveGroup, dangerousGroup)}
       >
         保存本组{groupDirtyCount > 0 ? `（${groupDirtyCount} 项）` : ''}
       </Button>
@@ -90,7 +97,7 @@ export const SaveBar: React.FC<Props> = ({
         disabled={!canSaveAll || saving}
         loading={saving}
         style={{ marginLeft: Spacing.MD }}
-        onClick={() => confirmThen(onSaveAll)}
+        onClick={() => confirmThen(onSaveAll, dangerousAll)}
       >
         保存全部{dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
       </Button>
