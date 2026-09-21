@@ -22,6 +22,7 @@
 //   不再绕过确认直接切 Tab（原 jumpTo 静默丢弃当前组未保存修改）；确认对话框记录待跳 tab+高亮 key，
 //   保存成功后跳转并高亮；②deleteTarget 解析改用首个 '::' 索引切片（原 split('::') 对含 '::' 的模型名截断误删）；
 //   ③onSaveGroup/onSaveAll 返回 Promise，SaveBar confirmThen 的 Modal onOk await 化——OK 按钮自带 loading 防连点双保存
+// 2026-09-21 小强 - 切 provider 表单值跟随真修复：key 加在 ProviderConfig 组件层（整体重挂→useForm 全新实例→空仓库→新 initialValues 落盘；内层 key 经 rc-field-form 源码证伪无效已删，北京老陈定）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -244,6 +245,7 @@ const SettingsPage: React.FC = () => {
       <div data-section="provider-config">
         <SectionTitle title="── ③ Provider 配置 ──" />
         <ProviderConfig
+          key={state.model.selectedProvider}
           name={state.model.selectedProvider}
           config={
             state.model.providerConfig[state.model.selectedProvider] ?? {
