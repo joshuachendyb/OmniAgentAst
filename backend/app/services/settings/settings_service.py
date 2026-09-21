@@ -28,16 +28,27 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
      对齐 /health.version（原返回 "v1.0.3"，health 返回 "1.0.3"，两处不一致）
   2026-09-21 - 小欧 - v4.20 单源收敛: update_settings 写 ai.model_ref 时删「同时双写扁平 ai.provider/ai.model」
     （唯一源=ai.model_ref，与 resolver/model_service/config_helpers 读取侧一致）
+   2026-09-21 - 小欧 - [59]B-8/B-9 修复: get_group 对 group 做 strip().lower() 归一，未知分组 Value Error→HTTPException(400)
+    （原裸 ValueError 被 handle_config_errors 笼统转 500；配合路由空串/大小写归一）
+   2026-09-21 - 小欧 - [59]B-10 修复: _item_data 普通键缺省（YAML 无此键）时 source 由 'yaml' 改标 'default'
+    （缺失与显式写入同标 yaml 前端无法区分"默认值"与"已落盘"，误导用户以为已保存）
+   2026-09-21 - 小欧 - [59]B-11 修复: is_env 判定改调 config.env_nonempty（原 bool(os.environ.get) 把纯空白 env 误判接管，
+     api_key/language 该类字段被空白值覆盖显示）
+   2026-09-21 - 小欧 - [59]B-12 修复: get_all_groups/get_group 改调 config_helpers.get_config_snapshot 原子快照
+    （data 与 mtime 同一把锁内读出，消除先读文件再单次 stat 的并发窗口）；
+    get_mtime 保持 _config_mtime（仅 stat 无数据读，无窗口问题，不引入整文件读开销）
 """
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from app.config import get_config, get_code_root
+from fastapi import HTTPException
+
+from app.config import env_nonempty, get_config, get_code_root
 from app.db.models.chat_models import ModelRef
 from app.logger import logger
 from app.services.model.config_helpers import (
     get_config_path,
+    get_config_snapshot,
     mask_secret_value,
     merge_region_patch,
     read_yaml_config,
@@ -83,16 +94,18 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         return (raw_val if raw_val is not None else item["default"]), "ro"
     raw_val = _get_dotted(raw, key, item["default"])
     eff_val = _resolved(key, item["default"])
-    is_env = bool(item.get("env_key") and os.environ.get(item["env_key"]))
+    is_env = bool(item.get("env_key") and env_nonempty(item["env_key"]))
     if item.get("secret"):
         return mask_secret_value(eff_val), ("env" if is_env else "yaml")
     if is_env:
         return eff_val, "env"
-    return raw_val if raw_val is not None else item["default"], "yaml"
+    # 2026-09-21 小欧 [59]B-10: 键缺失时 source 标 'default'（与显式落盘 yaml 区分）
+    return raw_val if raw_val is not None else item["default"], ("yaml" if raw_val is not None else "default")
 
 
 def get_all_groups() -> Dict[str, Any]:
-    raw = _raw_config()
+    snap = get_config_snapshot()  # [59]B-12: data+mtime 原子
+    raw = snap["data"]
     groups: Dict[str, Any] = {}
     for gname in GROUP_ORDER:
         data: Dict[str, Any] = {}
@@ -102,20 +115,23 @@ def get_all_groups() -> Dict[str, Any]:
             data[item["key"]] = val
             sources[item["key"]] = src
         groups[gname] = {"data": data, "sources": sources}
-    return {"groups": groups, "version": app_version(), "mtime": _config_mtime()}
+    return {"groups": groups, "version": app_version(), "mtime": snap["mtime"]}
 
 
 def get_group(group: str) -> Dict[str, Any]:
+    # 2026-09-21 小欧 [59]B-8/B-9: group 归一（strip+lower），未知分组抛 400 透传（不再被 handle 笼统 500）
+    group = (group or "").strip().lower()
     if group not in GROUPS:
-        raise ValueError(f"未知分组: {group}")
-    raw = _raw_config()
+        raise HTTPException(status_code=400, detail=f"未知分组: {group}")
+    snap = get_config_snapshot()  # [59]B-12: data+mtime 原子
+    raw = snap["data"]
     data: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
     for item in GROUPS[group]["items"]:
         val, src = _item_data(item["key"], item, raw)
         data[item["key"]] = val
         sources[item["key"]] = src
-    return {"data": data, "sources": sources, "mtime": _config_mtime()}
+    return {"data": data, "sources": sources, "mtime": snap["mtime"]}
 
 
 def get_schema() -> Dict[str, Any]:

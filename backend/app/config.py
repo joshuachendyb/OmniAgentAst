@@ -10,6 +10,10 @@
 # 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
 # 2026-09-19 小欧 - exe打包frozen支持: 新增get_frozen_dir唯一源(DRY), _get_code_root frozen时改走exe所在目录 - 小欧-2026-09-19
 # 2026-09-21 小欧 - v4.20 单源收敛: _apply_env_overrides 的 AI_PROVIDER 注入由扁平 ai.provider 改为结构化 ai.model_ref.provider（唯一源）
+# 2026-09-21 小欧 - [59]B-3 修复: 配置路径单源化 — 顶层 get_config_path() 尊重 OMNIAGENT_CONFIG_PATH（设置页/模型服务此前走代码库根 config/config.yaml，
+#   与 Config 实例 env 路径双源分裂，设置页改的不是实际运行配置）; Config._get_config_path 删除自身 env 分支改调顶层（DRY 唯一源）
+# 2026-09-21 小欧 - [59]B-11 修复: 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
+#   与 settings_service is_env 统一改用（原 bool(os.getenv) 把 "   " 当有效覆盖，空白 provider/日志级别注入运行配置）
 
 import functools
 import os
@@ -32,6 +36,13 @@ def _make_safe_loader() -> type:
         _construct_ordered_dict,
     )
     return _Loader
+
+
+def env_nonempty(name: str) -> bool:
+    """环境变量非空（排除纯空白）— 2026-09-21 小欧 [59]B-11（env 接管判定的统一语义）"""
+    v = os.environ.get(name)
+    return bool(v and v.strip())
+
 
 class Config:
     """配置管理类"""
@@ -84,10 +95,7 @@ class Config:
         self._config_mtime = config_path.stat().st_mtime
     
     def _get_config_path(self) -> Path:
-        """获取配置文件路径"""
-        env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
-        if env_path:
-            return Path(env_path)
+        """获取配置文件路径 — 2026-09-21 小欧 [59]B-3: 收敛掉自身 env 分支，统一走顶层 get_config_path(DRY 单源)"""
         return Path(get_config_path())
     
     def _apply_env_overrides(self):
@@ -103,8 +111,9 @@ class Config:
                 provider_config['api_key'] = env_value
         
         # 2026-09-21 小欧 v4.20 单源收敛: AI_PROVIDER 注入结构化 ai.model_ref.provider（唯一源，删扁平 ai.provider）
+        # 2026-09-21 小欧 [59]B-11: env_nonempty 排除纯空白覆写
         _env_provider = os.getenv('AI_PROVIDER')
-        if _env_provider:
+        if env_nonempty('AI_PROVIDER'):
             _ref = ai_config.get('model_ref')
             if not isinstance(_ref, dict):
                 _ref = {}
@@ -113,7 +122,7 @@ class Config:
         
         # 日志级别
         logging_config = self._config_data.get('logging', {})
-        if os.getenv('LOG_LEVEL'):
+        if env_nonempty('LOG_LEVEL'):
             logging_config['level'] = os.getenv('LOG_LEVEL')
     
     def get(self, key: str, default: Any = None) -> Any:
@@ -263,7 +272,11 @@ def get_code_root() -> str:
 
 
 def get_config_path(filename: str = "config.yaml") -> str:
-    """统一配置路径获取 — 代码库根下 config 目录(非项目根) — 小欧 2026-08-10 ④内部改调"""
+    """统一配置路径获取 — 尊重 OMNIAGENT_CONFIG_PATH(环境变量指定则用之)，否则代码库根 config 目录
+    — 小欧 2026-08-10 ④内部改调; 2026-09-21 小欧 [59]B-3 补 env 分支(与 Config 实例单源一致)"""
+    env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
+    if env_path:
+        return str(Path(env_path))
     return str(_get_code_root() / "config" / filename)
 
 

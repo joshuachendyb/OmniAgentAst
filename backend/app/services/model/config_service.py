@@ -27,6 +27,16 @@
 # 2026-09-21 - 小欧 - v4.20 单源收敛: delete_provider/add_model 的当前模型读写由扁平 ai.provider/ai.model
 #   改为 ai.model_ref（is_provider_metadata_field 过滤 provider 列表）；update_config 验证日志与返回
 #   current_model_ref 改读 model_ref
+# 2026-09-21 - 小欧 - [59]B-4 修复: _mask_api_key 复用公用 mask_secret_value（"****"+末4位，与 /settings /models
+#   的 suffix 契约一致）——原"前3后2/≤6全*"与前端 slice(-4) 显示错位；传入 int/None 由 mask_secret_value 内部 str() 兜底
+# 2026-09-21 - 小欧 - [59]B-5/B-6/B-7 修复: ①新增 _provider_conf（非 dict provider 归空统一守卫，三处复用，防畸形
+#   YAML 下 provider 非 dict .get 崩溃）; ②api_key 接层 str() 化（数字/None 不再 .strip()/len() 崩溃）;
+#   ③security 非 dict 统一回默认安全块（防 Pydantic ValidationError→500），默认块提模块级 DEFAULT_SECURITY（DRY）
+# 2026-09-21 - 小欧 - [59]B-14 修复: read_config_file/read_version_file ①内容 lstrip("\ufeff") 剥离 BOM
+#   （原样透传时与 main.get_version/settings_service.app_version 的显示不一致）; ②超过 512KB 拒读（size 上限防
+#   f.read() 全量进 JSON 响应）
+# 2026-09-21 - 小欧 - [59]B-15 修复: get_model_list 的 provider.models dict 老格式({model: {...}})归一为键列表——
+#   原只认 list，老式/手写 YAML 整个 provider 静默缺列表，与 /models 展示不一致
 """
 config_service — 配置业务服务(services/model)
 
@@ -59,6 +69,7 @@ from app.services.model.config_helpers import (
     get_config_path,
     is_provider_metadata_field,
     load_config,
+    mask_secret_value,
     read_yaml_config,
     save_config,
     write_yaml_config,
@@ -136,12 +147,25 @@ def update_config(config_update):
 
 
 def _mask_api_key(api_key: str) -> str:
-    """掩码API Key: 非空时保留前3后2, 中间以*替换, 短于等于6位全掩码 — 小欧 2026-08-13 (#7)"""
-    if not api_key:
-        return ""
-    if len(api_key) <= 6:
-        return "*" * len(api_key)
-    return api_key[:3] + "*" * (len(api_key) - 5) + api_key[-2:]
+    """掩码API Key — 2026-09-21 小欧 [59]B-4: 复用公用 mask_secret_value({configured, suffix 末4})，
+    统一输出 "****"+末4位，与 /settings、/models 的 suffix 显示一致（前端 slice(-4) 兼容）"""
+    m = mask_secret_value(api_key)
+    return "****" + (m.get("suffix") or "") if m.get("configured") else ""
+
+
+DEFAULT_SECURITY = {
+    "enabled": False,
+    "confirmDangerousOps": True,
+    "auto_confirm_delay": 10,
+    "hitl_timeout": 120,
+}
+
+
+def _provider_conf(ai_config: dict, provider: str) -> dict:
+    """取 provider 配置；非 dict 一律归空 — 2026-09-21 小欧 [59]B-5 统一守卫
+    （畸形 YAML 写 provider 为 str/list 时避免 .get 崩溃；get_system_config_data/get_model_list/get_full_config 复用）"""
+    p = ai_config.get(provider)
+    return p if isinstance(p, dict) else {}
 
 
 def get_system_config_data() -> dict:
@@ -150,20 +174,14 @@ def get_system_config_data() -> dict:
     config = get_config_instance()
     resolved_model = get_ai_config_resolver().resolve_model_ref()
     ai_config = config.get('ai', {})
-    provider_config = ai_config.get(resolved_model.provider, {})
-    api_key = provider_config.get('api_key') or ''
-    api_key_configured = bool(api_key and api_key.strip() != '')
+    provider_config = _provider_conf(ai_config, resolved_model.provider)
+    api_key = str(provider_config.get('api_key') or '')
+    api_key_configured = bool(api_key.strip() != '')
     theme = config.get('app.theme', 'light')
     language = config.get('app.language', 'zh-CN')
     security_config = config.get('security', {})
-    if not security_config:
-        # 2026-09-21 小欧 v4.20 死配置清理+对齐schema: 默认块与 settings_registry 安全组4项一一对应(enabled/confirmDangerousOps/auto_confirm_delay/hitl_timeout)
-        security_config = {
-            "enabled": False,
-            "confirmDangerousOps": True,
-            "auto_confirm_delay": 10,
-            "hitl_timeout": 120,
-        }
+    if not isinstance(security_config, dict) or not security_config:
+        security_config = dict(DEFAULT_SECURITY)
     logger.info(f"获取配置成功: provider={resolved_model.provider}, model={resolved_model.model}")
     return {
         "ai_model_ref": resolved_model,
@@ -209,10 +227,14 @@ def get_model_list() -> dict:
         for provider_name in ai_config.keys():
             if is_provider_metadata_field(provider_name):
                 continue
-            provider_data = ai_config.get(provider_name, {})
-            if not isinstance(provider_data, dict):
+            provider_data = _provider_conf(ai_config, provider_name)
+            if not provider_data:
                 continue
             provider_models = provider_data.get('models') or []
+            # 2026-09-21 小欧 [59]B-15: dict 老格式 models({name: {...}}) 归一为键列表——
+            # 原只认 list，老式/手写 YAML 整个 provider 静默不出现在 /config/models，与 /models 列表不一致
+            if isinstance(provider_models, dict):
+                provider_models = list(provider_models.keys())
             if isinstance(provider_models, list) and provider_models:
                 for model_name in provider_models:
                     display_name = f"{provider_name} ({model_name})"
@@ -242,10 +264,10 @@ def get_full_config() -> dict:
     for provider_name in ai_config.keys():
         if is_provider_metadata_field(provider_name):
             continue
-        provider_data = ai_config.get(provider_name, {})
-        if not isinstance(provider_data, dict):
+        provider_data = _provider_conf(ai_config, provider_name)
+        if not provider_data:
             continue
-        api_key = provider_data.get('api_key') or ''
+        api_key = str(provider_data.get('api_key') or '')
         providers[provider_name] = {
             "name": provider_name,
             "api_base": provider_data.get('api_base') or '',
@@ -399,14 +421,21 @@ def fix_config() -> dict:
     }
 
 
+_MAX_READ_FILE_BYTES = 512 * 1024
+
+
 def read_config_file() -> dict:
     """读取配置文件 — 自 model_routes.py 迁入 — 小沈 2026-08-13
-    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）"""
+    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）
+    2026-09-21 小欧 [59]B-14：BOM 剥离 + 大小上限"""
     config_path = get_config_path()
     if not config_path.exists():
         raise HTTPException(status_code=404, detail=f"配置文件不存在: {config_path}")
+    size = config_path.stat().st_size
+    if size > _MAX_READ_FILE_BYTES:
+        raise HTTPException(status_code=400, detail=f"配置文件过大({size} 字节)，拒绝读取")
     with open(config_path, "r", encoding="utf-8") as f:
-        content = f.read()
+        content = f.read().lstrip("\ufeff")
     stat = config_path.stat()
     return {
         "config_content": content,
@@ -420,13 +449,17 @@ def read_config_file() -> dict:
 def read_version_file() -> dict:
     """读取 version.txt 全文 — 2026-09-21 小欧 关于页"查看版本文件全文"。
     路径与 main.get_version / settings_service.app_version 一致（get_code_root()/version.txt，DRY）。
-    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）"""
+    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）
+    2026-09-21 小欧 [59]B-14：BOM 剥离 + 大小上限"""
     from app.config import get_code_root  # 局部 import：避免顶层循环依赖
     version_path = Path(get_code_root()) / "version.txt"
     if not version_path.exists():
         raise HTTPException(status_code=404, detail=f"version 文件不存在: {version_path}")
+    size = version_path.stat().st_size
+    if size > _MAX_READ_FILE_BYTES:
+        raise HTTPException(status_code=400, detail=f"version 文件过大({size} 字节)，拒绝读取")
     with open(version_path, "r", encoding="utf-8") as f:
-        content = f.read()
+        content = f.read().lstrip("\ufeff")
     stat = version_path.stat()
     return {
         "version_content": content,

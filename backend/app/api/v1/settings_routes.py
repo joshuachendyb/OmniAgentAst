@@ -3,6 +3,8 @@
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：GET/PUT /settings（5.2 参数配置接口）
+  2026-09-21 - 小欧 - [59]B-9 修复: GET /settings 空串/纯空白 group 不再被 `if group` 误判走全量（拼写错误静默成功），
+    改 is not None and strip() 判空；大小写不规范交 service get_group 归一（B-8）
 """
 from typing import Optional
 from fastapi import APIRouter, Query
@@ -37,7 +39,7 @@ async def get_settings_mtime():
 @router.get("/settings")
 @handle_config_errors("获取设置")
 async def get_settings(group: Optional[str] = Query(default=None)):
-    if group:
+    if group is not None and group.strip():
         one = svc.get_group(group)
         return SettingsGroupResponse(data=one["data"], sources=one["sources"],
                                      mtime=one["mtime"])

@@ -38,6 +38,12 @@ F10合并: 小欧 - 2026-06-08
 #   ②_order_for_dump 首位键 provider/model → model_ref；③_fix_config_common_issues 删 ai 顶层遗留扁平键；
 #   ④_validate_config_integrity 改校验 ai.model_ref；⑤_update_model_ref 改写 model_ref（原写扁平键）；
 #   ⑥_auto_fix_and_validate 失败 fail_result 的 current_model_ref 改读 model_ref
+# 2026-09-21 - 小欧 - [59]报告 B-1/B-2 修复: read_yaml_config ①捕获 yaml.YAMLError 显式抛 HTTPException(500)
+#   （坏 YAML 不再被 handle_api_errors 笼统 500; 防静默吞坏文件）; ②顶层非 dict 统一归一空 dict
+#   （修复 str/list 顶层时模型读 _raw_ai .get 崩溃、settings 静默全默认两处行为分裂）
+# 2026-09-21 - 小欧 - [59]B-12 修复: 新增 get_config_snapshot 原子快照(与 merge_region_patch 同一把 .lock)，
+#   settings get_all_groups/get_group 改调水源，消除"先读数据再单次 stat"窗口——并发写者落在两操作间时
+#   数据旧/mtime 新，前端误判"已外部更新"整页刷新
 
 import os
 import shutil
@@ -107,11 +113,21 @@ def get_config_path() -> Path:
     return Path(_get_config_path())
 
 def read_yaml_config(config_path: Path) -> dict:
-    """读取 YAML 配置文件,文件不存在时返回空 dict"""
+    """读取 YAML 配置文件,文件不存在时返回空 dict
+
+    2026-09-21 小欧 [59]B-1/B-2: ①YAMLError 显式抛 500（坏 YAML 必须被看见，禁静默吞）;
+    ②顶层非 dict 归一空 dict（str/list 顶层不再对 .get 崩溃，模型/设置读统一空配置语义）
+    """
     if not config_path.exists():
         return {}
     with open(config_path, 'r', encoding='utf-8') as f:
-        return yaml.load(f, Loader=_make_safe_loader()) or {}
+        text = f.read()
+    try:
+        data = yaml.load(text, Loader=_make_safe_loader())
+    except yaml.YAMLError as e:
+        logger.error(f"配置文件解析失败: {config_path}: {e}")
+        raise HTTPException(status_code=500, detail=f"配置文件解析失败: {e}")
+    return data if isinstance(data, dict) else {}
 
 def write_yaml_config(config_path: str, data: dict) -> None:
     """使用有序 Key 写入 YAML 配置文件 — 2026-09-20 小沈: 经 atomic_write 原子落盘(9.3.3)"""
@@ -533,6 +549,22 @@ def _config_mtime() -> float:
         return os.path.getmtime(get_config_path())
     except OSError:
         return 0.0
+
+
+def get_config_snapshot() -> Dict[str, Any]:
+    """配置数据 + mtime 原子快照 — 2026-09-21 小欧 [59]B-12
+    与 merge_region_patch 同一把 config.yaml.lock，读写互斥：读侧不再有
+    "先 read_yaml_config 再单独 stat"的窗口（并发写落在两操作间 → 数据旧/mtime 新 → 前端误刷新）。
+    锁超时 10s 与写侧一致；缺文件时 data={}、mtime=0.0（不抛错）。"""
+    import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面（与 merge_region_patch 同策略）
+    lock_path = Path(str(get_config_path()) + ".lock")
+    with filelock.SoftFileLock(str(lock_path), timeout=10):
+        data = read_yaml_config(Path(get_config_path()))
+        try:
+            mtime = os.path.getmtime(get_config_path())
+        except OSError:
+            mtime = 0.0
+    return {"data": data, "mtime": mtime}
 
 
 def mask_secret_value(value: Any) -> Dict[str, Any]:
