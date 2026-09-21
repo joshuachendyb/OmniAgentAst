@@ -1,9 +1,12 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型选择器（Provider/Model 双下拉联动 + 能力标签 + CRUD 入口）
 // 2026-09-21 小欧 - P0-6：下拉宽度→settingsControl 令牌（[58] P0-6）
+// 2026-09-21 小欧 - 全文逐章核查：gap/marginTop 裸数字 → Spacing.MD/XS 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 删掉冗余"当前模型"行（该信息已移至模型Tab ①选择器上方独立显示）
 import React from 'react';
 import { Button, Select, Tag } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { settingsControl } from '@/theme/settingsTokens';
+import { Spacing } from '@/utils/stepStyles';
 import type { ProviderEntry } from '@/services/api/model.api';
 
 interface Props {
@@ -29,7 +32,7 @@ export const ModelSelector: React.FC<Props> = ({
   const current = provider?.models.find((m) => m.name === selectedModel);
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
         <Select
           value={selectedProvider}
           style={{ width: settingsControl.modelSelectWidth }}
@@ -59,10 +62,7 @@ export const ModelSelector: React.FC<Props> = ({
           添加 Provider
         </Button>
       </div>
-      <div style={{ marginTop: 8 }}>
-        当前模型：{selectedModel}（{selectedProvider}）
-      </div>
-      <div style={{ marginTop: 4 }}>
+      <div style={{ marginTop: Spacing.XS }}>
         {(current?.capabilities ?? []).map((c) => (
           <Tag key={c}>{c}</Tag>
         ))}

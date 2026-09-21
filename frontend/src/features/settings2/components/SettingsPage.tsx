@@ -7,11 +7,14 @@
 // 2026-09-21 小欧 - P1-4：重置按钮上移到②标题行右侧（方案B）+ 顺带修正：无params隐藏/无脏态disabled（[58] P1-4）
 // 2026-09-21 小欧 - 第五章：当前生效模型高占位状态卡集成（[58] 第五章 5.6）
 // 2026-09-21 小欧 - 第五章核查修复：小字可点跳模型 Tab；S2/S3 锚点滚动+高亮（Step 5.2/5.3）；第六章 6.4 重置确认弹窗 danger+⚠（[58] v1.11）
+// 2026-09-21 小欧 - 全文逐章核查：④重置确认/⑦Tab切换 弹窗宽散落 480 → settingsModalWidth.confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
+// 2026-09-21 小欧 - 排版重构：CurrentModelRefCard+参数区从模型Tab移到通用Tab；模型Tab区块编号④→③；删除Card顶部辅位小字（与通用Tab CurrentModelRefCard重复）；新增沙箱Tab
+// 2026-09-21 小欧 - 模型Tab：①选择器上方加"当前系统全局使用模型"行（与通用Tab CurrentModelRefCard 对应）；删废弃 jumpToModels
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
-import { settingsSpacing } from '@/theme/settingsTokens';
+import { settingsSpacing, settingsModalWidth } from '@/theme/settingsTokens';
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SearchBox } from './SearchBox';
@@ -41,6 +44,7 @@ const TAB_TITLES: Record<TabKey, string> = {
   chat: '聊天',
   appearance: '外观',
   system: '系统',
+  sandbox: '沙箱',
 };
 
 const SettingsPage: React.FC = () => {
@@ -73,7 +77,6 @@ const SettingsPage: React.FC = () => {
     setFlashSelector(true);
     setTimeout(() => setFlashSelector(false), 2000);
   };
-  const jumpToModels = () => highlightJump('selector');
   const jumpToProviderConfig = () => scrollTo('provider-config');
 
   const dangerousDirty = Object.keys(state.dirtyKeys).some(
@@ -121,37 +124,16 @@ const SettingsPage: React.FC = () => {
     );
   }
 
-  const renderModelTab = () => (
+  const renderGeneralTab = () => (
     <div>
       <CurrentModelRefCard
         currentRef={state.currentRef}
         providers={state.model.providers}
-        onSelectModel={jumpToModels}
+        onModelSwitched={() => void s.load()}
         onAddProvider={jumpToProviderConfig}
       />
-      <div
-        data-section="selector"
-        style={{
-          background: flashSelector ? chatTokens.colorPrimaryBg : undefined,
-          transition: 'background 0.3s',
-          borderRadius: settingsSpacing.pagePadding,
-          padding: `0 ${Spacing.MD}px`,
-          margin: `0 -${Spacing.MD}px`,
-        }}
-      >
-        <SectionTitle title="── ① 选择器 ──" />
-        <ModelSelector
-          providers={state.model.providers}
-          selectedProvider={state.model.selectedProvider}
-          selectedModel={state.model.selectedModel}
-          onSelectProvider={s.selectProvider}
-          onSelectModel={s.selectModel}
-          onAddModel={() => s.patchModel({ addModelModalOpen: true })}
-          onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
-        />
-      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
+        <SectionTitle title="── 参数区（跟随当前模型） ──" />
         {Object.keys(state.model.params).length > 0 && (
           <Button
             type="link"
@@ -159,7 +141,11 @@ const SettingsPage: React.FC = () => {
             disabled={!state.model.isDirty}
             onClick={() => {
               Modal.confirm({
-                title: '⚠ 重置为默认',
+                title: (
+                  <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+                    ⚠ 重置为默认
+                  </span>
+                ),
                 content: (
                   <span style={{ color: Colors.TEXT.SECONDARY }}>
                     将恢复该模型全部参数为默认值，当前修改将丢失。
@@ -168,6 +154,7 @@ const SettingsPage: React.FC = () => {
                 okText: '确认重置',
                 okButtonProps: { danger: true },
                 cancelText: '取消',
+                width: settingsModalWidth.confirm,
                 onOk: () => s.resetParams(),
               });
             }}
@@ -183,8 +170,48 @@ const SettingsPage: React.FC = () => {
         envOverride={state.model.envOverride}
         onChange={s.setParam}
       />
+      <SettingsGroup
+        group="general"
+        items={state.schema['general']?.items ?? []}
+        values={state.values['general'] ?? {}}
+        sources={state.sources['general'] ?? {}}
+        dirtyKeys={state.dirtyKeys}
+        highlightKey={s.highlightKey}
+        onChange={s.setValue}
+      />
+    </div>
+  );
+
+  const renderModelTab = () => (
+    <div>
+      <div
+        data-section="selector"
+        style={{
+          background: flashSelector ? chatTokens.colorPrimaryBg : undefined,
+          transition: 'background 0.3s',
+          borderRadius: settingsSpacing.pagePadding,
+          padding: `0 ${Spacing.MD}px`,
+          margin: `0 -${Spacing.MD}px`,
+        }}
+      >
+        {state.currentRef && (
+          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.SM }}>
+            当前系统全局使用模型：{state.currentRef.provider} / {state.currentRef.model}
+          </div>
+        )}
+        <SectionTitle title="── ① 选择器 ──" />
+        <ModelSelector
+          providers={state.model.providers}
+          selectedProvider={state.model.selectedProvider}
+          selectedModel={state.model.selectedModel}
+          onSelectProvider={s.selectProvider}
+          onSelectModel={s.selectModel}
+          onAddModel={() => s.patchModel({ addModelModalOpen: true })}
+          onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
+        />
+      </div>
       <div data-section="provider-config">
-        <SectionTitle title="── ③ Provider 配置 ──" />
+        <SectionTitle title="── ② Provider 配置 ──" />
         <ProviderConfig
           name={state.model.selectedProvider}
           config={
@@ -211,7 +238,7 @@ const SettingsPage: React.FC = () => {
         }}
       />
       </div>
-      <SectionTitle title="── ④ 操作区 ──" />
+      <SectionTitle title="── ③ 操作区 ──" />
       <ModelActions
         onDeleteModel={() =>
           s.patchModel({
@@ -305,25 +332,12 @@ const SettingsPage: React.FC = () => {
       style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
     >
       <Card>
-        {state.currentRef && (
-          <div
-            style={{
-              fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
-              marginBottom: Spacing.SM,
-              cursor: 'pointer',
-            }}
-            onClick={() => requestTab('model')}
-          >
-            当前生效模型：{state.currentRef.provider} / {state.currentRef.model}（点击切换）
-          </div>
-        )}
         <div
           style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: 12,
+            marginBottom: Spacing.LG,
           }}
         >
           <span>
@@ -346,6 +360,8 @@ const SettingsPage: React.FC = () => {
         </div>
         {state.activeTab === 'model' ? (
           renderModelTab()
+        ) : state.activeTab === 'general' ? (
+          renderGeneralTab()
         ) : (
           <SettingsGroup
             group={state.activeTab}
@@ -377,7 +393,12 @@ const SettingsPage: React.FC = () => {
       </Card>
       <Modal
         open={pendingTab !== null}
-        title="有未保存的修改"
+        title={
+          <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+            有未保存的修改
+          </span>
+        }
+        width={settingsModalWidth.confirm}
         onCancel={() => setPendingTab(null)}
         onOk={() => {
           if (pendingTab) {
