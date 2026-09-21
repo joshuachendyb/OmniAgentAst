@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置2版类型层（分组/项/模型管理状态，见 6.2）
+// 2026-09-21 小欧 - providerConfig 类型补 max_retries（对齐 ProviderConfig 表单 + 后端 GET /models 返回）
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -14,7 +15,8 @@ export type TabKey =
   | 'security'
   | 'chat'
   | 'appearance'
-  | 'system';
+  | 'system'
+  | 'sandbox';
 
 export interface ModelState {
   providers: ProviderEntry[];
@@ -30,6 +32,7 @@ export interface ModelState {
       api_key: { configured: boolean; suffix: string };
       base_url: string;
       timeout: number;
+      max_retries: number;
       env: boolean;
     }
   >;

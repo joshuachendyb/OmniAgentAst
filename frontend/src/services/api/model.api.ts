@@ -1,6 +1,7 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型管理 API（与 config.api.ts 同模式；current_model_ref 复用 SessionModelOverride）
 // 编辑历史: 2026-09-21 小强 - deleteProvider 返回类型补齐 mtime(ModelMutationResult, 与 deleteModel 同构、后端同样返回 mtime)，消除表单 union 后 res.mtime 的 TS 报错 — 小强-2026-09-21
 // 2026-09-21 小欧 - P0-9：addProvider 参数扩 api_key（[58] P0-9）
+// 2026-09-21 小欧 - ProviderEntry 补 max_retries 字段（对齐后端 GET /models 返回 max_retries）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -19,6 +20,7 @@ export interface ProviderEntry {
   api_key: { configured: boolean; suffix: string };
   env: boolean; // v4.19：该 provider 的 api_key 是否被 {NAME}_API_KEY 环境变量接管（config.py _apply_env_overrides 同源判定）
   timeout: number;
+  max_retries: number;
   models: ModelEntry[];
 }
 

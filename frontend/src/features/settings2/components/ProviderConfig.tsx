@@ -4,9 +4,11 @@
 // 2026-09-21 小欧 - P2-6：isEnv 时渲染 EnvTag + 警示文案（[58] P2-6）
 // 2026-09-21 小欧 - P2-7：清空 api_key 按钮改 danger + 间距分隔（[58] P2-7）
 // 2026-09-21 小欧 - V-1：base_url 留空=保持原值，与 api_key 语义对齐（[58] V-1）
+// 2026-09-21 小欧 - 重组区块：清空api_key移入操作区，保存按钮限宽（方案C）
+// 2026-09-21 小欧 - 补 max_retries：config 类型+表单字段+doSave patch 全链路补齐（后端 update_provider_config 支持 max_retries 键）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Form } from 'antd';
-import { Colors, Spacing } from '@/utils/stepStyles';
+import { Colors } from '@/utils/stepStyles';
 import { EnvTag } from './icons';
 
 interface Props {
@@ -15,6 +17,7 @@ interface Props {
     api_key: { configured: boolean; suffix: string };
     base_url: string;
     timeout: number;
+    max_retries: number;
     retry_times?: number;
     env: boolean;
   };
@@ -23,6 +26,7 @@ interface Props {
     base_url?: string;
     timeout?: number;
     retry_times?: number;
+    max_retries?: number;
     clear?: boolean;
   }) => Promise<void>;
 }
@@ -30,18 +34,17 @@ interface Props {
 export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
-  // v4.19(P1-4/P1-5 修正)：isEnv 看 GET /models 下发的 config.env（与 config.py:99-102 _apply_env_overrides 同源判定），
-  // 弃用旧 envOverride[name]（models[] 上无此标注，恒 false 的假死代码路径）
   const isEnv = config.env === true;
   const doSave = async () => {
     const values = await form.validateFields();
     const patch: Record<string, unknown> = {};
-    // api_key 三态：留空/空白 = 保持原值（secret 契约，不提交覆盖）；填值 = 覆盖；clear=true = 显式清空
     if (values.api_key !== undefined && String(values.api_key).trim() !== '')
       patch.api_key = values.api_key;
     if (values.base_url !== undefined && String(values.base_url).trim() !== '')
       patch.base_url = values.base_url;
     if (values.timeout !== undefined) patch.timeout = values.timeout;
+    if (values.max_retries !== undefined)
+      patch.max_retries = values.max_retries;
     setSaving(true);
     try {
       await onSave(patch);
@@ -49,14 +52,7 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       setSaving(false);
     }
   };
-  const doClear = async () => {
-    setSaving(true);
-    try {
-      await onSave({ clear: true });
-    } finally {
-      setSaving(false);
-    }
-  };
+
   if (isEnv)
     return (
       <div>
@@ -95,16 +91,14 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       <Form.Item label="timeout" name="timeout">
         <InputNumber min={1} />
       </Form.Item>
-      {config.api_key.configured && (
-        <Button type="link" danger disabled={saving} onClick={doClear}>
-          清空 api_key
-        </Button>
-      )}
-      <div style={{ marginTop: Spacing.MD }}>
+      <Form.Item label="max_retries" name="max_retries">
+        <InputNumber min={0} />
+      </Form.Item>
+      <Form.Item>
         <Button type="primary" htmlType="submit" loading={saving}>
-          {'保存 Provider 配置（立即生效）'}
+          保存 Provider 配置（立即生效）
         </Button>
-      </div>
+      </Form.Item>
     </Form>
   );
 };

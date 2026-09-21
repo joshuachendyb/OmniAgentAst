@@ -2,6 +2,7 @@
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.* 改走 errorHandler(showMessage/showSuccess)，移除未用 ModelEntry 导入
 // 2026-09-21 小欧 - ensureModelSaved 保存失败提示由 ERROR 对齐为 MODEL_CONFIG_ERROR（域名级错误码，信息更精确）
 // 2026-09-21 小欧 - P1-2：搜索高亮加 TTL 自动消退（[58] P1-2）
+// 2026-09-21 小欧 - 补 max_retries：providerConfig 两处构建映射补齐 max_retries（load + refreshModels），对齐后端 GET /models 返回字段
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   settingsApi,
@@ -22,9 +23,10 @@ const GROUP_ORDER: TabKey[] = [
   'general',
   'model',
   'security',
+  'sandbox',
+  'system',
   'chat',
   'appearance',
-  'system',
 ];
 
 // 2026-09-21 BUG-C 修复：secret 值归一（保存成功后 state 里不能再留明文/clear 标记，
@@ -173,6 +175,7 @@ export function useSettings() {
                 api_key: p.api_key,
                 base_url: p.api_base,
                 timeout: p.timeout,
+                max_retries: p.max_retries,
                 env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
               },
             ])
@@ -517,6 +520,7 @@ export function useSettings() {
                 api_key: p.api_key,
                 base_url: p.api_base,
                 timeout: p.timeout,
+                max_retries: p.max_retries,
                 env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv）
               },
             ])

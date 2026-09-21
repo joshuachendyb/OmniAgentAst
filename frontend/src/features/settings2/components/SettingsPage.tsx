@@ -10,10 +10,12 @@
 // 2026-09-21 小欧 - 全文逐章核查：④重置确认/⑦Tab切换 弹窗宽散落 480 → settingsModalWidth.confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
 // 2026-09-21 小欧 - 排版重构：CurrentModelRefCard+参数区从模型Tab移到通用Tab；模型Tab区块编号④→③；删除Card顶部辅位小字（与通用Tab CurrentModelRefCard重复）；新增沙箱Tab
 // 2026-09-21 小欧 - 模型Tab：①选择器上方加"当前系统全局使用模型"行（与通用Tab CurrentModelRefCard 对应）；删废弃 jumpToModels
+// 2026-09-21 小欧 - 修正排版重构失误：参数区（ModelParams/模型特殊参数）从通用Tab移回模型Tab，模型Tab恢复四区块②参数区；ProviderConfig补max_retries回退值
+// 2026-09-21 小欧 - 三堂会审修复：删除无触发源死代码 highlightJump/flashSelector（YAGNI，消 eslint pre-existing warning）；
+//   jumpToProviderConfig 修复跨Tab失效（CurrentModelRefCard 已移通用Tab，原 scrollTo 在模型Tab未渲染时静默失败）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
-import { chatTokens } from '@/theme/tokens';
 import { settingsSpacing, settingsModalWidth } from '@/theme/settingsTokens';
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
@@ -66,18 +68,15 @@ const SettingsPage: React.FC = () => {
     s.setHighlightKey(key);
   };
 
-  // 第五章 S2/S3：滚动+高亮跳转（S2 复用 P1-2 的 2s TTL 消退）
-  const [flashSelector, setFlashSelector] = useState(false);
+  // 第五章 S2/S3：滚动跳转（跨 Tab 锚点：先切到目标 Tab，等渲染完成后再滚动）
   const scrollTo = (dataSection: string) => {
     const el = document.querySelector(`[data-section="${dataSection}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
-  const highlightJump = (dataSection: string) => {
-    scrollTo(dataSection);
-    setFlashSelector(true);
-    setTimeout(() => setFlashSelector(false), 2000);
+  const jumpToProviderConfig = () => {
+    s.setActiveTab('model');
+    requestAnimationFrame(() => scrollTo('provider-config'));
   };
-  const jumpToProviderConfig = () => scrollTo('provider-config');
 
   const dangerousDirty = Object.keys(state.dirtyKeys).some(
     (k) =>
@@ -132,8 +131,46 @@ const SettingsPage: React.FC = () => {
         onModelSwitched={() => void s.load()}
         onAddProvider={jumpToProviderConfig}
       />
+      <SettingsGroup
+        group="general"
+        items={state.schema['general']?.items ?? []}
+        values={state.values['general'] ?? {}}
+        sources={state.sources['general'] ?? {}}
+        dirtyKeys={state.dirtyKeys}
+        highlightKey={s.highlightKey}
+        onChange={s.setValue}
+      />
+    </div>
+  );
+
+  const renderModelTab = () => (
+    <div>
+      <div
+        data-section="selector"
+        style={{
+          borderRadius: settingsSpacing.pagePadding,
+          padding: `0 ${Spacing.MD}px`,
+          margin: `0 -${Spacing.MD}px`,
+        }}
+      >
+        {state.currentRef && (
+          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.SM }}>
+            当前系统全局使用模型：{state.currentRef.provider} / {state.currentRef.model}
+          </div>
+        )}
+        <SectionTitle title="── ① 选择器 ──" />
+        <ModelSelector
+          providers={state.model.providers}
+          selectedProvider={state.model.selectedProvider}
+          selectedModel={state.model.selectedModel}
+          onSelectProvider={s.selectProvider}
+          onSelectModel={s.selectModel}
+          onAddModel={() => s.patchModel({ addModelModalOpen: true })}
+          onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
+        />
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <SectionTitle title="── 参数区（跟随当前模型） ──" />
+        <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
         {Object.keys(state.model.params).length > 0 && (
           <Button
             type="link"
@@ -170,48 +207,8 @@ const SettingsPage: React.FC = () => {
         envOverride={state.model.envOverride}
         onChange={s.setParam}
       />
-      <SettingsGroup
-        group="general"
-        items={state.schema['general']?.items ?? []}
-        values={state.values['general'] ?? {}}
-        sources={state.sources['general'] ?? {}}
-        dirtyKeys={state.dirtyKeys}
-        highlightKey={s.highlightKey}
-        onChange={s.setValue}
-      />
-    </div>
-  );
-
-  const renderModelTab = () => (
-    <div>
-      <div
-        data-section="selector"
-        style={{
-          background: flashSelector ? chatTokens.colorPrimaryBg : undefined,
-          transition: 'background 0.3s',
-          borderRadius: settingsSpacing.pagePadding,
-          padding: `0 ${Spacing.MD}px`,
-          margin: `0 -${Spacing.MD}px`,
-        }}
-      >
-        {state.currentRef && (
-          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.SM }}>
-            当前系统全局使用模型：{state.currentRef.provider} / {state.currentRef.model}
-          </div>
-        )}
-        <SectionTitle title="── ① 选择器 ──" />
-        <ModelSelector
-          providers={state.model.providers}
-          selectedProvider={state.model.selectedProvider}
-          selectedModel={state.model.selectedModel}
-          onSelectProvider={s.selectProvider}
-          onSelectModel={s.selectModel}
-          onAddModel={() => s.patchModel({ addModelModalOpen: true })}
-          onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
-        />
-      </div>
       <div data-section="provider-config">
-        <SectionTitle title="── ② Provider 配置 ──" />
+        <SectionTitle title="── ③ Provider 配置 ──" />
         <ProviderConfig
           name={state.model.selectedProvider}
           config={
@@ -219,6 +216,7 @@ const SettingsPage: React.FC = () => {
               api_key: { configured: false, suffix: '' },
               base_url: '',
               timeout: 60,
+              max_retries: 3,
               env: false,
             }
         }
@@ -238,8 +236,22 @@ const SettingsPage: React.FC = () => {
         }}
       />
       </div>
-      <SectionTitle title="── ③ 操作区 ──" />
+      <SectionTitle title="── ④ 操作区 ──" />
       <ModelActions
+        configured={state.model.providerConfig[state.model.selectedProvider]?.api_key?.configured ?? false}
+        onClearApiKey={async () => {
+          try {
+            const r = await modelApi.updateProvider(
+              state.model.selectedProvider,
+              { clear: true }
+            );
+            showSuccess('api_key 已清空');
+            s.syncMtime(r.mtime);
+            await s.refreshModels();
+          } catch (e) {
+            handleApiError(e);
+          }
+        }}
         onDeleteModel={() =>
           s.patchModel({
             deleteConfirmOpen: true,
