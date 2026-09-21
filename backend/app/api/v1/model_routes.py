@@ -8,6 +8,9 @@
      req.max_retries（旧实现丢弃，DTO 有字段借而不传，前端无法创建多模型 Provider/设置重试）；
      ②S7 ProviderConfigUpdate 补 label 字段并交由 update_provider_config 落盘（旧实现 provider
      label 创建后永不可改）
+   2026-09-21 - 小欧 - 建议报告 P18: PUT/DELETE /models/{provider}/{model} 路由 model 参数改 :path 转换器——
+     FastAPI 单段 path 参数对模型名含 '/'（真实 z-ai/glm-4.7, moonshotai/kimi-k2）先解码再分断必然 404，
+     改贪婪吞余段后含斜杠模型名可更新/删除
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
@@ -64,15 +67,18 @@ async def add_model(req: ModelCreateRequest):
                          req.default_params, req.range, req.capabilities)
 
 
-@router.put("/models/{provider}/{model}")
+@router.put("/models/{provider}/{model:path}")
 @handle_config_errors("修改模型")
 async def update_model(provider: str, model: str, req: ModelUpdateRequest):
+    # 2026-09-21 小欧 修 P18：模型名可含 '/'（真实 z-ai/glm-4.7、moonshotai/kimi-k2），
+    # FastAPI 单段 path 参数遇 '/' 先解码再分断必然 404，改 path 转换器贪婪吞余段。
     return svc.update_model(provider, model, req.model_dump(exclude_none=True))
 
 
-@router.delete("/models/{provider}/{model}")
+@router.delete("/models/{provider}/{model:path}")
 @handle_config_errors("删除模型")
 async def delete_model(provider: str, model: str):
+    # 2026-09-21 小欧 修 P18：同 update_model，path 转换器支持含 '/' 模型名删除。
     return svc.delete_model(provider, model)
 
 

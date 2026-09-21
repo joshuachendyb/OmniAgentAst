@@ -25,6 +25,8 @@ current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加�
      max_retries(M13 链路透传)；⑦env 接管双标准对齐：{NAME}_API_KEY 命中的 provider 读只读、
      AI_PROVIDER 命中时当前模型切换/删除只读(M14)；⑧update_provider_config 支持 label 更新(S7)、
      拒绝非法字段(S8)；⑨get_models 输出补 max_retries 对齐 ProviderInfo DTO
+   2026-09-21 - 小欧 - 建议报告 P8: update_model 对空 default_params 提交由"跳过+无有效配置项 500"改为
+     显式清空（写空块 {}），配合 config_helpers._iter_nested_ops 空 dict 叶值修复根治"清空不落盘"
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -172,10 +174,16 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         if fields.get(k) is not None:
             node.setdefault("model_meta", {}).setdefault(model, {})[k] = fields[k]
     dp = fields.get("default_params")
-    if isinstance(dp, dict) and dp:
-        old_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
-        old_params.update(dp)
-        node.setdefault("model_params", {})[model] = old_params
+    if isinstance(dp, dict):
+        if dp:
+            old_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
+            old_params.update(dp)
+            node.setdefault("model_params", {})[model] = old_params
+        else:
+            # 2026-09-21 小欧 修 P8：空 default_params 提交 = 显式清空模型参数（原实现走
+            # isinstance 且为空跳过 → node 空 → "无有效配置项" 500）。merge_nested_patch
+            # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
+            node.setdefault("model_params", {})[model] = {}
     if not node:
         raise ValueError("无有效配置项")
     merge_nested_patch(tree, scope="model")

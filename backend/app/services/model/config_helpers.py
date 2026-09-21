@@ -26,6 +26,8 @@ F10合并: 小欧 - 2026-06-08
 #   (S6 备份膨胀); ③_validate_config_integrity 对 env 接管 provider(设 {NAME}_API_KEY)放行 api_base/
 #   api_key 缺失约束(修 S1: env 接管配置任意 settings 写均校验崩溃); ④mask_secret_value 短 secret(<4位)
 #   suffix 置空不再整体暴露(修 S5)
+# 2026-09-21 - 小欧 - 建议报告 P8 根治: _iter_nested_ops 对空 dict 叶值显式 yield 空块 {}——原实现把 {} 当
+#   内部节点无限展开导致零 ops("清空模型参数/空块"永远写不落盘, PUT default_params={} 静默无效果)。
 
 import os
 import shutil
@@ -446,9 +448,14 @@ def _set_dotted(data: Dict[str, Any], key: str, value: Any) -> None:
 
 def _iter_nested_ops(tree: Any, prefix: Tuple[str, ...] = ()) -> Iterator[Tuple[Tuple[str, ...], Any]]:
     """嵌套树扁平化为 (路径段, 值) 列表；叶段保持字面名，绝不按点号分裂
-    （模型/Provider 名含点号时必须在模型域使用 merge_nested_patch）。"""
+    （模型/Provider 名含点号时必须在模型域使用 merge_nested_patch）。
+    2026-09-21 小欧 修 P8 根治：空 dict 叶值显式 yield 空块 {}——原实现把 {} 当内部节点
+    展开导致零 ops（"清空模型参数/空块"永远写不落盘，PUT default_params={} 静默无效果）。"""
     if not isinstance(tree, dict):
         yield prefix, tree
+        return
+    if not tree:
+        yield prefix, {}
         return
     for k, v in tree.items():
         yield from _iter_nested_ops(v, prefix + (k,))
