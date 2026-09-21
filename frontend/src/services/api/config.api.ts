@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-21 小强 - 关于页功能：新增 readVersionFile（GET /config/version-file 返回 version.txt 全文）
+// 2026-09-21 小欧 - 删除无意义白/黑名单类型（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：后端 SecurityConfig 已删，无消费方（北京老陈裁定）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -11,14 +12,7 @@ export interface Config {
 }
 
 export interface SecurityConfig {
-  contentFilterEnabled: boolean;
-  contentFilterLevel: 'low' | 'medium' | 'high';
-  whitelistEnabled: boolean;
-  commandWhitelist: string;
-  blacklistEnabled: boolean;
-  commandBlacklist: string;
   confirmDangerousOps: boolean;
-  maxFileSize: number;
 }
 
 export interface ConfigUpdate {

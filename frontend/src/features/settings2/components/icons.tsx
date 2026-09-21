@@ -1,6 +1,7 @@
 // 编辑历史: 2026-09-20 小强 - 新建：SettingIcon 唯一图标出口 + DirtyDot + EnvTag；全部 antd SVG，禁止 emoji（7.9.4）
 // 2026-09-21 小欧 - P2-4：Tab 图标去掉内联色，随 antd Tabs 选中态继承主色（[58] P2-4）
 // 2026-09-21 小欧 - 全文逐章核查：gap/marginLeft/fontSize 裸数字 → Spacing.XS/MD、FontSize.PRIMARY 令牌；DirtyDot 6px 圆点为 P2-2 文档明确规格保留（[58] v1.12 第七章 铁规）
+// 2026-09-21 小强 - 删死图标 SettingIcon.chat：后端注册表已删 chat 组（TabKey 收敛 6 组），Record<TabKey> 同步收敛
 import React from 'react';
 import {
   ApiOutlined,
@@ -9,7 +10,6 @@ import {
   CopyOutlined,
   DesktopOutlined,
   GlobalOutlined,
-  MessageOutlined,
   SafetyOutlined,
 } from '@ant-design/icons';
 import { Tag } from 'antd';
@@ -25,7 +25,6 @@ export const SettingIcon: Record<TabKey, React.ReactNode> = {
   general: <GlobalOutlined style={TAB_ICON_STYLE} />,
   model: <ApiOutlined style={TAB_ICON_STYLE} />,
   security: <SafetyOutlined style={TAB_ICON_STYLE} />,
-  chat: <MessageOutlined style={TAB_ICON_STYLE} />,
   appearance: <BgColorsOutlined style={TAB_ICON_STYLE} />,
   system: <DesktopOutlined style={TAB_ICON_STYLE} />,
   sandbox: <CodeOutlined style={TAB_ICON_STYLE} />,

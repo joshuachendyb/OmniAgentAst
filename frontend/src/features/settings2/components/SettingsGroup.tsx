@@ -5,6 +5,7 @@
 // 2026-09-21 小欧 - 全文逐章核查：marginBottom/padding 裸数字 → Spacing.LG/XS/MD 令牌（[58] v1.12 第七章 铁规）
 // 2026-09-21 小欧 - 关于区排版修复：按钮从独立竖排块改为嵌入对应信息行右侧（排版修复）
 // 2026-09-21 小欧 - 三堂会审修复：aboutIdx 计数器改为 item.key.includes('path') 判断（防 schema 顺序变化映射错）
+// 2026-09-21 小强 - 删死分支 group==='chat'：后端注册表已删 chat 组，该块永不渲染（分组对齐后端唯一源）
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -81,17 +82,6 @@ export const SettingsGroup: React.FC<Props> = ({
             </div>
           </div>
         </Card>
-      )}
-      {group === 'chat' && (
-        <div
-          style={{
-            fontSize: FontSize.SECONDARY,
-            color: Colors.TEXT.SECONDARY,
-            marginBottom: Spacing.MD,
-          }}
-        >
-          聊天默认参数［已存储·待二期接入 LLM，当前不承诺生效］
-        </div>
       )}
       {items.map((item) => {
         const section = sectionOf(group, item.key);

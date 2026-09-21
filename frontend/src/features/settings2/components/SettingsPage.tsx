@@ -15,6 +15,9 @@
 //   jumpToProviderConfig 修复跨Tab失效（CurrentModelRefCard 已移通用Tab，原 scrollTo 在模型Tab未渲染时静默失败）
 // 2026-09-21 小欧 - 方案A：删除 Provider/模型成功后由 refreshModels 改整体 load()，焦点/全局卡/参数区重载对齐后端
 //   （根治"删全局当前模型时前端仍悬浮已删模型，保存报错、全局卡显示假数据"）——[54] v4.20 关联
+// 2026-09-21 小强 - Tab 标题唯一源=后端注册表：删硬编码 TAB_TITLES（含死 chat:"聊天"），
+//   Tab label 改用 state.schema[g].label（后端 settings_registry GROUPS[g].label）；GROUP_ORDER 由 useSettings 动态派生
+// 2026-09-21 小强 - 关联清理：dangerousDirty 去掉已删键 whitelist/blacklist 死判断（键已从注册表移除，恒 false 死代码）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -40,16 +43,6 @@ import {
   showSuccess,
 } from '@/services/error/handler';
 import type { TabKey } from '../types';
-
-const TAB_TITLES: Record<TabKey, string> = {
-  general: '通用',
-  model: '模型',
-  security: '安全',
-  chat: '聊天',
-  appearance: '外观',
-  system: '系统',
-  sandbox: '沙箱',
-};
 
 const SettingsPage: React.FC = () => {
   const s = useSettings();
@@ -80,11 +73,8 @@ const SettingsPage: React.FC = () => {
     requestAnimationFrame(() => scrollTo('provider-config'));
   };
 
-  const dangerousDirty = Object.keys(state.dirtyKeys).some(
-    (k) =>
-      k.includes('confirmDangerousOps') ||
-      k.includes('whitelist') ||
-      k.includes('blacklist')
+  const dangerousDirty = Object.keys(state.dirtyKeys).some((k) =>
+    k.includes('confirmDangerousOps')
   );
 
   const groupDirtyCount = state.activeTab === 'model'
@@ -365,7 +355,7 @@ const SettingsPage: React.FC = () => {
                 key: g,
                 label: (
                   <span>
-                    {SettingIcon[g]} {TAB_TITLES[g]}
+                    {SettingIcon[g]} {state.schema[g]?.label ?? g}
                   </span>
                 ),
               }))}

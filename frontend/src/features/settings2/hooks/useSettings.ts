@@ -5,6 +5,8 @@
 // 2026-09-21 小欧 - 补 max_retries：providerConfig 两处构建映射补齐 max_retries（load + refreshModels），对齐后端 GET /models 返回字段
 // 2026-09-21 小欧 - 解耦：模型Tab①选择器改为纯前端焦点切换（selectedProvider/selectedModel/参数区联动，不写 ai.model_ref）——
 //   全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal；原 v4.19(P1-6)「双下拉即时落盘 model_ref」设计废弃（[54] v4.20 修正）
+// 2026-09-21 小强 - Tab 标题/分组对齐后端注册表：GROUP_ORDER 由模块级硬编码（含死 chat）改为从 state.schema 键序动态派生，
+//   分组顺序与 Tab 标题 label 唯一源=后端 settings_registry；前端不再维护任何分组名常量（下方 TAB_TITLES 已删）
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   settingsApi,
@@ -21,15 +23,6 @@ import {
 } from '@/services/error/handler';
 
 const PREF_KEY = 'omni.prefs.v1';
-const GROUP_ORDER: TabKey[] = [
-  'general',
-  'model',
-  'security',
-  'sandbox',
-  'system',
-  'chat',
-  'appearance',
-];
 
 // 2026-09-21 BUG-C 修复：secret 值归一（保存成功后 state 里不能再留明文/clear 标记，
 // 否则 SettingRow 会误显"未配置"且再次保存重复提交）：
@@ -241,6 +234,13 @@ export function useSettings() {
       }
       return null;
     },
+    [state.schema]
+  );
+
+  // 2026-09-21 小强 - Tab 顺序唯一源=后端注册表：load 后 state.schema 键序即后端 GROUP_ORDER，
+  //   前端不再硬编码分组顺序（原常量含已删 chat 组）；Tab 标题 label 由 SettingsPage 取 state.schema[g].label
+  const GROUP_ORDER = useMemo(
+    () => Object.keys(state.schema) as TabKey[],
     [state.schema]
   );
 

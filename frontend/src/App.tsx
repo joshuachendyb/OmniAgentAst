@@ -27,8 +27,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));
-const Settings = lazy(() => import('./pages/Settings'));
 const Settings2 = lazy(() => import('./pages/Settings2')); // 2026-09-20 小强 - 设置2版（6 Tab + 模型管理）
+// 编辑历史: 2026-09-21 小欧 - 旧设置页(pages/Settings=settings1版)整体退休: 移除 /settings 路由与懒加载, 唯一入口为 /settings2(settings2版)
 
 // 懒加载加载中组件
 const LazyLoadingFallback: React.FC = () => (
@@ -63,7 +63,6 @@ const RouterContent: React.FC = () => {
         <Routes>
           <Route path="/" element={<ChatPage />} />
           <Route path="/history" element={<HistoryPage />} />
-          <Route path="/settings" element={<Settings />} />
           <Route path="/settings2" element={<Settings2 />} />
           {/* 默认重定向到首页 */}
           <Route path="*" element={<ChatPage />} />
