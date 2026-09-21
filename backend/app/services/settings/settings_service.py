@@ -16,7 +16,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
   2026-09-20 - 小欧 - v4.17：security 逐键走通用合并（去 SECURITY_KNOWN 整块写，防覆盖丢键）；
     update_config 返回 fail_result 透传 errors（防假成功）；PUT 响应带 mtime
   2026-09-20 - 小沈 - v4.19：update_settings 改单次落盘（弃 update_config 两阶段），ai.model_ref 内联双写
-  2026-09-21 - 小欧 - 三堂会审修复：update_settings 成功时也返回 errors 空列表保持返回结构一致
+  2026-09-21 - 小欧 - 对齐文档54 9.1.2：update_settings 成功返回不含 errors 字段（文档如此），撤销此前误加的空 errors
 """
 import os
 from pathlib import Path
@@ -178,4 +178,4 @@ def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
     if region:
         merge_region_patch(region, scope="settings")
     return {"ok": True, "updated": updated, "need_restart": need_restart,
-            "warnings": warnings, "errors": [], "mtime": _config_mtime()}
+            "warnings": warnings, "mtime": _config_mtime()}

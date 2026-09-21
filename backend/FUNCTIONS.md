@@ -335,10 +335,45 @@ def my_parse_json(json_str):
 
 ---
 
+## 十、模型/配置域（app/services/settings/ + app/services/model/）（v4.19 登记 — 小沈 2026-09-20）
+
+### 10.1 设置页服务（settings_service.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `get_all_groups` | 设置页 6 组全量读（data+sources+版本+mtime），env 标注 + secret 掩码 | 无 | Dict: {groups, version, mtime} |
+| `get_group` | 单组刷新（未知组名 ValueError 拒） | group: str | Dict: {data, sources, mtime} |
+| `get_schema` | 6 分组 schema（前端初始化/核对） | 无 | Dict: {groups} |
+| `get_setting` | 后端任意处一行读取有效值（env 覆盖自动生效） | key: str, default: Any | Any |
+| `update_settings` | PUT /settings：全部 key 一次 merge_region_patch 单次落盘；ai.model_ref 内联结构+扁平双写 | patch: Dict[str, Any] | Dict: {ok, updated, need_restart, warnings, mtime}（失败时含 errors） |
+
+### 10.2 通用 region 合并 / secret 掩码（service/model/config_helpers.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `merge_region_patch` | 通用 region 合并写（settings_service/model_service 共用，DRY 单点；v4.11 核查 B2 上提）：filelock 并发锁→备份→内存合并→_validate_config_integrity 校验→_order_for_dump 保序→atomic_write 原子写→重读逐键验证→reload→异常回滚，返回 backup_path | region_updates: Dict[str, Any], scope: str | str（backup_path） |
+| `mask_secret_value` | secret 掩码公共函数（两 service 共用，消重复），永不返明文 | value: Any | Dict: {configured: bool, suffix?: 末4位} |
+
+### 10.3 模型编排器（model_service.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `get_models` | GET /models：providers/models 层级 + current_model_ref | 无 | Dict: {providers, current_model_ref} |
+| `get_providers` | GET /providers：provider 列表（含掩码 key） | 无 | List[Dict] |
+| `add_model` | POST /models：校验存在+唯一 → 单次 region 合并落盘 | provider, model, label, default_params, range_, capabilities | Dict: {ok, mtime, ...} |
+| `update_model` | PUT /models/{p}/{m}：label/range/capabilities 写 model_meta；default_params 逐键 merge | provider, model, fields | Dict: {ok, model, mtime} |
+| `delete_model` | DELETE：models[] 移除 + 清 model_params/model_meta 块；删当前 → 自动切换（switched_to）；无模型跨 provider 回退 | provider, model | Dict: {ok, switched_to, mtime} |
+| `add_provider` | POST /providers：name 唯一 → 写入 ai.{name} 块 | name, label, api_base, api_key, model, timeout | Dict: {ok, provider, mtime} |
+| `update_provider_config` | PUT /providers/{name}：改 api_key/base_url/timeout 立即生效；clear=true 清空 api_key | name, fields | Dict: {ok, provider, mtime} |
+| `delete_provider` | DELETE /providers：级联删 ai.{name} 全块 + 删当前自动切换（switched_to）；禁删最后一个 | name | Dict: {ok, switched_to, mtime} |
+
+---
+
 ## 版本历史
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.0 | 2026-09-21 07:45:00 | 新增 十、模型/配置域 章节（v4.19 9.3.8）: 登记 settings_service.get_all_groups/get_group/get_schema/get_setting/update_settings、config_helpers.merge_region_patch/mask_secret_value、model_service.get_models/get_providers/add_model/update_model/delete_model/add_provider/update_provider_config/delete_provider | 小欧 |
 | v3.15 | 2026-09-16 07:04:06 | 新增 4.4 信任机制辅助(app/tools/trust_db.py+trust.py): norm_trust_path 函数化公开(文件域 resolve / 非文件信任域 strip, insert/check/delete 落库·查询·撤销统一单一来源, DRY 消除 storage 层双份逐字副本); extract_trust_path 补登记(hitl_gateway 直调 + resolve_skip 复用) | 小欧 |
 | v3.14 | 2026-08-30 14:50:00 | 13.11 空行规约(北京老陈 2026-08-30 批准): 1.7 text_utils 新增 normalize_blank_lines(连续空行折叠为一个空行+段首尾trim, 幂等, 后端落库收口入口, 与前端 normalizeBlankLines 同一张规则表); format_tool_call_markup 末尾压缩收敛复用(行为逐字节等价, DRY); agent_runner._persist 与 storage.load_steps_by_task 的 C2/规约逻辑为模块内私有改动不单列条目 | 小欧 |
 | v3.13 | 2026-08-30 08:05:00 | 新增 1.11 控制台镜像(app/logger/console_writer.py): console_put 非阻塞控制台写(全局queue+daemon写线程, 满则丢弃, 事件循环零同步stdout写); log_and_print 与 action_handler/main/config 裸print 收口点统一复用(根治 case09 挂起) | 小欧 |

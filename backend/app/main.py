@@ -12,6 +12,7 @@
 # 2026-08-16 - 小欧 - S2(10.1.7②-6/10.1.8 S2): 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): 启动 tip 两条 print→console_put(语义不变仅控制台, 非阻塞镜像), 事件循环线程零同步 stdout 写
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
+# 2026-09-21 - 小欧 - 对齐文档54 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
 import sys
 import asyncio
 from typing import Optional
@@ -154,7 +155,7 @@ app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(config_router, prefix="/api/v1", tags=["config"])
 app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
-app.include_router(model_router, prefix="/api/v1", tags=["model"])
+app.include_router(model_router, prefix="/api/v1", tags=["models"])  # 设置页模型管理 — 小沈 2026-09-20
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
 

@@ -3,14 +3,20 @@
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：/models /providers CRUD（5.2 模型管理接口）
+  2026-09-21 - 小欧 - 对齐文档54 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
+from app.api.v1.config_schemas import (
+    ModelAddRequest,
+    ProviderAddRequest,
+    ProviderInfo,
+    ProviderUpdate,
+)
 from app.services.model.config_helpers import handle_config_errors
 from app.services.model import model_service as svc
-from app.api.v1.config_schemas import ProviderAddRequest
 
 
 router = APIRouter()

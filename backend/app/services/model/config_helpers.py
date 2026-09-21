@@ -15,7 +15,12 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-20 - 小沈 - v4.19 Phase 1/2: 新增公共工具函数 _get_dotted/_config_mtime/mask_secret_value/merge_region_patch/_set_nested;
 #   write_yaml_config 改调 atomic_write 原子落盘; _write_system_yaml 改为返回 ordered data（不再直写文件）
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 新增 _validate_config_integrity 校验（merge_region_patch 安全网）
+# 2026-09-21 - 小欧 - 依据文档54 9.3.3 完全重写: merge_region_patch 补全 filelock 并发锁/备份/完整性校验/
+#   写后逐键验证/失败回滚/reload 全链路; _set_dotted 替代 _set_nested(None 删键+回收空父级);
+#   mask_secret_value 改返 {configured, suffix} 契约(5.2); _validate_config_integrity 恢复读扁平键
+#   ai.provider/ai.model(v4.19 明确, resolver/config_service 只读扁平键)
 
+import os
 import shutil
 import yaml
 from collections import OrderedDict
@@ -42,36 +47,44 @@ from fastapi import HTTPException
 # YAML 有序写入（配置专用）
 # ====================================================================
 
-def _write_system_yaml(data: dict) -> OrderedDict:
-    """系统配置专用 YAML 有序化 — 小欧 2026-06-23; 小沈 2026-09-20 v4.19 改为返回 ordered data
+def _repr_ordered_dict(dumper, data):
+    return dumper.represent_dict(data.items())
+
+
+yaml.add_representer(OrderedDict, _repr_ordered_dict)  # 模块 import 时注册一次（文档 9.3.3）
+# 文档 9.3.3 merge_region_patch 字面用 yaml.safe_dump（SafeDumper）；add_representer 默认只注册 Dumper，
+# 不补注册 SafeDumper 会让 safe_dump 对 OrderedDict 抛 RepresenterError（实测），故补一行 — 小欧 2026-09-21
+yaml.SafeDumper.add_representer(OrderedDict, _repr_ordered_dict)
+
+
+def _order_for_dump(d: Any) -> Any:
+    """系统配置专用 YAML 有序化 — 小欧 2026-06-23; 小沈 2026-09-20 v4.19 由 _write_system_yaml 内嵌 _order 上提
     - model/provider 排 ai 块最前面
     - provider 名字保留原始顺序（不字母序重排）
     """
-    def _order(d):
-        if not isinstance(d, dict):
-            return d
-        result = OrderedDict()
-        if 'ai' in d:
-            ai_data = d['ai']
-            ai_ordered = OrderedDict()
-            if 'provider' in ai_data:
-                ai_ordered['provider'] = ai_data['provider']
-            if 'model' in ai_data:
-                ai_ordered['model'] = ai_data['model']
-            for k in ai_data:
-                if k not in ('provider', 'model'):
-                    ai_ordered[k] = _order(ai_data[k]) if isinstance(ai_data[k], dict) else ai_data[k]
-            result['ai'] = ai_ordered
-        for k in d:
-            if k != 'ai':
-                result[k] = _order(d[k]) if isinstance(d[k], dict) else d[k]
-        return result
+    if not isinstance(d, dict):
+        return d
+    result = OrderedDict()
+    if 'ai' in d:
+        ai_data = d['ai']
+        ai_ordered = OrderedDict()
+        if 'provider' in ai_data:
+            ai_ordered['provider'] = ai_data['provider']
+        if 'model' in ai_data:
+            ai_ordered['model'] = ai_data['model']
+        for k in ai_data:
+            if k not in ('provider', 'model'):
+                ai_ordered[k] = _order_for_dump(ai_data[k]) if isinstance(ai_data[k], dict) else ai_data[k]
+        result['ai'] = ai_ordered
+    for k in d:
+        if k != 'ai':
+            result[k] = _order_for_dump(d[k]) if isinstance(d[k], dict) else d[k]
+    return result
 
-    def _repr_ordered_dict(dumper, data):
-        return dumper.represent_dict(data.items())
 
-    yaml.add_representer(OrderedDict, _repr_ordered_dict)
-    return _order(data)
+def _write_system_yaml(data: dict) -> OrderedDict:
+    """系统配置专用 YAML 有序化（历史公用函数，调 _order_for_dump）。"""
+    return _order_for_dump(data)
 
 # ====================================================================
 # 配置路径 / 读写
@@ -89,8 +102,8 @@ def read_yaml_config(config_path: Path) -> dict:
         return yaml.load(f, Loader=_make_safe_loader()) or {}
 
 def write_yaml_config(config_path: str, data: dict) -> None:
-    """使用有序 Key 写入 YAML 配置文件 — 2026-09-20 小沈: 经 atomic_write 原子落盘(9.2)"""
-    ordered = _write_system_yaml(data)
+    """使用有序 Key 写入 YAML 配置文件 — 2026-09-20 小沈: 经 atomic_write 原子落盘(9.3.3)"""
+    ordered = _order_for_dump(data)
     from app.utils.file_utils import atomic_write
     atomic_write(config_path, yaml.dump(ordered, allow_unicode=True, default_flow_style=False, indent=2))
 
@@ -173,27 +186,23 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
 # ====================================================================
 
 def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
-    """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表) — 小沈 2026-09-20 v4.19 支持新设计 ai.model_ref"""
+    """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表)
+    v4.19 修正：保持读取扁平键 ai.provider/ai.model——① 运行时 resolver.parse_model_ref/config_service.py:85
+    只读扁平键；② 现有 config.yaml 仅含扁平键、无 model_ref，改读 model_ref 会让存量配置在任何
+    update_config 保存时被校验打回（无迁移即回滚）。_sync_current 已双写扁平键+model_ref，与读取侧一致。"""
     errors = []
     warnings = []
     ai_config = config_data.get('ai', {})
 
-    # v4.19: 新设计优先检查 ai.model_ref，回退检查旧设计 ai.provider/ai.model
-    model_ref = ai_config.get('model_ref')
-    has_new_design = isinstance(model_ref, dict) and model_ref.get('provider') and model_ref.get('model')
-    has_old_provider = 'provider' in ai_config
-    has_old_model = 'model' in ai_config
-
-    if not has_new_design and not (has_old_provider and has_old_model):
-        errors.append("缺少 ai.model_ref 结构或 ai.provider/ai.model 字段")
+    if 'provider' not in ai_config:
+        errors.append("缺少 ai.provider 字段")
+    if 'model' not in ai_config:
+        errors.append("缺少 ai.model 字段")
+    if errors:
         return False, errors, warnings
 
-    if has_new_design:
-        selected_provider = model_ref['provider']
-        selected_model = model_ref['model']
-    else:
-        selected_provider = ai_config['provider']
-        selected_model = ai_config['model']
+    selected_provider = ai_config['provider']
+    selected_model = ai_config['model']
 
     if selected_provider not in ai_config:
         errors.append(f"provider '{selected_provider}' 不存在")
@@ -378,61 +387,96 @@ FIELD_HANDLERS: Dict[str, Any] = {
 # 公共工具函数（settings_service/model_service 共用）
 # ====================================================================
 
-def _get_dotted(d: dict, key: str, default: Any = None) -> Any:
-    """点分路径取值（如 'ai.model_ref'）。"""
-    keys = key.split(".")
-    cur = d
-    for k in keys:
-        if isinstance(cur, dict):
-            cur = cur.get(k)
+def _get_dotted(data: Dict[str, Any], key: str, default: Any = None) -> Any:
+    """点号键取值（文档 9.3.3）。"""
+    node: Any = data
+    for part in key.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
         else:
             return default
-        if cur is None:
-            return default
-    return cur
+    return node
 
 
 def _config_mtime() -> float:
-    """返回 config.yaml 的 mtime（秒级浮点）。"""
-    import os
-    cp = Path(_get_config_path())
-    if cp.exists():
-        return os.path.getmtime(cp)
-    return 0.0
+    """config.yaml mtime（公共函数，settings_service/model_service 共用，v4.18 DRY 修正）。"""
+    try:
+        return os.path.getmtime(get_config_path())
+    except OSError:
+        return 0.0
 
 
-def mask_secret_value(value: Any) -> str:
-    """脱敏：前3+后2 星号补中间。小沈 2026-09-20 v4.19: 空字符串返回空"""
+def mask_secret_value(value: Any) -> Dict[str, Any]:
+    """secret 掩码公共函数：永不返明文，只返 {configured, suffix 末4位}（5.2 secret 契约）。"""
+    s = str(value or "")
+    if not s.strip():
+        return {"configured": False}
+    return {"configured": True, "suffix": s[-4:]}
+
+
+def _set_dotted(data: Dict[str, Any], key: str, value: Any) -> None:
+    """点号键写入嵌套 dict；value 为 None 时删除该叶键并回收空父级
+    （v4.17：delete_model 以 None 清 ai.{provider}.model_params.{model} 等块，
+    不走 null 字面量——parse_model_params 对 dict(None) 会 TypeError）。"""
+    parts = key.split(".")
+    node = data
+    for part in parts[:-1]:
+        child = node.get(part)
+        if not isinstance(child, dict):
+            child = {}
+            node[part] = child
+        node = child
     if value is None:
-        return "***"
-    if not isinstance(value, str):
-        return "***"
-    if value == "":
-        return ""
-    if len(value) <= 5:
-        return value[0] + "***"
-    return value[:3] + "***" + value[-2:]
+        node.pop(parts[-1], None)
+        for i in range(len(parts) - 1, 0, -1):
+            parent = data
+            for p in parts[:i]:
+                parent = parent.get(p) if isinstance(parent, dict) else {}
+            if isinstance(parent, dict) and not parent.get(parts[i]):
+                parent.pop(parts[i], None)
+            else:
+                break
+        return
+    node[parts[-1]] = value
 
 
-def merge_region_patch(region: Dict[str, Any], scope: str = "settings") -> None:
-    """读→合→校验→写：单次落盘的 region 合并。
-    scope='settings' 走完整校验（_validate_config_integrity）。
-    小沈 2026-09-20 v4.19 9.3.3
-    """
-    config_path = str(_get_config_path())
-    current = read_yaml_config(Path(config_path))
-    for k, v in region.items():
-        _set_nested(current, k, v)
-    write_yaml_config(config_path, current)
-    logger.info(f"merge_region_patch({scope}) 落盘完成, keys={list(region.keys())}")
+def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
+    """通用 region 合并写（v4.11 前为 settings_service._apply_region_patch 私有函数，
+    跨域复用违反分层，上提至此；调用方：settings_service.update_settings、model_service 全量 CRUD）：
+    备份 → 内存合并(_set_dotted) → _validate_config_integrity 校验（v4.19 补：单写方案下校验
+    由本函数统一承载，安全网与 update_config 持平，防绕过校验写坏配置）→
+    _order_for_dump 保序 → atomic_write → 重读验证(reload_ai_config) → 异常回滚最近一个备份。返回 backup_path。
+    v4.19(P2-1 落码)：并发保护——进入即持 filelock.SoftFileLock(config.yaml.lock)，
+    先写者完成后后写者基于最新文件重读合并，杜绝「读原→改→写」非原子下旧快照覆盖丢项。"""
+    import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面
+    from app.utils.file_utils import atomic_write  # 局部 import：utils 不反向依赖 services
 
-
-def _set_nested(d: dict, key: str, value: Any) -> None:
-    """按点分路径设置值（如 'ai.provider' → d['ai']['provider'] = value）。"""
-    keys = key.split(".")
-    cur = d
-    for k in keys[:-1]:
-        if k not in cur or not isinstance(cur[k], dict):
-            cur[k] = {}
-        cur = cur[k]
-    cur[keys[-1]] = value
+    config_path = Path(get_config_path())
+    lock = filelock.SoftFileLock(str(config_path.with_suffix(config_path.suffix + ".lock")), timeout=10)
+    with lock:
+        backup_path = _backup_config(config_path)
+        restored = [False]
+        try:
+            config_data = read_yaml_config(config_path) or {}
+            for key, value in region_updates.items():
+                _set_dotted(config_data, key, value)
+            is_valid, verr, _w = _validate_config_integrity(config_data)
+            if not is_valid:
+                raise RuntimeError("配置完整性校验失败: " + "; ".join(verr))
+            ordered = _order_for_dump(config_data)  # 保序：与 write_yaml_config 同一排序，不打乱键序
+            atomic_write(str(config_path), yaml.safe_dump(ordered, allow_unicode=True,
+                                                           default_flow_style=False, indent=2))
+            verify = read_yaml_config(config_path)
+            for key, value in region_updates.items():
+                if _get_dotted(verify, key) != value:
+                    raise RuntimeError(f"写入验证失败: {key}")
+            reload_ai_config()
+            logger.info(f"[{scope}] region 合并写入成功: {sorted(region_updates)}")
+            return str(backup_path)
+        except Exception:
+            _restore_backup_if_needed(backup_path, config_path, restored)
+            # 文档54 9.3.3 字面的 logger.error+裸 raise 在 except 块外会报
+            # "No active exception to reraise"（Python 语义实测）；移入 except 块内
+            # 保证「记日志 + 原样重抛」语义正确 — 小欧 2026-09-21
+            logger.error(f"[{scope}] region 合并写入失败已回滚", exc_info=True)
+            raise
