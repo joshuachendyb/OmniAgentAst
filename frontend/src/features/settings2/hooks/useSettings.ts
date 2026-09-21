@@ -3,6 +3,8 @@
 // 2026-09-21 小欧 - ensureModelSaved 保存失败提示由 ERROR 对齐为 MODEL_CONFIG_ERROR（域名级错误码，信息更精确）
 // 2026-09-21 小欧 - P1-2：搜索高亮加 TTL 自动消退（[58] P1-2）
 // 2026-09-21 小欧 - 补 max_retries：providerConfig 两处构建映射补齐 max_retries（load + refreshModels），对齐后端 GET /models 返回字段
+// 2026-09-21 小欧 - 解耦：模型Tab①选择器改为纯前端焦点切换（selectedProvider/selectedModel/参数区联动，不写 ai.model_ref）——
+//   全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal；原 v4.19(P1-6)「双下拉即时落盘 model_ref」设计废弃（[54] v4.20 修正）
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   settingsApi,
@@ -420,17 +422,13 @@ export function useSettings() {
       const p = state.model.providers.find((x) => x.name === name);
       const first = p?.models[0];
       if (!p || !first) return;
-      // BUG-D 修复：先保存未落库参数，再改 ai.model_ref，防切换后参数静默丢失/数据不一致
+      // BUG-D 修复：先保存未落库参数，再改焦点，防切换后参数静默丢失/数据不一致
       if (!(await ensureModelSaved())) return;
+      // v4.20(小欧 2026-09-21 解耦)：①选择器 = 参数编辑焦点（纯前端），只切 selectedProvider/selectedModel
+      //   + 参数区联动；不再写 ai.model_ref——全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal
       const defaults = {
         ...((first?.default_params ?? {}) as Record<string, unknown>),
       };
-      // v4.19(P1-6 修正)：双下拉 ai.model_ref 即时落盘（4.2 表「双下拉 · YAML · 即时」），
-      // 成功返回新 mtime 再同步内存，杜绝「页面切换成功、重启后失效」的假成功。
-      const r = await settingsApi.updateSettings({
-        'ai.model_ref': { provider: name, model: first.name },
-      });
-      syncMtime(r.mtime);
       patchModel({
         selectedProvider: name,
         selectedModel: first?.name ?? '',
@@ -445,7 +443,7 @@ export function useSettings() {
         isDirty: false,
       });
     },
-    [patchModel, state.model.providers, syncMtime, ensureModelSaved]
+    [patchModel, state.model.providers, ensureModelSaved]
   );
 
   const selectModel = useCallback(
@@ -454,13 +452,9 @@ export function useSettings() {
         .find((x) => x.name === state.model.selectedProvider)
         ?.models.find((m) => m.name === name);
       if (!entry) return;
-      // BUG-D 修复：先保存未落库参数，再改 ai.model_ref，防切换同模型时参数静默丢失
+      // BUG-D 修复：先保存未落库参数，再改焦点，防切换时参数静默丢失
       if (!(await ensureModelSaved())) return;
-      // v4.19(P1-6 修正)：同 selectProvider，即刻落盘 ai.model_ref 再更新内存。
-      const r = await settingsApi.updateSettings({
-        'ai.model_ref': { provider: state.model.selectedProvider, model: name },
-      });
-      syncMtime(r.mtime);
+      // v4.20(小欧 2026-09-21 解耦)：同 selectProvider，只切前端焦点，不再写 ai.model_ref
       const nextDefaults = { ...entry.default_params } as Record<
         string,
         unknown
@@ -480,7 +474,7 @@ export function useSettings() {
         ).some(Boolean),
       });
     },
-    [patchModel, state.model, syncMtime, ensureModelSaved]
+    [patchModel, state.model, ensureModelSaved]
   );
 
   const setParam = useCallback((key: string, value: unknown) => {

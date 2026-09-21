@@ -13,6 +13,8 @@
 // 2026-09-21 小欧 - 修正排版重构失误：参数区（ModelParams/模型特殊参数）从通用Tab移回模型Tab，模型Tab恢复四区块②参数区；ProviderConfig补max_retries回退值
 // 2026-09-21 小欧 - 三堂会审修复：删除无触发源死代码 highlightJump/flashSelector（YAGNI，消 eslint pre-existing warning）；
 //   jumpToProviderConfig 修复跨Tab失效（CurrentModelRefCard 已移通用Tab，原 scrollTo 在模型Tab未渲染时静默失败）
+// 2026-09-21 小欧 - 方案A：删除 Provider/模型成功后由 refreshModels 改整体 load()，焦点/全局卡/参数区重载对齐后端
+//   （根治"删全局当前模型时前端仍悬浮已删模型，保存报错、全局卡显示假数据"）——[54] v4.20 关联
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -328,7 +330,9 @@ const SettingsPage: React.FC = () => {
                 );
             }
             s.syncMtime(res.mtime);
-            await s.refreshModels();
+            // v4.20(小欧 2026-09-21 方案A)：删除后整体 load()——焦点(selectedProvider/Model)/currentRef/参数区
+            //   全部重载对齐后端，杜绝「删的是全局当前模型时前端仍停在已删模型上(悬空+保存报错)」
+            await s.load();
           } catch (e) {
             handleApiError(e);
           }
