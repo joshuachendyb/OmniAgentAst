@@ -8,6 +8,9 @@
 # 2026-09-21 - 小欧 - 三堂会审修复: ProviderAddRequest 添加 label 字段（model_routes.add_provider 依赖）
 # 2026-09-21 - 小欧 - 对齐文档54 9.3.9：label 字段类型定为 str = Field("")（缺省与 name 相同），撤销此前 Optional[str] 变更
 # 2026-09-21 - 小欧 - 修复 None 陷阱: ProviderInfo.api_base 由 Field(...) 改 Field("")（配置文件 api_base 缺失/None 时不再炸 Pydantic 500）
+# 2026-09-21 - 小欧 - 删除无意义白/黑名单配置项: SecurityConfig 移除 whitelistEnabled/commandWhitelist/commandBlacklist
+#   （全库无消费方，仅透传保存不生效；命令安全由 path_safe_check/tools/security 代码内实现，北京老陈裁定删除）
+# 2026-09-21 - 小欧 - v4.20 死配置清理: SecurityConfig 移除 contentFilterEnabled/contentFilterLevel/maxFileSize（全库无消费方）
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
@@ -16,14 +19,8 @@ from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结
 
 
 class SecurityConfig(BaseModel):
-    """安全配置"""
-    contentFilterEnabled: bool = Field(True, description="是否启用内容安全过滤")
-    contentFilterLevel: str = Field("medium", description="敏感词过滤级别: low | medium | high")
-    whitelistEnabled: bool = Field(False, description="是否启用命令白名单")
-    commandWhitelist: str = Field("", description="命令白名单,每行一个命令")
-    commandBlacklist: str = Field("", description="命令黑名单,每行一个命令")
+    """安全配置 — 2026-09-21 小欧 v4.20 死配置清理: 移除 contentFilterEnabled/contentFilterLevel/maxFileSize（无消费方）；仅保留 confirmDangerousOps（UX层）"""
     confirmDangerousOps: bool = Field(True, description="危险操作需要二次确认")
-    maxFileSize: int = Field(100, description="最大文件操作大小(MB)")
 
 
 class ConfigUpdate(BaseModel):

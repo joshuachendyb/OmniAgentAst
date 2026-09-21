@@ -3,11 +3,21 @@
 # 1. 复制此文件到 config/config.yaml
 # 2. 填入您的API密钥
 # 3. config.yaml 已被Git忽略，不会提交到仓库
+#
+# 编辑历史:
+#   2026-09-21 - 小欧 - v4.20 键名按域收敛重排：app.debug/max_rounds/max_steps/project_root/allowed_dirs
+#                       分域归 workspace/agent/logging；删白/黑名单4键与死配置（contentFilter/strict_mode/maxFileSize）；
+#                       补行安全漏斗铁律注释
+#   2026-09-21 - 小欧 - v4.20 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
+#
+# ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
+#   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
+#   ❌ 禁止复制网上模板带入 openai/gpt 垃圾配置（占位 api_key=sk-new-key 之类一律不准出现）
+#     命令安全由 path_safe_check/tools/security 代码内实现（路径校验才是关键）
 
 ai:
-  # ✅ 顶层配置（全局）
-  model: kimi-k2.5-free
-  provider: opencode  # ✅ 当前Provider
+  # ✅ 顶层配置（全局）— 唯一源 ai.model_ref（v4.20 单源收敛，删扁平 provider/model）
+  model_ref: {provider: opencode, model: kimi-k2.5-free}
 
   # ✅ Provider配置（多个）
   opencode:
@@ -19,7 +29,7 @@ ai:
     timeout: 120
 
   longcat:
-    api_base: https://api.longcat.chat/openai/v1
+    api_base: https://api.longcat.chat/v1
     api_key: ak_xxx...
     models:
       - LongCat-Flash-Thinking
@@ -34,14 +44,13 @@ ai:
       - cogview-3-flash
     timeout: 90
 
-# 应用配置
+# 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:
-  debug: true
   language: zh-CN
-  max_context_tokens: 200000
-  max_history_length: 10
-  max_rounds: 100
-  max_steps: 10000
+  theme: light
+
+# 工作区配置（项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①）
+workspace:
   project_root: ""  # 项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①
   # 授权目录列表(可多个): tool 在项目根之外额外授权访问的工作目录。
   # 格式: YAML 列表, 每行一个绝对路径, 以 "- " 开头(不是逗号/分号分隔字符串), 例如:
@@ -50,24 +59,28 @@ app:
   #     - D:\工作目录B
   # 注意: 项目根天然在授权内, 无需重复列入; 指向代码库根或其父/子级 → 加载即拒(与⑦tool禁区冲突) — 小欧 2026-08-10 ⑩
   allowed_dirs: []
-  theme: light
+
+# Agent 循环配置
+agent:
+  max_rounds: 100
+  max_steps: 10000
+
+# 日志配置
+logging:
+  debug: true                # 调试模式: true→backend/files、DEBUG日志; false→用户级持久
+  level: INFO                # DEBUG, INFO, WARNING, ERROR
+  max_file_size: 10485760    # 单日志文件大小上限（字节）
+  backup_count: 5            # 轮转保留文件数
 
 # 安全配置
-# 2026-09-03 小欧: 新增 auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120) 两个可配置计时键
+# 2026-09-03 小欧: auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120)
 security:
+  enabled: false
+  confirmDangerousOps: true
   auto_confirm_delay: 10
   hitl_timeout: 120
-  commandBlacklist: ''
-  commandWhitelist: ''
-  confirmDangerousOps: true
-  contentFilterEnabled: true
-  contentFilterLevel: medium
-  enabled: false
-  maxFileSize: 100
-  strict_mode: false
-  whitelistEnabled: false
 
-# 【新增】沙箱预检配置节（与 config.yaml 同步, 2026-08-25 小欧）
+# 沙箱预检配置节（2026-08-25 小欧；total开关逃生门）
 sandbox:
   enabled: true                    # 总开关(逃生门): false=完全关闭预检, 行为与实施前一致
   backend: "job_object"            # 后端选择键(预留扩展位): 当前唯一实现 job_object
@@ -77,9 +90,3 @@ sandbox:
   process_memory_limit_mb: 2048    # Job Object 进程树内存上限(误杀时调大此值)
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
-
-# 日志配置
-logging:
-  level: INFO                  # DEBUG, INFO, WARNING, ERROR
-  max_file_size: 10485760      # 单日志文件大小上限（字节）
-  backup_count: 5              # 轮转保留文件数

@@ -19,6 +19,7 @@
 #   2026-09-04 - 小健 - 新增 make_fp_callback(第2阶段拆分): 文件A 落盘回调工厂从 action_handler._fp_factory 下沉,
 #       action_handler 不再持有文件落盘细节; 函数体完整复制不改逻辑(闭包捕获 agent/step/exec_calls)
 #   2026-09-19 - 小欧 - exe打包frozen支持: 调试分流 frozen时改走exe所在目录/files(源码保持backend/files不变) - 小欧-2026-09-19
+#   2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（_files_root 调试分流读键同步，见[54]）
 # ============================================================================
 from __future__ import annotations
 
@@ -35,12 +36,13 @@ from app.config import get_config, get_frozen_dir
 
 def _files_root() -> Path:
     """文件根目录环境分流(对齐 logger 惯例: debug→仓库内目录) — 小欧 2026-08-23
-    调试(app.debug=True): backend/files/   —— 与 backend/logs/ 同级, 便于开发期查看
-    正式(app.debug=False): ~/.omniagent/files/ —— 与 chat_history.db 同根用户级持久
+    调试(logging.debug=True): backend/files/   —— 与 backend/logs/ 同级, 便于开发期查看
+    正式(logging.debug=False): ~/.omniagent/files/ —— 与 chat_history.db 同根用户级持久
     frozen(exe)调试时改走exe所在目录/files — 小欧 2026-09-19
+    2026-09-21 小欧 v4.20 键名按域收敛: app.debug → logging.debug
     """
     try:
-        if get_config().get("app.debug", False):
+        if get_config().get("logging.debug", False):
             _frozen = get_frozen_dir()
             if _frozen is not None:
                 return _frozen / "files"
