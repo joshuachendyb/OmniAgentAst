@@ -15,6 +15,8 @@ current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加�
   2026-09-20 - 小欧 - v4.17：models[] 回字符串列表；模型参数/元数据分置 model_params/model_meta；
     delete_provider 单次落盘 + 禁删最后一个 Provider；_sync_current 空值保护
   2026-09-21 - 小欧 - 对齐文档54 9.1.3：delete_provider switched_to 返回 provider 名称（target_p or None），撤销此前误改的模型名称版
+  2026-09-21 - 小欧 - 修复 None 陷阱: .get('key','')/get('key',[])/get('key',{}) 在 key 存在但值为 None 时返回 None，
+    统一修为 .get('key') or ''/[]/{}/60/3（config_service/config_helpers/model_service/resolver 共 12 处）
    2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（模型域 M1~M14，对应 config_helpers 的
      merge_nested_patch 系列）——①add/update/delete_model 与 add/update/delete_provider 全部改走
      merge_nested_patch 嵌套树写(叶段字面名)：点号模型名 gpt-4.1 不再被拆成 model_params['gpt-4']['1']
@@ -26,7 +28,8 @@ current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加�
      AI_PROVIDER 命中时当前模型切换/删除只读(M14)；⑧update_provider_config 支持 label 更新(S7)、
      拒绝非法字段(S8)；⑨get_models 输出补 max_retries 对齐 ProviderInfo DTO
    2026-09-21 - 小欧 - 建议报告 P8: update_model 对空 default_params 提交由"跳过+无有效配置项 500"改为
-     显式清空（写空块 {}），配合 config_helpers._iter_nested_ops 空 dict 叶值修复根治"清空不落盘"
+      显式清空（写空块 {}），配合 config_helpers._iter_nested_ops 空 dict 叶值修复根治"清空不落盘"
+# 2026-09-21 - 小欧 - 三堂会审修复：timeout/max_retries 的 `or 60/3` 改为 `is not None` 判断，防止合法值0被吞
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -66,13 +69,13 @@ def get_current_ref(ai: Dict[str, Any], providers: List[str]) -> Dict[str, str]:
 
 def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
     p = ai.get(provider, {})
-    raw_models = p.get("models", []) if isinstance(p, dict) else []
+    raw_models = p.get("models") or [] if isinstance(p, dict) else []
     params_block = (p.get("model_params", {}) or {}) if isinstance(p, dict) else {}
     meta_block = (p.get("model_meta", {}) or {}) if isinstance(p, dict) else {}
     out: List[Dict[str, Any]] = []
     for m in raw_models:
         if not isinstance(m, str):
-            m = str(m.get("name", "")) if isinstance(m, dict) else str(m)
+            m = str(m.get("name") or "") if isinstance(m, dict) else str(m)
         if not m or m in [o["name"] for o in out]:
             continue
         meta = (meta_block.get(m) or {}) if isinstance(meta_block, dict) else {}
@@ -81,8 +84,8 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "name": m,
             "label": str(meta.get("label") or m),
             "default_params": params,
-            "range": meta.get("range", {}) or {},
-            "capabilities": meta.get("capabilities", []) or [],
+            "range": meta.get("range") or {},
+            "capabilities": meta.get("capabilities") or [],
         })
     return out
 
@@ -93,12 +96,12 @@ def get_models() -> Dict[str, Any]:
     for name in _provider_names(ai):
         p = ai[name]
         is_env = bool(os.environ.get(f"{name.upper()}_API_KEY"))
-        providers.append({"name": name, "label": str(p.get("label", name)),
-                          "api_base": str(p.get("api_base", "")),
-                          "api_key": mask_secret_value(p.get("api_key", "")),
+        providers.append({"name": name, "label": str(p.get("label") or name),
+                          "api_base": str(p.get("api_base") or ""),
+                          "api_key": mask_secret_value(p.get("api_key") or ""),
                           "env": is_env,
-                          "timeout": p.get("timeout", 60),
-                          "max_retries": p.get("max_retries", 3),
+                          "timeout": p.get('timeout') if p.get('timeout') is not None else 60,
+                          "max_retries": p.get('max_retries') if p.get('max_retries') is not None else 3,
                           "models": _models_of(ai, name)})
     return {"providers": providers,
             "current_model_ref": get_current_ref(ai, [p["name"] for p in providers])}
@@ -195,7 +198,7 @@ def delete_model(provider: str, model: str) -> Dict[str, Any]:
     if provider not in _provider_names(ai):
         raise ValueError(f"Provider 不存在: {provider}")
     _raise_if_env_takeover(provider)
-    models = [m for m in (ai.get(provider, {}).get("models", []) or [])
+    models = [m for m in (ai.get(provider, {}).get("models") or [])
               if (m if isinstance(m, str) else m.get("name")) != model]
     tree: Dict[str, Any] = {
         "ai": {provider: {

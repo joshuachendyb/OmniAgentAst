@@ -7,6 +7,7 @@
 #   死DTO(全仓无引用)按 YAGNI 删除
 # 2026-09-21 - 小欧 - 三堂会审修复: ProviderAddRequest 添加 label 字段（model_routes.add_provider 依赖）
 # 2026-09-21 - 小欧 - 对齐文档54 9.3.9：label 字段类型定为 str = Field("")（缺省与 name 相同），撤销此前 Optional[str] 变更
+# 2026-09-21 - 小欧 - 修复 None 陷阱: ProviderInfo.api_base 由 Field(...) 改 Field("")（配置文件 api_base 缺失/None 时不再炸 Pydantic 500）
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
@@ -78,7 +79,7 @@ class ModelListResponse(BaseModel):
 class ProviderInfo(BaseModel):
     """Provider信息"""
     name: str = Field(..., description="Provider名称")
-    api_base: str = Field(..., description="API地址")
+    api_base: str = Field("", description="API地址")
     api_key: str = Field("", description="API密钥")
     model: str = Field("", description="当前使用的模型")
     models: list[str] = Field(default_factory=list, description="模型列表")

@@ -20,6 +20,9 @@
 #   api_base/display_name null 键剔除(模型转 dict 后过滤 None), 免前端/日志噪声
 # 2026-09-21 - 小欧 - 关于页功能: 新增 read_version_file(读 get_code_root()/version.txt 全文返
 #   {version_content})，供 GET /config/version-file；Path 顶层 import。
+# 2026-09-21 - 小欧 - 修复 None 陷阱: .get('key', '') 在 key 存在但值为 None 时返回 None 非 ''，
+#   导致 ProviderInfo(api_base=None) Pydantic 校验 500；全文件 .get() 统一修为 .get() or ''/[]/60/3
+# 2026-09-21 - 小欧 - 三堂会审修复：timeout/max_retries 的 `or 60/3` 改为 `is not None` 判断，防止合法值0被吞
 """
 config_service — 配置业务服务(services/model)
 
@@ -109,8 +112,8 @@ def update_config(config_update):
             "warnings": warnings,
             "backup_path": str(backup_path) if backup_path else None,
             "current_model_ref": {
-                "provider": config_data.get('ai', {}).get('provider', ''),
-                "model": config_data.get('ai', {}).get('model', ''),
+                "provider": config_data.get('ai', {}).get('provider') or '',
+                "model": config_data.get('ai', {}).get('model') or '',
             },
         }
 
@@ -143,7 +146,7 @@ def get_system_config_data() -> dict:
     resolved_model = get_ai_config_resolver().resolve_model_ref()
     ai_config = config.get('ai', {})
     provider_config = ai_config.get(resolved_model.provider, {})
-    api_key = provider_config.get('api_key', '')
+    api_key = provider_config.get('api_key') or ''
     api_key_configured = bool(api_key and api_key.strip() != '')
     theme = config.get('app.theme', 'light')
     language = config.get('app.language', 'zh-CN')
@@ -206,7 +209,7 @@ def get_model_list() -> dict:
             provider_data = ai_config.get(provider_name, {})
             if not isinstance(provider_data, dict):
                 continue
-            provider_models = provider_data.get('models', [])
+            provider_models = provider_data.get('models') or []
             if isinstance(provider_models, list) and provider_models:
                 for model_name in provider_models:
                     display_name = f"{provider_name} ({model_name})"
@@ -239,15 +242,15 @@ def get_full_config() -> dict:
         provider_data = ai_config.get(provider_name, {})
         if not isinstance(provider_data, dict):
             continue
-        api_key = provider_data.get('api_key', '')
+        api_key = provider_data.get('api_key') or ''
         providers[provider_name] = {
             "name": provider_name,
-            "api_base": provider_data.get('api_base', ''),
+            "api_base": provider_data.get('api_base') or '',
             "api_key": _mask_api_key(api_key),
             "model": '',
-            "models": provider_data.get('models', []),
-            "timeout": provider_data.get('timeout', 60),
-            "max_retries": provider_data.get('max_retries', 3)
+            "models": provider_data.get('models') or [],
+            "timeout": provider_data.get('timeout') if provider_data.get('timeout') is not None else 60,
+            "max_retries": provider_data.get('max_retries') if provider_data.get('max_retries') is not None else 3,
         }
     return {
         "providers": providers,
@@ -276,7 +279,7 @@ def delete_model(provider_name: str, model_name: str) -> dict:
     config_path, config = load_config()
     ensure_provider_exists(config, provider_name)
     ensure_model_exists(config, provider_name, model_name)
-    models = config['ai'][provider_name].get('models', [])
+    models = config['ai'][provider_name].get('models') or []
     if len(models) <= 1:
         raise HTTPException(status_code=400, detail="至少保留一个模型")
     models.remove(model_name)
@@ -289,7 +292,7 @@ def update_model(provider_name: str, old_model_name: str, data) -> dict:
     """更新模型 — 自 model_routes.py 迁入, data为ModelAddRequest DTO(鸭子类型) — 小沈 2026-08-13"""
     config_path, config = load_config()
     ensure_provider_exists(config, provider_name)
-    models = config['ai'][provider_name].get('models', [])
+    models = config['ai'][provider_name].get('models') or []
     new_model_name = ' '.join(data.model.split())
     if old_model_name not in models:
         raise HTTPException(status_code=404, detail=f"模型 {old_model_name} 不存在")
@@ -350,7 +353,7 @@ def add_model(provider_name: str, data) -> dict:
     ensure_provider_exists(config, provider_name)
     model_name = ' '.join(data.model.split())
     ensure_model_not_duplicate(config, provider_name, model_name)
-    models = config['ai'][provider_name].get('models', [])
+    models = config['ai'][provider_name].get('models') or []
     models.append(model_name)
     config['ai'][provider_name]['models'] = models
     if not config['ai'].get('model'):
