@@ -32,6 +32,8 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
      value 由 settings_service 派生为两级相对目录模板 + 各自文件名（Sion_<会话ID>\\Task_<任务ID>\\xxx.jsonl），
      不写绝对路径（当机值随环境算、无通用语义）；根两态（调试=backend\\files、正式=~\\.omniagent\\files）写 notice。
      北京老陈 2026-09-21 裁定
+   2026-09-21 - 小欧 - system 组 96 行下加注释：paths.* 条目与 settings_service._item_data 派生字典一一对应，
+     对端漏配抛 KeyError(fail-fast)，两处注释互相指引（北京老陈 2026-09-21 采纳）
 """
 from typing import Any, Dict, List, Optional
 
@@ -99,6 +101,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="单次执行最大超时（秒），超出截断转裁决"),
     ]},
     # 4.5 系统（system，12 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 2 关于只读）
+    #   注意：本小节新增 / 删除 paths.* 条目务必同步 settings_service._item_data 的 paths 派生字典，
+    #   二者 keys 一一对应，service 漏配将抛 KeyError(fail-fast 防静默空白) —— 小欧 2026-09-21
     "system": {"label": "系统", "items": [
         # --- 运维日志（3 配置 + 1 目录只读；目录值实时派生见 settings_service._item_data） ---
         _item("logging.level", "select", "日志级别", "INFO",

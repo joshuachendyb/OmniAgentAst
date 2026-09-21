@@ -39,9 +39,11 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
     get_mtime 保持 _config_mtime（仅 stat 无数据读，无窗口问题，不引入整文件读开销）
     2026-09-21 - 小欧 - 系统Tab「工程目录/日志目录」7 个 paths.* 只读值实时派生（同 config_path 机制，不落 yaml）：
       项目根/项目规则文件(OmniAgent.md)/下载/数据库(~/.omniagent)/文件持久化(_files_root)/任务文件模板(Sion_<会话ID>/Task_<任务ID>)/日志目录(LOG_DIR)
-   2026-09-21 - 小欧 - 记录文件两行派生收敛：删死键 paths.task_files（registry 无此只读项，仅残留模板键）；
+2026-09-21 - 小欧 - 记录文件两行派生收敛：删死键 paths.task_files（registry 无此只读项，仅残留模板键）；
      新增 paths.record_tool/paths.record_conv 两键，value=两级相对目录模板+各自文件名（Sion_<会话ID>\\Task_<任务ID>\\xxx.jsonl，
      前缀走 file_persist 常量源）；不写绝对路径（用户主目录/代码位置等当机值不上 UI），根两态由 registry notice 承载
+   2026-09-21 - 小欧 - paths.* 派生取数 fail-fast：.get(key, default) → dict[key]，漏配即 KeyError 报错，
+     杜绝前端静默空白；字典与 registry system 组 paths.* 条目一一对应，两处注释互相指引（北京老陈 2026-09-21 采纳）
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -98,6 +100,9 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
         from app.logger.config import LOG_DIR
         _p_root = get_config().get_project_root()
+        # 2026-09-21 - 小欧 - 本字典 keys 必须与 settings_registry system 组全部 paths.* 条目一一对应；
+        #   registry 新增 paths.* 条目时必须同步到此加派值。直接 dict[key] 取(fail-fast)：
+        #   漏配即抛 KeyError 点亮问题，杜绝前端静默取 default(None) 空白(对端说明见 registry 同小节注释)
         return {
             "paths.project_root": _p_root,
             "paths.omniagent_md": str(Path(_p_root) / "OmniAgent.md"),
@@ -106,7 +111,7 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
             "paths.record_tool": f"{SESSION_DIR_PREFIX}<会话ID>\\{TASK_DIR_PREFIX}<任务ID>\\tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl",
             "paths.record_conv": f"{SESSION_DIR_PREFIX}<会话ID>\\{TASK_DIR_PREFIX}<任务ID>\\conv_hist_<短任务ID>_<消息ID>_<时间去冒号>.jsonl",
             "paths.logs": str(LOG_DIR),
-        }.get(key, item["default"]), "ro"
+        }[key], "ro"
     # 2026-09-21 小欧 修 B5: readonly 项一律 source='ro'（原实现 app.theme 只读却标 yaml，
     # 与 config_path/version 的 ro 语义不一致，前端误判可编辑）。
     if item.get("readonly"):

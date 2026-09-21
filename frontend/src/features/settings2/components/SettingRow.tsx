@@ -8,7 +8,6 @@
 //   补回 import 消除 tsc 未定义引用错误（编辑历史纪律：错误的加同样不对，立即修正）
 // 2026-09-21 小强 - 设置页17问题复核修复：根部加 data-settings-key 搜索滚动锚点；
 //   窄屏 labelWidth→88、textarea→100%、行 flexWrap（[设置页UI审计] 问题1/16）
-// 2026-09-21 小欧 - notice 与生效方式分隔符 // → ·（与注释示例统一，三堂会审发现注释/实现不符）
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
@@ -256,8 +255,8 @@ export const SettingRow: React.FC<Props> = ({
           marginLeft: Spacing.MD,
         }}
       >
-        {/* 调整(2026-09-21 小强)：说明在前生效方式在后——如「同时运行的沙箱并发数，超出排队等待 · 即时生效」 */}
-        {item.notice && `${item.notice} · `}
+        {/* 调整(2026-09-21 小强)：说明在前生效方式在后——如「同时运行的沙箱并发数，超出排队等待 // 即时生效」 */}
+        {item.notice && `${item.notice} // `}
         {item.restart ? '重启生效' : '即时生效'}
       </span>
     </div>
