@@ -4,6 +4,10 @@
 编辑历史:
   2026-09-20 - 小沈 - 新建：/models /providers CRUD（5.2 模型管理接口）
   2026-09-21 - 小欧 - 对齐文档54 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
+   2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复：①M13 add_provider 透传 req.models 列表与
+     req.max_retries（旧实现丢弃，DTO 有字段借而不传，前端无法创建多模型 Provider/设置重试）；
+     ②S7 ProviderConfigUpdate 补 label 字段并交由 update_provider_config 落盘（旧实现 provider
+     label 创建后永不可改）
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
@@ -39,6 +43,7 @@ class ModelUpdateRequest(BaseModel):
 
 
 class ProviderConfigUpdate(BaseModel):
+    label: Optional[str] = Field(default=None, description="Provider 显示名")
     api_key: Optional[str] = Field(default=None)
     base_url: Optional[str] = Field(default=None)
     timeout: Optional[int] = Field(default=None)
@@ -81,7 +86,8 @@ async def get_providers():
 @handle_config_errors("添加 Provider")
 async def add_provider(req: ProviderAddRequest):
     return svc.add_provider(req.name, req.label or req.name, req.api_base,
-                            req.api_key, req.model, req.timeout)
+                            req.api_key, req.model, req.timeout,
+                            models=req.models, max_retries=req.max_retries)
 
 
 @router.put("/providers/{name}")

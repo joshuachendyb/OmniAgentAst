@@ -15,6 +15,16 @@ current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加�
   2026-09-20 - 小欧 - v4.17：models[] 回字符串列表；模型参数/元数据分置 model_params/model_meta；
     delete_provider 单次落盘 + 禁删最后一个 Provider；_sync_current 空值保护
   2026-09-21 - 小欧 - 对齐文档54 9.1.3：delete_provider switched_to 返回 provider 名称（target_p or None），撤销此前误改的模型名称版
+   2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（模型域 M1~M14，对应 config_helpers 的
+     merge_nested_patch 系列）——①add/update/delete_model 与 add/update/delete_provider 全部改走
+     merge_nested_patch 嵌套树写(叶段字面名)：点号模型名 gpt-4.1 不再被拆成 model_params['gpt-4']['1']
+     (M1/M2/M3 错位+孤儿)；②add_provider 校验保留键 provider/model/model_ref 与空名(M4/M5/M6)；
+     ③delete_model 未知 provider 前置 ValueError，不再写入空块污染(M7/M8)；④add_model 空模型名拒绝(M9)；
+     ⑤delete_provider 跳板扫第一个有可用模型的 provider(M10/M11)，deelete_model/deelete_provider
+     无可用回退时抛"禁止删除最后一个可用模型"守卫(M12)；⑥add_provider 接受 models 列表与
+     max_retries(M13 链路透传)；⑦env 接管双标准对齐：{NAME}_API_KEY 命中的 provider 读只读、
+     AI_PROVIDER 命中时当前模型切换/删除只读(M14)；⑧update_provider_config 支持 label 更新(S7)、
+     拒绝非法字段(S8)；⑨get_models 输出补 max_retries 对齐 ProviderInfo DTO
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,7 +34,7 @@ from app.logger import logger
 from app.services.model.config_helpers import (
     get_config_path,
     mask_secret_value,
-    merge_region_patch,
+    merge_nested_patch,
     read_yaml_config,
     _config_mtime,
 )
@@ -86,6 +96,7 @@ def get_models() -> Dict[str, Any]:
                           "api_key": mask_secret_value(p.get("api_key", "")),
                           "env": is_env,
                           "timeout": p.get("timeout", 60),
+                          "max_retries": p.get("max_retries", 3),
                           "models": _models_of(ai, name)})
     return {"providers": providers,
             "current_model_ref": get_current_ref(ai, [p["name"] for p in providers])}
@@ -95,11 +106,25 @@ def get_providers() -> List[Dict[str, Any]]:
     return get_models()["providers"]
 
 
-def _sync_current(region: Dict[str, Any], provider: str, model: str) -> None:
-    region["ai.model_ref"] = {"provider": provider, "model": model}
+def _raise_if_env_takeover(name: str) -> None:
+    """env 接管守卫：设 {NAME}_API_KEY 的 provider 整行只读（与 settings 页 env 语义对齐，M14 双标准）。"""
+    if os.environ.get(f"{name.upper()}_API_KEY"):
+        raise ValueError(f"Provider '{name}' 由环境变量 {name.upper()}_API_KEY 接管，只读")
+
+
+def _raise_if_current_ref_env() -> None:
+    """当前模型 env 接管守卫：AI_PROVIDER 命中时切换/删除当前模型只读（settings 页同源语义）。"""
+    if os.environ.get("AI_PROVIDER"):
+        raise ValueError("当前模型由环境变量 AI_PROVIDER 接管，切换/删除当前模型只读")
+
+
+def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
+    """更新嵌套树（merge_nested_patch）中的当前模型：model_ref 结构 + 有值时双写扁平键。"""
+    ai = tree.setdefault("ai", {})
+    ai["model_ref"] = {"provider": provider, "model": model}
     if provider and model:
-        region["ai.provider"] = provider
-        region["ai.model"] = model
+        ai["provider"] = provider
+        ai["model"] = model
 
 
 def add_model(provider: str, model: str, label: str = "",
@@ -109,22 +134,27 @@ def add_model(provider: str, model: str, label: str = "",
     ai = _raw_ai()
     if provider not in _provider_names(ai):
         raise ValueError(f"Provider 不存在: {provider}")
+    _raise_if_env_takeover(provider)
+    if not model:
+        raise ValueError("模型名不能为空")
     if any(m["name"] == model for m in _models_of(ai, provider)):
         raise ValueError("同名模型已存在")
     models = list(ai[provider].get("models", []) or [])
     if not all(isinstance(m, str) for m in models):
         models = [_m["name"] for _m in _models_of(ai, provider)]
     models.append(model)
-    region: Dict[str, Any] = {
-        f"ai.{provider}.models": models,
-        f"ai.{provider}.model_params.{model}": default_params or {},
-        f"ai.{provider}.model_meta.{model}": {
-            "label": label or model,
-            "range": range_ or {},
-            "capabilities": capabilities or [],
-        },
+    tree: Dict[str, Any] = {
+        "ai": {provider: {
+            "models": models,
+            "model_params": {model: default_params or {}},
+            "model_meta": {model: {
+                "label": label or model,
+                "range": range_ or {},
+                "capabilities": capabilities or [],
+            }},
+        }}
     }
-    merge_region_patch(region, scope="model")
+    merge_nested_patch(tree, scope="model")
     return {**get_models(), "ok": True, "mtime": _config_mtime()}
 
 
@@ -132,36 +162,48 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     ai = _raw_ai()
     if not any(m["name"] == model for m in _models_of(ai, provider)):
         raise ValueError(f"模型不存在: {provider}/{model}")
-    region: Dict[str, Any] = {}
+    _raise_if_env_takeover(provider)
+    unknown = set(fields) - {"label", "range", "capabilities", "default_params"}
+    if unknown:
+        raise ValueError(f"不支持的配置项: {sorted(unknown)}")
+    tree: Dict[str, Any] = {"ai": {provider: {}}}
+    node = tree["ai"][provider]
     for k in ("label", "range", "capabilities"):
         if fields.get(k) is not None:
-            region[f"ai.{provider}.model_meta.{model}.{k}"] = fields[k]
+            node.setdefault("model_meta", {}).setdefault(model, {})[k] = fields[k]
     dp = fields.get("default_params")
     if isinstance(dp, dict) and dp:
-        for pk, pv in dp.items():
-            region[f"ai.{provider}.model_params.{model}.{pk}"] = pv
-    if not region:
+        old_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
+        old_params.update(dp)
+        node.setdefault("model_params", {})[model] = old_params
+    if not node:
         raise ValueError("无有效配置项")
-    merge_region_patch(region, scope="model")
+    merge_nested_patch(tree, scope="model")
     return {"ok": True, "model": model, "mtime": _config_mtime()}
 
 
 def delete_model(provider: str, model: str) -> Dict[str, Any]:
     ai = _raw_ai()
+    if provider not in _provider_names(ai):
+        raise ValueError(f"Provider 不存在: {provider}")
+    _raise_if_env_takeover(provider)
     models = [m for m in (ai.get(provider, {}).get("models", []) or [])
               if (m if isinstance(m, str) else m.get("name")) != model]
-    region: Dict[str, Any] = {
-        f"ai.{provider}.models": models,
-        f"ai.{provider}.model_params.{model}": None,
-        f"ai.{provider}.model_meta.{model}": None,
+    tree: Dict[str, Any] = {
+        "ai": {provider: {
+            "models": models,
+            "model_params": {model: None},
+            "model_meta": {model: None},
+        }}
     }
     switched_to = None
     cur = get_current_ref(ai, _provider_names(ai))
     if cur["provider"] == provider and cur["model"] == model:
+        _raise_if_current_ref_env()
         names = [m for m in models if isinstance(m, str)] or \
                 [(_m["name"]) for _m in _models_of(ai, provider) if _m["name"] in models]
         if names:
-            _sync_current(region, provider, names[0])
+            _sync_current(tree, provider, names[0])
             switched_to = names[0]
         else:
             rest = [n for n in _provider_names(ai) if n != provider]
@@ -171,20 +213,37 @@ def delete_model(provider: str, model: str) -> Dict[str, Any]:
                 if ms:
                     target_p, target_m = n, ms[0]["name"]
                     break
-            _sync_current(region, target_p, target_m)
+            if not target_p:
+                raise ValueError("禁止删除最后一个可用模型（无其它 Provider 可回退）")
+            _sync_current(tree, target_p, target_m)
             switched_to = target_m or None
-    merge_region_patch(region, scope="model")
+    merge_nested_patch(tree, scope="model")
     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
 
 
-def add_provider(name: str, label: str = "", api_base: str = "",
-                 api_key: str = "", model: str = "", timeout: int = 60) -> Dict[str, Any]:
-    ai = _raw_ai()
+def _validate_new_provider_name(name: str, ai: Dict[str, Any]) -> None:
+    """新 Provider 名校验：非空、非保留键（provider/model/model_ref，撞车会覆盖 ai 元数据损坏）、不重名。"""
+    if not name:
+        raise ValueError("Provider 名不能为空")
+    if name in RESERVED_AI_KEYS:
+        raise ValueError(f"Provider 名 '{name}' 为保留键(provider/model/model_ref)，不可用作 Provider 名")
     if name in _provider_names(ai):
         raise ValueError("同名 Provider 已存在")
-    merge_region_patch({f"ai.{name}": {
+
+
+def add_provider(name: str, label: str = "", api_base: str = "",
+                 api_key: str = "", model: str = "", timeout: int = 60,
+                 models: Optional[List[str]] = None,
+                 max_retries: int = 3) -> Dict[str, Any]:
+    ai = _raw_ai()
+    _validate_new_provider_name(name, ai)
+    ms = list(models or [])
+    if model and model not in ms:
+        ms.append(model)
+    tree: Dict[str, Any] = {"ai": {name: {
         "name": name, "label": label or name, "api_base": api_base, "api_key": api_key,
-        "timeout": timeout, "models": [model] if model else []}}, scope="model")
+        "timeout": timeout, "max_retries": max_retries, "models": ms}}}
+    merge_nested_patch(tree, scope="model")
     return {"ok": True, "provider": name, "mtime": _config_mtime()}
 
 
@@ -192,17 +251,20 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     ai = _raw_ai()
     if name not in _provider_names(ai):
         raise ValueError(f"Provider 不存在: {name}")
-    region = {}
+    _raise_if_env_takeover(name)
     key_map = {"api_key": "api_key", "base_url": "api_base", "api_base": "api_base",
-               "timeout": "timeout", "retry_times": "max_retries", "max_retries": "max_retries"}
+               "timeout": "timeout", "retry_times": "max_retries", "max_retries": "max_retries",
+               "label": "label"}
+    tree: Dict[str, Any] = {"ai": {name: {}}}
+    node = tree["ai"][name]
     for k, v in fields.items():
         if k in key_map and v is not None:
-            region[f"ai.{name}.{key_map[k]}"] = v
+            node[key_map[k]] = v
     if fields.get("clear") is True:
-        region[f"ai.{name}.api_key"] = ""
-    if not region:
+        node["api_key"] = ""
+    if not node:
         raise ValueError("无有效配置项")
-    merge_region_patch(region, scope="model")
+    merge_nested_patch(tree, scope="model")
     return {"ok": True, "provider": name, "mtime": _config_mtime()}
 
 
@@ -213,16 +275,22 @@ def delete_provider(name: str) -> Dict[str, Any]:
         raise ValueError(f"Provider 不存在: {name}")
     if len(names) <= 1:
         raise ValueError("禁止删除最后一个 Provider（需至少保留一个可用模型）")
-    region: Dict[str, Any] = {f"ai.{name}": None}
+    _raise_if_env_takeover(name)
+    tree: Dict[str, Any] = {"ai": {name: None}}
     switched_to = None
     cur = get_current_ref(ai, names)
     if cur["provider"] == name:
+        _raise_if_current_ref_env()
         rest = [n for n in names if n != name]
         target_p, target_m = "", ""
-        if rest:
-            ms = _models_of(ai, rest[0])
-            target_p, target_m = rest[0], (ms[0]["name"] if ms else "")
-        _sync_current(region, target_p, target_m)
+        for n in rest:  # 2026-09-21 小欧 修 M10/M11：扫第一个有可用模型的 provider，不止取 rest[0]
+            ms = _models_of(ai, n)
+            if ms:
+                target_p, target_m = n, ms[0]["name"]
+                break
+        if not target_p:
+            raise ValueError("禁止删除最后一个 Provider（其余 Provider 均无可用模型）")
+        _sync_current(tree, target_p, target_m)
         switched_to = target_p or None
-    merge_region_patch(region, scope="model")
+    merge_nested_patch(tree, scope="model")
     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}

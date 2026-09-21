@@ -19,6 +19,13 @@ F10合并: 小欧 - 2026-06-08
 #   写后逐键验证/失败回滚/reload 全链路; _set_dotted 替代 _set_nested(None 删键+回收空父级);
 #   mask_secret_value 改返 {configured, suffix} 契约(5.2); _validate_config_integrity 恢复读扁平键
 #   ai.provider/ai.model(v4.19 明确, resolver/config_service 只读扁平键)
+# 2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复 —— ①新增 merge_nested_patch/_merge_region_core/
+#   _iter_nested_ops/_set_nested_path/_get_path: 叶段按字面名写入(模型/Provider 名含点号如 gpt-4.1
+#   不再被 _set_dotted 当路径拆开, 修 M1~M3 点号模型名 params/meta 错位、删除残留孤儿); _set_dotted/
+#   _get_dotted 改为复用同一核心(行为不变, DRY); ②merge_region_patch 空 patch 直接跳过不备份不写盘
+#   (S6 备份膨胀); ③_validate_config_integrity 对 env 接管 provider(设 {NAME}_API_KEY)放行 api_base/
+#   api_key 缺失约束(修 S1: env 接管配置任意 settings 写均校验崩溃); ④mask_secret_value 短 secret(<4位)
+#   suffix 置空不再整体暴露(修 S5)
 
 import os
 import shutil
@@ -26,7 +33,7 @@ import yaml
 from collections import OrderedDict
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from app.config import get_config as get_config_instance, _make_safe_loader
 from app.utils.file_utils import backup_file  # P5b: 从 utils 导入 — 小沈 2026-08-13
@@ -210,9 +217,12 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
 
     provider_config = ai_config[selected_provider]
 
-    if 'api_base' not in provider_config:
+    # 2026-09-21 小欧 修 S1：env 接管 provider（设 {NAME}_API_KEY）在 YAML 里可无 api_base/api_key，
+    # 硬性要求会让「环境变量接管的配置」任意 settings 写都被校验打回；env 存在时放行这两项约束。
+    env_managed = bool(os.environ.get(f"{selected_provider.upper()}_API_KEY"))
+    if 'api_base' not in provider_config and not env_managed:
         errors.append(f"provider '{selected_provider}' 缺少 api_base 字段")
-    if 'api_key' not in provider_config:
+    if 'api_key' not in provider_config and not env_managed:
         errors.append(f"provider '{selected_provider}' 缺少 api_key 字段")
     if errors:
         return False, errors, warnings
@@ -387,10 +397,10 @@ FIELD_HANDLERS: Dict[str, Any] = {
 # 公共工具函数（settings_service/model_service 共用）
 # ====================================================================
 
-def _get_dotted(data: Dict[str, Any], key: str, default: Any = None) -> Any:
-    """点号键取值（文档 9.3.3）。"""
+def _get_path(data: Dict[str, Any], parts: Tuple[str, ...], default: Any = None) -> Any:
+    """按路径段序列取值（_get_dotted/写后验证共用核心，叶段绝不分裂）。"""
     node: Any = data
-    for part in key.split("."):
+    for part in parts:
         if isinstance(node, dict) and part in node:
             node = node[part]
         else:
@@ -398,27 +408,14 @@ def _get_dotted(data: Dict[str, Any], key: str, default: Any = None) -> Any:
     return node
 
 
-def _config_mtime() -> float:
-    """config.yaml mtime（公共函数，settings_service/model_service 共用，v4.18 DRY 修正）。"""
-    try:
-        return os.path.getmtime(get_config_path())
-    except OSError:
-        return 0.0
+def _get_dotted(data: Dict[str, Any], key: str, default: Any = None) -> Any:
+    """点号键取值（文档 9.3.3）。"""
+    return _get_path(data, tuple(key.split(".")), default)
 
 
-def mask_secret_value(value: Any) -> Dict[str, Any]:
-    """secret 掩码公共函数：永不返明文，只返 {configured, suffix 末4位}（5.2 secret 契约）。"""
-    s = str(value or "")
-    if not s.strip():
-        return {"configured": False}
-    return {"configured": True, "suffix": s[-4:]}
-
-
-def _set_dotted(data: Dict[str, Any], key: str, value: Any) -> None:
-    """点号键写入嵌套 dict；value 为 None 时删除该叶键并回收空父级
-    （v4.17：delete_model 以 None 清 ai.{provider}.model_params.{model} 等块，
-    不走 null 字面量——parse_model_params 对 dict(None) 会 TypeError）。"""
-    parts = key.split(".")
+def _set_nested_path(data: Dict[str, Any], parts: Tuple[str, ...], value: Any) -> None:
+    """路径段序列写入嵌套 dict；value 为 None 时删除该叶键并回收空父级
+    （merge_region_patch 的 _set_dotted 与 merge_nested_patch 共用核心）。"""
     node = data
     for part in parts[:-1]:
         child = node.get(part)
@@ -440,16 +437,51 @@ def _set_dotted(data: Dict[str, Any], key: str, value: Any) -> None:
     node[parts[-1]] = value
 
 
+def _set_dotted(data: Dict[str, Any], key: str, value: Any) -> None:
+    """点号键写入嵌套 dict；value 为 None 时删除该叶键并回收空父级
+    （v4.17：delete_model 以 None 清 ai.{provider}.model_params.{model} 等块，
+    不走 null 字面量——parse_model_params 对 dict(None) 会 TypeError）。"""
+    _set_nested_path(data, tuple(key.split(".")), value)
+
+
+def _iter_nested_ops(tree: Any, prefix: Tuple[str, ...] = ()) -> Iterator[Tuple[Tuple[str, ...], Any]]:
+    """嵌套树扁平化为 (路径段, 值) 列表；叶段保持字面名，绝不按点号分裂
+    （模型/Provider 名含点号时必须在模型域使用 merge_nested_patch）。"""
+    if not isinstance(tree, dict):
+        yield prefix, tree
+        return
+    for k, v in tree.items():
+        yield from _iter_nested_ops(v, prefix + (k,))
+
+
 def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
-    """通用 region 合并写（v4.11 前为 settings_service._apply_region_patch 私有函数，
-    跨域复用违反分层，上提至此；调用方：settings_service.update_settings、model_service 全量 CRUD）：
-    备份 → 内存合并(_set_dotted) → _validate_config_integrity 校验（v4.19 补：单写方案下校验
+    """通用 region 合并写（registry 已知的固定点号键：security.enabled 等）：
+    registry 键不含叶段点号，安全按点号分裂。模型/Provider 名域请用 merge_nested_patch。"""
+    ops = [(tuple(key.split(".")), value) for key, value in region_updates.items()]
+    return _merge_region_core(ops, scope)
+
+
+def merge_nested_patch(nested_tree: Dict[str, Any], scope: str) -> str:
+    """通用嵌套树合并写：叶段按字面名写入（模型/Provider 名含 gpt-4.1 之类点号也不会被拆开）。
+    与 merge_region_patch 同链路：备份→内存合并(_set_nested_path)→完整性校验→原子写→逐叶验证
+    →失败回滚→reload，返回 backup_path。— 小欧 2026-09-21"""
+    return _merge_region_core(list(_iter_nested_ops(nested_tree)), scope)
+
+
+def _merge_region_core(ops: List[Tuple[Tuple[str, ...], Any]], scope: str) -> str:
+    """region 合并写核心（merge_region_patch/merge_nested_patch 共用单条落盘链路）：
+    备份 → 内存合并 → _validate_config_integrity 校验（v4.19 补：单写方案下校验
     由本函数统一承载，安全网与 update_config 持平，防绕过校验写坏配置）→
     _order_for_dump 保序 → atomic_write → 重读验证(reload_ai_config) → 异常回滚最近一个备份。返回 backup_path。
     v4.19(P2-1 落码)：并发保护——进入即持 filelock.SoftFileLock(config.yaml.lock)，
-    先写者完成后后写者基于最新文件重读合并，杜绝「读原→改→写」非原子下旧快照覆盖丢项。"""
+    先写者完成后后写者基于最新文件重读合并，杜绝「读原→改→写」非原子下旧快照覆盖丢项。
+    2026-09-21 小欧：空 ops 直接跳过（不备份不写盘，S6 备份膨胀）。"""
     import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面
     from app.utils.file_utils import atomic_write  # 局部 import：utils 不反向依赖 services
+
+    if not ops:
+        logger.info(f"[{scope}] region 合并写入: 空 patch，跳过（不备份不写盘）")
+        return ""
 
     config_path = Path(get_config_path())
     lock = filelock.SoftFileLock(str(config_path.with_suffix(config_path.suffix + ".lock")), timeout=10)
@@ -458,8 +490,8 @@ def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
         restored = [False]
         try:
             config_data = read_yaml_config(config_path) or {}
-            for key, value in region_updates.items():
-                _set_dotted(config_data, key, value)
+            for parts, value in ops:
+                _set_nested_path(config_data, parts, value)
             is_valid, verr, _w = _validate_config_integrity(config_data)
             if not is_valid:
                 raise RuntimeError("配置完整性校验失败: " + "; ".join(verr))
@@ -467,11 +499,11 @@ def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
             atomic_write(str(config_path), yaml.safe_dump(ordered, allow_unicode=True,
                                                            default_flow_style=False, indent=2))
             verify = read_yaml_config(config_path)
-            for key, value in region_updates.items():
-                if _get_dotted(verify, key) != value:
-                    raise RuntimeError(f"写入验证失败: {key}")
+            for parts, value in ops:
+                if _get_path(verify, parts) != value:
+                    raise RuntimeError(f"写入验证失败: {'.'.join(parts)}")
             reload_ai_config()
-            logger.info(f"[{scope}] region 合并写入成功: {sorted(region_updates)}")
+            logger.info(f"[{scope}] region 合并写入成功: {sorted('.'.join(p) for p, _ in ops)}")
             return str(backup_path)
         except Exception:
             _restore_backup_if_needed(backup_path, config_path, restored)
@@ -480,3 +512,20 @@ def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
             # 保证「记日志 + 原样重抛」语义正确 — 小欧 2026-09-21
             logger.error(f"[{scope}] region 合并写入失败已回滚", exc_info=True)
             raise
+
+
+def _config_mtime() -> float:
+    """config.yaml mtime（公共函数，settings_service/model_service 共用，v4.18 DRY 修正）。"""
+    try:
+        return os.path.getmtime(get_config_path())
+    except OSError:
+        return 0.0
+
+
+def mask_secret_value(value: Any) -> Dict[str, Any]:
+    """secret 掩码公共函数：永不返明文，只返 {configured, suffix 末4位}（5.2 secret 契约）。"""
+    s = str(value or "")
+    if not s.strip():
+        return {"configured": False}
+    # 2026-09-21 小欧 修 S5：不足 4 位的短 secret 不再整体暴露为 suffix，改置空串
+    return {"configured": True, "suffix": s[-4:] if len(s) >= 4 else ""}
