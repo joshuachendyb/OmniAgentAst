@@ -14,6 +14,24 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
     ②键名按域收敛: app.project_root→workspace.project_root/app.allowed_dirs→workspace.allowed_dirs/
       app.max_rounds→agent.max_rounds/app.max_steps→agent.max_steps/app.debug→logging.debug
     ③保留: app.language/app.theme(外观域待二期深色) + appearance.fontSize(设置页预览有消费)
+  2026-09-21 - 小欧 - 安全/沙箱 12 项补 notice 简明说明（enabled 关闭行为/影子区预演/内存与超时上限等；
+    消费点核实：tool_safety_checker enabled=false、executor 预检直通、workspace 影子副本、job_object 内存限制）——
+    说明文字从注册表单点下发，前端共用唯一渲染位展示
+  2026-09-21 - 小欧 - 追加 6 项 notice：logging.debug(持久化路径分流)、agent.max_rounds/max_steps(单任务轮/步上限)、
+    logging.level/max_file_size/backup_count(日志级别与轮转)——消费点核实：logger/config.py、file_persist.py、config.py
+  2026-09-21 - 小欧 - logging.debug 说明修正：核心语义为日志(级别强制 DEBUG、明细含文件/行号)，
+    文件持久化落点分流为开发期附带惯例不当主解释——消费点核实：get_log_level/shared_handler/api_logger
+  2026-09-21 - 小欧 - 系统Tab重组 3 小节：运维日志(logging.*+paths.logs)/工程目录(6 paths.* 只读)/关于；
+    工程目录=项目根/项目规则文件/下载/数据库(~/.omniagent)/文件持久化/任务文件目录；
+    两级目录中文称呼：「会话目录」=Sion_<会话ID>、「任务目录」=Task_<任务ID>（A/B 记录文件 tool_data_*/conv_hist_*）
+    —— 派生值由 settings_service._item_data 实时计算（不落 yaml），前端 SettingsGroup.sectionOf 判定小节
+  2026-09-21 - 小欧 - paths.* 说明完整化：每条标注全部状态（project_root 已配置/未配置；ogs 源码/打包；
+    files 调试源码/调试打包/正式；task_files 持久化根随状态切换；database 固定含回收站），杜绝只写一种情况
+   2026-09-21 - 小欧 - 记录文件两行定稿：工程目录只读收敛为 6 行（项目根/规则文件/下载/数据库/工具结果记录/对话历史记录）；
+     删无意义 files 存根行 + 撤 task_files 派生死键（registry 无对应行，仅剩值模板残留）；两条记录文件各写各的互不混杂。
+     value 由 settings_service 派生为两级相对目录模板 + 各自文件名（Sion_<会话ID>\\Task_<任务ID>\\xxx.jsonl），
+     不写绝对路径（当机值随环境算、无通用语义）；根两态（调试=backend\\files、正式=~\\.omniagent\\files）写 notice。
+     北京老陈 2026-09-21 裁定
 """
 from typing import Any, Dict, List, Optional
 
@@ -36,9 +54,12 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("workspace.project_root", "text", "项目根目录", "E:\\test_dir"),
         _item("workspace.allowed_dirs", "textarea", "授权目录", "",
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
-        _item("logging.debug", "bool", "调试模式", True, restart=True),
-        _item("agent.max_rounds", "int", "最大轮数", 100),
-        _item("agent.max_steps", "int", "最大步数", 10000, range_=[1, 10000]),
+        _item("logging.debug", "bool", "调试模式", True, restart=True,
+              notice="开启后日志按 DEBUG 级别记录，明细含文件/行号"),
+        _item("agent.max_rounds", "int", "最大轮数", 100,
+              notice="单个任务最大执行轮数，超限结束任务"),
+        _item("agent.max_steps", "int", "最大步数", 10000, range_=[1, 10000],
+              notice="单任务最大执行步数，超限中止"),
     ]},
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）
     "model": {"label": "模型", "items": [
@@ -48,32 +69,61 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     ]},
     # 4.3 安全（security，4 项，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
     "security": {"label": "安全", "items": [
-        _item("security.enabled", "bool", "安全开关", False),
+        _item("security.enabled", "bool", "安全开关", False,
+              notice="关闭后跳过所有安全检查（盘根/项目根等删除硬防线仍生效）"),
         _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
               notice="保存二次确认 Modal（UX 层）；后端安全门禁独立生效"),
         _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10,
-              notice="HITL 弹窗自动确认倒计时"),
+              notice="HITL 自动确认倒计时（秒），到时未操作自动放行"),
         _item("security.hitl_timeout", "int", "人工确认超时(秒)", 120,
-              notice="HITL 弹窗等待人工确认的最大时间"),
+              notice="HITL 人工确认最大等待（秒），超时按策略处理"),
     ]},
     # 4.4 沙箱（sandbox，8 项，运行时参数）
     "sandbox": {"label": "沙箱", "items": [
-        _item("sandbox.enabled", "bool", "沙箱开关", True, restart=True),
+        _item("sandbox.enabled", "bool", "沙箱开关", True, restart=True,
+              notice="关闭后取消沙箱预检，命令/文件操作直通执行"),
         _item("sandbox.backend", "select", "沙箱后端", "job_object",
-              options=["job_object"], restart=True),
-        _item("sandbox.max_concurrent_sandboxes", "int", "最大并发沙箱数", 3),
-        _item("sandbox.max_workspace_mb", "int", "工作区上限(MB)", 500),
-        _item("sandbox.max_shadow_mb", "int", "影子区上限(MB)", 100),
-        _item("sandbox.process_memory_limit_mb", "int", "进程内存上限(MB)", 2048),
-        _item("sandbox.default_timeout_sec", "int", "默认超时(秒)", 60),
-        _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300),
+              options=["job_object"], restart=True,
+              notice="当前仅支持 job_object（Windows 进程 Job 隔离）"),
+        _item("sandbox.max_concurrent_sandboxes", "int", "最大并发沙箱数", 3,
+              notice="同时运行的沙箱并发数，超出排队等待"),
+        _item("sandbox.max_workspace_mb", "int", "工作区上限(MB)", 500,
+              notice="工作区真实磁盘占用上限（MB）"),
+        _item("sandbox.max_shadow_mb", "int", "影子区上限(MB)", 100,
+              notice="高危文件操作（删除/复制/移动）预演副本上限（MB）"),
+        _item("sandbox.process_memory_limit_mb", "int", "进程内存上限(MB)", 2048,
+              notice="沙箱内进程内存上限（MB），超限终止（误杀时调大）"),
+        _item("sandbox.default_timeout_sec", "int", "默认超时(秒)", 60,
+              notice="命令未指定超时时的默认超时（秒）"),
+        _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300,
+              notice="单次执行最大超时（秒），超出截断转裁决"),
     ]},
-    # 4.5 系统（system，5 项：3 运维日志 + 2 关于只读）
+    # 4.5 系统（system，12 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 2 关于只读）
     "system": {"label": "系统", "items": [
+        # --- 运维日志（3 配置 + 1 目录只读；目录值实时派生见 settings_service._item_data） ---
         _item("logging.level", "select", "日志级别", "INFO",
-              options=["DEBUG", "INFO", "WARNING", "ERROR"], restart=True),
-        _item("logging.max_file_size", "int", "日志文件上限(字节)", 10485760, restart=True),
-        _item("logging.backup_count", "int", "日志备份数", 5, restart=True),
+              options=["DEBUG", "INFO", "WARNING", "ERROR"], restart=True,
+              notice="日志记录级别，DEBUG 最详细"),
+        _item("logging.max_file_size", "int", "日志文件上限(字节)", 10485760, restart=True,
+              notice="单个日志文件大小上限，超限自动轮转"),
+        _item("logging.backup_count", "int", "日志备份数", 5, restart=True,
+              notice="日志轮转保留的备份文件个数"),
+        _item("paths.logs", "readonly", "日志目录", None, readonly=True,
+              notice="源码运行=backend\\logs；打包(exe)运行=exe所在目录\\logs；app_日期.log按日期轮转，prompt日志在prompt-logs子目录"),
+        # --- 工程目录（6 只读；值实时派生见 settings_service._item_data） ---
+        _item("paths.project_root", "readonly", "项目根目录", None, readonly=True,
+              notice="workspace.project_root 已配置时用配置值；未配置时=用户主目录"),
+        _item("paths.omniagent_md", "readonly", "项目规则文件", None, readonly=True,
+              notice="项目根目录\\OmniAgent.md；项目根未配置时=用户主目录\\OmniAgent.md"),
+        _item("paths.download", "readonly", "下载目录", None, readonly=True,
+              notice="项目根目录\\download；项目根未配置时=用户主目录\\download；download.dest 相对本目录"),
+        _item("paths.database", "readonly", "数据库目录", None, readonly=True,
+              notice="固定 ~\\.omniagent 无配置项；chat_history.db/monitoring.db 等多库与回收站 recycle_bin 同根"),
+        _item("paths.record_tool", "readonly", "工具结果文件", None, readonly=True,
+              notice="根：调试=backend\\files、正式=~\\.omniagent\\files；tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1工具结果"),
+        _item("paths.record_conv", "readonly", "对话历史文件", None, readonly=True,
+              notice="根：调试=backend\\files、正式=~\\.omniagent\\files；conv_hist_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1消息"),
+        # --- 关于（2 只读） ---
         _item("config_path", "readonly", "配置文件路径", None, readonly=True),
         _item("version", "readonly", "当前版本", None, readonly=True),
     ]},
