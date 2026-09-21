@@ -67,6 +67,7 @@ import {
   ReloadOutlined,
   ExclamationCircleOutlined,
   CloseCircleOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { configApi } from '../../services/api/config.api';
 import type { ValidateResponse } from '../../services/api/chat.api';
@@ -75,6 +76,7 @@ import ShortcutPanel from '../ShortcutPanel';
 import { LogoGridIcon, TitleSpinIcon } from '../AnimatedIcons';
 import { useApp } from '../../contexts/AppContext';
 import { LayoutSkeleton } from '../Skeleton';
+import { Colors, FontSize, Spacing } from '../../utils/stepStyles';
 import {
   handleError,
   showSuccess,
@@ -144,8 +146,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     initError,
   } = useApp();
 
-  // 编辑历史: 2026-08-28 小欧 - [25] 恢复isManualRefreshing状态+setter调用(防死状态)
-  const [, setIsManualRefreshing] = useState(false);
+  // 2026-09-21 小强 - 删写-only死状态isManualRefreshing（值从未被读，只剩两次空转setState；YAGNI收尾09-09半删）
   // 【修复问题1】检查服务状态 - 使用AppContext
   // 监听初始化状态，在初始化过程中显示loading
   const [checkingStatus, setCheckingStatus] = useState(false);
@@ -362,7 +363,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
   // 手动检查服务
   const handleCheckService = async () => {
-    setIsManualRefreshing(true);
     setCheckingStatus(true);
     try {
       const status = await refreshServiceStatus();
@@ -381,7 +381,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     } catch {
       showMessage(ErrorType.WARNING, '服务验证失败，请检查网络连接');
     } finally {
-      setIsManualRefreshing(false);
       setCheckingStatus(false);
     }
   };
@@ -636,7 +635,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         <Header
           style={{
             height: 43,
-            background: '#fff',
+            // 2026-09-21 小强 - 令牌零视觉差：#fff=Colors.BG.PRIMARY
+            background: Colors.BG.PRIMARY,
             boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
             padding: isMobile ? '0 16px' : '0 20px',
             display: 'flex',
@@ -668,22 +668,27 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               OmniAgentAst.
             </span>
             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
+            {/* 2026-09-21 小强 - emoji禁令(7.9.4)：⚠️改WarningOutlined图标 */}
             {validationResult &&
               (!validationResult.success ||
                 (validationResult.warnings &&
                   validationResult.warnings.length > 0)) && (
                 <Tag
                   color="warning"
+                  icon={<WarningOutlined />}
                   style={{ cursor: 'pointer' }}
                   onClick={() => setValidationModalVisible(true)}
                 >
-                  ⚠️ 配置验证
+                  配置验证
                 </Tag>
               )}
           </div>
 
           {/* 右侧操作区 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {/* 2026-09-21 小强 - 令牌零视觉差：gap 12=Spacing.LG */}
+          <div
+            style={{ display: 'flex', alignItems: 'center', gap: Spacing.LG }}
+          >
             {/* 模型选择下拉框 */}
             {modelList.length > 0 ? (
               <Select
@@ -723,7 +728,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               检查服务
             </Button>
             <Avatar size="small" icon={<DesktopOutlined />} />
-            <span style={{ color: '#666', fontSize: 14 }}>用户</span>
+            {/* 2026-09-21 小强 - 令牌零视觉差：fontSize 14=FontSize.PRIMARY */}
+            <span style={{ color: '#666', fontSize: FontSize.PRIMARY }}>
+              用户
+            </span>
           </div>
         </Header>
 
