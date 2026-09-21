@@ -11,6 +11,7 @@
 # 2026-08-29 - 小沈 - 修复#15: 读库由同步 db.get_conn 改为 db.atxn 离载到子线程, 避免阻塞事件循环(其余逻辑零改动)
 # 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计P0/C0/T0
 # 2026-09-03 小欧/北京老陈: token_usage端点补日志: 查询请求/结果/异常三处关键节点, 改前无任何log
+# 2026-09-21 小欧 - v4.20 单源收敛: ?model= 组装 ModelRef 的 provider 改读 ai.model_ref（删扁平 ai.provider）
 """
 token_usage — LLM token 用量四维度查询 API（chat 域）
 
@@ -63,7 +64,7 @@ async def get_token_usage(session_id: Optional[str] = None,
     from app.config import get_config as _get_cfg   # 归一: 取当前 provider 与 model 组成 ModelRef — 小欧 2026-08-22
     _model_ref = None
     if model:
-        _provider = _get_cfg().get("ai", {}).get("provider", "")
+        _provider = (_get_cfg().get("ai", {}).get("model_ref") or {}).get("provider", "")
         _model_ref = ModelRef(provider=_provider, model=model)
     def _read(conn):
         row = query_token_usage(conn, session_id=session_id, task_id=task_id, model_ref=_model_ref)

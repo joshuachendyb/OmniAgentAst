@@ -5,7 +5,7 @@ model_service — 模型编排器（位于 model 域，与 config_service/config
 禁止硬编码 provider 名，与旧页铁律一致）；写：校验 → config_helpers.merge_region_patch（单次落盘）→ config.yaml。
 数据模型（v4.17）：models[] 保持字符串列表（旧链不变式）；模型参数写 ai.{provider}.model_params.{model}
 （运行时 parse_model_params 消费）；label/range/capabilities 写 ai.{provider}.model_meta.{model}（UI 元数据）。
-current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加法，不改旧逻辑）；空值不写空键。
+current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收敛：删旧扁平 ai.provider/ai.model 双写）；空值不写空键。
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：5.2 模型管理契约（合并返回/级联/switched_to/立即生效）
@@ -30,6 +30,8 @@ current_model_ref 与旧扁平 ai.provider/ai.model 双写保持同步（纯加�
    2026-09-21 - 小欧 - 建议报告 P8: update_model 对空 default_params 提交由"跳过+无有效配置项 500"改为
       显式清空（写空块 {}），配合 config_helpers._iter_nested_ops 空 dict 叶值修复根治"清空不落盘"
 # 2026-09-21 - 小欧 - 三堂会审修复：timeout/max_retries 的 `or 60/3` 改为 `is not None` 判断，防止合法值0被吞
+# 2026-09-21 - 小欧 - v4.20 单源收敛: get_current_ref 去扁平键 fallback 只读 ai.model_ref（签名去 providers 参数）；
+#   _sync_current 只写 ai.model_ref（删扁平双写）——与 resolver/config_helpers 统一为单一真相源
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -57,14 +59,12 @@ def _provider_names(ai: Dict[str, Any]) -> List[str]:
     return [k for k, v in ai.items() if isinstance(v, dict) and k not in RESERVED_AI_KEYS]
 
 
-def get_current_ref(ai: Dict[str, Any], providers: List[str]) -> Dict[str, str]:
+def get_current_ref(ai: Dict[str, Any]) -> Dict[str, str]:
+    """读当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只读结构化 ai.model_ref（删扁平键 fallback，见[54]）"""
     ref = ai.get("model_ref")
     if isinstance(ref, dict) and ref.get("provider") and ref.get("model"):
         return {"provider": str(ref["provider"]), "model": str(ref["model"])}
-    provider = str(ai.get("provider") or (providers[0] if providers else ""))
-    models = _models_of(ai, provider)
-    model = str(ai.get("model") or (models[0]["name"] if models else ""))
-    return {"provider": provider, "model": model}
+    return {"provider": "", "model": ""}
 
 
 def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
@@ -104,7 +104,7 @@ def get_models() -> Dict[str, Any]:
                           "max_retries": p.get('max_retries') if p.get('max_retries') is not None else 3,
                           "models": _models_of(ai, name)})
     return {"providers": providers,
-            "current_model_ref": get_current_ref(ai, [p["name"] for p in providers])}
+            "current_model_ref": get_current_ref(ai)}
 
 
 def get_providers() -> List[Dict[str, Any]]:
@@ -124,12 +124,10 @@ def _raise_if_current_ref_env() -> None:
 
 
 def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
-    """更新嵌套树（merge_nested_patch）中的当前模型：model_ref 结构 + 有值时双写扁平键。"""
+    """更新嵌套树（merge_nested_patch）中的当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只写 ai.model_ref（删扁平双写，见[54]）。"""
     ai = tree.setdefault("ai", {})
-    ai["model_ref"] = {"provider": provider, "model": model}
     if provider and model:
-        ai["provider"] = provider
-        ai["model"] = model
+        ai["model_ref"] = {"provider": provider, "model": model}
 
 
 def add_model(provider: str, model: str, label: str = "",
@@ -208,7 +206,7 @@ def delete_model(provider: str, model: str) -> Dict[str, Any]:
         }}
     }
     switched_to = None
-    cur = get_current_ref(ai, _provider_names(ai))
+    cur = get_current_ref(ai)
     if cur["provider"] == provider and cur["model"] == model:
         _raise_if_current_ref_env()
         names = [m for m in models if isinstance(m, str)] or \
@@ -289,7 +287,7 @@ def delete_provider(name: str) -> Dict[str, Any]:
     _raise_if_env_takeover(name)
     tree: Dict[str, Any] = {"ai": {name: None}}
     switched_to = None
-    cur = get_current_ref(ai, names)
+    cur = get_current_ref(ai)
     if cur["provider"] == name:
         _raise_if_current_ref_env()
         rest = [n for n in names if n != name]

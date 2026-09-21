@@ -13,6 +13,7 @@
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): 启动 tip 两条 print→console_put(语义不变仅控制台, 非阻塞镜像), 事件循环线程零同步 stdout 写
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
 # 2026-09-21 - 小欧 - 对齐文档54 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
+# 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
 import sys
 import asyncio
 from typing import Optional
@@ -204,7 +205,8 @@ async def startup_event():
     from app.logger.console_writer import console_put  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
     console_put(f"当前版本: {app_version}")
     _cfg = get_config()
-    console_put(f"LLM 配置: provider={_cfg.get('ai.provider')}, model={_cfg.get('ai.model')}")
+    _ref = _cfg.get('ai.model_ref') or {}
+    console_put(f"LLM 配置: provider={_ref.get('provider')}, model={_ref.get('model')}")
 
 
 @app.on_event("shutdown")

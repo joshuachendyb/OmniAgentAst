@@ -6,7 +6,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
     merge_region_patch 内部先 _validate_config_integrity 校验再原子写（安全网与 update_config 持平）。
 只读项 config_path/version 由本服务组装。
 注：v4.19 起 settings_service 不再直接调 update_config_service——旧链仅剩 ai.model_ref 一个映射键，
-    且其写语义（结构+扁平双写）已由 update_settings 内联等价实现（P0-2），避免两阶段写的半程失败风险；
+    且其写语义（v4.20 单源收敛：只写结构化 ai.model_ref）已由 update_settings 内联实现（P0-2），避免两阶段写的半程失败风险；
     写旧业务键（语言/项目根目录）与安全/新键同路径经 region 合并，字段语义由 registry schema 承接。
 
 编辑历史:
@@ -26,6 +26,8 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
    2026-09-21 - 小欧 - 建议报告 B5/D8: ①_item_data 加通用 `item.get("readonly")` 分支→source='ro'
      （app.theme 原无分支落 sources 缺键，前端只读项回显缺 source）；②app_version 加 lstrip("v")
      对齐 /health.version（原返回 "v1.0.3"，health 返回 "1.0.3"，两处不一致）
+  2026-09-21 - 小欧 - v4.20 单源收敛: update_settings 写 ai.model_ref 时删「同时双写扁平 ai.provider/ai.model」
+    （唯一源=ai.model_ref，与 resolver/model_service/config_helpers 读取侧一致）
 """
 import os
 from pathlib import Path
@@ -183,9 +185,6 @@ def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
         if key == "ai.model_ref":
             ref = ModelRef(**value)
             region["ai.model_ref"] = ref.model_dump()
-            if ref.provider and ref.model:
-                region["ai.provider"] = ref.provider
-                region["ai.model"] = ref.model
         else:
             region[key] = value
         updated.append({"key": key, "source": "yaml"})

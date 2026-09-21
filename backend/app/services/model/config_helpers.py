@@ -32,6 +32,12 @@ F10合并: 小欧 - 2026-06-08
 #   统一修为 .get('key') or ''/[]（config_helpers 内 4 处）
 # 2026-09-21 - 小欧 - 三堂会审清理: 删除无调用方的历史透传函数 _write_system_yaml（KISS-DIRECT 无透传函数 + YAGNI，
 #   唯一逻辑已由 _order_for_dump 承接，全仓无任何 import 调用）
+# 2026-09-21 - 小欧 - v4.20 键名按域收敛修残留: _update_max_steps 写入键 app.max_steps → agent.max_steps
+#   （原写旧键，config.get() 读不到成死数据，与 settings merge_region_patch 写路径统一为单键 agent.max_steps）
+# 2026-09-21 - 小欧 - v4.20 单源收敛: ①is_provider_metadata_field 补 'model_ref'（防其被当 provider 遍历）；
+#   ②_order_for_dump 首位键 provider/model → model_ref；③_fix_config_common_issues 删 ai 顶层遗留扁平键；
+#   ④_validate_config_integrity 改校验 ai.model_ref；⑤_update_model_ref 改写 model_ref（原写扁平键）；
+#   ⑥_auto_fix_and_validate 失败 fail_result 的 current_model_ref 改读 model_ref
 
 import os
 import shutil
@@ -81,12 +87,10 @@ def _order_for_dump(d: Any) -> Any:
     if 'ai' in d:
         ai_data = d['ai']
         ai_ordered = OrderedDict()
-        if 'provider' in ai_data:
-            ai_ordered['provider'] = ai_data['provider']
-        if 'model' in ai_data:
-            ai_ordered['model'] = ai_data['model']
+        if 'model_ref' in ai_data:
+            ai_ordered['model_ref'] = ai_data['model_ref']
         for k in ai_data:
-            if k not in ('provider', 'model'):
+            if k != 'model_ref':
                 ai_ordered[k] = _order_for_dump(ai_data[k]) if isinstance(ai_data[k], dict) else ai_data[k]
         result['ai'] = ai_ordered
     for k in d:
@@ -127,8 +131,9 @@ def _set_app_field(config_data: dict, field_name: str, value: Any, display_name:
     logger.info(f"更新{display_name or field_name}: {value}")
 
 def is_provider_metadata_field(field_name: str) -> bool:
-    """检查字段是否是provider元数据字段（provider/model），用于遍历ai配置时跳过 — 小欧 2026-06-18"""
-    return field_name in ('provider', 'model')
+    """检查字段是否是provider元数据字段（provider/model/model_ref），用于遍历ai配置时跳过 — 小欧 2026-06-18
+    2026-09-21 小欧 v4.20 单源收敛：补 model_ref（唯一源），防其被当作 provider 遍历"""
+    return field_name in ('provider', 'model', 'model_ref')
 
 def load_config() -> tuple:
     """加载配置的公共函数 — 小欧 2026-06-18
@@ -180,6 +185,11 @@ def _restore_backup_if_needed(
 def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
     """自动修复常见的配置问题(删除provider下废弃的model字段)"""
     ai_config = config_data.get('ai', {})
+    # 2026-09-21 小欧 v4.20 单源收敛: 删除 ai 顶层遗留扁平键 provider/model（唯一源=ai.model_ref）
+    for _legacy in ('provider', 'model'):
+        if _legacy in ai_config:
+            del ai_config[_legacy]
+            logger.info(f"已删除 ai 顶层废弃扁平键 '{_legacy}'（唯一源=ai.model_ref）")
     for provider_name in ai_config.keys():
         if is_provider_metadata_field(provider_name):
             continue
@@ -195,22 +205,19 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
 
 def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表)
-    v4.19 修正：保持读取扁平键 ai.provider/ai.model——① 运行时 resolver.parse_model_ref/config_service.py:85
-    只读扁平键；② 现有 config.yaml 仅含扁平键、无 model_ref，改读 model_ref 会让存量配置在任何
-    update_config 保存时被校验打回（无迁移即回滚）。_sync_current 已双写扁平键+model_ref，与读取侧一致。"""
+    v4.20 单源收敛（2026-09-21 小欧）：改读结构化 ai.model_ref，删扁平 ai.provider/ai.model
+    （运行时 resolver._extract_provider_model 与 model_service.get_current_ref 均已改读 model_ref，见[54]）。"""
     errors = []
     warnings = []
     ai_config = config_data.get('ai', {})
 
-    if 'provider' not in ai_config:
-        errors.append("缺少 ai.provider 字段")
-    if 'model' not in ai_config:
-        errors.append("缺少 ai.model 字段")
-    if errors:
+    model_ref = ai_config.get('model_ref')
+    if not isinstance(model_ref, dict) or not model_ref.get('provider') or not model_ref.get('model'):
+        errors.append("缺少 ai.model_ref.provider/model 字段")
         return False, errors, warnings
 
-    selected_provider = ai_config['provider']
-    selected_model = ai_config['model']
+    selected_provider = model_ref['provider']
+    selected_model = model_ref['model']
 
     if selected_provider not in ai_config:
         errors.append(f"provider '{selected_provider}' 不存在")
@@ -272,8 +279,8 @@ def _auto_fix_and_validate(
             "backup_path": str(backup_path) if backup_path else None,
             # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构
             "current_model_ref": {
-                "provider": str(original_ai.get('provider') or 'unknown'),
-                "model": str(original_ai.get('model') or ''),
+                "provider": str((original_ai.get('model_ref') or {}).get('provider') or 'unknown'),
+                "model": str((original_ai.get('model_ref') or {}).get('model') or ''),
             },
         }
         return False, errors, warnings, fail_result
@@ -344,8 +351,10 @@ def _update_model_ref(config_data: dict, update) -> None:
     ai_config = config_data.get('ai', {})
     if update.ai_model_ref.provider not in ai_config:
         raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_model_ref.provider}")
-    config_data['ai']['provider'] = update.ai_model_ref.provider
-    config_data['ai']['model'] = update.ai_model_ref.model
+    config_data['ai']['model_ref'] = {
+        "provider": update.ai_model_ref.provider,
+        "model": update.ai_model_ref.model,
+    }
     if update.ai_model_ref.api_base:
         config_data['ai'][update.ai_model_ref.provider]['api_base'] = update.ai_model_ref.api_base
     reset()
@@ -364,21 +373,19 @@ def _update_max_steps(config_data: dict, update) -> None:
         raise HTTPException(status_code=400, detail="max_steps 必须大于等于 1")
     if update.max_steps > 10000:
         raise HTTPException(status_code=400, detail="max_steps 不能超过 10000")
-    config_data.setdefault('app', {})['max_steps'] = update.max_steps
+    # 2026-09-21 小欧 v4.20 键名按域收敛: app.max_steps → agent.max_steps（PUT /config 与 settings 写路径对齐同一键）
+    config_data.setdefault('agent', {})['max_steps'] = update.max_steps
     logger.info(f"更新max_steps: {update.max_steps}")
 
 def _update_security(config_data: dict, update) -> None:
     if not update.security:
         return
     security = config_data.get('security', {})
+    # 2026-09-21 小欧 - 删白/黑名单透传（whitelistEnabled/commandWhitelist/commandBlacklist，无消费方仅透传不生效，
+    #   北京老陈裁定删除；命令安全由 path_safe_check/tools/security 代码内实现）
+    # 2026-09-21 小欧 - v4.20 死配置清理: 删 contentFilterEnabled/contentFilterLevel/maxFileSize 透传（全库无消费方）
     security.update({
-        "contentFilterEnabled": update.security.contentFilterEnabled,
-        "contentFilterLevel": update.security.contentFilterLevel,
-        "whitelistEnabled": update.security.whitelistEnabled,
-        "commandWhitelist": update.security.commandWhitelist,
-        "commandBlacklist": update.security.commandBlacklist,
         "confirmDangerousOps": update.security.confirmDangerousOps,
-        "maxFileSize": update.security.maxFileSize,
     })
     config_data['security'] = security
     logger.info("更新安全配置成功")

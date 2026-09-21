@@ -9,6 +9,7 @@
 # 2026-08-17 - 小健 - 门限基准唯一化(北京老陈驱动): 删除 get_max_context_tokens 方法(唯一调用方 base_agent:68 已改默认构造, 且其值被 agent_runner 覆盖无实际作用); 上下文窗口基准收敛为 compaction_constants.DEFAULT_CONTEXT_LIMIT(配置优先)
 # 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
 # 2026-09-19 小欧 - exe打包frozen支持: 新增get_frozen_dir唯一源(DRY), _get_code_root frozen时改走exe所在目录 - 小欧-2026-09-19
+# 2026-09-21 小欧 - v4.20 单源收敛: _apply_env_overrides 的 AI_PROVIDER 注入由扁平 ai.provider 改为结构化 ai.model_ref.provider（唯一源）
 
 import functools
 import os
@@ -101,8 +102,14 @@ class Config:
             if env_value:
                 provider_config['api_key'] = env_value
         
-        if os.getenv('AI_PROVIDER'):
-            ai_config['provider'] = os.getenv('AI_PROVIDER')
+        # 2026-09-21 小欧 v4.20 单源收敛: AI_PROVIDER 注入结构化 ai.model_ref.provider（唯一源，删扁平 ai.provider）
+        _env_provider = os.getenv('AI_PROVIDER')
+        if _env_provider:
+            _ref = ai_config.get('model_ref')
+            if not isinstance(_ref, dict):
+                _ref = {}
+                ai_config['model_ref'] = _ref
+            _ref['provider'] = _env_provider
         
         # 日志级别
         logging_config = self._config_data.get('logging', {})
@@ -114,7 +121,7 @@ class Config:
         获取配置项
         
         Args:
-            key: 配置键,支持点号分隔(如 'ai.provider')
+            key: 配置键,支持点号分隔(如 'ai.model_ref')
             default: 默认值
             
         Returns:
@@ -133,8 +140,9 @@ class Config:
     
 
     def get_max_rounds(self, default: int = 100) -> int:
-        """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08"""
-        return self.get('app.max_rounds', default)
+        """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08
+        2026-09-21 小欧 v4.20 键名按域收敛: app.max_rounds → agent.max_rounds"""
+        return self.get('agent.max_rounds', default)
 
     def get_max_steps(self, default: int = 10000) -> int:
         """
@@ -145,44 +153,47 @@ class Config:
 
         Returns:
             max_steps值
+        2026-09-21 小欧 v4.20 键名按域收敛: app.max_steps → agent.max_steps
         """
-        return self.get('app.max_steps', default)
+        return self.get('agent.max_steps', default)
 
     def get_project_root(self) -> str:
         """获取项目根目录配置 — 小欧 2026-08-10 ①改兜底
+        2026-09-21 小欧 v4.20 键名按域收敛: app.project_root → workspace.project_root
 
-        项目根=tool工作区: 配置 `app.project_root` 优先;
+        项目根=tool工作区: 配置 `workspace.project_root` 优先;
         未配置(空) → 用户主目录 `Path.home()`(不再用代码位置当项目根)。
         代码库根另行由 `get_code_root()` 提供(定位 config/version.txt 等程序资源)。
         """
-        root = self.get('app.project_root', '')
+        root = self.get('workspace.project_root', '')
         if root:
             return root
         return str(Path.home())
 
     def get_allowed_dirs(self) -> list:
         """获取授权目录列表(可多个) — 小欧 2026-08-10 ⑩新增
+        2026-09-21 小欧 v4.20 键名按域收敛: app.allowed_dirs → workspace.allowed_dirs
 
-        除项目根外, tool 额外授权访问的工作目录, 配置 `app.allowed_dirs`(列表)。
+        除项目根外, tool 额外授权访问的工作目录, 配置 `workspace.allowed_dirs`(列表)。
         项目根天然在授权内, 无需重复列入。
         边界约束: 任一授权目录指向代码库根或其父/子级 → 抛 ValueError 拒绝加载
         (与⑦ tool禁区冲突, 防止授权目录变相开放代码库)。
         """
-        raw = self.get('app.allowed_dirs', None)
+        raw = self.get('workspace.allowed_dirs', None)
         if not raw:
             return []
         if not isinstance(raw, list):
-            raise ValueError("app.allowed_dirs 必须是列表(list)")
+            raise ValueError("workspace.allowed_dirs 必须是列表(list)")
         result = []
         code_root = Path(_get_code_root()).resolve()
         for item in raw:
             if not isinstance(item, str) or not item.strip():
-                raise ValueError(f"app.allowed_dirs 含非法条目: {item!r}, 必须是非空字符串路径")
+                raise ValueError(f"workspace.allowed_dirs 含非法条目: {item!r}, 必须是非空字符串路径")
             d = Path(item).resolve()
             if d == code_root:
-                raise ValueError(f"app.allowed_dirs 禁止指向代码库根: {item}")
+                raise ValueError(f"workspace.allowed_dirs 禁止指向代码库根: {item}")
             if code_root in d.parents or d in code_root.parents:
-                raise ValueError(f"app.allowed_dirs 禁止指向代码库根的父/子级: {item}")
+                raise ValueError(f"workspace.allowed_dirs 禁止指向代码库根的父/子级: {item}")
             result.append(str(d))
         return result
 

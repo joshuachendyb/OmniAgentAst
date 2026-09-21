@@ -24,6 +24,8 @@
 # 2026-09-20 - 小欧 - 三堂会审BUG-12修复: resolve_session_client添加hasattr类型保护(防非ModelRef类型如dict导致AttributeError静默失效)
 # 2026-09-21 - 小欧 - 修复 None 陷阱: _extract_provider_model 的 .get('provider','')/get('model','') 改为 .get() or ''；
 #   _validate_model_in_list 的 .get('models',[]) 改为 .get() or []（key 存在但值为 None 时原写法返回 None）
+# 2026-09-21 - 小欧 - v4.20 单源收敛: _extract_provider_model 改读结构化 ai.model_ref（删扁平 ai.provider/ai.model
+#   双源，与 model_service.get_current_ref / config_helpers._update_model_ref 统一为单一真相源）
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -49,10 +51,12 @@ class AIConfigResolver:
         return self._config.get("ai", {})
     
     def _extract_provider_model(self, ai_config: Dict[str, Any]) -> Tuple[str, str]:
-        """提取provider和model - 小沈 2026-06-08"""
-        provider = ai_config.get("provider") or ""
-        model = ai_config.get("model") or ""
-        return provider, model
+        """提取provider和model - 小沈 2026-06-08
+        2026-09-21 小欧 v4.20 单源收敛：改读结构化 ai.model_ref（删扁平 ai.provider/ai.model，见[54]）"""
+        ref = ai_config.get("model_ref") or {}
+        if not isinstance(ref, dict):
+            ref = {}
+        return ref.get("provider") or "", ref.get("model") or ""
     
     def _validate_provider_model_not_empty(self, provider: str, model: str) -> None:
         """验证provider和model不为空 - 小沈 2026-06-08"""

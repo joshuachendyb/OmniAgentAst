@@ -23,6 +23,10 @@
 # 2026-09-21 - 小欧 - 修复 None 陷阱: .get('key', '') 在 key 存在但值为 None 时返回 None 非 ''，
 #   导致 ProviderInfo(api_base=None) Pydantic 校验 500；全文件 .get() 统一修为 .get() or ''/[]/60/3
 # 2026-09-21 - 小欧 - 三堂会审修复：timeout/max_retries 的 `or 60/3` 改为 `is not None` 判断，防止合法值0被吞
+# 2026-09-21 - 小欧 - v4.20 死配置清理: get_system_config_data 默认 security 块删 contentFilterEnabled/contentFilterLevel/maxFileSize（全库无消费方）
+# 2026-09-21 - 小欧 - v4.20 单源收敛: delete_provider/add_model 的当前模型读写由扁平 ai.provider/ai.model
+#   改为 ai.model_ref（is_provider_metadata_field 过滤 provider 列表）；update_config 验证日志与返回
+#   current_model_ref 改读 model_ref
 """
 config_service — 配置业务服务(services/model)
 
@@ -89,7 +93,8 @@ def update_config(config_update):
         write_yaml_config(str(config_path), config_data)
         with open(config_path, 'r', encoding='utf-8') as f:
             verify_data = yaml.load(f, Loader=_make_safe_loader())
-            logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
+            _vref = verify_data['ai'].get('model_ref') or {}
+            logger.info(f"[update_config] 验证写入: provider={_vref.get('provider')}, model={_vref.get('model')}")
         get_config_instance().reload()
 
         if backup_path and backup_path.exists():
@@ -112,8 +117,8 @@ def update_config(config_update):
             "warnings": warnings,
             "backup_path": str(backup_path) if backup_path else None,
             "current_model_ref": {
-                "provider": config_data.get('ai', {}).get('provider') or '',
-                "model": config_data.get('ai', {}).get('model') or '',
+                "provider": (config_data.get('ai', {}).get('model_ref') or {}).get('provider') or '',
+                "model": (config_data.get('ai', {}).get('model_ref') or {}).get('model') or '',
             },
         }
 
@@ -152,14 +157,12 @@ def get_system_config_data() -> dict:
     language = config.get('app.language', 'zh-CN')
     security_config = config.get('security', {})
     if not security_config:
+        # 2026-09-21 小欧 v4.20 死配置清理+对齐schema: 默认块与 settings_registry 安全组4项一一对应(enabled/confirmDangerousOps/auto_confirm_delay/hitl_timeout)
         security_config = {
-            "contentFilterEnabled": True,
-            "contentFilterLevel": "medium",
-            "whitelistEnabled": False,
-            "commandWhitelist": "",
-            "commandBlacklist": "",
+            "enabled": False,
             "confirmDangerousOps": True,
-            "maxFileSize": 100
+            "auto_confirm_delay": 10,
+            "hitl_timeout": 120,
         }
     logger.info(f"获取配置成功: provider={resolved_model.provider}, model={resolved_model.model}")
     return {
@@ -262,14 +265,20 @@ def delete_provider(provider_name: str) -> dict:
     """删除Provider — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
     config_path, config = load_config()
     ensure_provider_exists(config, provider_name)
-    provider_keys = [k for k in config.get('ai', {}).keys() if k != 'provider']
+    provider_keys = [k for k in config.get('ai', {}).keys() if not is_provider_metadata_field(k)]
     if len(provider_keys) <= 1:
         raise HTTPException(status_code=400, detail="至少保留一个Provider")
     del config['ai'][provider_name]
-    if config['ai'].get('provider') == provider_name:
-        remaining = [k for k in config['ai'].keys() if k != 'provider']
+    _ref = config['ai'].get('model_ref') or {}
+    if isinstance(_ref, dict) and _ref.get('provider') == provider_name:
+        remaining = [k for k in config['ai'].keys() if not is_provider_metadata_field(k)]
         if remaining:
-            config['ai']['provider'] = remaining[0]
+            _new_p = remaining[0]
+            _new_models = config['ai'][_new_p].get('models') or []
+            config['ai']['model_ref'] = {
+                "provider": _new_p,
+                "model": _new_models[0] if _new_models else "",
+            }
     save_config(str(config_path), config)
     return api_success(f"Provider {provider_name} 已删除")
 
@@ -356,8 +365,9 @@ def add_model(provider_name: str, data) -> dict:
     models = config['ai'][provider_name].get('models') or []
     models.append(model_name)
     config['ai'][provider_name]['models'] = models
-    if not config['ai'].get('model'):
-        config['ai']['model'] = model_name
+    _ref = config['ai'].get('model_ref')
+    if not (isinstance(_ref, dict) and _ref.get('provider') and _ref.get('model')):
+        config['ai']['model_ref'] = {"provider": provider_name, "model": model_name}
     save_config(str(config_path), config)
     return api_success(f"模型 {data.model} 已添加")
 
