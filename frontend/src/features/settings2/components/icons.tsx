@@ -2,6 +2,7 @@
 // 2026-09-21 小欧 - P2-4：Tab 图标去掉内联色，随 antd Tabs 选中态继承主色（[58] P2-4）
 // 2026-09-21 小欧 - 全文逐章核查：gap/marginLeft/fontSize 裸数字 → Spacing.XS/MD、FontSize.PRIMARY 令牌；DirtyDot 6px 圆点为 P2-2 文档明确规格保留（[58] v1.12 第七章 铁规）
 // 2026-09-21 小强 - 删死图标 SettingIcon.chat：后端注册表已删 chat 组（TabKey 收敛 6 组），Record<TabKey> 同步收敛
+// 2026-09-21 小欧 - [59]B-10 渲染: 新增 DefaultTag（后端缺省 source='default'，灰色 Tag 与 env 橙区分）
 import React from 'react';
 import {
   ApiOutlined,
@@ -32,7 +33,9 @@ export const SettingIcon: Record<TabKey, React.ReactNode> = {
 
 /** 已修改角标：6px 实心圆点 + 12px 次文（7.9.2，不用 emoji）。 */
 export const DirtyDot: React.FC = () => (
-  <span style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.XS }}>
+  <span
+    style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.XS }}
+  >
     <span
       style={{
         width: 6,
@@ -55,6 +58,11 @@ export const EnvTag: React.FC = () => (
   <Tag color="orange" style={{ marginLeft: Spacing.MD }}>
     来自环境变量
   </Tag>
+);
+
+/** 默认值(未落盘)标注 — 2026-09-21 小欧 [59]B-10（后端缺省 source='default'，与显式写入 yaml 区分） */
+export const DefaultTag: React.FC = () => (
+  <Tag style={{ marginLeft: Spacing.MD }}>默认值(未保存)</Tag>
 );
 
 /** 只读复制按钮图标（7.7/7.9.4）。 */

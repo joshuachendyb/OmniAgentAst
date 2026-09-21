@@ -6,6 +6,7 @@
 // 2026-09-21 小欧 - 关于区排版修复：按钮从独立竖排块改为嵌入对应信息行右侧（排版修复）
 // 2026-09-21 小欧 - 三堂会审修复：aboutIdx 计数器改为 item.key.includes('path') 判断（防 schema 顺序变化映射错）
 // 2026-09-21 小强 - 删死分支 group==='chat'：后端注册表已删 chat 组，该块永不渲染（分组对齐后端唯一源）
+// 2026-09-21 小欧 - [59]B-10 渲染: sources 缺键回退 ?? 'yaml' → ?? 'default'（后端缺省 source='default'，缺键=默认值语义）
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -53,9 +54,23 @@ export const SettingsGroup: React.FC<Props> = ({
           style={{ marginBottom: Spacing.LG }}
           title="预览小卡（改下面控件，这里实时变）"
         >
-          <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'flex-start' }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: Spacing.MD,
+              alignItems: 'flex-start',
+            }}
+          >
             <div>
-              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.XS }}>紧凑</div>
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.SECONDARY,
+                  marginBottom: Spacing.XS,
+                }}
+              >
+                紧凑
+              </div>
               <div
                 style={{
                   fontSize,
@@ -68,7 +83,15 @@ export const SettingsGroup: React.FC<Props> = ({
               </div>
             </div>
             <div>
-              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.XS }}>舒适</div>
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.SECONDARY,
+                  marginBottom: Spacing.XS,
+                }}
+              >
+                舒适
+              </div>
               <div
                 style={{
                   fontSize,
@@ -92,24 +115,32 @@ export const SettingsGroup: React.FC<Props> = ({
           <React.Fragment key={item.key}>
             {header && <SectionTitle title={`── ${header} ──`} />}
             {isAbout ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: Spacing.SM }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: Spacing.SM,
+                }}
+              >
                 <div style={{ flex: 1 }}>
                   <SettingRow
                     item={item}
                     value={values[item.key]}
-                    source={sources[item.key] ?? 'yaml'}
+                    source={sources[item.key] ?? 'default'}
                     dirty={!!dirtyKeys[item.key]}
                     highlight={highlightKey === item.key}
                     onChange={(v) => onChange(group, item.key, v)}
                   />
                 </div>
-                <AboutFiles kind={item.key.includes('path') ? 'config' : 'version'} />
+                <AboutFiles
+                  kind={item.key.includes('path') ? 'config' : 'version'}
+                />
               </div>
             ) : (
               <SettingRow
                 item={item}
                 value={values[item.key]}
-                source={sources[item.key] ?? 'yaml'}
+                source={sources[item.key] ?? 'default'}
                 dirty={!!dirtyKeys[item.key]}
                 highlight={highlightKey === item.key}
                 onChange={(v) => onChange(group, item.key, v)}

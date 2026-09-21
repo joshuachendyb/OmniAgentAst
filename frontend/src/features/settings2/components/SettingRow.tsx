@@ -2,17 +2,26 @@
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：复制成功提示改走 errorHandler.showSuccess
 // 2026-09-21 小欧 - P0-6：控件宽度→settingsControl 令牌（[58] P0-6）
 // 2026-09-21 小欧 - 全文逐章核查：gap:8/marginLeft:8 → Spacing.MD 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - [59]B-10 渲染: source === 'default' 显示 DefaultTag（后端缺省键新语义）;
+//   [59]F-1 修复: 只读复制不立即弹成功，await copyTextToClipboard 结果后再提示（剪贴板权限拒绝时不再假"已复制"）
+// 2026-09-21 小欧 - [59]F-1 补漏: showSuccess 在上轮 import 整理中被移除、但复制成功分支(line:52)仍引用,
+//   补回 import 消除 tsc 未定义引用错误（编辑历史纪律：错误的加同样不对，立即修正）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
-import { settingsSpacing, settingsControl, settingsRowLayout } from '@/theme/settingsTokens';
+import {
+  settingsSpacing,
+  settingsControl,
+  settingsRowLayout,
+} from '@/theme/settingsTokens';
 import type {
   SettingSchemaItem,
   SettingSource,
 } from '@/services/api/settings.api';
-import { EnvTag, CopyIcon, DirtyDot } from './icons';
-import { showSuccess } from '@/services/error/handler';
+import { EnvTag, CopyIcon, DirtyDot, DefaultTag } from './icons';
+import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import { copyTextToClipboard } from '@/utils/clipboard';
 
 interface Props {
   item: SettingSchemaItem;
@@ -44,8 +53,10 @@ export const SettingRow: React.FC<Props> = ({
             type="link"
             icon={<CopyIcon />}
             onClick={() => {
-              void navigator.clipboard.writeText(String(value ?? ''));
-              showSuccess('已复制');
+              void copyTextToClipboard(String(value ?? '')).then((r) => {
+                if (r.ok) showSuccess('已复制');
+                else showMessage(ErrorType.WARNING, '复制失败，请手动复制');
+              });
             }}
           />
         </span>
@@ -139,7 +150,11 @@ export const SettingRow: React.FC<Props> = ({
       case 'range':
         return (
           <span
-            style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.MD }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: Spacing.MD,
+            }}
           >
             <Slider
               min={item.range?.[0]}
@@ -220,6 +235,7 @@ export const SettingRow: React.FC<Props> = ({
       <span style={{ flex: 1 }}>{renderControl()}</span>
       {dirty && <DirtyDot />}
       {source === 'env' && <EnvTag />}
+      {source === 'default' && <DefaultTag />}
       <span
         style={{
           fontSize: FontSize.SECONDARY,

@@ -18,6 +18,10 @@
 // 2026-09-21 小强 - Tab 标题唯一源=后端注册表：删硬编码 TAB_TITLES（含死 chat:"聊天"），
 //   Tab label 改用 state.schema[g].label（后端 settings_registry GROUPS[g].label）；GROUP_ORDER 由 useSettings 动态派生
 // 2026-09-21 小强 - 关联清理：dangerousDirty 去掉已删键 whitelist/blacklist 死判断（键已从注册表移除，恒 false 死代码）
+// 2026-09-21 小欧 - [59]F-6/F-7/F-9 修复：①搜索跳转 jumpTo 与 Tab 切换统一走「当前组脏→确认」闸口，
+//   不再绕过确认直接切 Tab（原 jumpTo 静默丢弃当前组未保存修改）；确认对话框记录待跳 tab+高亮 key，
+//   保存成功后跳转并高亮；②deleteTarget 解析改用首个 '::' 索引切片（原 split('::') 对含 '::' 的模型名截断误删）；
+//   ③onSaveGroup/onSaveAll 返回 Promise，SaveBar confirmThen 的 Modal onOk await 化——OK 按钮自带 loading 防连点双保存
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -47,11 +51,16 @@ import type { TabKey } from '../types';
 const SettingsPage: React.FC = () => {
   const s = useSettings();
   const { state } = s;
-  const [pendingTab, setPendingTab] = useState<TabKey | null>(null);
+  const [pendingJump, setPendingJump] = useState<{
+    tab: TabKey;
+    key: string;
+  } | null>(null);
 
+  // [59]F-6 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
+  // 原 jumpTo 直接切 Tab 绕过确认，会静默丢弃当前组未保存修改
   const requestTab = (tab: TabKey) => {
     if (tab !== state.activeTab && s.isGroupDirty(state.activeTab)) {
-      setPendingTab(tab);
+      setPendingJump({ tab, key: '' });
     } else {
       s.setActiveTab(tab);
       void s.checkMtime();
@@ -59,8 +68,12 @@ const SettingsPage: React.FC = () => {
   };
 
   const jumpTo = (tab: TabKey, key: string) => {
-    s.setActiveTab(tab);
-    s.setHighlightKey(key);
+    if (tab !== state.activeTab && s.isGroupDirty(state.activeTab)) {
+      setPendingJump({ tab, key });
+    } else {
+      s.setActiveTab(tab);
+      s.setHighlightKey(key);
+    }
   };
 
   // 第五章 S2/S3：滚动跳转（跨 Tab 锚点：先切到目标 Tab，等渲染完成后再滚动）
@@ -77,15 +90,23 @@ const SettingsPage: React.FC = () => {
     k.includes('confirmDangerousOps')
   );
 
-  const groupDirtyCount = state.activeTab === 'model'
-    ? (state.model.isDirty ? 1 : 0)
-    : Object.keys(state.dirtyKeys).filter((k) => s.groupOfKey(k) === state.activeTab).length;
+  const groupDirtyCount =
+    state.activeTab === 'model'
+      ? state.model.isDirty
+        ? 1
+        : 0
+      : Object.keys(state.dirtyKeys).filter(
+          (k) => s.groupOfKey(k) === state.activeTab
+        ).length;
 
   if (state.loading) {
     return (
       <div
         className="settings-page"
-        style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
+        style={{
+          padding: settingsSpacing.pagePadding,
+          background: Colors.BG.PRIMARY,
+        }}
       >
         <Skeleton active />
       </div>
@@ -95,7 +116,10 @@ const SettingsPage: React.FC = () => {
     return (
       <div
         className="settings-page"
-        style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
+        style={{
+          padding: settingsSpacing.pagePadding,
+          background: Colors.BG.PRIMARY,
+        }}
       >
         <Result
           status="error"
@@ -146,8 +170,15 @@ const SettingsPage: React.FC = () => {
         }}
       >
         {state.currentRef && (
-          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.SM }}>
-            当前系统全局使用模型：{state.currentRef.provider} / {state.currentRef.model}
+          <div
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+              marginBottom: Spacing.SM,
+            }}
+          >
+            当前系统全局使用模型：{state.currentRef.provider} /{' '}
+            {state.currentRef.model}
           </div>
         )}
         <SectionTitle title="── ① 选择器 ──" />
@@ -161,7 +192,13 @@ const SettingsPage: React.FC = () => {
           onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
         {Object.keys(state.model.params).length > 0 && (
           <Button
@@ -171,7 +208,12 @@ const SettingsPage: React.FC = () => {
             onClick={() => {
               Modal.confirm({
                 title: (
-                  <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+                  <span
+                    style={{
+                      fontSize: FontSize.PRIMARY,
+                      fontWeight: FontWeight.BOLD,
+                    }}
+                  >
                     ⚠ 重置为默认
                   </span>
                 ),
@@ -211,26 +253,29 @@ const SettingsPage: React.FC = () => {
               max_retries: 3,
               env: false,
             }
-        }
-        onSave={async (patch) => {
-          try {
-            const r = await modelApi.updateProvider(
-              state.model.selectedProvider,
-              patch
-            );
-            showSuccess('Provider 配置已保存（立即生效）');
-            // A7：同步落盘后 mtime
-            s.syncMtime(r.mtime);
-            await s.refreshModels();
-          } catch (e) {
-            handleApiError(e);
           }
-        }}
-      />
+          onSave={async (patch) => {
+            try {
+              const r = await modelApi.updateProvider(
+                state.model.selectedProvider,
+                patch
+              );
+              showSuccess('Provider 配置已保存（立即生效）');
+              // A7：同步落盘后 mtime
+              s.syncMtime(r.mtime);
+              await s.refreshModels();
+            } catch (e) {
+              handleApiError(e);
+            }
+          }}
+        />
       </div>
       <SectionTitle title="── ④ 操作区 ──" />
       <ModelActions
-        configured={state.model.providerConfig[state.model.selectedProvider]?.api_key?.configured ?? false}
+        configured={
+          state.model.providerConfig[state.model.selectedProvider]?.api_key
+            ?.configured ?? false
+        }
         onClearApiKey={async () => {
           try {
             const r = await modelApi.updateProvider(
@@ -311,7 +356,11 @@ const SettingsPage: React.FC = () => {
                 );
             } else {
               // BUG-F 修复：模型名可含 '/'（如 z-ai/glm-4.7），改用 '::' 分隔解析，杜绝删除错位
-              const [p, m] = target.slice('model:'.length).split('::');
+              // [59]F-7 修复：改用首个 '::' 索引切片，模型名含 '::' 时不再被 split 截断误删
+              const rest = target.slice('model:'.length);
+              const sepIndex = rest.indexOf('::');
+              const p = sepIndex >= 0 ? rest.slice(0, sepIndex) : '';
+              const m = sepIndex >= 0 ? rest.slice(sepIndex + 2) : rest;
               res = await modelApi.deleteModel(p, m);
               if (res.switched_to)
                 showMessage(
@@ -335,7 +384,10 @@ const SettingsPage: React.FC = () => {
   return (
     <div
       className="settings-page"
-      style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
+      style={{
+        padding: settingsSpacing.pagePadding,
+        background: Colors.BG.PRIMARY,
+      }}
     >
       <Card>
         <div
@@ -360,7 +412,9 @@ const SettingsPage: React.FC = () => {
                 ),
               }))}
             />
-            <span style={{ marginLeft: Spacing.MD }}><DirtyBadge count={s.dirtyCount} /></span>
+            <span style={{ marginLeft: Spacing.MD }}>
+              <DirtyBadge count={s.dirtyCount} />
+            </span>
           </span>
           <SearchBox schema={state.schema} onJump={jumpTo} />
         </div>
@@ -388,31 +442,33 @@ const SettingsPage: React.FC = () => {
           saving={s.saving}
           restartKeys={s.restartKeys}
           hasDangerousDirty={dangerousDirty}
-          onSaveGroup={() => {
-            void s.saveGroup(state.activeTab);
-          }}
-          onSaveAll={() => {
-            void s.saveAll();
-          }}
+          // [59]F-9 修复：直接透出 Promise，SaveBar 确认弹窗 onOk await 化后自带 loading 防连点
+          onSaveGroup={() => s.saveGroup(state.activeTab)}
+          onSaveAll={() => s.saveAll()}
           onCloseRestart={() => s.setRestartKeys([])}
         />
       </Card>
       <Modal
-        open={pendingTab !== null}
+        open={pendingJump !== null}
         title={
-          <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+          <span
+            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
+          >
             有未保存的修改
           </span>
         }
         width={settingsModalWidth.confirm}
-        onCancel={() => setPendingTab(null)}
+        onCancel={() => setPendingJump(null)}
         onOk={() => {
-          if (pendingTab) {
-            void s.saveGroup(state.activeTab).then((r) => {
-              if ((r as { ok: boolean }).ok) s.setActiveTab(pendingTab);
-              setPendingTab(null);
-            });
-          }
+          const jump = pendingJump;
+          if (!jump) return;
+          void s.saveGroup(state.activeTab).then((r) => {
+            if ((r as { ok: boolean }).ok) {
+              s.setActiveTab(jump.tab);
+              if (jump.key) s.setHighlightKey(jump.key);
+            }
+            setPendingJump(null);
+          });
         }}
         okText="保存并切换"
         cancelText="放弃切换"

@@ -20,6 +20,8 @@
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-C1: extractErrorMessage入参Record<string,any>→Record<string,unknown>+data双重收窄
 //   (消除lib用any与裸断言, 语义不变) — 小欧-2026-09-09
 // 编辑历史: 2026-09-20 小强 - 新增设置/模型域三错误类型+固定文案: SETTINGS_SCHEMA_FAILED/SETTINGS_SAVE_FAILED/MODEL_MANAGEMENT_FAILED(可重试2次) — 小强-2026-09-20
+// 编辑历史: 2026-09-21 小欧 - [59]F-13 修复: 去重键由「仅 errorType」改为「errorType+最终文案」, 同一类型不同原因(如多条 env 跳过警告)
+//   不再互相吞掉, 30s 窗口仍防同类同文案刷屏 — 小欧-2026-09-21
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -657,19 +659,19 @@ const ERROR_DEDUP_WINDOW = 30000;
 const recentErrors = new Map<string, number>();
 
 /**
- * 判断错误是否应该显示（30秒去重）
- * @param errorType 错误类型
+ * 判断错误是否应该显示（30秒去重，键="类型:文案"，同类型不同原因不互相吞）
+ * @param key 去重键（errorType 或 "errorType:文案"）
  * @returns 是否应该显示
  */
-export function shouldShowError(errorType: ErrorType): boolean {
+export function shouldShowError(key: string): boolean {
   const now = Date.now();
-  const lastShowTime = recentErrors.get(errorType);
+  const lastShowTime = recentErrors.get(key);
 
   if (lastShowTime && now - lastShowTime < ERROR_DEDUP_WINDOW) {
     return false;
   }
 
-  recentErrors.set(errorType, now);
+  recentErrors.set(key, now);
   return true;
 }
 
@@ -763,13 +765,14 @@ export function showMessage(
     return;
   }
 
-  if (!shouldShowError(errorType)) {
-    return;
-  }
-
   // 2026-09-08 小欧 B加固: 透传文案过 sanitizeDisplayMessage 防裸数字/垃圾值上弹窗(如 "60000"), 非法即回退固定中文 — 小欧-2026-09-08
   const displayMessage =
     sanitizeDisplayMessage(customMessage) || config.message;
+
+  // [59]F-13 修复: 去重检查移到文案定稿后, 键=类型+文案(原仅类型, 会吞掉同类型不同原因)
+  if (!shouldShowError(`${errorType}:${displayMessage ?? ''}`)) {
+    return;
+  }
 
   // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
   console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}`);

@@ -7,6 +7,10 @@
 //   全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal；原 v4.19(P1-6)「双下拉即时落盘 model_ref」设计废弃（[54] v4.20 修正）
 // 2026-09-21 小强 - Tab 标题/分组对齐后端注册表：GROUP_ORDER 由模块级硬编码（含死 chat）改为从 state.schema 键序动态派生，
 //   分组顺序与 Tab 标题 label 唯一源=后端 settings_registry；前端不再维护任何分组名常量（下方 TAB_TITLES 已删）
+// 2026-09-21 小欧 - [59]F-3/F-15/F-16/F-14 修复：①checkMtime 后台配置变化且存在未保存修改时，刷新前明确提示
+//   「本地修改已丢失」，不再静默覆盖脏态；②saveKeys 将「schema 已删键/值为 undefined/env 接管键」归 ghost 清脏并提示，
+//   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存(F-15)与 env 接管键假保存(F-16)；③有效键为空直接返回不调 API；
+//   ④后端 warnings 全为空文案时给固定兜底提示(F-14)
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   settingsApi,
@@ -188,17 +192,26 @@ export function useSettings() {
   }, [load]);
 
   /** 切 Tab/刷新 mtime 检查（3.1/9.11）。 */
+  // [59]F-3 修复：后台配置被外部修改导致整体刷新时，若存在未保存的本地修改（脏 keys/模型参数），
+  // 明确提示「已丢失」，不再只报「已刷新」让用户误以为本地改动还在
   const checkMtime = useCallback(async () => {
     try {
       const mtime = await settingsApi.getMtime();
       if (mtime !== state.mtime) {
+        const hasLocalDirty =
+          Object.keys(state.dirtyKeys).length > 0 || state.model.isDirty;
         await load();
-        showMessage(ErrorType.INFO, '配置已更新，已刷新');
+        showMessage(
+          hasLocalDirty ? ErrorType.WARNING : ErrorType.INFO,
+          hasLocalDirty
+            ? '后端配置已更新并刷新，本次未保存的修改已丢失'
+            : '配置已更新，已刷新'
+        );
       }
     } catch (e) {
       handleApiError(e);
     }
-  }, [state.mtime, load]);
+  }, [state.mtime, state.dirtyKeys, state.model.isDirty, load]);
 
   /** 改控件：记脏态；外观两项同步 localStorage 预览（7.6）。 */
   const setValue = useCallback((group: string, key: string, value: unknown) => {
@@ -258,30 +271,54 @@ export function useSettings() {
   );
 
   /** 写（参数配置）：schema 校验 → PUT /settings（6.3/7.5）。 */
+  // [59]F-15/F-16 修复：①schema 已删键/值为 undefined/env 接管键一律归 ghost —— 不提交、清脏、提示，
+  //   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存 与 env 接管键被后端跳过后的假保存；
+  //   ②有效键(found)为空则直接返回，不再调 API 制造空 patch 假成功
   const saveKeys = useCallback(
     async (keys: string[]) => {
       const items: SettingSchemaItem[] = [];
       const values: Record<string, unknown> = {};
+      const found: string[] = [];
+      const ghost: string[] = [];
       keys.forEach((ck) => {
         for (const g of Object.keys(state.schema)) {
           const item = state.schema[g]?.items.find((i) => i.key === ck);
-          if (item) {
+          if (!item) continue;
+          const v = state.values[g]?.[ck];
+          const src = state.sources[g]?.[ck];
+          if (v !== undefined && src !== 'env') {
             items.push(item);
-            values[ck] = state.values[g]?.[ck];
-            break;
+            values[ck] = v;
+            found.push(ck);
+          } else {
+            ghost.push(ck);
           }
+          return;
         }
+        ghost.push(ck);
       });
+      if (ghost.length) {
+        setState((s) => {
+          const dirtyKeys = { ...s.dirtyKeys };
+          ghost.forEach((k) => delete dirtyKeys[k]);
+          return { ...s, dirtyKeys };
+        });
+        showMessage(
+          ErrorType.INFO,
+          `已忽略不存在或环境变量接管的配置项：${ghost.join(', ')}`
+        );
+      }
       const bad = validate(items, values);
       if (bad) {
         setHighlightKeyTtl(bad.key);
         showMessage(ErrorType.WARNING, bad.message);
         return { ok: false as const, firstError: bad.key };
       }
+      if (!found.length) return { ok: true as const };
       setSaving(true);
       try {
         const patch = Object.fromEntries(
-          keys.map((ck) => {
+          found.map((ck) => {
             const g = Object.keys(state.schema).find((g) =>
               state.schema[g]?.items.some((i) => i.key === ck)
             );
@@ -295,12 +332,21 @@ export function useSettings() {
           );
           return { ok: false as const };
         }
-        result.warnings.forEach((m) => showMessage(ErrorType.WARNING, m));
+        // [59]F-14 修复：后端 warnings 全为空文案时给固定兜底提示，避免空文案被 showMessage 静默吞掉后用户误以为干净保存
+        const warnMsgs = result.warnings.filter((m) => (m ?? '').trim());
+        if (result.warnings.length && !warnMsgs.length) {
+          showMessage(
+            ErrorType.WARNING,
+            '部分配置项由环境变量接管，已跳过保存'
+          );
+        } else {
+          warnMsgs.forEach((m) => showMessage(ErrorType.WARNING, m));
+        }
         if (result.need_restart.length) setRestartKeys(result.need_restart);
         else showSuccess('保存成功');
         setState((s) => {
           const dirtyKeys = { ...s.dirtyKeys };
-          keys.forEach((k) => {
+          found.forEach((k) => {
             delete dirtyKeys[k];
           });
           // 2026-09-21 BUG-C 修复：secret 项保存成功后把明文/clear 归一回 {configured,suffix}，
@@ -329,7 +375,7 @@ export function useSettings() {
         setSaving(false);
       }
     },
-    [state.schema, state.values, syncMtime, setHighlightKeyTtl]
+    [state.schema, state.values, state.sources, syncMtime, setHighlightKeyTtl]
   );
 
   const saveModelGroup = useCallback(async () => {

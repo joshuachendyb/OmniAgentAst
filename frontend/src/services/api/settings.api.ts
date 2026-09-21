@@ -1,7 +1,8 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置页 API（getSchema/getAll/getGroup/updateSettings，与 config.api.ts 同模式）
+// 2026-09-21 小欧 - [59]B-10 同步：SettingSource 增加 'default'（后端缺省键 source='default'，与显式落盘 yaml 区分）
 import api from './client';
 
-export type SettingSource = 'yaml' | 'env' | 'ro';
+export type SettingSource = 'yaml' | 'env' | 'ro' | 'default';
 
 export interface SettingSchemaItem {
   key: string;
