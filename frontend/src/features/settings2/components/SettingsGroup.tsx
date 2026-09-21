@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-20 小强 - 新建：组渲染（7.3 动态渲染；6.2 局部脏态汇总；外观预览小卡内联）
+// 2026-09-21 小强 - 关于页功能：system 组"关于"小节 header 处集成 AboutFiles（查看配置文件全文 / version 文件全文入口）
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize } from '@/utils/stepStyles';
@@ -8,6 +9,7 @@ import type {
 } from '@/services/api/settings.api';
 import { SettingRow } from './SettingRow';
 import { SectionTitle } from './SectionTitle';
+import { AboutFiles } from './AboutFiles';
 
 interface Props {
   group: string;
@@ -77,6 +79,10 @@ export const SettingsGroup: React.FC<Props> = ({
         return (
           <React.Fragment key={item.key}>
             {header && <SectionTitle title={`── ${header} ──`} />}
+            {header && section === '关于' && (
+              // 2026-09-21 小强 关于区：查看配置文件/version 文件全文
+              <AboutFiles />
+            )}
             <SettingRow
               item={item}
               value={values[item.key]}

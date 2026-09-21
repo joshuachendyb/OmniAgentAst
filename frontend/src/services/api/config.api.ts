@@ -1,3 +1,4 @@
+// 编辑历史: 2026-09-21 小强 - 关于页功能：新增 readVersionFile（GET /config/version-file 返回 version.txt 全文）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -226,6 +227,14 @@ export const configApi = {
 
   readConfigFile: async (): Promise<{ config_content: string }> => {
     const response = await api.get<{ config_content: string }>('/config/read');
+    return response.data;
+  },
+
+  // 2026-09-21 小强 - 关于页"查看 version 文件全文"：后端 GET /config/version-file
+  readVersionFile: async (): Promise<{ version_content: string }> => {
+    const response = await api.get<{ version_content: string }>(
+      '/config/version-file'
+    );
     return response.data;
   },
 };

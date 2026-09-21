@@ -1,5 +1,7 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置页壳（搜索+Tabs+全局脏角标+切 Tab 未保存确认内联+sticky 保存条，见 7.2/6.4）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.success/info 改走 errorHandler.showSuccess/showMessage
+// 2026-09-21 小强 - BUG-F 修复：模型删除确认的 target 精确匹配 provider::model（原 deleteTarget 未带 provider
+//   前缀，确认句恒为 false 导致删除项参数名链上错误——匹配 SettingRow 的 key 形如 provider::model）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { settingsSpacing } from '@/theme/settingsTokens';
