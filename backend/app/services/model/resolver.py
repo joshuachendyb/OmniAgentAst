@@ -22,6 +22,8 @@
 #     (破坏C1), 经 _default_snapshot 派生全局默认快照兜底(复用共享连接池)。
 #   compliance: DRY(两失败路径共用 helper)/KISS-DIRECT/禁止backward
 # 2026-09-20 - 小欧 - 三堂会审BUG-12修复: resolve_session_client添加hasattr类型保护(防非ModelRef类型如dict导致AttributeError静默失效)
+# 2026-09-21 - 小欧 - 修复 None 陷阱: _extract_provider_model 的 .get('provider','')/get('model','') 改为 .get() or ''；
+#   _validate_model_in_list 的 .get('models',[]) 改为 .get() or []（key 存在但值为 None 时原写法返回 None）
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -48,8 +50,8 @@ class AIConfigResolver:
     
     def _extract_provider_model(self, ai_config: Dict[str, Any]) -> Tuple[str, str]:
         """提取provider和model - 小沈 2026-06-08"""
-        provider = ai_config.get("provider", "")
-        model = ai_config.get("model", "")
+        provider = ai_config.get("provider") or ""
+        model = ai_config.get("model") or ""
         return provider, model
     
     def _validate_provider_model_not_empty(self, provider: str, model: str) -> None:
@@ -71,7 +73,7 @@ class AIConfigResolver:
     
     def _validate_model_in_list(self, provider_config: Dict[str, Any], provider: str, model: str) -> Optional[str]:
         """验证model在列表中, 不在则warning并返回提示消息(含可用列表) - 小欧 2026-07-22"""
-        models = provider_config.get("models", [])
+        models = provider_config.get("models") or []
         if model not in models:
             msg = f"model \"{model}\" 不在 provider \"{provider}\" 的 models 列表中，可用模型: {', '.join(models)}"
             logger.warning(msg)

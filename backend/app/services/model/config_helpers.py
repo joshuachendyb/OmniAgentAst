@@ -28,6 +28,10 @@ F10合并: 小欧 - 2026-06-08
 #   suffix 置空不再整体暴露(修 S5)
 # 2026-09-21 - 小欧 - 建议报告 P8 根治: _iter_nested_ops 对空 dict 叶值显式 yield 空块 {}——原实现把 {} 当
 #   内部节点无限展开导致零 ops("清空模型参数/空块"永远写不落盘, PUT default_params={} 静默无效果)。
+# 2026-09-21 - 小欧 - 修复 None 陷阱: .get('key','')/get('key',[]) 在 key 存在但值为 None 时返回 None，
+#   统一修为 .get('key') or ''/[]（config_helpers 内 4 处）
+# 2026-09-21 - 小欧 - 三堂会审清理: 删除无调用方的历史透传函数 _write_system_yaml（KISS-DIRECT 无透传函数 + YAGNI，
+#   唯一逻辑已由 _order_for_dump 承接，全仓无任何 import 调用）
 
 import os
 import shutil
@@ -89,11 +93,6 @@ def _order_for_dump(d: Any) -> Any:
         if k != 'ai':
             result[k] = _order_for_dump(d[k]) if isinstance(d[k], dict) else d[k]
     return result
-
-
-def _write_system_yaml(data: dict) -> OrderedDict:
-    """系统配置专用 YAML 有序化（历史公用函数，调 _order_for_dump）。"""
-    return _order_for_dump(data)
 
 # ====================================================================
 # 配置路径 / 读写
@@ -273,8 +272,8 @@ def _auto_fix_and_validate(
             "backup_path": str(backup_path) if backup_path else None,
             # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构
             "current_model_ref": {
-                "provider": str(original_ai.get('provider', 'unknown')),
-                "model": str(original_ai.get('model', '')),
+                "provider": str(original_ai.get('provider') or 'unknown'),
+                "model": str(original_ai.get('model') or ''),
             },
         }
         return False, errors, warnings, fail_result
@@ -308,7 +307,7 @@ def ensure_model_exists(config: dict, provider_name: str, model_name: str) -> No
             status_code=404,
             detail=f"Provider {provider_name} 不存在"
         )
-    models = providers[provider_name].get('models', [])
+    models = providers[provider_name].get('models') or []
     if model_name and model_name not in models:
         raise HTTPException(
             status_code=404,
@@ -320,7 +319,7 @@ def ensure_model_not_duplicate(config: dict, provider_name: str, model_name: str
     providers = config.get('ai', {})
     if provider_name not in providers:
         return
-    models = providers[provider_name].get('models', [])
+    models = providers[provider_name].get('models') or []
     if model_name and model_name in models:
         raise HTTPException(
             status_code=400,
