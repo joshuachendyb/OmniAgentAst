@@ -3,9 +3,12 @@
 // 编辑历史: 2026-09-21 小强 - 修复 BUG-A：mProvider 仅 useState 初始化一次，父级 selectedProvider 变化后弹窗仍指向旧 Provider（陈旧状态）；加 useEffect 联动
 // 2026-09-21 小欧 - P0-9：添加 Provider 弹窗增 api_key 输入框（[58] P0-9）
 // 2026-09-21 小欧 - 第六章①②③：弹窗视觉优化——描述行/danger/⚠/后果说明（[58] 第六章 6.2）
+// 2026-09-21 小欧 - 全文逐章核查：①②表单弹窗显式 form 宽、③确认弹窗宽散落 480 → settingsModalWidth.form/confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
+// 2026-09-21 小欧 - 全文逐章核查：规范二落地——①②③弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD，弃用 antd 默认16px；描述行 marginBottom:12 → Spacing.LG（[58] v1.12 第六章 6.1 规范二）
 import React, { useEffect, useState } from 'react';
 import { Form, Input, Modal, Select } from 'antd';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import { settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
 
 interface Props {
@@ -47,7 +50,8 @@ export const ModelModals: React.FC<Props> = (props) => {
     <>
       <Modal
         open={addModelOpen}
-        title="添加模型"
+        title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>添加模型</span>}
+        width={settingsModalWidth.form}
         onCancel={props.onCloseAddModel}
         onOk={() =>
           mForm.validateFields().then((v) => {
@@ -62,7 +66,7 @@ export const ModelModals: React.FC<Props> = (props) => {
         okText="保存"
         cancelText="取消"
       >
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: 12 }}>
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.LG }}>
           为指定 Provider 添加新模型，创建后可在①选择器中选用
         </div>
         <Form form={mForm} layout="vertical">
@@ -89,7 +93,8 @@ export const ModelModals: React.FC<Props> = (props) => {
       </Modal>
       <Modal
         open={addProviderOpen}
-        title="添加 Provider"
+        title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>添加 Provider</span>}
+        width={settingsModalWidth.form}
         onCancel={props.onCloseAddProvider}
         onOk={() =>
           pForm.validateFields().then((v) => {
@@ -100,7 +105,7 @@ export const ModelModals: React.FC<Props> = (props) => {
         okText="保存"
         cancelText="取消"
       >
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: 12 }}>
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.LG }}>
           创建后可在③Provider配置区修改 API Key / API 地址
         </div>
         <Form form={pForm} layout="vertical">
@@ -124,12 +129,13 @@ export const ModelModals: React.FC<Props> = (props) => {
       </Modal>
       <Modal
         open={deleteOpen}
-        title={`⚠ 确定要删除 "${deleteTarget ?? ''}"？`}
+        title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>{`⚠ 确定要删除 "${deleteTarget ?? ''}"？`}</span>}
         onCancel={props.onCloseDelete}
         onOk={props.onConfirmDelete}
         okText="删除"
         okButtonProps={{ danger: true }}
         cancelText="取消"
+        width={settingsModalWidth.confirm}
       >
         <span style={{ color: Colors.TEXT.SECONDARY }}>
           警告：如果这是当前使用的模型，将自动切换为默认模型；删除 Provider

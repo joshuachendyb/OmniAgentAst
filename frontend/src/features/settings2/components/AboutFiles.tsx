@@ -3,6 +3,10 @@
 //   代码区等宽 CODE 字号 + VERTICAL 边框 + TERTIARY 底，不硬编码色值/字号（stepStyles 铁律）。
 // 2026-09-21 小欧 - P2-8：关于区按钮由横排改竖排+靠左对齐（[58] P2-8）
 // 2026-09-21 小欧 - P2-9：文件查看 Modal 作品级 UI——Header/元信息条/行号正文/加载错误态/footer（[58] P2-9）
+// 2026-09-21 小欧 - 全文逐章核查(P2-9第4条)：错误横幅改 Colors.ERROR 系（ERROR_BG/ERROR_BORDER/ERROR），与文档"Colors.ERROR 系"一致（[58] v1.12）
+// 2026-09-21 小欧 - 全文逐章核查：展示弹窗宽散落 800 → settingsModalWidth.display 令牌收口（[58] v1.12 第六章 6.1 规范一）
+// 2026-09-21 小欧 - 全文逐章核查：标题图标 marginRight:8、只读 badge padding:6/borderRadius:4 → Spacing.MD/SM、Radius.SM 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 关于区排版修复：按钮从独立竖排块改为嵌入对应信息行右侧（排版修复）
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Modal, Spin } from 'antd';
 import {
@@ -10,8 +14,8 @@ import {
   FileTextOutlined,
 } from '@ant-design/icons';
 import { configApi } from '@/services/api/config.api';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
-import { settingsRadius } from '@/theme/settingsTokens';
+import { Colors, FontSize, FontWeight, Spacing, Radius as Radius_SM } from '@/utils/stepStyles';
+import { settingsRadius, settingsModalWidth } from '@/theme/settingsTokens';
 import { showSuccess } from '@/services/error/handler';
 import { CopyIcon } from './icons';
 
@@ -21,7 +25,7 @@ const CODE_FONT = 'Consolas, Menlo, monospace';
 
 const stripBom = (s: string): string => s.replace(/^\uFEFF/, '');
 
-const actionStyle: React.CSSProperties = {
+const btnStyle: React.CSSProperties = {
   fontSize: FontSize.PRIMARY,
   fontWeight: FontWeight.REGULAR,
 };
@@ -50,16 +54,20 @@ const formatTime = (ts: number): string => {
   }
 };
 
-export const AboutFiles: React.FC = () => {
-  const [open, setOpen] = useState<FileKind | null>(null);
+interface AboutFilesProps {
+  kind: FileKind;
+}
+
+export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
+  const [open, setOpen] = useState(false);
   const [content, setContent] = useState('');
   const [meta, setMeta] = useState<FileMeta | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const openFile = useCallback(async (kind: FileKind) => {
+  const openFile = useCallback(async () => {
     setLoading(true);
-    setOpen(kind);
+    setOpen(true);
     setError(null);
     setContent('');
     setMeta(null);
@@ -78,10 +86,10 @@ export const AboutFiles: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [kind]);
 
   const close = useCallback(() => {
-    setOpen(null);
+    setOpen(false);
     setContent('');
     setMeta(null);
     setError(null);
@@ -93,31 +101,17 @@ export const AboutFiles: React.FC = () => {
   }, [content]);
 
   const lines = useMemo(() => content.split('\n'), [content]);
-  const title = open === 'config' ? '配置文件全文' : 'version 文件全文';
+  const title = kind === 'config' ? '配置文件全文' : 'version 文件全文';
+  const icon = kind === 'config' ? <FileTextOutlined /> : <FileDoneOutlined />;
 
   return (
     <>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: Spacing.XS, margin: `${Spacing.XS}px 0 ${Spacing.MD}px` }}>
-        <Button
-          icon={<FileTextOutlined />}
-          style={actionStyle}
-          loading={loading && open === 'config'}
-          onClick={() => openFile('config')}
-        >
-          查看配置文件全文
-        </Button>
-        <Button
-          icon={<FileDoneOutlined />}
-          style={actionStyle}
-          loading={loading && open === 'version'}
-          onClick={() => openFile('version')}
-        >
-          查看 version 文件全文
-        </Button>
-      </div>
+      <Button icon={icon} style={btnStyle} loading={loading} onClick={openFile}>
+        查看{title}
+      </Button>
       <Modal
-        open={open !== null}
-        width={800}
+        open={open}
+        width={settingsModalWidth.display}
         onCancel={close}
         footer={[
           <Button key="copy" icon={<CopyIcon />} onClick={copyAll} disabled={!content}>
@@ -130,7 +124,7 @@ export const AboutFiles: React.FC = () => {
         title={
           <div>
             <div style={{ fontWeight: FontWeight.BOLD, fontSize: FontSize.PRIMARY }}>
-              <FileTextOutlined style={{ marginRight: 8 }} />
+              <span style={{ marginRight: Spacing.MD }}>{icon}</span>
               {title}
             </div>
             {meta && (
@@ -158,8 +152,8 @@ export const AboutFiles: React.FC = () => {
             <span>更新 {formatTime(meta.mtime)}</span>
             <span style={{
               marginLeft: 'auto',
-              padding: '0 6px',
-              borderRadius: 4,
+              padding: `0 ${Spacing.SM}px`,
+              borderRadius: Radius_SM.SM,
               background: Colors.BG.SECONDARY,
               fontSize: FontSize.SECONDARY,
             }}>只读</span>
@@ -173,9 +167,10 @@ export const AboutFiles: React.FC = () => {
         {error && (
           <div style={{
             padding: Spacing.MD,
-            background: Colors.BG.TERTIARY,
+            background: Colors.ERROR_BG,
+            border: `1px solid ${Colors.ERROR_BORDER}`,
             borderRadius: settingsRadius.DEFAULT,
-            color: Colors.TEXT.SECONDARY,
+            color: Colors.ERROR,
             marginBottom: Spacing.MD,
           }}>
             {error}
@@ -194,6 +189,7 @@ export const AboutFiles: React.FC = () => {
               lineHeight: 1.7,
               fontFamily: CODE_FONT,
               minWidth: 48,
+              overflow: 'hidden',
               borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
             }}>
               {lines.map((_, i) => i + 1).join('\n')}
@@ -209,7 +205,6 @@ export const AboutFiles: React.FC = () => {
               wordBreak: 'normal',
               color: Colors.TEXT.PRIMARY,
               flex: 1,
-              overflow: 'auto',
             }}>
               {content}
             </pre>

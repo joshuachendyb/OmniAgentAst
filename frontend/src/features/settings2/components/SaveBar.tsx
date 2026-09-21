@@ -3,10 +3,12 @@
 // 2026-09-21 小欧 - P1-3：保存本组按钮带本组待存计数（[58] P1-3）
 // 2026-09-21 小欧 - 第六章⑤⑥：危险保存确认 danger+⚠、重启通知结构化（[58] 第六章 6.2）
 // 2026-09-21 小欧 - 核查修复：⑤ content 包 span 加 secondary 色、⑥ 标题 fontWeight BOLD 内容 fontSize SECONDARY（[58] v1.11 Step6.5/6.6）
+// 2026-09-21 小欧 - 全文逐章核查：弹窗宽散落硬编码 480 → settingsModalWidth.confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
+// 2026-09-21 小欧 - 全文逐章核查：规范二落地——⑤⑥弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD；marginTop/padding/marginLeft 裸数字 → Spacing.LG/MD 令牌（[58] v1.12 第六章 6.1 规范二）
 import React from 'react';
 import { Button, Modal } from 'antd';
-import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
-import { settingsShadow } from '@/theme/settingsTokens';
+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import { settingsShadow, settingsModalWidth } from '@/theme/settingsTokens';
 
 interface Props {
   canSaveGroup: boolean;
@@ -36,7 +38,11 @@ export const SaveBar: React.FC<Props> = ({
   const confirmThen = (fn: () => void) => {
     if (hasDangerousDirty) {
       Modal.confirm({
-        title: '⚠ 含危险操作相关改动',
+        title: (
+          <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+            ⚠ 含危险操作相关改动
+          </span>
+        ),
         content: (
           <span style={{ color: Colors.TEXT.SECONDARY }}>
             本次保存涉及危险操作/黑白名单配置，确认提交吗？
@@ -45,6 +51,7 @@ export const SaveBar: React.FC<Props> = ({
         okText: '确认保存',
         okButtonProps: { danger: true },
         cancelText: '取消',
+        width: settingsModalWidth.confirm,
         onOk: fn,
       });
     } else {
@@ -56,8 +63,8 @@ export const SaveBar: React.FC<Props> = ({
       style={{
         position: 'sticky',
         bottom: 0,
-        marginTop: 12,
-        padding: '12px 0 0',
+        marginTop: Spacing.LG,
+        padding: `${Spacing.LG}px 0 0`,
         background: Colors.BG.PRIMARY,
         borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
         boxShadow: settingsShadow,
@@ -75,17 +82,22 @@ export const SaveBar: React.FC<Props> = ({
         type="primary"
         disabled={!canSaveAll || saving}
         loading={saving}
-        style={{ marginLeft: 8 }}
+        style={{ marginLeft: Spacing.MD }}
         onClick={() => confirmThen(onSaveAll)}
       >
         保存全部{dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
       </Button>
       <Modal
         open={restartKeys.length > 0}
-        title={<span style={{ fontWeight: FontWeight.BOLD }}>含重启生效项</span>}
+        title={
+          <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+            含重启生效项
+          </span>
+        }
         onOk={onCloseRestart}
         onCancel={onCloseRestart}
         okText="知道了"
+        width={settingsModalWidth.confirm}
         cancelButtonProps={{ style: { display: 'none' } }}
       >
         <div style={{ fontSize: FontSize.SECONDARY }}>

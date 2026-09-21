@@ -1,8 +1,9 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型参数区（跟随当前模型+范围+[已修改]+[重置为默认]确认内联）
 // 2026-09-21 小欧 - P0-4+P0-6+P0-7：色/字号→令牌、滑块宽→settingsControl、标签宽→settingsSpacing（[58] P0-4/P0-6/P0-7）
+// 2026-09-21 小欧 - 全文逐章核查：gap 裸数字 → Spacing.MD 令牌（[58] v1.12 第七章 铁规）
 import React from 'react';
 import { InputNumber, Slider } from 'antd';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { settingsSpacing, settingsControl, settingsRowLayout } from '@/theme/settingsTokens';
 import { isDirty } from '../utils/modelUtils';
 import { DirtyDot } from './icons';
@@ -41,7 +42,7 @@ export const ModelParams: React.FC<Props> = ({
             <span style={{ width: settingsSpacing.labelWidth }}>{key}</span>
             {range ? (
               <span
-                style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}
+                style={{ display: 'inline-flex', gap: Spacing.MD, alignItems: 'center' }}
               >
                 <Slider
                   min={range.min}

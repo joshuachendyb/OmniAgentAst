@@ -1,9 +1,10 @@
 // 编辑历史: 2026-09-20 小强 - 新建：单行渲染（控件↔schema.type↔antd；secret 三态/只读复制/env 只读，见 7.4/7.7）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：复制成功提示改走 errorHandler.showSuccess
 // 2026-09-21 小欧 - P0-6：控件宽度→settingsControl 令牌（[58] P0-6）
+// 2026-09-21 小欧 - 全文逐章核查：gap:8/marginLeft:8 → Spacing.MD 令牌（[58] v1.12 第七章 铁规）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
-import { FontSize, FontWeight, Colors } from '@/utils/stepStyles';
+import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 import { settingsSpacing, settingsControl, settingsRowLayout } from '@/theme/settingsTokens';
 import type {
@@ -79,7 +80,7 @@ export const SettingRow: React.FC<Props> = ({
         );
       }
       return (
-        <span style={{ display: 'inline-flex', gap: 8 }}>
+        <span style={{ display: 'inline-flex', gap: Spacing.MD }}>
           <Input.Password
             value={secretInput}
             onChange={(e) => setSecretInput(e.target.value)}
@@ -138,7 +139,7 @@ export const SettingRow: React.FC<Props> = ({
       case 'range':
         return (
           <span
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: Spacing.MD }}
           >
             <Slider
               min={item.range?.[0]}
@@ -223,7 +224,7 @@ export const SettingRow: React.FC<Props> = ({
         style={{
           fontSize: FontSize.SECONDARY,
           color: Colors.TEXT.SECONDARY,
-          marginLeft: 8,
+          marginLeft: Spacing.MD,
         }}
       >
         {item.notice || (item.restart ? '重启生效' : '即时生效')}
