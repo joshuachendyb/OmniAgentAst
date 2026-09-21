@@ -19,6 +19,8 @@
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes.py → config_routes.py(实为配置API路由薄壳, /config/* /provider/*)
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B: GET /config 落 DTO 改 ai_model_ref=data["ai_model_ref"]、
 #   GET /config/full 改 current_model_ref=result["current_model_ref"](后端 DTO 字段变更, 前端 api.ts 契约已同步改)
+# 2026-09-21 - 小欧 - 关于页功能: 新增 GET /config/version-file 只读端点(返回 {version_content})，version.txt
+#   全文读取落 services/model/config_service.read_version_file，供前端关于区"查看 version 文件全文"。
 """
 config_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
 
@@ -53,6 +55,7 @@ from app.services.model.config_service import (
     get_system_config_data,
     open_config_folder as svc_open_config_folder,
     read_config_file as svc_read_config_file,
+    read_version_file as svc_read_version_file,
     update_config as update_config_service,
     update_model as svc_update_model,
     update_provider as svc_update_provider,
@@ -180,6 +183,13 @@ async def get_config_path_endpoint():
 @handle_config_errors("读取配置文件")
 async def read_config_file():
     return svc_read_config_file()
+
+
+@router.get("/config/version-file")
+@handle_config_errors("读取版本文件")
+async def read_version_file():
+    # 2026-09-21 小欧 关于页"查看 version 文件全文"：返回 version.txt 全文
+    return svc_read_version_file()
 
 
 @router.post("/config/open-folder")

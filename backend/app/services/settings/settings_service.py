@@ -20,9 +20,12 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
    2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（settings 域 S2/S3/S4，其余模型域见 model_service）——
      ①S2 merge_region_patch 对非法 model_ref 目标（provider 不存在/模型不在列表）抛 RuntimeError 未捕获→500，
      改在 update_settings 内捕获转 {ok:False, errors}，杜绝裸异常；②S3 校验对 None 一律放行→_set_dotted(None)
-     直接删 YAML 键（select/bool/range 字段被"清空消失"），改为仅当该 key 默认值本身为 None 时允 null
+      直接删 YAML 键（select/bool/range 字段被"清空消失"），改为仅当该 key 默认值本身为 None 时允 null
      （如 chat.max_tokens 留空=跟随模型），否则拒绝；③S4 os.environ.get(env_key) is not None 把空字符串
      环境变量误判为 env 接管（AI_PROVIDER='' 导致模型永不可改），改 bool(...) 非空才判定接管
+   2026-09-21 - 小欧 - 建议报告 B5/D8: ①_item_data 加通用 `item.get("readonly")` 分支→source='ro'
+     （app.theme 原无分支落 sources 缺键，前端只读项回显缺 source）；②app_version 加 lstrip("v")
+     对齐 /health.version（原返回 "v1.0.3"，health 返回 "1.0.3"，两处不一致）
 """
 import os
 from pathlib import Path
@@ -60,7 +63,7 @@ def app_version() -> str:
                 for line in f:
                     v = line.strip().lstrip("\ufeff")
                     if v:
-                        return v
+                        return v.lstrip("v")  # 2026-09-21 小欧 修 D8: 与 main.get_version 一致去 v 前缀（/health.version 1.0.3）
     except Exception as e:
         logger.warning(f"读取 version 失败: {e}")
     return "0.0.0"
@@ -71,6 +74,11 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         return str(get_config_path()), "ro"
     if key == "version":
         return app_version(), "ro"
+    # 2026-09-21 小欧 修 B5: readonly 项一律 source='ro'（原实现 app.theme 只读却标 yaml，
+    # 与 config_path/version 的 ro 语义不一致，前端误判可编辑）。
+    if item.get("readonly"):
+        raw_val = _get_dotted(raw, key, item["default"])
+        return (raw_val if raw_val is not None else item["default"]), "ro"
     raw_val = _get_dotted(raw, key, item["default"])
     eff_val = _resolved(key, item["default"])
     is_env = bool(item.get("env_key") and os.environ.get(item["env_key"]))

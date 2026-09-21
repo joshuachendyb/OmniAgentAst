@@ -18,6 +18,8 @@
 #   resolved_model、update_config 返回 current_model_ref 结构(方案B 前端 api.ts 契约已同步改)
 # 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): update_config 的 updated_fields 内嵌 ai_model_ref 的
 #   api_base/display_name null 键剔除(模型转 dict 后过滤 None), 免前端/日志噪声
+# 2026-09-21 - 小欧 - 关于页功能: 新增 read_version_file(读 get_code_root()/version.txt 全文返
+#   {version_content})，供 GET /config/version-file；Path 顶层 import。
 """
 config_service — 配置业务服务(services/model)
 
@@ -27,6 +29,8 @@ P3(小沈 2026-08-13): 全量CRUD下沉, model_routes 降为纯薄壳。
 """
 import os
 import subprocess
+from pathlib import Path
+
 import yaml
 
 from fastapi import HTTPException
@@ -390,6 +394,17 @@ def read_config_file() -> dict:
     with open(config_path, "r", encoding="utf-8") as f:
         content = f.read()
     return {"config_content": content}
+
+
+def read_version_file() -> dict:
+    """读取 version.txt 全文 — 2026-09-21 小欧 关于页"查看版本文件全文"。
+    路径与 main.get_version / settings_service.app_version 一致（get_code_root()/version.txt，DRY）。"""
+    from app.config import get_code_root  # 局部 import：避免顶层循环依赖
+    version_path = Path(get_code_root()) / "version.txt"
+    if not version_path.exists():
+        raise HTTPException(status_code=404, detail=f"version 文件不存在: {version_path}")
+    with open(version_path, "r", encoding="utf-8") as f:
+        return {"version_content": f.read()}
 
 
 def open_config_folder() -> dict:
