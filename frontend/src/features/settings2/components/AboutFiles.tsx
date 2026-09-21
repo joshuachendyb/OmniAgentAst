@@ -7,14 +7,19 @@
 // 2026-09-21 小欧 - 全文逐章核查：展示弹窗宽散落 800 → settingsModalWidth.display 令牌收口（[58] v1.12 第六章 6.1 规范一）
 // 2026-09-21 小欧 - 全文逐章核查：标题图标 marginRight:8、只读 badge padding:6/borderRadius:4 → Spacing.MD/SM、Radius.SM 令牌（[58] v1.12 第七章 铁规）
 // 2026-09-21 小欧 - 关于区排版修复：按钮从独立竖排块改为嵌入对应信息行右侧（排版修复）
+// 2026-09-21 小强 - 按钮改名：查看配置文件/查看版本文件（去"全文"，北京老陈定）
+// 2026-09-21 小强 - 弹框优化：标题与按钮统一去"全文"（单源 docName 派生，删 title/btnLabel/报错三处双写）；行号栏 sticky；复制失败走框内错误条；空文件占位；Modal 加 destroyOnHidden（北京老陈定）
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Modal, Spin } from 'antd';
-import {
-  FileDoneOutlined,
-  FileTextOutlined,
-} from '@ant-design/icons';
+import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
 import { configApi } from '@/services/api/config.api';
-import { Colors, FontSize, FontWeight, Spacing, Radius as Radius_SM } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontSize,
+  FontWeight,
+  Spacing,
+  Radius as Radius_SM,
+} from '@/utils/stepStyles';
 import { settingsRadius, settingsModalWidth } from '@/theme/settingsTokens';
 import { showSuccess } from '@/services/error/handler';
 import { CopyIcon } from './icons';
@@ -46,8 +51,12 @@ const formatSize = (bytes: number): string => {
 const formatTime = (ts: number): string => {
   try {
     return new Date(ts * 1000).toLocaleString('zh-CN', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     });
   } catch {
     return String(ts);
@@ -65,6 +74,9 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 2026-09-21 小强 - 单源 docName：标题/按钮/报错/toast/复制按钮全由它派生，删 title/btnLabel/报错三处双写（DRY）
+  const docName = kind === 'config' ? '配置文件' : '版本文件';
+
   const openFile = useCallback(async () => {
     setLoading(true);
     setOpen(true);
@@ -75,18 +87,28 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
       if (kind === 'config') {
         const res = await configApi.readConfigFile();
         setContent(stripBom(res.config_content));
-        setMeta({ path: res.path, size: res.size, lines: res.lines, mtime: res.mtime });
+        setMeta({
+          path: res.path,
+          size: res.size,
+          lines: res.lines,
+          mtime: res.mtime,
+        });
       } else {
         const res = await configApi.readVersionFile();
         setContent(stripBom(res.version_content));
-        setMeta({ path: res.path, size: res.size, lines: res.lines, mtime: res.mtime });
+        setMeta({
+          path: res.path,
+          size: res.size,
+          lines: res.lines,
+          mtime: res.mtime,
+        });
       }
     } catch {
-      setError('读取' + (kind === 'config' ? '配置文件' : '版本文件') + '全文失败');
+      setError('读取' + docName + '失败');
     } finally {
       setLoading(false);
     }
-  }, [kind]);
+  }, [kind, docName]);
 
   const close = useCallback(() => {
     setOpen(false);
@@ -95,27 +117,36 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
     setError(null);
   }, []);
 
-  const copyAll = useCallback(() => {
-    void navigator.clipboard.writeText(content);
-    showSuccess('已复制全文');
-  }, [content]);
+  const copyAll = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      showSuccess(`已复制${docName}`);
+    } catch {
+      setError('复制失败，请手动选择复制');
+    }
+  }, [content, docName]);
 
   const lines = useMemo(() => content.split('\n'), [content]);
-  const title = kind === 'config' ? '配置文件全文' : 'version 文件全文';
   const icon = kind === 'config' ? <FileTextOutlined /> : <FileDoneOutlined />;
 
   return (
     <>
       <Button icon={icon} style={btnStyle} loading={loading} onClick={openFile}>
-        查看{title}
+        查看{docName}
       </Button>
       <Modal
         open={open}
         width={settingsModalWidth.display}
+        destroyOnHidden
         onCancel={close}
         footer={[
-          <Button key="copy" icon={<CopyIcon />} onClick={copyAll} disabled={!content}>
-            复制全文
+          <Button
+            key="copy"
+            icon={<CopyIcon />}
+            onClick={copyAll}
+            disabled={!content}
+          >
+            复制{docName}
           </Button>,
           <Button key="close" type="primary" onClick={close}>
             关闭
@@ -123,12 +154,23 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
         ]}
         title={
           <div>
-            <div style={{ fontWeight: FontWeight.BOLD, fontSize: FontSize.PRIMARY }}>
+            <div
+              style={{
+                fontWeight: FontWeight.BOLD,
+                fontSize: FontSize.PRIMARY,
+              }}
+            >
               <span style={{ marginRight: Spacing.MD }}>{icon}</span>
-              {title}
+              {docName}
             </div>
             {meta && (
-              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.REGULAR }}>
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.SECONDARY,
+                  fontWeight: FontWeight.REGULAR,
+                }}
+              >
                 {meta.path}
               </div>
             )}
@@ -136,27 +178,35 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
         }
       >
         {meta && (
-          <div style={{
-            display: 'flex', gap: Spacing.LG, alignItems: 'center',
-            padding: `${Spacing.SM}px ${Spacing.MD}px`,
-            background: Colors.BG.TERTIARY,
-            borderRadius: settingsRadius.DEFAULT,
-            marginBottom: Spacing.MD,
-            fontSize: FontSize.SECONDARY,
-            color: Colors.TEXT.SECONDARY,
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: Spacing.LG,
+              alignItems: 'center',
+              padding: `${Spacing.SM}px ${Spacing.MD}px`,
+              background: Colors.BG.TERTIARY,
+              borderRadius: settingsRadius.DEFAULT,
+              marginBottom: Spacing.MD,
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+            }}
+          >
             <span>{meta.lines} 行</span>
             <span>·</span>
             <span>{formatSize(meta.size)}</span>
             <span>·</span>
             <span>更新 {formatTime(meta.mtime)}</span>
-            <span style={{
-              marginLeft: 'auto',
-              padding: `0 ${Spacing.SM}px`,
-              borderRadius: Radius_SM.SM,
-              background: Colors.BG.SECONDARY,
-              fontSize: FontSize.SECONDARY,
-            }}>只读</span>
+            <span
+              style={{
+                marginLeft: 'auto',
+                padding: `0 ${Spacing.SM}px`,
+                borderRadius: Radius_SM.SM,
+                background: Colors.BG.SECONDARY,
+                fontSize: FontSize.SECONDARY,
+              }}
+            >
+              只读
+            </span>
           </div>
         )}
         {loading && (
@@ -165,49 +215,77 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
           </div>
         )}
         {error && (
-          <div style={{
-            padding: Spacing.MD,
-            background: Colors.ERROR_BG,
-            border: `1px solid ${Colors.ERROR_BORDER}`,
-            borderRadius: settingsRadius.DEFAULT,
-            color: Colors.ERROR,
-            marginBottom: Spacing.MD,
-          }}>
+          <div
+            style={{
+              padding: Spacing.MD,
+              background: Colors.ERROR_BG,
+              border: `1px solid ${Colors.ERROR_BORDER}`,
+              borderRadius: settingsRadius.DEFAULT,
+              color: Colors.ERROR,
+              marginBottom: Spacing.MD,
+            }}
+          >
             {error}
           </div>
         )}
         {!loading && !error && content && (
-          <div style={{ display: 'flex', maxHeight: '60vh', overflow: 'auto', border: `1px solid ${Colors.BORDER.VERTICAL}`, borderRadius: settingsRadius.LG }}>
-            <pre style={{
-              margin: 0,
-              padding: `${Spacing.LG}px ${Spacing.MD}px`,
-              background: Colors.BG.TERTIARY,
-              color: Colors.TEXT.SECONDARY,
-              textAlign: 'right',
-              userSelect: 'none',
-              fontSize: FontSize.CODE,
-              lineHeight: 1.7,
-              fontFamily: CODE_FONT,
-              minWidth: 48,
-              overflow: 'hidden',
-              borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
-            }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'auto 1fr',
+              maxHeight: '60vh',
+              overflow: 'auto',
+              border: `1px solid ${Colors.BORDER.VERTICAL}`,
+              borderRadius: settingsRadius.LG,
+            }}
+          >
+            <pre
+              style={{
+                margin: 0,
+                padding: `${Spacing.LG}px ${Spacing.MD}px`,
+                background: Colors.BG.TERTIARY,
+                color: Colors.TEXT.SECONDARY,
+                textAlign: 'right',
+                userSelect: 'none',
+                fontSize: FontSize.CODE,
+                lineHeight: 1.7,
+                fontFamily: CODE_FONT,
+                minWidth: 48,
+                whiteSpace: 'pre',
+                borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
+                flexShrink: 0,
+              }}
+            >
               {lines.map((_, i) => i + 1).join('\n')}
             </pre>
-            <pre style={{
-              margin: 0,
-              padding: `${Spacing.LG}px ${Spacing.XL}px`,
-              background: Colors.BG.PRIMARY,
-              fontSize: FontSize.CODE,
-              lineHeight: 1.7,
-              fontFamily: CODE_FONT,
-              whiteSpace: 'pre',
-              wordBreak: 'normal',
-              color: Colors.TEXT.PRIMARY,
-              flex: 1,
-            }}>
+            <pre
+              style={{
+                margin: 0,
+                padding: `${Spacing.LG}px ${Spacing.XL}px`,
+                background: Colors.BG.PRIMARY,
+                fontSize: FontSize.CODE,
+                lineHeight: 1.7,
+                fontFamily: CODE_FONT,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'normal',
+                color: Colors.TEXT.PRIMARY,
+                flex: 1,
+              }}
+            >
               {content}
             </pre>
+          </div>
+        )}
+        {!loading && !error && !content && (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: Spacing.XL * 2,
+              color: Colors.TEXT.SECONDARY,
+              fontSize: FontSize.SECONDARY,
+            }}
+          >
+            文件为空
           </div>
         )}
       </Modal>
