@@ -1,0 +1,231 @@
+// 编辑历史: 2026-09-20 小强 - 新建：单行渲染（控件↔schema.type↔antd；secret 三态/只读复制/env 只读，见 7.4/7.7）
+// 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：复制成功提示改走 errorHandler.showSuccess
+import React, { useState } from 'react';
+import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
+import { FontSize, FontWeight, Colors } from '@/utils/stepStyles';
+import { chatTokens } from '@/theme/tokens';
+import { settingsSpacing } from '@/theme/settingsTokens';
+import type {
+  SettingSchemaItem,
+  SettingSource,
+} from '@/services/api/settings.api';
+import { EnvTag, CopyIcon, DirtyDot } from './icons';
+import { showSuccess } from '@/services/error/handler';
+
+interface Props {
+  item: SettingSchemaItem;
+  value: unknown;
+  source: SettingSource;
+  dirty: boolean;
+  highlight: boolean;
+  onChange: (value: unknown) => void;
+}
+
+export const SettingRow: React.FC<Props> = ({
+  item,
+  value,
+  source,
+  dirty,
+  highlight,
+  onChange,
+}) => {
+  const [editingSecret, setEditingSecret] = useState(false);
+  const [secretInput, setSecretInput] = useState('');
+  const disabled = item.readonly || source === 'env';
+
+  const renderControl = (): React.ReactNode => {
+    if (item.readonly) {
+      return (
+        <span>
+          <span style={{ fontSize: FontSize.CODE }}>{String(value ?? '')}</span>
+          <Button
+            type="link"
+            icon={<CopyIcon />}
+            onClick={() => {
+              void navigator.clipboard.writeText(String(value ?? ''));
+              showSuccess('已复制');
+            }}
+          />
+        </span>
+      );
+    }
+    if (item.secret) {
+      // 2026-09-21 BUG-B 修复：value 可为明文（保存中/保存后未回读的瞬时态），
+      // 原逻辑按 {configured,suffix} 结构取 configured 对字符串取到 undefined -> 误显"未配置"
+      const raw = value;
+      const isPlain = typeof raw === 'string';
+      const configured = isPlain
+        ? raw.length > 0
+        : !!(raw as { configured?: boolean })?.configured;
+      const suffix = isPlain
+        ? raw.slice(-4)
+        : ((raw as { suffix?: string })?.suffix ?? '');
+      if (!editingSecret) {
+        return (
+          <span>
+            {configured ? `已配置 ····${suffix}` : '未配置'}
+            <Button
+              type="link"
+              disabled={source === 'env'}
+              onClick={() => {
+                setSecretInput('');
+                setEditingSecret(true);
+              }}
+            >
+              {configured ? '修改' : '配置'}
+            </Button>
+          </span>
+        );
+      }
+      return (
+        <span style={{ display: 'inline-flex', gap: 8 }}>
+          <Input.Password
+            value={secretInput}
+            onChange={(e) => setSecretInput(e.target.value)}
+            placeholder="留空=保持原值"
+            style={{ width: 220 }}
+          />
+          <Button
+            type="primary"
+            size="small"
+            onClick={() => {
+              onChange(secretInput);
+              setEditingSecret(false);
+            }}
+          >
+            确定
+          </Button>
+          <Button
+            size="small"
+            onClick={() => {
+              onChange({ clear: true });
+              setEditingSecret(false);
+            }}
+          >
+            清空
+          </Button>
+          <Button size="small" onClick={() => setEditingSecret(false)}>
+            取消
+          </Button>
+        </span>
+      );
+    }
+    switch (item.type) {
+      case 'bool':
+        return (
+          <Switch
+            checked={value as boolean}
+            disabled={disabled}
+            onChange={onChange}
+          />
+        );
+      case 'select':
+        return (
+          <Select
+            value={value as string}
+            disabled={disabled}
+            style={{ width: 200 }}
+            onChange={onChange}
+          >
+            {(item.options ?? []).map((o) => (
+              <Select.Option key={String(o)} value={o as string}>
+                {String(o)}
+              </Select.Option>
+            ))}
+          </Select>
+        );
+      case 'range':
+        return (
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
+          >
+            <Slider
+              min={item.range?.[0]}
+              max={item.range?.[1]}
+              step={item.step ?? 1}
+              value={value as number}
+              disabled={disabled}
+              style={{ width: 160 }}
+              onChange={onChange}
+            />
+            <InputNumber
+              min={item.range?.[0]}
+              max={item.range?.[1]}
+              step={item.step ?? 1}
+              value={value as number}
+              disabled={disabled}
+              onChange={(v) => onChange(v)}
+            />
+          </span>
+        );
+      case 'int':
+      case 'float':
+        return (
+          <InputNumber
+            value={value as number}
+            disabled={disabled}
+            onChange={(v) => onChange(v)}
+          />
+        );
+      case 'textarea':
+        return (
+          <Input.TextArea
+            value={value as string}
+            disabled={disabled}
+            rows={3}
+            style={{ width: 320 }}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        );
+      case 'model_ref':
+        return (
+          <span style={{ color: Colors.TEXT.SECONDARY }}>
+            由模型 Tab 选择器管理
+          </span>
+        );
+      default:
+        return (
+          <Input
+            value={value as string}
+            disabled={disabled}
+            style={{ width: 260 }}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        );
+    }
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: settingsSpacing.rowHeight,
+        borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
+        background: highlight ? chatTokens.colorPrimaryBg : undefined,
+      }}
+    >
+      <span
+        style={{
+          width: settingsSpacing.labelWidth,
+          fontSize: FontSize.PRIMARY,
+          fontWeight: FontWeight.REGULAR,
+        }}
+      >
+        {item.label}
+      </span>
+      <span style={{ flex: 1 }}>{renderControl()}</span>
+      {dirty && <DirtyDot />}
+      {source === 'env' && <EnvTag />}
+      <span
+        style={{
+          fontSize: FontSize.SECONDARY,
+          color: Colors.TEXT.SECONDARY,
+          marginLeft: 8,
+        }}
+      >
+        {item.notice || (item.restart ? '重启生效' : '即时生效')}
+      </span>
+    </div>
+  );
+};

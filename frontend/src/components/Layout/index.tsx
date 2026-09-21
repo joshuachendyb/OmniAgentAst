@@ -9,6 +9,7 @@
 // 编辑历史: 2026-09-08 小欧 - 删左侧Logo区Avatar(北京老陈令): 顶部仅保留文字标识"OmniAgentAst.", 更简洁 — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 标题图标化(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader(蓝绿橙, 与 title-icon-compare.html 的D三色版一致),
 //   复用 waiting-spin 逆时针1s常转, Tooltip 保留原标题; Title 组件仍被 Logo 区使用, import 保留 — 小欧-2026-09-08
+// 编辑历史: 2026-09-20 小强 - 侧边"系统设置"菜单/快捷跳转由 /settings 切换为 /settings2(设置2版: 6Tab+模型管理) — 小强-2026-09-20
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去refreshAll解构; isManualRefreshing改[,setIsManualRefreshing]
 //   (保留setter调用防死状态:131注释, 仅弃读值) — 小欧-2026-09-09
 // 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①删左侧Logo区文字Title,
@@ -456,10 +457,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     },
     { type: 'divider' },
     {
-      key: '/settings',
+      key: '/settings2',
       icon: <SettingOutlined />,
-      title: '系统设置',
-      label: '系统设置',
+      title: '设置2版',
+      label: '设置2版',
     },
   ];
 
@@ -504,9 +505,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         // 跳转到历史记录
         navigate('/history');
         break;
-      case '/settings':
-        // 跳转到设置
-        navigate('/settings');
+      case '/settings2':
+        // 跳转到设置2版 — 小强 2026-09-20
+        navigate('/settings2');
         break;
       default:
       // 执行快捷指令

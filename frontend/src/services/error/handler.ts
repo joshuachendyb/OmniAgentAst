@@ -19,6 +19,7 @@
 //   ②showMessage 弹前加 console.info("[Toast] errorType: 文案") 打点, 供复现时反查 60000 来源字段 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-C1: extractErrorMessage入参Record<string,any>→Record<string,unknown>+data双重收窄
 //   (消除lib用any与裸断言, 语义不变) — 小欧-2026-09-09
+// 编辑历史: 2026-09-20 小强 - 新增设置/模型域三错误类型+固定文案: SETTINGS_SCHEMA_FAILED/SETTINGS_SAVE_FAILED/MODEL_MANAGEMENT_FAILED(可重试2次) — 小强-2026-09-20
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -88,6 +89,9 @@ export enum ErrorType {
   // 操作错误
   SAVE_FAILED = 'save_failed',
   LOAD_FAILED = 'load_failed',
+  SETTINGS_SCHEMA_FAILED = 'settings_schema_failed', // 2026-09-20 小强 - 设置 Schema 拉取失败
+  SETTINGS_SAVE_FAILED = 'settings_save_failed', // 2026-09-20 小强 - 设置保存失败
+  MODEL_MANAGEMENT_FAILED = 'model_management_failed', // 2026-09-20 小强 - 模型管理 CRUD 失败
   SEND_FAILED = 'send_failed',
   USER_MESSAGE_SAVE_FAILED = 'user_message_save_failed',
 
@@ -318,6 +322,27 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     maxRetries: 3,
     retryDelay: 1000,
     message: '保存失败，请重试',
+    severity: 'warning',
+  },
+  [ErrorType.SETTINGS_SCHEMA_FAILED]: {
+    retryable: true,
+    maxRetries: 2,
+    retryDelay: 1000,
+    message: '设置结构加载失败，请重试',
+    severity: 'warning',
+  },
+  [ErrorType.SETTINGS_SAVE_FAILED]: {
+    retryable: true,
+    maxRetries: 2,
+    retryDelay: 1000,
+    message: '设置保存失败，请重试',
+    severity: 'warning',
+  },
+  [ErrorType.MODEL_MANAGEMENT_FAILED]: {
+    retryable: true,
+    maxRetries: 2,
+    retryDelay: 1000,
+    message: '模型管理操作失败，请重试',
     severity: 'warning',
   },
   [ErrorType.LOAD_FAILED]: {
