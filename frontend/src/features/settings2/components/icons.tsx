@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-20 小强 - 新建：SettingIcon 唯一图标出口 + DirtyDot + EnvTag；全部 antd SVG，禁止 emoji（7.9.4）
+// 2026-09-21 小欧 - P2-4：Tab 图标去掉内联色，随 antd Tabs 选中态继承主色（[58] P2-4）
 import React from 'react';
 import {
   ApiOutlined,
@@ -15,7 +16,6 @@ import type { TabKey } from '../types';
 
 const TAB_ICON_STYLE: React.CSSProperties = {
   fontSize: 14,
-  color: Colors.TEXT.SECONDARY,
 };
 
 export const SettingIcon: Record<TabKey, React.ReactNode> = {

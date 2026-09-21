@@ -387,24 +387,41 @@ def fix_config() -> dict:
 
 
 def read_config_file() -> dict:
-    """读取配置文件 — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
+    """读取配置文件 — 自 model_routes.py 迁入 — 小沈 2026-08-13
+    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）"""
     config_path = get_config_path()
     if not config_path.exists():
         raise HTTPException(status_code=404, detail=f"配置文件不存在: {config_path}")
     with open(config_path, "r", encoding="utf-8") as f:
         content = f.read()
-    return {"config_content": content}
+    stat = config_path.stat()
+    return {
+        "config_content": content,
+        "path": str(config_path),
+        "size": stat.st_size,
+        "lines": content.count('\n') + 1,
+        "mtime": int(stat.st_mtime),
+    }
 
 
 def read_version_file() -> dict:
     """读取 version.txt 全文 — 2026-09-21 小欧 关于页"查看版本文件全文"。
-    路径与 main.get_version / settings_service.app_version 一致（get_code_root()/version.txt，DRY）。"""
+    路径与 main.get_version / settings_service.app_version 一致（get_code_root()/version.txt，DRY）。
+    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）"""
     from app.config import get_code_root  # 局部 import：避免顶层循环依赖
     version_path = Path(get_code_root()) / "version.txt"
     if not version_path.exists():
         raise HTTPException(status_code=404, detail=f"version 文件不存在: {version_path}")
     with open(version_path, "r", encoding="utf-8") as f:
-        return {"version_content": f.read()}
+        content = f.read()
+    stat = version_path.stat()
+    return {
+        "version_content": content,
+        "path": str(version_path),
+        "size": stat.st_size,
+        "lines": content.count('\n') + 1,
+        "mtime": int(stat.st_mtime),
+    }
 
 
 def open_config_folder() -> dict:

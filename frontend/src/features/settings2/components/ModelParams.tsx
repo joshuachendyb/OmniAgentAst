@@ -1,6 +1,9 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型参数区（跟随当前模型+范围+[已修改]+[重置为默认]确认内联）
+// 2026-09-21 小欧 - P0-4+P0-6+P0-7：色/字号→令牌、滑块宽→settingsControl、标签宽→settingsSpacing（[58] P0-4/P0-6/P0-7）
 import React from 'react';
-import { Button, InputNumber, Modal, Slider } from 'antd';
+import { InputNumber, Slider } from 'antd';
+import { Colors, FontSize } from '@/utils/stepStyles';
+import { settingsSpacing, settingsControl, settingsRowLayout } from '@/theme/settingsTokens';
 import { isDirty } from '../utils/modelUtils';
 import { DirtyDot } from './icons';
 
@@ -10,7 +13,6 @@ interface Props {
   ranges: Record<string, { min: number; max: number }>;
   envOverride: Record<string, boolean>;
   onChange: (key: string, value: unknown) => void;
-  onReset: () => void;
 }
 
 export const ModelParams: React.FC<Props> = ({
@@ -19,18 +21,8 @@ export const ModelParams: React.FC<Props> = ({
   ranges,
   envOverride,
   onChange,
-  onReset,
 }) => {
   const dirty = isDirty(params, defaults, envOverride);
-  const confirmReset = () => {
-    Modal.confirm({
-      title: '重置为默认',
-      content: '按当前模型 schema.default 重置全部参数，脏态清空。继续吗？',
-      okText: '重置',
-      cancelText: '取消',
-      onOk: onReset,
-    });
-  };
   return (
     <div>
       {Object.keys(defaults).map((key) => {
@@ -40,13 +32,13 @@ export const ModelParams: React.FC<Props> = ({
           <div
             key={key}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              minHeight: 44,
+              display: settingsRowLayout.display,
+              alignItems: settingsRowLayout.alignItems,
+              gap: settingsRowLayout.gap,
+              minHeight: settingsRowLayout.minHeight,
             }}
           >
-            <span style={{ width: 132 }}>{key}</span>
+            <span style={{ width: settingsSpacing.labelWidth }}>{key}</span>
             {range ? (
               <span
                 style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}
@@ -55,7 +47,7 @@ export const ModelParams: React.FC<Props> = ({
                   min={range.min}
                   max={range.max}
                   value={value}
-                  style={{ width: 160 }}
+                  style={{ width: settingsControl.sliderWidth }}
                   onChange={(v) => onChange(key, v)}
                 />
                 <InputNumber
@@ -68,7 +60,7 @@ export const ModelParams: React.FC<Props> = ({
             ) : (
               <InputNumber value={value} onChange={(v) => onChange(key, v)} />
             )}
-            <span style={{ color: '#8c8c8c', fontSize: 12 }}>
+            <span style={{ color: Colors.TEXT.SECONDARY, fontSize: FontSize.SECONDARY }}>
               范围{range ? `${range.min}-${range.max}` : '不限'} 默认
               {String(defaults[key])}
             </span>
@@ -76,7 +68,6 @@ export const ModelParams: React.FC<Props> = ({
           </div>
         );
       })}
-      <Button onClick={confirmReset}>重置为默认</Button>
     </div>
   );
 };

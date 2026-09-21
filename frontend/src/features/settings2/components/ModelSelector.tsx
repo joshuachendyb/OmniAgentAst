@@ -1,7 +1,9 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型选择器（Provider/Model 双下拉联动 + 能力标签 + CRUD 入口）
+// 2026-09-21 小欧 - P0-6：下拉宽度→settingsControl 令牌（[58] P0-6）
 import React from 'react';
 import { Button, Select, Tag } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
+import { settingsControl } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
 
 interface Props {
@@ -30,7 +32,7 @@ export const ModelSelector: React.FC<Props> = ({
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <Select
           value={selectedProvider}
-          style={{ width: 200 }}
+          style={{ width: settingsControl.modelSelectWidth }}
           onChange={onSelectProvider}
         >
           {providers.map((p) => (
@@ -41,7 +43,7 @@ export const ModelSelector: React.FC<Props> = ({
         </Select>
         <Select
           value={selectedModel}
-          style={{ width: 240 }}
+          style={{ width: settingsControl.modelNameWidth }}
           onChange={onSelectModel}
         >
           {(provider?.models ?? []).map((m) => (

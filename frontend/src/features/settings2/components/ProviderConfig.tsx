@@ -1,8 +1,13 @@
 // 编辑历史: 2026-09-20 小强 - 新建：Provider 配置区（统一表单；写走 PUT /providers 统一链 + mtime 同步，见 7.3.2/8.4.1）
 // 编辑历史: 2026-09-20 小强 - v4.17 纠错：撤销内嵌 <ProviderSettings shouldLoad />——旧组件自带保存按钮直调旧 /config API，
 //   内嵌会造成双真相源 + modelApi.updateProvider 死代码；改为读全局 providerConfig state、保存走 PUT /providers。
+// 2026-09-21 小欧 - P2-6：isEnv 时渲染 EnvTag + 警示文案（[58] P2-6）
+// 2026-09-21 小欧 - P2-7：清空 api_key 按钮改 danger + 间距分隔（[58] P2-7）
+// 2026-09-21 小欧 - V-1：base_url 留空=保持原值，与 api_key 语义对齐（[58] V-1）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Form } from 'antd';
+import { Colors, Spacing } from '@/utils/stepStyles';
+import { EnvTag } from './icons';
 
 interface Props {
   name: string;
@@ -34,7 +39,8 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     // api_key 三态：留空/空白 = 保持原值（secret 契约，不提交覆盖）；填值 = 覆盖；clear=true = 显式清空
     if (values.api_key !== undefined && String(values.api_key).trim() !== '')
       patch.api_key = values.api_key;
-    if (values.base_url !== undefined) patch.base_url = values.base_url;
+    if (values.base_url !== undefined && String(values.base_url).trim() !== '')
+      patch.base_url = values.base_url;
     if (values.timeout !== undefined) patch.timeout = values.timeout;
     setSaving(true);
     try {
@@ -54,7 +60,10 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
   if (isEnv)
     return (
       <div>
-        该 Provider 配置被 {name.toUpperCase()}_API_KEY 环境变量接管，页面只读。
+        <EnvTag />
+        <span style={{ color: Colors.TEXT.SECONDARY }}>
+          该 Provider 配置被 {name.toUpperCase()}_API_KEY 环境变量接管，页面只读。
+        </span>
       </div>
     );
   return (
@@ -87,13 +96,15 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         <InputNumber min={1} />
       </Form.Item>
       {config.api_key.configured && (
-        <Button type="link" disabled={saving} onClick={doClear}>
+        <Button type="link" danger disabled={saving} onClick={doClear}>
           清空 api_key
         </Button>
       )}
-      <Button type="primary" htmlType="submit" loading={saving}>
-        {'保存 Provider 配置（立即生效）'}
-      </Button>
+      <div style={{ marginTop: Spacing.MD }}>
+        <Button type="primary" htmlType="submit" loading={saving}>
+          {'保存 Provider 配置（立即生效）'}
+        </Button>
+      </div>
     </Form>
   );
 };

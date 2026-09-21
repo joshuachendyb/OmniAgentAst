@@ -225,14 +225,14 @@ export const configApi = {
     return response.data;
   },
 
-  readConfigFile: async (): Promise<{ config_content: string }> => {
-    const response = await api.get<{ config_content: string }>('/config/read');
+  readConfigFile: async (): Promise<{ config_content: string; path: string; size: number; lines: number; mtime: number }> => {
+    const response = await api.get<{ config_content: string; path: string; size: number; lines: number; mtime: number }>('/config/read');
     return response.data;
   },
 
   // 2026-09-21 小强 - 关于页"查看 version 文件全文"：后端 GET /config/version-file
-  readVersionFile: async (): Promise<{ version_content: string }> => {
-    const response = await api.get<{ version_content: string }>(
+  readVersionFile: async (): Promise<{ version_content: string; path: string; size: number; lines: number; mtime: number }> => {
+    const response = await api.get<{ version_content: string; path: string; size: number; lines: number; mtime: number }>(
       '/config/version-file'
     );
     return response.data;

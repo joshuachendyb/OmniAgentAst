@@ -1,8 +1,10 @@
 // 编辑历史: 2026-09-20 小强 - 新建：组渲染（7.3 动态渲染；6.2 局部脏态汇总；外观预览小卡内联）
 // 2026-09-21 小强 - 关于页功能：system 组"关于"小节 header 处集成 AboutFiles（查看配置文件全文 / version 文件全文入口）
+// 2026-09-21 小欧 - P0-2+P0-3：预览小卡色/圆角→令牌、提示文字色→Colors.TEXT.SECONDARY（[58] P0-2/P0-3）
+// 2026-09-21 小欧 - P2-5：预览小卡改为双态并排对比（[58] P2-5）
 import React from 'react';
 import { Card } from 'antd';
-import { FontSize } from '@/utils/stepStyles';
+import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
 import type {
   SettingSchemaItem,
   SettingSource,
@@ -39,7 +41,6 @@ export const SettingsGroup: React.FC<Props> = ({
 }) => {
   let lastSection: string | null = null;
   const fontSize = Number(values['appearance.fontSize'] ?? 14);
-  const density = String(values['appearance.density'] ?? 'comfortable');
   return (
     <div>
       {group === 'appearance' && (
@@ -48,16 +49,33 @@ export const SettingsGroup: React.FC<Props> = ({
           style={{ marginBottom: 12 }}
           title="预览小卡（改下面控件，这里实时变）"
         >
-          <div
-            style={{
-              fontSize,
-              padding: density === 'compact' ? 4 : 12,
-              background: '#f5f5f5',
-              borderRadius: 6,
-            }}
-          >
-            示例消息气泡：字号 {fontSize}px /{' '}
-            {density === 'compact' ? '紧凑' : '舒适'}
+          <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: 4 }}>紧凑</div>
+              <div
+                style={{
+                  fontSize,
+                  padding: 4,
+                  background: Colors.BG.TERTIARY,
+                  borderRadius: Radius.DEFAULT,
+                }}
+              >
+                示例消息气泡 4px
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: 4 }}>舒适</div>
+              <div
+                style={{
+                  fontSize,
+                  padding: 12,
+                  background: Colors.BG.TERTIARY,
+                  borderRadius: Radius.DEFAULT,
+                }}
+              >
+                示例消息气泡 12px
+              </div>
+            </div>
           </div>
         </Card>
       )}
@@ -65,7 +83,7 @@ export const SettingsGroup: React.FC<Props> = ({
         <div
           style={{
             fontSize: FontSize.SECONDARY,
-            color: '#8c8c8c',
+            color: Colors.TEXT.SECONDARY,
             marginBottom: 8,
           }}
         >

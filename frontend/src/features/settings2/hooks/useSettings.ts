@@ -1,6 +1,7 @@
 // 编辑历史: 2026-09-20 小强 - 新建：全局单层 state（6 组+脏态+sources+模型管理+mtime 感知+外观本地预应用，见 6.2/6.3/7.0.5）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.* 改走 errorHandler(showMessage/showSuccess)，移除未用 ModelEntry 导入
 // 2026-09-21 小欧 - ensureModelSaved 保存失败提示由 ERROR 对齐为 MODEL_CONFIG_ERROR（域名级错误码，信息更精确）
+// 2026-09-21 小欧 - P1-2：搜索高亮加 TTL 自动消退（[58] P1-2）
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   settingsApi,
@@ -89,6 +90,13 @@ export function useSettings() {
   const [saving, setSaving] = useState(false);
   const [restartKeys, setRestartKeys] = useState<string[]>([]);
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
+
+  // P1-2：高亮 TTL 自动消退（2 秒后清除）
+  const HIGHLIGHT_TTL = 2000;
+  const setHighlightKeyTtl = useCallback((key: string | null) => {
+    setHighlightKey(key);
+    if (key) setTimeout(() => setHighlightKey(null), HIGHLIGHT_TTL);
+  }, []);
 
   const patchState = useCallback((p: Partial<SettingsState>) => {
     setState((s) => ({ ...s, ...p }));
@@ -261,7 +269,7 @@ export function useSettings() {
       });
       const bad = validate(items, values);
       if (bad) {
-        setHighlightKey(bad.key);
+        setHighlightKeyTtl(bad.key);
         showMessage(ErrorType.WARNING, bad.message);
         return { ok: false as const, firstError: bad.key };
       }
@@ -316,7 +324,7 @@ export function useSettings() {
         setSaving(false);
       }
     },
-    [state.schema, state.values, syncMtime]
+    [state.schema, state.values, syncMtime, setHighlightKeyTtl]
   );
 
   const saveModelGroup = useCallback(async () => {
@@ -548,7 +556,7 @@ export function useSettings() {
     restartKeys,
     setRestartKeys,
     highlightKey,
-    setHighlightKey,
+    setHighlightKey: setHighlightKeyTtl,
     dirtyCount,
     isGroupDirty,
     groupOfKey,

@@ -1,8 +1,11 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型管理弹窗（添加模型/Provider + 删除确认含级联警告）
 // 编辑历史: 2026-09-21 小强 - onSubmitAddModel 类型补齐 default_params?(Record<string, unknown>)——SettingsPage 提交处按参考扩展该字段，缺此声明 tsc 报错 — 小强-2026-09-21
 // 编辑历史: 2026-09-21 小强 - 修复 BUG-A：mProvider 仅 useState 初始化一次，父级 selectedProvider 变化后弹窗仍指向旧 Provider（陈旧状态）；加 useEffect 联动
+// 2026-09-21 小欧 - P0-9：添加 Provider 弹窗增 api_key 输入框（[58] P0-9）
+// 2026-09-21 小欧 - 第六章①②③：弹窗视觉优化——描述行/danger/⚠/后果说明（[58] 第六章 6.2）
 import React, { useEffect, useState } from 'react';
 import { Form, Input, Modal, Select } from 'antd';
+import { Colors, FontSize } from '@/utils/stepStyles';
 import type { ProviderEntry } from '@/services/api/model.api';
 
 interface Props {
@@ -25,6 +28,7 @@ interface Props {
     name: string;
     label: string;
     api_base: string;
+    api_key?: string;
   }) => void;
   onConfirmDelete: () => void;
 }
@@ -58,6 +62,9 @@ export const ModelModals: React.FC<Props> = (props) => {
         okText="保存"
         cancelText="取消"
       >
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: 12 }}>
+          为指定 Provider 添加新模型，创建后可在①选择器中选用
+        </div>
         <Form form={mForm} layout="vertical">
           <Form.Item label="Provider" required>
             <Select value={mProvider} onChange={setMProvider}>
@@ -93,6 +100,9 @@ export const ModelModals: React.FC<Props> = (props) => {
         okText="保存"
         cancelText="取消"
       >
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: 12 }}>
+          创建后可在③Provider配置区修改 API Key / API 地址
+        </div>
         <Form form={pForm} layout="vertical">
           <Form.Item
             name="name"
@@ -107,19 +117,24 @@ export const ModelModals: React.FC<Props> = (props) => {
           <Form.Item name="api_base" label="API 地址">
             <Input />
           </Form.Item>
+          <Form.Item name="api_key" label="API Key">
+            <Input.Password placeholder="未配置则留空" />
+          </Form.Item>
         </Form>
       </Modal>
       <Modal
         open={deleteOpen}
-        title={`确定要删除 "${deleteTarget ?? ''}"？`}
+        title={`⚠ 确定要删除 "${deleteTarget ?? ''}"？`}
         onCancel={props.onCloseDelete}
         onOk={props.onConfirmDelete}
         okText="删除"
         okButtonProps={{ danger: true }}
         cancelText="取消"
       >
-        警告：如果这是当前使用的模型，将自动切换为默认模型；删除 Provider
-        将级联删除其下所有模型！
+        <span style={{ color: Colors.TEXT.SECONDARY }}>
+          警告：如果这是当前使用的模型，将自动切换为默认模型；删除 Provider
+          将级联删除其下所有模型！
+        </span>
       </Modal>
     </>
   );

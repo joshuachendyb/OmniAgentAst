@@ -2,8 +2,13 @@
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.success/info 改走 errorHandler.showSuccess/showMessage
 // 2026-09-21 小强 - BUG-F 修复：模型删除确认的 target 精确匹配 provider::model（原 deleteTarget 未带 provider
 //   前缀，确认句恒为 false 导致删除项参数名链上错误——匹配 SettingRow 的 key 形如 provider::model）
+// 2026-09-21 小欧 - P0-1+P0-5：背景色→Colors.BG.PRIMARY、字重→FontWeight.BOLD、间距→Spacing（[58] P0-1/P0-5）
+// 2026-09-21 小欧 - P1-3：保存本组按钮带本组待存计数（[58] P1-3）
+// 2026-09-21 小欧 - P1-4：重置按钮上移到②标题行右侧（方案B）+ 顺带修正：无params隐藏/无脏态disabled（[58] P1-4）
+// 2026-09-21 小欧 - 第五章：当前生效模型高占位状态卡集成（[58] 第五章 5.6）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { settingsSpacing } from '@/theme/settingsTokens';
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
@@ -16,6 +21,8 @@ import { ModelParams } from './ModelParams';
 import { ProviderConfig } from './ProviderConfig';
 import { ModelActions } from './ModelActions';
 import { ModelModals } from './ModelModals';
+import { SectionTitle } from './SectionTitle';
+import { CurrentModelRefCard } from './CurrentModelRefCard';
 import { modelApi } from '@/services/api/model.api';
 import {
   ErrorType,
@@ -60,11 +67,15 @@ const SettingsPage: React.FC = () => {
       k.includes('blacklist')
   );
 
+  const groupDirtyCount = state.activeTab === 'model'
+    ? (state.model.isDirty ? 1 : 0)
+    : Object.keys(state.dirtyKeys).filter((k) => s.groupOfKey(k) === state.activeTab).length;
+
   if (state.loading) {
     return (
       <div
         className="settings-page"
-        style={{ padding: settingsSpacing.pagePadding, background: '#fff' }}
+        style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
       >
         <Skeleton active />
       </div>
@@ -74,7 +85,7 @@ const SettingsPage: React.FC = () => {
     return (
       <div
         className="settings-page"
-        style={{ padding: settingsSpacing.pagePadding, background: '#fff' }}
+        style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
       >
         <Result
           status="error"
@@ -96,7 +107,17 @@ const SettingsPage: React.FC = () => {
 
   const renderModelTab = () => (
     <div>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>① 选择器</div>
+      <CurrentModelRefCard
+        currentRef={state.currentRef}
+        providers={state.model.providers}
+        onSelectModel={() => {
+          s.setActiveTab('model');
+          const el = document.querySelector('[data-section="selector"]');
+          el?.scrollIntoView({ behavior: 'smooth' });
+        }}
+        onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
+      />
+      <SectionTitle title="── ① 选择器 ──" />
       <ModelSelector
         providers={state.model.providers}
         selectedProvider={state.model.selectedProvider}
@@ -106,8 +127,18 @@ const SettingsPage: React.FC = () => {
         onAddModel={() => s.patchModel({ addModelModalOpen: true })}
         onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
       />
-      <div style={{ fontWeight: 600, margin: '12px 0 8px' }}>
-        ② 参数区（跟随当前模型）
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
+        {Object.keys(state.model.params).length > 0 && (
+          <Button
+            type="link"
+            style={{ padding: 0, color: Colors.TEXT.SECONDARY }}
+            disabled={!state.model.isDirty}
+            onClick={() => s.resetParams()}
+          >
+            重置为默认
+          </Button>
+        )}
       </div>
       <ModelParams
         params={state.model.params}
@@ -115,11 +146,8 @@ const SettingsPage: React.FC = () => {
         ranges={state.model.ranges}
         envOverride={state.model.envOverride}
         onChange={s.setParam}
-        onReset={s.resetParams}
       />
-      <div style={{ fontWeight: 600, margin: '12px 0 8px' }}>
-        ③ Provider 配置
-      </div>
+      <SectionTitle title="── ③ Provider 配置 ──" />
       <ProviderConfig
         name={state.model.selectedProvider}
         config={
@@ -145,7 +173,7 @@ const SettingsPage: React.FC = () => {
           }
         }}
       />
-      <div style={{ fontWeight: 600, margin: '12px 0 8px' }}>④ 操作区</div>
+      <SectionTitle title="── ④ 操作区 ──" />
       <ModelActions
         onDeleteModel={() =>
           s.patchModel({
@@ -236,9 +264,14 @@ const SettingsPage: React.FC = () => {
   return (
     <div
       className="settings-page"
-      style={{ padding: settingsSpacing.pagePadding, background: '#fff' }}
+      style={{ padding: settingsSpacing.pagePadding, background: Colors.BG.PRIMARY }}
     >
       <Card>
+        {state.currentRef && (
+          <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.SM }}>
+            当前生效模型：{state.currentRef.provider} / {state.currentRef.model}
+          </div>
+        )}
         <div
           style={{
             display: 'flex',
@@ -261,7 +294,7 @@ const SettingsPage: React.FC = () => {
                 ),
               }))}
             />
-            <DirtyBadge count={s.dirtyCount} />
+            <span style={{ marginLeft: Spacing.MD }}><DirtyBadge count={s.dirtyCount} /></span>
           </span>
           <SearchBox schema={state.schema} onJump={jumpTo} />
         </div>
@@ -283,6 +316,7 @@ const SettingsPage: React.FC = () => {
           canSaveGroup={s.isGroupDirty(state.activeTab)}
           canSaveAll={s.dirtyCount > 0}
           dirtyCount={s.dirtyCount}
+          groupDirtyCount={groupDirtyCount}
           saving={s.saving}
           restartKeys={s.restartKeys}
           hasDangerousDirty={dangerousDirty}
@@ -308,10 +342,11 @@ const SettingsPage: React.FC = () => {
           }
         }}
         okText="保存并切换"
-        cancelText="取消"
+        cancelText="放弃切换"
       >
-        目标 Tab 存在未保存项：保存并切换 /
-        取消停留（放弃修改请手动还原后切换）。
+        <span style={{ color: Colors.TEXT.SECONDARY }}>
+          切换 Tab 后未保存的修改将丢失，需手动还原。
+        </span>
       </Modal>
     </div>
   );

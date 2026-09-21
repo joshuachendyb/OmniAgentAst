@@ -1,10 +1,11 @@
 // 编辑历史: 2026-09-20 小强 - 新建：单行渲染（控件↔schema.type↔antd；secret 三态/只读复制/env 只读，见 7.4/7.7）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：复制成功提示改走 errorHandler.showSuccess
+// 2026-09-21 小欧 - P0-6：控件宽度→settingsControl 令牌（[58] P0-6）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, FontWeight, Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
-import { settingsSpacing } from '@/theme/settingsTokens';
+import { settingsSpacing, settingsControl, settingsRowLayout } from '@/theme/settingsTokens';
 import type {
   SettingSchemaItem,
   SettingSource,
@@ -83,7 +84,7 @@ export const SettingRow: React.FC<Props> = ({
             value={secretInput}
             onChange={(e) => setSecretInput(e.target.value)}
             placeholder="留空=保持原值"
-            style={{ width: 220 }}
+            style={{ width: settingsControl.secretWidth }}
           />
           <Button
             type="primary"
@@ -124,7 +125,7 @@ export const SettingRow: React.FC<Props> = ({
           <Select
             value={value as string}
             disabled={disabled}
-            style={{ width: 200 }}
+            style={{ width: settingsControl.selectWidth }}
             onChange={onChange}
           >
             {(item.options ?? []).map((o) => (
@@ -145,7 +146,7 @@ export const SettingRow: React.FC<Props> = ({
               step={item.step ?? 1}
               value={value as number}
               disabled={disabled}
-              style={{ width: 160 }}
+              style={{ width: settingsControl.sliderWidth }}
               onChange={onChange}
             />
             <InputNumber
@@ -173,7 +174,7 @@ export const SettingRow: React.FC<Props> = ({
             value={value as string}
             disabled={disabled}
             rows={3}
-            style={{ width: 320 }}
+            style={{ width: settingsControl.textareaWidth }}
             onChange={(e) => onChange(e.target.value)}
           />
         );
@@ -188,7 +189,7 @@ export const SettingRow: React.FC<Props> = ({
           <Input
             value={value as string}
             disabled={disabled}
-            style={{ width: 260 }}
+            style={{ width: settingsControl.inputWidth }}
             onChange={(e) => onChange(e.target.value)}
           />
         );
@@ -198,11 +199,12 @@ export const SettingRow: React.FC<Props> = ({
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        minHeight: settingsSpacing.rowHeight,
+        display: settingsRowLayout.display,
+        alignItems: settingsRowLayout.alignItems,
+        minHeight: settingsRowLayout.minHeight,
         borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
         background: highlight ? chatTokens.colorPrimaryBg : undefined,
+        transition: 'background 0.3s',
       }}
     >
       <span

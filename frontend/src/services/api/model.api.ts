@@ -1,5 +1,6 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型管理 API（与 config.api.ts 同模式；current_model_ref 复用 SessionModelOverride）
 // 编辑历史: 2026-09-21 小强 - deleteProvider 返回类型补齐 mtime(ModelMutationResult, 与 deleteModel 同构、后端同样返回 mtime)，消除表单 union 后 res.mtime 的 TS 报错 — 小强-2026-09-21
+// 2026-09-21 小欧 - P0-9：addProvider 参数扩 api_key（[58] P0-9）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -96,6 +97,7 @@ export const modelApi = {
     name: string;
     label?: string;
     api_base?: string;
+    api_key?: string;
   }): Promise<ModelMutationResult> => {
     const response = await api.post('/providers', data);
     return response.data;
