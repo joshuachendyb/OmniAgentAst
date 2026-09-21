@@ -1,5 +1,6 @@
 // 编辑历史: 2026-09-20 小强 - 新建：全局单层 state（6 组+脏态+sources+模型管理+mtime 感知+外观本地预应用，见 6.2/6.3/7.0.5）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.* 改走 errorHandler(showMessage/showSuccess)，移除未用 ModelEntry 导入
+// 2026-09-21 小欧 - ensureModelSaved 保存失败提示由 ERROR 对齐为 MODEL_CONFIG_ERROR（域名级错误码，信息更精确）
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   settingsApi,
@@ -370,7 +371,7 @@ export function useSettings() {
     const r = await saveModelGroup();
     if (!r.ok) {
       showMessage(
-        ErrorType.ERROR,
+        ErrorType.MODEL_CONFIG_ERROR,
         '模型参数保存失败，已阻止切换（防止数据丢失）'
       );
       return false;
@@ -464,11 +465,7 @@ export function useSettings() {
         defaults: nextDefaults,
         ranges: nextRanges,
         isDirty: Object.values(
-          isDirty(
-            { ...nextDefaults },
-            nextDefaults,
-            state.model.envOverride
-          )
+          isDirty({ ...nextDefaults }, nextDefaults, state.model.envOverride)
         ).some(Boolean),
       });
     },
