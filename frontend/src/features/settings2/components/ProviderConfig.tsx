@@ -6,6 +6,7 @@
 // 2026-09-21 小欧 - V-1：base_url 留空=保持原值，与 api_key 语义对齐（[58] V-1）
 // 2026-09-21 小欧 - 重组区块：清空api_key移入操作区，保存按钮限宽（方案C）
 // 2026-09-21 小欧 - 补 max_retries：config 类型+表单字段+doSave patch 全链路补齐（后端 update_provider_config 支持 max_retries 键）
+// 2026-09-21 小强 - 切 provider 表单值不跟随修复：Form 加 key={name} 重挂刷新（initialValues 只在挂载生效；KISS-DIRECT 一行直解，不加 effect 链条，北京老陈定）
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Form } from 'antd';
 import { Colors } from '@/utils/stepStyles';
@@ -58,12 +59,14 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       <div>
         <EnvTag />
         <span style={{ color: Colors.TEXT.SECONDARY }}>
-          该 Provider 配置被 {name.toUpperCase()}_API_KEY 环境变量接管，页面只读。
+          该 Provider 配置被 {name.toUpperCase()}_API_KEY
+          环境变量接管，页面只读。
         </span>
       </div>
     );
   return (
     <Form
+      key={name}
       form={form}
       layout="horizontal"
       initialValues={{ ...config, api_key: undefined }}
