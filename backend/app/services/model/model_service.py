@@ -48,6 +48,30 @@ from app.services.model.config_helpers import (
 
 RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
 
+# v1.1：仅全局兜底默认，不同模型3/4/5个选项走config覆盖，不写死（小欧 2026-09-22）
+DEFAULT_PARAM_OPTIONS: Dict[str, List[str]] = {
+    "reasoning_effort": ["low", "medium", "high"],
+}
+
+
+def _resolve_param_options(ai: Dict[str, Any], provider: str, model: str,
+                           params: Dict[str, Any], meta: Dict[str, Any]) -> Dict[str, List[str]]:
+    """三层解析 param_options（模型级 > provider级 > 全局兜底）并取并集（小欧 2026-09-22）。
+
+    params=该模型 model_params 当前值，meta=该模型 model_meta；并集保证"有选项无默认值"
+    时值不丢（config 已配置该项但 meta 未列选项 → 用 server/provider 级选项承接）。
+    """
+    out: Dict[str, List[str]] = {}
+    meta_opts = meta.get("param_options") or {}
+    for k in list(params) + [k for k in meta_opts if k not in params]:
+        mo = meta_opts.get(k)  # 1.模型级最高
+        po = ((ai.get(provider) or {}).get("param_options") or {}).get(k)  # 2.provider级
+        go = DEFAULT_PARAM_OPTIONS.get(k)  # 3.全局兜底
+        v = mo if mo is not None else (po if po is not None else go)
+        if isinstance(v, list) and v:
+            out[k] = list(v)
+    return out
+
 
 def _raw_ai() -> Dict[str, Any]:
     raw = read_yaml_config(Path(get_config_path())) or {}
@@ -86,6 +110,7 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "default_params": params,
             "range": meta.get("range") or {},
             "capabilities": meta.get("capabilities") or [],
+            "param_options": _resolve_param_options(ai, provider, m, params, meta),
         })
     return out
 
@@ -166,7 +191,8 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     if not any(m["name"] == model for m in _models_of(ai, provider)):
         raise ValueError(f"模型不存在: {provider}/{model}")
     _raise_if_env_takeover(provider)
-    unknown = set(fields) - {"label", "range", "capabilities", "default_params"}
+    # 白名单放行+落model_meta（小欧 2026-09-22：加 param_options，否则送了即报不支持的配置项）
+    unknown = set(fields) - {"label", "range", "capabilities", "default_params", "param_options"}
     if unknown:
         raise ValueError(f"不支持的配置项: {sorted(unknown)}")
     tree: Dict[str, Any] = {"ai": {provider: {}}}
@@ -176,6 +202,16 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
             node.setdefault("model_meta", {}).setdefault(model, {})[k] = fields[k]
     dp = fields.get("default_params")
     if isinstance(dp, dict):
+        # v1.6：先合并本次新选项再校验，避免同批改选项+改值时用旧单子误杀（小欧 2026-09-22）
+        cur = next((x for x in _models_of(ai, provider) if x["name"] == model), None) or {}
+        allowed = dict(cur.get("param_options") or {})
+        if isinstance(fields.get("param_options"), dict):
+            for k, v in fields["param_options"].items():
+                if isinstance(v, list) and v:
+                    allowed[k] = list(v)
+        for k, v in dp.items():
+            if k in allowed and v not in allowed[k]:
+                raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allowed[k]}")
         if dp:
             old_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
             old_params.update(dp)
@@ -185,6 +221,9 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
             # isinstance 且为空跳过 → node 空 → "无有效配置项" 500）。merge_nested_patch
             # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
             node.setdefault("model_params", {})[model] = {}
+    # 选项表落 model_meta（小欧 2026-09-22）
+    if isinstance(fields.get("param_options"), dict):
+        node.setdefault("model_meta", {}).setdefault(model, {})["param_options"] = fields["param_options"]
     if not node:
         raise ValueError("无有效配置项")
     merge_nested_patch(tree, scope="model")
@@ -263,7 +302,7 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     _raise_if_env_takeover(name)
     key_map = {"api_key": "api_key", "base_url": "api_base", "api_base": "api_base",
                "timeout": "timeout", "retry_times": "max_retries", "max_retries": "max_retries",
-               "label": "label"}
+               "label": "label", "param_options": "param_options"}
     tree: Dict[str, Any] = {"ai": {name: {}}}
     node = tree["ai"][name]
     for k, v in fields.items():

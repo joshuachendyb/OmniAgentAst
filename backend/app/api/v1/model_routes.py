@@ -36,6 +36,7 @@ class ModelCreateRequest(BaseModel):
     default_params: Dict[str, Any] = Field(default_factory=dict)
     range: Dict[str, Any] = Field(default_factory=dict)
     capabilities: List[str] = Field(default_factory=list)
+    param_options: Optional[Dict[str, List[str]]] = Field(default=None)
 
 
 class ModelUpdateRequest(BaseModel):
@@ -43,6 +44,7 @@ class ModelUpdateRequest(BaseModel):
     default_params: Optional[Dict[str, Any]] = Field(default=None)
     range: Optional[Dict[str, Any]] = Field(default=None)
     capabilities: Optional[List[str]] = Field(default=None)
+    param_options: Optional[Dict[str, List[str]]] = Field(default=None)
 
 
 class ProviderConfigUpdate(BaseModel):
