@@ -11,6 +11,7 @@
 #   2026-09-21 - 小欧 - v4.20 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
 #   2026-09-22 - 小欧 - [61] 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
 #   2026-09-22 - 小欧 - [62]v1.4 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
+#   2026-09-23 - 小欧 - [64] LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_limit_default）
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）

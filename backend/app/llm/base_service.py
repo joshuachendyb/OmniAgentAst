@@ -66,6 +66,7 @@
 #   ② timeout 判断 truthiness 改 is not None——0 是合法值（极短超时）不再被当 falsy 跳过跳 tuning；
 #   ③ snapshot() 透传 max_retries=self.max_retries（快照跨 provider 不丢定制值）；
 #   ④ request_stream 用 self.max_retries（删除 _D_STREAM_MAX_RETRIES 直读，运行时真正消费配置值）。
+# 2026-09-23 小欧 - [64] LLM补充采样参数: ①__init__签名加 top_p/frequency_penalty/presence_penalty 三参; ②兜底读键由 tuning.llm.* 改 llm.sampling.*; ③request/request_stream 两处调用点透传三参; ④snapshot 必须同步加三参透传
 """
 LLM 核心模块 — BaseAIService
 

@@ -8,6 +8,7 @@
 // 2026-09-21 小强 - 删死分支 group==='chat'：后端注册表已删 chat 组，该块永不渲染（分组对齐后端唯一源）
 // 2026-09-21 小欧 - [59]B-10 渲染: sources 缺键回退 ?? 'yaml' → ?? 'default'（后端缺省 source='default'，缺键=默认值语义）
 // 2026-09-21 小强 - 系统Tab 3 小节（运维日志/工程目录/关于）：sectionOf 按 logging./paths.logs→运维日志、paths.*→工程目录、app.*→系统参数、其余→关于（对齐后端 system 组 12 项结构）
+// 2026-09-23 小欧 - [64] LLM补充采样参数: sectionOf 加 general 组「模型参数」小节（llm.sampling.* + llm.context_limit_default → '模型参数'）
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';

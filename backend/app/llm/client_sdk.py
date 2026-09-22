@@ -25,6 +25,7 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   ——BaseAIService.cancel 优先委托此处直达HTTP层(原来 cancel 关闭的 _current_response 恒 None 假日志)
 编辑历史: 2026-09-20 小欧 三堂会审BUG-04修复: cancel()中aclose后立即清_current_response引用, 防finally/__aexit__二次关闭(double-close)
 编辑历史: 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + soft_pool_wait_timeout/max_connections/max_keepalive 改读 tuning 配置
+编辑历史: 2026-09-23 小欧 - [64] LLM补充采样参数: _build_request_body/request/request_stream 签名加 top_p/frequency_penalty/presence_penalty 三参(仿 seed None透传写法)
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20

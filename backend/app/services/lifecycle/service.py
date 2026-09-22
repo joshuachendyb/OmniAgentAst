@@ -19,6 +19,7 @@
 # 2026-09-22 - 小欧 - [62]P7 4.3(1)a+4.3(2)d: create_service_instance 改传 timeout=None/max_retries=None
 #   （源 provider_config.get 去默认值，None=未设 → BaseAIService 内部三层回落 tuning>常量；原来写死
 #    timeout 默认 30 跳过 tuning 配置层、max_retries 完全不消费；见 [62] 第4章 P1/P2/P3）
+# 2026-09-23 - 小欧 - [64] LLM补充采样参数: ①create_service_instance 三参 None 透传(top_p/frequency_penalty/presence_penalty, 仿 max_tokens 写法); ②temperature 去 float(...,0.7) 恒非 None 改可 None(死键复活); ③parse_model_params pop 缺省改读 llm.context_limit_default 全局兜底
 """
 service — 服务创建与获取
 

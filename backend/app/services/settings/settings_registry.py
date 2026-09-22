@@ -37,9 +37,10 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
    2026-09-22 - 小欧 - 编辑/保存审计修复 S9：logging.level 补 env_key="LOG_LEVEL"——_apply_env_overrides 本就用
      LOG_LEVEL 覆写运行时级别，不标 env_key 致 sources 报 yaml 可编辑可保存却"改了不生效"（假保存）；
      对齐后 env 接管键前端禁改、update_settings 跳过并 warning
-   2026-09-22 - 小欧 - 31候选修复 #7：全部无界 int 项补 range_ 上下界（agent.max_rounds/security 延时与超时/
-     sandbox 8项/logging 文件大小与备份数）——压缩负数(如 -500MB)曾当合法值落盘，消费方断言非负
-     崩溃；range_ 为唯一边界来源，表驱 schema 与 _validate_value 单点校验（fontSize 的 step 见 #8 修复）
+    2026-09-22 - 小欧 - 31候选修复 #7：全部无界 int 项补 range_ 上下界（agent.max_rounds/security 延时与超时/
+      sandbox 8项/logging 文件大小与备份数）——压缩负数(如 -500MB)曾当合法值落盘，消费方断言非负
+      崩溃；range_ 为唯一边界来源，表驱 schema 与 _validate_value 单点校验（fontSize 的 step 见 #8 修复）
+  2026-09-23 - 小欧 - [64] LLM补充采样参数: ①general组 agent.max_steps 后追加6条目(llm.sampling.temperature/max_tokens/top_p/frequency_penalty/presence_penalty + llm.context_limit_default); ②OLD_KEY_MAP 加 tuning.llm.temperature→llm.sampling.temperature / tuning.llm.max_tokens→llm.sampling.max_tokens 迁入映射
 """
 from typing import Any, Dict, List, Optional
 
