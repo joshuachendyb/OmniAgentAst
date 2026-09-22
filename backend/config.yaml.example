@@ -9,6 +9,7 @@
 #                       分域归 workspace/agent/logging；删白/黑名单4键与死配置（contentFilter/strict_mode/maxFileSize）；
 #                       补行安全漏斗铁律注释
 #   2026-09-21 - 小欧 - v4.20 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
+#   2026-09-22 - 小欧 - [61] 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -90,3 +91,60 @@ sandbox:
   process_memory_limit_mb: 2048    # Job Object 进程树内存上限(误杀时调大此值)
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
+
+# 调优配置（[61] constants.py 配置化迁移，31 键，前端「调优」Tab 展示）
+tuning:
+  # LLM 语义参数（7 键）
+  llm:
+    temperature: 0.7               # LLM 采样温度，0=确定性，2=高随机
+    tool_choice: auto              # auto=模型自主选择工具，none=纯文本模式
+    max_tokens: 16384              # LLM 单次调用最大输出 token 数
+    stream_max_retries: 3          # LLM 流式调用最大重试次数
+    response_fallback: true        # FC 模式错误时降级为 Text 模式重试
+    response_retries: 2            # LLM 响应错误（空/无效）最大重试次数
+    stream_options: '{"include_usage": true}'  # LLM 流式请求 stream_options 字段，JSON 格式
+
+  # LLM 网络/超时/连接池（7 键）
+  llm_net:
+    read_timeout: 150              # LLM 客户端读超时兜底(秒)
+    connect_timeout: 30.0          # LLM 客户端连接超时(秒)
+    write_timeout: 10.0            # LLM 客户端写超时(秒)
+    pool_timeout: 10.0             # LLM 客户端连接池超时(秒)
+    max_connections: 10            # LLM 客户端连接池最大连接数
+    max_keepalive: 5               # LLM 客户端连接池 keepalive 连接数
+    stream_total_timeout: 500      # 单次 LLM 流式调用总时长硬超时(秒)
+
+  # 并发配额（2 键）
+  concurrency:
+    soft_pool_wait_timeout: 30.0   # LLM 软配额排队等待上限(秒)，超时保底放行
+    shell_pool_max_per_type: 8     # 同 key Shell 池最大并发实例数
+
+  # Agent 循环参数（3 键）
+  agent:
+    default_max_steps: 100         # API 请求体默认 max_steps
+    max_consecutive_chunks: 5      # Agent 循环连续 chunk 上限，超出触发 promote
+    max_chunks_without_promote: 50 # Agent 循环无 promote 的 chunk 上限，超出强制停止
+
+  # 流/任务/缓存（4 键）
+  stream_task:
+    heartbeat_interval: 25.0       # SSE keep-alive 心跳周期(秒)，须 < 前端 IDLE_TIMEOUT=60s
+    task_timeout_hours: 1          # 已结束任务超过 N 小时自动清理
+    tool_cache_ttl: 300            # 工具结果缓存 TTL(秒)
+    max_cache_size: 1000           # 会话/上下文缓存最大条目数
+
+  # 人工确认（4 键）
+  hitl:
+    hitl_confirm_lead: 10          # 前端倒计时比后端 HITL_TIMEOUT 提前的秒数
+    bypass_auto_lead: 2            # bypass 前端倒计时比后端提前的秒数
+    hitl_min_confirm_timeout: 3    # 前端倒计时最小值，不低于后端窗口减提前量
+    max_pending_confirmations: 100 # HITL 最大待确认请求数
+
+  # 内容截断（3 键）
+  content:
+    project_context_max_chars: 10000  # 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
+    action_log_result_max_chars: 5000 # action_handler 日志 tool_result 截断长度
+    temp_history_char_limit: 50000    # compaction 临时历史字符上限
+
+  # 网络（1 键）
+  network:
+    cors_origins: "http://localhost:5173,http://127.0.0.1:5173"  # API CORS 允许来源，多个用逗号分隔
