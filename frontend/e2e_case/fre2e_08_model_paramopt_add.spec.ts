@@ -11,6 +11,11 @@ import * as fs from 'fs';
  *   → POST /models body 含 high+param_options → config.yaml 落盘(model_params+model_meta)
  *   → 切新模型参数区下拉 value=high（回显）
  *
+ * [62]P9 核对（2026-09-22 小欧）: 设计 4.4-9「真实 LLM 请求体断言 reasoning_effort="high"」
+ *   — 请求体运行时消费（extra_body→body 顶层 reason_effort 字符串）由后端 BY-08
+ *   TestParseModelParamsRuntime.test_build_request_body_runtime 承担（零 mock、真实函数）；
+ *   本 E2E 负责「配置→保存→显示」三段，运行时构造透传见 create_instance_passes_extra_body。
+ *
  * 铁规提醒: AGENTS.md 严令禁止 commit 任何测试代码文件 —— 本 spec 严禁提交。
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
