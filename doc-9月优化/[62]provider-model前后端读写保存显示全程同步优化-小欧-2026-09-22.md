@@ -1,7 +1,7 @@
 # [62]provider/model前后端读写保存显示全程同步优化
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 14:58:18（小欧）
+**更新时间**: 2026-09-22 15:06:24（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -34,6 +34,7 @@
 - v3.7 2026-09-22 14:47:25 小欧 补两个"后来添加参数"场景UI设计：4.3(8)模型param_options编辑UI（管理选项弹窗，修改允许值列表）+4.3(9)Provider动态参数发现（GET /models返回param_types元数据，ProviderConfig动态渲染）
 - v3.8 2026-09-22 14:55:36 小欧 修3处冲突：①4.3(2)中间层key正名tuning.llm.stream_max_retries（registry:157既有，llm_net.max_retries不存在）；②4.3(2)补snapshot()透传max_retries=self.max_retries（跨provider快照否则丢定制值）；③4.3(1)补get_models显示层走同三层+tuning对齐（否则显示60实际150），SettingsPage fallback改150
 - v3.9 2026-09-22 14:58:18 小欧 文档改名：reasoning_effort类型错乱根因分析与SSOT根治方案→provider/model前后端读写保存显示全程同步优化（内容覆盖已超单点bug，改名贴合全貌；标题H1同步）
+- v4.0 2026-09-22 15:06:24 小欧 补全三缺口：①4.3(9)动态参数读-写-存-显闭环（值随GET /models下发+types/useSettings透传+doSave收集+DTO extra='allow'+param_types白名单防注入）；②4.3(8)删选项致默认值悬空处理（同批回提default_params重置为首项，复用3.1(2)同批合并校验）；③4.4补第8/9条model级运行时消费验证（parse_model_params单测+真实LLM请求体）
 
 ---
 
@@ -938,27 +939,83 @@ zhipuai:
 
 原因：param_options是模型元数据的一部分，修改允许值列表是管理员常见操作（模型升级、厂商调整参数范围）。放在参数区标题行右侧，与"重置为默认"同级，位置合理——用户在参数区发现选项不够时，视线自然扫到标题行的管理入口。
 
-（9）Provider动态参数发现——后端返回参数元数据（小欧 v3.7，场景：Provider新增参数类型后UI自动适配）：
+**悬空值处理（小欧 v4.0，删选项致当前默认值不再合法时）：**
+
+场景：当前`defaults.reasoning_effort="high"`，管理员在管理选项里删掉`high`。若只提交`param_options`、不碰`default_params`，保存后Select的value=high不在新options内，下拉无高亮、回显悬空。
+
+修复（复用3.1(2)同批合并能力，零后端改动）：管理选项弹窗`onSave`保存前交叉校验——对每个改了`param_options`的key，若`defaults[key]`存在且不在新列表内，弹`Modal.confirm`："默认值 {key}='{旧值}' 不在新选项内，是否重置为该参数第一选项 '{新列表[0]}'？"。确认→同批提交`{param_options: 新表, default_params: {..., [key]: 新列表[0]}}`；取消→不保存并停留在弹窗。
+
+```diff
+ # ParamOptionsModal.tsx onSave（保存前交叉校验，小欧 v4.0）
+ -  onSave调用: modelApi.updateModel(provider, model, {param_options: newOptions})
+ +  // 1. 排查每个改动过的key，defaults[key]是否仍在新列表内
+ +  const dangling = toChangedKeys.find(
+ +    (k) => defaults[k] !== undefined && !newOptions[k].includes(defaults[k])
+ +  );
+ +  if (dangling) {
+ +    Modal.confirm({
+ +      title: `默认值 ${dangling}='${defaults[dangling]}' 不在新选项内`,
+ +      content: `将重置为 '{newOptions[dangling][0]}'，继续？`,
+ +      onOk: async () => {
+ +        await modelApi.updateModel(provider, model, {
+ +          param_options: newOptions,
+ +          default_params: { ...defaults, [dangling]: newOptions[dangling][0] },
+ +        });
+ +        onSaveDone(); // 刷新 paramOptions + defaults
+ +      },
+ +    });
+ +    return;
+ +  }
+ +  // 2. 无悬空：仅提交param_options
+ +  await modelApi.updateModel(provider, model, { param_options: newOptions });
+```
+
+关键点：`param_options`+`default_params`同批提交正好走3.1(2)的"先合并本次新选项再校验"逻辑（allow合并新表→`dangling`新值=首项必然在新列表内→校验通过），校验与落盘天然自洽，不需要后端额外分支。回显层（ModelParams Select）新选项内含该值，无悬空。
+
+（9）Provider动态参数发现——完整读-写-存-显闭环（小欧 v3.7起，v4.0补全）：
 
 **场景**：Provider以后可能新增参数（如`rate_limit`、`max_concurrent`），当前UI硬编码了timeout/max_retries/label，新参数无法被发现和编辑。
 
-**设计**：后端`GET /models`的Provider段新增`param_types`元数据字段，声明该Provider支持的所有参数及类型。前端根据`param_types`动态渲染输入框，无需改代码即可适配新参数。
+**设计原则**：元数据（参数名/类型/标签）由后端一处声明，前端只渲染不定义；新参数的值随`GET /models`正常下发、随`PUT /providers`正常落盘，前端不做任何硬编码。新增参数只需后端：①常量表加一行元数据 ②`config.yaml`加字段 ③零改前端。
 
-**后端契约**（`GET /models` Provider段新增）：
+**1. 元数据源头（后端常量表，不塞config避免配置膨胀）：**
+
+```python
+# model_service.py 模块常量区（小欧 v4.0）
+PROVIDER_PARAM_TYPES: Dict[str, Dict[str, Any]] = {
+    "timeout":     {"type": "number", "label": "超时(秒)", "min": 1, "default": 60},
+    "max_retries": {"type": "number", "label": "重试次数", "min": 0, "default": 3},
+    "label":       {"type": "string", "label": "显示名"},
+    # 新增Provider参数：在此加一行 + config.yaml对应provider加字段，前后端自动适配，不再改前端代码
+    # "rate_limit": {"type": "number", "label": "速率限制", "min": 0, "default": 0},
+}
+KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_types"}
+```
+
+**2. 读链（`GET /models`→config state→Form回填，v4.0补值通道）：**
 
 ```json
 {
   "name": "sensenova",
+  "timeout": 60, "max_retries": 3, "label": "商汤", "rate_limit": 10,
   "param_types": {
     "timeout": {"type": "number", "label": "超时(秒)", "min": 1, "default": 60},
     "max_retries": {"type": "number", "label": "重试次数", "min": 0, "default": 3},
     "label": {"type": "string", "label": "显示名"},
     "rate_limit": {"type": "number", "label": "速率限制", "min": 0, "default": 0}
-  }
+  },
+  "models": [ ... ]
 }
 ```
 
-**前端渲染规则**：遍历`param_types`，按`type`渲染对应控件（number→InputNumber，string→Input，boolean→Switch），`label/min/default`用于显示和兜底。已有参数（timeout/max_retries/label）继续走原有硬编码表单（保持向后兼容），新参数走动态渲染。
+```diff
+ # model_service.py get_models() Provider段（v4.0：元数据 + 动态值一并下发）
+         "max_retries": <三层解析值>,
++        "param_types": PROVIDER_PARAM_TYPES,
++        **{k: v for k, v in p.items()
++           if k not in KNOWN_PROVIDER_KEYS and isinstance(v, (str, int, float, bool))},  # 动态值透传
+         "models": <models>,
+```
 
 ```diff
  # model.api.ts ProviderEntry 加param_types
@@ -976,7 +1033,54 @@ zhipuai:
 ```
 
 ```diff
- # ProviderConfig.tsx 在硬编码表单后新增动态渲染区
+ # types.ts providerConfig 每条加动态索引（v4.0：rate_limit等新参数类型收容）
+       {
+         api_key: { configured: boolean; suffix: string };
+         base_url: string;
+         label: string;
+         timeout: number;
+         max_retries: number;
+         env: boolean;
++        [key: string]: unknown;  // 动态参数（param_types驱动）
+       }
+```
+
+```diff
+ # useSettings.ts load()构建providerConfig（v4.0：动态值从provider对象透传）
+         {
+           api_key: p.api_key,
+           base_url: p.api_base,
+           label: p.label,
+           timeout: p.timeout,
+           max_retries: p.max_retries,
+           env: p.env,
++          // 动态参数值透传：跳过已具名+元数据+列表类，其余标量照抄
++          ...Object.fromEntries(
++            Object.entries(p as Record<string, unknown>).filter(([k]) =>
++              !['name', 'label', 'api_base', 'api_key', 'timeout',
++                'max_retries', 'env', 'models', 'param_types'].includes(k)
++            )
++          ),
+         }
+```
+
+回填点：`ProviderConfig.tsx:82` `initialValues={{ ...config, api_key: undefined }}`已把整个config展开进Form——动态字段只要进了`config`即自动回填，无需额外代码。
+
+**3. 写链（前端patch收集 → DTO放行 → 后端白名单落盘，v4.0补收集）：**
+
+```diff
+ # ProviderConfig.tsx doSave（v4.0：param_types驱动的新参数收集进patch）
+     if (values.max_retries !== undefined)
+       patch.max_retries = values.max_retries;
++    // 动态参数收集：已有静态字段skip，param_types里其余字段值非undefined送patch
++    for (const k of Object.keys(config.param_types ?? {})) {
++      if (STATIC_KEYS.has(k)) continue;
++      if (values[k] !== undefined) patch[k] = values[k];
++    }
+```
+
+```diff
+ # ProviderConfig.tsx 动态渲染区（v3.7已有，值回填走initialValues天然生效）
    {/* 已有字段: api_key / base_url / label / timeout / max_retries（硬编码） */}
 +  {/* 动态字段: param_types中除已有字段外的新参数 */}
 +  {Object.entries(config.param_types ?? {}).map(([key, meta]) =>
@@ -994,7 +1098,41 @@ zhipuai:
 +  )}
 ```
 
-原因：硬编码字段（timeout/max_retries/label）是当前已知参数，保持不变；新参数通过`param_types`元数据动态发现，前端无需改代码即可适配。Provider新增参数时只需后端：①config.yaml加字段②`GET /models`返回`param_types`③`update_provider_config`的key_map加映射，前端自动渲染+保存。
+```diff
+ # model_routes.py:17 import 补ConfigDict（v4.0：动态字段放行必须的pydantic配置）
+-from pydantic import BaseModel, Field
++from pydantic import BaseModel, ConfigDict, Field
+ # ProviderConfigUpdate 加 extra='allow'（v4.0：静态字段仍强类型，动态字段放行）
+ class ProviderConfigUpdate(BaseModel):
++    model_config = ConfigDict(extra='allow')
+     label: Optional[str] = Field(default=None)
+     ...
+```
+
+```diff
+ # model_service.py update_provider_config() 循环前加param_types白名单（v4.0：防任意键注入）+动态落盘
++    if isinstance(fields, dict):
++        unknown_key = next(
++            (k for k in fields if k not in set(key_map) and k not in PROVIDER_PARAM_TYPES), None
++        )
++        if unknown_key:
++            raise ValueError(f"不支持的Provider配置项: {unknown_key}")
+     for k, v in fields.items():
+         if k not in key_map: continue
+         ...
++    # 动态参数落盘：key_map遍历后，param_types内的动态字段写 config.yaml 的 ai.{provider}.{k}
++    for k, v in fields.items():
++        if k in PROVIDER_PARAM_TYPES and k not in key_map:
++            node.setdefault("ai", {}).setdefault(provider, {})[k] = v
+```
+
+原因：动态字段在DTO声明会违背"前端零改代码"初衷（每个新参数都改DTO）。`extra='allow'`一行放行未知字段，静态字段（label/timeout/max_retries）仍强类型校验，两条合流。后端白名单以`PROVIDER_PARAM_TYPES`为界——不在元数据表的键拒绝落盘，杜绝注入。动态参数走`merge_nested_patch`叶值写入（复用1.4已验证链路），标量类型直写无拆散风险。
+
+**4. 存（mtime+锁+备份回滚，复用已有链路）：** 第3步节点写复用`merge_nested_patch`叶级原子写（锁+备份+回滚，1.4验明），`mtime`校验并发。`onSave`成功后父级`refreshModels`（或重拉`GET /models`）刷新，动态值回显即最新。
+
+**5. 测试（4.4第10条）：** 后端`config.yaml` sensenova加`rate_limit: 10`→`GET /models`该provider返回`rate_limit: 10`+`param_types.rate_limit`→前端ProviderConfig自动渲染InputNumber且值回填10→改20保存→`PUT /providers`体含`rate_limit: 20`→落盘`config.yaml`→重拉显示20（闭环）。
+
+原因：v3.7只给了渲染骨架，"读"（值回填）和"写"（patch收集+落盘）都断。本次补全后动态参数也成为完整四段闭环：元数据常量表→值下发透传→表单回填→patch收集→DTO放行→白名单落盘→重拉回显。新增参数真正只需要动后端两处（常量表+config.yaml），前端零改。
 
 ### 4.4 测试与验证（小欧）
 
@@ -1005,3 +1143,6 @@ zhipuai:
 5. **创建可设**：添加Provider弹窗填写timeout=30/max_retries=5，保存后`config.yaml`落盘对应值，`GET /models`返回所填值。
 6. **param_options编辑**：模型参数区点击"管理选项"→弹窗显示当前`[low,medium,high]`→添加`xhigh`→保存→`GET /models`返回4个选项→ModelParams的Select下拉立即出现`xhigh`。
 7. **Provider动态参数**：后端config.yaml加`rate_limit: 10`→`GET /models`返回`param_types.rate_limit`→ProviderConfig自动渲染InputNumber→保存→落盘成功。
+8. **model级运行时消费（v4.0补，第3章链路的运行时闭环）**：`parse_model_params`（lifecycle/service.py:87-97）单测——config.yaml `ai.{provider}.model_params.{m}.reasoning_effort="high"`（字符串）→ 返回`extra_body_params={"reasoning_effort": "high"}`（字符串，非数字）；`context_limit`弹出逻辑不伤余量；`create_service_instance`构造时`extra_body_params=该返回值`透传给BaseAIService（lifecycle/service.py:105/117）。
+9. **model级端到端运行时（v4.0补）**：真实后端改`sensenova`某模型`reasoning_effort=high`保存→真实LLM调用（E2E幂等用例或手工+请求日志断言）请求体携带`reasoning_effort="high"`字符串；与第3章显示/落盘构成"配置→保存→显示→运行时消费"四段全通。
+10. **Provider动态参数闭环（v4.0补，走通4.3(9)五步）**：config.yaml sensenova加`rate_limit: 10`→`GET /models`返回`rate_limit: 10`+`param_types`→ProviderConfig渲染InputNumber**且值回填10**→改20保存→落盘20→重拉显示20；另验白名单：`PUT /providers/sensenova {evil_key: 1}`→400（不在param_types拒绝）。
