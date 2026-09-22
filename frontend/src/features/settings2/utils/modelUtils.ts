@@ -1,4 +1,6 @@
 // 编辑历史: 2026-09-20 小强 - 新建：纯函数层（isDirty/clampToRange/validate，无 JSX，可单测，见 6.2/7.5）
+// 2026-09-22 小强 - S7：validate 拒 null（原 null 与 undefined 一并 continue 放行，前端放行 → 落库被后端拒）；
+//    null 仅当 schema 默认值本身为 null（可空项）时放行，其余类型返回「不能为空」
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 
 /** 模型 Tab 脏态：值与默认不一致且未被 env 接管（6.2）。 */
@@ -33,7 +35,12 @@ export function validate(
   for (const item of items) {
     if (item.readonly) continue;
     const value = values[item.key];
-    if (value === undefined || value === null) continue;
+    if (value === undefined) continue;
+    // S7：null 仅当 schema 默认值本身为 null（声明可空）时放行，其余报错（对齐后端 settings_service._validate_value）
+    if (value === null) {
+      if (item.default === null) continue;
+      return { key: item.key, message: `${item.label}不能为空` };
+    }
     if (item.type === 'bool' && typeof value !== 'boolean') {
       return { key: item.key, message: `${item.label}应为开关值` };
     }

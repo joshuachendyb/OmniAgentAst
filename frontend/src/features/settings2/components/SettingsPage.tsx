@@ -28,6 +28,7 @@
 //   ③危险确认拆分本组/全部(dangerousGroup/All)，危险键含 security.enabled；④模型组脏计数按实际参数数；
 //   ⑤添加/删除/Provider 保存失败不关窗并 rethrow（弹窗保留输入）；⑥添加 Provider toast 引导切换；
 //   ⑦jumpToProviderConfig 走脏确认闸口+保存后滚动锚点；⑧删模型Tab①"当前系统全局使用模型"冗余行
+// 2026-09-22 小强 - A3：ModelActions 传 envManaged（provider env 接管时隐藏「清空 api_key」，后端拒 clear）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -313,6 +314,10 @@ const SettingsPage: React.FC = () => {
         configured={
           state.model.providerConfig[state.model.selectedProvider]?.api_key
             ?.configured ?? false
+        }
+        // A3(2026-09-22 小强)：env 接管 provider 隐藏「清空 api_key」（后端拒 clear）
+        envManaged={
+          state.model.providerConfig[state.model.selectedProvider]?.env ?? false
         }
         onClearApiKey={async () => {
           try {

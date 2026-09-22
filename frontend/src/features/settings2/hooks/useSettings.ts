@@ -13,6 +13,13 @@
 //   ④后端 warnings 全为空文案时给固定兜底提示(F-14)
 // 2026-09-21 小强 - 设置页17问题复核修复：高亮TTL 2000→4000+新跳转清旧timer；dirtyCount 模型按实际脏参数量计数；
 //   setParam ①env 接管键禁改（杜绝改假值静默丢失）②越界输入补校正提示（[设置页UI审计] 问题1/13/2/15）
+// 2026-09-22 小强 - 编辑/保存 12 项可测缺陷批次2 修复（settings2-edsave-red）：
+//   S6 setValue 与持久化基线(baseline)对比，改回原值撤销脏标记（原无条件置脏）；
+//   S2 load() 遇未保存修改默认保留脏态+缓冲值（onModelSwitched 切全局模型不再静默丢脏），checkMtime 改显式 reset；
+//   S11 saveKeys/saveModelGroup 保存前校验 mtime，外部已更新则刷新+提示并中止（防静默覆盖）；
+//   S5 env provider 选中/切模型/刷新时回填 envOverride（load/selectProvider/selectModel/refreshModels），
+//      参数区禁用+setParam 拒改（后端 _raise_if_env_takeover 保存必败，杜绝假操作）；
+//   S12 selectProvider 无模型 Provider 补提示（原静默 return 无反馈）；
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -81,6 +88,7 @@ export function useSettings() {
   const [state, setState] = useState<SettingsState>({
     schema: {},
     values: {},
+    baseline: {},
     sources: {},
     dirtyKeys: {},
     mtime: 0,
@@ -123,79 +131,122 @@ export function useSettings() {
   }, []);
 
   /** 首次加载：schema + 全量值 + 模型列表一次拉取（6.3/7.0.5）。 */
-  const load = useCallback(async () => {
-    patchState({ loading: true, loadError: null });
-    try {
-      const [schema, all, models] = await Promise.all([
-        settingsApi.getSchema(),
-        settingsApi.getAll(),
-        modelApi.getModels(),
-      ]);
-      const values = all.groups
-        ? Object.fromEntries(
-            Object.entries(all.groups).map(([g, v]) => [g, { ...v.data }])
+  // 2026-09-22 小强 - S2 修复：默认（非 reset）且存在未保存修改时，保留 dirtyKeys 与脏键缓冲值（values 脏键不上抛），
+  //   杜绝 onModelSwitched（切全局模型 → load）静默丢脏；checkMtime/S11 守卫显式传 {reset:true} 才全量重置。
+  //   同时新增 baseline（纯服务端值快照）供 S6 回滚判定；模型区按选中 provider.env 回填 envOverride（S5）。
+  const load = useCallback(
+    async (opts?: { reset?: boolean }) => {
+      patchState({ loading: true, loadError: null });
+      try {
+        const [schema, all, models] = await Promise.all([
+          settingsApi.getSchema(),
+          settingsApi.getAll(),
+          modelApi.getModels(),
+        ]);
+        const serverValues = all.groups
+          ? Object.fromEntries(
+              Object.entries(all.groups).map(([g, v]) => [g, { ...v.data }])
+            )
+          : {};
+        const serverSources = all.groups
+          ? Object.fromEntries(
+              Object.entries(all.groups).map(([g, v]) => [g, { ...v.sources }])
+            )
+          : {};
+        const keyToGroup = new Map<string, string>();
+        for (const [g, grp] of Object.entries(schema.groups ?? {})) {
+          for (const it of grp.items ?? []) keyToGroup.set(it.key, g);
+        }
+        // v4.19(P2-4 修正)：正常加载不再用 localStorage prefs 覆盖 values——后端 YAML 是唯一真相源，
+        // local prefs 只承载"后端不可达时的本地试玩草稿"（7.6③），若潜伏自定义值遮蔽 YAML 会误导保存；
+        // 后端不可达（本 try 已抛错走到 catch）时 values 保持未初始化，外观 Tab 本地模式另行消费 prefs。
+        const ref = models.current_model_ref ?? null;
+        const provider =
+          models.providers.find((p) => p.name === ref?.provider) ??
+          models.providers[0];
+        const current =
+          provider?.models.find((m) => m.name === (ref?.model ?? '')) ??
+          provider?.models[0];
+        const defaults = Object.fromEntries(
+          Object.entries(
+            (current?.default_params ?? {}) as Record<string, unknown>
           )
-        : {};
-      const sources = all.groups
-        ? Object.fromEntries(
-            Object.entries(all.groups).map(([g, v]) => [g, { ...v.sources }])
-          )
-        : {};
-      // v4.19(P2-4 修正)：正常加载不再用 localStorage prefs 覆盖 values——后端 YAML 是唯一真相源，
-      // local prefs 只承载"后端不可达时的本地试玩草稿"（7.6③），若潜伏自定义值遮蔽 YAML 会误导保存；
-      // 后端不可达（本 try 已抛错走到 catch）时 values 保持未初始化，外观 Tab 本地模式另行消费 prefs。
-      const ref = models.current_model_ref ?? null;
-      const provider =
-        models.providers.find((p) => p.name === ref?.provider) ??
-        models.providers[0];
-      const current =
-        provider?.models.find((m) => m.name === (ref?.model ?? '')) ??
-        provider?.models[0];
-      const defaults = Object.fromEntries(
-        Object.entries(
-          (current?.default_params ?? {}) as Record<string, unknown>
-        )
-      );
-      patchState({
-        schema: schema.groups,
-        values,
-        sources,
-        dirtyKeys: {},
-        mtime: all.mtime,
-        loading: false,
-        currentRef: ref,
-        model: {
-          ...initialModel(),
-          providers: models.providers,
-          selectedProvider: provider?.name ?? '',
-          selectedModel: current?.name ?? '',
-          params: { ...defaults },
-          defaults,
-          ranges: {
-            ...((current?.range ?? {}) as Record<
-              string,
-              { min: number; max: number }
-            >),
-          },
-          providerConfig: Object.fromEntries(
-            models.providers.map((p) => [
-              p.name,
-              {
-                api_key: p.api_key,
-                base_url: p.api_base,
-                timeout: p.timeout,
-                max_retries: p.max_retries,
-                env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
+        );
+        const providerConfig = Object.fromEntries(
+          models.providers.map((p) => [
+            p.name,
+            {
+              api_key: p.api_key,
+              base_url: p.api_base,
+              timeout: p.timeout,
+              max_retries: p.max_retries,
+              env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
+            },
+          ])
+        );
+        // S5：provider 由 {NAME}_API_KEY 环境变量接管时（后端 update_model/update_provider_config
+        // 均 _raise_if_env_takeover 拒绝），其模型参数保存必败 → 参数区整体标记 envOverride 禁用。
+        const envOverride =
+          (provider?.env ?? false)
+            ? Object.fromEntries(
+                Object.keys(current?.default_params ?? {}).map((k) => [k, true])
+              )
+            : {};
+        setState((s) => {
+          const resetAll = opts?.reset ?? false;
+          const preserve = !resetAll && Object.keys(s.dirtyKeys).length > 0;
+          const values = preserve
+            ? (() => {
+                const merged: Record<string, Record<string, unknown>> = {};
+                for (const [g, data] of Object.entries(serverValues)) {
+                  merged[g] = { ...data };
+                }
+                for (const key of Object.keys(s.dirtyKeys)) {
+                  const g = keyToGroup.get(key);
+                  if (!g) continue;
+                  const buffered = s.values[g]?.[key];
+                  if (buffered !== undefined) {
+                    merged[g] = { ...(merged[g] ?? {}), [key]: buffered };
+                  }
+                }
+                return merged;
+              })()
+            : serverValues;
+          return {
+            ...s,
+            schema: schema.groups,
+            values,
+            sources: serverSources,
+            baseline: serverValues,
+            dirtyKeys: preserve ? { ...s.dirtyKeys } : {},
+            mtime: all.mtime,
+            loading: false,
+            currentRef: ref,
+            model: {
+              ...initialModel(),
+              providers: models.providers,
+              selectedProvider: provider?.name ?? '',
+              selectedModel: current?.name ?? '',
+              params: { ...defaults },
+              defaults,
+              ranges: {
+                ...((current?.range ?? {}) as Record<
+                  string,
+                  { min: number; max: number }
+                >),
               },
-            ])
-          ),
-        },
-      });
-    } catch (e) {
-      handleApiError(e);
-      patchState({ loading: false, loadError: '设置加载失败' });
-    }
-  }, [patchState]);
+              envOverride,
+              providerConfig,
+            },
+          };
+        });
+      } catch (e) {
+        handleApiError(e);
+        patchState({ loading: false, loadError: '设置加载失败' });
+      }
+    },
+    [patchState]
+  );
 
   useEffect(() => {
     void load();
@@ -210,7 +261,8 @@ export function useSettings() {
       if (mtime !== state.mtime) {
         const hasLocalDirty =
           Object.keys(state.dirtyKeys).length > 0 || state.model.isDirty;
-        await load();
+        // S2：外部更新 → 显式全量重置（load 默认会保留脏态，这里必须 reset 以对齐"已丢失"提示）
+        await load({ reset: true });
         showMessage(
           hasLocalDirty ? ErrorType.WARNING : ErrorType.INFO,
           hasLocalDirty
@@ -223,7 +275,7 @@ export function useSettings() {
     }
   }, [state.mtime, state.dirtyKeys, state.model.isDirty, load]);
 
-  /** 改控件：记脏态；外观两项同步 localStorage 预览（7.6）。 */
+  /** 改控件：与持久化基线对比记脏（S6）；外观两项同步 localStorage 预览（7.6）。 */
   const setValue = useCallback((group: string, key: string, value: unknown) => {
     setState((s) => {
       const values = {
@@ -246,7 +298,11 @@ export function useSettings() {
           /* 本地预览失败不阻断 */
         }
       }
-      return { ...s, values, dirtyKeys: { ...s.dirtyKeys, [key]: true } };
+      // S6：与原（持久化/服务端基线）一致则撤销脏标记，否则置脏——原无条件置脏，改回原值仍脏（迫使多存一次）
+      const dirtyKeys = { ...s.dirtyKeys };
+      if (s.baseline[group]?.[key] === value) delete dirtyKeys[key];
+      else dirtyKeys[key] = true;
+      return { ...s, values, dirtyKeys };
     });
   }, []);
 
@@ -335,6 +391,16 @@ export function useSettings() {
       if (!found.length) return { ok: true as const };
       setSaving(true);
       try {
+        // S11：保存前校验 mtime——后端已被外部更新则刷新并中止，杜绝本地静默覆盖且用户无感知
+        const curMtime = await settingsApi.getMtime();
+        if (curMtime !== state.mtime) {
+          await load({ reset: true });
+          showMessage(
+            ErrorType.WARNING,
+            '配置已被外部更新，已重新加载，请核对后重新保存'
+          );
+          return { ok: false as const };
+        }
         const patch = Object.fromEntries(
           found.map((ck) => {
             const g = Object.keys(state.schema).find((g) =>
@@ -370,6 +436,7 @@ export function useSettings() {
           // 2026-09-21 BUG-C 修复：secret 项保存成功后把明文/clear 归一回 {configured,suffix}，
           // 保证再渲染正确显示且再次保存不重复提交明文
           const values = { ...s.values };
+          const baseline = { ...s.baseline };
           items.forEach((it) => {
             if (!it.secret) return;
             const g = Object.keys(s.schema).find((g) =>
@@ -381,7 +448,18 @@ export function useSettings() {
               [it.key]: normalizeSecret(values[g]?.[it.key]),
             };
           });
-          return { ...s, dirtyKeys, values };
+          // S6：成功保存后把已保存键的基线同步为落盘值（含 secret 归一），回滚判定才有正确参照
+          items.forEach((it) => {
+            const g = Object.keys(s.schema).find((g) =>
+              s.schema[g]?.items.some((i) => i.key === it.key)
+            );
+            if (!g || values[g] == null) return;
+            baseline[g] = {
+              ...(baseline[g] ?? {}),
+              [it.key]: values[g][it.key],
+            };
+          });
+          return { ...s, dirtyKeys, values, baseline };
         });
         // A7：用落盘后 mtime 覆盖缓存，防假后门刷新误判
         syncMtime(result.mtime);
@@ -393,7 +471,15 @@ export function useSettings() {
         setSaving(false);
       }
     },
-    [state.schema, state.values, state.sources, syncMtime, setHighlightKeyTtl]
+    [
+      state.schema,
+      state.values,
+      state.sources,
+      state.mtime,
+      load,
+      syncMtime,
+      setHighlightKeyTtl,
+    ]
   );
 
   const saveModelGroup = useCallback(async () => {
@@ -410,6 +496,16 @@ export function useSettings() {
     if (!Object.keys(changed).length) return { ok: true as const };
     setSaving(true);
     try {
+      // S11：保存前校验 mtime（模型参数与设置同落 YAML），外部已更新则刷新并中止
+      const curMtime = await settingsApi.getMtime();
+      if (curMtime !== state.mtime) {
+        await load({ reset: true });
+        showMessage(
+          ErrorType.WARNING,
+          '配置已被外部更新，已重新加载，请核对后重新保存'
+        );
+        return { ok: false as const };
+      }
       // A1：模型参数写 ai.{provider}.model_params.{model}.{key}（运行时 parse_model_params 消费），
       // 经 PUT /models/{provider}/{model} 的 default_params 通道，不再走 /settings 裸 key（registry 无此 key 会保存失败）
       const r = await modelApi.updateModel(
@@ -434,7 +530,7 @@ export function useSettings() {
     } finally {
       setSaving(false);
     }
-  }, [patchModel, syncMtime, state.model]);
+  }, [patchModel, syncMtime, state.model, state.mtime, load]);
 
   // v4.25(2026-09-21 小强 修复 BUG-D)：跨模型/Provider 切换前强制保存未落库的模型参数，
   // 杜绝真实场景（agnes 空 dp <-> sensenova 有 dp）切换后参数静默丢失；保存失败则阻止切换。
@@ -483,9 +579,20 @@ export function useSettings() {
 
   const selectProvider = useCallback(
     async (name: string) => {
+      // S12：无此 Provider / 无模型的 Provider 给明确提示（原静默 return 无任何反馈）
       const p = state.model.providers.find((x) => x.name === name);
-      const first = p?.models[0];
-      if (!p || !first) return;
+      if (!p) {
+        showMessage(ErrorType.WARNING, `Provider「${name}」不存在`);
+        return;
+      }
+      const first = p.models[0];
+      if (!first) {
+        showMessage(
+          ErrorType.WARNING,
+          `Provider「${name}」暂无模型，请先在①选择器添加模型`
+        );
+        return;
+      }
       // BUG-D 修复：先保存未落库参数，再改焦点，防切换后参数静默丢失/数据不一致
       if (!(await ensureModelSaved())) return;
       // v4.20(小欧 2026-09-21 解耦)：①选择器 = 参数编辑焦点（纯前端），只切 selectedProvider/selectedModel
@@ -504,6 +611,13 @@ export function useSettings() {
             { min: number; max: number }
           >),
         },
+        // S5：切到 env 接管 provider 时参数区整体禁用（后端拒保存）
+        envOverride:
+          (p.env ?? false)
+            ? Object.fromEntries(
+                Object.keys(first?.default_params ?? {}).map((k) => [k, true])
+              )
+            : {},
         isDirty: false,
       });
     },
@@ -528,11 +642,21 @@ export function useSettings() {
         { min: number; max: number }
       >;
       // 参数已随 ensureModelSaved 落库，新模型按默认值展示，无残留脏态/幽灵参数
+      const providerEntry = state.model.providers.find(
+        (x) => x.name === state.model.selectedProvider
+      );
       patchModel({
         selectedModel: name,
         params: { ...nextDefaults },
         defaults: nextDefaults,
         ranges: nextRanges,
+        // S5：选中 provider 为 env 接管时同步禁用其参数区
+        envOverride:
+          (providerEntry?.env ?? false)
+            ? Object.fromEntries(
+                Object.keys(nextDefaults ?? {}).map((k) => [k, true])
+              )
+            : {},
         isDirty: Object.values(
           isDirty({ ...nextDefaults }, nextDefaults, state.model.envOverride)
         ).some(Boolean),
@@ -581,6 +705,9 @@ export function useSettings() {
 
   const refreshModels = useCallback(
     async (select?: { provider: string; model: string }) => {
+      // S3：带 select 的刷新（添加模型后定位）若当前参数未落库，先强制保存——与 selectProvider/selectModel
+      //   同一 BUG-D 防线，杜绝切到新模型时旧模型未保存参数静默丢失
+      if (select && !(await ensureModelSaved())) return null;
       try {
         const models = await modelApi.getModels();
         // v4.19(P2-10 修正)：与 load() 同构重建 providerConfig（含 env），防保存/增删后 env 状态过期
@@ -614,6 +741,13 @@ export function useSettings() {
               ranges: {
                 ...(m.range as Record<string, { min: number; max: number }>),
               },
+              // S5：目标 provider env 接管时禁用其参数区
+              envOverride:
+                (p.env ?? false)
+                  ? Object.fromEntries(
+                      Object.keys(defaults).map((k) => [k, true])
+                    )
+                  : {},
               isDirty: false,
             });
           }
@@ -624,7 +758,7 @@ export function useSettings() {
         return null;
       }
     },
-    [patchModel]
+    [patchModel, ensureModelSaved]
   );
 
   return {
