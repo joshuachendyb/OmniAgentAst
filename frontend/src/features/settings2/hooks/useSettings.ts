@@ -31,14 +31,18 @@
 //   缺则保存 label 后刷新即丢）。前后端写链路 label 编辑闭环。
 // 2026-09-22 小欧 - [62]P8：①4.3(9)-2-d load()/refreshModels() 两处 providerConfig 构建补动态参数值透传
 //   （跳过已具名键，其余标量照抄——rate_limit 保存后重拉不丢）；②4.3(8) 初始态补 paramOptionsModalOpen
+// 2026-09-22 小欧 - DRY 收口（三堂会审 10 大规范）：①load/refreshModels 两处 providerConfig 构建重复 →
+//   buildProviderConfig 公共函数；②load/selectProvider/selectModel/refreshModels 四处 envOverride 构建模式重复 →
+//   getEnvOverride 公共函数；③saveKeys 内两处手写「查 schema 键归属组」循环与 groupOfKey 重复 → findGroupOfKey 单纯函数
+//   （groupOfKey 改薄封装，setState 回调内传最新 s.schema）；三处均删重复回归单点维护 - 小欧-2026-09-22
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
   type SettingSchemaItem,
 } from '@/services/api/settings.api';
-import { modelApi } from '@/services/api/model.api';
+import { modelApi, type ProviderEntry } from '@/services/api/model.api';
 import { isDirty, clampToRange, validate } from '../utils/modelUtils';
-import type { SettingsState, TabKey } from '../types';
+import type { ModelState, SettingsState, TabKey } from '../types';
 import {
   ErrorType,
   handleApiError,
@@ -47,6 +51,64 @@ import {
 } from '@/services/error/handler';
 
 const PREF_KEY = 'omni.prefs.v1';
+
+// 2026-09-22 小欧 - DRY 收口：load()/refreshModels() 两处 providerConfig 构建完全重复 → 抽公共构建函数
+//   api_key/base_url/label/timeout/max_retries/env + 动态参数值（rate_limit 等 param_types 元数据驱动新键，
+//   跳过具名键/元数据/列表类，其余标量照抄 [62]P8 4.3(9)-2-d）；只此一处维护，杜绝改一处漏一处
+const DYNAMIC_PROVIDER_SKIP_KEYS = [
+  'name',
+  'label',
+  'api_base',
+  'api_key',
+  'timeout',
+  'max_retries',
+  'env',
+  'models',
+  'param_types',
+];
+
+function buildProviderConfig(
+  providers: ProviderEntry[]
+): ModelState['providerConfig'] {
+  return Object.fromEntries(
+    providers.map((p) => [
+      p.name,
+      {
+        api_key: p.api_key,
+        base_url: p.api_base,
+        label: p.label,
+        timeout: p.timeout,
+        max_retries: p.max_retries,
+        env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
+        // [62]P8 4.3(9)-2-d：动态参数值透传（rate_limit 等）——跳过已具名键 + 元数据 + 列表类，其余标量照抄
+        ...Object.fromEntries(
+          Object.entries(p as unknown as Record<string, unknown>).filter(
+            ([k]) => !DYNAMIC_PROVIDER_SKIP_KEYS.includes(k)
+          )
+        ),
+      },
+    ])
+  );
+}
+
+// 2026-09-22 小欧 - DRY 收口：load/selectProvider/selectModel/refreshModels 四处「env 接管 → 参数键全置禁改」重复 → 单函数
+function getEnvOverride(
+  env: boolean | undefined,
+  keys: string[]
+): Record<string, boolean> {
+  return env ? Object.fromEntries(keys.map((k) => [k, true])) : {};
+}
+
+// 2026-09-22 小欧 - DRY 收口：saveKeys 内两处手写「查 schema 键归属组」循环与 groupOfKey 重复 → 单纯函数（setState 回调内传最新 s.schema）
+function findGroupOfKey(
+  schema: SettingsState['schema'],
+  key: string
+): string | null {
+  for (const [g, grp] of Object.entries(schema)) {
+    if (grp.items.some((i) => i.key === key)) return g;
+  }
+  return null;
+}
 
 // 2026-09-21 BUG-C 修复：secret 值归一（保存成功后 state 里不能再留明文/clear 标记，
 // 否则 SettingRow 会误显"未配置"且再次保存重复提交）：
@@ -186,45 +248,13 @@ export function useSettings() {
             (current?.default_params ?? {}) as Record<string, unknown>
           )
         );
-        const providerConfig = Object.fromEntries(
-          models.providers.map((p) => [
-            p.name,
-            {
-              api_key: p.api_key,
-              base_url: p.api_base,
-              label: p.label,
-              timeout: p.timeout,
-              max_retries: p.max_retries,
-              env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
-              // 2026-09-22 小欧 - [62]P8 4.3(9)-2-d：动态参数值透传（rate_limit 等）——跳过已具名键
-              // + 元数据 + 列表类，其余标量照抄；ProviderConfig initialValues 展开 config 即自动回填
-              ...Object.fromEntries(
-                Object.entries(p as unknown as Record<string, unknown>).filter(
-                  ([k]) =>
-                    ![
-                      'name',
-                      'label',
-                      'api_base',
-                      'api_key',
-                      'timeout',
-                      'max_retries',
-                      'env',
-                      'models',
-                      'param_types',
-                    ].includes(k)
-                )
-              ),
-            },
-          ])
-        );
+        const providerConfig = buildProviderConfig(models.providers);
         // S5：provider 由 {NAME}_API_KEY 环境变量接管时（后端 update_model/update_provider_config
         // 均 _raise_if_env_takeover 拒绝），其模型参数保存必败 → 参数区整体标记 envOverride 禁用。
-        const envOverride =
-          (provider?.env ?? false)
-            ? Object.fromEntries(
-                Object.keys(current?.default_params ?? {}).map((k) => [k, true])
-              )
-            : {};
+        const envOverride = getEnvOverride(
+          provider?.env,
+          Object.keys(current?.default_params ?? {})
+        );
         setState((s) => {
           const resetAll = opts?.reset ?? false;
           const preserve = !resetAll && Object.keys(s.dirtyKeys).length > 0;
@@ -357,12 +387,7 @@ export function useSettings() {
   }, []);
 
   const groupOfKey = useCallback(
-    (key: string): string | null => {
-      for (const [g, items] of Object.entries(state.schema)) {
-        if (items.items.some((i) => i.key === key)) return g;
-      }
-      return null;
-    },
+    (key: string): string | null => findGroupOfKey(state.schema, key),
     [state.schema]
   );
 
@@ -452,12 +477,10 @@ export function useSettings() {
           return { ok: false as const };
         }
         const patch = Object.fromEntries(
-          found.map((ck) => {
-            const g = Object.keys(state.schema).find((g) =>
-              state.schema[g]?.items.some((i) => i.key === ck)
-            );
-            return [ck, state.values[g ?? '']?.[ck]];
-          })
+          found.map((ck) => [
+            ck,
+            state.values[findGroupOfKey(state.schema, ck) ?? '']?.[ck],
+          ])
         );
         const result = await settingsApi.updateSettings(patch);
         if (!result.ok) {
@@ -500,9 +523,7 @@ export function useSettings() {
           const baseline = { ...s.baseline };
           items.forEach((it) => {
             if (!it.secret) return;
-            const g = Object.keys(s.schema).find((g) =>
-              s.schema[g]?.items.some((i) => i.key === it.key)
-            );
+            const g = findGroupOfKey(s.schema, it.key);
             if (!g) return;
             values[g] = {
               ...(values[g] ?? {}),
@@ -511,9 +532,7 @@ export function useSettings() {
           });
           // S6：成功保存后把已保存键的基线同步为落盘值（含 secret 归一），回滚判定才有正确参照
           items.forEach((it) => {
-            const g = Object.keys(s.schema).find((g) =>
-              s.schema[g]?.items.some((i) => i.key === it.key)
-            );
+            const g = findGroupOfKey(s.schema, it.key);
             if (!g || values[g] == null) return;
             baseline[g] = {
               ...(baseline[g] ?? {}),
@@ -676,12 +695,10 @@ export function useSettings() {
           ...((first?.param_options ?? {}) as Record<string, string[]>),
         },
         // S5：切到 env 接管 provider 时参数区整体禁用（后端拒保存）
-        envOverride:
-          (p.env ?? false)
-            ? Object.fromEntries(
-                Object.keys(first?.default_params ?? {}).map((k) => [k, true])
-              )
-            : {},
+        envOverride: getEnvOverride(
+          p.env,
+          Object.keys(first?.default_params ?? {})
+        ),
         isDirty: false,
       });
     },
@@ -720,12 +737,10 @@ export function useSettings() {
         ranges: nextRanges,
         paramOptions: nextOptions,
         // S5：选中 provider 为 env 接管时同步禁用其参数区
-        envOverride:
-          (providerEntry?.env ?? false)
-            ? Object.fromEntries(
-                Object.keys(nextDefaults ?? {}).map((k) => [k, true])
-              )
-            : {},
+        envOverride: getEnvOverride(
+          providerEntry?.env,
+          Object.keys(nextDefaults)
+        ),
         isDirty: Object.values(
           isDirty({ ...nextDefaults }, nextDefaults, state.model.envOverride)
         ).some(Boolean),
@@ -791,38 +806,7 @@ export function useSettings() {
         // v4.19(P2-10 修正)：与 load() 同构重建 providerConfig（含 env），防保存/增删后 env 状态过期
         patchModel({
           providers: models.providers,
-          providerConfig: Object.fromEntries(
-            models.providers.map((p) => [
-              p.name,
-              {
-                api_key: p.api_key,
-                base_url: p.api_base,
-                label: p.label,
-                timeout: p.timeout,
-                max_retries: p.max_retries,
-                env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv）
-                // 2026-09-22 小欧 - [62]P8 4.3(9)-2-d：动态参数值透传（与 load() 同构，保存后重拉不丢新参数）
-                ...Object.fromEntries(
-                  Object.entries(
-                    p as unknown as Record<string, unknown>
-                  ).filter(
-                    ([k]) =>
-                      ![
-                        'name',
-                        'label',
-                        'api_base',
-                        'api_key',
-                        'timeout',
-                        'max_retries',
-                        'env',
-                        'models',
-                        'param_types',
-                      ].includes(k)
-                  )
-                ),
-              },
-            ])
-          ),
+          providerConfig: buildProviderConfig(models.providers),
         });
         if (select) {
           const p = models.providers.find((x) => x.name === select.provider);
@@ -843,12 +827,7 @@ export function useSettings() {
                 ...((m.param_options ?? {}) as Record<string, string[]>),
               },
               // S5：目标 provider env 接管时禁用其参数区
-              envOverride:
-                (p.env ?? false)
-                  ? Object.fromEntries(
-                      Object.keys(defaults).map((k) => [k, true])
-                    )
-                  : {},
+              envOverride: getEnvOverride(p.env, Object.keys(defaults)),
               isDirty: false,
             });
           }
