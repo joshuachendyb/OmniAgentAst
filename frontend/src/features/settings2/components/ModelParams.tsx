@@ -10,13 +10,14 @@
 // 2026-09-22 小欧 - 布局对齐：复用 settingsRowLayout 统一结构（label 固定宽 + 控件 flex:1 自适应）- 小欧-2026-09-22
 // 2026-09-22 小欧 - 提交前清理：import 移除 FontSize（布局重构删掉范围提示行后不再使用，lint unused）- 小欧-2026-09-22
 // 2026-09-22 小欧 - 修正：删容器 gap、label 加 fontSize/fontWeight 完全对齐 SettingRow 行容器样式；import 补回 FontSize/FontWeight - 小欧-2026-09-22
+// 2026-09-22 小欧 - DRY 收口：行容器/label 改复用 settingsRowStyle/settingsLabelStyle 令牌（删 settingsRowLayout/settingsSpacing 内联展开）；移 Colors/FontSize/FontWeight unused import - 小欧-2026-09-22
 import React from 'react';
 import { Input, InputNumber, Select, Slider, Switch } from 'antd';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import { Spacing } from '@/utils/stepStyles';
 import {
-  settingsSpacing,
   settingsControl,
-  settingsRowLayout,
+  settingsRowStyle,
+  settingsLabelStyle,
 } from '@/theme/settingsTokens';
 import { isDirty } from '../utils/modelUtils';
 import { DirtyDot, EnvTag } from './icons';
@@ -147,17 +148,8 @@ export const ModelParams: React.FC<Props> = ({
           );
         };
         return (
-          <div
-            key={key}
-            style={{
-              display: settingsRowLayout.display,
-              alignItems: settingsRowLayout.alignItems,
-              flexWrap: 'wrap',
-              minHeight: settingsRowLayout.minHeight,
-              borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
-            }}
-          >
-            <span style={{ width: settingsSpacing.labelWidth, fontSize: FontSize.PRIMARY, fontWeight: FontWeight.REGULAR }}>
+          <div key={key} style={settingsRowStyle}>
+            <span style={settingsLabelStyle}>
               {key} {envKey && <EnvTag />}
             </span>
             <span style={{ flex: 1 }}>{renderControl()}</span>

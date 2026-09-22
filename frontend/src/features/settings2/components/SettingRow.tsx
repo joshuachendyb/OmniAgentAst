@@ -11,14 +11,16 @@
 // 2026-09-22 小欧 - int/float 输入增强：int 加 precision=0/step=1 强制整数、两者加 min/max 范围约束；
 //   控件右侧显示范围提示（int: "0 ~ 2 · 整数"，float: "0 ~ 2"），range 类型不重复显示
 // 2026-09-22 小欧 - 控件宽度统一：range/int/float 的 InputNumber 补齐 rangeNumberWidth/inputNumberWidth 令牌 - 小欧-2026-09-22
+// 2026-09-22 小欧 - DRY 收口：行容器/label 样式改复用 settingsRowStyle/settingsLabelStyle 令牌（删 SettingsRowLayout 内联展开）；移 FontWeight unused import - 小欧-2026-09-22
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
-import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
+import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 import {
   settingsSpacing,
   settingsControl,
-  settingsRowLayout,
+  settingsRowStyle,
+  settingsLabelStyle,
 } from '@/theme/settingsTokens';
 import type {
   SettingSchemaItem,
@@ -245,20 +247,15 @@ export const SettingRow: React.FC<Props> = ({
       // 修正(2026-09-21 小强)：data-settings-key 作为搜索跳转滚动锚点（[设置页UI审计] 问题1）
       data-settings-key={item.key}
       style={{
-        display: settingsRowLayout.display,
-        alignItems: settingsRowLayout.alignItems,
-        flexWrap: 'wrap',
-        minHeight: settingsRowLayout.minHeight,
-        borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
+        ...settingsRowStyle,
         background: highlight ? chatTokens.colorPrimaryBg : undefined,
         transition: 'background 0.3s',
       }}
     >
       <span
         style={{
+          ...settingsLabelStyle,
           width: labelWidth,
-          fontSize: FontSize.PRIMARY,
-          fontWeight: FontWeight.REGULAR,
         }}
       >
         {item.label}

@@ -19,22 +19,20 @@
 //   值回填走 initialValues 天然生效）——rate_limit 等新参数前端零改代码。
 // 2026-09-22 小欧 - 控件宽度统一：api_key/base_url 使用 apiKeyWidth/baseUrlWidth(360px)令牌；显示名/timeout/max_retries 使用 inputWidth/inputNumberWidth(240px)令牌
 // 2026-09-22 小欧 - 布局重构：去 AntD Form，改 SettingRow 的 flex 行布局 + React state 管理字段值（复用 settingsRowLayout，DRC/SRP/KISS-DIRECT）- 小欧-2026-09-22
+// 2026-09-22 小欧 - DRY+令牌收口：EXISTING_KEYS/STATIC_KEYS 重复 Set → HARDCODED_KEYS 单 Set；行容器/label 改复用 settingsRowStyle/settingsLabelStyle（删本地 ROW_STYLE/LABEL_STYLE）；EXTRA_STYLE paddingTop/paddingBottom、保存按钮 padding 裸数字 → Spacing 令牌 - 小欧-2026-09-22
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
-import { Colors, FontSize, FontWeight } from '@/utils/stepStyles';
-import { settingsControl, settingsSpacing, settingsRowLayout } from '@/theme/settingsTokens';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import {
+  settingsControl,
+  settingsSpacing,
+  settingsRowStyle,
+  settingsLabelStyle,
+} from '@/theme/settingsTokens';
 import { EnvTag } from './icons';
 
-// [62]P8 4.3(9)-3-c：动态字段渲染 skip 已有硬编码字段（api_key/base_url/label/timeout/max_retries）
-const EXISTING_KEYS = new Set([
-  'api_key',
-  'base_url',
-  'label',
-  'timeout',
-  'max_retries',
-]);
-// [62]P8 4.3(9)-3-c：doSave 动静态字段分界——静态字段已在 onSave patch 显式收集，动态循环跳过
-const STATIC_KEYS = new Set([
+// 2026-09-22 小欧 - DRY 收口：EXISTING_KEYS/STATIC_KEYS 两 Set 内容完全相同合并为 HARDCODED_KEYS（渲染跳过 + doSave 动态收集共用）
+const HARDCODED_KEYS = new Set([
   'api_key',
   'base_url',
   'label',
@@ -70,26 +68,12 @@ interface Props {
   }) => Promise<void>;
 }
 
-const ROW_STYLE: React.CSSProperties = {
-  display: settingsRowLayout.display,
-  alignItems: settingsRowLayout.alignItems,
-  flexWrap: 'wrap',
-  minHeight: settingsRowLayout.minHeight,
-  borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
-};
-
-const LABEL_STYLE: React.CSSProperties = {
-  width: settingsSpacing.labelWidth,
-  fontSize: FontSize.PRIMARY,
-  fontWeight: FontWeight.REGULAR,
-};
-
 const EXTRA_STYLE: React.CSSProperties = {
   marginLeft: settingsSpacing.labelWidth,
   fontSize: FontSize.SECONDARY,
   color: Colors.TEXT.SECONDARY,
-  paddingTop: 4,
-  paddingBottom: 8,
+  paddingTop: Spacing.XS,
+  paddingBottom: Spacing.MD,
 };
 
 export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
@@ -99,15 +83,17 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
   const [label, setLabel] = useState(config.label ?? '');
   const [timeout, setTimeoutVal] = useState(config.timeout ?? 150);
   const [maxRetries, setMaxRetries] = useState(config.max_retries ?? 3);
-  const [dynamicValues, setDynamicValues] = useState<Record<string, unknown>>(() => {
-    const init: Record<string, unknown> = {};
-    for (const k of Object.keys(config.param_types ?? {})) {
-      if (!STATIC_KEYS.has(k) && config[k] !== undefined) {
-        init[k] = config[k];
+  const [dynamicValues, setDynamicValues] = useState<Record<string, unknown>>(
+    () => {
+      const init: Record<string, unknown> = {};
+      for (const k of Object.keys(config.param_types ?? {})) {
+        if (!HARDCODED_KEYS.has(k) && config[k] !== undefined) {
+          init[k] = config[k];
+        }
       }
+      return init;
     }
-    return init;
-  });
+  );
 
   const isEnv = config.env === true;
 
@@ -119,7 +105,7 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     patch.timeout = timeout;
     patch.max_retries = maxRetries;
     for (const k of Object.keys(config.param_types ?? {})) {
-      if (STATIC_KEYS.has(k)) continue;
+      if (HARDCODED_KEYS.has(k)) continue;
       if (dynamicValues[k] !== undefined) patch[k] = dynamicValues[k];
     }
     setSaving(true);
@@ -147,8 +133,8 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
   return (
     <div>
       {/* api_key */}
-      <div style={ROW_STYLE}>
-        <span style={LABEL_STYLE}>api_key</span>
+      <div style={settingsRowStyle}>
+        <span style={settingsLabelStyle}>api_key</span>
         <span style={{ flex: 1 }}>
           <Input.Password
             value={apiKey}
@@ -168,8 +154,8 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       </div>
 
       {/* base_url */}
-      <div style={ROW_STYLE}>
-        <span style={LABEL_STYLE}>base_url</span>
+      <div style={settingsRowStyle}>
+        <span style={settingsLabelStyle}>base_url</span>
         <span style={{ flex: 1 }}>
           <Input
             value={baseUrl}
@@ -181,8 +167,8 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       <div style={EXTRA_STYLE}>留空=清空地址（恢复默认直连）</div>
 
       {/* 显示名 */}
-      <div style={ROW_STYLE}>
-        <span style={LABEL_STYLE}>显示名</span>
+      <div style={settingsRowStyle}>
+        <span style={settingsLabelStyle}>显示名</span>
         <span style={{ flex: 1 }}>
           <Input
             value={label}
@@ -194,26 +180,30 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       <div style={EXTRA_STYLE}>Provider 显示名称，留空=保持原值</div>
 
       {/* timeout */}
-      <div style={ROW_STYLE}>
-        <span style={LABEL_STYLE}>timeout</span>
+      <div style={settingsRowStyle}>
+        <span style={settingsLabelStyle}>timeout</span>
         <span style={{ flex: 1 }}>
           <InputNumber
             min={1}
             value={timeout}
-            onChange={(v) => { if (v !== null) setTimeoutVal(v); }}
+            onChange={(v) => {
+              if (v !== null) setTimeoutVal(v);
+            }}
             style={{ width: settingsControl.inputNumberWidth }}
           />
         </span>
       </div>
 
       {/* max_retries */}
-      <div style={ROW_STYLE}>
-        <span style={LABEL_STYLE}>max_retries</span>
+      <div style={settingsRowStyle}>
+        <span style={settingsLabelStyle}>max_retries</span>
         <span style={{ flex: 1 }}>
           <InputNumber
             min={0}
             value={maxRetries}
-            onChange={(v) => { if (v !== null) setMaxRetries(v); }}
+            onChange={(v) => {
+              if (v !== null) setMaxRetries(v);
+            }}
             style={{ width: settingsControl.inputNumberWidth }}
           />
         </span>
@@ -221,26 +211,35 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
 
       {/* 动态字段 */}
       {Object.entries(config.param_types ?? {}).map(([key, meta]) =>
-        EXISTING_KEYS.has(key) ? null : (
-          <div key={key} style={ROW_STYLE}>
-            <span style={LABEL_STYLE}>{meta.label}</span>
+        HARDCODED_KEYS.has(key) ? null : (
+          <div key={key} style={settingsRowStyle}>
+            <span style={settingsLabelStyle}>{meta.label}</span>
             <span style={{ flex: 1 }}>
               {meta.type === 'number' ? (
                 <InputNumber
                   min={meta.min}
                   value={dynamicValues[key] as number}
-                  onChange={(v) => setDynamicValues((prev) => ({ ...prev, [key]: v }))}
+                  onChange={(v) =>
+                    setDynamicValues((prev) => ({ ...prev, [key]: v }))
+                  }
                   style={{ width: settingsControl.inputNumberWidth }}
                 />
               ) : meta.type === 'boolean' ? (
                 <Switch
                   checked={dynamicValues[key] as boolean}
-                  onChange={(v) => setDynamicValues((prev) => ({ ...prev, [key]: v }))}
+                  onChange={(v) =>
+                    setDynamicValues((prev) => ({ ...prev, [key]: v }))
+                  }
                 />
               ) : (
                 <Input
                   value={String(dynamicValues[key] ?? '')}
-                  onChange={(e) => setDynamicValues((prev) => ({ ...prev, [key]: e.target.value }))}
+                  onChange={(e) =>
+                    setDynamicValues((prev) => ({
+                      ...prev,
+                      [key]: e.target.value,
+                    }))
+                  }
                   style={{ width: settingsControl.inputWidth }}
                 />
               )}
@@ -250,7 +249,7 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       )}
 
       {/* 保存按钮 */}
-      <div style={{ padding: '12px 0' }}>
+      <div style={{ padding: `${Spacing.LG}px 0` }}>
         <Button type="primary" onClick={() => void doSave()} loading={saving}>
           保存 Provider 配置（立即生效）
         </Button>
