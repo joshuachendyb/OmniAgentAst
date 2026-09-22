@@ -1,7 +1,7 @@
 # [62]reasoning_effort类型错乱根因分析与SSOT根治方案
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 14:26:43（小欧）
+**更新时间**: 2026-09-22 14:47:25（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -31,6 +31,7 @@
 - v3.4 2026-09-22 14:14:11 小欧 4.1补四种断链说明表：timeout兜底打架（保存✓生效✗三处默认值不一致）、max_retries完全不消费（保存✓运行时硬编码3）、label改不了（保存✓前端无编辑入口）、models创建时丢失（没传✓弹窗无输入框）
 - v3.5 2026-09-22 14:18:37 小欧 核查发现现有diff不遵守三层回落原则：4.3(1)create_service_instance写死默认60跳过tuning配置，4.3(2)max_retries无回落链。修正：create_service_instance传None（Provider没设时不传默认值），base_service.py timeout用is not None判断（0是合法值），max_retries加三层回落（Provider > tuning.max_retries > 常量3）
 - v3.6 2026-09-22 14:26:43 小欧 补label/models两处diff：4.3(6)label编辑入口（types/useSettings/SettingsPage/ProviderConfig四文件）+4.3(7)addProvider弹窗补timeout/max_retries输入框+models注释说明（创建后通过模型管理UI添加）
+- v3.7 2026-09-22 14:47:25 小欧 补两个"后来添加参数"场景UI设计：4.3(8)模型param_options编辑UI（管理选项弹窗，修改允许值列表）+4.3(9)Provider动态参数发现（GET /models返回param_types元数据，ProviderConfig动态渲染）
 
 ---
 
@@ -833,6 +834,136 @@ zhipuai:
 
 （7）`models`创建时处理说明：后端`ProviderAddRequest` DTO（config_schemas.py:116）已有`models: list[str]`字段，`add_provider()`（model_service.py:249-251）已支持models列表写入config.yaml。前端创建弹窗不加models输入框——模型列表通过②模型管理区的"添加模型"按钮逐个添加（已有完整UI），创建Provider时通常还不知道要挂哪些模型。如需批量设置，可直接编辑config.yaml的`ai.{provider}.models`列表。
 
+（8）模型param_options编辑UI——"管理选项"弹窗（小欧 v3.7，场景：模型升级后修改允许值列表）：
+
+**场景**：模型创建时配了`reasoning_effort: [low, medium, high]`，后来模型升级支持`xhigh`，需加第4个选项。
+
+**UI位置**：模型Tab → ②参数区 → 标题行右侧，与"重置为默认"同排。仅当当前模型有`param_options`时显示"管理选项"链接。
+
+**弹窗设计**：
+
+```
+┌─ Modal: 管理参数选项 ──────────────────────────────────┐
+│  width: 480px                                           │
+│  标题: "管理 {model} 的参数选项"                         │
+│                                                         │
+│  ┌─ 参数行: reasoning_effort ─────────────────────────┐ │
+│  │  标签名: [low] [medium] [high] [×]                 │ │
+│  │  添加: [输入新值...] [添加]                         │ │
+│  │  说明: "保存后生效，已有参数值不做校验"              │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                         │
+│  ┌─ 参数行: (其他有param_options的参数) ──────────────┐ │
+│  │  同上结构                                          │ │
+│  └────────────────────────────────────────────────────┘ │
+│                                                         │
+│  按钮: [保存] [取消]                                    │
+│  保存调用: update_model(provider, model,                │
+│            {param_options: {reasoning_effort: [....]}}) │
+│  保存后: 刷新state.paramOptions → ModelParams下拉联动   │
+└─────────────────────────────────────────────────────────┘
+```
+
+**交互规则**：
+- 候选参数 = `state.model.paramOptions`的所有key（即当前模型的param_options）
+- 每个参数显示已有值为Tag，Tag可删除（×）
+- 输入框+添加按钮：新值须为非空字符串，重复值禁止
+- 保存前校验：每个参数至少保留1个值（空列表禁止）
+- 保存后：`update_model`写入config.yaml的`model_meta.{model}.param_options`，刷新`state.model.paramOptions`，ModelParams的Select下拉立即联动
+
+```diff
+ # SettingsPage.tsx:②参数区标题行（约line 218-230）
+   <SectionTitle
+     title={`② 参数（${state.model.selectedModel}）`}
+     extra={
+       <>
++        {Object.keys(state.model.paramOptions).length > 0 && (
++          <Button type="link" size="small" onClick={() => setParamOptionsModalOpen(true)}>
++            管理选项
++          </Button>
++        )}
+         {state.model.isDirty && (
+           <Button type="link" size="small" danger onClick={handleResetParams}>
+             重置为默认
+           </Button>
+         )}
+       </>
+     }
+   />
+```
+
+```diff
+ # types.ts ModelState 加弹窗控制
++  paramOptionsModalOpen: boolean;
+```
+
+```diff
+ # ParamOptionsModal.tsx（新组件，约120行）
+ // Props: {open, model, paramOptions, onClose, onSave}
+ // onSave调用: modelApi.updateModel(provider, model, {param_options: newOptions})
+ // 保存后回调: 刷新state.model.paramOptions
+```
+
+原因：param_options是模型元数据的一部分，修改允许值列表是管理员常见操作（模型升级、厂商调整参数范围）。放在参数区标题行右侧，与"重置为默认"同级，位置合理——用户在参数区发现选项不够时，视线自然扫到标题行的管理入口。
+
+（9）Provider动态参数发现——后端返回参数元数据（小欧 v3.7，场景：Provider新增参数类型后UI自动适配）：
+
+**场景**：Provider以后可能新增参数（如`rate_limit`、`max_concurrent`），当前UI硬编码了timeout/max_retries/label，新参数无法被发现和编辑。
+
+**设计**：后端`GET /models`的Provider段新增`param_types`元数据字段，声明该Provider支持的所有参数及类型。前端根据`param_types`动态渲染输入框，无需改代码即可适配新参数。
+
+**后端契约**（`GET /models` Provider段新增）：
+
+```json
+{
+  "name": "sensenova",
+  "param_types": {
+    "timeout": {"type": "number", "label": "超时(秒)", "min": 1, "default": 60},
+    "max_retries": {"type": "number", "label": "重试次数", "min": 0, "default": 3},
+    "label": {"type": "string", "label": "显示名"},
+    "rate_limit": {"type": "number", "label": "速率限制", "min": 0, "default": 0}
+  }
+}
+```
+
+**前端渲染规则**：遍历`param_types`，按`type`渲染对应控件（number→InputNumber，string→Input，boolean→Switch），`label/min/default`用于显示和兜底。已有参数（timeout/max_retries/label）继续走原有硬编码表单（保持向后兼容），新参数走动态渲染。
+
+```diff
+ # model.api.ts ProviderEntry 加param_types
+   export interface ProviderEntry {
+     name: string;
+     label: string;
+     api_base: string;
+     api_key: { configured: boolean; suffix: string };
+     env: boolean;
+     timeout: number;
+     max_retries: number;
+     models: ModelEntry[];
++    param_types?: Record<string, { type: string; label: string; min?: number; default?: unknown }>;
+   }
+```
+
+```diff
+ # ProviderConfig.tsx 在硬编码表单后新增动态渲染区
+   {/* 已有字段: api_key / base_url / label / timeout / max_retries（硬编码） */}
++  {/* 动态字段: param_types中除已有字段外的新参数 */}
++  {Object.entries(config.param_types ?? {}).map(([key, meta]) =>
++    EXISTING_KEYS.has(key) ? null : (
++      <Form.Item key={key} label={meta.label} name={key}>
++        {meta.type === 'number' ? (
++          <InputNumber min={meta.min} />
++        ) : meta.type === 'boolean' ? (
++          <Switch />
++        ) : (
++          <Input />
++        )}
++      </Form.Item>
++    )
++  )}
+```
+
+原因：硬编码字段（timeout/max_retries/label）是当前已知参数，保持不变；新参数通过`param_types`元数据动态发现，前端无需改代码即可适配。Provider新增参数时只需后端：①config.yaml加字段②`GET /models`返回`param_types`③`update_provider_config`的key_map加映射，前端自动渲染+保存。
+
 ### 4.4 测试与验证（小欧）
 
 1. **timeout三层回落**：Provider设timeout=45→运行时用45；Provider不设timeout+tuning设read_timeout=80→运行时用80；Provider不设+tuning也不设→运行时用150（常量）。
@@ -840,3 +971,5 @@ zhipuai:
 3. **timeout=0合法值**：Provider设timeout=0→不被跳过，直接传入BaseAIService（极短超时场景）。
 4. **DTO类型对齐**：`PUT /providers/{name} {max_retries: 5}`直接调API，落盘成功（不再依赖retry_times别名）。
 5. **创建可设**：添加Provider弹窗填写timeout=30/max_retries=5，保存后`config.yaml`落盘对应值，`GET /models`返回所填值。
+6. **param_options编辑**：模型参数区点击"管理选项"→弹窗显示当前`[low,medium,high]`→添加`xhigh`→保存→`GET /models`返回4个选项→ModelParams的Select下拉立即出现`xhigh`。
+7. **Provider动态参数**：后端config.yaml加`rate_limit: 10`→`GET /models`返回`param_types.rate_limit`→ProviderConfig自动渲染InputNumber→保存→落盘成功。
