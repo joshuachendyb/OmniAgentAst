@@ -9,9 +9,10 @@
 //   Props 加 options?（枚举选项表）/onReset?（对齐调用方 SettingsPage 已透传的 options）。
 // 2026-09-22 小欧 - 布局对齐：复用 settingsRowLayout 统一结构（label 固定宽 + 控件 flex:1 自适应）- 小欧-2026-09-22
 // 2026-09-22 小欧 - 提交前清理：import 移除 FontSize（布局重构删掉范围提示行后不再使用，lint unused）- 小欧-2026-09-22
+// 2026-09-22 小欧 - 修正：删容器 gap、label 加 fontSize/fontWeight 完全对齐 SettingRow 行容器样式；import 补回 FontSize/FontWeight - 小欧-2026-09-22
 import React from 'react';
 import { Input, InputNumber, Select, Slider, Switch } from 'antd';
-import { Colors, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import {
   settingsSpacing,
   settingsControl,
@@ -152,12 +153,11 @@ export const ModelParams: React.FC<Props> = ({
               display: settingsRowLayout.display,
               alignItems: settingsRowLayout.alignItems,
               flexWrap: 'wrap',
-              gap: settingsRowLayout.gap,
               minHeight: settingsRowLayout.minHeight,
               borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
             }}
           >
-            <span style={{ width: settingsSpacing.labelWidth }}>
+            <span style={{ width: settingsSpacing.labelWidth, fontSize: FontSize.PRIMARY, fontWeight: FontWeight.REGULAR }}>
               {key} {envKey && <EnvTag />}
             </span>
             <span style={{ flex: 1 }}>{renderControl()}</span>
