@@ -49,8 +49,16 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
        原字符串落盘致 get_allowed_dirs() 抛 ValueError（消费方断言 list），且 SettingRow 显示 '['a','b']' 畸形；
      ②S8 _validate_value 的 isinstance(value, int) 认同 bool（True 当整数写入 max_steps），
        int/float/range 统一先拒 bool（bool 属开关语义），int 报"整数"、float/range 报"数字"
+    2026-09-22 - 小欧 - 31候选修复 S13~S16（全部经真实红测试转绿）：
+     ①S13 text/str/textarea 类型门禁：text 须 str、textarea 须 str 或 list[str]（#5/#6 数字/bool/dict 落盘根治）
+     ②S14 model_ref 非空字符串类型校验：provider/model 为 list/None 等一律拒（#1/#2 HTTP500 根治）
+     ③S15 int 项补 registry range_ 上下界（#7 负数拒）+ range 项补 step 校验（#8 fontSize 12.5 拒）
+      ④S16 空 patch 拒绝假成功（#11 ok:True 空保存根治）
+    2026-09-22 - 小欧 - int/float 补 range_ 边界校验：type=int/float 且 schema 有 range_ 时，
+      校验值不超出 [lo, hi]，与 range 类型对齐（schema.range_ 统一生效，堵住超范围值落盘漏洞）
 """
 from pathlib import Path
+import math
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -193,11 +201,11 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
     if item.get("readonly"):
         return f"{item['key']} 为只读项"
     t = item["type"]
-    # 2026-09-22 小欧 修 S3：None 仅当该 key 默认值本身为 None（如 chat.max_tokens 留空=跟随模型）时放行；
-    # 否则拒绝——旧实现一律放行，_set_dotted(None) 直接删 YAML 键，select/bool/range 字段被"清空消失"。
+    # 2026-09-22 小欧 修 S3+S14：值域内一律拒 null——S3 历史分支「default=None 键允许 null
+    # （chat.max_tokens 留空=跟随模型）」已随 v4.20 删除 chat 组失败；现唯一 default=None 的
+    # 可编辑键为 ai.model_ref，其 null 语义="清空当前模型"无后端支撑（原 ModelRef(**None)→500），
+    # 一并拒（只读键 readonly 已在顶部早退）。_set_dotted(None) 删 YAML 键的静默破坏由此根除。
     if value is None:
-        if item["default"] is None:
-            return None
         return f"{item['key']} 值不能为 null"
     # 2026-09-22 小欧 修 S8：isinstance(True, int) 为真，bool 曾混入 int/float/range 校验通过；
     # 数值键先拒 bool（开关语义归 bool 类型专属）
@@ -210,18 +218,51 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
         return f"{item['key']} 应为整数"
     if t in ("float", "range") and not isinstance(value, (int, float)):
         return f"{item['key']} 应为数字"
+    # 2026-09-22 小欧 - int/float 补 range_ 边界校验（与 range 类型对齐，schema.range_ 统一生效）
+    if t in ("int", "float") and item.get("range"):
+        lo, hi = item["range"]
+        num = float(value)
+        if not (lo <= num <= hi):
+            return f"{item['key']} 超出范围 [{lo}, {hi}]"
+    # 2026-09-22 小欧 修 S13：text/str/textrea 长时间裸露无类型门禁——
+    # project_root:5 原样落库致 paths.* 派生 Path(int) 崩溃、allowed_dirs int/dict 落库致 get_allowed_dirs ValueError（#5/#6）
+    if t in ("text", "str") and not isinstance(value, str):
+        return f"{item['key']} 应为文本"
+    if t == "textarea":
+        if not (isinstance(value, str) or
+                (isinstance(value, list) and all(isinstance(x, str) for x in value))):
+            return f"{item['key']} 应为多行文本"
     if item.get("range"):
         lo, hi = item["range"]
-        if not (lo <= float(value) <= hi):
+        num = float(value)
+        if not (lo <= num <= hi):
             return f"{item['key']} 超出范围 [{lo}, {hi}]"
+        # 2026-09-22 小欧 修 S15：range 校验不查 step——appearance.fontSize=12.5 通过但 slider
+        # step=1 无法显示，前后端契约冲突（#8）
+        step = item.get("step")
+        if step:
+            k = (num - lo) / step
+            if not math.isclose(k, round(k), rel_tol=1e-9, abs_tol=1e-9):
+                return f"{item['key']} 取值不满足步长 {step}"
     if item.get("options") and value not in item["options"]:
         return f"{item['key']} 非法选项"
-    if t == "model_ref" and not (isinstance(value, dict) and value.get("provider") and value.get("model")):
-        return "ai.model_ref 应为 {provider, model} 结构"
+    if t == "model_ref":
+        # 2026-09-22 小欧 修 S14：原只查 truthy，provider=[1] 等非 str 进 ModelRef(**value) 抛
+        # pydantic ValidationError→HTTP500（#1）；null 走上方 None 分支拒（#2）
+        if not isinstance(value, dict):
+            return "ai.model_ref 应为 {provider, model} 结构"
+        provider, model = value.get("provider"), value.get("model")
+        if not (isinstance(provider, str) and provider.strip() and
+                isinstance(model, str) and model.strip()):
+            return "ai.model_ref 的 provider/model 应为非空字符串"
     return None
 
 
 def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
+    # 2026-09-22 小欧 修 S16：空 patch 直接 ok:True 假成功——前端防抖点击/未变更提交收到"保存成功"却无任何生效（#11）
+    if not patch or not isinstance(patch, dict):
+        return {"ok": False, "updated": [], "need_restart": [], "warnings": [],
+                "errors": ["空 patch，请求未包含任何配置项"], "mtime": _config_mtime()}
     raw = _raw_config()
     updated: List[Dict[str, str]] = []
     need_restart: List[str] = []

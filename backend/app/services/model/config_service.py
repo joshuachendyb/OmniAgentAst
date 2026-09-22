@@ -37,6 +37,9 @@
 #   f.read() 全量进 JSON 响应）
 # 2026-09-21 - 小欧 - [59]B-15 修复: get_model_list 的 provider.models dict 老格式({model: {...}})归一为键列表——
 #   原只认 list，老式/手写 YAML 整个 provider 静默缺列表，与 /models 展示不一致
+# 2026-09-22 - 小欧 - 31候选修复 #9/#14: update_config 包 filelock(config.yaml.lock) 与 merge_region_patch/
+#   get_config_snapshot 同一把锁串行化（并发读-改-写旧快照整文件覆盖丢更新、文件占用 PermissionError→500 根治）；
+#   成功路径改 reload_ai_config(_load+reset) 与 merge 写链路行为对齐（原仅 reload 不 reset，运行态缓存不一致）
 """
 config_service — 配置业务服务(services/model)
 
@@ -71,6 +74,7 @@ from app.services.model.config_helpers import (
     load_config,
     mask_secret_value,
     read_yaml_config,
+    reload_ai_config,
     save_config,
     write_yaml_config,
 )
@@ -79,71 +83,75 @@ from app.utils.response_utils import api_success, api_failure
 
 
 def update_config(config_update):
-    """配置更新业务编排 — 自 api/v1/model_routes.py 迁入, 复用 persistence.py 底层 I/O — 小欧 2026-08-13"""
-    backup_path = None
-    config_path = None
-    restored = [False]
+    """配置更新业务编排 — 自 api/v1/model_routes.py 迁入, 复用 persistence.py 底层 I/O — 小欧 2026-08-13
+    2026-09-22 小欧：整段读-改-写包 filelock(config.yaml.lock)（#9 并发丢更新/文件占用 500 根治）；
+    成功路径 reload_ai_config(_load+reset) 对齐 merge 写链路（#14 行为分裂收敛）。"""
+    import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面（与 merge_region_patch 同策略）
+    config_path = get_config_path()
+    lock = filelock.SoftFileLock(str(config_path) + ".lock", timeout=10)
+    with lock:
+        backup_path = None
+        restored = [False]
 
-    try:
-        config_path = get_config_path()
-        backup_path = _backup_config(config_path)
-        original_config_data = read_yaml_config(config_path)
-        config_data = original_config_data.copy()
-        config_data.setdefault('app', {})
+        try:
+            backup_path = _backup_config(config_path)
+            original_config_data = read_yaml_config(config_path)
+            config_data = original_config_data.copy()
+            config_data.setdefault('app', {})
 
-        for field, handler in FIELD_HANDLERS.items():
-            value = getattr(config_update, field, None)
-            if value is not None:
-                handler(config_data, config_update)
+            for field, handler in FIELD_HANDLERS.items():
+                value = getattr(config_update, field, None)
+                if value is not None:
+                    handler(config_data, config_update)
 
-        is_valid, errors, warnings, fail_result = _auto_fix_and_validate(
-            config_data, config_path, backup_path, original_config_data)
-        if not is_valid:
-            return fail_result
+            is_valid, errors, warnings, fail_result = _auto_fix_and_validate(
+                config_data, config_path, backup_path, original_config_data)
+            if not is_valid:
+                return fail_result
 
-        write_yaml_config(str(config_path), config_data)
-        with open(config_path, 'r', encoding='utf-8') as f:
-            verify_data = yaml.load(f, Loader=_make_safe_loader())
-            _vref = verify_data['ai'].get('model_ref') or {}
-            logger.info(f"[update_config] 验证写入: provider={_vref.get('provider')}, model={_vref.get('model')}")
-        get_config_instance().reload()
+            write_yaml_config(str(config_path), config_data)
+            with open(config_path, 'r', encoding='utf-8') as f:
+                verify_data = yaml.load(f, Loader=_make_safe_loader())
+                _vref = verify_data['ai'].get('model_ref') or {}
+                logger.info(f"[update_config] 验证写入: provider={_vref.get('provider')}, model={_vref.get('model')}")
+            reload_ai_config()
 
-        if backup_path and backup_path.exists():
-            try:
-                backup_path.unlink()
-                logger.info(f"验证成功,已删除备份文件:{backup_path}")
-            except Exception as e:
-                logger.warning(f"删除备份文件失败:{e}")
-        clear_backup_paths()
+            if backup_path and backup_path.exists():
+                try:
+                    backup_path.unlink()
+                    logger.info(f"验证成功,已删除备份文件:{backup_path}")
+                except Exception as e:
+                    logger.warning(f"删除备份文件失败:{e}")
+            clear_backup_paths()
 
-        # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构(PUT /config 直接返回前端, 方案B)
-        # 三堂会审修复(P2): updated_fields 内嵌 ModelRef 的 api_base/display_name null 键剔除, 免前端噪声 — 小欧
-        _updated_fields = config_update.model_dump(exclude_none=True)
-        if isinstance(_updated_fields.get("ai_model_ref"), dict):
-            _updated_fields["ai_model_ref"] = {
-                k: v for k, v in _updated_fields["ai_model_ref"].items() if v is not None}
-        return {
-            "success": True, "message": "配置更新成功,请验证服务可用性",
-            "updated_fields": _updated_fields,
-            "warnings": warnings,
-            "backup_path": str(backup_path) if backup_path else None,
-            "current_model_ref": {
-                "provider": (config_data.get('ai', {}).get('model_ref') or {}).get('provider') or '',
-                "model": (config_data.get('ai', {}).get('model_ref') or {}).get('model') or '',
-            },
-        }
+            # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构(PUT /config 直接返回前端, 方案B)
+            # 三堂会审修复(P2): updated_fields 内嵌 ModelRef 的 api_base/display_name null 键剔除, 免前端噪声 — 小欧
+            _updated_fields = config_update.model_dump(exclude_none=True)
+            if isinstance(_updated_fields.get("ai_model_ref"), dict):
+                _updated_fields["ai_model_ref"] = {
+                    k: v for k, v in _updated_fields["ai_model_ref"].items() if v is not None}
+            return {
+                "success": True, "message": "配置更新成功,请验证服务可用性",
+                "updated_fields": _updated_fields,
+                "warnings": warnings,
+                "backup_path": str(backup_path) if backup_path else None,
+                "current_model_ref": {
+                    "provider": (config_data.get('ai', {}).get('model_ref') or {}).get('provider') or '',
+                    "model": (config_data.get('ai', {}).get('model_ref') or {}).get('model') or '',
+                },
+            }
 
-    except HTTPException:
-        _restore_backup_if_needed(backup_path, config_path, restored)
-        if backup_path:
-            backup_path.unlink(missing_ok=True)
-        raise
-    except Exception as e:
-        _restore_backup_if_needed(backup_path, config_path, restored)
-        if backup_path:
-            backup_path.unlink(missing_ok=True)
-        logger.error(f"更新配置失败:{e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="更新配置失败,请稍后重试")
+        except HTTPException:
+            _restore_backup_if_needed(backup_path, config_path, restored)
+            if backup_path:
+                backup_path.unlink(missing_ok=True)
+            raise
+        except Exception as e:
+            _restore_backup_if_needed(backup_path, config_path, restored)
+            if backup_path:
+                backup_path.unlink(missing_ok=True)
+            logger.error(f"更新配置失败:{e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="更新配置失败,请稍后重试")
 
 
 def _mask_api_key(api_key: str) -> str:

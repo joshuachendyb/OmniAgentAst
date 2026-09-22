@@ -47,6 +47,8 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-22 - 小欧 - 编辑/保存审计修复 S10: _update_model_ref 加 AI_PROVIDER env 接管守卫——env 接管下
 #   PUT /config 切换 ai.model_ref 原无守卫，写入被 _apply_env_overrides 读回覆盖="假成功"；现抛 400
 #   （与 settings_service env_key=AI_PROVIDER、model_service _raise_if_current_ref_env 双标准语义对齐）
+# 2026-09-22 - 小欧 - 31候选修复 #10: _update_project_root 取代 _set_app_field lambda —— 原写 app.project_root
+#   死键（全读取方统一走 workspace.project_root，保存"成功"永不生效）；改写 workspace.project_root + 类型门禁
 
 import os
 import shutil
@@ -415,6 +417,15 @@ def _update_security(config_data: dict, update) -> None:
     config_data['security'] = security
     logger.info("更新安全配置成功")
 
+def _update_project_root(config_data: dict, update) -> None:
+    """PUT /config project_root → workspace.project_root（唯一读取键）— 2026-09-22 小欧 31候选#10
+    v4.20 键名按域收敛后写入方与读取方统一唯一键；类型门禁防数字/布尔落库（#5 同类缺陷闭环）。"""
+    value = update.project_root
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="project_root 应为字符串路径")
+    config_data.setdefault('workspace', {})['project_root'] = value
+    logger.info(f"更新项目根目录: {value}")
+
 FIELD_HANDLERS: Dict[str, Any] = {
     "ai_model_ref": _update_model_ref,
     "provider_api_keys": _update_api_keys,
@@ -422,7 +433,7 @@ FIELD_HANDLERS: Dict[str, Any] = {
     "language": lambda config_data, update: _set_app_field(config_data, "language", update.language, "语言"),
     "max_steps": _update_max_steps,
     "security": _update_security,
-    "project_root": lambda config_data, update: _set_app_field(config_data, "project_root", update.project_root, "项目根目录"),
+    "project_root": _update_project_root,
 }
 
 

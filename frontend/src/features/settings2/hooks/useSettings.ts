@@ -20,6 +20,9 @@
 //   S5 env provider 选中/切模型/刷新时回填 envOverride（load/selectProvider/selectModel/refreshModels），
 //      参数区禁用+setParam 拒改（后端 _raise_if_env_takeover 保存必败，杜绝假操作）；
 //   S12 selectProvider 无模型 Provider 补提示（原静默 return 无反馈）；
+// 2026-09-22 小强 - 31候选 #22/#17/#15 修复：①load catch 去重（全页 Result 唯一通道，不再叠 toast）；
+//   ②saveKeys 后端 errors 首 token 命中 schema 键 → setHighlightKeyTtl 红框定位；③beforeunload 离开守卫
+//   （脏态下拦截刷新/关闭，对齐 chat useBeforeUnload 语义）
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -240,8 +243,9 @@ export function useSettings() {
             },
           };
         });
-      } catch (e) {
-        handleApiError(e);
+      } catch {
+        // 31候选 #22：load 失败只保留全页 Result（loadError 由 SettingsPage 整屏渲染），
+        //   不再叠加 handleApiError 系统 toast——原双提示重复噪询；Result 自带重试入口
         patchState({ loading: false, loadError: '设置加载失败' });
       }
     },
@@ -251,6 +255,19 @@ export function useSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 31候选 #15：离开守卫——存在未保存修改（设置项脏键/模型参数）时拦截刷新与关闭，
+  //   对齐 chat 侧 useBeforeUnload 语义（设置页原无守卫，改完点关闭静默丢改动）；
+  //   监听在 useEffect 内注册，dirtyKeys/model.isDirty 变化时自动重绑，无脏态时不拦截
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!Object.keys(state.dirtyKeys).length && !state.model.isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [state.dirtyKeys, state.model.isDirty]);
 
   /** 切 Tab/刷新 mtime 检查（3.1/9.11）。 */
   // [59]F-3 修复：后台配置被外部修改导致整体刷新时，若存在未保存的本地修改（脏 keys/模型参数），
@@ -414,6 +431,17 @@ export function useSettings() {
           result.errors.forEach((m) =>
             showMessage(ErrorType.VALIDATE_CONFIG_FAILED, m)
           );
+          // 31候选 #17：后端校验错误高亮定位——错误文案首 token 形如 "agent.max_rounds 应为整数"的
+          //   key 前缀，命中 schema 键则 setHighlightKeyTtl（原只弹 toast 无红框定位，用户找不到错项）
+          const firstTok = result.errors[0]?.split(/\s+/)[0] ?? '';
+          if (
+            firstTok &&
+            Object.values(state.schema).some((g) =>
+              g.items.some((i) => i.key === firstTok)
+            )
+          ) {
+            setHighlightKeyTtl(firstTok);
+          }
           return { ok: false as const };
         }
         // [59]F-14 修复：后端 warnings 全为空文案时给固定兜底提示，避免空文案被 showMessage 静默吞掉后用户误以为干净保存

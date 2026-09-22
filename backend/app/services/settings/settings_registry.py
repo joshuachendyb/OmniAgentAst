@@ -37,6 +37,9 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
    2026-09-22 - 小欧 - 编辑/保存审计修复 S9：logging.level 补 env_key="LOG_LEVEL"——_apply_env_overrides 本就用
      LOG_LEVEL 覆写运行时级别，不标 env_key 致 sources 报 yaml 可编辑可保存却"改了不生效"（假保存）；
      对齐后 env 接管键前端禁改、update_settings 跳过并 warning
+   2026-09-22 - 小欧 - 31候选修复 #7：全部无界 int 项补 range_ 上下界（agent.max_rounds/security 延时与超时/
+     sandbox 8项/logging 文件大小与备份数）——压缩负数(如 -500MB)曾当合法值落盘，消费方断言非负
+     崩溃；range_ 为唯一边界来源，表驱 schema 与 _validate_value 单点校验（fontSize 的 step 见 #8 修复）
 """
 from typing import Any, Dict, List, Optional
 
@@ -61,7 +64,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
         _item("logging.debug", "bool", "调试模式", True, restart=True,
               notice="开启后日志按 DEBUG 级别记录，明细含文件/行号"),
-        _item("agent.max_rounds", "int", "最大轮数", 100,
+        _item("agent.max_rounds", "int", "最大轮数", 100, range_=[1, 10000],
               notice="单个任务最大执行轮数，超限结束任务"),
         _item("agent.max_steps", "int", "最大步数", 10000, range_=[1, 10000],
               notice="单任务最大执行步数，超限中止"),
@@ -78,9 +81,9 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="关闭后跳过所有安全检查（盘根/项目根等删除硬防线仍生效）"),
         _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
               notice="保存二次确认 Modal（UX 层）；后端安全门禁独立生效"),
-        _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10,
+        _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10, range_=[0, 3600],
               notice="HITL 自动确认倒计时（秒），到时未操作自动放行"),
-        _item("security.hitl_timeout", "int", "人工确认超时(秒)", 120,
+        _item("security.hitl_timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],
               notice="HITL 人工确认最大等待（秒），超时按策略处理"),
     ]},
     # 4.4 沙箱（sandbox，8 项，运行时参数）
@@ -90,17 +93,17 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("sandbox.backend", "select", "沙箱后端", "job_object",
               options=["job_object"], restart=True,
               notice="当前仅支持 job_object（Windows 进程 Job 隔离）"),
-        _item("sandbox.max_concurrent_sandboxes", "int", "最大并发沙箱数", 3,
+        _item("sandbox.max_concurrent_sandboxes", "int", "最大并发沙箱数", 3, range_=[1, 128],
               notice="同时运行的沙箱并发数，超出排队等待"),
-        _item("sandbox.max_workspace_mb", "int", "工作区上限(MB)", 500,
+        _item("sandbox.max_workspace_mb", "int", "工作区上限(MB)", 500, range_=[1, 1048576],
               notice="工作区真实磁盘占用上限（MB）"),
-        _item("sandbox.max_shadow_mb", "int", "影子区上限(MB)", 100,
+        _item("sandbox.max_shadow_mb", "int", "影子区上限(MB)", 100, range_=[1, 1048576],
               notice="高危文件操作（删除/复制/移动）预演副本上限（MB）"),
-        _item("sandbox.process_memory_limit_mb", "int", "进程内存上限(MB)", 2048,
+        _item("sandbox.process_memory_limit_mb", "int", "进程内存上限(MB)", 2048, range_=[1, 1048576],
               notice="沙箱内进程内存上限（MB），超限终止（误杀时调大）"),
-        _item("sandbox.default_timeout_sec", "int", "默认超时(秒)", 60,
+        _item("sandbox.default_timeout_sec", "int", "默认超时(秒)", 60, range_=[1, 86400],
               notice="命令未指定超时时的默认超时（秒）"),
-        _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300,
+        _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300, range_=[1, 3600],
               notice="单次执行最大超时（秒），超出截断转裁决"),
     ]},
     # 4.5 系统（system，12 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 2 关于只读）
@@ -111,9 +114,9 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("logging.level", "select", "日志级别", "INFO",
               options=["DEBUG", "INFO", "WARNING", "ERROR"], restart=True,
               notice="日志记录级别，DEBUG 最详细", env_key="LOG_LEVEL"),
-        _item("logging.max_file_size", "int", "日志文件上限(字节)", 10485760, restart=True,
+        _item("logging.max_file_size", "int", "日志文件上限(字节)", 10485760, range_=[1024, 1073741824], restart=True,
               notice="单个日志文件大小上限，超限自动轮转"),
-        _item("logging.backup_count", "int", "日志备份数", 5, restart=True,
+        _item("logging.backup_count", "int", "日志备份数", 5, range_=[1, 100], restart=True,
               notice="日志轮转保留的备份文件个数"),
         _item("paths.logs", "readonly", "日志目录", None, readonly=True,
               notice="源码运行=backend\\logs；打包(exe)运行=exe所在目录\\logs；app_日期.log按日期轮转，prompt日志在prompt-logs子目录"),

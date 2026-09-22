@@ -8,6 +8,8 @@
 //   补回 import 消除 tsc 未定义引用错误（编辑历史纪律：错误的加同样不对，立即修正）
 // 2026-09-21 小强 - 设置页17问题复核修复：根部加 data-settings-key 搜索滚动锚点；
 //   窄屏 labelWidth→88、textarea→100%、行 flexWrap（[设置页UI审计] 问题1/16）
+// 2026-09-22 小欧 - int/float 输入增强：int 加 precision=0/step=1 强制整数、两者加 min/max 范围约束；
+//   控件右侧显示范围提示（int: "0 ~ 2 · 整数"，float: "0 ~ 2"），range 类型不重复显示
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
@@ -183,11 +185,24 @@ export const SettingRow: React.FC<Props> = ({
           </span>
         );
       case 'int':
+        return (
+          <InputNumber
+            value={value as number}
+            disabled={disabled}
+            min={item.range?.[0]}
+            max={item.range?.[1]}
+            step={1}
+            precision={0}
+            onChange={(v) => onChange(v)}
+          />
+        );
       case 'float':
         return (
           <InputNumber
             value={value as number}
             disabled={disabled}
+            min={item.range?.[0]}
+            max={item.range?.[1]}
             onChange={(v) => onChange(v)}
           />
         );
@@ -245,6 +260,11 @@ export const SettingRow: React.FC<Props> = ({
         {item.label}
       </span>
       <span style={{ flex: 1 }}>{renderControl()}</span>
+      {item.range && item.type !== 'range' && (
+        <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.TERTIARY, marginLeft: Spacing.SM }}>
+          {item.range[0]} ~ {item.range[1]}{item.type === 'int' && ' · 整数'}
+        </span>
+      )}
       {dirty && <DirtyDot />}
       {source === 'env' && <EnvTag />}
       {source === 'default' && <DefaultTag />}
