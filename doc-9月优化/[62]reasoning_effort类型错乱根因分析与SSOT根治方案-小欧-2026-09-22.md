@@ -1,7 +1,7 @@
 # [62]reasoning_effort类型错乱根因分析与SSOT根治方案
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 13:46:00（小欧）
+**更新时间**: 2026-09-22 14:02:56（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -27,6 +27,7 @@
 - v3.0 2026-09-22 13:32:18 小欧 揪出全部代码点：一、1.4新增审计结论24处（3错21缺，逐条文件行号+违哪段原则+对应diff），写路径复用项验明（list叶值直写/None删叶/空dict落空块/锁+备份回滚，无需改）
 - v3.1 2026-09-22 13:34:37 小欧 补齐第三章缺的diff：3.1(2)补unknown白名单+落盘hunk、新增3.1(5)add_model完整diff（签名+校验+落盘），3.2(1)(2)(4)补类型diff块，3.2(3)补四通道+setParam完整diff，3.3(1)补模板区diff，3.4(1)补夹具diff
 - v3.2 2026-09-22 13:46:00 小欧 二轮十遍核查补漏：新增3.3(5)前端updateModel签名补param_options+3.1(6)POST路由add_model调用透req.param_options，共2处diff缺失补齐；PUT路由model_dump(exclude_none=True)随DTO自动含param_options无需改
+- v3.3 2026-09-22 14:02:56 小欧 新增第四章Provider参数问题（除URL/KEY外6处）：timeout兜底不一致（lifecycle/service.py用30，其他用60）、max_retries运行时不消费（base_service.py硬编码3，DTO/TS类型缺字段）、addProvider前端缺timeout/max_retries输入
 
 ---
 
@@ -558,3 +559,149 @@ zhipuai:
 3. 后端加`test_model_param_options`：`get_models`含`param_options`，`update_model default_params:{reasoning_effort:0}`报400。
 4. 手工：切`sensenova/deepseek-v4-flash`下拉显示`medium`非`0`；改`high`保存Network为字符串`"high"`；刷新仍`high`；`config.yaml`落盘字符串。
 5. 添加口：sensenova下新建模型，勾选`reasoning_effort=high`+`context_limit=900000`保存，`POST /models`体含字符串`"high"`；非法值（如`0`）后端400弹窗不关；建完自动切新模型，参数区即有下拉且值为所勾值；`config.yaml`中新模型`model_params`与`model_meta.param_options`同时落盘。
+
+---
+
+## 四、Provider特殊参数问题与修复（小欧，除URL/KEY外）
+
+第三章解决了model级参数的SSOT问题。本章解决Provider级参数（除`api_base`/`api_key`外）的遗留问题。
+
+### 4.1 问题清单（小欧）
+
+按2.1第5条完整性铁律逐条核对现状代码（未改），6处问题：
+
+| # | 代码点 | 问题 | 违原则段 |
+|---|---|---|---|
+| P1 | `lifecycle/service.py:113` timeout兜底`30` | `get_models()`对外返回`60`，实际运行时用`30`，显示值≠实际值 | ②读③写 |
+| P2 | `base_service.py:98-109` `__init__`无`max_retries`参数 | 运行时完全不消费Provider级`max_retries`，前端可编辑但改了没用 | ③写 |
+| P3 | `base_service.py:300` `max_retries`硬编码`_D_STREAM_MAX_RETRIES`（常量3） | 用户在前端改`max_retries=5`，实际重试仍是3 | ③写 |
+| P4 | `model_routes.py:48-54` `ProviderConfigUpdate` DTO缺`max_retries`字段 | DTO只有`retry_times`，前端发`max_retries`靠key_map别名绕过，类型不一致 | ②③ |
+| P5 | `model.api.ts:43-49` `ProviderConfigPatch` TS类型缺`max_retries` | 接口只有`retry_times`，前端`ProviderConfig.tsx:52-53`实际发送`max_retries`，TS类型保护失效 | ④ |
+| P6 | `model.api.ts:98-103` `addProvider`签名缺`timeout`/`max_retries` | 创建Provider时不传这两个值，全走后端默认值（60/3），前端无法在创建时自定义 | ⑤ |
+
+注：P4的DTO虽然缺`max_retries`字段，但`model_dump(exclude_none=True)`把前端传的`max_retries`原样透传到`update_provider_config`的`fields`，key_map有`max_retries→max_retries`映射，所以**写入链路碰巧能工作**——但这是绕过类型系统的隐式行为，不是正确设计。
+
+### 4.2 设计原则（小欧）
+
+1. **兜底值统一**：Provider参数在所有读写点使用同一默认值，杜绝显示值≠运行时值。
+2. **运行时必须消费配置值**：前端可编辑的参数，后端运行时必须真正使用，禁止硬编码常量。
+3. **DTO与TS类型对齐**：前后端类型定义必须覆盖实际发送的所有字段。
+4. **创建时可设**：Provider创建弹窗和API签名必须包含所有可配置参数。
+
+### 4.3 精确修改diff（小欧）
+
+（1）`backend/app/services/lifecycle/service.py:113` timeout兜底统一为60：
+
+```diff
+-        timeout=provider_config.get("timeout", 30),
++        timeout=provider_config.get("timeout", 60),
+```
+
+原因：`get_models()`（model_service.py:103）兜底60，`add_provider()`（model_service.py:244）默认60，`ProviderAddRequest`（config_schemas.py:117）默认60，SettingsPage.tsx:281前端fallback 60。唯独`lifecycle/service.py`用30，导致YAML未配timeout的Provider对外显示60但实际用30。统一为60。
+
+（2）`backend/app/llm/base_service.py` `max_retries`从硬编码改为配置驱动：
+
+```diff
+     def __init__(
+         self,
+         api_key: str,
+         llm_model: ModelRef,
+         timeout: int = _D_READ_TIMEOUT,
++        max_retries: int = _D_STREAM_MAX_RETRIES,
+         max_tokens: Optional[int] = None,
+         ...
+     ):
+         ...
+         self.timeout = int(timeout_value)
++        self.max_retries = max_retries
+```
+
+```diff
+     # request_stream():300
+-        max_retries = _D_STREAM_MAX_RETRIES
++        max_retries = self.max_retries
+```
+
+```diff
+ # lifecycle/service.py:106-119 create_service_instance():
+     return BaseAIService(
+         api_key=...,
+         llm_model=...,
+         timeout=provider_config.get("timeout", 60),
++        max_retries=provider_config.get("max_retries", 3),
+         ...
+     )
+```
+
+原因：现状`base_service.py:300`硬编码`_D_STREAM_MAX_RETRIES=3`，用户在前端改`max_retries`后保存成功但运行时无任何效果，是虚假可配置。修复后`BaseAIService`持有`self.max_retries`，`request_stream()`使用配置值，`lifecycle/service.py`从`provider_config`读取并透传。`get_models()`（model_service.py:104）已正确返回`max_retries`值（兜底3），无需改。
+
+（3）`backend/app/api/v1/model_routes.py:48-54` `ProviderConfigUpdate` DTO补`max_retries`：
+
+```diff
+ class ProviderConfigUpdate(BaseModel):
+     label: Optional[str] = Field(default=None, description="Provider 显示名")
+     api_key: Optional[str] = Field(default=None)
+     base_url: Optional[str] = Field(default=None)
+     timeout: Optional[int] = Field(default=None)
+     retry_times: Optional[int] = Field(default=None)
++    max_retries: Optional[int] = Field(default=None)
+     clear: Optional[bool] = Field(default=None, description="clear=true 显式清空 api_key")
+```
+
+原因：前端`ProviderConfig.tsx:52-53`发送`max_retries`，但DTO只有`retry_times`。靠`model_dump(exclude_none=True)`透传碰巧能工作，但类型不一致。补字段后前端发`max_retries`直连key_map，不再依赖隐式绕过。
+
+（4）`frontend/src/services/api/model.api.ts:43-49` `ProviderConfigPatch` TS类型补`max_retries`：
+
+```diff
+ export interface ProviderConfigPatch {
+   api_key?: string;
+   base_url?: string;
+   timeout?: number;
+   retry_times?: number;
++  max_retries?: number;
+   clear?: boolean;
+ }
+```
+
+原因：`ProviderConfig.tsx:52-53`实际发送`max_retries`但TS类型无此字段，类型保护失效。补后与实际行为一致。
+
+（5）`frontend/src/services/api/model.api.ts:98-103` + `ModelModals.tsx:32-37` + `ModelModals.tsx:170-187` `addProvider`补`timeout`/`max_retries`：
+
+```diff
+ // model.api.ts:98-103 addProvider签名
+   addProvider: async (data: {
+     name: string;
+     label?: string;
+     api_base?: string;
+     api_key?: string;
++    timeout?: number;
++    max_retries?: number;
+   }): Promise<ModelMutationResult> => {
+
+ // ModelModals.tsx:32-37 Props.onSubmitAddProvider类型
+   onSubmitAddProvider: (data: {
+     name: string;
+     label: string;
+     api_base: string;
+     api_key?: string;
++    timeout?: number;
++    max_retries?: number;
+   }) => Promise<void>;
+
+ // ModelModals.tsx:170-187 弹窗表单区块（在api_key输入框后新增两项）
++      <Form.Item label="timeout(秒)" name="timeout">
++        <InputNumber min={1} placeholder="默认60" />
++      </Form.Item>
++      <Form.Item label="max_retries" name="max_retries">
++        <InputNumber min={0} placeholder="默认3" />
++      </Form.Item>
+```
+
+原因：创建Provider时无法自定义timeout/max_retries，全走后端默认值。补后创建弹窗可设，API签名可传，与后端`ProviderAddRequest` DTO（config_schemas.py:117-118，已有timeout=60/max_retries=3默认值）对齐。
+
+### 4.4 测试与验证（小欧）
+
+1. **timeout一致性**：`config.yaml`给某Provider设`timeout: 45`，`GET /models`返回45，运行时httpx read timeout为45；不设timeout的Provider，`GET /models`返回60，运行时也为60（不再出现显示60实际30）。
+2. **max_retries消费**：前端改`max_retries=5`保存，触发请求模拟失败，观察日志重试次数为5次（不再固定3次）；不设max_retries的Provider，运行时用3（与常量一致）。
+3. **DTO类型对齐**：`PUT /providers/{name} {max_retries: 5}`直接调API，落盘成功（不再依赖retry_times别名）。
+4. **创建可设**：添加Provider弹窗填写timeout=30/max_retries=5，保存后`config.yaml`落盘对应值，`GET /models`返回所填值。
