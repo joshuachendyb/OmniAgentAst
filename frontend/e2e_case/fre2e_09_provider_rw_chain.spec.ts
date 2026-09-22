@@ -26,6 +26,8 @@ const stamp = () => {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 };
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
   test('添加Provider→label/动态参数/timeout编辑→拒注入→落盘回显', async ({
     page,
@@ -52,14 +54,28 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     expect(add.status()).toBe(200);
     console.log(`[E2E] 步骤0 添加 Provider ${pname} (timeout=60, max_retries=2) → ${add.status()}`);
 
-    // 0b) 前置落盘动态参数 rate_limit=80 —— 之后 UI「速率限制」行才渲染
+    // 0b) 添加一个模型 —— selectProvider 要求 provider 有模型，否则 WARNING「暂无模型」拒绝切换（文档4.3(7)）
+    const mname = `${pname}-m1`;
+    const am = await request.post(`${BASE}/models`, {
+      data: {
+        provider: pname,
+        model: mname,
+        label: `${pname}-模型`,
+        default_params: {},
+        param_options: {},
+      },
+    });
+    expect(am.status()).toBe(200);
+    console.log(`[E2E] 步骤0b 添加模型 ${mname} → ${am.status()}`);
+
+    // 0c) 前置落盘动态参数 rate_limit=80 —— 之后 UI「速率限制」行才渲染
     const slr = await request.put(`${BASE}/providers/${pname}`, {
       data: { rate_limit: 80 },
     });
     expect(slr.status()).toBe(200);
-    console.log(`[E2E] 步骤0b PUT rate_limit=80 → ${slr.status()}`);
+    console.log(`[E2E] 步骤0c PUT rate_limit=80 → ${slr.status()}`);
 
-    // 0c) GET 读回预置值（timeout/max_retries/rate_limit/label）
+    // 0d) GET 读回预置值（timeout/max_retries/rate_limit/label）
     let prov: Record<string, unknown> | null = null;
     await expect
       .poll(
@@ -77,23 +93,63 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     expect(prov!['timeout']).toBe(60);
     expect(prov!['max_retries']).toBe(2);
     expect(prov!['rate_limit']).toBe(80);
-    console.log(`[E2E] 步骤0c 读回: timeout=${prov!['timeout']} max_retries=${prov!['max_retries']} rate_limit=${prov!['rate_limit']}`);
+    console.log(`[E2E] 步骤0d 读回: timeout=${prov!['timeout']} max_retries=${prov!['max_retries']} rate_limit=${prov!['rate_limit']}`);
 
     // 1) 打开设置页 → 模型 Tab
+    page.on('response', (resp) => {
+      if (resp.url().includes('/api/v1/models') && resp.request().method() === 'GET') {
+        resp
+          .json()
+          .then((j) => {
+            const names = (j.providers ?? []).map((p: { name: string }) => p.name);
+            console.log(`[E2E] GET /models providers(${names.length}): ${names.join('|')}`);
+          })
+          .catch(() => {});
+      }
+    });
     await page.goto('http://localhost:5173/settings2');
+    await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
+    await page.reload();
     await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
     const modelTab = page.getByRole('tab', { name: /模\s*型/ }).first();
     await modelTab.click();
     await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
 
     // 2) ①选择器切到测试 Provider（第一个下拉）—— 此时 label 仍=初值 pname
-    await page.locator('[data-section="selector"] .ant-select').first().click();
-    await page
+    const selDropdown = page.locator('[data-section="selector"] .ant-select').first();
+    await selDropdown.scrollIntoViewIfNeeded();
+    await selDropdown.click();
+    await expect(page.locator('.ant-select-dropdown:visible')).toBeVisible({
+      timeout: 10_000,
+    });
+    // antd5 Select 默认 rc-virtual-list（只渲染可见项）：长列表下 target 可能未在 DOM，
+    // 需滚动 dropdown 容器触发按需渲染 —— 循环滚动直到目标出现
+    const dd = page.locator('.ant-select-dropdown:visible');
+    await dd.hover();
+    const target = page
       .locator('.ant-select-dropdown:visible .ant-select-item')
       .filter({ hasText: pname })
-      .first()
-      .click();
+      .first();
+    for (let i = 0; i < 30; i += 1) {
+      if ((await target.count()) > 0) break;
+      await page.mouse.wheel(0, 600);
+      await page.waitForTimeout(200);
+    }
+    const drpTexts = await page
+      .locator('.ant-select-dropdown:visible .ant-select-item')
+      .allInnerTexts();
+    console.log(`[E2E] step2 dropdown items(${drpTexts.length}): ${drpTexts.join(' | ')}`);
+    await target.click({ timeout: 10_000 });
     await page.waitForTimeout(800);
+    // 确认已切换：form 内 base_url/显示名 input 的 value（toContainText 不读 input value 属性）
+    const cfg = page.locator('[data-section="provider-config"]');
+    await expect(
+      cfg.getByText('base_url', { exact: true }).locator('xpath=..').locator('input')
+    ).toHaveValue('https://api.example.com/v1', { timeout: 15_000 });
+    await expect(
+      cfg.getByText('显示名', { exact: true }).locator('xpath=..').locator('input')
+    ).toHaveValue(pname, { timeout: 15_000 });
+    console.log('[E2E] step2 已切到测试 Provider');
 
     // 3) ③ Provider 配置区出现（key=name 重挂 → initialValues 回填预置值）
     await expect(page.getByText('③ Provider 配置')).toBeVisible({ timeout: 15_000 });
@@ -170,7 +226,7 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
 
   test('白名单拒注入: 未知键 evil_key PUT 被拒 (4.4-10)', async ({ request }) => {
     test.setTimeout(60_000);
-    const pname = `e2e-prov-${stamp()}`;
+    const pname = `e2e-evil-${stamp()}`;
     const add = await request.post(`${BASE}/providers`, {
       data: { name: pname, label: pname, api_base: 'https://api.example.com/v1' },
     });
