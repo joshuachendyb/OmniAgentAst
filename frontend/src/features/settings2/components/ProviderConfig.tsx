@@ -1,4 +1,4 @@
-// 编辑历史: 2026-09-20 小强 - 新建：Provider 配置区（统一表单；写走 PUT /providers 统一链 + mtime 同步，见 7.3.2/8.4.1）
+// 2026-09-20 小强 - 新建：Provider 配置区（统一表单；写走 PUT /providers 统一链 + mtime 同步，见 7.3.2/8.4.1）
 // 编辑历史: 2026-09-20 小强 - v4.17 纠错：撤销内嵌 <ProviderSettings shouldLoad />——旧组件自带保存按钮直调旧 /config API，
 //   内嵌会造成双真相源 + modelApi.updateProvider 死代码；改为读全局 providerConfig state、保存走 PUT /providers。
 // 2026-09-21 小欧 - P2-6：isEnv 时渲染 EnvTag + 警示文案（[58] P2-6）
@@ -13,10 +13,35 @@
 // 2026-09-22 小欧 - [62]P6 4.3(6)：label 显示名编辑入口——Props.config 加 label、onSave patch 加 label?、
 //   doSave 收集（非空 trim 留空=保持原值）、表单 base_url 后加「显示名」Input（后端 key_map/DTO 早已支持，
 //   前端补入口即闭环）；types/useSettings/SettingsPage 三文件同批联动
+// 2026-09-22 小欧 - [62]P8 4.3(9)-3-c：①Props.config 加 param_types + [key:string]:unknown 动态索引、
+//   onSave patch 加动态索引；②doSave 动态收集循环（param_types 非静态 keys、values[k]!==undefined 送 patch）；
+//   ③渲染区加动态字段（param_types 除已硬编码字段外，number→InputNumber/boolean→Switch/string→Input，
+//   值回填走 initialValues 天然生效）——rate_limit 等新参数前端零改代码。
+// 2026-09-22 小欧 - 控件宽度统一：api_key/base_url 使用 apiKeyWidth/baseUrlWidth(360px)令牌；显示名/timeout/max_retries 使用 inputWidth/inputNumberWidth(240px)令牌 - 小欧-2026-09-22
+// 2026-09-22 小欧 - 布局对齐：Form labelCol 固定宽度对齐 SettingRow 的 labelWidth - 小欧-2026-09-22
 import React, { useState } from 'react';
-import { Button, Input, InputNumber, Form } from 'antd';
+import { Button, Input, InputNumber, Form, Switch } from 'antd';
 import { Colors } from '@/utils/stepStyles';
+import { settingsControl, settingsSpacing } from '@/theme/settingsTokens';
 import { EnvTag } from './icons';
+
+// 2026-09-22 小欧 - [62]P8 4.3(9)-3-c：动态字段渲染 skip 已有硬编码字段（api_key/base_url/label/timeout/max_retries）
+const EXISTING_KEYS = new Set([
+  'api_key',
+  'base_url',
+  'label',
+  'timeout',
+  'max_retries',
+]);
+// 2026-09-22 小欧 - [62]P8 4.3(9)-3-c：doSave 动静态字段分界——静态字段（timeout/max_retries）已在
+//  onSave patch 显式收集，动态循环跳过它们避免重复/类型偏差
+const STATIC_KEYS = new Set([
+  'api_key',
+  'base_url',
+  'label',
+  'timeout',
+  'max_retries',
+]);
 
 interface Props {
   name: string;
@@ -28,6 +53,13 @@ interface Props {
     max_retries: number;
     retry_times?: number;
     env: boolean;
+    // 2026-09-22 小欧 - [62]P8 4.3(9)：param_types 元数据（动态字段 schema 源）——只渲染不定义
+    param_types?: Record<
+      string,
+      { type: string; label: string; min?: number; default?: unknown }
+    >;
+    // 2026-09-22 小欧 - [62]P8 4.3(9)：动态参数值（rate_limit 等）——useSettings 透传后表单回填
+    [key: string]: unknown;
   };
   onSave: (patch: {
     api_key?: string;
@@ -37,6 +69,8 @@ interface Props {
     retry_times?: number;
     max_retries?: number;
     clear?: boolean;
+    // 2026-09-22 小欧 - [62]P8 4.3(9)：动态字段收容（rate_limit 等 param_types 驱动）
+    [key: string]: unknown;
   }) => Promise<void>;
 }
 
@@ -59,6 +93,12 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     if (values.timeout !== undefined) patch.timeout = values.timeout;
     if (values.max_retries !== undefined)
       patch.max_retries = values.max_retries;
+    // 2026-09-22 小欧 - [62]P8 4.3(9)-3-c：动态参数收集——现有静态字段 skip，param_types 里其余
+    // 字段值非 undefined 送 patch（rate_limit 等新参数保存闭环；undefined=未填写不发送）
+    for (const k of Object.keys(config.param_types ?? {})) {
+      if (STATIC_KEYS.has(k)) continue;
+      if (values[k] !== undefined) patch[k] = values[k];
+    }
     setSaving(true);
     try {
       await onSave(patch);
@@ -87,6 +127,7 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     <Form
       form={form}
       layout="horizontal"
+      labelCol={{ style: { width: settingsSpacing.labelWidth } }}
       initialValues={{ ...config, api_key: undefined }}
       onFinish={doSave}
     >
@@ -104,6 +145,7 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
             config.api_key.configured ? '已配置，留空保持原值' : '未配置'
           }
           autoComplete="new-password"
+          style={{ width: settingsControl.apiKeyWidth }}
         />
       </Form.Item>
       <Form.Item
@@ -111,7 +153,7 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         name="base_url"
         extra="留空=清空地址（恢复默认直连）"
       >
-        <Input />
+        <Input style={{ width: settingsControl.baseUrlWidth }} />
       </Form.Item>
       {/* [62]P6 4.3(6) label 显示名编辑入口（后端 key_map label→label + DTO label 字段早已支持，
           原来前端无入口，配置区改不了显示名；留空=保持原值） */}
@@ -120,14 +162,29 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         name="label"
         extra="Provider 显示名称，留空=保持原值"
       >
-        <Input />
+        <Input style={{ width: settingsControl.inputWidth }} />
       </Form.Item>
       <Form.Item label="timeout" name="timeout">
-        <InputNumber min={1} />
+        <InputNumber min={1} style={{ width: settingsControl.inputNumberWidth }} />
       </Form.Item>
       <Form.Item label="max_retries" name="max_retries">
-        <InputNumber min={0} />
+        <InputNumber min={0} style={{ width: settingsControl.inputNumberWidth }} />
       </Form.Item>
+      {/* 2026-09-22 小欧 - [62]P8 4.3(9)-3-c：动态字段——param_types 中除已硬编码字段外的新参数
+          （rate_limit 等元数据驱动，只渲染不定义；值回填走 initialValues 展开 config 天然生效） */}
+      {Object.entries(config.param_types ?? {}).map(([key, meta]) =>
+        EXISTING_KEYS.has(key) ? null : (
+          <Form.Item key={key} label={meta.label} name={key}>
+            {meta.type === 'number' ? (
+              <InputNumber min={meta.min} style={{ width: settingsControl.inputNumberWidth }} />
+            ) : meta.type === 'boolean' ? (
+              <Switch />
+            ) : (
+              <Input style={{ width: settingsControl.inputWidth }} />
+            )}
+          </Form.Item>
+        )
+      )}
       <Form.Item>
         <Button type="primary" htmlType="submit" loading={saving}>
           保存 Provider 配置（立即生效）

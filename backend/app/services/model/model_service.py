@@ -41,6 +41,11 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-09-22 - 小欧 - [62]P7 4.3(1)c：get_models 显示层 timeout/max_retries 兜底改读 tuning
 #   （timeout→tuning.llm_net.read_timeout 默认150、max_retries→tuning.llm.stream_max_retries 默认3），
 #   import 补 from app.config import get_config——消除显示值60/3与运行时30/3 不一致（显示即真相）。
+# 2026-09-22 - 小欧 - [62]P8 4.3(9)：①常量区加 PROVIDER_PARAM_TYPES + KNOWN_PROVIDER_KEYS（元数据源头，
+#   新增 Provider 参数只需加一行 + config.yaml 对字段，前端零改）；②get_models Provider 段加
+#   param_types 元数据 + 动态标量值透传（KNOWN_PROVIDER_KEYS 之外标量平铺）；③update_provider_config
+#   加 param_types 白名单（key_map + PROVIDER_PARAM_TYPES 之外拒，防任意键注入）+ 动态字段落盘
+#   （param_types 内 key_map 外的标量直写 ai.{provider}.{k}，复用 merge_nested_patch 叶值链路）。
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -62,6 +67,17 @@ RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
 DEFAULT_PARAM_OPTIONS: Dict[str, List[str]] = {
     "reasoning_effort": ["low", "medium", "high"],
 }
+
+# [62]P8 4.3(9)-1 动态参数元数据表象（小欧 2026-09-22）
+# 新增 Provider 参数：在此加一行 + config.yaml 对应 provider 加字段，前后端自动适配，不再改前端代码
+# （rate_limit 作闭环演示实例保留启用——BY-09 测试以它验证读-写-存-显四段）
+PROVIDER_PARAM_TYPES: Dict[str, Dict[str, Any]] = {
+    "timeout":     {"type": "number", "label": "超时(秒)", "min": 1, "default": 60},
+    "max_retries": {"type": "number", "label": "重试次数", "min": 0, "default": 3},
+    "label":       {"type": "string", "label": "显示名"},
+    "rate_limit":  {"type": "number", "label": "速率限制", "min": 0, "default": 0},
+}
+KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_types"}
 
 
 def _resolve_param_options(ai: Dict[str, Any], provider: str, model: str,
@@ -137,6 +153,9 @@ def get_models() -> Dict[str, Any]:
                           "env": is_env,
                           "timeout": p.get('timeout') if p.get('timeout') is not None else get_config().get("tuning.llm_net.read_timeout", 150),  # [62]P7 4.3(1)c：显示值=运行时三层回落值（原兜底60≠运行30，显示即真相被打破）
                           "max_retries": p.get('max_retries') if p.get('max_retries') is not None else get_config().get("tuning.llm.stream_max_retries", 3),  # [62]P7 4.3(1)c：与 __init__ 三层回落同源
+                          "param_types": PROVIDER_PARAM_TYPES,  # [62]P8 4.3(9)-2-a：元数据表下发（前端只渲染不定义）
+                          **{k: v for k, v in p.items()
+                             if k not in KNOWN_PROVIDER_KEYS and isinstance(v, (str, int, float, bool))},  # [62]P8 4.3(9)-2-a：动态标量值透传（rate_limit 等新参数零改前端）
                           "models": _models_of(ai, name)})
     return {"providers": providers,
             "current_model_ref": get_current_ref(ai)}
@@ -324,11 +343,23 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     key_map = {"api_key": "api_key", "base_url": "api_base", "api_base": "api_base",
                "timeout": "timeout", "retry_times": "max_retries", "max_retries": "max_retries",
                "label": "label", "param_options": "param_options"}
+    # [62]P8 4.3(9)-3-d 白名单：仅 key_map + PROVIDER_PARAM_TYPES + clear（清空标记）内字段可落盘，其余拒（防任意键注入）
+    if isinstance(fields, dict):
+        unknown_key = next(
+            (k for k in fields if k not in set(key_map) and k not in PROVIDER_PARAM_TYPES
+             and k != "clear"), None
+        )
+        if unknown_key:
+            raise ValueError(f"不支持的Provider配置项: {unknown_key}")
     tree: Dict[str, Any] = {"ai": {name: {}}}
     node = tree["ai"][name]
     for k, v in fields.items():
         if k in key_map and v is not None:
             node[key_map[k]] = v
+    # [62]P8 4.3(9)-3-d 动态参数落盘：param_types 内、key_map 外的动态字段写 ai.{provider}.{k}（标量叶值直写）
+    for k, v in fields.items():
+        if k in PROVIDER_PARAM_TYPES and k not in key_map:
+            node[k] = v
     if fields.get("clear") is True:
         node["api_key"] = ""
     if not node:

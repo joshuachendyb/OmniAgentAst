@@ -29,6 +29,8 @@
 // 2026-09-22 小欧 - [62]P6 4.3(6)：load() 与 refreshModels() 两处 providerConfig 构建补 label: p.label
 //   （与后端 GET /models 返回 p.label 对齐；load 缺则 ProviderConfig 表单无显示名初值，refreshModels
 //   缺则保存 label 后刷新即丢）。前后端写链路 label 编辑闭环。
+// 2026-09-22 小欧 - [62]P8：①4.3(9)-2-d load()/refreshModels() 两处 providerConfig 构建补动态参数值透传
+//   （跳过已具名键，其余标量照抄——rate_limit 保存后重拉不丢）；②4.3(8) 初始态补 paramOptionsModalOpen
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -79,6 +81,8 @@ const initialModel = () => ({
   editingProviderConfig: false,
   addModelModalOpen: false,
   addProviderModalOpen: false,
+  // 2026-09-22 小欧 - [62]P8 4.3(8)：初始态补 paramOptionsModalOpen（ModelState 已要求，缺则 tsc 报错）
+  paramOptionsModalOpen: false,
   deleteConfirmOpen: false,
   deleteTarget: null as string | null,
 });
@@ -192,6 +196,24 @@ export function useSettings() {
               timeout: p.timeout,
               max_retries: p.max_retries,
               env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
+              // 2026-09-22 小欧 - [62]P8 4.3(9)-2-d：动态参数值透传（rate_limit 等）——跳过已具名键
+              // + 元数据 + 列表类，其余标量照抄；ProviderConfig initialValues 展开 config 即自动回填
+              ...Object.fromEntries(
+                Object.entries(p as unknown as Record<string, unknown>).filter(
+                  ([k]) =>
+                    ![
+                      'name',
+                      'label',
+                      'api_base',
+                      'api_key',
+                      'timeout',
+                      'max_retries',
+                      'env',
+                      'models',
+                      'param_types',
+                    ].includes(k)
+                )
+              ),
             },
           ])
         );
@@ -779,6 +801,25 @@ export function useSettings() {
                 timeout: p.timeout,
                 max_retries: p.max_retries,
                 env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv）
+                // 2026-09-22 小欧 - [62]P8 4.3(9)-2-d：动态参数值透传（与 load() 同构，保存后重拉不丢新参数）
+                ...Object.fromEntries(
+                  Object.entries(
+                    p as unknown as Record<string, unknown>
+                  ).filter(
+                    ([k]) =>
+                      ![
+                        'name',
+                        'label',
+                        'api_base',
+                        'api_key',
+                        'timeout',
+                        'max_retries',
+                        'env',
+                        'models',
+                        'param_types',
+                      ].includes(k)
+                  )
+                ),
               },
             ])
           ),

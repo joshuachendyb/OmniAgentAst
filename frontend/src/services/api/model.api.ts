@@ -10,6 +10,7 @@
 // 2026-09-22 小欧 - [62]P6 4.3(4)(5)：ProviderConfigPatch 补 max_retries/label、addProvider 入参补
 //   timeout/max_retries（对齐后端 ProviderConfigUpdate/ProviderAddRequest DTO——前端实际发送的字段
 //   须在 TS 类型有声明，否则类型保护失效；创建 Provider 弹窗可自定义超时/重试）
+// 2026-09-22 小欧 - [62]P8 4.3(9)-2-b：ProviderEntry 补 param_types 元数据（动态字段 schema 源）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -30,6 +31,12 @@ export interface ProviderEntry {
   env: boolean; // v4.19：该 provider 的 api_key 是否被 {NAME}_API_KEY 环境变量接管（config.py _apply_env_overrides 同源判定）
   timeout: number;
   max_retries: number;
+  // 2026-09-22 小欧 - [62]P8 4.3(9)-2-b：param_types 元数据（后端 PROVIDER_PARAM_TYPES 下发，
+  //   前端动态字段渲染/收集的 schema 源——只渲染不定义）
+  param_types?: Record<
+    string,
+    { type: string; label: string; min?: number; default?: unknown }
+  >;
   models: ModelEntry[];
 }
 

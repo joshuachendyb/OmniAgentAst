@@ -6,6 +6,9 @@
 //   由 useSettings 四通道从 ModelEntry.param_options 透传，参数区枚举下拉数据源）
 // 2026-09-22 小欧 - [62]P6 4.3(6)：providerConfig 每条补 label: string（Provider 显示名，
 //   后端 GET /models 已返回 p.label，前端无此类型声明则 ProviderConfig 表单/配置区读不到）
+// 2026-09-22 小欧 - [62]P8：①4.3(9)-2-c providerConfig 每条加 [key:string]:unknown 动态索引
+//   （rate_limit 等 param_types 驱动新参数收容，TS 不透传报 unknown）；②4.3(8) ModelState 补
+//   paramOptionsModalOpen 弹窗控制（管理选项入口与重置默认同排）。
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -43,12 +46,17 @@ export interface ModelState {
       timeout: number;
       max_retries: number;
       env: boolean;
+      // 2026-09-22 小欧 - [62]P8 4.3(9)-2-c：动态参数收容（rate_limit 等 param_types 元数据驱动），
+      //   否则 TS 对 useSettings 透传动态键报 unknown；ProviderConfig 动态渲染/收集的前提
+      [key: string]: unknown;
     }
   >;
   isDirty: boolean;
   editingProviderConfig: boolean;
   addModelModalOpen: boolean;
   addProviderModalOpen: boolean;
+  // 2026-09-22 小欧 - [62]P8 4.3(8)：paramOptionsModalOpen 弹窗控制（管理选项入口，与重置默认同排）
+  paramOptionsModalOpen: boolean;
   deleteConfirmOpen: boolean;
   deleteTarget: string | null;
 }

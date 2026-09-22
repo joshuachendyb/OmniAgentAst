@@ -19,10 +19,13 @@
      前端 ProviderConfig.tsx 实际发送 max_retries 而 DTO 原只有 retry_times 别名，Pydantic v2
      extra='ignore' 丢弃未声明字段 → model_dump 不产 max_retries → 落不了盘；补声明后
      前端发的 max_retries 直连 key_map，不再依赖隐式绕过（BY-06 红条件验证）。
+   2026-09-22 - 小欧 - [62]P8 4.3(9)-3-a/b：import 补 ConfigDict + ProviderConfigUpdate 加
+     model_config = ConfigDict(extra='allow')——动态字段（rate_limit 等 param_types 元数据驱动）
+     放行（静态字段仍强类型），后端白名单拒注入在 model_service.update_provider_config。
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.config_schemas import (
     ModelAddRequest,
@@ -58,7 +61,10 @@ class ModelUpdateRequest(BaseModel):
 class ProviderConfigUpdate(BaseModel):
     """Provider 配置更新 DTO — 2026-09-22 小欧 [62]P6 补 max_retries：
     前端 ProviderConfig.tsx 发送 max_retries，DTO 原只有 retry_times 别名——Pydantic v2
-    默认 extra='ignore' 会丢弃未声明字段，补声明后 model_dump(exclude_none=True) 才落盘。"""
+    默认 extra='ignore' 会丢弃未声明字段，补声明后 model_dump(exclude_none=True) 才落盘。
+    [62]P8 4.3(9)-3-b extra='allow'：静态字段仍强类型，动态字段（param_types 元数据驱动）
+    放行——违背"前端零改代码"初衷的每个新参数无需改 DTO；后端白名单见 update_provider_config。"""
+    model_config = ConfigDict(extra='allow')
     label: Optional[str] = Field(default=None, description="Provider 显示名")
     api_key: Optional[str] = Field(default=None)
     base_url: Optional[str] = Field(default=None)

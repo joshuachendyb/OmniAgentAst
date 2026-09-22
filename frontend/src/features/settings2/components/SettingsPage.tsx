@@ -36,6 +36,8 @@
 //   fallback 对象须同构，否则选中未加载 Provider 时 ProviderConfig 表单缺显示名初值）
 // 2026-09-22 小欧 - [62]P7 4.3(1)d：ProviderConfig fallback timeout 60→150（与后端常量/三层回落对齐，
 //   缺省条目才触发，平时走 API 值；原 fallback 60≠运行时 150，切未加载 Provider 时表单显示 60 实际 150）
+// 2026-09-22 小欧 - [62]P8 4.3(8)：②参数区标题行加「管理选项」入口（param_options 非空才显示），
+//   ModelModals 后渲染 ParamOptionsModal（open=paramOptionsModalOpen，保存后 refreshModels 重拉）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -63,6 +65,8 @@ import {
 } from '@/services/error/handler';
 import { isDirty } from '../utils/modelUtils';
 import type { TabKey } from '../types';
+// 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项弹窗（④区标题行「管理选项」入口）
+import { ParamOptionsModal } from './ParamOptionsModal';
 
 const SettingsPage: React.FC = () => {
   const s = useSettings();
@@ -235,6 +239,21 @@ const SettingsPage: React.FC = () => {
         }}
       >
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
+        {/* 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项入口（仅当前模型有 param_options 时显示，
+            与「重置为默认」同排——用户发现选项不够时视线自然扫到标题行） */}
+        {Object.keys(state.model.paramOptions).length > 0 && (
+          <Button
+            type="link"
+            style={{
+              padding: 0,
+              color: Colors.TEXT.SECONDARY,
+              marginRight: 16,
+            }}
+            onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
+          >
+            管理选项
+          </Button>
+        )}
         {Object.keys(state.model.params).length > 0 && (
           <Button
             type="link"
@@ -287,7 +306,7 @@ const SettingsPage: React.FC = () => {
               api_key: { configured: false, suffix: '' },
               base_url: '',
               label: '',
-              timeout: 150,  // [62]P7 4.3(1)d：缺省 fallback 与后端常量对齐（原60≠运行30/150，v3.8 对齐）
+              timeout: 150, // [62]P7 4.3(1)d：缺省 fallback 与后端常量对齐（原60≠运行30/150，v3.8 对齐）
               max_retries: 3,
               env: false,
             }
@@ -436,6 +455,23 @@ const SettingsPage: React.FC = () => {
           } catch (e) {
             handleApiError(e);
           }
+        }}
+      />
+      {/* 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项弹窗（④②区标题行「管理选项」入口；保存后
+          refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
+      <ParamOptionsModal
+        open={state.model.paramOptionsModalOpen}
+        provider={state.model.selectedProvider}
+        model={state.model.selectedModel}
+        paramOptions={state.model.paramOptions}
+        defaults={state.model.defaults}
+        onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
+        onSaved={async () => {
+          if (state.model.selectedProvider && state.model.selectedModel)
+            await s.refreshModels({
+              provider: state.model.selectedProvider,
+              model: state.model.selectedModel,
+            });
         }}
       />
     </div>
