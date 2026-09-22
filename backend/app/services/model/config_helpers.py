@@ -44,6 +44,9 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-21 - 小欧 - [59]B-12 修复: 新增 get_config_snapshot 原子快照(与 merge_region_patch 同一把 .lock)，
 #   settings get_all_groups/get_group 改调水源，消除"先读数据再单次 stat"窗口——并发写者落在两操作间时
 #   数据旧/mtime 新，前端误判"已外部更新"整页刷新
+# 2026-09-22 - 小欧 - 编辑/保存审计修复 S10: _update_model_ref 加 AI_PROVIDER env 接管守卫——env 接管下
+#   PUT /config 切换 ai.model_ref 原无守卫，写入被 _apply_env_overrides 读回覆盖="假成功"；现抛 400
+#   （与 settings_service env_key=AI_PROVIDER、model_service _raise_if_current_ref_env 双标准语义对齐）
 
 import os
 import shutil
@@ -363,8 +366,14 @@ __all__ = [
 def _update_model_ref(config_data: dict, update) -> None:
     """provider+model(+api_base) 成对原子写入 — 单一权威入口
     2026-08-22 小欧 归一报告v1.25 6.6 方案B: 原 _update_provider/_update_model 两 handler 依赖
-    FIELD_HANDLERS 迭代顺序先后生效, 合并为单一 handler 消除该耦合(DRY/原子性, KISS-DIRECT)"""
+    FIELD_HANDLERS 迭代顺序先后生效, 合并为单一 handler 消除该耦合(DRY/原子性, KISS-DIRECT)
+    2026-09-22 小欧 修 S10: AI_PROVIDER env 接管时切换只读(防假成功)——
+      原无守卫, 切换写入 yaml 后被 _apply_env_overrides 读回覆盖, 前端"更换成功"实为无效"""
     ai_config = config_data.get('ai', {})
+    # 2026-09-22 小欧 修 S10: 与 settings_service env_key=AI_PROVIDER / model_service _raise_if_current_ref_env 同语义
+    from app.config import env_nonempty  # 局部 import 防顶层循环
+    if env_nonempty('AI_PROVIDER'):
+        raise HTTPException(status_code=400, detail="当前模型由环境变量 AI_PROVIDER 接管，切换/删除当前模型只读")
     if update.ai_model_ref.provider not in ai_config:
         raise HTTPException(status_code=400, detail=f"不支持的提供商: {update.ai_model_ref.provider}")
     config_data['ai']['model_ref'] = {

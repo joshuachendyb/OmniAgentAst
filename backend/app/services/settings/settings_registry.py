@@ -34,6 +34,9 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
      北京老陈 2026-09-21 裁定
    2026-09-21 - 小欧 - system 组 96 行下加注释：paths.* 条目与 settings_service._item_data 派生字典一一对应，
      对端漏配抛 KeyError(fail-fast)，两处注释互相指引（北京老陈 2026-09-21 采纳）
+   2026-09-22 - 小欧 - 编辑/保存审计修复 S9：logging.level 补 env_key="LOG_LEVEL"——_apply_env_overrides 本就用
+     LOG_LEVEL 覆写运行时级别，不标 env_key 致 sources 报 yaml 可编辑可保存却"改了不生效"（假保存）；
+     对齐后 env 接管键前端禁改、update_settings 跳过并 warning
 """
 from typing import Any, Dict, List, Optional
 
@@ -107,7 +110,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # --- 运维日志（3 配置 + 1 目录只读；目录值实时派生见 settings_service._item_data） ---
         _item("logging.level", "select", "日志级别", "INFO",
               options=["DEBUG", "INFO", "WARNING", "ERROR"], restart=True,
-              notice="日志记录级别，DEBUG 最详细"),
+              notice="日志记录级别，DEBUG 最详细", env_key="LOG_LEVEL"),
         _item("logging.max_file_size", "int", "日志文件上限(字节)", 10485760, restart=True,
               notice="单个日志文件大小上限，超限自动轮转"),
         _item("logging.backup_count", "int", "日志备份数", 5, restart=True,
@@ -115,8 +118,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("paths.logs", "readonly", "日志目录", None, readonly=True,
               notice="源码运行=backend\\logs；打包(exe)运行=exe所在目录\\logs；app_日期.log按日期轮转，prompt日志在prompt-logs子目录"),
         # --- 工程目录（6 只读；值实时派生见 settings_service._item_data） ---
-        _item("paths.project_root", "readonly", "项目根目录", None, readonly=True,
-              notice="workspace.project_root 已配置时用配置值；未配置时=用户主目录"),
+        _item("paths.project_root", "readonly", "生效项目根目录", None, readonly=True,
+              notice="workspace.project_root 已配置时用配置值；未配置时=用户主目录（2026-09-22 小欧：label 与 workspace.project_root 去重，保证 SearchBox 跳转无歧义）"),
         _item("paths.omniagent_md", "readonly", "项目规则文件", None, readonly=True,
               notice="项目根目录\\OmniAgent.md；项目根未配置时=用户主目录\\OmniAgent.md"),
         _item("paths.download", "readonly", "下载目录", None, readonly=True,

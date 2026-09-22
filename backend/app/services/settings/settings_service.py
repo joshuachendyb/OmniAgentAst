@@ -42,8 +42,13 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
 2026-09-21 - 小欧 - 记录文件两行派生收敛：删死键 paths.task_files（registry 无此只读项，仅残留模板键）；
      新增 paths.record_tool/paths.record_conv 两键，value=两级相对目录模板+各自文件名（Sion_<会话ID>\\Task_<任务ID>\\xxx.jsonl，
      前缀走 file_persist 常量源）；不写绝对路径（用户主目录/代码位置等当机值不上 UI），根两态由 registry notice 承载
-   2026-09-21 - 小欧 - paths.* 派生取数 fail-fast：.get(key, default) → dict[key]，漏配即 KeyError 报错，
-     杜绝前端静默空白；字典与 registry system 组 paths.* 条目一一对应，两处注释互相指引（北京老陈 2026-09-21 采纳）
+2026-09-21 - 小欧 - paths.* 派生取数 fail-fast：.get(key, default) → dict[key]，漏配即 KeyError 报错，
+      杜绝前端静默空白；字典与 registry system 组 paths.* 条目一一对应，两处注释互相指引（北京老陈 2026-09-21 采纳）
+   2026-09-22 - 小欧 - 编辑/保存审计修复 S1/S8：
+     ①S1 textarea(workspace.allowed_dirs) 落盘前拆多行为 list、读回 list 拼回多行字符串——
+       原字符串落盘致 get_allowed_dirs() 抛 ValueError（消费方断言 list），且 SettingRow 显示 '['a','b']' 畸形；
+     ②S8 _validate_value 的 isinstance(value, int) 认同 bool（True 当整数写入 max_steps），
+       int/float/range 统一先拒 bool（bool 属开关语义），int 报"整数"、float/range 报"数字"
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -118,6 +123,9 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         raw_val = _get_dotted(raw, key, item["default"])
         return (raw_val if raw_val is not None else item["default"]), "ro"
     raw_val = _get_dotted(raw, key, item["default"])
+    # 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) YAML 存 list，读回拼回多行供 SettingRow 文本框显示
+    if item["type"] == "textarea" and isinstance(raw_val, list):
+        raw_val = "\n".join(str(x) for x in raw_val)
     eff_val = _resolved(key, item["default"])
     is_env = bool(item.get("env_key") and env_nonempty(item["env_key"]))
     if item.get("secret"):
@@ -173,16 +181,29 @@ def get_setting(key: str, default: Any = None) -> Any:
     return _resolved(key, item["default"] if item else default)
 
 
+def _to_stored_value(item: Dict[str, Any], value: Any) -> Any:
+    """落盘前类型归一 — 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) 存 list 满足消费方
+    get_allowed_dirs() 的列表契约；多行文本→逐行去空白过滤空行，空文本→[]。"""
+    if item["type"] == "textarea" and isinstance(value, str):
+        return [ln.strip() for ln in value.splitlines() if ln.strip()]
+    return value
+
+
 def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
     if item.get("readonly"):
         return f"{item['key']} 为只读项"
     t = item["type"]
-    # 2026-09-21 小欧 修 S3：None 仅当该 key 默认值本身为 None（如 chat.max_tokens 留空=跟随模型）时放行；
+    # 2026-09-22 小欧 修 S3：None 仅当该 key 默认值本身为 None（如 chat.max_tokens 留空=跟随模型）时放行；
     # 否则拒绝——旧实现一律放行，_set_dotted(None) 直接删 YAML 键，select/bool/range 字段被"清空消失"。
     if value is None:
         if item["default"] is None:
             return None
         return f"{item['key']} 值不能为 null"
+    # 2026-09-22 小欧 修 S8：isinstance(True, int) 为真，bool 曾混入 int/float/range 校验通过；
+    # 数值键先拒 bool（开关语义归 bool 类型专属）
+    if t != "bool" and isinstance(value, bool):
+        if t in ("int", "float", "range"):
+            return f"{item['key']} 应为{'整数' if t == 'int' else '数字'}"
     if t == "bool" and not isinstance(value, bool):
         return f"{item['key']} 应为 bool"
     if t == "int" and not isinstance(value, int):
@@ -227,7 +248,7 @@ def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
             ref = ModelRef(**value)
             region["ai.model_ref"] = ref.model_dump()
         else:
-            region[key] = value
+            region[key] = _to_stored_value(item, value)
         updated.append({"key": key, "source": "yaml"})
 
     if errors:
