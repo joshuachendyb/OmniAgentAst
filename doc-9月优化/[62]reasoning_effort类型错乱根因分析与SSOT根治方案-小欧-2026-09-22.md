@@ -1,7 +1,7 @@
 # [62]reasoning_effort类型错乱根因分析与SSOT根治方案
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 13:34:37（小欧）
+**更新时间**: 2026-09-22 13:46:00（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -26,6 +26,7 @@
 - v2.9 2026-09-22 13:30:00 小欧 立核心原则：2.1加第5条完整性铁律（配置有体现→后端读写正常→前端显示修改正常→新增适配多模型→API落盘不错位不丢失不破坏），2.6总表加第16行完整性验收
 - v3.0 2026-09-22 13:32:18 小欧 揪出全部代码点：一、1.4新增审计结论24处（3错21缺，逐条文件行号+违哪段原则+对应diff），写路径复用项验明（list叶值直写/None删叶/空dict落空块/锁+备份回滚，无需改）
 - v3.1 2026-09-22 13:34:37 小欧 补齐第三章缺的diff：3.1(2)补unknown白名单+落盘hunk、新增3.1(5)add_model完整diff（签名+校验+落盘），3.2(1)(2)(4)补类型diff块，3.2(3)补四通道+setParam完整diff，3.3(1)补模板区diff，3.4(1)补夹具diff
+- v3.2 2026-09-22 13:46:00 小欧 二轮十遍核查补漏：新增3.3(5)前端updateModel签名补param_options+3.1(6)POST路由add_model调用透req.param_options，共2处diff缺失补齐；PUT路由model_dump(exclude_none=True)随DTO自动含param_options无需改
 
 ---
 
@@ -50,7 +51,7 @@
 - 直接病根：`ModelParams`不区分参数类型，全当数字处理，用错控件。
 - 设计病根：`GET /models`从未下发模型参数的合法枚举（SSOT缺失），前端拿不到`["low","medium","high"]`，只能硬编码或误用`InputNumber`。光改前端为`Select`硬编码，下个枚举值、换个`provider`照样翻车。
 
-### 1.4 代码审计结论：24处（3错21缺，小欧）
+### 1.4 代码审计结论：26处（3错23缺，小欧）
 
 按2.1第5条完整性铁律逐条揪出，现状代码（未改）核对，`错`=行为错误须改，`缺`=原则要求但代码没有须补：
 
@@ -62,7 +63,7 @@
 | E2 | `modelUtils.ts:9-19 isDirty`用`!==`，对象参数恒脏 | ④修改 | 三、3.2(6) |
 | E3 | `ModelModals.tsx:63-80 handleAddModel`丢掉已声明的`default_params`，只送3个基本项 | ⑤新增 | 三、3.3(2) |
 
-**缺21处：**
+**缺23处：**
 
 | # | 代码点 | 违原则段 | 对应diff |
 |---|---|---|---|
@@ -70,9 +71,9 @@
 | B2 | `_models_of（70-90）`不组装`param_options` | ②读 | 三、3.1(1) |
 | B3 | `ModelCreateRequest（model_routes.py:32-38）`无`param_options` | ②③ | 三、3.1(3) |
 | B4 | `ModelUpdateRequest`无`param_options` | ②③ | 三、3.1(3) |
-| B5 | `add_model（133-136）`签名无`param_options` | ③⑤ | 三、3.3(3) |
+| B5 | `add_model（133-136）`签名无`param_options` | ③⑤ | 三、3.1(5) |
 | B6 | `unknown`白名单（169）无`param_options` | ③ | 三、3.1(2) |
-| B7 | `add_model`无枚举校验 | ③ | 三、3.3(3) |
+| B7 | `add_model`无枚举校验 | ③ | 三、3.1(5) |
 | B8 | `update_model`无枚举校验 | ③ | 三、3.1(2) |
 | B9 | `update_provider_config key_map（264-266）`无`param_options` | ②写 | 三、3.1(4) |
 | F1 | `ModelEntry（model.api.ts:8-14）`无`param_options` | ④读 | 三、3.2(1) |
@@ -87,6 +88,8 @@
 | F10 | `ModelModals.tsx:123-143`无参数模板区 | ⑤ | 三、3.3(1) |
 | F11 | `SettingsPage.tsx:360-367`+`model.api.ts:59-69`未透`range/capabilities/param_options` | ⑤③ | 三、3.3(2) |
 | T1 | `live-models.json`无`param_options`夹具 | ④验 | 三、3.4(1) |
+| B10 | `model_routes.py:66-67` POST路由`add_model`调用不透`req.param_options` | ③⑤ | 三、3.1(6) |
+| F12 | `model.api.ts:71-83` `updateModel`的`Pick`不含`param_options` | ③⑤ | 三、3.2(7) |
 
 **验明复用、无需改（违③写安全，已有实现）：**`config_helpers.py:460-527`落盘链路——`merge_nested_patch`叶段字面名写（点号模型名不拆散）、`None`删叶并回收空父级、空dict落`{}`空块（P8）、`list`按叶值直写（`param_options`数组天然适配）、`filelock`并发锁+备份+完整性校验+原子写+失败回滚。`param_options`读写复用此链路，只需三、3.1的字段透传与校验，不动落盘核心。
 
@@ -185,10 +188,12 @@ zhipuai:
 | 10 | `isDirty`对象深比较 | 三、3.2(6) | `modelUtils.ts:9-19` |
 | 11 | 弹窗模板区（候选并集/默认值/切Provider重置） | 三、3.3(1) | `ModelModals.tsx:123-143` |
 | 12 | 提交透传`default_params/range/capabilities/param_options` | 三、3.3(2) | `ModelModals.tsx:63-80`、`SettingsPage.tsx:360-367`、`model.api.ts:59-69` |
-| 13 | `add_model`落盘`param_options`+同规则校验 | 三、3.3(3) | `model_service.py:133-161` |
+| 13 | `add_model`落盘`param_options`+同规则校验 | 三、3.1(5) | `model_service.py:133-161` |
 | 14 | 建完回显补`paramOptions` | 三、3.3(4) | `useSettings.ts:734-783` |
 | 15 | 夹具/单测/后端测试/手工/添加口验证 | 三、3.4(1)-(5) | 见3.4 |
 | 16 | 完整性验收（核心原则第5条）：配置有值有选项→读写正常→显示修改正常→新增多模型适配→API落盘不错位不丢失 | 三、3.4(4)(5)+2.1(5) | `config.yaml`+全链 |
+| 17 | POST路由`add_model`调用透`param_options` | 三、3.1(6) | `model_routes.py:63-68` |
+| 18 | `updateModel`签名Pick补`param_options` | 三、3.2(7) | `model.api.ts:71-83` |
 
 ---
 
@@ -309,6 +314,22 @@ zhipuai:
 ```
 
 原因：新建即带选项+值，入口与修改口同规则；不送`param_options`与现状`{}`兼容。
+
+（6）`backend/app/api/v1/model_routes.py:63-68` POST路由`add_model`调用透`param_options`（小欧 v3.2）：
+
+```diff
+ @router.post("/models")
+ @handle_config_errors("添加模型")
+ async def add_model(req: ModelCreateRequest):
+     return svc.add_model(req.provider, req.model, req.label,
+-                         req.default_params, req.range, req.capabilities)
++                         req.default_params, req.range, req.capabilities,
++                         req.param_options)
+```
+
+原因：DTO（3.1(3)）声明了`param_options`字段，但POST路由调用`svc.add_model`时 positional args不传该值，`param_options`形参永远拿到`None`，落盘静默丢。与(5)签名改动联动——(5)签名末尾加了`param_options`，路由必须同步传。
+
+注：PUT路由无需改——`model_routes.py:75`用`req.model_dump(exclude_none=True)`构建`fields`字典，`ModelUpdateRequest`加`param_options`后`model_dump`自动包含，`update_model`的`fields`自然有该key，经(2)的`unknown`白名单放行+校验+落盘，链路闭合。
 
 ### 3.2 前端修改（小欧）
 
@@ -441,6 +462,23 @@ zhipuai:
 -    out[key] = !env[key] && params[key] !== defaults[key];
 +    out[key] = !env[key] && !sameValue(params[key], defaults[key]);
 ```
+
+（7）`frontend/src/services/api/model.api.ts:71-83` `updateModel`签名补`param_options`（小欧 v3.2）：
+
+```diff
+   updateModel: async (
+     provider: string,
+     model: string,
+     data: Partial<
+-      Pick<ModelEntry, 'label' | 'default_params' | 'range' | 'capabilities'>
++      Pick<ModelEntry, 'label' | 'default_params' | 'range' | 'capabilities' | 'param_options'>
+     >
+   ): Promise<ModelMutationResult> => {
+```
+
+原因：`ModelEntry`加了`param_options?`（3.2(1)），但`updateModel`的`Pick`不含它，TS类型不接受`param_options`字段，前端修改模型选项时传了也编译不过。与3.1(3) DTO + 3.1(2) `update_model`校验联动——后端已接收+校验+落盘，前端API层必须同步放开类型。
+
+注：`model.api.ts:59-69`的`addModel`入参已为内联类型字面量（非`Pick`），3.3(2)的diff直接加了`param_options?`字段，无此问题。
 
 ### 3.3 添加口修改：添加模型时特定参数在哪处理（小欧）
 
