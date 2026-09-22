@@ -10,6 +10,7 @@
 #                       补行安全漏斗铁律注释
 #   2026-09-21 - 小欧 - v4.20 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
 #   2026-09-22 - 小欧 - [61] 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
+#   2026-09-22 - 小欧 - [62]v1.4 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -44,6 +45,24 @@ ai:
       - glm-4.7-flash
       - cogview-3-flash
     timeout: 90
+    # 模型参数当前值（运行时透传 extra_body/context_limit）— 小欧 2026-09-22
+    # key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）
+    model_params:
+      glm-4.7-flash:
+        reasoning_effort: medium
+    # 模型元数据：枚举选项 SSOT（按模型各配各的）— 小欧 2026-09-22
+    # 三层解析：model_meta.param_options（本级最高）> provider级 param_options > 代码兜底
+    # 不写 model_meta 的模型走兜底 [low, medium, high]；3/4/5个选项各写各的单子
+    model_meta:
+      glm-4.7-flash: # 3个选项
+        param_options:
+          reasoning_effort: [low, medium, high]
+      # cogview-3-flash: # 4个选项示例（按需解开）
+      #   param_options:
+      #     reasoning_effort: [low, medium, high, xhigh]
+      # new-big-model: # 5个选项示例（按需解开）
+      #   param_options:
+      #     reasoning_effort: [low, medium, high, xhigh, ultra]
 
 # 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:
