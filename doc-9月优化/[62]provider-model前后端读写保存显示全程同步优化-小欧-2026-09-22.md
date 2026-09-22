@@ -1,7 +1,7 @@
-# [62]reasoning_effort类型错乱根因分析与SSOT根治方案
+# [62]provider/model前后端读写保存显示全程同步优化
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 14:55:36（小欧）
+**更新时间**: 2026-09-22 14:58:18（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -33,6 +33,7 @@
 - v3.6 2026-09-22 14:26:43 小欧 补label/models两处diff：4.3(6)label编辑入口（types/useSettings/SettingsPage/ProviderConfig四文件）+4.3(7)addProvider弹窗补timeout/max_retries输入框+models注释说明（创建后通过模型管理UI添加）
 - v3.7 2026-09-22 14:47:25 小欧 补两个"后来添加参数"场景UI设计：4.3(8)模型param_options编辑UI（管理选项弹窗，修改允许值列表）+4.3(9)Provider动态参数发现（GET /models返回param_types元数据，ProviderConfig动态渲染）
 - v3.8 2026-09-22 14:55:36 小欧 修3处冲突：①4.3(2)中间层key正名tuning.llm.stream_max_retries（registry:157既有，llm_net.max_retries不存在）；②4.3(2)补snapshot()透传max_retries=self.max_retries（跨provider快照否则丢定制值）；③4.3(1)补get_models显示层走同三层+tuning对齐（否则显示60实际150），SettingsPage fallback改150
+- v3.9 2026-09-22 14:58:18 小欧 文档改名：reasoning_effort类型错乱根因分析与SSOT根治方案→provider/model前后端读写保存显示全程同步优化（内容覆盖已超单点bug，改名贴合全貌；标题H1同步）
 
 ---
 
