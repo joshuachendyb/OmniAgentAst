@@ -38,12 +38,16 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   落 model_meta；update_provider_config key_map 加 param_options（Provider级写入口）。
 #   ②P2 add_model 签名加 param_options + 选项表非空 string[]/值在表内（0拒）校验 + 落 model_meta
 #   （不送 param_options 与现状兼容，tree 不写该键）。
+# 2026-09-22 - 小欧 - [62]P7 4.3(1)c：get_models 显示层 timeout/max_retries 兜底改读 tuning
+#   （timeout→tuning.llm_net.read_timeout 默认150、max_retries→tuning.llm.stream_max_retries 默认3），
+#   import 补 from app.config import get_config——消除显示值60/3与运行时30/3 不一致（显示即真相）。
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import os
 
 from app.logger import logger
+from app.config import get_config  # [62]P7 4.3(1)c：get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 from app.services.model.config_helpers import (
     get_config_path,
     mask_secret_value,
@@ -131,8 +135,8 @@ def get_models() -> Dict[str, Any]:
                           "api_base": str(p.get("api_base") or ""),
                           "api_key": mask_secret_value(p.get("api_key") or ""),
                           "env": is_env,
-                          "timeout": p.get('timeout') if p.get('timeout') is not None else 60,
-                          "max_retries": p.get('max_retries') if p.get('max_retries') is not None else 3,
+                          "timeout": p.get('timeout') if p.get('timeout') is not None else get_config().get("tuning.llm_net.read_timeout", 150),  # [62]P7 4.3(1)c：显示值=运行时三层回落值（原兜底60≠运行30，显示即真相被打破）
+                          "max_retries": p.get('max_retries') if p.get('max_retries') is not None else get_config().get("tuning.llm.stream_max_retries", 3),  # [62]P7 4.3(1)c：与 __init__ 三层回落同源
                           "models": _models_of(ai, name)})
     return {"providers": providers,
             "current_model_ref": get_current_ref(ai)}

@@ -61,6 +61,11 @@
 # 2026-09-20 小欧 三堂会审BUG-02/03修复: ①request_stream循环体_current_response fallback赋SDK对象致cancel对错误对象调aclose; ②reset_cancel后cancelled检查跳过无效HTTP请求(防竞态取消丢失)
 # 2026-09-22 小欧 [61]别名漏改修复: line86 import已更名DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, __init__默认值仍用旧名致import期NameError(worker秒崩8000无响应); 改用_D_READ_TIMEOUT, 语义零改动
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + temperature/max_tokens/timeout 改读 tuning 配置
+# 2026-09-22 小欧 - [62]P7 (4.3(1)b/4.3(2)a/b/c)：
+#   ① __init__ 加 max_retries:Optional[int]=None + 三层回落（Provider>tuning.llm.stream_max_retries>常量3）→ self.max_retries；
+#   ② timeout 判断 truthiness 改 is not None——0 是合法值（极短超时）不再被当 falsy 跳过跳 tuning；
+#   ③ snapshot() 透传 max_retries=self.max_retries（快照跨 provider 不丢定制值）；
+#   ④ request_stream 用 self.max_retries（删除 _D_STREAM_MAX_RETRIES 直读，运行时真正消费配置值）。
 """
 LLM 核心模块 — BaseAIService
 
@@ -100,6 +105,7 @@ class BaseAIService:
         api_key: str,
         llm_model: ModelRef,
         timeout: int = _D_READ_TIMEOUT,
+        max_retries: Optional[int] = None,  # None=未设，回落到tuning>常量 — 小欧 [62]P7 4.3(2)a
         max_tokens: Optional[int] = None,
         temperature: float = None,
         seed: Optional[int] = None,
@@ -129,10 +135,15 @@ class BaseAIService:
         self._llm_sdk = None
         self._shared_client = shared_client  # 2026-09-20 小欧 C1: 构造期定论, 杜绝"先建独占池再注入"竞态 — 小欧-2026-09-20
         try:
-            timeout_value = float(timeout) if timeout else float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))
+            timeout_value = float(timeout) if timeout is not None else float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))  # [62]P7 4.3(1)b：is not None，0合法不被truthiness跳过
         except (ValueError, TypeError):
             timeout_value = float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))
         self.timeout = int(timeout_value)
+        # max_retries三层回落：Provider值 > tuning配置 > 常量（小欧 [62]P7 4.3(2)a）
+        if max_retries is not None:
+            self.max_retries = max_retries
+        else:
+            self.max_retries = int(get_config().get("tuning.llm.stream_max_retries", _D_STREAM_MAX_RETRIES))
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
         self._stop_check: Optional[Callable] = None
@@ -174,6 +185,7 @@ class BaseAIService:
             api_key=api_key or self.api_key,
             llm_model=model_ref if model_ref is not None else self.llm_model,
             timeout=self.timeout,
+            max_retries=self.max_retries,  # [62]P7 4.3(2)c：快照常切跨 provider 模型，不传则丢 provider 定制值 — 小欧 2026-09-22
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             seed=self.seed,
@@ -297,7 +309,7 @@ class BaseAIService:
         self._ensure_client()
 
         retry_count = 0
-        max_retries = _D_STREAM_MAX_RETRIES
+        max_retries = self.max_retries  # [62]P7 4.3(2)b：消费 __init__ 三层回落后的值，删 _D_STREAM_MAX_RETRIES 硬编码读取 — 小欧 2026-09-22
         stream_options = _D_STREAM_OPTIONS
 
         # ======== 系统层HTTP请求重试（真正的重试逻辑）========

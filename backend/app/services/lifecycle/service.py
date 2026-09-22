@@ -16,6 +16,9 @@
 #   快照经 create_llm_client(shared_client=...) 建独立 LLMClient 复用连接池(非 LLMClient 对象)。
 #   compliance: DRY(复用原 _ensure_client 路径)/KISS-DIRECT
 # 2026-09-20 - 小欧 - 三堂会审BUG-06/16修复: ①_ensure_client失败时回滚半初始化实例防缓存; ②get_service_for_model加_instance_lock防竞态
+# 2026-09-22 - 小欧 - [62]P7 4.3(1)a+4.3(2)d: create_service_instance 改传 timeout=None/max_retries=None
+#   （源 provider_config.get 去默认值，None=未设 → BaseAIService 内部三层回落 tuning>常量；原来写死
+#    timeout 默认 30 跳过 tuning 配置层、max_retries 完全不消费；见 [62] 第4章 P1/P2/P3）
 """
 service — 服务创建与获取
 
@@ -110,7 +113,8 @@ def create_service_instance(provider_config: dict, final_provider: str, final_mo
             model=final_model,
             api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
         ),
-        timeout=provider_config.get("timeout", 30),
+        timeout=provider_config.get("timeout"),  # None=未设，BaseAIService 回落到 tuning>常量 — 小欧 [62]P7 4.3(1)a
+        max_retries=provider_config.get("max_retries"),  # None=未设，BaseAIService 回落到 tuning>常量3 — 小欧 [62]P7 4.3(2)d
         max_tokens=provider_config.get("max_tokens"),
         temperature=float(provider_config.get("temperature", 0.7)),
         seed=provider_config.get("seed", None),

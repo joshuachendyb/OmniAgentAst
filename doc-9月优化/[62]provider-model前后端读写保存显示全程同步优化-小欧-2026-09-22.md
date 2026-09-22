@@ -1,7 +1,7 @@
 # [62]provider/model前后端读写保存显示全程同步优化
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 18:01:43（小欧）
+**更新时间**: 2026-09-22 18:21:30（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -39,6 +39,7 @@
 - v5.1 2026-09-22 15:23:28 小欧 三轮核查修8处：①3.1(6)从P1移P2（POST路由依赖add_model签名，不能跨阶段）；②FF-04从P8移P6（快照须与ProviderConfig改动同阶段）；③BY-05补get_models显示值断言；④P5拆3.3(2)为Props+handleAddModel两行；⑤P8拆4.3(9)-2为四个文件行；⑥P8拆4.3(9)-3为import+DTO两行；⑦P6/P7标题加"含前端"；⑧BY-07断言明确为GET /models字段值
 - v5.2 2026-09-22 15:36:48 小欧 按老陈实施铁律固化阶段收尾核查纪律：5.1新增第7条"阶段收尾核查"（一阶段完成后必须重读参考设计+改后代码逐diff逐项比对，列丢失/遗漏/偏差项数与清单，补正并重跑验证门后才能进下一阶段，严禁带未补正项前移）
 - v6.0 2026-09-22 18:01:43 小欧 P6阶段实施完成记录：4.3(3)model_routes.py ProviderConfigUpdate补max_retries（红实证：Pydantic v2 extra='ignore'丢未声明字段→model_dump不产max_retries落不了盘，补声明后直连key_map）；4.3(4)model.api.ts ProviderConfigPatch补max_retries/label；4.3(5)addProvider入参+ModelModals添加弹窗两项InputNumber（timeout min1默认60占位/max_retries min0默认3占位）；4.3(6)label编辑入口四文件联动（types/useSettings load+refreshModels两处/SettingsPage fallback/ProviderConfig Props+doSave+表单）；4.3(7)无代码；FF-04前端断言核查无需改（唯一providerConfig mock为{}空对象不受label必填影响）。TDD红→绿→验证门全过：BY-06/BY-07六用例绿（test_model_service_tdd.py 29全绿）、相关回归118过1既有失败（test_returns_six_groups assert 7==6 pre-existing与P6无关）、tsc--noEmit零输出、npm run check（lint 0 errors+改动6文件prettier全过）、手工真实链路验证（PUT label中文UTF-8落盘+GET读回+config.yaml备份比对字节级还原）。阶段收尾核查偏差清单1处：4.3(6)设计文字仅列load()，实际同构补refreshModels()（依据既有max_retries两处构建先例+保存label后刷新即丢的关联逻辑必要补全）；遗漏0处
+- v7.0 2026-09-22 18:21:30 小欧 P7阶段实施完成记录：4.3(1)a lifecycle/service.py create_service_instance `timeout=provider_config.get("timeout")`（去写死默认30，None→BaseAIService内回落）；4.3(1)b base_service.py timeout判断truthiness改`is not None`（0合法不跳tuning）；4.3(1)c model_service.py get_models显示层timeout/max_retries兜底改读`tuning.llm_net.read_timeout`(默认150)/`tuning.llm.stream_max_retries`(默认3)+`from app.config import get_config`；4.3(1)d SettingsPage.tsx fallback timeout 60→150；4.3(2)a __init__加`max_retries:Optional[int]=None`+三层回落（Provider>[tuning.llm.stream_max_retries]>[常量3]）→self.max_retries；4.3(2)b request_stream用self.max_retries（删_D_STREAM_MAX_RETRIES直读）；4.3(2)c snapshot()透传max_retries=self.max_retries；4.3(2)d create_service_instance加`max_retries=provider_config.get("max_retries")`。TDD红→绿→验证门全过：BY-04/BY-05十一用例红（9失败实证timeout=0被truthiness吞/__init__无max_retries参数/get_models无get_config import）→绿（test_model_service_tdd.py全量40 passed）；RG-01回归66过1既有失败（test_returns_six_groups assert 7==6 pre-existing）+4个LLM域monkeypatch属性路径陈旧失败均与P7物理零交集；tsc零SettingsPage错误、npm run check lint 0 errors on P7文件（唯一error来自游离非跟踪文件src/hooks/chat/useChatCallbacks.ts）；手工真实链路验证：PUT timeout=0→config.yaml落盘timeout:0→GET /models显示timeout:0（极短超时合法透传不回落）→恢复timeout=120+校验config与备份归一化后一致。FF-03核查：全测试无get_models兜底60硬编码断言（均显式fixture值），无需改。阶段收尾核查偏差0处；遗漏0处
 
 ---
 

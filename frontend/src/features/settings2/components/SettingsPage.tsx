@@ -34,6 +34,8 @@
 //   （原仅透 default_params，新模型建出即带元数据/选项，不必回参数区返工）
 // 2026-09-22 小欧 - [62]P6 4.3(6)：ProviderConfig fallback 加 label:''（providerConfig 类型补 label 后
 //   fallback 对象须同构，否则选中未加载 Provider 时 ProviderConfig 表单缺显示名初值）
+// 2026-09-22 小欧 - [62]P7 4.3(1)d：ProviderConfig fallback timeout 60→150（与后端常量/三层回落对齐，
+//   缺省条目才触发，平时走 API 值；原 fallback 60≠运行时 150，切未加载 Provider 时表单显示 60 实际 150）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -285,7 +287,7 @@ const SettingsPage: React.FC = () => {
               api_key: { configured: false, suffix: '' },
               base_url: '',
               label: '',
-              timeout: 60,
+              timeout: 150,  // [62]P7 4.3(1)d：缺省 fallback 与后端常量对齐（原60≠运行30/150，v3.8 对齐）
               max_retries: 3,
               env: false,
             }
