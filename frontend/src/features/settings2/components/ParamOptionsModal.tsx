@@ -1,6 +1,7 @@
 // 编辑历史: 2026-09-22 小欧 - 新建：[62]P8 4.3(8) 管理选项弹窗——Tag 展示/添加/删除当前模型
 //  param_options 选项列表；保存前交叉校验悬空默认值（defaults[key] 不在新列表 → Modal.confirm
 //  同批回提 default_params 重置首项，复用后端 merge_nested_patch 同批合并零后端改动）。
+// 2026-09-22 小欧 - KISS+令牌收口：`dangling && dangling !== undefined` 冗余判断 → `dangling`（truthy 即非 undefined）；marginBottom:4/marginTop:4/fontSize:12 裸数字 → Spacing.XS/FontSize.SECONDARY - 小欧-2026-09-22
 import React, { useState } from 'react';
 import { Button, Input, Modal, Space, Tag } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -84,7 +85,7 @@ export const ParamOptionsModal: React.FC<Props> = ({
         defaults[k] !== null &&
         !(draft[k] ?? []).includes(String(defaults[k]))
     );
-    if (dangling && dangling !== undefined) {
+    if (dangling) {
       Modal.confirm({
         title: `默认值 ${dangling}='${String(defaults[dangling])}' 不在新选项内`,
         content: `将重置为该参数第一选项 '${(draft[dangling] ?? [])[0] ?? ''}'，继续？`,
@@ -144,10 +145,12 @@ export const ParamOptionsModal: React.FC<Props> = ({
       ) : (
         Object.entries(draft).map(([key, values]) => (
           <div key={key} style={{ marginBottom: Spacing.MD }}>
-            <div style={{ fontWeight: FontWeight.BOLD, marginBottom: 4 }}>
+            <div
+              style={{ fontWeight: FontWeight.BOLD, marginBottom: Spacing.XS }}
+            >
               {key}
             </div>
-            <Space wrap style={{ marginBottom: 4 }}>
+            <Space wrap style={{ marginBottom: Spacing.XS }}>
               {(values ?? []).map((val) => (
                 <Tag
                   key={val}
@@ -175,8 +178,8 @@ export const ParamOptionsModal: React.FC<Props> = ({
             <div
               style={{
                 color: Colors.TEXT.SECONDARY,
-                fontSize: 12,
-                marginTop: 4,
+                fontSize: FontSize.SECONDARY,
+                marginTop: Spacing.XS,
               }}
             >
               保存后生效，已有参数值不做校验。

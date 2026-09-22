@@ -38,6 +38,7 @@
 //   缺省条目才触发，平时走 API 值；原 fallback 60≠运行时 150，切未加载 Provider 时表单显示 60 实际 150）
 // 2026-09-22 小欧 - [62]P8 4.3(8)：②参数区标题行加「管理选项」入口（param_options 非空才显示），
 //   ModelModals 后渲染 ParamOptionsModal（open=paramOptionsModalOpen，保存后 refreshModels 重拉）
+// 2026-09-22 小欧 - YAGNI+令牌收口：①选择器锚点 div 删 borderRadius/padding/margin 无效死样式（padding+margin 恰恰抵消，视觉零效果）；「管理选项」按钮 marginRight:16 裸数字 → Spacing.XL - 小欧-2026-09-22
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -210,14 +211,7 @@ const SettingsPage: React.FC = () => {
 
   const renderModelTab = () => (
     <div>
-      <div
-        data-section="selector"
-        style={{
-          borderRadius: settingsSpacing.pagePadding,
-          padding: `0 ${Spacing.MD}px`,
-          margin: `0 -${Spacing.MD}px`,
-        }}
-      >
+      <div data-section="selector">
         {/* 修正(2026-09-21 小强)：删除「当前系统全局使用模型」冗余小字——该信息已由
             通用 Tab CurrentModelRefCard 完整展示（标题+卡内文案），此处重复（[设置页UI审计] 问题17） */}
         <SectionTitle title="── ① 选择器 ──" />
@@ -247,7 +241,7 @@ const SettingsPage: React.FC = () => {
             style={{
               padding: 0,
               color: Colors.TEXT.SECONDARY,
-              marginRight: 16,
+              marginRight: Spacing.XL,
             }}
             onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
           >

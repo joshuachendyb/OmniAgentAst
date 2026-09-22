@@ -9,6 +9,7 @@
 // 2026-09-21 小欧 - 关于区排版修复：按钮从独立竖排块改为嵌入对应信息行右侧（排版修复）
 // 2026-09-21 小强 - 按钮改名：查看配置文件/查看版本文件（去"全文"，北京老陈定）
 // 2026-09-21 小强 - 弹框优化：标题与按钮统一去"全文"（单源 docName 派生，删 title/btnLabel/报错三处双写）；行号栏 sticky；复制失败走框内错误条；空文件占位；Modal 加 destroyOnHidden（北京老陈定）
+// 2026-09-22 小欧 - DRY+魔数收口：lineHeight:1.7 两处重复 → CODE_LINE_HEIGHT 常量；行号栏 minWidth:48 → LINE_NO_MIN_WIDTH 命名常量 - 小欧-2026-09-22
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Modal, Spin } from 'antd';
 import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
@@ -27,6 +28,10 @@ import { CopyIcon } from './icons';
 type FileKind = 'config' | 'version';
 
 const CODE_FONT = 'Consolas, Menlo, monospace';
+// 2026-09-22 小欧 - DRY 收口：行号栏/正文两处 lineHeight:1.7 → 单常量（杜绝改一处漏一处）
+const CODE_LINE_HEIGHT = 1.7;
+// 2026-09-22 小欧 - 魔数收口：行号栏固定最小宽 48 提取命名常量（代码区等宽布局固有值）
+const LINE_NO_MIN_WIDTH = 48;
 
 const stripBom = (s: string): string => s.replace(/^\uFEFF/, '');
 
@@ -248,9 +253,9 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
                 textAlign: 'right',
                 userSelect: 'none',
                 fontSize: FontSize.CODE,
-                lineHeight: 1.7,
+                lineHeight: CODE_LINE_HEIGHT,
                 fontFamily: CODE_FONT,
-                minWidth: 48,
+                minWidth: LINE_NO_MIN_WIDTH,
                 whiteSpace: 'pre',
                 borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
                 flexShrink: 0,
@@ -264,7 +269,7 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
                 padding: `${Spacing.LG}px ${Spacing.XL}px`,
                 background: Colors.BG.PRIMARY,
                 fontSize: FontSize.CODE,
-                lineHeight: 1.7,
+                lineHeight: CODE_LINE_HEIGHT,
                 fontFamily: CODE_FONT,
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'normal',

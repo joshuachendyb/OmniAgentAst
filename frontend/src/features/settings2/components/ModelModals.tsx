@@ -18,6 +18,8 @@
 //   弹窗表单 api_key 后新增 timeout(秒) min1 默认60占位、max_retries min0 默认3占位两个 InputNumber
 //   （配合 model.api.ts addProvider 入参补两字段，创建时即可自定义超时/重试）
 // 2026-09-22 小欧 - 控件宽度统一：参数模板区硬编码 minWidth:160/maxWidth:240 改用 settingsControl 令牌 - 小欧-2026-09-22
+// 2026-09-22 小欧 - DRY 收口：参数模板区 Select/InputNumber/Input 三控件 onChange 的「勾选才收集+params合并」
+//   重复 → 抽取 updateCollectedParam 单函数（函数式更新防闭包陈旧值）- 小欧-2026-09-22
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -141,6 +143,12 @@ export const ModelModals: React.FC<Props> = (props) => {
       setBusy(null);
     }
   };
+  // 2026-09-22 小欧 - DRY 收口：模板区三个控件（Select/InputNumber/Input）onChange 都走「勾选才收集 + params 合并」，
+  //   抽取单函数，杜绝三处 `checked[key] && setCollected({...})` 重复（函数式更新防闭包陈旧值）
+  const updateCollectedParam = (key: string, value: unknown) => {
+    if (!checked[key]) return;
+    setCollected((c) => ({ ...c, params: { ...c.params, [key]: value } }));
+  };
   return (
     <>
       <Modal
@@ -254,25 +262,13 @@ export const ModelModals: React.FC<Props> = (props) => {
                         }
                         options={opts.map((v) => ({ label: v, value: v }))}
                         style={{ width: settingsControl.selectWidth }}
-                        onChange={(v) =>
-                          checked[key] &&
-                          setCollected({
-                            ...collected,
-                            params: { ...collected.params, [key]: v },
-                          })
-                        }
+                        onChange={(v) => updateCollectedParam(key, v)}
                       />
                     ) : typeof defaultVal === 'number' ? (
                       <InputNumber
                         value={defaultVal as number}
                         style={{ width: settingsControl.inputNumberWidth }}
-                        onChange={(v) =>
-                          checked[key] &&
-                          setCollected({
-                            ...collected,
-                            params: { ...collected.params, [key]: v },
-                          })
-                        }
+                        onChange={(v) => updateCollectedParam(key, v)}
                       />
                     ) : (
                       <Input
@@ -281,14 +277,7 @@ export const ModelModals: React.FC<Props> = (props) => {
                         }
                         style={{ width: settingsControl.inputWidth }}
                         onChange={(e) =>
-                          checked[key] &&
-                          setCollected({
-                            ...collected,
-                            params: {
-                              ...collected.params,
-                              [key]: e.target.value,
-                            },
-                          })
+                          updateCollectedParam(key, e.target.value)
                         }
                       />
                     )}
