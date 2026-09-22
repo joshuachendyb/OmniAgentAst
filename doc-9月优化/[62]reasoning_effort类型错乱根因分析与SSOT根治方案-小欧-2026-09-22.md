@@ -1,7 +1,7 @@
 # [62]reasoning_effort类型错乱根因分析与SSOT根治方案
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 14:02:56（小欧）
+**更新时间**: 2026-09-22 14:14:11（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -28,6 +28,7 @@
 - v3.1 2026-09-22 13:34:37 小欧 补齐第三章缺的diff：3.1(2)补unknown白名单+落盘hunk、新增3.1(5)add_model完整diff（签名+校验+落盘），3.2(1)(2)(4)补类型diff块，3.2(3)补四通道+setParam完整diff，3.3(1)补模板区diff，3.4(1)补夹具diff
 - v3.2 2026-09-22 13:46:00 小欧 二轮十遍核查补漏：新增3.3(5)前端updateModel签名补param_options+3.1(6)POST路由add_model调用透req.param_options，共2处diff缺失补齐；PUT路由model_dump(exclude_none=True)随DTO自动含param_options无需改
 - v3.3 2026-09-22 14:02:56 小欧 新增第四章Provider参数问题（除URL/KEY外6处）：timeout兜底不一致（lifecycle/service.py用30，其他用60）、max_retries运行时不消费（base_service.py硬编码3，DTO/TS类型缺字段）、addProvider前端缺timeout/max_retries输入
+- v3.4 2026-09-22 14:14:11 小欧 4.1补四种断链说明表：timeout兜底打架（保存✓生效✗三处默认值不一致）、max_retries完全不消费（保存✓运行时硬编码3）、label改不了（保存✓前端无编辑入口）、models创建时丢失（没传✓弹窗无输入框）
 
 ---
 
@@ -580,6 +581,15 @@ zhipuai:
 | P6 | `model.api.ts:98-103` `addProvider`签名缺`timeout`/`max_retries` | 创建Provider时不传这两个值，全走后端默认值（60/3），前端无法在创建时自定义 | ⑤ |
 
 注：P4的DTO虽然缺`max_retries`字段，但`model_dump(exclude_none=True)`把前端传的`max_retries`原样透传到`update_provider_config`的`fields`，key_map有`max_retries→max_retries`映射，所以**写入链路碰巧能工作**——但这是绕过类型系统的隐式行为，不是正确设计。
+
+**四种断链类型总结：**
+
+| 问题 | 保存到config.yaml | 运行时生效 | 断链类型 | 根因 |
+|------|:-:|:-:|:-:|------|
+| timeout | ✓ | **兜底值打架** | 保存✓生效✗ | `lifecycle/service.py:113`兜底30，`get_models()`兜底60，`base_service.__init__`兜底150，三处三个数字；用户改了timeout的Provider没问题（链路完整），**没改的才出问题**（显示60实际30） |
+| max_retries | ✓ | **完全不消费** | 保存✓运行时忽略 | config.yaml写了`max_retries:5`，但`create_service_instance()`不传给BaseAIService，`base_service.py:300`硬编码用常量3；用户改了白改 |
+| label | ✓ | **改不了** | 保存✓前端无入口 | 后端`key_map`有`label→label`支持修改，但`ProviderConfig.tsx`没有label输入框，创建后无法通过UI编辑 |
+| models | **没传** | **创建时丢失** | 弹窗缺字段 | 后端`ProviderAddRequest` DTO支持`models`字段，但`ModelModals.tsx`弹窗无models输入框，创建时只能传name/label/api_base/api_key，models走默认空列表 |
 
 ### 4.2 设计原则（小欧）
 
