@@ -7,8 +7,12 @@
 // 2026-09-21 小欧 - 全文逐章核查：规范二落地——①②③弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD，弃用 antd 默认16px；描述行 marginBottom:12 → Spacing.LG（[58] v1.12 第六章 6.1 规范二）
 // 2026-09-21 小强 - 设置页17问题复核修复：删除标题剥离 model:/provider: 内部前缀；添加弹窗 busy+confirmLoading 防连点双发、
 //   失败不关窗不 reset（父级 rethrow）；onSubmitAddModel/Provider 类型改 Promise<void>（[设置页UI审计] 问题3/9）
+// 2026-09-22 小欧 - [62]P5 3.3(1)+3.3(2)：添加模型弹窗加「参数模板」区——候选=所选Provider兄弟模型
+//   default_params∪param_options key 并集；勾选即带入默认值（兄弟default_params，reasoning_effort→medium兜底），
+//   控件按 opts→Select/数字→InputNumber/其他→Input；切Provider重算清空；成功重置。
+//   Props onSubmitAddModel 加 range?/capabilities?/param_options?；handleAddModel 透传 collected.{params,options}
 import React, { useEffect, useState } from 'react';
-import { Form, Input, Modal, Select } from 'antd';
+import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
@@ -28,6 +32,9 @@ interface Props {
     model: string;
     label: string;
     default_params?: Record<string, unknown>;
+    range?: Record<string, { min: number; max: number }>;
+    capabilities?: string[];
+    param_options?: Record<string, string[]>;
   }) => Promise<void>;
   onSubmitAddProvider: (data: {
     name: string;
@@ -52,6 +59,28 @@ export const ModelModals: React.FC<Props> = (props) => {
     setMProvider(props.selectedProvider);
   }, [props.selectedProvider]);
 
+  // [62]P5 3.3(1) 模板区：候选 = 所选 Provider 已有模型 default_params ∪ param_options key 并集
+  const sibModels = providers.find((p) => p.name === mProvider)?.models ?? [];
+  const candKeys = Array.from(
+    new Set(
+      sibModels.flatMap((m) => [
+        ...Object.keys(m.default_params ?? {}),
+        ...Object.keys(m.param_options ?? {}),
+      ])
+    )
+  );
+  // 勾选状态 + 值收集（勾中才送后端，未勾不送该 key——与现状 {} 兼容）
+  const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [collected, setCollected] = useState<{
+    params: Record<string, unknown>;
+    options: Record<string, string[]>;
+  }>({ params: {}, options: {} });
+  // 切 Provider 重算候选并清空已勾（与 BUG-A 的 mProvider 联动放一处）
+  useEffect(() => {
+    setChecked({});
+    setCollected({ params: {}, options: {} });
+  }, [mProvider]);
+
   // 修正(2026-09-21 小强)：删除标题剥离 model:/provider: 内部前缀——原 deleteTarget 直接注入标题，
   // 显示 "model:openai::gpt-4o" 泄漏内部格式（[设置页UI审计] 问题3）
   const deleteLabel = (t: string | null): string => {
@@ -66,12 +95,22 @@ export const ModelModals: React.FC<Props> = (props) => {
     if (!v) return;
     setBusy('model');
     try {
+      // [62]P5 3.3(2)-b：模板区勾选项由 collected.{params,options} 供给——勾了才送，未勾不送该 key
       await props.onSubmitAddModel({
         provider: mProvider,
         model: v.model,
         label: v.label ?? v.model,
+        ...(Object.keys(collected.params).length
+          ? { default_params: collected.params }
+          : {}),
+        ...(Object.keys(collected.options).length
+          ? { param_options: collected.options }
+          : {}),
       });
       mForm.resetFields();
+      // [62]P5 3.3(1) 成功重置模板区勾选/收集
+      setChecked({});
+      setCollected({ params: {}, options: {} });
     } catch {
       /* 保存失败：输入保留、弹窗不关（父级已弹错） */
     } finally {
@@ -140,6 +179,111 @@ export const ModelModals: React.FC<Props> = (props) => {
           <Form.Item name="label" label="显示名">
             <Input />
           </Form.Item>
+          {/* [62]P5 3.3(1) 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集 */}
+          {candKeys.length > 0 && (
+            <div
+              style={{
+                borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+                paddingTop: Spacing.MD,
+                marginTop: Spacing.MD,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.SECONDARY,
+                  marginBottom: Spacing.MD,
+                }}
+              >
+                参数模板（勾选即带入新模型）
+              </div>
+              {candKeys.map((key) => {
+                const opts = sibModels[0]?.param_options?.[key];
+                const siblingValue = sibModels[0]?.default_params?.[key];
+                const defaultVal =
+                  collected.params[key] ??
+                  siblingValue ??
+                  (key === 'reasoning_effort' ? 'medium' : undefined);
+                return (
+                  <div
+                    key={key}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: Spacing.MD,
+                      marginBottom: Spacing.SM,
+                    }}
+                  >
+                    <Checkbox
+                      checked={!!checked[key]}
+                      onChange={(e) => {
+                        const next = { ...checked, [key]: e.target.checked };
+                        setChecked(next);
+                        const params = { ...collected.params };
+                        if (e.target.checked) {
+                          // 勾选即带入当前默认值（不含则保持未送）
+                          if (defaultVal !== undefined)
+                            params[key] = defaultVal;
+                        } else {
+                          delete params[key];
+                        }
+                        setCollected({ ...collected, params });
+                      }}
+                    >
+                      {key}
+                    </Checkbox>
+                    {opts ? (
+                      <Select
+                        value={
+                          typeof defaultVal === 'string'
+                            ? defaultVal
+                            : String(defaultVal ?? '')
+                        }
+                        options={opts.map((v) => ({ label: v, value: v }))}
+                        style={{ minWidth: 160 }}
+                        onChange={(v) =>
+                          checked[key] &&
+                          setCollected({
+                            ...collected,
+                            params: { ...collected.params, [key]: v },
+                          })
+                        }
+                      />
+                    ) : typeof defaultVal === 'number' ? (
+                      <InputNumber
+                        value={defaultVal as number}
+                        style={{ minWidth: 160 }}
+                        onChange={(v) =>
+                          checked[key] &&
+                          setCollected({
+                            ...collected,
+                            params: { ...collected.params, [key]: v },
+                          })
+                        }
+                      />
+                    ) : (
+                      <Input
+                        value={
+                          defaultVal !== undefined ? String(defaultVal) : ''
+                        }
+                        style={{ maxWidth: 240 }}
+                        onChange={(e) =>
+                          checked[key] &&
+                          setCollected({
+                            ...collected,
+                            params: {
+                              ...collected.params,
+                              [key]: e.target.value,
+                            },
+                          })
+                        }
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Form>
       </Modal>
       <Modal

@@ -30,6 +30,8 @@
 //   ⑦jumpToProviderConfig 走脏确认闸口+保存后滚动锚点；⑧删模型Tab①"当前系统全局使用模型"冗余行
 // 2026-09-22 小强 - A3：ModelActions 传 envManaged（provider env 接管时隐藏「清空 api_key」，后端拒 clear）
 // 2026-09-22 小欧 - [62]P3：ModelParams 传 options={state.model.paramOptions}（读链末端：state→组件；P4 才消费渲染 Select）
+// 2026-09-22 小欧 - [62]P5 3.3(2)-b：onSubmitAddModel 透传 range/capabilities/param_options 到 modelApi.addModel
+//   （原仅透 default_params，新模型建出即带元数据/选项，不必回参数区返工）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -366,6 +368,9 @@ const SettingsPage: React.FC = () => {
               model: d.model,
               label: d.label,
               ...(d.default_params ? { default_params: d.default_params } : {}),
+              ...(d.range ? { range: d.range } : {}),
+              ...(d.capabilities ? { capabilities: d.capabilities } : {}),
+              ...(d.param_options ? { param_options: d.param_options } : {}),
             });
             s.syncMtime(res.mtime);
             showSuccess('模型已添加');

@@ -4,6 +4,9 @@
 // 2026-09-21 小欧 - ProviderEntry 补 max_retries 字段（对齐后端 GET /models 返回 max_retries）
 // 2026-09-22 小欧 - [62]P3 ModelEntry 补 param_options?: Record<string,string[]>（对齐后端 GET /models
 //   返回的三层解析 param_options，前端读链第一站；缺此字段 useSettings 四通道无数据来源）
+// 2026-09-22 小欧 - [62]P5：①addModel 入参补 param_options?: Record<string,string[]>（3.3(2)-b，
+//   添加口模板区勾选项透传到 POST /models 落盘）；②updateModel Pick 补 'param_options'（3.2(7)，
+//   ModelEntry 加该字段后 Pick 缺它 TS 拒收 param_options——后端已校验+落盘，前端类型须同步放开）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -66,6 +69,7 @@ export const modelApi = {
     default_params?: Record<string, unknown>;
     range?: Record<string, { min: number; max: number }>;
     capabilities?: string[];
+    param_options?: Record<string, string[]>;
   }): Promise<ModelsResponse> => {
     const response = await api.post<ModelsResponse>('/models', data);
     return response.data;
@@ -75,7 +79,10 @@ export const modelApi = {
     provider: string,
     model: string,
     data: Partial<
-      Pick<ModelEntry, 'label' | 'default_params' | 'range' | 'capabilities'>
+      Pick<
+        ModelEntry,
+        'label' | 'default_params' | 'range' | 'capabilities' | 'param_options'
+      >
     >
   ): Promise<ModelMutationResult> => {
     const response = await api.put(
