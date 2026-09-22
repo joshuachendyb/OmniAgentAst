@@ -1,4 +1,5 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复配置对象属性换行/缩进统一, 防止格式再次出错
+// 编辑历史: 2026-09-22 小欧 - server.port/proxy 补注释说明前端:5173→后端:8000 端口关系(两种连接方式 + 改端口同步清单)
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import eslint from 'vite-plugin-eslint';
@@ -39,8 +40,15 @@ export default defineConfig(({ command }) => {
       },
     },
     server: {
+      // 前端 dev server 端口（Vite 默认 5173）。
+      // 端口关系：前端(:5173) → 后端(:8000)，两种连接方式：
+      //   方式1 proxy：下方 proxy 配置将 /api/* 转发到 localhost:8000（同源，无 CORS）
+      //   方式2 直连：getApiBaseUrl() 拼 hostname:port 直连后端（走 CORS，需改 constants.py 白名单）
+      // 改端口须同步：proxy.target（方式1）或 VITE_API_PORT + CORS 白名单（方式2）
       port: 5173,
       proxy: {
+        // Vite 内置 http-proxy：开发模式下 /api/* 请求代理到后端 uvicorn(:8000)。
+        // 改后端端口时同步改 target。生产构建不走此 proxy（由 Nginx/反代接管）。
         '/api': {
           target: 'http://localhost:8000',
           changeOrigin: true,

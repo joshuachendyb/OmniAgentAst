@@ -40,6 +40,7 @@
     2026-09-08 北京老陈裁定+小欧 新增 HEARTBEAT_INTERVAL=25.0 SSE keep-alive 心跳周期常量(stream_orchestrator 心跳
         原硬编码 timeout=25.0 → 常量引用; 常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系设计依据, 常量与前端改动联动)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
+    2026-09-22 小欧 DEFAULT_CORS_ORIGINS 删除死配置 localhost:3000(全仓零引用, 早期 CRA 遗留) + 补注释说明端口关系(前端:5173 直连后端:8000 走 CORS, proxy 同源不走)
 """
 
 import re
@@ -93,7 +94,13 @@ STREAM_TOTAL_TIMEOUT = 500  # 【系统级】使用对象: base_service.request_
 
 # BROWSER_USER_AGENT 已迁移到 tool_constants.py → TOOL_BROWSER_UA
 
-DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"  # 【系统级】使用对象: API 服务 CORS 允许源
+# CORS 允许来源（直连模式下浏览器预检用）。
+# 端口关系：前端(:5173) 直连后端(:8000) 时，浏览器发 CORS 预检，后端 CORSMiddleware 校验 Origin。
+#   - localhost:5173 / 127.0.0.1:5173：Vite dev server 默认端口（vite.config.ts:42）
+#     浏览器把 localhost 和 127.0.0.1 当不同 Origin，所以两个都写。
+# 改前端端口时须同步更新此值（或走 tuning.network.cors_origins 配置化）。
+# 不适用于 Vite proxy 模式（proxy 同源无 CORS 问题）。
+DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"  # 【系统级】使用对象: API 服务 CORS 允许源
 
 # ============================================================
 # 4. 内容截断与字符限制
