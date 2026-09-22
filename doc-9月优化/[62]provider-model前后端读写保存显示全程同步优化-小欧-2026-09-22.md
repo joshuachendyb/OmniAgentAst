@@ -1,7 +1,7 @@
 # [62]provider/model前后端读写保存显示全程同步优化
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 15:06:24（小欧）
+**更新时间**: 2026-09-22 15:12:36（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -35,6 +35,7 @@
 - v3.8 2026-09-22 14:55:36 小欧 修3处冲突：①4.3(2)中间层key正名tuning.llm.stream_max_retries（registry:157既有，llm_net.max_retries不存在）；②4.3(2)补snapshot()透传max_retries=self.max_retries（跨provider快照否则丢定制值）；③4.3(1)补get_models显示层走同三层+tuning对齐（否则显示60实际150），SettingsPage fallback改150
 - v3.9 2026-09-22 14:58:18 小欧 文档改名：reasoning_effort类型错乱根因分析与SSOT根治方案→provider/model前后端读写保存显示全程同步优化（内容覆盖已超单点bug，改名贴合全貌；标题H1同步）
 - v4.0 2026-09-22 15:06:24 小欧 补全三缺口：①4.3(9)动态参数读-写-存-显闭环（值随GET /models下发+types/useSettings透传+doSave收集+DTO extra='allow'+param_types白名单防注入）；②4.3(8)删选项致默认值悬空处理（同批回提default_params重置为首项，复用3.1(2)同批合并校验）；③4.4补第8/9条model级运行时消费验证（parse_model_params单测+真实LLM请求体）
+- v5.0 2026-09-22 15:12:36 小欧 新增第五章TDD实施流程：5.1铁律+5.2要点↔Case覆盖矩阵（2.6十八行+4.x全映射）+5.3 Case清单（9新4改2回归2E2E）+5.4分九阶段实施计划（第2/3/4章diff台账一个不漏，红→绿→验证门）+5.5手工清单+5.6失败处理
 
 ---
 
@@ -1146,3 +1147,214 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 8. **model级运行时消费（v4.0补，第3章链路的运行时闭环）**：`parse_model_params`（lifecycle/service.py:87-97）单测——config.yaml `ai.{provider}.model_params.{m}.reasoning_effort="high"`（字符串）→ 返回`extra_body_params={"reasoning_effort": "high"}`（字符串，非数字）；`context_limit`弹出逻辑不伤余量；`create_service_instance`构造时`extra_body_params=该返回值`透传给BaseAIService（lifecycle/service.py:105/117）。
 9. **model级端到端运行时（v4.0补）**：真实后端改`sensenova`某模型`reasoning_effort=high`保存→真实LLM调用（E2E幂等用例或手工+请求日志断言）请求体携带`reasoning_effort="high"`字符串；与第3章显示/落盘构成"配置→保存→显示→运行时消费"四段全通。
 10. **Provider动态参数闭环（v4.0补，走通4.3(9)五步）**：config.yaml sensenova加`rate_limit: 10`→`GET /models`返回`rate_limit: 10`+`param_types`→ProviderConfig渲染InputNumber**且值回填10**→改20保存→落盘20→重拉显示20；另验白名单：`PUT /providers/sensenova {evil_key: 1}`→400（不在param_types拒绝）。
+
+---
+
+## 五、TDD实施流程（小欧）
+
+### 5.1 TDD方法铁律（小欧）
+
+1. **真实环境，禁止Mock**（AGENTS.md铁律）：后端单测可mock `config`对象内存态（`test_model_service_tdd.py`现有风格），但落盘、`GET /models`、`parse_model_params`、LLM请求体必须真实config/真实后端/真实LLM；E2E一律真实后端+真实SQLite（`~/.omniagent/chat_history.db`）。禁止为通过测试伪造数据通路。
+2. **TDD三步循环**：①先写会失败的测试（红）→②改对应diff的最小代码→③测试变绿；红→绿一次一跳，严禁一次改多个diff不跑测试。
+3. **一次只跑一个case**（AGENTS.md铁律），严禁批量；E2E用`subprocess.Popen`方式跑（bash工具会强杀长时进程），stdout/stderr落盘`tests/output/`，结果查junitxml；harness见`backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md`（v2.8）。
+4. **验证门**：每阶段绿后必过——①pytest/vitest该case绿②既有回归不破（RG-01/02）③`npm run check`（lint+format:check）④手工清单（5.5）抽检。任一门未过禁止进入下一阶段。
+5. **提交规范**：每阶段绿且验证门过→提交，格式`<type>:<文件名> <description> - 小欧-<日期>`；禁提交测试代码；版本收尾统一走`version.txt`+打tag。
+6. **失败处置**：红测试7天不绿/卡阶段→回退到上一绿基线重查该阶段diff与测试断言的匹配，**禁止`git checkout`/`git reset --hard`/`git revert`**（AGENTS.md禁止），用新增补丁修复。
+
+### 5.2 要点↔Case覆盖矩阵（无遗漏证明，小欧）
+
+每个设计要点都唯一映射到测试Case，双向覆盖；行来自第2.6修改要点总表（18行）+第4章各diff，列=Case编号（见5.3）。
+
+| 要点（设计出处） | 对应diff | Case | 阶段 |
+|---|---|---|---|
+| 2.4 配置文件示例（model_params+model_meta） | config.yaml.example zhipuai段 | BY-01前置+RL-01 | P1 |
+| 2.6-1 后端组装出口派生param_options三层并集 | 三、3.1(1) | BY-01 | P1 |
+| 2.6-2 update_model合并校验+白名单放行 | 三、3.1(2) | BY-01 | P1 |
+| 2.6-3 DTO透传param_options | 三、3.1(3) | BY-01 | P1 |
+| 2.6-4 Provider级写入口key_map加param_options | 三、3.1(4) | BY-03 | P1 |
+| 2.6-13 add_model落盘+同规则校验 | 三、3.1(5) | BY-02 | P2 |
+| 2.6-17 POST路由透req.param_options | 三、3.1(6) | BY-02（含POST层） | P2 |
+| 2.6-5 ModelEntry加param_options | 三、3.2(1) | FF-02 | P3 |
+| 2.6-6 ModelState加paramOptions | 三、3.2(2) | FF-02 | P3 |
+| 2.6-7 四处通道+setParam拦截 | 三、3.2(3) | FF-02 | P3 |
+| 2.6-8 参数区传入options | 三、3.2(4) | FF-02 | P3 |
+| 2.6-9 五分支渲染+options可选 | 三、3.2(5) | FF-02 | P4 |
+| 2.6-10 isDirty对象深比较 | 三、3.2(6) | FF-02 | P4 |
+| 2.6-18 updateModel签名Pick补param_options | 三、3.2(7) | FF-02 | P5 |
+| 2.6-11 弹窗模板区 | 三、3.3(1) | E2E-01 | P5 |
+| 2.6-12 提交透传default_params/range/capabilities/param_options | 三、3.3(2) | E2E-01 | P5 |
+| 2.6-14 建完回显补paramOptions | 三、3.3(4) | E2E-01 | P5 |
+| 2.6-15/16 夹具/完整性验收 | 三、3.4(1)-(5) | FF-01+RG+E2E-01 | P3/P10 |
+| 4.2-1 兜底值统一（get_models三层对齐） | 四、4.3(1)c | BY-04+RG-03 | P7 |
+| 4.2-2 运行时消费（timeout is not None） | 四、4.3(1)a/b | BY-04 | P7 |
+| 4.2-3 DTO与TS对齐（max_retries） | 四、4.3(3)(4) | BY-06+RG-03 | P6 |
+| 4.2-4 创建时可设（addProvider timeout/max_retries） | 四、4.3(5) | BY-07 | P6 |
+| 4.2-5 三层回落（max_retries Provider>tuning>常量） | 四、4.3(2)a/b/d | BY-05 | P7 |
+| 4.3(2)c snapshot透传max_retries | 四、4.3(2)c | BY-05 | P7 |
+| 4.3(6) label编辑入口四文件 | 四、4.3(6) | BY-06+RG-03 | P6 |
+| 4.3(7) models创建说明（无代码） | — | E2E-02 | P6 |
+| 4.3(8) 管理选项弹窗+悬空值处理 | 四、4.3(8) | FF-03 | P8 |
+| 4.3(9) 动态参数闭环（常量表/下发/透传/收集/白名单/落盘） | 四、4.3(9) | BY-09+FF-04+E2E-02 | P8 |
+| 4.4-8/9 model级运行时消费 | — | BY-08+E2E-01 | P9 |
+| 4.4-10 动态参数闭环+白名单 | — | BY-09+FF-04 | P8 |
+| 完整性铁律2.1(5)（读写保存显示全闭合+落盘不错位） | 全部 | RG+E2E-01/02 | P10 |
+
+### 5.3 Case清单：要修正/更新的case + 新建case（小欧）
+
+**修正4个（现有case改动）：**
+
+| 编号 | 文件 | 修正内容 | 依据 |
+|---|---|---|---|
+| FF-01 | `frontend/src/tests/fixtures/live-models.json` | 给`sensenova`四模型（deepseek-v4-flash/glm-5.2/sensenova-6.8-flash-lite/deepseek-v4-pro）各补`"param_options": {"reasoning_effort": ["low","medium","high"]}` | 三、3.4(1) |
+| FF-02 | `frontend/src/tests/unit/settings2-live-scenarios.test.tsx:91-110` BUG-E | 保留原有"字符串被当number"断言（防回退），**新增**：`options`来自fixture的`param_options`；`Select`显示`medium`（非0）；`setParam('reasoning_effort','x')`被拒（非法选项拦截）；`setParam('reasoning_effort','high')`合法放行 | 三、3.4(2) |
+| FF-03 | `backend/tests/test_model_service_tdd.py` 既有断言对齐 | timeout显示值从硬编码60→tuning对齐（若存在断言60处更新为150/80/实际值）；key_map新增`param_options`/`max_retries`映射后既有PUT用例参数表核对 | 四、4.3(1)c |
+| FF-04 | 前端全量快照/断言（如有SettingsPage/ProviderConfig相关） | max_retries/label新增字段后，任何硬编码60、缺label的mock对象断言同步 | 四、4.3(5)(6) |
+
+**新建9个case（红→绿）：**
+
+| 编号 | 文件 | Case | 红条件（先写失败测什么） | 断言（绿）要点 |
+|---|---|---|---|---|
+| BY-01 | `backend/tests/test_model_service_tdd.py` | `test_model_param_options` | 现状`_models_of`不产`param_options`→断言空即红 | 三层解析：模型级`model_meta`覆盖provider级/全局；sensenova零迁移走`DEFAULT_PARAM_OPTIONS`得3选项；并集（params已有值∪meta选项）；`update_model default_params:{reasoning_effort:0}`→400；5选项模型传第5合法值放行 |
+| BY-02 | 同上 | `test_add_model_param_options` | 现状`add_model`无param_options形参→签名缺失即红 | 带options新建→`model_meta.{model}.param_options`落盘；round-trip `GET /models`读回；非法选项表/`0`值→400弹窗不关；POST路由层透传 |
+| BY-03 | 同上 | `test_param_options_provider_roundtrip` | `update_provider_config` key_map无param_options→PUT不落盘即红 | `PUT /providers/{name} {param_options:{...}}`→`ai.{provider}.param_options`落盘+读回；与模型级同校验 |
+| BY-04 | 同上 | `test_timeout_three_tier` | 现状timeout=0被当falsy跳过、get_models兜底60≠150 | Provider设45→45；不设+tuning 80→80；不设+tuning无→150；timeout=0合法直传；三档`GET /models`显示值=运行时值 |
+| BY-05 | 同上 | `test_max_retries_three_tier` | 现状base_service无max_retries参数→None即红 | Provider 5→`self.max_retries=5`；不设+tuning.llm.stream_max_retries 8→8；不设无→3；`snapshot()`结果max_retries一致；`request_stream`用self.max_retries |
+| BY-06 | 同上 | `test_provider_config_dto_align` | DTO缺max_retries、label——直接PUT断言 | `PUT /providers/{name} {max_retries:5}`落盘（不再靠retry_times别名）；`{label:"新名"}`落盘并读回；`evil_key:1`→400白名单拒绝 |
+| BY-07 | 同上 | `test_add_provider_fields` | addProvider DTO/服务无timeout/max_retries | 创建带timeout=30/max_retries=5→`config.yaml`落盘→`GET /models`读回30/5 |
+| BY-08 | 同上 | `test_parse_model_params_runtime` | 无此单测 | `model_params.{m}.reasoning_effort="high"`→`extra_body_params`含字符串`"high"`（非数字）；context_limit弹出不伤余量；无model_params→`extra_body_params=None` |
+| BY-09 | 同上 | `test_param_types_whitelist` | 无白名单概念→`evil_key`未拒绝 | `get_models` Provider段含`param_types`+动态标量值（rate_limit:10）；`PUT {evil_key:1}`→400；`{rate_limit:20}`→落盘读回20 |
+
+**回归2个（全量门）：**
+
+| 编号 | 命令 | 用途 |
+|---|---|---|
+| RG-01 | `pytest`（backend工作目录） | 后端全量回归，确认无既有用例被新diff破坏 |
+| RG-02 | `npm run test`（frontend工作目录）+`npm run check` | 前端全量+lint+format:check，提交前必过 |
+
+**E2E 2个case（真实全链路）：**
+
+| 编号 | 场景 | 完整链路 |
+|---|---|---|
+| E2E-01 | 模型链（3.4手工5项转脚本） | 弹窗模板勾选`reasoning_effort=high`+`context_limit=900000`→POST体含字符串`"high"`→`config.yaml`落盘model_params+model_meta.param_options→切新模型参数区下拉+值=high→重启后端读回→真实LLM请求体断言`reasoning_effort="high"`（4.4-9） |
+| E2E-02 | Provider链 | 创建provider带timeout=30/max_retries=5→落盘→GET /models读回→改label/动态rate_limit→保存→重拉回显→（无LLM诉求，纯配置链） |
+
+### 5.4 实施计划：分九阶段，第2/3/4章diff台账一个不漏（小欧）
+
+每阶段含：**先写红测试 → 改本阶段diff → 跑绿 → 验证门**。diff编号即本设计文档对应块，按P1→P9顺序执行，严禁越序。
+
+**阶段P1 · 第2章配置+第3章后端读链（红：BY-01）**
+
+| 步骤 | diff清单（一个不漏） |
+|---|---|
+| 改 | 第2.4 `backend/config.yaml.example` zhipuai段（`model_params.glm-4.7-flash.reasoning_effort: medium`+`model_meta.glm-4.7-flash.param_options`三选项） |
+| 改 | 三、3.1(1) `model_service.py`：`DEFAULT_PARAM_OPTIONS`+`_resolve_param_options(ai,provider,model,params,meta)`+`_models_of`组装`param_options` |
+| 改 | 三、3.1(2) `model_service.py update_model`：合并新options再校验（先合并→allowed→逐k校验）+`unknown`白名单加`param_options`+落`model_meta` |
+| 改 | 三、3.1(3) `model_routes.py`：`ModelCreateRequest`/`ModelUpdateRequest`各加`param_options: Optional[Dict[str,List[str]]]=None` |
+| 改 | 三、3.1(4) `model_service.py key_map`：加`"param_options": "param_options"` |
+| 改 | 三、3.1(6) `model_routes.py` POST路由：`add_model(..., req.param_options)` |
+| 验 | BY-01 绿 + RG-01 不破 + 手工：sensenova开关参数区有下拉 |
+
+**阶段P2 · 第3章后端写链（红：BY-02）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 三、3.1(5) `add_model`签名加`param_options`+选项表校验（非空string[]/默认值在表内/0拒）+`tree`写`model_meta.{model}.param_options` |
+| 验 | BY-02 绿（含POST路由层透传断言）+ RG-01 + 手工：POST /models带options落盘yaml可见 |
+
+**阶段P3 · 第3章前端读链（红：FF-02，前置FF-01）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改夹具 | 三、3.4(1) `live-models.json` sensenova四模型补`param_options`（FF-01，缺一个即切该模型无下拉） |
+| 改 | 三、3.2(1) `model.api.ts ModelEntry` 加`param_options?` |
+| 改 | 三、3.2(2) `types.ts ModelState` 加`paramOptions` |
+| 改 | 三、3.2(3) `useSettings.ts`：`initialModel`加`paramOptions:{}`+`load/selectProvider/selectModel/refreshModels`四通道补`paramOptions`+`setParam`枚举拦截（`opts.includes(value)`不中→WARNING+return） |
+| 改 | 三、3.2(4) `SettingsPage.tsx:265-271` 传`options={state.model.paramOptions}` |
+| 验 | FF-02 绿 + RG-02 + 手工：切sensenova下拉显示medium |
+
+**阶段P4 · 第3章前端渲染+脏态（红：FF-02新增断言）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 三、3.2(5) `ModelParams.tsx` 五分支：删`as number`；`enumOpts→Select(string直绑)`；`range→Slider+InputNumber(安全转数字)`；`number→InputNumber`；`boolean→Switch`；`object→TextArea(JSON)+blur回退`；`string→Input`；Props加`options?`/`onReset?` |
+| 改 | 三、3.2(6) `modelUtils.ts` `sameValue`（`Object.is`+对象`JSON.stringify`）替换`!==` |
+| 验 | FF-02 全绿（含对象compare恒脏修复）+ RG-02 |
+
+**阶段P5 · 第3章添加口（红：E2E-01手工步骤先行红）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 三、3.2(7) `model.api.ts updateModel` Pick 加`'param_options'` |
+| 改 | 三、3.3(1) `ModelModals.tsx` 模板区：`sibModels`/`candKeys`（default_params∪param_options &&）/`checked`/`collected` state/切Provider重算清空/勾选行控件（select/InputNumber/Input+默认值取兄弟）/成功后重置 |
+| 改 | 三、3.3(2) `ModelModals.tsx` Props`onSubmitAddModel`加`range?/capabilities?/param_options?`+`handleAddModel`透传`collected.params/options`；`SettingsPage.tsx:360-367` addModel透传range/capabilities/param_options；`model.api.ts addModel`入参加`param_options?` |
+| 改 | 三、3.3(4) `useSettings.ts refreshModels(select)` 补回显`paramOptions` |
+| 验 | E2E-01 添加口径（表单→POST→落盘→回显下拉）+ RG-02 |
+
+**阶段P6 · 第4章 provider读写（红：BY-06/BY-07）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 四、4.3(3) `model_routes.py ProviderConfigUpdate` 加`max_retries: Optional[int]=Field(default=None)` |
+| 改 | 四、4.3(4) `model.api.ts ProviderConfigPatch` 加`max_retries?: number` |
+| 改 | 四、4.3(5) `model.api.ts addProvider`加`timeout?/max_retries?`；`ModelModals.tsx` Props`onSubmitAddProvider`加两字段+弹窗表单两`InputNumber`（timeout min1默认60占位/max_retries min0默认3占位） |
+| 改 | 四、4.3(6) 四文件联动label：`types.ts` providerConfig加`label:string`；`useSettings.ts` load构建加`label:p.label`；`SettingsPage.tsx:278-284` fallback加`label:''`；`ProviderConfig.tsx` Props/doSave/表单label输入框 |
+| 改 | 四、4.3(7) 无代码（models创建走模型管理区UI） |
+| 验 | BY-06/BY-07 绿 + RG-01 + 手工：改label保存→配置区即变+重拉仍新名 |
+
+**阶段P7 · 第4章 provider运行时（红：BY-04/BY-05，含FF-03对齐）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 四、4.3(1)a `lifecycle/service.py` `timeout=provider_config.get("timeout")`（传None不传默认值） |
+| 改 | 四、4.3(1)b `base_service.py:131-135` `timeout is not None`（0合法，不据truthiness） |
+| 改 | 四、4.3(1)c `model_service.py get_models` 显示层读`tuning.llm_net.read_timeout`/`tuning.llm.stream_max_retries`（v3.8）+`from app.config import get_config` |
+| 改 | 四、4.3(1)d `SettingsPage.tsx:278-284` fallback `timeout:150` |
+| 改 | 四、4.3(2)a `base_service.py __init__` 加`max_retries:Optional[int]=None`+三层（Provider>[tuning.llm.stream_max_retries]>[常量3]）+`self.max_retries` |
+| 改 | 四、4.3(2)b `request_stream:299-300` 用`self.max_retries`（删`_D_STREAM_MAX_RETRIES`读值） |
+| 改 | 四、4.3(2)c `snapshot()` 加`max_retries=self.max_retries` |
+| 改 | 四、4.3(2)d `lifecycle/service.py create_service_instance` 加`max_retries=provider_config.get("max_retries")` |
+| 修 | FF-03：既有timeout=60断言改tuning对齐值 |
+| 验 | BY-04/BY-05 绿 + RG-01 + 手工：改timeout=0保存→请求极短超时生效不跳tuning |
+
+**阶段P8 · 第4章 高级：管理选项+动态参数（红：BY-09/FF-03/FF-04）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 四、4.3(8) `SettingsPage.tsx` 参数区标题行加"管理选项"链接（`paramOptions`非空才现）+`types.ts ModelState`加`paramOptionsModalOpen`+新建`ParamOptionsModal.tsx`（Tag展示/添加/删除/保存前校验非空/悬空值`Modal.confirm`同批回提`default_params`重置首项，复用3.1(2)同批合并） |
+| 改 | 四、4.3(9)-1 `model_service.py` 常量区`PROVIDER_PARAM_TYPES`+`KNOWN_PROVIDER_KEYS` |
+| 改 | 四、4.3(9)-2 `get_models` Provider段加`param_types`+动态标量值透传；`model.api.ts ProviderEntry`加`param_types?`；`types.ts providerConfig`加`[key:string]:unknown`；`useSettings.ts load`动态值照抄透传 |
+| 改 | 四、4.3(9)-3 `ProviderConfig.tsx` doSave动态收集循环+渲染区（initialValues天然回填）；`model_routes.py:17` import补`ConfigDict`+`ProviderConfigUpdate`加`model_config=ConfigDict(extra='allow')`；`update_provider_config` param_types白名单+动态字段落盘 |
+| 改 | 四、4.3(9)-4 落盘走`merge_nested_patch`（复用，无新增） |
+| 验 | BY-09/FF-03/FF-04 绿 + RG + 手工：管理选项加xhigh→下拉即现；rate_limit改20→重拉20；evil_key 400 |
+
+**阶段P9 · model级运行时验证（红：BY-08，E2E-01扩展LLM断言）**
+
+| 步骤 | diff清单 |
+|---|---|
+| 改 | 无新代码（BY-08测现有`parse_model_params`；E2E-01补真实LLM请求体断言`reasoning_effort="high"`） |
+| 验 | BY-08 绿 + E2E-01 全绿（配置→保存→显示→运行时四段全通） |
+
+**阶段P10 · 全量回归与收尾（RG-01/RG-02/E2E-02）**
+
+| 步骤 | 动作 |
+|---|---|
+| 回归 | 后端全量`pytest`（RG-01）+前端全量`npm run test`+`npm run check`（RG-02）+E2E-02（Provider全链） |
+| 手工 | 5.5清单逐项 |
+| 收尾 | 更新`version.txt`头部（本tag以来所有commit摘要）→打tag`v{major}.{minor}.{patch+1}`；commit标题带签名+日期；禁提交测试代码 |
+
+### 5.5 手工验证清单（每阶段收尾抽检，小欧）
+
+1. 切`sensenova/deepseek-v4-flash`参数区下拉显示`medium`非`0`；改`high`保存，Network观察`reasoning_effort`为字符串`"high"`。
+2. 刷新页面重进设置页，值仍`high`；`config.yaml`对应模型落盘字符串。
+3. 添加模型：sensenova下新建→勾选`reasoning_effort=high`+`context_limit=900000`→保存→`POST /models`体含字符串`"high"`→建完自动切新模型→参数区下拉出现且值为所勾值→`yaml`同时落`model_params`与`model_meta.param_options`。
+4. Provider改`timeout=0`保存→请求按极短超时走（4.3(1)b验证`is not None`）；未设timeout的Provider显示值与运行时一致。
+5. 管理选项删`high`且当前默认值=high→弹确认重置首项→保存后下拉无悬空值；新增`xhigh`→下拉出现。
+6. 动态参数：config加`rate_limit:10`→ProviderConfig自动出现该InputNumber并回填10→改20保存→重拉20；`evil_key`保存被拒。
+7. 重启后端，全部配置读回不变（落盘幂等性）。
+
+### 5.6 失败处理（小欧）
+
+- **红→绿未果**：单一case红7天不绿=该阶段diff与测试断言不匹配。按序核查：断言是否对准真实行为（非设计愿望）→工厂数据是否真实→diff是否遗漏相邻行。找到后补丁修正，禁改测试去迁就未实现行为。
+- **回归破坏**：RG-01/02出现红=新diff与既有行为冲突。先隔离（该阶段最后一个提交回查），用增量补丁修复，禁`git checkout`/`reset --hard`/`revert`。
+- **E2E超时/强杀**：一律走`subprocess.Popen`+`--timeout=2900`，严禁bash直跑pytest（agents.harness铁律）。
+- **顺序纪律**：P1→P10严禁越序；前阶段验证门未全过，后阶段红测试不允许开工（防止diff堆叠掩盖断链）。
