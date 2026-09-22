@@ -4,6 +4,8 @@
 // 2026-09-22 小强 - SettingsState 增 baseline（纯服务端值快照）：供 S6 改回原值撤销脏标记/S2 load 保留缓冲
 // 2026-09-22 小欧 - [62]P3 ModelState 补 paramOptions: Record<string,string[]>（UI 层三选项表，
 //   由 useSettings 四通道从 ModelEntry.param_options 透传，参数区枚举下拉数据源）
+// 2026-09-22 小欧 - [62]P6 4.3(6)：providerConfig 每条补 label: string（Provider 显示名，
+//   后端 GET /models 已返回 p.label，前端无此类型声明则 ProviderConfig 表单/配置区读不到）
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -37,6 +39,7 @@ export interface ModelState {
     {
       api_key: { configured: boolean; suffix: string };
       base_url: string;
+      label: string;
       timeout: number;
       max_retries: number;
       env: boolean;

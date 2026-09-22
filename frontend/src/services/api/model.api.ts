@@ -7,6 +7,9 @@
 // 2026-09-22 小欧 - [62]P5：①addModel 入参补 param_options?: Record<string,string[]>（3.3(2)-b，
 //   添加口模板区勾选项透传到 POST /models 落盘）；②updateModel Pick 补 'param_options'（3.2(7)，
 //   ModelEntry 加该字段后 Pick 缺它 TS 拒收 param_options——后端已校验+落盘，前端类型须同步放开）
+// 2026-09-22 小欧 - [62]P6 4.3(4)(5)：ProviderConfigPatch 补 max_retries/label、addProvider 入参补
+//   timeout/max_retries（对齐后端 ProviderConfigUpdate/ProviderAddRequest DTO——前端实际发送的字段
+//   须在 TS 类型有声明，否则类型保护失效；创建 Provider 弹窗可自定义超时/重试）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -49,8 +52,10 @@ export interface ModelMutationResult {
 export interface ProviderConfigPatch {
   api_key?: string;
   base_url?: string;
+  label?: string;
   timeout?: number;
   retry_times?: number;
+  max_retries?: number;
   clear?: boolean;
 }
 
@@ -105,11 +110,16 @@ export const modelApi = {
     return response.data;
   },
 
+  // 2026-09-22 小欧 - [62]P6 4.3(5)：addProvider 入参补 timeout/max_retries（添加弹窗可设，
+  //   后端 ProviderAddRequest DTO 已有默认 timeout=60/max_retries=3，缺此声明前端弹窗没数据来源，
+  //   创建 Provider 只能走后端默认值）
   addProvider: async (data: {
     name: string;
     label?: string;
     api_base?: string;
     api_key?: string;
+    timeout?: number;
+    max_retries?: number;
   }): Promise<ModelMutationResult> => {
     const response = await api.post('/providers', data);
     return response.data;

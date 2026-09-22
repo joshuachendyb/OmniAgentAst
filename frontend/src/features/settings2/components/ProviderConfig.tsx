@@ -10,6 +10,9 @@
 // 2026-09-21 小强 - 修正：内层 key 证伪（rc-field-form 源码：setInitialValues merge(新值,旧仓库)旧赢+默认preserve不清仓，form 实例常驻则重挂无效）；key 上移调用方，删内层冗余 key（北京老陈定）
 // 2026-09-21 小强 - 设置页17问题复核修复：base_url 留空=清空（后端支持空串落盘api_base=''）；保存成功复位 api_key
 //   防明文残留二次重复提交（失败父级 rethrow 保留输入）；env 接管补解除指引（[设置页UI审计] 问题5/6/14）
+// 2026-09-22 小欧 - [62]P6 4.3(6)：label 显示名编辑入口——Props.config 加 label、onSave patch 加 label?、
+//   doSave 收集（非空 trim 留空=保持原值）、表单 base_url 后加「显示名」Input（后端 key_map/DTO 早已支持，
+//   前端补入口即闭环）；types/useSettings/SettingsPage 三文件同批联动
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Form } from 'antd';
 import { Colors } from '@/utils/stepStyles';
@@ -20,6 +23,7 @@ interface Props {
   config: {
     api_key: { configured: boolean; suffix: string };
     base_url: string;
+    label: string;
     timeout: number;
     max_retries: number;
     retry_times?: number;
@@ -28,6 +32,7 @@ interface Props {
   onSave: (patch: {
     api_key?: string;
     base_url?: string;
+    label?: string;
     timeout?: number;
     retry_times?: number;
     max_retries?: number;
@@ -48,6 +53,9 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     // 后端 update_provider_config 对空串落盘 api_base=''，前端 model_dump(exclude_none=True) 不丢空串
     if (values.base_url !== undefined)
       patch.base_url = String(values.base_url).trim();
+    // [62]P6 4.3(6) label：非空才送（留空=保持原值，与后端 update_provider_config label 语义一致）
+    if (values.label !== undefined && String(values.label).trim() !== '')
+      patch.label = String(values.label).trim();
     if (values.timeout !== undefined) patch.timeout = values.timeout;
     if (values.max_retries !== undefined)
       patch.max_retries = values.max_retries;
@@ -102,6 +110,15 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         label="base_url"
         name="base_url"
         extra="留空=清空地址（恢复默认直连）"
+      >
+        <Input />
+      </Form.Item>
+      {/* [62]P6 4.3(6) label 显示名编辑入口（后端 key_map label→label + DTO label 字段早已支持，
+          原来前端无入口，配置区改不了显示名；留空=保持原值） */}
+      <Form.Item
+        label="显示名"
+        name="label"
+        extra="Provider 显示名称，留空=保持原值"
       >
         <Input />
       </Form.Item>

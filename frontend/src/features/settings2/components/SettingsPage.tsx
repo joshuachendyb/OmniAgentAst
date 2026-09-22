@@ -32,6 +32,8 @@
 // 2026-09-22 小欧 - [62]P3：ModelParams 传 options={state.model.paramOptions}（读链末端：state→组件；P4 才消费渲染 Select）
 // 2026-09-22 小欧 - [62]P5 3.3(2)-b：onSubmitAddModel 透传 range/capabilities/param_options 到 modelApi.addModel
 //   （原仅透 default_params，新模型建出即带元数据/选项，不必回参数区返工）
+// 2026-09-22 小欧 - [62]P6 4.3(6)：ProviderConfig fallback 加 label:''（providerConfig 类型补 label 后
+//   fallback 对象须同构，否则选中未加载 Provider 时 ProviderConfig 表单缺显示名初值）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -282,6 +284,7 @@ const SettingsPage: React.FC = () => {
             state.model.providerConfig[state.model.selectedProvider] ?? {
               api_key: { configured: false, suffix: '' },
               base_url: '',
+              label: '',
               timeout: 60,
               max_retries: 3,
               env: false,

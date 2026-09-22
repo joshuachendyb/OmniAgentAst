@@ -15,6 +15,10 @@
      param_options: Optional[Dict[str,List[str]]]=None（Pydantic 不声明即丢字段，老前端不送也不报错）；
      P2 POST /models 路由 add_model 调用透传 req.param_options（5 位置参→7 位置参，防 param_options 形参
      永远拿 None 静默丢）。PUT 路由无需改——model_dump(exclude_none=True) 自动含 param_options。
+   2026-09-22 - 小欧 - [62]P6 4.3(3) ProviderConfigUpdate 补 max_retries: Optional[int]=None：
+     前端 ProviderConfig.tsx 实际发送 max_retries 而 DTO 原只有 retry_times 别名，Pydantic v2
+     extra='ignore' 丢弃未声明字段 → model_dump 不产 max_retries → 落不了盘；补声明后
+     前端发的 max_retries 直连 key_map，不再依赖隐式绕过（BY-06 红条件验证）。
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
@@ -52,11 +56,15 @@ class ModelUpdateRequest(BaseModel):
 
 
 class ProviderConfigUpdate(BaseModel):
+    """Provider 配置更新 DTO — 2026-09-22 小欧 [62]P6 补 max_retries：
+    前端 ProviderConfig.tsx 发送 max_retries，DTO 原只有 retry_times 别名——Pydantic v2
+    默认 extra='ignore' 会丢弃未声明字段，补声明后 model_dump(exclude_none=True) 才落盘。"""
     label: Optional[str] = Field(default=None, description="Provider 显示名")
     api_key: Optional[str] = Field(default=None)
     base_url: Optional[str] = Field(default=None)
     timeout: Optional[int] = Field(default=None)
     retry_times: Optional[int] = Field(default=None)
+    max_retries: Optional[int] = Field(default=None)
     clear: Optional[bool] = Field(default=None, description="clear=true 显式清空 api_key")
 
 

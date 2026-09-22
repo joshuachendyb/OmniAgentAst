@@ -26,6 +26,9 @@
 // 2026-09-22 小欧 - [62]P3 param_options 读链：initialModel 加 paramOptions:{}；
 //   load/selectProvider/selectModel/refreshModels 四处通道补 paramOptions 透传（源 current/first/entry/m.param_options）；
 //   setParam 加枚举拦截（opts.includes(value) 不中 → WARNING+return，禁非法枚举写 state）。P4 将消费渲染 Select。
+// 2026-09-22 小欧 - [62]P6 4.3(6)：load() 与 refreshModels() 两处 providerConfig 构建补 label: p.label
+//   （与后端 GET /models 返回 p.label 对齐；load 缺则 ProviderConfig 表单无显示名初值，refreshModels
+//   缺则保存 label 后刷新即丢）。前后端写链路 label 编辑闭环。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -185,6 +188,7 @@ export function useSettings() {
             {
               api_key: p.api_key,
               base_url: p.api_base,
+              label: p.label,
               timeout: p.timeout,
               max_retries: p.max_retries,
               env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
@@ -771,6 +775,7 @@ export function useSettings() {
               {
                 api_key: p.api_key,
                 base_url: p.api_base,
+                label: p.label,
                 timeout: p.timeout,
                 max_retries: p.max_retries,
                 env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv）

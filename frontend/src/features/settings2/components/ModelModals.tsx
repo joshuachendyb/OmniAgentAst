@@ -14,6 +14,9 @@
 // 2026-09-22 小欧 - [62]P5 E2E-01 抓真bug修复：勾选行有兄弟 param_options 时, 仅写 collected.params 而 options 恒空
 //   → handleAddModel 的 param_options 永远空 → 新模型 model_meta 不落 options → 回显无下拉。
 //   修复：勾选时若 opts 存在同步带 options[key]=opts, 取消则删（POST 体含 param_options + config.yaml 落盘 + 回显下拉验证通过）
+// 2026-09-22 小欧 - [62]P6 4.3(5)：onSubmitAddProvider Props 加 timeout?/max_retries?；添加 Provider
+//   弹窗表单 api_key 后新增 timeout(秒) min1 默认60占位、max_retries min0 默认3占位两个 InputNumber
+//   （配合 model.api.ts addProvider 入参补两字段，创建时即可自定义超时/重试）
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -44,6 +47,8 @@ interface Props {
     label: string;
     api_base: string;
     api_key?: string;
+    timeout?: number;
+    max_retries?: number;
   }) => Promise<void>;
   onConfirmDelete: () => void;
 }
@@ -334,6 +339,13 @@ export const ModelModals: React.FC<Props> = (props) => {
           </Form.Item>
           <Form.Item name="api_key" label="API Key">
             <Input.Password placeholder="未配置则留空" />
+          </Form.Item>
+          {/* [62]P6 4.3(5) 创建 Provider 可自定义 timeout/max_retries（后端 DTO 默认 60/3，留空走默认） */}
+          <Form.Item label="timeout(秒)" name="timeout">
+            <InputNumber min={1} placeholder="默认60" />
+          </Form.Item>
+          <Form.Item label="max_retries" name="max_retries">
+            <InputNumber min={0} placeholder="默认3" />
           </Form.Item>
         </Form>
       </Modal>
