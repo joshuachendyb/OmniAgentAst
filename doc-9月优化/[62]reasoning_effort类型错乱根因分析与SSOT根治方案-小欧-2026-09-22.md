@@ -1,7 +1,7 @@
 # [62]reasoning_effort类型错乱根因分析与SSOT根治方案
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 14:47:25（小欧）
+**更新时间**: 2026-09-22 14:55:36（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -32,6 +32,7 @@
 - v3.5 2026-09-22 14:18:37 小欧 核查发现现有diff不遵守三层回落原则：4.3(1)create_service_instance写死默认60跳过tuning配置，4.3(2)max_retries无回落链。修正：create_service_instance传None（Provider没设时不传默认值），base_service.py timeout用is not None判断（0是合法值），max_retries加三层回落（Provider > tuning.max_retries > 常量3）
 - v3.6 2026-09-22 14:26:43 小欧 补label/models两处diff：4.3(6)label编辑入口（types/useSettings/SettingsPage/ProviderConfig四文件）+4.3(7)addProvider弹窗补timeout/max_retries输入框+models注释说明（创建后通过模型管理UI添加）
 - v3.7 2026-09-22 14:47:25 小欧 补两个"后来添加参数"场景UI设计：4.3(8)模型param_options编辑UI（管理选项弹窗，修改允许值列表）+4.3(9)Provider动态参数发现（GET /models返回param_types元数据，ProviderConfig动态渲染）
+- v3.8 2026-09-22 14:55:36 小欧 修3处冲突：①4.3(2)中间层key正名tuning.llm.stream_max_retries（registry:157既有，llm_net.max_retries不存在）；②4.3(2)补snapshot()透传max_retries=self.max_retries（跨provider快照否则丢定制值）；③4.3(1)补get_models显示层走同三层+tuning对齐（否则显示60实际150），SettingsPage fallback改150
 
 ---
 
@@ -628,6 +629,25 @@ zhipuai:
 
 原因：原来`if timeout`用truthiness判断，`timeout=0`是合法值（极短超时）但被当falsy跳到tuning层。改`is not None`后：Provider设了任意值（含0）→直接用；Provider没设（None）→读tuning配置→没配→常量150。三层回落链完整。
 
+```diff
+ # model_service.py:93-105 get_models()显示值走同三层（小欧 v3.8：否则显示60实际150，第3章"显示即真相"被打破）
++from app.config import get_config  # config_helpers同层已引，无循环
+-                           "timeout": p.get('timeout') if p.get('timeout') is not None else 60,
+-                           "max_retries": p.get('max_retries') if p.get('max_retries') is not None else 3,
++                           "timeout": p.get('timeout') if p.get('timeout') is not None else get_config().get("tuning.llm_net.read_timeout", 150),
++                           "max_retries": p.get('max_retries') if p.get('max_retries') is not None else get_config().get("tuning.llm.stream_max_retries", 3),
+```
+
+```diff
+ # SettingsPage.tsx:278-284 fallback对齐tuning默认（小欧 v3.8：缺省条目才触发，平时走API值）
+               api_key: { configured: false, suffix: '' },
+               base_url: '',
+-              timeout: 60,
++              timeout: 150,
+               max_retries: 3,
+               env: false,
+```
+
 （2）`backend/app/llm/base_service.py` + `lifecycle/service.py` max_retries三层回落：
 
 ```diff
@@ -646,13 +666,24 @@ zhipuai:
 +        if max_retries is not None:
 +            self.max_retries = max_retries
 +        else:
-+            self.max_retries = int(get_config().get("tuning.llm_net.max_retries", _D_STREAM_MAX_RETRIES))
++            self.max_retries = int(get_config().get("tuning.llm.stream_max_retries", _D_STREAM_MAX_RETRIES))
 ```
 
 ```diff
  # base_service.py:299-300 request_stream()
 -        max_retries = _D_STREAM_MAX_RETRIES
 +        max_retries = self.max_retries
+```
+
+```diff
+ # base_service.py:173-184 snapshot()透传（小欧 v3.8：快照常切跨provider模型，不传则丢provider定制值）
+         snap = BaseAIService(
+             api_key=api_key or self.api_key,
+             llm_model=model_ref if model_ref is not None else self.llm_model,
+             timeout=self.timeout,
++            max_retries=self.max_retries,
+             max_tokens=self.max_tokens,
+             ...
 ```
 
 ```diff
@@ -666,7 +697,7 @@ zhipuai:
      )
 ```
 
-原因：原来`create_service_instance`不传max_retries，`base_service.py:300`硬编码用常量3。修复后Provider设了→用Provider的；Provider没设→读`tuning.llm_net.max_retries`（系统级可配）；tuning也没配→常量3。三层回落完整，与timeout同构。
+原因：原来`create_service_instance`不传max_retries，`base_service.py:300`硬编码用常量3。修复后Provider设了→用Provider的；Provider没设→读`tuning.llm.stream_max_retries`（系统级可配）；tuning也没配→常量3。三层回落完整，与timeout同构。中间层用既有键`tuning.llm.stream_max_retries`（registry:157，默认3）——`tuning.llm_net.max_retries`不存在，误引则中间层永死。`snapshot()`同步透传，否则跨provider快照丢定制值。
 
 （3）`backend/app/api/v1/model_routes.py:48-54` `ProviderConfigUpdate` DTO补`max_retries`：
 
@@ -966,8 +997,8 @@ zhipuai:
 
 ### 4.4 测试与验证（小欧）
 
-1. **timeout三层回落**：Provider设timeout=45→运行时用45；Provider不设timeout+tuning设read_timeout=80→运行时用80；Provider不设+tuning也不设→运行时用150（常量）。
-2. **max_retries三层回落**：Provider设max_retries=5→运行时重试5次；Provider不设+tuning设max_retries=8→运行时重试8次；Provider不设+tuning也不设→运行时重试3次（常量）。
+1. **timeout三层回落**：Provider设timeout=45→运行时用45；Provider不设timeout+tuning设read_timeout=80→运行时用80；Provider不设+tuning也不设→运行时用150（常量）；三档下`GET /models`返回值与运行时一致（显示即真相）。
+2. **max_retries三层回落**：Provider设max_retries=5→运行时重试5次；Provider不设+tuning.llm.stream_max_retries设8→运行时重试8次；Provider不设+tuning也不设→运行时重试3次（常量）；三档下`GET /models`返回值与运行时一致。
 3. **timeout=0合法值**：Provider设timeout=0→不被跳过，直接传入BaseAIService（极短超时场景）。
 4. **DTO类型对齐**：`PUT /providers/{name} {max_retries: 5}`直接调API，落盘成功（不再依赖retry_times别名）。
 5. **创建可设**：添加Provider弹窗填写timeout=30/max_retries=5，保存后`config.yaml`落盘对应值，`GET /models`返回所填值。
