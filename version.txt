@@ -1,4 +1,89 @@
-﻿v1.0.3
+﻿v1.0.4
+更新时间: 2026-09-22 20:28:53 - 小欧-2026-09-22
+## v1.0.3以来 变更汇总(68个commit: feat18/docs24/fix16/refactor9/test1) - 小欧-2026-09-22
+[2026-09-22 20:28:53 小欧] 范围=v1.0.3以来全部commit(共68个); 主线: [61]constants配置化迁移tuning 31键全链(后端18文件import改别名+改读配置+前端Tab/图标/分块+SSE崩溃修复)+[62]Provider-Model参数管理(P1-P8全链路含param_options四通道+弹窗+动态参数+timeout/max_retries三层回落)+设置2版UI视觉优化(令牌化+组件规范+DRY收口+死代码清理); PAR-05 E2E验证2次通过; PATCH bump v1.0.3→v1.0.4
+
+### feat(18个):
+- a6f25741e feat:settings_registry tuning schema + config.yaml 31键 - 小欧-2026-09-22
+- 130d51f0d feat:[61]constants配置化迁移: 18文件import改别名+改读tuning配置 - 小欧-2026-09-22
+- 6879cb7b2 feat:[61]tuning Tab前端: TabKey+图标+分块标识 - 小欧-2026-09-22
+- 73952de84 feat:constants.py+client.ts+vite.config.ts 前端后端端口配置化+CORS清理+第六章实施代码 - 小欧-2026-09-22
+- 27a494a35 feat:model_service.py+model_routes.py P1实现param_options三层解析+DEFAULT_PARAM_OPTIONS+_resolve_param_options+update_model合并校验白名单+DTO/key_map透传 - 小欧-2026-09-22
+- b17116b95 feat:model_service.py+model_routes.py P2实现add_model写链param_options(签名+校验+落model_meta)+POST路由透传 - 小欧-2026-09-22
+- 081febd31 feat:前端读链P3 param_options四通道透传+setParam枚举拦截(useSettings.ts/SettingsPage.tsx/types.ts/model.api.ts) - 小欧-2026-09-22
+- 0a84d8aaf feat:ModelParams.tsx+modelUtils.ts P4实现五分支渲染同value深比较(enumOpts Select/range安全转数字/boolean Switch/object TextArea/string Input+sameValue对象深比替换!==) - 小欧-2026-09-22
+- 9303f38a7 feat:ModelModals.tsx+SettingsPage.tsx+model.api.ts P5实现添加口参数模板(候选并集/勾选即带入/切Provider清空+透传范围能力选项+updateModel Pick补param_options) - 小欧-2026-09-22
+- 1662ec413 feat:model_routes.py+model.api.ts+ModelModals.tsx+ProviderConfig.tsx+SettingsPage.tsx+useSettings.ts+types.ts P6实现provider配置读写全同步(label可编辑+addProvider自定义timeout/max_retries+DTO/TS类型补max_retries落盘闭合) - 小欧-2026-09-22
+- 6fc7c844a feat:base_service.py+service.py+model_service.py+SettingsPage.tsx P7实现provider运行时timeout/max_retries三层回落全链 - 小欧-2026-09-22
+- f68b530c8 feat:model_routes.py+model_service.py+ParamOptionsModal.tsx+SettingsPage.tsx+ProviderConfig.tsx+useSettings.ts+types.ts+model.api.ts P8实现管理选项弹窗(参数区入口+param_options Tag增删+悬空默认值confirm同批回提)+Provider动态参数闭环 - 小欧-2026-09-22
+- 2e1985c31 feat:settings2 组件令牌化+弹窗规范(AboutFiles/ModelModals/SaveBar/SettingRow/SettingsGroup/icons/settingsTokens/ModelParams) - 小欧-2026-09-21
+- c7a4c4545 feat:settings2 模型Tab参数区移回②+max_retries全链路补齐+清空api_key移操作区方案C+跨Tab跳转修复 - 小欧-2026-09-21
+- 7cb8bd5e9 feat:settings2 更换模型独立弹框(ModelSwitchModal新建+CurrentModelRefCard集成+模型Tab当前系统全局使用模型行+删冗余jumpToModels) - 小欧-2026-09-21
+- 4f169bd09 feat:settings_registry 分组调整(app.language移外观+系统参数5项移通用+安全HITL+沙箱8项+标签对齐UI) - 小欧-2026-09-21
+- 8a6bc5b09 feat:settings2 useSettings+SettingsPage 模型Tab①选择器与全局model_ref解耦(切换不落盘改纯前端焦点)+删除后整体load()方案A根治悬空 - 小欧-2026-09-21
+- f7519ec13 feat:frontend settings2 关于页文件查看功能(config/version全文Modal+AboutFiles新组件集成system关于区)+BUG-F删除确认target加provider前缀 - 小强-2026-09-21
+
+### docs(24个):
+- 697be694f docs:[61]config.yaml.example加tuning组31键 - 小欧-2026-09-22
+- 0861c7a9d docs:前端后端端口关系说明帮助文档 - 小欧-2026-09-22
+- 2f7a26b2f docs:[60]设置编辑保存审计TDD修复汇总+[61]constants配置化分组设计(替[57]) - 小欧-2026-09-22
+- c00fc3b7c docs:[57]constants配置化分组设计 v1.0-v1.7 tuning八子组32键+键文件对照+实施步骤 - 小欧-2026-09-21
+- f26916f40 docs:config.yaml.example+[62]reasoning_effort根治方案 设计定稿v3.1 - 小欧-2026-09-22
+- e27547ef9 docs:[62]v3.2二轮十遍核查补漏:POST路由透参+updateModel签名 26处全覆盖 - 小欧-2026-09-22
+- 74197b255 docs:[62]v3.3新增第四章Provider参数问题(timeout兜底不一致+max_retries不消费+DTO/TS类型缺字段+addProvider缺输入) - 小欧-2026-09-22
+- 51d827889 docs:[62]v3.4 4.1补四种断链说明表 - 小欧-2026-09-22
+- 36c4f47d2 docs:[62]v3.5修正三层回落原则 - 小欧-2026-09-22
+- 9bc565e0c docs:[62]v3.6补label编辑入口+models创建说明 - 小欧-2026-09-22
+- f6255a349 docs:[62]v3.7补两个后来添加参数场景 - 小欧-2026-09-22
+- fc2c3133e docs:[62]v3.8修3冲突:tuning key正名stream_max_retries+snapshot透传+get_models显示层三层对齐 - 小欧-2026-09-22
+- f31a476b4 docs:[62]v3.9文档改名provider-model前后端读写保存显示全程同步优化 - 小欧-2026-09-21
+- 18948d733 docs:[62]v4.0补全三缺口 - 小欧-2026-09-22
+- b4983db25 docs:[62]v5.0新增第五章TDD实施流程 - 小欧-2026-09-22
+- 029f16f2a docs:[62]v5.1核查修8处 - 小欧-2026-09-22
+- 098b61c74 docs:[62]v5.2固化阶段收尾核查纪律 - 小欧-2026-09-22
+- 40935e562 docs:[61]tuning Tab顺序调整至sandbox和system之间 - 小欧-2026-09-22
+- b9c60abdd docs:[61]10遍核查修正8项 - 小欧-2026-09-22
+- ac3ddc589 docs:[61]一致性修正(v1.9合并+键数31+shell_pool8+cors去3000) - 小欧-2026-09-22
+- ecea89c61 docs:settings_registry+settings_service 设置页说明补全+派生收敛 - 小欧-2026-09-21
+- c29281089 docs:[54]设置新架构设计v4.20 模型Tab①选择器与全局model_ref解耦 - 小欧-2026-09-21
+- 1bb3cb1be docs:[58]设置2版UI视觉优化方案v1.15 参数区移回模型Tab+跨Tab跳转+flashSelector删除一致性修正 - 小欧-2026-09-21
+- fc6aebdc0 docs:[59]设置读取链路问题分析报告31真实bug三遍核实与修改方案 - 小欧-2026-09-21
+
+### fix(16个):
+- ee65f86aa fix:[61]客户端超时常量使用点漏改修复(client_sdk.py+base_service.py) - 小欧-2026-09-22
+- ce1314b46 fix:settings类型校验增强+int整数约束+范围提示+配置锁+离开守卫 - 小欧-2026-09-22
+- 52a5bb68d fix:ModelModals.tsx [62]P5 E2E-01抓真bug修复(勾选行select只写params致param_options恒空不落盘/回显无下拉,现同步带options) - 小欧-2026-09-22
+- efb410fa9 fix:useSettings+ModelActions+SettingsPage+types+modelUtils 编辑保存审计S2保脏/S5回填envOverride/S6基线回滚/S7null校验/S11mtime守卫/S12无模型提示+A3envManaged - 小强-2026-09-22
+- 163d61bb2 fix:config_helpers+settings_registry+settings_service 编辑保存审计S1textarea落盘读回/S8数值拒bool/S9LOG_LEVEL env_key/S10AI_PROVIDER接管守卫 - 小欧-2026-09-22
+- 3c7d5b8ff fix:settings_registry+settings_service+SettingRow 系统Tab收尾(paths派生fail-fast防漏配空白+记录文件两行相对模板注释互指+notice分隔符//定稿) - 小欧-2026-09-21
+- d256c7389 fix:settings2前端7问题复核修复(标题前缀/busy防连点/env接管/base_url清空/key复位) - 小强-2026-09-21
+- ec815d14f fix:.gitignore 根node_modules忽略(删根目录误建vitest缓存+防再现) - 小欧-2026-09-22
+- 9421dabe0 fix:config_helpers+resolver 三堂会审清理(删无调用方透传死函数_write_system_yaml+None陷阱or ''修复) - 小欧-2026-09-21
+- f28f06dce fix:config_service+model_service+config_schemas 三堂会审修复timeout/max_retries合法值0被吞+ProviderInfo.api_base防None - 小欧-2026-09-21
+- f9facfab4 fix:settings2 第8章核查修复7处遗漏(状态卡令牌化+S2/S3锚点滚动高亮+小字可跳+重置确认弹窗+弹窗规范⑤⑥) - 小欧-2026-09-21
+- 892e6fba5 fix:config_service+config_routes+settings_service (read_version_file关于页version全文端点+app_version去v前缀对齐health+B5 readonly项source=ro) - 小欧-2026-09-21
+- 9d010d0a8 fix:model_routes+config_helpers+model_service 建议报告P8/P18根治(空default_params清空落盘+空dict叶值yield+模型名含斜杠path转换器) - 小欧-2026-09-21
+- d711cba7f fix:useSettings ensureModelSaved错误码对齐MODEL_CONFIG_ERROR+编辑历史 - 小欧-2026-09-21
+- 37669452b fix:ProviderConfig切provider表单值跟随真修复(key上移组件层重建form实例+删内层无效key) - 小强-2026-09-21
+- a7aeb7eae fix:ProviderConfig切provider表单值跟随(Form加key重挂刷新initialValues) - 小强-2026-09-21
+
+### refactor(9个):
+- 18b7108dd refactor:SettingsPage.tsx+ParamOptionsModal.tsx+ModelModals.tsx+AboutFiles.tsx 设置页其余组件规范收口 - 小欧-2026-09-22
+- 0f8b71aef refactor:useSettings.ts 设置页hook三重DRY收口(load/refreshModels两处providerConfig构建合并buildProviderConfig公共函数,load/selectProvider/selectModel/refreshModels四处envOverride构建合并getEnvOverride,groupOfKey与saveKeys两处手写schema键归属组循环合并findGroupOfKey单纯函数,减约160行重复逻辑) - 小欧-2026-09-22
+- efe9aa3cd refactor:settingsTokens.ts+SettingRow.tsx+ProviderConfig.tsx+ModelParams.tsx 设置页行样式三组件复用收口(行容器/行label抽settingsRowStyle+settingsLabelStyle单点维护,删SettingRow内联/ProviderConfig私有ROW_STYLE+LABEL_STYLE重复实现,EXISTING_KEYS+STATIC_KEYS重复Set合并HARDCODED_KEYS,EXTRA_STYLE与保存按钮裸数字改Spacing令牌,settingsRowLayout删gap死配置) - 小欧-2026-09-22
+- 58f909aa9 refactor:ProviderConfig.tsx+ModelParams.tsx 设置页Provider配置区型号布局重构(去AntD Form改React state+flex行布局对齐SettingRow,api_key保存成功复位保留,动态字段state化闭环)+ModelParams行容器样式对齐 - 小欧-2026-09-22
+- e018869ac refactor:settingsTokens.ts+SettingRow.tsx+ModelParams.tsx+ModelModals.tsx 设置页控件宽度统一令牌化(240px族+inputNumberWidth/rangeNumberWidth+slider160改140)+参数区布局重构(renderControl分派+flex自适应+borderBottom分隔) - 小欧-2026-09-22
+- af8ed38dd refactor:切全局模型DRY收口引入configApi.switchCurrentModel唯一写链,消除Layout/CurrentModelRefCard重复装配 - 小强-2026-09-21
+- fde9e6e40 fix:顶栏Header优化(删写-only死状态/emoji换WarningOutlined/3处令牌零视觉差)+ModelSwitchModal补success检查防假成功 - 小强-2026-09-21
+- 4473bafc1 refactor:旧设置页settings1死代码全删(pages/Settings+settings组件4个+types,路由已退,测试联动本地改不进仓) - 小强-2026-09-21
+- d10f20a9a refactor:v4.20 死配置全清+键名按域收敛(白黑名单4键/chat组/contentFilter等删+app.*归域workspace/agent/logging+config.yaml.example对齐model_ref) - 小欧-2026-09-21
+
+### test(1个):
+- e17748c6a test:fre2e_08_model_paramopt_add.spec.ts [62]P5添加模型参数模板全链路E2E(预置兄弟param_options/模板区并集默认medium/勾选改high/POST body)+config落盘+回显下拉,有头验证通过10.7s - 小欧-2026-09-22
+
+---
+
+v1.0.3
 更新时间: 2026-09-21 06:41:06 - 小欧-2026-09-21
 ## v1.0.2以来 变更汇总(21个commit: feat6/docs4/fix11) - 小欧-2026-09-21
 [2026-09-21 小欧] 范围=v1.0.2以来全部commit(共21个); 主线: [55]多Session并发P0-P5实现(TDD-01~33全绿)+B/C组/A/X三堂会审缺陷修复+E组直线化收敛+PAR并行专项(E2E-PAR-01~04 case+手册第十章v2.16); PATCH bump v1.0.2→v1.0.3
