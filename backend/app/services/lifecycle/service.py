@@ -33,6 +33,7 @@ from app.logger import setup_logger
 from app.llm import BaseAIService
 from app.db.models.chat_models import ModelRef
 from app.services.lifecycle.lifecycle import close_instance_sync
+from app.config import get_config  # 新增 — 小欧 2026-09-23
 
 logger = setup_logger(__name__)
 
@@ -91,12 +92,13 @@ def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict
     """解析 provider 配置的 model_params → (extra_body_params, context_limit)
     复用优先/DRY 归一(小欧 2026-09-01): 原逻辑双份嵌在 create_service_instance(本文件) 与
     stream_orchestrator(L2 跨 provider 快照), 双份漂移风险; 归一为本函数唯一权威, 两处同用。
-    行为: 取目标 model 专属 dict, pop context_limit(配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底),
+    行为: 取目标 model 专属 dict, pop context_limit(配置优先否则 llm.context_limit_default 全局兜底),
     余量作 extra_body_params(无则 None)。与历史行为完全一致(仅去重, 不改逻辑)。"""
     from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT  # 小健 2026-08-17: 常量权威归一 agent/compaction_constants
     model_params = (provider_config or {}).get("model_params", {}) or {}
     specific_params = dict(model_params.get(model, {})) if model_params else {}
-    context_limit = specific_params.pop("context_limit", DEFAULT_CONTEXT_LIMIT)
+    # ✅ pop 缺省改读全局兜底 — 小欧 2026-09-23
+    context_limit = specific_params.pop("context_limit", get_config().get("llm.context_limit_default", DEFAULT_CONTEXT_LIMIT))
     return (specific_params or None), context_limit
 
 
@@ -116,7 +118,10 @@ def create_service_instance(provider_config: dict, final_provider: str, final_mo
         timeout=provider_config.get("timeout"),  # None=未设，BaseAIService 回落到 tuning>常量 — 小欧 [62]P7 4.3(1)a
         max_retries=provider_config.get("max_retries"),  # None=未设，BaseAIService 回落到 tuning>常量3 — 小欧 [62]P7 4.3(2)d
         max_tokens=provider_config.get("max_tokens"),
-        temperature=float(provider_config.get("temperature", 0.7)),
+        temperature=provider_config.get("temperature"),  # ✅ v1.8 死键复活：去 float(...,0.7)恒非 None，改可 None — 小欧 2026-09-23
+        top_p=provider_config.get("top_p"),  # 新增 — 小欧 2026-09-23
+        frequency_penalty=provider_config.get("frequency_penalty"),  # 新增 — 小欧 2026-09-23
+        presence_penalty=provider_config.get("presence_penalty"),  # 新增 — 小欧 2026-09-23
         seed=provider_config.get("seed", None),
         extra_body_params=extra_body_params,
         context_limit=context_limit,

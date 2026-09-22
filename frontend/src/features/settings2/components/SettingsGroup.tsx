@@ -31,6 +31,11 @@ interface Props {
 
 // 2026-09-22 小欧 - [61] tuning Tab 分块：sectionOf 加 tuning.* 前缀→8 个子组名映射
 function sectionOf(group: string, key: string): string | null {
+  // ✅ general 组加模型参数小节（仿 system/tuning 分支写法）— 小欧 2026-09-23
+  if (group === 'general') {
+    if (key.startsWith('llm.sampling.') || key === 'llm.context_limit_default') return '模型参数';
+    return null;  // 通用组其余项（workspace/logging/agent.*）保持无小节原样
+  }
   if (group === 'system') {
     // 2026-09-21 小强 - 系统Tab 3 小节：运维日志(配置+日志目录只读) / 工程目录(6 只读) / 关于
     if (key.startsWith('logging.') || key === 'paths.logs') return '运维日志';

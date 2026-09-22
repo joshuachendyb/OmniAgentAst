@@ -68,6 +68,19 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="单个任务最大执行轮数，超限结束任务"),
         _item("agent.max_steps", "int", "最大步数", 10000, range_=[1, 10000],
               notice="单任务最大执行步数，超限中止"),
+        # ✅ general 组 agent.max_steps 之后追加 6 条目 — 小欧 2026-09-23
+        _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
+              notice="LLM 采样温度，0=确定性，2=高随机（自 tuning.llm.temperature 迁入）"),
+        _item("llm.sampling.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
+              notice="LLM 单次调用最大输出 token 数（自 tuning.llm.max_tokens 迁入）"),
+        _item("llm.sampling.top_p", "float", "核采样 top_p", 1.0, range_=[0, 1],
+              notice="核采样阈值，1.0=不启用；建议与温度二选一为主控"),
+        _item("llm.sampling.frequency_penalty", "float", "频次惩罚", 0, range_=[-2, 2],
+              notice="按词频惩罚重复，0=不启用"),
+        _item("llm.sampling.presence_penalty", "float", "存在惩罚", 0, range_=[-2, 2],
+              notice="按是否出现过惩罚复述，0=不启用"),
+        _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
+              notice="model_params 未配 context_limit 时的全局缺省（256K；北京老陈拍板值域 200K~2M）"),
     ]},
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）
     "model": {"label": "模型", "items": [
@@ -229,6 +242,9 @@ OLD_KEY_MAP: Dict[str, str] = {
     "app.language": "language",
     "workspace.project_root": "project_root",
     "ai.model_ref": "ai_model_ref",
+    # ✅ 迁入映射（旧 yaml 值带入，不留双源）— 小欧 2026-09-23
+    "tuning.llm.temperature": "llm.sampling.temperature",
+    "tuning.llm.max_tokens": "llm.sampling.max_tokens",
 }
 # v4.17 修正：安全 10 项全部逐键走通用 region 合并（security.* 逐行 merge，防整块覆盖丢键）。
 # 原 SECURITY_KNOWN 整块写 ConfigUpdate.security 的方案撤销——整块替换会覆盖未识别键造成丢数据。

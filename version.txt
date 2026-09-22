@@ -1,4 +1,15 @@
-﻿v1.0.4
+﻿v1.0.5
+更新时间: 2026-09-23 05:23:13 - 小欧-2026-09-23
+## v1.0.4以来 变更汇总(2个commit: docs1/feat1) - 小欧-2026-09-23
+[2026-09-23 05:23:13 小欧] 范围=v1.0.4以来全部commit(共2个); 主线: [64]LLM补充采样参数设置说明全文核查纠错+[64]TDD红→绿全链路实现(top_p/frequency_penalty/presence_penalty三参+context_limit_default全局兜底+OLD_KEY_MAP迁移+前端模型参数小节+config落盘); 28个TDD测试全绿+43个回归测试无退化; MINOR bump v1.0.4→v1.0.5
+
+### docs(1个):
+- 9dc620d4b docs:[64]LLM补充采样参数设置说明 全文核查纠错 - 小欧-2026-09-23
+
+### feat(1个):
+- feat:[64]LLM采样参数TDD红→绿全链: client_sdk三参+base_service兜底+service透传+settings_registry6条目+OLD_KEY_MAP+前端sectionOf+config落盘 - 小欧-2026-09-23
+
+### v1.0.4
 更新时间: 2026-09-22 20:28:53 - 小欧-2026-09-22
 ## v1.0.3以来 变更汇总(68个commit: feat18/docs24/fix16/refactor9/test1) - 小欧-2026-09-22
 [2026-09-22 20:28:53 小欧] 范围=v1.0.3以来全部commit(共68个); 主线: [61]constants配置化迁移tuning 31键全链(后端18文件import改别名+改读配置+前端Tab/图标/分块+SSE崩溃修复)+[62]Provider-Model参数管理(P1-P8全链路含param_options四通道+弹窗+动态参数+timeout/max_retries三层回落)+设置2版UI视觉优化(令牌化+组件规范+DRY收口+死代码清理); PAR-05 E2E验证2次通过; PATCH bump v1.0.3→v1.0.4

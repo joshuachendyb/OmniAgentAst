@@ -53,6 +53,9 @@ def _build_request_body(
     model: str,
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
+    top_p: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+    frequency_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+    presence_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
     seed: Optional[int] = None,
     tools: Optional[List[Dict]] = None,
     tool_choice: Optional[str] = None,
@@ -69,6 +72,13 @@ def _build_request_body(
         body["temperature"] = temperature
     if seed is not None:
         body["seed"] = seed
+    # ✅ 仿 seed 现写法：None 即不拼（旁路），有值才拼 — 小欧 2026-09-23
+    if top_p is not None:
+        body["top_p"] = top_p
+    if frequency_penalty is not None:
+        body["frequency_penalty"] = frequency_penalty
+    if presence_penalty is not None:
+        body["presence_penalty"] = presence_penalty
     if stream:
         body["stream"] = True
         if stream_options is not None:
@@ -183,6 +193,9 @@ class LLMClient:
         tool_choice: str = "auto",
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        top_p: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+        frequency_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+        presence_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
         seed: Optional[int] = None,
         extra_body: Optional[Dict] = None,
         request_timeout: Optional[int] = None,  # #37 fix: per-request timeout — 小欧 2026-07-18
@@ -190,7 +203,9 @@ class LLMClient:
         """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body; #37 新增request_timeout"""
         body = _build_request_body(
             messages=messages, model=self.llm_model.model,   # 裸单值调API(设计要求4允许) — 小欧 2026-08-22
-            max_tokens=max_tokens, temperature=temperature, seed=seed,
+            max_tokens=max_tokens, temperature=temperature, top_p=top_p,  # 新增 — 小欧 2026-09-23
+            frequency_penalty=frequency_penalty, presence_penalty=presence_penalty,  # 新增 — 小欧 2026-09-23
+            seed=seed,
             tools=tools, tool_choice=tool_choice, stream=False,
             extra_body=extra_body,
         )
@@ -227,6 +242,9 @@ class LLMClient:
         tool_choice: str = "auto",
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
+        top_p: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+        frequency_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+        presence_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
         seed: Optional[int] = None,
         stream_options: Optional[Dict] = None,
         request_timeout: Optional[int] = None,
@@ -235,7 +253,9 @@ class LLMClient:
         """流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小健 2026-06-17 新增stream_options; 小欧 2026-07-09 新增extra_body"""
         body = _build_request_body(
             messages=messages, model=self.llm_model.model,   # 裸单值调API(设计要求4允许) — 小欧 2026-08-22
-            max_tokens=max_tokens, temperature=temperature, seed=seed,
+            max_tokens=max_tokens, temperature=temperature, top_p=top_p,  # 新增 — 小欧 2026-09-23
+            frequency_penalty=frequency_penalty, presence_penalty=presence_penalty,  # 新增 — 小欧 2026-09-23
+            seed=seed,
             tools=tools, tool_choice=tool_choice, stream=True,
             stream_options=stream_options,
             extra_body=extra_body,

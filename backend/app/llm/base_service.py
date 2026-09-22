@@ -108,17 +108,30 @@ class BaseAIService:
         max_retries: Optional[int] = None,  # None=未设，回落到tuning>常量 — 小欧 [62]P7 4.3(2)a
         max_tokens: Optional[int] = None,
         temperature: float = None,
+        top_p: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+        frequency_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
+        presence_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
         seed: Optional[int] = None,
         extra_body_params: Optional[Dict] = None,
         context_limit: Optional[int] = None,
         shared_client: Optional["httpx.AsyncClient"] = None,  # C1: 共享连接池, 快照复用不 new(仅在 snapshot 构造时传)
     ):
         if temperature is None:
-            temperature = get_config().get("tuning.llm.temperature", _D_TEMPERATURE)
+            temperature = get_config().get("llm.sampling.temperature", _D_TEMPERATURE)  # tuning.llm.temperature → llm.sampling.temperature — 小欧 2026-09-23
         self.api_key = api_key
         self.llm_model = llm_model   # 归一唯一模型身份结构(provider+model+api_base) — 小欧 2026-08-22
-        self.max_tokens = max_tokens if max_tokens is not None else get_config().get("tuning.llm.max_tokens", _D_MAX_TOKENS)
+        self.max_tokens = max_tokens if max_tokens is not None else get_config().get("llm.sampling.max_tokens", _D_MAX_TOKENS)  # 同上迁移 — 小欧 2026-09-23
         self.temperature = temperature
+        # ✅ 仿 max_tokens 分支（L120）— 小欧 2026-09-23
+        if top_p is None:
+            top_p = get_config().get("llm.sampling.top_p", 1.0)
+        if frequency_penalty is None:
+            frequency_penalty = get_config().get("llm.sampling.frequency_penalty", 0)
+        if presence_penalty is None:
+            presence_penalty = get_config().get("llm.sampling.presence_penalty", 0)
+        self.top_p = top_p  # 已兜底全局后的定值
+        self.frequency_penalty = frequency_penalty
+        self.presence_penalty = presence_penalty
         self.seed = seed
         # 默认开启 thinking 模式；配置文件传参可覆盖（如 chat_template_kwargs.enable_thinking: false 可关）— 小欧 2026-07-26
         # 2026-08-06 小欧 合并而非替换: 顶层键用户覆盖优先, chat_template_kwargs 层深合并保 enable_thinking:True 兜底
@@ -188,6 +201,9 @@ class BaseAIService:
             max_retries=self.max_retries,  # [62]P7 4.3(2)c：快照常切跨 provider 模型，不传则丢 provider 定制值 — 小欧 2026-09-22
             max_tokens=self.max_tokens,
             temperature=self.temperature,
+            top_p=self.top_p,  # 新增 — 小欧 2026-09-23
+            frequency_penalty=self.frequency_penalty,  # 新增 — 小欧 2026-09-23
+            presence_penalty=self.presence_penalty,  # 新增 — 小欧 2026-09-23
             seed=self.seed,
             extra_body_params=extra_body_params
             if extra_body_params is not None else self.extra_body_params,
@@ -272,6 +288,9 @@ class BaseAIService:
                 tool_choice=tool_choice,
                 max_tokens=self.max_tokens,
                 temperature=self.temperature,
+                top_p=self.top_p,  # 新增 — 小欧 2026-09-23
+                frequency_penalty=self.frequency_penalty,  # 新增 — 小欧 2026-09-23
+                presence_penalty=self.presence_penalty,  # 新增 — 小欧 2026-09-23
                 seed=self.seed,
                 extra_body=self.extra_body_params,
             )
@@ -333,6 +352,9 @@ class BaseAIService:
                     tool_choice=tool_choice,
                     max_tokens=self.max_tokens,
                     temperature=self.temperature,
+                    top_p=self.top_p,  # 新增 — 小欧 2026-09-23
+                    frequency_penalty=self.frequency_penalty,  # 新增 — 小欧 2026-09-23
+                    presence_penalty=self.presence_penalty,  # 新增 — 小欧 2026-09-23
                     seed=self.seed,
                     stream_options=stream_options,
                     request_timeout=effective_timeout,

@@ -111,6 +111,16 @@ sandbox:
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
 
+# ============ 本次新增：顶层 llm 域（模型无关通用，UI=设置→通用）— 小欧 2026-09-23 ============
+llm:
+  sampling:                   # A类 采样/生成控制（5 键）
+    temperature: 0.7          # 迁入：自 tuning.llm.temperature
+    max_tokens: 16384         # 迁入：自 tuning.llm.max_tokens
+    top_p: 1.0                # 新增：核采样阈值，1.0=不启用
+    frequency_penalty: 0      # 新增：频次重复惩罚
+    presence_penalty: 0       # 新增：话题重复惩罚
+  context_limit_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
+
 # 调优配置（[61] constants.py 配置化迁移，31 键，前端「调优」Tab 展示）
 tuning:
   # LLM 语义参数（7 键）
