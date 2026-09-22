@@ -1,7 +1,7 @@
 # [62]provider/model前后端读写保存显示全程同步优化
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 15:12:36（小欧）
+**更新时间**: 2026-09-22 15:23:28（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -36,6 +36,7 @@
 - v3.9 2026-09-22 14:58:18 小欧 文档改名：reasoning_effort类型错乱根因分析与SSOT根治方案→provider/model前后端读写保存显示全程同步优化（内容覆盖已超单点bug，改名贴合全貌；标题H1同步）
 - v4.0 2026-09-22 15:06:24 小欧 补全三缺口：①4.3(9)动态参数读-写-存-显闭环（值随GET /models下发+types/useSettings透传+doSave收集+DTO extra='allow'+param_types白名单防注入）；②4.3(8)删选项致默认值悬空处理（同批回提default_params重置为首项，复用3.1(2)同批合并校验）；③4.4补第8/9条model级运行时消费验证（parse_model_params单测+真实LLM请求体）
 - v5.0 2026-09-22 15:12:36 小欧 新增第五章TDD实施流程：5.1铁律+5.2要点↔Case覆盖矩阵（2.6十八行+4.x全映射）+5.3 Case清单（9新4改2回归2E2E）+5.4分九阶段实施计划（第2/3/4章diff台账一个不漏，红→绿→验证门）+5.5手工清单+5.6失败处理
+- v5.1 2026-09-22 15:23:28 小欧 三轮核查修8处：①3.1(6)从P1移P2（POST路由依赖add_model签名，不能跨阶段）；②FF-04从P8移P6（快照须与ProviderConfig改动同阶段）；③BY-05补get_models显示值断言；④P5拆3.3(2)为Props+handleAddModel两行；⑤P8拆4.3(9)-2为四个文件行；⑥P8拆4.3(9)-3为import+DTO两行；⑦P6/P7标题加"含前端"；⑧BY-07断言明确为GET /models字段值
 
 ---
 
@@ -1218,9 +1219,9 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 | BY-02 | 同上 | `test_add_model_param_options` | 现状`add_model`无param_options形参→签名缺失即红 | 带options新建→`model_meta.{model}.param_options`落盘；round-trip `GET /models`读回；非法选项表/`0`值→400弹窗不关；POST路由层透传 |
 | BY-03 | 同上 | `test_param_options_provider_roundtrip` | `update_provider_config` key_map无param_options→PUT不落盘即红 | `PUT /providers/{name} {param_options:{...}}`→`ai.{provider}.param_options`落盘+读回；与模型级同校验 |
 | BY-04 | 同上 | `test_timeout_three_tier` | 现状timeout=0被当falsy跳过、get_models兜底60≠150 | Provider设45→45；不设+tuning 80→80；不设+tuning无→150；timeout=0合法直传；三档`GET /models`显示值=运行时值 |
-| BY-05 | 同上 | `test_max_retries_three_tier` | 现状base_service无max_retries参数→None即红 | Provider 5→`self.max_retries=5`；不设+tuning.llm.stream_max_retries 8→8；不设无→3；`snapshot()`结果max_retries一致；`request_stream`用self.max_retries |
+| BY-05 | 同上 | `test_max_retries_three_tier` | 现状base_service无max_retries参数→None即红 | Provider 5→`self.max_retries=5`；不设+tuning.llm.stream_max_retries 8→8；不设无→3；`snapshot()`结果max_retries一致；`request_stream`用self.max_retries；**三档`GET /models`返回的`max_retries`值=三层回落后实际值**（显示即真相，与BY-04同构） |
 | BY-06 | 同上 | `test_provider_config_dto_align` | DTO缺max_retries、label——直接PUT断言 | `PUT /providers/{name} {max_retries:5}`落盘（不再靠retry_times别名）；`{label:"新名"}`落盘并读回；`evil_key:1`→400白名单拒绝 |
-| BY-07 | 同上 | `test_add_provider_fields` | addProvider DTO/服务无timeout/max_retries | 创建带timeout=30/max_retries=5→`config.yaml`落盘→`GET /models`读回30/5 |
+| BY-07 | 同上 | `test_add_provider_fields` | addProvider DTO/服务无timeout/max_retries | 创建带timeout=30/max_retries=5→`GET /models`的`providers[].timeout=30, .max_retries=5`（显示即真相）；`config.yaml`文件落盘对应值 |
 | BY-08 | 同上 | `test_parse_model_params_runtime` | 无此单测 | `model_params.{m}.reasoning_effort="high"`→`extra_body_params`含字符串`"high"`（非数字）；context_limit弹出不伤余量；无model_params→`extra_body_params=None` |
 | BY-09 | 同上 | `test_param_types_whitelist` | 无白名单概念→`evil_key`未拒绝 | `get_models` Provider段含`param_types`+动态标量值（rate_limit:10）；`PUT {evil_key:1}`→400；`{rate_limit:20}`→落盘读回20 |
 
@@ -1251,7 +1252,6 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 | 改 | 三、3.1(2) `model_service.py update_model`：合并新options再校验（先合并→allowed→逐k校验）+`unknown`白名单加`param_options`+落`model_meta` |
 | 改 | 三、3.1(3) `model_routes.py`：`ModelCreateRequest`/`ModelUpdateRequest`各加`param_options: Optional[Dict[str,List[str]]]=None` |
 | 改 | 三、3.1(4) `model_service.py key_map`：加`"param_options": "param_options"` |
-| 改 | 三、3.1(6) `model_routes.py` POST路由：`add_model(..., req.param_options)` |
 | 验 | BY-01 绿 + RG-01 不破 + 手工：sensenova开关参数区有下拉 |
 
 **阶段P2 · 第3章后端写链（红：BY-02）**
@@ -1259,6 +1259,7 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 | 步骤 | diff清单 |
 |---|---|
 | 改 | 三、3.1(5) `add_model`签名加`param_options`+选项表校验（非空string[]/默认值在表内/0拒）+`tree`写`model_meta.{model}.param_options` |
+| 改 | 三、3.1(6) `model_routes.py` POST路由：`add_model(..., req.param_options)`（3.1(5)签名已就位，本步骤透传才安全） |
 | 验 | BY-02 绿（含POST路由层透传断言）+ RG-01 + 手工：POST /models带options落盘yaml可见 |
 
 **阶段P3 · 第3章前端读链（红：FF-02，前置FF-01）**
@@ -1286,11 +1287,12 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 |---|---|
 | 改 | 三、3.2(7) `model.api.ts updateModel` Pick 加`'param_options'` |
 | 改 | 三、3.3(1) `ModelModals.tsx` 模板区：`sibModels`/`candKeys`（default_params∪param_options &&）/`checked`/`collected` state/切Provider重算清空/勾选行控件（select/InputNumber/Input+默认值取兄弟）/成功后重置 |
-| 改 | 三、3.3(2) `ModelModals.tsx` Props`onSubmitAddModel`加`range?/capabilities?/param_options?`+`handleAddModel`透传`collected.params/options`；`SettingsPage.tsx:360-367` addModel透传range/capabilities/param_options；`model.api.ts addModel`入参加`param_options?` |
+| 改 | 三、3.3(2)-a `ModelModals.tsx:26-31` Props `onSubmitAddModel`加`range?/capabilities?/param_options?`（TS类型改，须先于handleAddModel） |
+| 改 | 三、3.3(2)-b `ModelModals.tsx:63-80` `handleAddModel`透传`collected.params/options`；`SettingsPage.tsx:360-367` addModel透传range/capabilities/param_options；`model.api.ts addModel`入参加`param_options?` |
 | 改 | 三、3.3(4) `useSettings.ts refreshModels(select)` 补回显`paramOptions` |
 | 验 | E2E-01 添加口径（表单→POST→落盘→回显下拉）+ RG-02 |
 
-**阶段P6 · 第4章 provider读写（红：BY-06/BY-07）**
+**阶段P6 · 第4章 provider读写-含前端（红：BY-06/BY-07）**
 
 | 步骤 | diff清单 |
 |---|---|
@@ -1299,9 +1301,10 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 | 改 | 四、4.3(5) `model.api.ts addProvider`加`timeout?/max_retries?`；`ModelModals.tsx` Props`onSubmitAddProvider`加两字段+弹窗表单两`InputNumber`（timeout min1默认60占位/max_retries min0默认3占位） |
 | 改 | 四、4.3(6) 四文件联动label：`types.ts` providerConfig加`label:string`；`useSettings.ts` load构建加`label:p.label`；`SettingsPage.tsx:278-284` fallback加`label:''`；`ProviderConfig.tsx` Props/doSave/表单label输入框 |
 | 改 | 四、4.3(7) 无代码（models创建走模型管理区UI） |
-| 验 | BY-06/BY-07 绿 + RG-01 + 手工：改label保存→配置区即变+重拉仍新名 |
+| 修 | FF-04：前端快照/断言同步（max_retries/label新增字段后，任何硬编码60、缺label的mock对象断言+ProviderConfig/ModelParams快照更新） |
+| 验 | BY-06/BY-07 绿 + RG-01 + RG-02（含快照更新核对） + 手工：改label保存→配置区即变+重拉仍新名 |
 
-**阶段P7 · 第4章 provider运行时（红：BY-04/BY-05，含FF-03对齐）**
+**阶段P7 · 第4章 provider运行时-含前端（红：BY-04/BY-05，含FF-03对齐）**
 
 | 步骤 | diff清单 |
 |---|---|
@@ -1322,10 +1325,16 @@ KNOWN_PROVIDER_KEYS = {"name", "api_base", "api_key", "env", "models", "param_ty
 |---|---|
 | 改 | 四、4.3(8) `SettingsPage.tsx` 参数区标题行加"管理选项"链接（`paramOptions`非空才现）+`types.ts ModelState`加`paramOptionsModalOpen`+新建`ParamOptionsModal.tsx`（Tag展示/添加/删除/保存前校验非空/悬空值`Modal.confirm`同批回提`default_params`重置首项，复用3.1(2)同批合并） |
 | 改 | 四、4.3(9)-1 `model_service.py` 常量区`PROVIDER_PARAM_TYPES`+`KNOWN_PROVIDER_KEYS` |
-| 改 | 四、4.3(9)-2 `get_models` Provider段加`param_types`+动态标量值透传；`model.api.ts ProviderEntry`加`param_types?`；`types.ts providerConfig`加`[key:string]:unknown`；`useSettings.ts load`动态值照抄透传 |
-| 改 | 四、4.3(9)-3 `ProviderConfig.tsx` doSave动态收集循环+渲染区（initialValues天然回填）；`model_routes.py:17` import补`ConfigDict`+`ProviderConfigUpdate`加`model_config=ConfigDict(extra='allow')`；`update_provider_config` param_types白名单+动态字段落盘 |
+| 改 | 四、4.3(9)-2-a `model_service.py get_models` Provider段加`param_types: PROVIDER_PARAM_TYPES`+动态标量值透传 |
+| 改 | 四、4.3(9)-2-b `model.api.ts ProviderEntry` 加`param_types?: Record<...>` |
+| 改 | 四、4.3(9)-2-c `types.ts providerConfig` 每条加`[key:string]:unknown`动态索引 |
+| 改 | 四、4.3(9)-2-d `useSettings.ts load` 构建providerConfig时动态值照抄透传（跳过已具名键） |
+| 改 | 四、4.3(9)-3-a `model_routes.py:17` import补`ConfigDict`（`from pydantic import BaseModel, ConfigDict, Field`） |
+| 改 | 四、4.3(9)-3-b `ProviderConfigUpdate` 加`model_config = ConfigDict(extra='allow')`（静态字段仍强类型，动态字段放行） |
+| 改 | 四、4.3(9)-3-c `ProviderConfig.tsx` doSave动态收集循环（遍历param_types非静态keys，`values[k]!==undefined`送patch）+渲染区（initialValues天然回填） |
+| 改 | 四、4.3(9)-3-d `model_service.py update_provider_config` param_types白名单（`PROVIDER_PARAM_TYPES`为界，不在表内拒绝）+动态字段落盘 |
 | 改 | 四、4.3(9)-4 落盘走`merge_nested_patch`（复用，无新增） |
-| 验 | BY-09/FF-03/FF-04 绿 + RG + 手工：管理选项加xhigh→下拉即现；rate_limit改20→重拉20；evil_key 400 |
+| 验 | BY-09 绿 + RG + 手工：管理选项加xhigh→下拉即现；rate_limit改20→重拉20；evil_key 400 |
 
 **阶段P9 · model级运行时验证（红：BY-08，E2E-01扩展LLM断言）**
 
