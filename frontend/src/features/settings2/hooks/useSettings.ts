@@ -80,6 +80,9 @@ function buildProviderConfig(
         timeout: p.timeout,
         max_retries: p.max_retries,
         env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
+        // 2026-09-22 小欧 修 [62]P8 遗漏：param_types 元数据未透传 → ProviderConfig 动态渲染区
+        //   永远为空（rate_limit 无「速率限制」行）。补透传，E2E-02 实测复现（E2E 浏览器验证）。
+        param_types: p.param_types,
         // [62]P8 4.3(9)-2-d：动态参数值透传（rate_limit 等）——跳过已具名键 + 元数据 + 列表类，其余标量照抄
         ...Object.fromEntries(
           Object.entries(p as unknown as Record<string, unknown>).filter(
