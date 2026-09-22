@@ -138,7 +138,7 @@ class LLMClient:
         # _default_base_url 返回空串致 httpx base_url 为空; 当前可达路径虽恒非空, 防御不弱化)
         self._base_url = llm_model.api_base or self._default_base_url(llm_model.provider or "openai")
 
-        read_timeout = float(timeout) if timeout else DEFAULT_READ_TIMEOUT
+        read_timeout = float(timeout) if timeout else _D_READ_TIMEOUT
         self._default_timeout = read_timeout
         self._owns_client = shared_client is None   # 真连接池仅全局单例持有, 快照共享不重复建 — 小欧-2026-09-20
         self._current_response: Optional[httpx.Response] = None  # C-1(小欧 2026-09-20): 在飞流式HTTP响应, 供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
@@ -147,10 +147,10 @@ class LLMClient:
         else:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(
-                    connect=DEFAULT_CONNECT_TIMEOUT,
+                    connect=_D_CONNECT_TIMEOUT,
                     read=read_timeout,
-                    write=DEFAULT_WRITE_TIMEOUT,
-                    pool=DEFAULT_POOL_TIMEOUT,
+                    write=_D_WRITE_TIMEOUT,
+                    pool=_D_POOL_TIMEOUT,
                 ),
                 limits=httpx.Limits(
                     max_connections=get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS),
@@ -243,12 +243,12 @@ class LLMClient:
         # 结构化超时: request_timeout 仅作用于 read 阶段, connect/write/pool 独立固定。
         # 避免浮点标量将四者全部拉长 (浮点标量 = 全阶段统一值, 会误将 connect 也拉长至 90+秒)。
         # request_timeout 由 base_service 传入 (provider.timeout + 重试递增),
-        # 未显式传入时用 DEFAULT_READ_TIMEOUT 兜底 — 小欧 2026-07-13
+        # 未显式传入时用 _D_READ_TIMEOUT 兜底 — 小欧 2026-07-13
         _timeout = httpx.Timeout(
-            connect=DEFAULT_CONNECT_TIMEOUT,
-            read=float(request_timeout) if request_timeout is not None else DEFAULT_READ_TIMEOUT,
-            write=DEFAULT_WRITE_TIMEOUT,
-            pool=DEFAULT_POOL_TIMEOUT,
+            connect=_D_CONNECT_TIMEOUT,
+            read=float(request_timeout) if request_timeout is not None else _D_READ_TIMEOUT,
+            write=_D_WRITE_TIMEOUT,
+            pool=_D_POOL_TIMEOUT,
         )
         _acquired = False
         _sem = _get_soft_pool_semaphore()

@@ -297,8 +297,8 @@ class BaseAIService:
         self._ensure_client()
 
         retry_count = 0
-        max_retries = LLM_STREAM_MAX_RETRIES
-        stream_options = LLM_STREAM_OPTIONS
+        max_retries = _D_STREAM_MAX_RETRIES
+        stream_options = _D_STREAM_OPTIONS
 
         # ======== 系统层HTTP请求重试（真正的重试逻辑）========
         # 同一个 LLM 调用（llm_call_count 不变），HTTP请求超时/断连时自动重新发送。
@@ -313,7 +313,7 @@ class BaseAIService:
                 usage_data = None
                 _truncated = False  # #34 fix: 超时截断标记 — 小欧 2026-07-18
                 tool_call_streaming_start = None
-                deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
+                deadline = time.monotonic() + _D_STREAM_TOTAL_TIMEOUT
                 finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
@@ -339,7 +339,7 @@ class BaseAIService:
                     # LLM 持续流式返回 tool_call delta 时字节不断到达, read timeout 永不触发。
                     # 此处用 wall-clock deadline 做总时长保护, 超时 break→accumulator→截断修复。
                     if time.monotonic() > deadline:
-                        logger.warning(f"[request_stream] 流调用总时长超时({STREAM_TOTAL_TIMEOUT}s), 截断已累积数据")
+                        logger.warning(f"[request_stream] 流调用总时长超时({_D_STREAM_TOTAL_TIMEOUT}s), 截断已累积数据")
                         _truncated = True  # #34 fix — 小欧 2026-07-18
                         break
 
@@ -383,7 +383,7 @@ class BaseAIService:
                     # 首次检测到 tool_call delta 时开始计时, 超时 break→accumulator→截断修复。
                     if tc_data and tool_call_streaming_start is None:
                         tool_call_streaming_start = time.monotonic()
-                    if tool_call_streaming_start and (time.monotonic() - tool_call_streaming_start) > STREAM_TOTAL_TIMEOUT * 3 // 5:
+                    if tool_call_streaming_start and (time.monotonic() - tool_call_streaming_start) > _D_STREAM_TOTAL_TIMEOUT * 3 // 5:
                         logger.warning(f"[request_stream] tool_call参数流式已持续{time.monotonic()-tool_call_streaming_start:.0f}s, 强制截断")
                         break
 
