@@ -11,6 +11,9 @@
 //   default_params∪param_options key 并集；勾选即带入默认值（兄弟default_params，reasoning_effort→medium兜底），
 //   控件按 opts→Select/数字→InputNumber/其他→Input；切Provider重算清空；成功重置。
 //   Props onSubmitAddModel 加 range?/capabilities?/param_options?；handleAddModel 透传 collected.{params,options}
+// 2026-09-22 小欧 - [62]P5 E2E-01 抓真bug修复：勾选行有兄弟 param_options 时, 仅写 collected.params 而 options 恒空
+//   → handleAddModel 的 param_options 永远空 → 新模型 model_meta 不落 options → 回显无下拉。
+//   修复：勾选时若 opts 存在同步带 options[key]=opts, 取消则删（POST 体含 param_options + config.yaml 落盘 + 回显下拉验证通过）
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -220,14 +223,18 @@ export const ModelModals: React.FC<Props> = (props) => {
                         const next = { ...checked, [key]: e.target.checked };
                         setChecked(next);
                         const params = { ...collected.params };
+                        const options = { ...collected.options };
                         if (e.target.checked) {
                           // 勾选即带入当前默认值（不含则保持未送）
                           if (defaultVal !== undefined)
                             params[key] = defaultVal;
+                          // 兄弟有枚举则一并带入新模型（回显下拉）
+                          if (opts) options[key] = opts;
                         } else {
                           delete params[key];
+                          delete options[key];
                         }
-                        setCollected({ ...collected, params });
+                        setCollected({ ...collected, params, options });
                       }}
                     >
                       {key}
