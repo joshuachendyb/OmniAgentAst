@@ -11,6 +11,10 @@
    2026-09-21 - 小欧 - 建议报告 P18: PUT/DELETE /models/{provider}/{model} 路由 model 参数改 :path 转换器——
      FastAPI 单段 path 参数对模型名含 '/'（真实 z-ai/glm-4.7, moonshotai/kimi-k2）先解码再分断必然 404，
      改贪婪吞余段后含斜杠模型名可更新/删除
+   2026-09-22 - 小欧 - [62]P1/P2 param_options 读写链落地：P1 ModelCreateRequest/ModelUpdateRequest 各加
+     param_options: Optional[Dict[str,List[str]]]=None（Pydantic 不声明即丢字段，老前端不送也不报错）；
+     P2 POST /models 路由 add_model 调用透传 req.param_options（5 位置参→7 位置参，防 param_options 形参
+     永远拿 None 静默丢）。PUT 路由无需改——model_dump(exclude_none=True) 自动含 param_options。
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter

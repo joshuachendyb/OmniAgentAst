@@ -29,6 +29,7 @@
 //   ⑤添加/删除/Provider 保存失败不关窗并 rethrow（弹窗保留输入）；⑥添加 Provider toast 引导切换；
 //   ⑦jumpToProviderConfig 走脏确认闸口+保存后滚动锚点；⑧删模型Tab①"当前系统全局使用模型"冗余行
 // 2026-09-22 小强 - A3：ModelActions 传 envManaged（provider env 接管时隐藏「清空 api_key」，后端拒 clear）
+// 2026-09-22 小欧 - [62]P3：ModelParams 传 options={state.model.paramOptions}（读链末端：state→组件；P4 才消费渲染 Select）
 import React, { useState } from 'react';
 import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -266,6 +267,7 @@ const SettingsPage: React.FC = () => {
         params={state.model.params}
         defaults={state.model.defaults}
         ranges={state.model.ranges}
+        options={state.model.paramOptions}
         envOverride={state.model.envOverride}
         onChange={s.setParam}
       />

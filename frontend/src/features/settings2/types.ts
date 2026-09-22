@@ -2,6 +2,8 @@
 // 2026-09-21 小欧 - providerConfig 类型补 max_retries（对齐 ProviderConfig 表单 + 后端 GET /models 返回）
 // 2026-09-21 小强 - 删死 TabKey 'chat'：后端注册表已整体删除 chat 组（GROUP_ORDER 6 组），前端与之对齐
 // 2026-09-22 小强 - SettingsState 增 baseline（纯服务端值快照）：供 S6 改回原值撤销脏标记/S2 load 保留缓冲
+// 2026-09-22 小欧 - [62]P3 ModelState 补 paramOptions: Record<string,string[]>（UI 层三选项表，
+//   由 useSettings 四通道从 ModelEntry.param_options 透传，参数区枚举下拉数据源）
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -28,6 +30,7 @@ export interface ModelState {
   params: Record<string, unknown>;
   defaults: Record<string, unknown>;
   ranges: Record<string, { min: number; max: number }>;
+  paramOptions: Record<string, string[]>;
   envOverride: Record<string, boolean>;
   providerConfig: Record<
     string,

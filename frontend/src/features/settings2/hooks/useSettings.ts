@@ -23,6 +23,9 @@
 // 2026-09-22 小强 - 31候选 #22/#17/#15 修复：①load catch 去重（全页 Result 唯一通道，不再叠 toast）；
 //   ②saveKeys 后端 errors 首 token 命中 schema 键 → setHighlightKeyTtl 红框定位；③beforeunload 离开守卫
 //   （脏态下拦截刷新/关闭，对齐 chat useBeforeUnload 语义）
+// 2026-09-22 小欧 - [62]P3 param_options 读链：initialModel 加 paramOptions:{}；
+//   load/selectProvider/selectModel/refreshModels 四处通道补 paramOptions 透传（源 current/first/entry/m.param_options）；
+//   setParam 加枚举拦截（opts.includes(value) 不中 → WARNING+return，禁非法枚举写 state）。P4 将消费渲染 Select。
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -66,6 +69,7 @@ const initialModel = () => ({
   params: {},
   defaults: {},
   ranges: {},
+  paramOptions: {},
   envOverride: {},
   providerConfig: {},
   isDirty: false,
@@ -237,6 +241,9 @@ export function useSettings() {
                   string,
                   { min: number; max: number }
                 >),
+              },
+              paramOptions: {
+                ...((current?.param_options ?? {}) as Record<string, string[]>),
               },
               envOverride,
               providerConfig,
@@ -639,6 +646,9 @@ export function useSettings() {
             { min: number; max: number }
           >),
         },
+        paramOptions: {
+          ...((first?.param_options ?? {}) as Record<string, string[]>),
+        },
         // S5：切到 env 接管 provider 时参数区整体禁用（后端拒保存）
         envOverride:
           (p.env ?? false)
@@ -669,6 +679,10 @@ export function useSettings() {
         string,
         { min: number; max: number }
       >;
+      const nextOptions = { ...(entry.param_options ?? {}) } as Record<
+        string,
+        string[]
+      >;
       // 参数已随 ensureModelSaved 落库，新模型按默认值展示，无残留脏态/幽灵参数
       const providerEntry = state.model.providers.find(
         (x) => x.name === state.model.selectedProvider
@@ -678,6 +692,7 @@ export function useSettings() {
         params: { ...nextDefaults },
         defaults: nextDefaults,
         ranges: nextRanges,
+        paramOptions: nextOptions,
         // S5：选中 provider 为 env 接管时同步禁用其参数区
         envOverride:
           (providerEntry?.env ?? false)
@@ -699,6 +714,15 @@ export function useSettings() {
     (key: string, value: unknown) => {
       if (state.model.envOverride[key]) return;
       const range = state.model.ranges[key];
+      // [62]P3 param_options 枚举拦截：字符串参数有选项表时，值必须在表内，否则拒绝并提示
+      const opts = state.model.paramOptions[key];
+      if (opts && !opts.includes(value as string)) {
+        showMessage(
+          ErrorType.WARNING,
+          `参数 ${key} 为非法选项，允许：${opts.join('/')}`
+        );
+        return;
+      }
       const clamped =
         typeof value === 'number' && range ? clampToRange(value, range) : value;
       if (typeof value === 'number' && range && clamped !== value) {
@@ -724,7 +748,7 @@ export function useSettings() {
         };
       });
     },
-    [state.model.envOverride, state.model.ranges]
+    [state.model.envOverride, state.model.ranges, state.model.paramOptions]
   );
 
   const resetParams = useCallback(() => {
@@ -768,6 +792,9 @@ export function useSettings() {
               defaults,
               ranges: {
                 ...(m.range as Record<string, { min: number; max: number }>),
+              },
+              paramOptions: {
+                ...((m.param_options ?? {}) as Record<string, string[]>),
               },
               // S5：目标 provider env 接管时禁用其参数区
               envOverride:

@@ -2,6 +2,8 @@
 // 编辑历史: 2026-09-21 小强 - deleteProvider 返回类型补齐 mtime(ModelMutationResult, 与 deleteModel 同构、后端同样返回 mtime)，消除表单 union 后 res.mtime 的 TS 报错 — 小强-2026-09-21
 // 2026-09-21 小欧 - P0-9：addProvider 参数扩 api_key（[58] P0-9）
 // 2026-09-21 小欧 - ProviderEntry 补 max_retries 字段（对齐后端 GET /models 返回 max_retries）
+// 2026-09-22 小欧 - [62]P3 ModelEntry 补 param_options?: Record<string,string[]>（对齐后端 GET /models
+//   返回的三层解析 param_options，前端读链第一站；缺此字段 useSettings 四通道无数据来源）
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -9,6 +11,7 @@ export interface ModelEntry {
   name: string;
   label: string;
   default_params: Record<string, unknown>;
+  param_options?: Record<string, string[]>;
   range: Record<string, { min: number; max: number }>;
   capabilities: string[];
 }

@@ -32,6 +32,12 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-09-21 - 小欧 - 三堂会审修复：timeout/max_retries 的 `or 60/3` 改为 `is not None` 判断，防止合法值0被吞
 # 2026-09-21 - 小欧 - v4.20 单源收敛: get_current_ref 去扁平键 fallback 只读 ai.model_ref（签名去 providers 参数）；
 #   _sync_current 只写 ai.model_ref（删扁平双写）——与 resolver/config_helpers 统一为单一真相源
+# 2026-09-22 - 小欧 - [62]P1/P2 param_options 读写链落地：①P1 加 DEFAULT_PARAM_OPTIONS 全局兜底 +
+#   _resolve_param_options 三层解析并集（模型级>provider级>全局）、_models_of 组装 param_options；
+#   update_model 先合并本次新选项再校验（避免同批改选项+改值误杀）、unknown 白名单加 param_options、
+#   落 model_meta；update_provider_config key_map 加 param_options（Provider级写入口）。
+#   ②P2 add_model 签名加 param_options + 选项表非空 string[]/值在表内（0拒）校验 + 落 model_meta
+#   （不送 param_options 与现状兼容，tree 不写该键）。
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
