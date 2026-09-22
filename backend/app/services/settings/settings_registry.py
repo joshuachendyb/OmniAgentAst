@@ -145,9 +145,83 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
     ]},
+    # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
+    "tuning": {"label": "调优", "items": [
+        # --- llm: LLM 语义参数（7 键） ---
+        _item("tuning.llm.temperature", "float", "采样温度", 0.7, range_=[0, 2],
+              notice="LLM 采样温度，0=确定性，2=高随机"),
+        _item("tuning.llm.tool_choice", "select", "tool_choice 模式", "auto",
+              options=["auto", "none"], notice="auto=模型自主选择工具，none=纯文本模式"),
+        _item("tuning.llm.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
+              notice="LLM 单次调用最大输出 token 数"),
+        _item("tuning.llm.stream_max_retries", "int", "流式最大重试", 3, range_=[0, 10],
+              notice="LLM 流式调用最大重试次数"),
+        _item("tuning.llm.response_fallback", "bool", "FC 响应回退", True,
+              notice="FC 模式错误时降级为 Text 模式重试"),
+        _item("tuning.llm.response_retries", "int", "响应错误重试", 2, range_=[0, 5],
+              notice="LLM 响应错误（空/无效）最大重试次数"),
+        _item("tuning.llm.stream_options", "textarea", "流式选项(JSON)", '{"include_usage": true}',
+              notice="LLM 流式请求 stream_options 字段，JSON 格式"),
+        # --- llm_net: LLM 网络/超时/连接池（7 键） ---
+        _item("tuning.llm_net.read_timeout", "int", "读超时(秒)", 150, range_=[10, 600],
+              notice="LLM 客户端读超时兜底(秒)"),
+        _item("tuning.llm_net.connect_timeout", "float", "连接超时(秒)", 30.0, range_=[5, 120],
+              notice="LLM 客户端连接超时(秒)"),
+        _item("tuning.llm_net.write_timeout", "float", "写超时(秒)", 10.0, range_=[5, 120],
+              notice="LLM 客户端写超时(秒)"),
+        _item("tuning.llm_net.pool_timeout", "float", "连接池超时(秒)", 10.0, range_=[5, 120],
+              notice="LLM 客户端连接池超时(秒)"),
+        _item("tuning.llm_net.max_connections", "int", "池最大连接", 10, range_=[1, 50],
+              notice="LLM 客户端连接池最大连接数"),
+        _item("tuning.llm_net.max_keepalive", "int", "keepalive 连接", 5, range_=[0, 20],
+              notice="LLM 客户端连接池 keepalive 连接数"),
+        _item("tuning.llm_net.stream_total_timeout", "int", "流总硬超时(秒)", 500, range_=[60, 3600],
+              notice="单次 LLM 流式调用总时长硬超时(秒)"),
+        # --- concurrency: 并发配额（2 键） ---
+        _item("tuning.concurrency.soft_pool_wait_timeout", "float", "软配额等待(秒)", 30.0, range_=[5, 120],
+              notice="LLM 软配额排队等待上限(秒)，超时保底放行"),
+        _item("tuning.concurrency.shell_pool_max_per_type", "int", "Shell 池槽位", 8, range_=[1, 20],
+              notice="同 key Shell 池最大并发实例数"),
+        # --- agent: Agent 循环参数（3 键） ---
+        _item("tuning.agent.default_max_steps", "int", "Agent 最大步数", 100, range_=[10, 500],
+              notice="API 请求体默认 max_steps（config.yaml agent.max_steps 为运行时上限）"),
+        _item("tuning.agent.max_consecutive_chunks", "int", "连续 chunk 上限", 5, range_=[1, 20],
+              notice="Agent 循环连续 chunk 上限，超出触发 promote"),
+        _item("tuning.agent.max_chunks_without_promote", "int", "无 promote 上限", 50, range_=[10, 200],
+              notice="Agent 循环无 promote 的 chunk 上限，超出强制停止"),
+        # --- stream_task: 流/任务/缓存（4 键） ---
+        _item("tuning.stream_task.heartbeat_interval", "float", "SSE 心跳周期(秒)", 25.0, range_=[5, 60],
+              notice="SSE keep-alive 心跳周期(秒)，须 < 前端 IDLE_TIMEOUT=60s"),
+        _item("tuning.stream_task.task_timeout_hours", "int", "任务过期(小时)", 1, range_=[1, 24],
+              notice="已结束任务超过 N 小时自动清理"),
+        _item("tuning.stream_task.tool_cache_ttl", "int", "工具缓存 TTL(秒)", 300, range_=[60, 3600],
+              notice="工具结果缓存 TTL(秒)"),
+        _item("tuning.stream_task.max_cache_size", "int", "缓存条目上限", 1000, range_=[100, 10000],
+              notice="会话/上下文缓存最大条目数"),
+        # --- hitl: 人工确认（4 键） ---
+        _item("tuning.hitl.hitl_confirm_lead", "int", "HITL 倒计时提前量(秒)", 10, range_=[0, 60],
+              notice="前端倒计时比后端 HITL_TIMEOUT 提前的秒数"),
+        _item("tuning.hitl.bypass_auto_lead", "int", "bypass 提前量(秒)", 2, range_=[0, 10],
+              notice="bypass 前端倒计时比后端提前的秒数"),
+        _item("tuning.hitl.hitl_min_confirm_timeout", "int", "倒计时最小值(秒)", 3, range_=[1, 30],
+              notice="前端倒计时最小值，不低于后端窗口减提前量"),
+        _item("tuning.hitl.max_pending_confirmations", "int", "待确认上限", 100, range_=[10, 1000],
+              notice="HITL 最大待确认请求数"),
+        # --- content: 内容截断（3 键） ---
+        _item("tuning.content.project_context_max_chars", "int", "上下文注入上限(字符)", 10000, range_=[1000, 50000],
+              notice="项目规则文件(OmniAgent.md)注入 Prompt 字符上限"),
+        _item("tuning.content.action_log_result_max_chars", "int", "日志截断(字符)", 5000, range_=[1000, 20000],
+              notice="action_handler 日志 tool_result 截断长度"),
+        _item("tuning.content.temp_history_char_limit", "int", "临时历史字符上限", 50000, range_=[5000, 200000],
+              notice="compaction 临时历史字符上限"),
+        # --- network: 网络（1 键） ---
+        _item("tuning.network.cors_origins", "text", "CORS 允许来源",
+              "http://localhost:5173,http://127.0.0.1:5173",
+              notice="API CORS 允许来源，多个用逗号分隔"),
+    ]},
 }
 
-GROUP_ORDER = ["general", "model", "security", "sandbox", "system", "appearance"]
+GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "appearance"]
 
 # registry key → ConfigUpdate 字段映射（旧键走 config_service.update_config，语义不变；
 # 未列出的键走通用 region 合并，见 config_helpers.merge_region_patch）
