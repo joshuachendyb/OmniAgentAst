@@ -66,7 +66,8 @@ async def get_models():
 @handle_config_errors("添加模型")
 async def add_model(req: ModelCreateRequest):
     return svc.add_model(req.provider, req.model, req.label,
-                         req.default_params, req.range, req.capabilities)
+                         req.default_params, req.range, req.capabilities,
+                         req.param_options)
 
 
 @router.put("/models/{provider}/{model:path}")

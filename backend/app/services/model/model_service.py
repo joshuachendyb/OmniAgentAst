@@ -158,7 +158,8 @@ def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
 def add_model(provider: str, model: str, label: str = "",
               default_params: Optional[Dict[str, Any]] = None,
               range_: Optional[Dict[str, Any]] = None,
-              capabilities: Optional[List[str]] = None) -> Dict[str, Any]:
+              capabilities: Optional[List[str]] = None,
+              param_options: Optional[Dict[str, List[str]]] = None) -> Dict[str, Any]:
     ai = _raw_ai()
     if provider not in _provider_names(ai):
         raise ValueError(f"Provider 不存在: {provider}")
@@ -167,6 +168,15 @@ def add_model(provider: str, model: str, label: str = "",
         raise ValueError("模型名不能为空")
     if any(m["name"] == model for m in _models_of(ai, provider)):
         raise ValueError("同名模型已存在")
+    # 与 update_model 同规则：选项表须为非空 string[]，值须在表内，0 直接 400（小欧 2026-09-22）
+    allowed = dict(param_options or {})
+    for k, vs in allowed.items():
+        if not isinstance(vs, list) or not vs or not all(isinstance(x, str) for x in vs):
+            raise ValueError(f"不支持的选项表: {k}须为非空string[]")
+    for k, v in (default_params or {}).items():
+        allow = allowed.get(k, DEFAULT_PARAM_OPTIONS.get(k))
+        if allow is not None and v not in allow:
+            raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allow}")
     models = list(ai[provider].get("models", []) or [])
     if not all(isinstance(m, str) for m in models):
         models = [_m["name"] for _m in _models_of(ai, provider)]
@@ -179,6 +189,7 @@ def add_model(provider: str, model: str, label: str = "",
                 "label": label or model,
                 "range": range_ or {},
                 "capabilities": capabilities or [],
+                **({"param_options": param_options} if param_options else {}),
             }},
         }}
     }
