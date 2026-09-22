@@ -3,7 +3,27 @@
 //    null 仅当 schema 默认值本身为 null（可空项）时放行，其余类型返回「不能为空」
 // 2026-09-22 小强 - 31候选 #3/#8：int 补 Number.isInteger（1.5 曾过前端、后端"应为整数"拒=契约漂移；
 //    红测先红），range 补 step 倍数校验（12.5 过前端、对称后端 #8）
+// 2026-09-22 小欧 - [62]P4 3.2(6) isDirty 对象深比较：补 sameValue（Object.is 快路径 + 双对象
+//    JSON.stringify 深比），替换原 `!==`——对象/数组参数两个独立字面量内容相同但引用不同被判恒脏（[62] 3.2(6)）
 import type { SettingSchemaItem } from '@/services/api/settings.api';
+
+/** [62]P4 3.2(6)：值深比较——同一引用/Object.is 相同立即真；双方对象则 JSON 深比；其余恒假。 */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (
+    a !== null &&
+    b !== null &&
+    typeof a === 'object' &&
+    typeof b === 'object'
+  ) {
+    try {
+      return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 /** 模型 Tab 脏态：值与默认不一致且未被 env 接管（6.2）。 */
 export function isDirty(
@@ -13,7 +33,7 @@ export function isDirty(
 ): Record<string, boolean> {
   const out: Record<string, boolean> = {};
   Object.keys(params).forEach((key) => {
-    out[key] = !env[key] && params[key] !== defaults[key];
+    out[key] = !env[key] && !sameValue(params[key], defaults[key]);
   });
   return out;
 }
