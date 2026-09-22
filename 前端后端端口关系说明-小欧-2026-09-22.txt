@@ -1,0 +1,112 @@
+======================================================
+  OmniAgentAs 前后端端口关系说明
+  编写人：小欧
+  编写时间：2026-09-22 09:21:11
+======================================================
+
+一、端口全景
+
+  端口      谁用                      说明
+  --------  ----------------------    --------------------------------
+  8000      后端 uvicorn              python -m uvicorn app.main:app --reload，固定端口
+  5173      前端 Vite dev server      npm run dev，Vite 默认端口
+  9000      E2E 断线重连专用代理      e2e_case/api-proxy.ts，9000→8000，仅测试用
+
+
+二、前端→后端连接方式（两种，二选一）
+
+  方式1 — Vite proxy（推荐开发用）
+
+    前端 (Vite :5173)  ──/api/*──→  Vite http-proxy  ──→  后端 (uvicorn :8000)
+
+    配置位置：frontend/vite.config.ts 第 43-47 行
+      proxy: {
+        '/api': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
+      }
+
+    特点：同源（都是 :5173），无 CORS 问题。
+    改后端端口时同步改 proxy.target。
+
+  方式2 — 直连（跨域，走 CORS）
+
+    前端 (Vite :5173)  ──直连──→  后端 (uvicorn :8000)
+
+    代码位置：frontend/src/services/api/client.ts getApiBaseUrl() 函数
+    端口优先级：
+      ① VITE_API_BASE_URL 环境变量（完整地址，如 http://localhost:9000）→ 直接用
+      ② VITE_API_PORT 环境变量（仅端口号，如 9000）→ 拼 hostname:port
+      ③ 都不设 → 默认 :8000
+
+    特点：跨域，浏览器会发 CORS 预检。
+    改端口后须同步改 CORS 白名单（见第四节）。
+
+
+三、两个端口是两个独立进程
+
+  前端和后端是两个不同的程序，端口互相独立：
+
+    前端 (Vite dev server, :5173)  ──请求──→  后端 (uvicorn, :8000)
+
+  前端必须知道后端在哪个端口，才能连上。
+  改端口必须前后端对齐，否则连不上。
+
+  示例：
+    场景                        后端启动命令                      前端 .env                      结果
+    ------------------------    --------------------------------  ----------------------------  ------
+    默认（都不改）              uvicorn ... --port 8000           不设                            前端连 :8000 ✓
+    后端改 9000                 uvicorn ... --port 9000           VITE_API_PORT=9000             前端连 :9000 ✓
+    只改前端不改后端             uvicorn ... --port 8000           VITE_API_PORT=9000             前端连 :9000 ✗ 连不上
+
+
+四、CORS 白名单
+
+  位置：backend/app/constants.py DEFAULT_CORS_ORIGINS
+
+  当前端直连后端（方式2）时，浏览器会发 CORS 预检。
+  后端 CORSMiddleware 校验 Origin 是否在白名单里，不在则拦截。
+
+  当前值：
+    "http://localhost:5173,http://127.0.0.1:5173"
+
+  为什么两个都要写：
+    浏览器把 localhost 和 127.0.0.1 当成不同的 Origin。
+    你在地址栏输 http://localhost:5173 和 http://127.0.0.1:5173 看到的是同一个页面，
+    但 Origin 不一样，CORS 预检会分别校验。
+
+  改前端端口时须同步更新此值。
+  也可通过 tuning.network.cors_origins 配置化（设计中）。
+
+  Vite proxy 模式不走 CORS（同源）。
+
+
+五、改端口操作清单
+
+  场景：后端端口从 8000 改为 9000
+
+    ① 后端启动命令改为：python -m uvicorn app.main:app --port 9000
+    ② 前端 .env 加一行：VITE_API_PORT=9000
+    ③ 前端 vite.config.ts proxy.target 改为 http://localhost:9000
+    ④ 完成
+
+  场景：前端端口从 5173 改为 3000
+
+    ① vite.config.ts server.port 改为 3000
+    ② 后端 constants.py DEFAULT_CORS_ORIGINS 加上 http://localhost:3000
+    ③ 完成
+
+
+六、文件索引
+
+  文件                                              作用
+  -----------------------------------------------   --------------------------------
+  frontend/vite.config.ts                           前端 dev server 端口 + proxy 配置
+  frontend/src/services/api/client.ts               后端 API 地址拼接（读 VITE_API_PORT）
+  backend/app/constants.py                          CORS 白名单（DEFAULT_CORS_ORIGINS）
+  backend/app/main.py                               CORS 中间件注册（L90-99）
+  backend/app/config.py                             后端配置管理
+  e2e_case/api-proxy.ts                             E2E 断线重连代理（9000→8000）
+
+编写人：小欧 2026-09-22 09:21:11
