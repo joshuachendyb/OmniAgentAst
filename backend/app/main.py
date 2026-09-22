@@ -14,6 +14,7 @@
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
 # 2026-09-21 - 小欧 - 对齐文档54 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 import sys
 import asyncio
 from typing import Optional
@@ -49,7 +50,8 @@ from app.api.v1.chat import router as chat_router, task_router, execution_stream
 from app.api.v1.task_queries import router as task_queries_router
 from app.logger import logger
 from app.monitoring import setup_monitoring
-from app.constants import DEFAULT_CORS_ORIGINS
+from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
+from app.config import get_config
 from app.services.task.task_registry import cleanup_expired_tasks
 from app.db import db
 
@@ -87,7 +89,7 @@ app = FastAPI(
 
 logger.info("Backend v" + app_version + " started")
 
-_cors_origins_str = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
+_cors_origins_str = os.getenv("CORS_ORIGINS", get_config().get("tuning.network.cors_origins", _D_CORS))
 _cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(

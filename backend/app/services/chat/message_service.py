@@ -18,6 +18,7 @@
 #   (同 id 对齐/失败仅留痕); 权威写失败改 fail-loud 抛 HTTPException(旧路径吞异常返 success 但权威缺行,
 #   历史回放丢消息属假成功); assistant legacy 直存分支行为不变; W1 两处镜像 INSERT 加 TODO 删除注释
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W1镜像写点(user/assistant两处INSERT chat_messages), 删除后assistant消息由任务/步骤体系(chat_tasks.ai_message_id/chat_task_steps)管理, 系统对该表零写依赖
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import MAX_CACHE_SIZE 改别名 + cache 改读 tuning 配置
 """
 message_service — 消息业务服务(services/chat)
 
@@ -29,7 +30,8 @@ from typing import Optional
 from app.logger import logger
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.cache import LRUCache
-from app.constants import MAX_CACHE_SIZE
+from app.constants import MAX_CACHE_SIZE as _D_CACHE_SIZE
+from app.config import get_config
 from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.db.models.chat_models import MessageResponse
@@ -40,7 +42,7 @@ from app.utils.display_utils import extract_display_name_from_steps, build_displ
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
-display_name_cache = LRUCache(max_size=MAX_CACHE_SIZE)
+display_name_cache = LRUCache(max_size=get_config().get("tuning.stream_task.max_cache_size", _D_CACHE_SIZE))
 
 
 def delete_session_display_names(session_id: str) -> None:

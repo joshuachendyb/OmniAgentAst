@@ -95,6 +95,7 @@
 #     连带时序归正: _discard_stderr增defer_unlink参数(start调用defer=True仅关句柄, await join后进程必死再unlink成功);
 #     命令级_TempFiles 6文件登记ctx["temp_files"], await join后补unlink(进程未死时_TempFiles.finally的_safe_unlink必失败残留)。
 #   验证: 全量回归 6波42 + 池33 + 组合3689 全绿, Temp ps_*.err清零无孤儿进程(超出原计划追加波回归由测试文件承载)。 — 小欧-2026-09-19 10:40
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：shell_pool 槽位改读 tuning 配置
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -1074,7 +1075,9 @@ class ShellPoolManager:
 
 # 2026-08-07 小欧 三堂会审定稿(R3): 3→8 — 当日C2日志实测同key并发达5(ps7池默认3放不下),
 # acquire排队超2s→ShellPoolBusyError; 8覆盖实测并发5并留余量(每实例约40MB内存, 8≈320MB可接受)
-shell_pool = ShellPoolManager(max_per_type=8)
+# 2026-09-22 小欧 - [61] v2.0 第六章 6.20：shell_pool 槽位改读 tuning 配置
+from app.config import get_config as _get_cfg
+shell_pool = ShellPoolManager(max_per_type=_get_cfg().get("tuning.concurrency.shell_pool_max_per_type", 8))
 
 
 atexit.register(shell_pool.cleanup_all)

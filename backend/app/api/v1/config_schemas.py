@@ -11,10 +11,12 @@
 # 2026-09-21 - 小欧 - 删除无意义白/黑名单配置项: SecurityConfig 移除 whitelistEnabled/commandWhitelist/commandBlacklist
 #   （全库无消费方，仅透传保存不生效；命令安全由 path_safe_check/tools/security 代码内实现，北京老陈裁定删除）
 # 2026-09-21 - 小欧 - v4.20 死配置清理: SecurityConfig 移除 contentFilterEnabled/contentFilterLevel/maxFileSize（全库无消费方）
+# 2026-09-22 - 小欧 - [61] constants.py 配置化迁移：import DEFAULT_MAX_STEPS 改别名 _D_MAX_STEPS + Field 默认值改读配置
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
-from app.constants import DEFAULT_MAX_STEPS
+from app.constants import DEFAULT_MAX_STEPS as _D_MAX_STEPS
+from app.config import get_config
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 
 
@@ -41,7 +43,7 @@ class ConfigResponse(BaseModel):
     theme: str = Field(..., description="当前主题")
     language: str = Field(..., description="当前语言")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
-    max_steps: int = Field(DEFAULT_MAX_STEPS, description="Agent最大迭代次数")
+    max_steps: int = Field(_D_MAX_STEPS, description="Agent最大迭代次数")
     project_root: str = Field("", description="项目根目录路径")
 
 

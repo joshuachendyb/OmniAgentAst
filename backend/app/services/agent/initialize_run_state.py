@@ -25,6 +25,7 @@
 #   本文件退化为纯状态重置 + init_history, 不再持有任何 start 装配私有逻辑(单一归属, 依赖不反向)
 # 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 重置区加 agent._last_error=None(防跨任务残留)
 # 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 重置区加 agent._usage_events=[]
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + ChunkBuffer() 无参调用
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -35,7 +36,8 @@ Author: 小沈 - 2026-05-31
 
 from typing import Any, Dict, Optional
 
-from app.constants import MAX_CONSECUTIVE_CHUNKS
+from app.constants import MAX_CONSECUTIVE_CHUNKS as _D_CONSECUTIVE
+from app.config import get_config
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.chunk_buffer import ChunkBuffer
 from app.logger import logger
@@ -91,4 +93,4 @@ def initialize_run_state(
     agent._on_before_loop(sys_prompt, task, context)
     agent.message_builder.init_history(sys_prompt, task)
 
-    return ChunkBuffer(MAX_CONSECUTIVE_CHUNKS)
+    return ChunkBuffer()

@@ -59,6 +59,8 @@
 #     _check_stop OR 迭代全部 stop_check —— 多任务共享单例/同快照多次注入时不再被后注册覆盖串号。
 #     compliance: SRP/KISS-DIRECT/禁止backward
 # 2026-09-20 小欧 三堂会审BUG-02/03修复: ①request_stream循环体_current_response fallback赋SDK对象致cancel对错误对象调aclose; ②reset_cancel后cancelled检查跳过无效HTTP请求(防竞态取消丢失)
+# 2026-09-22 小欧 [61]别名漏改修复: line86 import已更名DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, __init__默认值仍用旧名致import期NameError(worker秒崩8000无响应); 改用_D_READ_TIMEOUT, 语义零改动
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + temperature/max_tokens/timeout 改读 tuning 配置
 """
 LLM 核心模块 — BaseAIService
 
@@ -83,7 +85,8 @@ from app.llm.client_sdk import create_llm_client
 from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.llm.error_classifier import SystemErrorClassifier
 
-from app.constants import DEFAULT_READ_TIMEOUT, LLM_TEMPERATURE, LLM_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS, STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS
+from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS as _D_STREAM_OPTIONS, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS
+from app.config import get_config
 
 # 默认extra_body: 开启thinking模式; 配置文件model_params可覆盖/扩展, 合并策略见__init__ — 小欧 2026-08-06
 DEFAULT_EXTRA_BODY_PARAMS: Dict = {"chat_template_kwargs": {"enable_thinking": True}}
@@ -96,7 +99,7 @@ class BaseAIService:
         self,
         api_key: str,
         llm_model: ModelRef,
-        timeout: int = DEFAULT_READ_TIMEOUT,
+        timeout: int = _D_READ_TIMEOUT,
         max_tokens: Optional[int] = None,
         temperature: float = None,
         seed: Optional[int] = None,
@@ -105,10 +108,10 @@ class BaseAIService:
         shared_client: Optional["httpx.AsyncClient"] = None,  # C1: 共享连接池, 快照复用不 new(仅在 snapshot 构造时传)
     ):
         if temperature is None:
-            temperature = LLM_TEMPERATURE
+            temperature = get_config().get("tuning.llm.temperature", _D_TEMPERATURE)
         self.api_key = api_key
         self.llm_model = llm_model   # 归一唯一模型身份结构(provider+model+api_base) — 小欧 2026-08-22
-        self.max_tokens = max_tokens if max_tokens is not None else LLM_MAX_TOKENS
+        self.max_tokens = max_tokens if max_tokens is not None else get_config().get("tuning.llm.max_tokens", _D_MAX_TOKENS)
         self.temperature = temperature
         self.seed = seed
         # 默认开启 thinking 模式；配置文件传参可覆盖（如 chat_template_kwargs.enable_thinking: false 可关）— 小欧 2026-07-26
@@ -126,9 +129,9 @@ class BaseAIService:
         self._llm_sdk = None
         self._shared_client = shared_client  # 2026-09-20 小欧 C1: 构造期定论, 杜绝"先建独占池再注入"竞态 — 小欧-2026-09-20
         try:
-            timeout_value = float(timeout) if timeout else float(DEFAULT_READ_TIMEOUT)
+            timeout_value = float(timeout) if timeout else float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))
         except (ValueError, TypeError):
-            timeout_value = float(DEFAULT_READ_TIMEOUT)
+            timeout_value = float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))
         self.timeout = int(timeout_value)
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None

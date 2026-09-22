@@ -11,6 +11,7 @@ Updated: 小健 - 2026-06-18 删除 _categories_config_cache（DRY原则）
   2026-07-14 小欧 TOOL_CACHE_TTL导入源由base_service改为app.constants(常量集中,非功能退化)
   2026-08-05 小欧 默认注入分类去SHELL: shell工具已迁入FUNDAMENTAL, SHELL分类仅剩which, 不再默认注入(需要时经searchtool动态注入)
   2026-08-12 小欧 A6: 工具加载从 BaseAgent.__init__ 移至本类(方案4.6.3步骤3); 导入 ToolLoader/ToolRetryEngine
+  2026-09-22 小欧 - [61] constants.py 配置化迁移：import TOOL_CACHE_TTL 改别名 + 类属性改读 tuning 配置
 """
 from typing import Any, Optional, Set
 
@@ -24,7 +25,8 @@ from app.services.agent.tool_loader import ToolLoader
 from app.tools.tool_retry_engine import ToolRetryEngine
 
 from app.services.agent.tool_cache_manager import patch_search_desc
-from app.constants import TOOL_CACHE_TTL as _TOOL_CACHE_TTL
+from app.constants import TOOL_CACHE_TTL as _D_TOOL_CACHE_TTL
+from app.config import get_config
 
 
 # 初始注入分类 — 小健 2026-06-18
@@ -37,7 +39,7 @@ _INITIAL_CATEGORIES: Set[ToolCategory] = {ToolCategory.FUNDAMENTAL, ToolCategory
 class UniversalAgent(BaseAgent):
     """通用 Agent — 初始仅注入 FUNDAMENTAL+FILE 2个分类给LLM，其余分类（含SHELL）通过 searchtool 动态注入"""
 
-    TOOL_CACHE_TTL = _TOOL_CACHE_TTL
+    TOOL_CACHE_TTL = get_config().get("tuning.stream_task.tool_cache_ttl", _D_TOOL_CACHE_TTL)
 
 
     def __init__(

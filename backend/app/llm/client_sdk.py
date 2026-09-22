@@ -24,6 +24,7 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   在飞流式HTTP响应(request_stream 进入置位/finally清空) + cancel() 方法 aclose 强关在飞流
   ——BaseAIService.cancel 优先委托此处直达HTTP层(原来 cancel 关闭的 _current_response 恒 None 假日志)
 编辑历史: 2026-09-20 小欧 三堂会审BUG-04修复: cancel()中aclose后立即清_current_response引用, 防finally/__aexit__二次关闭(double-close)
+编辑历史: 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + soft_pool_wait_timeout/max_connections/max_keepalive 改读 tuning 配置
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
@@ -32,12 +33,12 @@ import json
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from app.constants import (
-    DEFAULT_CONNECT_TIMEOUT,
-    DEFAULT_READ_TIMEOUT,
-    DEFAULT_WRITE_TIMEOUT,
-    DEFAULT_POOL_TIMEOUT,
-    LLM_MAX_CONNECTIONS,
-    LLM_MAX_KEEPALIVE,
+    DEFAULT_CONNECT_TIMEOUT as _D_CONNECT_TIMEOUT,
+    DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT,
+    DEFAULT_WRITE_TIMEOUT as _D_WRITE_TIMEOUT,
+    DEFAULT_POOL_TIMEOUT as _D_POOL_TIMEOUT,
+    LLM_MAX_CONNECTIONS as _D_MAX_CONNECTIONS,
+    LLM_MAX_KEEPALIVE as _D_MAX_KEEPALIVE,
 )
 from app.config import get_config
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
@@ -107,14 +108,14 @@ def _extract_server_error_message(body_text: str) -> str:
 
 
 _soft_pool_semaphore = None  # 2026-09-20 小欧 P5: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
-_SOFT_POOL_WAIT_TIMEOUT = 30.0  # 软配额排队等待上限(秒): 超时保底放行(不拒绝不降级) — 小欧-2026-09-20
+_SOFT_POOL_WAIT_TIMEOUT = get_config().get("tuning.concurrency.soft_pool_wait_timeout", 30.0)  # 软配额排队等待上限(秒): 超时保底放行(不拒绝不降级) — 小欧-2026-09-20
 
 
 def _get_soft_pool_semaphore():
     """惰性获取软配额信号量(避免模块级创建绑定错误 loop) — 小欧 2026-09-20"""
     global _soft_pool_semaphore
     if _soft_pool_semaphore is None:
-        _soft_pool_semaphore = asyncio.Semaphore(LLM_MAX_CONNECTIONS)
+        _soft_pool_semaphore = asyncio.Semaphore(get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS))
     return _soft_pool_semaphore
 
 
@@ -152,18 +153,16 @@ class LLMClient:
                     pool=DEFAULT_POOL_TIMEOUT,
                 ),
                 limits=httpx.Limits(
-                    max_connections=LLM_MAX_CONNECTIONS,
-                    max_keepalive_connections=LLM_MAX_KEEPALIVE,
+                    max_connections=get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS),
+                    max_keepalive_connections=get_config().get("tuning.llm_net.max_keepalive", _D_MAX_KEEPALIVE),
                 ),
                 headers={"Authorization": f"Bearer {api_key}"},
                 base_url=self._base_url,
             )
 
     _DEFAULT_URLS = {
-        "openai": "https://api.openai.com/v1",
         "deepseek": "https://api.deepseek.com",
         "qwen": "https://dashscope.aliyuncs.com/compatible-mode",
-        "groq": "https://api.groq.com/openai",
         "ollama": "http://localhost:11434",
     }
 

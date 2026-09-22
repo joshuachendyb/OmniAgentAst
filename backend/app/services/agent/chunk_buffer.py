@@ -9,7 +9,9 @@ ChunkBuffer — chunk拼接、阈值检测、flush管理 — 小沈 2026-05-25
 # 2026-07-18 小欧 #6 fix: 删除重复定义的should_force_stop(44-51)与含未定义变量content的buggy clear(62-66); 运行时正确版(68-75/77-79)保留
 # 2026-07-18 小欧 #46 fix: max_without_promote→max_chunks_before_stop，消除误导命名
 # 【3.9修复 北京老陈 2026-05-31】阈值统一从constants.py读取
-from app.constants import MAX_CONSECUTIVE_CHUNKS, MAX_CHUNKS_WITHOUT_PROMOTE  # noqa: F401 - 作为默认值使用
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + __init__ 默认值改读 tuning 配置
+from app.constants import MAX_CONSECUTIVE_CHUNKS as _D_CONSECUTIVE, MAX_CHUNKS_WITHOUT_PROMOTE as _D_NO_PROMOTE  # noqa: F401 - 作为默认值使用
+from app.config import get_config
 
 
 class ChunkBuffer:
@@ -31,7 +33,11 @@ class ChunkBuffer:
     """
 
     # #46 fix: max_without_promote→max_chunks_before_stop 消除误导名 — 小欧 2026-07-18
-    def __init__(self, max_consecutive: int = MAX_CONSECUTIVE_CHUNKS, max_chunks_before_stop: int = MAX_CHUNKS_WITHOUT_PROMOTE):
+    def __init__(self, max_consecutive: int = None, max_chunks_before_stop: int = None):
+        if max_consecutive is None:
+            max_consecutive = get_config().get("tuning.agent.max_consecutive_chunks", _D_CONSECUTIVE)
+        if max_chunks_before_stop is None:
+            max_chunks_before_stop = get_config().get("tuning.agent.max_chunks_without_promote", _D_NO_PROMOTE)
         self.buffer: str = ""
         self.consecutive_count: int = 0
         self.max_consecutive: int = max_consecutive

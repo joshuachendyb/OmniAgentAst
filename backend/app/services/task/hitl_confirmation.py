@@ -23,6 +23,7 @@
 # 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
 #   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
 #   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -44,7 +45,8 @@ from uuid import uuid4
 
 from app.services.task.task_runtime import check_cancelled
 
-from app.constants import HITL_TIMEOUT, MAX_PENDING_CONFIRMATIONS
+from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT, MAX_PENDING_CONFIRMATIONS as _D_MAX_CONFIRM
+from app.config import get_config
 from app.logger import logger
 
 
@@ -73,7 +75,7 @@ def _cleanup_stale_confirmations():
 
     _last_cleanup_time = now
     from app.config import get_config as _get_cfg_cln  # 对应 config.yaml security.hitl_timeout(过期清理判据与确认等待同源,默认120); 兜底常量 HITL_TIMEOUT — 小欧 2026-09-03
-    _hitl_timeout = int(float(_get_cfg_cln().get("security.hitl_timeout", HITL_TIMEOUT)))
+    _hitl_timeout = int(float(_get_cfg_cln().get("security.hitl_timeout", _D_HITL_TIMEOUT)))
     with _pending_lock:
         stale = [k for k, v in _pending_confirmations.items()
                  if v.future.done() or now - v.created_at > _hitl_timeout]
@@ -98,8 +100,9 @@ async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[
     """
     _cleanup_stale_confirmations()
     with _pending_lock:
-        if len(_pending_confirmations) >= MAX_PENDING_CONFIRMATIONS:
-            raise RuntimeError(f"待确认操作数已达上限({MAX_PENDING_CONFIRMATIONS})")
+        _max_confirm = get_config().get("tuning.hitl.max_pending_confirmations", _D_MAX_CONFIRM)
+        if len(_pending_confirmations) >= _max_confirm:
+            raise RuntimeError(f"待确认操作数已达上限({_max_confirm})")
 
         confirm_id = f"{task_id}:{uuid4().hex[:8]}"
         loop = asyncio.get_running_loop()

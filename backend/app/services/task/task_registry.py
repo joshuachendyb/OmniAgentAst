@@ -12,6 +12,7 @@
 # 2026-09-20 - 小欧 - B-3守卫改方案②(北京老陈定案, 弃抛异常): register_task 守卫命中由 raise RuntimeError 改为
 #   返回占位活跃task_id(str), 注册成功返回 None —— 调用方(编排层)拿返回值改道注入占位任务, 竞态下消息不丢;
 #   签名 None → Optional[str]。compliance: 与B机制"注入不静默丢失"红线同哲学(KISS-DIRECT)
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -28,7 +29,9 @@ from typing import Any, Dict, List, Optional   # 2026-09-20 小欧 13.4.1: drain
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
-from app.constants import TASK_TIMEOUT
+from app.constants import TASK_TIMEOUT as _D_TASK_TIMEOUT
+from app.config import get_config
+from datetime import timedelta
 from app.utils.response_utils import api_success, api_failure
 
 from app.services.task.task_state import (
@@ -188,10 +191,11 @@ async def cleanup_expired_tasks() -> None:
         注: 本字典 status 实际取值仅 running/cancelled/paused(status_table 的 completed/failed 是 agent 对象枚举, 不写此字典)。
     """
     now = datetime.now()
+    _task_timeout = timedelta(hours=get_config().get("tuning.stream_task.task_timeout_hours", 1))
     async with running_tasks_lock:
         expired = [
             tid for tid, t in running_tasks.items()
-            if t.get("created_at") and now - t["created_at"] > TASK_TIMEOUT
+            if t.get("created_at") and now - t["created_at"] > _task_timeout
             and t.get("status") not in ("running", "paused")
         ]
         for tid in expired:

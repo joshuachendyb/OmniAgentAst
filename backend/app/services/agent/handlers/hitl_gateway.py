@@ -18,6 +18,7 @@
 # 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT): 删ConfirmSpec.mode字符串(布尔→"bypass/hitl"→==bypass还原的无意义往返),
 #   bypass/真HITL身份全线只用布尔auto_confirm单字段(唯一真相源); _resolve_timeouts/resumed条件/mode推导随迁改读auto_confirm,
 #   调用方safety_gate传auto_confirm=_bypass/sandbox_gate传auto_confirm=False, 语义零变化 置顶safety_gate/sandbox_gate同步 - 小欧-2026-09-18
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -79,14 +80,14 @@ async def _resolve_timeouts(auto_confirm):
      （见safety_gate行79/85/87/112、sandbox_gate行90-92；四常量均在app.constants）。
      2026-09-18 小欧: 参数mode字符串→auto_confirm布尔(去mode字段同批, 唯一真相源)。"""
     from app.config import get_config                            # 延迟import防环
-    from app.constants import HITL_TIMEOUT, HITL_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT, BYPASS_AUTO_LEAD
+    from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT, HITL_CONFIRM_LEAD as _D_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT as _D_MIN_TIMEOUT, BYPASS_AUTO_LEAD as _D_BYPASS_LEAD
     cfg = get_config()
     if not auto_confirm:
-        _bt = int(float(cfg.get("security.hitl_timeout", HITL_TIMEOUT)))
-        return _bt, max(HITL_MIN_CONFIRM_TIMEOUT, _bt - HITL_CONFIRM_LEAD)
-    _bt = max(HITL_MIN_CONFIRM_TIMEOUT + BYPASS_AUTO_LEAD,
+        _bt = int(float(cfg.get("security.hitl_timeout", _D_HITL_TIMEOUT)))
+        return _bt, max(_D_MIN_TIMEOUT, _bt - _D_CONFIRM_LEAD)
+    _bt = max(_D_MIN_TIMEOUT + _D_BYPASS_LEAD,
               int(float(cfg.get("security.auto_confirm_delay", 10.0))))
-    return _bt, _bt - BYPASS_AUTO_LEAD
+    return _bt, _bt - _D_BYPASS_LEAD
 
 
 async def hitl_confirm(agent, spec: ConfirmSpec, publish):

@@ -155,6 +155,7 @@
 # 2026-09-20 - 小欧 - E-1修复(锁内yield死锁): stream_reader 重构为"锁内阶段只取待转发事件/心跳动作,
 #   绝不 yield; 锁外阶段统一 yield"——消除持 cond 锁期间 await/yield 阻塞生产者 append 的死锁窗口,
 #   白名单/心跳/重连/done 行为不变。compliance: SRP/KISS-DIRECT
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HEARTBEAT_INTERVAL 改别名 + 心跳改读 tuning 配置
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -183,7 +184,8 @@ from app.utils.sse_formatter import format_agent_sse  # 8.6 消费转发并回�
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.task.task_state import create_stream_buffer, get_stream_buffer, reclaim_stream_buffer  # 2026-09-20 小欧 +reclaim_stream_buffer(B-3方案②: 注入改道时回收预建缓冲)
-from app.constants import HEARTBEAT_INTERVAL  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py §6) — 小欧 2026-09-08
+from app.constants import HEARTBEAT_INTERVAL as _D_HEARTBEAT  # 心跳周期常量(与前端 IDLE_TIMEOUT 的错开关系见 constants.py §6) — 小欧 2026-09-08
+from app.config import get_config
 from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 12.2-Q3: 追加权威累计查询 — 小欧 2026-08-21
@@ -569,10 +571,11 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                 # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
                 # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
                 try:
-                    await asyncio.wait_for(buffer.cond.wait(), timeout=HEARTBEAT_INTERVAL)  # 心跳周期 HEARTBEAT_INTERVAL(错开关系见 constants.py §6, 与前端 IDLE_TIMEOUT=60s 错开)
+                    _hb = get_config().get("tuning.stream_task.heartbeat_interval", _D_HEARTBEAT)
+                    await asyncio.wait_for(buffer.cond.wait(), timeout=_hb)  # 心跳周期(错开关系见 constants.py §6, 与前端 IDLE_TIMEOUT=60s 错开)
                 except asyncio.TimeoutError:
                     heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(北京老陈指令双写+计数) — 小欧-2026-09-08
-                    log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {HEARTBEAT_INTERVAL}s超时, 发 :ping 保活")  # 2026-09-08 小欧: debug→双写(北京老陈指令) — 小欧-2026-09-08
+                    log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {_hb}s超时, 发 :ping 保活")  # 2026-09-08 小欧: debug→双写(北京老陈指令) — 小欧-2026-09-08
                     # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
                     #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
                     #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),

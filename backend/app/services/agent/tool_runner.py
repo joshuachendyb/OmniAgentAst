@@ -4,12 +4,14 @@
 #   [背景] execute_tools 是工具三分支(单/并行分组串行/顺序)执行调度, 应属工具执行层, 非 action 编排本身
 #   [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置
 #   [效果] action_handler 920→~596行纯编排调度层; 本文件与 tool_executor 同层(工具执行调度), 是 execute_tool 的上一层
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 + 使用点改读 tuning 配置
 import asyncio
 import time
 from typing import Dict, List, Any
 
 from app.logger import logger, log_and_print
-from app.constants import ACTION_LOG_RESULT_MAX_CHARS
+from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
+from app.config import get_config
 from app.services.agent.tool_executor import execute_tool
 from app.tools.file_tool_utils import _auto_correct_file_tool
 from app.tools.conflict_detector import _has_conflict, _partition_calls
@@ -152,8 +154,9 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result=ERROR({result})")
             else:
                 _r_str = str(result)
-                if len(_r_str) > ACTION_LOG_RESULT_MAX_CHARS:
-                    _r_str = _r_str[:ACTION_LOG_RESULT_MAX_CHARS] + f"...(截断{len(_r_str)}字符)"
+                _log_max = get_config().get("tuning.content.action_log_result_max_chars", _D_LOG_CHARS)
+                if len(_r_str) > _log_max:
+                    _r_str = _r_str[:_log_max] + f"...(截断{len(_r_str)}字符)"
                 logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result={_r_str}")
             _orig_tool = _correction_map.get(i)
             if _orig_tool and isinstance(result, dict):

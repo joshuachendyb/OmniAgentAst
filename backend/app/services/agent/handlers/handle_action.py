@@ -242,6 +242,7 @@
 #          ②新发射点移到 build_observation 之后、非 return_direct(工具结果直接作终态)守卫 else 内 —
 #            承接"下一次 LLM 请求前"的等待信号, 与 react_loop 进 loop 前发射点合计=loop 内调工具次数+1(发射公式);
 #         return_direct 终态轮豁免不发(4.4.2 元规则) — 小欧-2026-09-07
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 _D_LOG_MAX_CHARS
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -269,7 +270,8 @@ from itertools import zip_longest  # 2026-09-03 小欧 Bug-1: build_observation 
 from typing import Dict, List, Any, Optional, Set
 from app.logger import logger, log_and_print
 
-from app.constants import ACTION_LOG_RESULT_MAX_CHARS
+from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
+from app.config import get_config
 from app.utils.display_utils import format_llm_data_text  # 小欧 2026-08-25 合规重构: 纯展示格式化函数拆至全局层 display_utils(去内嵌闭包)
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3

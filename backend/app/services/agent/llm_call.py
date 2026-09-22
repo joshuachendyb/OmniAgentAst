@@ -42,6 +42,7 @@
 #   仅认类级 _check_stop(真实 BaseAIService), SimpleNamespace/MagicMock 测试桩忽略(不触发短路)。
 #   compliance: KISS-DIRECT/禁止backward
 # 2026-09-20 - 小欧 - C-2/BUG-09修复: ①删降级前reset_cancel(会清取消标志致已取消任务继续降级); ②hasattr(type(_lc))改getattr实例级检查(_check_stop是实例方法, type()检查永False→短路失效)
+# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + tool_choice/fallback/retries 改读 tuning 配置
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -70,7 +71,8 @@ from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5�
     _resolve_chunk_model,          # 小健 2026-09-06: 路径2 出口统一取模型 ModelRef(复用2.5.2, 防二次重复)
     _yield_error_response,
 )
-from app.constants import LLM_RESPONSE_FALLBACK, LLM_RESPONSE_RETRIES, LLM_TOOL_CHOICE
+from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RETRIES as _D_RETRIES, LLM_TOOL_CHOICE as _D_TOOL_CHOICE
+from app.config import get_config
 from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk, create_cancelled_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(路径2出口统一构造); 小欧 2026-09-20 C-2 +create_cancelled_chunk(降级前取消短路收尾)
 from app.utils.text_utils import extract_tool_call_xml
 from app.logger import logger
@@ -84,7 +86,7 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     tool_calls_result = None
     stream_error = None
     usage_data = None
-    tool_choice = LLM_TOOL_CHOICE if openai_tools else None
+    tool_choice = get_config().get("tuning.llm.tool_choice", _D_TOOL_CHOICE) if openai_tools else None
     _finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason(None→_log_llm_response回退stop)
 
     llm_start = time.time()
@@ -225,8 +227,9 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
     last_error = None
     # 小欧 2026-09-03 P7修复: 缓冲最近一次retry notice, CancelledError中断时保证重试通知必落事件流
     _pending_retry_notice = None
+    _retries = get_config().get("tuning.llm.response_retries", _D_RETRIES)
 
-    for attempt in range(LLM_RESPONSE_RETRIES):
+    for attempt in range(_retries):
         try:
             async for item in call_llm_stream(agent, messages, openai_tools):
                 # 流式error响应(type:"error")会绕过L2重试直抵set_failed使agent失败;此处转LLMResponseError交给上层重试 — 小欧 2026-07-15
@@ -258,19 +261,19 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             raise
         except LLMResponseError as e:
             last_error = e
-            logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{LLM_RESPONSE_RETRIES}次: {e}")
+            logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{_retries}次: {e}")
             wait_time = min(0.5 * (2 ** attempt), 30)
             # 小欧 2026-09-02: L2 重试事件透传发前端
             yield create_payload_chunk(_resolve_chunk_model(agent), {
                 "type": "retrying",
-                "content": f"LLM响应重试 {attempt+1}/{LLM_RESPONSE_RETRIES}: {e.message}",
+                "content": f"LLM响应重试 {attempt+1}/{_retries}: {e.message}",
                 "wait_time": wait_time,
             })
             await asyncio.sleep(wait_time)
             continue
 
-    if LLM_RESPONSE_FALLBACK:
-        logger.warning(f"[FC降级] FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式")
+    if get_config().get("tuning.llm.response_fallback", _D_FALLBACK):
+        logger.warning(f"[FC降级] FC模式{_retries}次重试均失败，降级到Text模式")
         # C-2(小欧 2026-09-20 RED-C-2): 删降级前 reset_cancel()(会清掉取消标志 _cancelled, 致已取消任务继续降级请求);
         #   改为降级前 _check_stop() 短路: 若已取消直接 yield cancelled chunk 收尾, 不再发降级请求。
         #   BUG-09修复(小欧 2026-09-20): hasattr(type(_lc)) 检查类而非实例, _check_stop是实例方法永不命中;
@@ -292,7 +295,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         # 小欧 2026-09-02: FC降级事件透传发前端（用户需知"FC失败已降级Text"）
         yield create_payload_chunk(_resolve_chunk_model(agent), {
             "type": "retrying",
-            "content": f"FC模式{LLM_RESPONSE_RETRIES}次重试均失败，降级到Text模式重试",
+            "content": f"FC模式{_retries}次重试均失败，降级到Text模式重试",
             "wait_time": None,
         })
         try:
@@ -305,7 +308,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
     else:
         # LLM_RESPONSE_RETRIES=0时for循环不执行,last_error恒为None,直接_format_response_error(None)会AttributeError崩溃,故兜底 — 小欧 2026-07-15
         if last_error is None:
-            error_msg = f"功能调用模式不可用(重试次数={LLM_RESPONSE_RETRIES})，降级通道已关闭，无法继续执行任务"  # Bug4: 保留重试次数诊断信息 — 小欧 2026-07-23
+            error_msg = f"功能调用模式不可用(重试次数={_retries})，降级通道已关闭，无法继续执行任务"  # Bug4: 保留重试次数诊断信息 — 小欧 2026-07-23
         else:
             error_msg = _format_response_error(last_error)
         yield _yield_error_response(error_msg, agent)
