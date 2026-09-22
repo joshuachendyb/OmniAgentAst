@@ -58,6 +58,7 @@ backend/verify_fixes.py
 backend/test_verify_*
 
 # node_modules
+node_modules/
 frontend/node_modules/
 
 # config (contains API keys)
