@@ -110,15 +110,21 @@ npm run test:e2e     # Playwright
 
 ## E2E 全链路测试（核心要点）
 
-> 完整流程见 `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md`（v2.8）。以下为「启动」与「执行检查」的抽取要点，每次 E2E 必读。
+> 后端完整流程见 `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md`（v2.16）。前端 E2E 见第八章。本节抽取每次 E2E 必读要点。
 
-### 启动后端（每次测试前必做）
+### 后端 E2E（pytest + 真实后端 + 真实 LLM）
+
+**定位**：验证 API→Agent→LLM→Tool→DB→SSE 全链路，深度校验 DB 记录完整性、SSE-DB 一致性、prompt 日志对齐、token 用量追踪。76 个 case（P0-P5/PAR/重连/复合），核心 helper `e2e_helpers.py`（32 函数，2350 行）。
+
+#### 启动后端（每次测试前必做）
+
 1. 杀掉旧进程：`Stop-Process -Id (Get-NetTCPConnection -LocalPort 8000).OwningProcess -Force`
 2. 独立 PowerShell 窗口启动（**不走 OpenCode bash tool**，避免日志混扰）：
-   `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'G:\OmniAgentAs-desk\backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000" -WindowStyle Normal`
+   `Start-Process powershell -ArgumentList "-NoExit","-Command","cd 'F:\OmniAgentAs-repair\backend'; python -m uvicorn app.main:app --reload --reload-dir app --host 0.0.0.0 --port 8000" -WindowStyle Normal`
 3. 验证：`Invoke-RestMethod http://127.0.0.1:8000/api/v1/health` 返回 200（或窗口显示 `Application startup complete`）
 
-### 执行脚本（铁律）
+#### 执行脚本（铁律）
+
 - **一次只跑一个 case**，严禁批量；核心脚本默认超时 2000s，**严禁给启动脚本另设超时**
 - E2E 调真实 LLM，单次常 >120s；OpenCode bash 工具会强杀进程 → **必须用 subprocess.Popen 方式**，禁止直接 bash `python -m pytest`
 - 方式：用 Python 内联脚本调 `subprocess.Popen`，bash tool timeout 设 `9007199254740991`，pytest 自行管理超时（`--timeout=2900`）；stdout/stderr 落盘 `tests/output/XXX_stdout.txt` / `XXX_stderr.txt`，结果查 junitxml
@@ -143,64 +149,61 @@ npm run test:e2e     # Playwright
   "
   ```
 
-### 执行检查（手动，逐项验证）
+#### 执行检查（手动，逐项验证）
+
 按 3 项验证，全过才进入下一个 case：
 1. **代码错误异常检查（最高优先级）**：查日志 traceback/ERROR、SSE 是否有 error 事件 → 有则立即停，走修复
 2. **调用链分析**：工具选择/顺序/LLM 次数是否合理，输出 `[CALL CHAIN]`
 3. **参数正确性**：路径/关键词等是否准确
 
-### 铁律
+---
+
+### 前端 E2E（Playwright + 真实浏览器 + 真实后端）
+
+**定位**：验证浏览器 UI→SSE 流→UI 渲染→断线重连全链路。8 个 case（fre2e_01~08），公共库 `e2e_front_lib/`（4 模块：POM/进程控制/SSE 诊断/普通会话封装）。
+
+#### 架构特点
+
+| 角色 | 进程 | 职责 |
+|------|------|------|
+| 页面服务 A | vite dev `:5173`（hmr:false） | 永活服务页面，**全程不杀** |
+| 后端代理 B | `e2e_case/api-proxy.ts :9000→8000` | 页面 API/SSE 直连目标（断线测试用） |
+| 后端 C | uvicorn `:8000` | 内存任务持有者 |
+
+断线测试原理：`killPort(9000)` 杀 B → 浏览器↔A 完好、仅 API 链路断（真 TCP RST）→ C 任务后台存活 → 重启 B → 前端退避 `GET /chat/stream/{task_id}?after_seq=` 断点续传。
+
+#### 执行方式
+
+```bash
+npx playwright test fre2e_01_reconnect_ui.spec.ts --headed --reporter=line   # 单 case
+npm run test:e2e      # 整组（先 lint + format）
+npm run test:e2e:ui   # UI 模式
+npm run test:e2e:debug # 调试模式
+```
+
+#### 关键机制
+
+| 机制 | 说明 |
+|------|------|
+| 日志对账防假通过 | `logBaseOf` 记基线 → `readLogSince` 只读本轮新增 → 断言重连端点 `after_seq>0` |
+| 真进程断流 | `killPort(9000)` 产生真实 TCP RST；禁 `setOffline`（无法断 in-flight SSE） |
+| run-on 检测 | `hasAdjacentDup` 逐行检测行内相邻重复（6~30 步滑动窗口） |
+| 诊断挂满+失败即打 | 开头必 `attachStreamDiag`；任何一步失败先 `printDiag` 打全量证据链再 throw |
+
+---
+
+### 铁律（前后端共用）
+
 - 测试目的是**发现问题**，不是跑脚本；严禁看到 FAIL 跳过
 - 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`），**禁止 Mock**
 
 ---
 
-## Architecture (Current)
+## Request Flow
 
-> 架构详情（架构图、工具体系、Agent体系、安全体系、项目结构、技术栈）见 `README.md` 二~六章。
-> 此处仅保留 AGENTS.md 独有的技术要点。
+FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` → `UniversalAgent.run_react_cycle()` → SSE。详细架构见 `README.md` 二~六章。
 
-**Request flow**: FastAPI `/api/v1` → `services/chat/stream.py`(SSE 编排) → `UniversalAgent.run_react_cycle()` → SSE
-
-**Agent system** (`backend/app/services/agent/`):
-- `base_agent.py` — `BaseAgent(ABC)`，含 `run_react_cycle` 编排钩子
-- `universal_agent.py` — `UniversalAgent(BaseAgent)`，唯一实现类（配置驱动，**无 AgentFactory 分发**）
-- `react_cycle.py` — ReAct 循环核心（薄调度：调用 LLM → 解析 → 分派 handler → 产出 Step）
-- `handlers/` — ReAct 循环业务处理器（action / answer）
-- `steps/` — Step 类型定义（ThoughtStep, ToolStep, FinalStep 等）
-- 其余模块：`message_builder.py` / `observation_formatter.py` / `status_table.py` / `tool_executor.py` / `tool_retry_engine.py` / `tool_cache_manager.py` / `llm_stream.py` / `initialize_run_state.py` / `fc_message_types.py`
-
-**Tool registry** (`backend/app/tools/`):
-- `registry.py` — `ToolRegistry` singleton, `ToolCategory` enum
-- `__init__.py` — `ensure_tools_registered()` loads all tools
-- Categories: `file`, `shell`, `network`, `system`, `desktop`, `document`, `fundamental`, `dataanalysis`, `timer`, `win_registry`
-- Each `{category}/` has: `{category}_register.py`, `{category}_tools.py`, `{category}_schema.py` (+ optional extras)
-
-**LLM client** (`backend/app/llm/`):
-- `client_sdk.py` — LLMClient(httpx封装)
-- `core.py` — BaseAIService(基类)
-- `stream_parser.py` — 流式响应解析
-
-**Safety** (`backend/app/services/safety/`):
-- `tool_safety_checker.py` — 工具执行前安全检查
-- `file_safety/` — 文件操作安全(备份/回滚/查询)
-
-
-### Frontend: `frontend/src/main.tsx` → Vite+React
-
-- `src/pages/` — page components
-- `src/contexts/` — React Context 状态（AppContext / SecurityContext）
-- `src/hooks/` — 聊天流/任务控制/持久化等 Hook（`hooks/chat/`）
-- `src/components/` — UI 组件（Chat / Security / Layout 等）
-- `src/services/` — API layer
-- `src/utils/` — formatters, step rendering, SSE handling
-
----
-
-
----
-
-## Key Dependencies
+---## Key Dependencies
 
 | Layer | Tech | Notes |
 |-------|------|-------|
@@ -220,9 +223,8 @@ npm run test:e2e     # Playwright
 | Pitfall | Detail |
 |---------|--------|
 | **httpx version lock** | `httpx==0.26.0` required. Don't upgrade — 0.28.1+ upgrades httpcore which breaks TLS. |
-| **Duplicate `__all__`** | Register files may have 2 `__all__` defs (second overwrites first). |
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
-| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, SHELL, FILE}`. |
+| **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, FILE}`. |
 
 
 
