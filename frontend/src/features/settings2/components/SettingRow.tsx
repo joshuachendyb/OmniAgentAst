@@ -10,6 +10,7 @@
 //   窄屏 labelWidth→88、textarea→100%、行 flexWrap（[设置页UI审计] 问题1/16）
 // 2026-09-22 小欧 - int/float 输入增强：int 加 precision=0/step=1 强制整数、两者加 min/max 范围约束；
 //   控件右侧显示范围提示（int: "0 ~ 2 · 整数"，float: "0 ~ 2"），range 类型不重复显示
+// 2026-09-22 小欧 - 控件宽度统一：range/int/float 的 InputNumber 补齐 rangeNumberWidth/inputNumberWidth 令牌 - 小欧-2026-09-22
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, FontWeight, Colors, Spacing } from '@/utils/stepStyles';
@@ -180,6 +181,7 @@ export const SettingRow: React.FC<Props> = ({
               step={item.step ?? 1}
               value={value as number}
               disabled={disabled}
+              style={{ width: settingsControl.rangeNumberWidth }}
               onChange={(v) => onChange(v)}
             />
           </span>
@@ -193,6 +195,7 @@ export const SettingRow: React.FC<Props> = ({
             max={item.range?.[1]}
             step={1}
             precision={0}
+            style={{ width: settingsControl.inputNumberWidth }}
             onChange={(v) => onChange(v)}
           />
         );
@@ -203,6 +206,7 @@ export const SettingRow: React.FC<Props> = ({
             disabled={disabled}
             min={item.range?.[0]}
             max={item.range?.[1]}
+            style={{ width: settingsControl.inputNumberWidth }}
             onChange={(v) => onChange(v)}
           />
         );
@@ -261,8 +265,15 @@ export const SettingRow: React.FC<Props> = ({
       </span>
       <span style={{ flex: 1 }}>{renderControl()}</span>
       {item.range && item.type !== 'range' && (
-        <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.TERTIARY, marginLeft: Spacing.SM }}>
-          {item.range[0]} ~ {item.range[1]}{item.type === 'int' && ' · 整数'}
+        <span
+          style={{
+            fontSize: FontSize.SECONDARY,
+            color: Colors.TEXT.TERTIARY,
+            marginLeft: Spacing.SM,
+          }}
+        >
+          {item.range[0]} ~ {item.range[1]}
+          {item.type === 'int' && ' · 整数'}
         </span>
       )}
       {dirty && <DirtyDot />}

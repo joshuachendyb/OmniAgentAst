@@ -7,9 +7,11 @@
 //   enumOpts→Select 字符串直绑（禁 indexOf/[idx]）；range→Slider+InputNumber 安全转数字(isNaN 回退 range.min)；
 //   number→InputNumber；boolean→Switch；object→TextArea(JSON，blur 失败回退默认)；string→Input。
 //   Props 加 options?（枚举选项表）/onReset?（对齐调用方 SettingsPage 已透传的 options）。
+// 2026-09-22 小欧 - 布局对齐：复用 settingsRowLayout 统一结构（label 固定宽 + 控件 flex:1 自适应）- 小欧-2026-09-22
+// 2026-09-22 小欧 - 提交前清理：import 移除 FontSize（布局重构删掉范围提示行后不再使用，lint unused）- 小欧-2026-09-22
 import React from 'react';
 import { Input, InputNumber, Select, Slider, Switch } from 'antd';
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, Spacing } from '@/utils/stepStyles';
 import {
   settingsSpacing,
   settingsControl,
@@ -48,21 +50,9 @@ export const ModelParams: React.FC<Props> = ({
         // 修正(2026-09-21 小强)：env 接管键禁用控件 + EnvTag 标识——
         // 原可编辑但 setParam 写入被 isDirty 排除，静默无效（改假值/保存假成功/切走丢失）([设置页UI审计] 问题2)
         const envKey = envOverride[key];
-        return (
-          <div
-            key={key}
-            style={{
-              display: settingsRowLayout.display,
-              alignItems: settingsRowLayout.alignItems,
-              flexWrap: 'wrap',
-              gap: settingsRowLayout.gap,
-              minHeight: settingsRowLayout.minHeight,
-            }}
-          >
-            <span style={{ width: settingsSpacing.labelWidth }}>
-              {key} {envKey && <EnvTag />}
-            </span>
-            {range ? ( // 数值范围型：Slider+InputNumber，字符串安全转数字
+        const renderControl = (): React.ReactNode => {
+          if (range) {
+            return (
               <span
                 style={{
                   display: 'inline-flex',
@@ -86,7 +76,10 @@ export const ModelParams: React.FC<Props> = ({
                   onChange={(v) => onChange(key, v)}
                 />
               </span>
-            ) : enumOpts ? ( // 枚举型：Select字符串直绑，禁indexOf/[idx]
+            );
+          }
+          if (enumOpts) {
+            return (
               <Select
                 options={enumOpts.map((v) => ({ label: v, value: v }))}
                 value={
@@ -95,26 +88,37 @@ export const ModelParams: React.FC<Props> = ({
                     : String(rawValue ?? '')
                 }
                 disabled={envKey}
-                style={{ minWidth: 120 }}
+                style={{ width: settingsControl.selectWidth }}
                 onChange={(v) => onChange(key, v)}
               />
-            ) : typeof rawValue === 'number' ? ( // 数值型
+            );
+          }
+          if (typeof rawValue === 'number') {
+            return (
               <InputNumber
                 value={rawValue}
                 disabled={envKey}
+                style={{ width: settingsControl.inputNumberWidth }}
                 onChange={(v) => onChange(key, v)}
               />
-            ) : typeof rawValue === 'boolean' ? ( // 布尔型
+            );
+          }
+          if (typeof rawValue === 'boolean') {
+            return (
               <Switch
                 checked={rawValue}
                 disabled={envKey}
                 onChange={(v) => onChange(key, v)}
               />
-            ) : rawValue !== null && typeof rawValue === 'object' ? ( // 对象型：textarea(JSON)，禁String(obj)
+            );
+          }
+          if (rawValue !== null && typeof rawValue === 'object') {
+            return (
               <Input.TextArea
                 value={JSON.stringify(rawValue ?? null)}
                 disabled={envKey}
                 autoSize
+                style={{ width: settingsControl.textareaWidth }}
                 onChange={(e) => {
                   try {
                     onChange(key, JSON.parse(e.target.value));
@@ -130,23 +134,33 @@ export const ModelParams: React.FC<Props> = ({
                   }
                 }}
               />
-            ) : (
-              // 字符串型
-              <Input
-                value={String(rawValue ?? '')}
-                disabled={envKey}
-                onChange={(e) => onChange(key, e.target.value)}
-              />
-            )}
-            <span
-              style={{
-                color: Colors.TEXT.SECONDARY,
-                fontSize: FontSize.SECONDARY,
-              }}
-            >
-              范围{range ? `${range.min}-${range.max}` : '不限'} 默认
-              {String(defaults[key])}
+            );
+          }
+          return (
+            <Input
+              value={String(rawValue ?? '')}
+              disabled={envKey}
+              style={{ width: settingsControl.inputWidth }}
+              onChange={(e) => onChange(key, e.target.value)}
+            />
+          );
+        };
+        return (
+          <div
+            key={key}
+            style={{
+              display: settingsRowLayout.display,
+              alignItems: settingsRowLayout.alignItems,
+              flexWrap: 'wrap',
+              gap: settingsRowLayout.gap,
+              minHeight: settingsRowLayout.minHeight,
+              borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
+            }}
+          >
+            <span style={{ width: settingsSpacing.labelWidth }}>
+              {key} {envKey && <EnvTag />}
             </span>
+            <span style={{ flex: 1 }}>{renderControl()}</span>
             {dirty[key] && <DirtyDot />}
           </div>
         );

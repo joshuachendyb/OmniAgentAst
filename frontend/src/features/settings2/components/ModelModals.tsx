@@ -17,10 +17,11 @@
 // 2026-09-22 小欧 - [62]P6 4.3(5)：onSubmitAddProvider Props 加 timeout?/max_retries?；添加 Provider
 //   弹窗表单 api_key 后新增 timeout(秒) min1 默认60占位、max_retries min0 默认3占位两个 InputNumber
 //   （配合 model.api.ts addProvider 入参补两字段，创建时即可自定义超时/重试）
+// 2026-09-22 小欧 - 控件宽度统一：参数模板区硬编码 minWidth:160/maxWidth:240 改用 settingsControl 令牌 - 小欧-2026-09-22
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
-import { settingsModalWidth } from '@/theme/settingsTokens';
+import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
 
 interface Props {
@@ -252,7 +253,7 @@ export const ModelModals: React.FC<Props> = (props) => {
                             : String(defaultVal ?? '')
                         }
                         options={opts.map((v) => ({ label: v, value: v }))}
-                        style={{ minWidth: 160 }}
+                        style={{ width: settingsControl.selectWidth }}
                         onChange={(v) =>
                           checked[key] &&
                           setCollected({
@@ -264,7 +265,7 @@ export const ModelModals: React.FC<Props> = (props) => {
                     ) : typeof defaultVal === 'number' ? (
                       <InputNumber
                         value={defaultVal as number}
-                        style={{ minWidth: 160 }}
+                        style={{ width: settingsControl.inputNumberWidth }}
                         onChange={(v) =>
                           checked[key] &&
                           setCollected({
@@ -278,7 +279,7 @@ export const ModelModals: React.FC<Props> = (props) => {
                         value={
                           defaultVal !== undefined ? String(defaultVal) : ''
                         }
-                        style={{ maxWidth: 240 }}
+                        style={{ width: settingsControl.inputWidth }}
                         onChange={(e) =>
                           checked[key] &&
                           setCollected({
