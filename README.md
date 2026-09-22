@@ -27,16 +27,16 @@
 | 层级 | 技术 | 版本 |
 |------|------|------|
 | 后端 | Python / FastAPI / Uvicorn | 3.13 / ≥0.109.0 / ≥0.27.0 |
-| 前端 | React / TypeScript / Vite / Ant Design | 18 / 5 / — / 5 |
+| 前端 | React / TypeScript / Vite / Ant Design | 18 / 5 / 5 / 5 |
 | LLM 集成 | 多 Provider 适配层（OpenAI 兼容 API） | — |
-| 数据库 | SQLite 原生 `sqlite3`，5 个库：chat_history.db / operations.db / task_tracker.db / timers.db / monitoring.db | — |
+| 数据库 | SQLAlchemy + aiosqlite，SQLite 5 库：chat_history.db / operations.db / task_tracker.db / timers.db / monitoring.db | — |
 | 任务执行 | 请求内流式（SSE），`run_react_cycle` 单请求驱动，无独立任务队列/Redis | — |
 | 测试 | pytest / Vitest / Playwright | — |
 
 ### 2.2 架构总览
 
 ```
-前端（React + Vite）：ChatPage（会话主界面）/ Session / Settings
+前端（React + Vite）：ChatPage（会话主界面）/ History / Settings2
         │  SSE 流式 / REST
         ▼
 后端 API 薄壳层（FastAPI，单进程，无独立网关）
@@ -65,7 +65,7 @@
 │  │                                                                              │   │
 │  │  contexts/AppContext ───── 全局单 Context（会话/任务/授权/设置共享状态）     │   │
 │  │       │                                                                       │   │
-│  │  hooks/chat/useChatFacade ── 7 个核心 hook 聚合                              │   │
+│  │  features/chat/hooks/useChatFacade ── 7 个核心 hook 聚合                   │   │
 │  │       │    useChatState · useChatCallbacks · useChatSession · useChatStreaming │   │
 │  │       │    useChatPersistence · useChatSend · useChatTaskControl             │   │
 │  │       ▼                                                                       │   │
@@ -94,13 +94,14 @@
 
 ### 2.3 依赖分层
 
-backend/app 采用六层单向依赖，上层只依赖下层，禁止反向、双向、环形：
+backend/app 采用分层单向依赖，禁止反向、双向、环形：
 
 ```
-api/v1 ──> services ──> safety ──> tools ──> utils / db / logger / config / constants
+api/v1 ──> services ──> tools ──> utils / db / logger / config / constants
+                       safety ──> tools（安全守卫被工具层调用，不反向依赖业务）
 ```
 
-由守护测试 `tests/test_architecture_boundaries.py`（3 条规则）持续强制。
+由守护测试 `tests/test_architecture_boundaries.py`（3 条规则）持续强制：api 不得引 tools/safety；tools 不得引 services/safety；safety 不得引 services。
 
 ### 2.4 与初始设计蓝图的差距
 
@@ -114,7 +115,7 @@ api/v1 ──> services ──> safety ──> tools ──> utils / db / logger
 | 权限 | 工具/文件路径级校验 | 用户级 RBAC | 保留工具级 |
 | 限流 | 仅 LLM 429 检测 | 请求级/IP 限流 | 未做请求级 |
 | 任务队列 | 无，请求内流式执行 | Celery + Redis | 未引入 Redis |
-| 缓存 | 无 | Redis | 未引入 |
+| 缓存 | 无 Redis；有内存级工具结果缓存（tuning.stream_task.tool_cache_ttl）+ 会话缓存上限 | Redis | 未引入 Redis，内存缓存够用 |
 | 数据存储 | SQLite 5 库 | PostgreSQL + Redis + MinIO + ES | 单机 SQLite |
 
 以上取舍基于单机/单用户场景，属有意的范围收敛，而非技术债。
@@ -131,7 +132,7 @@ api/v1 ──> services ──> safety ──> tools ──> utils / db / logger
 | SHELL | 1 | 命令查找（which） |
 | NETWORK | 5 | HTTP 请求、下载、网页抓取、网络诊断、搜索 |
 | SYSTEM | 4 | 系统计划任务、事件日志 |
-| DESKTOP | 11 | 窗口管理、截屏、剪贴板、键鼠、通知 |
+| DESKTOP | 11 | 窗口管理、截屏、剪贴板、键鼠（通知在 FUNDAMENTAL） |
 | DOCUMENT | 8 | PDF/Word/Excel/PPT 读写 |
 | DATAANALYSIS | 6 | SQL 查询/执行、图表生成、数据筛选/分析 |
 | FUNDAMENTAL | 5 | Shell 命令执行、系统信息、时间日期、通知、工具搜索 |
@@ -154,8 +155,8 @@ backend/app/tools/
 ├── file/ shell/ network/ system/ desktop/ document/
 ├── dataanalysis/ fundamental/ win_registry/ timer/   # 10 个工具分类目录
 └── {category}_schema.py     # Pydantic 参数模型（每个分类）
-   {category}_register.py    # 注册入口
-   {category}_tools.py       # 具体实现（按原子文件散落，如 file/ 下 read_text_file.py 等）
+   {category}_register.py    # 注册入口（tool_methods 字典显式注册）
+   └── {原子实现文件}.py     # 具体实现按原子文件散落（如 file/ 下 read_text_file.py 等，无 {category}_tools.py 大文件）
 ```
 > `tool_loader.py`（按 category 加载、per-agent 集合）位于 `backend/app/services/agent/tool_loader.py`。
 
@@ -179,7 +180,7 @@ UniversalAgent(BaseAgent) ← 唯一实现类，配置驱动（模型/系统提�
 | L1 | 工具安全级别（safe / destructive / dangerous） |
 | L2 | 已知风险检测：路径越权 / 写入污染 / 代码注入 / 删除安全（delete_safety R1-R6） |
 | L3 | DB 事务编排：操作记录 → 状态追踪 → 备份 → 文件 hash → 审计（operations.db，支持回滚） |
-| hooks | 安全 hooks 协议（ContextVar 注入，NoOpHooks 兜底） |
+| hooks | 安全 hooks 协议（`safety/default_hooks.py` 默认转发壳） |
 
 ### 4.3 Agent 2.0（规划中）
 
@@ -199,7 +200,7 @@ OmniAgentAs-desk/
 ├── backend/                    # Python FastAPI 后端
 │   ├── app/
 │   │   ├── api/v1/             # API 薄壳路由（config/settings/models/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage）
-│   │   ├── db/                 # 数据库（原生 sqlite3 连接：database.py / db_initializer.py / operation_queries.py）
+│   │   ├── db/                 # 数据库（SQLAlchemy + aiosqlite：database.py / db_initializer.py / operation_queries.py / models/ / migrations/）
 │   │   ├── logger/             # 日志配置
 │   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/tool_safety_checker/default_hooks/models
 │   │   ├── tools/              # 工具函数（10分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
@@ -217,7 +218,7 @@ OmniAgentAs-desk/
 │   │   │   └── visualization/  # 可视化报告（mermaid/html/tree 等）
 │   │   └── utils/
 │   ├── config.yaml.example     # 配置模板（复制到 config/config.yaml 后填写）
-│   ├── e2etests/               # 端到端测试（P0/P1/P2 全链路）
+│   ├── e2etests/               # 端到端测试（P0-P5/PAR/重连/复合，test_e2e_*.py 62 + com-* 14 = 76 个）
 │   ├── logs/                   # 运行日志
 │   ├── migrations/             # DB 迁移
 │   ├── scripts/                # 辅助脚本
@@ -232,14 +233,14 @@ OmniAgentAs-desk/
 │   │   │   │   ├── hooks/      #   useChatPanels 面板组装 / 其余 chat hook
 │   │   │   │   └── services/   #   sseParser.ts（SSE 解析）
 │   │   │   └── settings2/      # 设置特性域（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/ModelModals/ParamOptionsModal 等 17 组件）
-│   │   ├── components/         # 通用 UI 组件（AuthorizationModal / TrustPanel / 布局等）
+│   │   ├── components/         # 通用 UI 组件（AuthorizationModal / 布局等；TrustPanel 在 features/chat/components/config/）
 │   │   ├── contexts/           # React Context（AppContext）
-│   │   ├── hooks/              # 顶层 Hook（useSSE / useStateWithRef / useBeforeUnload 等）；chat 聚合见 hooks/chat/useChatFacade
+│   │   ├── hooks/              # 顶层 Hook（useSSE / useStateWithRef / useBeforeUnload 等）；chat 聚合见 features/chat/hooks/useChatFacade
 │   │   ├── lib/                # 库桥接（antd bridge）
 │   │   ├── pages/              # 页面（ChatPage / HistoryPage / Settings2）
 │   │   ├── services/           # API 层（api/*.api.ts + error/handler）
 │   │   ├── theme/              # 视觉令牌（tokens.ts）
-│   │   ├── types/              # TS 类型定义
+│   │   ├── types/              # TS 类型定义（chat/sse/execution，如 types/chat.ts）
 │   │   ├── constants/          # 前端常量
 │   │   └── utils/              # 工具函数（time / stepStyles / sse 处理等）
 │   ├── src/tests/              # 前端单元测试（Vitest，git 忽略）
@@ -271,7 +272,7 @@ OmniAgentAs-desk/
 | 其他页面 | `HistoryPage`（历史会话管理）/ `Settings2`（7 Tab 设置管理） |
 | 特性域 | `features/chat`（components/hooks/services/sseParser）+ `features/settings2`（SettingsPage/SettingsGroup/SettingRow/ProviderConfig/ModelParams/ModelModals/ParamOptionsModal 等 17 组件） |
 | 全局状态 | 单 Context `AppContext`（安全 Context 已并入） |
-| Hook 编排 | `useChatFacade` 聚合核心 hook：`useChatState` / `useChatCallbacks` / `useChatSession` / `useChatStreaming` / `useChatPersistence` / `useChatSend` / `useChatTaskControl`（另有 `useSSE` 流接收、`useAuthorization` 授权、`useTaskInfo` 等 20+ 个 hook） |
+| Hook 编排 | `features/chat/hooks/useChatFacade` 聚合核心 hook：`useChatState` / `useChatCallbacks` / `useChatSession` / `useChatStreaming` / `useChatPersistence` / `useChatSend` / `useChatTaskControl`（另有顶层 `useSSE` 流接收、`useAuthorization` 授权、`useTaskInfo` 等） |
 
 #### 6.1.1 界面布局图（SessionLayout 插槽化骨架 + useChatPanels 面板注册）
 
@@ -323,7 +324,7 @@ OmniAgentAs-desk/
 | paused / resumed / rejected / error | 任务暂停（含 HITL）、恢复、拒绝、异常 |
 | severity | paused 帧携带安全分级（safe/destructive/dangerous），前端据此渲染授权态 |
 
-前端解析统一在 `frontend/src/features/chat/services/sseParser.ts`，事件结构与 `types/chat.ts` 对齐。
+前端解析统一在 `frontend/src/features/chat/services/sseParser.ts`，事件结构与 `src/types/chat.ts` 对齐。
 
 ### 6.4 任务控制与断线重连
 
@@ -418,8 +419,8 @@ OmniAgentAs-desk/
 | 文件名 | `OmniAgent.md`（固定，`project_context.py` 中 `CONTEXT_FILE = "OmniAgent.md"`） |
 | 位置 | **项目根目录** = `get_project_root()`（`workspace.project_root` 配置值） |
 | 未配置 `workspace.project_root` | 回退用户主目录 `Path.home()` |
-| 当前配置值 | `config/config.yaml:90` → `project_root: E:\test_dir`，即应为 `E:\test_dir\OmniAgent.md` |
-| 注入上限 | `PROJECT_CONTEXT_MAX_CHARS`（10000 字符，超限截断，`app/constants.py`） |
+| 当前配置值 | `config/config.yaml` → `workspace.project_root: E:\test_dir`，即应为 `E:\test_dir\OmniAgent.md` |
+| 注入上限 | `tuning.content.project_context_max_chars`（10000 字符，超限截断；`app/constants.py` 仅保留 fallback 默认值） |
 | 用途 | 项目规则说明，LLM 执行任务时知晓项目约定 |
 
 > 说明：该文件为**可选的**项目规则注入，不存在时 `_get_project_context()` 返回空串（忽略），不影响系统正常运行。
@@ -443,7 +444,7 @@ OmniAgentAs-desk/
 
 | 键 | 说明 |
 |----|------|
-| `ai.model_ref` | 当前选中模型的引用（`{provider}.{model}` 结构，单源真相；切换不落盘改纯前端焦点） |
+| `ai.model_ref` | 当前选中模型的引用（`{provider, model}` 字典结构，单源真相；切换不落盘改纯前端焦点） |
 
 每个 Provider 以键名（如 `opencode`、`qiniu`、`zhipuai`）作为一级键，可配置任意多个：
 
@@ -454,7 +455,7 @@ OmniAgentAs-desk/
 | `label` | Provider 显示名称（可编辑） |
 | `models` | 可用模型列表（字符串数组） |
 | `model_params` | 按模型的补充参数（见下方结构说明） |
-| `param_options` | 按模型的参数模板选项（P1-P8 实现，前端 ParamOptionsModal 管理） |
+| `model_meta` | 按模型的元数据，含 `param_options` 参数模板选项（P1-P8 实现，前端 ParamOptionsModal 管理） |
 | `timeout` | 请求超时（秒），默认 60；0 为合法值（无超时） |
 | `max_retries` | 失败重试次数，默认 3 |
 
@@ -467,13 +468,13 @@ model_params:
     reasoning_effort: low    # 其它键整体作为 extra_body 透传（如推理强度），支持任意键
 ```
 
-`param_options` 为 **按模型名分组的参数模板选项**（P1-P8 实现），结构如下：
+`model_meta.param_options` 为 **按模型名分组的参数模板选项**（P1-P8 实现，三层解析：model_meta.param_options > provider 级 param_options > 代码兜底），结构如下：
 
 ```yaml
-param_options:
-  gpt-4o:
-    reasoning_effort: [low, medium, high]   # 候选值列表，前端 ParamOptionsModal 管理
-    temperature: [0.0, 0.3, 0.7, 1.0]
+model_meta:
+  glm-4.7-flash:
+    param_options:
+      reasoning_effort: [low, medium, high]   # 候选值列表，前端 ParamOptionsModal 管理
 ```
 
 ### 7.4 `workspace` + `agent` + `app` — 应用配置
@@ -552,7 +553,7 @@ param_options:
 | 环境变量 | 覆盖项 |
 |----------|--------|
 | `{PROVIDER}_API_KEY`（如 `AGNES_API_KEY`） | `ai.<provider>.api_key` |
-| `AI_PROVIDER` | `ai.provider` |
+| `AI_PROVIDER` | `ai.model_ref.provider` |
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
 | `CORS_ORIGINS` | `tuning.network.cors_origins`（CORS 跨域，逗号分隔） |
@@ -571,7 +572,7 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 | 资产 | 位置 |
 |------|------|
-| 后端执行手册（用例/铁律/数据结构，v2.8+） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
+| 后端执行手册（用例/铁律/数据结构，v2.15） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
@@ -598,7 +599,7 @@ backend/e2etests/
 │   ├── e2e_helpers.py                     #  全部通用逻辑（计时/SSE解析/DB校验/日志检查/测试记录）
 │   ├── conftest.py                        #  pytest fixtures
 │   └── model-test_e2e_0*.py              #  四类 case 模板（A无工具/B单工具/C多步/D数据持久化）
-├── test_e2e_*.py                          # 实际 case（P0~P5 分级，当前 76 个）
+├── test_e2e_*.py                          # 实际 case（P0-P5/PAR/重连，62 个）+ com-* 复合 14 个 = 76 个
 └── reports/                               # 报告输出（按需生成）
 ```
 
@@ -631,7 +632,6 @@ frontend/
 | 目录/文件 | 内容 |
 |-----------|------|
 | `notes/测试记录-{test_id}-{日期}.md` | 每条 case 的测试记录（write_test_record 自动追加，见 8.8） |
-| `notes/.e2e_status/` | 运行状态标记（{test_id}.json，防重复/记挂起） |
 
 ### 8.3 库代码文件与核心功能
 
@@ -963,7 +963,6 @@ pip install mss imageio numpy
 | `pytest` | 运行全部测试 |
 | `pytest tests/test_xxx.py -v` | 运行指定测试文件 |
 | `pytest -k test_name -v` | 按名称匹配运行测试 |
-| `pytest --cov=app` | 测试并生成覆盖率 |
 | `pytest --runxfail` | 运行所有测试（含标记为 xfail 的） |
 | `pytest e2etests/test_e2e_p0_02_tool_call.py -v --runxfail` | 指定 E2E 测试运行（e2etests 目录） |
 
