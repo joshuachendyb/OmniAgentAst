@@ -11,13 +11,15 @@ import type { ModelEntry, ProviderEntry } from '@/services/api/model.api';
 
 export type { SettingSchemaItem, SettingSource, ModelEntry, ProviderEntry };
 
+// 2026-09-22 小欧 - [61] tuning Tab 类型补齐：TabKey 加 'tuning'
 export type TabKey =
   | 'general'
   | 'model'
   | 'security'
   | 'appearance'
   | 'system'
-  | 'sandbox';
+  | 'sandbox'
+  | 'tuning';
 
 export interface ModelState {
   providers: ProviderEntry[];

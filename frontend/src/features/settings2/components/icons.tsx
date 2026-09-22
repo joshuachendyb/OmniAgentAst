@@ -12,6 +12,7 @@ import {
   DesktopOutlined,
   GlobalOutlined,
   SafetyOutlined,
+  SlidersOutlined,
 } from '@ant-design/icons';
 import { Tag } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -22,6 +23,7 @@ const TAB_ICON_STYLE: React.CSSProperties = {
   fontSize: 14,
 };
 
+// 2026-09-22 小欧 - [61] tuning Tab 图标：SettingIcon 加 tuning + SlidersOutlined
 export const SettingIcon: Record<TabKey, React.ReactNode> = {
   general: <GlobalOutlined style={TAB_ICON_STYLE} />,
   model: <ApiOutlined style={TAB_ICON_STYLE} />,
@@ -29,6 +31,7 @@ export const SettingIcon: Record<TabKey, React.ReactNode> = {
   appearance: <BgColorsOutlined style={TAB_ICON_STYLE} />,
   system: <DesktopOutlined style={TAB_ICON_STYLE} />,
   sandbox: <CodeOutlined style={TAB_ICON_STYLE} />,
+  tuning: <SlidersOutlined style={TAB_ICON_STYLE} />,
 };
 
 /** 已修改角标：6px 实心圆点 + 12px 次文（7.9.2，不用 emoji）。 */

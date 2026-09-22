@@ -29,13 +29,26 @@ interface Props {
   onChange: (group: string, key: string, value: unknown) => void;
 }
 
+// 2026-09-22 小欧 - [61] tuning Tab 分块：sectionOf 加 tuning.* 前缀→8 个子组名映射
 function sectionOf(group: string, key: string): string | null {
-  if (group !== 'system') return null;
-  // 2026-09-21 小强 - 系统Tab 3 小节：运维日志(配置+日志目录只读) / 工程目录(6 只读) / 关于
-  if (key.startsWith('logging.') || key === 'paths.logs') return '运维日志';
-  if (key.startsWith('paths.')) return '工程目录';
-  if (key.startsWith('app.')) return '系统参数';
-  return '关于';
+  if (group === 'system') {
+    // 2026-09-21 小强 - 系统Tab 3 小节：运维日志(配置+日志目录只读) / 工程目录(6 只读) / 关于
+    if (key.startsWith('logging.') || key === 'paths.logs') return '运维日志';
+    if (key.startsWith('paths.')) return '工程目录';
+    if (key.startsWith('app.')) return '系统参数';
+    return '关于';
+  }
+  if (group === 'tuning') {
+    if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
+    if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
+    if (key.startsWith('tuning.concurrency.')) return '并发配额';
+    if (key.startsWith('tuning.agent.')) return 'Agent 循环参数';
+    if (key.startsWith('tuning.stream_task.')) return '流/任务/缓存';
+    if (key.startsWith('tuning.hitl.')) return '人工确认';
+    if (key.startsWith('tuning.content.')) return '内容截断';
+    if (key.startsWith('tuning.network.')) return '网络';
+  }
+  return null;
 }
 
 export const SettingsGroup: React.FC<Props> = ({
