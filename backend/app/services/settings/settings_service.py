@@ -58,6 +58,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
       校验值不超出 [lo, hi]，与 range 类型对齐（schema.range_ 统一生效，堵住超范围值落盘漏洞）
 """
 from pathlib import Path
+import json
 import math
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -134,6 +135,11 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
     # 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) YAML 存 list，读回拼回多行供 SettingRow 文本框显示
     if item["type"] == "textarea" and isinstance(raw_val, list):
         raw_val = "\n".join(str(x) for x in raw_val)
+    # 2026-09-22 小欧 修 S17：textarea JSON 型(tuning.llm.stream_options，default 为 JSON 字符串)，
+    # 但 config.yaml 落盘的是结构体 dict → 快照 value 变 dict，与 schema 的 textarea/字符串类型契约冲突
+    # （RG-02 live-probe B10/B15 失败）。读回统一序列化为 JSON 字符串，写回见 _to_stored_value 对称还原。
+    elif item["type"] == "textarea" and isinstance(raw_val, dict):
+        raw_val = json.dumps(raw_val, ensure_ascii=False)
     eff_val = _resolved(key, item["default"])
     is_env = bool(item.get("env_key") and env_nonempty(item["env_key"]))
     if item.get("secret"):
@@ -190,9 +196,21 @@ def get_setting(key: str, default: Any = None) -> Any:
 
 
 def _to_stored_value(item: Dict[str, Any], value: Any) -> Any:
-    """落盘前类型归一 — 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) 存 list 满足消费方
-    get_allowed_dirs() 的列表契约；多行文本→逐行去空白过滤空行，空文本→[]。"""
+    """落盘前类型归一：
+    - 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) 普通多行文本→拆 list 存，满足消费方
+      get_allowed_dirs() 的列表契约；多行文本→逐行去空白过滤空行，空文本→[]。
+    - 2026-09-22 小欧 修 S17：textarea JSON 型(如 tuning.llm.stream_options，default 为 JSON 文本)
+      编辑框提交 JSON 字符串 → json.loads 还原结构体落盘，与 _item_data 读回序列化对称，
+      保证 LLM 运行时 get_setting 拿到 dict。"""
     if item["type"] == "textarea" and isinstance(value, str):
+        dflt = str(item.get("default") or "").strip()
+        if dflt.startswith("{") or dflt.startswith("["):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, (dict, list)):
+                    return parsed
+            except ValueError:
+                pass
         return [ln.strip() for ln in value.splitlines() if ln.strip()]
     return value
 
