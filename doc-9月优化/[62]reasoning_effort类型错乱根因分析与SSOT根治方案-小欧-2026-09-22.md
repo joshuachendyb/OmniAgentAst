@@ -1,7 +1,7 @@
 # [62]reasoning_effort类型错乱根因分析与SSOT根治方案
 
 **创建时间**: 2026-09-22 12:40:51
-**更新时间**: 2026-09-22 14:18:37（小欧）
+**更新时间**: 2026-09-22 14:26:43（小欧）
 **编写人**: 小欧
 **版本历史**（按时间正序，旧条原文保留）:
 - v1.0 2026-09-22 12:40:51 小欧 新建：reasoning_effort显示为数字0的病根分析与后端SSOT根治设计
@@ -30,6 +30,7 @@
 - v3.3 2026-09-22 14:02:56 小欧 新增第四章Provider参数问题（除URL/KEY外6处）：timeout兜底不一致（lifecycle/service.py用30，其他用60）、max_retries运行时不消费（base_service.py硬编码3，DTO/TS类型缺字段）、addProvider前端缺timeout/max_retries输入
 - v3.4 2026-09-22 14:14:11 小欧 4.1补四种断链说明表：timeout兜底打架（保存✓生效✗三处默认值不一致）、max_retries完全不消费（保存✓运行时硬编码3）、label改不了（保存✓前端无编辑入口）、models创建时丢失（没传✓弹窗无输入框）
 - v3.5 2026-09-22 14:18:37 小欧 核查发现现有diff不遵守三层回落原则：4.3(1)create_service_instance写死默认60跳过tuning配置，4.3(2)max_retries无回落链。修正：create_service_instance传None（Provider没设时不传默认值），base_service.py timeout用is not None判断（0是合法值），max_retries加三层回落（Provider > tuning.max_retries > 常量3）
+- v3.6 2026-09-22 14:26:43 小欧 补label/models两处diff：4.3(6)label编辑入口（types/useSettings/SettingsPage/ProviderConfig四文件）+4.3(7)addProvider弹窗补timeout/max_retries输入框+models注释说明（创建后通过模型管理UI添加）
 
 ---
 
@@ -570,7 +571,7 @@ zhipuai:
 
 ### 4.1 问题清单（小欧）
 
-按2.1第5条完整性铁律逐条核对现状代码（未改），6处问题：
+按2.1第5条完整性铁律逐条核对现状代码（未改），8处问题：
 
 | # | 代码点 | 问题 | 违原则段 |
 |---|---|---|---|
@@ -580,6 +581,8 @@ zhipuai:
 | P4 | `model_routes.py:48-54` `ProviderConfigUpdate` DTO缺`max_retries`字段 | DTO只有`retry_times`，前端发`max_retries`靠key_map别名绕过，类型不一致 | ②③ |
 | P5 | `model.api.ts:43-49` `ProviderConfigPatch` TS类型缺`max_retries` | 接口只有`retry_times`，前端`ProviderConfig.tsx:52-53`实际发送`max_retries`，TS类型保护失效 | ④ |
 | P6 | `model.api.ts:98-103` `addProvider`签名缺`timeout`/`max_retries` | 创建Provider时不传这两个值，全走后端默认值（60/3），前端无法在创建时自定义 | ⑤ |
+| P7 | `types.ts:32-41` + `ProviderConfig.tsx`无label编辑入口 | providerConfig state无label字段，ProviderConfig无label输入框，创建后无法通过UI修改显示名 | ②③ |
+| P8 | `model.api.ts:98-103` + `ModelModals.tsx:170-187` addProvider弹窗缺timeout/max_retries | 创建Provider时无法自定义这两个值，全走后端默认值 | ⑤ |
 
 注：P4的DTO虽然缺`max_retries`字段，但`model_dump(exclude_none=True)`把前端传的`max_retries`原样透传到`update_provider_config`的`fields`，key_map有`max_retries→max_retries`映射，所以**写入链路碰巧能工作**——但这是绕过类型系统的隐式行为，不是正确设计。
 
@@ -727,6 +730,108 @@ zhipuai:
 ```
 
 原因：创建Provider时无法自定义timeout/max_retries，全走后端默认值。补后创建弹窗可设，API签名可传，与后端`ProviderAddRequest` DTO（config_schemas.py:117-118，已有timeout=60/max_retries=3默认值）对齐。
+
+（6）label编辑入口（`types.ts` + `useSettings.ts` + `SettingsPage.tsx` + `ProviderConfig.tsx`，四文件联动）：
+
+```diff
+ # types.ts:32-41 providerConfig类型
+   providerConfig: Record<
+     string,
+     {
+       api_key: { configured: boolean; suffix: string };
+       base_url: string;
++      label: string;
+       timeout: number;
+       max_retries: number;
+       env: boolean;
+     }
+   >;
+```
+
+```diff
+ # useSettings.ts:178-189 load()构建providerConfig
+   const providerConfig = Object.fromEntries(
+     models.providers.map((p) => [
+       p.name,
+       {
+         api_key: p.api_key,
+         base_url: p.api_base,
++        label: p.label,
+         timeout: p.timeout,
+         max_retries: p.max_retries,
+         env: p.env,
+       },
+     ])
+   );
+```
+
+```diff
+ # SettingsPage.tsx:278-284 ProviderConfig fallback
+   state.model.providerConfig[state.model.selectedProvider] ?? {
+     api_key: { configured: false, suffix: '' },
+     base_url: '',
++    label: '',
+     timeout: 60,
+     max_retries: 3,
+     env: false,
+   }
+```
+
+```diff
+ # ProviderConfig.tsx:18-36 Props定义
+   interface Props {
+     name: string;
+     config: {
+       api_key: { configured: boolean; suffix: string };
+       base_url: string;
++      label: string;
+       timeout: number;
+       max_retries: number;
+       retry_times?: number;
+       env: boolean;
+     };
+     onSave: (patch: {
+       api_key?: string;
+       base_url?: string;
++      label?: string;
+       timeout?: number;
+       retry_times?: number;
+       max_retries?: number;
+       clear?: boolean;
+     }) => Promise<void>;
+   }
+```
+
+```diff
+ # ProviderConfig.tsx:42-64 doSave构建patch
+   const doSave = async () => {
+     const values = await form.validateFields();
+     const patch: Record<string, unknown> = {};
+     if (values.api_key !== undefined && String(values.api_key).trim() !== '')
+       patch.api_key = values.api_key;
+     if (values.base_url !== undefined)
+       patch.base_url = String(values.base_url).trim();
++    if (values.label !== undefined && String(values.label).trim() !== '')
++      patch.label = String(values.label).trim();
+     if (values.timeout !== undefined) patch.timeout = values.timeout;
+     if (values.max_retries !== undefined)
+       patch.max_retries = values.max_retries;
+```
+
+```diff
+ # ProviderConfig.tsx:78-119 表单区块（在base_url后新增label输入框）
+   <Form.Item label="base_url" name="base_url" extra="留空=清空地址（恢复默认直连）">
+     <Input />
+   </Form.Item>
++  <Form.Item label="显示名" name="label" extra="Provider显示名称，留空=保持原值">
++    <Input />
++  </Form.Item>
+   <Form.Item label="timeout" name="timeout">
+```
+
+原因：后端`key_map`有`label→label`支持修改，`ProviderConfigUpdate` DTO有`label`字段，但前端无编辑入口。补后可在Provider配置区修改显示名，与后端写链路闭合。
+
+（7）`models`创建时处理说明：后端`ProviderAddRequest` DTO（config_schemas.py:116）已有`models: list[str]`字段，`add_provider()`（model_service.py:249-251）已支持models列表写入config.yaml。前端创建弹窗不加models输入框——模型列表通过②模型管理区的"添加模型"按钮逐个添加（已有完整UI），创建Provider时通常还不知道要挂哪些模型。如需批量设置，可直接编辑config.yaml的`ai.{provider}.models`列表。
 
 ### 4.4 测试与验证（小欧）
 
