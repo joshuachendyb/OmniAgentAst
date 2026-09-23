@@ -31,7 +31,7 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
  *
  * 改端口必须前后端对齐：
  *   后端改端口（如 8000→9000）→ 前端必须同步改 VITE_API_PORT=9000，否则连不上。
- *   前端改端口（如 5173→3000）→ 后端必须同步改 CORS 白名单（constants.py 或 tuning.network.cors_origins）。
+ *   前端改端口（如 5173→3000）→ 后端必须同步改 CORS 白名单（constants.py 或 network.cors_origins）。
  *
  * 后端端口配置方式：
  *   - uvicorn 启动参数：python -m uvicorn app.main:app --port 9000

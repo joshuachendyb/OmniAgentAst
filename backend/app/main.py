@@ -15,6 +15,7 @@
 # 2026-09-21 - 小欧 - 对齐文档54 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
+# 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
 import sys
 import asyncio
 from typing import Optional
@@ -89,7 +90,7 @@ app = FastAPI(
 
 logger.info("Backend v" + app_version + " started")
 
-_cors_origins_str = os.getenv("CORS_ORIGINS", get_config().get("tuning.network.cors_origins", _D_CORS))
+_cors_origins_str = os.getenv("CORS_ORIGINS", get_config().get("network.cors_origins", _D_CORS))
 _cors_origins = [origin.strip() for origin in _cors_origins_str.split(",") if origin.strip()]
 
 app.add_middleware(

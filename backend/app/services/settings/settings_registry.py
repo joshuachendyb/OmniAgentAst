@@ -81,6 +81,26 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
      原"只记得最近 N 轮问答"语义不准——实际是超限触发裁剪操作，非单纯记忆范围；
      改为"超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，
      调小=省钱但会忘更早的事" —— 消费点 message_builder.py:358-360 msg_count>max_rounds*2+2 触发裁剪 — 小欧-2026-09-23
+   2026-09-23 20:04:15 - 小欧 - 调优组 4 项 label/type 修正(北京老陈指令"有几个标签不对"):
+     ①tuning.trim.max_rounds label "保留对话轮数"→"裁剪历史触发轮"（语义=超限触发裁剪，非记忆范围）;
+     ②tuning.trim.compaction_buffer label "给回答留底(字符)"→"上下文预留空间";
+     ③tuning.compaction.keep_tail label "摘要后留几条"→"免压缩原始对话数";
+     ④tuning.network.cors_origins type "text"→"textarea"（原单行输入框太短，改用长文本框；
+       前端 SettingRow.tsx case 'textarea' 走 textareaWidth 宽框）—— 键名/默认值/值域/notice 均不动 — 小欧-2026-09-23
+   2026-09-23 20:07:36 - 小欧 - tuning.network.cors_origins type 再修正(北京老陈"textarea也不对,应该用类似base_url的显示框"):
+     "textarea"→"url"——textarea 保存路径 settings_service._to_stored 会按行拆 list，破坏 main.py:93
+     逗号分隔字符串契约（split(",") 对 list 直接崩）；base_url 实为单行 Input+baseUrlWidth(360px)，
+      故新设 "url" 类型：后端 _validate_value 按 str 校验、前端 SettingRow case 'url' 渲染单行 Input
+      走 baseUrlWidth 宽框（与 ProviderConfig base_url 同款）—— 键名/默认值/notice 不动 — 小欧-2026-09-23
+    2026-09-23 20:12:44 - 小欧 - tuning.network.cors_origins 组归属迁移(北京老陈"应该在系统组,关于上面一个分块"):
+      调优组 items 删除该条，迁入 system 组「工程目录」之后「关于」之前成独立「网络」分块；
+      键名 tuning.network.cors_origins/默认值/notice/type=url 均不动（yaml 结构与 main.py:92 消费方零改动），
+      仅 UI 分组重排；系统组 12 项→13 项、调优组剔除 network 子组 — 小欧-2026-09-23
+    2026-09-23 20:29:50 - 小欧 - 键名去 tuning 前缀(北京老陈"和调优没有屁关系为什么要牵涉在一起"):
+      tuning.network.cors_origins → network.cors_origins（系统组键不该带 tuning. 前缀）；
+      yaml 结构 tuning.network.cors_origins 上提为顶层 network.cors_origins（config.yaml.example +
+      真实 config/config.yaml 同步搬块）；main.py:92 get 路径同步；禁止backward 无 OLD_KEY_MAP 迁移；
+      默认值/notice/type=url/label 均不动 — 小欧-2026-09-23
 """
 from typing import Any, Dict, List, Optional
 
@@ -158,7 +178,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300, range_=[1, 3600],
               notice="单次执行最大超时（秒），超出截断转裁决"),
     ]},
-    # 4.5 系统（system，12 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 2 关于只读）
+    # 4.5 系统（system，13 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 1 网络 CORS + 2 关于只读）
     #   注意：本小节新增 / 删除 paths.* 条目务必同步 settings_service._item_data 的 paths 派生字典，
     #   二者 keys 一一对应，service 漏配将抛 KeyError(fail-fast 防静默空白) —— 小欧 2026-09-21
     "system": {"label": "系统", "items": [
@@ -185,6 +205,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="根：调试=backend\\files、正式=~\\.omniagent\\files；tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1工具结果"),
         _item("paths.record_conv", "readonly", "对话历史文件", None, readonly=True,
               notice="根：调试=backend\\files、正式=~\\.omniagent\\files；conv_hist_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1消息"),
+        # --- 网络（1 键，自 tuning 组迁入；键名 network.cors_origins 顶层，main.py 消费方同步）--- 小欧-2026-09-23
+        _item("network.cors_origins", "url", "允许访问的页面地址",
+              "http://localhost:5173,http://127.0.0.1:5173",
+              notice="允许访问本服务的页面地址白名单，多个用逗号隔开；换了前端地址或端口要加上新地址，否则页面会被浏览器拦住。默认两个是本机开发地址，一般不用改"),
         # --- 关于（2 只读） ---
         _item("config_path", "readonly", "配置文件路径", None, readonly=True),
         _item("version", "readonly", "当前版本", None, readonly=True),
@@ -198,7 +222,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
     ]},
     # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
-    # 2026-09-23 小欧 - 现 10子组35键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键）
+    # 2026-09-23 小欧 - 20:12:44 前 10子组34键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键，network 1键仍在）— 小欧-2026-09-23
+    # 2026-09-23 小欧 - 20:12:44 起 9子组33键（network.cors_origins 迁系统组；实测 REGISTRY 9子组33键）— 小欧-2026-09-23
     "tuning": {"label": "调优", "items": [
         # --- llm: LLM 语义参数（5 键，temperature/max_tokens 已迁入 llm.sampling.* 通用组）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
         _item("tuning.llm.tool_choice", "select", "工具调用模式", "auto",
@@ -235,11 +260,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
         # --- trim: 裁剪 3 键（每轮循环自动执行）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
-        _item("tuning.trim.max_rounds", "int", "保留对话轮数", 100, range_=[1, 10000],
+        _item("tuning.trim.max_rounds", "int", "裁剪历史触发轮", 100, range_=[1, 10000],
               notice="超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，调小=省钱但会忘更早的事"),
         _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.75, range_=[0.1, 0.95],
               notice="对话占到模型记忆容量的百分之多少时开始自动删旧内容（0.75=占到四分之三就删）；调小=删得勤、腾地方快，调大=多记一会但快满时才动手"),
-        _item("tuning.trim.compaction_buffer", "int", "给回答留底(字符)", 20000, range_=[1000, 100000],
+        _item("tuning.trim.compaction_buffer", "int", "上下文预留空间", 20000, range_=[1000, 100000],
               notice="删旧内容时故意不删满，给模型写这次回答预留这么多容量，防止删完一点空都没有、模型没地方写"),
         # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
         _item("tuning.compaction.start_enabled", "bool", "开局压缩开关", True,
@@ -248,7 +273,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="开局时旧对话占到记忆容量百分之多少才值得压（0.5=占到一半就压）；只管任务开头这一次，任务跑起来后归上面的「裁剪」管"),
         _item("tuning.compaction.summary_feed_max_chars", "int", "单条截断(字符)", 2000, range_=[100, 10000],
               notice="压成摘要前，单条工具结果超过这么多字先砍掉再给模型看（防超长输出把摘要过程撑爆）；调大=摘要更全但更费"),
-        _item("tuning.compaction.keep_tail", "int", "摘要后留几条", 1, range_=[0, 5],
+        _item("tuning.compaction.keep_tail", "int", "免压缩原始对话数", 1, range_=[0, 5],
               notice="压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
         # --- stream_task: 连接保活/任务清理/缓存（4 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
         _item("tuning.stream_task.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
@@ -275,10 +300,6 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="工具跑完后写进对话记录的单条结果最多保留多少字，超长截断；防止读了个大文件把整个对话撑爆"),
         _item("tuning.content.temp_history_char_limit", "int", "临时副本字数上限", 50000, range_=[5000, 200000],
               notice="压缩过程中临时存的对话副本最多多少字，超了硬截断；正常用不到，属于防爆保险"),
-        # --- network: 网络（1 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
-        _item("tuning.network.cors_origins", "text", "允许访问的页面地址",
-              "http://localhost:5173,http://127.0.0.1:5173",
-              notice="允许访问本服务的页面地址白名单，多个用逗号隔开；换了前端地址或端口要加上新地址，否则页面会被浏览器拦住。默认两个是本机开发地址，一般不用改"),
     ]},
 }
 

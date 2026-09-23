@@ -140,7 +140,7 @@ llm:
     presence_penalty: 0       # 正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用
   context_limit_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
 
-# 调优配置（前端「调优」Tab 展示；10子组35键）
+# 调优配置（前端「调优」Tab 展示；9子组33键，network 已迁顶层）— 小欧-2026-09-23
 tuning:
   # LLM 语义参数（5 键）— 注释 2026-09-23 去开发术语重写，对齐 registry notice — 小欧-2026-09-23
   llm:
@@ -203,6 +203,6 @@ tuning:
     action_log_result_max_chars: 5000 # 工具结果写进对话最多留N字,超长截断(防大文件撑爆)
     temp_history_char_limit: 50000    # 压缩时临时副本最多N字,超了硬截断(防爆保险)
 
-  # 网络（1 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
-  network:
-    cors_origins: "http://localhost:5173,http://127.0.0.1:5173"  # 允许访问的页面地址白名单,换端口要加新地址
+# 网络（1 键，顶层 network 域，系统组显示）— 小欧-2026-09-23 键名去 tuning 前缀
+network:
+  cors_origins: "http://localhost:5173,http://127.0.0.1:5173"  # 允许访问的页面地址白名单,换端口要加新地址

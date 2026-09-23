@@ -98,7 +98,7 @@ STREAM_TOTAL_TIMEOUT = 500  # 【系统级】使用对象: base_service.request_
 # 端口关系：前端(:5173) 直连后端(:8000) 时，浏览器发 CORS 预检，后端 CORSMiddleware 校验 Origin。
 #   - localhost:5173 / 127.0.0.1:5173：Vite dev server 默认端口（vite.config.ts:42）
 #     浏览器把 localhost 和 127.0.0.1 当不同 Origin，所以两个都写。
-# 改前端端口时须同步更新此值（或走 tuning.network.cors_origins 配置化）。
+# 改前端端口时须同步更新此值（或走 network.cors_origins 配置化）。
 # 不适用于 Vite proxy 模式（proxy 同源无 CORS 问题）。
 DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"  # 【系统级】使用对象: API 服务 CORS 允许源
 

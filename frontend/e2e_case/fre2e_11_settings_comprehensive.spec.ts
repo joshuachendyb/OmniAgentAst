@@ -995,9 +995,9 @@ test('55 安全 auto_confirm_delay编辑→保存→落盘', async ({ page, requ
     console.log(`[E2E] 81 project_context_max_chars=${val}`);
   });
 
-  test('82 调优 cors_origins读取', async ({ page, request }) => {
+  test('82 系统 cors_origins读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as { groups: Record<string, { data: Record<string, unknown> }> };
-    const val = before.groups.tuning.data['tuning.network.cors_origins'];
+    const val = before.groups.system.data['network.cors_origins'];
     console.log(`[E2E] 82 cors_origins=${val}`);
   });
 
