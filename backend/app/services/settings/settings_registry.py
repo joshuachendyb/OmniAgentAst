@@ -44,7 +44,34 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
   2026-09-23 - 小欧 - trim/compaction配置化: ①通用组删 agent.max_rounds（挪入调优·裁剪）; ②tuning组 Agent 循环参数后插 trim 3键(max_rounds/trigger_ratio/compaction_buffer)+compaction 4键(start_enabled/start_trigger_ratio/summary_feed_max_chars/keep_tail)两独立分块; ③OLD_KEY_MAP 加 agent.max_rounds→tuning.trim.max_rounds
   2026-09-23 - 小欧 - 禁止backward还清旧账: 删 OLD_KEY_MAP 3条迁入映射(tuning.llm.temperature/max_tokens、agent.max_rounds，无消费方虚假承诺); live值已手工搬入新键，旧键废弃
   2026-09-23 - 小欧 - 删死配置 tuning.agent.max_consecutive_chunks（should_promote 历史接口全仓零调用，max_consecutive 唯一读取点即该死方法）; max_chunks_without_promote 改名实义 chunk 累积上限+notice重写（单轮未收到完整响应累积50 chunk 即强制失败终止）
-  2026-09-23 - 小欧 - 频次惩罚/存在惩罚 label 补英文名: "频次惩罚"→"频次惩罚 (frequency_penalty)"、"存在惩罚"→"存在惩罚 (presence_penalty)" - 小欧-2026-09-23
+   2026-09-23 - 小欧 - 频次惩罚/存在惩罚 label 补英文名: "频次惩罚"→"频次惩罚 (frequency_penalty)"、"存在惩罚"→"存在惩罚 (presence_penalty)" - 小欧-2026-09-23
+   2026-09-23 - 小欧 - llm_net 7键 notice 重写(北京老陈指令"描述准确"): 原文案仅同义复述label无解释——
+     改为「管什么阶段+超了/超限会怎样」: read=两字节间隙(非总时长,流式断流判死依据)/connect=TCP建连握手/
+     write=发完请求体/pool=池满等空位/max_connections=并发上限第N+1排队/max_keepalive=空闲复用保留/
+     stream_total=单次流式总闸到点强制截断(与read分工: read管间隙, total管总长) - 小欧-2026-09-23
+   2026-09-23 - 小欧 - 连接相关7键 notice 重写(北京老陈指令"一起补充"): stream_max_retries=传输层HTTP重发
+     (与response_retries分工: 传输vs内容)/response_fallback=FC耗尽降级Text语义展开/response_retries=L2内容层
+     指数退避+不重试元组/soft_pool_wait_timeout=信号量排队超时保底放行(与连接池超时分工)/
+     shell_pool_max_per_type=(任务ID,Shell类型)分池槽位/heartbeat_interval=防前端60s判死保活/
+     cors_origins=跨域白名单+直连vs proxy场景 —— 消费点核实: base_service.py:344/llm_call.py:230,275/
+     client_sdk.py:123,219/shell_engine.py:853/stream_orchestrator.py:574/main.py:92 - 小欧-2026-09-23
+   2026-09-23 - 小欧 - 调优组剩余18键 notice 全量重写(北京老陈指令"都是看的稀里糊涂 都优化一下"):
+     llm 2键(tool_choice/include_usage)/trim 3键/compaction 4键/stream_task 3键(除heartbeat已改)/
+     hitl 4键/content 3键 —— 统一口径「管什么+什么时候触发+超了/关了会怎样+与谁分工」，消灭
+     C4/TTL/L2/HITL/bypass/FC轮 等黑话直甩 —— 消费点核实: llm_call.py:89/base_service.py:335/
+     message_builder.py:106-108,318,345-366/trigger.py:60/start_step.py:127,137,167/summary.py:61/
+     task_registry.py:194/universal_agent.py:42/message_service.py:45/hitl_gateway.py:88-92/
+     hitl_confirmation.py:103/project_context.py:45/tool_runner.py:157/chunk_buffer.py:38 - 小欧-2026-09-23
+   2026-09-23 - 小欧 - 调优组 notice/label 去开发术语(北京老陈指令"怎么还有开发的代码信息"):
+     设置页 notice 是给最终用户看的，禁出现 SSE/HITL/bypass/CORS/Origin/chunk/FC/L2/C4/TTL/
+     信号量/request body/ConnectTimeout/PoolTimeout/TCP/DNS/ShellPoolBusy/IDLE_TIMEOUT/Vite
+     proxy/action_handler/tool_result/上下文窗口 等代码与内部黑话 —— 全组改纯用户语言
+     (「我还活着」「记得更久更费钱」「弹窗一闪来不及点」式口语)，label 同步去术语
+     (tool_choice模式→工具调用模式、流式最大重试→传输失败重试、FC响应回退→工具失败转文字、
+     响应错误重试→内容错误重试、SSE心跳周期→保活间隔、HITL/bypass倒计时→确认倒计时、
+     CORS允许来源→允许访问的页面地址、chunk累积上限→卡死保护上限、软配额等待→排队最多等、
+     Shell池槽位→终端会话槽位、裁剪触发比例→裁剪触发水位、开局压缩水位等) ——
+     config.yaml.example 注释同步去术语；float 类型键(connect/write/pool/soft_pool)类型值域未动 - 小欧-2026-09-23
 """
 from typing import Any, Dict, List, Optional
 
@@ -83,12 +110,12 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("llm.sampling.presence_penalty", "float", "存在惩罚 (presence_penalty)", 0, range_=[-2, 2],
               notice="正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用"),
         _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
-              notice="模型上下文窗口的默认值（当模型未单独配置时使用），256K tokens"),
+              notice="模型一次能记住的内容总量默认值（单个模型没单独配置时用这个），约 25.6 万 token"),
     ]},
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）
     "model": {"label": "模型", "items": [
         _item("ai.model_ref", "model_ref", "当前系统全局使用模型", None,
-              notice="与后端 DTO 同形的 {provider, model} 结构；env 接管时整行只读",
+              notice="当前选用的模型（哪个服务商+哪个模型）；被环境变量强制指定时整行只读",
               env_key="AI_PROVIDER"),
     ]},
     # 4.3 安全（security，4 项，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
@@ -96,11 +123,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("security.enabled", "bool", "安全开关", False,
               notice="关闭后跳过所有安全检查（盘根/项目根等删除硬防线仍生效）"),
         _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
-              notice="保存二次确认 Modal（UX 层）；后端安全门禁独立生效"),
+              notice="保存时再弹一次确认框（防误触）；后端的安全拦截不依赖这个开关"),
         _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10, range_=[0, 3600],
-              notice="HITL 自动确认倒计时（秒），到时未操作自动放行"),
+              notice="自动确认弹窗倒计时（秒），到时没人点就自动放行"),
         _item("security.hitl_timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],
-              notice="HITL 人工确认最大等待（秒），超时按策略处理"),
+              notice="人工确认弹窗最长等你多久（秒），超时按弹窗设定的处理方式收尾"),
     ]},
     # 4.4 沙箱（sandbox，8 项，运行时参数）
     "sandbox": {"label": "沙箱", "items": [
@@ -138,7 +165,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="源码运行=backend\\logs；打包(exe)运行=exe所在目录\\logs；app_日期.log按日期轮转，prompt日志在prompt-logs子目录"),
         # --- 工程目录（6 只读；值实时派生见 settings_service._item_data） ---
         _item("paths.project_root", "readonly", "生效项目根目录", None, readonly=True,
-              notice="workspace.project_root 已配置时用配置值；未配置时=用户主目录（2026-09-22 小欧：label 与 workspace.project_root 去重，保证 SearchBox 跳转无歧义）"),
+              notice="workspace.project_root 已配置时用配置值；未配置时=用户主目录"),
         _item("paths.omniagent_md", "readonly", "项目规则文件", None, readonly=True,
               notice="项目根目录\\OmniAgent.md；项目根未配置时=用户主目录\\OmniAgent.md"),
         _item("paths.download", "readonly", "下载目录", None, readonly=True,
@@ -164,85 +191,85 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
     # 2026-09-23 小欧 - 现 10子组35键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键）
     "tuning": {"label": "调优", "items": [
-        # --- llm: LLM 语义参数（5 键，temperature/max_tokens 已迁入 llm.sampling.* 通用组） ---
-        _item("tuning.llm.tool_choice", "select", "tool_choice 模式", "auto",
-              options=["auto", "none"], notice="auto=模型自主选择工具，none=纯文本模式"),
-        _item("tuning.llm.stream_max_retries", "int", "流式最大重试", 3, range_=[0, 10],
-              notice="LLM 流式调用最大重试次数"),
-        _item("tuning.llm.response_fallback", "bool", "FC 响应回退", True,
-              notice="FC 模式错误时降级为 Text 模式重试"),
-        _item("tuning.llm.response_retries", "int", "响应错误重试", 2, range_=[0, 5],
-              notice="LLM 响应错误（空/无效）最大重试次数"),
-        _item("tuning.llm.stream_options.include_usage", "bool", "包含 Token 用量统计", True,
-              notice="流式响应末尾 chunk 是否返回 token 用量(prompt_tokens/completion_tokens/total_tokens)"),
-        # --- llm_net: LLM 网络/超时/连接池（7 键） ---
-        _item("tuning.llm_net.read_timeout", "int", "读超时(秒)", 150, range_=[10, 600],
-              notice="LLM 客户端读超时兜底(秒)"),
-        _item("tuning.llm_net.connect_timeout", "float", "连接超时(秒)", 30.0, range_=[5, 120],
-              notice="LLM 客户端连接超时(秒)"),
-        _item("tuning.llm_net.write_timeout", "float", "写超时(秒)", 10.0, range_=[5, 120],
-              notice="LLM 客户端写超时(秒)"),
-        _item("tuning.llm_net.pool_timeout", "float", "连接池超时(秒)", 10.0, range_=[5, 120],
-              notice="LLM 客户端连接池超时(秒)"),
-        _item("tuning.llm_net.max_connections", "int", "池最大连接", 10, range_=[1, 50],
-              notice="LLM 客户端连接池最大连接数"),
-        _item("tuning.llm_net.max_keepalive", "int", "keepalive 连接", 5, range_=[0, 20],
-              notice="LLM 客户端连接池 keepalive 连接数"),
-        _item("tuning.llm_net.stream_total_timeout", "int", "流总硬超时(秒)", 500, range_=[60, 3600],
-              notice="单次 LLM 流式调用总时长硬超时(秒)"),
-        # --- concurrency: 并发配额（2 键） ---
-        _item("tuning.concurrency.soft_pool_wait_timeout", "float", "软配额等待(秒)", 30.0, range_=[5, 120],
-              notice="LLM 软配额排队等待上限(秒)，超时保底放行"),
-        _item("tuning.concurrency.shell_pool_max_per_type", "int", "Shell 池槽位", 8, range_=[1, 20],
-              notice="同 key Shell 池最大并发实例数"),
-        # --- agent: Agent 循环参数（1 键） ---
-        _item("tuning.agent.max_chunks_without_promote", "int", "chunk 累积上限", 50, range_=[10, 200],
-              notice="单轮流式响应未收到完整响应就累积到此数量 chunk，判定 LLM 流卡死，强制失败终止任务（防无限吐 chunk）"),
-        # --- trim: 裁剪(Trim) 3 键（loop 循环内逐轮执行） --- 小欧 2026-09-23
-        _item("tuning.trim.max_rounds", "int", "保留轮数", 100, range_=[1, 10000],
-              notice="对话历史最多保留的 FC 轮数，超出裁剪旧轮（自通用 agent.max_rounds 迁入）"),
-        _item("tuning.trim.trigger_ratio", "float", "裁剪触发比例", 0.75, range_=[0.1, 0.95],
-              notice="历史 token 超过 上下文窗口×此比例触发裁剪（北京老陈定案×3/4）"),
-        _item("tuning.trim.compaction_buffer", "int", "裁剪缓冲(tok)", 20000, range_=[1000, 100000],
-              notice="增量触发/预算裁剪的输出预留缓冲"),
-        # --- compaction: 压缩(Compaction) 4 键（start 超窗一次性锚定摘要） --- 小欧 2026-09-23
-        _item("tuning.compaction.start_enabled", "bool", "压缩开关", True,
-              notice="start 注入历史超窗时是否启用 C4 锚定摘要"),
-        _item("tuning.compaction.start_trigger_ratio", "float", "压缩触发比例", 0.5, range_=[0.1, 0.95],
-              notice="start 注入历史超过 上下文窗口×此比例触发压缩（北京老陈定案×1/2）"),
-        _item("tuning.compaction.summary_feed_max_chars", "int", "摘要喂入截断(字符)", 2000, range_=[100, 10000],
-              notice="压缩喂 LLM 的单条 tool content 截断上限"),
-        _item("tuning.compaction.keep_tail", "int", "摘要保尾条数", 1, range_=[0, 5],
-              notice="压缩回填保留尾部最新消息条数，0=不保尾"),
-        # --- stream_task: 流/任务/缓存（4 键） ---
-        _item("tuning.stream_task.heartbeat_interval", "float", "SSE 心跳周期(秒)", 25.0, range_=[5, 60],
-              notice="SSE keep-alive 心跳周期(秒)，须 < 前端 IDLE_TIMEOUT=60s"),
-        _item("tuning.stream_task.task_timeout_hours", "int", "任务过期(小时)", 1, range_=[1, 24],
-              notice="已结束任务超过 N 小时自动清理"),
-        _item("tuning.stream_task.tool_cache_ttl", "int", "工具缓存 TTL(秒)", 300, range_=[60, 3600],
-              notice="工具结果缓存 TTL(秒)"),
-        _item("tuning.stream_task.max_cache_size", "int", "缓存条目上限", 1000, range_=[100, 10000],
-              notice="会话/上下文缓存最大条目数"),
-        # --- hitl: 人工确认（4 键） ---
-        _item("tuning.hitl.hitl_confirm_lead", "int", "HITL 倒计时提前量(秒)", 10, range_=[0, 60],
-              notice="前端倒计时比后端 HITL_TIMEOUT 提前的秒数"),
-        _item("tuning.hitl.bypass_auto_lead", "int", "bypass 提前量(秒)", 2, range_=[0, 10],
-              notice="bypass 前端倒计时比后端提前的秒数"),
-        _item("tuning.hitl.hitl_min_confirm_timeout", "int", "倒计时最小值(秒)", 3, range_=[1, 30],
-              notice="前端倒计时最小值，不低于后端窗口减提前量"),
-        _item("tuning.hitl.max_pending_confirmations", "int", "待确认上限", 100, range_=[10, 1000],
-              notice="HITL 最大待确认请求数"),
-        # --- content: 内容截断（3 键） ---
-        _item("tuning.content.project_context_max_chars", "int", "OmniAgent.md字符限制", 10000, range_=[1000, 50000],
-              notice="项目规则文件(OmniAgent.md)注入 Prompt 字符上限"),
-        _item("tuning.content.action_log_result_max_chars", "int", "日志截断(字符)", 5000, range_=[1000, 20000],
-              notice="action_handler 日志 tool_result 截断长度"),
-        _item("tuning.content.temp_history_char_limit", "int", "临时历史字符上限", 50000, range_=[5000, 200000],
-              notice="compaction 临时历史字符上限"),
-        # --- network: 网络（1 键） ---
-        _item("tuning.network.cors_origins", "text", "CORS 允许来源",
+        # --- llm: LLM 语义参数（5 键，temperature/max_tokens 已迁入 llm.sampling.* 通用组）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.llm.tool_choice", "select", "工具调用模式", "auto",
+              options=["auto", "none"], notice="控制模型能不能用工具：auto=正常模式，模型自己决定要不要调用工具；none=禁止用工具，只回纯文字（怀疑工具出问题时用它对照）"),
+        _item("tuning.llm.stream_max_retries", "int", "传输失败重试", 3, range_=[0, 10],
+              notice="请求中途断线或超时时自动重新发起，最多再试 N 次（每次比上次多等一会）；0=不重试直接失败。与下面「内容错误重试」分工：本项管根本没收到回复，下面管收到了但内容不对"),
+        _item("tuning.llm.response_fallback", "bool", "工具失败转文字", True,
+              notice="让模型用工具干活时如果一直失败，重试用完后自动改成「不用工具、直接写文字回答」再试一次；关掉则失败就直接报错"),
+        _item("tuning.llm.response_retries", "int", "内容错误重试", 2, range_=[0, 5],
+              notice="模型返回空回复或明显坏内容时自动重试，最多 N 次，越等越久；配额用完、被限流、请求本身写错这三种情况不走这里。与上面「传输失败重试」分工：本项管内容坏，上面管没收到"),
+        _item("tuning.llm.stream_options.include_usage", "bool", "统计 Token 用量", True,
+              notice="回答结束后附带本次消耗了多少 token（输入+输出）；关掉后任务统计页的 token 数会显示为 0"),
+        # --- llm_net: LLM 网络/超时/连接池（7 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.llm_net.read_timeout", "int", "等待回复间隔(秒)", 150, range_=[10, 600],
+              notice="两次收到模型回字之间的最大间隔：超过这个秒数没动静就认为连接断了。不是总时长——模型一直有字吐出来就不算超。与下面「单次总时长」分工：本项管字与字的间隔，下面管从头到尾总时间"),
+        _item("tuning.llm_net.connect_timeout", "float", "连上服务器超时(秒)", 30.0, range_=[5, 120],
+              notice="发起请求到连上模型服务器的最大等待：网络不通或地址解析失败时，最多等这么多秒就报错。调大=弱网多等会，调小=更快发现连不上"),
+        _item("tuning.llm_net.write_timeout", "float", "发送请求超时(秒)", 10.0, range_=[5, 120],
+              notice="把你的问题完整发出去的最大等待：请求内容很大或上行网速很慢时用到，超时报错"),
+        _item("tuning.llm_net.pool_timeout", "float", "等空闲连接超时(秒)", 10.0, range_=[5, 120],
+              notice="并发连接用满时，排队等一条空闲连接的最大时间：等到就接着发，等不到就报错。与上面「并发连接上限」配套——上限决定排多少人，本项决定排多久"),
+        _item("tuning.llm_net.max_connections", "int", "同时最多连接数", 10, range_=[1, 50],
+              notice="同时向模型服务器发起的请求最多几条：超出的排队等空位（排多久由上面「等空闲连接超时」管）。调大=并行任务更顺但更占资源"),
+        _item("tuning.llm_net.max_keepalive", "int", "空闲保留连接", 5, range_=[0, 20],
+              notice="请求结束后先留着不断开的连接条数，下次请求直接复用、省去重新连的时间；0=用完就断（更省资源，但下次会慢一点）"),
+        _item("tuning.llm_net.stream_total_timeout", "int", "单次总时长上限(秒)", 500, range_=[60, 3600],
+              notice="一次回答从开始到结束的总时间上限，到点强制掐断（防模型卡住永远不出结果）。与上面「等待回复间隔」分工：本项管总时长，上面管字与字的间隔"),
+        # --- concurrency: 并发配额（2 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.concurrency.soft_pool_wait_timeout", "float", "排队最多等(秒)", 30.0, range_=[5, 120],
+              notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
+        _item("tuning.concurrency.shell_pool_max_per_type", "int", "终端会话槽位", 8, range_=[1, 20],
+              notice="同一任务里同一种终端（如 PowerShell）最多同时开几个常驻会话：满了新命令要等空位；调大=并行命令更顺但更占内存"),
+        # --- agent: Agent 循环参数（1 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
+              notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
+        # --- trim: 裁剪 3 键（每轮循环自动执行）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.trim.max_rounds", "int", "保留对话轮数", 100, range_=[1, 10000],
+              notice="只记得最近 N 轮问答（1轮=你说一句+它答一句），更早的自动忘掉；调大=记得更久但更费 token，调小=省钱但会忘更早的事"),
+        _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.75, range_=[0.1, 0.95],
+              notice="对话占到模型记忆容量的百分之多少时开始自动删旧内容（0.75=占到四分之三就删）；调小=删得勤、腾地方快，调大=多记一会但快满时才动手"),
+        _item("tuning.trim.compaction_buffer", "int", "给回答留底(字符)", 20000, range_=[1000, 100000],
+              notice="删旧内容时故意不删满，给模型写这次回答预留这么多容量，防止删完一点空都没有、模型没地方写"),
+        # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.compaction.start_enabled", "bool", "开局压缩开关", True,
+              notice="任务刚开始如果发现以前的对话太长装不下，先自动压成一段摘要再开始干活；关掉则不压、直接硬删"),
+        _item("tuning.compaction.start_trigger_ratio", "float", "开局压缩水位", 0.5, range_=[0.1, 0.95],
+              notice="开局时旧对话占到记忆容量百分之多少才值得压（0.5=占到一半就压）；只管任务开头这一次，任务跑起来后归上面的「裁剪」管"),
+        _item("tuning.compaction.summary_feed_max_chars", "int", "单条截断(字符)", 2000, range_=[100, 10000],
+              notice="压成摘要前，单条工具结果超过这么多字先砍掉再给模型看（防超长输出把摘要过程撑爆）；调大=摘要更全但更费"),
+        _item("tuning.compaction.keep_tail", "int", "摘要后留几条", 1, range_=[0, 5],
+              notice="压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
+        # --- stream_task: 连接保活/任务清理/缓存（4 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.stream_task.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
+              notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活"),
+        _item("tuning.stream_task.task_timeout_hours", "int", "任务保留(小时)", 1, range_=[1, 24],
+              notice="已经做完的任务在列表里保留几小时后自动清掉（正在跑的不受影响）；调小=列表干净但翻不了旧任务，调大=能回看更久"),
+        _item("tuning.stream_task.tool_cache_ttl", "int", "结果复用时间(秒)", 300, range_=[60, 3600],
+              notice="同一工具用同样的参数再查一次时，这么多秒内直接给上次的结果、不再真跑一遍；调小=结果更新鲜但重复查询更慢，调大=更快但可能给到过期结果"),
+        _item("tuning.stream_task.max_cache_size", "int", "缓存条数上限", 1000, range_=[100, 10000],
+              notice="内部小缓存最多存多少条，超了自动丢最久没用的；一般不用动，调错也没什么感觉"),
+        # --- hitl: 人工确认（4 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.hitl.hitl_confirm_lead", "int", "确认倒计时提前(秒)", 10, range_=[0, 60],
+              notice="危险操作确认弹窗：页面上的倒计时比后端实际超时（默认120秒）提前这么多秒归零，让你先看到「已超时」提示，而不是弹窗凭空消失；提前量要小于总超时"),
+        _item("tuning.hitl.bypass_auto_lead", "int", "自动放行提前(秒)", 2, range_=[0, 10],
+              notice="自动确认弹窗：页面倒计时比后端自动放行提前这么多秒归零，保证页面先收好、后端再放行，弹窗不会闪一下才关"),
+        _item("tuning.hitl.hitl_min_confirm_timeout", "int", "倒计时最短(秒)", 3, range_=[1, 30],
+              notice="确认弹窗倒计时至少显示这么多秒，防止倒计时太短、弹窗一闪而来不及点"),
+        _item("tuning.hitl.max_pending_confirmations", "int", "待确认条数上限", 100, range_=[10, 1000],
+              notice="同时排队等你确认的操作最多多少条，超了新的直接拒绝（防一次弹出太多窗把页面卡死）"),
+        # --- content: 内容截断（3 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.content.project_context_max_chars", "int", "项目规则字数上限", 10000, range_=[1000, 50000],
+              notice="项目规则文件(OmniAgent.md)每次带给模型的最大字数，超长部分不带；调大=规则记得全但更占记忆容量，调小=省容量但长规则会被截断"),
+        _item("tuning.content.action_log_result_max_chars", "int", "工具结果字数上限", 5000, range_=[1000, 20000],
+              notice="工具跑完后写进对话记录的单条结果最多保留多少字，超长截断；防止读了个大文件把整个对话撑爆"),
+        _item("tuning.content.temp_history_char_limit", "int", "临时副本字数上限", 50000, range_=[5000, 200000],
+              notice="压缩过程中临时存的对话副本最多多少字，超了硬截断；正常用不到，属于防爆保险"),
+        # --- network: 网络（1 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        _item("tuning.network.cors_origins", "text", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
-              notice="API CORS 允许来源，多个用逗号分隔"),
+              notice="允许访问本服务的页面地址白名单，多个用逗号隔开；换了前端地址或端口要加上新地址，否则页面会被浏览器拦住。默认两个是本机开发地址，一般不用改"),
     ]},
 }
 

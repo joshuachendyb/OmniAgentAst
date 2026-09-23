@@ -15,6 +15,9 @@
 #   2026-09-23 - 小欧 - trim/compaction配置化：tuning组 Agent 循环参数后加 trim 3键/compaction 4键两独立分块；删 tuning.agent.default_max_steps 死键
 #   2026-09-23 - 小欧 - 禁止backward还旧账：删 tuning.llm.temperature/max_tokens（已迁顶层 llm.sampling）+ 顶层 agent.max_rounds（已迁 tuning.trim.max_rounds）旧键残留
 #   2026-09-23 - 小欧 - [65] 设置页「+添加参数」写入样子打样：zhipuai 段 model_params 补预设新键缀尾（temperature/top_p）+ 自定义键注释样例 + model_meta.range 捎带完整写法
+#   2026-09-23 - 小欧 - 连接相关注释重写(北京老陈指令"一起补充"): provider timeout/max_retries 补优先级注释(高于tuning.llm_net/stream_max_retries) + tuning llm 3键/concurrency 2键/heartbeat/cors 全部改为「阶段+后果+分工」语义对齐 settings_registry notice - 小欧-2026-09-23
+#   2026-09-23 - 小欧 - 调优组剩余注释全量重写(北京老陈指令"都是看的稀里糊涂 都优化一下"): llm 2键/trim 3键/compaction 4键/stream_task 3键/hitl 4键/content 3键 全部对齐 settings_registry notice 同口径「管什么+触发时机+后果+分工」 - 小欧-2026-09-23
+#   2026-09-23 - 小欧 - 调优组注释去开发术语(北京老陈指令"怎么还有开发的代码信息"): 删 SSE/HITL/bypass/CORS/Origin/chunk/FC/C4/TTL/信号量/request body/ConnectTimeout 等代码黑话，全部改纯用户语言，与 registry notice 同步 - 小欧-2026-09-23
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -26,29 +29,30 @@ ai:
   model_ref: {provider: opencode, model: kimi-k2.5-free}
 
   # ✅ Provider配置（多个）
+  # timeout=max_retries 优先级高于全局 tuning.llm_net.read_timeout / tuning.llm.stream_max_retries — 小欧-2026-09-23
   opencode:
     api_base: https://opencode.ai/zen/v1
     api_key: sk_xxx...
     models:
       - minimax-m2.5-free
       - kimi-k2.5-free
-    timeout: 120
+    timeout: 120                 # Provider级读超时(秒)：优先于 tuning.llm_net.read_timeout(150)，未配则用全局
 
   longcat:
     api_base: https://api.longcat.chat/v1
     api_key: ak_xxx...
     models:
       - LongCat-Flash-Thinking
-    timeout: 120
+    timeout: 120                 # Provider级读超时(秒)：优先于 tuning.llm_net.read_timeout(150)，未配则用全局
 
   zhipuai:
     api_base: https://test.com
     api_key: test123
-    max_retries: 3
+    max_retries: 3               # Provider级流式最大重试：优先于 tuning.llm.stream_max_retries(3)，未配则用全局
     models:
       - glm-4.7-flash
       - cogview-3-flash
-    timeout: 90
+    timeout: 90                  # Provider级读超时(秒)：优先于 tuning.llm_net.read_timeout(150)，未配则用全局
     # 模型参数当前值（运行时透传 extra_body/context_limit）— 小欧 2026-09-22
     # key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）
     model_params:
@@ -138,67 +142,67 @@ llm:
 
 # 调优配置（前端「调优」Tab 展示；10子组35键）
 tuning:
-  # LLM 语义参数（5 键）
+  # LLM 语义参数（5 键）— 注释 2026-09-23 去开发术语重写，对齐 registry notice — 小欧-2026-09-23
   llm:
-    tool_choice: auto              # auto=模型自主选择工具，none=纯文本模式
-    stream_max_retries: 3          # LLM 流式调用最大重试次数
-    response_fallback: true        # FC 模式错误时降级为 Text 模式重试
-    response_retries: 2            # LLM 响应错误（空/无效）最大重试次数
+    tool_choice: auto              # auto=正常调工具; none=禁用工具只回文字(排查工具问题用)
+    stream_max_retries: 3          # 断线/超时自动重发最多再试N次;0=不重试。与下面分工:本管没收到,下面管内容坏
+    response_fallback: true        # 工具一直失败重试用完后,自动改成不调工具直接写文字再试;关=直接报错
+    response_retries: 2            # 空回复/坏内容自动重试最多N次;配额完/限流/请求写错不走这里
     stream_options:
-      include_usage: true          # 流式响应末尾 chunk 是否返回 token 用量统计
+      include_usage: true          # 回答结束附带本次token消耗;关则统计页显示0
 
-  # LLM 网络/超时/连接池（7 键）
+  # LLM 网络/超时/连接池（7 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   llm_net:
-    read_timeout: 150              # LLM 客户端读超时兜底(秒)
-    connect_timeout: 30.0          # LLM 客户端连接超时(秒)
-    write_timeout: 10.0            # LLM 客户端写超时(秒)
-    pool_timeout: 10.0             # LLM 客户端连接池超时(秒)
-    max_connections: 10            # LLM 客户端连接池最大连接数
-    max_keepalive: 5               # LLM 客户端连接池 keepalive 连接数
-    stream_total_timeout: 500      # 单次 LLM 流式调用总时长硬超时(秒)
+    read_timeout: 150              # 两次收到回字最大间隔(非总时长):超时判连接断。与总时长分工:本管间隔
+    connect_timeout: 30.0          # 连上模型服务器最大等待:连不上/DNS失败超时报错
+    write_timeout: 10.0            # 把问题发出去的最大等待:请求大/上行慢时用到
+    pool_timeout: 10.0             # 连接用满时等空位最久多久:等到接着发,等不到报错
+    max_connections: 10            # 同时最多几条请求:超出排队(排多久看pool_timeout)
+    max_keepalive: 5               # 空闲保留连接条数供复用;0=用完即断
+    stream_total_timeout: 500      # 单次回答从头到尾总时长上限,到点强制掐断(与间隔超时分工:本管总长)
 
-  # 并发配额（2 键）
+  # 并发配额（2 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   concurrency:
-    soft_pool_wait_timeout: 30.0   # LLM 软配额排队等待上限(秒)，超时保底放行
-    shell_pool_max_per_type: 8     # 同 key Shell 池最大并发实例数
+    soft_pool_wait_timeout: 30.0   # 排队最多等N秒,超时不排了照样放行(防任务卡死)
+    shell_pool_max_per_type: 8     # 同任务同种终端最多开几个常驻会话,满了要等
 
-  # Agent 循环参数（1 键）
+  # Agent 循环参数（1 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   agent:
-    max_chunks_without_promote: 50 # 单轮未收到完整响应累积到此数量 chunk 即强制失败终止（防无限吐 chunk）
+    max_chunks_without_promote: 50 # 一直吐零碎字却不给完整回答,累计N次判卡死强制结束(防白烧配额)
 
-  # 裁剪(Trim)（3 键，loop 循环内逐轮执行）— 小欧 2026-09-23
+  # 裁剪（3 键，每轮循环自动执行）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   trim:
-    max_rounds: 100                # 对话历史最多保留的 FC 轮数，超出裁剪旧轮
-    trigger_ratio: 0.75            # 历史 token 超过 上下文窗口×此比例触发裁剪
-    compaction_buffer: 20000       # 增量触发/预算裁剪的输出预留缓冲
+    max_rounds: 100                # 只记得最近N轮问答,更早自动忘;大=记得久费token,小=省钱忘得快
+    trigger_ratio: 0.75            # 对话占记忆容量75%时开始删旧;小=删得勤,大=多记会
+    compaction_buffer: 20000       # 删旧时故意留这么多容量给本次回答,防删完没地方写
 
-  # 压缩(Compaction)（4 键，start 超窗一次性锚定摘要）— 小欧 2026-09-23
+  # 压缩（4 键，开局超容时压成摘要）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   compaction:
-    start_enabled: true            # start 注入历史超窗时是否启用 C4 锚定摘要
-    start_trigger_ratio: 0.5       # start 注入历史超过 上下文窗口×此比例触发压缩
-    summary_feed_max_chars: 2000   # 压缩喂 LLM 的单条 tool content 截断上限
-    keep_tail: 1                   # 压缩回填保留尾部最新消息条数，0=不保尾
+    start_enabled: true            # 开局旧对话太长时先压成摘要再干活;关=不压直接硬删
+    start_trigger_ratio: 0.5       # 开局旧对话占容量一半才值得压;只管开局这一次
+    summary_feed_max_chars: 2000   # 压摘要前单条工具结果超N字先砍;防超长撑爆
+    keep_tail: 1                   # 压完摘要再原样留最近几条;0=全压不留原话
 
-  # 流/任务/缓存（4 键）
+  # 连接保活/任务清理/缓存（4 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   stream_task:
-    heartbeat_interval: 25.0       # SSE keep-alive 心跳周期(秒)，须 < 前端 IDLE_TIMEOUT=60s
-    task_timeout_hours: 1          # 已结束任务超过 N 小时自动清理
-    tool_cache_ttl: 300            # 工具结果缓存 TTL(秒)
-    max_cache_size: 1000           # 会话/上下文缓存最大条目数
+    heartbeat_interval: 25.0       # 没新内容时隔N秒发"我还活着"防页面误判断线;须明显小于60秒断线判定
+    task_timeout_hours: 1          # 做完的任务保留N小时后自动清出列表(在跑的不受影响)
+    tool_cache_ttl: 300            # 同工具同参数N秒内直接给上次结果不重跑;小=新鲜慢,大=快但可能过期
+    max_cache_size: 1000           # 内部小缓存最多存多少条,超了丢最久没用的;一般不用动
 
-  # 人工确认（4 键）
+  # 人工确认（4 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   hitl:
-    hitl_confirm_lead: 10          # 前端倒计时比后端 HITL_TIMEOUT 提前的秒数
-    bypass_auto_lead: 2            # bypass 前端倒计时比后端提前的秒数
-    hitl_min_confirm_timeout: 3    # 前端倒计时最小值，不低于后端窗口减提前量
-    max_pending_confirmations: 100 # HITL 最大待确认请求数
+    hitl_confirm_lead: 10          # 确认弹窗倒计时比后端实际超时提前N秒归零,先看到提示不凭空消失
+    bypass_auto_lead: 2            # 自动放行弹窗倒计时提前N秒归零,页面先收好后端再放行
+    hitl_min_confirm_timeout: 3    # 倒计时至少显示N秒,防弹窗一闪来不及点
+    max_pending_confirmations: 100 # 同时排队等确认最多N条,超了新的直接拒(防弹窗洪水)
 
-  # 内容截断（3 键）
+  # 内容截断（3 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   content:
-    project_context_max_chars: 10000  # 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
-    action_log_result_max_chars: 5000 # action_handler 日志 tool_result 截断长度
-    temp_history_char_limit: 50000    # compaction 临时历史字符上限
+    project_context_max_chars: 10000  # 项目规则文件每次带给模型最多N字,超长不带
+    action_log_result_max_chars: 5000 # 工具结果写进对话最多留N字,超长截断(防大文件撑爆)
+    temp_history_char_limit: 50000    # 压缩时临时副本最多N字,超了硬截断(防爆保险)
 
-  # 网络（1 键）
+  # 网络（1 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   network:
-    cors_origins: "http://localhost:5173,http://127.0.0.1:5173"  # API CORS 允许来源，多个用逗号分隔
+    cors_origins: "http://localhost:5173,http://127.0.0.1:5173"  # 允许访问的页面地址白名单,换端口要加新地址
