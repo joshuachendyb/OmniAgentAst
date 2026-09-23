@@ -26,6 +26,7 @@
 # 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 重置区加 agent._last_error=None(防跨任务残留)
 # 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 重置区加 agent._usage_events=[]
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + ChunkBuffer() 无参调用
+# 2026-09-23 小欧 - 删死 import MAX_CONSECUTIVE_CHUNKS（should_promote 死链清理，ChunkBuffer 无参构造零使用）
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -36,7 +37,6 @@ Author: 小沈 - 2026-05-31
 
 from typing import Any, Dict, Optional
 
-from app.constants import MAX_CONSECUTIVE_CHUNKS as _D_CONSECUTIVE
 from app.config import get_config
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.chunk_buffer import ChunkBuffer

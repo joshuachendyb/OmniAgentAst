@@ -41,6 +41,8 @@
         原硬编码 timeout=25.0 → 常量引用; 常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系设计依据, 常量与前端改动联动)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
     2026-09-22 小欧 DEFAULT_CORS_ORIGINS 删除死配置 localhost:3000(全仓零引用, 早期 CRA 遗留) + 补注释说明端口关系(前端:5173 直连后端:8000 走 CORS, proxy 同源不走)
+    2026-09-23 小欧 删除 LLM_STREAM_OPTIONS 死常量(消费方 base_service 改读 tuning.llm.stream_options.include_usage 开关组 dict, 全仓零引用, 功能零退化)
+    2026-09-23 小欧 删除 MAX_CONSECUTIVE_CHUNKS 死常量(should_promote 死链清理：历史接口全仓零调用，chunk_buffer/initialize_run_state 引用同步删除)
 """
 
 import re
@@ -60,7 +62,6 @@ from datetime import timedelta
 # 2026-08-05 小欧 核对说明(北京老陈 2026-08-05 裁定: max_steps 现为调试需要, 不改代码): 运行时 max_steps 由 config.yaml 的 app.max_steps 控制(当前=10000),
 # 创建 Agent 链路(openai.py:256 UniversalAgent 不传 max_steps)经 base_agent.py get_max_steps() 取配置; 本常量 100 与配置 10000 不一致系历史遗留, 禁止据其推断循环步数上限
 DEFAULT_MAX_STEPS = 100  # 【系统级】使用对象: 仅 config_schemas.py API 请求体默认值
-MAX_CONSECUTIVE_CHUNKS = 5  # 【系统级】使用对象: Agent 循环连续 chunk 上限
 MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 promote 的 chunk 上限
 
 # ============================================================
@@ -70,7 +71,6 @@ MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 
 LLM_TEMPERATURE = 0.7  # 【系统级】使用对象: LLM 客户端采样温度
 LLM_TOOL_CHOICE = "auto"  # 【系统级】使用对象: LLM 客户端 tool_choice 模式
 LLM_STREAM_MAX_RETRIES = 3  # 【系统级】使用对象: LLM 流式最大重试次数
-LLM_STREAM_OPTIONS = {"include_usage": True}  # 【系统级】使用对象: LLM 流式选项
 LLM_RESPONSE_FALLBACK = True  # 【系统级】使用对象: LLM响应错误降级开关(FC模式错误→Text降级) — 小沈 2026-07-17
 LLM_RESPONSE_RETRIES = 2  # 【系统级】使用对象: LLM响应错误最大重试次数(如空/无效响应) — 小沈 2026-07-17
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
