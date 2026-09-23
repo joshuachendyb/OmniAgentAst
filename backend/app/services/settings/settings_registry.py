@@ -44,6 +44,7 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
   2026-09-23 - 小欧 - trim/compaction配置化: ①通用组删 agent.max_rounds（挪入调优·裁剪）; ②tuning组 Agent 循环参数后插 trim 3键(max_rounds/trigger_ratio/compaction_buffer)+compaction 4键(start_enabled/start_trigger_ratio/summary_feed_max_chars/keep_tail)两独立分块; ③OLD_KEY_MAP 加 agent.max_rounds→tuning.trim.max_rounds
   2026-09-23 - 小欧 - 禁止backward还清旧账: 删 OLD_KEY_MAP 3条迁入映射(tuning.llm.temperature/max_tokens、agent.max_rounds，无消费方虚假承诺); live值已手工搬入新键，旧键废弃
   2026-09-23 - 小欧 - 删死配置 tuning.agent.max_consecutive_chunks（should_promote 历史接口全仓零调用，max_consecutive 唯一读取点即该死方法）; max_chunks_without_promote 改名实义 chunk 累积上限+notice重写（单轮未收到完整响应累积50 chunk 即强制失败终止）
+  2026-09-23 - 小欧 - 频次惩罚/存在惩罚 label 补英文名: "频次惩罚"→"频次惩罚 (frequency_penalty)"、"存在惩罚"→"存在惩罚 (presence_penalty)" - 小欧-2026-09-23
 """
 from typing import Any, Dict, List, Optional
 
@@ -77,9 +78,9 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="单次 LLM 调用最大输出 token 数，超长截断"),
         _item("llm.sampling.top_p", "float", "核采样 top_p", 1.0, range_=[0, 1],
               notice="核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选；通常与温度二选一调节，同时调易相互抵消"),
-        _item("llm.sampling.frequency_penalty", "float", "频次惩罚", 0, range_=[-2, 2],
+        _item("llm.sampling.frequency_penalty", "float", "频次惩罚 (frequency_penalty)", 0, range_=[-2, 2],
               notice="正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用"),
-        _item("llm.sampling.presence_penalty", "float", "存在惩罚", 0, range_=[-2, 2],
+        _item("llm.sampling.presence_penalty", "float", "存在惩罚 (presence_penalty)", 0, range_=[-2, 2],
               notice="正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用"),
         _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
               notice="模型上下文窗口的默认值（当模型未单独配置时使用），256K tokens"),
