@@ -19,6 +19,7 @@
 #   bypass/真HITL身份全线只用布尔auto_confirm单字段(唯一真相源); _resolve_timeouts/resumed条件/mode推导随迁改读auto_confirm,
 #   调用方safety_gate传auto_confirm=_bypass/sandbox_gate传auto_confirm=False, 语义零变化 置顶safety_gate/sandbox_gate同步 - 小欧-2026-09-18
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
+# 2026-09-23 小欧 - wiring假保存修复: _resolve_timeouts 的 MIN/LEAD/BYPASS 改读 tuning.hitl.* 配置兜底常量（此前设置页可改实际不生效）
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -84,10 +85,14 @@ async def _resolve_timeouts(auto_confirm):
     cfg = get_config()
     if not auto_confirm:
         _bt = int(float(cfg.get("security.hitl_timeout", _D_HITL_TIMEOUT)))
-        return _bt, max(_D_MIN_TIMEOUT, _bt - _D_CONFIRM_LEAD)
-    _bt = max(_D_MIN_TIMEOUT + _D_BYPASS_LEAD,
+        _min = int(float(cfg.get("tuning.hitl.hitl_min_confirm_timeout", _D_MIN_TIMEOUT)))  # 小欧 2026-09-23 wiring假保存修复
+        _lead = int(float(cfg.get("tuning.hitl.hitl_confirm_lead", _D_CONFIRM_LEAD)))  # 小欧 2026-09-23 wiring假保存修复
+        return _bt, max(_min, _bt - _lead)
+    _min2 = int(float(cfg.get("tuning.hitl.hitl_min_confirm_timeout", _D_MIN_TIMEOUT)))  # 小欧 2026-09-23 wiring假保存修复
+    _bypass = int(float(cfg.get("tuning.hitl.bypass_auto_lead", _D_BYPASS_LEAD)))  # 小欧 2026-09-23 wiring假保存修复
+    _bt = max(_min2 + _bypass,
               int(float(cfg.get("security.auto_confirm_delay", 10.0))))
-    return _bt, _bt - _D_BYPASS_LEAD
+    return _bt, _bt - _bypass
 
 
 async def hitl_confirm(agent, spec: ConfirmSpec, publish):

@@ -26,6 +26,7 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-09-20 小欧 三堂会审BUG-04修复: cancel()中aclose后立即清_current_response引用, 防finally/__aexit__二次关闭(double-close)
 编辑历史: 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + soft_pool_wait_timeout/max_connections/max_keepalive 改读 tuning 配置
 编辑历史: 2026-09-23 小欧 - [64] LLM补充采样参数: _build_request_body/request/request_stream 签名加 top_p/frequency_penalty/presence_penalty 三参(仿 seed None透传写法)
+编辑历史: 2026-09-23 小欧 - wiring假保存修复: __init__/request_stream 两处 httpx.Timeout 的 connect/write/pool 改读 tuning.llm_net.* 配置兜底常量（此前设置页可改实际不生效）
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
@@ -158,10 +159,10 @@ class LLMClient:
         else:
             self._client = httpx.AsyncClient(
                 timeout=httpx.Timeout(
-                    connect=_D_CONNECT_TIMEOUT,
+                    connect=float(get_config().get("tuning.llm_net.connect_timeout", _D_CONNECT_TIMEOUT)),  # 小欧 2026-09-23 wiring假保存修复
                     read=read_timeout,
-                    write=_D_WRITE_TIMEOUT,
-                    pool=_D_POOL_TIMEOUT,
+                    write=float(get_config().get("tuning.llm_net.write_timeout", _D_WRITE_TIMEOUT)),  # 小欧 2026-09-23 wiring假保存修复
+                    pool=float(get_config().get("tuning.llm_net.pool_timeout", _D_POOL_TIMEOUT)),  # 小欧 2026-09-23 wiring假保存修复
                 ),
                 limits=httpx.Limits(
                     max_connections=get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS),
@@ -261,15 +262,15 @@ class LLMClient:
             stream_options=stream_options,
             extra_body=extra_body,
         )
-        # 结构化超时: request_timeout 仅作用于 read 阶段, connect/write/pool 独立固定。
+        # 结构化超时: request_timeout 仅作用于 read 阶段, connect/write/pool 读 tuning.llm_net.* 配置。
         # 避免浮点标量将四者全部拉长 (浮点标量 = 全阶段统一值, 会误将 connect 也拉长至 90+秒)。
         # request_timeout 由 base_service 传入 (provider.timeout + 重试递增),
-        # 未显式传入时用 _D_READ_TIMEOUT 兜底 — 小欧 2026-07-13
+        # 未显式传入时用 _D_READ_TIMEOUT 兜底 — 小欧 2026-07-13; connect/write/pool 改读配置 — 小欧 2026-09-23
         _timeout = httpx.Timeout(
-            connect=_D_CONNECT_TIMEOUT,
+            connect=float(get_config().get("tuning.llm_net.connect_timeout", _D_CONNECT_TIMEOUT)),
             read=float(request_timeout) if request_timeout is not None else _D_READ_TIMEOUT,
-            write=_D_WRITE_TIMEOUT,
-            pool=_D_POOL_TIMEOUT,
+            write=float(get_config().get("tuning.llm_net.write_timeout", _D_WRITE_TIMEOUT)),
+            pool=float(get_config().get("tuning.llm_net.pool_timeout", _D_POOL_TIMEOUT)),
         )
         _acquired = False
         _sem = _get_soft_pool_semaphore()

@@ -67,6 +67,8 @@
 #   ③ snapshot() 透传 max_retries=self.max_retries（快照跨 provider 不丢定制值）；
 #   ④ request_stream 用 self.max_retries（删除 _D_STREAM_MAX_RETRIES 直读，运行时真正消费配置值）。
 # 2026-09-23 小欧 - [64] LLM补充采样参数: ①__init__签名加 top_p/frequency_penalty/presence_penalty 三参; ②兜底读键由 tuning.llm.* 改 llm.sampling.*; ③request/request_stream 两处调用点透传三参; ④snapshot 必须同步加三参透传
+# 2026-09-23 小欧 - stream_options 开关化: 删 _D_STREAM_OPTIONS 常量直读, 改读 tuning.llm.stream_options.include_usage 布尔组 {"include_usage": bool}（textarea 改 bool 开关）
+# 2026-09-23 小欧 - wiring假保存修复: request_stream 流总硬超时 3 处改读 tuning.llm_net.stream_total_timeout 兜底常量（此前设置页可改实际不生效）
 """
 LLM 核心模块 — BaseAIService
 
@@ -91,7 +93,7 @@ from app.llm.client_sdk import create_llm_client
 from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.llm.error_classifier import SystemErrorClassifier
 
-from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, LLM_STREAM_OPTIONS as _D_STREAM_OPTIONS, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS
+from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS
 from app.config import get_config
 
 # 默认extra_body: 开启thinking模式; 配置文件model_params可覆盖/扩展, 合并策略见__init__ — 小欧 2026-08-06
@@ -330,7 +332,9 @@ class BaseAIService:
 
         retry_count = 0
         max_retries = self.max_retries  # [62]P7 4.3(2)b：消费 __init__ 三层回落后的值，删 _D_STREAM_MAX_RETRIES 硬编码读取 — 小欧 2026-09-22
-        stream_options = _D_STREAM_OPTIONS
+        include_usage = get_config().get("tuning.llm.stream_options.include_usage", True)
+        stream_options = {"include_usage": bool(include_usage)}
+        _stream_total_timeout = int(get_config().get("tuning.llm_net.stream_total_timeout", _D_STREAM_TOTAL_TIMEOUT))  # 小欧 2026-09-23 wiring假保存修复
 
         # ======== 系统层HTTP请求重试（真正的重试逻辑）========
         # 同一个 LLM 调用（llm_call_count 不变），HTTP请求超时/断连时自动重新发送。
@@ -345,7 +349,7 @@ class BaseAIService:
                 usage_data = None
                 _truncated = False  # #34 fix: 超时截断标记 — 小欧 2026-07-18
                 tool_call_streaming_start = None
-                deadline = time.monotonic() + _D_STREAM_TOTAL_TIMEOUT
+                deadline = time.monotonic() + _stream_total_timeout
                 finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason
                 async for data_str in self._llm_sdk.request_stream(
                     messages=messages,
@@ -374,7 +378,7 @@ class BaseAIService:
                     # LLM 持续流式返回 tool_call delta 时字节不断到达, read timeout 永不触发。
                     # 此处用 wall-clock deadline 做总时长保护, 超时 break→accumulator→截断修复。
                     if time.monotonic() > deadline:
-                        logger.warning(f"[request_stream] 流调用总时长超时({_D_STREAM_TOTAL_TIMEOUT}s), 截断已累积数据")
+                        logger.warning(f"[request_stream] 流调用总时长超时({_stream_total_timeout}s), 截断已累积数据")
                         _truncated = True  # #34 fix — 小欧 2026-07-18
                         break
 
@@ -418,7 +422,7 @@ class BaseAIService:
                     # 首次检测到 tool_call delta 时开始计时, 超时 break→accumulator→截断修复。
                     if tc_data and tool_call_streaming_start is None:
                         tool_call_streaming_start = time.monotonic()
-                    if tool_call_streaming_start and (time.monotonic() - tool_call_streaming_start) > _D_STREAM_TOTAL_TIMEOUT * 3 // 5:
+                    if tool_call_streaming_start and (time.monotonic() - tool_call_streaming_start) > _stream_total_timeout * 3 // 5:
                         logger.warning(f"[request_stream] tool_call参数流式已持续{time.monotonic()-tool_call_streaming_start:.0f}s, 强制截断")
                         break
 
