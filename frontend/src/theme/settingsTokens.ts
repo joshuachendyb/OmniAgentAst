@@ -3,6 +3,7 @@
 // 2026-09-21 小欧 - v1.12 全文逐章核查：新增 settingsModalWidth 弹窗宽度族，收敛第六章 6.1 规范一散落硬编码宽（[58] v1.12）
 // 2026-09-22 小欧 - 统一控件宽度：inputWidth/secretWidth/selectWidth/inputNumberWidth/textareaWidth 统一为 240px；新增 inputNumberWidth/rangeNumberWidth 令牌；sliderWidth 160→140 配合 InputNumber 组合约 240；新增 apiKeyWidth/baseUrlWidth 360px - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY+YAGNI 收口：行容器样式抽 settingsRowStyle、行 label 样式抽 settingsLabelStyle（SettingRow/ProviderConfig/ModelParams 三处复用，杜绝三套行样式漂移）；删 settingsRowLayout.gap 死配置（行容器已不用 gap，用量随布局对齐移除）- 小欧-2026-09-22
+// 2026-09-23 小欧 - labelWidth 132→180（适配"频次惩罚 (frequency_penalty)"长标签）；控件宽度 inputWidth/secretWidth/selectWidth/inputNumberWidth/textareaWidth/modelSelectWidth/modelNameWidth 统一 240→180 - 小欧-2026-09-23
 import {
   Spacing,
   Radius,
@@ -15,24 +16,24 @@ export const settingsSpacing = {
   ...Spacing,
   pagePadding: 16,
   rowHeight: 44,
-  labelWidth: 132,
+  labelWidth: 180,
 } as const;
 
 export const settingsRadius = { ...Radius } as const;
 
 export const settingsControl = {
-  inputWidth: 240, // 统一输入框宽度
-  secretWidth: 240, // 密码框对齐输入框
-  selectWidth: 240, // 下拉框对齐输入框
-  inputNumberWidth: 240, // 数字输入框对齐输入框
-  sliderWidth: 140, // 滑块（配合 InputNumber 组合约 240）
-  rangeNumberWidth: 80, // range 内 InputNumber（与 slider 组合）
-  textareaWidth: 240, // 多行文本对齐统一宽度
-  searchWidth: 260, // 搜索框独立
-  modelSelectWidth: 240, // 模型选择器对齐
-  modelNameWidth: 240, // 模型名对齐
-  apiKeyWidth: 360, // API Key 输入框（值较长）
-  baseUrlWidth: 360, // Base URL 输入框（值较长）
+  inputWidth: 180,
+  secretWidth: 180,
+  selectWidth: 180,
+  inputNumberWidth: 180,
+  sliderWidth: 140,
+  rangeNumberWidth: 80,
+  textareaWidth: 180,
+  searchWidth: 260,
+  modelSelectWidth: 180,
+  modelNameWidth: 180,
+  apiKeyWidth: 360,
+  baseUrlWidth: 360,
 } as const;
 
 // 第六章 6.1 规范一：弹窗宽度三档（确认/通知=480、表单=520、展示=800）— 单点收口，禁散落硬编码

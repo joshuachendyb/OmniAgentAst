@@ -12,6 +12,7 @@
 //   控件右侧显示范围提示（int: "0 ~ 2 · 整数"，float: "0 ~ 2"），range 类型不重复显示
 // 2026-09-22 小欧 - 控件宽度统一：range/int/float 的 InputNumber 补齐 rangeNumberWidth/inputNumberWidth 令牌 - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：行容器/label 样式改复用 settingsRowStyle/settingsLabelStyle 令牌（删 SettingsRowLayout 内联展开）；移 FontWeight unused import - 小欧-2026-09-22
+// 2026-09-23 小欧 - notice 说明文字移到输入框上方（flexDirection:column）；删除 // 拼接，notice 与即时生效分离 - 小欧-2026-09-23
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -260,7 +261,14 @@ export const SettingRow: React.FC<Props> = ({
       >
         {item.label}
       </span>
-      <span style={{ flex: 1 }}>{renderControl()}</span>
+      <span style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {item.notice && (
+          <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+            {item.notice}
+          </span>
+        )}
+        <span>{renderControl()}</span>
+      </span>
       {item.range && item.type !== 'range' && (
         <span
           style={{
@@ -283,8 +291,6 @@ export const SettingRow: React.FC<Props> = ({
           marginLeft: Spacing.MD,
         }}
       >
-        {/* 调整(2026-09-21 小强)：说明在前生效方式在后——如「同时运行的沙箱并发数，超出排队等待 // 即时生效」 */}
-        {item.notice && `${item.notice} // `}
         {item.restart ? '重启生效' : '即时生效'}
       </span>
     </div>
