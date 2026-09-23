@@ -2,7 +2,9 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v1.0.4 | **更新时间**: 2026-09-22 20:28:53 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-22
+**版本**: v1.0.4 | **更新时间**: 2026-09-23 20:41:01 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-23
+
+> 更新记录（小欧-2026-09-23）：三堂会审一致性修正——①§7.2 配置节总览补 `llm`/`network` 节、`agent` 去掉已迁走的 `max_rounds`；②§7.4 agent 表对齐现键（仅 `max_steps`，历史保留轮数迁 `tuning.trim.max_rounds`）；③§7.7 调优表按 REGISTRY 实测重写为 33 键 9 子组（补 trim/compaction，llm 5 键/agent 1 键，删 network 行与已迁通用的 temperature/max_tokens）；④`CORS_ORIGINS` 覆盖项改 `network.cors_origins`。
 
 ---
 
@@ -365,7 +367,7 @@ OmniAgentAs-desk/
 | Provider CRUD | `ProviderConfig` api_key/base_url/label/timeout/max_retries 配置 |
 | 模型参数管理 | `ModelParams` 五分支渲染 + `ParamOptionsModal` 参数模板管理弹窗 |
 | 模型切换弹窗 | `ModelSwitchModal` 独立切换弹框，DRY 唯一写链 `configApi.switchCurrentModel` |
-| 调优配置 | 31 个 tuning 键（LLM 语义/网络/并发/Agent/流/任务/HITL/内容/网络），前端自动出现调优 Tab |
+| 调优配置 | 33 个 tuning 键（LLM 语义/网络/并发/Agent/裁剪/压缩/流/任务/HITL/内容，9 子组），前端自动出现调优 Tab |
 | 配置运维台 | 配置文件路径展示、一键打开目录、在线查看、检测配置 |
 | Provider 动态参数 | `provider_param_types` 透传 + 白名单校验 + 动态落盘 |
 
@@ -431,12 +433,14 @@ OmniAgentAs-desk/
 |--------|------|
 | `ai` | AI 模型与 Provider（多厂商 OpenAI 兼容 API，含 model_ref 单源） |
 | `workspace` | 工作区（project_root、allowed_dirs） |
-| `agent` | Agent 参数（max_rounds、max_steps） |
+| `agent` | Agent 参数（max_steps） |
+| `llm` | LLM 采样与上下文兜底（sampling 5 键、context_limit_default） |
+| `network` | 网络（cors_origins 跨域白名单，系统组展示） |
 | `app` | 应用参数（language、theme） |
 | `logging` | 日志级别与轮转（level、debug） |
 | `security` | 安全开关与 HITL（enabled、hitl_timeout、auto_confirm_delay、confirmDangerousOps） |
 | `sandbox` | 沙箱预检（工具执行前资源约束） |
-| `tuning` | 调优参数（31 键，8 子组：LLM 语义/网络/并发/Agent/流任务/HITL/内容/网络 CORS） |
+| `tuning` | 调优参数（33 键，9 子组：LLM 语义/网络/并发/Agent/裁剪/压缩/流任务/HITL/内容） |
 
 ### 7.3 `ai` — 模型与 Provider
 
@@ -490,8 +494,7 @@ model_meta:
 
 | 键 | 说明 |
 |----|------|
-| `agent.max_rounds` | 对话历史保留的 FC 轮数上限（默认 100，消费点 `message_builder`） |
-| `agent.max_steps` | Agent 单次任务最大迭代步数（默认 10000） |
+| `agent.max_steps` | 单任务最大对话轮数/循环门限（默认 10000，消费点 `react_loop`）；历史保留轮数已迁 `tuning.trim.max_rounds` |
 
 **`app`** — 应用外观：
 
@@ -520,20 +523,22 @@ model_meta:
 
 > 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 已从 config.yaml.example 移除（dead keys，后端零消费）。**执行链路真正消费的 security 键仅 `enabled` / `hitl_timeout` / `auto_confirm_delay`**。
 
-### 7.7 `tuning` — 调优参数（31 键，8 子组）
+### 7.7 `tuning` — 调优参数（33 键，9 子组）
 
 | 子组 | 键前缀 | 数量 | 说明 |
 |------|--------|------|------|
-| LLM 语义参数 | `tuning.llm.` | 7 | temperature, tool_choice, max_tokens, stream_max_retries, response_fallback, response_retries, stream_options |
+| LLM 语义参数 | `tuning.llm.` | 5 | tool_choice, stream_max_retries, response_fallback, response_retries, stream_options |
 | LLM 网络/超时/连接池 | `tuning.llm_net.` | 7 | read_timeout, connect_timeout, write_timeout, pool_timeout, max_connections, max_keepalive, stream_total_timeout |
 | 并发配额 | `tuning.concurrency.` | 2 | soft_pool_wait_timeout, shell_pool_max_per_type |
-| Agent 循环参数 | `tuning.agent.` | 3 | default_max_steps, max_consecutive_chunks, max_chunks_without_promote |
+| Agent 循环参数 | `tuning.agent.` | 1 | max_chunks_without_promote |
+| 裁剪 | `tuning.trim.` | 3 | max_rounds, trigger_ratio, compaction_buffer |
+| 压缩 | `tuning.compaction.` | 4 | start_enabled, start_trigger_ratio, summary_feed_max_chars, keep_tail |
 | 流/任务/缓存 | `tuning.stream_task.` | 4 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size |
 | 人工确认 | `tuning.hitl.` | 4 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations |
 | 内容截断 | `tuning.content.` | 3 | project_context_max_chars, action_log_result_max_chars, temp_history_char_limit |
-| 网络 | `tuning.network.` | 1 | cors_origins（CORS 跨域配置，默认 `http://localhost:5173,http://127.0.0.1:5173`） |
 
-> 调优参数消费方分散在 `base_service.py`（LLM 超时/重试）、`client_sdk.py`（连接池）、`stream_orchestrator.py`（心跳/任务超时）、`llm_call.py`（LLM 语义参数）、`shell_engine.py`（Shell 池槽位）等 16 个文件中，从 `constants.py` 硬编码迁移至配置驱动。前端设置页自动出现「调优」Tab（8 子组分块渲染）。
+> `temperature`/`max_tokens` 等采样参数已迁顶层 `llm.sampling.*`（通用组）；`cors_origins` 已迁顶层 `network.cors_origins`（系统组）。
+> 调优参数消费方分散在 `base_service.py`（LLM 超时/重试）、`client_sdk.py`（连接池）、`stream_orchestrator.py`（心跳/任务超时）、`llm_call.py`（LLM 语义参数）、`shell_engine.py`（Shell 池槽位）、`message_builder.py`（裁剪/压缩）等 16 个文件中，从 `constants.py` 硬编码迁移至配置驱动。前端设置页自动出现「调优」Tab（9 子组分块渲染）。
 
 ### 7.8 `sandbox` — 沙箱预检
 
@@ -556,7 +561,7 @@ model_meta:
 | `AI_PROVIDER` | `ai.model_ref.provider` |
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
-| `CORS_ORIGINS` | `tuning.network.cors_origins`（CORS 跨域，逗号分隔） |
+| `CORS_ORIGINS` | `network.cors_origins`（CORS 跨域，逗号分隔） |
 
 ### 7.10 修改生效方式
 
