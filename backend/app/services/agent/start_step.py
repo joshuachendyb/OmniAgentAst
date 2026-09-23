@@ -30,6 +30,7 @@
 #   start_model=_ai.llm_model(ModelRef 单结构), 删 display_name=f"{provider} ({model})" 拼装与
 #   provider=/model= 分离入参(设计要求2: display_name 不再落库, 前端派生)
 # 2026-08-29 - 小沈 - bug#2修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
+# 2026-09-23 - 小欧 - compaction配置化: _maybe 读 tuning.compaction.start_enabled/start_trigger_ratio; _compact 内联保尾 history[-1:] 改读 tuning.compaction.keep_tail（0=不保尾）
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -43,6 +44,7 @@ start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 """
 from typing import Any, Dict, List, Optional
 
+from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
 from app.logger import logger
 
 
@@ -122,7 +124,8 @@ def _maybe_compact_injected_history(agent) -> None:
         START_COMPACTION_ENABLED,
         START_TRIGGER_RATIO,
     )
-    if not START_COMPACTION_ENABLED:
+    _start_enabled = bool(get_config().get('tuning.compaction.start_enabled', START_COMPACTION_ENABLED))  # 小欧 2026-09-23 compaction配置化
+    if not _start_enabled:
         return
     from app.services.agent.message_builder import MessageBuilder
     history = agent.message_builder.conversation_history
@@ -131,11 +134,12 @@ def _maybe_compact_injected_history(agent) -> None:
     # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
     # MessageBuilder 构造自带默认无需兜底 — 小健 2026-08-17
     _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
-    _threshold = int(_ctx * START_TRIGGER_RATIO)
+    _start_ratio = float(get_config().get('tuning.compaction.start_trigger_ratio', START_TRIGGER_RATIO))  # 小欧 2026-09-23 compaction配置化
+    _threshold = int(_ctx * _start_ratio)
     rough = MessageBuilder._estimate_tokens(history)
     if rough > _threshold:
         agent._needs_compact = True
-        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{START_TRIGGER_RATIO}), 置 _needs_compact")
+        logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_start_ratio}), 置 _needs_compact")
 
 
 async def _compact_injected_history(agent) -> None:
@@ -160,8 +164,9 @@ async def _compact_injected_history(agent) -> None:
         logger.warning(f"[start_step] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
         summary_text = ""
     if summary_text:
+        _keep = max(0, int(get_config().get('tuning.compaction.keep_tail', 1)))  # 小欧 2026-09-23 compaction配置化，0=不保尾
         compacted = (
-            history[:1] + [{"role": "assistant", "content": summary_text}] + history[-1:]
+            history[:1] + [{"role": "assistant", "content": summary_text}] + (history[-_keep:] if _keep else [])
         )
         # bug#2修复(小沈 2026-08-29): 中段 assistant 已被丢弃, 末条若仍是 tool 消息则成孤儿→发LLM 400;
         # 最小守卫: 丢弃尾随无配对 assistant 的 tool 消息

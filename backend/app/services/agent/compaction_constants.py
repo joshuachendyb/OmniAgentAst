@@ -32,6 +32,8 @@
                         ×比例计算. 引用方(start_step/message_builder/trigger)同步改导入与公式
   2026-08-17 小健 开关定名开放(北京老陈 2026-08-17 拍板): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 超窗
                         判定使用, 其他任何模块不得引用); 值置 True(放开 R4 锚定摘要); start_step 超窗 gate 同步改名
+  2026-09-23 小欧 trim/compaction配置化: 本文件5常量保留作配置缺省兜底(TRIM_TRIGGER_RATIO/COMPACTION_BUFFER/START_TRIGGER_RATIO/START_COMPACTION_ENABLED/SUMMARY_FEED_MAX_CHARS)，消费方优先读 tuning.trim.*/tuning.compaction.* 配置；keep_tail 缺省 1（start_step 内联兜底，ASSEMBLE_KEEP_TAIL 仍为装配函数保留常量）
+  2026-09-23 小欧 7死常量以备后用标注: C3/T1四阈值+Hermes Pass3两阈值+ASSEMBLE_KEEP_TAIL暂无消费方，留定义供后续接线，禁止删除
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
@@ -59,6 +61,7 @@ TEMP_HISTORY_CHAR_LIMIT = 50000
 START_COMPACTION_ENABLED = True
 
 # ---- 触发比例(C3 轻量/T1 紧急裁剪, [4] 第八章节) ———————————————————————————
+# 状态: 以备后用（2026-09-23 小欧核查：C3/T1 全量接线前暂无消费方，保留阈值定义供后续接线，禁止删除）
 # 意义: TRIGGER_T1_RATIO/compress_long_tool_output 触发阈值; TRIGGER_T3_RATIO/keep_valuable_messages 紧急裁剪最后安全网;
 #       TRIM_TARGET_RATIO/裁剪到目标占用比例; KEEP_TAIL_ROUNDS/保尾完整 FC 轮数。
 # 默认值依据: 借鉴 opencode/历史方案口径(50% 常规触发、95% 濒危安全网、保留最近 3 轮)。
@@ -76,6 +79,7 @@ PRUNE_MINIMUM_TOKENS = 20000   # 剪枝/T1 最少需释放 token, 否则跳过(�
 PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token 阈值([4] 14.3.3; prune.py 引用 _TOKENS 权威名)
 
 # ---- Hermes Pass3 参数截断(T1 步骤2, [4] 5.2/第八章节) ————————————————————
+# 状态: 以备后用（2026-09-23 小欧核查：Pass3 代码尚未落地，暂无消费方，保留阈值定义供后续接线，禁止删除）
 # 意义: PASS3_ARGS_THRESHOLD/tool_call 参数超此长度才截断; PASS3_ARG_MAX_CHARS/截断后字符串字段最大长度。
 # 默认值依据: Hermes 2 Pass3 原文参数截断口径(500/200 字符)。
 # 可选范围: 阈值过低会误伤关键参数, 建议 300~800; 截断长度建议 100~300(须保留命令可读)。
@@ -112,6 +116,7 @@ TAIL_TOKEN_MAX = 8000        # 保尾预算上限(14.3.2 select: min(8000, ...))
 SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断([4] 14.9.2 splitTurn)
 
 # ---- 装配线(Assembler) ————————————————————————————
+# 状态: 以备后用（2026-09-23 小欧核查：assembler 装配函数尚未接入主链路，暂无消费方，保留供后续接线，禁止删除；运行时保尾数以 tuning.compaction.keep_tail 配置为准）
 # 意义: ASSEMBLE_KEEP_TAIL/注入摘要后保留的尾部最新消息条数(防摘要顶掉最新 task)。
 # 默认值依据: 保最新 1 条 task 即可维持对话意图([4] 14.5/10.1.7⑤)。
 # 可选范围: 0=只留摘要不保尾; 建议 1~3。

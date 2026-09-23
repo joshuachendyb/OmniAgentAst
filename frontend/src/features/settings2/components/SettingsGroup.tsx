@@ -9,6 +9,7 @@
 // 2026-09-21 小欧 - [59]B-10 渲染: sources 缺键回退 ?? 'yaml' → ?? 'default'（后端缺省 source='default'，缺键=默认值语义）
 // 2026-09-21 小强 - 系统Tab 3 小节（运维日志/工程目录/关于）：sectionOf 按 logging./paths.logs→运维日志、paths.*→工程目录、app.*→系统参数、其余→关于（对齐后端 system 组 12 项结构）
 // 2026-09-23 小欧 - [64] LLM补充采样参数: sectionOf 加 general 组「模型参数」小节（llm.sampling.* + llm.context_limit_default → '模型参数'）
+// 2026-09-23 小欧 - trim/compaction配置化: sectionOf 加 tuning.trim.→'裁剪(Trim)'、tuning.compaction.→'压缩(Compaction)' 两独立分块
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -31,6 +32,7 @@ interface Props {
 }
 
 // 2026-09-22 小欧 - [61] tuning Tab 分块：sectionOf 加 tuning.* 前缀→8 个子组名映射
+// 2026-09-23 小欧 - 现 10 个子组名映射（加 tuning.trim.→'裁剪(Trim)'、tuning.compaction.→'压缩(Compaction)'）
 function sectionOf(group: string, key: string): string | null {
   // ✅ general 组加模型参数小节（仿 system/tuning 分支写法）— 小欧 2026-09-23
   if (group === 'general') {
@@ -49,6 +51,8 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
     if (key.startsWith('tuning.concurrency.')) return '并发配额';
     if (key.startsWith('tuning.agent.')) return 'Agent 循环参数';
+    if (key.startsWith('tuning.trim.')) return '裁剪(Trim)';
+    if (key.startsWith('tuning.compaction.')) return '压缩(Compaction)';
     if (key.startsWith('tuning.stream_task.')) return '流/任务/缓存';
     if (key.startsWith('tuning.hitl.')) return '人工确认';
     if (key.startsWith('tuning.content.')) return '内容截断';

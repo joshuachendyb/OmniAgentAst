@@ -14,6 +14,7 @@
 #   与 Config 实例 env 路径双源分裂，设置页改的不是实际运行配置）; Config._get_config_path 删除自身 env 分支改调顶层（DRY 唯一源）
 # 2026-09-21 小欧 - [59]B-11 修复: 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
 #   与 settings_service is_env 统一改用（原 bool(os.getenv) 把 "   " 当有效覆盖，空白 provider/日志级别注入运行配置）
+# 2026-09-23 小欧 - trim配置化: get_max_rounds 改读 tuning.trim.max_rounds（自通用 agent.max_rounds 迁入调优·裁剪分块）
 
 import functools
 import os
@@ -150,8 +151,9 @@ class Config:
 
     def get_max_rounds(self, default: int = 100) -> int:
         """获取max_rounds配置 — 对话历史最多保留的FC轮数 — 小欧 2026-07-08
-        2026-09-21 小欧 v4.20 键名按域收敛: app.max_rounds → agent.max_rounds"""
-        return self.get('agent.max_rounds', default)
+        2026-09-21 小欧 v4.20 键名按域收敛: app.max_rounds → agent.max_rounds
+        2026-09-23 小欧 trim配置化: agent.max_rounds → tuning.trim.max_rounds（调优·裁剪分块）"""
+        return self.get('tuning.trim.max_rounds', default)
 
     def get_max_steps(self, default: int = 10000) -> int:
         """

@@ -41,6 +41,9 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
       sandbox 8项/logging 文件大小与备份数）——压缩负数(如 -500MB)曾当合法值落盘，消费方断言非负
       崩溃；range_ 为唯一边界来源，表驱 schema 与 _validate_value 单点校验（fontSize 的 step 见 #8 修复）
   2026-09-23 - 小欧 - [64] LLM补充采样参数: ①general组 agent.max_steps 后追加6条目(llm.sampling.temperature/max_tokens/top_p/frequency_penalty/presence_penalty + llm.context_limit_default); ②OLD_KEY_MAP 加 tuning.llm.temperature→llm.sampling.temperature / tuning.llm.max_tokens→llm.sampling.max_tokens 迁入映射
+  2026-09-23 - 小欧 - trim/compaction配置化: ①通用组删 agent.max_rounds（挪入调优·裁剪）; ②tuning组 Agent 循环参数后插 trim 3键(max_rounds/trigger_ratio/compaction_buffer)+compaction 4键(start_enabled/start_trigger_ratio/summary_feed_max_chars/keep_tail)两独立分块; ③OLD_KEY_MAP 加 agent.max_rounds→tuning.trim.max_rounds
+  2026-09-23 - 小欧 - 禁止backward还清旧账: 删 OLD_KEY_MAP 3条迁入映射(tuning.llm.temperature/max_tokens、agent.max_rounds，无消费方虚假承诺); live值已手工搬入新键，旧键废弃
+  2026-09-23 - 小欧 - 删死配置 tuning.agent.max_consecutive_chunks（should_promote 历史接口全仓零调用，max_consecutive 唯一读取点即该死方法）; max_chunks_without_promote 改名实义 chunk 累积上限+notice重写（单轮未收到完整响应累积50 chunk 即强制失败终止）
 """
 from typing import Any, Dict, List, Optional
 
@@ -58,30 +61,28 @@ def _item(key: str, type_: str, label: str, default: Any = None,
 
 
 GROUPS: Dict[str, Dict[str, Any]] = {
-    # 4.1 通用（general，5 项）
+    # 4.1 通用（general，10 项）
     "general": {"label": "通用", "items": [
         _item("workspace.project_root", "text", "项目根目录", "E:\\test_dir"),
         _item("workspace.allowed_dirs", "textarea", "授权目录", "",
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
         _item("logging.debug", "bool", "调试模式", True, restart=True,
               notice="开启后日志按 DEBUG 级别记录，明细含文件/行号"),
-        _item("agent.max_rounds", "int", "最大轮数", 100, range_=[1, 10000],
-              notice="单个任务最大执行轮数，超限结束任务"),
         _item("agent.max_steps", "int", "最大步数", 10000, range_=[1, 10000],
-              notice="单任务最大执行步数，超限中止"),
+              notice="单任务最大执行步数（运行时硬上限），超限强制中止"),
         # ✅ general 组 agent.max_steps 之后追加 6 条目 — 小欧 2026-09-23
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
-              notice="LLM 采样温度，0=确定性，2=高随机（自 tuning.llm.temperature 迁入）"),
+              notice="控制输出随机性：0=完全确定性（每次相同输入输出一致），1=默认随机性，2=最高随机性"),
         _item("llm.sampling.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
-              notice="LLM 单次调用最大输出 token 数（自 tuning.llm.max_tokens 迁入）"),
+              notice="单次 LLM 调用最大输出 token 数，超长截断"),
         _item("llm.sampling.top_p", "float", "核采样 top_p", 1.0, range_=[0, 1],
-              notice="核采样阈值，1.0=不启用；建议与温度二选一为主控"),
+              notice="核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选；通常与温度二选一调节，同时调易相互抵消"),
         _item("llm.sampling.frequency_penalty", "float", "频次惩罚", 0, range_=[-2, 2],
-              notice="按词频惩罚重复，0=不启用"),
+              notice="正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用"),
         _item("llm.sampling.presence_penalty", "float", "存在惩罚", 0, range_=[-2, 2],
-              notice="按是否出现过惩罚复述，0=不启用"),
+              notice="正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用"),
         _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
-              notice="model_params 未配 context_limit 时的全局缺省（256K；北京老陈拍板值域 200K~2M）"),
+              notice="模型上下文窗口的默认值（当模型未单独配置时使用），256K tokens"),
     ]},
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）
     "model": {"label": "模型", "items": [
@@ -160,22 +161,19 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
     ]},
     # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
+    # 2026-09-23 小欧 - 现 10子组35键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键）
     "tuning": {"label": "调优", "items": [
-        # --- llm: LLM 语义参数（7 键） ---
-        _item("tuning.llm.temperature", "float", "采样温度", 0.7, range_=[0, 2],
-              notice="LLM 采样温度，0=确定性，2=高随机"),
+        # --- llm: LLM 语义参数（5 键，temperature/max_tokens 已迁入 llm.sampling.* 通用组） ---
         _item("tuning.llm.tool_choice", "select", "tool_choice 模式", "auto",
               options=["auto", "none"], notice="auto=模型自主选择工具，none=纯文本模式"),
-        _item("tuning.llm.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
-              notice="LLM 单次调用最大输出 token 数"),
         _item("tuning.llm.stream_max_retries", "int", "流式最大重试", 3, range_=[0, 10],
               notice="LLM 流式调用最大重试次数"),
         _item("tuning.llm.response_fallback", "bool", "FC 响应回退", True,
               notice="FC 模式错误时降级为 Text 模式重试"),
         _item("tuning.llm.response_retries", "int", "响应错误重试", 2, range_=[0, 5],
               notice="LLM 响应错误（空/无效）最大重试次数"),
-        _item("tuning.llm.stream_options", "textarea", "流式选项(JSON)", '{"include_usage": true}',
-              notice="LLM 流式请求 stream_options 字段，JSON 格式"),
+        _item("tuning.llm.stream_options.include_usage", "bool", "包含 Token 用量统计", True,
+              notice="流式响应末尾 chunk 是否返回 token 用量(prompt_tokens/completion_tokens/total_tokens)"),
         # --- llm_net: LLM 网络/超时/连接池（7 键） ---
         _item("tuning.llm_net.read_timeout", "int", "读超时(秒)", 150, range_=[10, 600],
               notice="LLM 客户端读超时兜底(秒)"),
@@ -196,13 +194,25 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="LLM 软配额排队等待上限(秒)，超时保底放行"),
         _item("tuning.concurrency.shell_pool_max_per_type", "int", "Shell 池槽位", 8, range_=[1, 20],
               notice="同 key Shell 池最大并发实例数"),
-        # --- agent: Agent 循环参数（3 键） ---
-        _item("tuning.agent.default_max_steps", "int", "Agent 最大步数", 100, range_=[10, 500],
-              notice="API 请求体默认 max_steps（config.yaml agent.max_steps 为运行时上限）"),
-        _item("tuning.agent.max_consecutive_chunks", "int", "连续 chunk 上限", 5, range_=[1, 20],
-              notice="Agent 循环连续 chunk 上限，超出触发 promote"),
-        _item("tuning.agent.max_chunks_without_promote", "int", "无 promote 上限", 50, range_=[10, 200],
-              notice="Agent 循环无 promote 的 chunk 上限，超出强制停止"),
+        # --- agent: Agent 循环参数（1 键） ---
+        _item("tuning.agent.max_chunks_without_promote", "int", "chunk 累积上限", 50, range_=[10, 200],
+              notice="单轮流式响应未收到完整响应就累积到此数量 chunk，判定 LLM 流卡死，强制失败终止任务（防无限吐 chunk）"),
+        # --- trim: 裁剪(Trim) 3 键（loop 循环内逐轮执行） --- 小欧 2026-09-23
+        _item("tuning.trim.max_rounds", "int", "保留轮数", 100, range_=[1, 10000],
+              notice="对话历史最多保留的 FC 轮数，超出裁剪旧轮（自通用 agent.max_rounds 迁入）"),
+        _item("tuning.trim.trigger_ratio", "float", "裁剪触发比例", 0.75, range_=[0.1, 0.95],
+              notice="历史 token 超过 上下文窗口×此比例触发裁剪（北京老陈定案×3/4）"),
+        _item("tuning.trim.compaction_buffer", "int", "裁剪缓冲(tok)", 20000, range_=[1000, 100000],
+              notice="增量触发/预算裁剪的输出预留缓冲"),
+        # --- compaction: 压缩(Compaction) 4 键（start 超窗一次性锚定摘要） --- 小欧 2026-09-23
+        _item("tuning.compaction.start_enabled", "bool", "压缩开关", True,
+              notice="start 注入历史超窗时是否启用 C4 锚定摘要"),
+        _item("tuning.compaction.start_trigger_ratio", "float", "压缩触发比例", 0.5, range_=[0.1, 0.95],
+              notice="start 注入历史超过 上下文窗口×此比例触发压缩（北京老陈定案×1/2）"),
+        _item("tuning.compaction.summary_feed_max_chars", "int", "摘要喂入截断(字符)", 2000, range_=[100, 10000],
+              notice="压缩喂 LLM 的单条 tool content 截断上限"),
+        _item("tuning.compaction.keep_tail", "int", "摘要保尾条数", 1, range_=[0, 5],
+              notice="压缩回填保留尾部最新消息条数，0=不保尾"),
         # --- stream_task: 流/任务/缓存（4 键） ---
         _item("tuning.stream_task.heartbeat_interval", "float", "SSE 心跳周期(秒)", 25.0, range_=[5, 60],
               notice="SSE keep-alive 心跳周期(秒)，须 < 前端 IDLE_TIMEOUT=60s"),
@@ -222,7 +232,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("tuning.hitl.max_pending_confirmations", "int", "待确认上限", 100, range_=[10, 1000],
               notice="HITL 最大待确认请求数"),
         # --- content: 内容截断（3 键） ---
-        _item("tuning.content.project_context_max_chars", "int", "上下文注入上限(字符)", 10000, range_=[1000, 50000],
+        _item("tuning.content.project_context_max_chars", "int", "OmniAgent.md字符限制", 10000, range_=[1000, 50000],
               notice="项目规则文件(OmniAgent.md)注入 Prompt 字符上限"),
         _item("tuning.content.action_log_result_max_chars", "int", "日志截断(字符)", 5000, range_=[1000, 20000],
               notice="action_handler 日志 tool_result 截断长度"),
@@ -243,9 +253,6 @@ OLD_KEY_MAP: Dict[str, str] = {
     "app.language": "language",
     "workspace.project_root": "project_root",
     "ai.model_ref": "ai_model_ref",
-    # ✅ 迁入映射（旧 yaml 值带入，不留双源）— 小欧 2026-09-23
-    "tuning.llm.temperature": "llm.sampling.temperature",
-    "tuning.llm.max_tokens": "llm.sampling.max_tokens",
 }
 # v4.17 修正：安全 10 项全部逐键走通用 region 合并（security.* 逐行 merge，防整块覆盖丢键）。
 # 原 SECURITY_KNOWN 整块写 ConfigUpdate.security 的方案撤销——整块替换会覆盖未识别键造成丢数据。

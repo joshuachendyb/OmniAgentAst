@@ -12,6 +12,8 @@
 #   2026-09-22 - 小欧 - [61] 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
 #   2026-09-22 - 小欧 - [62]v1.4 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
 #   2026-09-23 - 小欧 - [64] LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_limit_default）
+#   2026-09-23 - 小欧 - trim/compaction配置化：tuning组 Agent 循环参数后加 trim 3键/compaction 4键两独立分块；删 tuning.agent.default_max_steps 死键
+#   2026-09-23 - 小欧 - 禁止backward还旧账：删 tuning.llm.temperature/max_tokens（已迁顶层 llm.sampling）+ 顶层 agent.max_rounds（已迁 tuning.trim.max_rounds）旧键残留
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -83,7 +85,6 @@ workspace:
 
 # Agent 循环配置
 agent:
-  max_rounds: 100
   max_steps: 10000
 
 # 日志配置
@@ -112,27 +113,26 @@ sandbox:
   default_timeout_sec: 60          # 预检默认超时(LLM未声明timeout时生效)
   max_timeout_sec: 300             # 预检硬上限5分钟; 声明超上限直接转HITL强确认
 
-# ============ 本次新增：顶层 llm 域（模型无关通用，UI=设置→通用）— 小欧 2026-09-23 ============
+# ============ 顶层 llm 域（模型无关通用，UI=设置→通用） ============
 llm:
   sampling:                   # A类 采样/生成控制（5 键）
-    temperature: 0.7          # 迁入：自 tuning.llm.temperature
-    max_tokens: 16384         # 迁入：自 tuning.llm.max_tokens
-    top_p: 1.0                # 新增：核采样阈值，1.0=不启用
-    frequency_penalty: 0      # 新增：频次重复惩罚
-    presence_penalty: 0       # 新增：话题重复惩罚
+    temperature: 0.7          # 采样温度：0=完全确定性，1=默认随机性，2=最高随机性
+    max_tokens: 16384         # 单次 LLM 调用最大输出 token 数，超长截断
+    top_p: 1.0                # 核采样阈值：从概率质量前 p 的词中采样；1.0=不筛选
+    frequency_penalty: 0      # 正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用
+    presence_penalty: 0       # 正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用
   context_limit_default: 262144   # C类全局兜底（256K）：值域 200000~2000000
 
-# 调优配置（[61] constants.py 配置化迁移，31 键，前端「调优」Tab 展示）
+# 调优配置（前端「调优」Tab 展示；10子组35键）
 tuning:
-  # LLM 语义参数（7 键）
+  # LLM 语义参数（5 键）
   llm:
-    temperature: 0.7               # LLM 采样温度，0=确定性，2=高随机
     tool_choice: auto              # auto=模型自主选择工具，none=纯文本模式
-    max_tokens: 16384              # LLM 单次调用最大输出 token 数
     stream_max_retries: 3          # LLM 流式调用最大重试次数
     response_fallback: true        # FC 模式错误时降级为 Text 模式重试
     response_retries: 2            # LLM 响应错误（空/无效）最大重试次数
-    stream_options: '{"include_usage": true}'  # LLM 流式请求 stream_options 字段，JSON 格式
+    stream_options:
+      include_usage: true          # 流式响应末尾 chunk 是否返回 token 用量统计
 
   # LLM 网络/超时/连接池（7 键）
   llm_net:
@@ -149,11 +149,22 @@ tuning:
     soft_pool_wait_timeout: 30.0   # LLM 软配额排队等待上限(秒)，超时保底放行
     shell_pool_max_per_type: 8     # 同 key Shell 池最大并发实例数
 
-  # Agent 循环参数（3 键）
+  # Agent 循环参数（1 键）
   agent:
-    default_max_steps: 100         # API 请求体默认 max_steps
-    max_consecutive_chunks: 5      # Agent 循环连续 chunk 上限，超出触发 promote
-    max_chunks_without_promote: 50 # Agent 循环无 promote 的 chunk 上限，超出强制停止
+    max_chunks_without_promote: 50 # 单轮未收到完整响应累积到此数量 chunk 即强制失败终止（防无限吐 chunk）
+
+  # 裁剪(Trim)（3 键，loop 循环内逐轮执行）— 小欧 2026-09-23
+  trim:
+    max_rounds: 100                # 对话历史最多保留的 FC 轮数，超出裁剪旧轮
+    trigger_ratio: 0.75            # 历史 token 超过 上下文窗口×此比例触发裁剪
+    compaction_buffer: 20000       # 增量触发/预算裁剪的输出预留缓冲
+
+  # 压缩(Compaction)（4 键，start 超窗一次性锚定摘要）— 小欧 2026-09-23
+  compaction:
+    start_enabled: true            # start 注入历史超窗时是否启用 C4 锚定摘要
+    start_trigger_ratio: 0.5       # start 注入历史超过 上下文窗口×此比例触发压缩
+    summary_feed_max_chars: 2000   # 压缩喂 LLM 的单条 tool content 截断上限
+    keep_tail: 1                   # 压缩回填保留尾部最新消息条数，0=不保尾
 
   # 流/任务/缓存（4 键）
   stream_task:

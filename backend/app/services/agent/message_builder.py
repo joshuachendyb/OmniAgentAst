@@ -32,6 +32,8 @@
 #   prepare_messages_for_llm 浅拷贝后剥离 user_message_id 防泄漏 LLM wire(conversation_history 源保留锚)。compliance: SRP/DRY/KISS
 # 2026-09-20 - 小欧 - D-4修复: _total_chars 将 reasoning/reasoning_content 计入预算(DeepSeek 长 reasoning 20K字符
 #   原估0 token, 严重低估导致上下文越界); _estimate_tokens 复用 _total_chars 自动生效, 最小侵入。compliance: SRP/DRY/KISS
+# 2026-09-23 - 小欧 - trim配置化: __init__ 新增 _trim_trigger_ratio/_compaction_buffer 读 tuning.trim.* 兜底常量; trim_history 增量/绝对值/budget 三处改用实例值
+# 2026-09-23 - 小欧 - wiring假保存修复: _cap_temp_history 改读 tuning.content.temp_history_char_limit 兜底常量（此前设置页可改实际不生效）
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -102,6 +104,8 @@ class MessageBuilder:
         self.temp_history: List[Dict[str, Any]] = []
         self.MAX_CONTEXT_TOKENS = max_context_tokens
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
+        self._trim_trigger_ratio: float = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))  # 小欧 2026-09-23 trim配置化
+        self._compaction_buffer: int = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))  # 小欧 2026-09-23 trim配置化
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
         self._msg_id_counter: int = 0  # 自增计数器(#10 文件B 去重 — 文档[1]11.8.4.1 D2b v3.29 单点化) — 小欧 2026-08-23
         # B组(B-1/B-2锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
@@ -311,7 +315,8 @@ class MessageBuilder:
 
     def _cap_temp_history(self):
         """对temp_history加字符容量限制(最多50000字符),从最旧条目开始截断"""
-        while self._total_chars(self.temp_history) > TEMP_HISTORY_CHAR_LIMIT and len(self.temp_history) > 1:
+        _temp_limit = int(get_config().get('tuning.content.temp_history_char_limit', TEMP_HISTORY_CHAR_LIMIT))  # 小欧 2026-09-23 wiring假保存修复
+        while self._total_chars(self.temp_history) > _temp_limit and len(self.temp_history) > 1:
             self.temp_history.pop(0)
 
     # =========================================================================
@@ -337,11 +342,11 @@ class MessageBuilder:
             if msg_count <= 5:
                 return
 
-            # 增量触发: 本轮粗估 - 上轮精确 > COMPACTION_BUFFER → 膨胀明显
+            # 增量触发: 本轮粗估 - 上轮精确 > 裁剪缓冲 → 膨胀明显 — 小欧 2026-09-23 trim配置化读 tuning.trim.compaction_buffer
             delta_trigger = (self.last_total_tokens is not None and
-                             rough_current - self.last_total_tokens > COMPACTION_BUFFER)
-            # 绝对值安全网: 历史占满 80%
-            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * TRIM_TRIGGER_RATIO
+                             rough_current - self.last_total_tokens > self._compaction_buffer)
+            # 绝对值安全网 — 小欧 2026-09-23 trim配置化读 tuning.trim.trigger_ratio
+            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * self._trim_trigger_ratio
 
             if not (delta_trigger or abs_trigger) and msg_count <= self._max_rounds * 2 + 5:
                 return
@@ -356,9 +361,9 @@ class MessageBuilder:
                 obs_list = [m for m in kept_fc if m.get("role") == "tool"]
                 assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
 
-            # 条件2: budget = context - COMPACTION_BUFFER - system/user 占用量
+            # 条件2: budget = context - 裁剪缓冲 - system/user 占用量 — 小欧 2026-09-23 trim配置化
             always_keep_tokens = self._estimate_tokens(system_msgs) + self._estimate_tokens(user_msgs)
-            available_budget = max(1, self.MAX_CONTEXT_TOKENS - COMPACTION_BUFFER - always_keep_tokens)
+            available_budget = max(1, self.MAX_CONTEXT_TOKENS - self._compaction_buffer - always_keep_tokens)
             trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
 
             rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)

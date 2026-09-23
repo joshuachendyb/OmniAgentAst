@@ -6,6 +6,7 @@
 #   2026-08-17 小健 改名: should_compact_window→should_compact_now(名符其实); 函数关系/设计文档引用同步
 #   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
 #   2026-08-17 小健 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): 绝对值安全网条件C int(context_limit*MAX_CONTEXT_RATIO)→int(context_limit*TRIM_TRIGGER_RATIO); 导入 MAX_CONTEXT_RATIO→TRIM_TRIGGER_RATIO
+#   2026-09-23 小欧 trim配置化: should_compact 每次调用读 tuning.trim.compaction_buffer/trigger_ratio 兜底常量（无状态类与 message_builder 一致）
 """compaction.trigger — 触发判定(统一/窗口/冷却) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「是否该压缩」的三类判定, 不含任何压缩/裁剪执行逻辑。
@@ -55,9 +56,12 @@ class CompactionTrigger:
         delta = current_tokens - last_total_tokens
         if current_tokens >= usable:
             return True
-        if delta > COMPACTION_BUFFER:
+        from app.config import get_config  # 小欧 2026-09-23 trim配置化：无状态类每次调用读配置兜底常量
+        _buf = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))
+        _ratio = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))
+        if delta > _buf:
             return True
-        if current_tokens >= int(context_limit * TRIM_TRIGGER_RATIO):
+        if current_tokens >= int(context_limit * _ratio):
             return True
         return False
 
