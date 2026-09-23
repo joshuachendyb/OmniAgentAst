@@ -5,6 +5,7 @@
 //    红测先红），range 补 step 倍数校验（12.5 过前端、对称后端 #8）
 // 2026-09-22 小欧 - [62]P4 3.2(6) isDirty 对象深比较：补 sameValue（Object.is 快路径 + 双对象
 //    JSON.stringify 深比），替换原 `!==`——对象/数组参数两个独立字面量内容相同但引用不同被判恒脏（[62] 3.2(6)）
+// 2026-09-23 小欧 - 新增 isCapsDirty + CAPABILITY_OPTIONS（[65]§七，复用既有 sameValue 与 §7.2 单源词表）- 小欧-2026-09-23
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 
 /** [62]P4 3.2(6)：值深比较——同一引用/Object.is 相同立即真；双方对象则 JSON 深比；其余恒假。 */
@@ -72,7 +73,11 @@ export function validate(
     ) {
       return { key: item.key, message: `${item.label}应为数字` };
     }
-    if (item.type === 'int' && typeof value === 'number' && !Number.isInteger(value)) {
+    if (
+      item.type === 'int' &&
+      typeof value === 'number' &&
+      !Number.isInteger(value)
+    ) {
       return { key: item.key, message: `${item.label}应为整数` };
     }
     if (item.range && typeof value === 'number') {
@@ -86,7 +91,10 @@ export function validate(
       if (item.step) {
         const k = (value - lo) / item.step;
         if (Math.abs(k - Math.round(k)) > 1e-9) {
-          return { key: item.key, message: `${item.label}取值需为 ${item.step} 的倍数` };
+          return {
+            key: item.key,
+            message: `${item.label}取值需为 ${item.step} 的倍数`,
+          };
         }
       }
     }
@@ -96,3 +104,15 @@ export function validate(
   }
   return null;
 }
+
+// 2026-09-23 小欧 - [65]§七：模型能力脏判定 + 能力枚举单源词表（useSettings 合并与 SettingsPage 渲染共用，杜绝词表漂移）- 小欧-2026-09-23
+export const isCapsDirty = (caps: string[], baseline: string[]): boolean =>
+  !sameValue(caps, baseline);
+
+export const CAPABILITY_OPTIONS = [
+  { label: '文本', value: 'text' },
+  { label: '图片', value: 'image' },
+  { label: '视频', value: 'video' },
+  { label: '音频', value: 'audio' },
+  { label: 'PDF', value: 'pdf' },
+];

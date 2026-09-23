@@ -35,13 +35,23 @@
 //   buildProviderConfig 公共函数；②load/selectProvider/selectModel/refreshModels 四处 envOverride 构建模式重复 →
 //   getEnvOverride 公共函数；③saveKeys 内两处手写「查 schema 键归属组」循环与 groupOfKey 重复 → findGroupOfKey 单纯函数
 //   （groupOfKey 改薄封装，setState 回调内传最新 s.schema）；三处均删重复回归单点维护 - 小欧-2026-09-22
+// 2026-09-23 小欧 - [65]§二+§七落码：①新增 addParam（新键注入 defaults 不同步即脏）；②新增 setCapabilities（Q1 未知值合并+联合置脏）；
+//   ③四通道回填 capabilities/capabilitiesBaseline；④dirtyCount 计能力脏 +1；⑤saveModelGroup 双通道
+//   （P0：参数无变不带 default_params；新键捎带全量 range/param_options；保存成功 providers 同步 patch 必修②）；
+//   ⑥ensureModelSaved 放行补 isCapsDirty（必修①）—— import 并入既有 modelUtils 行 - 小欧-2026-09-23
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
   type SettingSchemaItem,
 } from '@/services/api/settings.api';
 import { modelApi, type ProviderEntry } from '@/services/api/model.api';
-import { isDirty, clampToRange, validate } from '../utils/modelUtils';
+import {
+  isDirty,
+  clampToRange,
+  validate,
+  isCapsDirty,
+  CAPABILITY_OPTIONS,
+} from '../utils/modelUtils';
 import type { ModelState, SettingsState, TabKey } from '../types';
 import {
   ErrorType,
@@ -140,6 +150,9 @@ const initialModel = () => ({
   defaults: {},
   ranges: {},
   paramOptions: {},
+  // 2026-09-23 小欧 - [65]§7.3.4：能力编辑副本+基线（load 四通道回填覆盖）
+  capabilities: [] as string[],
+  capabilitiesBaseline: [] as string[],
   envOverride: {},
   providerConfig: {},
   isDirty: false,
@@ -148,6 +161,8 @@ const initialModel = () => ({
   addProviderModalOpen: false,
   // 2026-09-22 小欧 - [62]P8 4.3(8)：初始态补 paramOptionsModalOpen（ModelState 已要求，缺则 tsc 报错）
   paramOptionsModalOpen: false,
+  // 2026-09-23 小欧 - [65]§4.2.1：「+ 添加参数」内联表单初始关
+  addParamFormOpen: false,
   deleteConfirmOpen: false,
   deleteTarget: null as string | null,
 });
@@ -304,6 +319,9 @@ export function useSettings() {
               paramOptions: {
                 ...((current?.param_options ?? {}) as Record<string, string[]>),
               },
+              // 2026-09-23 小欧 - [65]§7.3.4 load 通道：能力+基线回填（含 yaml 手写未知值原样入 state）
+              capabilities: [...(current?.capabilities ?? [])],
+              capabilitiesBaseline: [...(current?.capabilities ?? [])],
               envOverride,
               providerConfig,
             },
@@ -402,16 +420,25 @@ export function useSettings() {
   );
 
   // 修正(2026-09-21 小强)：脏计数模型按实际脏参数数计（原固定 +1，「保存全部(N 项)」对参数组恒 1 项误导）([设置页UI审计] 问题13)
+  // 2026-09-23 小欧 - [65]§7.3.7 Q3 定案：能力脏计入 +1（isDirty 已联合判定，计数不跟上会「模型(0 项)却可保存」显示失真）
   const dirtyCount = useMemo(() => {
     const modelDirty = Object.values(
       isDirty(state.model.params, state.model.defaults, state.model.envOverride)
     ).filter(Boolean).length;
-    return Object.keys(state.dirtyKeys).length + modelDirty;
+    const capsDirty = isCapsDirty(
+      state.model.capabilities,
+      state.model.capabilitiesBaseline
+    )
+      ? 1
+      : 0;
+    return Object.keys(state.dirtyKeys).length + modelDirty + capsDirty;
   }, [
     state.dirtyKeys,
     state.model.params,
     state.model.defaults,
     state.model.envOverride,
+    state.model.capabilities,
+    state.model.capabilitiesBaseline,
   ]);
 
   const isGroupDirty = useCallback(
@@ -576,7 +603,33 @@ export function useSettings() {
         .filter((k) => dirty[k])
         .map((k) => [k, state.model.params[k]])
     );
-    if (!Object.keys(changed).length) return { ok: true as const };
+    // 2026-09-23 小欧 - [65]§7.3.2 P0：能力脏也算可保存；★空 changed 不带 default_params
+    //   （后端 default_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
+    const capsChanged = isCapsDirty(
+      state.model.capabilities,
+      state.model.capabilitiesBaseline
+    );
+    if (!Object.keys(changed).length && !capsChanged)
+      return { ok: true as const };
+    // 2026-09-23 小欧 - [65]§4.2.4 v1.3 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
+    //   无新键时 body 与原来完全一致（零行为变化）—— 与 §七 双通道叠加（v1.9 定稿形态）
+    const prevDefaults = state.model.defaults;
+    const newKeys = Object.keys(changed).filter((k) => !(k in prevDefaults));
+    const body: {
+      default_params?: Record<string, unknown>;
+      range?: Record<string, { min: number; max: number }>;
+      param_options?: Record<string, string[]>;
+      capabilities?: string[];
+    } = {};
+    if (Object.keys(changed).length) {
+      body.default_params = changed;
+      if (newKeys.length) {
+        body.range = { ...state.model.ranges };
+        body.param_options = { ...state.model.paramOptions };
+      }
+    }
+    // setCapabilities 已合并未知值（Q1），state 恒含未知值，直接送
+    if (capsChanged) body.capabilities = state.model.capabilities;
     setSaving(true);
     try {
       // S11：保存前校验 mtime（模型参数与设置同落 YAML），外部已更新则刷新并中止
@@ -594,16 +647,32 @@ export function useSettings() {
       const r = await modelApi.updateModel(
         state.model.selectedProvider,
         state.model.selectedModel,
-        {
-          default_params: changed,
-        }
+        body
       );
       if (!r.ok) {
         showMessage(ErrorType.MODEL_CONFIG_ERROR, '模型参数保存失败');
         return { ok: false as const };
       }
       showSuccess('模型参数已保存');
-      patchModel({ defaults: { ...state.model.params }, isDirty: false });
+      // 2026-09-23 小欧 - [65]§7.3.10 必修②：providers 内该模型 capabilities 同步 patch
+      //   （否则参数区勾选已改、通用 Tab 卡片 tags 仍旧值直到 F5，同屏两处不同源=显示失真）
+      patchModel({
+        defaults: { ...state.model.params },
+        capabilitiesBaseline: [...state.model.capabilities],
+        providers: state.model.providers.map((p) =>
+          p.name !== state.model.selectedProvider
+            ? p
+            : {
+                ...p,
+                models: p.models.map((m) =>
+                  m.name !== state.model.selectedModel
+                    ? m
+                    : { ...m, capabilities: [...state.model.capabilities] }
+                ),
+              }
+        ),
+        isDirty: false,
+      });
       // A7：同步落盘后 mtime，防假后门刷新误判
       syncMtime(r.mtime);
       return { ok: true as const };
@@ -623,7 +692,12 @@ export function useSettings() {
       state.model.defaults,
       state.model.envOverride
     );
-    if (!Object.values(dirtyMap).some(Boolean)) return true;
+    // 2026-09-23 小欧 - [65]§7.3.10 必修①：放行条件补能力脏（否则"能力改了没存就切模型"静默丢失，BUG-D 同类）
+    if (
+      !Object.values(dirtyMap).some(Boolean) &&
+      !isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline)
+    )
+      return true;
     const r = await saveModelGroup();
     if (!r.ok) {
       showMessage(
@@ -697,6 +771,9 @@ export function useSettings() {
         paramOptions: {
           ...((first?.param_options ?? {}) as Record<string, string[]>),
         },
+        // 2026-09-23 小欧 - [65]§7.3.4 selectProvider 通道：切 provider 回填首模型能力+基线
+        capabilities: [...(first?.capabilities ?? [])],
+        capabilitiesBaseline: [...(first?.capabilities ?? [])],
         // S5：切到 env 接管 provider 时参数区整体禁用（后端拒保存）
         envOverride: getEnvOverride(
           p.env,
@@ -739,6 +816,9 @@ export function useSettings() {
         defaults: nextDefaults,
         ranges: nextRanges,
         paramOptions: nextOptions,
+        // 2026-09-23 小欧 - [65]§7.3.4 selectModel 通道：同 provider 切模型回填能力+基线
+        capabilities: [...(entry.capabilities ?? [])],
+        capabilitiesBaseline: [...(entry.capabilities ?? [])],
         // S5：选中 provider 为 env 接管时同步禁用其参数区
         envOverride: getEnvOverride(
           providerEntry?.env,
@@ -795,6 +875,70 @@ export function useSettings() {
     [state.model.envOverride, state.model.ranges, state.model.paramOptions]
   );
 
+  // 2026-09-23 小欧 - [65]§7.3.1 setCapabilities：Q1 未知值合并（onChange 只含已渲染 5 枚举，
+  //   uiValues ∪ state 未知原值 → state 恒含未知值，提交直接送无二次合并）+ isCapsDirty 联合置脏（baseline 不动）
+  const setCapabilities = useCallback((uiValues: string[]) => {
+    setState((s) => {
+      const known = new Set(CAPABILITY_OPTIONS.map((o) => o.value));
+      const unknown = s.model.capabilities.filter((v) => !known.has(v));
+      const next = [...uiValues, ...unknown];
+      const paramsDirty = Object.values(
+        isDirty(s.model.params, s.model.defaults, s.model.envOverride)
+      ).some(Boolean);
+      return {
+        ...s,
+        model: {
+          ...s.model,
+          capabilities: next,
+          isDirty:
+            paramsDirty || isCapsDirty(next, s.model.capabilitiesBaseline),
+        },
+      };
+    });
+  }, []);
+
+  // 2026-09-23 小欧 - [65]§4.2.2 addParam：新键注入 params+ranges+paramOptions，defaults 不同步（立即判脏）
+  const addParam = useCallback(
+    (
+      key: string,
+      value: unknown,
+      meta?: { range?: { min: number; max: number }; options?: string[] }
+    ) => {
+      if (key in state.model.params) {
+        showMessage(ErrorType.WARNING, `参数 ${key} 已存在`);
+        return;
+      }
+      if (meta?.options && !meta.options.includes(value as string)) {
+        showMessage(
+          ErrorType.WARNING,
+          `参数 ${key} 的值 ${value} 不在选项 ${meta.options.join('/')} 中`
+        );
+        return;
+      }
+      setState((s) => {
+        const params = { ...s.model.params, [key]: value };
+        const ranges = meta?.range
+          ? { ...s.model.ranges, [key]: meta.range }
+          : s.model.ranges;
+        const paramOptions = meta?.options
+          ? { ...s.model.paramOptions, [key]: meta.options }
+          : s.model.paramOptions;
+        return {
+          ...s,
+          model: {
+            ...s.model,
+            params,
+            ranges,
+            paramOptions,
+            isDirty: true,
+          },
+        };
+      });
+      // deps 只留判重闭包用的 params（ranges/paramOptions 在 setState 内经 s 读取，lint unnecessary 修正）
+    },
+    [state.model.params]
+  );
+
   const resetParams = useCallback(() => {
     patchModel({ params: { ...state.model.defaults }, isDirty: false });
   }, [patchModel, state.model.defaults]);
@@ -829,6 +973,9 @@ export function useSettings() {
               paramOptions: {
                 ...((m.param_options ?? {}) as Record<string, string[]>),
               },
+              // 2026-09-23 小欧 - [65]§7.3.4 refreshModels(select) 通道：定位回填目标模型能力+基线
+              capabilities: [...(m.capabilities ?? [])],
+              capabilitiesBaseline: [...(m.capabilities ?? [])],
               // S5：目标 provider env 接管时禁用其参数区
               envOverride: getEnvOverride(p.env, Object.keys(defaults)),
               isDirty: false,
@@ -863,6 +1010,9 @@ export function useSettings() {
     selectProvider,
     selectModel,
     setParam,
+    // 2026-09-23 小欧 - [65]：暴露 addParam（§4.2.3）与 setCapabilities（§7.4 #5）
+    addParam,
+    setCapabilities,
     resetParams,
     saveModelGroup,
     refreshModels,

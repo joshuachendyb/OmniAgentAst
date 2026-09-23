@@ -39,16 +39,35 @@
 // 2026-09-22 小欧 - [62]P8 4.3(8)：②参数区标题行加「管理选项」入口（param_options 非空才显示），
 //   ModelModals 后渲染 ParamOptionsModal（open=paramOptionsModalOpen，保存后 refreshModels 重拉）
 // 2026-09-22 小欧 - YAGNI+令牌收口：①选择器锚点 div 删 borderRadius/padding/margin 无效死样式（padding+margin 恰恰抵消，视觉零效果）；「管理选项」按钮 marginRight:16 裸数字 → Spacing.XL - 小欧-2026-09-22
+// 2026-09-23 小欧 - [65]§4.3+§7.2 落码：①标题行加「+ 添加参数」按钮；②ModelParams 前条件渲染 AddParamForm；
+//   ③ModelParams 后加「模型能力」多选行（Checkbox.Group+env 按 providerConfig.env 禁用+DirtyDot）——
+//   import 合并追加（Checkbox 进 antd 行、settingsRowStyle/settingsLabelStyle 进 tokens 行、DirtyDot 并 icons 行、
+//   CAPABILITY_OPTIONS/isCapsDirty 并 modelUtils 行、AddParamForm 新行，禁重复 import）- 小欧-2026-09-23
+// 2026-09-23 小欧 - UI 风格对齐（北京老陈指示）：「+ 添加参数」由手打加号的 type=link 改为整体页面添加类
+//   动作标准款 = 默认 Button + PlusOutlined 图标（与 ModelSelector「添加模型/添加 Provider」同款），
+//   主操作层级与右侧辅助 link（管理选项/重置为默认）拉开；PlusOutlined 并入 @ant-design/icons 独立 import - 小欧-2026-09-23
+// 2026-09-23 小欧 - ②标题行布局改三列 grid（北京老陈指示：添加参数太靠右）：space-between 多子项均分致
+//   按钮漂移——改 gridTemplateColumns '1fr auto 1fr' = 标题左 | 添加参数居中 | 管理选项/重置右组
+//   （右组包 flex 容器 gap:Spacing.XL，去掉两按钮各自 marginRight，按钮条件渲染变化不再影响中列位置）- 小欧-2026-09-23
+// 2026-09-23 小欧 - ②标题行三按钮合一组（北京老陈指示）：添加参数/管理选项/重置为默认 = 同款默认 Button
+//   （管理选项/重置原 type=link 去边框异款）+ 统一 width:120 等长 + gap:Spacing.SM 紧挨 + 中列整组居中；
+//   原「标题|添加参数居中|右组」拆两处 → 组内条件渲染（无 param_options/无 params 仍隐藏，组始终居中）- 小欧-2026-09-23
 import React, { useState } from 'react';
-import { Button, Card, Modal, Result, Skeleton, Tabs } from 'antd';
+import { Button, Card, Checkbox, Modal, Result, Skeleton, Tabs } from 'antd';
+import { PlusOutlined } from '@ant-design/icons';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
-import { settingsSpacing, settingsModalWidth } from '@/theme/settingsTokens';
+import {
+  settingsSpacing,
+  settingsModalWidth,
+  settingsRowStyle,
+  settingsLabelStyle,
+} from '@/theme/settingsTokens';
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SearchBox } from './SearchBox';
 import { SaveBar } from './SaveBar';
 import { DirtyBadge } from './DirtyBadge';
-import { SettingIcon } from './icons';
+import { SettingIcon, DirtyDot } from './icons';
 import { ModelSelector } from './ModelSelector';
 import { ModelParams } from './ModelParams';
 import { ProviderConfig } from './ProviderConfig';
@@ -64,10 +83,12 @@ import {
   showMessage,
   showSuccess,
 } from '@/services/error/handler';
-import { isDirty } from '../utils/modelUtils';
+import { isDirty, CAPABILITY_OPTIONS, isCapsDirty } from '../utils/modelUtils';
 import type { TabKey } from '../types';
 // 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项弹窗（④区标题行「管理选项」入口）
 import { ParamOptionsModal } from './ParamOptionsModal';
+// 2026-09-23 小欧 - [65]§4.3.0：添加参数内联表单（组件一文件，独立 import）
+import { AddParamForm } from './AddParamForm';
 
 const SettingsPage: React.FC = () => {
   const s = useSettings();
@@ -225,63 +246,79 @@ const SettingsPage: React.FC = () => {
           onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
         />
       </div>
+      {/* ②标题行 = 三列 grid：标题左 | 三按钮等宽组居中 | 右 1fr 空列对称 */}
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
           alignItems: 'center',
         }}
       >
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
-        {/* 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项入口（仅当前模型有 param_options 时显示，
-            与「重置为默认」同排——用户发现选项不够时视线自然扫到标题行） */}
-        {Object.keys(state.model.paramOptions).length > 0 && (
+        {/* 三按钮组：同款默认 Button + width 120 等长 + gap SM 紧挨，整组居中（北京老陈指示）；
+            添加参数 = [65]§4.3.1 入口（管 model_params），管理选项 = [62]P8 入口，重置 = [58]P1-4 入口 */}
+        <div style={{ display: 'flex', gap: Spacing.SM }}>
           <Button
-            type="link"
-            style={{
-              padding: 0,
-              color: Colors.TEXT.SECONDARY,
-              marginRight: Spacing.XL,
-            }}
-            onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
+            icon={<PlusOutlined />}
+            style={{ width: 120 }}
+            onClick={() => s.patchModel({ addParamFormOpen: true })}
           >
-            管理选项
+            添加参数
           </Button>
-        )}
-        {Object.keys(state.model.params).length > 0 && (
-          <Button
-            type="link"
-            style={{ padding: 0, color: Colors.TEXT.SECONDARY }}
-            disabled={!state.model.isDirty}
-            onClick={() => {
-              Modal.confirm({
-                title: (
-                  <span
-                    style={{
-                      fontSize: FontSize.PRIMARY,
-                      fontWeight: FontWeight.BOLD,
-                    }}
-                  >
-                    ⚠ 重置为默认
-                  </span>
-                ),
-                content: (
-                  <span style={{ color: Colors.TEXT.SECONDARY }}>
-                    将恢复该模型全部参数为默认值，当前修改将丢失。
-                  </span>
-                ),
-                okText: '确认重置',
-                okButtonProps: { danger: true },
-                cancelText: '取消',
-                width: settingsModalWidth.confirm,
-                onOk: () => s.resetParams(),
-              });
-            }}
-          >
-            重置为默认
-          </Button>
-        )}
+          {/* 管理选项：仅当前模型有 param_options 时显示 */}
+          {Object.keys(state.model.paramOptions).length > 0 && (
+            <Button
+              style={{ width: 120 }}
+              onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
+            >
+              管理选项
+            </Button>
+          )}
+          {/* 重置为默认：无 params 隐藏、无脏态 disabled */}
+          {Object.keys(state.model.params).length > 0 && (
+            <Button
+              style={{ width: 120 }}
+              disabled={!state.model.isDirty}
+              onClick={() => {
+                Modal.confirm({
+                  title: (
+                    <span
+                      style={{
+                        fontSize: FontSize.PRIMARY,
+                        fontWeight: FontWeight.BOLD,
+                      }}
+                    >
+                      ⚠ 重置为默认
+                    </span>
+                  ),
+                  content: (
+                    <span style={{ color: Colors.TEXT.SECONDARY }}>
+                      将恢复该模型全部参数为默认值，当前修改将丢失。
+                    </span>
+                  ),
+                  okText: '确认重置',
+                  okButtonProps: { danger: true },
+                  cancelText: '取消',
+                  width: settingsModalWidth.confirm,
+                  onOk: () => s.resetParams(),
+                });
+              }}
+            >
+              重置为默认
+            </Button>
+          )}
+        </div>
       </div>
+      {/* 2026-09-23 小欧 - [65]§4.3.2：「+ 添加参数」内联表单（勾选多个循环 onAdd，批量完调 onCancel 统一关） */}
+      {state.model.addParamFormOpen && (
+        <AddParamForm
+          existingKeys={Object.keys(state.model.params)}
+          onAdd={(key, value, meta) => {
+            s.addParam(key, value, meta);
+          }}
+          onCancel={() => s.patchModel({ addParamFormOpen: false })}
+        />
+      )}
       <ModelParams
         params={state.model.params}
         defaults={state.model.defaults}
@@ -290,6 +327,29 @@ const SettingsPage: React.FC = () => {
         envOverride={state.model.envOverride}
         onChange={s.setParam}
       />
+      {/* 2026-09-23 小欧 - [65]§7.2：模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
+          env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
+          其 keys 来自 default_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
+      <div style={settingsRowStyle}>
+        <span style={settingsLabelStyle}>模型能力</span>
+        <span style={{ flex: 1 }}>
+          <Checkbox.Group
+            value={state.model.capabilities}
+            disabled={
+              state.model.providerConfig[state.model.selectedProvider]?.env ===
+              true
+            }
+            options={CAPABILITY_OPTIONS}
+            onChange={(v) => s.setCapabilities(v as string[])}
+          />
+        </span>
+        {!isCapsDirty(
+          state.model.capabilities,
+          state.model.capabilitiesBaseline
+        ) ? null : (
+          <DirtyDot />
+        )}
+      </div>
       <div data-section="provider-config">
         <SectionTitle title="── ③ Provider 配置 ──" />
         <ProviderConfig

@@ -9,6 +9,8 @@
 // 2026-09-22 小欧 - [62]P8：①4.3(9)-2-c providerConfig 每条加 [key:string]:unknown 动态索引
 //   （rate_limit 等 param_types 驱动新参数收容，TS 不透传报 unknown）；②4.3(8) ModelState 补
 //   paramOptionsModalOpen 弹窗控制（管理选项入口与重置默认同排）。
+// 2026-09-23 小欧 - [65]§七：ModelState 补 capabilities/capabilitiesBaseline（模型能力编辑双字段，编辑副本+基线）- 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]§4.1：ModelState 补 addParamFormOpen（「+ 添加参数」内联表单开关）- 小欧-2026-09-23
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -36,6 +38,9 @@ export interface ModelState {
   defaults: Record<string, unknown>;
   ranges: Record<string, { min: number; max: number }>;
   paramOptions: Record<string, string[]>;
+  // 2026-09-23 小欧 - [65]§七：能力编辑副本与持久化基线（baseline 不注入，保脏；[65]7.3.1/7.3.3）
+  capabilities: string[];
+  capabilitiesBaseline: string[];
   envOverride: Record<string, boolean>;
   providerConfig: Record<
     string,
@@ -57,6 +62,8 @@ export interface ModelState {
   addProviderModalOpen: boolean;
   // 2026-09-22 小欧 - [62]P8 4.3(8)：paramOptionsModalOpen 弹窗控制（管理选项入口，与重置默认同排）
   paramOptionsModalOpen: boolean;
+  // 2026-09-23 小欧 - [65]§4.1：「+ 添加参数」内联表单开关
+  addParamFormOpen: boolean;
   deleteConfirmOpen: boolean;
   deleteTarget: string | null;
 }
