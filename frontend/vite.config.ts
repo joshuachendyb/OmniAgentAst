@@ -1,5 +1,7 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复配置对象属性换行/缩进统一, 防止格式再次出错
 // 编辑历史: 2026-09-22 小欧 - server.port/proxy 补注释说明前端:5173→后端:8000 端口关系(两种连接方式 + 改端口同步清单)
+// 编辑历史: 2026-09-23 小欧 - server.watch.usePolling=true: Windows 下 chokidar 长跑丢文件事件
+//   (2026-09-23 一天连发两次"改代码浏览器不生效"根因)，轮询监听根治，代价=多耗 CPU - 小欧-2026-09-23
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import eslint from 'vite-plugin-eslint';
@@ -46,6 +48,12 @@ export default defineConfig(({ command }) => {
       //   方式2 直连：getApiBaseUrl() 拼 hostname:port 直连后端（走 CORS，需改 constants.py 白名单）
       // 改端口须同步：proxy.target（方式1）或 VITE_API_PORT + CORS 白名单（方式2）
       port: 5173,
+      watch: {
+        // 【小欧 2026-09-23】轮询监听：Windows 下 chokidar push 通知长跑后会丢文件变更事件，
+        // 导致"改了源码 vite 不热更、浏览器一直旧版"（当日连发两次，重启才恢复）。usePolling 根治，
+        // 代价是固定间隔轮询 stat 多耗少量 CPU。
+        usePolling: true,
+      },
       proxy: {
         // Vite 内置 http-proxy：开发模式下 /api/* 请求代理到后端 uvicorn(:8000)。
         // 改后端端口时同步改 target。生产构建不走此 proxy（由 Nginx/反代接管）。
