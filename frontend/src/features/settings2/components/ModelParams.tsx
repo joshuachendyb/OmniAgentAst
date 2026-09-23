@@ -12,6 +12,7 @@
 // 2026-09-22 小欧 - 修正：删容器 gap、label 加 fontSize/fontWeight 完全对齐 SettingRow 行容器样式；import 补回 FontSize/FontWeight - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：行容器/label 改复用 settingsRowStyle/settingsLabelStyle 令牌（删 settingsRowLayout/settingsSpacing 内联展开）；移 Colors/FontSize/FontWeight unused import - 小欧-2026-09-22
 // 2026-09-23 小欧 - [65]§4.4：遍历改 params⊔defaults 并集（addParam 不注入 defaults，原只遍历 defaults 新键不可见；无新键时并集==defaults 键集零行为变化）- 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]十遍会审 F5：safeNum 单点（原 isNaN 三元在 Slider/InputNumber 各写一次重复）- 小欧-2026-09-23
 import React from 'react';
 import { Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { Spacing } from '@/utils/stepStyles';
@@ -56,6 +57,7 @@ export const ModelParams: React.FC<Props> = ({
           const envKey = envOverride[key];
           const renderControl = (): React.ReactNode => {
             if (range) {
+              const safeNum = isNaN(numValue) ? range.min : numValue;
               return (
                 <span
                   style={{
@@ -67,7 +69,7 @@ export const ModelParams: React.FC<Props> = ({
                   <Slider
                     min={range.min}
                     max={range.max}
-                    value={isNaN(numValue) ? range.min : numValue}
+                    value={safeNum}
                     disabled={envKey}
                     style={{ width: settingsControl.sliderWidth }}
                     onChange={(v) => onChange(key, v)}
@@ -75,7 +77,7 @@ export const ModelParams: React.FC<Props> = ({
                   <InputNumber
                     min={range.min}
                     max={range.max}
-                    value={isNaN(numValue) ? range.min : numValue}
+                    value={safeNum}
                     disabled={envKey}
                     onChange={(v) => onChange(key, v)}
                   />

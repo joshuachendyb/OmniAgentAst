@@ -4,6 +4,8 @@
 // 2026-09-22 小欧 - 统一控件宽度：inputWidth/secretWidth/selectWidth/inputNumberWidth/textareaWidth 统一为 240px；新增 inputNumberWidth/rangeNumberWidth 令牌；sliderWidth 160→140 配合 InputNumber 组合约 240；新增 apiKeyWidth/baseUrlWidth 360px - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY+YAGNI 收口：行容器样式抽 settingsRowStyle、行 label 样式抽 settingsLabelStyle（SettingRow/ProviderConfig/ModelParams 三处复用，杜绝三套行样式漂移）；删 settingsRowLayout.gap 死配置（行容器已不用 gap，用量随布局对齐移除）- 小欧-2026-09-22
 // 2026-09-23 小欧 - labelWidth 132→180（适配"频次惩罚 (frequency_penalty)"长标签）；控件宽度 inputWidth/secretWidth/selectWidth/inputNumberWidth/textareaWidth/modelSelectWidth/modelNameWidth 统一 240→180 - 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]十遍会审 F3：settingsControl 增 actionBtnWidth:120（②标题行三按钮等长，消 style={{width:120}}×3
+//   重复字面量；标题操作按钮非 180 输入族，单列不混入 inputWidth）- 小欧-2026-09-23
 import {
   Spacing,
   Radius,
@@ -34,6 +36,7 @@ export const settingsControl = {
   modelNameWidth: 180,
   apiKeyWidth: 360,
   baseUrlWidth: 360,
+  actionBtnWidth: 120,
 } as const;
 
 // 第六章 6.1 规范一：弹窗宽度三档（确认/通知=480、表单=520、展示=800）— 单点收口，禁散落硬编码

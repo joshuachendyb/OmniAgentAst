@@ -52,12 +52,15 @@
 // 2026-09-23 小欧 - ②标题行三按钮合一组（北京老陈指示）：添加参数/管理选项/重置为默认 = 同款默认 Button
 //   （管理选项/重置原 type=link 去边框异款）+ 统一 width:120 等长 + gap:Spacing.SM 紧挨 + 中列整组居中；
 //   原「标题|添加参数居中|右组」拆两处 → 组内条件渲染（无 param_options/无 params 仍隐藏，组始终居中）- 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]十遍会审：F3 三按钮宽改 settingsControl.actionBtnWidth 令牌（消 width:120×3，
+//   settingsControl 并入 tokens import 行）+ F6 能力行 DirtyDot 改 && 写法（与 ModelParams 同款）- 小欧-2026-09-23
 import React, { useState } from 'react';
 import { Button, Card, Checkbox, Modal, Result, Skeleton, Tabs } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
 import {
   settingsSpacing,
+  settingsControl,
   settingsModalWidth,
   settingsRowStyle,
   settingsLabelStyle,
@@ -255,12 +258,13 @@ const SettingsPage: React.FC = () => {
         }}
       >
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
-        {/* 三按钮组：同款默认 Button + width 120 等长 + gap SM 紧挨，整组居中（北京老陈指示）；
+        {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（十遍会审 F3，消 width:120×3）
+            + gap SM 紧挨，整组居中（北京老陈指示）；
             添加参数 = [65]§4.3.1 入口（管 model_params），管理选项 = [62]P8 入口，重置 = [58]P1-4 入口 */}
         <div style={{ display: 'flex', gap: Spacing.SM }}>
           <Button
             icon={<PlusOutlined />}
-            style={{ width: 120 }}
+            style={{ width: settingsControl.actionBtnWidth }}
             onClick={() => s.patchModel({ addParamFormOpen: true })}
           >
             添加参数
@@ -268,16 +272,16 @@ const SettingsPage: React.FC = () => {
           {/* 管理选项：仅当前模型有 param_options 时显示 */}
           {Object.keys(state.model.paramOptions).length > 0 && (
             <Button
-              style={{ width: 120 }}
+              style={{ width: settingsControl.actionBtnWidth }}
               onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
             >
               管理选项
             </Button>
           )}
-          {/* 重置为默认：无 params 隐藏、无脏态 disabled */}
+          {/* 重置为默认：无 params 隐藏、无脏态 disabled；仅清参数脏，能力脏保留（十遍会审 F1 见 resetParams） */}
           {Object.keys(state.model.params).length > 0 && (
             <Button
-              style={{ width: 120 }}
+              style={{ width: settingsControl.actionBtnWidth }}
               disabled={!state.model.isDirty}
               onClick={() => {
                 Modal.confirm({
@@ -343,12 +347,11 @@ const SettingsPage: React.FC = () => {
             onChange={(v) => s.setCapabilities(v as string[])}
           />
         </span>
-        {!isCapsDirty(
+        {/* 2026-09-23 小欧 - [65]十遍会审 F6：&& 写法（与 ModelParams 脏点同款，原 !cond?null:<x/> 三元异款） */}
+        {isCapsDirty(
           state.model.capabilities,
           state.model.capabilitiesBaseline
-        ) ? null : (
-          <DirtyDot />
-        )}
+        ) && <DirtyDot />}
       </div>
       <div data-section="provider-config">
         <SectionTitle title="── ③ Provider 配置 ──" />

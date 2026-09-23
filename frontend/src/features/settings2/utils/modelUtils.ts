@@ -6,6 +6,8 @@
 // 2026-09-22 小欧 - [62]P4 3.2(6) isDirty 对象深比较：补 sameValue（Object.is 快路径 + 双对象
 //    JSON.stringify 深比），替换原 `!==`——对象/数组参数两个独立字面量内容相同但引用不同被判恒脏（[62] 3.2(6)）
 // 2026-09-23 小欧 - 新增 isCapsDirty + CAPABILITY_OPTIONS（[65]§七，复用既有 sameValue 与 §7.2 单源词表）- 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]十遍会审：F2 isCapsDirty 排序后比（集合语义防手写 YAML 顺序假脏）+
+//   F4 增 KNOWN_CAPABILITY_VALUES 单源（setCapabilities 每次重建 Set → 模块常量）- 小欧-2026-09-23
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 
 /** [62]P4 3.2(6)：值深比较——同一引用/Object.is 相同立即真；双方对象则 JSON 深比；其余恒假。 */
@@ -106,8 +108,10 @@ export function validate(
 }
 
 // 2026-09-23 小欧 - [65]§七：模型能力脏判定 + 能力枚举单源词表（useSettings 合并与 SettingsPage 渲染共用，杜绝词表漂移）- 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]十遍会审 F2：排序后比较（能力是集合语义；手写 YAML 顺序与 UI 选项顺序不一致时
+//   JSON 串比误判假脏。只改本函数内部，不动共享 sameValue——params 数组顺序敏感处仍需顺序比）- 小欧-2026-09-23
 export const isCapsDirty = (caps: string[], baseline: string[]): boolean =>
-  !sameValue(caps, baseline);
+  !sameValue([...caps].sort(), [...baseline].sort());
 
 export const CAPABILITY_OPTIONS = [
   { label: '文本', value: 'text' },
@@ -116,3 +120,9 @@ export const CAPABILITY_OPTIONS = [
   { label: '音频', value: 'audio' },
   { label: 'PDF', value: 'pdf' },
 ];
+
+// 2026-09-23 小欧 - [65]十遍会审 F4：已知能力值集合单源（setCapabilities 每次调用重建 Set → 模块级常量，
+//   与 CAPABILITY_OPTIONS 同源，增枚举只改一处）- 小欧-2026-09-23
+export const KNOWN_CAPABILITY_VALUES: ReadonlySet<string> = new Set(
+  CAPABILITY_OPTIONS.map((o) => o.value)
+);

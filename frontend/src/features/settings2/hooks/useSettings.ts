@@ -39,6 +39,8 @@
 //   ③四通道回填 capabilities/capabilitiesBaseline；④dirtyCount 计能力脏 +1；⑤saveModelGroup 双通道
 //   （P0：参数无变不带 default_params；新键捎带全量 range/param_options；保存成功 providers 同步 patch 必修②）；
 //   ⑥ensureModelSaved 放行补 isCapsDirty（必修①）—— import 并入既有 modelUtils 行 - 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]十遍会审：F1 resetParams 联合置脏（重置只清参数脏，能力脏保留）+
+//   F4 已知能力值集改 modelUtils 单源常量（原每次调用重建 Set）- 小欧-2026-09-23
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -50,7 +52,7 @@ import {
   clampToRange,
   validate,
   isCapsDirty,
-  CAPABILITY_OPTIONS,
+  KNOWN_CAPABILITY_VALUES,
 } from '../utils/modelUtils';
 import type { ModelState, SettingsState, TabKey } from '../types';
 import {
@@ -877,10 +879,12 @@ export function useSettings() {
 
   // 2026-09-23 小欧 - [65]§7.3.1 setCapabilities：Q1 未知值合并（onChange 只含已渲染 5 枚举，
   //   uiValues ∪ state 未知原值 → state 恒含未知值，提交直接送无二次合并）+ isCapsDirty 联合置脏（baseline 不动）
+  // 2026-09-23 小欧 - [65]十遍会审 F4：已知值集合改用 modelUtils 单源常量（原每次调用重建 Set）
   const setCapabilities = useCallback((uiValues: string[]) => {
     setState((s) => {
-      const known = new Set(CAPABILITY_OPTIONS.map((o) => o.value));
-      const unknown = s.model.capabilities.filter((v) => !known.has(v));
+      const unknown = s.model.capabilities.filter(
+        (v) => !KNOWN_CAPABILITY_VALUES.has(v)
+      );
       const next = [...uiValues, ...unknown];
       const paramsDirty = Object.values(
         isDirty(s.model.params, s.model.defaults, s.model.envOverride)
@@ -939,9 +943,22 @@ export function useSettings() {
     [state.model.params]
   );
 
+  // 2026-09-23 小欧 - [65]十遍会审 F1：重置只清参数脏，能力脏保留（原 isDirty:false 连能力脏一起抹，
+  //   仅能力脏时点「重置为默认」→ 能力修改变不可保存。同 saveAll/isGroupDirty 的联合语义对齐）
   const resetParams = useCallback(() => {
-    patchModel({ params: { ...state.model.defaults }, isDirty: false });
-  }, [patchModel, state.model.defaults]);
+    patchModel({
+      params: { ...state.model.defaults },
+      isDirty: isCapsDirty(
+        state.model.capabilities,
+        state.model.capabilitiesBaseline
+      ),
+    });
+  }, [
+    patchModel,
+    state.model.defaults,
+    state.model.capabilities,
+    state.model.capabilitiesBaseline,
+  ]);
 
   const refreshModels = useCallback(
     async (select?: { provider: string; model: string }) => {
