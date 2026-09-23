@@ -54,8 +54,20 @@
 //   原「标题|添加参数居中|右组」拆两处 → 组内条件渲染（无 param_options/无 params 仍隐藏，组始终居中）- 小欧-2026-09-23
 // 2026-09-23 小欧 - [65]十遍会审：F3 三按钮宽改 settingsControl.actionBtnWidth 令牌（消 width:120×3，
 //   settingsControl 并入 tokens import 行）+ F6 能力行 DirtyDot 改 && 写法（与 ModelParams 同款）- 小欧-2026-09-23
+// 2026-09-23 小欧 - [65]§7.2 Q1-2 补漏：能力行 Checkbox.Group 右侧加未知能力值灰色只读 Tag
+//   （yaml 手写 vision 等非 5 枚举值——设计要点「看得见、本页不提供增删」，原实现未知值完全不可见；
+//   Tag 无 closable + cursor:not-allowed；import 并入既有 antd/modelUtils 行，禁重复）- 小欧-2026-09-23
 import React, { useState } from 'react';
-import { Button, Card, Checkbox, Modal, Result, Skeleton, Tabs } from 'antd';
+import {
+  Button,
+  Card,
+  Checkbox,
+  Modal,
+  Result,
+  Skeleton,
+  Tabs,
+  Tag,
+} from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
 import {
@@ -86,7 +98,12 @@ import {
   showMessage,
   showSuccess,
 } from '@/services/error/handler';
-import { isDirty, CAPABILITY_OPTIONS, isCapsDirty } from '../utils/modelUtils';
+import {
+  isDirty,
+  CAPABILITY_OPTIONS,
+  isCapsDirty,
+  KNOWN_CAPABILITY_VALUES,
+} from '../utils/modelUtils';
 import type { TabKey } from '../types';
 // 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项弹窗（④区标题行「管理选项」入口）
 import { ParamOptionsModal } from './ParamOptionsModal';
@@ -346,6 +363,22 @@ const SettingsPage: React.FC = () => {
             options={CAPABILITY_OPTIONS}
             onChange={(v) => s.setCapabilities(v as string[])}
           />
+          {/* 2026-09-23 小欧 - [65]§7.2 Q1-2：未知能力值灰色只读 Tag（不可关、cursor:not-allowed）——
+              yaml 手写非 5 枚举值看得见、本页不提供增删；有未知值才渲染，空则零开销 */}
+          {state.model.capabilities
+            .filter((v) => !KNOWN_CAPABILITY_VALUES.has(v))
+            .map((v) => (
+              <Tag
+                key={v}
+                style={{
+                  cursor: 'not-allowed',
+                  marginLeft: Spacing.XS,
+                  color: Colors.TEXT.SECONDARY,
+                }}
+              >
+                {v}
+              </Tag>
+            ))}
         </span>
         {/* 2026-09-23 小欧 - [65]十遍会审 F6：&& 写法（与 ModelParams 脏点同款，原 !cond?null:<x/> 三元异款） */}
         {isCapsDirty(
