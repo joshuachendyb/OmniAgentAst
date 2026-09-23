@@ -14,6 +14,7 @@
 #   2026-09-23 - 小欧 - [64] LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_limit_default）
 #   2026-09-23 - 小欧 - trim/compaction配置化：tuning组 Agent 循环参数后加 trim 3键/compaction 4键两独立分块；删 tuning.agent.default_max_steps 死键
 #   2026-09-23 - 小欧 - 禁止backward还旧账：删 tuning.llm.temperature/max_tokens（已迁顶层 llm.sampling）+ 顶层 agent.max_rounds（已迁 tuning.trim.max_rounds）旧键残留
+#   2026-09-23 - 小欧 - [65] 设置页「+添加参数」写入样子打样：zhipuai 段 model_params 补预设新键缀尾（temperature/top_p）+ 自定义键注释样例 + model_meta.range 捎带完整写法
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -53,6 +54,10 @@ ai:
     model_params:
       glm-4.7-flash:
         reasoning_effort: medium
+        # ↓ 设置页「+ 添加参数」勾选预设后保存写入的样子：新键缀尾 — 小欧 2026-09-23 [65]
+        temperature: 0.7
+        top_p: 1.0
+        # my_custom_key: 1.0  # 自定义参数同理缀尾；无 range/options 时只进 model_params，不写 model_meta
     # 模型元数据：枚举选项 SSOT（按模型各配各的）— 小欧 2026-09-22
     # 三层解析：model_meta.param_options（本级最高）> provider级 param_options > 代码兜底
     # 不写 model_meta 的模型走兜底 [low, medium, high]；3/4/5个选项各写各的单子
@@ -60,6 +65,14 @@ ai:
       glm-4.7-flash: # 3个选项
         param_options:
           reasoning_effort: [low, medium, high]
+        # ↓ 带 range 的预设保存时捎带全量 range 表（[65]§4.2.4 新键时全量捎带）— 小欧 2026-09-23
+        range:
+          temperature:
+            min: 0
+            max: 2
+          top_p:
+            min: 0
+            max: 1
       # cogview-3-flash: # 4个选项示例（按需解开）
       #   param_options:
       #     reasoning_effort: [low, medium, high, xhigh]
