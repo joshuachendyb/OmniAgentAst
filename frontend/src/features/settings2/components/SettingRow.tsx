@@ -13,6 +13,8 @@
 // 2026-09-22 小欧 - 控件宽度统一：range/int/float 的 InputNumber 补齐 rangeNumberWidth/inputNumberWidth 令牌 - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：行容器/label 样式改复用 settingsRowStyle/settingsLabelStyle 令牌（删 SettingsRowLayout 内联展开）；移 FontWeight unused import - 小欧-2026-09-22
 // 2026-09-23 小欧 - notice 说明文字移到输入框上方（flexDirection:column）；删除 // 拼接，notice 与即时生效分离 - 小欧-2026-09-23
+// 2026-09-23 小欧 - 新增 url 类型：单行 Input 走 baseUrlWidth(360px)，与 ProviderConfig base_url 同款宽框；
+//   用于 network.cors_origins（textarea 会按行拆 list 破坏逗号契约，text 默认 180px 太短）- 小欧-2026-09-23
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -230,6 +232,15 @@ export const SettingRow: React.FC<Props> = ({
           <span style={{ color: Colors.TEXT.SECONDARY }}>
             由模型 Tab 选择器管理
           </span>
+        );
+      case 'url':
+        return (
+          <Input
+            value={value as string}
+            disabled={disabled}
+            style={{ width: settingsControl.baseUrlWidth }}
+            onChange={(e) => onChange(e.target.value)}
+          />
         );
       default:
         return (

@@ -244,7 +244,7 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
             return f"{item['key']} 超出范围 [{lo}, {hi}]"
     # 2026-09-22 小欧 修 S13：text/str/textrea 长时间裸露无类型门禁——
     # project_root:5 原样落库致 paths.* 派生 Path(int) 崩溃、allowed_dirs int/dict 落库致 get_allowed_dirs ValueError（#5/#6）
-    if t in ("text", "str") and not isinstance(value, str):
+    if t in ("text", "str", "url") and not isinstance(value, str):
         return f"{item['key']} 应为文本"
     if t == "textarea":
         if not (isinstance(value, str) or
