@@ -1,4 +1,21 @@
-﻿v1.0.5
+﻿v1.0.6
+更新时间: 2026-09-23 09:42:36 - 小欧-2026-09-23
+## v1.0.5以来 变更汇总(4个commit: docs1/feat1/fix1/refactor1) - 小欧-2026-09-23
+[2026-09-23 09:42:36 小欧] 范围=v1.0.5以来全部commit(共4个); 主线: trim/compaction 7键调优配置化(通用挪max_rounds+裁剪压缩两独立分块+消费方读配置+OLD_KEY_MAP还旧账)+8假开关接线(connect/write/pool/流总超时/HITL三提前量/临时历史)+死链清理(should_promote/max_consecutive)+注释说明对齐; 37+297测试全绿; MINOR bump v1.0.5→v1.0.6
+
+### docs(1个):
+- e7ce420cb docs: 补充[64]采样参数编辑历史 - 小欧-2026-09-23
+
+### feat(1个):
+- 651c2e3a2 feat:settings_registry trim/compaction配置化7键:通用挪max_rounds+调优两分块+消费方读配置+OLD_KEY_MAP还旧账+前端两标题 - 小欧-2026-09-23
+
+### fix(1个):
+- 57f1dc19e fix:llm/hitl 8假开关接线:connect/write/pool/流总超时/HITL三提前量/临时历史改读tuning配置 - 小欧-2026-09-23
+
+### refactor(1个):
+- 82bb6afed refactor:chunk_buffer死链清理:删should_promote/max_consecutive/MAX_CONSECUTIVE_CHUNKS及死import - 小欧-2026-09-23
+
+### v1.0.5
 更新时间: 2026-09-23 05:23:13 - 小欧-2026-09-23
 ## v1.0.4以来 变更汇总(2个commit: docs1/feat1) - 小欧-2026-09-23
 [2026-09-23 05:23:13 小欧] 范围=v1.0.4以来全部commit(共2个); 主线: [64]LLM补充采样参数设置说明全文核查纠错+[64]TDD红→绿全链路实现(top_p/frequency_penalty/presence_penalty三参+context_limit_default全局兜底+OLD_KEY_MAP迁移+前端模型参数小节+config落盘); 28个TDD测试全绿+43个回归测试无退化; MINOR bump v1.0.4→v1.0.5
