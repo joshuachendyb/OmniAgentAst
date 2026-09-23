@@ -72,6 +72,15 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
      CORS允许来源→允许访问的页面地址、chunk累积上限→卡死保护上限、软配额等待→排队最多等、
      Shell池槽位→终端会话槽位、裁剪触发比例→裁剪触发水位、开局压缩水位等) ——
      config.yaml.example 注释同步去术语；float 类型键(connect/write/pool/soft_pool)类型值域未动 - 小欧-2026-09-23
+   2026-09-23 19:51:21 - 小欧 - 通用组 agent.max_steps label/notice 归位(北京老陈裁定"标签不对，应该是最大轮数"):
+     label "最大步数"→"最大轮数"——消费点 react_loop.py:188 while agent.llm_call_count < max_steps 实际限制的是
+     LLM 调用轮数(任务条"轮数")，原"步数"标签误导(任务条"步数"=step_count 纯统计无独立上限、被本门限间接封顶)；
+     notice 改为轮数门限语义+与"步数"区分说明。键名 agent.max_steps/默认10000/值域[1,10000]/读取链
+     config.py:169 get_max_steps→base_agent.py:74 self.max_steps 均不动，只改皮 — 小欧-2026-09-23
+   2026-09-23 19:53:20 - 小欧 - tuning.trim.max_rounds notice 修正(北京老陈指正"这个注释不对"):
+     原"只记得最近 N 轮问答"语义不准——实际是超限触发裁剪操作，非单纯记忆范围；
+     改为"超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，
+     调小=省钱但会忘更早的事" —— 消费点 message_builder.py:358-360 msg_count>max_rounds*2+2 触发裁剪 — 小欧-2026-09-23
 """
 from typing import Any, Dict, List, Optional
 
@@ -96,8 +105,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
         _item("logging.debug", "bool", "调试模式", True, restart=True,
               notice="开启后日志按 DEBUG 级别记录，明细含文件/行号"),
-        _item("agent.max_steps", "int", "最大步数", 10000, range_=[1, 10000],
-              notice="单任务最大执行步数（运行时硬上限），超限强制中止"),
+        _item("agent.max_steps", "int", "最大轮数", 10000, range_=[1, 10000],
+              notice="单任务最多执行的对话轮数（循环门限）：任务条上的『轮数』到顶就强制结束任务；调大=允许跑更久，调小=更早刹车。注意这不是任务条上的『步数』（步数只是自动统计，跟着轮数走，没有单独上限）"),
         # ✅ general 组 agent.max_steps 之后追加 6 条目 — 小欧 2026-09-23
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
               notice="控制输出随机性：0=完全确定性（每次相同输入输出一致），1=默认随机性，2=最高随机性"),
@@ -227,7 +236,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
         # --- trim: 裁剪 3 键（每轮循环自动执行）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
         _item("tuning.trim.max_rounds", "int", "保留对话轮数", 100, range_=[1, 10000],
-              notice="只记得最近 N 轮问答（1轮=你说一句+它答一句），更早的自动忘掉；调大=记得更久但更费 token，调小=省钱但会忘更早的事"),
+              notice="超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，调小=省钱但会忘更早的事"),
         _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.75, range_=[0.1, 0.95],
               notice="对话占到模型记忆容量的百分之多少时开始自动删旧内容（0.75=占到四分之三就删）；调小=删得勤、腾地方快，调大=多记一会但快满时才动手"),
         _item("tuning.trim.compaction_buffer", "int", "给回答留底(字符)", 20000, range_=[1000, 100000],
