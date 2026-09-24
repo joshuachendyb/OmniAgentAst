@@ -20,6 +20,10 @@
 // 2026-09-22 小欧 - 控件宽度统一：api_key/base_url 使用 apiKeyWidth/baseUrlWidth(360px)令牌；显示名/timeout/max_retries 使用 inputWidth/inputNumberWidth(240px)令牌
 // 2026-09-22 小欧 - 布局重构：去 AntD Form，改 SettingRow 的 flex 行布局 + React state 管理字段值（复用 settingsRowLayout，DRC/SRP/KISS-DIRECT）- 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY+令牌收口：EXISTING_KEYS/STATIC_KEYS 重复 Set → HARDCODED_KEYS 单 Set；行容器/label 改复用 settingsRowStyle/settingsLabelStyle（删本地 ROW_STYLE/LABEL_STYLE）；EXTRA_STYLE paddingTop/paddingBottom、保存按钮 padding 裸数字 → Spacing 令牌 - 小欧-2026-09-22
+// 2026-09-24 小欧 - 保存按钮上移（北京老陈选定方案B）：从表单底部挪到③区首行右侧（标题下第一行右对齐），
+//   与 ③ Provider 配置 区标题同行视觉对齐；doSave/表单 state 不动（按钮仍属本组件，KISS 最小改动）- 小欧-2026-09-24
+// 2026-09-24 小欧 - 标题行合一（北京老陈反馈两行难看）：SectionTitle 从 SettingsPage 收进本组件，
+//   标题+保存按钮同一行三列 grid（标题左|按钮居中|右空列），对齐②参数区标题行风格；env 接管分支同步带标题无按钮 - 小欧-2026-09-24
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -30,6 +34,7 @@ import {
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
 import { EnvTag } from './icons';
+import { SectionTitle } from './SectionTitle';
 
 // 2026-09-22 小欧 - DRY 收口：EXISTING_KEYS/STATIC_KEYS 两 Set 内容完全相同合并为 HARDCODED_KEYS（渲染跳过 + doSave 动态收集共用）
 const HARDCODED_KEYS = new Set([
@@ -122,6 +127,18 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
   if (isEnv)
     return (
       <div>
+        {/* env 接管：标题仍在（区锚点完整），只读无保存按钮 */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr',
+            alignItems: 'center',
+          }}
+        >
+          <SectionTitle title="── ③ Provider 配置 ──" />
+          <span />
+          <span />
+        </div>
         <EnvTag />
         <span style={{ color: Colors.TEXT.SECONDARY }}>
           该 Provider 配置被 {name.toUpperCase()}_API_KEY
@@ -132,6 +149,22 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
 
   return (
     <div>
+      {/* 2026-09-24 小欧 - 标题+保存按钮同一行（北京老陈：要一行、按钮居中别太靠后）：
+          三列 grid 1fr auto 1fr = 标题左 | 按钮居中 | 右空列对称，对齐②参数区标题行风格 */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr auto 1fr',
+          alignItems: 'center',
+        }}
+      >
+        <SectionTitle title="── ③ Provider 配置 ──" />
+        <Button type="primary" onClick={() => void doSave()} loading={saving}>
+          保存 Provider 配置（立即生效）
+        </Button>
+        <span />
+      </div>
+
       {/* api_key */}
       <div style={settingsRowStyle}>
         <span style={settingsLabelStyle}>api_key</span>
@@ -247,13 +280,6 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
           </div>
         )
       )}
-
-      {/* 保存按钮 */}
-      <div style={{ padding: `${Spacing.LG}px 0` }}>
-        <Button type="primary" onClick={() => void doSave()} loading={saving}>
-          保存 Provider 配置（立即生效）
-        </Button>
-      </div>
     </div>
   );
 };

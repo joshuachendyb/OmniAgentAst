@@ -387,7 +387,7 @@ const SettingsPage: React.FC = () => {
         ) && <DirtyDot />}
       </div>
       <div data-section="provider-config">
-        <SectionTitle title="── ③ Provider 配置 ──" />
+        {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中，北京老陈指示） */}
         <ProviderConfig
           key={state.model.selectedProvider}
           name={state.model.selectedProvider}
