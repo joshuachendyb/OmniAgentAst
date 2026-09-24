@@ -49,6 +49,15 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-09-24 - 小欧 - 参数键级删除：update_model 白名单加 remove_params——先从 model_params 拷贝删键、
 #   同步清 model_meta.range/param_options 对应键，再 merge default_params（空 dp 仍=整块清空，与既有 P8 语义叠加：
 #   remove 先算好 new_params，dp 非空则 update，dp 为空则置 {}）。前端①参数行 × 删除按钮通道 — 小欧-2026-09-24
+# 2026-09-24 - 小欧 - 三堂会审修复（BZ-3/BZ-6/BZ-7/BZ-9 四条，逐条真伪鉴别后落码）：
+#   ①BZ-3 remove 不再无条件 setdefault model_meta（原必建空块落 YAML model_meta.{model}:{} 污染），
+#     range/param_options 清理仅实际命中才建块；
+#   ②BZ-6 remove 的 meta 清理挪到 fields param_options 写入之后执行（原在前，293 行同批
+#     param_options 全量覆盖使已删键选项复活）；清理跳过 default_params 重加键（keep 集合，
+#     remove+dp 同批恢复值时其 meta 保留不误删）；
+#   ③BZ-7 remove_params 全为不存在键（model_params 均无命中且 meta 无命中、无 default_params、
+#     无其它字段）= 幂等 no-op 成功返回不写盘（原仍全量 merge 空耗备份/原子重写/mtime 抖动）；
+#   ④BZ-9 range/param_options 双份近似清理收敛 for meta_key 单循环（DRY）— 小欧-2026-09-24
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -256,43 +265,57 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         for k, v in dp.items():
             if k in allowed and v not in allowed[k]:
                 raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allowed[k]}")
-    # 2026-09-24 小欧：remove_params 键级删除——拷贝当前 model_params 删键得 new_params，
-    #   同步清 model_meta.range/param_options 对应键（fields 已带 range/param_options 时以其为准，
-    #   清在已写入 node 的副本上做，缺省则从 YAML 基线清）— 小欧-2026-09-24
+    # 2026-09-24 小欧：remove_params 键级删除——拷贝当前 model_params 删键得 new_params；
+    #   三堂会审修复（BZ-3/BZ-6/BZ-7/BZ-9）：①移除本段原无条件 setdefault model_meta（原 remove
+    #   必建空块、YAML 落 model_meta.{model}:{} 污染）；②range/param_options 清理挪到下方
+    #   fields 写入完成之后统一做（remove 删除意图最终生效，防同批 param_options 覆盖复活；
+    #   且跳过 default_params 重加键 keep——remove+dp 同批恢复值时其 meta 保留）；③双份
+    #   range/options 清理收敛 for meta_key 循环（DRY）；④remove 全为不存在键且 meta 无命中时
+    #   不再空写盘（幂等 no-op 成功返回）— 小欧-2026-09-24
     removed = fields.get("remove_params")
+    orig_params = ai[provider].get("model_params", {}).get(model, {}) or {}
     new_params: Optional[Dict[str, Any]] = None
+    removed_hit = False
     if isinstance(removed, list) and removed:
-        new_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
+        removed_hit = any(k in orig_params for k in removed)
+        new_params = dict(orig_params)
         for k in removed:
             new_params.pop(k, None)
-        meta_node = node.setdefault("model_meta", {}).setdefault(model, {})
-        base_meta = (ai[provider].get("model_meta", {}) or {}).get(model, {}) or {}
-        cur_range = dict(meta_node.get("range") or base_meta.get("range") or {})
-        if any(k in cur_range for k in removed):
-            for k in removed:
-                cur_range.pop(k, None)
-            meta_node["range"] = cur_range
-        cur_opts = dict(meta_node.get("param_options") or base_meta.get("param_options") or {})
-        if any(k in cur_opts for k in removed):
-            for k in removed:
-                cur_opts.pop(k, None)
-            meta_node["param_options"] = cur_opts
     if isinstance(dp, dict):
         if dp:
             if new_params is None:
-                new_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
+                new_params = dict(orig_params)
             new_params.update(dp)
         else:
-            # 2026-09-21 小欧 修 P8：空 default_params 提交 = 显式清空模型参数（原实现走
+            # 2026-09-21 小欧 修 P8：空 default_params 提交 = 显式清空模型参数块（原实现走
             # isinstance 且为空跳过 → node 空 → "无有效配置项" 500）。merge_nested_patch
             # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
             new_params = {}
-    if new_params is not None:
+    # BZ-7：仅 remove 真命中或 default_params 有变更才写 model_params（全 miss 不空写）
+    if new_params is not None and (removed_hit or isinstance(dp, dict)):
         node.setdefault("model_params", {})[model] = new_params
     # 选项表落 model_meta（小欧 2026-09-22）
     if isinstance(fields.get("param_options"), dict):
         node.setdefault("model_meta", {}).setdefault(model, {})["param_options"] = fields["param_options"]
+    # BZ-3/BZ-6/BZ-9：remove 同步清 range/param_options——在 fields 写入之后执行（删除意图最终
+    #   生效，防 293 行同批 param_options 覆盖复活）；跳过 default_params 中重加键（keep）；
+    #   仅实际命中才 setdefault 建 model_meta 块（防空块污染）；range/options 单循环（DRY）
+    if isinstance(removed, list) and removed:
+        keep = set(dp) if isinstance(dp, dict) else set()
+        base_meta = (ai[provider].get("model_meta", {}) or {}).get(model, {}) or {}
+        node_meta = node.get("model_meta", {}).get(model)
+        for meta_key in ("range", "param_options"):
+            cur = dict((node_meta or {}).get(meta_key) or base_meta.get(meta_key) or {})
+            hit_keys = [k for k in removed if k not in keep and k in cur]
+            if hit_keys:
+                for k in hit_keys:
+                    cur.pop(k, None)
+                node.setdefault("model_meta", {}).setdefault(model, {})[meta_key] = cur
     if not node:
+        # BZ-7：remove_params 全为不存在键 = 幂等 no-op，成功返回不写盘（原仍全量 merge，
+        #   空耗备份/原子重写/mtime 抖动）；其余无有效配置项仍拒
+        if isinstance(removed, list) and removed:
+            return {"ok": True, "model": model, "mtime": _config_mtime()}
         raise ValueError("无有效配置项")
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "model": model, "mtime": _config_mtime()}
