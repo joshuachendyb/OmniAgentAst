@@ -362,7 +362,7 @@ def my_parse_json(json_str):
 | `get_models` | GET /models：providers/models 层级 + current_model_ref | 无 | Dict: {providers, current_model_ref} |
 | `get_providers` | GET /providers：provider 列表（含掩码 key） | 无 | List[Dict] |
 | `add_model` | POST /models：校验存在+唯一 → 单次 region 合并落盘 | provider, model, label, default_params, range_, capabilities | Dict: {ok, mtime, ...} |
-| `update_model` | PUT /models/{p}/{m}：label/range/capabilities 写 model_meta；default_params 逐键 merge | provider, model, fields | Dict: {ok, model, mtime} |
+| `update_model` | PUT /models/{p}/{m}：label/range/capabilities 写 model_meta；default_params 逐键 merge；remove_params 键级删除（先从 model_params/range/param_options 删键再 merge default_params，空 dp=整块清空与 P8 叠加） | provider, model, fields | Dict: {ok, model, mtime} |
 | `delete_model` | DELETE：models[] 移除 + 清 model_params/model_meta 块；删当前 → 自动切换（switched_to）；无模型跨 provider 回退 | provider, model | Dict: {ok, switched_to, mtime} |
 | `add_provider` | POST /providers：name 唯一 → 写入 ai.{name} 块 | name, label, api_base, api_key, model, timeout | Dict: {ok, provider, mtime} |
 | `update_provider_config` | PUT /providers/{name}：改 api_key/base_url/timeout 立即生效；clear=true 清空 api_key | name, fields | Dict: {ok, provider, mtime} |
@@ -374,6 +374,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.2 | 2026-09-24 21:16:00 | 10.3 update_model 描述补 remove_params 键级删除通道（②设置页参数行 × 删除按钮，先删 model_params/range/param_options 键再 merge default_params；空 dp=整块清空与既有 P8 叠加） | 小欧 |
 | v4.1 | 2026-09-24 19:34:00 | 9.1 新增常量 READ_TOOLS（北京老陈指示归一helper）: 读类工具名唯一源{"read","readtext","readmedia"}; ling-3.0实调read而非readtext致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量, 供SSE断言与verify_db_tool_usage共用(DRY) | 小欧 |
 | v4.0 | 2026-09-21 07:45:00 | 新增 十、模型/配置域 章节（v4.19 9.3.8）: 登记 settings_service.get_all_groups/get_group/get_schema/get_setting/update_settings、config_helpers.merge_region_patch/mask_secret_value、model_service.get_models/get_providers/add_model/update_model/delete_model/add_provider/update_provider_config/delete_provider | 小欧 |
 | v3.15 | 2026-09-16 07:04:06 | 新增 4.4 信任机制辅助(app/tools/trust_db.py+trust.py): norm_trust_path 函数化公开(文件域 resolve / 非文件信任域 strip, insert/check/delete 落库·查询·撤销统一单一来源, DRY 消除 storage 层双份逐字副本); extract_trust_path 补登记(hitl_gateway 直调 + resolve_skip 复用) | 小欧 |
