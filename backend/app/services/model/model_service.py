@@ -68,6 +68,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   时删键意图丢失; 改 remove 命中时对残留键显式写 None（_set_nested_path 原生删键），
 #   dp 恢复键原位保留不误删;(verify_cfg_weak_guard 10 passed) — 小欧-2026-09-25
 #   文案补「该 Provider」前缀对齐设计 L138 — 小欧-2026-09-24
+# 2026-09-25 - 小健 - 模型列表全链路排序: _parse_remote_models_body 收集后按 id 字母序(不分大小写)单点排序,
+#   远端返回即有序→模型库列表/分组组内/保存落盘 finalList/模型Tab下次保存后下拉全字母序(北京老陈确认全链路方案) — 小健-2026-09-25
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -522,6 +524,8 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         if not mid:
             continue
         models.append({"id": str(mid), "owned_by": item.get("owned_by")})
+    # 2026-09-25 04:38:28 小健 - 全链路单点排序: 远端列表按 id 字母序(不分大小写), 下游分组/落盘/下拉自动继承
+    models.sort(key=lambda m: m["id"].lower())
     return models, None
 
 
