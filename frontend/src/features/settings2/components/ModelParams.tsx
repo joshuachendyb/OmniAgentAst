@@ -13,8 +13,11 @@
 // 2026-09-22 小欧 - DRY 收口：行容器/label 改复用 settingsRowStyle/settingsLabelStyle 令牌（删 settingsRowLayout/settingsSpacing 内联展开）；移 Colors/FontSize/FontWeight unused import - 小欧-2026-09-22
 // 2026-09-23 小欧 - [65]§4.4：遍历改 params⊔defaults 并集（addParam 不注入 defaults，原只遍历 defaults 新键不可见；无新键时并集==defaults 键集零行为变化）- 小欧-2026-09-23
 // 2026-09-23 小欧 - [65]十遍会审 F5：safeNum 单点（原 isNaN 三元在 Slider/InputNumber 各写一次重复）- 小欧-2026-09-23
+// 2026-09-24 小欧 - ①参数行尾加「删除参数」× 按钮（A 方案，北京老陈拍板）：env 接管键禁用（后端
+//   _raise_if_env_takeover 拒保存）；onDelete 由 SettingsPage 透传 s.removeParam；点即删无确认弹窗 - 小欧-2026-09-24
 import React from 'react';
-import { Input, InputNumber, Select, Slider, Switch } from 'antd';
+import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
+import { DeleteOutlined } from '@ant-design/icons';
 import { Spacing } from '@/utils/stepStyles';
 import {
   settingsControl,
@@ -32,6 +35,8 @@ interface Props {
   envOverride: Record<string, boolean>;
   onChange: (key: string, value: unknown) => void;
   onReset?: (key: string) => void;
+  // 2026-09-24 小欧 - ①参数行 × 删除（A 方案，点即删无确认）；env 接管键按钮禁用 — 小欧-2026-09-24
+  onDelete?: (key: string) => void;
 }
 
 export const ModelParams: React.FC<Props> = ({
@@ -41,6 +46,7 @@ export const ModelParams: React.FC<Props> = ({
   options,
   envOverride,
   onChange,
+  onDelete,
 }) => {
   const dirty = isDirty(params, defaults, envOverride);
   return (
@@ -158,6 +164,23 @@ export const ModelParams: React.FC<Props> = ({
               </span>
               <span style={{ flex: 1 }}>{renderControl()}</span>
               {dirty[key] && <DirtyDot />}
+              {/* 2026-09-24 小欧 - ①删除参数：行尾 × 图标钮，env 接管禁用；点即删（北京老陈拍板 A 方案）- 小欧-2026-09-24 */}
+              {onDelete && (
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  disabled={envKey}
+                  onClick={() => onDelete(key)}
+                  aria-label={`删除参数 ${key}`}
+                  style={{
+                    marginLeft: Spacing.XS,
+                    minWidth: 'auto',
+                    padding: '0 4px',
+                  }}
+                />
+              )}
             </div>
           );
         }

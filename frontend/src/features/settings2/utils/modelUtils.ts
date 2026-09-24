@@ -8,6 +8,8 @@
 // 2026-09-23 小欧 - 新增 isCapsDirty + CAPABILITY_OPTIONS（[65]§七，复用既有 sameValue 与 §7.2 单源词表）- 小欧-2026-09-23
 // 2026-09-23 小欧 - [65]十遍会审：F2 isCapsDirty 排序后比（集合语义防手写 YAML 顺序假脏）+
 //   F4 增 KNOWN_CAPABILITY_VALUES 单源（setCapabilities 每次重建 Set → 模块常量）- 小欧-2026-09-23
+// 2026-09-24 小欧 - 能力默认值语义（北京老陈拍板）：①文本项 disabled 恒勾选；②normalizeCaps 归一恒含 text
+//   （load/select 四通道防假脏）；③capsForSave 保存转换——无增强送 []、有增强送 ['text',...extras] - 小欧-2026-09-24
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 
 /** [62]P4 3.2(6)：值深比较——同一引用/Object.is 相同立即真；双方对象则 JSON 深比；其余恒假。 */
@@ -114,12 +116,27 @@ export const isCapsDirty = (caps: string[], baseline: string[]): boolean =>
   !sameValue([...caps].sort(), [...baseline].sort());
 
 export const CAPABILITY_OPTIONS = [
-  { label: '文本', value: 'text' },
+  // 2026-09-24 小欧 - 文本 disabled 恒勾选（北京老陈拍板②：文本隐含默认，UI 不提供取消）- 小欧-2026-09-24
+  { label: '文本', value: 'text', disabled: true },
   { label: '图片', value: 'image' },
   { label: '视频', value: 'video' },
   { label: '音频', value: 'audio' },
   { label: 'PDF', value: 'pdf' },
 ];
+
+// 2026-09-24 小欧 - 状态归一：去重后恒含 'text'（防加载/切换时缺 text 致假脏；未知值原样保留）- 小欧-2026-09-24
+export const normalizeCaps = (caps: string[]): string[] => {
+  const list = [...new Set(caps)];
+  if (!list.includes('text')) list.unshift('text');
+  return list;
+};
+
+// 2026-09-24 小欧 - 保存转换：除 text 外无增强 → []（YAML 无此项=纯文本等价）；
+//   有增强 → ['text', ...extras]（extras 含未知值，与已拍板语义一致）- 小欧-2026-09-24
+export const capsForSave = (caps: string[]): string[] => {
+  const extras = caps.filter((v) => v !== 'text');
+  return extras.length ? ['text', ...extras] : [];
+};
 
 // 2026-09-23 小欧 - [65]十遍会审 F4：已知能力值集合单源（setCapabilities 每次调用重建 Set → 模块级常量，
 //   与 CAPABILITY_OPTIONS 同源，增枚举只改一处）- 小欧-2026-09-23

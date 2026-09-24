@@ -11,6 +11,8 @@
 //   paramOptionsModalOpen 弹窗控制（管理选项入口与重置默认同排）。
 // 2026-09-23 小欧 - [65]§七：ModelState 补 capabilities/capabilitiesBaseline（模型能力编辑双字段，编辑副本+基线）- 小欧-2026-09-23
 // 2026-09-23 小欧 - [65]§4.1：ModelState 补 addParamFormOpen（「+ 添加参数」内联表单开关）- 小欧-2026-09-23
+// 2026-09-24 小欧 - 参数键级删除：ModelState 补 removedParams: string[]（②参数行 × 删除待落盘键名单，
+//   saveModelGroup 经 remove_params 通道提交；仅 defaults 已有键才入名单，未保存新键删除直接丢弃）- 小欧-2026-09-24
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -64,6 +66,8 @@ export interface ModelState {
   paramOptionsModalOpen: boolean;
   // 2026-09-23 小欧 - [65]§4.1：「+ 添加参数」内联表单开关
   addParamFormOpen: boolean;
+  // 2026-09-24 小欧 - 参数键级删除待提交名单（defaults 已有键被 × 删除时入列，保存时送 remove_params）- 小欧-2026-09-24
+  removedParams: string[];
   deleteConfirmOpen: boolean;
   deleteTarget: string | null;
 }

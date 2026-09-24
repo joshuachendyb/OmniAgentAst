@@ -44,6 +44,14 @@
 // 2026-09-24 小欧 - 修复：saveModelGroup 保存成功后 providers 条目同步补 default_params/range/param_options
 //   （原仅同步 capabilities，default_params 停留在 load 时旧值）——selectModel 切回读 entry.default_params
 //   得陈旧值致参数区显示旧值（big-pickle 保存362144、切走再切回显示10000）- 小欧-2026-09-24
+// 2026-09-24 小欧 - ①参数键级删除 + ②能力默认值语义（北京老陈拍板）：
+//   ①新增 removeParam（params/defaults/ranges/paramOptions 四处删键；仅 defaults 已有键记入 removedParams；
+//     重新 addParam 同名键从 removedParams 摘除）；saveModelGroup/ensureModelSaved/dirtyCount/resetParams/
+//     selectProvider/selectModel/refreshModels 全量纳入 removedParams；保存成功清空。
+//   ②load/selectProvider/selectModel/refreshModels 四通道 capabilities/capabilitiesBaseline 过 normalizeCaps
+//     （恒含 text 防假脏）；setCapabilities 归一并强制含 text；saveModelGroup 送 capsForSave（无增强→[]、
+//     有增强→['text',...extras]）；providers 缓存 capabilities 存保存态（空→[] 防 tags 假显文本）。
+//   initialModel 补 removedParams:[] 与 normalizeCaps 兼容初值 - 小欧-2026-09-24
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -56,6 +64,9 @@ import {
   validate,
   isCapsDirty,
   KNOWN_CAPABILITY_VALUES,
+  // 2026-09-24 小欧 - ②能力归一/保存转换（modelUtils 单源，与 SettingsPage 共用词表）- 小欧-2026-09-24
+  normalizeCaps,
+  capsForSave,
 } from '../utils/modelUtils';
 import type { ModelState, SettingsState, TabKey } from '../types';
 import {
@@ -168,6 +179,8 @@ const initialModel = () => ({
   paramOptionsModalOpen: false,
   // 2026-09-23 小欧 - [65]§4.2.1：「+ 添加参数」内联表单初始关
   addParamFormOpen: false,
+  // 2026-09-24 小欧 - ①参数键级删除待提交名单初始空 — 小欧-2026-09-24
+  removedParams: [] as string[],
   deleteConfirmOpen: false,
   deleteTarget: null as string | null,
 });
@@ -324,9 +337,11 @@ export function useSettings() {
               paramOptions: {
                 ...((current?.param_options ?? {}) as Record<string, string[]>),
               },
-              // 2026-09-23 小欧 - [65]§7.3.4 load 通道：能力+基线回填（含 yaml 手写未知值原样入 state）
-              capabilities: [...(current?.capabilities ?? [])],
-              capabilitiesBaseline: [...(current?.capabilities ?? [])],
+              // 2026-09-24 小欧 - ②load 通道：normalizeCaps 归一（恒含 text 防假脏；未知值原样保留）- 小欧-2026-09-24
+              capabilities: normalizeCaps([...(current?.capabilities ?? [])]),
+              capabilitiesBaseline: normalizeCaps([
+                ...(current?.capabilities ?? []),
+              ]),
               envOverride,
               providerConfig,
             },
@@ -436,7 +451,14 @@ export function useSettings() {
     )
       ? 1
       : 0;
-    return Object.keys(state.dirtyKeys).length + modelDirty + capsDirty;
+    // 2026-09-24 小欧 - ①removedParams 每项计 1（删键是独立待存变更，计入「保存全部(N 项)」计数）- 小欧-2026-09-24
+    const removedCount = state.model.removedParams.length;
+    return (
+      Object.keys(state.dirtyKeys).length +
+      modelDirty +
+      capsDirty +
+      removedCount
+    );
   }, [
     state.dirtyKeys,
     state.model.params,
@@ -444,6 +466,7 @@ export function useSettings() {
     state.model.envOverride,
     state.model.capabilities,
     state.model.capabilitiesBaseline,
+    state.model.removedParams,
   ]);
 
   const isGroupDirty = useCallback(
@@ -614,7 +637,9 @@ export function useSettings() {
       state.model.capabilities,
       state.model.capabilitiesBaseline
     );
-    if (!Object.keys(changed).length && !capsChanged)
+    // 2026-09-24 小欧 - ①removedParams 也算可保存（仅删无改时 body 不带 default_params，只送 remove_params）
+    const hasRemovals = state.model.removedParams.length > 0;
+    if (!Object.keys(changed).length && !capsChanged && !hasRemovals)
       return { ok: true as const };
     // 2026-09-23 小欧 - [65]§4.2.4 v1.3 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
     //   无新键时 body 与原来完全一致（零行为变化）—— 与 §七 双通道叠加（v1.9 定稿形态）
@@ -625,7 +650,10 @@ export function useSettings() {
       range?: Record<string, { min: number; max: number }>;
       param_options?: Record<string, string[]>;
       capabilities?: string[];
+      // 2026-09-24 小欧 - ①键级删除名单（与 default_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
+      remove_params?: string[];
     } = {};
+    if (hasRemovals) body.remove_params = [...state.model.removedParams];
     if (Object.keys(changed).length) {
       body.default_params = changed;
       if (newKeys.length) {
@@ -633,8 +661,9 @@ export function useSettings() {
         body.param_options = { ...state.model.paramOptions };
       }
     }
-    // setCapabilities 已合并未知值（Q1），state 恒含未知值，直接送
-    if (capsChanged) body.capabilities = state.model.capabilities;
+    // 2026-09-24 小欧 - ②capabilities 送保存态 capsForSave：无增强→[]、有增强→['text',...extras]
+    //   （state 恒含 text，直接送会让纯文本模型落 ['text'] 而非隐含默认的空）- 小欧-2026-09-24
+    if (capsChanged) body.capabilities = capsForSave(state.model.capabilities);
     setSaving(true);
     try {
       // S11：保存前校验 mtime（模型参数与设置同落 YAML），外部已更新则刷新并中止
@@ -664,9 +693,13 @@ export function useSettings() {
       // 2026-09-24 小欧 - 修复：同步补 default_params/range/param_options 回写 providers 缓存
       //   （原仅同步 capabilities——default_params 仍是 load 时旧值，selectModel 切回读 entry.default_params
       //   得旧值，参数区显示旧值而非刚保存的新值；range/param_options 新增键落盘同类隐患一并回写）- 小欧-2026-09-24
+      // 2026-09-24 小欧 - ①保存成功后清空 removedParams；②capabilitiesBaseline 存归一态（与 state 一致防假脏）；
+      //   providers 缓存存保存态 capsForSave（空→[] 防 tags 假显文本；有增强→['text',...extras]）- 小欧-2026-09-24
+      const capsSaved = capsForSave(state.model.capabilities);
       patchModel({
         defaults: { ...state.model.params },
-        capabilitiesBaseline: [...state.model.capabilities],
+        capabilitiesBaseline: normalizeCaps([...state.model.capabilities]),
+        removedParams: [],
         providers: state.model.providers.map((p) =>
           p.name !== state.model.selectedProvider
             ? p
@@ -680,7 +713,7 @@ export function useSettings() {
                         default_params: { ...state.model.params },
                         range: { ...state.model.ranges },
                         param_options: { ...state.model.paramOptions },
-                        capabilities: [...state.model.capabilities],
+                        capabilities: capsSaved,
                       }
                 ),
               }
@@ -707,9 +740,14 @@ export function useSettings() {
       state.model.envOverride
     );
     // 2026-09-23 小欧 - [65]§7.3.10 必修①：放行条件补能力脏（否则"能力改了没存就切模型"静默丢失，BUG-D 同类）
+    // 2026-09-24 小欧 - ①放行条件补 removedParams（删键未存就切模型会静默丢失删除意图）- 小欧-2026-09-24
     if (
       !Object.values(dirtyMap).some(Boolean) &&
-      !isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline)
+      !isCapsDirty(
+        state.model.capabilities,
+        state.model.capabilitiesBaseline
+      ) &&
+      !state.model.removedParams.length
     )
       return true;
     const r = await saveModelGroup();
@@ -785,14 +823,16 @@ export function useSettings() {
         paramOptions: {
           ...((first?.param_options ?? {}) as Record<string, string[]>),
         },
-        // 2026-09-23 小欧 - [65]§7.3.4 selectProvider 通道：切 provider 回填首模型能力+基线
-        capabilities: [...(first?.capabilities ?? [])],
-        capabilitiesBaseline: [...(first?.capabilities ?? [])],
+        // 2026-09-24 小欧 - ②selectProvider 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
+        capabilities: normalizeCaps([...(first?.capabilities ?? [])]),
+        capabilitiesBaseline: normalizeCaps([...(first?.capabilities ?? [])]),
         // S5：切到 env 接管 provider 时参数区整体禁用（后端拒保存）
         envOverride: getEnvOverride(
           p.env,
           Object.keys(first?.default_params ?? {})
         ),
+        // 2026-09-24 小欧 - ①切 Provider 重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
+        removedParams: [],
         isDirty: false,
       });
     },
@@ -830,14 +870,16 @@ export function useSettings() {
         defaults: nextDefaults,
         ranges: nextRanges,
         paramOptions: nextOptions,
-        // 2026-09-23 小欧 - [65]§7.3.4 selectModel 通道：同 provider 切模型回填能力+基线
-        capabilities: [...(entry.capabilities ?? [])],
-        capabilitiesBaseline: [...(entry.capabilities ?? [])],
+        // 2026-09-24 小欧 - ②selectModel 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
+        capabilities: normalizeCaps([...(entry.capabilities ?? [])]),
+        capabilitiesBaseline: normalizeCaps([...(entry.capabilities ?? [])]),
         // S5：选中 provider 为 env 接管时同步禁用其参数区
         envOverride: getEnvOverride(
           providerEntry?.env,
           Object.keys(nextDefaults)
         ),
+        // 2026-09-24 小欧 - ①切模型重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
+        removedParams: [],
         isDirty: Object.values(
           isDirty({ ...nextDefaults }, nextDefaults, state.model.envOverride)
         ).some(Boolean),
@@ -892,12 +934,14 @@ export function useSettings() {
   // 2026-09-23 小欧 - [65]§7.3.1 setCapabilities：Q1 未知值合并（onChange 只含已渲染 5 枚举，
   //   uiValues ∪ state 未知原值 → state 恒含未知值，提交直接送无二次合并）+ isCapsDirty 联合置脏（baseline 不动）
   // 2026-09-23 小欧 - [65]十遍会审 F4：已知值集合改用 modelUtils 单源常量（原每次调用重建 Set）
+  // 2026-09-24 小欧 - ②归一：next 过 normalizeCaps（恒含 text——antd Checkbox disabled 项 onChange 可能不带，
+  //   归一兜底；未知值仍保留）；isDirty 联合 removedParams — 小欧-2026-09-24
   const setCapabilities = useCallback((uiValues: string[]) => {
     setState((s) => {
       const unknown = s.model.capabilities.filter(
         (v) => !KNOWN_CAPABILITY_VALUES.has(v)
       );
-      const next = [...uiValues, ...unknown];
+      const next = normalizeCaps([...uiValues, ...unknown]);
       const paramsDirty = Object.values(
         isDirty(s.model.params, s.model.defaults, s.model.envOverride)
       ).some(Boolean);
@@ -907,7 +951,9 @@ export function useSettings() {
           ...s.model,
           capabilities: next,
           isDirty:
-            paramsDirty || isCapsDirty(next, s.model.capabilitiesBaseline),
+            paramsDirty ||
+            isCapsDirty(next, s.model.capabilitiesBaseline) ||
+            s.model.removedParams.length > 0,
         },
       };
     });
@@ -939,6 +985,9 @@ export function useSettings() {
         const paramOptions = meta?.options
           ? { ...s.model.paramOptions, [key]: meta.options }
           : s.model.paramOptions;
+        // 2026-09-24 小欧 - ①重新加入已删键时从 removedParams 摘除（净效果：删后又加回同名键 = 无需后端删除）；
+        //   仅该键从名单移除，isDirty 仍为 true（新键不在 defaults，注入即脏）- 小欧-2026-09-24
+        const removedParams = s.model.removedParams.filter((k) => k !== key);
         return {
           ...s,
           model: {
@@ -946,6 +995,7 @@ export function useSettings() {
             params,
             ranges,
             paramOptions,
+            removedParams,
             isDirty: true,
           },
         };
@@ -955,21 +1005,75 @@ export function useSettings() {
     [state.model.params]
   );
 
+  // 2026-09-24 小欧 - ①removeParam：参数行 × 删除（A 方案，点即删无确认）——四处同步删键
+  //   （params/defaults/ranges/paramOptions；defaults 必须删否则 params⊔defaults 并集仍渲染、「重置为默认」复活）；
+  //   仅 key∈defaults（已落盘）记入 removedParams 待后端 remove_params；未保存新键直接丢弃不送后端。
+  //   env 接管键 UI 已禁用，此处再守一道（防绕过）；isDirty 联合 caps/removedParams/paramsDirty - 小欧-2026-09-24
+  const removeParam = useCallback(
+    (key: string) => {
+      if (state.model.envOverride[key]) {
+        showMessage(ErrorType.WARNING, `参数 ${key} 由环境变量接管，不可删除`);
+        return;
+      }
+      setState((s) => {
+        if (!(key in s.model.params) && !(key in s.model.defaults)) return s;
+        const params = { ...s.model.params };
+        const defaults = { ...s.model.defaults };
+        const ranges = { ...s.model.ranges };
+        const paramOptions = { ...s.model.paramOptions };
+        const wasPersisted = key in defaults;
+        delete params[key];
+        delete defaults[key];
+        delete ranges[key];
+        delete paramOptions[key];
+        const removedParams = wasPersisted
+          ? s.model.removedParams.includes(key)
+            ? s.model.removedParams
+            : [...s.model.removedParams, key]
+          : s.model.removedParams.filter((k) => k !== key);
+        const paramsDirty = Object.values(
+          isDirty(params, defaults, s.model.envOverride)
+        ).some(Boolean);
+        const capsDirty = isCapsDirty(
+          s.model.capabilities,
+          s.model.capabilitiesBaseline
+        );
+        return {
+          ...s,
+          model: {
+            ...s.model,
+            params,
+            defaults,
+            ranges,
+            paramOptions,
+            removedParams,
+            isDirty: paramsDirty || capsDirty || removedParams.length > 0,
+          },
+        };
+      });
+    },
+    // 2026-09-24 小欧 - deps 只留 envOverride（state.model.capabilities* 在 setState 回调内经 s 读取，lint unnecessary 修正）
+    [state.model.envOverride]
+  );
+
   // 2026-09-23 小欧 - [65]十遍会审 F1：重置只清参数脏，能力脏保留（原 isDirty:false 连能力脏一起抹，
   //   仅能力脏时点「重置为默认」→ 能力修改变不可保存。同 saveAll/isGroupDirty 的联合语义对齐）
+  // 2026-09-24 小欧 - ①重置不清 removedParams（结构变更保留，仍需保存才落盘）；isDirty 联合之 - 小欧-2026-09-24
   const resetParams = useCallback(() => {
     patchModel({
       params: { ...state.model.defaults },
-      isDirty: isCapsDirty(
-        state.model.capabilities,
-        state.model.capabilitiesBaseline
-      ),
+      isDirty:
+        isCapsDirty(
+          state.model.capabilities,
+          state.model.capabilitiesBaseline
+        ) || state.model.removedParams.length > 0,
     });
   }, [
     patchModel,
     state.model.defaults,
     state.model.capabilities,
     state.model.capabilitiesBaseline,
+    state.model.removedParams,
   ]);
 
   const refreshModels = useCallback(
@@ -1002,11 +1106,13 @@ export function useSettings() {
               paramOptions: {
                 ...((m.param_options ?? {}) as Record<string, string[]>),
               },
-              // 2026-09-23 小欧 - [65]§7.3.4 refreshModels(select) 通道：定位回填目标模型能力+基线
-              capabilities: [...(m.capabilities ?? [])],
-              capabilitiesBaseline: [...(m.capabilities ?? [])],
+              // 2026-09-24 小欧 - ②refreshModels(select) 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
+              capabilities: normalizeCaps([...(m.capabilities ?? [])]),
+              capabilitiesBaseline: normalizeCaps([...(m.capabilities ?? [])]),
               // S5：目标 provider env 接管时禁用其参数区
               envOverride: getEnvOverride(p.env, Object.keys(defaults)),
+              // 2026-09-24 小欧 - ①定位重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
+              removedParams: [],
               isDirty: false,
             });
           }
@@ -1041,6 +1147,8 @@ export function useSettings() {
     setParam,
     // 2026-09-23 小欧 - [65]：暴露 addParam（§4.2.3）与 setCapabilities（§7.4 #5）
     addParam,
+    // 2026-09-24 小欧 - ①暴露 removeParam（参数行 × 删除，A 方案）- 小欧-2026-09-24
+    removeParam,
     setCapabilities,
     resetParams,
     saveModelGroup,

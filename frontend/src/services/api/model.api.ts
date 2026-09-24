@@ -11,6 +11,8 @@
 //   timeout/max_retries（对齐后端 ProviderConfigUpdate/ProviderAddRequest DTO——前端实际发送的字段
 //   须在 TS 类型有声明，否则类型保护失效；创建 Provider 弹窗可自定义超时/重试）
 // 2026-09-22 小欧 - [62]P8 4.3(9)-2-b：ProviderEntry 补 param_types 元数据（动态字段 schema 源）
+// 2026-09-24 小欧 - updateModel data 扩 remove_params?: string[]（②参数行 × 删除键级通道，
+//   PUT /models body 白名单字段，后端 update_model 先删后 merge）- 小欧-2026-09-24
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -95,7 +97,10 @@ export const modelApi = {
         ModelEntry,
         'label' | 'default_params' | 'range' | 'capabilities' | 'param_options'
       >
-    >
+    > & {
+      // 2026-09-24 小欧 - 键级删除名单（与 default_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
+      remove_params?: string[];
+    }
   ): Promise<ModelMutationResult> => {
     const response = await api.put(
       `/models/${enc(provider)}/${enc(model)}`,

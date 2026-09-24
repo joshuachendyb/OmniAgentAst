@@ -57,6 +57,7 @@
 // 2026-09-23 小欧 - [65]§7.2 Q1-2 补漏：能力行 Checkbox.Group 右侧加未知能力值灰色只读 Tag
 //   （yaml 手写 vision 等非 5 枚举值——设计要点「看得见、本页不提供增删」，原实现未知值完全不可见；
 //   Tag 无 closable + cursor:not-allowed；import 并入既有 antd/modelUtils 行，禁重复）- 小欧-2026-09-23
+// 2026-09-24 小欧 - ①ModelParams 传 onDelete={s.removeParam}（②参数行 × 删除按钮接线，A 方案）- 小欧-2026-09-24
 import React, { useState } from 'react';
 import {
   Button,
@@ -177,6 +178,7 @@ const SettingsPage: React.FC = () => {
   const dangerousAll = DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
 
   // 修正(2026-09-21 小强)：模型组脏计数按实际脏参数数（原是 isDirty?1:0 恒 1 项误导）（[设置页UI审计] 问题13）
+  // 2026-09-24 小欧 - ①removedParams 计入模型组脏计数（删键是独立待存变更，与 dirtyCount 同口径）- 小欧-2026-09-24
   const groupDirtyCount =
     state.activeTab === 'model'
       ? Object.values(
@@ -185,7 +187,7 @@ const SettingsPage: React.FC = () => {
             state.model.defaults,
             state.model.envOverride
           )
-        ).filter(Boolean).length
+        ).filter(Boolean).length + state.model.removedParams.length
       : Object.keys(state.dirtyKeys).filter(
           (k) => s.groupOfKey(k) === state.activeTab
         ).length;
@@ -347,6 +349,8 @@ const SettingsPage: React.FC = () => {
         options={state.model.paramOptions}
         envOverride={state.model.envOverride}
         onChange={s.setParam}
+        // 2026-09-24 小欧 - ①接 removeParam：行尾 × 点即删（env 接管键组件内 disabled）- 小欧-2026-09-24
+        onDelete={s.removeParam}
       />
       {/* 2026-09-23 小欧 - [65]§7.2：模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
