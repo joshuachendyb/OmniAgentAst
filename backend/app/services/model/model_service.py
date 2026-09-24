@@ -60,6 +60,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   ④BZ-9 range/param_options 双份近似清理收敛 for meta_key 单循环（DRY）— 小欧-2026-09-24
 # 2026-09-24 - 小欧 - [68] 模型库：新增 fetch_remote_models（GET 远程列表）与
 #   replace_provider_models（PUT 替换写入 + 差集孤儿清理）— 小欧-2026-09-24
+# 2026-09-24 23:55:00 - 小欧 - [68] 第四章核查修复 2 处：①fetch_remote_models 组头
+#   api_key 补读 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底；原仅读 YAML，
+#   env 接管时 YAML 可无 api_key 致 Bearer 空 key 远端 401）；②api_base 空的 400
+#   文案补「该 Provider」前缀对齐设计 L138 — 小欧-2026-09-24
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -459,7 +463,7 @@ def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Tuple[Dict[str
     p = ai[name]  # _provider_names 已保证 isinstance(ai[name], dict)
     api_base = str(p.get("api_base") or "").strip()
     if not api_base:
-        raise HTTPException(status_code=400, detail="未配置 api_base，请先到模型 Tab → ③ Provider 配置填写")
+        raise HTTPException(status_code=400, detail="该 Provider 未配置 api_base，请先到模型 Tab → ③ Provider 配置填写")
     return p, api_base
 
 
@@ -513,7 +517,9 @@ async def fetch_remote_models(name: str) -> Dict[str, Any]:
     """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
-    headers = get_provider_adapter(name).static_headers(str(p.get("api_key") or ""))
+    # 2026-09-24 23:55:00 - 小欧 - 设计 L137：api_key 含 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底）— 小欧-2026-09-24
+    api_key = os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or "")
+    headers = get_provider_adapter(name).static_headers(api_key)
     configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
     ref = get_current_ref(ai)
     current_model = ref["model"] if ref["provider"] == name else None
