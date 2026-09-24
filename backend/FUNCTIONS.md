@@ -367,6 +367,11 @@ def my_parse_json(json_str):
 | `add_provider` | POST /providers：name 唯一 → 写入 ai.{name} 块 | name, label, api_base, api_key, model, timeout | Dict: {ok, provider, mtime} |
 | `update_provider_config` | PUT /providers/{name}：改 api_key/base_url/timeout 立即生效；clear=true 清空 api_key | name, fields | Dict: {ok, provider, mtime} |
 | `delete_provider` | DELETE /providers：级联删 ai.{name} 全块 + 删当前自动切换（switched_to）；禁删最后一个 | name | Dict: {ok, switched_to, mtime} |
+| `_require_provider_for_fetch` | [68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) | name, ai | Tuple[Dict[str, Any], str] |
+| `_http_get_remote_models` | [68] HTTP 拉取层 GET {api_base}/models → (resp, err)；网络异常统一 err 文案；timeout 30s | api_base, headers | Tuple[Any, Optional[str]] |
+| `_parse_remote_models_body` | [68] 响应解析层 → (models, err)；HTTP>=400 提取 error.message / 非JSON / data 非数组 → err；id 缺失回退 model | resp | Tuple[Optional[List[Dict]], Optional[str]] |
+| `fetch_remote_models` | [68] GET /providers/{name}/remote-models：后端代理绕 CORS；本地校验 400/404，远端失败统一 200+ok:false | name | Dict: {ok, provider, models, count, configured, current_model, message?} |
+| `replace_provider_models` | [68] PUT /providers/{name}/models：替换式写 ai.{name}.models + 差集孤儿清理（removed 键写 None 叶，禁空 dict）；env 接管/空列表/移除当前全局模型 → 400 | name, models | Dict: {ok, mtime, added, removed} |
 
 ---
 
@@ -374,6 +379,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.3 | 2026-09-24 23:20:00 | 10.3 新增 [68] 模型库 5 函数：_require_provider_for_fetch/_http_get_remote_models/_parse_remote_models_body/fetch_remote_models/replace_provider_models（设置页模型库 Tab 远程拉取+替换写入，HTTPException 防 500，孤儿清理 None 叶） | 小欧 |
 | v4.2 | 2026-09-24 21:16:00 | 10.3 update_model 描述补 remove_params 键级删除通道（②设置页参数行 × 删除按钮，先删 model_params/range/param_options 键再 merge default_params；空 dp=整块清空与既有 P8 叠加） | 小欧 |
 | v4.1 | 2026-09-24 19:34:00 | 9.1 新增常量 READ_TOOLS（北京老陈指示归一helper）: 读类工具名唯一源{"read","readtext","readmedia"}; ling-3.0实调read而非readtext致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量, 供SSE断言与verify_db_tool_usage共用(DRY) | 小欧 |
 | v4.0 | 2026-09-21 07:45:00 | 新增 十、模型/配置域 章节（v4.19 9.3.8）: 登记 settings_service.get_all_groups/get_group/get_schema/get_setting/update_settings、config_helpers.merge_region_patch/mask_secret_value、model_service.get_models/get_providers/add_model/update_model/delete_model/add_provider/update_provider_config/delete_provider | 小欧 |
