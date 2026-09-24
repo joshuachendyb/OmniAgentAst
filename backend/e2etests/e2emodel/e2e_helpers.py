@@ -82,6 +82,9 @@
 #   ③新增 _sync_pending_result(result): send_chat 返回即回填完整result到唯一空壳pending,
 #   集中覆盖全部单会话E2E case(免逐case脚本手改); ④send_chat 返回前调用 _sync_pending_result
 #   —— 防 send_chat 后验证阶段超时丢完整数据 — 小欧-2026-09-24
+# 2026-09-24 - 小欧 - 新增READ_TOOLS常量(北京老陈指示归一helper): 读类工具名唯一源{read,readtext,readmedia},
+#   ling-3.0实调read而非readtext致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量(DRY),
+#   供SSE断言与verify_db_tool_usage(expect_any_tools=READ_TOOLS)共用 — 小欧-2026-09-24
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -252,6 +255,9 @@ API_PREFIX = "/api/v1"
 DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
+# 读类工具名唯一源(DRY): SSE has_read断言 + verify_db_tool_usage(expect_any_tools) 共用
+# 含read(ling-3.0实调)/readtext/readmedia — 小欧 2026-09-24 北京老陈指示归一helper
+READ_TOOLS = {"read", "readtext", "readmedia"}
 
 
 # ─── 后端检查 ────────────────────────────────────────────────

@@ -332,6 +332,7 @@ def my_parse_json(json_str):
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `verify_db_tool_usage` | DB侧工具步骤统一校验（case脚本唯一入口）: 工具步骤数≥min_tool_steps、expect_any_tools至少命中一个、每个工具步骤按step号配对observation步骤tool_result[]非空; 内部复用_is_action_step/_action_entries新旧协议自适应, §10.3模型变更仅改此一处 | db: Dict[str,Any](check_db返回值), expect_any_tools: Optional[List[str]]=None, min_tool_steps: int=1 | List[str] 问题列表(空=通过) |
+| `READ_TOOLS` | 读类工具名唯一源常量(DRY): {"read","readtext","readmedia"}; SSE has_read断言与verify_db_tool_usage(expect_any_tools=READ_TOOLS)共用, case侧禁再散落本地read_tools字面量 | 无（set常量） | Set[str] |
 
 ---
 
@@ -373,6 +374,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.1 | 2026-09-24 19:34:00 | 9.1 新增常量 READ_TOOLS（北京老陈指示归一helper）: 读类工具名唯一源{"read","readtext","readmedia"}; ling-3.0实调read而非readtext致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量, 供SSE断言与verify_db_tool_usage共用(DRY) | 小欧 |
 | v4.0 | 2026-09-21 07:45:00 | 新增 十、模型/配置域 章节（v4.19 9.3.8）: 登记 settings_service.get_all_groups/get_group/get_schema/get_setting/update_settings、config_helpers.merge_region_patch/mask_secret_value、model_service.get_models/get_providers/add_model/update_model/delete_model/add_provider/update_provider_config/delete_provider | 小欧 |
 | v3.15 | 2026-09-16 07:04:06 | 新增 4.4 信任机制辅助(app/tools/trust_db.py+trust.py): norm_trust_path 函数化公开(文件域 resolve / 非文件信任域 strip, insert/check/delete 落库·查询·撤销统一单一来源, DRY 消除 storage 层双份逐字副本); extract_trust_path 补登记(hitl_gateway 直调 + resolve_skip 复用) | 小欧 |
 | v3.14 | 2026-08-30 14:50:00 | 13.11 空行规约(北京老陈 2026-08-30 批准): 1.7 text_utils 新增 normalize_blank_lines(连续空行折叠为一个空行+段首尾trim, 幂等, 后端落库收口入口, 与前端 normalizeBlankLines 同一张规则表); format_tool_call_markup 末尾压缩收敛复用(行为逐字节等价, DRY); agent_runner._persist 与 storage.load_steps_by_task 的 C2/规约逻辑为模块内私有改动不单列条目 | 小欧 |

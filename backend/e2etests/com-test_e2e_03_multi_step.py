@@ -18,6 +18,7 @@
 -- 小健 2026-06-14
 -- 更新: 2026-07-03(铁律5: 超时统一管理) 小欧
 -- 更新: 2026-08-22 - 小欧 - §10.3适配: 本case旧action_tool取数块(type过滤+顶层tool_name+observation字段)收敛为verify_db_tool_usage单点校验(e2e_helpers FUNCTIONS.md九.1), 协议再变只改helper一处
+-- 更新: 2026-09-24 19:36:11 - 小欧 - 归一helper: 本地read_tools字面量改import e2e_helpers.READ_TOOLS(DRY, 北京老陈拍板全部归一; office扩展名并入通用读集合场景由read通用工具覆盖)
 """
 
 from datetime import datetime
@@ -31,6 +32,7 @@ from e2emodel.e2e_helpers import (
     assert_stream_ended, verify_consistency, verify_steps, filter_safety_errors,
     register_pending_record,
     verify_db_tool_usage,
+    READ_TOOLS,
 )
 
 TEST_FILE = Path("E:/test_dir/test.txt")
@@ -73,7 +75,8 @@ async def test_e2e_p0_03_multi_step_reasoning():
         end_type = assert_stream_ended(result)
         assert end_type == "final", f"任务必须以final正常结束(MUST), actual: {end_type}"
 
-        read_tools = {"readtext", "readmedia", "read_pdf", "read_docx", "read_pptx", "read_xlsx"}
+        # 2026-09-24 小欧 归一helper: READ_TOOLS唯一源含read/readtext/readmedia(DRY)
+        read_tools = READ_TOOLS
         has_read = any(n in read_tools for n in tool_names)
         assert has_read, f"must call read tool(文本/媒体/文档任一读取,MUST P0-03), actual: {tool_names}"
 
