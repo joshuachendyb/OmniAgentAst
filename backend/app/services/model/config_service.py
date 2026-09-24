@@ -40,6 +40,8 @@
 # 2026-09-22 - 小欧 - 31候选修复 #9/#14: update_config 包 filelock(config.yaml.lock) 与 merge_region_patch/
 #   get_config_snapshot 同一把锁串行化（并发读-改-写旧快照整文件覆盖丢更新、文件占用 PermissionError→500 根治）；
 #   成功路径改 reload_ai_config(_load+reset) 与 merge 写链路行为对齐（原仅 reload 不 reset，运行态缓存不一致）
+# 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 delete_provider/delete_model/update_model/update_provider/
+#   add_provider/add_model 6函数（仅被已删 /config/provider/* 路由调用, 前端零调用）；同步清孤儿 import — 小欧-2026-09-24
 """
 config_service — 配置业务服务(services/model)
 
@@ -65,21 +67,15 @@ from app.services.model.config_helpers import (
     _fix_config_common_issues,
     _restore_backup_if_needed,
     _validate_config_integrity,
-    ensure_model_exists,
-    ensure_model_not_duplicate,
-    ensure_provider_exists,
-    ensure_provider_not_duplicate,
     get_config_path,
     is_provider_metadata_field,
-    load_config,
     mask_secret_value,
     read_yaml_config,
     reload_ai_config,
-    save_config,
     write_yaml_config,
 )
 from app.logger import logger
-from app.utils.response_utils import api_success, api_failure
+from app.utils.response_utils import api_success
 
 
 def update_config(config_update):
@@ -289,117 +285,6 @@ def get_full_config() -> dict:
         "providers": providers,
         "current_model_ref": resolved_model
     }
-
-
-def delete_provider(provider_name: str) -> dict:
-    """删除Provider — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    provider_keys = [k for k in config.get('ai', {}).keys() if not is_provider_metadata_field(k)]
-    if len(provider_keys) <= 1:
-        raise HTTPException(status_code=400, detail="至少保留一个Provider")
-    del config['ai'][provider_name]
-    _ref = config['ai'].get('model_ref') or {}
-    if isinstance(_ref, dict) and _ref.get('provider') == provider_name:
-        remaining = [k for k in config['ai'].keys() if not is_provider_metadata_field(k)]
-        if remaining:
-            _new_p = remaining[0]
-            _new_models = config['ai'][_new_p].get('models') or []
-            config['ai']['model_ref'] = {
-                "provider": _new_p,
-                "model": _new_models[0] if _new_models else "",
-            }
-    save_config(str(config_path), config)
-    return api_success(f"Provider {provider_name} 已删除")
-
-
-def delete_model(provider_name: str, model_name: str) -> dict:
-    """删除模型 — 自 model_routes.py 迁入 — 小沈 2026-08-13"""
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    ensure_model_exists(config, provider_name, model_name)
-    models = config['ai'][provider_name].get('models') or []
-    if len(models) <= 1:
-        raise HTTPException(status_code=400, detail="至少保留一个模型")
-    models.remove(model_name)
-    config['ai'][provider_name]['models'] = models
-    save_config(str(config_path), config)
-    return api_success(f"模型 {model_name} 已删除")
-
-
-def update_model(provider_name: str, old_model_name: str, data) -> dict:
-    """更新模型 — 自 model_routes.py 迁入, data为ModelAddRequest DTO(鸭子类型) — 小沈 2026-08-13"""
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    models = config['ai'][provider_name].get('models') or []
-    new_model_name = ' '.join(data.model.split())
-    if old_model_name not in models:
-        raise HTTPException(status_code=404, detail=f"模型 {old_model_name} 不存在")
-    if new_model_name == old_model_name:
-        return api_success("模型名称未改变")
-    if new_model_name in models:
-        raise HTTPException(status_code=400, detail=f"模型 {new_model_name} 已存在")
-    index = models.index(old_model_name)
-    models[index] = new_model_name
-    config['ai'][provider_name]['models'] = models
-    save_config(str(config_path), config)
-    return api_success(f"模型已从 {old_model_name} 更新为 {new_model_name}")
-
-
-def update_provider(provider_name: str, data) -> dict:
-    """更新Provider — 自 model_routes.py 迁入, data为ProviderUpdate DTO(鸭子类型) — 小沈 2026-08-13"""
-    config_path, config = load_config()
-    backup_path = _backup_config(config_path)
-    ensure_provider_exists(config, provider_name)
-    if data.api_base is not None:
-        config['ai'][provider_name]['api_base'] = data.api_base
-    if data.api_key is not None:
-        config['ai'][provider_name]['api_key'] = data.api_key.strip()
-    if data.timeout is not None:
-        config['ai'][provider_name]['timeout'] = data.timeout
-    if data.max_retries is not None:
-        config['ai'][provider_name]['max_retries'] = data.max_retries
-    config = _fix_config_common_issues(config)
-    is_valid, errors, warnings = _validate_config_integrity(config)
-    if not is_valid:
-        return api_failure("配置验证失败", errors=errors, warnings=warnings, backup_path=str(backup_path))
-    save_config(str(config_path), config)
-    return api_success(f"Provider {provider_name} 已更新", warnings=warnings, backup_path=str(backup_path))
-
-
-def add_provider(data) -> dict:
-    """添加Provider — 自 model_routes.py 迁入, data为ProviderAddRequest DTO(鸭子类型) — 小沈 2026-08-13"""
-    config_path, config = load_config()
-    backup_path = _backup_config(config_path)
-    ensure_provider_not_duplicate(config, data.name)
-    config['ai'][data.name] = {
-        'api_base': data.api_base.strip(),
-        'api_key': data.api_key.strip() if data.api_key else "",
-        'models': [m.strip() for m in (data.models if data.models else ([data.model] if data.model else []))],
-        'timeout': data.timeout,
-        'max_retries': data.max_retries
-    }
-    is_valid, errors, warnings = _validate_config_integrity(config)
-    if not is_valid:
-        return api_failure("配置验证失败", errors=errors, backup_path=str(backup_path))
-    save_config(str(config_path), config)
-    return api_success(f"Provider {data.name} 已添加", warnings=warnings)
-
-
-def add_model(provider_name: str, data) -> dict:
-    """添加模型 — 自 model_routes.py 迁入, data为ModelAddRequest DTO(鸭子类型) — 小沈 2026-08-13"""
-    config_path, config = load_config()
-    ensure_provider_exists(config, provider_name)
-    model_name = ' '.join(data.model.split())
-    ensure_model_not_duplicate(config, provider_name, model_name)
-    models = config['ai'][provider_name].get('models') or []
-    models.append(model_name)
-    config['ai'][provider_name]['models'] = models
-    _ref = config['ai'].get('model_ref')
-    if not (isinstance(_ref, dict) and _ref.get('provider') and _ref.get('model')):
-        config['ai']['model_ref'] = {"provider": provider_name, "model": model_name}
-    save_config(str(config_path), config)
-    return api_success(f"模型 {data.model} 已添加")
 
 
 def fix_config() -> dict:

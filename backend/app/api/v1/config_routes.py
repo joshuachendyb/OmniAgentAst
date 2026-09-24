@@ -21,6 +21,8 @@
 #   GET /config/full 改 current_model_ref=result["current_model_ref"](后端 DTO 字段变更, 前端 api.ts 契约已同步改)
 # 2026-09-21 - 小欧 - 关于页功能: 新增 GET /config/version-file 只读端点(返回 {version_content})，version.txt
 #   全文读取落 services/model/config_service.read_version_file，供前端关于区"查看 version 文件全文"。
+# 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 /config/provider/* 6个老CRUD路由(前端零调用, 设置2版已走
+#   /models /providers model_routes)；同步删仅被其调用的 config_service 6函数与 config_schemas 死DTO — 小欧-2026-09-24
 """
 config_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
 
@@ -36,19 +38,12 @@ from app.api.v1.config_schemas import (
     ConfigValidateRequest,
     ConfigValidateResponse,
     FullConfigResponse,
-    ModelAddRequest,
     ModelInfo,
     ModelListResponse,
-    ProviderAddRequest,
     ProviderInfo,
-    ProviderUpdate,
     SecurityConfig,
 )
 from app.services.model.config_service import (
-    add_model as svc_add_model,
-    add_provider as svc_add_provider,
-    delete_model as svc_delete_model,
-    delete_provider as svc_delete_provider,
     fix_config as svc_fix_config,
     get_full_config as svc_get_full_config,
     get_model_list as svc_get_model_list,
@@ -57,8 +52,6 @@ from app.services.model.config_service import (
     read_config_file as svc_read_config_file,
     read_version_file as svc_read_version_file,
     update_config as update_config_service,
-    update_model as svc_update_model,
-    update_provider as svc_update_provider,
     validate_config as svc_validate_config,
 )
 from app.services.model.config_helpers import get_config_path, handle_config_errors
@@ -123,42 +116,6 @@ async def get_full_config():
         providers=providers,
         current_model_ref=result["current_model_ref"]
     )
-
-
-@router.delete("/config/provider/{provider_name}")
-@handle_config_errors("删除Provider")
-async def delete_provider(provider_name: str):
-    return svc_delete_provider(provider_name)
-
-
-@router.delete("/config/provider/{provider_name}/model/{model_name}")
-@handle_config_errors("删除模型")
-async def delete_model(provider_name: str, model_name: str):
-    return svc_delete_model(provider_name, model_name)
-
-
-@router.put("/config/provider/{provider_name}/model/{old_model_name}")
-@handle_config_errors("更新模型")
-async def update_model(provider_name: str, old_model_name: str, data: ModelAddRequest):
-    return svc_update_model(provider_name, old_model_name, data)
-
-
-@router.put("/config/provider/{provider_name}")
-@handle_config_errors("更新Provider")
-async def update_provider(provider_name: str, data: ProviderUpdate):
-    return svc_update_provider(provider_name, data)
-
-
-@router.post("/config/provider")
-@handle_config_errors("添加Provider")
-async def add_provider(data: ProviderAddRequest):
-    return svc_add_provider(data)
-
-
-@router.post("/config/provider/{provider_name}/model")
-@handle_config_errors("添加模型")
-async def add_model(provider_name: str, data: ModelAddRequest):
-    return svc_add_model(provider_name, data)
 
 
 @router.post("/config/fix", response_model=ConfigFixResponse)

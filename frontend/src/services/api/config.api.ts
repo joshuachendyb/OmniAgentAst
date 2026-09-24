@@ -3,6 +3,7 @@
 // 编辑历史: 2026-09-21 小强 - 关于页功能：新增 readVersionFile（GET /config/version-file 返回 version.txt 全文）
 // 2026-09-21 小欧 - 删除无意义白/黑名单类型（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：后端 SecurityConfig 已删，无消费方（北京老陈裁定）
 // 2026-09-21 小强 - DRY收口：新增 configApi.switchCurrentModel 切全局模型唯一写链（Layout.handleModelChange 与 CurrentModelRefCard.onOk 共用，消除重复 updateConfig+ai_model_ref 装配）
+// 2026-09-24 19:38:01 小欧 - 禁止backward死代码清理: 删 /config/provider/* 6个死方法及专属类型 ProviderUpdate/ModelAddRequest/ProviderAddRequest（设置2版已走 modelApi /models /providers）— 小欧-2026-09-24
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -53,18 +54,6 @@ export interface FullConfigResponse {
   current_model_ref: SessionModelOverride;
 }
 
-export interface ProviderUpdate {
-  api_base?: string;
-  api_key?: string;
-  model?: string;
-  timeout?: number;
-  max_retries?: number;
-}
-
-export interface ModelAddRequest {
-  model: string;
-}
-
 export interface FullConfigValidationResponse {
   success: boolean;
   provider: string;
@@ -85,16 +74,6 @@ export interface ConfigPathResponse {
   config_path: string;
   config_dir: string;
   exists: boolean;
-}
-
-export interface ProviderAddRequest {
-  name: string;
-  api_base: string;
-  api_key: string;
-  model: string;
-  models: string[];
-  timeout: number;
-  max_retries: number;
 }
 
 export const configApi = {
@@ -158,63 +137,6 @@ export const configApi = {
 
   getFullConfig: async (): Promise<FullConfigResponse> => {
     const response = await api.get<FullConfigResponse>('/config/full');
-    return response.data;
-  },
-
-  deleteProvider: async (
-    providerName: string
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(`/config/provider/${providerName}`);
-    return response.data;
-  },
-
-  updateModel: async (
-    providerName: string,
-    oldModelName: string,
-    newModelName: string
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.put(
-      `/config/provider/${providerName}/model/${oldModelName}`,
-      { model: newModelName }
-    );
-    return response.data;
-  },
-
-  deleteModel: async (
-    providerName: string,
-    modelName: string,
-    options?: { signal?: AbortSignal }
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(
-      `/config/provider/${providerName}/model/${modelName}`,
-      options?.signal ? { signal: options.signal } : {}
-    );
-    return response.data;
-  },
-
-  updateProvider: async (
-    providerName: string,
-    data: ProviderUpdate
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.put(`/config/provider/${providerName}`, data);
-    return response.data;
-  },
-
-  addModel: async (
-    providerName: string,
-    data: ModelAddRequest
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.post(
-      `/config/provider/${providerName}/model`,
-      data
-    );
-    return response.data;
-  },
-
-  addProvider: async (
-    data: ProviderAddRequest
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.post('/config/provider', data);
     return response.data;
   },
 

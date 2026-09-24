@@ -3,7 +3,9 @@
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：/models /providers CRUD（5.2 模型管理接口）
-  2026-09-21 - 小欧 - 对齐文档54 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
+   2026-09-21 - 小欧 - 对齐文档54 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
+   2026-09-24 - 小欧 - 禁止backward死代码清理: 删未使用的 ModelAddRequest/ProviderInfo/ProviderUpdate import
+     （本文件实际用 ModelCreateRequest/ModelUpdateRequest/ProviderConfigUpdate/ProviderAddRequest）— 小欧-2026-09-24
    2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复：①M13 add_provider 透传 req.models 列表与
      req.max_retries（旧实现丢弃，DTO 有字段借而不传，前端无法创建多模型 Provider/设置重试）；
      ②S7 ProviderConfigUpdate 补 label 字段并交由 update_provider_config 落盘（旧实现 provider
@@ -28,10 +30,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.config_schemas import (
-    ModelAddRequest,
     ProviderAddRequest,
-    ProviderInfo,
-    ProviderUpdate,
 )
 from app.services.model.config_helpers import handle_config_errors
 from app.services.model import model_service as svc

@@ -12,6 +12,7 @@
 #   （全库无消费方，仅透传保存不生效；命令安全由 path_safe_check/tools/security 代码内实现，北京老陈裁定删除）
 # 2026-09-21 - 小欧 - v4.20 死配置清理: SecurityConfig 移除 contentFilterEnabled/contentFilterLevel/maxFileSize（全库无消费方）
 # 2026-09-22 - 小欧 - [61] constants.py 配置化迁移：import DEFAULT_MAX_STEPS 改别名 _D_MAX_STEPS + Field 默认值改读配置
+# 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 ProviderUpdate/ModelAddRequest 死DTO（仅被已删 /config/provider/* 路由引用）— 小欧-2026-09-24
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
@@ -90,20 +91,6 @@ class FullConfigResponse(BaseModel):
     """完整配置响应 — 归一: current_provider/current_model → current_model_ref: ModelRef"""
     providers: dict[str, ProviderInfo] = Field(..., description="所有Provider配置")
     current_model_ref: ModelRef = Field(..., description="当前使用的模型(provider+model 结构)")
-
-
-class ProviderUpdate(BaseModel):
-    """Provider更新请求"""
-    api_base: Optional[str] = Field(None, description="API地址")
-    api_key: Optional[str] = Field(None, description="API密钥")
-    model: Optional[str] = Field(None, description="当前使用的模型")
-    timeout: Optional[int] = Field(None, description="超时时间")
-    max_retries: Optional[int] = Field(None, description="最大重试次数")
-
-
-class ModelAddRequest(BaseModel):
-    """添加模型请求"""
-    model: str = Field(..., description="模型名称")
 
 
 class ProviderAddRequest(BaseModel):
