@@ -89,7 +89,7 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
        前端 SettingRow.tsx case 'textarea' 走 textareaWidth 宽框）—— 键名/默认值/值域/notice 均不动 — 小欧-2026-09-23
    2026-09-23 20:07:36 - 小欧 - tuning.network.cors_origins type 再修正(北京老陈"textarea也不对,应该用类似base_url的显示框"):
      "textarea"→"url"——textarea 保存路径 settings_service._to_stored 会按行拆 list，破坏 main.py:93
-     逗号分隔字符串契约（split(",") 对 list 直接崩）；base_url 实为单行 Input+baseUrlWidth(360px)，
+      逗号分隔字符串契约（split(",") 对 list 直接崩）；base_url 实为单行 Input+baseUrlWidth(360px)，
       故新设 "url" 类型：后端 _validate_value 按 str 校验、前端 SettingRow case 'url' 渲染单行 Input
       走 baseUrlWidth 宽框（与 ProviderConfig base_url 同款）—— 键名/默认值/notice 不动 — 小欧-2026-09-23
     2026-09-23 20:12:44 - 小欧 - tuning.network.cors_origins 组归属迁移(北京老陈"应该在系统组,关于上面一个分块"):
