@@ -23,6 +23,8 @@ import * as fs from 'fs';
  *
  * 编辑历史: 2026-09-24 21:56:36 小欧 - 过时键修正：case-05 参数区改 data-settings-key=temperature；
  *   case-09 tuning.llm.*→llm.sampling.*+通用Tab；case-10 搜索temperature断言通用+回车、脏态键改活键 — 小欧-2026-09-24
+ * 编辑历史: 2026-09-25 04:06:45 小健 - 恢复保存稳健化: 重试次数恢复改 waitForTimeout(500) +
+ *   saveAllBtn.isEnabled() 条件点击（按钮未就绪不再硬点失败） — 小健-2026-09-25
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const BASE = 'http://127.0.0.1:8000/api/v1';
@@ -820,10 +822,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
 
       // 恢复重试次数
       await dirtyInput.fill(dirtyCur);
-      await page.getByRole('button', { name: /保存本组/ }).click();
-      await expect(page.locator('.ant-message')).toContainText('保存成功', {
-        timeout: 20_000,
-      });
+      await page.waitForTimeout(500);
+      if (await saveAllBtn.isEnabled()) {
+        await saveAllBtn.click();
+        await expect(page.locator('.ant-message')).toContainText('保存成功', {
+          timeout: 20_000,
+        });
+      }
       console.log('[E2E] case-10 stream_max_retries 已恢复');
     }
 

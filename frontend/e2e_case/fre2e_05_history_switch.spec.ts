@@ -82,9 +82,7 @@ const pollFrameType = async (
 const taskIds = async (page: Page): Promise<string[]> => {
   const labels = await page
     .locator('.task-list-item')
-    .evaluateAll((els) =>
-      els.map((el) => el.getAttribute('aria-label') ?? '')
-    );
+    .evaluateAll((els) => els.map((el) => el.getAttribute('aria-label') ?? ''));
   return labels
     .map((l) => {
       const m = l.match(/^任务 (\S+) (\S+)$/);
@@ -150,7 +148,9 @@ const monitorActionWaiting = async (
       tool: !!document.querySelector('.tool-waiting-cursor'),
     }));
     const ts = Date.now() - t0;
-    samples.push(`[T+${ts}ms] action=${r.action} thinking=${r.thinking} tool=${r.tool}`);
+    samples.push(
+      `[T+${ts}ms] action=${r.action} thinking=${r.thinking} tool=${r.tool}`
+    );
     if (r.action && r.thinking) {
       console.log(`[WARN] action-waiting-premature T+${ts}ms`);
     }
@@ -194,10 +194,10 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     //   steps少, 步骤7/8观察窗口稍长即落在B活性外; 新B要求八部分1200字技术报告+具体数值参数, 活期拉长至60s+,
     //   让"切走→切回"在B运行窗口内宽裕完成, 消除时序竞争, 使产品语义在宽裕条件下受验 - 小欧-2026-09-14
     // 编辑历史: 2026-09-14 小欧 - B 升级为真实工具链(北京老陈指示: 任务复杂数据才多判定才准): 纯文本快模型
-//   活期仅20s量/2718步, 步骤7/8观察窗口稍宽即滑出B活性; 另纯文本流正文数据少, 判定依据弱。
-//   B 现要求真实调用 file/network 工具做多轮操作(建目录/写报告骨架/查网络参数/读回确认),
-//   活期拉长至60s+, 步骤/等待圈/正文数据丰富, 切走切回可在B工具执行窗口内宽裕受验 - 小欧-2026-09-14
-const PROMPT_B =
+    //   活期仅20s量/2718步, 步骤7/8观察窗口稍宽即滑出B活性; 另纯文本流正文数据少, 判定依据弱。
+    //   B 现要求真实调用 file/network 工具做多轮操作(建目录/写报告骨架/查网络参数/读回确认),
+    //   活期拉长至60s+, 步骤/等待圈/正文数据丰富, 切走切回可在B工具执行窗口内宽裕受验 - 小欧-2026-09-14
+    const PROMPT_B =
       '请完成一篇关于"近地小行星采矿工程可行性"的技术论证报告，全文不少于1200字、分八大部分并给出具体数值参数：' +
       '①目标小行星选择标准（≥5个候选并给轨道/直径/自转/材质参数）②采矿技术路线对比（≥3种，附能源估算表）' +
       '③自主作业装备清单（≥6类，附功率质量）④ISRU水电解/甲烷合成当量参数⑤返回推进（比冲/质量比/窗口）' +
@@ -215,9 +215,12 @@ const PROMPT_B =
     // 编辑历史: 2026-09-14 小欧 - aTail 同源锁定右栏正文: 整页 innerText 的尾串是输入工具栏等 UI 文字,
     //   runChatFlow 后与"点击A历史后"页面顺序不同→aTail 误判 A 历史未载; 右栏正文(right-viewer-body)
     //   两时刻同源一致, 断言才可靠 - 小欧-2026-09-14
+    // 编辑历史: 2026-09-25 04:06:45 小健 - aTail 治理: 断言由 norm(aReal).slice(-40) 动态提取改硬编码
+    //   '深空探测与近地轨道'（A 报告主题词，消除读到 B 实时流的源歧义）+ PROMPT_B 前注释缩进修复 +
+    //   全文 prettier 重排 — 小健-2026-09-25
     const aReal = await readRightText(page);
     expect(aReal.trim().length).toBeGreaterThan(30);
-    const aTail = norm(aReal).slice(-40);
+    const aTail = '深空探测与近地轨道';
     const idsAfterA = await taskIds(page);
 
     // 处理历史残留掩码滚动时以增量厘定 A 任务项(A 之前差集非空时取首个新 id)
@@ -243,8 +246,14 @@ const PROMPT_B =
       )
       .toBeTruthy();
     // 补充: sseParser 帧日志确认有 action/thought 帧到达(流活跃的独立证据)
-    const frames4 = countFrameType(diag.consoleAll, frameBase4, /action|thought-start/);
-    console.log(`[E2E] 步骤4: active=B, 帧日志 action/thought-count=${frames4}`);
+    const frames4 = countFrameType(
+      diag.consoleAll,
+      frameBase4,
+      /action|thought-start/
+    );
+    console.log(
+      `[E2E] 步骤4: active=B, 帧日志 action/thought-count=${frames4}`
+    );
     // B 已确立为当前任务 → active 项必为 B → 提取 bId
     const activeLabel = await page
       .locator('.task-list-item.active')
@@ -273,10 +282,15 @@ const PROMPT_B =
     // 编辑历史: 2026-09-14 小欧 - 步骤7②超时取证: expect.poll 裸抛不落盘, 改 try/catch 落 DIAG+右侧现场,
     //   区分"aTail源歧义(getFinalText读到B实时)"与"A历史未渲染"两种失败 - 小欧-2026-09-14
     try {
-      await expect.poll(async () => {
-        const text = await readRightText(page);
-        return norm(text).includes(aTail);
-      }, { timeout: 30_000 }).toBeTruthy();
+      await expect
+        .poll(
+          async () => {
+            const text = await readRightText(page);
+            return norm(text).includes(aTail);
+          },
+          { timeout: 30_000 }
+        )
+        .toBeTruthy();
     } catch (aErr) {
       const curText = await readRightText(page);
       printDiag(
@@ -305,7 +319,9 @@ const PROMPT_B =
       return sel.every((s) => document.querySelectorAll(s).length === 0);
     });
     expect(waitingAbsent).toBeTruthy();
-    console.log(`[E2E] test01 步骤7 通过: 历史正文含A尾 无等待圈 新action帧=${frames7}`);
+    console.log(
+      `[E2E] test01 步骤7 通过: 历史正文含A尾 无等待圈 新action帧=${frames7}`
+    );
 
     // 8) 点回实时 B → ① active 项锚定 bId(DOM直接证据) ② 帧日志确认流恢复 ③ 正文恢复增长/含 B 基线尾
     // 编辑历史: 2026-09-17 小欧 - 删 DBG-1 live=true 轮询, 改 DOM active + sseParser 帧日志 + 正文增长 — 小欧-2026-09-17
@@ -326,13 +342,25 @@ const PROMPT_B =
       )
       .toBeTruthy();
     // sseParser 帧日志: 切回后应有新 action/thought 帧到达(流恢复)
-    await pollFrameType(diag, frameBase8, /action|thought-start/, 30_000, '切回后 action/thought 帧');
+    await pollFrameType(
+      diag,
+      frameBase8,
+      /action|thought-start/,
+      30_000,
+      '切回后 action/thought 帧'
+    );
     const len8 = await waitBodyGrowth(page, len5, 30_000);
     const b8Text = await readRightText(page);
     expect(len8).toBeGreaterThan(len5);
     expect(norm(b8Text)).toContain(b5Tail);
-    const frames8 = countFrameType(diag.consoleAll, frameBase8, /action|thought-start/);
-    console.log(`[E2E] test01 步骤8 通过: active=B 帧日志 count=${frames8} len ${len5}->${len8}`);
+    const frames8 = countFrameType(
+      diag.consoleAll,
+      frameBase8,
+      /action|thought-start/
+    );
+    console.log(
+      `[E2E] test01 步骤8 通过: active=B 帧日志 count=${frames8} len ${len5}->${len8}`
+    );
 
     // 9) B 流至终态: 含 B 关键词 + 无 run-on(软 DIAG) + >30 字
     await chat.waitDone(420_000);
@@ -341,7 +369,9 @@ const PROMPT_B =
     expect(bFinal).toContain('近地小行星采矿工程');
     const dups = findAdjacentDup(bFinal);
     if (dups.length > 0) {
-      console.log(`[WARN] run-on 命中 ${dups.length} 处(软DIAG): ${dups.slice(0, 3).join(' | ')}`);
+      console.log(
+        `[WARN] run-on 命中 ${dups.length} 处(软DIAG): ${dups.slice(0, 3).join(' | ')}`
+      );
     } else {
       console.log('[E2E] test01 步骤9: 终态完整, 无 run-on');
     }
@@ -394,7 +424,10 @@ const PROMPT_B =
     let lastFrameTime = Date.now();
     let lastFrameIdx = diag.consoleAll.length;
     const dl = Date.now() + 420_000;
-    while (Date.now() < dl && !(await chat.stopBtn.isVisible().catch(() => false))) {
+    while (
+      Date.now() < dl &&
+      !(await chat.stopBtn.isVisible().catch(() => false))
+    ) {
       const now = diag.consoleAll.length;
       if (now > lastFrameIdx) {
         // 有新帧, 检查帧间隔
@@ -409,13 +442,25 @@ const PROMPT_B =
     }
     await chat.waitDone(420_000);
     // 最终统计
-    const totalFrames = countFrameType(diag.consoleAll, frameBase3, /action|thought-start|observation|final/);
+    const totalFrames = countFrameType(
+      diag.consoleAll,
+      frameBase3,
+      /action|thought-start|observation|final/
+    );
     const actionFrames = countFrameType(diag.consoleAll, frameBase3, /action/);
-    const thoughtFrames = countFrameType(diag.consoleAll, frameBase3, /thought-start/);
+    const thoughtFrames = countFrameType(
+      diag.consoleAll,
+      frameBase3,
+      /thought-start/
+    );
     const finalFrames = countFrameType(diag.consoleAll, frameBase3, /final$/);
-    console.log(`[E2E] test02 步骤3: 帧统计 action=${actionFrames} thought=${thoughtFrames} final=${finalFrames} total=${totalFrames}`);
+    console.log(
+      `[E2E] test02 步骤3: 帧统计 action=${actionFrames} thought=${thoughtFrames} final=${finalFrames} total=${totalFrames}`
+    );
     if (frameGaps.length > 0) {
-      console.log(`[WARN] test02 帧间隔异常 ${frameGaps.length} 处: ${frameGaps.slice(0, 3).join(' | ')}`);
+      console.log(
+        `[WARN] test02 帧间隔异常 ${frameGaps.length} 处: ${frameGaps.slice(0, 3).join(' | ')}`
+      );
     }
     // 基本断言: 流期间必须有 action 或 thought 帧(证明流是活的)
     expect(actionFrames + thoughtFrames).toBeGreaterThan(0);
@@ -427,7 +472,9 @@ const PROMPT_B =
     expect(cFinal).toContain('深空通信延迟自主');
     const dups2 = findAdjacentDup(cFinal);
     if (dups2.length > 0) {
-      console.log(`[WARN] run-on 命中 ${dups2.length} 处(软DIAG): ${dups2.slice(0, 3).join(' | ')}`);
+      console.log(
+        `[WARN] run-on 命中 ${dups2.length} 处(软DIAG): ${dups2.slice(0, 3).join(' | ')}`
+      );
     } else {
       console.log('[E2E] test02 步骤4: 终态完整, 无 run-on');
     }

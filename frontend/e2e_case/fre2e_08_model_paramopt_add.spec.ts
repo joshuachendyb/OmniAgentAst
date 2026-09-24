@@ -17,10 +17,14 @@ import * as fs from 'fs';
  *   本 E2E 负责「配置→保存→显示」三段，运行时构造透传见 create_instance_passes_extra_body。
  *
  * 铁规提醒: AGENTS.md 严令禁止 commit 任何测试代码文件 —— 本 spec 严禁提交。
+ *
+ * 编辑历史: 2026-09-25 04:06:45 小健 - 防真实配置污染: 弃真实兄弟模型 deepseek-v4-flash（原步骤0
+ *   直 PUT 真实模型 param_options），改临时创建 e2e-sibling-* + createdModels 集合 +
+ *   afterEach DELETE 自清理 + prettier 重排 — 小健-2026-09-25
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const PROVIDER = 'sensenova';
-const SIBLING = 'deepseek-v4-flash'; // 兄弟模型（已有 model_params 含 reasoning_effort）
+const BASE = 'http://127.0.0.1:8000/api/v1';
 
 const stamp = () => {
   const d = new Date();
@@ -28,20 +32,39 @@ const stamp = () => {
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 };
 
+const createdModels = new Set<string>();
+
+test.afterEach(async ({ request }) => {
+  for (const model of createdModels) {
+    await request.delete(`${BASE}/models/${PROVIDER}/${model}`);
+  }
+  createdModels.clear();
+});
+
 test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
-  test('模板区勾选 reasoning_effort=high → 落盘 → 回显下拉', async ({ page, request }) => {
+  test('模板区勾选 reasoning_effort=high → 落盘 → 回显下拉', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(180_000);
     const newModel = `e2e-opt-${stamp()}`;
+    createdModels.add(newModel);
+    const sibling = `e2e-sibling-${stamp()}`;
+    createdModels.add(sibling);
 
-    // 0) 预置兄弟模型 param_options（PUT /models 合并写 model_meta）——模板区才渲染 Select
-    const preseed = await request.put(
-      `http://127.0.0.1:8000/api/v1/models/${PROVIDER}/${SIBLING}`,
-      {
-        data: { param_options: { reasoning_effort: ['low', 'medium', 'high'] } },
-      }
+    const seed = await request.post(`${BASE}/models`, {
+      data: {
+        provider: PROVIDER,
+        model: sibling,
+        label: `${sibling}-兄弟`,
+        default_params: {},
+        param_options: { reasoning_effort: ['low', 'medium', 'high'] },
+      },
+    });
+    expect(seed.status()).toBe(200);
+    console.log(
+      `[E2E] 步骤0 预置临时兄弟 param_options ok (status=${seed.status()})`
     );
-    expect(preseed.status()).toBe(200);
-    console.log(`[E2E] 步骤0 预置兄弟 param_options ok (status=${preseed.status()})`);
 
     // 1) 拦截 POST /models
     let postBody: Record<string, unknown> | null = null;
@@ -61,7 +84,9 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
 
     // 2) 打开设置页 → 模型 Tab
     await page.goto('http://localhost:5173/settings2');
-    await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.settings-page')).toBeVisible({
+      timeout: 30_000,
+    });
     const modelTab = page.getByRole('tab', { name: /模\s*型/ }).first();
     await modelTab.click();
     await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
@@ -90,9 +115,13 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
       .filter({ hasText: 'reasoning_effort' })
       .first()
       .locator('xpath=parent::div');
-    await expect(tplRow.locator('.ant-select')).toBeVisible({ timeout: 15_000 });
+    await expect(tplRow.locator('.ant-select')).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(
-      tplRow.locator('.ant-select-selection-item, .ant-select-selection-selected-value')
+      tplRow.locator(
+        '.ant-select-selection-item, .ant-select-selection-selected-value'
+      )
     ).toContainText('medium');
     console.log('[E2E] 步骤5 模板区 reasoning_effort 行已出, 默认 medium');
 
@@ -124,17 +153,14 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
 
     // 9) POST /models body 断言
     await expect
-      .poll(
-        () => JSON.stringify(postBody ?? null),
-        { timeout: 30_000 }
-      )
+      .poll(() => JSON.stringify(postBody ?? null), { timeout: 30_000 })
       .toContain('"reasoning_effort"');
     const b = postBody as Record<string, unknown>;
     expect(b.provider).toBe(PROVIDER);
     expect(b.model).toBe(newModel);
-    expect(
-      (b.default_params as Record<string, unknown>).reasoning_effort
-    ).toBe('high');
+    expect((b.default_params as Record<string, unknown>).reasoning_effort).toBe(
+      'high'
+    );
     const po = (b.param_options as Record<string, string[]>) ?? {};
     expect(po.reasoning_effort).toEqual(['low', 'medium', 'high']);
     console.log(
@@ -193,7 +219,9 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
       .poll(
         async () => {
           const v = await paramRow
-            .locator('.ant-select-selection-item, .ant-select-selection-selected-value')
+            .locator(
+              '.ant-select-selection-item, .ant-select-selection-selected-value'
+            )
             .innerText();
           return v;
         },

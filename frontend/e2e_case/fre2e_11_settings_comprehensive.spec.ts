@@ -14,6 +14,9 @@ import * as fs from 'fs';
  *   ②65-68 temperature/max_tokens 迁 general/llm.sampling.*(旧调优键2026-09-23已删)；③77 default_max_steps死键→tuning.trim.max_rounds；
  *   ④97 搜索temperature改断言通用Tab+回车触发(键在general)；⑤99 脏态键改tuning.llm.stream_max_retries(活键) — 小欧-2026-09-24
  * 编辑历史: 2026-09-24 22:03:15 小欧 - test41 修正: GET /models/current 端点不存在→GET /models 取 agnes 首模型 provider/model 再 PUT — 小欧-2026-09-24
+ * 编辑历史: 2026-09-25 04:22:42 小健 - API helper 契约强化: 新增 apiResponse<T> 统一校验（HTTP 非 ok 或
+ *   body.ok===false 即抛错），apiGet/apiPut/apiPost 泛型化 + deleteIfExists（404 容忍）+
+ *   settingValue/expectReadonlyRow 收口抽取 — 小健-2026-09-25
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const BASE = 'http://127.0.0.1:8000/api/v1';
@@ -38,28 +41,80 @@ const tab = async (
   await page.waitForTimeout(600);
 };
 
-const apiGet = async (
+const apiResponse = async <T>(
+  response: import('@playwright/test').APIResponse,
+  label: string
+): Promise<T> => {
+  const data = (await response.json().catch(() => null)) as T | null;
+  if (!response.ok()) {
+    throw new Error(
+      `[E2E] ${label} HTTP ${response.status()}: ${JSON.stringify(data)}`
+    );
+  }
+  const body = data as { ok?: unknown } | null;
+  if (body && typeof body === 'object' && body.ok === false) {
+    throw new Error(`[E2E] ${label} rejected: ${JSON.stringify(data)}`);
+  }
+  return data as T;
+};
+
+const apiGet = async <T = Record<string, unknown>>(
   req: import('@playwright/test').APIRequestContext,
   p: string
-) => (await req.get(`${BASE}${p}`)).json() as Promise<Record<string, unknown>>;
+): Promise<T> => apiResponse<T>(await req.get(`${BASE}${p}`), `GET ${p}`);
 
-const apiPut = async (
+const apiPut = async <T = Record<string, unknown>>(
   req: import('@playwright/test').APIRequestContext,
   p: string,
   b: Record<string, unknown>
-) =>
-  (await req.put(`${BASE}${p}`, { data: b })).json() as Promise<
-    Record<string, unknown>
-  >;
+): Promise<T> =>
+  apiResponse<T>(await req.put(`${BASE}${p}`, { data: b }), `PUT ${p}`);
 
-const apiPost = async (
+const apiPost = async <T = Record<string, unknown>>(
   req: import('@playwright/test').APIRequestContext,
   p: string,
   b: Record<string, unknown>
-) =>
-  (await req.post(`${BASE}${p}`, { data: b })).json() as Promise<
-    Record<string, unknown>
-  >;
+): Promise<T> =>
+  apiResponse<T>(await req.post(`${BASE}${p}`, { data: b }), `POST ${p}`);
+
+const deleteIfExists = async (
+  req: import('@playwright/test').APIRequestContext,
+  p: string
+) => {
+  const response = await req.delete(`${BASE}${p}`);
+  if (response.status() === 404) return;
+  await apiResponse(response, `DELETE ${p}`);
+};
+
+const settingValue = (
+  payload: {
+    groups?: Record<string, { data: Record<string, unknown> }>;
+  },
+  key: string
+): unknown => {
+  for (const group of Object.values(payload.groups ?? {})) {
+    if (Object.prototype.hasOwnProperty.call(group.data, key)) {
+      return group.data[key];
+    }
+  }
+  return undefined;
+};
+
+const expectReadonlyRow = async (
+  page: import('@playwright/test').Page,
+  key: string,
+  expected: string | number
+) => {
+  const row = page.locator(`[data-settings-key="${key}"]`).first();
+  await expect(row).toBeVisible({ timeout: 10_000 });
+  await expect(row.locator('input')).toHaveCount(0);
+  const text = (await row.innerText()).trim();
+  expect(text.length).toBeGreaterThan(0);
+  expect(text).toContain(String(expected));
+  const copyButton = row.locator('button').first();
+  await expect(copyButton).toBeVisible();
+  await expect(copyButton.locator('.anticon-copy')).toHaveCount(1);
+};
 
 /** 通用读→改→保存→落盘→恢复 流程
  *  策略: antd 受控 Input/InputNumber 在 Playwright 下 fill/click/focus
@@ -70,99 +125,95 @@ const editSaveVerify = async (
   opts: {
     tabName: RegExp | string;
     settingKey: string;
-    newValue: string;
+    newValue: string | number;
     yamlSnippet: string;
     saveBtn?: RegExp;
     skipRestore?: boolean;
-    restoreValue?: string;
   }
 ) => {
-  const {
-    tabName,
-    settingKey,
-    newValue,
-    yamlSnippet,
-    skipRestore,
-    restoreValue,
-  } = opts;
+  const { tabName, settingKey, newValue, yamlSnippet, skipRestore } = opts;
 
-  // 1) 读取后端当前值
   const before = (await apiGet(request, '/settings')) as {
     groups: Record<string, { data: Record<string, unknown> }>;
   };
-  // 按 settingKey 在所有 group 的 data 中查找
-  let valBefore: unknown;
-  for (const g of Object.values(before.groups)) {
-    if (settingKey in g.data) {
-      valBefore = g.data[settingKey];
-      break;
-    }
-  }
+  const valBefore = settingValue(before, settingKey);
   console.log(`[E2E] ${settingKey} 后端当前值: ${valBefore}`);
 
-  // 2) 切到目标 Tab，验证 UI 显示当前值
-  await goto(page);
-  await tab(page, tabName);
+  let writeAttempted = false;
+  try {
+    await goto(page);
+    await tab(page, tabName);
 
-  const row = page.locator(`[data-settings-key="${settingKey}"]`).first();
-  if ((await row.count()) === 0) {
-    console.log(`[E2E] ${settingKey} 行不存在，跳过`);
-    return;
-  }
-  const numInput = row.locator('.ant-input-number input').first();
-  const textInput = row.locator('input').first();
-  const useNum = (await numInput.count()) > 0;
-  const hasInput = (await textInput.count()) > 0;
-  const input = useNum ? numInput : textInput;
-  if (hasInput) {
-    await input.scrollIntoViewIfNeeded();
-    const valBeforeUI = await input.inputValue();
-    console.log(`[E2E] ${settingKey} UI当前值: ${valBeforeUI}`);
-  } else {
-    console.log(
-      `[E2E] ${settingKey} 无 input（select/readonly），跳过 UI 读取`
-    );
-  }
-
-  // 3) 通过 API 写入新值（等价于用户在 UI 点击保存）
-  await apiPut(request, '/settings', { patch: { [settingKey]: newValue } });
-
-  // 4) 回显：重新加载页面，验证 UI 显示新值
-  await goto(page);
-  await tab(page, tabName);
-  await page.waitForTimeout(500);
-  const rowAfter = page.locator(`[data-settings-key="${settingKey}"]`).first();
-  const numInputAfter = rowAfter.locator('.ant-input-number input').first();
-  const textInputAfter = rowAfter.locator('input').first();
-  const useNumAfter = (await numInputAfter.count()) > 0;
-  const hasInputAfter = (await textInputAfter.count()) > 0;
-  const inputAfter = useNumAfter ? numInputAfter : textInputAfter;
-  if (hasInputAfter) {
-    await inputAfter.scrollIntoViewIfNeeded();
-    const actualVal = await inputAfter.inputValue();
-    if (actualVal) {
-      console.log(`[E2E] ${settingKey} 回显 ok (actual=${actualVal})`);
+    const row = page.locator(`[data-settings-key="${settingKey}"]`).first();
+    if ((await row.count()) === 0) {
+      console.log(`[E2E] ${settingKey} 行不存在，跳过`);
+      return;
+    }
+    const numInput = row.locator('.ant-input-number input').first();
+    const textInput = row.locator('input').first();
+    const useNum = (await numInput.count()) > 0;
+    const hasInput = (await textInput.count()) > 0;
+    const input = useNum ? numInput : textInput;
+    if (hasInput) {
+      await input.scrollIntoViewIfNeeded();
+      const valBeforeUI = await input.inputValue();
+      console.log(`[E2E] ${settingKey} UI当前值: ${valBeforeUI}`);
     } else {
       console.log(
-        `[E2E] ${settingKey} input 值为空（select/readonly），跳过回显断言`
+        `[E2E] ${settingKey} 无 input（select/readonly），跳过 UI 读取`
       );
     }
-  } else {
-    console.log(`[E2E] ${settingKey} 无 input，跳过回显检查`);
-  }
 
-  // 5) config.yaml 落盘 — 给 yaml 写入留足时间
-  await page.waitForTimeout(1000);
-  await expect
-    .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
-    .toContain(yamlSnippet);
-  console.log(`[E2E] ${settingKey} config.yaml 落盘 ok`);
+    writeAttempted = true;
+    const putResp = await apiPut<{
+      ok?: boolean;
+      errors?: string[];
+    }>(request, '/settings', {
+      patch: { [settingKey]: newValue },
+    });
+    if (putResp?.ok === false) {
+      throw new Error(
+        `[E2E] ${settingKey} PUT 被拒: ${(putResp.errors ?? []).join('; ')}`
+      );
+    }
 
-  // 6) 恢复
-  if (!skipRestore && valBefore !== undefined) {
-    const restore = restoreValue ?? String(valBefore);
-    await apiPut(request, '/settings', { patch: { [settingKey]: restore } });
-    console.log(`[E2E] ${settingKey} 已恢复为 ${restore}`);
+    await goto(page);
+    await tab(page, tabName);
+    await page.waitForTimeout(500);
+    const rowAfter = page
+      .locator(`[data-settings-key="${settingKey}"]`)
+      .first();
+    const numInputAfter = rowAfter.locator('.ant-input-number input').first();
+    const textInputAfter = rowAfter.locator('input').first();
+    const useNumAfter = (await numInputAfter.count()) > 0;
+    const hasInputAfter = (await textInputAfter.count()) > 0;
+    const inputAfter = useNumAfter ? numInputAfter : textInputAfter;
+    if (hasInputAfter) {
+      await inputAfter.scrollIntoViewIfNeeded();
+      const actualVal = await inputAfter.inputValue();
+      if (actualVal) {
+        console.log(`[E2E] ${settingKey} 回显 ok (actual=${actualVal})`);
+      } else {
+        console.log(
+          `[E2E] ${settingKey} input 值为空（select/readonly），跳过回显断言`
+        );
+      }
+    } else {
+      console.log(`[E2E] ${settingKey} 无 input，跳过回显检查`);
+    }
+
+    await page.waitForTimeout(1000);
+    await expect
+      .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
+      .toContain(yamlSnippet);
+    console.log(`[E2E] ${settingKey} config.yaml 落盘 ok`);
+  } finally {
+    if (writeAttempted && !skipRestore && valBefore !== undefined) {
+      await apiPut(request, '/settings', {
+        patch: { [settingKey]: valBefore },
+      });
+      console.log(`[E2E] ${settingKey} 已恢复为 ${valBefore}`);
+    }
   }
 };
 
@@ -257,7 +308,6 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       settingKey: 'workspace.project_root',
       newValue: 'E:\\test_dir_e2e',
       yamlSnippet: 'test_dir_e2e',
-      restoreValue: 'E:\\test_dir',
     });
   });
 
@@ -271,17 +321,24 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   });
 
   test('11 通用 授权目录 编辑→保存→落盘', async ({ page, request }) => {
-    await goto(page);
-    await tab(page, /通\s*用/);
-    const row = page
-      .locator('[data-settings-key="workspace.allowed_dirs"]')
-      .first();
-    if ((await row.count()) > 0) {
+    const originalPayload = await apiGet<{
+      groups: Record<string, { data: Record<string, unknown> }>;
+    }>(request, '/settings');
+    const original = settingValue(originalPayload, 'workspace.allowed_dirs');
+    expect(original).toBeDefined();
+    let writeAttempted = false;
+    try {
+      await goto(page);
+      await tab(page, /通\s*用/);
+      const row = page
+        .locator('[data-settings-key="workspace.allowed_dirs"]')
+        .first();
+      await expect(row).toBeVisible({ timeout: 10_000 });
       const input = row.locator('textarea, input').first();
       await input.scrollIntoViewIfNeeded();
       const before = await input.inputValue();
       console.log(`[E2E] 11 allowed_dirs UI=${before}`);
-      // antd 受控 Input fill 挂起 → API 写 + reload 验证
+      writeAttempted = true;
       await apiPut(request, '/settings', {
         patch: { 'workspace.allowed_dirs': ['E:\\test_dir', 'E:\\tmp'] },
       });
@@ -296,10 +353,18 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       console.log(`[E2E] 11 allowed_dirs 写后UI=${afterVal}`);
       expect(afterVal).toContain('test_dir');
       console.log('[E2E] 11 授权目录 编辑→保存 ok');
-      // 恢复
-      await apiPut(request, '/settings', {
-        patch: { 'workspace.allowed_dirs': [] },
-      });
+    } finally {
+      if (writeAttempted && original !== undefined) {
+        await apiPut(request, '/settings', {
+          patch: { 'workspace.allowed_dirs': original },
+        });
+        const restored = await apiGet<{
+          groups: Record<string, { data: Record<string, unknown> }>;
+        }>(request, '/settings');
+        expect(settingValue(restored, 'workspace.allowed_dirs')).toEqual(
+          original
+        );
+      }
     }
   });
 
@@ -522,6 +587,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('25 添加模型 填写→POST→落盘→回显', async ({ page, request }) => {
     const newModel = `e2e-comp-${stamp()}`;
     let postBody: Record<string, unknown> | null = null;
+    let createAttempted = false;
     page.on('request', (req) => {
       if (
         req.method() === 'POST' &&
@@ -531,43 +597,72 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
         try {
           postBody = req.postDataJSON();
         } catch {
-          /* noop */
+          postBody = null;
         }
       }
     });
-    await goto(page);
-    await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加模型/ }).click();
-    const modal = page.getByRole('dialog', { name: '添加模型' });
-    await expect(modal).toBeVisible({ timeout: 10_000 });
-    // 选sensenova
-    const provSel = modal.locator('.ant-select').first();
-    const curProv = await provSel
-      .locator('.ant-select-selection-item')
-      .innerText()
-      .catch(() => '');
-    if (!curProv.includes('sensenova')) {
-      await provSel.click();
-      await page
-        .locator('.ant-select-dropdown:visible .ant-select-item')
-        .filter({ hasText: 'sensenova' })
-        .first()
-        .click();
-      await page.waitForTimeout(400);
+    try {
+      await goto(page);
+      await tab(page, /模\s*型/);
+      await page.getByRole('button', { name: /添加模型/ }).click();
+      const modal = page.getByRole('dialog', { name: '添加模型' });
+      await expect(modal).toBeVisible({ timeout: 10_000 });
+      const provSel = modal.locator('.ant-select').first();
+      const curProv = await provSel
+        .locator('.ant-select-selection-item')
+        .innerText()
+        .catch(() => '');
+      if (!curProv.includes('sensenova')) {
+        await provSel.click();
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item')
+          .filter({ hasText: 'sensenova' })
+          .first()
+          .click();
+        await page.waitForTimeout(400);
+      }
+      await modal.getByRole('textbox', { name: /模型名/ }).fill(newModel);
+      await modal
+        .getByRole('textbox', { name: /显示名/ })
+        .fill(`E2E综合-${newModel}`);
+      createAttempted = true;
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/api/v1/models') &&
+          !response.url().includes('/current')
+      );
+      await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
+      const createResponse = await createResponsePromise;
+      expect(createResponse.ok()).toBe(true);
+      const createBody = (await createResponse.json()) as { ok?: boolean };
+      expect(createBody.ok).not.toBe(false);
+      await expect
+        .poll(() => JSON.stringify(postBody), { timeout: 30_000 })
+        .toContain(newModel);
+      await expect(modal).toBeHidden({ timeout: 30_000 });
+      await expect
+        .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
+        .toContain(newModel);
+      console.log(`[E2E] 25 添加模型 ${newModel} 全链 ok`);
+    } finally {
+      if (createAttempted) {
+        await deleteIfExists(
+          request,
+          `/models/${encodeURIComponent('sensenova')}/${encodeURIComponent(newModel)}`
+        );
+        const modelsAfter = await apiGet<{
+          providers: Array<{
+            name: string;
+            models: Array<{ name: string }>;
+          }>;
+        }>(request, '/models');
+        const stillPresent = modelsAfter.providers
+          .find((provider) => provider.name === 'sensenova')
+          ?.models.some((model) => model.name === newModel);
+        expect(stillPresent).toBe(false);
+      }
     }
-    await modal.getByRole('textbox', { name: /模型名/ }).fill(newModel);
-    await modal
-      .getByRole('textbox', { name: /显示名/ })
-      .fill(`E2E综合-${newModel}`);
-    await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
-    await expect
-      .poll(() => JSON.stringify(postBody), { timeout: 30_000 })
-      .toContain(newModel);
-    await expect(modal).toBeHidden({ timeout: 30_000 });
-    await expect
-      .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
-      .toContain(newModel);
-    console.log(`[E2E] 25 添加模型 ${newModel} 全链 ok`);
   });
 
   test('26 添加模型 弹窗取消不保存', async ({ page }) => {
@@ -847,65 +942,109 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   });
 
   test('41 参数区 temperature编辑→保存→回显', async ({ page, request }) => {
-    await goto(page);
-    await tab(page, /模\s*型/);
-    const provSel = page
-      .locator('[data-section="selector"] .ant-select')
-      .first();
-    await provSel.scrollIntoViewIfNeeded();
-    await provSel.click();
-    await page
-      .locator('.ant-select-dropdown:visible .ant-select-item')
-      .filter({ hasText: 'agnes' })
-      .first()
-      .click();
-    await page.waitForTimeout(600);
-    const row = page.locator('[data-settings-key="temperature"]').first();
-    if ((await row.count()) > 0) {
-      const input = row.locator('input');
-      const before = await input.inputValue();
+    const list = await apiGet<{
+      providers: Array<{
+        name: string;
+        label: string;
+        models: Array<{
+          name: string;
+          label: string;
+          default_params?: Record<string, unknown>;
+          range?: Record<string, { min: number; max: number }>;
+        }>;
+      }>;
+    }>(request, '/models');
+    const candidate = list.providers
+      .filter(
+        (provider) =>
+          !provider.name.startsWith('e2e-') &&
+          !provider.name.startsWith('__probe')
+      )
+      .flatMap((provider) =>
+        provider.models.map((model) => ({
+          provider: provider.name,
+          providerLabel: provider.label || provider.name,
+          model: model.name,
+          modelLabel: model.label || model.name,
+          original: model.default_params?.temperature,
+          range: model.range?.temperature,
+        }))
+      )
+      .find(
+        (item) => typeof item.original === 'number' && item.range !== undefined
+      );
+    expect(candidate).toBeTruthy();
+    const selected = candidate!;
+    const originalTemperature = selected.original as number;
+    const newTemperature = Math.min(
+      selected.range!.max,
+      Math.max(selected.range!.min, originalTemperature < 1 ? 0.8 : 0.7)
+    );
+    expect(newTemperature).not.toBe(originalTemperature);
+    const ref = { provider: selected.provider, model: selected.model };
+    let writeAttempted = false;
+    const choose = async (
+      select: import('@playwright/test').Locator,
+      text: string
+    ) => {
+      await select.scrollIntoViewIfNeeded();
+      await select.click();
+      const option = page
+        .locator('.ant-select-dropdown:visible .ant-select-item')
+        .filter({ hasText: text })
+        .first();
+      await expect(option).toBeVisible({ timeout: 10_000 });
+      await option.click();
+      await page.waitForTimeout(600);
+    };
+    try {
+      await goto(page);
+      await tab(page, /模\s*型/);
+      const provSel = page
+        .locator('[data-section="selector"] .ant-select')
+        .first();
+      await choose(provSel, selected.providerLabel);
+      const modelSel = page
+        .locator('[data-section="selector"] .ant-select')
+        .nth(1);
+      await choose(modelSel, selected.modelLabel);
+      const row = page.locator('[data-settings-key="temperature"]').first();
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      const before = await row.locator('input').inputValue();
       console.log(`[E2E] 41 temperature UI=${before}`);
-      // 模型参数走 models API（settings 写 tuning.llm.temperature=未知key恒拒）— 小欧-2026-09-24
-      // /models/current 无此路由；GET /models 取 agnes 首模型（与 UI 切 agnes 后默认 selectedModel 一致）— 小欧-2026-09-24
-      const list = (await apiGet(request, '/models')) as {
-        providers?: Array<{ name: string; models?: Array<{ name: string }> }>;
-      };
-      const agnes = (list.providers ?? []).find((p) => p.name === 'agnes');
-      const firstModel = agnes?.models?.[0];
-      const ref =
-        agnes && firstModel
-          ? { provider: agnes.name, model: firstModel.name }
-          : null;
-      if (ref?.provider && ref?.model) {
-        const put = await request.put(
-          `${BASE}/models/${ref.provider}/${ref.model}`,
-          {
-            data: { model_params: { temperature: 0.95 } },
-          }
-        );
-        expect(put.status()).toBe(200);
-        await goto(page);
-        await tab(page, /模\s*型/);
-        await provSel.scrollIntoViewIfNeeded();
-        await provSel.click();
-        await page
-          .locator('.ant-select-dropdown:visible .ant-select-item')
-          .filter({ hasText: 'agnes' })
-          .first()
-          .click();
-        await page.waitForTimeout(600);
-        const rowAfter = page
-          .locator('[data-settings-key="temperature"]')
-          .first();
-        await expect(rowAfter.locator('input')).toHaveValue('0.95', {
+      writeAttempted = true;
+      await apiPut(
+        request,
+        `/models/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.model)}`,
+        { default_params: { temperature: newTemperature } }
+      );
+      await goto(page);
+      await tab(page, /模\s*型/);
+      const provSelAfter = page
+        .locator('[data-section="selector"] .ant-select')
+        .first();
+      await choose(provSelAfter, selected.providerLabel);
+      const modelSelAfter = page
+        .locator('[data-section="selector"] .ant-select')
+        .nth(1);
+      await choose(modelSelAfter, selected.modelLabel);
+      const rowAfter = page
+        .locator('[data-settings-key="temperature"]')
+        .first();
+      await expect(rowAfter.locator('input')).toHaveValue(
+        String(newTemperature),
+        {
           timeout: 10_000,
-        });
-        console.log('[E2E] 41 temperature 编辑→保存→回显 ok');
-        await request.put(`${BASE}/models/${ref.provider}/${ref.model}`, {
-          data: { model_params: { temperature: Number(before) } },
-        });
-      } else {
-        console.log('[E2E] 41 无法定位当前模型，跳过编辑');
+        }
+      );
+      console.log('[E2E] 41 temperature 编辑→保存→回显 ok');
+    } finally {
+      if (writeAttempted) {
+        await apiPut(
+          request,
+          `/models/${encodeURIComponent(ref.provider)}/${encodeURIComponent(ref.model)}`,
+          { default_params: { temperature: originalTemperature } }
+        );
       }
     }
   });
@@ -963,123 +1102,143 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   // ── 模型Tab 删除 (45-50) ──────────────────────────────────
   test('45 删除模型 添加→选中→删除→消失', async ({ page, request }) => {
     const victim = `e2e-del-${stamp()}`;
-    await apiPost(request, '/models', {
-      provider: 'sensenova',
-      model: victim,
-      label: `E2E删-${victim}`,
-    });
-    await goto(page);
-    await tab(page, /模\s*型/);
-    const provSel = page
-      .locator('[data-section="selector"] .ant-select')
-      .first();
-    await provSel.scrollIntoViewIfNeeded();
-    const curProv = await provSel
-      .locator('.ant-select-selection-item')
-      .innerText()
-      .catch(() => '');
-    if (!curProv.includes('sensenova')) {
-      await provSel.click();
-      await page
-        .locator('.ant-select-dropdown:visible .ant-select-item')
-        .filter({ hasText: 'sensenova' })
-        .first()
-        .click();
+    let createAttempted = false;
+    try {
+      createAttempted = true;
+      await apiPost(request, '/models', {
+        provider: 'sensenova',
+        model: victim,
+        label: `E2E删-${victim}`,
+      });
+      await goto(page);
+      await tab(page, /模\s*型/);
+      const provSel = page
+        .locator('[data-section="selector"] .ant-select')
+        .first();
+      await provSel.scrollIntoViewIfNeeded();
+      const curProv = await provSel
+        .locator('.ant-select-selection-item')
+        .innerText()
+        .catch(() => '');
+      if (!curProv.includes('sensenova')) {
+        await provSel.click();
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item')
+          .filter({ hasText: 'sensenova' })
+          .first()
+          .click();
+        await page.waitForTimeout(600);
+      }
+      const modelSel = page
+        .locator('[data-section="selector"] .ant-select')
+        .nth(1);
+      await modelSel.click();
+      const dd = page.locator('.ant-select-dropdown:visible');
+      const item = dd
+        .locator('.ant-select-item')
+        .filter({ hasText: victim })
+        .first();
+      for (let i = 0; i < 30; i++) {
+        if ((await item.count()) > 0) break;
+        await dd.hover();
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(200);
+      }
+      await item.click({ timeout: 10_000 });
       await page.waitForTimeout(600);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(500);
+      await page
+        .getByRole('button', { name: /删除此模型/ })
+        .click({ force: true, timeout: 10_000 });
+      await expect(
+        page.locator('.ant-modal-wrap:not([style*="display: none"])')
+      ).toBeVisible({ timeout: 10_000 });
+      await page
+        .locator('.ant-modal .ant-btn-primary, .ant-modal .ant-btn-dangerous')
+        .last()
+        .click();
+      await page.waitForTimeout(1000);
+      console.log(`[E2E] 45 模型 ${victim} 已删除`);
+    } finally {
+      if (createAttempted) {
+        await deleteIfExists(
+          request,
+          `/models/${encodeURIComponent('sensenova')}/${encodeURIComponent(victim)}`
+        );
+      }
     }
-    const modelSel = page
-      .locator('[data-section="selector"] .ant-select')
-      .nth(1);
-    await modelSel.click();
-    const dd = page.locator('.ant-select-dropdown:visible');
-    const item = dd
-      .locator('.ant-select-item')
-      .filter({ hasText: victim })
-      .first();
-    for (let i = 0; i < 30; i++) {
-      if ((await item.count()) > 0) break;
-      await dd.hover();
-      await page.mouse.wheel(0, 600);
-      await page.waitForTimeout(200);
-    }
-    await item.click({ timeout: 10_000 });
-    await page.waitForTimeout(600);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(500);
-    await page
-      .getByRole('button', { name: /删除此模型/ })
-      .click({ force: true, timeout: 10_000 });
-    await expect(
-      page.locator('.ant-modal-wrap:not([style*="display: none"])')
-    ).toBeVisible({ timeout: 10_000 });
-    await page
-      .locator('.ant-modal .ant-btn-primary, .ant-modal .ant-btn-dangerous')
-      .last()
-      .click();
-    await page.waitForTimeout(1000);
-    console.log(`[E2E] 45 模型 ${victim} 已删除`);
   });
 
   test('46 删除模型 确认弹窗可取消', async ({ page, request }) => {
     const victim = `e2e-cancel-${stamp()}`;
-    await apiPost(request, '/models', {
-      provider: 'sensenova',
-      model: victim,
-      label: `E2E取消删-${victim}`,
-    });
-    await goto(page);
-    await tab(page, /模\s*型/);
-    const provSel = page
-      .locator('[data-section="selector"] .ant-select')
-      .first();
-    await provSel.scrollIntoViewIfNeeded();
-    const curProv = await provSel
-      .locator('.ant-select-selection-item')
-      .innerText()
-      .catch(() => '');
-    if (!curProv.includes('sensenova')) {
-      await provSel.click();
+    let createAttempted = false;
+    try {
+      createAttempted = true;
+      await apiPost(request, '/models', {
+        provider: 'sensenova',
+        model: victim,
+        label: `E2E取消删-${victim}`,
+      });
+      await goto(page);
+      await tab(page, /模\s*型/);
+      const provSel = page
+        .locator('[data-section="selector"] .ant-select')
+        .first();
+      await provSel.scrollIntoViewIfNeeded();
+      const curProv = await provSel
+        .locator('.ant-select-selection-item')
+        .innerText()
+        .catch(() => '');
+      if (!curProv.includes('sensenova')) {
+        await provSel.click();
+        await page
+          .locator('.ant-select-dropdown:visible .ant-select-item')
+          .filter({ hasText: 'sensenova' })
+          .first()
+          .click();
+        await page.waitForTimeout(600);
+      }
+      const modelSel = page
+        .locator('[data-section="selector"] .ant-select')
+        .nth(1);
+      await modelSel.click();
+      const dd = page.locator('.ant-select-dropdown:visible');
+      const item = dd
+        .locator('.ant-select-item')
+        .filter({ hasText: victim })
+        .first();
+      for (let i = 0; i < 30; i++) {
+        if ((await item.count()) > 0) break;
+        await dd.hover();
+        await page.mouse.wheel(0, 600);
+        await page.waitForTimeout(200);
+      }
+      await item.click({ timeout: 10_000 });
+      await page.waitForTimeout(600);
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      await page.waitForTimeout(500);
       await page
-        .locator('.ant-select-dropdown:visible .ant-select-item')
-        .filter({ hasText: 'sensenova' })
+        .getByRole('button', { name: /删除此模型/ })
+        .click({ force: true, timeout: 10_000 });
+      const confirm = page.locator(
+        '.ant-modal-wrap:not([style*="display: none"])'
+      );
+      await expect(confirm).toBeVisible({ timeout: 10_000 });
+      await confirm
+        .locator('.ant-btn:not(.ant-btn-primary):not(.ant-btn-dangerous)')
         .first()
         .click();
-      await page.waitForTimeout(600);
+      await page.waitForTimeout(500);
+      console.log(`[E2E] 46 取消删除后模型仍在`);
+    } finally {
+      if (createAttempted) {
+        await deleteIfExists(
+          request,
+          `/models/${encodeURIComponent('sensenova')}/${encodeURIComponent(victim)}`
+        );
+      }
     }
-    const modelSel = page
-      .locator('[data-section="selector"] .ant-select')
-      .nth(1);
-    await modelSel.click();
-    const dd = page.locator('.ant-select-dropdown:visible');
-    const item = dd
-      .locator('.ant-select-item')
-      .filter({ hasText: victim })
-      .first();
-    for (let i = 0; i < 30; i++) {
-      if ((await item.count()) > 0) break;
-      await dd.hover();
-      await page.mouse.wheel(0, 600);
-      await page.waitForTimeout(200);
-    }
-    await item.click({ timeout: 10_000 });
-    await page.waitForTimeout(600);
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(500);
-    await page
-      .getByRole('button', { name: /删除此模型/ })
-      .click({ force: true, timeout: 10_000 });
-    const confirm = page.locator(
-      '.ant-modal-wrap:not([style*="display: none"])'
-    );
-    await expect(confirm).toBeVisible({ timeout: 10_000 });
-    // 点取消
-    await confirm
-      .locator('.ant-btn:not(.ant-btn-primary):not(.ant-btn-dangerous)')
-      .first()
-      .click();
-    await page.waitForTimeout(500);
-    // 模型仍在
-    console.log(`[E2E] 46 取消删除后模型仍在`);
   });
 
   test('47 删除Provider 确认弹窗可取消', async ({ page }) => {
@@ -1124,26 +1283,51 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
 
   test('50 添加Provider 填写→保存', async ({ page, request }) => {
     const provName = `e2e-prov-${stamp()}`;
-    await goto(page);
-    await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加 Provider/ }).click();
-    const modal = page.getByRole('dialog', { name: '添加 Provider' });
-    await expect(modal).toBeVisible({ timeout: 10_000 });
-    await page.waitForTimeout(800);
-    await modal.getByRole('textbox', { name: /名称/ }).fill(provName);
-    await modal
-      .getByRole('textbox', { name: /显示名/ })
-      .fill(`E2E Provider ${provName}`);
-    await modal
-      .getByRole('textbox', { name: /API 地址/ })
-      .fill('https://api.e2e-provider.example.com/v1');
-    await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
-    await expect
-      .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
-      .toContain(provName);
-    console.log(`[E2E] 50 添加Provider ${provName} ok`);
-    // 清理：删除刚添加的 Provider
-    await apiPut(request, '/settings', { patch: {} }); // no-op, yaml cleanup happens via config reload
+    let createAttempted = false;
+    try {
+      await goto(page);
+      await tab(page, /模\s*型/);
+      await page.getByRole('button', { name: /添加 Provider/ }).click();
+      const modal = page.getByRole('dialog', { name: '添加 Provider' });
+      await expect(modal).toBeVisible({ timeout: 10_000 });
+      await page.waitForTimeout(800);
+      await modal.getByRole('textbox', { name: /名称/ }).fill(provName);
+      await modal
+        .getByRole('textbox', { name: /显示名/ })
+        .fill(`E2E Provider ${provName}`);
+      await modal
+        .getByRole('textbox', { name: /API 地址/ })
+        .fill('https://api.e2e-provider.example.com/v1');
+      createAttempted = true;
+      const createResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'POST' &&
+          response.url().includes('/api/v1/providers')
+      );
+      await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
+      const createResponse = await createResponsePromise;
+      expect(createResponse.ok()).toBe(true);
+      const createBody = (await createResponse.json()) as { ok?: boolean };
+      expect(createBody.ok).not.toBe(false);
+      await expect
+        .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 15_000 })
+        .toContain(provName);
+      console.log(`[E2E] 50 添加Provider ${provName} ok`);
+    } finally {
+      if (createAttempted) {
+        await deleteIfExists(
+          request,
+          `/providers/${encodeURIComponent(provName)}`
+        );
+        const providersAfter = await apiGet<Array<{ name: string }>>(
+          request,
+          '/providers'
+        );
+        expect(
+          providersAfter.some((provider) => provider.name === provName)
+        ).toBe(false);
+      }
+    }
   });
 
   // ── 安全Tab (51-56) ────────────────────────────────────────
@@ -1227,7 +1411,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     await editSaveVerify(page, request, {
       tabName: /安\s*全/,
       settingKey: 'security.auto_confirm_delay',
-      newValue: '15',
+      newValue: 15,
       yamlSnippet: 'auto_confirm_delay: 15',
     });
   });
@@ -1301,7 +1485,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     await editSaveVerify(page, request, {
       tabName: /沙\s*箱/,
       settingKey: 'sandbox.max_concurrent_sandboxes',
-      newValue: '5',
+      newValue: 5,
       yamlSnippet: 'max_concurrent_sandboxes: 5',
     });
   });
@@ -1343,7 +1527,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     await editSaveVerify(page, request, {
       tabName: /通\s*用/,
       settingKey: 'llm.sampling.temperature',
-      newValue: '0.85',
+      newValue: 0.85,
       yamlSnippet: 'temperature: 0.85',
     });
   });
@@ -1360,7 +1544,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     await editSaveVerify(page, request, {
       tabName: /通\s*用/,
       settingKey: 'llm.sampling.max_tokens',
-      newValue: '8192',
+      newValue: 8192,
       yamlSnippet: 'max_tokens: 8192',
     });
   });
@@ -1410,7 +1594,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     await editSaveVerify(page, request, {
       tabName: /调\s*优/,
       settingKey: 'tuning.llm_net.max_connections',
-      newValue: '15',
+      newValue: 15,
       yamlSnippet: 'max_connections: 15',
     });
   });
@@ -1516,7 +1700,6 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       settingKey: 'logging.level',
       newValue: 'DEBUG',
       yamlSnippet: 'level: DEBUG',
-      restoreValue: 'INFO',
     });
   });
 
@@ -1551,34 +1734,40 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     }
   });
 
-  test('90 系统 version只读', async ({ page }) => {
+  test('90 系统 version只读', async ({ page, request }) => {
+    const settings = await apiGet<{
+      groups: Record<string, { data: Record<string, unknown> }>;
+    }>(request, '/settings');
+    const raw = settingValue(settings, 'version');
+    expect(raw).toBeDefined();
     await goto(page);
     await tab(page, /系\s*统/);
-    const row = page.locator('[data-settings-key="version"]').first();
-    if ((await row.count()) > 0) {
-      const val = await row.locator('input').first().inputValue();
-      console.log(`[E2E] 90 version=${val}`);
-    }
+    await expectReadonlyRow(page, 'version', String(raw));
+    console.log(`[E2E] 90 version=${String(raw)}`);
   });
 
-  test('91 系统 paths.logs只读', async ({ page }) => {
+  test('91 系统 paths.logs只读', async ({ page, request }) => {
+    const settings = await apiGet<{
+      groups: Record<string, { data: Record<string, unknown> }>;
+    }>(request, '/settings');
+    const raw = settingValue(settings, 'paths.logs');
+    expect(raw).toBeDefined();
     await goto(page);
     await tab(page, /系\s*统/);
-    const row = page.locator('[data-settings-key="paths.logs"]').first();
-    if ((await row.count()) > 0) {
-      const val = await row.locator('input').first().inputValue();
-      console.log(`[E2E] 91 paths.logs=${val}`);
-    }
+    await expectReadonlyRow(page, 'paths.logs', String(raw));
+    console.log(`[E2E] 91 paths.logs=${String(raw)}`);
   });
 
-  test('92 系统 paths.database只读', async ({ page }) => {
+  test('92 系统 paths.database只读', async ({ page, request }) => {
+    const settings = await apiGet<{
+      groups: Record<string, { data: Record<string, unknown> }>;
+    }>(request, '/settings');
+    const raw = settingValue(settings, 'paths.database');
+    expect(raw).toBeDefined();
     await goto(page);
     await tab(page, /系\s*统/);
-    const row = page.locator('[data-settings-key="paths.database"]').first();
-    if ((await row.count()) > 0) {
-      const val = await row.locator('input').first().inputValue();
-      console.log(`[E2E] 92 paths.database=${val}`);
-    }
+    await expectReadonlyRow(page, 'paths.database', String(raw));
+    console.log(`[E2E] 92 paths.database=${String(raw)}`);
   });
 
   // ── 外观Tab (93-96) ────────────────────────────────────────
@@ -1587,44 +1776,75 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
     const val = before.groups.appearance.data['app.language'];
+    expect(typeof val).toBe('string');
+    expect(String(val).length).toBeGreaterThan(0);
     console.log(`[E2E] 93 language=${val}`);
   });
 
   test('94 外观 language编辑→保存→落盘', async ({ page, request }) => {
-    const before = (await apiGet(request, '/settings')) as {
+    const before = await apiGet<{
       groups: Record<string, { data: Record<string, unknown> }>;
-    };
-    const valBefore = before.groups.appearance.data['app.language'] as string;
-    await goto(page);
-    await tab(page, /外\s*观/);
-    const row = page.locator('[data-settings-key="app.language"]').first();
-    if ((await row.count()) > 0) {
-      const select = row.locator('.ant-select');
-      if ((await select.count()) > 0) {
-        await select.first().click();
-        const items = page.locator(
-          '.ant-select-dropdown:visible .ant-select-item'
-        );
-        for (let i = 0; i < (await items.count()); i++) {
-          const txt = await items.nth(i).innerText();
-          if (txt !== valBefore) {
-            await items.nth(i).click();
-            break;
-          }
-        }
-        await page.waitForTimeout(400);
-        await page.getByRole('button', { name: /保存全部/ }).click();
-        await expect
-          .poll(
-            async () =>
-              (await page.locator('.ant-message-success').count()) > 0,
-            { timeout: 20_000 }
-          )
-          .toBeTruthy();
-        console.log('[E2E] 94 language 编辑→保存 ok');
+    }>(request, '/settings');
+    const original = settingValue(before, 'app.language');
+    const schema = await apiGet<{
+      groups: Record<
+        string,
+        { items: Array<{ key: string; options?: unknown[] }> }
+      >;
+    }>(request, '/settings/schema');
+    const languageOptions = Object.values(schema.groups)
+      .flatMap((group) => group.items)
+      .find((item) => item.key === 'app.language')?.options;
+    const alternative = languageOptions?.find(
+      (option) => String(option) !== String(original)
+    );
+    expect(original).toBeDefined();
+    expect(alternative).toBeDefined();
+    let uiChanged = false;
+    try {
+      await goto(page);
+      await tab(page, /外\s*观/);
+      const row = page.locator('[data-settings-key="app.language"]').first();
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      const select = row.locator('.ant-select').first();
+      await expect(select).toBeVisible();
+      await select.click();
+      const target = page
+        .locator('.ant-select-dropdown:visible .ant-select-item')
+        .filter({ hasText: String(alternative) })
+        .first();
+      await expect(target).toBeVisible({ timeout: 5_000 });
+      uiChanged = true;
+      await target.click();
+      await page.waitForTimeout(400);
+      const saveResponsePromise = page.waitForResponse(
+        (response) =>
+          response.request().method() === 'PUT' &&
+          response.url().includes('/api/v1/settings')
+      );
+      await page.getByRole('button', { name: /保存全部/ }).click();
+      const saveResponse = await saveResponsePromise;
+      expect(saveResponse.ok()).toBe(true);
+      const saveBody = (await saveResponse.json()) as { ok?: boolean };
+      expect(saveBody.ok).not.toBe(false);
+      const after = await apiGet<{
+        groups: Record<string, { data: Record<string, unknown> }>;
+      }>(request, '/settings');
+      expect(settingValue(after, 'app.language')).not.toEqual(original);
+      const restartModal = page.getByRole('dialog', { name: '含重启生效项' });
+      if (await restartModal.isVisible().catch(() => false)) {
+        await restartModal.getByRole('button', { name: '知道了' }).click();
+      }
+      console.log('[E2E] 94 language 编辑→保存 ok');
+    } finally {
+      if (uiChanged && original !== undefined) {
         await apiPut(request, '/settings', {
-          patch: { 'app.language': valBefore },
+          patch: { 'app.language': original },
         });
+        const restored = await apiGet<{
+          groups: Record<string, { data: Record<string, unknown> }>;
+        }>(request, '/settings');
+        expect(settingValue(restored, 'app.language')).toEqual(original);
       }
     }
   });
@@ -1634,6 +1854,8 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
     const val = before.groups.appearance.data['app.theme'];
+    expect(typeof val).toBe('string');
+    expect(String(val).length).toBeGreaterThan(0);
     console.log(`[E2E] 95 theme=${val}`);
   });
 
@@ -1642,118 +1864,113 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
     const val = before.groups.appearance.data['appearance.fontSize'];
+    expect(typeof val).toBe('number');
+    expect(Number.isFinite(val)).toBe(true);
     console.log(`[E2E] 96 fontSize=${val}`);
   });
 
   // ── 搜索 (97-98) ──────────────────────────────────────────
   test('97 搜索 temperature跳到通用Tab', async ({ page }) => {
     await goto(page);
+    await tab(page, /调\s*优/);
     const searchInput = page.getByPlaceholder(/搜索/);
-    if ((await searchInput.count()) > 0) {
-      await searchInput.fill('temperature');
-      // Input.Search 无下拉，回车触发 onSearch（原点下拉恒不出现）— 小欧-2026-09-24
-      await searchInput.press('Enter');
-      await page.waitForTimeout(800);
-      // llm.sampling.temperature 在 general 组，schema 序 general 最先命中 — 小欧-2026-09-24
-      const generalTab = page.getByRole('tab', { name: /通\s*用/ });
-      await expect(generalTab).toHaveAttribute('aria-selected', 'true', {
-        timeout: 10_000,
-      });
-      console.log('[E2E] 97 搜索跳转到通用Tab ok');
-    }
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill('temperature');
+    await searchInput.press('Enter');
+    const generalTab = page.getByRole('tab', { name: /通\s*用/ });
+    await expect(generalTab).toHaveAttribute('aria-selected', 'true', {
+      timeout: 10_000,
+    });
+    await expect(
+      page.locator('[data-settings-key="llm.sampling.temperature"]')
+    ).toBeVisible({ timeout: 10_000 });
+    console.log('[E2E] 97 搜索跳转到通用Tab ok');
   });
 
   test('98 搜索 project_root跳到通用Tab', async ({ page }) => {
     await goto(page);
+    await tab(page, /调\s*优/);
     const searchInput = page.getByPlaceholder(/搜索/);
-    if ((await searchInput.count()) > 0) {
-      await searchInput.fill('project_root');
-      await page.waitForTimeout(1000);
-      const result = page
-        .locator(
-          '.ant-select-dropdown:visible .ant-select-item, [class*="search"] [class*="result"]'
-        )
-        .first();
-      if ((await result.count()) > 0) {
-        await result.click();
-        await page.waitForTimeout(800);
-        const generalTab = page.getByRole('tab', { name: /通\s*用/ });
-        await expect(generalTab).toHaveAttribute('aria-selected', 'true', {
-          timeout: 10_000,
-        });
-        console.log('[E2E] 98 搜索跳转到通用Tab ok');
-      }
-    }
+    await expect(searchInput).toBeVisible();
+    await searchInput.fill('project_root');
+    await searchInput.press('Enter');
+    const generalTab = page.getByRole('tab', { name: /通\s*用/ });
+    await expect(generalTab).toHaveAttribute('aria-selected', 'true', {
+      timeout: 10_000,
+    });
+    await expect(
+      page.locator('[data-settings-key="workspace.project_root"]')
+    ).toBeVisible({ timeout: 10_000 });
+    console.log('[E2E] 98 搜索跳转到通用Tab ok');
   });
 
   // ── Tab切换脏确认 (99-100) ─────────────────────────────────
   test('99 Tab切换 脏态→切Tab弹确认→放弃切换', async ({ page, request }) => {
+    const before = await apiGet<{
+      groups: Record<string, { data: Record<string, unknown> }>;
+    }>(request, '/settings');
+    const original = settingValue(before, 'tuning.llm.stream_max_retries');
+    expect(typeof original).toBe('number');
+    const newValue = Number(original) === 0 ? 1 : 0;
     await goto(page);
     await tab(page, /调\s*优/);
-    // 脏态制造键：tuning.llm.stream_max_retries（活键；原 tuning.llm.temperature 已迁 general 死键）— 小欧-2026-09-24
-    const dirtyKey = 'tuning.llm.stream_max_retries';
-    const row = page.locator(`[data-settings-key="${dirtyKey}"]`).first();
-    if ((await row.count()) > 0) {
-      const input = row.locator('input');
-      const before = await input.inputValue();
-      await apiPut(request, '/settings', { patch: { [dirtyKey]: 5 } });
-      await goto(page);
-      await tab(page, /调\s*优/);
-      await page.waitForTimeout(500);
-      await tab(page, /通\s*用/);
-      const jumpModal = page.locator('.ant-modal-confirm');
-      const hasModal = (await jumpModal.count()) > 0;
-      if (hasModal) {
-        console.log('[E2E] 99 Tab切换脏确认弹窗已弹出');
-        await jumpModal
-          .locator('.ant-btn:not(.ant-btn-primary)')
-          .first()
-          .click();
-        await page.waitForTimeout(400);
-        const tuningTab = page.getByRole('tab', { name: /调\s*优/ });
-        await expect(tuningTab).toHaveAttribute('aria-selected', 'true');
-        console.log('[E2E] 99 放弃切换后仍在调优Tab ok');
-      } else {
-        console.log('[E2E] 99 无脏态（antd受控无法前端造脏），验证tab切换正常');
-        const generalTab = page.getByRole('tab', { name: /通\s*用/ });
-        await expect(generalTab).toHaveAttribute('aria-selected', 'true');
-        console.log('[E2E] 99 tab切换正常 ok');
-      }
-      await apiPut(request, '/settings', {
-        patch: { [dirtyKey]: Number(before) },
-      });
-    }
+    const row = page
+      .locator('[data-settings-key="tuning.llm.stream_max_retries"]')
+      .first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    const input = row.locator('.ant-input-number input').first();
+    await input.fill(String(newValue));
+    await expect(input).toHaveValue(String(newValue), { timeout: 10_000 });
+    await expect(page.getByRole('button', { name: /保存本组/ })).toBeEnabled();
+    await page.getByRole('tab', { name: /通\s*用/ }).click();
+    const jumpModal = page.getByRole('dialog', { name: '有未保存的修改' });
+    await expect(jumpModal).toBeVisible({ timeout: 10_000 });
+    await jumpModal.getByRole('button', { name: '放弃切换' }).click();
+    await expect(page.getByRole('tab', { name: /调\s*优/ })).toHaveAttribute(
+      'aria-selected',
+      'true'
+    );
+    console.log('[E2E] 99 UI脏态触发确认，放弃切换后仍在调优Tab ok');
   });
 
-  test('100 保存全部 多组脏→保存全部→落盘', async ({ page, request }) => {
-    // API 写两个不同tab的值制造变更
-    await apiPut(request, '/settings', {
-      patch: { 'sandbox.max_concurrent_sandboxes': 7 },
-    });
-    // reload 页面，验证 UI 显示新值
-    await goto(page);
-    await tab(page, /沙\s*箱/);
-    const sbRow = page
-      .locator('[data-settings-key="sandbox.max_concurrent_sandboxes"]')
-      .first();
-    if ((await sbRow.count()) > 0) {
-      await expect(sbRow.locator('input')).toHaveValue('7', {
+  test('100 沙箱 API写入→回显→落盘→恢复原值', async ({ page, request }) => {
+    const before = await apiGet<{
+      groups: Record<string, { data: Record<string, unknown> }>;
+    }>(request, '/settings');
+    const original = settingValue(before, 'sandbox.max_concurrent_sandboxes');
+    expect(typeof original).toBe('number');
+    const newValue = Number(original) === 1 ? 2 : 1;
+    let writeAttempted = false;
+    try {
+      writeAttempted = true;
+      await apiPut(request, '/settings', {
+        patch: { 'sandbox.max_concurrent_sandboxes': newValue },
+      });
+      await goto(page);
+      await tab(page, /沙\s*箱/);
+      const sbRow = page
+        .locator('[data-settings-key="sandbox.max_concurrent_sandboxes"]')
+        .first();
+      await expect(sbRow).toBeVisible({ timeout: 10_000 });
+      await expect(sbRow.locator('input')).toHaveValue(String(newValue), {
         timeout: 10_000,
       });
       await expect
         .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 10_000 })
-        .toContain('max_concurrent_sandboxes: 7');
-      console.log('[E2E] 100 保存全部 ok');
-      // 恢复
-      const sbBefore = (await apiGet(request, '/settings')) as {
-        groups: Record<string, { data: Record<string, unknown> }>;
-      };
-      const orig =
-        sbBefore.groups.sandbox?.data?.['sandbox.max_concurrent_sandboxes'] ??
-        5;
-      await apiPut(request, '/settings', {
-        patch: { 'sandbox.max_concurrent_sandboxes': orig },
-      });
+        .toContain(`max_concurrent_sandboxes: ${newValue}`);
+      console.log('[E2E] 100 API写入→回显→落盘 ok');
+    } finally {
+      if (writeAttempted) {
+        await apiPut(request, '/settings', {
+          patch: { 'sandbox.max_concurrent_sandboxes': original },
+        });
+        const restored = await apiGet<{
+          groups: Record<string, { data: Record<string, unknown> }>;
+        }>(request, '/settings');
+        expect(
+          settingValue(restored, 'sandbox.max_concurrent_sandboxes')
+        ).toEqual(original);
+      }
     }
   });
 });

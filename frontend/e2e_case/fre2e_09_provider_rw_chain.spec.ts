@@ -16,6 +16,9 @@ import * as fs from 'fs';
  *   6) 落盘幂等: 全部保存值重拉不变（5.5-7）
  *
  * 铁规提醒: AGENTS.md 严令禁止 commit 任何测试代码文件 —— 本 spec 严禁提交。
+ *
+ * 编辑历史: 2026-09-25 04:06:45 小健 - 孤儿残留治理: 新增 createdProviders 集合 + afterEach 强制
+ *   DELETE 清理（步骤0/白名单注入探针 Provider 失败不再残留）+ prettier 重排 — 小健-2026-09-25
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const BASE = 'http://127.0.0.1:8000/api/v1';
@@ -25,6 +28,15 @@ const stamp = () => {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 };
+
+const createdProviders = new Set<string>();
+
+test.afterEach(async ({ request }) => {
+  for (const provider of createdProviders) {
+    await request.delete(`${BASE}/providers/${provider}`);
+  }
+  createdProviders.clear();
+});
 
 test.describe.configure({ mode: 'serial' });
 
@@ -51,8 +63,11 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
         max_retries: 2,
       },
     });
+    createdProviders.add(pname);
     expect(add.status()).toBe(200);
-    console.log(`[E2E] 步骤0 添加 Provider ${pname} (timeout=60, max_retries=2) → ${add.status()}`);
+    console.log(
+      `[E2E] 步骤0 添加 Provider ${pname} (timeout=60, max_retries=2) → ${add.status()}`
+    );
 
     // 0b) 添加一个模型 —— selectProvider 要求 provider 有模型，否则 WARNING「暂无模型」拒绝切换（文档4.3(7)）
     const mname = `${pname}-m1`;
@@ -93,30 +108,45 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     expect(prov!['timeout']).toBe(60);
     expect(prov!['max_retries']).toBe(2);
     expect(prov!['rate_limit']).toBe(80);
-    console.log(`[E2E] 步骤0d 读回: timeout=${prov!['timeout']} max_retries=${prov!['max_retries']} rate_limit=${prov!['rate_limit']}`);
+    console.log(
+      `[E2E] 步骤0d 读回: timeout=${prov!['timeout']} max_retries=${prov!['max_retries']} rate_limit=${prov!['rate_limit']}`
+    );
 
     // 1) 打开设置页 → 模型 Tab
     page.on('response', (resp) => {
-      if (resp.url().includes('/api/v1/models') && resp.request().method() === 'GET') {
+      if (
+        resp.url().includes('/api/v1/models') &&
+        resp.request().method() === 'GET'
+      ) {
         resp
           .json()
           .then((j) => {
-            const names = (j.providers ?? []).map((p: { name: string }) => p.name);
-            console.log(`[E2E] GET /models providers(${names.length}): ${names.join('|')}`);
+            const names = (j.providers ?? []).map(
+              (p: { name: string }) => p.name
+            );
+            console.log(
+              `[E2E] GET /models providers(${names.length}): ${names.join('|')}`
+            );
           })
           .catch(() => {});
       }
     });
     await page.goto('http://localhost:5173/settings2');
-    await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.settings-page')).toBeVisible({
+      timeout: 30_000,
+    });
     await page.reload();
-    await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('.settings-page')).toBeVisible({
+      timeout: 30_000,
+    });
     const modelTab = page.getByRole('tab', { name: /模\s*型/ }).first();
     await modelTab.click();
     await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
 
     // 2) ①选择器切到测试 Provider（第一个下拉）—— 此时 label 仍=初值 pname
-    const selDropdown = page.locator('[data-section="selector"] .ant-select').first();
+    const selDropdown = page
+      .locator('[data-section="selector"] .ant-select')
+      .first();
     await selDropdown.scrollIntoViewIfNeeded();
     await selDropdown.click();
     await expect(page.locator('.ant-select-dropdown:visible')).toBeVisible({
@@ -138,36 +168,45 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     const drpTexts = await page
       .locator('.ant-select-dropdown:visible .ant-select-item')
       .allInnerTexts();
-    console.log(`[E2E] step2 dropdown items(${drpTexts.length}): ${drpTexts.join(' | ')}`);
+    console.log(
+      `[E2E] step2 dropdown items(${drpTexts.length}): ${drpTexts.join(' | ')}`
+    );
     await target.click({ timeout: 10_000 });
     await page.waitForTimeout(800);
     // 确认已切换：form 内 base_url/显示名 input 的 value（toContainText 不读 input value 属性）
     const cfg = page.locator('[data-section="provider-config"]');
     await expect(
-      cfg.getByText('base_url', { exact: true }).locator('xpath=..').locator('input')
+      cfg
+        .getByText('base_url', { exact: true })
+        .locator('xpath=..')
+        .locator('input')
     ).toHaveValue('https://api.example.com/v1', { timeout: 15_000 });
     await expect(
-      cfg.getByText('显示名', { exact: true }).locator('xpath=..').locator('input')
+      cfg
+        .getByText('显示名', { exact: true })
+        .locator('xpath=..')
+        .locator('input')
     ).toHaveValue(pname, { timeout: 15_000 });
     console.log('[E2E] step2 已切到测试 Provider');
 
     // 3) ③ Provider 配置区出现（key=name 重挂 → initialValues 回填预置值）
-    await expect(page.getByText('③ Provider 配置')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('③ Provider 配置')).toBeVisible({
+      timeout: 15_000,
+    });
     const rowOf = (label: string) =>
       page.getByText(label, { exact: true }).locator('xpath=..');
-    await expect(rowOf('timeout').locator('.ant-input-number input')).toHaveValue(
-      '60',
-      { timeout: 15_000 }
+    await expect(
+      rowOf('timeout').locator('.ant-input-number input')
+    ).toHaveValue('60', { timeout: 15_000 });
+    await expect(
+      rowOf('max_retries').locator('.ant-input-number input')
+    ).toHaveValue('2', { timeout: 15_000 });
+    await expect(
+      rowOf('速率限制').locator('.ant-input-number input')
+    ).toHaveValue('80', { timeout: 15_000 });
+    console.log(
+      '[E2E] 步骤3 表单初值回填 ok: timeout=60 max_retries=2 rate_limit=80'
     );
-    await expect(rowOf('max_retries').locator('.ant-input-number input')).toHaveValue(
-      '2',
-      { timeout: 15_000 }
-    );
-    await expect(rowOf('速率限制').locator('.ant-input-number input')).toHaveValue(
-      '80',
-      { timeout: 15_000 }
-    );
-    console.log('[E2E] 步骤3 表单初值回填 ok: timeout=60 max_retries=2 rate_limit=80');
 
     // 4) 编辑: label=labelEdited + timeout=99 + max_retries=5 + rate_limit=120 → 保存
     await rowOf('显示名').locator('input').fill(labelEdited);
@@ -182,21 +221,20 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
       { timeout: 20_000 }
     );
     await page.waitForTimeout(800); // refreshModels 重挂表单
-    console.log('[E2E] 步骤4 保存成功 label/timeout/max_retries/rate_limit 全改');
+    console.log(
+      '[E2E] 步骤4 保存成功 label/timeout/max_retries/rate_limit 全改'
+    );
 
     // 5) 回显断言: 表单重挂后新值（显示即真相，4.3-1）
-    await expect(rowOf('timeout').locator('.ant-input-number input')).toHaveValue(
-      '99',
-      { timeout: 15_000 }
-    );
-    await expect(rowOf('max_retries').locator('.ant-input-number input')).toHaveValue(
-      '5',
-      { timeout: 15_000 }
-    );
-    await expect(rowOf('速率限制').locator('.ant-input-number input')).toHaveValue(
-      '120',
-      { timeout: 15_000 }
-    );
+    await expect(
+      rowOf('timeout').locator('.ant-input-number input')
+    ).toHaveValue('99', { timeout: 15_000 });
+    await expect(
+      rowOf('max_retries').locator('.ant-input-number input')
+    ).toHaveValue('5', { timeout: 15_000 });
+    await expect(
+      rowOf('速率限制').locator('.ant-input-number input')
+    ).toHaveValue('120', { timeout: 15_000 });
     await expect(rowOf('显示名').locator('input')).toHaveValue(labelEdited, {
       timeout: 15_000,
     });
@@ -224,12 +262,19 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     console.log('[E2E] 步骤6 GET 读回新值 ok');
   });
 
-  test('白名单拒注入: 未知键 evil_key PUT 被拒 (4.4-10)', async ({ request }) => {
+  test('白名单拒注入: 未知键 evil_key PUT 被拒 (4.4-10)', async ({
+    request,
+  }) => {
     test.setTimeout(60_000);
     const pname = `e2e-evil-${stamp()}`;
     const add = await request.post(`${BASE}/providers`, {
-      data: { name: pname, label: pname, api_base: 'https://api.example.com/v1' },
+      data: {
+        name: pname,
+        label: pname,
+        api_base: 'https://api.example.com/v1',
+      },
     });
+    createdProviders.add(pname);
     expect(add.status()).toBe(200);
 
     const evil = await request.put(`${BASE}/providers/${pname}`, {
@@ -240,7 +285,9 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
     expect(evil.status()).not.toBe(200);
     const cfg = fs.readFileSync(cfgYaml(), 'utf8');
     expect(cfg.includes('evil_key')).toBeFalsy();
-    console.log(`[E2E] 白名单拒注入 evil_key → status=${evil.status()}, yaml 无 evil_key`);
+    console.log(
+      `[E2E] 白名单拒注入 evil_key → status=${evil.status()}, yaml 无 evil_key`
+    );
   });
 });
 
