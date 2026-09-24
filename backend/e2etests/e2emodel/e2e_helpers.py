@@ -76,6 +76,12 @@
 # 2026-08-26 - 小欧 - model 结构信息空值修复(com-test 02/03实证): write_test_record中_sid原仅在`if dpi is None:`分支内赋值;
 #   单测传dpi=[](非None)使分支不执行→_sid未绑定→UnboundLocalError被except吞掉→session_id取不到→model结构信息(取chat_tasks.sessionModel)恒显"-";
 #   改法: 把`_sid = result.get("session_id","")`移到`if dpi is None:`外无条件赋值
+# 2026-09-24 - 小欧 - 超时保护记录缺口修复(4处): ①_flush_pending_records 不再静默吞异常, 空壳
+#   (result无session_id且无events, send_chat挂死被强杀)转"超时中止(FALLBACK)"占位记录(带error_info),
+#   写失败打stderr可见; ②register_pending_record 幂等: 同test_id后注册覆盖先注册, 与remove对齐;
+#   ③新增 _sync_pending_result(result): send_chat 返回即回填完整result到唯一空壳pending,
+#   集中覆盖全部单会话E2E case(免逐case脚本手改); ④send_chat 返回前调用 _sync_pending_result
+#   —— 防 send_chat 后验证阶段超时丢完整数据 — 小欧-2026-09-24
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -164,12 +170,23 @@ _pending_records: List[Dict[str, Any]] = []
 
 
 def _flush_pending_records():
-    """进程退出时写入所有未完成的测试记录"""
+    """进程退出时写入所有未完成的测试记录
+    # 2026-09-24 小欧 修复: 不再静默吞异常; 空壳(result无session_id且无events, send_chat挂死被强杀)
+    #   也写'超时中止'占位记录(带error_info标记), 保证测试记录不缺失; 写失败打印stderr可见 — 小欧-2026-09-24"""
     for rec in _pending_records:
         try:
+            _res = rec.get("result") or {}
+            if not _res.get("session_id") and not _res.get("events"):
+                import sys as _sys
+                _tmp = dict(rec)
+                _tmp["error_info"] = (rec.get("error_info") or "") + \
+                    "[超时保护] send_chat 等待期间进程被截断, 数据未回收, 按超时中止记录(FALLBACK)"
+                _sys.stderr.write(f"[超时保护] 空壳记录转为超时中止: {rec.get('test_id')}\n")
+                rec = _tmp
             write_test_record(**rec)
-        except Exception:
-            pass
+        except Exception as _e:
+            import sys as _sys
+            _sys.stderr.write(f"[超时保护] 写记录失败 {rec.get('test_id')}: {type(_e).__name__}: {_e}\n")
     _pending_records.clear()
 
 
@@ -203,7 +220,9 @@ def register_pending_record(
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
 ):
-    """注册一个待写入的测试记录（超时保护）"""
+    """注册一个待写入的测试记录（超时保护）
+    # 2026-09-24 小欧 幂等: 同test_id后注册覆盖先注册(send_chat返回后重注册完整数据), 与remove_pending_record语义对齐 — 小欧-2026-09-24"""
+    _pending_records[:] = [r for r in _pending_records if r.get("test_id") != test_id]
     _pending_records.append({
         "test_id": test_id,
         "test_name": test_name,
@@ -370,6 +389,19 @@ async def save_user_message(session_id: str, content: str) -> Optional[int]:
 
 
 # ─── 步骤2+3: 发送用户请求 + SSE事件解析 (send_chat) ─────────
+
+
+def _sync_pending_result(result):
+    """send_chat 返回后回填完整 result 到待写记录 — 集中式超时保护, 覆盖全部单会话 E2E case
+    # 2026-09-24 小欧 新增: 待写记录中恰有1条空壳(result无session_id)时回填完整 result;
+    #   多条/无则不猜(YAGNI), 免逐case脚本手改 — 小欧-2026-09-24"""
+    if not result or not result.get("session_id"):
+        return
+    _cands = [r for r in _pending_records
+              if r.get("test_id") and not (r.get("result") or {}).get("session_id")]
+    if len(_cands) == 1:
+        _cands[0]["result"] = result
+
 
 async def send_chat(
     user_input: str,
@@ -746,6 +778,9 @@ def check_db(session_id: str) -> Dict[str, Any]:
     except Exception as e:
         result["errors"].append(f"API query error: {e}")
 
+    # 2026-09-24 小欧 超时保护集中注入: send_chat 返回即回填完整 result 到唯一空壳 pending,
+    # 防 send_chat 后验证阶段超时丢完整数据(与各case脚本 send_chat 后手动补注册等价) — 小欧-2026-09-24
+    _sync_pending_result(result)
     return result
 
 
