@@ -41,6 +41,9 @@
 //   ⑥ensureModelSaved 放行补 isCapsDirty（必修①）—— import 并入既有 modelUtils 行 - 小欧-2026-09-23
 // 2026-09-23 小欧 - [65]十遍会审：F1 resetParams 联合置脏（重置只清参数脏，能力脏保留）+
 //   F4 已知能力值集改 modelUtils 单源常量（原每次调用重建 Set）- 小欧-2026-09-23
+// 2026-09-24 小欧 - 修复：saveModelGroup 保存成功后 providers 条目同步补 default_params/range/param_options
+//   （原仅同步 capabilities，default_params 停留在 load 时旧值）——selectModel 切回读 entry.default_params
+//   得陈旧值致参数区显示旧值（big-pickle 保存362144、切走再切回显示10000）- 小欧-2026-09-24
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -658,6 +661,9 @@ export function useSettings() {
       showSuccess('模型参数已保存');
       // 2026-09-23 小欧 - [65]§7.3.10 必修②：providers 内该模型 capabilities 同步 patch
       //   （否则参数区勾选已改、通用 Tab 卡片 tags 仍旧值直到 F5，同屏两处不同源=显示失真）
+      // 2026-09-24 小欧 - 修复：同步补 default_params/range/param_options 回写 providers 缓存
+      //   （原仅同步 capabilities——default_params 仍是 load 时旧值，selectModel 切回读 entry.default_params
+      //   得旧值，参数区显示旧值而非刚保存的新值；range/param_options 新增键落盘同类隐患一并回写）- 小欧-2026-09-24
       patchModel({
         defaults: { ...state.model.params },
         capabilitiesBaseline: [...state.model.capabilities],
@@ -669,7 +675,13 @@ export function useSettings() {
                 models: p.models.map((m) =>
                   m.name !== state.model.selectedModel
                     ? m
-                    : { ...m, capabilities: [...state.model.capabilities] }
+                    : {
+                        ...m,
+                        default_params: { ...state.model.params },
+                        range: { ...state.model.ranges },
+                        param_options: { ...state.model.paramOptions },
+                        capabilities: [...state.model.capabilities],
+                      }
                 ),
               }
         ),
