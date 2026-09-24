@@ -1,5 +1,9 @@
 // 编辑历史: 2026-09-24 小欧 - 新建：[68] 模型库 Tab（拉取 Provider 远程模型 + 勾选替换式写入
 //   ai.{provider}.models；三项过滤 D4/守卫第5条前端对应/脏态不进 SaveBar）- 小欧-2026-09-24
+// 2026-09-25 00:05:02 小欧 - 第五章核查修复 4 处：①Modal.confirm title 加粗+content 次级色
+//   （复用 SettingsPage 重置确认同款）；②获取按钮去 type=primary 改默认 Button 对齐
+//   ModelSelector「添加模型」；③「当前」Tag 去 color=blue 改默认 Tag；④切换 Provider 勾选
+//   重置为新 Provider 已配置集（原清空空集，与设计 5.2-1 字面不符）- 小欧-2026-09-25
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -50,9 +54,11 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
   const [saving, setSaving] = useState(false);
 
   // 2026-09-24 小欧 - [68] v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
-  const resetSelection = () => {
+  // 2026-09-25 小欧 - 5.2-1：勾选重置为目标 Provider 已配置集（原空集与设计字面不符）— 小欧-2026-09-25
+  const resetSelection = (providerName: string) => {
+    const p = providers.find((x) => x.name === providerName);
     setRemote(null);
-    setChecked(new Set());
+    setChecked(new Set((p?.models ?? []).map((m) => m.name)));
     setKeyword('');
     setFetchError(null);
   };
@@ -62,8 +68,9 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
     if (providers.length === 0) return;
     if (!providers.some((p) => p.name === selectedProvider)) {
       setSelectedProvider(providers[0].name);
-      resetSelection();
+      resetSelection(providers[0].name);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providers, selectedProvider]);
 
   const provider = providers.find((p) => p.name === selectedProvider);
@@ -115,7 +122,7 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
 
   const onSelectProvider = (name: string) => {
     setSelectedProvider(name);
-    resetSelection();
+    resetSelection(name);
   };
 
   const fetchList = async () => {
@@ -152,9 +159,21 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
   const onSave = () => {
     if (!remote?.ok || finalList.length === 0) return;
     Modal.confirm({
-      title: '替换模型列表',
+      // 2026-09-25 小欧 - 5.4.2：title 加粗 PRIMARY、content 次级色（复用 SettingsPage 重置确认同款）— 小欧-2026-09-25
+      title: (
+        <span
+          style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
+        >
+          替换模型列表
+        </span>
+      ),
       width: settingsModalWidth.confirm,
-      content: `将替换该 Provider 的模型列表为已勾选的 ${finalList.length} 个（移除 ${removedCount} 个）`,
+      content: (
+        <span style={{ color: Colors.TEXT.SECONDARY }}>
+          将替换该 Provider 的模型列表为已勾选的 {finalList.length} 个（移除{' '}
+          {removedCount} 个）
+        </span>
+      ),
       onOk: async () => {
         setSaving(true);
         try {
@@ -202,7 +221,7 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
             {m.owned_by}
           </span>
         )}
-        {isCurrent && <Tag color="blue">当前</Tag>}
+        {isCurrent && <Tag>当前</Tag>}
       </div>
     );
   };
@@ -237,7 +256,6 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
           }))}
         />
         <Button
-          type="primary"
           icon={<CloudDownloadOutlined />}
           loading={loading}
           disabled={apiBaseEmpty}
