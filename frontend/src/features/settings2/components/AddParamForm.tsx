@@ -23,6 +23,11 @@
 //   ③第二行单输入框大片留白；④与常用参数模式三列风格不一致。修复=删三个冗余 label（placeholder 已承担
 //   说明，测试亦按 placeholder 查询），三控件「参数名|类型|值」单行 settingsRowStyle + gap:Spacing.LG，
 //   行尾注释列 flex:1 与预设行注释列同位同色 - 小欧-2026-09-23
+// 2026-09-24 小欧 - PARAM_PRESETS 显示顺序按北京老陈指定调整：
+//   context_limit → temperature → max_tokens → reasoning_effort → top_p → seed → frequency_penalty → presence_penalty
+//   （仅重排数组元素顺序，各预设字段内容不变；已存在的参数仍会被 existingKeys 过滤，剩余项保持新相对序）- 小欧-2026-09-24
+// 2026-09-24 小欧 - top_p/seed 的 desc 改口语化（北京老陈反馈原说明不清楚）- 小欧-2026-09-24
+// 2026-09-24 小欧 - seed desc 再改：补数字含义（北京老陈反馈看不出数字变化差异）- 小欧-2026-09-24
 import React, { useState } from 'react';
 import { Button, Checkbox, Input, Radio, Select } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -37,8 +42,16 @@ import {
 // （settingsLabelStyle.width=180 装不下会折行；不改共享令牌以免影响 ModelParams 等既有行）- 小欧-2026-09-23
 const NAME_COL_WIDTH = 240;
 
-/** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐 §2.3/v1.2） */
+/** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐 §2.3/v1.2；显示顺序按北京老陈指定 - 小欧-2026-09-24） */
 const PARAM_PRESETS = [
+  {
+    key: 'context_limit',
+    type: 'number' as const,
+    default: 262144,
+    range: { min: 1000, max: 900000 },
+    label: '上下文限制',
+    desc: '上下文窗口上限，超限裁剪旧轮',
+  },
   {
     key: 'temperature',
     type: 'number' as const,
@@ -53,7 +66,15 @@ const PARAM_PRESETS = [
     default: 16384,
     range: { min: 1, max: 100000 },
     label: '最大Token',
-    desc: '单次最大输出 token 数，超长截断',
+    desc: 'LLM的单次最大输出 token 数，超长截断',
+  },
+  {
+    key: 'reasoning_effort',
+    type: 'enum' as const,
+    default: 'medium',
+    options: ['low', 'medium', 'high'],
+    label: '推理深度',
+    desc: '推理深度模式选择,，仅推理模型有效',
   },
   {
     key: 'top_p',
@@ -61,7 +82,15 @@ const PARAM_PRESETS = [
     default: 1.0,
     range: { min: 0, max: 1 },
     label: '核采样',
-    desc: '从概率质量前 p 的词中采样；1.0=不筛选',
+    desc: '只从概率最高的前 p 部分词里选词；1=全都不筛，调小=更保守、只留高概率词',
+  },
+  {
+    key: 'seed',
+    type: 'number' as const,
+    default: null,
+    range: { min: 0, max: 999999 },
+    label: '随机种子',
+    desc: '数字本身无好坏：同一数字=每次结果固定不变，换一个数字=换一组新的随机结果；留空=每次都不固定',
   },
   {
     key: 'frequency_penalty',
@@ -78,30 +107,6 @@ const PARAM_PRESETS = [
     range: { min: -2, max: 2 },
     label: '存在惩罚',
     desc: '正值鼓励新话题，负值鼓励重复，0=不启用',
-  },
-  {
-    key: 'reasoning_effort',
-    type: 'enum' as const,
-    default: 'medium',
-    options: ['low', 'medium', 'high'],
-    label: '推理深度',
-    desc: '推理深度，仅推理模型有效',
-  },
-  {
-    key: 'context_limit',
-    type: 'number' as const,
-    default: 262144,
-    range: { min: 1000, max: 900000 },
-    label: '上下文限制',
-    desc: '上下文窗口上限，超限裁剪旧轮',
-  },
-  {
-    key: 'seed',
-    type: 'number' as const,
-    default: null,
-    range: { min: 0, max: 999999 },
-    label: '随机种子',
-    desc: '固定随机种子，复现输出',
   },
 ];
 
