@@ -8,6 +8,8 @@ import * as fs from 'fs';
  * 覆盖: 7个tab × 每个设置项的 读取→编辑→保存→落盘→回显 全链路。
  *
  * 铁规: AGENTS.md 严禁 commit 任何测试代码文件。
+ *
+ * 编辑历史: 2026-09-24 21:36:38 小欧 - 调优组 3 处断言键名 tuning.stream_task.*→tuning.live_front.*(组名改，断言语义不变) — 小欧-2026-09-24
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const BASE = 'http://127.0.0.1:8000/api/v1';
@@ -973,13 +975,13 @@ test('55 安全 auto_confirm_delay编辑→保存→落盘', async ({ page, requ
 
   test('78 调优 heartbeat_interval读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as { groups: Record<string, { data: Record<string, unknown> }> };
-    const val = before.groups.tuning.data['tuning.stream_task.heartbeat_interval'];
+    const val = before.groups.tuning.data['tuning.live_front.heartbeat_interval'];  // 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     console.log(`[E2E] 78 heartbeat_interval=${val}`);
   });
 
   test('79 调优 task_timeout_hours读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as { groups: Record<string, { data: Record<string, unknown> }> };
-    const val = before.groups.tuning.data['tuning.stream_task.task_timeout_hours'];
+    const val = before.groups.tuning.data['tuning.live_front.task_timeout_hours'];  // 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     console.log(`[E2E] 79 task_timeout_hours=${val}`);
   });
 
@@ -1009,7 +1011,7 @@ test('55 安全 auto_confirm_delay编辑→保存→落盘', async ({ page, requ
 
   test('84 调优 tool_cache_ttl读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as { groups: Record<string, { data: Record<string, unknown> }> };
-    const val = before.groups.tuning.data['tuning.stream_task.tool_cache_ttl'];
+    const val = before.groups.tuning.data['tuning.live_front.tool_cache_ttl'];  // 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     console.log(`[E2E] 84 tool_cache_ttl=${val}`);
   });
 
