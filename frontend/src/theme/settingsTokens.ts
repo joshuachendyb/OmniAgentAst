@@ -6,6 +6,8 @@
 // 2026-09-23 小欧 - labelWidth 132→180（适配"频次惩罚 (frequency_penalty)"长标签）；控件宽度 inputWidth/secretWidth/selectWidth/inputNumberWidth/textareaWidth/modelSelectWidth/modelNameWidth 统一 240→180 - 小欧-2026-09-23
 // 2026-09-23 小欧 - [65]十遍会审 F3：settingsControl 增 actionBtnWidth:120（②标题行三按钮等长，消 style={{width:120}}×3
 //   重复字面量；标题操作按钮非 180 输入族，单列不混入 inputWidth）- 小欧-2026-09-23
+// 2026-09-24 小欧 - modelNameWidth 180→280（北京老陈指示：模型下拉单独加宽，长模型名截断难读；
+//   与 modelSelectWidth 不必等宽。超 280 的极端长名靠 AntD 悬停 title+下拉面板自适应兜底，不做动态宽防布局抖动）- 小欧-2026-09-24
 import {
   Spacing,
   Radius,
@@ -33,7 +35,7 @@ export const settingsControl = {
   textareaWidth: 180,
   searchWidth: 260,
   modelSelectWidth: 180,
-  modelNameWidth: 180,
+  modelNameWidth: 240,
   apiKeyWidth: 360,
   baseUrlWidth: 360,
   actionBtnWidth: 120,
