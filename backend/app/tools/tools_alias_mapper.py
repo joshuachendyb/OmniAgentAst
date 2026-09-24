@@ -354,6 +354,7 @@ TOOL_NAME_ALIASES = {
     "list_directory": "listdir",
     "http_get": "httpget",
     "http_request": "httpget",
+    "bash": "shell",  # LLM幻觉名→shell - 小欧 2026-09-24(P9-03/04实证: big-pickle把shell_type值bash当工具名, 各被拦3次致FAILED)
 }
 
 

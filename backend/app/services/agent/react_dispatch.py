@@ -156,7 +156,7 @@ async def _dispatch_handler(agent, llm_response):
                     #   连续同签名死循环由场景F count>=5(第5次)硬终止兜底; 非连续死胡同(签名变化重置标记)
                     #   仍由本处累计≥3次拦截, 语义不退化。 — 小欧 2026-08-08
                     if not getattr(agent, "_warned_same_tool_loop", 0):
-                        _fail_msg = f"工具 {_tool} 被反复{_ERR_CN.get(_rk, _rk)}(≥3次), LLM陷入死胡同, 停止循环"
+                        _fail_msg = f"工具 {_tool} 被累计{_ERR_CN.get(_rk, _rk)}(终身≥3次, 非连续), LLM陷入死胡同, 停止循环"  # 2026-09-24 小欧: “反复”改“累计”, 与per-(tool,type)终身累计实现对齐(P9-03/04三弹各跨40+分钟实证)
                         set_failed(agent, _fail_msg)
                         # #1整改(2026-09-17 小欧): set_failed 同步写 _last_error, 供 agent_runner 守卫取回终态原因。
                         #   原 blocked/timeout 走 type="error" 在 step_emitter:66 记录 _last_error; 统一 rejected 后不再触发, 原因丢失 — 小欧-2026-09-17
