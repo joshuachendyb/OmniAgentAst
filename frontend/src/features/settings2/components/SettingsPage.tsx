@@ -70,6 +70,10 @@
 // 2026-09-24 小欧 - [68] 模型库 Tab 落码：①import ModelLibraryTab；②抽 afterModelSaved 组件级收口
 //   （syncMtime+refreshModels DRY，Provider 配置保存/清空 key/模型库保存 3 处共用）；
 //   ③Tab 分支加 model_library 渲染 ModelLibraryTab（onSaved 直引 afterModelSaved 不内联）- 小欧-2026-09-24
+// 2026-09-25 06:20:25 小健 - 参数区入口按钮文案「管理选项」→「管理推理深度」（北京老陈指示，语义直指
+//   reasoning_effort 档位表）；宽度沿用 settingsControl.actionBtnWidth 120 保持三按钮等宽 - 小健-2026-09-25
+// 2026-09-25 06:23:15 小健 - 同排入口按钮「添加参数」→「添加模型参数」（北京老陈指示，6 字与
+//   「管理推理深度」等长，actionBtnWidth 120 内不挤压，三按钮等宽视觉不变）— 小健-2026-09-25
 import React, { useState } from 'react';
 import {
   Button,
@@ -318,9 +322,10 @@ const SettingsPage: React.FC = () => {
             disabled={s.saving || envManaged}
             onClick={() => s.patchModel({ addParamFormOpen: true })}
           >
-            添加参数
+            添加模型参数
           </Button>
-          {/* 管理选项：仅当前模型有 param_options 时显示 */}
+          {/* 管理推理深度：仅当前模型有 param_options 时显示（2026-09-25 06:20:25 北京老陈指示
+          「管理选项」→「管理推理深度」，语义直指 reasoning_effort 档位表，宽度沿用 120 三按钮等宽）*/}
           {Object.keys(state.model.paramOptions).length > 0 && (
             <Button
               style={{ width: settingsControl.actionBtnWidth }}
@@ -328,7 +333,7 @@ const SettingsPage: React.FC = () => {
               disabled={s.saving || envManaged}
               onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
             >
-              管理选项
+              管理推理深度
             </Button>
           )}
           {/* 重置为默认：无 params 隐藏、无脏态 disabled；仅清参数脏，能力脏保留（十遍会审 F1 见 resetParams） */}

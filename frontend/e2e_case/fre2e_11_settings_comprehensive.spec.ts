@@ -1077,12 +1077,13 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     }
   });
 
-  test('43 参数区 管理选项按钮状态', async ({ page }) => {
+  test('43 参数区 管理推理深度按钮状态', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    const manageBtn = page.getByRole('button', { name: /管理选项/ });
+    // 2026-09-25 06:20:25 小健 - 按钮文案「管理选项」→「管理推理深度」（北京老陈指示），定位同步 — 小健-2026-09-25
+    const manageBtn = page.getByRole('button', { name: /管理推理深度/ });
     const cnt = await manageBtn.count();
-    console.log(`[E2E] 43 管理选项按钮数: ${cnt}`);
+    console.log(`[E2E] 43 管理推理深度按钮数: ${cnt}`);
   });
 
   test('44 参数区 选择器上方标题可见', async ({ page }) => {
