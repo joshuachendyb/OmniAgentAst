@@ -16,10 +16,13 @@ import * as fs from 'fs';
  *   6) 模型Tab 删除模型 — 添加测试模型 → 删除 → 选择器消失
  *   7) 安全Tab — 读写 + 危险确认弹窗 + 落盘
  *   8) 沙箱Tab — 读写 + 落盘
- *   9) 调优Tab LLM参数 — temperature/max_tokens 编辑 + 落盘
+ *   9) 通用Tab 采样参数 — llm.sampling.temperature/max_tokens 编辑 + 落盘（2026-09-23 已迁 general）
  *  10) 外观Tab + 搜索跳转 — 主题切换 + 搜索命中行 + Tab切换脏确认
  *
  * 铁规: AGENTS.md 严禁 commit 任何测试代码文件。
+ *
+ * 编辑历史: 2026-09-24 21:56:36 小欧 - 过时键修正：case-05 参数区改 data-settings-key=temperature；
+ *   case-09 tuning.llm.*→llm.sampling.*+通用Tab；case-10 搜索temperature断言通用+回车、脏态键改活键 — 小欧-2026-09-24
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const BASE = 'http://127.0.0.1:8000/api/v1';
@@ -45,7 +48,10 @@ const clickTab = async (
   await page.waitForTimeout(600);
 };
 
-const apiGet = async (request: import('@playwright/test').APIRequestContext, path: string) => {
+const apiGet = async (
+  request: import('@playwright/test').APIRequestContext,
+  path: string
+) => {
   const r = await request.get(`${BASE}${path}`);
   return r.json() as Promise<Record<string, unknown>>;
 };
@@ -84,9 +90,9 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     });
 
     // 1) 当前模型卡可见（CurrentModelRefCard）
-    await expect(
-      page.getByText('当前系统全局使用模型').first()
-    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('当前系统全局使用模型').first()).toBeVisible({
+      timeout: 15_000,
+    });
     console.log('[E2E] case-01 通用Tab已加载，当前模型卡可见');
 
     // 2) 项目根目录行可见（general group item: workspace.project_root）
@@ -99,14 +105,16 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
 
     // 4) 脏角标初始为 0
     const dirtyBadge = page.locator('.ant-badge-count, [class*="dirty"]');
-    const badgeText = (await dirtyBadge.first().innerText().catch(() => '0')) || '0';
+    const badgeText =
+      (await dirtyBadge
+        .first()
+        .innerText()
+        .catch(() => '0')) || '0';
     console.log(`[E2E] case-01 初始脏角标: ${badgeText}`);
   });
 
   // ─── 2) 模型Tab 选择器: Provider/Model 切换联动 ───────────────
-  test('case-02 模型Tab: Provider→Model切换 + 参数区跟随', async ({
-    page,
-  }) => {
+  test('case-02 模型Tab: Provider→Model切换 + 参数区跟随', async ({ page }) => {
     await gotoSettings(page);
     await clickTab(page, /模\s*型/);
     await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
@@ -305,9 +313,7 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     const models = (await apiGet(request, '/models')) as {
       providers: Array<{ name: string; timeout: number }>;
     };
-    const sensenova = models.providers.find(
-      (p) => p.name === 'sensenova'
-    );
+    const sensenova = models.providers.find((p) => p.name === 'sensenova');
     expect(sensenova).toBeTruthy();
     // timeout 可能被 clamp 到 [30, 600]，只要非原值即可
     console.log(
@@ -359,10 +365,8 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     // 3) ② 参数区应出现
     await expect(page.getByText('② 参数区')).toBeVisible({ timeout: 10_000 });
 
-    // 4) 找 temperature 行（如有）
-    const tempRow = page
-      .locator('[data-settings-key="tuning.llm.temperature"]')
-      .first();
+    // 4) 找 temperature 行（模型参数区裸键，ModelParams data-settings-key）— 小欧-2026-09-24
+    const tempRow = page.locator('[data-settings-key="temperature"]').first();
     const hasTemp = (await tempRow.count()) > 0;
     if (hasTemp) {
       const tempInput = tempRow.locator('input');
@@ -443,7 +447,9 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
       .locator('[data-section="selector"] .ant-select')
       .nth(1);
     await modelSelect.click();
-    await expect(page.locator('.ant-select-dropdown:visible')).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator('.ant-select-dropdown:visible')).toBeVisible({
+      timeout: 5_000,
+    });
     // 用 filter hasText 匹配 victim（虚拟列表需要滚动 dropdown 容器）
     const victimItem = page
       .locator('.ant-select-dropdown:visible .ant-select-item')
@@ -467,10 +473,15 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     await delBtn.click({ force: true, timeout: 10_000 });
 
     // 3) 确认弹窗（Ant Design Modal.confirm 用 ant-modal 定位）
-    const confirmModal = page.locator('.ant-modal-wrap:not([style*="display: none"])');
+    const confirmModal = page.locator(
+      '.ant-modal-wrap:not([style*="display: none"])'
+    );
     await expect(confirmModal).toBeVisible({ timeout: 10_000 });
     // 点击「删除」确认按钮
-    await confirmModal.locator('.ant-btn-primary, .ant-btn-dangerous').last().click();
+    await confirmModal
+      .locator('.ant-btn-primary, .ant-btn-dangerous')
+      .last()
+      .click();
     await page.waitForTimeout(1000);
     console.log('[E2E] case-06 确认删除');
 
@@ -509,7 +520,10 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     await clickTab(page, /安\s*全/);
     // 等安全Tab内容出现（"安全设置"组标题或 "危险操作确认" 行）
     await expect(
-      page.getByText('安全设置').first().or(page.getByText('危险操作确认').first())
+      page
+        .getByText('安全设置')
+        .first()
+        .or(page.getByText('危险操作确认').first())
     ).toBeVisible({ timeout: 15_000 });
 
     // 1) 找 security.enabled 开关（安全Tab第一个 switch）
@@ -517,14 +531,20 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     if ((await switchEl.count()) > 0) {
       await expect(switchEl).toBeVisible({ timeout: 5_000 });
       const isOn = await switchEl.isChecked();
-      console.log(`[E2E] case-07 security.enabled 开关状态: ${isOn ? 'ON' : 'OFF'}`);
+      console.log(
+        `[E2E] case-07 security.enabled 开关状态: ${isOn ? 'ON' : 'OFF'}`
+      );
       await switchEl.click();
     } else {
       // fallback: 找 ant-switch 类
       const altSwitch = page.locator('.ant-switch').first();
       await expect(altSwitch).toBeVisible({ timeout: 5_000 });
-      const isOn = await altSwitch.evaluate((el) => el.classList.contains('ant-switch-checked'));
-      console.log(`[E2E] case-07 security.enabled 开关状态(alt): ${isOn ? 'ON' : 'OFF'}`);
+      const isOn = await altSwitch.evaluate((el) =>
+        el.classList.contains('ant-switch-checked')
+      );
+      console.log(
+        `[E2E] case-07 security.enabled 开关状态(alt): ${isOn ? 'ON' : 'OFF'}`
+      );
       await altSwitch.click();
     }
     await page.waitForTimeout(400);
@@ -540,7 +560,10 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     console.log('[E2E] case-07 危险确认弹窗已弹出');
 
     // 5) 确认保存
-    await dangerModal.locator('.ant-btn-dangerous, .ant-btn-primary').last().click();
+    await dangerModal
+      .locator('.ant-btn-dangerous, .ant-btn-primary')
+      .last()
+      .click();
     await expect
       .poll(
         async () => {
@@ -581,13 +604,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     const sbBefore = before.groups.sandbox.data[
       'sandbox.max_concurrent_sandboxes'
     ] as number;
-    console.log(
-      `[E2E] case-08 当前 max_concurrent_sandboxes=${sbBefore}`
-    );
+    console.log(`[E2E] case-08 当前 max_concurrent_sandboxes=${sbBefore}`);
 
     await gotoSettings(page);
     await clickTab(page, /沙\s*箱/);
-    await expect(page.getByText('沙箱').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('沙箱').first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // 1) 找 sandbox.max_concurrent_sandboxes 行
     const sbRow = page
@@ -629,12 +652,15 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
       });
       console.log('[E2E] case-08 值已恢复');
     } else {
-      console.log('[E2E] case-08 沙箱 Tab 无 max_concurrent_sandboxes 行，跳过');
+      console.log(
+        '[E2E] case-08 沙箱 Tab 无 max_concurrent_sandboxes 行，跳过'
+      );
     }
   });
 
-  // ─── 9) 调优Tab LLM参数: temperature/max_tokens 编辑→落盘 ───
-  test('case-09 调优Tab: LLM参数 temperature/max_tokens 编辑→保存→落盘', async ({
+  // ─── 9) 通用Tab 采样参数: llm.sampling.temperature/max_tokens 编辑→落盘 ───
+  // 2026-09-23 [64] 迁顶层 llm.sampling.*，原 tuning.llm.* 死键 — 小欧-2026-09-24
+  test('case-09 通用Tab: 采样参数 temperature/max_tokens 编辑→保存→落盘', async ({
     page,
     request,
   }) => {
@@ -642,20 +668,20 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const tuneData = before.groups.tuning.data;
-    const tempBefore = tuneData['tuning.llm.temperature'] as number;
-    const tokensBefore = tuneData['tuning.llm.max_tokens'] as number;
+    const genData = before.groups.general.data;
+    const tempBefore = genData['llm.sampling.temperature'] as number;
+    const tokensBefore = genData['llm.sampling.max_tokens'] as number;
     console.log(
       `[E2E] case-09 当前 temperature=${tempBefore} max_tokens=${tokensBefore}`
     );
 
     await gotoSettings(page);
-    await clickTab(page, /调\s*优/);
-    await expect(page.getByText('调优')).toBeVisible({ timeout: 15_000 });
+    await clickTab(page, /通\s*用/);
+    await expect(page.getByText('通用')).toBeVisible({ timeout: 15_000 });
 
     // 1) temperature 行
     const tempRow = page
-      .locator('[data-settings-key="tuning.llm.temperature"]')
+      .locator('[data-settings-key="llm.sampling.temperature"]')
       .first();
     if ((await tempRow.count()) > 0) {
       const tempInput = tempRow.locator('input');
@@ -666,7 +692,7 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
 
     // 2) max_tokens 行
     const tokensRow = page
-      .locator('[data-settings-key="tuning.llm.max_tokens"]')
+      .locator('[data-settings-key="llm.sampling.max_tokens"]')
       .first();
     if ((await tokensRow.count()) > 0) {
       const tokensInput = tokensRow.locator('input');
@@ -680,7 +706,7 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     await expect(page.locator('.ant-message')).toContainText('保存成功', {
       timeout: 20_000,
     });
-    console.log('[E2E] case-09 调优参数保存成功');
+    console.log('[E2E] case-09 通用采样参数保存成功');
 
     // 4) config.yaml 落盘
     await expect
@@ -694,14 +720,14 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     // 5) 恢复
     await apiPut(request, '/settings', {
       patch: {
-        'tuning.llm.temperature': tempBefore,
-        'tuning.llm.max_tokens': tokensBefore,
+        'llm.sampling.temperature': tempBefore,
+        'llm.sampling.max_tokens': tokensBefore,
       },
     });
     await expect
       .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 10_000 })
       .toContain(`temperature: ${tempBefore}`);
-    console.log('[E2E] case-09 调优参数已恢复');
+    console.log('[E2E] case-09 通用采样参数已恢复');
   });
 
   // ─── 10) 外观Tab + 搜索跳转: 主题切换 + 搜索命中 + Tab切换脏确认 ──
@@ -721,9 +747,7 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     await expect(page.getByText('外观')).toBeVisible({ timeout: 15_000 });
 
     // 1) 主题切换（如 theme 是 select）
-    const themeRow = page
-      .locator('[data-settings-key="app.theme"]')
-      .first();
+    const themeRow = page.locator('[data-settings-key="app.theme"]').first();
     if ((await themeRow.count()) > 0) {
       const themeSelect = themeRow.locator('.ant-select');
       if ((await themeSelect.count()) > 0) {
@@ -750,37 +774,29 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     const saveAllBtn = page.getByRole('button', { name: /保存全部/ });
     const isDirty = await saveAllBtn.isEnabled().catch(() => false);
 
-    // 3) 搜索跳转测试: 搜索 "temperature" 应跳到调优Tab
+    // 3) 搜索跳转: temperature 在 general/llm.sampling.*，应跳通用Tab；Input.Search 回车触发 — 小欧-2026-09-24
     const searchInput = page.getByPlaceholder(/搜索/);
     if ((await searchInput.count()) > 0) {
       await searchInput.fill('temperature');
+      await searchInput.press('Enter');
       await page.waitForTimeout(800);
-      // 搜索结果出现
-      const searchResult = page
-        .locator('.ant-select-dropdown:visible .ant-select-item, [class*="search"] [class*="result"]')
-        .first();
-      if ((await searchResult.count()) > 0) {
-        await searchResult.click();
-        await page.waitForTimeout(800);
-        // 应切到调优Tab
-        const tuningTab = page.getByRole('tab', { name: /调\s*优/ });
-        await expect(tuningTab).toHaveAttribute('aria-selected', 'true', {
-          timeout: 10_000,
-        });
-        console.log('[E2E] case-10 搜索跳转到调优Tab ok');
-      }
+      const generalTab = page.getByRole('tab', { name: /通\s*用/ });
+      await expect(generalTab).toHaveAttribute('aria-selected', 'true', {
+        timeout: 10_000,
+      });
+      console.log('[E2E] case-10 搜索跳转到通用Tab ok');
     }
 
     // 4) Tab 切换脏确认: 调优Tab有脏态时切到通用Tab应弹确认
-    // 先在调优Tab改个值制造脏态
+    // 脏态键=tuning.llm.stream_max_retries（活键；原 tuning.llm.temperature 已迁 general）— 小欧-2026-09-24
     await clickTab(page, /调\s*优/);
-    const tempRow = page
-      .locator('[data-settings-key="tuning.llm.temperature"]')
+    const dirtyRow = page
+      .locator('[data-settings-key="tuning.llm.stream_max_retries"]')
       .first();
-    if ((await tempRow.count()) > 0) {
-      const tempInput = tempRow.locator('input');
-      const tempCur = await tempInput.inputValue();
-      await tempInput.fill('0.95');
+    if ((await dirtyRow.count()) > 0) {
+      const dirtyInput = dirtyRow.locator('input');
+      const dirtyCur = await dirtyInput.inputValue();
+      await dirtyInput.fill('4');
       await page.waitForTimeout(300);
 
       // 切到通用Tab
@@ -791,7 +807,10 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
       if (hasJumpModal) {
         console.log('[E2E] case-10 Tab切换脏确认弹窗已弹出');
         // 点「放弃切换」留在当前页
-        await jumpModal.locator('.ant-btn:not(.ant-btn-primary)').first().click();
+        await jumpModal
+          .locator('.ant-btn:not(.ant-btn-primary)')
+          .first()
+          .click();
         await page.waitForTimeout(400);
         // 应仍在调优Tab
         const tuningTab = page.getByRole('tab', { name: /调\s*优/ });
@@ -799,13 +818,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
         console.log('[E2E] case-10 放弃切换后仍在调优Tab ok');
       }
 
-      // 恢复温度
-      await tempInput.fill(tempCur);
+      // 恢复重试次数
+      await dirtyInput.fill(dirtyCur);
       await page.getByRole('button', { name: /保存本组/ }).click();
       await expect(page.locator('.ant-message')).toContainText('保存成功', {
         timeout: 20_000,
       });
-      console.log('[E2E] case-10 温度已恢复');
+      console.log('[E2E] case-10 stream_max_retries 已恢复');
     }
 
     // 5) 恢复主题

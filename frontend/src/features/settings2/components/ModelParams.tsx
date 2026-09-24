@@ -15,6 +15,8 @@
 // 2026-09-23 小欧 - [65]十遍会审 F5：safeNum 单点（原 isNaN 三元在 Slider/InputNumber 各写一次重复）- 小欧-2026-09-23
 // 2026-09-24 小欧 - ①参数行尾加「删除参数」× 按钮（A 方案，北京老陈拍板）：env 接管键禁用（后端
 //   _raise_if_env_takeover 拒保存）；onDelete 由 SettingsPage 透传 s.removeParam；点即删无确认弹窗 - 小欧-2026-09-24
+// 2026-09-24 21:56:36 小欧 - 行根加 data-settings-key={key} 搜索/E2E锚点（对齐 SettingRow；模型参数区原先无锚点，
+//   fre2e 用 tuning.llm.temperature 永远 count=0 假跳过）— 小欧-2026-09-24
 import React from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
@@ -158,7 +160,7 @@ export const ModelParams: React.FC<Props> = ({
             );
           };
           return (
-            <div key={key} style={settingsRowStyle}>
+            <div key={key} data-settings-key={key} style={settingsRowStyle}>
               <span style={settingsLabelStyle}>
                 {key} {envKey && <EnvTag />}
               </span>
