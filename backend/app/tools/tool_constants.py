@@ -359,6 +359,7 @@ EDITTEXT_OUTPARM_LIMIT_SAFETY: int = 200               # 使用对象: edit_text
 
 FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作类工具集合(安全/分批判定)
     "readtext", "writetext", "edittext",
+    "read",  # 方案1别名工具(复用readtext), 参与路径冲突检测 — 北京老陈 2026-09-24
     "move", "copy", "delete", "rename",
     "compress", "extract",
     # office 8工具(读写) — 小欧 2026-08-13: 与文本文件工具同机制参与路径冲突检测, 消除并行读写竞态

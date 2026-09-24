@@ -356,9 +356,11 @@ _PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "dest")
 
 # P2: 只读工具集合(3.2.15, 以真实注册名为准, stat 无对应注册工具已剔除) — 小欧 2026-08-10 v1.43
+# 2026-09-24 北京老陈 方案1: 加"read"(fundamental别名工具, 虽经normalize归一到readtext, 此处双保险)
 _READ_ONLY_TOOLS = frozenset({
     "listdir", "tree", "find", "grep", "readtext", "readmedia",
     "read_pdf", "read_docx", "read_pptx", "read_xlsx",
+    "read",  # 方案1别名工具 — 北京老陈 2026-09-24
 })
 
 

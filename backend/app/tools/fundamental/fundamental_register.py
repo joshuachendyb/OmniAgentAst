@@ -8,13 +8,16 @@ FUNDAMENTAL Register — 基础工具注册点
 【2026-07-30 小沈】searchtool examp加"时间 定时"用例,补全7类备用工具
 【2026-08-05 小欧】searchtool描述说明多分类关键词一次搜索即注入多个分类整类工具; 无命中提示换词重搜不注入
 【2026-08-07 小欧】searchtool examples精简为4条(2多类型+2单类型), 引导"一次搜索多个类型"并保留单类型用法
+【2026-09-24 北京老陈】方案1: 注册bash/read两个别名工具(impl=shell/readtext), 根治opencodeZen GATE_STUBS假tool问题
 
-5个工具:
+7个工具:
 - searchtool — BM25全文检索搜索工具
 - timenow — 获取当前时间
 - sysinfo — 获取系统信息 (从SYSTEM迁入)
 - notify — 发送系统通知 (从DESKTOP迁入)
 - shell — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入)
+- bash — shell别名工具, 复用ShellInput schema (方案1根治GATE_STUBS)
+- read — readtext别名工具, 复用ReadtextInput schema (方案1根治GATE_STUBS)
 """
 
 from app.tools.registry import tool_registry
@@ -26,8 +29,10 @@ FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "searchtool": [],  # 使用内置库
     "timenow": [],  # 使用内置库
     "shell": [],  # 使用内置库
+    "bash": [],  # 方案1别名工具, 复用shell实现 — 北京老陈 2026-09-24
     "sysinfo": ["psutil"],  # 从SYSTEM迁入
     "notify": ["win10toast"],
+    "read": [],  # 方案1别名工具, 复用readtext实现 — 北京老陈 2026-09-24
 }
 
 from app.tools.fundamental.fundamental_schema import (
@@ -42,6 +47,10 @@ from app.tools.fundamental.time_now import timenow
 from app.tools.fundamental.execute_shell_command import shell
 from app.tools.fundamental.get_system_info import sysinfo
 from app.tools.fundamental.send_notification import notify
+# 方案1: bash/read别名工具复用file包schema+impl — 北京老陈 2026-09-24
+# file包不依赖fundamental, 无循环导入
+from app.tools.file.file_schema import ReadtextInput
+from app.tools.file.read_text_file import readtext
 
 
 # 【描述规范】2026-07-20 北京老陈 — 工具描述(本 FUNDAMENTAL_TOOL_DESCRIPTIONS 字典)保持简洁、不冗余:
@@ -53,6 +62,8 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "shell": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
     "sysinfo": """获取系统信息,包括操作系统、CPU、内存、磁盘和网络。适用场景:需要诊断系统问题(CPU高、内存不足、磁盘满)、了解硬件规格时使用。""",
     "notify": """发送Windows系统通知弹窗。适用场景:需要向用户发送桌面通知时使用。""",
+    "bash": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。与shell工具功能完全相同,任选其一即可""",
+    "read": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。与readtext工具功能完全相同,任选其一即可""",
 }
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
@@ -86,13 +97,24 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
         {"title": "系统提醒", "message": "这是一条包含特殊字符<>&\"'的通知消息", "duration": 10},
         {"title": "长文本测试标题用于验证通知系统的稳定性", "message": "这是一条较长的通知内容，用于测试系统对长文本的处理能力，确保不会出现截断或显示异常", "duration": 8},
     ],
+    "bash": [
+        {"command": "dir", "timeout": 10},
+        {"command": "python --version", "shell_type": "ps7", "timeout": 10},
+        {"command": "ls -la", "shell_type": "bash", "timeout": 10},
+    ],
+    "read": [
+        {"path": "D:/project/main.py"},
+        {"path": "D:/logs/app.log", "tail": 50},
+        {"path": "D:/project/main.py", "offset": 1, "limit": 200},
+    ],
 }
 
 
 def _register_fundamental_tools():
-    """注册5个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
+    """注册7个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18; 方案1+2工具 — 北京老陈 2026-09-24"""
     CONFIRMATION_MAP = {
         "shell": {"write": True},
+        "bash": {"write": True},  # 方案1: bash与shell同等确认门 — 北京老陈 2026-09-24
     }
     
     tool_methods = {
@@ -101,6 +123,8 @@ def _register_fundamental_tools():
         "shell": shell,
         "sysinfo": sysinfo,
         "notify": notify,
+        "bash": shell,   # 方案1: 复用shell实现 — 北京老陈 2026-09-24
+        "read": readtext,  # 方案1: 复用readtext实现 — 北京老陈 2026-09-24
     }
 
     TOOL_INPUT_MODELS = {
@@ -109,6 +133,8 @@ def _register_fundamental_tools():
         "shell": ShellInput,
         "sysinfo": GetSystemInfoInput,
         "notify": SendNotificationInput,
+        "bash": ShellInput,      # 方案1: 复用ShellInput schema, FC parameters逐字节一致 — 北京老陈 2026-09-24
+        "read": ReadtextInput,   # 方案1: 复用ReadtextInput schema, FC parameters逐字节一致 — 北京老陈 2026-09-24
     }
 
     for name, method in tool_methods.items():
@@ -124,7 +150,7 @@ def _register_fundamental_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name == "shell"),
+            needs_confirmation=(name in ("shell", "bash")),  # 方案1: bash同等确认门 — 北京老陈 2026-09-24
             action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=FUNDAMENTAL_TOOL_DEPENDENCIES.get(name, []),
         )
@@ -138,4 +164,6 @@ __all__ = [
     "shell",
     "sysinfo",
     "notify",
+    "bash",
+    "read",
 ]

@@ -2,13 +2,15 @@
 # 模块说明: zen_free 免费无key 适配 — 小欧 2026-09-23
 #   准入配方([66]§2.1 门禁重验): UA(>=1.17) + 合法 session 头
 #   + body tools 同时含 bash 与 read + stream:true，四者齐备即 200。
+#   (方案1后bash/read由fundamental_register真实注册, FC正常流程天然满足; 无tools请求由历史行为观察决定)
 #   端点路由: muse- 前缀走 /responses(与 base_url zen/v1 拼成 /zen/v1/responses, flat tools)，其余走 /chat/completions。
 # 编辑历史: 2026-09-23 小欧 新建
 # 编辑历史: 2026-09-24 小欧 注释清理: 删注释/docstring 中 identifier.ts/session-id.ts/v1/session.ts 外部源码路径与 opencode.ai/session 等痕迹; 保留正式代码(URL/_ZEN_USER_AGENT/x-opencode-* header 键/类名/注册键/error_message_map 用户文案)零改动
+# 编辑历史: 2026-09-24 北京老陈 方案1: 删GATE_STUBS假tool与missing注入逻辑, ensure_gate_body只保留stream:true强制
 
 import os
 import time
-from typing import Dict, List
+from typing import Dict, List  # List: 仅注释块GATE_STUBS备用代码使用, 取消注释时无需再加 — 北京老陈 2026-09-24
 
 from app.llm.adapters.base import ProviderAdapter
 
@@ -66,20 +68,22 @@ def _gen_request_id() -> str:
     """生成 request ID: msg_ + 12位hex + 14位base62，每请求刷新 — 小欧 2026-09-23"""
     return _gen_id.generate("msg_", descending=False)   # ascending: 不取反
 
-
-GATE_STUBS: List[Dict] = [
-    {"type": "function", "function": {
-        "name": "bash", "description": "Executes a given command.",
-        "parameters": {"type": "object",
-                       "properties": {"command": {"type": "string"}},
-                       "required": ["command"]}}},
-    {"type": "function", "function": {
-        "name": "read", "description": "Read a file.",
-        "parameters": {"type": "object",
-                       "properties": {"filePath": {"type": "string"}},
-                       "required": ["filePath"]}}},
-]
-
+# 2026-09-24 北京老陈 方案1: 删GATE_STUBS假tool — bash/read已在fundamental_register注册真实工具,
+# FC正常调用get_openai_tools已含真实bash/read, ensure_gate_body的missing注入成为死代码, 整体删除
+# <留着以后面备用>
+# GATE_STUBS: List[Dict] = [
+#     {"type": "function", "function": {
+#         "name": "bash", "description": "Executes a given command.",
+#         "parameters": {"type": "object",
+#                        "properties": {"command": {"type": "string"}},
+#                        "required": ["command"]}}},
+#     {"type": "function", "function": {
+#         "name": "read", "description": "Read a file.",
+#         "parameters": {"type": "object",
+#                        "properties": {"filePath": {"type": "string"}},
+#                        "required": ["filePath"]}}},
+# ]
+# <留着以后面备用>
 
 class OpencodeZenAdapter(ProviderAdapter):
     """zen_free 匿名免费层适配 — 小欧 2026-09-23"""
@@ -101,14 +105,18 @@ class OpencodeZenAdapter(ProviderAdapter):
 
     @staticmethod
     def ensure_gate_body(body: Dict) -> Dict:
-        tools = body.get("tools") or []
-        names = {t.get("function", {}).get("name")
-                 for t in tools if isinstance(t, dict)}
-        missing = [s for s in GATE_STUBS
-                   if s["function"]["name"] not in names]
-        if missing:
-            body = dict(body)
-            body["tools"] = list(tools) + missing
+        # 2026-09-24 北京老陈 方案1: 删stub注入逻辑, 只保留stream:true强制(zen门禁要求)
+        # bash/read真实工具由fundamental_register注册, 正常FC流程get_openai_tools已含
+        # <留着以后面备用>
+        # tools = body.get("tools") or []
+        # names = {t.get("function", {}).get("name")
+        #          for t in tools if isinstance(t, dict)}
+        # missing = [s for s in GATE_STUBS
+        #            if s["function"]["name"] not in names]
+        # if missing:
+        #     body = dict(body)
+        #     body["tools"] = list(tools) + missing
+        # <留着以后面备用>
         if body.get("stream") is not True:
             body = dict(body)
             body["stream"] = True

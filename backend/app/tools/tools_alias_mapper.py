@@ -31,6 +31,15 @@ PARAM_ALIASES = {
     "readtext": {
         "file_path": "path",
         "filepath": "path",
+        "filePath": "path",  # 驼峰兜底: opencodeZen旧GATE_STUB曾用filePath — 北京老陈 2026-09-24
+        "file": "path",
+        "filename": "path",
+        "file_name": "path",
+    },
+    "read": {
+        "file_path": "path",
+        "filepath": "path",
+        "filePath": "path",  # 方案1: read别名工具参数别名, 驼峰兜底 — 北京老陈 2026-09-24
         "file": "path",
         "filename": "path",
         "file_name": "path",
