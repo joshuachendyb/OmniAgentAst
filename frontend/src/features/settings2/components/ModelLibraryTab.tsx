@@ -4,6 +4,8 @@
 //   （复用 SettingsPage 重置确认同款）；②获取按钮去 type=primary 改默认 Button 对齐
 //   ModelSelector「添加模型」；③「当前」Tag 去 color=blue 改默认 Tag；④切换 Provider 勾选
 //   重置为新 Provider 已配置集（原清空空集，与设计 5.2-1 字面不符）- 小欧-2026-09-25
+// 2026-09-25 01:13:09 小欧 - 第七章 Step8 核查修复：过滤「仅看免费」Checkbox 说明字补
+//   FontSize.SECONDARY（§5.4.2 字面要求，原用 antd 默认 14px 主字号）- 小欧-2026-09-25
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -294,6 +296,7 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
           <Checkbox
             checked={freeOnly}
             onChange={(e) => setFreeOnly(e.target.checked)}
+            style={{ fontSize: FontSize.SECONDARY }}
           >
             仅看免费
           </Checkbox>
