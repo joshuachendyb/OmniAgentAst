@@ -1,11 +1,11 @@
 # [68] 设置页「模型库」Tab — 获取 Provider 模型列表并写入配置设计方案
 
-**版本**: v1.5
+**版本**: v1.6
 **创建时间**: 2026-09-24 20:34:12
-**更新时间**: 2026-09-24 22:36:52
+**更新时间**: 2026-09-24 22:59:05
 **编写人**: 小欧
 **更新人**: 小欧
-**状态**: 评审通过 + 实施详细设计代码完成（北京老陈 2026-09-24 定案四项决策 + 整体方案通过；第八章代码未落盘）
+**状态**: 评审通过 + 实施详细设计代码完成并通过 10 大规范自检修复（北京老陈 2026-09-24 定案四项决策 + 整体方案通过；第八章代码未落盘）
 
 ---
 
@@ -19,6 +19,7 @@
 | v1.3 | 2026-09-24 21:13:56 | 小欧 | 删除原第六章「边界与风险」整章（北京老陈指令：能解决的在方案里解决，不能解决的删掉，不留此章）：11 条全部为可解决问题且正文已覆盖或本次并入——①§4.2-5 补非数组响应显式 ok:false + 路径参数 enc() 编码；②测试表补 T11 非标准结构容错锁定该解法；③原七/八章号重排为六/七（含 7.1/7.2→6.1/6.2），全文章节连续 |
 | v1.4 | 2026-09-24 21:27:36 | 小欧 | 全文十遍通读整体化修订（北京老陈指令：查逻辑一致性，正文不许版本补丁注释）：①消除悬空摇摆——失败路径定死「本地校验 400/404、远端失败 200+ok:false」，DTO 定死 model_routes 内联，service 定死 model_service.py，删读而不用的 timeout 步骤；②修硬伤——§4.2 重复步骤号 6、§5.1 改动数量 5+1→4+1、实施清单 10 case→11 case、§2.3 删用不上的 mask 行、D4/§5.2 过滤用词统一；③路径参数编码移 §4.4 路由层；④清除正文全部版本补丁标记与历史备注（v1.x 补/已证/禁回潮/19 组件等），融为整体行文 |
 | v1.5 | 2026-09-24 22:36:52 | 小欧 | 新增第八章「实施详细设计代码」（北京老陈指令：前后端可直接落盘的真实代码 + 真 unified diff，不许说明性伪代码）：后端 settings_registry/model_service/model_routes 三文件 diff（@@ 行号按落码前 349/447/133 行精确计算）+ pytest T1~T11 全量 271 行；前端 types/icons/model.api/SettingsPage 四文件 diff + ModelLibraryTab.tsx 全量 328 行；本地校验 400/404 一律 HTTPException（ValueError 会被 handle_config_errors 转 500）、远端失败 200+ok:false 落码定死 |
+| v1.6 | 2026-09-24 22:59:05 | 小欧 | 10 大规范自检修复（北京老陈指令按自检结果改设计）：①DRY—SettingsPage 抽 `afterModelSaved` 收口 syncMtime+refreshModels（新分支引用 + 既有 2 处同模式改引用），ModelLibraryTab 已配置/未配置分组改单遍 partition；②复用优先—8.1 补 FUNCTIONS.md 已查结论（v4.2 无同名函数），§七加登记 Step；③KISS—`replace_provider_models` 去海象内联与冗余 isinstance，`p = ai[name]` 单点取值；④SLAP—`fetch_remote_models` 拆 `_require_provider_for_fetch`/`_http_get_remote_models`/`_parse_remote_models_body` 三层 helper（imports 补 Tuple）；⑤OCP 擦边在 8.1 声明随既有三元分支架构不重构；ModelLibraryTab 328→329 行，@@ 行号重算 |
 
 ---
 
@@ -382,11 +383,12 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 | 2 | 拉取端点（DTO + service + 路由） | `model_routes.py` / `model_service.py` |
 | 3 | 替换端点（守卫 + 差集孤儿清理 + 落盘） | 同上 |
 | 4 | 后端 pytest 11 case | `backend/tests/...` |
-| 5 | 前端类型/图标/API | `types.ts` / `icons.tsx` / `model.api.ts` |
-| 6 | ModelLibraryTab 组件 + SettingsPage 分支 | 新 `ModelLibraryTab.tsx` / `SettingsPage.tsx` |
-| 7 | UI 风格自查（逐条过 §5.4 禁止清单 + 令牌表：无裸 hex/裸数字/emoji/link 款按钮/message 直调） | 新组件 + SettingsPage 分支 |
-| 8 | `npm run check` + vitest + 手工 E2E | frontend |
-| 9 | 编辑历史/注释署名+日期逐文件补 | 全部改动文件 |
+| 5 | 登记新函数到 FUNCTIONS.md 10.3（`fetch_remote_models` / `replace_provider_models` / `_require_provider_for_fetch` / `_http_get_remote_models` / `_parse_remote_models_body`） | `backend/FUNCTIONS.md` |
+| 6 | 前端类型/图标/API | `types.ts` / `icons.tsx` / `model.api.ts` |
+| 7 | ModelLibraryTab 组件 + SettingsPage 分支（`afterModelSaved` 抽取 + 既有 2 处 syncMtime 改引用） | 新 `ModelLibraryTab.tsx` / `SettingsPage.tsx` |
+| 8 | UI 风格自查（逐条过 §5.4 禁止清单 + 令牌表：无裸 hex/裸数字/emoji/link 款按钮/message 直调） | 新组件 + SettingsPage 分支 |
+| 9 | `npm run check` + vitest + 手工 E2E | frontend |
+| 10 | 编辑历史/注释署名+日期逐文件补 | 全部改动文件 |
 
 ---
 
@@ -404,8 +406,18 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 4. service 必须模块级 `import httpx`（测试 patch `app.services.model.model_service.httpx.AsyncClient`）。
 5. 孤儿清理仅对「已存在」的 `model_params`/`model_meta` 二级键写 `None`；**绝不能写空 dict 叶**（`_iter_nested_ops` 空 dict 叶会整块覆盖）。
 
+10 大规范自检结论（v1.6 修复）：
+
+1. **复用优先**：已查 `backend/FUNCTIONS.md`（v4.2，`## 十、模型/配置域` 10.3 表）——无 `fetch_remote_models` / `replace_provider_models` / 远程列表拉取同名函数，新建不重复；落码后须登记新函数（§七 Step 5）。
+2. **DRY**：`syncMtime + refreshModels` 既有 2 处 + 本设计新分支曾第 3 处照抄 → 抽组件级 `afterModelSaved` 收口，新旧 3 处全部改引用；已配置/未配置分组原正反各一遍 `configured.includes` → 单遍 partition。
+3. **KISS-DIRECT**：`replace_provider_models` 原海象内联 `p := ai.get(name)` + 同一 `p` 两次 isinstance → `_provider_names` 已保证 dict，改 `p = ai[name]` 单点取值后直接使用。
+4. **SLAP**：`fetch_remote_models` 原混本地校验/HTTP I/O/响应解析三层 → 拆三个同层 helper，主函数只做编排。
+5. **OCP（擦边，声明不修）**：SettingsPage 三元分支链加 Tab 为既有 model/general 特殊分支同构扩展；本次不重构通用 Tab 分发（YAGNI，仅 3 个特殊分支），后续 Tab 再增时再统一 map 分发。
+
 编写人：小欧
 编写时间：2026-09-24 22:36:52
+更新人：小欧
+更新时间：2026-09-24 22:59:05（v1.6：10 大规范自检 4 明确违反修复）
 
 ### 8.2 后端
 
@@ -480,14 +492,15 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
  from typing import Any, Dict, List, Optional
 ```
 
-**改动 B — imports**（+3 行；首 hunk +2，本 hunk 新起点 64）：
+**改动 B — imports**（-1+1+3 净 +3；首 hunk +2，本 hunk 新起点 64）：
 
 ```diff
 --- a/backend/app/services/model/model_service.py
 +++ b/backend/app/services/model/model_service.py
-@@ -62,6 +64,9 @@
+@@ -62,7 +64,10 @@
  from pathlib import Path
- from typing import Any, Dict, List, Optional
+-from typing import Any, Dict, List, Optional
++from typing import Any, Dict, List, Optional, Tuple
  import os
 +import httpx
 +from fastapi import HTTPException
@@ -498,31 +511,82 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
  from app.services.model.config_helpers import (
 ```
 
-**改动 C — 文件末尾追加两个函数**（累计偏移 +5，新起点 449）：
+**改动 C — 文件末尾追加 5 个函数（3 个同层 helper + fetch 编排 + replace）**（累计偏移 +5，新起点 449；v1.6 SLAP/KISS 重构）：
 
 ```diff
 --- a/backend/app/services/model/model_service.py
 +++ b/backend/app/services/model/model_service.py
-@@ -444,4 +449,84 @@
-         _sync_current(tree, target_p, target_m)
-         switched_to = target_p or None
-     merge_nested_patch(tree, scope="model")
-     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
+@@ -444,4 +449,144 @@
+        _sync_current(tree, target_p, target_m)
+        switched_to = target_p or None
+    merge_nested_patch(tree, scope="model")
+    return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
 +
 +
-+async def fetch_remote_models(name: str) -> Dict[str, Any]:
-+    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
-+    ai = _raw_ai()
++def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Dict[str, Any]:
++    """[68] 拉取前置校验层：provider 存在性 + api_base 非空（SLAP：与 HTTP/解析分层）— 小欧 2026-09-24"""
 +    if name not in _provider_names(ai):
 +        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
 +    p = ai.get(name)
 +    if not isinstance(p, dict):
 +        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
-+    api_base = str(p.get("api_base") or "").strip()
-+    if not api_base:
++    if not str(p.get("api_base") or "").strip():
 +        raise HTTPException(status_code=400, detail="未配置 api_base，请先到模型 Tab → ③ Provider 配置填写")
-+    api_key = str(p.get("api_key") or "")
-+    headers = get_provider_adapter(name).static_headers(api_key)
++    return p
++
++
++async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tuple[Any, Optional[str]]:
++    """[68] HTTP 拉取层 → (resp, err)；网络异常统一 err 文案 — 小欧 2026-09-24"""
++    try:
++        async with httpx.AsyncClient(timeout=30.0) as client:
++            resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
++    except Exception as e:
++        logger.error(f"拉取远程模型失败: {e}")
++        return None, f"拉取失败: {e}"
++    return resp, None
++
++
++def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
++    """[68] 响应解析层 → (models, err)；HTTP>=400/非JSON/非数组 → err — 小欧 2026-09-24"""
++    if resp.status_code >= 400:
++        message = f"HTTP {resp.status_code}"
++        try:
++            body = resp.json()
++            if isinstance(body, dict):
++                err = body.get("error")
++                if isinstance(err, dict) and err.get("message"):
++                    message = str(err["message"])
++                elif body.get("message"):
++                    message = str(body["message"])
++        except Exception:
++            pass
++        return None, message
++    try:
++        body = resp.json()
++    except Exception as e:
++        return None, f"响应解析失败: {e}"
++    if not isinstance(body, dict):
++        return None, "远端返回结构异常"
++    data = body.get("data")
++    if not isinstance(data, list):
++        return None, "远端返回结构异常（data 非数组）"
++    models: List[Dict[str, Any]] = []
++    for item in data:
++        if not isinstance(item, dict):
++            continue
++        mid = item.get("id") or item.get("model")
++        if not mid:
++            continue
++        models.append({"id": str(mid), "owned_by": item.get("owned_by")})
++    return models, None
++
++
++async def fetch_remote_models(name: str) -> Dict[str, Any]:
++    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
++    ai = _raw_ai()
++    p = _require_provider_for_fetch(name, ai)
++    api_base = str(p.get("api_base") or "").strip()
++    headers = get_provider_adapter(name).static_headers(str(p.get("api_key") or ""))
 +    configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
 +    ref = get_current_ref(ai)
 +    current_model = ref["model"] if ref["provider"] == name else None
@@ -538,47 +602,12 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +            "message": message,
 +        }
 +
-+    try:
-+        async with httpx.AsyncClient(timeout=30.0) as client:
-+            resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
-+    except Exception as e:
-+        logger.error(f"拉取远程模型失败 name={name}: {e}")
-+        return _fail(f"拉取失败: {e}")
-+
-+    if resp.status_code >= 400:
-+        message = f"HTTP {resp.status_code}"
-+        try:
-+            body = resp.json()
-+            if isinstance(body, dict):
-+                err = body.get("error")
-+                if isinstance(err, dict) and err.get("message"):
-+                    message = str(err["message"])
-+                elif body.get("message"):
-+                    message = str(body["message"])
-+        except Exception:
-+            pass
-+        return _fail(message)
-+
-+    try:
-+        body = resp.json()
-+    except Exception as e:
-+        return _fail(f"响应解析失败: {e}")
-+
-+    if not isinstance(body, dict):
-+        return _fail("远端返回结构异常")
-+    data = body.get("data")
-+    if not isinstance(data, list):
-+        return _fail("远端返回结构异常（data 非数组）")
-+
-+    models: List[Dict[str, Any]] = []
-+    for item in data:
-+        if not isinstance(item, dict):
-+            continue
-+        mid = item.get("id") or item.get("model")
-+        if not mid:
-+            continue
-+        models.append({"id": str(mid), "owned_by": item.get("owned_by")})
-+
++    resp, err = await _http_get_remote_models(api_base, headers)
++    if err:
++        return _fail(err)
++    models, err = _parse_remote_models_body(resp)
++    if err:
++        return _fail(err)
 +    return {
 +        "ok": True,
 +        "provider": name,
@@ -594,6 +623,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +    ai = _raw_ai()
 +    if name not in _provider_names(ai):
 +        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
++    p = ai[name]  # _provider_names 已保证 isinstance(ai[name], dict)
 +    if os.environ.get(f"{name.upper()}_API_KEY"):
 +        raise HTTPException(
 +            status_code=400,
@@ -614,22 +644,21 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +            status_code=400,
 +            detail=f"不能移除当前全局模型 {ref['model']}，请先切换全局模型",
 +        )
-+    old = [m for m in (p.get("models") or []) if isinstance(m, str)] if isinstance(p := ai.get(name), dict) else []
++    old = [m for m in (p.get("models") or []) if isinstance(m, str)]
 +    removed = [m for m in old if m not in set(new_list)]
 +    added = [m for m in new_list if m not in set(old)]
 +    tree: Dict[str, Any] = {"ai": {name: {"models": new_list}}}
 +    node = tree["ai"][name]
-+    if isinstance(p, dict):
-+        params_block = p.get("model_params") or {}
-+        meta_block = p.get("model_meta") or {}
-+        if isinstance(params_block, dict):
-+            orphans = {m: None for m in removed if m in params_block}
-+            if orphans:
-+                node["model_params"] = orphans
-+        if isinstance(meta_block, dict):
-+            orphans = {m: None for m in removed if m in meta_block}
-+            if orphans:
-+                node["model_meta"] = orphans
++    params_block = p.get("model_params") or {}
++    meta_block = p.get("model_meta") or {}
++    if isinstance(params_block, dict):
++        orphans = {m: None for m in removed if m in params_block}
++        if orphans:
++            node["model_params"] = orphans
++    if isinstance(meta_block, dict):
++        orphans = {m: None for m in removed if m in meta_block}
++        if orphans:
++            node["model_meta"] = orphans
 +    merge_nested_patch(tree, scope="model")
 +    return {"ok": True, "mtime": _config_mtime(), "added": added, "removed": removed}
 ```
@@ -643,7 +672,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 ```diff
 --- a/backend/app/api/v1/model_routes.py
 +++ b/backend/app/api/v1/model_routes.py
-@@ -74,6 +74,25 @@
+@@ -74,8 +74,27 @@
      base_url: Optional[str] = Field(default=None)
      timeout: Optional[int] = Field(default=None)
      retry_times: Optional[int] = Field(default=None)
@@ -983,7 +1012,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 ```diff
 --- a/frontend/src/features/settings2/types.ts
 +++ b/frontend/src/features/settings2/types.ts
-@@ -25,9 +25,10 @@
+@@ -25,11 +25,12 @@
  // 2026-09-22 小欧 - [61] tuning Tab 类型补齐：TabKey 加 'tuning'
  export type TabKey =
    | 'general'
@@ -1045,7 +1074,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 ```diff
 --- a/frontend/src/services/api/model.api.ts
 +++ b/frontend/src/services/api/model.api.ts
-@@ -53,9 +53,31 @@
+@@ -53,10 +53,32 @@
  export interface ModelMutationResult {
    ok: boolean;
    model?: string;
@@ -1114,12 +1143,12 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
  };
 ```
 
-#### 8.3.4 ModelLibraryTab.tsx（新文件 328 行）
+#### 8.3.4 ModelLibraryTab.tsx（新文件 329 行，v1.6 分组改单遍 partition）
 
 ```diff
 --- /dev/null
 +++ b/frontend/src/features/settings2/components/ModelLibraryTab.tsx
-@@ -0,0 +1,328 @@
+@@ -0,0 +1,329 @@
 +// 编辑历史: 2026-09-24 小欧 - 新建：[68] 模型库 Tab（拉取 Provider 远程模型 + 勾选替换式写入
 +//   ai.{provider}.models；三项过滤 D4/守卫第5条前端对应/脏态不进 SaveBar）- 小欧-2026-09-24
 +import React, { useEffect, useMemo, useState } from 'react';
@@ -1202,14 +1231,15 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +    });
 +  }, [remote, keyword, freeOnly]);
 +
-+  const configuredGroup = useMemo(
-+    () => filtered.filter((m) => remote?.configured.includes(m.id)),
-+    [filtered, remote]
-+  );
-+  const unconfiguredGroup = useMemo(
-+    () => filtered.filter((m) => !remote?.configured.includes(m.id)),
-+    [filtered, remote]
-+  );
++  const { configuredGroup, unconfiguredGroup } = useMemo(() => {
++    const configuredSet = new Set(remote?.configured ?? []);
++    const configured: typeof filtered = [];
++    const unconfigured: typeof filtered = [];
++    for (const m of filtered) {
++      (configuredSet.has(m.id) ? configured : unconfigured).push(m);
++    }
++    return { configuredGroup: configured, unconfiguredGroup: unconfigured };
++  }, [filtered, remote]);
 +
 +  // D2 替换式：勾选集 = 最终列表；远端未回但配置里仍有的模型自动保留（防静默丢配置）
 +  const finalList = useMemo(() => {
@@ -1450,9 +1480,9 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +};
 ```
 
-#### 8.3.5 SettingsPage.tsx（落码前 683 行，2 处 hunk）
+#### 8.3.5 SettingsPage.tsx（落码前 683 行，4 处 hunk，v1.6 DRY 收口）
 
-**改动 A — import**（CurrentModelRefCard 后）：
+**改动 A — import**（CurrentModelRefCard 后，+1）：
 
 ```diff
 --- a/frontend/src/features/settings2/components/SettingsPage.tsx
@@ -1467,12 +1497,65 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
    ErrorType,
 ```
 
-**改动 B — Tab 分支**（general 分支后、SettingsGroup 默认分支前；累计偏移 +1，新起点 612）：
+**改动 B — 抽取 `afterModelSaved`**（envManaged 后、groupDirtyCount 注释前，+6；首 hunk +1，本 hunk 新起点 177；DRY：syncMtime+refreshModels 单点收口）：
 
 ```diff
 --- a/frontend/src/features/settings2/components/SettingsPage.tsx
 +++ b/frontend/src/features/settings2/components/SettingsPage.tsx
-@@ -611,8 +612,17 @@
+@@ -176,8 +177,14 @@
+   const dangerousAll = DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
+ 
+   // 2026-09-24 小欧 - BZ-8/收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
+   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
+   const envManaged =
+     state.model.providerConfig[state.model.selectedProvider]?.env === true;
+ 
++  // 2026-09-24 小欧 - [68] 落盘成功后同步 mtime+刷新模型列表（DRY：Provider 配置保存/清空 key/模型库保存共用收口）- 小欧-2026-09-24
++  const afterModelSaved = async (mtime: number) => {
++    s.syncMtime(mtime);
++    await s.refreshModels();
++  };
++
+   // 修正(2026-09-21 小强)：模型组脏计数按实际脏参数数（原是 isDirty?1:0 恒 1 项误导）（[设置页UI审计] 问题13）
+```
+
+**改动 C — ProviderConfig onSave 改引用**（2 行→1 行净 -1；累计偏移 +7，新起点 438；DRY 既有第 1 处）：
+
+```diff
+--- a/frontend/src/features/settings2/components/SettingsPage.tsx
++++ b/frontend/src/features/settings2/components/SettingsPage.tsx
+@@ -437,7 +444,6 @@
+               showSuccess('Provider 配置已保存（立即生效）');
+               // A7：同步落盘后 mtime
+-              s.syncMtime(r.mtime);
+-              await s.refreshModels();
++              await afterModelSaved(r.mtime);
+             } catch (e) {
+               handleApiError(e);
+               throw e;
+```
+
+**改动 D — onClearApiKey 改引用**（2 行→1 行净 -1；累计偏移 +6，新起点 464；DRY 既有第 2 处）：
+
+```diff
+--- a/frontend/src/features/settings2/components/SettingsPage.tsx
++++ b/frontend/src/features/settings2/components/SettingsPage.tsx
+@@ -463,6 +468,5 @@
+             showSuccess('api_key 已清空');
+-            s.syncMtime(r.mtime);
+-            await s.refreshModels();
++            await afterModelSaved(r.mtime);
+           } catch (e) {
+             handleApiError(e);
+           }
+```
+
+**改动 E — Tab 分支**（general 分支后、SettingsGroup 默认分支前；累计偏移 +5，新起点 616；onSaved 直接引用 `afterModelSaved` 不再内联两行）：
+
+```diff
+--- a/frontend/src/features/settings2/components/SettingsPage.tsx
++++ b/frontend/src/features/settings2/components/SettingsPage.tsx
+@@ -611,8 +616,13 @@
          {state.activeTab === 'model' ? (
            renderModelTab()
          ) : state.activeTab === 'general' ? (
@@ -1480,10 +1563,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +        ) : state.activeTab === 'model_library' ? (
 +          <ModelLibraryTab
 +            providers={state.model.providers}
-+            onSaved={async (mtime) => {
-+              s.syncMtime(mtime);
-+              await s.refreshModels();
-+            }}
++            onSaved={afterModelSaved}
 +          />
          ) : (
            <SettingsGroup
@@ -1496,4 +1576,4 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 **编写人**: 小欧
 **编写时间**: 2026-09-24 20:34:12
 **更新人**: 小欧
-**更新时间**: 2026-09-24 22:36:52（v1.5：新增第八章实施详细设计代码——前后端真实代码 + 真 unified diff，@@ 行号按落码前 349/447/133/87/74/153/683 行精确计算）
+**更新时间**: 2026-09-24 22:59:05（v1.6：10 大规范自检 4 明确违反修复——DRY afterModelSaved 收口 + 分组单遍 partition、复用优先 FUNCTIONS.md 已查、KISS 去海象冗余判型、SLAP fetch 三层拆分；@@ 行号按落码前 349/447/133/87/74/153/683 行精确计算）
