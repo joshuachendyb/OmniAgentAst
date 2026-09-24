@@ -38,9 +38,6 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   落 model_meta；update_provider_config key_map 加 param_options（Provider级写入口）。
 #   ②P2 add_model 签名加 param_options + 选项表非空 string[]/值在表内（0拒）校验 + 落 model_meta
 #   （不送 param_options 与现状兼容，tree 不写该键）。
-# 2026-09-24 - 小欧 - 参数键级删除：update_model 白名单加 remove_params——先从 model_params 拷贝删键、
-#   同步清 model_meta.range/param_options 对应键，再 merge default_params（空 dp 仍=整块清空，与既有 P8 语义叠加：
-#   remove 先算好 new_params，dp 非空则 update，dp 为空则置 {}）。前端②参数行 × 删除按钮通道 — 小欧-2026-09-24
 # 2026-09-22 - 小欧 - [62]P7 4.3(1)c：get_models 显示层 timeout/max_retries 兜底改读 tuning
 #   （timeout→tuning.llm_net.read_timeout 默认150、max_retries→tuning.llm.stream_max_retries 默认3），
 #   import 补 from app.config import get_config——消除显示值60/3与运行时30/3 不一致（显示即真相）。
@@ -49,6 +46,9 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   param_types 元数据 + 动态标量值透传（KNOWN_PROVIDER_KEYS 之外标量平铺）；③update_provider_config
 #   加 param_types 白名单（key_map + PROVIDER_PARAM_TYPES 之外拒，防任意键注入）+ 动态字段落盘
 #   （param_types 内 key_map 外的标量直写 ai.{provider}.{k}，复用 merge_nested_patch 叶值链路）。
+# 2026-09-24 - 小欧 - 参数键级删除：update_model 白名单加 remove_params——先从 model_params 拷贝删键、
+#   同步清 model_meta.range/param_options 对应键，再 merge default_params（空 dp 仍=整块清空，与既有 P8 语义叠加：
+#   remove 先算好 new_params，dp 非空则 update，dp 为空则置 {}）。前端①参数行 × 删除按钮通道 — 小欧-2026-09-24
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional
