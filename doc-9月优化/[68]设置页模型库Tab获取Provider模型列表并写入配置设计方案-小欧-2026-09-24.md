@@ -1,11 +1,11 @@
 # [68] 设置页「模型库」Tab — 获取 Provider 模型列表并写入配置设计方案
 
-**版本**: v1.6
+**版本**: v1.7
 **创建时间**: 2026-09-24 20:34:12
-**更新时间**: 2026-09-24 22:59:05
+**更新时间**: 2026-09-24 23:09:11
 **编写人**: 小欧
 **更新人**: 小欧
-**状态**: 评审通过 + 实施详细设计代码完成并通过 10 大规范自检修复（北京老陈 2026-09-24 定案四项决策 + 整体方案通过；第八章代码未落盘）
+**状态**: 评审通过 + 实施详细设计代码完成并通过 10 大规范两轮自检修复（北京老陈 2026-09-24 定案四项决策 + 整体方案通过；第八章代码未落盘）
 
 ---
 
@@ -20,6 +20,7 @@
 | v1.4 | 2026-09-24 21:27:36 | 小欧 | 全文十遍通读整体化修订（北京老陈指令：查逻辑一致性，正文不许版本补丁注释）：①消除悬空摇摆——失败路径定死「本地校验 400/404、远端失败 200+ok:false」，DTO 定死 model_routes 内联，service 定死 model_service.py，删读而不用的 timeout 步骤；②修硬伤——§4.2 重复步骤号 6、§5.1 改动数量 5+1→4+1、实施清单 10 case→11 case、§2.3 删用不上的 mask 行、D4/§5.2 过滤用词统一；③路径参数编码移 §4.4 路由层；④清除正文全部版本补丁标记与历史备注（v1.x 补/已证/禁回潮/19 组件等），融为整体行文 |
 | v1.5 | 2026-09-24 22:36:52 | 小欧 | 新增第八章「实施详细设计代码」（北京老陈指令：前后端可直接落盘的真实代码 + 真 unified diff，不许说明性伪代码）：后端 settings_registry/model_service/model_routes 三文件 diff（@@ 行号按落码前 349/447/133 行精确计算）+ pytest T1~T11 全量 271 行；前端 types/icons/model.api/SettingsPage 四文件 diff + ModelLibraryTab.tsx 全量 328 行；本地校验 400/404 一律 HTTPException（ValueError 会被 handle_config_errors 转 500）、远端失败 200+ok:false 落码定死 |
 | v1.6 | 2026-09-24 22:59:05 | 小欧 | 10 大规范自检修复（北京老陈指令按自检结果改设计）：①DRY—SettingsPage 抽 `afterModelSaved` 收口 syncMtime+refreshModels（新分支引用 + 既有 2 处同模式改引用），ModelLibraryTab 已配置/未配置分组改单遍 partition；②复用优先—8.1 补 FUNCTIONS.md 已查结论（v4.2 无同名函数），§七加登记 Step；③KISS—`replace_provider_models` 去海象内联与冗余 isinstance，`p = ai[name]` 单点取值；④SLAP—`fetch_remote_models` 拆 `_require_provider_for_fetch`/`_http_get_remote_models`/`_parse_remote_models_body` 三层 helper（imports 补 Tuple）；⑤OCP 擦边在 8.1 声明随既有三元分支架构不重构；ModelLibraryTab 328→329 行，@@ 行号重算 |
+| v1.7 | 2026-09-24 23:09:11 | 小欧 | 二轮自检补修 3 处残留（北京老陈指令「修改」）：①KISS—`_require_provider_for_fetch` 去 `_provider_names` 后冗余 isinstance 死代码，改 `p = ai[name]` 与 replace 对齐；②KISS+SLAP—helper 返回 `Tuple[Dict, str]` 直接带上已 strip 的 `api_base`，fetch 主函数不再二次 strip；③DRY—ModelLibraryTab 抽 `resetSelection()` 收口 `onSelectProvider` 与 providers 失效守卫 2 处完全相同的 4 行 reset（fetchList 错误分支语义不同保留变体）；model_service 改动 C 144→142 行、ModelLibraryTab 329→331 行，@@ 重算 |
 
 ---
 
@@ -406,18 +407,18 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 4. service 必须模块级 `import httpx`（测试 patch `app.services.model.model_service.httpx.AsyncClient`）。
 5. 孤儿清理仅对「已存在」的 `model_params`/`model_meta` 二级键写 `None`；**绝不能写空 dict 叶**（`_iter_nested_ops` 空 dict 叶会整块覆盖）。
 
-10 大规范自检结论（v1.6 修复）：
+10 大规范自检结论（v1.6 首轮 + v1.7 二轮补修）：
 
 1. **复用优先**：已查 `backend/FUNCTIONS.md`（v4.2，`## 十、模型/配置域` 10.3 表）——无 `fetch_remote_models` / `replace_provider_models` / 远程列表拉取同名函数，新建不重复；落码后须登记新函数（§七 Step 5）。
-2. **DRY**：`syncMtime + refreshModels` 既有 2 处 + 本设计新分支曾第 3 处照抄 → 抽组件级 `afterModelSaved` 收口，新旧 3 处全部改引用；已配置/未配置分组原正反各一遍 `configured.includes` → 单遍 partition。
-3. **KISS-DIRECT**：`replace_provider_models` 原海象内联 `p := ai.get(name)` + 同一 `p` 两次 isinstance → `_provider_names` 已保证 dict，改 `p = ai[name]` 单点取值后直接使用。
-4. **SLAP**：`fetch_remote_models` 原混本地校验/HTTP I/O/响应解析三层 → 拆三个同层 helper，主函数只做编排。
+2. **DRY**：`syncMtime + refreshModels` 既有 2 处 + 本设计新分支曾第 3 处照抄 → 抽组件级 `afterModelSaved` 收口，新旧 3 处全部改引用；已配置/未配置分组原正反各一遍 `configured.includes` → 单遍 partition；ModelLibraryTab `onSelectProvider` 与 providers 失效守卫 2 处完全相同的 4 行 reset → 抽 `resetSelection()`（fetchList 错误分支只 reset remote/checked 不清 keyword，语义不同保留变体）。
+3. **KISS-DIRECT**：`replace_provider_models` 原海象内联 `p := ai.get(name)` + 同一 `p` 两次 isinstance → `_provider_names` 已保证 dict，改 `p = ai[name]` 单点取值；`_require_provider_for_fetch` 同步去 `_provider_names` 后冗余 isinstance 死代码，且返回 `Tuple[Dict, str]` 直接带上已 strip 的 `api_base`，fetch 主函数不再二次 strip。
+4. **SLAP**：`fetch_remote_models` 原混本地校验/HTTP I/O/响应解析三层 → 拆三个同层 helper，主函数只做编排（v1.7：校验层顺带产出 api_base，编排层零重复计算）。
 5. **OCP（擦边，声明不修）**：SettingsPage 三元分支链加 Tab 为既有 model/general 特殊分支同构扩展；本次不重构通用 Tab 分发（YAGNI，仅 3 个特殊分支），后续 Tab 再增时再统一 map 分发。
 
 编写人：小欧
 编写时间：2026-09-24 22:36:52
 更新人：小欧
-更新时间：2026-09-24 22:59:05（v1.6：10 大规范自检 4 明确违反修复）
+更新时间：2026-09-24 23:09:11（v1.7：二轮自检补修 KISS 冗余判型/二次 strip + DRY reset 重复）
 
 ### 8.2 后端
 
@@ -511,28 +512,27 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
  from app.services.model.config_helpers import (
 ```
 
-**改动 C — 文件末尾追加 5 个函数（3 个同层 helper + fetch 编排 + replace）**（累计偏移 +5，新起点 449；v1.6 SLAP/KISS 重构）：
+**改动 C — 文件末尾追加 5 个函数（3 个同层 helper + fetch 编排 + replace）**（累计偏移 +5，新起点 449；v1.6 SLAP/KISS + v1.7 去冗余判型/二次 strip）：
 
 ```diff
 --- a/backend/app/services/model/model_service.py
 +++ b/backend/app/services/model/model_service.py
-@@ -444,4 +449,144 @@
+@@ -444,4 +449,142 @@
         _sync_current(tree, target_p, target_m)
         switched_to = target_p or None
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
 +
 +
-+def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Dict[str, Any]:
-+    """[68] 拉取前置校验层：provider 存在性 + api_base 非空（SLAP：与 HTTP/解析分层）— 小欧 2026-09-24"""
++def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
++    """[68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) — 小欧 2026-09-24"""
 +    if name not in _provider_names(ai):
 +        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
-+    p = ai.get(name)
-+    if not isinstance(p, dict):
-+        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
-+    if not str(p.get("api_base") or "").strip():
++    p = ai[name]  # _provider_names 已保证 isinstance(ai[name], dict)
++    api_base = str(p.get("api_base") or "").strip()
++    if not api_base:
 +        raise HTTPException(status_code=400, detail="未配置 api_base，请先到模型 Tab → ③ Provider 配置填写")
-+    return p
++    return p, api_base
 +
 +
 +async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tuple[Any, Optional[str]]:
@@ -584,8 +584,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +async def fetch_remote_models(name: str) -> Dict[str, Any]:
 +    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
 +    ai = _raw_ai()
-+    p = _require_provider_for_fetch(name, ai)
-+    api_base = str(p.get("api_base") or "").strip()
++    p, api_base = _require_provider_for_fetch(name, ai)
 +    headers = get_provider_adapter(name).static_headers(str(p.get("api_key") or ""))
 +    configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
 +    ref = get_current_ref(ai)
@@ -1143,12 +1142,12 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
  };
 ```
 
-#### 8.3.4 ModelLibraryTab.tsx（新文件 329 行，v1.6 分组改单遍 partition）
+#### 8.3.4 ModelLibraryTab.tsx（新文件 331 行，v1.6 单遍 partition + v1.7 resetSelection 收口）
 
 ```diff
 --- /dev/null
 +++ b/frontend/src/features/settings2/components/ModelLibraryTab.tsx
-@@ -0,0 +1,329 @@
+@@ -0,0 +1,331 @@
 +// 编辑历史: 2026-09-24 小欧 - 新建：[68] 模型库 Tab（拉取 Provider 远程模型 + 勾选替换式写入
 +//   ai.{provider}.models；三项过滤 D4/守卫第5条前端对应/脏态不进 SaveBar）- 小欧-2026-09-24
 +import React, { useEffect, useMemo, useState } from 'react';
@@ -1200,15 +1199,20 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +  const [checked, setChecked] = useState<Set<string>>(new Set());
 +  const [saving, setSaving] = useState(false);
 +
++  // 2026-09-24 小欧 - [68] v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
++  const resetSelection = () => {
++    setRemote(null);
++    setChecked(new Set());
++    setKeyword('');
++    setFetchError(null);
++  };
++
 +  // §5.2-7：providers 变化（设置页增删/外部改 yaml）时本地 selectedProvider 失效守卫
 +  useEffect(() => {
 +    if (providers.length === 0) return;
 +    if (!providers.some((p) => p.name === selectedProvider)) {
 +      setSelectedProvider(providers[0].name);
-+      setRemote(null);
-+      setChecked(new Set());
-+      setKeyword('');
-+      setFetchError(null);
++      resetSelection();
 +    }
 +  }, [providers, selectedProvider]);
 +
@@ -1261,10 +1265,7 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 +
 +  const onSelectProvider = (name: string) => {
 +    setSelectedProvider(name);
-+    setRemote(null);
-+    setChecked(new Set());
-+    setKeyword('');
-+    setFetchError(null);
++    resetSelection();
 +  };
 +
 +  const fetchList = async () => {
@@ -1576,4 +1577,4 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 **编写人**: 小欧
 **编写时间**: 2026-09-24 20:34:12
 **更新人**: 小欧
-**更新时间**: 2026-09-24 22:59:05（v1.6：10 大规范自检 4 明确违反修复——DRY afterModelSaved 收口 + 分组单遍 partition、复用优先 FUNCTIONS.md 已查、KISS 去海象冗余判型、SLAP fetch 三层拆分；@@ 行号按落码前 349/447/133/87/74/153/683 行精确计算）
+**更新时间**: 2026-09-24 23:09:11（v1.7：10 大规范二轮补修——KISS 去 `_require_provider_for_fetch` 冗余 isinstance + api_base 二次 strip（helper 返 Tuple 带出）、DRY ModelLibraryTab 抽 `resetSelection()`；@@ 行号按落码前 349/447/133/87/74/153/683 行精确计算）
