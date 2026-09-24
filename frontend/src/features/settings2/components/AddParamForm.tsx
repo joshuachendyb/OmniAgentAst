@@ -28,6 +28,9 @@
 //   （仅重排数组元素顺序，各预设字段内容不变；已存在的参数仍会被 existingKeys 过滤，剩余项保持新相对序）- 小欧-2026-09-24
 // 2026-09-24 小欧 - top_p/seed 的 desc 改口语化（北京老陈反馈原说明不清楚）- 小欧-2026-09-24
 // 2026-09-24 小欧 - seed desc 再改：补数字含义（北京老陈反馈看不出数字变化差异）- 小欧-2026-09-24
+// 2026-09-24 22:56:21 小欧 - BZ-5 闭环：加 disabled prop（保存中禁用「确认」提交+handleAdd 守卫）——
+//   三堂会审发现参数区/重置/入口按钮已锁 saving，但表单内批量 onAdd 未锁：保存 await 期间仍可注入
+//   新键，与 saveModelGroup 闭包快照错位竞态（BZ-5 目标漏洞）；取消按钮不改 state 不禁 - 小欧-2026-09-24
 import React, { useState } from 'react';
 import { Button, Checkbox, Input, Radio, Select } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -118,6 +121,8 @@ interface AddParamFormProps {
   ) => void;
   onCancel: () => void;
   existingKeys: string[]; // v1.3：已存在参数不再列出（addParam 内 key in params 判重仅作安全网）
+  // 2026-09-24 小欧 - BZ-5 闭环：保存中(saving) 禁用确认，防保存期间注入新键致快照错位 — 小欧-2026-09-24
+  disabled?: boolean;
 }
 
 // v1.10 DRY：values 初始表达式原本 useState 与切 mode 两处重复，抽单函数
@@ -130,6 +135,7 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
   onAdd,
   onCancel,
   existingKeys,
+  disabled = false,
 }) => {
   const [mode, setMode] = useState<'preset' | 'custom'>('preset');
   // v1.3：已存在 key 不列出（主防），addParam 内判重为安全网
@@ -176,7 +182,8 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
   })();
 
   const handleAdd = () => {
-    if (!canConfirm) return;
+    // 2026-09-24 小欧 - BZ-5 闭环：保存中禁用提交（防保存期间批量 onAdd 注入 vs saveModelGroup 闭包竞态）
+    if (!canConfirm || disabled) return;
     if (mode === 'preset') {
       Object.keys(checked)
         .filter((k) => checked[k])
@@ -247,7 +254,7 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
             size="small"
             autoInsertSpace={false}
             onClick={handleAdd}
-            disabled={!canConfirm}
+            disabled={!canConfirm || disabled}
           >
             确认
           </Button>

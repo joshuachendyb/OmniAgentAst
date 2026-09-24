@@ -17,6 +17,11 @@
 //   _raise_if_env_takeover 拒保存）；onDelete 由 SettingsPage 透传 s.removeParam；点即删无确认弹窗 - 小欧-2026-09-24
 // 2026-09-24 21:56:36 小欧 - 行根加 data-settings-key={key} 搜索/E2E锚点（对齐 SettingRow；模型参数区原先无锚点，
 //   fre2e 用 tuning.llm.temperature 永远 count=0 假跳过）— 小欧-2026-09-24
+// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①BZ-10 删未使用 onReset 死 prop（YAGNI，全仓无调用方传参、
+//   组件未解构未用）；②BZ-5 加 disabled（保存中 saving 锁定参数行全部控件+×按钮，杜绝保存 await 期间
+//   继续编辑致 saveModelGroup 闭包快照错位——成功后 defaults/providers 缓存写旧值且 isDirty 误置 false）；
+//   锁态抽 lock 局部变量单点（envKey||disabled），EnvTag 标签仍只认 envKey（保存中不误标环境接管）
+//   - 小欧-2026-09-24
 import React from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
@@ -36,9 +41,10 @@ interface Props {
   options?: Record<string, string[]>;
   envOverride: Record<string, boolean>;
   onChange: (key: string, value: unknown) => void;
-  onReset?: (key: string) => void;
   // 2026-09-24 小欧 - ①参数行 × 删除（A 方案，点即删无确认）；env 接管键按钮禁用 — 小欧-2026-09-24
   onDelete?: (key: string) => void;
+  // 2026-09-24 小欧 - BZ-5：保存中 saving 锁定参数行（控件+×按钮 disabled）— 小欧-2026-09-24
+  disabled?: boolean;
 }
 
 export const ModelParams: React.FC<Props> = ({
@@ -49,6 +55,7 @@ export const ModelParams: React.FC<Props> = ({
   envOverride,
   onChange,
   onDelete,
+  disabled = false,
 }) => {
   const dirty = isDirty(params, defaults, envOverride);
   return (
@@ -63,6 +70,8 @@ export const ModelParams: React.FC<Props> = ({
           // 修正(2026-09-21 小强)：env 接管键禁用控件 + EnvTag 标识——
           // 原可编辑但 setParam 写入被 isDirty 排除，静默无效（改假值/保存假成功/切走丢失）([设置页UI审计] 问题2)
           const envKey = envOverride[key];
+          // 2026-09-24 小欧 - BZ-5：保存中整体锁定（envKey||disabled 单点；EnvTag 下方仍只认 envKey）
+          const lock = envKey || disabled;
           const renderControl = (): React.ReactNode => {
             if (range) {
               const safeNum = isNaN(numValue) ? range.min : numValue;
@@ -78,7 +87,7 @@ export const ModelParams: React.FC<Props> = ({
                     min={range.min}
                     max={range.max}
                     value={safeNum}
-                    disabled={envKey}
+                    disabled={lock}
                     style={{ width: settingsControl.sliderWidth }}
                     onChange={(v) => onChange(key, v)}
                   />
@@ -86,7 +95,7 @@ export const ModelParams: React.FC<Props> = ({
                     min={range.min}
                     max={range.max}
                     value={safeNum}
-                    disabled={envKey}
+                    disabled={lock}
                     onChange={(v) => onChange(key, v)}
                   />
                 </span>
@@ -101,7 +110,7 @@ export const ModelParams: React.FC<Props> = ({
                       ? rawValue
                       : String(rawValue ?? '')
                   }
-                  disabled={envKey}
+                  disabled={lock}
                   style={{ width: settingsControl.selectWidth }}
                   onChange={(v) => onChange(key, v)}
                 />
@@ -111,7 +120,7 @@ export const ModelParams: React.FC<Props> = ({
               return (
                 <InputNumber
                   value={rawValue}
-                  disabled={envKey}
+                  disabled={lock}
                   style={{ width: settingsControl.inputNumberWidth }}
                   onChange={(v) => onChange(key, v)}
                 />
@@ -121,7 +130,7 @@ export const ModelParams: React.FC<Props> = ({
               return (
                 <Switch
                   checked={rawValue}
-                  disabled={envKey}
+                  disabled={lock}
                   onChange={(v) => onChange(key, v)}
                 />
               );
@@ -130,7 +139,7 @@ export const ModelParams: React.FC<Props> = ({
               return (
                 <Input.TextArea
                   value={JSON.stringify(rawValue ?? null)}
-                  disabled={envKey}
+                  disabled={lock}
                   autoSize
                   style={{ width: settingsControl.textareaWidth }}
                   onChange={(e) => {
@@ -153,7 +162,7 @@ export const ModelParams: React.FC<Props> = ({
             return (
               <Input
                 value={String(rawValue ?? '')}
-                disabled={envKey}
+                disabled={lock}
                 style={{ width: settingsControl.inputWidth }}
                 onChange={(e) => onChange(key, e.target.value)}
               />
@@ -173,7 +182,7 @@ export const ModelParams: React.FC<Props> = ({
                   size="small"
                   danger
                   icon={<DeleteOutlined />}
-                  disabled={envKey}
+                  disabled={lock}
                   onClick={() => onDelete(key)}
                   aria-label={`删除参数 ${key}`}
                   style={{

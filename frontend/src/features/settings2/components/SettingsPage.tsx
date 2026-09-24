@@ -58,6 +58,15 @@
 //   （yaml 手写 vision 等非 5 枚举值——设计要点「看得见、本页不提供增删」，原实现未知值完全不可见；
 //   Tag 无 closable + cursor:not-allowed；import 并入既有 antd/modelUtils 行，禁重复）- 小欧-2026-09-23
 // 2026-09-24 小欧 - ①ModelParams 传 onDelete={s.removeParam}（②参数行 × 删除按钮接线，A 方案）- 小欧-2026-09-24
+// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①BZ-1 groupDirtyCount 补能力脏 +1（与 useSettings dirtyCount/
+//   isGroupDirty 同口径，原仅改能力时「保存本组」可点却显示 0 项计数失真）；②BZ-4 删除确认前置
+//   ensureModelSaved（删除成功后 load() 全量重建会静默丢当前焦点模型未落库改动，与 selectProvider/
+//   selectModel 同款 BUG-D 防线）；③BZ-5 保存中(saving) 锁定参数区（ModelParams disabled + 添加参数/
+//   管理选项/重置三按钮禁用，防保存 await 期间改 state 致闭包快照错位）；④BZ-8 添加参数/管理选项
+//   env 接管禁用 + envManaged 单点收口（能力行内联 env 判定表达式复用，防重复） — 小欧-2026-09-24
+// 2026-09-24 22:56:21 小欧 - BZ-5 闭环补漏（三堂会审发现表单通道未锁）：AddParamForm/ParamOptionsModal
+//   传 disabled={s.saving}（保存中禁提交）+「重置为默认」Modal.confirm onOk 加 saving 守卫——
+//   堵死「弹窗通道在保存 await 期间仍改模型 state」的最后竞态窗口，BZ-5 目标全闭合 - 小欧-2026-09-24
 import React, { useState } from 'react';
 import {
   Button,
@@ -177,8 +186,15 @@ const SettingsPage: React.FC = () => {
     DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
   const dangerousAll = DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
 
+  // 2026-09-24 小欧 - BZ-8/收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
+  //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
+  const envManaged =
+    state.model.providerConfig[state.model.selectedProvider]?.env === true;
+
   // 修正(2026-09-21 小强)：模型组脏计数按实际脏参数数（原是 isDirty?1:0 恒 1 项误导）（[设置页UI审计] 问题13）
   // 2026-09-24 小欧 - ①removedParams 计入模型组脏计数（删键是独立待存变更，与 dirtyCount 同口径）- 小欧-2026-09-24
+  // 2026-09-24 小欧 - BZ-1：补能力脏 +1（与 useSettings dirtyCount/isGroupDirty 同口径——
+  //   原仅改能力时「保存本组」可点却显示 0 项，计数失真）- 小欧-2026-09-24
   const groupDirtyCount =
     state.activeTab === 'model'
       ? Object.values(
@@ -187,7 +203,11 @@ const SettingsPage: React.FC = () => {
             state.model.defaults,
             state.model.envOverride
           )
-        ).filter(Boolean).length + state.model.removedParams.length
+        ).filter(Boolean).length +
+        state.model.removedParams.length +
+        (isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline)
+          ? 1
+          : 0)
       : Object.keys(state.dirtyKeys).filter(
           (k) => s.groupOfKey(k) === state.activeTab
         ).length;
@@ -284,6 +304,8 @@ const SettingsPage: React.FC = () => {
           <Button
             icon={<PlusOutlined />}
             style={{ width: settingsControl.actionBtnWidth }}
+            // 2026-09-24 小欧 - BZ-8 env 接管禁添加（后端拒保存）+ BZ-5 保存中禁（防保存期间改 state）— 小欧-2026-09-24
+            disabled={s.saving || envManaged}
             onClick={() => s.patchModel({ addParamFormOpen: true })}
           >
             添加参数
@@ -292,6 +314,8 @@ const SettingsPage: React.FC = () => {
           {Object.keys(state.model.paramOptions).length > 0 && (
             <Button
               style={{ width: settingsControl.actionBtnWidth }}
+              // 2026-09-24 小欧 - BZ-8/BZ-5：env 接管与保存中均禁（后端拒保存/防并发写）— 小欧-2026-09-24
+              disabled={s.saving || envManaged}
               onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
             >
               管理选项
@@ -301,7 +325,8 @@ const SettingsPage: React.FC = () => {
           {Object.keys(state.model.params).length > 0 && (
             <Button
               style={{ width: settingsControl.actionBtnWidth }}
-              disabled={!state.model.isDirty}
+              // 2026-09-24 小欧 - BZ-5：保存中禁重置（防保存期间改 state 致快照错位）— 小欧-2026-09-24
+              disabled={!state.model.isDirty || s.saving}
               onClick={() => {
                 Modal.confirm({
                   title: (
@@ -323,7 +348,11 @@ const SettingsPage: React.FC = () => {
                   okButtonProps: { danger: true },
                   cancelText: '取消',
                   width: settingsModalWidth.confirm,
-                  onOk: () => s.resetParams(),
+                  onOk: () => {
+                    // 2026-09-24 小欧 - BZ-5 闭环：保存进行中确认重置竞态守卫（防 resetParams 覆写保存中快照）
+                    if (s.saving) return;
+                    s.resetParams();
+                  },
                 });
               }}
             >
@@ -340,6 +369,8 @@ const SettingsPage: React.FC = () => {
             s.addParam(key, value, meta);
           }}
           onCancel={() => s.patchModel({ addParamFormOpen: false })}
+          // 2026-09-24 小欧 - BZ-5 闭环：保存中禁用表单确认（三堂会审边角）— 小欧-2026-09-24
+          disabled={s.saving}
         />
       )}
       <ModelParams
@@ -351,6 +382,8 @@ const SettingsPage: React.FC = () => {
         onChange={s.setParam}
         // 2026-09-24 小欧 - ①接 removeParam：行尾 × 点即删（env 接管键组件内 disabled）- 小欧-2026-09-24
         onDelete={s.removeParam}
+        // 2026-09-24 小欧 - BZ-5：保存中(saving) 锁定参数区全部控件+×按钮，防闭包快照错位 — 小欧-2026-09-24
+        disabled={s.saving}
       />
       {/* 2026-09-23 小欧 - [65]§7.2：模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
@@ -360,10 +393,8 @@ const SettingsPage: React.FC = () => {
         <span style={{ flex: 1 }}>
           <Checkbox.Group
             value={state.model.capabilities}
-            disabled={
-              state.model.providerConfig[state.model.selectedProvider]?.env ===
-              true
-            }
+            // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原内联 providerConfig env 判定重复表达式）
+            disabled={envManaged}
             options={CAPABILITY_OPTIONS}
             onChange={(v) => s.setCapabilities(v as string[])}
           />
@@ -438,9 +469,8 @@ const SettingsPage: React.FC = () => {
             ?.configured ?? false
         }
         // A3(2026-09-22 小强)：env 接管 provider 隐藏「清空 api_key」（后端拒 clear）
-        envManaged={
-          state.model.providerConfig[state.model.selectedProvider]?.env ?? false
-        }
+        // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原独立 `?? false` 表达式与能力行重复）
+        envManaged={envManaged}
         onClearApiKey={async () => {
           try {
             const r = await modelApi.updateProvider(
@@ -514,6 +544,10 @@ const SettingsPage: React.FC = () => {
           }
         }}
         onConfirmDelete={async () => {
+          // 2026-09-24 小欧 - BZ-4：删除前先强制保存模型 Tab 未落库改动——删除成功后的 load() 会全量
+          //   重建 model 态（defaults/params/能力/删除名单全部重载），不保存会静默丢弃当前焦点模型的
+          //   未存参数/能力/删除意图；与 selectProvider/selectModel 同款 BUG-D 防线（复用 ensureModelSaved）
+          if (!(await s.ensureModelSaved())) return;
           const target = state.model.deleteTarget ?? '';
           try {
             let res;
@@ -560,6 +594,8 @@ const SettingsPage: React.FC = () => {
         paramOptions={state.model.paramOptions}
         defaults={state.model.defaults}
         onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
+        // 2026-09-24 小欧 - BZ-5 闭环：保存中禁用弹窗提交（三堂会审边角）— 小欧-2026-09-24
+        disabled={s.saving}
         onSaved={async () => {
           if (state.model.selectedProvider && state.model.selectedModel)
             await s.refreshModels({

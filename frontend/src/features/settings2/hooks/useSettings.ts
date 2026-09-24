@@ -52,6 +52,11 @@
 //     （恒含 text 防假脏）；setCapabilities 归一并强制含 text；saveModelGroup 送 capsForSave（无增强→[]、
 //     有增强→['text',...extras]）；providers 缓存 capabilities 存保存态（空→[] 防 tags 假显文本）。
 //   initialModel 补 removedParams:[] 与 normalizeCaps 兼容初值 - 小欧-2026-09-24
+// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①BZ-8 addParam 加 env 接管守卫（与 removeParam 同款双防线——
+//   UI 入口禁用外 hook 再守一道防绕过；env Provider 加参保存必被后端 _raise_if_env_takeover 拒，无用功+吃报错）；
+//   ②BZ-4 暴露 ensureModelSaved 供 SettingsPage 删除确认前置调用（删除成功后 load() 全量重建 model 态，
+//   不强制保存会静默丢弃模型 Tab 未落库改动，与 selectProvider/selectModel/refreshModels 同款 BUG-D 防线复用）
+//   - 小欧-2026-09-24
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -966,6 +971,15 @@ export function useSettings() {
       value: unknown,
       meta?: { range?: { min: number; max: number }; options?: string[] }
     ) => {
+      // 2026-09-24 小欧 - BZ-8：env 接管 Provider 禁添加参数（后端 _raise_if_env_takeover 拒保存；
+      //   providerConfig.env 单源判定，与能力行/UI 入口禁用同源，hook 再守一道防绕过）
+      if (state.model.providerConfig[state.model.selectedProvider]?.env) {
+        showMessage(
+          ErrorType.WARNING,
+          '当前 Provider 由环境变量接管，不可添加参数'
+        );
+        return;
+      }
       if (key in state.model.params) {
         showMessage(ErrorType.WARNING, `参数 ${key} 已存在`);
         return;
@@ -1000,9 +1014,14 @@ export function useSettings() {
           },
         };
       });
-      // deps 只留判重闭包用的 params（ranges/paramOptions 在 setState 内经 s 读取，lint unnecessary 修正）
+      // deps 只留判重闭包用的 params（ranges/paramOptions 在 setState 内经 s 读取，lint unnecessary 修正；
+      //   BZ-8 守卫需 providerConfig/selectedProvider）
     },
-    [state.model.params]
+    [
+      state.model.params,
+      state.model.providerConfig,
+      state.model.selectedProvider,
+    ]
   );
 
   // 2026-09-24 小欧 - ①removeParam：参数行 × 删除（A 方案，点即删无确认）——四处同步删键
@@ -1152,6 +1171,8 @@ export function useSettings() {
     setCapabilities,
     resetParams,
     saveModelGroup,
+    // 2026-09-24 小欧 - BZ-4：暴露 BUG-D 防线（SettingsPage 删除确认前置调用，防删除后 load() 丢未存改动）
+    ensureModelSaved,
     refreshModels,
     syncMtime,
     patchModel,
