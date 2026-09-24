@@ -25,6 +25,11 @@ import * as fs from 'fs';
  * 编辑历史: 2026-09-25 00:15:06 小欧 - 新建：[68]§6.2 模型库 E2E 自动化 — 小欧-2026-09-25
  * 编辑历史: 2026-09-25 00:41:00 小欧 - 强化覆盖：本地 mock /models 打通获取→三项过滤→勾选→
  *   保存→模型Tab出现→取消勾选→无孤儿全链路；补强分组/统计/行数/孤儿键断言 — 小欧-2026-09-25
+ * 编辑历史: 2026-09-25 04:38:28 小健 - 补排序回归断言：清过滤恢复处 DOM 行序 = 已配置组 + 未配置组字母序
+ *   （mock 非字母序返回，验证后端 _parse_remote_models_body 单点排序生效）— 小健-2026-09-25
+ * 编辑历史: 2026-09-25 05:18:23 小健 - 断言工具修正：新增 domOrderIds（按 checkbox 行真 DOM 文档序抓取）
+ *   替换 visibleIds 做排序断言（后者按 ALL_IDS 遍历，集合语义不保序，致假失败 3 轮），
+ *   并移除排查期临时调试（API 直连打印 / page response 监听）— 小健-2026-09-25
  */
 const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
 const BASE = 'http://127.0.0.1:8000/api/v1';
@@ -90,6 +95,22 @@ const visibleIds = async (page: Page): Promise<string[]> => {
     if (n > 0) present.push(id);
   }
   return present;
+};
+
+// 2026-09-25 小健 - 真 DOM 文档序抓取(排序回归专用): 按 checkbox 行在文档中的实际出现序返回,
+//   与 visibleIds 的 ALL_IDS 遍历序(集合语义, 不保序)区分 — 小健-2026-09-25
+const domOrderIds = async (page: Page): Promise<string[]> => {
+  const texts = await page.$$eval(
+    '.settings-page .ant-checkbox-wrapper',
+    (els) =>
+      els.map(
+        (el) =>
+          ((el as HTMLElement).parentElement as HTMLElement)?.textContent ?? ''
+      )
+  );
+  return texts
+    .map((t) => ALL_IDS.find((id) => t.startsWith(id)) ?? '')
+    .filter((id) => id !== '');
 };
 
 const rowCheckbox = (page: Page, id: string) =>
@@ -235,7 +256,17 @@ test.describe('模型库 Tab 全链路 E2E-12 (有头+mock)', () => {
       await page.waitForTimeout(200);
       visible = await visibleIds(page);
       expect(visible.length).toBe(5);
-      console.log('[E2E] 步骤3 清过滤恢复 5 行 ok');
+      // 2026-09-25 小健 - 排序回归断言: 真DOM文档序 = 已配置组(seed) + 未配置组字母序
+      //   mock 远端返回 seed,alpha,beta,gamma,pickle 非字母序, 解析层排序后组内 big-pickle<alpha<beta<gamma
+      const domOrder = await domOrderIds(page);
+      expect(domOrder).toEqual([
+        SEED_ID,
+        PICKLE_ID,
+        ALPHA_ID,
+        BETA_ID,
+        GAMMA_ID,
+      ]);
+      console.log(`[E2E] 步骤3 清过滤恢复 5 行 ok DOM序=${domOrder.join(',')}`);
 
       // 4) 勾选未配置模型 alpha → 保存计数 1→2
       await expect(

@@ -6,6 +6,12 @@
 //   重置为新 Provider 已配置集（原清空空集，与设计 5.2-1 字面不符）- 小欧-2026-09-25
 // 2026-09-25 01:13:09 小欧 - 第七章 Step8 核查修复：过滤「仅看免费」Checkbox 说明字补
 //   FontSize.SECONDARY（§5.4.2 字面要求，原用 antd 默认 14px 主字号）- 小欧-2026-09-25
+// 2026-09-25 04:38:28 小健 - 模型列表全链路排序：finalList 落盘前整体按 id 字母序（不分大小写），
+//   后端 _parse_remote_models_body 已单点排序，preserve 保留项并入后整体排序保证 YAML/下拉一致 - 小健-2026-09-25
+// 2026-09-25 05:05:08 小健 - UI布局调整：①获取 + ②过滤两功能项并排一行（组内标题在上、控件在下），
+//   fetchError Alert 与统计行下沉至行外（北京老陈要求）- 小健-2026-09-25
+// 2026-09-25 05:11:13 小健 - UI布局调整：「保存所选」按钮移至③列表标题同行、行内水平垂直居中，
+//   原右下角独立按钮容器移除（北京老陈要求）- 小健-2026-09-25
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -109,10 +115,11 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
     if (!remote?.ok) return [];
     const listed = new Set(remote.models.map((m) => m.id));
     const preserve = remote.configured.filter((id) => !listed.has(id));
+    // 2026-09-25 04:38:28 小健 - 全链路字母序: checked 部分继承远端已排序序, preserve 保留项并入后整体排序
     return [
       ...remote.models.map((m) => m.id).filter((id) => checked.has(id)),
       ...preserve,
-    ];
+    ].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
   }, [remote, checked]);
   const removedCount = useMemo(
     () =>
@@ -246,32 +253,73 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
 
   return (
     <div>
-      <SectionTitle title="── ① 获取 ──" />
-      <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
-        <Select
-          value={selectedProvider}
-          style={{ width: settingsControl.modelSelectWidth }}
-          onChange={onSelectProvider}
-          options={providers.map((p) => ({
-            value: p.name,
-            label: p.label || p.name,
-          }))}
-        />
-        <Button
-          icon={<CloudDownloadOutlined />}
-          loading={loading}
-          disabled={apiBaseEmpty}
-          onClick={() => void fetchList()}
-        >
-          获取模型列表
-        </Button>
-        {apiBaseEmpty && (
-          <span
-            style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}
+      {/* 2026-09-25 05:05:08 小健 - UI布局: ①获取+②过滤并排一行(北京老陈要求), 组内标题在上控件在下, Alert/统计行下沉行外 - 小健-2026-09-25 */}
+      <div
+        style={{
+          display: 'flex',
+          gap: Spacing.XL,
+          alignItems: 'flex-start',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div>
+          <SectionTitle title="── ① 获取 ──" />
+          <div
+            style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}
           >
-            未配置 api_base，请先到模型 Tab → ③ Provider 配置填写
-          </span>
-        )}
+            <Select
+              value={selectedProvider}
+              style={{ width: settingsControl.modelSelectWidth }}
+              onChange={onSelectProvider}
+              options={providers.map((p) => ({
+                value: p.name,
+                label: p.label || p.name,
+              }))}
+            />
+            <Button
+              icon={<CloudDownloadOutlined />}
+              loading={loading}
+              disabled={apiBaseEmpty}
+              onClick={() => void fetchList()}
+            >
+              获取模型列表
+            </Button>
+            {apiBaseEmpty && (
+              <span
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.WEAK,
+                }}
+              >
+                未配置 api_base，请先到模型 Tab → ③ Provider 配置填写
+              </span>
+            )}
+          </div>
+        </div>
+        <div>
+          <SectionTitle title="── ② 过滤 ──" />
+          <div
+            style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}
+          >
+            <Input
+              allowClear
+              prefix={<SearchOutlined />}
+              placeholder="搜索模型名 / 作者"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              style={{ width: settingsControl.searchWidth }}
+            />
+            <Tooltip title="只显示名称含 -free 或 big-pickle 的模型">
+              <Checkbox
+                checked={freeOnly}
+                onChange={(e) => setFreeOnly(e.target.checked)}
+                style={{ fontSize: FontSize.SECONDARY }}
+              >
+                仅看免费
+              </Checkbox>
+            </Tooltip>
+          </div>
+        </div>
       </div>
       {fetchError && (
         <Alert
@@ -281,27 +329,6 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
           message={fetchError}
         />
       )}
-
-      <SectionTitle title="── ② 过滤 ──" />
-      <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
-        <Input
-          allowClear
-          prefix={<SearchOutlined />}
-          placeholder="搜索模型名 / 作者"
-          value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
-          style={{ width: settingsControl.searchWidth }}
-        />
-        <Tooltip title="只显示名称含 -free 或 big-pickle 的模型">
-          <Checkbox
-            checked={freeOnly}
-            onChange={(e) => setFreeOnly(e.target.checked)}
-            style={{ fontSize: FontSize.SECONDARY }}
-          >
-            仅看免费
-          </Checkbox>
-        </Tooltip>
-      </div>
       {remote?.ok && (
         <div
           style={{
@@ -315,7 +342,33 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
         </div>
       )}
 
-      <SectionTitle title="── ③ 列表 ──" />
+      {/* 2026-09-25 05:11:13 小健 - UI布局: 保存所选按钮移至③列表标题同行并水平垂直居中(北京老陈要求), 原右下角容器移除 - 小健-2026-09-25 */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          position: 'relative',
+        }}
+      >
+        <SectionTitle title="── ③ 列表 ──" />
+        <div
+          style={{
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            transform: 'translate(-50%, -50%)',
+          }}
+        >
+          <Button
+            type="primary"
+            disabled={!remote?.ok || finalList.length === 0}
+            loading={saving}
+            onClick={onSave}
+          >
+            保存所选（{finalList.length}）
+          </Button>
+        </div>
+      </div>
       {loading && <Skeleton active paragraph={{ rows: 4 }} />}
       {!loading && !remote && (
         <Empty description="点击「获取模型列表」拉取该 Provider 远程模型" />
@@ -329,23 +382,6 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
           )}
         </>
       )}
-
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'flex-end',
-          marginTop: Spacing.LG,
-        }}
-      >
-        <Button
-          type="primary"
-          disabled={!remote?.ok || finalList.length === 0}
-          loading={saving}
-          onClick={onSave}
-        >
-          保存所选（{finalList.length}）
-        </Button>
-      </div>
     </div>
   );
 };
