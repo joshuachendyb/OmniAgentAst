@@ -1,11 +1,11 @@
 # [68] 设置页「模型库」Tab — 获取 Provider 模型列表并写入配置设计方案
 
-**版本**: v1.4
+**版本**: v1.5
 **创建时间**: 2026-09-24 20:34:12
-**更新时间**: 2026-09-24 21:27:36
+**更新时间**: 2026-09-24 22:36:52
 **编写人**: 小欧
 **更新人**: 小欧
-**状态**: 评审通过（北京老陈 2026-09-24 定案四项决策 + 整体方案通过；未落码）
+**状态**: 评审通过 + 实施详细设计代码完成（北京老陈 2026-09-24 定案四项决策 + 整体方案通过；第八章代码未落盘）
 
 ---
 
@@ -18,6 +18,7 @@
 | v1.2 | 2026-09-24 21:10:44 | 小欧 | 补 §5.4 UI 布局与视觉风格规范（北京老陈指令「必须参考本地最新代码风格，不能搞的奇奇怪怪的」）：基于 settingsTokens/stepStyles/SettingsPage 现行代码提炼——令牌强制表（间距/字号/颜色/控件宽/弹窗宽，禁裸数字禁 hex）、区块骨架对齐 SectionTitle/ModelSelector/settingsRowStyle、控件选型 antd5 同款、提示走 errorHandler、六条禁止清单；§5.2 图注补「结构示意以 §5.4 为准」 |
 | v1.3 | 2026-09-24 21:13:56 | 小欧 | 删除原第六章「边界与风险」整章（北京老陈指令：能解决的在方案里解决，不能解决的删掉，不留此章）：11 条全部为可解决问题且正文已覆盖或本次并入——①§4.2-5 补非数组响应显式 ok:false + 路径参数 enc() 编码；②测试表补 T11 非标准结构容错锁定该解法；③原七/八章号重排为六/七（含 7.1/7.2→6.1/6.2），全文章节连续 |
 | v1.4 | 2026-09-24 21:27:36 | 小欧 | 全文十遍通读整体化修订（北京老陈指令：查逻辑一致性，正文不许版本补丁注释）：①消除悬空摇摆——失败路径定死「本地校验 400/404、远端失败 200+ok:false」，DTO 定死 model_routes 内联，service 定死 model_service.py，删读而不用的 timeout 步骤；②修硬伤——§4.2 重复步骤号 6、§5.1 改动数量 5+1→4+1、实施清单 10 case→11 case、§2.3 删用不上的 mask 行、D4/§5.2 过滤用词统一；③路径参数编码移 §4.4 路由层；④清除正文全部版本补丁标记与历史备注（v1.x 补/已证/禁回潮/19 组件等），融为整体行文 |
+| v1.5 | 2026-09-24 22:36:52 | 小欧 | 新增第八章「实施详细设计代码」（北京老陈指令：前后端可直接落盘的真实代码 + 真 unified diff，不许说明性伪代码）：后端 settings_registry/model_service/model_routes 三文件 diff（@@ 行号按落码前 349/447/133 行精确计算）+ pytest T1~T11 全量 271 行；前端 types/icons/model.api/SettingsPage 四文件 diff + ModelLibraryTab.tsx 全量 328 行；本地校验 400/404 一律 HTTPException（ValueError 会被 handle_config_errors 转 500）、远端失败 200+ok:false 落码定死 |
 
 ---
 
@@ -389,7 +390,1110 @@ replaceModels: (provider: string, models: string[]) => Promise<{ ok: boolean; mt
 
 ---
 
+## 八、实施详细设计代码
+
+### 8.1 说明
+
+本章给出前后端**可直接落盘的真实代码**与 **真 unified diff**（`--- a/`、`+++ b/`、`@@` 行号按落码前文件精确计算），不写说明性伪代码。行号基线：`settings_registry.py`=349、`model_service.py`=447、`model_routes.py`=133、`types.ts`=87、`icons.tsx`=74、`model.api.ts`=153、`SettingsPage.tsx`=683。
+
+落码铁律（与正文一致）：
+
+1. 本地参数错误一律 `HTTPException`（400/404），**禁止 `ValueError`**——`handle_config_errors`（=`handle_api_errors`）把非 `HTTPException` 转 500。
+2. 远端失败统一 **200 + `ok:false` + message**，不透传远端状态码。
+3. route handler 必须 `async def`（装饰器内部 `await func(...)`）。
+4. service 必须模块级 `import httpx`（测试 patch `app.services.model.model_service.httpx.AsyncClient`）。
+5. 孤儿清理仅对「已存在」的 `model_params`/`model_meta` 二级键写 `None`；**绝不能写空 dict 叶**（`_iter_nested_ops` 空 dict 叶会整块覆盖）。
+
+编写人：小欧
+编写时间：2026-09-24 22:36:52
+
+### 8.2 后端
+
+#### 8.2.1 settings_registry.py（落码前 349 行，3 处 hunk）
+
+**改动 A — docstring 编辑历史**（在 `"""` 收口前追加 2 行）：
+
+```diff
+--- a/backend/app/services/settings/settings_registry.py
++++ b/backend/app/services/settings/settings_registry.py
+@@ -104,6 +104,8 @@
+     2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(北京老陈裁定"live_front 更准确")：
+        原名 stream_task 与 tuning.llm.stream_* 撞名易误读为 LLM body 流式开关，实为前端 SSE 保活+任务清理+缓存；
+        4 键 key 路径前缀同步、label/默认值/值域/notice/type 均不动；全仓消费点 4 处 get 路径+前端前缀匹配+E2E 断言
+        同轮改，禁止 backward 无 OLD_KEY_MAP — 小欧-2026-09-24
++   2026-09-24 22:36:52 - 小欧 - [68] 模型库：新增 model_library 组（items 空，不走 schema 行渲染，
++     走专用组件分支）；GROUP_ORDER 插倒数第二 — 小欧-2026-09-24
+ """
+ from typing import Any, Dict, List, Optional
+```
+
+**改动 B — GROUPS 增 model_library**（appearance 后、tuning 注释前，+2 行；首 hunk 已 +2，本 hunk 新起点 226）：
+
+```diff
+--- a/backend/app/services/settings/settings_registry.py
++++ b/backend/app/services/settings/settings_registry.py
+@@ -224,8 +226,10 @@
+         _item("app.theme", "readonly", "主题", "light", readonly=True,
+               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
+         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
+     ]},
++    # 2026-09-24 小欧 - [68] 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支 — 小欧-2026-09-24
++    "model_library": {"label": "模型库", "items": []},
+     # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
+     # 2026-09-23 小欧 - 20:12:44 前 10子组34键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键，network 1键仍在）— 小欧-2026-09-23
+     # 2026-09-23 小欧 - 20:12:44 起 9子组33键（network.cors_origins 迁系统组；实测 REGISTRY 9子组33键）— 小欧-2026-09-23
+     "tuning": {"label": "调优", "items": [
+```
+
+**改动 C — GROUP_ORDER 插倒数第二**（累计偏移 +4，新起点 311）：
+
+```diff
+--- a/backend/app/services/settings/settings_registry.py
++++ b/backend/app/services/settings/settings_registry.py
+@@ -307,7 +311,8 @@
+     ]},
+ }
+ 
+-GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "appearance"]
++# 2026-09-24 小欧 - [68] D1：模型库插倒数第二（通用→模型→安全→沙箱→调优→系统→模型库→外观）— 小欧-2026-09-24
++GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "model_library", "appearance"]
+ 
+ # registry key → ConfigUpdate 字段映射（旧键走 config_service.update_config，语义不变；
+ # 未列出的键走通用 region 合并，见 config_helpers.merge_region_patch）
+```
+
+#### 8.2.2 model_service.py（落码前 447 行，3 处 hunk）
+
+**改动 A — docstring 编辑历史**（+2 行）：
+
+```diff
+--- a/backend/app/services/model/model_service.py
++++ b/backend/app/services/model/model_service.py
+@@ -58,6 +58,8 @@
+ #   ③BZ-7 remove_params 全为不存在键（model_params 均无命中且 meta 无命中、无 default_params、
+ #     无其它字段）= 幂等 no-op 成功返回不写盘（原仍全量 merge 空耗备份/原子重写/mtime 抖动）；
+ #   ④BZ-9 range/param_options 双份近似清理收敛 for meta_key 单循环（DRY）— 小欧-2026-09-24
++# 2026-09-24 - 小欧 - [68] 模型库：新增 fetch_remote_models（GET 远程列表）与
++#   replace_provider_models（PUT 替换写入 + 差集孤儿清理）— 小欧-2026-09-24
+ """
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional
+```
+
+**改动 B — imports**（+3 行；首 hunk +2，本 hunk 新起点 64）：
+
+```diff
+--- a/backend/app/services/model/model_service.py
++++ b/backend/app/services/model/model_service.py
+@@ -62,6 +64,9 @@
+ from pathlib import Path
+ from typing import Any, Dict, List, Optional
+ import os
++import httpx
++from fastapi import HTTPException
++from app.llm.adapters import get_provider_adapter
+ 
+ from app.logger import logger
+ from app.config import get_config  # [62]P7 4.3(1)c：get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
+ from app.services.model.config_helpers import (
+```
+
+**改动 C — 文件末尾追加两个函数**（累计偏移 +5，新起点 449）：
+
+```diff
+--- a/backend/app/services/model/model_service.py
++++ b/backend/app/services/model/model_service.py
+@@ -444,4 +449,84 @@
+         _sync_current(tree, target_p, target_m)
+         switched_to = target_p or None
+     merge_nested_patch(tree, scope="model")
+     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
++
++
++async def fetch_remote_models(name: str) -> Dict[str, Any]:
++    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
++    ai = _raw_ai()
++    if name not in _provider_names(ai):
++        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
++    p = ai.get(name)
++    if not isinstance(p, dict):
++        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
++    api_base = str(p.get("api_base") or "").strip()
++    if not api_base:
++        raise HTTPException(status_code=400, detail="未配置 api_base，请先到模型 Tab → ③ Provider 配置填写")
++    api_key = str(p.get("api_key") or "")
++    headers = get_provider_adapter(name).static_headers(api_key)
++    configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
++    ref = get_current_ref(ai)
++    current_model = ref["model"] if ref["provider"] == name else None
++
++    def _fail(message: str) -> Dict[str, Any]:
++        return {
++            "ok": False,
++            "provider": name,
++            "models": [],
++            "count": 0,
++            "configured": configured,
++            "current_model": current_model,
++            "message": message,
++        }
++
++    try:
++        async with httpx.AsyncClient(timeout=30.0) as client:
++            resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
++    except Exception as e:
++        logger.error(f"拉取远程模型失败 name={name}: {e}")
++        return _fail(f"拉取失败: {e}")
++
++    if resp.status_code >= 400:
++        message = f"HTTP {resp.status_code}"
++        try:
++            body = resp.json()
++            if isinstance(body, dict):
++                err = body.get("error")
++                if isinstance(err, dict) and err.get("message"):
++                    message = str(err["message"])
++                elif body.get("message"):
++                    message = str(body["message"])
++        except Exception:
++            pass
++        return _fail(message)
++
++    try:
++        body = resp.json()
++    except Exception as e:
++        return _fail(f"响应解析失败: {e}")
++
++    if not isinstance(body, dict):
++        return _fail("远端返回结构异常")
++    data = body.get("data")
++    if not isinstance(data, list):
++        return _fail("远端返回结构异常（data 非数组）")
++
++    models: List[Dict[str, Any]] = []
++    for item in data:
++        if not isinstance(item, dict):
++            continue
++        mid = item.get("id") or item.get("model")
++        if not mid:
++            continue
++        models.append({"id": str(mid), "owned_by": item.get("owned_by")})
++
++    return {
++        "ok": True,
++        "provider": name,
++        "models": models,
++        "count": len(models),
++        "configured": configured,
++        "current_model": current_model,
++    }
++
++
++def replace_provider_models(name: str, models: List[str]) -> Dict[str, Any]:
++    """[68] 替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24"""
++    ai = _raw_ai()
++    if name not in _provider_names(ai):
++        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
++    if os.environ.get(f"{name.upper()}_API_KEY"):
++        raise HTTPException(
++            status_code=400,
++            detail=f"Provider '{name}' 由环境变量 {name.upper()}_API_KEY 接管，只读",
++        )
++    new_list: List[str] = []
++    seen = set()
++    for m in models:
++        s = str(m).strip()
++        if s and s not in seen:
++            seen.add(s)
++            new_list.append(s)
++    if not new_list:
++        raise HTTPException(status_code=400, detail="模型列表不能为空")
++    ref = get_current_ref(ai)
++    if ref["provider"] == name and ref["model"] and ref["model"] not in new_list:
++        raise HTTPException(
++            status_code=400,
++            detail=f"不能移除当前全局模型 {ref['model']}，请先切换全局模型",
++        )
++    old = [m for m in (p.get("models") or []) if isinstance(m, str)] if isinstance(p := ai.get(name), dict) else []
++    removed = [m for m in old if m not in set(new_list)]
++    added = [m for m in new_list if m not in set(old)]
++    tree: Dict[str, Any] = {"ai": {name: {"models": new_list}}}
++    node = tree["ai"][name]
++    if isinstance(p, dict):
++        params_block = p.get("model_params") or {}
++        meta_block = p.get("model_meta") or {}
++        if isinstance(params_block, dict):
++            orphans = {m: None for m in removed if m in params_block}
++            if orphans:
++                node["model_params"] = orphans
++        if isinstance(meta_block, dict):
++            orphans = {m: None for m in removed if m in meta_block}
++            if orphans:
++                node["model_meta"] = orphans
++    merge_nested_patch(tree, scope="model")
++    return {"ok": True, "mtime": _config_mtime(), "added": added, "removed": removed}
+```
+
+> 实现注意：`replace_provider_models` 内 env 接管**直接抛 `HTTPException(400)`**，不调 `_raise_if_env_takeover`（后者抛 `ValueError` 会被转 500）。
+
+#### 8.2.3 model_routes.py（落码前 133 行，2 处 hunk）
+
+**改动 A — DTO**（clear 行后、`GET /models` 前，+19 行）：
+
+```diff
+--- a/backend/app/api/v1/model_routes.py
++++ b/backend/app/api/v1/model_routes.py
+@@ -74,6 +74,25 @@
+     base_url: Optional[str] = Field(default=None)
+     timeout: Optional[int] = Field(default=None)
+     retry_times: Optional[int] = Field(default=None)
+     max_retries: Optional[int] = Field(default=None)
+     clear: Optional[bool] = Field(default=None, description="clear=true 显式清空 api_key")
++
++
++class RemoteModelItem(BaseModel):
++    id: str
++    owned_by: Optional[str] = None
++
++
++class RemoteModelsResponse(BaseModel):
++    ok: bool
++    provider: str
++    models: List[RemoteModelItem]
++    count: int
++    configured: List[str]
++    current_model: Optional[str] = None
++    message: Optional[str] = None
++
++
++class ProviderModelsReplaceRequest(BaseModel):
++    models: List[str]
+ 
+ 
+ @router.get("/models")
+```
+
+**改动 B — 两个 endpoint**（文件末尾，累计偏移 +19，新起点 149）：
+
+```diff
+--- a/backend/app/api/v1/model_routes.py
++++ b/backend/app/api/v1/model_routes.py
+@@ -130,4 +149,16 @@
+ @router.delete("/providers/{name}")
+ @handle_config_errors("删除 Provider")
+ async def delete_provider(name: str):
+     return svc.delete_provider(name)
++
++
++@router.get("/providers/{name}/remote-models")
++@handle_config_errors("获取远程模型列表")
++async def get_remote_models(name: str):
++    return await svc.fetch_remote_models(name)
++
++
++@router.put("/providers/{name}/models")
++@handle_config_errors("替换 Provider 模型列表")
++async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
++    return svc.replace_provider_models(name, req.models)
+```
+
+#### 8.2.4 后端测试 test_remote_models_tdd.py（新文件 271 行，T1~T11）
+
+```diff
+--- /dev/null
++++ b/backend/tests/test_remote_models_tdd.py
+@@ -0,0 +1,271 @@
++# -*- coding: utf-8 -*-
++"""
++test_remote_models_tdd — [68] 模型库 Tab 远程拉取 / 替换写入测试
++T1~T11（[68] §6.1）
++
++TDD 纪律：先红后绿。
++"""
++# 2026-09-24 - 小欧 - 新建：[68] T1-T11 全量 — 小欧-2026-09-24
++import json
++from unittest.mock import patch
++
++from fastapi.testclient import TestClient
++
++
++class _FakeResp:
++    def __init__(self, status_code=200, text="{}"):
++        self.status_code = status_code
++        self.text = text
++
++
++def _client():
++    from app.main import app
++    return TestClient(app, raise_server_exceptions=False)
++
++
++def _httpx_cls(resp: _FakeResp):
++    """构造可替换响应的 AsyncClient 替身（async with + get 两钩子）。"""
++
++    class _C:
++        def __init__(self, *args, **kwargs):
++            pass
++
++        async def __aenter__(self):
++            return self
++
++        async def __aexit__(self, *args):
++            return False
++
++        async def get(self, url, headers=None):
++            return resp
++
++    return _C
++
++
++_AI = {
++    "model_ref": {"provider": "p1", "model": "m-old"},
++    "p1": {
++        "api_base": "https://api.example.com/v1",
++        "api_key": "sk-test",
++        "models": ["m-old", "m-del"],
++        "model_params": {"m-del": {"temperature": 0.1}, "m-old": {"t": 1}},
++        "model_meta": {"m-del": {"label": "del"}, "m-old": {"label": "old"}},
++    },
++}
++
++
++# ------------------------------------------------------------------
++# T1: 拉取成功
++# ------------------------------------------------------------------
++class TestT1FetchOk:
++    """T1: 200 + data[] → count/configured/current_model 对齐"""
++
++    def test_t1(self):
++        body = json.dumps({"data": [
++            {"id": "m-new", "owned_by": "acme"},
++            {"model": "m-fallback"},
++        ]})
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.httpx.AsyncClient",
++                   _httpx_cls(_FakeResp(200, body))):
++            resp = _client().get("/api/v1/providers/p1/remote-models")
++        assert resp.status_code == 200
++        data = resp.json()
++        assert data["ok"] is True
++        assert data["count"] == 2
++        assert data["models"][0]["id"] == "m-new"
++        assert data["models"][1]["id"] == "m-fallback"
++        assert data["configured"] == ["m-old", "m-del"]
++        assert data["current_model"] == "m-old"
++
++
++# ------------------------------------------------------------------
++# T2: 远端 401 → 200 + ok:false + 服务商真实错误
++# ------------------------------------------------------------------
++class TestT2Remote401:
++    """T2: HTTP>=400 不透传状态码，提取 error.message"""
++
++    def test_t2(self):
++        body = json.dumps({"error": {"message": "invalid api key"}})
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.httpx.AsyncClient",
++                   _httpx_cls(_FakeResp(401, body))):
++            resp = _client().get("/api/v1/providers/p1/remote-models")
++        assert resp.status_code == 200
++        data = resp.json()
++        assert data["ok"] is False
++        assert "invalid api key" in data["message"]
++
++
++# ------------------------------------------------------------------
++# T3: api_base 空 → 400
++# ------------------------------------------------------------------
++class TestT3ApiBaseEmpty:
++    """T3: 本地参数错误 400"""
++
++    def test_t3(self):
++        ai = {"p1": {"api_base": "", "api_key": "k", "models": ["m-old"]}}
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=ai):
++            resp = _client().get("/api/v1/providers/p1/remote-models")
++        assert resp.status_code == 400
++
++
++# ------------------------------------------------------------------
++# T4: provider 不存在 → 404
++# ------------------------------------------------------------------
++class TestT4ProviderMissing:
++    """T4: 本地参数错误 404"""
++
++    def test_t4(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI):
++            resp = _client().get("/api/v1/providers/nope/remote-models")
++        assert resp.status_code == 404
++
++
++# ------------------------------------------------------------------
++# T5: 替换写盘 → tree models == 入参；mtime 返回
++# ------------------------------------------------------------------
++class TestT5ReplaceWrite:
++    """T5: 替换式落盘 patch 结构 + mtime"""
++
++    def test_t5(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.merge_nested_patch") as m, \
++             patch("app.services.model.model_service._config_mtime",
++                   return_value=123.0):
++            resp = _client().put(
++                "/api/v1/providers/p1/models",
++                json={"models": ["m-old", "m-new"]})
++        assert resp.status_code == 200
++        data = resp.json()
++        assert data["ok"] is True
++        assert data["mtime"] == 123.0
++        tree = m.call_args[0][0]
++        assert tree["ai"]["p1"]["models"] == ["m-old", "m-new"]
++
++
++# ------------------------------------------------------------------
++# T6: 移除当前全局模型 → 400，不落盘
++# ------------------------------------------------------------------
++class TestT6KeepCurrentGlobal:
++    """T6: model_ref.model 不在新列表 → 400 且 merge 不被调用"""
++
++    def test_t6(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.merge_nested_patch") as m:
++            resp = _client().put(
++                "/api/v1/providers/p1/models",
++                json={"models": ["m-del"]})
++        assert resp.status_code == 400
++        m.assert_not_called()
++
++
++# ------------------------------------------------------------------
++# T7: env 接管保存 → 400 只读
++# ------------------------------------------------------------------
++class TestT7EnvTakeover:
++    """T7: {NAME}_API_KEY 命中 → 400"""
++
++    def test_t7(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch.dict("os.environ", {"P1_API_KEY": "x"}):
++            resp = _client().put(
++                "/api/v1/providers/p1/models",
++                json={"models": ["m-old", "m-del"]})
++        assert resp.status_code == 400
++        assert "只读" in resp.json()["detail"]
++
++
++# ------------------------------------------------------------------
++# T8: 空列表 → 400
++# ------------------------------------------------------------------
++class TestT8EmptyList:
++    """T8: 归一后为空 → 400"""
++
++    def test_t8(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI):
++            resp = _client().put(
++                "/api/v1/providers/p1/models",
++                json={"models": ["", "  "]})
++        assert resp.status_code == 400
++
++
++# ------------------------------------------------------------------
++# T9: 孤儿清理 → removed 模型的 model_params/model_meta 置 None
++# ------------------------------------------------------------------
++class TestT9OrphanCleanup:
++    """T9: 差集 removed → params/meta None 叶；未移除的不写"""
++
++    def test_t9(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.merge_nested_patch") as m, \
++             patch("app.services.model.model_service._config_mtime",
++                   return_value=1.0):
++            resp = _client().put(
++                "/api/v1/providers/p1/models",
++                json={"models": ["m-old", "m-new"]})
++        assert resp.status_code == 200
++        node = m.call_args[0][0]["ai"]["p1"]
++        assert node["model_params"]["m-del"] is None
++        assert node["model_meta"]["m-del"] is None
++        assert "m-old" not in node.get("model_params", {})
++        assert "m-old" not in node.get("model_meta", {})
++        assert resp.json()["removed"] == ["m-del"]
++        assert resp.json()["added"] == ["m-new"]
++
++
++# ------------------------------------------------------------------
++# T10: 重复 / 空串入参归一
++# ------------------------------------------------------------------
++class TestT10Normalize:
++    """T10: 去空去重保序"""
++
++    def test_t10(self):
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.merge_nested_patch") as m, \
++             patch("app.services.model.model_service._config_mtime",
++                   return_value=1.0):
++            resp = _client().put(
++                "/api/v1/providers/p1/models",
++                json={"models": ["m-old", "m-old", "", "m-new", "m-old"]})
++        assert resp.status_code == 200
++        assert m.call_args[0][0]["ai"]["p1"]["models"] == ["m-old", "m-new"]
++
++
++# ------------------------------------------------------------------
++# T11: 非标准结构容错
++# ------------------------------------------------------------------
++class TestT11NonStandard:
++    """T11: data 非数组 → ok:false；id 缺失回退 model 字段"""
++
++    def test_data_not_array(self):
++        body = json.dumps({"data": {"oops": True}})
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.httpx.AsyncClient",
++                   _httpx_cls(_FakeResp(200, body))):
++            resp = _client().get("/api/v1/providers/p1/remote-models")
++        assert resp.status_code == 200
++        assert resp.json()["ok"] is False
++
++    def test_id_fallback_model(self):
++        body = json.dumps({"data": [{"model": "only-model"}]})
++        with patch("app.services.model.model_service._raw_ai",
++                   return_value=_AI), \
++             patch("app.services.model.model_service.httpx.AsyncClient",
++                   _httpx_cls(_FakeResp(200, body))):
++            resp = _client().get("/api/v1/providers/p1/remote-models")
++        assert resp.status_code == 200
++        data = resp.json()
++        assert data["ok"] is True
++        assert data["models"][0]["id"] == "only-model"
+```
+
+### 8.3 前端
+
+#### 8.3.1 types.ts（落码前 87 行）
+
+```diff
+--- a/frontend/src/features/settings2/types.ts
++++ b/frontend/src/features/settings2/types.ts
+@@ -25,9 +25,10 @@
+ // 2026-09-22 小欧 - [61] tuning Tab 类型补齐：TabKey 加 'tuning'
+ export type TabKey =
+   | 'general'
+   | 'model'
+   | 'security'
+   | 'appearance'
+   | 'system'
+   | 'sandbox'
+-  | 'tuning';
++  | 'tuning'
++  | 'model_library';
+ 
+ export interface ModelState {
+```
+
+#### 8.3.2 icons.tsx（落码前 74 行，2 处 hunk）
+
+**改动 A — import**：
+
+```diff
+--- a/frontend/src/features/settings2/components/icons.tsx
++++ b/frontend/src/features/settings2/components/icons.tsx
+@@ -7,10 +7,11 @@
+ import {
+   ApiOutlined,
+   BgColorsOutlined,
++  CloudDownloadOutlined,
+   CodeOutlined,
+   CopyOutlined,
+   DesktopOutlined,
+   GlobalOutlined,
+   SafetyOutlined,
+   SlidersOutlined,
+ } from '@ant-design/icons';
+```
+
+**改动 B — SettingIcon 条目**（累计偏移 +1，新起点 28）：
+
+```diff
+--- a/frontend/src/features/settings2/components/icons.tsx
++++ b/frontend/src/features/settings2/components/icons.tsx
+@@ -27,9 +28,10 @@
+ export const SettingIcon: Record<TabKey, React.ReactNode> = {
+   general: <GlobalOutlined style={TAB_ICON_STYLE} />,
+   model: <ApiOutlined style={TAB_ICON_STYLE} />,
+   security: <SafetyOutlined style={TAB_ICON_STYLE} />,
+   appearance: <BgColorsOutlined style={TAB_ICON_STYLE} />,
+   system: <DesktopOutlined style={TAB_ICON_STYLE} />,
+   sandbox: <CodeOutlined style={TAB_ICON_STYLE} />,
+   tuning: <SlidersOutlined style={TAB_ICON_STYLE} />,
++  model_library: <CloudDownloadOutlined style={TAB_ICON_STYLE} />,
+ };
+```
+
+#### 8.3.3 model.api.ts（落码前 153 行，2 处 hunk）
+
+**改动 A — 类型**（ModelMutationResult 后，+22 行）：
+
+```diff
+--- a/frontend/src/services/api/model.api.ts
++++ b/frontend/src/services/api/model.api.ts
+@@ -53,9 +53,31 @@
+ export interface ModelMutationResult {
+   ok: boolean;
+   model?: string;
+   provider?: string;
+   switched_to?: string | null;
+   mtime: number;
+ }
++
++export interface RemoteModelItem {
++  id: string;
++  owned_by?: string | null;
++}
++
++export interface RemoteModelsResponse {
++  ok: boolean;
++  provider: string;
++  models: RemoteModelItem[];
++  count: number;
++  configured: string[];
++  current_model?: string | null;
++  message?: string;
++}
++
++export interface ReplaceModelsResult {
++  ok: boolean;
++  mtime: number;
++  added: string[];
++  removed: string[];
++}
+ 
+ export interface ProviderConfigPatch {
+   api_key?: string;
+```
+
+**改动 B — API 方法**（deleteProvider 后、对象收口前；累计偏移 +22，新起点 170）：
+
+```diff
+--- a/frontend/src/services/api/model.api.ts
++++ b/frontend/src/services/api/model.api.ts
+@@ -148,6 +170,26 @@
+   // 2026-09-21 小强 - 修复类型瑕疵：deleteProvider 补齐 mtime（与 deleteModel 同构、后端同样返回 mtime，缺此字段表单 union 后 res.mtime 报错）
+   deleteProvider: async (name: string): Promise<ModelMutationResult> => {
+     const response = await api.delete(`/providers/${enc(name)}`);
+     return response.data;
+   },
++
++  // 2026-09-24 小欧 - [68] 拉取远程模型列表 — 小欧-2026-09-24
++  fetchRemoteModels: async (provider: string): Promise<RemoteModelsResponse> => {
++    const response = await api.get<RemoteModelsResponse>(
++      `/providers/${enc(provider)}/remote-models`
++    );
++    return response.data;
++  },
++
++  // 2026-09-24 小欧 - [68] 替换式写入 models 列表 — 小欧-2026-09-24
++  replaceModels: async (
++    provider: string,
++    models: string[]
++  ): Promise<ReplaceModelsResult> => {
++    const response = await api.put<ReplaceModelsResult>(
++      `/providers/${enc(provider)}/models`,
++      { models }
++    );
++    return response.data;
++  },
+ };
+```
+
+#### 8.3.4 ModelLibraryTab.tsx（新文件 328 行）
+
+```diff
+--- /dev/null
++++ b/frontend/src/features/settings2/components/ModelLibraryTab.tsx
+@@ -0,0 +1,328 @@
++// 编辑历史: 2026-09-24 小欧 - 新建：[68] 模型库 Tab（拉取 Provider 远程模型 + 勾选替换式写入
++//   ai.{provider}.models；三项过滤 D4/守卫第5条前端对应/脏态不进 SaveBar）- 小欧-2026-09-24
++import React, { useEffect, useMemo, useState } from 'react';
++import {
++  Alert,
++  Button,
++  Checkbox,
++  Empty,
++  Input,
++  Modal,
++  Select,
++  Skeleton,
++  Tag,
++  Tooltip,
++} from 'antd';
++import { CloudDownloadOutlined, SearchOutlined } from '@ant-design/icons';
++import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
++import {
++  settingsControl,
++  settingsModalWidth,
++  settingsRowStyle,
++} from '@/theme/settingsTokens';
++import { modelApi } from '@/services/api/model.api';
++import type {
++  ProviderEntry,
++  RemoteModelsResponse,
++} from '@/services/api/model.api';
++import { showSuccess } from '@/services/error/handler';
++import { SectionTitle } from './SectionTitle';
++
++interface Props {
++  providers: ProviderEntry[];
++  onSaved: (mtime: number) => Promise<void>;
++}
++
++// D4 免费过滤：名称含 -free 或等于 big-pickle（对齐 scripts 过滤规则）
++const isFreeModel = (id: string): boolean =>
++  id.includes('-free') || id === 'big-pickle';
++
++export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
++  const [selectedProvider, setSelectedProvider] = useState<string>(
++    providers[0]?.name ?? ''
++  );
++  const [loading, setLoading] = useState(false);
++  const [fetchError, setFetchError] = useState<string | null>(null);
++  const [remote, setRemote] = useState<RemoteModelsResponse | null>(null);
++  const [keyword, setKeyword] = useState('');
++  const [freeOnly, setFreeOnly] = useState(false);
++  const [checked, setChecked] = useState<Set<string>>(new Set());
++  const [saving, setSaving] = useState(false);
++
++  // §5.2-7：providers 变化（设置页增删/外部改 yaml）时本地 selectedProvider 失效守卫
++  useEffect(() => {
++    if (providers.length === 0) return;
++    if (!providers.some((p) => p.name === selectedProvider)) {
++      setSelectedProvider(providers[0].name);
++      setRemote(null);
++      setChecked(new Set());
++      setKeyword('');
++      setFetchError(null);
++    }
++  }, [providers, selectedProvider]);
++
++  const provider = providers.find((p) => p.name === selectedProvider);
++  const apiBaseEmpty = provider ? !provider.api_base : true;
++
++  // D4 三项过滤叠加：关键词 + 仅看免费（分组在渲染层做）
++  const filtered = useMemo(() => {
++    if (!remote?.ok) return [];
++    const kw = keyword.trim().toLowerCase();
++    return remote.models.filter((m) => {
++      if (freeOnly && !isFreeModel(m.id)) return false;
++      if (
++        kw &&
++        !m.id.toLowerCase().includes(kw) &&
++        !(m.owned_by ?? '').toLowerCase().includes(kw)
++      )
++        return false;
++      return true;
++    });
++  }, [remote, keyword, freeOnly]);
++
++  const configuredGroup = useMemo(
++    () => filtered.filter((m) => remote?.configured.includes(m.id)),
++    [filtered, remote]
++  );
++  const unconfiguredGroup = useMemo(
++    () => filtered.filter((m) => !remote?.configured.includes(m.id)),
++    [filtered, remote]
++  );
++
++  // D2 替换式：勾选集 = 最终列表；远端未回但配置里仍有的模型自动保留（防静默丢配置）
++  const finalList = useMemo(() => {
++    if (!remote?.ok) return [];
++    const listed = new Set(remote.models.map((m) => m.id));
++    const preserve = remote.configured.filter((id) => !listed.has(id));
++    return [
++      ...remote.models.map((m) => m.id).filter((id) => checked.has(id)),
++      ...preserve,
++    ];
++  }, [remote, checked]);
++  const removedCount = useMemo(
++    () =>
++      remote?.ok
++        ? remote.configured.filter((id) => !finalList.includes(id)).length
++        : 0,
++    [remote, finalList]
++  );
++
++  const onSelectProvider = (name: string) => {
++    setSelectedProvider(name);
++    setRemote(null);
++    setChecked(new Set());
++    setKeyword('');
++    setFetchError(null);
++  };
++
++  const fetchList = async () => {
++    setLoading(true);
++    setFetchError(null);
++    try {
++      const res = await modelApi.fetchRemoteModels(selectedProvider);
++      if (!res.ok) {
++        setRemote(null);
++        setChecked(new Set());
++        setFetchError(res.message ?? '拉取失败');
++        return;
++      }
++      setRemote(res);
++      setChecked(new Set(res.configured));
++    } catch {
++      // 400/404 已由 client 拦截器 handleApiError 统一提示，此处只重置
++      setRemote(null);
++      setChecked(new Set());
++    } finally {
++      setLoading(false);
++    }
++  };
++
++  const toggle = (id: string) => {
++    setChecked((prev) => {
++      const next = new Set(prev);
++      if (next.has(id)) next.delete(id);
++      else next.add(id);
++      return next;
++    });
++  };
++
++  const onSave = () => {
++    if (!remote?.ok || finalList.length === 0) return;
++    Modal.confirm({
++      title: '替换模型列表',
++      width: settingsModalWidth.confirm,
++      content: `将替换该 Provider 的模型列表为已勾选的 ${finalList.length} 个（移除 ${removedCount} 个）`,
++      onOk: async () => {
++        setSaving(true);
++        try {
++          const res = await modelApi.replaceModels(
++            selectedProvider,
++            finalList
++          );
++          showSuccess(
++            `已保存：新增 ${res.added.length} 个、移除 ${res.removed.length} 个`
++          );
++          await onSaved(res.mtime);
++          setRemote({ ...remote, configured: finalList });
++        } catch {
++          // 失败已由 client 拦截器提示，弹窗保留可重试
++        } finally {
++          setSaving(false);
++        }
++      },
++    });
++  };
++
++  const renderRow = (m: { id: string; owned_by?: string | null }) => {
++    const isCurrent = remote?.current_model === m.id;
++    return (
++      <div key={m.id} style={settingsRowStyle}>
++        <Checkbox
++          checked={isCurrent || checked.has(m.id)}
++          disabled={isCurrent}
++          onChange={() => toggle(m.id)}
++        />
++        <span
++          style={{
++            marginLeft: Spacing.MD,
++            fontSize: FontSize.PRIMARY,
++            flex: 1,
++          }}
++        >
++          {m.id}
++        </span>
++        {m.owned_by && (
++          <span
++            style={{
++              fontSize: FontSize.SECONDARY,
++              color: Colors.TEXT.SECONDARY,
++              marginRight: Spacing.MD,
++            }}
++          >
++            {m.owned_by}
++          </span>
++        )}
++        {isCurrent && <Tag color="blue">当前</Tag>}
++      </div>
++    );
++  };
++
++  const renderGroup = (title: string, rows: typeof filtered) =>
++    rows.length > 0 && (
++      <div>
++        <div
++          style={{
++            fontSize: FontSize.PRIMARY,
++            fontWeight: FontWeight.BOLD,
++            margin: `${Spacing.SM}px 0`,
++          }}
++        >
++          {title}（{rows.length}）
++        </div>
++        {rows.map(renderRow)}
++      </div>
++    );
++
++  return (
++    <div>
++      <SectionTitle title="── ① 获取 ──" />
++      <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
++        <Select
++          value={selectedProvider}
++          style={{ width: settingsControl.modelSelectWidth }}
++          onChange={onSelectProvider}
++          options={providers.map((p) => ({
++            value: p.name,
++            label: p.label || p.name,
++          }))}
++        />
++        <Button
++          type="primary"
++          icon={<CloudDownloadOutlined />}
++          loading={loading}
++          disabled={apiBaseEmpty}
++          onClick={() => void fetchList()}
++        >
++          获取模型列表
++        </Button>
++        {apiBaseEmpty && (
++          <span style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.WEAK }}>
++            未配置 api_base，请先到模型 Tab → ③ Provider 配置填写
++          </span>
++        )}
++      </div>
++      {fetchError && (
++        <Alert
++          style={{ marginTop: Spacing.MD }}
++          type="error"
++          showIcon
++          message={fetchError}
++        />
++      )}
++
++      <SectionTitle title="── ② 过滤 ──" />
++      <div style={{ display: 'flex', gap: Spacing.MD, alignItems: 'center' }}>
++        <Input
++          allowClear
++          prefix={<SearchOutlined />}
++          placeholder="搜索模型名 / 作者"
++          value={keyword}
++          onChange={(e) => setKeyword(e.target.value)}
++          style={{ width: settingsControl.searchWidth }}
++        />
++        <Tooltip title="只显示名称含 -free 或 big-pickle 的模型">
++          <Checkbox
++            checked={freeOnly}
++            onChange={(e) => setFreeOnly(e.target.checked)}
++          >
++            仅看免费
++          </Checkbox>
++        </Tooltip>
++      </div>
++      {remote?.ok && (
++        <div
++          style={{
++            fontSize: FontSize.SECONDARY,
++            color: Colors.TEXT.SECONDARY,
++            marginTop: Spacing.XS,
++          }}
++        >
++          共 {remote.models.length} 个模型，已配置 {remote.configured.length}{' '}
++          个，已勾选 {finalList.length} 个
++        </div>
++      )}
++
++      <SectionTitle title="── ③ 列表 ──" />
++      {loading && <Skeleton active paragraph={{ rows: 4 }} />}
++      {!loading && !remote && (
++        <Empty description="点击「获取模型列表」拉取该 Provider 远程模型" />
++      )}
++      {!loading && remote?.ok && (
++        <>
++          {renderGroup('已配置', configuredGroup)}
++          {renderGroup('未配置 · 待挑选', unconfiguredGroup)}
++          {configuredGroup.length === 0 && unconfiguredGroup.length === 0 && (
++            <Empty description="无匹配模型" />
++          )}
++        </>
++      )}
++
++      <div
++        style={{
++          display: 'flex',
++          justifyContent: 'flex-end',
++          marginTop: Spacing.LG,
++        }}
++      >
++        <Button
++          type="primary"
++          disabled={!remote?.ok || finalList.length === 0}
++          loading={saving}
++          onClick={onSave}
++        >
++          保存所选（{finalList.length}）
++        </Button>
++      </div>
++    </div>
++  );
++};
+```
+
+#### 8.3.5 SettingsPage.tsx（落码前 683 行，2 处 hunk）
+
+**改动 A — import**（CurrentModelRefCard 后）：
+
+```diff
+--- a/frontend/src/features/settings2/components/SettingsPage.tsx
++++ b/frontend/src/features/settings2/components/SettingsPage.tsx
+@@ -91,6 +91,7 @@
+ import { ModelModals } from './ModelModals';
+ import { SectionTitle } from './SectionTitle';
+ import { CurrentModelRefCard } from './CurrentModelRefCard';
++import { ModelLibraryTab } from './ModelLibraryTab';
+ import { modelApi } from '@/services/api/model.api';
+ import {
+   ErrorType,
+```
+
+**改动 B — Tab 分支**（general 分支后、SettingsGroup 默认分支前；累计偏移 +1，新起点 612）：
+
+```diff
+--- a/frontend/src/features/settings2/components/SettingsPage.tsx
++++ b/frontend/src/features/settings2/components/SettingsPage.tsx
+@@ -611,8 +612,17 @@
+         {state.activeTab === 'model' ? (
+           renderModelTab()
+         ) : state.activeTab === 'general' ? (
+           renderGeneralTab()
++        ) : state.activeTab === 'model_library' ? (
++          <ModelLibraryTab
++            providers={state.model.providers}
++            onSaved={async (mtime) => {
++              s.syncMtime(mtime);
++              await s.refreshModels();
++            }}
++          />
+         ) : (
+           <SettingsGroup
+             group={state.activeTab}
+             items={state.schema[state.activeTab]?.items ?? []}
+```
+
+---
+
 **编写人**: 小欧
 **编写时间**: 2026-09-24 20:34:12
 **更新人**: 小欧
-**更新时间**: 2026-09-24 21:27:36（v1.4：全文十遍通读整体化修订——消除悬空定案、修数字/编号硬伤、清除正文版本补丁标记）
+**更新时间**: 2026-09-24 22:36:52（v1.5：新增第八章实施详细设计代码——前后端真实代码 + 真 unified diff，@@ 行号按落码前 349/447/133/87/74/153/683 行精确计算）
