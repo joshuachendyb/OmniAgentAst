@@ -117,7 +117,7 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 | 权限 | 工具/文件路径级校验 | 用户级 RBAC | 保留工具级 |
 | 限流 | 仅 LLM 429 检测 | 请求级/IP 限流 | 未做请求级 |
 | 任务队列 | 无，请求内流式执行 | Celery + Redis | 未引入 Redis |
-| 缓存 | 无 Redis；有内存级工具结果缓存（tuning.stream_task.tool_cache_ttl）+ 会话缓存上限 | Redis | 未引入 Redis，内存缓存够用 |
+| 缓存 | 无 Redis；有内存级工具结果缓存（tuning.live_front.tool_cache_ttl）+ 会话缓存上限 | Redis | 未引入 Redis，内存缓存够用 |
 | 数据存储 | SQLite 5 库 | PostgreSQL + Redis + MinIO + ES | 单机 SQLite |
 
 以上取舍基于单机/单用户场景，属有意的范围收敛，而非技术债。
@@ -533,7 +533,7 @@ model_meta:
 | Agent 循环参数 | `tuning.agent.` | 1 | max_chunks_without_promote |
 | 裁剪 | `tuning.trim.` | 3 | max_rounds, trigger_ratio, compaction_buffer |
 | 压缩 | `tuning.compaction.` | 4 | start_enabled, start_trigger_ratio, summary_feed_max_chars, keep_tail |
-| 流/任务/缓存 | `tuning.stream_task.` | 4 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size |
+| 前后端之间的流/任务/缓存 | `tuning.live_front.` | 4 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size |
 | 人工确认 | `tuning.hitl.` | 4 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations |
 | 内容截断 | `tuning.content.` | 3 | project_context_max_chars, action_log_result_max_chars, temp_history_char_limit |
 
