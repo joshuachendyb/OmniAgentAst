@@ -27,6 +27,9 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + soft_pool_wait_timeout/max_connections/max_keepalive 改读 tuning 配置
 编辑历史: 2026-09-23 小欧 - [64] LLM补充采样参数: _build_request_body/request/request_stream 签名加 top_p/frequency_penalty/presence_penalty 三参(仿 seed None透传写法)
 编辑历史: 2026-09-23 小欧 - wiring假保存修复: __init__/request_stream 两处 httpx.Timeout 的 connect/write/pool 改读 tuning.llm_net.* 配置兜底常量（此前设置页可改实际不生效）
+编辑历史: 2026-09-24 小欧 - [66]v3.6 流式主路径漏改修复+整段快照保底: ①request_stream 循环逐帧把 muse /responses 事件归一为 chat 形 choices[0].delta 行（增量优先、整段快照仅"全程无对应增量"时作保底唯一来源, 双布尔去重）, 供 BaseAIService 既有 chat 解析链一字不改读通——agent 全链(react_step→BaseAIService.request_stream)对 muse 不再空响应; ②collect 删 is_responses 分支回归纯 chat 消费(单通道单归一心智); ③_norm_responses_delta 新增 content_full 文本整段快照保底识别(output_text.done/content_part.done/output_item.done message/completed); ④删 _responses_stream_frame 薄壳(KISS-DIRECT, 决策内联循环)
+编辑历史: 2026-09-23 小欧 - [66]v3.7 适配层接入: ①import get_provider_adapter + __init__ 注入 self._adapter/self._static_headers(shared_client 分支复用全局池头); ②headers= 改用 static_headers(默认仅 Authorization, 行为==现状); ③request/request_stream 发送点接 per_request_headers + force_stream 流式收集分支 + _request_via_stream_collect(非流式入口经 request_stream 收集返回, 覆盖 zen 门禁 stream:true); ④>=400 分支消费 adapter.error_message_map(zen 403/426 友好文案); ⑤gate body/端点路由/协议位经 _adapt_request 单点(muse- 前缀→/responses)
+编辑历史: 2026-09-24 小欧 - [66]v3.7.1 模块化搬迁: ①八个 /responses 归一成员(_norm_responses_delta/_fold_emit_delta/_chat_frame/_DeltaFoldState/_responses_completed_eval 等)整体迁出至 responses_stream.py(零行为变更, 与 chat 直通通道物理隔离); ②request/request_stream 重复块函数化收敛: _acquire_soft_pool(软配额排队)/_adapt_request(gate+端点+动态头+协议判定单点)/_raise_http_error(4xx/5xx 日志分级+错误提取+error map); ③协议位 _is_responses 收敛 _adapt_request 唯一判定(消除 2 处 endswith 重复嗅探)
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
@@ -45,6 +48,12 @@ from app.constants import (
 from app.config import get_config
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.logger import logger
+from app.llm.adapters import get_provider_adapter   # 适配层查询 — 小欧 2026-09-23
+from app.llm.reasoning import extract_reasoning_from_chunk   # diff五 流式收集复用三字段链 — 小欧 2026-09-23
+from app.llm.responses_stream import (   # v3.7.1 模块化: /responses 协议归一独立模块, 与 chat 直通通道隔离 — 小欧 2026-09-24
+    _chat_frame, _DeltaFoldState, _fold_emit_delta,
+    _norm_responses_delta, _responses_completed_eval,
+)
 
 # 可重试 HTTP 状态: 429限流 / 5xx服务端瞬时错误, 由 base_service L1 重试处理 — 小欧 2026-07-17
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
@@ -154,6 +163,11 @@ class LLMClient:
         self._default_timeout = read_timeout
         self._owns_client = shared_client is None   # 真连接池仅全局单例持有, 快照共享不重复建 — 小欧-2026-09-20
         self._current_response: Optional[httpx.Response] = None  # C-1(小欧 2026-09-20): 在飞流式HTTP响应, 供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
+        # 适配层消费: 按 provider 取适配实例(未注册=默认基类, 行为==现状); 静态头全生命周期算一次
+        # shared_client 分支(同provider快照复用全局池)不重算头——全局池建池时已带 static_headers;
+        # 跨provider 时 resolver 置 shared_client=None 走 else 新建, 头由 static_headers 注入 — 小欧 2026-09-23
+        self._adapter = get_provider_adapter(llm_model.provider or "")
+        self._static_headers = self._adapter.static_headers(api_key)
         if shared_client is not None:
             self._client = shared_client
         else:
@@ -168,7 +182,7 @@ class LLMClient:
                     max_connections=get_config().get("tuning.llm_net.max_connections", _D_MAX_CONNECTIONS),
                     max_keepalive_connections=get_config().get("tuning.llm_net.max_keepalive", _D_MAX_KEEPALIVE),
                 ),
-                headers={"Authorization": f"Bearer {api_key}"},
+                headers=self._static_headers,   # zen: UA/session 等静态头; 默认: 仅 Authorization — 小欧 2026-09-23
                 base_url=self._base_url,
             )
 
@@ -188,6 +202,46 @@ class LLMClient:
             logger.warning(f"[client_sdk] 读取自定义URL配置失败: provider={provider}")
         return self._DEFAULT_URLS.get(provider, "")
 
+    async def _acquire_soft_pool(self, _sem: Optional[asyncio.Semaphore] = None) -> bool:
+        """排队获取软配额信号量: 超时保底放行(不拒绝不降级, 防长时间卡等) — 小欧 2026-09-24 v3.7.1
+        函数化(DRY: request/request_stream 两处完全相同的排队块收敛为单点)。"""
+        sem = _sem or _get_soft_pool_semaphore()
+        try:
+            await asyncio.wait_for(sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
+            return True
+        except asyncio.TimeoutError:
+            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
+            return False
+
+    def _adapt_request(self, body: Dict) -> tuple:
+        """gate 允许 + 端点分派 + 动态头 + 协议判定(非流式/流式共用) — 小欧 2026-09-24 v3.7.1; 模块化收敛协议判定单点 2026-09-24
+        函数化(DRY: request/request_stream 两处 gate/端点/头组装重复); 返回含 _is_responses——
+        v3.7.1 模块化后曾 2 处 endswith("/responses") 嗅探(请求侧转换 + 主循环分派), 收敛为本函数唯一判定点。"""
+        body = self._adapter.ensure_gate_body(body)   # zen: 补 bash/read stub + stream:true; 默认原样 — 小欧 2026-09-23
+        _endpoint = self._adapter.endpoint_for(self.llm_model.model)   # zen: muse- 前缀→/responses(+base=zen/v1→/zen/v1/responses); 默认/chat/completions
+        _is_responses = _endpoint.endswith("/responses")   # 协议判定唯一来源 — 小欧 2026-09-24
+        if _is_responses:
+            body = self._adapter.to_responses_body(body, self.llm_model.model)   # messages→input, 双层tools→flat
+        return _endpoint, body, self._adapter.per_request_headers(), _is_responses
+
+    def _raise_http_error(self, response: httpx.Response, body_text: str) -> None:
+        """>=400 错误响应体记录 + 服务商真实错误提取 + 抛错(request/request_stream 共用) — 小欧 2026-09-24 v3.7.1
+        函数化(DRY: 两处 4xx/5xx 处理重复): 可重试状态(429限流/5xx服务端瞬时)记 WARNING 交 base_service L1 重试,
+        仅不可重试客户端错误(400/401/403等)记 ERROR, 避免 check_logs/测试误判 FAIL。"""
+        if response.status_code >= 400:
+            if response.status_code in _RETRYABLE_STATUS:
+                logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
+            else:
+                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
+            server_msg = _extract_server_error_message(body_text)
+            # 适配层错误消息映射消费(zen 403/426 友好文案; 默认空 dict=不干预, 走全局分类) — 小欧 2026-09-17
+            _adapter_msg = self._adapter.error_message_map().get(response.status_code)
+            if _adapter_msg:
+                server_msg = f"{_adapter_msg}（服务端: {server_msg}）" if server_msg else _adapter_msg
+            raise httpx.HTTPStatusError(
+                f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
+                request=response.request, response=response)
+
     async def request(
         self,
         messages: List[Dict],
@@ -203,6 +257,15 @@ class LLMClient:
         request_timeout: Optional[int] = None,  # #37 fix: per-request timeout — 小欧 2026-07-18
     ) -> Dict[str, Any]:
         """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body; #37 新增request_timeout"""
+        if self._adapter.force_stream():
+            # zen True: 门禁强制 stream:true, 非流式语义改走流式收集(返回形态与 request 同构) — 小欧 2026-09-23
+            # 默认 False: 直通现有非流式逻辑, 行为==现状
+            return await self._request_via_stream_collect(
+                messages=messages, tools=tools, tool_choice=tool_choice,
+                max_tokens=max_tokens, temperature=temperature, top_p=top_p,
+                frequency_penalty=frequency_penalty, presence_penalty=presence_penalty,
+                seed=seed, extra_body=extra_body, request_timeout=request_timeout,
+            )
         body = _build_request_body(
             messages=messages, model=self.llm_model.model,   # 裸单值调API(设计要求4允许) — 小欧 2026-08-22
             max_tokens=max_tokens, temperature=temperature, top_p=top_p,  # 新增 — 小欧 2026-09-23
@@ -213,29 +276,86 @@ class LLMClient:
         )
         _to = httpx.Timeout(request_timeout) if request_timeout else self._default_timeout
         # 软配额: 排队超时保底放行(非硬闸不 503 不降级, 防长时间卡等) — 小欧-2026-09-20
-        _acquired = False
         _sem = _get_soft_pool_semaphore()
+        _acquired = await self._acquire_soft_pool(_sem)
         try:
-            await asyncio.wait_for(_sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
-            _acquired = True
-        except asyncio.TimeoutError:
-            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
-        try:
-            response = await self._client.post("/chat/completions", json=body, timeout=_to)
+            _endpoint, body, _dyn_headers, _ = self._adapt_request(body)   # v3.7.1 函数化; 协议位非流式不消费 — 小欧 2026-09-24
+            response = await self._client.post(_endpoint, json=body, timeout=_to,
+                                               headers=_dyn_headers or None)
         finally:
             if _acquired:
                 _sem.release()
         if response.status_code >= 400:
-            body_text = response.text
-            if response.status_code in _RETRYABLE_STATUS:
-                logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
-            else:
-                logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
-            server_msg = _extract_server_error_message(body_text)
-            raise httpx.HTTPStatusError(
-                f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
-                request=response.request, response=response)
+            self._raise_http_error(response, response.text)   # v3.7.1 函数化 — 小欧 2026-09-24
         return response.json()
+
+    async def _request_via_stream_collect(
+        self,
+        messages: List[Dict],
+        tools: Optional[List[Dict]] = None,
+        tool_choice: str = "auto",
+        max_tokens: Optional[int] = None,
+        temperature: Optional[float] = None,
+        top_p: Optional[float] = None,
+        frequency_penalty: Optional[float] = None,
+        presence_penalty: Optional[float] = None,
+        seed: Optional[int] = None,
+        extra_body: Optional[Dict] = None,
+        request_timeout: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """force_stream 收集: 复用 request_stream 的 SSE, 累积为 request() 同构非流式响应 — 小欧 2026-09-23
+        返回形态镜像 base_service.request 消费点: choices[0].message.{content,tool_calls,reasoning*}。
+        端点分派(v3.3): muse 走 /responses(+base=zen/v1→/zen/v1/responses, SSE 事件形), 经 _norm_responses_delta 归一为 delta。"""
+        content = ""
+        reasoning = ""
+        tool_acc: Dict[int, Dict[str, Any]] = {}   # 按 index 合并 — 镜像 base_service._extract_tool_calls 累加器
+        finish_reason: Optional[str] = None
+        async for raw in self.request_stream(
+            messages=messages, tools=tools, tool_choice=tool_choice,
+            max_tokens=max_tokens, temperature=temperature, top_p=top_p,
+            frequency_penalty=frequency_penalty, presence_penalty=presence_penalty,
+            seed=seed, stream_options=None, request_timeout=request_timeout, extra_body=extra_body,
+        ):
+            try:
+                data = json.loads(raw)
+            except (ValueError, TypeError):
+                continue
+            # v3.6 小欧 2026-09-24: muse 事件已由 request_stream 循环内逐帧归一为 chat 形行,
+            # 原 is_responses 分支删除, 此处纯 chat 消费(单通道单归一心智)
+            choices = data.get("choices") or [{}]
+            delta = choices[0].get("delta") or {}
+            if delta.get("content"):
+                content += delta["content"]
+            rc = extract_reasoning_from_chunk(delta)   # 三字段链: reasoning_content/reasoning/thinking — 复用全局
+            if rc:
+                reasoning += rc
+            for tc in delta.get("tool_calls") or []:
+                idx = tc.get("index", 0)
+                entry = tool_acc.setdefault(idx, {"id": None, "name": "", "arguments": ""})
+                if tc.get("id"):
+                    entry["id"] = tc["id"]
+                fn = tc.get("function") or {}
+                if fn.get("name"):
+                    entry["name"] = fn["name"]
+                if fn.get("arguments"):
+                    entry["arguments"] += fn["arguments"]
+            fr = choices[0].get("finish_reason")
+            if fr:
+                finish_reason = fr
+        # 幽灵过滤: 仅有 id 无 name 的残余 delta 丢弃 — 镜像 base_service._extract_tool_calls #38
+        tool_calls_list = [
+            {"id": acc.get("id"), "type": "function",
+             "function": {"name": acc["name"], "arguments": acc["arguments"]}}
+            for _, acc in sorted(tool_acc.items()) if acc.get("name")
+        ]
+        message: Dict[str, Any] = {"content": content}
+        if reasoning:
+            message["reasoning_content"] = reasoning
+        if tool_calls_list:
+            message["tool_calls"] = tool_calls_list
+        if finish_reason is None:
+            finish_reason = "tool_calls" if tool_calls_list else "stop"
+        return {"choices": [{"index": 0, "message": message, "finish_reason": finish_reason}]}
 
     async def request_stream(
         self,
@@ -272,37 +392,48 @@ class LLMClient:
             write=float(get_config().get("tuning.llm_net.write_timeout", _D_WRITE_TIMEOUT)),
             pool=float(get_config().get("tuning.llm_net.pool_timeout", _D_POOL_TIMEOUT)),
         )
-        _acquired = False
         _sem = _get_soft_pool_semaphore()
+        _acquired = await self._acquire_soft_pool(_sem)   # v3.7.1 函数化(DRY) — 小欧 2026-09-24
         try:
-            await asyncio.wait_for(_sem.acquire(), timeout=_SOFT_POOL_WAIT_TIMEOUT)
-            _acquired = True
-        except asyncio.TimeoutError:
-            logger.warning(f"[LLM] 软配额排队超{_SOFT_POOL_WAIT_TIMEOUT}s 保底放行")
-        try:
-            async with self._client.stream("POST", "/chat/completions", json=body, timeout=_timeout) as response:
+            _endpoint, body, _dyn_headers, _is_responses = self._adapt_request(body)   # 协议判定单点(见 _adapt_request) — 小欧 2026-09-24
+            async with self._client.stream("POST", _endpoint, json=body, timeout=_timeout,
+                                           headers=_dyn_headers or None) as response:
                 # C-1(小欧 2026-09-20): 记录在飞流式响应, BaseAIService 镜像后供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
                 self._current_response = response
                 # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
-                # 2026-07-17 小欧 修复: 可重试状态(429限流/5xx服务端瞬时错误)由 base_service 的 L1 重试处理,
-                #   降为 WARNING 避免污染 ERROR 日志(check_logs/测试据此误判 FAIL); 仅不可重试客户端错误(400/401/403等)记 ERROR
                 if response.status_code >= 400:
-                    response_body = await response.aread()
-                    body_text = response_body.decode("utf-8", errors="replace")
-                    if response.status_code in _RETRYABLE_STATUS:
-                        logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
-                    else:
-                        logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
-                    server_msg = _extract_server_error_message(body_text)
-                    raise httpx.HTTPStatusError(
-                        f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
-                        request=response.request, response=response)
+                    response_body = await response.aread()   # 仅错误路径读 body(随后抛错终止, 不进流式读取) — 小欧 2026-07-16
+                    self._raise_http_error(response, response_body.decode("utf-8", errors="replace"))   # v3.7.1 函数化 — 小欧 2026-09-24
+                _state = _DeltaFoldState() if _is_responses else None   # 折叠状态仅 responses 协议需要(chat 通道不实例化) — 小欧 2026-09-24
                 async for line in response.aiter_lines():
                     if line.startswith("data:"):  # #33 fix: 兼容无空格 data: — 小欧 2026-07-18
                         _body = line[len("data:"):].lstrip()
                         if _body.strip() == "[DONE]":
                             break
-                        yield _body
+                        if not _is_responses:
+                            yield _body
+                            continue
+                        # v3.6 responses 事件逐帧归一(小欧 2026-09-24): 产物为 chat 形 choices[0].delta 行,
+                        # 供 base_service/_request_via_stream_collect 既有 chat 解析链一字不改读通;
+                        # v3.7.1(小欧 2026-09-24) 循环只做解析+落底(_chat_frame): 普通事件决策全在
+                        # _fold_emit_delta(文本/快照/推理/工具去重状态机), completed 走单遍分支(文本快照+信令同遍)。
+                        try:
+                            _ev = json.loads(_body)
+                        except (ValueError, TypeError):
+                            _ev = None
+                        if not isinstance(_ev, dict):
+                            yield _body   # 非 JSON 行原样透传(#7 防内容丢失)
+                            continue
+                        if _ev.get("type") == "response.completed":
+                            # v3.7.1 终帧: 单遍扫描 output 得文本快照+finish_reason/usage, 与 chat 流末帧同构 — 小欧 2026-09-24
+                            _cfull, _meta = _responses_completed_eval(_ev)
+                            if _cfull and not _state.saw_text_delta:
+                                yield _chat_frame({"content": _cfull})
+                            yield _chat_frame({}, finish_reason=_meta["finish_reason"], usage=_meta.get("usage"))
+                            continue
+                        _emit = _fold_emit_delta(_norm_responses_delta(_ev), _state)
+                        if _emit:
+                            yield _chat_frame(_emit)
         finally:
             # C-1(小欧 2026-09-20): 流结束/异常清在飞响应(镜像随流清), 防悬挂旧HTTP响应 — 小欧-2026-09-20
             self._current_response = None
