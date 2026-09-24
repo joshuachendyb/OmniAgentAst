@@ -38,6 +38,9 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   落 model_meta；update_provider_config key_map 加 param_options（Provider级写入口）。
 #   ②P2 add_model 签名加 param_options + 选项表非空 string[]/值在表内（0拒）校验 + 落 model_meta
 #   （不送 param_options 与现状兼容，tree 不写该键）。
+# 2026-09-24 - 小欧 - 参数键级删除：update_model 白名单加 remove_params——先从 model_params 拷贝删键、
+#   同步清 model_meta.range/param_options 对应键，再 merge default_params（空 dp 仍=整块清空，与既有 P8 语义叠加：
+#   remove 先算好 new_params，dp 非空则 update，dp 为空则置 {}）。前端②参数行 × 删除按钮通道 — 小欧-2026-09-24
 # 2026-09-22 - 小欧 - [62]P7 4.3(1)c：get_models 显示层 timeout/max_retries 兜底改读 tuning
 #   （timeout→tuning.llm_net.read_timeout 默认150、max_retries→tuning.llm.stream_max_retries 默认3），
 #   import 补 from app.config import get_config——消除显示值60/3与运行时30/3 不一致（显示即真相）。
@@ -232,7 +235,8 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         raise ValueError(f"模型不存在: {provider}/{model}")
     _raise_if_env_takeover(provider)
     # 白名单放行+落model_meta（小欧 2026-09-22：加 param_options，否则送了即报不支持的配置项）
-    unknown = set(fields) - {"label", "range", "capabilities", "default_params", "param_options"}
+    # 2026-09-24 小欧：加 remove_params（键级删除，与 default_params merge 叠加）— 小欧-2026-09-24
+    unknown = set(fields) - {"label", "range", "capabilities", "default_params", "param_options", "remove_params"}
     if unknown:
         raise ValueError(f"不支持的配置项: {sorted(unknown)}")
     tree: Dict[str, Any] = {"ai": {provider: {}}}
@@ -241,26 +245,50 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
         if fields.get(k) is not None:
             node.setdefault("model_meta", {}).setdefault(model, {})[k] = fields[k]
     dp = fields.get("default_params")
+    # v1.6：先合并本次新选项再校验，避免同批改选项+改值时用旧单子误杀（小欧 2026-09-22）
+    cur = next((x for x in _models_of(ai, provider) if x["name"] == model), None) or {}
+    allowed = dict(cur.get("param_options") or {})
+    if isinstance(fields.get("param_options"), dict):
+        for k, v in fields["param_options"].items():
+            if isinstance(v, list) and v:
+                allowed[k] = list(v)
     if isinstance(dp, dict):
-        # v1.6：先合并本次新选项再校验，避免同批改选项+改值时用旧单子误杀（小欧 2026-09-22）
-        cur = next((x for x in _models_of(ai, provider) if x["name"] == model), None) or {}
-        allowed = dict(cur.get("param_options") or {})
-        if isinstance(fields.get("param_options"), dict):
-            for k, v in fields["param_options"].items():
-                if isinstance(v, list) and v:
-                    allowed[k] = list(v)
         for k, v in dp.items():
             if k in allowed and v not in allowed[k]:
                 raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allowed[k]}")
+    # 2026-09-24 小欧：remove_params 键级删除——拷贝当前 model_params 删键得 new_params，
+    #   同步清 model_meta.range/param_options 对应键（fields 已带 range/param_options 时以其为准，
+    #   清在已写入 node 的副本上做，缺省则从 YAML 基线清）— 小欧-2026-09-24
+    removed = fields.get("remove_params")
+    new_params: Optional[Dict[str, Any]] = None
+    if isinstance(removed, list) and removed:
+        new_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
+        for k in removed:
+            new_params.pop(k, None)
+        meta_node = node.setdefault("model_meta", {}).setdefault(model, {})
+        base_meta = (ai[provider].get("model_meta", {}) or {}).get(model, {}) or {}
+        cur_range = dict(meta_node.get("range") or base_meta.get("range") or {})
+        if any(k in cur_range for k in removed):
+            for k in removed:
+                cur_range.pop(k, None)
+            meta_node["range"] = cur_range
+        cur_opts = dict(meta_node.get("param_options") or base_meta.get("param_options") or {})
+        if any(k in cur_opts for k in removed):
+            for k in removed:
+                cur_opts.pop(k, None)
+            meta_node["param_options"] = cur_opts
+    if isinstance(dp, dict):
         if dp:
-            old_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
-            old_params.update(dp)
-            node.setdefault("model_params", {})[model] = old_params
+            if new_params is None:
+                new_params = dict(ai[provider].get("model_params", {}).get(model, {}) or {})
+            new_params.update(dp)
         else:
             # 2026-09-21 小欧 修 P8：空 default_params 提交 = 显式清空模型参数（原实现走
             # isinstance 且为空跳过 → node 空 → "无有效配置项" 500）。merge_nested_patch
             # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
-            node.setdefault("model_params", {})[model] = {}
+            new_params = {}
+    if new_params is not None:
+        node.setdefault("model_params", {})[model] = new_params
     # 选项表落 model_meta（小欧 2026-09-22）
     if isinstance(fields.get("param_options"), dict):
         node.setdefault("model_meta", {}).setdefault(model, {})["param_options"] = fields["param_options"]

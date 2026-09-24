@@ -22,8 +22,11 @@
      extra='ignore' 丢弃未声明字段 → model_dump 不产 max_retries → 落不了盘；补声明后
      前端发的 max_retries 直连 key_map，不再依赖隐式绕过（BY-06 红条件验证）。
    2026-09-22 - 小欧 - [62]P8 4.3(9)-3-a/b：import 补 ConfigDict + ProviderConfigUpdate 加
-     model_config = ConfigDict(extra='allow')——动态字段（rate_limit 等 param_types 元数据驱动）
-     放行（静态字段仍强类型），后端白名单拒注入在 model_service.update_provider_config。
+      model_config = ConfigDict(extra='allow')——动态字段（rate_limit 等 param_types 元数据驱动）
+      放行（静态字段仍强类型），后端白名单拒注入在 model_service.update_provider_config。
+   2026-09-24 - 小欧 - 参数删除键级通道：ModelUpdateRequest 加 remove_params: Optional[List[str]]=None
+      （前端②参数行 × 删除按钮经 PUT /models 送键名列表，update_model 白名单放行并先删后 merge；
+      不声明则 Pydantic 丢字段，老前端不送不报错）— 小欧-2026-09-24
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
@@ -55,6 +58,8 @@ class ModelUpdateRequest(BaseModel):
     range: Optional[Dict[str, Any]] = Field(default=None)
     capabilities: Optional[List[str]] = Field(default=None)
     param_options: Optional[Dict[str, List[str]]] = Field(default=None)
+    # 2026-09-24 小欧 - 参数键级删除：送键名列表，update_model 先从 model_params/range/param_options 删键再 merge — 小欧-2026-09-24
+    remove_params: Optional[List[str]] = Field(default=None)
 
 
 class ProviderConfigUpdate(BaseModel):
