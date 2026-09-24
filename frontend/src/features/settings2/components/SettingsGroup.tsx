@@ -11,6 +11,7 @@
 // 2026-09-23 小欧 - [64] LLM补充采样参数: sectionOf 加 general 组「模型参数」小节（llm.sampling.* + llm.context_limit_default → '模型参数'）
 // 2026-09-23 小欧 - trim/compaction配置化: sectionOf 加 tuning.trim.→'裁剪(Trim)'、tuning.compaction.→'压缩(Compaction)' 两独立分块
 // 2026-09-23 小欧 - cors_origins 迁系统组: tuning 分支删 network 映射，改挂 system 分支「关于」上方；键名去 tuning 前缀 network.cors_origins — 小欧-2026-09-23
+// 2026-09-24 21:36:38 小欧 - tuning.stream_task.→tuning.live_front. 前缀同步(组名改，分组显示名「前后端之间的流/任务/缓存」不动) — 小欧-2026-09-24
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -56,7 +57,7 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('tuning.agent.')) return 'Agent 循环参数';
     if (key.startsWith('tuning.trim.')) return '裁剪(Trim)';
     if (key.startsWith('tuning.compaction.')) return '压缩(Compaction)';
-    if (key.startsWith('tuning.stream_task.')) return '流/任务/缓存';
+    if (key.startsWith('tuning.live_front.')) return '前后端之间的流/任务/缓存';  // 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     if (key.startsWith('tuning.hitl.')) return '人工确认';
     if (key.startsWith('tuning.content.')) return '内容截断';
   }
