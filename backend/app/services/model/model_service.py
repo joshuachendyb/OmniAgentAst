@@ -63,6 +63,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-09-24 23:55:00 - 小欧 - [68] 第四章核查修复 2 处：①fetch_remote_models 组头
 #   api_key 补读 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底；原仅读 YAML，
 #   env 接管时 YAML 可无 api_key 致 Bearer 空 key 远端 401）；②api_base 空的 400
+# 2026-09-25 - 小欧 - 修复 BZ-3/BZ-6 复发（守护测试 verify_bz_remove_params_guard 实证 temperature 残留）：
+#   _iter_nested_ops 对非空 dict 无整块替换语义（递归展平为叶键写），update_model 落 new_params 整块
+#   时删键意图丢失; 改 remove 命中时对残留键显式写 None（_set_nested_path 原生删键），
+#   dp 恢复键原位保留不误删;(verify_cfg_weak_guard 10 passed) — 小欧-2026-09-25
 #   文案补「该 Provider」前缀对齐设计 L138 — 小欧-2026-09-24
 """
 from pathlib import Path
@@ -301,8 +305,16 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
             # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
             new_params = {}
     # BZ-7：仅 remove 真命中或 default_params 有变更才写 model_params（全 miss 不空写）
+    # 2026-09-25 小欧 修 BZ-3/BZ-6 复发（守护测试 verify_bz_remove_params_guard 实证）：
+    #   _iter_nested_ops 把非空 dict 递归展平为叶键写（无整块替换语义），直接落 new_params 块会丢删键意图
+    #   → temperature 残留。改显式 None 删键意向（_set_nested_path 原生删键），保留 dp/keep 语义。
     if new_params is not None and (removed_hit or isinstance(dp, dict)):
-        node.setdefault("model_params", {})[model] = new_params
+        pn = node.setdefault("model_params", {})
+        pn[model] = new_params
+        if removed_hit:
+            for k in removed:
+                if k not in new_params:
+                    pn[model][k] = None  # None=删键（被 dp 恢复的键已原位保留）
     # 选项表落 model_meta（小欧 2026-09-22）
     if isinstance(fields.get("param_options"), dict):
         node.setdefault("model_meta", {}).setdefault(model, {})["param_options"] = fields["param_options"]
