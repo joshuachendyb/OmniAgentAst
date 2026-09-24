@@ -22,6 +22,8 @@
 //   继续编辑致 saveModelGroup 闭包快照错位——成功后 defaults/providers 缓存写旧值且 isDirty 误置 false）；
 //   锁态抽 lock 局部变量单点（envKey||disabled），EnvTag 标签仍只认 envKey（保存中不误标环境接管）
 //   - 小欧-2026-09-24
+// 2026-09-25 05:44:50 小健 - range 取值加内置兜底 PARAM_DEFAULT_RANGES[key]（meta 未存 range 时），
+//   统一同为数值参数却有的显示滑块+数字框、有的只出数字框的显示形态（北京老陈选定方案）— 小健-2026-09-25
 import React from 'react';
 import { Button, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { DeleteOutlined } from '@ant-design/icons';
@@ -31,7 +33,7 @@ import {
   settingsRowStyle,
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
-import { isDirty } from '../utils/modelUtils';
+import { isDirty, PARAM_DEFAULT_RANGES } from '../utils/modelUtils';
 import { DirtyDot, EnvTag } from './icons';
 
 interface Props {
@@ -62,7 +64,9 @@ export const ModelParams: React.FC<Props> = ({
     <div>
       {[...new Set([...Object.keys(defaults), ...Object.keys(params)])].map(
         (key) => {
-          const range = ranges[key];
+          // 2026-09-25 05:44:50 小健 - 北京老陈选定前端兜底统一: meta 未存 range 时按参数名取内置默认范围,
+          //   杜绝同为 context_limit 却「有滑块/纯数字框」两种形态(取决于该模型当初加参数时是否写入 range)— 小健-2026-09-25
+          const range = ranges[key] ?? PARAM_DEFAULT_RANGES[key];
           const rawValue = params[key] ?? defaults[key];
           const enumOpts = (options ?? {})[key];
           const numValue =

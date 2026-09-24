@@ -34,6 +34,8 @@
 // 2026-09-25 05:29:51 小健 - context_limit 预设上限 900000→2000000（北京老陈确认，对齐后端
 //   settings_registry llm.context_limit_default range_=[200000,2000000] 口径）; 注释列补范围显示
 //   （原范围仅在 placeholder，输入后不可见，填 1000000 越界无提示且确认按钮灰）— 小健-2026-09-25
+// 2026-09-25 05:44:50 小健 - 预设 range 改引用单源 PARAM_DEFAULT_RANGES（与 ModelParams 兜底共用，
+//   杜绝两处范围字面量漂移）— 小健-2026-09-25
 import React, { useState } from 'react';
 import { Button, Checkbox, Input, Radio, Select } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -43,6 +45,7 @@ import {
   settingsLabelStyle,
   settingsRadius,
 } from '@/theme/settingsTokens';
+import { PARAM_DEFAULT_RANGES } from '../utils/modelUtils';
 
 // 行内名称列宽（☐ 右侧）：最长预设名「频次惩罚 (frequency_penalty)」@14px≈205px，取 240 保单行+列对齐
 // （settingsLabelStyle.width=180 装不下会折行；不改共享令牌以免影响 ModelParams 等既有行）- 小欧-2026-09-23
@@ -54,7 +57,7 @@ const PARAM_PRESETS = [
     key: 'context_limit',
     type: 'number' as const,
     default: 262144,
-    range: { min: 1000, max: 2000000 },
+    range: PARAM_DEFAULT_RANGES.context_limit,
     label: '上下文限制',
     desc: '上下文窗口上限，超限裁剪旧轮',
   },
@@ -62,7 +65,7 @@ const PARAM_PRESETS = [
     key: 'temperature',
     type: 'number' as const,
     default: 0.7,
-    range: { min: 0, max: 2 },
+    range: PARAM_DEFAULT_RANGES.temperature,
     label: '温度',
     desc: '采样温度：0=完全确定，2=最随机',
   },
@@ -70,7 +73,7 @@ const PARAM_PRESETS = [
     key: 'max_tokens',
     type: 'number' as const,
     default: 16384,
-    range: { min: 1, max: 100000 },
+    range: PARAM_DEFAULT_RANGES.max_tokens,
     label: '最大Token',
     desc: 'LLM的单次最大输出 token 数，超长截断',
   },
@@ -86,7 +89,7 @@ const PARAM_PRESETS = [
     key: 'top_p',
     type: 'number' as const,
     default: 1.0,
-    range: { min: 0, max: 1 },
+    range: PARAM_DEFAULT_RANGES.top_p,
     label: '核采样',
     desc: '只从概率最高的前 p 部分词里选词；1=全都不筛，调小=更保守、只留高概率词',
   },
@@ -94,7 +97,7 @@ const PARAM_PRESETS = [
     key: 'seed',
     type: 'number' as const,
     default: null,
-    range: { min: 0, max: 999999 },
+    range: PARAM_DEFAULT_RANGES.seed,
     label: '随机种子',
     desc: '数字本身无好坏：同一数字=每次结果固定不变，换一个数字=换一组新的随机结果；留空=每次都不固定',
   },
@@ -102,7 +105,7 @@ const PARAM_PRESETS = [
     key: 'frequency_penalty',
     type: 'number' as const,
     default: 0,
-    range: { min: -2, max: 2 },
+    range: PARAM_DEFAULT_RANGES.frequency_penalty,
     label: '频次惩罚',
     desc: '正值减少重复（更多样），负值增加重复，0=不启用',
   },
@@ -110,7 +113,7 @@ const PARAM_PRESETS = [
     key: 'presence_penalty',
     type: 'number' as const,
     default: 0,
-    range: { min: -2, max: 2 },
+    range: PARAM_DEFAULT_RANGES.presence_penalty,
     label: '存在惩罚',
     desc: '正值鼓励新话题，负值鼓励重复，0=不启用',
   },

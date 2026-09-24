@@ -143,3 +143,17 @@ export const capsForSave = (caps: string[]): string[] => {
 export const KNOWN_CAPABILITY_VALUES: ReadonlySet<string> = new Set(
   CAPABILITY_OPTIONS.map((o) => o.value)
 );
+
+// 2026-09-25 05:44:50 小健 - 模型参数默认范围单源（北京老陈选定前端兜底统一显示形态）：
+//   AddParamForm 预设表与 ModelParams 渲染共用，杜绝两处范围漂移（如 context_limit 上限 900000↔2000000）— 小健-2026-09-25
+export const PARAM_DEFAULT_RANGES: Readonly<
+  Record<string, { min: number; max: number }>
+> = {
+  context_limit: { min: 1000, max: 2000000 },
+  temperature: { min: 0, max: 2 },
+  max_tokens: { min: 1, max: 100000 },
+  top_p: { min: 0, max: 1 },
+  seed: { min: 0, max: 999999 },
+  frequency_penalty: { min: -2, max: 2 },
+  presence_penalty: { min: -2, max: 2 },
+};
