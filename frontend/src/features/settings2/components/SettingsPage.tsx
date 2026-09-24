@@ -67,6 +67,9 @@
 // 2026-09-24 22:56:21 小欧 - BZ-5 闭环补漏（三堂会审发现表单通道未锁）：AddParamForm/ParamOptionsModal
 //   传 disabled={s.saving}（保存中禁提交）+「重置为默认」Modal.confirm onOk 加 saving 守卫——
 //   堵死「弹窗通道在保存 await 期间仍改模型 state」的最后竞态窗口，BZ-5 目标全闭合 - 小欧-2026-09-24
+// 2026-09-24 小欧 - [68] 模型库 Tab 落码：①import ModelLibraryTab；②抽 afterModelSaved 组件级收口
+//   （syncMtime+refreshModels DRY，Provider 配置保存/清空 key/模型库保存 3 处共用）；
+//   ③Tab 分支加 model_library 渲染 ModelLibraryTab（onSaved 直引 afterModelSaved 不内联）- 小欧-2026-09-24
 import React, { useState } from 'react';
 import {
   Button,
@@ -100,6 +103,7 @@ import { ModelActions } from './ModelActions';
 import { ModelModals } from './ModelModals';
 import { SectionTitle } from './SectionTitle';
 import { CurrentModelRefCard } from './CurrentModelRefCard';
+import { ModelLibraryTab } from './ModelLibraryTab';
 import { modelApi } from '@/services/api/model.api';
 import {
   ErrorType,
@@ -190,6 +194,12 @@ const SettingsPage: React.FC = () => {
   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
   const envManaged =
     state.model.providerConfig[state.model.selectedProvider]?.env === true;
+
+  // 2026-09-24 小欧 - [68] 落盘成功后同步 mtime+刷新模型列表（DRY：Provider 配置保存/清空 key/模型库保存共用收口）- 小欧-2026-09-24
+  const afterModelSaved = async (mtime: number) => {
+    s.syncMtime(mtime);
+    await s.refreshModels();
+  };
 
   // 修正(2026-09-21 小强)：模型组脏计数按实际脏参数数（原是 isDirty?1:0 恒 1 项误导）（[设置页UI审计] 问题13）
   // 2026-09-24 小欧 - ①removedParams 计入模型组脏计数（删键是独立待存变更，与 dirtyCount 同口径）- 小欧-2026-09-24
@@ -453,8 +463,7 @@ const SettingsPage: React.FC = () => {
               }
               showSuccess('Provider 配置已保存（立即生效）');
               // A7：同步落盘后 mtime
-              s.syncMtime(r.mtime);
-              await s.refreshModels();
+              await afterModelSaved(r.mtime);
             } catch (e) {
               handleApiError(e);
               throw e;
@@ -478,8 +487,7 @@ const SettingsPage: React.FC = () => {
               { clear: true }
             );
             showSuccess('api_key 已清空');
-            s.syncMtime(r.mtime);
-            await s.refreshModels();
+            await afterModelSaved(r.mtime);
           } catch (e) {
             handleApiError(e);
           }
@@ -648,6 +656,11 @@ const SettingsPage: React.FC = () => {
           renderModelTab()
         ) : state.activeTab === 'general' ? (
           renderGeneralTab()
+        ) : state.activeTab === 'model_library' ? (
+          <ModelLibraryTab
+            providers={state.model.providers}
+            onSaved={afterModelSaved}
+          />
         ) : (
           <SettingsGroup
             group={state.activeTab}

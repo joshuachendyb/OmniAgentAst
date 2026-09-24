@@ -3,10 +3,12 @@
 // 2026-09-21 小欧 - 全文逐章核查：gap/marginLeft/fontSize 裸数字 → Spacing.XS/MD、FontSize.PRIMARY 令牌；DirtyDot 6px 圆点为 P2-2 文档明确规格保留（[58] v1.12 第七章 铁规）
 // 2026-09-21 小强 - 删死图标 SettingIcon.chat：后端注册表已删 chat 组（TabKey 收敛 6 组），Record<TabKey> 同步收敛
 // 2026-09-21 小欧 - [59]B-10 渲染: 新增 DefaultTag（后端缺省 source='default'，灰色 Tag 与 env 橙区分）
+// 2026-09-24 小欧 - [68] 模型库：SettingIcon 加 model_library + CloudDownloadOutlined — 小欧-2026-09-24
 import React from 'react';
 import {
   ApiOutlined,
   BgColorsOutlined,
+  CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
   DesktopOutlined,
@@ -32,6 +34,7 @@ export const SettingIcon: Record<TabKey, React.ReactNode> = {
   system: <DesktopOutlined style={TAB_ICON_STYLE} />,
   sandbox: <CodeOutlined style={TAB_ICON_STYLE} />,
   tuning: <SlidersOutlined style={TAB_ICON_STYLE} />,
+  model_library: <CloudDownloadOutlined style={TAB_ICON_STYLE} />,
 };
 
 /** 已修改角标：6px 实心圆点 + 12px 次文（7.9.2，不用 emoji）。 */

@@ -13,6 +13,8 @@
 // 2026-09-22 小欧 - [62]P8 4.3(9)-2-b：ProviderEntry 补 param_types 元数据（动态字段 schema 源）
 // 2026-09-24 小欧 - updateModel data 扩 remove_params?: string[]（②参数行 × 删除键级通道，
 //   PUT /models body 白名单字段，后端 update_model 先删后 merge）- 小欧-2026-09-24
+// 2026-09-24 小欧 - [68] 模型库：类型补 RemoteModelItem/RemoteModelsResponse/ReplaceModelsResult，
+//   方法补 fetchRemoteModels（GET remote-models）/replaceModels（PUT models 替换写入）- 小欧-2026-09-24
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -56,6 +58,28 @@ export interface ModelMutationResult {
   provider?: string;
   switched_to?: string | null;
   mtime: number;
+}
+
+export interface RemoteModelItem {
+  id: string;
+  owned_by?: string | null;
+}
+
+export interface RemoteModelsResponse {
+  ok: boolean;
+  provider: string;
+  models: RemoteModelItem[];
+  count: number;
+  configured: string[];
+  current_model?: string | null;
+  message?: string;
+}
+
+export interface ReplaceModelsResult {
+  ok: boolean;
+  mtime: number;
+  added: string[];
+  removed: string[];
 }
 
 export interface ProviderConfigPatch {
@@ -148,6 +172,28 @@ export const modelApi = {
   // 2026-09-21 小强 - 修复类型瑕疵：deleteProvider 补齐 mtime（与 deleteModel 同构、后端同样返回 mtime，缺此字段表单 union 后 res.mtime 报错）
   deleteProvider: async (name: string): Promise<ModelMutationResult> => {
     const response = await api.delete(`/providers/${enc(name)}`);
+    return response.data;
+  },
+
+  // 2026-09-24 小欧 - [68] 拉取远程模型列表 — 小欧-2026-09-24
+  fetchRemoteModels: async (
+    provider: string
+  ): Promise<RemoteModelsResponse> => {
+    const response = await api.get<RemoteModelsResponse>(
+      `/providers/${enc(provider)}/remote-models`
+    );
+    return response.data;
+  },
+
+  // 2026-09-24 小欧 - [68] 替换式写入 models 列表 — 小欧-2026-09-24
+  replaceModels: async (
+    provider: string,
+    models: string[]
+  ): Promise<ReplaceModelsResult> => {
+    const response = await api.put<ReplaceModelsResult>(
+      `/providers/${enc(provider)}/models`,
+      { models }
+    );
     return response.data;
   },
 };

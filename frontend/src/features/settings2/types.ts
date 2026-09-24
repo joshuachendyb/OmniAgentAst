@@ -13,6 +13,7 @@
 // 2026-09-23 小欧 - [65]§4.1：ModelState 补 addParamFormOpen（「+ 添加参数」内联表单开关）- 小欧-2026-09-23
 // 2026-09-24 小欧 - 参数键级删除：ModelState 补 removedParams: string[]（②参数行 × 删除待落盘键名单，
 //   saveModelGroup 经 remove_params 通道提交；仅 defaults 已有键才入名单，未保存新键删除直接丢弃）- 小欧-2026-09-24
+// 2026-09-24 小欧 - [68] 模型库：TabKey 补 'model_library'（设置页倒数第二 Tab，对齐后端 GROUP_ORDER）- 小欧-2026-09-24
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -30,7 +31,8 @@ export type TabKey =
   | 'appearance'
   | 'system'
   | 'sandbox'
-  | 'tuning';
+  | 'tuning'
+  | 'model_library';
 
 export interface ModelState {
   providers: ProviderEntry[];
