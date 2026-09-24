@@ -25,10 +25,11 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
 
   /* Opt out of parallel tests on CI */
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
 
   /* Reporter to use: html 报告与测试产物统一落 e2e_case/output/（与 DIAG/代理日志同一根目录）
-     编辑历史: 2026-09-13 小欧 - 前端E2E日志/产物统一落盘规范: Playwright 产物根移入 e2e_case/output - 小欧-2026-09-13 */
+     编辑历史: 2026-09-13 小欧 - 前端E2E日志/产物统一落盘规范: Playwright 产物根移入 e2e_case/output - 小欧-2026-09-13
+     编辑历史: 2026-09-25 04:06:45 小健 - E2E 串行化: workers 本地由 undefined 改强制 1（原仅 CI 限 1，本地并行致真实后端探针互踩/残留） - 小健-2026-09-25 */
   reporter: [
     [
       'html',
