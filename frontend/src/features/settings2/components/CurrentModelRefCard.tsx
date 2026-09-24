@@ -5,6 +5,8 @@
 // 2026-09-21 小欧 - 标题改为"当前系统全局使用模型"并移到卡片边框上方；删未使用的 Popover 导入
 // 2026-09-21 小强 - 补 success 检查对齐顶栏：后端校验失败回 HTTP200+success:false，不查则假成功 toast（北京老陈定）
 // 2026-09-21 小强 - DRY收口：onOk改经configApi.switchCurrentModel调共用切全局模型唯一写链
+// 2026-09-24 18:56:06 小欧 - 修顶栏下拉不刷新：切全局模型成功后补调 AppContext.refreshModelList()，使顶栏收起态带★即时更新（对齐顶栏 handleModelChange 路径）
+// 2026-09-24 19:15:58 小欧 - DRY收口：onOk改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
 import React, { useState } from 'react';
 import { Button, Tag } from 'antd';
 import {
@@ -14,13 +16,13 @@ import {
 } from '@ant-design/icons';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsRadius } from '@/theme/settingsTokens';
-import { configApi } from '@/services/api/config.api';
 import {
   handleApiError,
   handleError,
   showSuccess,
   ErrorType,
 } from '@/services/error/handler';
+import { useApp } from '@/contexts/AppContext';
 import { ModelSwitchModal } from './ModelSwitchModal';
 import type { SessionModelOverride } from '@/types/chat';
 import type { ProviderEntry } from '@/services/api/model.api';
@@ -53,6 +55,7 @@ export const CurrentModelRefCard: React.FC<Props> = ({
   onModelSwitched,
   onAddProvider,
 }) => {
+  const { switchAndRefreshModel } = useApp();
   const [switchOpen, setSwitchOpen] = useState(false);
   const status = resolveStatus(currentRef, providers);
   const providerName = currentRef?.provider ?? '';
@@ -198,7 +201,8 @@ export const CurrentModelRefCard: React.FC<Props> = ({
           try {
             // 2026-09-21 小强 - 补 success 检查（对齐顶栏 handleModelChange）：后端校验失败回 HTTP200+success:false，
             //   不查就弹"模型已切换"假成功；失败弹错、不关框（后端未落盘，当前展示仍有效）
-            const r = await configApi.switchCurrentModel(p, m);
+            // 2026-09-24 小欧 - DRY收口: 改经switchAndRefreshModel(API+成功/失败刷新收口), 不再直调configApi+手动refreshAfterModelChange
+            const r = await switchAndRefreshModel(p, m);
             if (!r.success) {
               handleError({
                 message: r.message || '切换失败',

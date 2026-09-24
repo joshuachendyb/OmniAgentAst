@@ -1,6 +1,8 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复引号风格(双→单)、尾逗号移除、缩进统一(2空格)、空行压缩, 防止格式再次出错
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): refreshServiceStatus 删「validateService 返回」打点
 //   ——整 status 对象打印属调试残留, 已 setServiceStatus(status) 承接状态, 打点无追踪增量价值 — 小欧-2026-09-09
+// 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: 新增 switchAndRefreshModel — 切全局模型API+成功/失败刷新收口到一处,
+//   顶栏 Layout.handleModelChange 与设置页 CurrentModelRefCard.onOk 两调用方只管展示逻辑, 杜绝再漏刷 modelList — 小欧-2026-09-24
 /**
  * 应用全局状态上下文 - AppContext.tsx
  *
@@ -83,6 +85,11 @@ interface AppContextType extends AppState {
   refreshServiceStatus: () => Promise<ValidateResponse | null>;
   refreshAll: () => Promise<void>;
   refreshAfterModelChange: () => Promise<void>;
+  // 2026-09-24 小欧 - 切全局模型收口入口: API调用+成功/失败刷新内置, 调用方不再各记刷新
+  switchAndRefreshModel: (
+    provider: string,
+    model: string
+  ) => Promise<{ success: boolean; message: string }>;
   initializeApp: () => Promise<void>;
 }
 
@@ -249,6 +256,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     // 【小强修复 2026-04-07】删除 refreshServiceStatus()，不再调用AI API验证
   }, [refreshModelList]);
 
+  // 2026-09-24 小欧 - DRY收口: 切全局模型唯一入口, 成功→refreshAfterModelChange刷★,
+  //   失败→后端已回滚刷列表; 两调用方(顶栏/设置页)只传provider/model, 不再各记刷新 — 小欧-2026-09-24
+  const switchAndRefreshModel = useCallback(
+    async (
+      provider: string,
+      model: string
+    ): Promise<{ success: boolean; message: string }> => {
+      const r = await configApi.switchCurrentModel(provider, model);
+      if (r.success) {
+        await refreshAfterModelChange();
+      } else {
+        // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
+        await refreshModelList();
+      }
+      return r;
+    },
+    [refreshAfterModelChange, refreshModelList]
+  );
+
   /**
    * 初始化应用（只在首次加载时调用）
    * 按正确顺序调用API，确保依赖关系
@@ -321,6 +347,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     refreshServiceStatus,
     refreshAll,
     refreshAfterModelChange,
+    switchAndRefreshModel,
     initializeApp,
   };
 

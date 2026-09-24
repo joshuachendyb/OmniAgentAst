@@ -29,6 +29,7 @@
 // 编辑历史: 2026-09-21 小强 - 顶栏Header优化: ①删写-only死状态isManualRefreshing(值从未被读, 收尾09-09半删YAGNI);
 //   ②配置验证Tag emoji改WarningOutlined(7.9.4禁emoji); ③#fff/fontSize14/gap12→Colors.BG.PRIMARY/FontSize.PRIMARY/Spacing.LG令牌零视觉差 — 小强-2026-09-21
 // 编辑历史: 2026-09-21 小强 - DRY收口: handleModelChange改经configApi.switchCurrentModel共用切全局模型唯一写链(去本地装配ai_model_ref) — 小强-2026-09-21
+// 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: handleModelChange改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -72,7 +73,6 @@ import {
   CloseCircleOutlined,
   WarningOutlined,
 } from '@ant-design/icons';
-import { configApi } from '../../services/api/config.api';
 import type { ValidateResponse } from '../../services/api/chat.api';
 import type { MenuProps } from 'antd';
 import ShortcutPanel from '../ShortcutPanel';
@@ -143,7 +143,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     validationResult,
     initializeApp,
     refreshServiceStatus,
-    refreshAfterModelChange,
+    switchAndRefreshModel,
     refreshModelList: appRefreshModelList, // 获取AppContext的refreshModelList
     isInitialized,
     initError,
@@ -329,8 +329,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       });
 
       // 归一(小欧 2026-08-22 报告v1.25 6.6 方案B): ai_provider/ai_model → ai_model_ref 结构
-      // 2026-09-21 小强 - DRY收口: 改经configApi.switchCurrentModel共用切模型唯一写链(去本地装配ai_model_ref)
-      const result = await configApi.switchCurrentModel(
+      // 2026-09-24 小欧 - DRY收口: 改经switchAndRefreshModel(API+成功/失败刷新收口), 不再直调configApi+手动refreshAfterModelChange
+      const result = await switchAndRefreshModel(
         selectedModel.provider,
         selectedModel.model
       );
@@ -339,14 +339,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           message: result.message || '切换失败',
           error_type: ErrorType.SWITCH_MODEL_FAILED,
         });
-        // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
-        await appRefreshModelList();
+        // 切换失败时switchAndRefreshModel内部已刷新模型列表(后端回滚后状态), 此处只管展示
         return;
       }
       showSuccess(`已切换到 ${selectedModel.display_name}`);
-      // 【修复】使用refreshAfterModelChange串行刷新：验证新配置→刷新模型列表→刷新会话数
-      // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
-      await refreshAfterModelChange();
     } catch (error: unknown) {
       const err = error as {
         response?: { data?: { detail?: string } };
