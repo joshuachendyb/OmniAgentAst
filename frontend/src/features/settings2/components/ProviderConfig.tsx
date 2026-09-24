@@ -24,9 +24,11 @@
 //   与 ③ Provider 配置 区标题同行视觉对齐；doSave/表单 state 不动（按钮仍属本组件，KISS 最小改动）- 小欧-2026-09-24
 // 2026-09-24 小欧 - 标题行合一（北京老陈反馈两行难看）：SectionTitle 从 SettingsPage 收进本组件，
 //   标题+保存按钮同一行三列 grid（标题左|按钮居中|右空列），对齐②参数区标题行风格；env 接管分支同步带标题无按钮 - 小欧-2026-09-24
+// 2026-09-24 小欧 - 再修（北京老陈截图复核：grid 实渲染仍两行）：改 flex 强制同行——左1fr+按钮+右1fr，
+//   按钮物理居中；SectionTitle 收掉自带上下 margin 并入本行（margin 会撑高行框造成视觉断裂）- 小欧-2026-09-24
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import {
   settingsControl,
   settingsSpacing,
@@ -34,7 +36,6 @@ import {
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
 import { EnvTag } from './icons';
-import { SectionTitle } from './SectionTitle';
 
 // 2026-09-22 小欧 - DRY 收口：EXISTING_KEYS/STATIC_KEYS 两 Set 内容完全相同合并为 HARDCODED_KEYS（渲染跳过 + doSave 动态收集共用）
 const HARDCODED_KEYS = new Set([
@@ -127,17 +128,22 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
   if (isEnv)
     return (
       <div>
-        {/* env 接管：标题仍在（区锚点完整），只读无保存按钮 */}
+        {/* env 接管只读：标题仍在（搜索锚点），无保存按钮；裸 span 与正常分支同款防两行 */}
         <div
           style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr auto 1fr',
+            display: 'flex',
             alignItems: 'center',
+            margin: `${Spacing.LG}px 0 ${Spacing.XS}px`,
           }}
         >
-          <SectionTitle title="── ③ Provider 配置 ──" />
-          <span />
-          <span />
+          <span
+            style={{
+              fontSize: FontSize.PRIMARY,
+              fontWeight: FontWeight.BOLD,
+            }}
+          >
+            ── ③ Provider 配置 ──
+          </span>
         </div>
         <EnvTag />
         <span style={{ color: Colors.TEXT.SECONDARY }}>
@@ -149,20 +155,29 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
 
   return (
     <div>
-      {/* 2026-09-24 小欧 - 标题+保存按钮同一行（北京老陈：要一行、按钮居中别太靠后）：
-          三列 grid 1fr auto 1fr = 标题左 | 按钮居中 | 右空列对称，对齐②参数区标题行风格 */}
+      {/* 2026-09-24 小欧 - 标题+保存按钮强制同一行（北京老陈截图：仍两行+按钮靠右）：
+          flex 三段 = 左 spacer 1fr | 按钮 | 右 spacer 1fr → 按钮物理居中；
+          标题用裸 span（不用 SectionTitle 的 block+margin，防独占一行） */}
       <div
         style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto 1fr',
+          display: 'flex',
           alignItems: 'center',
+          margin: `${Spacing.LG}px 0 ${Spacing.XS}px`,
         }}
       >
-        <SectionTitle title="── ③ Provider 配置 ──" />
+        <span
+          style={{
+            flex: 1,
+            fontSize: FontSize.PRIMARY,
+            fontWeight: FontWeight.BOLD,
+          }}
+        >
+          ── ③ Provider 配置 ──
+        </span>
         <Button type="primary" onClick={() => void doSave()} loading={saving}>
           保存 Provider 配置（立即生效）
         </Button>
-        <span />
+        <span style={{ flex: 1 }} />
       </div>
 
       {/* api_key */}
