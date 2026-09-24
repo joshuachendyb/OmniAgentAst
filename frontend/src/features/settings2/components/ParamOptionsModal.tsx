@@ -5,6 +5,8 @@
 // 2026-09-24 22:56:21 小欧 - BZ-5 闭环：加 disabled prop（保存中禁用「保存」提交+doSave 头部守卫）——
 //   三堂会审发现外部 saveModelGroup saving 进行中弹窗仍可提交 param_options，与模型组保存并发写
 //   同 YAML 不同字段（服务端非事务），快照错位同类风险；保存/取消关窗不改模型 state 不禁 - 小欧-2026-09-24
+// 2026-09-25 06:17:07 小健 - 「添加」按钮改橘红底白字（Colors.ORANGE_RED 标准令牌 + inline style，
+//   北京老陈指示）；同批撤销首版 12 行 antd color 对象与 stepStyles 派生色令牌（过度设计/YAGNI）— 小健-2026-09-25
 import React, { useState } from 'react';
 import { Button, Input, Modal, Space, Tag } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -183,7 +185,19 @@ export const ParamOptionsModal: React.FC<Props> = ({
                 }
                 onPressEnter={() => addValue(key)}
               />
-              <Button onClick={() => addValue(key)}>添加</Button>
+              {/* 2026-09-25 06:17:07 小健 - 「添加」按钮改橘红底白字（Colors.ORANGE_RED 标准令牌 + inline
+                  style 3 行; 原 12 行 color 对象过度设计已撤, hover/active 沿用同色不派生新令牌,
+                  YAGNI/KISS; 北京老陈指示) — 小健-2026-09-25 */}
+              <Button
+                style={{
+                  background: Colors.ORANGE_RED,
+                  borderColor: Colors.ORANGE_RED,
+                  color: Colors.BG.PRIMARY,
+                }}
+                onClick={() => addValue(key)}
+              >
+                添加
+              </Button>
             </Space.Compact>
             <div
               style={{
