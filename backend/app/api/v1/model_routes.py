@@ -27,6 +27,9 @@
    2026-09-24 - 小欧 - 参数删除键级通道：ModelUpdateRequest 加 remove_params: Optional[List[str]]=None
       （前端②参数行 × 删除按钮经 PUT /models 送键名列表，update_model 白名单放行并先删后 merge；
       不声明则 Pydantic 丢字段，老前端不送不报错）— 小欧-2026-09-24
+   2026-09-24 - 小欧 - [68] 模型库：新增 RemoteModelItem/RemoteModelsResponse/ProviderModelsReplaceRequest
+      DTO + GET /providers/{name}/remote-models + PUT /providers/{name}/models 两 endpoint
+      （远程拉取走后端代理绕 CORS，替换式写入 models 列表）— 小欧-2026-09-24
 """
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter
@@ -76,6 +79,25 @@ class ProviderConfigUpdate(BaseModel):
     retry_times: Optional[int] = Field(default=None)
     max_retries: Optional[int] = Field(default=None)
     clear: Optional[bool] = Field(default=None, description="clear=true 显式清空 api_key")
+
+
+class RemoteModelItem(BaseModel):
+    id: str
+    owned_by: Optional[str] = None
+
+
+class RemoteModelsResponse(BaseModel):
+    ok: bool
+    provider: str
+    models: List[RemoteModelItem]
+    count: int
+    configured: List[str]
+    current_model: Optional[str] = None
+    message: Optional[str] = None
+
+
+class ProviderModelsReplaceRequest(BaseModel):
+    models: List[str]
 
 
 @router.get("/models")
@@ -131,3 +153,15 @@ async def update_provider(name: str, req: ProviderConfigUpdate):
 @handle_config_errors("删除 Provider")
 async def delete_provider(name: str):
     return svc.delete_provider(name)
+
+
+@router.get("/providers/{name}/remote-models")
+@handle_config_errors("获取远程模型列表")
+async def get_remote_models(name: str):
+    return await svc.fetch_remote_models(name)
+
+
+@router.put("/providers/{name}/models")
+@handle_config_errors("替换 Provider 模型列表")
+async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
+    return svc.replace_provider_models(name, req.models)

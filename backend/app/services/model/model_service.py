@@ -58,10 +58,15 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   ③BZ-7 remove_params 全为不存在键（model_params 均无命中且 meta 无命中、无 default_params、
 #     无其它字段）= 幂等 no-op 成功返回不写盘（原仍全量 merge 空耗备份/原子重写/mtime 抖动）；
 #   ④BZ-9 range/param_options 双份近似清理收敛 for meta_key 单循环（DRY）— 小欧-2026-09-24
+# 2026-09-24 - 小欧 - [68] 模型库：新增 fetch_remote_models（GET 远程列表）与
+#   replace_provider_models（PUT 替换写入 + 差集孤儿清理）— 小欧-2026-09-24
 """
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import os
+import httpx
+from fastapi import HTTPException
+from app.llm.adapters import get_provider_adapter
 
 from app.logger import logger
 from app.config import get_config  # [62]P7 4.3(1)c：get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
@@ -445,3 +450,141 @@ def delete_provider(name: str) -> Dict[str, Any]:
         switched_to = target_p or None
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "switched_to": switched_to, "mtime": _config_mtime()}
+
+
+def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
+    """[68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) — 小欧 2026-09-24"""
+    if name not in _provider_names(ai):
+        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
+    p = ai[name]  # _provider_names 已保证 isinstance(ai[name], dict)
+    api_base = str(p.get("api_base") or "").strip()
+    if not api_base:
+        raise HTTPException(status_code=400, detail="未配置 api_base，请先到模型 Tab → ③ Provider 配置填写")
+    return p, api_base
+
+
+async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tuple[Any, Optional[str]]:
+    """[68] HTTP 拉取层 → (resp, err)；网络异常统一 err 文案 — 小欧 2026-09-24"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
+    except Exception as e:
+        logger.error(f"拉取远程模型失败: {e}")
+        return None, f"拉取失败: {e}"
+    return resp, None
+
+
+def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+    """[68] 响应解析层 → (models, err)；HTTP>=400/非JSON/非数组 → err — 小欧 2026-09-24"""
+    if resp.status_code >= 400:
+        message = f"HTTP {resp.status_code}"
+        try:
+            body = resp.json()
+            if isinstance(body, dict):
+                err = body.get("error")
+                if isinstance(err, dict) and err.get("message"):
+                    message = str(err["message"])
+                elif body.get("message"):
+                    message = str(body["message"])
+        except Exception:
+            pass
+        return None, message
+    try:
+        body = resp.json()
+    except Exception as e:
+        return None, f"响应解析失败: {e}"
+    if not isinstance(body, dict):
+        return None, "远端返回结构异常"
+    data = body.get("data")
+    if not isinstance(data, list):
+        return None, "远端返回结构异常（data 非数组）"
+    models: List[Dict[str, Any]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        mid = item.get("id") or item.get("model")
+        if not mid:
+            continue
+        models.append({"id": str(mid), "owned_by": item.get("owned_by")})
+    return models, None
+
+
+async def fetch_remote_models(name: str) -> Dict[str, Any]:
+    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
+    ai = _raw_ai()
+    p, api_base = _require_provider_for_fetch(name, ai)
+    headers = get_provider_adapter(name).static_headers(str(p.get("api_key") or ""))
+    configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
+    ref = get_current_ref(ai)
+    current_model = ref["model"] if ref["provider"] == name else None
+
+    def _fail(message: str) -> Dict[str, Any]:
+        return {
+            "ok": False,
+            "provider": name,
+            "models": [],
+            "count": 0,
+            "configured": configured,
+            "current_model": current_model,
+            "message": message,
+        }
+
+    resp, err = await _http_get_remote_models(api_base, headers)
+    if err:
+        return _fail(err)
+    models, err = _parse_remote_models_body(resp)
+    if err:
+        return _fail(err)
+    return {
+        "ok": True,
+        "provider": name,
+        "models": models,
+        "count": len(models),
+        "configured": configured,
+        "current_model": current_model,
+    }
+
+
+def replace_provider_models(name: str, models: List[str]) -> Dict[str, Any]:
+    """[68] 替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24"""
+    ai = _raw_ai()
+    if name not in _provider_names(ai):
+        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
+    p = ai[name]  # _provider_names 已保证 isinstance(ai[name], dict)
+    if os.environ.get(f"{name.upper()}_API_KEY"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Provider '{name}' 由环境变量 {name.upper()}_API_KEY 接管，只读",
+        )
+    new_list: List[str] = []
+    seen = set()
+    for m in models:
+        s = str(m).strip()
+        if s and s not in seen:
+            seen.add(s)
+            new_list.append(s)
+    if not new_list:
+        raise HTTPException(status_code=400, detail="模型列表不能为空")
+    ref = get_current_ref(ai)
+    if ref["provider"] == name and ref["model"] and ref["model"] not in new_list:
+        raise HTTPException(
+            status_code=400,
+            detail=f"不能移除当前全局模型 {ref['model']}，请先切换全局模型",
+        )
+    old = [m for m in (p.get("models") or []) if isinstance(m, str)]
+    removed = [m for m in old if m not in set(new_list)]
+    added = [m for m in new_list if m not in set(old)]
+    tree: Dict[str, Any] = {"ai": {name: {"models": new_list}}}
+    node = tree["ai"][name]
+    params_block = p.get("model_params") or {}
+    meta_block = p.get("model_meta") or {}
+    if isinstance(params_block, dict):
+        orphans = {m: None for m in removed if m in params_block}
+        if orphans:
+            node["model_params"] = orphans
+    if isinstance(meta_block, dict):
+        orphans = {m: None for m in removed if m in meta_block}
+        if orphans:
+            node["model_meta"] = orphans
+    merge_nested_patch(tree, scope="model")
+    return {"ok": True, "mtime": _config_mtime(), "added": added, "removed": removed}

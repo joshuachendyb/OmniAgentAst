@@ -105,6 +105,8 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
        原名 stream_task 与 tuning.llm.stream_* 撞名易误读为 LLM body 流式开关，实为前端 SSE 保活+任务清理+缓存；
        4 键 key 路径前缀同步、label/默认值/值域/notice/type 均不动；全仓消费点 4 处 get 路径+前端前缀匹配+E2E 断言
        同轮改，禁止 backward 无 OLD_KEY_MAP — 小欧-2026-09-24
+    2026-09-24 22:36:52 - 小欧 - [68] 模型库：新增 model_library 组（items 空，不走 schema 行渲染，
+      走专用组件分支）；GROUP_ORDER 插倒数第二 — 小欧-2026-09-24
 """
 from typing import Any, Dict, List, Optional
 
@@ -225,6 +227,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
     ]},
+    # 2026-09-24 小欧 - [68] 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支 — 小欧-2026-09-24
+    "model_library": {"label": "模型库", "items": []},
     # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
     # 2026-09-23 小欧 - 20:12:44 前 10子组34键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键，network 1键仍在）— 小欧-2026-09-23
     # 2026-09-23 小欧 - 20:12:44 起 9子组33键（network.cors_origins 迁系统组；实测 REGISTRY 9子组33键）— 小欧-2026-09-23
@@ -307,7 +311,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     ]},
 }
 
-GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "appearance"]
+# 2026-09-24 小欧 - [68] D1：模型库插倒数第二（通用→模型→安全→沙箱→调优→系统→模型库→外观）— 小欧-2026-09-24
+GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "model_library", "appearance"]
 
 # registry key → ConfigUpdate 字段映射（旧键走 config_service.update_config，语义不变；
 # 未列出的键走通用 region 合并，见 config_helpers.merge_region_patch）
