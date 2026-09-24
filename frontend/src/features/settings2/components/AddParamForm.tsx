@@ -31,6 +31,9 @@
 // 2026-09-24 22:56:21 小欧 - BZ-5 闭环：加 disabled prop（保存中禁用「确认」提交+handleAdd 守卫）——
 //   三堂会审发现参数区/重置/入口按钮已锁 saving，但表单内批量 onAdd 未锁：保存 await 期间仍可注入
 //   新键，与 saveModelGroup 闭包快照错位竞态（BZ-5 目标漏洞）；取消按钮不改 state 不禁 - 小欧-2026-09-24
+// 2026-09-25 05:29:51 小健 - context_limit 预设上限 900000→2000000（北京老陈确认，对齐后端
+//   settings_registry llm.context_limit_default range_=[200000,2000000] 口径）; 注释列补范围显示
+//   （原范围仅在 placeholder，输入后不可见，填 1000000 越界无提示且确认按钮灰）— 小健-2026-09-25
 import React, { useState } from 'react';
 import { Button, Checkbox, Input, Radio, Select } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -51,7 +54,7 @@ const PARAM_PRESETS = [
     key: 'context_limit',
     type: 'number' as const,
     default: 262144,
-    range: { min: 1000, max: 900000 },
+    range: { min: 1000, max: 2000000 },
     label: '上下文限制',
     desc: '上下文窗口上限，超限裁剪旧轮',
   },
@@ -306,7 +309,7 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
                   style={inputStyle}
                 />
               )}
-              {/* 列4：注释（desc + 默认值，次要色小字，弹性列） */}
+              {/* 列4：注释（desc + 范围 + 默认值，次要色小字，弹性列） */}
               <span
                 style={{
                   flex: 1,
@@ -316,7 +319,9 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
                   fontSize: FontSize.SECONDARY,
                 }}
               >
-                {p.desc}（默认 {p.default !== null ? String(p.default) : '空'}）
+                {`${p.desc}（${
+                  p.range ? `范围 ${p.range.min} ~ ${p.range.max}，` : ''
+                }默认 ${p.default !== null ? String(p.default) : '空'}）`}
               </span>
             </div>
           ))}
