@@ -19,6 +19,8 @@
 #   历史回放丢消息属假成功); assistant legacy 直存分支行为不变; W1 两处镜像 INSERT 加 TODO 删除注释
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W1镜像写点(user/assistant两处INSERT chat_messages), 删除后assistant消息由任务/步骤体系(chat_tasks.ai_message_id/chat_task_steps)管理, 系统对该表零写依赖
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import MAX_CACHE_SIZE 改别名 + cache 改读 tuning 配置
+# 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：display_name 缓存上限读取键路径同步，
+#   缓存逻辑/_D_CACHE_SIZE 默认值零改动 — 小欧-2026-09-24
 """
 message_service — 消息业务服务(services/chat)
 
@@ -42,7 +44,7 @@ from app.utils.display_utils import extract_display_name_from_steps, build_displ
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
-display_name_cache = LRUCache(max_size=get_config().get("tuning.stream_task.max_cache_size", _D_CACHE_SIZE))
+display_name_cache = LRUCache(max_size=get_config().get("tuning.live_front.max_cache_size", _D_CACHE_SIZE))  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
 
 
 def delete_session_display_names(session_id: str) -> None:

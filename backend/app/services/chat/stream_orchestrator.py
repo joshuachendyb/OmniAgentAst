@@ -156,6 +156,8 @@
 #   绝不 yield; 锁外阶段统一 yield"——消除持 cond 锁期间 await/yield 阻塞生产者 append 的死锁窗口,
 #   白名单/心跳/重连/done 行为不变。compliance: SRP/KISS-DIRECT
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HEARTBEAT_INTERVAL 改别名 + 心跳改读 tuning 配置
+# 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：心跳读取键路径同步(北京老陈裁定组名更准确)，
+#   读逻辑/默认值 _D_HEARTBEAT/心跳周期语义零改动 — 小欧-2026-09-24
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -571,7 +573,7 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
                 # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
                 # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
                 try:
-                    _hb = get_config().get("tuning.stream_task.heartbeat_interval", _D_HEARTBEAT)
+                    _hb = get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
                     await asyncio.wait_for(buffer.cond.wait(), timeout=_hb)  # 心跳周期(错开关系见 constants.py §6, 与前端 IDLE_TIMEOUT=60s 错开)
                 except asyncio.TimeoutError:
                     heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(北京老陈指令双写+计数) — 小欧-2026-09-08

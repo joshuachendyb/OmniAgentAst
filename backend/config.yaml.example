@@ -18,6 +18,7 @@
 #   2026-09-23 - 小欧 - 连接相关注释重写(北京老陈指令"一起补充"): provider timeout/max_retries 补优先级注释(高于tuning.llm_net/stream_max_retries) + tuning llm 3键/concurrency 2键/heartbeat/cors 全部改为「阶段+后果+分工」语义对齐 settings_registry notice - 小欧-2026-09-23
 #   2026-09-23 - 小欧 - 调优组剩余注释全量重写(北京老陈指令"都是看的稀里糊涂 都优化一下"): llm 2键/trim 3键/compaction 4键/stream_task 3键/hitl 4键/content 3键 全部对齐 settings_registry notice 同口径「管什么+触发时机+后果+分工」 - 小欧-2026-09-23
 #   2026-09-23 - 小欧 - 调优组注释去开发术语(北京老陈指令"怎么还有开发的代码信息"): 删 SSE/HITL/bypass/CORS/Origin/chunk/FC/C4/TTL/信号量/request body/ConnectTimeout 等代码黑话，全部改纯用户语言，与 registry notice 同步 - 小欧-2026-09-23
+#   2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(北京老陈裁定"live_front 更准确"，原名与 tuning.llm.stream_* 易混且非 LLM body 流式)；块下 4 键路径/值/注释措辞不变，仅块名改 — 小欧-2026-09-24
 #
 # ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
 #   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -184,7 +185,8 @@ tuning:
     keep_tail: 1                   # 压完摘要再原样留最近几条;0=全压不留原话
 
   # 连接保活/任务清理/缓存（4 键）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
-  stream_task:
+  # 组名 stream_task→live_front — 小欧-2026-09-24
+  live_front:
     heartbeat_interval: 25.0       # 没新内容时隔N秒发"我还活着"防页面误判断线;须明显小于60秒断线判定
     task_timeout_hours: 1          # 做完的任务保留N小时后自动清出列表(在跑的不受影响)
     tool_cache_ttl: 300            # 同工具同参数N秒内直接给上次结果不重跑;小=新鲜慢,大=快但可能过期

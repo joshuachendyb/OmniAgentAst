@@ -56,7 +56,7 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
      cors_origins=跨域白名单+直连vs proxy场景 —— 消费点核实: base_service.py:344/llm_call.py:230,275/
      client_sdk.py:123,219/shell_engine.py:853/stream_orchestrator.py:574/main.py:92 - 小欧-2026-09-23
    2026-09-23 - 小欧 - 调优组剩余18键 notice 全量重写(北京老陈指令"都是看的稀里糊涂 都优化一下"):
-     llm 2键(tool_choice/include_usage)/trim 3键/compaction 4键/stream_task 3键(除heartbeat已改)/
+     llm 2键(tool_choice/include_usage)/trim 3键/compaction 4键/stream_task 3键(除heartbeat已改，2026-09-24 组名已改 live_front 见下方编辑历史)/
      hitl 4键/content 3键 —— 统一口径「管什么+什么时候触发+超了/关了会怎样+与谁分工」，消灭
      C4/TTL/L2/HITL/bypass/FC轮 等黑话直甩 —— 消费点核实: llm_call.py:89/base_service.py:335/
      message_builder.py:106-108,318,345-366/trigger.py:60/start_step.py:127,137,167/summary.py:61/
@@ -101,6 +101,10 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
       yaml 结构 tuning.network.cors_origins 上提为顶层 network.cors_origins（config.yaml.example +
       真实 config/config.yaml 同步搬块）；main.py:92 get 路径同步；禁止backward 无 OLD_KEY_MAP 迁移；
       默认值/notice/type=url/label 均不动 — 小欧-2026-09-23
+    2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(北京老陈裁定"live_front 更准确")：
+       原名 stream_task 与 tuning.llm.stream_* 撞名易误读为 LLM body 流式开关，实为前端 SSE 保活+任务清理+缓存；
+       4 键 key 路径前缀同步、label/默认值/值域/notice/type 均不动；全仓消费点 4 处 get 路径+前端前缀匹配+E2E 断言
+       同轮改，禁止 backward 无 OLD_KEY_MAP — 小欧-2026-09-24
 """
 from typing import Any, Dict, List, Optional
 
@@ -275,14 +279,14 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压成摘要前，单条工具结果超过这么多字先砍掉再给模型看（防超长输出把摘要过程撑爆）；调大=摘要更全但更费"),
         _item("tuning.compaction.keep_tail", "int", "免压缩原始对话数", 1, range_=[0, 5],
               notice="压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
-        # --- stream_task: 连接保活/任务清理/缓存（4 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
-        _item("tuning.stream_task.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
+        # --- live_front: 连接保活/任务清理/缓存（4 键）--- 原名 stream_task，2026-09-24 改名防与 tuning.llm.stream_* 混淆 — 小欧-2026-09-24
+        _item("tuning.live_front.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
               notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活"),
-        _item("tuning.stream_task.task_timeout_hours", "int", "任务保留(小时)", 1, range_=[1, 24],
+        _item("tuning.live_front.task_timeout_hours", "int", "任务保留(小时)", 1, range_=[1, 24],
               notice="已经做完的任务在列表里保留几小时后自动清掉（正在跑的不受影响）；调小=列表干净但翻不了旧任务，调大=能回看更久"),
-        _item("tuning.stream_task.tool_cache_ttl", "int", "结果复用时间(秒)", 300, range_=[60, 3600],
+        _item("tuning.live_front.tool_cache_ttl", "int", "结果复用时间(秒)", 300, range_=[60, 3600],
               notice="同一工具用同样的参数再查一次时，这么多秒内直接给上次的结果、不再真跑一遍；调小=结果更新鲜但重复查询更慢，调大=更快但可能给到过期结果"),
-        _item("tuning.stream_task.max_cache_size", "int", "缓存条数上限", 1000, range_=[100, 10000],
+        _item("tuning.live_front.max_cache_size", "int", "缓存条数上限", 1000, range_=[100, 10000],
               notice="内部小缓存最多存多少条，超了自动丢最久没用的；一般不用动，调错也没什么感觉"),
         # --- hitl: 人工确认（4 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
         _item("tuning.hitl.hitl_confirm_lead", "int", "确认倒计时提前(秒)", 10, range_=[0, 60],

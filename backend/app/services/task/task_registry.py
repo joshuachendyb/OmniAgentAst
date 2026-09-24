@@ -13,6 +13,8 @@
 #   返回占位活跃task_id(str), 注册成功返回 None —— 调用方(编排层)拿返回值改道注入占位任务, 竞态下消息不丢;
 #   签名 None → Optional[str]。compliance: 与B机制"注入不静默丢失"红线同哲学(KISS-DIRECT)
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
+# 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：任务保留时长读取键路径同步，
+#   清理逻辑/默认值 1 小时零改动 — 小欧-2026-09-24
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -191,7 +193,7 @@ async def cleanup_expired_tasks() -> None:
         注: 本字典 status 实际取值仅 running/cancelled/paused(status_table 的 completed/failed 是 agent 对象枚举, 不写此字典)。
     """
     now = datetime.now()
-    _task_timeout = timedelta(hours=get_config().get("tuning.stream_task.task_timeout_hours", 1))
+    _task_timeout = timedelta(hours=get_config().get("tuning.live_front.task_timeout_hours", 1))  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     async with running_tasks_lock:
         expired = [
             tid for tid, t in running_tasks.items()
