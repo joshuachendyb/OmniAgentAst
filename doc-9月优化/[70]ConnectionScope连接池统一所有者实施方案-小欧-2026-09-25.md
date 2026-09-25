@@ -3,8 +3,8 @@
 **文档名**: [70]ConnectionScope连接池统一所有者实施方案-小欧-2026-09-25.md  
 **编写人/签名**: 小欧（资深后端开发、全架构设计与分析）  
 **创建时间**: 2026-09-25 11:40:25  
-**更新时间**: 2026-09-25 13:37:58  
-**版本**: v1.3  
+**更新时间**: 2026-09-25 14:15:57  
+**版本**: v1.4  
 **状态**: 设计定稿 + **第三章 13 个文件逐真实 diff 已落笔（基于干净 HEAD `527cfc727` 逐行精读后编写）**；尚未修改任何程序源码  
 **适用基线**: `F:\OmniAgentAs-repair` HEAD `527cfc727`（6 个 lease 半成品文件已撤销回 HEAD 的干净基线；此前 8a58edb57 起点见 [69] 文档）  
 **关联问题**: 配置热重载期间活动任务仍使用已关闭的共享 `httpx.AsyncClient`（任务零感知 + 不泄漏）  
@@ -20,6 +20,7 @@
 | v1.1 | 2026-09-25 12:15:36 | 小欧 | ①三章落地：13 个目标文件逐真实 unified diff（3.1 client_sdk lease 落户 → 3.13 agent_runner，依赖序），全部基于 HEAD `527cfc727` 逐行精读编写，`check_doc_diff` 类校验器复核；②二章设计修正（三堂会审 YAGNI 复查）：删 `mark_config_changed`/四态状态机（`close_on_zero` 使零穿越只可能发生在退休后，状态机为冗余抽象）、删 `scope.release_lease`/`scope.resolve_session`（快照 close 直接归还 lease、查询职责留 resolver——SRP）、`__init__` 改持 `ai_service`（一代=一实例一池）、新增 `ensure_pool`/`release_owner`；③registry"ai_service"字段全仓零消费核证后删除；④runner 关闭判据改无条件（resolver 恒返回任务私有快照，`_is_snapshot` 死判据消亡）；⑤五章步骤改依赖序（client_sdk→base_service→scope→工厂/停机→resolver→registry→接线→测试），每步 `py_compile` 自检、全步后 `compileall` |
 | v1.2 | 2026-09-25 12:59:14 | 小欧 | 校验与迁移清单收尾：①`check_doc_diff_70` 变体复核全部 13 个 diff 块 → TOTAL_BAD=0、blocks=13、skipped=1（3.4 新文件预期），修正 3.5 编辑历史锚行漏杠（`2026-09-23 - 小欧`）；②五章 step 8 补**存量测试迁移清单**（逐调用点扫描核证）：`register_task` **58 调用点/16 文件**（带 `session_id=` 31 处删位后 TypeError 响亮、**裸传第 2 位 27 处漏改静默错位**必须逐处去位）、删 `test_tdd_14_20_inbox.py:111` 字段断言、resolver 直调 8 处改传 scope、`snapshot` 桩补 `client_lease`（test_repro_v01936 L186/L225）、`_is_snapshot` 断言迁移 6 处；③3.11 调用点 60→58 按精确扫描更正；④step 2 reset_sdk"改走 lease"更正为"零调用核证直接删除"（与 3.2 一致） |
 | v1.3 | 2026-09-25 13:37:58 | 小欧 | 新增**第六章 TDD 实施步骤（详细执行篇）**：①6.1 执行总则（RED→GREEN 循环定义、每步验证三件套、3 个新测试文件与阶段总览）；②6.2 阶段0 存量迁移清单 M1~M8（58 调用点/resolver 直调 8 处/`_is_snapshot` 断言 6 处/snapshot 桩/工厂桩/字段断言/G2 桩，逐项标 RED 性质与 GREEN 归属，分批执行）；③6.3~6.5 阶段1~3 共 **29 个新增 case（TDD-74~102，续接现有 TDD-01~73）**逐 case 规格（文件/函数名/断言要点/对应 diff/命令），scope 核心 5 case（TDD-83~87）附完整代码；④6.6 [69] 4.3 十五场景→case 映射表；⑤6.7 全量验收（compileall/静态 grep/定向序列/全量基线 7355 对照/真实 E2E/并发矩阵）；⑥6.8 提交切片与回滚。五章加执行细则指引，五章 8 步依赖序保留 |
+| v1.4 | 2026-09-25 13:58:47 | 小欧 | **全文十遍一致性审核后修订（11 项问题，每项三遍复核：①[69] 原始要求 ②本文现状 ③HEAD 代码/全文搜索）**——已解决 8 条根因/3 条欠账（diff 与 HEAD 逐行对得上），落实修复 4 项：①**3.12 补 hunk-7~9 交接兜底**（`_session_client`/`_snapshot_handed_to_runner` 预初始化 + create_task 后置标记 + `finally` 单点归还未交接快照）——根治 [69] 1.2.5 泄漏窗口（原 3.12 缺失，六章 TDD-102 曾是无实现的空断言）；②**3.1 `acquire()` 增 `client.is_closed` 检查**——偿还 [69] 1.2.3⑥/2.2 池约束④"底层被外部关闭后仍可借出"；③**3.6 `shutdown` 改全停机总预算**（原按代逐个计，最坏代数×30s 无界）+ 补 `import time`；④**2.3 并发边界如实界定**（池锁只护 `_ref_count/_closing`；`lease._released` 无锁，幂等由单 loop async 串行保证，零跨线程调用面）——修正"池级锁线程安全"说过头。**如实交代取舍**（2.7 单节，只列不做的理由）：①事件循环策略（全仓 33 处线程调用无一在 reset 路径，不跨 loop）、②软配额按 loop 隔离（Semaphore 仅竞争时绑 loop，生产单 loop 不触发）、③裸 client 传递（LLMClient 必须持有 client 才能发请求，约束前提不成立）、④关闭失败重试（归零后无人再碰，需先造触发者；**失败日志已补池标识**）、⑤`config_helpers:387` 写盘前错位 reset **由"不做"改判为"做"**（新增 3.14，删 1 行风险为零且语义更正确）、⑥取消语义非不做（零改动已保留）。五章 step5 同步纳入 3.14、4.1 静态核查增 3 条、4.2 增 2 类 case、六章 6.1/6.4 同步 |
 
 ---
 
@@ -135,7 +136,8 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
           经素材 close_on_zero 单次关闭 + 日志可查承接；不引入二次重试复杂度——YAGNI）
 ```
 
-- 素材既有语义原样继承：`_closing` 标志、释放幂等（`lease._released`）、池级 `threading.Lock` 线程安全。
+- 素材既有语义原样继承：`_closing` 标志、释放幂等（`lease._released`）、池级 `threading.Lock` 保护 `_ref_count/_closing`。
+- **v1.4 审核修正（并发边界如实界定）**：池内 `_ref_count`/`_closing` 的判断与迁移在同一把锁内（[69] 2.2 池约束①已兑现）；`lease._released` 是**无锁实例标志**，其"释放只减一次"的幂等在**单事件循环内由 async 串行性保证**，本方案全部调用面（resolver/snapshot close/runner finally/orchestrator finally）均在事件循环内 → **实际无跨线程暴露**；若未来出现"同一 lease 被多线程并发 release"的调用面，须将 `_released` 纳入池锁或改原子标志（本次不引入，YAGNI：零调用面不预设计）。
 
 ### 2.4 所有权与计数模型
 
@@ -151,12 +153,14 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 
 | 环节 | 现状（HEAD）落点 | 重组后 | 收口变化 |
 |------|-----------------|--------|---------|
-| 创建 | `service.get_service` 锁内建单例 + C1 惰性建池后**裸暴露 `_shared_client` 属性** | 锁内 `_attach_scope`：`ConnectionScope(instance)` + `ensure_pool()`（建池 + `relinquish_ownership` 移交） | 建池、所有权移交、scope 诞生同一处；裸属性暴露消亡 |
+| 创建 | `service.get_service` 锁内建单例 + C1 惰性建池后**裸暴露 `_shared_client` 属性** | 锁内 `_attach_scope`：`ConnectionScope(instance)` + `ensure_pool()`（建池 + `relinquish_ownership` 移交） | 建池、所有权移交、scope 诞生同一处；裸属性暴露消亡（**池地址的传递路径仍为裸 `shared_client` 构造参数**——见 2.7 取舍③） |
 | 决议 | resolver 用 `getattr(ai_service, "_shared_client")` 反射摸池 | `resolve_session_client(scope, session_id)`：进门 `scope.acquire_lease()`，快照接走、未转移 finally 归还 | 反射消亡；**lease 只从 scope 发**；查询职责（DB/provider 配置）留 resolver（v1.1 修正：不迁 scope，SRP） |
 | 注册 | `task_registry.register_task` 存 `"ai_service"` 字段（且**全仓零消费点**，v1.1 核证） | 删参数删字段，只存任务身份/状态/inbox | registry 不 import 任何资源类型；死字段直接删除（YAGNI） |
-| 使用 | orchestrator 反射/`_shared_client` 属性 + runner 摸 `_is_snapshot` 私有标记 | 快照构造注入 `scope.acquire_lease()`；runner 无条件 `close()`（快照恒私有） | `_is_snapshot` 消亡；`_owns_client` 收敛回 LLMClient 类内（relinquish/公开 `client` property），跨层摸私有清零 |
+| 使用 | orchestrator 反射/`_shared_client` 属性 + runner 摸 `_is_snapshot` 私有标记 | 快照构造注入 `scope.acquire_lease()`；runner 无条件 `close()`（快照恒私有） | `_is_snapshot` 消亡；`_owns_client` 收敛回 LLMClient 类内（relinquish/公开 `client` property），跨层摸私有清零；**新增：orchestrator `finally` 单点归还未交接快照**（3.12 hunk-7~9，根治交接窗口泄漏） |
 | 取消 | task_runtime 经 `running_tasks["agent"].llm_client` 取消在飞 HTTP | **不变**（v1.1 核证：取消链本就不经 registry 的 ai_service 字段，零改动） | 取消只作用于任务与 HTTP response；池引用随任务结束 close 归还 |
-| 停机 | `main.shutdown_event` 调裸 `reset()` | `await lifecycle.shutdown()` = `reset()`（换代归还）+ `scope.drain(30)` | 关闭等待收编进 scope.drain 单点 |
+| 停机 | `main.shutdown_event` 调裸 `reset()` | `await lifecycle.shutdown()` = `reset()`（换代归还）+ 各退休代 `scope.drain(剩余预算)` | 关闭等待收编进 scope.drain 单点；`timeout` 为**全停机总预算**（v1.4 修订，原按代逐个计） |
+| 跨 loop（**本次不做**） | [69] 2.3 曾要求 owner loop 绑定 + `run_coroutine_threadsafe` 回归；实际调用面全在单事件循环内 | 保持现状（`release_owner` 有 loop 走 `create_task`、无 loop 走 `asyncio.run` 兜底） | 见 2.7 取舍①：真实链路不触发，风险为"未来新增同步调用面" |
+| 软配额跨 loop（**本次不做**） | `client_sdk` 类级 `_soft_pool_semaphore`（HEAD L139）为单例 | 保持现状 | 见 2.7 取舍②：单 loop 部署下无实际收益 |
 
 ### 2.6 reset 换代模型（配置代 generation）
 
@@ -165,6 +169,17 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 3. **新请求** → `get_service()` → 锁内 `_attach_scope` 创建**新一代 scope**（新池、新配置参数）→ 新任务用新池；
 4. **旧任务**继续持有旧 scope 的 lease → 请求照常 → 全部结束 release 归零 → 旧池在最后一个 release 协程内自动 `aclose()`；
 5. 结果：新配置即时生效（新请求即新代），旧任务零感知，旧池不泄漏。
+
+### 2.7 不做的项与理由（v1.4，2026-09-25 14:15:06）
+
+| # | 项 | 理由 |
+|---|---|---|
+| ① | 事件循环策略（owner loop 绑定、跨 loop 回归） | 配置保存/重置全在 FastAPI 事件循环内，全仓 33 处线程调用无一在此路径，不会跨 loop；真出现时改两个函数即可，现在预埋 loop 字段会阻止内存回收 |
+| ② | 软配额按 loop 隔离 | `Semaphore` 仅排队竞争时绑 loop，生产单进程单 loop、多 worker 多进程均不触发；做它收益为零 |
+| ③ | LLMClient 不再接收裸 client | LLMClient 必须持有 client 才能发请求（HEAD L283/399），约束前提不成立；防误关已由池唯一所有者+relinquish+close 三态+引用计数达成 |
+| ④ | 关闭失败可重试 | 池归零后无人再碰，重试需先造触发者（新功能）；停机时进程将退、重试无意义。**失败日志已补池标识**（3.1），可定位 |
+| ⑤ | ~~写盘前错位 reset~~ | **已改判为做**（3.14 删除）：留着会致"保存模型换两次代"，删 1 行风险为零且语义更正确 |
+| ⑥ | 取消语义 | 非"不做"——`cancel`/`reset_cancel`/`_current_response`/取消短路全部零改动，已保留 |
 
 ---
 
@@ -178,7 +193,9 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 
 - 吸收 [70]素材-lease核心 两段类（原样：归零关闭 `close_on_zero`、释放幂等、池级线程锁）；
 - 新增 `relinquish_ownership()`（幂等移交）与 `client` property（公开 `_client`，消灭跨层摸私有，欠账①）；
-- `close()` 三态：`_owns_client=False`（共享池/已移交）→ no-op；独占池 → `aclose`（`is_closed` 双保险）。
+- `close()` 三态：`_owns_client=False`（共享池/已移交）→ no-op；独占池 → `aclose`（`is_closed` 双保险）；
+- **v1.4 审核新增**：`acquire()` 增 `client.is_closed` 检查——偿还 [69] 1.2.3⑥ / 2.2 池约束④"底层被外部关闭后池仍可 acquire"（借出即炸的真病灶），`close()` 已有同款双保险、acquire 侧此前缺失；
+- **v1.4 说明**：`close_on_zero=False` 为素材保留分支（借用池不随引用归零关闭的旧语义），本方案全部调用点用默认 `True`（引用归零即关）——保留是为不毁素材已验证逻辑，不新增用法（YAGNI：不预设第二种所有权形态）。
 
 ```diff
 @@ hunk-1 imports: +inspect/+threading（素材 close 判可等待对象 / 池级线程锁）
@@ -210,6 +227,9 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +        with self._lock:
 +            if self._closing:
 +                raise RuntimeError("共享 httpx 客户端已关闭，不能继续获取 lease")
++            if getattr(self.client, "is_closed", False):
++                # [70] v1.4 审核新增: 底层被池外 aclose 后禁借, 防借出即炸(偿还 [69] 1.2.3⑥/2.2 池约束④) — 小欧-2026-09-25
++                raise RuntimeError("共享 httpx 客户端已被外部关闭，不能继续获取 lease")
 +            self._ref_count += 1
 +        return SharedClientLease._from_pool(self)
 +
@@ -241,7 +261,7 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +            if inspect.isawaitable(result):
 +                await result
 +        except Exception as exc:
-+            logger.warning(f"[LLM] 共享 httpx 客户端关闭失败: {exc}")
++            logger.warning(f"[LLM] 共享 httpx 客户端关闭失败(pool={id(self):#x}): {exc}")  # [70] v1.4 审核新增: warning 带池标识, 多代并存时可定位(2.7④) — 小欧-2026-09-25
 +
 +
 +class SharedClientLease:
@@ -638,6 +658,10 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
  小欧 2026-08-14 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 +小欧 2026-09-25 [70] 新增 shutdown(): 停机收口 = reset() 换代归还 + 逐个退休代 scope.drain(超时放行)
  """
+@@ hunk-1b imports 增 time(总预算 deadline 所需)
+ import asyncio
++import time  # [70] shutdown 总预算 deadline 计算 — 小欧-2026-09-25
+ from typing import Optional
 @@ hunk-2 文件尾追加 shutdown
  def reset():
      """重置工厂状态 — 小沈 2026-06-08
@@ -651,12 +675,18 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +
 +async def shutdown(timeout: float = 30.0) -> None:
 +    """[70] 停机收口(小欧 2026-09-25): ①reset() 换代归还当前代 owner(阻断新任务混入)+关闭旧实例;
-+    ②逐个等待退休代池 lease 归零关闭(0.1s 轮询, 超时 warning 放行不阻塞进程退出)。
++    ②逐个等待退休代池 lease 归零关闭(0.1s 轮询)。v1.4 审核修订: timeout 为**全停机总预算**
++    (原按代逐个计, 最坏 代数×timeout 无界上界), 各代按剩余预算 drain, 耗尽即放行不阻塞进程退出。
 +    main.shutdown_event 调用, 取代原裸 reset()(原调用只清工厂不等池关闭)。"""
 +    from app.services.lifecycle.service import get_retired_scopes
 +    reset()
++    deadline = time.monotonic() + timeout
 +    for scope in get_retired_scopes():
-+        await scope.drain(timeout=timeout)
++        remaining = deadline - time.monotonic()
++        if remaining <= 0:
++            logger.warning(f"[AIServiceFactory] 停机收口预算耗尽({timeout}s), 剩余退休代未等完(放行)")
++            break
++        await scope.drain(timeout=remaining)
 +    logger.info("[AIServiceFactory] 停机收口完成(共享池 lease 已归零或超时放行)")
 ```
 
@@ -853,7 +883,11 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
              "_pause_event": asyncio.Event(),
 ```
 
-### 3.12 `backend/app/services/chat/stream_orchestrator.py` — 接线：get_scope / 注册去参 / resolve 传 scope
+### 3.12 `backend/app/services/chat/stream_orchestrator.py` — 接线：get_scope / 注册去参 / resolve 传 scope / 交接兜底
+
+- hunk-1~6：门面切换与注册去参（`get_scope` 原子取本代、resolve 传 scope、恒非 None 死分支消亡）；
+- hunk-7~9 **交接兜底（v1.4 审核新增，根治 [69] 1.2.5 泄漏窗口）**：`_session_client`/`_snapshot_handed_to_runner` 预初始化（同 `bg_task` 防 NameError 模式）→ `create_task` 交接后置标记（其后无 await，无竞态窗口）→ `finally` 单点归还未交接快照（异常/断连/取消/`create_task` 失败全路径覆盖，不逐路径 close——DRY）；**无快照泄漏则旧池必然归零关闭**；
+- 边界核证：`register_task`（HEAD 368/375）与 `UniversalAgent` 构造（385）**均在 resolve 之前**，此二者失败时快照尚未创建、无 lease 可泄漏（[69] 4.3 场景 6/7 在本方案顺序下不成立，真实窗口是 resolve 成功后至 bg_task 交接前）。
 
 ```diff
 @@ hunk-1 编辑历史尾部追加
@@ -896,6 +930,23 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +        #   (而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神 — 小欧 2026-09-01
 +        agent._task_llm_model = getattr(_session_client, "llm_model", None)
          # ── [TASK_START] 在会话覆盖快照生效后打印, 用 agent.llm_client(实际生效模型)非全局默认
+@@ hunk-7 预初始化快照交接标记(防 finally NameError, 同 bg_task 预初始化模式)
+     bg_task = None  # BUG-32修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
++    _session_client = None  # [70] 快照预初始化: finally 交接守卫用(防 NameError) — 小欧-2026-09-25
++    _snapshot_handed_to_runner = False  # [70] 交接标记: create_task 后置 True, finally 据此定归还方 — 小欧-2026-09-25
+     try:
+@@ hunk-8 bg_task 交接后置标记(其后无 await, 无竞态窗口)
+         _agent_tasks.add(bg_task)
+         bg_task.add_done_callback(_agent_tasks.discard)
++        # [70] 交接完成: 快照关闭责任移交 runner finally, orchestrator 不再归还 — 小欧-2026-09-25
++        _snapshot_handed_to_runner = True
+@@ hunk-9 finally 兜底: 未交接快照单点归还([69] 1.2.5 泄漏窗口根治)
+     finally:
++        if _session_client is not None and not _snapshot_handed_to_runner:
++            # [70] 未交接 runner 的快照统一单点归还(lease 随之 release 归还本代池);
++            #   异常/断连/取消/create_task 失败等全部路径经此 finally, 不逐路径 close(DRY) — 小欧-2026-09-25
++            await _session_client.close()
+         _current_task_id.reset(_task_token)
 ```
 
 ### 3.13 `backend/app/services/agent/agent_runner.py` — finally 关客户端改无条件
@@ -936,7 +987,24 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +                logger.warning(f"[Runner] 关闭任务客户端失败(task={task_id}): {_ce}")
 ```
 
-**零改动声明**：`services/task/task_runtime.py`（取消链走 `running_tasks["agent"].llm_client`，不经 registry ai_service 字段，已核证）；`services/model/config_helpers.py`（`reset()` 调用点 147/387 语义兼容——新语义在 `reset()` 内部）。
+### 3.14 `backend/app/services/model/config_helpers.py` — 删写盘前错位 reset（v1.4 审核新增）
+
+- 病灶实证（`config_service.update_config` 顺序）：L98-101 handler（`_update_model_ref` 内 **L387 `reset()`**）→ L103 校验 → **L108 写盘** → L113 `reload_ai_config()`（`_load_config` + 再 `reset()`）——**写盘前已换代一次**，属 [69] 4.1 判定并已在工作树删过的错位触发点（撤销 6 文件时随基线带回）；
+- 删除后语义：`reset()` 的正确位置由 L113 承担（写盘+校验成功后一次性换代）；写盘失败时不换代 = 配置未变本就不该换代（**语义更正确**）；消除"写盘前换代 → 窗口内新请求用旧配置建代 → 随即被退休"的多余换代；
+- 引用计数模型下它已不致害（只归还 owner，活动 lease 撑池），但**留着即留隐患**（2.7⑤ 审核后决定删除）。
+
+```diff
+@@ hunk-1 编辑历史尾部追加（禁插中间，锚点=末条历史）
+ # 2026-09-22 - 小欧 - 31候选修复 #10: _update_project_root 取代 _set_app_field lambda —— 原写 app.project_root
+ #   死键（全读取方统一走 workspace.project_root，保存"成功"永不生效）；改写 workspace.project_root + 类型门禁
++# 2026-09-25 - 小欧 - [70] 审核新增: 删 _update_model_ref 写盘前错位 reset()——换代正确位置在写盘+校验成功后的 reload_ai_config(撤回 6 文件时随基线带回的错位触发点); 保留它会致"保存模型换两次代"(写盘前换代→窗口内新请求拿旧配置建代→随即被退休) — 小欧 2026-09-25
+@@ hunk-2 删错位 reset(换代职责归 reload_ai_config)
+         config_data['ai'][update.ai_model_ref.provider]['api_base'] = update.ai_model_ref.api_base
+-    reset()
+     logger.info(f"更新AI模型: provider={update.ai_model_ref.provider}, model={update.ai_model_ref.model}")
+```
+
+**零改动声明（v1.4 修正）**：`services/task/task_runtime.py`（取消链走 `running_tasks["agent"].llm_client`，不经 registry ai_service 字段，已核证）；`config_helpers.py` 的 `reload_ai_config():147` 保持（换代正确入口），仅删 `_update_model_ref:387` 错位 reset（3.14）。
 
 ---
 
@@ -948,11 +1016,13 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 python -m compileall -q app
 ```
 
-检查：`_owns_client`/`_is_snapshot`/`_shared_client` 反射在生产代码无引用；resolver 无 `getattr(type(...))`/`__dict__`；registry 不 import 资源类型、不存 `ai_service` 字段；`reset()` 无 `close` 调用（只经 `_retire_scope` 归还 owner）；全仓无 `mark_config_changed`/`scope.resolve_session`/`scope.release_lease`/`state` 状态机残留。
+检查：`_owns_client`/`_is_snapshot`/`_shared_client` 反射在生产代码无引用；resolver 无 `getattr(type(...))`/`__dict__`；registry 不 import 资源类型、不存 `ai_service` 字段；`reset()` 无 `close` 调用（只经 `_retire_scope` 归还 owner）；全仓无 `mark_config_changed`/`scope.resolve_session`/`scope.release_lease`/`state` 状态机残留；**v1.4 增**：`config_helpers.py` 的 `reset()` 仅 `reload_ai_config()` 一处调用点（3.14 删错位后）；orchestrator `finally` 含未交接快照归还守卫（3.12 hunk-9）；`_SharedClientPool.acquire` 含 `client.is_closed` 检查、`close` warning 含池标识。
 
 ### 4.2 定向单元测试（从 [69] 3.10 六个测试文件移植，断言按 scope API 改造）
 
 - 计数正确性：`acquire_lease`/快照 `close`→release/归零/幂等 release/`ref_count` 观测；
+- 池外守卫（v1.4 增）：底层 client 被池外 `aclose()` 后 `acquire` 抛 `RuntimeError`（3.1 新增 `is_closed` 检查）；
+- 交接兜底（v1.4 增）：resolve 成功后至 bg_task 交接前的异常/取消（`log_and_print`/组装/`db.atxn` 被 `CancelledError` 中断/`create_task` 失败）→ orchestrator `finally` 归还快照，池最终归零（3.12 hunk-7~9，见 TDD-102）；
 - 换代：`reset()` 后旧 scope `is_released=True` 且旧池存活（活动任务撑住）、新 scope 生效、旧任务全结束后旧池归零关闭；
 - 决议：`resolve_session_client(scope, ...)` 全路径（覆盖/无覆盖/配置失败/DB 异常）guard 不泄漏；同 provider 多快照互不归还（`_from_pool` 独立 lease）；跨 provider finally 归还（含 race 用例）；
 - 非法迁移：退休 scope `acquire_lease` 抛 RuntimeError、素材池归零后 acquire 抛 RuntimeError；
@@ -964,20 +1034,20 @@ python -m compileall -q app
 - 同/异 Provider 双任务 + reload、任务取消并发 reload、drain 停机等；
 - 真实 reload E2E：流式任务运行中改配置 → 任务不中断 + 新请求新配置 + 旧池归零关闭（观测 `ref_count` 日志）。
 
-### 4.4 验收基准（移植 [69] 4.7，全部满足才允许提交）
+### 4.4 验收基准（移植 [69] 4.7 并按 2.7 取舍校准，全部满足才允许提交）
 
-任务零感知、旧池归零必关、关闭失败有日志可重试、无裸 client 入口、无反射无私有标记、registry 无资源、真实 E2E 通过。
+任务零感知、旧池归零必关、**未交接快照必归还（3.12 hunk-7~9）**、**底层被外部关闭后 acquire 拦截（3.1）**、关闭失败有日志可查（按 2.7④"不做重试"，与 2.3 一致——非"可重试"）、无裸 client **反射**入口（按 2.7③ 裸参数传递为已知取舍）、无私有标记跨层摸、registry 无资源、真实 E2E 通过。
 
 ---
 
 ## 五、实施步骤与回滚
 
-**步骤**（v1.1 改为依赖序，8 步；每步末 `python -m py_compile <本步文件>` 自检，全步后 4.1 `compileall`）：
-1. **3.1 client_sdk**：`SharedClientLease`/`_SharedClientPool` 落户 + `relinquish_ownership()` + `client` property；
+**步骤**（v1.1 改为依赖序，8 步；v1.4 审核后 3.14 并入 step5 同批落地，步数不变；每步末 `python -m py_compile <本步文件>` 自检，全步后 4.1 `compileall`）：
+1. **3.1 client_sdk**：`SharedClientLease`/`_SharedClientPool` 落户（含 v1.4 审核新增 `acquire` 侧 `is_closed` 检查 + close warning 池标识）+ `relinquish_ownership()` + `client` property；
 2. **3.2 base_service**：`ensure_client_pool()`（建池+移交+返回 client）、`_shared_client` 收编、snapshot 构造接 lease、`close()` 三分支、删 `reset_sdk`（app+tests 零调用核证，YAGNI 直接删除）；
 3. **3.3 `llm/__init__.py`**：导出 `SharedClientLease`（resolver/type 提示用）；
 4. **3.4 connection_scope.py**：新增（依赖 1~3 的 API）；
-5. **3.5~3.9 工厂与停机**：service（`_attach_scope`/`_retire_scope`/`get_scope`/set_instance 改造）→ lifecycle.py（`shutdown()`）→ `lifecycle/__init__` → `services/__init__` → main（`shutdown_event`）；
+5. **3.5~3.9 工厂与停机 + 3.14 错位 reset**：service（`_attach_scope`/`_retire_scope`/`get_scope`/set_instance 改造）→ lifecycle.py（`shutdown()` 总预算）→ `lifecycle/__init__` → `services/__init__` → main（`shutdown_event`）→ config_helpers（删写盘前错位 `reset`，v1.4 三省改判）；
 6. **3.10 resolver**：`resolve_session_client(scope, ...)` 改签名 + acquire/transferred/finally；
 7. **3.11~3.13 接线**：task_registry 删 ai_service → orchestrator（`get_scope`/注册参数/resolve 传参）→ agent_runner（无条件 close）；
 8. **存量测试迁移 + 新用例移植**（全量 4.1 验证收尾）：
@@ -1016,7 +1086,7 @@ python -m compileall -q app
 | 文件 | 阶段 | case 范围 | 对应 diff |
 |------|------|----------|-----------|
 | `backend/tests/test_tdd_74_87_scope_lease.py` | 阶段1（step1~4） | TDD-74~87（14 个） | 3.1 / 3.2 / 3.3 / 3.4 |
-| `backend/tests/test_tdd_88_93_generation.py` | 阶段2（step5） | TDD-88~93（6 个） | 3.5 / 3.6 / 3.7 / 3.8 / 3.9 |
+| `backend/tests/test_tdd_88_93_generation.py` | 阶段2（step5） | TDD-88~93（6 个） | 3.5 / 3.6 / 3.7 / 3.8 / 3.9 / 3.14 |
 | `backend/tests/test_tdd_94_102_wiring.py` | 阶段3（step6~7） | TDD-94~102（9 个） | 3.10 / 3.11 / 3.12 / 3.13 |
 
 **阶段总览**：
@@ -1025,7 +1095,7 @@ python -m compileall -q app
 |------|------|---------|------|
 | 0 | 存量迁移清单（分批归属，6.2） | 配套 step5/6/7 | M1~M8 |
 | 1 | lease 核心 + ConnectionScope | step1~4 | TDD-74~87 |
-| 2 | 工厂收口 / 换代 / 停机 | step5 | TDD-88~93 |
+| 2 | 工厂收口 / 换代 / 停机 / 错位 reset | step5 | TDD-88~93 |
 | 3 | 决议与接线 | step6~7 | TDD-94~102 |
 | 4 | 场景回归映射（[69] 4.3 十五场景） | 各步收尾 | 存量改造 + 增强断言 |
 | 5 | 全量验收 | 全步后 | 无新增 |
@@ -1055,7 +1125,7 @@ python -m compileall -q app
 | TDD-75 | `test_llmclient_close_three_states` | 独占池 `close()` 真关（`is_closed=True`）；relinquish 后 `close()` no-op；已关闭池再 `close()` 不抛（`is_closed` 双保险） |
 | TDD-76 | `test_shared_lease_lifecycle` | `from app.llm import SharedClientLease` 导入成功（3.3）；构造 ref=1 → `acquire()` ref=2 → `release()` ref=1 池活；最后 `release()` 归零 `aclose`；二次 `release()` 幂等（ref 不再减、不重关） |
 | TDD-77 | `test_shared_lease_concurrent_release_once` | `asyncio.gather(*(lease.release() for _ in range(8)))` 只减一次、池只关一次、无异常（[69] 4.3 场景1） |
-| TDD-78 | `test_shared_lease_double_defense_raises` | 已释放 lease `.acquire()` 抛 `RuntimeError`；池归零 `_closing` 后 `pool.acquire()` 抛 `RuntimeError`（素材双重防线） |
+| TDD-78 | `test_shared_lease_double_defense_raises` | 已释放 lease `.acquire()` 抛 `RuntimeError`；池归零 `_closing` 后 `pool.acquire()` 抛 `RuntimeError`（素材防线）；**v1.4 增：底层 client 被池外 `aclose()` 后 `pool.acquire()` 抛 `RuntimeError`**（3.1 新增 `is_closed` 检查，偿还 [69] 1.2.3⑥） |
 
 **GREEN**：3.1（hunk-1 imports / hunk-2 `_SharedClientPool`+`SharedClientLease` / hunk-3 `relinquish_ownership`+`client` property+`close` 三态）、3.3（导出 `SharedClientLease`）。
 **验证**：`python -m py_compile app/llm/client_sdk.py app/llm/__init__.py`；`pytest tests/test_tdd_74_87_scope_lease.py -k "relinquish or three_states or shared_lease" --timeout=120 -x --tb=short -v`
@@ -1226,8 +1296,8 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 | TDD-92 | `test_retired_scopes_pruned_on_zero` | 退休代归零后被剪出 `_retired_scopes`（防无界增长）；ref>0 的在役退休代保留（3.5 hunk-4 剪枝语义） |
 | TDD-93 | `test_shutdown_drains_retired_scopes` | `await shutdown(timeout=...)`（3.6）= `reset()` 换代归还 + 逐退休代 `drain`：无活动任务时调用后各池 `is_closed=True`；持活动任务时超时 warning 放行、不阻塞退出（3.9 main 改 `await shutdown()` 的收口语义） |
 
-**GREEN**：step5 整步 = 3.5（工厂收口）+ 3.6（`shutdown`）+ 3.7（lifecycle 导出）+ 3.8（services 导出）+ 3.9（main 接线）按依赖序同批落地。
-**验证**：`python -m py_compile app/services/lifecycle/service.py app/services/lifecycle/lifecycle.py app/services/lifecycle/__init__.py app/services/__init__.py app/main.py`；`pytest tests/test_tdd_88_93_generation.py --timeout=120 -x --tb=short -v`；复跑 `pytest tests/test_tdd_64_73_bug_guard.py -k g2 --timeout=120 -x --tb=short -v`（M7 转绿）
+**GREEN**：step5 整步 = 3.5（工厂收口）+ 3.6（`shutdown` 总预算）+ 3.7（lifecycle 导出）+ 3.8（services 导出）+ 3.9（main 接线）+ **3.14（删写盘前错位 `reset`）** 按依赖序同批落地。
+**验证**：`python -m py_compile app/services/lifecycle/service.py app/services/lifecycle/lifecycle.py app/services/lifecycle/__init__.py app/services/__init__.py app/main.py app/services/model/config_helpers.py`；`pytest tests/test_tdd_88_93_generation.py --timeout=120 -x --tb=short -v`；复跑 `pytest tests/test_tdd_64_73_bug_guard.py -k g2 --timeout=120 -x --tb=short -v`（M7 转绿）；**3.14 验证**：静态核 `config_helpers.py` 仅 `reload_ai_config():147` 一处 `reset()`（`_update_model_ref` 内已删），并跑配置保存相关存量测试 + 真实 E2E"保存模型 → 新请求用新模型生效"（2.7⑤ 可证伪项）。
 
 ### 6.5 阶段3（step 6~7）：决议与接线
 
@@ -1251,7 +1321,7 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 | TDD-99 | `test_registry_stores_no_resource_fields` | `register_task(task_id, session_id=...)` 两参可用（旧 `ai_service` 参数消亡——`inspect.signature` 无之）；任务 dict **无** `ai_service`/`llm_client`/`snapshot` 资源键；`_inbox`/`created_at`/状态等身份字段照常（3.11） |
 | TDD-100 | `test_orchestrator_scope_wiring` | monkeypatch `get_scope` → FakeScope（带 `.ai_service` 与 `acquire_lease()`）：编排② `ai_service = scope.ai_service` 生效（同代单例）；`resolve_session_client` 收到的第 1 参是 scope（spy 断言）；两处 `register_task` 均两参（spy）；resolve 返回快照直接赋 `agent.llm_client`（无 None 死分支——3.12 hunk-6） |
 | TDD-101 | `test_runner_close_unconditional` | `run_agent_in_background` finally 对 `agent.llm_client.close()` **无条件**调用（mock 计数+1，无论对象带何种标记——`_is_snapshot` 死判据核证）；resolve 抛错时 runner 不执行（连接顺序 resolve(388) < bg_task(489) < finally，无裸单例入口）；close 抛错被 except 捕获记 warning 不打断终态（3.13） |
-| TDD-102 | `test_failures_release_snapshot` | [69] 4.3 场景6/7/8：`register_task` 同会话占位失败 / `UniversalAgent` 构造失败 / `asyncio.create_task` 失败三条路径 → 已 acquire 的快照 lease 均归还（`scope.ref_count` 回基线、池最终归零关）——编排层 `finally` 归还语义 |
+| TDD-102 | `test_orchestrator_finally_releases_unhanded_snapshot` | **v1.4 重写（对齐 [70] 实际执行顺序）**：真实窗口是 resolve 成功后至 bg_task 交接前——① `log_and_print`/组装段异常；② `await db.atxn`（`_setup_task_db`）被 `CancelledError` 中断（穿透 `except Exception`，落 `except asyncio.CancelledError: return`）；③ `asyncio.create_task` 失败。三条路径 → orchestrator `finally` 单点归还（3.12 hunk-7~9），`scope.ref_count` 回基线、池最终归零关。**注**：`register_task` 占位失败与 `UniversalAgent` 构造失败在 HEAD 顺序下（均在 resolve 之前）**不产生快照**，无 lease 可泄漏（见 3.12 边界核证），不作为本 case 场景 |
 
 **GREEN**：step7 = 3.11（registry 删参删字段）+ 3.12（orchestrator 接线）+ 3.13（runner 无条件 close）。
 **验证**：`python -m py_compile app/services/task/task_registry.py app/services/chat/stream_orchestrator.py app/services/agent/agent_runner.py`；`pytest tests/test_tdd_94_102_wiring.py --timeout=120 -x --tb=short -v`（整文件 9 case 全绿）；复跑存量 `pytest tests/test_tdd_14_20_inbox.py --timeout=120 -x --tb=short -v`、`pytest tests/test_repro_v01936.py --timeout=120 -x --tb=short -v`；M1 的 16 文件逐个跑（见 6.7 定向序列）
@@ -1265,9 +1335,9 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 | 3 owner reset 后活动 snapshot 仍能执行 | TDD-89 | 新增 |
 | 4 db await 期间 owner 被关，lease 仍保护池 | TDD-98 | 新增 |
 | 5 resolver 创建 snapshot 失败，lease 自动释放 | TDD-97 | 新增 |
-| 6 `register_task()` 同会话占位，快照自动释放 | TDD-102 | 新增 |
-| 7 `UniversalAgent` 构造失败，快照自动释放 | TDD-102 | 新增 |
-| 8 `asyncio.create_task()` 失败，快照自动释放 | TDD-102 | 新增 |
+| 6 `register_task()` 同会话占位，快照自动释放 | **v1.4 修正**：本方案顺序下该路径在 resolve 之前失败，**无快照产生**（无需释放，见 3.12 边界核证） | 不适用（已消亡场景） |
+| 7 `UniversalAgent` 构造失败，快照自动释放 | **v1.4 修正**：同上，构造在 resolve 之前，**无快照产生** | 不适用（已消亡场景） |
+| 8 `asyncio.create_task()` 失败，快照自动释放 | TDD-102（v1.4 重写：窗口改为 resolve 后至交接前，含 db.atxn 取消/日志异常） | 新增 |
 | 9 runner 被取消，关闭不被取消中断 | TDD-101 变体 + 存量 cancel 系列回归 | 增强+回归 |
 | 10 `aclose()` 失败有 warning 可查（不炸流程） | TDD-76 增强断言（patch `client.aclose` 抛错 → 无异常 + logger.warning 留痕） | 增强 |
 | 11 owner loop 与同步线程不同，关闭回 owner loop | TDD-86（`release_owner` 双分支：循环内 `create_task` / 无循环 `asyncio.run`）+ 存量 `close_instance_sync` case 回归 | 覆盖+回归 |
@@ -1312,4 +1382,4 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 ---
 
 **文档签名**: 小欧  
-**更新时间**: 2026-09-25 13:37:58
+**更新时间**: 2026-09-25 14:15:57
