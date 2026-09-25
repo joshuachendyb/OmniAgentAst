@@ -1,4 +1,114 @@
-﻿v1.0.5
+﻿v1.0.6
+更新时间: 2026-09-25 15:20:14 - 小欧-2026-09-25
+## v1.0.5以来 变更汇总(79个commit: feat13/docs34/fix24/test5/refactor4) - 小欧-2026-09-25
+[2026-09-25 15:20:14 小欧] 范围=v1.0.5以来全部commit(共79个); 主线: [68]设置页模型库Tab全链(远程拉取+过滤+替换保存)+[66]Zen模型responses协议适配层+[63]会话页实时step跨页不中断(含后端Journal P3)+[69]/[70]LLM连接池与ConnectionScope统一所有权方案+[71]后端重启checkpoint续算概要设计+设置页配置链路补url类型/参数删除/配置组stream_task→live_front/E2E稳定性治理(workers串行+console_writer强制UTF-8); 注: 文档按月份归位(305重命名+5删除); PATCH bump v1.0.5→v1.0.6
+
+## 1 版本历史说明
+[2026-09-25 15:20:14 小欧] 本次v1.0.5→v1.0.6共79个commit，主线一句话：设置页新增"模型库"Tab能拉取并管理远端模型，LLM连接池与任务续算的架构方案成套落地成文，同时E2E稳定性系统性治理。
+
+### 1.1 代码功能升级
+设置页新增"模型库"Tab（[68]）：后端远程拉取Provider模型列表，按id字母序单点排序全链生效，支持三项过滤、替换写入model_library组、已配置集勾选与重置，确认弹窗样式与按钮默认色修正；前端finalList按字母序落盘，UI布局①②并排、保存按钮居中第三行；API接入Tab分支闭环。参数区入口改名"添加模型参数与管理推理深度"，添加按钮改橘红底白字标准令牌，参数行支持删除按钮（removedParams先删后merge语义），能力默认值语义与保存后回写default_params/range/param_options全部修好。
+Zen模型接入（[66]）：新增provider适配层（一provider一文件+注册表）、responses协议归一独立模块responses_stream.py、client_sdk适配层函数化收敛，默认行为零变更。工具侧注册bash/read别名工具并删GATE_STUBS假tool。设置配置链路：新增url类型全链（后端str校验+前端type联合+baseUrl单行控件）、配置组stream_task改名live_front并同步4处消费点、network.cors_origins迁系统组去tuning前缀、通用max_steps标签归位、trim.max_rounds notice语义修正、SettingsGroup显示名改为前后端一致的用户语言（流/任务/缓存）。另有死路由/config死函数DTO清理、ModelPicker provider重复显示与下拉列框自适应修复、AppContext切全局模型顶栏不刷新修复、bash→shell别名与熔断文案累计对齐、console_writer强制UTF-8字节流根治pytest捕获污染。
+
+### 1.2 文档功能变更
+新增：[63]会话页实时step跨页面切换不中断架构方案（v1.8一致性修订+后端Journal事件层P3设计，v1.11~v1.13补齐刷新恢复四分支、无taskId草稿后端附着分支与R5根因、内存态与备份态同步、Store事件分发/会话竞态/资源边界十轮复核）；[70]ConnectionScope连接池统一所有者实施方案（v1.4~v1.7：交接兜底、is_closed守卫、停机总预算、finally保护、假绿修正、TDD实施步骤29case与迁移M1~M8）；[69]LLM连接池生命周期与任务快照资源所有权优化实施方案（v1.3~v1.6：热重载通俗解释、历史重组决策、改判A）；[71]后端重启运行中未完成任务从LLM/tool checkpoint继续执行概要设计（R4立项）；[68]设置页模型库Tab设计方案（v1.5~v1.7）；[67]opencode-responses协议复制评估分析报告新建；[66]Zen模型接入设计v3.0~v3.8。整理类：文档按月份归位（305个重命名+5个删除，doc系旧目录并入2-9月目录）、开发规范3文件并入doc-2月发展、[55]多Session架构设计改名增插话、6文件摘资产备份patch入库。索引类：FUNCTIONS.md登记[68]模型库5函数v4.3与update_model remove_params通道v4.2、READ_TOOLS读类工具唯一源归一、README配置章节与tuning.live_front键路径同步、settings_registry历史行缩进对齐。
+
+### 1.3 E2E测试case更新
+新增fre2e_12 [68]模型库Tab全链路E2E（mock远端拉取+三项过滤+替换保存+孤儿清理，含排序断言）；fre2e_11 3断言键名随stream_task→live_front同步（特批提交）；fre2e_10/11与ModelParams过时键修正与锚点补齐；e2e_helpers+5个case的READ_TOOLS读类工具归一DRY；fre2e_05~11稳定性治理（flaky修复+孤儿探针自清理+helper契约强化）；backend/scripts Zen免费门禁用例入库。E2E基础设施：playwright本地workers强制1串行化、console_writer双换行退化修复。提请注意：本次5个测试提交已入库，均为E2E/门禁用例。
+
+## 2 版本commit汇总
+
+### feat(13个):
+- 431af3330 feat:SettingsPage 参数区入口改名添加模型参数与管理推理深度并同步fre2e_11定位 - 小健-2026-09-25
+- 459562052 feat:ParamOptionsModal 添加按钮改橘红底白字用ORANGE_RED标准令牌 - 小健-2026-09-25
+- d554cd6b7 feat:frontend参数默认范围单源化+文档LLM连接池实施方案 PARAM_DEFAULT_RANGES统一兜底 - 小欧-2026-09-25
+- cf016b418 feat:ModelLibraryTab finalList落盘字母序+UI布局①②并排保存按钮移③行居中+fre2e_12排序断言 - 小健-2026-09-25
+- c2e53a81a feat:model_service 模型列表远端解析按id字母序单点排序全链路生效 - 小健-2026-09-25
+- 9b4274294 feat:settings2模型库Tab UI+API+Tab分支接入 - 小欧-2026-09-24
+- 88421183d feat:model_library后端 远程拉取+替换写入model_library组 - 小欧-2026-09-24
+- 74f41f09a feat:useSettings.ts等6文件 参数行删除按钮+removedParams+能力默认值语义 - 小欧-2026-09-24
+- 5259d2626 feat:model_service.py update_model支持remove_params键级删除先删后merge - 小欧-2026-09-24
+- b1f9701e1 feat:settingsTokens.ts modelNameWidth 180→280 模型下拉加宽不截断 - 小欧-2026-09-24
+- 6b6c19d13 feat:opencodeZen+fundamental+tools 方案1注册bash/read别名工具删GATE_STUBS假tool - 小欧-2026-09-24
+- 28ec7c99b feat:responses_stream.py [66]v3.7.1 responses协议归一独立模块8成员搬迁零行为变更 - 小欧-2026-09-24
+- 1629761b0 feat:adapters [66]Zen provider适配层新增一provider一文件+注册表 - 小欧-2026-09-24
+
+### docs(34个):
+- 8bb4a82fe docs:[70]ConnectionScope连接池统一所有者实施方案v1.7第三轮十遍复核修正 - 小欧-2026-09-25
+- 4c7e3d6a5 docs:[71]后端重启运行中未完成任务从LLM-tool checkpoint继续执行概要设计 - 小欧-2026-09-25
+- edccaf4a5 docs:[63]v1.13内存态与备份态同步并补无taskId待发测试分支 - 小欧-2026-09-25
+- 5ba08ee97 docs:[63]v1.12补无taskId草稿后端附着分支与R5根因修正 - 小欧-2026-09-25
+- ad157e697 docs:[70]方案v1.6第二轮十遍复核-修14处stale表述+失败语义补记+TDD-93预算分支 - 小欧-2026-09-25
+- a6ee59b5a docs:[63]v1.11补齐刷新恢复四个功能分支缺口 - 小欧-2026-09-25
+- 39a93bdab docs:[70]方案v1.5十遍复核补缺-finally保护+假绿修正+M9回归面 - 小欧-2026-09-25
+- cd5cce260 docs:[70]方案v1.4审核修订-补交接兜底+is_closed守卫+停机总预算+删错位reset - 小欧-2026-09-25
+- 2e1a6c35f docs:[63]十轮复核补齐Store事件分发/会话竞态/资源边界并清理残留矛盾 - 小欧-2026-09-25
+- 793f0b842 docs:[63]会话页实时step跨页面切换不中断架构方案 v1.8一致性修订+后端Journal设计 - 小欧-2026-09-25
+- f1a4087c4 docs:[70]ConnectionScope方案v1.3新增第六章TDD实施步骤(29case+迁移M1~M8)+v1.2校准 - 小欧-2026-09-25
+- 3e30363a5 docs:[63]会话页实时step架构方案改名增,多会话页, - 小欧-2026-09-25
+- 7a994088c docs:doc-开发规范3文件并入doc-2月发展 - 小欧-2026-09-25
+- 8f06f2033 docs:文档按月份整理归位305重命名+5删除 doc系旧目录并入2-9月目录 - 小欧-2026-09-25
+- 8b28ce2d6 docs:[55]多Session架构设计改名增插话+新增[70]ConnectionScope连接池统一所有权实施方案 - 小欧-2026-09-25
+- 527cfc727 docs:backup-6files+config_helpers摘资产备份patch入库 - 小欧-2026-09-25
+- bc2465adb docs:[69]LLM连接池生命周期与任务快照资源所有权优化实施方案 v1.6改判A+新增第五章历史重组决策 - 小欧-2026-09-25
+- c9122963f docs:[69]LLM连接池生命周期与任务快照资源所有权优化实施方案 补热重载问题通俗解释 - 小欧-2026-09-25
+- f65dcee26 docs:[69]LLM连接池生命周期与任务快照资源所有权优化实施方案 v1.3深审修复 - 小欧-2026-09-25
+- c0f8813b0 docs:FUNCTIONS.md登记[68]模型库5函数v4.3 - 小欧-2026-09-24
+- 8dc49c769 docs:[68]设置页模型库Tab设计方案v1.7 10大规范二轮补修3处残留 - 小欧-2026-09-24
+- c8c5364bb docs:[68]设置页模型库Tab设计方案v1.6 10大规范自检修复 - 小欧-2026-09-24
+- 7be3d54c7 docs:[68]设置页模型库Tab设计方案v1.5第八章实施代码 - 小欧-2026-09-24
+- 6f701e3c7 docs:[68]设置页模型库Tab获取Provider模型列表设计稿 - 小欧-2026-09-24
+- ad8c8cbf3 docs:settings_registry.py 历史行缩进对齐无语义变化 - 小欧-2026-09-24
+- d9312f87b docs:README.md tuning.live_front键路径与分组显示名同步2处 - 小欧-2026-09-24
+- 3d6246829 docs:FUNCTIONS.md update_model登记remove_params通道v4.2 - 小欧-2026-09-24
+- 1eee34cab docs:[67]opencode-responses协议复制评估分析报告 v1.0-v1.5新建：三方案对照+六章4小节流程+七章A/C精确清单 - 小欧-2026-09-24
+- 8eaccc52f docs:[66]Zen模型接入设计 v3.7第五章对照代码重写+v3.8章节号重排 - 小欧-2026-09-24
+- baf2e69b3 docs:[66]Zen模型接入设计 v3.3 muse responses端点收集终检+8/8复验+C13/C14/B29+29项合计+格式修复 - 小欧-2026-09-23
+- 071f66f53 docs:README §7.2/7.4/7.7配置章节一致性修正(补llm/network节+调优33键9子组+agent仅max_steps+CORS映射network.cors_origins) - 小欧-2026-09-23
+- 048448653 docs:settings_registry+config.yaml.example 设置页调优组说明去开发术语改纯用户语言 - 小欧-2026-09-23
+- d7fe057b2 docs:[66][47]Zen模型接入设计 v3.1§5.3重写+v3.2测试case对齐force_stream+归档[47] - 小欧-2026-09-23
+- dea5579df docs:[66]Zen模型接入设计 v3.0门禁四条件+双端点重写+改名 - 小欧-2026-09-23
+
+### fix(24个):
+- 8a58edb57 fix:frontend/ModelPicker.tsx 修provider重复显示+下拉列框自适应最长行 - 小欧-2026-09-25
+- e8bca48f4 fix:AddParamForm context_limit预设上限提到2000000并补范围显示 - 小健-2026-09-25
+- 41ced2f42 fix:backend/app/services/model/model_service.py BZ-3/BZ-6复发修复remove_params删键意图丢失 - 小欧-2026-09-25
+- d1e389753 fix:playwright.config E2E本地workers强制1串行化+补编辑历史 - 小健-2026-09-25
+- 1da16c699 fix:console_writer 修双换行退化worker去重加换行+小健复审历史 - 小健-2026-09-25
+- 744c4246d fix:backend/app/logger/console_writer.py 控制台镜像写强制UTF-8字节流根治pytest全量捕获污染 - 小欧-2026-09-25
+- 2efd0f51e fix:ModelLibraryTab 第七章Step8核查修复 过滤Checkbox说明字补FontSize.SECONDARY - 小欧-2026-09-25
+- da6fd2c40 fix:ModelLibraryTab [68]第五章核查修复4处 确认弹窗样式+按钮Tag默认+勾选重置已配置集 - 小欧-2026-09-25
+- 793246137 fix:model_service [68]第四章核查修复2处 env接管api_key+400文案前缀 - 小欧-2026-09-24
+- 6628cf954 fix:settings2前端模型库Tab BZ-1/4/5/8/10三堂会审修复+表单通道闭环 - 小欧-2026-09-24
+- bfee4373d fix:model_service.py remove_params键级删除三堂会审修复BZ-3/6/7/9 - 小欧-2026-09-24
+- 278845e7e fix: fre2e_10/11+ModelParams 过时键修正与锚点补齐 - 小欧-2026-09-24
+- 68711d98c fix:model_service.py 编辑历史09-24条目中插移板块最下边 - 小欧-2026-09-24
+- 1c580a741 fix:ProviderConfig.tsx ③标题+保存按钮改flex三段布局强制同行按钮居中移除SectionTitle依赖 - 小欧-2026-09-24
+- 048680026 fix:ProviderConfig+SettingsPage ③标题与保存按钮合一行三列grid按钮居中 - 小欧-2026-09-24
+- fecdfb6d3 fix:AddParamForm.tsx 预设顺序按北京老陈指定重排+top_p/seed说明改口语化 - 小欧-2026-09-24
+- ab2479143 fix:AppContext+Layout+CurrentModelRefCard 切全局模型收口switchAndRefreshModel修顶栏★不刷新 - 小欧-2026-09-24
+- 2cbdaf746 fix:useSettings.ts 保存后回写default_params/range/param_options修参数区陈旧值 - 小欧-2026-09-24
+- b7668c10a fix:tools_alias_mapper.py+react_dispatch.py bash→shell别名+熔断文案累计对齐 - 小欧-2026-09-24
+- e45eab96c fix:e2e_helpers.py 超时保护记录缺口修复FALLBACK占位+幂等+集中回填 - 小欧-2026-09-24
+- 4190ef420 fix:settings_registry network.cors_origins迁系统组去tuning前缀+3label修正+键数注释对齐 main.py/config.yaml.example/SettingsGroup/client/constants/fre2e_11全链同步 - 小欧-2026-09-23
+- 33ee3507d fix:settings_service+settings.api+SettingRow 新增url类型全链(后端str校验+前端type联合+单行baseUrlWidth控件) - 小欧-2026-09-23
+- 1ed0e9081 fix:settings_registry 通用max_steps标签归位最大轮数+trim.max_rounds notice裁剪语义修正 - 小欧-2026-09-23
+- 1db08bc25 fix:SettingsPage.tsx [65]§7.2 Q1-2未知能力值灰色只读Tag补漏 - 小欧-2026-09-23
+
+### refactor(4个):
+- 47fbddd3f refactor:SettingsGroup.tsx tuning.live_front前缀匹配+显示名前后端之间的流/任务/缓存 - 小欧-2026-09-24
+- b1107718a refactor:settings_registry等6文件 配置组stream_task改名live_front+4消费点键路径同步 - 小欧-2026-09-24
+- b7fc4d485 refactor:config_routes+config_service+config_schemas+config.api 删/config/provider/*6死路由及连带死函数死DTO死方法 - 小欧-2026-09-24
+- a9d2638ce refactor:client_sdk.py [66]v3.7适配层接入+v3.7.1函数化收敛默认行为零变更 - 小欧-2026-09-24
+
+### test(5个):
+- a08eafa91 test:fre2e_12 [68]模型库Tab全链路E2E mock远端拉取三项过滤替换保存孤儿清理 - 小健-2026-09-25
+- a2d7a3d72 test:fre2e_05-11 E2E稳定性治理 flaky修复+孤儿探针自清理+helper契约强化+编辑历史补记 - 小健-2026-09-25
+- f77cf4107 test:fre2e_11 3断言键名tuning.live_front同步(北京老陈特批提交) - 小欧-2026-09-24
+- ed6b99da3 test:e2e_helpers+5个case+FUNCTIONS.md READ_TOOLS读类工具唯一源归一DRY - 小欧-2026-09-24
+- 0ba4d0886 test:backend/scripts Zen免费门禁用例入库(models_verify+muse_responses) - 小欧-2026-09-23
+
+v1.0.5
 更新时间: 2026-09-23 14:49:03 - 小欧-2026-09-23
 ## v1.0.4以来 变更汇总(30个commit: feat3/docs14/fix7/test5/refactor1) - 小欧-2026-09-23
 [2026-09-23 14:49:03 小欧] 范围=v1.0.4以来全部commit(共30个); 主线: [64]LLM采样参数TDD红绿全链+trim/compaction配置化7键+8假开关接线+[65]模型参数添加参数双通道+设置页E2E用例入库(fre2e_08~11)+HMR监听修复; 注: 含c8c62f774版v1.0.6头与0f0a4191e回退整理2个版本维护commit; PATCH bump v1.0.4→v1.0.5
