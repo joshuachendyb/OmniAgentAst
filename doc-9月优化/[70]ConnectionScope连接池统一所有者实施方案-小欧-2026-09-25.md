@@ -3,8 +3,8 @@
 **文档名**: [70]ConnectionScope连接池统一所有者实施方案-小欧-2026-09-25.md  
 **编写人/签名**: 小欧（资深后端开发、全架构设计与分析）  
 **创建时间**: 2026-09-25 11:40:25  
-**更新时间**: 2026-09-25 15:11:31  
-**版本**: v1.7  
+**更新时间**: 2026-09-25 15:38:28  
+**版本**: v1.9  
 **状态**: 设计定稿 + **第三章 14 个文件逐真实 diff 已落笔（基于干净 HEAD `527cfc727` 逐行精读后编写）**；尚未修改任何程序源码  
 **适用基线**: `F:\OmniAgentAs-repair` HEAD `527cfc727`（6 个 lease 半成品文件已撤销回 HEAD 的干净基线；此前 8a58edb57 起点见 [69] 文档）  
 **关联问题**: 配置热重载期间活动任务仍使用已关闭的共享 `httpx.AsyncClient`（任务零感知 + 不泄漏）  
@@ -24,6 +24,8 @@
 | v1.5 | 2026-09-25 14:19:47 | 小欧 | **补充内容十遍复核（找缺口）**：①**3.12 hunk-9 加 try/except**——归还时 `close()` 抛错（独占池 `aclose` 失败）会中断 `_current_task_id.reset()`（ContextVar 泄漏）并覆盖原始异常根因，与 3.13 runner 同款保护对齐；②**3.14 附带收益入档**：`test_model_ref_normalization.py:96` monkeypatch `lifecycle_mod.reset` 因 `config_helpers` 是导入时绑定而失效→该"不调 reset"断言实为假绿，且 HEAD 下调用 `_update_model_ref` 会触发真实 `lifecycle.reset()` 造成跨测试污染，3.14 删除后转真绿；③**六章 6.2 增 M9 + 6.7 定向序列补 2 文件**（`test_model_ref_normalization.py`、`test_settings_editsave_red.py` 为 3.14 回归面，此前遗漏）；④TDD-102 增"close 抛错不挡 reset/不覆盖根因"断言分支；⑤6.7 验收项同步 4.4 校准表述（"可查"非"可重试"、裸 client 仅反射清零） |
 | v1.6 | 2026-09-25 14:31:41 | 小欧 | **v1.5 之后第二轮十遍复核（本轮新增 diff 的逻辑分支穷举 + 全文 stale 表述清理）**：①第1遍二章：L78"变更由它标记"过时（`mark_config_changed` v1.1 已删，改为"换代由它退休"）、L164"类级 `_soft_pool_semaphore`"与 2.7"模块级"矛盾（HEAD L131 实为模块级）；②第2-3遍 3.1/3.2：hunk-9 直接访问 `self._client_lease` 对两处 `__new__` 构造安全（全仓仅此 2 处且均不调 `close()`，另 grep e2etests 确认无第三处，无需防御性 getattr）；③第4-5遍 3.10/3.5：3.10 八分支穷举全过（acquire 抛/空会话/同代/跨代/构造失败/except 兜底/`_default_snapshot` 内抛/`lease.client` 不抛）；**缺口 #5**：hunk-6 失败语义已由"清 `_instance=None`"变为"旧代保留继续服务"（更可用，BUG-06 本质不变），G2 断言成立仅因前置 fixture 已清位——3.5 说明区+M7 行+TDD-88 规格三处补记；④第6遍 hunk 引用全有效，step1 GREEN 行补 v1.4 新增内容（`is_closed`+warning 标识）；⑤第7遍一章：L34"HEAD 含两处正规 reset"（实为一正一错位，且 3.14 将删其一）、L40 夸大 HEAD 反射形态（HEAD 仅实例级 `getattr`，类级/`__dict__` 系工作树形态）、L50"关闭失败可重试"（与 2.3/2.7④矛盾）、L53"标记换代"（与 2.6"不是标记是归还"矛盾）、L66"HEAD 已含同内容"（与 387 仍在矛盾）——五处全部修正；⑥第8遍：4.1/6.7 检查清单查工作树形态改为"任何 `_shared_client` 反射（含实例级与类级）"；⑦第9遍 36 个新增条件分支审计：仅 B23b（shutdown 多代预算耗尽 `break`）无显式条款——TDD-93 补入；⑧第10遍 3.4 新鲜眼：循环导入风险为零（`app.llm.*` 全仓无 `app.services` 导入）、drain 0.05 收尾/`_pending_release_tasks`/loop 分支均 sound |
 | v1.7 | 2026-09-25 15:11:31 | 小欧 | **第三轮十遍复核（源码反证 + 迁移清单补全，5 类 9 处）**：①**失败语义三处改判**（3.5 说明区/M7 行/TDD-88，纠正 v1.5/v1.6 自身补记）——源码证实 `get_service`(L152)/`get_service_for_model`(L220) 均**先** `cleanup_old_instance`（清 `_instance` + 退休旧 scope）**再**建新代，attach 失败时 `_instance`/`_scope` 皆 None、旧代已退休，不存在"旧代保留继续服务"，新旧代失败结果等价（断服至重试）；真实改进改为两条：锁外 `check_cache_valid`/`get_scope` 永不见半初始化 + 旧代池经 `_retire_scope` 归还由活动 lease 撑住（HEAD 同位置 `close_instance_sync` 真关旧池连坐活动任务）；②**2.3 生命周期图纠正**：退休判据是 `_owner_released=True`、`_owner_lease` 引用保留供 `ref_count` 观测——原"owner_lease=None"与 3.4 代码（L490-492）及 TDD-86 `ref_count==1` 直接矛盾；③**6.2 增 M10/M11（M1~M11）**：M10=基线红孤儿 4 case（6 文件撤销时 tests 未回退，HEAD 即红——v1.7 定向实测 12 文件 349 case = 4 failed/345 passed 全部为它们）逐个迁移规格：`acquire_shared_lease`→`ConnectionScope` 三件套 + 补 patch `_scope`（否则 reset→retire 落空）、`_close_tasks`→`_pending_release_tasks` 强引用改写、race case 并入 TDD-98、`owner.close()`→`scope.release_owner()`+drain 收尾；M11=`test_s2_s4_review_bugs:266` 源码断言 `get_service()`→`get_scope()` 并增强反向断言（3.12 落地后旧断言必红，此前漏入表）；④**M4 拆批**：repro L118 死属性删除移 step7（须与 3.13 无条件 close、M3 升级同批，step6 删会使 L292/L209/246 中途红）、桩补存 `self._client_lease` 供 M3 判据；M2 补 race case 语义换；⑤step5/6/7 RED 与验证序列补 M10/M11 配对项、6.7 定向序列补 test_s2_s4_review_bugs、全量对照改"实施前实测 B0 + 差异逐项解释"（7355 系旧口径已过期）；⑥stale 清理：L8/L1077"13 个 diff"→14（3.14 后）、L1071/L1104 `M1~M8`→`M1~M11`、L35 换代职责引用补明 `config_service.py:113` 调用链 |
+| v1.8 | 2026-09-25 15:34:08 | 小欧 | **第四轮复核：第五章 TDD 流程作为实施依据的可行性审查（5 类问题，全部修正）**——生产码 7 步依赖序逐条反证无误（3.4 走 `from app.llm import ...` 包级、3.2 走 `client_sdk` 模块级、3.5 依赖 3.2+3.4、3.12 依赖 3.8+3.10），但**执行流程层 4 处会导致实施爆错**：①**3.3 归属矛盾（致命）**：TDD-76 `from app.llm import SharedClientLease` 在 step1 即硬依赖 3.3 包级导出（3.4 亦然），而五章把 3.3 排为 step3、六章 step1 GREEN 写"3.1+3.3"却在 step3 又写"落 3.3 diff 后复跑"——同一 diff 两处落地自相矛盾，照五章字面 step1 末尾 TDD-76 必 `ImportError` 卡死、违反"本步全绿才进下一步"；**修正**：3.3 明确随 step1 的 3.1 同批落地，五章 step1 加"（+ 3.3 同批）"、step3 改"依赖序占位、不得二次落 diff"，六章 step3 同步改"无独立 diff，仅复跑 TDD-76"；②**step8 迁移堆到最后（致命）**：与 6.2 明文"迁移不一次性做完、与该步 RED 同批落下，否则中间态大面积报错"直接矛盾——按字面执行会在半改生产码上一次性引爆 27 处 `register_task` 裸传第 2 位**静默**错位 + 8 处 resolver 直调 `AttributeError` + M10 四孤儿 case 叠加；**修正**：step8 改为"收口+全量验收"，前置"分批归属铁律"（step5=M7+M9+M10①~③、step6=M2+M3(4处)+M4(桩2处+L177)+M10④、step7=M1+M3(2处)+M4(L118)+M5+M6+M11），各步另补"配套 RED"指引；③**数字错误**："移植 4.2 六个新文件"把 4.2 标题中 [69] 的**源**文件数误作目标数——**修正**为六个 [69] 源文件**合并为 3 个新测试文件**（TDD-74~87 / 88~93 / 94~102）；④**清单缺项**：step8 旧版漏列 **M5**（orchestrator 桩 `get_service`→`get_scope`）、**M7**（G2 桩 `_ensure_client`→`ensure_client_pool`）、**M8**（真实池 case 补 close 收尾），M4 漏 2 处死属性（L177/L118）与桩需存 `self._client_lease`——全部补入并标注随属步；⑤四章 4.2 标题"六个测试文件"加来源标注（自 [69] 移植，合并为 3 个）避免再被误读为 6 个目标文件 |
+| v1.9 | 2026-09-25 15:38:28 | 小欧 | **第六章 TDD 实施步骤执行性审查（6 处缺陷全修）**——先反证**依赖序本身无误**（逐步核对无前向依赖：step1 的 TDD-74~78 只需 3.1+3.3、step2 只需 3.2、step4 只需 3.4、step5 只需 3.5~3.9+3.14、step6 只需 3.10、step7 只需 3.11~3.13；且 3.6 `shutdown` 用**函数内延迟 import** 取 `get_retired_scopes`、3.7 `__init__` 先导 `lifecycle` 后导 `service`，**无循环导入风险**），再查出 6 处**执行闭环缺失**（照字面做会漏做/返工，非顺序错误）：①**"阶段0"标签语义倒挂**——6.2 置于 6.3 之前且名"阶段0"，易被读成"先做存量迁移"，实为随阶段1~3 分批；**修正**：标题改"非独立阶段：随 step5/6/7 分批执行"，6.1 阶段总览阶段0 行同步注明；②**M9 未进 step5 闭环**——归属 step5（3.14）但验证只写"配置保存相关存量测试"未点名，改点名 `test_model_ref_normalization.py` + `test_settings_editsave_red.py`（v1.5 引入后一直悬空）；③**M8 归属"随所属步"过虚**——落到 step4（TDD-83~87 真实池收尾）+ step5（M10②③ drain 收尾），并在 6.1 三件套**新增第 4 条"真实池收尾自检"**（每步统一判据，防残留连接与 warning 噪声掩盖真实失败）；④**step6 验证漏 `test_repro_v01936.py`**（M4 step6 批含其 L186/L225 桩签名，3.10 传 `client_lease` 漏补即 `TypeError`——漏跑则本步存量面留红），已补入并注明；⑤**6.1 三件套第 2 条"单 case 定向"与实际用法不符**（各步实为多 case `-k` 模式，如 step1 的 `-k "relinquish or three_states or shared_lease"` 一次覆盖 5 case），改为"判据是本步 case 全绿"；⑥**6.6 两条增强断言跨节悬空**——场景2→TDD-84、场景10→TDD-76 原只写在 6.6 映射表，6.3 的 case 规格与完整代码块均无，照 6.3 落盘必漏做；已回填两 case 规格 + 在 6.3 末新增"6.6 增强段代码"（两段可直接落 `test_tdd_74_87_scope_lease.py` 末尾：①aclose 抛错→release 不抛+warning 留痕 ②两快照 gather 并发 close→最后一个归还才归零），6.6 改注"本表此后仅作索引，出处已回填 6.3"防再分叉 |
 
 ---
 
@@ -1029,7 +1031,9 @@ python -m compileall -q app
 
 检查：`_owns_client`/`_is_snapshot`/`_shared_client` 反射在生产代码无引用；resolver 无任何 `_shared_client` 反射（含 HEAD 实例级 `getattr(ai_service, ...)` 与工作树类级 `getattr(type(...))`/`__dict__`）；registry 不 import 资源类型、不存 `ai_service` 字段；`reset()` 无 `close` 调用（只经 `_retire_scope` 归还 owner）；全仓无 `mark_config_changed`/`scope.resolve_session`/`scope.release_lease`/`state` 状态机残留；**v1.4 增**：`config_helpers.py` 的 `reset()` 仅 `reload_ai_config()` 一处调用点（3.14 删错位后）；orchestrator `finally` 含未交接快照归还守卫（3.12 hunk-9）；`_SharedClientPool.acquire` 含 `client.is_closed` 检查、`close` warning 含池标识。
 
-### 4.2 定向单元测试（从 [69] 3.10 六个测试文件移植，断言按 scope API 改造）
+### 4.2 定向单元测试（从 [69] 3.10 **六个源测试文件**移植合并；断言按 scope API 改造）
+
+> **v1.8 标注**：此"六个"是 [69] 的**源**文件数，非本方案目标文件数——本方案新增用例合并为 **3 个**新测试文件（见 6.1 表），六章分步追加。
 
 - 计数正确性：`acquire_lease`/快照 `close`→release/归零/幂等 release/`ref_count` 观测；
 - 池外守卫（v1.4 增）：底层 client 被池外 `aclose()` 后 `acquire` 抛 `RuntimeError`（3.1 新增 `is_closed` 检查）；
@@ -1053,22 +1057,27 @@ python -m compileall -q app
 
 ## 五、实施步骤与回滚
 
-**步骤**（v1.1 改为依赖序，8 步；v1.4 审核后 3.14 并入 step5 同批落地，步数不变；每步末 `python -m py_compile <本步文件>` 自检，全步后 4.1 `compileall`）：
-1. **3.1 client_sdk**：`SharedClientLease`/`_SharedClientPool` 落户（含 v1.4 审核新增 `acquire` 侧 `is_closed` 检查 + close warning 池标识）+ `relinquish_ownership()` + `client` property；
-2. **3.2 base_service**：`ensure_client_pool()`（建池+移交+返回 client）、`_shared_client` 收编、snapshot 构造接 lease、`close()` 三分支、删 `reset_sdk`（app+tests 零调用核证，YAGNI 直接删除）；
-3. **3.3 `llm/__init__.py`**：导出 `SharedClientLease`（resolver/type 提示用）；
-4. **3.4 connection_scope.py**：新增（依赖 1~3 的 API）；
-5. **3.5~3.9 工厂与停机 + 3.14 错位 reset**：service（`_attach_scope`/`_retire_scope`/`get_scope`/set_instance 改造）→ lifecycle.py（`shutdown()` 总预算）→ `lifecycle/__init__` → `services/__init__` → main（`shutdown_event`）→ config_helpers（删写盘前错位 `reset`，v1.4 三省改判）；
-6. **3.10 resolver**：`resolve_session_client(scope, ...)` 改签名 + acquire/transferred/finally；
-7. **3.11~3.13 接线**：task_registry 删 ai_service → orchestrator（`get_scope`/注册参数/resolve 传参）→ agent_runner（无条件 close）；
-8. **存量测试迁移 + 新用例移植**（全量 4.1 验证收尾）：
-   - `register_task` 去第 2 位实参：**58 调用点 / 16 文件**（test_7_01:1、test_7_02:2、test_7_03:9、test_7_04:1、test_7_05:2、test_9_08:5、test_critical_flow_deep_bugs:6、test_tdd_01_02:1、test_tdd_14_20:7、test_tdd_21_25:3、test_tdd_30_32:2、test_tdd_34_40:12、test_tdd_41_46:3、test_tdd_47_51:1、test_tdd_52_58:1、test_tdd_64_73:2，逐调用点核证）：带 `session_id=` 的 31 处删位后 TypeError 响亮暴露；**裸传第 2 位的 27 处漏改会把 mock 静默绑进 session_id**，必须逐处去位；
-   - 删 `test_tdd_14_20_inbox.py:111` 的 `["ai_service"]` 字段断言（字段消亡，3.11 已核证唯一读点）；
-   - `resolve_session_client` 直调 8 处改传 scope（test_resolve_session_client ×5、test_tdd_03_08 ×1、test_tdd_41_46 ×2）+ 测试桩补 `scope.ai_service` / `scope.acquire_lease()`；
-   - `snapshot` 桩签名补 `client_lease=None`（test_repro_v01936 L186/L225——3.10 resolver 新传 `client_lease`，漏补即 TypeError）；
-   - `_is_snapshot` 断言迁移（test_resolve_session_client L76/87/127、test_tdd_03_08 L43、test_repro_v01936 L209/246）：判据升为"快照持 `_client_lease` / close 已归还"，fake 自设属性的死断言删除；
-   - 基线红孤儿 4 case 修复（M10：`acquire_shared_lease`→`ConnectionScope` 三件套、`_close_tasks`→`_pending_release_tasks`、race case 并入 TDD-98）与 `test_s2_s4_review_bugs:266` 源码断言迁移（M11）——分批随 step5/6/7；
-   - 移植 4.2 六个新文件 + 4.3 场景用例。
+**步骤**（v1.1 改为依赖序，8 步；v1.4 审核后 3.14 并入 step5 同批、**v1.8 修正后 3.3 并入 step1 同批**落地，步数不变；每步末 `python -m py_compile <本步文件>` 自检，全步后 4.1 `compileall`）：
+1. **3.1 client_sdk（+ 3.3 同批）**：`SharedClientLease`/`_SharedClientPool` 落户（含 v1.4 审核新增 `acquire` 侧 `is_closed` 检查 + close warning 池标识）+ `relinquish_ownership()` + `client` property；**同批落 3.3 `llm/__init__.py` 导出 `SharedClientLease`**（v1.8 修正：TDD-76 `from app.llm import SharedClientLease` 硬依赖包级导出，3.3 若后置到 step3 则 step1 末尾不可能全绿，违反 6.1"本步全绿才进下一步"）。**配套**：RED 先落 TDD-74~78 到 `test_tdd_74_87_scope_lease.py`；
+2. **3.2 base_service**：`ensure_client_pool()`（建池+移交+返回 client）、`_shared_client` 收编、snapshot 构造接 lease、`close()` 三分支、删 `reset_sdk`（app+tests 零调用核证，YAGNI 直接删除）；**配套**：RED 先落 TDD-79~82（同文件追加）；
+3. **3.3 `llm/__init__.py`**：导出 `SharedClientLease`（scope/resolver 注入与 type 提示用）——**TDD 实施时已随 step1 的 3.1 同批落地，本步为依赖序占位、不得二次落 diff**（v1.8 修正，与 6.3 step3 表述统一）；
+4. **3.4 connection_scope.py**：新增（依赖 1~3 的 API；hunk import 为 `from app.llm import BaseAIService, SharedClientLease`——包级，硬依赖 3.3 先于本步）。**配套**：RED 先落 TDD-83~87（6.3 附完整代码，直接落盘）；
+5. **3.5~3.9 工厂与停机 + 3.14 错位 reset**：service（`_attach_scope`/`_retire_scope`/`get_scope`/set_instance 改造）→ lifecycle.py（`shutdown()` 总预算）→ `lifecycle/__init__` → `services/__init__` → main（`shutdown_event`）→ config_helpers（删写盘前错位 `reset`，v1.4 三省改判）；**配套**：RED 先落 TDD-88~93 + M7 + M9 + M10①~③ 同批（6.4）；
+6. **3.10 resolver**：`resolve_session_client(scope, ...)` 改签名 + acquire/transferred/finally；**配套**：RED 先落 TDD-94~98 + M2 + M3（step6 批 4 处）+ M4（桩签名 2 处 + L177）+ M10④ 同批（6.5）；
+7. **3.11~3.13 接线**：task_registry 删 ai_service → orchestrator（`get_scope`/注册参数/resolve 传参）→ agent_runner（无条件 close）；**配套**：RED 先落 TDD-99~102 + M1（58 点/16 文件）+ M3（step7 批 2 处）+ M4（L118）+ M5 + M6 + M11 同批（6.5）；
+8. **存量迁移与新增 case 收口 + 全量验收**（**v1.8 修正：迁移不集中在本步**——随 step5/6/7 各自 RED 同批落下，本步为核对与验收；旧版把全量迁移列作最后一步，按字面执行会在半改态上一次性引爆数十个错误）：
+   - **分批归属铁律**（逐项明细以 6.2 表"GREEN 归属"列为准）：step5 = M7 + M9 + M10①~③；step6 = M2 + M3（4 处）+ M4（桩签名 2 处 + L177）+ M10④；step7 = M1 + M3（2 处）+ M4（L118）+ M5 + M6 + M11；新增 case = TDD-74~87 随 step1~4、TDD-88~93 随 step5、TDD-94~102 随 step6~7。**严禁**先落完 7 步生产码再一次性迁移（6.1/6.2 明文纪律）；
+   - `register_task` 去第 2 位实参：**58 调用点 / 16 文件**（test_7_01:1、test_7_02:2、test_7_03:9、test_7_04:1、test_7_05:2、test_9_08:5、test_critical_flow_deep_bugs:6、test_tdd_01_02:1、test_tdd_14_20:7、test_tdd_21_25:3、test_tdd_30_32:2、test_tdd_34_40:12、test_tdd_41_46:3、test_tdd_47_51:1、test_tdd_52_58:1、test_tdd_64_73:2，逐调用点核证）：带 `session_id=` 的 31 处删位后 TypeError 响亮暴露；**裸传第 2 位的 27 处漏改会把 mock 静默绑进 session_id**，必须逐处去位（随 step7）；
+   - 删 `test_tdd_14_20_inbox.py:111` 的 `["ai_service"]` 字段断言（字段消亡，3.11 已核证唯一读点；随 step7）；
+   - `resolve_session_client` 直调 8 处改传 scope（test_resolve_session_client ×5、test_tdd_03_08 ×1、test_tdd_41_46 ×2）+ 测试桩补 `scope.ai_service` / `scope.acquire_lease()`（随 step6）；
+   - `snapshot` 桩签名补 `client_lease=None` **并存 `self._client_lease`**（M3 升级判据需要，test_repro_v01936 L186/L225 随 step6）+ 自设 `_is_snapshot` 死属性删除 2 处（test_tdd_41_46 L177 随 step6、test_repro_v01936 L118 随 step7——L118 须与 3.13 无条件 close、M3 升级同批，提前删会使 L292/L209/246 中途红）；
+   - `_is_snapshot` 断言迁移 6 处（test_resolve_session_client L76/87/127、test_tdd_03_08 L43、test_repro_v01936 L209/246）：判据升为"快照持 `_client_lease` / close 已归还"，fake 自设属性的死断言删除（4 处随 step6、2 处随 step7）；
+   - **M5**（v1.8 补入，旧版漏列）：orchestrator 测试桩 `get_service` → `get_scope`（`monkeypatch.setattr(orch_mod, "get_scope", lambda: FakeScope(ai))`，FakeScope 带 `.ai_service` 与 `acquire_lease()`；随 step7）；
+   - **M7**（v1.8 补入，旧版漏列）：G2 桩 `BadInst._ensure_client` → `BadInst.ensure_client_pool`（随 step5）；
+   - **M8**（v1.8 补入，旧版漏列）：凡新逻辑建了真实 httpx 池的 case 补 `await snap.close()` / `await owner.close()` 收尾（防连接残留与 warning 噪声；随所属步）；
+   - 基线红孤儿 4 case 修复（M10：①`owner_reset_keeps_live_snapshot_pool_open`/②`snapshot_close_before_request_is_idempotent`/③`async_close_task_is_strongly_referenced` 随 step5、④race case 并入 TDD-98 随 step6）与 `test_s2_s4_review_bugs:266` 源码断言迁移（M11，随 step7）；
+   - **新增用例载体（v1.8 修正数字）**：4.2 的六个 [69] 源测试文件**合并为 3 个新测试文件**——`test_tdd_74_87_scope_lease.py`（TDD-74~87）/ `test_tdd_88_93_generation.py`（TDD-88~93）/ `test_tdd_94_102_wiring.py`（TDD-94~102），均随所属步分步追加、**不得预先写完**（旧版"移植 4.2 六个新文件"把 [69] 源数量误作目标数量）；
+   - **本步验收动作**：4.1 静态（`python -m compileall -q app` + grep 清单）→ 6.7 定向序列（一次一文件，全绿才下一个）→ 6.7 全量对照（实测基线 B0 + 差异逐项解释，**不允许放宽断言换全绿**）→ 4.3 真实 E2E 九步 + 4.3 并发矩阵六行 → 4.4 验收基准逐条核对；4.3 场景用例**不新增独立 case**（按 6.6 映射增强并入对应 case，回归项以存量迁移后全绿为达成）。
 
 **回滚**：本方案实施全部为新 commit；若翻盘（[69] 5.4 省可证伪），`git revert` 实施序列即可；摘资产三重备份（素材/patch/stash）在此之前始终保留。
 
@@ -1090,8 +1099,9 @@ python -m compileall -q app
 **每步验证三件套**：
 
 1. `python -m py_compile <本步生产文件>`（步末自检，五章同款）；
-2. `pytest tests/<文件> -k <case名> --timeout=120 -x --tb=short -v`（单 case 定向）；
-3. 阶段末整文件：`pytest tests/<文件> --timeout=120 -x --tb=short -v` 全绿。
+2. `pytest tests/<文件> -k <case名或模式> --timeout=120 -x --tb=short -v`（**v1.8 澄清**：`-k` 可为单 case 名，也可为多 case 匹配模式（如 step1 的 `-k "relinquish or three_states or shared_lease"` 一次覆盖 TDD-74~78）——判据是**本步 case 全绿**，不是"只跑一个"）；
+3. 阶段末整文件：`pytest tests/<文件> --timeout=120 -x --tb=short -v` 全绿；
+4. **真实池收尾自检（v1.8 新增，M8 闭环）**：本步凡新建真实 httpx 池的 case，末尾须有 `await snap.close()` / `await owner.close()` / `await scope.drain(...)` 之一收尾——否则进程残留连接与 warning 噪声会掩盖真实失败信号。
 
 **新增测试文件**（3 个，**分步长大**：每步只追加本步 case，不提前写后续阶段代码）：
 
@@ -1105,14 +1115,14 @@ python -m compileall -q app
 
 | 阶段 | 内容 | 五章步骤 | case |
 |------|------|---------|------|
-| 0 | 存量迁移清单（分批归属，6.2） | 配套 step5/6/7 | M1~M11 |
+| 0 | **非独立阶段**：存量迁移清单（6.2），按"GREEN 归属"列**分批随 step5/6/7 落下**（v1.8 改判：旧称"阶段0"易被误读为"先做迁移"，实为随阶段1~3 分批执行） | 配套 step5/6/7 | M1~M11 |
 | 1 | lease 核心 + ConnectionScope | step1~4 | TDD-74~87 |
 | 2 | 工厂收口 / 换代 / 停机 / 错位 reset | step5 | TDD-88~93 |
 | 3 | 决议与接线 | step6~7 | TDD-94~102 |
 | 4 | 场景回归映射（[69] 4.3 十五场景） | 各步收尾 | 存量改造 + 增强断言 |
 | 5 | 全量验收 | 全步后 | 无新增 |
 
-### 6.2 阶段0：存量迁移清单（按 GREEN 归属分批执行）
+### 6.2 存量迁移清单（**非独立阶段**：随 step5/6/7 分批执行）
 
 > 迁移**不一次性做完**——每项标注 GREEN 归属，与该步 RED 同批落下，否则中间态大面积报错。红性分类：**红迁移** = 改完对旧码必失败（即该步 RED 信号）；**非红迁移** = 随同批落下，GREEN 后语义才成立。
 
@@ -1125,7 +1135,7 @@ python -m compileall -q app
 | M5 | orchestrator 测试桩 `get_service` → `get_scope`：`monkeypatch.setattr(orch_mod, "get_scope", lambda: FakeScope(ai))`（FakeScope 带 `.ai_service` 与 `acquire_lease()`） | test_repro_v01936（_bug05_patch）等 orchestrator 桩 | 桩未接住新门面 → 真实工厂被调 / `AttributeError` | 随批落地 | step7（3.12） |
 | M6 | 删 `test_tdd_14_20_inbox.py:111` 的 `["ai_service"]` 字段断言（全仓唯一读点） | 1 处 | 字段删除后 `KeyError` | 随批落地 | step7（3.11） |
 | M7 | G2 桩 `BadInst._ensure_client` → `BadInst.ensure_client_pool`（工厂路径改走 `_attach_scope → ConnectionScope.ensure_pool → ensure_client_pool`；`assert svc._instance is None` 断言不变——cleanup 已在锁内清位。**v1.7 纠正 v1.5 补记**：失败时 `_instance`/`_scope` 皆 None（与 HEAD 等价），改进是旧代池归还不被连坐关闭、锁外不见半初始化，**非**"旧代保留继续服务"，见 3.5 说明区） | test_tdd_64_73 G2 一处 | 旧工厂调 `_ensure_client` → 桩接不住，回滚核证漂移 | 红迁移 | step5（3.5） |
-| M8 | 收尾 close 补齐：凡新逻辑建了真实 httpx 池的 case 补 `await snap.close()` / `await owner.close()`（防进程残留未关连接与 warning 噪声） | 随各文件 | （非红项） | 非红迁移 | 随所属步 |
+| M8 | 收尾 close 补齐：凡新逻辑建了真实 httpx 池的 case 补 `await snap.close()` / `await owner.close()` / `await scope.drain(...)` 收尾（防进程残留未关连接与 warning 噪声） | 随各文件 | （非红项） | 非红迁移 | **v1.8 落到具体步**：step4（TDD-83~87 真实池 case 收尾）+ step5（M10②③ `drain` 收尾）+ 6.1 三件套第 4 条为每步统一自检 |
 | M9 | 3.14 删错位 `reset()` 的回归面：`test_model_ref_normalization.py`（其 `:96` monkeypatch 因导入时绑定而失效，删除后断言转真绿）、`test_settings_editsave_red.py`（S10 两 case 直接调 `_update_model_ref`） | 2 文件 | 无需改测试（3.14 反而修正其假绿/污染）；RED 不适用 | 非红迁移（回归验证） | step5（3.14） |
 | M10 | **基线红孤儿 4 case**（6 文件撤销时 tests 未随回退的 lease 时代遗留，HEAD 即红，非实施引入）：①test_tdd_03_08 `owner_reset_keeps_live_snapshot_pool_open`：`owner.acquire_shared_lease()`→`ConnectionScope(owner)+ensure_pool()+acquire_lease()`、`snapshot(shared_client=lease)`→`snapshot(shared_client=lease.client, client_lease=lease)`、**补 monkeypatch `service_mod._scope`**（否则 reset→`_retire_scope` 落空、L136 归零关断言必失——同 TDD-89 先例）；②同文件 `snapshot_close_before_request_is_idempotent`：同款构造换法，`finally` 补 `scope.release_owner()` + `await scope.drain(timeout=2)` 收尾（[70] 下 `owner.close()` 为 no-op，不归还 owner 引用则 L159 `is_closed=True` 必失；release_owner 走 create_task，断言前必须 drain——6.3 注同款纪律）；③同文件 `async_close_task_is_strongly_referenced`：断言对象 `lifecycle._close_tasks`（lease 时代）已消亡→改写为 `connection_scope._pending_release_tasks` 强引用断言（release_owner 后任务保活、gather 后关闭完成），`close_instance_sync` 直调段仅保留"完成关闭"功能断言（其强引用保活为 HEAD 既有行为，如实界定不在 [70] 范围）；④test_resolve_session_client race case（L132-158）并入 TDD-98 整体重写（直调点已计 M2，不重复计数） | 4 case/3 文件 | **基线即红**（v1.7 定向实测 12 文件 349 case = 4 failed/345 passed，4 failed 全部为本行 4 case） | 存量欠账迁移 | ①②③ step5（3.4/3.5）、④ step6（TDD-98） |
 | M11 | `test_s2_s4_review_bugs.py:266` 源码断言迁移：`assert "get_service()" in src` → `assert "get_scope()" in src` 并增强 `assert "get_service()" not in src`（3.12 hunk-3 换门面后旧断言必红；orchestrator 中 `get_service` 仅 import+L296 调用，替换后零残留——反向断言防回潮） | 1 处 | 3.12 落地前新断言 `get_scope() in src` 对旧码必失败 = 该步 RED 信号 | 红迁移 | step7（3.12） |
@@ -1138,7 +1148,7 @@ python -m compileall -q app
 |------|-------------|----------|
 | TDD-74 | `test_relinquish_ownership_noop_close` | `relinquish_ownership()` 后 `await sdk.close()` 为 no-op（底层池 `is_closed=False`）、`client` property 即底层池、二次 relinquish 幂等 |
 | TDD-75 | `test_llmclient_close_three_states` | 独占池 `close()` 真关（`is_closed=True`）；relinquish 后 `close()` no-op；已关闭池再 `close()` 不抛（`is_closed` 双保险） |
-| TDD-76 | `test_shared_lease_lifecycle` | `from app.llm import SharedClientLease` 导入成功（3.3）；构造 ref=1 → `acquire()` ref=2 → `release()` ref=1 池活；最后 `release()` 归零 `aclose`；二次 `release()` 幂等（ref 不再减、不重关） |
+| TDD-76 | `test_shared_lease_lifecycle` | `from app.llm import SharedClientLease` 导入成功（3.3）；构造 ref=1 → `acquire()` ref=2 → `release()` ref=1 池活；最后 `release()` 归零 `aclose`；二次 `release()` 幂等（ref 不再减、不重关）。**v1.8 回填 6.6 场景10 增强**：patch 底层 `client.aclose` 抛错 → `release()` **不抛**（3.1 hunk-2 `close` 的 try/except 捕获）+ logger 留 warning（见 6.3 末"增强段"代码①） |
 | TDD-77 | `test_shared_lease_concurrent_release_once` | `asyncio.gather(*(lease.release() for _ in range(8)))` 只减一次、池只关一次、无异常（[69] 4.3 场景1） |
 | TDD-78 | `test_shared_lease_double_defense_raises` | 已释放 lease `.acquire()` 抛 `RuntimeError`；池归零 `_closing` 后 `pool.acquire()` 抛 `RuntimeError`（素材防线）；**v1.4 增：底层 client 被池外 `aclose()` 后 `pool.acquire()` 抛 `RuntimeError`**（3.1 新增 `is_closed` 检查，偿还 [69] 1.2.3⑥） |
 
@@ -1157,14 +1167,14 @@ python -m compileall -q app
 **GREEN**：3.2 hunk-1~9。
 **验证**：`python -m py_compile app/llm/base_service.py`；`pytest tests/test_tdd_74_87_scope_lease.py -k "ensure_client_pool or three_branches or pairs or reset_sdk" --timeout=120 -x --tb=short -v`
 
-**step 3 —** 无独立新 case：3.3 导出由 TDD-76 覆盖（`from app.llm import SharedClientLease`），落 3.3 diff 后复跑 TDD-76 确认转绿。
+**step 3 —** 无独立新 case、**无独立 diff**（v1.8 修正）：3.3 导出**已随 step1 GREEN 与 3.1 同批落地**——TDD-76 `from app.llm import SharedClientLease` 在 step1 即硬依赖包级导出，3.3 若后置到本步，则 step1 末尾整文件不可能全绿（违反 6.1"本步全绿才进下一步"），原文"落 3.3 diff 后复跑 TDD-76"与 step1 GREEN 重复矛盾已废；本步仅复跑 TDD-76 确认导入转绿即视为通过（依赖序上 3.3 仍列于 3.2 与 3.4 之间，见五章 step3 占位说明）。
 
 **step 4 — RED（追加 case；GREEN = 3.4 新文件 connection_scope.py）**
 
 | 编号 | case（新增） | 断言要点 |
 |------|-------------|----------|
 | TDD-83 | `test_scope_ensure_pool_idempotent_refcount_start` | 【代码①】ensure_pool 幂等、owner 计数起点=1、relinquish 后单例 close 不关池、无借用归还即归零关 |
-| TDD-84 | `test_scope_acquire_release_close_on_zero` | 【代码②】acquire ref+1、快照成对接管 lease、快照 close 归还 ref-1、owner 归还后归零自动 `aclose`、`is_released=True` |
+| TDD-84 | `test_scope_acquire_release_close_on_zero` | 【代码②】acquire ref+1、快照成对接管 lease、快照 close 归还 ref-1、owner 归还后归零自动 `aclose`、`is_released=True`。**v1.8 回填 6.6 场景2 增强**：两快照（两 lease 同一池）`asyncio.gather` 并发 close，**最后一个归还才归零关闭**，先归零一侧不得关池（见 6.3 末"增强段"代码②） |
 | TDD-85 | `test_scope_acquire_rejects_uninit_and_retired` | 【代码③】未初始化/已退休 scope `acquire_lease()` 抛 `RuntimeError`（防混代，双重防线）、无借用退休代归零即关 |
 | TDD-86 | `test_scope_release_owner_idempotent` | 【代码④】`release_owner()` 幂等（二次调用 ref 不再减）、`is_released=True`、活动借用撑池不关 |
 | TDD-87 | `test_scope_drain_timeout_and_settle` | 【代码⑤】活动借用未归还时 `drain(timeout=0.3)` 超时放行且**不强关**（任务零感知）；归还后 `drain(timeout=2)` 等到归零关闭 |
@@ -1296,11 +1306,62 @@ async def test_scope_drain_timeout_and_settle(owner_service):
     assert pool.is_closed is True, "活动 lease 归还后归零关闭"
 ```
 
+**6.6 增强段代码**（v1.8 补：6.6 场景2/场景10 的增强断言原只写在 6.6 映射表，6.3 的 case 规格与完整代码块均无——照 6.3 落盘会漏做；以下两段**追加到 `test_tdd_74_87_scope_lease.py` 末尾**，复用同文件已导入的 `asyncio`/`pytest` 与 `owner_service` fixture）：
+
+```python
+# 6.6 增强段①: 池外关闭失败可查不炸流程 — [69] 4.3 场景10 — 小欧 2026-09-25
+@pytest.mark.asyncio
+async def test_shared_lease_close_failure_warns(monkeypatch):
+    """TDD-76 增强: aclose 抛错 → release 不抛 + warning 留痕(2.7④ 不做重试, 只可查) — 小欧 2026-09-25"""
+    import httpx
+    from app.llm import client_sdk
+    from app.llm import SharedClientLease
+
+    warns = []
+    monkeypatch.setattr(client_sdk.logger, "warning", lambda msg: warns.append(str(msg)))
+
+    async def _boom():
+        raise RuntimeError("aclose 模拟失败")
+
+    client = httpx.AsyncClient()
+    monkeypatch.setattr(client, "aclose", _boom)
+    lease = SharedClientLease(client)
+    await lease.release()
+    assert any("关闭失败" in msg for msg in warns), "池关闭失败必须留 warning 可查"
+    assert lease.is_released is True, "关闭失败不影响归还状态(引用已减, 幂等成立)"
+
+
+# 6.6 增强段②: 多 snapshot 并发关闭, 最后一个归还才关池 — [69] 4.3 场景2 — 小欧 2026-09-25
+@pytest.mark.asyncio
+async def test_scope_two_snapshots_close_on_last(owner_service):
+    """TDD-84 增强: 两快照并发 close, 最后一个归还才归零 aclose — 小欧 2026-09-25"""
+    from app.services.lifecycle.connection_scope import ConnectionScope
+
+    scope = ConnectionScope(owner_service)
+    scope.ensure_pool()
+    pool = owner_service._llm_sdk.client
+
+    lease_a = scope.acquire_lease()
+    lease_b = scope.acquire_lease()
+    snap_a = owner_service.snapshot(shared_client=lease_a.client, client_lease=lease_a)
+    snap_b = owner_service.snapshot(shared_client=lease_b.client, client_lease=lease_b)
+    assert scope.ref_count == 3, "owner(1) + 两借用(2) = 3"
+
+    scope.release_owner()
+    assert scope.ref_count == 2, "owner 归还后剩两借用撑池"
+    assert pool.is_closed is False
+
+    await asyncio.gather(snap_a.close(), snap_b.close())
+    assert scope.ref_count == 0, "两借用并发归还后归零"
+    await scope.drain(timeout=2)
+    assert pool.is_closed is True, "最后一个归还者负责归零 aclose"
+```
+
 > 注：TDD-83~87 在事件循环内调 `release_owner()` 走 3.4 的 `create_task` 分支（强引用 `_pending_release_tasks` 防 GC 取消），`drain()` 的 0.1s 轮询即给该 task 调度机会——断言前一律经 `await scope.drain(...)` 收尾，不裸 `sleep(0)` 押注时序。
 
 ### 6.4 阶段2（step 5）：工厂收口与换代、停机
 
-**RED**：追加 TDD-88~93 到 `test_tdd_88_93_generation.py` + M7（G2 桩迁移）+ M10①②③（基线红孤儿 3 case 迁移，随本步 API 转绿——本步 RED 信号仍以新 case `ImportError` 为准）同批落下；`from app.services import get_scope` 此时 `ImportError`（3.8 才导出）= RED 信号。
+**RED**：追加 TDD-88~93 到 `test_tdd_88_93_generation.py` + M7（G2 桩迁移）+ M10①②③（基线红孤儿 3 case 迁移，随本步 API 转绿——本步 RED 信号仍以新 case `ImportError` 为准）+ M9（**非红**，3.14 回归面，仅随批核对不产生 RED，见验证段点名两文件）同批落下；`from app.services import get_scope` 此时 `ImportError`（3.8 才导出）= RED 信号。
 
 | 编号 | case（新增） | 断言要点 |
 |------|-------------|----------|
@@ -1312,7 +1373,7 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 | TDD-93 | `test_shutdown_drains_retired_scopes` | `await shutdown(timeout=...)`（3.6）= `reset()` 换代归还 + 逐退休代 `drain`：无活动任务时调用后各池 `is_closed=True`；持活动任务时超时 warning 放行、不阻塞退出（3.9 main 改 `await shutdown()` 的收口语义）。**v1.5 增**：多退休代预算耗尽分支——前代 drain 耗尽总预算时 `remaining<=0` 即 warning + `break`（不再逐代各等 30s，总时长有界），断言 `shutdown` 返回且 warning 留痕 |
 
 **GREEN**：step5 整步 = 3.5（工厂收口）+ 3.6（`shutdown` 总预算）+ 3.7（lifecycle 导出）+ 3.8（services 导出）+ 3.9（main 接线）+ **3.14（删写盘前错位 `reset`）** 按依赖序同批落地。
-**验证**：`python -m py_compile app/services/lifecycle/service.py app/services/lifecycle/lifecycle.py app/services/lifecycle/__init__.py app/services/__init__.py app/main.py app/services/model/config_helpers.py`；`pytest tests/test_tdd_88_93_generation.py --timeout=120 -x --tb=short -v`；复跑 `pytest tests/test_tdd_64_73_bug_guard.py -k g2 --timeout=120 -x --tb=short -v`（M7 转绿）、`pytest tests/test_tdd_03_08_snapshot.py --timeout=120 -x --tb=short -v`（M10①②③ 转绿——基线红 4 case 中的 3 个）；**3.14 验证**：静态核 `config_helpers.py` 仅 `reload_ai_config():147` 一处 `reset()`（`_update_model_ref` 内已删），并跑配置保存相关存量测试 + 真实 E2E"保存模型 → 新请求用新模型生效"（2.7⑤ 可证伪项）。
+**验证**：`python -m py_compile app/services/lifecycle/service.py app/services/lifecycle/lifecycle.py app/services/lifecycle/__init__.py app/services/__init__.py app/main.py app/services/model/config_helpers.py`；`pytest tests/test_tdd_88_93_generation.py --timeout=120 -x --tb=short -v`；复跑 `pytest tests/test_tdd_64_73_bug_guard.py -k g2 --timeout=120 -x --tb=short -v`（M7 转绿）、`pytest tests/test_tdd_03_08_snapshot.py --timeout=120 -x --tb=short -v`（M10①②③ 转绿——基线红 4 case 中的 3 个）；**3.14 验证**：静态核 `config_helpers.py` 仅 `reload_ai_config():147` 一处 `reset()`（`_update_model_ref` 内已删），并**点名复跑 M9 两个回归文件**（v1.8 补闭环：原文只写"配置保存相关存量测试"未点名，照做会漏跑）——`pytest tests/test_model_ref_normalization.py --timeout=120 -x --tb=short -v`、`pytest tests/test_settings_editsave_red.py --timeout=120 -x --tb=short -v`；再跑真实 E2E"保存模型 → 新请求用新模型生效"（2.7⑤ 可证伪项）。
 
 ### 6.5 阶段3（step 6~7）：决议与接线
 
@@ -1327,7 +1388,7 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 | TDD-98 | `test_resolve_regeneration_race_keeps_pool` | 改造存量 race case（M2 同文件）：`db.atxn` await 期间 `lifecycle.reset()` 换代 → 快照仍返回、旧池 `is_closed=False`（旧 scope lease 撑住）→ 快照 close 后归零关（[69] 4.3 场景3/4 合并） |
 
 **GREEN**：step6 = 3.10（resolver 改签名 `(scope, session_id)` + 进门 acquire + transferred + finally 归还）。
-**验证**：`python -m py_compile app/services/model/resolver.py`；`pytest tests/test_tdd_94_102_wiring.py -k "resolve" --timeout=120 -x --tb=short -v`；复跑存量 `pytest tests/test_resolve_session_client.py --timeout=120 -x --tb=short -v`（M2/M3 转绿）、`pytest tests/test_tdd_03_08_snapshot.py --timeout=120 -x --tb=short -v`、`pytest tests/test_tdd_41_46_bug_c_red.py --timeout=120 -x --tb=short -v`
+**验证**：`python -m py_compile app/services/model/resolver.py`；`pytest tests/test_tdd_94_102_wiring.py -k "resolve" --timeout=120 -x --tb=short -v`；复跑存量 `pytest tests/test_resolve_session_client.py --timeout=120 -x --tb=short -v`（M2/M3 转绿）、`pytest tests/test_tdd_03_08_snapshot.py --timeout=120 -x --tb=short -v`、`pytest tests/test_tdd_41_46_bug_c_red.py --timeout=120 -x --tb=short -v`（M4 的 L177 死属性）、**`pytest tests/test_repro_v01936.py --timeout=120 -x --tb=short -v`（v1.8 补：M4 step6 批含其 L186/L225 桩签名——3.10 新传 `client_lease` 漏补即 `TypeError`，原验证清单漏此文件，桩未补则本步存量面留红）**
 
 **step 7 — RED**：追加 TDD-99~102 + 同批 M1（58 调用点）、M5（orchestrator 桩）、M3 step7 部分（repro 2 处）+ M4 的 repro L118 死属性删除（与 M3 升级、3.13 同批）、M6（字段断言）、M11（s2_s4 源码断言）。
 
@@ -1361,7 +1422,7 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 | 14 `reset_cancel()` 不清除 `_cancelled` | 存量回归（M1 迁移后） | 迁移回归 |
 | 15 `LLMClient.cancel()` 能关闭流式 HTTP response | 存量回归（test_tdd_64_73 G1 等） | 回归 |
 
-> 阶段4 不新增独立 case：**增强断言并入**对应 case（断言只增强），**回归项** = 存量文件迁移后全绿即达成。
+> 阶段4 不新增独立 case：**增强断言并入**对应 case（断言只增强），**回归项** = 存量文件迁移后全绿即达成。**v1.8 补**：本表"增强"列的两条（TDD-76 场景10 关闭失败留痕、TDD-84 场景2 多快照并发关闭）已**回填 6.3 对应 case 规格并附可落盘代码**（6.3 末"6.6 增强段代码"）——本表此后仅作索引，不再是唯一出处，避免两节再次分叉。
 
 ### 6.7 阶段5：全量验收（全部满足才允许进入提交）
 
@@ -1400,4 +1461,4 @@ async def test_scope_drain_timeout_and_settle(owner_service):
 ---
 
 **文档签名**: 小欧  
-**更新时间**: 2026-09-25 15:11:31
+**更新时间**: 2026-09-25 15:38:28
