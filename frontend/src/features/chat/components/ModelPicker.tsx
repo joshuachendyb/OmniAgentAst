@@ -2,6 +2,11 @@
 // 编辑历史: 2026-08-27 小欧 - 修复#11: 切L2模型不再以'新会话'污染后端会话标题(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 模型列表类型归一为ModelListItem; 删IIFE改直线find写法
 // 编辑历史: 2026-08-27 小欧 - 去头像-C2: 删ModelPicker内RobotOutlined后缀图标, 回落Antd默认DownOutlined下拉箭头(更符下拉心智)
+// 编辑历史: 2026-09-25 小欧 - 修双 provider 重复 + 列框自适应:
+//   (1) provider 重复: 后端 get_models display_name 已含 "provider (model)", 原再拼 " (provider)"
+//     → openai (gpt-4) (openai) 双 provider, 改直接用 display_name;
+//   (2) 列框自适应: popupMatchSelectWidth=false 弹层宽度由最长选项决定(原默认=选中框 180 截断),
+//     nowrap 防换行; 选中框保持 minWidth:180 — 小欧-2026-09-25
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -134,11 +139,19 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
         style={{ minWidth: 180 }}
         placeholder="跟随全局"
         suffixIcon={<DownOutlined />}
+        // 2026-09-25 小欧 列框自适应: popupMatchSelectWidth=false 弹层宽度由最长选项决定,
+        //   原默认=选中框宽(定 180) 长模型名截断; 选中框保持 minWidth:180 下限 — 小欧-2026-09-25
+        popupMatchSelectWidth={false}
+        popupRender={(menu) => (
+          <div style={{ whiteSpace: 'nowrap' }}>{menu}</div>
+        )}
         options={[
           { value: FOLLOW_GLOBAL, label: '跟随全局' },
           ...models.map((m) => ({
             value: `${m.provider}-${m.model}`,
-            label: `${m.display_name || m.model} (${m.provider})`,
+            // 2026-09-25 小欧 修重复: 后端 getModelList display_name 已含 "provider (model)"
+            //   (config_service.get_models), 原再拼 " (provider)" 致 openai (gpt-4) (openai) 双 provider — 小欧-2026-09-25
+            label: m.display_name || `${m.provider} (${m.model})`,
           })),
         ]}
       />
