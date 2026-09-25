@@ -294,11 +294,12 @@ def reset_instance():
         _current_model_ref = None
         _retire_scope()   # [70] 换代新语义: 归还 owner 引用(任务撑池, 归零自动关), 绝不关旧池 — 小欧-2026-09-25
         # 小欧-2026-09-25: 换代入口日志(此处是**唯一**能拿到真实旧模型的位置: _retire_scope 只拿到 scope,
-        #   旧模型身份在 _current_model_ref 被清空前就丢了; 与下方 退代(含退休时 ref=活动任务数)/建新代
-        #   三行串成完整且如实的换代链。活动任务数不在此报, 由 退代 那行权威给出, 免得两处口径打架)
+        #   旧模型身份在 _current_model_ref 被清空前就丢了; 与下方 退代(含退休时 ref)成对, 再与
+        #   config_helpers 紧邻其前那行"配置热重载触发: 生效模型=X"配成完整事实——"退的是哪一代 → 切成哪个"。
+        #   活动任务数不在此报, 由 退代 那行权威给出, 免得两处口径打架)
         logger.info(
             f"[AIServiceFactory] 换代触发(reset_instance): 退休旧代 model={_ref_str(old_ref)}"
-            f"({'有在役旧代' if old is not None else '无在役旧代'})"
+            f"({'有在役旧代' if old is not None else '无在役旧代, 新代待下次请求惰性创建'})"
         )
     return old
 

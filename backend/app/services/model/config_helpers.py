@@ -146,10 +146,26 @@ def write_yaml_config(config_path: str, data: dict) -> None:
 
 def reload_ai_config() -> None:
     """重新加载 AI 配置并重置缓存"""
-    # 小欧-2026-09-25: 补热重载入口日志(整条"建代→退代→归还→归零关闭"日志链的起点标记)
-    logger.info("[config] 配置热重载触发: 重新加载 config.yaml 并换代")
     config_obj = get_config_instance()
-    config_obj._load_config()
+    try:
+        config_obj._load_config()
+    except Exception:
+        # 2026-09-25 小欧 - 补失败留痕: 坏配置若只靠异常上抛, 从换代链看就是"改了配置没生效",
+        #   无从区分是"写盘失败"还是"重载失败"。此处明确记"未换代, 旧配置继续生效"。
+        logger.error("[config] 配置热重载失败(未换代, 旧配置继续生效)", exc_info=True)
+        raise
+    # 2026-09-25 小欧 - 入口日志补**生效模型**(换代链可独立自证, 不必再去翻 config 写入那套日志):
+    #   原日志只写"重新加载 config.yaml 并换代"不带模型, 于是"无在役旧代"的重载完全看不出切成了什么。
+    #   实测: 连切 3 次模型(ling-3.0-flash-fin-free → big-pickle → sensenova-6.8-flash-lite),
+    #   换代链里只有 1 次带模型名, 另 2 次因那一刻无在役代而丢失目标信息, 排障时只能靠另一套日志反推。
+    #   模型须在 _load_config() 之后读, 此刻配置单例已是新值; 与 service 侧"换代触发(退休旧代)"相邻成对,
+    #   构成"退的是哪一代 → 切成哪个模型"的完整事实。
+    _ai = config_obj.get("ai") or {}
+    _new_ref = _ai.get("model_ref") or {}
+    logger.info(
+        f"[config] 配置热重载触发: 已重载 config.yaml, 生效模型="
+        f"{_new_ref.get('provider') or '-'}/{_new_ref.get('model') or '-'}, 即将换代"
+    )
     reset()
 
 def _set_app_field(config_data: dict, field_name: str, value: Any, display_name: str = "") -> None:
