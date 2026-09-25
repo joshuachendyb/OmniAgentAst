@@ -247,6 +247,14 @@
 | `create_payload_chunk` | 元事件载荷工厂: meta事件(retrying/error/usage/停顿)统一经 payload 随 chunk 直送, 废弃二元tuple协议(文档[6]2.5.1/5.9); 与取消/错误族工厂同列单行构造 | chunk_model: ModelRef, payload: Dict | StreamChunk |
 | `create_cancelled_chunk` | 取消响应工厂(取消语义, payload恒None) | chunk_model: ModelRef | StreamChunk |
 | `create_error_chunk` | 错误响应工厂(流异常/出错, payload恒None) | chunk_model, error, error_type="http_error" | StreamChunk |
+| `SharedClientLease` | [70] 共享连接池的一次引用(引用计数核心): 构造即持一份, `acquire()` 加计数, `release()` 减计数且归零者负责 aclose(幂等, 二次 release 无害); 配套 `_SharedClientPool` 管计数与池级锁 | client: Any, close_on_zero: bool = True | lease 实例; 属性 client/ref_count/is_released |
+| `LLMClient.relinquish_ownership` | [70] 所有权移交(幂等): 移交后本实例 `close()` 对共享池变 no-op, 池生命周期交 ConnectionScope 引用计数管理 | — | None |
+| `LLMClient.client` | [70] 公开底层 httpx 客户端 property(替代跨层摸 `_client` 私有字段) | — | httpx.AsyncClient |
+| `BaseAIService.ensure_client_pool` | [70] 建池 + 所有权移交(幂等) 并返回底层共享客户端; **ConnectionScope.ensure_pool 唯一调用点**, 重复调用复用已建池 | — | httpx.AsyncClient |
+| `ConnectionScope` | [70] 共享连接池唯一所有者(一代配置 = 一个 scope): 建池(ensure_pool)/发计数(acquire_lease)/换代退休(release_owner)/停机等待(drain); 不做业务查询、不做归还中介 | ai_service: BaseAIService | scope 实例; 属性 ai_service/ref_count/is_released |
+| `get_scope` | [70] 取当前代 ConnectionScope(无则经 get_service 惰性建代); **orchestrator 唯一所有者入口** | — | ConnectionScope |
+| `get_retired_scopes` | [70] 已退休代快照(list 拷贝), 供 `shutdown` 逐个 drain | — | List[ConnectionScope] |
+| `shutdown` | [70] 停机收口 = `reset()` 换代归还 + 逐退休代 `drain`(timeout 为**全停机总预算**, 各代按剩余预算等, 耗尽即 warning 放行不阻塞退出) | timeout: float = 30.0 | None |
 
 ---
 

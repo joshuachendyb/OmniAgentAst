@@ -3,8 +3,8 @@
 **文档名**: [70]ConnectionScope连接池统一所有者实施方案-小欧-2026-09-25.md  
 **编写人/签名**: 小欧（资深后端开发、全架构设计与分析）  
 **创建时间**: 2026-09-25 11:40:25  
-**更新时间**: 2026-09-25 15:38:28  
-**版本**: v1.9  
+**更新时间**: 2026-09-25 17:53:48  
+**版本**: v1.11  
 **状态**: 设计定稿 + **第三章 14 个文件逐真实 diff 已落笔（基于干净 HEAD `527cfc727` 逐行精读后编写）**；尚未修改任何程序源码  
 **适用基线**: `F:\OmniAgentAs-repair` HEAD `527cfc727`（6 个 lease 半成品文件已撤销回 HEAD 的干净基线；此前 8a58edb57 起点见 [69] 文档）  
 **关联问题**: 配置热重载期间活动任务仍使用已关闭的共享 `httpx.AsyncClient`（任务零感知 + 不泄漏）  
@@ -26,6 +26,8 @@
 | v1.7 | 2026-09-25 15:11:31 | 小欧 | **第三轮十遍复核（源码反证 + 迁移清单补全，5 类 9 处）**：①**失败语义三处改判**（3.5 说明区/M7 行/TDD-88，纠正 v1.5/v1.6 自身补记）——源码证实 `get_service`(L152)/`get_service_for_model`(L220) 均**先** `cleanup_old_instance`（清 `_instance` + 退休旧 scope）**再**建新代，attach 失败时 `_instance`/`_scope` 皆 None、旧代已退休，不存在"旧代保留继续服务"，新旧代失败结果等价（断服至重试）；真实改进改为两条：锁外 `check_cache_valid`/`get_scope` 永不见半初始化 + 旧代池经 `_retire_scope` 归还由活动 lease 撑住（HEAD 同位置 `close_instance_sync` 真关旧池连坐活动任务）；②**2.3 生命周期图纠正**：退休判据是 `_owner_released=True`、`_owner_lease` 引用保留供 `ref_count` 观测——原"owner_lease=None"与 3.4 代码（L490-492）及 TDD-86 `ref_count==1` 直接矛盾；③**6.2 增 M10/M11（M1~M11）**：M10=基线红孤儿 4 case（6 文件撤销时 tests 未回退，HEAD 即红——v1.7 定向实测 12 文件 349 case = 4 failed/345 passed 全部为它们）逐个迁移规格：`acquire_shared_lease`→`ConnectionScope` 三件套 + 补 patch `_scope`（否则 reset→retire 落空）、`_close_tasks`→`_pending_release_tasks` 强引用改写、race case 并入 TDD-98、`owner.close()`→`scope.release_owner()`+drain 收尾；M11=`test_s2_s4_review_bugs:266` 源码断言 `get_service()`→`get_scope()` 并增强反向断言（3.12 落地后旧断言必红，此前漏入表）；④**M4 拆批**：repro L118 死属性删除移 step7（须与 3.13 无条件 close、M3 升级同批，step6 删会使 L292/L209/246 中途红）、桩补存 `self._client_lease` 供 M3 判据；M2 补 race case 语义换；⑤step5/6/7 RED 与验证序列补 M10/M11 配对项、6.7 定向序列补 test_s2_s4_review_bugs、全量对照改"实施前实测 B0 + 差异逐项解释"（7355 系旧口径已过期）；⑥stale 清理：L8/L1077"13 个 diff"→14（3.14 后）、L1071/L1104 `M1~M8`→`M1~M11`、L35 换代职责引用补明 `config_service.py:113` 调用链 |
 | v1.8 | 2026-09-25 15:34:08 | 小欧 | **第四轮复核：第五章 TDD 流程作为实施依据的可行性审查（5 类问题，全部修正）**——生产码 7 步依赖序逐条反证无误（3.4 走 `from app.llm import ...` 包级、3.2 走 `client_sdk` 模块级、3.5 依赖 3.2+3.4、3.12 依赖 3.8+3.10），但**执行流程层 4 处会导致实施爆错**：①**3.3 归属矛盾（致命）**：TDD-76 `from app.llm import SharedClientLease` 在 step1 即硬依赖 3.3 包级导出（3.4 亦然），而五章把 3.3 排为 step3、六章 step1 GREEN 写"3.1+3.3"却在 step3 又写"落 3.3 diff 后复跑"——同一 diff 两处落地自相矛盾，照五章字面 step1 末尾 TDD-76 必 `ImportError` 卡死、违反"本步全绿才进下一步"；**修正**：3.3 明确随 step1 的 3.1 同批落地，五章 step1 加"（+ 3.3 同批）"、step3 改"依赖序占位、不得二次落 diff"，六章 step3 同步改"无独立 diff，仅复跑 TDD-76"；②**step8 迁移堆到最后（致命）**：与 6.2 明文"迁移不一次性做完、与该步 RED 同批落下，否则中间态大面积报错"直接矛盾——按字面执行会在半改生产码上一次性引爆 27 处 `register_task` 裸传第 2 位**静默**错位 + 8 处 resolver 直调 `AttributeError` + M10 四孤儿 case 叠加；**修正**：step8 改为"收口+全量验收"，前置"分批归属铁律"（step5=M7+M9+M10①~③、step6=M2+M3(4处)+M4(桩2处+L177)+M10④、step7=M1+M3(2处)+M4(L118)+M5+M6+M11），各步另补"配套 RED"指引；③**数字错误**："移植 4.2 六个新文件"把 4.2 标题中 [69] 的**源**文件数误作目标数——**修正**为六个 [69] 源文件**合并为 3 个新测试文件**（TDD-74~87 / 88~93 / 94~102）；④**清单缺项**：step8 旧版漏列 **M5**（orchestrator 桩 `get_service`→`get_scope`）、**M7**（G2 桩 `_ensure_client`→`ensure_client_pool`）、**M8**（真实池 case 补 close 收尾），M4 漏 2 处死属性（L177/L118）与桩需存 `self._client_lease`——全部补入并标注随属步；⑤四章 4.2 标题"六个测试文件"加来源标注（自 [69] 移植，合并为 3 个）避免再被误读为 6 个目标文件 |
 | v1.9 | 2026-09-25 15:38:28 | 小欧 | **第六章 TDD 实施步骤执行性审查（6 处缺陷全修）**——先反证**依赖序本身无误**（逐步核对无前向依赖：step1 的 TDD-74~78 只需 3.1+3.3、step2 只需 3.2、step4 只需 3.4、step5 只需 3.5~3.9+3.14、step6 只需 3.10、step7 只需 3.11~3.13；且 3.6 `shutdown` 用**函数内延迟 import** 取 `get_retired_scopes`、3.7 `__init__` 先导 `lifecycle` 后导 `service`，**无循环导入风险**），再查出 6 处**执行闭环缺失**（照字面做会漏做/返工，非顺序错误）：①**"阶段0"标签语义倒挂**——6.2 置于 6.3 之前且名"阶段0"，易被读成"先做存量迁移"，实为随阶段1~3 分批；**修正**：标题改"非独立阶段：随 step5/6/7 分批执行"，6.1 阶段总览阶段0 行同步注明；②**M9 未进 step5 闭环**——归属 step5（3.14）但验证只写"配置保存相关存量测试"未点名，改点名 `test_model_ref_normalization.py` + `test_settings_editsave_red.py`（v1.5 引入后一直悬空）；③**M8 归属"随所属步"过虚**——落到 step4（TDD-83~87 真实池收尾）+ step5（M10②③ drain 收尾），并在 6.1 三件套**新增第 4 条"真实池收尾自检"**（每步统一判据，防残留连接与 warning 噪声掩盖真实失败）；④**step6 验证漏 `test_repro_v01936.py`**（M4 step6 批含其 L186/L225 桩签名，3.10 传 `client_lease` 漏补即 `TypeError`——漏跑则本步存量面留红），已补入并注明；⑤**6.1 三件套第 2 条"单 case 定向"与实际用法不符**（各步实为多 case `-k` 模式，如 step1 的 `-k "relinquish or three_states or shared_lease"` 一次覆盖 5 case），改为"判据是本步 case 全绿"；⑥**6.6 两条增强断言跨节悬空**——场景2→TDD-84、场景10→TDD-76 原只写在 6.6 映射表，6.3 的 case 规格与完整代码块均无，照 6.3 落盘必漏做；已回填两 case 规格 + 在 6.3 末新增"6.6 增强段代码"（两段可直接落 `test_tdd_74_87_scope_lease.py` 末尾：①aclose 抛错→release 不抛+warning 留痕 ②两快照 gather 并发 close→最后一个归还才归零），6.6 改注"本表此后仅作索引，出处已回填 6.3"防再分叉 |
+| v1.10 | 2026-09-25 15:55:17 | 小欧 | **实施 step1~4 期间实测暴露的文档自身缺陷修正（1 类 3 处）**——代码实施严格按 3.1/3.2/3.3/3.4 逐行落地（`verify_impl_vs_doc_70.py` 对账：112/29/2/92 条 `+` 行**零缺失零多余**），但 step4 实测发现**文档给出的测试代码与其自身实现矛盾**：`release_owner()`（3.4 hunk）把 `lease.release()` 放进 `create_task`，**ref 计数在协程真正跑完前不变**，而 ①TDD-86 代码 ②6.6 增强段②代码 均在 `release_owner()` 后**立即**断言 `ref_count`（`== 1` / `== 2`）——照抄必红（实测 2 failed：`assert 3 == 2`）；文档自带的注"断言前一律经 `await scope.drain(...)` 收尾"才是正确纪律，但该注与同章代码块自相矛盾。**修正**：6.3 代码块新增 `_settle_owner_release()` helper（经 3.4 强引用表 `_pending_release_tasks` 确定性 `gather` 等待，不用 sleep 押注），TDD-86 与增强段②各补一次结算后再断言 ref，块后注补"v1.10 实施补正"明示该纪律。**另如实记录中间态风险（不改设计，step7 消解）**：3.2 删 `snap._is_snapshot` 标记后，`agent_runner.py:531` 的 `getattr(_snap_client,"_is_snapshot",False)` 判据在 step2~step6 窗口内恒 False → runner 该窗口不关快照（独占池延迟释放）；按设计于 step7 的 3.13"改无条件 close"消解。实施期间禁止提交、末次统一验收，该窗口不落地运行。**实施实录**：step1 6 case 绿 / step2 4 case 绿 / step4 整文件 16 case 绿；step2~step4 存量面 8 红全部与 6.2 M 表逐条吻合（M3 step6 批 4 处 + M10①~④ 4 处），无意外回归 |
+| v1.11 | 2026-09-25 17:53:48 | 小欧 | **实施后代码审查（10 大规范 + 编辑历史两轮）查出并修正 5 处**——①**B1（Type hints required）**：`service.py` 的 `get_scope()`/`get_retired_scopes()` 缺返回类型标注（同批 `_attach_scope() -> None` 有，注解不一致）；**修正**：3.5 hunk-4 两条签名补 `-> ConnectionScope` / `-> List[ConnectionScope]`（`List` 已在 hunk-2 导入）②**B2（YAGNI）**：`_SharedClientPool.closing` property 全仓核**零消费点**（含测试，`_closing` 实例标志本身仍被 `acquire`/`release` 判据与 2.3 并发边界描述引用，删的只是无读者的公开 property）；**修正**：3.1 hunk-2 删该 property + v1.4 说明补记删除依据 ③**B3（DRY）**：`set_instance` 与 `reset_instance` 重复"清位+retire"3 行——因 `_instance_lock` 不可重入（`set_instance` 已在锁内，直接调 `reset_instance` 死锁）属**必要重复**，实施侧补注释说明理由（不动逻辑）④**A1（复用优先流程）**：实施前**未查 `backend/FUNCTIONS.md`**（AGENTS 1.3 强制先查后建）——事后核 418 行清单确认**无可复用 lease/scope/pool 函数**，未重复造轮子，但流程违规如实记录 ⑤**A2（复用优先"及时更新"）**：7 个新公用项（`SharedClientLease`/`LLMClient.relinquish_ownership`/`LLMClient.client`/`BaseAIService.ensure_client_pool`/`ConnectionScope`/`service.get_scope`/`service.get_retired_scopes`/`lifecycle.shutdown`）未登记 FUNCTIONS.md——已按既有表格格式补登记。**另修**：`main.py`/`lifecycle/__init__.py`/`services/__init__.py` 三个文件的 [70] 编辑历史条目**漏写**（其余 11 个文件均合规），已补日期+署名+逻辑说明。**未违规已核**：SRP/KISS-DIRECT/SLAP/禁止backward(3 处改签名全无兼容 shim)/OCP/LSP/ISP 逐条过 |
 
 ---
 
@@ -202,7 +204,7 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 - 新增 `relinquish_ownership()`（幂等移交）与 `client` property（公开 `_client`，消灭跨层摸私有，欠账①）；
 - `close()` 三态：`_owns_client=False`（共享池/已移交）→ no-op；独占池 → `aclose`（`is_closed` 双保险）；
 - **v1.4 审核新增**：`acquire()` 增 `client.is_closed` 检查——偿还 [69] 1.2.3⑥ / 2.2 池约束④"底层被外部关闭后池仍可 acquire"（借出即炸的真病灶），`close()` 已有同款双保险、acquire 侧此前缺失；
-- **v1.4 说明**：`close_on_zero=False` 为素材保留分支（借用池不随引用归零关闭的旧语义），本方案全部调用点用默认 `True`（引用归零即关）——保留是为不毁素材已验证逻辑，不新增用法（YAGNI：不预设第二种所有权形态）。
+- **v1.4 说明**：`close_on_zero=False` 为素材保留分支（借用池不随引用归零关闭的旧语义），本方案全部调用点用默认 `True`（引用归零即关）——保留是为不毁素材已验证逻辑，不新增用法（YAGNI：不预设第二种所有权形态）；**v1.11 补**：`_SharedClientPool.closing` property 经全仓核**零消费点**（含测试），按 YAGNI **删除**——`_closing` 实例标志本身保留（`acquire`/`release` 内部判据 + 2.3 并发边界描述仍引用它），删的只是无读者的公开 property。
 
 ```diff
 @@ hunk-1 imports: +inspect/+threading（素材 close 判可等待对象 / 池级线程锁）
@@ -254,11 +256,6 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +    def ref_count(self) -> int:
 +        with self._lock:
 +            return self._ref_count
-+
-+    @property
-+    def closing(self) -> bool:
-+        with self._lock:
-+            return self._closing
 +
 +    async def close(self) -> None:
 +        if getattr(self.client, "is_closed", False) is True:
@@ -580,7 +577,7 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +    _scope = None
 +
 +
-+def get_scope():
++def get_scope() -> ConnectionScope:   # [70] v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
 +    """[70] 取当前代 ConnectionScope(共享池唯一所有者); 无则经 get_service 惰性创建新代 — 小欧 2026-09-25"""
 +    if _scope is None:
 +        get_service()
@@ -589,7 +586,7 @@ aclose 失败: 素材 pool.close 内 try/except + logger.warning 留痕（[69] 2
 +    return _scope
 +
 +
-+def get_retired_scopes():
++def get_retired_scopes() -> List[ConnectionScope]:   # [70] v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
 +    """[70] 已退休代快照(list 拷贝, 供 lifecycle.shutdown 逐个 drain) — 小欧 2026-09-25"""
 +    return list(_retired_scopes)
 +
@@ -1199,6 +1196,17 @@ def owner_service():
                          llm_model=ModelRef(provider="openai", model="gpt-4"))
 
 
+async def _settle_owner_release() -> None:
+    """[70] v1.10 增: 等 release_owner() 的释放协程真正跑完 — 小欧 2026-09-25
+    必需: release_owner() 把 lease.release() 放进 create_task(3.4 hunk), ref 计数在协程跑完前不变,
+    故任何"release_owner() 之后立即断言 ref_count"的写法必红(实施 step4 实测暴露)。经 3.4 强引用表
+    _pending_release_tasks 确定性 gather 等待, 不用 sleep 押注时序。"""
+    from app.services.lifecycle import connection_scope as scope_mod
+    pending = list(scope_mod._pending_release_tasks)
+    if pending:
+        await asyncio.gather(*pending)
+
+
 @pytest.mark.asyncio
 async def test_scope_ensure_pool_idempotent_refcount_start(owner_service):
     """TDD-83: ensure_pool 幂等, owner 计数起点=1 — [70] 2.4 — 小欧 2026-09-25"""
@@ -1278,6 +1286,7 @@ async def test_scope_release_owner_idempotent(owner_service):
     scope.release_owner()
     scope.release_owner()  # 二次归还必须无害(幂等)
     assert scope.is_released is True
+    await _settle_owner_release()   # [70] v1.10 修: 释放协程跑完, ref 2→1(原直接断言 ref_count 必红)
     assert scope.ref_count == 1, "owner 只归还一次, 借用仍撑池"
     assert pool.is_closed is False, "活动借用期间池不得关闭"
 
@@ -1348,6 +1357,7 @@ async def test_scope_two_snapshots_close_on_last(owner_service):
     assert scope.ref_count == 3, "owner(1) + 两借用(2) = 3"
 
     scope.release_owner()
+    await _settle_owner_release()   # [70] v1.10 修: 释放协程跑完, ref 3→2(原直接断言 ref_count 必红)
     assert scope.ref_count == 2, "owner 归还后剩两借用撑池"
     assert pool.is_closed is False
 
@@ -1357,7 +1367,7 @@ async def test_scope_two_snapshots_close_on_last(owner_service):
     assert pool.is_closed is True, "最后一个归还者负责归零 aclose"
 ```
 
-> 注：TDD-83~87 在事件循环内调 `release_owner()` 走 3.4 的 `create_task` 分支（强引用 `_pending_release_tasks` 防 GC 取消），`drain()` 的 0.1s 轮询即给该 task 调度机会——断言前一律经 `await scope.drain(...)` 收尾，不裸 `sleep(0)` 押注时序。
+> 注：TDD-83~87 在事件循环内调 `release_owner()` 走 3.4 的 `create_task` 分支（强引用 `_pending_release_tasks` 防 GC 取消），`drain()` 的 0.1s 轮询即给该 task 调度机会——断言前一律经 `await scope.drain(...)` 收尾，不裸 `sleep(0)` 押注时序。**v1.10 实施补正**：若要在 `release_owner()` 之后**立即**断言 `ref_count`（不等 drain 归零），必须先 `await _settle_owner_release()`——`create_task` 是异步调度，ref 计数在协程真正跑完前不变，直接断言必红（TDD-86 与 6.6 增强段② 原写法即此病灶，step4 实测 2 failed 暴露）。
 
 ### 6.4 阶段2（step 5）：工厂收口与换代、停机
 
@@ -1461,4 +1471,4 @@ async def test_scope_two_snapshots_close_on_last(owner_service):
 ---
 
 **文档签名**: 小欧  
-**更新时间**: 2026-09-25 15:38:28
+**更新时间**: 2026-09-25 17:53:48
