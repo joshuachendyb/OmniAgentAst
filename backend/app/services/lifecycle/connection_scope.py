@@ -37,15 +37,28 @@ class ConnectionScope:
             return
         client = self.ai_service.ensure_client_pool()
         self._owner_lease = SharedClientLease(client)
+        # 小欧-2026-09-25: 此处原有一条"新代建池"日志, 经日志审查判定与 _attach_scope 的"建代"重复
+        #   (本方法唯一调用点即 _attach_scope, 两者都报 scope+model), 已删; client 标识并入"建代"一行
 
     def acquire_lease(self) -> SharedClientLease:
         """任务/快照借用本代池(ref+1)。已退休/未初始化抛 RuntimeError(防新任务混入旧代);
         池已归零(_closing)由素材 SharedClientLease.acquire 自身拦截(双重防线) — [70] 2.3 小欧 2026-09-25"""
         if self._owner_lease is None:
+            # 小欧-2026-09-25: 补失败日志(池未建就借出=建代链断, 此前裸抛无现场)
+            logger.error(f"[ConnectionScope] 借出被拒(池未建): scope={id(self):#x}")
             raise RuntimeError("ConnectionScope 未初始化(池未建), 禁止借用")
         if self._owner_released:
+            # 小欧-2026-09-25: 补关闸 warning(新任务混入退休代是 [69] 事故型故障, 必须留现场)
+            logger.warning(
+                f"[ConnectionScope] 借出被拒(代已退休): scope={id(self):#x}, ref={self.ref_count}"
+            )
             raise RuntimeError("ConnectionScope 已退休(换代/停机), 禁止新任务混入旧代")
-        return self._owner_lease.acquire()
+        lease = self._owner_lease.acquire()
+        # 小欧-2026-09-25 日志审查: 本条由 INFO 降 DEBUG —— 每请求一条属高频, 且不含 task_id
+        #   (acquire_lease 不知道借用者身份, 补传需改签名加参数=YAGNI), 故对"定位未归还持有者"无实质帮助;
+        #   泄漏定位改由 退代(退休时 ref=N) 与 收口完成(ref=0) 配对承担, 二者均为低频关键事件
+        logger.debug(f"[ConnectionScope] 借出 lease: scope={id(self):#x}, ref={lease.ref_count}")
+        return lease
 
     def release_owner(self) -> None:
         """换代/停机归还 owner 引用(幂等, ref-1; 归零由素材 close_on_zero 自动 aclose)。
@@ -53,6 +66,9 @@ class ConnectionScope:
         无运行循环 asyncio.run 同步完成 — [70] 2.2; reset() 新语义即此调用 — 小欧 2026-09-25"""
         if self._owner_released or self._owner_lease is None:
             return
+        # 小欧-2026-09-25 日志审查: 此处原有一条"归还 owner(归还前 ref=N)", 判定为多余并删 ——
+        #   唯一调用方 _retire_scope 的"退代"已记同一时刻同一个 ref(本方法走 create_task 异步归还,
+        #   调用返回时计数尚未减, 两条数值完全相同), 保留会在换代链上产生重复行
         self._owner_released = True
         coro = self._owner_lease.release()
         try:
@@ -78,6 +94,8 @@ class ConnectionScope:
             await asyncio.sleep(0.1)
         # 归零与 aclose 之间存在微窗口(最后一个 release 协程在途), 短歇让关闭收尾 — 小欧 2026-09-25
         await asyncio.sleep(0.05)
+        # 小欧-2026-09-25: 补收口完成日志(与超时 warning 配对, 停机复盘"哪几代收干净了")
+        logger.info(f"[ConnectionScope] 收口完成: scope={id(self):#x}, ref=0")
 
     @property
     def ref_count(self) -> int:

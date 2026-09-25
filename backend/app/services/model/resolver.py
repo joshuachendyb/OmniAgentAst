@@ -237,4 +237,12 @@ async def resolve_session_client(scope, session_id):
     finally:
         # [70] 未转移的 lease 归还(跨 provider/构造失败), 防 ref 永久悬挂 — 小欧-2026-09-25
         if not transferred:
-            await lease.release()
+            # 小欧-2026-09-25: 归还失败不得掩盖在途异常(原为裸 await, release 抛错会替换掉真正的失败原因,
+            #   排障时只看到归还错误而看不到真因); 故兜 try/except 记 error 后继续原路径
+            try:
+                await lease.release()
+            except Exception as _rel_e:
+                logger.error(
+                    f"[chat] 未转移 lease 归还失败(session={session_id}, 该代 ref 将悬挂): {_rel_e}",
+                    exc_info=True,
+                )

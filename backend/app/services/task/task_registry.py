@@ -148,7 +148,7 @@ async def drain_inbox(task_id: str) -> List[str]:
     return _msgs
 
 
-def _drain_inbox(q) -> list:
+def _drain_inbox(q: asyncio.Queue) -> list:
     """排空 inbox 队列 — 唯一权威(DRY 归一: drain_inbox / cleanup_task / cleanup_expired_tasks 三处共用) — 小欧 2026-09-25
     竞态说明: 不用 while q.empty() 单一判据收尾——empty() 与 get_nowait() 之间可能已被其他协程取空,
     必须 except asyncio.QueueEmpty 兜底 break; 三份拷贝易漂移成不一致的竞态处理, 故归一"""

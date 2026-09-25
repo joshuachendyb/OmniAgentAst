@@ -143,6 +143,8 @@ def write_yaml_config(config_path: str, data: dict) -> None:
 
 def reload_ai_config() -> None:
     """重新加载 AI 配置并重置缓存"""
+    # 小欧-2026-09-25: 补热重载入口日志(整条"建代→退代→归还→归零关闭"日志链的起点标记)
+    logger.info("[config] 配置热重载触发: 重新加载 config.yaml 并换代")
     config_obj = get_config_instance()
     config_obj._load_config()
     reset()

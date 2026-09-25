@@ -78,9 +78,17 @@ class _SharedClientPool:
     def acquire(self) -> "SharedClientLease":
         with self._lock:
             if self._closing:
+                # 小欧-2026-09-25: 补关闸 warning(借出已归零池 = 有人在关池后仍借, 必须留现场)
+                logger.warning(
+                    f"[LLM] 借出被拒(池已归零关闭): pool={id(self):#x}, client={id(self.client):#x}"
+                )
                 raise RuntimeError("共享 httpx 客户端已关闭，不能继续获取 lease")
             if getattr(self.client, "is_closed", False):
                 # [70] v1.4 审核新增: 底层被池外 aclose 后禁借, 防借出即炸(偿还 [69] 1.2.3⑥/2.2 池约束④) — 小欧-2026-09-25
+                # 小欧-2026-09-25: 同步补 warning 现场(池外误关是 [69] 事故型故障, 禁借必须可追溯)
+                logger.warning(
+                    f"[LLM] 借出被拒(底层被池外关闭): pool={id(self):#x}, client={id(self.client):#x}"
+                )
                 raise RuntimeError("共享 httpx 客户端已被外部关闭，不能继续获取 lease")
             self._ref_count += 1
         return SharedClientLease._from_pool(self)
@@ -147,6 +155,11 @@ class SharedClientLease:
             return
         self._released = True
         if self._pool.release():
+            # 小欧-2026-09-25: 补归零关池日志(池 id 与归属代一并留证, 泄漏/误关复盘的第一现场)
+            logger.info(
+                f"[LLM] 共享池 ref 归零, 关闭 httpx 客户端: pool={id(self._pool):#x}, "
+                f"client={id(self._pool.client):#x}"
+            )
             await self._pool.close()
 
 

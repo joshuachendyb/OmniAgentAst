@@ -47,12 +47,41 @@ _scope: Optional[ConnectionScope] = None   # [70] 当前代唯一所有者; 不�
 _retired_scopes: List[ConnectionScope] = []   # [70] 已退休代(供 shutdown drain); 归零即清防无界增长 — 小欧-2026-09-25
 
 
+def _ref_str(model_ref: Optional[ModelRef]) -> str:
+    """[70] 换代日志用 model_ref 一行式(provider/model, None 安全) — 小欧-2026-09-25"""
+    if model_ref is None:
+        return "<none>"
+    return f"{model_ref.provider}/{model_ref.model}"
+
+
 def _attach_scope(instance: BaseAIService) -> None:
     """[70] 新代 scope 诞生收口: 建池+所有权移交成功后才挂载, 失败 _scope 不落位(防半初始化) — 小欧 2026-09-25"""
     global _scope
     scope = ConnectionScope(instance)
     scope.ensure_pool()
     _scope = scope
+    # 小欧-2026-09-25: 建代日志(换代链权威起点·新代诞生的唯一一条); 日志审查后此处并入 client 标识,
+    #   原 ConnectionScope.ensure_pool 的"新代建池"行因与本行重复已删
+    logger.info(
+        f"[AIServiceFactory] 建代: scope={id(scope):#x}, client={id(scope._owner_lease.client):#x}, "
+        f"model={_ref_str(instance.llm_model)}"
+    )
+
+
+def _prune_retired() -> None:
+    """剪掉已归零的退休代(池已关, 无需再 drain); 保留 ref>0 的在役退休代 — [70] 3.5 剪枝唯一权威(DRY)。
+    小欧-2026-09-25 修复: 剪枝原先只在 _retire_scope(换代事件)里跑, 导致"最后一次换代之后才归零"的代会
+    永久滞留 _retired_scopes(池已关但 scope/service/llm_sdk 对象不释放), 与本行自述目的相悖。
+    归零事件发生在 lease 归还侧(本模块无从得知), 故在**消费方读取时**也过一遍, 保证列表恒为"仍需 drain 的代"。"""
+    global _retired_scopes
+    before = len(_retired_scopes)
+    _retired_scopes = [s for s in _retired_scopes if s.ref_count > 0]
+    # 小欧-2026-09-25 日志审查: 剩余代清单原以 hex id 列表打印, 判定过度具体(运维无意义且长度不定)并删,
+    #   只保留数量; 需要定位具体代时看 退代/收口完成 两行的 scope id
+    if len(_retired_scopes) != before:
+        logger.info(
+            f"[AIServiceFactory] 退役表剪枝: {before} -> {len(_retired_scopes)} (已归零代清出)"
+        )
 
 
 def _retire_scope() -> None:
@@ -63,8 +92,13 @@ def _retire_scope() -> None:
         return
     _scope.release_owner()
     _retired_scopes.append(_scope)
+    # 小欧-2026-09-25: 补退代日志(退休时代次 + 退休瞬间活动任务数, 换代复盘的核心现场)
+    logger.info(
+        f"[AIServiceFactory] 退代: scope={id(_scope):#x}, model={_ref_str(_scope.ai_service.llm_model)}, "
+        f"退休时 ref={_scope.ref_count}, 退役表={len(_retired_scopes)}"
+    )
     # 已归零的退休代即时清出(仍>0 的在役退休代保留), 防长驻进程列表无界增长 — 小欧 2026-09-25
-    _retired_scopes = [s for s in _retired_scopes if s.ref_count > 0]
+    _prune_retired()   # 小欧-2026-09-25: 剪枝规则收敛到 _prune_retired 单一权威(DRY)
     _scope = None
 
 
@@ -73,12 +107,19 @@ def get_scope() -> ConnectionScope:   # [70] v1.11 补返回类型标注(AGENTS.
     if _scope is None:
         get_service()
     if _scope is None:
+        # 小欧-2026-09-25: 补失败日志(get_service 返回后仍无 scope = 建代链断裂, 此前裸抛无现场)
+        logger.error(
+            f"[AIServiceFactory] get_scope 失败: get_service 返回后 _scope 仍为 None"
+            f"(instance={'有' if _instance is not None else '无'}, 退役表={len(_retired_scopes)})"
+        )
         raise RuntimeError("ConnectionScope 未初始化(get_service 未创建 scope)")
     return _scope
 
 
 def get_retired_scopes() -> List[ConnectionScope]:   # [70] v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
-    """[70] 已退休代快照(list 拷贝, 供 lifecycle.shutdown 逐个 drain) — 小欧 2026-09-25"""
+    """[70] 仍需 drain 的退休代(list 拷贝, 供 lifecycle.shutdown 逐个 drain)。
+    小欧-2026-09-25 修复 BUG-B: 读取时先过一遍剪枝, 免得把早已归零(池已关)的代也交给 shutdown 空 drain"""
+    _prune_retired()
     return list(_retired_scopes)
 
 
@@ -109,6 +150,9 @@ def cleanup_old_instance(new_model_ref: Optional[ModelRef] = None) -> None:
     2026-08-22 归一: 参数改 new_model_ref: Optional[ModelRef] — 小欧"""
     global _instance, _current_model_ref
     old_instance = _instance
+    # 小欧-2026-09-25 日志审查: 此处原有一条"建新代(cleanup_old_instance): model=X", 判定与
+    #   _attach_scope 的"建代"重复(同一事件、同一 model, 且"建代"还多带 scope/client 标识), 已删。
+    #   "退的是哪个模型"由 reset_instance 的换代触发行唯一承担(唯一能在 _current_model_ref 被清空前取到它的地方)
     _instance = None   # [70] 先清实例再退休: 锁外漏读窗口只可能拿到旧 scope(安全), 永不见半初始化 — 小欧-2026-09-25
     _retire_scope()    # [70] 换代: 归还旧代 owner(活动任务撑池), 绝不关旧池 — 小欧-2026-09-25
     _current_model_ref = new_model_ref
@@ -203,11 +247,21 @@ def get_service() -> BaseAIService:
                 _attach_scope(_new_instance)
             except Exception:
                 # BUG-06修复(小欧 2026-09-20): 建池/挂载失败时回滚, 防半初始化实例被缓存 — [70] 维持该语义
+                # 小欧-2026-09-25: 补 rollback 日志(建代失败=换代链断点; 无此日志则只见"每请求都失败"而无因)
+                logger.warning(
+                    f"[AIServiceFactory] 建代回滚(挂载失败, 已清 _current_model_ref 防半初始化缓存): "
+                    f"model={_ref_str(config_model)}", exc_info=True
+                )
                 _current_model_ref = None
                 raise
             _instance = _new_instance
     except:
         # get_service 异常时消费并丢弃 _model_warning，防止残留到下一请求— 小欧 2026-07-22
+        # 小欧-2026-09-25: 补失败日志(此前裸 except 只丢 warning 不留因, 校验/换代/建池失败全部静默上抛)
+        logger.error(
+            f"[AIServiceFactory] get_service 失败(向上抛, 调用方将失败): model={_ref_str(config_model)}",
+            exc_info=True,
+        )
         resolver.pop_model_warning()
         raise
 
@@ -223,9 +277,17 @@ def reset_instance():
     global _instance, _current_model_ref
     with _instance_lock:
         old = _instance
+        old_ref = _current_model_ref   # 小欧-2026-09-25: 先留旧代身份再清空, 供下方日志如实报"退的是哪个模型"
         _instance = None
         _current_model_ref = None
         _retire_scope()   # [70] 换代新语义: 归还 owner 引用(任务撑池, 归零自动关), 绝不关旧池 — 小欧-2026-09-25
+        # 小欧-2026-09-25: 换代入口日志(此处是**唯一**能拿到真实旧模型的位置: _retire_scope 只拿到 scope,
+        #   旧模型身份在 _current_model_ref 被清空前就丢了; 与下方 退代(含退休时 ref=活动任务数)/建新代
+        #   三行串成完整且如实的换代链。活动任务数不在此报, 由 退代 那行权威给出, 免得两处口径打架)
+        logger.info(
+            f"[AIServiceFactory] 换代触发(reset_instance): 退休旧代 model={_ref_str(old_ref)}"
+            f"({'有在役旧代' if old is not None else '无在役旧代'})"
+        )
     return old
 
 

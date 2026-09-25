@@ -390,6 +390,15 @@ async def chat_stream_orchestrator(
         # 8.7 会话模型覆盖决议外迁 resolver.resolve_session_client(纯搬迁, 逻辑零改动) — 小健 2026-09-05
         #   [70] 小欧 2026-09-25: 改传 scope(lease 只从 scope.acquire_lease() 出); 恒返回任务私有快照
         #   (无 None 死分支)——同 provider 快照接管本代 lease(agent 结束 close 归还), 跨 provider 独占新池
+        # [70] 换代窗口守卫(小欧 2026-09-25 修 BUG-A): L297 取到的 scope 与本次 resolve 之间隔着 8 个 await
+        #   (落库/兜底/活跃任务/注册/取消检查), 期间用户点保存即换代 → 该 scope 已退休, 直接 acquire_lease
+        #   会抛 RuntimeError 并被上层 except Exception 当成"路由异常"回给用户, 等于"换一次配置打死一个
+        #   正在起步的请求", 违反 [70] 2.6「新请求即新代」与 4.3「任务不中断」。故 resolve 前就地复核:
+        #   已退休就改取当前代(仍是原子取本代唯一所有者, 不引双代)。
+        #   复核与 acquire_lease 之间无 await(事件循环单线程, 无处让出), 故不产生新的竞态窗口。
+        if scope.is_released:
+            logger.info(f"[chat] 换代窗口: scope 已退休, 改取当前代(task={task_id})")
+            scope = get_scope()
         _session_client = await resolve_session_client(scope, session_id)
         agent.llm_client = _session_client
         # S2 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry 显示真实生效模型
