@@ -159,6 +159,14 @@
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：心跳读取键路径同步(北京老陈裁定组名更准确)，
 #   读逻辑/默认值 _D_HEARTBEAT/心跳周期语义零改动 — 小欧-2026-09-24
 # 2026-09-25 小欧 - [70] ConnectionScope统一流接线: ①get_service→get_scope(本代唯一所有者原子取 ai_service); ②register_task 删 ai_service 实参(两处); ③resolve_session_client 改传 scope, 恒返回快照(删 None 死分支)
+# 2026-09-25 小欧 - [70] v1.12 修 BUG-A(真实缺陷, 高): get_scope()(编排②)与 resolve_session_client(编排⑧)之间隔着
+#   8 个 await(落库取链/兜底取 user_message_id/查活跃任务/注入消息/注册任务/取消检查), 每个都是事件循环让出点;
+#   其间用户保存配置即换代 → 该 scope 被标记退休 → 随后 acquire_lease 抛 RuntimeError → 被本函数编排层
+#   except Exception 消化成 router_error「路由异常: ConnectionScope 已退休(换代/停机), 禁止新任务混入旧代」回给用户,
+#   即"换一次配置打死一个正在起步的新请求", 且泄露内部异常文案; 违反 [70] 2.6「新请求即新代」与 4.3「任务不中断」。
+#   修法: resolve 前就地复核 scope.is_released, 已退休则改取 get_scope()(仍是原子取本代唯一所有者, 不引双代)并记 INFO。
+#   为何不引入竞态: 复核与 acquire_lease 之间无任何 await, 事件循环单线程无处让出, 故不存在新的换代窗口。
+#   反证: 临时撤掉守卫后 case S13 复现出上述 router_error, 装回即绿 — 小欧 2026-09-25
 """
 stream_orchestrator — 聊天流编排器(services 层)
 

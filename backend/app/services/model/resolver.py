@@ -25,7 +25,10 @@
 # 2026-09-21 - 小欧 - 修复 None 陷阱: _extract_provider_model 的 .get('provider','')/get('model','') 改为 .get() or ''；
 #   _validate_model_in_list 的 .get('models',[]) 改为 .get() or []（key 存在但值为 None 时原写法返回 None）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: _extract_provider_model 改读结构化 ai.model_ref（删扁平 ai.provider/ai.model
-#   双源，与 model_service.get_current_ref / config_helpers._update_model_ref 统一为单一真相源）
+#   双源，与 model_service.get_current_ref / config_helpers._update_model_ref   统一为单一真相源）
+# 2026-09-25 - 小欧 - [70] v1.12 修掩盖根因: finally 里未转移 lease 的归还原为裸 await, 一旦归还抛错
+#   会替换掉正在传播的真实失败原因(排障只看到归还错误, 看不到真因); 改为兜 try/except 记 error 后继续原路径。
+#   不吞异常、不改归还语义, 只保证"真因"不被"善后失败"顶掉 — 小欧 2026-09-25
 # 2026-09-25 - 小欧 - [70] ConnectionScope连接池统一所有者: ①resolve_session_client 签名 ai_service→scope(lease 只从 scope.acquire_lease() 出, 反射摸 _shared_client 消亡); ②进门 acquire + transferred 标记 + finally 未转移归还; ③空会话走无覆盖分支派生默认快照(恒非 None); ④_default_snapshot 改传 lease 接管池引用
 """
 AI配置解析器 — 直接读配置,无效就报错

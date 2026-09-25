@@ -7,6 +7,17 @@ connection_scope — 共享连接池唯一所有者(一代配置 = 一个 scope)
 停机由它等(drain); 不做业务查询(决议留 resolver), 不做归还中介(快照 close 直线 release)。
 生命周期模型见 [70] 2.3: 无状态机, 纯引用计数——owner 归还后零穿越只可能在退休后,
 close_on_zero 天然实现"活动任务撑池不关、任务全结束后最后一个 release 归零 aclose"。
+
+编辑历史:
+2026-09-25 - 小欧 - [70] 新建: 共享连接池唯一所有者 ConnectionScope(一代配置 = 一个 scope)。
+  职责(SRP)四段: ensure_pool 建池+所有权移交 / acquire_lease 计数与借出 / release_owner 换代归还 owner /
+  drain 停机等待; 不做业务查询(留 resolver), 不做归还中介(快照 close 直线 release)。
+2026-09-25 - 小欧 - [70] v1.12 补可观测性 + 二次日志审查: ①按 4.3「观测 ref_count 日志」补齐本类观测点——
+  acquire_lease 两处关闸(池未建 ERROR / 代已退休 WARNING, 带 scope 与 ref)、drain 收口完成 INFO(与超时 warning 配对);
+  ②日志审查删 2 条冗余: ensure_pool 的"新代建池"(与 _attach_scope 的"建代"重复, 唯一调用点即它, client 标识已并入"建代")、
+  release_owner 的"归还 owner"(与 _retire_scope 的"退代"记同一个数——本方法走 create_task 异步归还,
+  调用返回时计数尚未减, 两值完全相同); ③借出 lease 由 INFO 降 DEBUG(每请求一条属高频, 且不含 task_id
+  定位不到持有者, 泄漏定位改由"退代 ref=N"+"收口完成"配对承担) — 小欧 2026-09-25
 """
 
 import asyncio

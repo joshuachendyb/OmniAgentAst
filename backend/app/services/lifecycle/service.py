@@ -21,6 +21,18 @@
 #    timeout 默认 30 跳过 tuning 配置层、max_retries 完全不消费；见 [62] 第4章 P1/P2/P3）
 # 2026-09-23 - 小欧 - [64] LLM补充采样参数: ①create_service_instance 三参 None 透传(top_p/frequency_penalty/presence_penalty, 仿 max_tokens 写法); ②temperature 去 float(...,0.7) 恒非 None 改可 None(死键复活); ③parse_model_params pop 缺省改读 llm.context_limit_default 全局兜底
 # 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: ①新增 _scope/_retired_scopes 全局与 _attach_scope/_retire_scope/get_scope/get_retired_scopes(不变式: _instance 非None⟹_scope 非None); ②get_service/get_service_for_model 建池改经 _attach_scope(删 _ensure_client+裸暴露 _shared_client 反射点); ③reset_instance/cleanup_old_instance/set_instance 换代改走 _retire_scope(release_owner 归还, 绝不关旧池)
+# 2026-09-25 小欧 - [70] v1.12 实施收尾(修 BUG-B + 补可观测性 + 日志准确性):
+#   ①修 BUG-B(真实缺陷): 退役代剪枝原先只挂在 _retire_scope(换代事件)上, 导致"最后一次换代之后才归零"的代
+#     永久滞留 _retired_scopes(池已关但 scope/service/llm_sdk 对象不释放), 与本文件自述"即时清出…防无界增长"矛盾;
+#     修法: 剪枝规则收敛为 _prune_retired() 单一权威(DRY), _retire_scope 与 get_retired_scopes() 读取路径各过一遍
+#     (归零动作发生在 lease 归还侧, 本模块当时无从得知, 但读取时一定知道);
+#   ②补可观测性: _attach_scope 建代(含 client 标识)/_retire_scope 退代(含退休时 ref=活动任务数与退役表规模)/
+#     reset_instance 换代触发(退休旧代模型)/_prune_retired 剪枝(仅数量)四段串成完整换代链;
+#     建代回滚 WARNING、get_service 失败与 get_scope 失败 ERROR(此前裸抛无现场, 换代链断裂无从复盘);
+#   ③修日志准确性: 原"换代触发(cleanup_old_instance): 旧 -> 新"的旧侧在热重载路径下恒为 <none>
+#     (_current_model_ref 早被 reset_instance 清空, 字段无效且误导), 真实旧代身份改由 reset_instance 承担
+#     (唯一能在清空前取到它的位置); cleanup_old_instance 的"建新代"行与 _attach_scope"建代"重复, 已删;
+#   ④新增 _ref_str() 供三处换代日志统一格式化 model_ref(None 安全), 避免各写各的 — 小欧 2026-09-25
 """
 service — 服务创建与获取
 

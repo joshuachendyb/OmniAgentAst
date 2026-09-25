@@ -50,6 +50,9 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-22 - 小欧 - 31候选修复 #10: _update_project_root 取代 _set_app_field lambda —— 原写 app.project_root
 #   死键（全读取方统一走 workspace.project_root，保存"成功"永不生效）；改写 workspace.project_root + 类型门禁
 # 2026-09-25 - 小欧 - [70] 审核新增: 删 _update_model_ref 写盘前错位 reset()——换代正确位置在写盘+校验成功后的 reload_ai_config(撤回 6 文件时随基线带回的错位触发点); 保留它会致"保存模型换两次代"(写盘前换代→窗口内新请求拿旧配置建代→随即被退休) — 小欧 2026-09-25
+# 2026-09-25 - 小欧 - [70] v1.12 补换代链入口日志: reload_ai_config() 记 INFO「配置热重载触发」——
+#   它是整条换代链(重载→退代→建代→归还→归零关闭)的起点, 此前完全静默, 线上无法判断"换代到底发生没发生"。
+#   与 service 侧四段日志配对后, 一次换代的完整因果链可从日志直接读出 — 小欧 2026-09-25
 
 import os
 import shutil

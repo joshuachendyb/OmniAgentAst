@@ -15,7 +15,11 @@
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：任务保留时长读取键路径同步，
 #   清理逻辑/默认值 1 小时零改动 — 小欧-2026-09-24
-# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: register_task 删 ai_service 参数与 "ai_service" 字段(全仓零消费点核证, YAGNI); registry 只存任务身份/状态/inbox, 不 import 不持资源句柄(欠账②)
+# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: register_task 删 ai_service 参数与 "ai_service" 字段(全仓零消费点核证, YAGNI 消亡), 任务只登记标识与状态
+# 2026-09-25 小欧 - [70] v1.11 类型标注补齐(AGENTS 要求 type hints): _drain_inbox(q) 补 q: asyncio.Queue
+# 2026-09-25 小欧 - [70] v1.12 DRY 归一: 抽出 _drain_inbox(q) 供 drain_inbox / cleanup_task /
+#   cleanup_expired_tasks 三处共用(原三份逐字拷贝, 竞态兜底写法易漂移成不一致); 排空统一用
+#   except asyncio.QueueEmpty 兜底 break, 不用 while q.empty() 单一判据(empty() 与 get_nowait() 之间可能已被取空) — 小欧 2026-09-25); registry 只存任务身份/状态/inbox, 不 import 不持资源句柄(欠账②)
 """
 task_registry — running_tasks 数据层唯一入口
 

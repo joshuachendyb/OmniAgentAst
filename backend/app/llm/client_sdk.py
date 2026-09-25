@@ -32,6 +32,11 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-09-24 小欧 - [66]v3.7.1 模块化搬迁: ①八个 /responses 归一成员(_norm_responses_delta/_fold_emit_delta/_chat_frame/_DeltaFoldState/_responses_completed_eval 等)整体迁出至 responses_stream.py(零行为变更, 与 chat 直通通道物理隔离); ②request/request_stream 重复块函数化收敛: _acquire_soft_pool(软配额排队)/_adapt_request(gate+端点+动态头+协议判定单点)/_raise_http_error(4xx/5xx 日志分级+错误提取+error map); ③协议位 _is_responses 收敛 _adapt_request 唯一判定(消除 2 处 endswith 重复嗅探)
 编辑历史: 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.1): ①新增 inspect/threading 导入(池 close 判定可等待对象 + 池级线程锁); ②新增 _SharedClientPool/SharedClientLease 两类(引用计数 lease 核心: 归零关闭 close_on_zero/释放幂等/池级锁, 落户自[70]素材原样); ③acquire 增 client.is_closed 检查(底层被池外 aclose 后禁借, 偿还[69] 1.2.3⑥) + close 失败 warning 带池标识(多代并存可定位); ④LLMClient 新增 relinquish_ownership() 与 client property, close() 改三态收口(移交后 no-op/独占池 aclose/已关闭不抛), _owns_client 判据全部收敛回本类
 编辑历史: 2026-09-25 小欧 - [70] v1.11 代码审查修正(YAGNI): _SharedClientPool.closing property 全仓零消费点(含测试)按 YAGNI 删除; _closing 实例标志保留(acquire/release 内部判据仍在用) — 小欧 2026-09-25
+编辑历史: 2026-09-25 小欧 - [70] v1.12 补可观测性: ①SharedClientLease.release 走到 ref 归零且 close_on_zero 时记 INFO
+  "共享池 ref 归零, 关闭 httpx 客户端"(带 pool/client 标识)——此前"归零→关池"这一关键事件完全静默, 池被谁关掉无从追溯,
+  而它正是 4.3「观测 ref_count 日志」要回答的问题; ②acquire() 两处关闸(_closing 已归零 / 底层被池外 aclose)补 WARNING
+  现场(带 pool/client 标识)——二者都是"有人在本该关死后仍来借出"的异常形态, 必须留痕;
+  沿用 v1.4 已确立的池标识口径, 不新增日志风格 — 小欧 2026-09-25
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
