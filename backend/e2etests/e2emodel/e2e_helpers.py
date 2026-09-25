@@ -1,5 +1,17 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-09-25 - 小欧 - 记录口径: 支持运行中换模型(只改 helper, 不改任何 case 代码):
+#   【病根】记录里 model 行原是 `ORDER BY rowid DESC LIMIT 1` 只取该 session 最后一条任务, 两处失真:
+#     ①[70] 支持运行中切换模型后, 只记最后一个模型, 前面任务实际用的模型被静默丢弃;
+#     ②同 session 被复用(多轮 / case 重跑)时, 会把上一次运行的模型记成本次结果。
+#   【改法】①record_test_baseline 增记模块级 _RUN_START_TS(ISO+微秒, 与 created_at 同格式);
+#     ②write_test_record 按 created_at >= _RUN_START_TS 框定"本次运行", 全取后按时间序连续去重成时间线;
+#     ③模型三级回退(每任务): sessionModel → token_usage.task_model → 行内 provider/model/display_name;
+#     ④跨模型/多任务时追加 1.1 任务×模型明细表; 单任务格式与旧版逐字一致, 不撑大既有 76 个 case 记录;
+#     ⑤未调 baseline 的 case 退回原"最后一条"口径, 行为不变, 绝不劣化。
+#   【实测依据】created_at=ISO+微秒(空格/无微秒的 strftime 会致 'T'>' ' 把当天全卷进时间窗, 故对齐格式);
+#     provider/model/display_name 列 88% 为空, 故回退链必须保留 token_usage.task_model(实测有值);
+#     record_test_baseline 仅 32 个 case(P2~P5)调用, 故对未调用者必须回老口径而非全量(避免恶化失真②)。
 # 2026-08-12 - 小欧 - COM_03记录误判修复: write_test_record按error_type区分可恢复/不可恢复错误
 #   【病根】LLM幻觉调用未注册工具write被SafetyChecker blocked拦截, action_handler发ErrorStep(error_type=blocked)
 #          进SSE流致has_error=True; 但blocked/user_rejected属可恢复错误(拒绝≠失败, 与react_cycle._RECOVERABLE_ERRORS
@@ -310,7 +322,21 @@ def record_test_baseline() -> Dict[str, Any]:
         baseline["log_file_size"] = log_file.stat().st_size
         baseline["log_file"] = str(log_file)
 
+    # 2026-09-25 小欧 - 记录本次运行起始时刻, 供 write_test_record 框定"本次运行"任务范围:
+    #   必须与 chat_tasks.created_at 同格式(ISO8601+微秒, 如 2026-09-25T21:33:55.326798)。
+    #   格式一旦不一致, SQL 字符串比较会错位(如 'T' > ' ' 把当天全部记录卷进时间窗) → 时间线失真。
+    #   实测 2026-06-18 旧版 env 检查在此值缺失时只做一次性 env 快照, 此处仅新增记时, 不改任何返回结构。
+    global _RUN_START_TS
+    _RUN_START_TS = datetime.now().isoformat(timespec="microseconds")
+
     return baseline
+
+
+# 本次运行起始时刻(ISO8601 微秒, 与 chat_tasks.created_at 同格式) — 小欧 2026-09-25
+#   由 record_test_baseline() 写入(手册步骤1), 供 write_test_record 框定"本次运行"的任务范围。
+#   仅 32 个 case(P2~P5)调用 baseline, 未调用的 case 此值保持 None → write_test_record 走原"最后一条"口径,
+#   行为与旧版逐字一致, 绝不劣化; 调用过的 case 才能获得"运行时切换模型"的时间线。
+_RUN_START_TS: Optional[str] = None
 
 
 # ─── 步骤1+3.4: 响应质量验证 (verify_response_quality) ─────────
@@ -1885,28 +1911,78 @@ def write_test_record(
     lines.append("---")
     lines.append("")
 
-    # model 结构信息(小欧 2026-08-23): 归一后模型身份=ModelRef JSON, 取自 chat_tasks.sessionModel(回退 token_usage.task_model)
+    # -- 2026-09-25 小欧 重写: 模型身份改为"本次运行时间窗内的全部任务"口径(修两个记录失真):
+    #   病根(旧实现 ORDER BY rowid DESC LIMIT 1 只取该 session 最后一条任务):
+    #     ①[70] 支持运行中切换模型后, 只记最后一个模型, 前面任务实际用的模型被静默丢弃;
+    #     ②同 session 被复用(多轮对话 / case 重跑)时, 会把上一次运行的模型记成本次结果。
+    #   实现要点(全部实测核实, 不靠假设):
+    #     · 时间窗: record_test_baseline() 写入 _RUN_START_TS(与 created_at 同 ISO+微秒), created_at >= 窗线。
+    #       仅 32 个 case 调用 baseline, 其余(case 未调)保持 None → 直接退"最后一条", 行为与旧版完全一致。
+    #     · 模型回退链(每行任务): sessionModel(快照身份, 实测空率为0) → token_usage.task_model(同任务, 实测有值)
+    #       → 行内 provider/model/display_name(实测 88% 为空, 仅作最后兜底)。原版"token_usage 回退"予以保留。
+    #     · 输出: 单一模型时格式与旧版逐字一致(不改动既有 76 个 case 的记录版式); 跨模型才追加切换标记+明细表。
     _model_info = "-"
+    _task_model_rows: List[tuple] = []
     try:
         if _sid:
             _mc = sqlite3.connect(str(DB_PATH))
             _mc.row_factory = sqlite3.Row
-            _mr = _mc.execute(
-                "SELECT sessionModel FROM chat_tasks WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
-                (_sid,)).fetchone()
-            _mj = None
-            if _mr and _mr["sessionModel"]:
-                _mj = json.loads(_mr["sessionModel"])
-            else:
-                _mt = _mc.execute(
-                    "SELECT task_model FROM token_usage WHERE session_id=? ORDER BY rowid DESC LIMIT 1",
-                    (_sid,)).fetchone()
-                if _mt and _mt["task_model"]:
-                    _mj = json.loads(_mt["task_model"])
+            _rows = _mc.execute(
+                "SELECT task_id, created_at, sessionModel, provider, model, display_name"
+                " FROM chat_tasks WHERE session_id=?"
+                + (" AND created_at >= ?" if _RUN_START_TS else "")
+                + " ORDER BY rowid ASC, created_at ASC",
+                ((_sid, _RUN_START_TS) if _RUN_START_TS else (_sid,)),
+            ).fetchall()
+            if not _rows:
+                # 范围内无任务(未调 baseline)→ 与原版等价: 会话内最后一条
+                _rows = _mc.execute(
+                    "SELECT task_id, created_at, sessionModel, provider, model, display_name"
+                    " FROM chat_tasks WHERE session_id=? ORDER BY rowid DESC LIMIT 1", (_sid,)).fetchall()
+            _model_of_task: Dict[str, Optional[Dict[str, str]]] = {}
+            _timeline = []
+            for _r_ in _rows:
+                _mj = None
+                if _r_["sessionModel"]:
+                    try:
+                        _mj = json.loads(_r_["sessionModel"])
+                    except (TypeError, ValueError):
+                        _mj = None
+                if not _mj:
+                    try:
+                        _mr2 = _mc.execute(
+                            "SELECT task_model FROM token_usage WHERE task_id=? ORDER BY rowid DESC LIMIT 1",
+                            (_r_["task_id"],)).fetchone()
+                        if _mr2 and _mr2["task_model"]:
+                            _mj = json.loads(_mr2["task_model"])
+                    except (TypeError, ValueError):
+                        _mj = None
+                if not _mj and _r_["model"]:
+                    _mj = {"provider": _r_["provider"], "model": _r_["model"],
+                           "display_name": _r_["display_name"]}
+                if not _mj or not _mj.get("model"):
+                    continue
+                _one = (str(_mj.get("provider") or "-"), str(_mj.get("model")),
+                        str(_mj.get("display_name") or "-"))
+                _model_of_task[str(_r_["task_id"])] = _one
+                if not _timeline or _timeline[-1] != _one:      # 连续去重: 只留切换点, 不逐任务重复
+                    _timeline.append(_one)
             _mc.close()
-            if _mj:
-                _model_info = (f"provider={_mj.get('provider')}, model={_mj.get('model')}, "
-                               f"display_name={_mj.get('display_name')}")
+            if _timeline:
+                _head = _timeline[0]
+                _model_info = (f"provider={_head[0]}, model={_head[1]}, display_name={_head[2]}")
+                if len(_timeline) > 1 or (_rows and len(_rows) > 1):
+                    # 多次任务/跨模型时, 把"本次运行内每任务真实模型"留作明细, 由下方表格给出
+                    _task_model_rows = [
+                        (str(r["task_id"] or "-"), str(r["created_at"] or "-"),
+                         _model_of_task.get(str(r["task_id"]), ("-", "-", "-"))[0],
+                         _model_of_task.get(str(r["task_id"]), ("-", "-", "-"))[1])
+                        for r in _rows
+                    ]
+                if len(_timeline) > 1:
+                    _switched = " → ".join(f"{p}/{m}" for p, m, _ in _timeline)
+                    _model_info += (f" [运行中切换过模型: 共{len(_timeline)}个版本, {_switched}"
+                                    f"; 下表按任务逐条列出]")
     except Exception:
         _model_info = "-"
 
@@ -1945,6 +2021,16 @@ def write_test_record(
         _usage_cell = "-"
     lines.append(f"| Token使用(prompt/completion/total) | {_usage_cell} |")
     lines.append(f"| model 结构信息 | {_model_info} |")
+    if _task_model_rows:
+        # 2026-09-25 小欧: 本次运行内"每任务×真实模型"明细(仅在同 session 含多条任务时输出, 单任务不撑大版式);
+        #   配合上方 model 行, 解决 [70] 运行时切换模型后"记录里只剩最后一个模型"的失真。
+        lines.append("")
+        lines.append("### 1.1 本次运行的任务 × 模型明细")
+        lines.append("")
+        lines.append("| # | task_id | 创建时间 | provider | model |")
+        lines.append("|----|---------|----------|----------|-------|")
+        for _i, (_tid, _ts, _p, _m) in enumerate(_task_model_rows, 1):
+            lines.append(f"| {_i} | `{_tid}` | {_ts} | {_p} | {_m} |")
     lines.append(f"| 跨任务注入上下文 | {_inj_info} |")
     lines.append(f"| 逻辑步数 | {len(logical_events)} |")
     lines.append(f"| 不重复步骤号数 | {unique_step_nums} |")
