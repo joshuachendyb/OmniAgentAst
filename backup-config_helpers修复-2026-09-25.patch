@@ -1,0 +1,12 @@
+diff --git a/backend/app/services/model/config_helpers.py b/backend/app/services/model/config_helpers.py
+index a286de055..0fb0ea020 100644
+--- a/backend/app/services/model/config_helpers.py
++++ b/backend/app/services/model/config_helpers.py
+@@ -384,7 +384,6 @@ def _update_model_ref(config_data: dict, update) -> None:
+     }
+     if update.ai_model_ref.api_base:
+         config_data['ai'][update.ai_model_ref.provider]['api_base'] = update.ai_model_ref.api_base
+-    reset()
+     logger.info(f"更新AI模型: provider={update.ai_model_ref.provider}, model={update.ai_model_ref.model}")
+ 
+ def _update_api_keys(config_data: dict, update) -> None:
