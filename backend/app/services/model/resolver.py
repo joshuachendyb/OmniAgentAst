@@ -26,6 +26,7 @@
 #   _validate_model_in_list 的 .get('models',[]) 改为 .get() or []（key 存在但值为 None 时原写法返回 None）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: _extract_provider_model 改读结构化 ai.model_ref（删扁平 ai.provider/ai.model
 #   双源，与 model_service.get_current_ref / config_helpers._update_model_ref 统一为单一真相源）
+# 2026-09-25 - 小欧 - [70] ConnectionScope连接池统一所有者: ①resolve_session_client 签名 ai_service→scope(lease 只从 scope.acquire_lease() 出, 反射摸 _shared_client 消亡); ②进门 acquire + transferred 标记 + finally 未转移归还; ③空会话走无覆盖分支派生默认快照(恒非 None); ④_default_snapshot 改传 lease 接管池引用
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -90,16 +91,22 @@ class AIConfigResolver:
         self._model_warning = None
         return msg
     
+    def _validate_all(self, ai_config: dict, provider: str, model: str) -> Optional[str]:
+        """4 步校验链唯一权威(DRY 归一: resolve_model_ref / validate_config 复用) — 小欧 2026-09-25
+        只返回 warning(无警告 None): 两处调用方均不消费 provider_config(原实现的中间变量), 故不外传(YAGNI);
+        任一步不合法直接抛 ValueError(与原实现语义一致)"""
+        self._validate_provider_model_not_empty(provider, model)
+        self._validate_provider_exists(ai_config, provider)
+        provider_config = self._get_provider_config(ai_config, provider)
+        return self._validate_model_in_list(provider_config, provider, model)
+
     def resolve_model_ref(self) -> ModelRef:
         """直接读配置的provider和model,无效就报错 — 返回 ModelRef 结构(归一, 禁二元组拆包) — 小欧 2026-08-22
         api_base 当前无调用方需求(F7), 不在此读取; 构造服务实例时由 provider_config 补齐(lifecycle 6.6)"""
         ai_config = self.get_ai_config()
         provider, model = self._extract_provider_model(ai_config)
 
-        self._validate_provider_model_not_empty(provider, model)
-        self._validate_provider_exists(ai_config, provider)
-        provider_config = self._get_provider_config(ai_config, provider)
-        warning = self._validate_model_in_list(provider_config, provider, model)
+        warning = self._validate_all(ai_config, provider, model)
         if warning:
             self._model_warning = warning
 
@@ -120,10 +127,7 @@ class AIConfigResolver:
         provider, model = self._extract_provider_model(ai_config)
         errors = []
         try:
-            self._validate_provider_model_not_empty(provider, model)
-            self._validate_provider_exists(ai_config, provider)
-            provider_config = self._get_provider_config(ai_config, provider)
-            warning = self._validate_model_in_list(provider_config, provider, model)
+            warning = self._validate_all(ai_config, provider, model)
             if warning:
                 errors.append(warning)
         except ValueError as e:
@@ -141,31 +145,31 @@ def get_ai_config_resolver() -> AIConfigResolver:
     return _global_resolver
 
 
-def _default_snapshot(ai_service) -> "BaseAIService":
+def _default_snapshot(ai_service, lease) -> "BaseAIService":   # [70] 增 lease 参数, 快照接管本代池 — 小欧-2026-09-25
     """C3/C4(小欧 2026-09-20): 会话决议失败路径派生全局默认快照兜底(无条件快照)。
-    resolver 失败时绝不允许返回 None 让主流程回退全局单例(破坏C1'无条件快照'), 
-    统一返回 ai_service.snapshot(复用其共享连接池, 快照模型=全局默认)。"""
-    _shared_llm = getattr(ai_service, "_shared_client", None)  # 内部自取, 防 except 分支 L146 未执行 NameError(DRY)
-    _snap = ai_service.snapshot(shared_client=_shared_llm)
+    resolver 失败时绝不允许返回 None 让主流程回退全局单例(破坏C1'无条件快照'),
+    统一返回 ai_service.snapshot(复用其共享连接池, 快照模型=全局默认)。[70] 增 lease, 快照接管本代池。"""
+    # [70] 共享池地址改经 lease.client 公开属性(反射摸 _shared_client 消亡) — 小欧 2026-09-25
+    _snap = ai_service.snapshot(shared_client=lease.client, client_lease=lease)
     logger.warning(f"[chat] 会话决议失败, 派生全局默认快照兜底: model={_snap.llm_model.model}")
     return _snap
 
 
-async def resolve_session_client(ai_service, session_id):
-    """会话模型覆盖决议：返回独立客户端快照，无覆盖返回None。纯搬迁，逻辑零改动。
-    # 2026-09-05 - 小健 - 自 stream_orchestrator 编排⑥(原 285-336)整块外迁, 逐字复制逻辑零改动。
-    #   S2 sessionModel 生效(10.1.7②-4/文档2 6.1.1/6.1.8)：编排层读会话覆盖写 ai_service.llm_model(L2 结构化)
-    #   归一(小欧 2026-08-22 报告v1.25 6.5): 整个 ModelRef 单变量原子切换——缺省键回退原值合并,
-    #   消除原逐属性赋值的半覆盖中间态(KISS-DIRECT 纯增强)
-    """
-    if not session_id:
-        return None
+async def resolve_session_client(scope, session_id):
+    """会话模型覆盖决议：返回任务私有快照(恒非 None), 同 provider 快照接管本代 lease — [70] 小欧 2026-09-25
+    # 2026-09-05 - 小健 - 自 stream_orchestrator 编排⑥(原 285-336)整块外迁 — 小健 2026-09-05
+    # [70] 签名 ai_service→scope: lease 只从 scope.acquire_lease() 出(反射摸 _shared_client 消亡);
+    #   进门 acquire(ref+1) + transferred 标记 + finally 未转移归还——跨 provider 独占池不接 lease。"""
+    ai_service = scope.ai_service
+    lease = scope.acquire_lease()   # 进门借用本代池(ref+1); 已退休/未初始化诚实上抛(不建任务)
+    transferred = False
     try:
-        # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
-        _ov = await db.atxn("chat", lambda conn: get_session_model(conn, session_id))
+        _ov = None
+        if session_id:
+            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+            _ov = await db.atxn("chat", lambda conn: get_session_model(conn, session_id))
         # 2026-09-20 小欧 C1(修正): 无条件快照——无论有无覆盖都构造独立 BaseAIService(状态分离),
-        #   有覆盖按原路径查目标 provider 配置; 无覆盖仅派生全局默认, snapshot 复用全局共享连接池 — 小欧-2026-09-20
-        _shared_llm = getattr(ai_service, "_shared_client", None)
+        #   有覆盖按原路径查目标 provider 配置; 无覆盖仅派生全局默认, snapshot 复用本代共享池 — [70] 小欧-2026-09-25
         # BUG-12修复(小欧 2026-09-20): 添加类型保护, 防非ModelRef类型(如dict)导致AttributeError静默失效
         if _ov and hasattr(_ov, 'model') and hasattr(_ov, 'provider') and (_ov.model or _ov.provider):
             # 病根修复(小沈 2026-08-29): 旧实现直接改共享单例 ai_service.llm_model + reset_sdk,
@@ -195,31 +199,42 @@ async def resolve_session_client(ai_service, session_id):
                     _pv_ctx = None
             if _pv_cfg is None and _ov.provider and _ov.provider != ai_service.llm_model.provider:
                 logger.warning(f"[chat] 会话模型覆盖已跳过(配置查找失败), 使用全局默认模型快照: provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
-                return _default_snapshot(ai_service)  # C-3(小欧 2026-09-20): 配置失败不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+                _snap = _default_snapshot(ai_service, lease)  # C-3(小欧 2026-09-20): 配置失败不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+                transferred = True   # [70] 默认快照接管 lease(close 归还) — 小欧-2026-09-25
+                return _snap
             override_ref = ModelRef(
                 provider=_ov.provider or ai_service.llm_model.provider,
                 model=_ov.model or ai_service.llm_model.model,
                 api_base=(_pv_cfg or {}).get("api_base") or ai_service.llm_model.api_base,
                 display_name=_ov.display_name or ai_service.llm_model.display_name,
             )
+            _same_pv = (not _ov.provider or _ov.provider == ai_service.llm_model.provider)
             session_client = ai_service.snapshot(
                 override_ref,
                 api_key=_pv_key,
                 extra_body_params=_pv_ebp,
                 context_limit=_pv_ctx,
-                shared_client=(_shared_llm
-                               if _shared_llm is not None
-                               and (not _ov.provider or _ov.provider == ai_service.llm_model.provider)
-                               else None),  # 2026-09-20 小欧 C1: 同 provider 复用全局共享池; 跨 provider(api_key 不同)保留独占池 — 小欧-2026-09-20
+                shared_client=(lease.client if _same_pv else None),  # [70] 同 provider 复用本代共享池; 跨 provider 独占新池 — 小欧-2026-09-25
+                client_lease=(lease if _same_pv else None),  # [70] lease 与池成对: 同 provider 接管(close 归还), 跨 provider 不接 — 小欧-2026-09-25
             )
+            if _same_pv:
+                transferred = True   # [70] 跨 provider 不转移 → finally 归还 — 小欧-2026-09-25
             # 2026-09-01 小欧: 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry
             # 显示真实生效模型(而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神
             logger.info(f"[chat] L2 sessionModel 已生效(独立客户端快照): session={session_id}, "
                         f"provider={session_client.llm_model.provider}, model={session_client.llm_model.model}")
             return session_client
-        # ---- 无条件快照新增分支(无覆盖): 派生全局默认快照 + 复用全局共享连接池 ----
+        # ---- 无条件快照分支(无覆盖/空会话): 派生全局默认快照 + 接管本代共享池 lease ----
         logger.info(f"[chat] C1 无覆盖会话快照(session={session_id})")
-        return ai_service.snapshot(shared_client=_shared_llm)   # 构造期注入共享池, _ensure_client 惰性复用(原 set_shared_client 后置注入已废弃)
+        _snap = ai_service.snapshot(shared_client=lease.client, client_lease=lease)   # [70] 构造期注入共享池+成对 lease — 小欧-2026-09-25
+        transferred = True
+        return _snap
     except Exception as _ov_e:
         logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
-    return _default_snapshot(ai_service)  # C-4(小欧 2026-09-20): 读 sessionModel 异常不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+        _snap = _default_snapshot(ai_service, lease)  # C-4(小欧 2026-09-20): 异常不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+        transferred = True
+        return _snap
+    finally:
+        # [70] 未转移的 lease 归还(跨 provider/构造失败), 防 ref 永久悬挂 — 小欧-2026-09-25
+        if not transferred:
+            await lease.release()

@@ -30,11 +30,15 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-09-24 小欧 - [66]v3.6 流式主路径漏改修复+整段快照保底: ①request_stream 循环逐帧把 muse /responses 事件归一为 chat 形 choices[0].delta 行（增量优先、整段快照仅"全程无对应增量"时作保底唯一来源, 双布尔去重）, 供 BaseAIService 既有 chat 解析链一字不改读通——agent 全链(react_step→BaseAIService.request_stream)对 muse 不再空响应; ②collect 删 is_responses 分支回归纯 chat 消费(单通道单归一心智); ③_norm_responses_delta 新增 content_full 文本整段快照保底识别(output_text.done/content_part.done/output_item.done message/completed); ④删 _responses_stream_frame 薄壳(KISS-DIRECT, 决策内联循环)
 编辑历史: 2026-09-23 小欧 - [66]v3.7 适配层接入: ①import get_provider_adapter + __init__ 注入 self._adapter/self._static_headers(shared_client 分支复用全局池头); ②headers= 改用 static_headers(默认仅 Authorization, 行为==现状); ③request/request_stream 发送点接 per_request_headers + force_stream 流式收集分支 + _request_via_stream_collect(非流式入口经 request_stream 收集返回, 覆盖 zen 门禁 stream:true); ④>=400 分支消费 adapter.error_message_map(zen 403/426 友好文案); ⑤gate body/端点路由/协议位经 _adapt_request 单点(muse- 前缀→/responses)
 编辑历史: 2026-09-24 小欧 - [66]v3.7.1 模块化搬迁: ①八个 /responses 归一成员(_norm_responses_delta/_fold_emit_delta/_chat_frame/_DeltaFoldState/_responses_completed_eval 等)整体迁出至 responses_stream.py(零行为变更, 与 chat 直通通道物理隔离); ②request/request_stream 重复块函数化收敛: _acquire_soft_pool(软配额排队)/_adapt_request(gate+端点+动态头+协议判定单点)/_raise_http_error(4xx/5xx 日志分级+错误提取+error map); ③协议位 _is_responses 收敛 _adapt_request 唯一判定(消除 2 处 endswith 重复嗅探)
+编辑历史: 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.1): ①新增 inspect/threading 导入(池 close 判定可等待对象 + 池级线程锁); ②新增 _SharedClientPool/SharedClientLease 两类(引用计数 lease 核心: 归零关闭 close_on_zero/释放幂等/池级锁, 落户自[70]素材原样); ③acquire 增 client.is_closed 检查(底层被池外 aclose 后禁借, 偿还[69] 1.2.3⑥) + close 失败 warning 带池标识(多代并存可定位); ④LLMClient 新增 relinquish_ownership() 与 client property, close() 改三态收口(移交后 no-op/独占池 aclose/已关闭不抛), _owns_client 判据全部收敛回本类
+编辑历史: 2026-09-25 小欧 - [70] v1.11 代码审查修正(YAGNI): _SharedClientPool.closing property 全仓零消费点(含测试)按 YAGNI 删除; _closing 实例标志保留(acquire/release 内部判据仍在用) — 小欧 2026-09-25
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
 import httpx
+import inspect  # [70] SharedClientPool.close 判定可等待对象 — 小欧-2026-09-25
 import json
+import threading  # [70] SharedClientPool 池级线程锁(多线程 acquire/release) — 小欧-2026-09-25
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from app.constants import (
@@ -57,6 +61,93 @@ from app.llm.responses_stream import (   # v3.7.1 模块化: /responses 协议�
 
 # 可重试 HTTP 状态: 429限流 / 5xx服务端瞬时错误, 由 base_service L1 重试处理 — 小欧 2026-07-17
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
+# ============================================================
+# [70] 共享连接池 lease 核心(引用计数) — 落户自 doc-9月优化/[70]素材-lease核心 原样吸收
+# 归零关闭(close_on_zero)/释放幂等(lease._released)/池级线程锁 — 小欧 2026-09-25
+# ============================================================
+
+class _SharedClientPool:
+    def __init__(self, client: Any, close_on_zero: bool = True) -> None:
+        self.client = client
+        self.close_on_zero = close_on_zero
+        self._ref_count = 1
+        self._closing = False
+        self._lock = threading.Lock()
+
+    def acquire(self) -> "SharedClientLease":
+        with self._lock:
+            if self._closing:
+                raise RuntimeError("共享 httpx 客户端已关闭，不能继续获取 lease")
+            if getattr(self.client, "is_closed", False):
+                # [70] v1.4 审核新增: 底层被池外 aclose 后禁借, 防借出即炸(偿还 [69] 1.2.3⑥/2.2 池约束④) — 小欧-2026-09-25
+                raise RuntimeError("共享 httpx 客户端已被外部关闭，不能继续获取 lease")
+            self._ref_count += 1
+        return SharedClientLease._from_pool(self)
+
+    def release(self) -> bool:
+        with self._lock:
+            if self._closing or self._ref_count <= 0:
+                return False
+            self._ref_count -= 1
+            if self._ref_count != 0 or not self.close_on_zero:
+                return False
+            self._closing = True
+            return True
+
+    @property
+    def ref_count(self) -> int:
+        with self._lock:
+            return self._ref_count
+
+    async def close(self) -> None:
+        if getattr(self.client, "is_closed", False) is True:
+            return
+        try:
+            result = self.client.aclose()
+            if inspect.isawaitable(result):
+                await result
+        except Exception as exc:
+            logger.warning(f"[LLM] 共享 httpx 客户端关闭失败(pool={id(self):#x}): {exc}")  # [70] v1.4 审核新增: warning 带池标识, 多代并存时可定位(2.7④) — 小欧-2026-09-25
+
+
+class SharedClientLease:
+    """共享连接池的一次引用；释放幂等，最后一个引用负责关闭。"""
+
+    def __init__(self, client: Any, close_on_zero: bool = True) -> None:
+        self._pool = _SharedClientPool(client, close_on_zero=close_on_zero)
+        self._released = False
+
+    @classmethod
+    def _from_pool(cls, pool: _SharedClientPool) -> "SharedClientLease":
+        lease = cls.__new__(cls)
+        lease._pool = pool
+        lease._released = False
+        return lease
+
+    @property
+    def client(self) -> Any:
+        return self._pool.client
+
+    @property
+    def ref_count(self) -> int:
+        return self._pool.ref_count
+
+    @property
+    def is_released(self) -> bool:
+        return self._released
+
+    def acquire(self) -> "SharedClientLease":
+        if self._released:
+            raise RuntimeError("已释放的 lease 不能继续获取引用")
+        return self._pool.acquire()
+
+    async def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        if self._pool.release():
+            await self._pool.close()
 
 
 def _build_request_body(
@@ -453,8 +544,24 @@ class LLMClient:
             except Exception as e:
                 logger.warning(f"[LLMClient.cancel] 关闭流式响应失败: {e}")
 
+    def relinquish_ownership(self) -> None:
+        """移交底层 httpx 客户端所有权(本实例不再关闭) — [70] ConnectionScope.ensure_pool 调用 — 小欧 2026-09-25
+        幂等: 重复移交无害; 移交后 close() 对共享池变 no-op, 实例仍保留使用引用(不丢连接)。"""
+        self._owns_client = False
+
+    @property
+    def client(self) -> httpx.AsyncClient:
+        """公开底层 httpx 客户端 — [70] 替代跨层摸 _client 私有字段(欠账①) — 小欧 2026-09-25"""
+        return self._client
+
     async def close(self):
-        """关闭客户端,释放连接池 - 小沈 2026-06-09"""
+        """关闭客户端,释放连接池 - 小沈 2026-06-09
+        [70] 三态收口(小欧 2026-09-25): _owns_client=False(共享池/已移交) → no-op(池归 ConnectionScope
+        引用计数管理); 独占池 → aclose(带 is_closed 双保险)。_owns_client 判据全部收敛回本类(欠账①)。"""
+        if not self._owns_client:
+            return
+        if getattr(self._client, "is_closed", False):
+            return
         await self._client.aclose()
 
     # 【P1-22修复】添加异步上下文管理器,防止AsyncClient连接池泄漏 — chendyg 2026-06-26

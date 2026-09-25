@@ -20,6 +20,7 @@
 #   （源 provider_config.get 去默认值，None=未设 → BaseAIService 内部三层回落 tuning>常量；原来写死
 #    timeout 默认 30 跳过 tuning 配置层、max_retries 完全不消费；见 [62] 第4章 P1/P2/P3）
 # 2026-09-23 - 小欧 - [64] LLM补充采样参数: ①create_service_instance 三参 None 透传(top_p/frequency_penalty/presence_penalty, 仿 max_tokens 写法); ②temperature 去 float(...,0.7) 恒非 None 改可 None(死键复活); ③parse_model_params pop 缺省改读 llm.context_limit_default 全局兜底
+# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: ①新增 _scope/_retired_scopes 全局与 _attach_scope/_retire_scope/get_scope/get_retired_scopes(不变式: _instance 非None⟹_scope 非None); ②get_service/get_service_for_model 建池改经 _attach_scope(删 _ensure_client+裸暴露 _shared_client 反射点); ③reset_instance/cleanup_old_instance/set_instance 换代改走 _retire_scope(release_owner 归还, 绝不关旧池)
 """
 service — 服务创建与获取
 
@@ -27,13 +28,14 @@ service — 服务创建与获取
 小沈 2026-06-17
 """
 
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List  # [70] List: _retired_scopes — 小欧-2026-09-25
 import threading
 
 from app.logger import setup_logger
 from app.llm import BaseAIService
 from app.db.models.chat_models import ModelRef
 from app.services.lifecycle.lifecycle import close_instance_sync
+from app.services.lifecycle.connection_scope import ConnectionScope  # [70] 唯一所有者 — 小欧-2026-09-25
 from app.config import get_config  # 新增 — 小欧 2026-09-23
 
 logger = setup_logger(__name__)
@@ -41,6 +43,43 @@ logger = setup_logger(__name__)
 _instance: Optional[BaseAIService] = None
 _current_model_ref: Optional[ModelRef] = None   # 归一: 结构态替代原 _current_provider 单值态 — 小欧 2026-08-22
 _instance_lock = threading.Lock()
+_scope: Optional[ConnectionScope] = None   # [70] 当前代唯一所有者; 不变式: _instance 非None ⟹ _scope 非None — 小欧-2026-09-25
+_retired_scopes: List[ConnectionScope] = []   # [70] 已退休代(供 shutdown drain); 归零即清防无界增长 — 小欧-2026-09-25
+
+
+def _attach_scope(instance: BaseAIService) -> None:
+    """[70] 新代 scope 诞生收口: 建池+所有权移交成功后才挂载, 失败 _scope 不落位(防半初始化) — 小欧 2026-09-25"""
+    global _scope
+    scope = ConnectionScope(instance)
+    scope.ensure_pool()
+    _scope = scope
+
+
+def _retire_scope() -> None:
+    """[70] 换代退休收口: 归还当前代 owner 引用(活动任务 lease 撑池, 归零自动关) + 移入退休表供 shutdown drain。
+    绝不主动关池([69] 病灶: 关旧池必然误伤活动任务) — 小欧 2026-09-25"""
+    global _scope, _retired_scopes
+    if _scope is None:
+        return
+    _scope.release_owner()
+    _retired_scopes.append(_scope)
+    # 已归零的退休代即时清出(仍>0 的在役退休代保留), 防长驻进程列表无界增长 — 小欧 2026-09-25
+    _retired_scopes = [s for s in _retired_scopes if s.ref_count > 0]
+    _scope = None
+
+
+def get_scope() -> ConnectionScope:   # [70] v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
+    """[70] 取当前代 ConnectionScope(共享池唯一所有者); 无则经 get_service 惰性创建新代 — 小欧 2026-09-25"""
+    if _scope is None:
+        get_service()
+    if _scope is None:
+        raise RuntimeError("ConnectionScope 未初始化(get_service 未创建 scope)")
+    return _scope
+
+
+def get_retired_scopes() -> List[ConnectionScope]:   # [70] v1.11 补返回类型标注(AGENTS.md 要求 type hints) — 小欧 2026-09-25
+    """[70] 已退休代快照(list 拷贝, 供 lifecycle.shutdown 逐个 drain) — 小欧 2026-09-25"""
+    return list(_retired_scopes)
 
 
 def get_resolver_and_config():
@@ -70,7 +109,8 @@ def cleanup_old_instance(new_model_ref: Optional[ModelRef] = None) -> None:
     2026-08-22 归一: 参数改 new_model_ref: Optional[ModelRef] — 小欧"""
     global _instance, _current_model_ref
     old_instance = _instance
-    _instance = None
+    _instance = None   # [70] 先清实例再退休: 锁外漏读窗口只可能拿到旧 scope(安全), 永不见半初始化 — 小欧-2026-09-25
+    _retire_scope()    # [70] 换代: 归还旧代 owner(活动任务撑池), 绝不关旧池 — 小欧-2026-09-25
     _current_model_ref = new_model_ref
     close_instance_sync(old_instance)
 
@@ -155,21 +195,17 @@ def get_service() -> BaseAIService:
 
             provider_config = get_provider_config(ai_config, config_model.provider)
 
-            _instance = create_service_instance(provider_config, config_model.provider, config_model.model)
-
-            # 2026-09-20 小欧 C1: 惰性触发单例首次建池(复用原 _ensure_client 路径),
-            #   并暴露共享【底层 httpx.AsyncClient】引用供 resolver 快照构造期注入(存 httpx 连接池,
-            #   非 LLMClient 对象 —— 快照经 create_llm_client(shared_client=...) 建自己的 LLMClient 复用连接池) — 小欧-2026-09-20
+            # [70] 新代 scope 诞生(小欧 2026-09-25): 建池 + LLMClient 所有权移交(relinquish) + 挂载三事一处,
+            #   取代 2026-09-20 C1 的 _ensure_client + 裸暴露 _shared_client 属性——反射摸私有消亡,
+            #   池/计数/关闭唯一归属 ConnectionScope([70] 2.5「创建」环节); 先 attach 后落位保不变式
+            _new_instance = create_service_instance(provider_config, config_model.provider, config_model.model)
             try:
-                _instance._ensure_client()
-                _shared_llm_sdk = getattr(_instance, "_llm_sdk", None)
-                if _shared_llm_sdk is not None:
-                    _instance._shared_client = _shared_llm_sdk._client
+                _attach_scope(_new_instance)
             except Exception:
-                # BUG-06修复(小欧 2026-09-20): _ensure_client/共享池赋值失败时回滚, 防半初始化实例被缓存
-                _instance = None
+                # BUG-06修复(小欧 2026-09-20): 建池/挂载失败时回滚, 防半初始化实例被缓存 — [70] 维持该语义
                 _current_model_ref = None
                 raise
+            _instance = _new_instance
     except:
         # get_service 异常时消费并丢弃 _model_warning，防止残留到下一请求— 小欧 2026-07-22
         resolver.pop_model_warning()
@@ -189,6 +225,7 @@ def reset_instance():
         old = _instance
         _instance = None
         _current_model_ref = None
+        _retire_scope()   # [70] 换代新语义: 归还 owner 引用(任务撑池, 归零自动关), 绝不关旧池 — 小欧-2026-09-25
     return old
 
 
@@ -200,6 +237,14 @@ def set_instance(instance, model_ref: Optional[ModelRef] = None):
     """
     global _instance, _current_model_ref
     with _instance_lock:
+        # [70] v1.11 DRY 说明: 下方"清位+retire"与 reset_instance 重复 3 行属**必要重复**——
+        #   本函数已持 _instance_lock, 而 threading.Lock 不可重入, 直接调 reset_instance 会死锁
+        #   (get_service_for_model 同样因 BUG-16 已注释"锁内不调 set_instance"同款理由)
+        _instance = None   # [70] 先清位再换代(锁外漏读窗口安全) — 小欧-2026-09-25
+        _current_model_ref = None
+        _retire_scope()
+        if instance is not None:
+            _attach_scope(instance)   # [70] 先 attach 后落位, 维持不变式 — 小欧-2026-09-25
         _instance = instance
         _current_model_ref = model_ref
 
@@ -227,6 +272,7 @@ def get_service_for_model(model_ref: ModelRef):
         instance = create_service_instance(provider_config, model_ref.provider, model_ref.model)
         # BUG-16: 直接赋值(已在锁内), 不调set_instance(内部也加锁会死锁)
         global _instance, _current_model_ref
+        _attach_scope(instance)   # [70] 新代 scope 挂载(先 attach 后落位, 与 get_service 同构) — 小欧-2026-09-25
         _instance = instance
         _current_model_ref = model_ref
 

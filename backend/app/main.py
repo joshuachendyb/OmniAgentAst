@@ -16,6 +16,7 @@
 # 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 # 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
+# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.9): shutdown_event 的裸 reset() 改 await shutdown()——原调用只清工厂换代不等共享池关闭, 池归零由 3.6 shutdown 逐退休代 drain 兜底(超时放行不阻塞退出) — 小欧-2026-09-25
 import sys
 import asyncio
 from typing import Optional
@@ -218,8 +219,9 @@ async def shutdown_event():
     global _cleanup_task_ref
     if _cleanup_task_ref is not None and not _cleanup_task_ref.done():
         _cleanup_task_ref.cancel()
-    from app.services.lifecycle import reset
-    reset()
+    # [70] 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
+    from app.services.lifecycle import shutdown
+    await shutdown()
 
 
 @app.get("/")

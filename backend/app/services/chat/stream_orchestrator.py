@@ -158,6 +158,7 @@
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HEARTBEAT_INTERVAL 改别名 + 心跳改读 tuning 配置
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：心跳读取键路径同步(北京老陈裁定组名更准确)，
 #   读逻辑/默认值 _D_HEARTBEAT/心跳周期语义零改动 — 小欧-2026-09-24
+# 2026-09-25 小欧 - [70] ConnectionScope统一流接线: ①get_service→get_scope(本代唯一所有者原子取 ai_service); ②register_task 删 ai_service 实参(两处); ③resolve_session_client 改传 scope, 恒返回快照(删 None 死分支)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -170,7 +171,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional, AsyncGenerator, Dict, List
 
-from app.services import get_service
+from app.services import get_scope  # [70] 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.services.model.resolver import get_ai_config_resolver, resolve_session_client  # 8.7 外迁: 会话模型覆盖决议 — 小健 2026-09-05
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
@@ -293,7 +294,8 @@ async def chat_stream_orchestrator(
         return
 
     # ── 编排②取全局服务(LLM单例/model警告/task_id) ————————————————————————— 小健 2026-08-17
-    ai_service = get_service()
+    scope = get_scope()            # [70] 原子取本代唯一所有者(防换代窗口双代) — 小欧-2026-09-25
+    ai_service = scope.ai_service  # [70] 同代单例(UniversalAgent 兜底/注入应答用) — 小欧-2026-09-25
     session_id = session_id or str(uuid.uuid4())
     _model_warning = get_ai_config_resolver().pop_model_warning()
 
@@ -341,6 +343,8 @@ async def chat_stream_orchestrator(
     log_and_print(f"INFO: {time.strftime('%Y-%m-%d %H:%M:%S')}")
 
     bg_task = None  # BUG-32修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
+    _session_client = None  # [70] 快照预初始化: finally 交接守卫用(防 NameError) — 小欧-2026-09-25
+    _snapshot_handed_to_runner = False  # [70] 交接标记: create_task 后置 True, finally 据此定归还方 — 小欧-2026-09-25
     try:
 
         # 2026-09-20 小欧 B机制(北京老陈定案): 同会话已有活跃任务时, 新消息注入该任务 inbox(可多条),
@@ -359,7 +363,7 @@ async def chat_stream_orchestrator(
         buffer = create_stream_buffer(task_id)
         # B-3方案②(2026-09-20 小欧, 北京老陈定案): register_task 不再抛异常, 守卫命中返回占位tid —
         #   同会话活跃任务被并发请求抢先占位(TOCTOU窗口), 本消息改道注入占位任务, 不丢消息。
-        _reg_res = await register_task(task_id, ai_service, session_id=session_id)
+        _reg_res = await register_task(task_id, session_id=session_id)  # [70] 删 ai_service — 小欧-2026-09-25
         if _reg_res:
             logger.warning(f"[chat] B-3竞态守卫命中(session={session_id}, 占位={_reg_res}, 本task={task_id}作废), 改道注入")
             _inj2 = await inject_message_to_task(_reg_res, user_input)
@@ -369,7 +373,7 @@ async def chat_stream_orchestrator(
                 return
             # 极端: 占位任务恰在守卫命中与注入之间终态(已清出活跃集) → 重试注册(此时守卫应放行), 消息仍不丢
             logger.warning(f"[chat] B-3占位任务 {_reg_res} 已释出, 重试注册新建: session={session_id}")
-            _reg_retry = await register_task(task_id, ai_service, session_id=session_id)
+            _reg_retry = await register_task(task_id, session_id=session_id)  # [70] 删 ai_service — 小欧-2026-09-25
             if _reg_retry:
                 # 双极端(占位者再次抢先): 概率极低, 交给外层异常兜底(不再深挖, KISS)
                 raise RuntimeError(f"B-3 重试注册仍被占位: session={session_id}, 占位={_reg_retry}")
@@ -384,13 +388,13 @@ async def chat_stream_orchestrator(
         # ── 编排⑥建 UniversalAgent + 会话sessionModel(先建才有 llm_client) ——— 小健 2026-08-17
         agent = UniversalAgent(llm_client=ai_service, task_id=task_id)
         # 8.7 会话模型覆盖决议外迁 resolver.resolve_session_client(纯搬迁, 逻辑零改动) — 小健 2026-09-05
-        #   无覆盖/无 session_id 返回 None, agent 维持全局默认; 有覆盖则换装独立客户端快照(单例不受污染)
-        _session_client = await resolve_session_client(ai_service, session_id)
-        if _session_client is not None:
-            agent.llm_client = _session_client
-            # S2 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry 显示真实生效模型
-            #   (而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神 — 小欧 2026-09-01
-            agent._task_llm_model = getattr(_session_client, "llm_model", None)
+        #   [70] 小欧 2026-09-25: 改传 scope(lease 只从 scope.acquire_lease() 出); 恒返回任务私有快照
+        #   (无 None 死分支)——同 provider 快照接管本代 lease(agent 结束 close 归还), 跨 provider 独占新池
+        _session_client = await resolve_session_client(scope, session_id)
+        agent.llm_client = _session_client
+        # S2 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry 显示真实生效模型
+        #   (而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神 — 小欧 2026-09-01
+        agent._task_llm_model = getattr(_session_client, "llm_model", None)
         # ── [TASK_START] 在会话覆盖快照生效后打印, 用 agent.llm_client(实际生效模型)非全局默认
         #    (修复: 原先打印 ai_service.llm_model 是全局默认且时机在覆盖前, 误导排查) — 小欧 2026-09-01
         log_and_print(
@@ -491,6 +495,8 @@ async def chat_stream_orchestrator(
             db_ops=_db_ops, ai_message_id=_ai_message_id))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
+        # [70] 交接完成: 快照关闭责任移交 runner finally, orchestrator 不再归还 — 小欧-2026-09-25
+        _snapshot_handed_to_runner = True
 
         # ── 编排⑩流式转发(消费后台 agent 产出的 SSE → 转前端) ————————————————— 小健 2026-08-17
         async for sse_chunk in _stream_with_control(buffer, task_id, session_id, execution_steps, state):
@@ -512,6 +518,14 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat_stream_orchestrator] 取消 bg_task 失败: {_ce}")
         yield create_error_response(error_type="router_error", error_message=f"路由异常: {str(e)}")
     finally:
+        if _session_client is not None and not _snapshot_handed_to_runner:
+            # [70] 未交接 runner 的快照统一单点归还(lease 随之 release 归还本代池);
+            #   异常/断连/取消/create_task 失败等全部路径经此 finally, 不逐路径 close(DRY);
+            #   try/except 与 3.13 runner 同款: 独占池 aclose 抛错也不得吞掉根因/挡住 ContextVar reset — 小欧 2026-09-25
+            try:
+                await _session_client.close()
+            except Exception as _sce:
+                logger.warning(f"[chat] 未交接快照关闭失败(task={task_id}): {_sce}")
         _current_task_id.reset(_task_token)
 
 

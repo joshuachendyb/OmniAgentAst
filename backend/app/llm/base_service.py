@@ -69,6 +69,7 @@
 # 2026-09-23 小欧 - [64] LLM补充采样参数: ①__init__签名加 top_p/frequency_penalty/presence_penalty 三参; ②兜底读键由 tuning.llm.* 改 llm.sampling.*; ③request/request_stream 两处调用点透传三参; ④snapshot 必须同步加三参透传
 # 2026-09-23 小欧 - stream_options 开关化: 删 _D_STREAM_OPTIONS 常量直读, 改读 tuning.llm.stream_options.include_usage 布尔组 {"include_usage": bool}（textarea 改 bool 开关）
 # 2026-09-23 小欧 - wiring假保存修复: request_stream 流总硬超时 3 处改读 tuning.llm_net.stream_total_timeout 兜底常量（此前设置页可改实际不生效）
+# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: ①新增 ensure_client_pool()(建池+relinquish移交+返回client); ②__init__/snapshot 增 client_lease 参数(与 shared_client 成对), close() 改三分支(共享归还lease/独占aclose/单例no-op), 删 _owns_client 跨层判据; ③删 snap._is_snapshot 死判据(runner 无条件 close); ④删除零调用的 reset_sdk(裸置None泄漏独占池, YAGNI)
 """
 LLM 核心模块 — BaseAIService
 
@@ -89,7 +90,7 @@ from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结
 from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
 # 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
 from app.llm.core import create_cancelled_chunk
-from app.llm.client_sdk import create_llm_client
+from app.llm.client_sdk import create_llm_client, SharedClientLease  # [70] client_lease 注解 — 小欧-2026-09-25
 from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.llm.error_classifier import SystemErrorClassifier
 
@@ -118,6 +119,7 @@ class BaseAIService:
         extra_body_params: Optional[Dict] = None,
         context_limit: Optional[int] = None,
         shared_client: Optional["httpx.AsyncClient"] = None,  # C1: 共享连接池, 快照复用不 new(仅在 snapshot 构造时传)
+        client_lease: Optional[SharedClientLease] = None,  # [70] 与 shared_client 成对的池 lease, close() 归还 — 小欧-2026-09-25
     ):
         if temperature is None:
             temperature = get_config().get("llm.sampling.temperature", _D_TEMPERATURE)  # tuning.llm.temperature → llm.sampling.temperature — 小欧 2026-09-23
@@ -150,6 +152,7 @@ class BaseAIService:
         self.context_limit = context_limit
         self._llm_sdk = None
         self._shared_client = shared_client  # 2026-09-20 小欧 C1: 构造期定论, 杜绝"先建独占池再注入"竞态 — 小欧-2026-09-20
+        self._client_lease = client_lease   # [70] 共享池 lease(close 时归还, 归零由 ConnectionScope 关) — 小欧-2026-09-25
         try:
             timeout_value = float(timeout) if timeout is not None else float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))  # [62]P7 4.3(1)b：is not None，0合法不被truthiness跳过
         except (ValueError, TypeError):
@@ -176,22 +179,26 @@ class BaseAIService:
                 shared_client=self._shared_client,  # 2026-09-20 小欧 C1: 快照构造期已定共享地址 — 小欧-2026-09-20
             )
 
-    def reset_sdk(self):
-        """重置底层 SDK 缓存 — L2 会话级换模(整体替换 llm_model, 可能变更 api_base)后必须调用:
-        _ensure_client 只在首次创建 SDK 时读取 llm_model, 不重置则新 api_base/model 不生效,
-        造成"记录身份与实际 HTTP 连接不一致" — 三堂会审 P1 修复 小欧 2026-08-22"""
-        self._llm_sdk = None
+    def ensure_client_pool(self) -> "httpx.AsyncClient":
+        """[70] 建池 + 所有权移交(幂等), 返回底层共享 httpx 客户端 — 小欧 2026-09-25
+        ConnectionScope.ensure_pool 唯一调用点: 首次 create_llm_client(独占池) → relinquish_ownership
+        (保留使用引用不关池) → 池生命周期交 ConnectionScope 引用计数; 重复调用直接复用已建池。"""
+        self._ensure_client()
+        self._llm_sdk.relinquish_ownership()   # 幂等: 已移交再调无害
+        self._shared_client = self._llm_sdk.client
+        return self._shared_client
 
     def snapshot(self, model_ref: Optional[ModelRef] = None,
                  api_key: Optional[str] = None,
                  extra_body_params: Optional[Dict] = None,
                  context_limit: Optional[int] = None,
-                 shared_client: Optional["httpx.AsyncClient"] = None) -> "BaseAIService":
+                 shared_client: Optional["httpx.AsyncClient"] = None,
+                 client_lease: Optional[SharedClientLease] = None) -> "BaseAIService":  # [70] 与 shared_client 成对注入 — 小欧-2026-09-25
         """构造本实例的独立副本(携带 model_ref 或当前模型), 与进程级共享单例解耦 — 小沈 2026-08-29
         病根修复: sessionModel 覆盖此前直接改进程单例 llm_model + reset_sdk(全局副作用), 单例还原时序竞态
         导致"断连时后台任务误用旧模型"与"后续无覆盖会话串用错误模型"两类退化。改为后台任务/会话持有自身
-        模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。返回实例带 _is_snapshot 标记,
-        供 run_agent_in_background 结束后释放其 httpx 连接池。
+        模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。[70] 小欧 2026-09-25: _is_snapshot
+        标记消亡(runner 无条件 close, 判据在 close 三分支内); 共享快照经 client_lease 归还池引用。
         L2 切跨 provider 模型(2026-09-01 小欧): 快照必须携带"目标 provider"的 api_key 与
         个性参数(model_params/context_limit), 否则沿用全局默认 provider(agnes) 会走错端点、
         用错 key、丢 reasoning_effort/context_limit(api_base/api_key/model_params 缺一不可)。
@@ -213,8 +220,8 @@ class BaseAIService:
             context_limit=context_limit
             if context_limit is not None else self.context_limit,
             shared_client=shared_client,  # C1: 共享与否由调用方(resolver)按 provider 判据定, 构造期定论
+            client_lease=client_lease,  # [70] 与 shared_client 成对: 同 provider 快照接管池 lease — 小欧-2026-09-25
         )
-        snap._is_snapshot = True
         logger.info(f"[BaseAIService.snapshot] 构造独立客户端快照: model={snap.llm_model.model}, provider={snap.llm_model.provider}")
         return snap
 
@@ -640,9 +647,14 @@ class BaseAIService:
         return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
-        # 2026-09-20 小欧 C1: 共享池 snapshot 不关连接池(全局单例生命周期统一关), 仅独占池才真关 — 小欧-2026-09-20
-        if getattr(self, "_llm_sdk", None) is not None and getattr(self._llm_sdk, "_owns_client", False) is False:
-            return
+        # [70] 三分支(小欧 2026-09-25): ①共享池快照 → 归还 _client_lease(ref-1, 归零由 ConnectionScope 关);
+        #   ②独占池快照 → LLMClient.close 真关; ③全局单例(relinquish 后 owns=False) → no-op。
+        #   _owns_client 判据收敛回 LLMClient.close 类内, 本层跨层摸私有清零(欠账①) — [70] 2.5「使用」
+        if self._client_lease is not None:
+            _lease = self._client_lease
+            self._client_lease = None   # 先摘引用防重复归还(lease.release 自身幂等, 双保险)
+            await _lease.release()
+            logger.info(f"[BaseAIService.close] 共享池 lease 已归还(model={self.llm_model.model})")
         if self._llm_sdk:
             await self._llm_sdk.close()
 

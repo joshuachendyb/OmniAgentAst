@@ -156,6 +156,8 @@
 # 2026-09-20 - 小欧 - D-1修复(B机制注入消息DB幽灵): 终态 update_user_message_final 增传 session_id,
 #   由 storage 侧对该注入 user_message_id 补 chat_tasks 配对(注入消息答复归属任务), 消除 fetch 重建"user+AI"对时的
 #   NULL 幽灵(前端双栖渲染/linked 误判未回答)。compliance: KISS-DIRECT/禁止backward
+# 2026-09-25 小欧 - [70] finally 关客户端判据改无条件: resolver 恒返回任务私有快照(_is_snapshot 死判据消亡),
+#   关闭语义由 base_service.close 三分支兜底(共享 lease 归还幂等/独占 aclose/单例 no-op) — [70] 2.5「使用」
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -526,16 +528,17 @@ async def run_agent_in_background(
 
     # finally: 统一DB保存（①②③都会执行）— 小欧 2026-07-13
     finally:
-        # 关闭本任务持有的独立客户端快照(若有), 释放其 httpx 连接池, 防覆盖会话累积泄漏 — 小沈 2026-08-29
+        # 关闭本任务持有的客户端(快照恒私有, 无条件 close) — [70] 小欧 2026-09-25
+        #   三分支由 base_service.close/LLMClient.close 兜底: 共享池快照→归还 lease(ref-1, 归零自动关),
+        #   独占池快照→aclose, 单例(relinquish 后 owns=False)→no-op; _is_snapshot 死判据消亡。
+        #   连接顺序: resolve(388) < bg_task 创建(489) < 本 finally——resolve 抛错时 runner 不执行, 无裸单例入口
         _snap_client = getattr(agent, "llm_client", None) if agent is not None else None
-        if _snap_client is not None and getattr(_snap_client, "_is_snapshot", False):
-            # 2026-09-20 小欧 C1: 共享池快照 close 由 13.2.3 base_service.close 判据兜底(共享不真关),
-            #   独占池快照照常释放 — 完全兼容原逻辑 — 小欧-2026-09-20
+        if _snap_client is not None:
             try:
                 await _snap_client.close()
-                logger.info(f"[Runner] 会话客户端快照已关闭(task={task_id})")
+                logger.info(f"[Runner] 任务客户端已关闭(task={task_id})")
             except Exception as _ce:
-                logger.warning(f"[Runner] 关闭会话客户端快照失败(task={task_id}): {_ce}")
+                logger.warning(f"[Runner] 关闭任务客户端失败(task={task_id}): {_ce}")
         # === 守卫：兜底补发 FinalStep（覆盖 ②CancelledError + react_cycle 内部 set_failed 等无 final 路径）— 小欧 2026-07-18 ===
         if not any(
             isinstance(s, dict) and s.get("type") == "final"

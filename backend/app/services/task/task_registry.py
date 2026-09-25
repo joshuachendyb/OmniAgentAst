@@ -15,6 +15,7 @@
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：任务保留时长读取键路径同步，
 #   清理逻辑/默认值 1 小时零改动 — 小欧-2026-09-24
+# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: register_task 删 ai_service 参数与 "ai_service" 字段(全仓零消费点核证, YAGNI); registry 只存任务身份/状态/inbox, 不 import 不持资源句柄(欠账②)
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -72,7 +73,7 @@ def _trim_orphaned_inbox() -> None:
 # 注册 / 清理
 # ============================================================
 
-async def register_task(task_id: str, ai_service: Any, session_id: Optional[str] = None) -> Optional[str]:
+async def register_task(task_id: str, session_id: Optional[str] = None) -> Optional[str]:  # [70] 删 ai_service 参数 — 小欧-2026-09-25
     """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20
     B-3 守卫(2026-09-20 小欧, 北京老陈定案方案②): 锁内检查同 session 已有活跃任务(running/paused), 存在即
     **返回该活跃任务 task_id** 而非抛异常 —— 根治编排层 has_active_task_in_session 与 register_task 分离 await
@@ -96,7 +97,6 @@ async def register_task(task_id: str, ai_service: Any, session_id: Optional[str]
             "session_id": session_id,          # X5/X6 同会话判定
             "_inbox": asyncio.Queue(),         # B机制: 运行中注入消息队列(多条), agent 侧每轮 LLM 调用前合并吸收
             "created_at": datetime.now(),
-            "ai_service": ai_service,
             "_task": asyncio.current_task(),
             "_pause_event": asyncio.Event(),
         }
@@ -144,13 +144,21 @@ async def drain_inbox(task_id: str) -> List[str]:
         _q = _t.get("_inbox")
         if _q is None:
             return []
-        _msgs = []
-        while not _q.empty():
-            try:
-                _msgs.append(_q.get_nowait())
-            except asyncio.QueueEmpty:
-                break
+        _msgs = _drain_inbox(_q)
     return _msgs
+
+
+def _drain_inbox(q) -> list:
+    """排空 inbox 队列 — 唯一权威(DRY 归一: drain_inbox / cleanup_task / cleanup_expired_tasks 三处共用) — 小欧 2026-09-25
+    竞态说明: 不用 while q.empty() 单一判据收尾——empty() 与 get_nowait() 之间可能已被其他协程取空,
+    必须 except asyncio.QueueEmpty 兜底 break; 三份拷贝易漂移成不一致的竞态处理, 故归一"""
+    msgs = []
+    while not q.empty():
+        try:
+            msgs.append(q.get_nowait())
+        except asyncio.QueueEmpty:
+            break
+    return msgs
 
 
 async def cleanup_task(task_id: str) -> bool:
@@ -163,12 +171,7 @@ async def cleanup_task(task_id: str) -> bool:
         if running_tasks[task_id].get("status") != "cancelled":
             _q = running_tasks[task_id].get("_inbox")
             if _q is not None:
-                _leftover = []
-                while not _q.empty():
-                    try:
-                        _leftover.append(_q.get_nowait())
-                    except asyncio.QueueEmpty:
-                        break
+                _leftover = _drain_inbox(_q)
                 if _leftover:
                     _orphaned_inbox[task_id] = _leftover
                     _trim_orphaned_inbox()  # 缺口补(2026-09-20 小欧): 防 orphan 无上限滞留内存
@@ -204,12 +207,7 @@ async def cleanup_expired_tasks() -> None:
             # BUG-10修复(小欧 2026-09-20): 过期清理前把未吸收inbox消息转入orphan, 与cleanup_task对齐(防收尾窗口静默丢失)
             _q = running_tasks[tid].get("_inbox")
             if _q is not None:
-                _leftover = []
-                while not _q.empty():
-                    try:
-                        _leftover.append(_q.get_nowait())
-                    except asyncio.QueueEmpty:
-                        break
+                _leftover = _drain_inbox(_q)
                 if _leftover:
                     _orphaned_inbox[tid] = _leftover
                     _trim_orphaned_inbox()  # 缺口补(2026-09-20 小欧): 防 orphan 无上限滞留内存

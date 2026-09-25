@@ -49,6 +49,7 @@ F10合并: 小欧 - 2026-06-08
 #   （与 settings_service env_key=AI_PROVIDER、model_service _raise_if_current_ref_env 双标准语义对齐）
 # 2026-09-22 - 小欧 - 31候选修复 #10: _update_project_root 取代 _set_app_field lambda —— 原写 app.project_root
 #   死键（全读取方统一走 workspace.project_root，保存"成功"永不生效）；改写 workspace.project_root + 类型门禁
+# 2026-09-25 - 小欧 - [70] 审核新增: 删 _update_model_ref 写盘前错位 reset()——换代正确位置在写盘+校验成功后的 reload_ai_config(撤回 6 文件时随基线带回的错位触发点); 保留它会致"保存模型换两次代"(写盘前换代→窗口内新请求拿旧配置建代→随即被退休) — 小欧 2026-09-25
 
 import os
 import shutil
@@ -384,7 +385,6 @@ def _update_model_ref(config_data: dict, update) -> None:
     }
     if update.ai_model_ref.api_base:
         config_data['ai'][update.ai_model_ref.provider]['api_base'] = update.ai_model_ref.api_base
-    reset()
     logger.info(f"更新AI模型: provider={update.ai_model_ref.provider}, model={update.ai_model_ref.model}")
 
 def _update_api_keys(config_data: dict, update) -> None:

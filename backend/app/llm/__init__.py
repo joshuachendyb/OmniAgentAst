@@ -14,9 +14,11 @@ LLM服务包
 
 小沈 2026-06-17 llm_core目录合并入llm,消除冗余分层
 小欧 2026-08-14 llm 独立为 app 顶层能力层目录(services/llm→app/llm), 包内 import 路径同步
+小欧 2026-09-25 [70] ConnectionScope连接池统一所有者(3.3): 导出 SharedClientLease(scope/resolver 包级导入与 type 提示用)
 """
 
 from app.llm.base_service import BaseAIService
+from app.llm.client_sdk import SharedClientLease  # [70] 共享池 lease 对外导出(scope/resolver 注入用) — 小欧 2026-09-25
 
 from app.llm.xml_adapter import (
     convert_xml_tool_call_to_json,
@@ -42,6 +44,7 @@ from app.llm.core import (
 
 __all__ = [
     "BaseAIService",
+    "SharedClientLease",
     "convert_xml_tool_call_to_json",
     "is_xml_tool_call",
     "fix_thinking_messages",
