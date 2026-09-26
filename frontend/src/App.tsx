@@ -24,6 +24,8 @@ import { AppProvider } from './contexts/AppContext';
 import { AntdAppBridge } from './lib/antd/bridge';
 // 2026-09-09 小欧: 应用级错误边界(渲染异常白屏兜底)
 import { ErrorBoundary } from './components/ErrorBoundary';
+// 编辑历史: 2026-09-26 小欧 - [72]第九章(9.6-4): 引入登录页（访问口令输入）
+import LoginPage from './pages/LoginPage';
 
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));
@@ -57,10 +59,19 @@ const LazyLoadingFallback: React.FC = () => (
 const RouterContent: React.FC = () => {
   const location = useLocation();
 
+  // 编辑历史: 2026-09-26 小欧 - [72]第九章(9.6-4): 新增 /login 路由（输入访问口令）。
+  //   登录页**不进 AppLayout**（无侧边栏/顶栏），避免未鉴权用户看到界面骨架。
+  //   逻辑: 未登录访问任意页 → 401 拦截器跳 /login；已登录正常进入。
+  // @update 2026-09-26 [72]第九章: 新增 /login 路由 — by 小欧
+  if (location.pathname === '/login') {
+    return <LoginPage />;
+  }
+
   return (
     <AppLayout activeKey={location.pathname}>
       <Suspense fallback={<LazyLoadingFallback />}>
         <Routes>
+          <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ChatPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/settings2" element={<Settings2 />} />

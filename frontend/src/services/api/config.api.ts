@@ -4,6 +4,12 @@
 // 2026-09-21 小欧 - 删除无意义白/黑名单类型（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：后端 SecurityConfig 已删，无消费方（北京老陈裁定）
 // 2026-09-21 小强 - DRY收口：新增 configApi.switchCurrentModel 切全局模型唯一写链（Layout.handleModelChange 与 CurrentModelRefCard.onOk 共用，消除重复 updateConfig+ai_model_ref 装配）
 // 2026-09-24 19:38:01 小欧 - 禁止backward死代码清理: 删 /config/provider/* 6个死方法及专属类型 ProviderUpdate/ModelAddRequest/ProviderAddRequest（设置2版已走 modelApi /models /providers）— 小欧-2026-09-24
+// 2026-09-26 小欧 - [72]第七章(7.3): ProviderInfo.api_key 由 string 改为三键恒定对象
+//   {configured, prefix, suffix} —— 后端 /config/full 已改用唯一权威 mask_secret_value（形状变对象），
+//   原 string 声明即"类型撒谎"，与后端实际返回不符。与 model.api.ts ProviderEntry.api_key 同一契约。
+// 2026-09-26 小欧 - [72]第十一章(11.5 第1步): 删 ConfigUpdate 接口与 updateConfig 方法（均零调用），
+//   其中 provider_api_keys 字段是第三章认定的"第二个能擦除密钥的入口"，删除后前后端一致收敛；
+//   切全局模型由 switchCurrentModel 走收敛后的 PUT /config（只写 ai_model_ref）— 小欧-2026-09-26
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -19,13 +25,10 @@ export interface SecurityConfig {
   confirmDangerousOps: boolean;
 }
 
-export interface ConfigUpdate {
-  ai_model_ref?: SessionModelOverride;
-  provider_api_keys?: Record<string, string>;
-  theme?: 'light' | 'dark';
-  language?: string;
-  security?: SecurityConfig;
-}
+// 2026-09-26 小欧 - [72]第十一章(11.5 第1步): 删 ConfigUpdate 接口 —— 随 updateConfig 方法一并删除
+//   （该方法全项目零调用，仅 config.api.ts 内自引用）。其中的 provider_api_keys 字段是
+//   [72]第三章认定的"第二个能擦除密钥的入口"，前端亦无任何调用方，删除后前后端一致收敛。
+//   切全局模型改由 configApi.switchCurrentModel 走收敛后的 PUT /config（只写 ai_model_ref）。
 
 export interface ConfigValidateRequest {
   provider: string;
@@ -41,7 +44,10 @@ export interface ConfigValidateResponse {
 export interface ProviderInfo {
   name: string;
   api_base: string;
-  api_key: string;
+  // [72]第七章(7.3) - 小欧 - 2026-09-26: /config/full 的 api_key 已改用唯一权威 mask_secret_value，
+  //   **形状由字符串变为对象** {configured, prefix, suffix}（原 string 类型即"类型撒谎"，与后端不符）。
+  //   与 model.api.ts 的 ProviderEntry.api_key 保持同一契约。
+  api_key: { configured: boolean; prefix: string; suffix: string };
   model: string;
   models: string[];
   timeout: number;
@@ -82,15 +88,10 @@ export const configApi = {
     return response.data;
   },
 
-  updateConfig: async (
-    config: ConfigUpdate
-  ): Promise<{ success: boolean; message: string }> => {
-    const response = await api.put('/config', config);
-    return response.data;
-  },
-
   // 2026-09-21 小强 - 切全局模型共用(DRY收口): Layout.handleModelChange与CurrentModelRefCard.onOk
   //   原先各自重复 updateConfig+ai_model_ref装配, 现统一唯一写链入口, 两调用方只传provider/model
+  // 2026-09-26 小欧 - [72]第十一章: 后端 PUT /config 收敛为**只写 ai_model_ref**（六个旧 handler 已删，
+  //   provider_api_keys 漏洞字段已移除），本方法语义随之收敛，与后端契约一致。
   switchCurrentModel: async (
     provider: string,
     model: string

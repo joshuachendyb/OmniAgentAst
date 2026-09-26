@@ -17,6 +17,26 @@
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 # 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
 # 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.9): shutdown_event 的裸 reset() 改 await shutdown()——原调用只清工厂换代不等共享池关闭, 池归零由 3.6 shutdown 逐退休代 drain 兜底(超时放行不阻塞退出) — 小欧-2026-09-25
+# 2026-09-26 - 小欧 - [72]第九章(9.6-1) 落地: 全路由统一 token 鉴权（一处生效，KISS-DIRECT）
+#   ①新增 import: fastapi.Depends + app.api.v1.deps.verify_token
+#   ②include_router 处统一 dependencies=[Depends(verify_token)]，**不去改 13 个 router 的定义**（9.6-1 指定方式）
+#   ③/api/v1/health **豁免**（9.6-1 要求，便于探活与排障）；其余 12 个 router 全部需鉴权
+#   依据 9.4: `--host 0.0.0.0` 是多机部署硬前提**保持不变**（收窄则其他机器全部连不上、服务作废），
+#   真正要修的是"零身份验证"这一缺陷 —— 原状态下局域网任意设备/程序/网页跨源请求可直调任何接口
+#   （读走全部 provider 明文密钥 / 改擦密钥 / 越权读他人会话与消息）。
+#   依赖本体 fail-closed：未配置 token 时拒绝一切受保护请求（绝不"没配就全放行"= 等于没做鉴权）；
+#   失败文案统一不区分"未配置"与"不匹配"避免被探测；比较用 hmac 常量时间防计时侧信道。
+#   连带(12.6 硬依赖): 第十二章明文接口与本轮同批上线，避免"明文接口 + 零鉴权"成为新的泄露口 — 小欧-2026-09-26
+# 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核, 本文件 2 处已改（均已实测行为等价）:
+#   ①[DRY + 失效来源] 13 行 include_router 各自手写 `prefix="/api/v1"` 与 `dependencies=_AUTHENTICATED`,
+#     同一事实写 13 遍。真正危害不是"啰嗦"，而是**新增 router 时的静默漏鉴权**: 加第 14 个 router
+#     谁记得手写 dependencies=? 漏写即该 router 裸奔 —— 而"零身份验证"正是第九章要消灭的核心缺陷,
+#     意味着这条安全规则会"修一次漏一次"。已抽 _mount() 为唯一挂载入口(前缀只写一次、默认鉴权、
+#     豁免必须显式 exempt=True)。豁免面表达方式由"逐行不写"变为"显式声明"，反而更醒目不易漏。
+#     实测等价性: 总路由 72、受保护路径 54、/api/v1/health 与 /api/v1/echo 仍豁免、
+#     /api/v1/auth/status 仍受保护 —— 零行为变化。
+#   ②[DRY 注释重复] 挂载点上方 6 行注释与本文件头编辑历史同条目**全文重复**。同一事实写两处,
+#     改一处忘另一处就产生两个互相矛盾的"事实来源"。已改为指向文件头，不重复抄写。
 import sys
 import asyncio
 from typing import Optional
@@ -29,7 +49,7 @@ if sys.platform == "win32":
         # Python -u模式下可能抛AttributeError，忽略
         pass
 
-from fastapi import FastAPI, Request, status
+from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
@@ -50,6 +70,10 @@ from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测
 from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-6): token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
+# 2026-09-26 小欧 - [72]第九章(9.6-1): 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
+from app.api.v1.deps import verify_token
+# 2026-09-26 小欧 - [72]第九章补: 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
+from app.api.v1.auth_routes import router as auth_router
 from app.logger import logger
 from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
@@ -154,20 +178,52 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(tool_routes_router, prefix="/api/v1", tags=["tools"])  # A4: 工具测试路由 — 小欧 2026-08-12
-app.include_router(chat_router, prefix="/api/v1", tags=["chat"])
-app.include_router(task_router, prefix="/api/v1", tags=["chat"])
-app.include_router(config_router, prefix="/api/v1", tags=["config"])
-app.include_router(settings_router, prefix="/api/v1", tags=["settings"])
-app.include_router(model_router, prefix="/api/v1", tags=["models"])  # 设置页模型管理 — 小沈 2026-09-20
-app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
-app.include_router(messages.router, prefix="/api/v1", tags=["sessions"])
+# [72]第九章(9.6-1) - 小欧 - 2026-09-26: 全路由统一挂 token 鉴权依赖（一处生效，KISS-DIRECT）。
+#   要点与设计依据见文件头编辑历史同条目（不在此重复抄写一遍 —— 同一事实全文写两处，
+#   改一处忘另一处即产生两个互相矛盾的"事实来源"，是本项目吃过亏的坑，见 ProviderConfig 注释教训）。
+# 2026-09-26 - 小欧 - [72]三堂会审后修正(DRY · 13 遍重复抽成一处):
+#   原写法把 `prefix="/api/v1"` 与 `dependencies=_AUTHENTICATED` **在 13 行里各手写一遍**。两处真实问题:
+#     ①DRY: 同一事实(前缀/鉴权)写 13 遍, 改前缀必漏改(漏改=该 router 挂在错误路径 → 404);
+#     ②**新增 router 时的静默漏鉴权风险**: 未来加第 14 个 router, 谁记得手写 dependencies=?
+#        漏写则该 router 默认裸奔 —— 而"零身份验证"正是 [72]第九章要消灭的核心缺陷, 修一次漏一次。
+#   故抽 _mount() 为唯一挂载入口: 前缀与"默认鉴权"只写一次, 豁免必须显式写 exempt=True。
+#   行为等价性已逐条核对: health 仍豁免(豁免面由"逐行不写"改为"显式 exempt=True", 反而更醒目不易漏)，
+#   其余 12 个 router + auth 仍全部鉴权, 端点路径与 tag 均不变 —— 零行为变化的重构。
+_AUTHENTICATED = [Depends(verify_token)]
 
-app.include_router(chat_execution_router.router, prefix="/api/v1", tags=["execution"])
-app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
-app.include_router(task_queries_router, prefix="/api/v1", tags=["task-queries"])
-app.include_router(token_usage_router, prefix="/api/v1", tags=["token-usage"])  # S2(10.1.7②-6) — 小欧 2026-08-16
+
+def _mount(router, tags: str, *, exempt: bool = False) -> None:
+    """统一挂载 API router：**默认加 token 鉴权**，仅探活类显式 exempt=True 豁免。
+
+    [72]第九章 9.6-1 —— 全项目唯一挂载入口。新增 router 一律走本函数即自动获得鉴权，
+    不再依赖"记得手写 dependencies="（那是本条规则最大的失效来源）。
+    """
+    app.include_router(
+        router,
+        prefix="/api/v1",
+        tags=[tags],
+        dependencies=None if exempt else _AUTHENTICATED,
+    )
+
+
+# 探活/回显豁免（9.6-1 要求，便于探活与排障）。/echo 与 /health 同属 health router 且为
+# 纯回显无副作用（已读 health.py:68-76 核实：不落库、不调 LLM），故同享豁免无实际风险。
+_mount(health.router, "health", exempt=True)
+_mount(tool_routes_router, "tools")  # A4: 工具测试路由 — 小欧 2026-08-12
+_mount(chat_router, "chat")
+_mount(task_router, "chat")
+_mount(config_router, "config")
+_mount(settings_router, "settings")
+_mount(model_router, "models")  # 设置页模型管理 — 小沈 2026-09-20
+_mount(sessions.router, "sessions")
+_mount(messages.router, "sessions")
+_mount(chat_execution_router.router, "execution")
+_mount(metrics.router, "metrics")
+_mount(task_queries_router, "task-queries")
+_mount(token_usage_router, "token-usage")  # S2(10.1.7②-6) — 小欧 2026-08-16
+# 2026-09-26 小欧 - [72]第九章补: 访问口令设置路由(挂鉴权依赖; deps.verify_token 内含"未配置口令时
+#   对 /auth/token 与 /auth/status 的首次设置豁免", 故未设口令时可自举, 已设后改口令需当前有效 token)
+app.include_router(auth_router, prefix="/api/v1", tags=["auth"], dependencies=_AUTHENTICATED)
 
 
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel

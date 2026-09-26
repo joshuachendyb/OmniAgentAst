@@ -1,3 +1,13 @@
+/**
+ * 编辑历史:
+ * 2026-09-26 - 小欧 - [72]第九章(9.5.3 第4步/9.6-2) 新增 setAccessToken()：登录页输入的访问口令
+ *   经此写入 localStorage，与既有 getAccessToken() 的读取结构严格对称（同一存储键 omniagent_auth，
+ *   同时认 zustand persist 的 {state:{accessToken}} 与裸 {accessToken} 两种形态）。
+ *   为何不新造第二个存储键：读端已存在且真实生效（request 拦截器确实附带 Authorization: Bearer），
+ *   另起一键会造出"读 A 写 B"的静默失效——那才是真 bug（写进去读不到，登录态看似成功实则无效）。
+ *   写入时保留既有其它字段（合并而非整体覆盖），免冲掉用户态里其余持久化数据。
+ *   连带 9.6-4: 401 时跳登录页，闭环"输错口令进不来 → 改口令 → 旧口令立即作废"。— 小欧 2026-09-26
+ */
 import axios from 'axios';
 import type {
   AxiosInstance,
@@ -49,14 +59,19 @@ export function getApiBaseUrl(): string {
   if (typeof window !== 'undefined') {
     const loc = window.location;
     // VITE_API_PORT：仅端口号（如 9000），缺省 8000（后端 uvicorn 标准端口）
-    const port = (import.meta as unknown as { env: Record<string, string> })
-      .env?.VITE_API_PORT || '8000';
+    const port =
+      (import.meta as unknown as { env: Record<string, string> }).env
+        ?.VITE_API_PORT || '8000';
     return `${loc.protocol}//${loc.hostname}:${port}`;
   }
   // SSR/测试兜底
   return 'http://127.0.0.1:8000';
 }
 
+/**
+ * 取访问口令（token）— [72]第九章(9.6-2) 核实结论：此逻辑**已存在且真实生效**
+ *   （request 拦截器确实会附带 `Authorization: Bearer <token>`），本次实施只补 setAccessToken。
+ */
 export function getAccessToken(): string | null {
   try {
     const raw = localStorage.getItem('omniagent_auth');
@@ -65,6 +80,58 @@ export function getAccessToken(): string | null {
     return parsed?.state?.accessToken ?? parsed?.accessToken ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * 写访问口令 — [72]第九章(9.5.3) 新建：登录页输入后写入，与 getAccessToken 的读取结构对称
+ *   （兼容 zustand persist 的 {state:{accessToken}} 与裸 {accessToken} 两种形态）。
+ */
+export function setAccessToken(token: string | null): void {
+  try {
+    if (!token) {
+      localStorage.removeItem('omniagent_auth');
+      return;
+    }
+    // 2026-09-26 - 小欧 - [72]三堂会审后修正（修包络破坏）:
+    //   原写法把 zustand persist 包络 `{"state":{...},"version":1}` 展平回写为顶层对象，
+    //   `state` 包裹与 `version` 双双丢失。读端靠 `??` 侥幸兼容，但包络已坏：
+    //   zustand 下次持久化会与残留顶层字段互相覆盖，且 corrupt 非对象 JSON 时
+    //   `parsed.accessToken = token` 在严格模式抛异常 → catch 吞掉 → 口令**没存上**（静默失败）。
+    //   现按原包络回写：有 state 写回 state 内（包络其余字段原样保留），裸对象则合并顶层，
+    //   非对象/解析失败则全新写入。getAccessToken 的双形态读取与此严格对称。
+    const raw = localStorage.getItem('omniagent_auth');
+    if (raw) {
+      try {
+        const p: unknown = JSON.parse(raw);
+        if (p && typeof p === 'object' && !Array.isArray(p)) {
+          const obj = p as Record<string, unknown>;
+          if (obj.state && typeof obj.state === 'object') {
+            localStorage.setItem(
+              'omniagent_auth',
+              JSON.stringify({
+                ...obj,
+                state: {
+                  ...(obj.state as Record<string, unknown>),
+                  accessToken: token,
+                },
+              })
+            );
+            return;
+          }
+          localStorage.setItem(
+            'omniagent_auth',
+            JSON.stringify({ ...obj, accessToken: token })
+          );
+          return;
+        }
+      } catch {
+        /* 解析失败则走全新写入 */
+      }
+    }
+    localStorage.setItem('omniagent_auth', JSON.stringify({ accessToken: token }));
+  } catch {
+    /* ignore */
   }
 }
 

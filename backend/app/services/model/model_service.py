@@ -70,6 +70,50 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   文案补「该 Provider」前缀对齐设计 L138 — 小欧-2026-09-24
 # 2026-09-25 - 小健 - 模型列表全链路排序: _parse_remote_models_body 收集后按 id 字母序(不分大小写)单点排序,
 #   远端返回即有序→模型库列表/分组组内/保存落盘 finalList/模型Tab下次保存后下拉全字母序(北京老陈确认全链路方案) — 小健-2026-09-25
+# 2026-09-26 - 小欧 - [72]第三章 + 第四章 + 第八章(8.5-3) + 第一章(1.3-1) 同一函数一次落地(铁律: 同函数禁止拆两次改):
+#   (1)第三章 api_key 三态做实为后端唯一权威: key_map 循环内对 api_key 分流 - 空串/纯空白 continue 跳过(不写入=不修改),
+#     非空先 str(v).strip() 再落盘; 字段不出现/None 由 v is not None 拦; clear=true 仍走下方显式写空串分支(唯一清空途径)。
+#     修前缺陷: if k in key_map and v is not None 把空串判为合法, 任何非界面途径传空串即擦除密钥还返回 ok(第三章 3.1/3.2)
+#   (2)第一章 去空格与三态同一处收口(写入前 strip), 与 client_sdk 消费端兜底两侧对齐, 双通道 strip 不一致根因消除
+#   (3)第四章 clear 与设置值互斥: clear is True 且 api_key 非空 -> 400, 不静默丢弃任何一方(修前无条件覆盖新 key)
+#   (4)第八章 base_url 空即错误状态: base_url/api_base 传空或纯空白 -> 400 文案指向填写完整地址, 不再清空后照存
+#   (5)三条校验均置于 tree/node 构造与 merge 之前, 失败时配置零改动(满足配置未被修改验收)
+#   (6)ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500, 故显式抛 HTTPException(400);
+#     不改公共装饰器, 避免波及全项目 24 处调用点(OCP/SRP)
+# 2026-09-26 - 小欧 - [72]第八章(8.5-1): add_provider 增加 api_base 必填校验(空/纯空白 -> 400, 文案"api_base 必填:
+#   API 地址是 Provider 的必要配置"), 置于 _validate_new_provider_name 之后、构造 tree 之前, 失败时配置零改动;
+#   前端 ModelModals.tsx 添加 Provider 弹窗同步加 required + 拒纯空白 validator, 前后端双闸。
+#   不允许"先建后填" - api_key 才可后填(第三章三态), base_url 是必要配置, 与之方向相反 - 小欧 2026-09-26
+# 2026-09-26 - 小欧 - [72]第十章(10.3) 落地: fetch_remote_models 增 probe_key 参数(测未保存的 key) + 错误分类
+#   (1)新增 _classify_remote_result(status_code, network_err): ok / key_invalid(401,403) /
+#      endpoint_unsupported(404,405,501) / network_error(超时与连接失败)。**404/405/501 刻意不判 key 无效** ——
+#      部分 provider 无 /models 端点, 误判会让用户反复改 key 甚至把正确的 key 改坏(设计 10.2 第3条)
+#   (2)_fail 增 status_code / category 两字段, 成功返回亦补 status_code + category:"ok", 调用方据此分两套文案
+#   (3)probe_key 仅存内存、只进本次探测的 header: 不落盘、不进日志、不回传响应(设计硬要求)。
+#      优先级 probe_key > {NAME}_API_KEY env > YAML —— 用户输入框里新输的 key 才是待验证的那个
+#   (4)安全前提已实测(设计 10.3 要求先实测): httpx 异常字符串不回显 header、不含 key
+#      (DNS 失败/连接拒绝/超时三种均验证), 故 _http_get_remote_models 现有 logger.error(f"拉取失败: {e}") 可保留
+#   (5)未动 _http_get_remote_models 与 _parse_remote_models_body(职责单一, 分类在调用层做, 不污染下层) - 小欧 2026-09-26
+# 2026-09-26 - 小欧 - [72]第十二章(12.5) 落地: 增"查看已保存密钥明文"的只读取数出口
+#   审计日志与 env 接管拒绝逻辑在路由层(那里才有 request.client 可取来源 IP) — 小欧 2026-09-26
+# 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核, 本文件 2 处已改:
+#   ①[KISS-DIRECT + YAGNI] **删除** get_raw_ai_for_plain_read / provider_names_for_plain_read 两个函数。
+#     原设计为"只读出口": 供 model_routes 的 GET /providers/{name}/api-key 取 ai 区域原始数据(不掩码)、
+#     provider 名判定复用 _provider_names。但实现成了**纯透传壳**——函数体只有 `return _raw_ai()` /
+#     `return _provider_names(ai)`, 无任何附加逻辑, 项目铁规明禁:
+#     "无透传函数: def f(x): return g(x) 只调一个函数 → 内联, 直接调 g"。
+#     原 docstring 自称"防两处口径分叉"并不成立 —— 透传壳取到的仍是底层同一权威, 与直接调完全等价,
+#     只是一层无意义跳转(SLAP: API 层不必经 service 中转两次才拿到同一份数据)。真正的防分叉由
+#     "两处都调 _raw_ai/_provider_names" 保证, 而非由壳函数保证。
+#     调用方 model_routes 已同步改为直接调 svc._raw_ai() / svc._provider_names(ai)。
+#   ②[复用优先] fetch_remote_models 的 probe_key 判空改调公用 is_blank_secret(), 删除内联的
+#     `isinstance(probe_key, str) and probe_key.strip()`。同一判定写两遍必然漂移: 内联版只覆盖
+#     "是字符串"一路, 非字符串类型靠短路侥幸兜住; 一旦 is_blank_secret 后续增补语义, 两处即分叉。
+# 2026-09-26 (三堂会审后修正·二) - 小欧 - 上条 ① 的"直接调 svc._raw_ai() / svc._provider_names(ai)"
+#   走偏了: 下划线前缀是模块私有约定, API 层直接调 service 私有函数 = 破坏封装/分层(SLAP)。
+#   省一层壳却拆了层边界, 是拆东墙补西墙。正确解法不是"零函数", 而是"一个做实事的公开函数":
+#   新增 get_provider_raw_entry(name) —— 读 ai 区 + 存在性校验(404)一次做完(含真实分支逻辑,
+#   不是透传), 路由层只调它, 不再碰 _raw_ai/_provider_names。公开契约、防分叉、守边界三者兼得。
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -79,6 +123,9 @@ from fastapi import HTTPException
 from app.llm.adapters import get_provider_adapter
 
 from app.logger import logger
+# 2026-09-26 - 小欧 - [72]三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
+#   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
+from app.utils.secret_utils import is_blank_secret
 from app.config import get_config  # [62]P7 4.3(1)c：get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 from app.services.model.config_helpers import (
     get_config_path,
@@ -399,6 +446,10 @@ def add_provider(name: str, label: str = "", api_base: str = "",
                  max_retries: int = 3) -> Dict[str, Any]:
     ai = _raw_ai()
     _validate_new_provider_name(name, ai)
+    # [72]第八章(8.5-1) - 小欧 - 2026-09-26: api_base 必填，空/纯空白 → 400。
+    # URL 是 Provider 的必要配置，无地址即无法调用；不允许"先建后填"（与 api_key 的"留空=保持原值"方向相反）。
+    if not str(api_base or "").strip():
+        raise HTTPException(status_code=400, detail="api_base 必填：API 地址是 Provider 的必要配置")
     ms = list(models or [])
     if model and model not in ms:
         ms.append(model)
@@ -425,10 +476,32 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         )
         if unknown_key:
             raise ValueError(f"不支持的Provider配置项: {unknown_key}")
+    # [72]第三章 + 第四章 + 第八章(8.5-3) - 小欧 - 2026-09-26
+    # 三条契约在本函数一次落地（同函数禁止拆两次改）：
+    #   第三章 api_key 三态：字段不出现/None/空串/纯空白 = 不修改（跳过不写）；非空 strip 后写入
+    #   第四章 clear 与设置值互斥：clear=true 且 api_key 非空 → 400，不静默丢弃任何一方
+    #   第八章 base_url 空即错误状态：空/纯空白 → 400，不再"清空后照存"
+    # ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500，故此处显式抛 400 HTTPException
+    if fields.get("clear") is True and str(fields.get("api_key") or "").strip():
+        raise HTTPException(status_code=400,
+                            detail="clear=true 与 api_key 设置值不能同时提交：请只提交其中一项")
+    for _url_key in ("base_url", "api_base"):
+        _url_val = fields.get(_url_key)
+        if _url_key in fields and _url_val is not None and not str(_url_val).strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"{_url_key} 为空：URL 是 Provider 的必要配置，无法调用，请填写完整地址")
     tree: Dict[str, Any] = {"ai": {name: {}}}
     node = tree["ai"][name]
     for k, v in fields.items():
         if k in key_map and v is not None:
+            if k == "api_key":
+                # 第三章三态 + 第一章去空格：空/纯空白视为"不修改"跳过；非空 strip 后落盘
+                cleaned = str(v).strip()
+                if not cleaned:
+                    continue
+                node["api_key"] = cleaned
+                continue
             node[key_map[k]] = v
     # [62]P8 4.3(9)-3-d 动态参数落盘：param_types 内、key_map 外的动态字段写 ai.{provider}.{k}（标量叶值直写）
     for k, v in fields.items():
@@ -529,18 +602,71 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
     return models, None
 
 
-async def fetch_remote_models(name: str) -> Dict[str, Any]:
-    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24"""
+def _classify_remote_result(status_code: Optional[int], network_err: bool) -> str:
+    """[72]第十章(10.3) - 小欧 - 2026-09-26: 远端探测结果分类，供前端给出"地址问题/key 问题"两套文案。
+
+    分类表（设计 10.3，**404/405/501 不得判 key 无效** —— 部分 provider 没有 /models 端点，
+    拿 404 判"key 无效"会给用户误报，用户会反复改 key 甚至把本来正确的 key 改坏）：
+      ok                     2xx                     key 有效
+      key_invalid            401 / 403               key 无效或无权限
+      endpoint_unsupported   404 / 405 / 501         该 provider 无 /models 端点，key 未验证
+      network_error          超时 / 连接失败          base_url 或网络问题，与 key 无关
+    """
+    if network_err:
+        return "network_error"
+    if status_code is None:
+        return "network_error"
+    if 200 <= status_code < 300:
+        return "ok"
+    if status_code in (401, 403):
+        return "key_invalid"
+    if status_code in (404, 405, 501):
+        return "endpoint_unsupported"
+    return "network_error"
+
+
+def get_provider_raw_entry(name: str) -> Dict[str, Any]:
+    """取指定 provider 的 ai 区原始条目（不掩码）—— 明文查看端点的 service 层唯一入口。
+
+    2026-09-26 - 小欧 - [72]三堂会审后修正·二（见文件头）: 做"读 + 存在性校验"两件事，
+    有真实分支逻辑，不是透传壳。路由层只调本函数，不直接碰 _raw_ai/_provider_names。
+    """
+    ai = _raw_ai()
+    if name not in _provider_names(ai):
+        raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
+    return ai.get(name) or {}
+
+
+async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dict[str, Any]:
+    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24
+
+    [72]第十章(10.3) - 小欧 - 2026-09-26: 增 probe_key 参数支持"测未保存的 key"（保存前验证场景）。
+    该 key **仅存内存、只用于本次探测的 header，不落盘、不进日志、不回传响应**（设计硬要求）。
+    另：失败返回增 status_code + category 字段，供前端区分"地址问题"与"key 问题"两套文案。
+    """
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
     # 2026-09-24 23:55:00 - 小欧 - 设计 L137：api_key 含 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底）— 小欧-2026-09-24
-    api_key = os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or "")
+    # [72]第十章(10.3) - 小欧 - 2026-09-26: probe_key 优先于 env/YAML（用户正在输入框里新输的 key 才是待验证的那个）
+    # 2026-09-26 - 小欧 - [72]第二章(2.4 一致性项): 补注释「此处不回落」——
+    #   本行 api_key 为空时**传空串给远端、不回落到全局默认 provider 的 key**（`or str(p.get("api_key") or "")` 的
+    #   第二个 or 只是 YAML 兜底，不是跨 provider 回落）。此"不回落"行为是**正确**的：它与 resolver 情况 B
+    #   （跨 provider 且 key 空白 → 明确报错）共同构成"key 空白即失败"的一致语义。
+    #   **切勿在此加 fallback**（如 `or 全局单例.api_key`）：那会让本路径重新出现"用别的 provider 的 key"，
+    #   即第二章认定的最高优先缺陷 B。此注释为防后人误加而立。
+    # 2026-09-26 - 小欧 - [72]三堂会审后修正(复用优先): 判空改调公用函数 is_blank_secret(),
+    #   原为 `isinstance(probe_key, str) and probe_key.strip()` 内联重写一遍"空/纯空白=未配置"判定,
+    #   而 app/utils/secret_utils.py 已有该判定的唯一权威(同一批改动刚为 validation.py 收口而建)。
+    #   同一判定写两遍必然漂移 —— 本次即已漂移: 内联版只覆盖"是字符串"这一路, 非字符串类型的行为
+    #   靠短路侥幸兜住, 一旦后续给 is_blank_secret 增补语义(如接受 bytes), 两处就会分叉。
+    api_key = (probe_key.strip() if not is_blank_secret(probe_key)
+               else os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or ""))
     headers = get_provider_adapter(name).static_headers(api_key)
     configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
     ref = get_current_ref(ai)
     current_model = ref["model"] if ref["provider"] == name else None
 
-    def _fail(message: str) -> Dict[str, Any]:
+    def _fail(message: str, status_code: Optional[int] = None, network_err: bool = False) -> Dict[str, Any]:
         return {
             "ok": False,
             "provider": name,
@@ -549,14 +675,17 @@ async def fetch_remote_models(name: str) -> Dict[str, Any]:
             "configured": configured,
             "current_model": current_model,
             "message": message,
+            # [72]第十章(10.3): 分类 + 状态码随失败一起返回，调用方才能程序化区分错误类型
+            "status_code": status_code,
+            "category": _classify_remote_result(status_code, network_err),
         }
 
     resp, err = await _http_get_remote_models(api_base, headers)
     if err:
-        return _fail(err)
+        return _fail(err, network_err=True)
     models, err = _parse_remote_models_body(resp)
     if err:
-        return _fail(err)
+        return _fail(err, status_code=resp.status_code)
     return {
         "ok": True,
         "provider": name,
@@ -564,6 +693,8 @@ async def fetch_remote_models(name: str) -> Dict[str, Any]:
         "count": len(models),
         "configured": configured,
         "current_model": current_model,
+        "status_code": resp.status_code,
+        "category": "ok",
     }
 
 

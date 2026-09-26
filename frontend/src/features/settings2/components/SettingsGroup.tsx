@@ -12,6 +12,14 @@
 // 2026-09-23 小欧 - trim/compaction配置化: sectionOf 加 tuning.trim.→'裁剪(Trim)'、tuning.compaction.→'压缩(Compaction)' 两独立分块
 // 2026-09-23 小欧 - cors_origins 迁系统组: tuning 分支删 network 映射，改挂 system 分支「关于」上方；键名去 tuning 前缀 network.cors_origins — 小欧-2026-09-23
 // 2026-09-24 21:36:38 小欧 - tuning.stream_task.→tuning.live_front. 前缀同步(组名改，分组显示名「前后端之间的流/任务/缓存」不动) — 小欧-2026-09-24
+// 2026-09-26 小欧 - [72]第九章（北京老陈指示）: appearance 组内分 2 块 ——
+//   块1「登录与准入」= 访问口令 + 免口令 IP 白名单（后端 registry 已把这两项移到本组最前）
+//   块2「外观」= 系统语言 / 主题 / 字号（原有项）
+//   理由: 准入控制（谁能进得来）与界面外观（语言/主题/字号）是两件事，混在一块会误导 ——
+//   例如以为"改外观设置就能改准入"。分组机制复用既有 sectionOf + SectionTitle（与 general/system/tuning 同款），
+//   不新造第二套渲染分支。
+//   连带: 预览小卡（服务于"字号"）从"组首无条件渲染"改为"随「外观」块首项渲染" ——
+//   否则它会孤零零压在「登录与准入」块上方，位置与语义都不对。 — 小欧-2026-09-26
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -31,6 +39,13 @@ interface Props {
   dirtyKeys: Record<string, boolean>;
   highlightKey: string | null;
   onChange: (group: string, key: string, value: unknown) => void;
+  /**
+   * 重新拉取全部设置（secret 项走专用通道落盘后刷新显示）。
+   * 2026-09-26 - 小欧 - [72]三堂会审后修正: secret 写成功后**不能**再用 onChange 去"刷新"——
+   *   onChange 是 settings 通道 setter，会把该 key 置脏（useSettings.setValue: baseline 不等 → dirtyKeys=true），
+   *   而 secret 已被 [72]第六章在 settings 写路径显式拒绝 → 用户随后"保存本组"必然整组失败。
+   */
+  onRefresh?: () => void;
 }
 
 // 2026-09-22 小欧 - [61] tuning Tab 分块：sectionOf 加 tuning.* 前缀→8 个子组名映射
@@ -38,8 +53,9 @@ interface Props {
 function sectionOf(group: string, key: string): string | null {
   // ✅ general 组加模型参数小节（仿 system/tuning 分支写法）— 小欧 2026-09-23
   if (group === 'general') {
-    if (key.startsWith('llm.sampling.') || key === 'llm.context_limit_default') return '模型参数';
-    return null;  // 通用组其余项（workspace/logging/agent.*）保持无小节原样
+    if (key.startsWith('llm.sampling.') || key === 'llm.context_limit_default')
+      return '模型参数';
+    return null; // 通用组其余项（workspace/logging/agent.*）保持无小节原样
   }
   if (group === 'system') {
     // 2026-09-21 小强 - 系统Tab 3 小节：运维日志(配置+日志目录只读) / 工程目录(6 只读) / 关于
@@ -50,6 +66,14 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('network.')) return '网络';
     return '关于';
   }
+  // 2026-09-26 小欧 - [72]第九章（北京老陈指示）: appearance 组分 2 块 ——
+  //   块1「登录与准入」= 访问口令 + 免口令 IP 白名单（谁能进得来；由后端 registry 放在本组最前两项）
+  //   块2「外观」= 系统语言 / 主题 / 字号（原有的界面外观项）
+  //   语义切分理由同后端：准入控制 ≠ 外观偏好，混在一块会让人误以为"改外观就能改准入"。
+  if (group === 'appearance') {
+    if (key.startsWith('security.')) return '登录与准入';
+    return '外观';
+  }
   if (group === 'tuning') {
     if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
     if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
@@ -57,7 +81,7 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('tuning.agent.')) return 'Agent 循环参数';
     if (key.startsWith('tuning.trim.')) return '裁剪(Trim)';
     if (key.startsWith('tuning.compaction.')) return '压缩(Compaction)';
-    if (key.startsWith('tuning.live_front.')) return '前后端之间的流/任务/缓存';  // 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
+    if (key.startsWith('tuning.live_front.')) return '前后端之间的流/任务/缓存'; // 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
     if (key.startsWith('tuning.hitl.')) return '人工确认';
     if (key.startsWith('tuning.content.')) return '内容截断';
   }
@@ -72,77 +96,85 @@ export const SettingsGroup: React.FC<Props> = ({
   dirtyKeys,
   highlightKey,
   onChange,
+  onRefresh,
 }) => {
   let lastSection: string | null = null;
   const fontSize = Number(values['appearance.fontSize'] ?? 14);
-  return (
-    <div>
-      {group === 'appearance' && (
-        <Card
-          size="small"
-          style={{ marginBottom: Spacing.LG }}
-          title="预览小卡（改下面控件，这里实时变）"
-        >
+  // [72]第九章: 外观组分「登录与准入」/「外观」两块后，预览小卡（服务于"字号"这个外观项）
+  //   必须随「外观」块一起渲染 —— 否则它会孤零零压在"登录与准入"上方，位置与语义都不对。
+  //   故改为在渲染到「外观」块首项时再输出（appearance 组内顺序由后端 registry 保证：准入项在前、外观项在后）。
+  const appearancePreview = (
+    <Card
+      size="small"
+      style={{ marginBottom: Spacing.LG }}
+      title="预览小卡（改下面控件，这里实时变）"
+    >
+      <div
+        style={{
+          display: 'flex',
+          gap: Spacing.MD,
+          alignItems: 'flex-start',
+        }}
+      >
+        <div>
           <div
             style={{
-              display: 'flex',
-              gap: Spacing.MD,
-              alignItems: 'flex-start',
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+              marginBottom: Spacing.XS,
             }}
           >
-            <div>
-              <div
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.SECONDARY,
-                  marginBottom: Spacing.XS,
-                }}
-              >
-                紧凑
-              </div>
-              <div
-                style={{
-                  fontSize,
-                  padding: Spacing.XS,
-                  background: Colors.BG.TERTIARY,
-                  borderRadius: Radius.DEFAULT,
-                }}
-              >
-                示例消息气泡 4px
-              </div>
-            </div>
-            <div>
-              <div
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.SECONDARY,
-                  marginBottom: Spacing.XS,
-                }}
-              >
-                舒适
-              </div>
-              <div
-                style={{
-                  fontSize,
-                  padding: Spacing.LG,
-                  background: Colors.BG.TERTIARY,
-                  borderRadius: Radius.DEFAULT,
-                }}
-              >
-                示例消息气泡 12px
-              </div>
-            </div>
+            紧凑
           </div>
-        </Card>
-      )}
+          <div
+            style={{
+              fontSize,
+              padding: Spacing.XS,
+              background: Colors.BG.TERTIARY,
+              borderRadius: Radius.DEFAULT,
+            }}
+          >
+            示例消息气泡 4px
+          </div>
+        </div>
+        <div>
+          <div
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+              marginBottom: Spacing.XS,
+            }}
+          >
+            舒适
+          </div>
+          <div
+            style={{
+              fontSize,
+              padding: Spacing.LG,
+              background: Colors.BG.TERTIARY,
+              borderRadius: Radius.DEFAULT,
+            }}
+          >
+            示例消息气泡 12px
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+  return (
+    <div>
       {items.map((item) => {
         const section = sectionOf(group, item.key);
         const header = section && section !== lastSection ? section : null;
         lastSection = section;
         const isAbout = section === '关于';
+        // [72]第九章: 预览小卡随「外观」块首项输出（不再置于组首，避免压住「登录与准入」块）
+        const showAppearancePreview =
+          group === 'appearance' && header === '外观';
         return (
           <React.Fragment key={item.key}>
             {header && <SectionTitle title={`── ${header} ──`} />}
+            {showAppearancePreview && appearancePreview}
             {isAbout ? (
               <div
                 style={{
@@ -159,6 +191,7 @@ export const SettingsGroup: React.FC<Props> = ({
                     dirty={!!dirtyKeys[item.key]}
                     highlight={highlightKey === item.key}
                     onChange={(v) => onChange(group, item.key, v)}
+                    onRefresh={onRefresh}
                   />
                 </div>
                 <AboutFiles
@@ -173,6 +206,7 @@ export const SettingsGroup: React.FC<Props> = ({
                 dirty={!!dirtyKeys[item.key]}
                 highlight={highlightKey === item.key}
                 onChange={(v) => onChange(group, item.key, v)}
+                onRefresh={onRefresh}
               />
             )}
           </React.Fragment>

@@ -107,6 +107,16 @@ key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局�
        同轮改，禁止 backward 无 OLD_KEY_MAP — 小欧-2026-09-24
     2026-09-24 22:36:52 - 小欧 - [68] 模型库：新增 model_library 组（items 空，不走 schema 行渲染，
       走专用组件分支）；GROUP_ORDER 插倒数第二 — 小欧-2026-09-24
+    2026-09-26 - 小欧 - [72]第九章(9.4/9.5) + 第六章(6.3) + 第十一章(11.5) 三处同批落地:
+      ①新增 security.api_token（secret=True，访问口令）——掩码读、**拒经 /settings 写**，
+        唯一权威写入口是 POST /api/v1/auth/token（单一写入口，杜绝同一 key 两个写入口产生分叉，DRY）；
+      ②新增 security.ip_allowlist（IP/CIDR 白名单，逗号分隔）——供本机回环之外的准入豁免用；
+      ③两项均置于 **appearance 组最前**（北京老陈裁定）：准入控制属"谁能进得来"，与语言/主题/字号的外观项
+        分属两件事，混在一组会误导用户以为"改外观就能改准入"；前端 SettingsGroup 相应分
+        「登录与准入」/「外观」两个渲染块（复用既有 sectionOf + SectionTitle，不新造第二套分支）；
+      ④第十一章联动：ConfigUpdate 收敛为只 ai_model_ref 后，本注册表成为 theme/language/max_steps 等
+        6 项的唯一写入口，不再与 PUT /config 并行 —— 消重入口即消分叉。
+      secret 项新增后 _build_index 自检生效：未接 provider/auth 通道的 secret 项直接拒启（fail-fast）。— 小欧-2026-09-26
 """
 from typing import Any, Dict, List, Optional
 
@@ -154,6 +164,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               env_key="AI_PROVIDER"),
     ]},
     # 4.3 安全（security，4 项，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
+    #   2026-09-26 小欧 - [72]第九章: 「访问口令」「免口令 IP 白名单」两项**移出本组**，
+    #   改置于「外观」组首（见下方 appearance）。理由（北京老陈）：本组是**操作安全**
+    #   （要不要拦用户的危险动作），而那两项是**准入控制**（谁能进得来），语义不同混在一起会误导
+    #   —— 例如误以为"关掉安全开关就不用输口令"。本组恢复为原有 4 项操作安全。
     "security": {"label": "安全", "items": [
         _item("security.enabled", "bool", "安全开关", False,
               notice="关闭后跳过所有安全检查（盘根/项目根等删除硬防线仍生效）"),
@@ -220,7 +234,23 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("version", "readonly", "当前版本", None, readonly=True),
     ]},
     # 4.6 外观（theme 只读，字号/语言 YAML 即时 + 本地预应用）
+    # 4.8 外观（appearance，5 项）
+    #   2026-09-26 小欧 - [72]第九章（北京老陈指示）: 前两块为**准入控制**（谁能进得来），
+    #   放在本组最前；「安全」组只留操作安全（危险动作拦不拦），两者语义分开不混淆。
+    #   注: 键名仍为 security.*（对外契约与已装环境变量 OMNIAGENT_API_TOKEN 保持不变），
+    #     但**展示分组**在本组 —— 键名前缀只表命名空间，展示位置由 GROUPS 决定。
     "appearance": {"label": "外观", "items": [
+        # 块1 访问口令（secret=True → 读路径掩码，永不回明文；
+        #   写路径被 settings_service._validate_value 显式拒绝（第六章方案 B），
+        #   改口令走专用端点 auth_routes，与 provider 通道同构：单一权威写入口）
+        _item("security.api_token", "text", "访问口令", None, secret=True,
+              env_key="OMNIAGENT_API_TOKEN",
+              notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
+        # 块2 免口令 IP 白名单（白名单内等于无鉴权，可读全部明文密钥 —— 只应放可信网段；
+        #   本机 127.0.0.1/::1 恒免，无需在此配置；非 secret：白名单不是机密，需在设置页可维护）
+        _item("security.ip_allowlist", "text", "免口令 IP 白名单", "",
+              env_key="OMNIAGENT_IP_ALLOWLIST",
+              notice="这些 IP/网段访问本服务免口令，逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1)恒免。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
         _item("app.language", "select", "系统语言", "zh-CN",
               options=["zh-CN", "en-US"], restart=True),
         _item("app.theme", "readonly", "主题", "light", readonly=True,
@@ -314,19 +344,40 @@ GROUPS: Dict[str, Dict[str, Any]] = {
 # 2026-09-24 小欧 - [68] D1：模型库插倒数第二（通用→模型→安全→沙箱→调优→系统→模型库→外观）— 小欧-2026-09-24
 GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "model_library", "appearance"]
 
-# registry key → ConfigUpdate 字段映射（旧键走 config_service.update_config，语义不变；
-# 未列出的键走通用 region 合并，见 config_helpers.merge_region_patch）
-OLD_KEY_MAP: Dict[str, str] = {
-    "app.language": "language",
-    "workspace.project_root": "project_root",
-    "ai.model_ref": "ai_model_ref",
-}
+# 2026-09-26 - 小欧 - [72]第十一章(11.5 第1步): 删 OLD_KEY_MAP（死映射，零消费方）。
+#   该映射 registry key → ConfigUpdate 字段名，但 ConfigUpdate 已收敛为只留 ai_model_ref，
+#   映射里 app.language→language / workspace.project_root→project_root 两项**指向已不存在的字段**，
+#   留着会误导后人以为存在键名映射通道。核实依据: 全项目非注释引用为 0（仅本定义处 + 历史编辑记录里的提及）。
+#   本次删定的 settings 写路径统一走 update_settings → merge_region_patch（region 级合并），
+#   不需要键名映射层。历史编辑记录里的相关记载按铁律保留不删。 — 小欧 2026-09-26
 # v4.17 修正：安全 10 项全部逐键走通用 region 合并（security.* 逐行 merge，防整块覆盖丢键）。
 # 原 SECURITY_KNOWN 整块写 ConfigUpdate.security 的方案撤销——整块替换会覆盖未识别键造成丢数据。
+#   [72]第十一章补充: ConfigUpdate 已收敛为只留 ai_model_ref（security 字段随旧 handler 一并删除），
+#   本条记载的"撤销"结论如今已成既成事实——安全 10 项只走逐键 region 合并，无第二条写路径。
 # v4.18 修正：app.max_steps 从 OLD_KEY_MAP 移除，统一走 merge_region_patch（与 app.debug/max_context_tokens/max_history_length/max_rounds 同路径，消除系统参数写路径分裂）；范围校验由 registry range_=[1,10000] + _validate_value 承接。
 # v4.20 修正：键名按域收敛后，app.max_steps→agent.max_steps、app.max_rounds→agent.max_rounds、app.debug→logging.debug、
 #   app.project_root→workspace.project_root、app.allowed_dirs→workspace.allowed_dirs（OLD_KEY_MAP 同步改）；死配置已全清。
 # v4.18 修正：app.theme 从 OLD_KEY_MAP 移除——该键 readonly=True，_validate_value 恒先拒，映射不可达死代码。
+    # 2026-09-26 - 小欧 - [72]第六章(6.5) 加 secret 项注册自检（方案 B 的"防半吊子"关键）
+    #   secret=True 的项若未在 _SECRET_WRITTEN_BY_PROVIDER_CHANNEL 登记（即其写路径未接 provider 通道
+    #   或专用 auth 端点），模块加载即拒启。动机: settings 通用通道对 secret 项一律显式拒绝写
+    #   （settings_service._validate_value），未接写通道的 secret 项将"写不进也读不出掩码"，属半吊子。
+    #   登记项: api_token（专用 auth 端点，第九章）。收口口径与既有"重复 key 拒启"(3.2 铁律1)一致。 — 小欧 2026-09-26
+
+
+# [72]第六章(6.5) - 小欧 - 2026-09-26: 声明"registry 静态 secret 键中，哪些的写路径已接好"的唯一权威集合。
+# 新增 secret 项时必须在此登记（登记即自检通过），未登记则模块加载即拒启（防半吊子）。
+# 位置必须在 _build_index 之前 —— REGISTRY_INDEX = _build_index() 在模块加载时即执行。
+# 2026-09-26 补登 security.api_token（[72]第九章）: 其写路径为**专用 auth 端点**（auth_routes.set_api_token），
+#   与 provider 通道同构（单一权威写入口 + 显式拒绝 settings 通用通道），故登记于此以通过自检。
+#   注意: 登记键须与 registry 中的**完整 key** 一致（此处是 security.api_token，不是裸字段名）。
+# 2026-09-26 (三堂会审后修正) - 小欧 - 删集合中原有的 `"api_key"` 裸项：
+#   registry 共 74 键经实测无任何键含 api_key（provider 的 api_key 是**动态项**，由 ProviderConfig
+#   专属表单渲染，不在 registry 静态表里），故该裸项匹配不到任何键，属死数据；
+#   且它与上一段"须登记完整 key"自相矛盾（按此规则它自身就不合格），还会误导后人照抄。
+#   provider 动态 key 的写保护由 model_service.update_provider_config（三态）+ settings 写路径
+#   显式拒绝共同承担，不在本集合登记（本集合只收 registry 静态 secret 键）。
+_SECRET_WRITTEN_BY_PROVIDER_CHANNEL = frozenset({"security.api_token"})
 
 
 def _build_index() -> Dict[str, Dict[str, Any]]:
@@ -338,6 +389,18 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
             if key in index:
                 raise RuntimeError(f"[settings_registry] 重复 key 拒启: {key}")
             index[key] = item
+    # [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项自检（方案 B 的"防半吊子"关键）。
+    # secret=True 的项其写路径必须指向 provider 通道（model_service.update_provider_config 三态），
+    # 而 settings 通用通道一律显式拒绝写 secret 项。若有人注册了 secret=True 却没在 provider 通道
+    # 实现该 key 的写入能力，则该项**写不进也读不出掩码**，属半吊子 —— 故开发期即拒启，
+    # 杜绝"开了 secret 却没实现写保护"这种静默失效（与既有"重复 key 拒启"同一收口口径）。
+    for key, item in index.items():
+        if item.get("secret") and key not in _SECRET_WRITTEN_BY_PROVIDER_CHANNEL:
+            raise RuntimeError(
+                f"[settings_registry] secret 项未接 provider 通道写路径，拒启: {key}。"
+                f"secret 项须在 _SECRET_WRITTEN_BY_PROVIDER_CHANNEL 登记"
+                f"（当前已登记: {sorted(_SECRET_WRITTEN_BY_PROVIDER_CHANNEL)}）"
+            )
     return index
 
 

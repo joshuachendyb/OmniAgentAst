@@ -23,6 +23,14 @@
 #   全文读取落 services/model/config_service.read_version_file，供前端关于区"查看 version 文件全文"。
 # 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 /config/provider/* 6个老CRUD路由(前端零调用, 设置2版已走
 #   /models /providers model_routes)；同步删仅被其调用的 config_service 6函数与 config_schemas 死DTO — 小欧-2026-09-24
+# 2026-09-26 - 小欧 - [72]第十一章(11.5 第1步) 落地: PUT /config 收敛为**只写 ai_model_ref**
+#   ConfigUpdate 七字段砍到只剩 ai_model_ref（切全局模型的唯一必需项），其余 6 项功能已迁移或属安全隐患：
+#   ①provider_api_keys：能以空串擦除密钥（[72]第三章认定的"第二个能擦除密钥的入口"）→ 字段删除，漏洞消失；
+#   ②⑤⑥ theme/language/max_steps/security 块：由 /settings PUT 与设置页各 Tab 承担，重复入口即分叉；
+#   ③④ project_root 等：写 workspace.project_root 有专用 handler 与备份恢复链路，PUT /config 不再旁路。
+#   为何端点本身保留：北京老陈裁定 configApi.switchCurrentModel（AppContext.tsx:266 切全局模型）仍走此端点，
+#   整条删除会打断该功能（功能退化，禁止）—— 故保留端点、只收窄可写字段（KISS-DIRECT，不新造第二个切模型端点）。
+#   连带 config_service.update_config 同步收敛 + FIELD_HANDLERS 只剩 ai_model_ref 一项 — 小欧 2026-09-26
 """
 config_routes — 配置API路由薄壳 (P3 后路由+DTO 调 config_service)
 
@@ -34,6 +42,7 @@ from app.api.v1.config_schemas import (
     ConfigFixResponse,
     ConfigPathResponse,
     ConfigResponse,
+    # 2026-09-26 小欧 - [72]第十一章(11.5 第1步): ConfigUpdate 保留（收敛为只切模型），import 随之保留
     ConfigUpdate,
     ConfigValidateRequest,
     ConfigValidateResponse,
@@ -51,6 +60,7 @@ from app.services.model.config_service import (
     open_config_folder as svc_open_config_folder,
     read_config_file as svc_read_config_file,
     read_version_file as svc_read_version_file,
+    # 2026-09-26 小欧 - [72]第十一章(11.5 第1步): update_config 保留（收敛为只切模型，内部只派发 ai_model_ref）
     update_config as update_config_service,
     validate_config as svc_validate_config,
 )
@@ -79,6 +89,14 @@ async def get_system_config():
     )
 
 
+# 2026-09-26 - 小欧 - [72]第十一章(11.5 第1步): PUT /config 端点**保留但收敛为只切模型**。
+#   原计划整条删除，实施时实测发现文档 11.2「前端零调用」结论不成立 ——
+#   configApi.switchCurrentModel（AppContext.tsx:266，顶栏与设置页「切换全局模型」唯一写链）在调本端点，
+#   整条删除会导致切全局模型 404 失效（功能退化，违反"只能增强不能退化"红线）。故保留，但**只写 ai_model_ref**：
+#   ①provider_api_keys（[72]第三章认定的"第二个能擦除密钥的入口"）已从 ConfigUpdate 删除 → 漏洞消失，本条为本次整改核心目标
+#   ②theme/language/max_steps/security/project_root 功能已全部迁移至 settings registry 对应项（文档 11.2 表），
+#     且其中 theme 早已是 registry 只读项（暗色入口已移除）——旧 handler 一并删除，不再有第二条写路径。
+#   保留全部 GET 端点（GET /config、/config/read、/config/full、/config/validate、/config/fix、/config/path 等）。 — 小欧-2026-09-26
 @router.put("/config")
 def update_config(config_update: ConfigUpdate):
     return update_config_service(config_update)

@@ -39,6 +39,7 @@
 | `extract_metadata_from_steps` | 从步骤提取元数据 | execution_steps | dict |
 | `format_param_value` | 将参数默认值格式化为字符串（供LLM提示文本使用），None→""、bool→"true"/"false" | val | str |
 | `format_llm_data_text` | 将工具结果 llm_data 格式化为前端展示文本（JSON美化，失败回退str）；2026-08-25 小欧 从 action_handler 内嵌闭包拆出至全局层（纯函数，零改动） | llm_data | str |
+| `is_blank_secret` | 判定密钥/敏感值是否"未配置"（None/空串/纯空白/非字符串均算未配置）。[72]第二章「key 空白即失败」一致语义的唯一权威，`lifecycle/validation.py` 与 `model/resolver.py` 两处复用（DRY，避免第三份不一致写法）；2026-09-26 小欧 新建于 secret_utils.py | value: Any | bool |
 
 ### 1.3 JSON解析（json_utils.py）
 

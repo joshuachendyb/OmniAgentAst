@@ -6,6 +6,12 @@ Author: 小沈 - 2026-05-29
 基础模块,被 BaseAIService 调用。
 只支持 OpenAI 兼容格式的 API(/chat/completions 端点)。
 SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
+2026-09-26 - 小欧 - [72]三堂会审后修正（如实更正上述第 8 行契约）:
+  [72]第八章(8.5-4) 起，本模块在 __init__ 对"base_url 空/纯空白"直接抛 fastapi.HTTPException(400)。
+  这与第 8 行"不处理错误"已有出入 —— SDK 依赖了 Web 框架并承担了 HTTP 状态语义。
+  现状行为正确（FastAPI 原样透传该 400，前端能收到准确文案），故本次不动结构；
+  根治（SDK 只抛 ValueError、由 API 边界统一译为 400）需清查全部构造点，面大单列，不在此顺手改。
+  此注为防后人误信第 8 行而做出错误假设。
 
 FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-06-11
 编辑历史: 2026-07-16 小欧 request_stream 响应错误路径: >=400时记录响应体后raise_for_status(所有4xx/5xx可见错误原因)
@@ -37,6 +43,15 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   而它正是 4.3「观测 ref_count 日志」要回答的问题; ②acquire() 两处关闸(_closing 已归零 / 底层被池外 aclose)补 WARNING
   现场(带 pool/client 标识)——二者都是"有人在本该关死后仍来借出"的异常形态, 必须留痕;
   沿用 v1.4 已确立的池标识口径, 不新增日志风格 — 小欧 2026-09-25
+编辑历史: 2026-09-26 小欧 - [72]第一章(1.3-3) + 第八章(8.5-4) 落地: ①__init__ 组 header 前对 api_key 再 strip 一次
+  (api_key.strip() if isinstance(api_key,str) else api_key), 使 YAML 里已落盘的历史脏 key(带首尾空格/换行)也能工作,
+  无需用户手工重录, 与写入侧 model_service.update_provider_config 的 strip 两侧对齐消除双通道不一致;
+  ②删 _default_base_url() 与 _DEFAULT_URLS 整段(:298-312 原址): 北京老陈裁定「URL 不能空→空是错误状态要红色提示
+  →保存就是保存」, 静默兜底会把远程 ollama 打到本机、绕过中转直连官方计费(8.3 表), 属有害的假便利;
+  ③self._base_url 改纯取 llm_model.api_base, 空/纯空白即抛 HTTPException(400) 文案指向"到设置页填写完整地址",
+  空就是空不瞎兜底(与第二章"情况 B 直接报错"同一原则); ④新增 fastapi.HTTPException 导入;
+  ⑤原 :267-268 兜底注释保留在 __init__ 内作为历史记录(注明撤销理由), 文件头 docstring :18/:21 的旧描述按
+  "编辑历史不删"铁律保留不动 — 小欧 2026-09-26
 """
 
 import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
@@ -45,6 +60,8 @@ import inspect  # [70] SharedClientPool.close 判定可等待对象 — 小欧-2
 import json
 import threading  # [70] SharedClientPool 池级线程锁(多线程 acquire/release) — 小欧-2026-09-25
 from typing import Any, AsyncGenerator, Dict, List, Optional
+
+from fastapi import HTTPException  # [72]第八章(8.5-4) 小欧 2026-09-26: base_url 空即错误状态, 构造即报错
 
 from app.constants import (
     DEFAULT_CONNECT_TIMEOUT as _D_CONNECT_TIMEOUT,
@@ -263,10 +280,24 @@ class LLMClient:
         shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 C1: 共享连接池注入, 快照复用不 new — 小欧-2026-09-20
     ):
         self.llm_model = llm_model   # 前导+model 命名铁律 — 小欧 2026-08-22
-        self._api_key = api_key
-        # 三堂会审复核加固(小欧 2026-08-23): 保留原 provider or "openai" 兜底语义(防空 provider 时
-        # _default_base_url 返回空串致 httpx base_url 为空; 当前可达路径虽恒非空, 防御不弱化)
-        self._base_url = llm_model.api_base or self._default_base_url(llm_model.provider or "openai")
+        # 2026-09-26 - 小欧 - [72]三堂会审后修正(DRY): strip 只做一次。
+        #   原写法第 277 行存一份未清洗的 `self._api_key`、第 301 行组 header 时又 strip 一次 ——
+        #   同一清洗做两遍，且存的那份是脏的（虽然当前全仓零读取，属死状态）。
+        #   现清洗一次得 cleaned_key，两处共用：内存态与发出的 header 同一口径。
+        #   [72]第一章(1.3-3) 消费端兜底本意不变：YAML 里已落盘的历史脏 key（首尾空格/换行）照常工作。
+        cleaned_key = api_key.strip() if isinstance(api_key, str) else api_key
+        self._api_key = cleaned_key
+        # [72]第八章(8.5-4) - 小欧 - 2026-09-26：删 _default_base_url/_DEFAULT_URLS 兜底，空 URL 构造即报错。
+        # 原注释保留在下方（历史编辑记录不删）：原为
+        #   "三堂会审复核加固(小欧 2026-08-23): 保留原 provider or "openai" 兜底语义(防空 provider 时
+        #   _default_base_url 返回空串致 httpx base_url 为空; 当前可达路径虽恒非空, 防御不弱化)"
+        # 撤销理由：北京老陈裁定「URL 不能空→空是错误状态要红色提示→保存就是保存」；静默兜底会把
+        # 远程 ollama 打到本机、绕过中转直连官方计费。空就是空，明确报错，不瞎兜底（与第二章同一原则）。
+        self._base_url = llm_model.api_base
+        if not (self._base_url or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"provider {llm_model.provider or '未指定'} 的 URL 为空，请到设置页填写完整地址")
 
         read_timeout = float(timeout) if timeout else _D_READ_TIMEOUT
         self._default_timeout = read_timeout
@@ -276,7 +307,9 @@ class LLMClient:
         # shared_client 分支(同provider快照复用全局池)不重算头——全局池建池时已带 static_headers;
         # 跨provider 时 resolver 置 shared_client=None 走 else 新建, 头由 static_headers 注入 — 小欧 2026-09-23
         self._adapter = get_provider_adapter(llm_model.provider or "")
-        self._static_headers = self._adapter.static_headers(api_key)
+        # [72]第一章(1.3-3) - 小欧 - 2026-09-26 消费端兜底：用已清洗的 cleaned_key 组 header
+        # （与后端写入侧 model_service.update_provider_config 的 strip 对齐，两侧一致）。
+        self._static_headers = self._adapter.static_headers(cleaned_key)
         if shared_client is not None:
             self._client = shared_client
         else:
@@ -294,22 +327,6 @@ class LLMClient:
                 headers=self._static_headers,   # zen: UA/session 等静态头; 默认: 仅 Authorization — 小欧 2026-09-23
                 base_url=self._base_url,
             )
-
-    _DEFAULT_URLS = {
-        "deepseek": "https://api.deepseek.com",
-        "qwen": "https://dashscope.aliyuncs.com/compatible-mode",
-        "ollama": "http://localhost:11434",
-    }
-
-    def _default_base_url(self, provider: str) -> str:
-        """根据 provider 返回默认 API 地址 — 小健 2026-06-17 OCP: 优先配置,其次硬编码默认"""
-        try:
-            custom_urls = get_config().get("llm", {}).get("provider_urls", {})
-            if provider in custom_urls:
-                return custom_urls[provider]
-        except Exception:
-            logger.warning(f"[client_sdk] 读取自定义URL配置失败: provider={provider}")
-        return self._DEFAULT_URLS.get(provider, "")
 
     async def _acquire_soft_pool(self, _sem: Optional[asyncio.Semaphore] = None) -> bool:
         """排队获取软配额信号量: 超时保底放行(不拒绝不降级, 防长时间卡等) — 小欧 2026-09-24 v3.7.1

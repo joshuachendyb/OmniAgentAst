@@ -20,6 +20,11 @@
 // 2026-09-22 小欧 - 控件宽度统一：参数模板区硬编码 minWidth:160/maxWidth:240 改用 settingsControl 令牌 - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：参数模板区 Select/InputNumber/Input 三控件 onChange 的「勾选才收集+params合并」
 //   重复 → 抽取 updateCollectedParam 单函数（函数式更新防闭包陈旧值）- 小欧-2026-09-22
+// 2026-09-26 - 小欧 - [72]第八章(8.5-1) 落地: 添加 Provider 弹窗的 api_base 改为必填
+//   (rules required + 自定义 validator 拒纯空白), 未填不允许提交(北京老陈: URL 不能空->空是错误状态)。
+//   与 api_key 的"未配置则留空"方向相反: api_key 允许先建后填, base_url 是必要配置。
+//   后端 model_service.add_provider 同步校验 api_base 空 -> 400, 前后端双闸。 - 小欧-2026-09-26
+
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -324,8 +329,22 @@ export const ModelModals: React.FC<Props> = (props) => {
           <Form.Item name="label" label="显示名">
             <Input />
           </Form.Item>
-          <Form.Item name="api_base" label="API 地址">
-            <Input />
+          <Form.Item
+            name="api_base"
+            label="API 地址"
+            // [72]第八章(8.5-1) 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
+            // 无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
+            rules={[
+              { required: true, message: '请输入 API 地址' },
+              {
+                validator: (_rule, value: string) =>
+                  value && value.trim() === ''
+                    ? Promise.reject(new Error('API 地址不能为空白'))
+                    : Promise.resolve(),
+              },
+            ]}
+          >
+            <Input placeholder="https://api.deepseek.com" />
           </Form.Item>
           <Form.Item name="api_key" label="API Key">
             <Input.Password placeholder="未配置则留空" />

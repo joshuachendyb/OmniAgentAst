@@ -56,6 +56,13 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
       ④S16 空 patch 拒绝假成功（#11 ok:True 空保存根治）
     2026-09-22 - 小欧 - int/float 补 range_ 边界校验：type=int/float 且 schema 有 range_ 时，
       校验值不超出 [lo, hi]，与 range 类型对齐（schema.range_ 统一生效，堵住超范围值落盘漏洞）
+    2026-09-26 - 小欧 - [72]第六章(6.5) 落地: _validate_value 增 secret 项显式拒绝（方案 B 主线）
+      secret=True 的项经 /settings 写入时直接报错并指引 provider 通道，不做隐式兜底。
+      修前缺陷：secret 三态只在 provider 通道（model_service.update_provider_config）实现，
+      而 settings 通用通道会把 secret 项当普通值写入 —— 空串=擦除值、{clear:true} dict 直接落盘写坏结构，
+      一旦有人注册 secret=True 立刻生效且界面还显示"留空=保持原值"误导用户。
+      配套自检在 settings_registry._build_index（未接 provider 通道的 secret 项拒启），
+      二者同批实施：自检保证"不会误开 secret"，本处保证"开了也不被通用通道写坏"。 — 小欧 2026-09-26
 """
 from pathlib import Path
 import json
@@ -216,6 +223,21 @@ def _to_stored_value(item: Dict[str, Any], value: Any) -> Any:
 
 
 def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
+    # [72]第六章(6.5) - 小欧 - 2026-09-26: 方案 B —— secret 项写路径**显式拒绝**，指引 provider 通道。
+    # 修前缺陷：secret=True 的项若有人注册进来，settings 通用通道会把它当普通值写入
+    #   （空串=擦除密钥、{clear:true} dict 直接落盘损坏结构），而 secret 三态只在 provider 通道实现。
+    # 故此处**不做隐式兜底**，直接报错，让"开了 secret 却没实现写保护"在开发期即暴露（配合 registry 自检）。
+    if item.get("secret"):
+        # 2026-09-26 - 小欧 - [72]三堂会审后修正(文案准确性): 原文案对**所有** secret 项一律提示
+        #   "请用 provider 通道"，但 [72]第九章新增的 security.api_token 走的是 **auth 专用端点**
+        #   (POST /api/v1/auth/token)，根本没有 provider 通道 —— 照原文案指引，用户会去 provider 通道
+        #   找入口、根本找不到。**报错文案把人带偏**，比报错本身更有害。改为按 key 前缀给出各自真实的写通道:
+        #     ai.{provider}.api_key → provider 通道; security.api_token → auth 专用端点。
+        channel = ("auth 专用端点 POST /api/v1/auth/token"
+                   if item["key"].startswith("security.")
+                   else "provider 通道 PUT /api/v1/providers/{provider}")
+        return (f"{item['key']} 为敏感项，不支持经 /settings 写入"
+                f"（空串会擦除值、clear 标记会写坏结构），请走 {channel}")
     if item.get("readonly"):
         return f"{item['key']} 为只读项"
     t = item["type"]

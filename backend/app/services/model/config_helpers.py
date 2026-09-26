@@ -53,6 +53,30 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-25 - 小欧 - [70] v1.12 补换代链入口日志: reload_ai_config() 记 INFO「配置热重载触发」——
 #   它是整条换代链(重载→退代→建代→归还→归零关闭)的起点, 此前完全静默, 线上无法判断"换代到底发生没发生"。
 #   与 service 侧四段日志配对后, 一次换代的完整因果链可从日志直接读出 — 小欧 2026-09-25
+# 2026-09-26 - 小欧 - [72]第七章(7.3) + 第十二章(12.5) 两章合并一次实施（设计明写"两处改同一函数须合并一次做"）:
+#   mask_secret_value 升级为三键恒定 {configured, prefix, suffix} 唯一权威契约:
+#   ①第七章修"类型撒谎" —— 原未配置分支只返 {configured: False}, 根本没有 suffix 键,
+#     而前端 model.api.ts 声明 suffix 必填, 形状不恒定埋运行时 undefined 隐患; 现补齐两键
+#   ②第十二章加 prefix 实现"前4位+后4位"显示; 长度分档防短 key 泄露:
+#     len>=8 → prefix=s[:4]+suffix=s[-4:]（不重叠）; 4<=len<8 → prefix="" 只给末4位
+#     （否则 5 位 key 前后缀重叠等于泄露 7/8 位）; len<4 → 两键皆空（维持 2026-09-21 S5 修复）
+#   ③未动 _parse_remote_models_body / _http_get_remote_models(职责单一, 掩码契约不外溢) — 小欧 2026-09-26
+# 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核, 本文件 2 处已改:
+#   ①[DRY + 正确性] mask_secret_value: 原先 `s = str(value or "")` 后用 `s.strip()` 判空、
+#     却用**未 strip 的 s** 参与长度分档与切片 —— 判空与分档用了两个不同的值(根因)。
+#     实测复现的真 bug: m('  sk-abcdefghijkl  ') -> prefix='  sk', suffix='kl  '  (把空白当密钥位泄露)
+#                        m('sk-abcdefghijkl\n')  -> suffix='jkl\n'                  (换行进掩码)
+#     触发面真实: 本函数是 secret 掩码唯一权威, 被 /settings、/models、/config 多处调用, 输入含
+#     **未落盘清洗的 env 变量**(MONTHSHOT_API_KEY=" sk-xxx " 这类 export 手误常见; 写入侧
+#     update_provider_config 会 strip, 但掩码侧拿到的可能是原始 env 值)。
+#     后果: ①空白被当成密钥位显示; ②长度分档被空白污染(8 位有效 key 被算成 >8 而给出 prefix,
+#     恰好掩盖了本该保护的短 key 场景)。修法: 一律先 strip, 判空与分档用同一个值。
+#     改后实测: 带空格/带换行的 12 位 key 掩码结果与干净值完全一致。
+#   ②[关联逻辑] _validate_config_integrity 里那段"仅判缺失不判空串"的说明注释, 原被放在 `if` 语句体
+#     **内部**(紧跟 errors.append), 位置荒谬 —— 读起来像"报错之后还要做的事", 实则是"为何这样校验"的
+#     解释。注释解释判断本身, 必须置于判断之前。位置错了, 注释就在撒谎。已移至 if 之前。
+#   附: 本轮删除的 5 个旧 handler(_set_app_field/_update_api_keys/_update_max_steps/_update_security/
+#     _update_project_root)已全仓核实**零残留引用**, __all__ 4 项亦全部真实存在(无 import * 缺符号)。
 
 import os
 import shutil
@@ -168,11 +192,6 @@ def reload_ai_config() -> None:
     )
     reset()
 
-def _set_app_field(config_data: dict, field_name: str, value: Any, display_name: str = "") -> None:
-    """设置 app 下单一字段"""
-    config_data.setdefault('app', {})[field_name] = value
-    logger.info(f"更新{display_name or field_name}: {value}")
-
 def is_provider_metadata_field(field_name: str) -> bool:
     """检查字段是否是provider元数据字段（provider/model/model_ref），用于遍历ai配置时跳过 — 小欧 2026-06-18
     2026-09-21 小欧 v4.20 单源收敛：补 model_ref（唯一源），防其被当作 provider 遍历"""
@@ -273,6 +292,15 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
     env_managed = bool(os.environ.get(f"{selected_provider.upper()}_API_KEY"))
     if 'api_base' not in provider_config and not env_managed:
         errors.append(f"provider '{selected_provider}' 缺少 api_base 字段")
+    # 2026-09-26 - 小欧 - [72]第三章(3.3 配套项): 下一条校验**仅在"字段完全缺失"时报警，空值合法、不应报警** ——
+    #   界面 ProviderConfig.tsx 明确显示"未配置，留空=保持原值"，说明**允许未配置状态**；
+    #   若在此把空串/纯空白也判为错误，将导致"未配置 key 的 provider 无法保存任何其它配置"（功能退化）。
+    #   故此处维持现状（只判缺失），**切勿加"空串即错误"的校验**。此注释为防后人误加而立。
+    #   key 三态（空=不修改 / 非空=设置 / clear=清空）由 provider 通道
+    #   model_service.update_provider_config 唯一承担（[72]第三章已落地），此处不重复实现。
+    # 2026-09-26 (三堂会审后修正) - 小欧 - 上一段说明原先被放在 `if` 语句体**内部**（紧跟 errors.append），
+    #   位置荒谬: 读起来像"报错之后还要做的事"，实则是"为何只判缺失、不判空串"的解释。
+    #   注释解释的是判断本身，必须置于该判断**之前** —— 位置错了，注释就在撒谎。
     if 'api_key' not in provider_config and not env_managed:
         errors.append(f"provider '{selected_provider}' 缺少 api_key 字段")
     if errors:
@@ -383,14 +411,14 @@ __all__ = [
     "ensure_model_not_duplicate",
 ]
 
-# ====================================================================
-# 来自 field_handlers.py
-# ====================================================================
 
+# ====================================================================
+# 模型切换 handler（[72]第十一章: 六个旧 handler 已删, 只留切模型必需的这一个）
+# ====================================================================
 def _update_model_ref(config_data: dict, update) -> None:
     """provider+model(+api_base) 成对原子写入 — 单一权威入口
     2026-08-22 小欧 归一报告v1.25 6.6 方案B: 原 _update_provider/_update_model 两 handler 依赖
-    FIELD_HANDLERS 迭代顺序先后生效, 合并为单一 handler 消除该耦合(DRY/原子性, KISS-DIRECT)
+    FIELD_HANDLERS 迭代顺序先后生效, 合并为单一 handler 消除该耦合(DRY/原子性 KISS-DIRECT)
     2026-09-22 小欧 修 S10: AI_PROVIDER env 接管时切换只读(防假成功)——
       原无守卫, 切换写入 yaml 后被 _apply_env_overrides 读回覆盖, 前端"更换成功"实为无效"""
     ai_config = config_data.get('ai', {})
@@ -408,59 +436,18 @@ def _update_model_ref(config_data: dict, update) -> None:
         config_data['ai'][update.ai_model_ref.provider]['api_base'] = update.ai_model_ref.api_base
     logger.info(f"更新AI模型: provider={update.ai_model_ref.provider}, model={update.ai_model_ref.model}")
 
-def _update_api_keys(config_data: dict, update) -> None:
-    for provider_name, api_key in (update.provider_api_keys or {}).items():
-        if provider_name in config_data.get('ai', {}):
-            config_data['ai'][provider_name]['api_key'] = api_key.strip()
-            logger.info(f"更新Provider API Key成功: {provider_name}")
-        else:
-            raise HTTPException(status_code=400, detail=f"不支持的Provider: {provider_name}")
 
-def _update_max_steps(config_data: dict, update) -> None:
-    if update.max_steps < 1:
-        raise HTTPException(status_code=400, detail="max_steps 必须大于等于 1")
-    if update.max_steps > 10000:
-        raise HTTPException(status_code=400, detail="max_steps 不能超过 10000")
-    # 2026-09-21 小欧 v4.20 键名按域收敛: app.max_steps → agent.max_steps（PUT /config 与 settings 写路径对齐同一键）
-    config_data.setdefault('agent', {})['max_steps'] = update.max_steps
-    logger.info(f"更新max_steps: {update.max_steps}")
-
-def _update_security(config_data: dict, update) -> None:
-    if not update.security:
-        return
-    security = config_data.get('security', {})
-    # 2026-09-21 小欧 - 删白/黑名单透传（whitelistEnabled/commandWhitelist/commandBlacklist，无消费方仅透传不生效，
-    #   北京老陈裁定删除；命令安全由 path_safe_check/tools/security 代码内实现）
-    # 2026-09-21 小欧 - v4.20 死配置清理: 删 contentFilterEnabled/contentFilterLevel/maxFileSize 透传（全库无消费方）
-    security.update({
-        "confirmDangerousOps": update.security.confirmDangerousOps,
-    })
-    config_data['security'] = security
-    logger.info("更新安全配置成功")
-
-def _update_project_root(config_data: dict, update) -> None:
-    """PUT /config project_root → workspace.project_root（唯一读取键）— 2026-09-22 小欧 31候选#10
-    v4.20 键名按域收敛后写入方与读取方统一唯一键；类型门禁防数字/布尔落库（#5 同类缺陷闭环）。"""
-    value = update.project_root
-    if not isinstance(value, str):
-        raise HTTPException(status_code=400, detail="project_root 应为字符串路径")
-    config_data.setdefault('workspace', {})['project_root'] = value
-    logger.info(f"更新项目根目录: {value}")
-
+# [72]第十一章(11.5 第1步): FIELD_HANDLERS 收敛为**只含 "ai_model_ref" 一项**。
+#   原 7 项中的 6 项已删:
+#     - provider_api_keys(→_update_api_keys): [72]第三章认定的"第二个能擦除密钥的入口", 删除即漏洞消失(本次核心目标)
+#     - theme/language(→_set_app_field lambda): theme 早已是 registry 只读项(暗色入口已移除), 旧写路径是死键回退
+#     - max_steps/security/project_root: 功能已全部迁移至 PUT /settings 对应 registry 项(文档 11.2 表)
+#   留 ai_model_ref 的原因: configApi.switchCurrentModel（AppContext.tsx:266 顶栏与设置页「切换全局模型」
+#   唯一写链）仍走 PUT /config; 连同端点与 ConfigUpdate 一并保留, 但**只写模型**, 不再是第二条通用写路径。
 FIELD_HANDLERS: Dict[str, Any] = {
     "ai_model_ref": _update_model_ref,
-    "provider_api_keys": _update_api_keys,
-    "theme": lambda config_data, update: _set_app_field(config_data, "theme", update.theme, "主题"),
-    "language": lambda config_data, update: _set_app_field(config_data, "language", update.language, "语言"),
-    "max_steps": _update_max_steps,
-    "security": _update_security,
-    "project_root": _update_project_root,
 }
 
-
-# ====================================================================
-# 公共工具函数（settings_service/model_service 共用）
-# ====================================================================
 
 def _get_path(data: Dict[str, Any], parts: Tuple[str, ...], default: Any = None) -> Any:
     """按路径段序列取值（_get_dotted/写后验证共用核心，叶段绝不分裂）。"""
@@ -609,9 +596,37 @@ def get_config_snapshot() -> Dict[str, Any]:
 
 
 def mask_secret_value(value: Any) -> Dict[str, Any]:
-    """secret 掩码公共函数：永不返明文，只返 {configured, suffix 末4位}（5.2 secret 契约）。"""
-    s = str(value or "")
+    """secret 掩码公共函数（**唯一权威**）：永不返明文，只返 {configured, prefix 前4位, suffix 末4位}。
+
+    [72]第七章(7.3) + 第十二章(12.5) - 小欧 - 2026-09-26 两章合并一次实施（设计明写"两处改同一函数须合并一次做"）：
+      - 第七章修"类型撒谎"：原未配置分支只返 {configured: False}，**根本没有 suffix 键**，
+        而前端 model.api.ts 声明 suffix 必填 → 形状不恒定，埋运行时 undefined 隐患。
+      - 第十二章加 prefix，最终契约为**三键恒定** {configured, prefix, suffix}。
+    长度分档（第十二章"坑2 短 key 前后缀重叠"，防 5~7 位 key 前后缀重叠等于泄露 7/8 位）：
+      len >= 8  -> {True,  prefix=s[:4],  suffix=s[-4:]}   前4+后4，不重叠
+      4<=len<8  -> {True,  prefix="",     suffix=s[-4:]}   只给末4位，prefix 置空
+      len < 4   -> {True,  prefix="",     suffix=""}       维持：configured=True 但不泄露任何位
+      未配置   -> {False, prefix="",     suffix=""}
+    2026-09-26 (三堂会审后修正) - 小欧 - [DRY + 正确性] 原实现先 `s = str(value or "")` 再用
+      `s.strip()` 判空、却用**未 strip 的 s** 参与长度分档与切片。实测复现（真 bug，非理论）:
+        m('  sk-abcdefghijkl  ') -> prefix='  sk', suffix='kl  '   ← 把空白当密钥内容泄露
+        m('sk-abcdefghijkl\n')  -> prefix='sk-a', suffix='jkl\n'  ← 换行进掩码
+      触发面真实存在: 本函数是 secret 掩码唯一权威，被 /settings、/models、/config 等多处调用，
+      输入包含**未落盘清洗的 env 变量**（MONTHSHOT_API_KEY=" sk-xxx " 这类 export 手误很常见，
+      写入侧 update_provider_config 会 strip，但读取/掩码侧拿到的可能是原始 env 值）。
+      后果有二: ①空白字符被当成密钥位显示给用户（掩码失真且泄露无效位）；
+      ②长度分档被空白污染（8 位有效 key 被算成 >8 而给出 prefix，掩盖了本该保护的短 key 场景）。
+      修法: 一律先 strip 再判空与分档，**判空与分档用同一个值**（此前两者用不同值，是 bug 的根因）。
+      此改动与写入侧 strip、client_sdk 消费端兜底构成"三处同一口径"，消除双通道不一致。
+    """
+    s = str(value or "").strip()
     if not s.strip():
-        return {"configured": False}
+        return {"configured": False, "prefix": "", "suffix": ""}
     # 2026-09-21 小欧 修 S5：不足 4 位的短 secret 不再整体暴露为 suffix，改置空串
-    return {"configured": True, "suffix": s[-4:] if len(s) >= 4 else ""}
+    if len(s) < 4:
+        return {"configured": True, "prefix": "", "suffix": ""}
+    if len(s) < 8:
+        # [72]第十二章(12.5) 坑2: 4~7 位只给 suffix，prefix 置空 —— 否则 5 位 key 会
+        # prefix=s[:4] + suffix=s[-4:] 重复展示中间位，等于泄露 7/8 位
+        return {"configured": True, "prefix": "", "suffix": s[-4:]}
+    return {"configured": True, "prefix": s[:4], "suffix": s[-4:]}

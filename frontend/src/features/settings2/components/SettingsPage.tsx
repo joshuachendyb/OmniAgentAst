@@ -74,6 +74,10 @@
 //   reasoning_effort 档位表）；宽度沿用 settingsControl.actionBtnWidth 120 保持三按钮等宽 - 小健-2026-09-25
 // 2026-09-25 06:23:15 小健 - 同排入口按钮「添加参数」→「添加模型参数」（北京老陈指示，6 字与
 //   「管理推理深度」等长，actionBtnWidth 120 内不挤压，三按钮等宽视觉不变）— 小健-2026-09-25
+// 2026-09-26 小欧 - [72]第七章(7.3)+第十二章(12.5): ProviderConfig 的 fallback config 里 api_key 兜底值
+//   由 {configured:false, suffix:''} 补为三键恒定 {configured:false, prefix:'', suffix:''} ——
+//   该契约在项目内有 4 处声明（model.api.ts ProviderEntry / ProviderConfig.config / settings2/types.ts / 本兜底值），
+//   少任一处 tsc 即报 prefix 缺失，故四处同步为同一形状 — 小欧-2026-09-26
 import React, { useState } from 'react';
 import {
   Button,
@@ -443,7 +447,10 @@ const SettingsPage: React.FC = () => {
           name={state.model.selectedProvider}
           config={
             state.model.providerConfig[state.model.selectedProvider] ?? {
-              api_key: { configured: false, suffix: '' },
+              // [72]第七章(7.3)+第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}，
+              // 与 model.api.ts ProviderEntry / ProviderConfig.config / settings2/types.ts 保持同一契约
+              // （缺省会漏 prefix 键，tsc 直接报错——这正是把契约显式化的价值）
+              api_key: { configured: false, prefix: '', suffix: '' },
               base_url: '',
               label: '',
               timeout: 150, // [62]P7 4.3(1)d：缺省 fallback 与后端常量对齐（原60≠运行30/150，v3.8 对齐）
@@ -676,6 +683,11 @@ const SettingsPage: React.FC = () => {
             // 2026-09-21 小强 - 修复类型瑕疵：highlightKey 为 useSettings 独立 state（非 SettingsState 字段），直接引用返回值等价
             highlightKey={s.highlightKey}
             onChange={s.setValue}
+            // 2026-09-26 - 小欧 - [72]三堂会审后修正: secret 项（api_key / 访问口令）走各自专用通道
+            //   落盘后，用 load() 重新拉取以刷新掩码与"已配置"状态。**不能用 setValue 充当刷新**——
+            //   它会把该 key 置脏，而 secret 已被 [72]第六章在 settings 写路径显式拒绝，
+            //   用户随后点"保存本组"会因这个脏 secret 而整组失败（改 A 坏 B）。
+            onRefresh={() => void s.load()}
           />
         )}
         <SaveBar

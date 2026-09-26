@@ -2,6 +2,10 @@
 // 编辑历史: 2026-09-22 小欧 - server.port/proxy 补注释说明前端:5173→后端:8000 端口关系(两种连接方式 + 改端口同步清单)
 // 编辑历史: 2026-09-23 小欧 - server.watch.usePolling=true: Windows 下 chokidar 长跑丢文件事件
 //   (2026-09-23 一天连发两次"改代码浏览器不生效"根因)，轮询监听根治，代价=多耗 CPU - 小欧-2026-09-23
+// 2026-09-26 小欧 - [72]第九章配套: server.host 补 '0.0.0.0'。此前未配 host → Vite 默认只绑 localhost
+//   (Windows 解析为 [::1] IPv6 回环) → **局域网其他机器访问不到前端**(后端 uvicorn 已是 0.0.0.0, 两端不对齐)。
+//   依据 [72]第九章 9.1 部署事实: 后端在 B 机器、客户端在局域网多台机器, 前端必须对外可达。
+//   连带: e2e_case/vite.e2e.config.ts 仍绑 ::1(测试专用, 有意不对外暴露, 不改)。 — 小欧-2026-09-26
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import eslint from 'vite-plugin-eslint';
@@ -47,7 +51,13 @@ export default defineConfig(({ command }) => {
       //   方式1 proxy：下方 proxy 配置将 /api/* 转发到 localhost:8000（同源，无 CORS）
       //   方式2 直连：getApiBaseUrl() 拼 hostname:port 直连后端（走 CORS，需改 constants.py 白名单）
       // 改端口须同步：proxy.target（方式1）或 VITE_API_PORT + CORS 白名单（方式2）
-      port: 5173,
+        port: 5173,
+        // 2026-09-26 小欧 - [72]第九章配套: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
+        //   此前未配 host，Vite 默认只绑 localhost(Windows 解析为 [::1] IPv6 回环)，
+        //   导致**局域网其他机器访问不了前端**（后端 0.0.0.0 可达、前端不可达，两端不对齐）。
+        //   部署事实见 [72]第九章 9.1: 后端在 B 机器、客户端在局域网多台机器 → 前端必须对外可达。
+        //   注意: 这只影响 dev server；生产静态托管由部署方自行绑定。
+        host: '0.0.0.0',
       watch: {
         // 【小欧 2026-09-23】轮询监听：Windows 下 chokidar push 通知长跑后会丢文件变更事件，
         // 导致"改了源码 vite 不热更、浏览器一直旧版"（当日连发两次，重启才恢复）。usePolling 根治，

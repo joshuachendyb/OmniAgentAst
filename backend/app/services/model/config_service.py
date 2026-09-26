@@ -42,6 +42,31 @@
 #   成功路径改 reload_ai_config(_load+reset) 与 merge 写链路行为对齐（原仅 reload 不 reset，运行态缓存不一致）
 # 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 delete_provider/delete_model/update_model/update_provider/
 #   add_provider/add_model 6函数（仅被已删 /config/provider/* 路由调用, 前端零调用）；同步清孤儿 import — 小欧-2026-09-24
+# 2026-09-26 - 小欧 - [72]第七章(7.3) 落地: 删死契约 _mask_api_key(第2套掩码, "****"+末4位 字符串形态),
+#   /config/full 的 providers.{name}.api_key 改用第 1 套唯一权威 mask_secret_value → **形状变为对象**
+#   {configured, prefix, suffix}。删除前已按 7.3 要求复核消费方: 前端 getFullConfig( 全项目零调用
+#   (仅 config.api.ts:138 定义处); config.api.ts 的 ConfigValidateRequest/ProviderInfo 两 interface
+#   仅文件内自引用、无组件消费 —— 故 [59]B-4 注释宣称的"前端 slice(-4) 兼容"确无对应代码, 死契约成立。
+#   第3套 api_key_configured(bool, 回答"是否已配置"这一布尔问题) 保留, 语义区别已写入 config_schemas
+#   的字段说明(避免后人误以为三套可互换取错形状) — 小欧 2026-09-26
+# 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范 + 关联逻辑复核, 本文件 4 处已改:
+#   ①[规范违规] `from app.logger import logger` 与 `from app.utils.response_utils import api_success`
+#     被误放在**模块中部**（update_config 函数体之后、DEFAULT_SECORY 之前）。Python 允许 import
+#     出现在模块任意层级(照样执行) → 不报错、测试也过, 但违反 PEP8 与项目 import 规范
+#     (import 必须在文件头依赖区)。危害: 读者会误以为 logger 是 update_config 的局部导入、
+#     模块执行顺序反直觉、lint 的 import/first 规则一旦启用即整片报错。已归位到文件头。
+#   ②[YAGNI 死 import] `api_success` 经全仓 Select-String 确认**零引用** → 删（没引用就不留）。
+#   ③[注释撒谎 · 事实错误] import 区原注释称"删 update_config 本体"、"FIELD_HANDLERS/
+#     _restore_backup_if_needed 随本体删"。**update_config 本体并未被删**(仅内部收敛为只切模型),
+#     且这两个符号在收敛后**仍被 update_config 使用**。照原注释再删一次 → 运行时 NameError。
+#     已按事实重写注释并逐条标注保留理由。
+#   ④[KISS-DIRECT 无意义中间层] `handler = FIELD_HANDLERS["ai_model_ref"]; handler(...)` 退化为
+#     纯中转(7 项收敛为 1 项后，派发表不再有可扩展性价值)，改为直接调 _update_model_ref。
+#   ⑤[可观测性倒退] 删备份的 `except Exception: pass` 静默吞异常 → 恢复 logger.warning。
+#     删不掉的备份副本内含**明文 api_key**, 静默 pass 让密钥副本堆积无人知晓。
+#   ※ 如实记录: 上述 ④ 改完后, FIELD_HANDLERS 在全仓已成**零消费方**(含 tests/e2etests 均无引用)。
+#     本次**不删**它 —— [72]第十一章设计明文要求"FIELD_HANDLERS 收敛为只含 ai_model_ref 一项",
+#     即保留该结构是设计决定而非疏漏。此事实记录在案, 是否进一步删除请北京老陈裁定。
 """
 config_service — 配置业务服务(services/model)
 
@@ -51,21 +76,47 @@ P3(小沈 2026-08-13): 全量CRUD下沉, model_routes 降为纯薄壳。
 """
 import os
 import subprocess
+import copy
 from pathlib import Path
-
-import yaml
 
 from fastapi import HTTPException
 
-from app.config import _make_safe_loader, get_config as get_config_instance
-from app.safety.operation_backup import clear_backup_paths
+# 2026-09-26 - 小欧 - [72]第十一章(11.5 第1步) 孤儿 import 清理（逐条核实零引用后删）:
+#   删 import yaml（唯一使用点原在 update_config 内的写后 yaml.load，本轮随该校验一并移除）
+#   删 _make_safe_loader（同上；故**本行连注释一起重写**——原文案声称"随 update_config 本体删除"，
+#     而 update_config 本体**并未被删**（仅内部收敛为只切模型），原注释在撒谎）
+#   删 clear_backup_paths（唯一使用点原在 update_config 末尾。**注**：该调用删除无实际副作用 ——
+#     其读侧 get_backup_paths / 写侧 set_backup_paths 经全仓 Select-String 确认同样零调用，
+#     即它操作的是一组无人读取的全局变量。故此项不算功能退化，只算去掉一次无意义调用）
+#   保留 FIELD_HANDLERS 与 _restore_backup_if_needed —— 二者在**收敛后仍被 update_config 使用**
+#     （前者派发 ai_model_ref，后者用于两个 except 分支的回滚）。原注释称二者"已随本体删"属**事实错误**，
+#     若照该注释再删一次，update_config 会在运行时 NameError。
+# 2026-09-26 - 小欧 - [72]三堂会审后修正(import 归位 + 死 import): 原先
+#   `from app.logger import logger` 与 `from app.utils.response_utils import api_success`
+#   被放在**模块中部**（update_config 函数体之后、DEFAULT_SECURITY 之前），是本轮误插。
+#   Python 允许 import 出现在模块任意层级（照样执行），所以**不报错、测试也过**，但违反 PEP8
+#   与项目 import 规范: import 必须在文件头依赖区。危害: ①读者会误以为 logger 是 update_config 的
+#   局部导入；②模块执行顺序反直觉；③lint 的 import/first 类规则一旦启用即整片报错。
+#   同批删除: `api_success` **全仓零引用**（Select-String 全量确认，除自身定义外无调用），
+#   属第十一章收敛后残留死 import，YAGNI 清除（没引用就不留，不"以防万一"）。
+from app.logger import logger
+# 2026-09-26 小欧 - [72]第十一章(11.5): _make_safe_loader 已删（随 update_config 内的写后校验移除），
+#   同行保留 get_config_instance —— get_system_config_data / fix_config 仍在用。
+from app.config import get_config as get_config_instance
 from app.services.model.resolver import get_ai_config_resolver
 from app.services.model.config_helpers import (
-    FIELD_HANDLERS,
+    # 2026-09-26 - 小欧 - [72]三堂会审后修正·二: 删本行的 `FIELD_HANDLERS` 导入 ——
+    #   update_config 已改为直调 `_update_model_ref`（去无意义中间层），本文件内再无第二处引用，
+    #   留着即死 import（F401 类）。注意与"保留 FIELD_HANDLERS 表本身"不矛盾：
+    #   表的定义（config_helpers 内）按 [72]第十一章设计保留，删的只是本文件用不上的导入名。
+    #   其余 6 项(provider_api_keys/theme/language/max_steps/security/project_root)随本次整改删除:
+    #   provider_api_keys 是[72]第三章认定的"第二个能擦除密钥的入口"; 其余 5 项功能已迁移至 settings
+    #   registry 对应项(文档 11.2 表), 且 theme 早已是 registry 只读项(暗色入口已移除)——不再有第二条写路径。
+    _update_model_ref,  # [72]十一章: 唯一保留的 handler（直调，不经 FIELD_HANDLERS 中转）
     _auto_fix_and_validate,
     _backup_config,
     _fix_config_common_issues,
-    _restore_backup_if_needed,
+    _restore_backup_if_needed,  # [72]十一章: 收敛后 update_config 的 except 分支仍需回滚备份
     _validate_config_integrity,
     get_config_path,
     is_provider_metadata_field,
@@ -74,61 +125,54 @@ from app.services.model.config_helpers import (
     reload_ai_config,
     write_yaml_config,
 )
-from app.logger import logger
-from app.utils.response_utils import api_success
 
 
 def update_config(config_update):
-    """配置更新业务编排 — 自 api/v1/model_routes.py 迁入, 复用 persistence.py 底层 I/O — 小欧 2026-08-13
-    2026-09-22 小欧：整段读-改-写包 filelock(config.yaml.lock)（#9 并发丢更新/文件占用 500 根治）；
-    成功路径 reload_ai_config(_load+reset) 对齐 merge 写链路（#14 行为分裂收敛）。"""
-    import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面（与 merge_region_patch 同策略）
+    """[72]第十一章(11.5 第1步) 收敛后的配置更新业务编排 — **只切模型**。
+    原实现（已删）经 FIELD_HANDLERS 派发 7 个 handler：ai_model_ref / provider_api_keys / theme /
+    language / max_steps / security / project_root。本次整改后本函数**只保留 ai_model_ref 一条能力**：
+      - provider_api_keys：能空串擦除密钥（[72]第三章认定第二个入口），字段已从 ConfigUpdate 删除，漏洞消失
+      - theme/language/max_steps/security/project_root：功能已迁移至 PUT /settings 对应 registry 项，
+        旧字段与旧 handler 一并删除，不留第二条写路径（避免同一配置两个写入口产生分叉）
+    保留原因：configApi.switchCurrentModel（AppContext.tsx:266，顶栏与设置页「切换全局模型」唯一写链）
+    仍调 PUT /config；删端点会导致该功能 404 失效（功能退化，违反"只能增强不能退化"红线）。
+    事务语义不变：整段读-改-写包 filelock(config.yaml.lock)，异常路径回滚备份。
+    """
+    import filelock  # 局部 import：filelock 为可选依赖，抑制启动失败面（与 merge_region_patch 同策略）
     config_path = get_config_path()
-    lock = filelock.SoftFileLock(str(config_path) + ".lock", timeout=10)
-    with lock:
-        backup_path = None
+    with filelock.SoftFileLock(str(config_path) + ".lock", timeout=10):
+        config_data = read_yaml_config(Path(config_path)) or {}
+        original_config_data = copy.deepcopy(config_data)
         restored = [False]
-
+        backup_path = _backup_config(config_path)
         try:
-            backup_path = _backup_config(config_path)
-            original_config_data = read_yaml_config(config_path)
-            config_data = original_config_data.copy()
-            config_data.setdefault('app', {})
-
-            for field, handler in FIELD_HANDLERS.items():
-                value = getattr(config_update, field, None)
-                if value is not None:
-                    handler(config_data, config_update)
-
+            # 2026-09-26 - 小欧 - [72]三堂会审后修正(KISS-DIRECT · 去掉无意义间接层):
+            #   原为 `handler = FIELD_HANDLERS["ai_model_ref"]; handler(config_data, config_update)`。
+            #   FIELD_HANDLERS 经第十一章收敛后**只剩这一项**，于是这层字典查表 + 间接调用
+            #   已退化为纯粹的中间层 —— 项目铁规明禁: "无中间层: 3 层函数每层只调下一层 → 合并为 1 层"、
+            #   "KISS-DIRECT: 逻辑直线，不提前引入抽象"。7 项变 1 项后保留派发表，是"为不再存在的
+            #   可扩展性付费"（YAGNI）。改为直接调用已 import 的 _update_model_ref，链路 A→B 两跳到底。
+            _update_model_ref(config_data, config_update)
             is_valid, errors, warnings, fail_result = _auto_fix_and_validate(
                 config_data, config_path, backup_path, original_config_data)
             if not is_valid:
                 return fail_result
 
             write_yaml_config(str(config_path), config_data)
-            with open(config_path, 'r', encoding='utf-8') as f:
-                verify_data = yaml.load(f, Loader=_make_safe_loader())
-                _vref = verify_data['ai'].get('model_ref') or {}
-                logger.info(f"[update_config] 验证写入: provider={_vref.get('provider')}, model={_vref.get('model')}")
             reload_ai_config()
 
             if backup_path and backup_path.exists():
                 try:
                     backup_path.unlink()
-                    logger.info(f"验证成功,已删除备份文件:{backup_path}")
+                    logger.info(f"[update_config] 验证成功, 已删除备份文件: {backup_path}")
                 except Exception as e:
-                    logger.warning(f"删除备份文件失败:{e}")
-            clear_backup_paths()
-
-            # 归一(小欧 2026-08-22 报告v1.25 6.6): current_provider/current_model → current_model_ref 结构(PUT /config 直接返回前端, 方案B)
-            # 三堂会审修复(P2): updated_fields 内嵌 ModelRef 的 api_base/display_name null 键剔除, 免前端噪声 — 小欧
-            _updated_fields = config_update.model_dump(exclude_none=True)
-            if isinstance(_updated_fields.get("ai_model_ref"), dict):
-                _updated_fields["ai_model_ref"] = {
-                    k: v for k, v in _updated_fields["ai_model_ref"].items() if v is not None}
+                    # 2026-09-26 - 小欧 - [72]三堂会审后修正: 原为 `except Exception: pass`（静默吞掉）。
+                    #   备份文件删不掉是**要留痕**的运维事实：残留副本持续堆积、且副本内含**明文 api_key**。
+                    #   静默 pass 等于让"密钥副本堆积"无人知晓 —— 可观测性倒退（配置已生效，行为不回滚）。
+                    logger.warning(f"[update_config] 删除备份文件失败（可能残留含明文密钥的副本）: {e}")
             return {
-                "success": True, "message": "配置更新成功,请验证服务可用性",
-                "updated_fields": _updated_fields,
+                "success": True, "message": "配置更新成功，已校验并生效",
+                "updated_fields": {"ai_model_ref": getattr(config_update, "ai_model_ref", None)},
                 "warnings": warnings,
                 "backup_path": str(backup_path) if backup_path else None,
                 "current_model_ref": {
@@ -146,15 +190,8 @@ def update_config(config_update):
             _restore_backup_if_needed(backup_path, config_path, restored)
             if backup_path:
                 backup_path.unlink(missing_ok=True)
-            logger.error(f"更新配置失败:{e}", exc_info=True)
-            raise HTTPException(status_code=500, detail="更新配置失败,请稍后重试")
-
-
-def _mask_api_key(api_key: str) -> str:
-    """掩码API Key — 2026-09-21 小欧 [59]B-4: 复用公用 mask_secret_value({configured, suffix 末4})，
-    统一输出 "****"+末4位，与 /settings、/models 的 suffix 显示一致（前端 slice(-4) 兼容）"""
-    m = mask_secret_value(api_key)
-    return "****" + (m.get("suffix") or "") if m.get("configured") else ""
+            logger.error(f"配置更新失败: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="配置更新失败，请稍后重试")
 
 
 DEFAULT_SECURITY = {
@@ -275,7 +312,12 @@ def get_full_config() -> dict:
         providers[provider_name] = {
             "name": provider_name,
             "api_base": provider_data.get('api_base') or '',
-            "api_key": _mask_api_key(api_key),
+            # [72]第七章(7.3) - 小欧 - 2026-09-26: 删死契约 _mask_api_key（"****"+末4位 字符串形态），
+            # /config/full 改用第 1 套唯一权威 mask_secret_value → **形状变为对象** {configured, prefix, suffix}。
+            # 删除前已按 7.3 要求复核消费方: 前端 getFullConfig( 全项目零调用（仅 config.api.ts:138 定义处），
+            # config.api.ts 的 ConfigValidateRequest/ProviderInfo 两个 interface 仅文件内自引用、无组件消费，
+            # 故原注释宣称的"前端 slice(-4) 兼容"确无对应代码 —— 死契约成立。
+            "api_key": mask_secret_value(api_key),
             "model": '',
             "models": provider_data.get('models') or [],
             "timeout": provider_data.get('timeout') if provider_data.get('timeout') is not None else 60,

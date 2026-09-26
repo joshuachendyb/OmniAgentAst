@@ -26,9 +26,59 @@
 //   标题+保存按钮同一行三列 grid（标题左|按钮居中|右空列），对齐②参数区标题行风格；env 接管分支同步带标题无按钮 - 小欧-2026-09-24
 // 2026-09-24 小欧 - 再修（北京老陈截图复核：grid 实渲染仍两行）：改 flex 强制同行——左1fr+按钮+右1fr，
 //   按钮物理居中；SectionTitle 收掉自带上下 margin 并入本行（margin 会撑高行框造成视觉断裂）- 小欧-2026-09-24
+// 2026-09-26 - 小欧 - [72]第一章(1.3-2) + 第八章(8.5-2)(8.5-3) 落地:
+//   (1)第一章 api_key 落盘前 trim(patch.api_key = apiKey.trim())，与同函数 base_url 的 trim 写法统一；
+//     修前 base_url 去了空格而 api_key 没有，是遗漏而非设计(同一保存函数内行为分叉)
+//   (2)第八章 base_url 留空语义反转: 原文案"留空=清空地址(恢复默认直连)"改为"URL 为空，此 Provider 无法调用(错误状态)"，
+//     为空时以 Colors.ERROR 红字显示(base_url 不属密钥，原样回显不做任何改写)
+//   (3)第八章 保存按钮在 base_url 为空时 disabled + doSave 入口 return 不提交: 错误状态不可保存，
+//     用 disabled 而非静默 return，避免用户点击后"没反应"无提示
+//   (4)与后端 model_service.update_provider_config 的 base_url 空 -> 400 形成前后端双闸 - 小欧-2026-09-26
+// 2026-09-26 - 小欧 - [72]第十章(10.3) 落地: key 正确性检测（测试连接按钮）
+//   ①保存按钮旁加"测试连接"按钮，语义与保存并列但不同 —— 它是只读探测（不改配置），
+//     故走 modelApi.testConnection 而非 onSave；base_url 为空时同样禁用（地址不通测了无意义）
+//   ②结果按后端返回的 category 分档文案（设计 10.5 明写"不得统一显示失败"）：
+//     ok=连接成功 / key_invalid(401,403)=key 无效或无权限 / endpoint_unsupported(404,405,501)=
+//     该 Provider 无 /models 端点、key 未验证、**不代表 key 无效** / network_error=请检查 base_url、与 key 无关
+//   ③传输入框里的 key 实现"保存前验证"（后端仅存内存用于本次 header，不落盘不进日志）；
+//     前端不在此回显 key
+//   ④组件内 config.api_key 类型同步改三键恒定（与 model.api.ts ProviderEntry 同一契约两处声明）— 小欧-2026-09-26
+// 2026-09-26 - 小欧 - [72]第十二章(12.4/12.5) 落地: 眼睛按钮查看已保存明文（三项已定决策全部实现）
+//   ①关 AntD 自带眼睛(visibilityToggle={false}) —— 坑1「双眼睛冲突」: 原生眼睛只能显示"刚输入的字符"
+//     (输入框初值恒为 ''，它看不到已保存的 key), 与新增的"看已保存明文"眼睛并存会让用户无法分辨
+//   ②自定义眼睛 + 二次确认(Modal.confirm「将显示明文密钥，请勿截图或分享」)，确认后才调
+//     modelApi.getApiKeyPlain 取明文
+//   ③30 秒自动恢复打码: setTimeout 到期清空明文并恢复打码态; 组件卸载时清理定时器(防内存泄漏 +
+//     防卸载后回调 setState); 手动点眼睛关闭时亦立即清除明文
+//   ④明文只在内存 state，**不写 localStorage**；明文态输入框 readOnly + onChange 直接 return
+//     (避免把明文当新值提交出去)；env 接管时按钮不显示(上方 isEnv 早退分支已覆盖)
+//   ⑤打码文案改"前4位 X + 末4位 Y"（prefix 为空时只显示末4位，即 4~7 位短 key 不给 prefix）— 小欧-2026-09-26
+// 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核，本文件 3 处已改：
+//   ①[YAGNI 死代码] doSave 开头的 `if (baseUrl.trim() === '') return;` 删除 —— 同一改动里保存按钮已
+//     disabled={baseUrl.trim() === ''}，按钮禁用时用户点不到，该 return 永不可达；且它与本次自己写的
+//     注释直接矛盾（注释写"用 disabled 而非静默 return，避免用户点击后没反应"，代码却是静默 return）。
+//     只留 disabled 一处把关：空值的唯一可见表现是"按钮点不动"，不另埋隐形分支。
+//   ②[DRY] 测试结果文案表由 doTestConnection 体内提到模块级常量 TEST_RESULT_TEXT —— 原写法每次点击
+//     重建同内容对象，且文案埋在业务逻辑里不便与后端 category 一一对账。
+//   ③[关联逻辑漏洞] 修 `map[r.category]` 未知分类显示 undefined 的坑：后端新增分类或分类拼错时，
+//     界面会显示 "undefined（后端信息: ...）"。补 `?? network_error` 兜底，未知分类按网络/地址问题提示
+//     并附后端原文。此为"前端比后端旧"或"分类枚举漂移"时的可见故障，未修等于把内部错误抛给用户。
+// 2026-09-26 (三堂会审后修正·二) - 小欧 - [SRP] 明文查看 + 测试连接两块功能内联在本组件，
+//   使本组件同时承担"Provider 配置表单 / 明文密钥查看(30秒自动隐藏+二次确认) / key 连通性探测"三件事，
+//   组件膨胀到 500 行、任一功能改动都要读完整个组件（违反单一职责）。已把二者各自抽为独立组件：
+//     SecretRevealInput（第十二章 12.5 明文查看）
+//     TestConnectionProbe（第十章 10.3 测试连接）
+//   父组件只留"配置表单"本责，状态与样式令牌按需传入，不新造第二套渲染分支。
+//   2026-09-26 (三堂会审后修正·三) - 小欧 - 删本文件残留的 TEST_RESULT_TEXT 文案表常量：
+//     它在上一轮已随"测试连接"迁到 TestConnectionProbe 内，此处留着即死代码
+//     （eslint no-unused-vars 已实测报出该 warning）。"文案随职责走"是拆分纪律的必然结果：
+//     拆分后不许在原处留一份副本，那等于把 DRY 违规从"函数内重建"升级成"跨文件两份"。
+
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import { SecretRevealInput } from './SecretRevealInput';
+import { TestConnectionProbe } from './TestConnectionProbe';
 import {
   settingsControl,
   settingsSpacing,
@@ -36,6 +86,9 @@ import {
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
 import { EnvTag } from './icons';
+// 2026-09-26 - 小欧 - [72]三堂会审后修正(SRP 拆分): 原先在此 import modelApi 供内联的"测试连接"使用，
+//   该功能已迁到 TestConnectionProbe 组件内部自持，本组件不再需要 modelApi，故删此 import
+//   （留着会变成未使用导入，eslint 报警）。
 
 // 2026-09-22 小欧 - DRY 收口：EXISTING_KEYS/STATIC_KEYS 两 Set 内容完全相同合并为 HARDCODED_KEYS（渲染跳过 + doSave 动态收集共用）
 const HARDCODED_KEYS = new Set([
@@ -49,7 +102,9 @@ const HARDCODED_KEYS = new Set([
 interface Props {
   name: string;
   config: {
-    api_key: { configured: boolean; suffix: string };
+    // [72]第七章(7.3)+第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}，
+    // 与 model.api.ts 的 ProviderEntry.api_key 保持一致（同一契约两处声明，形状必须相同）
+    api_key: { configured: boolean; prefix: string; suffix: string };
     base_url: string;
     label: string;
     timeout: number;
@@ -103,9 +158,22 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
 
   const isEnv = config.env === true;
 
+  // 2026-09-26 - 小欧 - [72]三堂会审后修正(SRP): 原先内联在本组件的两块功能已各自抽出为独立组件 ——
+  //   ①「明文密钥查看(二次确认 + 30 秒自动恢复打码 + 不写 localStorage)」→ SecretRevealInput
+  //   ②「key 连通性探测(按 category 分档文案)」→ TestConnectionProbe
+  //   本组件回归单一职责：只负责 Provider 配置表单的取值/校验/提交。相关 state、定时器清理、
+  //   Modal.confirm、文案表一并随之迁出（拆分只改归属，不改业务行为）。
+
   const doSave = async () => {
+    // [72]第八章(8.5-3) - 小欧 - 2026-09-26 修正: 原此处有 `if (baseUrl.trim() === '') return;`，
+    //   与同一改动的按钮 `disabled={baseUrl.trim() === ''}` 重复，且是**死代码**——按钮禁用时用户点不到，
+    //   永远走不到这个 return。更糟的是它与本文自己写的注释相矛盾（注释明写"用 disabled 而非静默 return，
+    //   避免用户点击后没反应"，代码却正是静默 return）。已删除该 return，只保留按钮 disabled 一处把关：
+    //   空值唯一的可达路径是"点了没反应"，那由 disabled 表达，而不是在函数里再埋一个隐形分支。
+    //   与 api_key 的"留空=保持原值"方向相反：api_key 允许先建后填，base_url 是必要配置不可为空。
     const patch: Record<string, unknown> = {};
-    if (apiKey.trim() !== '') patch.api_key = apiKey;
+    // [72]第一章(1.3-2) 小欧 2026-09-26: api_key 落盘前 trim，与 base_url 写法统一(此前只有 base_url 去了空格)
+    if (apiKey.trim() !== '') patch.api_key = apiKey.trim();
     patch.base_url = baseUrl.trim();
     if (label.trim() !== '') patch.label = label.trim();
     patch.timeout = timeout;
@@ -174,31 +242,46 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         >
           ── ③ Provider 配置 ──
         </span>
-        <Button type="primary" onClick={() => void doSave()} loading={saving}>
+        {/* [72]第八章(8.5-3) 小欧 2026-09-26: base_url 为空时禁用保存(错误状态不可保存),
+            disabled 而非静默 return，避免"点了没反应" */}
+        <Button
+          type="primary"
+          onClick={() => void doSave()}
+          loading={saving}
+          disabled={baseUrl.trim() === ''}
+        >
           保存 Provider 配置（立即生效）
         </Button>
+        {/* 2026-09-26 小欧 - [72]第十章(10.3) 迁出为 TestConnectionProbe（SRP 拆分）：
+            与保存并列但语义不同 —— 只读探测（不改配置），故不走 onSave。
+            base_url 为空时同样禁用（地址不通测了无意义）。 */}
+        <TestConnectionProbe
+          providerName={name}
+          probeKey={apiKey}
+          baseUrlReady={baseUrl.trim() !== ''}
+          marginLeft={Spacing.SM}
+        />
         <span style={{ flex: 1 }} />
       </div>
 
-      {/* api_key */}
+      {/* api_key —— 2026-09-26 小欧 - [72]第十二章(12.5) 迁出为 SecretRevealInput（SRP 拆分）：
+          明文查看的 state/定时器/二次确认全在子组件内，本组件不再持有明文（更安全：
+          父组件不持有明文即父组件的其它逻辑永远碰不到它）。env 接管时整块只读，不显示眼睛
+          —— 由 isEnv 早退分支处理。 */}
       <div style={settingsRowStyle}>
         <span style={settingsLabelStyle}>api_key</span>
-        <span style={{ flex: 1 }}>
-          <Input.Password
-            value={apiKey}
-            onChange={(e) => setApiKey(e.target.value)}
-            placeholder={
-              config.api_key.configured ? '已配置，留空保持原值' : '未配置'
-            }
-            autoComplete="new-password"
-            style={{ width: settingsControl.apiKeyWidth }}
-          />
-        </span>
-      </div>
-      <div style={EXTRA_STYLE}>
-        {config.api_key.configured
-          ? `已配置（末4位 ${config.api_key.suffix}），留空=保持原值`
-          : '未配置，留空=保持原值'}
+        <SecretRevealInput
+          providerName={name}
+          value={apiKey}
+          onChange={setApiKey}
+          configured={config.api_key.configured}
+          maskedHint={
+            config.api_key.prefix
+              ? `前4位 ${config.api_key.prefix} + 末4位 ${config.api_key.suffix}`
+              : `末4位 ${config.api_key.suffix}`
+          }
+          width={settingsControl.apiKeyWidth}
+        />
       </div>
 
       {/* base_url */}
@@ -212,7 +295,18 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
           />
         </span>
       </div>
-      <div style={EXTRA_STYLE}>留空=清空地址（恢复默认直连）</div>
+      {/* [72]第八章(8.5-2) 小欧 2026-09-26: base_url 空 = 错误状态(红色警示)，原样回显不改写。
+          红色复用既有语义 token Colors.ERROR(utils/stepStyles.ts:140)，不新造色值。 */}
+      <div
+        style={{
+          ...EXTRA_STYLE,
+          color: baseUrl.trim() === '' ? Colors.ERROR : undefined,
+        }}
+      >
+        {baseUrl.trim() === ''
+          ? '⚠️ URL 为空，此 Provider 无法调用（错误状态）'
+          : 'URL 为 Provider 的必要配置，不能为空'}
+      </div>
 
       {/* 显示名 */}
       <div style={settingsRowStyle}>

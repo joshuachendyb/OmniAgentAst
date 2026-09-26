@@ -4,6 +4,11 @@
 #   两分离字段归一为 model_ref: Optional[ModelRef]; _resolve_provider_model 返回 (ModelRef|None, errors);
 #   各 make_*_result 工厂与 validate_config 主流程形参同步改透传 model_ref(日志文本内取 .provider/.model
 #   拼展示串属派生, 允许) — F8 无兼容 shim, 调用点随改
+# 2026-09-26 - 小欧 - [72]第二章(2.4 配套·DRY) 落地: api_key 空判定改调公用函数 is_blank_secret()
+#   修前此处为 `not isinstance(api_key, str) or api_key.strip() == ""`，与 model/resolver.py 的
+#   `(_pv_cfg.get("api_key") or "").strip() or None` 是两处独立写法、语义却相同（空/纯空白=未配置）。
+#   同一判定两处各写一遍，第三次出现不一致只是时间问题 —— 抽出全局层 app/utils/secret_utils.py
+#   作唯一权威（DRY：相同逻辑只写一次）。行为等价，非字符串仍按未配置处理，验证语义零变化 — 小欧 2026-09-26
 """
 validation — 配置验证
 
@@ -18,6 +23,8 @@ import os
 
 from app.config import get_config_path
 from app.db.models.chat_models import ModelRef
+# 2026-09-26 小欧 - [72]第二章(2.4 配套·DRY): 密钥空白判定收口到公用函数
+from app.utils.secret_utils import is_blank_secret
 
 
 @dataclass
@@ -49,7 +56,10 @@ def validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, li
     api_key = selected_provider_config.get("api_key")
     if not api_key:
         errors.append(f"provider '{final_provider}' 缺少 api_key 配置")
-    elif not isinstance(api_key, str) or api_key.strip() == "":
+    elif is_blank_secret(api_key):
+        # [72]第二章(2.4 配套·DRY) - 小欧 - 2026-09-26: 原为 `not isinstance(api_key, str) or api_key.strip() == ""`，
+        #   与 resolver 的"key 空白判定"是同一语义的两份独立写法；现统一收口到 app.utils.secret_utils.is_blank_secret，
+        #   杜绝第三次出现不一致写法（DRY）。语义不变：空/纯空白 = 未配置。
         errors.append(f"provider '{final_provider}' 的 api_key 为空")
     api_base = selected_provider_config.get("api_base")
     if not api_base:

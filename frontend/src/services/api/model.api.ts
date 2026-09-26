@@ -15,6 +15,12 @@
 //   PUT /models body 白名单字段，后端 update_model 先删后 merge）- 小欧-2026-09-24
 // 2026-09-24 小欧 - [68] 模型库：类型补 RemoteModelItem/RemoteModelsResponse/ReplaceModelsResult，
 //   方法补 fetchRemoteModels（GET remote-models）/replaceModels（PUT models 替换写入）- 小欧-2026-09-24
+// 2026-09-26 小欧 - [72]第七章(7.3) + 第十二章(12.5) + 第十章(10.3) 落地:
+//   ①ProviderEntry.api_key 改三键恒定 {configured, prefix, suffix} —— 原类型 {configured, suffix} 撒谎
+//     （后端未配置时只返 {configured:false}，无 suffix 键）；第七与十二两章改同一处，按设计合并一次实施
+//   ②RemoteModelsResponse 补 status_code?/category? 两字段（第十章错误分类，前端据此分两套文案）
+//   ③新增 testConnection(provider, probeKey?) —— POST test-connection，body 传待测 key；
+//     刻意不用 GET query（query 会进浏览器历史与服务器 access log，明文 key 留痕）— 小欧-2026-09-26
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -31,7 +37,12 @@ export interface ProviderEntry {
   name: string;
   label: string;
   api_base: string;
-  api_key: { configured: boolean; suffix: string };
+  // [72]第七章(7.3) + 第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}。
+  // 原类型 `{configured: boolean; suffix: string}` 撒谎：后端未配置时只返 {configured:false}，根本没有 suffix 键。
+  // 两章改同一处，按设计"两处改同一函数须合并一次实施"一次改到位：
+  //   已配且 len>=8 → {true, prefix:s[:4], suffix:s[-4:]}；4<=len<8 → {true, prefix:"", suffix:s[-4:]}
+  //   （短 key 不给 prefix，否则 5~7 位 key 前后缀重叠等于泄露 7/8 位）；未配 → {false, "", ""}
+  api_key: { configured: boolean; prefix: string; suffix: string };
   env: boolean; // v4.19：该 provider 的 api_key 是否被 {NAME}_API_KEY 环境变量接管（config.py _apply_env_overrides 同源判定）
   timeout: number;
   max_retries: number;
@@ -73,6 +84,11 @@ export interface RemoteModelsResponse {
   configured: string[];
   current_model?: string | null;
   message?: string;
+  // [72]第十章(10.3) - 小欧 - 2026-09-26: 错误分类与状态码随响应返回，前端据此分流
+  // "地址问题"与"key 问题"两套文案（**不得统一显示"失败"**）。
+  // **404/405/501 → endpoint_unsupported，刻意不判 key 无效**（部分 provider 无 /models 端点）。
+  status_code?: number | null;
+  category?: 'ok' | 'key_invalid' | 'endpoint_unsupported' | 'network_error';
 }
 
 export interface ReplaceModelsResult {
@@ -80,6 +96,13 @@ export interface ReplaceModelsResult {
   mtime: number;
   added: string[];
   removed: string[];
+}
+
+// [72]第十二章(12.5) - 小欧 - 2026-09-26: 明文查看接口响应（api_key 为明文，仅内存持有不持久化）
+export interface ApiKeyPlainResponse {
+  provider: string;
+  api_key: string;
+  configured: boolean;
 }
 
 export interface ProviderConfigPatch {
@@ -181,6 +204,29 @@ export const modelApi = {
   ): Promise<RemoteModelsResponse> => {
     const response = await api.get<RemoteModelsResponse>(
       `/providers/${enc(provider)}/remote-models`
+    );
+    return response.data;
+  },
+
+  // [72]第十二章(12.5) - 小欧 - 2026-09-26: 取已保存的 api_key 明文（供"眼睛"切换查看）。
+  // 后端会记审计日志（provider + 时间 + 来源 IP），env 接管时返回 400 拒绝（YAML 里不是生效值）。
+  getApiKeyPlain: async (provider: string): Promise<ApiKeyPlainResponse> => {
+    const response = await api.get<ApiKeyPlainResponse>(
+      `/providers/${enc(provider)}/api-key`
+    );
+    return response.data;
+  },
+
+  // [72]第十章(10.3) - 小欧 - 2026-09-26: 测试连接（key 正确性检测）。
+  // 用 POST 而非 GET query 传待测 key —— query 会进浏览器历史/服务器 access log，明文 key 会留痕。
+  // 探测逻辑在后端复用 fetch_remote_models，此处只做转发（不新造第二套）。
+  testConnection: async (
+    provider: string,
+    probeKey?: string
+  ): Promise<RemoteModelsResponse> => {
+    const response = await api.post<RemoteModelsResponse>(
+      `/providers/${enc(provider)}/test-connection`,
+      { api_key: probeKey && probeKey.trim() !== '' ? probeKey.trim() : null }
     );
     return response.data;
   },

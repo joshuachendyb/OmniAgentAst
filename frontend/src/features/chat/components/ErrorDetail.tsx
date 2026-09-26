@@ -4,6 +4,11 @@
 // 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
 // 编辑历史: 2026-08-28 小强 - 修复[17]: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
 // 编辑历史: 2026-09-17 小欧 - [48]修改6: 中文标签映射表导出并补 10 条(配额超限/响应超时/已取消/参数有误/服务繁忙/未知错误/服务暂不可用/调用出错/未知响应/智能体异常), 既有 10 条不动 — 小欧-2026-09-17
+// 2026-09-26 - 小欧 - [72]第二章(2.5) 落地: ①ERROR_TYPE_LABELS 补 config_error:'配置错误'(原缺该键,
+//   formatErrorType 的 `LABELS[type] || type` 会让前端直接显示英文 config_error); ②ERROR_COLORS_MAP 补 config_error
+//   配色组(蓝灰 #0958d9/⚙️/标题「配置错误」), 与红系(网络/参数/权限/文件/未知)、黄系(待确认)、蓝系(agent)区分 ——
+//   配置问题属"用户可自行修复", 不应与系统/网络故障同色。配色查找为 ERROR_COLORS_MAP[type] → 去 _error 后缀 → default
+//   三级兜底, config_error 精确命中第一级。标签总数 20 → 21 — 小欧-2026-09-26
 import React, { memo } from 'react';
 import { formatSafeTimestamp } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatSafeTimestamp统一至utils/time.ts
 import { Colors } from '@/utils/stepStyles';
@@ -101,6 +106,18 @@ const ERROR_COLORS_MAP: Record<
     title: '未知错误',
     codeBackground: 'rgba(255, 77, 79, 0.15)',
   },
+  // [72]第二章(2.5) - 小欧 - 2026-09-26: config_error 中文标签 + 配色。
+  // 背景：会话跨 provider 切换但目标 provider 未配置 api_key（resolver.ProviderKeyMissingError）。
+  // 属【用户可自行修复的配置问题】，故用蓝灰色系（区别于红=网络/权限/参数错误、黄=待确认），
+  // 不补则 formatErrorType 的 `LABELS[type] || type` 会直接显示英文 config_error。
+  config_error: {
+    background: 'rgba(22, 119, 255, 0.08)',
+    border: 'rgba(22, 119, 255, 0.25)',
+    color: '#0958d9',
+    icon: '⚙️',
+    title: '配置错误',
+    codeBackground: 'rgba(22, 119, 255, 0.15)',
+  },
   default: {
     background: 'rgba(255, 77, 79, 0.08)',
     border: 'rgba(255, 77, 79, 0.2)',
@@ -134,6 +151,8 @@ export const ERROR_TYPE_LABELS: Record<string, string> = {
   llm_error: '调用出错',
   unknown_response: '未知响应',
   agent_operation_error: '智能体异常',
+  // [72]第二章(2.5) - 小欧 - 2026-09-26: 补 config_error 中文标签（原缺，formatErrorType 会显示英文）
+  config_error: '配置错误',
 };
 
 // ========== Step 4: 合并内联style常量 ==========

@@ -167,6 +167,14 @@
 #   修法: resolve 前就地复核 scope.is_released, 已退休则改取 get_scope()(仍是原子取本代唯一所有者, 不引双代)并记 INFO。
 #   为何不引入竞态: 复核与 acquire_lease 之间无任何 await, 事件循环单线程无处让出, 故不存在新的换代窗口。
 #   反证: 临时撤掉守卫后 case S13 复现出上述 router_error, 装回即绿 — 小欧 2026-09-25
+# 2026-09-26 - 小欧 - [72]第九章(9.6-1) 配套: 口令错误时抛 401 而非静默空流, 让前端能跳登录页。
+# 2026-09-26 (三堂会审后修正) - 小欧 - 删除本条目原先的后半段（"SSE 事件流补访问口令传递链：
+#   口令经查询串 ?access_token= 传入、本模块在起流时从 query 取出校验"）—— 经全仓 grep 核实，
+#   `access_token` 全仓**仅出现在这条注释里**，无任何实现代码。该链路根本不存在，注释在撒谎。
+#   真实情况: 前端全走 fetch+ReadableStream（见 useSSE.ts:876 getReader），请求头可带
+#   `Authorization: Bearer`（useSSE.ts:849），鉴权链路完整可用；原生 EventSource（不能自定
+#   义请求头）的客户端目前**不受支持** —— 如未来要支持，需在 chat 流端点实现 ?access_token=
+#   查询串校验（以 deps.verify_token 为唯一权威，不另起第二处校验）。特此如实记录，不冒充已实现。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -180,7 +188,11 @@ from dataclasses import dataclass
 from typing import Optional, AsyncGenerator, Dict, List
 
 from app.services import get_scope  # [70] 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
-from app.services.model.resolver import get_ai_config_resolver, resolve_session_client  # 8.7 外迁: 会话模型覆盖决议 — 小健 2026-09-05
+from app.services.model.resolver import (
+    ProviderKeyMissingError,
+    get_ai_config_resolver,
+    resolve_session_client,
+)  # 8.7 外迁: 会话模型覆盖决议 — 小健 2026-09-05
 from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
 from app.services.task.task_registry import (
@@ -407,7 +419,16 @@ async def chat_stream_orchestrator(
         if scope.is_released:
             logger.info(f"[chat] 换代窗口: scope 已退休, 改取当前代(task={task_id})")
             scope = get_scope()
-        _session_client = await resolve_session_client(scope, session_id)
+        # [72]第二章(2.5) - 小欧 - 2026-09-26: 专属 catch，不让它掉进下方 :536 的 router_error 兜底 ——
+        #   配置问题与系统问题必须可分辨（用户看到"路由异常: xxx"无法判断该去设置页补 key）
+        try:
+            _session_client = await resolve_session_client(scope, session_id)
+        except ProviderKeyMissingError as _pk:
+            yield create_error_response(
+                error_type="config_error",
+                error_message=str(_pk),
+            )
+            return
         agent.llm_client = _session_client
         # S2 同步 _task_llm_model 为生效快照模型, 使 react_cycle 日志/telemetry 显示真实生效模型
         #   (而非全局 agnes), 与 TASK_START 显示实际生效模型同一精神 — 小欧 2026-09-01
