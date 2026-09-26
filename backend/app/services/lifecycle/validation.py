@@ -4,11 +4,9 @@
 #   两分离字段归一为 model_ref: Optional[ModelRef]; _resolve_provider_model 返回 (ModelRef|None, errors);
 #   各 make_*_result 工厂与 validate_config 主流程形参同步改透传 model_ref(日志文本内取 .provider/.model
 #   拼展示串属派生, 允许) — F8 无兼容 shim, 调用点随改
-# 2026-09-26 - 小欧 - [72]第二章(2.4 配套·DRY) 落地: api_key 空判定改调公用函数 is_blank_secret()
-#   修前此处为 `not isinstance(api_key, str) or api_key.strip() == ""`，与 model/resolver.py 的
-#   `(_pv_cfg.get("api_key") or "").strip() or None` 是两处独立写法、语义却相同（空/纯空白=未配置）。
-#   同一判定两处各写一遍，第三次出现不一致只是时间问题 —— 抽出全局层 app/utils/secret_utils.py
-#   作唯一权威（DRY：相同逻辑只写一次）。行为等价，非字符串仍按未配置处理，验证语义零变化 — 小欧 2026-09-26
+# 2026-09-26 - 小欧 - api_key 空判定收口公用函数 is_blank_secret()，消除与 model/resolver.py 的重复写法 — 小欧 2026-09-26
+# 2026-09-26 (三堂会审后修正·二) - 小欧 - 删残留的外层 `if not api_key:`：它是 is_blank_secret 的真子集，
+#   同一判定写两遍（DRY），且两套文案同指"没有可用 api_key"。详见 validate_credentials 内注释。
 """
 validation — 配置验证
 
@@ -54,13 +52,13 @@ def validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, li
     warnings = []
     selected_provider_config = ai_config.get(final_provider, {})
     api_key = selected_provider_config.get("api_key")
-    if not api_key:
-        errors.append(f"provider '{final_provider}' 缺少 api_key 配置")
-    elif is_blank_secret(api_key):
-        # [72]第二章(2.4 配套·DRY) - 小欧 - 2026-09-26: 原为 `not isinstance(api_key, str) or api_key.strip() == ""`，
-        #   与 resolver 的"key 空白判定"是同一语义的两份独立写法；现统一收口到 app.utils.secret_utils.is_blank_secret，
-        #   杜绝第三次出现不一致写法（DRY）。语义不变：空/纯空白 = 未配置。
-        errors.append(f"provider '{final_provider}' 的 api_key 为空")
+    # 2026-09-26 - 小欧 - 判空收口 is_blank_secret（缺失/空串/纯空白/类型非法统一为"未配置"），
+    #   文案带出实际类型与值，便于定位 YAML 手误。详见文件头「三堂会审后修正·二」
+    if is_blank_secret(api_key):
+        errors.append(
+            f"provider '{final_provider}' 未配置可用的 api_key"
+            f"（缺失/空串/纯空白，或类型非法：{type(api_key).__name__}={api_key!r}）"
+        )
     api_base = selected_provider_config.get("api_base")
     if not api_base:
         warnings.append(f"provider '{final_provider}' 未配置 api_base,将使用默认值")

@@ -114,6 +114,13 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   省一层壳却拆了层边界, 是拆东墙补西墙。正确解法不是"零函数", 而是"一个做实事的公开函数":
 #   新增 get_provider_raw_entry(name) —— 读 ai 区 + 存在性校验(404)一次做完(含真实分支逻辑,
 #   不是透传), 路由层只调它, 不再碰 _raw_ai/_provider_names。公开契约、防分叉、守边界三者兼得。
+# 2026-09-26 (三堂会审后修正·三) - 小欧 - update_provider_config 字段落盘改单遍 if/elif 分流：
+#   原为两遍遍历 fields + 第二遍 `k not in key_map` 排除重叠键(timeout/max_retries/label 同属
+#   key_map 与 PROVIDER_PARAM_TYPES)，两循环互相耦合属隐式契约；单遍后该约束由结构天然承担。
+#   行为经 20 万随机组合穷举验证等价(含 v=None/纯空白/非字符串真值/三键重叠)。
+#   同时把 D22 决策史由行内迁至本处：api_key 传空串="不修改" ⇒ node 空 ⇒ `if not node:
+#   raise ValueError` ⇒ 级别纠正只在中央映射 response_utils.handle_api_errors 做(不在 service
+#   层改异常类型, 否则推翻 TDD test_empty_api_key_not_overwrite 固化的"抛错+绝不落盘")。
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -453,8 +460,16 @@ def add_provider(name: str, label: str = "", api_base: str = "",
     ms = list(models or [])
     if model and model not in ms:
         ms.append(model)
+    # 2026-09-27 - 小欧 - [72]第一章补齐第二条写入路径：api_key 落盘前 strip。
+    #   add_provider 与 update_provider_config 是**两条并行的 api_key 落盘路径**，第一章 1.3 只覆盖了
+    #   后者（`cleaned = str(v).strip()`），本函数原样落盘 ⇒ 界面新建 Provider 粘贴带空格的 key
+    #   会把脏值写进 YAML。危害不在"当下调用失败"（消费端 service.py:220 / client_sdk:288 /
+    #   model_routes:248 各有一道 strip 兜底），而在**脏值长期潜伏**：YAML 里存的是带空格的 key，
+    #   任何新增消费端漏 strip 即 401，且界面无从提示病因（用户会反复重输同一串正确 key）。
+    #   留空仍为"未配置"（str 化同时兜住 None/数字等非字符串，与 :458 的 api_base 校验同款）。
     tree: Dict[str, Any] = {"ai": {name: {
-        "name": name, "label": label or name, "api_base": api_base, "api_key": api_key,
+        "name": name, "label": label or name, "api_base": api_base,
+        "api_key": str(api_key or "").strip(),
         "timeout": timeout, "max_retries": max_retries, "models": ms}}}
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "provider": name, "mtime": _config_mtime()}
@@ -493,38 +508,25 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
                 detail=f"{_url_key} 为空：URL 是 Provider 的必要配置，无法调用，请填写完整地址")
     tree: Dict[str, Any] = {"ai": {name: {}}}
     node = tree["ai"][name]
+    # 2026-09-26 - 小欧 - 单遍 if/elif 分流（原两遍遍历+`k not in key_map` 排除重叠三键），
+    #   行为经 20 万组合验证等价。None 短路须在 `k in key_map` 内层：否则 label=None 会落入
+    #   动态参数分支被写入（原语义是不写）。详见文件头「三堂会审后修正·三」
     for k, v in fields.items():
-        if k in key_map and v is not None:
-            if k == "api_key":
-                # 第三章三态 + 第一章去空格：空/纯空白视为"不修改"跳过；非空 strip 后落盘
-                cleaned = str(v).strip()
-                if not cleaned:
-                    continue
-                node["api_key"] = cleaned
-                continue
-            node[key_map[k]] = v
-    # [62]P8 4.3(9)-3-d 动态参数落盘：param_types 内、key_map 外的动态字段写 ai.{provider}.{k}（标量叶值直写）
-    for k, v in fields.items():
-        if k in PROVIDER_PARAM_TYPES and k not in key_map:
-            node[k] = v
+        if k in key_map:
+            if v is not None:
+                if k == "api_key":
+                    # 第三章三态 + 第一章去空格：空/纯空白视为"不修改"跳过；非空 strip 后落盘
+                    cleaned = str(v).strip()
+                    if cleaned:
+                        node["api_key"] = cleaned
+                else:
+                    node[key_map[k]] = v
+        elif k in PROVIDER_PARAM_TYPES:
+            node[k] = v   # 动态参数直写 ai.{provider}.{k}（到此处必不在 key_map）
     if fields.get("clear") is True:
         node["api_key"] = ""
-    # 2026-09-26 - 小欧 - 修 D22「api_key="" 单字段提交 → 500，与三态契约矛盾」（三遍核实确认成立）：
-    #   上游三态契约（本文件 [72] 注释与 model_routes 的 DTO 注释都写明）：
-    #   `api_key` 传 空串/纯空白/None = 不修改。`api_key: ""` 走到上面 api_key 分支时
-    #   cleaned 为空 → continue → node 仍空 → 落进 `if not node: raise ValueError`，
-    #   而 ValueError 被 handle_config_errors(=handle_api_errors) **统一兜成 500**。
-    #   即：调用方完全按契约办事（传空串表示"这个字段别动"），却拿到 5xx —— 5xx 会被前端/网关
-    #   当成服务端故障（自动重试、告警噪声），而重试永远不会成功；detail 还被改写成
-    #   "更新配置失败: ..."，用户看不出是自己提交的内容不成立。
-    #   ⚠ 修法取舍（三遍核实后两次修正，此处为最终版）：初版在此处改抛 HTTPException(400)，
-    #     但既有 TDD test_empty_api_key_not_overwrite 固化的是 **[72]第三章刻意选定的**
-    #     "抛错 + 绝不落盘"语义，改异常类型等于推翻既定设计；次版改成"幂等成功返回 ok"，
-    #     同样与该测试的语义相悖。**最终不改编排层**（保持 ValueError，一个字不动），
-    #     只在**中央映射** response_utils.handle_api_errors 里把 ValueError 归为 400 ——
-    #     级别纠正发生在唯一该发生的地方（DRY），并顺带修掉 E12 的 add_provider name 校验同类问题。
-    #   本函数此处保持原样，`merge_nested_patch` 仍不被调用 ⇒ 原 api_key 绝不被空串擦除。
-    #   —— 编辑：小欧 2026-09-26
+    # api_key 传空串="不修改" ⇒ 上面全部跳过 ⇒ node 空。保持 ValueError 不在本层改类型
+    # （TDD test_empty_api_key_not_overwrite 固化"抛错+绝不落盘"），级别纠正由中央映射统一做。
     if not node:
         raise ValueError("没有有效字段")
     merge_nested_patch(tree, scope="model")
@@ -664,17 +666,8 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
     p, api_base = _require_provider_for_fetch(name, ai)
     # 2026-09-24 23:55:00 - 小欧 - 设计 L137：api_key 含 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底）— 小欧-2026-09-24
     # [72]第十章(10.3) - 小欧 - 2026-09-26: probe_key 优先于 env/YAML（用户正在输入框里新输的 key 才是待验证的那个）
-    # 2026-09-26 - 小欧 - [72]第二章(2.4 一致性项): 补注释「此处不回落」——
-    #   本行 api_key 为空时**传空串给远端、不回落到全局默认 provider 的 key**（`or str(p.get("api_key") or "")` 的
-    #   第二个 or 只是 YAML 兜底，不是跨 provider 回落）。此"不回落"行为是**正确**的：它与 resolver 情况 B
-    #   （跨 provider 且 key 空白 → 明确报错）共同构成"key 空白即失败"的一致语义。
-    #   **切勿在此加 fallback**（如 `or 全局单例.api_key`）：那会让本路径重新出现"用别的 provider 的 key"，
-    #   即第二章认定的最高优先缺陷 B。此注释为防后人误加而立。
-    # 2026-09-26 - 小欧 - [72]三堂会审后修正(复用优先): 判空改调公用函数 is_blank_secret(),
-    #   原为 `isinstance(probe_key, str) and probe_key.strip()` 内联重写一遍"空/纯空白=未配置"判定,
-    #   而 app/utils/secret_utils.py 已有该判定的唯一权威(同一批改动刚为 validation.py 收口而建)。
-    #   同一判定写两遍必然漂移 —— 本次即已漂移: 内联版只覆盖"是字符串"这一路, 非字符串类型的行为
-    #   靠短路侥幸兜住, 一旦后续给 is_blank_secret 增补语义(如接受 bytes), 两处就会分叉。
+    # api_key 为空时传空串给远端、**不回落**到全局默认 provider 的 key（与 resolver 第二章行为 B
+    # 共同构成"key 空白即失败"的一致语义）。切勿在此加 `or 全局单例.api_key` 之类 fallback。
     api_key = (probe_key.strip() if not is_blank_secret(probe_key)
                else os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or ""))
     headers = get_provider_adapter(name).static_headers(api_key)

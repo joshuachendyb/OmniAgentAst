@@ -20,10 +20,10 @@
 // 2026-09-22 小欧 - 控件宽度统一：参数模板区硬编码 minWidth:160/maxWidth:240 改用 settingsControl 令牌 - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：参数模板区 Select/InputNumber/Input 三控件 onChange 的「勾选才收集+params合并」
 //   重复 → 抽取 updateCollectedParam 单函数（函数式更新防闭包陈旧值）- 小欧-2026-09-22
-// 2026-09-26 - 小欧 - [72]第八章(8.5-1) 落地: 添加 Provider 弹窗的 api_base 改为必填
-//   (rules required + 自定义 validator 拒纯空白), 未填不允许提交(北京老陈: URL 不能空->空是错误状态)。
-//   与 api_key 的"未配置则留空"方向相反: api_key 允许先建后填, base_url 是必要配置。
-//   后端 model_service.add_provider 同步校验 api_base 空 -> 400, 前后端双闸。 - 小欧-2026-09-26
+// 2026-09-26 - 小欧 - [72]第八章(8.5-1)：添加 Provider 弹窗的 api_base 改必填（rules required +
+//   自定义 validator 拒纯空白），未填不提交；与 api_key 的"未配置则留空"方向相反（api_key 允许先建后填）。
+//   后端 add_provider 同步校验 → 400，前后端双闸。
+// 2026-09-27 - 小欧 - [72]第一章：提交前 trim api_key（与 ProviderConfig.doSave、后端 add_provider 同一口径）。
 
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
@@ -138,6 +138,10 @@ export const ModelModals: React.FC<Props> = (props) => {
     if (busy) return;
     const v = await pForm.validateFields().catch(() => null);
     if (!v) return;
+    // 2026-09-27 - 小欧 - [72]第一章: api_key 落盘前 trim（与 ProviderConfig.doSave 同一口径）。
+    //   后端 add_provider 已同步 strip（此前只有后端兜底、前端不回传），此处为体验一致；
+    //   留空仍是"未配置"，不因 trim 变成空串以外的值。
+    if (typeof v.api_key === 'string') v.api_key = v.api_key.trim();
     setBusy('provider');
     try {
       await props.onSubmitAddProvider(v);
