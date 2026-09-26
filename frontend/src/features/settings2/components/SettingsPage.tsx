@@ -78,6 +78,11 @@
 //   由 {configured:false, suffix:''} 补为三键恒定 {configured:false, prefix:'', suffix:''} ——
 //   该契约在项目内有 4 处声明（model.api.ts ProviderEntry / ProviderConfig.config / settings2/types.ts / 本兜底值），
 //   少任一处 tsc 即报 prefix 缺失，故四处同步为同一形状 — 小欧-2026-09-26
+// 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求）：
+//   ①groupDirtyCount 模型组分支 += providerDraft 键数（与 useSettings dirtyCount 同口径）；
+//   ②ProviderConfig 挂载传 onDraftChange={s.setProviderDraft}（③区字段 diff 上报→底部栏计数）；
+//   ③③自带保存按钮的 onSave 改走 s.saveProviderDraft(patch)——与底部保存栏同一条落盘链（统一链，
+//   原内联 modelApi.updateProvider+afterModelSaved 三段逻辑收口进 hook，失败 rethrow 保留输入语义不变）- 小欧-2026-09-27
 import React, { useState } from 'react';
 import {
   Button,
@@ -116,7 +121,7 @@ import { modelApi } from '@/services/api/model.api';
 import {
   ErrorType,
   handleApiError,
-  handleError,
+  // 2026-09-27 小欧 - handleError 随③ onSave 收口进 saveProviderDraft 移除（全文件已无调用点）- 小欧-2026-09-27
   showMessage,
   showSuccess,
 } from '@/services/error/handler';
@@ -213,6 +218,7 @@ const SettingsPage: React.FC = () => {
   // 2026-09-24 小欧 - ①removedParams 计入模型组脏计数（删键是独立待存变更，与 dirtyCount 同口径）- 小欧-2026-09-24
   // 2026-09-24 小欧 - BZ-1：补能力脏 +1（与 useSettings dirtyCount/isGroupDirty 同口径——
   //   原仅改能力时「保存本组」可点却显示 0 项，计数失真）- 小欧-2026-09-24
+  // 2026-09-27 小欧 - 补③区草稿键数（改了几个字段=几项，与 dirtyCount 同口径）- 小欧-2026-09-27
   const groupDirtyCount =
     state.activeTab === 'model'
       ? Object.values(
@@ -225,7 +231,8 @@ const SettingsPage: React.FC = () => {
         state.model.removedParams.length +
         (isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline)
           ? 1
-          : 0)
+          : 0) +
+        Object.keys(state.model.providerDraft).length
       : Object.keys(state.dirtyKeys).filter(
           (k) => s.groupOfKey(k) === state.activeTab
         ).length;
@@ -459,28 +466,14 @@ const SettingsPage: React.FC = () => {
             }
           }
           onSave={async (patch) => {
-            try {
-              const r = await modelApi.updateProvider(
-                state.model.selectedProvider,
-                patch
-              );
-              // 修正(2026-09-21 小强)：查 ok——后端配置错误回 HTTP200+ok:false 时不查会弹假成功；
-              //   失败 rethrow，ProviderConfig 才不执行 api_key 复位（[设置页UI审计] 问题6）
-              if (!r.ok) {
-                handleError({
-                  message: 'Provider 配置保存失败',
-                  error_type: ErrorType.MODEL_CONFIG_ERROR,
-                });
-                throw new Error('provider-config-save-failed');
-              }
-              showSuccess('Provider 配置已保存（立即生效）');
-              // A7：同步落盘后 mtime
-              await afterModelSaved(r.mtime);
-            } catch (e) {
-              handleApiError(e);
-              throw e;
-            }
+            // 2026-09-27 小欧 - 收口统一落盘链：③自带按钮与底部保存栏同走 saveProviderDraft
+            //   （updateProvider→syncMtime→reloadProviderCache→清草稿；成功 toast/失败提示在 hook 内），
+            //   失败 rethrow 保留 ProviderConfig 输入（原 [设置页UI审计] 问题6 语义不变）- 小欧-2026-09-27
+            const r = await s.saveProviderDraft(patch);
+            if (!r.ok) throw new Error('provider-config-save-failed');
           }}
+          // 2026-09-27 小欧 - ③区字段 diff 上报：底部保存栏计数/亮起的数据源（空 diff=干净）- 小欧-2026-09-27
+          onDraftChange={s.setProviderDraft}
         />
       </div>
       <SectionTitle title="── ④ 操作区 ──" />

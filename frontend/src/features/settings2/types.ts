@@ -18,6 +18,10 @@
 //   {configured, prefix, suffix} —— 原 {configured, suffix} 撒谎（后端未配置时只返 {configured:false}）。
 //   本契约在项目内有 4 处声明（model.api.ts ProviderEntry / ProviderConfig.config / SettingsPage 兜底值 / 本文件），
 //   已同步为同一形状，缺任一处 tsc 即报 prefix 缺失 — 小欧-2026-09-26
+// 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求）：ModelState 补
+//   providerDraft: Record<string, unknown> —— ③区表单字段的变更草稿（只含改过的键，空对象=干净），
+//   由 ProviderConfig 经 onDraftChange 上报 diff，dirtyCount/isGroupDirty/saveGroup/saveAll/
+//   ensureModelSaved/beforeunload/checkMtime 全链纳入；保存经 saveProviderDraft → PUT /providers 落盘 - 小欧-2026-09-27
 import type { SessionModelOverride } from '@/types/chat';
 import type {
   SettingSchemaItem,
@@ -67,6 +71,8 @@ export interface ModelState {
       [key: string]: unknown;
     }
   >;
+  // 2026-09-27 小欧 - ③区字段变更草稿（只含改过的键；空=干净）——底部保存栏计数/落盘源 - 小欧-2026-09-27
+  providerDraft: Record<string, unknown>;
   isDirty: boolean;
   editingProviderConfig: boolean;
   addModelModalOpen: boolean;

@@ -76,8 +76,25 @@
 //   2026-09-26 (掩码契约同步) - 小欧 - 后端 mask_secret_value 按北京老陈 2026-09-26 裁定改两档，
 //     len<8 由返 prefix="" 改返 prefix="****"，故上方第⑤条历史里"prefix 为空只显示末4位"的旧分档
 //     已不再成立；本文件 :285 附近活注释同步为新契约（只改注释，逻辑零改动）。
+// 2026-09-27 小欧 - ③区字段改后底部保存栏亮起（北京老陈需求「3修改了, 出现保存的按钮」）：
+//   ①Props 加可选 onDraftChange（字段 diff 上报回调；不传=单测挂载的独立用法，零影响）；
+//   ②新增 buildDiff：本地表单值 vs config 基线的**变更键**集合（与 doSave 提交语义对齐——
+//     api_key 非空才算改/base_url trim 后不等才算改/label 留空=保持原值不算改/timeout、max_retries、
+//     动态键不等才算改）；只含改过的键，改回原值即变空=自动撤销脏（S6 同款语义）；
+//   ③上报 effect 用 JSON 签名去重（config 引用变化会重算，签名相同不通知，防父层 setState 循环）；
+//   ④本组件本地表单 state 不动（受控输入/焦点/明文查看逻辑零改动），③自带按钮 onSave 链不变 - 小欧-2026-09-27
+// 2026-09-27 (三堂会审第6遍修正) 小欧 - 推翻上条③的初版实现（lastDiffSig 签名去重）：
+//   签名缓存与 hook 侧 providerDraft 会失真不同步（保存成功时 hook 单方面清草稿，本地签名仍停在
+//   旧值）→ 请求在飞期间的新输入不再上报，静默丢脏。改为每渲染如实上报，循环防护收口到
+//   useSettings.setProviderDraft 的等价去重单点（详见 effect 处注释）- 小欧-2026-09-27
+// 2026-09-27 小欧 - 保存按钮状态化（北京老陈拍板「无修改时灰白不可点，与底部一致」）：
+//   ①原按钮 type="primary" 常年蓝色、无脏态判定——改没改一个样，用户不知道何时该点它；
+//   ②改后：无修改=default 白灰+disabled；有修改=primary 蓝色+计数「（N 项）」（N=diff 键数，
+//     与底部「保存本组(N 项)」同源同口径）；base_url 原值被清空的错误状态守卫保留仍禁；
+//   ③判据与上报同源（buildDiff），保存成功→草稿清空→按钮回灰、保存失败→草稿保留→按钮
+//   保持蓝色可重试，闭环自动正确；doSave 提交语义不变（仍送全量表单值）- 小欧-2026-09-27
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { SecretRevealInput } from './SecretRevealInput';
@@ -130,6 +147,8 @@ interface Props {
     clear?: boolean;
     [key: string]: unknown;
   }) => Promise<void>;
+  // 2026-09-27 小欧 - ③区字段变更草稿上报（可选：单测独立挂载不传即无副作用）- 小欧-2026-09-27
+  onDraftChange?: (diff: Record<string, unknown>) => void;
 }
 
 const EXTRA_STYLE: React.CSSProperties = {
@@ -140,7 +159,12 @@ const EXTRA_STYLE: React.CSSProperties = {
   paddingBottom: Spacing.MD,
 };
 
-export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
+export const ProviderConfig: React.FC<Props> = ({
+  name,
+  config,
+  onSave,
+  onDraftChange,
+}) => {
   const [saving, setSaving] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [baseUrl, setBaseUrl] = useState(config.base_url ?? '');
@@ -158,8 +182,51 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       return init;
     }
   );
+  // 2026-09-27 小欧 - ③区脏计数：保存按钮 灰白(disabled)/蓝+计数 的判据与显示（存数字而非
+  //   键数组——相同数字 React setState 会 bail out，天然防渲染循环；数组新引用会循环）- 小欧-2026-09-27
+  const [dirtyCount, setDirtyCount] = useState(0);
 
   const isEnv = config.env === true;
+
+  // 2026-09-27 小欧 - ③区草稿 diff（只含改过的键，值=落盘形态）：
+  //   与 doSave 的提交语义对齐（api_key trim 非空、base_url trim 不等、label 非空且不等、
+  //   timeout/max_retries/动态键不等）——改回原值 diff 即空，父层自动撤销脏计数（S6 同款）。
+  //   doSave 无条件送 timeout/max_retries 是"等值重写"，diff 只送真变更，二者字段值同源无分叉。
+  const buildDiff = useCallback((): Record<string, unknown> => {
+    const diff: Record<string, unknown> = {};
+    if (apiKey.trim() !== '') diff.api_key = apiKey.trim();
+    const nowBase = baseUrl.trim();
+    if (nowBase !== (config.base_url || '').trim()) diff.base_url = nowBase;
+    const nowLabel = label.trim();
+    if (nowLabel !== '' && nowLabel !== (config.label || '').trim())
+      diff.label = nowLabel;
+    if (timeout !== (config.timeout ?? 150)) diff.timeout = timeout;
+    if (maxRetries !== (config.max_retries ?? 3)) diff.max_retries = maxRetries;
+    for (const k of Object.keys(config.param_types ?? {})) {
+      if (HARDCODED_KEYS.has(k)) continue;
+      if (dynamicValues[k] !== undefined && dynamicValues[k] !== config[k])
+        diff[k] = dynamicValues[k];
+    }
+    return diff;
+    // 2026-09-27 小欧 - useCallback 显式依赖（exhaustive-deps）：表单六态 + config 基线，
+    //   任一变化才重建引用触发 effect 重报；config 引用变（缓存刷新/内联 fallback）也在此覆盖
+    //   （原在 effect 注释里靠"每渲染"覆盖，现由依赖显式表达，语义等价且 lint 干净）- 小欧-2026-09-27
+  }, [apiKey, baseUrl, label, timeout, maxRetries, dynamicValues, config]);
+
+  // 2026-09-27 小欧 - diff 上报（底部保存栏亮起数据源）：无依赖数组=任一表单值/基线变化即重算，
+  //   每次渲染都如实上报、**不做本地签名去重**——初版用 lastDiffSig 去重，被三堂会审第6遍抓出状态
+  //   失真：hook 保存成功会单方面清空 providerDraft，本地签名还停在旧值就不再上报，此时（请求
+  //   在飞的几百 ms 内）新改的字段会「输入框有值、草稿无记录、保存栏归零」静默丢脏。改为全量
+  //   上报后，防循环唯一防线=useSettings.setProviderDraft 的 JSON 等价去重（同一 diff 重报不改
+  //   state 引用、不触发渲染，循环在此终止；DRY：去重只此一处维护）- 小欧-2026-09-27
+  useEffect(() => {
+    const diff = buildDiff();
+    // 2026-09-27 小欧 - 同一份 diff 双出口：本地脏计数（按钮亮/灰）+ 父层草稿（底部保存栏）；
+    //   相同数字 setState 被 React bail out，不产生渲染循环。依赖含内联 buildDiff（每渲染新引用
+    //   = 每渲染如实上报，与设计一致，同时满足 exhaustive-deps）- 小欧-2026-09-27
+    setDirtyCount(Object.keys(diff).length);
+    onDraftChange?.(diff);
+  }, [buildDiff, onDraftChange]);
 
   // 2026-09-26 - 小欧 - [72]三堂会审后修正(SRP): 原先内联在本组件的两块功能已各自抽出为独立组件 ——
   //   ①「明文密钥查看(二次确认 + 30 秒自动恢复打码 + 不写 localStorage)」→ SecretRevealInput
@@ -256,16 +323,21 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         </span>
         {/* [72]第八章(8.5-3) + 2026-09-26 修正 - 小欧: base_url "为空即错误状态不可保存" 的判据是
           **"原本有值却被清空"**，不是"当前为空"。原本就空（老配置缺 api_base）时按钮必须可用，
-          否则改 label/timeout/max_retries 也存不下去（改前用 `baseUrl.trim()===''` 一票否决 = 退化）。 */}
+          否则改 label/timeout/max_retries 也存不下去（改前用 `baseUrl.trim()===''` 一票否决 = 退化）。
+          2026-09-27 小欧 - 状态化（北京老陈拍板「无修改时灰白不可点，与底部一致」）：
+          无修改 → default 白灰 + disabled；有修改 → primary 蓝 + 计数「（N 项）」（N=diff 键数，
+          与底部「保存本组(N 项)」同源同口径）；base_url 原值清空错误状态守卫叠加保留仍禁。 */}
         <Button
-          type="primary"
+          type={dirtyCount > 0 ? 'primary' : 'default'}
           onClick={() => void doSave()}
           loading={saving}
           disabled={
-            baseUrl.trim() === '' && (config.base_url || '').trim() !== ''
+            dirtyCount === 0 ||
+            (baseUrl.trim() === '' && (config.base_url || '').trim() !== '')
           }
         >
           保存 Provider 配置（立即生效）
+          {dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
         </Button>
         {/* 2026-09-26 小欧 - [72]第十章(10.3) 迁出为 TestConnectionProbe（SRP 拆分）：
             与保存并列但语义不同 —— 只读探测（不改配置），故不走 onSave。

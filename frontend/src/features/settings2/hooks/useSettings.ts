@@ -57,6 +57,17 @@
 //   ②BZ-4 暴露 ensureModelSaved 供 SettingsPage 删除确认前置调用（删除成功后 load() 全量重建 model 态，
 //   不强制保存会静默丢弃模型 Tab 未落库改动，与 selectProvider/selectModel/refreshModels 同款 BUG-D 防线复用）
 //   - 小欧-2026-09-24
+// 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求「3修改了, 出现保存的按钮」）：
+//   ①initialModel 补 providerDraft:{}（非 keepModel 的 load 自动清、keepModel 保留）；
+//   ②dirtyCount/isGroupDirty('model')/beforeunload/checkMtime 四处纳入 providerDraft 计数与判定；
+//   ③新增 setProviderDraft（JSON 签名等价去重，防 ProviderConfig effect 重报造成渲染循环）；
+//   ④新增 saveProviderDraft：updateProvider(PUT /providers) → syncMtime → reloadProviderCache → 清草稿；
+//   ⑤抽 reloadProviderCache 公共函数（getModels+patch providers/providerConfig），saveProviderDraft/
+//   refreshModels 共用（DRY）—— saveProviderDraft 不内联 refreshModels 是为避免
+//   refreshModels→ensureModelSaved→saveProviderDraft 循环依赖；
+//   ⑥saveGroup('model') = saveModelGroup 后串行 saveProviderDraft；saveAll 在 Promise.all 后串行 flush
+//   （串行防 reloadProviderCache 与 saveModelGroup 的 providers patch 竞态）；
+//   ⑦ensureModelSaved 放行条件补 providerDraft（切换前强制落库，BUG-D 同类防线）- 小欧-2026-09-27
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -176,6 +187,8 @@ const initialModel = () => ({
   capabilitiesBaseline: [] as string[],
   envOverride: {},
   providerConfig: {},
+  // 2026-09-27 小欧 - ③区草稿初始干净（load 非 keepModel 重建即清；keepModel 由调用方保留）- 小欧-2026-09-27
+  providerDraft: {} as Record<string, unknown>,
   isDirty: false,
   editingProviderConfig: false,
   addModelModalOpen: false,
@@ -382,18 +395,24 @@ export function useSettings() {
     void load();
   }, [load]);
 
-  // 31候选 #15：离开守卫——存在未保存修改（设置项脏键/模型参数）时拦截刷新与关闭，
+  // 31候选 #15：离开守卫——存在未保存修改（设置项脏键/模型参数/③区草稿）时拦截刷新与关闭，
   //   对齐 chat 侧 useBeforeUnload 语义（设置页原无守卫，改完点关闭静默丢改动）；
-  //   监听在 useEffect 内注册，dirtyKeys/model.isDirty 变化时自动重绑，无脏态时不拦截
+  //   监听在 useEffect 内注册，dirtyKeys/model.isDirty/providerDraft 变化时自动重绑，无脏态时不拦截
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (!Object.keys(state.dirtyKeys).length && !state.model.isDirty) return;
+      if (
+        !Object.keys(state.dirtyKeys).length &&
+        !state.model.isDirty &&
+        // 2026-09-27 小欧 - ③区草稿也算未保存修改（否则改了 base_url 直接刷新静默丢）- 小欧-2026-09-27
+        !Object.keys(state.model.providerDraft).length
+      )
+        return;
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', onBeforeUnload);
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
-  }, [state.dirtyKeys, state.model.isDirty]);
+  }, [state.dirtyKeys, state.model.isDirty, state.model.providerDraft]);
 
   /** 切 Tab/刷新 mtime 检查（3.1/9.11）。 */
   // [59]F-3 修复：后台配置被外部修改导致整体刷新时，若存在未保存的本地修改（脏 keys/模型参数），
@@ -402,8 +421,11 @@ export function useSettings() {
     try {
       const mtime = await settingsApi.getMtime();
       if (mtime !== state.mtime) {
+        // 2026-09-27 小欧 - ③区草稿纳入"本地未保存修改"判定（load(reset) 会连草稿一起清，须先报丢失）- 小欧-2026-09-27
         const hasLocalDirty =
-          Object.keys(state.dirtyKeys).length > 0 || state.model.isDirty;
+          Object.keys(state.dirtyKeys).length > 0 ||
+          state.model.isDirty ||
+          Object.keys(state.model.providerDraft).length > 0;
         // S2：外部更新 → 显式全量重置（load 默认会保留脏态，这里必须 reset 以对齐"已丢失"提示）
         await load({ reset: true });
         showMessage(
@@ -416,7 +438,13 @@ export function useSettings() {
     } catch (e) {
       handleApiError(e);
     }
-  }, [state.mtime, state.dirtyKeys, state.model.isDirty, load]);
+  }, [
+    state.mtime,
+    state.dirtyKeys,
+    state.model.isDirty,
+    state.model.providerDraft,
+    load,
+  ]);
 
   /** 改控件：与持久化基线对比记脏（S6）；外观两项同步 localStorage 预览（7.6）。 */
   const setValue = useCallback((group: string, key: string, value: unknown) => {
@@ -475,11 +503,14 @@ export function useSettings() {
       : 0;
     // 2026-09-24 小欧 - ①removedParams 每项计 1（删键是独立待存变更，计入「保存全部(N 项)」计数）- 小欧-2026-09-24
     const removedCount = state.model.removedParams.length;
+    // 2026-09-27 小欧 - ③区草稿每键计 1（改了几个字段=几项，北京老陈需求的计数来源）- 小欧-2026-09-27
+    const providerDraftCount = Object.keys(state.model.providerDraft).length;
     return (
       Object.keys(state.dirtyKeys).length +
       modelDirty +
       capsDirty +
-      removedCount
+      removedCount +
+      providerDraftCount
     );
   }, [
     state.dirtyKeys,
@@ -489,14 +520,25 @@ export function useSettings() {
     state.model.capabilities,
     state.model.capabilitiesBaseline,
     state.model.removedParams,
+    state.model.providerDraft,
   ]);
 
   const isGroupDirty = useCallback(
     (tab: TabKey) => {
-      if (tab === 'model') return state.model.isDirty;
+      if (tab === 'model')
+        return (
+          state.model.isDirty ||
+          // 2026-09-27 小欧 - ③区草稿纳入模型组脏判定（否则仅改③字段时「保存本组」灰着不可点）- 小欧-2026-09-27
+          Object.keys(state.model.providerDraft).length > 0
+        );
       return Object.keys(state.dirtyKeys).some((k) => groupOfKey(k) === tab);
     },
-    [groupOfKey, state.dirtyKeys, state.model.isDirty]
+    [
+      groupOfKey,
+      state.dirtyKeys,
+      state.model.isDirty,
+      state.model.providerDraft,
+    ]
   );
 
   /** 写（参数配置）：schema 校验 → PUT /settings（6.3/7.5）。 */
@@ -642,6 +684,24 @@ export function useSettings() {
     ]
   );
 
+  // 2026-09-27 小欧 - DRY：getModels + 同步 providers/providerConfig 缓存（原内联在 refreshModels），
+  //   saveProviderDraft/refreshModels 共用单点。saveProviderDraft 不直接调 refreshModels 是为避免
+  //   循环依赖（refreshModels→ensureModelSaved→saveProviderDraft），只取其中的缓存刷新段 - 小欧-2026-09-27
+  const reloadProviderCache = useCallback(async () => {
+    try {
+      const models = await modelApi.getModels();
+      // v4.19(P2-10 修正)：与 load() 同构重建 providerConfig（含 env），防保存/增删后 env 状态过期
+      patchModel({
+        providers: models.providers,
+        providerConfig: buildProviderConfig(models.providers),
+      });
+      return models;
+    } catch (e) {
+      handleApiError(e);
+      return null;
+    }
+  }, [patchModel]);
+
   const saveModelGroup = useCallback(async () => {
     const dirty = isDirty(
       state.model.params,
@@ -753,6 +813,57 @@ export function useSettings() {
     }
   }, [patchModel, syncMtime, state.model, state.mtime, load]);
 
+  // 2026-09-27 小欧 - ③区草稿写入：JSON 签名等价去重——这是防 ProviderConfig 上报 effect
+  //   （每渲染无条件通知）造成 setState→渲染→effect 循环的**唯一防线**（同一 diff 重报时
+  //   return 原 state 引用、不触发渲染，循环在此终止；三堂会审第6遍定案，组件侧不再去重）- 小欧-2026-09-27
+  const setProviderDraft = useCallback((draft: Record<string, unknown>) => {
+    setState((s) => {
+      if (JSON.stringify(s.model.providerDraft) === JSON.stringify(draft))
+        return s;
+      return { ...s, model: { ...s.model, providerDraft: draft } };
+    });
+  }, []);
+
+  // 2026-09-27 小欧 - ③区草稿落盘（北京老陈需求的统一保存链）：patch=③自带按钮提交的全量表单值，
+  //   缺省=底部保存栏提交的草稿 diff；两入口同一链。成功 → 同步 mtime + 刷新 provider 缓存 + 清草稿；
+  //   失败保留草稿（保存栏仍亮，可改后重试）- 小欧-2026-09-27
+  const saveProviderDraft = useCallback(
+    async (patch?: Record<string, unknown>) => {
+      const draft = patch ?? state.model.providerDraft;
+      if (!Object.keys(draft).length) return { ok: true as const };
+      setSaving(true);
+      try {
+        const r = await modelApi.updateProvider(
+          state.model.selectedProvider,
+          draft
+        );
+        if (!r.ok) {
+          showMessage(ErrorType.MODEL_CONFIG_ERROR, 'Provider 配置保存失败');
+          return { ok: false as const };
+        }
+        showSuccess('Provider 配置已保存（立即生效）');
+        // A7：同步落盘后 mtime，防假后门刷新误判
+        syncMtime(r.mtime);
+        // 缓存刷新（掩码/label/timeout 回读）+ 草稿清空（保存栏计数归零）
+        await reloadProviderCache();
+        patchModel({ providerDraft: {} });
+        return { ok: true as const };
+      } catch (e) {
+        handleApiError(e);
+        return { ok: false as const };
+      } finally {
+        setSaving(false);
+      }
+    },
+    [
+      state.model.providerDraft,
+      state.model.selectedProvider,
+      syncMtime,
+      reloadProviderCache,
+      patchModel,
+    ]
+  );
+
   // v4.25(2026-09-21 小强 修复 BUG-D)：跨模型/Provider 切换前强制保存未落库的模型参数，
   // 杜绝真实场景（agnes 空 dp <-> sensenova 有 dp）切换后参数静默丢失；保存失败则阻止切换。
   const ensureModelSaved = useCallback(async (): Promise<boolean> => {
@@ -763,15 +874,14 @@ export function useSettings() {
     );
     // 2026-09-23 小欧 - [65]§7.3.10 必修①：放行条件补能力脏（否则"能力改了没存就切模型"静默丢失，BUG-D 同类）
     // 2026-09-24 小欧 - ①放行条件补 removedParams（删键未存就切模型会静默丢失删除意图）- 小欧-2026-09-24
-    if (
-      !Object.values(dirtyMap).some(Boolean) &&
-      !isCapsDirty(
-        state.model.capabilities,
-        state.model.capabilitiesBaseline
-      ) &&
-      !state.model.removedParams.length
-    )
-      return true;
+    // 2026-09-27 小欧 - 放行条件补 providerDraft（③区字段改了没存就切 Provider 会随组件重挂静默丢失，
+    //   BUG-D 同类防线；hadParams 拆出是为了只在参数/能力真保存过时才弹参数保存提示，防误导文案）- 小欧-2026-09-27
+    const hadParams =
+      Object.values(dirtyMap).some(Boolean) ||
+      isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline) ||
+      state.model.removedParams.length > 0;
+    const hasDraft = Object.keys(state.model.providerDraft).length > 0;
+    if (!hadParams && !hasDraft) return true;
     const r = await saveModelGroup();
     if (!r.ok) {
       showMessage(
@@ -780,19 +890,35 @@ export function useSettings() {
       );
       return false;
     }
-    showMessage(ErrorType.INFO, '已保存当前模型参数修改');
+    if (hasDraft) {
+      const p = await saveProviderDraft();
+      if (!p.ok) {
+        showMessage(
+          ErrorType.MODEL_CONFIG_ERROR,
+          'Provider 配置保存失败，已阻止切换（防止数据丢失）'
+        );
+        return false;
+      }
+    }
+    if (hadParams) showMessage(ErrorType.INFO, '已保存当前模型参数修改');
     return true;
-  }, [saveModelGroup, state.model]);
+  }, [saveModelGroup, saveProviderDraft, state.model]);
 
   const saveGroup = useCallback(
-    (tab: TabKey) => {
-      if (tab === 'model') return saveModelGroup();
+    async (tab: TabKey) => {
+      // 2026-09-27 小欧 - 模型组 = 参数/能力/删键 落库后串行 flush ③区草稿（参数保存失败时
+      //   load(reset) 可能已清草稿，此时直接返回不重复提交，对齐"已丢失"提示语义）- 小欧-2026-09-27
+      if (tab === 'model') {
+        const a = await saveModelGroup();
+        if (!a.ok) return a;
+        return saveProviderDraft();
+      }
       const keys = Object.keys(state.dirtyKeys).filter(
         (k) => groupOfKey(k) === tab
       );
       return saveKeys(keys);
     },
-    [groupOfKey, state.dirtyKeys, saveKeys, saveModelGroup]
+    [groupOfKey, state.dirtyKeys, saveKeys, saveModelGroup, saveProviderDraft]
   );
 
   // ---- 模型 Tab（8.2.10 脏态合并/截断；6.5 四区域） ----
@@ -803,10 +929,23 @@ export function useSettings() {
     );
     if (nonModelKeys.length) tasks.push(saveKeys(nonModelKeys));
     if (state.model.isDirty) tasks.push(saveModelGroup());
-    if (!tasks.length) return { ok: true as const };
-    const results = await Promise.all(tasks);
-    return { ok: results.every((r) => r.ok) };
-  }, [state.dirtyKeys, state.model.isDirty, saveKeys, saveModelGroup]);
+    // 2026-09-27 小欧 - ③区草稿并入「保存全部」：tasks（参数/设置）成功后**串行** flush——
+    //   并行会让 reloadProviderCache 的 providers patch 与 saveModelGroup 的 patch 互相覆盖（竞态）；
+    //   参数保存失败（mtime 冲突已 load 清草稿）时不再提交，见 saveProviderDraft 早退 - 小欧-2026-09-27
+    const hasDraft = Object.keys(state.model.providerDraft).length > 0;
+    if (!tasks.length && !hasDraft) return { ok: true as const };
+    const results = tasks.length ? await Promise.all(tasks) : [];
+    if (!results.every((r) => r.ok)) return { ok: false as const };
+    const d = await saveProviderDraft();
+    return { ok: d.ok };
+  }, [
+    state.dirtyKeys,
+    state.model.isDirty,
+    state.model.providerDraft,
+    saveKeys,
+    saveModelGroup,
+    saveProviderDraft,
+  ]);
 
   const selectProvider = useCallback(
     async (name: string) => {
@@ -1117,49 +1256,42 @@ export function useSettings() {
       // S3：带 select 的刷新（添加模型后定位）若当前参数未落库，先强制保存——与 selectProvider/selectModel
       //   同一 BUG-D 防线，杜绝切到新模型时旧模型未保存参数静默丢失
       if (select && !(await ensureModelSaved())) return null;
-      try {
-        const models = await modelApi.getModels();
-        // v4.19(P2-10 修正)：与 load() 同构重建 providerConfig（含 env），防保存/增删后 env 状态过期
-        patchModel({
-          providers: models.providers,
-          providerConfig: buildProviderConfig(models.providers),
-        });
-        if (select) {
-          const p = models.providers.find((x) => x.name === select.provider);
-          const m = p?.models.find((x) => x.name === select.model);
-          if (p && m) {
-            const defaults = {
-              ...(m.default_params as Record<string, unknown>),
-            };
-            patchModel({
-              selectedProvider: p.name,
-              selectedModel: m.name,
-              params: { ...defaults },
-              defaults,
-              ranges: {
-                ...(m.range as Record<string, { min: number; max: number }>),
-              },
-              paramOptions: {
-                ...((m.param_options ?? {}) as Record<string, string[]>),
-              },
-              // 2026-09-24 小欧 - ②refreshModels(select) 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
-              capabilities: normalizeCaps([...(m.capabilities ?? [])]),
-              capabilitiesBaseline: normalizeCaps([...(m.capabilities ?? [])]),
-              // S5：目标 provider env 接管时禁用其参数区
-              envOverride: getEnvOverride(p.env, Object.keys(defaults)),
-              // 2026-09-24 小欧 - ①定位重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
-              removedParams: [],
-              isDirty: false,
-            });
-          }
+      // 2026-09-27 小欧 - 缓存刷新段收口到 reloadProviderCache（DRY，与 saveProviderDraft 共用；失败已在内
+      //   handleApiError 并返回 null）- 小欧-2026-09-27
+      const models = await reloadProviderCache();
+      if (!models) return null;
+      if (select) {
+        const p = models.providers.find((x) => x.name === select.provider);
+        const m = p?.models.find((x) => x.name === select.model);
+        if (p && m) {
+          const defaults = {
+            ...(m.default_params as Record<string, unknown>),
+          };
+          patchModel({
+            selectedProvider: p.name,
+            selectedModel: m.name,
+            params: { ...defaults },
+            defaults,
+            ranges: {
+              ...(m.range as Record<string, { min: number; max: number }>),
+            },
+            paramOptions: {
+              ...((m.param_options ?? {}) as Record<string, string[]>),
+            },
+            // 2026-09-24 小欧 - ②refreshModels(select) 通道：normalizeCaps 归一（恒含 text 防假脏）- 小欧-2026-09-24
+            capabilities: normalizeCaps([...(m.capabilities ?? [])]),
+            capabilitiesBaseline: normalizeCaps([...(m.capabilities ?? [])]),
+            // S5：目标 provider env 接管时禁用其参数区
+            envOverride: getEnvOverride(p.env, Object.keys(defaults)),
+            // 2026-09-24 小欧 - ①定位重置删除名单（已随 ensureModelSaved 落库）- 小欧-2026-09-24
+            removedParams: [],
+            isDirty: false,
+          });
         }
-        return models;
-      } catch (e) {
-        handleApiError(e);
-        return null;
       }
+      return models;
     },
-    [patchModel, ensureModelSaved]
+    [patchModel, ensureModelSaved, reloadProviderCache]
   );
 
   return {
@@ -1194,6 +1326,10 @@ export function useSettings() {
     syncMtime,
     patchModel,
     patchState,
+    // 2026-09-27 小欧 - ③区草稿：setProviderDraft 供 ProviderConfig 上报 diff，saveProviderDraft 供
+    //   SettingsPage 的③自带保存按钮/底部保存栏共用一条落盘链 - 小欧-2026-09-27
+    setProviderDraft,
+    saveProviderDraft,
     setActiveTab: (t: TabKey) => patchState({ activeTab: t }),
   };
 }
