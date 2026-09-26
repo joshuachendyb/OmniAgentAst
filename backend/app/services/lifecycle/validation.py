@@ -7,6 +7,8 @@
 # 2026-09-26 - 小欧 - api_key 空判定收口公用函数 is_blank_secret()，消除与 model/resolver.py 的重复写法 — 小欧 2026-09-26
 # 2026-09-26 (三堂会审后修正·二) - 小欧 - 删残留的外层 `if not api_key:`：它是 is_blank_secret 的真子集，
 #   同一判定写两遍（DRY），且两套文案同指"没有可用 api_key"。详见 validate_credentials 内注释。
+# 2026-09-27 - 小欧 - 订正空 api_base 警示文案（原文"将使用默认值"撒谎：[72]8.5-4 已删 client_sdk
+#   兜底，空 URL 调用即 400）。改为如实告知"调用时会报错，请到设置页填写完整地址" — 小欧 2026-09-27
 """
 validation — 配置验证
 
@@ -61,7 +63,13 @@ def validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, li
         )
     api_base = selected_provider_config.get("api_base")
     if not api_base:
-        warnings.append(f"provider '{final_provider}' 未配置 api_base,将使用默认值")
+        # 2026-09-27 - 小欧 - 订正文案撒谎：原文写"将使用默认值"，但 [72]第八章(8.5-4) 已删
+        #   client_sdk 的 _default_base_url/_DEFAULT_URLS 兜底，空 URL 构造即抛 400
+        #   （见 client_sdk.py:298「provider X 的 URL 为空，请到设置页填写完整地址」）。
+        #   继续写"用默认值"会让用户以为不填也能跑，真调用时才 400 且难归因。改为如实告知。
+        warnings.append(
+            f"provider '{final_provider}' 未配置 api_base，调用时会报错，请到设置页填写完整地址"
+        )
     return errors, warnings
 
 
