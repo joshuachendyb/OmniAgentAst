@@ -58,6 +58,9 @@
 //   失败保持蓝可重试，闭环自动正确。
 // 2026-09-27 (三堂会审 P0 修复) 小欧 - doSave 提交源统一为 buildDiff()：原 doSave 自带第二套判定，
 //   6 字段里 5 个与草稿口径不一致（label 清空会静默丢改动、等值字段白写并 bump mtime），已删除。
+// 2026-09-27 (三堂会审·二) 小欧 - 再修 2 个真实 bug：①动态数字字段 onChange 补 null 守卫（同静态字段写法，
+//   漏判会让 null 落盘成 `rate_limit: null`，case: settings2-dynamic-null.test.ts）；②buildDiff 基线改用
+//   原值比较，使带空格的历史脏值 api_base 能被判为有改动从而被清理。
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
@@ -158,9 +161,12 @@ export const ProviderConfig: React.FC<Props> = ({
     const diff: Record<string, unknown> = {};
     if (apiKey.trim() !== '') diff.api_key = apiKey.trim();
     const nowBase = baseUrl.trim();
-    if (nowBase !== (config.base_url || '').trim()) diff.base_url = nowBase;
+    // 2026-09-27 - 小欧 - 比较时只 trim 待提交的一边，配置那边用原值。
+    // 原因：历史脏数据的 api_base 可能带首尾空格（后端下发时原样透出）。若两边都 trim，
+    //       脏值 trim 后与输入值相同 → 判定"没改" → 按钮不亮，脏值永远清不掉。
+    if (nowBase !== (config.base_url || '')) diff.base_url = nowBase;
     const nowLabel = label.trim();
-    if (nowLabel !== '' && nowLabel !== (config.label || '').trim())
+    if (nowLabel !== '' && nowLabel !== (config.label || ''))
       diff.label = nowLabel;
     if (timeout !== (config.timeout ?? 150)) diff.timeout = timeout;
     if (maxRetries !== (config.max_retries ?? 3)) diff.max_retries = maxRetries;
@@ -375,9 +381,14 @@ export const ProviderConfig: React.FC<Props> = ({
                 <InputNumber
                   min={meta.min}
                   value={dynamicValues[key] as number}
-                  onChange={(v) =>
-                    setDynamicValues((prev) => ({ ...prev, [key]: v }))
-                  }
+                  onChange={(v) => {
+                    // 2026-09-27 - 小欧 - null = 清空 = 不修改（同本文件 timeout/max_retries 静态字段）。
+                    // 漏判会把 null 送进 patch、后端原样落盘 ⇒ YAML 出现 `rate_limit: null`。
+                    // case: settings2-dynamic-null.test.ts
+                    if (v !== null) {
+                      setDynamicValues((prev) => ({ ...prev, [key]: v }));
+                    }
+                  }}
                   style={{ width: settingsControl.inputNumberWidth }}
                 />
               ) : meta.type === 'boolean' ? (
