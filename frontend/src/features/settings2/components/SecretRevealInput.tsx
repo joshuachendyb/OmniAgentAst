@@ -19,6 +19,11 @@
  *       DOM 节点不重建，焦点天然保持（antd Input.Password 的显示/隐藏眼睛同此做法）。
  *     顺带删死代码：startOverwrite 里 `if (!revealed) setPlainKey('')` —— plainKey 只在
  *       revealed 时被置位、隐藏/超时同步清零，!revealed 时必为 ''，该行永不可达（YAGNI）。
+ *   2026-09-26 - 小欧 - 修掩码渲染与后端新契约错位（随 2c3a2b7bd「mask 两档裁定」落地后暴露）：
+ *     后端 mask_secret_value 对 len<8 改返 prefix="****"（原为 ""），本组件仍按
+ *     `prefix ? prefix+6星+suffix` 渲染 → 短 key 出现 10 个星（实测 '**********2345'），
+ *     与裁定原文「小于8的 显示后4位, 前面加4个*」不符。改为 prefix 为 "****" 字面量时不插星；
+ *     len>=8 与 prefix 为空两条路径行为不变（红灯→绿灯实测）。
  *
  * 本组件只做一件事：安全地展示密钥。三条安全约束（[72] 12.5 已定决策）：
  *   ①二次确认：点眼睛先 Modal.confirm 告知"将显示明文，请勿截图或分享"，确认后才调接口取明文
@@ -47,7 +52,10 @@ export interface SecretRevealInputProps {
   onChange: (v: string) => void;
   /** 是否已配置过密钥（决定框内打码显示与是否显示眼睛） */
   configured: boolean;
-  /** 掩码前后缀（[72]12.5 三键恒定契约）；prefix 为空表示短 key，只给末 4 位 */
+  /**
+   * 掩码前后缀（[72]12.5 三键恒定契约）。后端 mask_secret_value 两档（北京老陈 2026-09-26 裁定）：
+   * len>=8 给真前 4 位；len<8 给 "****" 字面量。两种情形均显示末 4 位，详见下方 maskedDisplay。
+   */
   prefix: string;
   /** 掩码末 4 位 */
   suffix: string;
@@ -68,10 +76,12 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   const [plainKey, setPlainKey] = useState('');
   const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // 打码显示：前4位 + 星号 + 末4位（[72]12.2 目标效果）。
-  // 短 key（prefix 为空，即 len<8）只显示末 4 位，不给 prefix —— 否则前后缀重叠等于泄露 7/8 位（12.4 坑2）。
+  // 打码显示（[72]12.2 目标效果 + 北京老陈 2026-09-26 裁定；后端 mask_secret_value 为唯一权威）：
+  //   len>=8 → prefix = 真前4位     → 前4 + 6星 + 末4（12.2「前4位+星号+末4位」）
+  //   len<8  → prefix = "****"字面量 → 直接 prefix + 末4（裁定原文「小于8的 显示后4位, 前面加4个*」；
+  //            此处若再插 6 星会渲染成 10 个星）。prefix 为空按同一形态兜底（未配置/旧契约值）。
   const maskedDisplay = configured
-    ? prefix
+    ? prefix && prefix !== '****'
       ? `${prefix}${'*'.repeat(6)}${suffix}`
       : `****${suffix}`
     : '';

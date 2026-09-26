@@ -73,6 +73,9 @@
 //     它在上一轮已随"测试连接"迁到 TestConnectionProbe 内，此处留着即死代码
 //     （eslint no-unused-vars 已实测报出该 warning）。"文案随职责走"是拆分纪律的必然结果：
 //     拆分后不许在原处留一份副本，那等于把 DRY 违规从"函数内重建"升级成"跨文件两份"。
+//   2026-09-26 (掩码契约同步) - 小欧 - 后端 mask_secret_value 按北京老陈 2026-09-26 裁定改两档，
+//     len<8 由返 prefix="" 改返 prefix="****"，故上方第⑤条历史里"prefix 为空只显示末4位"的旧分档
+//     已不再成立；本文件 :285 附近活注释同步为新契约（只改注释，逻辑零改动）。
 
 import React, { useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
@@ -281,7 +284,8 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
           父组件不持有明文即父组件的其它逻辑永远碰不到它）。env 接管时整块只读，不显示眼睛
           —— 由 isEnv 早退分支处理。
           12.2 目标效果：打码（前4位+星号+末4位）显示在**输入框内**，故传 prefix/suffix
-          由子组件拼 maskedDisplay；12.4 坑2 短 key（prefix 空）只给末 4 位。 */}
+          由子组件拼 maskedDisplay；短 key（len<8）后端按 2026-09-26 裁定给 prefix="****"，
+          由子组件渲染为 ****+末4 位（不再插 6 星）。 */}
       <div style={settingsRowStyle}>
         <span style={settingsLabelStyle}>api_key</span>
         <SecretRevealInput
