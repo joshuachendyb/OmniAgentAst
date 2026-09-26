@@ -19,30 +19,31 @@ const AUTH_REQ: ApiRequestConfig = { _skip401: true };
  * 首次设置豁免由后端处理（未配置口令时该端点放行，否则"没口令就永远设不了"死锁）。
  */
 export const authApi = {
-  /** 查是否已配置（**不回明文**，只回 configured + 掩码） */
+  /**
+   * 查是否已配置（**永不回明文**）。返回 4 个字段：
+   *   configured  是否已配置口令（前端实际只用这一个）
+   *   masked      三键掩码 {configured,prefix,suffix}，与 provider api_key 同一形状
+   *               （mask_secret_value 产物；三键形状被 test_auth_status_shape 锁定，前端目前零消费）
+   *   config_key  落盘的配置键名（security.api_token），供设置页定位
+   *   env_name    对应环境变量名（OMNIAGENT_API_TOKEN），供提示"也可改环境变量"
+   */
   getTokenStatus: async (): Promise<{
     configured: boolean;
     masked: { configured: boolean; prefix: string; suffix: string };
     config_key: string;
     env_name: string;
   }> => {
-    // 2026-09-26 - 小欧 - 修登录页 401 死循环：登录页本身就靠这两个端点工作，
-    //   若放任 401 触发响应拦截器的 location.href='/login'，则
-    //   进登录页 → getTokenStatus 401 → 跳登录页 → 重载 → 再 401 → **无限重载**。
-    //   故 auth 通道一律标记 _skip401（该标记此前只有读取、0 处赋值，等于形同虚设）。
+    // 登录页本身靠这两个端点工作，若放任 401 触发拦截器的 location.href='/login'，就会
+    // 进登录页 → getTokenStatus 401 → 跳登录页 → 重载 → 再 401 无限重载。故 auth 通道一律 _skip401。
     const response = await api.get('/auth/status', AUTH_REQ);
     return response.data;
   },
-  /** 设置/更换口令（至少 8 位；立即生效，旧口令作废）
+  /**
+   * 设置/更换口令（至少 8 位；立即生效，旧口令作废）
    *
-   *  2026-09-26 - 小欧 - 修 C04「改完口令自己被踢回登录页」（三遍核实确认成立）：
-   *   原实现只 POST 落盘，**不同步前端内存里的 token**。而鉴权头每次请求都从
-   *   `getAccessToken()` 现取 ⇒ 用户改完口令后，后续所有请求仍带**刚被作废的旧口令** →
-   *   第一个请求 401 → client.ts 的 401 拦截器清 token 并跳登录页。
-   *   本机（127.0.0.1）因后端"本机豁免"察觉不到，**只有非本机访问（局域网/公网部署）才复现**，
-   *   即"改完口令必须重新登录、新口令还得再输一遍"，与后端"立即生效"的承诺相矛盾。
-   *   修法：落盘成功后把新口令写回内存 token 源（真相源仍是 client.ts，此处只做同步），
-   *   后续请求自然带新口令，无需重登。 —— 编辑：小欧 2026-09-26
+   * 落盘成功后必须把新口令写回内存 token 源（真相源仍是 client.ts，此处只同步）：鉴权头每次请求
+   * 都现取 getAccessToken()，不同步的话用户改完口令后所有请求仍带刚作废的旧口令 → 首个请求 401
+   * → 被踢回登录页，即"改完还得重输一遍"，与后端"立即生效"矛盾。本机豁免故只有非本机访问才复现。
    */
   setToken: async (
     token: string

@@ -16,8 +16,9 @@
 // 2026-09-24 小欧 - [68] 模型库：TabKey 补 'model_library'（设置页倒数第二 Tab，对齐后端 GROUP_ORDER）- 小欧-2026-09-24
 // 2026-09-26 小欧 - [72]第七章(7.3)+第十二章(12.5)：providerConfig 每条的 api_key 改三键恒定
 //   {configured, prefix, suffix} —— 原 {configured, suffix} 撒谎（后端未配置时只返 {configured:false}）。
-//   本契约在项目内有 4 处声明（model.api.ts ProviderEntry / ProviderConfig.config / SettingsPage 兜底值 / 本文件），
-//   已同步为同一形状，缺任一处 tsc 即报 prefix 缺失 — 小欧-2026-09-26
+//   本契约在项目内有 5 处声明：model.api.ts ProviderEntry / config.api.ts ProviderInfo /
+//   ProviderConfig.config / SettingsPage 兜底值 / 本文件（另有 settings.api.ts getTokenStatus 的
+//   masked 为同一形状）。已同步，缺任一处 tsc 即报 prefix 缺失 — 小欧-2026-09-26/27
 // 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求）：ModelState 补
 //   providerDraft: Record<string, unknown> —— ③区表单字段的变更草稿（只含改过的键，空对象=干净），
 //   由 ProviderConfig 经 onDraftChange 上报 diff，dirtyCount/isGroupDirty/saveGroup/saveAll/
