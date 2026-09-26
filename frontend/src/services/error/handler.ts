@@ -22,6 +22,8 @@
 // 编辑历史: 2026-09-20 小强 - 新增设置/模型域三错误类型+固定文案: SETTINGS_SCHEMA_FAILED/SETTINGS_SAVE_FAILED/MODEL_MANAGEMENT_FAILED(可重试2次) — 小强-2026-09-20
 // 编辑历史: 2026-09-21 小欧 - [59]F-13 修复: 去重键由「仅 errorType」改为「errorType+最终文案」, 同一类型不同原因(如多条 env 跳过警告)
 //   不再互相吞掉, 30s 窗口仍防同类同文案刷屏 — 小欧-2026-09-21
+// 编辑历史: 2026-09-27 小欧 - [72]三堂会审: 4 处 `ERROR_CONFIG_MAP[errorType]` 直接索引无 fallback 致白屏
+//   （classifyError 原样返回后端 error_type，表里没该键就崩），收敛为唯一兜底口 getErrorConfig()。
 /**
  * 统一错误处理中心 - errorHandler.ts
  *
@@ -125,9 +127,8 @@ export enum ErrorType {
 
   // Settings页面错误
   // 2026-09-27 - 小欧 - [72]第二章(2.5) 补 CONFIG_ERROR：后端 resolver 的 ProviderKeyMissingError
-  //   会以 error_type="config_error" 下发（stream_orchestrator 专属 catch）。当前它只走对话流渲染层
-  //   （ErrorDetail.ERROR_TYPE_LABELS，已登记），不经本体系；但此处补同义项防将来改走 toast 时
-  //   config=silent 落空崩溃（showMessage 直接索引 ERROR_CONFIG_MAP，无 fallback）。
+  //   以 error_type="config_error" 下发（stream_orchestrator 专属 catch）。当前它只走对话流渲染层
+  //   （ErrorDetail.ERROR_TYPE_LABELS），此处补同义项防将来改走 toast 时无配置可用。
   CONFIG_ERROR = 'config_error',
   PROVIDER_CONFIG_ERROR = 'provider_config_error',
   MODEL_CONFIG_ERROR = 'model_config_error',
@@ -664,6 +665,19 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
   },
 };
 
+/**
+ * 取错误配置（唯一兜底口）— 小欧 2026-09-27
+ *
+ * 未登记/空/null/undefined 一律降级为 UNKNOWN 配置：classifyError 会把后端 `error_type` 原样返回，
+ * 直接索引会因表里没有该键而 `config.silent` 抛 TypeError 白屏。case: errorhandler-unknown-type.test.ts
+ */
+function getErrorConfig(errorType: ErrorType | string | undefined | null) {
+  return (
+    ERROR_CONFIG_MAP[errorType as ErrorType] ??
+    ERROR_CONFIG_MAP[ErrorType.UNKNOWN]
+  );
+}
+
 // ============================================
 // 错误去重机制 - 30秒内不重复提示
 // ============================================
@@ -772,7 +786,7 @@ export function showMessage(
   errorType: ErrorType,
   customMessage?: string
 ): void {
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
   if (config.silent) {
     return;
@@ -1045,7 +1059,7 @@ export function handleError(
   }
 
   const errorType = classifyError(error);
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
   // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息(空则回退config.message)
   // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail 等后端具体文案
@@ -1107,7 +1121,7 @@ export function handleApiError(
   }
 
   const errorType = classifyError(error);
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
   // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息
   // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail
@@ -1173,7 +1187,7 @@ export function handleSSEError(
   }
 
   const errorType = classifyError(error);
-  const config = ERROR_CONFIG_MAP[errorType];
+  const config = getErrorConfig(errorType);
 
   const maxRetries = context.maxRetries ?? config.maxRetries;
   const canRetry = config.retryable && context.reconnectAttempts < maxRetries;
