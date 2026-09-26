@@ -121,6 +121,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   同时把 D22 决策史由行内迁至本处：api_key 传空串="不修改" ⇒ node 空 ⇒ `if not node:
 #   raise ValueError` ⇒ 级别纠正只在中央映射 response_utils.handle_api_errors 做(不在 service
 #   层改异常类型, 否则推翻 TDD test_empty_api_key_not_overwrite 固化的"抛错+绝不落盘")。
+# 2026-09-27 - 小欧 - [72]第一章补齐：①add_provider 落盘前 strip（api_key/label/api_base，
+#   与 update_provider_config 的并行写入路径对齐；label 原未 strip、api_base 校验 strip 判空而落盘原样写，
+#   均致 YAML 存脏值——消费端 get_models/resolver/client_sdk 均不 strip）；②update_provider_config
+#   其余字符串字段同步 strip，与 api_key 同一口径（DRY：清洗只做一次）。留空仍为"未配置" — 小欧 2026-09-27
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -468,7 +472,13 @@ def add_provider(name: str, label: str = "", api_base: str = "",
     #   任何新增消费端漏 strip 即 401，且界面无从提示病因（用户会反复重输同一串正确 key）。
     #   留空仍为"未配置"（str 化同时兜住 None/数字等非字符串，与 :458 的 api_base 校验同款）。
     tree: Dict[str, Any] = {"ai": {name: {
-        "name": name, "label": label or name, "api_base": api_base,
+        "name": name,
+        "label": str(label or name).strip(),
+        # 2026-09-27 - 小欧 - [72]第一章：api_base 与 label 一并 strip（与 update_provider_config 同一口径）：
+        #   校验时用 .strip() 判非空，落盘却原样写，两者不一致 ⇒ YAML 存脏值。
+        #   消费端 get_models(:232) / resolver(:274) / client_sdk(:296) 均不 strip，
+        #   带空格的 base_url 会让 httpx 拿到 " https://x/v1 " 而真实请求失败。
+        "api_base": str(api_base).strip(),
         "api_key": str(api_key or "").strip(),
         "timeout": timeout, "max_retries": max_retries, "models": ms}}}
     merge_nested_patch(tree, scope="model")
@@ -515,12 +525,14 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         if k in key_map:
             if v is not None:
                 if k == "api_key":
-                    # 第三章三态 + 第一章去空格：空/纯空白视为"不修改"跳过；非空 strip 后落盘
+                    # 第三章三态：空/纯空白视为"不修改"跳过；非空 strip 后落盘
                     cleaned = str(v).strip()
                     if cleaned:
                         node["api_key"] = cleaned
                 else:
-                    node[key_map[k]] = v
+                    # 2026-09-27 - 小欧 - [72]第一章：其余字符串字段（label / base_url / api_base）同样 strip 后落盘，
+                    # 与 api_key 同一口径（DRY：清洗只做一次，不靠调用方自觉）
+                    node[key_map[k]] = v.strip() if isinstance(v, str) else v
         elif k in PROVIDER_PARAM_TYPES:
             node[k] = v   # 动态参数直写 ai.{provider}.{k}（到此处必不在 key_map）
     if fields.get("clear") is True:
