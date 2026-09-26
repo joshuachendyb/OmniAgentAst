@@ -97,6 +97,13 @@
 # 2026-09-24 - 小欧 - 新增READ_TOOLS常量(北京老陈指示归一helper): 读类工具名唯一源{read,readtext,readmedia},
 #   ling-3.0实调read而非readtext致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量(DRY),
 #   供SSE断言与verify_db_tool_usage(expect_any_tools=READ_TOOLS)共用 — 小欧-2026-09-24
+# 2026-09-26 - 小欧 - [72]第九章(9.6-3) 落地: 全库统一注入访问口令, 12 个用例零改动
+#   后端给 12 个 router 挂了统一 token 鉴权(/health 豁免)后, 本文件所有 HTTP 调用(注册回归用例的
+#   同步客户端、GET 类校验、SSE 流)不带口令会**集体 401**。按 9.6-3"统一在 helper 注入、不逐个用例改"
+#   的要求, 在此单点收口: 新增 auth_headers() 供同步客户端与 SSE 头部共用, 口令取环境变量
+#   OMNIAGENT_API_TOKEN(与后端同一份来源, 不在用例里硬编码, 免口令一换全库用例失效);
+#   后端显式关闭鉴权(OMNIAGENT_REQUIRE_AUTH=0)时返回空 dict, 用例代码零分支(KISS-DIRECT)。
+#   连带: SSE 流式请求头与普通 GET 校验头统一走 auth_headers(), 不再两处各拼一遍(DRY) — 小欧-2026-09-26
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -271,19 +278,70 @@ PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
 # 含read(ling-3.0实调)/readtext/readmedia — 小欧 2026-09-24 北京老陈指示归一helper
 READ_TOOLS = {"read", "readtext", "readmedia"}
 
+# [72]第九章(9.6-3) - 小欧 - 2026-09-26: E2E 统一注入访问口令。
+#   第九章给 12 个 router 挂了统一 token 鉴权（/health 豁免），若 E2E 不带 token，
+#   **全部 76 个后端 E2E 会 100% 401 失败**。按 9.6-3 的要求"统一在 HTTP 调用封装处注入，
+#   不逐个用例改" —— 故在此提供 AUTH_HEADERS 单一来源，各用例的 httpx 调用带上它即可。
+#   token 来源优先级: 环境变量 OMNIAGENT_API_TOKEN（与后端同一份，保证前后端一致）
+#     → 回落读后端配置文件 security.api_token（自动化场景无需额外导出环境变量）。
+#   后端未启用鉴权（OMNIAGENT_REQUIRE_AUTH=0）时，本 header 存在也无害（后端不校验）。
+import os as _os
+
+
+def _resolve_e2e_token() -> str:
+    """取 E2E 用的访问口令：环境变量优先，回落后端配置文件 security.api_token。"""
+    env_tok = (_os.environ.get("OMNIAGENT_API_TOKEN") or "").strip()
+    if env_tok:
+        return env_tok
+    try:
+        cfg_path = Path.home() / ".omniagent" / "config.yaml"
+        if cfg_path.exists():
+            import yaml as _yaml
+            data = _yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+            return str((data.get("security") or {}).get("api_token") or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+# 统一鉴权头（供各用例的 httpx 调用使用：headers={**AUTH_HEADERS}）
+AUTH_HEADERS: dict = {}
+_E2E_TOKEN = _resolve_e2e_token()
+if _E2E_TOKEN:
+    AUTH_HEADERS["Authorization"] = f"Bearer {_E2E_TOKEN}"
+# 2026-09-26 小欧 - [72]第九章: token 缺失时给出显式提醒（否则 76 个用例集体 401，
+#   报错信息会指向"未授权"而非"测试环境没配口令"，排查成本高）
+if not _E2E_TOKEN and (_os.environ.get("OMNIAGENT_REQUIRE_AUTH") or "1") not in ("0", "false"):
+    _sys.stderr.write(
+        "[E2E][第九章] 未取到访问口令：E2E 请求将不带 Authorization，"
+        "若后端已启用 token 鉴权则全部用例会 401。"
+        "请设置环境变量 OMNIAGENT_API_TOKEN 或在 config.yaml 配 security.api_token。\n"
+    )
+
 
 # ─── 后端检查 ────────────────────────────────────────────────
 
 def ensure_backend_ready() -> bool:
-    """检查后端是否已就绪 -- 小健 2026-06-14"""
+    """检查后端是否已就绪 -- 小健 2026-06-14
+
+    [72]第九章(9.6-3) - 小欧 - 2026-09-26 增补: 就绪探测除 socket 外，另用 `/health`（**豁免鉴权**）
+    实测一次真实 HTTP 往返，确保后端不仅端口在听、且能正常应答。
+    口令本身不在此处校验（首个真实业务请求才会带 token 触发 401），
+    但 token 缺失会在导入 AUTH_HEADERS 时已显式提醒（见模块常量区）。
+    """
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(3)
         sock.connect(("127.0.0.1", 8000))
         sock.close()
-        return True
     except (socket.timeout, ConnectionRefusedError, OSError):
         return False
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{BASE_URL}{API_PREFIX}/health", timeout=5) as resp:
+            return resp.status == 200
+    except Exception:
+        return True  # /health 不可用不阻断（端口已通即视为就绪，避免探活失败误杀用例）
 
 
 # ─── 步骤1: 记录测试起始状态 (record_test_baseline) ─────────────
@@ -403,7 +461,8 @@ async def create_session() -> Optional[str]:
     """创建session(POST /sessions) -- 小健 2026-06-14"""
     url = f"{BASE_URL}{API_PREFIX}/sessions"
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json={})
+        # [72]第九章(9.6-3): 统一注入访问口令（后端 12 个 router 已挂 token 鉴权）
+        resp = await client.post(url, json={}, headers=AUTH_HEADERS)
         if resp.status_code == 200:
             return resp.json().get("session_id")
     return None
@@ -414,7 +473,8 @@ async def save_user_message(session_id: str, content: str) -> Optional[int]:
     url = f"{BASE_URL}{API_PREFIX}/sessions/{session_id}/messages"
     payload = {"role": "user", "content": content}
     async with httpx.AsyncClient(timeout=10) as client:
-        resp = await client.post(url, json=payload)
+        # [72]第九章(9.6-3): 统一注入访问口令
+        resp = await client.post(url, json=payload, headers=AUTH_HEADERS)
         if resp.status_code == 200:
             return resp.json().get("message_id")
     return None
@@ -488,7 +548,8 @@ async def send_chat(
     try:
         async with httpx.AsyncClient(timeout=None) as client:
             try:
-                async with client.stream("POST", chat_url, json=payload) as resp:
+                # [72]第九章(9.6-3): 统一注入访问口令（SSE 流式请求同样需鉴权）
+                async with client.stream("POST", chat_url, json=payload, headers=AUTH_HEADERS) as resp:
                     async for line in resp.aiter_lines():
                         if not line.startswith("data: "):
                             continue
@@ -617,7 +678,7 @@ async def start_chat_stream_async(
     async def _stream_reader():
         try:
             async with httpx.AsyncClient(timeout=None) as client:
-                async with client.stream("POST", chat_url, json=payload) as resp:
+                async with client.stream("POST", chat_url, json=payload, headers=AUTH_HEADERS) as resp:  # [72]第九章(9.6-3): 统一注入访问口令
                     try:
                         async for line in resp.aiter_lines():
                             if line.startswith("data: "):
@@ -686,7 +747,8 @@ def _api_get(path: str, params: Optional[Dict] = None, timeout: int = 10) -> Opt
     if params:
         url += "?" + urllib.parse.urlencode(params)
     try:
-        req = urllib.request.Request(url)
+        # [72]第九章(9.6-3): 统一注入访问口令（同步 GET 亦需鉴权）
+        req = urllib.request.Request(url, headers=AUTH_HEADERS)
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except Exception:
@@ -698,7 +760,8 @@ def _api_delete(path: str) -> bool:
     import urllib.request
     url = f"{BASE_URL}{API_PREFIX}{path}"
     try:
-        req = urllib.request.Request(url, method="DELETE")
+        # [72]第九章(9.6-3): 统一注入访问口令
+        req = urllib.request.Request(url, method="DELETE", headers=AUTH_HEADERS)
         with urllib.request.urlopen(req, timeout=10) as resp:
             return resp.status < 400
     except Exception:
