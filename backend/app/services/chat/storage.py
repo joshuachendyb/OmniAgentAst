@@ -361,7 +361,7 @@ def _warn_oversize_step_dict(step_dict, tag: str = "") -> None:
             _warn_oversize_step_dict(item, f"{tag}[{i}].")
     elif isinstance(step_dict, str):
         if len(step_dict) > _ALARM_STEP_STR_LEN:
-            logger.error(f"[storage]{tag}字符串超长({len(step_dict)}字符>告警线{_ALARM_STEP_STR_LEN}), 请核查工具层自截断")
+            logger.warning(f"[storage]{tag}字符串超长({len(step_dict)}字符>告警线{_ALARM_STEP_STR_LEN}), 请核查工具层自截断")
 
 
 def append_execution_step(conn: Connection, ai_message_id: int, session_id: str,
