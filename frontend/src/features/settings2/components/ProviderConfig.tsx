@@ -26,73 +26,38 @@
 //   标题+保存按钮同一行三列 grid（标题左|按钮居中|右空列），对齐②参数区标题行风格；env 接管分支同步带标题无按钮 - 小欧-2026-09-24
 // 2026-09-24 小欧 - 再修（北京老陈截图复核：grid 实渲染仍两行）：改 flex 强制同行——左1fr+按钮+右1fr，
 //   按钮物理居中；SectionTitle 收掉自带上下 margin 并入本行（margin 会撑高行框造成视觉断裂）- 小欧-2026-09-24
-// 2026-09-26 - 小欧 - [72]第一章(1.3-2) + 第八章(8.5-2)(8.5-3) 落地:
-//   (1)第一章 api_key 落盘前 trim(patch.api_key = apiKey.trim())，与同函数 base_url 的 trim 写法统一；
-//     修前 base_url 去了空格而 api_key 没有，是遗漏而非设计(同一保存函数内行为分叉)
-//   (2)第八章 base_url 留空语义反转: 原文案"留空=清空地址(恢复默认直连)"改为"URL 为空，此 Provider 无法调用(错误状态)"，
-//     为空时以 Colors.ERROR 红字显示(base_url 不属密钥，原样回显不做任何改写)
-//   (3)第八章 保存按钮在 base_url 为空时 disabled + doSave 入口 return 不提交: 错误状态不可保存，
-//     用 disabled 而非静默 return，避免用户点击后"没反应"无提示
-//   (4)与后端 model_service.update_provider_config 的 base_url 空 -> 400 形成前后端双闸 - 小欧-2026-09-26
-// 2026-09-26 - 小欧 - [72]第十章(10.3) 落地: key 正确性检测（测试连接按钮）
-//   ①保存按钮旁加"测试连接"按钮，语义与保存并列但不同 —— 它是只读探测（不改配置），
-//     故走 modelApi.testConnection 而非 onSave；base_url 为空时同样禁用（地址不通测了无意义）
-//   ②结果按后端返回的 category 分档文案（设计 10.5 明写"不得统一显示失败"）：
-//     ok=连接成功 / key_invalid(401,403)=key 无效或无权限 / endpoint_unsupported(404,405,501)=
-//     该 Provider 无 /models 端点、key 未验证、**不代表 key 无效** / network_error=请检查 base_url、与 key 无关
-//   ③传输入框里的 key 实现"保存前验证"（后端仅存内存用于本次 header，不落盘不进日志）；
-//     前端不在此回显 key
-//   ④组件内 config.api_key 类型同步改三键恒定（与 model.api.ts ProviderEntry 同一契约两处声明）— 小欧-2026-09-26
-// 2026-09-26 - 小欧 - [72]第十二章(12.4/12.5) 落地: 眼睛按钮查看已保存明文（三项已定决策全部实现）
-//   ①关 AntD 自带眼睛(visibilityToggle={false}) —— 坑1「双眼睛冲突」: 原生眼睛只能显示"刚输入的字符"
-//     (输入框初值恒为 ''，它看不到已保存的 key), 与新增的"看已保存明文"眼睛并存会让用户无法分辨
-//   ②自定义眼睛 + 二次确认(Modal.confirm「将显示明文密钥，请勿截图或分享」)，确认后才调
-//     modelApi.getApiKeyPlain 取明文
-//   ③30 秒自动恢复打码: setTimeout 到期清空明文并恢复打码态; 组件卸载时清理定时器(防内存泄漏 +
-//     防卸载后回调 setState); 手动点眼睛关闭时亦立即清除明文
-//   ④明文只在内存 state，**不写 localStorage**；明文态输入框 readOnly + onChange 直接 return
-//     (避免把明文当新值提交出去)；env 接管时按钮不显示(上方 isEnv 早退分支已覆盖)
-//   ⑤打码文案改"前4位 X + 末4位 Y"（prefix 为空时只显示末4位，即 4~7 位短 key 不给 prefix）— 小欧-2026-09-26
-// 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核，本文件 3 处已改：
-//   ①[YAGNI 死代码] doSave 开头的 `if (baseUrl.trim() === '') return;` 删除 —— 同一改动里保存按钮已
-//     disabled={baseUrl.trim() === ''}，按钮禁用时用户点不到，该 return 永不可达；且它与本次自己写的
-//     注释直接矛盾（注释写"用 disabled 而非静默 return，避免用户点击后没反应"，代码却是静默 return）。
-//     只留 disabled 一处把关：空值的唯一可见表现是"按钮点不动"，不另埋隐形分支。
-//   ②[DRY] 测试结果文案表由 doTestConnection 体内提到模块级常量 TEST_RESULT_TEXT —— 原写法每次点击
-//     重建同内容对象，且文案埋在业务逻辑里不便与后端 category 一一对账。
-//   ③[关联逻辑漏洞] 修 `map[r.category]` 未知分类显示 undefined 的坑：后端新增分类或分类拼错时，
-//     界面会显示 "undefined（后端信息: ...）"。补 `?? network_error` 兜底，未知分类按网络/地址问题提示
-//     并附后端原文。此为"前端比后端旧"或"分类枚举漂移"时的可见故障，未修等于把内部错误抛给用户。
-// 2026-09-26 (三堂会审后修正·二) - 小欧 - [SRP] 明文查看 + 测试连接两块功能内联在本组件，
-//   使本组件同时承担"Provider 配置表单 / 明文密钥查看(30秒自动隐藏+二次确认) / key 连通性探测"三件事，
-//   组件膨胀到 500 行、任一功能改动都要读完整个组件（违反单一职责）。已把二者各自抽为独立组件：
-//     SecretRevealInput（第十二章 12.5 明文查看）
-//     TestConnectionProbe（第十章 10.3 测试连接）
-//   父组件只留"配置表单"本责，状态与样式令牌按需传入，不新造第二套渲染分支。
-//   2026-09-26 (三堂会审后修正·三) - 小欧 - 删本文件残留的 TEST_RESULT_TEXT 文案表常量：
-//     它在上一轮已随"测试连接"迁到 TestConnectionProbe 内，此处留着即死代码
-//     （eslint no-unused-vars 已实测报出该 warning）。"文案随职责走"是拆分纪律的必然结果：
-//     拆分后不许在原处留一份副本，那等于把 DRY 违规从"函数内重建"升级成"跨文件两份"。
-//   2026-09-26 (掩码契约同步) - 小欧 - 后端 mask_secret_value 按北京老陈 2026-09-26 裁定改两档，
-//     len<8 由返 prefix="" 改返 prefix="****"，故上方第⑤条历史里"prefix 为空只显示末4位"的旧分档
-//     已不再成立；本文件 :285 附近活注释同步为新契约（只改注释，逻辑零改动）。
-// 2026-09-27 小欧 - ③区字段改后底部保存栏亮起（北京老陈需求「3修改了, 出现保存的按钮」）：
-//   ①Props 加可选 onDraftChange（字段 diff 上报回调；不传=单测挂载的独立用法，零影响）；
-//   ②新增 buildDiff：本地表单值 vs config 基线的**变更键**集合（与 doSave 提交语义对齐——
-//     api_key 非空才算改/base_url trim 后不等才算改/label 留空=保持原值不算改/timeout、max_retries、
-//     动态键不等才算改）；只含改过的键，改回原值即变空=自动撤销脏（S6 同款语义）；
-//   ③上报 effect 用 JSON 签名去重（config 引用变化会重算，签名相同不通知，防父层 setState 循环）；
-//   ④本组件本地表单 state 不动（受控输入/焦点/明文查看逻辑零改动），③自带按钮 onSave 链不变 - 小欧-2026-09-27
-// 2026-09-27 (三堂会审第6遍修正) 小欧 - 推翻上条③的初版实现（lastDiffSig 签名去重）：
-//   签名缓存与 hook 侧 providerDraft 会失真不同步（保存成功时 hook 单方面清草稿，本地签名仍停在
-//   旧值）→ 请求在飞期间的新输入不再上报，静默丢脏。改为每渲染如实上报，循环防护收口到
-//   useSettings.setProviderDraft 的等价去重单点（详见 effect 处注释）- 小欧-2026-09-27
-// 2026-09-27 小欧 - 保存按钮状态化（北京老陈拍板「无修改时灰白不可点，与底部一致」）：
-//   ①原按钮 type="primary" 常年蓝色、无脏态判定——改没改一个样，用户不知道何时该点它；
-//   ②改后：无修改=default 白灰+disabled；有修改=primary 蓝色+计数「（N 项）」（N=diff 键数，
-//     与底部「保存本组(N 项)」同源同口径）；base_url 原值被清空的错误状态守卫保留仍禁；
-//   ③判据与上报同源（buildDiff），保存成功→草稿清空→按钮回灰、保存失败→草稿保留→按钮
-//   保持蓝色可重试，闭环自动正确；doSave 提交语义不变（仍送全量表单值）- 小欧-2026-09-27
+// 2026-09-26 - 小欧 - [72]第一章+第八章(8.5-2/8.5-3)：①api_key 落盘前 trim，与同函数 base_url 写法统一
+//   （修前只有 base_url 去空格，是遗漏而非设计）；②base_url 留空语义反转为"错误状态"：Colors.ERROR
+//   红字 + 保存按钮 disabled，与后端 update_provider_config 的 400 形成前后端双闸；③config.api_key
+//   同步改三键恒定（与 model.api.ts ProviderEntry 同一契约）。
+// 2026-09-26 - 小欧 - [72]第十章(10.3)：加"测试连接"按钮（与保存并列但语义不同——只读探测，走
+//   modelApi.testConnection 不走 onSave；base_url 为空同样禁用）。结果按后端 category 分档文案
+//   （设计 10.5 要求"不得统一显示失败"）：ok / key_invalid(401,403) / endpoint_unsupported
+//   (404,405,501，该 Provider 无 /models 端点、**不代表 key 无效**) / network_error。
+//   传输入框里的 key 实现"保存前验证"（后端仅存内存用于本次 header，不落盘不进日志不回传）。
+// 2026-09-26 - 小欧 - [72]第十二章(12.4/12.5)：关 AntD 自带眼睛（坑1 双眼睛冲突：原生眼睛只能显示
+//   "刚输入的字符"、看不到已保存的 key，与"看已保存明文"并存会让用户无法分辨），改自定义眼睛 +
+//   二次确认(Modal.confirm「将显示明文密钥，请勿截图或分享」) + 30 秒自动恢复打码 + 卸载清理定时器；
+//   明文只在内存 state（不写 localStorage）、明文态 readOnly 且 onChange 直接 return；env 接管时不显示。
+// 2026-09-26 (三堂会审后修正) - 小欧 - ①YAGNI 删 doSave 开头 `if (baseUrl.trim()==='') return;`
+//   （按钮已 disabled，该 return 永不可达，且与本次自己写的注释矛盾）；②DRY 测试文案表提为模块级
+//   TEST_RESULT_TEXT；③修 `map[r.category]` 未知分类显示 undefined 的坑，补 `?? network_error` 兜底。
+// 2026-09-26 (三堂会审后修正·二) - 小欧 - [SRP] 明文查看 + 测试连接内联使本组件膨胀到 500 行、
+//   兼三职，已抽出 SecretRevealInput（12.5）/ TestConnectionProbe（10.3），父组件只留配置表单本责。
+// 2026-09-26 (三堂会审后修正·三) - 小欧 - 删本文件残留的 TEST_RESULT_TEXT 常量（已随测试连接迁出，
+//   留着即死代码、eslint 报警）——"文案随职责走"，拆分后不在原处留副本。
+// 2026-09-26 (掩码契约同步) - 小欧 - 后端 mask_secret_value 按北京老陈裁定改两档（len<8 返
+//   prefix="****"，原为 ""），故上方第⑤条"prefix 为空只显示末4位"的旧分档不再成立（只改注释）。
+// 2026-09-27 小欧 - ③区字段改后底部保存栏亮起（北京老陈需求）：加可选 onDraftChange（不传=零影响）；
+//   新增 buildDiff 取"变更键"集合（只含改过的键，改回原值即变空=自动撤销脏）；本地表单 state 不动。
+// 2026-09-27 (三堂会审第6遍修正) 小欧 - 推翻上条的"JSON 签名本地去重"初版：签名与 hook 侧
+//   providerDraft 会失真不同步（保存成功时 hook 单方面清草稿）→ 请求在飞期间新输入不再上报、静默丢脏。
+//   改为每渲染如实上报，循环防护收口到 setProviderDraft 的等价去重单点。
+// 2026-09-27 小欧 - 保存按钮状态化（北京老陈拍板「无修改时灰白不可点，与底部一致」）：无修改=白灰
+//   +disabled、有修改=蓝色+「（N 项）」（N=diff 键数，与底栏同源）；判据与上报同源，故保存成功回灰、
+//   失败保持蓝可重试，闭环自动正确。
+// 2026-09-27 (三堂会审 P0 修复) 小欧 - doSave 提交源统一为 buildDiff()：原 doSave 自带第二套判定，
+//   6 字段里 5 个与草稿口径不一致（label 清空会静默丢改动、等值字段白写并 bump mtime），已删除。
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
@@ -182,16 +147,13 @@ export const ProviderConfig: React.FC<Props> = ({
       return init;
     }
   );
-  // 2026-09-27 小欧 - ③区脏计数：保存按钮 灰白(disabled)/蓝+计数 的判据与显示（存数字而非
-  //   键数组——相同数字 React setState 会 bail out，天然防渲染循环；数组新引用会循环）- 小欧-2026-09-27
+  // 保存按钮的判据与显示（存数字：相同值 React setState 会 bail out，天然防循环）
   const [dirtyCount, setDirtyCount] = useState(0);
 
   const isEnv = config.env === true;
 
-  // 2026-09-27 小欧 - ③区草稿 diff（只含改过的键，值=落盘形态）：
-  //   与 doSave 的提交语义对齐（api_key trim 非空、base_url trim 不等、label 非空且不等、
-  //   timeout/max_retries/动态键不等）——改回原值 diff 即空，父层自动撤销脏计数（S6 同款）。
-  //   doSave 无条件送 timeout/max_retries 是"等值重写"，diff 只送真变更，二者字段值同源无分叉。
+  // 草稿 diff：只含改过的键，值即落盘形态。改回原值即从 diff 消失，父层自动撤销脏计数。
+  // 本函数是**唯一提交口径**（组件内保存按钮、底部保存栏、按钮计数三处同源，见 doSave）。
   const buildDiff = useCallback((): Record<string, unknown> => {
     const diff: Record<string, unknown> = {};
     if (apiKey.trim() !== '') diff.api_key = apiKey.trim();
@@ -208,59 +170,27 @@ export const ProviderConfig: React.FC<Props> = ({
         diff[k] = dynamicValues[k];
     }
     return diff;
-    // 2026-09-27 小欧 - useCallback 显式依赖（exhaustive-deps）：表单六态 + config 基线，
-    //   任一变化才重建引用触发 effect 重报；config 引用变（缓存刷新/内联 fallback）也在此覆盖
-    //   （原在 effect 注释里靠"每渲染"覆盖，现由依赖显式表达，语义等价且 lint 干净）- 小欧-2026-09-27
+    // 依赖含 config 基线：缓存刷新/内联 fallback 换引用也会重算，等值即空 diff，lint 干净 — 小欧 2026-09-27
   }, [apiKey, baseUrl, label, timeout, maxRetries, dynamicValues, config]);
 
-  // 2026-09-27 小欧 - diff 上报（底部保存栏亮起数据源）：无依赖数组=任一表单值/基线变化即重算，
-  //   每次渲染都如实上报、**不做本地签名去重**——初版用 lastDiffSig 去重，被三堂会审第6遍抓出状态
-  //   失真：hook 保存成功会单方面清空 providerDraft，本地签名还停在旧值就不再上报，此时（请求
-  //   在飞的几百 ms 内）新改的字段会「输入框有值、草稿无记录、保存栏归零」静默丢脏。改为全量
-  //   上报后，防循环唯一防线=useSettings.setProviderDraft 的 JSON 等价去重（同一 diff 重报不改
-  //   state 引用、不触发渲染，循环在此终止；DRY：去重只此一处维护）- 小欧-2026-09-27
+  // 同一份 diff 双出口：本地脏计数（按钮亮/灰）+ 父层草稿（底部保存栏）。
+  // 有意不做本地签名去重：父层保存成功会单方面清空 providerDraft，本地签名会卡在旧值不再上报，
+  // 导致"输入框有值、草稿无记录、保存栏归零"静默丢脏。防循环由 setProviderDraft 的 JSON 等价
+  // 去重唯一承担（同一 diff 重报返回原 state 引用、不触发渲染，DRY：去重只此一处维护）。— 小欧 2026-09-27
   useEffect(() => {
     const diff = buildDiff();
-    // 2026-09-27 小欧 - 同一份 diff 双出口：本地脏计数（按钮亮/灰）+ 父层草稿（底部保存栏）；
-    //   相同数字 setState 被 React bail out，不产生渲染循环。依赖含内联 buildDiff（每渲染新引用
-    //   = 每渲染如实上报，与设计一致，同时满足 exhaustive-deps）- 小欧-2026-09-27
     setDirtyCount(Object.keys(diff).length);
     onDraftChange?.(diff);
   }, [buildDiff, onDraftChange]);
 
-  // 2026-09-26 - 小欧 - [72]三堂会审后修正(SRP): 原先内联在本组件的两块功能已各自抽出为独立组件 ——
-  //   ①「明文密钥查看(二次确认 + 30 秒自动恢复打码 + 不写 localStorage)」→ SecretRevealInput
-  //   ②「key 连通性探测(按 category 分档文案)」→ TestConnectionProbe
-  //   本组件回归单一职责：只负责 Provider 配置表单的取值/校验/提交。相关 state、定时器清理、
-  //   Modal.confirm、文案表一并随之迁出（拆分只改归属，不改业务行为）。
+  // 2026-09-26 - 小欧 - [72]SRP 拆分：内联的「明文密钥查看」与「key 连通性探测」已抽出为
+  //   SecretRevealInput / TestConnectionProbe，本组件回归单一职责（配置表单取值/校验/提交）。
 
   const doSave = async () => {
-    // [72]第八章(8.5-3) - 小欧 - 2026-09-26 修正: 原此处有 `if (baseUrl.trim() === '') return;`，
-    //   与同一改动的按钮 `disabled={baseUrl.trim() === ''}` 重复，且是**死代码**——按钮禁用时用户点不到，
-    //   永远走不到这个 return。更糟的是它与本文自己写的注释相矛盾（注释明写"用 disabled 而非静默 return，
-    //   避免用户点击后没反应"，代码却正是静默 return）。已删除该 return，只保留按钮 disabled 一处把关：
-    //   空值唯一的可达路径是"点了没反应"，那由 disabled 表达，而不是在函数里再埋一个隐形分支。
-    //   与 api_key 的"留空=保持原值"方向相反：api_key 允许先建后填，base_url 是必要配置不可为空。
-    const patch: Record<string, unknown> = {};
-    // [72]第一章(1.3-2) 小欧 2026-09-26: api_key 落盘前 trim，与 base_url 写法统一(此前只有 base_url 去了空格)
-    if (apiKey.trim() !== '') patch.api_key = apiKey.trim();
-    // 2026-09-26 小欧 - 修"保存按钮被 base_url 一票否决"（[72]第八章改动引入的退化）：
-    //   改前无条件 `patch.base_url = baseUrl.trim()`，于是"yaml 里本来就没有 api_base"的 provider
-    //   （靠默认地址直连的老配置）会提交空串 → 后端 400；而按钮又被 disabled 死点，
-    //   结果**改显示名/超时/重试这类无关字段也存不下去**。
-    //   正确语义与 api_key 同向（"留空=保持原值"）：
-    //     · 原本就空、现在仍空 → 不进 patch（= 没改这个字段，后端不校验、不会 400）
-    //     · 原本有值、现在被清空 → 照送，由后端 400 拦住（"清空 URL"确是错误状态）
-    const _origBase = (config.base_url || '').trim();
-    const _nowBase = baseUrl.trim();
-    if (_nowBase !== '' || _origBase !== '') patch.base_url = _nowBase;
-    if (label.trim() !== '') patch.label = label.trim();
-    patch.timeout = timeout;
-    patch.max_retries = maxRetries;
-    for (const k of Object.keys(config.param_types ?? {})) {
-      if (HARDCODED_KEYS.has(k)) continue;
-      if (dynamicValues[k] !== undefined) patch[k] = dynamicValues[k];
-    }
+    // 2026-09-27 - 小欧 - 提交源统一为 buildDiff()（DRY）：原 doSave 自带第二套判定，6 字段里 5 个与
+    //   草稿口径不一致 ⇒ 清空 label 时底栏不亮但改动消失、等值字段白写并 bump mtime。统一后与底栏/
+    //   按钮计数同一份 diff。不会退化成空提交：按钮按 dirtyCount===0 禁用，saveProviderDraft 另有空守卫。
+    const patch = buildDiff();
     setSaving(true);
     try {
       await onSave(patch);
@@ -321,12 +251,9 @@ export const ProviderConfig: React.FC<Props> = ({
         >
           ── ③ Provider 配置 ──
         </span>
-        {/* [72]第八章(8.5-3) + 2026-09-26 修正 - 小欧: base_url "为空即错误状态不可保存" 的判据是
-          **"原本有值却被清空"**，不是"当前为空"。原本就空（老配置缺 api_base）时按钮必须可用，
-          否则改 label/timeout/max_retries 也存不下去（改前用 `baseUrl.trim()===''` 一票否决 = 退化）。
-          2026-09-27 小欧 - 状态化（北京老陈拍板「无修改时灰白不可点，与底部一致」）：
-          无修改 → default 白灰 + disabled；有修改 → primary 蓝 + 计数「（N 项）」（N=diff 键数，
-          与底部「保存本组(N 项)」同源同口径）；base_url 原值清空错误状态守卫叠加保留仍禁。 */}
+        {/* 无修改 → 灰白不可点；有修改 → 蓝 + 「（N 项）」（N=diff 键数，与底部保存栏同源）。
+            base_url 守卫是"原本有值却被清空"（错误状态），不是"当前为空"——原本就空的老配置
+            仍须能改其它字段（第八章 8.5-3 曾用"当前为空"一票否决，属退化，已修）。— 小欧 2026-09-26 */}
         <Button
           type={dirtyCount > 0 ? 'primary' : 'default'}
           onClick={() => void doSave()}
