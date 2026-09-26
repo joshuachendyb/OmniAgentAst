@@ -11,6 +11,8 @@
  *     span 包裹 ⇒ 第 1 个字符落地即重建 DOM、焦点掉到 body。改为常驻单 <Input> 只切 type 属性。
  *     顺带删死代码 startOverwrite 的 `if (!revealed) setPlainKey('')`（!revealed 时必为 ''，YAGNI）。
  *   2026-09-26 - 小欧 - 修掩码与后端两档契约错位：len<8 改返 prefix="****"，旧写法渲染成 10 个星。
+ *   2026-09-27 - 小欧 - [72]三堂会审: 补「value 清空即退出输入态」effect —— 父层保存成功置空 value
+ *     后若焦点仍在，框内显示空白可编辑而非打码提示，用户会误以为没保存成功。
  *
  * 本组件只做一件事：安全地展示密钥。三条安全约束（[72] 12.5 已定决策）：
  *   ①二次确认：点眼睛先 Modal.confirm 告知"将显示明文，请勿截图或分享"，确认后才调接口取明文
@@ -79,6 +81,12 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
     },
     []
   );
+
+  // 2026-09-27 - 小欧 - value 被清空即退出输入态：父层保存成功会置空 value，若焦点仍在则 isTyping 仍为 true，
+  // 框内显示空白且可编辑，用户看不到"已配置"打码提示会误以为没保存成功。case: settings2-after-save-mask
+  useEffect(() => {
+    if (value === '') setFocused(false);
+  }, [value]);
 
   /** 眼睛点击：需二次确认，确认后才调接口取明文；再次点击立即清除明文。 */
   const onToggleReveal = async () => {
