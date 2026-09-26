@@ -37,17 +37,16 @@
 #   ②fetch_remote_models 按 [72]第十章(10.3) 返回错误分类：探测失败不再一律 HTTPException，
 #     改返 (models, error_kind, status_code) 三元组 —— 调用方（model_routes.test-connection）
 #     据此分「地址问题」与「key 问题」两套文案，不再把两类根因混成一句泛化报错。— 小欧 2026-09-26
-# 2026-09-26 (三堂会审后修正) - 小欧 - 本文件 2 处已改:
-#   ①[严重功能退化 · 修A坏B] 见下方 resolve_session_client 构造 ModelRef 处的详注(已实测复现):
-#     第八章把 api_base 的 `or ai_service.llm_model.api_base` 回落**无条件**删除，但同 provider 时
-#     _pv_cfg 恒为 None ⇒ api_base=None ⇒ LLMClient 抛 400「URL 为空」⇒
-#     **会话内换同一 provider 的模型 100% 失败**。已按"是否跨 provider"分两种语义修复。
-#   ②[编辑历史位置违规 + DRY] resolve_session_client 的 09-26 说明原被塞进**函数体内注释**，
-#     而文件头已有同一条目 —— 同一事实两处写、改一处必漏另一处。已删函数体内那份，只留文件头。
-#   ③[历史记录事实错误] 上一条 ② 的记录本身有两处不实，现更正: fetch_remote_models **不在本文件**
-#     (它在 model_service.py —— 本文件只经 get_ai_config_resolver() 间接读配置)，且它返回的是
-#     **dict**(带 status_code/category 键)不是三元组。照原记录去找会找不到函数、对不上返回形状。
-#     第八章真正改在本文件的是 resolve_session_client 的 api_base 回落(见上方 ①)。
+# 2026-09-26 (三堂会审后修正) - 小欧 - ①[退化·已实测复现] 第八章把 api_base 的
+#   `or 本代地址` 回落无条件删除，但同 provider 时 _pv_cfg 恒为 None ⇒ api_base=None ⇒
+#   会话内换同一 provider 的模型 100% 报 400。已按"是否跨 provider"分语义修复(见下方 _same_pv)。
+#   ②[编辑历史位置违规+DRY] 同一事实原在文件头与函数体各写一份，已删函数体内那份。
+#   ③[史实订正] 上一条②的记录称第八章改的是 fetch_remote_models —— 该函数不在本文件
+#   (在 model_service.py)，本文件真正被改的是上述 api_base 回落。
+# 2026-09-26 (三堂会审后修正·四) - 小欧 - [DRY] 降级兜底收敛为唯一出口 _fallback_snapshot()：
+#   原 :254(配置查找失败) 与 :312(读会话失败) 两处逐字重复"派生快照→标记→返回"，且曾因独立
+#   evolve 漏加一处专属异常上抛(即第二章要消灭的行为 B)。日志分工: 调用方只报原因(reason)，
+#   _default_snapshot 统一报"降级到哪个模型"，消除两条重叠 warning。
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -189,6 +188,15 @@ def _default_snapshot(ai_service, lease) -> "BaseAIService":   # [70] 增 lease 
     return _snap
 
 
+def _fallback_snapshot(ai_service, lease, reason: str) -> "BaseAIService":
+    """降级派生全局默认快照 —— resolve_session_client 降级路径唯一出口(DRY) — 小欧 2026-09-26
+
+    reason 只报"为什么降级"；"已降级到哪个模型"由 _default_snapshot 统一记录，避免重复 warning。
+    """
+    logger.warning(f"[chat] {reason}")
+    return _default_snapshot(ai_service, lease)
+
+
 async def resolve_session_client(scope, session_id):
     """会话模型覆盖决议：返回任务私有快照(恒非 None), 同 provider 快照接管本代 lease — [70] 小欧 2026-09-25
     # 2026-09-05 - 小健 - 自 stream_orchestrator 编排⑥(原 285-336)整块外迁 — 小健 2026-09-05
@@ -228,11 +236,9 @@ async def resolve_session_client(scope, session_id):
                     #   is_blank_secret（与 lifecycle/validation.py 同一权威，杜绝第三份不一致写法）
                     _pv_key = (None if is_blank_secret(_pv_cfg.get("api_key"))
                                else str(_pv_cfg["api_key"]).strip())
-                    # [72]第二章(2.4) - 小欧 - 2026-09-26: 情况 B 判定 —— 跨 provider 且目标 provider
-                    #   配置取到、但 api_key 空白 => 明确报错(带 provider 名 + env 变量名)，不再偷用全局默认 key。
-                    #   情况 A(同 provider)不经过本分支(:189 if 条件), 行为原样不动, 严禁一并"修掉"。
-                    #   env 安全性: get_service_config 返回的 cfg 已过 config.py 的 _apply_env_overrides,
-                    #   env 提供的 key 已写入配置 -> 用 {NAME}_API_KEY 的 provider 不会被误判为"未配置"。
+                    # 跨 provider 但目标 key 空白 => 明确报错，不再偷用全局默认 key（第二章行为 B）。
+                    # 情况 A(同 provider)不进本分支、用单例 key 属正常，严禁一并"修掉"。
+                    # env 安全性: get_service_config 的 cfg 已过 _apply_env_overrides，env key 已入配置。
                     if not _pv_key:
                         raise ProviderKeyMissingError(
                             f"会话切换到 provider {_ov.provider}，但该 provider 未配置 api_key，"
@@ -242,9 +248,7 @@ async def resolve_session_client(scope, session_id):
                     from app.services.lifecycle.service import parse_model_params
                     _pv_ebp, _pv_ctx = parse_model_params(_pv_cfg, _ov.model or "")
                 except ProviderKeyMissingError:
-                    # [72]第二章(2.4) 小欧 2026-09-26: 专属异常向上冒泡, 不被下方 except Exception
-                    #   降级为"放弃会话模型覆盖"(那会用全局默认快照继续跑 = 恰恰是要消灭的行为 B)
-                    raise
+                    raise   # 专属异常必须冒泡: 被下方 except Exception 降级即等于用全局 key 继续跑
                 except Exception as _pv_e:
                     logger.warning(f"[chat] 按 provider 查配置失败({_ov.provider}): {_pv_e}, 放弃会话模型覆盖")
                     _pv_cfg = None
@@ -252,23 +256,14 @@ async def resolve_session_client(scope, session_id):
                     _pv_ebp = None
                     _pv_ctx = None
             if _pv_cfg is None and _ov.provider and _ov.provider != ai_service.llm_model.provider:
-                logger.warning(f"[chat] 会话模型覆盖已跳过(配置查找失败), 使用全局默认模型快照: provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
-                _snap = _default_snapshot(ai_service, lease)  # C-3(小欧 2026-09-20): 配置失败不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+                _snap = _fallback_snapshot(
+                    ai_service, lease,
+                    f"会话模型覆盖已跳过(配置查找失败), 使用全局默认模型快照: "
+                    f"provider={ai_service.llm_model.provider}, model={ai_service.llm_model.model}")
                 transferred = True   # [70] 默认快照接管 lease(close 归还) — 小欧-2026-09-25
                 return _snap
-            # 2026-09-26 - 小欧 - [72]三堂会审后修正(修严重功能退化): 跨 provider 判定**提前**到构造 ModelRef 之前。
-            #   原改动把 api_base 的 `or ai_service.llm_model.api_base` 回落**无条件**删掉了,
-            #   但"该不该用全局地址"取决于是否跨 provider, 而原代码在**同 provider 时 _pv_cfg 恒为 None**
-            #   (:219 的 if 不成立 → 不查配置 → _pv_cfg 保持 None), 于是 `(_pv_cfg or {}).get("api_base")`
-            #   恒为 None。
-            #   实测复现(非理论): LLMClient(ModelRef(api_base=None), 'sk') 直接抛
-            #   HTTPException 400「provider deepseek 的 URL 为空」。
-            #   ⇒ 用户在**同一 provider 内切换模型**(只换 model 不换 provider, 会话覆盖的常见用法)
-            #     100% 报 400、功能完全不可用。这是本轮 [72]第八章改动引入的退化, 属"修 A 坏 B"。
-            #   正确语义分两种情况(8.5-4 只针对"跨 provider 不得用别人的地址", 未要求同 provider 也放弃):
-            #     · 跨 provider: 留空即由 LLMClient 报错(空就是空不瞎兜底) —— 8.5-4 的本意;
-            #     · 同 provider / 无 provider 覆盖: 本代地址就是该 provider 自己的地址, 必须沿用,
-            #       否则会话内换模型全废。
+            # 同 provider 时 _pv_cfg 恒为 None，api_base 必须沿用本代地址（否则会话内换模型全报 400，
+            # 退化史见文件头「三堂会审后修正」①）；跨 provider 才留空由 LLMClient 报错(8.5-4)。
             _same_pv = (not _ov.provider or _ov.provider == ai_service.llm_model.provider)
             override_ref = ModelRef(
                 provider=_ov.provider or ai_service.llm_model.provider,
@@ -301,17 +296,12 @@ async def resolve_session_client(scope, session_id):
         transferred = True
         return _snap
     except ProviderKeyMissingError:
-        # 2026-09-26 - 小欧 - [72]三堂会审后修正（修设计被架空）：
-        #   内层的 `except ProviderKeyMissingError: raise` 只防住了内层 `except Exception`，
-        #   但本外层 `except Exception`（读会话失败兜底）会把好不容易冒泡出来的专属异常**再接住**，
-        #   降级走 `_default_snapshot` 全局默认快照 + 只记一条 warning —— 即用全局 key 继续跑，
-        #   恰恰是 [72]第二章要消灭的行为 B。且前端永远收不到 `config_error`（2.5 专属 catch 成摆设）。
-        #   已实测复现：跨 provider 空白 key 时无 config_error、静默用全局快照。
-        #   修法与内层同模式：在本 except 之前加专属分支原样上抛；finally 的 lease 归还照常执行。
+        # 本外层 except 若接住专属异常，会降级为"用全局 key 继续跑"= 第二章行为 B，
+        # 且前端收不到 config_error。已实测复现，故与内层同模式原样上抛（finally 归还照常）。
         raise
     except Exception as _ov_e:
-        logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
-        _snap = _default_snapshot(ai_service, lease)  # C-4(小欧 2026-09-20): 异常不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+        # C-4(小欧 2026-09-20): 异常不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20
+        _snap = _fallback_snapshot(ai_service, lease, f"读会话sessionModel失败(session={session_id}): {_ov_e}")
         transferred = True
         return _snap
     finally:

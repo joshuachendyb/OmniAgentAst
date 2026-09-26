@@ -124,6 +124,11 @@ export enum ErrorType {
   COMPONENT_UNMOUNTED = 'component_unmounted',
 
   // Settings页面错误
+  // 2026-09-27 - 小欧 - [72]第二章(2.5) 补 CONFIG_ERROR：后端 resolver 的 ProviderKeyMissingError
+  //   会以 error_type="config_error" 下发（stream_orchestrator 专属 catch）。当前它只走对话流渲染层
+  //   （ErrorDetail.ERROR_TYPE_LABELS，已登记），不经本体系；但此处补同义项防将来改走 toast 时
+  //   config=silent 落空崩溃（showMessage 直接索引 ERROR_CONFIG_MAP，无 fallback）。
+  CONFIG_ERROR = 'config_error',
   PROVIDER_CONFIG_ERROR = 'provider_config_error',
   MODEL_CONFIG_ERROR = 'model_config_error',
   ADD_PROVIDER_FAILED = 'add_provider_failed',
@@ -489,6 +494,14 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
   },
 
   // Settings页面错误
+  // 与 ErrorDetail.ERROR_TYPE_LABELS 的 config_error 同义（同一后端 error_type 的两个消费面）
+  [ErrorType.CONFIG_ERROR]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    message: '配置错误，请检查配置（例：目标 Provider 未配置 API Key）',
+    severity: 'critical',
+  },
   [ErrorType.PROVIDER_CONFIG_ERROR]: {
     retryable: false,
     maxRetries: 0,

@@ -168,13 +168,16 @@
 #   为何不引入竞态: 复核与 acquire_lease 之间无任何 await, 事件循环单线程无处让出, 故不存在新的换代窗口。
 #   反证: 临时撤掉守卫后 case S13 复现出上述 router_error, 装回即绿 — 小欧 2026-09-25
 # 2026-09-26 - 小欧 - [72]第九章(9.6-1) 配套: 口令错误时抛 401 而非静默空流, 让前端能跳登录页。
-# 2026-09-26 (三堂会审后修正) - 小欧 - 删除本条目原先的后半段（"SSE 事件流补访问口令传递链：
-#   口令经查询串 ?access_token= 传入、本模块在起流时从 query 取出校验"）—— 经全仓 grep 核实，
-#   `access_token` 全仓**仅出现在这条注释里**，无任何实现代码。该链路根本不存在，注释在撒谎。
-#   真实情况: 前端全走 fetch+ReadableStream（见 useSSE.ts:876 getReader），请求头可带
-#   `Authorization: Bearer`（useSSE.ts:849），鉴权链路完整可用；原生 EventSource（不能自定
-#   义请求头）的客户端目前**不受支持** —— 如未来要支持，需在 chat 流端点实现 ?access_token=
-#   查询串校验（以 deps.verify_token 为唯一权威，不另起第二处校验）。特此如实记录，不冒充已实现。
+# 2026-09-26 (三堂会审后修正) - 小欧 - 本文件头原称"SSE 补 ?access_token= 传递链"，经全仓 grep 核实该
+#   链路**零实现**（access_token 只存在于注释中），注释在撒谎故删。实际：前端全走
+#   fetch+ReadableStream 可带 Authorization 头（useSSE.ts:849），鉴权完整；原生 EventSource
+#   （不能自定义请求头）不受支持。
+# 2026-09-26 (三堂会审后修正·二) - 小欧 - ②[B04·最严重一条] config_error 早退未清任务：
+#   该早退位于 create_stream_buffer/register_task 之后、create_task 之前，原实现只 yield
+#   config_error 就 return ⇒ task_id 永久停留 running（cleanup_expired_tasks 明确排除 running）
+#   ⇒ 该会话后续每条消息都被 has_active_task_in_session 改道注入死任务，用户补完 key 重试仍
+#   卡死、只能重启后端。修法: 早退前 reclaim_stream_buffer + cleanup_task（与 B-3 早退(:392)
+#   的差别是"本任务已注册成功"，彼时只回收缓冲、无任务可清）。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -425,23 +428,16 @@ async def chat_stream_orchestrator(
         try:
             _session_client = await resolve_session_client(scope, session_id)
         except ProviderKeyMissingError as _pk:
-            # 2026-09-26 - 小欧 - 修 B04「config_error 早退把会话永久占死」（三遍核实确认成立，最严重一条）：
-            #   本早退位于 `create_stream_buffer`(383) 与 `register_task`(386) **之后**、`asyncio.create_task`(531)
-            #   **之前**。原实现只 `yield config_error; return`，既不 `reclaim_stream_buffer` 也不清任务：
-            #     ① `running_tasks[task_id]` 永久停留 status="running"；
-            #     ② `task_registry.cleanup_expired_tasks` 明确**排除 running/paused**（设计如此：running 可能是
-            #        legit 长任务），故 1 小时后也不清理 → **只能重启后端**；
-            #     ③ 之后该会话每条新消息都命中 `has_active_task_in_session` → 被 B-3 守卫改道注入这个
-            #        死任务，前端只回 "消息已注入当前执行中的任务，将在下一轮吸收"，**用户永远等不到回复**。
-            #   即：用户被 config_error 指引去设置页补 key，补完重试**仍然卡死** —— 正是本机制要解决的场景。
-            #   修法：早退前把本次已预建的缓冲回收 + 已注册的任务摘除，与上方 B-3 早退(:391) 同一套动作。
-            #   —— 编辑：小欧 2026-09-26
+            # 2026-09-26 - 小欧 - 专属 catch（不用通用 router_error 兜底）：配置问题须与系统问题可分辨。
+            #   早退前必清缓冲+任务：本处 register_task 已成功，清洗_expired_tasks 又排除 running，
+            #   不清则该任务永久占死本会话（后续消息全被改道注入死任务，用户永远等不到回复）。
+            #   与 B-3 早退(:392) 不同：彼时本任务从未注册成功，故只回收缓冲、无任务可清。
             logger.warning(
                 "[chat] 配置缺失，提前结束（任务已注销，缓冲已回收）: task=%s, session=%s, err=%s",
                 task_id, session_id, _pk,
             )
-            reclaim_stream_buffer(task_id)   # 回收预建缓冲，防 running_tasks 之外的残留
-            await cleanup_task(task_id)     # 摘除 running_tasks，避免会话被死任务永久占住
+            reclaim_stream_buffer(task_id)
+            await cleanup_task(task_id)
             yield create_error_response(
                 error_type="config_error",
                 error_message=str(_pk),
