@@ -243,12 +243,21 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # 块1 访问口令（secret=True → 读路径掩码，永不回明文；
         #   写路径被 settings_service._validate_value 显式拒绝（第六章方案 B），
         #   改口令走专用端点 auth_routes，与 provider 通道同构：单一权威写入口）
-        _item("security.api_token", "text", "访问口令", None, secret=True,
+        # 2026-09-26 - 小欧 - 修 schema 类型撒谎（live-probe B10 失败）：
+        #   原声明 type="text"（字符串），但 secret=True 使读路径走 mask_secret_value，
+        #   实际返回**对象** {configured, prefix, suffix} → schema 说字符串、实际给对象。
+        #   前端 SettingRow 靠 item.secret 先于 switch(type) 短路才幸免，属巧合不属契约。
+        #   改用 "secret" 类型名，使 schema 如实表达"这是掩码对象、编辑走专用端点"。
+        _item("security.api_token", "secret", "访问口令", None, secret=True,
               env_key="OMNIAGENT_API_TOKEN",
               notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
         # 块2 免口令 IP 白名单（白名单内等于无鉴权，可读全部明文密钥 —— 只应放可信网段；
         #   本机 127.0.0.1/::1 恒免，无需在此配置；非 secret：白名单不是机密，需在设置页可维护）
-        _item("security.ip_allowlist", "text", "免口令 IP 白名单", "",
+        # 2026-09-26 - 小欧 - 同 B10 的同构问题：原声明 type="text"，但 deps._resolve_ip_allowlist
+        #   明确支持 YAML **list** 形态，而 _item_data 只对 textarea 做 list→str 归一 →
+        #   用户写 `security.ip_allowlist: [1.1.1.1, 2.2.2.2]` 时对一个声明为 text 的键返回数组。
+        #   改 textarea：既复用既有的 list/str 双向归一，又能在设置页多行维护（与 allowed_dirs 同款）。
+        _item("security.ip_allowlist", "textarea", "免口令 IP 白名单", "",
               env_key="OMNIAGENT_IP_ALLOWLIST",
               notice="这些 IP/网段访问本服务免口令，逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1)恒免。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
         _item("app.language", "select", "系统语言", "zh-CN",

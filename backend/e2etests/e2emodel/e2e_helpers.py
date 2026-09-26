@@ -311,8 +311,12 @@ if _E2E_TOKEN:
     AUTH_HEADERS["Authorization"] = f"Bearer {_E2E_TOKEN}"
 # 2026-09-26 小欧 - [72]第九章: token 缺失时给出显式提醒（否则 76 个用例集体 401，
 #   报错信息会指向"未授权"而非"测试环境没配口令"，排查成本高）
+# 2026-09-26 - 小欧 - [72]三堂会审后修正（修收集期崩溃）：
+#   原此处写 `_sys.stderr` —— 但 `_sys` 只是本文件两函数内的局部别名，模块级不存在。
+#   本块在模块顶层执行，import 本 helper 的 7 个 test_p9_*.py 在收集期全部 NameError 中断。
+#   改用模块顶层已有的 `import sys`（:179）。一字之差，教训记下。
 if not _E2E_TOKEN and (_os.environ.get("OMNIAGENT_REQUIRE_AUTH") or "1") not in ("0", "false"):
-    _sys.stderr.write(
+    sys.stderr.write(
         "[E2E][第九章] 未取到访问口令：E2E 请求将不带 Authorization，"
         "若后端已启用 token 鉴权则全部用例会 401。"
         "请设置环境变量 OMNIAGENT_API_TOKEN 或在 config.yaml 配 security.api_token。\n"

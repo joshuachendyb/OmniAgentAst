@@ -229,44 +229,33 @@ export const SettingRow: React.FC<Props> = ({
               理由（方案 B）：secret 三态只在专用通道实现；[72]第六章已让 settings 写路径对 secret 项
               **显式拒绝**，若此处仍走 settings 通道，用户一点清空就会拿到"该敏感项不支持经 /settings 写入"的报错。
               两类 secret 项的写路径各自保持单一权威，杜绝同一 key 两个写入口产生分叉。 */}
-          <Button
-            size="small"
-            onClick={() => {
-              // [72]第九章: 访问口令**不提供"清空=关闭鉴权"** —— 那是部署级危险操作
-              //   （一关全站失守），后端 auth/token 亦显式拒绝空口令（防静默关闭）。
-              //   故此处前置拦截并给出准确指引，而非让用户点了才报错。
-              if (item.key === 'security.api_token') {
-                showMessage(
-                  ErrorType.WARNING,
-                  '访问口令不能清空（清空=关闭鉴权，全站会失去保护）。如需关闭请在后端设环境变量 OMNIAGENT_REQUIRE_AUTH=0'
-                );
-                return;
-              }
-              // 2026-09-26 - 小欧 - [72]三堂会审后修正（修一个真功能 bug:「清空」按钮点了没反应）:
-              //   原实现 `writeSecret(key, { clear: true })`，而 writeSecret 的 provider 分支写的是
-              //   `updateProvider(name, { api_key: value 是不是非空字符串 ? value : undefined })` ——
-              //   value 是对象 → 走 undefined 分支 → **clear=true 从未被发出**，后端收到一个不含 clear 的
-              //   patch，判定为"无字段变更"→ 原样返回 ok。前端 .then 照跑、提示成功，**密钥根本没被清空**。
-              //   这类"静默无操作还报成功"最难查：后端日志正常、前端无报错、用户以为清掉了。
-              //   根因是 writeSecret 用一个联合类型把"设置值/清空"两种语义挤在一起，
-              //   清空意图在类型转换里被吃掉。修法: 清空不再经 writeSecret，直接按后端契约
-              //   ProviderConfigUpdate.clear 显式发 { clear: true }（该字段与 api_key 同级、互斥）。
-              void modelApi
-                .updateProvider(secretProviderName(item.key), { clear: true })
-                .then(() => {
-                  onRefresh?.(); // 重新 load（不再走 onChange，理由见 Props.onRefresh 注释）
-                  setEditingSecret(false);
-                })
-                .catch((e) => {
-                  showMessage(
-                    ErrorType.NETWORK_ERROR,
-                    `清空失败：${e instanceof Error ? e.message : String(e)}`
-                  );
-                });
-            }}
-          >
-            清空
-          </Button>
+          {/* 2026-09-26 - 小沈(三遍复核) - 修 A07 遗留死代码：上一版用 hidden={...} 隐藏按钮，
+              却把 showMessage 警告留在 onClick 里 —— 按钮不渲染，onClick 永不触发，那段代码是纯死代码
+              （留着即"看不见的逻辑"，后人误以为点得到）。改为**条件渲染**：不渲染就真不渲染，
+              警告文案改挂到 notice 区之外的用户可见入口（本项 notice 已含关闭鉴权的正确路径说明）。 */}
+          {item.key !== 'security.api_token' && (
+            <Button
+              size="small"
+              onClick={() => {
+                // 清空=擦除已保存密钥，走 provider 通道的 { clear: true } 显式契约
+                // （writeSecret 只接受 string 语义，清空意图在类型转换里会被吃掉，见本文件上方注释）。
+                void modelApi
+                  .updateProvider(secretProviderName(item.key), { clear: true })
+                  .then(() => {
+                    onRefresh?.();
+                    setEditingSecret(false);
+                  })
+                  .catch((e) => {
+                    showMessage(
+                      ErrorType.NETWORK_ERROR,
+                      `清空失败：${e instanceof Error ? e.message : String(e)}`
+                    );
+                  });
+              }}
+            >
+              清空
+            </Button>
+          )}
           <Button size="small" onClick={() => setEditingSecret(false)}>
             取消
           </Button>

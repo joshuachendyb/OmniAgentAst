@@ -602,31 +602,26 @@ def mask_secret_value(value: Any) -> Dict[str, Any]:
       - 第七章修"类型撒谎"：原未配置分支只返 {configured: False}，**根本没有 suffix 键**，
         而前端 model.api.ts 声明 suffix 必填 → 形状不恒定，埋运行时 undefined 隐患。
       - 第十二章加 prefix，最终契约为**三键恒定** {configured, prefix, suffix}。
-    长度分档（第十二章"坑2 短 key 前后缀重叠"，防 5~7 位 key 前后缀重叠等于泄露 7/8 位）：
-      len >= 8  -> {True,  prefix=s[:4],  suffix=s[-4:]}   前4+后4，不重叠
-      4<=len<8  -> {True,  prefix="",     suffix=s[-4:]}   只给末4位，prefix 置空
-      len < 4   -> {True,  prefix="",     suffix=""}       维持：configured=True 但不泄露任何位
-      未配置   -> {False, prefix="",     suffix=""}
-    2026-09-26 (三堂会审后修正) - 小欧 - [DRY + 正确性] 原实现先 `s = str(value or "")` 再用
-      `s.strip()` 判空、却用**未 strip 的 s** 参与长度分档与切片。实测复现（真 bug，非理论）:
-        m('  sk-abcdefghijkl  ') -> prefix='  sk', suffix='kl  '   ← 把空白当密钥内容泄露
-        m('sk-abcdefghijkl\n')  -> prefix='sk-a', suffix='jkl\n'  ← 换行进掩码
-      触发面真实存在: 本函数是 secret 掩码唯一权威，被 /settings、/models、/config 等多处调用，
-      输入包含**未落盘清洗的 env 变量**（MONTHSHOT_API_KEY=" sk-xxx " 这类 export 手误很常见，
-      写入侧 update_provider_config 会 strip，但读取/掩码侧拿到的可能是原始 env 值）。
-      后果有二: ①空白字符被当成密钥位显示给用户（掩码失真且泄露无效位）；
-      ②长度分档被空白污染（8 位有效 key 被算成 >8 而给出 prefix，掩盖了本该保护的短 key 场景）。
-      修法: 一律先 strip 再判空与分档，**判空与分档用同一个值**（此前两者用不同值，是 bug 的根因）。
-      此改动与写入侧 strip、client_sdk 消费端兜底构成"三处同一口径"，消除双通道不一致。
+    长度分档（**北京老陈 2026-09-26 裁定：只分两档 >=8 / <8**）:
+      len >= 8 -> {True, prefix=s[:4], suffix=s[-4:]}   按规矩: 前4 + 后4
+      len <  8 -> {True, prefix="****", suffix=s[-4:]}   裁定原文「小于8的 显示后4位, 前面加4个*」
+      未配置(空) -> {False, prefix="", suffix=""}
+      非字符串入参先 str() 兜底再走上面分档（裁定:「按我之前说的规则处理」）
     """
+    # 【编辑历史 — 最新在下】
+    # 2026-09-26 - 小欧 - 落实北京老陈裁定，**收敛为两档**（原为 4 档: <4 / 4~7 / 8~11 / >=12）:
+    #   裁定原话:「只是分大于=8还是小于8」+「>=8 按规矩来处理(前4+后4)」
+    #              +「小于8的 显示后4位, 前面加4个*」。
+    #   同时**撤销**我先前两项越权改动: ① 4~7 档"一律不给位"、② 非字符串判未配置(D18) ——
+    #   二者都与 [72]第十二章 12.5 契约表冲突, 属擅改产品契约, 现按裁定恢复。
+    #   ⚠ 残留风险(已两次明确告知北京老陈, 由其裁定保留, 非疏漏): 两档划分下
+    #     ① len<=4 → s[-4:] 即全量明文, 1~4 位 key 以 ****xxxx 全量回显;
+    #     ② len==8 → 前4+后4 恰好拼回全量明文(例 "abcd1234")。
+    #     两者都是"只分两档"的必然结果; 若日后要消除, 需把 >=8 档阈值上调(如 >=12)或对
+    #     len<=4 档不回显, 属产品契约变更, 需北京老陈另行裁定。
     s = str(value or "").strip()
-    if not s.strip():
+    if not s:
         return {"configured": False, "prefix": "", "suffix": ""}
-    # 2026-09-21 小欧 修 S5：不足 4 位的短 secret 不再整体暴露为 suffix，改置空串
-    if len(s) < 4:
-        return {"configured": True, "prefix": "", "suffix": ""}
     if len(s) < 8:
-        # [72]第十二章(12.5) 坑2: 4~7 位只给 suffix，prefix 置空 —— 否则 5 位 key 会
-        # prefix=s[:4] + suffix=s[-4:] 重复展示中间位，等于泄露 7/8 位
-        return {"configured": True, "prefix": "", "suffix": s[-4:]}
+        return {"configured": True, "prefix": "****", "suffix": s[-4:]}
     return {"configured": True, "prefix": s[:4], "suffix": s[-4:]}

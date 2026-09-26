@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 登录页 — 输入访问口令（token）
  *
  * 编辑历史:
@@ -24,6 +24,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input } from 'antd';
 import api, { getAccessToken, setAccessToken } from '@/services/api/client';
+import type { ApiRequestConfig } from '@/services/api/client';
 // 2026-09-26 小欧 - [72]第九章: 统一提示规范（禁 message.*，走 error/handler）
 import { ErrorType, showMessage } from '@/services/error/handler';
 // 2026-09-26 小欧 - [72]第九章(9.5.3 第1步): 首次设置/查状态走 authApi
@@ -64,7 +65,14 @@ const LoginPage: React.FC = () => {
     const prev = getAccessToken();
     setAccessToken(val); // 先写入以带上 Authorization
     try {
-      await api.get('/models'); // 任一受保护接口即可验真
+      // 2026-09-26 小欧 - 修登录页 401 死循环：此处 401 表示"口令不对"，
+      //   是本catch要处理的正常分支，绝不能被响应拦截器升级成 location.href='/login'
+      //   （那会重载本页 → 再验一次 → 再 401 → 死循环，且下面的错误提示永远不显示）。
+      // 2026-09-26 - 小沈(三遍复核): 走具名常量而非内联字面量 —— 内联对象会触发 axios 的
+      //   excess-property 检查报错（_skip401 是本仓扩展字段，不在 axios 自带类型里），
+      //   写成 ApiRequestConfig 具名常量则既过编译又保留字段名提示。
+      const VERIFY_REQ: ApiRequestConfig = { _skip401: true };
+      await api.get('/models', VERIFY_REQ);
       navigate('/', { replace: true });
     } catch {
       // [72]第九章(9.5.3 第1步): 服务端**未配置**口令时，任何口令都无法通过校验

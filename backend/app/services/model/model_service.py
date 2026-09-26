@@ -509,8 +509,24 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
             node[k] = v
     if fields.get("clear") is True:
         node["api_key"] = ""
+    # 2026-09-26 - 小欧 - 修 D22「api_key="" 单字段提交 → 500，与三态契约矛盾」（三遍核实确认成立）：
+    #   上游三态契约（本文件 [72] 注释与 model_routes 的 DTO 注释都写明）：
+    #   `api_key` 传 空串/纯空白/None = 不修改。`api_key: ""` 走到上面 api_key 分支时
+    #   cleaned 为空 → continue → node 仍空 → 落进 `if not node: raise ValueError`，
+    #   而 ValueError 被 handle_config_errors(=handle_api_errors) **统一兜成 500**。
+    #   即：调用方完全按契约办事（传空串表示"这个字段别动"），却拿到 5xx —— 5xx 会被前端/网关
+    #   当成服务端故障（自动重试、告警噪声），而重试永远不会成功；detail 还被改写成
+    #   "更新配置失败: ..."，用户看不出是自己提交的内容不成立。
+    #   ⚠ 修法取舍（三遍核实后两次修正，此处为最终版）：初版在此处改抛 HTTPException(400)，
+    #     但既有 TDD test_empty_api_key_not_overwrite 固化的是 **[72]第三章刻意选定的**
+    #     "抛错 + 绝不落盘"语义，改异常类型等于推翻既定设计；次版改成"幂等成功返回 ok"，
+    #     同样与该测试的语义相悖。**最终不改编排层**（保持 ValueError，一个字不动），
+    #     只在**中央映射** response_utils.handle_api_errors 里把 ValueError 归为 400 ——
+    #     级别纠正发生在唯一该发生的地方（DRY），并顺带修掉 E12 的 add_provider name 校验同类问题。
+    #   本函数此处保持原样，`merge_nested_patch` 仍不被调用 ⇒ 原 api_key 绝不被空串擦除。
+    #   —— 编辑：小欧 2026-09-26
     if not node:
-        raise ValueError("无有效配置项")
+        raise ValueError("没有有效字段")
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "provider": name, "mtime": _config_mtime()}
 

@@ -172,7 +172,21 @@ def update_config(config_update):
                     logger.warning(f"[update_config] 删除备份文件失败（可能残留含明文密钥的副本）: {e}")
             return {
                 "success": True, "message": "配置更新成功，已校验并生效",
-                "updated_fields": {"ai_model_ref": getattr(config_update, "ai_model_ref", None)},
+                # 2026-09-26 - 小欧 - 修契约退化（BUG9 修复被回退）：改前曾用
+                #   `config_update.model_dump(exclude_none=True)` + 内嵌过滤剔除 api_base/display_name
+                #   的 null 噪声；本次收敛时改回 `getattr(..., None)` **整个 Pydantic 对象**，
+                #   于是 JSON 变成 {"ai_model_ref":{...,"api_base":null,"display_name":null}}，
+                #   内层也不再是 dict 而是待 jsonable_encoder 序列化的模型对象。
+                #   现只输出本次真正写入的非空项（与改前语义一致，且不再依赖 exclude_none 的隐式行为）。
+                "updated_fields": {
+                    "ai_model_ref": {
+                        k: v
+                        for k, v in (
+                            getattr(config_update, "ai_model_ref", None) or {}
+                        ).model_dump(exclude_none=True).items()
+                        if v is not None
+                    }
+                },
                 "warnings": warnings,
                 "backup_path": str(backup_path) if backup_path else None,
                 "current_model_ref": {

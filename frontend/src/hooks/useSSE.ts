@@ -827,6 +827,13 @@ export const useSSE = (
       ); // 请求头超时(180s): 仅覆盖 fetch 等待响应头(返回即清除, 见:832); 首帧/流中途活性由 idle(60s)+心跳(25s)保障
 
       let response: Response;
+      // 2026-09-26 - 小欧 - 修 SSE 不带鉴权头（[72]第九章鉴权挂载后暴露）：
+      //   SSE 走原生 fetch，**绕过 axios 拦截器**，故 token 必须在此现取。
+      //   改前 config.token 全仓 0 处赋值 → 恒为 undefined → Authorization 从不附带；
+      //   且重连 GET 连 token 判断都没有。一旦服务端启用口令且非本机，聊天整体 401。
+      const authHeaders: Record<string, string> = config.token
+        ? { Authorization: `Bearer ${config.token}` }
+        : {};
       if (isReconnect) {
         // 重连：GET /chat/stream/{task_id}?after_seq=N 续传，不重新发起对话 — 北京老陈 2026-07-12 小欧
         // 小欧 2026-09-10 S3: after_seq 改为 lastSeqRef.current + 1（续传从已处理最大 seq 的下一帧开始）
@@ -837,6 +844,7 @@ export const useSSE = (
         response = await fetch(url, {
           method: 'GET',
           signal: controller.signal,
+          headers: authHeaders,
         });
       } else {
         // 聊天流式传输端点
@@ -845,9 +853,7 @@ export const useSSE = (
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(config.token
-              ? { Authorization: `Bearer ${config.token}` }
-              : {}),
+            ...authHeaders,
           },
           body: JSON.stringify({
             messages: [{ role: 'user', content: content }],

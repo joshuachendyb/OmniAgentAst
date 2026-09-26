@@ -51,13 +51,13 @@ export default defineConfig(({ command }) => {
       //   方式1 proxy：下方 proxy 配置将 /api/* 转发到 localhost:8000（同源，无 CORS）
       //   方式2 直连：getApiBaseUrl() 拼 hostname:port 直连后端（走 CORS，需改 constants.py 白名单）
       // 改端口须同步：proxy.target（方式1）或 VITE_API_PORT + CORS 白名单（方式2）
-        port: 5173,
-        // 2026-09-26 小欧 - [72]第九章配套: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
-        //   此前未配 host，Vite 默认只绑 localhost(Windows 解析为 [::1] IPv6 回环)，
-        //   导致**局域网其他机器访问不了前端**（后端 0.0.0.0 可达、前端不可达，两端不对齐）。
-        //   部署事实见 [72]第九章 9.1: 后端在 B 机器、客户端在局域网多台机器 → 前端必须对外可达。
-        //   注意: 这只影响 dev server；生产静态托管由部署方自行绑定。
-        host: '0.0.0.0',
+      port: 5173,
+      // 2026-09-26 小欧 - [72]第九章配套: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
+      //   此前未配 host，Vite 默认只绑 localhost(Windows 解析为 [::1] IPv6 回环)，
+      //   导致**局域网其他机器访问不了前端**（后端 0.0.0.0 可达、前端不可达，两端不对齐）。
+      //   部署事实见 [72]第九章 9.1: 后端在 B 机器、客户端在局域网多台机器 → 前端必须对外可达。
+      //   注意: 这只影响 dev server；生产静态托管由部署方自行绑定。
+      host: '0.0.0.0',
       watch: {
         // 【小欧 2026-09-23】轮询监听：Windows 下 chokidar push 通知长跑后会丢文件变更事件，
         // 导致"改了源码 vite 不热更、浏览器一直旧版"（当日连发两次，重启才恢复）。usePolling 根治，

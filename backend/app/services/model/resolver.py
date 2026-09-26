@@ -300,6 +300,15 @@ async def resolve_session_client(scope, session_id):
         _snap = ai_service.snapshot(shared_client=lease.client, client_lease=lease)   # [70] 构造期注入共享池+成对 lease — 小欧-2026-09-25
         transferred = True
         return _snap
+    except ProviderKeyMissingError:
+        # 2026-09-26 - 小欧 - [72]三堂会审后修正（修设计被架空）：
+        #   内层的 `except ProviderKeyMissingError: raise` 只防住了内层 `except Exception`，
+        #   但本外层 `except Exception`（读会话失败兜底）会把好不容易冒泡出来的专属异常**再接住**，
+        #   降级走 `_default_snapshot` 全局默认快照 + 只记一条 warning —— 即用全局 key 继续跑，
+        #   恰恰是 [72]第二章要消灭的行为 B。且前端永远收不到 `config_error`（2.5 专属 catch 成摆设）。
+        #   已实测复现：跨 provider 空白 key 时无 config_error、静默用全局快照。
+        #   修法与内层同模式：在本 except 之前加专属分支原样上抛；finally 的 lease 归还照常执行。
+        raise
     except Exception as _ov_e:
         logger.warning(f"[chat] 读会话sessionModel失败(session={session_id}): {_ov_e}")
         _snap = _default_snapshot(ai_service, lease)  # C-4(小欧 2026-09-20): 异常不再返回 None(破坏C1), 改派生全局默认快照 — 小欧-2026-09-20

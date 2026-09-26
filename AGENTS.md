@@ -196,6 +196,7 @@ npm run test:e2e:debug # 调试模式
 
 - 测试目的是**发现问题**，不是跑脚本；严禁看到 FAIL 跳过
 - 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`），**禁止 Mock**
+- **配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；`backend/tests/conftest.py` 的会话级 `isolated_config_dir` 已把全链指向临时副本，测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**（曾实测污染真配置 2 次：进程被杀时 teardown 不执行，还原不可靠；根治靠"够不到"而非"事后还原"）
 
 ---
 

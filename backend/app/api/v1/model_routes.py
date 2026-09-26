@@ -57,8 +57,10 @@ from app.services.model.config_helpers import handle_config_errors
 from app.services.model import model_service as svc
 # 2026-09-26 - 小欧 - [72]三堂会审后修正(DRY): 审计用来源 IP 复用 deps._client_ip（唯一权威），
 #   不在本文件另写一份。本文件原先自带的 _client_ip 与 deps 版是"同一逻辑两份实现"，
-#   且语义还不一致（deps 版懂 TRUST_PROXY_HEADERS/X-Forwarded-For，本版不懂），
+#   且语义还不一致（deps 版曾懂 TRUST_PROXY_HEADERS/X-Forwarded-For，本版不懂），
 #   审计日志的 IP 口径会随调用点不同而漂移。现统一 + `or "unknown"` 保底（审计行不写空值）。
+#   2026-09-26 二次修正 - 小欧: deps._client_ip 已删除 TRUST_PROXY_HEADERS 与自解析 XFF
+#   （只读 request.client.host，代理信任交回 uvicorn），两端口径现已完全一致。
 from app.api.v1.deps import _client_ip as _audit_ip
 
 

@@ -19,7 +19,7 @@
 #   但三套形状并存易令后人误以为可互换取错形状, 故在字段说明处显式区分(本项为 7.3 明确要求)。 — 小欧 2026-09-26
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field  # 2026-09-26 小欧 - 修 D16: ConfigUpdate 需 extra="forbid" 拒多余字段 — 小欧-2026-09-26
 from app.constants import DEFAULT_MAX_STEPS as _D_MAX_STEPS
 from app.config import get_config
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
@@ -49,7 +49,17 @@ class ConfigUpdate(BaseModel):
     空 PUT（{} 或缺该字段）会在 None 上取属性 → AttributeError → 被 except 吞成 500。
     PUT /config 的唯一能力就是切模型，不带模型调它属客户端错误，应在 DTO 层 422 拦掉，
     不得穿透到 service 变成 500。唯一合法调用方 switchCurrentModel 恒传完整 ref，不受影响。
+
+    2026-09-26 - 小欧 - 修 D16「未 extra='forbid' → 多余字段静默丢弃，却回 success:true 假成功」
+    （三遍核实确认成立）：上面刚写定的"应在 DTO 层 422 拦掉"只对**缺字段**成立；
+    Pydantic v2 **默认 `extra='ignore'`** —— 传 `{"ai_model_ref":{...},"timeout":999}` 时
+    `timeout` 被默默丢掉，请求照样 200 + success:true。用户（尤其从 OpenAI 兼容接口迁移过来、
+    习惯带一堆参数的人）得到"改了没生效"的假成功且**零提示**，排错成本极高。
+    修法：加 `extra="forbid"`，让"无用字段 422 拒绝"这句契约对**多余字段同样成立**，文档与实现对齐。
+    —— 编辑：小欧 2026-09-26
     """
+
+    model_config = ConfigDict(extra="forbid")
     ai_model_ref: ModelRef = Field(..., description="AI模型(provider+model 结构)")
 
 

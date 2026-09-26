@@ -199,6 +199,7 @@ from app.services.task.task_registry import (
     register_task,
     has_active_task_in_session,   # 2026-09-20 小欧 13.4.3: B机制注入入口 — 小欧-2026-09-20
     inject_message_to_task,
+    cleanup_task,                 # 2026-09-26 小欧 B-04: config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
 )
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
@@ -424,6 +425,23 @@ async def chat_stream_orchestrator(
         try:
             _session_client = await resolve_session_client(scope, session_id)
         except ProviderKeyMissingError as _pk:
+            # 2026-09-26 - 小欧 - 修 B04「config_error 早退把会话永久占死」（三遍核实确认成立，最严重一条）：
+            #   本早退位于 `create_stream_buffer`(383) 与 `register_task`(386) **之后**、`asyncio.create_task`(531)
+            #   **之前**。原实现只 `yield config_error; return`，既不 `reclaim_stream_buffer` 也不清任务：
+            #     ① `running_tasks[task_id]` 永久停留 status="running"；
+            #     ② `task_registry.cleanup_expired_tasks` 明确**排除 running/paused**（设计如此：running 可能是
+            #        legit 长任务），故 1 小时后也不清理 → **只能重启后端**；
+            #     ③ 之后该会话每条新消息都命中 `has_active_task_in_session` → 被 B-3 守卫改道注入这个
+            #        死任务，前端只回 "消息已注入当前执行中的任务，将在下一轮吸收"，**用户永远等不到回复**。
+            #   即：用户被 config_error 指引去设置页补 key，补完重试**仍然卡死** —— 正是本机制要解决的场景。
+            #   修法：早退前把本次已预建的缓冲回收 + 已注册的任务摘除，与上方 B-3 早退(:391) 同一套动作。
+            #   —— 编辑：小欧 2026-09-26
+            logger.warning(
+                "[chat] 配置缺失，提前结束（任务已注销，缓冲已回收）: task=%s, session=%s, err=%s",
+                task_id, session_id, _pk,
+            )
+            reclaim_stream_buffer(task_id)   # 回收预建缓冲，防 running_tasks 之外的残留
+            await cleanup_task(task_id)     # 摘除 running_tasks，避免会话被死任务永久占住
             yield create_error_response(
                 error_type="config_error",
                 error_message=str(_pk),

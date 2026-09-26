@@ -56,6 +56,7 @@ import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
 import { useSSE } from '@/hooks/useSSE';
 import { sessionApi } from '../../../services/api/session.api';
+import { getAccessToken } from '@/services/api/client';
 import { getClientInfo } from '../../../utils/clientInfo';
 import { handleError } from '@/services/error/handler';
 
@@ -287,6 +288,9 @@ export const useChatStreaming = (
     {
       baseURL: config.baseURL,
       sessionId: sessionId || 'default-session',
+      // 2026-09-26 小欧 - [72]第九章鉴权：SSE 走原生 fetch 绕过 axios 拦截器，
+      //   token 必须由调用方显式传入（改前此处不传，config.token 恒 undefined → 聊天 401）。
+      token: getAccessToken() || undefined,
     },
     onStep,
     onChunk,

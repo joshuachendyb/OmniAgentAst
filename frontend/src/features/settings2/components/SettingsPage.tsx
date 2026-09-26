@@ -687,7 +687,9 @@ const SettingsPage: React.FC = () => {
             //   落盘后，用 load() 重新拉取以刷新掩码与"已配置"状态。**不能用 setValue 充当刷新**——
             //   它会把该 key 置脏，而 secret 已被 [72]第六章在 settings 写路径显式拒绝，
             //   用户随后点"保存本组"会因这个脏 secret 而整组失败（改 A 坏 B）。
-            onRefresh={() => void s.load()}
+            // 2026-09-26 小欧 - 修 C03: 传 keepModel —— 只刷新设置区以更新掩码/已配置态，
+            //   保住模型区未保存的参数/能力/env/provider 切换（load 默认会重建模型区并静默丢弃它们）— 小欧-2026-09-26
+            onRefresh={() => void s.load({ keepModel: true })}
           />
         )}
         <SaveBar

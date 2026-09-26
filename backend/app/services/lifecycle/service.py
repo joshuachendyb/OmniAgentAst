@@ -199,19 +199,45 @@ def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict
     return (specific_params or None), context_limit
 
 
-def create_service_instance(provider_config: dict, final_provider: str, final_model: str) -> BaseAIService:
+def _resolve_api_base(model_ref: ModelRef, provider_config: dict) -> str:
+    """端点定位唯一权威(DRY 归一) — 小欧 2026-09-26
+    优先级: 调用方显式端点 model_ref.api_base > 目标 provider 配置端点 provider_config["api_base"] > 空。
+    空即空, 交 client_sdk 抛 400「请到设置页填写完整地址」—— 严禁兜底任何境外/他人地址(北京老陈 2026-09-26 指示)。
+    两级来源都是**目标 provider 自己**的地址(get_service:267 取 config_model.provider 配置;
+    get_service_for_model:352 取 model_ref.provider 配置), 故本优先级链**永不产出他人/境外地址**,
+    与 resolver.py:272-280「跨 provider 不用别人的地址」隔离语义一致。"""
+    return (model_ref.api_base or "").strip() or (provider_config.get("api_base") or "").strip()
+
+
+def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseAIService:
     """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传;
     小健 2026-08-17 DEFAULT_CONTEXT_LIMIT 迁 agent.compaction_constants;
     2026-08-22 小欧 归一报告v1.25 6.6: BaseAIService 构造改传 llm_model=ModelRef(provider+model+api_base),
-    api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY)"""
-    extra_body_params, context_limit = parse_model_params(provider_config, final_model)
+    api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY);
+    2026-09-26 小欧 签名收归 ModelRef(禁散参数拆解, KISS-DIRECT)+api_base 解析收归 _resolve_api_base(DRY)"""
+    extra_body_params, context_limit = parse_model_params(provider_config, model_ref.model)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
-        llm_model=ModelRef(
-            provider=final_provider,
-            model=final_model,
-            api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
-        ),
+        # 【编辑历史 — 最新在下】
+        # 2026-09-26 - 小欧 - 修 D19「openai.com 兜底使 client_sdk 新增的 400 在主路径不可达」（三遍核实确认成立）：
+        #   原 `or "https://api.openai.com/v1"` 与 [72]第一章(1.3-3) 的裁定**直接矛盾** ——
+        #   client_sdk 那边已刻意删掉 _default_base_url/_DEFAULT_URLS 兜底并改为
+        #   「URL 为空 → raise HTTPException(400)『请到设置页填写完整地址』」，
+        #   理由写得很清楚：静默兜底会把远程 provider 打到本机、绕过中转直连官方计费。
+        #   但本函数是**聊天主路径**的 instance 构造入口，api_base 在这里被强行兜成非空 ⇒
+        #   那条 400 在主路径**永远不可达**（新加的防护形同虚设）。
+        #   真实危害（三遍核实复现）：任一 provider 漏配/误清 api_base 时，请求不会报错，
+        #   而是被**静默发往 api.openai.com** —— 用户的第三方 key 连同请求体一起送给 OpenAI，
+        #   既泄密又记到别人的账上，且用户完全看不到任何提示。
+        #   修法：不再兜底，空就是空，交由 client_sdk 那条 400 明确报错（单一真相源，不两处各判一次）。
+        #   —— 编辑：小欧 2026-09-26
+        # 2026-09-26 - 小欧 - 关联逻辑修复(删兜底后暴露的三处真缺陷, 全部由 test_get_service_for_model_attaches_scope 400 暴露):
+        #   原在此**新建** ModelRef(provider=, model=, api_base=) 三字段重列, ① 丢 display_name(调用方别名被静默吞掉);
+        #   ② 丢 model_ref.api_base(显式端点被静默吞掉 —— D19 删兜底后地址彻底蒸发, 正是该测试 400 的根因);
+        #   ③ 字段清单与 SessionModelOverride 定义重复, 加字段必漏(违反 DRY/单一真相源)。
+        #   改法: model_copy 只覆写解析出的 api_base, 其余字段(provider/model/display_name)原样保留, 不再重列字段
+        #   —— 新增 ModelRef 字段自动继承, 无需改本行; api_base 优先级收归 _resolve_api_base(唯一权威)。
+        llm_model=model_ref.model_copy(update={"api_base": _resolve_api_base(model_ref, provider_config)}),
         timeout=provider_config.get("timeout"),  # None=未设，BaseAIService 回落到 tuning>常量 — 小欧 [62]P7 4.3(1)a
         max_retries=provider_config.get("max_retries"),  # None=未设，BaseAIService 回落到 tuning>常量3 — 小欧 [62]P7 4.3(2)d
         max_tokens=provider_config.get("max_tokens"),
@@ -254,7 +280,7 @@ def get_service() -> BaseAIService:
             # [70] 新代 scope 诞生(小欧 2026-09-25): 建池 + LLMClient 所有权移交(relinquish) + 挂载三事一处,
             #   取代 2026-09-20 C1 的 _ensure_client + 裸暴露 _shared_client 属性——反射摸私有消亡,
             #   池/计数/关闭唯一归属 ConnectionScope([70] 2.5「创建」环节); 先 attach 后落位保不变式
-            _new_instance = create_service_instance(provider_config, config_model.provider, config_model.model)
+            _new_instance = create_service_instance(provider_config, config_model)
             try:
                 _attach_scope(_new_instance)
             except Exception:
@@ -329,6 +355,11 @@ def get_service_for_model(model_ref: ModelRef):
     P2-07修复: 使用set_instance替代直接操作私有变量; P2-09: 删除未使用的config_path
     【2026-08-22 小欧】归一: 入参 (provider, model) → model_ref: ModelRef(F8 无兼容 shim, 调用点随改)
     BUG-16修复(小欧 2026-09-20): 整个操作加_instance_lock, 防并发竞态覆盖/丢失实例。
+    2026-09-26 小欧 修关联缺陷(暴露于 test_get_service_for_model_attaches_scope): 原
+      create_service_instance(provider_config, model_ref.provider, model_ref.model) 只传二元组,
+      把 model_ref.api_base 当场蒸发 ⇒ 该字段被静默吞掉(显式端点丢失, 与 resolver.py:139
+      「api_base 不在此读取, 由 provider_config 补齐」的本意冲突: 本函数**已有** ModelRef 却不用)。
+      改法: 传整个 model_ref, 端点解析收归 service._resolve_api_base(唯一权威)。
     """
     from app.services.model.resolver import get_ai_config_resolver
     resolver = get_ai_config_resolver()
@@ -344,7 +375,7 @@ def get_service_for_model(model_ref: ModelRef):
         if not provider_config:
             provider_config = {}
 
-        instance = create_service_instance(provider_config, model_ref.provider, model_ref.model)
+        instance = create_service_instance(provider_config, model_ref)
         # BUG-16: 直接赋值(已在锁内), 不调set_instance(内部也加锁会死锁)
         global _instance, _current_model_ref
         _attach_scope(instance)   # [70] 新代 scope 挂载(先 attach 后落位, 与 get_service 同构) — 小欧-2026-09-25

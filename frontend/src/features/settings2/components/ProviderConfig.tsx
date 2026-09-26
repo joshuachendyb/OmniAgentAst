@@ -174,7 +174,16 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
     const patch: Record<string, unknown> = {};
     // [72]第一章(1.3-2) 小欧 2026-09-26: api_key 落盘前 trim，与 base_url 写法统一(此前只有 base_url 去了空格)
     if (apiKey.trim() !== '') patch.api_key = apiKey.trim();
-    patch.base_url = baseUrl.trim();
+    // 2026-09-26 小欧 - 修"保存按钮被 base_url 一票否决"（[72]第八章改动引入的退化）：
+    //   改前无条件 `patch.base_url = baseUrl.trim()`，于是"yaml 里本来就没有 api_base"的 provider
+    //   （靠默认地址直连的老配置）会提交空串 → 后端 400；而按钮又被 disabled 死点，
+    //   结果**改显示名/超时/重试这类无关字段也存不下去**。
+    //   正确语义与 api_key 同向（"留空=保持原值"）：
+    //     · 原本就空、现在仍空 → 不进 patch（= 没改这个字段，后端不校验、不会 400）
+    //     · 原本有值、现在被清空 → 照送，由后端 400 拦住（"清空 URL"确是错误状态）
+    const _origBase = (config.base_url || '').trim();
+    const _nowBase = baseUrl.trim();
+    if (_nowBase !== '' || _origBase !== '') patch.base_url = _nowBase;
     if (label.trim() !== '') patch.label = label.trim();
     patch.timeout = timeout;
     patch.max_retries = maxRetries;
@@ -242,13 +251,16 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
         >
           ── ③ Provider 配置 ──
         </span>
-        {/* [72]第八章(8.5-3) 小欧 2026-09-26: base_url 为空时禁用保存(错误状态不可保存),
-            disabled 而非静默 return，避免"点了没反应" */}
+        {/* [72]第八章(8.5-3) + 2026-09-26 修正 - 小欧: base_url "为空即错误状态不可保存" 的判据是
+          **"原本有值却被清空"**，不是"当前为空"。原本就空（老配置缺 api_base）时按钮必须可用，
+          否则改 label/timeout/max_retries 也存不下去（改前用 `baseUrl.trim()===''` 一票否决 = 退化）。 */}
         <Button
           type="primary"
           onClick={() => void doSave()}
           loading={saving}
-          disabled={baseUrl.trim() === ''}
+          disabled={
+            baseUrl.trim() === '' && (config.base_url || '').trim() !== ''
+          }
         >
           保存 Provider 配置（立即生效）
         </Button>
@@ -267,7 +279,9 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
       {/* api_key —— 2026-09-26 小欧 - [72]第十二章(12.5) 迁出为 SecretRevealInput（SRP 拆分）：
           明文查看的 state/定时器/二次确认全在子组件内，本组件不再持有明文（更安全：
           父组件不持有明文即父组件的其它逻辑永远碰不到它）。env 接管时整块只读，不显示眼睛
-          —— 由 isEnv 早退分支处理。 */}
+          —— 由 isEnv 早退分支处理。
+          12.2 目标效果：打码（前4位+星号+末4位）显示在**输入框内**，故传 prefix/suffix
+          由子组件拼 maskedDisplay；12.4 坑2 短 key（prefix 空）只给末 4 位。 */}
       <div style={settingsRowStyle}>
         <span style={settingsLabelStyle}>api_key</span>
         <SecretRevealInput
@@ -275,11 +289,8 @@ export const ProviderConfig: React.FC<Props> = ({ name, config, onSave }) => {
           value={apiKey}
           onChange={setApiKey}
           configured={config.api_key.configured}
-          maskedHint={
-            config.api_key.prefix
-              ? `前4位 ${config.api_key.prefix} + 末4位 ${config.api_key.suffix}`
-              : `末4位 ${config.api_key.suffix}`
-          }
+          prefix={config.api_key.prefix}
+          suffix={config.api_key.suffix}
           width={settingsControl.apiKeyWidth}
         />
       </div>

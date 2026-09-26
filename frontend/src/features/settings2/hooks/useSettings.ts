@@ -252,7 +252,16 @@ export function useSettings() {
   //   杜绝 onModelSwitched（切全局模型 → load）静默丢脏；checkMtime/S11 守卫显式传 {reset:true} 才全量重置。
   //   同时新增 baseline（纯服务端值快照）供 S6 回滚判定；模型区按选中 provider.env 回填 envOverride（S5）。
   const load = useCallback(
-    async (opts?: { reset?: boolean }) => {
+    // 2026-09-26 - 小欧 - 修 C03「刷新 secret 掩码时静默清空模型区未保存修改」（三遍核实确认成立）：
+    //   新增 `keepModel`：只刷新"设置区"(schema/values/sources/baseline/mtime)，**原样保留模型区**
+    //   (selectedProvider/selectedModel/params/defaults/capabilities/envOverride/providerConfig)。
+    //   起因：secret 行落盘后需重拉以刷新掩码，走的是 onRefresh → load()，而 load() 原实现
+    //   **无条件重建整个 model 区**（见下方 setState 中 `model: {...initialModel(), ...}`）。
+    //   `preserve` 逻辑只保护**设置区**的脏键缓冲，模型区的未保存编辑（改了参数/能力/勾了 env/
+    //   换了 provider 或模型）在这次"只想刷新一行掩码"的操作里被**静默丢弃且无任何提示** ——
+    //   用户视角：保存了一个 API Key，回到模型 Tab，刚才的参数全没了。
+    //   调用方：SettingsGroup 的 onRefresh（secret 行专用通道落盘后）。 —— 编辑：小欧 2026-09-26
+    async (opts?: { reset?: boolean; keepModel?: boolean }) => {
       patchState({ loading: true, loadError: null });
       try {
         const [schema, all, models] = await Promise.all([
@@ -326,30 +335,38 @@ export function useSettings() {
             mtime: all.mtime,
             loading: false,
             currentRef: ref,
-            model: {
-              ...initialModel(),
-              providers: models.providers,
-              selectedProvider: provider?.name ?? '',
-              selectedModel: current?.name ?? '',
-              params: { ...defaults },
-              defaults,
-              ranges: {
-                ...((current?.range ?? {}) as Record<
-                  string,
-                  { min: number; max: number }
-                >),
-              },
-              paramOptions: {
-                ...((current?.param_options ?? {}) as Record<string, string[]>),
-              },
-              // 2026-09-24 小欧 - ②load 通道：normalizeCaps 归一（恒含 text 防假脏；未知值原样保留）- 小欧-2026-09-24
-              capabilities: normalizeCaps([...(current?.capabilities ?? [])]),
-              capabilitiesBaseline: normalizeCaps([
-                ...(current?.capabilities ?? []),
-              ]),
-              envOverride,
-              providerConfig,
-            },
+            // 2026-09-26 - 小欧 - 修 C03: keepModel 时保留模型区全部未保存编辑（详见 load 的 docstring）
+            model: opts?.keepModel
+              ? s.model
+              : {
+                  ...initialModel(),
+                  providers: models.providers,
+                  selectedProvider: provider?.name ?? '',
+                  selectedModel: current?.name ?? '',
+                  params: { ...defaults },
+                  defaults,
+                  ranges: {
+                    ...((current?.range ?? {}) as Record<
+                      string,
+                      { min: number; max: number }
+                    >),
+                  },
+                  paramOptions: {
+                    ...((current?.param_options ?? {}) as Record<
+                      string,
+                      string[]
+                    >),
+                  },
+                  // 2026-09-24 小欧 - ②load 通道：normalizeCaps 归一（恒含 text 防假脏；未知值原样保留）- 小欧-2026-09-24
+                  capabilities: normalizeCaps([
+                    ...(current?.capabilities ?? []),
+                  ]),
+                  capabilitiesBaseline: normalizeCaps([
+                    ...(current?.capabilities ?? []),
+                  ]),
+                  envOverride,
+                  providerConfig,
+                },
           };
         });
       } catch {

@@ -6,12 +6,27 @@
  *     不改业务逻辑——符合项目"能复制就复制、不重写"纪律）。
  *     迁出原因（SRP）：ProviderConfig 同时承担"配置表单 / 明文查看 / 连通性探测"三件事，
  *     组件膨胀到 500 行，任一功能改动都要读完整个组件。故把本职责独立成组件。
+ *   2026-09-26 - 小欧 - 修 P0-1 / P0-2（api_key 输入链路完全不可用）：
+ *     P0-1【readOnly 死锁】原 displayReadOnly = revealed || !value。value 初始恒为 ''、唯一来源是
+ *       用户敲键（又被 readOnly 挡死），onFocus 里 startOverwrite('') 是空串回灌的 no-op
+ *       （React Object.is 相等直接 bailout）→ 输入框恒 readOnly，**一个字符都输不进去**；
+ *       单测用 fireEvent.change 能绕过 readOnly 造出非空 value，故 11 条全绿是假绿。
+ *     P0-2【组件切换丢焦点】原按 value 是否为空在 <Input> 与 <Input.Password> 之间换组件类型，
+ *       两者 DOM 结构不同（Password 外多一层 span 包裹），第 1 个字符落地即卸载重建 →
+ *       焦点掉到 body，后续字符全丢。两层叠加 = UI 上无法完成 key 录入。
+ *     修法（KISS-DIRECT/DRY）：①改用"焦点"判定是否在输入新 key（focused），
+ *       ②常驻单个 <Input>，只在 text/password 之间切 type 属性、不换组件 ——
+ *       DOM 节点不重建，焦点天然保持（antd Input.Password 的显示/隐藏眼睛同此做法）。
+ *     顺带删死代码：startOverwrite 里 `if (!revealed) setPlainKey('')` —— plainKey 只在
+ *       revealed 时被置位、隐藏/超时同步清零，!revealed 时必为 ''，该行永不可达（YAGNI）。
  *
  * 本组件只做一件事：安全地展示密钥。三条安全约束（[72] 12.5 已定决策）：
  *   ①二次确认：点眼睛先 Modal.confirm 告知"将显示明文，请勿截图或分享"，确认后才调接口取明文
  *   ②30 秒自动恢复打码 + 组件卸载清理定时器（防内存泄漏、防卸载后 setState）
  *   ③明文只在内存 state，不写 localStorage；明文态 readOnly 且 onChange 直接 return
  *     （避免把明文当新值提交出去）
+ * 另：[72]12.2 目标效果要求**打码显示在输入框内**（前4位+星号+末4位），
+ *   故 maskedDisplay 作为 value 参与三态互斥（见下方 displayValue / inputType 的注释）。
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Modal } from 'antd';
@@ -30,10 +45,12 @@ export interface SecretRevealInputProps {
   value: string;
   /** 输入变化回调（明文态下不会触发） */
   onChange: (v: string) => void;
-  /** 是否已配置过密钥（决定 placeholder 与是否显示眼睛） */
+  /** 是否已配置过密钥（决定框内打码显示与是否显示眼睛） */
   configured: boolean;
-  /** 打码描述：前4位 / 末4位（prefix 为空时只显示末4位） */
-  maskedHint: string;
+  /** 掩码前后缀（[72]12.5 三键恒定契约）；prefix 为空表示短 key，只给末 4 位 */
+  prefix: string;
+  /** 掩码末 4 位 */
+  suffix: string;
   /** 输入框宽度 */
   width: number | string;
 }
@@ -43,12 +60,21 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   value,
   onChange,
   configured,
-  maskedHint,
+  prefix,
+  suffix,
   width,
 }) => {
   const [revealed, setRevealed] = useState(false);
   const [plainKey, setPlainKey] = useState('');
   const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 打码显示：前4位 + 星号 + 末4位（[72]12.2 目标效果）。
+  // 短 key（prefix 为空，即 len<8）只显示末 4 位，不给 prefix —— 否则前后缀重叠等于泄露 7/8 位（12.4 坑2）。
+  const maskedDisplay = configured
+    ? prefix
+      ? `${prefix}${'*'.repeat(6)}${suffix}`
+      : `****${suffix}`
+    : '';
 
   // 30 秒自动恢复打码（组件卸载时清理定时器，防内存泄漏与"卸载后仍回调 setState"）
   useEffect(
@@ -92,25 +118,58 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
     });
   };
 
+  // ★ [72]12.2 目标效果要求打码显示"前4位+星号+末4位"，而密码模式会把每一个字符
+  //   都渲染成圆点（含 prefix/suffix），故"打码串/已保存明文"必须以 type="text" 展示，
+  //   只有"用户本次正在输入的新 key"才用 type="password" 遮住。否则二者在框内长得一样，功能失效。
+  //
+  // 2026-09-26 - 小欧 - 修 P0-1 / P0-2：状态改由"焦点"驱动 + 常驻单个 <Input>：
+  //   ①是否在输入新 key 只看 isTyping = 非明文态 && (框内有焦点 || value 有未保存输入)。
+  //      **不能拿 value 是否为空当判据**：value 初始恒 ''、且只在放行输入后才可能非空，
+  //      拿它当 readOnly 判据会自锁（P0-1：框恒只读，一个字符都进不来）。
+  //   ②**常驻同一个 <Input>，只在 text/password 之间切 type 属性，绝不换组件**：
+  //      在 <Input> 与 <Input.Password> 间切换等于换 DOM 结构（后者外层多一层 span），
+  //      第 1 个字符就卸载重建 → 焦点掉到 body，后续字符全丢（P0-2）。
+  //      节点不重建则焦点天然保持；antd 自身的"显示密码"眼睛也是在同一 input 上切 type。
+  const [focused, setFocused] = useState(false);
+  // 是否处于"输入新 key"态；明文态恒否（已保存明文只读展示，不可被当新值提交）
+  const isTyping = !revealed && (focused || value !== '');
+  const displayValue = revealed ? plainKey : isTyping ? value : maskedDisplay;
+  // 只读：①明文态恒只读（安全约束③）②非输入态（打码串/空框）只读，防误改已保存 key
+  const displayReadOnly = revealed || !isTyping;
+  // 输入中遮蔽本次输入；展示打码串/明文必须 text，否则前后 4 位看不见（12.2）
+  const inputType = isTyping ? 'password' : 'text';
+
+  const startOverwrite = (next: string) => {
+    // 安全约束③：明文态直接 return —— 绝不把已保存明文当新值提交出去
+    if (revealed) return;
+    onChange(next);
+  };
+
   return (
     <>
       <span style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-        <Input.Password
-          // 2026-09-26 小欧 - 职责切分: revealed 时展示**已保存的明文**；否则展示本次输入
-          //   （输入框初值恒为 ''，原生眼睛看不到已保存的 key，故与自定义眼睛并存会让人无法分辨）
-          value={revealed ? plainKey : value}
-          onChange={(e) => {
-            if (revealed) return; // 明文态禁止编辑（避免把明文当新值提交）
-            onChange(e.target.value);
-          }}
-          placeholder={configured ? '已配置，留空保持原值' : '未配置'}
+        {/* 常驻单个 Input：type 只在 text/password 间切换，DOM 节点不重建（修 P0-2） */}
+        <Input
+          type={inputType}
+          value={displayValue}
+          readOnly={displayReadOnly}
+          onChange={(e) => startOverwrite(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          // 新密钥一律不让浏览器自动填充（防把已保存口令填进覆盖框）
           autoComplete="new-password"
-          readOnly={revealed}
-          // 2026-09-26 小欧 - [72]第十二章(12.4 起): 关闭 AntD 自带眼睛。
-          //   原生眼睛只能显示"刚输入的字符"，与"看已保存明文"的眼睛并存会出现两个眼睛，
-          //   用户无法分辨；本次输入内容的隐藏改由 autoComplete="new-password" 承担。
-          visibilityToggle={false}
-          style={{ width }}
+          placeholder={
+            isTyping
+              ? '输入新密钥以覆盖'
+              : configured
+                ? '已配置，留空保持原值'
+                : '未配置'
+          }
+          style={{
+            width,
+            // 明文态用等宽字体，便于逐字符核对密钥
+            fontFamily: revealed ? 'monospace' : undefined,
+          }}
         />
         {/* 自定义眼睛：查看已保存的明文（未配置时无密钥可看，不显示） */}
         {configured && (
@@ -133,7 +192,9 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
           paddingTop: Spacing.XS,
         }}
       >
-        {configured ? `已配置（${maskedHint}），留空=保持原值` : '未配置，留空=保持原值'}
+        {configured
+          ? '留空=保持原值（上方为已保存密钥的掩码）'
+          : '未配置，留空=保持原值'}
       </div>
     </>
   );

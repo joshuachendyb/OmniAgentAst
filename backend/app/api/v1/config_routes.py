@@ -98,7 +98,19 @@ async def get_system_config():
 #     且其中 theme 早已是 registry 只读项（暗色入口已移除）——旧 handler 一并删除，不再有第二条写路径。
 #   保留全部 GET 端点（GET /config、/config/read、/config/full、/config/validate、/config/fix、/config/path 等）。 — 小欧-2026-09-26
 @router.put("/config")
-def update_config(config_update: ConfigUpdate):
+# 2026-09-26 - 小欧 - 修裸 500：本端点原先**未挂** @handle_config_errors（全文件其它端点都挂了），
+#   而 update_config_service 内部事务链（备份→改→校验→写→reload）任一步抛异常
+#   （含 filelock 超时、备份失败、YAML 不可写、reload 失败）都会直穿成框架默认 500，
+#   前端拿不到结构化 {success,message,errors}，且日志缺统一出处。挂上后与同文件其它端点一致。
+# 2026-09-26 - 小沈(三遍复核) - 修挂装饰器引入的**硬退化**：`handle_api_errors` 的 wrapper 是
+#   `async def` 且体内 `return await func(...)`（app/utils/response_utils.py:50-52），它只能包 **async** 端点。
+#   本函数原先是同步 `def`，挂上装饰器后 wrapper 执行 `await <dict>` → TypeError
+#   "object dict can't be used in 'await' expression" → 被 except Exception 兜成 500
+#   ⇒ PUT /config 100% 失败（实测复现，顶栏「切换全局模型」全链断）。
+#   修法：改回 `async def`（与同文件其它被装饰端点一致），业务函数 update_config_service 本身是同步的，
+#   照原样 return 即可，不改任何业务逻辑。
+@handle_config_errors("更新配置")
+async def update_config(config_update: ConfigUpdate):
     return update_config_service(config_update)
 
 
