@@ -6,9 +6,10 @@
  *   （查天气 / 查股票行情 / 查文件目录分析 等 fre2e_* 普通 case）。
  *
  * 与断连 case 环境差异: 不需要 9000 后端代理、不需要注入 VITE_API_BASE_URL ——
- *   页面由默认 vite dev(:5173, `npm run dev`) 服务，前端 API 默认基址为
- *   `http://localhost:8000/api/v1`（getApiBaseUrl 对未注入环境自动按 hostname:8000 组装）直连后端，
- *   后端 CORSMiddleware 已放行 http://localhost:5173（见 backend/app/constants.py DEFAULT_CORS_ORIGINS）。
+ *   页面由默认 vite dev(:5173, `npm run dev`) 服务，API 基址为相对路径 `/api/v1`，
+ *   经 vite proxy(/api → localhost:8000) 转发，与后端同源、无 CORS
+ *   （[75]BUG-6 修复：此前 getApiBaseUrl 直连 :8000，REST 跨域而 SSE 走 proxy，两条通道分叉）。
+ *   诊断日志中请求 URL 形如 /api/v1/chat/stream（相对路径），排查时按此匹配。
  *
  * 失败归因: 复用 attachStreamDiag/printDiag 全链路诊断（网络 REQ/RES/FAIL + 前端 SSE console）。
  */
@@ -21,7 +22,7 @@ import { ensureDevServer } from './process';
 //   5173 已有活的前端服务(vite dev)则直接复用, 不 kill+冷启动(省白屏几秒~十几秒); 无服务才由通用函数启动。
 //   断连 case(fre2e_01) 例外仍自启专用 config(hmr:false)——其进程隔离方案须独占5173, 不复用。 - 小欧-2026-09-13
 /** 普通会话流环境(复用优先): 5173 已有 vite dev 活服务则直接复用, 否则自动启动(`npm run dev` 默认config)并等就绪。
- *  仅服务于页面来源, API 由前端默认基址直连后端 :8000(跨域CORS放行), 不起9000代理/不注入VITE_API_BASE_URL。 */
+ *  仅服务于页面来源, API 走相对路径经 vite proxy 转发到 :8000, 不起 9000 代理/不注入 VITE_API_BASE_URL。 */
 export const startNormalUiEnv = async (frontendDir: string): Promise<void> => {
   await ensureDevServer(5173, frontendDir, 'run dev');
 };
