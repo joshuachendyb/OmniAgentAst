@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# job_object.py — Windows Job Object ctypes 封装(v1.19 P1 真实实现, 非伪代码) — 小欧 2026-08-25
+# job_object.py — Windows Job Object ctypes 封装(真实实现, 非伪代码) — 小欧 2026-08-25
 import ctypes
 import subprocess
 from ctypes import wintypes

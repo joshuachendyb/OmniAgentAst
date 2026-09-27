@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# workspace.py — 沙箱工作区管理(v1.19 P3 真实实现, 非伪代码) — 小欧 2026-08-25
+# workspace.py — 沙箱工作区管理(真实实现, 非伪代码) — 小欧 2026-08-25
 import shutil
 import tempfile
 import time

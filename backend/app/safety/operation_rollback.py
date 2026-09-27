@@ -2,18 +2,18 @@
 # 编辑历史:
 # 2026-07-16 - 小欧 - rollback_session 改用 get_tracker().mark_rolled_back() 贯通 task_tracker 统计(消除跨库死链), 删除直接UPDATE旧operations表逻辑
 # 2026-07-18 - 小欧 - rolled_back_at 改 get_utc_timestamp() 入库 UTC Z, 消除 datetime.now() 裸传 sqlite3
-# 2026-07-18 - 小欧 - #1 fix: 新增 MODIFY/COPY/COMPRESS 三条回滚分支(MODIFY用备份还原, COPY/COMPRESS删目标); #2 fix: MOVE回滚前检测source是否被新文件占用, 先备份再移回, 杜绝覆盖丢失
-# 2026-07-18 - 小欧 - #16 fix: rollback_session失败时添加warning提示而非静默
+# 2026-07-18 - 小欧 - 修复: 新增 MODIFY/COPY/COMPRESS 三条回滚分支(MODIFY用备份还原, COPY/COMPRESS删目标); 修复: MOVE回滚前检测source是否被新文件占用, 先备份再移回, 杜绝覆盖丢失
+# 2026-07-18 - 小欧 - 修复: rollback_session失败时添加warning提示而非静默
 # 2026-08-08 - 小欧 - 全程统一本地时区: rolled_back_at 改 get_local_iso_timestamp() 本地ISO无Z入库
 # 2026-08-11 - 小欧 - 三堂会审: 备份恢复链路长路径化 + MODIFY/DELETE恢复分支合并(DRY)。
 #   长路径备份(\\?\前缀写入回收站)用普通Path.exists()返回False→回滚失效, 与备份/清理长路径支持闭环;
 #   原MODIFY与DELETE恢复逻辑完全相同, 违反DRY, 合并为同一分支
-# 2026-08-11 - 小欧 - 三堂会审复核落地(P1-1): MOVE/CREATE/COPY/COMPRESS 回滚分支长路径化, 与MODIFY/DELETE恢复链路闭环
+# 2026-08-11 - 小欧 - 三堂会审复核落地: MOVE/CREATE/COPY/COMPRESS 回滚分支长路径化, 与MODIFY/DELETE恢复链路闭环
 #   (普通Path.exists()/rename()/rmtree()/unlink()对超长路径(>260字符)静默失效→回滚跳过→数据丢失/空间泄漏);
 #   补 remove_readonly 函数内延迟导入(防NameError+循环依赖, 对齐 operation_cleanup 模式)
 # 2026-08-12 - 小欧 - A2-越层(方案4.2.4): 删除 app.services.task.get_tracker 越层依赖,
 #   rollback_session 内 mark_rolled_back 统计逻辑下沉至 task 域 task_rollback_service.rollback_task_with_stats
-# 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
+# 2026-08-13 - 小沈 - remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
 # 2026-08-13 - 小欧 - 三堂会审修复#10: MOVE回滚"source被新文件占用→rename为.rollback_bak→移回"链路中,
 #   L87 移回后无清理, .rollback_bak 永久残留; 新增 _bak_renamed 记录并在移回成功后删除
 #   (目录走 rmtree onerror=remove_readonly, 文件走 unlink), 回滚不留残留
@@ -33,7 +33,7 @@ from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db.models.operation_models import OperationType, OperationStatus
 from app.logger import logger
-from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
+from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 
 
 def rollback_operation(operation_id: str) -> bool:
@@ -78,7 +78,7 @@ def rollback_operation(operation_id: str) -> bool:
                 dest_long = to_win_long_path(dest_path)
                 src_long = to_win_long_path(source_path)
                 if os.path.exists(dest_long):
-                    # 先保全当前 source（若被新文件占用）再移回，杜绝覆盖丢失 — 小欧 2026-07-18 #2 fix; 2026-08-11 长路径化
+                    # 先保全当前 source（若被新文件占用）再移回，杜绝覆盖丢失 — 小欧 2026-07-18 修复; 2026-08-11 长路径化
                     _bak_renamed = None  # #10: 记录被占位改名的路径, 移回后需清理 — 小欧 2026-08-13
                     if os.path.exists(src_long):
                         _bak = source_path.with_name(source_path.name + ".rollback_bak")

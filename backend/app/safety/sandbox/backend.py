@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# backend.py — 后端协议与唯一实现(v1.19 P2 真实实现, 非伪代码) — 小欧 2026-08-25
+# backend.py — 后端协议与唯一实现(真实实现, 非伪代码) — 小欧 2026-08-25
 import os
 import subprocess
 import tempfile

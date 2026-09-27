@@ -14,7 +14,7 @@ from app.config import get_config
 
 
 class FileSafetyConfig:
-    """文件安全操作配置 — 小欧 2026-07-10 从 config.py 合并至此 C-10"""
+    """文件安全操作配置 — 小欧 2026-07-10 从 config.py 合并至此"""
     RECYCLE_BIN_PATH: Path = Path.home() / ".omniagent" / "recycle_bin"
     BACKUP_RETENTION_DAYS: int = 5
     RECYCLE_BIN_MAX_SIZE_GB: int = 10

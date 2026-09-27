@@ -3,8 +3,8 @@
 # 编辑历史:
 # 2026-07-15 - 小欧 - execute_with_safety返回值(bool)改(bool, Optional[str]): 原仅返bool, 操作失败吞掉真实错误(如"目标路径已存在...请设置overwrite=True"), 上层只能给LLM笼统"移动/复制/删除失败", LLM无法自我纠正。改后透传真实细节, LLM可据细节重试(如带overwrite=True)。
 # 2026-07-18 - 小欧 - executed_at/backup_expires_at 改 get_utc_timestamp/convert_to_utc 入库 UTC Z; duration 计算 created_at_dt 兼容老/新数据
-# 2026-07-18 - 小欧 - #1 fix: MODIFY 操作也生成备份(MODIFY回滚需原文件恢复), 用 op_type in (DELETE, MODIFY) 替代仅 DELETE, 扩展且不破原有DELETE路径
-# 2026-07-25 - 小欧 - #2 fix: db.get_conn→get_conn_with_retry + 拆三段式(DB/文件/DB)消除长事务持锁, 彻底解决并行delete database is locked
+# 2026-07-18 - 小欧 - 修复: MODIFY 操作也生成备份(MODIFY回滚需原文件恢复), 用 op_type in (DELETE, MODIFY) 替代仅 DELETE, 扩展且不破原有DELETE路径
+# 2026-07-25 - 小欧 - 修复: db.get_conn→get_conn_with_retry + 拆三段式(DB/文件/DB)消除长事务持锁, 彻底解决并行delete database is locked
 # 2026-07-26 - 小欧 - 第二阶段注释加"先备份/再执行"子步骤说明(欧阳报告问题1修复)
 # 2026-07-26 - 小沈 - execute_with_safety三段try拆分: Phase 1/3 DB异常logger.error; Phase 2工具异常只透传不log(透明原则+SRP)
 # 2026-07-26 - 小沈 - operation_executor→operation_record改名, 名实对齐(主力职责为记录而非执行)

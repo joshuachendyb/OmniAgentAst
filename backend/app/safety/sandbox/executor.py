@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
-# executor.py — 编排入口(v1.19 P7 引用完整性闭合: imports/信号量/构造器/分派器全部落码) — 小欧 2026-08-24
+# executor.py — 编排入口(引用完整性闭合: imports/信号量/构造器/分派器全部落码) — 小欧 2026-08-24
 # 编辑历史:
-# 2026-08-25 - 小欧/小健 三堂会审修复(北京老陈驱动, 真实 pwsh 后端/真实文件/真实参数反证, 严禁伪代码/弄虚): 逐字核查修正 7 类真实根因 bug(BUG-0 致命 + A~F)
-#   BUG-0(致命): pre_execute 误调 self._is_shell_tool(实例无此法)→每次预检抛 AttributeError 被 M4 兜底静默绕过, 沙箱预检整体失效; 改模块级 _is_shell_tool(小欧)
-#   BUG-A(高): _pre_execute_file_op 未调 normalize_params, 别名 src/dst/file/target/source 读不到 path→Path("")退化为复制 cwd 且对不存在源误放行(passed=True); 加别名归一 + 源存在性守卫转裁决(小欧)
-#   BUG-B(中): timeout 字符串与 int 比较抛 TypeError 被兜底成"内部异常"误分类; 改 int() 归一 + 守卫①明确超时超上限转 HITL(小欧)
-#   BUG-C(中): 副本重演命令裸拼 '{replica}' 致文件名含 ' 时 PowerShell 断裂误判危险型拒绝; 新增 _ps_literal_path 单引号转义(小欧)
-#   BUG-D(低): 删除不存在文件误报"超过影子副本上限"; 源不存在明确"源不存在"语义(源存在性守卫, 小欧)
-#   BUG-E(中): 容量只 sum(impacts.size) 漏算副本自身/误算删除释放; 改 _disk_usage 真实落盘占用(rglob 累加)(小欧)
-#   BUG-F(中): F-B 扫描正则只认 C:\ 漏判 C:/ 正斜杠; _OUTSIDE_TARGET_RE 改 [\\/](小欧)
+# 2026-08-25 - 小欧/小健 三堂会审修复(北京老陈驱动, 真实 pwsh 后端/真实文件/真实参数反证, 严禁伪代码/弄虚): 逐字核查修正 7 类真实根因 bug(致命预检失效 + A~F)
+#   致命bug: pre_execute 误调 self._is_shell_tool(实例无此法)→每次预检抛 AttributeError 被兜底静默绕过, 沙箱预检整体失效; 改模块级 _is_shell_tool(小欧)
+#   高危: _pre_execute_file_op 未调 normalize_params, 别名 src/dst/file/target/source 读不到 path→Path("")退化为复制 cwd 且对不存在源误放行(passed=True); 加别名归一 + 源存在性守卫转裁决(小欧)
+#   中危: timeout 字符串与 int 比较抛 TypeError 被兜底成"内部异常"误分类; 改 int() 归一 + 超时超上限转 HITL(小欧)
+#   中危: 副本重演命令裸拼 '{replica}' 致文件名含 ' 时 PowerShell 断裂误判危险型拒绝; 新增 _ps_literal_path 单引号转义(小欧)
+#   低危: 删除不存在文件误报"超过影子副本上限"; 源不存在明确"源不存在"语义(源存在性守卫, 小欧)
+#   中危: 容量只 sum(impacts.size) 漏算副本自身/误算删除释放; 改 _disk_usage 真实落盘占用(rglob 累加)(小欧)
+#   中危: F-B 扫描正则只认 C:\ 漏判 C:/ 正斜杠; _OUTSIDE_TARGET_RE 改 [\\/](小欧)
 #   全部修复经"修复前 FAIL/修复后 PASS"逐类反证, 功能只增强不退化
 # 2026-08-29 - 小沈 - 修复#18: shell/file_op 预检的同步 backend.run(subprocess 最长300s)经 asyncio.to_thread 离载到子线程, 释放事件循环不被冻结; 返回结构 BackendResult 不变
 # 2026-09-17 小欧 会审V3(#10): 规则5/7 blocked_reason 落实 v1.22 W4 承诺——附带 stderr 尾部供 LLM 自纠(空则不加后缀, 截200字符) - 小欧-2026-09-17
@@ -83,7 +83,7 @@ def _attach_stderr_tail(reason: str, stderr_tail: str) -> str:
         return reason
     return f"{reason} | {tail[:200]}"
 
-# —— F-B 写意图扫描器(v1.19 P4 真实实现, v1.21 Z1/Z10 补重定向与词表): 只判越界写意图, 不判危险等级 ——
+# —— F-B 写意图扫描器(真实实现, 补重定向与词表): 只判越界写意图, 不判危险等级 ——
 _WRITE_CMD_RE = re.compile(
     r"\b(?:Remove-Item|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
     r"|New-Item|ni|Set-Content|Add-Content|ac|Out-File|Expand-Archive"
@@ -286,7 +286,7 @@ class SandboxExecutor:
                                        stdout_tail=result.stdout_tail, stderr_tail=result.stderr_tail)
             return self._classify(result, impacts)   # 4.2 判定分流算法(规则2-7)
         except OSError as exc:
-            # R3(v1.19 P6): Job Object 收编失败(进程已提权等, assign 上抛非静默) → 升级 HITL 强确认而非静默放行
+            # R3: Job Object 收编失败(进程已提权等, assign 上抛非静默) → 升级 HITL 强确认而非静默放行
             logger.warning(f"[sandbox][exec] Job Object 收编失败转HITL: {exc}")
             return PreCheckResult(passed=False, needs_ruling=True,
                                   blocked_reason="沙箱环境配置异常，需要用户确认")
@@ -306,7 +306,7 @@ class SandboxExecutor:
                 logger.warning(f"[sandbox] workspace destroy failed(残留 %TEMP%, 无功能影响): {exc}")
 
     async def _pre_execute_file_op(self, tool_name: str, params: Dict) -> PreCheckResult:
-        """Phase 2(v1.19 P5): 高危文件操作预检 — delete/copy/move 影子副本预演 + registry 静态分析"""
+        """Phase 2: 高危文件操作预检 — delete/copy/move 影子副本预演 + registry 静态分析"""
         normalized = normalize_tool_name(tool_name)
         if normalized not in ("registrywrite", "registrydelete", "delete", "copy", "move"):
             # v1.23 V-B: 未支持的操作类型不猜分支——原 writetext/extractarchive 落入 else 被当 move

@@ -4,10 +4,10 @@
 # 2026-08-12 - 小欧 - 从 operation_cleanup.py 承接清理职责(A2-内部环, 方案4.2.3步骤2): cleanup_expired_backups/_get_folder_size/_cleanup_by_size 整体复制,
 #   FileSafetyConfig 导入改 app.services.safety.models(原 operation_record, 已独立); 其余逻辑一字不改
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件内部 import 路径同步更新(配合 tools 禁 app.services 守护规则)
-# 2026-08-13 - 小沈 - P1: remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
+# 2026-08-13 - 小沈 - remove_readonly 延迟导入改从 app.utils.file_utils 直接导入(消除 safety→tools 实现依赖)
 # 2026-08-13 - 小欧 - 三堂会审修复#14: cleanup_expired_backups 删完过期备份(形态 backup_dir时间戳uuid/源名)后,
 #   父时间戳目录若空则顺手删除(原仅靠超限清理 _cleanup_by_size 兜底, 空时间戳目录残留); 长路径+空判定
-# 2026-08-13 - 小沈 - 三堂会审修复#15: E2E p0_08 发现并发竞态(多工具并行各自 backup→各自 cleanup 同批过期记录):
+# 2026-08-13 - 小沈 - 三堂会审修复: E2E p0_08 发现并发竞态(多工具并行各自 backup→各自 cleanup 同批过期记录):
 #   (1)加进程内锁 _cleanup_lock 串行化 cleanup, 锁内重查DB, 后进线程见文件已删→exists=False跳过, 天然幂等
 #   (2)FileNotFoundError(目标已删=目标达成) 降为 debug, 不再报 ERROR
 #   (3)PermissionError(文件被占用/只读残留) 降为 warning, 下次再清; 与 backup_to_recycle_bin 备份失败降warning策略一致
@@ -28,7 +28,7 @@ from app.db import db
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
-from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
+from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 
 
 def _get_folder_size(path: Path) -> int:

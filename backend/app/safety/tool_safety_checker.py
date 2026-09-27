@@ -1,27 +1,27 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 小欧 #14 fix: 删known_risk.requires_confirmation死分支
-# 2026-07-18 小欧 #15/#50 fix: 删SafetyResult.is_safe死字段
+# 2026-07-18 小欧 修复: 删known_risk.requires_confirmation死分支
+# 2026-07-18 小欧 修复: 删SafetyResult.is_safe死字段
 # 2026-07-30 - 小欧 - auto_confirm+绕过时仍查needs_confirmation
 # 2026-07-31 - 小欧 - 撤销auto_confirm: 恢复security.enabled=false原绕过路径, 删auto_confirm字段
 # 2026-08-04 - 小欧 - 开关false仍拒绝已知风险: bypass只跳过确认询问不跳过危险防护, _check_known_risks(路径越权/写入保护/代码注入)检测到即blocked拒绝执行; 普通needs_confirmation仍auto_confirm放行 — 北京老陈驱动
 # 2026-08-04 - 小欧 - 重构DRY: _check_known_risks提到两分支共同入口(无条件防线), 未注册check前置统一; 开关只分流"确认策略", 危险防护与开关解耦 — 三堂会审驱动(合规SRP/DRY/KISS最优)
 # 2026-08-04 - 小欧 - delete专属安全(双轨接入): check_before_execute 一次性计算 delete_risk; R1/R2 仍由 known_risks(_is_forbidden_path) 覆盖, R6 入 _check_known_risks 无条件拦截, R3-R5 入 _get_needs_confirmation 确认分流; 惰性导入 delete_safety 避免循环依赖 — 北京老陈驱动(设计文档 v1.15)
-# 2026-08-04 - 小欧 - fix: _check_known_risks 中 writetext 的 content 可能为 dict/list(LLM结构化传参), content.encode() 崩溃致误拦; 对齐工具层 check_content_safety 的 dict/list→json 转换 — E2E-P0-03a 回归发现
+# 2026-08-04 - 小欧 - fix: _check_known_risks 中 writetext 的 content 可能为 dict/list(LLM结构化传参), content.encode() 崩溃致误拦; 对齐工具层 check_content_safety 的 dict/list→json 转换 — E2E 回归发现
 # 2026-08-04 - 小欧 - 三堂会审(YAGNI)撤销转换方案: 写保护只需量字节数, content为dict/list(非str)走 isinstance(str) 判typeskip(new_size=0), 不崩不误拦且无需把dict转json; 与工具层json转换职责解耦 — 北京老陈审出多余转换
 # 2026-08-10 - 小欧 - 步骤1实施(⑮, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): SafetyResult新增auth_path字段; _check_known_risks白名单外路径(非禁区/系统目录)转为临时授权请求(requires_confirmation+auth_path), 由action_handler HITL确认后grant_temp_auth放行
-# 2026-08-10 - 小欧 - BUG-A修复: delete R6(项目根/授权目录外递归)外层先于 _check_known_risks 判定(if delete_risk.blocked: return), 杜绝R6被白名单临时授权绕过
-# 2026-08-10 - 小欧 - BUG-D修复: _check_known_risks 白名单外授权请求的 auth_path 改用 validate_tool_path 返回的 failed_path(真正越权参数的真实路径),
+# 2026-08-10 - 小欧 - 修复: delete R6(项目根/授权目录外递归)外层先于 _check_known_risks 判定(if delete_risk.blocked: return), 杜绝R6被白名单临时授权绕过
+# 2026-08-10 - 小欧 - 修复: _check_known_risks 白名单外授权请求的 auth_path 改用 validate_tool_path 返回的 failed_path(真正越权参数的真实路径),
 #   不再固定 params.get("path") or params.get("dest")(多路径参数工具 copy/move/compress/extract 越权在dest时原逻辑授权对象错误, 取到合法path) — 小欧 2026-08-10
-# 2026-08-10 - 小欧 - T1-T3 实施(第二次代码更新, 基于第3章设计框架): _check_known_risks 接收 validate_tool_path 4元组(is_valid, msg, failed_path, category);
+# 2026-08-10 - 小欧 - 实施(第二次代码更新, 基于设计框架): _check_known_risks 接收 validate_tool_path 4元组(is_valid, msg, failed_path, category);
 #   T2 按 category+mode 显式分流(替代 L167 msg 字符串特征判断): category=="system"写删硬拦永不授权 / category=="non_system"写→任务级授权请求(删在validate_path删除规则已硬拦到达不到) / category==None→白名单外临时授权 / category=="system"/"non_system"且读→放行(validate_path读mode已处理)
 # 2026-08-10 - 小欧 - T2 缺陷修复(三堂会审关联逻辑复核发现): category=="non_system" 分支未区分写/删——validate_path 删mode返回
-#   (False, msg, "non_system") 时, 原代码一律返回 requires_confirmation(可授权), 违反 3.2.10/表五「非系统禁区删❌硬拦永不授权」;
+#   (False, msg, "non_system") 时, 原代码一律返回 requires_confirmation(可授权), 违反「非系统禁区删❌硬拦永不授权」;
 #   修复: 按 normalize_tool_name 判断 delete 操作 → 硬拦 blocked; 写操作保持任务级授权请求(3.2.13)
-# 2026-08-10 - 小欧 - 三堂会审 BUG-2 修复(v1.45): _check_known_risks 写保护判定原 `tool_name == _WRITE_RISK_TOOL("writetext")`
+# 2026-08-10 - 小欧 - 三堂会审修复(v1.45): _check_known_risks 写保护判定原 `tool_name == _WRITE_RISK_TOOL("writetext")`
 #   用 LLM 原始名, 别名(write_text/writefile等) normalize 前不等于 writetext → 写入大小保护被绕过;
-#   统一走 normalize_tool_name 再判(P2 防别名漏检补齐, 与 T2 delete 判定同模式) — 小欧 2026-08-10
-# 2026-08-11 - 小欧 - P0-02回归修复: security.enabled=false(bypass)时 _check_known_risks 白名单外临时授权请求
+#   统一走 normalize_tool_name 再判(防别名漏检补齐, 与 delete 判定同模式) — 小欧 2026-08-10
+# 2026-08-11 - 小欧 - 回归修复: security.enabled=false(bypass)时 _check_known_risks 白名单外临时授权请求
 #   (requires_confirmation+auth_path) 未设 auto_confirm, 仍挂起HITL等确认; E2E自动化无人在线确认→确认超时→任务failed。
 #   修复: 白名单外授权请求在 _is_skip_safety()=true 时设 auto_confirm=True 直放(与普通确认bypass语义一致) — 北京老陈驱动E2E
 # 2026-08-11 - 小欧 - 全分支补日志留痕(北京老陈驱动): bypass自动放行+各硬拦截统一用log_and_print(日志+控制台双输出),
@@ -30,31 +30,31 @@
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1盲点二/四迁移: validate_tool_path 迁 app/tools/security/path_safe_check(import 同步),
 #   SafetyResult dataclass 迁 app/tools/security/safety_result(本文件删除本地定义改 import, __all__ 保留导出) — 小欧 2026-08-12
-# 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): 会话信任豁免读取接入——
+# 2026-08-16 - 小欧 - 会话信任豁免读取接入(北京老陈驱动):
 #   check_before_execute 增 session_id 可选参; check_fn 后、needs_confirm 前查 check_session_trust(chat_session_trust),
 #   会话已信任该工具则豁免二次确认(跳 HITL); 危险防护(known_risk/check_fn blocked)不受豁免仍拦截(功能只增强不退化)
 # 2026-08-17 - 小健 - 三堂会审架构修复(北京老陈驱动): 本层不再 import app.services.chat.storage(消除
 #   test_layer_boundaries 守护的 safety→services 反向依赖违规)。会话信任预查上移到调用方(action_handler,
 #   services层)查 check_session_trust + normalize_tool_name 后, 本层 check_before_execute 用新增
 #   skip_confirmation 参数(原 session_id 参数移除)接收信任结果豁免确认; 危险防护(known_risk/check_fn
-#   blocked)不受 skip_confirmation 豁免仍拦截。T1 normalize 语义随查询移至 action_handler, 与写保护 BUG-2 同模式。
-# 2026-08-25 - 小欧 - M2(设计文档 3.2.4): 四条置位路径在 destructive 级条件成立时置 SafetyResult.sandbox_required=True(沙箱预检唯一触发依据):
-#   ①白名单外 destructive 写授权请求(代码库根/系统保护区/越权) ②路径越权(known_risk 命中路径越权 blocked) ③注册表写(registrywrite/registrydelete, 2.4 仅静态分析不动态执行, 置位交真实后端兜底) ④危险型失败兜底(rc!=0 且产生工作区影响/环境性 stderr);
-#   同时 cleanup 分支补 backend.cleanup() 资源泄漏修复(§8.7/R5); 安全开关不读此字段(总闸在 executor.pre_execute 单点), 存量 safe 级零感知
+#   blocked)不受 skip_confirmation 豁免仍拦截。T1 normalize 语义随查询移至 action_handler, 与写保护修复同模式。
+# 2026-08-25 - 小欧 - 沙箱预检置位(设计文档): 四条置位路径在 destructive 级条件成立时置 SafetyResult.sandbox_required=True(沙箱预检唯一触发依据):
+#   ①白名单外 destructive 写授权请求(代码库根/系统保护区/越权) ②路径越权(known_risk 命中路径越权 blocked) ③注册表写(registrywrite/registrydelete, 仅静态分析不动态执行, 置位交真实后端兜底) ④危险型失败兜底(rc!=0 且产生工作区影响/环境性 stderr);
+#   同时 cleanup 分支补 backend.cleanup() 资源泄漏修复; 安全开关不读此字段(总闸在 executor.pre_execute 单点), 存量 safe 级零感知
 # 2026-09-02 - 小欧 - 提示文案"准确+可读"优化(北京老陈驱动「提示文字看不懂」): _check_known_risks 用户可见 message 与日志串
 #   由专业黑话改为"术语保留(禁区分级/授权策略)+人话解释"并存——非系统禁区删:「该路径在受保护区域(非系统禁区),禁止删除」;
 #   非系统禁区写:「该路径在受保护区域(非系统禁区),写入需申请授权」; 系统禁区:「该路径在系统禁区,禁止访问」;
 #   白名单外:「该路径超出允许范围(白名单外),需临时授权」; msg 定位拼接自 path_safe_check(路径位于...);
 #   仅改文案不改逻辑(安全分级/blocked/requires_confirmation/auth_path/auto_confirm 一律不变), 测试不断言文案, 逻辑零退化
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤③代理(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): _check_known_risks 增 skip_confirmation:
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): _check_known_risks 增 skip_confirmation:
 #   trust 豁免传参下沉函数内部(替代调用方 action_handler 在函数外预判), 命中已信任(tool+path)则本轮函数内不再产出确认请求; 豁免只跳确认不跳危险防护,
 #   系统禁区/路径越权/细粒度危险防护仍无条件 blocked(功能只增强不退化); 豁免保留信任判定所需 auth_path(与撤销资格、临时授权申请一致性)
 # 2026-09-18 小欧 - safety_level→severity全量重命名: SafetyResult字段+内部变量+构造调用+比较, 与SSE协议severity对齐 — 小欧-2026-09-18
-# 2026-09-18 - 小欧 - 第7章实施([50]7.3.2): 10处用户可见文案改写(文案仅可读性, 逻辑/分级/blocked/requires_confirmation/auth_path一律不变):
-#   C2"安全开关已绕过，自动确认执行"/C5"安全检查异常，已阻止执行"/C8"该路径在受保护区域，禁止删除"/C9"该路径在受保护区域，会话已信任，允许写入"/
-#   C10"该路径在受保护区域，写入需申请授权"/C11"该路径在系统禁区，禁止访问"/C12"该路径超出允许范围，会话已信任，允许操作"/
-#   C13"该路径超出允许范围，需临时授权"/C14"数据保护: 写入内容远小于原内容，已阻止"(去字节数,C14/C15半角逗号统一改全角) — 小欧-2026-09-18
-# 2026-09-18 小欧 - [50]7.3.2-C8~C13 精化(重查挖掘, 人类可读性): message 尾拼 {msg} 会带出 path_safe_check 整句
+# 2026-09-18 - 小欧 - 10处用户可见文案改写(文案仅可读性, 逻辑/分级/blocked/requires_confirmation/auth_path一律不变):
+#   "安全开关已绕过，自动确认执行"/"安全检查异常，已阻止执行"/"该路径在受保护区域，禁止删除"/"该路径在受保护区域，会话已信任，允许写入"/
+#   "该路径在受保护区域，写入需申请授权"/"该路径在系统禁区，禁止访问"/"该路径超出允许范围，会话已信任，允许操作"/
+#   "该路径超出允许范围，需临时授权"/"数据保护: 写入内容远小于原内容，已阻止"(去字节数, 半角逗号统一改全角) — 小欧-2026-09-18
+# 2026-09-18 小欧 - 文案精化(重查挖掘, 人类可读性): message 尾拼 {msg} 会带出 path_safe_check 整句
 #   ("该路径在受保护区域，禁止删除: 路径位于受保护区域(项目代码库): C:\..." 双主语+双冒号+括号技术元数据;
 #    白名单外拼"仅允许:list"超长), 改拼 failed_path(真实越权路径, 读/删边界, 前缀关键词不变故safety_gate分类不受影响),
 #   failed_path为空(如空路径)兜底 display msg 保原因; 用户可见 message 干净, 日志仍留 {msg} 完整审计 — 小欧-2026-09-18
@@ -69,7 +69,7 @@
 #   HIGH拦截, 无风险直接放行, 现在恢复 — 北京老陈驱动(空content弹窗=逻辑错误)
 # 2026-09-19 小欧 - HIGH级shell blocked修复: check_before_execute 返回时读 tool_meta._shell_risk_blocked 设置 blocked,
 #   HIGH级不再 blocked=False 走弹窗, 改为 blocked=True 走拦截(reject消息用 message); MEDIUM/无风险 blocked=False 不变 — 北京老陈驱动
-# 2026-09-19 小欧 - Bug-2修复(北京老陈核查): 经tool_meta动态属性传递shell风险是隐藏副作用, 且 _shell_risk_blocked=True
+# 2026-09-19 小欧 - 修复(北京老陈核查): 经tool_meta动态属性传递shell风险是隐藏副作用, 且 _shell_risk_blocked=True
 #   置位后永不重置, registry单例共享导致首个HIGH拦截后同进程任意后续无风险shell在:244读残留blocked=True被误拦;
 #   改 _get_needs_confirmation 返回三元组(needs_confirm, shell_msg, shell_blocked)直线传递, 三处调用点解包直接构造SafetyResult,
 #   彻底删除 tool_meta._shell_risk_* setattr/getattr; 同步修复skip_confirmation分支丢弃blocked(会话信任下HIGH shell被放行,
@@ -180,7 +180,7 @@ class ToolSafetyChecker:
             # ⑮ 白名单外临时授权请求(blocked=False, requires_confirmation=True, auth_path): 放行到确认流程 —
             #    action_handler 识别 requires_confirmation 走 HITL, 用户确认后 grant_temp_auth; 不在此拦截 — 小欧 2026-08-10
             if known_risk.requires_confirmation and not known_risk.blocked:
-                # P0-02回归修复(安全开关false=bypass): 白名单外临时授权请求同样auto_confirm直放,
+                # 回归修复(安全开关false=bypass): 白名单外临时授权请求同样auto_confirm直放,
                 #   与L129-131普通确认bypass语义一致; 否则E2E自动化无人在线确认, HITL超时致任务failed — 小欧 2026-08-11
                 if _is_skip_safety():
                     known_risk.auto_confirm = True
@@ -190,7 +190,7 @@ class ToolSafetyChecker:
                 # v1.25 M2-D: 白名单外 destructive 授权请求→沙箱预检; safe 级不触发(与 G1 唯一触发依据一致)
                 known_risk.sandbox_required = (known_risk.severity == "destructive")
                 return known_risk
-            # #14 fix: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
+            # 修复: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.severity = "dangerous"
             log_and_print(f"[ToolSafetyChecker] 已知风险拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
             return known_risk
@@ -236,7 +236,7 @@ class ToolSafetyChecker:
         if skip_confirmation:
             # v1.6 会审F1修复: 信任豁免只跳确认不跳沙箱; sandbox_required 按真实危险度(needs_confirmation)置位, 非恒True
             _needs, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
-            # Bug-2: HIGH级shell(blocked) 不受会话信任豁免仍拦截("豁免只跳确认不跳危险防护"), 改前丢弃_blocked致HIGH shell被放行 — 小欧-2026-09-19
+            # 修复: HIGH级shell(blocked) 不受会话信任豁免仍拦截("豁免只跳确认不跳危险防护"), 改前丢弃_blocked致HIGH shell被放行 — 小欧-2026-09-19
             if _shell_blocked:
                 log_and_print(f"[ToolSafetyChecker] 会话信任下HIGH级Shell仍拦截: tool={tool_name}, {_shell_msg}")
                 return SafetyResult(blocked=True, message=_shell_msg or "高风险Shell命令拦截",
@@ -250,7 +250,7 @@ class ToolSafetyChecker:
         severity = "destructive" if needs_confirm else "safe"
         # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
         # 2026-09-19 小欧: HIGH级shell _shell_blocked=True → blocked=True 走拦截(reject消息用message), 不弹窗
-        # Bug-2: shell风险经三元组直线传递(不经tool_meta), 无风险shell不再读残留blocked误拦 — 小欧-2026-09-19
+        # 修复: shell风险经三元组直线传递(不经tool_meta), 无风险shell不再读残留blocked误拦 — 小欧-2026-09-19
         return SafetyResult(requires_confirmation=needs_confirm,
                 blocked=_shell_blocked, message=_shell_msg or "", severity=severity,
                 sandbox_required=(severity == "destructive"))
@@ -258,7 +258,7 @@ class ToolSafetyChecker:
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> tuple:
         """获取生效的确认策略：delete动态判定 > action级 > 工具级 — 小欧 2026-08-04
-        Bug-2(2026-09-19 小欧): 返回三元组 (needs_confirm, shell_msg, shell_blocked),
+        修复(2026-09-19 小欧): 返回三元组 (needs_confirm, shell_msg, shell_blocked),
         shell 风险本函数内计算直线返回, 不再经 tool_meta 动态属性传递(全局单例残留误拦)"""
         from app.tools.tools_alias_mapper import normalize_tool_name  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
@@ -305,7 +305,7 @@ class ToolSafetyChecker:
             if category == "non_system":
                 # 非系统禁区: 删→硬拦永不授权(3.2.10/表五), 写→任务级临时授权请求
                 # (validate_tool_path 已按 tool_name 推断 mode, 此处按注册名归一判断删除操作)
-                from app.tools.tools_alias_mapper import normalize_tool_name  # P2: 防别名漏判 — 小欧 2026-08-10
+                from app.tools.tools_alias_mapper import normalize_tool_name  # 防别名漏判 — 小欧 2026-08-10
                 if normalize_tool_name(tool_name) == "delete":
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)禁止删除(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(blocked=True, message=f"该路径在受保护区域，禁止删除: {failed_path or msg}",
@@ -344,9 +344,9 @@ class ToolSafetyChecker:
                                 severity="destructive",
                                 auth_path=failed_path or (params.get("path") or params.get("dest")))
 
-        # BUG-2 (三堂会审复核发现, v1.45): 写保护判定用归一化名 —
+        # 修复 (三堂会审复核发现, v1.45): 写保护判定用归一化名 —
         #   原代码 `tool_name == _WRITE_RISK_TOOL("writetext")` 用 LLM 原始名, 别名(write_text/writefile等)
-        #   normalize 前不等于 writetext → 写入大小保护被绕过; 统一走 normalize_tool_name 再判(P2 补齐)
+        #   normalize 前不等于 writetext → 写入大小保护被绕过; 统一走 normalize_tool_name 再判(补齐)
         from app.tools.tools_alias_mapper import normalize_tool_name as _norm_tool
         if _norm_tool(tool_name) == _WRITE_RISK_TOOL:
             try:
