@@ -1,34 +1,20 @@
-// 编辑历史: 2026-04-11 小强 - 创建统一错误处理中心(errorHandler)
-// 编辑历史: 2026-08-27 小欧 - 修复#9/#36/#37: formatTime复用/formatError重试死循环/重试递归改Math.pow
-// 编辑历史: 2026-08-27 小欧 - 修复BUG1: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED, 不再错失可重试语义
-// 编辑历史: 2026-08-27 小欧 - 修复BUG2: classifyError中timeout分支前置于network, "网络连接超时"正确归REQUEST_TIMEOUT
-// 编辑历史: 2026-08-27 小欧 - 修复BUG3: classifyError兼容顶层err.status(非仅response.status)
-// 编辑历史: 2026-08-27 小欧 - 修复BUG4: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归BACKEND_ERROR避免过度归类
-// 编辑历史: 2026-08-27 小欧 - 修复BUG9: isSilentError补美式"Canceled"(大小写不敏感)
-// 编辑历史: 2026-08-27 小欧 - 修复BUG10: classifyError支持字符串型错误
-// 编辑历史: 2026-08-27 小欧 - 修复Bug15: handleError/handleApiError展示原始error.message, 不丢调试信息
-// 编辑历史: 2026-08-27 小欧 - 修复Bug5/Bug6/Bug13/Bug14: handleSSEError无onReconnect不误导; 空文案不弹; handleApiError补齐回传fallbackMode/deleteMessage
-// 编辑历史: 2026-08-28 小欧 - 修复review-bugs#1: 新增 extractErrorMessage, handleError/handleApiError 兼容 axios response.data.detail/error.detail 等后端具体文案, 不再丢失后端 detail
-// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#1: extractErrorMessage优先级倒置——response.data.detail/message优先于e.message, 数组detail用JSON.stringify兜底 - 小沈-2026-08-28
-// 编辑历史: 2026-08-28 小沈 - 修复review-bugs#2: retryWithBackoff改async/await, 成功后停止递归, 加计数器防无限 - 小沈-2026-08-28
-// 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message改走antdApp.getMessage()上下文实例; showMessage增onClick点击消失 - 小欧-2026-08-28
-// 编辑历史: 2026-09-08 小欧 - 提示文案防裸值加固+实证打点(北京老陈驱动「xx 60000」裸数字 toast):
-//   ①新增 sanitizeDisplayMessage: showMessage 透传上弹窗前过滤纯数字/非字符串/空白/undefined/null/[object Object] 等
-//     垃圾值, 一律回退 ERROR_CONFIG_MAP[errorType] 固定中文文案, 杜绝 UI 裸弹 60000 之类数字(后端原始报文不受影响,
-//     console 仍完整可查);
-//   ②showMessage 弹前加 console.info("[Toast] errorType: 文案") 打点, 供复现时反查 60000 来源字段 — 小欧-2026-09-08
-// 编辑历史: 2026-09-09 小欧 - 存量warning清零-C1: extractErrorMessage入参Record<string,any>→Record<string,unknown>+data双重收窄
-//   (消除lib用any与裸断言, 语义不变) — 小欧-2026-09-09
-// 编辑历史: 2026-09-20 小强 - 新增设置/模型域三错误类型+固定文案: SETTINGS_SCHEMA_FAILED/SETTINGS_SAVE_FAILED/MODEL_MANAGEMENT_FAILED(可重试2次) — 小强-2026-09-20
-// 编辑历史: 2026-09-21 小欧 - [59]F-13 修复: 去重键由「仅 errorType」改为「errorType+最终文案」, 同一类型不同原因(如多条 env 跳过警告)
-//   不再互相吞掉, 30s 窗口仍防同类同文案刷屏 — 小欧-2026-09-21
-// 编辑历史: 2026-09-27 小欧 - [72]三堂会审: 4 处 `ERROR_CONFIG_MAP[errorType]` 直接索引无 fallback 致白屏
-//   （classifyError 原样返回后端 error_type，表里没该键就崩），收敛为唯一兜底口 getErrorConfig()。
+// 编辑历史（按日合并，只留结论）:
+// 2026-04-11 小强 - 创建统一错误处理中心
+// 2026-08-27 小欧 - formatTime 复用 / formatError 重试死循环改 Math.pow；storage 归可重试、quota 单列
+//   QUOTA_EXCEEDED；timeout 分支前置于 network；classifyError 兼容顶层 err.status 与字符串型错误；
+//   404 仅当 url 含 sessions 才归 SESSION_NOT_FOUND；isSilentError 补 "Canceled"；错误展示保留
+//   原始 message。handleSSEError 无 onReconnect 不误导、空文案不弹
+// 2026-08-28 小欧/小沈 - 新增 extractErrorMessage 及其优先级（后端 detail/message 优先于 error.message）；
+//   retryWithBackoff 改 async/await + 计数器防无限递归；静态 message 改走 antdApp.getMessage() 上下文实例
+// 2026-09-08 小欧 - sanitizeDisplayMessage 过滤纯数字/占位垃圾值（防 "xx 60000" 裸数字 toast），
+//   回退该 errorType 的固定中文文案；console 仍留完整报文
+// 2026-09-09 小欧 - extractErrorMessage 入参改 Record<string, unknown>（消除 any 与裸断言）
+// 2026-09-20 小强 - 新增设置/模型域三错误类型与固定文案
+// 2026-09-21 小欧 - [59]F-13 去重键由 errorType 改为 errorType+最终文案（同类不同因不再互相吞）
+// 2026-09-27 小欧 - [72]ERROR_CONFIG_MAP 直接索引无 fallback 致白屏，收敛为唯一兜底口 getErrorConfig()；
+//   [75]5.6 AUTH_401 文案由「API Key无效」改「访问口令无效」（张冠李戴）；AUTH_403 改兜底措辞
 /**
- * 统一错误处理中心 - errorHandler.ts
- *
- * 功能：集中管理所有前端错误的分类、提示风格、重试逻辑、错误去重
- * 设计文档：前端错误统一处理中心设计-小强-2026-0411.md (v1.4)
+ * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
  * @author 小强
  * @version 1.0.0
@@ -125,10 +111,8 @@ export enum ErrorType {
   REQUEST_ABORT = 'request_abort',
   COMPONENT_UNMOUNTED = 'component_unmounted',
 
-  // Settings页面错误
-  // 2026-09-27 - 小欧 - [72]第二章(2.5) 补 CONFIG_ERROR：后端 resolver 的 ProviderKeyMissingError
-  //   以 error_type="config_error" 下发（stream_orchestrator 专属 catch）。当前它只走对话流渲染层
-  //   （ErrorDetail.ERROR_TYPE_LABELS），此处补同义项防将来改走 toast 时无配置可用。
+  // Settings 页面错误。CONFIG_ERROR 对应后端 resolver 的 ProviderKeyMissingError
+  // （error_type="config_error"，[72]2.5）；现仅走对话流渲染层，此处补同义项防将来改走 toast 时无配置。
   CONFIG_ERROR = 'config_error',
   PROVIDER_CONFIG_ERROR = 'provider_config_error',
   MODEL_CONFIG_ERROR = 'model_config_error',
@@ -260,14 +244,18 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
-    message: 'API Key无效，请检查配置',
+    // [75]5.6：原文案「API Key无效」是张冠李戴 —— 访问令牌与 provider 的 API Key 无关，
+    // 用户输错访问口令却被指去检查 LLM 服务商密钥配置，方向完全错误
+    message: '访问口令无效，请重新输入',
     severity: 'critical',
   },
   [ErrorType.AUTH_403]: {
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
-    message: '权限不足，请检查配置',
+    // [75]5.6：改为兜底措辞。403 的精确引导来自后端 detail（如「只能在服务端本机进行」），
+    // 调用方优先透传原话，本条仅在后端未给文案时兜底
+    message: '此操作不被允许，请按提示处理',
     severity: 'critical',
   },
 
@@ -666,10 +654,9 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
 };
 
 /**
- * 取错误配置（唯一兜底口）— 小欧 2026-09-27
- *
- * 未登记/空/null/undefined 一律降级为 UNKNOWN 配置：classifyError 会把后端 `error_type` 原样返回，
- * 直接索引会因表里没有该键而 `config.silent` 抛 TypeError 白屏。case: errorhandler-unknown-type.test.ts
+ * 取错误配置（唯一兜底口）。未登记/空/null 一律降级为 UNKNOWN：
+ * classifyError 会把后端 error_type 原样返回，直接索引会因缺键而 config.silent 抛 TypeError 白屏。
+ * case: errorhandler-unknown-type.test.ts
  */
 function getErrorConfig(errorType: ErrorType | string | undefined | null) {
   return (
@@ -763,10 +750,9 @@ export function isSilentError(error: unknown): boolean {
 // 统一显示函数
 // ============================================
 
-// 2026-09-08 小欧 提示文案防裸值过滤(北京老陈驱动「xx 60000」裸数字 toast 实证加固):
-//   上游透传的 message 可能是纯数字(如后端毫秒值 60000)或垃圾占位值, 直接上弹窗用户无法理解且易误判为 Bug。
-//   非字符串/空白/纯数字/占位垃圾值一律返回 undefined → showMessage 回退该 errorType 的固定中文文案。
-//   真实报文排查仍走 console 完整 error 对象, 本过滤只防 UI 文案错乱, 不丢任何调试信息。 — 小欧-2026-09-08
+// 提示文案防裸值：上游 message 可能是纯数字（如后端毫秒值 60000）或占位垃圾值，
+// 直上弹窗用户无法理解。返回 undefined 让 showMessage 回退该 errorType 的固定中文文案；
+// 完整报文仍走 console，不丢调试信息。
 const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   if (typeof raw !== 'string') return undefined;
   const t = raw.trim();

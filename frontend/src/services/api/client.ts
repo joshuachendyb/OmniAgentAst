@@ -1,12 +1,12 @@
 ﻿/**
  * 编辑历史:
- * 2026-09-26 - 小欧 - [72]第九章(9.5.3 第4步/9.6-2) 新增 setAccessToken()：登录页输入的访问口令
- *   经此写入 localStorage，与既有 getAccessToken() 的读取结构严格对称（同一存储键 omniagent_auth，
- *   同时认 zustand persist 的 {state:{accessToken}} 与裸 {accessToken} 两种形态）。
- *   为何不新造第二个存储键：读端已存在且真实生效（request 拦截器确实附带 Authorization: Bearer），
- *   另起一键会造出"读 A 写 B"的静默失效——那才是真 bug（写进去读不到，登录态看似成功实则无效）。
- *   写入时保留既有其它字段（合并而非整体覆盖），免冲掉用户态里其余持久化数据。
- *   连带 9.6-4: 401 时跳登录页，闭环"输错口令进不来 → 改口令 → 旧口令立即作废"。— 小欧 2026-09-26
+ * 2026-09-26 小欧 - [72]第九章：新增 setAccessToken()，与 getAccessToken() 读写结构严格对称
+ *   （同一存储键 omniagent_auth，认 zustand persist 的 {state:{accessToken}} 与裸 {accessToken}）。
+ *   写入合并而非整体覆盖，免冲掉用户态其余持久化数据。连带 9.6-4：401 跳登录页。
+ * 2026-09-27 小欧 - [75]5.5：提 AUTH_STORAGE_KEY（键名原散落 7 处，改键必漏）；setAccessToken
+ *   收敛为"读包络 → 合并 → 单次 setItem"三步且写失败抛错（原静默吞掉，调用方无从得知）；
+ *   请求拦截器新增 _skipAuth（入口查询不带已作废旧口令）；响应拦截器新增 403 分支
+ *   （不跳登录页、不清口令，detail 原话交调用方呈现）。
  */
 import axios from 'axios';
 import type {
@@ -19,49 +19,34 @@ import { handleApiError } from '../error/handler';
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
+/** 访问口令的 localStorage 键名（[75]5.5：原字面量散落 7 处，改键必漏一处）。 */
+export const AUTH_STORAGE_KEY = 'omniagent_auth';
+
 /**
- * 2026-09-26 - 小沈(三遍复核) - 把 `_skip401` 提升为**有类型的请求配置字段**（A03 配套）。
- *   改前该标记只有"读"（响应拦截器 `error.config as unknown as {_skip401?}`）而**无类型载体**，
- *   调用方要传就得写 `as never` 硬转义 —— 编译器全程失明，写错键名/写错类型一律不报。
- *   现导出本接口，调用方 `api.get(url, { _skip401: true } satisfies ApiRequestConfig)` 即可，
- *   拦截器侧也改读本类型，双向受检。语义不变：仅"本次请求的 401 不触发清 token + 跳登录页"。
+ * 请求级开关。`_skip401` 提升为有类型字段（[72]A03）：改前只有"读"没有类型载体，
+ * 调用方需 `as never` 硬转义，编译器全程失明。
  */
 export interface ApiRequestConfig extends AxiosRequestConfig {
-  /** true = 本请求收到 401 时不执行全局「清 token + 跳 /login」（登录/鉴权通道自身用） */
+  /** true = 本请求 401 不执行全局「清 token + 跳 /login」（登录/鉴权通道自身用） */
   _skip401?: boolean;
+  /**
+   * true = 本请求不附带 Authorization 头（即使 localStorage 存有口令）。
+   * 登录页入口查询 GET /auth/status 专用：默认附带的旧口令已作废时会把引导查询打成 401/403。
+   * 验真查询不带此标记、照常附带（[75]4.2.3 两次查询的分工）。
+   */
+  _skipAuth?: boolean;
 }
 
 /**
- * 获取后端 API 基础地址（不含 /api/v1 后缀）。
+ * 后端 API 基础地址（不含 /api/v1）。
  *
- * ═══════════════════════════════════════════════════════════════
- * 前端→后端端口关系（两个独立进程，各跑各的端口）：
+ * 前端 :5173 与后端 :8000 是两个独立进程，端口互不联动：
+ * - 走 Vite proxy（vite.config.ts）：请求 /api/* 由 dev server 转发到后端，同源无 CORS，返回 ''
+ * - 直连本函数：跨域走 CORS。优先级 ① VITE_API_BASE_URL 全地址 → ② VITE_API_PORT 端口 → ③ 默认 :8000
  *
- *   前端 (Vite dev server, :5173)  ──请求──→  后端 (uvicorn, :8000)
+ * 改端口须前后端对齐：后端改 → 前端同步 VITE_API_PORT；前端改 :5173 → 后端同步 CORS 白名单。
  *
- *   这是两个不同的程序，端口互相独立。
- *   前端必须知道后端在哪个端口，才能连上。
- *
- * 连接方式（二选一）：
- *   方式1 — Vite proxy（vite.config.ts:43-47）：
- *     前端请求 /api/* 由 Vite 内置 http-proxy 转发到 localhost:8000。
- *     同源（都是 :5173），无 CORS 问题。此函数返回 ''（空串）。
- *   方式2 — 直连（本函数）：
- *     前端直连后端，跨域，走 CORS。端口优先级：
- *       ① VITE_API_BASE_URL 环境变量（完整地址，如 http://localhost:9000）→ 直接用
- *       ② VITE_API_PORT 环境变量（仅端口号，如 9000）→ 拼 hostname:port
- *       ③ 都不设 → 默认 :8000（后端 uvicorn 标准端口）
- *
- * 改端口必须前后端对齐：
- *   后端改端口（如 8000→9000）→ 前端必须同步改 VITE_API_PORT=9000，否则连不上。
- *   前端改端口（如 5173→3000）→ 后端必须同步改 CORS 白名单（constants.py 或 network.cors_origins）。
- *
- * 后端端口配置方式：
- *   - uvicorn 启动参数：python -m uvicorn app.main:app --port 9000
- *   - 或修改 main.py 读取环境变量 PORT
- *
- * 编辑历史:
- *   2026-09-22 小欧 硬编码 :8000 → 读 VITE_API_PORT 环境变量（默认 8000），消除后端改端口时改代码
+ * 编辑历史: 2026-09-22 小欧 硬编码 :8000 → 读 VITE_API_PORT（消除后端改端口时改代码）
  */
 export function getApiBaseUrl(): string {
   // 优先级1：完整地址覆盖（如 http://localhost:9000/api/v1）
@@ -81,13 +66,10 @@ export function getApiBaseUrl(): string {
   return 'http://127.0.0.1:8000';
 }
 
-/**
- * 取访问口令（token）— [72]第九章(9.6-2) 核实结论：此逻辑**已存在且真实生效**
- *   （request 拦截器确实会附带 `Authorization: Bearer <token>`），本次实施只补 setAccessToken。
- */
+/** 取访问口令。认 zustand persist 的 {state:{accessToken}} 与裸 {accessToken} 两种形态。 */
 export function getAccessToken(): string | null {
   try {
-    const raw = localStorage.getItem('omniagent_auth');
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed?.state?.accessToken ?? parsed?.accessToken ?? null;
@@ -97,57 +79,51 @@ export function getAccessToken(): string | null {
 }
 
 /**
- * 写访问口令 — [72]第九章(9.5.3) 新建：登录页输入后写入，与 getAccessToken 的读取结构对称
- *   （兼容 zustand persist 的 {state:{accessToken}} 与裸 {accessToken} 两种形态）。
+ * 写访问口令。与 getAccessToken 读写结构对称（认 {state:{accessToken}} 与裸 {accessToken}）。
+ * [75]5.5：收敛为"读包络 → 合并 → 单次 setItem"三步；写失败抛错（原静默吞掉，见 [75]4.4.4）。
  */
 export function setAccessToken(token: string | null): void {
   try {
     if (!token) {
-      localStorage.removeItem('omniagent_auth');
+      localStorage.removeItem(AUTH_STORAGE_KEY);
       return;
     }
-    // 2026-09-26 - 小欧 - [72]三堂会审后修正（修包络破坏）:
-    //   原写法把 zustand persist 包络 `{"state":{...},"version":1}` 展平回写为顶层对象，
-    //   `state` 包裹与 `version` 双双丢失。读端靠 `??` 侥幸兼容，但包络已坏：
-    //   zustand 下次持久化会与残留顶层字段互相覆盖，且 corrupt 非对象 JSON 时
-    //   `parsed.accessToken = token` 在严格模式抛异常 → catch 吞掉 → 口令**没存上**（静默失败）。
-    //   现按原包络回写：有 state 写回 state 内（包络其余字段原样保留），裸对象则合并顶层，
-    //   非对象/解析失败则全新写入。getAccessToken 的双形态读取与此严格对称。
-    const raw = localStorage.getItem('omniagent_auth');
+    // 保留 zustand persist 包络（{"state":{...},"version":N}）的其余字段原样回写：
+    // 展平会丢 state 包裹与 version，且会与 zustand 下次持久化互相覆盖（[72]三堂会审结论）。
+    const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+    let base: Record<string, unknown> = {};
     if (raw) {
       try {
-        const p: unknown = JSON.parse(raw);
-        if (p && typeof p === 'object' && !Array.isArray(p)) {
-          const obj = p as Record<string, unknown>;
-          if (obj.state && typeof obj.state === 'object') {
-            localStorage.setItem(
-              'omniagent_auth',
-              JSON.stringify({
-                ...obj,
-                state: {
-                  ...(obj.state as Record<string, unknown>),
-                  accessToken: token,
-                },
-              })
-            );
-            return;
-          }
-          localStorage.setItem(
-            'omniagent_auth',
-            JSON.stringify({ ...obj, accessToken: token })
-          );
-          return;
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          base = parsed as Record<string, unknown>;
         }
       } catch {
-        /* 解析失败则走全新写入 */
+        // 存量数据损坏（corrupt JSON）→ 当全新写入。此处绝不能往外抛，
+        // 否则一次损坏就让口令永远存不上（比静默失败更糟）。
       }
     }
+    const wrapped = !!base.state && typeof base.state === 'object';
     localStorage.setItem(
-      'omniagent_auth',
-      JSON.stringify({ accessToken: token })
+      AUTH_STORAGE_KEY,
+      JSON.stringify(
+        wrapped
+          ? {
+              ...base,
+              state: {
+                ...(base.state as Record<string, unknown>),
+                accessToken: token,
+              },
+            }
+          : { ...base, accessToken: token }
+      )
     );
-  } catch {
-    /* ignore */
+  } catch (e) {
+    // 只有真正的存储写入失败（配额满/隐私模式禁写等）才走到这 —— 必须让调用方知道，
+    // 否则用户以为改成功了，下个请求带旧口令被 401 踢回登录页（见 [75]4.4.4）。
+    throw new Error(
+      `访问口令存取失败：${e instanceof Error ? e.message : String(e)}`
+    );
   }
 }
 
@@ -159,6 +135,10 @@ const api: AxiosInstance = axios.create({
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    // [75]5.5：_skipAuth 的请求不附带 Authorization。专供登录页"入口查询"
+    //   （[75]4.2.3 分工①）：默认附带的旧口令已作废时会把引导查询打成 401/403；
+    //   验真查询不带此标记、照常附带口令（分工②）。
+    if ((config as ApiRequestConfig)._skipAuth) return config;
     const token = getAccessToken();
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -172,20 +152,16 @@ api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error) => {
     const skip401 = (error.config as ApiRequestConfig | undefined)?._skip401;
+    // [75]5.5：403 独立处理，不跳登录页、不清口令，原话透传。
+    //   403 语义是"你不能做这事"（如非本机要设口令），不是"口令错了"。原实现只认 401，
+    //   403 一律落到 handleApiError 的泛化文案，后端返回的「只能在服务端本机进行」被丢弃。
+    if (error.response?.status === 403) {
+      return Promise.reject(error); // 交给调用方按后端 detail 呈现（LoginPage / SettingRow）
+    }
     if (error.response?.status === 401 && !skip401) {
-      // 2026-09-26 - 小欧 - 修 C07「401 拦截器无差别清 token，误杀刚设的新口令」（三遍核实确认成立）：
-      //   原实现对任何 401 无条件 `removeItem('omniagent_auth') + location='/login'`。
-      //   危险时序（用户可在设置页改口令，与本文件 A04/C04 修复后的常规流量并存）：
-      //     t0 请求 R 发出，带的是**旧口令**（长耗时，如 SSE/测试连接/大模型列表）；
-      //     t1 用户改口令成功 → setAccessToken(新口令) 已写入 localStorage；
-      //     t2 R 返回 401 —— 它证明的是**旧口令无效**，而旧口令本就已被作废，
-      //        此时内存里的新口令是完全有效的；拦截器却把它一起清掉并跳登录页。
-      //   后果：口令改成功了，用户却被踢回登录页、必须重新输新口令（且若他此时正在输入新口令，
-      //   输入内容随页面跳转一并丢失）——「保存成功」与「被登出」同时发生，自相矛盾。
-      //   修法：只清"这次失败所凭据的那个 token"——比对失败请求实际带的 Authorization 与当前
-      //   内存 token，两者不同即说明用户已换过口令、旧口令的失败是过期信息，**不动当前状态**。
-      //   同值才清（真·当前凭据被拒）。这是标准的"凭据版本比对"，不引入任何新状态。
-      //   —— 编辑：小欧 2026-09-26
+      // 凭据版本比对（[72]C07）：改口令前发出的长耗时请求返回 401 时，它证明的是**旧口令**
+      // 无效，而内存里的新口令有效。原实现无条件清 token + 跳登录页，会出现"保存成功却被登出"
+      // （用户正在输入的新口令随跳转丢失）。故只在失败凭据与当前凭据**同值**时才清。
       const failedAuth = (
         error.config as InternalAxiosRequestConfig | undefined
       )?.headers?.Authorization as string | undefined;
@@ -196,23 +172,16 @@ api.interceptors.response.use(
         failedAuth !== `Bearer ${currentToken}`;
       if (!isStaleCredential) {
         try {
-          localStorage.removeItem('omniagent_auth');
+          localStorage.removeItem(AUTH_STORAGE_KEY);
           window.location.href = '/login';
         } catch {
           /* ignore */
         }
       }
     }
-    // 2026-09-26 - 小欧 - 修 C08「_skip401 只挡跳转、仍弹全局 toast」（三遍核实确认成立）：
-    //   `_skip401` 的语义本就是"这次 401 是预期内的、由调用方自己处理"，但原实现只跳过了
-    //   清除+跳转，**紧接着仍无条件调 handleApiError(error)**（默认 showError=true）⇒
-    //   auth 通道的 401 照样弹全局错误 toast。真实后果：用户在登录页输错口令，
-    //   页面自己有内联提示，同时又弹一个全局 toast（"服务器内部错误/网络错误"之类），
-    //   两个提示内容不一致甚至矛盾；改口令时被后端 409/400 拒绝同理。
-    //   修法：_skip401 时以 showError:false 调用 —— 调用方（LoginPage / SettingRow）本就持有
-    //   该请求的上下文与自有提示，此处不再叠加全局 toast。errorType/deleteMessage 等
-    //   handleApiError 的其它返回值不受影响。
-    //   —— 编辑：小欧 2026-09-26
+    // _skip401 = 「这次 401 是预期内的、由调用方自己处理」（[72]C08）：
+    // 此时不弹全局 toast，否则与调用方的内联提示重复且矛盾。
+    // [75]5.5：403 已在上方提前返回，同样不叠加全局 toast。
     handleApiError(error, skip401 ? { showError: false } : undefined);
     return Promise.reject(error);
   }
