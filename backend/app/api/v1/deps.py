@@ -13,20 +13,15 @@ deps — API 统一鉴权依赖（token）
   - 失败返回 401 且文案统一，不区分"token 不对"与"未配置"（防探测）
 
 编辑历史:
-  2026-09-26 小欧 - 新建；_is_localhost 改用 ipaddress.is_loopback（消除与白名单解析的
-    两套实现，顺带堵掉"伪造 X-Forwarded-For: localhost"免口令）；豁免路径提为命名常量
-    （原为内联字面量，与 router 定义分处两地，对不上即死锁）。
-  2026-09-26 小欧 - **删除**应用层 XFF 解析与 TRUST_PROXY_HEADERS：uvicorn 的
-    ProxyHeadersMiddleware 已负责代理信任判定，远程客户端伪造 XFF 改不了 request.client.host，
-    应用再自行解析属重复实现且易出判断分歧。
-  2026-09-27 小欧 - 按北京老陈裁定重排判定顺序（设口令只能本机 / 白名单只是免口令登录 /
-    其余一律要口令）；精简冗长注释（XFF 取值争论史与 _is_localhost 三堂会审说明压缩为结论）。
-  2026-09-27 小欧 - 安全加固: 新增 _forwarded_allow_ips_all/_is_trusted_localhost。
-    uvicorn 被配成 FORWARDED_ALLOW_IPS=* 时任何客户端可伪造 client.host 为 127.0.0.1，
-    免口令进（可读全部明文密钥、可改口令）；应用层无法区分真回环与伪造，故此时
-    **取消回环豁免、一律要口令**（fail-closed）。默认配置不受影响，本机开发照常免口令。
-    同轮修 DRY: _resolve_ip_allowlist 里 join 时的 `if str(x).strip()` 是冗余（尾部
-    split 后的 `if x.strip()` 已过滤第二次），删之。另修 security 出口不再整体透传。
+  2026-09-26 小欧 - 新建；_is_localhost 改用 ipaddress.is_loopback；豁免路径提为命名常量。
+  2026-09-26 小欧 - 删应用层 XFF 解析（uvicorn ProxyHeadersMiddleware 已判定代理信任）。
+  2026-09-27 小欧 - 按裁定重排判定顺序；新增 _forwarded_allow_ips_all/_is_trusted_localhost（*=信任任意
+    XFF 时取消回环豁免，fail-closed）。
+  2026-09-27 小欧 - [75]5.1：/auth/status 豁免 `not expected` → `not extract_token(request)`；新增
+    can_set_access_token / current_client_requires_auth。
+  2026-09-27 小欧 - [75]缺陷修复：提 SET_TOKEN_LOCAL_ONLY_MESSAGE（消除 403 文案两处重复）；
+    current_client_requires_auth 增 configured 入参（同源一次读取）；_auth_required 改 lower() 比较；
+    新增 warn_startup_checks（未注入 forwarded_allow_ips / 白名单全网通配时告警）。判定逻辑未变。
 """
 import hmac
 import ipaddress
@@ -51,6 +46,14 @@ AUTH_STATUS_PATH = "/api/v1/auth/status"
 # 鉴权失败统一文案。严禁在此拆分"未配置"与"不匹配"两种措辞 —— 那会让攻击者从 401 body
 # 就能探测服务端是否已启用口令。是否已配置由豁免的 GET /auth/status 告知前端。
 AUTH_FAIL_MESSAGE = "访问口令无效或缺失"
+# 2026-09-27 小欧 - [75]复核 DEFECT-4：设口令的 403 文案原在 verify_token 与 auth_routes.set_api_token
+#   两处逐字硬编码，改一处即漂移（前端按原话做引导，文案不一致会误导用户）。提为单一权威。
+#   "本机"指 _is_trusted_localhost（回环且 uvicorn 未配 FORWARDED_ALLOW_IPS=*），
+#   * 部署下该判据恒 False、本机亦不可设 —— 边界见 _is_trusted_localhost。
+SET_TOKEN_LOCAL_ONLY_MESSAGE = (
+    "设置或更换访问口令只能在服务端本机进行"
+    "（白名单设备只是免口令登录，不能改口令）"
+)
 # 免口令白名单（IP/CIDR），支持环境变量与配置文件两种来源。
 # 2026-09-27 小欧 - 改名 ip_allowlist → access_token_allowlist：原名像通用防火墙白名单，
 #   看不出与访问令牌有关。同步改配置键与环境变量。
@@ -74,8 +77,11 @@ def _resolve_configured_token() -> str:
 
 
 def _auth_required() -> bool:
-    """是否启用鉴权。默认启用；仅显式 OMNIAGENT_REQUIRE_AUTH=0 时关闭（供本机开发/测试）。"""
-    return (os.environ.get(REQUIRE_AUTH_ENV) or "1").strip() not in ("0", "false", "False")
+    """是否启用鉴权。默认启用；仅 OMNIAGENT_REQUIRE_AUTH=0 / false（大小写等价）时关闭。
+
+    无法识别的值按"启用"处理（fail-closed）。
+    """
+    return (os.environ.get(REQUIRE_AUTH_ENV) or "1").strip().lower() not in ("0", "false")
 
 
 def _client_ip(request: Request) -> str:
@@ -127,8 +133,38 @@ def _forwarded_allow_ips_all() -> bool:
 
 
 def _is_trusted_localhost(ip: str) -> bool:
-    """能否按"本机"豁免鉴权 = 是回环 **且** uvicorn 未被配成信任任意 XFF。"""
+    """能否按"本机"豁免鉴权 = 回环 且 uvicorn 未配 FORWARDED_ALLOW_IPS=*。
+
+    *=信任任意 XFF 时的两项后果（[75] DEFECT-1/5）：
+      安全侧  回环不再免口令 —— 任何客户端可伪造 client.host 为 127.0.0.1，fail-closed。
+      可用性侧 本机也无法设置/更换口令（set_api_token 同判据）→ 首次部署只能改用环境变量
+                OMNIAGENT_ACCESS_TOKEN 或配置文件 security.access_token 后重启。
+    _forwarded_allow_ips 仅由 run_server.py 注入；换 uvicorn 命令行等方式启动则注入不发生，
+    此时无法得知实际是否配了 *，故 warn_startup_checks() 在启动时告警。
+    """
     return _is_localhost(ip) and not _forwarded_allow_ips_all()
+
+
+def warn_startup_checks() -> None:
+    """启动自检：两处"配错即失守或死锁"的配置显式告警。只观测，不改判定。
+
+    ① _forwarded_allow_ips 为 None = 未收到 run_server.py 注入，按"非 *"处理会低估风险。
+    ② 白名单含 0.0.0.0/0、::/0 时任意来源免鉴权（白名单内可读全部明文密钥）；
+       不拒绝（拒绝会改变既有部署行为），仅告警。
+    """
+    from app.logger import logger  # noqa: PLC0415
+
+    if _forwarded_allow_ips is None:
+        logger.warning(
+            "[auth] 未收到 forwarded_allow_ips 注入：若 uvicorn 实际以 --forwarded-allow-ips '*' "
+            "启动，伪造 X-Forwarded-For 即可冒充本机免口令。请改用 run_server.py 启动。"
+        )
+    for entry in _resolve_ip_allowlist():
+        if entry.strip() in ("0.0.0.0/0", "::/0"):
+            logger.warning(
+                "[auth] 白名单含全网通配 %s：任意来源将免口令访问（可读全部明文密钥），"
+                "请改为具体网段。", entry,
+            )
 
 
 def _resolve_ip_allowlist() -> list:
@@ -170,6 +206,24 @@ def _ip_in_allowlist(ip: str) -> bool:
     return False
 
 
+def can_set_access_token(request: Request) -> bool:
+    """本来源能否设置/更换访问口令 = 可信本机（[75]5.1）。auth_routes 与 set_api_token 共用（DRY）。"""
+    return _is_trusted_localhost(_client_ip(request))
+
+
+def current_client_requires_auth(request: Request, configured: str) -> bool:
+    """本来源本次访问是否需要口令（[75]5.1）。
+
+    公式须含已设口令判定：白名单在未设口令时同样需要口令（判定链②），否则该来源得 false
+    放行进主界面、随即被 403 挡回。configured 由调用方传入而非本函数自取，使同一响应内
+    三个字段同源于一次读取（[75] DEFECT-2：自取会与 access_token_configured 读到不同值）。
+    """
+    return not (
+        _is_trusted_localhost(_client_ip(request))
+        or (_ip_in_allowlist(_client_ip(request)) and configured)
+    )
+
+
 def extract_token(request: Request) -> Optional[str]:
     """从请求头取 token：Authorization: Bearer <token> 优先，其次 X-API-Token。"""
     auth = request.headers.get("Authorization") or ""
@@ -186,38 +240,39 @@ async def verify_token(request: Request) -> None:
     口令**校验**失败一律 401 且文案统一（不区分"未配置"与"口令不对"，防探测鉴权状态）；
     仅两类**准入**失败用 403：改口令非本机、白名单在未配置口令时访问。
 
-    判定顺序（北京老陈 2026-09-27 裁定，勿随意调整）：
-      0. 未配置口令时 `GET /auth/status` 对所有来源放行（前端据此显示状态）
-      1. 设置口令只能本机：`POST /auth/token` 非本机 → 403（放这层而非只放业务层，
-         否则远程请求会先被通用 401 拦掉，用户永远看不到"只能本机设置"这条提示）
-      2. 白名单只是免口令登录：已配置口令 → 放行；未配置 → 403「请联系管理员设置」
-         （此时无口令可免，静默放行等于防护就位前先开全站敞口）
+    判定顺序（2026-09-27 裁定，勿随意调整）：
+      0. 未带口令时 `GET /auth/status` 对所有来源放行；带了口令照常往下验真
+      1. `POST /auth/token` 非本机 → 403（放鉴权层而非只放业务层，否则远程请求先被通用 401
+         拦掉，用户看不到"只能本机设置"这条提示）
+      2. 白名单只是免口令登录：已配置 → 放行；未配置 → 403「请联系管理员设置」（无口令可免，
+         静默放行等于防护就位前开全站敞口）
       3. 其余来源一律要口令；未配置口令时 fail-closed
 
     ⚠️ 白名单内等于无鉴权（可读全部明文密钥），只应放可信网段。
-    ⚠️ `auth_routes.set_api_token` 内的本机检查是纵深兜底（拦非 HTTP 调用），非重复；改任一处须同步。
+    ⚠️ `auth_routes.set_api_token` 的本机检查是纵深兜底（拦非 HTTP 调用），非重复；改任一处须同步。
     """
     if not _auth_required():
         return
     _ip = _client_ip(request)
     _local = _is_trusted_localhost(_ip)
     _allow = _ip_in_allowlist(_ip)
-    # D14 修复（2026-09-26）：开头只取一次 expected，避免同一请求读到两个 token 的竞态
+    # 只取一次 expected，避免同一请求读到两个 token 的竞态
     expected = _resolve_configured_token()
     _path = request.url.path.rstrip("/")
 
-    # 未配置口令时，状态查询对所有来源放行（前端据此显示"已配置/未配置"）
-    if not expected and request.method == "GET" and _path.endswith(AUTH_STATUS_PATH):
+    # 2026-09-27 小欧 - [75]5.1：豁免条件 `not expected` → `not extract_token(request)`。
+    #   带口令时继续走判定链验真（对 200 / 错 401），不得写成无条件放行。
+    if (
+        request.method == "GET"
+        and _path.endswith(AUTH_STATUS_PATH)
+        and not extract_token(request)
+    ):
         return
 
     # 裁定①：设口令仅限本机。放鉴权层而非只放业务层，否则远程请求会先被下面的通用 401 拦掉，
     # 用户就永远看不到"只能本机设置"这条准确提示。
     if request.method == "POST" and _path.endswith(AUTH_TOKEN_PATH) and not _local:
-        raise HTTPException(
-            status_code=403,
-            detail="设置或更换访问口令只能在服务端本机进行"
-                   "（白名单设备只是免口令登录，不能改口令）",
-        )
+        raise HTTPException(status_code=403, detail=SET_TOKEN_LOCAL_ONLY_MESSAGE)
 
     if _local:
         return

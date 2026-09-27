@@ -25,6 +25,8 @@
 #   / 的 docs 键同步条件化，避免广播一个必 404 的地址。②访问口令路由改走 _mount()，不再手写
 #   include_router 绕过唯一入口。③_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
 #   同轮精简冗长注释（三堂会审叙事压缩为结论）。
+# 2026-09-27 小欧 - [75]启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
+#   forwarded_allow_ips 注入"与"白名单含全网通配"告警（DEFECT-5/6）。只观测，不改判定逻辑。
 import sys
 import asyncio
 from typing import Optional
@@ -59,7 +61,7 @@ from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
 # 2026-09-26 小欧 - [72]第九章(9.6-1): 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
-from app.api.v1.deps import verify_token
+from app.api.v1.deps import verify_token, warn_startup_checks
 # 2026-09-26 小欧 - [72]第九章补: 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
 from app.api.v1.auth_routes import router as auth_router
 from app.logger import logger
@@ -253,6 +255,10 @@ async def startup_event():
     _t2 = _time.time()
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
+    # 鉴权配置自检（未注入 forwarded_allow_ips / 白名单全网通配 → 告警），只观测不改判定
+    _t3 = _time.time()
+    warn_startup_checks()
+    logger.info(f"[启动耗时] warn_startup_checks: {_time.time()-_t3:.3f}s")
     logger.info(f"[启动耗时] startup_event 合计: {_time.time()-_t0:.3f}s")
     from app.logger.console_writer import console_put  # 小欧 2026-08-30 启动tip离线化(语义不变仅控制台)
     console_put(f"当前版本: {app_version}")

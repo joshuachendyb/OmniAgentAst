@@ -1,6 +1,9 @@
 """统一响应格式工具 — 标准化 success/failure/error 响应 + 通用装饰器
 
-【小健 2026-05-31】新建:统一响应函数 + handle_api_errors 装饰器
+编辑历史:
+  2026-05-31 小健 - 新建：统一响应函数 + handle_api_errors 装饰器。
+  2026-09-26 小欧 - ValueError 显式映射 400（原一律 500，客户端错误被当服务端故障）。
+  2026-09-27 小欧 - [75]DEFECT-7（CWE-209）：500 的 detail 不再回显 str(e)，异常全文与堆栈只落日志。
 """
 
 from functools import wraps
@@ -52,28 +55,16 @@ def handle_api_errors(operation_name: str) -> Callable[[F], F]:
                 return await func(*args, **kwargs)
             except HTTPException:
                 raise
-            # 2026-09-26 - 小欧 - 修 D22 + E12「ValueError 被统一兜成 500，客户端错误被当服务端故障」
-            # （三遍核实确认成立；改在此处而非各 service，是 DRY：一条规则覆盖全部调用方）：
-            #   原实现只有 HTTPException 直通，其余**一律** 500。而本项目里 ValueError 是
-            #   **客户端提交内容不成立**的既定表达（provider 不存在、不支持的字段、没有有效字段、
-            #   add_provider 的 name 非法…），被 handle_config_errors 包住后一律变成 500。
-            #   危害：①5xx 会被前端/网关/监控当服务端故障（自动重试、告警噪声），而重试永远不会成功；
-            #        ②detail 变成"XXX失败: ..."，用户看不出是自己填错了；③既有 TDD
-            #           test_empty_api_key_not_overwrite 固化的就是"抛错 + 绝不落盘"，
-            #           说明"报错"是既定设计，错的只是**级别**。
-            #   修法：ValueError（含其子类，如 KeyError 之外的常见输入类错误）显式映射为 **400**，
-            #     语义不变、级别纠正，且**不改动任何 service 的既有契约与测试**。
-            #   刻意不把 KeyError/AttributeError 等也归入 400：那些是代码缺陷，理应继续 500（可观测）。
-            #   —— 编辑：小欧 2026-09-26
             except ValueError as e:
+                # ValueError 在本项目是"客户端提交内容不成立"的既定表达，映射 400 而非 500
+                # （500 会被前端/网关/监控当服务端故障而反复重试）。KeyError/AttributeError
+                # 属代码缺陷，刻意留在 500 以保持可观测。
                 logger.warning(f"{operation_name}参数/数据不合法: {e}")
                 raise HTTPException(status_code=400, detail=str(e))
             except Exception as e:
-                logger.error(f"{operation_name}失败: {e}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"{operation_name}失败: {str(e)}"
-                )
+                # [75] DEFECT-7（CWE-209）：detail 不回显 str(e)，避免泄露内部绝对路径与实现细节
+                logger.error(f"{operation_name}失败: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"{operation_name}失败")
         return wrapper  # type: ignore
     return decorator
 
