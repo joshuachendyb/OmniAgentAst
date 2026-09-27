@@ -13,7 +13,7 @@
 # 2026-07-21 - 小欧 - 入参即信任: ReadDocxInput.limit 加 ge=1,le=1000, 支撑LLM指定1000以内段落数
 # 2026-07-25 - 小欧 - description去冗余+Field精简
 # 2026-07-26 - 小沈 - 欧阳报告: WriteDocxInput/WritePdfInput validator放宽, content+table_data都空时默认""而非报错
-# 2026-07-26 - 小沈 - Bug #6 DRY: 抽取_DocContentOrTableMixin消除WriteDocxInput/WritePdfInput的_check_content_or_table重复代码
+# 2026-07-26 - 小沈 - DRY: 抽取_DocContentOrTableMixin消除WriteDocxInput/WritePdfInput的_check_content_or_table重复代码
 # 2026-07-28 - 小欧 - description精确化: write_pptx.path/write_docx.path/write_xlsx.path/write_pdf.path 全部加"必填"标注
 # 2026-07-31 - 小欧 - ReadPdfInput 补 page/pages 互斥校验(model_validator): 二者同时指定时报 ValueError, 与运行时逻辑对齐(Pydantic 层即拦截非法组合); 移除未使用 Literal 导入
 # 2026-08-07 - 小欧 - WriteXlsxInput 新增 append_mode 字段(追加模式): True=文件已存在时末尾追加, False=默认覆盖; 与 write_xlsx 实现层同步 — 小欧 2026-08-07

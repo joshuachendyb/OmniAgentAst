@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-09-04 小健 - 新建: trust 三合一提取下沉, 解环 action_handler → trust 单向依赖 - 小健-2026-09-04
-# 2026-09-16 小欧 - 问题A修复(文档[44]5.2): extract_trust_path 补非文件信任域专用提取 —— 仅认规范 path 及
+# 2026-09-16 小欧 - 问题修复(文档落码): extract_trust_path 补非文件信任域专用提取 —— 仅认规范 path 及
 #   定向别名(key_path/registry_key/db_path → path), 排除 data→value 非路径别名污染; 不动 _parse_paths
 #   (保护 conflict_detector 并查集分组); 与 FILE 流程共用 PARAM_ALIASES 只取规范 path — 小欧-2026-09-16
 """

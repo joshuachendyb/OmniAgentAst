@@ -4,14 +4,14 @@
 # 2026-07-20 - 小欧 - 门限治理(shell章6.4): 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回(Tool输出零限制3.7); 显示限量收口 observation_formatter 行×列(OBS_SHELL_MAX_ROWS/CHARS)
 # 2026-07-20 - 小欧 - 门限复查: data 仅 {stdout,stderr}(returncode/shell_type/duration_ms 归 llm_data); observation_formatter #11 不再重复渲染 meta(shell_type/duration_ms/rc), 改由 _format_llm_data 在 llm_data 段统一呈现(退出码/耗时/shell类型), 严禁 data 详情与 llm_data 段重复显示; #11 仅渲染 stdout/stderr 原始输出 + 两态截断说明
 # 2026-07-20 - 小欧 - 门限复查: cmd 分支补 3.4 硬安全网(与 powershell 分支 safe_read_file 对称): 新增 _safe_truncate_output 对 proc.communicate() 内存输出超 SHELL_OUTLIMIT_RAW_BYTES 仅保留头尾各半, 防下游 OOM/序列化膨胀
-# 2026-07-21 - 小欧 - #14 PS版本检测: _translate_powershell_operators 改为无条件执行（删 not _PWSH_CACHE[0] 条件）
+# 2026-07-21 - 小欧 - PS版本检测: _translate_powershell_operators 改为无条件执行（删 not _PWSH_CACHE[0] 条件）
 # 2026-07-23 - 小欧 - 北京老陈驱动: 新增 _truncate_shell_field
 #         head-only+行边界截断(stdout=50000/stderr=20000);
 #         tool_constants 新增 SHELL_OUTLIMIT_STDOUT_MAX_CHARS
 #         /SHELL_OUTLIMIT_STDERR_MAX_CHARS;
 #         formatter #11 读 _truncated 标记;
 #         storage MAX_TOOL_RESULT_STR_LEN 提至100000;
-# 2026-07-23 - 小欧 - 北京老陈驱动BugFix: output_len 传原始截断前长度而非截断后长度(bug1), 避免 LLM 被误导
+# 2026-07-23 - 小欧 - 北京老陈驱动BugFix: output_len 传原始截断前长度而非截断后长度, 避免 LLM 被误导
 # 2026-07-23 - 小欧 - 北京老陈驱动: 删 _safe_truncate_output(10MB 字节截断多余), 改直接 _decode_bytes_safe; 删 SHELL_OUTLIMIT_RAW_BYTES import; tool 层仅保留 _truncate_shell_field 50K/20K 唯一输出截断
 # 2026-07-23 - 小欧 - #5 ERR_SHELL_EXEC 退出码释义映射: stderr/stdout全空时返回"退出码127(命令未找到)"等释义, 非纯数字
 # 2026-07-24 - 小欧 - 北京老陈驱动BugFix:
@@ -43,8 +43,8 @@
 # 2026-07-27 - 小欧 - CMD增强: _resolve_safe_cwd安全回退+tempdir保底; CMD分支poll loop代替communicate阻塞; taskkill /T /F杀进程树; 阶段标注【PS专属|CMD专属|通用】; _auto_fix_cmd_syntax修复$env:VAR→%VAR%; _sanitize_env过滤API key泄露子进程
 # 2026-07-27 - 小欧 - Bugfix×5: _close_if_blocks嵌套花括号深度计数; warning分支detail字段逻辑取反; bat_path加引号防空格; _PWSH_CACHE死代码删除; 阶段1.5重复执行消除
 # 2026-07-27 - 小欧 - 重构: _sanitize_env常量提为模块级; cwd不存在改报错为自动回退; PS分支engine.exec传env=_sanitize_env()
-# 2026-07-28 - 小欧 - 欧阳task005一轮修复4bug: BUG-03截断前存_stderr_for_diag; BUG-05删command死参数; BUG-06删_PWSH_CACHE死代码; BUG-07删cwd回退外层重复日志
-# 2026-07-28 - 小欧 - 欧阳task005二轮修复4bug: BUG-02 CMD超时改立即杀进程; BUG-04深度计数简化为存在性检查; BUG-08良性stderr白名单扩展; BUG-09 safety检查传shell_type
+# 2026-07-28 - 小欧 - 欧阳task005一轮修复4bug: 截断前存_stderr_for_diag; 删command死参数; 删_PWSH_CACHE死代码; 删cwd回退外层重复日志
+# 2026-07-28 - 小欧 - 欧阳task005二轮修复4bug: CMD超时改立即杀进程; 深度计数简化为存在性检查; 良性stderr白名单扩展; safety检查传shell_type
 # 2026-07-28 - 小欧 - 抽取 _kill_and_read_output 消除CMD超时两处重复代码
 #         _close_if_blocks 改用深度计数+引号感知, 避免字符串内}误判
 #         _cmd_powershell_mismatch_hint 补充英文匹配, 兼容非中文系统
@@ -53,14 +53,14 @@
 # 2026-07-28 - 北京老陈 - 三堂会审重构shell()参数流:
 #         ①shell_type早归一化(校验后即设ps7,消灭全文9处or""/or"ps7"冗余+2处is None冗余)
 #         ②cmd变量改名stripped_command+processed_command消除与shell_type="cmd"的语义混淆
-#         ③null字节检查_build调用补全缺失的shell_type/err_code/detail三参(P0修复)
+#         ③null字节检查_build调用补全缺失的shell_type/err_code/detail三参(修复)
 #         ④语法修复/执行/安全检查/后处理统一使用processed_command
 #         ⑤预处理错误路径保留command,处理后路径统一用processed_command
 # 2026-07-29 - 小沈 - type加入CMD检测模式(\btype\b, CMD type=文件内容,bash type=命令类型); 修复遗留regex转义损坏(Format-Table行引号前多反斜杠)
 # 2026-07-30 - 小欧 - 新增bash特征自动路由(阶段1.4): _looks_like_bash检测Linux命令→自动切换到Git Bash
 #        +路径分隔符\→/转换+python3→python; 三堂会审修复: L649语法错误(\\\\n? not here),
 #        DRY合并bash_keywords/path_indicators进bash_patterns
-# 2026-07-30 - 小欧 - 重排阶段编号: 1.5→1.1, 1.6→1.2, 1.7→1.3, 1.8→1.4, 补齐1.1-1.4窟窿
+# 2026-07-30 - 小欧 - 重排阶段编号: 旧1.5→1.1, 旧1.6→1.2, 旧1.7→1.3, 旧1.8→1.4, 补齐窟窿
 # 2026-07-30 - 小欧 - 三路检测增强(阶段1.5):
 #        +新增_looks_like_ps: 9模式PowerShell检测(Verb-Noun/$env/$global/function/$_/[Type]::/Write-/Out-/Format-)
 #        +新增_looks_like_cmd: 19模式CMD检测(%VAR%/for/where/wmic/reg/attrib/tasklist/taskkill等)
@@ -79,16 +79,16 @@
 #        ⑤三路检测日志logger.warning→logger.info(路由是正常操作非异常)
 # 2026-08-06 - 小欧 - 注释清晰化: stage 总览改用清晰列表(1.0/1.0a/1.1/1.2/2/3/4); 清理重复的`#stage`草案残片; _auto_fix_bash_syntax docstring精简(拆出python3注), 无逻辑改动
 # 2026-08-06 - 小欧 - 三堂会审实证BugFix×4:
-#        Bug5: _looks_like_cmd `\btype\b`过宽(bash/python type误判)→改`type`后带文件路径才判CMD
-#        Bug6: _looks_like_ps Verb-Noun `\b[a-z]+-[a-z]+\b`过宽(foo-bar/project-x误判PS)
+#        修复: _looks_like_cmd `\btype\b`过宽(bash/python type误判)→改`type`后带文件路径才判CMD
+#        修复: _looks_like_ps Verb-Noun `\b[a-z]+-[a-z]+\b`过宽(foo-bar/project-x误判PS)
 #             →收敛为已知cmdlet动词前缀+Test-*确切cmdlet
-#        Bug7: stage 1.0a 简单re.sub替换python3破坏引号内容+DRY违规→改用shell_engine._replace_python3_safe(引号感知)
-#        Bug8: Verb-Noun/pip3/python引号内误判bash→`(?:^|[;&|])\s*(python|pip3)\b`仅命令token; `\bpython\b`同理
+#        修复: stage 简单re.sub替换python3破坏引号内容+DRY违规→改用shell_engine._replace_python3_safe(引号感知)
+#        修复: Verb-Noun/pip3/python引号内误判bash→`(?:^|[;&|])\s*(python|pip3)\b`仅命令token; `\bpython\b`同理
 #       修复后实证复验: test-case/echo "pip3"/echo "python is cool"不再误判; Test-Path/get-process/正常bash命令保留
 # 2026-08-06 - 小欧 - v2.7三堂会审BugFix: PS分支 shell_pool.acquire() 补传 env=_sanitize_env()(原acquire启动走os.environ含API key泄漏给子进程, exec时传的env因进程存活被_ensure_alive忽略) — 与shell_engine.py acquire加env参数配套
 # 2026-08-06 - 小欧 - 卡死场景日志补齐: C10(C11)分支超时/管道阻塞事件加[卡死C#]warning日志(CMD poll-loop超时/CMD communicate超时/Bash超时/taskkill异常/等退出超时), 与shell_engine.py C1-C14标注联动
 # 2026-08-06 - 小健 - v2.9打猎修复: _kill_and_read_output 的 proc.wait() 无try保护(taskkill失败且进程僵死时抛TimeoutExpired冒泡到shell()的except → 丢失超时语义, 且中断残存stdout/stderr读取), 补try+warning日志, 超时后仍读残存返回
-# 2026-08-06 - 小健/小欧 - v2.10打猎Bug#6(C11): _kill_and_read_output taskkill失败后裸proc.kill()兜底无保护, 进程已死/句柄失效时抛ProcessLookupError冒泡 → 中断残存stdout/stderr读取。修复: proc.kill()包try/except补warning日志, 失败后仍继续读残存返回(与引擎_kill_tree已有保护对称)。与shell_engine.py v2.10 Bug#5/#7打猎联动
+# 2026-08-06 - 小健/小欧 - v2.10打猎修复(C11): _kill_and_read_output taskkill失败后裸proc.kill()兜底无保护, 进程已死/句柄失效时抛ProcessLookupError冒泡 → 中断残存stdout/stderr读取。修复: proc.kill()包try/except补warning日志, 失败后仍继续读残存返回(与引擎_kill_tree已有保护对称)。与shell_engine.py v2.10 打猎联动
 # 2026-08-06 - 小欧 - 卡死C13根因修复(北京老陈21:53:36报告): ps7原生&&虽合法, 但`&&/||后接赋值语句`(如
 #        `cd X && $env:PYTHONIOENCODING='utf-8'`)是PS7语法错误(ParserError), LLM高频生成 → ps1解析失败
 #        → 命令从未执行 → 假超时(C8/C14杀进程) → C12 stderr残留ParserError → 池中留死实例 → 下次复用
@@ -122,11 +122,11 @@
 #        新增纯函数: _REAL_ERROR_MARKERS(35项词边界正则, ERROR用(?<!no )防"no error"误伤)/_contains_real_error/_has_output
 #        关联: 原「未找到/语法/权限」前缀识别保留复用, _hint/_shell_mismatch_hint不变, 成功/超时分支未动
 #        验证: py_compile✓ 新增37用例全过(含真实命令三分支+markers覆盖) 既有shell测试106+103全过 150案例回归131/17/2
-# 2026-08-09 - 小欧 - 修正A收尾三审(P1/P2, 见doc-8月优化修复代码三堂会审报告v1.1):
-#        P1: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
-#        P2: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(	\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
+# 2026-08-09 - 小欧 - 修正A收尾三审(两处, 见doc-8月优化修复代码三堂会审报告v1.1):
+#        第一处: Add-Type 属cmdlet, 从"异常类型裸词组"移入"cmdlet名+冒号"组, 收紧为 \bAdd-Type\b[ \t]*:(原遗漏致正常输出含Add-Type字样误判error)
+#        第二处: 全部cmdlet错误行首匹配 \s* 改 [ \t]*(\s含换行可跨行误命中, 仅同行内空白的真实PS错误行首格式)
 #        验证: 5组用例实测全过(Add-Type:错→error / Add-Type裸词→不误判 / 跨行\n: →不命中), ast语法✓
-# 2026-08-09 - 小欧 - task005核查P1落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
+# 2026-08-09 - 小欧 - task005核查落地: _REAL_ERROR_MARKERS 0x[0-9a-fA-F]{8} 收紧为
 #   \b0x(?:8[0-9a-fA-F]{3}|C[0-9a-fA-F]{3})[0-9a-fA-F]{4}\b (仅HRESULT失败段/NTSTATUS失败段)。
 #   病根: 任意8位hex误匹配校验和/内存地址/颜色值, returncode≠0但stdout有真实成果时被误判error(非warning)。
 #   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
@@ -653,7 +653,7 @@ _REAL_ERROR_MARKERS = (
     r"\bArgument list too long\b", r"\bNo package found\b",
     # Windows / 注册表
     r"(?<!no )\bERROR\b", r"\bCannot find\b", r"\b无法找到\b",
-    # 2026-08-09 - 小欧 - task005核查P1: 0x[0-9a-fA-F]{8} 过宽(任意8位hex误匹配哈希/内存地址/颜色值),
+    # 2026-08-09 - 小欧 - task005核查: 0x[0-9a-fA-F]{8} 过宽(任意8位hex误匹配哈希/内存地址/颜色值),
     #   收紧为仅HRESULT失败段 0x8XXXXXXX 与 NTSTATUS失败段 0xCXXXXXXX (实测 0x80070005/0xC0000022 命中,
     #   0x1a2b3c4d/0xFF0000FF/0x000002A1... 不命中); 前缀白名单(8004/8007/C000列表)会漏 0x80004005(E_FAIL)
     #   等真实错误码, 故用段匹配替代白名单 — 小欧 2026-08-09
@@ -841,7 +841,7 @@ def _looks_like_bash(command: str) -> bool:
         r'(?:^|[;&|])\s*python(?=\s+(?:\.?/|~/))',  # python+Linux风格路径(/|./|~/): 裸python是跨平台命令(Windows ps7同样合法), 仅当带Linux风格路径才判bash — 小欧 2026-08-06 BugFix
         r'(?:^|[;&|])\s*python3\b',      # python3(Linux独有解释器, Windows无python3可执行) — 小欧 2026-08-06
         r'(?:^|[;&|])\s*python\s3\b',    # python 3 (space)
-        r'(?:^|[;&|])\s*pip3\b',    # pip3(要求作为命令起始token, 避免echo "pip3"误判) — 小欧 2026-08-06 Bug6修正
+        r'(?:^|[;&|])\s*pip3\b',    # pip3(要求作为命令起始token, 避免echo "pip3"误判) — 小欧 2026-08-06 修复
         r'\bapt\b',               # apt
         r'\bapt-get\b',           # apt-get
         r'\bconda\b',             # conda
@@ -894,7 +894,7 @@ def _looks_like_ps(command: str) -> bool:
 
     # PowerShell特有命令（Windows PowerShell语法）— 正则匹配灵活覆盖各种变体
     ps_patterns = [
-        # Verb-Noun cmdlet: 只匹配PowerShell已知动词前缀, 避免误判普通连字符命名(如project-x/hello-world) — 小欧 2026-08-06 Bug6修复
+        # Verb-Noun cmdlet: 只匹配PowerShell已知动词前缀, 避免误判普通连字符命名(如project-x/hello-world) — 小欧 2026-08-06 修复
         r'\b(?:get|set|new|add|remove|select|write|read|start|stop|restart|invoke|convert|copy|move|format|clear|output|enter|exit|wait|prompt|show|hide|ping|trace|assert|join|sort|group)-[a-z]{2,}\b',
         r'\btest-(?:path|connection|json|netconnection|service|webrequest|modulemanifest)\b',  # Test-*确切cmdlet(避免test-case误判) — 小欧 2026-08-06
         r'\$env:\w+',                   # PS环境变量: $env:PATH, $env:USERPROFILE
@@ -953,7 +953,7 @@ def _looks_like_cmd(command: str) -> bool:
         r'\bset\s+\w+=',              # 变量定义: set MYVAR=value
         r'\bpushd\b\|\bpopd\b',       # 目录栈操作
         r'\bassoc\b\|\bftype\b',       # 文件关联: assoc, ftype
-        r'\btype\s+\S+[.\/\\]\S+',     # 文件内容显示(CMD type=cat; 仅当带文件路径时判CMD, 避免bash/python type误判) — 小沈 2026-07-29, 小欧 2026-08-06 Bug5修复
+        r'\btype\s+\S+[.\/\\]\S+',     # 文件内容显示(CMD type=cat; 仅当带文件路径时判CMD, 避免bash/python type误判) — 小沈 2026-07-29, 小欧 2026-08-06 修复
         r'\bfindstr\b',                # 字符串搜索
         r'\bcmd\.exe\b',               # CMD入口点
         r'\b(copy|del|rd)\b',          # 文件操作
@@ -1012,7 +1012,7 @@ def shell(
     stripped_command = command.strip() if command else ""
     processed_command = stripped_command
     
-    # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30; 2026-08-06 引号感知修复(Bug7) ──
+    # ── 阶段 1.0a【通用】: 通用预处理 — 小欧 2026-07-30; 2026-08-06 引号感知修复 ──
     #  python3 → python（引号感知，仅替换引号外的python3；复用shell_engine._replace_python3_safe，DRY）
     processed_command, _python3_cnt = _replace_python3_safe(processed_command)
 

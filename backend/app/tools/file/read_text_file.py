@@ -21,10 +21,10 @@ F1: readtext — 读取文本文件
 # 2026-07-24 - 小欧 - 修复: warning summary嵌入full detail(三重重复) → 去掉detail
 # 2026-07-25 - 小欧 - 截断治理: content[:100] → READTEXT_INER_CJK_SAMPLE 命名常量
 # 2026-07-26 - 小欧 - OOD: 确认READTEXT_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
-# 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖; #5: hint传完整路径
-# 2026-08-05 - 小欧 - 文档20.3处置: READTEXT_OUTLIMIT_CHARS 截断补 data["truncated"]=True + truncated_reason 标记(20.3 read_text 决策项)
-# 2026-08-05 - 小欧 - 4bug修复: Bug1:total_lines统计被截断视图污染; Bug2:截断标记被编入行号; Bug3:record_read记录被截断内容; Bug4:select_lines双换行
-# 2026-08-07 - 小欧 - BUG-01修复: 翻页参数(offset/limit/tail)入口强制int(), 防直接调用(readtext)绕过Pydantic schema时 float 参数引发 line_pager slice 崩溃
+# 2026-07-26 - 小沈 - 修复: path参数不覆盖; hint传完整路径
+# 2026-08-05 - 小欧 - 设计文档 20.3 处置: READTEXT_OUTLIMIT_CHARS 截断补 data["truncated"]=True + truncated_reason 标记(20.3 read_text 决策项)
+# 2026-08-05 - 小欧 - 4bug修复: total_lines统计被截断视图污染; 截断标记被编入行号; record_read记录被截断内容; select_lines双换行
+# 2026-08-07 - 小欧 - 修复: 翻页参数(offset/limit/tail)入口强制int(), 防直接调用(readtext)绕过Pydantic schema时 float 参数引发 line_pager slice 崩溃
 #   【病根】readtext(offset=1.5) 绕过 schema 验证, select_lines 收到 float → lines[start_idx:start_idx+limit] 抛 TypeError(日志09:07:09 ×2)
 #   【改法】入口处 offset/limit/tail 均为 None 时跳过, 否则 int() 强转; 保持既有校验逻辑不变(无退化)
 # 2026-08-09 - 小欧 - DRY合并: 本地 _try_read_file_with_encodings 与 _looks_like_mojibake 迁入公共 file_encoding.read_file_with_encodings(import别名保持调用点零改动)
@@ -141,7 +141,7 @@ async def readtext(
     tail: 读取尾部N行（不能与offset/limit同时使用）"""
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
-    # BUG-01修复: 翻页参数强制int, 防直接调用(readtext)绕过Pydantic schema时 offset=1.5 引起 slice 崩溃 — 小欧 2026-08-07
+    # 修复: 翻页参数强制int, 防直接调用(readtext)绕过Pydantic schema时 offset=1.5 引起 slice 崩溃 — 小欧 2026-08-07
     #   日志证据: 09:07:09 line_pager.py:69 slice indices must be integers (Offset 1.5)
     if offset is not None:
         offset = int(offset)
@@ -234,9 +234,9 @@ async def readtext(
         file_size = _p.stat().st_size
 
         content, used_encoding, error = await _try_read_file_with_encodings(_p, encoding)
-        # Bug3修复: 保存原始content用于record_read — 小欧 2026-08-05 三堂会审4bug修复
+        # 修复: 保存原始content用于record_read — 小欧 2026-08-05 三堂会审4bug修复
         _original_content = content
-        # Bug1修复: 截断前计算真实总行数(必须在if外初始化, 否则翻页/空文件场景NameError) — 小欧 2026-08-05
+        # 修复: 截断前计算真实总行数(必须在if外初始化, 否则翻页/空文件场景NameError) — 小欧 2026-08-05
         _real_total_lines = len(content.splitlines()) if content else 0
         # outlimit: 仅全量读取(无翻页参数)截断, 翻页由用户参数控制
         _outlimit_truncated = False
@@ -244,7 +244,7 @@ async def readtext(
         if content and offset is None and limit is None and tail is None:
             _orig_len = len(content)
             if _orig_len > READTEXT_OUTLIMIT_CHARS:
-                # Bug2修复: 截断标记与正文分离, 编号后再追加(避免标记被编入行号) — 小欧 2026-08-05
+                # 修复: 截断标记与正文分离, 编号后再追加(避免标记被编入行号) — 小欧 2026-08-05
                 content = content[:READTEXT_OUTLIMIT_CHARS]
                 _outlimit_marker = f"... (内容已截断: 原文{_orig_len}字符, 保留{READTEXT_OUTLIMIT_CHARS}字符) ..."
                 _outlimit_truncated = True
@@ -263,7 +263,7 @@ async def readtext(
         # =============================================================================
         _line_count = _data.pop("line_count", 0)
         _total_lines = _data.pop("total_lines", 0)
-        # Bug1修复: 使用真实total_lines而不是截断视图的total_lines
+        # 修复: 使用真实total_lines而不是截断视图的total_lines
         if _real_total_lines:
             _total_lines = _real_total_lines
         _warning = _data.pop("warning", None)
@@ -296,7 +296,7 @@ async def readtext(
         )
         raw = _data.get("content", "")
         if raw:
-            # Bug2修复: 正文与截断标记分离存储, 标记不编入行号, 编号后追加 — 小欧 2026-08-05
+            # 修复: 正文与截断标记分离存储, 标记不编入行号, 编号后追加 — 小欧 2026-08-05
             _data["content"] = add_line_numbers(raw, offset=line_offset)
             if _outlimit_marker:
                 _data["content"] = _data["content"] + "\n" + _outlimit_marker

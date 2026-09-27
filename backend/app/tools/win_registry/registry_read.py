@@ -2,14 +2,14 @@
 # 编辑历史:
 # 2026-07-25 - 小欧 - 不存在的键reg export失败日志WARNING→INFO(正常业务场景不应报WARNING)
 # 2026-07-31 - 小欧 - CRITICAL: _backup_registry 失败路径不缓存备份路径(原在 returncode!=0/FileNotFoundError/Exception 3 处均缓存)。失败后续操作命中缓存跳过备份, 导致 registry_write/delete 丢失安全保障
-# 2026-09-20 - 小欧 - P2 X4锁+备份三原则(A-4/D-6/E-5)+D-7(红case A-4/D-6/D-7/E-5 驱动):
+# 2026-09-20 - 小欧 - 锁+备份三原则+红case驱动(红case 备份原则 驱动):
 #   ①X4: 新增 threading.Lock 保护 _registry_session_backup(多会话并行竞态);
-#   ②A-4: 缓存键含 session_id → 跨会话备份隔离, 不误复用它会话快照;
+#   ②缓存键含 session_id → 跨会话备份隔离, 不误复用它会话快照;
 #   ③D-6: 文件名加 uuid4 唯一后缀 → 同秒/同会话不再撞名互覆;
 #   ④E-5: 去掉"缓存命中即返回"短路 → 每次调用重新导出(备份=写前最新快照);
 #   ⑤D-7: 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
 #   compliance: SRP/禁止backward
-# 2026-09-20 - 小欧 - 三堂会审BUG-14修复: _backup_registry新建备份前清理同key旧备份文件(防temp目录磁盘泄漏)
+# 2026-09-20 - 小欧 - 三堂会审修复: _backup_registry新建备份前清理同key旧备份文件(防temp目录磁盘泄漏)
 # 2026-09-20 - 小欧 - E-2修复(写失败回滚安全网): 新增 _restore_registry_from_backup(reg import 恢复), 供
 #   registry_write 在写失败(PermissionError/ValueError/Exception)分支回滚; _backup_registry 返回值缓存到
 #   _backup_file 供恢复定位。compliance: SRP(恢复职责归属读取侧备份)+禁止backward
@@ -74,12 +74,12 @@ def _backup_registry(root_key: str, sub_key: str, session_id: str) -> Optional[s
       D-6 文件名加 uuid4 唯一后缀 → 同秒/同会话不再撞名互覆;
       E-5 去掉"缓存命中即返回"短路 → 每次调用重新导出, 缓存仅登记供校验, 备份=写前最新快照;
       D-7 失败显式返回 None → 调用方据 None 中止危险操作, 杜绝"误以为已备份"。
-    BUG-14修复(小欧 2026-09-20): 新建备份前清理同key旧备份文件, 防temp目录磁盘泄漏。
+    修复(小欧 2026-09-20): 新建备份前清理同key旧备份文件, 防temp目录磁盘泄漏。
     """
     backup_key = f"{session_id}::{root_key}\\{sub_key}"  # A-4: 会话级缓存键
     backup_dir = tempfile.gettempdir()
 
-    # BUG-14修复: 清理同key旧备份文件, 防磁盘泄漏
+    # 修复: 清理同key旧备份文件, 防磁盘泄漏
     with _registry_backup_lock:
         old_file = _registry_session_backup.get(backup_key)
     if old_file and os.path.exists(old_file):

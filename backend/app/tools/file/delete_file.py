@@ -14,8 +14,8 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - P1: remove_readonly 函数迁移至 app/utils/file_utils.py(消除 safety→tools 实现依赖), 本文件改为从 utils 导入
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 函数迁移: remove_readonly 函数迁移至 app/utils/file_utils.py(消除 safety→tools 实现依赖), 本文件改为从 utils 导入
+# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 # 2026-08-13 - 小欧 - 三堂会审修复#5: _force_delete_sync/os.walk/rmdir/unlink/chmod 全链 to_win_long_path
 #   长路径化(仅NT生效), 深嵌套目录不再 WinError 206; impl 层 is_dir/exists 探测同步长路径化
@@ -24,8 +24,8 @@
 # 2026-08-13 - 小欧 - 三堂会审修复#22: _guard_forbidden_delete 删除死分支 `if p is None: return None`
 #   【病根】p = raw.expanduser().resolve() 恒返回Path(异常已被前try捕获返回), resolve()绝不返回None, L58-59分支永不可达(死代码, 违KISS)
 #   【改法】删除该分支; 无任何行为变化(resolve成功则p恒为Path)
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance, 防 AttributeError
-# 2026-09-20 - 小欧 - A-2(X2落地): 删除执行前 with claim_write 登记文件写仲裁(acquire_write/release_write
+# 2026-08-18 - 小健 - 三堂会审 修复(同源): extra_metrics.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-09-20 - 小欧 - 写仲裁落地: 删除执行前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行读改写覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
@@ -46,14 +46,14 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.utils.file_utils import remove_readonly  # P1: 从 utils 导入 — 小沈 2026-08-13
+from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 
 
@@ -228,7 +228,7 @@ def _build_delete_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": extra_metrics,
         }
-    # 2026-08-18 小健 三堂会审 Bug#7(同源): extra_metrics.status 可能为 str, 防御 isinstance
+    # 2026-08-18 小健 三堂会审 修复(同源): extra_metrics.status 可能为 str, 防御 isinstance
     _st = extra_metrics.get("status")
     _st_text = _st.get("text", "") if isinstance(_st, dict) else ""
     _dl = extra_metrics.get("deleted")
@@ -261,7 +261,7 @@ async def _delete_file_impl(
         if not task_id:
             return {"success": False, "error_detail": "当前没有活跃任务ID", "params": {"source": file_path}}
 
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.DELETE,
             source_path=path, sequence_number=0,
@@ -279,7 +279,7 @@ async def _delete_file_impl(
             return ok, detail  # 返回2-tuple兼容execute_with_safety
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24 — 小沈 2026-07-07 execute_with_safety返回(bool,str)
-        # A-2: 删除执行前登记文件写仲裁, 防跨任务并行读写覆盖 — 小欧 2026-09-20
+        # 删除执行前登记文件写仲裁, 防跨任务并行读写覆盖 — 小欧 2026-09-20
         with claim_write(str(path), task_id):
             if operation_id:
                 is_ok, error_detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_delete_sync)

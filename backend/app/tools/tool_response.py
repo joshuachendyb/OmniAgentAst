@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): is_success/is_warning/is_error 的 llm_data.status 可能为 str, 防御 AttributeError; 抽 _exec_code 统一取值, 保留 is_error 畸形结果(无llm_data)视为错误语义不退化
+# 2026-08-18 - 小健 - 三堂会审 修复(同源): is_success/is_warning/is_error 的 llm_data.status 可能为 str, 防御 AttributeError; 抽 _exec_code 统一取值, 保留 is_error 畸形结果(无llm_data)视为错误语义不退化
 # 2026-08-21 - 小欧 - 11.6.1: 新增 extract_ext/with_artifacts/with_artifact_file 三个公共helper（DRY+KISS，产出型工具声明artifacts统一入口）
 """
 统一工具返回结构定义 — 小健 2026-05-21
@@ -75,7 +75,7 @@ def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
 
 
 def _exec_code(result: Dict[str, Any]) -> str:
-    """2026-08-18 小健 三堂会审 Bug#7(同源): llm_data.status 可能为 str, 防御 .get AttributeError"""
+    """2026-08-18 小健 三堂会审 修复(同源): llm_data.status 可能为 str, 防御 .get AttributeError"""
     llm_data = result.get("llm_data")
     if not isinstance(llm_data, dict):
         return ""

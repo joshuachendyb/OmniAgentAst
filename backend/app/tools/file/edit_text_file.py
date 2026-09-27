@@ -16,21 +16,21 @@
 # 2026-07-29 - 小欧 - validation_error加强: 格式"行N；语法错误；建议:xxxx"替代纯error_text; 透传_syn_line/_syn_suggestion到main; metrics新增error_line+suggestion; _check_anchor_overlap报错简化: 去除冗余行引用, 统一"只包含新内容"表述
 # 2026-08-08 - 小欧 - task002问题1增强: 新增_anchor_signature_hint — before/after锚点为单行def/class签名行时给safety_hint提示(引导用方法体末行锚点), 不改插入逻辑(KISS), 与sl_warn/so_warn合并不覆盖 | py_compile ✓
 # 2026-08-08 - 小欧 - _anchor_signature_hint 三堂会审精简: 空串/多行两项卫兵合并为 first=old_string.strip() 单卫(not first or '\n' in first), 消除重复rstrip/strip, 职责唯一零回归 | 回归 pytest: before_after+internal+retest 169✓ v2+deep+twelfth 112✓ guardrail+perf 64✓
-# 2026-08-09 - 小欧 - task006 P4: 编码回退反馈 — 用户指定编码无效时原仅logger.warning, LLM感知不到
+# 2026-08-09 - 小欧 - task006: 编码回退反馈 — 用户指定编码无效时原仅logger.warning, LLM感知不到
 #   病根: _try_read_file_with_encodings 第三参数err_msg非None即被调用方raise, 报告"子函数返回hint"方案会破坏
 #   该契约导致回退成功变失败(退化) → 改为调用方合成: encoding与used_enc不一致时生成encoding_fallback并入safety_hint, 增强不退化
 #   验证: 指定无效编码→回退提示; 一致/未指定/失败短路均无提示
 # 2026-08-09 - 小欧 - DRY合并: 本地 _try_read_file_with_encodings 迁入公共 file_encoding.read_file_with_encodings(import别名保持调用点零改动)
 #   病根: readtext/edittext 各持一份同名编码回退读取实现且行为不一致(本版对preferred做替换符检查, readtext对preferred直接返回)
 #   方案: 合并为公共版(取增强语义: 所有编码统一替换符阈值+mojibake检查); 本文件删除本地实现与本地阈值常量/get_file_encoding import;
-#         P1修正(拼接顺序)在下方success分支, 优先保safety_hint完整
+#         修正(拼接顺序)在下方success分支, 优先保safety_hint完整
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 # 2026-08-13 - 小欧 - 三堂会审修复#5: _precise_replace_in_file 的 stat/read_bytes/read_text/open('w')
 #   全链 to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码回退读取传 \\?\ 前缀 Path;
@@ -39,7 +39,7 @@
 #   【病根】from app.tools.validate.file_path_checker import validate_str_param 全文件零调用(grep仅导入处1处), 冗余导入
 #   【改法】从导入行移除, 保留validate_path/OpCategory
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
-# 2026-09-20 - 小欧 - A-2(X2落地): 精确替换落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
+# 2026-09-20 - 小欧 - 写仲裁落地: 精确替换落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
@@ -63,7 +63,7 @@ from app.tools.tool_response import build_success, build_error, with_artifact_fi
 from app.tools.tool_constants import EDITTEXT_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.tools.tool_constants import EDITTEXT_OUTPARM_LIMIT_OLD, EDITTEXT_OUTPARM_LIMIT_NEW, EDITTEXT_OUTPARM_LIMIT_SAFETY
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12; 2026-08-13 #23: 移除validate_str_param(全文件零调用)
@@ -417,7 +417,7 @@ async def _precise_replace_in_file(
             # 插入位置为签名行后/前而非常规方法体之后, 易错位. 引导使用完整方法体末行锚点 — 小欧 2026-08-08 (task002问题1)
             _anchor_hint = _anchor_signature_hint(old_string)
 
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.MODIFY,
             destination_path=path, sequence_number=0,
@@ -496,7 +496,7 @@ async def _precise_replace_in_file(
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
-        # A-2: 精确替换落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
+        # 精确替换落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
         with claim_write(file_path, task_id):
             if operation_id:
                 raw = await asyncio.to_thread(_hooks.execute_with_safety, operation_id, operation_func=_replace_sync)
@@ -624,7 +624,7 @@ async def edittext(
             data={"error_detail": error_detail, "params": {"path": file_path}},
             llm_data=llm_data,
         )
-    # P1修正(2026-08-09 - 小欧): 编码回退提示改放尾部, 优先保safety_hint完整(原200上限行为不变),
+    # 修正(2026-08-09 - 小欧): 编码回退提示改放尾部, 优先保safety_hint完整(原200上限行为不变),
     #   回退文案可截断(仅降级本轮新增提示, 不退化原安全提示); 边界: 单者存在不带多余";"
     _sh = result.get("safety_hint", "") or ""
     _fb = result.get("encoding_fallback", "") or ""

@@ -12,8 +12,8 @@
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: fetch_webpage 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
 # 2026-07-29 - 小欧 - fetchpage URL验证增强: 添加url is None强制防御, 排除对抗测试test_adversarial_batch*.py对None URL的故意利用, 修复或清除对抗测试always_fail/capture_wait_for抛异常对traceback统计影响
 # 2026-07-29 - 小欧 - 反爬增强(方案A+B): A-新增_build_browser_headers()完整浏览器头(sec-ch-ua/sec-fetch-*+br+image/avif), B-403优先降级Jina Reader再cf-mitigated, 解决知乎/CSDN等403问题
-# 2026-08-06 - 小欧 - 核查7/31未实现项[08]修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
-# 2026-08-06 - 小欧 - 三堂会审修复: BUG-5 url=None时summary传空串""代替None
+# 2026-08-06 - 小欧 - 核查未实现项修复: url=None由try内raise ValueError(落入except打traceback)改为函数入口直接build_error(ERR_INVALID_URL), 与timeout/proxy校验同级, 不再泄漏traceback
+# 2026-08-06 - 小欧 - 三堂会审修复: url=None时summary传空串""代替None
 # 2026-08-12 - 小欧 - 三堂会审DRY: InvalidURL识别统一改用http_client_sdk.is_ssrf_blocked_error公用函数(httpget/fetch_webpage/download三工具一致)
 # 2026-08-13 - 小欧 - 三堂会审修复#11: cf_resp分支(L697)字符切片`:N`与流式分支字节截断口径不一(UTF-8多字节字符下字符≠字节)
 #   【病根】FETCHPAGE_OUTLIMIT_BODY_BYTES=2MB是字节预算, 但cf_resp.text为str, `:N`按字符切, 多字节页面可超字节预算且与L716-723字节流截断行为不一致

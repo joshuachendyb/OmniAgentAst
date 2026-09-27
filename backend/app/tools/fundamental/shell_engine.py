@@ -20,7 +20,7 @@
 # 2026-07-30 - 小沈 - 空闲超时兜底: ShellPoolManager 新增 idle_timeout=300s + _last_used 追踪; acquire()复用前检查超时则close不放回; release()/cleanup*同步清理_last_used
 # 2026-07-30 - 小沈 - except:pass补日志: _kill_tree/_close/cleanup_by_task/cleanup_all四处catch改为logger.debug记录
 # 2026-07-31 - 小欧 - Shell池进程保护: ShellPoolManager新增get_all_pids()返回所有活跃PID集合,供安全检查拦截Stop-Process/taskkill/kill保护自身进程; get_all_pids()加debug日志
-# 2026-08-06 - 小欧 - 按设计文档12章实施H1-H10: ①新增探活常量+_probe()响应性探活; ②_start() stderr落日志+就绪握手; ③_close()显式关stderr句柄+残留读取+清理临时文件; ④ShellPoolManager新增_sem并发限流+_slot_held槽位记录; ⑤acquire()重构(Phase0限流/Phase1持锁找空闲/Phase2解锁探活/Phase3有界重试); ⑥release()/cleanup_by_task归还前查_slot_held防计数虚高; ⑦删除死代码shell/shell_engine.py
+# 2026-08-06 - 小欧 - 按设计文档实施H1-H10: ①新增探活常量+_probe()响应性探活; ②_start() stderr落日志+就绪握手; ③_close()显式关stderr句柄+残留读取+清理临时文件; ④ShellPoolManager新增_sem并发限流+_slot_held槽位记录; ⑤acquire()重构(Phase0限流/Phase1持锁找空闲/Phase2解锁探活/Phase3有界重试); ⑥release()/cleanup_by_task归还前查_slot_held防计数虚高; ⑦删除死代码shell/shell_engine.py
 # 2026-08-06 - 小欧 - v2.7 BugFix: acquire()复用路径漏注册_inst_map(release()会pop, 复用后release拿key=None提前return → 信号量槽位泄漏, 并发下所有acquire等满ACQUIRE_WAIT_TIMEOUT); 由test_shell_pool_manager并发用例暴露(100.89s→41.21s); 复用路径补 self._inst_map[id(inst)] = key
 # 2026-08-06 - 小欧 - 三堂会审终稿8项BugFix: ①cleanup_by_task池实例清理归还信号量槽位(防teardown后limiter枯零→全链卡慢, 复证free 2→1→0→0); ②self._lock Lock→RLock, _exec拆_exec/_exec_locked统一持锁(修_probe脱锁与exec并发写stdin串扰); ③Phase1空闲超时淘汰实例close移出池锁(修持池锁taskkill阻塞全池); ④acquire加env参数+execute_shell_command传_sanitize_env()(修启动copy os.environ泄漏API key); ⑤cleanup_by_task删temp循环内count+=1(修双计); ⑥新增_READY_PROBE_TIMEOUT=10s就绪握手(修冷启动>3s被误杀); ⑦_exec写stdin前poll探活(修向死进程写管道阻塞); ⑧F保留temp兜底(治#5防卡死设计, 非bug)
 # 2026-08-06 - 小欧 - v2.8 单一信号量硬限流(用户北京老陈拍板最优解, 治F): ①删除temp兜底+超时继续——拿到槽位必然可复用或新建(池满⇒busy==max⇒拿不到槽), temp是死代码; 超时继续创建temp既绕过限流又卡10s, 是烂设计; ②ACQUIRE_WAIT_TIMEOUT 10→2s; ③拿不到槽位明确抛ShellPoolBusyError(调用方except捕获转build_error返回错误, 非卡死非500); ④删_slot_held/acquired布尔, 改用_inst_map存在性判定release/cleanup单次归还防超归(BoundedSemaphore超归会ValueError); ⑤删_temp_instances结构及相关分支; ⑥删除本次临时标记DETECT-TEST-TEMP
@@ -28,7 +28,7 @@
 # 2026-08-06 - 小欧 - 卡死场景代码标注: 系统梳理多shell并行「后台卡死」14类场景(C1-C14), 在文件头加【场景索引】总表, 并在各处理代码点加[卡死场景C#]标注(供三堂会审/回归对照)。零逻辑改动, 全测试通过
 # 2026-08-06 - 小欧 - 卡死场景日志补齐: 按C1-C14逐一核对各处理事件是否落地日志, 补齐缺漏(C2/C5/C8半死/C9/C10/C11/C13/C14), 统一[卡死C#]前缀标识分支序号, 级别用warning(卡死异常事件)/debug(正常淘汰/清理失败)。涉及shell_engine.py与execute_shell_command.py, 池测试19 passed
 # 2026-08-06 - 小健 - 打猎测试定位并修复v2.9三个真实Bug: ①_probe()超时路径引用self._proc.pid崩溃(_exec超时内部已_close置_proc=None, pid引用→AttributeError), 改getattr(self._proc,'pid',None); ②cleanup_by_task/cleanup_all "in检查+release"与release()锁外pop存在超归竞态(cleanup锁内判断True后、sem.release前, release线程已pop拿到key并release → 双归还BoundedSemaphore超归抛ValueError), 改原子pop(仅pop成功才release), 与release()同一所有权转移规则; ③acquire C6淘汰日志it._proc.pid对无_proc对象(Mock) AttributeError, 改getattr嵌套防御。测试: test_shell_pool_manager 19→28用例(新增半死剔除/exec自愈/槽位守恒/并发不超归/高并发sem守恒), 全shell套件266 passed
-# 2026-08-06 - 小健/小欧 - v2.10打猎第5~7个真实Bug: ⑤Bug#5(_start失败路径stderr临时文件泄漏,C12): Popen抛异常/进程立即退出两条失败路径残留ps_*.err(初测ps_0k3lbafn.err), 加_close()后_stderr_path置None但文件仍在磁盘(内联open()句柄泄漏→Windows句柄被占无法unlink) → 重构为self._stderr_handle持句柄, Popen异常时显式关闭并置None, Popen成功后置None交接子进程, _close()同步关闭句柄+unlink临时文件; ⑥Bug#6(C11,execute业务模块): taskkill失败后裸proc.kill()兜底, 进程已死时ProcessLookupError冒泡中断残存读取 → try/except包住+warning防丢失(execute_shell_command.py); ⑦Bug#7(acquire重试×并发cleanup超归): acquire Phase2阻塞期间并发cleanup原子pop+sem.release归还槽位, acquire Phase3重试注册新实例后调用方release再归一次 → BoundedSemaphore超归ValueError(shell_engine.py:633)。修复: acquire重试前用原子_inst_map.pop判定槽是否已归还(lost_slot), 已归还则sem.acquire重取一槽供新实例; owning_slot标记actual持槽, except仅实际持有才release, 杜绝空释/超归。hunt测试params_hunt_v3 2用例确定性复现→修后绿
+# 2026-08-06 - 小健/小欧 - v2.10打猎第5~7个真实Bug: ⑤_start失败路径stderr临时文件泄漏(C12): Popen抛异常/进程立即退出两条失败路径残留ps_*.err(初测ps_0k3lbafn.err), 加_close()后_stderr_path置None但文件仍在磁盘(内联open()句柄泄漏→Windows句柄被占无法unlink) → 重构为self._stderr_handle持句柄, Popen异常时显式关闭并置None, Popen成功后置None交接子进程, _close()同步关闭句柄+unlink临时文件; ⑥C11,execute业务模块: taskkill失败后裸proc.kill()兜底, 进程已死时ProcessLookupError冒泡中断残存读取 → try/except包住+warning防丢失(execute_shell_command.py); ⑦acquire重试×并发cleanup超归: acquire Phase2阻塞期间并发cleanup原子pop+sem.release归还槽位, acquire Phase3重试注册新实例后调用方release再归一次 → BoundedSemaphore超归ValueError(shell_engine.py:633)。修复: acquire重试前用原子_inst_map.pop判定槽是否已归还(lost_slot), 已归还则sem.acquire重取一槽供新实例; owning_slot标记actual持槽, except仅实际持有才release, 杜绝空释/超归。hunt测试params_hunt_v3 2用例确定性复现→修后绿
 # 2026-08-06 - 小欧 - v2.11 BugFix(C13死实例放回池): C8/C14命令超时_exec_locked内部_close()置_proc=None后, release()仍将死实例放回池 → 下次acquire复用死实例_probe见_proc=None返回False → 反复[卡死C13]噪音(第二次卡死案例22:14-22:16 tasklist真实超时链的共因)。修复: release()放回池前判定实例存活(_proc is None或poll()非None即死), 死实例从池中移除+close, 杜绝复用死实例。验证: 池测试全绿(28用例)
 # 2026-08-07 - 小欧 - 卡死日志三问五处修复(与execute_shell_command.py联动, 三堂会审定稿):
 #        R3: ps7池上限3→8 — 当日C2日志实测同key并发达5(ps7池默认3放不下), acquire排队超2s→ShellPoolBusyError;
@@ -999,7 +999,7 @@ class ShellPoolManager:
                     else:
                         # 池实例放回: 记录时间戳供空闲超时兜底
                         self._last_used[id(inst)] = time.time()
-        # [卡死场景C6] Bug#3 修复: close() 在锁外执行，不阻塞全池操作 — 小欧 2026-08-06
+        # [卡死场景C6] 修复: close() 在锁外执行，不阻塞全池操作 — 小欧 2026-08-06
         if should_close:
             inst.close()
         if sem is not None:

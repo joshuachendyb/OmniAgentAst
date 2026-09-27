@@ -5,8 +5,8 @@ timer_list — 列出所有定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
 编辑历史:
 # 2026-07-24 - 小欧 - timers[:5] → TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS(魔数→命名常量)
-# 2026-08-05 - 小欧 - Bug3: DB数据并入后统一按trigger_at排序(此前混排); data层保持完整列表(预览限制仅限metrics,见常量注释"预览数量")
-# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地, 文档漏此文件): db.get_conn("operations")→db.get_conn("timers"),
+# 2026-08-05 - 小欧 - 修复: DB数据并入后统一按trigger_at排序(此前混排); data层保持完整列表(预览限制仅限metrics,见常量注释"预览数量")
+# 2026-08-21 - 小欧 - 任务计数单口径(按文档设计落地, 文档漏此文件): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP), 与 writer(timer_set/timer_clear)保持读写同库一致性 — 小欧 2026-08-21
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
@@ -42,7 +42,7 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
 
 
 async def timer_list() -> Dict[str, Any]:
-    """列出所有活跃定时器 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-10 async+锁 C-07"""
+    """列出所有活跃定时器 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-10 async+锁"""
     t0 = _time_mod.perf_counter()
     try:
         async with _timer_lock:
@@ -71,7 +71,7 @@ async def timer_list() -> Dict[str, Any]:
                         })
         except Exception:
             pass
-        # 内存与DB数据合并后统一按触发时间排序，保证整体有序 — 小欧 2026-08-05 Bug3
+        # 内存与DB数据合并后统一按触发时间排序，保证整体有序 — 小欧 2026-08-05
         timers.sort(key=lambda x: x.get("trigger_at", ""))
         # data 返回完整列表(含新建定时器,不被预览限制截断); 预览限制仅用于 metrics 的 timer_id 预览 — 小欧 2026-08-05
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

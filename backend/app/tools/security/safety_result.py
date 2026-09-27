@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-12 - 小欧 - 新建: A1 盲点四定案 — SafetyResult dataclass 由 app/safety/tool_safety_checker.py:73 复制迁入
-#   (P6 复制原则, 逻辑零改动)。供 tools 层 execute_shell_command_safety 风险检查与 safety 层 tool_safety_checker/delete_safety 共享,
+#   (复制原则, 逻辑零改动)。供 tools 层 execute_shell_command_safety 风险检查与 safety 层 tool_safety_checker/delete_safety 共享,
 #   消除 tools→safety 越层依赖。
 # 2026-08-25 - 小欧 - M1(设计文档 3.2.4): SafetyResult 新增 sandbox_required: bool = False 字段(沙箱预检触发唯一依据);
 #   由 tool_safety_checker 在 destructive 级(白名单外授权/路径越权/注册表写等)置位 True, 安全开关总闸在 executor.pre_execute 单点读取, 缺省 False 使存量调用方零感知
@@ -19,7 +19,7 @@ from typing import Optional
 @dataclass
 class SafetyResult:
     """安全检查结果 — 替代raw dict — 小欧 2026-06-25
-    #15 #50 fix: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
+    # 修复: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
     # ⑮2026-08-10: 新增 auth_path(白名单外临时授权路径, None=普通确认/无)"""
     blocked: bool = False
     requires_confirmation: bool = False

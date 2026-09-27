@@ -7,7 +7,7 @@
 #   + _norm_trust_path(储storage侧 delete/list 仍使用, 双侧各持一份保持落库/查询一致)。
 #   迁移后 trust.py 由 import app.services.chat.storage 改为 import app.tools.trust_db(同层, 零越层)。
 # 2026-09-16 小欧 - 问题B修复: _norm_trust_path 增加 tool_name 参数, 非文件信任域跳过 Path.resolve() — 小欧-2026-09-16
-# 2026-09-16 小欧 - 函数化(DRY/KISS核查, 文档[44]三堂会审): _norm_trust_path 公开化改名 norm_trust_path 单一来源,
+# 2026-09-16 小欧 - 函数化(DRY/KISS核查, 文档三堂会审): _norm_trust_path 公开化改名 norm_trust_path 单一来源,
 #   storage.delete_session_trust 撤销侧改 import 消费本函数 —— 消除 split 双份 13 行逐字重复(5.4 曾因双份漏同步引入退化),
 #   方向 services→tools 合法单向, 走既有模块内延迟导入同模式 — 小欧-2026-09-16
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""

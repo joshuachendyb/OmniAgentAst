@@ -3,7 +3,7 @@
 # 2026-07-21 - 小欧 - query_sql limit: schema暴露limit字段给LLM, 加范围校验
 # 2026-07-21 - 小欧 - Bug修: 删_format_table死代码; 多条SQL; 查询超时; if limit→is not None; 增量fetch
 # 2026-07-21 - 小欧 - Bug修: logger加到关键路径; str(sql)防非字符串; timeout→is not None; truncated标记; MySQL/PG增量fetch+超时已知限制
-# 2026-07-21 - 小欧 - 复核修复(Bug1-5): DRY重复truncated_reason→公共; connection_type/path改回if x:防空值; 先判断后append防截断误报
+# 2026-07-21 - 小欧 - 复核修复: DRY重复truncated_reason→公共; connection_type/path改回if x:防空值; 先判断后append防截断误报
 # 2026-07-21 - 小欧 - 入参即信任: 内部 limit 校验上界 OBS_MAX_DISPLAY_ITEMS→1000（同步 schema le=1000）
 # 2026-07-24 - 小欧 - 修复: WITH绕过只读检测(括号深度扫描CTE防WITH...UPDATE) + columns[:5]提取OBS常量
 # 2026-07-25 - 小欧 - 截断治理: str(sql)[:50](5处logger) → QUERY_SQL_INER_LOG_SQL 命名常量

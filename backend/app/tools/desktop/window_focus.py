@@ -9,7 +9,7 @@ window_focus — 聚焦窗口
 # 2026-07-31 - 小欧 - 三堂会审修复B9:SetForegroundWindow返回值未检查,失败假成功→检查后返回ERR_FOCUS_WINDOW
 # 2026-07-31 - 小欧 - 三堂会审修复B2:非Windows平台ImportError时提示"仅支持Windows"而非"安装pywin32"
 # 2026-07-31 - 小欧 - CRITICAL: 补充缺失的 ERR_NO_WIN32GUI 导入(第21行), 原缺导入导致非Windows/无pywin32环境时 NameError 崩溃
-# 2026-08-05 - 小欧 - 三堂会审修复#2: 多窗口匹配取"最后一个"改"第一个"(匹配到即停止枚举), 与 set_window_state 取 matched_hwnds[0] 行为一致, 消除同标题多窗口时行为不可预期
+# 2026-08-05 - 小欧 - 三堂会审修复: 多窗口匹配取"最后一个"改"第一个"(匹配到即停止枚举), 与 set_window_state 取 matched_hwnds[0] 行为一致, 消除同标题多窗口时行为不可预期
 # 2026-08-05 - 小欧 - 三堂会审修复#10: "ERR_INVALID_PARAM"字符串字面量→ERR_INVALID_PARAMS常量(注意常量带S), 与同文件ERR_FOCUS_WINDOW/ERR_WINDOW_NOT_FOUND常量风格统一
 # 2026-08-11 - 小欧 - task002 三堂会审修复B(问题B): ERR_FOCUS_WINDOW hint 文案改三段式引导
 #   —— ①先 set_window_state(action='restore') 还原窗口后重试 → ②仍失败重试一次 → ③再失败需用户手动点击激活。

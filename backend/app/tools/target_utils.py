@@ -41,7 +41,7 @@ def _resolve_target_field(tool_name: str) -> Optional[str]:
 
 
 def _extract_target(call: Dict[str, Any]) -> str:
-    """2026-08-18 小欧 - §10.3.3(2) 从工具调用入参提取展示用target(ActionStep结构化, 极少截断保留完整值; 截断收敛见observation_formatter)"""
+    """2026-08-18 小欧 - 从工具调用入参提取展示用target(ActionStep结构化, 极少截断保留完整值; 截断收敛见observation_formatter)"""
     _name = call.get("tool_name", "")
     _params = call.get("tool_params", {}) or {}
     _field = _resolve_target_field(_name)

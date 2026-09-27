@@ -4,7 +4,7 @@
 # 2026-07-20 - 小欧 - 删 SafetyResult(is_safe=False) 两处 kwarg: SafetyResult 已于 2026-07-18 删除 is_safe 字段, 此处漏改致中危/destructive shell 命令检查 TypeError 崩溃; 删后 blocked/requires_confirmation/safety_level 已正确表达风险意图, 行为不变
 # 2026-07-27 - 小欧 - 补全CMD安全检查模式(diskpart/bcdedit/vssadmin/sc delete等HIGH+med); 所有模式加 # PS / # CMD / # PS+CMD 注释
 # 2026-07-27 - 小欧 - Bugfix: MEDIUM多命中合并(原只记录首个); 规则分组优化(PS/CMD/PS+CMD); 注释修正(Remove-Item...Recurse标PS+CMD→PS)
-# 2026-07-28 - 小欧 - 欧阳BUG-09修复: 新增shell_type参数; 规则加第4元素st_tag("ps"/"cmd"/None); check_shell_command_risk按shell_type过滤不匹配规则
+# 2026-07-28 - 小欧 - 修复: 新增shell_type参数; 规则加第4元素st_tag("ps"/"cmd"/None); check_shell_command_risk按shell_type过滤不匹配规则
 # 2026-07-28 - 小欧 - 临时目录清理误伤修复: 新增_TEMP_SAFE_PATTERNS+_is_temp_cleanup, Remove-Item类HIGH命中时检查目标路径, 若为已知安全临时目录则降级MEDIUM(日志放行), 非临时路径仍HIGH拦截
 # 2026-07-28 - 小欧 - shell_type名称改为ps7/ps5/cmd/bash; 新增6条bash安全规则; 过滤逻辑扩展支持ps7/ps5/bash/cmd; _TEMP_SAFE_PATTERNS扩展bash路径
 # 2026-07-31 - 小欧 - Shell池进程保护: 新增_extract_stop_process_pids/_extract_taskkill_pids/_extract_bash_kill_pids; check_shell_command_risk加protected_pids参数; Stop-Process/taskkill/kill命中受保护PID时BLOCKED; 三提取函数+拦截点加日志; message优化为"系统保护进程"避免泄露架构细节
@@ -18,7 +18,7 @@
 #   【改法】PS HIGH新增两条字母flag规则: `-[rR][fF]`合并形态与`-[rR]\b.*?-[fF]\b`分离形态; desc含"递归"故临时目录降级逻辑同样生效; 与bash L57口径对齐
 #   【说明】文档方案第二条正则(?:Remove-Item|rm|ri|erase|del)\s+.*?\brm\s+-rf\b 需再次rm不成立(首rm已消费), 修正为`-[rR][fF]`合并flag形态
 # 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段+构造调用+比较全量重命名, 历史注释原文还原(勿改) — 小欧-2026-09-18
-# 2026-09-18 - 小欧 - 第7章实施([50]7.3.4 C18-C23): 6处用户可见message改写(逻辑/分级不变)——C18"高风险Shell操作，含路径穿越，不允许降级"/
+# 2026-09-18 - 小欧 - 实施: 6处用户可见message改写(逻辑/分级不变)——"高风险Shell操作，含路径穿越，不允许降级"/
 #   C19"高风险Shell操作，已阻止执行"/C20-C22"系统保护进程，禁止终止: PID {pid}"/C23"中风险Shell操作，需确认后执行"（半角逗号统一全角） — 小欧-2026-09-18
 # 2026-09-18 小欧 - 7.3.4-C18精化(重查挖掘): "不允许降级"为安全内部术语(降危/临时目录豁免机制), 普通用户看不懂;
 #   改"路径含穿越符号，已阻止"(说明=命令危险+穿越符号导致不放行+已阻止), 分级blocked不变, 所注参数#20语义保持 — 小欧-2026-09-18

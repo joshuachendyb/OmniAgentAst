@@ -2,24 +2,23 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-05-27 - 小沈 - 创建文件
-# 2026-06-08 - 小沈 - P1-7/8/9: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
+# 2026-06-08 - 小沈 - 参数校验与实例化: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
 # 2026-06-30 - 小欧 - 明确分层归属(工具的外部重试 → 工具层)，常量全部引自 tool_constants
 # 2026-07-15 - 小沈 - 外层超时恒>内层timeout+缓冲, 防状态工具进程孤儿化
 # 2026-07-17 - 小沈 - max_retries=0日志显示超时值; [Retry][L2]→[Retry][L3]重命名
-# 2026-07-18 - 小欧 - #13 fix: _validate_params增加参数类型校验
-# 2026-07-21 - 小欧 - #17 参数验证提示改进
-# 2026-07-23 - 小欧 - #8 fix: _validate_params扩展number/object类型+值范围clamp
-# 2026-07-23 - 小欧 - #11 fix: 智能类型容错(string参数传dict/list自动修复)
+# 2026-07-18 - 小欧 - 修复: _validate_params增加参数类型校验
+# 2026-07-21 - 小欧 - 参数验证提示改进
+# 2026-07-23 - 小欧 - 修复: _validate_params扩展number/object类型+值范围clamp
+# 2026-07-23 - 小欧 - 修复: 智能类型容错(string参数传dict/list自动修复)
 # 2026-07-26 - 小沈 - 欧阳报告: 非必填None值自动丢弃
-# 2026-07-26 - 小沈 - Bug #7: None丢弃日志增强
+# 2026-07-26 - 小沈 - 修复: None丢弃日志增强
 # 2026-07-29 - 小沈 - 超时hint注入: 导入TOOL_TIMEOUT_HINTS,try_once/_execute_with_retry的TIMEOUT路径查表传hint给LLM
 # 2026-07-30 - 小沈 - 保险丝常量重构: INSURANCE_CEILING=600(天花板), INSURANCE_BUFFER=30(缓冲), PROGRESSIVE_MAX=CEILING//2(无inner渐进上限); 两路径逻辑统一为: 有inner=max(inner,CEILING)+BUFFER, 无inner=min(base_timeout*(attempt+1),PROGRESSIVE_MAX)
 # 2026-07-30 - 小沈 - 备用工具命名统一: design注释+error hint中"搜索"→"搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)"; docstring渐进超时标注(无inner路径)并补(有inner路径)保险丝公式
-# 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), #11 fix行为不变(ensure_ascii=False) — 北京老陈驱动
-# 2026-08-05 - 小欧 - BUG-3修复: _validate_params 值范围clamp 补 number 类型
-#   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"#8 fix扩展number"不符
-#   【解决】clamp 条件由 _t=="integer" 扩为 _t in ("integer","number"), 行为一致化
-# 2026-08-05 - 小欧 - BUG-2修复: 保险丝三路取值统一(北京老陈 2026-08-05 原则第3条)
+# 2026-08-04 - 小欧 - DRY收敛: 手写json.dumps → 复用公共safe_json_dumps(复用先查库), 类型容错行为不变(ensure_ascii=False) — 北京老陈驱动
+# 2026-08-05 - 小欧 - 修复: _validate_params 值范围clamp 补 number 类型
+#   【病根】原仅钳 integer, 漏 number(float字段如 timer_schema.delay ge=1/le=86400), 超范围float仍抛Pydantic ValidationError, 与编辑历史"扩展number"不符
+# 2026-08-05 - 小欧 - 修正: 保险丝三路取值统一(北京老陈 2026-08-05 原则第3条)
 #   【病根】LLM未传timeout时, 有timeout参数的工具掉入"无inner"分支用 TOOL_TIMEOUTS default=60,
 #   而工具内部真实超时是schema默认值(如compress=300), 保险丝60<内部300 → 抢先截杀,
 #   compress内部的timed_out进度/hint永远回不来, 击穿7-30"保险丝恒晚于内部超时"修复
@@ -28,10 +27,10 @@
 #   try_once 与 _execute_with_retry 两处重复保险丝逻辑收敛至 _compute_fuse (DRY)
 #   【影响】compress: LLM未传时 60→630 修复; httpget/download/fetchpage/ping_port 同型一致性纠正,
 #     内部超时即schema默认(30/60/30/5), 保险丝恒覆盖不截杀; 无timeout参数工具(listdir/delete等)不变
-# 2026-08-05 - 小欧 - BUG-2修正(老陈审核): 原则3 inner 由 max(schema默认,base) 改为直接用 schema默认值
+# 2026-08-05 - 小欧 - 修正(老陈审核): 原则3 inner 由 max(schema默认,base) 改为直接用 schema默认值
 #   【理由】tool 的 timeout 值要优先; 与 base 取 min/max 都会在 schema默认>base 时丢失 tool 真实值
 #   (如 schema默认=1800,base=60, 取min得60→保险丝630反小于内部1800截杀); 直接用 schema默认最贴近 tool 值优先
-# 2026-08-05 - 小欧 - 注释与文档对齐: 设计注释块"有inner参数工具"补上 shell(漏网), 与文档13.4.2"6个工具"一致
+# 2026-08-05 - 小欧 - 注释与文档对齐: 设计注释块"有inner参数工具"补上 shell(漏网), 与设计文档 13.4.2"6个工具"一致
 # 2026-08-05 - 小欧 - 注释按4条原则重构(老陈审阅): 明确本保险丝是toolretry引擎外部超时(非工具自身超时);
 #   注释统一拆分为 inner取值来源(原则2 LLM值/原则3 schema默认) 与 保险丝公式(原则4 max(inner,CEILING)+BUFFER);
 #   "直接用LLM值+取max"旧表述有歧义, 实为 inner取LLM值后保险丝再max托底, 消除"未超CEILING是否托底"误解
@@ -55,15 +54,16 @@
 #      read_docx/read_pdf(limit)、network port(1-65535)、timer year(1900-2100), 一并修复
 #   【解决】新增_extract_numeric_bounds(spec)范围提取helper(顶层优先, 无则取anyOf[0]),
 #      clamp逻辑与既有钳制语义完全一致(v<min→min, v>max→max), 仅提取路径修正, 增强无退化
-# 2026-08-13 - 小欧 - 三堂会审修复#3/#31: #31 _extract_numeric_bounds 的 anyOf 分支改全量扫描
-#   首个含 min/max 的成员, 消除"anyOf[0] 恰为 null 分支则取不到边界"的顺序依赖;
-#   #3 clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
+# 2026-08-13 - 小欧 - 三堂会审修复: _extract_numeric_bounds 的 anyOf 分支改全量扫描
+#   anyOf[0] 若含 min/max 则取, 否则取首个含 min/max 的成员,
+#   消除"anyOf[0] 恰为 null 分支则取不到边界"的顺序依赖;
+#   clamp 门控废除顶层 type 判定(数组形式如 ["integer","null"] 时 if _t=="integer" 整段跳过,
 #   clamp 全程失效), 改为"能取到数值边界即钳制", 并补 isinstance(v,(int,float)) 防类型不可比较异常
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): params.llm_data.status 可能为 str, 防御 isinstance, 防 AttributeError
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.5.2 D3c/11.9 P4, #B 闭环 北京老陈 裁定②):
+# 2026-08-18 - 小健 - 三堂会审 修复(同源): params.llm_data.status 可能为 str, 防御 isinstance, 防 AttributeError
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码, 闭环 北京老陈 裁定②):
 #   try_once/_execute_with_retry 加 on_attempt_recorded 回调——每次实际执行(成功/失败)各回调一次,
 #   供文件A 排查副本 format 前直落盘(前端不可见铁律不变); execute_tool_with_retry 签名接收+:371 透传最后一跳(#21);
-#   实施修正: 失败回调置于 _should_retry 判定之前——中间可重试失败尝试也必须成块(11.7.9-2「每次尝试各写一块」),
+#   实施修正: 失败回调置于 _should_retry 判定之前——中间可重试失败尝试也必须成块(「每次尝试各写一块」),
 #   设计 diff 原只记末次失败与需求不符, 按需求权威执行
 # 2026-09-20 - 小欧 - E-3修复(结构化工具错误识别): 新增 StructuredToolError(携带 category 的标记异常) +
 #   _struct_error_category 提取; 错 dict 无 error_type 时回退读 other_data.category(字符串/枚举值均可);
@@ -260,7 +260,7 @@ class ToolRetryEngine:
         inner = 工具 timeout 参数值，取值来源：
           [原则2] LLM 显式传 timeout → inner = LLM 给的值
           [原则3] LLM 未传但工具有 timeout 参数 → inner = schema 默认值(tool 值优先)
-                 【修复BUG-2】LLM省略timeout时若掉入无inner用default=60, 可能<内部超时被截杀
+                 【修复】LLM省略timeout时若掉入无inner用default=60, 可能<内部超时被截杀
                  (如 compress schema默认300>60); 现用schema默认兜底, 保险丝恒覆盖内部超时
         [原则4] 有 inner → 保险丝 = max(inner, CEILING)+BUFFER (取max, inner超CEILING随它去)
         [原则1] 无 timeout 参数工具 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
@@ -313,7 +313,7 @@ class ToolRetryEngine:
         normalized_input, _ = normalize_params(action, action_input)
         params = self._validate_params(action, normalized_input, tool)
         # 验证失败（非法参数/缺失必需参数）→ 返回error_dict，不继续执行
-        # 2026-08-18 小健 三堂会审 Bug#7(同源): llm_data.status 可能为 str, 防御 isinstance
+        # 2026-08-18 小健 三堂会审 修复(同源): llm_data.status 可能为 str, 防御 isinstance
         _ec = ""
         if isinstance(params, dict):
             _ld = params.get("llm_data")
@@ -339,7 +339,7 @@ class ToolRetryEngine:
          不需要引擎层自动重试。这避免了asyncio.gather内部的重试复杂性。
 
          小欧 2026-07-09
-         2026-08-23 小欧: 新增 on_attempt_recorded 回调(文档[1]11.8.5.2 D3c/#B 闭环 北京老陈 裁定②):
+         2026-08-23 小欧: 新增 on_attempt_recorded 回调(落盘闭环 北京老陈 裁定②):
            每次实际执行(成功/失败)回调一次, 供文件A 排查副本落盘(format 前原始现场), 前端不可见不变
         """
         tool, params_or_error = self._prepare_execution(action, action_input)
@@ -415,8 +415,8 @@ class ToolRetryEngine:
             return top_min, top_max
         any_of = spec.get("anyOf")
         if isinstance(any_of, list):
-            # 2026-08-13 - 小欧 - 三堂会审修复#31: 全量扫描 anyOf 成员取首个含 min/max 者,
-            #   原固定 any_of[0] 顺序依赖(null分支在前时取不到边界 → clamp 静默失效); JSON-Schema
+            # 2026-08-13 - 小欧 - 三堂会审修复: 全量扫描 anyOf 成员取首个含 min/max 者,
+            #   原固定取 anyOf[0] 顺序依赖(null分支在前时取不到边界 → clamp 静默失效); JSON-Schema
             #   anyOf 成员顺序不保证。
             for a in any_of:
                 if isinstance(a, dict) and ("minimum" in a or "maximum" in a):
@@ -424,7 +424,7 @@ class ToolRetryEngine:
         return None, None
 
     def _validate_params(self, action: str, action_input: Dict[str, Any], tool: Callable):
-        """验证参数（非法参数+必需参数）— P1-05修复: 返回错误字典而非None
+        """验证参数（非法参数+必需参数）— 修复: 返回错误字典而非None
         小健 2026-06-18 合并_are_params_valid和_check_missing_params为一次查询"""
         params = action_input.copy()
         
@@ -465,10 +465,10 @@ class ToolRetryEngine:
                     if k not in required and params[k] is None:
                         _none_discarded.append(k)
                         del params[k]
-                # #13 fix: 参数类型校验 — 小欧 2026-07-18
-                # #8 fix: +number/object类型 + 值范围clamp — 三堂会审 小欧 2026-07-23
+                # 修复: 参数类型校验 — 小欧 2026-07-18
+                # 修复: +number/object类型 + 值范围clamp — 三堂会审 小欧 2026-07-23
                 props = input_schema.get("properties", {})
-                # #11 fix: 智能类型容错(LLM常为string参数传dict/list,自动json.dumps/str修复减少重试) — 小欧 2026-07-23
+                # 修复: 智能类型容错(LLM常为string参数传dict/list,自动json.dumps/str修复减少重试) — 小欧 2026-07-23
                 for k, v in params.items():
                     spec = props.get(k)
                     if not spec:
@@ -512,11 +512,11 @@ class ToolRetryEngine:
                         0, error_type="invalid_params",
                         action_name=action, action_params=params,
                     )
-                # #8 fix: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
-                # 2026-08-05 小欧 BUG-3修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
+                # 修复: 值范围clamp(integer/number参数的minimum/maximum),防Pydantic ValidationError — 小欧 2026-07-23
+                # 2026-08-05 小欧 修复: 原仅钳 integer,漏 number(float字段如timer_set delay),超范围float仍抛ValidationError; 补上 number — 小欧
                 # 2026-08-12 小欧 三堂会审修复: 范围提取走_extract_numeric_bounds, 兼容Pydantic v2 anyOf嵌套
-                #   (Optional字段min/max在anyOf[0], 原顶层取None→clamp失效, limit=1200漏到运行时)
-                # 2026-08-13 - 小欧 - 三堂会审修复#3: 门控不再依赖顶层type(数组形式type如["integer","null"]
+                #   (Optional字段min/max在anyOf[0]子结构, 原顶层取None→clamp失效, limit=1200漏到运行时)
+                # 2026-08-13 - 小欧 - 三堂会审修复: 门控不再依赖顶层type(数组形式type如["integer","null"]
                 #   时 _t in ("integer","number") 为False→整段clamp被跳过), 改为以"能取到数值边界"为准。
                 for k, v in params.items():
                     spec = props.get(k)
@@ -572,7 +572,7 @@ class ToolRetryEngine:
         重试策略（遵守KISS-DIRECT原则，简单直线）：
         1. 超时策略统一走 _compute_fuse (北京老陈 4条原则)（②保险丝超时; ①传给tool超时随params走,见顶部【两条超时】）— 小欧 2026-08-06 10:05:21:
            - [原则2] LLM显式传timeout → inner=LLM值 → max(inner, CEILING)+BUFFER (有inner)
-           - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【BUG-2修复】
+           - [原则3] 有timeout参数且LLM未传 → inner=schema默认值(tool值优先) → max(inner, CEILING)+BUFFER 【修复】
            - [原则1] 无timeout参数 → 渐进 base*(attempt+1) cap PROGRESSIVE_MAX (无inner)
            → 有inner: compress(600)=630, compress(1800)=1830; LLM未传compress=630; 无inner: listdir=60/120/180 cap 300
         2. 指数退避等待: 重试间隔 = backoff_factor^attempt（1s, 2s, 4s...）
@@ -625,7 +625,7 @@ class ToolRetryEngine:
                 error_category = ToolErrorClassifier.classify_tool_error(e)
 
                 if on_attempt_recorded:
-                    # #B 每次失败尝试均回调(置于 _should_retry 之前)——11.7.9-2「重试=多次执行=多个独立记录块,
+                    # 修复: 每次失败尝试均回调(置于 _should_retry 之前)——「重试=多次执行=多个独立记录块,
                     #   中间失败尝试也保留」; 实施修正: 设计 diff 原只记末次失败, 与需求不符, 按需求权威执行 — 小欧 2026-08-23
                     on_attempt_recorded(action, attempt, params, e, False)
 

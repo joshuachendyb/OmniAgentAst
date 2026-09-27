@@ -3,7 +3,7 @@
 # 编辑历史:
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 移除 MAX_SEARCH_RESULTS 收集上限与 max_depth=50 递归限制; 移除 FIND_PAGE_SIZE 分页, 返回全部匹配(offset 仅作跳过); 截断唯一收口于 observation_formatter OBS_FIND_MAX_ROWS/CHARS(两态说明); deadline 超时保留为保护
 # 2026-07-20 - 小欧 - 门限复查: 删 _is_already_seen_or_skipped 去重/跳过死逻辑(seen_files/start_offset 恒0, os.walk 不重复致 dup/skip 永False)及未用 Tuple import; 直接 _collect_entry_result, 行为不变
-# 2026-08-06 - 小欧 - 核查7/31未实现项[14]修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
+# 2026-08-06 - 小欧 - 核查未实现项修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 
 import asyncio

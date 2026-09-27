@@ -15,10 +15,10 @@
 #                    简化_compress_sync中冗余的isinstance分支,两个raise合并为一个
 # 2026-07-29 - 小欧 - 超时反馈增强:删前从result抢救已压缩文件数/大小,计算进度%,
 #                     hint给出3条降级建议(增大timeout/排除大文件/分批压缩),metrics带进度数据
-# 2026-08-05 - 小欧 - BUG-1修复: observation_formatter #18 触发字段由"compression_ratio"改为"compression_level"
+# 2026-08-05 - 小欧 - 修复: observation_formatter 触发字段由"compression_ratio"改为"compression_level"
 #    【病根】safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 致 #18 分支永不触发, 压缩观测格式化成死代码
 #    【解决】仅改触发字段为 data 恒在且 compress 独有的 compression_level, 保持去噪不复原大文件列表/ratio, 分支恢复工作
-# 2026-08-06 10:05:21 - 小欧 - 更正"min(timeout+30,630)"旧公式表述(已过时): BUG-2 后现行保险丝为 max(inner, CEILING=600)+BUFFER=30,
+# 2026-08-06 10:05:21 - 小欧 - 更正"min(timeout+30,630)"旧公式表述(已过时): 修正后现行保险丝为 max(inner, CEILING=600)+BUFFER=30,
 #    compress 保险丝恒=630 或 max(LLM值,600)+30, 恒晚于内部 _cf_deadline; 旧行按规范保留为历史记录
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, _current_task_id import 由 app.services.task.task_context 改 app.tools.context,
@@ -26,7 +26,7 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 # 2026-08-13 - 小欧 - 三堂会审修复#5: zip/tar/目标探测/stat/清理 全链 to_win_long_path 长路径化(仅NT):
 #   ZipFile/AESZipFile/tarfile.open 目标长路径; zf.write/tf.add 源文件长路径; _get_total_size_sync 各 stat 长路径;
@@ -64,7 +64,7 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.utils.json_utils import coerce_json
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
@@ -333,7 +333,7 @@ async def compress(
 
         os.makedirs(to_win_long_path(dst.parent), exist_ok=True)  # #5长路径 — 小欧 2026-08-13
 
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id, operation_type=OperationType.COMPRESS,
             source_path=src, destination_path=dst,

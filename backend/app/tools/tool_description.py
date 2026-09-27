@@ -20,7 +20,7 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
     Args:
         registry: ToolRegistry实例
         categories: 工具分类集合,None=全部
-        tool_names: 额外包含的指定工具名集合(即使其分类不在categories中) — P0-3 2026-06-23 小欧
+        tool_names: 额外包含的指定工具名集合(即使其分类不在categories中) — 修复 2026-06-23 小欧
         strict: 是否启用strict模式(强制arguments符合Schema) - 小沈 2026-06-17
 
     Returns:

@@ -7,7 +7,7 @@ Network Register - 网络通信工具注册点
 - 使用 registry.py 的 tool_registry.register() 显式注册
 - 使用 Pydantic 模型注册,自动生成 OpenAI Schema
 
-【工具列表】(共5个)— 【2026-05-17 小沈】P1: 6→5,ping+port_check→network_diagnose
+【工具列表】(共5个)— 【2026-05-17 小沈】精简: 6→5,ping+port_check→network_diagnose
 【2026-07-20 小欧】加描述规范:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 1. httpget - 发起HTTP请求
 2. download - 下载文件到本地

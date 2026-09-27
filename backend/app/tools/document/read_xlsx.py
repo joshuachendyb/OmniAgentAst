@@ -20,11 +20,11 @@
 #    截断后缀包含原文长度: f"...(截断:原文N字符)"
 #    row_count 同步更新, 使 llm_data.summary 与实际 data 一致
 #     formatter #25 已读 truncated 字段, 自动显示 "⚠ 已截断"
-# 2026-07-23 - 小欧 - 北京老陈驱动BugFix: 多 sheet 也 apply 行+格截断(bug4); 新增 truncated_reason 具体原因(bug5)
+# 2026-07-23 - 小欧 - 北京老陈驱动修复: 多 sheet 也 apply 行+格截断; 新增 truncated_reason 具体原因
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - OOD: 删 READ_XLSX_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
-# 2026-07-26 - 小沈 - BugFix #2/#9: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); #3: path参数不覆盖
+# 2026-07-26 - 小沈 - 修复: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); path参数不覆盖
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档

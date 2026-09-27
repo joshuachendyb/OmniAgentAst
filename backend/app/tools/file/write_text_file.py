@@ -8,7 +8,7 @@
 # 2026-07-29 - 小欧 - PYEOF容错: Python文件末尾整行PYEOF自动剥离(heredoc泄漏), 前置在validate_syntax之前; metrics新增auto_removed_pyeof
 # 2026-07-30 - 小沈 - except:pass补日志: diff生成失败改为logger.debug记录
 # 2026-08-06 - 小欧 - 追加补换行: append且原文件非空且末尾非换行符时自动补换行, 避免追加内容与末行合并(仿edit_text_file末行处理)
-# 2026-08-07 - 小欧 - BUG-05修复: 编码无法编码(GBK+emoji/ascii+中文)时自动降级utf-8重写/追加, 不再崩溃
+# 2026-08-07 - 小欧 - 修复: 编码无法编码(GBK+emoji/ascii+中文)时自动降级utf-8重写/追加, 不再崩溃
 #   【病根】append模式下_detect_file_encoding_for_write返回原文件编码(如gbk), user无法指定编码(file_safety_checker:126-127阻止), GBK无法编码emoji → 无fallback → 崩溃(日志09:11:34)
 #   【改法】_write_file_atomic 捕获 UnicodeEncodeError/UnicodeDecodeError 后, 非utf-8编码降级以utf-8整写(append先读回原内容防重复); utf-8也失败则返回错误
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, import 路径同步更新(配合 tools 禁 app.services 守护规则)
@@ -17,15 +17,15 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 # 2026-08-13 - 小欧 - 三堂会审修复#5: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码降级回退分支同步;
 #   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
 # 2026-08-21 - 小欧 - 11.6.1 exemplar: success分支调 with_artifact_file 声明产出物
-# 2026-09-20 - 小欧 - X2/13.3.4 跨任务文件写仲裁接入 + A-1 修复:
+# 2026-09-20 - 小欧 - X2/13.3.4 跨任务文件写仲裁接入 + 修复:
 #   ①writetext 主函数 acquire_write 登记 + 全部返回路径 finally 统一 release(13.3.4, 冲突仅提示不阻断);
-#   ②A-1 修复(红case驱动): _arb_warning = acquire_write 返回的占用者 task_id 即冲突信号, 此前从未读取(死变量),
+#   ②修复(红case驱动): _arb_warning = acquire_write 返回的占用者 task_id 即冲突信号, 此前从未读取(死变量),
 #     现消费并入 conflict_warning/llm_data arb_warning 段, X2 冲突提示真实落地(占用者非本人时为并行写警告)。
 #   compliance: SRP(仲裁职责归 arbiter)/KISS-DIRECT/禁止backward
 """
@@ -57,7 +57,7 @@ def _build_content_preview(content: str) -> str:
         return content
     return f"文首({_pc}字符):{content[:_pc]}\n...(中间省略)...\n文末({_pc}字符):{content[-_pc:]}"
 from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复: 改用 _or_noop 兜底 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复: 改用 _or_noop 兜底 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
@@ -89,7 +89,7 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
 
 def _write_file_atomic(content: str, path: Path, encoding: str,
                         append: bool, create_parents: bool) -> Tuple[bool, str]:
-    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行 — 小欧 2026-08-07 BUG-05修复: 编码无法编码时降级utf-8"""
+    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行 — 小欧 2026-08-07 修复: 编码无法编码时降级utf-8"""
     try:
         _long = to_win_long_path(path)  # #5长路径: open/mkdir/stat 统一 \\?\ 前缀 — 小欧 2026-08-13
         if create_parents:
@@ -107,7 +107,7 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
             f.write(content)
         return True, ""
     except (UnicodeEncodeError, UnicodeDecodeError) as e:
-        # BUG-05修复(小欧 2026-08-07): GBK等编码无法编码emoji时, 自动降级以utf-8重写/追加
+        # 修复(小欧 2026-08-07): GBK等编码无法编码emoji时, 自动降级以utf-8重写/追加
         #   日志证据: 09:11:34 write_text_file.py:88 'gbk' codec can't encode '\U0001f602'
         #   根因: _detect_file_encoding_for_write 对 append 返回文件原编码(如gbk), GBK无法编码emoji → 直接失败
         #   设计: UTF-8是GBK超集, 追加模式下转utf-8写(仅当原文件内容可无损重读), 不再崩溃
@@ -292,7 +292,7 @@ async def writetext(
         return build_error(data={}, llm_data=llm_data)
 
     # 2026-09-20 小欧 X2/13.3.4: 跨任务写仲裁登记(冲突仅提示不阻断) — 小欧-2026-09-20
-    # A-1 修复(小欧 2026-09-20): _arb_warning=acquire_write 返回的占用者task_id即冲突信号,
+    # 修复(小欧 2026-09-20): _arb_warning=acquire_write 返回的占用者task_id即冲突信号,
     #   此前从未读取(死变量, use_count==1), 现经 _build_write_text_file_llm_data 的 arb_warning 段消费,
     #   使 X2 冲突提示真实落地: 冲突→llm_data 带 arb_warning(占用者task_id)→观察层提示。
     from app.tools.file.file_write_arbiter import acquire_write, release_write
@@ -307,7 +307,7 @@ async def writetext(
         if conflict_warning:
             logger.warning(f"[writetext] {conflict_warning}")
 
-        # A-1 修复(小欧 2026-09-20): 消费 arbiter 冲突占用者提示——占用者非本人时为并行写警告,
+        # 修复(小欧 2026-09-20): 消费 arbiter 冲突占用者提示——占用者非本人时为并行写警告,
         #   并入 conflict_warning 通道 → 成功/警告路径均带 arb_warning 语义(冲突提示真实落地, 不阻断写)。
         if _arb_warning:
             _arb_tip = f"目标文件正被任务[{_arb_warning}]写入(并行覆盖风险), 本次写入可能覆盖他人结果"
@@ -347,7 +347,7 @@ async def writetext(
                 encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
 
         try:
-            _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+            _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
             operation_id = _hooks.record_operation(
                 task_id=task_id,
                 operation_type=OperationType.CREATE,

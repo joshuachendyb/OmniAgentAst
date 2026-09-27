@@ -11,10 +11,9 @@
 # 2026-07-25 - 小欧 - 【重构】URL非ASCII处理: 拦截报错→转码(IDNA+percent-encoding), RFC 3987标准IRI→URI转换, 中文域名/路径自动兼容; _transcode_url函数抽离; 转码后走validate_url做DNS/SSRF安全检查
 # 2026-07-25 - 小欧 - 重构: _transcode_url 移入 validate/url_validator.py 作为公用函数 transcode_url(download/fetch_webpage 同用)
 # 2026-07-25 - 小欧 - 【重构】Header非ASCII处理: 拦截报错→值自动转码(UTF-8→latin-1, HTTP标准兼容方式), 键仍强制ASCII(RFC 7230)
-# 2026-08-06 - 小欧 - 核查7/31未实现项[21]修复: Header值非ASCII由UTF-8→latin-1转码改为拒绝(与键处理对称, RFC 9110 Header须ASCII, 避免字节漂移致服务端解码错乱), 声称功能"转码改拒绝"
-# 2026-08-06 - 小欧 - 三堂会审修复: BUG-4 detail文案去"obs-text"暗示, 统一为"必须为ASCII"
-# 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
-# 2026-08-07 - 小欧 - BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError
+# 2026-08-06 - 小欧 - 核查未实现项修复: Header值非ASCII由UTF-8→latin-1转码改为拒绝(与键处理对称, RFC 9110 Header须ASCII, 避免字节漂移致服务端解码错乱), 声称功能"转码改拒绝"
+# 2026-08-06 - 小欧 - 三堂会审修复: detail文案去"obs-text"暗示, 统一为"必须为ASCII"
+# 2026-08-07 - 小欧 - 修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError
 #   【病根】coerce_json(headers)可能返回list, request_headers.update(list) 抛 ValueError: dictionary update sequence(日志09:05:38)
 #   【改法】if headers and isinstance(headers, dict): 才 update; 非dict自动忽略, 不抛异常(无退化)
 # 2026-08-12 - 小欧 - 修复: httpget兜底except将httpx.InvalidURL(重定向目标被拦截=SSRF主动防护)记ERROR, 触发E2E"日志无非安全ERROR"断言失败
@@ -233,7 +232,7 @@ async def httpget(
             return build_error(data={}, llm_data=llm_data)
 
         request_headers = {}
-        # BUG-02修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError — 小欧 2026-08-07
+        # 修复: headers仅接受dict, 防LLM传list引发 dict.update(list) ValueError — 小欧 2026-08-07
         #   日志证据: 09:05:38 http_request.py:343 ValueError: dictionary update sequence
         if headers and isinstance(headers, dict):
             request_headers.update(headers)

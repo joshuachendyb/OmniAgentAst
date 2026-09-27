@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-12 - 小欧 - 新建: A1 后半面 tools/security 包(A1 盲点四/五定案)。
-#   path_safe_check.py + temp_auth.py 由 app/safety 整体迁移(P6 复制, 逻辑零改动, 仅改 import 路径);
+#   path_safe_check.py + temp_auth.py 由 app/safety 整体迁移(复制, 逻辑零改动, 仅改 import 路径);
 #   safety_result.py 由 tool_safety_checker.py 复制 SafetyResult dataclass(供 tools 层 Shell 风险检查与 safety 层 checker 共享)。
 """
 tools/security — 工具层安全能力包(A1 迁入)

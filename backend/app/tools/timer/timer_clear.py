@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-21 - 小欧 - 12.2-Q2-D3(按文档[1]12.2 diff设计落地): cancelled 状态 UPDATE 的 except 静默 pass→
+# 2026-08-21 - 小欧 - 单口径落地(按文档 diff设计落地): cancelled 状态 UPDATE 的 except 静默 pass→
 #   logger.error 提级留痕(带 timer_id+失败后果说明), 内存取消行为零改动, 仅补可追溯性
-# 2026-08-21 - 小欧 - 12.2-Q7-D4(按文档[1]12.2 diff设计落地): db.get_conn("operations")→db.get_conn("timers"),
+# 2026-08-21 - 小欧 - 任务计数单口径(按文档 diff设计落地): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP) — 小欧 2026-08-21
 """
 timer_clear — 清除定时器
@@ -48,7 +48,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
     try:
         async with _timer_lock:
             # 模块级共享状态: _timers / _timer_callbacks 统一加锁
-            # — 小欧 2026-07-10 C-07
+            # — 小欧 2026-07-10
             if timer_id not in _timers:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_timer_clear_llm_data("success", duration_ms, timer_id, False)

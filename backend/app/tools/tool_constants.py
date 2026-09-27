@@ -102,8 +102,8 @@
 #   逐条按分类小节(文件/Shell/参数/Meta/网络/系统/注册表/桌面/文档/数据/迁移补充)删除, 保留全部活常量;
 #   删除后py_compile通过, 全部工具ensure_tools_registered()注册成功, 活常量均有工具真实引用(REF>=1),
 #   唯一含已删常量名的backend/scripts/fix_error_codes.py为一次性迁移脚本(FIXES字符串对照表,纯文本替换,不依赖本文件常量)
-# 2026-08-13 - 小沈 - P2: SUPPORTED_ALGORITHMS 迁入 constants.py(系统级常量), 本文件 re-export 保持下游兼容
-# 2026-09-16 - 小欧 - 问题A修复(文档[44]5.1): 新增 NON_FILE_TRUST_TOOLS(registry_write/registry_delete/execute_sql)
+# 2026-08-13 - 小沈 - 迁移: SUPPORTED_ALGORITHMS 迁入 constants.py(系统级常量), 本文件 re-export 保持下游兼容
+# 2026-09-16 - 小欧 - 问题修复(文档落码): 新增 NON_FILE_TRUST_TOOLS(registry_write/registry_delete/execute_sql)
 #   非文件信任域 —— 信任路径不能做文件系统 resolve; 单一来源 trust.extract_trust_path /
 #   trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
 """
@@ -126,7 +126,7 @@
     供 SystemErrorClassifier 和 LLM 客户端使用。
 
 禁止：
-  ❌ 本文件 import constants.py 的任何内容（SUPPORTED_ALGORITHMS re-export 除外 — 小沈 2026-08-13 P2 迁移过渡）
+  ❌ 本文件 import constants.py 的任何内容（SUPPORTED_ALGORITHMS re-export 除外 — 小沈 2026-08-13 迁移过渡）
   ❌ 本文件的常量被系统层代码引用（系统层应引用 constants.py 的 SYS_* 常量）
 """
 
@@ -377,7 +377,7 @@ NON_FILE_TRUST_TOOLS: set[str] = {
 }
 # 2026-08-13 - 小欧 - 扩展纳入8个office读写工具(unit-06 三堂会审, 北京老陈驱动):
 #   原集合仅文本文件工具, 致 action_handler 冲突检测对同路径 write_xlsx+read_xlsx 误判无冲突→并行→read 先跑报"路径不存在"
-#   (实测 prompt_003749 LLM[5] parallel_calls=7: write 67ms后 read 2ms失败, 重试成功);
+#   (实测 prompt_003749 LLM 并行调用=7: write 67ms后 read 2ms失败, 重试成功);
 #   并入后与文本工具同机制: 同路径写+读/写×2 并组串行, 读×2/不同路径仍并行, 无性能退化
 
 # 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 依3.7作废删除(2026-07-20 章18): Tool 层条数截断违反3.7, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
@@ -466,7 +466,7 @@ QINGMING_DATES: dict[int, tuple[int, int]] = {  # 【tool 级】使用对象: �
     2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
 }
 
-from app.constants import SUPPORTED_ALGORITHMS  # P2: 迁入 constants.py, 此处 re-export — 小沈 2026-08-13
+from app.constants import SUPPORTED_ALGORITHMS  # 迁入 constants.py, 此处 re-export — 小沈 2026-08-13
 
 # ============================================================
 # 🕐 11. 工具重试配置(从 tool_config.py 迁移 + HTTP 可重试状态码归并) — 【工具层】

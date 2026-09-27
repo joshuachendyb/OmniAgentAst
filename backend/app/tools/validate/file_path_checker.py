@@ -5,11 +5,11 @@
 # 2026-07-09 - 北京老陈 - 交叉引用注释统一
 # 2026-07-26 - 小欧 - hint_for_read_error加MemoryError分支, OOM时提示分批读取
 # 2026-07-26 - 小欧 - 迁移: sql_error_hint/hint_for_data_error从tool_constants迁入(file_path_checker同属检查类)
-# 2026-07-26 - 小沈 - BugFix #7: sqlite3/pandas函数级import提升模块级; #10: PermissionError冗余分支删(矫正,确认删除); #12: hint_for_read_error入__all__
+# 2026-07-26 - 小沈 - 修复: sqlite3/pandas函数级import提升模块级; PermissionError冗余分支删(矫正,确认删除); hint_for_read_error入__all__
 # 2026-07-29 - 小欧 - ERR_FILE_READ_FAILED 三堂会审: hint_for_read_error 文件不存在提示改为引导用find/listdir确认存在
 # 2026-08-02 - 小欧 - 加固validate_not_system_path: 新增磁盘根目录硬阻断(C:\), 修复盘后单级目录漏网(原path_after_drive无前导斜杠导致C:\\Windows不拦, 现用os.path.splitdrive规范化判断)
-# 2026-08-09 - 小欧 - task006 P1落地(sql_error_hint): 新增多语句识别分支"one statement at a time" → 精准hint"SQLite仅支持单条语句", 打破LLM多语句SQL低效重试循环
-# 2026-08-09 - 小欧 - task006 P3落地(sql_error_hint): 新增 UNIQUE 分支 — "unique constraint"/"is not unique" → 引导查现值再UPDATE/INSERT
+# 2026-08-09 - 小欧 - task006 落地(sql_error_hint): 新增多语句识别分支"one statement at a time" → 精准hint"SQLite仅支持单条语句", 打破LLM多语句SQL低效重试循环
+# 2026-08-09 - 小欧 - task006 落地(sql_error_hint): 新增 UNIQUE 分支 — "unique constraint"/"is not unique" → 引导查现值再UPDATE/INSERT
 #   病根: UNIQUE 约束失败回落"请检查SQL语法", LLM 无法据此自查(日志 `users.id` 重键 253 处), 陷入插重键低效循环
 #   方案: 一分支全覆盖 3 个 SQL 工具(execute_sql/query_sql/get_db_schema 共用 sql_error_hint, DRY); 验证不误伤其它6分支
 # 2026-08-09 - 小欧 - 三堂会审复审: UNIQUE 匹配词收紧 "unique constraint"→"unique constraint failed" — 原词会误命中

@@ -16,13 +16,13 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks(record_operation/execute_with_safety 两方法签名与 operation_record 一致), 消除 tools→safety 越层
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - BUG-3修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
 # 2026-08-13 - 小欧 - 三堂会审修复#5: _copy_sync 的 copy2/copytree/rmtree/mkdir/os调用全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套路径不再 WinError 206; 主函数目标存在探测/成功stat
 #   同步长路径化, 探测与操作口径一致(超长路径不误报"目标已存在"或stat失败)
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
-# 2026-09-20 - 小欧 - A-2(X2落地): 拷贝目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
+# 2026-09-20 - 小欧 - 写仲裁落地: 拷贝目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 """
@@ -45,7 +45,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # A1: ContextVar hooks — 小欧 2026-08-12; BUG-3修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
@@ -158,7 +158,7 @@ async def copy(
         return build_error(data={}, llm_data=llm_data)
 
     try:
-        _hooks = get_current_hooks_or_noop()  # A1: ContextVar 取安全 hooks(BUG-3修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
+        _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
         operation_id = _hooks.record_operation(
             task_id=task_id,
             operation_type=OperationType.COPY,
@@ -197,7 +197,7 @@ async def copy(
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
-        # A-2: 拷贝目标落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
+        # 拷贝目标落盘前登记文件写仲裁, 防跨任务并行覆盖 — 小欧 2026-09-20
         with claim_write(str(dst), task_id):
             if operation_id:
                 success, detail = await asyncio.to_thread(_hooks.execute_with_safety, operation_id=operation_id, operation_func=_copy_sync)

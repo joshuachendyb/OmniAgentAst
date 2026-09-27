@@ -2,7 +2,7 @@
 """
 execute_sql — 执行写操作SQL
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
-【2026-07-23 小欧】#6 fix: 扩展CREATE豁免+_AFFECTED_ROWS_LIMIT常量+affected_rows=-1防御
+【2026-07-23 小欧】修复: 扩展CREATE豁免+_AFFECTED_ROWS_LIMIT常量+affected_rows=-1防御
    【病根】①豁免仅CREATE TABLE/VIEW IF NOT EXISTS, 漏INDEX/TRIGGER/TEMP TABLE(约60%误拦)
           ②affected_rows>10000三处硬编码(DRY违规), 且-1不被处理
    【改法】①扩展豁免: CREATE INDEX/TRIGGER安全放行, TEMP TABLE/VIEW有IF NOT EXISTS放行
@@ -11,12 +11,12 @@ execute_sql — 执行写操作SQL
    【合规】DRY(常量消重)+KISS-DIRECT(if/elif直线扩展,不引入分级抽象)+YAGNI(模块常量不跨文件)
 【2026-07-24 小欧】修复: _sql_preview前置防空SQL漏截断 + timeout判断用is not None防0跳过
 【2026-07-26 小欧】迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
-【2026-08-07 小欧】P01+P02优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
-【2026-08-09 小欧】task006 P1落地: dry_run分支保留sqlite3异常(dry_run_error), 校验失败detail带异常原文+hint走sql_error_hint精准分支(多语句识别), 替代笼统"SQL语法校验失败/请检查SQL语法"
-【2026-08-09 小欧】task005核查P3落地: dry_run外层except加`if dry_run_error is None`保护 — 仅内层无异常时才用外层异常, 保留内层原始SQL语法错误(信息不丢失, 符合异常可追溯规范); 病根: SAVEPOINT/ROLLBACK失败(连接损坏)无条件覆盖内层已捕获异常
-【2026-08-11 小欧】三堂会审复核落地(P2-7): 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
+【2026-08-07 小欧】两项优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
+【2026-08-09 小欧】task006落地: dry_run分支保留sqlite3异常(dry_run_error), 校验失败detail带异常原文+hint走sql_error_hint精准分支(多语句识别), 替代笼统"SQL语法校验失败/请检查SQL语法"
+【2026-08-09 小欧】task005核查落地: dry_run外层except加`if dry_run_error is None`保护 — 仅内层无异常时才用外层异常, 保留内层原始SQL语法错误(信息不丢失, 符合异常可追溯规范); 病根: SAVEPOINT/ROLLBACK失败(连接损坏)无条件覆盖内层已捕获异常
+【2026-08-11 小欧】三堂会审复核落地: 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
    外层SAVEPOINT/ROLLBACK/RELEASE失败(连接异常)不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果, 增强不退化
-【2026-08-13 小欧】A5职责拆分: sql_error_hint/hint_for_data_error 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
+【2026-08-13 小欧】职责拆分: sql_error_hint/hint_for_data_error 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -181,7 +181,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 return build_error(data={}, llm_data=llm_data)
             syntax_valid = False
             dry_run_refused = None  # 2026-07-31 小欧: Bug③ MySQL DDL拒绝理由
-            dry_run_error = None  # 2026-08-09 小欧: task006 P1 保留校验异常供精准hint(多语句等)
+            dry_run_error = None  # 2026-08-09 小欧: task006 保留校验异常供精准hint(多语句等)
             try:
                 if connection_type == "sqlite":
                     conn.execute("SAVEPOINT dry_run_check")
@@ -212,9 +212,9 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                         finally:
                             trans.rollback()
             except Exception as e:
-                # 2026-08-09 小欧: task005核查P3 — 仅内层无异常时才用外层异常, 保留内层原始SQL错误(信息不丢失);
+                # 2026-08-09 小欧: task005核查 — 仅内层无异常时才用外层异常, 保留内层原始SQL错误(信息不丢失);
                 #   病根: SAVEPOINT/ROLLBACK等外层操作失败(连接损坏)会无条件覆盖内层已捕获的SQL语法异常
-                # 2026-08-11 小欧(P2-7): 删除无条件 syntax_valid=False 覆写 — 内层语法校验已通过(syntax_valid=True)时,
+                # 2026-08-11 小欧: 删除无条件 syntax_valid=False 覆写 — 内层语法校验已通过(syntax_valid=True)时,
                 #   外层SAVEPOINT/ROLLBACK/RELEASE失败属连接异常, 不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果
                 if dry_run_error is None:
                     dry_run_error = e
@@ -239,7 +239,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                 # ------------------------------------------------------------------------------
                 return build_success(data={"syntax_valid": True}, llm_data=llm_data)
             else:
-                # 2026-08-09 小欧: task006 P1 — detail带异常原文, hint走sql_error_hint精准分支(多语句等), 替代笼统提示
+                # 2026-08-09 小欧: task006 — detail带异常原文, hint走sql_error_hint精准分支(多语句等), 替代笼统提示
                 _dry_detail = f"SQL语法校验失败: {dry_run_error}" if dry_run_error else "SQL语法校验失败"
                 llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail=_dry_detail,
                                                           hint=sql_error_hint(dry_run_error) if dry_run_error else "请检查SQL语法",

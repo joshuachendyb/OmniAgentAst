@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 - 小欧 - #10 fix: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
+# 2026-07-18 - 小欧 - 修复: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
 #    与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
 # 2026-07-20 - 小欧 - 加【描述规范】注释:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
 # 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源),
@@ -10,7 +10,7 @@
 File Register - 文件工具注册点 v3.0
 
 【架构规范】2026-04-26 小沈
-【精简时间】2026-05-18 小沈 — 第17章工具精简:26→11
+【精简时间】2026-05-18 小沈 — 工具精简:26→11
 【拆分时间】2026-06-16 小沈 — 组合工具拆分:archive_tool→2, file_operation→4
 【拆分时间】2026-06-17 小欧 — data_file_format→2: read_config_file, write_config_file
 【删除时间】2026-06-24 小欧 — 删除read_config_file/write_config_file，text工具已覆盖

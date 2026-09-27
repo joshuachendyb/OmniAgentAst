@@ -232,7 +232,7 @@ def searchtool(query: str) -> Dict[str, Any]:
         })
 
     scored.sort(key=lambda x: x["_score"], reverse=True)
-    # P1-1修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
+    # 修复 2026-06-23 小欧: 相对阈值过滤,只保留分数>=最高分10%的结果
     # 2026-08-05 小欧 无命中修复: 完全无命中时max_score=0→threshold=0→全部工具过阈值,
     # 须先判"最高分>0"才计算阈值, 否则meaningful=[] (修复误报"匹配63个"并错误注入)
     if scored and scored[0]["_score"] > 0:

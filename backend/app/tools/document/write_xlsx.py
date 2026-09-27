@@ -4,7 +4,7 @@
 # 2026-07-26 - 小欧 - summary加路径前空格
 # 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
 # 2026-08-07 - 小欧 - P04优化(北京老陈驱动 task001): 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
-# 2026-08-08 - 小欧 - P1修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
+# 2026-08-08 - 小欧 - 修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """

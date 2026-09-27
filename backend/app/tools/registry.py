@@ -141,7 +141,7 @@ class ToolRegistry:
         """
         注册工具（单一入口，委托给私有方法）
         
-        【修复P0-5 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
+        【修复 2026-06-08 小沈】拆分为私有方法，遵守SRP原则
         【2026-06-16 小沈】用二元安全参数替代5级枚举
         【2026-06-18 小健】添加依赖管理参数
         """
@@ -187,7 +187,7 @@ class ToolRegistry:
         check_fn: Optional[Callable] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """更新已注册工具 — chendyg 2026-06-26 P1-25/26修复: 补全所有字段更新和分类索引"""
+        """更新已注册工具 — chendyg 2026-06-26 修复: 补全所有字段更新和分类索引"""
         _update_tool_metadata(
             self._tools[name],
             description=description,
@@ -204,7 +204,7 @@ class ToolRegistry:
             target_param=target_param,
         )
         self._implementations[name] = implementation
-        # 【P1-26修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
+        # 【修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
         self._update_category_index(category, name)
         return {"status": "success"}
     

@@ -9,7 +9,7 @@
 #   5. fitz 文本改为按页拆分(\n\n)
 #   6. 更新 formatter 路由注释
 #   7. 超出页数时拼接截断提示语
-# 2026-07-21 - 小欧 - 修复BUG-001:
+# 2026-07-21 - 小欧 - 修复:
 #   1. _process_page 表格从 list 改为
 #     dict 含 page+rows 双字段
 #   2. 恢复 paginate 按页过滤正确性
@@ -18,7 +18,7 @@
 # 2026-07-23 - 小欧 - 三堂会审5bug修复(配套删input门): 删READ_PDF_INPUT_MAX_BYTES import+input门块
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
-# 2026-07-26 - 小沈 - BugFix #3: path参数不覆盖
+# 2026-07-26 - 小沈 - 修复: path参数不覆盖
 # 2026-07-31 - 小欧 - Bug⑦修复: _is_garbled_text 仅统计 \ufffd 替换字符, 不再统计普通'?'(正文合法问号占比高时误触发fitz后备); Bug⑮修复: _extract_with_fitz 返回按页对齐文本列表, 防页内含空行 split("\n\n") 页码错位 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 """

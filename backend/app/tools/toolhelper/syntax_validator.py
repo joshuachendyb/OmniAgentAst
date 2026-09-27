@@ -12,7 +12,7 @@
 # ═══════════════════════════════════════════════════════════════════════════
 # 设计策略与逻辑(精要) — 小欧 2026-07-21
 # ═══════════════════════════════════════════════════════════════════════════
-# 【目标】防 LLM 把代码文件写坏(BUG-002类: 编辑/写入后语法错误落盘)
+# 【目标】防 LLM 把代码文件写坏(编辑/写入后语法错误落盘)
 #
 # 【原则】不自己写解析器; 全部调用语言官方/成熟库; 零新增依赖; 可扩展(OCP)
 #   校验器复用标准库: python→compile()(CPython官方解析器)
@@ -159,7 +159,7 @@ def validate_syntax(content: str, language: str, file_path: Optional[str] = None
         return VALIDATORS[language](content, file_path)
     except Exception as e:
         # 校验器意外崩溃(如 RecursionError / RuntimeError)不应让工具 500,
-        # 优雅降级为 invalid(阻断而非写坏), 避免 BUG-002 类损坏 — 小欧 2026-07-21
+        # 优雅降级为 invalid(阻断而非写坏), 避免文件损坏 — 小欧 2026-07-21
         return SyntaxCheckResult(
             valid=False, language=language,
             error=f"校验器异常: {type(e).__name__}: {str(e)}",
