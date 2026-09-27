@@ -13,8 +13,8 @@ key 全局唯一，加载自检重复直接拒启。
   2026-09-23 小欧 - 补 LLM 采样/裁剪/压缩/网络参数；notice 全量重写为用户语言
     （禁出现 SSE/HITL/信号量等内部黑话）；cors_origins 迁入 system 组并去 tuning 前缀。
   2026-09-24 小欧 - tuning.stream_task→live_front（与 LLM 流式撞名易误读）；新增 model_library 组。
-  2026-09-26 小欧 - 新增 security.api_token（secret，拒经 /settings 写，唯一写入口 auth/token）
-    与 security.ip_allowlist，置于 appearance 组最前。
+  2026-09-26 小欧 - 新增 security.access_token（secret，拒经 /settings 写，唯一写入口 auth/token）
+    与 security.access_token_allowlist，置于 appearance 组最前。
   2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（后端一次生成，前端纯回显）。
   2026-09-27 小欧 - 修 B6: workspace.project_root 默认值 "E:\test_dir" → ""（原值非空使
     `if root:` 恒真、永不回退用户主目录）。另精简本文件冗长编辑历史（410→285 行，只留决策不留过程）。
@@ -140,16 +140,16 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     ]},
     # 4.8 外观（appearance）
     #   前两项为**准入控制**（谁能进得来），与 security 组的操作安全分开。键名仍为 security.*
-    #   （对外契约与已装环境变量 OMNIAGENT_API_TOKEN 不变），键名前缀只表命名空间，
+    #   （对外契约与已装环境变量 OMNIAGENT_ACCESS_TOKEN 不变），键名前缀只表命名空间，
     #   展示位置由 GROUPS 决定。
     "appearance": {"label": "外观", "items": [
         # 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
-        _item("security.api_token", "secret", "访问口令", None, secret=True,
-              env_key="OMNIAGENT_API_TOKEN",
+        _item("security.access_token", "secret", "访问口令", None, secret=True,
+              env_key="OMNIAGENT_ACCESS_TOKEN",
               notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
         # 免口令 IP 白名单（非 secret：白名单不是机密，需在设置页可维护）
-        _item("security.ip_allowlist", "textarea", "免口令 IP 白名单", "",
-              env_key="OMNIAGENT_IP_ALLOWLIST",
+        _item("security.access_token_allowlist", "textarea", "免口令 IP 白名单", "",
+              env_key="OMNIAGENT_ACCESS_TOKEN_ALLOWLIST",
               notice="这些 IP/网段访问本服务免口令，逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1)恒免。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
         _item("app.language", "select", "系统语言", "zh-CN",
               options=["zh-CN", "en-US"], restart=True),
@@ -242,10 +242,10 @@ GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "m
 
 # 声明"registry 静态 secret 键中哪些的写路径已接好"的唯一权威集合：新增 secret 项必须在此登记，
 # 未登记则模块加载即拒启（fail-fast，防半吊子）。位置须在 _build_index 之前。
-# 键须与 registry 完整 key 一致。security.api_token 的写路径是专用 auth 端点（与 provider 通道同构）。
+# 键须与 registry 完整 key 一致。security.access_token 的写路径是专用 auth 端点（与 provider 通道同构）。
 # 2026-09-26 小欧 - 删原集合里的裸 "api_key"：registry 无任何键含 api_key（provider 的 api_key 是
 #   ProviderConfig 专属动态项，不在静态表），属死数据且与"须登记完整 key"自相矛盾。
-_SECRET_WRITTEN_BY_PROVIDER_CHANNEL = frozenset({"security.api_token"})
+_SECRET_WRITTEN_BY_PROVIDER_CHANNEL = frozenset({"security.access_token"})
 
 
 def _build_index() -> Dict[str, Dict[str, Any]]:

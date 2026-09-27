@@ -4,12 +4,12 @@ auth_routes — 访问口令（token）设置接口
 
 编辑历史:
   2026-09-26 - 小欧 - [72]第九章(9.5.3 第1步/第4步 + 9.8) 新建。补齐第九章的"设置侧" ——
-    此前只实现了"校验侧"(deps.verify_token 读 security.api_token) 与"登录页"，
+    此前只实现了"校验侧"(deps.verify_token 读 security.access_token) 与"登录页"，
     但**无处可设口令** → 用户被 401 跳登录页后拿不到口令，系统进不去（死锁）。
     本模块提供口令的**唯一权威写入口**，使 "设置一次即可" 与 "泄露可随时换"（9.5.3 第1/4步）落地。
 
 设计（与 [72]第六章方案 B 严格一致）：
-  - `security.api_token` 是 registry 的 **secret=True** 项 → 读路径经 mask_secret_value 掩码
+  - `security.access_token` 是 registry 的 **secret=True** 项 → 读路径经 mask_secret_value 掩码
     （**永不回明文**），settings 通用通道写路径被 `_validate_value` **显式拒绝**。
   - 改口令**只走本模块的专用端点**（与 provider 通道 model_service.update_provider_config 同构：
     单一权威写入口 + 通用通道显式拒绝），杜绝"同一个 key 两个写入口"的分叉。
@@ -38,8 +38,8 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.api.v1.deps import (
-    API_TOKEN_CONFIG_KEY,
-    API_TOKEN_ENV,
+    ACCESS_TOKEN_CONFIG_KEY,
+    ACCESS_TOKEN_ENV,
     _client_ip,
     _is_trusted_localhost,
     _resolve_configured_token,
@@ -78,11 +78,11 @@ async def get_token_status() -> Dict[str, Any]:
     """
     current = _resolve_configured_token()
     return {
-        "configured": bool(current),
+        "access_token_configured": bool(current),
         # masked 与 provider api_key 同形（掩码同一权威）；外层 configured 省得前端再解一层
         "masked": mask_secret_value(current),
-        "config_key": API_TOKEN_CONFIG_KEY,
-        "env_name": API_TOKEN_ENV,
+        "config_key": ACCESS_TOKEN_CONFIG_KEY,
+        "env_name": ACCESS_TOKEN_ENV,
     }
 
 
@@ -121,16 +121,17 @@ async def set_api_token(req: SetTokenRequest, request: Request) -> Dict[str, Any
     # 2026-09-26 小欧 - 修 C01：deps 是 env 优先，本函数原先无 env 接管检测，无条件写 yaml 后
     #   回"旧口令已作废"。env 部署下管理员改口令 → 旧口令（env 里的）仍有效、新值永不生效且无报错，
     #   "泄露了改成新的立即作废"的承诺形同虚设。改：env 接管时显式拒绝并指路。
-    if (os.environ.get(API_TOKEN_ENV) or "").strip():
+    if (os.environ.get(ACCESS_TOKEN_ENV) or "").strip():
         raise HTTPException(
             status_code=409,
-            detail=f"访问口令当前由环境变量 {API_TOKEN_ENV} 接管，设置页改写不生效"
+            detail=f"访问口令当前由环境变量 {ACCESS_TOKEN_ENV} 接管，设置页改写不生效"
                    f"（env 优先于配置文件）。请修改该环境变量后重启后端；"
                    f"或先清除该环境变量再回到本页面设置。",
         )
-    merge_region_patch({API_TOKEN_CONFIG_KEY: new_token}, scope="auth")
+    merge_region_patch({ACCESS_TOKEN_CONFIG_KEY: new_token}, scope="auth")
     return {
         "ok": True,
-        "configured": True,
+        # 2026-09-27 小欧 - 与 GET /auth/status 对齐改名（原 "configured" 泛化，看不出是访问口令）
+        "access_token_configured": True,
         "message": "访问口令已保存，立即生效（旧口令已作废）",
     }

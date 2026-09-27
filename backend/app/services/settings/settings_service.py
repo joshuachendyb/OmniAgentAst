@@ -229,10 +229,10 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
     # 故此处**不做隐式兜底**，直接报错，让"开了 secret 却没实现写保护"在开发期即暴露（配合 registry 自检）。
     if item.get("secret"):
         # 2026-09-26 - 小欧 - [72]三堂会审后修正(文案准确性): 原文案对**所有** secret 项一律提示
-        #   "请用 provider 通道"，但 [72]第九章新增的 security.api_token 走的是 **auth 专用端点**
+        #   "请用 provider 通道"，但 [72]第九章新增的 security.access_token 走的是 **auth 专用端点**
         #   (POST /api/v1/auth/token)，根本没有 provider 通道 —— 照原文案指引，用户会去 provider 通道
         #   找入口、根本找不到。**报错文案把人带偏**，比报错本身更有害。改为按 key 前缀给出各自真实的写通道:
-        #     ai.{provider}.api_key → provider 通道; security.api_token → auth 专用端点。
+        #     ai.{provider}.api_key → provider 通道; security.access_token → auth 专用端点。
         channel = ("auth 专用端点 POST /api/v1/auth/token"
                    if item["key"].startswith("security.")
                    else "provider 通道 PUT /api/v1/providers/{provider}")

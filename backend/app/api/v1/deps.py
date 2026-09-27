@@ -7,7 +7,7 @@ deps — API 统一鉴权依赖（token）
 处一次性挂载（KISS：不逐个改 router 定义）。
 
 设计要点：
-  - token 存 security.api_token，支持环境变量覆盖（多机统一配置，不必逐台改 yaml）
+  - token 存 security.access_token，支持环境变量覆盖（多机统一配置，不必逐台改 yaml）
   - 支持 Authorization: Bearer 与 X-API-Token 两种头
   - 未配置 token 时拒绝所有受保护请求（fail-closed），显式 OMNIAGENT_REQUIRE_AUTH=0 才放行
   - 失败返回 401 且文案统一，不区分"token 不对"与"未配置"（防探测）
@@ -35,9 +35,12 @@ from typing import Optional
 
 from fastapi import HTTPException, Request
 
-# 2026-09-26 - 小欧 - [72]第九章(9.6-1): token 配置键与环境变量名（集中在此，避免散落各处硬编码字符串）
-API_TOKEN_CONFIG_KEY = "security.api_token"   # config.yaml 中的键
-API_TOKEN_ENV = "OMNIAGENT_API_TOKEN"         # 环境变量名（优先于配置文件，便于多机统一配置）
+# 2026-09-26 - 小欧 - [72]第九章(9.6-1): 访问令牌的配置键与环境变量名（集中在此，避免散落各处硬编码字符串）
+# 2026-09-27 小欧 - 改名 api_token → access_token：原名与各家 LLM 服务商的密钥混淆
+#   （本项目 `ai.*.api_key` / `{PROVIDER}_API_KEY` 遍地都是）。access_token 专指"访问本服务
+#   所需的令牌"，看名字即知是鉴权而非模型密钥。配置键与环境变量同步改，不留旧名（禁止 backward）。
+ACCESS_TOKEN_CONFIG_KEY = "security.access_token"   # config.yaml 中的键
+ACCESS_TOKEN_ENV = "OMNIAGENT_ACCESS_TOKEN"          # 环境变量名（优先于配置文件，便于多机统一配置）
 # 显式关闭鉴权的环境变量（仅供本机开发/自动化测试显式声明；生产不得设置）
 REQUIRE_AUTH_ENV = "OMNIAGENT_REQUIRE_AUTH"
 # 首次设置豁免的端点路径单一来源。原为内联字面量、auth_routes 又各写一次前缀，
@@ -48,20 +51,22 @@ AUTH_STATUS_PATH = "/api/v1/auth/status"
 # 鉴权失败统一文案。严禁在此拆分"未配置"与"不匹配"两种措辞 —— 那会让攻击者从 401 body
 # 就能探测服务端是否已启用口令。是否已配置由豁免的 GET /auth/status 告知前端。
 AUTH_FAIL_MESSAGE = "访问口令无效或缺失"
-# IP/CIDR 白名单（白名单内免口令），支持环境变量与配置文件两种来源。
+# 免口令白名单（IP/CIDR），支持环境变量与配置文件两种来源。
+# 2026-09-27 小欧 - 改名 ip_allowlist → access_token_allowlist：原名像通用防火墙白名单，
+#   看不出与访问令牌有关。同步改配置键与环境变量。
 # ⚠ 白名单内等于无鉴权（可读全部明文密钥），只应放可信网段。
-IP_ALLOWLIST_CONFIG_KEY = "security.ip_allowlist"
-IP_ALLOWLIST_ENV = "OMNIAGENT_IP_ALLOWLIST"
+ACCESS_TOKEN_ALLOWLIST_CONFIG_KEY = "security.access_token_allowlist"
+ACCESS_TOKEN_ALLOWLIST_ENV = "OMNIAGENT_ACCESS_TOKEN_ALLOWLIST"
 
 
 def _resolve_configured_token() -> str:
     """取配置中的 token：环境变量优先（多机统一配置），回落配置文件。空字符串表示未配置。"""
-    env_val = (os.environ.get(API_TOKEN_ENV) or "").strip()
+    env_val = (os.environ.get(ACCESS_TOKEN_ENV) or "").strip()
     if env_val:
         return env_val
     try:
         from app.config import get_config
-        val = get_config().get(API_TOKEN_CONFIG_KEY)
+        val = get_config().get(ACCESS_TOKEN_CONFIG_KEY)
         return str(val or "").strip()
     except Exception:
         # 配置读取失败一律按"未配置"处理（fail-closed，不因读不到配置就放行）
@@ -90,8 +95,25 @@ def _is_localhost(ip: str) -> bool:
         return False
 
 
+# 2026-09-27 小欧 - [75]第5章 5.2：本模块不再自己读 FORWARDED_ALLOW_IPS 环境变量。
+#   值由 run_server.py 启动时注入下面这个模块变量（与传给 uvicorn 的是同一份，见 5.2）。
+#   原因：应用与 uvicorn 各读一次环境变量可能不一致（命令行启动时应用层读不到、只看到默认值），
+#   改为同源注入后不可能分叉，并顺带修掉"命令行传 * 检测不到"的盲区。
+#   未被 run_server 启动（如测试直接 import）时为 None → 按 uvicorn 默认 "127.0.0.1" 处理。
+_forwarded_allow_ips: Optional[str] = None
+
+
+def set_forwarded_allow_ips(value: str) -> None:
+    """由启动脚本注入 uvicorn 的 forwarded_allow_ips 实参（唯一来源）。
+
+    2026-09-27 小欧 - [75]第5章 5.2。run_server.py 在 uvicorn.run() 前调用一次。
+    """
+    global _forwarded_allow_ips
+    _forwarded_allow_ips = value
+
+
 def _forwarded_allow_ips_all() -> bool:
-    """uvicorn 是否被配成"信任任意来源的 X-Forwarded-For"（FORWARDED_ALLOW_IPS=*）。
+    """uvicorn 是否被配成"信任任意来源的 X-Forwarded-For"（值 = `*`）。
 
     2026-09-27 小欧 - 安全加固。uvicorn 默认 forwarded_allow_ips="127.0.0.1"，此时远程客户端
     伪造 XFF 改不了 request.client.host，回环判定可信。但一旦被配成 `*`（常见于"反代在内网、
@@ -100,10 +122,8 @@ def _forwarded_allow_ips_all() -> bool:
 
     此时应用层**无法区分**真回环与伪造（两者 client.host 都是 127.0.0.1），故 fail-closed：
     不再给回环豁免，一律要口令（见 _is_trusted_localhost）。
-    ⚠️ 本函数只认环境变量；用命令行 `--forwarded-allow-ips=*` 启动的检测不到 ——
-    run_server.py 已改为显式传参并默认 127.0.0.1，从源头堵住该路径。
     """
-    return (os.environ.get("FORWARDED_ALLOW_IPS") or "127.0.0.1").strip() == "*"
+    return (_forwarded_allow_ips or "127.0.0.1").strip() == "*"
 
 
 def _is_trusted_localhost(ip: str) -> bool:
@@ -112,12 +132,12 @@ def _is_trusted_localhost(ip: str) -> bool:
 
 
 def _resolve_ip_allowlist() -> list:
-    """取 IP/CIDR 白名单：环境变量优先（多机统一配置），回落配置文件 security.ip_allowlist。"""
-    raw = (os.environ.get(IP_ALLOWLIST_ENV) or "").strip()
+    """取 IP/CIDR 白名单：环境变量优先（多机统一配置），回落配置文件 security.access_token_allowlist。"""
+    raw = (os.environ.get(ACCESS_TOKEN_ALLOWLIST_ENV) or "").strip()
     if not raw:
         try:
             from app.config import get_config
-            v = get_config().get(IP_ALLOWLIST_CONFIG_KEY)
+            v = get_config().get(ACCESS_TOKEN_ALLOWLIST_CONFIG_KEY)
             if isinstance(v, list):
                 raw = ",".join(str(x) for x in v)   # 空项由下方 split 后的 if x.strip() 统一过滤
             elif v:
@@ -219,7 +239,7 @@ async def verify_token(request: Request) -> None:
         from app.logger import logger  # noqa: PLC0415
         logger.warning(
             "[auth] 拒绝请求：服务端尚未配置访问口令（键 %s / 环境变量 %s），来源 path=%s",
-            API_TOKEN_CONFIG_KEY, API_TOKEN_ENV, _path,
+            ACCESS_TOKEN_CONFIG_KEY, ACCESS_TOKEN_ENV, _path,
         )
         raise HTTPException(status_code=401, detail=AUTH_FAIL_MESSAGE)
     provided = extract_token(request)

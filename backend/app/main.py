@@ -20,7 +20,7 @@
 # 2026-09-26 小欧 - [72]第九章: 全路由统一 token 鉴权（服务绑 0.0.0.0 是多机部署硬前提不可收窄，
 #   原状态下局域网任意设备可直调任何接口：读走全部明文密钥、改擦密钥、越权读会话）。
 #   鉴权细节与设计依据见 deps.py 文件头；_mount() 抽成唯一入口的理由见挂载点处注释。
-# 2026-09-27 小欧 - ①默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_DOCS=1 开启）：这三者是
+# 2026-09-27 小欧 - ①默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_API_DOCS=1 开启）：这三者是
 #   **应用级**路由，不在任何 APIRouter 内，走不到 verify_token，实跑确认无 token 可拉走全部端点与模型。
 #   / 的 docs 键同步条件化，避免广播一个必 404 的地址。②访问口令路由改走 _mount()，不再手写
 #   include_router 绕过唯一入口。③_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
@@ -97,9 +97,9 @@ logger.info(f"Backend version: {app_version}")
 
 # 2026-09-27 10:15 小欧 - 关闭应用级 API 文档端点（修 [72]核查发现的鉴权缺口）：/docs /redoc /openapi.json
 #   是**应用级路由**，不在任何 APIRouter 内，走不到 verify_token —— 实跑确认无 token 可拉走 57 个端点
-#   + 44 个请求模型。本机开发需查看时设 OMNIAGENT_ENABLE_DOCS=1（多机部署下别开）。
+#   + 44 个请求模型。本机开发需查看时设 OMNIAGENT_ENABLE_API_DOCS=1（多机部署下别开）。
 #   布尔解析复用 config.env_flag（假值列表统一单点），不手搓真值列表。
-_ENABLE_DOCS = env_flag("OMNIAGENT_ENABLE_DOCS")
+_ENABLE_DOCS = env_flag("OMNIAGENT_ENABLE_API_DOCS")
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
@@ -109,7 +109,7 @@ app = FastAPI(
     openapi_url="/openapi.json" if _ENABLE_DOCS else None,
 )
 if not _ENABLE_DOCS:
-    logger.info("API 文档端点已关闭（如需本地查看设置：OMNIAGENT_ENABLE_DOCS=1）")
+    logger.info("API 文档端点已关闭（如需本地查看设置：OMNIAGENT_ENABLE_API_DOCS=1）")
 
 logger.info("Backend v" + app_version + " started")
 
