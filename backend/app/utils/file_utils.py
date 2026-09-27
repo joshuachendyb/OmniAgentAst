@@ -3,14 +3,14 @@
 文件操作公共辅助函数 — 纯文件系统操作，不依赖任何业务层
 
 编辑历史:
-  2026-08-13 小沈 P1: 从 tools/file/delete_file.py 复制迁入 remove_readonly,
+  2026-08-13 小沈: 从 tools/file/delete_file.py 复制迁入 remove_readonly,
     消除 safety→tools 实现依赖(safety/operation_maintenance.py 和 operation_rollback.py
     改从本文件导入, tools/file/delete_file.py 同步改从本文件导入)
   2026-08-13 小沈 P5b: 从 tools/tool_fc_helper.py 复制迁入 backup_file,
     消除 services/model/persistence.py→tools 实现依赖
   2026-09-20 小沈 v4.19 9.3.2: 新增 atomic_write（临时文件+os.replace 原子写入）;
     backup_file 改为编号链 backup.1~5 + FIFO（保留原签名兼容，suffix 透传）
-  2026-09-21 小欧 依文档54 9.3.2 复核回滚: backup_file 轮转恢复文档原样（不存在的中间文件
+  2026-09-21 小欧 依设计文档 9.3.2 复核回滚: backup_file 轮转恢复文档原样（不存在的中间文件
     直接 continue 跳过，不搬移——文档明确如此，非缺陷）
 """
 

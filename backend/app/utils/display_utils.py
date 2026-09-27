@@ -65,7 +65,7 @@ def extract_metadata_from_steps(execution_steps: Optional[List[Dict[str, Any]]])
     """
     if not execution_steps:
         return {"model": None, "provider": None, "display_name": None}
-    # 复用extract_display_name_from_steps避免重复遍历 — 小欧 2026-07-10 M-55
+    # 复用extract_display_name_from_steps避免重复遍历 — 小欧 2026-07-10
     display_name = extract_display_name_from_steps(execution_steps)
     for step in execution_steps:
         if step.get("type") == "start":

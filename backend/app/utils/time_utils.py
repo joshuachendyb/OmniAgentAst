@@ -1,7 +1,7 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 小欧 #19 fix: convert_to_utc(None)返回None而非当前时间
+# 2026-07-18 小欧 修复: convert_to_utc(None)返回None而非当前时间
 """
 时间工具函数 — 统一时间戳/步骤计数器入口
 
@@ -18,7 +18,7 @@ Author: 小健 - 2026-05-28
 
 # 编辑历史:
 # 2026-07-14 - 小欧 - 修复ensure_timestamp_milliseconds: 13位epoch毫秒串被Python3.13宽松fromisoformat误解析为pre-1970 datetime致.timestamp()抛OSError[Errno22]; 数字串直接转int(判别毫秒/秒), 并对fromisoformat分支补充捕获OSError
-# 2026-07-18 - 小欧 - #19 fix: convert_to_utc(None) 返回 None 而非当前时间, 返回值类型改为 Optional[str]; 调用方 grep 确认均不受影响
+# 2026-07-18 - 小欧 - 修复: convert_to_utc(None) 返回 None 而非当前时间, 返回值类型改为 Optional[str]; 调用方 grep 确认均不受影响
 # 2026-07-26 - 小沈 - 欧阳报告: 新增safe_utc_offset安全获取本地UTC偏移(utcoffset()可能返回None)
 # 2026-08-08 - 小欧 - 全程统一本地时区(task004问题1): 新增get_local_iso_timestamp/to_local_iso; format_timestamp改语义(字符串不再强制加Z, 走to_local_iso); __all__补2项
 
@@ -81,7 +81,7 @@ def to_local_iso(time_value: Any) -> Optional[str]:
 
 
 def convert_to_utc(time_value) -> Optional[str]:
-    """将时间转换为UTC ISO格式；None 如实返回 None — 小欧 2026-07-18 #19 fix"""
+    """将时间转换为UTC ISO格式；None 如实返回 None — 小欧 2026-07-18 修复"""
     if time_value is None:
         return None
     if not time_value:
@@ -137,7 +137,7 @@ def timestamp_for_filename() -> str:
 def format_timestamp(val: Any) -> Optional[str]:
     """通用时间戳格式化(本地时区) — 小沈 2026-02-17
     小欧 2026-07-04 修复: 增加OSError捕获，处理Windows不支持负时间戳的问题
-    小欧 2026-07-10 M-19: 为None时返回None
+    小欧 2026-07-10: 为None时返回None
     小欧 2026-08-08 全程统一本地: 字符串不再强制追加Z, 走 to_local_iso 统一转换
     """
     if val is None:

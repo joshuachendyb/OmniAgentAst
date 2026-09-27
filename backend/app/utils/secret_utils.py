@@ -3,7 +3,7 @@
 secret_utils — 密钥/敏感值判定的公用函数（全局层）
 
 编辑历史:
-  2026-09-26 - 小欧 - [72]第二章(2.4 配套·DRY): 新建。抽出 is_blank_secret() 供两处复用，
+  2026-09-26 - 小欧 - 新建(DRY 配套): 抽出 is_blank_secret() 供两处复用，
     避免第三次出现"key 空白判定"的不一致写法:
       ① lifecycle/validation.py:52 原为 `not isinstance(api_key, str) or api_key.strip() == ""`
       ② model/resolver.py 原为 `(_pv_cfg.get("api_key") or "").strip() or None`
@@ -17,7 +17,7 @@ from typing import Any
 def is_blank_secret(value: Any) -> bool:
     """判定密钥/敏感值是否为"未配置"（空、None、纯空白均算未配置）。
 
-    语义来源 [72]第二章：key 空白就是空白，不得回落、不得用别的 provider 的 key 顶替
+    语义: key 空白就是空白，不得回落、不得用别的 provider 的 key 顶替
     （"key 空白即失败"的一致语义）。调用方据此决定"报错"或"跳过不写"。
 
     Args:

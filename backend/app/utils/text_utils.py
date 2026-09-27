@@ -2,9 +2,9 @@
 # 编辑历史:
 # 2026-06-09 - 小沈 - 新建: 文本处理公共工具
 # 2026-07-12 - 小欧 - v2.0: 新增 format_tool_call_markup
-# 2026-07-16 - 小欧 - v2.1: 新增 extract_tool_call_xml(P1-04推理降级XML提取) + _format_xml_tool_block改调它(DRY)
+# 2026-07-16 - 小欧 - v2.1: 新增 extract_tool_call_xml(推理降级XML提取) + _format_xml_tool_block改调它(DRY)
 # 2026-08-20 - 小欧 - 遥测收敛: 本文件在遥测链路被引用(工具调用标记格式化), 本次无逻辑改动仅补标准编辑历史头
-# 2026-08-30 - 小欧 - 13.11(设计文档[2]13.12.9): 新增公用 normalize_blank_lines(空行规约, 前后端同一张规则表, 幂等);
+# 2026-08-30 - 小欧 - 空行规约(设计文档): 新增公用 normalize_blank_lines(空行规约, 前后端同一张规则表, 幂等);
 #   format_tool_call_markup 末尾 \n{3,} 压缩+strip 收敛至该公用函数(answer 轮行为逐字节等价, DRY); __all__ 登记
 # 2026-09-05 小健 - answer_focus第二阶段搬一(8.1): 新增公用 dedup_repeat(从 answer_handler._dedup_repeat 去下划线转公有,
 #   逐字复制含L97 logger.warning; 随迁REPEAT_*三常量与Counter/logger import) - 小健-2026-09-05
@@ -19,7 +19,7 @@
 
 Author: 小沈 - 2026-06-09
 v2.0: 新增format_tool_call_markup — 小欧 2026-07-12
-v2.1: 新增extract_tool_call_xml(P1-04推理降级XML提取) + _format_xml_tool_block改调它(DRY) — 小欧 2026-07-16
+v2.1: 新增extract_tool_call_xml(推理降级XML提取) + _format_xml_tool_block改调它(DRY) — 小欧 2026-07-16
 """
 import json
 import re
@@ -111,7 +111,7 @@ def _try_format_json_tool_call(obj):
 
 
 def extract_tool_call_xml(text: str) -> Optional[Dict[str, Any]]:
-    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16 (P1-04)
+    """从文本中提取 <tool_call> XML 格式的工具调用 — 小欧 2026-07-16 (推理降级)
 
     解析 <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
     返回 {"tool_name": str, "tool_params": Dict[str, str]}

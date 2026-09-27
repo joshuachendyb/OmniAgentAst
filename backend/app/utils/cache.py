@@ -158,7 +158,7 @@ _MISS = object()
 
 
 class TTLCache:
-    """单值TTL缓存 — 小沈 2026-06-17 从universal_agent内联缓存提取 — 小欧 2026-07-10 C-17 哨兵对象"""
+    """单值TTL缓存 — 小沈 2026-06-17 从universal_agent内联缓存提取 — 小欧 2026-07-10 哨兵对象"""
 
     def __init__(self, ttl: float = 60.0):
         self._ttl = ttl
