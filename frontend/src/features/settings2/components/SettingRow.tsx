@@ -32,12 +32,12 @@ import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
 // 2026-09-26 小欧 - [72]第六章(6.5): secret 项的清空改走 provider 通道，需 modelApi
 import { modelApi } from '@/services/api/model.api';
-// 2026-09-26 小欧 - [72]第九章: security.api_token 走 auth 专用通道（settings 通道拒写 secret）
+// 2026-09-26 小欧 - [72]第九章: security.access_token 走 auth 专用通道（settings 通道拒写 secret）
 import { authApi } from '@/services/api/settings.api';
 
 /** [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项的 key → 所属 provider 名（非 provider secret 返回空串）。
  *  key 形状为 `ai.{provider}.{field}`（provider 通道按 ai 区域嵌套写，见 settings_registry:152-154），
- *  故取第 2 段即 provider 名。非 `ai.` 前缀的 secret 项（如 [72]第九章的 `security.api_token`）
+ *  故取第 2 段即 provider 名。非 `ai.` 前缀的 secret 项（如 [72]第九章的 `security.access_token`）
  *  不走 provider 通道，返回空串。 */
 function secretProviderName(key: string): string {
   const parts = key.split('.');
@@ -46,7 +46,7 @@ function secretProviderName(key: string): string {
 
 /** [72]第九章 - 小欧 - 2026-09-26: 按 secret 项的 key 分流到各自的**唯一权威写通道**。
  *  - `ai.{provider}.api_key` → provider 通道（modelApi.updateProvider，[72]第三章三态）
- *  - `security.api_token`     → auth 专用通道（authApi.setToken，[72]第九章）
+ *  - `security.access_token`     → auth 专用通道（authApi.setToken，[72]第九章）
  *  两类 secret 项的写路径**都**被 settings 通用通道显式拒绝（[72]第六章方案 B），
  *  故此处必须按 key 分派，绝不能把 api_token 发到 provider 通道（会打错端点）。
  *
@@ -61,7 +61,7 @@ const writeSecret = async (key: string, value: string): Promise<void> => {
     await modelApi.updateProvider(secretProviderName(key), { api_key: value });
     return;
   }
-  if (key === 'security.api_token') {
+  if (key === 'security.access_token') {
     // [72]第九章: 口令走 auth 专用端点（后端拒空口令，此处传值必非空）
     await authApi.setToken(value);
     return;
@@ -200,7 +200,7 @@ export const SettingRow: React.FC<Props> = ({
             确定
           </Button>
           {/* [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项的「清空」改走各自唯一权威写通道
-              （ai.*.api_key → provider 通道；security.api_token → auth 通道），不再经 onChange → settings 通用通道。
+              （ai.*.api_key → provider 通道；security.access_token → auth 通道），不再经 onChange → settings 通用通道。
               理由（方案 B）：secret 三态只在专用通道实现；[72]第六章已让 settings 写路径对 secret 项
               **显式拒绝**，若此处仍走 settings 通道，用户一点清空就会拿到"该敏感项不支持经 /settings 写入"的报错。
               两类 secret 项的写路径各自保持单一权威，杜绝同一 key 两个写入口产生分叉。 */}
@@ -208,7 +208,7 @@ export const SettingRow: React.FC<Props> = ({
               却把 showMessage 警告留在 onClick 里 —— 按钮不渲染，onClick 永不触发，那段代码是纯死代码
               （留着即"看不见的逻辑"，后人误以为点得到）。改为**条件渲染**：不渲染就真不渲染，
               警告文案改挂到 notice 区之外的用户可见入口（本项 notice 已含关闭鉴权的正确路径说明）。 */}
-          {item.key !== 'security.api_token' && (
+          {item.key !== 'security.access_token' && (
             <Button
               size="small"
               onClick={() => {

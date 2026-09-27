@@ -10,7 +10,7 @@
  *   之后所有请求由 client.ts 自动附带 `Authorization: Bearer <token>`。
  *
  * 四步操作（对应 9.5.3）：
- *   第1步 服务端在设置里填口令（security.api_token）或环境变量 OMNIAGENT_API_TOKEN
+ *   第1步 服务端在设置里填口令（security.access_token）或环境变量 OMNIAGENT_ACCESS_TOKEN
  *   第2步 打开本页输入口令 ← 本文件
  *   第3步 输对即记住（localStorage），以后不用再输；输错进不去
  *   第4步 口令泄露 → 在设置里改成新口令，旧口令立即作废
@@ -44,7 +44,7 @@ const LoginPage: React.FC = () => {
     void authApi
       .getTokenStatus()
       .then((st) => {
-        if (alive) setNotConfigured(!st.configured);
+        if (alive) setNotConfigured(!st.access_token_configured);
       })
       .catch(() => {
         /* 查询失败不阻断输入（可能已配置但网络异常） */

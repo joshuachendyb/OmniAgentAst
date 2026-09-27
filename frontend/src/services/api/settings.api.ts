@@ -13,7 +13,7 @@ const AUTH_REQ: ApiRequestConfig = { _skip401: true };
 /**
  * 访问口令（token）设置 — [72]第九章(9.5.3 第1步/第4步)
  *
- * 为何独立于 settingsApi：`security.api_token` 是 registry 的 secret 项，settings 通用通道
+ * 为何独立于 settingsApi：`security.access_token` 是 registry 的 secret 项，settings 通用通道
  * **显式拒绝**写 secret（[72]第六章方案 B），故口令有且仅有这条专用写路径
  * （与 provider 通道 modelApi.updateProvider 同构：单一权威写入口，避免同一 key 两个写入口分叉）。
  * 首次设置豁免由后端处理（未配置口令时该端点放行，否则"没口令就永远设不了"死锁）。
@@ -21,14 +21,14 @@ const AUTH_REQ: ApiRequestConfig = { _skip401: true };
 export const authApi = {
   /**
    * 查是否已配置（**永不回明文**）。返回 4 个字段：
-   *   configured  是否已配置口令（前端实际只用这一个）
+   *   access_token_configured  访问口令是否已配置（前端实际只用这一个）
    *   masked      掩码 {configured, masked}，与 provider api_key 同一形状
    *               （mask_secret_value 产物；前端目前零消费）
-   *   config_key  落盘的配置键名（security.api_token），供设置页定位
-   *   env_name    对应环境变量名（OMNIAGENT_API_TOKEN），供提示"也可改环境变量"
+   *   config_key  落盘的配置键名（security.access_token），供设置页定位
+   *   env_name    对应环境变量名（OMNIAGENT_ACCESS_TOKEN），供提示"也可改环境变量"
    */
   getTokenStatus: async (): Promise<{
-    configured: boolean;
+    access_token_configured: boolean;
     masked: { configured: boolean; masked: string };
     config_key: string;
     env_name: string;
