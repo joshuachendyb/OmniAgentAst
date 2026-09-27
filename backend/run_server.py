@@ -1,9 +1,17 @@
 # ============================================================================
 # exe打包启动入口 — PyInstaller Analysis 入口, uvicorn 编程式启动(无--reload)
 # 创建: 2026-09-19 小欧 - 后端打包exe(北京老陈驱动)
-# 用法: run_server.exe [--host 127.0.0.1] [--port 8000]
+# 用法: run_server.exe [--host 127.0.0.1] [--port 8000] [--forwarded-allow-ips 127.0.0.1]
 #   程序自身资源(version.txt/config/config.yaml/logs/)定位exe所在目录,
 #   首次启动若 config/config.yaml 缺失则由 config.yaml.example 复制生成。
+#
+# 编辑历史:
+#   2026-09-19 小欧 - 新建。
+#   2026-09-27 小欧 - 新增 --forwarded-allow-ips（显式传参，默认 127.0.0.1）。
+#     起因: 该值原先走 uvicorn 默认值、不显式声明，运维为图省事改成 `*` 时无人察觉，
+#     而 `*` 意味着任意客户端可伪造 X-Forwarded-For 把来源 IP 伪造成 127.0.0.1 →
+#     免口令进（可读全部明文密钥、可改口令）。显式暴露该参数 + 启动告警 + 应用层
+#     fail-closed（deps._is_trusted_localhost）三道防线。
 # ============================================================================
 import argparse
 import shutil
@@ -46,14 +54,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="OmniAgentAst 后端服务")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--forwarded-allow-ips", default="127.0.0.1",
+        help="信任哪些对端的 X-Forwarded-For。默认仅本机反代。"
+             "⚠️ 填 * 会让任意客户端伪造 client.host（可伪造 127.0.0.1 免口令访问），"
+             "确需信任内网反代时只列该反代的 IP。")
     args = parser.parse_args()
+
+    if args.forwarded_allow_ips.strip() == "*":
+        # 不是禁止启动（部署者可能知情），但必须让风险可见 —— 应用层会因无法区分
+        # 真回环与伪造而取消回环豁免（deps._is_trusted_localhost），即本机也要输口令。
+        print("[run_server] ⚠️ 警告：--forwarded-allow-ips=* 信任任意来源的 X-Forwarded-For，"
+              "客户端可伪造来源 IP。为安全起见，本机回环将不再自动豁免鉴权。", flush=True)
 
     base = _exe_dir()
     _ensure_config(base)
 
     import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
     import uvicorn
-    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info")
+    uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info",
+                forwarded_allow_ips=args.forwarded_allow_ips)
 
 
 if __name__ == "__main__":

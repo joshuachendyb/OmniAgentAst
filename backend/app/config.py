@@ -17,6 +17,10 @@
 # 2026-09-23 小欧 - trim配置化: get_max_rounds 改读 tuning.trim.max_rounds（自通用 agent.max_rounds 迁入调优·裁剪分块）
 # 2026-09-27 07:38 小欧 - 修 B5/B7: _apply_env_overrides 补 security.api_token / security.ip_allowlist 两键注入。
 #   registry 声明了 env_key 但此处不注入 → 设置页显示 yaml 值、deps 按 env 优先用另一个值（准入判断错位）。
+# 2026-09-27 小欧 - ①新增 env_flag()：布尔型 env 统一按"假值列表"({空,0,false})判定，替代各处手搓的
+#   真值列表 in ("1","true","True")（语义相反且 TRUE/yes/on 会失效）。deps 的 OMNIAGENT_REQUIRE_AUTH
+#   故意未并入 —— 安全核心路径，改动风险大于 DRY 收益。②get_max_steps 源头归一 None/非数字/0，
+#   调用处不再各写兜底；归一复用 app.utils.type_utils.to_int_or（该模块无依赖，故本文件可安全 import）。
 
 import functools
 import os
@@ -25,6 +29,7 @@ import yaml
 from collections import OrderedDict
 from typing import Dict, Any, Optional
 from pathlib import Path
+from app.utils.type_utils import to_int_or
 @functools.lru_cache(maxsize=1)
 def _make_safe_loader() -> type:
     """创建支持 OrderedDict 标签的 SafeLoader — 小欧 2026-06-22"""
@@ -42,9 +47,22 @@ def _make_safe_loader() -> type:
 
 
 def env_nonempty(name: str) -> bool:
-    """环境变量非空（排除纯空白）— 2026-09-21 小欧 [59]B-11（env 接管判定的统一语义）"""
+    """返回环境变量是否非空且非纯空白 — 2026-09-21 小欧 [59]B-11：env 覆盖语义统一单点"""
     v = os.environ.get(name)
     return bool(v and v.strip())
+
+
+def env_flag(name: str, default: str = "0") -> bool:
+    """布尔型环境变量：值在 {空, 0, false}（忽略大小写）视为关，其余视为开。
+
+    2026-09-27 小欧 - 抽成单点：此前各处手搓 `in ("1","true","True")` 真值列表，与 deps 的
+    `not in ("0","false","False")` 语义相反，且 `TRUE`/`yes`/`on` 会失效。
+    统一为假值列表（凡不是显式关闭就算开）。
+
+    注：`deps.verify_token` 里的 `OMNIAGENT_REQUIRE_AUTH` 判定故意未并入 —— 那是安全核心路径
+    （默认 "1"=开），统一它须写成 `env_flag(REQUIRE_AUTH_ENV, default="1")` 并跑通鉴权全部护栏测试。
+    """
+    return (os.environ.get(name) or default).strip().lower() not in ("", "0", "false")
 
 
 class Config:
@@ -169,17 +187,21 @@ class Config:
         return self.get('tuning.trim.max_rounds', default)
 
     def get_max_steps(self, default: int = 10000) -> int:
-        """
-        获取max_steps配置 - 统一入口
+        """获取max_steps配置 - 统一入口
 
         Args:
             default: 默认值
 
         Returns:
-            max_steps值
+            max_steps值（int）
+
+        2026-09-27 小欧 - 源头归一 None/非数字/0：yaml 写 `agent.max_steps:`（空值）、手写成
+        "10000"（带引号）或 0 时，`self.get` 原样返回 → 下游 int 字段 500 或拿到非法 0。
+        在此归一，调用处就无需各写一套兜底（DRY）。0 是非法值（registry range_ 下界为 1）。
         2026-09-21 小欧 v4.20 键名按域收敛: app.max_steps → agent.max_steps
         """
-        return self.get('agent.max_steps', default)
+        steps = to_int_or(self.get('agent.max_steps'), default)
+        return steps if steps > 0 else default
 
     def get_project_root(self) -> str:
         """获取项目根目录配置 — 小欧 2026-08-10 ①改兜底

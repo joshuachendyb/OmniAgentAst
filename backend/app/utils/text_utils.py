@@ -8,6 +8,8 @@
 #   format_tool_call_markup 末尾 \n{3,} 压缩+strip 收敛至该公用函数(answer 轮行为逐字节等价, DRY); __all__ 登记
 # 2026-09-05 小健 - answer_focus第二阶段搬一(8.1): 新增公用 dedup_repeat(从 answer_handler._dedup_repeat 去下划线转公有,
 #   逐字复制含L97 logger.warning; 随迁REPEAT_*三常量与Counter/logger import) - 小健-2026-09-05
+# 2026-09-27 小欧 - 本轮无逻辑改动。曾把 to_int_or 放在本文件，因本文件模块级 import app.logger
+#   → app.logger.config → app.config 成环，app.config 无法复用，已移至无依赖的 app/utils/type_utils.py。
 """
 文本处理工具函数 — 小沈 2026-06-09
 
