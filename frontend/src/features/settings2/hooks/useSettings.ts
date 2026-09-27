@@ -1065,9 +1065,9 @@ export function useSettings() {
         .find((x) => x.name === state.model.selectedProvider)
         ?.models.find((m) => m.name === name);
       if (!entry) return;
-      // BUG-D 修复：先保存未落库参数，再改焦点，防切换时参数静默丢失
+      // 修复：先保存未落库参数，再改焦点，防切换时参数静默丢失
       if (!(await ensureModelSaved())) return;
-      // v4.20(小欧 2026-09-21 解耦)：同 selectProvider，只切前端焦点，不再写 ai.model_ref
+      // 2026-09-21 小欧 解耦：同 selectProvider，只切前端焦点，不再写 ai.model_ref
       const nextDefaults = { ...entry.default_params } as Record<
         string,
         unknown
@@ -1114,7 +1114,7 @@ export function useSettings() {
     (key: string, value: unknown) => {
       if (state.model.envOverride[key]) return;
       const range = state.model.ranges[key];
-      // [62]P3 param_options 枚举拦截：字符串参数有选项表时，值必须在表内，否则拒绝并提示
+      // param_options 枚举拦截：字符串参数有选项表时，值必须在表内，否则拒绝并提示
       const opts = state.model.paramOptions[key];
       if (opts && !opts.includes(value as string)) {
         showMessage(
