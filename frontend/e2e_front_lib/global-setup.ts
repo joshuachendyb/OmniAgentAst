@@ -1,10 +1,10 @@
 /**
  * e2e_front_lib/global-setup.ts — Playwright globalSetup：统一预置访问口令
  *
- * 2026-09-27 - 小欧 - [72]第九章(9.6-3) 落地
+ * 2026-09-27 - 小欧 - 落地
  *
- * [72]第九章给 12 个 router 挂了统一 token 鉴权（仅 /health 豁免），前端 E2E 不带口令会全 401。
- * auth.ts 的 injectAuthToken 早已写好但全仓零调用，即 9.6-3「统一注入」其实没落地。
+ * 后端给 12 个 router 挂了统一 token 鉴权（仅 /health 豁免），前端 E2E 不带口令会全 401。
+ * auth.ts 的 injectAuthToken 早已写好但全仓零调用，即「统一注入」其实没落地。
  *
  * 用 storageState 而非逐 spec 调 injectAuthToken：后者要 8 遍 beforeEach 样板（违反 DRY）；
  * storageState 由 Playwright 每次导航前自动应用，效果等价且 spec 零改动。

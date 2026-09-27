@@ -2,10 +2,10 @@
  * e2e_front_lib/auth.ts — 前端 E2E 访问口令注入
  *
  * 编辑历史:
- *   2026-09-26 - 小欧 - [72]第九章(9.6-3) 新建
+ *   2026-09-26 - 小欧 - 新建
  *
- * [72]第九章(9.6-3) - 后端给 12 个 router 挂了统一 token 鉴权（/health 豁免），
- *   若前端 E2E 不带口令，**全部 8 个前端 E2E 会 401 失败**。按 9.6-3 要求
+ * 后端统一 token 鉴权（/health 豁免），
+ *   若前端 E2E 不带口令，**全部 8 个前端 E2E 会 401 失败**。按统一注入要求
  *   "统一在 e2e_front_lib 注入，不逐个用例改" —— 故在此提供单一入口。
  *
  * 为什么只需预置 localStorage：
@@ -42,7 +42,7 @@ export const injectAuthToken = async (page: Page): Promise<boolean> => {
   }
   await page.addInitScript((t: string) => {
     try {
-      // 2026-09-26 - 小欧 - [72]三堂会审后修正（与 client.ts setAccessToken 同一修法）:
+      // 2026-09-26 - 小欧 - 三堂会审后修正（与 client.ts setAccessToken 同一修法）:
       //   按原包络回写，不把 zustand persist 的 {"state":{...}} 展平。
       //   注：此处逻辑与 client.ts 重复是**被迫的** —— addInitScript 回调会被 Playwright
       //   序列化后在浏览器执行，不能引用外部 import 的函数，只能内联（DRY 在此让位给约束）。

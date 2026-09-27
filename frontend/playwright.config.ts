@@ -40,7 +40,7 @@ export default defineConfig({
   /* 测试产物根(截图/视频/trace 等)统一落 e2e_case/output/ 编辑历史: 2026-09-13 小欧 */
   outputDir: './e2e_case/output/test-results',
 
-  /* 2026-09-27 小欧 - [72]第九章(9.6-3): 统一注入访问口令。auth.ts 的 injectAuthToken 此前全仓零调用，
+  /* 2026-09-27 小欧 - 统一注入访问口令。auth.ts 的 injectAuthToken 此前全仓零调用，
      8 个 spec 都靠本机回环豁免才过。改由 globalSetup 生成 storageState 自动应用 —— spec 零改动（DRY）。 */
   globalSetup: './e2e_front_lib/global-setup.ts',
 

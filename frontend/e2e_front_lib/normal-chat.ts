@@ -8,7 +8,7 @@
  * 与断连 case 环境差异: 不需要 9000 后端代理、不需要注入 VITE_API_BASE_URL ——
  *   页面由默认 vite dev(:5173, `npm run dev`) 服务，API 基址为相对路径 `/api/v1`，
  *   经 vite proxy(/api → localhost:8000) 转发，与后端同源、无 CORS
- *   （[75]BUG-6 修复：此前 getApiBaseUrl 直连 :8000，REST 跨域而 SSE 走 proxy，两条通道分叉）。
+ *   （修复：此前 getApiBaseUrl 直连 :8000，REST 跨域而 SSE 走 proxy，两条通道分叉）。
  *   诊断日志中请求 URL 形如 /api/v1/chat/stream（相对路径），排查时按此匹配。
  *
  * 失败归因: 复用 attachStreamDiag/printDiag 全链路诊断（网络 REQ/RES/FAIL + 前端 SSE console）。
