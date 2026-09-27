@@ -6,8 +6,8 @@ execution_stream — 执行步骤流式查看
 # 编辑历史:
 # 2026-07-14 - 小欧 - _generate_execution_stream改为从chat_message_steps读取步骤列表, SELECT去除execution_steps列, 统一步骤解析走load_execution_steps
 # 2026-07-18 - 小欧 - 默认 timestamp 改 get_utc_timestamp() 时间统一
-# 2026-07-18 - 小欧 - #18 fix: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
-# 2026-07-18 - 小欧 - #21 fix: 预读数据退出with再yield,连接不占SSE流
+# 2026-07-18 - 小欧 - 修复: execution_steps 遍历加 step is None continue 防御, 单条 json 解析失败不触发 AttributeError
+# 2026-07-18 - 小欧 - 修复: 预读数据退出with再yield,连接不占SSE流
 # 2026-07-18 - 小欧 - ExecutionStep.timestamp 注解 int→str, 默认值 0→"" 与时间归一化 UTC Z 字符串对齐, 消除 int 注解与 str 实际值不一致
 # 2026-08-08 - 小欧 - 全程统一本地时区: 默认 timestamp 改 get_local_iso_timestamp()
 # 2026-08-14 - 小欧 - 改名名实相符: sse.py → execution_stream.py(实为执行步骤流式查看业务端点, 非通用SSE设施)
@@ -62,7 +62,7 @@ async def _generate_execution_stream(session_id: str):
         SSE格式的数据
     """
     try:
-        # #21 fix: 先取数据退出 with 再 yield，连接不占 SSE 流 — 小欧 2026-07-18
+        # 修复: 先取数据退出 with 再 yield，连接不占 SSE 流 — 小欧 2026-07-18
         # 2026-08-29 小沈 修复#16: 读库经 db.atxn 离载子线程, 不阻塞事件循环
         def _read(conn):
             rows_with_steps = []

@@ -15,7 +15,7 @@
 # 2026-08-16 - 小欧 - S1(10.1.4②): chat_stream_endpoint 透传 request.context_link_mode 给 orchestrator(任务上下文链)
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.6): 注册task_execution_router(C1任务详情统计+C2步骤回放,
 #   嵌套于chat_router, 经main.py /api/v1前缀挂载为/api/v1/chat/execution/task/{task_id}路径)
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(5.1 落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5 ①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): confirm 端点调用改 `await resolve_confirmation(...)` — resolve_confirmation 由同步改 async 后, API 层路由必须 await(落库强一致, 反查失败 raise, 一处不改则运行时报错显性暴露)
 # 2026-09-03 - 小欧/北京老陈 - confirm端点补日志: 改前无任何log, 问题排查全靠猜; 收到确认/确认成功/confirm_id不存在或已处理三处关键节点补info/warning
 # 2026-09-03 - 小欧/北京老陈 - 后端必有返回: 全链路try兜底, 异常也返回success False, 杜绝前端await死等(北京老陈"后端不能没有返回"铁律)
 # 2026-09-08 - 小欧 - 方案五(6.6.1): cancel 端点增 source query 参数(缺省 user_requested), 透传 task_runtime.cancel_task 落库; 支撑方案四断连超时来源区分

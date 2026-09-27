@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-10 - 小欧 - merged from health/ 3 files, only changed import paths
-# 2026-07-23 - 小欧 - #14 fix: health check 加真实DB连接验证(chat/operations/task_tracker)
+# 2026-07-23 - 小欧 - 修复: health check 加真实DB连接验证(chat/operations/task_tracker)
 #   【病根】health check 始终返回"healthy", 不检查DB就绪状态, 无法发现表缺失/连接异常
 #   【改法】遍历三库执行SELECT 1 + sqlite_master查表数, 任一失败则db_status="degraded"
 #   【合规】SRP(health只检查状态不修改)+KISS-DIRECT(直接连库查,不引入复杂健康指标)
@@ -13,7 +13,7 @@
 # 2026-08-12 - 小欧 - A1过渡红项历史(4.1.7/A4待消, 随A4迁出而移除代码, 历史按规范保留): /tool/execute 曾 API直调不走tool_executor,
 #   注入 DefaultToolSecurityHooks 到 ContextVar 防空钩子 NPE; A4 建成 services/tool 门面后该过渡注入由 facade 统一接管, 移除。
 # 2026-08-24 - 小欧 - 后端卡死修复: /health 的 SELECT 1 经 db.atxn 进子线程 offload 出事件循环; 被动 health 不再因 loop 被 agent 落库同步写独占而超时(零改动连接管理, 复用 atxn 薄壳)
-# 2026-09-21 - 小欧 - [59]B-13 修复: health.version 由 request.app.version(import 时快照, 永不跟随 version.txt 更新)改调
+# 2026-09-21 - 小欧 - 修复: health.version 由 request.app.version(import 时快照, 永不跟随 version.txt 更新)改调
 #   settings_service.app_version()(每次实时读文件); 消除与 /settings.version、GET /config/version-file 长期不一致
 """
 health — merged from health/ 3 files

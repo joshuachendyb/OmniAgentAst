@@ -9,7 +9,7 @@
 #   ModelRef(provider+model) 结构传 query_token_usage(model_ref=), 落 task_model JSON 列 json_extract 双键过滤;
 #   import 补 ModelRef — 方案B 契约随归一
 # 2026-08-29 - 小沈 - 修复#15: 读库由同步 db.get_conn 改为 db.atxn 离载到子线程, 避免阻塞事件循环(其余逻辑零改动)
-# 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计P0/C0/T0
+# 2026-09-03 小欧 chain兜底: token_usage表可能为空(_usage_events未写入), fallback到chat_tasks.task_accumulated_tokens防链累计
 # 2026-09-03 小欧/北京老陈: token_usage端点补日志: 查询请求/结果/异常三处关键节点, 改前无任何log
 # 2026-09-21 小欧 - v4.20 单源收敛: ?model= 组装 ModelRef 的 provider 改读 ai.model_ref（删扁平 ai.provider）
 """

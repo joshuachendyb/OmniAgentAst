@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 - 小欧 - #23 fix: 删手动BEGIN/COMMIT，归属get_conn事务管理
+# 2026-07-18 - 小欧 - 修复: 删手动BEGIN/COMMIT，归属get_conn事务管理
 # 2026-08-08 - 小欧 - 全程统一本地时区: 3处写入改 get_local_iso_timestamp; title_updated_at 输出改 to_local_iso(不再转UTC)
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): 业务逻辑(create/list/update/delete/titles_batch + 辅助函数)迁入
 #   services/chat/session_service.py; 删除会话的 display_name 缓存清理改经 message_service.delete_session_display_names
@@ -10,8 +10,8 @@
 # 2026-08-26 - 小欧 - D-2(文档2 8.D): 新增 GET /sessions/{session_id} 单会话信息路由(调 session_service.get_session_info),
 #   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel) + 顶栏创建/更新时间悬浮数据源。
 #   路由置于文件末尾(防御性习惯; 本路由与 /titles/batch、/{id}/tasks 等子路径段数不同, 实际无遮蔽关系)。
-# 2026-08-30 - 小欧 - 设计文档[2]第十二章 v1.103: B1 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤⑤(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
+# 2026-08-30 - 小欧 - 会话响应增强 v1.103: 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
 #   path 传入则精确 DELETE (session_id, tool_name, path) 该路径行; path=None(默认) 删工具级通配行(path IS NULL); 无匹配行返回 404 Trust not found
 # 2026-09-03 - 小欧/北京老陈 - sessions端点补日志: trust相关端点(list/delete)补info/warning, 改前无log无法排查信任操作
 """
@@ -88,7 +88,7 @@ async def save_execution_steps_endpoint(session_id: str, update_data: ExecutionS
 @router.get("/sessions/{session_id}/tasks")
 def list_session_tasks_endpoint(session_id: str):
     """B1/问题6(10.5): 会话任务列表 + 任务数 + 最新任务id（任务数=用户消息数, chat_tasks 行数新口径）— 小欧 2026-08-20
-    2026-08-30 小欧 设计文档[2]12.5 v1.103: 响应新增 latest_task_id(配合 storage 三元组返回, 排序一义后锚点解耦)"""
+    2026-08-30 小欧 会话响应增强 v1.103: 响应新增 latest_task_id(配合 storage 三元组返回, 排序一义后锚点解耦)"""
     with db.get_conn("chat") as conn:
         tasks, total, latest_task_id = list_session_tasks(conn, session_id)
     return {"session_id": session_id, "total": total, "tasks": tasks, "latest_task_id": latest_task_id}
