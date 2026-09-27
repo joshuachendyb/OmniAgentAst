@@ -107,11 +107,20 @@ def get_version() -> str:
 app_version = get_version()
 logger.info(f"Backend version: {app_version}")
 
+# 2026-09-27 10:15 小欧 - 关闭应用级 API 文档端点（修 [72]核查发现的鉴权缺口）：/docs /redoc /openapi.json
+#   是**应用级路由**，不在任何 APIRouter 内，走不到 verify_token —— 实跑确认无 token 可拉走 57 个端点
+#   + 44 个请求模型。本机开发需查看时设 OMNIAGENT_ENABLE_DOCS=1（多机部署下别开）。
+_ENABLE_DOCS = os.getenv("OMNIAGENT_ENABLE_DOCS", "").strip() in ("1", "true", "True")
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
-    version=app_version
+    version=app_version,
+    docs_url="/docs" if _ENABLE_DOCS else None,
+    redoc_url="/redoc" if _ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if _ENABLE_DOCS else None,
 )
+if not _ENABLE_DOCS:
+    logger.info("API 文档端点已关闭（如需本地查看设置：OMNIAGENT_ENABLE_DOCS=1）")
 
 logger.info("Backend v" + app_version + " started")
 

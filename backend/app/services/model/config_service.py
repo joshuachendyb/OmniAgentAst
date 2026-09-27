@@ -105,7 +105,11 @@ from fastapi import HTTPException
 #   局部导入；②模块执行顺序反直觉；③lint 的 import/first 类规则一旦启用即整片报错。
 #   同批删除: `api_success` **全仓零引用**（Select-String 全量确认，除自身定义外无调用），
 #   属第十一章收敛后残留死 import，YAGNI 清除（没引用就不留，不"以防万一"）。
+# 2026-09-27 10:15 小欧 - **撤回上一条的删除结论（该结论是错的）**: 上一条称 api_success"全仓零引用"
+#   并据此删了 import，实际漏查本文件 —— open_config_folder 仍在用它，NameError 会让该端点必 500。
 from app.logger import logger
+# 2026-09-27 10:15 小欧 - 恢复 api_success import（open_config_folder 在用，见上方撤回说明）
+from app.utils.response_utils import api_success
 # 2026-09-26 小欧 - [72]第十一章(11.5): _make_safe_loader 已删（随 update_config 内的写后校验移除），
 #   同行保留 get_config_instance —— get_system_config_data / fix_config 仍在用。
 from app.config import get_config as get_config_instance
