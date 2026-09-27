@@ -1,24 +1,24 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置页壳（搜索+Tabs+全局脏角标+切 Tab 未保存确认内联+sticky 保存条，见 7.2/6.4）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.success/info 改走 errorHandler.showSuccess/showMessage
-// 2026-09-21 小强 - BUG-F 修复：模型删除确认的 target 精确匹配 provider::model（原 deleteTarget 未带 provider
+// 2026-09-21 小强 - 修复：模型删除确认的 target 精确匹配 provider::model（原 deleteTarget 未带 provider
 //   前缀，确认句恒为 false 导致删除项参数名链上错误——匹配 SettingRow 的 key 形如 provider::model）
-// 2026-09-21 小欧 - P0-1+P0-5：背景色→Colors.BG.PRIMARY、字重→FontWeight.BOLD、间距→Spacing（[58] P0-1/P0-5）
-// 2026-09-21 小欧 - P1-3：保存本组按钮带本组待存计数（[58] P1-3）
-// 2026-09-21 小欧 - P1-4：重置按钮上移到②标题行右侧（方案B）+ 顺带修正：无params隐藏/无脏态disabled（[58] P1-4）
-// 2026-09-21 小欧 - 第五章：当前生效模型高占位状态卡集成（[58] 第五章 5.6）
-// 2026-09-21 小欧 - 第五章核查修复：小字可点跳模型 Tab；S2/S3 锚点滚动+高亮（Step 5.2/5.3）；第六章 6.4 重置确认弹窗 danger+⚠（[58] v1.11）
-// 2026-09-21 小欧 - 全文逐章核查：④重置确认/⑦Tab切换 弹窗宽散落 480 → settingsModalWidth.confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
+// 2026-09-21 小欧 - 背景色→Colors.BG.PRIMARY、字重→FontWeight.BOLD、间距→Spacing
+// 2026-09-21 小欧 - 保存本组按钮带本组待存计数
+// 2026-09-21 小欧 - 重置按钮上移到②标题行右侧（方案B）+ 顺带修正：无params隐藏/无脏态disabled
+// 2026-09-21 小欧 - 当前生效模型高占位状态卡集成
+// 2026-09-21 小欧 - 核查修复：小字可点跳模型 Tab；锚点滚动+高亮；重置确认弹窗 danger+⚠
+// 2026-09-21 小欧 - 全文逐章核查：重置确认/Tab切换 弹窗宽散落 480 → settingsModalWidth.confirm 令牌收口
 // 2026-09-21 小欧 - 排版重构：CurrentModelRefCard+参数区从模型Tab移到通用Tab；模型Tab区块编号④→③；删除Card顶部辅位小字（与通用Tab CurrentModelRefCard重复）；新增沙箱Tab
 // 2026-09-21 小欧 - 模型Tab：①选择器上方加"当前系统全局使用模型"行（与通用Tab CurrentModelRefCard 对应）；删废弃 jumpToModels
 // 2026-09-21 小欧 - 修正排版重构失误：参数区（ModelParams/模型特殊参数）从通用Tab移回模型Tab，模型Tab恢复四区块②参数区；ProviderConfig补max_retries回退值
 // 2026-09-21 小欧 - 三堂会审修复：删除无触发源死代码 highlightJump/flashSelector（YAGNI，消 eslint pre-existing warning）；
 //   jumpToProviderConfig 修复跨Tab失效（CurrentModelRefCard 已移通用Tab，原 scrollTo 在模型Tab未渲染时静默失败）
 // 2026-09-21 小欧 - 方案A：删除 Provider/模型成功后由 refreshModels 改整体 load()，焦点/全局卡/参数区重载对齐后端
-//   （根治"删全局当前模型时前端仍悬浮已删模型，保存报错、全局卡显示假数据"）——[54] v4.20 关联
+//   （根治"删全局当前模型时前端仍悬浮已删模型，保存报错、全局卡显示假数据"）
 // 2026-09-21 小强 - Tab 标题唯一源=后端注册表：删硬编码 TAB_TITLES（含死 chat:"聊天"），
 //   Tab label 改用 state.schema[g].label（后端 settings_registry GROUPS[g].label）；GROUP_ORDER 由 useSettings 动态派生
 // 2026-09-21 小强 - 关联清理：dangerousDirty 去掉已删键 whitelist/blacklist 死判断（键已从注册表移除，恒 false 死代码）
-// 2026-09-21 小欧 - [59]F-6/F-7/F-9 修复：①搜索跳转 jumpTo 与 Tab 切换统一走「当前组脏→确认」闸口，
+// 2026-09-21 小欧 - 修复：①搜索跳转 jumpTo 与 Tab 切换统一走「当前组脏→确认」闸口，
 //   不再绕过确认直接切 Tab（原 jumpTo 静默丢弃当前组未保存修改）；确认对话框记录待跳 tab+高亮 key，
 //   保存成功后跳转并高亮；②deleteTarget 解析改用首个 '::' 索引切片（原 split('::') 对含 '::' 的模型名截断误删）；
 //   ③onSaveGroup/onSaveAll 返回 Promise，SaveBar confirmThen 的 Modal onOk await 化——OK 按钮自带 loading 防连点双保存
@@ -29,17 +29,17 @@
 //   ⑤添加/删除/Provider 保存失败不关窗并 rethrow（弹窗保留输入）；⑥添加 Provider toast 引导切换；
 //   ⑦jumpToProviderConfig 走脏确认闸口+保存后滚动锚点；⑧删模型Tab①"当前系统全局使用模型"冗余行
 // 2026-09-22 小强 - A3：ModelActions 传 envManaged（provider env 接管时隐藏「清空 api_key」，后端拒 clear）
-// 2026-09-22 小欧 - [62]P3：ModelParams 传 options={state.model.paramOptions}（读链末端：state→组件；P4 才消费渲染 Select）
-// 2026-09-22 小欧 - [62]P5 3.3(2)-b：onSubmitAddModel 透传 range/capabilities/param_options 到 modelApi.addModel
+// 2026-09-22 小欧 - ModelParams 传 options={state.model.paramOptions}（读链末端：state→组件；后续才消费渲染 Select）
+// 2026-09-22 小欧 - onSubmitAddModel 透传 range/capabilities/param_options 到 modelApi.addModel
 //   （原仅透 default_params，新模型建出即带元数据/选项，不必回参数区返工）
-// 2026-09-22 小欧 - [62]P6 4.3(6)：ProviderConfig fallback 加 label:''（providerConfig 类型补 label 后
+// 2026-09-22 小欧 - ProviderConfig fallback 加 label:''（providerConfig 类型补 label 后
 //   fallback 对象须同构，否则选中未加载 Provider 时 ProviderConfig 表单缺显示名初值）
-// 2026-09-22 小欧 - [62]P7 4.3(1)d：ProviderConfig fallback timeout 60→150（与后端常量/三层回落对齐，
+// 2026-09-22 小欧 - ProviderConfig fallback timeout 60→150（与后端常量/三层回落对齐，
 //   缺省条目才触发，平时走 API 值；原 fallback 60≠运行时 150，切未加载 Provider 时表单显示 60 实际 150）
-// 2026-09-22 小欧 - [62]P8 4.3(8)：②参数区标题行加「管理选项」入口（param_options 非空才显示），
+// 2026-09-22 小欧 - ②参数区标题行加「管理选项」入口（param_options 非空才显示），
 //   ModelModals 后渲染 ParamOptionsModal（open=paramOptionsModalOpen，保存后 refreshModels 重拉）
 // 2026-09-22 小欧 - YAGNI+令牌收口：①选择器锚点 div 删 borderRadius/padding/margin 无效死样式（padding+margin 恰恰抵消，视觉零效果）；「管理选项」按钮 marginRight:16 裸数字 → Spacing.XL - 小欧-2026-09-22
-// 2026-09-23 小欧 - [65]§4.3+§7.2 落码：①标题行加「+ 添加参数」按钮；②ModelParams 前条件渲染 AddParamForm；
+// 2026-09-23 小欧 - ①标题行加「+ 添加参数」按钮；②ModelParams 前条件渲染 AddParamForm；
 //   ③ModelParams 后加「模型能力」多选行（Checkbox.Group+env 按 providerConfig.env 禁用+DirtyDot）——
 //   import 合并追加（Checkbox 进 antd 行、settingsRowStyle/settingsLabelStyle 进 tokens 行、DirtyDot 并 icons 行、
 //   CAPABILITY_OPTIONS/isCapsDirty 并 modelUtils 行、AddParamForm 新行，禁重复 import）- 小欧-2026-09-23
@@ -52,22 +52,22 @@
 // 2026-09-23 小欧 - ②标题行三按钮合一组（北京老陈指示）：添加参数/管理选项/重置为默认 = 同款默认 Button
 //   （管理选项/重置原 type=link 去边框异款）+ 统一 width:120 等长 + gap:Spacing.SM 紧挨 + 中列整组居中；
 //   原「标题|添加参数居中|右组」拆两处 → 组内条件渲染（无 param_options/无 params 仍隐藏，组始终居中）- 小欧-2026-09-23
-// 2026-09-23 小欧 - [65]十遍会审：F3 三按钮宽改 settingsControl.actionBtnWidth 令牌（消 width:120×3，
-//   settingsControl 并入 tokens import 行）+ F6 能力行 DirtyDot 改 && 写法（与 ModelParams 同款）- 小欧-2026-09-23
-// 2026-09-23 小欧 - [65]§7.2 Q1-2 补漏：能力行 Checkbox.Group 右侧加未知能力值灰色只读 Tag
+// 2026-09-23 小欧 - 十遍会审：三按钮宽改 settingsControl.actionBtnWidth 令牌（消 width:120×3，
+//   settingsControl 并入 tokens import 行）+ 能力行 DirtyDot 改 && 写法（与 ModelParams 同款）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 补漏：能力行 Checkbox.Group 右侧加未知能力值灰色只读 Tag
 //   （yaml 手写 vision 等非 5 枚举值——设计要点「看得见、本页不提供增删」，原实现未知值完全不可见；
 //   Tag 无 closable + cursor:not-allowed；import 并入既有 antd/modelUtils 行，禁重复）- 小欧-2026-09-23
 // 2026-09-24 小欧 - ①ModelParams 传 onDelete={s.removeParam}（②参数行 × 删除按钮接线，A 方案）- 小欧-2026-09-24
-// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①BZ-1 groupDirtyCount 补能力脏 +1（与 useSettings dirtyCount/
-//   isGroupDirty 同口径，原仅改能力时「保存本组」可点却显示 0 项计数失真）；②BZ-4 删除确认前置
+// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①groupDirtyCount 补能力脏 +1（与 useSettings dirtyCount/
+//   isGroupDirty 同口径，原仅改能力时「保存本组」可点却显示 0 项计数失真）；②删除确认前置
 //   ensureModelSaved（删除成功后 load() 全量重建会静默丢当前焦点模型未落库改动，与 selectProvider/
-//   selectModel 同款 BUG-D 防线）；③BZ-5 保存中(saving) 锁定参数区（ModelParams disabled + 添加参数/
-//   管理选项/重置三按钮禁用，防保存 await 期间改 state 致闭包快照错位）；④BZ-8 添加参数/管理选项
+//   selectModel 同款防线）；③保存中(saving) 锁定参数区（ModelParams disabled + 添加参数/
+//   管理选项/重置三按钮禁用，防保存 await 期间改 state 致闭包快照错位）；④添加参数/管理选项
 //   env 接管禁用 + envManaged 单点收口（能力行内联 env 判定表达式复用，防重复） — 小欧-2026-09-24
-// 2026-09-24 22:56:21 小欧 - BZ-5 闭环补漏（三堂会审发现表单通道未锁）：AddParamForm/ParamOptionsModal
+// 2026-09-24 22:56:21 小欧 - 保存中锁定闭环补漏（三堂会审发现表单通道未锁）：AddParamForm/ParamOptionsModal
 //   传 disabled={s.saving}（保存中禁提交）+「重置为默认」Modal.confirm onOk 加 saving 守卫——
-//   堵死「弹窗通道在保存 await 期间仍改模型 state」的最后竞态窗口，BZ-5 目标全闭合 - 小欧-2026-09-24
-// 2026-09-24 小欧 - [68] 模型库 Tab 落码：①import ModelLibraryTab；②抽 afterModelSaved 组件级收口
+//   堵死「弹窗通道在保存 await 期间仍改模型 state」的最后竞态窗口 - 小欧-2026-09-24
+// 2026-09-24 小欧 - 模型库 Tab 落码：①import ModelLibraryTab；②抽 afterModelSaved 组件级收口
 //   （syncMtime+refreshModels DRY，Provider 配置保存/清空 key/模型库保存 3 处共用）；
 //   ③Tab 分支加 model_library 渲染 ModelLibraryTab（onSaved 直引 afterModelSaved 不内联）- 小欧-2026-09-24
 // 2026-09-25 06:20:25 小健 - 参数区入口按钮文案「管理选项」→「管理推理深度」（北京老陈指示，语义直指
@@ -137,9 +137,9 @@ import {
   KNOWN_CAPABILITY_VALUES,
 } from '../utils/modelUtils';
 import type { TabKey } from '../types';
-// 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项弹窗（④区标题行「管理选项」入口）
+// 2026-09-22 小欧 - 管理选项弹窗（④区标题行「管理选项」入口）
 import { ParamOptionsModal } from './ParamOptionsModal';
-// 2026-09-23 小欧 - [65]§4.3.0：添加参数内联表单（组件一文件，独立 import）
+// 2026-09-23 小欧 - 添加参数内联表单（组件一文件，独立 import）
 import { AddParamForm } from './AddParamForm';
 
 const SettingsPage: React.FC = () => {
@@ -151,7 +151,7 @@ const SettingsPage: React.FC = () => {
     anchor?: string | null;
   } | null>(null);
 
-  // [59]F-6 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
+  // 修复：requestTab 与 jumpTo（搜索高亮跳转）统一走「当前组脏→确认」闸口，
   // 原 jumpTo 直接切 Tab 绕过确认，会静默丢弃当前组未保存修改
   const requestTab = (tab: TabKey) => {
     if (tab !== state.activeTab && s.isGroupDirty(state.activeTab)) {
@@ -215,7 +215,7 @@ const SettingsPage: React.FC = () => {
   const envManaged =
     state.model.providerConfig[state.model.selectedProvider]?.env === true;
 
-  // 2026-09-24 小欧 - [68] 落盘成功后同步 mtime+刷新模型列表（DRY：Provider 配置保存/清空 key/模型库保存共用收口）- 小欧-2026-09-24
+  // 2026-09-24 小欧 - 落盘成功后同步 mtime+刷新模型列表（DRY：Provider 配置保存/清空 key/模型库保存共用收口）- 小欧-2026-09-24
   const afterModelSaved = async (mtime: number) => {
     s.syncMtime(mtime);
     await s.refreshModels();
@@ -329,9 +329,9 @@ const SettingsPage: React.FC = () => {
         }}
       >
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
-        {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（十遍会审 F3，消 width:120×3）
+        {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（消 width:120×3）
             + gap SM 紧挨，整组居中（北京老陈指示）；
-            添加参数 = [65]§4.3.1 入口（管 model_params），管理选项 = [62]P8 入口，重置 = [58]P1-4 入口 */}
+            添加参数 = 管 model_params，管理选项 = 管 param_options，重置 = 回默认值 */}
         <div style={{ display: 'flex', gap: Spacing.SM }}>
           <Button
             icon={<PlusOutlined />}
@@ -394,7 +394,7 @@ const SettingsPage: React.FC = () => {
           )}
         </div>
       </div>
-      {/* 2026-09-23 小欧 - [65]§4.3.2：「+ 添加参数」内联表单（勾选多个循环 onAdd，批量完调 onCancel 统一关） */}
+      {/* 2026-09-23 小欧 - 「+ 添加参数」内联表单（勾选多个循环 onAdd，批量完调 onCancel 统一关） */}
       {state.model.addParamFormOpen && (
         <AddParamForm
           existingKeys={Object.keys(state.model.params)}
@@ -415,10 +415,10 @@ const SettingsPage: React.FC = () => {
         onChange={s.setParam}
         // 2026-09-24 小欧 - ①接 removeParam：行尾 × 点即删（env 接管键组件内 disabled）- 小欧-2026-09-24
         onDelete={s.removeParam}
-        // 2026-09-24 小欧 - BZ-5：保存中(saving) 锁定参数区全部控件+×按钮，防闭包快照错位 — 小欧-2026-09-24
+        // 2026-09-24 小欧 - 保存中(saving) 锁定参数区全部控件+×按钮，防闭包快照错位 — 小欧-2026-09-24
         disabled={s.saving}
       />
-      {/* 2026-09-23 小欧 - [65]§7.2：模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
+      {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
           其 keys 来自 default_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
       <div style={settingsRowStyle}>
@@ -431,7 +431,7 @@ const SettingsPage: React.FC = () => {
             options={CAPABILITY_OPTIONS}
             onChange={(v) => s.setCapabilities(v as string[])}
           />
-          {/* 2026-09-23 小欧 - [65]§7.2 Q1-2：未知能力值灰色只读 Tag（不可关、cursor:not-allowed）——
+          {/* 2026-09-23 小欧 - 未知能力值灰色只读 Tag（不可关、cursor:not-allowed）——
               yaml 手写非 5 枚举值看得见、本页不提供增删；有未知值才渲染，空则零开销 */}
           {state.model.capabilities
             .filter((v) => !KNOWN_CAPABILITY_VALUES.has(v))
@@ -448,7 +448,7 @@ const SettingsPage: React.FC = () => {
               </Tag>
             ))}
         </span>
-        {/* 2026-09-23 小欧 - [65]十遍会审 F6：&& 写法（与 ModelParams 脏点同款，原 !cond?null:<x/> 三元异款） */}
+        {/* 2026-09-23 小欧 - && 写法（与 ModelParams 脏点同款，原三元异款） */}
         {isCapsDirty(
           state.model.capabilities,
           state.model.capabilitiesBaseline
@@ -466,7 +466,7 @@ const SettingsPage: React.FC = () => {
               api_key: { configured: false, masked: '' },
               base_url: '',
               label: '',
-              timeout: 150, // [62]P7 4.3(1)d：缺省 fallback 与后端常量对齐（原60≠运行30/150，v3.8 对齐）
+              timeout: 150, // 缺省 fallback 与后端常量对齐（原 60≠运行时 150）
               max_retries: 3,
               env: false,
             }
@@ -566,9 +566,9 @@ const SettingsPage: React.FC = () => {
           }
         }}
         onConfirmDelete={async () => {
-          // 2026-09-24 小欧 - BZ-4：删除前先强制保存模型 Tab 未落库改动——删除成功后的 load() 会全量
+          // 2026-09-24 小欧 - 删除前先强制保存模型 Tab 未落库改动——删除成功后的 load() 会全量
           //   重建 model 态（defaults/params/能力/删除名单全部重载），不保存会静默丢弃当前焦点模型的
-          //   未存参数/能力/删除意图；与 selectProvider/selectModel 同款 BUG-D 防线（复用 ensureModelSaved）
+          //   未存参数/能力/删除意图；与 selectProvider/selectModel 同款防线（复用 ensureModelSaved）
           if (!(await s.ensureModelSaved())) return;
           const target = state.model.deleteTarget ?? '';
           try {
@@ -583,8 +583,8 @@ const SettingsPage: React.FC = () => {
                   `已切换回默认 Provider：${res.switched_to}`
                 );
             } else {
-              // BUG-F 修复：模型名可含 '/'（如 z-ai/glm-4.7），改用 '::' 分隔解析，杜绝删除错位
-              // [59]F-7 修复：改用首个 '::' 索引切片，模型名含 '::' 时不再被 split 截断误删
+              // 修复：模型名可含 '/'（如 z-ai/glm-4.7），改用 '::' 分隔解析，杜绝删除错位；
+              // 改用首个 '::' 索引切片，模型名含 '::' 时不再被 split 截断误删
               const rest = target.slice('model:'.length);
               const sepIndex = rest.indexOf('::');
               const p = sepIndex >= 0 ? rest.slice(0, sepIndex) : '';
@@ -607,7 +607,7 @@ const SettingsPage: React.FC = () => {
           }
         }}
       />
-      {/* 2026-09-22 小欧 - [62]P8 4.3(8)：管理选项弹窗（④②区标题行「管理选项」入口；保存后
+      {/* 2026-09-22 小欧 - 管理选项弹窗（②区标题行「管理选项」入口；保存后
           refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
       <ParamOptionsModal
         open={state.model.paramOptionsModalOpen}
@@ -685,11 +685,11 @@ const SettingsPage: React.FC = () => {
             // 2026-09-21 小强 - 修复类型瑕疵：highlightKey 为 useSettings 独立 state（非 SettingsState 字段），直接引用返回值等价
             highlightKey={s.highlightKey}
             onChange={s.setValue}
-            // 2026-09-26 - 小欧 - [72]三堂会审后修正: secret 项（api_key / 访问口令）走各自专用通道
+            // 2026-09-26 - 小欧 - secret 项（api_key / 访问口令）走各自专用通道
             //   落盘后，用 load() 重新拉取以刷新掩码与"已配置"状态。**不能用 setValue 充当刷新**——
-            //   它会把该 key 置脏，而 secret 已被 [72]第六章在 settings 写路径显式拒绝，
+            //   它会把该 key 置脏，而 secret 已在 settings 写路径显式拒绝，
             //   用户随后点"保存本组"会因这个脏 secret 而整组失败（改 A 坏 B）。
-            // 2026-09-26 小欧 - 修 C03: 传 keepModel —— 只刷新设置区以更新掩码/已配置态，
+            // 2026-09-26 小欧 - 传 keepModel —— 只刷新设置区以更新掩码/已配置态，
             //   保住模型区未保存的参数/能力/env/provider 切换（load 默认会重建模型区并静默丢弃它们）— 小欧-2026-09-26
             onRefresh={() => void s.load({ keepModel: true })}
           />
@@ -703,7 +703,7 @@ const SettingsPage: React.FC = () => {
           restartKeys={s.restartKeys}
           dangerousGroup={dangerousGroup}
           dangerousAll={dangerousAll}
-          // [59]F-9 修复：直接透出 Promise，SaveBar 确认弹窗 onOk await 化后自带 loading 防连点
+          // 修复：直接透出 Promise，SaveBar 确认弹窗 onOk await 化后自带 loading 防连点
           onSaveGroup={() => s.saveGroup(state.activeTab)}
           onSaveAll={() => s.saveAll()}
           onCloseRestart={() => s.setRestartKeys([])}

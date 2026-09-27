@@ -1151,9 +1151,9 @@ export function useSettings() {
     [state.model.envOverride, state.model.ranges, state.model.paramOptions]
   );
 
-  // 2026-09-23 小欧 - [65]§7.3.1 setCapabilities：Q1 未知值合并（onChange 只含已渲染 5 枚举，
+  // 2026-09-23 小欧 - setCapabilities：未知值合并（onChange 只含已渲染 5 枚举，
   //   uiValues ∪ state 未知原值 → state 恒含未知值，提交直接送无二次合并）+ isCapsDirty 联合置脏（baseline 不动）
-  // 2026-09-23 小欧 - [65]十遍会审 F4：已知值集合改用 modelUtils 单源常量（原每次调用重建 Set）
+  // 2026-09-23 小欧 - 已知值集合改用 modelUtils 单源常量（原每次调用重建 Set）
   // 2026-09-24 小欧 - ②归一：next 过 normalizeCaps（恒含 text——antd Checkbox disabled 项 onChange 可能不带，
   //   归一兜底；未知值仍保留）；isDirty 联合 removedParams — 小欧-2026-09-24
   const setCapabilities = useCallback((uiValues: string[]) => {
@@ -1179,7 +1179,7 @@ export function useSettings() {
     });
   }, []);
 
-  // 2026-09-23 小欧 - [65]§4.2.2 addParam：新键注入 params+ranges+paramOptions，defaults 不同步（立即判脏）
+  // 2026-09-23 小欧 - addParam：新键注入 params+ranges+paramOptions，defaults 不同步（立即判脏）
   const addParam = useCallback(
     (
       key: string,
@@ -1290,7 +1290,7 @@ export function useSettings() {
     [state.model.envOverride]
   );
 
-  // 2026-09-23 小欧 - [65]十遍会审 F1：重置只清参数脏，能力脏保留（原 isDirty:false 连能力脏一起抹，
+  // 2026-09-23 小欧 - 重置只清参数脏，能力脏保留（原 isDirty:false 连能力脏一起抹，
   //   仅能力脏时点「重置为默认」→ 能力修改变不可保存。同 saveAll/isGroupDirty 的联合语义对齐）
   // 2026-09-24 小欧 - ①重置不清 removedParams（结构变更保留，仍需保存才落盘）；isDirty 联合之 - 小欧-2026-09-24
   const resetParams = useCallback(() => {
@@ -1312,8 +1312,8 @@ export function useSettings() {
 
   const refreshModels = useCallback(
     async (select?: { provider: string; model: string }) => {
-      // S3：带 select 的刷新（添加模型后定位）若当前参数未落库，先强制保存——与 selectProvider/selectModel
-      //   同一 BUG-D 防线，杜绝切到新模型时旧模型未保存参数静默丢失
+      // 带 select 的刷新（添加模型后定位）若当前参数未落库，先强制保存——与 selectProvider/selectModel
+      //   同一防线，杜绝切到新模型时旧模型未保存参数静默丢失
       if (select && !(await ensureModelSaved())) return null;
       // 2026-09-27 小欧 - 缓存刷新段收口到 reloadProviderCache（DRY，与 saveProviderDraft 共用；失败已在内
       //   handleApiError 并返回 null）- 小欧-2026-09-27
@@ -1372,14 +1372,14 @@ export function useSettings() {
     selectProvider,
     selectModel,
     setParam,
-    // 2026-09-23 小欧 - [65]：暴露 addParam（§4.2.3）与 setCapabilities（§7.4 #5）
+    // 2026-09-23 小欧 - 暴露 addParam 与 setCapabilities
     addParam,
     // 2026-09-24 小欧 - ①暴露 removeParam（参数行 × 删除，A 方案）- 小欧-2026-09-24
     removeParam,
     setCapabilities,
     resetParams,
     saveModelGroup,
-    // 2026-09-24 小欧 - BZ-4：暴露 BUG-D 防线（SettingsPage 删除确认前置调用，防删除后 load() 丢未存改动）
+    // 2026-09-24 小欧 - 暴露切换前强制保存（SettingsPage 删除确认前置调用，防删除后 load() 丢未存改动）
     ensureModelSaved,
     refreshModels,
     syncMtime,
