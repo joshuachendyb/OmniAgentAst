@@ -3,23 +3,22 @@
 auth_routes — 访问口令（token）设置接口
 
 编辑历史:
-  2026-09-26 小欧 - [72]第九章 新建：补齐口令"设置侧"（此前只有校验侧与登录页，无处可设 → 死锁）。
+  2026-09-26 小欧 - 新建：补齐口令"设置侧"（此前只有校验侧与登录页，无处可设 → 死锁）。
   2026-09-26 小欧 - 修 3 处注释与实现不符（留空实为 400 / 无 main.py 特殊挂载 / 删死代码）。
   2026-09-27 小欧 - token 加 max_length=200000；本机准入改用 _is_trusted_localhost（与 deps 同判据）。
-  2026-09-27 小欧 - [75]5.2：status 删 masked/config_key/env_name（YAGNI）、补两个按来源的结论；
+  2026-09-27 小欧 - status 删 masked/config_key/env_name（无人消费的字段）、补两个按来源的结论；
     set_api_token 本机准入改调 deps 单一判据（DRY）。
-  2026-09-27 小欧 - [75]缺陷修复：403 文案引用 deps.SET_TOKEN_LOCAL_ONLY_MESSAGE；
-    get_token_status 只读一次配置并同源下传。
-  2026-09-27 小欧 - [75]会审 BUG-B：status 增 set_token_blocked_reason（前端分叉指引，
-    * 部署不再死路）；两处 403 改按原因取文案（deps.SET_TOKEN_BLOCKED_MESSAGES）。
+  2026-09-27 小欧 - 403 文案引用 deps 的单一文案常量；get_token_status 只读一次配置并同源下传。
+  2026-09-27 小欧 - status 增 set_token_blocked_reason（前端分叉指引，
+    FORWARDED_ALLOW_IPS=* 部署不再死路）；两处 403 改按原因取文案（deps.SET_TOKEN_BLOCKED_MESSAGES）。
 
-设计（[72]第六章方案 B）：
+设计（secret 项单一写入口方案）：
   - `security.access_token` 是 registry 的 secret 项：读路径掩码永不回明文，settings 通用通道
     显式拒绝写 secret。
   - 改口令只走本模块端点，与 provider 通道同构（单一权威写入口，避免同 key 两个写入口分叉）。
   - 豁免判定全在 deps.verify_token，本文件不重复判断。
     POST /auth/token  设/改口令，仅限本机（deps + 函数体双重把关）。
-    GET  /auth/status 查状态，回三个布尔结论；不带口令放行、带口令验真（引导查询与探针两用）。
+    GET  /auth/status 查状态，回三个布尔结论与被拒原因；不带口令放行、带口令验真（引导查询与探针两用）。
 """
 import os
 from typing import Any, Dict
@@ -58,10 +57,10 @@ class SetTokenRequest(BaseModel):
 @router.get("/auth/status")
 @handle_config_errors("查询访问口令状态")
 async def get_token_status(request: Request) -> Dict[str, Any]:
-    """查访问口令状态。永不回明文（[75]5.2）。
+    """查访问口令状态。永不回明文。
 
     can_set_access_token 为刚需：缺此字段前端只能显示"填入即保存"，非本机提交必被 403。
-    set_token_blocked_reason（[75]BUG-B）给出被拒原因，前端据此分叉指引。
+    set_token_blocked_reason 给出被拒原因，前端据此分叉指引。
     current_client_requires_auth 用于登录页免口令分支。三者均取自 deps，不在本层重算。
 
     configured 只读一次并同源传给 current_client_requires_auth，避免同一响应内
@@ -72,7 +71,7 @@ async def get_token_status(request: Request) -> Dict[str, Any]:
     return {
         "access_token_configured": bool(configured),
         "can_set_access_token": blocked is None,
-        # [75]BUG-B：前端据此分叉指引。* 部署下若只给 can_set=False 而不说原因，
+        # 前端据此分叉指引。FORWARDED_ALLOW_IPS=* 部署下若只给 can_set=False 而不说原因，
         # 前端只能提示"去服务端本机设置"，用户照做仍被拒 → 死路。
         "set_token_blocked_reason": blocked,
         "current_client_requires_auth": current_client_requires_auth(request, configured),
@@ -91,7 +90,7 @@ async def set_api_token(req: SetTokenRequest, request: Request) -> Dict[str, Any
                 （deps 不掺和业务规则，SRP）。判据放函数体内而非 router 级依赖：安全门须对
                 任何调用方式生效。* 部署下本机亦不可设，见 deps._is_trusted_localhost。
     """
-    # 准入先于业务校验（长度、env 接管）；[75]BUG-B 文案按真实原因取
+    # 准入先于业务校验（长度、env 接管）；文案按真实原因取
     blocked = set_token_blocked_reason(request)
     if blocked:
         raise HTTPException(status_code=403, detail=SET_TOKEN_BLOCKED_MESSAGES[blocked])
