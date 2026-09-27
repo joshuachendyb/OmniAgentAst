@@ -484,6 +484,83 @@ async def save_user_message(session_id: str, content: str) -> Optional[int]:
     return None
 
 
+# ─── 断线重连 E2E 专用: SSE 读半截后主动断开 / 断点续传 ──
+# 2026-09-27 小欧 - [72]第九章(9.6-3) 收口: test_e2e_30/31 此前各自实现这两个封装并
+#   自建 httpx.AsyncClient（不带 AUTH_HEADERS，靠本机回环豁免才过）。统一收口到此，
+#   断线逻辑与鉴权注入同处一地（DRY），两个 case 改为调用。
+
+def _sse_line_to_event(line: str) -> Optional[Dict[str, Any]]:
+    """SSE 行 → 事件 dict；非 data 行/坏 JSON 返回 None。"""
+    if not line.startswith("data: "):
+        return None
+    try:
+        return json.loads(line[6:])
+    except json.JSONDecodeError:
+        return None
+
+
+async def open_chat_stream_partial(
+    session_id: str, user_input: str, cutoff: int, api_prefix: str = "",
+) -> tuple:
+    """POST /chat/stream 只读 cutoff 个事件后主动断开（模拟真实断线）。
+
+    返回 (task_id, events, last_seq)；last_seq 为断开时最后一个事件的 seq（续传断点，-1=无事件）。
+    """
+    prefix = api_prefix or API_PREFIX
+    url = f"{BASE_URL}{prefix}/chat/stream"
+    payload = {
+        "messages": [{"role": "user", "content": user_input}],
+        "stream": True,
+        "session_id": session_id,
+    }
+    events: List[Dict[str, Any]] = []
+    task_id = None
+    async with httpx.AsyncClient(timeout=None, headers=AUTH_HEADERS) as client:
+        async with client.stream("POST", url, json=payload) as resp:
+            async for line in resp.aiter_lines():
+                ev = _sse_line_to_event(line)
+                if ev is None:
+                    continue
+                if not task_id and ev.get("type") == "start" and ev.get("task_id"):
+                    task_id = ev["task_id"]
+                events.append(ev)
+                if len(events) >= cutoff:
+                    break
+            await resp.aclose()   # 立即关底层连接，服务端感知客户端断开
+    return task_id, events, (events[-1].get("seq", 0) if events else -1)
+
+
+async def resume_chat_stream(
+    task_id: str, session_id: str, after_seq: int, usage_cutoff: Optional[int] = None,
+) -> tuple:
+    """GET /chat/stream/{task_id}?after_seq=N 断点续传一段。
+
+    usage_cutoff=None: 读到流自然结束；=N: 收到第 N 个 usage 事件后主动断开（模拟二次掉线）。
+    返回 (events, last_seq, finished)：finished=True 仅表示读到流自然结束。
+    """
+    url = f"{BASE_URL}{API_PREFIX}/chat/stream/{task_id}"
+    events: List[Dict[str, Any]] = []
+    usage_count = 0
+    finished = False
+    async with httpx.AsyncClient(timeout=None, headers=AUTH_HEADERS) as client:
+        async with client.stream(
+            "GET", url, params={"session_id": session_id, "after_seq": after_seq}
+        ) as resp:
+            async for line in resp.aiter_lines():
+                ev = _sse_line_to_event(line)
+                if ev is None:
+                    continue
+                events.append(ev)
+                if usage_cutoff is not None and ev.get("type") == "usage":
+                    usage_count += 1
+                    if usage_count >= usage_cutoff:
+                        await resp.aclose()   # 二次主动断线
+                        break
+            else:
+                finished = True   # for 正常结束 = 流自然结束(读到 done)
+    return events, (events[-1].get("seq", 0) if events else after_seq - 1), finished
+
+
 # ─── 步骤2+3: 发送用户请求 + SSE事件解析 (send_chat) ─────────
 
 
