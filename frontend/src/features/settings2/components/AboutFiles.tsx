@@ -1,11 +1,11 @@
 // 编辑历史: 2026-09-21 小强 - 新建：关于区文件查看（配置文件全文 / version 文件全文，Modal 只读展示）
 // 2026-09-21 小强 - 视觉对齐项目 tokens（FontSize/Colors/Spacing/settingsRadius），全 antd SVG 图标，
 //   代码区等宽 CODE 字号 + VERTICAL 边框 + TERTIARY 底，不硬编码色值/字号（stepStyles 铁律）。
-// 2026-09-21 小欧 - P2-8：关于区按钮由横排改竖排+靠左对齐（[58] P2-8）
-// 2026-09-21 小欧 - P2-9：文件查看 Modal 作品级 UI——Header/元信息条/行号正文/加载错误态/footer（[58] P2-9）
-// 2026-09-21 小欧 - 全文逐章核查(P2-9第4条)：错误横幅改 Colors.ERROR 系（ERROR_BG/ERROR_BORDER/ERROR），与文档"Colors.ERROR 系"一致（[58] v1.12）
-// 2026-09-21 小欧 - 全文逐章核查：展示弹窗宽散落 800 → settingsModalWidth.display 令牌收口（[58] v1.12 第六章 6.1 规范一）
-// 2026-09-21 小欧 - 全文逐章核查：标题图标 marginRight:8、只读 badge padding:6/borderRadius:4 → Spacing.MD/SM、Radius.SM 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 实施：关于区按钮由横排改竖排+靠左对齐
+// 2026-09-21 小欧 - 实施：文件查看 Modal 作品级 UI——Header/元信息条/行号正文/加载错误态/footer
+// 2026-09-21 小欧 - 全文核查：错误横幅改 Colors.ERROR 系（ERROR_BG/ERROR_BORDER/ERROR），与文档"Colors.ERROR 系"一致（设计文档 v1.12）
+// 2026-09-21 小欧 - 全文核查：展示弹窗宽散落 800 → settingsModalWidth.display 令牌收口（设计文档 v1.12 规范一）
+// 2026-09-21 小欧 - 全文核查：标题图标 marginRight:8、只读 badge padding:6/borderRadius:4 → Spacing.MD/SM、Radius.SM 令牌（设计文档 v1.12 铁规）
 // 2026-09-21 小欧 - 关于区排版修复：按钮从独立竖排块改为嵌入对应信息行右侧（排版修复）
 // 2026-09-21 小强 - 按钮改名：查看配置文件/查看版本文件（去"全文"，北京老陈定）
 // 2026-09-21 小强 - 弹框优化：标题与按钮统一去"全文"（单源 docName 派生，删 title/btnLabel/报错三处双写）；行号栏 sticky；复制失败走框内错误条；空文件占位；Modal 加 destroyOnHidden（北京老陈定）

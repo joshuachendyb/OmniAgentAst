@@ -5,9 +5,9 @@
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: SSE-02 isReceiving加Ref防闭包陈旧(空闲超时读旧值误重连) — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复等待图标闪烁(北京老陈反馈): disconnect函数新增setReceiving参数(默认true),
 //   重连路径传递false避免setIsReceiving(false)→true间隙导致等待图标闪烁
-// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 P1-3: HITL等待期暂停IDLE计时（paused/badge挂起时不清IDLE），自适应backendTimeout，防60s误杀110s等待 - 小欧-2026-09-03
-// 编辑历史: 2026-09-06 小欧 方案C三堂会审缺陷1修复: 每行热路径(L671循环内)processSSEData handlers 对象
+// 编辑历史: 2026-09-03 小欧 修复: onAuthorizationRequired 类型补全 4→8 字段, 与 sseParser 下发契约一致 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 修复: HITL等待期暂停IDLE计时（paused/badge挂起时不清IDLE），自适应backendTimeout，防60s误杀110s等待 - 小欧-2026-09-03
+// 编辑历史: 2026-09-06 小欧 方案C三堂会审缺陷修复: 每行热路径(L671循环内)processSSEData handlers 对象
 //   漏传 onDenied(done 块已传) → 流式期间独立 user_rejected 事件无法触发 deniedStepSet 聚合, 拒绝不停齿轮;
 //   补齐 onDenied 转发, useChatStreaming 侧 handleDenied 已注入(10参) — 小欧-2026-09-06
 // 编辑历史: 2026-09-06 小欧 方案C观察点1/2根治(北京老陈批准方案2后端标记): sessionStorage 恢复时剔除
@@ -19,7 +19,7 @@
 //   disconnect()主动abort与180s fetch超时abort同型(AbortError)无法靠error区分, 以操作语义标记判别:
 //   ①disconnect确有活动连接时设intentionalAbortRef并2s兜底清残留; ②catch入口读标+errorHandlerClassify===REQUEST_ABORT短路静默,
 //   根治"手动停止/卸载→误判request_timeout→1s后自动重连复活任务/误弹超时warning"; 180s超时abort无标记, 仍走原重连 - 小欧-2026-09-07
-// 编辑历史: 2026-09-08 小欧 - 方案二(北京老陈, 见doc-9月优化[12] 6.3): 重连N次全失败不再自动调cancel(任务可能仍在正常执行,
+// 编辑历史: 2026-09-08 小欧 - 方案二(北京老陈, 见doc-9月优化): 重连N次全失败不再自动调cancel(任务可能仍在正常执行,
 //   tool参数流式等假断连会被误杀), 改为轮询会话任务列表(GET /sessions/{session_id}/tasks, 复用sessionTaskApi.listTasks)
 //   观察终态: 任务不存在或已终态(completed/failed/cancelled)即静默收尾, 轮询超时仍在执行才提示用户手动确认 - 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 空闲超时实证打点+类型修正(北京老陈驱动「xx 60000」toast 定位):
@@ -65,12 +65,12 @@
 // 编辑历史: 2026-09-10 小欧 - [B2]空流误报修复(北京老陈反馈「final收不到」): B1上线后final已正常处理后
 //   流结束buffer亦空, 误触B1空流onError覆盖成功终态; 补else if(terminalSeqRef.current>=0)分支——
 //   终态(final/error)已处理完毕即视为流正常结束不报错, 仅真·200+空body(无任何终态)才走B1 — 小欧-2026-09-10
-// 编辑历史: 2026-09-12 小欧 - P0-4三堂会审修复: useRef<ReconnectConfig>去Omit<ReconnectConfig,'enabled'>死壳(ReconnectConfig已删enabled字段, Omit无意义且锁死后续字段变更) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - [30]§8.2问题1实施(北京老陈批准, 作废守卫退役, 前端部分): 删 terminalSeqRef 声明/
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: useRef<ReconnectConfig>去Omit<ReconnectConfig,'enabled'>死壳(ReconnectConfig已删enabled字段, Omit无意义且锁死后续字段变更) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 问题1实施(北京老陈批准, 作废守卫退役, 前端部分): 删 terminalSeqRef 声明/
 //   新任务重置/两处传参; [B2]空流判定分支改 lastSeqRef(current>=0)判定——原 terminalSeqRef 只能判「final/error已处理」,
 //   现收敛到唯一权威基线 lastSeqRef(收到过任一帧即推进), 正常流 final 先于 done 权威置位发布(agent_runner.py L708-714 实测),
 //   done+buffer空时 lastSeqRef≥0 ⇔ 终态已处理, 空流/异常断流 lastSeqRef=-1 走B1, 判定语义等价 — 小欧-2026-09-12
-// 编辑历史: 2026-09-13 小欧 - [30]§8.2 TDD P6(行495/733/906/959): lastUsageSeqRef 第二基线退役——①:495 删除
+// 编辑历史: 2026-09-13 小欧 - TDD(行495/733/906/959): lastUsageSeqRef 第二基线退役——①:495 删除
 //   useRef(-1) 声明; ②:733 删除新任务重置(lastUsageSeqRef.current=-1); ③:906/:959 删除两处 processSSEData
 //   调用 lastUsageSeqRef 传参(usage 去重守卫已退役, 前端只保留 lastSeqRef 唯一条基线, 单基线纪律 3.2) — 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - fetch+ReadableStream 绝对正确性三处修复(先合规审查后实施: KISS/DRY/SRP/YAGNI/禁止backward全过):
@@ -87,8 +87,8 @@
 //   resetSettledAndHistory/statsExpanded复位/右栏折叠)逐点审查均为必要, 逻辑零改动 — 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调参数; ②两处 processSSEData 调用传递 onRejected - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3整改: onDenied 参数/两处透传全链删除(YAGNI 零消费者), onRejected 类型去 from_backend(全链透传零消费) - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①新增 lastBizTsRef/heartbeatTs 信号源; ②流起始重置业务基线; ③两处 processSSEData 透传 onHeartbeat/onBiz; ④useMemo 打包 waitClock 并暴露 - 小欧-2026-09-17
-// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4): onAuthorizationRequired 类型补 content?: string(与 sseParser/useChatCallbacks 契约一致, 弹窗原因透传) — 小欧-2026-09-18
+// 编辑历史: 2026-09-17 小欧 - 实施: ①新增 lastBizTsRef/heartbeatTs 信号源; ②流起始重置业务基线; ③两处 processSSEData 透传 onHeartbeat/onBiz; ④useMemo 打包 waitClock 并暴露 - 小欧-2026-09-17
+// 编辑历史: 2026-09-18 小欧 - 实施: onAuthorizationRequired 类型补 content?: string(与 sseParser/useChatCallbacks 契约一致, 弹窗原因透传) — 小欧-2026-09-18
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -423,7 +423,7 @@ export const useSSE = (
     params: Record<string, unknown>;
     content?: string;
     safety_level: string;
-    // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段(与 sseParser 下发契约一致)
+    // 2026-09-03 小欧 修复: 类型补全 4→8 字段(与 sseParser 下发契约一致)
     trust_path?: string | null;
     auto_confirm?: boolean;
     confirm_timeout?: number;
@@ -531,7 +531,7 @@ export const useSSE = (
   // 小欧 2026-09-10 S14: 删除 useEffect 手动同步（useStateWithRef 已内置 ref 同步）
 
   // 重连相关
-  // 2026-09-12 小欧 P0-4三堂会审修复: 去 Omit<ReconnectConfig,'enabled'> 死壳——ReconnectConfig 已删 enabled 字段,
+  // 2026-09-12 小欧 三堂会审修复: 去 Omit<ReconnectConfig,'enabled'> 死壳——ReconnectConfig 已删 enabled 字段,
   //   Omit 语义等价于 ReconnectConfig 本体, 属死代码(禁止backward, 防后续改字段被 Omit 反向锁死) — 小欧-2026-09-12
   const reconnectConfigRef = useRef<ReconnectConfig>({
     maxAttempts: 3,
@@ -544,7 +544,7 @@ export const useSSE = (
   // 【北京老陈 2026-07-12 小欧】记录已收到的最大后端事件 seq，断线重连时作为 after_seq 续传
   // 小欧 2026-09-10 S3: 已处理最大 seq 语义，初始 -1（首帧 seq=0 不被误拦）
   const lastSeqRef = useRef(-1);
-  // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 声明(useRef(-1))已删除(作废守卫退役,
+  // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 声明(useRef(-1))已删除(作废守卫退役,
   //   B2 空流判定改用 lastSeqRef, 见本文件底部编辑历史板块 2026-09-12 条目) — 小欧-2026-09-12
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{
@@ -562,12 +562,12 @@ export const useSSE = (
   const idleTimeoutRef = useRef<number | null>(null); // 空闲超时检测
   const firstChunkTimeoutRef = useRef<number | null>(null); // 请求头超时(180s), fetch 返回响应头即清除(:832); 首帧活性由 idle(60s)+心跳(25s)保障
   const IDLE_TIMEOUT = 60000; // 60 秒无数据判定为断开
-  // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号源(与 IDLE_TIMEOUT 同域, 语义同源):
+  // 2026-09-17 小欧 实施: 心跳等待感知钟面信号源(与 IDLE_TIMEOUT 同域, 语义同源):
   //   lastBizTsRef=业务事件(含chunk)到达时刻; heartbeatTs=`: ping`到达时刻(低频 state, 驱动盘外圈微闪);
   //   数据静默基线复用上方既有 lastDataTimeRef(其更新含 `: ping`, 天然覆盖心跳) — 小欧-2026-09-17
   const lastBizTsRef = useRef<number>(Date.now());
   const [heartbeatTs, setHeartbeatTs] = useState(0);
-  // 2026-09-03 小欧 P1-3: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
+  // 2026-09-03 小欧 修复: HITL等待态（paused/highlight）时IDLE应暂停，避免60s误杀110s HITL等待
   // 小欧 2026-09-10 S15: Set 计数 — 并发 HITL 场景防误判
   const hitlWaitingKeysRef = useRef(new Set<string>());
   const isHitlWaitingRef = {
@@ -814,7 +814,7 @@ export const useSSE = (
       }
       if (!isReconnect) {
         lastSeqRef.current = -1; // 小欧 2026-09-10 S3: 重置为已处理最大 seq 初始值
-        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 新任务重置(current=-1)已删除(作废守卫退役) — 小欧-2026-09-12
+        // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 新任务重置(current=-1)已删除(作废守卫退役) — 小欧-2026-09-12
       }
       // 2026-09-13 小欧: 局部别名 ctrl 供本次请求内同步引用(abort回调/fetch signal), 外置 controller 供 finally 释放守卫 —
       //   原 setTimeout 回调引用 controller === null 状态抛 TypeError; 别名为快照, 回调恒有效 — 小欧-2026-09-13
@@ -827,7 +827,7 @@ export const useSSE = (
       ); // 请求头超时(180s): 仅覆盖 fetch 等待响应头(返回即清除, 见:832); 首帧/流中途活性由 idle(60s)+心跳(25s)保障
 
       let response: Response;
-      // 2026-09-26 - 小欧 - 修 SSE 不带鉴权头（[72]第九章鉴权挂载后暴露）：
+      // 2026-09-26 - 小欧 - 修 SSE 不带鉴权头（鉴权挂载后暴露）：
       //   SSE 走原生 fetch，**绕过 axios 拦截器**，故 token 必须在此现取。
       //   改前 config.token 全仓 0 处赋值 → 恒为 undefined → Authorization 从不附带；
       //   且重连 GET 连 token 判断都没有。一旦服务端启用口令且非本机，聊天整体 401。
@@ -886,17 +886,17 @@ export const useSSE = (
 
       // 【小强修复 2026-03-18】初始化最后数据时间
       lastDataTimeRef.current = Date.now();
-      lastBizTsRef.current = Date.now(); // 2026-09-17 小欧 [46]: 新一轮流重置业务基线, 防上轮陈旧值致钟面误升档 — 小欧-2026-09-17
+      lastBizTsRef.current = Date.now(); // 2026-09-17 小欧 实施: 新一轮流重置业务基线, 防上轮陈旧值致钟面误升档 — 小欧-2026-09-17
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        // 编辑历史: 2026-08-28 小欧 - BUG8修复: 重排顺序→清除旧timeout/设新timeout/更新lastDataTimeRef/再reader.read()
+        // 编辑历史: 2026-08-28 小欧 修复: 重排顺序→清除旧timeout/设新timeout/更新lastDataTimeRef/再reader.read()
         if (idleTimeoutRef.current) {
           clearTimeout(idleTimeoutRef.current);
         }
 
         idleTimeoutRef.current = window.setTimeout(() => {
-          // 2026-09-03 小欧 P1-3: HITL等待期暂停IDLE计时
+          // 2026-09-03 小欧 修复: HITL等待期暂停IDLE计时
           if (isHitlWaitingRef.current) return;
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
           if (timeSinceLastData >= IDLE_TIMEOUT && isReceivingRef.current) {
@@ -950,12 +950,12 @@ export const useSSE = (
                 if (s > lastSeqRef.current) lastSeqRef.current = s;
               },
               lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-              // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 传参(done块)已删除(作废守卫退役) — 小欧-2026-09-12
+              // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 传参(done块)已删除(作废守卫退役) — 小欧-2026-09-12
               pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
               scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
               setMetaFrames,
               usageAccumRef,
-              // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
+              // 2026-09-17 小欧 实施: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
               onHeartbeat: () => {
                 setHeartbeatTs(Date.now());
               },
@@ -964,7 +964,7 @@ export const useSSE = (
               },
             });
           } else if (lastSeqRef.current >= 0) {
-            // 小欧 2026-09-12 [30]§8.2问题1(作废守卫退役): [B2] final已收到 —— 流正常结束但buffer已空,
+            // 小欧 2026-09-12 问题1(作废守卫退役): final已收到 —— 流正常结束但buffer已空,
             //   原 terminalSeqRef 判定改 lastSeqRef(唯一权威基线: 收到过任一帧即 lastSeqRef≥0, 正常流 final 先于
             //   done 权威置位发布实测成立, 判定语义等价; 空流/异常断流 lastSeqRef 仍为 -1 走下方 B1) — 小欧-2026-09-12
             console.info('[SSE] 流正常结束: final已收到, buffer为空(正常)');
@@ -1007,12 +1007,12 @@ export const useSSE = (
               if (s > lastSeqRef.current) lastSeqRef.current = s;
             },
             lastSeqRef, // 小欧 2026-09-10 S3: 传给 sseParser 供守卫判定
-            // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 传参(热路径)已删除(作废守卫退役) — 小欧-2026-09-12
+            // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 传参(热路径)已删除(作废守卫退役) — 小欧-2026-09-12
             pendingStepsRef, // 小欧 2026-09-10 S12: 批量 commit 队列
             scheduleFlush, // 小欧 2026-09-10 S12: rAF 调度刷新
             setMetaFrames,
             usageAccumRef,
-            // 2026-09-17 小欧 [46]第五章: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
+            // 2026-09-17 小欧 实施: 钟面信号上报(心跳微闪 / 业务静默基线) — 小欧-2026-09-17
             onHeartbeat: () => setHeartbeatTs(Date.now()),
             onBiz: () => {
               lastBizTsRef.current = Date.now();
@@ -1251,7 +1251,7 @@ export const useSSE = (
     };
   }, [disconnect]);
 
-  // 2026-09-17 小欧 [46]第五章: 钟面信号打包(引用稳定; 仅 heartbeatTs 25s 低频变化才重建) — 小欧-2026-09-17
+  // 2026-09-17 小欧 实施: 钟面信号打包(引用稳定; 仅 heartbeatTs 25s 低频变化才重建) — 小欧-2026-09-17
   const waitClock = useMemo<ClockSignals>(
     () => ({ lastBizTsRef, lastDataTsRef: lastDataTimeRef, heartbeatTs }),
     [heartbeatTs]
@@ -1272,7 +1272,7 @@ export const useSSE = (
     reconnectStatus,
     reconnect,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照
-    waitClock, // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号 — 小欧-2026-09-17
+    waitClock, // 2026-09-17 小欧 实施: 心跳等待感知钟面信号 — 小欧-2026-09-17
   };
 };
 

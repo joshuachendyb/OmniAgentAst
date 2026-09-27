@@ -1,9 +1,9 @@
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 7Hook组合入口整合(8.1~8.14 统一暴露)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-8透传setIsReceiving/12 hasSteps/13复用Options类型/14 memo依赖onError
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 7Hook组合入口整合(统一暴露)
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 透传setIsReceiving/hasSteps/复用Options类型/memo依赖onError
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定回归总原则): onError 包装器不再把 SSEError 压成 string,
-//   改构 LiveError{text, requestLevel} 上抛(P3 数据源对象形态); options.onError 签名同步升级;
-//   内部 chatCallbacks.onError 仍先调(后端分道早退不影响 P3 写入) — 小欧-2026-09-08
+//   改构 LiveError{text, requestLevel} 上抛(页面级错误数据源对象形态); options.onError 签名同步升级;
+//   内部 chatCallbacks.onError 仍先调(后端分道早退不影响页面级错误写入) — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B6: :355 useMemo有意只列字段级依赖(整体对象入deps每次重建级联渲染),
 //   eslint-disable注释移至依赖数组行上方使生效+写明理由 — 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: shared.executionStepsRef改从chatStreaming取(useSSE单一真源),
@@ -43,7 +43,7 @@ import { useChatSend } from './useChatSend';
 import { useChatTaskControl } from './useChatTaskControl';
 import type { Message } from '../../../types/chat';
 import type { ExecutionStep } from '../../../types/execution';
-import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: P3 数据源对象形态 — 小欧-2026-09-08
+import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: 页面级错误数据源对象形态 — 小欧-2026-09-08
 
 /**
  * useChatFacade 返回类型定义
@@ -179,13 +179,13 @@ export const useChatFacade = (options?: {
     onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
   });
 
-  // 2.1 透传 SSE 错误给上层（P3 数据源对象形态，6.3.4——不再压 string）
+  // 2.1 透传 SSE 错误给上层（页面级错误数据源对象形态，6.3.4——不再压 string）
   const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
     () => ({
       ...chatCallbacks,
       onError: (error: Parameters<typeof chatCallbacks.onError>[0]) => {
-        // 2026-09-08 小欧 6.3.3 Q级: 内部先调(后端业务错误分道早退只清refs; 本地错误走弹窗+P2),
-        //   P3 写入不因早退而跳过 —— 由构造 LiveError 继续完成
+        // 2026-09-08 小欧 6.3.3: 内部先调(后端业务错误分道早退只清refs; 本地错误走弹窗+消息替换),
+        //   页面级错误写入不因早退而跳过 —— 由构造 LiveError 继续完成
         chatCallbacks.onError(error);
         if (onError) {
           const text =

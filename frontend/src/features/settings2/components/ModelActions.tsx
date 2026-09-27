@@ -1,5 +1,5 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型操作区（删除模型/Provider 入口；添加入口在选择器）
-// 2026-09-21 小欧 - 全文逐章核查：gap 裸数字 → Spacing.MD 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 全文核查：gap 裸数字 → Spacing.MD 令牌（设计文档 v1.12 铁规）
 // 2026-09-21 小欧 - 重组区块：清空api_key从ProviderConfig移入操作区（方案C）
 // 2026-09-22 小强 - A3：加 envManaged 契约——env 接管 provider 的 api_key 由 {NAME}_API_KEY 环境变量管控，
 //   「清空 api_key」后端必拒（clear 走 update_provider_config 被 _raise_if_env_takeover 拦截），隐藏该假操作按钮

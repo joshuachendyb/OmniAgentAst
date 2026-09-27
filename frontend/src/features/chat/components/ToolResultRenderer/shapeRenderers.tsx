@@ -1,7 +1,7 @@
 // 编辑历史: 2026-08-27 小欧 - 重构: 形状渲染器(Tree/Code/Default), 移植自原views/*(复用优先), 删per-tool视图(禁backward/KISS)
 // 编辑历史: 2026-08-27 小欧 - 修复chat-A: extractResult 合并 tool_result[].data_text 兜底, 新契约数据在 data_text 时树/码渲染不空
 // 2026-08-27 小欧 - 三堂会审: tree列表/树容器统一边框 1px #f0f0f0(与行分割线一致), 半径保持6
-// 编辑历史: 2026-08-28 小强 - 修复[18]: extractResult遍历tool_result数组合并data_text, 不再仅取首项 - 小强-2026-08-28
+// 编辑历史: 2026-08-28 小强 - 修复: extractResult遍历tool_result数组合并data_text, 不再仅取首项 - 小强-2026-08-28
 // 编辑历史: 2026-08-28 小欧 - ④B/b1: 去卡片填色改透明+左线, 令牌化, Code深色→浅底左线
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 行高 `${FontSize.*+Spacing.XS}px` - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 修复readtext内容为空: extractResult对非JSON的data_text兜底为content, 消除"读取成功却文件内容为空"矛盾 - 小欧-2026-09-01

@@ -7,8 +7,8 @@
 // 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}：masked 由后端唯一权威
 //   mask_secret_value 一次生成（/config/full 已是该形状），前端纯回显。
 //   与 model.api.ts ProviderEntry.api_key 同一契约。
-// 2026-09-26 小欧 - [72]第十一章(11.5 第1步): 删 ConfigUpdate 接口与 updateConfig 方法（均零调用），
-//   其中 provider_api_keys 字段是第三章认定的"第二个能擦除密钥的入口"，删除后前后端一致收敛；
+// 2026-09-26 小欧 - 实施: 删 ConfigUpdate 接口与 updateConfig 方法（均零调用），
+//   其中 provider_api_keys 字段是设计文档认定的"第二个能擦除密钥的入口"，删除后前后端一致收敛；
 //   切全局模型由 switchCurrentModel 走收敛后的 PUT /config（只写 ai_model_ref）— 小欧-2026-09-26
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
@@ -25,9 +25,9 @@ export interface SecurityConfig {
   confirmDangerousOps: boolean;
 }
 
-// 2026-09-26 小欧 - [72]第十一章(11.5 第1步): 删 ConfigUpdate 接口 —— 随 updateConfig 方法一并删除
+// 2026-09-26 小欧 - 实施: 删 ConfigUpdate 接口 —— 随 updateConfig 方法一并删除
 //   （该方法全项目零调用，仅 config.api.ts 内自引用）。其中的 provider_api_keys 字段是
-//   [72]第三章认定的"第二个能擦除密钥的入口"，前端亦无任何调用方，删除后前后端一致收敛。
+//   设计稿认定的"第二个能擦除密钥的入口"，前端亦无任何调用方，删除后前后端一致收敛。
 //   切全局模型改由 configApi.switchCurrentModel 走收敛后的 PUT /config（只写 ai_model_ref）。
 
 export interface ConfigValidateRequest {
@@ -89,7 +89,7 @@ export const configApi = {
 
   // 2026-09-21 小强 - 切全局模型共用(DRY收口): Layout.handleModelChange与CurrentModelRefCard.onOk
   //   原先各自重复 updateConfig+ai_model_ref装配, 现统一唯一写链入口, 两调用方只传provider/model
-  // 2026-09-26 小欧 - [72]第十一章: 后端 PUT /config 收敛为**只写 ai_model_ref**（六个旧 handler 已删，
+  // 2026-09-26 小欧: 后端 PUT /config 收敛为**只写 ai_model_ref**（六个旧 handler 已删，
   //   provider_api_keys 漏洞字段已移除），本方法语义随之收敛，与后端契约一致。
   switchCurrentModel: async (
     provider: string,

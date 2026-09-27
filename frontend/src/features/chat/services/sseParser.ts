@@ -1,5 +1,5 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 usage帧废止前端累加、直取后端本轮+三累计(P/C/T)四字段 - 小欧-2026-08-30
-// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端§5.7.4③④): paused帧 onAuthorizationRequired 透传四字段——
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 后端设计定案): paused帧 onAuthorizationRequired 透传四字段——
 //   trust_path(仅bypass时=rawData.trust_path, trust_panel的双写/撤回核心)、auto_confirm、confirm_timeout(前端倒计时=后端窗口-提前量)、backend_timeout - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 Bug修复(24项): ㉒/㉗镜像 assignTimeout(合法0保留) + auto_confirm严格判断(防"false"误判), 与 useAuthorization 语义一致 — 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')，与normalizeIsReasoning同策略，防bypass误判 - 小欧-2026-09-03
@@ -10,7 +10,7 @@
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定 被拒工具 UI 灰字痕迹): ①onDenied 回调两参→三参
 //   (step,message,toolName)——user_rejected 事件透传 rawData.tool_name 供聚合被拒工具点名条; ②error blocked/timeout
 //   构造对象补 tool_name(rawData.tool_name, 后端 6.2 事件已带被拒工具名)——两路同源承灰字链路 — 小欧-2026-09-06
-// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.1): paused帧透传新增 content 字段(后端 ConfirmSpec.content 弹窗原因) — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 实施: paused帧透传新增 content 字段(后端 ConfirmSpec.content 弹窗原因) — 小欧-2026-09-18
 // 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: 删外层 case 'cancelled' 与内层 switch 分支, 取消收尾单一由
 //   type=final+outcome=cancelled 承担(paused/resumed/retrying 保留); incident 废弃注释同步移出 cancelled — 小欧-2026-09-07
 // 编辑历史: 2026-09-07 小欧 - 4.4.3 start/startinfo 双信号拆分(前端消息分类处理分析及设计-小欧-2026-09-06.md):
@@ -19,8 +19,8 @@
 //   徽标(running/idle)/过程条首行/计时/概况支付行为全不变(startInfo 到达提前到 start, 徽章 running 只更早亮) — 小欧-2026-09-07
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.1/6.3.4(北京老陈裁定回归总原则): error case onError 构造对象无条件打
 //   from_backend=true(来源判据, 不做类型匹配) + request_level=rawData.step===0(层级判据, 读原始值禁stepNum归一;
-//   请求级step=0为真, 执行级step≥1/缺失为false) — useChatCallbacks 据此分道只进P3; step/tool_name 仍照传(聚合源不变) — 小欧-2026-09-08
-// 编辑历史: 2026-09-08 小欧 - BUG-7回归修复(全量回归红): case 'start' 的 contextSummary 承接对象 content——
+//   请求级step=0为真, 执行级step≥1/缺失为false) — useChatCallbacks 据此分道只进第三类; step/tool_name 仍照传(聚合源不变) — 小欧-2026-09-08
+// 编辑历史: 2026-09-08 小欧 - 回归修复(全量回归红): case 'start' 的 contextSummary 承接对象 content——
 //   后端 StartStep.get_content() 返回 context_summary 对象(非字符串), 原 typeof==='string' 三元把对象丢弃为 '',
 //   任务信息条上下文概况(tooltip)空白(数据退化)。改: 对象 JSON 序列化承接, null/undefined 仍为空 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理、与后端消息不匹配的必须一致」):
@@ -68,23 +68,23 @@
 // 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB executionSteps),
 //   实时 SSE 永不发(后端 stream_reader 经 _SSE_EXCLUDE_TYPES 过滤)。case 'thought' 改为纯防御分支——
 //   原实时收集 thought 入 executionSteps 为历史错逻辑(实时+DB 双通道重复根因), 现收到即丢弃仅打日志 — 小欧-2026-09-11
-// 编辑历史: 2026-09-12 小欧 - P1-7/P1-8三堂会审修复: normalizeIsReasoning/normalizeAutoConfirm同名同体合并为
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(归一化/数值化两项): normalizeIsReasoning/normalizeAutoConfirm同名同体合并为
 //   normalizeBoolean(DRY); Number(rawData.step)||1 十处重复抽 toStepNumber helper(DRY, SLAP) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - P0-1/P0-2三堂会审修复: ①error分支step.step改toStepNumber归一化(原直接赋string致终态seq守卫string/number比较失效);
-//   ②action分支补赋tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 原从未赋值致 DBG-6 日志恒undefined — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - P1-11三堂会审修复: usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts P1-11) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - P1-4三堂会审修复: action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - [30]§8.2问题1实施(北京老陈批准, 作废守卫退役): 删[ C1/C2]终态后作废守卫全部残留——
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(error分支归一化/终态补字段): ①error分支step.step改toStepNumber归一化(原直接赋string致终态seq守卫string/number比较失效);
+//   ②action分支补赋tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 原从未赋值致调试日志恒undefined — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(usage帧taskLike单源): usage帧taskLike不再round fallback(taskAcc空时→{0,0,0}), usage字段写入删除(→types/sse.ts 同源) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复(action分支删死字段): action分支删step.code赋值(死字段, 原rawData.code无人消费; execution_status含同语义) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 问题1实施(北京老陈批准, 作废守卫退役): 删终态后作废守卫全部残留——
 //   接口定义/解构/入口拦截块/ final·error分支终态seq记录 五处删除(第二套度量衡退役, event_log seq全局连续单调+TCP有序
 //   +final后无业务帧 ⇒ 晚到高seq帧物理不存在, 守卫零拦截量, YAGNI纯删除)。useSSE侧S904 B2空流判定改用lastSeqRef
 //   (见useSSE.ts编辑历史, done权威置位在后final先publish, 判定语义等价)。编辑历史注释保留可追溯 — 小欧-2026-09-12
-// 编辑历史: 2026-09-13 小欧 - [30]§8.2 TDD P6(行154/311-315): lastUsageSeqRef 第二基线退役——①handlers 接口删除
+// 编辑历史: 2026-09-13 小欧 - TDD(行154/311-315): lastUsageSeqRef 第二基线退役——①handlers 接口删除
 //   lastUsageSeqRef 字段声明(仅保留 lastSeqRef 唯一条基线); ②usage 分支内 seq<=lastUsageSeqRef.current 守卫块整块删除
 //   (入口 lastSeqRef 层已拦截全部重复帧, 该守卫拦截量 0, F2 与入口重复; 单基线纪律 3.2, YAGNI) — 小欧-2026-09-13
-// 编辑历史: 2026-09-13 小欧 - [30]重连链路追踪补点C(北京老陈指令): 入口 seq 守卫拦截 console.debug→console.warn——
+// 编辑历史: 2026-09-13 小欧 - 重连链路追踪补点(北京老陈指令): 入口 seq 守卫拦截 console.debug→console.warn——
 //   重发正是本专项核心, 若未来引入物理重复帧(seq<=lastSeq)必须醒目可见(debug 级易被忽略且不落盘), 升 warn 保追踪 — 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①新增 onRejected 回调接口; ②新增 case 'rejected' 分支, 调用 onRejected + 兼容调用 onDenied; ③onRejected 接收 {step,message,tool_name,reject_type,from_backend} - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(6.6#1 校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: ①handlers 新增 onHeartbeat/onBiz 回调; ②入口识别 `: ping` 上报心跳(原被前缀判断静默丢弃); ③业务帧在 seq 守卫后上报 onBiz 刷新业务静默基线(校核: 过期帧不得掩盖真实静默) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
 //   同日会审V3已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: 心跳:ping 除调用 onHeartbeat 外, 新增创建 ExecutionStep({type:'heartbeat'}) 并 pushAndFlush 记录到事件列表 — 北京老陈驱动
@@ -92,14 +92,14 @@ import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
 
-// 2026-09-12 小欧 P1-7: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12
+// 2026-09-12 小欧 修复: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12
 const normalizeBoolean = (v: unknown): boolean =>
   v === true || v === 'true' || v === 1 || v === '1';
 
-// 2026-09-12 小欧 P1-8: step 数值化 helper, 消原始十处 Number(rawData.step)||1 重复(DRY) — 小欧-2026-09-12
+// 2026-09-12 小欧 修复: step 数值化 helper, 消原始十处 Number(rawData.step)||1 重复(DRY) — 小欧-2026-09-12
 const toStepNumber = (v: unknown): number => Number(v) || 1;
 
-// 2026-09-03 小欧 Bug-22: 计时解析(与 useAuthorization.parseTimeout 同语义), 合法 0 保留, 仅 NaN/负数兜 60
+// 2026-09-03 小欧 修复: 计时解析(与 useAuthorization.parseTimeout 同语义), 合法 0 保留, 仅 NaN/负数兜 60
 const assignTimeout = (v: unknown): number => {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 60;
@@ -174,7 +174,7 @@ const processSSEData = (
     onSeq?: (seq: number) => void;
     // 小欧 2026-09-10 S3: seq 守卫 ref，sseParser 入口层拦截重复事件（seq <= lastSeqRef.current 即跳过）
     lastSeqRef?: React.MutableRefObject<number>;
-    // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 接口定义已删除(作废守卫退役,
+    // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 接口定义已删除(作废守卫退役,
     //   event_log seq 全局连续单调+TCP有序+final后无业务帧 ⇒ 晚到高seq帧物理不存在, YAGNI) — 小欧-2026-09-12
     // 小欧 2026-09-10 S12: 批量 commit — 传入 pendingStepsRef + scheduleFlush
     pendingStepsRef?: React.MutableRefObject<ExecutionStep[]>;
@@ -186,7 +186,7 @@ const processSSEData = (
       completion: number;
       total: number;
     }>;
-    // 2026-09-17 小欧 [46]第五章: 心跳/业务到达信号(钟面数据源) — 小欧-2026-09-17
+    // 2026-09-17 小欧 实施: 心跳/业务到达信号(钟面数据源) — 小欧-2026-09-17
     onHeartbeat?: () => void; // 收到后端 `: ping` 保活注释行
     onBiz?: () => void; // 收到任一业务 data 帧(含 chunk)
   }
@@ -208,12 +208,12 @@ const processSSEData = (
     disconnect: _disconnect,
     setServerTaskId,
     onSeq,
-    // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原 terminalSeqRef 解构已删除(作废守卫退役) — 小欧-2026-09-12
+    // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 解构已删除(作废守卫退役) — 小欧-2026-09-12
   } = handlers;
 
   // 2026-08-27 小欧 修复: SSE数据行可能带前导空格, 先trim再判断前缀
   const trimmedLine = line.trim();
-  // 2026-09-17 小欧 [46]第五章: 后端 `: ping`(stream_orchestrator.py:515, 周期 constants.HEARTBEAT_INTERVAL=25s)
+  // 2026-09-17 小欧 实施: 后端 `: ping`(stream_orchestrator.py:515, 周期 constants.HEARTBEAT_INTERVAL=25s)
   //   原被下行前缀判断静默丢弃(前端无任何 UI 可感知通路); 现上报心跳信号供钟面盘外圈微闪(存活确认, 不参与计时) — 小欧-2026-09-17
   if (trimmedLine === ': ping') {
     handlers.onHeartbeat?.();
@@ -247,14 +247,14 @@ const processSSEData = (
       }
     }
 
-    // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原「终态后作废守卫」拦截块已删除(作废守卫退役,
+    // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「终态后作废守卫」拦截块已删除(作废守卫退役,
     //   本文件编辑历史板块 2026-09-12 条目同步) — 小欧-2026-09-12
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
     if (typeof rawData.seq === 'number' && onSeq) {
       onSeq(rawData.seq);
     }
 
-    // 2026-09-17 小欧 [46]第五章: 业务帧到达(=后端仍在活跃产出) → 刷新业务时间基线;
+    // 2026-09-17 小欧 实施: 业务帧到达(=后端仍在活跃产出) → 刷新业务时间基线;
     //   长输出期间 chunk 不断, 保证不被误判"业务静默"而升档(与心跳/断连语义正交);
     //   按 6.6#1 校核置于 seq 守卫之后, 仅通过守卫的真正新帧才刷新基线(过期帧不得掩盖真实静默) — 小欧-2026-09-17
     handlers.onBiz?.();
@@ -283,7 +283,7 @@ const processSSEData = (
       message: rawData.message,
 
       // 保留字段
-      step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复base-3: 加Number()数值化; 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+      step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复: 加Number()数值化; 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
       thought: rawData.thought, // Agent.thought的值
       // 2026-07-18 小欧 FinalStep 终态规整：终态统一 type=final，由 outcome 声明；同步解析出后端字段
       outcome: rawData.outcome,
@@ -296,7 +296,7 @@ const processSSEData = (
       // 【小沈修复】思考过程与正式内容区分字段
       // 【小查修复】统一使用 snake_case: is_reasoning
       // 2026-08-27 小欧 修复B2/base-2: 统一归一化helper, 补'1'分支(原缺导致true被当false)
-      is_reasoning: normalizeBoolean(rawData.is_reasoning), // 2026-09-12 P1-7: 统用normalizeBoolean(原normalizeIsReasoning) — 小欧-2026-09-12
+      is_reasoning: normalizeBoolean(rawData.is_reasoning), // 2026-09-12 修复: 统用normalizeBoolean(原normalizeIsReasoning) — 小欧-2026-09-12
       // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
 
       timestamp: timestampValue,
@@ -314,7 +314,7 @@ const processSSEData = (
       //    不进右侧查看区流水线（4.4.4）；user_message 对话界面已可见不重复渲染（4.9.1）；
       //    model/provider 由顶栏徽标承载（4.8.3-A）。
       case 'start': {
-        // 2026-09-08 小欧 BUG-7修复: 后端 StartStep.get_content() 返回 context_summary 对象(非字符串),
+        // 2026-09-08 小欧 修复: 后端 StartStep.get_content() 返回 context_summary 对象(非字符串),
         //   原 typeof==='string' 三元把对象丢弃为 '' → contextSummary 空白(任务信息条上下文概况退化)。
         //   改: 对象 JSON 序列化承接(tooltip 消费 string), null/undefined 仍空 — 小欧-2026-09-08
         const summary =
@@ -343,7 +343,7 @@ const processSSEData = (
         const ts: ExecutionStep = {
           type: 'thought-start',
           content: '',
-          step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+          step: toStepNumber(rawData.step), // 2026-08-27 小欧 修复: 加Number(); 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
           timestamp: timestampValue,
         };
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
@@ -364,7 +364,7 @@ const processSSEData = (
         const taskAcc = rawData.task_accumulated_tokens ?? null;
         const sessAcc = rawData.session_accumulated_tokens ?? null;
         const chainAcc = rawData.chain_accumulated_tokens ?? null;
-        // 2026-09-12 小欧 P1-11: taskLike 由 round fallback 改 taskAcc 空时硬 {0,0,0}(不再复用 round, taskAccumulated 单一真源) — 小欧-2026-09-12
+        // 2026-09-12 小欧 修复: taskLike 由 round fallback 改 taskAcc 空时硬 {0,0,0}(不再复用 round, taskAccumulated 单一真源) — 小欧-2026-09-12
         const taskLike = taskAcc
           ? {
               prompt: taskAcc.prompt_tokens ?? 0,
@@ -400,7 +400,7 @@ const processSSEData = (
       }
 
       // final_stats：终态统计独立步（duration/tool_stats/artifacts/step_count/llm_call_count）
-      // 小欧 2026-09-11 第七章 M5b(finalStats补解析): 补解析 step_count/llm_call_count（后端 3.4 FinalStatsStep 新增 7 键, 折叠区步数/轮次来源） — 小欧-2026-09-11
+      // 小欧 2026-09-11 M5b(finalStats补解析): 补解析 step_count/llm_call_count（后端 3.4 FinalStatsStep 新增 7 键, 折叠区步数/轮次来源） — 小欧-2026-09-11
       case 'final_stats': {
         logTypeArrival('final_stats'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
@@ -453,7 +453,7 @@ const processSSEData = (
         //   纠正的历史错逻辑: 实时收到 thought 即收集入 executionSteps → 与 DB 回放 thought
         //   双通道重复(前端重复显示根因), 且 S12 批量 append 令思考草稿与正文并存。
         //   现改为纯防御分支: 后端异常误发时打日志并丢弃, 绝不污染实时 executionSteps — 小欧-2026-09-11
-        const stepNum = toStepNumber(rawData.step); // 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        const stepNum = toStepNumber(rawData.step); // 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
         console.warn(
           `%c[契约] [type=thought] 实时SSE不应出现 thought(仅历史回显), 已防御丢弃 step=${stepNum} 时间=${new Date(
             frameTime
@@ -467,7 +467,7 @@ const processSSEData = (
         // 精简日志：chunk不打印，避免日志过多
 
         // 传递 is_reasoning 区分思考过程和最终答案
-        const is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper; 2026-09-12 P1-7: 统用normalizeBoolean — 小欧-2026-09-12
+        const is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复: 复用统一helper; 2026-09-12 修复: 统用normalizeBoolean — 小欧-2026-09-12
         const chunkContent = rawData.content || '';
         console.log(
           `${formatDebugTime()} ${is_reasoning ? 'T' : 'F'} =${chunkContent}`
@@ -503,10 +503,10 @@ const processSSEData = (
 
       case 'final': {
         logTypeArrival('final', step.step); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
-        // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        // 2026-08-27 小欧 修复: 加Number(); 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
 
         // 【小沈修改2026-04-16】添加step和timestamp字段
-        step.step = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number()数值化; 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        step.step = toStepNumber(rawData.step); // 2026-08-27 小欧 修复: 加Number()数值化; 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
         step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
 
         // 【小强修复 2026-04-15】后端final类型没有content字段，直接使用response
@@ -515,7 +515,7 @@ const processSSEData = (
         step.is_finished = rawData.is_finished;
         step.thought = rawData.thought || '';
         step.is_streaming = rawData.is_streaming;
-        step.is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复B3: 归一化避免存字符串; 2026-09-12 P1-7: 统用normalizeBoolean — 小欧-2026-09-12
+        step.is_reasoning = normalizeBoolean(rawData.is_reasoning); // 2026-08-27 小欧 修复: 归一化避免存字符串; 2026-09-12 修复: 统用normalizeBoolean — 小欧-2026-09-12
         step.content = step.response; // content只用于前端显示，使用response的值
         // 2026-09-09 小欧 失败终态透传: 后端 FinalStep 已下发 outcome/error_type/error_message,
         //   前端原漏解析致 onComplete 无法识别失败终态(4333字思考草稿被当完整回复) — 小欧-2026-09-09
@@ -524,7 +524,7 @@ const processSSEData = (
         step.error_message = rawData.error_message;
         // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, final分支补解析(后端FinalStep.to_dict恒输出cancel_source) — 小欧-2026-09-11
         step.cancel_source = rawData.cancel_source;
-        // 小欧 2026-09-11 第七章 M4(title段duration解析): final 分支补 duration 解析——title 段运行时长唯一实时源
+        // 小欧 2026-09-11 M4(title段duration解析): final 分支补 duration 解析——title 段运行时长唯一实时源
         //   (后端 3.1 FinalStep._extra_fields 新增, 与 DB update_task duration 同源算式: now-_run_start_ts)
         //   不读 DB; ExecutionStep.duration 字段已存在(类型 L155: number?) — 小欧-2026-09-11
         step.duration = rawData.duration;
@@ -580,16 +580,16 @@ const processSSEData = (
 
         setIsReceiving(false);
         setIsConnected(false);
-        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原「final 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
+        // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「final 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 
       case 'error': {
-        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复: 加Number(); 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
         logTypeArrival('error', stepNum); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
 
         // 【小强修复 2026-04-15】后端error类型只有以下字段，只解析后端存在的字段
-        // 【小欧 2026-08-18 三堂会审】P4 起 error 文本统一由 MetaStep.content 承载(新)，
+        // 【小欧 2026-08-18 三堂会审】error 文本统一由 MetaStep.content 承载(新)，
         //   兼容读 content，再回退旧 ErrorStep 的 error_message，杜绝实时显示退化为'未知错误'
         const errorMsg = rawData.content || rawData.error_message || '未知错误';
         step.content = errorMsg;
@@ -597,7 +597,7 @@ const processSSEData = (
         step.error_type = rawData.error_type || '';
 
         // 解析后端存在的字段
-        // 2026-09-12 小欧 P0-1三堂会审修复: 原直接赋值rawData.step(string)致终态seq守卫string/number比较失效, 统一Number()归一化 — 小欧-2026-09-12
+        // 2026-09-12 小欧 三堂会审修复: 原直接赋值rawData.step(string)致终态seq守卫string/number比较失效, 统一Number()归一化 — 小欧-2026-09-12
         if (rawData.step) {
           step.step = toStepNumber(rawData.step);
         }
@@ -630,7 +630,7 @@ const processSSEData = (
         // 【小欧 2026-08-26 8.4】error 收敛为事件通知：不进执行步骤列表、不落库不回放
         // （4.9.2.6）；失败态展示 = 任务信息条状态徽标(final.outcome=failed) + RightViewer
         // 经 onError→liveErrorText 直渲错误行（8.10，非 StatusLine）+ 静态统计块错误项。
-        // 文本读 content（P4 已收敛），回退 error_message。
+        // 文本读 content（已收敛），回退 error_message。
         // 【小沈修改2026-04-15】传递完整的错误对象，统一使用error_message，删除code字段
         onError?.({
           type: 'error',
@@ -638,7 +638,7 @@ const processSSEData = (
           error_message: errorMsg,
           step: stepNum, // 2026-09-06 小欧 B2(方案C): 错误透传所属执行轮 step, 前端按 blocked/timeout 聚合 deniedStepSet — 小欧-2026-09-06
           tool_name: rawData.tool_name, // 2026-09-06 小欧 B2(6.4): 透传被拒工具名(blocked/timeout), 供被拒工具点名条 — 小欧-2026-09-06
-          // 2026-09-08 小欧 6.3.1: 后端 error 事件无条件打来源标 —— useChatCallbacks 据此分道只进P3不弹窗 — 小欧-2026-09-08
+          // 2026-09-08 小欧 落码: 后端 error 事件无条件打来源标 —— useChatCallbacks 据此分道只进第三类不弹窗 — 小欧-2026-09-08
           from_backend: true, // 判据=来源(事件由 SSE 解析而来)而非类型匹配
           // 2026-09-08 小欧 6.3.4: 层级标记读原始 rawData.step===0(禁 stepNum 归一, 恒≥1判不出请求级) — 小欧-2026-09-08
           request_level: rawData.step === 0,
@@ -655,7 +655,7 @@ const processSSEData = (
         // v0.8.75版本没有调用onComplete，UI显示正常
         setIsReceiving(false);
         setIsConnected(false);
-        // 编辑历史: 2026-09-12 16:28 小欧 - [30]§8.2 问题1: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
+        // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
 
@@ -704,7 +704,7 @@ const processSSEData = (
             )
           : [];
         step.tools = tools;
-        // 2026-09-12 小欧 P0-2三堂会审修复: 补赋值 tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 与 step.content 同源 —
+        // 2026-09-12 小欧 三堂会审修复: 补赋值 tool_name(单工具=tools[0].tool, 多工具=join(' + ')), 与 step.content 同源 —
         //   原从未赋值致 debug 日志 [DBG-6] 恒打印 undefined; 下游 ToolCallLine 单工具场景读 tool_name 亦受益 — 小欧-2026-09-12
         step.tool_name =
           tools.length === 1
@@ -732,19 +732,19 @@ const processSSEData = (
       }
 
       // 【小沈修复 2026-04-11】新增：observation类型处理
-      // 【小沈改造 2026-05-22】支持observation为JSON对象（第13章设计方案）
+      // 【小沈改造 2026-05-22】支持observation为JSON对象（设计方案）
       case 'observation': {
-        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复base-3: 加Number(); 2026-09-12 P1-8: 统用toStepNumber — 小欧-2026-09-12
+        const stepNum = toStepNumber(rawData.step); // 2026-08-27 小欧 修复: 加Number(); 2026-09-12 修复: 统用toStepNumber — 小欧-2026-09-12
         logTypeArrival('observation', stepNum); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         step.step = stepNum; // 2026-08-27 小欧 修复base-3: 加Number()数值化
         step.timestamp = timestampValue; // 2026-08-27 小欧 修复base-1: 用已转换number
-        // 2026-09-12 小欧 P1-4: 删 step.code 赋值(死字段, 原 rawData.code 无人消费; execution_status 含同语义) — 小欧-2026-09-12
+        // 2026-09-12 小欧 修复: 删 step.code 赋值(死字段, 原 rawData.code 无人消费; execution_status 含同语义) — 小欧-2026-09-12
 
         // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
         // 先检查null（typeof null === 'object'是历史bug）
         // 2026-08-27 小欧 三堂会审: 适配后端08-18新契约 — observation步骤仅携带rawData.tool_result数组(顶层), 无observation字段
         if (Array.isArray(rawData.tool_result) && rawData.tool_result.length) {
-          // 新契约(§10.3.3(3)): tool_result数组在rawData顶层, 每元素自包含{tool_name,llm_data,data_text,other_data}
+          // 新契约: tool_result数组在rawData顶层, 每元素自包含{tool_name,llm_data,data_text,other_data}
           const tr = rawData.tool_result as Array<Record<string, unknown>>;
           step.tool_result = tr; // 供ToolResultRenderer早退/DefaultRenderer读取
           const el = (tr[0] || {}) as Record<string, unknown>;
@@ -884,16 +884,16 @@ const processSSEData = (
                 content: rawData.content ?? '', // 7.4.1: 后端 ConfirmSpec.content 弹窗原因 — 小欧-2026-09-18
                 safety_level: rawData.safety_level,
                 trust_path: rawData.trust_path ?? null,
-                // 2026-09-03 小欧 D2-10: 改用normalizeAutoConfirm四态归一; 2026-09-12 P1-7: 函数更名normalizeBoolean — 小欧-2026-09-12
+                // 2026-09-03 小欧 落码: 改用normalizeAutoConfirm四态归一; 2026-09-12 修复: 函数更名normalizeBoolean — 小欧-2026-09-12
                 auto_confirm: normalizeBoolean(rawData.auto_confirm),
-                // 2026-09-03 小欧 Bug-22镜像: 合法 0 不被 || 兜成 60(与 useAuthorization 的 parseTimeout 同语义)
+                // 2026-09-03 小欧 镜像修复: 合法 0 不被 || 兜成 60(与 useAuthorization 的 parseTimeout 同语义)
                 confirm_timeout: assignTimeout(rawData.confirm_timeout),
                 backend_timeout: assignTimeout(rawData.backend_timeout),
               });
             }
             break;
           case 'resumed':
-            // 2026-09-03 小沈 缺陷1修复: resumed带confirm_id时派发事件, useAuthorization据此关弹窗(防御性兜底) — 小沈-2026-09-03
+            // 2026-09-03 小沈 缺陷修复: resumed带confirm_id时派发事件, useAuthorization据此关弹窗(防御性兜底) — 小沈-2026-09-03
             if (rawData.confirm_id) {
               window.dispatchEvent(
                 new CustomEvent('authorization_resumed', {

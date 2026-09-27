@@ -1,5 +1,5 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: sessionModelOverride state 类型 string|null→SessionModelOverride|null
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 统一状态管理对接NewChatContainer(8.x 状态重构)
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 统一状态管理对接NewChatContainer(状态重构)
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: 删streamingStepsRef定义+类型声明+返回值透传(146/258/360);
 //   阶段二S2提前实施: executionStepsRef保留(useChatStreaming透传useSSE的ref, 此处ref作备用/兼容) — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): 删executionStepsRef定义+类型声明+返回值透传(useSSE唯一真源,

@@ -183,7 +183,7 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  // 第五章 S2/S3：滚动跳转（跨 Tab 锚点：先切到目标 Tab，等渲染完成后再滚动）
+  // S2/S3：滚动跳转（跨 Tab 锚点：先切到目标 Tab，等渲染完成后再滚动）
   const scrollTo = (dataSection: string) => {
     const el = document.querySelector(`[data-section="${dataSection}"]`);
     el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -210,7 +210,7 @@ const SettingsPage: React.FC = () => {
     DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
   const dangerousAll = DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
 
-  // 2026-09-24 小欧 - BZ-8/收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
+  // 2026-09-24 小欧 - 收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
   const envManaged =
     state.model.providerConfig[state.model.selectedProvider]?.env === true;
@@ -223,7 +223,7 @@ const SettingsPage: React.FC = () => {
 
   // 修正(2026-09-21 小强)：模型组脏计数按实际脏参数数（原是 isDirty?1:0 恒 1 项误导）（[设置页UI审计] 问题13）
   // 2026-09-24 小欧 - ①removedParams 计入模型组脏计数（删键是独立待存变更，与 dirtyCount 同口径）- 小欧-2026-09-24
-  // 2026-09-24 小欧 - BZ-1：补能力脏 +1（与 useSettings dirtyCount/isGroupDirty 同口径——
+  // 2026-09-24 小欧 - 修复：补能力脏 +1（与 useSettings dirtyCount/isGroupDirty 同口径——
   //   原仅改能力时「保存本组」可点却显示 0 项，计数失真）- 小欧-2026-09-24
   // 2026-09-27 小欧 - 补③区草稿键数（改了几个字段=几项，与 dirtyCount 同口径）- 小欧-2026-09-27
   const groupDirtyCount =
@@ -336,7 +336,7 @@ const SettingsPage: React.FC = () => {
           <Button
             icon={<PlusOutlined />}
             style={{ width: settingsControl.actionBtnWidth }}
-            // 2026-09-24 小欧 - BZ-8 env 接管禁添加（后端拒保存）+ BZ-5 保存中禁（防保存期间改 state）— 小欧-2026-09-24
+            // 2026-09-24 小欧 - env 接管禁添加（后端拒保存）+ 保存中禁（防保存期间改 state）— 小欧-2026-09-24
             disabled={s.saving || envManaged}
             onClick={() => s.patchModel({ addParamFormOpen: true })}
           >
@@ -347,7 +347,7 @@ const SettingsPage: React.FC = () => {
           {Object.keys(state.model.paramOptions).length > 0 && (
             <Button
               style={{ width: settingsControl.actionBtnWidth }}
-              // 2026-09-24 小欧 - BZ-8/BZ-5：env 接管与保存中均禁（后端拒保存/防并发写）— 小欧-2026-09-24
+              // 2026-09-24 小欧：env 接管与保存中均禁（后端拒保存/防并发写）— 小欧-2026-09-24
               disabled={s.saving || envManaged}
               onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
             >
@@ -358,7 +358,7 @@ const SettingsPage: React.FC = () => {
           {Object.keys(state.model.params).length > 0 && (
             <Button
               style={{ width: settingsControl.actionBtnWidth }}
-              // 2026-09-24 小欧 - BZ-5：保存中禁重置（防保存期间改 state 致快照错位）— 小欧-2026-09-24
+              // 2026-09-24 小欧：保存中禁重置（防保存期间改 state 致快照错位）— 小欧-2026-09-24
               disabled={!state.model.isDirty || s.saving}
               onClick={() => {
                 Modal.confirm({
@@ -382,7 +382,7 @@ const SettingsPage: React.FC = () => {
                   cancelText: '取消',
                   width: settingsModalWidth.confirm,
                   onOk: () => {
-                    // 2026-09-24 小欧 - BZ-5 闭环：保存进行中确认重置竞态守卫（防 resetParams 覆写保存中快照）
+                    // 2026-09-24 小欧 - 闭环：保存进行中确认重置竞态守卫（防 resetParams 覆写保存中快照）
                     if (s.saving) return;
                     s.resetParams();
                   },
@@ -402,7 +402,7 @@ const SettingsPage: React.FC = () => {
             s.addParam(key, value, meta);
           }}
           onCancel={() => s.patchModel({ addParamFormOpen: false })}
-          // 2026-09-24 小欧 - BZ-5 闭环：保存中禁用表单确认（三堂会审边角）— 小欧-2026-09-24
+          // 2026-09-24 小欧 - 闭环：保存中禁用表单确认（三堂会审边角）— 小欧-2026-09-24
           disabled={s.saving}
         />
       )}
@@ -616,7 +616,7 @@ const SettingsPage: React.FC = () => {
         paramOptions={state.model.paramOptions}
         defaults={state.model.defaults}
         onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
-        // 2026-09-24 小欧 - BZ-5 闭环：保存中禁用弹窗提交（三堂会审边角）— 小欧-2026-09-24
+        // 2026-09-24 小欧 - 闭环：保存中禁用弹窗提交（三堂会审边角）— 小欧-2026-09-24
         disabled={s.saving}
         onSaved={async () => {
           if (state.model.selectedProvider && state.model.selectedModel)

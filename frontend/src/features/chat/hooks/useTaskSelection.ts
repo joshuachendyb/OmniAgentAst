@@ -1,5 +1,5 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离任务选择与详情逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
-// 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.9 v1.103: 拆两effect修G2/G3(①serverTaskId变化强制锚定当前任务, 去activeTaskId门闩; ②纯历史会话默认选中latestTaskId, ASC后tasks[0]≈最旧失效); 签名插入latestTaskId
+// 编辑历史: 2026-08-30 小欧 - 设计文档 v1.103: 拆两effect修锚定问题(①serverTaskId变化强制锚定当前任务, 去activeTaskId门闩; ②纯历史会话默认选中latestTaskId, ASC后tasks[0]≈最旧失效); 签名插入latestTaskId
 // 编辑历史: 2026-09-13 小欧 - 新建会话右栏残留根治(北京老陈三思三省定位): 会话切换重置由useEffect滞后执行改渲染期复位
 //   (React官方"prop变化时调整state"范式)——子组件RightViewer的effect先于父级本hook的effect执行, 原滞后重置致切换首帧
 //   旧activeTaskId存活, 触发RightViewer历史REST effect跨会话拉旧任务步骤回填historySteps→右栏残留旧执行记录;

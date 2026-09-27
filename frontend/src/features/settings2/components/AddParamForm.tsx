@@ -5,7 +5,7 @@
 //   （#d9d9d9→Colors.BORDER.DEFAULT、#fafafa→Colors.BG.LIGHT、borderRadius:4→settingsRadius.SM、
 //    宽 120/160/100→settingsControl 统一 180 族、文本 Input 误用 inputNumberWidth→inputWidth）；
 //   values 初始表达式两处重复抽 initValues（DRY）- 小欧-2026-09-23
-// 2026-09-23 小欧 - [65]§4.3.3 落码：按设计定稿实现（PARAM_PRESETS 8 项+existingKeys 主防+门禁+批量提交统一关表单）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 落码：按设计定稿实现（PARAM_PRESETS 8 项+existingKeys 主防+门禁+批量提交统一关表单）- 小欧-2026-09-23
 // 2026-09-23 小欧 - UI 布局对齐整体页面风格（北京老陈指示）：①容器由横向挤压的 dashed 灰底工具条改纵向区块
 //   （白底 Colors.BG.PRIMARY + 实线 Colors.BORDER.DEFAULT + settingsRadius.SM + Spacing 间距，对齐页面白底浅框语言）；
 //   ②顶行 space-between：左=模式 Radio、右=「取消/确认」按钮组（右对齐操作位，按钮组 gap 间距）；
@@ -28,9 +28,9 @@
 //   （仅重排数组元素顺序，各预设字段内容不变；已存在的参数仍会被 existingKeys 过滤，剩余项保持新相对序）- 小欧-2026-09-24
 // 2026-09-24 小欧 - top_p/seed 的 desc 改口语化（北京老陈反馈原说明不清楚）- 小欧-2026-09-24
 // 2026-09-24 小欧 - seed desc 再改：补数字含义（北京老陈反馈看不出数字变化差异）- 小欧-2026-09-24
-// 2026-09-24 22:56:21 小欧 - BZ-5 闭环：加 disabled prop（保存中禁用「确认」提交+handleAdd 守卫）——
+// 2026-09-24 22:56:21 小欧 - 闭环：加 disabled prop（保存中禁用「确认」提交+handleAdd 守卫）——
 //   三堂会审发现参数区/重置/入口按钮已锁 saving，但表单内批量 onAdd 未锁：保存 await 期间仍可注入
-//   新键，与 saveModelGroup 闭包快照错位竞态（BZ-5 目标漏洞）；取消按钮不改 state 不禁 - 小欧-2026-09-24
+//   新键，与 saveModelGroup 闭包快照错位竞态（目标漏洞）；取消按钮不改 state 不禁 - 小欧-2026-09-24
 // 2026-09-25 05:29:51 小健 - context_limit 预设上限 900000→2000000（北京老陈确认，对齐后端
 //   settings_registry llm.context_limit_default range_=[200000,2000000] 口径）; 注释列补范围显示
 //   （原范围仅在 placeholder，输入后不可见，填 1000000 越界无提示且确认按钮灰）— 小健-2026-09-25
@@ -51,7 +51,7 @@ import { PARAM_DEFAULT_RANGES } from '../utils/modelUtils';
 // （settingsLabelStyle.width=180 装不下会折行；不改共享令牌以免影响 ModelParams 等既有行）- 小欧-2026-09-23
 const NAME_COL_WIDTH = 240;
 
-/** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐 §2.3/v1.2；显示顺序按北京老陈指定 - 小欧-2026-09-24） */
+/** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐设计 v1.2；显示顺序按北京老陈指定 - 小欧-2026-09-24） */
 const PARAM_PRESETS = [
   {
     key: 'context_limit',
@@ -127,7 +127,7 @@ interface AddParamFormProps {
   ) => void;
   onCancel: () => void;
   existingKeys: string[]; // v1.3：已存在参数不再列出（addParam 内 key in params 判重仅作安全网）
-  // 2026-09-24 小欧 - BZ-5 闭环：保存中(saving) 禁用确认，防保存期间注入新键致快照错位 — 小欧-2026-09-24
+  // 2026-09-24 小欧 - 闭环：保存中(saving) 禁用确认，防保存期间注入新键致快照错位 — 小欧-2026-09-24
   disabled?: boolean;
 }
 
@@ -188,7 +188,7 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
   })();
 
   const handleAdd = () => {
-    // 2026-09-24 小欧 - BZ-5 闭环：保存中禁用提交（防保存期间批量 onAdd 注入 vs saveModelGroup 闭包竞态）
+    // 2026-09-24 小欧 - 闭环：保存中禁用提交（防保存期间批量 onAdd 注入 vs saveModelGroup 闭包竞态）
     if (!canConfirm || disabled) return;
     if (mode === 'preset') {
       Object.keys(checked)

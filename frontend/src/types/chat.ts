@@ -11,7 +11,7 @@
  * 流式API响应类型定义
  *
  * 用于定义ReAct流式API返回的8种消息类型
- * 与后端第9章设计文档完全对应
+ * 与后端设计文档完全对应
  *
  * @author 小新
  * @version 1.0.0
@@ -123,7 +123,7 @@ export interface ObservationData {
 /**
  * observation类型 - 工具执行完成提示
  * 发送时机：ReAct第3阶段，工具执行完成后
- * 【2026-05-22 小沈】observation改为JSON对象（第13章设计方案）
+ * 【2026-05-22 小沈】observation改为JSON对象（设计方案）
  * 【向后兼容】保留content字段，但优先使用observation.summary
  */
 export interface ObservationMessage {
@@ -331,7 +331,7 @@ export interface Message extends ChatMessage {
   thought?: string; // 小欧 2026-07-16 LLM推理过程
   isStreaming?: boolean;
   isError?: boolean;
-  // 【小沈修复2026-04-23】P0-1: 添加发送状态，用于显示发送失败标识
+  // 【小沈修复2026-04-23】添加发送状态，用于显示发送失败标识
   sendStatus?: 'sending' | 'sent' | 'failed';
   // 错误相关字段（与API文档对齐）
   // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段

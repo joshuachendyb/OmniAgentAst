@@ -1,9 +1,9 @@
-// 编辑历史: 2026-09-17 小欧 - 新增: 心跳等待感知微型钟面独立控件(北京老陈[46]第四章定案):
+// 编辑历史: 2026-09-17 小欧 - 新增: 心跳等待感知微型钟面独立控件(北京老陈定案):
 //   短针贴内缘环带扫动(60s归零重扫)＋中央纯秒数(≥10s)＋心跳微闪光波(存活确认)＋三档色(绿/黄/橙红)
 //   ＋整数分钟里程碑文字; 与等待图标并存(追加不替换) — 小欧-2026-09-17
 import React, { useEffect, useRef, useState } from 'react';
 import { Colors } from '@/utils/stepStyles';
-import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]: 钟面信号打包类型(定义于类型层, 避免 types→components 反向依赖) — 小欧-2026-09-17
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧: 钟面信号打包类型(定义于类型层, 避免 types→components 反向依赖) — 小欧-2026-09-17
 
 const APPEAR_SEC = 10; // 钟面出现门槛(短等待避免闪烁)
 const YELLOW_SEC = 60; // 业务静默转黄

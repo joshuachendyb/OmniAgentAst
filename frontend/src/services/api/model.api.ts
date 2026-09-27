@@ -1,24 +1,24 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型管理 API（与 config.api.ts 同模式；current_model_ref 复用 SessionModelOverride）
 // 编辑历史: 2026-09-21 小强 - deleteProvider 返回类型补齐 mtime(ModelMutationResult, 与 deleteModel 同构、后端同样返回 mtime)，消除表单 union 后 res.mtime 的 TS 报错 — 小强-2026-09-21
-// 2026-09-21 小欧 - P0-9：addProvider 参数扩 api_key（[58] P0-9）
+// 2026-09-21 小欧 - 实施：addProvider 参数扩 api_key
 // 2026-09-21 小欧 - ProviderEntry 补 max_retries 字段（对齐后端 GET /models 返回 max_retries）
-// 2026-09-22 小欧 - [62]P3 ModelEntry 补 param_options?: Record<string,string[]>（对齐后端 GET /models
+// 2026-09-22 小欧 - 实施 ModelEntry 补 param_options?: Record<string,string[]>（对齐后端 GET /models
 //   返回的三层解析 param_options，前端读链第一站；缺此字段 useSettings 四通道无数据来源）
-// 2026-09-22 小欧 - [62]P5：①addModel 入参补 param_options?: Record<string,string[]>（3.3(2)-b，
+// 2026-09-22 小欧 - 实施：①addModel 入参补 param_options?: Record<string,string[]>（勾选即带入，
 //   添加口模板区勾选项透传到 POST /models 落盘）；②updateModel Pick 补 'param_options'（3.2(7)，
 //   ModelEntry 加该字段后 Pick 缺它 TS 拒收 param_options——后端已校验+落盘，前端类型须同步放开）
-// 2026-09-22 小欧 - [62]P6 4.3(4)(5)：ProviderConfigPatch 补 max_retries/label、addProvider 入参补
+// 2026-09-22 小欧 - 实施：ProviderConfigPatch 补 max_retries/label、addProvider 入参补
 //   timeout/max_retries（对齐后端 ProviderConfigUpdate/ProviderAddRequest DTO——前端实际发送的字段
 //   须在 TS 类型有声明，否则类型保护失效；创建 Provider 弹窗可自定义超时/重试）
-// 2026-09-22 小欧 - [62]P8 4.3(9)-2-b：ProviderEntry 补 param_types 元数据（动态字段 schema 源）
+// 2026-09-22 小欧 - 实施：ProviderEntry 补 param_types 元数据（动态字段 schema 源）
 // 2026-09-24 小欧 - updateModel data 扩 remove_params?: string[]（②参数行 × 删除键级通道，
 //   PUT /models body 白名单字段，后端 update_model 先删后 merge）- 小欧-2026-09-24
-// 2026-09-24 小欧 - [68] 模型库：类型补 RemoteModelItem/RemoteModelsResponse/ReplaceModelsResult，
+// 2026-09-24 小欧 - 模型库：类型补 RemoteModelItem/RemoteModelsResponse/ReplaceModelsResult，
 //   方法补 fetchRemoteModels（GET remote-models）/replaceModels（PUT models 替换写入）- 小欧-2026-09-24
-// 2026-09-26 小欧 - [72]第七章(7.3) + 第十二章(12.5) + 第十章(10.3) 落地:
+// 2026-09-26 小欧 - 落地:
 //   ①ProviderEntry.api_key 改三键恒定 {configured, prefix, suffix} —— 原类型 {configured, suffix} 撒谎
 //     （后端未配置时只返 {configured:false}，无 suffix 键）；第七与十二两章改同一处，按设计合并一次实施
-//   ②RemoteModelsResponse 补 status_code?/category? 两字段（第十章错误分类，前端据此分两套文案）
+//   ②RemoteModelsResponse 补 status_code?/category? 两字段（设计文档错误分类，前端据此分两套文案）
 //   ③新增 testConnection(provider, probeKey?) —— POST test-connection，body 传待测 key；
 //     刻意不用 GET query（query 会进浏览器历史与服务器 access log，明文 key 留痕）— 小欧-2026-09-26
 import api from './client';
@@ -44,7 +44,7 @@ export interface ProviderEntry {
   env: boolean; // v4.19：该 provider 的 api_key 是否被 {NAME}_API_KEY 环境变量接管（config.py _apply_env_overrides 同源判定）
   timeout: number;
   max_retries: number;
-  // 2026-09-22 小欧 - [62]P8 4.3(9)-2-b：param_types 元数据（后端 PROVIDER_PARAM_TYPES 下发，
+  // 2026-09-22 小欧 - 实施：param_types 元数据（后端 PROVIDER_PARAM_TYPES 下发，
   //   前端动态字段渲染/收集的 schema 源——只渲染不定义）
   param_types?: Record<
     string,
@@ -82,7 +82,7 @@ export interface RemoteModelsResponse {
   configured: string[];
   current_model?: string | null;
   message?: string;
-  // [72]第十章(10.3) - 小欧 - 2026-09-26: 错误分类与状态码随响应返回，前端据此分流
+  // 小欧 - 2026-09-26: 错误分类与状态码随响应返回，前端据此分流
   // "地址问题"与"key 问题"两套文案（**不得统一显示"失败"**）。
   // **404/405/501 → endpoint_unsupported，刻意不判 key 无效**（部分 provider 无 /models 端点）。
   status_code?: number | null;
@@ -96,7 +96,7 @@ export interface ReplaceModelsResult {
   removed: string[];
 }
 
-// [72]第十二章(12.5) - 小欧 - 2026-09-26: 明文查看接口响应（api_key 为明文，仅内存持有不持久化）
+// 小欧 - 2026-09-26: 明文查看接口响应（api_key 为明文，仅内存持有不持久化）
 export interface ApiKeyPlainResponse {
   provider: string;
   api_key: string;
@@ -167,7 +167,7 @@ export const modelApi = {
     return response.data;
   },
 
-  // 2026-09-22 小欧 - [62]P6 4.3(5)：addProvider 入参补 timeout/max_retries（添加弹窗可设，
+  // 2026-09-22 小欧 - 实施：addProvider 入参补 timeout/max_retries（添加弹窗可设，
   //   后端 ProviderAddRequest DTO 已有默认 timeout=60/max_retries=3，缺此声明前端弹窗没数据来源，
   //   创建 Provider 只能走后端默认值）
   addProvider: async (data: {
@@ -196,7 +196,7 @@ export const modelApi = {
     return response.data;
   },
 
-  // 2026-09-24 小欧 - [68] 拉取远程模型列表 — 小欧-2026-09-24
+  // 2026-09-24 小欧 - 拉取远程模型列表 — 小欧-2026-09-24
   fetchRemoteModels: async (
     provider: string
   ): Promise<RemoteModelsResponse> => {
@@ -206,7 +206,7 @@ export const modelApi = {
     return response.data;
   },
 
-  // [72]第十二章(12.5) - 小欧 - 2026-09-26: 取已保存的 api_key 明文（供"眼睛"切换查看）。
+  // 小欧 - 2026-09-26: 取已保存的 api_key 明文（供"眼睛"切换查看）。
   // 后端会记审计日志（provider + 时间 + 来源 IP），env 接管时返回 400 拒绝（YAML 里不是生效值）。
   getApiKeyPlain: async (provider: string): Promise<ApiKeyPlainResponse> => {
     const response = await api.get<ApiKeyPlainResponse>(
@@ -215,7 +215,7 @@ export const modelApi = {
     return response.data;
   },
 
-  // [72]第十章(10.3) - 小欧 - 2026-09-26: 测试连接（key 正确性检测）。
+  // 小欧 - 2026-09-26: 测试连接（key 正确性检测）。
   // 用 POST 而非 GET query 传待测 key —— query 会进浏览器历史/服务器 access log，明文 key 会留痕。
   // 探测逻辑在后端复用 fetch_remote_models，此处只做转发（不新造第二套）。
   testConnection: async (
@@ -229,7 +229,7 @@ export const modelApi = {
     return response.data;
   },
 
-  // 2026-09-24 小欧 - [68] 替换式写入 models 列表 — 小欧-2026-09-24
+  // 2026-09-24 小欧 - 替换式写入 models 列表 — 小欧-2026-09-24
   replaceModels: async (
     provider: string,
     models: string[]

@@ -15,7 +15,7 @@ export interface MetricItemProps {
   icon?: React.ReactNode;
   maxWidth?: number; // >0 时数值区 ellipsis + Tooltip 全文
   tooltip?: string;
-  dataState?: string; // aria/data 钩子（P1-8 测试断言）
+  dataState?: string; // aria/data 钩子（测试断言）
 }
 
 const TONE_COLOR: Record<MetricTone, string> = {
@@ -48,7 +48,7 @@ export const MetricItem: React.FC<MetricItemProps> = ({
         style={{
           fontSize: FontSize.SECONDARY,
           fontWeight: FontWeight.BOLD,
-          // 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#1(3.1.3 G6 数值 hover 变 PRIMARY):
+          // 编辑历史: 2026-09-09 小欧 - v4.4 修复#1(数值 hover 变 PRIMARY):
           //   数值色唯一机制 = CSS 变量 --taskinfo-entry-active(回退 tone 色);
           //   .taskinfo-entry:hover 注入蓝值即可覆盖任意 tone, 无分支无 !important。 — 小欧-2026-09-09
           color: `var(--taskinfo-entry-active, ${TONE_COLOR[tone]})`,

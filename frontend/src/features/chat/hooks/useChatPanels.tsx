@@ -3,7 +3,7 @@
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel由config slot移至TaskInfoBar第一行尾部集成，移除config.trust - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 入参新增sessionTokens(会话累计3字段), 解构并透传TopbarStats; chainTokens由number改3字段结构; sessionTokens加入useMemo依赖(否则实时/静态更新不重算是栏不刷新) - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-C/D落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
+// 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
 //   liveErrorText(位4 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
 //   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
@@ -21,16 +21,16 @@
 //   删body未用currentResponse与handleAuthorizationConfirm(解构+依赖数组同步清除, 先误删5行opts解构已用git diff识别恢复) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给TaskListPanel, 控制模型标签provider前缀条件显示 - 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - S13: 从chatStreaming解构executionStepsRef透传RightViewer(final到达时快照用) - 小欧-2026-09-10
-// 编辑历史: 2026-09-12 小欧 - P1-1三堂会审修复: opts.sessionTokens/chainTokens 形状改复用TokenLayer(消私有形状重复, DRY), import TokenLayer — 小欧-2026-09-12
-// 编辑历史: 2026-09-14 小欧 [36]改动点③(方案A, 北京老陈批准): RightViewer 透传删 receiving={isReceiving}
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: opts.sessionTokens/chainTokens 形状改复用TokenLayer(消私有形状重复, DRY), import TokenLayer — 小欧-2026-09-12
+// 编辑历史: 2026-09-14 小欧 改动点③(方案A, 北京老陈批准): RightViewer 透传删 receiving={isReceiving}
 //   (props 已删接收变量; TaskInfoBar 的 receiving 语义保留, isCurrentLive 改纯函数判定) — 小欧-2026-09-14
-// 编辑历史: 2026-09-14 小欧 [36]删第二个变量+第三个(北京老陈令): TaskInfoBar receiving prop 已整体删除,
+// 编辑历史: 2026-09-14 小欧 删第二个变量+第三个(北京老陈令): TaskInfoBar receiving prop 已整体删除,
 //   秒表启停改由 frames 权威信号(startInfo 非空 && finalStats 空=执行走廊)驱动, 本处透传 receiving 一并删除;
 //   连接级 isReceiving 只保留 ChatInput(L278)消费 — 小欧-2026-09-14
-// 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+// 编辑历史: 2026-09-15 小欧 - (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   UseChatPanelsOptions 新增 updateTaskResponse prop, 解构并透传 RightViewer; 删除 onSettledRefresh(不再传) — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - TopbarStats 包 span 加 marginLeft:12, 标题与任务数间距加大到约20px(5字符留白) — 小沈-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -42,7 +42,7 @@ import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
-import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧 P1-1: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
+import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
 import type {
   TaskDetail,
   SessionTaskItem,
@@ -70,7 +70,7 @@ interface UseChatPanelsOptions {
   total: number;
   tasksLoading: boolean;
   refreshTasks: () => void;
-  // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+            // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
   //   updateTaskResponse 由 ChatPage 解构自 useSessionTasks 传入, 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
   updateTaskResponse: (taskId: string, response: string) => void;
   effective: EffectiveModel | null;
@@ -78,8 +78,8 @@ interface UseChatPanelsOptions {
   activeTaskId: string | null;
   selectedDetail: TaskDetail | null;
   handleSelectTask: (id: string) => void;
-  sessionTokens: TokenLayer; // 2026-09-01 小欧: 会话累计 token (TokenLayer复用 P1-1) — 小欧-2026-09-12
-  chainTokens: TokenLayer; // 2026-09-01 小欧: 链累计 token(改3字段, TokenLayer复用 P1-1) — 小欧-2026-09-12
+  sessionTokens: TokenLayer; // 2026-09-01 小欧: 会话累计 token (TokenLayer复用) — 小欧-2026-09-12
+  chainTokens: TokenLayer; // 2026-09-01 小欧: 链累计 token(改3字段, TokenLayer复用) — 小欧-2026-09-12
   handleNewSession: () => void;
   handleEditingStart: () => void;
   handleEditingCancel: () => void;
@@ -110,7 +110,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     total,
     tasksLoading,
     refreshTasks,
-    updateTaskResponse, // 2026-09-15 小欧 [33]第七章: 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
+    updateTaskResponse, // 2026-09-15 小欧: 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
     effective,
     sessionTimes,
     activeTaskId,
@@ -152,7 +152,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     serverTaskId,
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条透传 RightViewer → ToolCallLine — 小欧-2026-09-06
-    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号透传 RightViewer → PipelineRenderer — 小欧-2026-09-17
+    waitClock, // 2026-09-17 小欧 实施: 钟面信号透传 RightViewer → PipelineRenderer — 小欧-2026-09-17
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
 
@@ -260,10 +260,10 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
-            waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
+            waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             sessionTokens={sessionTokens} // 2026-09-11 小欧: 折叠区4组token显示
             chainTokens={chainTokens}
-            // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+  // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
             //   历史任务加载 steps 后写 final.response 到左侧(替代原 onSettledRefresh 从 DB 拉 chat_tasks.response) — 小欧-2026-09-15
             updateTaskResponse={updateTaskResponse}
           />
@@ -344,7 +344,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       metaFrames,
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06
-      waitClock, // 2026-09-17 小欧 [46]第五章: heartbeatTs 变化需触发面板重渲 — 小欧-2026-09-17
+      waitClock, // 2026-09-17 小欧 实施: heartbeatTs 变化需触发面板重渲 — 小欧-2026-09-17
       selectedDetail,
       loading,
       isPaused,
@@ -355,7 +355,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       authorizationPending, // 2026-09-06 小欧 B1: recentConfirmedTool 同入依赖(否则 useMemo 缓存旧值 highlight 不刷新) — 小欧-2026-09-06
       recentConfirmedTool,
       refreshTasks,
-      updateTaskResponse, // 2026-09-15 小欧 [33]第七章: RightViewer 透传写 final.response — 小欧-2026-09-15
+      updateTaskResponse, // 2026-09-15 小欧: RightViewer 透传写 final.response — 小欧-2026-09-15
       latestTaskId, // 2026-09-01 小欧 方案C
       latestTaskRef, // 2026-09-01 小欧 方案C
     ]

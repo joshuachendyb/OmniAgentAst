@@ -21,7 +21,7 @@ const HealthCheck: React.FC = () => {
       setVersion(data.version);
     } catch (error) {
       setStatus('error');
-      // 2026-08-27 小欧 修复review-bugs#4: 健康检查失败不再静默吞掉, 统一进入错误处理中心通知用户
+      // 2026-08-27 小欧 修复: 健康检查失败不再静默吞掉, 统一进入错误处理中心通知用户
       handleError(error, {
         message: '系统健康检查失败，请确认后端服务已启动',
       });

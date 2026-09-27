@@ -1,5 +1,5 @@
 // 编辑历史: 2026-09-20 小强 - 新建：小节头（4.6 系统三小节分隔）
-// 2026-09-21 小欧 - P0-8：margin 间距→Spacing 令牌（[58] P0-8）
+// 2026-09-21 小欧 - 实施：margin 间距→Spacing 令牌
 import React from 'react';
 import { FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 

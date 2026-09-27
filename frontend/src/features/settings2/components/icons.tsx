@@ -1,9 +1,9 @@
 // 编辑历史: 2026-09-20 小强 - 新建：SettingIcon 唯一图标出口 + DirtyDot + EnvTag；全部 antd SVG，禁止 emoji（7.9.4）
-// 2026-09-21 小欧 - P2-4：Tab 图标去掉内联色，随 antd Tabs 选中态继承主色（[58] P2-4）
-// 2026-09-21 小欧 - 全文逐章核查：gap/marginLeft/fontSize 裸数字 → Spacing.XS/MD、FontSize.PRIMARY 令牌；DirtyDot 6px 圆点为 P2-2 文档明确规格保留（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 实施：Tab 图标去掉内联色，随 antd Tabs 选中态继承主色
+// 2026-09-21 小欧 - 全文核查：gap/marginLeft/fontSize 裸数字 → Spacing.XS/MD、FontSize.PRIMARY 令牌；DirtyDot 6px 圆点为文档明确规格保留（设计文档 v1.12 铁规）
 // 2026-09-21 小强 - 删死图标 SettingIcon.chat：后端注册表已删 chat 组（TabKey 收敛 6 组），Record<TabKey> 同步收敛
-// 2026-09-21 小欧 - [59]B-10 渲染: 新增 DefaultTag（后端缺省 source='default'，灰色 Tag 与 env 橙区分）
-// 2026-09-24 小欧 - [68] 模型库：SettingIcon 加 model_library + CloudDownloadOutlined — 小欧-2026-09-24
+// 2026-09-21 小欧 - 渲染: 新增 DefaultTag（后端缺省 source='default'，灰色 Tag 与 env 橙区分）
+// 2026-09-24 小欧 - 模型库：SettingIcon 加 model_library + CloudDownloadOutlined — 小欧-2026-09-24
 import React from 'react';
 import {
   ApiOutlined,
@@ -20,12 +20,12 @@ import { Tag } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import type { TabKey } from '../types';
 
-// 2026-09-21 小欧 - P2-4 定案：Tab 图标 fontSize=14（文档明确规格，不随 Tabs 主题缩放，7.9.x Tabs 集成）
+// 2026-09-21 小欧 - 定案：Tab 图标 fontSize=14（文档明确规格，不随 Tabs 主题缩放，Tabs 集成）
 const TAB_ICON_STYLE: React.CSSProperties = {
   fontSize: 14,
 };
 
-// 2026-09-22 小欧 - [61] tuning Tab 图标：SettingIcon 加 tuning + SlidersOutlined
+// 2026-09-22 小欧 - tuning Tab 图标：SettingIcon 加 tuning + SlidersOutlined
 export const SettingIcon: Record<TabKey, React.ReactNode> = {
   general: <GlobalOutlined style={TAB_ICON_STYLE} />,
   model: <ApiOutlined style={TAB_ICON_STYLE} />,
@@ -66,7 +66,7 @@ export const EnvTag: React.FC = () => (
   </Tag>
 );
 
-/** 默认值(未落盘)标注 — 2026-09-21 小欧 [59]B-10（后端缺省 source='default'，与显式写入 yaml 区分） */
+/** 默认值(未落盘)标注 — 2026-09-21 小欧（后端缺省 source='default'，与显式写入 yaml 区分） */
 export const DefaultTag: React.FC = () => (
   <Tag style={{ marginLeft: Spacing.MD }}>默认值(未保存)</Tag>
 );

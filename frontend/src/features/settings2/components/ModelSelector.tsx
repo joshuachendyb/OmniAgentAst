@@ -1,6 +1,6 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型选择器（Provider/Model 双下拉联动 + 能力标签 + CRUD 入口）
-// 2026-09-21 小欧 - P0-6：下拉宽度→settingsControl 令牌（[58] P0-6）
-// 2026-09-21 小欧 - 全文逐章核查：gap/marginTop 裸数字 → Spacing.MD/XS 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 实施：下拉宽度→settingsControl 令牌
+// 2026-09-21 小欧 - 全文核查：gap/marginTop 裸数字 → Spacing.MD/XS 令牌（设计文档 v1.12 铁规）
 // 2026-09-21 小欧 - 删掉冗余"当前模型"行（该信息已移至模型Tab ①选择器上方独立显示）
 import React from 'react';
 import { Button, Select, Tag } from 'antd';

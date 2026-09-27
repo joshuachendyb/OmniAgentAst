@@ -25,7 +25,7 @@
 //   （脏态下拦截刷新/关闭，对齐 chat useBeforeUnload 语义）
 // 2026-09-22 小欧 - param_options 读链：initialModel 加 paramOptions:{}；
 //   load/selectProvider/selectModel/refreshModels 四处通道补 paramOptions 透传（源 current/first/entry/m.param_options）；
-//   setParam 加枚举拦截（opts.includes(value) 不中 → WARNING+return，禁非法枚举写 state）。P4 将消费渲染 Select。
+//   setParam 加枚举拦截（opts.includes(value) 不中 → WARNING+return，禁非法枚举写 state）。后续将消费渲染 Select。
 // 2026-09-22 小欧 - load() 与 refreshModels() 两处 providerConfig 构建补 label: p.label
 //   （与后端 GET /models 返回 p.label 对齐；load 缺则 ProviderConfig 表单无显示名初值，refreshModels
 //   缺则保存 label 后刷新即丢）。前后端写链路 label 编辑闭环。
@@ -239,7 +239,7 @@ export function useSettings() {
   const [restartKeys, setRestartKeys] = useState<string[]>([]);
   const [highlightKey, setHighlightKey] = useState<string | null>(null);
 
-  // P1-2 修正(2026-09-21 小强)：高亮 TTL(4s) + 新跳转生效前清旧 timer，
+  // 修正(2026-09-21 小强)：高亮 TTL(4s) + 新跳转生效前清旧 timer，
   // 原 2s 且不清理 timer，连续搜索时旧 timer 提前熄灭新高亮（[设置页UI审计] 问题1）
   const HIGHLIGHT_TTL = 4000;
   const highlightTimer = useRef<number | null>(null);
@@ -316,7 +316,7 @@ export function useSettings() {
         for (const [g, grp] of Object.entries(schema.groups ?? {})) {
           for (const it of grp.items ?? []) keyToGroup.set(it.key, g);
         }
-        // v4.19(P2-4 修正)：正常加载不再用 localStorage prefs 覆盖 values——后端 YAML 是唯一真相源，
+        // v4.19 修正：正常加载不再用 localStorage prefs 覆盖 values——后端 YAML 是唯一真相源，
         // local prefs 只承载"后端不可达时的本地试玩草稿"（7.6③），若潜伏自定义值遮蔽 YAML 会误导保存；
         // 后端不可达（本 try 已抛错走到 catch）时 values 保持未初始化，外观 Tab 本地模式另行消费 prefs。
         const ref = models.current_model_ref ?? null;
@@ -722,7 +722,7 @@ export function useSettings() {
   const reloadProviderCache = useCallback(async () => {
     try {
       const models = await modelApi.getModels();
-      // v4.19(P2-10 修正)：与 load() 同构重建 providerConfig（含 env），防保存/增删后 env 状态过期
+      // v4.19 修正：与 load() 同构重建 providerConfig（含 env），防保存/增删后 env 状态过期
       patchModel({
         providers: models.providers,
         providerConfig: buildProviderConfig(models.providers),
@@ -1186,7 +1186,7 @@ export function useSettings() {
       value: unknown,
       meta?: { range?: { min: number; max: number }; options?: string[] }
     ) => {
-      // 2026-09-24 小欧 - BZ-8：env 接管 Provider 禁添加参数（后端 _raise_if_env_takeover 拒保存；
+      // 2026-09-24 小欧：env 接管 Provider 禁添加参数（后端 _raise_if_env_takeover 拒保存；
       //   providerConfig.env 单源判定，与能力行/UI 入口禁用同源，hook 再守一道防绕过）
       if (state.model.providerConfig[state.model.selectedProvider]?.env) {
         showMessage(
@@ -1230,7 +1230,7 @@ export function useSettings() {
         };
       });
       // deps 只留判重闭包用的 params（ranges/paramOptions 在 setState 内经 s 读取，lint unnecessary 修正；
-      //   BZ-8 守卫需 providerConfig/selectedProvider）
+      //   env 接管守卫需 providerConfig/selectedProvider）
     },
     [
       state.model.params,

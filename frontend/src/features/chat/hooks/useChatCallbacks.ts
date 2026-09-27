@@ -1,16 +1,16 @@
 // 编辑历史: 2026-07-18 小欧 - FinalStep终态规整: 取消判定改为type=final+outcome=cancelled
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-9删后端自动保存死代码/10抽pickMsg/11终态清executionSteps
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删后端自动保存死代码/抽pickMsg/终态清executionSteps
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#1/2/3/4/5/6/7/8: 取消事件识别/暂停ref同步/末条非assistant回写/thought回落/暂停分块保留
 // 编辑历史: 2026-08-28 小强 - hooks修复#9: onComplete依赖数组补executionStepsRef/streamingStepsRef(闭包陈旧)
 // 编辑历史: 2026-08-28 小强 - hooks修复#10: onResumed缓冲区回放改为单次setMessages原子合并(防批处理乱序)
 // 编辑历史: 2026-08-28 小强 - hooks修复#11: 删onComplete后端保存空分支+else warn(YAGNI, 后端已自动落库)
-// 编辑历史: 2026-09-03 小欧 Bug-26: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 修复: onAuthorizationRequired 类型补全 4→8 字段(trust_path/auto_confirm/confirm_timeout/backend_timeout), 与 sseParser 下发契约一致, 全量透传保弹窗正确渲染 — 小欧-2026-09-03
 // 编辑历史: 2026-09-07 小欧 - 4.4.1取消终态: isCancelEvent 窄化为 type=final+outcome=cancelled(删 type=cancelled
 //   分支)/isStreaming 终态条件同步移除 cancelled/取消日志文案对齐新契约 — 小欧-2026-09-07
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.3(北京老陈裁定回归总原则): onError 分道——errorObj.from_backend===true
-//   (后端业务错误) 时只清三refs即return, 不进 handleSSEError(弹窗)与 isPausedRef(缓冲)与 setMessages(P2红字),
-//   不等下发 loading/计时(计时不停) — P3 由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
+//   (后端业务错误) 时只清三refs即return, 不进 handleSSEError(弹窗)与 isPausedRef(缓冲)与 setMessages(红字),
+//   不等下发 loading/计时(计时不停) — 页面级错误显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - A1修复(356步残留类累积根治): onStep入口任务内指纹去重(type|step|preview|content前64),
 //   拦截 SSE 重复行/重连GET重放导致的同一执行轮事件重复 append; preview 与 canonical 因 preview 位不同不误杀,
 //   chunk 逐块 content 不同不误杀; onComplete/onError 终态 clear Set 供下任务重新计数 — 小欧-2026-09-09
@@ -25,7 +25,7 @@
 //   final.outcome=failed / final.error_type 有值——失败任务优先展示 final.response('任务执行失败')并置 isError 错误态,
 //   不再把 responseBuffer 全程累积的思考草稿(实证 4333字 = 五轮流式chunk: 1737+169+447+668+1312)当"完整回复"正常展示;
 //   与 sseParser final 分支 outcome/error_type/error_message 透传配套, 正常/cancelled 终态不受影响 — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - bug-2修复(task2 step5/step6丢失): onComplete 读 lastMessage.executionSteps 是 React
+// 编辑历史: 2026-09-09 小欧 - 修复(task2 step5/step6丢失): onComplete 读 lastMessage.executionSteps 是 React
 //   批处理旧态(不含 final step), 导致 PipelineRenderer 缺数据; 改为优先取 executionStepsFromSSE(sseParser 传入的完整
 //   ref 含 final), 与 sseParser final 分支 :499-500 更新 ref + :520 读 ref + :522 传参配套 — 小欧-2026-09-09
 // 编辑历史: 2026-09-10 小欧 - 阶段一零风险清障: ①S1 删streamingStepsRef解构+清空+依赖数组(133/528/539/576/664/680);
@@ -53,8 +53,8 @@
 //   原 hasThoughtContent 兜底是 thought 泄漏到实时流时期"把思考草稿顶成回答"的历史错逻辑(老陈指正
 //   "前端的毛病"), 现回归"真实产出正文"判断: final.response ∨ final.thought — 小欧-2026-09-11
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
-// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F3代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
-// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.2): onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
+// 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-18 小欧 - 设计稿实施: onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
 // 编辑历史: 2026-09-19 小欧: onComplete终态非failed时通过onSuccessRef调最新回调清liveError, 解闭包陈旧(streaming不在deps) — 北京老陈驱动
 /**
  * useChatCallbacks Hook - 统一回调管理
@@ -108,7 +108,7 @@ export interface UseChatCallbacksReturn {
     params: Record<string, unknown>;
     content?: string;
     safety_level: string;
-    // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段(与 sseParser 下发契约一致), 防改代码时缺字段不自知
+    // 2026-09-03 小欧 修复: 类型补全 4→8 字段(与 sseParser 下发契约一致), 防改代码时缺字段不自知
     trust_path?: string | null;
     auto_confirm?: boolean;
     confirm_timeout?: number;
@@ -205,7 +205,7 @@ export const useChatCallbacks = (
       onStepFingerprintRef.current.add(fingerprint);
       // 【北京老陈 2026-07-12 小欧】统一取消语义：interrupted → cancelled
       // 2026-09-07 小欧 4.4.1: type=cancelled 已从链路移除, 取消心跳/收尾单一由 final+outcome=cancelled 承担
-      // 2026-09-15 小欧 [41]v1.3: F3复位点唯一化 — 收到取消终态帧处复位闸
+      // 2026-09-15 小欧 v1.3: 复位点唯一化 — 收到取消终态帧处复位闸
       const isCancelEvent =
         step.type === 'final' && step.outcome === 'cancelled';
       if (isCancelEvent) {
@@ -463,7 +463,7 @@ export const useChatCallbacks = (
           // 【修改 2026-06-09 小沈】直接使用message中的executionSteps，删除三源合并逻辑
           // 2026-08-27 小欧 修复#6: 优先用服务端最终 fullResponse(含暂停期间缓冲分块), 避免暂停分块因 streamingContentRef 未累积而丢失
           const finalContent = finalResponse || streamingContentRef.current;
-          // 2026-09-09 小欧 bug-2修复: sseParser final分支在调onComplete前已将final step追加到ref(:499-500),
+          // 2026-09-09 小欧 修复: sseParser final分支在调onComplete前已将final step追加到ref(:499-500),
           //   并作为executionStepsFromSSE(:520)传入; 此处优先用它(含final), 防React批处理prev旧态覆盖
           const finalSteps =
             executionStepsFromSSE &&
@@ -574,8 +574,8 @@ export const useChatCallbacks = (
         return o.error_message || o.message || '未知错误';
       };
 
-      // 2026-09-08 小欧 6.3.3 分道: 后端业务错误(from_backend=true)只进P3——不弹窗/不替换消息/不进缓冲/不停计时,
-      //   仅清三refs准备下一轮(最终终态由随后 final 承担); P3 显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
+      // 2026-09-08 小欧 分道: 后端业务错误(from_backend=true)只进页面级错误提示——不弹窗/不替换消息/不进缓冲/不停计时,
+      //   仅清三refs准备下一轮(最终终态由随后 final 承担); 页面级错误显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
       if (errorObj.from_backend === true) {
         console.info(
           '[onError] 后端业务错误: 只进P3, 不弹窗/不替换消息/不停计时 (6.3.3)'
@@ -738,7 +738,7 @@ export const useChatCallbacks = (
       }
     }
 
-    // 编辑历史: 2026-08-28 小欧 - BUG10修复: onResumed改用单次setMessages原子合并(防批处理乱序)
+    // 编辑历史: 2026-08-28 小欧 - 修复: onResumed改用单次setMessages原子合并(防批处理乱序)
     if (hasReplayable) {
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
@@ -838,7 +838,7 @@ export const useChatCallbacks = (
       params: Record<string, unknown>;
       content?: string;
       safety_level: string;
-      // 2026-09-03 小欧 Bug-26: 类型补全 4→8 字段, 全量透传 trust/计时字段保弹窗正确渲染
+      // 2026-09-03 小欧 修复: 类型补全 4→8 字段, 全量透传 trust/计时字段保弹窗正确渲染
       trust_path?: string | null;
       auto_confirm?: boolean;
       confirm_timeout?: number;

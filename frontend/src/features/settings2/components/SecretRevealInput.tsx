@@ -3,9 +3,9 @@
  *
  * 编辑历史:
  *   2026-09-26 小欧 - 从 ProviderConfig.tsx 迁出（SRP：父组件原兼三职）。
- *   2026-09-26 小欧 - 修 P0-1 readOnly 死锁（原 readOnly 条件含 !value 而 value 初值恒空，
+ *   2026-09-26 小欧 - 修 readOnly 死锁（原 readOnly 条件含 !value 而 value 初值恒空，
  *     唯一来源是敲键又被 readOnly 挡死，一个字符都输不进去；fireEvent.change 能绕过故当时是假绿）；
- *     修 P0-2 丢焦点（原在 Input/Input.Password 间换组件会重建 DOM，改为常驻单 Input 只切 type）。
+ *     修丢焦点（原在 Input/Input.Password 间换组件会重建 DOM，改为常驻单 Input 只切 type）。
  *   2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}：打码串由后端生成，本组件只回显。
  *   2026-09-27 07:38 小欧 - 修 F1：isTyping 改由「值是否非空」驱动，不再由 focused 驱动。原式
  *     focused||value!=='' 让只读掩码框被点一下/Tab 一下就进入输入态（掩码消失、翻 password、提示语变），
@@ -24,7 +24,7 @@ import { modelApi } from '@/services/api/model.api';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { settingsSpacing } from '@/theme/settingsTokens';
 
-/** 明文自动恢复打码的秒数（[72] 12.5 已定：30 秒） */
+/** 明文自动恢复打码的秒数（设计稿已定：30 秒） */
 const REVEAL_TIMEOUT_MS = 30_000;
 
 export interface SecretRevealInputProps {
@@ -37,7 +37,7 @@ export interface SecretRevealInputProps {
   /** 是否已配置过密钥（决定框内打码显示与是否显示眼睛） */
   configured: boolean;
   /**
-   * 掩码串（[72]12.5 契约）。**由后端 mask_secret_value 一次生成、三档规则已定稿**，
+   * 掩码串（后端契约）。**由后端 mask_secret_value 一次生成、三档规则已定稿**，
    * 前端只负责显示，不做任何档位判断或拼接（DRY：掩码规则只此一处）。
    */
   masked: string;
@@ -106,7 +106,7 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   };
 
   // 打码串与已保存明文必须 type="text"（密码模式把每字符渲染成圆点，前4后4看不见），只有本次输入才遮蔽。
-  // P0-2 硬约束：常驻同一个 <Input>、只切 type 属性 —— 换 Input.Password 会重建 DOM，焦点掉到 body。
+  // 硬约束：常驻同一个 <Input>、只切 type 属性 —— 换 Input.Password 会重建 DOM，焦点掉到 body。
   const [focused, setFocused] = useState(false);
   // 2026-09-27 小欧 - 修 F1：isTyping 由「值非空」驱动而非 focused。原先点一下/Tab 一下即进输入态，
   //   掩码被抹成空白并翻 password，用户误以为密钥没配而重输覆盖。现在聚焦即可编辑、敲字符前仍显掩码。
@@ -125,7 +125,7 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   return (
     <>
       <span style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-        {/* 常驻单个 Input：type 只在 text/password 间切换，DOM 节点不重建（修 P0-2） */}
+        {/* 常驻单个 Input：type 只在 text/password 间切换，DOM 节点不重建（修丢焦点） */}
         <Input
           type={inputType}
           value={displayValue}

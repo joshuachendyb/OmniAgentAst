@@ -3,7 +3,7 @@
  *
  * 功能：应用根组件，整合Layout布局和路由
  *
- * Phase 2 P2 优化：路由懒加载 - 减少首屏 bundle 大小
+ * 优化：路由懒加载 - 减少首屏 bundle 大小
  *
  * @author 小新
  * @version 3.2.0
@@ -24,7 +24,7 @@ import { AppProvider } from './contexts/AppContext';
 import { AntdAppBridge } from './lib/antd/bridge';
 // 2026-09-09 小欧: 应用级错误边界(渲染异常白屏兜底)
 import { ErrorBoundary } from './components/ErrorBoundary';
-// 编辑历史: 2026-09-26 小欧 - [72]第九章(9.6-4): 引入登录页（访问口令输入）
+// 编辑历史: 2026-09-26 小欧 - 实施: 引入登录页（访问口令输入）
 import LoginPage from './pages/LoginPage';
 
 // 路由懒加载 - 减少首屏 bundle 大小
@@ -52,17 +52,17 @@ const LazyLoadingFallback: React.FC = () => (
  * 路由内容组件
  *
  * 功能：根据当前路由渲染不同页面，并传递activeKey给Layout
- * Phase 2 P2 优化：使用 Suspense 包装懒加载路由
+ * 优化：使用 Suspense 包装懒加载路由
  *
  * @author 小新
  */
 const RouterContent: React.FC = () => {
   const location = useLocation();
 
-  // 编辑历史: 2026-09-26 小欧 - [72]第九章(9.6-4): 新增 /login 路由（输入访问口令）。
+  // 编辑历史: 2026-09-26 小欧 - 实施: 新增 /login 路由（输入访问口令）。
   //   登录页**不进 AppLayout**（无侧边栏/顶栏），避免未鉴权用户看到界面骨架。
   //   逻辑: 未登录访问任意页 → 401 拦截器跳 /login；已登录正常进入。
-  // @update 2026-09-26 [72]第九章: 新增 /login 路由 — by 小欧
+  // @update 2026-09-26 设计稿: 新增 /login 路由 — by 小欧
   if (location.pathname === '/login') {
     return <LoginPage />;
   }

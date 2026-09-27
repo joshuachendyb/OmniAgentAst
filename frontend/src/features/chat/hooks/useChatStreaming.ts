@@ -1,4 +1,4 @@
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: SSE流式状态管理改造(8.4/8.6 事件分发/暂停续传)
+// 编辑历史: 2026-08-26 小欧 - 参与改造: SSE流式状态管理改造(事件分发/暂停续传)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H1修复: executeSend内sendMessage加await闭合SSE发送Promise, 防拒绝变unhandled rejection/占位消息永久悬挂
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#10: disconnect参数语义纠偏(force->manualDisconnect, stopServer->clearStorage)
@@ -26,9 +26,9 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): useSSE删除第12参externalExecutionStepsRef(唯一真源独立useRef),
 //   此处删除传参state.executionStepsRef(285行), executionStepsRef仍从useSSE解构(264行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
-// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F5代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedEntries 数据结构新增 reject_type 字段; ②markDenied 函数新增 reject_type 参数; ③删除旧 sseOnError/handleDenied; ④新增统一 handleRejected 函数 - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -129,7 +129,7 @@ export interface UseChatStreamingReturn {
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   executeSend: (userMessage: Message) => Promise<void>;
 
-  // 2026-09-17 小欧 [46]第五章: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
+  // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
   waitClock: import('@/types/sse').ClockSignals;
 }
 
@@ -283,12 +283,12 @@ export const useChatStreaming = (
     clearSteps,
     serverTaskId,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
-    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
+    waitClock, // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
   } = useSSE(
     {
       baseURL: config.baseURL,
       sessionId: sessionId || 'default-session',
-      // 2026-09-26 小欧 - [72]第九章鉴权：SSE 走原生 fetch 绕过 axios 拦截器，
+      // 2026-09-26 小欧 - 鉴权：SSE 走原生 fetch 绕过 axios 拦截器，
       //   token 必须由调用方显式传入（改前此处不传，config.token 恒 undefined → 聊天 401）。
       token: getAccessToken() || undefined,
     },
@@ -359,7 +359,7 @@ export const useChatStreaming = (
   // 2026-08-27 小欧 修复#51/B3: 参数名与底层disconnect对齐, 消除stopServer语义混淆
   // 2026-08-27 小欧 修复#10: 底层 useSSE.disconnect 签名为 (manualDisconnect, clearStorage, onDisconnect)。
   //   force 控制 manualDisconnect(禁止自动重连), stopServer 控制 clearStorage; 此前 force 被误当 clearStorage 传入, 语义反转。
-  // 编辑历史: 2026-08-28 小欧 - BUG14b修复: disconnect参数用局部变量避免字面量匹配翻转语义
+    // 编辑历史: 2026-08-28 小欧 - 修复: disconnect参数用局部变量避免字面量匹配翻转语义
   const disconnectWithParams = useCallback(
     (stopServer?: boolean, force?: boolean, callback?: () => void) => {
       const manualDisconnect = force ?? false;
@@ -384,7 +384,7 @@ export const useChatStreaming = (
       userMessage: Message,
       contextLinkMode?: 'linked' | 'independent'
     ) => {
-      // 2026-09-15 小欧 [41]v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
+      // 2026-09-15 小欧 v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
       cancelInProgressRef.current = false;
 
       // 1. 启动等待计时器
@@ -530,7 +530,7 @@ export const useChatStreaming = (
     clearSteps,
     serverTaskId: serverTaskId || null,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
-    waitClock, // 2026-09-17 小欧 [46]第五章: 钟面信号透传 — 小欧-2026-09-17
+    waitClock, // 2026-09-17 小欧 实施: 钟面信号透传 — 小欧-2026-09-17
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合, 供流水线停齿轮 — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条集合, 供 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
 

@@ -1,11 +1,11 @@
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 发送逻辑对齐CommandPanel/TaskType/contextLink(8.12/8.14)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-15 删pendingMessageIdRef(回滚靠userMessage.id)
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 发送逻辑对齐CommandPanel/TaskType/contextLink
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删pendingMessageIdRef(回滚靠userMessage.id)
 // 编辑历史: 2026-08-27 小欧 - hooks修复#9: executeSend抛错清理isStreaming占位幽灵消息
 // 编辑历史: 2026-08-28 小强 - hooks修复#12: 防重由loading state改isSendingRef(useRef同步), 消除双击竞态
 // 编辑历史: 2026-08-29 小强 - 修复#20: 超长/网络失败early-return前复位isSendingRef, 避免绕过finally永久卡死发送 - 小强-2026-08-29
 // 编辑历史: 2026-09-13 小欧 - 会话标题截断50→10(北京老陈复查, 30仍显冗长): 待界面查看效果 - 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 生成端取消标题截断,创建会话存全量标题(截断只发生在显示端ChatHeader SESSION_TITLE_DISPLAY_MAX=10) - 小欧-2026-09-13
-// 编辑历史: 2026-09-15 小欧 [41]v1.3 - F4'复位点迁址 + async回滚(北京老陈裁定): ①finally不再无条件setLoading(false)
+// 编辑历史: 2026-09-15 小欧 v1.3 - 复位点迁址 + async回滚(北京老陈裁定): ①finally不再无条件setLoading(false)
 //   (loading复位职责归SSE终态: 正常完成→onFinal(:510)/error→onError(:655)/取消→resetUiFlags(:126)——根治
 //   "任务执行中finally提前掐loading → 停止/暂停按钮消失"病根) ②catch分支显式兜底setLoading(false)
 //   (取消失败/网络失败/发送异常路径不依赖SSE终态, 防loading永久为true卡"思考中") — 小欧-2026-09-15

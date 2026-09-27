@@ -2,9 +2,9 @@
 // 编辑历史: 2026-09-22 小欧 - server.port/proxy 补注释说明前端:5173→后端:8000 端口关系(两种连接方式 + 改端口同步清单)
 // 编辑历史: 2026-09-23 小欧 - server.watch.usePolling=true: Windows 下 chokidar 长跑丢文件事件
 //   (2026-09-23 一天连发两次"改代码浏览器不生效"根因)，轮询监听根治，代价=多耗 CPU - 小欧-2026-09-23
-// 2026-09-26 小欧 - [72]第九章配套: server.host 补 '0.0.0.0'。此前未配 host → Vite 默认只绑 localhost
+// 2026-09-26 小欧 - 配套改造: server.host 补 '0.0.0.0'。此前未配 host → Vite 默认只绑 localhost
 //   (Windows 解析为 [::1] IPv6 回环) → **局域网其他机器访问不到前端**(后端 uvicorn 已是 0.0.0.0, 两端不对齐)。
-//   依据 [72]第九章 9.1 部署事实: 后端在 B 机器、客户端在局域网多台机器, 前端必须对外可达。
+//   依据部署事实: 后端在 B 机器、客户端在局域网多台机器, 前端必须对外可达。
 //   连带: e2e_case/vite.e2e.config.ts 仍绑 ::1(测试专用, 有意不对外暴露, 不改)。 — 小欧-2026-09-26
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -48,14 +48,14 @@ export default defineConfig(({ command }) => {
     server: {
       // 前端 dev server 端口（Vite 默认 5173）。
       // 端口关系：前端(:5173) → 后端(:8000)，默认走下方 proxy（/api/* → localhost:8000，同源无 CORS）。
-      // 前端 REST 与 SSE 均为相对路径 /api/v1（[75]BUG-6 修复：此前 REST 直连、SSE 相对，
+      // 前端 REST 与 SSE 均为相对路径 /api/v1（修复：此前 REST 直连、SSE 相对，
       // 两条通道分叉）。前后端不同源且无反代时才设 VITE_API_BASE_URL 显式指向后端。
       // 改端口须同步：proxy.target 与 VITE_API_BASE_URL。
       port: 5173,
-      // 2026-09-26 小欧 - [72]第九章配套: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
+      // 2026-09-26 小欧 - 配套改造: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
       //   此前未配 host，Vite 默认只绑 localhost(Windows 解析为 [::1] IPv6 回环)，
       //   导致**局域网其他机器访问不了前端**（后端 0.0.0.0 可达、前端不可达，两端不对齐）。
-      //   部署事实见 [72]第九章 9.1: 后端在 B 机器、客户端在局域网多台机器 → 前端必须对外可达。
+      //   部署事实: 后端在 B 机器、客户端在局域网多台机器 → 前端必须对外可达。
       //   注意: 这只影响 dev server；生产静态托管由部署方自行绑定。
       host: '0.0.0.0',
       watch: {

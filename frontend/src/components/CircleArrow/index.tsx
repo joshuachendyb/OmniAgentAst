@@ -1,5 +1,5 @@
 // 编辑历史: 2026-09-13 小欧 - CircleArrow 简洁版：圆形+实心三角+折叠旋转 — 小欧-2026-09-13
-// 编辑历史: 2026-09-15 小欧 - [40]第一阶段: 默认色引 Colors 令牌(FOLD_COLLAPSED/FOLD_EXPANDED/BORDER.LIGHT)去硬编码(S5);
+// 编辑历史: 2026-09-15 小欧 - 第一阶段: 默认色引 Colors 令牌(FOLD_COLLAPSED/FOLD_EXPANDED/BORDER.LIGHT)去硬编码;
 //   新增 animated prop(默认true)——内部折叠传 animated=false 保持静止, 主折叠保留旋转动画 — 小欧-2026-09-15
 import React from 'react';
 import { Colors } from '@/utils/stepStyles';

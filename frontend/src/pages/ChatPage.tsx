@@ -1,12 +1,12 @@
 // 编辑历史: 2026-08-28 小欧 - NewChatContainer瘦身: 抽9 hook(useAuthorization/useChatScroll/useSessionMeta/useTaskSelection/useChainTokens/useChatInit/useChatLifecycle/useChatTitle/useChatPanels), 本文件<100行(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - v1.100实施: 点击任务联动右栏展开, 新增handleSelectTaskOpenRight包装(useChatPanels入参handleSelectTask→handleSelectTaskOpenRight, 4.5.1联动锚定) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复输入框悬空: 根div高度由写死calc(100vh-120px)改为height:100%填满Content(Content为flex:auto有确定高度, 原公式比实际可用高度矮61px导致底部空白) - 小欧-2026-08-30
-// 编辑历史: 2026-08-30 小欧 - 设计文档[2]12.10 v1.103: G2修复(serverTaskId变化即refreshTasks, 4.8.4.2 SSE start帧任务产生即入列) + latestTaskId透传useTaskSelection/useChainTokens(diff⑤⑥签名同步) - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 设计文档 v1.103: 修复(serverTaskId变化即refreshTasks, SSE start帧任务产生即入列) + latestTaskId透传useTaskSelection/useChainTokens(签名同步) - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。创建latestTaskRef常驻ref并透传useChatPanels→TaskListPanel(左列滚动定位到最新任务) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): useChainTokens入参加metaFrames(SSE实时token帧源), 解构新增sessionTokens并透传useChatPanels - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: CP-01 serverTaskId监听补sessionId防切会话残留旧列表 - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 同类DB滞后修复: 直播失败即刷新左列(消executing残留) - 小欧-2026-09-02
-// 编辑历史: 2026-09-03 小欧 - BUG-29修复修正: handleSendWithMode改async+await, 原void吞Promise致ChatInput catch永不触发回填无效 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 修复修正: handleSendWithMode改async+await, 原void吞Promise致ChatInput catch永不触发回填无效 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 简化重构: AuthorizationModal加key={confirmId}强制重建, 新请求=新组件实例, 彻底消除countdown/autoHandledRef等跨请求残留 - 小欧-2026-09-03
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: useAuthorization 解构 recentConfirmedTool 并透传 useChatPanels —— 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): liveErrorText✗ string 改 liveError(LiveError|null 对象形态,
@@ -20,12 +20,12 @@
 //   effect依赖它(session_id不变即不重跑)。曾用useMemo稳定引用(堵截)与isReceiving守卫(边界退化)两案, 复查后撤销 — 小欧-2026-09-10
 // 编辑历史: 2026-09-11 小欧 - 即时写入final.response+DB刷新覆盖修复: 新增isReceiving翻false时写入final.response effect(isReceiving翻false时从executionSteps取final.response即时写入task, 不读DB);
 //   删旧prevReceivingRef effect改DB落库信号触发刷新(final_stats到达=DB已落库才触发refreshTasks); 解构补updateTaskResponse — 小欧-2026-09-11
-// 编辑历史: 2026-09-12 小欧 - P1-10三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
-// 编辑历史: 2026-09-12 小欧 - P1左卡草稿根治: 数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: L54 searchParams.get('session_id') 复用已有 urlSessionId(L47), 消重复取参(DRY) — 小欧-2026-09-12
+// 编辑历史: 2026-09-12 小欧 - 左卡草稿根治: 数据源修正(lastMsg.content→executionSteps中type=final的step.response, 无兜底) — 小欧-2026-09-12
 // 编辑历史: 2026-09-12 小欧 - X2终态短信号(北京老陈定案): 删除DB刷新覆盖(hasFinalStats→refreshTasks DB兜底补左侧response), 铁命令: 左侧只用final.response, 实时短条留空、历史回放从DB读; useChainTokens 的 final_stats→refreshTasks(token刷新)保持不变 — 小欧-2026-09-12
 // 编辑历史: 2026-09-13 小欧 - 北京老陈定案: 新建会话时右侧面板整体折叠(rightOpen=false)——右栏残留信息已根治清空,
 //   但新会话仍展开空态右栏不符预期; handleNewSession 包装置折叠, 点任务经 handleSelectTaskOpenRight 再展开 — 小欧-2026-09-13
-// 编辑历史: 2026-09-14 小欧 - [34]布局底部被推出视口修复(北京老陈令): 根div高度由calc(100vh-59px)改height:'100%'+overflow:'hidden',
+// 编辑历史: 2026-09-14 小欧 - 布局底部被推出视口修复(北京老陈令): 根div高度由calc(100vh-59px)改height:'100%'+overflow:'hidden',
 //   外层Layout已锁height:100vh, 本层填满Content即可, 输入条/整体窗口底部始终钉视口内(Edge/Chrome缩放实测通过) — 小欧-2026-09-14
 // 编辑历史: 2026-09-15 小欧 - 新任务开始执行自动展开右栏(北京老陈反馈修复): 2026-09-13 折叠改动后 rightOpen 只靠初始
 //   true 兜底, 新建会话折叠后直接发新任务无任何 setRightOpen(true), 右侧step面板一直折叠不显示; 在 serverTaskId
@@ -36,7 +36,7 @@
 //   SRP(污染G2刷新列表effect)/YAGNI(为不存在的"重试"产任务路径通用化)+冗余依赖setRightOpen; 已撤销effect内改动;
 //   改为在唯一发送入口 handleSendWithMode 直线 setRightOpen(true)(发送即展开右侧step面板, 请求级失败右栏展开亦无副作用);
 //   "点击任务展开"与"发送任务展开"两触发源调同一setter非重复实现(DRY合规), G2 effect恢复单一职责 — 小欧-2026-09-15
-// 编辑历史: 2026-09-15 小欧 - [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+// 编辑历史: 2026-09-15 小欧(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   useChatPanels 调用新增 updateTaskResponse 透传(供 RightViewer 历史任务加载 steps 后写 final.response 到左侧) — 小欧-2026-09-15
 // 编辑历史: 2026-09-19 小欧: useChatFacade加onSuccess: () => setLiveError(null), 任务成功完成时清LiveMeta — 北京老陈驱动
 import React, { useState, useEffect, useCallback, useRef } from 'react';
@@ -70,7 +70,7 @@ const ChatPage: React.FC = () => {
   const latestTaskRef = useRef<HTMLDivElement | null>(null);
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
-    sessionId: urlSessionId, // 2026-09-12 小欧 P1-10: 复用 L47 已取 urlSessionId, 消重复 searchParams.get(DRY) — 小欧-2026-09-12
+    sessionId: urlSessionId, // 2026-09-12 小欧: 复用 L47 已取 urlSessionId, 消重复 searchParams.get(DRY) — 小欧-2026-09-12
     onError: (liveError: LiveError) => setLiveError(liveError),
     // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
     onSuccess: () => setLiveError(null),
@@ -219,7 +219,7 @@ const ChatPage: React.FC = () => {
     total,
     tasksLoading,
     refreshTasks,
-    updateTaskResponse, // 2026-09-15 小欧 [33]第七章(北京老陈定案): 左侧回复区只用 final.step.response 渲染——透传 useChatPanels→RightViewer — 小欧-2026-09-15
+    updateTaskResponse, // 2026-09-15 小欧(北京老陈定案): 左侧回复区只用 final.step.response 渲染——透传 useChatPanels→RightViewer — 小欧-2026-09-15
     effective,
     sessionTimes,
     activeTaskId,

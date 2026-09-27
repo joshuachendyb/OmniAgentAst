@@ -1,29 +1,29 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型管理弹窗（添加模型/Provider + 删除确认含级联警告）
 // 编辑历史: 2026-09-21 小强 - onSubmitAddModel 类型补齐 default_params?(Record<string, unknown>)——SettingsPage 提交处按参考扩展该字段，缺此声明 tsc 报错 — 小强-2026-09-21
 // 编辑历史: 2026-09-21 小强 - 修复 BUG-A：mProvider 仅 useState 初始化一次，父级 selectedProvider 变化后弹窗仍指向旧 Provider（陈旧状态）；加 useEffect 联动
-// 2026-09-21 小欧 - P0-9：添加 Provider 弹窗增 api_key 输入框（[58] P0-9）
-// 2026-09-21 小欧 - 第六章①②③：弹窗视觉优化——描述行/danger/⚠/后果说明（[58] 第六章 6.2）
-// 2026-09-21 小欧 - 全文逐章核查：①②表单弹窗显式 form 宽、③确认弹窗宽散落 480 → settingsModalWidth.form/confirm 令牌收口（[58] v1.12 第六章 6.1 规范一）
-// 2026-09-21 小欧 - 全文逐章核查：规范二落地——①②③弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD，弃用 antd 默认16px；描述行 marginBottom:12 → Spacing.LG（[58] v1.12 第六章 6.1 规范二）
+// 2026-09-21 小欧 - 实施：添加 Provider 弹窗增 api_key 输入框
+// 2026-09-21 小欧 - 实施：弹窗视觉优化——描述行/danger/⚠/后果说明
+// 2026-09-21 小欧 - 全文核查：①表单弹窗显式 form 宽、③确认弹窗宽散落 480 → settingsModalWidth.form/confirm 令牌收口（设计文档 v1.12 规范一）
+// 2026-09-21 小欧 - 全文核查：规范二落地——①②③弹窗标题显式 fontSize:PRIMARY(14)+fontWeight:BOLD，弃用 antd 默认16px；描述行 marginBottom:12 → Spacing.LG（设计文档 v1.12 规范二）
 // 2026-09-21 小强 - 设置页17问题复核修复：删除标题剥离 model:/provider: 内部前缀；添加弹窗 busy+confirmLoading 防连点双发、
 //   失败不关窗不 reset（父级 rethrow）；onSubmitAddModel/Provider 类型改 Promise<void>（[设置页UI审计] 问题3/9）
-// 2026-09-22 小欧 - [62]P5 3.3(1)+3.3(2)：添加模型弹窗加「参数模板」区——候选=所选Provider兄弟模型
+// 2026-09-22 小欧 - 实施：添加模型弹窗加「参数模板」区——候选=所选Provider兄弟模型
 //   default_params∪param_options key 并集；勾选即带入默认值（兄弟default_params，reasoning_effort→medium兜底），
 //   控件按 opts→Select/数字→InputNumber/其他→Input；切Provider重算清空；成功重置。
 //   Props onSubmitAddModel 加 range?/capabilities?/param_options?；handleAddModel 透传 collected.{params,options}
-// 2026-09-22 小欧 - [62]P5 E2E-01 抓真bug修复：勾选行有兄弟 param_options 时, 仅写 collected.params 而 options 恒空
+// 2026-09-22 小欧 - E2E 抓真bug修复：勾选行有兄弟 param_options 时, 仅写 collected.params 而 options 恒空
 //   → handleAddModel 的 param_options 永远空 → 新模型 model_meta 不落 options → 回显无下拉。
 //   修复：勾选时若 opts 存在同步带 options[key]=opts, 取消则删（POST 体含 param_options + config.yaml 落盘 + 回显下拉验证通过）
-// 2026-09-22 小欧 - [62]P6 4.3(5)：onSubmitAddProvider Props 加 timeout?/max_retries?；添加 Provider
+// 2026-09-22 小欧 - 实施：onSubmitAddProvider Props 加 timeout?/max_retries?；添加 Provider
 //   弹窗表单 api_key 后新增 timeout(秒) min1 默认60占位、max_retries min0 默认3占位两个 InputNumber
 //   （配合 model.api.ts addProvider 入参补两字段，创建时即可自定义超时/重试）
 // 2026-09-22 小欧 - 控件宽度统一：参数模板区硬编码 minWidth:160/maxWidth:240 改用 settingsControl 令牌 - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：参数模板区 Select/InputNumber/Input 三控件 onChange 的「勾选才收集+params合并」
 //   重复 → 抽取 updateCollectedParam 单函数（函数式更新防闭包陈旧值）- 小欧-2026-09-22
-// 2026-09-26 - 小欧 - [72]第八章(8.5-1)：添加 Provider 弹窗的 api_base 改必填（rules required +
+// 2026-09-26 - 小欧 - 实施：添加 Provider 弹窗的 api_base 改必填（rules required +
 //   自定义 validator 拒纯空白），未填不提交；与 api_key 的"未配置则留空"方向相反（api_key 允许先建后填）。
 //   后端 add_provider 同步校验 → 400，前后端双闸。
-// 2026-09-27 - 小欧 - [72]第一章：提交前 trim api_key（与 ProviderConfig.doSave、后端 add_provider 同一口径）。
+// 2026-09-27 - 小欧 - 实施：提交前 trim api_key（与 ProviderConfig.doSave、后端 add_provider 同一口径）。
 
 import React, { useEffect, useState } from 'react';
 import { Checkbox, Form, Input, InputNumber, Modal, Select } from 'antd';
@@ -75,7 +75,7 @@ export const ModelModals: React.FC<Props> = (props) => {
     setMProvider(props.selectedProvider);
   }, [props.selectedProvider]);
 
-  // [62]P5 3.3(1) 模板区：候选 = 所选 Provider 已有模型 default_params ∪ param_options key 并集
+  // 模板区：候选 = 所选 Provider 已有模型 default_params ∪ param_options key 并集
   const sibModels = providers.find((p) => p.name === mProvider)?.models ?? [];
   const candKeys = Array.from(
     new Set(
@@ -111,7 +111,7 @@ export const ModelModals: React.FC<Props> = (props) => {
     if (!v) return;
     setBusy('model');
     try {
-      // [62]P5 3.3(2)-b：模板区勾选项由 collected.{params,options} 供给——勾了才送，未勾不送该 key
+      // 模板区勾选项由 collected.{params,options} 供给——勾了才送，未勾不送该 key
       await props.onSubmitAddModel({
         provider: mProvider,
         model: v.model,
@@ -124,7 +124,7 @@ export const ModelModals: React.FC<Props> = (props) => {
           : {}),
       });
       mForm.resetFields();
-      // [62]P5 3.3(1) 成功重置模板区勾选/收集
+      // 成功重置模板区勾选/收集
       setChecked({});
       setCollected({ params: {}, options: {} });
     } catch {
@@ -138,7 +138,7 @@ export const ModelModals: React.FC<Props> = (props) => {
     if (busy) return;
     const v = await pForm.validateFields().catch(() => null);
     if (!v) return;
-    // 2026-09-27 - 小欧 - [72]第一章: api_key 落盘前 trim（与 ProviderConfig.doSave 同一口径）。
+    // 2026-09-27 - 小欧 - 实施: api_key 落盘前 trim（与 ProviderConfig.doSave 同一口径）。
     //   后端 add_provider 已同步 strip（此前只有后端兜底、前端不回传），此处为体验一致；
     //   留空仍是"未配置"，不因 trim 变成空串以外的值。
     if (typeof v.api_key === 'string') v.api_key = v.api_key.trim();
@@ -205,7 +205,7 @@ export const ModelModals: React.FC<Props> = (props) => {
           <Form.Item name="label" label="显示名">
             <Input />
           </Form.Item>
-          {/* [62]P5 3.3(1) 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集 */}
+          {/* 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集 */}
           {candKeys.length > 0 && (
             <div
               style={{
@@ -336,7 +336,7 @@ export const ModelModals: React.FC<Props> = (props) => {
           <Form.Item
             name="api_base"
             label="API 地址"
-            // [72]第八章(8.5-1) 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
+            // 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
             // 无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
             rules={[
               { required: true, message: '请输入 API 地址' },
@@ -353,7 +353,7 @@ export const ModelModals: React.FC<Props> = (props) => {
           <Form.Item name="api_key" label="API Key">
             <Input.Password placeholder="未配置则留空" />
           </Form.Item>
-          {/* [62]P6 4.3(5) 创建 Provider 可自定义 timeout/max_retries（后端 DTO 默认 60/3，留空走默认） */}
+          {/* 创建 Provider 可自定义 timeout/max_retries（后端 DTO 默认 60/3，留空走默认） */}
           <Form.Item label="timeout(秒)" name="timeout">
             <InputNumber min={1} placeholder="默认60" />
           </Form.Item>

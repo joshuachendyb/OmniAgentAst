@@ -730,7 +730,7 @@ export function isSilentError(error: unknown): boolean {
     return true;
   }
 
-  // 2026-08-27 小欧 修复BUG9: 补美式"Canceled", 统一大小写不敏感匹配
+  // 2026-08-27 小欧 修复: 补美式"Canceled", 统一大小写不敏感匹配
   const silentMsg = err.message?.toLowerCase() ?? '';
   if (silentMsg.includes('canceled') || silentMsg.includes('cancelled')) {
     return true;
@@ -793,7 +793,7 @@ export function showMessage(
   // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
   console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}`);
 
-  // 2026-08-27 小欧 修复Bug6: 空文案(如RETRY_WARNING)不弹空toast
+  // 2026-08-27 小欧 修复: 空文案(如RETRY_WARNING)不弹空toast
   if (!displayMessage) {
     return;
   }
@@ -880,7 +880,7 @@ export function classifyError(error: unknown): ErrorType {
     return ErrorType.UNKNOWN;
   }
 
-  // 2026-08-27 小欧 修复Bug10: 支持字符串型错误(无.message属性)
+  // 2026-08-27 小欧 修复: 支持字符串型错误(无.message属性)
   const err = (typeof error === 'string' ? { message: error } : error) as {
     name?: string;
     message?: string;
@@ -901,7 +901,7 @@ export function classifyError(error: unknown): ErrorType {
     return ErrorType.COMPONENT_UNMOUNTED;
   }
 
-  // 2026-08-27 小欧 修复Bug3: 兼容顶层err.status(非仅response.status, fetch类错误常放顶层)
+  // 2026-08-27 小欧 修复: 兼容顶层err.status(非仅response.status, fetch类错误常放顶层)
   const status = err.response?.status ?? err.status;
   if (status) {
     switch (status) {
@@ -910,7 +910,7 @@ export function classifyError(error: unknown): ErrorType {
       case 403:
         return ErrorType.AUTH_403;
       case 404:
-        // 2026-08-27 小欧 修复BUG4: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归通用后端错误避免过度归类
+        // 2026-08-27 小欧 修复: 404仅当url含sessions才归SESSION_NOT_FOUND, 其余归通用后端错误避免过度归类
         if (err.response?.config?.url?.includes('sessions')) {
           return ErrorType.SESSION_NOT_FOUND;
         }
@@ -942,7 +942,7 @@ export function classifyError(error: unknown): ErrorType {
     ) {
       return ErrorType.CONNECTION_RESET;
     }
-    // 2026-08-27 小欧 修复BUG2: timeout优先于network, "网络连接超时"正确归REQUEST_TIMEOUT
+    // 2026-08-27 小欧 修复: timeout优先于network, "网络连接超时"正确归REQUEST_TIMEOUT
     if (msg.includes('timeout') || msg.includes('超时')) {
       return ErrorType.REQUEST_TIMEOUT;
     }
@@ -956,7 +956,7 @@ export function classifyError(error: unknown): ErrorType {
     ) {
       return ErrorType.NETWORK_ERROR;
     }
-    // 2026-08-27 小欧 修复BUG1: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED
+    // 2026-08-27 小欧 修复: storage/存储归STORAGE_ERROR(可重试), quota单独归QUOTA_EXCEEDED
     if (msg.includes('storage') || msg.includes('存储')) {
       return ErrorType.STORAGE_ERROR;
     }
@@ -1008,7 +1008,7 @@ export interface ErrorContext {
   source?: 'api' | 'sse' | 'manual';
   onRetry?: () => void;
   continueOnError?: boolean;
-  // 2026-08-27 小欧 修复review-bugs#1: 调用方自定义文案优先于原始error.message透传
+  // 2026-08-27 小欧 修复: 调用方自定义文案优先于原始error.message透传
   message?: string;
 }
 
@@ -1052,10 +1052,10 @@ export function handleError(
   const errorType = classifyError(error);
   const config = getErrorConfig(errorType);
 
-  // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息(空则回退config.message)
-  // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail 等后端具体文案
+  // 2026-08-27 小欧 修复: 展示原始error.message, 不丢调试信息(空则回退config.message)
+  // 2026-08-28 小欧 修复: 改用 extractErrorMessage, 兼容 axios response.data.detail 等后端具体文案
   const rawMsg = extractErrorMessage(error);
-  // 2026-08-27 小欧 修复review-bugs#1: context.message 优先透传, 其次原始error.message, 确保调用方自定义文案不丢失
+  // 2026-08-27 小欧 修复: context.message 优先透传, 其次原始error.message, 确保调用方自定义文案不丢失
   const customMsg =
     (typeof context.message === 'string' && context.message) ||
     (typeof rawMsg === 'string' ? rawMsg : undefined);
@@ -1114,8 +1114,8 @@ export function handleApiError(
   const errorType = classifyError(error);
   const config = getErrorConfig(errorType);
 
-  // 2026-08-27 小欧 修复Bug15: 展示原始error.message, 不丢调试信息
-  // 2026-08-28 小欧 修复review-bugs#1: 改用 extractErrorMessage, 兼容 axios response.data.detail
+  // 2026-08-27 小欧 修复: 展示原始error.message, 不丢调试信息
+  // 2026-08-28 小欧 修复: 改用 extractErrorMessage, 兼容 axios response.data.detail
   const rawMsg = extractErrorMessage(error);
   if (options?.showError !== false) {
     ErrorHandlerSelf.showMessage(
@@ -1184,7 +1184,7 @@ export function handleSSEError(
   const canRetry = config.retryable && context.reconnectAttempts < maxRetries;
 
   if (canRetry) {
-    // 2026-08-27 小欧 修复Bug5: 无onReconnect时不展示"正在重试"误导文案(实际不会重连)
+    // 2026-08-27 小欧 修复: 无onReconnect时不展示"正在重试"误导文案(实际不会重连)
     if (context.onReconnect) {
       const retryMessage = `正在重试 (${context.reconnectAttempts + 1}/${maxRetries})...`;
       getMessage().warning(retryMessage);

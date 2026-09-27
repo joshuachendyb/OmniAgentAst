@@ -1,5 +1,5 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.5: 自 TaskInfoBar 抽取状态映射常量+纯函数(DRY/SRP/OCP, 禁止backward 不兼容旧写法)
-//   职责: BADGE_MAP(P2-15 cancelled 区分) / CONTEXT_STATE_MAP(4态 P1-8) / EVENT_ICON_MAP(9事件 P1-5+新增)
+//   职责: BADGE_MAP(cancelled 区分) / CONTEXT_STATE_MAP(4态状态机) / EVENT_ICON_MAP(9事件+新增)
 //   / mapStatus(纯函数) / formatToken(千分位 3.2) — 小欧-2026-09-08
 // 编辑历史: 2026-09-17 小欧 - 新增5个事件图标: error/rejected/cancelled/heartbeat/final - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3(#2): 删除 heartbeat 事件图标——后端心跳是 SSE 协议层 ":ping"(stream_orchestrator)，
@@ -18,7 +18,7 @@ import {
 } from '@ant-design/icons';
 import type { ProcessEvent, TaskBadge } from '../../hooks/useTaskInfo';
 
-// ---------- BADGE_MAP（P2-15：cancelled 与 idle 区分） ----------
+// ---------- BADGE_MAP（cancelled 与 idle 区分） ----------
 export interface BadgeEntry {
   status: 'default' | 'processing' | 'warning' | 'success' | 'error';
   text: string;
@@ -32,7 +32,7 @@ export const BADGE_MAP: Record<TaskBadge, BadgeEntry> = {
   cancelled: { status: 'error', text: '已取消' }, // 定案: 红点红字，区分 idle 灰
 };
 
-// ---------- CONTEXT_STATE_MAP（P1-8：4 态文案状态机） ----------
+// ---------- CONTEXT_STATE_MAP（4 态文案状态机） ----------
 export type ContextState = 'ok' | 'summary-only' | 'truncated' | 'empty';
 export interface ContextStateEntry {
   text: string; // 数值区文案（ok 态由调用方传入 token，此处留空）
@@ -87,7 +87,7 @@ export const mapStatus = (src: ContextSource): ContextState => {
   return 'empty';
 };
 
-// ---------- EVENT_ICON_MAP（3.4/P1-5：过程事件统一 antd SVG，禁 emoji） ----------
+// ---------- EVENT_ICON_MAP（过程事件统一 antd SVG，禁 emoji） ----------
 // 2026-09-17 小欧 会审V3(#2): 8类事件——heartbeat 非事件(后端心跳=SSE 协议层 ":ping" 服务器注释帧,
 //   对 JS EventSource 不可见, 永不解析为 ProcessEvent; 变更流不打 event 行, 已核实 stream_orchestrator) — 小欧-2026-09-17
 export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
@@ -109,7 +109,7 @@ export const formatToken = (n: number | null | undefined): string => {
   return `T ${n.toLocaleString('en-US')}`;
 };
 
-// ---------- 等宽数字共享样式（P2-16/3.6：耗时、事件时间均用） ----------
+// ---------- 等宽数字共享样式（耗时、事件时间均用） ----------
 export const TABULAR_NUMS: CSSProperties = {
   fontVariantNumeric: 'tabular-nums',
 };

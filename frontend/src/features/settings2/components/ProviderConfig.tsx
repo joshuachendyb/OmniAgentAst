@@ -1,19 +1,19 @@
 // 编辑历史: 2026-09-20 小强 - 新建：Provider 配置区（统一表单；写走 PUT /providers 统一链 + mtime 同步，见 7.3.2/8.4.1）
 // 2026-09-20 小强 - v4.17 纠错：撤销内嵌 <ProviderSettings shouldLoad />——旧组件自带保存按钮直调旧 /config API，
 //   内嵌会造成双真相源 + modelApi.updateProvider 死代码；改为读全局 providerConfig state、保存走 PUT /providers。
-// 2026-09-21 小欧 - P2-6：isEnv 时渲染 EnvTag + 警示文案（[58] P2-6）
-// 2026-09-21 小欧 - P2-7：清空 api_key 按钮改 danger + 间距分隔（[58] P2-7）
-// 2026-09-21 小欧 - V-1：base_url 留空=保持原值，与 api_key 语义对齐（[58] V-1）
+// 2026-09-21 小欧 - 实施：isEnv 时渲染 EnvTag + 警示文案
+// 2026-09-21 小欧 - 实施：清空 api_key 按钮改 danger + 间距分隔
+// 2026-09-21 小欧 - 实施：base_url 留空=保持原值，与 api_key 语义对齐
 // 2026-09-21 小欧 - 重组区块：清空api_key移入操作区，保存按钮限宽（方案C）
 // 2026-09-21 小欧 - 补 max_retries：config 类型+表单字段+doSave patch 全链路补齐（后端 update_provider_config 支持 max_retries 键）
 // 2026-09-21 小强 - 切 provider 表单值不跟随修复：Form 加 key={name} 重挂刷新（initialValues 只在挂载生效；KISS-DIRECT 一行直解，不加 effect 链条，北京老陈定）
 // 2026-09-21 小强 - 修正：内层 key 证伪（rc-field-form 源码：setInitialValues merge(新值,旧仓库)旧赢+默认preserve不清仓，form 实例常驻则重挂无效）；key 上移调用方，删内层冗余 key（北京老陈定）
 // 2026-09-21 小强 - 设置页17问题复核修复：base_url 留空=清空（后端支持空串落盘api_base=''）；保存成功复位 api_key
 //   防明文残留二次重复提交（失败父级 rethrow 保留输入）；env 接管补解除指引（[设置页UI审计] 问题5/6/14）
-// 2026-09-22 小欧 - [62]P6 4.3(6)：label 显示名编辑入口——Props.config 加 label、onSave patch 加 label?、
+// 2026-09-22 小欧 - 实施：label 显示名编辑入口——Props.config 加 label、onSave patch 加 label?、
 //   doSave 收集（非空 trim 留空=保持原值）、表单 base_url 后加「显示名」Input（后端 key_map/DTO 早已支持，
 //   前端补入口即闭环）；types/useSettings/SettingsPage 三文件同批联动
-// 2026-09-22 小欧 - [62]P8 4.3(9)-3-c：①Props.config 加 param_types + [key:string]:unknown 动态索引、
+// 2026-09-22 小欧 - 实施：①Props.config 加 param_types + [key:string]:unknown 动态索引、
 //   onSave patch 加动态索引；②doSave 动态收集循环（param_types 非静态 keys、values[k]!==undefined 送 patch）；
 //   ③渲染区加动态字段（param_types 除已硬编码字段外，number→InputNumber/boolean→Switch/string→Input，
 //   值回填走 initialValues 天然生效）——rate_limit 等新参数前端零改代码。
@@ -163,7 +163,7 @@ export const ProviderConfig: React.FC<Props> = ({
     onDraftChange?.(diff);
   }, [buildDiff, onDraftChange]);
 
-  // 2026-09-26 - 小欧 - [72]SRP 拆分：内联的「明文密钥查看」与「key 连通性探测」已抽出为
+  // 2026-09-26 - 小欧 - SRP 拆分：内联的「明文密钥查看」与「key 连通性探测」已抽出为
   //   SecretRevealInput / TestConnectionProbe，本组件回归单一职责（配置表单取值/校验/提交）。
 
   const doSave = async () => {
@@ -233,7 +233,7 @@ export const ProviderConfig: React.FC<Props> = ({
         </span>
         {/* 无修改 → 灰白不可点；有修改 → 蓝 + 「（N 项）」（N=diff 键数，与底部保存栏同源）。
             base_url 守卫是"原本有值却被清空"（错误状态），不是"当前为空"——原本就空的老配置
-            仍须能改其它字段（第八章 8.5-3 曾用"当前为空"一票否决，属退化，已修）。— 小欧 2026-09-26 */}
+            仍须能改其它字段（设计稿曾用"当前为空"一票否决，属退化，已修）。— 小欧 2026-09-26 */}
         <Button
           type={dirtyCount > 0 ? 'primary' : 'default'}
           onClick={() => void doSave()}
@@ -246,7 +246,7 @@ export const ProviderConfig: React.FC<Props> = ({
           保存 Provider 配置（立即生效）
           {dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
         </Button>
-        {/* 2026-09-26 小欧 - [72]第十章(10.3) 迁出为 TestConnectionProbe（SRP 拆分）：
+        {/* 2026-09-26 小欧 - 迁出为 TestConnectionProbe（SRP 拆分）：
             与保存并列但语义不同 —— 只读探测（不改配置），故不走 onSave。
             base_url 为空时同样禁用（地址不通测了无意义）。 */}
         <TestConnectionProbe
@@ -283,7 +283,7 @@ export const ProviderConfig: React.FC<Props> = ({
           />
         </span>
       </div>
-      {/* [72]第八章(8.5-2) 小欧 2026-09-26: base_url 空 = 错误状态(红色警示)，原样回显不改写。
+      {/* 小欧 2026-09-26: base_url 空 = 错误状态(红色警示)，原样回显不改写。
           红色复用既有语义 token Colors.ERROR(utils/stepStyles.ts:140)，不新造色值。 */}
       <div
         style={{

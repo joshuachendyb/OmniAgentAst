@@ -1,16 +1,16 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离授权弹窗逻辑至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: AU-02二次授权覆盖旧confirmId先confirm(false)防泄漏+裸as守卫 - 小欧-2026-09-02
-// 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理(§5.7.4-⑥) - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - v1.5.4 计时统一: 移除setTimeout后备, 倒计时由AuthorizationModal countdown统一管理 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - Bug修复(24项): ⑭pendingRef镜像+监听器一次注册[]消闭包窗口 ⑮确认失败不清空pending保留重试(改前 finally清空致后端挂起) ⑱/⑲旧请求覆盖前 await confirm(false) 回声防fire-and-forget ㉒parseTimeout合法0保留(Number||60吞0) ㉗auto_confirm严格判断防"false"误判bypass - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 - D2-10: normalizeAutoConfirm四态归一，P2-1: 同confirmId重放去重不二次resolve，P0-1: catch中404清pending防僵死 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - normalizeAutoConfirm四态归一；同confirmId重放去重不二次resolve；catch中404清pending防僵死 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 17.3: 404判定改读axios response.status+message（String(error)对axios得[object Object]无效） - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 - P1修复: handleAuthorizationConfirm加15s超时兜底, HTTP挂起时强制clearTimeout+setAuthorizationPending(null)防弹窗永久滞留 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 修复: handleAuthorizationConfirm加15s超时兜底, HTTP挂起时强制clearTimeout+setAuthorizationPending(null)防弹窗永久滞留 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 弹窗立即消失+API后台fire-and-forget: 改前await API后才关窗致死等，改后立即关窗API后台发，后端必有返回解耦 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 前端错误提示: 200+success False与网络/500均走公用handleError弹窗(WARNING)，改前仅console.error用户无感知 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - BUG FIX: 同步写入pendingRef — React useEffect子先父后致auto-confirm读旧confirmId发旧ID到后端, 弹窗0秒不消失; 改前pendingRef在useEffect同步(父effect后执行), 改后handleAuthorizationRequired中同步写入 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 根因修复: handleAuthorizationConfirm加confirmId参数, 优先用参数(弹窗直接传入), fallback用pendingRef(兜底); 堵ref时序竞态致旧弹窗auto-confirm发旧ID - 小欧-2026-09-03
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: 确认成功(confirmed=true)暂存 recentConfirmedTool(state)+recentTimerRef(2s自动清除, 卸载清timer), 返回扩展 recentConfirmedTool —— 小欧-2026-09-06
-// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.3): 组装 AuthorizationRequest 新增 content 字段(弹窗原因, 后端 ConfirmSpec.content 透传) — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 设计稿实施: 组装 AuthorizationRequest 新增 content 字段(弹窗原因, 后端 ConfirmSpec.content 透传) — 小欧-2026-09-18
 // 编辑历史: 2026-09-19 小欧 - confirm_id已失效静默处理: 后端超时清理/重复confirm返回"not found/already processed"时仅log不弹toast(良性竞态) — 北京老陈驱动
 // 编辑历史: 2026-09-19 小欧 - P-005契约化(北京老陈批准): confirm_id失效判定改读后端稳定code字段confirm_stale(替代4关键词字符串includes匹配, 消除"后端message变更即前端失效"脆弱链) — 小欧-2026-09-19
 import React, { useCallback, useEffect, useState } from 'react';
@@ -18,7 +18,7 @@ import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
 import { handleError, ErrorType } from '@/services/error/handler';
 
-// 2026-09-03 小欧 Bug-22: 计时解析 —— 合法 0(禁倒计时)保留, 仅 NaN/负数兜底 60(改前 Number||60 把 0 兜成 60)
+// 2026-09-03 小欧 修复: 计时解析 —— 合法 0(禁倒计时)保留, 仅 NaN/负数兜底 60(改前 Number||60 把 0 兜成 60)
 const parseTimeout = (value: unknown): number => {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : 60;
@@ -31,7 +31,7 @@ const parseTimeout = (value: unknown): number => {
 export function useAuthorization(sessionId: string | null) {
   const [authorizationPending, setAuthorizationPending] =
     useState<AuthorizationRequest | null>(null);
-  // 2026-09-03 小欧 Bug-14/18/19: pendingRef 镜像最新 pending, 监听器一次性注册([]), 闭包不再读旧快照;
+  // 2026-09-03 小欧 修复: pendingRef 镜像最新 pending, 监听器一次性注册([]), 闭包不再读旧快照;
   //   覆盖旧请求前 await 旧 confirm(false) 回声, 防 fire-and-forget / 中间请求泄漏
   const pendingRef = React.useRef<AuthorizationRequest | null>(null);
   React.useEffect(() => {
@@ -59,7 +59,7 @@ export function useAuthorization(sessionId: string | null) {
       const rawData = event.detail;
       if (!rawData?.confirm_id || !rawData?.tool_name) return;
       const cur = pendingRef.current;
-      // 2026-09-03 小欧 P2-1: 同confirmId重放去重，不二次resolve
+      // 2026-09-03 小欧 修复: 同confirmId重放去重，不二次resolve
       if (cur) {
         if (cur.confirmId === rawData.confirm_id) return;
         taskControlApi
@@ -78,7 +78,7 @@ export function useAuthorization(sessionId: string | null) {
           rawData.auto_confirm === 'true' ||
           rawData.auto_confirm === 1 ||
           rawData.auto_confirm === '1',
-        // 2026-09-03 小欧 Bug-22: 合法 0(禁倒计时)不被 || 兜成 60; 仅 NaN/负数 兜 60
+        // 2026-09-03 小欧 修复: 合法 0(禁倒计时)不被 || 兜成 60; 仅 NaN/负数 兜 60
         trustPath:
           typeof rawData.trust_path === 'string'
             ? (rawData.trust_path as string)
@@ -96,7 +96,7 @@ export function useAuthorization(sessionId: string | null) {
       'authorization_required',
       handleAuthorizationRequired as EventListener
     );
-    // 2026-09-03 小沈 缺陷1修复: 监听resumed事件, 后端S1超时兜底放行后据此关弹窗(防御性兜底) — 小沈-2026-09-03
+    // 2026-09-03 小沈 缺陷修复: 监听resumed事件, 后端S1超时兜底放行后据此关弹窗(防御性兜底) — 小沈-2026-09-03
     const handleAuthorizationResumed = (
       event: CustomEvent<Record<string, unknown>>
     ) => {
@@ -121,7 +121,7 @@ export function useAuthorization(sessionId: string | null) {
         handleAuthorizationResumed as EventListener
       );
     };
-    // 2026-09-03 小欧 Bug-14: 依赖改 [] 一次性注册, 不再随 authorizationPending 重建监听器(消闭包窗口)
+    // 2026-09-03 小欧 修复: 依赖改 [] 一次性注册, 不再随 authorizationPending 重建监听器(消闭包窗口)
   }, []);
 
   // 【v3.4新增 2026-06-09 小沈】授权确认处理

@@ -3,16 +3,16 @@
 // 编辑历史: 2026-08-28 小欧 - ①B/b1: 空态不占位(tools0→null), ghost对齐padding4 0, 文案色#595959统一
 // 编辑历史: 2026-08-30 小欧 - 13.14 纯div重构: 去Collapse/List/Typography/Button, 收起16px/展开90px(4×16+3×2+4), 零默认留白 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#8c8c8c→#595959、字号12→14加粗 - 小欧-2026-08-30
-// 编辑历史: 2026-09-02 小欧 - task005会审P2无障碍修复(北京老陈定案): 纯div折叠回归→折叠区补 role="button"/aria-expanded/tabIndex/onKeyDown(Enter/Space)、列表补 role="list"/"listitem"; 不引 aria-controls(列表条件渲染, id可能不存在成无效引用) - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - task005会审无障碍修复(北京老陈定案): 纯div折叠回归→折叠区补 role="button"/aria-expanded/tabIndex/onKeyDown(Enter/Space)、列表补 role="list"/"listitem"; 不引 aria-controls(列表条件渲染, id可能不存在成无效引用) - 小欧-2026-09-02
 // 编辑历史: 2026-09-01 小欧 - 规范折叠符号位置统一：三角移至“(*)”后，与工具调用链同位，保持全页单一折叠方法 - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): 面板升级 tool+path 精确信任——
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象"): 面板升级 tool+path 精确信任——
 //   tools行类型带path、行键 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revoke签名带path精确撤销 — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - TaskInfoBar复用(北京老陈定案方向1, 零退化铁律): TrustPanel原为config孤儿(2026-08-30迁移TaskInfoBar时被内联复制成孤儿),
 //   现把TaskInfoBar内联信任实现(查询/刷新/撤销/折叠/无障碍/空态/计数配色 + Tooltip + stopPropagation + 撤销try/catch)全部合并回TrustPanel,
 //   TaskInfoBar改import复用删除内联重复(DRY); 以TaskInfoBar现有样式为准(紧凑"信任(N)"+Tooltip+计数配色+stopPropagation), 功能零丢失零退化 - 小欧-2026-09-03
-// 编辑历史: 2026-09-09 小欧 - [16]v4.x P1-10/P0-4/P2-18: 展开列表改 Drawer 侧滑面板(第一行高度恒定不跳动); 撤销移入每行首列 + Modal.confirm 二次确认(文案含工具名);
+// 编辑历史: 2026-09-09 小欧 - v4.x: 展开列表改 Drawer 侧滑面板(第一行高度恒定不跳动); 撤销移入每行首列 + Modal.confirm 二次确认(文案含工具名);
 //   触发按钮文字样式(PRIMARY+500)提示可点; 关闭后焦点回触发按钮; load/omni-trust-changed监听/trustReqIdRef竞态守卫原样不动 — 小欧-2026-09-09
-// 编辑历史: 2026-09-16 小欧 - 文档[44]5.7 问题C文案修正(方案A决策落地): Tooltip 文案精准反映"信任豁免的是确认弹框, 非所有弹框",
+// 编辑历史: 2026-09-16 小欧 - 设计稿问题C文案修正(方案A决策落地): Tooltip 文案精准反映"信任豁免的是确认弹框, 非所有弹框",
 //   补"沙箱预检未完成验证时仍可能弹窗" — 小欧-2026-09-16
 /**
  * TrustPanel - 信任操作面板（集成于 TaskInfoBar 第一行尾部，紧凑样式）
@@ -76,7 +76,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
       );
   }, [sessionId, load]);
 
-  // P0-4: 撤销前 Modal.confirm 二次确认（文案含工具名），确认才删
+  // 撤销前 Modal.confirm 二次确认（文案含工具名），确认才删
   const confirmRevoke = (t: TrustedTool) => {
     if (!sessionId) return;
     Modal.confirm({
@@ -103,7 +103,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
     setDrawerOpen(false);
     triggerRef.current?.focus(); // 3.5: 关闭后焦点回到触发按钮
   };
-  // 小欧 2026-09-09 #4: Drawer 打开后焦点移入面板(3.5/P1-10 键盘无障碍)；
+  // 小欧 2026-09-09: Drawer 打开后焦点移入面板(键盘无障碍)；
   //   open 置 true 时内容已渲染, 直接聚焦(不依赖 antd 动画 afterOpenChange, 测试可判定)
   useEffect(() => {
     if (drawerOpen) drawerPanelRef.current?.focus();
@@ -138,7 +138,7 @@ const TrustPanel: React.FC<TrustPanelProps> = ({ sessionId, compact }) => {
           </span>
         </Tooltip>
       </div>
-      {/* Drawer 侧滑面板: 第一行高度恒 28px 不跳动(P1-10) */}
+      {/* Drawer 侧滑面板: 第一行高度恒 28px 不跳动 */}
       <Drawer
         placement="right"
         open={drawerOpen}

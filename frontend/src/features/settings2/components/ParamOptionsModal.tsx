@@ -1,8 +1,8 @@
-// 编辑历史: 2026-09-22 小欧 - 新建：[62]P8 4.3(8) 管理选项弹窗——Tag 展示/添加/删除当前模型
+// 编辑历史: 2026-09-22 小欧 - 新建：管理选项弹窗——Tag 展示/添加/删除当前模型
 //  param_options 选项列表；保存前交叉校验悬空默认值（defaults[key] 不在新列表 → Modal.confirm
 //  同批回提 default_params 重置首项，复用后端 merge_nested_patch 同批合并零后端改动）。
 // 2026-09-22 小欧 - KISS+令牌收口：`dangling && dangling !== undefined` 冗余判断 → `dangling`（truthy 即非 undefined）；marginBottom:4/marginTop:4/fontSize:12 裸数字 → Spacing.XS/FontSize.SECONDARY - 小欧-2026-09-22
-// 2026-09-24 22:56:21 小欧 - BZ-5 闭环：加 disabled prop（保存中禁用「保存」提交+doSave 头部守卫）——
+// 2026-09-24 22:56:21 小欧 - 闭环：加 disabled prop（保存中禁用「保存」提交+doSave 头部守卫）——
 //   三堂会审发现外部 saveModelGroup saving 进行中弹窗仍可提交 param_options，与模型组保存并发写
 //   同 YAML 不同字段（服务端非事务），快照错位同类风险；保存/取消关窗不改模型 state 不禁 - 小欧-2026-09-24
 // 2026-09-25 06:17:07 小健 - 「添加」按钮改橘红底白字（Colors.ORANGE_RED 标准令牌 + inline style，
@@ -24,7 +24,7 @@ interface Props {
   onClose: () => void;
   // 保存成功后回调（父级刷新 paramOptions + defaults）
   onSaved: () => Promise<void> | void;
-  // 2026-09-24 小欧 - BZ-5 闭环：保存中(saving) 禁用提交，防与模型组保存并发写 YAML 致快照错位 — 小欧-2026-09-24
+  // 2026-09-24 小欧 - 闭环：保存中(saving) 禁用提交，防与模型组保存并发写 YAML 致快照错位 — 小欧-2026-09-24
   disabled?: boolean;
 }
 
@@ -76,7 +76,7 @@ export const ParamOptionsModal: React.FC<Props> = ({
     );
 
   const doSave = async () => {
-    // 2026-09-24 小欧 - BZ-5 闭环：保存中禁止提交（防与 saveModelGroup 并发写同 YAML 快照错位）— 小欧-2026-09-24
+    // 2026-09-24 小欧 - 闭环：保存中禁止提交（防与 saveModelGroup 并发写同 YAML 快照错位）— 小欧-2026-09-24
     if (disabled) return;
     // 保存前校验：每个参数至少保留 1 个值（空列表禁止）
     for (const k of Object.keys(draft)) {
@@ -147,7 +147,7 @@ export const ParamOptionsModal: React.FC<Props> = ({
       okText="保存"
       cancelText="取消"
       confirmLoading={saving}
-      // 2026-09-24 小欧 - BZ-5 闭环：外部 saving 时禁用 OK 按钮（视觉与守卫双保险）— 小欧-2026-09-24
+      // 2026-09-24 小欧 - 闭环：外部 saving 时禁用 OK 按钮（视觉与守卫双保险）— 小欧-2026-09-24
       okButtonProps={{ disabled }}
     >
       {Object.keys(draft).length === 0 ? (

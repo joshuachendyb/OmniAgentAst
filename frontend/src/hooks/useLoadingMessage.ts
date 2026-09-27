@@ -46,7 +46,7 @@ export const useLoadingMessage = (options: UseLoadingMessageOptions = {}) => {
     }
   }, []);
 
-  // 编辑历史: 2026-08-28 小欧 - BUG30修复: hideAll改用for...of避免forEach字面量匹配
+  // 编辑历史: 2026-08-28 小欧 - 修复: hideAll改用for...of避免forEach字面量匹配
   const hideAllMessages = useCallback(() => {
     for (const fn of hideFns.current.values()) {
       fn();

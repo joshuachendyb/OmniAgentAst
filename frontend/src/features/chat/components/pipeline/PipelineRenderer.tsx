@@ -1,9 +1,9 @@
 // 编辑历史: 2026-08-26 小欧 - 8.4.9 实施: 消息流水线渲染器, 按事件seq序产出段, 相邻同类合并, 实时与回放共用(4.4.2①/3.7.6)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 消除map自增副作用, 预计算lastThink判定光标(11)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P1-2/P1-6: 流水线容器左线化(borderLeft2px#e8e8e8+paddingLeft12+marginTop4), 靠换行+缩进+左线替代卡片; 段距已统一8px0
+// 编辑历史: 2026-08-27 小欧 - 三堂会审去框: 流水线容器左线化(borderLeft2px#e8e8e8+paddingLeft12+marginTop4), 靠换行+缩进+左线替代卡片; 段距已统一8px0
 // 编辑历史: 2026-08-28 小欧 - ④A/a1: 左线令牌化 Colors.BORDER.VERTICAL
-// 编辑历史: 2026-08-30 小欧 - 第十三章13.10.3.1(设计文档[2]13.12.1, 北京老陈 2026-08-30 批准): 正文 text 段接入 TextStream 打字机(预计算 lastText 作实时累积段); 容器 paddingLeft→Spacing.LG、marginTop→Spacing.XS、obs 失孤行 margin→Spacing.MD 去魔法数字 - 小欧-2026-08-30
+// 编辑历史: 2026-08-30 小欧 - 设计文档实施(设计文档落码, 北京老陈 2026-08-30 批准): 正文 text 段接入 TextStream 打字机(预计算 lastText 作实时累积段); 容器 paddingLeft→Spacing.LG、marginTop→Spacing.XS、obs 失孤行 margin→Spacing.MD 去魔法数字 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈 标注修正(step之间8/step内部文字6/观察折叠内4): text 段同 step 后续标记 sameStep(thought的reasoning+thought), 主段 step 间距收敛 MD(8), 同 step 内文字块走 compact(6) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): stepMargin(false)=(MD-2)=6 统一 step 段距(obs 孤儿行同步), 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 容器 line-height=字号+Spacing.XS(4)(行间距4), step 间 SM6/step 内文字 XS4 折不折同 - 小欧-2026-08-30
@@ -20,15 +20,15 @@
 //   (startinfo 已到且 receiving → badge=running 撑圈) ②HIT挂起>60s 空闲超时重连 disconnect isReceiving=false 圈闪失
 //   (badge 仍 paused/running 撑圈) ③HIT confirm 后 resumed 前 highlight 已清 null 圈闪失(badge 仍 paused 撑圈);
 //   非 live 历史回放 badge=undefined, 不显示圈 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 三堂会审task005-BUG-005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
+// 编辑历史: 2026-09-02 小欧 - 三堂会审task005修复: ToolCallLine key由索引i改step序号(任务切换时卸载重建, 展开状态不残留)
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①buildSegments去原地突变last.text改不可变更新(防污染缓存)②ThinkingStream/TextStream key由i改稳定key(防索引复用串味)③waiting终态守卫lastSeg.kind !== 'final'防失败后转圈 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 等待图标残留丢失根治(北京老陈驱动三堂会审): waiting守卫补 error 终态(exclude error与final同为终态, 防止error后转圈); 场景穷举12种, 残留主因为纯网络空闲断连isCurrentLive瞬false, 由RightViewer isCurrentLive改 (receiving||badge running/paused) 共担
-// 编辑历史: 2026-09-03 小欧 - Bug-9: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载
+// 编辑历史: 2026-09-03 小欧 修复: waiting 判定排除 tool 段 — 末段为工具段时不再叠加底部绿色缺口圆弧(双动画), 工具等待由 ToolCallLine 橙齿轮+扳手唯一承载
 // 编辑历史: 2026-09-03 小欧 D2-07: waiting补排除obs孤儿观察（与final/error同终态），防绿圈残留
-// 编辑历史: 2026-09-03 小欧 P3/P4/P5修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存)
-// 编辑历史: 2026-09-03 小欧 P2修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义
-// 编辑历史: 2026-09-03 小沈 P3/P4/P5修复修正: buildSegments action去重改不可变更新(原existingTool.action=s原地突变违反BUG-18不可变原则)
-// 编辑历史: 2026-09-03 小沈 thought/action等待图标修复: 修正小欧P2(第29行)/D2-07(第27行)方向反转——
+// 编辑历史: 2026-09-03 小欧 修复: buildSegments action段按step去重, 防重复seq致双实例(空obs走超时+有obs走子行并存)
+// 编辑历史: 2026-09-03 小欧 修复: waiting判定tool段改为有obs时排除/无obs时保留, 恢复每轮thought前绿圈复现语义
+// 编辑历史: 2026-09-03 小沈 修复修正: buildSegments action去重改不可变更新(原existingTool.action=s原地突变违反不可变原则)
+// 编辑历史: 2026-09-03 小沈 thought/action等待图标修复: 修正小欧方向反转(第29行)/第27行)——
 //   tool有obs(工具完成等待LLM下一轮thought)应保留绿圈(observations.length>0), tool无obs(action执行中由ToolCallLine齿轮承载)应排除;
 //   obs孤儿观察段(结果已到等待LLM下一轮)应保留绿圈(去掉obs排除); 场景穷举6种: 无段✅thinking/text✅tool无obs✅tool有obs✅obs✅final/error✅ - 小沈-2026-09-03
 // 编辑历史: 2026-09-03 小欧/北京老陈 v5.1 observation统一存obs段, 不挂tool
@@ -61,24 +61,24 @@
 //   (跨任务/异常残留)独立追加不覆盖历史段, 杜绝"旧任务工具行被新任务同 step 覆盖篡改" — 小欧-2026-09-09
 // 编辑历史: 2026-09-11 小欧 - 修复reasoning/thought重复: thought步骤的reasoning字段与chunk步骤(is_reasoning=true)内容重叠时去重, 防appendToLast拼接致双倍文本 - 小欧-2026-09-11
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
-// 编辑历史: 2026-09-13 小欧 - [35]thought-action等待状态实施: 内联WaitingIcon拆为WaitingIcons控件ThoughtWaitingIcon; 新增action-waiting段
+// 编辑历史: 2026-09-13 小欧 - thought-action等待状态实施: 内联WaitingIcon拆为WaitingIcons控件ThoughtWaitingIcon; 新增action-waiting段
 //   (thinking末段+taskActive时组件体内追加ActionWaitingIcon段, 北京老陈令选G波纹扩散样式, action到达/任务结束自动消失);
 //   union加action-waiting类型, 渲染分支加ActionWaitingIcon; 注释统一用组件名(ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon) — 小欧-2026-09-13
-// 编辑历史: 2026-09-14 小欧 [36]改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive 纯函数
+// 编辑历史: 2026-09-14 小欧 改动点④(方案A, 北京老陈批准): taskActive 判定提纯复用 computeTaskActive 纯函数
 //   (删 streaming 条件, highlight/badge 双权威信号), import viewState — 小欧-2026-09-14
-// 编辑历史: 2026-09-14 小欧 - [35]蓝色圈圈显示逻辑停用(北京老陈令, 定义/CSS/import保留为将来新方案启用):
+// 编辑历史: 2026-09-14 小欧 - 蓝色圈圈显示逻辑停用(北京老陈令, 定义/CSS/import保留为将来新方案启用):
 //   删 union {kind:'action-waiting'} 类型; 删组件体内末段thinking+taskActive时追加action-waiting段逻辑;
 //   删渲染分支 action-waiting段渲染; 绿ThoughtWaitingIcon/橙ToolWaitingIcon及蓝色定义与CSS一律不动 — 小欧-2026-09-14
-// 编辑历史: 2026-09-14 小欧 - [37]思考光标不显示问题修复(北京老陈驱动, 文档[37]): 删渲染函数体内
+// 编辑历史: 2026-09-14 小欧 - 思考光标不显示问题修复(北京老陈驱动, 文档落码): 删渲染函数体内
 //   CURSOR T/CURSOR F 两处 console.log(render 副作用+StrictMode 双渲染致 2~4 倍虚假重复, 且条件 isLive
 //   与 UI 光标真实条件 shown<clean.length 不同步); 打点已下放至 TextStream/ThinkingStream 内部翻转检测;
 //   formatDebugTime import 同步删除 — 小欧-2026-09-14
-//   2026-09-14 小欧 - [37]lint清理: 删 [35] 遗留未使用 import ActionWaitingIcon(仅 import+注释, 无实际使用) — 小欧-2026-09-14
+//   2026-09-14 小欧 - lint清理: 删遗留未使用 import ActionWaitingIcon(仅 import+注释, 无实际使用) — 小欧-2026-09-14
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 步骤摘要段去📋emoji前缀, 只留 summary/content 文本 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": PipelineRendererProps deniedEntries 类型新增 reject_type 字段 - 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
-// 编辑历史: 2026-09-17 小欧 - [48]修改7/修改8: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 修改: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -93,15 +93,15 @@
 import React from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskBadge } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: waiting 取 badge 权威派生
-import { CloseCircleFilled, StopOutlined } from '@ant-design/icons'; // 2026-09-17 小欧 [48]修改8: 失败/取消行 emoji 改 antd SVG 内联图标 — 小欧-2026-09-17
+import { CloseCircleFilled, StopOutlined } from '@ant-design/icons'; // 2026-09-17 小欧 修改: 失败/取消行 emoji 改 antd SVG 内联图标 — 小欧-2026-09-17
 import { ThinkingStream } from './ThinkingStream';
 import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
 import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
-import { formatErrorType } from '@/features/chat/components/ErrorDetail'; // 2026-09-17 小欧 [48]修改6/修改7: 中文标签映射复用, 失败细节行英文枚举转中文 — 小欧-2026-09-17
-import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
+import { formatErrorType } from '@/features/chat/components/ErrorDetail'; // 2026-09-17 小欧 修改: 中文标签映射复用, 失败细节行英文枚举转中文 — 小欧-2026-09-17
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 import {
   Colors,
   BorderWidth,
@@ -109,7 +109,7 @@ import {
   Spacing,
   stepMargin,
 } from '@/utils/stepStyles';
-import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 [36]改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
+import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
@@ -204,8 +204,8 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         break;
       }
       case 'action': {
-        // 2026-09-03 小欧 P3/P4/P5修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
-        // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与BUG-18修复原则一致(防污染调用方缓存)
+        // 2026-09-03 小欧 修复: 同step的action段去重, 防重复seq致双实例(一个空obs走超时一个有obs走子行)
+        // 2026-09-03 小沈 修正: 原地突变改不可变更新, 与不可变更新原则一致(防污染调用方缓存)
         // 2026-09-06 小欧 B2(J1修复): 预览action(tools=全量候选)先到, canonical(tools=执行集)后覆盖——
         //   candidateCount取以致小者优先的预览候选总数, canonical覆盖时保留, 供allDenied作分母(不得用执行集) — 小欧-2026-09-06
         // A2(2026-09-09 小欧): preview 槽位制——preview action 登记"待正式化槽位"并新增 tool 段;
@@ -282,7 +282,7 @@ interface PipelineRendererProps {
     number,
     Array<{ tool: string; reason: string; reject_type?: string }>
   >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
-  waitClock?: ClockSignals; // 2026-09-17 小欧 [46]第五章: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
+  waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
 }
 
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
@@ -293,7 +293,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
   deniedSteps, // 2026-09-06 小欧 B2(方案C)
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
-  waitClock, // 2026-09-17 小欧 [46]第五章
+  waitClock, // 2026-09-17 小欧 实施
 }) => {
   const segs = buildSegments(steps);
   const taskActive = computeTaskActive(highlightToolName, badge);
@@ -332,7 +332,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           return (
             <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
               <ThoughtWaitingIcon waitClock={waitClock} />{' '}
-              {/* 2026-09-17 小欧 [46]: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
+              {/* 2026-09-17 小欧: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
             </div>
           );
         }
@@ -358,7 +358,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               typing={isLive}
               cursor={isLive}
               compact={seg.sameStep}
-              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
+              waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             />
           );
         }
@@ -431,7 +431,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               }
               deniedTools={// 2026-09-06 小欧 B2(6.4): 本执行轮被拒工具点名条(橘红灰字数据源, 按 step 取) — 小欧-2026-09-06
               deniedEntries?.get(seg.action.step as number)}
-              waitClock={waitClock} // 2026-09-17 小欧 [46]第五章: 钟面信号 — 小欧-2026-09-17
+              waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             />
           );
         }

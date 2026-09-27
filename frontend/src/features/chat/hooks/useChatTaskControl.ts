@@ -1,10 +1,10 @@
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 任务取消/暂停控制对齐final_cancel事件(7.7)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-19删内层finally/20 抽callCancelApi/waitForCancelOrTimeout/resetUiFlags编排
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 任务取消/暂停控制对齐final_cancel事件
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删内层finally/抽callCancelApi/waitForCancelOrTimeout/resetUiFlags编排
 // 编辑历史: 2026-08-28 小强 - hooks修复#15: waitForCancelOrTimeout加5s超时兜底Promise.race, 防永久挂起
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「与后端消息不匹配的必须一致起来」): 3 处「cancelled 事件」文案
 //   对齐后端现行取消终态契约 type=final+outcome=cancelled(waitForCancelEvent 2处 + handleCancel 1处)——取消事件已不存在,
 //   取消收尾单一由 final+outcome=cancelled 承担(sseParser 4.4.1 所述), 日志反映系统实际 — 小欧-2026-09-09
-// 编辑历史: 2026-09-15 20:13:04 小欧 - P-008注释清理: 去除取消链路[41]遗留F2/F4'代号, 改描述性术语(与commit b79b79b清理口径一致) — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语(与commit b79b79b清理口径一致) — 小欧-2026-09-15 20:13:04
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -40,7 +40,7 @@ import { handleError } from '@/services/error/handler';
 /**
  * useChatTaskControl 配置参数
  *
- * 【P3优化】方案1：参数分组
+ * 【优化】方案1：参数分组
  * - 将10个扁平参数改为4个分组参数
  * - setters: 状态设置函数
  * - states: 状态值
@@ -106,7 +106,7 @@ export interface UseChatTaskControlReturn {
 export const useChatTaskControl = (
   options: UseChatTaskControlOptions
 ): UseChatTaskControlReturn => {
-  // 【P3优化】方案1参数分组解构
+  // 【优化】方案1参数分组解构
   const { setters, states, refs, functions } = options;
   const { setLoading, setIsPaused, setIsReceiving } = setters;
   const { isPaused, sessionId, serverTaskId } = states;
@@ -155,7 +155,7 @@ export const useChatTaskControl = (
    * 4. 断开SSE连接
    * 5. 更新UI状态
    */
-  // 2026-09-15 小欧 [41]v1.3: 删强断连病根+取消失败复位点唯一化
+  // 2026-09-15 小欧 v1.3: 删强断连病根+取消失败复位点唯一化
   // 取消确认由 SSE 自然流到达的 final+cancelled 承载，前端不再主动 disconnect
   const handleCancel = useCallback(async () => {
     // 【防重复点击】如果正在取消中，忽略后续点击

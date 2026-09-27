@@ -1,10 +1,10 @@
 /* eslint-disable react/prop-types */
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 错误详情组件(任务信息条错误展示)
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 错误详情组件(任务信息条错误展示)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
 // 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
-// 编辑历史: 2026-08-28 小强 - 修复[17]: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
-// 编辑历史: 2026-09-17 小欧 - [48]修改6: 中文标签映射表导出并补 10 条(配额超限/响应超时/已取消/参数有误/服务繁忙/未知错误/服务暂不可用/调用出错/未知响应/智能体异常), 既有 10 条不动 — 小欧-2026-09-17
-// 2026-09-26 - 小欧 - [72]第二章(2.5) 落地: ①ERROR_TYPE_LABELS 补 config_error:'配置错误'(原缺该键,
+// 编辑历史: 2026-08-28 小强 - 修复: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
+// 编辑历史: 2026-09-17 小欧 - 修改: 中文标签映射表导出并补 10 条(配额超限/响应超时/已取消/参数有误/服务繁忙/未知错误/服务暂不可用/调用出错/未知响应/智能体异常), 既有 10 条不动 — 小欧-2026-09-17
+// 2026-09-26 - 小欧 - 落地: ①ERROR_TYPE_LABELS 补 config_error:'配置错误'(原缺该键,
 //   formatErrorType 的 `LABELS[type] || type` 会让前端直接显示英文 config_error); ②ERROR_COLORS_MAP 补 config_error
 //   配色组(蓝灰 #0958d9/⚙️/标题「配置错误」), 与红系(网络/参数/权限/文件/未知)、黄系(待确认)、蓝系(agent)区分 ——
 //   配置问题属"用户可自行修复", 不应与系统/网络故障同色。配色查找为 ERROR_COLORS_MAP[type] → 去 _error 后缀 → default
@@ -32,7 +32,7 @@ interface ErrorDetailProps {
 
 // ========== 错误类型格式化纯函数（模块顶层，2026-08-27 小欧 三堂会审） ==========
 // 2026-08-27 小欧 三堂会审: 提到模块顶层保持纯函数, 与上方常量同区, 便于复用与测试
-// 2026-09-17 小欧 [48]修改6: formatErrorType/ERROR_TYPE_LABELS 导出供 PipelineRenderer/StaticStatsBlock 复用(DRY), 不另起映射表 — 小欧-2026-09-17
+// 2026-09-17 小欧 修改: formatErrorType/ERROR_TYPE_LABELS 导出供 PipelineRenderer/StaticStatsBlock 复用(DRY), 不另起映射表 — 小欧-2026-09-17
 export const formatErrorType = (type?: string): string => {
   return ERROR_TYPE_LABELS[type || ''] || type || '未知';
 };
@@ -106,7 +106,7 @@ const ERROR_COLORS_MAP: Record<
     title: '未知错误',
     codeBackground: 'rgba(255, 77, 79, 0.15)',
   },
-  // [72]第二章(2.5) - 小欧 - 2026-09-26: config_error 中文标签 + 配色。
+  // 小欧 - 2026-09-26: config_error 中文标签 + 配色。
   // 背景：会话跨 provider 切换但目标 provider 未配置 api_key（resolver.ProviderKeyMissingError）。
   // 属【用户可自行修复的配置问题】，故用蓝灰色系（区别于红=网络/权限/参数错误、黄=待确认），
   // 不补则 formatErrorType 的 `LABELS[type] || type` 会直接显示英文 config_error。
@@ -129,7 +129,7 @@ const ERROR_COLORS_MAP: Record<
 };
 
 // ========== Step 3: 外部类型标签映射常量 ==========
-// 2026-09-17 小欧 [48]修改6: 补实际流通的 10 个错误类型中文标签(既有 10 条不动), 供失败细节行渲染 — 小欧-2026-09-17
+// 2026-09-17 小欧 修改: 补实际流通的 10 个错误类型中文标签(既有 10 条不动), 供失败细节行渲染 — 小欧-2026-09-17
 export const ERROR_TYPE_LABELS: Record<string, string> = {
   empty_response: '空响应',
   timeout: '请求超时',
@@ -151,7 +151,7 @@ export const ERROR_TYPE_LABELS: Record<string, string> = {
   llm_error: '调用出错',
   unknown_response: '未知响应',
   agent_operation_error: '智能体异常',
-  // [72]第二章(2.5) - 小欧 - 2026-09-26: 补 config_error 中文标签（原缺，formatErrorType 会显示英文）
+  // 小欧 - 2026-09-26: 补 config_error 中文标签（原缺，formatErrorType 会显示英文）
   config_error: '配置错误',
 };
 

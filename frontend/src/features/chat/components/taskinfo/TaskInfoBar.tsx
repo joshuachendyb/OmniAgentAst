@@ -1,28 +1,28 @@
 ﻿// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审去框-P0-2/边距-P0-2: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
+// 编辑历史: 2026-08-27 小欧 - 三堂会审去框/边距: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
 // 编辑历史: 2026-08-28 小欧 - ①C/c1: 去胶囊改透明+borderTop#f0f0f0, gap12→8, 数值加粗#595959 500, Tag→Text轻量化
 // 编辑历史: 2026-08-30 小欧 - 13.14 8处Typography.Text→span+双组token本轮/任务累计(P/C/T后端直发) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 13.14 TrustPanel移至TaskInfoBar第一行尾部集成（第一行尾巴） - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 修复×不显眼: DeleteOutlined→文本×、色#999→#595959、字号12→14加粗 - 小欧-2026-08-30
 // 编辑历史: 2026-09-01 小欧 - TaskInfoBar一线三组最佳重排: 左主节奏(状态/耗时/步轮·重试) 中Token合一T(P/C) 右信任/收起 gap12/8 减半宽 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 去尾部"收起/展开"文字按钮(北京老陈驱动: 冒泡至整行onClick致setCollapsed两次切换抵消=点了没反应; 且与整行点击重复): 面板折叠仅保留整行点击(:139), 信任独立三角stopPropagation - 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 设计文档v1.21§5.7-B落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): Props六参补
+// 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): Props六参补
 //   liveErrorText(位4 error 实时源) + 组件解构同步 + useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计(:163-168,
 //   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位4) + 位4渲染段(🔁/🛑/⚠
 //   图标映射, 置于 步骤/轮次 之后、·疑似卡死 之前; 新覆盖旧无优先级) - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端§5.5): TrustedTool带path升级一行一变——
+// 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端定案): TrustedTool带path升级一行一变——
 //   trustTools行键改 `${toolName}:${path}`、显示 {toolName} › {path ?? '任意'}(空=工具级通配)、revokeTrust签名带path精确撤销、Tooltip文案改"会话级 tool+path 免审白名单"(目标路径及其子目录免弹框) — 小欧-2026-09-02
 // 编辑历史: 2026-09-06 小欧 - 秒表与徽标解耦(B1实证修复, 见 doc-9月优化/错误弹窗与TaskInfoBar计时器干扰问题-验证分析与解决方案): 秒表interval运行条件去badge依赖改为
 //   receiving&&!detail(实时流在就走表, 错误信号不再清零停表/业务恢复不再回跳); shownElapsed实时态一律liveElapsed, 非实时/历史回退elapsedSec;
 //   else分支原样保留(归零+startRef复位, 保终态duration显示与新任务归零) — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
-//   (P3数据源对象形态, useChatPanels 透传) + 位4 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
+//   (数据源对象形态, useChatPanels 透传) + 位4 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
 //   替原🛑, ·/着色 Colors.ERROR) + 请求级 error 用 ⛔(后端业务错误如"消息列表为空"); retrying🔁/truncated⚠ 不变 — 小欧-2026-09-08
-// 编辑历史: 2026-09-09 小欧 - [16]v4.1+v4.2: P0-1探针删除/P0-3折叠态机删除(信息带恒定1行)/P1-5图标全antd SVG/P1-6对比度分级/P1-7 Token两段式MetricItem/P1-8上下文4态/P1-9换行/P1-11分隔线归属input/P2-12令牌化/P2-13事件时间轴/P2-15徽标迁infoMaps/P2-16耗时等宽/G6上下文+G8事件双浮层经FloatingEntry复用(G8双写修复) — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#3: 3.9 断点矩阵落地(useInfoBreakpoint 1280/960/768)——G2/G3 xsmall 合并(G3 含耗时段)、
+// 编辑历史: 2026-09-09 小欧 - v4.1+v4.2: 探针删除/折叠态机删除(信息带恒定1行)/图标全antd SVG/对比度分级/ Token两段式MetricItem/上下文4态/换行/分隔线归属input/令牌化/事件时间轴/徽标迁infoMaps/耗时等宽/G6上下文+G8事件双浮层经FloatingEntry复用(G8双写修复) — 小欧-2026-09-09
+// 编辑历史: 2026-09-09 小欧 - v4.4 修复: 断点矩阵落地(useInfoBreakpoint 1280/960/768)——G2/G3 xsmall 合并(G3 含耗时段)、
 //   G3 mid/narrow 收窄(仅数字+Tooltip 展开全文本)、G4 narrow/xsmall 省略(maxWidth200+ellipsis+Tooltip 全文)、G5 累计段收窄(明细进 MetricItem Tooltip 轻浮层)、
 //   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(定时器防每帧重置去抖, 见:122注释),
@@ -32,18 +32,18 @@
 //   G6上下文卡片标签"上下文详情"→"历史上下文"(ariaLabel+卡片标题同步, 北京老陈令), 摘要移除 slice(0,60) 截断改完整显示 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行 G6 上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
 //   MetricItem label 恒直出 + 浮层摘要全文显示(非截断), 两块均与"上下文详情→历史上下文"命名一致 — 小欧-2026-09-09
-// 编辑历史: 2026-09-14 小欧 [36]改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名 (steps, frames, detail, liveError)
+// 编辑历史: 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名 (steps, frames, detail, liveError)
 //   ——receiving 不再透传徽标派生(断连窗由 startinfo 门承接), 组件自身 receiving prop 保留(秒表 interval 启停, D3 契约) — 小欧-2026-09-14
-// 编辑历史: 2026-09-14 小欧 [36]删第二个变量(北京老陈令): receiving prop 整体删除——秒表启停改由 frames 权威信号驱动:
+// 编辑历史: 2026-09-14 小欧 删第二个变量(北京老陈令): receiving prop 整体删除——秒表启停改由 frames 权威信号驱动:
 //   走廊判定=startInfo非空(已开始)&&finalStats空(未终态落库); 实时走廊走表(语义等价旧receiving), 断连窗/错误中间态继续走表(旧
 //   receiving=false缺陷窗口=进化, 09-08同源根治), final到达(hasFinalStats)停表回退duration(终态准确), 未开始startInfo空
 //   不走表(旧receiving=true提前走表窗口=修正); shownElapsed同步: detail→elapsedSec / 走廊→liveElapsed / 终态→elapsedSec;
 //   deps 保持派生布尔(跨帧值稳定), frames对象有意不入deps(防每帧重置去抖); useChatPanels 透传一并删除, 连接级isReceiving
 //   只留ChatInput消费 — 小欧-2026-09-14
-// 编辑历史: 2026-09-15 小欧 - [33]北京老陈定案(整体视觉): 纯白页面中 taskinfo 白条无分隔看不清——
+// 编辑历史: 2026-09-15 小欧 - 北京老陈定案(整体视觉): 纯白页面中 taskinfo 白条无分隔看不清——
 //   加底色 Colors.BG.LIGHT(#fafafa) 整条通栏平铺(无圆角卡片, 全页无卡片语法), 与纯白输入区形成明暗层次,
-//   分隔线仍走输入框上沿(P1-11 定案B), 色块下沿即贴 1px #f0f0f0 线衔接 — 小欧-2026-09-15
-// 编辑历史: 2026-09-15 小欧 - [33]北京老陈令(长方形封边): taskinfo 色块顶部补 1px #f0f0f0 上边框线,
+//   分隔线仍走输入框上沿(定案B), 色块下沿即贴 1px #f0f0f0 线衔接 — 小欧-2026-09-15
+// 编辑历史: 2026-09-15 小欧 - 北京老陈令(长方形封边): taskinfo 色块顶部补 1px #f0f0f0 上边框线,
 //   与输入框上沿线同色, 色块成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - 耗时+步轮从左组移至右组信任前面: 左组原 Badge+耗时+步轮+liveMeta 改为 Badge+liveMeta,
 //   耗时(G2)与步轮(G3)整块迁至右组 TrustPanel 前, 断点矩阵逻辑(xsmall/mid/narrow/wide)不变 — 小沈-2026-09-17
@@ -72,11 +72,11 @@ import {
   StopOutlined,
   SyncOutlined,
   WarningOutlined,
-} from '@ant-design/icons'; // 3.4: G4/G8 全 antd SVG (P1-5)
+} from '@ant-design/icons'; // G4/G8 全 antd SVG
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames, LiveError } from '@/types/sse';
 import type { TaskDetail } from '../../../../services/api/task.api';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles'; // P2-12: 硬码数字全令牌化
+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles'; // 硬码数字全令牌化
 import { formatTimeHMS, formatDurationHMS } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
 import { useInfoBreakpoint } from '../../hooks/useInfoBreakpoint'; // 3.9 断点矩阵(见 v4.4 修复#3)
@@ -113,11 +113,11 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   sessionId,
   liveError,
 }) => {
-  // v4.1: 取消整行折叠(P0-3), collapsed 状态机/localStorage 键已删除
+  // v4.1: 取消整行折叠, collapsed 状态机/localStorage 键已删除
   // 新增: eventsOpen、ctxOpen 各 useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
   const [eventsOpen, setEventsOpen] = useState(false);
   const [ctxOpen, setCtxOpen] = useState(false);
-  // 2026-09-14 小欧 [36]改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名, receiving prop 本身保留
+  // 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名, receiving prop 本身保留
   //   (秒表 interval 启停仍以 receiving 为准, D3 契约); 仅不再透传给徽标派生 — 小欧-2026-09-14
   const info = useTaskInfo(steps, frames, detail, liveError);
   const b = BADGE_MAP[info.badge];
@@ -131,7 +131,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   // 【小欧 2026-08-26 修复 B2】实时计时：实时流期间按 start 时刻走表
   // （2026-09-06 不再挂靠徽标 running, 错误/失败态下秒表继续走不零不回跳），
   // 历史任务(detail)用后端 duration，不计时。
-  // 2026-09-14 小欧 [36]删第二个变量(北京老陈令): receiving prop 删除——秒表启停改由 frames 权威信号驱动:
+  // 2026-09-14 小欧 删第二个变量(北京老陈令): receiving prop 删除——秒表启停改由 frames 权威信号驱动:
   //   startInfo 非空(任务已开始) && finalStats 空(尚未终态落库)=执行中走廊, 走表;
   //   断连窗/错误中间态(旧 receiving=false 缺陷窗口)继续走表=进化, final 到达(hasFinalStats)归零回退 duration;
   //   与 RightViewer hasFinalStats/isCurrentLive 同源, 连接级 isReceiving 只留 ChatInput 消费 — 小欧-2026-09-14
@@ -171,14 +171,14 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
         role="log"
         aria-live="polite" // 3.6: 新事件实时播报
         style={{
-          maxHeight: '40vh', // v4.1/P2-17: 浮层卡片内滚, 不撑 TaskInfoBar 高度
+          maxHeight: '40vh', // v4.1: 浮层卡片内滚, 不撑 TaskInfoBar 高度
           overflowY: 'auto',
           scrollbarWidth: 'thin',
         }}
       >
         {info.processEvents.map((e) => (
           <div
-            key={`${e.time}-${e.kind}`} // P2-13: 唯一 key, 弃索引 {i}
+            key={`${e.time}-${e.kind}`} // 唯一 key, 弃索引 {i}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -192,7 +192,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               style={{
                 fontSize: FontSize.SMALL, // 11px
                 color: Colors.TEXT.SECONDARY,
-                ...TABULAR_NUMS, // P2-13: 等宽防抖动
+                ...TABULAR_NUMS, // 等宽防抖动
                 width: 56,
                 textAlign: 'right',
                 flexShrink: 0,
@@ -201,7 +201,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               {formatTimeHMS(e.time)}
             </span>
             <span style={{ color: Colors.BORDER.LIGHT }}>│</span>
-            {/* 右列: antd SVG 图标 + 文本(P1-5); 图标即 3.6 "● 节点", 不另加 ● 文本符 */}
+            {/* 右列: antd SVG 图标 + 文本; 图标即 3.6 "● 节点", 不另加 ● 文本符 */}
             <span style={{ color: Colors.TEXT.TERTIARY, minWidth: 0 }}>
               {EVENT_ICON_MAP[e.kind]}
               <span style={{ marginLeft: Spacing.XS }}>{e.text}</span>
@@ -233,7 +233,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
     <span
       style={{
         fontSize: FontSize.SECONDARY,
-        fontWeight: FontWeight.MEDIUM, // P1-6: 加 500
+        fontWeight: FontWeight.MEDIUM, // 加 500
         color:
           m.kind === 'error'
             ? m.requestLevel
@@ -244,43 +244,43 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       }}
     >
       {m.kind === 'retrying' ? (
-        <SyncOutlined spin /> // P1-5: 🔁 → SyncOutlined spin
+        <SyncOutlined spin /> // 🔁 → SyncOutlined spin
       ) : m.kind === 'error' ? (
         m.requestLevel ? (
-          <StopOutlined /> // P1-5: ⛔ → StopOutlined
+          <StopOutlined /> // ⛔ → StopOutlined
         ) : (
           <CloseCircleFilled
             style={{ fontSize: FontSize.SECONDARY, color: Colors.ERROR }}
           />
         )
       ) : (
-        <WarningOutlined /> // P1-5: ⚠ → WarningOutlined
+        <WarningOutlined /> // ⚠ → WarningOutlined
       )}{' '}
       {briefMeta(m).text}
     </span>
   );
 
   // 3.1.3 方案A: 文字样式(PRIMARY + 500)提示可点
-  // 2026-09-15 小欧 [33]北京老陈定案: 整条压回真一行——外层 padding 8px 顶→4px(Spacing.XS),
+  // 2026-09-15 小欧 北京老陈定案: 整条压回真一行——外层 padding 8px 顶→4px(Spacing.XS),
   //   超一半留白主要来自此处 8px+热区32px(min-height 已并降到20), 两处合并后高度≈24px 恰一行;
   //   渗透加固(整体视觉): 加底色 Colors.BG.LIGHT 通栏平铺, 白条不可见问题根治 — 小欧-2026-09-15
   return (
     <div
       style={{
-        // 2026-09-15 小欧 [33]: #fafafa 通栏底色——白底页面中界定任务信息条, 与输入区白色/上沿1px #f0f0f0 分线形成层次 — 小欧-2026-09-15
+        // 2026-09-15 小欧: #fafafa 通栏底色——白底页面中界定任务信息条, 与输入区白色/上沿1px #f0f0f0 分线形成层次 — 小欧-2026-09-15
         background: Colors.BG.LIGHT,
         // 2026-09-15 小欧 北京老陈令(长方形闭环): 色块顶部补 1px 上边框线, 与输入框上沿 #f0f0f0 同色,
-        //   taskinfo 成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔; P1-11 定案B下沿线仍在输入框 — 小欧-2026-09-15
+        //   taskinfo 成完整"长方形"框感(顶线+底面), 与上方中部滚动区白底分隔; 定案B下沿线仍在输入框 — 小欧-2026-09-15
         borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-        padding: `${Spacing.XS}px 0 0`, // P2-12: 8px → Spacing.MD; 2026-09-15 小欧: MD→XS 压回一行 — 小欧-2026-09-15
+        padding: `${Spacing.XS}px 0 0`, // 8px → Spacing.MD; 2026-09-15 小欧: MD→XS 压回一行 — 小欧-2026-09-15
         display: 'flex',
         flexDirection: 'column',
         gap: Spacing.MD,
         textAlign: 'left',
       }}
     >
-      {/* v4.1: 信息带恒定 1 行, 整行折叠态机已删除(P0-3 随删); G1~G6 渲染其中, 无整行点击 */}
-      {/* 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#2: 接线 .taskinfo-bar(G5 可换行, 消死 CSS) — 小欧-2026-09-09 */}
+      {/* v4.1: 信息带恒定 1 行, 整行折叠态机已删除; G1~G6 渲染其中, 无整行点击 */}
+      {/* 编辑历史: 2026-09-09 小欧 - v4.4 修复: 接线 .taskinfo-bar(G5 可换行, 消死 CSS) — 小欧-2026-09-09 */}
       <div
         className="taskinfo-bar"
         style={{
@@ -297,7 +297,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            // 编辑历史: 2026-09-09 小欧 - [16]v4.4 修复#5(P2-12): gap:8 硬码 → Spacing.MD — 小欧-2026-09-09
+            // 编辑历史: 2026-09-09 小欧 - v4.4 修复: gap:8 硬码 → Spacing.MD — 小欧-2026-09-09
             gap: Spacing.MD,
             flexShrink: 0,
           }}
@@ -342,7 +342,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexWrap: 'wrap',
           }}
         >
-          {/* G5 本轮: 标签灰 + T 加粗 + P/C 中灰(P1-7 两段对称) */}
+          {/* G5 本轮: 标签灰 + T 加粗 + P/C 中灰(两段对称) */}
           {/* 3.9 断点矩阵: narrow 累计段进浮层(累计 detail 收进 tooltip)、xsmall 明细全部进浮层(两段 detail 全收, 基础行恒 label+value) — v4.4 修复#3 */}
           <MetricItem
             label="本轮"
@@ -502,7 +502,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           </span>
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
           <TrustPanel sessionId={sessionId} compact={isNarrow} />
-          {/* G8 事件入口(v4.1/P0-2/P2-12, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
+          {/* G8 事件入口(v4.1/v4.2, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
           {/* v4.2 双写修复: 删 onClick 手动 setEventsOpen toggle(与 antd trigger click 双重写入), 开合唯一真源为 trigger + onOpenChange, 与 G6 对齐 */}
           <FloatingEntry
             open={eventsOpen}
@@ -515,7 +515,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           >
             <span style={{ fontSize: FontSize.CAPTION }}>
               <DownOutlined style={{ fontSize: FontSize.CAPTION }} />{' '}
-              {/* P1-5 + v4.1: 方向=弹出语义 */}
+              {/* v4.1: 方向=弹出语义 */}
               事件
             </span>
           </FloatingEntry>

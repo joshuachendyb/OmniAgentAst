@@ -1,9 +1,9 @@
 // 编辑历史: 2026-09-20 小强 - 新建：模型参数区（跟随当前模型+范围+[已修改]+[重置为默认]确认内联）
-// 2026-09-21 小欧 - P0-4+P0-6+P0-7：色/字号→令牌、滑块宽→settingsControl、标签宽→settingsSpacing（[58] P0-4/P0-6/P0-7）
-// 2026-09-21 小欧 - 全文逐章核查：gap 裸数字 → Spacing.MD 令牌（[58] v1.12 第七章 铁规）
+// 2026-09-21 小欧 - 实施：色/字号→令牌、滑块宽→settingsControl、标签宽→settingsSpacing
+// 2026-09-21 小欧 - 全文核查：gap 裸数字 → Spacing.MD 令牌（设计文档 v1.12 铁规）
 // 2026-09-21 小强 - 设置页17问题复核修复：env 接管键禁用控件+EnvTag 标识（杜绝改假值/假保存/切走丢失）；
 //   行 flexWrap 防窄屏溢出（[设置页UI审计] 问题2/16）
-// 2026-09-22 小欧 - [62]P4 3.2(5) ModelParams 五分支渲染：删 `as number` 类型谎言；rawValue 原值判型 +
+// 2026-09-22 小欧 - 实施 ModelParams 五分支渲染：删 `as number` 类型谎言；rawValue 原值判型 +
 //   enumOpts→Select 字符串直绑（禁 indexOf/[idx]）；range→Slider+InputNumber 安全转数字(isNaN 回退 range.min)；
 //   number→InputNumber；boolean→Switch；object→TextArea(JSON，blur 失败回退默认)；string→Input。
 //   Props 加 options?（枚举选项表）/onReset?（对齐调用方 SettingsPage 已透传的 options）。
@@ -11,14 +11,14 @@
 // 2026-09-22 小欧 - 提交前清理：import 移除 FontSize（布局重构删掉范围提示行后不再使用，lint unused）- 小欧-2026-09-22
 // 2026-09-22 小欧 - 修正：删容器 gap、label 加 fontSize/fontWeight 完全对齐 SettingRow 行容器样式；import 补回 FontSize/FontWeight - 小欧-2026-09-22
 // 2026-09-22 小欧 - DRY 收口：行容器/label 改复用 settingsRowStyle/settingsLabelStyle 令牌（删 settingsRowLayout/settingsSpacing 内联展开）；移 Colors/FontSize/FontWeight unused import - 小欧-2026-09-22
-// 2026-09-23 小欧 - [65]§4.4：遍历改 params⊔defaults 并集（addParam 不注入 defaults，原只遍历 defaults 新键不可见；无新键时并集==defaults 键集零行为变化）- 小欧-2026-09-23
-// 2026-09-23 小欧 - [65]十遍会审 F5：safeNum 单点（原 isNaN 三元在 Slider/InputNumber 各写一次重复）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 实施：遍历改 params⊔defaults 并集（addParam 不注入 defaults，原只遍历 defaults 新键不可见；无新键时并集==defaults 键集零行为变化）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 十遍会审：safeNum 单点（原 isNaN 三元在 Slider/InputNumber 各写一次重复）- 小欧-2026-09-23
 // 2026-09-24 小欧 - ①参数行尾加「删除参数」× 按钮（A 方案，北京老陈拍板）：env 接管键禁用（后端
 //   _raise_if_env_takeover 拒保存）；onDelete 由 SettingsPage 透传 s.removeParam；点即删无确认弹窗 - 小欧-2026-09-24
 // 2026-09-24 21:56:36 小欧 - 行根加 data-settings-key={key} 搜索/E2E锚点（对齐 SettingRow；模型参数区原先无锚点，
 //   fre2e 用 tuning.llm.temperature 永远 count=0 假跳过）— 小欧-2026-09-24
-// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①BZ-10 删未使用 onReset 死 prop（YAGNI，全仓无调用方传参、
-//   组件未解构未用）；②BZ-5 加 disabled（保存中 saving 锁定参数行全部控件+×按钮，杜绝保存 await 期间
+// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①删未使用 onReset 死 prop（YAGNI，全仓无调用方传参、
+//   组件未解构未用）；②加 disabled（保存中 saving 锁定参数行全部控件+×按钮，杜绝保存 await 期间
 //   继续编辑致 saveModelGroup 闭包快照错位——成功后 defaults/providers 缓存写旧值且 isDirty 误置 false）；
 //   锁态抽 lock 局部变量单点（envKey||disabled），EnvTag 标签仍只认 envKey（保存中不误标环境接管）
 //   - 小欧-2026-09-24
@@ -45,7 +45,7 @@ interface Props {
   onChange: (key: string, value: unknown) => void;
   // 2026-09-24 小欧 - ①参数行 × 删除（A 方案，点即删无确认）；env 接管键按钮禁用 — 小欧-2026-09-24
   onDelete?: (key: string) => void;
-  // 2026-09-24 小欧 - BZ-5：保存中 saving 锁定参数行（控件+×按钮 disabled）— 小欧-2026-09-24
+  // 2026-09-24 小欧：保存中 saving 锁定参数行（控件+×按钮 disabled）— 小欧-2026-09-24
   disabled?: boolean;
 }
 
@@ -74,7 +74,7 @@ export const ModelParams: React.FC<Props> = ({
           // 修正(2026-09-21 小强)：env 接管键禁用控件 + EnvTag 标识——
           // 原可编辑但 setParam 写入被 isDirty 排除，静默无效（改假值/保存假成功/切走丢失）([设置页UI审计] 问题2)
           const envKey = envOverride[key];
-          // 2026-09-24 小欧 - BZ-5：保存中整体锁定（envKey||disabled 单点；EnvTag 下方仍只认 envKey）
+          // 2026-09-24 小欧：保存中整体锁定（envKey||disabled 单点；EnvTag 下方仍只认 envKey）
           const lock = envKey || disabled;
           const renderControl = (): React.ReactNode => {
             if (range) {

@@ -1,18 +1,18 @@
 // 编辑历史: 2026-09-13 小欧 - 新建等待图标控件组: ThoughtWaitingIcon/ToolWaitingIcon/ActionWaitingIcon从PipelineRenderer/ToolCallLine内联提取, 统一导出, DRY复用 — 小欧-2026-09-13
 // 编辑历史: 2026-09-13 小欧 - ActionWaitingIcon换型(北京老陈令选title-icon-compare G波纹扩散): 蓝色270°弧线旋转改蓝核心圆+双层扩散波纹(SVG36x36, .action-ripple-1/.action-ripple-2, 1.8s不旋转) — 小欧-2026-09-13
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: 组件内5处硬编码SVG色令牌化(绿#52c41a→Colors.SUCCESS / 橙#fa8c16→Colors.WAIT_ACTION / 蓝#1677ff→Colors.PRIMARY), 零行为变化 — 小欧-2026-09-14
-// 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 三角色等待图标接 waitClock 可选信号, 图标保留+钟面追加并存(Thought/Action→kind="llm", Tool→kind="tool") - 小欧-2026-09-17
+// 编辑历史: 2026-09-17 小欧 - 实施: 三角色等待图标接 waitClock 可选信号, 图标保留+钟面追加并存(Thought/Action→kind="llm", Tool→kind="tool") - 小欧-2026-09-17
 import React from 'react';
 import { Colors } from '@/utils/stepStyles';
-import { ClockStopwatch } from './clockStopwatch'; // 2026-09-17 小欧 [46]第五章: 微型钟面(追加并存) — 小欧-2026-09-17
-import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 [46]第五章: 钟面信号类型 — 小欧-2026-09-17
+import { ClockStopwatch } from './clockStopwatch'; // 2026-09-17 小欧 实施: 微型钟面(追加并存) — 小欧-2026-09-17
+import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 
 /**
  * ThoughtWaitingIcon — 绿色270°弧线旋转
  * 用途：thought-start到达后、首个thinking chunk到达前的等待状态
  * 原位置：PipelineRenderer.tsx 内联 const WaitingIcon（私有）
  */
-// 2026-09-17 小欧 [46]第五章: 等待图标(类型身份: 绿=思考) 与钟面(等待时长) 并存, 语义正交 — 小欧-2026-09-17
+// 2026-09-17 小欧 实施: 等待图标(类型身份: 绿=思考) 与钟面(等待时长) 并存, 语义正交 — 小欧-2026-09-17
 export const ThoughtWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
   waitClock,
 }) => (

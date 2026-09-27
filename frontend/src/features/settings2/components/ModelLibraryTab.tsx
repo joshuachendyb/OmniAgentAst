@@ -1,11 +1,11 @@
-// 编辑历史: 2026-09-24 小欧 - 新建：[68] 模型库 Tab（拉取 Provider 远程模型 + 勾选替换式写入
+// 编辑历史: 2026-09-24 小欧 - 新建：模型库 Tab（拉取 Provider 远程模型 + 勾选替换式写入
 //   ai.{provider}.models；三项过滤 D4/守卫第5条前端对应/脏态不进 SaveBar）- 小欧-2026-09-24
-// 2026-09-25 00:05:02 小欧 - 第五章核查修复 4 处：①Modal.confirm title 加粗+content 次级色
+// 2026-09-25 00:05:02 小欧 - 核查修复 4 处：①Modal.confirm title 加粗+content 次级色
 //   （复用 SettingsPage 重置确认同款）；②获取按钮去 type=primary 改默认 Button 对齐
 //   ModelSelector「添加模型」；③「当前」Tag 去 color=blue 改默认 Tag；④切换 Provider 勾选
-//   重置为新 Provider 已配置集（原清空空集，与设计 5.2-1 字面不符）- 小欧-2026-09-25
-// 2026-09-25 01:13:09 小欧 - 第七章 Step8 核查修复：过滤「仅看免费」Checkbox 说明字补
-//   FontSize.SECONDARY（§5.4.2 字面要求，原用 antd 默认 14px 主字号）- 小欧-2026-09-25
+//   重置为新 Provider 已配置集（原清空空集，与设计字面不符）- 小欧-2026-09-25
+// 2026-09-25 01:13:09 小欧 - Step8 核查修复：过滤「仅看免费」Checkbox 说明字补
+//   FontSize.SECONDARY（设计字面要求，原用 antd 默认 14px 主字号）- 小欧-2026-09-25
 // 2026-09-25 04:38:28 小健 - 模型列表全链路排序：finalList 落盘前整体按 id 字母序（不分大小写），
 //   后端 _parse_remote_models_body 已单点排序，preserve 保留项并入后整体排序保证 YAML/下拉一致 - 小健-2026-09-25
 // 2026-09-25 05:05:08 小健 - UI布局调整：①获取 + ②过滤两功能项并排一行（组内标题在上、控件在下），
@@ -61,8 +61,8 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
 
-  // 2026-09-24 小欧 - [68] v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
-  // 2026-09-25 小欧 - 5.2-1：勾选重置为目标 Provider 已配置集（原空集与设计字面不符）— 小欧-2026-09-25
+  // 2026-09-24 小欧 - v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
+  // 2026-09-25 小欧：勾选重置为目标 Provider 已配置集（原空集与设计字面不符）— 小欧-2026-09-25
   const resetSelection = (providerName: string) => {
     const p = providers.find((x) => x.name === providerName);
     setRemote(null);
@@ -71,7 +71,7 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
     setFetchError(null);
   };
 
-  // §5.2-7：providers 变化（设置页增删/外部改 yaml）时本地 selectedProvider 失效守卫
+  // 设计要求：providers 变化（设置页增删/外部改 yaml）时本地 selectedProvider 失效守卫
   useEffect(() => {
     if (providers.length === 0) return;
     if (!providers.some((p) => p.name === selectedProvider)) {

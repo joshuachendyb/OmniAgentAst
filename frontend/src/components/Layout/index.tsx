@@ -21,9 +21,9 @@
 // 编辑历史: 2026-09-15 小欧 - 动画图标抽离(北京老陈令): 左侧Logo点阵+右侧顶栏圈圈两段内联SVG统一移入
 //   新建 AnimatedIcons/index.tsx(LogoGridIcon/TitleSpinIcon, 数据+渲染随组件走), Layout改import引用, LOGO_GRID_CELLS随组件移走 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 折叠后Logo不显示修复+菜单栏优化落地(北京老陈令): ①折叠态Logo渲染条件去!collapsed(容器居中展示);
-//   ②[38]4.1 Logo区高度64→43与Topbar Header对齐; ③[38]4.2 Logo包Tooltip"OmniAgentAst"(折叠态可识别);
-//   ④[38]4.3 disabled项统一为"即将上线"预留样式(文件管理与知识库一致, opacity0.6+Tooltip);
-//   ⑤[38]4.4 展开态Logo左缘对齐菜单图象标中心(padding 5px); ⑥菜单栏默认折叠(useState true, 北京老陈令) — 小欧-2026-09-15
+//   ② Logo区高度64→43与Topbar Header对齐; ③ Logo包Tooltip"OmniAgentAst"(折叠态可识别);
+//   ④ disabled项统一为"即将上线"预留样式(文件管理与知识库一致, opacity0.6+Tooltip);
+//   ⑤ 展开态Logo左缘对齐菜单图象标中心(padding 5px); ⑥菜单栏默认折叠(useState true, 北京老陈令) — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 折叠态Tooltip黑框无字修复(北京老陈反馈): 折叠时AntD自动Tooltip取label文本,
 //   label为JSX(Badge/Tooltip包裹)取不到字符串→黑框无字, 所有菜单项显式加title字符串兜底 — 小欧-2026-09-15
 // 编辑历史: 2026-09-21 小强 - 顶栏Header优化: ①删写-only死状态isManualRefreshing(值从未被读, 收尾09-09半删YAGNI);
@@ -248,7 +248,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     }
 
     // 检查 serviceStatus 是否发生变化（比较关键字段避免引用不等导致重复弹窗）
-    // 编辑历史: 2026-08-28 老杨 - [26] 引用比较改为深比较关键字段valid/status，避免每次新对象即true
+    // 编辑历史: 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
     const statusChanged =
       lastServiceStatusRef.current?.valid !== serviceStatus?.valid ||
       lastServiceStatusRef.current?.status !== serviceStatus?.status ||
@@ -412,7 +412,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       key: '/files',
       icon: <FolderOutlined />,
       title: '文件管理',
-      // 2026-09-15 小欧 - [38]4.3 disabled项统一预留样式(与知识库一致): opacity0.6+Tooltip"即将上线" — 小欧-2026-09-15
+      // 2026-09-15 小欧 - disabled项统一预留样式(与知识库一致): opacity0.6+Tooltip"即将上线" — 小欧-2026-09-15
       label: (
         <Tooltip title="即将上线" placement="right">
           <span style={{ opacity: 0.6 }}>文件管理</span>
@@ -520,12 +520,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       {/* Logo区域 */}
       <div
         style={{
-          // 2026-09-15 小欧 - [38]4.1 高度64→43: 与顶栏Header(43px)纵向对齐, 三态统一 — 小欧-2026-09-15
+          // 2026-09-15 小欧 - 高度64→43: 与顶栏Header(43px)纵向对齐, 三态统一 — 小欧-2026-09-15
           height: 43,
           display: 'flex',
           alignItems: 'center',
           justifyContent: isMobile || collapsed ? 'center' : 'flex-start',
-          // 2026-09-15 小欧 - [38]4.4 展开态左缘5px(16px-11px): 使36px点阵中心对齐菜单项图标中心(图标14px距左16px),
+          // 2026-09-15 小欧 - 展开态左缘5px(16px-11px): 使36px点阵中心对齐菜单项图标中心(图标14px距左16px),
           //   消除视觉偏左重心; 折叠/移动端仍居中 — 小欧-2026-09-15
           padding: isMobile || collapsed ? 0 : '0 5px',
           borderBottom: '1px solid #f0f0f0',
@@ -536,7 +536,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           //   原文字"OmniAgentAst."移右侧顶栏动画圈圈之后, 此处放 AnimatedIcons/LogoGridIcon(3x3九色点阵, 组件内数据+渲染)
           //   2026-09-15 小欧 - 修复折叠后顶部Logo不显示: 原条件 !collapsed 使折叠态整块不渲染,
           //   容器折叠态 justify-content:center 正好居中展示点阵 — 小欧-2026-09-15
-          // 2026-09-15 小欧 - [38]4.2 Logo包Tooltip"OmniAgentAst": 折叠态窄栏可识别品牌 — 小欧-2026-09-15
+          // 2026-09-15 小欧 - Logo包Tooltip"OmniAgentAst": 折叠态窄栏可识别品牌 — 小欧-2026-09-15
           <Tooltip title="OmniAgentAst" placement="right">
             <LogoGridIcon />
           </Tooltip>

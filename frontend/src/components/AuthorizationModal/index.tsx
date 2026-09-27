@@ -1,19 +1,19 @@
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复对象属性/JSX属性行超80字符换行、import重排, 防止格式再次出错
-// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①AM-01 request变化重置trustSession防跨请求残留②AM-02 Modal加maskClosable=false+keyboard=false防幽灵关闭死锁 - 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - 44case审计修复: ① request变化重置trustSession防跨请求残留② Modal加maskClosable=false+keyboard=false防幽灵关闭死锁 - 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 - v1.5.4 弹窗渲染完善: 环形进度Progress+大数字倒计时+最后5s转橙3s微脉动+bypass标题补全+countdown到0自动代发/拒绝 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 三堂会审问题1方案A+问题3优化: ①handleConfirm强制bypass下trustSession=false(防bypass勾选偷偷落库转正为长期信任, 堵5.4防污染漏洞); ②countdown interval依赖数组移除countdown(函数式更新, 只在弹窗开/新请求建一次) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - Bug修复(24项): ⑪countdown lazy初值跟随request防首渲染0误触发 ⑬/⑲autoHandledRef按confirmId一次性guard防倒计时到0 effect重入双发 ⑰submitting互斥态防连点意图翻转(按钮loading/disabled+勾选disabled) ⑳后端兜底文案5→60与实际一致 ㉑首tick 100ms即-1节奏对齐 ㉘trustPath缺失文案改"未指定路径，仅本次"防"任意整工具"误导 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - UI优化(v1.1方案): 降高100px(420→288): Modal padding24→12+图标48→32+Title level4→5+Tag margin16→4+Progress size88→60+双卡合一(maxHeight200→150)+Checkbox margin24→12+Space→flex gap12+段距16→8 - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 - UI优化第四章实施: 边框2px→1.5px+boxShadow+Title Tag同行flex+动效pulse0.8s/opacity0.7+信任行缩写"信任此操作（本次会话）"+Tooltip展开路径+去Space导入加Tooltip - 小欧-2026-09-03
-// 编辑历史: 2026-09-03 小欧 - P1修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; P3: @keyframes pulse移至组件外避免重复注入 - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - UI优化实施: 边框2px→1.5px+boxShadow+Title Tag同行flex+动效pulse0.8s/opacity0.7+信任行缩写"信任此操作（本次会话）"+Tooltip展开路径+去Space导入加Tooltip - 小欧-2026-09-03
+// 编辑历史: 2026-09-03 小欧 - 修复: handleConfirm中autoHandledRef先设再调onConfirm, 堵countdown到0+用户同帧点击双发onConfirm时序缺口; 另一项: @keyframes pulse移至组件外避免重复注入 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - countdown就绪守卫: 跨弹窗countdown残留0致新弹窗首帧即触发自动代发, 加countdownReadyRef守卫, 未就绪禁止代发 - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 根因修复: onConfirm接口加confirmId参数, auto-confirm不依赖pendingRef读confirmId(改前ref时序竞态致旧弹窗auto-confirm发旧ID到后端, 新ID从未被confirm→S1超时弹窗不消失) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 真根因修复: interval effect加request?.confirmId依赖+currentRequestRef追踪, 旧interval残留tick跳过(setCountdown(0)覆盖新请求countdown致auto-confirm立即触发弹窗不消失) - 小欧-2026-09-03
 // 编辑历史: 2026-09-03 小欧 - 简化重构: ChatPage加key={confirmId}强制重建, 删除autoHandledRef/countdownReadyRef/currentRequestRef/resetEffect, 组件从370行→230行 - 小欧-2026-09-03
 // 编辑历史: 2026-09-07 小欧 - B3 防御加固: countdown 归零 effect 加 submitting guard, 组件自体防双发;
 //   改前仅靠 ChatPage key={confirmId} 重建兜底, 本组件 countdown 走完归零后(未重挂)会重入代发,
-//   加固后手动确认/代发任一次即锁定, 消除对 key 重建的依赖(与回归守卫 BUG-13/BUG-11 断言对齐) - 小欧-2026-09-07
-// 编辑历史: 2026-09-16 小欧 - 文档[44]5.6 缺陷①③修复: 缺陷①bypass下disable勾选框(原仅handleConfirm强改false, UI仍可勾, 静默失效误导);
+//   加固后手动确认/代发任一次即锁定, 消除对 key 重建的依赖(与回归守卫断言对齐) - 小欧-2026-09-07
+// 编辑历史: 2026-09-16 小欧 - 设计稿缺陷修复: 缺陷①bypass下disable勾选框(原仅handleConfirm强改false, UI仍可勾, 静默失效误导);
 //   缺陷③按工具域区分文案(registry工具路径含子键, 其余含子目录) — 小欧-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 浏览器白屏根因修复: 老杨T4 CollapsibleText误用default导入(命名导出)ES模块加载失败致React未挂载, 改命名导入;
 //   S2 request possibly null 改可选链 — 小欧-2026-09-16
@@ -21,10 +21,10 @@
 // 编辑历史: 2026-09-16 老陈 - 参数区去掉展开收起,超过2行直接出滚动条; paramsStr改Object.entries纯文本无花括号 - 老陈-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 文档v1.5定案实施(设计文档《HITL窗口工具名词参数显示优化审核报告》):
 //   ①参数格式化改key=value每参数一行(冒号改等号,禁JSON式) ②参数区固定3行高height:54+overflow滚动+超长wordBreak:break-all自动换行 ③参数区改单层轻量视觉容器(浅灰底#fafafa+细边框#e8e8e8+圆角4)取消与内层白底#fff的双层叠加 ④工具名称+执行参数标签合并flex同行 ⑤工具名称品牌蓝#1677ff高亮 - 小欧-2026-09-16
-// 编辑历史: 2026-09-16 小欧 - 三堂会审修复(2项): ①参数容器height:54在antd5全局border-box下含padding(4×2)+border(1×2)致内容区仅44px≈2.4行不足定案3行, 补boxSizing:'content-box'保证内容高=54px(3行×18px); ②P2合并行外层div删textAlign:'left'死属性(flex容器下对flex item无效) - 小欧-2026-09-16
+// 编辑历史: 2026-09-16 小欧 - 三堂会审修复(2项): ①参数容器height:54在antd5全局border-box下含padding(4×2)+border(1×2)致内容区仅44px≈2.4行不足定案3行, 补boxSizing:'content-box'保证内容高=54px(3行×18px); ②第二项合并行外层div删textAlign:'left'死属性(flex容器下对flex item无效) - 小欧-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 参数区居中对齐bug修复: 参数容器div补textAlign:'left'(外层textAlign:'center'继承至span致参数文本居中, 需在容器覆盖) - 小欧-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 参数区高度3行→4行: 北京老陈目视验收"整体高度不错,参数区可设4行", height:54(3×18)→72(4×18) - 小欧-2026-09-16
-// 编辑历史: 2026-09-18 小欧 - 第7章实施([50]7.4.3): ①AuthorizationRequest接口+config新增content(弹窗原因); ②SAFETY_LEVEL_CONFIG改后端safety_level 5类
+// 编辑历史: 2026-09-18 小欧 - 设计稿实施: ①AuthorizationRequest接口+config新增content(弹窗原因); ②SAFETY_LEVEL_CONFIG改后端safety_level 5类
 //   (path_auth需授权/shellparam命令确认/tool_delete删除确认/tool_execute执行确认, tool_write预留注释); ③新增content原因展示区+trust_path操作范围行;
 //   ④勾选title去trustPath展示(与新增信任范围行重复, 二选一) — 小欧-2026-09-18
 // 编辑历史: 2026-09-18 小欧 - content/trust_path显示布局(北京老陈定案): 两字段均折行显示(≤2行完整展示),
@@ -39,8 +39,8 @@
 //   (geekblue+EditOutlined+标签"写确认"), 与后端 safety_gate 工具名归属(create_task→tool_write)联动 — 小欧-2026-09-18
 // 编辑历史: 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 恢复confirmTimeout取request.confirmTimeout??60并回传CountdownRing饼环算percent,
 //   反向a59aaff8e扁平纯文本(与CountdownRing.tsx恢复同批) — 小欧-2026-09-18
-// 编辑历史: 2026-09-18 小欧 - 对齐[50]§6.3.2确认稿(北京老陈令): ①信任勾选框搬回信任范围行之后、工具名称之前
-//   (勾选=信任上方范围, 语义连贯); ②content原因区补SAFETY_LEVEL_CONFIG等级图标(§6.3.3规格, 无图标等级不渲染) — 小欧-2026-09-18
+// 编辑历史: 2026-09-18 小欧 - 对齐确认稿(北京老陈令): ①信任勾选框搬回信任范围行之后、工具名称之前
+//   (勾选=信任上方范围, 语义连贯); ②content原因区补SAFETY_LEVEL_CONFIG等级图标(规格要求, 无图标等级不渲染) — 小欧-2026-09-18
 // 编辑历史: 2026-09-19 小欧 - UI六项优化(北京老陈验收): ①A-content区长路径截断显示…+最后2-3级目录+文件名(truncatePath)
 //   ②B-参数区超长value截断>80字符(truncateValue) ③C-操作范围行只显示目录去掉文件名+左对齐
 //   ④D-bypass信任勾选框加常驻灰色提示替代hover title ⑤E-倒计时文案去掉后端兜底
@@ -150,13 +150,13 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
 }) => {
   // 2026-09-15 小欧 - 动画keyframes注入(AnimatedIcons/animations.ts 单例承载, DRY)
   injectKeyframes('pulse');
-  // 2026-09-03 小欧 Bug-11: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
+  // 2026-09-03 小欧 修复: countdown 用 lazy 初值(跟随新 request), 避免默认 0 触发首渲染自动代发/拒绝
   const [trustSession, setTrustSession] = React.useState(false);
   const [countdown, setCountdown] = React.useState(
     () => request?.confirmTimeout ?? 0
   );
   const onConfirmRef = React.useRef(onConfirm);
-  // 2026-09-03 小欧 Bug-17: submitting 互斥态, 提交中禁用按钮/勾选, 防连点意图翻转
+  // 2026-09-03 小欧 修复: submitting 互斥态, 提交中禁用按钮/勾选, 防连点意图翻转
   const [submitting, setSubmitting] = React.useState(false);
   const isBypass = Boolean(request?.autoConfirm);
   onConfirmRef.current = onConfirm;
@@ -177,7 +177,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
   }, [request?.params]);
 
   React.useEffect(() => {
-    // 2026-09-03 小欧 Bug-21: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
+    // 2026-09-03 小欧 修复: 首 tick 100ms 内即刻 -1(节奏对齐), 再走 1s interval; 依赖无 countdown(函数式更新)
     if (!visible || !request) return;
     const tick = () => setCountdown((v) => Math.max(0, v - 1));
     const t = setInterval(tick, 1000);
@@ -266,7 +266,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             marginBottom: 6,
           }}
         >
-          {/* 2026-09-03 小欧 Bug-20: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
+          {/* 2026-09-03 小欧 修复: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
           {isBypass
             ? `将在 ${countdown}s 后自动确认`
             : `未响应将在 ${countdown}s 后自动拒绝`}
@@ -298,7 +298,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
                 wordBreak: 'break-all',
               }}
             >
-              {/* §6.3.3规格: content区图标复用 SAFETY_LEVEL_CONFIG — 小欧-2026-09-18 */}
+              {/* 规格: content区图标复用 SAFETY_LEVEL_CONFIG — 小欧-2026-09-18 */}
               {safetyConfig.icon && (
                 <span style={{ marginRight: 6 }}>{safetyConfig.icon}</span>
               )}
@@ -343,7 +343,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </div>
         )}
 
-        {/* §6.3.2确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
+        {/* 确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
         <div style={{ marginBottom: 6, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Checkbox
             checked={trustSession}
@@ -364,7 +364,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           )}
         </div>
 
-        {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行(P2) + 参数区单层轻量视觉容器(P0/P1b/P3) — 小欧-2026-09-16 */}
+        {/* 2026-09-16 小欧 文档v1.5定案: 去外层灰底盒子(取消双层叠加), 工具名称+执行参数标签合并flex同行 + 参数区单层轻量视觉容器 — 小欧-2026-09-16 */}
         <div
           style={{
             display: 'flex',

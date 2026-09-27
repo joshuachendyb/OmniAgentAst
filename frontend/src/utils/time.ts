@@ -63,7 +63,7 @@ export const formatDate = (s?: string | number | Date): string => {
     : '-';
 };
 
-// 编辑历史: 2026-09-08 小欧 - 六章6.5(P2-13/3.6): 新增 formatTimeHMS(固定 HH:MM:SS, 时间轴左列用),
+// 编辑历史: 2026-09-08 小欧 - 实施: 新增 formatTimeHMS(固定 HH:MM:SS, 时间轴左列用),
 //   复用 parseTimeSafe, 不覆盖 formatTime(既有契约"月/日 时:分") — 小欧-2026-09-08
 export const formatTimeHMS = (date: Date | string | number): string => {
   const d = parseTimeSafe(date);

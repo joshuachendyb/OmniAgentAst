@@ -1,7 +1,7 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: state 类型 SessionModelOverride | null; loadSession/initializeSession 读 result.sessionModel
-// 编辑历史: 2026-08-26 小欧 - 参与P1-P7: 会话生命周期对接sessionModel/版本冲突(8.13/5.x)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.5-16删编辑标题辅助函数/17删未用messages/18 deps补setSessionModelOverride
-// 编辑历史: 2026-08-27 小欧 - hooks修复#5(BUG12): 重试计数改由 ref 持久化, 破除 options.retryCount 永不回写导致的无限重试死循环
+// 编辑历史: 2026-08-26 小欧 - 参与改造: 会话生命周期对接sessionModel/版本冲突
+// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删编辑标题辅助函数/删未用messages/deps补setSessionModelOverride
+// 编辑历史: 2026-08-27 小欧 - hooks修复: 重试计数改由 ref 持久化, 破除 options.retryCount 永不回写导致的无限重试死循环
 // 编辑历史: 2026-08-28 小强 - hooks修复#13: 删不可达if(urlSessionId)分支+删重复onLoadingEnd(只保留finally中)
 /**
  * useChatSession Hook - 会话生命周期管理
@@ -153,7 +153,7 @@ export const useChatSession = (
     currentSessionIdRef,
   } = state;
 
-  // 2026-08-27 小欧 修复#5(BUG12): 重试计数持久化 ref, 避免闭包内读取的 options.retryCount 永为初始 {} 而无限重试
+  // 2026-08-27 小欧 修复: 重试计数持久化 ref, 避免闭包内读取的 options.retryCount 永为初始 {} 而无限重试
   const sessionRetryRef = useRef<Record<string, number>>({});
 
   // ========================================
@@ -240,7 +240,7 @@ export const useChatSession = (
       // 场景1: URL指定会话
       if (urlSessionId) {
         const retryKey = `session-load-${urlSessionId}`;
-        // 2026-08-27 小欧 修复#5(BUG12): currentRetry 以 ref 为准(跨递归持久), 不再读永不更新的 options.retryCount
+        // 2026-08-27 小欧 修复: currentRetry 以 ref 为准(跨递归持久), 不再读永不更新的 options.retryCount
         const currentRetry = sessionRetryRef.current[retryKey] || 0;
 
         // 如果正在加载中，跳过此次调用
@@ -274,7 +274,7 @@ export const useChatSession = (
             onRenderEnd();
             onMessageListLoadingEnd();
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-            // 2026-08-27 小欧 修复#5(BUG12): 同步重置 ref 计数
+            // 2026-08-27 小欧 修复: 同步重置 ref 计数
             sessionRetryRef.current[retryKey] = 0;
 
             console.log(
@@ -313,7 +313,7 @@ export const useChatSession = (
           // 重试机制 - 最多3次
           if (currentRetry < 3) {
             const newRetry = currentRetry + 1;
-            // 2026-08-27 小欧 修复#5(BUG12): 写入 ref 计数(跨递归持久), 并同步 React state
+            // 2026-08-27 小欧 修复: 写入 ref 计数(跨递归持久), 并同步 React state
             sessionRetryRef.current[retryKey] = newRetry;
             setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
 
@@ -324,7 +324,7 @@ export const useChatSession = (
             // 超过重试次数
             onLoadingEnd();
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-            // 2026-08-27 小欧 修复#5(BUG12): 同步重置 ref 计数
+            // 2026-08-27 小欧 修复: 同步重置 ref 计数
             sessionRetryRef.current[retryKey] = 0;
             return { loaded: false, fromCache: false, hasUrlSession: true };
           }
@@ -404,7 +404,7 @@ export const useChatSession = (
           onMessageListLoadingEnd();
         }
 
-        // 编辑历史: 2026-08-28 小欧 - BUG13b修复: onLoadingEnd移到if/else之后单次调用
+        // 编辑历史: 2026-08-28 小欧 - 修复: onLoadingEnd移到if/else之后单次调用
         onLoadingEnd();
         isLoadingHistoryRef.current = false;
         setIsInitialized(true);

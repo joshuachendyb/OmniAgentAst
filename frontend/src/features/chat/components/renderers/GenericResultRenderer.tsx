@@ -3,7 +3,7 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(字体留白全0 + 行高=字号+4): 行高 `${FontSize.*+Spacing.XS}px`(键14→18/值12→16), 压 antd 1.5714 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈终定案(0留白): 修复数值型 lineHeight 144px——lineHeight: FontSize.SECONDARY(数字12) 无单位 12倍放大; 全部 `${FontSize.*}px` 带单位 - 小欧-2026-08-30
 /**
- * 通用结果数据渲染器（第13章设计方案）
+ * 通用结果数据渲染器（设计方案）
  * 统一渲染工具返回的结构化数据
  * 嵌套块统一中性左边线+淡底，禁止深色背景与多色彩虹
  */
@@ -42,7 +42,7 @@ interface GenericResultRendererProps {
 
 // 2026-08-27 小欧 三堂会审: 去9色彩虹, 嵌套块统一中性左边线+淡底(去色去框, KISS/DRY/禁止backward)
 // 2026-08-28 小欧 - ④A/a3: 嵌套左线 DEFAULT #d9d9d9→VERTICAL #e8e8e8 与 Pipeline 统一
-// 2026-08-28 小欧 v1.3(P1-H1): 嵌套块底由 Colors.BG.LIGHT(#fafafa)填充→transparent, 与 Pipeline/Code 透明左线统一, 消同语义双皮肤
+// 2026-08-28 小欧 v1.3: 嵌套块底由 Colors.BG.LIGHT(#fafafa)填充→transparent, 与 Pipeline/Code 透明左线统一, 消同语义双皮肤
 const NEST_BLOCK_BG = 'transparent'; // v1.3 去#fafafa填充, 仅留左线
 const NEST_BLOCK_LINE = Colors.BORDER.VERTICAL; // #e8e8e8 单色左边线
 

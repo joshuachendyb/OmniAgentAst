@@ -1,11 +1,11 @@
 // 编辑历史: 2026-08-26 小欧 - 8.11 实施: 长AI消息>30行/2000字折叠首2行+展开全文, 全局共用(4.4.3)
 // 编辑历史: 2026-08-27 小欧 - 修复#7: 单行超长(无换行)文本按字符截断折叠, 不再整行展示(实测失败用例转绿)
 // 编辑历史: 2026-08-27 小欧 - 修复chat-G: 多行超长按首2行摘要, 不再按字符截断展现数十行(含第10行等)
-// 编辑历史: 2026-08-28 小强 - 修复[19]: 多行折叠忽略maxChars, 首2行后按maxChars截断 - 小强-2026-08-28
-// 编辑历史: 2026-08-28 小强 - 修复[20]: expanded状态不随text重置, 新消息默认折叠 - 小强-2026-08-28
+// 编辑历史: 2026-08-28 小强 - 修复: 多行折叠忽略maxChars, 首2行后按maxChars截断 - 小强-2026-08-28
+// 编辑历史: 2026-08-28 小强 - 修复: expanded状态不随text重置, 新消息默认折叠 - 小强-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 修复: 展开全文/收起链接onClick/onKeyDown加stopPropagation阻断冒泡(左列任务response折叠按钮误触外层onSelect→右栏自动展开, 北京老陈反馈) - 小欧-2026-08-30
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CT-01移除text变化强制setExpanded(false)防打断展开②CT-02 Typography.Link补onKeyDown Enter/Space键盘展开(无障碍) — 小欧-2026-09-02
-// 编辑历史: 2026-09-03 小欧 BUG-16修复: text首100字符做key, 跨消息切换时重置expanded防状态残留
+// 编辑历史: 2026-09-03 小欧 修复: text首100字符做key, 跨消息切换时重置expanded防状态残留
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 折叠切换由 Typography.Link 改 span role=button
 //   (aria-expanded+Enter/Space 键盘), 支持展开/收起双向切换; 字号/间距令牌化(FontSize.SECONDARY/Spacing.SM/XS) — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - 折叠按钮从左侧独占一行改为右侧对齐: 外层包 flex justifyContent:flex-end,
@@ -39,7 +39,7 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   maxChars = 200,
 }) => {
   const [expanded, setExpanded] = useState(false);
-  // 2026-09-03 小欧 BUG-16修复: text变化(跨消息切换)时重置expanded, 用首100字符做key区分同消息内流式追加
+  // 2026-09-03 小欧 修复: text变化(跨消息切换)时重置expanded, 用首100字符做key区分同消息内流式追加
   const _textKey = text.slice(0, 100);
   const _prevTextKeyRef = React.useRef(_textKey);
   React.useEffect(() => {
