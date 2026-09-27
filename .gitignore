@@ -87,6 +87,9 @@ frontend/playwright-report/
 # 前端 E2E 运行产物(e2e_case/output代理自落盘日志)与TS增量缓存: 小欧 2026-09-13
 frontend/e2e_case/output/
 frontend/tsconfig.node.tsbuildinfo
+# 前端 E2E 访问口令状态(globalSetup 运行时生成, 内含 token 不得入库): 小欧 2026-09-27
+frontend/e2e_front_lib/.auth-state.json
+frontend/.auth-state.json
 
 # tsc 构建产物: 小欧 2026-09-13
 *.tsbuildinfo
