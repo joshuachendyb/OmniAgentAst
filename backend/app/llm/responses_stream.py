@@ -3,7 +3,7 @@
 #   v3.7.1 模块化搬迁: 由 client_sdk.py v3.7.1 整体迁出, 与 OpenAI 兼容 chat 直通通道物理隔离。
 #   归属: responses 协议专属处理(事件归一/折叠状态机/工具帧/completed 终帧), 非通用层;
 #   client_sdk 主循环仅在 _is_responses 时逐帧落地本模块产物。第三种异构协议(如 Anthropic
-#   /v1/messages)届时新增同级兄弟模块并按 protocol 能力位分派, 禁止 provider 化([66]归属边界)。
+#   /v1/messages)届时新增同级兄弟模块并按 protocol 能力位分派, 禁止 provider 化(归属边界)。
 # 编辑历史: 2026-09-24 小欧 新建(client_sdk v3.7.1 八个成员整体搬迁, 依赖仅 json/typing, 零行为变更)
 
 import json

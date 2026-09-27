@@ -7,7 +7,7 @@
 # 编辑历史:
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): _check_and_rotate_by_date 轮转提示 print→console_put(日志emit路径零同步stdout写)
 # 2026-09-19 - 小欧 - exe打包frozen支持: LOG_DIR frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
-# 2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（is_debug_mode/get_log_level 读键同步，见[54]）
+# 2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（is_debug_mode/get_log_level 读键同步）
 
 import logging
 import logging.handlers

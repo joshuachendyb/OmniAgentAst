@@ -2,11 +2,11 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - prompt-log生命周期归属修正: 删save()状态谎报升级分支; 新增set_terminal_status()供生产者按真实终态设态
 # 2026-07-18 - 小欧 - 修复#10 删除死代码 mark_completed/mark_error(openai.py消费者已退出日志层, 终态统一由生产者调 set_terminal_status)
-# 2026-07-18 - 小欧 - #48 fix: 文件名加uuid4().hex[:8]片段防覆蓋
+# 2026-07-18 - 小欧 - 修复: 文件名加uuid4().hex[:8]片段防覆蓋
 # 2026-07-26 - 小欧 - 修复log_llm_response更新路径漏写token信息字段(字段名"额外信息"→"token信息"); 新增if extra_info写call_entry["token信息"]
 # 2026-07-26 - 小欧 - 三堂会审欧阳task007报告: (1)去掉if extra_info守卫,改为extra_info or {},确保answer/error类型恒写token信息字段;
 #   (2) save()的"no_id"字面量fallback改为uuid4().hex[:8],并提import uuid到文件顶。
-# 2026-07-28 - 小欧 - 欧阳BUG-11修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
+# 2026-07-28 - 小欧 - 欧阳反馈修复: _user_id_from_db裸except Exception改except Exception as e + logger.debug, 避免错误静默丢失
 # 2026-08-09 - 小欧 - task004深度分析报告核查修复A1/A2/A4(三堂会审通过): (1)观察结果字段"格式化内容:"/"原始的内容:"去冒号改"格式化内容"/"原始内容", 历史日志不动仅新日志生效; (2)log_llm_response冗余赋值修复, entry构造移入else分支, 仅追加路径构造消除更新路径整包丢弃; (3)删除死代码log_tool_prompt(全库0调用, 与2026-07-18删mark_completed/mark_error先例一致)
 # 2026-08-12 - 小欧 - task004报告缺陷1核查修复(A1补全): log_observation补"内容"字段(与log_system_prompt/log_task_prompt结构对齐), 此前仅存"格式化内容"/"原始内容"致"内容"字段100%为空, 实测29文件窗口972/972观察步骤缺失, 历史日志不动仅新日志生效, 保留"格式化内容"兼容已有分析脚本
 # 2026-08-13 - 小欧 - 三堂会审修复#35: 删除观察条目重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文)
@@ -114,7 +114,7 @@ class PromptLogger:
         return session_id
     
     def _user_id_from_db(self, sid: str) -> Optional[int]:
-        """P1修复: 改用db.get_conn() SDK+修复裸except"""
+        """修复: 改用db.get_conn() SDK+修复裸except"""
         try:
             with db.get_conn("chat") as conn:
                 row = conn.execute(
@@ -209,7 +209,7 @@ class PromptLogger:
         current_log["Prompt组装过程"].append(entry)
     
     def _summarize_messages(self, messages):
-        """消息统计和摘要提取 — 小欧 2026-07-10 M-43"""
+        """消息统计和摘要提取 — 小欧 2026-07-10"""
         message_stats = {}
         if not messages:
             messages = []
@@ -234,7 +234,7 @@ class PromptLogger:
         return message_stats, message_summaries
 
     def _summarize_tools(self, tools):
-        """工具定义摘要提取 — 小欧 2026-07-10 M-43"""
+        """工具定义摘要提取 — 小欧 2026-07-10"""
         if not tools:
             return None
         tools_summary = []
@@ -343,7 +343,7 @@ class PromptLogger:
             raw_response = str(raw_response) if raw_response is not None else ""
 
         timestamp = now_str()
-        # 查找已有条目更新（不重复追加）— 北京老陈 2026-06-14 — 小欧 2026-07-10 C-08 修复
+        # 查找已有条目更新（不重复追加）— 北京老陈 2026-06-14 — 小欧 2026-07-10 修复
         # 2026-07-26 小欧 修复更新路径漏写token信息bug，改字段名"额外信息"→"token信息"
         # 2026-08-09 小欧 task004-A2修复: entry构造移入else分支, 消除更新路径整包丢弃的冗余赋值(三堂会审通过)
         for call_entry in reversed(current_log.get("LLM调用记录", [])):
@@ -467,7 +467,7 @@ class PromptLogger:
             short_id = str(user_id)[-6:] if user_id else uuid.uuid4().hex[:8]
         
         file_timestamp = timestamp_for_filename()
-        # #48 fix: 文件名加UUID片段防覆蓋 — 小欧 2026-07-18
+        # 修复: 文件名加UUID片段防覆蓋 — 小欧 2026-07-18
         _uid = uuid.uuid4().hex[:8]
         filename = f"prompt_{short_id}+{_uid}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename

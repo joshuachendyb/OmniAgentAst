@@ -5,71 +5,72 @@
 # 2026-07-17 - 小沈 - FC重命名: FCFormatError→LLMResponseError
 # 2026-07-17 - 小欧 - 流式截断落库修复: tool_call.arguments改用已解析规范化后的params
 # 2026-07-17 - 小欧 - 429配额耗尽增强: 明确"配额/限流耗尽"提示
-# 2026-07-18 - 小欧 - #7 fix: 并行tool_calls累加器遇重复idx自增去重
-# 2026-07-18 - 小欧 - #32 fix: 空name tool_call delta加warning日志
-# 2026-07-18 - 小欧 - #34 fix: StreamChunk.truncated字段;超时截断时标记
-# 2026-07-18 - 小欧 - #35 fix: _parse_sse_data改为generator，同chunk各yield一帧
-# 2026-07-18 - 小欧 - #7 fix: 并行tool_calls累加器遇重复idx时自增去重
-# 2026-07-18 - 小欧 - #38 fix: 流结束后过滤空name幽灵tool_call delta
-# 2026-07-18 - 小欧 - #7回归修正: 改while自增为if not in直接合并
+# 2026-07-18 - 小欧 - 修复: 并行tool_calls累加器遇重复idx自增去重
+# 2026-07-18 - 小欧 - 修复: 空name tool_call delta加warning日志
+# 2026-07-18 - 小欧 - 修复: StreamChunk.truncated字段;超时截断时标记
+# 2026-07-18 - 小欧 - 修复: _parse_sse_data改为generator，同chunk各yield一帧
+# 2026-07-18 - 小欧 - 修复: 并行tool_calls累加器遇重复idx时自增去重
+# 2026-07-18 - 小欧 - 修复: 流结束后过滤空name幽灵tool_call delta
+# 2026-07-18 - 小欧 - 回归修正: 改while自增为if not in直接合并
 # 2026-07-19 - 小欧 - finish_reason字段提取/透传
-# 2026-07-23 - 小欧 - #7三堂会审修复: 变量名/死代码/日志级别/非JSON行yield
+# 2026-07-23 - 小欧 - 三堂会审修复: 变量名/死代码/日志级别/非JSON行yield
 # 2026-07-26 - 小欧 - 默认开启thinking模式
-# 2026-08-06 - 小欧 - 核查7/31未实现项[01]修复: 重试退避基数2→3(2/4/8→3/9/27秒), 与7/31声称功能对齐
-# 2026-08-06 - 小欧 - 三堂会审修复: BUG-3 DEFAULT_EXTRA_BODY_PARAMS嵌套dict深拷贝防共享引用污染
+# 2026-08-06 - 小欧 - 核查7/31未实现项修复: 重试退避基数2→3(2/4/8→3/9/27秒), 与7/31声称功能对齐
+# 2026-08-06 - 小欧 - 三堂会审修复: DEFAULT_EXTRA_BODY_PARAMS嵌套dict深拷贝防共享引用污染
 # 2026-08-06 - 小欧 - thinking配置增强(老陈审核后修复): ①默认extra_body提常量DEFAULT_EXTRA_BODY_PARAMS; ②config的model_params由整体替换改为合并(深合并chat_template_kwargs层), 保证enable_thinking:True兜底, 配thinking_budget等不再静默关闭思考
 # 2026-08-11 - 小欧 - task006方案1落地: 429限流重试优先尊重服务端Retry-After头(秒), 未提供才用指数退避3^n; 避免LLM限流后仍按固定退避撞限流窗口, 增强限流场景恢复效率(不新增重试次数, 不触碰配额耗尽提示)
-# 2026-08-13 - 小欧 - 三堂会审修复#30: Retry-After仅支持整数秒, "1.5"/HTTP-date静默回落指数退避
+# 2026-08-13 - 小欧 - 三堂会审修复: Retry-After仅支持整数秒, "1.5"/HTTP-date静默回落指数退避
 #   【病根】原 `if _ra and _ra.strip().isdigit():` 仅解析整数秒, RFC 7231允许整数/浮点秒与HTTP-date, 违背"尊重服务端Retry-After提示"意图
 #   【改法】整数/浮点秒取max(int(float(_ra)),1); 否则尝试email.utils.parsedate_to_datetime解析HTTP-date(距当前秒数), 解析失败静默回落指数退避; time模块已有顶层导入
-# 2026-08-13 - 小欧 - 三堂会审复核#30修复方法(老陈要求): HTTP-date分支time.mktime(_dt.timetuple())丢弃时区,
+# 2026-08-13 - 小欧 - 三堂会审复核修复方法(老陈要求): HTTP-date分支time.mktime(_dt.timetuple())丢弃时区,
 #   按本地时区解释UTC字段→东八区偏移8小时, 实测Retry-After正确3600秒被clamp成1秒(限流后狂重试);
 #   改_dt.timestamp()(aware datetime直接给UTC epoch)与time.time()相减, 时区无关
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
-# 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.4: __init__ (model/api_base/provider 三参)→ llm_model: ModelRef
-#   单结构承载(F8 不留 self.model/self.provider/self.api_base 兼容别名); 内部16处自用点随改读 self.llm_model.*;
+# 2026-08-22 - 小欧 - model结构化归一报告v1.25: __init__ (model/api_base/provider 三参)→ llm_model: ModelRef
+#   单结构承载(不留 self.model/self.provider/self.api_base 兼容别名); 内部16处自用点随改读 self.llm_model.*;
 #   ChatResponse/StreamChunk 构造传参同步归一(chat_model/chunk_model)
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): 新增 reset_sdk()——L2 会话级整体换模后 _ensure_client 的 SDK 缓存
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: 新增 reset_sdk()——L2 会话级整体换模后 _ensure_client 的 SDK 缓存
 #   仍绑旧 api_base/model, 不重置则"记录身份与实际 HTTP 连接不一致"(编排层换模/还原两处已随调)
-# 2026-08-23 - 小欧 - 修复回归bug(P0): _ensure_client 调 create_llm_client 仍传 provider/model 旧签名,
+# 2026-08-23 - 小欧 - 修复回归bug: _ensure_client 调 create_llm_client 仍传 provider/model 旧签名,
 #   致 create_llm_client() got an unexpected keyword argument 'provider' TypeError(93dc95bc4 提交漏改此调用点);
 #   改为传 llm_model=self.llm_model(ModelRef), base_url 由 LLMClient.__init__ 从 llm_model.api_base 派生
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.2 D0/11.9 P3): request_stream 工具调用聚合处
-#   tool_calls_list 条目加 params_raw_str=args_str(:309 原始 arguments 串)——文件A③「LLM 原始参数」权威源,
-#   无论是否走截断修复分支 raw 都以它为准; 下游经 llm_stream D0b/_build_call_list D3b 两跳透传至落盘闭包
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施: request_stream 工具调用聚合处
+#   tool_calls_list 条目加 params_raw_str=args_str(:309 原始 arguments 串)——文件A「LLM 原始参数」权威源,
+#   无论是否走截断修复分支 raw 都以它为准; 下游经 llm_stream/_build_call_list 两跳透传至落盘闭包
 # 2026-09-01 - 小欧 - L2 会话级切跨 provider 模型修复: snapshot 增可选 api_key/extra_body_params/context_limit
 #   三参注入——L2 覆盖 provider(如 sensenova) 时, 快照必须携带"目标 provider"的 api_base/api_key/model_params,
 #   否则沿用全局默认 provider(agnes) 会走错端点、用错 key、丢 reasoning_effort/context_limit(503/AgnesAI_error
 #   病根)。三参缺省 None 时回退 self, 快照不重复合并(个性参数权威合并仍由 __init__ 兜底 enable_thinking:True)
-# 2026-09-02 - 小欧 - 设计文档v1.21§5.2落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
+# 2026-09-02 - 小欧 - 设计文档v1.21落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
 #   L1 重试分支(:414 logger后、sleep前) yield StreamChunk(retry_notice/retry_attempt/retry_total)——实时重试事件透出,
-#   llm_stream §5.3 消费转 ("meta",retrying) → react_cycle §5.5 转 MetaStep → 前端第一行位4🔁; 不设 stream_error 不触发读方 break
+#   llm_stream 消费转 ("meta",retrying) → react_cycle 转 MetaStep → 前端第一行位4🔁; 不设 stream_error 不触发读方 break
 # 2026-09-08 - 小欧 - 修复: L1 retry_notice 空串被真值判定静默丢弃(前端永不收重试通知)。
 #   根因: asyncio 读超时抛无参 TimeoutError() → httpcore/httpx map_exceptions 逐层包装 → httpx.ReadTimeout(""),
 #   str(e)==""→llm_call.py:93 真值判定丢弃。修复: retry_notice=str(e) or type(e).__name__ 兜底为类型名;
-#   日志行同改 {str(e) or type(e).__name__}。回归单测: tests/test_llm_retry_visibility.py §5.2b。
-# 2026-09-17 - 小欧 - [48]修改1/修改3用户可见文案通顺化: 429配额专支改"模型接口调用配额已用尽（HTTP 429），请稍后重试或升级配额";
+#   日志行同改 {str(e) or type(e).__name__}。回归单测: tests/test_llm_retry_visibility.py。
+# 2026-09-17 - 小欧 - 修改1/修改3用户可见文案通顺化: 429配额专支改"模型接口调用配额已用尽（HTTP 429），请稍后重试或升级配额";
 #   tool_calls全失败改"模型返回的所有工具调用（tool_calls）参数均解析失败"; 重试/路由语义零改动 — 小欧-2026-09-17
-# 2026-09-20 - 小欧 - P0+P1+C组RED修复(13.1+13.2无条件快照共享连接池 + C-1/C-2/C-5, test_tdd_41_46_bug_c_red.py 6红全转绿):
-#   ①P0+P1: snapshot 构造期注入 shared_client(httpx 连接池引用), 快照复用全局连接池不 new;
-#   ②C-1: request_stream 循环体顶部镜像 SDK 在飞响应到 _current_response, 供 cancel 直达HTTP层强关;
-#   ③C-1: cancel() 优先委托 SDK.cancel(), SDK 无 cancel(如FakeSDK)回落关闭镜像响应;
-#   ④C-2: reset_cancel() 只清 _current_response、绝不清 _cancelled(取消=终态语义, 根治降级前清取消吞取消);
-#   ⑤C-5: set_stop_check 累积去重入 _stop_checks + 同步 _stop_check 兼容既有直接赋值,
+# 2026-09-20 - 小欧 - 快照共享连接池与取消/停止检查组修复(无条件快照共享连接池 + 在飞响应/终态取消/OR停止检查,
+#   test_tdd_41_46_bug_c_red.py 6红全转绿):
+#   ①snapshot 构造期注入 shared_client(httpx 连接池引用), 快照复用全局连接池不 new;
+#   ②request_stream 循环体顶部镜像 SDK 在飞响应到 _current_response, 供 cancel 直达HTTP层强关;
+#   ③cancel() 优先委托 SDK.cancel(), SDK 无 cancel(如FakeSDK)回落关闭镜像响应;
+#   ④reset_cancel() 只清 _current_response、绝不清 _cancelled(取消=终态语义, 根治降级前清取消吞取消);
+#   ⑤set_stop_check 累积去重入 _stop_checks + 同步 _stop_check 兼容既有直接赋值,
 #     _check_stop OR 迭代全部 stop_check —— 多任务共享单例/同快照多次注入时不再被后注册覆盖串号。
 #     compliance: SRP/KISS-DIRECT/禁止backward
-# 2026-09-20 小欧 三堂会审BUG-02/03修复: ①request_stream循环体_current_response fallback赋SDK对象致cancel对错误对象调aclose; ②reset_cancel后cancelled检查跳过无效HTTP请求(防竞态取消丢失)
-# 2026-09-22 小欧 [61]别名漏改修复: line86 import已更名DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, __init__默认值仍用旧名致import期NameError(worker秒崩8000无响应); 改用_D_READ_TIMEOUT, 语义零改动
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + temperature/max_tokens/timeout 改读 tuning 配置
-# 2026-09-22 小欧 - [62]P7 (4.3(1)b/4.3(2)a/b/c)：
+# 2026-09-20 小欧 三堂会审修复: ①request_stream循环体_current_response fallback赋SDK对象致cancel对错误对象调aclose; ②reset_cancel后cancelled检查跳过无效HTTP请求(防竞态取消丢失)
+# 2026-09-22 小欧 别名漏改修复: line86 import已更名DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, __init__默认值仍用旧名致import期NameError(worker秒崩8000无响应); 改用_D_READ_TIMEOUT, 语义零改动
+# 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + temperature/max_tokens/timeout 改读 tuning 配置
+# 2026-09-22 小欧 - max_retries/timeout 配置化：
 #   ① __init__ 加 max_retries:Optional[int]=None + 三层回落（Provider>tuning.llm.stream_max_retries>常量3）→ self.max_retries；
 #   ② timeout 判断 truthiness 改 is not None——0 是合法值（极短超时）不再被当 falsy 跳过跳 tuning；
 #   ③ snapshot() 透传 max_retries=self.max_retries（快照跨 provider 不丢定制值）；
 #   ④ request_stream 用 self.max_retries（删除 _D_STREAM_MAX_RETRIES 直读，运行时真正消费配置值）。
-# 2026-09-23 小欧 - [64] LLM补充采样参数: ①__init__签名加 top_p/frequency_penalty/presence_penalty 三参; ②兜底读键由 tuning.llm.* 改 llm.sampling.*; ③request/request_stream 两处调用点透传三参; ④snapshot 必须同步加三参透传
+# 2026-09-23 小欧 - LLM补充采样参数: ①__init__签名加 top_p/frequency_penalty/presence_penalty 三参; ②兜底读键由 tuning.llm.* 改 llm.sampling.*; ③request/request_stream 两处调用点透传三参; ④snapshot 必须同步加三参透传
 # 2026-09-23 小欧 - stream_options 开关化: 删 _D_STREAM_OPTIONS 常量直读, 改读 tuning.llm.stream_options.include_usage 布尔组 {"include_usage": bool}（textarea 改 bool 开关）
 # 2026-09-23 小欧 - wiring假保存修复: request_stream 流总硬超时 3 处改读 tuning.llm_net.stream_total_timeout 兜底常量（此前设置页可改实际不生效）
-# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: ①新增 ensure_client_pool()(建池+relinquish移交+返回client); ②__init__/snapshot 增 client_lease 参数(与 shared_client 成对), close() 改三分支(共享归还lease/独占aclose/单例no-op), 删 _owns_client 跨层判据; ③删 snap._is_snapshot 死判据(runner 无条件 close); ④删除零调用的 reset_sdk(裸置None泄漏独占池, YAGNI)
+# 2026-09-25 小欧 - ConnectionScope连接池统一所有者: ①新增 ensure_client_pool()(建池+relinquish移交+返回client); ②__init__/snapshot 增 client_lease 参数(与 shared_client 成对), close() 改三分支(共享归还lease/独占aclose/单例no-op), 删 _owns_client 跨层判据; ③删 snap._is_snapshot 死判据(runner 无条件 close); ④删除零调用的 reset_sdk(裸置None泄漏独占池, YAGNI)
 """
 LLM 核心模块 — BaseAIService
 
@@ -90,7 +91,7 @@ from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结
 from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
 # 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
 from app.llm.core import create_cancelled_chunk
-from app.llm.client_sdk import create_llm_client, SharedClientLease  # [70] client_lease 注解 — 小欧-2026-09-25
+from app.llm.client_sdk import create_llm_client, SharedClientLease  # client_lease 注解 — 小欧-2026-09-25
 from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
 from app.llm.error_classifier import SystemErrorClassifier
 
@@ -109,7 +110,7 @@ class BaseAIService:
         api_key: str,
         llm_model: ModelRef,
         timeout: int = _D_READ_TIMEOUT,
-        max_retries: Optional[int] = None,  # None=未设，回落到tuning>常量 — 小欧 [62]P7 4.3(2)a
+        max_retries: Optional[int] = None,  # None=未设，回落到tuning>常量 — 小欧
         max_tokens: Optional[int] = None,
         temperature: float = None,
         top_p: Optional[float] = None,  # 新增 — 小欧 2026-09-23
@@ -119,7 +120,7 @@ class BaseAIService:
         extra_body_params: Optional[Dict] = None,
         context_limit: Optional[int] = None,
         shared_client: Optional["httpx.AsyncClient"] = None,  # C1: 共享连接池, 快照复用不 new(仅在 snapshot 构造时传)
-        client_lease: Optional[SharedClientLease] = None,  # [70] 与 shared_client 成对的池 lease, close() 归还 — 小欧-2026-09-25
+        client_lease: Optional[SharedClientLease] = None,  # 与 shared_client 成对的池 lease, close() 归还 — 小欧-2026-09-25
     ):
         if temperature is None:
             temperature = get_config().get("llm.sampling.temperature", _D_TEMPERATURE)  # tuning.llm.temperature → llm.sampling.temperature — 小欧 2026-09-23
@@ -140,7 +141,7 @@ class BaseAIService:
         self.seed = seed
         # 默认开启 thinking 模式；配置文件传参可覆盖（如 chat_template_kwargs.enable_thinking: false 可关）— 小欧 2026-07-26
         # 2026-08-06 小欧 合并而非替换: 顶层键用户覆盖优先, chat_template_kwargs 层深合并保 enable_thinking:True 兜底
-        # 2026-08-06 小欧 BUG-3修复: 嵌套dict深拷贝, 避免与全局常量共享引用污染后续实例
+        # 2026-08-06 小欧 修复: 嵌套dict深拷贝, 避免与全局常量共享引用污染后续实例
         merged_params = {"chat_template_kwargs": dict(DEFAULT_EXTRA_BODY_PARAMS["chat_template_kwargs"])}
         if extra_body_params:
             merged_params.update(extra_body_params)
@@ -152,13 +153,13 @@ class BaseAIService:
         self.context_limit = context_limit
         self._llm_sdk = None
         self._shared_client = shared_client  # 2026-09-20 小欧 C1: 构造期定论, 杜绝"先建独占池再注入"竞态 — 小欧-2026-09-20
-        self._client_lease = client_lease   # [70] 共享池 lease(close 时归还, 归零由 ConnectionScope 关) — 小欧-2026-09-25
+        self._client_lease = client_lease   # 共享池 lease(close 时归还, 归零由 ConnectionScope 关) — 小欧-2026-09-25
         try:
-            timeout_value = float(timeout) if timeout is not None else float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))  # [62]P7 4.3(1)b：is not None，0合法不被truthiness跳过
+            timeout_value = float(timeout) if timeout is not None else float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))  # is not None，0合法不被truthiness跳过
         except (ValueError, TypeError):
             timeout_value = float(get_config().get("tuning.llm_net.read_timeout", _D_READ_TIMEOUT))
         self.timeout = int(timeout_value)
-        # max_retries三层回落：Provider值 > tuning配置 > 常量（小欧 [62]P7 4.3(2)a）
+        # max_retries三层回落：Provider值 > tuning配置 > 常量（小欧）
         if max_retries is not None:
             self.max_retries = max_retries
         else:
@@ -166,7 +167,7 @@ class BaseAIService:
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
         self._stop_check: Optional[Callable] = None
-        self._stop_checks: list = []  # C-5(小欧 2026-09-20): stop_check 累积去重列表, 防多任务共享单例时后注册任务覆盖前者(串号) — 小欧-2026-09-20
+        self._stop_checks: list = []  # 小欧 2026-09-20: stop_check 累积去重列表, 防多任务共享单例时后注册任务覆盖前者(串号) — 小欧-2026-09-20
 
     def _ensure_client(self):
         if self._llm_sdk is None:
@@ -180,7 +181,7 @@ class BaseAIService:
             )
 
     def ensure_client_pool(self) -> "httpx.AsyncClient":
-        """[70] 建池 + 所有权移交(幂等), 返回底层共享 httpx 客户端 — 小欧 2026-09-25
+        """建池 + 所有权移交(幂等), 返回底层共享 httpx 客户端 — 小欧 2026-09-25
         ConnectionScope.ensure_pool 唯一调用点: 首次 create_llm_client(独占池) → relinquish_ownership
         (保留使用引用不关池) → 池生命周期交 ConnectionScope 引用计数; 重复调用直接复用已建池。"""
         self._ensure_client()
@@ -193,11 +194,11 @@ class BaseAIService:
                  extra_body_params: Optional[Dict] = None,
                  context_limit: Optional[int] = None,
                  shared_client: Optional["httpx.AsyncClient"] = None,
-                 client_lease: Optional[SharedClientLease] = None) -> "BaseAIService":  # [70] 与 shared_client 成对注入 — 小欧-2026-09-25
+                 client_lease: Optional[SharedClientLease] = None) -> "BaseAIService":  # 与 shared_client 成对注入 — 小欧-2026-09-25
         """构造本实例的独立副本(携带 model_ref 或当前模型), 与进程级共享单例解耦 — 小沈 2026-08-29
         病根修复: sessionModel 覆盖此前直接改进程单例 llm_model + reset_sdk(全局副作用), 单例还原时序竞态
         导致"断连时后台任务误用旧模型"与"后续无覆盖会话串用错误模型"两类退化。改为后台任务/会话持有自身
-        模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。[70] 小欧 2026-09-25: _is_snapshot
+        模型快照, 共享单例恒定全局默认不再被污染, 彻底根除该竞态。小欧 2026-09-25: _is_snapshot
         标记消亡(runner 无条件 close, 判据在 close 三分支内); 共享快照经 client_lease 归还池引用。
         L2 切跨 provider 模型(2026-09-01 小欧): 快照必须携带"目标 provider"的 api_key 与
         个性参数(model_params/context_limit), 否则沿用全局默认 provider(agnes) 会走错端点、
@@ -208,7 +209,7 @@ class BaseAIService:
             api_key=api_key or self.api_key,
             llm_model=model_ref if model_ref is not None else self.llm_model,
             timeout=self.timeout,
-            max_retries=self.max_retries,  # [62]P7 4.3(2)c：快照常切跨 provider 模型，不传则丢 provider 定制值 — 小欧 2026-09-22
+            max_retries=self.max_retries,  # 快照常切跨 provider 模型，不传则丢 provider 定制值 — 小欧 2026-09-22
             max_tokens=self.max_tokens,
             temperature=self.temperature,
             top_p=self.top_p,  # 新增 — 小欧 2026-09-23
@@ -220,7 +221,7 @@ class BaseAIService:
             context_limit=context_limit
             if context_limit is not None else self.context_limit,
             shared_client=shared_client,  # C1: 共享与否由调用方(resolver)按 provider 判据定, 构造期定论
-            client_lease=client_lease,  # [70] 与 shared_client 成对: 同 provider 快照接管池 lease — 小欧-2026-09-25
+            client_lease=client_lease,  # 与 shared_client 成对: 同 provider 快照接管池 lease — 小欧-2026-09-25
         )
         logger.info(f"[BaseAIService.snapshot] 构造独立客户端快照: model={snap.llm_model.model}, provider={snap.llm_model.provider}")
         return snap
@@ -228,7 +229,7 @@ class BaseAIService:
     async def cancel(self):
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.llm_model.model}")
         self._cancelled = True
-        # C-1(小欧 2026-09-20): 优先委托 SDK 直达HTTP层强关(LLMClient.cancel), SDK 无 cancel 时回落关闭镜像响应
+        # 小欧 2026-09-20: 优先委托 SDK 直达HTTP层强关(LLMClient.cancel), SDK 无 cancel 时回落关闭镜像响应
         _sdk_cancel = getattr(self._llm_sdk, "cancel", None)
         if _sdk_cancel is not None and callable(_sdk_cancel):
             try:
@@ -250,20 +251,20 @@ class BaseAIService:
                 logger.error(f"[BaseAIService.cancel] 关闭响应失败: {e}")
 
     def reset_cancel(self):
-        # C-2(小欧 2026-09-20): 只清 _current_response 镜像, 绝不清 _cancelled ——
-        # 取消是终态语义, reset_cancel 不得吃掉取消标志(RED-C-2 病根: fallback 前清取消致已取消任务继续降级请求)
+        # 小欧 2026-09-20: 只清 _current_response 镜像, 绝不清 _cancelled ——
+        # 取消是终态语义, reset_cancel 不得吃掉取消标志(病根: fallback 前清取消致已取消任务继续降级请求)
         self._current_response = None
 
     def set_stop_check(self, check_fn: Callable):
         """设置停止检查回调 — 由调用方注入，消除llm→task反向依赖 — 小沈 2026-06-17
-        C-5(小欧 2026-09-20): 累积去重入 _stop_checks, 并同步最新到 _stop_check 兼容既有直接赋值调用 — 小欧-2026-09-20"""
+        小欧 2026-09-20: 累积去重入 _stop_checks, 并同步最新到 _stop_check 兼容既有直接赋值调用 — 小欧-2026-09-20"""
         self._stop_check = check_fn
         if check_fn not in self._stop_checks:
             self._stop_checks.append(check_fn)
 
     async def _check_stop(self) -> bool:
         """检查是否应该停止 — 优先调用注入的回调，否则检查本地_cancelled — 小沈 2026-06-17
-        C-5(小欧 2026-09-20): OR 迭代全部累积 stop_check, 任一返回 True 即停 ——
+        小欧 2026-09-20: OR 迭代全部累积 stop_check, 任一返回 True 即停 ——
         多任务共享单例(或同快照多次注入)时不再被后注册覆盖串号; 双保险: _stop_check / _stop_checks 任一命中即停 — 小欧-2026-09-20"""
         _checks = list(self._stop_checks or [])
         if self._stop_check is not None and self._stop_check not in _checks:
@@ -331,14 +332,14 @@ class BaseAIService:
     ) -> AsyncGenerator[StreamChunk, None]:
         """流式请求 — FC-only: tool_calls原生yield,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
         self.reset_cancel()
-        # BUG-03修复(小欧 2026-09-20): reset_cancel不清_cancelled(C-2), 若已取消则直接返回, 跳过无效HTTP请求
+        # 修复(小欧 2026-09-20): reset_cancel不清_cancelled, 若已取消则直接返回, 跳过无效HTTP请求
         if self._cancelled:
             logger.info("[request_stream] 已标记cancelled, 跳过流式请求")
             return
         self._ensure_client()
 
         retry_count = 0
-        max_retries = self.max_retries  # [62]P7 4.3(2)b：消费 __init__ 三层回落后的值，删 _D_STREAM_MAX_RETRIES 硬编码读取 — 小欧 2026-09-22
+        max_retries = self.max_retries  # 消费 __init__ 三层回落后的值，删 _D_STREAM_MAX_RETRIES 硬编码读取 — 小欧 2026-09-22
         include_usage = get_config().get("tuning.llm.stream_options.include_usage", True)
         stream_options = {"include_usage": bool(include_usage)}
         _stream_total_timeout = int(get_config().get("tuning.llm_net.stream_total_timeout", _D_STREAM_TOTAL_TIMEOUT))  # 小欧 2026-09-23 wiring假保存修复
@@ -354,7 +355,7 @@ class BaseAIService:
                 tool_call_accumulator = {}
                 raw_data_buf: list = []
                 usage_data = None
-                _truncated = False  # #34 fix: 超时截断标记 — 小欧 2026-07-18
+                _truncated = False  # 超时截断标记 — 小欧 2026-07-18
                 tool_call_streaming_start = None
                 deadline = time.monotonic() + _stream_total_timeout
                 finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason
@@ -372,8 +373,8 @@ class BaseAIService:
                     request_timeout=effective_timeout,
                     extra_body=self.extra_body_params,
                 ):
-                    # C-1(小欧 2026-09-20): 循环体顶部镜像 SDK 在飞HTTP响应到 _current_response,
-                    #   供 cancel() 强关(真实 LLMClient 流期间持有 httpx.Response) — 小欧 BUG-02修复: None时直接None, 不回落SDK对象(防cancel对错误对象调aclose)
+                    # 小欧 2026-09-20: 循环体顶部镜像 SDK 在飞HTTP响应到 _current_response,
+                    #   供 cancel() 强关(真实 LLMClient 流期间持有 httpx.Response) — 修复: None时直接None, 不回落SDK对象(防cancel对错误对象调aclose)
                     _sdk_resp = getattr(self._llm_sdk, "_current_response", None)
                     self._current_response = _sdk_resp
                     if await self._check_stop():
@@ -386,7 +387,7 @@ class BaseAIService:
                     # 此处用 wall-clock deadline 做总时长保护, 超时 break→accumulator→截断修复。
                     if time.monotonic() > deadline:
                         logger.warning(f"[request_stream] 流调用总时长超时({_stream_total_timeout}s), 截断已累积数据")
-                        _truncated = True  # #34 fix — 小欧 2026-07-18
+                        _truncated = True  # 超时截断 — 小欧 2026-07-18
                         break
 
                     raw_data_buf.append(data_str)
@@ -400,10 +401,10 @@ class BaseAIService:
                         finish_reason = fr_from_chunk
 
                     # 跨chunk聚合tool_calls — FC-only: 含id — 小沈 2026-06-11
-                    # #7 fix 回归修正(小欧 2026-07-18): OpenAI 流式协议里单个 tool_call 以「稳定 index」跨多个 delta 续传,
+                    # 回归修正(小欧 2026-07-18): OpenAI 流式协议里单个 tool_call 以「稳定 index」跨多个 delta 续传,
                     #   首 delta 带 name, 后续 delta 仅带 arguments(无 name)。须按 index【合并】进同一槽位,
-                    #   原 #7 误把"arguments-only 续传"当"并行碰撞"而自增新槽位, 致 name 与 arguments 撕裂→解析失败→FC降级。
-                    #   并行碰撞(#7原意)已由 _extract_tool_calls 的 index 字典去重, 此处直接合并即可, 不再自增。
+                    #   原修复误把"arguments-only 续传"当"并行碰撞"而自增新槽位, 致 name 与 arguments 撕裂→解析失败→FC降级。
+                    #   并行碰撞本意已由 _extract_tool_calls 的 index 字典去重, 此处直接合并即可, 不再自增。
                     tc_data = self._extract_tool_calls(data_str)
                     for idx, entry in tc_data.items():
                         if idx not in tool_call_accumulator:
@@ -417,7 +418,7 @@ class BaseAIService:
                             tool_call_accumulator[idx]["name"] = _tc_name
                         if _tc_args:
                             tool_call_accumulator[idx]["arguments"] += _tc_args
-                        # #32 修正(小欧 2026-07-18): 仅当整个 delta 完全为空(协议残余)才告警;
+                        # 修正(小欧 2026-07-18): 仅当整个 delta 完全为空(协议残余)才告警;
                         #   正常的参数续传(arguments-only, 无 name)属预期行为, 不再刷屏 warning。
                         if not (_tc_id or _tc_name or _tc_args):
                             logger.warning(f"[BaseAIService] 收到完全为空的 tool_call delta, 跳过: idx={idx}, entry={entry}")
@@ -433,13 +434,13 @@ class BaseAIService:
                         logger.warning(f"[request_stream] tool_call参数流式已持续{time.monotonic()-tool_call_streaming_start:.0f}s, 强制截断")
                         break
 
-                    for chunk in self._parse_sse_data(data_str):  # #35 fix: generator — 小欧 2026-07-18
+                    for chunk in self._parse_sse_data(data_str):  # generator — 小欧 2026-07-18
                         if chunk:
                             yield chunk
 
                 # 流结束后，如有聚合的tool_calls，原生结构一次性yield — 小沈 2026-06-12
                 complete_raw = "\n".join(raw_data_buf)
-                # #38 fix: 过滤掉只有id无name的幽灵tool_call delta（LLM流式协议残余，非真实工具调用）— 小欧 2026-07-18
+                # 过滤掉只有id无name的幽灵tool_call delta（LLM流式协议残余，非真实工具调用）— 小欧 2026-07-18
                 tool_call_accumulator = {k: v for k, v in tool_call_accumulator.items() if v.get("name")}
                 if tool_call_accumulator:
                     tool_calls_list = []
@@ -467,7 +468,7 @@ class BaseAIService:
                             tool_calls_list.append({
                                 "tool_name": tc["name"],
                                 "tool_params": params,
-                                "params_raw_str": args_str,      # LLM 原始 arguments 串(文档[1]11.8.2 D0/文件A③) — 小欧 2026-08-23
+                                "params_raw_str": args_str,      # LLM 原始 arguments 串(文件A) — 小欧 2026-08-23
                                 "tool_call_id": tc.get("id"),
                                 "_repair_warning": tc.get("_repair_warning", ""),
                                 "tool_calls": [{
@@ -490,7 +491,7 @@ class BaseAIService:
                     yield StreamChunk(content="", chunk_model=self.llm_model, is_done=False,
                                       tool_calls=tool_calls_list, raw_data=complete_raw)
 
-                yield StreamChunk(content="", chunk_model=self.llm_model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated, finish_reason=finish_reason)  # #34 fix — 小欧 2026-07-18; finish_reason — 2026-07-19 小欧
+                yield StreamChunk(content="", chunk_model=self.llm_model, is_done=True, raw_data=complete_raw, usage=usage_data, truncated=_truncated, finish_reason=finish_reason)  # 超时截断 — 小欧 2026-07-18; finish_reason — 2026-07-19 小欧
                 return
 
             except LLMResponseError:
@@ -504,14 +505,14 @@ class BaseAIService:
                         _ra = e.response.headers.get("Retry-After")
                         if _ra:
                             _ra = _ra.strip()
-                            # 2026-08-13 小欧 三堂会审修复#30: RFC 7231允许整数/浮点秒与HTTP-date, 原仅isdigit整数秒("1.5"/日期静默回落指数退避)
+                            # 2026-08-13 小欧 三堂会审修复: RFC 7231允许整数/浮点秒与HTTP-date, 原仅isdigit整数秒("1.5"/日期静默回落指数退避)
                             if _ra.replace(".", "", 1).isdigit():
                                 wait_time = max(int(float(_ra)), 1)
                             else:
                                 try:
                                     import email.utils as _eu
                                     _dt = _eu.parsedate_to_datetime(_ra)
-                                    # 2026-08-13 小欧 三堂会审复核#30修复方法: mktime(timetuple())丢弃时区→东八区偏移8h(实测3600→1秒);
+                                    # 2026-08-13 小欧 三堂会审复核修复方法: mktime(timetuple())丢弃时区→东八区偏移8h(实测3600→1秒);
                                     #   改 _dt.timestamp()(aware→UTC epoch)与 time.time() 直接相减, 时区无关
                                     wait_time = max(int(_dt.timestamp() - time.time()), 1)
                                 except Exception:
@@ -569,7 +570,7 @@ class BaseAIService:
                     result[idx] = entry
             return result
         except Exception as e:
-            # #7: 降级为DEBUG(异常时返回{},外层逻辑跳过tool_calls) — 三堂会审 小欧 2026-07-23
+            # 降级为DEBUG(异常时返回{},外层逻辑跳过tool_calls) — 三堂会审 小欧 2026-07-23
             logger.debug(f"[BaseAIService] _extract_tool_calls异常: {e}")
             return {}
 
@@ -584,7 +585,7 @@ class BaseAIService:
                 return usage
             return None
         except Exception as e:
-            # #7: 降级为DEBUG(异常时返回None,不影响主流程) — 三堂会审 小欧 2026-07-23
+            # 降级为DEBUG(异常时返回None,不影响主流程) — 三堂会审 小欧 2026-07-23
             logger.debug(f"[BaseAIService] _extract_usage异常: {e}")
             return None
 
@@ -605,16 +606,16 @@ class BaseAIService:
             logger.debug(f"[BaseAIService] _extract_finish_reason异常: {e}")
             return None
 
-    def _parse_sse_data(self, data_str: str):  # → Generator[StreamChunk, None, None] — #35 fix
+    def _parse_sse_data(self, data_str: str):  # → Generator[StreamChunk, None, None] — 小欧 2026-07-18
         """解析 SSE data 行, yield StreamChunk — 2026-06-12 小沈 FC-only: tool_calls原生传递
         小沈 2026-06-14 新增tool_calls_delta逻辑
-        小欧 2026-07-10 M-17: usage兼容纯字符串
+        小欧 2026-07-10: usage兼容纯字符串
         2026-07-14 小欧 补充捕获IndexError(空choices安全异常)
-        #35 fix: reasoning+content 同 chunk 各 yield 一帧, 不再因 reasoning 存在而丢弃 content — 小欧 2026-07-18"""
+        修复: reasoning+content 同 chunk 各 yield 一帧, 不再因 reasoning 存在而丢弃 content — 小欧 2026-07-18"""
         try:
             data = parse_json(data_str)
             if data is None:
-                # #7: 非JSON行(LLM非标准回复)尝试作为纯文本yield,防内容静默丢失 — 三堂会审 小欧 2026-07-23
+                # 非JSON行(LLM非标准回复)尝试作为纯文本yield,防内容静默丢失 — 三堂会审 小欧 2026-07-23
                 if data_str and data_str.strip():
                     yield StreamChunk(content=data_str.strip(), chunk_model=self.llm_model, is_done=False, raw_data=data_str)
                 return
@@ -638,7 +639,7 @@ class BaseAIService:
                 # tool_calls delta 处理顺延至外层
                 yield None
         except (_json.JSONDecodeError, AttributeError, IndexError) as e:
-            # #7: 降级为DEBUG(parse_json已内部消化JSONDecodeError,异常路径有 None/{} fallback) — 三堂会审 小欧 2026-07-23
+            # 降级为DEBUG(parse_json已内部消化JSONDecodeError,异常路径有 None/{} fallback) — 三堂会审 小欧 2026-07-23
             logger.debug(f"[_parse_sse_data] 解析异常: {e}")
             return
 
@@ -647,9 +648,9 @@ class BaseAIService:
         return SystemErrorClassifier.classify_error(e).is_retryable
 
     async def close(self):
-        # [70] 三分支(小欧 2026-09-25): ①共享池快照 → 归还 _client_lease(ref-1, 归零由 ConnectionScope 关);
+        # 三分支(小欧 2026-09-25): ①共享池快照 → 归还 _client_lease(ref-1, 归零由 ConnectionScope 关);
         #   ②独占池快照 → LLMClient.close 真关; ③全局单例(relinquish 后 owns=False) → no-op。
-        #   _owns_client 判据收敛回 LLMClient.close 类内, 本层跨层摸私有清零(欠账①) — [70] 2.5「使用」
+        #   _owns_client 判据收敛回 LLMClient.close 类内, 本层跨层摸私有清零
         if self._client_lease is not None:
             _lease = self._client_lease
             self._client_lease = None   # 先摘引用防重复归还(lease.release 自身幂等, 双保险)

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 模块说明: zen_free 免费无key 适配 — 小欧 2026-09-23
-#   准入配方([66]§2.1 门禁重验): UA(>=1.17) + 合法 session 头
+#   准入配方(门禁重验): UA(>=1.17) + 合法 session 头
 #   + body tools 同时含 bash 与 read + stream:true，四者齐备即 200。
 #   (方案1后bash/read由fundamental_register真实注册, FC正常流程天然满足; 无tools请求由历史行为观察决定)
 #   端点路由: muse- 前缀走 /responses(与 base_url zen/v1 拼成 /zen/v1/responses, flat tools)，其余走 /chat/completions。

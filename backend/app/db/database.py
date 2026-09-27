@@ -12,16 +12,16 @@
 # 2026-07-18 小沈 修复: _ParamSafeConnection.execute 显式传 None 触发 sqlite3.ProgrammingError(parameters are of unsupported type), 致后端启动失败(init_chat_db 的 CREATE INDEX/ALTER TABLE 均走包装且 params=None); 改为 params is None 时调 self._conn.execute(sql) 不传 None, 冗余最小、单一闸门复用(SRP/KISS)。
 # 2026-07-18 小欧 修复回归: _SAFE_PARAM_TYPES 增加 datetime/date/time; sqlite3原生支持此三类参数(内置适配器转ISO串), 原仅允许基元类型致 task_db.complete_task(datetime.now())被误拦(日志报"DB参数类型不被支持: datetime"), 属本次闸门引入的回归。
 # 2026-07-18 - 小欧 - _validate 改 datetime/date→convert_to_utc() 自动归一化 UTC Z; _SAFE_PARAM_TYPES 移除 datetime/date 不依赖 sqlite3 废弃适配器
-# 2026-07-23 - 小欧 - #14 fix: busy_timeout 30000→500ms + get_conn_with_retry指数退避(max_retries=3: 0.5/1/2s)
+# 2026-07-23 - 小欧 - 修复: busy_timeout 30000→500ms + get_conn_with_retry指数退避(max_retries=3: 0.5/1/2s)
 #   【病根】busy_timeout=30000 + 无重试: 写竞争时sqlite内部先等30s才抛异常, 再retry等于31.5s比不修更差
 #   【改法】①busy_timeout=500(快速失败,不空等30s)②get_conn_with_retry: 仅对OperationalError+"locked"指数退避(0.5/1/2s),time.sleep总阻塞仅3.5s不拖事件循环; IntegrityError直抛不重试(YAGNI)
 #   【合规】SRP+KISS-DIRECT+YAGNI
-# 2026-08-07 - 小欧 - BUG-03/04修复: 重试下沉至get_conn统一入口(连接获取a段+commit b段, 单yield无re-yield)
-#   【病根】①BUG-03: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②BUG-04: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
+# 2026-08-07 - 小欧 - 修复: 重试下沉至get_conn统一入口(连接获取a段+commit b段, 单yield无re-yield)
+#   【病根】①原实现: 47处调用方用get_conn(无retry), 并发写锁死时静默失败; ②原实现: get_conn_with_retry在except内re-yield违反@contextmanager协议 → "generator didn't stop after throw()"(日志09:11:16)
 #   【改法】①get_conn新增max_retries: 连接获取期(a)与commit期(b)对"locked"指数退避(0.5/1/2s), 47处调用零改动即获重试能力(DRY); ②get_conn_with_retry改为get_conn薄包装(仅透传, 单次yield)
 #   【合规】DRY+KISS-DIRECT+SRP
 # 2026-08-20 - 小欧 - 11.2-C 监控独立库: _db_paths["monitoring"] 注册 monitoring.db + import init_monitoring_db(启动统一初始化), 复用 get_conn/get_conn_with_retry 闸门
-# 2026-08-21 - 小欧 - 12.2-Q7/Q10(按文档[1]12.2 diff设计落地): ①Q10-D1 删observer条目+Q10-D2删init_observer方法(零调用方); ②Q7-D1 _db_paths加timers条目(timers.db独立库); ③Q7-D3 import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
+# 2026-08-21 - 小欧 - 差异设计落地: ①删observer条目+删init_observer方法(零调用方); ②_db_paths加timers条目(timers.db独立库); ③import加init_timers_db+init()内注册(紧跟init_operations_db之后) — 小欧 2026-08-21
 # 2026-08-24 - 小欧 - 后端卡死修复(offload薄壳): 新增 atxn/_run_txn 异步事务壳, 将同步 sqlite3 I/O + 锁重试 time.sleep(get_conn:188/206) 整体 offload 出事件循环; 根治 agent 落库热路径在 loop 主线程同步阻塞致 /health 超时/console 冻结。storage.* 与连接管理零改动(复用既有一切), 唯一入口仍 db。
 """DB SDK - 统一数据库操作接口
 
@@ -142,10 +142,10 @@ class DatabaseManager:
         
         支持的db_name: chat, operations, observer, task_tracker
         
-        BUG-04修复(小欧 2026-08-07): 原get_conn_with_retry为@contextmanager且在except块内re-yield,
+        修复(小欧 2026-08-07): 原get_conn_with_retry为@contextmanager且在except块内re-yield,
             @contextmanager协议禁止二次yield → 抛出"generator didn't stop after throw()"(日志09:11:16).
             重构: 重试点只在【连接获取】与【commit】两处(均为单yield/无re-yield), 保证generator清洁退出.
-            BUG-03(小欧 2026-08-07): 重试逻辑下沉至get_conn统一入口, 47处调用方零改动即获重试能力(DRY).
+            修复(小欧 2026-08-07): 重试逻辑下沉至get_conn统一入口, 47处调用方零改动即获重试能力(DRY).
         """
         import time as _time
         if db_name not in self._db_paths:
@@ -170,7 +170,7 @@ class DatabaseManager:
                 #   致create_session同步写>10s超时;故改回WAL统一三库,消除写拥塞。
                 conn.execute("PRAGMA journal_mode=WAL")
                 conn.execute("PRAGMA busy_timeout=500")  # #14: 30000→500ms (快速失败, 应用层指数退避重试, 不空等30s) — 小欧 2026-07-23
-                # M-05: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
+                # 外键约束: SQLite默认OFF，外键约束不生效 — 小欧 2026-07-10
                 conn.execute("PRAGMA foreign_keys=ON")
                 break  # 连接成功
             except sqlite3.OperationalError as _lock_e:
@@ -192,7 +192,7 @@ class DatabaseManager:
         try:
             yield _ParamSafeConnection(conn)  # 小欧 2026-07-18: 参数安全闸门包装, 校验SQL参数类型(非基元类型抛清晰错误)
 
-            # (b) 提交: 对lock指数退避重试(无re-yield, 省去外层re-yield的Bug4) — 小欧 2026-08-07
+            # (b) 提交: 对lock指数退避重试(无re-yield, 省去外层re-yield的隐患) — 小欧 2026-08-07
             for commit_attempt in range(max_retries + 1):
                 try:
                     conn.commit()
@@ -244,7 +244,7 @@ class DatabaseManager:
             with db.get_conn_with_retry("chat") as conn:
                 conn.execute("INSERT INTO ...")
 
-        小欧 2026-08-07 BUG-04修复: 原实现于except内re-yield, 违反@contextmanager协议 →
+        小欧 2026-08-07 修复: 原实现于except内re-yield, 违反@contextmanager协议 →
             "generator didn't stop after throw()" (日志09:11:16 operation_record.py:156/214).
             本方法现为get_conn薄包装(仅透传, 单次yield, 无re-yield), 重试逻辑已下沉至get_conn:
               - 连接获取期: get_conn(a)段

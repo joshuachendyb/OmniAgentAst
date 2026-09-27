@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - OperationRecord/query_animation_operations 时间字段 format_timestamp 对外兜底 UTC Z
-# 2026-07-18 - 小欧 - #24 fix: SELECT * 替换为显式列名列表(第49行get_operation/第62行get_session_operations)
+# 2026-07-18 - 小欧 - 修复: SELECT * 替换为显式列名列表(get_operation/get_session_operations)
 """
 文件操作查询 — 所有file_operations表只读查询
 
@@ -24,7 +24,7 @@ from app.logger import logger
 
 
 def _execute_query(sql: str, params: tuple) -> list:
-    """公用查询：打开 operations 连接并执行 SQL — 小欧 2026-07-10 M-18"""
+    """公用查询：打开 operations 连接并执行 SQL — 小欧 2026-07-10"""
     with db.get_conn("operations") as conn:
         return conn.cursor().execute(sql, params).fetchall()
 
@@ -47,7 +47,7 @@ def get_operation(operation_id: str) -> Optional[OperationRecord]:
     try:
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()
-            # #24 fix: explicit columns取代SELECT * — 小欧 2026-07-18
+            # 显式列取代SELECT * — 小欧 2026-07-18
             cursor.execute('''SELECT id, operation_id, task_id, operation_type, status,
                 source_path, destination_path, backup_path, backup_expires_at,
                 file_size, file_hash, is_directory, file_extension,
@@ -66,7 +66,7 @@ def get_session_operations(task_id: str) -> List[OperationRecord]:
         with db.get_conn("operations") as conn:
             cursor = conn.cursor()
             cursor.execute(
-                # #24 fix: explicit columns取代SELECT * — 小欧 2026-07-18
+            # 显式列取代SELECT * — 小欧 2026-07-18
                 '''SELECT id, operation_id, task_id, operation_type, status,
                     source_path, destination_path, backup_path, backup_expires_at,
                     file_size, file_hash, is_directory, file_extension,

@@ -54,7 +54,7 @@ class MonitoringMiddleware:
             return await self.app(scope, receive, send)
         
         request_info = self._extract_request_info(scope)
-        # 捕获请求体大小 — 小欧 2026-07-10 M-52
+        # 捕获请求体大小 — 小欧 2026-07-10
         body_size = [0]
         async def _receive_with_size():
             msg = await receive()

@@ -29,7 +29,7 @@
 #   因 v2 迁移回灌 SET comprehension SELECT 依赖 _ensure_column 补的 client_os/timestamp 等列; 且
 #   建 chat_task_steps(ai_message_id) 索引需迁移改名后的新列, 故必须晚于补列、早于索引(修正初版时序错误)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens 实时累计列(落库口径与 react_cycle 同源); 新增 _verify_acc_columns() 复核落库, 防 _ensure_column 隐性失败致隐性 OperationalError
-# 2026-08-21 - 小欧 - 12.2-C1/C2/C5/Q7/Q8(按文档[1]12.2 diff设计落地): ①C1-D1 chat_task_steps去重+唯一索引(idx_steps_unique); ②C2-D1 token_usage去重+唯一索引(idx_token_usage_task_call); ③C5-D1 启动期空白AI行清扫(标败不删行); ④Q7-D2 init_operations_db拆分——移除timers DDL+新增init_timers_db独立函数(新库TEXT时间列=Q8落地); ⑤Q8-D1 新库timers.db三列TEXT(老列不动, SQLite不支持ALTER COLUMN)
+# 2026-08-21 - 小欧 - 差异设计落地: ①chat_task_steps去重+唯一索引(idx_steps_unique); ②token_usage去重+唯一索引(idx_token_usage_task_call); ③启动期空白AI行清扫(标败不删行); ④init_operations_db拆分——移除timers DDL+新增init_timers_db独立函数(新库TEXT时间列); ⑤新库timers.db三列TEXT(老列不动, SQLite不支持ALTER COLUMN)
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: chat_sessions.sessionModel 结构化落地 + 旧 model_override 兼容迁移:
 #   ①_ensure_column 补 sessionModel TEXT(会话级模型覆盖落库点); ②旧列 model_override 兼容: 存在则 RENAME COLUMN 到 sessionModel(现代 SQLite),
 #     回退路径先建 sessionModel 列再尝试 DROP 旧列(失败保留无害); 旧裸字符串数据缺 provider 不复制(免污染 JSON 解析);
@@ -37,8 +37,8 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.2: 三表归一幂等迁移——chat_tasks(provider/model/display_name→
 #   sessionModel JSON)、token_usage(model/provider→task_model JSON)、chat_user_message(model/provider→chat_model JSON),
 #   老库 PRAGMA 查列后 ALTER 补列+旧行数据回灌(旧列废弃保留不删); idx_token_model 改 json_extract 表达式索引
-# 2026-08-23 - 小欧 - 三轮三堂会审修复: ①P0 新增 _verify_model_ref_columns fail-loud 硬校验(迁移吞异常则三写路径
-#   全线崩, 仿 _verify_acc_columns 先例); ②P1 chat_tasks.sessionModel 新建 DDL 补 NOT NULL(insert_task 必填,
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: ①新增 _verify_model_ref_columns fail-loud 硬校验(迁移吞异常则三写路径
+#   全线崩, 仿 _verify_acc_columns 先例); ②chat_tasks.sessionModel 新建 DDL 补 NOT NULL(insert_task 必填,
 #   与 token_usage.task_model 约束对称)
 # 2026-08-23 - 小欧 - 回归bug#2修复(token_usage.model NOT NULL): 原"旧列废弃保留不删"对 token_usage 不完整——
 #   旧 model 列带 NOT NULL 约束, token_usage_insert 只写 task_model 不写 model → 新行 model=NULL 触发
@@ -50,14 +50,14 @@
 #   老库经幂等表重建迁移(查 sqlite_master DDL 含旧引用→建新表→复制→DROP子表→RENAME), 位于索引创建之前。
 #   动因: foreign_keys=ON 下该外键是硬依赖(步骤落库要求 chat_messages 行存在/删行级联删步骤),
 #   解除后 ai_message_id 为纯贯通键, chat_messages 对系统彻底无结构性约束; W7 启动清扫 UPDATE 加 TODO 删除注释
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.7.1 D7/11.9 P5): chat_tasks 加 files_dir 列
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码): chat_tasks 加 files_dir 列
 #   (TEXT DEFAULT '', _ensure_column 幂等)——任务级文件A/B 目录引用 $dir=files/{session_id}/{task_id}/,
 #   排查定位锚: 任务→files_dir→文件A 按 step/tool_no/retry_no 三键组定位→顺链文件B; orchestrator 同事务写入
 # 2026-08-24 - 小欧 - 目录前导(北京老陈裁定, 仅注释更正防失真, 本文件零代码改动): files_dir 实际值改为
 #       files/Sion_{session_id}/Task_{task_id}/(前缀常量定义于 file_persist, orchestrator 同源拼装落库)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W7启动清扫UPDATE chat_messages(崩溃残留空白AI行标败), 系统对该表零写依赖
 # 2026-08-27 - 小欧 - 阶段3(chat_messages表退役): 停建表——移除CREATE TABLE chat_messages及铁律注释、_ensure_column补齐(timestamp/display_name/client_os等/status/thought/task_id列)、idx_messages_session/idx_msg_task/idx_msg_timestamp索引; init_chat_db末尾真实DROP TABLE chat_messages(旧库历史数据已先由migrate_v2_chat_restructure回灌结构化表, 不丢数据); 系统对该表零依赖
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5⑤①(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): chat_session_trust 表结构+迁移——
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): chat_session_trust 表结构+迁移——
 #  path 列(TEXT, NULL=无路径工具的工具级通配; 非空=该路径及子目录树前缀递归豁免), UNIQUE 从(session_id,tool_name)扩为(session_id,tool_name,path)支持同工具多路径行;
 #  建表后插入迁移段: PRAGMA table_info 检测旧表无 path 列→DROP 重建(存量工具级信任全部视为无效清空, 定案"存量全部清空不迁移")→新库含path列跳过
 # 2026-09-07 - 小欧 - 4.4.1旧case清零: init_chat_db 接 migrate_cancelled_rows_to_final 调用(位于 migrate_v2_chat_restructure
@@ -119,7 +119,7 @@ def init_chat_db(get_conn):
                 status TEXT DEFAULT 'executing',
                 start_time TEXT, end_time TEXT, duration REAL,          -- 开始/结束/耗时（文档2 3.1.2 时间三字段）
                 context_link_mode TEXT, context_root_task_id TEXT,   -- 上下文链：续聊/新任务 + 链根任务id
-                sessionModel TEXT NOT NULL,                          -- 归一 JSON(ModelRef) 单列; display_name 列废弃(设计要求2); 三堂会审 P1: 任务行创建必有模型, 与 token_usage.task_model 约束对称 — 小欧 2026-08-22
+                sessionModel TEXT NOT NULL,                          -- 归一 JSON(ModelRef) 单列; display_name 列废弃(设计要求2); 三堂会审: 任务行创建必有模型, 与 token_usage.task_model 约束对称 — 小欧 2026-08-22
                 accumulated_usage TEXT DEFAULT '{}',
                 llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
                 retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0,   -- 最大步骤数上限（文档2 3.5.3）
@@ -215,15 +215,15 @@ def init_chat_db(get_conn):
         # 11.1 token 四层同构：任务级/会话级实时累计列 — 小欧 2026-08-20
         _ensure_column(conn, "chat_tasks", "task_accumulated_tokens", "TEXT DEFAULT '{}'")
         _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")
-        # 文件A/B 排查目录引用(文档[1]11.7.5-1 $dir / 11.8.7.1 D7 #5) — 物理目录 = files/Sion_{session_id}/Task_{task_id}/(前导 2026-08-24 北京老陈裁定)
-        _ensure_column(conn, "chat_tasks", "files_dir", "TEXT DEFAULT ''")   # 11.9 P5 — 小欧 2026-08-23
+        # 文件A/B 排查目录引用(文档落码 $dir) — 物理目录 = files/Sion_{session_id}/Task_{task_id}/(前导 2026-08-24 北京老陈裁定)
+        _ensure_column(conn, "chat_tasks", "files_dir", "TEXT DEFAULT ''")   # 落盘文件A/B — 小欧 2026-08-23
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 
         # ===== 归一迁移(小欧 2026-08-22 报告v1.25 6.2): 三表旧分离列 → JSON 单列, 幂等(查列→补列→回灌) =====
         # 旧 model/provider/display_name 列废弃保留不删(SQLite DROP 兼容性差, 保留无害), 读写一律走新 JSON 列
         _migrate_model_ref_columns(conn)
-        # 三堂会审修复(P0·小欧): 三写路径(insert_task/token_usage_insert/update_user_message_final)每任务强依赖
+        # 三堂会审修复(小欧): 三写路径(insert_task/token_usage_insert/update_user_message_final)每任务强依赖
         #   新 JSON 列, 补列失败若静默降级则全部任务落库崩溃——仿 _verify_acc_columns 先例 fail-loud 硬校验
         _verify_model_ref_columns(conn)
 
@@ -463,7 +463,7 @@ def init_task_tracker_db(get_conn):
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str):
-    """确保字段存在(P1修复: 添加异常处理,失败不中断init)"""
+    """确保字段存在(添加异常处理,失败不中断init)"""
     try:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         col_names = {row["name"].lower() for row in rows}
@@ -484,7 +484,7 @@ def _verify_acc_columns(conn: sqlite3.Connection) -> None:
 
 
 def _verify_model_ref_columns(conn: sqlite3.Connection) -> None:
-    """复核归一 JSON 列确已落库(仿 _verify_acc_columns: 缺失显式抛出, 防写路径隐性 OperationalError 全线崩) — 三堂会审 P0 修复 小欧"""
+    """复核归一 JSON 列确已落库(仿 _verify_acc_columns: 缺失显式抛出, 防写路径隐性 OperationalError 全线崩) — 三堂会审修复 小欧"""
     _checks = [("chat_tasks", "sessionModel"), ("token_usage", "task_model"), ("chat_user_message", "chat_model")]
     for _t, _c in _checks:
         _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()

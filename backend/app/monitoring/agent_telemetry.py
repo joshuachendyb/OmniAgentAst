@@ -4,22 +4,22 @@
 #   设计定位(北京老陈 2026-08-20 指示: 监控代码独立放 app/monitoring/)：本模块不依赖 agent 内部实现细节,
 #   仅读取 agent 公开属性与 message_builder 既有能力; 全部"新增状态 + stats/context_overview 计算 + 落库聚合"
 #   都在本文件, 核心 agent 文件仅薄钩子调用。
-# 2026-08-20 - 小欧 - P0-1 修复: on_llm_call 补 model/provider 参数并在 _llm_calls dict 写入,
-#   防 persist_llm_calls 读 r["model"] KeyError(见 [1] 13.2 三堂会审 P0-1)。
-#   P1-2 修复: build_context_overview 的 injected_ratio clamp 到 min(injected, estimated)/max(estimated,1),
+# 2026-08-20 - 小欧 - 修复: on_llm_call 补 model/provider 参数并在 _llm_calls dict 写入,
+#   防 persist_llm_calls 读 r["model"] KeyError(三堂会审修复)。
+#   修复: build_context_overview 的 injected_ratio clamp 到 min(injected, estimated)/max(estimated,1),
 #   防 trim 后 estimated_tokens < injected_tokens 时 ratio 超 1.0 与 11.2-C "0~1" 矛盾。
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复: ①B1: finalize 的 context_truncated 改任务级判定(self._trim_count>0),
 #   原读 _overview["truncated"]=末轮瞬时标志, 裁剪早于末轮漏报(现场 event 的 truncated 仍按 11.3 每轮语义不变);
 #   ②C1: finalize 新增输出 trim_count/trim_tokens, 原 on_trim 采集数据不进 finalize 成死链路。
 # 2026-08-21 - 小欧 - 11.6.3: _artifacts内存态收集+on_tool_call扩展artifacts参数+_merge_artifacts去重上限+build_final_stats_step真值
-# 2026-08-21 - 小欧 - 12.2-Q5/Q2(按文档[1]12.2 diff设计落地): ①Q5-D3 新增 checkpoint_llm_calls() 运行中每轮
+# 2026-08-21 - 小欧 - 差异设计落地: 新增 checkpoint_llm_calls() 运行中每轮
 #   增量持久化 llm_calls(整表重写+唯一索引幂等去重), 中途崩溃监控数据最多丢最后一轮不再全丢;
 #   ②Q2-D5 finalize_and_persist 落库失败 warning→error 提级留痕(保持降级不阻塞主链路)。
 # 2026-08-22 - 小欧 - _merge_artifacts去重改为 tool_name+path 组合去重（设计补充：同路径不同工具应分别收集）
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.7: on_llm_call 形参 (model, provider) → tele_model: ModelRef
 #   结构(dict 内保留 model/provider 单值派生键, 落库由 persist 层序列化); finalize 的 model/provider 两键 →
 #   task_model=llm_model.model_dump_json()(F1 补 task_metrics 写入源); import 补 ModelRef
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): finalize 的 task_model 改任务快照优先(_agent._task_llm_model,
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: finalize 的 task_model 改任务快照优先(_agent._task_llm_model,
 #   回退 llm_client.llm_model)——防共享单例被并发任务还原后记录到他人模型(既有竞态一并根治)
 # 2026-09-04 - 小健 - 新增 collect_and_report(第2阶段拆分): 工具执行批后批量聚合从 action_handler.execute_tools 下沉,
 #   收敛到 telemetry 模块, action_handler 不再持有 duration/artifacts 收集细节; 函数体完整复制不改逻辑
@@ -31,7 +31,7 @@
 #   _tm.model_dump_json(), 非Pydantic模型(SimpleNamespace等) AttributeError 致整表遥测落库失败(一行序列化拖垮
 #   全部指标, 与"降级不阻塞"声明相悖)。生产链路恒 ModelRef(Pydantic) 行为不变; 未来插件/轻量client出非Pydantic
 #   模型时该字段保全降级, 不再拖垮整表。来源线索: 回归测试以 SimpleNamespace 伪装模型触发 ERROR 日志 4 次。
-# 2026-09-11 - 小欧 - [27]方案: build_final_stats_step 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count),
+# 2026-09-11 - 小欧 - 方案: build_final_stats_step 补全统计 7 键(tool_stats/llm_call_count/retry_count/step_count),
 #   删 content=""、severity="info" 冗余键; 每键 getattr 默认值兜底结构上永不产 None 键 — 小欧-2026-09-11
 # 2026-09-11 - 小欧 - 设计缺陷修复: _log_task_end 的步骤剔除集由硬编码3种改为复用 _M_SKIP(单一来源),
 #   消除同文件同目的两套维护, 防后续加类型时漏改导致 total_steps 不一致 — 小欧-2026-09-11
@@ -207,7 +207,7 @@ class TaskTelemetry:
     def build_final_stats_step(self, outcome: str = ""):
         """产出 FinalStatsStep(type="final_stats") —— 终态统计独立事件（final 后单发；duration 与流式 stats 同 _run_start_ts 同源）— 小欧 2026-08-20
         outcome参数: 调用方显式传入终态(completed/failed/cancelled), 优先使用; 为空时fallback到agent.status — 小健 2026-09-04
-        [27] v1.4 2026-09-11 北京老陈定案: MetaStep → FinalStatsStep 独立子类(接线②) — 小欧 2026-09-11;
+        v1.4 2026-09-11 北京老陈定案: MetaStep → FinalStatsStep 独立子类(接线②) — 小欧 2026-09-11;
           steps/final_stats_step.py FinalStatsStep(7统计键强类型+构造门禁+TYPE="final_stats"+IS_DONE=True),
           本 build 产出该子类 —— 7 统计键逐键等价 MetaStep 时代(零 backward), type 键由 TYPE 类常量承载(删键),
           step 键怪癖(塞 llm_call_count)照单全收(零 backward, 前端逐键等价) — 小欧 2026-09-11
@@ -219,15 +219,15 @@ class TaskTelemetry:
         #   前端frames.finalStats.final_status据此兜底badge=failed, 防executionSteps中final step丢失时badge卡running — 小沈-2026-09-03
         # 2026-09-04 小健 SLAP修复: outcome显式传入优先, fallback到agent.status — 消除监控层隐式依赖核心状态
         _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
-        # [27] 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
+        # 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
         _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
         return FinalStatsStep(
             step=getattr(_agent, "llm_call_count", 0),    #  llm_call_count 而非 step 序号 — 小欧 2026-08-20
             duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）— 小欧 2026-08-20
             artifacts=list(self._artifacts) or [],         # 任务产出物：action_handler 经 on_tool_call 收集（内存态，单一来源）— 小欧 2026-08-21; or []兜底空表=合法终值 — 小欧 2026-09-11
             step_count=_step_count or 0,                   # 算法同 build_stats_step L188（_M_SKIP 过滤后计数）— 小欧 2026-09-11
-            llm_call_count=getattr(_agent, "llm_call_count", 0) or 0,  # [27] 补全统计键 — 小欧 2026-09-11
-            retry_count=getattr(_agent, "_retry_count", 0) or 0,      # [27] 补全统计键 — 小欧 2026-09-11
+            llm_call_count=getattr(_agent, "llm_call_count", 0) or 0,  # 补全统计键 — 小欧 2026-09-11
+            retry_count=getattr(_agent, "_retry_count", 0) or 0,      # 补全统计键 — 小欧 2026-09-11
             tool_stats=dict(self._tool_stats) or {},       # 权威源 _tool_stats（空表=合法终值，照发）— 小欧 2026-09-11
             final_status=_final_status or outcome,         # outcome 显式传入兜底，永不 None — 小欧 2026-09-11
         )
@@ -242,7 +242,7 @@ class TaskTelemetry:
         _truncated = bool(getattr(_mb, "_trimmed_this_round", False))
         _inj = self._injected_context or {"message_count": 0, "estimated_tokens": 0}
         _inj_tokens = _inj["estimated_tokens"]
-        _ratio = round(min(_inj_tokens, _estimated) / max(_estimated, 1), 3)   # P1-2 clamp 到 0~1
+        _ratio = round(min(_inj_tokens, _estimated) / max(_estimated, 1), 3)   # clamp 到 0~1
         _summary = ""
         for _m in reversed(_history):
             _c = _m.get("content") or ""
@@ -292,7 +292,7 @@ class TaskTelemetry:
         _overview = self.build_context_overview()
         _llm_client = getattr(_agent, "llm_client", None)
         _meta = getattr(_agent, "_start_meta", None)
-        # 三堂会审修复(P1): 任务快照优先——防单例被并发还原后 finalize 记录到他人模型 — 小欧 2026-08-22
+        # 三堂会审修复: 任务快照优先——防单例被并发还原后 finalize 记录到他人模型 — 小欧 2026-08-22
         _tm = getattr(_agent, "_task_llm_model", None) or getattr(_llm_client, "llm_model", None)
         return {
             "task_id": self.task_id,
@@ -386,7 +386,7 @@ def _log_task_end(task_id: str, end_type: str, start_time: Optional[float] = Non
         #   同性质非业务 MetaStep(paused/resumed/retrying/cancelled/authorization_required/start) 一并剔除, 与
         #   "Meta 步骤非业务步骤"注释自洽; 业务步骤(action/thought/observation/final/error)不计入排除,
         #   不误伤。total 必须在 pop 之后计算, 否则 total_steps 含排除项与注释声明矛盾。
-        # 2026-08-18 小欧 P1/P3/P5/P6: chunk/error/usage/paused/resumed/retrying/cancelled 均仅SSE不落库,
+        # 2026-08-18 小欧: chunk/error/usage/paused/resumed/retrying/cancelled 均仅SSE不落库,
         #   不入 current_execution_steps, total_steps 自然剔除; cancelled 经 task_runtime.task_cancel_check_and_yield(:90) append 进内存 steps 须显式剔除,
         #   收敛剔除集={cancelled,authorization_required,start}与 agent_runner:388 口径一致(10.4.4 第0步) — 小欧 2026-08-18(修正)
         # 2026-09-11 小欧: 剔除集改为复用 _M_SKIP(单一来源, 与 build_stats_step/build_final_stats_step 同源)

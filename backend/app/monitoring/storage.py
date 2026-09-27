@@ -6,7 +6,7 @@
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复: ①C1: task_metrics 增 trim_count/trim_tokens 列(DDL + persist _cols + PRAGMA 幂等补列迁移, 兼容老库);
 #   ②F: persist_tool_metrics 的 ON CONFLICT 由累积(`+=excluded`)改 latest-wins(`=excluded`), 与 persist_task_metrics 的 REPLACE 语义一致,
 #   消除冗余持久化(同一 task_id 落两次)时 tool 指标翻倍而汇总只留最新的不一致。
-# 2026-08-21 - 小欧 - 12.2-Q5/Q2/Q9(按文档[1]12.2 diff设计落地): ①Q5-D1 init_monitoring_db executescript 追加
+# 2026-08-21 - 小欧 - 差异设计落地: init_monitoring_db executescript 追加
 #   llm_calls 老库去重(task_id IS NOT NULL 限定防NULL分组误删)+唯一索引 idx_llm_calls_task_call(task_id,call_index);
 #   ②Q5-D2 persist_llm_calls INSERT→INSERT OR IGNORE(finalize_and_persist 重入不再翻倍, 与 task_metrics REPLACE/
 #   task_tool_metrics latest-wins 三表防重语义对齐); ③Q9-D1 persist_http_request docstring 补服务级指标定位声明;
@@ -14,7 +14,7 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.2/6.7: task_metrics(model/provider→task_model JSON 单列)、
 #   llm_calls(model/provider→llm_model JSON 单列); 老库幂等补列迁移(PRAMA 查列后 ALTER, 同 C1 模式);
 #   persist 层序列化 ModelRef.model_dump_json(), 旧两列废弃保留不删
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): ModelRef 改 persist_llm_calls 函数内惰性导入——本文件设计声明
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: ModelRef 改 persist_llm_calls 函数内惰性导入——本文件设计声明
 #   "不依赖、纯 DB 操作、惰性导入防环", 顶层 app import 破坏该隔离承诺
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
@@ -24,7 +24,7 @@
 """
 from typing import Dict, Any, List
 
-# 三堂会审修复(P2·小欧 2026-08-22): ModelRef 改 persist_llm_calls 函数内惰性导入——
+# 三堂会审修复(小欧 2026-08-22): ModelRef 改 persist_llm_calls 函数内惰性导入——
 #   本文件设计声明"不依赖、纯 DB 操作", 顶层 app import 破坏该隔离承诺
 
 

@@ -6,8 +6,8 @@ Author: 小沈 - 2026-05-29
 基础模块,被 BaseAIService 调用。
 只支持 OpenAI 兼容格式的 API(/chat/completions 端点)。
 SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
-2026-09-26 - 小欧 - [72]三堂会审后修正（如实更正上述第 8 行契约）:
-  [72]第八章(8.5-4) 起，本模块在 __init__ 对"base_url 空/纯空白"直接抛 fastapi.HTTPException(400)。
+2026-09-26 - 小欧 - 三堂会审后修正（如实更正上述第 8 行契约）:
+  自本次修正起，本模块在 __init__ 对"base_url 空/纯空白"直接抛 fastapi.HTTPException(400)。
   这与第 8 行"不处理错误"已有出入 —— SDK 依赖了 Web 框架并承担了 HTTP 状态语义。
   现状行为正确（FastAPI 原样透传该 400，前端能收到准确文案），故本次不动结构；
   根治（SDK 只抛 ValueError、由 API 边界统一译为 400）需清查全部构造点，面大单列，不在此顺手改。
@@ -15,53 +15,53 @@ SDK 只管发 HTTP 请求,不处理错误,异常原样抛出。
 
 FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-06-11
 编辑历史: 2026-07-16 小欧 request_stream 响应错误路径: >=400时记录响应体后raise_for_status(所有4xx/5xx可见错误原因)
-编辑历史: 2026-07-16 小欧 M1 解决400错误根因不可见问题: 此前>=400仅把响应体写进服务器日志, 前端/用户只看到泛化文案"客户端错误:请求参数异常", 排障须翻数MB日志; 新增_extract_server_error_message解析OpenAI兼容错误信封{"error":{"message":...}}, >=400时抛HTTPStatusError并携带服务商真实错误文本(server_msg)。能力提升: 前端用户与错误记录可直接看到sensenova等真实错误原因(如参数被拒), 无需查日志即可定位根因
+编辑历史: 2026-07-16 小欧 解决400错误根因不可见问题: 此前>=400仅把响应体写进服务器日志, 前端/用户只看到泛化文案"客户端错误:请求参数异常", 排障须翻数MB日志; 新增_extract_server_error_message解析OpenAI兼容错误信封{"error":{"message":...}}, >=400时抛HTTPStatusError并携带服务商真实错误文本(server_msg)。能力提升: 前端用户与错误记录可直接看到sensenova等真实错误原因(如参数被拒), 无需查日志即可定位根因
 编辑历史: 2026-07-17 小欧 修复429/5xx限流日志污染: 可重试状态(429/5xx)由base_service L1重试处理, 降为WARNING; 仅不可重试客户端错误(400/401/403)记ERROR, 避免check_logs/测试误判FAIL
-编辑历史: 2026-07-18 小欧 #33 fix: 兼容data:无空格格式
-编辑历史: 2026-07-18 小欧 #37 fix: request新增request_timeout形参并传httpx.Timeout
-编辑历史: 2026-07-28 小欧 BUG#1: 非流式请求必崩(AttributeError: _default_timeout undefined)。__init__ 漏存 self._default_timeout = read_timeout, request() 引用时崩溃。新增存储。
-编辑历史: 2026-08-22 小欧 model结构化归一报告v1.25 6.4: LLMClient 构造 (provider, model) 分离入参 → llm_model: ModelRef
+编辑历史: 2026-07-18 小欧 修复: 兼容data:无空格格式
+编辑历史: 2026-07-18 小欧 修复: request新增request_timeout形参并传httpx.Timeout
+编辑历史: 2026-07-28 小欧 修复: 非流式请求必崩(AttributeError: _default_timeout undefined)。__init__ 漏存 self._default_timeout = read_timeout, request() 引用时崩溃。新增存储。
+编辑历史: 2026-08-22 小欧 model结构化归一报告v1.25: LLMClient 构造 (provider, model) 分离入参 → llm_model: ModelRef
   单结构; base_url 取 llm_model.api_base(缺省回退 _default_base_url(llm_model.provider)); 请求体拼
   self.llm_model.model 属裸单值调API场景(设计要求4允许并注释)
-编辑历史: 2026-08-23 小欧 三堂会审复核加固(P2): _base_url 回退链补 provider or "openai" 兜底——
+编辑历史: 2026-08-23 小欧 三堂会审复核加固: _base_url 回退链补 provider or "openai" 兜底——
   防空 provider 时 _DEFAULT_URLS.get("","") 返回空串致 httpx base_url 为空(防御性语义与归一前对齐, 不弱化)
-编辑历史: 2026-09-20 小欧 P5+C-1: ①P5(13.6) LLM软配额信号量(_soft_pool_semaphore, asyncio.Semaphore 惰性初始化,
-  排队超时保底放行, request_stream 入口自动获取/finally释放); ②C-1(RED-C-1) 新增 _current_response 追踪
+编辑历史: 2026-09-20 小欧 软配额与在飞响应追踪: ①LLM软配额信号量(_soft_pool_semaphore, asyncio.Semaphore 惰性初始化,
+  排队超时保底放行, request_stream 入口自动获取/finally释放); ②新增 _current_response 追踪
   在飞流式HTTP响应(request_stream 进入置位/finally清空) + cancel() 方法 aclose 强关在飞流
   ——BaseAIService.cancel 优先委托此处直达HTTP层(原来 cancel 关闭的 _current_response 恒 None 假日志)
-编辑历史: 2026-09-20 小欧 三堂会审BUG-04修复: cancel()中aclose后立即清_current_response引用, 防finally/__aexit__二次关闭(double-close)
-编辑历史: 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + soft_pool_wait_timeout/max_connections/max_keepalive 改读 tuning 配置
-编辑历史: 2026-09-23 小欧 - [64] LLM补充采样参数: _build_request_body/request/request_stream 签名加 top_p/frequency_penalty/presence_penalty 三参(仿 seed None透传写法)
+编辑历史: 2026-09-20 小欧 三堂会审修复: cancel()中aclose后立即清_current_response引用, 防finally/__aexit__二次关闭(double-close)
+编辑历史: 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + soft_pool_wait_timeout/max_connections/max_keepalive 改读 tuning 配置
+编辑历史: 2026-09-23 小欧 - LLM补充采样参数: _build_request_body/request/request_stream 签名加 top_p/frequency_penalty/presence_penalty 三参(仿 seed None透传写法)
 编辑历史: 2026-09-23 小欧 - wiring假保存修复: __init__/request_stream 两处 httpx.Timeout 的 connect/write/pool 改读 tuning.llm_net.* 配置兜底常量（此前设置页可改实际不生效）
-编辑历史: 2026-09-24 小欧 - [66]v3.6 流式主路径漏改修复+整段快照保底: ①request_stream 循环逐帧把 muse /responses 事件归一为 chat 形 choices[0].delta 行（增量优先、整段快照仅"全程无对应增量"时作保底唯一来源, 双布尔去重）, 供 BaseAIService 既有 chat 解析链一字不改读通——agent 全链(react_step→BaseAIService.request_stream)对 muse 不再空响应; ②collect 删 is_responses 分支回归纯 chat 消费(单通道单归一心智); ③_norm_responses_delta 新增 content_full 文本整段快照保底识别(output_text.done/content_part.done/output_item.done message/completed); ④删 _responses_stream_frame 薄壳(KISS-DIRECT, 决策内联循环)
-编辑历史: 2026-09-23 小欧 - [66]v3.7 适配层接入: ①import get_provider_adapter + __init__ 注入 self._adapter/self._static_headers(shared_client 分支复用全局池头); ②headers= 改用 static_headers(默认仅 Authorization, 行为==现状); ③request/request_stream 发送点接 per_request_headers + force_stream 流式收集分支 + _request_via_stream_collect(非流式入口经 request_stream 收集返回, 覆盖 zen 门禁 stream:true); ④>=400 分支消费 adapter.error_message_map(zen 403/426 友好文案); ⑤gate body/端点路由/协议位经 _adapt_request 单点(muse- 前缀→/responses)
-编辑历史: 2026-09-24 小欧 - [66]v3.7.1 模块化搬迁: ①八个 /responses 归一成员(_norm_responses_delta/_fold_emit_delta/_chat_frame/_DeltaFoldState/_responses_completed_eval 等)整体迁出至 responses_stream.py(零行为变更, 与 chat 直通通道物理隔离); ②request/request_stream 重复块函数化收敛: _acquire_soft_pool(软配额排队)/_adapt_request(gate+端点+动态头+协议判定单点)/_raise_http_error(4xx/5xx 日志分级+错误提取+error map); ③协议位 _is_responses 收敛 _adapt_request 唯一判定(消除 2 处 endswith 重复嗅探)
-编辑历史: 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.1): ①新增 inspect/threading 导入(池 close 判定可等待对象 + 池级线程锁); ②新增 _SharedClientPool/SharedClientLease 两类(引用计数 lease 核心: 归零关闭 close_on_zero/释放幂等/池级锁, 落户自[70]素材原样); ③acquire 增 client.is_closed 检查(底层被池外 aclose 后禁借, 偿还[69] 1.2.3⑥) + close 失败 warning 带池标识(多代并存可定位); ④LLMClient 新增 relinquish_ownership() 与 client property, close() 改三态收口(移交后 no-op/独占池 aclose/已关闭不抛), _owns_client 判据全部收敛回本类
-编辑历史: 2026-09-25 小欧 - [70] v1.11 代码审查修正(YAGNI): _SharedClientPool.closing property 全仓零消费点(含测试)按 YAGNI 删除; _closing 实例标志保留(acquire/release 内部判据仍在用) — 小欧 2026-09-25
-编辑历史: 2026-09-25 小欧 - [70] v1.12 补可观测性: ①SharedClientLease.release 走到 ref 归零且 close_on_zero 时记 INFO
+编辑历史: 2026-09-24 小欧 - 流式主路径漏改修复+整段快照保底: ①request_stream 循环逐帧把 muse /responses 事件归一为 chat 形 choices[0].delta 行（增量优先、整段快照仅"全程无对应增量"时作保底唯一来源, 双布尔去重）, 供 BaseAIService 既有 chat 解析链一字不改读通——agent 全链(react_step→BaseAIService.request_stream)对 muse 不再空响应; ②collect 删 is_responses 分支回归纯 chat 消费(单通道单归一心智); ③_norm_responses_delta 新增 content_full 文本整段快照保底识别(output_text.done/content_part.done/output_item.done message/completed); ④删 _responses_stream_frame 薄壳(KISS-DIRECT, 决策内联循环)
+编辑历史: 2026-09-23 小欧 - 适配层接入: ①import get_provider_adapter + __init__ 注入 self._adapter/self._static_headers(shared_client 分支复用全局池头); ②headers= 改用 static_headers(默认仅 Authorization, 行为==现状); ③request/request_stream 发送点接 per_request_headers + force_stream 流式收集分支 + _request_via_stream_collect(非流式入口经 request_stream 收集返回, 覆盖 zen 门禁 stream:true); ④>=400 分支消费 adapter.error_message_map(zen 403/426 友好文案); ⑤gate body/端点路由/协议位经 _adapt_request 单点(muse- 前缀→/responses)
+编辑历史: 2026-09-24 小欧 - 模块化搬迁: ①八个 /responses 归一成员(_norm_responses_delta/_fold_emit_delta/_chat_frame/_DeltaFoldState/_responses_completed_eval 等)整体迁出至 responses_stream.py(零行为变更, 与 chat 直通通道物理隔离); ②request/request_stream 重复块函数化收敛: _acquire_soft_pool(软配额排队)/_adapt_request(gate+端点+动态头+协议判定单点)/_raise_http_error(4xx/5xx 日志分级+错误提取+error map); ③协议位 _is_responses 收敛 _adapt_request 唯一判定(消除 2 处 endswith 重复嗅探)
+编辑历史: 2026-09-25 小欧 - ConnectionScope连接池统一所有者: ①新增 inspect/threading 导入(池 close 判定可等待对象 + 池级线程锁); ②新增 _SharedClientPool/SharedClientLease 两类(引用计数 lease 核心: 归零关闭 close_on_zero/释放幂等/池级锁); ③acquire 增 client.is_closed 检查(底层被池外 aclose 后禁借) + close 失败 warning 带池标识(多代并存可定位); ④LLMClient 新增 relinquish_ownership() 与 client property, close() 改三态收口(移交后 no-op/独占池 aclose/已关闭不抛), _owns_client 判据全部收敛回本类
+编辑历史: 2026-09-25 小欧 - 代码审查修正(YAGNI): _SharedClientPool.closing property 全仓零消费点(含测试)按 YAGNI 删除; _closing 实例标志保留(acquire/release 内部判据仍在用) — 小欧 2026-09-25
+编辑历史: 2026-09-25 小欧 - 补可观测性: ①SharedClientLease.release 走到 ref 归零且 close_on_zero 时记 INFO
   "共享池 ref 归零, 关闭 httpx 客户端"(带 pool/client 标识)——此前"归零→关池"这一关键事件完全静默, 池被谁关掉无从追溯,
-  而它正是 4.3「观测 ref_count 日志」要回答的问题; ②acquire() 两处关闸(_closing 已归零 / 底层被池外 aclose)补 WARNING
+  而它正是「观测 ref_count 日志」要回答的问题; ②acquire() 两处关闸(_closing 已归零 / 底层被池外 aclose)补 WARNING
   现场(带 pool/client 标识)——二者都是"有人在本该关死后仍来借出"的异常形态, 必须留痕;
   沿用 v1.4 已确立的池标识口径, 不新增日志风格 — 小欧 2026-09-25
-编辑历史: 2026-09-26 小欧 - [72]第一章(1.3-3) + 第八章(8.5-4) 落地: ①__init__ 组 header 前对 api_key 再 strip 一次
+编辑历史: 2026-09-26 小欧 - api_key strip 与 base_url 空值硬校验落地: ①__init__ 组 header 前对 api_key 再 strip 一次
   (api_key.strip() if isinstance(api_key,str) else api_key), 使 YAML 里已落盘的历史脏 key(带首尾空格/换行)也能工作,
   无需用户手工重录, 与写入侧 model_service.update_provider_config 的 strip 两侧对齐消除双通道不一致;
   ②删 _default_base_url() 与 _DEFAULT_URLS 整段(:298-312 原址): 北京老陈裁定「URL 不能空→空是错误状态要红色提示
-  →保存就是保存」, 静默兜底会把远程 ollama 打到本机、绕过中转直连官方计费(8.3 表), 属有害的假便利;
+  →保存就是保存」, 静默兜底会把远程 ollama 打到本机、绕过中转直连官方计费, 属有害的假便利;
   ③self._base_url 改纯取 llm_model.api_base, 空/纯空白即抛 HTTPException(400) 文案指向"到设置页填写完整地址",
-  空就是空不瞎兜底(与第二章"情况 B 直接报错"同一原则); ④新增 fastapi.HTTPException 导入;
+  空就是空不瞎兜底(配置缺失直接报错原则); ④新增 fastapi.HTTPException 导入;
   ⑤原 :267-268 兜底注释保留在 __init__ 内作为历史记录(注明撤销理由), 文件头 docstring :18/:21 的旧描述按
   "编辑历史不删"铁律保留不动 — 小欧 2026-09-26
 """
 
-import asyncio  # 2026-09-20 小欧 P5: 软配额信号量 — 小欧-2026-09-20
+import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
 import httpx
-import inspect  # [70] SharedClientPool.close 判定可等待对象 — 小欧-2026-09-25
+import inspect  # SharedClientPool.close 判定可等待对象 — 小欧-2026-09-25
 import json
-import threading  # [70] SharedClientPool 池级线程锁(多线程 acquire/release) — 小欧-2026-09-25
+import threading  # SharedClientPool 池级线程锁(多线程 acquire/release) — 小欧-2026-09-25
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
-from fastapi import HTTPException  # [72]第八章(8.5-4) 小欧 2026-09-26: base_url 空即错误状态, 构造即报错
+from fastapi import HTTPException  # 小欧 2026-09-26: base_url 空即错误状态, 构造即报错
 
 from app.constants import (
     DEFAULT_CONNECT_TIMEOUT as _D_CONNECT_TIMEOUT,
@@ -85,7 +85,7 @@ from app.llm.responses_stream import (   # v3.7.1 模块化: /responses 协议�
 _RETRYABLE_STATUS = (429, 500, 502, 503, 504)
 
 # ============================================================
-# [70] 共享连接池 lease 核心(引用计数) — 落户自 doc-9月优化/[70]素材-lease核心 原样吸收
+# 共享连接池 lease 核心(引用计数) — 小欧 2026-09-25 落地
 # 归零关闭(close_on_zero)/释放幂等(lease._released)/池级线程锁 — 小欧 2026-09-25
 # ============================================================
 
@@ -106,8 +106,8 @@ class _SharedClientPool:
                 )
                 raise RuntimeError("共享 httpx 客户端已关闭，不能继续获取 lease")
             if getattr(self.client, "is_closed", False):
-                # [70] v1.4 审核新增: 底层被池外 aclose 后禁借, 防借出即炸(偿还 [69] 1.2.3⑥/2.2 池约束④) — 小欧-2026-09-25
-                # 小欧-2026-09-25: 同步补 warning 现场(池外误关是 [69] 事故型故障, 禁借必须可追溯)
+                # v1.4 审核新增: 底层被池外 aclose 后禁借, 防借出即炸(池约束) — 小欧-2026-09-25
+                # 小欧-2026-09-25: 同步补 warning 现场(池外误关是事故型故障, 禁借必须可追溯)
                 logger.warning(
                     f"[LLM] 借出被拒(底层被池外关闭): pool={id(self):#x}, client={id(self.client):#x}"
                 )
@@ -138,7 +138,7 @@ class _SharedClientPool:
             if inspect.isawaitable(result):
                 await result
         except Exception as exc:
-            logger.warning(f"[LLM] 共享 httpx 客户端关闭失败(pool={id(self):#x}): {exc}")  # [70] v1.4 审核新增: warning 带池标识, 多代并存时可定位(2.7④) — 小欧-2026-09-25
+            logger.warning(f"[LLM] 共享 httpx 客户端关闭失败(pool={id(self):#x}): {exc}")  # v1.4 审核新增: warning 带池标识, 多代并存时可定位 — 小欧-2026-09-25
 
 
 class SharedClientLease:
@@ -254,7 +254,7 @@ def _extract_server_error_message(body_text: str) -> str:
     return body_text[:500]
 
 
-_soft_pool_semaphore = None  # 2026-09-20 小欧 P5: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
+_soft_pool_semaphore = None  # 2026-09-20 小欧 软配额: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
 _SOFT_POOL_WAIT_TIMEOUT = get_config().get("tuning.concurrency.soft_pool_wait_timeout", 30.0)  # 软配额排队等待上限(秒): 超时保底放行(不拒绝不降级) — 小欧-2026-09-20
 
 
@@ -268,8 +268,8 @@ def _get_soft_pool_semaphore():
 
 class LLMClient:
     """LLM 客户端实例 - 小沈 2026-06-09
-    2026-08-22 小欧 归一报告v1.25 6.4: (provider, model) 分离入参 → llm_model: ModelRef 单结构
-    (F8 不留 self.model/self.provider 兼容别名); 请求体拼 model 单值属裸单值场景(设计要求4允许)"""
+    2026-08-22 小欧 归一报告v1.25: (provider, model) 分离入参 → llm_model: ModelRef 单结构
+    (不留 self.model/self.provider 兼容别名); 请求体拼 model 单值属裸单值场景(设计要求4允许)"""
 
     def __init__(
         self,
@@ -277,22 +277,22 @@ class LLMClient:
         api_key: str,
         base_url: Optional[str] = None,
         timeout: Optional[int] = None,
-        shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 C1: 共享连接池注入, 快照复用不 new — 小欧-2026-09-20
+        shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 共享连接池注入, 快照复用不 new — 小欧-2026-09-20
     ):
         self.llm_model = llm_model   # 前导+model 命名铁律 — 小欧 2026-08-22
-        # 2026-09-26 - 小欧 - [72]三堂会审后修正(DRY): strip 只做一次。
+        # 2026-09-26 - 小欧 - 三堂会审后修正(DRY): strip 只做一次。
         #   原写法第 277 行存一份未清洗的 `self._api_key`、第 301 行组 header 时又 strip 一次 ——
         #   同一清洗做两遍，且存的那份是脏的（虽然当前全仓零读取，属死状态）。
         #   现清洗一次得 cleaned_key，两处共用：内存态与发出的 header 同一口径。
-        #   [72]第一章(1.3-3) 消费端兜底本意不变：YAML 里已落盘的历史脏 key（首尾空格/换行）照常工作。
+        #   消费端兜底本意不变：YAML 里已落盘的历史脏 key（首尾空格/换行）照常工作。
         cleaned_key = api_key.strip() if isinstance(api_key, str) else api_key
         self._api_key = cleaned_key
-        # [72]第八章(8.5-4) - 小欧 - 2026-09-26：删 _default_base_url/_DEFAULT_URLS 兜底，空 URL 构造即报错。
+        # 小欧 - 2026-09-26：删 _default_base_url/_DEFAULT_URLS 兜底，空 URL 构造即报错。
         # 原注释保留在下方（历史编辑记录不删）：原为
         #   "三堂会审复核加固(小欧 2026-08-23): 保留原 provider or "openai" 兜底语义(防空 provider 时
         #   _default_base_url 返回空串致 httpx base_url 为空; 当前可达路径虽恒非空, 防御不弱化)"
         # 撤销理由：北京老陈裁定「URL 不能空→空是错误状态要红色提示→保存就是保存」；静默兜底会把
-        # 远程 ollama 打到本机、绕过中转直连官方计费。空就是空，明确报错，不瞎兜底（与第二章同一原则）。
+        # 远程 ollama 打到本机、绕过中转直连官方计费。空就是空，明确报错，不瞎兜底（配置缺失直接报错原则）。
         self._base_url = llm_model.api_base
         if not (self._base_url or "").strip():
             raise HTTPException(
@@ -302,12 +302,12 @@ class LLMClient:
         read_timeout = float(timeout) if timeout else _D_READ_TIMEOUT
         self._default_timeout = read_timeout
         self._owns_client = shared_client is None   # 真连接池仅全局单例持有, 快照共享不重复建 — 小欧-2026-09-20
-        self._current_response: Optional[httpx.Response] = None  # C-1(小欧 2026-09-20): 在飞流式HTTP响应, 供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
+        self._current_response: Optional[httpx.Response] = None  # 小欧 2026-09-20: 在飞流式HTTP响应, 供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
         # 适配层消费: 按 provider 取适配实例(未注册=默认基类, 行为==现状); 静态头全生命周期算一次
         # shared_client 分支(同provider快照复用全局池)不重算头——全局池建池时已带 static_headers;
         # 跨provider 时 resolver 置 shared_client=None 走 else 新建, 头由 static_headers 注入 — 小欧 2026-09-23
         self._adapter = get_provider_adapter(llm_model.provider or "")
-        # [72]第一章(1.3-3) - 小欧 - 2026-09-26 消费端兜底：用已清洗的 cleaned_key 组 header
+        # 消费端兜底 - 小欧 - 2026-09-26：用已清洗的 cleaned_key 组 header
         # （与后端写入侧 model_service.update_provider_config 的 strip 对齐，两侧一致）。
         self._static_headers = self._adapter.static_headers(cleaned_key)
         if shared_client is not None:
@@ -380,7 +380,7 @@ class LLMClient:
         presence_penalty: Optional[float] = None,  # 新增 — 小欧 2026-09-23
         seed: Optional[int] = None,
         extra_body: Optional[Dict] = None,
-        request_timeout: Optional[int] = None,  # #37 fix: per-request timeout — 小欧 2026-07-18
+        request_timeout: Optional[int] = None,  # per-request timeout — 小欧 2026-07-18
     ) -> Dict[str, Any]:
         """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11; 小欧 2026-07-09 新增extra_body; #37 新增request_timeout"""
         if self._adapter.force_stream():
@@ -468,7 +468,7 @@ class LLMClient:
             fr = choices[0].get("finish_reason")
             if fr:
                 finish_reason = fr
-        # 幽灵过滤: 仅有 id 无 name 的残余 delta 丢弃 — 镜像 base_service._extract_tool_calls #38
+        # 幽灵过滤: 仅有 id 无 name 的残余 delta 丢弃 — 镜像 base_service._extract_tool_calls
         tool_calls_list = [
             {"id": acc.get("id"), "type": "function",
              "function": {"name": acc["name"], "arguments": acc["arguments"]}}
@@ -524,7 +524,7 @@ class LLMClient:
             _endpoint, body, _dyn_headers, _is_responses = self._adapt_request(body)   # 协议判定单点(见 _adapt_request) — 小欧 2026-09-24
             async with self._client.stream("POST", _endpoint, json=body, timeout=_timeout,
                                            headers=_dyn_headers or None) as response:
-                # C-1(小欧 2026-09-20): 记录在飞流式响应, BaseAIService 镜像后供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
+                # 小欧 2026-09-20: 记录在飞流式响应, BaseAIService 镜像后供 cancel() 直达HTTP层强关 — 小欧-2026-09-20
                 self._current_response = response
                 # 记录所有 4xx/5xx 错误响应体(>=400), 定位错误原因 — 小欧 2026-07-16
                 if response.status_code >= 400:
@@ -532,7 +532,7 @@ class LLMClient:
                     self._raise_http_error(response, response_body.decode("utf-8", errors="replace"))   # v3.7.1 函数化 — 小欧 2026-09-24
                 _state = _DeltaFoldState() if _is_responses else None   # 折叠状态仅 responses 协议需要(chat 通道不实例化) — 小欧 2026-09-24
                 async for line in response.aiter_lines():
-                    if line.startswith("data:"):  # #33 fix: 兼容无空格 data: — 小欧 2026-07-18
+                    if line.startswith("data:"):  # 兼容无空格 data: — 小欧 2026-07-18
                         _body = line[len("data:"):].lstrip()
                         if _body.strip() == "[DONE]":
                             break
@@ -548,7 +548,7 @@ class LLMClient:
                         except (ValueError, TypeError):
                             _ev = None
                         if not isinstance(_ev, dict):
-                            yield _body   # 非 JSON 行原样透传(#7 防内容丢失)
+                            yield _body   # 非 JSON 行原样透传(防内容丢失)
                             continue
                         if _ev.get("type") == "response.completed":
                             # v3.7.1 终帧: 单遍扫描 output 得文本快照+finish_reason/usage, 与 chat 流末帧同构 — 小欧 2026-09-24
@@ -561,18 +561,18 @@ class LLMClient:
                         if _emit:
                             yield _chat_frame(_emit)
         finally:
-            # C-1(小欧 2026-09-20): 流结束/异常清在飞响应(镜像随流清), 防悬挂旧HTTP响应 — 小欧-2026-09-20
+            # 小欧 2026-09-20: 流结束/异常清在飞响应(镜像随流清), 防悬挂旧HTTP响应 — 小欧-2026-09-20
             self._current_response = None
             if _acquired:
                 _sem.release()
 
     async def cancel(self):
-        """强制取消在飞流式请求 — C-1(小欧 2026-09-20): 直达HTTP层关闭流式响应, 供 BaseAIService.cancel 委托。
-        RED-C-1 根因: 此前 cancel() 关闭的 _current_response 恒 None(从未赋值), 取消只能等 chunk 级轮询, 假日志。
-        BUG-04修复(小欧 2026-09-20): aclose后立即清引用, 防finally/__aexit__二次关闭(double-close)。"""
+        """强制取消在飞流式请求 — 小欧 2026-09-20: 直达HTTP层关闭流式响应, 供 BaseAIService.cancel 委托。
+        根因: 此前 cancel() 关闭的 _current_response 恒 None(从未赋值), 取消只能等 chunk 级轮询, 假日志。
+        修复(小欧 2026-09-20): aclose后立即清引用, 防finally/__aexit__二次关闭(double-close)。"""
         resp = self._current_response
         if resp is not None:
-            self._current_response = None  # BUG-04: 立即清空, 阻止finally块重复关闭
+            self._current_response = None  # 立即清空, 阻止finally块重复关闭
             try:
                 await resp.aclose()
                 logger.info("[LLMClient.cancel] 流式HTTP响应已强制关闭")
@@ -580,26 +580,26 @@ class LLMClient:
                 logger.warning(f"[LLMClient.cancel] 关闭流式响应失败: {e}")
 
     def relinquish_ownership(self) -> None:
-        """移交底层 httpx 客户端所有权(本实例不再关闭) — [70] ConnectionScope.ensure_pool 调用 — 小欧 2026-09-25
+        """移交底层 httpx 客户端所有权(本实例不再关闭) — ConnectionScope.ensure_pool 调用 — 小欧 2026-09-25
         幂等: 重复移交无害; 移交后 close() 对共享池变 no-op, 实例仍保留使用引用(不丢连接)。"""
         self._owns_client = False
 
     @property
     def client(self) -> httpx.AsyncClient:
-        """公开底层 httpx 客户端 — [70] 替代跨层摸 _client 私有字段(欠账①) — 小欧 2026-09-25"""
+        """公开底层 httpx 客户端 — 替代跨层摸 _client 私有字段 — 小欧 2026-09-25"""
         return self._client
 
     async def close(self):
         """关闭客户端,释放连接池 - 小沈 2026-06-09
-        [70] 三态收口(小欧 2026-09-25): _owns_client=False(共享池/已移交) → no-op(池归 ConnectionScope
-        引用计数管理); 独占池 → aclose(带 is_closed 双保险)。_owns_client 判据全部收敛回本类(欠账①)。"""
+        三态收口(小欧 2026-09-25): _owns_client=False(共享池/已移交) → no-op(池归 ConnectionScope
+        引用计数管理); 独占池 → aclose(带 is_closed 双保险)。_owns_client 判据全部收敛回本类。"""
         if not self._owns_client:
             return
         if getattr(self._client, "is_closed", False):
             return
         await self._client.aclose()
 
-    # 【P1-22修复】添加异步上下文管理器,防止AsyncClient连接池泄漏 — chendyg 2026-06-26
+    # 添加异步上下文管理器,防止AsyncClient连接池泄漏 — chendyg 2026-06-26
     async def __aenter__(self):
         return self
 
@@ -612,7 +612,7 @@ def create_llm_client(
     api_key: str,
     base_url: Optional[str] = None,
     timeout: Optional[int] = None,
-    shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 C1 透传 — 小欧-2026-09-20
+    shared_client: Optional[httpx.AsyncClient] = None,  # 2026-09-20 小欧 共享池透传 — 小欧-2026-09-20
 ) -> LLMClient:
     """创建 LLM 客户端 — 唯一入口 - 小沈 2026-06-09; 2026-08-22 小欧 归一: 入参 llm_model: ModelRef"""
     return LLMClient(llm_model=llm_model, api_key=api_key, base_url=base_url, timeout=timeout, shared_client=shared_client)
