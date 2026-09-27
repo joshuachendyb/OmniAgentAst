@@ -13,14 +13,14 @@
  *   → e2e_case/api-proxy.ts 原样透传全部请求头 → 后端校验通过。
  *   api-proxy 的 `headers: { ...req.headers }` 已透传 Authorization，故**代理无需改动**。
  *
- * token 来源：环境变量 OMNIAGENT_API_TOKEN（与后端同一份，保证前后端一致）。
+ * token 来源：环境变量 OMNIAGENT_ACCESS_TOKEN（与后端同一份，保证前后端一致）。
  * 后端未启用鉴权（OMNIAGENT_REQUIRE_AUTH=0）时不注入也无害。
  */
 import type { Page } from '@playwright/test';
 
 /** 取 E2E 用的访问口令（环境变量优先）。未设置返回空串。 */
 export const getE2eToken = (): string =>
-  (process.env.OMNIAGENT_API_TOKEN || '').trim();
+  (process.env.OMNIAGENT_ACCESS_TOKEN || '').trim();
 
 /**
  * 在页面加载前预置访问口令（写入 localStorage 的 omniagent_auth，与
@@ -35,7 +35,7 @@ export const injectAuthToken = async (page: Page): Promise<boolean> => {
     // 后端若已启用鉴权，用例会集体 401；显式提醒避免误判为"用例失败"
     // eslint-disable-next-line no-console
     console.warn(
-      '[E2E][第九章] 未设置 OMNIAGENT_API_TOKEN：页面请求将不带 Authorization。' +
+      '[E2E][第九章] 未设置 OMNIAGENT_ACCESS_TOKEN：页面请求将不带 Authorization。' +
         '若后端已启用 token 鉴权，全部前端 E2E 会 401。'
     );
     return false;
@@ -75,7 +75,10 @@ export const injectAuthToken = async (page: Page): Promise<boolean> => {
           /* 解析失败则走全新写入 */
         }
       }
-      window.localStorage.setItem('omniagent_auth', JSON.stringify({ accessToken: t }));
+      window.localStorage.setItem(
+        'omniagent_auth',
+        JSON.stringify({ accessToken: t })
+      );
     } catch {
       /* ignore */
     }

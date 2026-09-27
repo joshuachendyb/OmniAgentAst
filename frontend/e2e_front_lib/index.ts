@@ -8,7 +8,7 @@
  *
  * 编辑历史: 2026-09-13 小欧 - 新增 normal-chat(普通会话流环境/主流程, 供查天气/股票/目录分析等普通case复用) - 小欧-2026-09-13
  * 编辑历史: 2026-09-26 小欧 - [72]第九章(9.6-3) 新增 auth 导出: injectAuthToken(页面加载前预置访问口令),
- *   后端 12 个 router 已挂 token 鉴权, 前端 8 个 E2E 不带口令会集体 401; token 取环境变量 OMNIAGENT_API_TOKEN - 小欧-2026-09-26
+ *   后端 12 个 router 已挂 token 鉴权, 前端 8 个 E2E 不带口令会集体 401; token 取环境变量 OMNIAGENT_ACCESS_TOKEN - 小欧-2026-09-26
  */
 export * from './process';
 export * from './stream-diag';

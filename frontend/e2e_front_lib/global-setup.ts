@@ -9,7 +9,7 @@
  * 用 storageState 而非逐 spec 调 injectAuthToken：后者要 8 遍 beforeEach 样板（违反 DRY）；
  * storageState 由 Playwright 每次导航前自动应用，效果等价且 spec 零改动。
  *
- * token 来源：环境变量 OMNIAGENT_API_TOKEN（与后端同一份）。未设置时写**空 state** 而非跳过 ——
+ * token 来源：环境变量 OMNIAGENT_ACCESS_TOKEN（与后端同一份）。未设置时写**空 state** 而非跳过 ——
  * storageState 指向固定路径，文件缺失会让 Playwright 直接报错退出，那才是真正的退化。
  */
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -38,7 +38,7 @@ const buildState = (token: string) => ({
 const EMPTY_STATE = { cookies: [] as unknown[], origins: [] as unknown[] };
 
 export default async function globalSetup(): Promise<void> {
-  const token = (process.env.OMNIAGENT_API_TOKEN || '').trim();
+  const token = (process.env.OMNIAGENT_ACCESS_TOKEN || '').trim();
   if (!existsSync(dirname(STATE_PATH)))
     mkdirSync(dirname(STATE_PATH), { recursive: true });
   if (!token) {
@@ -48,7 +48,7 @@ export default async function globalSetup(): Promise<void> {
     writeFileSync(STATE_PATH, JSON.stringify(EMPTY_STATE));
     // eslint-disable-next-line no-console
     console.warn(
-      '[E2E][第九章] 未设置 OMNIAGENT_API_TOKEN：页面请求将不带 Authorization。' +
+      '[E2E][第九章] 未设置 OMNIAGENT_ACCESS_TOKEN：页面请求将不带 Authorization。' +
         '若后端已启用 token 鉴权，全部前端 E2E 会 401。'
     );
     return;
