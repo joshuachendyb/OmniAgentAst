@@ -47,10 +47,10 @@ export default defineConfig(({ command }) => {
     },
     server: {
       // 前端 dev server 端口（Vite 默认 5173）。
-      // 端口关系：前端(:5173) → 后端(:8000)，两种连接方式：
-      //   方式1 proxy：下方 proxy 配置将 /api/* 转发到 localhost:8000（同源，无 CORS）
-      //   方式2 直连：getApiBaseUrl() 拼 hostname:port 直连后端（走 CORS，需改 constants.py 白名单）
-      // 改端口须同步：proxy.target（方式1）或 VITE_API_PORT + CORS 白名单（方式2）
+      // 端口关系：前端(:5173) → 后端(:8000)，默认走下方 proxy（/api/* → localhost:8000，同源无 CORS）。
+      // 前端 REST 与 SSE 均为相对路径 /api/v1（[75]BUG-6 修复：此前 REST 直连、SSE 相对，
+      // 两条通道分叉）。前后端不同源且无反代时才设 VITE_API_BASE_URL 显式指向后端。
+      // 改端口须同步：proxy.target 与 VITE_API_BASE_URL。
       port: 5173,
       // 2026-09-26 小欧 - [72]第九章配套: 绑 0.0.0.0 与后端 uvicorn(--host 0.0.0.0)对齐。
       //   此前未配 host，Vite 默认只绑 localhost(Windows 解析为 [::1] IPv6 回环)，

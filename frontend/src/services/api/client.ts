@@ -37,33 +37,28 @@ export interface ApiRequestConfig extends AxiosRequestConfig {
   _skipAuth?: boolean;
 }
 
+/** Vite 注入的环境变量（测试环境无 import.meta.env 时的类型兜底）。 */
+const VITE_ENV =
+  (import.meta as unknown as { env: Record<string, string> }).env ?? {};
+
 /**
- * 后端 API 基础地址（不含 /api/v1）。
+ * 后端 API 基础地址（不含 /api/v1），返回空串即"走同源相对路径"。
  *
- * 前端 :5173 与后端 :8000 是两个独立进程，端口互不联动：
- * - 走 Vite proxy（vite.config.ts）：请求 /api/* 由 dev server 转发到后端，同源无 CORS，返回 ''
- * - 直连本函数：跨域走 CORS。优先级 ① VITE_API_BASE_URL 全地址 → ② VITE_API_PORT 端口 → ③ 默认 :8000
+ * 优先级：VITE_API_BASE_URL 显式地址 > 空串（同源）。
+ * 空串时浏览器按当前源解析 /api/*，由 Vite proxy（开发）或 Nginx 反代（生产）转发到后端，
+ * 与 API_BASE_URL 的默认值同源，两者不再分叉。
+ * 仅当前后端与前端不同源且无反代时才需设 VITE_API_BASE_URL（如 http://192.168.1.10:8000）。
  *
- * 改端口须前后端对齐：后端改 → 前端同步 VITE_API_PORT；前端改 :5173 → 后端同步 CORS 白名单。
+ * 端口联动：后端改端口 → 同步 Vite proxy 的 target 与 VITE_API_PORT。
  *
- * 编辑历史: 2026-09-22 小欧 硬编码 :8000 → 读 VITE_API_PORT（消除后端改端口时改代码）
+ * 编辑历史:
+ *   2026-09-22 小欧 硬编码 :8000 → 读 VITE_API_PORT
+ *   2026-09-27 小欧 [75]BUG-6：默认由"拼 hostname:port 绝对地址"改为"空串（同源）"——
+ *     原默认值使 REST（axios，绝对地址）与 SSE（fetch，'/api/v1' 相对）分属两条通道，
+ *     生产同源反代部署时 REST 打到未对外的 :8000 而失败。
  */
 export function getApiBaseUrl(): string {
-  // 优先级1：完整地址覆盖（如 http://localhost:9000/api/v1）
-  const envBase = (import.meta as unknown as { env: Record<string, string> })
-    .env?.VITE_API_BASE_URL;
-  if (envBase) return envBase;
-  // 优先级2/3：按 hostname + 端口拼接（直连后端场景）
-  if (typeof window !== 'undefined') {
-    const loc = window.location;
-    // VITE_API_PORT：仅端口号（如 9000），缺省 8000（后端 uvicorn 标准端口）
-    const port =
-      (import.meta as unknown as { env: Record<string, string> }).env
-        ?.VITE_API_PORT || '8000';
-    return `${loc.protocol}//${loc.hostname}:${port}`;
-  }
-  // SSR/测试兜底
-  return 'http://127.0.0.1:8000';
+  return VITE_ENV.VITE_API_BASE_URL || '';
 }
 
 /** 取访问口令。认 zustand persist 的 {state:{accessToken}} 与裸 {accessToken} 两种形态。 */

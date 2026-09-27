@@ -750,9 +750,12 @@ export function isSilentError(error: unknown): boolean {
 // 统一显示函数
 // ============================================
 
-// 提示文案防裸值：上游 message 可能是纯数字（如后端毫秒值 60000）或占位垃圾值，
-// 直上弹窗用户无法理解。返回 undefined 让 showMessage 回退该 errorType 的固定中文文案；
-// 完整报文仍走 console，不丢调试信息。
+// 提示文案防裸值：纯数字（如后端毫秒值 60000）与占位垃圾值（undefined/null/[object Object]）
+// 直上弹窗用户无法理解，返回 undefined 让 showMessage 回退该 errorType 的固定文案。
+// 完整报文仍走 console，调试信息不丢。
+//
+// 已知边界（[75]会审）：过滤不区分来源，后端 detail 本身为纯数字时（如 "0"）精确信息同样被丢弃。
+// 代码层无信号可区分噪声与有效值，根治方式为后端 detail 不返回裸数字。
 const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   if (typeof raw !== 'string') return undefined;
   const t = raw.trim();
@@ -844,9 +847,9 @@ function extractErrorMessage(error: unknown): string | undefined {
   const e = error as Record<string, unknown>;
   const resp = e.response;
   if (resp && typeof resp === 'object') {
-    const data = (resp as Record<string, unknown>).data as
-      | Record<string, unknown>
-      | undefined;
+    const raw = (resp as Record<string, unknown>).data;
+    if (typeof raw === 'string' && raw) return raw; // 纯文本 body（如 403 Forbidden 文本）
+    const data = raw as Record<string, unknown> | undefined;
     if (data && typeof data === 'object') {
       if (data.detail !== undefined && data.detail !== null) {
         if (Array.isArray(data.detail)) return JSON.stringify(data.detail);
