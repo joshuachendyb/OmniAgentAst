@@ -272,8 +272,8 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
     if t in ("float", "range") and not isinstance(value, (int, float)):
         return f"{item['key']} 应为数字"
     # 2026-09-22 小欧 - int/float 补 range_ 边界校验（与 range 类型对齐，schema.range_ 统一生效）
-    if t in ("int", "float") and item.get("range"):
-        lo, hi = item["range"]
+    if t in ("int", "float") and item.get("range_"):
+        lo, hi = item["range_"]
         num = float(value)
         if not (lo <= num <= hi):
             return f"{item['key']} 超出范围 [{lo}, {hi}]"
@@ -291,8 +291,8 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
         if bad:
             return (f"{item['key']} 含非法 IP/网段：{'、'.join(bad)}"
                     f"（支持单 IP 或 CIDR，如 10.0.0.5 / 192.168.1.0/24）")
-    if item.get("range"):
-        lo, hi = item["range"]
+    if item.get("range_"):
+        lo, hi = item["range_"]
         num = float(value)
         if not (lo <= num <= hi):
             return f"{item['key']} 超出范围 [{lo}, {hi}]"
