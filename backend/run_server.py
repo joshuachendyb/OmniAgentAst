@@ -71,7 +71,7 @@ def main() -> None:
     _ensure_config(base)
 
     import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
-    # [75]第5章 5.2 - 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
+    # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
     #   应用层原先自己读 FORWARDED_ALLOW_IPS 环境变量，与 uvicorn 各读一次可能不一致
     #   （命令行启动时应用层读不到、只看到默认值）。改为同源注入，两边不可能分叉，
     #   并顺带修掉"命令行传 * 时应用层检测不到、fail-closed 失效"的盲区。
