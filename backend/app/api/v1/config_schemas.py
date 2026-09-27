@@ -17,6 +17,8 @@
 #   本字段回答【是否已配置】(布尔, 不泄露任何位), 与掩码契约 mask_secret_value 的
 #   {configured, masked}(回答"已配置的话长什么样")语义不同、非重复, 故第3套保留不删；
 #   但三套形状并存易令后人误以为可互换取错形状, 故在字段说明处显式区分(本项为 7.3 明确要求)。 — 小欧 2026-09-26
+# 2026-09-27 小欧 - SecurityConfig 加护栏注释：禁止在此声明密钥字段，脱敏靠 config_service 出口白名单
+#   挑选，而非"本类没声明就丢掉"（那是巧合不是契约，后人加字段即可能泄露）。同轮精简冗长注释。
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, ConfigDict, Field  # 2026-09-26 小欧 - 修 D16: ConfigUpdate 需 extra="forbid" 拒多余字段 — 小欧-2026-09-26
@@ -26,7 +28,11 @@ from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结
 
 
 class SecurityConfig(BaseModel):
-    """安全配置 — 2026-09-21 小欧 v4.20 死配置清理: 移除 contentFilterEnabled/contentFilterLevel/maxFileSize（无消费方）；仅保留 confirmDangerousOps（UX层）"""
+    """安全配置 — 2026-09-21 小欧 v4.20 死配置清理: 移除 contentFilterEnabled/contentFilterLevel/maxFileSize（无消费方）；仅保留 confirmDangerousOps（UX层）
+
+    ⚠️ 禁止在此声明任何密钥/口令字段（api_token 等）。env 覆盖会把明文口令注入 security 段，
+    脱敏靠 `config_service.get_system_config_data` 的出口白名单挑选，而非"本类没声明就丢掉"。
+    """
     confirmDangerousOps: bool = Field(True, description="危险操作需要二次确认")
 
 
@@ -43,20 +49,10 @@ class ConfigUpdate(BaseModel):
 
     [72]第十一章: 原 7 字段现只留 ai_model_ref（切全局模型唯一必需）；其余 6 项功能已迁移或属安全隐患。
 
-    2026-09-26 - 小欧 - [72]三堂会审后修正（修空 PUT 必 500 回归）:
-    ai_model_ref 由 Optional 改为**必填**。收敛前 7 字段全 None 时派发循环自动跳过 → 无害 no-op 成功；
-    收敛后 update_config 直调 _update_model_ref，后者首行即 `update.ai_model_ref.provider` ——
-    空 PUT（{} 或缺该字段）会在 None 上取属性 → AttributeError → 被 except 吞成 500。
-    PUT /config 的唯一能力就是切模型，不带模型调它属客户端错误，应在 DTO 层 422 拦掉，
-    不得穿透到 service 变成 500。唯一合法调用方 switchCurrentModel 恒传完整 ref，不受影响。
-
-    2026-09-26 - 小欧 - 修 D16「未 extra='forbid' → 多余字段静默丢弃，却回 success:true 假成功」
-    （三遍核实确认成立）：上面刚写定的"应在 DTO 层 422 拦掉"只对**缺字段**成立；
-    Pydantic v2 **默认 `extra='ignore'`** —— 传 `{"ai_model_ref":{...},"timeout":999}` 时
-    `timeout` 被默默丢掉，请求照样 200 + success:true。用户（尤其从 OpenAI 兼容接口迁移过来、
-    习惯带一堆参数的人）得到"改了没生效"的假成功且**零提示**，排错成本极高。
-    修法：加 `extra="forbid"`，让"无用字段 422 拒绝"这句契约对**多余字段同样成立**，文档与实现对齐。
-    —— 编辑：小欧 2026-09-26
+    ai_model_ref 必填: PUT /config 唯一能力就是切模型，不带模型调它属客户端错误，
+    应在 DTO 层 422 拦掉，不得穿透到 service 变 500（_update_model_ref 首行就取该字段的属性）。
+    extra="forbid": Pydantic v2 默认 extra='ignore'，多余字段会被默默丢掉却回 success:true，
+    让用户拿到"改了没生效"的假成功且零提示。
     """
 
     model_config = ConfigDict(extra="forbid")

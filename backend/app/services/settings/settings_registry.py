@@ -16,9 +16,10 @@ key 全局唯一，加载自检重复直接拒启。
   2026-09-26 小欧 - 新增 security.api_token（secret，拒经 /settings 写，唯一写入口 auth/token）
     与 security.ip_allowlist，置于 appearance 组最前。
   2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（后端一次生成，前端纯回显）。
-  2026-09-27 07:38 小欧 - 修 B6: workspace.project_root 默认值 "E:\test_dir" → ""。该默认值非空，
-    使 config.get_project_root 的 `if root:` 恒真、永不回退用户主目录（其 docstring 明写未配置时=home），
-    缺键部署把项目根定到不存在的目录。另精简本文件冗长编辑历史（410→285 行，只留决策不留过程）。
+  2026-09-27 小欧 - 修 B6: workspace.project_root 默认值 "E:\test_dir" → ""（原值非空使
+    `if root:` 恒真、永不回退用户主目录）。另精简本文件冗长编辑历史（410→285 行，只留决策不留过程）。
+  2026-09-27 小欧 - 同轮再精简：_item docstring 与 security/appearance 分组注释去重（原"只有三处"
+    那类会腐烂的清单改为直接指向唯一真源 app/config.py::_apply_env_overrides）。
 """
 from typing import Any, Dict, List, Optional
 
@@ -30,8 +31,8 @@ def _item(key: str, type_: str, label: str, default: Any = None,
           env_key: Optional[str] = None) -> Dict[str, Any]:
     """单项构造：storage 统一 YAML；env_key 指定环境变量名时来源判定看 os.environ 是否设了该键。
 
-    注意：声明 env_key 只影响"来源"标记，不会把 env 值注入配置（注入只有
-    _apply_env_overrides 里的 {PROVIDER}_API_KEY / AI_PROVIDER / LOG_LEVEL 三处）。
+    声明 env_key 本身不注入任何值，只影响"来源"标记。是否真注入、注入哪些键，唯一真源是
+    `app/config.py::_apply_env_overrides` —— 本文件不复制那份清单（复制即腐烂）。
     """
     return {"key": key, "type": type_, "label": label, "default": default,
             "options": options, "range": range_, "step": step, "storage": "YAML",
@@ -42,8 +43,7 @@ def _item(key: str, type_: str, label: str, default: Any = None,
 GROUPS: Dict[str, Dict[str, Any]] = {
     # 4.1 通用（general，10 项）
     "general": {"label": "通用", "items": [
-        # 默认空：config.get_project_root 靠 `if root:` 判空后回退用户主目录（Path.home()）。
-        # 原默认 "E:\test_dir" 非空 → 恒真 → 永不回退，缺键部署把项目根定到不存在的目录。
+        # 默认空：config.get_project_root 靠 `if root:` 判空后回退用户主目录（Path.home()）
         _item("workspace.project_root", "text", "项目根目录", ""),
         _item("workspace.allowed_dirs", "textarea", "授权目录", "",
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
@@ -70,11 +70,9 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="当前选用的模型（哪个服务商+哪个模型）；被环境变量强制指定时整行只读",
               env_key="AI_PROVIDER"),
     ]},
-    # 4.3 安全（security，4 项，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
-    #   2026-09-26 小欧 - [72]第九章: 「访问口令」「免口令 IP 白名单」两项**移出本组**，
-    #   改置于「外观」组首（见下方 appearance）。理由（北京老陈）：本组是**操作安全**
-    #   （要不要拦用户的危险动作），而那两项是**准入控制**（谁能进得来），语义不同混在一起会误导
-    #   —— 例如误以为"关掉安全开关就不用输口令"。本组恢复为原有 4 项操作安全。
+    # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
+    #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，
+    #   两者语义分开，避免误以为"关掉安全开关就不用输口令"。
     "security": {"label": "安全", "items": [
         _item("security.enabled", "bool", "安全开关", False,
               notice="关闭后跳过所有安全检查（盘根/项目根等删除硬防线仍生效）"),
@@ -140,19 +138,16 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("config_path", "readonly", "配置文件路径", None, readonly=True),
         _item("version", "readonly", "当前版本", None, readonly=True),
     ]},
-    # 4.6 外观（theme 只读，字号/语言 YAML 即时 + 本地预应用）
-    # 4.8 外观（appearance，5 项）
-    #   2026-09-26 小欧 - [72]第九章（北京老陈指示）: 前两块为**准入控制**（谁能进得来），
-    #   放在本组最前；「安全」组只留操作安全（危险动作拦不拦），两者语义分开不混淆。
-    #   注: 键名仍为 security.*（对外契约与已装环境变量 OMNIAGENT_API_TOKEN 保持不变），
-    #     但**展示分组**在本组 —— 键名前缀只表命名空间，展示位置由 GROUPS 决定。
+    # 4.8 外观（appearance）
+    #   前两项为**准入控制**（谁能进得来），与 security 组的操作安全分开。键名仍为 security.*
+    #   （对外契约与已装环境变量 OMNIAGENT_API_TOKEN 不变），键名前缀只表命名空间，
+    #   展示位置由 GROUPS 决定。
     "appearance": {"label": "外观", "items": [
-        # 块1 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
-        #   2026-09-26 小欧 - type 用 "secret" 而非 "text"：读路径返掩码对象，原声明字符串即类型撒谎
+        # 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
         _item("security.api_token", "secret", "访问口令", None, secret=True,
               env_key="OMNIAGENT_API_TOKEN",
               notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
-        # 块2 免口令 IP 白名单（非 secret：白名单不是机密，需在设置页可维护；textarea 以复用 list/str 双向归一）
+        # 免口令 IP 白名单（非 secret：白名单不是机密，需在设置页可维护）
         _item("security.ip_allowlist", "textarea", "免口令 IP 白名单", "",
               env_key="OMNIAGENT_IP_ALLOWLIST",
               notice="这些 IP/网段访问本服务免口令，逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1)恒免。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),

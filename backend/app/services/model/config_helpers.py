@@ -15,45 +15,24 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-20 - 小沈 - v4.19 Phase 1/2: 新增公共工具函数 _get_dotted/_config_mtime/mask_secret_value/merge_region_patch/_set_nested;
 #   write_yaml_config 改调 atomic_write 原子落盘; _write_system_yaml 改为返回 ordered data（不再直写文件）
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 新增 _validate_config_integrity 校验（merge_region_patch 安全网）
-# 2026-09-21 - 小欧 - 依据文档54 9.3.3 完全重写: merge_region_patch 补全 filelock 并发锁/备份/完整性校验/
-#   写后逐键验证/失败回滚/reload 全链路; _set_dotted 替代 _set_nested(None 删键+回收空父级);
-#   mask_secret_value 改返 {configured, suffix} 契约(5.2); _validate_config_integrity 恢复读扁平键
-#   ai.provider/ai.model(v4.19 明确, resolver/config_service 只读扁平键)
-# 2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复 —— ①新增 merge_nested_patch/_merge_region_core/
-#   _iter_nested_ops/_set_nested_path/_get_path: 叶段按字面名写入(模型/Provider 名含点号如 gpt-4.1
-#   不再被 _set_dotted 当路径拆开, 修 M1~M3 点号模型名 params/meta 错位、删除残留孤儿); _set_dotted/
-#   _get_dotted 改为复用同一核心(行为不变, DRY); ②merge_region_patch 空 patch 直接跳过不备份不写盘
-#   (S6 备份膨胀); ③_validate_config_integrity 对 env 接管 provider(设 {NAME}_API_KEY)放行 api_base/
-#   api_key 缺失约束(修 S1: env 接管配置任意 settings 写均校验崩溃); ④mask_secret_value 短 secret(<4位)
-#   suffix 置空不再整体暴露(修 S5)
-# 2026-09-21 - 小欧 - 建议报告 P8 根治: _iter_nested_ops 对空 dict 叶值显式 yield 空块 {}——原实现把 {} 当
-#   内部节点无限展开导致零 ops("清空模型参数/空块"永远写不落盘, PUT default_params={} 静默无效果)。
-# 2026-09-21 - 小欧 - 修复 None 陷阱: .get('key','')/get('key',[]) 在 key 存在但值为 None 时返回 None，
-#   统一修为 .get('key') or ''/[]（config_helpers 内 4 处）
-# 2026-09-21 - 小欧 - 三堂会审清理: 删除无调用方的历史透传函数 _write_system_yaml（KISS-DIRECT 无透传函数 + YAGNI，
-#   唯一逻辑已由 _order_for_dump 承接，全仓无任何 import 调用）
-# 2026-09-21 - 小欧 - v4.20 键名按域收敛修残留: _update_max_steps 写入键 app.max_steps → agent.max_steps
-#   （原写旧键，config.get() 读不到成死数据，与 settings merge_region_patch 写路径统一为单键 agent.max_steps）
-# 2026-09-21 - 小欧 - v4.20 单源收敛: ①is_provider_metadata_field 补 'model_ref'（防其被当 provider 遍历）；
-#   ②_order_for_dump 首位键 provider/model → model_ref；③_fix_config_common_issues 删 ai 顶层遗留扁平键；
-#   ④_validate_config_integrity 改校验 ai.model_ref；⑤_update_model_ref 改写 model_ref（原写扁平键）；
-#   ⑥_auto_fix_and_validate 失败 fail_result 的 current_model_ref 改读 model_ref
-# 2026-09-21 - 小欧 - [59]报告 B-1/B-2 修复: read_yaml_config ①捕获 yaml.YAMLError 显式抛 HTTPException(500)
-#   （坏 YAML 不再被 handle_api_errors 笼统 500; 防静默吞坏文件）; ②顶层非 dict 统一归一空 dict
-#   （修复 str/list 顶层时模型读 _raw_ai .get 崩溃、settings 静默全默认两处行为分裂）
-# 2026-09-21 - 小欧 - [59]B-12 修复: 新增 get_config_snapshot 原子快照(与 merge_region_patch 同一把 .lock)，
-#   settings get_all_groups/get_group 改调水源，消除"先读数据再单次 stat"窗口——并发写者落在两操作间时
-#   数据旧/mtime 新，前端误判"已外部更新"整页刷新
-# 2026-09-22 - 小欧 - 编辑/保存审计修复 S10: _update_model_ref 加 AI_PROVIDER env 接管守卫——env 接管下
-#   PUT /config 切换 ai.model_ref 原无守卫，写入被 _apply_env_overrides 读回覆盖="假成功"；现抛 400
-#   （与 settings_service env_key=AI_PROVIDER、model_service _raise_if_current_ref_env 双标准语义对齐）
-# 2026-09-22 - 小欧 - 31候选修复 #10: _update_project_root 取代 _set_app_field lambda —— 原写 app.project_root
-#   死键（全读取方统一走 workspace.project_root，保存"成功"永不生效）；改写 workspace.project_root + 类型门禁
-# 2026-09-25 - 小欧 - [70] 审核新增: 删 _update_model_ref 写盘前错位 reset()——换代正确位置在写盘+校验成功后的 reload_ai_config(撤回 6 文件时随基线带回的错位触发点); 保留它会致"保存模型换两次代"(写盘前换代→窗口内新请求拿旧配置建代→随即被退休) — 小欧 2026-09-25
-# 2026-09-25 - 小欧 - [70] v1.12 补换代链入口日志: reload_ai_config() 记 INFO「配置热重载触发」——
-#   它是整条换代链(重载→退代→建代→归还→归零关闭)的起点, 此前完全静默, 线上无法判断"换代到底发生没发生"。
-#   与 service 侧四段日志配对后, 一次换代的完整因果链可从日志直接读出 — 小欧 2026-09-25
-# 2026-09-27 - 小欧 - 掩码契约收敛为 {configured, masked}（北京老陈裁定，后端一次生成最终串）:
+# 2026-09-21 小欧 - 依据文档54 9.3.3 重写 merge_region_patch: 补 filelock 并发锁/备份/完整性校验/
+#   写后逐键验证/失败回滚/reload 全链路；_set_dotted 替代 _set_nested；_validate_config_integrity
+#   恢复读扁平键。
+# 2026-09-21 小欧 - 新增 merge_nested_patch/_merge_region_core/_iter_nested_ops/_set_nested_path/
+#   _get_path: 叶段按字面名写入（模型名含点号如 gpt-4.1 不再被当路径拆开，修点号模型名 params/meta
+#   错位与删除残留孤儿）；_set_dotted/_get_dotted 复用同一核心。另: 空 patch 直接跳过不备份不写盘；
+#   env 接管 provider 放行 api_base/api_key 缺失约束；短 secret 不再整体暴露。
+# 2026-09-21 小欧 - _iter_nested_ops 对空 dict 叶值显式 yield 空块（原当内部节点无限展开导致零 ops，
+#   "清空模型参数"永远写不落盘）；.get() 的 None 陷阱统一 `or ''/[]`；删无调用方的 _write_system_yaml。
+# 2026-09-21 小欧 - v4.20 键名按域收敛与单源收敛: app.max_steps → agent.max_steps；ai.model_ref 统一
+#   （provider/model → model_ref 读写校验全部对齐），防写出死键"保存成功永不生效"。
+# 2026-09-21 小欧 - [59] 修复: read_yaml_config 坏 YAML 显式抛 500（不静默）、顶层非 dict 归一空 dict；
+#   新增 get_config_snapshot 原子快照（同把 .lock），消除"先读数据再 stat"导致前端误判外部更新。
+# 2026-09-22 小欧 - _update_model_ref 加 AI_PROVIDER env 接管守卫（否则写入被 env 读回覆盖=假成功）；
+#   _update_project_root 改写 workspace.project_root（原写 app.project_root 死键）。
+# 2026-09-25 小欧 - 删 _update_model_ref 写盘前错位 reset()（换代正确位置在 reload_ai_config，
+#   错位会致"保存模型换两次代"）；reload_ai_config 记 INFO 日志，补齐换代链入口可观测性。
+# 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（北京老陈裁定，后端一次生成最终串）:
 #   mask_secret_value 是全项目 secret 掩码唯一权威（/settings、/models、/config 共用），三档规则:
 #     len > 8     → s[:4] + "****" + s[-4:]
 #     4 < len <= 8 → "****" + s[-4:]
@@ -62,11 +41,12 @@ F10合并: 小欧 - 2026-06-08
 #   收敛动机：旧三键 {configured,prefix,suffix} 让"档位判定+星号拼接"在前后端各实现一遍（违反 DRY），
 #   且已漂移出真实 bug —— 前端靠 `prefix === '****'` 猜档位，遇到真实 key 前 4 位恰为 `****` 时拼错；
 #   旧两档还有 len<=4 全量回显、len==8 拼回全量明文两处泄漏，本三档一并消除。
-#   另: key 一律先去掉全部空白再判空与分档（本函数入参可能是未清洗的 env 变量，
-#   写入侧 update_provider_config 会 strip，但掩码侧未必拿到清洗值）；非字符串按 str() 兜底走同一分档。
-# 2026-09-27 07:38 小欧 - 修 B4（实跑复现 TypeError）: _validate_config_integrity 只校验了 provider 键存在，
-#   值为 None（yaml `myprov:` 空值）时 `'api_base' not in provider_config` 直接抛 TypeError。本函数被
-#   _merge_region_core 每次写调用 → 改任何设置/模型增删改全 500。补 isinstance 守卫（同函数另两处循环早有）。
+#   另: key 一律先去掉全部空白再判空与分档；非字符串按 str() 兜底。
+# 2026-09-27 小欧 - 精简冗长注释（09-21~09-25 流水账压缩为按主题归并，只留决策不留过程）；
+#   删掉"注释位置错了"这类关于注释的元讨论。
+# 2026-09-27 小欧 - 修 B4: _validate_config_integrity 缺 isinstance 守卫，provider 值为 None
+#   （yaml `myprov:` 空值）时下方 `'api_base' not in provider_config` 抛 TypeError。本函数被
+#   _merge_region_core 每次写调用 → 改任何设置全 500。
 
 import os
 import shutil
@@ -276,9 +256,6 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
         return False, errors, warnings
 
     provider_config = ai_config[selected_provider]
-    # 2026-09-27 小欧 - 修 B4：上面只校验了键存在，值为 None（yaml `myprov:` 空值）时
-    # 下面 `'api_base' not in provider_config` 抛 TypeError。本函数被 _merge_region_core 每次写调用，
-    # 改任何设置/模型增删改全 500。同函数另两处循环早就有 isinstance 守卫，此处补齐。
     if not isinstance(provider_config, dict):
         errors.append(f"provider '{selected_provider}' 配置格式错误（应为映射）")
         return False, errors, warnings
@@ -288,15 +265,9 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
     env_managed = bool(os.environ.get(f"{selected_provider.upper()}_API_KEY"))
     if 'api_base' not in provider_config and not env_managed:
         errors.append(f"provider '{selected_provider}' 缺少 api_base 字段")
-    # 2026-09-26 - 小欧 - [72]第三章(3.3 配套项): 下一条校验**仅在"字段完全缺失"时报警，空值合法、不应报警** ——
-    #   界面 ProviderConfig.tsx 明确显示"未配置，留空=保持原值"，说明**允许未配置状态**；
-    #   若在此把空串/纯空白也判为错误，将导致"未配置 key 的 provider 无法保存任何其它配置"（功能退化）。
-    #   故此处维持现状（只判缺失），**切勿加"空串即错误"的校验**。此注释为防后人误加而立。
-    #   key 三态（空=不修改 / 非空=设置 / clear=清空）由 provider 通道
-    #   model_service.update_provider_config 唯一承担（[72]第三章已落地），此处不重复实现。
-    # 2026-09-26 (三堂会审后修正) - 小欧 - 上一段说明原先被放在 `if` 语句体**内部**（紧跟 errors.append），
-    #   位置荒谬: 读起来像"报错之后还要做的事"，实则是"为何只判缺失、不判空串"的解释。
-    #   注释解释的是判断本身，必须置于该判断**之前** —— 位置错了，注释就在撒谎。
+    # 只判"字段缺失"，不判"空串"：界面明确允许未配置状态（显示"留空=保持原值"），
+    # 判空串会让未配置 key 的 provider 连其它配置都存不了（功能退化）。切勿加"空串即错误"。
+    # key 三态（空=不改 / 非空=设置 / clear=清空）由 model_service.update_provider_config 唯一承担。
     if 'api_key' not in provider_config and not env_managed:
         errors.append(f"provider '{selected_provider}' 缺少 api_key 字段")
     if errors:
@@ -433,13 +404,15 @@ def _update_model_ref(config_data: dict, update) -> None:
     logger.info(f"更新AI模型: provider={update.ai_model_ref.provider}, model={update.ai_model_ref.model}")
 
 
-# [72]第十一章(11.5 第1步): FIELD_HANDLERS 收敛为**只含 "ai_model_ref" 一项**。
-#   原 7 项中的 6 项已删:
-#     - provider_api_keys(→_update_api_keys): [72]第三章认定的"第二个能擦除密钥的入口", 删除即漏洞消失(本次核心目标)
-#     - theme/language(→_set_app_field lambda): theme 早已是 registry 只读项(暗色入口已移除), 旧写路径是死键回退
-#     - max_steps/security/project_root: 功能已全部迁移至 PUT /settings 对应 registry 项(文档 11.2 表)
-#   留 ai_model_ref 的原因: configApi.switchCurrentModel（AppContext.tsx:266 顶栏与设置页「切换全局模型」
-#   唯一写链）仍走 PUT /config; 连同端点与 ConfigUpdate 一并保留, 但**只写模型**, 不再是第二条通用写路径。
+# FIELD_HANDLERS 收敛为只含 "ai_model_ref" 一项。已删的 6 项:
+#   provider_api_keys —— [72]第三章认定的"第二个能擦除密钥的入口"，删除即漏洞消失
+#   theme/language   —— 已迁至 registry（theme 早已是只读项，旧写路径是死键回退）
+#   max_steps/security/project_root —— 已全部迁至 PUT /settings 对应 registry 项
+# 留 ai_model_ref: configApi.switchCurrentModel（顶栏与设置页"切换全局模型"唯一写链）仍走
+# PUT /config，但**只写模型**，不再是第二条通用写路径。
+#
+# ⚠️ 本表当前无消费方（update_config 已直调 _update_model_ref），按 [72]第十一章设计保留该结构。
+#   是否进一步删除待北京老陈裁定，勿自行处置。
 FIELD_HANDLERS: Dict[str, Any] = {
     "ai_model_ref": _update_model_ref,
 }
@@ -594,13 +567,10 @@ def get_config_snapshot() -> Dict[str, Any]:
 def mask_secret_value(value: Any) -> Dict[str, Any]:
     """secret 掩码公共函数（**唯一权威**）：永不返明文，只返 {configured, masked 可直接显示的串}。
 
-    [72]第七章(7.3) + 第十二章(12.5) + 北京老陈 2026-09-27 裁定 - 小欧 2026-09-27
-
-    **契约变更（2026-09-27）**：由 `{configured, prefix, suffix}` 三键改为 `{configured, masked}` 两键。
-      原三键把"怎么拼"的知识交给前端（前端要自己判断档位、自己数星号），导致掩码规则在前后端
-      各实现一遍 —— 违反 DRY，且已实际漂移出错：真实 key 前 4 位恰为 `****` 时，前端无法区分
-      "真前缀是星号"与"后端判定为短 key 档"。现**后端一次生成最终可显示串，前端直接显示**，
-      前端零掩码逻辑。
+    2026-09-27 北京老陈裁定 - 契约由 {configured, prefix, suffix} 三键改为两键：
+      原三键把"怎么拼"交给前端（前端要自己判档位、点数星号），掩码规则在前后端各实现一遍（违反 DRY），
+      且已漂移出真实 bug —— 真实 key 前 4 位恰为 `****` 时前端无法区分"真前缀是星号"与"短 key 档"。
+      现后端一次生成最终可显示串，前端零掩码逻辑。三档规则见文件头编辑历史。
     """
     # 【编辑历史 — 最新在下】
     # 2026-09-26 - 小欧 - 落实北京老陈裁定，**收敛为两档**（原为 4 档: <4 / 4~7 / 8~11 / >=12）:

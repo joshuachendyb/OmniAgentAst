@@ -88,13 +88,21 @@
 | `format_tool_call_markup` | 将LLM输出XML/JSON tool call标记格式化为纯文本(破坏性) | text | str |
 | `normalize_blank_lines` | 空行规约(13.11): 连续空行(含整行空格/制表)折叠为一个空行, 段首尾trim, 幂等; 落库收口入口(与前端 normalizeBlankLines 同一张规则表) | text | str |
 
-### 1.8 ID生成（id_utils.py）
+### 1.8 类型转换（type_utils.py）
+
+> 无依赖叶子模块（刻意不 import 项目内模块，否则 app.config 无法复用 → 循环导入）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `to_int_or` | 配置值转 int；None/非数字回落默认值，**0 视为合法值不吞** | value, default | int |
+
+### 1.9 ID生成（id_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `generate_operation_id` | 生成统一格式 op-{hex}, 全链路文件/任务操作 ID 同源(替代各处重复的 f"op-{uuid4().hex}") | 无 | str |
 
-### 1.9 路径处理（path_utils.py）
+### 1.10 路径处理（path_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -102,14 +110,14 @@
 
 > 注：备份(operation_backup)与回收站维护(operation_maintenance)链路统一使用本函数，保证深嵌套备份能写入亦能清理。
 
-### 1.10 文件处理（file_utils.py）
+### 1.11 文件处理（file_utils.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `backup_file` | 文件备份(.bak) | file_path, backup_dir, suffix | Dict |
 | `remove_readonly` | 去除文件只读属性(供删除/清理重试) | func, path, excinfo | None |
 
-### 1.11 控制台镜像（app/logger/console_writer.py）
+### 1.12 控制台镜像（app/logger/console_writer.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
