@@ -17,26 +17,14 @@
 # 2026-09-22 小欧 - [61] constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 # 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
 # 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.9): shutdown_event 的裸 reset() 改 await shutdown()——原调用只清工厂换代不等共享池关闭, 池归零由 3.6 shutdown 逐退休代 drain 兜底(超时放行不阻塞退出) — 小欧-2026-09-25
-# 2026-09-26 - 小欧 - [72]第九章(9.6-1) 落地: 全路由统一 token 鉴权（一处生效，KISS-DIRECT）
-#   ①新增 import: fastapi.Depends + app.api.v1.deps.verify_token
-#   ②include_router 处统一 dependencies=[Depends(verify_token)]，**不去改 13 个 router 的定义**（9.6-1 指定方式）
-#   ③/api/v1/health **豁免**（9.6-1 要求，便于探活与排障）；其余 12 个 router 全部需鉴权
-#   依据 9.4: `--host 0.0.0.0` 是多机部署硬前提**保持不变**（收窄则其他机器全部连不上、服务作废），
-#   真正要修的是"零身份验证"这一缺陷 —— 原状态下局域网任意设备/程序/网页跨源请求可直调任何接口
-#   （读走全部 provider 明文密钥 / 改擦密钥 / 越权读他人会话与消息）。
-#   依赖本体 fail-closed：未配置 token 时拒绝一切受保护请求（绝不"没配就全放行"= 等于没做鉴权）；
-#   失败文案统一不区分"未配置"与"不匹配"避免被探测；比较用 hmac 常量时间防计时侧信道。
-#   连带(12.6 硬依赖): 第十二章明文接口与本轮同批上线，避免"明文接口 + 零鉴权"成为新的泄露口 — 小欧-2026-09-26
-# 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核, 本文件 2 处已改（均已实测行为等价）:
-#   ①[DRY + 失效来源] 13 行 include_router 各自手写 `prefix="/api/v1"` 与 `dependencies=_AUTHENTICATED`,
-#     同一事实写 13 遍。真正危害不是"啰嗦"，而是**新增 router 时的静默漏鉴权**: 加第 14 个 router
-#     谁记得手写 dependencies=? 漏写即该 router 裸奔 —— 而"零身份验证"正是第九章要消灭的核心缺陷,
-#     意味着这条安全规则会"修一次漏一次"。已抽 _mount() 为唯一挂载入口(前缀只写一次、默认鉴权、
-#     豁免必须显式 exempt=True)。豁免面表达方式由"逐行不写"变为"显式声明"，反而更醒目不易漏。
-#     实测等价性: 总路由 72、受保护路径 54、/api/v1/health 与 /api/v1/echo 仍豁免、
-#     /api/v1/auth/status 仍受保护 —— 零行为变化。
-#   ②[DRY 注释重复] 挂载点上方 6 行注释与本文件头编辑历史同条目**全文重复**。同一事实写两处,
-#     改一处忘另一处就产生两个互相矛盾的"事实来源"。已改为指向文件头，不重复抄写。
+# 2026-09-26 小欧 - [72]第九章: 全路由统一 token 鉴权（服务绑 0.0.0.0 是多机部署硬前提不可收窄，
+#   原状态下局域网任意设备可直调任何接口：读走全部明文密钥、改擦密钥、越权读会话）。
+#   鉴权细节与设计依据见 deps.py 文件头；_mount() 抽成唯一入口的理由见挂载点处注释。
+# 2026-09-27 小欧 - ①默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_DOCS=1 开启）：这三者是
+#   **应用级**路由，不在任何 APIRouter 内，走不到 verify_token，实跑确认无 token 可拉走全部端点与模型。
+#   / 的 docs 键同步条件化，避免广播一个必 404 的地址。②访问口令路由改走 _mount()，不再手写
+#   include_router 绕过唯一入口。③_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
+#   同轮精简冗长注释（三堂会审叙事压缩为结论）。
 import sys
 import asyncio
 from typing import Optional
@@ -57,7 +45,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 import traceback
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.tools import ensure_tools_registered
-from app.config import get_config, get_code_root
+from app.config import get_config, get_code_root, env_flag
 from pathlib import Path
 import os
 import logging
@@ -110,7 +98,8 @@ logger.info(f"Backend version: {app_version}")
 # 2026-09-27 10:15 小欧 - 关闭应用级 API 文档端点（修 [72]核查发现的鉴权缺口）：/docs /redoc /openapi.json
 #   是**应用级路由**，不在任何 APIRouter 内，走不到 verify_token —— 实跑确认无 token 可拉走 57 个端点
 #   + 44 个请求模型。本机开发需查看时设 OMNIAGENT_ENABLE_DOCS=1（多机部署下别开）。
-_ENABLE_DOCS = os.getenv("OMNIAGENT_ENABLE_DOCS", "").strip() in ("1", "true", "True")
+#   布尔解析复用 config.env_flag（假值列表统一单点），不手搓真值列表。
+_ENABLE_DOCS = env_flag("OMNIAGENT_ENABLE_DOCS")
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
@@ -187,17 +176,10 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# [72]第九章(9.6-1) - 小欧 - 2026-09-26: 全路由统一挂 token 鉴权依赖（一处生效，KISS-DIRECT）。
-#   要点与设计依据见文件头编辑历史同条目（不在此重复抄写一遍 —— 同一事实全文写两处，
-#   改一处忘另一处即产生两个互相矛盾的"事实来源"，是本项目吃过亏的坑，见 ProviderConfig 注释教训）。
-# 2026-09-26 - 小欧 - [72]三堂会审后修正(DRY · 13 遍重复抽成一处):
-#   原写法把 `prefix="/api/v1"` 与 `dependencies=_AUTHENTICATED` **在 13 行里各手写一遍**。两处真实问题:
-#     ①DRY: 同一事实(前缀/鉴权)写 13 遍, 改前缀必漏改(漏改=该 router 挂在错误路径 → 404);
-#     ②**新增 router 时的静默漏鉴权风险**: 未来加第 14 个 router, 谁记得手写 dependencies=?
-#        漏写则该 router 默认裸奔 —— 而"零身份验证"正是 [72]第九章要消灭的核心缺陷, 修一次漏一次。
-#   故抽 _mount() 为唯一挂载入口: 前缀与"默认鉴权"只写一次, 豁免必须显式写 exempt=True。
-#   行为等价性已逐条核对: health 仍豁免(豁免面由"逐行不写"改为"显式 exempt=True", 反而更醒目不易漏)，
-#   其余 12 个 router + auth 仍全部鉴权, 端点路径与 tag 均不变 —— 零行为变化的重构。
+# [72]第九章(9.6-1) - 小欧 - 全路由统一挂 token 鉴权。抽 _mount() 为唯一挂载入口:
+#   原写法把 `prefix="/api/v1"` 与 `dependencies` 在 13 行各手写一遍 —— 改前缀必漏改（漏改=该 router
+#   挂在错误路径 404），且未来新增 router 谁记得手写 dependencies=？（漏写则该 router 裸奔）。
+#   抽成一处后豁免必须显式写 exempt=True，反而更醒目。零行为变化。
 _AUTHENTICATED = [Depends(verify_token)]
 
 
@@ -230,9 +212,10 @@ _mount(chat_execution_router.router, "execution")
 _mount(metrics.router, "metrics")
 _mount(task_queries_router, "task-queries")
 _mount(token_usage_router, "token-usage")  # S2(10.1.7②-6) — 小欧 2026-08-16
-# 2026-09-26 小欧 - [72]第九章补: 访问口令设置路由(挂鉴权依赖; deps.verify_token 内含"未配置口令时
-#   对 /auth/token 与 /auth/status 的首次设置豁免", 故未设口令时可自举, 已设后改口令需当前有效 token)
-app.include_router(auth_router, prefix="/api/v1", tags=["auth"], dependencies=_AUTHENTICATED)
+# 2026-09-27 小欧 - 访问口令路由改走 _mount()：原为绕过唯一入口而手写 include_router，
+#   与上方"新增 router 漏 dependencies= 是最大失效来源"的论证自相矛盾。
+#   豁免判定（首设自举/只能本机改口令）全在 deps.verify_token 内，与挂载方式无关。
+_mount(auth_router, "auth")
 
 
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
@@ -291,10 +274,11 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
+    # 2026-09-27 小欧 - docs 键随 _ENABLE_DOCS 条件化：默认关闭时无条件返回即对外广播一个必 404 的地址
     return {
         "message": "OmniAgentAst API",
         "version": app_version,
-        "docs": "/docs"
+        **({"docs": "/docs"} if _ENABLE_DOCS else {}),
     }
 
 
