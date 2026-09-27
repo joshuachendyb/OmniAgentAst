@@ -534,7 +534,7 @@ model_meta:
 
 > 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 已从 config.yaml.example 移除（dead keys，后端零消费）。
 
-#### 7.6.1 部署安全：反向代理与 X-Forwarded-For（⚠️ 必读）
+#### 7.6.1 请求方向（客户端 → 后端）：谁能免口令进（⚠️ 必读）
 
 服务绑 `0.0.0.0` 是多机部署硬前提，因此**来源 IP 判定直接决定谁能免口令进**。后端只读 `request.client.host`，不自行解析 `X-Forwarded-For`（XFF 解析交由 uvicorn 的 `ProxyHeadersMiddleware`）。
 
@@ -550,11 +550,44 @@ model_meta:
 
 1. **显式参数**：`run_server.py` 新增 `--forwarded-allow-ips`，默认 `127.0.0.1`，部署者能看见、能改对
 2. **启动告警**：传 `*` 时启动即打印醒目警告（不阻止启动，但让风险可见）
-3. **应用层 fail-closed**：`deps._forwarded_allow_ips_all()` 检测到 `FORWARDED_ALLOW_IPS=*` 时，**取消回环豁免**，一律要求口令。因为此时应用层已无法区分"真回环"与"伪造的 127.0.0.1"，只能选择更严的一侧。
+3. **应用层 fail-closed**：`deps._forwarded_allow_ips_all()` 检测到注入值为 `*` 时，**取消回环豁免**（`_is_trusted_localhost` 恒 False），一律要求口令。因为此时应用层已无法区分"真回环"与"伪造的 127.0.0.1"，只能选择更严的一侧。
 
-> ⚠️ 已知边界：第 3 道防线只读**环境变量** `FORWARDED_ALLOW_IPS`。若用命令行 `--forwarded-allow-ips=*` 启动，检测不到 —— 所以第 1、2 道防线是主防线，不要绕过。
+> ⚠️ 已知边界：第 3 道防线依赖 `_forwarded_allow_ips` 模块变量，**只由 `run_server.py` 注入**。改用 `python -m uvicorn app.main:app --forwarded-allow-ips '*'` 等不经 `run_server.py` 的方式启动时注入不发生 → 应用层误判为"非 `*` 模式"而放行回环，伪造 XFF 即可免口令。应用启动时 `deps.warn_startup_checks()` 会对"未收到注入"打 WARNING 告警。
 >
-> **正确做法**：确需在反代后运行时，只列该反代的 IP，例如 `--forwarded-allow-ips 192.168.1.10`；不要图省事填 `*`。
+> 该检测的取舍：`*` 模式下**本机也无法设置/更换访问口令**（同一判据 `can_set_access_token`），首次部署需改用环境变量 `OMNIAGENT_ACCESS_TOKEN` 或配置文件 `security.access_token` 后重启。
+>
+> **正确做法**：确需在反代后运行时，只列该反代的 IP，例如 `--forwarded-allow-ips 192.168.1.10`；不要图省事填 `*`。且须经 `run_server.py` 启动。
+>
+> 本节只管**请求方向**（客户端 → 后端）的安全：谁能免口令进。经反代部署时响应方向另有硬要求 —— SSE 必须关闭代理缓冲，否则流式不下发 → 见 [7.6.2](#762-响应方向后端-客户端sse-必须关闭缓冲-必读)。
+
+#### 7.6.2 响应方向（后端 → 客户端）：SSE 必须关闭缓冲（⚠️ 必读）
+
+前端 REST 与 SSE 走**同一相对路径** `/api/v1`（`[75]` BUG-6 修复，见 `client.ts::getApiBaseUrl`）：未设 `VITE_API_BASE_URL` 时返回空串，由 **Vite proxy（开发）/ Nginx 反代（生产）** 转发到后端。生产静态托管不跑 Vite，必须由 Nginx 承担转发。
+
+**Nginx 默认会缓冲响应**，SSE 事件被攒在代理侧不下发，前端表现为「流式卡住不出字」或「消息成批一次跳出」。开发期用 Vite proxy 不会出现（自动 flush），**只在生产暴露**。
+
+```nginx
+location /api/ {
+    proxy_pass         http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+
+    # SSE 必需三项
+    proxy_set_header   Connection '';      # 保持长连接
+    proxy_buffering    off;               # 关闭响应缓冲（否则流式被攒住）
+    proxy_cache        off;
+
+    # 长耗时：SSE 断线重连/长任务
+    proxy_read_timeout 3600s;
+}
+```
+
+| 项 | 不配的后果 |
+|---|---|
+| `proxy_buffering off` | **流式消息不下发**（最常见故障） |
+| `Connection ''` + HTTP/1.1 | 连接被代理复用/断开，重连频繁 |
+| `proxy_read_timeout` | 默认 60s，长任务中途被切断 |
+
+> 前后端不同源且无反代时，改为设 `VITE_API_BASE_URL=http://<后端地址>:8000` 显式直连（此时需后端 CORS 白名单含前端来源，见 `backend/app/constants.py` `DEFAULT_CORS_ORIGINS`）。
 
 ### 7.7 `tuning` — 调优参数（33 键，9 子组）
 
