@@ -68,6 +68,14 @@
 //   ⑥saveGroup('model') = saveModelGroup 后串行 saveProviderDraft；saveAll 在 Promise.all 后串行 flush
 //   （串行防 reloadProviderCache 与 saveModelGroup 的 providers patch 竞态）；
 //   ⑦ensureModelSaved 放行条件补 providerDraft（切换前强制落库，BUG-D 同类防线）- 小欧-2026-09-27
+// 2026-09-27 07:38 小欧 - 修 F4/F5/F6/F10/F11：①saveAll 由 Promise.all 改串行（并发两路拿同一旧 mtime
+//   做守卫，先落盘者 bump 服务端 mtime 使后一路必然误判"外部更新"→ load(reset) 清空用户全部未保存改动；
+//   且两路共享单个 saving 布尔，先完成者提前解锁按钮可重复提交），守卫只由第一路执行（加 skipMtimeCheck
+//   开关：守卫防的是外部更新，同一次 saveAll 内前一路自写不算）；②saveProviderDraft 补 base_url 空值守卫
+//   （组件按钮已 disabled 并红字标注，但草稿走底栏可绕过 → 落盘空地址致该 Provider 全调用失败）；
+//   ③patchModel 支持函数式更新，saveModelGroup 成功回写按最新 params 重算 isDirty（原先硬置 false，
+//   请求在飞期间的新编辑变成保存按钮都点不亮的隐形脏）；④ghost 键连 values 一并复位到 baseline
+//   （原先只删 dirtyKeys，值还留着改后内容，界面照显却已不算未保存）—— 小欧-2026-09-27
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
@@ -156,20 +164,19 @@ function findGroupOfKey(
 }
 
 // 2026-09-21 BUG-C 修复：secret 值归一（保存成功后 state 里不能再留明文/clear 标记，
-// 否则 SettingRow 会误显"未配置"且再次保存重复提交）：
-// 明文非空 -> {configured:true, suffix}; 空明文/clear 标记 -> {configured:false}
+// 否则 SettingRow 会误显"未配置"且再次保存重复提交）。
+// 2026-09-27 - 小欧 - 契约收敛为 {configured, masked}：masked 一律由后端生成，
+//   前端只把"未配置"归一成 {configured:false, masked:''}，不再自行 slice/拼星号。
 function normalizeSecret(raw: unknown): unknown {
   if (typeof raw === 'string') {
-    return raw === ''
-      ? { configured: false, suffix: '' }
-      : { configured: true, suffix: raw.slice(-4) };
+    return { configured: false, masked: '' };
   }
   if (
     raw &&
     typeof raw === 'object' &&
     (raw as { clear?: boolean }).clear === true
   ) {
-    return { configured: false, suffix: '' };
+    return { configured: false, masked: '' };
   }
   return raw;
 }
@@ -251,9 +258,22 @@ export function useSettings() {
     setState((s) => ({ ...s, ...p }));
   }, []);
 
-  const patchModel = useCallback((p: Partial<SettingsState['model']>) => {
-    setState((s) => ({ ...s, model: { ...s.model, ...p } }));
-  }, []);
+  // 2026-09-27 小欧 - 支持函数式更新（修 F10）：保存成功回写时需要按**最新** model 重算脏态
+  //   （请求在飞期间用户又改了参数，硬置 isDirty:false 会让那次编辑变成不可保存的隐形脏）。
+  //   对象入参行为不变，合并逻辑仍此一处（DRY）。
+  const patchModel = useCallback(
+    (
+      p:
+        | Partial<SettingsState['model']>
+        | ((m: SettingsState['model']) => Partial<SettingsState['model']>)
+    ) => {
+      setState((s) => ({
+        ...s,
+        model: { ...s.model, ...(typeof p === 'function' ? p(s.model) : p) },
+      }));
+    },
+    []
+  );
 
   /** A7：保存/模型 CRUD 后同步落盘后 mtime，防假后门刷新误判（9.2.8/9.2.9 共用）。 */
   const syncMtime = useCallback((mtime: number | undefined | null) => {
@@ -546,7 +566,7 @@ export function useSettings() {
   //   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存 与 env 接管键被后端跳过后的假保存；
   //   ②有效键(found)为空则直接返回，不再调 API 制造空 patch 假成功
   const saveKeys = useCallback(
-    async (keys: string[]) => {
+    async (keys: string[], opts?: { skipMtimeCheck?: boolean }) => {
       const items: SettingSchemaItem[] = [];
       const values: Record<string, unknown> = {};
       const found: string[] = [];
@@ -571,8 +591,16 @@ export function useSettings() {
       if (ghost.length) {
         setState((s) => {
           const dirtyKeys = { ...s.dirtyKeys };
-          ghost.forEach((k) => delete dirtyKeys[k]);
-          return { ...s, dirtyKeys };
+          const values = { ...s.values };
+          // 2026-09-27 小欧 - 修 F11：ghost 键要连 values 一起复位到 baseline。原实现只删 dirtyKeys，
+          //   值还留着改后内容，界面照显却已不算未保存（脏标记与可见值脱节，用户以为改生效了）。
+          ghost.forEach((k) => {
+            const g = findGroupOfKey(s.schema, k);
+            if (!g) return;
+            delete dirtyKeys[k];
+            values[g] = { ...values[g], [k]: s.baseline[g]?.[k] };
+          });
+          return { ...s, dirtyKeys, values };
         });
         showMessage(
           ErrorType.INFO,
@@ -589,14 +617,18 @@ export function useSettings() {
       setSaving(true);
       try {
         // S11：保存前校验 mtime——后端已被外部更新则刷新并中止，杜绝本地静默覆盖且用户无感知
-        const curMtime = await settingsApi.getMtime();
-        if (curMtime !== state.mtime) {
-          await load({ reset: true });
-          showMessage(
-            ErrorType.WARNING,
-            '配置已被外部更新，已重新加载，请核对后重新保存'
-          );
-          return { ok: false as const };
+        // 2026-09-27 小欧 - skipMtimeCheck：仅 saveAll 第二路用。守卫防的是**外部**更新，
+        //   而同一次 saveAll 里前一路自己落盘 bump 的 mtime 不算外部更新（否则必然误判 → load 丢弃全部改动）。
+        if (!opts?.skipMtimeCheck) {
+          const curMtime = await settingsApi.getMtime();
+          if (curMtime !== state.mtime) {
+            await load({ reset: true });
+            showMessage(
+              ErrorType.WARNING,
+              '配置已被外部更新，已重新加载，请核对后重新保存'
+            );
+            return { ok: false as const };
+          }
         }
         const patch = Object.fromEntries(
           found.map((ck) => [
@@ -702,116 +734,128 @@ export function useSettings() {
     }
   }, [patchModel]);
 
-  const saveModelGroup = useCallback(async () => {
-    const dirty = isDirty(
-      state.model.params,
-      state.model.defaults,
-      state.model.envOverride
-    );
-    const changed = Object.fromEntries(
-      Object.keys(dirty)
-        .filter((k) => dirty[k])
-        .map((k) => [k, state.model.params[k]])
-    );
-    // 2026-09-23 小欧 - [65]§7.3.2 P0：能力脏也算可保存；★空 changed 不带 default_params
-    //   （后端 default_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
-    const capsChanged = isCapsDirty(
-      state.model.capabilities,
-      state.model.capabilitiesBaseline
-    );
-    // 2026-09-24 小欧 - ①removedParams 也算可保存（仅删无改时 body 不带 default_params，只送 remove_params）
-    const hasRemovals = state.model.removedParams.length > 0;
-    if (!Object.keys(changed).length && !capsChanged && !hasRemovals)
-      return { ok: true as const };
-    // 2026-09-23 小欧 - [65]§4.2.4 v1.3 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
-    //   无新键时 body 与原来完全一致（零行为变化）—— 与 §七 双通道叠加（v1.9 定稿形态）
-    const prevDefaults = state.model.defaults;
-    const newKeys = Object.keys(changed).filter((k) => !(k in prevDefaults));
-    const body: {
-      default_params?: Record<string, unknown>;
-      range?: Record<string, { min: number; max: number }>;
-      param_options?: Record<string, string[]>;
-      capabilities?: string[];
-      // 2026-09-24 小欧 - ①键级删除名单（与 default_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
-      remove_params?: string[];
-    } = {};
-    if (hasRemovals) body.remove_params = [...state.model.removedParams];
-    if (Object.keys(changed).length) {
-      body.default_params = changed;
-      if (newKeys.length) {
-        body.range = { ...state.model.ranges };
-        body.param_options = { ...state.model.paramOptions };
-      }
-    }
-    // 2026-09-24 小欧 - ②capabilities 送保存态 capsForSave：无增强→[]、有增强→['text',...extras]
-    //   （state 恒含 text，直接送会让纯文本模型落 ['text'] 而非隐含默认的空）- 小欧-2026-09-24
-    if (capsChanged) body.capabilities = capsForSave(state.model.capabilities);
-    setSaving(true);
-    try {
-      // S11：保存前校验 mtime（模型参数与设置同落 YAML），外部已更新则刷新并中止
-      const curMtime = await settingsApi.getMtime();
-      if (curMtime !== state.mtime) {
-        await load({ reset: true });
-        showMessage(
-          ErrorType.WARNING,
-          '配置已被外部更新，已重新加载，请核对后重新保存'
-        );
-        return { ok: false as const };
-      }
-      // A1：模型参数写 ai.{provider}.model_params.{model}.{key}（运行时 parse_model_params 消费），
-      // 经 PUT /models/{provider}/{model} 的 default_params 通道，不再走 /settings 裸 key（registry 无此 key 会保存失败）
-      const r = await modelApi.updateModel(
-        state.model.selectedProvider,
-        state.model.selectedModel,
-        body
+  const saveModelGroup = useCallback(
+    async (opts?: { skipMtimeCheck?: boolean }) => {
+      const dirty = isDirty(
+        state.model.params,
+        state.model.defaults,
+        state.model.envOverride
       );
-      if (!r.ok) {
-        showMessage(ErrorType.MODEL_CONFIG_ERROR, '模型参数保存失败');
-        return { ok: false as const };
+      const changed = Object.fromEntries(
+        Object.keys(dirty)
+          .filter((k) => dirty[k])
+          .map((k) => [k, state.model.params[k]])
+      );
+      // 2026-09-23 小欧 - [65]§7.3.2 P0：能力脏也算可保存；★空 changed 不带 default_params
+      //   （后端 default_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
+      const capsChanged = isCapsDirty(
+        state.model.capabilities,
+        state.model.capabilitiesBaseline
+      );
+      // 2026-09-24 小欧 - ①removedParams 也算可保存（仅删无改时 body 不带 default_params，只送 remove_params）
+      const hasRemovals = state.model.removedParams.length > 0;
+      if (!Object.keys(changed).length && !capsChanged && !hasRemovals)
+        return { ok: true as const };
+      // 2026-09-23 小欧 - [65]§4.2.4 v1.3 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
+      //   无新键时 body 与原来完全一致（零行为变化）—— 与 §七 双通道叠加（v1.9 定稿形态）
+      const prevDefaults = state.model.defaults;
+      const newKeys = Object.keys(changed).filter((k) => !(k in prevDefaults));
+      const body: {
+        default_params?: Record<string, unknown>;
+        range?: Record<string, { min: number; max: number }>;
+        param_options?: Record<string, string[]>;
+        capabilities?: string[];
+        // 2026-09-24 小欧 - ①键级删除名单（与 default_params merge 叠加，后端先删再 merge）- 小欧-2026-09-24
+        remove_params?: string[];
+      } = {};
+      if (hasRemovals) body.remove_params = [...state.model.removedParams];
+      if (Object.keys(changed).length) {
+        body.default_params = changed;
+        if (newKeys.length) {
+          body.range = { ...state.model.ranges };
+          body.param_options = { ...state.model.paramOptions };
+        }
       }
-      showSuccess('模型参数已保存');
-      // 2026-09-23 小欧 - [65]§7.3.10 必修②：providers 内该模型 capabilities 同步 patch
-      //   （否则参数区勾选已改、通用 Tab 卡片 tags 仍旧值直到 F5，同屏两处不同源=显示失真）
-      // 2026-09-24 小欧 - 修复：同步补 default_params/range/param_options 回写 providers 缓存
-      //   （原仅同步 capabilities——default_params 仍是 load 时旧值，selectModel 切回读 entry.default_params
-      //   得旧值，参数区显示旧值而非刚保存的新值；range/param_options 新增键落盘同类隐患一并回写）- 小欧-2026-09-24
-      // 2026-09-24 小欧 - ①保存成功后清空 removedParams；②capabilitiesBaseline 存归一态（与 state 一致防假脏）；
-      //   providers 缓存存保存态 capsForSave（空→[] 防 tags 假显文本；有增强→['text',...extras]）- 小欧-2026-09-24
-      const capsSaved = capsForSave(state.model.capabilities);
-      patchModel({
-        defaults: { ...state.model.params },
-        capabilitiesBaseline: normalizeCaps([...state.model.capabilities]),
-        removedParams: [],
-        providers: state.model.providers.map((p) =>
-          p.name !== state.model.selectedProvider
-            ? p
-            : {
-                ...p,
-                models: p.models.map((m) =>
-                  m.name !== state.model.selectedModel
-                    ? m
-                    : {
-                        ...m,
-                        default_params: { ...state.model.params },
-                        range: { ...state.model.ranges },
-                        param_options: { ...state.model.paramOptions },
-                        capabilities: capsSaved,
-                      }
-                ),
-              }
-        ),
-        isDirty: false,
-      });
-      // A7：同步落盘后 mtime，防假后门刷新误判
-      syncMtime(r.mtime);
-      return { ok: true as const };
-    } catch (e) {
-      handleApiError(e);
-      return { ok: false as const };
-    } finally {
-      setSaving(false);
-    }
-  }, [patchModel, syncMtime, state.model, state.mtime, load]);
+      // 2026-09-24 小欧 - ②capabilities 送保存态 capsForSave：无增强→[]、有增强→['text',...extras]
+      //   （state 恒含 text，直接送会让纯文本模型落 ['text'] 而非隐含默认的空）- 小欧-2026-09-24
+      if (capsChanged)
+        body.capabilities = capsForSave(state.model.capabilities);
+      setSaving(true);
+      try {
+        // S11：保存前校验 mtime（模型参数与设置同落 YAML），外部已更新则刷新并中止
+        // 2026-09-27 小欧 - skipMtimeCheck 语义同 saveKeys
+        if (!opts?.skipMtimeCheck) {
+          const curMtime = await settingsApi.getMtime();
+          if (curMtime !== state.mtime) {
+            await load({ reset: true });
+            showMessage(
+              ErrorType.WARNING,
+              '配置已被外部更新，已重新加载，请核对后重新保存'
+            );
+            return { ok: false as const };
+          }
+        }
+        // A1：模型参数写 ai.{provider}.model_params.{model}.{key}（运行时 parse_model_params 消费），
+        // 经 PUT /models/{provider}/{model} 的 default_params 通道，不再走 /settings 裸 key（registry 无此 key 会保存失败）
+        const r = await modelApi.updateModel(
+          state.model.selectedProvider,
+          state.model.selectedModel,
+          body
+        );
+        if (!r.ok) {
+          showMessage(ErrorType.MODEL_CONFIG_ERROR, '模型参数保存失败');
+          return { ok: false as const };
+        }
+        showSuccess('模型参数已保存');
+        // 2026-09-23 小欧 - [65]§7.3.10 必修②：providers 内该模型 capabilities 同步 patch
+        //   （否则参数区勾选已改、通用 Tab 卡片 tags 仍旧值直到 F5，同屏两处不同源=显示失真）
+        // 2026-09-24 小欧 - 修复：同步补 default_params/range/param_options 回写 providers 缓存
+        //   （原仅同步 capabilities——default_params 仍是 load 时旧值，selectModel 切回读 entry.default_params
+        //   得旧值，参数区显示旧值而非刚保存的新值；range/param_options 新增键落盘同类隐患一并回写）- 小欧-2026-09-24
+        // 2026-09-24 小欧 - ①保存成功后清空 removedParams；②capabilitiesBaseline 存归一态（与 state 一致防假脏）；
+        //   providers 缓存存保存态 capsForSave（空→[] 防 tags 假显文本；有增强→['text',...extras]）- 小欧-2026-09-24
+        const capsSaved = capsForSave(state.model.capabilities);
+        // 2026-09-27 小欧 - 修 F10：函数式更新。defaults 仍存**本次实际提交的那份** params（落盘的就是
+        //   它，用新值当基线等于把未保存的编辑当成已保存）；但 isDirty 按**最新** params 重算，
+        //   请求在飞期间的新编辑不会被硬置的 false 吞掉（原先它变成保存按钮都点不亮的隐形脏）。
+        patchModel((m) => ({
+          defaults: { ...state.model.params },
+          capabilitiesBaseline: normalizeCaps([...state.model.capabilities]),
+          removedParams: [],
+          providers: state.model.providers.map((p) =>
+            p.name !== state.model.selectedProvider
+              ? p
+              : {
+                  ...p,
+                  models: p.models.map((m) =>
+                    m.name !== state.model.selectedModel
+                      ? m
+                      : {
+                          ...m,
+                          default_params: { ...state.model.params },
+                          range: { ...state.model.ranges },
+                          param_options: { ...state.model.paramOptions },
+                          capabilities: capsSaved,
+                        }
+                  ),
+                }
+          ),
+          isDirty: Object.values(
+            isDirty(m.params, { ...state.model.params }, m.envOverride)
+          ).some(Boolean),
+        }));
+        // A7：同步落盘后 mtime，防假后门刷新误判
+        syncMtime(r.mtime);
+        return { ok: true as const };
+      } catch (e) {
+        handleApiError(e);
+        return { ok: false as const };
+      } finally {
+        setSaving(false);
+      }
+    },
+    [patchModel, syncMtime, state.model, state.mtime, load]
+  );
 
   // 2026-09-27 小欧 - ③区草稿写入：JSON 签名等价去重——这是防 ProviderConfig 上报 effect
   //   （每渲染无条件通知）造成 setState→渲染→effect 循环的**唯一防线**（同一 diff 重报时
@@ -831,6 +875,16 @@ export function useSettings() {
     async (patch?: Record<string, unknown>) => {
       const draft = patch ?? state.model.providerDraft;
       if (!Object.keys(draft).length) return { ok: true as const };
+      // 2026-09-27 小欧 - 修 F6：base_url 为空是错误态（组件内按钮已 disabled 并红字标注），
+      //   但草稿里会带 base_url:'' 走底部保存栏进来，此前无校验直接 PUT → 落盘空地址、
+      //   该 Provider 全部调用失败。校验下沉到此处，组件按钮与底栏两处同源（DRY）。
+      if ('base_url' in draft && !String(draft.base_url ?? '').trim()) {
+        showMessage(
+          ErrorType.VALIDATE_CONFIG_FAILED,
+          'API 地址不能为空，请填写后再保存'
+        );
+        return { ok: false as const };
+      }
       setSaving(true);
       try {
         const r = await modelApi.updateProvider(
@@ -923,19 +977,24 @@ export function useSettings() {
 
   // ---- 模型 Tab（8.2.10 脏态合并/截断；6.5 四区域） ----
   const saveAll = useCallback(async () => {
-    const tasks: Array<Promise<{ ok: boolean }>> = [];
     const nonModelKeys = Object.keys(state.dirtyKeys).filter(
       (k) => !k.startsWith('model.')
     );
-    if (nonModelKeys.length) tasks.push(saveKeys(nonModelKeys));
-    if (state.model.isDirty) tasks.push(saveModelGroup());
-    // 2026-09-27 小欧 - ③区草稿并入「保存全部」：tasks（参数/设置）成功后**串行** flush——
-    //   并行会让 reloadProviderCache 的 providers patch 与 saveModelGroup 的 patch 互相覆盖（竞态）；
-    //   参数保存失败（mtime 冲突已 load 清草稿）时不再提交，见 saveProviderDraft 早退 - 小欧-2026-09-27
     const hasDraft = Object.keys(state.model.providerDraft).length > 0;
-    if (!tasks.length && !hasDraft) return { ok: true as const };
-    const results = tasks.length ? await Promise.all(tasks) : [];
-    if (!results.every((r) => r.ok)) return { ok: false as const };
+    if (!nonModelKeys.length && !state.model.isDirty && !hasDraft)
+      return { ok: true as const };
+
+    // 2026-09-27 小欧 - 修 F4/F5：改串行。原 Promise.all 并发时两路拿同一个旧 mtime 做守卫，
+    //   先落盘的一路 bump 服务端 mtime，后一路必然误判"外部更新"→ load(reset) 清空用户全部未保存改动；
+    //   且两路共享单个 saving 布尔，先完成者提前解锁按钮可重复提交。串行后守卫只由第一路执行。
+    if (nonModelKeys.length) {
+      const r = await saveKeys(nonModelKeys);
+      if (!r.ok) return { ok: false as const };
+    }
+    if (state.model.isDirty) {
+      const r = await saveModelGroup({ skipMtimeCheck: true });
+      if (!r.ok) return { ok: false as const };
+    }
     const d = await saveProviderDraft();
     return { ok: d.ok };
   }, [

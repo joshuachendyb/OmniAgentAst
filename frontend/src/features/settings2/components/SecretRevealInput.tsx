@@ -1,26 +1,21 @@
 /**
- * SecretRevealInput — 密钥输入框 + "查看已保存明文"眼睛（第十二章 12.5）
+ * SecretRevealInput — 密钥输入框 + "查看已保存明文"眼睛
  *
  * 编辑历史:
- *   2026-09-26 - 小欧 - [72]12.5 新建，从 ProviderConfig.tsx 原样迁出（拆分只改归属，不改逻辑；
- *     迁出原因 SRP：ProviderConfig 同时承担"配置表单/明文查看/连通性探测"三件事、膨胀到 500 行）。
- *   2026-09-26 - 小欧 - 修 P0-1 readOnly 死锁：displayReadOnly 含 !value，而 value 初值恒为 ''、
- *     唯一来源是敲键（又被 readOnly 挡死）⇒ 一个字符都输不进去；单测用 fireEvent.change 能绕过
- *     readOnly，故当时 11 条全绿是假绿。改用 focused 判定"正在输入"（见 displayValue 上方注释）。
- *   2026-09-26 - 小欧 - 修 P0-2 丢焦点：原先在 <Input> 与 <Input.Password> 之间换组件，Password 多一层
- *     span 包裹 ⇒ 第 1 个字符落地即重建 DOM、焦点掉到 body。改为常驻单 <Input> 只切 type 属性。
- *     顺带删死代码 startOverwrite 的 `if (!revealed) setPlainKey('')`（!revealed 时必为 ''，YAGNI）。
- *   2026-09-26 - 小欧 - 修掩码与后端两档契约错位：len<8 改返 prefix="****"，旧写法渲染成 10 个星。
- *   2026-09-27 - 小欧 - [72]三堂会审: 补「value 清空即退出输入态」effect —— 父层保存成功置空 value
- *     后若焦点仍在，框内显示空白可编辑而非打码提示，用户会误以为没保存成功。
+ *   2026-09-26 小欧 - 从 ProviderConfig.tsx 迁出（SRP：父组件原兼三职）。
+ *   2026-09-26 小欧 - 修 P0-1 readOnly 死锁（原 readOnly 条件含 !value 而 value 初值恒空，
+ *     唯一来源是敲键又被 readOnly 挡死，一个字符都输不进去；fireEvent.change 能绕过故当时是假绿）；
+ *     修 P0-2 丢焦点（原在 Input/Input.Password 间换组件会重建 DOM，改为常驻单 Input 只切 type）。
+ *   2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}：打码串由后端生成，本组件只回显。
+ *   2026-09-27 07:38 小欧 - 修 F1：isTyping 改由「值是否非空」驱动，不再由 focused 驱动。原式
+ *     focused||value!=='' 让只读掩码框被点一下/Tab 一下就进入输入态（掩码消失、翻 password、提示语变），
+ *     用户误以为密钥没配而重新输入覆盖。现改为聚焦即可编辑、但在敲下字符前仍显示掩码。
+ *   2026-09-27 小欧 - 补「value 清空即退出输入态」effect（父层保存成功置空 value 后，
+ *     否则框内空白可编辑，用户会误以为没保存成功）。
  *
- * 本组件只做一件事：安全地展示密钥。三条安全约束（[72] 12.5 已定决策）：
- *   ①二次确认：点眼睛先 Modal.confirm 告知"将显示明文，请勿截图或分享"，确认后才调接口取明文
- *   ②30 秒自动恢复打码 + 组件卸载清理定时器（防内存泄漏、防卸载后 setState）
- *   ③明文只在内存 state，不写 localStorage；明文态 readOnly 且 onChange 直接 return
- *     （避免把明文当新值提交出去）
- * 另：[72]12.2 要求打码显示在输入框内（前4位+星号+末4位），故 maskedDisplay 作为 value
- *   参与三态互斥（见 displayValue / inputType 处注释）。
+ * 四条安全约束：①点眼睛先 Modal.confirm 确认才取明文 ②明文 30 秒自动打码+卸载清 timer
+ *   ③明文只存内存（不写 localStorage）、明文态 readOnly 且 onChange 直接 return（不当作新值提交）
+ *   ④掩码纯回显 masked（前端不判断档位、不拼星号）
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Modal } from 'antd';
@@ -42,12 +37,10 @@ export interface SecretRevealInputProps {
   /** 是否已配置过密钥（决定框内打码显示与是否显示眼睛） */
   configured: boolean;
   /**
-   * 掩码前后缀（[72]12.5 三键恒定契约）。后端 mask_secret_value 两档（北京老陈 2026-09-26 裁定）：
-   * len>=8 给真前 4 位；len<8 给 "****" 字面量。两种情形均显示末 4 位，详见下方 maskedDisplay。
+   * 掩码串（[72]12.5 契约）。**由后端 mask_secret_value 一次生成、三档规则已定稿**，
+   * 前端只负责显示，不做任何档位判断或拼接（DRY：掩码规则只此一处）。
    */
-  prefix: string;
-  /** 掩码末 4 位 */
-  suffix: string;
+  masked: string;
   /** 输入框宽度 */
   width: number | string;
 }
@@ -57,22 +50,12 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   value,
   onChange,
   configured,
-  prefix,
-  suffix,
+  masked,
   width,
 }) => {
   const [revealed, setRevealed] = useState(false);
   const [plainKey, setPlainKey] = useState('');
   const revealTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // 打码显示（后端 mask_secret_value 为唯一权威，两档：北京老陈 2026-09-26 裁定）：
-  //   len>=8 → prefix=真前4位 → 前4+6星+末4；len<8 → prefix="****" 字面量 → 直接 prefix+末4
-  //   （裁定「小于8的 显示后4位, 前面加4个*」，此路径再插 6 星会渲染成 10 个星）；prefix 空同走兜底。
-  const maskedDisplay = configured
-    ? prefix && prefix !== '****'
-      ? `${prefix}${'*'.repeat(6)}${suffix}`
-      : `****${suffix}`
-    : '';
 
   // 30 秒自动恢复打码（组件卸载时清理定时器，防内存泄漏与"卸载后仍回调 setState"）
   useEffect(
@@ -124,17 +107,20 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
 
   // ★ 打码串与已保存明文必须用 type="text" 展示（密码模式会把每个字符渲染成圆点，前4后4看不见），
   //   只有"本次正在输入的新 key"才遮蔽，否则二者长得一样、功能失效。
-  //   两条不可动摇的实现约束（P0-1/P0-2 修复留下的）：
-  //     ①isTyping 不能拿 `value !== ''` 单独当判据 —— value 初值恒 '' 且放行输入后才可能非空，
-  //       拿它当 readOnly 判据会自锁（框恒只读，一个字符都进不来）。
-  //     ②必须常驻同一个 <Input>、只切 type 属性，**绝不换组件** —— 在 <Input> 与 <Input.Password>
-  //       间切换等于换 DOM 结构（后者多一层 span），第 1 个字符即卸载重建、焦点掉到 body。
+  //   P0-2 修复留下的硬约束：必须常驻同一个 <Input>、只切 type 属性，**绝不换组件** ——
+  //   在 <Input> 与 <Input.Password> 间切换等于换 DOM 结构（后者多一层 span），
+  //   第 1 个字符即卸载重建、焦点掉到 body。
   const [focused, setFocused] = useState(false);
+  // 2026-09-27 小欧 - 修 F1：isTyping 改由「值是否非空」驱动，不再由 focused 驱动。
+  //   原式 focused||value!=='' 让"只读掩码态被点一下/Tab 一下"也进入输入态 → 掩码被抹成空白、
+  //   输入框翻成 password、提示语换掉，用户以为密钥没配而重新输入覆盖。
+  //   现在：聚焦即可编辑（P0-1 要求的"不因 readOnly 自锁，一个字符都输不进去"由 displayReadOnly
+  //   交给 focused 保证），但在真的敲下字符前，框内仍显示掩码、仍是明文可见的 text。
   // 是否处于"输入新 key"态；明文态恒否（已保存明文只读展示，不可被当新值提交）
-  const isTyping = !revealed && (focused || value !== '');
-  const displayValue = revealed ? plainKey : isTyping ? value : maskedDisplay;
-  // 只读：①明文态恒只读（安全约束③）②非输入态（打码串/空框）只读，防误改已保存 key
-  const displayReadOnly = revealed || !isTyping;
+  const isTyping = !revealed && value !== '';
+  const displayValue = revealed ? plainKey : isTyping ? value : masked;
+  // 只读：①明文态恒只读（安全约束③）②未聚焦即只读，防误改已保存 key
+  const displayReadOnly = revealed || !focused;
   // 输入中遮蔽本次输入；展示打码串/明文必须 text，否则前后 4 位看不见（12.2）
   const inputType = isTyping ? 'password' : 'text';
 

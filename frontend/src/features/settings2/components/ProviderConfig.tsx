@@ -22,45 +22,17 @@
 // 2026-09-22 小欧 - DRY+令牌收口：EXISTING_KEYS/STATIC_KEYS 重复 Set → HARDCODED_KEYS 单 Set；行容器/label 改复用 settingsRowStyle/settingsLabelStyle（删本地 ROW_STYLE/LABEL_STYLE）；EXTRA_STYLE paddingTop/paddingBottom、保存按钮 padding 裸数字 → Spacing 令牌 - 小欧-2026-09-22
 // 2026-09-24 小欧 - 保存按钮上移（北京老陈选定方案B）：从表单底部挪到③区首行右侧（标题下第一行右对齐），
 //   与 ③ Provider 配置 区标题同行视觉对齐；doSave/表单 state 不动（按钮仍属本组件，KISS 最小改动）- 小欧-2026-09-24
-// 2026-09-24 小欧 - 标题行合一（北京老陈反馈两行难看）：SectionTitle 从 SettingsPage 收进本组件，
-//   标题+保存按钮同一行三列 grid（标题左|按钮居中|右空列），对齐②参数区标题行风格；env 接管分支同步带标题无按钮 - 小欧-2026-09-24
-// 2026-09-24 小欧 - 再修（北京老陈截图复核：grid 实渲染仍两行）：改 flex 强制同行——左1fr+按钮+右1fr，
-//   按钮物理居中；SectionTitle 收掉自带上下 margin 并入本行（margin 会撑高行框造成视觉断裂）- 小欧-2026-09-24
-// 2026-09-26 - 小欧 - [72]第一章+第八章(8.5-2/8.5-3)：①api_key 落盘前 trim，与同函数 base_url 写法统一
-//   （修前只有 base_url 去空格，是遗漏而非设计）；②base_url 留空语义反转为"错误状态"：Colors.ERROR
-//   红字 + 保存按钮 disabled，与后端 update_provider_config 的 400 形成前后端双闸；③config.api_key
-//   同步改三键恒定（与 model.api.ts ProviderEntry 同一契约）。
-// 2026-09-26 - 小欧 - [72]第十章(10.3)：加"测试连接"按钮（与保存并列但语义不同——只读探测，走
-//   modelApi.testConnection 不走 onSave；base_url 为空同样禁用）。结果按后端 category 分档文案
-//   （设计 10.5 要求"不得统一显示失败"）：ok / key_invalid(401,403) / endpoint_unsupported
-//   (404,405,501，该 Provider 无 /models 端点、**不代表 key 无效**) / network_error。
-//   传输入框里的 key 实现"保存前验证"（后端仅存内存用于本次 header，不落盘不进日志不回传）。
-// 2026-09-26 - 小欧 - [72]第十二章(12.4/12.5)：关 AntD 自带眼睛（坑1 双眼睛冲突：原生眼睛只能显示
-//   "刚输入的字符"、看不到已保存的 key，与"看已保存明文"并存会让用户无法分辨），改自定义眼睛 +
-//   二次确认(Modal.confirm「将显示明文密钥，请勿截图或分享」) + 30 秒自动恢复打码 + 卸载清理定时器；
-//   明文只在内存 state（不写 localStorage）、明文态 readOnly 且 onChange 直接 return；env 接管时不显示。
-// 2026-09-26 (三堂会审后修正) - 小欧 - ①YAGNI 删 doSave 开头 `if (baseUrl.trim()==='') return;`
-//   （按钮已 disabled，该 return 永不可达，且与本次自己写的注释矛盾）；②DRY 测试文案表提为模块级
-//   TEST_RESULT_TEXT；③修 `map[r.category]` 未知分类显示 undefined 的坑，补 `?? network_error` 兜底。
-// 2026-09-26 (三堂会审后修正·二) - 小欧 - [SRP] 明文查看 + 测试连接内联使本组件膨胀到 500 行、
-//   兼三职，已抽出 SecretRevealInput（12.5）/ TestConnectionProbe（10.3），父组件只留配置表单本责。
-// 2026-09-26 (三堂会审后修正·三) - 小欧 - 删本文件残留的 TEST_RESULT_TEXT 常量（已随测试连接迁出，
-//   留着即死代码、eslint 报警）——"文案随职责走"，拆分后不在原处留副本。
-// 2026-09-26 (掩码契约同步) - 小欧 - 后端 mask_secret_value 按北京老陈裁定改两档（len<8 返
-//   prefix="****"，原为 ""），故上方第⑤条"prefix 为空只显示末4位"的旧分档不再成立（只改注释）。
-// 2026-09-27 小欧 - ③区字段改后底部保存栏亮起（北京老陈需求）：加可选 onDraftChange（不传=零影响）；
-//   新增 buildDiff 取"变更键"集合（只含改过的键，改回原值即变空=自动撤销脏）；本地表单 state 不动。
-// 2026-09-27 (三堂会审第6遍修正) 小欧 - 推翻上条的"JSON 签名本地去重"初版：签名与 hook 侧
-//   providerDraft 会失真不同步（保存成功时 hook 单方面清草稿）→ 请求在飞期间新输入不再上报、静默丢脏。
-//   改为每渲染如实上报，循环防护收口到 setProviderDraft 的等价去重单点。
-// 2026-09-27 小欧 - 保存按钮状态化（北京老陈拍板「无修改时灰白不可点，与底部一致」）：无修改=白灰
-//   +disabled、有修改=蓝色+「（N 项）」（N=diff 键数，与底栏同源）；判据与上报同源，故保存成功回灰、
-//   失败保持蓝可重试，闭环自动正确。
-// 2026-09-27 (三堂会审 P0 修复) 小欧 - doSave 提交源统一为 buildDiff()：原 doSave 自带第二套判定，
-//   6 字段里 5 个与草稿口径不一致（label 清空会静默丢改动、等值字段白写并 bump mtime），已删除。
-// 2026-09-27 (三堂会审·二) 小欧 - 再修 2 个真实 bug：①动态数字字段 onChange 补 null 守卫（同静态字段写法，
-//   漏判会让 null 落盘成 `rate_limit: null`，case: settings2-dynamic-null.test.ts）；②buildDiff 基线改用
-//   原值比较，使带空格的历史脏值 api_base 能被判为有改动从而被清理。
+// 2026-09-24 小欧 - 标题与保存按钮同行（flex 三列，标题左|按钮居中|右空列）。
+// 2026-09-26 小欧 - api_key 落盘前 trim；base_url 留空改判为错误（红字+禁用保存，与后端 400 双闸）。
+// 2026-09-26 小欧 - 加"测试连接"（只读探测走 testConnection，不走 onSave）；结果按后端 category 分档文案。
+// 2026-09-26 小欧 - 关 AntD 自带眼睛，改自定义眼睛（二次确认+30 秒自动打码+卸载清 timer），明文只存内存。
+// 2026-09-26 小欧 - [SRP] 抽出 SecretRevealInput / TestConnectionProbe，本组件只留配置表单本责。
+// 2026-09-27 小欧 - 改后亮底部保存栏：buildDiff 取变更键集合（改回原值即自动撤销脏），加可选 onDraftChange。
+// 2026-09-27 小欧 - 保存按钮状态化：无修改=灰+disabled，有修改=蓝+「（N 项）」，判据与上报同源。
+// 2026-09-27 小欧 - doSave 提交源统一为 buildDiff()，消除第二套口径；动态数字字段 onChange 补 null 守卫；
+//   buildDiff 基线改用原值比较，使带空格的历史脏值 api_base 能被清理。
+// 2026-09-27 07:38 小欧 - 修 F3/F7：后端 masked 变化即复位本地 api_key。原先只在 doSave 清，而底部保存栏走
+//   saveProviderDraft 不经 doSave → 落盘后本地仍留明文、且被 buildDiff 重新算成脏（底栏存不干净）。
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
@@ -74,11 +46,7 @@ import {
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
 import { EnvTag } from './icons';
-// 2026-09-26 - 小欧 - [72]三堂会审后修正(SRP 拆分): 原先在此 import modelApi 供内联的"测试连接"使用，
-//   该功能已迁到 TestConnectionProbe 组件内部自持，本组件不再需要 modelApi，故删此 import
-//   （留着会变成未使用导入，eslint 报警）。
-
-// 2026-09-22 小欧 - DRY 收口：EXISTING_KEYS/STATIC_KEYS 两 Set 内容完全相同合并为 HARDCODED_KEYS（渲染跳过 + doSave 动态收集共用）
+// 2026-09-22 小欧 - DRY：渲染跳过与动态收集共用一份 HARDCODED_KEYS
 const HARDCODED_KEYS = new Set([
   'api_key',
   'base_url',
@@ -90,9 +58,9 @@ const HARDCODED_KEYS = new Set([
 interface Props {
   name: string;
   config: {
-    // [72]第七章(7.3)+第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}，
+    // 2026-09-27 小欧 - 掩码契约 {configured, masked}（后端一次生成 masked，本组件只原样下传），
     // 与 model.api.ts 的 ProviderEntry.api_key 保持一致（同一契约两处声明，形状必须相同）
-    api_key: { configured: boolean; prefix: string; suffix: string };
+    api_key: { configured: boolean; masked: string };
     base_url: string;
     label: string;
     timeout: number;
@@ -154,6 +122,12 @@ export const ProviderConfig: React.FC<Props> = ({
   const [dirtyCount, setDirtyCount] = useState(0);
 
   const isEnv = config.env === true;
+
+  // 2026-09-27 小欧 - 修 F3/F7：后端 masked 变化 = 上次输入已落盘，复位 api_key。
+  //   否则底部保存栏（不经 doSave）落盘后本地仍留明文并被 buildDiff 重新算成脏。保存失败时 masked 不变，保留输入。
+  useEffect(() => {
+    setApiKey('');
+  }, [config.api_key.masked]);
 
   // 草稿 diff：只含改过的键，值即落盘形态。改回原值即从 diff 消失，父层自动撤销脏计数。
   // 本函数是**唯一提交口径**（组件内保存按钮、底部保存栏、按钮计数三处同源，见 doSave）。
@@ -284,13 +258,8 @@ export const ProviderConfig: React.FC<Props> = ({
         <span style={{ flex: 1 }} />
       </div>
 
-      {/* api_key —— 2026-09-26 小欧 - [72]第十二章(12.5) 迁出为 SecretRevealInput（SRP 拆分）：
-          明文查看的 state/定时器/二次确认全在子组件内，本组件不再持有明文（更安全：
-          父组件不持有明文即父组件的其它逻辑永远碰不到它）。env 接管时整块只读，不显示眼睛
-          —— 由 isEnv 早退分支处理。
-          12.2 目标效果：打码（前4位+星号+末4位）显示在**输入框内**，故传 prefix/suffix
-          由子组件拼 maskedDisplay；短 key（len<8）后端按 2026-09-26 裁定给 prefix="****"，
-          由子组件渲染为 ****+末4 位（不再插 6 星）。 */}
+      {/* api_key —— 明文查看已迁入 SecretRevealInput（父组件不持有明文）；env 接管时整块只读，
+          由 isEnv 早退分支处理。打码串由后端生成，本组件只传 masked 原样下传。 */}
       <div style={settingsRowStyle}>
         <span style={settingsLabelStyle}>api_key</span>
         <SecretRevealInput
@@ -298,8 +267,7 @@ export const ProviderConfig: React.FC<Props> = ({
           value={apiKey}
           onChange={setApiKey}
           configured={config.api_key.configured}
-          prefix={config.api_key.prefix}
-          suffix={config.api_key.suffix}
+          masked={config.api_key.masked}
           width={settingsControl.apiKeyWidth}
         />
       </div>

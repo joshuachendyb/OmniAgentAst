@@ -74,15 +74,20 @@
 //   reasoning_effort 档位表）；宽度沿用 settingsControl.actionBtnWidth 120 保持三按钮等宽 - 小健-2026-09-25
 // 2026-09-25 06:23:15 小健 - 同排入口按钮「添加参数」→「添加模型参数」（北京老陈指示，6 字与
 //   「管理推理深度」等长，actionBtnWidth 120 内不挤压，三按钮等宽视觉不变）— 小健-2026-09-25
-// 2026-09-26 小欧 - [72]第七章(7.3)+第十二章(12.5): ProviderConfig 的 fallback config 里 api_key 兜底值
-//   由 {configured:false, suffix:''} 补为三键恒定 {configured:false, prefix:'', suffix:''} ——
-//   该契约在项目内有 4 处声明（model.api.ts ProviderEntry / ProviderConfig.config / settings2/types.ts / 本兜底值），
-//   少任一处 tsc 即报 prefix 缺失，故四处同步为同一形状 — 小欧-2026-09-26
+// 2026-09-27 小欧 - 掩码契约 {configured, masked}：ProviderConfig 的 fallback config 里 api_key 兜底值
+//   为 {configured:false, masked:''}。该契约在项目内有 4 处声明（model.api.ts ProviderEntry /
+//   ProviderConfig.config / settings2/types.ts / 本兜底值），少任一处 tsc 即报 masked 缺失，故四处同形
+//   — 小欧-2026-09-27
 // 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求）：
 //   ①groupDirtyCount 模型组分支 += providerDraft 键数（与 useSettings dirtyCount 同口径）；
 //   ②ProviderConfig 挂载传 onDraftChange={s.setProviderDraft}（③区字段 diff 上报→底部栏计数）；
 //   ③③自带保存按钮的 onSave 改走 s.saveProviderDraft(patch)——与底部保存栏同一条落盘链（统一链，
 //   原内联 modelApi.updateProvider+afterModelSaved 三段逻辑收口进 hook，失败 rethrow 保留输入语义不变）- 小欧-2026-09-27
+// 2026-09-27 07:38 小欧 - 修 F7/F8/F9：①「清空 api_key」成功后同清 providerDraft（清空是 api_key 的第二个
+//   写入口，原先只清后端，用户接着点保存会把刚清空的密钥写回）；②未保存确认弹窗补 confirmLoading={s.saving}
+//   （onOk 是 void...then() 不返 Promise，antd 不自带 loading，双击会连发两次 saveGroup）；
+//   ③jumpToProviderConfig 判脏对象改 'model'（原判 state.activeTab，而唯一调用点在通用 Tab 恒为 general，
+//   查错组致闸口形同虚设）- 小欧-2026-09-27
 import React, { useState } from 'react';
 import {
   Button,
@@ -186,7 +191,9 @@ const SettingsPage: React.FC = () => {
   // 修正(2026-09-21 小强)：jumpToProviderConfig 也走「当前组脏→确认」闸口——
   // 原直调 setActiveTab 绕过确认切到模型 Tab（[设置页UI审计] 问题11）
   const jumpToProviderConfig = () => {
-    if (s.isGroupDirty(state.activeTab)) {
+    // 2026-09-27 小欧 - 修 F9：判脏对象应为跳转**目标组** model。原判 state.activeTab，
+    // 而本函数唯一调用点在 renderGeneralTab（此时 activeTab 恒为 general）→ 闸口查错组，形同虚设。
+    if (s.isGroupDirty('model')) {
       setPendingJump({ tab: 'model', key: '', anchor: 'provider-config' });
       return;
     }
@@ -454,10 +461,9 @@ const SettingsPage: React.FC = () => {
           name={state.model.selectedProvider}
           config={
             state.model.providerConfig[state.model.selectedProvider] ?? {
-              // [72]第七章(7.3)+第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}，
-              // 与 model.api.ts ProviderEntry / ProviderConfig.config / settings2/types.ts 保持同一契约
-              // （缺省会漏 prefix 键，tsc 直接报错——这正是把契约显式化的价值）
-              api_key: { configured: false, prefix: '', suffix: '' },
+              // 2026-09-27 小欧 - 掩码契约 {configured, masked}，与 model.api.ts ProviderEntry /
+              // ProviderConfig.config / settings2/types.ts 保持同一契约（缺 masked 键 tsc 直接报错）
+              api_key: { configured: false, masked: '' },
               base_url: '',
               label: '',
               timeout: 150, // [62]P7 4.3(1)d：缺省 fallback 与后端常量对齐（原60≠运行30/150，v3.8 对齐）
@@ -492,6 +498,9 @@ const SettingsPage: React.FC = () => {
               { clear: true }
             );
             showSuccess('api_key 已清空');
+            // 2026-09-27 小欧 - 修 F7：清空是 api_key 的第二个写入口，须同清草稿，
+            //   否则用户接着点保存会把刚清空的密钥写回。ProviderConfig 的 apiKey 由 masked 变化自动复位。
+            s.patchModel({ providerDraft: {} });
             await afterModelSaved(r.mtime);
           } catch (e) {
             handleApiError(e);
@@ -710,6 +719,9 @@ const SettingsPage: React.FC = () => {
           </span>
         }
         width={settingsModalWidth.confirm}
+        // 2026-09-27 小欧 - 修 F8：onOk 是 void ...then() 不返回 Promise，antd 不会自带 loading，
+        //   双击「保存并切换」会连发两次 saveGroup。复用 SaveBar 同源的 saving 做 confirmLoading。
+        confirmLoading={s.saving}
         onCancel={() => setPendingJump(null)}
         onOk={() => {
           const jump = pendingJump;

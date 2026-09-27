@@ -1,46 +1,18 @@
-// 编辑历史: 2026-09-20 小强 - 新建：单行渲染（控件↔schema.type↔antd；secret 三态/只读复制/env 只读，见 7.4/7.7）
-// 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：复制成功提示改走 errorHandler.showSuccess
-// 2026-09-21 小欧 - P0-6：控件宽度→settingsControl 令牌（[58] P0-6）
-// 2026-09-21 小欧 - 全文逐章核查：gap:8/marginLeft:8 → Spacing.MD 令牌（[58] v1.12 第七章 铁规）
-// 2026-09-21 小欧 - [59]B-10 渲染: source === 'default' 显示 DefaultTag（后端缺省键新语义）;
-//   [59]F-1 修复: 只读复制不立即弹成功，await copyTextToClipboard 结果后再提示（剪贴板权限拒绝时不再假"已复制"）
-// 2026-09-21 小欧 - [59]F-1 补漏: showSuccess 在上轮 import 整理中被移除、但复制成功分支(line:52)仍引用,
-//   补回 import 消除 tsc 未定义引用错误（编辑历史纪律：错误的加同样不对，立即修正）
-// 2026-09-21 小强 - 设置页17问题复核修复：根部加 data-settings-key 搜索滚动锚点；
-//   窄屏 labelWidth→88、textarea→100%、行 flexWrap（[设置页UI审计] 问题1/16）
-// 2026-09-22 小欧 - int/float 输入增强：int 加 precision=0/step=1 强制整数、两者加 min/max 范围约束；
-//   控件右侧显示范围提示（int: "0 ~ 2 · 整数"，float: "0 ~ 2"），range 类型不重复显示
-// 2026-09-22 小欧 - 控件宽度统一：range/int/float 的 InputNumber 补齐 rangeNumberWidth/inputNumberWidth 令牌 - 小欧-2026-09-22
-// 2026-09-22 小欧 - DRY 收口：行容器/label 样式改复用 settingsRowStyle/settingsLabelStyle 令牌（删 SettingsRowLayout 内联展开）；移 FontWeight unused import - 小欧-2026-09-22
-// 2026-09-23 小欧 - notice 说明文字移到输入框上方（flexDirection:column）；删除 // 拼接，notice 与即时生效分离 - 小欧-2026-09-23
-// 2026-09-23 小欧 - 新增 url 类型：单行 Input 走 baseUrlWidth(360px)，与 ProviderConfig base_url 同款宽框；
-//   用于 network.cors_origins（textarea 会按行拆 list 破坏逗号契约，text 默认 180px 太短）- 小欧-2026-09-23
-// 2026-09-26 小欧 - [72]第六章(6.5) 落地: secret 项的「清空」与「确定」均改走 **provider 通道**
-//   （modelApi.updateProvider），不再经 onChange → settings 通用通道。
-//   动机: secret 三态只在 provider 通道实现（model_service.update_provider_config 为唯一权威），
-//   而 [72]第六章已让 settings 写路径对 secret 项**显式拒绝**——若前端仍走 settings 通道，
-//   用户一点清空/确定就会拿到"该敏感项不支持经 /settings 写入"的报错，功能不可用。
-//   两通道 key 语义保持单一权威，杜绝同一 key 两个写入口产生分叉（DRY + 禁止 backward）。
-//   配套: 新增 secretProviderName(key) 从 registry key(`ai.{provider}.{field}`)取 provider 名，
-//   避免为此新增 prop 改动全部调用方（KISS-DIRECT）；「确定」的空串经 provider 三态处理为"不修改"，
-//   不会擦除原值（第三章三态修复的价值）。 — 小欧-2026-09-26
-// 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范 + 关联逻辑复核，本文件 4 处已改：
-//   ①[功能 bug · 改A坏B] secret 写成功后调 `onChange(undefined)`，注释却称"刷新该行"——它不是刷新：
-//     onChange 是 settings 通道 setter（useSettings.setValue），会 values[key]=undefined 且因 baseline
-//     不等而 **dirtyKeys[key]=true**。用户改完密钥点"确定"→ 该行已脏 → 接着改别的设置 → 点"保存本组"
-//     → saveGroup 把这个 secret 键一并提交 → 而 secret 已被 [72]第六章在 settings 写路径**显式拒绝**
-//     → **整组保存失败、用户的其它修改全丢**。改法: secret 走专用通道后一律不碰 onChange，
-//     新增 onRefresh 回调走 load() 重新拉取（SettingsGroup/SettingsPage 已串通）。
-//   ②[功能 bug · 静默无操作] 「清空」按钮原走 `writeSecret(key, {clear:true})`，而 writeSecret 的
-//     provider 分支只从 value 里取 api_key（value 是对象 → undefined），**clear=true 从未被发出**；
-//     后端收到不含 clear 的 patch → 判定无变更 → 返回 ok。前端 .then 照跑、提示成功，
-//     **密钥根本没被清空**。根因: 用一个联合类型把"设置值/清空"挤在一起，清空意图在转换里被吃掉。
-//     修法: 清空不再经 writeSecret，直接按后端契约 ProviderConfigUpdate.clear 显式发 {clear:true}；
-//     writeSecret 签名收窄为 (key, value: string)，只管"设置一个非空值"（SRP）。
-//   ③[YAGNI 死代码 + 假成功] 「确定」按钮原把空串也当设置提交 → provider 通道收到 api_key: undefined，
-//     后端什么都不改却返回 ok（假成功），还白占一次网络往返。改为空串本地直接收工、不发请求。
-//   ④[DRY] writeSecret 两分支内 `typeof value === 'string' ? ... : ...` 兜底随 ②③ 一并删除
-//     —— 那两个兜底分支在旧调用方式下永不可达（属"为死分支写代码"）。
+// 编辑历史: 2026-09-20 小强 - 新建：单行渲染（控件↔schema.type↔antd；secret 三态/只读复制/env 只读）
+// 2026-09-21 小欧/小强 - 复制成功提示走 showSuccess（等剪贴板结果再提示，不假"已复制"）；
+//   宽度/间距改 settingsControl、Spacing 令牌；加 data-settings-key 锚点、窄屏换行
+// 2026-09-22 小欧 - int/float 加 precision/step/min-max 与范围提示；行与 label 复用 settingsRowStyle 令牌
+// 2026-09-23 小欧 - notice 移到输入框上方；新增 url 类型（宽框，textarea 会按行拆 list 破坏逗号契约）
+// 2026-09-26 小欧 - secret 的"清空/确定"改走 provider 通道（settings 写路径已显式拒绝 secret），
+//   单一写入口避免分叉；空串按 provider 三态当"不修改"，不擦原值
+// 2026-09-26 小欧 - 修 3 个真 bug：①写成功后不再 onChange(undefined)（那是置脏不是刷新，会让整组保存
+//   失败连累用户其它改动）→ 改走 onRefresh 重新 load；②清空从未真正发出（联合类型把清空意图吃掉，
+//   后端判无变更仍返回 ok = 假成功）→ 按后端契约显式发 {clear:true}，writeSecret 收窄为只管非空值；
+//   ③空串"确定"改本地收工不发请求（原来后端什么都不改却回 ok）
+// 2026-09-27 小欧 - 掩码纯回显：masked 由后端生成，前端不再对字符串取末 4 位（那等于在前端重算掩码）
+// 2026-09-27 07:38 小欧 - 修 F2/F11 同源两处：①三处 InputNumber onChange 补 null 守卫（清空回 null
+//   会让 validate 判"不能为空"→ saveKeys 提前 return → 整批其它改动全丢），与 ProviderConfig 同款写法；
+//   ②值是裸字符串时只判"是否已配置"、不显示任何内容，保住"已配置"标识（否则用户误以为密钥丢失而重输覆盖）
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -156,20 +128,23 @@ export const SettingRow: React.FC<Props> = ({
       );
     }
     if (item.secret) {
-      // 2026-09-21 BUG-B 修复：value 可为明文（保存中/保存后未回读的瞬时态），
-      // 原逻辑按 {configured,suffix} 结构取 configured 对字符串取到 undefined -> 误显"未配置"
-      const raw = value;
-      const isPlain = typeof raw === 'string';
-      const configured = isPlain
-        ? raw.length > 0
-        : !!(raw as { configured?: boolean })?.configured;
-      const suffix = isPlain
-        ? raw.slice(-4)
-        : ((raw as { suffix?: string })?.suffix ?? '');
+      // 2026-09-27 - 小欧 - 纯回显：掩码串由后端 mask_secret_value 生成，前端不判断档位、不拼星号、
+      //   不对字符串取末 4 位（那等于在前端重算掩码，且会把明文尾巴显示出来）。
+      //   值是裸字符串（非 {configured,masked}）时只判"是否已配置"、不显示任何内容：
+      //   该形态不该出现（secret 走 provider 通道后由 onRefresh 重拉掩码），但真出现时也要保住
+      //   "已配置"标识，否则用户会误以为密钥丢失而重新输入覆盖。
+      const cfg =
+        typeof value === 'string'
+          ? value.length > 0
+          : !!(value as { configured?: boolean })?.configured;
+      const shown =
+        typeof value === 'string'
+          ? ''
+          : ((value as { masked?: string })?.masked ?? '');
       if (!editingSecret) {
         return (
           <span>
-            {configured ? `已配置 ····${suffix}` : '未配置'}
+            {cfg ? `已配置 ${shown}` : '未配置'}
             <Button
               type="link"
               disabled={source === 'env'}
@@ -178,7 +153,7 @@ export const SettingRow: React.FC<Props> = ({
                 setEditingSecret(true);
               }}
             >
-              {configured ? '修改' : '配置'}
+              {cfg ? '修改' : '配置'}
             </Button>
           </span>
         );
@@ -311,7 +286,9 @@ export const SettingRow: React.FC<Props> = ({
               value={value as number}
               disabled={disabled}
               style={{ width: settingsControl.rangeNumberWidth }}
-              onChange={(v) => onChange(v)}
+              onChange={(v) => {
+                if (v !== null) onChange(v);
+              }}
             />
           </span>
         );
@@ -325,7 +302,9 @@ export const SettingRow: React.FC<Props> = ({
             step={1}
             precision={0}
             style={{ width: settingsControl.inputNumberWidth }}
-            onChange={(v) => onChange(v)}
+            onChange={(v) => {
+              if (v !== null) onChange(v);
+            }}
           />
         );
       case 'float':
@@ -336,7 +315,9 @@ export const SettingRow: React.FC<Props> = ({
             min={item.range?.[0]}
             max={item.range?.[1]}
             style={{ width: settingsControl.inputNumberWidth }}
-            onChange={(v) => onChange(v)}
+            onChange={(v) => {
+              if (v !== null) onChange(v);
+            }}
           />
         );
       case 'textarea':
