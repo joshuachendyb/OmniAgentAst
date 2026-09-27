@@ -6,7 +6,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
     merge_region_patch 内部先 _validate_config_integrity 校验再原子写（安全网与 update_config 持平）。
 只读项 config_path/version 由本服务组装。
 注：v4.19 起 settings_service 不再直接调 update_config_service——旧链仅剩 ai.model_ref 一个映射键，
-    且其写语义（v4.20 单源收敛：只写结构化 ai.model_ref）已由 update_settings 内联实现（P0-2），避免两阶段写的半程失败风险；
+    且其写语义（v4.20 单源收敛：只写结构化 ai.model_ref）已由 update_settings 内联实现，避免两阶段写的半程失败风险；
     写旧业务键（语言/项目根目录）与安全/新键同路径经 region 合并，字段语义由 registry schema 承接。
 
 编辑历史:
@@ -16,7 +16,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
   2026-09-20 - 小欧 - v4.17：security 逐键走通用合并（去 SECURITY_KNOWN 整块写，防覆盖丢键）；
     update_config 返回 fail_result 透传 errors（防假成功）；PUT 响应带 mtime
   2026-09-20 - 小沈 - v4.19：update_settings 改单次落盘（弃 update_config 两阶段），ai.model_ref 内联双写
-  2026-09-21 - 小欧 - 对齐文档54 9.1.2：update_settings 成功返回不含 errors 字段（文档如此），撤销此前误加的空 errors
+  2026-09-21 - 小欧 - 对齐设计文档 9.1.2：update_settings 成功返回不含 errors 字段（文档如此），撤销此前误加的空 errors
    2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（settings 域 S2/S3/S4，其余模型域见 model_service）——
      ①S2 merge_region_patch 对非法 model_ref 目标（provider 不存在/模型不在列表）抛 RuntimeError 未捕获→500，
      改在 update_settings 内捕获转 {ok:False, errors}，杜绝裸异常；②S3 校验对 None 一律放行→_set_dotted(None)

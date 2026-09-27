@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 - 小欧 - #11 fix: wait_for_confirmation_result 超时返回加 expired=True 标记, 供 action_handler 分流超时/拒绝
-# 2026-07-18 - 小欧 - #42 fix: _pending_confirmations 加 threading.Lock 防并发读写
+# 2026-07-18 - 小欧 - 修复: wait_for_confirmation_result 超时返回加 expired=True 标记, 供 action_handler 分流超时/拒绝
+# 2026-07-18 - 小欧 - 修复: _pending_confirmations 加 threading.Lock 防并发读写
 # 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): "信任本次会话"落库闭环——
 #   _PendingConfirmation 加 tool_name 字段; create_confirmation 增 tool_name 透传参数;
 #   resolve_confirmation confirm 成功+trust_session=True 时, 经 confirm_id 拆 task_id 反查 session_id(禁伪 agent.session_id)
 #   落 insert_session_trust(chat_session_trust), 落库失败只留日志不影响确认结果
 # 2026-08-17 - 小健 - 三堂会审-T1修复(北京老陈驱动): 落库用 normalize_tool_name(entry.tool_name) 规范名,
 #   与豁免查询侧(action_handler 端 normalize)一致, 防止 LLM 以别名(write_text/writefile)提名时信任落库别名、
-#   而查询用规范名导致漏配失效仍触发二次 HITL(与写保护 BUG-2 同模式)。
+#   而查询用规范名导致漏配失效仍触发二次 HITL(与写保护修复同模式)。
 # 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): resolve_confirmation 为同步函数(API层直调),
 #   "信任本次会话"旁路落库块改 daemon 线程投递(本块原为 fire-and-forget: 失败只留日志不影响确认结果),
 #   调用线程零 sqlite3 I/O+锁重试 sleep, 落库语义不变
@@ -23,7 +23,7 @@
 # 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
 #   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
 #   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
+# 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -58,7 +58,7 @@ class _PendingConfirmation:
     tool_name: str = ""  # ②-5 S2(10.1.7②-5): tool_name 随 create_confirmation 透传, 供 trust 落库 — 小欧 2026-08-16
     path: Optional[str] = None  # v1.5(2026-09-02 小欧): 信任目标路径透传, tool+path 精确落库 — 小欧 2026-09-02
 # 注: MAX_PENDING_CONFIRMATIONS 已集中迁移至 app.constants(2026-07-14 小欧)
-# #42 fix: 加锁防并发读写_pending_confirmations — 小欧 2026-07-18
+# 修复: 加锁防并发读写_pending_confirmations — 小欧 2026-07-18
 _pending_confirmations: Dict[str, _PendingConfirmation] = {}
 _pending_lock = threading.Lock()
 _last_cleanup_time: float = 0.0
@@ -125,7 +125,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
         {"confirmed": bool, "trust_session": bool}
 
     小沈 2026-06-17 从confirm_operation.py下沉
-    chendyg 2026-06-26 P1-9修复: 等待确认时检查任务取消状态
+    chendyg 2026-06-26 修复: 等待确认时检查任务取消状态
     """
     with _pending_lock:
         entry = _pending_confirmations.get(confirm_id)
@@ -135,7 +135,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
         return {"confirmed": False, "trust_session": False}
 
     try:
-        # 【P1-9修复】等待确认期间检查任务是否已取消 — chendyg 2026-06-26
+        # 修复: 等待确认期间检查任务是否已取消 — chendyg 2026-06-26
         task_id = confirm_id.split(":")[0] if ":" in confirm_id else ""
         check_interval = 2
         elapsed = 0

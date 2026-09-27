@@ -14,14 +14,14 @@
 #          前端 waiting 图标时序错乱(obs 到即收/收尾轮误亮); 本文件原无 thought-start 发射;
 #   [改法] 新增进 loop 前(while 前)第 1 发射点, step=agent.llm_call_count or 1(首个 thought 步号, 避开 start 0);
 #          与 handle_action 每工具轮 observation 后各 1 个合计=loop 内调工具次数+1(发射公式);
-#          max_steps<=0 提前分支(main中该分支在本点之前 return)不发 — 无终态无害信号; 纯实时不落库(§10.3.3(1)) — 小欧-2026-09-07
+#          max_steps<=0 提前分支(main中该分支在本点之前 return)不发 — 无终态无害信号; 纯实时不落库 — 小欧-2026-09-07
 # 2026-09-07 小欧 4.4.3(前端消息分类处理分析及设计-小欧-2026-09-06.md, 北京老陈批准):
 #   start/startinfo 双信号拆分——startinfo 合并入 start(后端侧):
-#   [2] start 发布前装配 ai_message_id: emit 出 start dict 后, 顶层写 agent._ai_message_id
+#   ② start 发布前装配 ai_message_id: emit 出 start dict 后, 顶层写 agent._ai_message_id
 #       (agent_runner run_agent_in_background 入口透传的 eager 值)再 publish;
 #       publish 做 dict 浅拷贝(task_state.py:49), 事后回填追不上实时流, 故 publish 前装配;
 #       None 守卫(getattr)——eager 分配失败时按缺失处理, 与现状 startinfo 缺失行为一致 — 小欧-2026-09-07
-# 2026-09-08 小欧 方案五(6.6.2 D/E/F 路径, 北京老陈 2026-09-08, 见doc-9月优化[12] 6.6):
+# 2026-09-08 小欧 方案五(路径设计, 北京老陈 2026-09-08, 见doc-9月优化):
 #   D(循环顶取消)来源读 agent._cancel_source(A/B经cancel_task写回, D被动继承), 文案按来源出, FinalStep带source;
 #   E(max_steps<=0)→source=config_limit文案"已达最大执行步数限制，任务结束"; F(循环结束无终态兜底)→source=status_inconsistency
 #   文案"执行状态异常，任务已结束" — 取消终态区分来源落库/下发(A-G全覆盖)
@@ -35,14 +35,14 @@
 #   走 D 路径局部 import(下方同函数已局部 import task_runtime, 运行期无循环), 顶层依赖消除 — 小欧-2026-09-08
 # 2026-09-08 小欧 北京老陈指令(console可见性): D路径循环顶检出取消 logger.info→log_and_print 双写,
 #   后端命令行可见"检测到任务取消"(task_id/source) — 小欧-2026-09-08
-# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 改返回一元组(final,), 5 处调用点删除
+# 2026-09-11 小欧 - 方案: emit_final_with_stats 改返回一元组(final,), 5 处调用点删除
 #   `await _publish(_fs[1].to_dict())`(final_stats 移出循环链, 由 runner 延后单发, 杜绝残缺组装即发) — 小欧-2026-09-11
-# 2026-09-12 小欧 - X2 终态长短信号分离(方案[31] §4.1.2): run_react_cycle 体首(initialize_run_state 后)插入
+# 2026-09-12 小欧 - 终态长短信号分离(方案): run_react_cycle 体首(initialize_run_state 后)插入
 #   终态判定上下文 _final_short_ctx + 长条缓存载体 _pending_final_db 初始化(每任务一次, 发射侧 react_step
 #   _emit_publish 运行时读写); 上层顶层终态(cancelled/failed/start 等)零改动(4.1.4, 非 completed 恒完整) — 小欧-2026-09-12
-# 2026-09-12 小欧 - X2 E2E-X2-01 竞态根因修复(方案[31] §5.4): 删除内部两处过早 `_buf.done.set()`——
+# 2026-09-12 小欧 - 竞态根因修复(方案): 删除内部两处过早 `_buf.done.set()`——
 #   max_steps<=0 分支(原 L163, 5.8.3 加, "否则消费订阅永不退出挂死") 与 finally(原 L302, 5.8.3 加):
-#   run_react_cycle 结束即置 done → stream_reader 排空后立即 return 关闭 SSE 流, 而 [27] final_stats
+#   run_react_cycle 结束即置 done → stream_reader 排空后立即 return 关闭 SSE 流, 而 final_stats
 #   已移出循环链由 runner 延后单发(_publish_final_stats, 在 done 之后才 publish)→ SSE 漏发 final_stats
 #   (E2E 断言 assert fs_events 失败; DB 先落库不受影响)。修复后 done 权威置位收敛唯一:
 #   agent_runner run_agent_in_background finally(L708-713, 所有事件含 final_stats 发布完成后), 本文件不再置位,
@@ -141,7 +141,7 @@ async def run_react_cycle(
             agent._chain_acc_base = None
 
     # S4/S5(10.1.7④⑤/10.1.8): start 装配进 agent.steps(占 step 0) — 任务输入装配完整过程收拢为一个模块。
-    #   P4 注入模式: 运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获),
+    #   注入模式: 运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获),
     #   start_step.assemble_start_step 从 _start_meta/_sys_prompt/context 读齐装配, 不 import chat 层。
     #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧/小健 2026-08-17
     _start_step = _assemble_start_step(agent, context)  # 同步装配(内部零 await, KISS — 小健 2026-08-17)
@@ -177,11 +177,11 @@ async def run_react_cycle(
         _finalize_cycle(agent)
         return
 
-    # 4.4.2 thought-start 第1发射点(2026-09-07 小欧, 时序根治 前端消息分类处理分析及设计 4.4.2[9]):
+    # 4.4.2 thought-start 第1发射点(2026-09-07 小欧, 时序根治 前端消息分类处理分析及设计):
     #   进 loop 前(首个可见轮 LLM 请求之前)发第 1 个等待信号 — 前缀"等待第一个 thought 出现";
     #   与 handle_action 每工具轮 observation 后各 1 个合计=loop 内调工具次数+1(发射公式);
     #   [时序根治] 旧 5 点均在 LLM 响应后发(错); 本点在请求前发;
-    #   retrying 空轮/真空重试(不可见中间轮)不进本代码路径不加发; 纯实时不落库(§10.3.3(1)) — 小欧-2026-09-07
+    #   retrying 空轮/真空重试(不可见中间轮)不进本代码路径不加发; 纯实时不落库 — 小欧-2026-09-07
     await _publish(agent._step_emitter.emit(ThoughtStartStep(step=agent.llm_call_count or 1)).to_dict())
 
     try:
@@ -222,7 +222,7 @@ async def run_react_cycle(
                 # 阻塞点在 wait_for_resume 内 pause_event.wait(); 恢复后回 THINKING 继续。
                 # 注意: 此处只查暂停不查取消(取消已在上方处理); 暂停不再经 LLMClient._stop_check
                 # 中断流式(已在 agent_runner 改为仅查取消), 故暂停在"下一轮循环顶"干净生效。
-                # 2026-08-09 - 小欧 - P4 拆分: 原 task_pause_check 在此产出 SSE 字符串被 agent_runner
+                # 2026-08-09 - 小欧 - 拆分: 原 task_pause_check 在此产出 SSE 字符串被 agent_runner
                 #   以"跳过非Step事件"丢弃(死路), 改纯阻塞 wait_for_resume(不产 SSE);
                 #   暂停/恢复 SSE 统一由前端消费路径 openai._stream_with_control 的
                 #   task_pause_check_and_yield 下发, 职责单一无死路。
@@ -287,7 +287,7 @@ async def run_react_cycle(
             if chunk_buffer.should_force_stop():
                 logger.warning(f"[run_react_cycle] chunk累积超时({agent.llm_call_count}步),强制停止")
                 set_failed(agent, f"chunk累积超时({agent.llm_call_count}步)")
-                await _publish(agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="error", content="响应累积超时，任务强制终止", error_type="chunk_buffer_timeout", severity="warn")).to_dict())  # P3+P4: error全仅SSE+severity — 小欧 2026-08-18
+                await _publish(agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="error", content="响应累积超时，任务强制终止", error_type="chunk_buffer_timeout", severity="warn")).to_dict())  # error全仅SSE+severity — 小欧 2026-08-18
                 break
 
         if agent.status not in (
@@ -313,7 +313,7 @@ async def run_react_cycle(
     finally:
         _finalize_cycle(agent)
         # 2026-09-12 小欧 - E2E-X2-01 竞态根因修复: 原 `_buf.done.set()` 在此置位过早——run_react_cycle 结束即置 done,
-        #   stream_reader 排空后立即 return 关闭 SSE 流, 而 runner 收尾 _publish_final_stats 延后单发([27])的 final_stats
+        #   stream_reader 排空后立即 return 关闭 SSE 流, 而 runner 收尾 _publish_final_stats 延后单发的 final_stats
         #   在 done.set() 之后才写入 event_log, 无消费者转发 → SSE 漏发(X2 E2E 断言失败/D B 先落库不受影响)。
         #   done 权威置位收敛唯一: agent_runner run_agent_in_background finally(L708-713, 所有事件含 final_stats 发布完成)
         #   — 小欧-2026-09-12
@@ -321,7 +321,7 @@ async def run_react_cycle(
         if _tele is not None:
             _tele.finalize_and_persist()
         # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
-        #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(Bug4修正: 该分支 I2 尚未运行,
+        #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(修正: 该分支 I2 尚未运行,
         #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
         from app.tools.security.temp_auth import clear_temp_auth
         clear_temp_auth()

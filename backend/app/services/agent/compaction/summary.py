@@ -8,7 +8,7 @@
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
 #   2026-08-17 小健 注释纠偏(北京老陈 2026-08-17): 前置条件去掉「须放开 R4(COMPACTION_ENABLED=True)」表述——开关仅限 start 超窗判定使用, 本摘要函数由 react_cycle._compact_injected_history 在超窗判定后 await 调用
-#   2026-09-06 小欧 路径2-5E(文档[6]2.5.5②): _extract_response_content 判别由 ("response",dict) tuple 改
+#   2026-09-06 小欧 路径2-5E(文档落码): _extract_response_content 判别由 ("response",dict) tuple 改
 #                 StreamChunk.payload 单协议(与 react_step 同款); docstring 同步"真实协议"描述 — 小欧-2026-09-06
 #   2026-09-23 小欧 compaction配置化: 两摘要函数 tool 截断读 tuning.compaction.summary_feed_max_chars 兜底 SUMMARY_FEED_MAX_CHARS
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17

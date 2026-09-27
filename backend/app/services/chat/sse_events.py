@@ -9,14 +9,14 @@
 #   MetaStep **kwargs 透传(base.py:114), 无需新建 StartStep 类
 # 2026-08-17 - 小健 - start 业务过程收敛(北京老陈驱动, 痛斥四处散落): 新增 build_start_step 集中函数,
 #   start 全部业务(算 context_summary 快照 message_count/total_tokens + 构造任务输入契约 StartStep)收拢一处,
-#   orchestrator 闭包只负责 P4 捕获传参; 依赖方向 chat→agent(MessageBuilder 估算, 合法方向)
+#   orchestrator 闭包只负责捕获传参; 依赖方向 chat→agent(MessageBuilder 估算, 合法方向)
 # 2026-08-17 - 小健 - start 业务彻底迁出(老陈驱动, 三思三省): 契约构造逻辑迁入 start_step 模块(_build_start_contract),
 #   删除本文件 send_start_step/build_start_step 两函数及 MetaStep/MessageBuilder import(死代码清除);
 #   start 业务完整单归属 start_step.py, sse_events 不再承载任何 start 构造 — 小健 2026-08-17
-# 2026-08-18 小欧 - §10.3.3(4): create_final_response 参数 thought→reasoning(FinalStep已删thought字段)
+# 2026-08-18 小欧 - 终态字段调整: create_final_response 参数 thought→reasoning(FinalStep已删thought字段)
 # 2026-08-22 小欧 - model结构化归一报告v1.25 6.8: create_error_response 的 model/provider 分离形参 →
 #   error_model: Optional[ModelRef] 结构承载(设计要求1)
-# 2026-08-23 小欧 - 三轮三堂会审修复(P1·YAGNI): create_final_response 全仓零调用(终态实际由
+# 2026-08-23 小欧 - 三轮三堂会审修复(YAGNI): create_final_response 全仓零调用(终态实际由
 #   step_emitter.emit_final_with_stats 产出), 死函数删除不改造, FinalStep import 随删
 """
 sse_events — SSE事件流处理模块
@@ -31,7 +31,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from app.utils.sse_formatter import format_sse_event, format_agent_sse
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
-from app.services.agent.steps import ErrorStep   # 三堂会审 P1: create_final_response 死函数删除, FinalStep import 随删 — 小欧 2026-08-22
+from app.services.agent.steps import ErrorStep   # 三堂会审: create_final_response 死函数删除, FinalStep import 随删 — 小欧 2026-08-22
 from app.llm.error_classifier import SystemErrorClassifier
 from app.logger import logger
 from app.services.chat.storage import save_execution_steps
@@ -114,6 +114,6 @@ async def save_execution_steps_to_db(
             logger.error(f"[Save] 保存失败: {e}", exc_info=True)
         return None
 
-# 三堂会审修复(P1·YAGNI·小欧 2026-08-22): create_final_response 经全仓 grep 零调用
+# 三堂会审修复(YAGNI·小欧 2026-08-22): create_final_response 经全仓 grep 零调用
 #   (终态实际由 step_emitter.emit_final_with_stats 产出 FinalStep, 见 react_cycle/agent_runner/handlers),
 #   死函数按 YAGNI 直接删除不改造; FinalStep import 随之仅余 ErrorStep 使用方 — 已同步删除 import

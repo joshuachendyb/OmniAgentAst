@@ -2,17 +2,17 @@
 """
 connection_scope — 共享连接池唯一所有者(一代配置 = 一个 scope)
 
-[70] ConnectionScope连接池统一所有者实施方案 — 小欧 2026-09-25
+ConnectionScope连接池统一所有者实施方案 — 小欧 2026-09-25
 职责(SRP): 池由它建(ensure_pool), 计数由它发(acquire_lease), 换代由它退休(release_owner),
 停机由它等(drain); 不做业务查询(决议留 resolver), 不做归还中介(快照 close 直线 release)。
-生命周期模型见 [70] 2.3: 无状态机, 纯引用计数——owner 归还后零穿越只可能在退休后,
+生命周期模型见方案文档: 无状态机, 纯引用计数——owner 归还后零穿越只可能在退休后,
 close_on_zero 天然实现"活动任务撑池不关、任务全结束后最后一个 release 归零 aclose"。
 
 编辑历史:
-2026-09-25 - 小欧 - [70] 新建: 共享连接池唯一所有者 ConnectionScope(一代配置 = 一个 scope)。
+2026-09-25 - 小欧 - 新建: 共享连接池唯一所有者 ConnectionScope(一代配置 = 一个 scope)。
   职责(SRP)四段: ensure_pool 建池+所有权移交 / acquire_lease 计数与借出 / release_owner 换代归还 owner /
   drain 停机等待; 不做业务查询(留 resolver), 不做归还中介(快照 close 直线 release)。
-2026-09-25 - 小欧 - [70] v1.12 补可观测性 + 二次日志审查: ①按 4.3「观测 ref_count 日志」补齐本类观测点——
+2026-09-25 - 小欧 - v1.12 补可观测性 + 二次日志审查: ①按「观测 ref_count 日志」补齐本类观测点——
   acquire_lease 两处关闸(池未建 ERROR / 代已退休 WARNING, 带 scope 与 ref)、drain 收口完成 INFO(与超时 warning 配对);
   ②日志审查删 2 条冗余: ensure_pool 的"新代建池"(与 _attach_scope 的"建代"重复, 唯一调用点即它, client 标识已并入"建代")、
   release_owner 的"归还 owner"(与 _retire_scope 的"退代"记同一个数——本方法走 create_task 异步归还,
@@ -33,7 +33,7 @@ _pending_release_tasks: set = set()
 
 
 class ConnectionScope:
-    """共享 httpx 连接池唯一所有者 — 一代配置(单例+池)的生命周期锚 — [70] 小欧 2026-09-25"""
+    """共享 httpx 连接池唯一所有者 — 一代配置(单例+池)的生命周期锚 — 小欧 2026-09-25"""
 
     def __init__(self, ai_service: BaseAIService) -> None:
         """持本代单例(池未建); owner lease 于 ensure_pool 建立(计数起点=1) — 小欧 2026-09-25"""
@@ -43,7 +43,7 @@ class ConnectionScope:
 
     def ensure_pool(self) -> None:
         """建池 + 所有权移交(幂等): 首次经 ai_service.ensure_client_pool() 建 LLMClient 池并
-        relinquish_ownership(保留使用引用不关池), SharedClientLease(client) 计数起点=1 — [70] 2.4 小欧 2026-09-25"""
+        relinquish_ownership(保留使用引用不关池), SharedClientLease(client) 计数起点=1 — 小欧 2026-09-25"""
         if self._owner_lease is not None:
             return
         client = self.ai_service.ensure_client_pool()
@@ -53,13 +53,13 @@ class ConnectionScope:
 
     def acquire_lease(self) -> SharedClientLease:
         """任务/快照借用本代池(ref+1)。已退休/未初始化抛 RuntimeError(防新任务混入旧代);
-        池已归零(_closing)由素材 SharedClientLease.acquire 自身拦截(双重防线) — [70] 2.3 小欧 2026-09-25"""
+        池已归零(_closing)由素材 SharedClientLease.acquire 自身拦截(双重防线) — 小欧 2026-09-25"""
         if self._owner_lease is None:
             # 小欧-2026-09-25: 补失败日志(池未建就借出=建代链断, 此前裸抛无现场)
             logger.error(f"[ConnectionScope] 借出被拒(池未建): scope={id(self):#x}")
             raise RuntimeError("ConnectionScope 未初始化(池未建), 禁止借用")
         if self._owner_released:
-            # 小欧-2026-09-25: 补关闸 warning(新任务混入退休代是 [69] 事故型故障, 必须留现场)
+            # 小欧-2026-09-25: 补关闸 warning(新任务混入退休代是事故型故障, 必须留现场)
             logger.warning(
                 f"[ConnectionScope] 借出被拒(代已退休): scope={id(self):#x}, ref={self.ref_count}"
             )
@@ -74,7 +74,7 @@ class ConnectionScope:
     def release_owner(self) -> None:
         """换代/停机归还 owner 引用(幂等, ref-1; 归零由素材 close_on_zero 自动 aclose)。
         调度参照 close_instance_sync 双分支: 运行中事件循环 create_task(强引用防 GC 取消),
-        无运行循环 asyncio.run 同步完成 — [70] 2.2; reset() 新语义即此调用 — 小欧 2026-09-25"""
+        无运行循环 asyncio.run 同步完成; reset() 新语义即此调用 — 小欧 2026-09-25"""
         if self._owner_released or self._owner_lease is None:
             return
         # 小欧-2026-09-25 日志审查: 此处原有一条"归还 owner(归还前 ref=N)", 判定为多余并删 ——
@@ -95,7 +95,7 @@ class ConnectionScope:
 
     async def drain(self, timeout: float = 30.0) -> None:
         """停机收口: 等本代池 lease 全部归零关闭(0.1s 轮询, 超时记 warning 放行不阻塞退出)。
-        归零关闭由 release 触发, 本函数只等 — [70] 2.3 小欧 2026-09-25"""
+        归零关闭由 release 触发, 本函数只等 — 小欧 2026-09-25"""
         deadline = time.monotonic() + timeout
         while self.ref_count > 0:
             if time.monotonic() >= deadline:
@@ -110,12 +110,12 @@ class ConnectionScope:
 
     @property
     def ref_count(self) -> int:
-        """池引用计数(owner 未归还时含 1) — 可观测/测试断言 — [70] 2.4 小欧 2026-09-25"""
+        """池引用计数(owner 未归还时含 1) — 可观测/测试断言 — 小欧 2026-09-25"""
         if self._owner_lease is None:
             return 0
         return self._owner_lease.ref_count
 
     @property
     def is_released(self) -> bool:
-        """退休态(owner 已归还) — 替代四态状态机的直接观测 — [70] 2.3 小欧 2026-09-25"""
+        """退休态(owner 已归还) — 替代四态状态机的直接观测 — 小欧 2026-09-25"""
         return self._owner_released

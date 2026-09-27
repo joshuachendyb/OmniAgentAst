@@ -20,13 +20,13 @@
 # 【增强】response_text全路径非空; 失败细节自包含; 内部set_failed全覆盖。
 # 2026-07-18 - 小欧 - 修复#6拼写错 yiled→yield (2处)
 # 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): reasoning-only拆好/坏两分支; 好的带_temp_reasoning标记注入conversation_history(供模型续写, wire副本由prepare_messages_for_llm strip标记), 终端统一由react_cycle._finalize_cycle(finally出口)直调agent.message_builder.pop_temp_messages()弹掉标记再持久化, 落点单一收口(KISS-DIRECT)无防御守卫; 坏的(有去重)跳过不注入不持久不发射ThoughtStep。注: 生产直调message_builder为本代码既有假设, 单测MockMb缺该方法属测试缺陷
-# 2026-08-18 小欧 - §10.3.3(1): 所有分支(error/unknown/reasoning-only终止/正常answer)前发射ThoughtStartStep; FinalStep删thought=加reasoning=
-# 2026-08-18 - 小欧 - §10.4.4 P4(severity): retrying MetaStep 加 severity="info"
+# 2026-08-18 小欧 - 落码: 所有分支(error/unknown/reasoning-only终止/正常answer)前发射ThoughtStartStep; FinalStep删thought=加reasoning=
+# 2026-08-18 - 小欧 - 落码(severity): retrying MetaStep 加 severity="info"
 # 2026-08-28 小欧 - yield日志审计: 3处 print()→logger(error/error/info, DRY违规修复); 三堂会审无逻辑修正
 # 2026-08-30 小欧 - 恢复[Final]终态全文打印(65f4de7f7"print→logger"把response=全文误改response_len, 终态正文不再上控制台; log_and_print复用07-23收口+08-30离线化双写)
 # 2026-09-02 小欧 - 配额类终态保真修复: error分支error_type透传(原写死llm_error丢粒度quota_exceeded/rate_limit/idle_timeout), errormessage已透传; KISS直线, 不新增事件类型 - 小欧-2026-09-02
 # 2026-09-01 - 小欧 - 方案A实施: 删除正常answer终态的污染版ThoughtStep(thought=parsed.get("thought", content)恒退化为完整答案, 致历史回放reasoning/response双渲); 终态正文/推理由FinalStep单一承载; 保留ThoughtStartStep(实时光标)与reasoning-only分支/工具轮ThoughtStep(正当); 方案详见 doc-9月优化/final步骤历史回放重复显示-问题分析与修复方案-小欧-2026-09-01.md
-# 2026-09-02 小欧 - 缺陷#4修复(测试验证 test_answer_handler_edge_cases): handle_answer 入口加 parsed=None 防御。
+# 2026-09-02 小欧 - 缺陷修复(测试验证 test_answer_handler_edge_cases): handle_answer 入口加 parsed=None 防御。
 #   病根: 上游LLM流异常/HTTP400等极端情况下 parsed 可能为 None, L105 parsed.get("type","answer") 抛 AttributeError 崩掉整个SSE流;
 #   修复: 入口 `if parsed is None` → 置空 dict, 后续走既有"真空→系统重试"分支(emit retrying MetaStep 由编排层重试), 不新增分支/不造新范式;
 #   三堂会审: 合规(SRP/DRY/KISS/SLAP/YAGNI) + 合理(空dict语义=空响应, 复用既有重试机制) + 关联(崩溃→优雅重试, 正常answer/error/unknown/reasoning-only四分支零影响) - 小欧-2026-09-02
@@ -89,7 +89,7 @@ async def handle_answer(agent, parsed: Dict) -> dict:
     type 产生于 llm_stream.py（见该模块头部），不由 LLM 输出，是 agent 推断。
     4A(5.5) 纯函数化: 事件统一收集_events返回dict、由5.7驱动yield; 本函数不产paused/resumed(单走publish) — 小欧-2026-09-06"""
     _events = []  # 4A(5.5): 事件收集载体 — 小欧-2026-09-06
-    # 2026-09-02 小欧 缺陷#4修复: parsed=None 防御(上游LLM流异常/HTTP400极端场景可能传 None)
+    # 2026-09-02 小欧 缺陷修复: parsed=None 防御(上游LLM流异常/HTTP400极端场景可能传 None)
     #   置空dict后: parsed_type默认"answer"→content/reasoning皆空→走既有"真空→系统重试"分支, 不新增逻辑
     if parsed is None:
         parsed = {}

@@ -36,11 +36,11 @@
 # 2026-07-25 小欧 - 回退上述类型守卫: 根因在测试fixture缺task_id而非生产代码(生产代码generate_task_id()永远返回str), 改为测试fixture源头修复; 生产代码恢复原始try-except
 # 2026-07-25 小欧 - 欧阳报告缺陷修复:
 # 2026-07-28 - 小欧 - BUG#3: _exec_calls原写法_safe_calls or call_result.all_calls, 当_safe_calls为空列表(所有调用均被安全拒绝)时回退到all_calls(含被拒绝调用), 完全绕过安全检查。改为_safe_calls if _safe_calls else [], 拒绝后执行空列表。
-#   缺陷1: 删_build_call_list中tool_name空检查的重复日志(DRY, handle_action已兜底ErrorStep+return)
-#   缺陷2: build_observation统一call字典访问为.get()防KeyError(与同函数内.get()混用修一致)
-#   缺陷3: _correction_map改用enumerate索引替代id(call)(更直观,符合KISS-DIRECT)
-#   缺陷4: check_safety_and_confirm拒绝反馈改为循环所有_denied(原只给第一个)
-#   缺陷5: _has_conflict跳过无别名工具时补path兜底冲突检测(漏报文件路径竞态)
+#   ① 删_build_call_list中tool_name空检查的重复日志(DRY, handle_action已兜底ErrorStep+return)
+#   ② build_observation统一call字典访问为.get()防KeyError(与同函数内.get()混用修一致)
+#   ③ _correction_map改用enumerate索引替代id(call)(更直观,符合KISS-DIRECT)
+#   ④ check_safety_and_confirm拒绝反馈改为循环所有_denied(原只给第一个)
+#   ⑤ _has_conflict跳过无别名工具时补path兜底冲突检测(漏报文件路径竞态)
 # 2026-07-30 - 小沈 - ContextVar注入: 导入set_current_task_id; handle_action入口加set_current_task_id(agent.task_id)
 # 2026-07-30 - 小沈 - except:pass补日志: add_tool_result双层catch失败改为logger.debug记录
 # 2026-07-30 - 小欧 - auto_confirm校验: SafetyResult.auto_confirm=True时不等确认直接通过, 提示照出但SUSPENDED不挂起 — 北京老陈驱动三堂会审
@@ -91,7 +91,7 @@
 #   在 auto_confirm 分支内补 grant_temp_auth(若有 auth_path), 与下方确认后授权逻辑对齐, 不退化
 # 2026-08-13 - 小欧 - unit-06 三堂会审(北京老陈驱动): FILE_OPERATION_TOOLS 扩展纳入8个office读写工具(见tool_constants.py)
 #   [BUG] write_xlsx+read_xlsx 同路径同批误走并行 → read 先于 write 执行, validate_path 的 p.exists()=False 报"路径不存在"
-#         (实测 prompt_003749 LLM[5] parallel_calls=7: write 67ms后 read 2ms失败, 重试成功)
+#         (实测 prompt_003749 LLM 并行调用=7: write 67ms后 read 2ms失败, 重试成功)
 #   [根因] _parse_paths/_has_conflict 仅认 FILE_OPERATION_TOOLS(文本工具), 8个office工具不在其中→空冲突键→并行
 #   [改法] ①tool_constants.FILE_OPERATION_TOOLS 并入8个office工具 ②_WRITE_OPS 排除集 {"readtext"}→_READ_TOOLS
 #         (含4个office读工具, 防 read_xlsx 等被误判写操作致读-读并行退化串行)
@@ -104,21 +104,21 @@
 #   check_safety_and_confirm 循环内查 check_session_trust(_conn, _session_id, normalize_tool_name(_cn)),
 #   查得信任后传 check_before_execute(skip_confirmation=True) 豁免二次确认; 消除 safety→services 反向
 #   依赖违规(test_layer_boundaries 护栏); T1 normalize 语义随查询落在本层, 与写保护修复同模式(防别名漏检)。
-# 2026-08-18 小欧 - §10.3.3(1/2/3): 新增ThoughtStartStep; handle_action发射新ActionStep(exec_type/tools); build_observation重写为tool_result数组+orchestration收集; 删_merge_llm_data/_merge_other_data
-# 2026-08-18 - 小健 - 三堂会审修复: ①删除无调用点的死代码 _merge_llm_data/_merge_other_data(编排收集改由 build_observation 按 tool_result[i].other_data 1:1 取代); ②删除 build_observation 死变量 _data(原始 data 已由 data_text/dl 承载); ③Bug#7 status/action 可能为 str 防御(isinstance 前判), 防 AttributeError
+# 2026-08-18 小欧 - 步骤信号: 新增ThoughtStartStep; handle_action发射新ActionStep(exec_type/tools); build_observation重写为tool_result数组+orchestration收集; 删_merge_llm_data/_merge_other_data
+# 2026-08-18 - 小健 - 三堂会审修复: ①删除无调用点的死代码 _merge_llm_data/_merge_other_data(编排收集改由 build_observation 按 tool_result[i].other_data 1:1 取代); ②删除 build_observation 死变量 _data(原始 data 已由 data_text/dl 承载); ③status/action 可能为 str 防御(isinstance 前判), 防 AttributeError
 # 2026-08-18 - 小健 - 恢复 op_id 双表贯通设计说明注释块(此前某次编辑被误删, 仅留行660短注释); 置于 _file_tool_names 逻辑正上方, 逐条核对当前代码(6文件工具白名单/预取队列/pop(0)分配)一致, 描述准确予以保留
 # 2026-08-18 - 小健 - 三堂会审修复(target推导): 删除硬编码_TARGE_FIELD(文件类工具+键read/web_search失配致_extract_target回退工具名真bug), 改为_resolve_target_field从tool_registry真实input_schema.properties按_TARGET_PARAM_PRIORITY推导字段名(target值取call入参LLM确定值); ActionStep.target极少截断; 预留ToolMetadata.target_param显式扩展点(OCP)
-# 2026-08-18 - 小欧 - §10.4.4 P3(错误全仅SSE): blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
-# 2026-08-18 - 小欧 - §10.4.4 P4(severity): error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
+# 2026-08-18 - 小欧 - 错误全仅SSE: blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
+# 2026-08-18 - 小欧 - severity: error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
 # 2026-08-18 小健 三堂会审: 删除硬编码_TARGE_FIELD——该映射对文件类工具及部分键失配, 使_extract_target回退为工具名(真实bug):
 #   ①键失配: 映射键"read"/"web_search"与注册名"readtext"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
 #   ②字段失配: 文件类映射值file_path/dir_path/search_dir 与真实schema属性名path/pattern不符, _params.get(...)取到空串→回退tool_name;
 #   (注: grep/shell/httpget/fetchpage/download/ping_port/query_sql/execute_sql 映射值恰与schema一致, 旧代码本可工作; 推导化后统一正确且新增工具自动获得)
 #   字段名由_resolve_target_field从tool_registry真实input_schema.properties推导; target值取自call["tool_params"]的LLM已回传确定入参值(非结果)。
-# 2026-08-18 小欧 - §10.3.3(2) target 提取: 来源=工具调用入参(与observation展示的llm_data.action.target同源, 后者经工具内部转发)
+# 2026-08-18 小欧 - target 提取: 来源=工具调用入参(与observation展示的llm_data.action.target同源, 后者经工具内部转发)
 # 规范化主参数优先级: 用于在工具真实input_schema.properties中选定"操作对象"字段;
 # pattern置于path之前以区分搜索类(grep/find取pattern)与路径类(其余取path); 新增工具若含这些标准字段即自动获得target(DRY)
-# 2026-08-20 - 小欧 - 11.2-C 工具遥测回调(P0-2 修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
+# 2026-08-20 - 小欧 - 工具遥测回调(修复): handle_action 执行结果处调用 agent.telemetry.on_tool_call(tool_name, success, duration), 供 tool_execution_seconds/task_tool_metrics 聚合(原未调用 → tool_execution_seconds 恒 0)
 # 2026-08-21 - 小欧 - 11.6.2: 回调循环扩展收集artifacts(工具自声明+target兜底派生); import os/extract_ext
 # 2026-08-21 - 小欧 - 12.2-Q1-D2(已撤销): 原设计将_operation_id经build_extra传action_handler双表贯通,
 #   但_operation_id是内部ID不应出现在给LLM的工具返回中(违反SRP:工具返回只服务LLM观察)。
@@ -129,7 +129,7 @@
 # 2026-08-22 - 小欧 - 三堂会审F1定案(北京老陈): 删兜底派生, artifacts仅认写工具with_artifacts自声明;
 #   读工具(read_*/query_sql/analyze_data等)也构造action.target, 兜底派生会把读取对象误落为伪产出物(违反"art只能是写的tool"铁律);
 #   14个写工具均已自声明零丢失; 连带删除仅服务派生的import os/extract_ext
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.5 D3/D3b/11.9 P3-P4): ①handle_action 先定义 _fp_factory 闭包
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码): ①handle_action 先定义 _fp_factory 闭包
 #   (按全局序号注入 tool_no; params_raw 权威源=闭包携带的 params_raw_str, #16/#20)再传 on_attempt_recorded 调 execute_tools;
 #   ②execute_tools 三分支(A单/B'分组并行/C顺序)全部以全局序号取号透传(#18); ③_build_call_list 透传 params_raw_str(D3b);
 #   build_observation 零改动(H3 已移入引擎回调, 防重复记)
@@ -145,9 +145,9 @@
 #   ①S1 auto_confirm分支(resolve_confirmation+set_status EXECUTING之后, 沙箱预检前)补发 MetaStep(type="resumed");
 #   ②S2 真HITL分支 resumed 从 if auth_path 内移出, 确认后无条件发1条(授权信息并入文案), 消除重复(KISS/DRY),
 #      user确认即恢复与是否授权白名单外路径解耦; resumed 非业务step, agent_runner.py 剔除集合已含, 不影响 total_steps。
-# 2026-09-02 小欧 三堂会审task005-BUG-001修复: auto_confirm分支resumed移至sandbox之后(原在sandbox前),
+# 2026-09-02 小欧 三堂会审task005修复: auto_confirm分支resumed移至sandbox之后(原在sandbox前),
 #   若sandbox需用户裁决且被拒绝,无paired paused→resumed, badge卡running; 现仅sandbox通过(放行/无需预检)才发resumed, 语义=真正恢复执行
-# 2026-09-02 - 小欧 - P9双重resumed去重(北京老陈驱动「问题报告P9验证」): auto_confirm/真HITL两处插入点
+# 2026-09-02 - 小欧 - 双重resumed去重(北京老陈驱动「问题报告验证」): auto_confirm/真HITL两处插入点
 #   sandbox_resolve 已含resumed(用户裁决确认, sandbox_gate:82)时跳过外层二次resumed, 以
 #   any(s.type=="resumed" for s in _steps) 去重, 规避报告A方案"无条件continue致bypass场景0次"缺陷;
 #   仅改去重不改语义(单次resumed成对, 双次幂等去重), 三堂会审通过(合规/合理/关联逻辑零退化)
@@ -160,13 +160,13 @@
 #   5.7.4①: paused emit 增 trust_path/auto_confirm/confirm_timeout/backend_timeout 四字段(后端唯一计时权威=后端窗口−提前量, constants.py HITL_CONFIRM_LEAD/BYPASS_AUTO_LEAD)
 # 2026-09-03 - 小欧 - bypass/真HITL确认超时可配置化(北京老陈驱动): auto_confirm_delay默认5→10(前端倒计时10−2=8s), 
 #   真HITL确认超时 HITL_TIMEOUT 改读 security.hitl_timeout(config.yaml优先, 默认120兜底); else分支补 get_config import 防NameError
-# 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
-# 2026-09-03 小欧 Bug-25: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
-# 2026-09-03 小欧 D2-01: synthetic占位补llm_data.summary使折叠区显“已安全拦截：tool”，可观测性增强
-# 2026-09-03 小欧 D2-02: _confirm_timeout钳制max(5,bt-LEAD)避免0秒窗口（HITL/bypass/sandbox同钳）
-# 2026-09-03 小欧 P0-1: bypass S1已expired不二次resolve（已pop死码），防404僵死
-# 2026-09-03 小欧 D2-03: trust_path复用_extract_trust_path消除别名盲区（path/file_path/source_path等），防通配污染
-# 2026-09-03 小欧 17.1: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
+# 2026-09-03 小欧 修复: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断; 全拦截/空 results 无条件发 ObservationStep(改前空 tool_result return 不发事件→前端齿轮永驻); 合成"无结果"占位保数组长度
+# 2026-09-03 小欧 修复: grant_temp_auth 三处(bypass自动确认/用户确认授权/白名单豁免直通)包 try/finally 或 try/except, 授权异常不跳过 resolve_confirmation、不阻断执行流程, confirm_id 必收口
+# 2026-09-03 小欧 修复: synthetic占位补llm_data.summary使折叠区显“已安全拦截：tool”，可观测性增强
+# 2026-09-03 小欧 修复: _confirm_timeout钳制max(5,bt-LEAD)避免0秒窗口（HITL/bypass/sandbox同钳）
+# 2026-09-03 小欧 修复: bypass 已expired不二次resolve（已pop死码），防404僵死
+# 2026-09-03 小欧 修复: trust_path复用_extract_trust_path消除别名盲区（path/file_path/source_path等），防通配污染
+# 2026-09-03 小欧: sandbox_gate硬编码7key含window_title误授权，改函数内延迟import复用_extract_trust_path
 # 2026-09-03 小欧/北京老陈: bypass流程补日志 — S1窗口开始/S1结果两处关键节点, 改前无log无法排查bypass时序
 # 2026-09-04 小健 DRY重构: check_safety_and_confirm三处sandbox重复调用→统一入口 run_sandbox_gate
 #   [问题] ①auto_confirm ②用户确认 ③循环体兜底 三处sandbox_precheck+sandbox_resolve调用逻辑几乎完全相同(DRY违规)
@@ -194,15 +194,15 @@
 # 2026-09-04 小健 fix (北京老陈裁定): 拦截action不emit不落库 — 仅正常执行的action才ActionStep落库/yield前端
 #   [问题] 全调用被安全拦截时 _exec_calls=[] → 老"记录层兜底"_record_calls=all_calls 将未执行调用emit ActionStep+完整payload
 #         落库, 但 build_observation 守卫 `if ctx.all_calls:`(空) 不发ObservationStep → DB出现"有action无observation/tool_result"残步
-#         (E2E-P0-03b step2 实证: write text未注册被拒→tools=[{tool:write text,params:完整content}]无observation)
+#   (E2E 联调 step2 实证: write text未注册被拒→tools=[{tool:write text,params:完整content}]无observation)
 #   [改法] 删除 2026-08-26 aba43fbea 记录层兜底 _record_calls, 改为 `if _exec_calls:` 才emit ActionStep(tools=_exec_calls真实执行)
 #   [效果] 拦截步不发action/不发observation(与D2-01空守卫自洽), 步骤干净无残步; 被拒call仍经_add_denial_feedback写LLM历史换方案
 #   [验证] mock全拦截(emit缺省)行为验证: emitted types=['thought-start','thought','error']无action/observation + 46单测通过;
-#          E2E-P0-03b重跑PASSED(79.89s), 新session所有action与observation成对、无残步
+#          E2E重跑PASSED(79.89s), 新session所有action与observation成对、无残步
 # 2026-09-05 小欧 ISS-001修复(task006问题报告核验为真实问题): 删除DRY重构(commits 48a6563b6)遗留的旧块
 #   (L382-390 sandbox_precheck+sandbox_resolve双调用) — bypass路径同call沙箱预检曾执行2次(冗余预检/裁决残留,
 #   与run_sandbox_gate统一入口声明矛盾); import同步收窄仅run_sandbox_gate; 主路L460/481不变, 零波及
-# 2026-09-05 小健 10.4第二阶段(TDD五步, 对应[8]十章10.4): 门禁check_safety_and_confirm整搬handlers/safety_gate.py,
+# 2026-09-05 小健 10.4第二阶段(TDD五步): 门禁check_safety_and_confirm整搬handlers/safety_gate.py,
 #   随迁import(trust/safety/hitl/sandbox/status/steps/constants), 函数体逐字复制不重写; 本文件经git mv改名
 #   action_handler→handle_action(改名成立条件: 拆完后本文件只剩handle_action), 余部8.2⑤return_direct改调
 #   emit_completed_final终态工厂 + 8.3两处_consecutive_reasoning_only=0直写改调note_progress(reasoning_guard);
@@ -210,7 +210,7 @@
 # 2026-09-06 小欧 4A(5.6) 纯函数化: 7处yield→收集_events列表, gate消费改_events.extend(await), 
 #   末尾return {"events": _events, "result": {...}}; 事件统一收集返回、由5.7驱动yield - 小欧-2026-09-06
 # 2026-09-06 小欧 B2时序根治(北京老陈定案: 一个action无论单/多工具必须先发action再发弹窗):
-#   初版"拆两阶段"落地后7个源码锚点测试红(文档[6]锁定check_safety_and_confirm单函数内含全部逻辑),
+#   初版"拆两阶段"落地后7个源码锚点测试红(文档锁定check_safety_and_confirm单函数内含全部逻辑),
 #   撤销改法, 改方案X: safety_gate原样不动(源码锚点测试绿基线不破), handle_action在check_safety_and_confirm
 #   调用前直接publish ActionStep(tools=all_calls全部call, 含待确认/将拦截工具, exec_type按候选数single/multi),
 #   拦截/拒绝/超时经后续error事件回执, 前端ToolCallLine interrupted(含blocked)停齿轮防空转;
@@ -231,7 +231,7 @@
 #   前端刷新恢复(sessionStorage)时剔除 type=action && preview 行——拦截/拒绝 action 本就不落库,
 #   恢复后不再出现"无灰字工具行"(观察点1)与"双条action"(观察点2), 与 DB 回放语义完全一致;
 #   实时预览行仍进 executionSteps(齿轮动画数据源), preview 字段对落库/路由零影响(落库只认 _live_only 判定) — 小欧-2026-09-06
-# 2026-09-06 小欧 BUG-1修复(问题挖掘文档六.6.1, 取证测试 test_01/08/09 红→绿): thought-start/thought 原仅 append
+# 2026-09-06 小欧 修复(问题挖掘文档, 取证测试 红→绿): thought-start/thought 原仅 append
 #   _events 延迟发布, 预览 ActionStep 直接 publish 提前插队 → SSE/前端顺序错乱(思考正文逆到工具行下/被隔断)
 #   且 HITL 弹窗等待期思考不可见; [改法] thought 先行直接 publish(buffer 统一提前获取至 thought 前), 从 _events
 #   摘除防 react_step.py:485 二次 publish 双发; DB 落库不经 _events(agent_runner._scan L344 读 buffer.event_log
@@ -242,7 +242,7 @@
 #          ②新发射点移到 build_observation 之后、非 return_direct(工具结果直接作终态)守卫 else 内 —
 #            承接"下一次 LLM 请求前"的等待信号, 与 react_loop 进 loop 前发射点合计=loop 内调工具次数+1(发射公式);
 #         return_direct 终态轮豁免不发(4.4.2 元规则) — 小欧-2026-09-07
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 _D_LOG_MAX_CHARS
+# 2026-09-22 小欧 - constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 _D_LOG_MAX_CHARS
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -266,7 +266,7 @@ import asyncio
 
 import time
 from dataclasses import dataclass, field
-from itertools import zip_longest  # 2026-09-03 小欧 Bug-1: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断丢失 tool_result
+from itertools import zip_longest  # 2026-09-03 小欧 修复: build_observation 用 zip_longest 防 all_calls/results 长度不齐截断丢失 tool_result
 from typing import Dict, List, Any, Optional, Set
 from app.logger import logger, log_and_print
 
@@ -274,7 +274,7 @@ from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
 from app.config import get_config
 from app.utils.display_utils import format_llm_data_text  # 小欧 2026-08-25 合规重构: 纯展示格式化函数拆至全局层 display_utils(去内嵌闭包)
 from app.logger.prompt_logger import get_prompt_logger
-from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error") P3
+from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error")
 from app.services.agent.status_table import AgentStatus, set_status
 from app.services.agent.observation_formatter import build_observation_text
 from app.services.agent.tool_executor import execute_tool
@@ -344,7 +344,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
     # 2026-08-30 小欧 收口: 裸print→log_and_print(延续2026-07-23统一治理), 控制台镜像离线化 + [Action]文件留痕增强
     log_and_print(f"{time.strftime('%H:%M:%S')} [Action]step={step} ={call_result.tool_name}, pars:{params_short}")
 
-    # BUG-1修复(2026-09-06 小欧, 问题挖掘文档六.6.1): thought 先于预览落地(方案C契约 thought→action 前序)
+    # 修复(2026-09-06 小欧): thought 先于预览落地(契约 thought→action 前序)
     #   — 原实现 thought 仅 append _events 延迟发布, 预览 ActionStep 于 L367 直接 publish
     #   提前插队 → SSE/前端顺序错乱(思考正文逆到工具行下/被隔断)且 HITL 弹窗等待期思考不可见;
     #   [改法] thought 先行直接 publish(先于预览与弹窗), 同步从 _events 摘除, 防 react_step.py:485 二次 publish 双发;
@@ -372,7 +372,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
             "target": _extract_target(c),
             "params": c.get("tool_params", {}) or {},
         } for c in call_result.all_calls]
-        # BUG-1修复(2026-09-06 小欧): buffer 已上移至 thought 前统一获取, 此处删除重复获取防冗余 — 小欧-2026-09-06
+        # 修复(2026-09-06 小欧): buffer 已上移至 thought 前统一获取, 此处删除重复获取防冗余 — 小欧-2026-09-06
         _live_action = agent._step_emitter.emit(ActionStep(
             step=step,
             exec_type="single" if len(call_result.all_calls) == 1 else "multi",
@@ -384,7 +384,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
         _live_action["preview"] = True
         await _buf.publish(_live_action)  # B2: 直接publish不合并_events(保证齿轮先于弹窗落地) — 小欧-2026-09-06
 
-    # #11+#12 fix: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
+    # 修复: 传_out收集通过安全检查的call, 拒绝不终止整批 — 小欧 2026-07-18
     # 2026-08-11 小欧 fix D2: 传_denied_out收集被拒call(tool_name,reason,call), 反馈在build_observation后写
     _exec_calls: List[Dict] = []
     _denied_list = []
@@ -415,7 +415,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
     # 重试回调不再收集/上报, 仅后端内部重试。
     # H1 (v1.43): 移除工具批 finally 的 clear_temp_auth() — 清零点迁移到 task 级(R1, react_cycle.run_react_cycle finally)
 
-    # 2026-08-23 #B 闭环(北京老陈 裁定②): 文件A 工厂回调, 每次重试尝试各写一块, 闭合 11.7.9-2 — 小欧 2026-08-23
+        # 2026-08-23 闭环(北京老陈 裁定②): 文件A 工厂回调, 每次重试尝试各写一块, 闭合落盘链路 — 小欧 2026-08-23
     # v3.29: 回调内直接落盘(write_tool_block), step=本步 llm_call_count(系统既有字段名); 工厂按全局工具序号闭包注入 tool_no
     # 2026-09-04 小健 第2阶段拆分: 回调工厂下沉 file_persist.make_fp_callback(逻辑完整复制)
 
@@ -450,11 +450,11 @@ async def handle_action(agent, parsed: Dict) -> dict:
             step=step, response=orchestration.get("return_direct_message", ""),
         ))  # 4A(5.6): 转发→extend — 小欧-2026-09-06
     else:
-        # 4.4.2 工具轮 thought-start 第2发射点(2026-09-07 小欧, 时序根治 前端消息分类处理分析及设计 4.4.2[9]):
+        # 4.4.2 工具轮 thought-start 第2发射点(2026-09-07 小欧, 时序根治 前端消息分类处理分析及设计):
         #   本点在 build_observation 之后、return_direct(工具结果直接作终态)守卫内 — 承接"下一次 LLM 请求前"
         #   等待信号; 与 react_loop 进 loop 前发射点合计 = loop 内调工具次数+1(发射公式);
         #   [时序] 旧点发在 thought 前=LLM 响应后(错), 移至 obs 后入 events(react_step.py:478 逐条 publish),
-        #   前端 waiting 图标在下一 thought 出现全程可见; 纯实时不落库(§10.3.3(1)) — 小欧-2026-09-07
+        #   前端 waiting 图标在下一 thought 出现全程可见; 纯实时不落库 — 小欧-2026-09-07
         _events.append(agent._step_emitter.emit(ThoughtStartStep(step=step)))
     return {"events": _events, "result": {
         "return_direct": orchestration.get("return_direct", False),

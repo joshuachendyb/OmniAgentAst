@@ -14,7 +14,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
     provider 回退，不写空 model_ref
   2026-09-20 - 小欧 - v4.17：models[] 回字符串列表；模型参数/元数据分置 model_params/model_meta；
     delete_provider 单次落盘 + 禁删最后一个 Provider；_sync_current 空值保护
-  2026-09-21 - 小欧 - 对齐文档54 9.1.3：delete_provider switched_to 返回 provider 名称（target_p or None），撤销此前误改的模型名称版
+  2026-09-21 - 小欧 - 对齐设计文档 9.1.3：delete_provider switched_to 返回 provider 名称（target_p or None），撤销此前误改的模型名称版
   2026-09-21 - 小欧 - 修复 None 陷阱: .get('key','')/get('key',[])/get('key',{}) 在 key 存在但值为 None 时返回 None，
     统一修为 .get('key') or ''/[]/{}/60/3（config_service/config_helpers/model_service/resolver 共 12 处）
    2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（模型域，对应 config_helpers 的

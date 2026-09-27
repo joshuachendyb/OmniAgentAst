@@ -3,13 +3,13 @@
 # 2026-09-05 小健 新建(10.4第二阶段提一): check_safety_and_confirm 自 action_handler.py 整搬(逐字复制不重写),
 #   随迁import(trust/safety/hitl/sandbox/status/steps/constants); 函数内延迟import原样保留;
 #   本文件=安全检查+HITL确认门禁(安全+HITL+沙箱三合一), 与 sandbox_gate 同族目录。
-# 2026-09-06 小欧 步骤3A落盘(test_path1_step3a_gateway_cutover.py T3A红→绿, 文档[6]5.4.0):
+# 2026-09-06 小欧 步骤3A落盘(测试红→绿, 文档落码):
 #   真HITL区(行156-212)/bypass区(行104-154)"等待源头"全收 hitl_gateway——删 create/wait/S1窗口/
 #   计时/trust_path/paused与resumed自行组装/SUSPENDED/EXECUTING/授权try收口, 改 ConfirmSpec+hitl_confirm
 #   唯一暂停源头; 函数保持 async generator 其余 yield 不动(收list/签名返回/sniff删归5.4.2三B);
 #   三处汇合点 run_sandbox_gate 加 main_confirmed 透传(141区传_bypass_confirmed/205区传True/226区缺省False);
 #   StreamBuffer缺失显式失败不静默; 仅凭auth_path授权不设trust_session门
-# 2026-09-06 小欧 步骤3B落盘(文档[6]5.4.2终态, 对应清单#4纯函数半#3纯函数半补):
+# 2026-09-06 小欧 步骤3B落盘(文档落码, 清单纯函数半补):
 #   收list→签名->list, blocked/超时/拒绝错误与三处sandbox汇合事件全部并入 _events 列表(单一出口return),
 #   删sandbox resumed旁路判定(any(...=='resumed'))与事件透传plumbing(for _st: yield _st),
 #   函数由 async generator 收敛纯函数(返回事件列表), 零并发副作用; 等待/resolve/计时/暂停/恢复仍归网关;
@@ -21,26 +21,26 @@
 #   由 MetaStep(type="error", error_type="user_rejected") 改独立 type="user_rejected" 单独发(无 error_type/
 #   severity, 不占 error 通道/liveErrorText); 前端 onDenied 独立回调聚合 deniedStepSet 停齿轮;
 #   配套：react_dispatch 状态推断适配(独立ttype计入可恢复拒绝计数)、agent_runner 仅SSE集合补入(不落库) — 小欧-2026-09-06
-# 2026-09-06 小欧 BUG-2 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证):
+# 2026-09-06 小欧 修复: 拒绝计数记错工具修复(react_dispatch 死胡同机制, A/B实证):
 #   真HITL拒绝分支构造 user_rejected 事件时未传 tool_name → react_dispatch 取 llm_response.
 #   tool_name(主工具) 兜底计数 → 拒绝累到主工具名下, 被拒工具读不完防呆的3次FAILED阈值;
 #   [修复] user_rejected 事件补 tool_name=_cn(被拒工具名, 拒绝语义自包含) — 小欧-2026-09-06
-# 2026-09-06 小欧 BUG-2 拒绝计数错键修复补全(问题挖掘文档六.6.2): 与 user_rejected 同根——blocked(拦截)/timeout(超时)
+# 2026-09-06 小欧 修复: 拒绝计数错键修复补全(问题挖掘文档): 与 user_rejected 同根——blocked(拦截)/timeout(超时)
 #   事件亦未带被拒工具名 tool_name, react_dispatch 计数同样回退主工具名;_deny_counts 同键跨拦截/超时累计漂移;
 #   [修复] blocked/timeout 事件均补 tool_name=_cn(拒绝语义自包含, react_dispatch 事件级优先取数) — 小欧-2026-09-06
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①行82 type="error"→"rejected", 新增 reject_type="safety"; ②行125 type="error"→"rejected", 新增 reject_type="timeout"; ③行137 type="user_rejected"→"rejected", 新增 reject_type="user" - 小欧-2026-09-17
-# 2026-09-18 小欧 TDD过宽收敛(第3章3.2/3.2.1/3.3/3.4):
+# 2026-09-18 小欧 TDD过宽收敛(分类归属细化):
 #   ①3.2/3.2.1 只读短路: requires_confirmation 前判 shell 只读白名单(含新增五项), 命中不进网关落site③沙箱只读直通;
 #   ②3.3 site③ run_sandbox_gate 传 trusted=_skip(会话信任豁免能力缺口直放, risky仍弹);
 #   ③3.4 同批合并: 循环外_confirm_cache按(tool, auth/trust_path)组键, 组内首call弹窗其余复用verdict(确认1次/拒绝整组),
 #      grant_temp_auth组内仅首call授齐, content追加"另有N-1个同类调用同批一并裁决" - 小欧-2026-09-18
 # 2026-09-18 小欧 - safety_level→severity: getattr读取字符串+ConfirmSpec字段同步重命名 — 小欧-2026-09-18
-# 2026-09-18 小欧 - 第7章实施([50]7.2.1/7.3.0): ConfirmSpec构造前按SafetyResult.message关键词分类safety_level(未注册→unregistered/系统禁区→forbidden_zone/
+# 2026-09-18 小欧 - 归属分类实施: ConfirmSpec构造前按SafetyResult.message关键词分类safety_level(未注册→unregistered/系统禁区→forbidden_zone/
 #   受保护区域/超出允许范围→path_auth/高风险Shell/系统保护进程→command_block/中风险Shell→shellparam/删除需确认/禁止删除→tool_delete/数据保护→data_guard/
 #   安全检查异常→command_block/兜底tool_execute); content改载_message原样(去拼接问句), bypass改"安全开关已绕过，自动确认执行" - 小欧-2026-09-18
 # 2026-09-18 小欧 - 三思三省精确化(9类全量核查): keyword链尾部补 `elif not _msg` 按工具名二次归属 —
-#   无message确认类(needs_confirmation=True且无风险文案)原全落tool_execute兜底, 与§6.2.2归属不符:
-#   shell确认→shellparam(§6.2.3中风险弹窗即needs_confirmation驱动, 命令确认主场景)、create_task/writetext/edittext/writetool→tool_write、
+#   无message确认类(needs_confirmation=True且无风险文案)原全落tool_execute兜底, 与归属规则不符:
+#   shell确认→shellparam(中风险弹窗即needs_confirmation驱动, 命令确认主场景)、create_task/writetext/edittext/writetool→tool_write、
 #   delete_task→tool_delete; execute_sql/registry_write/registry_delete保持tool_execute兜底(本就准确) — 小欧-2026-09-18
 # 2026-09-18 小欧 - 毛病3精化(弹窗过宽核查): 3.4同批合并组键 (tool, auth/trust_path) 对 shell 恒退化 ("shell", None)
 #   (shell 不在 trust FILE_OPERATION/NON_FILE_TRUST 两集合, extract_trust_path 恒 None),
@@ -54,7 +54,7 @@
 # 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT, 与hitl_gateway同批): ConfirmSpec删mode="bypass" if _bypass else "hitl",
 #   改auto_confirm=_bypass布尔单源(唯一真相源), 避免"布尔→字符串→布尔"无意义往返 — 小欧-2026-09-18
 # 2026-09-19 小欧 - bypass恢复_bypass_confirmed透传: 改动4误删run_sandbox_gate的_bypass_confirmed参数(main_confirmed),
-#   恢复透传, 避免bypass下sandbox走110s+超时拒绝; sandbox_gate同步修复auto_confirm读safety_result — 北京老陈驱动(三堂会审Bug1)
+#   恢复透传, 避免bypass下sandbox走110s+超时拒绝; sandbox_gate同步修复auto_confirm读safety_result — 北京老陈驱动(三堂会审)
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -99,13 +99,13 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         - 把"工具被拒绝/拦截"作为 observation 写进LLM历史(_add_denial_feedback), 让LLM换方案;
         - 循环回 THINKING 由主循环 EXECUTING→THINKING 处理;
         - 仅当同类拒绝累计>=3次才由 _dispatch_handler 置 FAILED。 — 小欧 2026-07-13
-        # 2026-07-18 小欧 #11+#12 fix: 超时/拒绝分流; 拒绝不终止整批, 收集_denied后继续检查剩余工具,
+        # 2026-07-18 小欧 修复: 超时/拒绝分流; 拒绝不终止整批, 收集_denied后继续检查剩余工具,
         #   最终只执行通过的call(通过_out返回过滤后的call列表)
         # 2026-08-11 小欧 fix D2: _denied从2元组(tool_name,reason)扩展为3元组(tool_name,reason,call),
         #   _out过滤从按tool_name改按id(call)对象精确标识(同批同名工具1个被拒不再误杀);
         #   反馈推迟到调用方build_observation之后(_denied_out回传), 由_add_denial_feedback精确到call写,
         #   消除"会执行的同名工具被误标被拦截"与"assistant双重写入"的矛盾
-        # 2026-09-06 小欧 3B终态(文档[6]5.4.2): 事件只经 _events 单一列表路径返回(5.5纯函数零并发副作用),
+        # 2026-09-06 小欧 3B终态(文档落码): 事件只经 _events 单一列表路径返回(纯函数零并发副作用),
         #   删sandbox resumed旁路判定与事件透传plumbing; blocked/超时/拒绝错误并入列表, 签名落->list
         """
         from app.safety.tool_safety_checker import get_tool_safety_checker
@@ -137,7 +137,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     tool_name=_cn
                 )))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
-                continue  # was: return  — 小欧 2026-07-18 #12 fix
+                continue  # was: return  — 小欧 2026-07-18 修复
 
             # 3.2/3.2.1 只读短路: shell 只读白名单(含新增五项)的 requires_confirmation 不进网关,
             #   恒与真机放行并行(仍落 site③ 走沙箱只读直通), 仅收敛"只读也弹窗"的过宽 — 小欧-2026-09-18
@@ -205,7 +205,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         _sl = "command_block"
                     elif not _msg:
                         # 三思三省(2026-09-18 小欧): 无message确认类(keyword无内容)按工具名精确归属 —
-                        #   §6.2.2 归属: shell确认→shellparam(命令确认主场景, §6.2.3中风险弹窗即needs_confirmation驱动),
+                        #   归属: shell确认→shellparam(命令确认主场景, 中风险弹窗即needs_confirmation驱动),
                         #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute兜底 ✓
                         if _cn == "shell":
                             _sl = "shellparam"
@@ -236,7 +236,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         except Exception as e:
                             logger.warning(f"[action] bypass grant_temp_auth失败仍放行: {e!r}")
                     # v1.25 M3 插入点①: auto_confirm 汇合路径 — 沙箱预检最后闸门(统一入口) — 小健 2026-09-04/2026-09-06
-                    # 2026-09-19 小欧 Bug1修复: 恢复 _bypass_confirmed 透传(main_confirmed), 改动4误删导致bypass下sandbox走110s+超时拒绝
+                    # 2026-09-19 小欧 修复: 恢复 _bypass_confirmed 透传(main_confirmed), 改动4误删导致bypass下sandbox走110s+超时拒绝
                     _ok, _steps = await run_sandbox_gate(agent, step, call, _cn, _cp, safety_result, _denied,
                                                          _bypass_confirmed)
                     _events.extend(_steps)  # 3B: 汇合事件併入返回列表(透传plumbing删除) — 小欧 2026-09-06
@@ -247,7 +247,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 # 3A: 等待源头已收网关(上方requires_confirmation入口统一调hitl_confirm), 此处按verdict分流 — 小欧 2026-09-06
                 if not _verdict["confirmed"]:                     # verdict四键恒在(见5.1), 直接下标安全 — 小欧 2026-09-06
                     if _verdict["expired"]:
-                        # #11 fix: 超时与拒绝分流 — 小欧 2026-07-18 (3B: 错误併入列表)
+                        # 修复: 超时与拒绝分流 — 小欧 2026-07-18 (3B: 错误併入列表)
                         logger.warning(f"[action] step={step} timeout: tool={_cn}")
                         _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="rejected", content=f"工具执行确认超时: {_cn}", reject_type="timeout",
@@ -268,7 +268,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         _denied.append((_cn, "被用户拒绝执行", call))
                         # 毛病4(2026-09-18 小欧): 记用户拒绝记忆(键与组键同口径), 同 (tool, path) 本任务内再派发不再弹
                         _rejection_cache_of(agent)[_group_key] = f"用户拒绝执行工具: {_cn}"
-                    continue  # was: return  — 小欧 2026-07-18 #12 fix
+                    continue  # was: return  — 小欧 2026-07-18 修复
 
                 # 用户已确认: 仅凭auth_path授权(不设trust_session门), 3.4组内去重仅首call授齐, grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06/2026-09-18
                 if _group_lead and getattr(safety_result, "auth_path", None):
@@ -289,7 +289,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             #   tool_safety_checker 豁免返回 requires_confirmation=False 但保留 auth_path,
             #   此处补 grant_temp_auth 闭环, 防"豁免跳窗不放行"(工具内部 validate_path 拦截执行失败)
             try:
-                # 2026-09-03 小欧 Bug-25: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
+                # 2026-09-03 小欧 修复: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合
                 if getattr(safety_result, "auth_path", None):
                     grant_temp_auth(safety_result.auth_path, recursive=True)
             except Exception as e:
@@ -303,7 +303,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             if not _ok:
                 continue
 
-        # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 #12 fix
+        # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 修复
         # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
         #   原按tool_name过滤→同批同名工具(如2×edittext)1个被拒全部误杀
         if _out is not None:

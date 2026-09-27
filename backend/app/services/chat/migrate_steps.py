@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 小欧 #5 fix: _needs_migration final分支补response字段
+# 2026-07-18 小欧 修复: _needs_migration final分支补response字段
 # 2026-08-19 小欧 v2.0: chat_messages.execution_steps 列随冻结废弃删除, migrate_execution_steps_status
 #   加"列存在"守卫(PRAGMA table_info 判断), 新库无此列直接跳过, 防触发时报 no such column
 # 2026-08-19 小欧 v2.0结构迁移: 新增 migrate_v2_chat_restructure, 复用 schema_migrations 登记机制,
@@ -16,7 +16,7 @@
 #    历史迁移漏带此列导致 ai_message_id 全空, 幂等仅回填为空的行)
 # 2026-08-27 小欧 阶段3(chat_messages表退役): migrate_execution_steps_status 新增"表存在"守卫(_table_exists), 表已DROP则跳过迁移, 防 PRAGMA table_info(chat_messages) 表不存在时报 no such table
 # 2026-08-27 小欧 阶段3(chat_messages表退役)清理: 整删migrate_execution_steps_status死函数(全backend无调用方)及其MIGRATION_NAME常量、migrate_v2_chat_restructure块5/6/7(chat_messages双列/回灌chat_user_message/chat_task_steps, 表已DROP永跳过)死分支; scripts/migrate_utc_to_local.py与migrate_time_format.py(硬编码引用已退役chat_messages列)删除; 系统对该表零残留运行代码引用
-# 2026-07-18 小欧 #5 fix: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成(恢复docstring改写时误删的第二板块同条记录, 禁止删除历史)
+# 2026-07-18 小欧 修复: _needs_migration final分支补齐response字段(与_migrate_one_step一致); 取消文本仅存response的历史消息不再漏迁移误判完成(恢复docstring改写时误删的第二板块同条记录, 禁止删除历史)
 # 2026-09-07 小欧 4.4.1(B7/B8): 规则#3 incident_value=cancelled 改产 type=final+outcome=cancelled; 规则#4 旧取消FinalStep 改原地补 outcome=cancelled(不再重建 type=cancelled dict, 保字段不丢)
 # 2026-09-07 小欧 4.4.1旧case清零(北京老陈裁定删死代码): 删 _needs_migration/_migrate_one_step/_confirm_id_of 三死函数及 typing/json_utils/storage 死导入(驱动 migrate_execution_steps_status 已于 2026-08-27 删除, 零调用方); 旧取消行改写另立新一次性行迁移 migrate_cancelled_rows_to_final 承接
 # 2026-09-07 小欧 4.4.1(B7/B8): 规则#3 incident_value=cancelled 改产 type=final+outcome=cancelled;

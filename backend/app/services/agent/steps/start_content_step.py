@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-18 小欧 - 新增: §10.1.2 P7 start 拆双——StartStep(thought 类内容步骤, 落库, content=context_summary)
+# 2026-08-18 小欧 - 新增: start 拆双——StartStep(thought 类内容步骤, 落库, content=context_summary)
 # 2026-08-22 小欧 - model结构化归一报告v1.25 6.5: display_name/provider/model 三分离入参 → start_model: Optional[ModelRef]
 #   单结构承载; display_name 键消亡(设计要求2: 后端零依赖仅前端派生, 消费点 agent_runner startinfo 已随删)
 from typing import Any, Dict, Optional
@@ -10,7 +10,7 @@ from .base import ReasoningStep
 
 
 class StartStep(ReasoningStep):
-    """start 完整任务契约 - thought 类内容步骤, 落库承载上下文摘要(§10.1.2)"""
+    """start 完整任务契约 - thought 类内容步骤, 落库承载上下文摘要"""
     TYPE: str = "start"
 
     def __init__(self, step: int = 0, context_summary: Optional[Dict] = None,

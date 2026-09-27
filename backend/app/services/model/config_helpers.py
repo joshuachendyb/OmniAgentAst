@@ -15,7 +15,7 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-20 - 小沈 - v4.19 Phase 1/2: 新增公共工具函数 _get_dotted/_config_mtime/mask_secret_value/merge_region_patch/_set_nested;
 #   write_yaml_config 改调 atomic_write 原子落盘; _write_system_yaml 改为返回 ordered data（不再直写文件）
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 新增 _validate_config_integrity 校验（merge_region_patch 安全网）
-# 2026-09-21 小欧 - 依据文档54 9.3.3 重写 merge_region_patch: 补 filelock 并发锁/备份/完整性校验/
+# 2026-09-21 小欧 - 依据设计文档 9.3.3 重写 merge_region_patch: 补 filelock 并发锁/备份/完整性校验/
 #   写后逐键验证/失败回滚/reload 全链路；_set_dotted 替代 _set_nested；_validate_config_integrity
 #   恢复读扁平键。
 # 2026-09-21 小欧 - 新增 merge_nested_patch/_merge_region_core/_iter_nested_ops/_set_nested_path/
@@ -480,7 +480,7 @@ def _set_dotted(data: Dict[str, Any], key: str, value: Any) -> None:
 def _iter_nested_ops(tree: Any, prefix: Tuple[str, ...] = ()) -> Iterator[Tuple[Tuple[str, ...], Any]]:
     """嵌套树扁平化为 (路径段, 值) 列表；叶段保持字面名，绝不按点号分裂
     （模型/Provider 名含点号时必须在模型域使用 merge_nested_patch）。
-    2026-09-21 小欧 修 P8 根治：空 dict 叶值显式 yield 空块 {}——原实现把 {} 当内部节点
+    2026-09-21 小欧 根治：空 dict 叶值显式 yield 空块 {}——原实现把 {} 当内部节点
     展开导致零 ops（"清空模型参数/空块"永远写不落盘，PUT default_params={} 静默无效果）。"""
     if not isinstance(tree, dict):
         yield prefix, tree
@@ -511,7 +511,7 @@ def _merge_region_core(ops: List[Tuple[Tuple[str, ...], Any]], scope: str) -> st
     备份 → 内存合并 → _validate_config_integrity 校验（v4.19 补：单写方案下校验
     由本函数统一承载，安全网与 update_config 持平，防绕过校验写坏配置）→
     _order_for_dump 保序 → atomic_write → 重读验证(reload_ai_config) → 异常回滚最近一个备份。返回 backup_path。
-    v4.19(P2-1 落码)：并发保护——进入即持 filelock.SoftFileLock(config.yaml.lock)，
+    落码：并发保护——进入即持 filelock.SoftFileLock(config.yaml.lock)，
     先写者完成后后写者基于最新文件重读合并，杜绝「读原→改→写」非原子下旧快照覆盖丢项。
     2026-09-21 小欧：空 ops 直接跳过（不备份不写盘，S6 备份膨胀）。"""
     import filelock  # 局部 import：filelock 为新增依赖，抑制启动失败面
@@ -545,7 +545,7 @@ def _merge_region_core(ops: List[Tuple[Tuple[str, ...], Any]], scope: str) -> st
             return str(backup_path)
         except Exception:
             _restore_backup_if_needed(backup_path, config_path, restored)
-            # 文档54 9.3.3 字面的 logger.error+裸 raise 在 except 块外会报
+            # 设计文档 9.3.3 字面的 logger.error+裸 raise 在 except 块外会报
             # "No active exception to reraise"（Python 语义实测）；移入 except 块内
             # 保证「记日志 + 原样重抛」语义正确 — 小欧 2026-09-21
             logger.error(f"[{scope}] region 合并写入失败已回滚", exc_info=True)

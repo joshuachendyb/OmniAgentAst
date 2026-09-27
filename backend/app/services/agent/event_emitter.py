@@ -6,7 +6,7 @@
 # 2026-09-04 小健 - 修复重构bug: completed分支补set_completed()调用,
 #   病根: 重构将handler的yield Step移到event_emitter, 但漏掉set_completed()副作用,
 #   致agent.status永远EXECUTING, 循环退出条件(agent.status in终态)永远不满足→死循环
-# 2026-09-18 - 小欧 - 第7章实施([50]7.3.5 D2/D3): blocked兜底文案"安全策略拦截"→"安全策略已拦截";
+# 2026-09-18 - 小欧 - 实施: blocked兜底文案"安全策略拦截"→"安全策略已拦截";
 #   confirmed文案"沙箱预检已确认执行"→"预检已确认，允许执行"(去"沙箱"技术术语) — 小欧-2026-09-18
 """
 event_emitter — 统一转换层：业务结果 → 前端Step

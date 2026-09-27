@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-09 - 小欧 - P4拆分(见doc-8月优化修复代码三堂会审报告v1.1): 暂停阻塞核心提取为 _pause_core,
+# 2026-08-09 - 小欧 - 拆分(见doc-8月优化修复代码三堂会审报告v1.1): 暂停阻塞核心提取为 _pause_core,
 #   react_cycle后台路径改 wait_for_resume(纯阻塞不产SSE), task_pause_check 保留产SSE供前端消费路径
 #   (openai._stream_with_control 的 task_pause_check_and_yield)。职责单一, 消除后台死路SSE事件。ast语法✓
 # 2026-08-17 - 小健 - 三堂会审收敛(北京老陈深挖db_ops/_stream_with_control): task_cancel_check_and_yield 删
 #   死参数 session_id/current_content(函数体从未使用, 调用点 stream_orchestrator 曾白算 current_content 传入);
 #   签名收窄为 (task_id, next_step, current_execution_steps), 消除 KISS-DIRECT 透传无用参数 — 小健 2026-08-17
-# 2026-08-18 - 小欧 - §10.4.4 P2(弃用 next_step): 各函数删 next_step 参数, 统一经 _current_step(task_id)
+# 2026-08-18 - 小欧 - 弃用 next_step: 各函数删 next_step 参数, 统一经 _current_step(task_id)
 #   读 running_tasks[task_id].agent.llm_call_count(or 1 兜底); 删 Callable import — 小欧 2026-08-18
 # 2026-08-28 小欧 - yield日志审计: _pause_core 的 paused/resumed yield 前加 logger.info("[pause] task step"), 覆盖4个无日志yield(SRP); 三堂会审无逻辑修正
 # 2026-09-07 小欧 - 4.4.1(取消终态信号的分工): 新增 _cancel_final_dict(task_id) 顶层构造 final+cancelled(禁止 build_step_dict 防 data 嵌套, 前端读顶层 outcome 失效);
 #   task_cancel_check_and_yield 去重检测扩展认 final+cancelled + 产出改 final; task_cancel_check 启动前分支同改。— 配套前端删 case 'cancelled', 取消收尾单一由 final+outcome=cancelled 承担。
 # 2026-09-07 小欧 - 4.4.1(B9): task_cancel_check_and_yield 去重删 type=cancelled 与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 运行任务只产新契约终态), 单条件完备
-# 2026-09-08 小欧 - 方案四/五(北京老陈, 见doc-9月优化[12] 6.5/6.6): cancel_task/_cancel_final_dict 增 source 来源区分,
+# 2026-09-08 小欧 - 方案四/五(北京老陈, 见doc-9月优化): cancel_task/_cancel_final_dict 增 source 来源区分,
 #   CANCEL_SOURCE_TERMINAL_TEXT+cancel_terminal_text 按来源出终态文案(6.6.2 A-G 全覆盖); set_cancelled(**extra=cancel_source) 落库;
 #   C/D 随 agent._cancel_source 继承 A/B 来源; task_cancel_check(_and_yield) source 随 running_tasks.cancel_source 带出。
 # 2026-09-08 小欧 补缺日志(北京老陈"新改代码需合理log"核查): task_cancel_check 启动前取消分支补 logger.info
@@ -22,12 +22,12 @@
 #   双写后后端命令行(uvicorn窗口)直接可见取消请求(task/source) — 小欧-2026-09-08
 # 2026-09-14 小欧 - _cancel_final_dict 取消终态字段修正: 删 content 改 response, 与 FinalStep.to_dict() 对齐,
 #   前端 sseParser final 分支读 response 字段, content 无消费者 — 小欧-2026-09-14
-# 2026-09-20 - 小欧 - P0+P1+C-6: ①P0(13.1) 补 import asyncio(_pause_core 用 asyncio.wait_for/TimeoutError);
-#   ②P1(13.2) resolver 无条件快照(C3/C4 返回全局默认快照兜底, 绝不返回 None);
-#   ③C-6(RED-C-6) cancel_task 取消目标改优先 agent.llm_client(会话快照), 而非注册时的全局 ai_service ——
+# 2026-09-20 - 小欧 - 三项修复: ①补 import asyncio(_pause_core 用 asyncio.wait_for/TimeoutError);
+#   ②resolver 无条件快照(返回全局默认快照兜底, 绝不返回 None);
+#   ③cancel_task 取消目标改优先 agent.llm_client(会话快照), 而非注册时的全局 ai_service ——
 #     取消全局单例作用在错误对象; 无 agent/无 llm_client 时回退注册 ai_service(兼容既路径)。
 #   compliance: KISS-DIRECT/禁止backward
-# 2026-09-20 - 小欧 - C-6/BUG-08修复: ①取消对象优先agent.llm_client(会话快照)而非全局ai_service; ②无agent/无llm_client时跳过cancel()(防误杀其他会话)
+# 2026-09-20 - 小欧 - 修复: ①取消对象优先agent.llm_client(会话快照)而非全局ai_service; ②无agent/无llm_client时跳过cancel()(防误杀其他会话)
 # 2026-09-20 - 小欧 - D-8修复(F7重连终态重复下发): task_cancel_check_and_yield 增任务级 _cancel_sent 标记——
 #   重连编排层以空 execution_steps 进入时原列表扫描恒 False, cancelled 终态帧被重复下发; 本次下发置位标记,
 #   任务存活期为界(服务重启后任务即不在 running_tasks 无从重连), 非空列表含 DB 旧帧且未置位时保留原列表扫描。
@@ -63,7 +63,7 @@ from app.services.agent.status_table import set_status, AgentStatus
 
 def _current_step(task_id: str) -> int:
     """取任务的当前轮数(统一步号口径) — 小欧 2026-08-18
-    §10.4.4 P2(弃用 next_step): 统一读 running_tasks[task_id].agent.llm_call_count,
+    弃用 next_step: 统一读 running_tasks[task_id].agent.llm_call_count,
     or 1 兜底(消费路径可能先于 agent 注册, 防 0 异常)。"""
     _agent = running_tasks.get(task_id, {}).get("agent")
     if _agent is not None:
@@ -117,9 +117,9 @@ async def cancel_task(task_id: str, session_id=None, source: str = "user_request
     _agent = _task.get("agent")
     if _agent is not None:
         _agent._cancel_source = source
-    # C-6(小欧 2026-09-20 RED-C-6): 取消对象优先 agent 实际使用的 llm_client(会话快照),
+    # 修复(小欧 2026-09-20): 取消对象优先 agent 实际使用的 llm_client(会话快照),
     #   而非注册时的全局 ai_service —— 编排 L345-347 已把快照赋给 agent.llm_client, 取消全局单例作用在错误对象。
-    #   无 agent / 无 llm_client 时跳过 cancel() — BUG-08修复(小欧 2026-09-20): 全局单例可能服务其他会话,
+    #   无 agent / 无 llm_client 时跳过 cancel() — 修复(小欧 2026-09-20): 全局单例可能服务其他会话,
     #   对其调cancel()会误杀, 仅标记cancelled(已由上方set_cancelled完成) — 小欧-2026-09-20
     _cancel_target = None
     if _agent is not None:
@@ -145,7 +145,7 @@ async def task_cancel_check_and_yield(
     task_id: str, current_execution_steps: list
 ) -> Optional[str]:
     # 小健 2026-08-17 三堂会审收敛(KISS-DIRECT): 删死参数 session_id/current_content(函数体从未使用, 调用点白算)
-    # 小欧 2026-08-18 P2(§10.4.4): 删 next_step, 步号统一 _current_step(task_id)
+    # 小欧 2026-08-18 删 next_step: 步号统一 _current_step(task_id)
     if await check_cancelled(task_id):
         # 2026-09-07 小欧 4.4.1(B9): 去重只认 type=final+outcome=cancelled, 删 type=cancelled
         #   与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 迁移后亦无,
@@ -253,7 +253,7 @@ async def task_pause_check(
     timeout: Optional[float] = None,
 ) -> AsyncGenerator[str, None]:
     """阻塞+产出暂停/恢复SSE。前端SSE消费路径(openai._stream_with_control)用 — 小欧 2026-08-09
-    小欧 2026-08-18 P2(§10.4.4): 删 next_step, 步号统一 _current_step(task_id)"""
+    小欧 2026-08-18 删 next_step: 步号统一 _current_step(task_id)"""
     async for sse in _pause_core(task_id, timeout, emit_sse=True):
         yield sse
 

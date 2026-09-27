@@ -17,17 +17,17 @@
 # 2026-08-17 - 小健 - S5(compaction 落地 943a77917): ①add_tool_result 新增 summary 形参, 工具层 llm_data.summary
 #   透传 stash `_summary` 供 compaction.use_tool_summary 复用(DRY, 14.9.6 C2 前置, 与 observation_formatter 拼接解耦);
 #   ②prepare_messages_for_llm 新增 _COMPACTION_TEMP_KEYS=("_summary","_pruned","_compressed","_raw","_truncated"),
-#   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3②/14.9.6 C2 剥离要求)。
+#   浅拷贝后一并剥离, 与 _temp_* 同段清空, 防泄漏 LLM 请求/污染 wire(对齐 14.9.3②/14.9.6 C2 剥离要求)。
 # 2026-08-17 - 小健 - compaction 函数改名同步: add_tool_result 注释3处 t1_reuse_summary→use_tool_summary(供 compaction.use_tool_summary 复用/防空转)
 # 2026-08-17 - 小健 - 常量归属迁移(北京老陈驱动): 压缩/裁剪常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 由 app.constants 迁至 app.services.agent.compaction_constants, 导入路径同步改
 # 2026-08-17 - 小健 - 阈值重构(北京老陈 2026-08-17 定案, loop裁剪=上下文×3/4): trim_history 绝对值触发 self.MAX_CONTEXT_TOKENS(skip覆盖后运行时窗口)×TRIM_TRIGGER_RATIO 替换原×MAX_CONTEXT_RATIO; 构造默认 self.MAX_CONTEXT_TOKENS 由全局 MAX_CONTEXT_TOKENS(200000) 改 DEFAULT_CONTEXT_LIMIT(262144), 运行时仍被 agent_runner 覆盖为 context_limit
 # 2026-08-20 - 小欧 - C2修复(真实缺陷复核确认): trim_history 新增瞬时裁剪token指标 `_trimmed_tokens_this_round`(每轮重置0, 实际裁剪时= rough_current-裁剪后估算, 与 `_trimmed_this_round` 同周期), 供 react_cycle on_trim 透传落 task_metrics.trim_tokens; 原 on_trim 只拿到 bool、token 数恒0 且 finalize 丢弃 → 裁剪遥测死链路。
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4.1 D2b/11.9 P2): __init__ 加 _msg_id_counter 自增计数 +
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码): __init__ 加 _msg_id_counter 自增计数 +
 #   prepare_messages_for_llm 开头单点惰性补 _msg_id(不进 LLM wire, 由 react_cycle 写盘后 pop)——文件B 稳定去重依赖;
 #   v3.29 单点化定案: conversation_history 全程同批 dict 引用(trim/inject/rebuild 不复制), 补标一次永久携带,
 #   各 add_*/inject_history/trim_history 零改动(最小侵入)
-# 2026-08-29 - 小沈 - bug#1修复: _trim_fc_pairs 丢弃 tool_call_id 为空/None 的孤儿 tool 消息(原 elif not tool_call_id 分支误保留→发LLM 400); KISS仅删该分支
-# 2026-09-20 - 小欧 - B组修复(B-1/B-2锚演进): add_user_message 增可选 user_message_id 参数(未传自动合成负id, 内部维护
+# 2026-08-29 - 小沈 - 修复: _trim_fc_pairs 丢弃 tool_call_id 为空/None 的孤儿 tool 消息(原 elif not tool_call_id 分支误保留→发LLM 400); KISS仅删该分支
+# 2026-09-20 - 小欧 - B组修复(锚演进): add_user_message 增可选 user_message_id 参数(未传自动合成负id, 内部维护
 #   current_user_msg_id 锚单点), __init__ 增 _synth_user_msg_id 合成计数与 current_user_msg_id 属性;
 #   prepare_messages_for_llm 浅拷贝后剥离 user_message_id 防泄漏 LLM wire(conversation_history 源保留锚)。compliance: SRP/DRY/KISS
 # 2026-09-20 - 小欧 - D-4修复: _total_chars 将 reasoning/reasoning_content 计入预算(DeepSeek 长 reasoning 20K字符
@@ -107,8 +107,8 @@ class MessageBuilder:
         self._trim_trigger_ratio: float = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))  # 小欧 2026-09-23 trim配置化
         self._compaction_buffer: int = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))  # 小欧 2026-09-23 trim配置化
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
-        self._msg_id_counter: int = 0  # 自增计数器(#10 文件B 去重 — 文档[1]11.8.4.1 D2b v3.29 单点化) — 小欧 2026-08-23
-        # B组(B-1/B-2锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
+        self._msg_id_counter: int = 0  # 自增计数器(文件B 去重单点化) — 小欧 2026-08-23
+        # B组(锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
         self._synth_user_msg_id: int = 0
         self._current_user_msg_id: Optional[int] = None
 
@@ -289,7 +289,7 @@ class MessageBuilder:
         self._cap_temp_history()
         # 惰性补 _msg_id(单点): conversation_history 内尚未打标的消息在此统一分配自增 id;
         # dict 引用全程稳定(trim/inject/rebuild 不复制), 补一次永久携带; 新增消息每轮被此处兜住
-        # — 文档[1]11.8.4.1 D2b v3.29 单点化(北京老陈 裁定:A/B 独立化最小侵入) — 小欧 2026-08-23
+        # — 单点化(北京老陈 裁定:A/B 独立化最小侵入) — 小欧 2026-08-23
         for _m in self.conversation_history:
             if "_msg_id" not in _m:
                 _m["_msg_id"] = self._msg_id_counter
@@ -300,9 +300,9 @@ class MessageBuilder:
         # 剥离内部标记防止泄漏到 LLM 请求(_temp_reasoning/_temp_same_tool_warn) — 小欧 2026-07-19 / 2026-08-08 通用前缀
         # 2026-08-17 - 小健 - S5(compaction): 一并剥离 compaction 内部标记(_summary/_pruned/_compressed/_raw/_truncated),
         #   因 _pruned/_summary 现为短下划线而非 _temp_ 前缀(compaction 模块落地备用后这些标记留 bool/短名前缀),
-        #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 [4] 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
-        # 2026-09-20 - 小欧 - B组(B-1/B-2锚演进): 一并剥离 user_message_id(B-2 锚), conversation_history 源保留锚供 assistant 回复配对落库,
-        #   wire 层不携带该内部锚(对齐 __all__ 同源锚演进)。B-2 自检: 剥离后 message 纯 payload 无内部锚 — SRP(锚=状态域, wire=传输域)
+        #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
+        # 2026-09-20 - 小欧 - B组(锚演进): 一并剥离 user_message_id(锚), conversation_history 源保留锚供 assistant 回复配对落库,
+        #   wire 层不携带该内部锚(对齐 __all__ 同源锚演进)。自检: 剥离后 message 纯 payload 无内部锚 — SRP(锚=状态域, wire=传输域)
         _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated", "user_message_id")
         for msg in messages:
             for _k in [k for k in msg if k.startswith("_temp_") or k in _COMPACTION_TEMP_KEYS]:
@@ -475,7 +475,7 @@ class MessageBuilder:
     @staticmethod
     def _normalize_observation_prefix(text: str) -> str:
         """确保observation文本以 [Observation] 开头 — 替代 base_react.py 前缀处理"""
-        # 【修复 小健 2026-05-24】P1-7: 防止双重[Observation]前缀
+        # 【修复 小健 2026-05-24】防止双重[Observation]前缀
         if text.startswith("[Observation]"):
             return text
         for prefix in ["Observation:", "observation:"]:

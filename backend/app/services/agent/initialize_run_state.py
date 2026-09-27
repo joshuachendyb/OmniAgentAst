@@ -9,7 +9,7 @@
 # 2026-08-10 - 小欧 - I1 (第二次代码更新): 新增任务文本目录解析(_parse_task_auth_paths), 仅解析不授权不产 SSE, 挂 agent._task_auth_paths; 同步新增 _TASK_PATH_RE 正则
 # 2026-08-10 - 小欧 - 撤销 I1 (北京老陈 2026-08-10): 「任务中目录解析功能点去掉」— 删除 _parse_task_auth_paths/_TASK_PATH_RE 及调用,
 #   目录权限全部走 LLM 工具参数路径进临时名单(3.2.12); 同步撤销 react_cycle 的 I2/I3/I4 任务级批量确认段; 保留 R1 clear_temp_auth
-# 2026-08-11 - 小欧 - 三堂会审复核落地(P2-3): I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
+# 2026-08-11 - 小欧 - 三堂会审复核落地: I1撤销后 _parse_task_auth_paths 已删, List 无消费处, 移除死 import(代码卫生)
 # 2026-08-16 - 小欧 - S4(10.1.2②): sys_prompt 取到后存 agent._sys_prompt, 供 react_cycle 前置装配 start 读取(start 的 system_prompt 字段, 10.1.1③ 装配时机=initialize_run_state 后 loop 前)
 # 2026-08-17 - 小健 - S5(10.1.8, 943a77917): 新增 _maybe_compact_injected_history(agent), 注入历史后估 token
 #   超窗(MAX_CONTEXT_TOKENS×MAX_CONTEXT_RATIO)置 agent._needs_compact=True; 仅置标记不触发 LLM(实际压缩
@@ -23,9 +23,9 @@
 #   全部业务(inject/超窗判定/C4回填/装配入口), 自本文件移除 _inject_conversation_history 与
 #   _maybe_compact_injected_history 两函数定义(迁入 start_step.py)及 COMPACTION_ENABLED import;
 #   本文件退化为纯状态重置 + init_history, 不再持有任何 start 装配私有逻辑(单一归属, 依赖不反向)
-# 2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): 重置区加 agent._last_error=None(防跨任务残留)
-# 2026-08-18 - 小欧 - §10.4.4 P6(usage剔step_json): 重置区加 agent._usage_events=[]
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import 改别名 + ChunkBuffer() 无参调用
+# 2026-08-18 - 小欧 - error全仅SSE: 重置区加 agent._last_error=None(防跨任务残留)
+# 2026-08-18 - 小欧 - usage剔step_json: 重置区加 agent._usage_events=[]
+# 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + ChunkBuffer() 无参调用
 # 2026-09-23 小欧 - 删死 import MAX_CONSECUTIVE_CHUNKS（should_promote 死链清理，ChunkBuffer 无参构造零使用）
 """
 _initialize_run_state — 每次运行前初始化Agent状态
@@ -59,8 +59,8 @@ def initialize_run_state(
     agent._consecutive_same_tool_calls = 0
     agent._last_tool_call_sig = None
     agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
-    agent._last_error = None  # 2026-08-18 - 小欧 - P3: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
-    agent._usage_events = []  # 2026-08-18 - 小欧 - P6: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
+    agent._last_error = None  # 2026-08-18 - 小欧 - error全仅SSE: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
+    agent._usage_events = []  # 2026-08-18 - 小欧 - usage剔step_json: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

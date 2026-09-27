@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-15 - 小欧 - 注释说明 TASK_TIMEOUT 兜底清理意义(防 running_tasks 内存注册表泄漏); 老陈裁定改为按终态+超时清理: 仅清非活跃(running/paused 外)且超1h任务, 避免误伤长任务/暂停任务
-# 2026-09-20 - 小欧 - B组修复(B-3并发守卫/B-4/B-7收尾窗口orphan兜底): ①register_task 锁内同会话活跃任务互斥守卫(TOCTOU根治, 同会话任务必须串行, 违反即抛RuntimeError);
-#   ②cleanup_task 删任务前把未吸收的 inbox 消息转入模块级 _orphaned_inbox(task_id→list), drain_inbox 任务已删时从 orphan 找回——收尾窗口注入不静默丢失(B-4/B-7)。
+# 2026-09-20 - 小欧 - B组修复(并发守卫 + 收尾窗口 orphan 兜底): ①register_task 锁内同会话活跃任务互斥守卫(TOCTOU根治, 同会话任务必须串行, 违反即抛RuntimeError);
+#   ②cleanup_task 删任务前把未吸收的 inbox 消息转入模块级 _orphaned_inbox(task_id→list), drain_inbox 任务已删时从 orphan 找回——收尾窗口注入不静默丢失。
 #   compliance: SRP/KISS-DIRECT/DRY(复用inbox队列)/禁止backward
-# 2026-09-20 - 小欧 - 三堂会审BUG-10修复: cleanup_expired_tasks过期清理前补orphan转移(与cleanup_task对齐, 防收尾窗口静默丢失)
-# 2026-09-20 - 小欧 - 提交前审查缺口补(3项): ①B-3串行守卫命中加专属log(编排泛化error看不清TOCTOU根因);
-#   ②drain_inbox orphan找回路径加warning log(B-4/B-7兜底命中可查); ③_orphaned_inbox加_ORPHAN_MAX_ITEMS=100上限
+# 2026-09-20 - 小欧 - 三堂会审修复: cleanup_expired_tasks过期清理前补orphan转移(与cleanup_task对齐, 防收尾窗口静默丢失)
+# 2026-09-20 - 小欧 - 提交前审查缺口补(3项): ①串行守卫命中加专属log(编排泛化error看不清TOCTOU根因);
+#   ②drain_inbox orphan找回路径加warning log(兜底命中可查); ③_orphaned_inbox加_ORPHAN_MAX_ITEMS=100上限
 #   与_trim_orphaned_inbox(终态任务无drain_inbox消费, 无上限即永久滞留内存), cleanup/过期两处转移后接入。
 #   compliance: KISS-DIRECT(上限防滞留即可, 不做TTL定时器)/禁止backward
-# 2026-09-20 - 小欧 - B-3守卫改方案②(北京老陈定案, 弃抛异常): register_task 守卫命中由 raise RuntimeError 改为
+# 2026-09-20 - 小欧 - 串行守卫改方案②(北京老陈定案, 弃抛异常): register_task 守卫命中由 raise RuntimeError 改为
 #   返回占位活跃task_id(str), 注册成功返回 None —— 调用方(编排层)拿返回值改道注入占位任务, 竞态下消息不丢;
-#   签名 None → Optional[str]。compliance: 与B机制"注入不静默丢失"红线同哲学(KISS-DIRECT)
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
+#   签名 None → Optional[str]。compliance: 与"注入不静默丢失"红线同哲学(KISS-DIRECT)
+# 2026-09-22 小欧 - constants.py 配置化迁移：import TASK_TIMEOUT 改别名 + timedelta 改读 tuning 配置
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：任务保留时长读取键路径同步，
 #   清理逻辑/默认值 1 小时零改动 — 小欧-2026-09-24
-# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者: register_task 删 ai_service 参数与 "ai_service" 字段(全仓零消费点核证, YAGNI 消亡), 任务只登记标识与状态
-# 2026-09-25 小欧 - [70] v1.11 类型标注补齐(AGENTS 要求 type hints): _drain_inbox(q) 补 q: asyncio.Queue
-# 2026-09-25 小欧 - [70] v1.12 DRY 归一: 抽出 _drain_inbox(q) 供 drain_inbox / cleanup_task /
+# 2026-09-25 小欧 - ConnectionScope连接池统一所有者: register_task 删 ai_service 参数与 "ai_service" 字段(全仓零消费点核证, YAGNI 消亡), 任务只登记标识与状态
+# 2026-09-25 小欧 - v1.11 类型标注补齐(AGENTS 要求 type hints): _drain_inbox(q) 补 q: asyncio.Queue
+# 2026-09-25 小欧 - v1.12 DRY 归一: 抽出 _drain_inbox(q) 供 drain_inbox / cleanup_task /
 #   cleanup_expired_tasks 三处共用(原三份逐字拷贝, 竞态兜底写法易漂移成不一致); 排空统一用
 #   except asyncio.QueueEmpty 兜底 break, 不用 while q.empty() 单一判据(empty() 与 get_nowait() 之间可能已被取空) — 小欧 2026-09-25); registry 只存任务身份/状态/inbox, 不 import 不持资源句柄(欠账②)
 """
@@ -55,7 +55,7 @@ from app.services.task.task_state import (
 )
 
 
-# B组调制(B-4/B-7 2026-09-20 小欧): 任务被 cleanup 删除后, 未吸收的 inbox 消息转入此处,
+# B组调制(2026-09-20 小欧): 任务被 cleanup 删除后, 未吸收的 inbox 消息转入此处,
 # drain_inbox 找不到任务时从 orphan 找回, 保证收尾窗口注入不静默丢失 — SRP: 孤儿缓存独立于 running_tasks 生命周期
 _orphaned_inbox: Dict[str, List[str]] = {}
 
@@ -77,7 +77,7 @@ def _trim_orphaned_inbox() -> None:
 # 注册 / 清理
 # ============================================================
 
-async def register_task(task_id: str, session_id: Optional[str] = None) -> Optional[str]:  # [70] 删 ai_service 参数 — 小欧-2026-09-25
+async def register_task(task_id: str, session_id: Optional[str] = None) -> Optional[str]:  # 删 ai_service 参数 — 小欧-2026-09-25
     """注册任务到 running_tasks — 小欧 2026-09-20 X5: 增 session_id + 任务级 inbox(运行中注入) — 小欧-2026-09-20
     B-3 守卫(2026-09-20 小欧, 北京老陈定案方案②): 锁内检查同 session 已有活跃任务(running/paused), 存在即
     **返回该活跃任务 task_id** 而非抛异常 —— 根治编排层 has_active_task_in_session 与 register_task 分离 await
@@ -89,7 +89,7 @@ async def register_task(task_id: str, session_id: Optional[str] = None) -> Optio
                 if (_tid != task_id
                         and _t.get("session_id") == session_id
                         and _t.get("status") in ("running", "paused")):
-                    # B-3方案②(2026-09-20 小欧): 返回占位tid, 由调用方改道注入(不丢消息), 不再抛异常
+                    # 方案②(2026-09-20 小欧): 返回占位tid, 由调用方改道注入(不丢消息), 不再抛异常
                     logger.warning(
                         f"[B-3串行守卫] 会话 {session_id} 已被占位 {_tid}, 拒绝并行注册 {task_id}"
                         f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口, 返回占位tid供注入)")
@@ -208,7 +208,7 @@ async def cleanup_expired_tasks() -> None:
             and t.get("status") not in ("running", "paused")
         ]
         for tid in expired:
-            # BUG-10修复(小欧 2026-09-20): 过期清理前把未吸收inbox消息转入orphan, 与cleanup_task对齐(防收尾窗口静默丢失)
+            # 修复(小欧 2026-09-20): 过期清理前把未吸收inbox消息转入orphan, 与cleanup_task对齐(防收尾窗口静默丢失)
             _q = running_tasks[tid].get("_inbox")
             if _q is not None:
                 _leftover = _drain_inbox(_q)

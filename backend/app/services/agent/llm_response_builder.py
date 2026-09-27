@@ -3,9 +3,9 @@
 # 2026-09-05 小健 8.5拆分(llm_stream.py提取builder成员): 5个纯函数逐字移入本文件(仅改import路径, 业务零改动)
 #   _build_tool_calls_response/_log_llm_response/_format_response_error/_yield_error_response/_build_answer_response
 #   原llm_stream.py余部只剩call_llm_stream+call_llm_with_fallback, git mv改名llm_call.py
-# 2026-09-06 小欧 文档[6]2.5.2/5.9落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
-#   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审P1同react_step判定)
-# 2026-09-17 小欧 [48]修改5: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
+# 2026-09-06 小欧 文档落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
+#   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审同react_step判定)
+# 2026-09-17 小欧 文案修改: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
 """
 llm_response_builder — LLM响应组装纯函数
 
@@ -26,8 +26,8 @@ from app.logger.prompt_logger import get_prompt_logger
 
 
 def _resolve_chunk_model(agent):
-    """解析 chunk_model — 任务级快照优先(三堂会审P1, 同 react_step 判别); _task_llm_model 缺省回退 llm_client.llm_model
-    — 小欧 2026-09-06 文档[6]2.5.2"""
+    """解析 chunk_model — 任务级快照优先(三堂会审, 同 react_step 判别); _task_llm_model 缺省回退 llm_client.llm_model
+    — 小欧 2026-09-06"""
     return getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)
 
 
@@ -49,7 +49,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
             "tool_name": tc.get("tool_name", ""), "tool_params": tc.get("tool_params") or {},
             "_tool_call_id": tc.get("tool_call_id") or "",
             "_repair_warning": tc.get("_repair_warning", ""),
-            "params_raw_str": tc.get("params_raw_str", ""),   # #3 并行调用各自原始串透传(11.7.9-2③) — 小欧 2026-08-23
+            "params_raw_str": tc.get("params_raw_str", ""),   # 并行调用各自原始串透传 — 小欧 2026-08-23
         })
 
     logger.info(f"[LLM] 原始响应(action): tool={first.get('tool_name','?')}, parallel={len(_pending_calls)}")
@@ -63,7 +63,7 @@ def _build_tool_calls_response(full_content, tool_calls_result, usage_data, agen
         "fc_context": {"tool_call_id": first.get("tool_call_id") or "", "tool_calls": built_tool_calls, "llm_content": full_content, "llm_reasoning": full_reasoning},  # 2026-07-19 小欧 新增/传递 llm_reasoning
         "_pending_calls": _pending_calls, "tool_name": first.get("tool_name", ""),
         "tool_params": first.get("tool_params") or {}, "tool_call_id": first.get("tool_call_id") or "",
-        "params_raw_str": first.get("params_raw_str", ""),   # #3 主调用原始 arguments 串透传(11.7.9-2③); 源=D0 base_service — 小欧 2026-08-23
+        "params_raw_str": first.get("params_raw_str", ""),   # 主调用原始 arguments 串透传; 源=D0 base_service — 小欧 2026-08-23
         "_repair_warning": first.get("_repair_warning", ""),
     }
     if usage_data is not None:  # 2026-07-22 - 小欧 - 修复: usage 为 None 时不添加 null 字段
@@ -86,7 +86,7 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
 
 def _format_response_error(e: "LLMResponseError") -> str:
     """格式化LLM响应错误为前端友好信息 — 小沈 2026-07-17"""
-    return f"模型响应解析失败：{e.message}"  # 2026-09-17 小欧 [48]修改5: 去LLM前缀改口语, 与base_service tool_calls文案联动 — 小欧-2026-09-17
+    return f"模型响应解析失败：{e.message}"  # 2026-09-17 小欧 去LLM前缀改口语, 与base_service tool_calls文案联动 — 小欧-2026-09-17
 
 
 def _yield_error_response(error_msg: str, agent, exc: Optional[BaseException] = None, exc_type: str = ""):

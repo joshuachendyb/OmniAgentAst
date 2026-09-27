@@ -10,7 +10,7 @@ Author: 小沈 - 2026-05-31
 2026-07-16 小欧  统一TaskID: _get_tracker只返回tracker, complete_task/record_operation直读agent.task_id
 2026-07-22 小欧  emit注入FinalStep._accumulated_usage: 自动从agent.accumulated_usage读取
 2026-07-22 小欧  emit注入加is None防御: 仅外部未设置时才注入
-2026-08-18 - 小欧 - §10.4.4 P3(error全仅SSE): emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
+2026-08-18 - 小欧 - error全仅SSE: emit 内记录 _last_error(type=="error" 时读 _kwargs 取 error_type/error_message, 赋值 agent._last_error, KISS-DIRECT单一出口)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: emit FinalStep 时自动注入 task/session/chain_accumulated_tokens 三层累计(读 agent 内存态, 与 react_cycle yield 值一致); 仅 FinalStep 触发, 仅外部未设置时注入
 2026-08-18 - 小欧 - 三堂会审复核: ①emit._last_error 兼容 ErrorStep 载体(_kwargs 为空时回退读 error_type 属性), 防 error_type 丢失; ②删除死码 exit_with_error 及 ErrorStep import(YAGNI, 全仓无真实调用点)
 2026-08-28 小欧 - yield日志审计: emit()统一入口加 logger.debug("[StepEmit] type step"), 覆盖全部~50个Step yield(KISS+DRY, 单一日志出口), 三堂会审无逻辑修正
@@ -18,8 +18,8 @@ Author: 小沈 - 2026-05-31
 2026-09-04 小健 - SLAP修复: emit_final_with_stats 从 final_step 提取 outcome 并透传给 build_final_stats_step(outcome=...), 消除发射层对遥测层隐式依赖 — 小健-2026-09-04
 # 2026-09-05 小健 - answer_focus第一阶段(10.3)搬二(8.2): 新增终态工厂 emit_completed_final/emit_failed_final,
 #   收口handler侧5处终态分产(顺序敏感set_failed内聚一步) - 小健-2026-09-05
-# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
-# 2026-09-11 小欧 - [27] 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
+# 2026-09-11 小欧 - 方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
+# 2026-09-11 小欧 - 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
 #   根因: emit_completed_final/emit_failed_final 未传 final_model/duration 致 DB step_json 三字段 null — 小欧-2026-09-11
 """
 
@@ -50,10 +50,10 @@ class StepEmitter:
                 step._session_accumulated_tokens = dict(getattr(self.agent, "session_accumulated_tokens", {}))
             if step._chain_accumulated_tokens is None:
                 step._chain_accumulated_tokens = dict(getattr(self.agent, "chain_accumulated_tokens", {}))
-            # [27] 注入 model/provider: 任务快照优先(三堂会审 P1 防还原竞态) — 小欧-2026-09-11
+            # 注入 model/provider: 任务快照优先(三堂会审 防还原竞态) — 小欧-2026-09-11
             if step._step_model is None:
                 step._step_model = getattr(self.agent, "_task_llm_model", None) or getattr(getattr(self.agent, "llm_client", None), "llm_model", None)
-            # [27] 注入 duration: now - telemetry._run_start_ts(同源 build_final_stats_step) — 小欧-2026-09-11
+            # 注入 duration: now - telemetry._run_start_ts(同源 build_final_stats_step) — 小欧-2026-09-11
             if step._duration is None:
                 _tele = getattr(self.agent, "telemetry", None)
                 _start = getattr(_tele, "_run_start_ts", None) if _tele else None
@@ -62,7 +62,7 @@ class StepEmitter:
         self.agent.steps.append(step)
         # 2026-08-28 小欧 yield日志审计: Step emit统一入口(覆盖全部~50个Step yield, KISS+DRY)
         logger.debug(f"[StepEmit] {getattr(step, 'type', '?')} step={getattr(step, 'step', '?')}")
-        # 2026-08-18 - 小欧 - P3: error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
+        # 2026-08-18 - 小欧 - error全仅SSE, emit统一出口记录_last_error供守卫填充final(KISS-DIRECT单一出口)
         if getattr(step, "type", "") == "error":
             # 2026-08-18 - 小欧 - 三堂会审复核: 兼容两种 error 载体——MetaStep(type="error") 走 _kwargs,
             #   ErrorStep 走 error_type 属性(遗留); 单一出口记录, 保证 error_type 不丢
@@ -72,7 +72,7 @@ class StepEmitter:
         return step
 
     def emit_final_with_stats(self, final_step):
-        """[27] v1.2 2026-09-11 小欧: 返回一元组 (final,); final_stats 不再由此构建/发布, 改由 runner 延后单发。
+        """v1.2 2026-09-11 小欧: 返回一元组 (final,); final_stats 不再由此构建/发布, 改由 runner 延后单发。
         2026-08-28 小欧 KISS修正: 原 async def 但体内零 await, 纯伪异步包装, 逼出10处调用点写 async for 仪式代码;
         改为 sync 返回 (final_step,) 一元组, 调用方 `for _s in ...: yield _s` 即可, 行为等价无backward。
         2026-09-04 小健 SLAP修复: outcome从final_step显式提取并透传给build_final_stats_step, 消除隐式依赖 — 小健-2026-09-04"""

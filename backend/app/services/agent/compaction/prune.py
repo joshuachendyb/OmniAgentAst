@@ -4,7 +4,7 @@
 #   2026-08-16 小欧 新增: t1_reuse_summary(复用工具层 llm_data.summary) + value_first_prune(按价值权重保留)
 #   2026-08-17 小健 落地: 四函数合并 prune.py, 常量自 agent.compaction_constants(DRY)
 #                        t1_compress_observations 实现为通用字符串级摘要兜底(去 per-tool 模板过度设计,
-#                        [4] 14.9.6 明示 t1_reuse_summary 强推荐替代逐工具模板; 本版为无 _summary 时的兜底)
+#                        14.9.6 明示 t1_reuse_summary 强推荐替代逐工具模板; 本版为无 _summary 时的兜底)
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出, 常量注释补意义/依据/可选范围
 #                        (043ed9c54, 对齐老陈函数名符其实要求), 并清除模块头"三堂会审"残留措辞
 #   2026-08-17 小健 改名: 8 函数名符其实——prune_tool_outputs→clear_tool_outputs, t1_reuse_summary→use_tool_summary,
@@ -15,7 +15,7 @@
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
 依据: [4] 14.9.3②(clear_tool_outputs) / 14.9.6 C2(use_tool_summary) / 14.9.6 T1 策略(keep_valuable_messages)
-      / 第五章(compress_long_tool_output 设计)。
+      / compress_long_tool_output 设计)。
 
 函数关系:
   - clear_tool_outputs: 通用清零旧 tool output, 保留 tool_call 参数(零 LLM, [4] 14.9.3②)。
@@ -94,7 +94,7 @@ def use_tool_summary(messages: List[Dict]) -> List[Dict]:
     return messages
 
 
-# ---- C3 策略实现: compress_long_tool_output 通用摘要兜底(第五章) —————————————
+# ---- C3 策略实现: compress_long_tool_output 通用摘要兜底(设计文档) —————
 
 
 def compress_long_tool_output(messages: List[Dict],
@@ -109,7 +109,7 @@ def compress_long_tool_output(messages: List[Dict],
     输出: (处理后的消息列表, 释放的 token 估算 int); 被压缩消息带 `_raw` 与 `_compressed=True` 标记。
     前置条件: 无; 只处理 role=tool 且未 `_compressed` 的消息, 已压缩/短输出自动跳过。
 
-    设计文档: [4] 第五章(compress_long_tool_output Tool-Summary) + 14.9.6 C2(use_tool_summary 强推荐替代,
+    设计文档: compress_long_tool_output Tool-Summary + 14.9.6 C2(use_tool_summary 强推荐替代,
     本函数为其兜底: 无 `_summary` 时仍可为长 tool 输出做字符串级摘要)。
     相对于 use_tool_summary: 后者依赖工具层已 stash 的 `_summary`; 本函数不依赖, 直接用
     内容首段 + 长度标记生成"一行摘要"(零 per-tool 模板, 去 14.7 指出的过度设计)。

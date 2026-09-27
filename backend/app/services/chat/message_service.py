@@ -4,9 +4,9 @@
 #   + display_name_cache(缓存归本服务独占), 仅改导入归属, 业务逻辑一字不改; 新增 delete_session_display_names 供
 #   session_service 删除会话时联动清理(经方法调用, 不直接 import 本服务缓存对象, 单向方法调用)。API 层薄壳化改调本服务。
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.3+9.6): save_message删除execution_steps列写入;
-#   user消息同步写chat_user_message(user_message_id=cursor.lastrowid一对一贯通, 根除两套自增id错位P0-2);
-#   合并重复的 if role=="user" 判断块(DRY, 三堂会审Bug#9)
-# 2026-08-21 - 小欧 - 12.2-Q6-D1(按文档[1]12.2 diff设计落地): chat_sessions.message_count 绝对值覆盖→SQL自增
+#   user消息同步写chat_user_message(user_message_id=cursor.lastrowid一对一贯通, 根除两套自增id错位);
+#   合并重复的 if role=="user" 判断块(DRY, 三堂会审)
+# 2026-08-21 - 小欧 - 计数单口径(按文档 diff设计落地): chat_sessions.message_count 绝对值覆盖→SQL自增
 #   (message_count + 1), 与 storage.py allocate 路径同口径, 消除并发写入丢计数; new_message_count 保留供返回值
 # 2026-08-22 - 小欧 - 北京老陈铁律(chat_messages 只写严禁读): get_session_messages 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs);
 #   assistant 正文取 response、thought 从 execution_steps 的 thought 类型步骤派生(不退化/不加列/不读 chat_messages)
@@ -18,7 +18,7 @@
 #   (同 id 对齐/失败仅留痕); 权威写失败改 fail-loud 抛 HTTPException(旧路径吞异常返 success 但权威缺行,
 #   历史回放丢消息属假成功); assistant legacy 直存分支行为不变; W1 两处镜像 INSERT 加 TODO 删除注释
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W1镜像写点(user/assistant两处INSERT chat_messages), 删除后assistant消息由任务/步骤体系(chat_tasks.ai_message_id/chat_task_steps)管理, 系统对该表零写依赖
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import MAX_CACHE_SIZE 改别名 + cache 改读 tuning 配置
+# 2026-09-22 小欧 - constants.py 配置化迁移：import MAX_CACHE_SIZE 改别名 + cache 改读 tuning 配置
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：display_name 缓存上限读取键路径同步，
 #   缓存逻辑/_D_CACHE_SIZE 默认值零改动 — 小欧-2026-09-24
 """

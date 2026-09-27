@@ -4,7 +4,7 @@
 职责(单一职责): 承载「消息压缩/裁剪」业务域全部常量——原全局压缩/裁剪常量(MAX_CONTEXT_TOKENS 等 5 个)
 2026-08-17 从 app/constants.py 迁入本文件(归属随用方集中到 agent/compaction 域), 不重复定义(DRY)。
 依据: doc-8月优化/[4]对话-HistoryMemory与历史裁剪设计方案 v5.10(14.9.2「压缩专属常量不堆进 app/constants.py」
-      + 第八章节常量表 + 14.9.3 trigger 代码 import 全局缓冲常量)。设计文档: 10.1.8 S5 C4+compaction 全模块。
+      + 常量表 + 14.9.3 trigger 代码 import 全局缓冲常量)。设计文档: 10.1.8 S5 C4+compaction 全模块。
 
 与 app/constants.py 边界(DRY 不重复):
   压缩/裁剪核心阈值本文件权威定义(自 app/constants.py 迁入 2026-08-17):
@@ -60,7 +60,7 @@ TEMP_HISTORY_CHAR_LIMIT = 50000
 # 默认值依据: R4「零额外 LLM 调用」原则放开, 北京老陈 2026-08-17 拍板置 True。 — 小健 2026-08-17
 START_COMPACTION_ENABLED = True
 
-# ---- 触发比例(C3 轻量/T1 紧急裁剪, [4] 第八章节) ———————————————————————————
+# ---- 触发比例(C3 轻量/T1 紧急裁剪) ———————————————————————————
 # 状态: 以备后用（2026-09-23 小欧核查：C3/T1 全量接线前暂无消费方，保留阈值定义供后续接线，禁止删除）
 # 意义: TRIGGER_T1_RATIO/compress_long_tool_output 触发阈值; TRIGGER_T3_RATIO/keep_valuable_messages 紧急裁剪最后安全网;
 #       TRIM_TARGET_RATIO/裁剪到目标占用比例; KEEP_TAIL_ROUNDS/保尾完整 FC 轮数。
@@ -69,16 +69,16 @@ START_COMPACTION_ENABLED = True
 TRIGGER_T1_RATIO = 0.50   # C3 的轻量实现函数 compress_long_tool_output 触发比例
 TRIGGER_T3_RATIO = 0.95   # T1 紧急裁剪法(触发比例, 窗口快爆最后安全网)
 TRIM_TARGET_RATIO = 0.50  # 裁剪目标比例
-KEEP_TAIL_ROUNDS = 3      # 保尾轮数(T1: 保留最近 3 轮完整 FC 对, [4] 5.2 步骤4)
+KEEP_TAIL_ROUNDS = 3      # 保尾轮数(T1: 保留最近 3 轮完整 FC 对, 5.2 步骤4)
 
 # ---- 剪枝(C3/Prune) ———————————————————————————————
 # 意义: PRUNE_MINIMUM_TOKENS/剪枝至少需释放的 token, 不足则跳过防抖动; PRUNE_PROTECT_TOKENS/保护近期工具输出细节阈值。
-# 默认值依据: 借鉴 OpenCode PRUNE_MINIMUM([4] 第八章节), 与 20K/40K 量级匹配常规消息体积。
+# 默认值依据: 借鉴 OpenCode PRUNE_MINIMUM(设计文档), 与 20K/40K 量级匹配常规消息体积。
 # 可选范围: 越小越激进(更易触发剪枝); 过小(如 <5K)易反复裁剪抖动, 过大(如 >100K)则剪枝失效。
-PRUNE_MINIMUM_TOKENS = 20000   # 剪枝/T1 最少需释放 token, 否则跳过(借鉴 OpenCode PRUNE_MINIMUM, [4] 第八章节)
-PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token 阈值([4] 14.3.3; prune.py 引用 _TOKENS 权威名)
+PRUNE_MINIMUM_TOKENS = 20000   # 剪枝/T1 最少需释放 token, 否则跳过(借鉴 OpenCode PRUNE_MINIMUM, 设计文档)
+PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token 阈值(14.3.3; prune.py 引用 _TOKENS 权威名)
 
-# ---- Hermes Pass3 参数截断(T1 步骤2, [4] 5.2/第八章节) ————————————————————
+# ---- Hermes Pass3 参数截断(T1 步骤2, 5.2/设计文档) ————————————————————
 # 状态: 以备后用（2026-09-23 小欧核查：Pass3 代码尚未落地，暂无消费方，保留阈值定义供后续接线，禁止删除）
 # 意义: PASS3_ARGS_THRESHOLD/tool_call 参数超此长度才截断; PASS3_ARG_MAX_CHARS/截断后字符串字段最大长度。
 # 默认值依据: Hermes 2 Pass3 原文参数截断口径(500/200 字符)。
@@ -88,21 +88,21 @@ PASS3_ARG_MAX_CHARS = 200    # 截断后字符串字段最大长度
 
 # ---- 锚定摘要(C4/Anchored Summary) ——————————————————
 # 意义: SUMMARY_FEED_MAX_CHARS/喂 LLM 的单条 tool content 截断上限字符(防二次胀窗)。
-# 默认值依据: 2000 字符足以承载工具返回关键信息又不撑大上下文([4] 14.9.4②「截断喂」)。
+# 默认值依据: 2000 字符足以承载工具返回关键信息又不撑大上下文(14.9.4②「截断喂」)。
 # 可选范围: 越小越省 token 但可能丢细节, 越大越保真但增加 LLM 输入; 建议 1000~5000。
-SUMMARY_FEED_MAX_CHARS = 2000  # 喂 LLM 的单条 tool content 截断上限字符(防二次胀窗, [4] 14.9.4②「截断喂」)
+SUMMARY_FEED_MAX_CHARS = 2000  # 喂 LLM 的单条 tool content 截断上限字符(防二次胀窗, 14.9.4②「截断喂」)
 
 # ---- 触发(Trigger) ——————————————————————————————
 # 意义: TRIGGER_MAX_MSGS/大窗口模型下消息数兜底触发阈值(防超大窗口固定比例形同虚设)。
-# 默认值依据: 80 条消息为常规长对话合理上限([4] 14.9.6 K1)。
+# 默认值依据: 80 条消息为常规长对话合理上限(14.9.6 K1)。
 # 可选范围: 越小越易触发, 越大越宽松; 建议 50~150。
-TRIGGER_MAX_MSGS = 80  # 窗口触发备用消息数阈值(大窗口模型下消息数兜底触发, [4] 14.9.6 K1)
+TRIGGER_MAX_MSGS = 80  # 窗口触发备用消息数阈值(大窗口模型下消息数兜底触发, 14.9.6 K1)
 
 # ---- 冷却(Cooldown) ——————————————————————————————
 # 意义: COOLDOWN_ROUNDS/压缩后冷却轮次, 防连续轮次反复压缩抖动(尤其 C4 每次 1 次 LLM 调用)。
-# 默认值依据: 2 轮冷却足以避开连续触发又不延迟过度([4] 14.9.6 K2)。
+# 默认值依据: 2 轮冷却足以避开连续触发又不延迟过度(14.9.6 K2)。
 # 可选范围: 0=每次评估不冷却, 越大越保守(降 LLM 成本但压缩滞后); 建议 1~5。
-COOLDOWN_ROUNDS = 2  # 压缩后冷却轮次(防连续轮次反复压缩抖动, 尤其 C4 每次 1 次 LLM 调用, [4] 14.9.6 K2)
+COOLDOWN_ROUNDS = 2  # 压缩后冷却轮次(防连续轮次反复压缩抖动, 尤其 C4 每次 1 次 LLM 调用, 14.9.6 K2)
 
 # ---- 保尾切分(Split-Turn) ————————————————————————
 # 意义: TAIL_TOKEN_RATIO/保尾窗口占可用预算比例; TAIL_TOKEN_MIN/MAX/保尾预算上下限夹取;
@@ -113,11 +113,11 @@ COOLDOWN_ROUNDS = 2  # 压缩后冷却轮次(防连续轮次反复压缩抖动, 
 TAIL_TOKEN_RATIO = 0.25      # 保尾窗口占可用预算比例(14.3.2 preserveRecentBudget 用 usable*0.25)
 TAIL_TOKEN_MIN = 2000        # 保尾预算下限(14.3.2 select: max(2000, usable*0.25))
 TAIL_TOKEN_MAX = 8000        # 保尾预算上限(14.3.2 select: min(8000, ...))
-SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断([4] 14.9.2 splitTurn)
+SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断(14.9.2 splitTurn)
 
 # ---- 装配线(Assembler) ————————————————————————————
 # 状态: 以备后用（2026-09-23 小欧核查：assembler 装配函数尚未接入主链路，暂无消费方，保留供后续接线，禁止删除；运行时保尾数以 tuning.compaction.keep_tail 配置为准）
 # 意义: ASSEMBLE_KEEP_TAIL/注入摘要后保留的尾部最新消息条数(防摘要顶掉最新 task)。
-# 默认值依据: 保最新 1 条 task 即可维持对话意图([4] 14.5/10.1.7⑤)。
+# 默认值依据: 保最新 1 条 task 即可维持对话意图(14.5/10.1.7⑤)。
 # 可选范围: 0=只留摘要不保尾; 建议 1~3。
 ASSEMBLE_KEEP_TAIL = 1  # 注入摘要后保留的尾部最新消息条数(默认保最新 task 一条)

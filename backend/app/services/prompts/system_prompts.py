@@ -93,7 +93,7 @@ class PromptBuilder:
         return self._TOOL_CALL_RULES_BASE + shell_section
 
     def _get_system_info(self) -> str:
-        """获取系统信息 — P0-2修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
+        """获取系统信息 — 修复 2026-06-23 小欧: 删除冗余日志(完整prompt已在initialize_run_state记录)"""
         system_info = get_system_prompt_string()
         logger.debug(f"[PromptBuilder] 系统信息长度: {len(system_info)}")
         return system_info
@@ -144,7 +144,7 @@ class PromptBuilder:
 
         result = "\n\n".join(parts)
 
-        # B-2修复 2026-06-25 小欧: 验证tag闭合
+        # 修复 2026-06-25 小欧: 验证tag闭合
         unclosed = re.findall(r'<(\w+)>', result)
         closed = re.findall(r'</(\w+)>', result)
         for tag in set(unclosed):

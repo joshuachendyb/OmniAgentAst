@@ -20,7 +20,7 @@ def get_openai_tools(agent) -> list:
     """获取已注入分类的OpenAI格式工具定义,含TTL缓存 — 小沈 2026-06-17 改用TTLCache
     注意：这里获取的是已注入(inject)给LLM的工具，不是所有已注册(register)的工具
 
-    P0-4修复 2026-06-23 小欧: revert P0-3改为注入整个tool类,通过_loaded_categories承载
+    修复 2026-06-23 小欧: revert 改为注入整个tool类,通过_loaded_categories承载
     Batch2e: 使用agent._searchtool_desc_override副本,不修改全局ts_meta — 小欧 2026-06-25
     """
     cached = agent._tool_cache.get()
@@ -41,13 +41,13 @@ def get_openai_tools(agent) -> list:
 
 
 def invalidate_tool_cache(agent):
-    """P2-14修复: 清除工具缓存,工具注册/注销后调用"""
+    """清除工具缓存,工具注册/注销后调用"""
     agent._tool_cache.invalidate()
 
 
 def _get_original_search_desc() -> str:
     """获取 searchtool 的原始描述（不带已注入的"当前未加载分类"后缀）— 小欧 2026-06-23
-    P0-1修复: 严禁重复追加,每次重新拼装
+    修复: 严禁重复追加,每次重新拼装
     """
     ts_meta = tool_registry.get_tool("searchtool")
     if not ts_meta:
@@ -70,10 +70,10 @@ def patch_search_desc(agent):
     - KISS-DIRECT: 逻辑直线，无中间文件，每次从原始描述重新拼装
     - 动态生成: 每次根据 agent._loaded_categories 实时计算
     
-    【P0-1修复 2026-06-23 小欧】每次从原始描述重新拼装，杜绝重复追加
+    【修复 2026-06-23 小欧】每次从原始描述重新拼装，杜绝重复追加
     【2026-06-18 小健】删除 tool_categories.json，改为直接从 registry 获取
     【方案A修复 2026-06-23 小健】移除工具名列表，只列出分类名，避免LLM直接调用未注入工具
-    【Bug15修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
+    【修复】chendyg 2026-06-26: override变更后统一失效缓存，消除4处重复invalidate调用
     """
 
     # 未加载分类 = 全集 - 已加载(_loaded_categories 由 init_tools/load_category 单一权威维护)

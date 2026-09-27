@@ -17,13 +17,13 @@
 # 2026-07-20 小欧 门限分工核查: 修正映射表+对照截断表4处注释常量值 10000→1000(OBS_MAX_STRING_LENGTH)/500→200(OBS_MAX_DISPLAY_ITEMS)/2000→1000(OBS_HTTPGET_MAX_ROW_CHARS)/200→100(OBS_SEARCHWEB_MAX_ROWS), 对齐 tool_constants.py 实际定义值
 # 2026-07-20 小欧 读取类自然单位治理: #10 改路由→_format_pdf_result(#10a PDF页感知, read_pdf专属, page=N翻页+前3页预览+逐页"--- 第N页 ---", INER_READ_PDF_MAX_PAGES=200安全网) / _format_prose_result(#10b 段落/文本行窗口, read_docx+clipboard_ctl适用, 两态说明+取页提示); _format_tree 层级感知截断(每节点子项封顶OBS_TREE_MAX_CHILDREN+总行封顶OBS_TREE_MAX_ROWS, 基于statistics计数); _format_slides 单页改行×列(OBS_PPTX_*); 映射表注释同步更新
 # 2026-07-20 小欧 单行超宽标注: _format_prose_result 与 _format_readtext_result 对超宽行追加 "…(该行超宽已截断, 原N字符)" 标注, 避免 LLM 被静默截断误导(对应 test_long_lines 期望); 与 Tool 层零限制(3.7)一致——截断唯一收口于 formatter
-# 2026-08-05 小欧 BUG-1修复: #18 compress 触发字段 "compression_ratio"→"compression_level"
+# 2026-08-05 小欧 修复: compress 触发字段 "compression_ratio"→"compression_level"
 #   【病根】compress_files.py safe_data 去噪剥掉 compression_ratio(与llm_data ratio重复), 原 trigger 永不成立 → #18 成死代码
 #   【解决】改 data 恒在且 compress 独有字段 compression_level, #18 分支恢复工作; 去噪不复原大文件列表/ratio
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源补全): status/action 可能为 str(工具实现不规范), 全文件 .get("action",{}).get("tool")/.get("status",{}).get 共4处 + _format_llm_data 统一收敛 _safe_llm_sub 防御 AttributeError; 实测 _truncation_msg({"action":"...STR"}) 原崩已修
+# 2026-08-18 - 小健 - 三堂会审 修复(同源补全): status/action 可能为 str(工具实现不规范), 全文件 .get("action",{}).get("tool")/.get("status",{}).get 共4处 + _format_llm_data 统一收敛 _safe_llm_sub 防御 AttributeError; 实测 _truncation_msg({"action":"...STR"}) 原崩已修
 # 2026-08-18 - 小健 - 三堂会审(target截断收敛): _format_llm_data 中 target 截断由手写[:200]+"..."改为公共 truncate_text(target,200,suffix="..."), 与action侧(按设计不截断)消除手写分歧, 满足复用优先
-# 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 Bug#7(str action)防御
-# 2026-08-18 - 小欧 - 三堂会审 Bug#7补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
+# 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 str action 防御
+# 2026-08-18 - 小欧 - 三堂会审 补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -125,9 +125,9 @@ from app.tools.tool_constants import (
 
 
 def _safe_llm_sub(llm_data, key: str) -> dict:
-    """2026-08-18 小健 三堂会审 Bug#7(同源补全): llm_data.status/action 可能为 str(工具实现不规范),
+    """2026-08-18 小健 三堂会审 修复(同源补全): llm_data.status/action 可能为 str(工具实现不规范),
     防御 .get 前 isinstance, 否则 'str' object has no attribute 'get' 崩溃。统一收敛所有同类取值点(DRY)。
-    2026-08-18 小欧 Bug#7补全: 顶层 llm_data 本身非 dict(工具实现不规范) 时同样防御——原 (llm_data or {})
+    2026-08-18 小欧 补全: 顶层 llm_data 本身非 dict(工具实现不规范) 时同样防御——原 (llm_data or {})
     仅防 None/空值, str 等真值类型仍触发 .get 崩溃, 现统一 isinstance 前置判定。"""
     if not isinstance(llm_data, dict):
         return {}
@@ -137,7 +137,7 @@ def _safe_llm_sub(llm_data, key: str) -> dict:
 
 def _tool_target(llm_data) -> str:
     """2026-08-18 小健 三堂会审: 统一从 llm_data.action.target 取展示目标(收敛 _format_llm_data 与
-    4 个 per-tool formatter 共 5 处重复读取, DRY); 防御 action 为 str(见 Bug#7), 顺带补齐 per-tool
+    4 个 per-tool formatter 共 5 处重复读取, DRY); 防御 action 为 str(见上同源防御), 顺带补齐 per-tool
     formatter 原缺失的该防御。返回未截断原始串, 截断由调用方按需处理。"""
     _action = _safe_llm_sub(llm_data, "action")
     _t = _action.get("target", "") if isinstance(_action, dict) else ""
@@ -623,8 +623,8 @@ def _format_readmedia_result(data: dict, llm_data: dict = None) -> str:
 
 def _format_llm_data(llm_data: Dict) -> str:
     """格式化llm_data为observation文本（精简版: 合并观察+结果为一行,去掉统计,保留建议）— 小沈 2026-07-06 — 小沈 2026-07-08 修复空target/前置空格/缺空格/空parts
-    2026-08-18 小健 三堂会审 Bug#7: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)
-    2026-08-18 小欧 Bug#7补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 _safe_llm_sub 同源防御)"""
+    2026-08-18 小健 三堂会审 修复: status/action 可能为 str(工具实现不规范), 防御防 AttributeError(实测 build_observation 链路因 status='FAILED_STR' 崩溃)
+    2026-08-18 小欧 补全: llm_data 顶层非 dict 时入口归一为空 dict, 防后续 summary/action 等 .get 崩(与 _safe_llm_sub 同源防御)"""
     if not isinstance(llm_data, dict):
         llm_data = {}
     status = _safe_llm_sub(llm_data, "status")
@@ -704,7 +704,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     最终给LLM的文本中必然包含。data中不再重复存放这些字段。
     — 小欧 2026-07-06 18:39:02
     """
-    # 2026-08-18 小欧 Bug#7补全: 顶层 llm_data 非 dict(工具实现不规范) 时入口归一为空 dict,
+    # 2026-08-18 小欧 补全: 顶层 llm_data 非 dict(工具实现不规范) 时入口归一为空 dict,
     #   防下游 _format_llm_data 与自身 status 取值等多处 .get 崩(与 _safe_llm_sub 同源防御)
     if not isinstance(llm_data, dict):
         llm_data = {}
@@ -713,7 +713,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     # error 统一兜底: 主通道是 llm_data.status.detail(各工具已构造);
     # 仅当 detail 为空且 data 含诊断信息时,受控渲染 data(复用既有 format_data_detail),
     # 收敛 build_error(data={}) 不一致且不退化已有 detail 的工具 — 小欧 2026-07-13
-    # 2026-08-18 小健 Bug#7: status 可能为 str, .get 前防御
+    # 2026-08-18 小健 修复: status 可能为 str, .get 前防御
     _status = llm_data.get("status") if isinstance(llm_data.get("status"), dict) else {}
     if _status.get("exec_code") == "error":
         _detail = _status.get("detail", "")

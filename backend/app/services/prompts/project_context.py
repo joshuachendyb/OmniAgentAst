@@ -1,7 +1,7 @@
 # 编辑历史:
 # 2026-07-14 - 小欧 - 明确注释说明 OmniAgent.md 为项目规则文件，替换模糊的"项目上下文"表述
 # 2026-07-15 - 小欧 - 常量归一化治理: 项目规则文件注入字符上限改引用 constants.PROJECT_CONTEXT_MAX_CHARS(原 MAX_CHARS=8000→10000, 系统级), 功能零退化
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import PROJECT_CONTEXT_MAX_CHARS 改别名 + 使用点改读 tuning 配置
+# 2026-09-22 小欧 - constants.py 配置化迁移：import PROJECT_CONTEXT_MAX_CHARS 改别名 + 使用点改读 tuning 配置
 """项目规则文件注入 — 读取项目根目录下的项目规则文件(OmniAgent.md)并注入Prompt — 小沈 2026-06-11 — 小欧 2026-07-08 改用config.get_project_root()
 
 只读取项目根目录下的 OmniAgent.md（项目规则文件），不读取其他文件。
@@ -20,8 +20,8 @@ CONTEXT_FILE = "OmniAgent.md"  # 项目规则文件名，置于项目根目录
 # MAX_CHARS 已归一化为系统级 PROJECT_CONTEXT_MAX_CHARS (app/constants.py, 2026-07-15 治理: 8000→10000)
 _CACHE_MAX_SIZE = 64
 
-# 【修复P1-3】手动缓存替代lru_cache，按workdir隔离 — 北京老陈 2026-06-13
-# M-13: OrderedDict + 上限 64，淘汰最旧 — 小欧 2026-07-10
+# 【修复】手动缓存替代lru_cache，按workdir隔离 — 北京老陈 2026-06-13
+# OrderedDict + 上限 64，淘汰最旧 — 小欧 2026-07-10
 _context_cache: OrderedDict = OrderedDict()
 
 

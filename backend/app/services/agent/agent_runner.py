@@ -89,7 +89,7 @@
 #   新增 seq: 原实现 event_log 内 final 双条(publish 完整 + 补发短/完整)致 SSE final 双发(bug, 专项测试捕获);
 #   覆写后 event_log 每种终态单条: 短信号场景前端仅见剥离条, 完整场景原位即完整, 守卫补发(无 publish 原条)仍 _append;
 #   零新增抽象, 覆写幂等(同内容覆写等价); final_stats 同法去重 — 小欧-2026-09-06
-# 2026-09-06 小欧 方案C三堂会审缺陷2修复(独立user_rejected不落库):
+# 2026-09-06 小欧 方案C三堂会审缺陷修复(独立user_rejected不落库):
 #   独立 type="user_rejected" 后, 该事件不在仅SSE集合 {error,usage,paused,resumed,retrying,cancelled} 内 →
 #   通道路由落 else _persist 写库, total_steps 虚增 + 违反"拒绝仅SSE不落库"设计(全拒步 DB 出现无观察配对残步)。
 #   [修复] 该集合补 "user_rejected"(按 拒绝/拦截类均非业务步, 不落库不计数 的设计精神)
@@ -108,9 +108,9 @@
 #   [修复] 订阅体补 `if not event_dict.get("_live_only")` 才 log_step_yield(Prompt 仅记业务 canonical 步) — 小欧-2026-09-06
 # 2026-09-07 小欧 消息分类方案(前端消息分类处理分析及设计-小欧-2026-09-06.md, 北京老陈批准):
 #   start/startinfo 双信号拆分——startinfo 合并入 start:
-#   [1] run_agent_in_background 入口将 eager ai_message_id 透传挂到 agent._ai_message_id(供 react_loop start 发布前装配);
-#   [2] 删 start 分支 startinfo 派生构造 13 行, 仅保留 _persist 落库(start 已自带 ai_message_id);
-#   [3] 通道路由注释同步(start/startinfo 不再双发, startinfo 事件从链路移除, 前端不再消费) — 小欧-2026-09-07
+#   ① run_agent_in_background 入口将 eager ai_message_id 透传挂到 agent._ai_message_id(供 react_loop start 发布前装配);
+#   ② 删 start 分支 startinfo 派生构造 13 行, 仅保留 _persist 落库(start 已自带 ai_message_id);
+#   ③ 通道路由注释同步(start/startinfo 不再双发, startinfo 事件从链路移除, 前端不再消费) — 小欧-2026-09-07
 # 2026-09-08 小欧 方案五(G路径, 北京老陈 2026-09-08, 见doc-9月优化):
 #   ②CancelledError 取消分支(CancelledError 系 orchestrator 异常→bg_task.cancel() 触发, G路径):
 #   未标记来源时置 agent._cancel_source="orchestrator_error"; finally 守卫 CANCELLED 分支文案改
@@ -147,7 +147,7 @@
 #   finally 覆写机制已删除", 明确缓冲 ensure 保留在役
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": 行433 SSE集合新增 "rejected"(原 "user_rejected") - 小欧-2026-09-17
 # 2026-09-17 小欧 会审V3(#13): 行435 SSE仅转发集合注释更新(user_rejected 表述更正为已统一 rejected, 原注释过时) - 小欧-2026-09-17
-# 2026-09-20 - 小欧 - B-2锚回填修复(B组, 配合 message_builder 锚演进): 终态 update_user_message_final 的
+# 2026-09-20 - 小欧 - 锚回填修复(B组, 配合 message_builder 锚演进): 终态 update_user_message_final 的
 #   user_message_id 由 db_ops.user_msg_id 改为优先取 agent.message_builder.current_user_msg_id(B机制注入消息经
 #   _absorb_inbox 落库取真实 uid 演进锚), DB 层 db_ops.user_msg_id 仅兜底 —— B机制注入的 user 消息回填不再落空。
 #   compliance: SRP/DRY(锚单点在 message_builder)/禁止backward
@@ -406,7 +406,7 @@ async def run_agent_in_background(
         #   本层订阅取完成快照逐条走通道路由(_persist 落库/SSE 标记/current_content); SSE 实时由
         #   stream_reader(独立协程按 seq 实时读 publish 事件)负责, 实时性不受影响; DB 落库由本层扫描完成
         #   (崩溃前已 publish 事件含异常路径 error/final 全量可读不丢); 订阅体内已 publish 事件不再 _append
-        #   防双发(doc[6]5.8.5, 违反 6.5 event_log 单一 seq); 自产事件(startinfo/异常final/守卫补发)统一经
+        #   防双发(违反 6.5 event_log 单一 seq); 自产事件(startinfo/异常final/守卫补发)统一经
         #   _publish → StreamBuffer.publish 发射, 单一写入口(5.8.1) — 小欧-2026-09-06
         await agent.run_react_cycle(
             task=last_message, context=run_context, task_id=task_id, start_time=start_time  # 11.2-B start_time 同源透传 — 小欧 2026-08-20

@@ -1,7 +1,7 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷1边沿修复)
+# 2026-07-22 - 小欧 - get_service 异常时清除 _model_warning 防止残留到下一请求(代码审查缺陷边沿修复)
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 # 2026-08-17 - 小健 - DEFAULT_CONTEXT_LIMIT(262144) 迁 app.services.agent.compaction_constants; create_service_instance 局部导入引用, 取值顺序不变(配置 model_params.context_limit 优先, 否则默认兜底)
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.6: 全链 ModelRef 归一——get_resolver_and_config 返回

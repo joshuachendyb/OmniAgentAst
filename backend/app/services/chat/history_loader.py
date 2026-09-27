@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-09-05 小健 - 新建: [7]8.6 一拆三——stream_reader.py 历史加载下沉。整份搬入
+# 2026-09-05 小健 - 新建: 8.6 一拆三——stream_reader.py 历史加载下沉。整份搬入
 #   _parse_tool_calls/_parse_observations/_load_previous_messages 三函数(逐字复制零改动),
 #   与 storage.py 的 fetch_session_user_message_pairs 做邻居(复用优先)。仅改导入归属, 业务逻辑一字不改,
 #   删 stream_reader.py 空壳时不留垫片(禁 backward)。
@@ -24,7 +24,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
     """从execution_steps JSON提取tool_calls列表
     小欧 2026-06-25 从_load_previous_messages提取
     小欧 2026-07-18 F4修复: try收窄到单步, 单步参数异常不株连整批
-    2026-08-18 小欧 §10.3.5(3)④: 兼容新 action(tools数组) + 老 action_tool(单工具)"""
+    2026-08-18 小欧 兼容新 action(tools数组) + 老 action_tool(单工具)"""
     try:
         exec_steps = json.loads(exec_steps_json)
     except Exception:
@@ -34,7 +34,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
         return []
     tool_calls = []
     _step_count: Dict[int, int] = {}   # 2026-08-18 小欧 兼容老 action_tool: 同 step 多工具追加组内序号
-    # bug#9修复(小沈 2026-08-29): 预扫描 observation 的 FC id 集合, 仅保留与 observation 配对的 action tool_call;
+    # 修复(小沈 2026-08-29): 预扫描 observation 的 FC id 集合, 仅保留与 observation 配对的 action tool_call;
     # 防 action/observation 工具数不一致→孤儿 tool_call(assistant 有 id 但无对应 tool 消息)→OpenAI 400
     _obs_ids: set = set()
     _orphan_skipped = 0
@@ -67,7 +67,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
                 if not isinstance(t, dict):
                     continue
                 _tcid = f"call_{msg_id}_{_s}_{_i}"
-                if _tcid not in _obs_ids:   # bug#9: 丢弃无配对 observation 的孤儿 tool_call
+                if _tcid not in _obs_ids:   # 修复: 丢弃无配对 observation 的孤儿 tool_call
                     _orphan_skipped += 1
                     continue
                 _name = t.get("tool", "")
@@ -85,7 +85,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
             _c = _step_count.get(_s, 0)
             _step_count[_s] = _c + 1
             _tcid = f"call_{msg_id}_{_s}_{_c}"
-            if _tcid not in _obs_ids:   # bug#9: 丢弃无配对 observation 的孤儿 tool_call
+            if _tcid not in _obs_ids:   # 修复: 丢弃无配对 observation 的孤儿 tool_call
                 continue
             try:
                 arguments = json.dumps(step.get("tool_params", {}), ensure_ascii=False)
@@ -104,9 +104,9 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
 
 def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
     """从execution_steps JSON提取observation tool消息 — 小欧 2026-06-25 从_load_previous_messages提取
-    小欧 2026-07-10 M-12: content已扁平到顶层，不再从observation包装读取
-    2026-08-18 小欧 §10.3.5(3)④: 直接读 tool_result 数组(新格式) + 老 content 回退
-    2026-08-18 小健 Bug#8: 截断场景的 truncated_output observation 无对应 action(运行时 id 为上次
+    小欧 2026-07-10: content已扁平到顶层，不再从observation包装读取
+    2026-08-18 小欧: 直接读 tool_result 数组(新格式) + 老 content 回退
+    2026-08-18 小健 修复: 截断场景的 truncated_output observation 无对应 action(运行时 id 为上次
       assistant 的 _retry_tc_id, 无法从 step_json 恢复), 回放一律生成孤儿 tool 消息 → 跳过, 防 OpenAI 历史不合法"""
     try:
         exec_steps = json.loads(exec_steps_json)
@@ -138,7 +138,7 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
                         continue
                     _cum = el.get("tool_name", "") == "truncated_output"
                     _cid = f"call_{msg_id}_{_s}_{_i}"
-                    # Bug#8: 截断观测量接管回放孤儿(无对应 action assistant), 跳过防 LLM 历史不合法
+                    # 修复: 截断观测量接管回放孤儿(无对应 action assistant), 跳过防 LLM 历史不合法
                     if _cum and _cid not in _action_ids:
                         continue
                     observations.append({
@@ -218,6 +218,6 @@ def _load_previous_messages(session_id: str, context_link_mode: str = "independe
                     messages.extend(_parse_observations(ai_id, steps_json))
         return messages
     except Exception as e:
-        # 【P1-14修复】DB异常加日志而非静默吞掉 — chendyg 2026-06-26
+        # 【修复】DB异常加日志而非静默吞掉 — chendyg 2026-06-26
         logger.warning(f"[SSE] 加载会话历史失败(session={session_id}): {e}")
         return []

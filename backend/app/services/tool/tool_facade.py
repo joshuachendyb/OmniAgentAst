@@ -11,9 +11,9 @@
 # 2026-08-13 小欧 A4收尾解耦: _FacadeAgent 去除 _tools_dict/_retry_engine 伪造字段, retry_engine 由 facade 显式构建
 #   (ToolRetryEngine(_get_tool_dict())) 经 execute_tool 的 retry_engine 显式依赖传入; _FacadeAgent 仅保留 _security_hooks
 #   + searchtool 注入所需 _loaded_categories/_tool_loader/_tool_cache(领域正确, 非 YAGNI 过度供给), 消除 hot-path 私有字段耦合
-# 2026-08-13 - 小沈 - BUG-6/7/25修复(三堂会审): ①_FacadeAgent 移至模块级(原函数内定义, 每次请求重建类对象);
+# 2026-08-13 - 小沈 - 修复(三堂会审): ①_FacadeAgent 移至模块级(原函数内定义, 每次请求重建类对象);
 #   ②_retry_engine 模块级单例(ToolRetryEngine 无状态, 复用同一实例, KISS-DIRECT); ③result 非 dict 时判失败(原 ok=True 误报成功)
-# 2026-08-18 - 小健 - 三堂会审 Bug#7(同源): result.llm_data.status 可能为 str, 新增 _safe_status_message 防御 AttributeError
+# 2026-08-18 - 小健 - 三堂会审 修复(同源): result.llm_data.status 可能为 str, 新增 _safe_status_message 防御 AttributeError
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -36,7 +36,7 @@ from app.services.task.task_context import _current_task_id
 
 
 def _safe_status_message(result: dict) -> str:
-    """2026-08-18 小健 三堂会审 Bug#7(同源): result.llm_data.status 可能为 str, 防御 .get AttributeError"""
+    """2026-08-18 小健 三堂会审 修复(同源): result.llm_data.status 可能为 str, 防御 .get AttributeError"""
     if not isinstance(result, dict):
         return ""
     _ld = result.get("llm_data")
@@ -66,7 +66,7 @@ def _get_tool_dict() -> dict:
     return _tools_dict
 
 
-# BUG-6/7修复(三堂会审 小沈 2026-08-13): _FacadeAgent 移至模块级(避免每次请求重建类对象);
+# 修复(三堂会审 小沈 2026-08-13): _FacadeAgent 移至模块级(避免每次请求重建类对象);
 #   _retry_engine 模块级单例(ToolRetryEngine 无状态, 复用同一实例, KISS-DIRECT)。
 class _FacadeAgent:
     """工具执行所需的最小 agent 状态面(仅保留 execute_tool 真实依赖的字段) — 小欧 2026-08-13
@@ -76,7 +76,7 @@ class _FacadeAgent:
       依赖 agent 内部状态, 属领域正确需求, 非 YAGNI 过度供给;
     - retry_engine 不再伪造为 agent 字段, 由 facade 显式构建并经 execute_tool 的 retry_engine
       显式依赖传入(A4 收尾解耦, 去除 hot-path 私有字段耦合)。
-    BUG-6修复: 移至模块级, 避免每次 execute_tool 调用都重建类对象(性能+可测试性) — 小沈 2026-08-13
+    修复: 移至模块级, 避免每次 execute_tool 调用都重建类对象(性能+可测试性) — 小沈 2026-08-13
     """
 
     def __init__(self):
@@ -86,7 +86,7 @@ class _FacadeAgent:
         self._tool_cache = TTLCache(ttl=_TOOL_CACHE_TTL)
 
 
-# BUG-7修复: 模块级单例 retry_engine(无状态, 复用同一实例) — 小沈 2026-08-13
+# 修复: 模块级单例 retry_engine(无状态, 复用同一实例) — 小沈 2026-08-13
 _retry_engine: Optional[ToolRetryEngine] = None
 
 
@@ -142,10 +142,10 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
         #    并 set/finally reset 到 ContextVar hooks — 与 chat 路径共享同一 executor + hooks, 消除双路径
         from app.services.agent.tool_executor import execute_tool as _exec
 
-        # BUG-6/7修复: _FacadeAgent 模块级 + _retry_engine 模块级单例, 不再每次请求重建 — 小沈 2026-08-13
+        # 修复: _FacadeAgent 模块级 + _retry_engine 模块级单例, 不再每次请求重建 — 小沈 2026-08-13
         result = await _exec(_FacadeAgent(), tool_name, params or {}, _get_retry_engine())
         # 用 is_success 判定(与 chat 路径 tool_executor 同源), 避免参数失败/工具未找到被误报 success=True — 三堂会审 小欧 2026-08-13
-        # BUG-25修复: result 非 dict 时判失败(原 ok=True 误报成功) — 小沈 2026-08-13
+        # 修复: result 非 dict 时判失败(原 ok=True 误报成功) — 小沈 2026-08-13
         if not isinstance(result, dict):
             return {
                 "tool_name": tool_name,

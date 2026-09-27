@@ -6,12 +6,12 @@ tool_executor — 工具执行逻辑
 """
 
 # 编辑历史:
-# 2026-08-05 小欧 修复BUG1/2(三堂会审通过): auto_inject_from_search只对未加载分类调load_category并尊重返回值, 去掉对已加载分类的多余重复调用; 空实现分类不再被误标为已加载
+# 2026-08-05 小欧 修复(三堂会审通过): auto_inject_from_search只对未加载分类调load_category并尊重返回值, 去掉对已加载分类的多余重复调用; 空实现分类不再被误标为已加载
 # 2026-08-12 小欧 A1后半面(4.1.7定案): execute_tool 入口注入安全 hooks(经 ContextVar, try/finally reset),
 #   并行/顺序两分支工具内 get_current_hooks() 读到注入值; getattr 通道支持子类自定义 hooks(OCP)
 # 2026-08-13 小欧 A4收尾解耦: execute_tool 显式接收 retry_engine 依赖(去除对 agent._retry_engine 私有字段的强耦合, KISS-DIRECT);
 #   两调用方(action_handler/tool_facade)显式传入同一引擎对象, 行为不变, 无退化; searchtool 自动注入仍走 agent 内部状态(领域正确)
-# 2026-08-23 小欧 落盘文件A/B 实施(文档[1]11.8.5 D3 #18/11.9 P4): execute_tool 加 on_attempt_recorded 形参并
+# 2026-08-23 小欧 落盘文件A/B 实施(文档落码): execute_tool 加 on_attempt_recorded 形参并
 #   双分支透传(parallel→try_once / 顺序→execute_tool_with_retry)——补透传链缺跳, 缺此 kwargs 调用必 TypeError
 import time
 from typing import Any, Callable, Dict, Optional, Set
@@ -91,7 +91,7 @@ def _log_single_tool(tool_name: str, params: Dict[str, Any], elapsed: float, sta
 def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
     """从searchtool结果自动注入整个工具类给LLM — 小欧 2026-06-23
 
-    P0-4修复: 匹配到一个工具，就把该工具所在的整个类(如NETWORK)全部注入LLM。
+    修复: 匹配到一个工具，就把该工具所在的整个类(如NETWORK)全部注入LLM。
     因为LLM知道类名后就能理解该类的所有工具，无需逐个注入。
     
     注意：注入(inject)是指将工具描述提供给LLM使用，工具函数已在启动时注册(register)
@@ -115,7 +115,7 @@ def auto_inject_from_search(agent, result: Dict[str, Any]) -> None:
         return
 
     # 只对尚未加载的分类调用load_category(单一权威, 见base_agent.load_category)
-    # 2026-08-05 小欧 修复BUG1/2: 空实现分类load_category返回False, 不再被标记为已加载;
+    # 2026-08-05 小欧 修复: 空实现分类load_category返回False, 不再被标记为已加载;
     #   同时去掉对已加载分类的多余重复调用
     loaded_any = False
     for cat in new_categories:

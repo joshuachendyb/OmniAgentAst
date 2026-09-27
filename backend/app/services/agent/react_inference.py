@@ -25,7 +25,7 @@ _MAX_CONSECUTIVE_TRUNCATIONS = 3
 # 相同工具调用死循环防御(双阈值纠偏/硬终止): LLM连续调用完全相同工具+相同参数时,
 # 第2次(count==2)、第3次(count==3)、第4次(count==4)各注入一条assistant role纠偏消息尝试唤醒调整(共3条);
 # count>=5(第5次)判定死循环硬终止。
-# 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用
+# 2026-08-08 - 小欧 - 文件不存在超时根因: LLM连续40+步逐字重复同一Thought并反复调用
 #   相同writetext(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
 #   空转, 本模式漏检, 致死循环直抵max_steps=10000。v1.6升级为由单阈值硬终止改为双阈值(纠偏+硬终止)。
 # v1.7(北京老陈 2026-08-08): 纠偏起点提前——第2次(count==2)就发第1条纠偏(原第3次), 第2/3/4次共发3条,
@@ -46,7 +46,7 @@ _RECOVERABLE_ERRORS = {"rejected", "blocked", "timeout"}
 
 
 def handle_react_error(agent, error, step):
-    """统一处理ReAct循环中的错误 — 返回MetaStep(type="error")仅SSE不落库 — 小欧 2026-08-18 P3
+    """统一处理ReAct循环中的错误 — 返回MetaStep(type="error")仅SSE不落库 — 小欧 2026-08-18
     _last_error由step_emitter.emit统一出口记录, 守卫读此填充final"""
     error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
@@ -82,7 +82,7 @@ def _should_retry_truncated_tool(agent, llm_response: Dict) -> bool:
     1. 返回类型是answer
     2. 内容很短(<500字,可能截断)
     3. 对话历史中存在带tool_calls的assistant消息(LLM之前处于工具模式)
-    4. 该tool_call**未被成功执行**(无对应tool角色响应) — P0-2修复 2026-06-23 小欧
+    4. 该tool_call**未被成功执行**(无对应tool角色响应) — 修复 2026-06-23 小欧
     E-3修复 2026-06-25 小欧: 阈值100→500,覆盖更多截断场景
     """
     if llm_response.get("type") != "answer":

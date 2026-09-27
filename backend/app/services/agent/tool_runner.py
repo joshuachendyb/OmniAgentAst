@@ -4,7 +4,7 @@
 #   [背景] execute_tools 是工具三分支(单/并行分组串行/顺序)执行调度, 应属工具执行层, 非 action 编排本身
 #   [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置
 #   [效果] action_handler 920→~596行纯编排调度层; 本文件与 tool_executor 同层(工具执行调度), 是 execute_tool 的上一层
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 + 使用点改读 tuning 配置
+# 2026-09-22 小欧 - constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 + 使用点改读 tuning 配置
 import asyncio
 import time
 from typing import Dict, List, Any
@@ -92,7 +92,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 group = [all_calls[i] for i in indices]
                 _g_start = time.time()  # 监控: 每组执行耗时起点 — 小欧 2026-08-09
                 if len(group) == 1:  # 单工具, 语义同原A
-                    # #18(2026-08-23): 工厂实参=全局序号(indices[0]+1), 禁用组内局部下标 — 小欧 2026-08-23
+                    # 2026-08-23: 工厂实参=全局序号(indices[0]+1), 禁用组内局部下标 — 小欧 2026-08-23
                     _cb = on_attempt_recorded(indices[0] + 1) if on_attempt_recorded else None
                     _res = [await execute_tool(agent, _cn(group[0]), _cp(group[0]), agent._retry_engine,
                                                on_retry_started=on_retry_started, on_attempt_recorded=_cb)]
@@ -164,7 +164,7 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
                     _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
 
-        # 11.2-C 工具遥测回调（P0-2 修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20; 2026-09-04 小健 第2阶段拆分: 批量聚合下沉 agent_telemetry.collect_and_report
+        # 工具遥测回调（修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20; 2026-09-04 小健 第2阶段拆分: 批量聚合下沉 agent_telemetry.collect_and_report
         _tele = getattr(agent, "telemetry", None)
         if _tele is not None:
             _tele.collect_and_report(all_calls, results)

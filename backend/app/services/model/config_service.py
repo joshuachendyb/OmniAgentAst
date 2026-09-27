@@ -22,14 +22,14 @@
 # ⚠️ 两个"别再删"的坑:
 #   1. `api_success` import 必须保留 —— open_config_folder 在用。曾因"全仓零引用"删掉导致该端点
 #      NameError→500(已实跑复现)。核实引用前先看本文件。
-#   2. `FIELD_HANDLERS` 收敛后已无消费方，但 [72]第十一章设计要求保留该结构，故未删。
+#   2. `FIELD_HANDLERS` 收敛后已无消费方，但章节设计要求保留该结构，故未删。
 #      是否进一步删除待北京老陈裁定，勿自行处置。
 """
 config_service — 配置业务服务(services/model)
 
 职责: 配置CRUD业务编排。YAML底层I/O归属config_helpers.py, 本服务只做编排。
 A7(小欧 2026-08-13): update_config 业务编排。
-P3(小沈 2026-08-13): 全量CRUD下沉, model_routes 降为纯薄壳。
+修复(小沈 2026-08-13): 全量CRUD下沉, model_routes 降为纯薄壳。
 """
 import os
 import subprocess
@@ -44,7 +44,7 @@ from app.utils.type_utils import to_int_or
 from app.config import get_config as get_config_instance
 from app.services.model.resolver import get_ai_config_resolver
 from app.services.model.config_helpers import (
-    _update_model_ref,  # [72]十一章: 唯一保留的 handler（直调，不经 FIELD_HANDLERS 中转）
+    _update_model_ref,  # 唯一保留的 handler（直调，不经 FIELD_HANDLERS 中转）
     _auto_fix_and_validate,
     _backup_config,
     _fix_config_common_issues,
@@ -60,10 +60,10 @@ from app.services.model.config_helpers import (
 
 
 def update_config(config_update):
-    """[72]第十一章(11.5 第1步) 收敛后的配置更新业务编排 — **只切模型**。
+    """配置更新业务编排 — **只切模型**。
     原实现（已删）经 FIELD_HANDLERS 派发 7 个 handler：ai_model_ref / provider_api_keys / theme /
     language / max_steps / security / project_root。本次整改后本函数**只保留 ai_model_ref 一条能力**：
-      - provider_api_keys：能空串擦除密钥（[72]第三章认定第二个入口），字段已从 ConfigUpdate 删除，漏洞消失
+      - provider_api_keys：能空串擦除密钥（认定第二个入口），字段已从 ConfigUpdate 删除，漏洞消失
       - theme/language/max_steps/security/project_root：功能已迁移至 PUT /settings 对应 registry 项，
         旧字段与旧 handler 一并删除，不留第二条写路径（避免同一配置两个写入口产生分叉）
     保留原因：configApi.switchCurrentModel（AppContext.tsx:266，顶栏与设置页「切换全局模型」唯一写链）
@@ -137,7 +137,7 @@ DEFAULT_SECURITY = {
 
 
 def _provider_conf(ai_config: dict, provider: str) -> dict:
-    """取 provider 配置；非 dict 一律归空 — 2026-09-21 小欧 [59]B-5 统一守卫
+    """取 provider 配置；非 dict 一律归空 — 2026-09-21 小欧 统一守卫
     （畸形 YAML 写 provider 为 str/list 时避免 .get 崩溃；get_system_config_data/get_model_list/get_full_config 复用）"""
     p = ai_config.get(provider)
     return p if isinstance(p, dict) else {}
@@ -314,8 +314,8 @@ _MAX_READ_FILE_BYTES = 512 * 1024
 
 def read_config_file() -> dict:
     """读取配置文件 — 自 model_routes.py 迁入 — 小沈 2026-08-13
-    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）
-    2026-09-21 小欧 [59]B-14：BOM 剥离 + 大小上限"""
+    2026-09-21 小欧 扩展：返回体扩 path/size/lines/mtime
+    2026-09-21 小欧 修复：BOM 剥离 + 大小上限"""
     config_path = get_config_path()
     if not config_path.exists():
         raise HTTPException(status_code=404, detail=f"配置文件不存在: {config_path}")
@@ -337,8 +337,8 @@ def read_config_file() -> dict:
 def read_version_file() -> dict:
     """读取 version.txt 全文 — 2026-09-21 小欧 关于页"查看版本文件全文"。
     路径与 main.get_version / settings_service.app_version 一致（get_code_root()/version.txt，DRY）。
-    2026-09-21 小欧 P2-9：返回体扩 path/size/lines/mtime（[58] P2-9）
-    2026-09-21 小欧 [59]B-14：BOM 剥离 + 大小上限"""
+    2026-09-21 小欧 扩展：返回体扩 path/size/lines/mtime
+    2026-09-21 小欧 修复：BOM 剥离 + 大小上限"""
     from app.config import get_code_root  # 局部 import：避免顶层循环依赖
     version_path = Path(get_code_root()) / "version.txt"
     if not version_path.exists():

@@ -3,7 +3,7 @@
 # 2026-08-17 小健 新建: start 任务输入装配完整过程独立模块(北京老陈驱动, 痛斥 start 业务割裂散落多处)——把
 #   start 全部业务收拢一个文件: 注入会话历史 _inject_conversation_history / 超窗判定 _maybe_compact_injected_history
 #   / C4 锚定摘要回填 _compact_injected_history / 装配入口 assemble_start_step; 自 initialize_run_state.py 与
-#   react_cycle.py 迁入, 单一归属; react_cycle 只保留薄调用(不 import chat 层, P4 解耦)
+#   react_cycle.py 迁入, 单一归属; react_cycle 只保留薄调用(不 import chat 层, 解耦)
 # 2026-08-17 小健 三思三省彻底收敛(老陈驱动): 契约构造业务自 sse_events 迁入本模块——新增 _build_start_contract
 #   在单模块内算 context_summary 快照(message_count/total_tokens) + 构造 MetaStep(type="start", step=0),
 #   并据 orchestrator 注入的运行元数据 agent._start_meta(ai_service/task_id/next_step/user_input/session_id/
@@ -23,13 +23,13 @@
 #   agent.message_builder.MAX_CONTEXT_TOKENS(agent_runner 已用 llm_service.context_limit 覆盖, 与 loop 同基准),
 #   不再读全局常量; 门限=运行时窗口 × START_TRIGGER_RATIO; 删除 MAX_CONTEXT_TOKENS=200000 死值兜底
 # 2026-08-17 小健 开关定名(北京老陈 2026-08-17): COMPACTION_ENABLED→START_COMPACTION_ENABLED(仅限 start 域), 值 True
-# 2026-08-18 - 小欧 - §10.4.4 P7②(§10.1.2): _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
+# 2026-08-18 - 小欧 - start契约改造: _build_start_contract 改产 StartStep(删 next_step 依赖, step 固定 0, content=context_summary, user_message 顶层化); assemble_start_step 返回类型改 StartStep
 # 2026-08-18 - 小欧 - 三堂会审复核(回归修复): _build_start_contract 补 _start_meta None/非 dict 防御, 防 _meta.get AttributeError, 兑现既声明的「无 _start_meta 返回 None 旁路兼容」契约
 # 2026-08-20 - 小欧 - 11.3-A 跨任务注入基线快照: assemble_start_step 完成时调 TaskTelemetry 记录注入上下文基线(固定不漂移), 供后续任务 context_overview/injected 对比
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5: _build_start_contract 构造 StartStep 改传
 #   start_model=_ai.llm_model(ModelRef 单结构), 删 display_name=f"{provider} ({model})" 拼装与
 #   provider=/model= 分离入参(设计要求2: display_name 不再落库, 前端派生)
-# 2026-08-29 - 小沈 - bug#2修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
+# 2026-08-29 - 小沈 - 修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
 # 2026-09-23 - 小欧 - compaction配置化: _maybe 读 tuning.compaction.start_enabled/start_trigger_ratio; _compact 内联保尾 history[-1:] 改读 tuning.compaction.keep_tail（0=不保尾）
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
@@ -38,7 +38,7 @@ start_step — start 任务输入装配完整过程(单一模块, 一个入口)
   - _inject_conversation_history: 注入会话历史(多轮对话上下文回填 message_builder)
   - _maybe_compact_injected_history: 超窗判定(C4, 置 _needs_compact 标记)
   - _compact_injected_history: C4 锚定摘要回填(超窗时一次性清洗注入历史)
-  - _build_start_contract: 契约构造(context_summary 快照 + StartStep 任务输入契约, 自 sse_events 迁入; P7 改产 StartStep)
+  - _build_start_contract: 契约构造(context_summary 快照 + StartStep 任务输入契约, 自 sse_events 迁入; 改产 StartStep)
   - assemble_start_step: 唯一对外入口(注入历史 → 超窗判定 → 契约构造)
 依据: [1] 10.1.1(功能逻辑) / 10.1.2(字段清单) / 10.1.6(C4 清洗) / 10.1.7④⑤(装配落点) / 10.1.8 S3/S4/S5。
 """
@@ -50,7 +50,7 @@ from app.logger import logger
 
 def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
     """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent
-    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug(P0-1)，保留FC协议完整性
+    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug，保留FC协议完整性
     chendyg 2026-06-30: 修复重复user消息bug——previous_messages中最后一条user与init_history注入的task重复
     小健 2026-08-17: 自 initialize_run_state 迁入 start_step(单一归属)
 
@@ -77,7 +77,7 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
         role = msg.get("role")
         if role == "tool":
             entry = {"role": "tool", "tool_call_id": msg.get("tool_call_id", ""), "content": msg.get("content", "")}
-            # M-04: FC协议需要name字段 — 小欧 2026-07-10
+            # FC协议需要name字段 — 小欧 2026-07-10
             name = msg.get("name")
             if name:
                 entry["name"] = name
@@ -168,7 +168,7 @@ async def _compact_injected_history(agent) -> None:
         compacted = (
             history[:1] + [{"role": "assistant", "content": summary_text}] + (history[-_keep:] if _keep else [])
         )
-        # bug#2修复(小沈 2026-08-29): 中段 assistant 已被丢弃, 末条若仍是 tool 消息则成孤儿→发LLM 400;
+        # 修复(小沈 2026-08-29): 中段 assistant 已被丢弃, 末条若仍是 tool 消息则成孤儿→发LLM 400;
         # 最小守卫: 丢弃尾随无配对 assistant 的 tool 消息
         while compacted and compacted[-1].get("role") == "tool":
             compacted = compacted[:-1]
@@ -178,7 +178,7 @@ async def _compact_injected_history(agent) -> None:
 
 
 def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional["StartStep"]:
-    """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 P7 改产 StartStep
+    """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
     适用场景: start 装配第③步——据 orchestrator 注入的运行元数据(_start_meta)算 context_summary 快照,
     构造 StartStep(type="start", step=0, content=context_summary); 自 sse_events 迁入(start 契约构造业务完整归此模块)。
@@ -187,9 +187,9 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
           + _start_meta(dict: user_input/session_id/context_link_mode/context_root_task_id/warning,
           orchestrator 注入); previous_messages 历史消息列表(空列表则快照 message_count=0)。
     输出: StartStep(type="start", step=0) —— 任务输入契约: 任务头部 + system_prompt + user_message(顶层) + context_summary。
-    前置条件: _start_meta 已注入(缺则返回 None 旁路兼容); step 固定 0(P2 弃用 next_step, 不再依赖轮数)。
-    依赖方向: 仅 agent 属性 + StartStep/MessageBuilder(俱 agent 层), 不 import chat 层(P4 解耦)。
-    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④ / 10.1.8 S3/S4 / 10.4.4 P7。
+    前置条件: _start_meta 已注入(缺则返回 None 旁路兼容); step 固定 0(弃用 next_step, 不再依赖轮数)。
+    依赖方向: 仅 agent 属性 + StartStep/MessageBuilder(俱 agent 层), 不 import chat 层(解耦)。
+    设计文档: start契约设计章节。
     """
     from app.services.agent.steps import StartStep  # 局部导入防包级环
     from app.services.agent.message_builder import MessageBuilder
@@ -197,7 +197,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
     _meta = getattr(agent, "_start_meta", None)
     _ai = getattr(agent, "llm_client", None)
     if _ai is None or not isinstance(_meta, dict):
-        return None   # P7: 不再依赖 next_step(P2 弃用)，仅需 llm_client 供 provider/model;
+        return None   # 不再依赖 next_step(弃用)，仅需 llm_client 供 provider/model;
                       # 三堂会审复核(小欧 2026-08-18): 缺 _start_meta 或非 dict 亦旁路返回 None, 防下方 _meta.get AttributeError(回归修复)
     _prev = previous_messages or []
     context_summary = {
@@ -208,7 +208,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
         "total_tokens": MessageBuilder._estimate_tokens(_prev),
     }
     return StartStep(
-        step=0,                                   # P2: start 固定轮数 0（不再调 next_step）
+        step=0,                                   # start 固定轮数 0（不再调 next_step）
         context_summary=context_summary,          # content 承载 context_summary(10.1.2 <第2步>3)
         user_message=_meta.get("user_input") or "",   # user_input 顶层化(<第2步>4)
         task_id=getattr(agent, "task_id", None),
@@ -219,7 +219,7 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
 
 
 def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]:
-    """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17; 小欧 2026-08-18 P7 改产 StartStep
+    """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
     适用场景: run_react_cycle 在 initialize_run_state 之后、while 之前调用一次, 完成 start 全部业务。
     使用方法: 传 agent + context, 返回构造好的 StartStep(调用方 emit); 无 _start_meta 时返回 None。
@@ -229,8 +229,8 @@ def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]
           context 含 previous_messages(注入历史 + 快照 message_count/total_tokens)。
     输出: StartStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容)。
     前置条件: initialize_run_state 已执行(agent.steps 已重置、init_history 已装载、_sys_prompt 已就绪)。
-    依赖方向: 只读 agent 属性 + context, 不 import chat 层(P4 解耦); 运行元数据由 orchestrator 注入 _start_meta。
-    设计文档: [1] 10.1.1 / 10.1.2 / 10.1.7④⑤ / 10.1.8 S3/S4/S5 / 10.4.4 P7。
+    依赖方向: 只读 agent 属性 + context, 不 import chat 层(解耦); 运行元数据由 orchestrator 注入 _start_meta。
+    设计文档: start契约设计章节。
     """
     # ① 注入会话历史(任务输入装配第一步)
     _inject_conversation_history(agent, context)

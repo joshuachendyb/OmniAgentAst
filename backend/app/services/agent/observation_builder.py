@@ -53,7 +53,7 @@ def _add_denial_feedback(agent, denied_items, fc_context=None):
 
 
 async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
-    """构建 observation - tool_result 数组方案（§10.3.3(3)）— 2026-08-18 小欧
+    """构建 observation - tool_result 数组方案 — 2026-08-18 小欧
 
     职责不变: 1条assistant(tool_calls)+逐工具add_tool_result喂LLM; record_operation双表同号
     变更: 删 ActionStep 发射/删 _merge_other_data/删顶层 llm_data/tool_result/other_data/parallel_results
@@ -76,7 +76,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
     for call, result in zip_longest(ctx.all_calls, ctx.results):
         if call is None:
             continue
-        # 2026-09-03 小欧 Bug-1: 全工具被安全拦截时 results 可能缺失该 call 的结果(zip_longest 补 None),
+        # 2026-09-03 小欧 修复: 全工具被安全拦截时 results 可能缺失该 call 的结果(zip_longest 补 None),
         #   用合成"无结果"占位, 使 ObservationStep 必然发出、前端 results 保长度, 齿轮/动画不再永驻
         # 2026-09-03 小欧 D2-01: synthetic补summary使折叠区可见“已安全拦截：tool”
         if result is None:
@@ -88,7 +88,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
         else:
             obs_text = build_observation_text(result, call.get("tool_name", ""), call.get("tool_params", {}))
             _llm_data = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
-            # 2026-08-18 小健 三堂会审 Bug#7: status 可能为 str(工具实现不规范), 防御防 AttributeError
+            # 2026-08-18 小健 三堂会审 修复: status 可能为 str(工具实现不规范), 防御防 AttributeError
             _status = _llm_data.get("status") if isinstance(_llm_data.get("status"), dict) else {}
             _ec = _status.get("exec_code", "")
             _is_failed = _ec == "error"
@@ -119,7 +119,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
                 logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
 
         # ── 构建 tool_result[i]（每元素自包含, other_data 1:1 不合并）── 2026-08-18 小欧
-        # 2026-08-18 小健 三堂会审 Bug#4: 删除死变量 _data(只赋值未使用, 原始 data 已由 data_text/dl 承载)
+        # 2026-08-18 小健 三堂会审 修复: 删除死变量 _data(只赋值未使用, 原始 data 已由 data_text/dl 承载)
         if isinstance(result, dict):
             _llm = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
             _other = result.get("other_data") if isinstance(result.get("other_data"), dict) else {}
@@ -135,7 +135,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
         # ── 编排层收集（取代旧 _merge_other_data 盲目合并）── 2026-08-18 小欧
         if _other.get("return_direct"):
             orchestration["return_direct"] = True
-            # 2026-08-18 小健 Bug#7: status 可能非 dict, .get 前防御 (line 732 同各 status 取值点)
+            # 2026-08-18 小健 修复: status 可能非 dict, .get 前防御 (line 732 同各 status 取值点)
             _rd_status = _llm.get("status") if isinstance(_llm.get("status"), dict) else {}
             orchestration["return_direct_message"] = _rd_status.get("message", "") or obs_text
         if _other.get("attachment") is not None:
@@ -144,7 +144,7 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             _w = str(_other["warning"])
             orchestration["warning"] = (orchestration["warning"] + "\n\n" + _w).strip() if orchestration["warning"] else _w
 
-    # 2026-09-03 小欧 Bug-1: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
+    # 2026-09-03 小欧 修复: 无条件发 ObservationStep(即使 tool_result 为空/全拦截),
     #   前端 results 到达即卸载等待动画, 杜绝齿轮/动画永驻(改前空 tool_result 直接 return 不发事件)
     # 2026-09-03 小欧 D2-01补：all_calls空时不发空观察（无工具调用无需观察）
     # 4C(5.8.2): ObservationStep 不进缓冲由本层发布——事件统一在 react_step 分发消费(await _dispatch_handler 逐条

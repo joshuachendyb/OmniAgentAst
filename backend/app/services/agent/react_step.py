@@ -9,9 +9,9 @@
 #   - handler 保留 add_observation/add_assistant_message, 不绕路
 # 2026-07-17 小沈 FC重命名: import/LLMResponseError同步
 # 2026-07-17 小欧 B3扩展+修正: 检测reasoning-only空转并软引导(修正has_tool_results屏蔽使已调工具后仍可警告); 改add_observation→add_assistant_message(避免空tool_call_id孤立tool消息致LLM参数不合法, 参照edca06261昨天修正); warning去具体工具名
-# 2026-07-18 小欧 #27 fix: 删llm_client._cancelled死分支
-# 2026-07-18 小欧 #28 fix: 更新docstring状态推断规则
-# 2026-07-18 小欧 #29 fix: 抽取_EV_FINAL/_EV_RETRY/_EV_ERROR常量
+# 2026-07-18 小欧 修复: 删llm_client._cancelled死分支
+# 2026-07-18 小欧 修复: 更新docstring状态推断规则
+# 2026-07-18 小欧 修复: 抽取_EV_FINAL/_EV_RETRY/_EV_ERROR常量
 # 2026-07-18 小欧 FinalStep多态自包含终态重构:
 #   【病根】原react_cycle中取消/截断/无终态等路径用MetaStep(cancelled)表示终态,
 #          与answer_handler的FinalStep(completed)不一致; _dispatch_handler基于event.type位置推断终态,
@@ -32,7 +32,7 @@
 # 2026-07-22 小欧 MetaStep usage: 从 **_usage 解包改为手动三字段，精确控制输出
 # 2026-07-23 小欧 - log_and_print统一: 3处print()替换为log_and_print()(Thought/Error/Cancel控制台输出), 导入log_and_print
 # 2026-08-08 小欧 相同工具调用死循环检测(场景F)新增:
-#   【病根】P6_01(file_not_found)超时根因: LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数
+#   【病根】超时根因: LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数
 #          (writetext写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
 #          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
 #   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
@@ -46,7 +46,7 @@
 #     cnt>=5 硬终止; _warned_same_tool_loop 为 int 计数(发纠偏条数, 上限_SAME_TOOL_WARN_MAX),
 #     重置/初始化点(签名变化/非action/initialize_run_state)由 False 改 0;
 #     deny_counts 让位判断 not _warned_same_tool_loop 真值语义不变(int>0即已发)
-# 2026-08-09 - 小欧 - P4拆分(见doc-8月优化修复代码三堂会审报告v1.1): 用户暂停阻塞由 task_pause_check(产SSE) 改为
+# 2026-08-09 - 小欧 - 拆分(见doc-8月优化修复代码三堂会审报告v1.1): 用户暂停阻塞由 task_pause_check(产SSE) 改为
 #   wait_for_resume(纯阻塞不产SSE)。原 task_pause_check 在 react_cycle→agent_runner 路径产出的SSE字符串
 #   被 agent_runner 以"跳过非Step事件"丢弃(死路); 前端暂停/恢复提示由 openai._stream_with_control 的
 #   task_pause_check_and_yield 统一下发(职责单一无重复)。ast语法✓
@@ -78,7 +78,7 @@
 #   【改法】与 clear_temp_auth 并列在 task 级 finally 调 reset_current_task_id(), 对称set/reset, 行为零退化
 # 2026-08-14 - 小欧 - llm 独立为 app 顶层能力层目录(services/llm→app/llm), 本文件 import 路径同步
 # 2026-08-16 - 小欧 - S4(10.1.1③/10.1.7④): start 装配进 agent.steps(占 step 0), 取消 orchestrator 旁路。
-#   P4 注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获), 本处只读 agent 属性
+#   注入模式: 工厂由 orchestrator 注入 agent._start_step_factory(chat 层数据闭包捕获), 本处只读 agent 属性
 #   (system_prompt=_sys_prompt, previous_messages=context), 不 import chat 层; start 落库走 agent_runner 事件流
 # 2026-08-17 - 小健 - 三堂会审修复(北京老陈驱动, 11 bug 复核3遍):
 #   S4(步号唯一): 首轮前取消(llm_call_count 尚未在 _process_single_step 开头 +1 =0)时, FinalStep step=0 与
@@ -102,25 +102,25 @@
 # 2026-08-17 - 小健 - 最合理核查(老陈追问): assemble_start_step 改同步(内部零 await), 调用点去 await — 小健 2026-08-17
 # 2026-08-17 - 小健 - 注释纠偏(北京老陈 2026-08-17): S5 超窗回填段注释去掉「依赖 COMPACTION_ENABLED 放开 R4」表述——
 #   开关仅限 start 超窗判定(start_step)使用; 触发条件只据 start 超窗置的 _needs_compact 标记(getattr 判断) — 小健 2026-08-17
-# 2026-08-18 小欧 - §10.3.3(4): same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
-# 2026-08-18 - 小欧 - §10.4.4 P2/P3/P4/P5/P6: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
+# 2026-08-18 小欧 - 步骤信号: same_tool_loop终止FinalStep的 thought= 改 reasoning=(FinalStep已删thought参数)
+# 2026-08-18 - 小欧 - 错误/用量仅SSE: handle_react_error/empty_response/chunk_buffer_timeout 改 MetaStep(type="error")(删ErrorStep import); _dispatch_handler 改读 _kwargs 取 error_type; usage emit 处 append _usage_events; 各 error/retrying/usage 加 severity(warn/info)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构累计三堂会审修复: 任务起点(run_react_cycle)读 DB 一次缓存 _session_acc_base/_chain_acc_base 到 agent 并初始化 session/chain 累计=基线(无 LLM 调用任务也正确反映历史累计, 杜绝日志/前端误显 0); usage 块改用缓存基线(消除每轮双 DB 连接冗余读取); DB 异常降级为零基线不阻断主链路
 # 2026-08-20 - 小欧 - 真实缺陷复核三遍修复(review 3x 确认后按最佳不退化): ①A(遥测 usage 门控): on_llm_call/build_stats_step/context_overview 原置于 `if _usage` 内, 无 usage 响应时 llm_calls/stats/context_overview 全丢; 移出到 response 分支末尾必发(usage 存在行为完全不变, 纯增强), 补 isinstance 守卫 error/finish_reason 计算; ②C2(裁剪token死活): on_trim 原只传 bool -> 透传 message_builder._trimmed_tokens_this_round, 裁掉token数不再恒0。
 # 2026-08-20 - 小欧 - 11.1b 运行中DB即时落库(北京老陈裁定"每轮即时落库"): 每轮 emit usage(MetaStep type=usage) 后同步 update_task/session_accumulation 落库, 供运行中他方查询/断线中间态读取实时累计; DB 读-加-写(当前DB值+本轮token)与内存态基线口径一致, 会话缺 session_id 守卫跳过; DB 异常降级 warning 不阻断主链路; 配套 agent_runner S2 移除重复 update 防同批 token 翻倍累加
 # 2026-08-20 - 小欧 - 解决问题18(2.4④ truncated): 新增 MetaStep(type="truncated") 统一"输出截断"事件, 仅触发于 LLM 输出截断 2 处(场景D)——重试分支(content=连续第N次+已注入重试Observation)与连续截断取消分支(content=连续N次+任务取消, 于 FinalStep 前下发), severity=warn; 上下文裁剪/工具结果截断已有 context_overview.truncated / observation data.truncated 通道, 不重复新增(DRY); MetaStep 不落库不占 steps, 不影响 total_steps
-# 2026-08-21 - 小欧 - 12.2-Q5-D3(按文档[1]12.2 diff设计落地): 每轮 token 累计落库块之后新增运行中 checkpoint——
+# 2026-08-21 - 小欧 - 差异设计落地: 每轮 token 累计落库块之后新增运行中 checkpoint——
 #   调 agent.telemetry.checkpoint_llm_calls() 增量持久化 llm_calls(整表重写+idx_llm_calls_task_call 唯一索引幂等去重);
 #   目的: 任务中途崩溃时监控数据最多丢最后一轮, 不再全丢; getattr 守卫无 telemetry 场景零影响, 主链路零改动
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.5/6.7: 三处 F8 属性迁移——:398 LLM 调用日志行改读
 #   llm_client.llm_model.model; :401 log_llm_call 改传 llm_model=llm_client.llm_model(prompt_logger 签名归一);
 #   :508 telemetry.on_llm_call 改传 tele_model=llm_client.llm_model — 全链 ModelRef 归一
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P1): :398/:404/:509 三处改读任务快照 agent._task_llm_model 优先——
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: :398/:404/:509 三处改读任务快照 agent._task_llm_model 优先——
 #   防共享单例被并发还原后本任务后续轮次记录到他人模型(与 base_agent 快照/telemetry.finalize 同步落地)
-# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档[1]11.8.4 D2/11.9 P2): _process_single_step 在 prepare_messages_for_llm()
+# 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码): _process_single_step 在 prepare_messages_for_llm()
 #   之后调 agent.file_persist.append_conv_blocks(llm_call_count, messages) 增量落文件B(稳定 _msg_id 去重),
 #   随即 pop("_msg_id") 防泄漏 LLM wire; getattr 守卫 writer 未挂载空转, 旁路不阻塞主链路
 # 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): 5处 emit_final_with_stats 调用点 async for→for(配合 step_emitter.emit_final_with_stats 改 sync 返回 (final, stats) 二元组); 原 async 体内零await, 纯伪异步包装; 行为等价无backward
-# 2026-09-02 - 小欧 - 设计文档v1.21§5.5落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): _process_single_step
+# 2026-09-02 - 小欧 - 设计文档v1.21落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): _process_single_step
 #   :435 async for 内拆包前拦截 ("meta", {...}) → yield MetaStep(type=retrying, step=llm_call_count, severity=info,
 #   wait_time) 走 StepEmitter 与既有 retrying 同路径发前端位4🔁; 命中即 continue(未命中照旧拆包走既有分支);
 #   LLM底层 L1/L2/FC降级重试通知全链落点收口
@@ -133,7 +133,7 @@
 #   final截断/L413 trunc重试前/L418 ObservationStep/L443-451 same_tool_loop final) 全收口 publish, 按序极化见
 #   emit_final_with_stats 三处(L406/L443/余为直接emit)先publish再 for 拆二元组 publish; L461-462 消费改
 #   for await _dispatch_handler(5.8.1 list) 逐条 publish; _publish = _buf.publish 函数顶部绑定一次 — 小欧-2026-09-06
-# 2026-09-06 小欧 路径2-5D(文档[6]2.5.4②): _process_single_step 消费判别段(L208-222)改 payload 单判别——
+# 2026-09-06 小欧 路径2-5D(文档落码): _process_single_step 消费判别段(L208-222)改 payload 单判别——
 #   meta分支→payload["type"]=="retrying", response分支→payload非空, chunk分支→payload为None;
 #   判别结果仍以 chunk_type/chunk_data 喂下方 chunk/response 既有处理体(L225起逐行不动);
 #   _task_llm_model 快照口径不变; 发射形态保留 4C publish(await _publish(emit(...).to_dict()))
@@ -146,21 +146,21 @@
 #   读 event_log 不看返回值(行300); 改为 return[](与 L444/L475 同风格, 事件已全量 publish), 并补
 #   test_run_react_cycle_truncation_max_cancelled 全循环回归 — 小欧 2026-09-06
 
-# 2026-09-11 小欧 - [27]方案: emit_final_with_stats 改返回一元组(final,), 2 处调用点删除
+# 2026-09-11 小欧 - 方案: emit_final_with_stats 改返回一元组(final,), 2 处调用点删除
 #   `await _publish(_fs[1].to_dict())`(final_stats 移出循环链, 由 runner 延后单发, 杜绝残缺组装即发) — 小欧-2026-09-11
-# 2026-09-12 小欧 - X2 终态长短信号分离(方案[31] §4.1): 新增 _emit_publish 发射统一收口(4.1.1, L187 后)——
+# 2026-09-12 小欧 - X2 终态长短信号分离(方案): 新增 _emit_publish 发射统一收口(L187 后)——
 #   ① chunk(非推理)/action 当场登记 _final_short_ctx(替代 agent_runner 扫描累积);
 #   ② completed final 当场分流: 一律先缓存完整长条 _pending_final_db(供扫描落库), 短判定(有正文chunk+非action轮)
 #     → 剥五键短条(type/step/timestamp/outcome/duration) publish, 长判定(return_direct/action轮/failed/cancelled)
 #     → 完整长条(=缓存同源)原样 publish; event_log 只进应转发形态, G2(实时长/重连短)根治;
 #   ③ 12 处 publish 调用点 L231/255/307/341/346/366/419/429/445/450/483/495 全改走 _emit_publish(4.1.3 C1~C12);
 #   ④ import 补 Dict 类型标注。非 final 事件原样 publish 逐字节等价, 无 backward — 小欧-2026-09-12
-# 2026-09-20 - 小欧 - B机制修复(B-1/B-2/B-5/B-6, 北京老陈定案, 机会②): _absorb_inbox 重构——
+# 2026-09-20 - 小欧 - B机制修复(北京老陈定案, 机会②): _absorb_inbox 重构——
 #   ①多条注入合并为同一用户输入块(末条已 user 则并入防连续 user 交替性), 单条独立成新 user 轮(TDD-30 铁约束);
-#   ②吸收时经 storage.insert_user_message 落库拿真实 user_message_id(B-1/B-6), 会话/session 缺失或 DB 异常
-#     静默 fallback(null 锚); ③吸收后写回真实 uid 到目标 user 消息并演进 builder 锚(B-2, 供 assistant 回复配对落库)。
+#   ②吸收时经 storage.insert_user_message 落库拿真实 user_message_id, 会话/session 缺失或 DB 异常
+#     静默 fallback(null 锚); ③吸收后写回真实 uid 到目标 user 消息并演进 builder 锚(供 assistant 回复配对落库)。
 #   compliance: SRP(数据层 drain_inbox 承接)/KISS-DIRECT/禁止backward
-# 2026-09-20 - 小欧 - 三堂会审BUG-01/07/15修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
+# 2026-09-20 - 小欧 - 三堂会审修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
 # 2026-09-20 - 小欧 - TDD-30铁约束回归修正: _absorb_inbox单条注入改条件传参——落库成功传真实uid,
 #   落库失败(_uid=None)回退单参调用(合成负id占位, 行为等价), 兼容既有 add_user_message 单参铁约束断言。
 
@@ -186,7 +186,7 @@ from app.services.agent.react_inference import (
     _check_same_tool_loop,
     _warn_same_tool_loop,
 )
-# 2026-09-20 小欧 三堂会审BUG-01/07/15修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
+# 2026-09-20 小欧 三堂会审修复: ①_absorb_inbox锚更新条件反转(_cur守卫致首次None永不演进→回填uid必空); ②insert_user_message异常静默吞掉无日志; ③add_user_message单条注入显式传uid消除合成负id中间态
 from app.services.agent.react_dispatch import _dispatch_handler
 from app.db import db
 from app.services.chat import storage
@@ -213,14 +213,14 @@ async def _absorb_inbox(agent) -> int:
     else:
         _contents = list(_injected)
     _merged = "\n".join(_contents)
-    # B-1/B-6: 吸收即落库(拿真实 user_message_id 供 linked/刷新回放), 会话缺失或 DB 异常静默 fallback(null 锚)
+    # 吸收即落库(拿真实 user_message_id 供 linked/刷新回放), 会话缺失或 DB 异常静默 fallback(null 锚)
     _uid = None
     _sid = await get_task_field(agent.task_id, "session_id")
     if _sid:
         try:
             _uid = await db.atxn("chat", lambda c: storage.insert_user_message(c, session_id=_sid, content=_merged))
         except Exception as _e:
-            # BUG-07修复(小欧 2026-09-20): 异常不再静默吞掉, 记warning供运维定位chat_user_message缺失
+            # 修复(小欧 2026-09-20): 异常不再静默吞掉, 记warning供运维定位chat_user_message缺失
             logger.warning(f"[B] insert_user_message落库失败(task={agent.task_id}, session={_sid}): {_e}")
             _uid = None
     _hist = getattr(agent.message_builder, "conversation_history", None)
@@ -229,12 +229,12 @@ async def _absorb_inbox(agent) -> int:
         len(_injected) > 1                      # B-5: 多条才合并(单条独立成轮, B-1/B-2/TDD-30)
         and isinstance(_last, dict) and _last.get("role") == "user"   # 末条已是 user(同轮连发) → 避免连续 user
     )
-    # B-5: 并入末条, 不产生连续 user; 否则独立成轮(单参调用, TDD-30 铁约束)
+    # 并入末条, 不产生连续 user; 否则独立成轮(单参调用, TDD-30 铁约束)
     if _merge_into_last:
         _last["content"] = str(_last.get("content") or "") + "\n" + _merged
         _write_target = _last
     else:
-        # BUG-15修复(小欧 2026-09-20): 落库成功显式传真实uid(消除合成负id中间态); 落库失败(_uid=None)走 TDD-30
+        # 修复(小欧 2026-09-20): 落库成功显式传真实uid(消除合成负id中间态); 落库失败(_uid=None)走 降级路径
         #   铁约束单参调用(合成负id占位, 行为等价, 兼容既有单参断言) — 2026-09-20 改动
         if _uid is not None:
             agent.message_builder.add_user_message(_merged, user_message_id=_uid)
@@ -242,10 +242,10 @@ async def _absorb_inbox(agent) -> int:
             agent.message_builder.add_user_message(_merged)  # TDD-30 铁约束: 单参调用(内部合成负id占位锚)
         _hist = getattr(agent.message_builder, "conversation_history", None)
         _write_target = _hist[-1] if isinstance(_hist, list) and _hist else None
-    # B-1/B-2 锚写回: 落库成功则把真实 uid 写到目标 user 消息并演进 builder 锚 — 小欧 2026-09-20 BUG-01修复: 无条件演进锚(None→真实uid)
+    # 锚写回: 落库成功则把真实 uid 写到目标 user 消息并演进 builder 锚 — 小欧 2026-09-20 修复: 无条件演进锚(None→真实uid)
     if _uid is not None and isinstance(_write_target, dict):
         _write_target["user_message_id"] = _uid
-        agent.message_builder._current_user_msg_id = _uid  # BUG-01: 去掉 _cur is not None 守卫, 首次(None)也必须演进
+        agent.message_builder._current_user_msg_id = _uid  # 去掉 _cur is not None 守卫, 首次(None)也必须演进
     logger.info(f"[B] 每轮LLM前吸入新消息: task={agent.task_id} len={len(_merged)} uid={_uid}")
     return len(_injected)
 
@@ -270,7 +270,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     #      event_log 只进应转发形态(有正文 chunk 的 completed→短五键; 其余→完整条);
     #   ③ 非 final 事件原样 publish(行为逐字节等价, 无 backward)。
     #   [G2 根治] event_log 终态唯一形态(发射即定, finally 不再覆写, 见 4.2.4), 实时/重连读同一形态。
-    #   [竞态] [27] final_stats 延后单发已是 DB 就绪信号, final 实时先到仅驱动快照(读内存流不读 DB) — 小欧 2026-09-12
+    #   [竞态] final_stats 延后单发已是 DB 就绪信号, final 实时先到仅驱动快照(读内存流不读 DB) — 小欧 2026-09-12
     async def _emit_publish(step_dict: Dict):
         _st = step_dict.get("type", "")
         _ctx = getattr(agent, "_final_short_ctx", None)
@@ -294,7 +294,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             #     (response=错误/取消文本是前端唯一正文载体), 同时完整长条进 _pending_final_db 落库。
             #     ≠"长条只存DB"仅适用于短条场景, 不适用于此场景 — 小欧 2026-09-12
             if _short:
-                step_dict = {k: step_dict[k] for k in ("type", "step", "timestamp", "outcome", "duration")}  # [27] 2026-09-11 小欧: 短信号带 duration, 重连回放与实时一致
+                step_dict = {k: step_dict[k] for k in ("type", "step", "timestamp", "outcome", "duration")}  # 2026-09-11 小欧: 短信号带 duration, 重连回放与实时一致
         await _publish(step_dict)
 
     # ── Phase 1: LLM 调用准备 ──────────────────────────────────
@@ -312,7 +312,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     _first_token_marked = False           # 11.2-B 首 chunk 只记一次首包时延 — 小欧 2026-08-20
     messages = agent.message_builder.prepare_messages_for_llm()
     # 11.8-H2: 文件B 增量落盘(loop顺序/结构保真/增量前缀) — 小欧 2026-08-23
-    # call_no = agent.llm_call_count(本次调用序号, 上方刚自增) — 文档[1]11.7.10-2
+    # call_no = agent.llm_call_count(本次调用序号, 上方刚自增)
     # 经注入的 agent.file_persist 调用(与 telemetry 同模式, agent 层零 chat 依赖); writer 未挂载时空转 — 小欧 2026-08-23
     _fp = getattr(agent, "file_persist", None)
     if _fp is not None:
@@ -321,7 +321,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         _m.pop("_msg_id", None)        # 剥离内部标记后再发 LLM(防泄漏 wire) — #10 修正 小欧 2026-08-23
     openai_tools = get_openai_tools(agent)
 
-    _task_llm = getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)   # 任务快照优先(三堂会审 P1) — 小欧 2026-08-22
+    _task_llm = getattr(agent, "_task_llm_model", None) or getattr(agent.llm_client, "llm_model", None)   # 任务快照优先(三堂会审) — 小欧 2026-08-22
     logger.info(f"[LLM] 调用#{agent.llm_call_count}, messages={len(messages)}, tools={len(openai_tools)}, model={getattr(_task_llm, 'model', '?')}")
 
     prompt_logger = get_prompt_logger()
@@ -386,7 +386,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                     if _v is not None:
                         agent.accumulated_usage[_k] += int(_v)
                 # 逐次报告: emit MetaStep(type="usage") 带本次 usage 三个值
-                # 2026-08-18 小欧 P6: usage剔step_json, append _usage_events明细供agent_runner终态insert_token读
+                # 2026-08-18 小欧: usage剔step_json, append _usage_events明细供agent_runner终态insert_token读
                 _ue = getattr(agent, "_usage_events", None)
                 if _ue is not None:
                     _ue.append({"step": agent.llm_call_count, "prompt_tokens": _usage.get("prompt_tokens"), "completion_tokens": _usage.get("completion_tokens"), "total_tokens": _usage.get("total_tokens")})
@@ -449,7 +449,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             agent.telemetry.on_llm_call(
                 _usage, duration=_call_dur,
                 tele_model=getattr(agent, "_task_llm_model", None)
-                           or getattr(agent.llm_client, "llm_model", None),   # 任务快照优先(三堂会审 P1 防还原竞态) — 小欧 2026-08-22
+                           or getattr(agent.llm_client, "llm_model", None),   # 任务快照优先(三堂会审 防还原竞态) — 小欧 2026-08-22
                 error_type=_llm_err, finish_reason=_fin,
             )
             # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20
@@ -570,7 +570,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
         return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
 
 # ── 场景F: 相同工具调用死循环检测(双阈值纠偏/硬终止) ──────────
-    # 2026-08-08 - 小欧 - P6_01(file_not_found)超时根因修复:
+    # 2026-08-08 - 小欧 - 超时根因修复(file_not_found):
     #   【病根】LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数(writetext写同一diff_tool.py),
     #          每次工具执行均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具调用"空转, 本模式漏检,
     #          致死循环直抵max_steps=10000(约40+分钟)。
