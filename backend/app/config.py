@@ -15,6 +15,8 @@
 # 2026-09-21 小欧 - [59]B-11 修复: 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
 #   与 settings_service is_env 统一改用（原 bool(os.getenv) 把 "   " 当有效覆盖，空白 provider/日志级别注入运行配置）
 # 2026-09-23 小欧 - trim配置化: get_max_rounds 改读 tuning.trim.max_rounds（自通用 agent.max_rounds 迁入调优·裁剪分块）
+# 2026-09-27 07:38 小欧 - 修 B5/B7: _apply_env_overrides 补 security.api_token / security.ip_allowlist 两键注入。
+#   registry 声明了 env_key 但此处不注入 → 设置页显示 yaml 值、deps 按 env 优先用另一个值（准入判断错位）。
 
 import functools
 import os
@@ -125,6 +127,17 @@ class Config:
         logging_config = self._config_data.get('logging', {})
         if env_nonempty('LOG_LEVEL'):
             logging_config['level'] = os.getenv('LOG_LEVEL')
+
+        # 2026-09-27 小欧 - 修 B5/B7：补 security 两键注入。registry 声明了 env_key 但本函数此前不注入，
+        #   导致设置页显示 yaml 值、deps 按 env 优先用另一个值（准入判断错位）。注入后两侧一致。
+        security_config = self._config_data.get('security')
+        if not isinstance(security_config, dict):
+            security_config = {}
+            self._config_data['security'] = security_config
+        if env_nonempty('OMNIAGENT_API_TOKEN'):
+            security_config['api_token'] = os.getenv('OMNIAGENT_API_TOKEN')
+        if env_nonempty('OMNIAGENT_IP_ALLOWLIST'):
+            security_config['ip_allowlist'] = os.getenv('OMNIAGENT_IP_ALLOWLIST')
     
     def get(self, key: str, default: Any = None) -> Any:
         """

@@ -1,122 +1,24 @@
 # -*- coding: utf-8 -*-
 """
-settings_registry — 设置页唯一 Schema 源（3.2 铁律1）
-key/类型/默认值/值域/存储/生效/来源规则只定一次；key 全局唯一，加载自检重复直接拒启。
+settings_registry — 设置页唯一 Schema 源：key/类型/默认值/值域/存储/来源规则只定一次，
+key 全局唯一，加载自检重复直接拒启。
 
 编辑历史:
-  2026-09-20 - 小沈 - 新建：v4.19 Phase 2 从文档54 9.1.1 逐字落盘
-  2026-09-21 - 小欧 - 安全组补 2 项 HITL 参数（auto_confirm_delay, hitl_timeout）+ 新增沙箱组 8 项 + GROUP_ORDER 加 sandbox + app.language 从通用移到外观（UI语言属外观属性，与主题/字号同类）+ 系统参数5项（debug/max_context_tokens/max_history_length/max_rounds/max_steps）从系统组移到通用组 + ai.model_ref 标签改为"当前系统全局使用模型"对齐UI
-  2026-09-21 - 小欧 - 删除无意义白/黑名单4项（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：全库无消费方、仅透传保存不生效（北京老陈裁定删除；命令安全由 path_safe_check/tools/security 代码内实现，路径校验才是关键）
-  2026-09-21 - 小欧 - v4.20 死配置全清+键名按域收敛（北京老陈裁定）:
-    ①删除死配置10项: app.max_context_tokens/app.max_history_length/security.strict_mode/security.contentFilterEnabled/
-      security.contentFilterLevel/security.maxFileSize/chat.temperature/chat.top_p/chat.max_tokens/chat.auto_title/
-      chat.history_limit/chat.stream(实为12项, 其中chat组6项整体删除) + appearance.density(无消费方)
-    ②键名按域收敛: app.project_root→workspace.project_root/app.allowed_dirs→workspace.allowed_dirs/
-      app.max_rounds→agent.max_rounds/app.max_steps→agent.max_steps/app.debug→logging.debug
-    ③保留: app.language/app.theme(外观域待二期深色) + appearance.fontSize(设置页预览有消费)
-  2026-09-21 - 小欧 - 安全/沙箱 12 项补 notice 简明说明（enabled 关闭行为/影子区预演/内存与超时上限等；
-    消费点核实：tool_safety_checker enabled=false、executor 预检直通、workspace 影子副本、job_object 内存限制）——
-    说明文字从注册表单点下发，前端共用唯一渲染位展示
-  2026-09-21 - 小欧 - 追加 6 项 notice：logging.debug(持久化路径分流)、agent.max_rounds/max_steps(单任务轮/步上限)、
-    logging.level/max_file_size/backup_count(日志级别与轮转)——消费点核实：logger/config.py、file_persist.py、config.py
-  2026-09-21 - 小欧 - logging.debug 说明修正：核心语义为日志(级别强制 DEBUG、明细含文件/行号)，
-    文件持久化落点分流为开发期附带惯例不当主解释——消费点核实：get_log_level/shared_handler/api_logger
-  2026-09-21 - 小欧 - 系统Tab重组 3 小节：运维日志(logging.*+paths.logs)/工程目录(6 paths.* 只读)/关于；
-    工程目录=项目根/项目规则文件/下载/数据库(~/.omniagent)/文件持久化/任务文件目录；
-    两级目录中文称呼：「会话目录」=Sion_<会话ID>、「任务目录」=Task_<任务ID>（A/B 记录文件 tool_data_*/conv_hist_*）
-    —— 派生值由 settings_service._item_data 实时计算（不落 yaml），前端 SettingsGroup.sectionOf 判定小节
-  2026-09-21 - 小欧 - paths.* 说明完整化：每条标注全部状态（project_root 已配置/未配置；ogs 源码/打包；
-    files 调试源码/调试打包/正式；task_files 持久化根随状态切换；database 固定含回收站），杜绝只写一种情况
-   2026-09-21 - 小欧 - 记录文件两行定稿：工程目录只读收敛为 6 行（项目根/规则文件/下载/数据库/工具结果记录/对话历史记录）；
-     删无意义 files 存根行 + 撤 task_files 派生死键（registry 无对应行，仅剩值模板残留）；两条记录文件各写各的互不混杂。
-     value 由 settings_service 派生为两级相对目录模板 + 各自文件名（Sion_<会话ID>\\Task_<任务ID>\\xxx.jsonl），
-     不写绝对路径（当机值随环境算、无通用语义）；根两态（调试=backend\\files、正式=~\\.omniagent\\files）写 notice。
-     北京老陈 2026-09-21 裁定
-   2026-09-21 - 小欧 - system 组 96 行下加注释：paths.* 条目与 settings_service._item_data 派生字典一一对应，
-     对端漏配抛 KeyError(fail-fast)，两处注释互相指引（北京老陈 2026-09-21 采纳）
-   2026-09-22 - 小欧 - 编辑/保存审计修复 S9：logging.level 补 env_key="LOG_LEVEL"——_apply_env_overrides 本就用
-     LOG_LEVEL 覆写运行时级别，不标 env_key 致 sources 报 yaml 可编辑可保存却"改了不生效"（假保存）；
-     对齐后 env 接管键前端禁改、update_settings 跳过并 warning
-    2026-09-22 - 小欧 - 31候选修复 #7：全部无界 int 项补 range_ 上下界（agent.max_rounds/security 延时与超时/
-      sandbox 8项/logging 文件大小与备份数）——压缩负数(如 -500MB)曾当合法值落盘，消费方断言非负
-      崩溃；range_ 为唯一边界来源，表驱 schema 与 _validate_value 单点校验（fontSize 的 step 见 #8 修复）
-  2026-09-23 - 小欧 - [64] LLM补充采样参数: ①general组 agent.max_steps 后追加6条目(llm.sampling.temperature/max_tokens/top_p/frequency_penalty/presence_penalty + llm.context_limit_default); ②OLD_KEY_MAP 加 tuning.llm.temperature→llm.sampling.temperature / tuning.llm.max_tokens→llm.sampling.max_tokens 迁入映射
-  2026-09-23 - 小欧 - trim/compaction配置化: ①通用组删 agent.max_rounds（挪入调优·裁剪）; ②tuning组 Agent 循环参数后插 trim 3键(max_rounds/trigger_ratio/compaction_buffer)+compaction 4键(start_enabled/start_trigger_ratio/summary_feed_max_chars/keep_tail)两独立分块; ③OLD_KEY_MAP 加 agent.max_rounds→tuning.trim.max_rounds
-  2026-09-23 - 小欧 - 禁止backward还清旧账: 删 OLD_KEY_MAP 3条迁入映射(tuning.llm.temperature/max_tokens、agent.max_rounds，无消费方虚假承诺); live值已手工搬入新键，旧键废弃
-  2026-09-23 - 小欧 - 删死配置 tuning.agent.max_consecutive_chunks（should_promote 历史接口全仓零调用，max_consecutive 唯一读取点即该死方法）; max_chunks_without_promote 改名实义 chunk 累积上限+notice重写（单轮未收到完整响应累积50 chunk 即强制失败终止）
-   2026-09-23 - 小欧 - 频次惩罚/存在惩罚 label 补英文名: "频次惩罚"→"频次惩罚 (frequency_penalty)"、"存在惩罚"→"存在惩罚 (presence_penalty)" - 小欧-2026-09-23
-   2026-09-23 - 小欧 - llm_net 7键 notice 重写(北京老陈指令"描述准确"): 原文案仅同义复述label无解释——
-     改为「管什么阶段+超了/超限会怎样」: read=两字节间隙(非总时长,流式断流判死依据)/connect=TCP建连握手/
-     write=发完请求体/pool=池满等空位/max_connections=并发上限第N+1排队/max_keepalive=空闲复用保留/
-     stream_total=单次流式总闸到点强制截断(与read分工: read管间隙, total管总长) - 小欧-2026-09-23
-   2026-09-23 - 小欧 - 连接相关7键 notice 重写(北京老陈指令"一起补充"): stream_max_retries=传输层HTTP重发
-     (与response_retries分工: 传输vs内容)/response_fallback=FC耗尽降级Text语义展开/response_retries=L2内容层
-     指数退避+不重试元组/soft_pool_wait_timeout=信号量排队超时保底放行(与连接池超时分工)/
-     shell_pool_max_per_type=(任务ID,Shell类型)分池槽位/heartbeat_interval=防前端60s判死保活/
-     cors_origins=跨域白名单+直连vs proxy场景 —— 消费点核实: base_service.py:344/llm_call.py:230,275/
-     client_sdk.py:123,219/shell_engine.py:853/stream_orchestrator.py:574/main.py:92 - 小欧-2026-09-23
-   2026-09-23 - 小欧 - 调优组剩余18键 notice 全量重写(北京老陈指令"都是看的稀里糊涂 都优化一下"):
-     llm 2键(tool_choice/include_usage)/trim 3键/compaction 4键/stream_task 3键(除heartbeat已改，2026-09-24 组名已改 live_front 见下方编辑历史)/
-     hitl 4键/content 3键 —— 统一口径「管什么+什么时候触发+超了/关了会怎样+与谁分工」，消灭
-     C4/TTL/L2/HITL/bypass/FC轮 等黑话直甩 —— 消费点核实: llm_call.py:89/base_service.py:335/
-     message_builder.py:106-108,318,345-366/trigger.py:60/start_step.py:127,137,167/summary.py:61/
-     task_registry.py:194/universal_agent.py:42/message_service.py:45/hitl_gateway.py:88-92/
-     hitl_confirmation.py:103/project_context.py:45/tool_runner.py:157/chunk_buffer.py:38 - 小欧-2026-09-23
-   2026-09-23 - 小欧 - 调优组 notice/label 去开发术语(北京老陈指令"怎么还有开发的代码信息"):
-     设置页 notice 是给最终用户看的，禁出现 SSE/HITL/bypass/CORS/Origin/chunk/FC/L2/C4/TTL/
-     信号量/request body/ConnectTimeout/PoolTimeout/TCP/DNS/ShellPoolBusy/IDLE_TIMEOUT/Vite
-     proxy/action_handler/tool_result/上下文窗口 等代码与内部黑话 —— 全组改纯用户语言
-     (「我还活着」「记得更久更费钱」「弹窗一闪来不及点」式口语)，label 同步去术语
-     (tool_choice模式→工具调用模式、流式最大重试→传输失败重试、FC响应回退→工具失败转文字、
-     响应错误重试→内容错误重试、SSE心跳周期→保活间隔、HITL/bypass倒计时→确认倒计时、
-     CORS允许来源→允许访问的页面地址、chunk累积上限→卡死保护上限、软配额等待→排队最多等、
-     Shell池槽位→终端会话槽位、裁剪触发比例→裁剪触发水位、开局压缩水位等) ——
-     config.yaml.example 注释同步去术语；float 类型键(connect/write/pool/soft_pool)类型值域未动 - 小欧-2026-09-23
-   2026-09-23 19:51:21 - 小欧 - 通用组 agent.max_steps label/notice 归位(北京老陈裁定"标签不对，应该是最大轮数"):
-     label "最大步数"→"最大轮数"——消费点 react_loop.py:188 while agent.llm_call_count < max_steps 实际限制的是
-     LLM 调用轮数(任务条"轮数")，原"步数"标签误导(任务条"步数"=step_count 纯统计无独立上限、被本门限间接封顶)；
-     notice 改为轮数门限语义+与"步数"区分说明。键名 agent.max_steps/默认10000/值域[1,10000]/读取链
-     config.py:169 get_max_steps→base_agent.py:74 self.max_steps 均不动，只改皮 — 小欧-2026-09-23
-   2026-09-23 19:53:20 - 小欧 - tuning.trim.max_rounds notice 修正(北京老陈指正"这个注释不对"):
-     原"只记得最近 N 轮问答"语义不准——实际是超限触发裁剪操作，非单纯记忆范围；
-     改为"超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，
-     调小=省钱但会忘更早的事" —— 消费点 message_builder.py:358-360 msg_count>max_rounds*2+2 触发裁剪 — 小欧-2026-09-23
-   2026-09-23 20:04:15 - 小欧 - 调优组 4 项 label/type 修正(北京老陈指令"有几个标签不对"):
-     ①tuning.trim.max_rounds label "保留对话轮数"→"裁剪历史触发轮"（语义=超限触发裁剪，非记忆范围）;
-     ②tuning.trim.compaction_buffer label "给回答留底(字符)"→"上下文预留空间";
-     ③tuning.compaction.keep_tail label "摘要后留几条"→"免压缩原始对话数";
-     ④tuning.network.cors_origins type "text"→"textarea"（原单行输入框太短，改用长文本框；
-       前端 SettingRow.tsx case 'textarea' 走 textareaWidth 宽框）—— 键名/默认值/值域/notice 均不动 — 小欧-2026-09-23
-   2026-09-23 20:07:36 - 小欧 - tuning.network.cors_origins type 再修正(北京老陈"textarea也不对,应该用类似base_url的显示框"):
-     "textarea"→"url"——textarea 保存路径 settings_service._to_stored 会按行拆 list，破坏 main.py:93
-      逗号分隔字符串契约（split(",") 对 list 直接崩）；base_url 实为单行 Input+baseUrlWidth(360px)，
-      故新设 "url" 类型：后端 _validate_value 按 str 校验、前端 SettingRow case 'url' 渲染单行 Input
-      走 baseUrlWidth 宽框（与 ProviderConfig base_url 同款）—— 键名/默认值/notice 不动 — 小欧-2026-09-23
-    2026-09-23 20:12:44 - 小欧 - tuning.network.cors_origins 组归属迁移(北京老陈"应该在系统组,关于上面一个分块"):
-      调优组 items 删除该条，迁入 system 组「工程目录」之后「关于」之前成独立「网络」分块；
-      键名 tuning.network.cors_origins/默认值/notice/type=url 均不动（yaml 结构与 main.py:92 消费方零改动），
-      仅 UI 分组重排；系统组 12 项→13 项、调优组剔除 network 子组 — 小欧-2026-09-23
-    2026-09-23 20:29:50 - 小欧 - 键名去 tuning 前缀(北京老陈"和调优没有屁关系为什么要牵涉在一起"):
-      tuning.network.cors_origins → network.cors_origins（系统组键不该带 tuning. 前缀）；
-      yaml 结构 tuning.network.cors_origins 上提为顶层 network.cors_origins（config.yaml.example +
-      真实 config/config.yaml 同步搬块）；main.py:92 get 路径同步；禁止backward 无 OLD_KEY_MAP 迁移；
-      默认值/notice/type=url/label 均不动 — 小欧-2026-09-23
-    2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(北京老陈裁定"live_front 更准确")：
-       原名 stream_task 与 tuning.llm.stream_* 撞名易误读为 LLM body 流式开关，实为前端 SSE 保活+任务清理+缓存；
-       4 键 key 路径前缀同步、label/默认值/值域/notice/type 均不动；全仓消费点 4 处 get 路径+前端前缀匹配+E2E 断言
-       同轮改，禁止 backward 无 OLD_KEY_MAP — 小欧-2026-09-24
-    2026-09-24 22:36:52 - 小欧 - [68] 模型库：新增 model_library 组（items 空，不走 schema 行渲染，
-      走专用组件分支）；GROUP_ORDER 插倒数第二 — 小欧-2026-09-24
-    2026-09-26 - 小欧 - [72]第九章(9.4/9.5) + 第六章(6.3) + 第十一章(11.5) 三处同批落地:
-      ①新增 security.api_token（secret=True，访问口令）——掩码读、**拒经 /settings 写**，
-        唯一权威写入口是 POST /api/v1/auth/token（单一写入口，杜绝同一 key 两个写入口产生分叉，DRY）；
-      ②新增 security.ip_allowlist（IP/CIDR 白名单，逗号分隔）——供本机回环之外的准入豁免用；
-      ③两项均置于 **appearance 组最前**（北京老陈裁定）：准入控制属"谁能进得来"，与语言/主题/字号的外观项
-        分属两件事，混在一组会误导用户以为"改外观就能改准入"；前端 SettingsGroup 相应分
-        「登录与准入」/「外观」两个渲染块（复用既有 sectionOf + SectionTitle，不新造第二套分支）；
-      ④第十一章联动：ConfigUpdate 收敛为只 ai_model_ref 后，本注册表成为 theme/language/max_steps 等
-        6 项的唯一写入口，不再与 PUT /config 并行 —— 消重入口即消分叉。
-      secret 项新增后 _build_index 自检生效：未接 provider/auth 通道的 secret 项直接拒启（fail-fast）。— 小欧-2026-09-26
+  2026-09-20 小沈 - 新建（Phase 2 落盘）。
+  2026-09-21 小欧 - 补 HITL 参数/沙箱组；app.language 移入外观；删白名单4项与死配置10项；
+    键名按域收敛（app.project_root→workspace.*、app.max_steps→agent.max_steps 等）；
+    系统 Tab 重组为 运维日志/工程目录/关于，paths.* 为派生只读值（由 settings_service 实时算）。
+  2026-09-22 小欧 - logging.level 补 env_key（否则标 yaml 可编辑却"改了不生效"= 假保存）；
+    无界 int 项补 range_（负数曾当合法值落盘致消费方崩溃）。
+  2026-09-23 小欧 - 补 LLM 采样/裁剪/压缩/网络参数；notice 全量重写为用户语言
+    （禁出现 SSE/HITL/信号量等内部黑话）；cors_origins 迁入 system 组并去 tuning 前缀。
+  2026-09-24 小欧 - tuning.stream_task→live_front（与 LLM 流式撞名易误读）；新增 model_library 组。
+  2026-09-26 小欧 - 新增 security.api_token（secret，拒经 /settings 写，唯一写入口 auth/token）
+    与 security.ip_allowlist，置于 appearance 组最前。
+  2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（后端一次生成，前端纯回显）。
+  2026-09-27 07:38 小欧 - 修 B6: workspace.project_root 默认值 "E:\test_dir" → ""。该默认值非空，
+    使 config.get_project_root 的 `if root:` 恒真、永不回退用户主目录（其 docstring 明写未配置时=home），
+    缺键部署把项目根定到不存在的目录。另精简本文件冗长编辑历史（410→285 行，只留决策不留过程）。
 """
 from typing import Any, Dict, List, Optional
 
@@ -126,7 +28,11 @@ def _item(key: str, type_: str, label: str, default: Any = None,
           step: Optional[float] = None, restart: bool = False, secret: bool = False,
           readonly: bool = False, notice: str = "",
           env_key: Optional[str] = None) -> Dict[str, Any]:
-    """单项构造：storage 统一 YAML（4.0/v3.0 单存储），env_key 指定环境变量名时来源判定看 os.environ 是否设了该键。"""
+    """单项构造：storage 统一 YAML；env_key 指定环境变量名时来源判定看 os.environ 是否设了该键。
+
+    注意：声明 env_key 只影响"来源"标记，不会把 env 值注入配置（注入只有
+    _apply_env_overrides 里的 {PROVIDER}_API_KEY / AI_PROVIDER / LOG_LEVEL 三处）。
+    """
     return {"key": key, "type": type_, "label": label, "default": default,
             "options": options, "range": range_, "step": step, "storage": "YAML",
             "restart": restart, "secret": secret, "readonly": readonly, "notice": notice,
@@ -136,14 +42,15 @@ def _item(key: str, type_: str, label: str, default: Any = None,
 GROUPS: Dict[str, Dict[str, Any]] = {
     # 4.1 通用（general，10 项）
     "general": {"label": "通用", "items": [
-        _item("workspace.project_root", "text", "项目根目录", "E:\\test_dir"),
+        # 默认空：config.get_project_root 靠 `if root:` 判空后回退用户主目录（Path.home()）。
+        # 原默认 "E:\test_dir" 非空 → 恒真 → 永不回退，缺键部署把项目根定到不存在的目录。
+        _item("workspace.project_root", "text", "项目根目录", ""),
         _item("workspace.allowed_dirs", "textarea", "授权目录", "",
               notice="项目根之外额外授权访问的工作目录，多个用换行分隔"),
         _item("logging.debug", "bool", "调试模式", True, restart=True,
               notice="开启后日志按 DEBUG 级别记录，明细含文件/行号"),
         _item("agent.max_steps", "int", "最大轮数", 10000, range_=[1, 10000],
               notice="单任务最多执行的对话轮数（循环门限）：任务条上的『轮数』到顶就强制结束任务；调大=允许跑更久，调小=更早刹车。注意这不是任务条上的『步数』（步数只是自动统计，跟着轮数走，没有单独上限）"),
-        # ✅ general 组 agent.max_steps 之后追加 6 条目 — 小欧 2026-09-23
         _item("llm.sampling.temperature", "float", "采样温度", 0.7, range_=[0, 2],
               notice="控制输出随机性：0=完全确定性（每次相同输入输出一致），1=默认随机性，2=最高随机性"),
         _item("llm.sampling.max_tokens", "int", "单次最大 token", 16384, range_=[1, 100000],
@@ -200,7 +107,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     ]},
     # 4.5 系统（system，13 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 1 网络 CORS + 2 关于只读）
     #   注意：本小节新增 / 删除 paths.* 条目务必同步 settings_service._item_data 的 paths 派生字典，
-    #   二者 keys 一一对应，service 漏配将抛 KeyError(fail-fast 防静默空白) —— 小欧 2026-09-21
+    #   二者 keys 一一对应，漏配将抛 KeyError（fail-fast 防静默空白）
     "system": {"label": "系统", "items": [
         # --- 运维日志（3 配置 + 1 目录只读；目录值实时派生见 settings_service._item_data） ---
         _item("logging.level", "select", "日志级别", "INFO",
@@ -225,7 +132,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="根：调试=backend\\files、正式=~\\.omniagent\\files；tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1工具结果"),
         _item("paths.record_conv", "readonly", "对话历史文件", None, readonly=True,
               notice="根：调试=backend\\files、正式=~\\.omniagent\\files；conv_hist_<短任务ID>_<消息ID>_<时间去冒号>.jsonl，1块=1消息"),
-        # --- 网络（1 键，自 tuning 组迁入；键名 network.cors_origins 顶层，main.py 消费方同步）--- 小欧-2026-09-23
+        # --- 网络（1 键，自 tuning 组迁入；键名 network.cors_origins 顶层，main.py 消费方同步）---
         _item("network.cors_origins", "url", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
               notice="允许访问本服务的页面地址白名单，多个用逗号隔开；换了前端地址或端口要加上新地址，否则页面会被浏览器拦住。默认两个是本机开发地址，一般不用改"),
@@ -240,23 +147,12 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     #   注: 键名仍为 security.*（对外契约与已装环境变量 OMNIAGENT_API_TOKEN 保持不变），
     #     但**展示分组**在本组 —— 键名前缀只表命名空间，展示位置由 GROUPS 决定。
     "appearance": {"label": "外观", "items": [
-        # 块1 访问口令（secret=True → 读路径掩码，永不回明文；
-        #   写路径被 settings_service._validate_value 显式拒绝（第六章方案 B），
-        #   改口令走专用端点 auth_routes，与 provider 通道同构：单一权威写入口）
-        # 2026-09-26 - 小欧 - 修 schema 类型撒谎（live-probe B10 失败）：
-        #   原声明 type="text"（字符串），但 secret=True 使读路径走 mask_secret_value，
-        #   实际返回**对象** {configured, prefix, suffix} → schema 说字符串、实际给对象。
-        #   前端 SettingRow 靠 item.secret 先于 switch(type) 短路才幸免，属巧合不属契约。
-        #   改用 "secret" 类型名，使 schema 如实表达"这是掩码对象、编辑走专用端点"。
+        # 块1 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
+        #   2026-09-26 小欧 - type 用 "secret" 而非 "text"：读路径返掩码对象，原声明字符串即类型撒谎
         _item("security.api_token", "secret", "访问口令", None, secret=True,
               env_key="OMNIAGENT_API_TOKEN",
               notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
-        # 块2 免口令 IP 白名单（白名单内等于无鉴权，可读全部明文密钥 —— 只应放可信网段；
-        #   本机 127.0.0.1/::1 恒免，无需在此配置；非 secret：白名单不是机密，需在设置页可维护）
-        # 2026-09-26 - 小欧 - 同 B10 的同构问题：原声明 type="text"，但 deps._resolve_ip_allowlist
-        #   明确支持 YAML **list** 形态，而 _item_data 只对 textarea 做 list→str 归一 →
-        #   用户写 `security.ip_allowlist: [1.1.1.1, 2.2.2.2]` 时对一个声明为 text 的键返回数组。
-        #   改 textarea：既复用既有的 list/str 双向归一，又能在设置页多行维护（与 allowed_dirs 同款）。
+        # 块2 免口令 IP 白名单（非 secret：白名单不是机密，需在设置页可维护；textarea 以复用 list/str 双向归一）
         _item("security.ip_allowlist", "textarea", "免口令 IP 白名单", "",
               env_key="OMNIAGENT_IP_ALLOWLIST",
               notice="这些 IP/网段访问本服务免口令，逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1)恒免。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
@@ -266,13 +162,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
     ]},
-    # 2026-09-24 小欧 - [68] 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支 — 小欧-2026-09-24
+    # 2026-09-24 小欧 - [68] 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支
     "model_library": {"label": "模型库", "items": []},
-    # 2026-09-22 小欧 - [61] v2.0 第六章 6.2：新增 tuning 调优组（8子组31键，值域来自 constants.py 现值）
-    # 2026-09-23 小欧 - 20:12:44 前 10子组34键（[64]剔temperature/max_tokens迁通用+stream_options改bool，trim/compaction配置化加 trim 3键/compaction 4键，network 1键仍在）— 小欧-2026-09-23
-    # 2026-09-23 小欧 - 20:12:44 起 9子组33键（network.cors_origins 迁系统组；实测 REGISTRY 9子组33键）— 小欧-2026-09-23
     "tuning": {"label": "调优", "items": [
-        # --- llm: LLM 语义参数（5 键，temperature/max_tokens 已迁入 llm.sampling.* 通用组）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- llm: LLM 语义参数（temperature/max_tokens 在 llm.sampling.* 通用组）---
         _item("tuning.llm.tool_choice", "select", "工具调用模式", "auto",
               options=["auto", "none"], notice="控制模型能不能用工具：auto=正常模式，模型自己决定要不要调用工具；none=禁止用工具，只回纯文字（怀疑工具出问题时用它对照）"),
         _item("tuning.llm.stream_max_retries", "int", "传输失败重试", 3, range_=[0, 10],
@@ -283,7 +176,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="模型返回空回复或明显坏内容时自动重试，最多 N 次，越等越久；配额用完、被限流、请求本身写错这三种情况不走这里。与上面「传输失败重试」分工：本项管内容坏，上面管没收到"),
         _item("tuning.llm.stream_options.include_usage", "bool", "统计 Token 用量", True,
               notice="回答结束后附带本次消耗了多少 token（输入+输出）；关掉后任务统计页的 token 数会显示为 0"),
-        # --- llm_net: LLM 网络/超时/连接池（7 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- llm_net: LLM 网络/超时/连接池（7 键）---
         _item("tuning.llm_net.read_timeout", "int", "等待回复间隔(秒)", 150, range_=[10, 600],
               notice="两次收到模型回字之间的最大间隔：超过这个秒数没动静就认为连接断了。不是总时长——模型一直有字吐出来就不算超。与下面「单次总时长」分工：本项管字与字的间隔，下面管从头到尾总时间"),
         _item("tuning.llm_net.connect_timeout", "float", "连上服务器超时(秒)", 30.0, range_=[5, 120],
@@ -298,22 +191,22 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="请求结束后先留着不断开的连接条数，下次请求直接复用、省去重新连的时间；0=用完就断（更省资源，但下次会慢一点）"),
         _item("tuning.llm_net.stream_total_timeout", "int", "单次总时长上限(秒)", 500, range_=[60, 3600],
               notice="一次回答从开始到结束的总时间上限，到点强制掐断（防模型卡住永远不出结果）。与上面「等待回复间隔」分工：本项管总时长，上面管字与字的间隔"),
-        # --- concurrency: 并发配额（2 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- concurrency: 并发配额（2 键）---
         _item("tuning.concurrency.soft_pool_wait_timeout", "float", "排队最多等(秒)", 30.0, range_=[5, 120],
               notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
         _item("tuning.concurrency.shell_pool_max_per_type", "int", "终端会话槽位", 8, range_=[1, 20],
               notice="同一任务里同一种终端（如 PowerShell）最多同时开几个常驻会话：满了新命令要等空位；调大=并行命令更顺但更占内存"),
-        # --- agent: Agent 循环参数（1 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- agent: Agent 循环参数（1 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
-        # --- trim: 裁剪 3 键（每轮循环自动执行）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- trim: 裁剪 3 键（每轮循环自动执行）---
         _item("tuning.trim.max_rounds", "int", "裁剪历史触发轮", 100, range_=[1, 10000],
               notice="超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，调小=省钱但会忘更早的事"),
         _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.75, range_=[0.1, 0.95],
               notice="对话占到模型记忆容量的百分之多少时开始自动删旧内容（0.75=占到四分之三就删）；调小=删得勤、腾地方快，调大=多记一会但快满时才动手"),
         _item("tuning.trim.compaction_buffer", "int", "上下文预留空间", 20000, range_=[1000, 100000],
               notice="删旧内容时故意不删满，给模型写这次回答预留这么多容量，防止删完一点空都没有、模型没地方写"),
-        # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）---
         _item("tuning.compaction.start_enabled", "bool", "开局压缩开关", True,
               notice="任务刚开始如果发现以前的对话太长装不下，先自动压成一段摘要再开始干活；关掉则不压、直接硬删"),
         _item("tuning.compaction.start_trigger_ratio", "float", "开局压缩水位", 0.5, range_=[0.1, 0.95],
@@ -322,7 +215,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压成摘要前，单条工具结果超过这么多字先砍掉再给模型看（防超长输出把摘要过程撑爆）；调大=摘要更全但更费"),
         _item("tuning.compaction.keep_tail", "int", "免压缩原始对话数", 1, range_=[0, 5],
               notice="压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
-        # --- live_front: 连接保活/任务清理/缓存（4 键）--- 原名 stream_task，2026-09-24 改名防与 tuning.llm.stream_* 混淆 — 小欧-2026-09-24
+        # --- live_front: 连接保活/任务清理/缓存（4 键；原名 stream_task，改名防与 tuning.llm.stream_* 混淆）---
         _item("tuning.live_front.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
               notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活"),
         _item("tuning.live_front.task_timeout_hours", "int", "任务保留(小时)", 1, range_=[1, 24],
@@ -331,7 +224,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="同一工具用同样的参数再查一次时，这么多秒内直接给上次的结果、不再真跑一遍；调小=结果更新鲜但重复查询更慢，调大=更快但可能给到过期结果"),
         _item("tuning.live_front.max_cache_size", "int", "缓存条数上限", 1000, range_=[100, 10000],
               notice="内部小缓存最多存多少条，超了自动丢最久没用的；一般不用动，调错也没什么感觉"),
-        # --- hitl: 人工确认（4 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- hitl: 人工确认（4 键）---
         _item("tuning.hitl.hitl_confirm_lead", "int", "确认倒计时提前(秒)", 10, range_=[0, 60],
               notice="危险操作确认弹窗：页面上的倒计时比后端实际超时（默认120秒）提前这么多秒归零，让你先看到「已超时」提示，而不是弹窗凭空消失；提前量要小于总超时"),
         _item("tuning.hitl.bypass_auto_lead", "int", "自动放行提前(秒)", 2, range_=[0, 10],
@@ -340,7 +233,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="确认弹窗倒计时至少显示这么多秒，防止倒计时太短、弹窗一闪而来不及点"),
         _item("tuning.hitl.max_pending_confirmations", "int", "待确认条数上限", 100, range_=[10, 1000],
               notice="同时排队等你确认的操作最多多少条，超了新的直接拒绝（防一次弹出太多窗把页面卡死）"),
-        # --- content: 内容截断（3 键）--- notice 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+        # --- content: 内容截断（3 键）---
         _item("tuning.content.project_context_max_chars", "int", "项目规则字数上限", 10000, range_=[1000, 50000],
               notice="项目规则文件(OmniAgent.md)每次带给模型的最大字数，超长部分不带；调大=规则记得全但更占记忆容量，调小=省容量但长规则会被截断"),
         _item("tuning.content.action_log_result_max_chars", "int", "工具结果字数上限", 5000, range_=[1000, 20000],
@@ -350,42 +243,13 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     ]},
 }
 
-# 2026-09-24 小欧 - [68] D1：模型库插倒数第二（通用→模型→安全→沙箱→调优→系统→模型库→外观）— 小欧-2026-09-24
 GROUP_ORDER = ["general", "model", "security", "sandbox", "tuning", "system", "model_library", "appearance"]
 
-# 2026-09-26 - 小欧 - [72]第十一章(11.5 第1步): 删 OLD_KEY_MAP（死映射，零消费方）。
-#   该映射 registry key → ConfigUpdate 字段名，但 ConfigUpdate 已收敛为只留 ai_model_ref，
-#   映射里 app.language→language / workspace.project_root→project_root 两项**指向已不存在的字段**，
-#   留着会误导后人以为存在键名映射通道。核实依据: 全项目非注释引用为 0（仅本定义处 + 历史编辑记录里的提及）。
-#   本次删定的 settings 写路径统一走 update_settings → merge_region_patch（region 级合并），
-#   不需要键名映射层。历史编辑记录里的相关记载按铁律保留不删。 — 小欧 2026-09-26
-# v4.17 修正：安全 10 项全部逐键走通用 region 合并（security.* 逐行 merge，防整块覆盖丢键）。
-# 原 SECURITY_KNOWN 整块写 ConfigUpdate.security 的方案撤销——整块替换会覆盖未识别键造成丢数据。
-#   [72]第十一章补充: ConfigUpdate 已收敛为只留 ai_model_ref（security 字段随旧 handler 一并删除），
-#   本条记载的"撤销"结论如今已成既成事实——安全 10 项只走逐键 region 合并，无第二条写路径。
-# v4.18 修正：app.max_steps 从 OLD_KEY_MAP 移除，统一走 merge_region_patch（与 app.debug/max_context_tokens/max_history_length/max_rounds 同路径，消除系统参数写路径分裂）；范围校验由 registry range_=[1,10000] + _validate_value 承接。
-# v4.20 修正：键名按域收敛后，app.max_steps→agent.max_steps、app.max_rounds→agent.max_rounds、app.debug→logging.debug、
-#   app.project_root→workspace.project_root、app.allowed_dirs→workspace.allowed_dirs（OLD_KEY_MAP 同步改）；死配置已全清。
-# v4.18 修正：app.theme 从 OLD_KEY_MAP 移除——该键 readonly=True，_validate_value 恒先拒，映射不可达死代码。
-    # 2026-09-26 - 小欧 - [72]第六章(6.5) 加 secret 项注册自检（方案 B 的"防半吊子"关键）
-    #   secret=True 的项若未在 _SECRET_WRITTEN_BY_PROVIDER_CHANNEL 登记（即其写路径未接 provider 通道
-    #   或专用 auth 端点），模块加载即拒启。动机: settings 通用通道对 secret 项一律显式拒绝写
-    #   （settings_service._validate_value），未接写通道的 secret 项将"写不进也读不出掩码"，属半吊子。
-    #   登记项: api_token（专用 auth 端点，第九章）。收口口径与既有"重复 key 拒启"(3.2 铁律1)一致。 — 小欧 2026-09-26
-
-
-# [72]第六章(6.5) - 小欧 - 2026-09-26: 声明"registry 静态 secret 键中，哪些的写路径已接好"的唯一权威集合。
-# 新增 secret 项时必须在此登记（登记即自检通过），未登记则模块加载即拒启（防半吊子）。
-# 位置必须在 _build_index 之前 —— REGISTRY_INDEX = _build_index() 在模块加载时即执行。
-# 2026-09-26 补登 security.api_token（[72]第九章）: 其写路径为**专用 auth 端点**（auth_routes.set_api_token），
-#   与 provider 通道同构（单一权威写入口 + 显式拒绝 settings 通用通道），故登记于此以通过自检。
-#   注意: 登记键须与 registry 中的**完整 key** 一致（此处是 security.api_token，不是裸字段名）。
-# 2026-09-26 (三堂会审后修正) - 小欧 - 删集合中原有的 `"api_key"` 裸项：
-#   registry 共 74 键经实测无任何键含 api_key（provider 的 api_key 是**动态项**，由 ProviderConfig
-#   专属表单渲染，不在 registry 静态表里），故该裸项匹配不到任何键，属死数据；
-#   且它与上一段"须登记完整 key"自相矛盾（按此规则它自身就不合格），还会误导后人照抄。
-#   provider 动态 key 的写保护由 model_service.update_provider_config（三态）+ settings 写路径
-#   显式拒绝共同承担，不在本集合登记（本集合只收 registry 静态 secret 键）。
+# 声明"registry 静态 secret 键中哪些的写路径已接好"的唯一权威集合：新增 secret 项必须在此登记，
+# 未登记则模块加载即拒启（fail-fast，防半吊子）。位置须在 _build_index 之前。
+# 键须与 registry 完整 key 一致。security.api_token 的写路径是专用 auth 端点（与 provider 通道同构）。
+# 2026-09-26 小欧 - 删原集合里的裸 "api_key"：registry 无任何键含 api_key（provider 的 api_key 是
+#   ProviderConfig 专属动态项，不在静态表），属死数据且与"须登记完整 key"自相矛盾。
 _SECRET_WRITTEN_BY_PROVIDER_CHANNEL = frozenset({"security.api_token"})
 
 
@@ -398,11 +262,12 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
             if key in index:
                 raise RuntimeError(f"[settings_registry] 重复 key 拒启: {key}")
             index[key] = item
-    # [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项自检（方案 B 的"防半吊子"关键）。
-    # secret=True 的项其写路径必须指向 provider 通道（model_service.update_provider_config 三态），
-    # 而 settings 通用通道一律显式拒绝写 secret 项。若有人注册了 secret=True 却没在 provider 通道
-    # 实现该 key 的写入能力，则该项**写不进也读不出掩码**，属半吊子 —— 故开发期即拒启，
-    # 杜绝"开了 secret 却没实现写保护"这种静默失效（与既有"重复 key 拒启"同一收口口径）。
+    # [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项自检。
+    # secret=True 的项其写路径必须已接好（provider 通道或专用 auth 端点），否则 settings 通用通道
+    #   又显式拒绝写它，该项就变成"写不进也读不出掩码"的半吊子。此处开发期即拒启。
+    # 边界（勿夸大其词）：本检查只能拦住"**忘记登记**"，拦不住"登记了但写通道其实没实现"——
+    #   静态自检无法验证运行时代码路径，那需要集成测试兜底。真正保证写通道可用的是 auth_routes
+    #   与 model_service 各自的 TDD 用例。
     for key, item in index.items():
         if item.get("secret") and key not in _SECRET_WRITTEN_BY_PROVIDER_CHANNEL:
             raise RuntimeError(
