@@ -15,7 +15,7 @@
 # 2026-09-24 - 小欧 - 禁止backward死代码清理: 删 ProviderUpdate/ModelAddRequest 死DTO（仅被已删 /config/provider/* 路由引用）— 小欧-2026-09-24
 # 2026-09-26 - 小欧 - [72]第七章(7.3) 落地: ConfigResponse.api_key_configured 字段说明写清"第3套契约"的语义边界 ——
 #   本字段回答【是否已配置】(布尔, 不泄露任何位), 与掩码契约 mask_secret_value 的
-#   {configured, prefix, suffix}(回答"已配置的话长什么样")语义不同、非重复, 故第3套保留不删；
+#   {configured, masked}(回答"已配置的话长什么样")语义不同、非重复, 故第3套保留不删；
 #   但三套形状并存易令后人误以为可互换取错形状, 故在字段说明处显式区分(本项为 7.3 明确要求)。 — 小欧 2026-09-26
 """配置DTO定义（Pydantic模型）"""
 from typing import Optional, Dict, Any, List
@@ -68,10 +68,10 @@ class ConfigResponse(BaseModel):
     ai_model_ref: ModelRef = Field(..., description="当前AI模型(provider+model 结构)")
     # [72]第七章(7.3) - 小欧 - 2026-09-26: 第 3 套契约保留，但在此写清它与掩码契约(第1/2套)的区别 ——
     # 本字段是**布尔问题**"是否已配置"(只回 configured 与否，不泄露任何位)，
-    # 而 mask_secret_value 是**掩码问题**"已配置的话长什么样"(回 configured+prefix+suffix 三键)。
-    # 二者语义不同、非重复，故本套不删；但读者易误以为三套可互换，故在此显式说明，避免后人取错形状。
+    # 而 mask_secret_value 是**掩码问题**"已配置的话长什么样"(回 configured+masked 两键)。
+    # 二者语义不同、非重复，故本套不删；但读者易误以为两套可互换，故在此显式说明，避免后人取错形状。
     api_key_configured: bool = Field(
-        ..., description="API Key是否已配置（布尔，只回是否；不回任何位，与掩码契约 mask_secret_value 的 {configured,prefix,suffix} 语义不同、非重复）"
+        ..., description="API Key是否已配置（布尔，只回是否；不回任何位，与掩码契约 mask_secret_value 的 {configured,masked} 语义不同、非重复）"
     )
     theme: str = Field(..., description="当前主题")
     language: str = Field(..., description="当前语言")
@@ -109,17 +109,13 @@ class ModelListResponse(BaseModel):
 
 
 class ApiKeyMask(BaseModel):
-    """密钥掩码形态（[72]第七章 7.3 + 第十二章 12.5 三键恒定契约）。
+    """密钥掩码形态（[72] 2026-09-27 契约：{configured, masked} 两键恒定）。
 
-    2026-09-26 - 小欧 - [72]三堂会审后修正（修 critical 回归）:
-    config_service.get_full_config 已改用 mask_secret_value（返对象 {configured,prefix,suffix}），
-    但 ProviderInfo.api_key 仍声明为 str → ProviderInfo(**p) 遇 dict 即抛 ValidationError →
-    **GET /config/full 全挂 500**（已实测复现）。本类即该对象的 DTO 形态，与前端
-    config.api.ts 的 ProviderInfo.api_key 对象声明同构（前后端同一契约）。
+    masked 是**后端一次生成好的最终可显示串**，前端只回显、不再判断档位或拼星号
+    （旧三键 {configured,prefix,suffix} 让掩码规则在前后端各实现一遍，已漂移出 bug）。
     """
     configured: bool = Field(..., description="是否已配置")
-    prefix: str = Field("", description="前4位（短 key 为空）")
-    suffix: str = Field("", description="末4位（短 key 为空）")
+    masked: str = Field("", description="后端生成的最终掩码串（前端原样回显）")
 
 
 class ProviderInfo(BaseModel):
@@ -127,7 +123,7 @@ class ProviderInfo(BaseModel):
     name: str = Field(..., description="Provider名称")
     api_base: str = Field("", description="API地址")
     # 2026-09-26 - 小欧 - [72]第七章(7.3): 由 str 改为 ApiKeyMask 对象（见本类上方案内说明）。
-    api_key: ApiKeyMask = Field(..., description="API密钥掩码（三键恒定，永不返明文）")
+    api_key: ApiKeyMask = Field(..., description="API密钥掩码（两键恒定，永不返明文）")
     model: str = Field("", description="当前使用的模型")
     models: list[str] = Field(default_factory=list, description="模型列表")
     timeout: int = Field(60, description="超时时间")

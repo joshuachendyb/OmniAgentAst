@@ -362,7 +362,7 @@ def my_parse_json(json_str):
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `merge_region_patch` | 通用 region 合并写（settings_service/model_service 共用，DRY 单点；v4.11 核查 B2 上提）：filelock 并发锁→备份→内存合并→_validate_config_integrity 校验→_order_for_dump 保序→atomic_write 原子写→重读逐键验证→reload→异常回滚，返回 backup_path | region_updates: Dict[str, Any], scope: str | str（backup_path） |
-| `mask_secret_value` | secret 掩码公共函数（两 service 共用，消重复），永不返明文 | value: Any | Dict: {configured: bool, suffix?: 末4位} |
+| `mask_secret_value` | secret 掩码唯一权威（全项目共用，永不返明文）。2026-09-27 起返 {configured, masked} 两键，masked 为后端一次生成的最终可显示串：len>8 → 前4+`****`+后4；4<len<=8 → `****`+后4；len<=4 → `****`；空 → {configured:False, masked:""}。前端只回显 | value: Any | Dict: {configured: bool, masked: str} |
 
 ### 10.3 模型编排器（model_service.py）
 

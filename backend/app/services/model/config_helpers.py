@@ -53,30 +53,20 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-25 - 小欧 - [70] v1.12 补换代链入口日志: reload_ai_config() 记 INFO「配置热重载触发」——
 #   它是整条换代链(重载→退代→建代→归还→归零关闭)的起点, 此前完全静默, 线上无法判断"换代到底发生没发生"。
 #   与 service 侧四段日志配对后, 一次换代的完整因果链可从日志直接读出 — 小欧 2026-09-25
-# 2026-09-26 - 小欧 - [72]第七章(7.3) + 第十二章(12.5) 两章合并一次实施（设计明写"两处改同一函数须合并一次做"）:
-#   mask_secret_value 升级为三键恒定 {configured, prefix, suffix} 唯一权威契约:
-#   ①第七章修"类型撒谎" —— 原未配置分支只返 {configured: False}, 根本没有 suffix 键,
-#     而前端 model.api.ts 声明 suffix 必填, 形状不恒定埋运行时 undefined 隐患; 现补齐两键
-#   ②第十二章加 prefix 实现"前4位+后4位"显示; 长度分档防短 key 泄露:
-#     len>=8 → prefix=s[:4]+suffix=s[-4:]（不重叠）; 4<=len<8 → prefix="" 只给末4位
-#     （否则 5 位 key 前后缀重叠等于泄露 7/8 位）; len<4 → 两键皆空（维持 2026-09-21 S5 修复）
-#   ③未动 _parse_remote_models_body / _http_get_remote_models(职责单一, 掩码契约不外溢) — 小欧 2026-09-26
-# 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核, 本文件 2 处已改:
-#   ①[DRY + 正确性] mask_secret_value: 原先 `s = str(value or "")` 后用 `s.strip()` 判空、
-#     却用**未 strip 的 s** 参与长度分档与切片 —— 判空与分档用了两个不同的值(根因)。
-#     实测复现的真 bug: m('  sk-abcdefghijkl  ') -> prefix='  sk', suffix='kl  '  (把空白当密钥位泄露)
-#                        m('sk-abcdefghijkl\n')  -> suffix='jkl\n'                  (换行进掩码)
-#     触发面真实: 本函数是 secret 掩码唯一权威, 被 /settings、/models、/config 多处调用, 输入含
-#     **未落盘清洗的 env 变量**(MONTHSHOT_API_KEY=" sk-xxx " 这类 export 手误常见; 写入侧
-#     update_provider_config 会 strip, 但掩码侧拿到的可能是原始 env 值)。
-#     后果: ①空白被当成密钥位显示; ②长度分档被空白污染(8 位有效 key 被算成 >8 而给出 prefix,
-#     恰好掩盖了本该保护的短 key 场景)。修法: 一律先 strip, 判空与分档用同一个值。
-#     改后实测: 带空格/带换行的 12 位 key 掩码结果与干净值完全一致。
-#   ②[关联逻辑] _validate_config_integrity 里那段"仅判缺失不判空串"的说明注释, 原被放在 `if` 语句体
-#     **内部**(紧跟 errors.append), 位置荒谬 —— 读起来像"报错之后还要做的事", 实则是"为何这样校验"的
-#     解释。注释解释判断本身, 必须置于判断之前。位置错了, 注释就在撒谎。已移至 if 之前。
-#   附: 本轮删除的 5 个旧 handler(_set_app_field/_update_api_keys/_update_max_steps/_update_security/
-#     _update_project_root)已全仓核实**零残留引用**, __all__ 4 项亦全部真实存在(无 import * 缺符号)。
+# 2026-09-27 - 小欧 - 掩码契约收敛为 {configured, masked}（北京老陈裁定，后端一次生成最终串）:
+#   mask_secret_value 是全项目 secret 掩码唯一权威（/settings、/models、/config 共用），三档规则:
+#     len > 8     → s[:4] + "****" + s[-4:]
+#     4 < len <= 8 → "****" + s[-4:]
+#     len <= 4    → "****"（真实内容零泄漏）
+#     空/纯空白   → {configured: False, masked: ""}
+#   收敛动机：旧三键 {configured,prefix,suffix} 让"档位判定+星号拼接"在前后端各实现一遍（违反 DRY），
+#   且已漂移出真实 bug —— 前端靠 `prefix === '****'` 猜档位，遇到真实 key 前 4 位恰为 `****` 时拼错；
+#   旧两档还有 len<=4 全量回显、len==8 拼回全量明文两处泄漏，本三档一并消除。
+#   另: key 一律先去掉全部空白再判空与分档（本函数入参可能是未清洗的 env 变量，
+#   写入侧 update_provider_config 会 strip，但掩码侧未必拿到清洗值）；非字符串按 str() 兜底走同一分档。
+# 2026-09-27 07:38 小欧 - 修 B4（实跑复现 TypeError）: _validate_config_integrity 只校验了 provider 键存在，
+#   值为 None（yaml `myprov:` 空值）时 `'api_base' not in provider_config` 直接抛 TypeError。本函数被
+#   _merge_region_core 每次写调用 → 改任何设置/模型增删改全 500。补 isinstance 守卫（同函数另两处循环早有）。
 
 import os
 import shutil
@@ -286,6 +276,12 @@ def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[
         return False, errors, warnings
 
     provider_config = ai_config[selected_provider]
+    # 2026-09-27 小欧 - 修 B4：上面只校验了键存在，值为 None（yaml `myprov:` 空值）时
+    # 下面 `'api_base' not in provider_config` 抛 TypeError。本函数被 _merge_region_core 每次写调用，
+    # 改任何设置/模型增删改全 500。同函数另两处循环早就有 isinstance 守卫，此处补齐。
+    if not isinstance(provider_config, dict):
+        errors.append(f"provider '{selected_provider}' 配置格式错误（应为映射）")
+        return False, errors, warnings
 
     # 2026-09-21 小欧 修 S1：env 接管 provider（设 {NAME}_API_KEY）在 YAML 里可无 api_base/api_key，
     # 硬性要求会让「环境变量接管的配置」任意 settings 写都被校验打回；env 存在时放行这两项约束。
@@ -596,32 +592,31 @@ def get_config_snapshot() -> Dict[str, Any]:
 
 
 def mask_secret_value(value: Any) -> Dict[str, Any]:
-    """secret 掩码公共函数（**唯一权威**）：永不返明文，只返 {configured, prefix 前4位, suffix 末4位}。
+    """secret 掩码公共函数（**唯一权威**）：永不返明文，只返 {configured, masked 可直接显示的串}。
 
-    [72]第七章(7.3) + 第十二章(12.5) - 小欧 - 2026-09-26 两章合并一次实施（设计明写"两处改同一函数须合并一次做"）：
-      - 第七章修"类型撒谎"：原未配置分支只返 {configured: False}，**根本没有 suffix 键**，
-        而前端 model.api.ts 声明 suffix 必填 → 形状不恒定，埋运行时 undefined 隐患。
-      - 第十二章加 prefix，最终契约为**三键恒定** {configured, prefix, suffix}。
-    长度分档（**北京老陈 2026-09-26 裁定：只分两档 >=8 / <8**）:
-      len >= 8 -> {True, prefix=s[:4], suffix=s[-4:]}   按规矩: 前4 + 后4
-      len <  8 -> {True, prefix="****", suffix=s[-4:]}   裁定原文「小于8的 显示后4位, 前面加4个*」
-      未配置(空) -> {False, prefix="", suffix=""}
-      非字符串入参先 str() 兜底再走上面分档（裁定:「按我之前说的规则处理」）
+    [72]第七章(7.3) + 第十二章(12.5) + 北京老陈 2026-09-27 裁定 - 小欧 2026-09-27
+
+    **契约变更（2026-09-27）**：由 `{configured, prefix, suffix}` 三键改为 `{configured, masked}` 两键。
+      原三键把"怎么拼"的知识交给前端（前端要自己判断档位、自己数星号），导致掩码规则在前后端
+      各实现一遍 —— 违反 DRY，且已实际漂移出错：真实 key 前 4 位恰为 `****` 时，前端无法区分
+      "真前缀是星号"与"后端判定为短 key 档"。现**后端一次生成最终可显示串，前端直接显示**，
+      前端零掩码逻辑。
     """
     # 【编辑历史 — 最新在下】
     # 2026-09-26 - 小欧 - 落实北京老陈裁定，**收敛为两档**（原为 4 档: <4 / 4~7 / 8~11 / >=12）:
-    #   裁定原话:「只是分大于=8还是小于8」+「>=8 按规矩来处理(前4+后4)」
-    #              +「小于8的 显示后4位, 前面加4个*」。
-    #   同时**撤销**我先前两项越权改动: ① 4~7 档"一律不给位"、② 非字符串判未配置(D18) ——
-    #   二者都与 [72]第十二章 12.5 契约表冲突, 属擅改产品契约, 现按裁定恢复。
-    #   ⚠ 残留风险(已两次明确告知北京老陈, 由其裁定保留, 非疏漏): 两档划分下
-    #     ① len<=4 → s[-4:] 即全量明文, 1~4 位 key 以 ****xxxx 全量回显;
-    #     ② len==8 → 前4+后4 恰好拼回全量明文(例 "abcd1234")。
-    #     两者都是"只分两档"的必然结果; 若日后要消除, 需把 >=8 档阈值上调(如 >=12)或对
-    #     len<=4 档不回显, 属产品契约变更, 需北京老陈另行裁定。
-    s = str(value or "").strip()
+    #   裁定原话:「只是分大于=8还是小于8」+「>=8 按规矩来处理(前4+后4)」+「小于8的 显示后4位, 前面加4个*」。
+    # 2026-09-27 - 北京老陈裁定改为**三档**，并定契约由后端一次生成最终串（星号一律 4 个）:
+    #   ① len >  8      -> s[:4] + 4星 + s[-4:]      「按规矩: 前4 + 后4」
+    #   ② 4 < len <= 8  -> **** + s[-4:]               「后面4个 + 前面4个*」
+    #   ③ len <= 4      -> ****                       「只是显示 4 个*」= **不露真实内容**
+    #   ④ 空(未配置)    -> configured=False, masked=""
+    #   规则同时消除原两档的残留风险: len<=4 曾全量回显、len==8 曾拼回全量明文，③档后均不再发生。
+    #   另: key 只做去空白(不校验内容), 非字符串按 str() 兜底走同一分档。
+    s = "".join(str(value or "").split())   # 去全部空白(北京老陈: "只做 trim 前后中间空白")
     if not s:
-        return {"configured": False, "prefix": "", "suffix": ""}
-    if len(s) < 8:
-        return {"configured": True, "prefix": "****", "suffix": s[-4:]}
-    return {"configured": True, "prefix": s[:4], "suffix": s[-4:]}
+        return {"configured": False, "masked": ""}
+    if len(s) <= 4:
+        return {"configured": True, "masked": "****"}
+    if len(s) <= 8:
+        return {"configured": True, "masked": "****" + s[-4:]}
+    return {"configured": True, "masked": s[:4] + "*" * 4 + s[-4:]}

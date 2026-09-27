@@ -44,7 +44,8 @@
 #   add_provider/add_model 6函数（仅被已删 /config/provider/* 路由调用, 前端零调用）；同步清孤儿 import — 小欧-2026-09-24
 # 2026-09-26 - 小欧 - [72]第七章(7.3) 落地: 删死契约 _mask_api_key(第2套掩码, "****"+末4位 字符串形态),
 #   /config/full 的 providers.{name}.api_key 改用第 1 套唯一权威 mask_secret_value → **形状变为对象**
-#   {configured, prefix, suffix}。删除前已按 7.3 要求复核消费方: 前端 getFullConfig( 全项目零调用
+#   （该对象自 2026-09-27 起为 {configured, masked} 两键，非 prefix/suffix 三键，见 config_helpers）。
+#   删除前已按 7.3 复核消费方: 前端 getFullConfig( 全项目零调用
 #   (仅 config.api.ts:138 定义处); config.api.ts 的 ConfigValidateRequest/ProviderInfo 两 interface
 #   仅文件内自引用、无组件消费 —— 故 [59]B-4 注释宣称的"前端 slice(-4) 兼容"确无对应代码, 死契约成立。
 #   第3套 api_key_configured(bool, 回答"是否已配置"这一布尔问题) 保留, 语义区别已写入 config_schemas
@@ -67,6 +68,11 @@
 #   ※ 如实记录: 上述 ④ 改完后, FIELD_HANDLERS 在全仓已成**零消费方**(含 tests/e2etests 均无引用)。
 #     本次**不删**它 —— [72]第十一章设计明文要求"FIELD_HANDLERS 收敛为只含 ai_model_ref 一项",
 #     即保留该结构是设计决定而非疏漏。此事实记录在案, 是否进一步删除请北京老陈裁定。
+# 2026-09-27 07:38 小欧 - 修 B1/B2（实跑复现 ValidationError→500）: ①models 的 dict 老格式归一
+#   抽成 _model_names() 供 get_full_config 与 get_model_list 共用（原只有后者内联归一，前者把 dict
+#   原样塞进声明 list[str] 的 ProviderInfo.models）; ②theme/language/max_steps 出口加 or 兜底
+#   （config.get 只在键不存在时给 default，键存在值为空时返回 None，而三项在 DTO 里是必填）。
+#   DTO 保持必填不放松，fail-fast 语义不丢。
 """
 config_service — 配置业务服务(services/model)
 
@@ -223,6 +229,19 @@ def _provider_conf(ai_config: dict, provider: str) -> dict:
     return p if isinstance(p, dict) else {}
 
 
+def _model_names(provider_data: dict) -> list:
+    """取 provider 的模型名列表，兼容老式映射形态 {name: {...}} → 键列表。
+
+    2026-09-27 小欧 - 抽成函数（修 B1）：原先只有 get_model_list 内联做此归一，get_full_config 没做，
+    把 dict 原样塞进 ProviderInfo.models（声明 list[str]）→ ValidationError → /config/full 500。
+    行为与原内联逻辑一致，供两处共用（DRY）。
+    """
+    models = provider_data.get('models') or []
+    if isinstance(models, dict):
+        models = list(models.keys())
+    return models
+
+
 def get_system_config_data() -> dict:
     """获取系统配置数据 — 自 model_routes.py 迁入 — 小沈 2026-08-13
     2026-08-22 小欧 归一报告v1.25 6.6: ai_provider/ai_model → ai_model_ref: ModelRef 结构"""
@@ -232,8 +251,11 @@ def get_system_config_data() -> dict:
     provider_config = _provider_conf(ai_config, resolved_model.provider)
     api_key = str(provider_config.get('api_key') or '')
     api_key_configured = bool(api_key.strip() != '')
-    theme = config.get('app.theme', 'light')
-    language = config.get('app.language', 'zh-CN')
+    # 2026-09-27 小欧 - or 兜底（修 B2）：config.get 只在键不存在时给 default，键存在且值为空
+    #   （yaml 写 `app.theme:` 空值）时原样返回 None，而 ConfigResponse 三项是必填 str/int → 500。
+    #   在出口归一而非放宽 DTO，保持 DTO 的 fail-fast 语义。
+    theme = config.get('app.theme') or 'light'
+    language = config.get('app.language') or 'zh-CN'
     security_config = config.get('security', {})
     if not isinstance(security_config, dict) or not security_config:
         security_config = dict(DEFAULT_SECURITY)
@@ -244,7 +266,7 @@ def get_system_config_data() -> dict:
         "theme": theme,
         "language": language,
         "security": security_config,
-        "max_steps": config.get_max_steps(),
+        "max_steps": config.get_max_steps() or 10000,
         "project_root": config.get_project_root()
     }
 
@@ -285,11 +307,7 @@ def get_model_list() -> dict:
             provider_data = _provider_conf(ai_config, provider_name)
             if not provider_data:
                 continue
-            provider_models = provider_data.get('models') or []
-            # 2026-09-21 小欧 [59]B-15: dict 老格式 models({name: {...}}) 归一为键列表——
-            # 原只认 list，老式/手写 YAML 整个 provider 静默不出现在 /config/models，与 /models 列表不一致
-            if isinstance(provider_models, dict):
-                provider_models = list(provider_models.keys())
+            provider_models = _model_names(provider_data)
             if isinstance(provider_models, list) and provider_models:
                 for model_name in provider_models:
                     display_name = f"{provider_name} ({model_name})"
@@ -327,13 +345,13 @@ def get_full_config() -> dict:
             "name": provider_name,
             "api_base": provider_data.get('api_base') or '',
             # [72]第七章(7.3) - 小欧 - 2026-09-26: 删死契约 _mask_api_key（"****"+末4位 字符串形态），
-            # /config/full 改用第 1 套唯一权威 mask_secret_value → **形状变为对象** {configured, prefix, suffix}。
+            # /config/full 改用第 1 套唯一权威 mask_secret_value → **形状变为对象** {configured, masked}。
             # 删除前已按 7.3 要求复核消费方: 前端 getFullConfig( 全项目零调用（仅 config.api.ts:138 定义处），
             # config.api.ts 的 ConfigValidateRequest/ProviderInfo 两个 interface 仅文件内自引用、无组件消费，
             # 故原注释宣称的"前端 slice(-4) 兼容"确无对应代码 —— 死契约成立。
             "api_key": mask_secret_value(api_key),
             "model": '',
-            "models": provider_data.get('models') or [],
+            "models": _model_names(provider_data),
             "timeout": provider_data.get('timeout') if provider_data.get('timeout') is not None else 60,
             "max_retries": provider_data.get('max_retries') if provider_data.get('max_retries') is not None else 3,
         }
