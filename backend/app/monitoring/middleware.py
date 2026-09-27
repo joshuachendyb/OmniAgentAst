@@ -3,7 +3,7 @@
 # 2026-08-14 - 小欧 - 迁移: monitoring 独立为 app 顶层能力层目录(services/monitoring→app/monitoring), 本文件 import 路径同步
 # 2026-08-20 - 小欧 - 11.2-C 落 monitoring.db 独立库: MonitoringMiddleware._record_response 新增
 #   persist_http_request(method, path, status_code, kind, duration, request_size, 0) 调用(非阻塞降级, 独立库 storage,
-#   response_size 暂以 0 占位见设计[1]⑩; path=='/api/v1/chat/stream' 归 kind='llm' 否则 'other')。
+#   response_size 暂以 0 占位; path=='/api/v1/chat/stream' 归 kind='llm' 否则 'other')。
 """
 监控中间件模块
 负责HTTP请求监控和门面函数

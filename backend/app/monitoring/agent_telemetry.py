@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-20 - 小欧 - 新建: 任务级遥测采集独立模块(11.2-B/C + 11.3, 见 [1] 13.2.2.1)。
+# 2026-08-20 - 小欧 - 新建: 任务级遥测采集独立模块(11.2-B/C + 11.3)。
 #   设计定位(北京老陈 2026-08-20 指示: 监控代码独立放 app/monitoring/)：本模块不依赖 agent 内部实现细节,
 #   仅读取 agent 公开属性与 message_builder 既有能力; 全部"新增状态 + stats/context_overview 计算 + 落库聚合"
 #   都在本文件, 核心 agent 文件仅薄钩子调用。
@@ -25,7 +25,7 @@
 #   收敛到 telemetry 模块, action_handler 不再持有 duration/artifacts 收集细节; 函数体完整复制不改逻辑
 # 2026-09-04 - 小健 - SLAP修复: build_final_stats_step 加 outcome 参数(默认空串), 优先用传入的 outcome,
 #   为空时 fallback 到 agent.status.value; 消除监控层隐式依赖核心状态 — 小健-2026-09-04
-# 2026-09-05 - 小健 - [7]8.6 一拆三: _log_task_end 自 stream_reader.py 整份搬入(任务收尾日志+统计属遥测同类,
+# 2026-09-05 - 小健 - 8.6 一拆三: _log_task_end 自 stream_reader.py 整份搬入(任务收尾日志+统计属遥测同类,
 #   仅改 import 归属零逻辑改动, 禁backward无垫片); 追加 log_and_print import(TASK_END console 打印)
 # 2026-09-05 - 小欧 - 防御加固(三堂会审): finalize 的 task_model 改走 _model_to_json 单向容错——原直呼
 #   _tm.model_dump_json(), 非Pydantic模型(SimpleNamespace等) AttributeError 致整表遥测落库失败(一行序列化拖垮

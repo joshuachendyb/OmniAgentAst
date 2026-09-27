@@ -187,7 +187,7 @@ def init_chat_db(get_conn):
 
 
         # ===== S0 补列（10.1.7① ②③，幂等只 ADD 缺列、老行 NULL 不丢数据）— 小欧 2026-08-16 =====
-        # ② chat_task_steps 补 task_id 列（B1 挂任务；对齐文档2 3.1.8-⑥）
+        # ② chat_task_steps 补 task_id 列（B1 挂任务；对齐设计文档 3.1.8-⑥）
         _ensure_column(conn, "chat_task_steps", "task_id", "TEXT")
         # ③ chat_sessions 补 sessionModel 列(会话级模型覆盖落库点, 结构化 provider+model 的 JSON)
         # 旧列 model_override 兼容迁移: 存在则改名(现代 SQLite); 老 SQLite 不支持 RENAME 时降级为
@@ -281,7 +281,7 @@ def init_chat_db(get_conn):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_message ON chat_task_steps(ai_message_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_session ON chat_task_steps(session_id, step_index)")
 
-        # ===== S0 新增索引（10.1.7①，对齐文档2 3.1.8-⑥）— 小欧 2026-08-16 =====
+        # ===== S0 新增索引（10.1.7①，对齐设计文档 3.1.8-⑥）— 小欧 2026-08-16 =====
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session ON chat_tasks(session_id)")
         # chat_task_steps 复合索引：按 ai_message_id 与 (task_id, step_index)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_task ON chat_task_steps(task_id, step_index)")
