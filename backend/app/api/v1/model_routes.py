@@ -3,7 +3,7 @@
 
 编辑历史:
   2026-09-20 - 小沈 - 新建：/models /providers CRUD（5.2 模型管理接口）
-   2026-09-21 - 小欧 - 对齐文档54 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
+   2026-09-21 - 小欧 - 对齐设计文档 9.1.6：import 补 ModelAddRequest/ProviderInfo/ProviderUpdate（DTO 复用 config_schemas）
    2026-09-24 - 小欧 - 禁止backward死代码清理: 删未使用的 ModelAddRequest/ProviderInfo/ProviderUpdate import
      （本文件实际用 ModelCreateRequest/ModelUpdateRequest/ProviderConfigUpdate/ProviderAddRequest）— 小欧-2026-09-24
    2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复：①M13 add_provider 透传 req.models 列表与
@@ -15,7 +15,7 @@
      改贪婪吞余段后含斜杠模型名可更新/删除
    2026-09-22 - 小欧 - param_options 读写链落地: ModelCreateRequest/ModelUpdateRequest 各加
      param_options: Optional[Dict[str,List[str]]]=None（Pydantic 不声明即丢字段，老前端不送也不报错）；
-     P2 POST /models 路由 add_model 调用透传 req.param_options（5 位置参→7 位置参，防 param_options 形参
+     POST /models 路由 add_model 调用透传 req.param_options（5 位置参→7 位置参，防 param_options 形参
      永远拿 None 静默丢）。PUT 路由无需改——model_dump(exclude_none=True) 自动含 param_options。
    2026-09-22 - 小欧 - ProviderConfigUpdate 补 max_retries: Optional[int]=None：
      前端 ProviderConfig.tsx 实际发送 max_retries 而 DTO 原只有 retry_times 别名，Pydantic v2
@@ -40,8 +40,8 @@
       ①必须记审计日志: provider 名 + 来源 IP(request.client.host), 读密钥属敏感操作须可追溯;
          env 接管被拒时**同样留痕**(谁在探查 env 接管的密钥也要可查);
       ②env 接管一律拒绝返回明文(400): env 优先消费, YAML 里那个不是生效值, 给出即假象
-         (与第二章"静默回落"同类陷阱), 文案明确指出真实来源 {NAME}_API_KEY;
-      ③上线硬依赖第九章 token 鉴权 —— 无鉴权时局域网任何客户端可直接调走全部明文密钥(见 12.6 依赖表);
+         (与"静默回落"同类陷阱), 文案明确指出真实来源 {NAME}_API_KEY;
+      ③上线硬依赖 token 鉴权 —— 无鉴权时局域网任何客户端可直接调走全部明文密钥(见 12.6 依赖表);
       ④新增 _client_ip 辅助(取 request.client.host, 无 request 时返回 unknown 不抛) — 小欧-2026-09-26
 """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
@@ -221,9 +221,9 @@ async def get_provider_api_key_plain(name: str, request: Request):
     三条硬约束（设计 12.5 / 12.6）：
       ①**必须记审计日志**：provider 名 + 时间戳 + 来源 IP（request.client.host）—— 读密钥属敏感操作。
       ②**env 接管时一律拒绝返回明文**：env 优先消费(config.py _apply_env_overrides)，YAML 里那个可能
-         **不是生效值**，给用户看是假象（与第二章"静默回落"同类陷阱）。文案明确指出真实来源。
-      ③**上线硬依赖第九章 token 鉴权**：无鉴权时局域网任何客户端可直接调走全部明文密钥，
-         故第九章落地前本接口不得对外暴露（见 12.6 依赖表）。
+         **不是生效值**，给用户看是假象（与"静默回落"同类陷阱）。文案明确指出真实来源。
+      ③**上线硬依赖 token 鉴权**：无鉴权时局域网任何客户端可直接调走全部明文密钥，
+         故鉴权落地前本接口不得对外暴露（见 12.6 依赖表）。
     """
     # 2026-09-26 - 小欧 - 三堂会审后修正·二(分层): 经 service 公开函数取数，
     #   不再直调 svc._raw_ai()/svc._provider_names() 私有函数（破坏封装，见 model_service 文件头）。

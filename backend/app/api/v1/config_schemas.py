@@ -6,7 +6,7 @@
 #   ai_model_ref/current_model_ref: ModelRef 封装字段(前端 api.ts 契约同步改); FullConfigValidationResponse
 #   死DTO(全仓无引用)按 YAGNI 删除
 # 2026-09-21 - 小欧 - 三堂会审修复: ProviderAddRequest 添加 label 字段（model_routes.add_provider 依赖）
-# 2026-09-21 - 小欧 - 对齐文档54 9.3.9：label 字段类型定为 str = Field("")（缺省与 name 相同），撤销此前 Optional[str] 变更
+# 2026-09-21 - 小欧 - 对齐设计文档 9.3.9：label 字段类型定为 str = Field("")（缺省与 name 相同），撤销此前 Optional[str] 变更
 # 2026-09-21 - 小欧 - 修复 None 陷阱: ProviderInfo.api_base 由 Field(...) 改 Field("")（配置文件 api_base 缺失/None 时不再炸 Pydantic 500）
 # 2026-09-21 - 小欧 - 删除无意义白/黑名单配置项: SecurityConfig 移除 whitelistEnabled/commandWhitelist/commandBlacklist
 #   （全库无消费方，仅透传保存不生效；命令安全由 path_safe_check/tools/security 代码内实现，北京老陈裁定删除）
@@ -37,7 +37,7 @@ class SecurityConfig(BaseModel):
 
 
 # 2026-09-26 - 小欧 - 修正: ConfigUpdate **保留但只留 ai_model_ref 一个字段**。
-#   原计划整类删除（随 PUT /config 端点删），实施时实测发现文档 11.2「前端零调用」结论不成立 ——
+#   原计划整类删除（随 PUT /config 端点删），实施时实测发现设计文档 11.2「前端零调用」结论不成立 ——
 #   configApi.switchCurrentModel（AppContext.tsx:266，顶栏与设置页「切换全局模型」唯一写链）在调 PUT /config，
 #   整类删除会导致切全局模型 404 失效（功能退化，违反"只能增强不能退化"红线）。
 #   故保留端点与本类，但**只保留切模型必需的 ai_model_ref**，其余 6 个字段全部删除：

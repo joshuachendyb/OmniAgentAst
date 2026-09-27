@@ -90,11 +90,11 @@ async def get_system_config():
 
 
 # 2026-09-26 - 小欧 - PUT /config 端点**保留但收敛为只切模型**。
-#   原计划整条删除，实施时实测发现文档 11.2「前端零调用」结论不成立 ——
+#   原计划整条删除，实施时实测发现设计文档 11.2「前端零调用」结论不成立 ——
 #   configApi.switchCurrentModel（AppContext.tsx:266，顶栏与设置页「切换全局模型」唯一写链）在调本端点，
 #   整条删除会导致切全局模型 404 失效（功能退化，违反"只能增强不能退化"红线）。故保留，但**只写 ai_model_ref**：
 #   ①provider_api_keys（第二个能擦除密钥的入口）已从 ConfigUpdate 删除 → 漏洞消失，本条为本次整改核心目标
-#   ②theme/language/max_steps/security/project_root 功能已全部迁移至 settings registry 对应项（文档 11.2 表），
+#   ②theme/language/max_steps/security/project_root 功能已全部迁移至 settings registry 对应项（设计文档 11.2 表），
 #     且其中 theme 早已是 registry 只读项（暗色入口已移除）——旧 handler 一并删除，不再有第二条写路径。
 #   保留全部 GET 端点（GET /config、/config/read、/config/full、/config/validate、/config/fix、/config/path 等）。 — 小欧-2026-09-26
 @router.put("/config")

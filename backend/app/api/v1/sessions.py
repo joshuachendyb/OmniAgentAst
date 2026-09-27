@@ -7,7 +7,7 @@
 #   (不再 direct import messages 缓存对象)。本文件降为路由薄壳(DTO+路由+调service)。
 # 2026-08-20 - 小欧 - 10.5 问题4/6 三堂会审落地: 新增 GET /sessions/{id}/tasks(B1会话任务列表+任务数=用户消息数) +
 #   GET /sessions/{id}/trust(D1信任清单) + DELETE /sessions/{id}/trust/{tool}(D3撤销信任)。
-# 2026-08-26 - 小欧 - D-2(文档2 8.D): 新增 GET /sessions/{session_id} 单会话信息路由(调 session_service.get_session_info),
+# 2026-08-26 - 小欧 - D-2(8.D): 新增 GET /sessions/{session_id} 单会话信息路由(调 session_service.get_session_info),
 #   使用场景: 设置界面读取会话级信息(title/created_at/updated_at/sessionModel) + 顶栏创建/更新时间悬浮数据源。
 #   路由置于文件末尾(防御性习惯; 本路由与 /titles/batch、/{id}/tasks 等子路径段数不同, 实际无遮蔽关系)。
 # 2026-08-30 - 小欧 - 会话响应增强 v1.103: 响应新增 latest_task_id(最新任务显式锚点, 配合 storage.list_session_tasks 三元组返回解包, 排序一义后顶栏锚点不依赖 DESC 首行)。
@@ -122,5 +122,5 @@ def delete_session_trust_endpoint(session_id: str, tool_name: str, path: Optiona
 
 @router.get("/sessions/{session_id}")
 def get_session_detail_endpoint(session_id: str):
-    """D-2(文档2 8.D): 单会话信息 — 设置界面读取会话级信息 + 顶栏创建/更新时间悬浮数据源, 现有端点无单会话信息 — 小欧 2026-08-26"""
+    """D-2(8.D): 单会话信息 — 设置界面读取会话级信息 + 顶栏创建/更新时间悬浮数据源, 现有端点无单会话信息 — 小欧 2026-08-26"""
     return get_session_info(session_id)
