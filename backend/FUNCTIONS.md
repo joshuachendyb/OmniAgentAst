@@ -117,8 +117,17 @@
 | `backup_file` | 文件备份(.bak) | file_path, backup_dir, suffix | Dict |
 | `remove_readonly` | 去除文件只读属性(供删除/清理重试) | func, path, excinfo | None |
 
-### 1.12 控制台镜像（app/logger/console_writer.py）
+### 1.12 白名单语法（allowlist.py，位于 app/utils/）
 
+免口令 IP 白名单的语法单一权威。写侧（settings_service 落盘前校验+归一）与读侧（deps 准入匹配）共用，规则无法各写一套而漂移。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `normalize` | 任意来源形态→干净条目列表（拆 , ; 换行及全角、去空白、去空项），落盘恒为 list | raw: str \| list \| None | List[str] |
+| `invalid_entries` | 返回非法 IP/网段原文，供落盘前报错（全部合法则空列表） | raw: str \| list \| None | List[str] |
+| `matches` | 来源 IP 是否命中白名单（支持单 IP 与 CIDR）；fail-closed：IP 非法/白名单空/条目非法均不命中 | ip: str, raw: str \| list \| None | bool |
+
+### 1.13 控制台镜像（app/logger/console_writer.py）
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `console_put` | 控制台镜像写(非阻塞): 全局 queue+daemon写线程, stdout阻塞时队列满则丢弃新消息, 绝不阻塞调用线程; log_and_print(logger/__init__.py)及裸print收口点(action_handler/main/config)统一出口 | msg: str | None |

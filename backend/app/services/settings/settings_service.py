@@ -63,6 +63,8 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
       一旦有人注册 secret=True 立刻生效且界面还显示"留空=保持原值"误导用户。
       配套自检在 settings_registry._build_index（未接 provider 通道的 secret 项拒启），
       二者同批实施：自检保证"不会误开 secret"，本处保证"开了也不被通用通道写坏"。 — 小欧 2026-09-26
+    2026-09-27 - 小欧 - [75]会审根因修复：BUG-C 存在性判据改 has_dotted（原 `is not None` 恒真，
+      缺键也标 'yaml'）；BUG-E/G 白名单落盘前经 allowlist 归一+校验（非法 IP 不再静默失效）
 """
 from pathlib import Path
 import json
@@ -81,10 +83,16 @@ from app.services.model.config_helpers import (
     merge_region_patch,
     read_yaml_config,
     _get_dotted,
+    has_dotted,
     _config_mtime,
 )
 from app.services.settings.settings_registry import (
     GROUPS, GROUP_ORDER, get_item,
+)
+# [75]BUG-E/G：白名单语法单一权威在 app/utils/allowlist.py（写侧校验/落盘归一 与 读侧匹配 同源）
+from app.utils.allowlist import (
+    invalid_entries as invalid_ip_cidr_entries,
+    normalize as normalize_ip_cidr,
 )
 
 
@@ -149,12 +157,16 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         raw_val = json.dumps(raw_val, ensure_ascii=False)
     eff_val = _resolved(key, item["default"])
     is_env = bool(item.get("env_key") and env_nonempty(item["env_key"]))
+    # [75]BUG-C：存在性一律用 has_dotted（raw_val is not None 恒真，缺键会被标 'yaml'）
+    src = "env" if is_env else ("yaml" if has_dotted(raw, key) else "default")
     if item.get("secret"):
-        return mask_secret_value(eff_val), ("env" if is_env else "yaml")
+        return mask_secret_value(eff_val), src
+    # [75]BUG-G：list_of 项显示归一（YAML list/str、env str 三种来源同形）。用 eff_val —— env 优先
+    if item.get("list_of") == "ip_cidr":
+        return "\n".join(normalize_ip_cidr(eff_val)), src
     if is_env:
         return eff_val, "env"
-    # 2026-09-21 小欧 [59]B-10: 键缺失时 source 标 'default'（与显式落盘 yaml 区分）
-    return raw_val if raw_val is not None else item["default"], ("yaml" if raw_val is not None else "default")
+    return raw_val, src
 
 
 def get_all_groups() -> Dict[str, Any]:
@@ -204,11 +216,12 @@ def get_setting(key: str, default: Any = None) -> Any:
 
 def _to_stored_value(item: Dict[str, Any], value: Any) -> Any:
     """落盘前类型归一：
-    - 2026-09-22 小欧 修 S1：textarea(workspace.allowed_dirs) 普通多行文本→拆 list 存，满足消费方
-      get_allowed_dirs() 的列表契约；多行文本→逐行去空白过滤空行，空文本→[]。
-    - 2026-09-22 小欧 修 S17：textarea JSON 型(如 tuning.llm.stream_options，default 为 JSON 文本)
-      编辑框提交 JSON 字符串 → json.loads 还原结构体落盘，与 _item_data 读回序列化对称，
-      保证 LLM 运行时 get_setting 拿到 dict。"""
+    - [75]BUG-E/G：声明 list_of 的项（ip_cidr）先归一为干净 list，形状不因分隔符而变。
+    - 修 S1：textarea(workspace.allowed_dirs) 多行文本→拆 list，满足 get_allowed_dirs() 列表契约。
+    - 修 S17：textarea JSON 型(tuning.llm.stream_options) 提交 JSON 串→还原结构体落盘，
+      与 _item_data 读回序列化对称，保证 LLM 运行时 get_setting 拿到 dict。"""
+    if item.get("list_of") == "ip_cidr":
+        return normalize_ip_cidr(value)
     if item["type"] == "textarea" and isinstance(value, str):
         dflt = str(item.get("default") or "").strip()
         if dflt.startswith("{") or dflt.startswith("["):
@@ -272,6 +285,12 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
         if not (isinstance(value, str) or
                 (isinstance(value, list) and all(isinstance(x, str) for x in value))):
             return f"{item['key']} 应为多行文本"
+    # [75]BUG-E：list_of='ip_cidr' 逐条校验。此前只校验类型，非法值照存照显、读侧静默跳过
+    if item.get("list_of") == "ip_cidr":
+        bad = invalid_ip_cidr_entries(value)
+        if bad:
+            return (f"{item['key']} 含非法 IP/网段：{'、'.join(bad)}"
+                    f"（支持单 IP 或 CIDR，如 10.0.0.5 / 192.168.1.0/24）")
     if item.get("range"):
         lo, hi = item["range"]
         num = float(value)

@@ -16,31 +16,36 @@ key 全局唯一，加载自检重复直接拒启。
   2026-09-26 小欧 - 新增 security.access_token（secret，拒经 /settings 写，唯一写入口 auth/token）
     与 security.access_token_allowlist，置于 appearance 组最前。
   2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（后端一次生成，前端纯回显）。
-  2026-09-27 小欧 - 修 B6: workspace.project_root 默认值 "E:\test_dir" → ""（原值非空使
+  2026-09-27 小欧 - 修 workspace.project_root 默认值 "E:\test_dir" → ""（原值非空使
     `if root:` 恒真、永不回退用户主目录）。另精简本文件冗长编辑历史（410→285 行，只留决策不留过程）。
-  2026-09-27 小欧 - appearance 组 label「外观」→「前端」（北京老陈指示）：该组实含两块
-    「登录与准入」（口令/白名单）+「外观」（语言/主题/字号），单说"外观"名不副实。
-    只改 label（Tab 显示名），组 key 仍为 appearance（配置路径/前端分组标识全不变）。
+  2026-09-27 小欧 - 根因修复：_item 增 env_inject（取代 config.py 手写注入清单，键名只此一处）
+    与 list_of（白名单落盘前归一+校验）；appearance label「外观」→「前端」
   2026-09-27 小欧 - 同轮再精简：_item docstring 与 security/appearance 分组注释去重（原"只有三处"
     那类会腐烂的清单改为直接指向唯一真源 app/config.py::_apply_env_overrides）。
 """
 from typing import Any, Dict, List, Optional
+
+# 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
+from app.config import ENV_INJECTED_KEYS
 
 
 def _item(key: str, type_: str, label: str, default: Any = None,
           options: Optional[List[Any]] = None, range_: Optional[List[float]] = None,
           step: Optional[float] = None, restart: bool = False, secret: bool = False,
           readonly: bool = False, notice: str = "",
-          env_key: Optional[str] = None) -> Dict[str, Any]:
-    """单项构造：storage 统一 YAML；env_key 指定环境变量名时来源判定看 os.environ 是否设了该键。
+          env_key: Optional[str] = None, env_inject: bool = False,
+          list_of: Optional[str] = None) -> Dict[str, Any]:
+    """单项构造：storage 统一 YAML。
 
-    声明 env_key 本身不注入任何值，只影响"来源"标记。是否真注入、注入哪些键，唯一真源是
-    `app/config.py::_apply_env_overrides` —— 本文件不复制那份清单（复制即腐烂）。
+    env_key 只决定页面"来源"标记；env_inject=True 另表示 env 值要注入 get_config()，
+    否则页面显示值≠实际生效值。两者分开：ai.model_ref 是 dict 而 env 是标量，注入会写坏结构。
+    注入清单在 app.config.ENV_INJECTED_KEYS，双向一致性由 _build_index 启动自检保证。
+    list_of 声明"本项是某类元素的列表"，落盘前归一+校验，规则见 app/utils/allowlist.py。
     """
     return {"key": key, "type": type_, "label": label, "default": default,
-            "options": options, "range": range_, "step": step, "storage": "YAML",
+            "options": options, "range_": range_, "step": step, "storage": "YAML",
             "restart": restart, "secret": secret, "readonly": readonly, "notice": notice,
-            "env_key": env_key}
+            "env_key": env_key, "env_inject": env_inject, "list_of": list_of}
 
 
 GROUPS: Dict[str, Dict[str, Any]] = {
@@ -141,26 +146,24 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("config_path", "readonly", "配置文件路径", None, readonly=True),
         _item("version", "readonly", "当前版本", None, readonly=True),
     ]},
-    # 4.8 外观（appearance）
-    #   前两项为**准入控制**（谁能进得来），与 security 组的操作安全分开。键名仍为 security.*
-    #   （对外契约与已装环境变量 OMNIAGENT_ACCESS_TOKEN 不变），键名前缀只表命名空间，
-    #   展示位置由 GROUPS 决定。
+    # 4.8 前端（appearance）：前两项是准入控制，键名沿用 security.*（前缀只表命名空间）
+    #   Tab 显示名 2026-09-27 由「外观」改「前端」（本组实含准入 + 外观两块）
     "appearance": {"label": "前端", "items": [
         # 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
         _item("security.access_token", "secret", "访问口令", None, secret=True,
-              env_key="OMNIAGENT_ACCESS_TOKEN",
+              env_key="OMNIAGENT_ACCESS_TOKEN", env_inject=True,
               notice="局域网访问本服务用的口令（暗号）。除本机与白名单外，访问任何接口都要它；泄露了改成新的，旧的立即作废"),
         # 免口令 IP 白名单（非 secret：白名单不是机密，需在设置页可维护）
         _item("security.access_token_allowlist", "textarea", "免口令 IP 白名单", "",
-              env_key="OMNIAGENT_ACCESS_TOKEN_ALLOWLIST",
-              notice="这些 IP/网段访问本服务免口令，逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1)恒免。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
+              env_key="OMNIAGENT_ACCESS_TOKEN_ALLOWLIST", env_inject=True, list_of="ip_cidr",
+              notice="这些 IP/网段访问本服务免口令。每行一条，也可用逗号分隔，支持 CIDR（如 192.168.1.0/24）。本机(127.0.0.1/::1)免口令。⚠️白名单内等于无鉴权，可读全部密钥，只放可信网段"),
         _item("app.language", "select", "系统语言", "zh-CN",
               options=["zh-CN", "en-US"], restart=True),
         _item("app.theme", "readonly", "主题", "light", readonly=True,
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
     ]},
-    # 2026-09-24 小欧 - [68] 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支
+    # 2026-09-24 小欧 - 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支
     "model_library": {"label": "模型库", "items": []},
     "tuning": {"label": "调优", "items": [
         # --- llm: LLM 语义参数（temperature/max_tokens 在 llm.sampling.* 通用组）---
@@ -260,7 +263,7 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
             if key in index:
                 raise RuntimeError(f"[settings_registry] 重复 key 拒启: {key}")
             index[key] = item
-    # [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项自检。
+    # secret 项自检（2026-09-26 小欧）。
     # secret=True 的项其写路径必须已接好（provider 通道或专用 auth 端点），否则 settings 通用通道
     #   又显式拒绝写它，该项就变成"写不进也读不出掩码"的半吊子。此处开发期即拒启。
     # 边界（勿夸大其词）：本检查只能拦住"**忘记登记**"，拦不住"登记了但写通道其实没实现"——
@@ -272,6 +275,25 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
                 f"[settings_registry] secret 项未接 provider 通道写路径，拒启: {key}。"
                 f"secret 项须在 _SECRET_WRITTEN_BY_PROVIDER_CHANNEL 登记"
                 f"（当前已登记: {sorted(_SECRET_WRITTEN_BY_PROVIDER_CHANNEL)}）"
+            )
+    # env_inject 与 config.ENV_INJECTED_KEYS 双向核对，不一致即拒启。
+    # 原手写清单在键改名时漏改 → env 注入旧键、页面读新键得 None；漏改从此是启动失败而非静默脱节。
+    for key, item in index.items():
+        if item.get("env_inject") and ENV_INJECTED_KEYS.get(key) != item.get("env_key"):
+            raise RuntimeError(
+                f"[settings_registry] env_inject 与 app.config.ENV_INJECTED_KEYS 不一致，拒启: {key}；"
+                f"声明 env_key={item.get('env_key')!r}，注入清单={ENV_INJECTED_KEYS.get(key)!r}"
+            )
+    for key, env_name in ENV_INJECTED_KEYS.items():
+        item = index.get(key)
+        if item is None:
+            raise RuntimeError(
+                f"[settings_registry] ENV_INJECTED_KEYS 的 {key}={env_name} 在 registry 无对应项，拒启"
+            )
+        if not item.get("env_inject") or item.get("env_key") != env_name:
+            raise RuntimeError(
+                f"[settings_registry] ENV_INJECTED_KEYS 与 registry 声明不一致，拒启: {key}={env_name}；"
+                f"registry env_inject={bool(item.get('env_inject'))} env_key={item.get('env_key')!r}"
             )
     return index
 

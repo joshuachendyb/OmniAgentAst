@@ -434,6 +434,18 @@ def _get_dotted(data: Dict[str, Any], key: str, default: Any = None) -> Any:
     return _get_path(data, tuple(key.split(".")), default)
 
 
+_MISSING = object()  # 存在性判定哨兵：与任何合法配置值都不相等（含 None/False/0/''）
+
+
+def has_dotted(data: Dict[str, Any], key: str) -> bool:
+    """点号键在 data 中是否存在。
+
+    [75]BUG-C：设置页 source 原用 `raw_val is not None` 判存在性，但 _get_dotted 对缺键返回
+    registry default（非 None）→ 判据恒真 → 缺键也标 'yaml'。取值与存在性必须各用各的判据。
+    """
+    return _get_path(data, tuple(key.split(".")), _MISSING) is not _MISSING
+
+
 def _set_nested_path(data: Dict[str, Any], parts: Tuple[str, ...], value: Any) -> None:
     """路径段序列写入嵌套 dict；value 为 None 时删除该叶键并回收空父级
     （merge_region_patch 的 _set_dotted 与 merge_nested_patch 共用核心）。"""

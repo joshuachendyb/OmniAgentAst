@@ -10,17 +10,18 @@
 # 2026-09-02 小欧 - 注释热重载触发: get_config()每次必调_load_config()按mtime自动重读, 下一工具/LLM即生效免重启 - 小欧-2026-09-02
 # 2026-09-19 小欧 - exe打包frozen支持: 新增get_frozen_dir唯一源(DRY), _get_code_root frozen时改走exe所在目录 - 小欧-2026-09-19
 # 2026-09-21 小欧 - v4.20 单源收敛: _apply_env_overrides 的 AI_PROVIDER 注入由扁平 ai.provider 改为结构化 ai.model_ref.provider（唯一源）
-# 2026-09-21 小欧 - [59]B-3 修复: 配置路径单源化 — 顶层 get_config_path() 尊重 OMNIAGENT_CONFIG_PATH（设置页/模型服务此前走代码库根 config/config.yaml，
+# 2026-09-21 小欧 - 配置路径单源化 — 顶层 get_config_path() 尊重 OMNIAGENT_CONFIG_PATH（设置页/模型服务此前走代码库根 config/config.yaml，
 #   与 Config 实例 env 路径双源分裂，设置页改的不是实际运行配置）; Config._get_config_path 删除自身 env 分支改调顶层（DRY 唯一源）
-# 2026-09-21 小欧 - [59]B-11 修复: 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
+# 2026-09-21 小欧 - 新增 env_nonempty 公用判定（排除纯空白 env）；_apply_env_overrides 的 AI_PROVIDER/LOG_LEVEL
 #   与 settings_service is_env 统一改用（原 bool(os.getenv) 把 "   " 当有效覆盖，空白 provider/日志级别注入运行配置）
 # 2026-09-23 小欧 - trim配置化: get_max_rounds 改读 tuning.trim.max_rounds（自通用 agent.max_rounds 迁入调优·裁剪分块）
-# 2026-09-27 07:38 小欧 - 修 B5/B7: _apply_env_overrides 补 security.access_token / security.access_token_allowlist 两键注入。
-#   registry 声明了 env_key 但此处不注入 → 设置页显示 yaml 值、deps 按 env 优先用另一个值（准入判断错位）。
 # 2026-09-27 小欧 - ①新增 env_flag()：布尔型 env 统一按"假值列表"({空,0,false})判定，替代各处手搓的
 #   真值列表 in ("1","true","True")（语义相反且 TRUE/yes/on 会失效）。deps 的 OMNIAGENT_REQUIRE_AUTH
 #   故意未并入 —— 安全核心路径，改动风险大于 DRY 收益。②get_max_steps 源头归一 None/非数字/0，
 #   调用处不再各写兜底；归一复用 app.utils.type_utils.to_int_or（该模块无依赖，故本文件可安全 import）。
+# 2026-09-27 小欧 - security 段 env 注入的手写键名清单改为 ENV_INJECTED_KEYS 常量 +
+#   _inject_registry_env 统一遍历；与 registry.env_inject 的一致性由 _build_index 启动自检保证
+#   （原手写清单在同日键改名时漏改 → env 值注入旧键，页面读新键得 None，显示与生效脱节）
 
 import functools
 import os
@@ -47,9 +48,18 @@ def _make_safe_loader() -> type:
 
 
 def env_nonempty(name: str) -> bool:
-    """返回环境变量是否非空且非纯空白 — 2026-09-21 小欧 [59]B-11：env 覆盖语义统一单点"""
+    """返回环境变量是否非空且非纯空白 — 2026-09-21 小欧：env 覆盖语义统一单点"""
     v = os.environ.get(name)
     return bool(v and v.strip())
+
+
+# 需注入内存配置的 env 键（让页面显示值=实际生效值）。
+#   放本模块而非 registry：get_config() 在 app.logger 导入期间就被调用，本模块不能反向依赖
+#   app.services（否则 logger→config→services→db→logger 循环）。一致性由 registry 自检兜底。
+ENV_INJECTED_KEYS: Dict[str, str] = {
+    "security.access_token": "OMNIAGENT_ACCESS_TOKEN",
+    "security.access_token_allowlist": "OMNIAGENT_ACCESS_TOKEN_ALLOWLIST",
+}
 
 
 def env_flag(name: str, default: str = "0") -> bool:
@@ -116,7 +126,7 @@ class Config:
         self._config_mtime = config_path.stat().st_mtime
     
     def _get_config_path(self) -> Path:
-        """获取配置文件路径 — 2026-09-21 小欧 [59]B-3: 收敛掉自身 env 分支，统一走顶层 get_config_path(DRY 单源)"""
+        """获取配置文件路径 — 2026-09-21 小欧：收敛掉自身 env 分支，统一走顶层 get_config_path(DRY 单源)"""
         return Path(get_config_path())
     
     def _apply_env_overrides(self):
@@ -132,7 +142,7 @@ class Config:
                 provider_config['api_key'] = env_value
         
         # 2026-09-21 小欧 v4.20 单源收敛: AI_PROVIDER 注入结构化 ai.model_ref.provider（唯一源，删扁平 ai.provider）
-        # 2026-09-21 小欧 [59]B-11: env_nonempty 排除纯空白覆写
+        # 2026-09-21 小欧: env_nonempty 排除纯空白覆写
         _env_provider = os.getenv('AI_PROVIDER')
         if env_nonempty('AI_PROVIDER'):
             _ref = ai_config.get('model_ref')
@@ -146,16 +156,23 @@ class Config:
         if env_nonempty('LOG_LEVEL'):
             logging_config['level'] = os.getenv('LOG_LEVEL')
 
-        # 2026-09-27 小欧 - 修 B5/B7：补 security 两键注入。registry 声明了 env_key 但本函数此前不注入，
-        #   导致设置页显示 yaml 值、deps 按 env 优先用另一个值（准入判断错位）。注入后两侧一致。
-        security_config = self._config_data.get('security')
-        if not isinstance(security_config, dict):
-            security_config = {}
-            self._config_data['security'] = security_config
-        if env_nonempty('OMNIAGENT_ACCESS_TOKEN'):
-            security_config['api_token'] = os.getenv('OMNIAGENT_ACCESS_TOKEN')
-        if env_nonempty('OMNIAGENT_ACCESS_TOKEN_ALLOWLIST'):
-            security_config['ip_allowlist'] = os.getenv('OMNIAGENT_ACCESS_TOKEN_ALLOWLIST')
+        # security 段注入改为按 ENV_INJECTED_KEYS 驱动（键名不再散落两处）
+        self._inject_registry_env()
+
+    def _inject_registry_env(self) -> None:
+        """按 ENV_INJECTED_KEYS 注入 env 值。漏改键名时由 registry 启动自检拒启，不会静默脱节。"""
+        for key, env_name in ENV_INJECTED_KEYS.items():
+            if not env_nonempty(env_name):
+                continue
+            parts = key.split(".")
+            node = self._config_data
+            for part in parts[:-1]:
+                child = node.get(part)
+                if not isinstance(child, dict):
+                    child = {}
+                    node[part] = child
+                node = child
+            node[parts[-1]] = os.getenv(env_name)
     
     def get(self, key: str, default: Any = None) -> Any:
         """
@@ -310,7 +327,7 @@ def get_code_root() -> str:
 
 def get_config_path(filename: str = "config.yaml") -> str:
     """统一配置路径获取 — 尊重 OMNIAGENT_CONFIG_PATH(环境变量指定则用之)，否则代码库根 config 目录
-    — 小欧 2026-08-10 ④内部改调; 2026-09-21 小欧 [59]B-3 补 env 分支(与 Config 实例单源一致)"""
+    — 小欧 2026-08-10 ④内部改调; 2026-09-21 小欧 补 env 分支(与 Config 实例单源一致)"""
     env_path = os.getenv('OMNIAGENT_CONFIG_PATH')
     if env_path:
         return str(Path(env_path))
