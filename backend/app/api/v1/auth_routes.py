@@ -72,7 +72,8 @@ async def get_token_status() -> Dict[str, Any]:
     current = _resolve_configured_token()
     return {
         "configured": bool(current),
-        # 与 mask_secret_value 同构，供前端统一渲染（虽然不返 prefix/suffix，只用 configured）
+        # masked 键内是与 provider api_key **同形**的 {configured, masked} 两键对象（掩码规则同一权威）；
+        # 外层 configured 是给设置页直接用的布尔，省得前端再解一层
         "masked": mask_secret_value(current),
         "config_key": API_TOKEN_CONFIG_KEY,
         "env_name": API_TOKEN_ENV,
