@@ -1,18 +1,14 @@
 // 编辑历史: 2026-09-20 小强 - 新建：单行渲染（控件↔schema.type↔antd；secret 三态/只读复制/env 只读）
-// 2026-09-21 小欧/小强 - 复制成功提示走 showSuccess（等剪贴板结果再提示，不假"已复制"）；
-//   宽度/间距改 settingsControl、Spacing 令牌；加 data-settings-key 锚点、窄屏换行
-// 2026-09-22 小欧 - int/float 加 precision/step/min-max 与范围提示；行与 label 复用 settingsRowStyle 令牌
-// 2026-09-23 小欧 - notice 移到输入框上方；新增 url 类型（宽框，textarea 会按行拆 list 破坏逗号契约）
-// 2026-09-26 小欧 - secret 的"清空/确定"改走 provider 通道（settings 写路径已显式拒绝 secret），
-//   单一写入口避免分叉；空串按 provider 三态当"不修改"，不擦原值
-// 2026-09-26 小欧 - 修 3 个真 bug：①写成功后不再 onChange(undefined)（那是置脏不是刷新，会让整组保存
-//   失败连累用户其它改动）→ 改走 onRefresh 重新 load；②清空从未真正发出（联合类型把清空意图吃掉，
-//   后端判无变更仍返回 ok = 假成功）→ 按后端契约显式发 {clear:true}，writeSecret 收窄为只管非空值；
-//   ③空串"确定"改本地收工不发请求（原来后端什么都不改却回 ok）
-// 2026-09-27 小欧 - 掩码纯回显：masked 由后端生成，前端不再对字符串取末 4 位（那等于在前端重算掩码）
-// 2026-09-27 07:38 小欧 - 修 F2/F11 同源两处：①三处 InputNumber onChange 补 null 守卫（清空回 null
-//   会让 validate 判"不能为空"→ saveKeys 提前 return → 整批其它改动全丢），与 ProviderConfig 同款写法；
-//   ②值是裸字符串时只判"是否已配置"、不显示任何内容，保住"已配置"标识（否则用户误以为密钥丢失而重输覆盖）
+// 2026-09-21 小欧/小强 - 复制成功提示走 showSuccess（等剪贴板结果再提示）；宽度/间距改 design token
+// 2026-09-22 小欧 - int/float 加 precision/step/min-max 与范围提示
+// 2026-09-23 小欧 - notice 移到输入框上方；新增 url 类型（宽框，textarea 会按行拆 list）
+// 2026-09-26 小欧 - secret 写/清空改走各自专用通道（settings 写路径拒绝 secret）；空串当"不修改"，
+//   本地收工不发请求（原会提交 undefined → 后端零改动却回 ok = 假成功）；写成功改走 onRefresh，
+//   不碰 onChange（那是通用通道 setter，调用会置脏 → 保存本组时 secret 键被拒 → 整组失败）
+// 2026-09-27 小欧 - 掩码纯回显（由后端生成，前端不重算）；InputNumber onChange 补 null 守卫
+// 2026-09-27 小欧 - [75]5.3 连带：① writeSecret 的 provider 分支补"保存 API Key 失败："上下文，
+//   auth 分支不加前缀（setToken 错误已自述"已存服务端、浏览器没记住"）—— 原统一加"保存失败："
+//   会与之自相矛盾；② 全文件注释精简为技术表述（判据与后果保留，推导与叙事删除）
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -35,39 +31,56 @@ import { modelApi } from '@/services/api/model.api';
 // 2026-09-26 小欧 - [72]第九章: security.access_token 走 auth 专用通道（settings 通道拒写 secret）
 import { authApi } from '@/services/api/settings.api';
 
-/** [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项的 key → 所属 provider 名（非 provider secret 返回空串）。
- *  key 形状为 `ai.{provider}.{field}`（provider 通道按 ai 区域嵌套写，见 settings_registry:152-154），
- *  故取第 2 段即 provider 名。非 `ai.` 前缀的 secret 项（如 [72]第九章的 `security.access_token`）
- *  不走 provider 通道，返回空串。 */
+/** secret 项 key → 所属 provider 名；非 ai.* 前缀返回空串（该类走各自专用通道）。
+ *  key 形状 ai.{provider}.{field}，取第 2 段。 */
 function secretProviderName(key: string): string {
   const parts = key.split('.');
   return parts.length >= 3 && parts[0] === 'ai' ? parts[1] : '';
 }
 
-/** [72]第九章 - 小欧 - 2026-09-26: 按 secret 项的 key 分流到各自的**唯一权威写通道**。
- *  - `ai.{provider}.api_key` → provider 通道（modelApi.updateProvider，[72]第三章三态）
- *  - `security.access_token`     → auth 专用通道（authApi.setToken，[72]第九章）
- *  两类 secret 项的写路径**都**被 settings 通用通道显式拒绝（[72]第六章方案 B），
- *  故此处必须按 key 分派，绝不能把 api_token 发到 provider 通道（会打错端点）。
- *
- *  2026-09-26 - 小欧 - [72]三堂会审后修正(签名收敛 + YAGNI): value 收窄为 `string`（必非空），
- *  且**「清空」不再经本函数** —— 清空是"显式写空串"的独立语义，与"设置一个值"挤在一个联合类型里
- *  必然出岔子（已实际出错: clear 意图在类型转换里被吃掉，详见清空按钮处注释）。
- *  现本函数只负责"设置/修改一个非空密钥值"这一件事（SRP），清空按钮直接调
- *  modelApi.updateProvider(name, { clear: true })。
+/** 按 secret 项 key 分流到唯一权威写通道（settings 通用通道显式拒绝写 secret，[72]第六章方案 B）。
+ *  - ai.{provider}.api_key → modelApi.updateProvider
+ *  - security.access_token  → authApi.setToken
+ *  value 收窄为非空 string：「清空」是显式 clear 语义，不走本函数（否则 clear 意图会在类型转换中被吃掉）。
+ *  [75] 两条通道的错误上下文各自在产生处补齐，本函数不统一包前缀。
  */
+/** provider 通道的实际写调用；单测可替换以注入失败（默认走真实实现）。 */
+export let providerWrite = (
+  provider: string,
+  payload: { api_key: string } | { clear: true }
+): Promise<unknown> => modelApi.updateProvider(provider, payload);
+
 const writeSecret = async (key: string, value: string): Promise<void> => {
   if (key.startsWith('ai.') && key.endsWith('.api_key')) {
-    await modelApi.updateProvider(secretProviderName(key), { api_key: value });
+    try {
+      await providerWrite(secretProviderName(key), { api_key: value });
+    } catch (e) {
+      // provider 通道抛的是 HTTP/网络原文，无业务上下文
+      throw new Error(
+        `保存 API Key 失败：${e instanceof Error ? e.message : String(e)}`
+      );
+    }
     return;
   }
   if (key === 'security.access_token') {
-    // [72]第九章: 口令走 auth 专用端点（后端拒空口令，此处传值必非空）
+    // [75]5.3/5.5 连锁：setToken 的错误信息已自述结论（"服务端已保存、浏览器没记住"），
+    // 此处不包前缀，否则上层统一加"保存失败："会与之自相矛盾
     await authApi.setToken(value);
     return;
   }
   throw new Error(`未登记的 secret 项写通道: ${key}`);
 };
+
+/** 单测专用：替换 provider 写入口以注入失败；传 undefined 恢复默认。 */
+export function __setProviderWrite(
+  fn?: (
+    p: string,
+    payload: { api_key: string } | { clear: true }
+  ) => Promise<unknown>
+): void {
+  providerWrite =
+    fn ?? ((provider, payload) => modelApi.updateProvider(provider, payload));
+}
 
 interface Props {
   item: SettingSchemaItem;
@@ -77,16 +90,11 @@ interface Props {
   highlight: boolean;
   onChange: (value: unknown) => void;
   /**
-   * 重新拉取设置数据（secret 项走专用通道落盘后，用它刷新该行显示）。
+   * 重新拉取设置数据（secret 走专用通道落盘后刷新该行显示）。
    *
-   * 2026-09-26 - 小欧 - [72]三堂会审后修正（修一个真 bug）: 原 secret 的「确定」「清空」成功后调
-   *   `onChange(undefined)` 注释写"交回上层刷新该行" —— 但 onChange 是 **settings 通用通道的 setter**
-   *   (useSettings.setValue)，不是刷新函数。它做的事是: values[group][key]=undefined 且
-   *   `baseline[group][key] === undefined` 不成立 → **dirtyKeys[key]=true（把该行标记为脏）**。
-   *   后果（用户可感知的功能损坏）: 用户改完 api_key 点"确定"成功 → 该行已脏 → 接着改任意别的设置 →
-   *   点"保存本组" → saveGroup 把这个 secret 键一并提交 → 而 secret 项已被 [72]第六章在 settings
-   *   写路径**显式拒绝** → **整组保存失败，用户的其它修改全部丢失**。即"改 A 坏 B"。
-   *   故 secret 走专用通道后**一律不碰 onChange**，改走本 onRefresh 重新 load()。
+   * secret 一律不碰 onChange —— 它是 settings 通用通道的 setter，调用会把该行标脏，
+   * 随后"保存本组"会把 secret 键一并提交，而 settings 写路径显式拒绝 secret（[72]第六章）
+   * → 整组保存失败、用户的其它修改全部丢失。
    */
   onRefresh?: () => void;
 }
@@ -128,11 +136,8 @@ export const SettingRow: React.FC<Props> = ({
       );
     }
     if (item.secret) {
-      // 2026-09-27 - 小欧 - 纯回显：掩码串由后端 mask_secret_value 生成，前端不判断档位、不拼星号、
-      //   不对字符串取末 4 位（那等于在前端重算掩码，且会把明文尾巴显示出来）。
-      //   值是裸字符串（非 {configured,masked}）时只判"是否已配置"、不显示任何内容：
-      //   该形态不该出现（secret 走 provider 通道后由 onRefresh 重拉掩码），但真出现时也要保住
-      //   "已配置"标识，否则用户会误以为密钥丢失而重新输入覆盖。
+      // 纯回显：掩码串由后端生成，前端不判断档位、不拼星号、不取末 4 位（等于在前端重算掩码）
+      // 值为裸字符串时只判是否已配置、显示为空：保住"已配置"标识，避免用户误以为密钥丢失而重输覆盖
       const cfg =
         typeof value === 'string'
           ? value.length > 0
@@ -170,13 +175,9 @@ export const SettingRow: React.FC<Props> = ({
             type="primary"
             size="small"
             onClick={() => {
-              // [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项「确定」(设置新值)同样走 provider 通道。
-              //   空串按 provider 通道三态语义处理为"不修改"（后端 skip 不写），不会擦除原值
-              //   —— 这正是第三章三态修复的价值：留空不再等于擦除。
-              // 2026-09-26 - 小欧 - [72]三堂会审后修正: 空串**不再白白发一次请求**。
-              //   原逻辑把空串也当"设置"提交 → provider 通道收到 api_key: undefined → 后端什么都不改
-              //   却仍返回 ok，用户看到"成功"实际零变化（假成功），且白白占用一次网络往返。
-              //   空串的真实语义是"不改"，那就**本地直接收工**，不发请求。
+              // secret「确定」走 provider 通道。空串按三态语义当"不修改"（后端 skip 不写），不擦原值
+              // 空串本地直接收工、不发请求：原逻辑把它当"设置"提交 → provider 收到 undefined → 后端零改动
+              // 却回 ok（假成功），且白占一次往返
               const input = secretInput.trim();
               if (input === '') {
                 setSecretInput('');
@@ -190,30 +191,26 @@ export const SettingRow: React.FC<Props> = ({
                   setEditingSecret(false);
                 })
                 .catch((e) => {
+                  // 前缀由各写通道在产生处补齐（writeSecret 的 provider 分支已补），
+                  // 此处直接呈现完整结论
                   showMessage(
                     ErrorType.NETWORK_ERROR,
-                    `保存失败：${e instanceof Error ? e.message : String(e)}`
+                    e instanceof Error ? e.message : String(e)
                   );
                 });
             }}
           >
             确定
           </Button>
-          {/* [72]第六章(6.5) - 小欧 - 2026-09-26: secret 项的「清空」改走各自唯一权威写通道
-              （ai.*.api_key → provider 通道；security.access_token → auth 通道），不再经 onChange → settings 通用通道。
-              理由（方案 B）：secret 三态只在专用通道实现；[72]第六章已让 settings 写路径对 secret 项
-              **显式拒绝**，若此处仍走 settings 通道，用户一点清空就会拿到"该敏感项不支持经 /settings 写入"的报错。
-              两类 secret 项的写路径各自保持单一权威，杜绝同一 key 两个写入口产生分叉。 */}
-          {/* 2026-09-26 - 小沈(三遍复核) - 修 A07 遗留死代码：上一版用 hidden={...} 隐藏按钮，
-              却把 showMessage 警告留在 onClick 里 —— 按钮不渲染，onClick 永不触发，那段代码是纯死代码
-              （留着即"看不见的逻辑"，后人误以为点得到）。改为**条件渲染**：不渲染就真不渲染，
-              警告文案改挂到 notice 区之外的用户可见入口（本项 notice 已含关闭鉴权的正确路径说明）。 */}
+          {/* secret 的「清空」走各自专用通道（api_key→provider、access_token→auth），
+              理由见 writeSecret docstring。access_token 无「清空」语义：后端拒空口令，
+              关闭鉴权走 OMNIAGENT_REQUIRE_AUTH=0（见本项 notice）。 */}
           {item.key !== 'security.access_token' && (
             <Button
               size="small"
               onClick={() => {
                 // 清空=擦除已保存密钥，走 provider 通道的 { clear: true } 显式契约
-                // （writeSecret 只接受 string 语义，清空意图在类型转换里会被吃掉，见本文件上方注释）。
+                // （writeSecret 只管非空值，清空意图在类型转换里会被吃掉）
                 void modelApi
                   .updateProvider(secretProviderName(item.key), { clear: true })
                   .then(() => {
