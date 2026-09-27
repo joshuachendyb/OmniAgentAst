@@ -122,9 +122,12 @@
 
 | 导出名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `API_BASE_URL` | API 基址（VITE_API_BASE_URL 或 /api/v1） | — | string |
-| `getApiBaseUrl` | API 基址解析（环境变量→window→127.0.0.1:8000 兜底） | 无 | string |
-| `getAccessToken` | 访问 token 读取 | 无 | string\|null |
+| `AUTH_STORAGE_KEY` | 访问口令的 localStorage 键名（`omniagent_auth`） | — | string |
+| `API_BASE_URL` | API 基址（`VITE_API_BASE_URL` 或相对路径 `/api/v1`），供 ChatPage 的 SSE fetch 使用 | — | string |
+| `getApiBaseUrl` | API 基址解析：`VITE_API_BASE_URL` 或空串（同源相对路径，由 Vite proxy / Nginx 反代转发） | 无 | string |
+| `getAccessToken` | 访问口令读取（认 `{state:{accessToken}}` 与裸 `{accessToken}`） | 无 | string\|null |
+| `setAccessToken` | 访问口令写入（保留 persist 包络其余字段）；**写失败抛错**，调用方须处理 | string\|null | void |
+| `ApiRequestConfig` | 请求级开关：`_skip401`（本请求 401 不清 token 不跳登录）、`_skipAuth`（本请求不附带 Authorization） | — | 接口 |
 
 ### 2.2 设置 API 簿（settings.api.ts）
 
