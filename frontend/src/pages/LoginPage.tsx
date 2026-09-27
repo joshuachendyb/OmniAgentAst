@@ -2,11 +2,11 @@
  * 登录页 — 输入访问口令（token）
  *
  * 编辑历史:
- *   2026-09-26 小欧 - [72]第九章 新建
- *   2026-09-27 小欧 - [75]5.4 按 4.2.3 状态机重写：状态 1 个扩成 5 个、入口查询不带旧口令
+ *   2026-09-26 小欧 - 新建
+ *   2026-09-27 小欧 - 按五状态状态机重写：状态 1 个扩成 5 个、入口查询不带旧口令
  *     （_skipAuth）、/auth/status 兼作验真探针（替代 /models）、can_set=false 不给输入框、
  *     403 透传后端原话、首设失败专属文案
- *   2026-09-27 小欧 - [75]实施后十轮会审修 3 处：① handleSubmit 增并发守卫（回车不受 Button
+ *   2026-09-27 小欧 - 实施后十轮会审修 3 处：① handleSubmit 增并发守卫（回车不受 Button
  *     loading 约束，连按会重复提交）；② 口令输入框验证中 disabled（避免界面显示值与实际提交值
  *     不一致）；③ 首设提交前复查后端状态（进页结论可能已过期，直接 setToken 会静默覆盖他人刚设的口令）
  *
@@ -23,12 +23,12 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input } from 'antd';
 import { getAccessToken, setAccessToken } from '@/services/api/client';
-// 2026-09-26 小欧 - [72]第九章: 统一提示规范（禁 message.*，走 error/handler）
+// 2026-09-26 小欧 - 统一提示规范（禁 message.*，走 error/handler）
 import { ErrorType, showMessage } from '@/services/error/handler';
-// 2026-09-26 小欧 - [72]第九章(9.5.3 第1步): 首次设置/查状态走 authApi
+// 2026-09-26 小欧 - 首次设置/查状态走 authApi
 import { authApi } from '@/services/api/settings.api';
 
-/** 2026-09-27 小欧 - [75]第5章 5.4：4.2.3 状态机的五个状态（按后端结论分流，前端不猜来源） */
+/** 2026-09-27 小欧 - 五个状态（按后端结论分流，前端不猜来源） */
 type AuthView =
   | { kind: 'checking' } // 入口查询进行中（结论未到不显示输入框）
   | { kind: 'noAuthNeeded' } // requires_auth=false → 直接进主页
@@ -36,7 +36,7 @@ type AuthView =
   | { kind: 'firstSetupElsewhere'; reason: BlockedReason } // 未配置 + 不可设 → 只给指引
   | { kind: 'login' }; // 已配置（或查状态失败兜底）→ 登录框，status 当探针验真
 
-/** [75]BUG-B：不可设口令的原因，决定指引怎么写。null=可设。 */
+/** 不可设口令的原因，决定指引怎么写。null=可设。 */
 type BlockedReason = 'not_local' | 'proxy_untrusted' | null;
 
 /** 提示框样式，三处警示文案共用（DRY）。 */
@@ -185,7 +185,7 @@ const LoginPage: React.FC = () => {
 
       {view.kind === 'firstSetupElsewhere' &&
         (view.reason === 'proxy_untrusted' ? (
-          // [75]BUG-B：* 部署下"去本机设置"是死路（照样 403），必须换成 env 变量出路
+          // FORWARDED_ALLOW_IPS=* 部署下"去本机设置"是死路（照样 403），必须换成 env 变量出路
           <div style={WARN_BOX}>
             <strong>服务端尚未配置访问口令</strong>
             <br />
@@ -253,7 +253,7 @@ const LoginPage: React.FC = () => {
 
 export default LoginPage;
 
-/** 2026-09-27 小欧 - [75]第5章 5.4：axios 错误对象里取 HTTP 状态码（axios 内部路径不稳定，不直接摸） */
+/** 2026-09-27 小欧 - axios 错误对象里取 HTTP 状态码（axios 内部路径不稳定，不直接摸） */
 function statusOf(e: unknown): number | undefined {
   return (e as { response?: { status?: number } } | null)?.response?.status;
 }

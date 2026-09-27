@@ -6,7 +6,7 @@
 //   本地收工不发请求（原会提交 undefined → 后端零改动却回 ok = 假成功）；写成功改走 onRefresh，
 //   不碰 onChange（那是通用通道 setter，调用会置脏 → 保存本组时 secret 键被拒 → 整组失败）
 // 2026-09-27 小欧 - 掩码纯回显（由后端生成，前端不重算）；InputNumber onChange 补 null 守卫
-// 2026-09-27 小欧 - [75]BUG-D/F：两处 catch 改用公用 classifyError（403→AUTH_403，原硬编码
+// 2026-09-27 小欧 - 两处 catch 改用公用 classifyError（403→AUTH_403，原硬编码
 //   NETWORK_ERROR 把"权限不够"说成"网络错误"）+ extractErrorMessage（取后端 detail，
 //   原 e.message 是 axios 的英文 "Request failed with status code 4xx"）；writeSecret 去掉
 //   自包前缀，错误文案统一在调用处给出
@@ -33,9 +33,9 @@ import {
   ErrorType,
 } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
-// 2026-09-26 小欧 - [72]第六章(6.5): secret 项的清空改走 provider 通道，需 modelApi
+// 2026-09-26 小欧 - secret 项的清空改走 provider 通道，需 modelApi
 import { modelApi } from '@/services/api/model.api';
-// 2026-09-26 小欧 - [72]第九章: security.access_token 走 auth 专用通道（settings 通道拒写 secret）
+// 2026-09-26 小欧 - security.access_token 走 auth 专用通道（settings 通道拒写 secret）
 import { authApi } from '@/services/api/settings.api';
 
 /** secret 项 key → 所属 provider 名；非 ai.* 前缀返回空串（该类走各自专用通道）。
@@ -45,11 +45,11 @@ function secretProviderName(key: string): string {
   return parts.length >= 3 && parts[0] === 'ai' ? parts[1] : '';
 }
 
-/** 按 secret 项 key 分流到唯一权威写通道（settings 通用通道显式拒绝写 secret，[72]第六章方案 B）。
+/** 按 secret 项 key 分流到唯一权威写通道（settings 通用通道显式拒绝写 secret）。
  *  - ai.{provider}.api_key → modelApi.updateProvider
  *  - security.access_token  → authApi.setToken
  *  value 收窄为非空 string：「清空」是显式 clear 语义，不走本函数（否则 clear 意图会在类型转换中被吃掉）。
- *  错误文案与类型不在此包装，统一由调用处 classifyError + extractErrorMessage 给出（[75]BUG-D）。
+ *  错误文案与类型不在此包装，统一由调用处 classifyError + extractErrorMessage 给出。
  */
 /** provider 通道的实际写调用；单测可替换以注入失败（默认走真实实现）。 */
 export let providerWrite = (
@@ -91,7 +91,7 @@ interface Props {
    * 重新拉取设置数据（secret 走专用通道落盘后刷新该行显示）。
    *
    * secret 一律不碰 onChange —— 它是 settings 通用通道的 setter，调用会把该行标脏，
-   * 随后"保存本组"会把 secret 键一并提交，而 settings 写路径显式拒绝 secret（[72]第六章）
+   * 随后"保存本组"会把 secret 键一并提交，而 settings 写路径显式拒绝 secret
    * → 整组保存失败、用户的其它修改全部丢失。
    */
   onRefresh?: () => void;
@@ -189,7 +189,7 @@ export const SettingRow: React.FC<Props> = ({
                   setEditingSecret(false);
                 })
                 .catch((e) => {
-                  // [75]BUG-D/F：类型与文案统一走公用函数，后端 detail 不再被丢弃
+                  // 类型与文案统一走公用函数，后端 detail 不再被丢弃
                   showMessage(
                     classifyError(e),
                     extractErrorMessage(e) ?? '保存失败'

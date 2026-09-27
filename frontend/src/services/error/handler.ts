@@ -10,9 +10,9 @@
 //   回退该 errorType 的固定中文文案；console 仍留完整报文
 // 2026-09-09 小欧 - extractErrorMessage 入参改 Record<string, unknown>（消除 any 与裸断言）
 // 2026-09-20 小强 - 新增设置/模型域三错误类型与固定文案
-// 2026-09-21 小欧 - [59]F-13 去重键由 errorType 改为 errorType+最终文案（同类不同因不再互相吞）
-// 2026-09-27 小欧 - [72]ERROR_CONFIG_MAP 直接索引无 fallback 致白屏，收敛为唯一兜底口 getErrorConfig()；
-//   [75]5.6 AUTH_401 文案由「API Key无效」改「访问口令无效」（张冠李戴）；AUTH_403 改兜底措辞
+// 2026-09-21 小欧 - 去重键由 errorType 改为 errorType+最终文案（同类不同因不再互相吞）
+// 2026-09-27 小欧 - ERROR_CONFIG_MAP 直接索引无 fallback 致白屏，收敛为唯一兜底口 getErrorConfig()；
+//   AUTH_401 文案由「API Key无效」改「访问口令无效」（张冠李戴）；AUTH_403 改兜底措辞
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
@@ -112,7 +112,7 @@ export enum ErrorType {
   COMPONENT_UNMOUNTED = 'component_unmounted',
 
   // Settings 页面错误。CONFIG_ERROR 对应后端 resolver 的 ProviderKeyMissingError
-  // （error_type="config_error"，[72]2.5）；现仅走对话流渲染层，此处补同义项防将来改走 toast 时无配置。
+  // （error_type="config_error"）；现仅走对话流渲染层，此处补同义项防将来改走 toast 时无配置。
   CONFIG_ERROR = 'config_error',
   PROVIDER_CONFIG_ERROR = 'provider_config_error',
   MODEL_CONFIG_ERROR = 'model_config_error',
@@ -244,7 +244,7 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
-    // [75]5.6：原文案「API Key无效」是张冠李戴 —— 访问令牌与 provider 的 API Key 无关，
+    // 原文案「API Key无效」是张冠李戴 —— 访问令牌与 provider 的 API Key 无关，
     // 用户输错访问口令却被指去检查 LLM 服务商密钥配置，方向完全错误
     message: '访问口令无效，请重新输入',
     severity: 'critical',
@@ -253,7 +253,7 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     retryable: false,
     maxRetries: 0,
     retryDelay: 0,
-    // [75]5.6：改为兜底措辞。403 的精确引导来自后端 detail（如「只能在服务端本机进行」），
+    // 改为兜底措辞。403 的精确引导来自后端 detail（如「只能在服务端本机进行」），
     // 调用方优先透传原话，本条仅在后端未给文案时兜底
     message: '此操作不被允许，请按提示处理',
     severity: 'critical',
@@ -754,7 +754,7 @@ export function isSilentError(error: unknown): boolean {
 // 直上弹窗用户无法理解，返回 undefined 让 showMessage 回退该 errorType 的固定文案。
 // 完整报文仍走 console，调试信息不丢。
 //
-// 已知边界（[75]会审）：过滤不区分来源，后端 detail 本身为纯数字时（如 "0"）精确信息同样被丢弃。
+// 已知边界：过滤不区分来源，后端 detail 本身为纯数字时（如 "0"）精确信息同样被丢弃。
 // 代码层无信号可区分噪声与有效值，根治方式为后端 detail 不返回裸数字。
 const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   if (typeof raw !== 'string') return undefined;
@@ -785,7 +785,7 @@ export function showMessage(
   const displayMessage =
     sanitizeDisplayMessage(customMessage) || config.message;
 
-  // [59]F-13 修复: 去重检查移到文案定稿后, 键=类型+文案(原仅类型, 会吞掉同类型不同原因)
+  // 修复: 去重检查移到文案定稿后, 键=类型+文案(原仅类型, 会吞掉同类型不同原因)
   if (!shouldShowError(`${errorType}:${displayMessage ?? ''}`)) {
     return;
   }
@@ -839,9 +839,9 @@ export function showSuccess(msg: string = '操作成功'): void {
   });
 }
 
-// 2026-08-28 小欧 修复review-bugs#1: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
+// 2026-08-28 小欧 修复: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
 // 2026-08-28 小沈 修复优先级: response.data.detail/message优先于e.message(后端精确文案优先), 数组detail用JSON.stringify
-// 2026-09-27 小欧 [75]BUG-D 根因修复：改为 export。调用方（如 SettingRow）此前直接取 e.message，
+// 2026-09-27 小欧 根因修复：改为 export。调用方（如 SettingRow）此前直接取 e.message，
 //   拿到的是 axios 造的英文 "Request failed with status code 403"，后端 detail 被丢弃。
 export function extractErrorMessage(error: unknown): string | undefined {
   if (typeof error === 'string') return error;

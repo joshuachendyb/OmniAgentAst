@@ -1,10 +1,10 @@
 // 编辑历史: 2026-09-20 小强 - 新建：设置页 API（getSchema/getAll/getGroup/updateSettings）
-// 2026-09-21 小欧 - [59]B-10：SettingSource 增加 'default'（后端缺省键与显式落盘区分）
+// 2026-09-21 小欧 - SettingSource 增加 'default'（后端缺省键与显式落盘区分）
 // 2026-09-23 小欧 - type 联合加 'url'（SettingRow 走 baseUrlWidth）
-// 2026-09-26 小欧 - [72]第九章：新增 authApi（口令唯一权威写通道，settings 通道拒写 secret）
-// 2026-09-27 小欧 - [75]5.3：getTokenStatus 返回类型同步后端（删 3 个死字段、补 2 个按来源结论）、
+// 2026-09-26 小欧 - 新增 authApi（口令唯一权威写通道，settings 通道拒写 secret）
+// 2026-09-27 小欧 - getTokenStatus 返回类型同步后端（删 3 个死字段、补 2 个按来源结论）、
 //   增 config 参数区分入口查询（_skipAuth）与验真查询、_skip401 恒真（config 在前 AUTH_REQ 在后）、
-//   setToken 包 try/catch 区分"服务端已保存、浏览器没记住"（5.5 落地后生效）
+//   setToken 包 try/catch 区分"服务端已保存、浏览器没记住"
 import api from './client';
 import type { ApiRequestConfig } from './client';
 // 2026-09-26 小欧 - 修 C04: 改口令成功后需同步内存 token，否则下一请求带旧口令被 401 踢出 — 小欧-2026-09-26
@@ -15,18 +15,18 @@ const AUTH_REQ: ApiRequestConfig = { _skip401: true };
 
 /**
  * 访问口令（token）读写 —— 唯一权威写入口。
- * security.access_token 是 registry 的 secret 项，settings 通用通道显式拒绝写 secret
- * （[72]第六章方案 B），故独立于 settingsApi（与 provider 通道同构，避免同 key 两个写入口）。
- * 豁免判定全在 deps（[75]5.1）：GET status 不带口令即放行、带口令照常验真；POST /auth/token 本机即放行。
+ * security.access_token 是 registry 的 secret 项，settings 通用通道显式拒绝写 secret，
+ * 故独立于 settingsApi（与 provider 通道同构，避免同 key 两个写入口）。
+ * 豁免判定全在 deps：GET status 不带口令即放行、带口令照常验真；POST /auth/token 本机即放行。
  */
 export const authApi = {
   /**
    * 查状态（永不回明文），返回四个字段：
    *   access_token_configured      全局：是否已设口令 → 分流"登录"与"首次设置"
    *   can_set_access_token         本来源：能否设口令 → 分流"填了即设置"与"去本机设"
-   *   set_token_blocked_reason     [75]BUG-B 被拒原因：'not_local' | 'proxy_untrusted' | null
+   *   set_token_blocked_reason     被拒原因：'not_local' | 'proxy_untrusted' | null
    *   current_client_requires_auth 本来源：是否需要口令 → 免口令来源不误显示登录框
-   * [75]5.3：masked/config_key/env_name 已随后端删除（YAGNI），两个按来源的结论为新增。
+   * masked/config_key/env_name 已随后端删除（无人消费），两个按来源的结论为新增。
    */
   getTokenStatus: async (
     config?: ApiRequestConfig
@@ -36,9 +36,9 @@ export const authApi = {
     set_token_blocked_reason: 'not_local' | 'proxy_untrusted' | null;
     current_client_requires_auth: boolean;
   }> => {
-    // 两种调法（[75]4.2.3）：
+    // 两种调法：
     //   ① 入口查询 config={_skipAuth:true} 不带旧口令 → 后端豁免必中 → 200 拿结论分流
-    //      （带旧口令会把引导查询打成 401/403，即错 8）
+    //      （带旧口令会把引导查询打成 401/403）
     //   ② 验真查询 不传 config → 默认带当前口令 → 200 有效 / 401 无效
     // 展开顺序 config 在前、AUTH_REQ 在后：保证 _skip401 恒为 true，
     // 否则调用方误传 _skip401:false 会触发拦截器跳登录 → 无限重载
@@ -58,7 +58,7 @@ export const authApi = {
     try {
       setAccessToken(token); // 同步内存 token：否则下一请求带旧口令 → 401 → 被踢回登录页
     } catch (e) {
-      // [75]5.3/5.5 连锁：5.5 让 setAccessToken 写失败抛错，而此刻服务端已保存成功。
+      // setAccessToken 写失败会抛错，而此刻服务端已保存成功。
       // 错误信息须自述"已存服务端、浏览器没记住"，否则调用方误判未保存而反复重试
       throw new Error(
         `口令已保存到服务端，但浏览器记住失败：${e instanceof Error ? e.message : String(e)}`
