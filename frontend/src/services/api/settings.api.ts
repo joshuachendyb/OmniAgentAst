@@ -2,6 +2,12 @@
 // 2026-09-21 小欧 - [59]B-10 同步：SettingSource 增加 'default'（后端缺省键 source='default'，与显式落盘 yaml 区分）
 // 2026-09-23 小欧 - type 联合加 'url'：cors_origins 单行宽框类型（SettingRow case 'url' 走 baseUrlWidth，与 base_url 同款）- 小欧-2026-09-23
 // 2026-09-26 小欧 - [72]第九章: 新增 authApi（访问口令设置，唯一权威写通道；settings 通用通道拒绝写 secret 项）— 小欧-2026-09-26
+// 2026-09-27 小欧 - [75]5.3：① getTokenStatus 返回类型同步后端（删 masked/config_key/env_name，补两个
+//   按来源的结论）；② getTokenStatus 增可选 config 参数，入口查询传 { _skipAuth: true } 不带旧口令
+//   （旧口令作废时会把引导查询打成 401/403），验真查询不传、默认带当前口令，两种调法均保留 _skip401；
+//   ③ 修两处与实现不符的注释（模块头"未配置口令时放行"、方法注释"只回 configured"）；
+//   ④ setToken 内 setAccessToken 包 try/catch —— 5.5 让写失败抛错，而此刻服务端已保存成功，
+//   文案须区分"已保存到服务端、浏览器没记住"，否则调用方误以为没保存而反复重试。
 import api from './client';
 import type { ApiRequestConfig } from './client';
 // 2026-09-26 小欧 - 修 C04: 改口令成功后需同步内存 token，否则下一请求带旧口令被 401 踢出 — 小欧-2026-09-26
@@ -16,26 +22,32 @@ const AUTH_REQ: ApiRequestConfig = { _skip401: true };
  * 为何独立于 settingsApi：`security.access_token` 是 registry 的 secret 项，settings 通用通道
  * **显式拒绝**写 secret（[72]第六章方案 B），故口令有且仅有这条专用写路径
  * （与 provider 通道 modelApi.updateProvider 同构：单一权威写入口，避免同一 key 两个写入口分叉）。
- * 首次设置豁免由后端处理（未配置口令时该端点放行，否则"没口令就永远设不了"死锁）。
+ * 豁免全在 deps（[75]5.1）：GET status 不带口令即放行（带口令照常验真，兼作登录页探针）；
+ * POST /auth/token 本机即放行 —— 否则"没口令就永远设不了"死锁。
  */
 export const authApi = {
   /**
-   * 查是否已配置（**永不回明文**）。返回 4 个字段：
-   *   access_token_configured  访问口令是否已配置（前端实际只用这一个）
-   *   masked      掩码 {configured, masked}，与 provider api_key 同一形状
-   *               （mask_secret_value 产物；前端目前零消费）
-   *   config_key  落盘的配置键名（security.access_token），供设置页定位
-   *   env_name    对应环境变量名（OMNIAGENT_ACCESS_TOKEN），供提示"也可改环境变量"
+   * 查状态（**永不回明文**）。返回 3 个字段：
+   *   access_token_configured     全局：服务端设过口令没 → 分流"登录"与"首次设置"
+   *   can_set_access_token         针对你：能不能设口令 → 分流"填了即设置"与"去服务端本机设"
+   *   current_client_requires_auth 针对你：要不要口令 → 手动打开 /login 时不误显示登录框
+   *
+   * 2026-09-27 小欧 - [75]第5章 5.3：删 masked/config_key/env_name（后端已删，前端类型同步，
+   *   否则声明着实际不存在的字段）。另两个字段是 [75] 第4章设计的新增。
    */
-  getTokenStatus: async (): Promise<{
+  getTokenStatus: async (
+    config?: ApiRequestConfig
+  ): Promise<{
     access_token_configured: boolean;
-    masked: { configured: boolean; masked: string };
-    config_key: string;
-    env_name: string;
+    can_set_access_token: boolean;
+    current_client_requires_auth: boolean;
   }> => {
-    // 登录页本身靠这两个端点工作，若放任 401 触发拦截器的 location.href='/login'，就会
-    // 进登录页 → getTokenStatus 401 → 跳登录页 → 重载 → 再 401 无限重载。故 auth 通道一律 _skip401。
-    const response = await api.get('/auth/status', AUTH_REQ);
+    // 2026-09-27 小欧 - [75]第5章 5.3：本端点两种调法（4.2.3 两次查询的分工）：
+    //   ① 入口查询 —— 调用方传 { _skipAuth: true } 不带旧口令，后端 5.1 的"不带口令即放行"
+    //      豁免必中 → 200，拿结论分流（带旧口令会把引导查询打成 401/403，正是错 8 要修的）。
+    //   ② 验真查询 —— 调用方不传 config，默认带上当前口令：200 = 口令有效 / 401 = 口令无效。
+    //   两种调法都保留 _skip401，防 401 触发拦截器 location.href='/login' 造成无限重载。
+    const response = await api.get('/auth/status', { ...AUTH_REQ, ...config });
     return response.data;
   },
   /**
@@ -49,7 +61,16 @@ export const authApi = {
     token: string
   ): Promise<{ ok: boolean; message: string }> => {
     const response = await api.post('/auth/token', { token }, AUTH_REQ);
-    setAccessToken(token); // 同步内存 token：否则下一请求带旧口令 → 401 → 被踢回登录页
+    try {
+      setAccessToken(token); // 同步内存 token：否则下一请求带旧口令 → 401 → 被踢回登录页
+    } catch (e) {
+      // 2026-09-27 小欧 - [75]5.3/5.5 连锁：5.5 让 setAccessToken 写失败抛错。
+      //   服务端此时已保存成功、只是浏览器没记住 —— 文案必须分开说，
+      //   否则调用方误以为"没保存"而反复重试（后端状态其实已生效）。
+      throw new Error(
+        `口令已保存到服务端，但浏览器记住失败：${e instanceof Error ? e.message : String(e)}`
+      );
+    }
     return response.data;
   },
 };
