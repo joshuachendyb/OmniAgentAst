@@ -14,10 +14,11 @@
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
 # 2026-09-21 - 小欧 - 对齐文档54 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
-# 2026-09-22 小欧 - [61] constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
+# 2026-09-22 小欧 - constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 # 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
-# 2026-09-25 小欧 - [70] ConnectionScope连接池统一所有者(3.9): shutdown_event 的裸 reset() 改 await shutdown()——原调用只清工厂换代不等共享池关闭, 池归零由 3.6 shutdown 逐退休代 drain 兜底(超时放行不阻塞退出) — 小欧-2026-09-25
-# 2026-09-26 小欧 - [72]第九章: 全路由统一 token 鉴权（服务绑 0.0.0.0 是多机部署硬前提不可收窄，
+# 2026-09-25 小欧 - ConnectionScope 连接池统一所有者：shutdown_event 的裸 reset() 改 await shutdown()——
+#   原调用只清工厂换代不等共享池关闭，池归零由逐退休代 drain 兜底（超时放行不阻塞退出） — 小欧-2026-09-25
+# 2026-09-26 小欧 - 全路由统一 token 鉴权（服务绑 0.0.0.0 是多机部署硬前提不可收窄，
 #   原状态下局域网任意设备可直调任何接口：读走全部明文密钥、改擦密钥、越权读会话）。
 #   鉴权细节与设计依据见 deps.py 文件头；_mount() 抽成唯一入口的理由见挂载点处注释。
 # 2026-09-27 小欧 - ①默认关闭 /docs /redoc /openapi.json（OMNIAGENT_ENABLE_API_DOCS=1 开启）：这三者是
@@ -25,8 +26,8 @@
 #   / 的 docs 键同步条件化，避免广播一个必 404 的地址。②访问口令路由改走 _mount()，不再手写
 #   include_router 绕过唯一入口。③_ENABLE_DOCS 改用 app.config.env_flag，不再手搓真值列表。
 #   同轮精简冗长注释（三堂会审叙事压缩为结论）。
-# 2026-09-27 小欧 - [75]启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
-#   forwarded_allow_ips 注入"与"白名单含全网通配"告警（DEFECT-5/6）。只观测，不改判定逻辑。
+# 2026-09-27 小欧 - 启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
+#   forwarded_allow_ips 注入"与"白名单含全网通配"告警。只观测，不改判定逻辑。
 import sys
 import asyncio
 from typing import Optional
@@ -60,9 +61,9 @@ from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测
 from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-6): token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
 from app.api.v1.task_queries import router as task_queries_router
-# 2026-09-26 小欧 - [72]第九章(9.6-1): 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
+# 2026-09-26 小欧 - 统一 token 鉴权依赖（12 个 router 挂载，/health 豁免）
 from app.api.v1.deps import verify_token, warn_startup_checks
-# 2026-09-26 小欧 - [72]第九章补: 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
+# 2026-09-26 小欧 - 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
 from app.api.v1.auth_routes import router as auth_router
 from app.logger import logger
 from app.monitoring import setup_monitoring
@@ -97,7 +98,7 @@ def get_version() -> str:
 app_version = get_version()
 logger.info(f"Backend version: {app_version}")
 
-# 2026-09-27 10:15 小欧 - 关闭应用级 API 文档端点（修 [72]核查发现的鉴权缺口）：/docs /redoc /openapi.json
+# 2026-09-27 10:15 小欧 - 关闭应用级 API 文档端点（修鉴权缺口）：/docs /redoc /openapi.json
 #   是**应用级路由**，不在任何 APIRouter 内，走不到 verify_token —— 实跑确认无 token 可拉走 57 个端点
 #   + 44 个请求模型。本机开发需查看时设 OMNIAGENT_ENABLE_API_DOCS=1（多机部署下别开）。
 #   布尔解析复用 config.env_flag（假值列表统一单点），不手搓真值列表。
@@ -178,7 +179,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# [72]第九章(9.6-1) - 小欧 - 全路由统一挂 token 鉴权。抽 _mount() 为唯一挂载入口:
+# 全路由统一挂 token 鉴权。抽 _mount() 为唯一挂载入口:
 #   原写法把 `prefix="/api/v1"` 与 `dependencies` 在 13 行各手写一遍 —— 改前缀必漏改（漏改=该 router
 #   挂在错误路径 404），且未来新增 router 谁记得手写 dependencies=？（漏写则该 router 裸奔）。
 #   抽成一处后豁免必须显式写 exempt=True，反而更醒目。零行为变化。
@@ -188,7 +189,7 @@ _AUTHENTICATED = [Depends(verify_token)]
 def _mount(router, tags: str, *, exempt: bool = False) -> None:
     """统一挂载 API router：**默认加 token 鉴权**，仅探活类显式 exempt=True 豁免。
 
-    [72]第九章 9.6-1 —— 全项目唯一挂载入口。新增 router 一律走本函数即自动获得鉴权，
+    全项目唯一挂载入口。新增 router 一律走本函数即自动获得鉴权，
     不再依赖"记得手写 dependencies="（那是本条规则最大的失效来源）。
     """
     app.include_router(
@@ -199,7 +200,7 @@ def _mount(router, tags: str, *, exempt: bool = False) -> None:
     )
 
 
-# 探活/回显豁免（9.6-1 要求，便于探活与排障）。/echo 与 /health 同属 health router 且为
+# 探活/回显豁免（便于探活与排障）。/echo 与 /health 同属 health router 且为
 # 纯回显无副作用（已读 health.py:68-76 核实：不落库、不调 LLM），故同享豁免无实际风险。
 _mount(health.router, "health", exempt=True)
 _mount(tool_routes_router, "tools")  # A4: 工具测试路由 — 小欧 2026-08-12
@@ -273,7 +274,7 @@ async def shutdown_event():
     global _cleanup_task_ref
     if _cleanup_task_ref is not None and not _cleanup_task_ref.done():
         _cleanup_task_ref.cancel()
-    # [70] 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
+    # 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
     from app.services.lifecycle import shutdown
     await shutdown()
 
