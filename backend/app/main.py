@@ -4,7 +4,7 @@
 # 2026-07-28 - 小欧 - BUG#4: version.txt为空时get_version直奔for line in f, 无行进入时version未赋值致UnboundLocalError; 补version="0.0.0"默认值。
 # 2026-08-03 - 小欧 - 恢复7-30原设计(DB核实): 删shutdown里的shell_pool.cleanup_all()+日志与import; 该行系8-02恢复工程误加回, 7-30已决策main.py不清理(atexit+task完成清理全覆盖)。
 # 2026-08-08 - 小欧 - 全程统一本地时区: 3处异常响应 timestamp 改 get_local_iso_timestamp() (本地ISO无Z)
-# 2026-08-09 - 小欧 - task006 P7落地(日志级别优化): HTTP 4xx客户端错误与Validation(422)由ERROR降为WARNING, 5xx保持ERROR — 避免测试/非法请求噪音污染ERROR日志, 干扰真实故障排查
+# 2026-08-09 - 小欧 - task006 落地(日志级别优化): HTTP 4xx客户端错误与Validation(422)由ERROR降为WARNING, 5xx保持ERROR — 避免测试/非法请求噪音污染ERROR日志, 干扰真实故障排查
 # 2026-08-10 - 小欧 - ⑬get_version改调get_code_root(): 定位version.txt改走代码库根(名实分离, 不再用项目根路径推算) — 步骤1实施(北京老陈驱动)
 # 2026-08-12 - 小欧 - A4(方案4.4.3): 注册 tool_routes router(工具测试路由由 health.py 迁出), include_router 加 /api/v1 tags=tools — 小欧 2026-08-12
 # 2026-08-14 - 小欧 - 改名名实相符: model_routes→config_routes(import与挂载变量model_router→config_router); api/v1/chat/sse→execution_stream(chat_execution_router导入同步)
@@ -12,7 +12,7 @@
 # 2026-08-16 - 小欧 - S2(10.1.7②-6/10.1.8 S2): 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): 启动 tip 两条 print→console_put(语义不变仅控制台, 非阻塞镜像), 事件循环线程零同步 stdout 写
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
-# 2026-09-21 - 小欧 - 对齐文档54 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
+# 2026-09-21 - 小欧 - 对齐设计文档 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
 # 2026-09-22 小欧 - constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 # 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
@@ -134,7 +134,7 @@ setup_monitoring(app)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     # 记录请求路径/方法/客户端, 便于定位 404 等异常的真正来源(原日志仅记状态码, 无法定位) — 小欧 2026-07-13
     client = request.client.host if request.client else "unknown"
-    # 2026-08-09 小欧: task006 P7 — 4xx客户端错误降WARNING, 5xx服务端错误保持ERROR(真实故障), 减少噪音
+    # 2026-08-09 小欧: task006 — 4xx客户端错误降WARNING, 5xx服务端错误保持ERROR(真实故障), 减少噪音
     _log = logger.warning if exc.status_code < 500 else logger.error
     _log(f"HTTP Exception: {exc.status_code} - {exc.detail} | {request.method} {request.url.path} client={client}")
     return JSONResponse(
@@ -150,7 +150,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # 2026-08-09 小欧: task006 P7 — 422恒为客户端请求参数错误, 由ERROR降WARNING, 避免非法请求噪音污染ERROR日志
+    # 2026-08-09 小欧: task006 — 422恒为客户端请求参数错误, 由ERROR降WARNING, 避免非法请求噪音污染ERROR日志
     logger.warning(f"Validation Error: {exc.errors()}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,

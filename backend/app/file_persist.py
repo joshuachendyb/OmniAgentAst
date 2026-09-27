@@ -11,7 +11,7 @@
 #   旁路异步尽力而为: 单写者FIFO队列串行化, 写失败仅 error 留痕不阻塞主链路
 #
 # 编辑历史:
-#   2026-08-23 - 小欧 - 初版落地(文档[1] v3.36 11.9 P1 / 设计=11.8.1 全量代码):
+#   2026-08-23 - 小欧 - 初版落地(文档落码):
 #       TaskFileWriter(A/B双文件单写者FIFO)/create_task_writer(H1工厂)/
 #       purge_task+purge_session(H7 GC备函数,挂接待物理删除入口)/_files_root(调试分流)
 #   2026-08-24 - 小欧 - 目录前导(北京老陈裁定): session/task 目录名加 Sion_/Task_ 前缀
@@ -19,7 +19,7 @@
 #   2026-09-04 - 小健 - 新增 make_fp_callback(第2阶段拆分): 文件A 落盘回调工厂从 action_handler._fp_factory 下沉,
 #       action_handler 不再持有文件落盘细节; 函数体完整复制不改逻辑(闭包捕获 agent/step/exec_calls)
 #   2026-09-19 - 小欧 - exe打包frozen支持: 调试分流 frozen时改走exe所在目录/files(源码保持backend/files不变) - 小欧-2026-09-19
-#   2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（_files_root 调试分流读键同步，见[54]）
+#   2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（_files_root 调试分流读键同步）
 # ============================================================================
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ _ALARM_STR_LEN = 100000
 
 
 def _short_task_id(task_id: str) -> str:
-    """文件名用 task 短 id: 头8+尾4 共12位hex, 去 task- 前缀 — 11.7.4-2"""
+    """文件名用 task 短 id: 头8+尾4 共12位hex, 去 task- 前缀"""
     _hex = task_id[5:] if task_id.startswith("task-") else task_id
     return _hex[:8] + _hex[-4:] if len(_hex) > 12 else _hex
 
@@ -85,7 +85,7 @@ class TaskFileWriter:
         self.session_id = session_id
         self.task_id = task_id
         self.ai_message_id = ai_message_id
-        self._dir = _files_root() / f"{SESSION_DIR_PREFIX}{session_id}" / f"{TASK_DIR_PREFIX}{task_id}"   # 目录用完整id+前导(北京老陈 2026-08-24); 根目录按 app.debug 分流(11.7.4-3)
+        self._dir = _files_root() / f"{SESSION_DIR_PREFIX}{session_id}" / f"{TASK_DIR_PREFIX}{task_id}"   # 目录用完整id+前导(北京老陈 2026-08-24); 根目录按 app.debug 分流
         self._short = _short_task_id(task_id)
         # #1 修正(2026-08-23): 文件名用 FS 安全时间戳——get_local_iso_timestamp() 含 ':' (如 2026-08-23T09:30:12.123456),
         #   Windows 禁止 ':' 作文件名 → open() 抛 OSError 致文件永远建不出; 故 ':'→'-' 仅作用于文件名,
@@ -151,7 +151,7 @@ class TaskFileWriter:
             "schema_version": _SCHEMA_VERSION,
             "format": "pretty-jsonl",
             "session_id": self.session_id,
-            "task_id": self.task_id,               # 完整值(11.7.9-4)
+            "task_id": self.task_id,               # 完整值
             "message_id": self.ai_message_id,
             "start_time": self._start_iso,         # 复用 __init__ 入参(与文件名同源); 禁调 get_local_iso_timestamp() 以免漂移 — 小欧 2026-08-23
             "model": self.model,
@@ -169,16 +169,16 @@ class TaskFileWriter:
         """H3: tool_retry_engine 每次尝试回调直接入队落盘(format 前实时写) — 2026-08-23 #B 闭环(裁定②)/v3.29 去 step_id 化(北京老陈:
         实时 loop 写入是关键——工具尝试完成即落盘, 不经暂存不等 DB 落库; 原 stage_tool_block+flush_tool_blocks 两段机制撤销)"""
         blk: Dict[str, Any] = {
-            "step": step,                          # 轮次号=该轮 agent.llm_call_count(系统既有字段名, 与 Step/SSE/step_json 同名同源 — 11.7.9-2① v3.29 定案)
+            "step": step,                          # 轮次号=该轮 agent.llm_call_count(系统既有字段名, 与 Step/SSE/step_json 同名同源 — 定案)
             "tool_name": tool_name,
             "params_raw": params_raw,
             "params_final": params_final,
             "llm_data": llm_data,                  # 主体① 全量
             "data": data,                          # 主体② format之前原文
         }
-        if other_data:                             # ⑦ 有则写、无则省略该键(11.7.9-2⑦)
+        if other_data:                             # ⑦ 有则写、无则省略该键
             blk["other_data"] = other_data
-        # #8 修正(2026-08-23): tool_no 置于①~⑦固定字段序之后, 作并行区分标记(11.7.9-2 同step多tool加tool_no),
+        # 修正(2026-08-23): tool_no 置于①~⑦固定字段序之后, 作并行区分标记(同step多tool加tool_no),
         #   不破坏 11.7.9 固定顺序(step→tool_name→params_raw→params_final→llm_data→data→other_data) — 小欧 2026-08-23
         blk["tool_no"] = tool_no
         # #B 闭环(2026-08-23 北京老陈 裁定②): retry_no 置于 tool_no 之后, 作重试区分标记(同工具第几次尝试, 0=首次);
@@ -188,7 +188,7 @@ class TaskFileWriter:
 
     # ---------- H2: 文件B ----------
     def append_conv_blocks(self, call_no: int, messages: List[Dict[str, Any]]) -> None:
-        """H2: 稳定 _msg_id 去重 — 仅追加未写过的消息块; 结构保真不改写(11.7.10-2)
+        """H2: 稳定 _msg_id 去重 — 仅追加未写过的消息块; 结构保真不改写
 
         call_no 权威 = agent.llm_call_count(react_cycle 在 prepare 之前已自增,
         即本次调用序号); msg_seq = 文件内顺序号(b_count 递增)。
@@ -215,7 +215,7 @@ class TaskFileWriter:
     def finalize(self, status: str) -> None:
         """H5: 任务终态 footer(completed/failed/cancelled); 关闭 worker
 
-        实施修正(小欧 2026-08-23, 文档[1]11.9 P1 发现): footer 块改在队列内惰性构造——
+        实施修正(小欧 2026-08-23, 文档发现): footer 块改在队列内惰性构造——
         原 11.8.1 设计在入队时即快照 a_written/b_written(#14 的实写计数在异步 _do 内自增),
         若 finalize 调用时队列尚有未排空数据块(磁盘慢/高频落盘), footer 会记到过期小值,
         击穿 11.7.9/10-5「块数对不上=中途崩溃有丢失」完整性校验; 改为闭包延迟到本块执行时读值
@@ -257,7 +257,7 @@ def make_fp_callback(agent: Any, step: int, exec_calls: List[Dict[str, Any]]) ->
 
     返回一个按全局工具序号闭包注入 tool_no 的工厂函数, 用法与原 _fp_factory 完全一致:
     on_attempt_recorded=make_fp_callback(agent, step, _exec_calls)。引擎每次尝试回调时
-    (action, attempt, params, res_or_exc, ok) 内调用 write_tool_block 实时落盘(11.7.9-2 闭环)。
+    (action, attempt, params, res_or_exc, ok) 内调用 write_tool_block 实时落盘(闭环)。
     """
     def _fp_factory(_tno: int):
         _call = exec_calls[_tno - 1] if 0 < _tno <= len(exec_calls) else {}
