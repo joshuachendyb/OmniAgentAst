@@ -6,7 +6,7 @@
 
 > 更新记录（小欧-2026-09-23）：三堂会审一致性修正——①§7.2 配置节总览补 `llm`/`network` 节、`agent` 去掉已迁走的 `max_rounds`；②§7.4 agent 表对齐现键（仅 `max_steps`，历史保留轮数迁 `tuning.trim.max_rounds`）；③§7.7 调优表按 REGISTRY 实测重写为 33 键 9 子组（补 trim/compaction，llm 5 键/agent 1 键，删 network 行与已迁通用的 temperature/max_tokens）；④`CORS_ORIGINS` 覆盖项改 `network.cors_origins`。
 
-> 更新记录（小欧-2026-09-27）：部署安全与鉴权文档补全——①§7.6 补齐 `security.api_token` / `security.ip_allowlist` 两项准入控制键（此前 7.6 只列了操作安全，漏了实际存在且最关键的两项）；②新增 §7.6.1「反向代理与 X-Forwarded-For」，说明 `--forwarded-allow-ips=*` 的伪造风险与三道防线；③§7.9 补 `OMNIAGENT_API_TOKEN` / `OMNIAGENT_IP_ALLOWLIST` / `OMNIAGENT_REQUIRE_AUTH` / `OMNIAGENT_ENABLE_DOCS` / `FORWARDED_ALLOW_IPS` 五个环境变量。
+> 更新记录（小欧-2026-09-27）：部署安全与鉴权文档补全——①§7.6 补齐 `security.access_token` / `security.access_token_allowlist` 两项准入控制键（此前 7.6 只列了操作安全，漏了实际存在且最关键的两项）；②新增 §7.6.1「反向代理与 X-Forwarded-For」，说明 `--forwarded-allow-ips=*` 的伪造风险与三道防线；③§7.9 补 `OMNIAGENT_ACCESS_TOKEN` / `OMNIAGENT_ACCESS_TOKEN_ALLOWLIST` / `OMNIAGENT_REQUIRE_AUTH` / `OMNIAGENT_ENABLE_API_DOCS` / `FORWARDED_ALLOW_IPS` 五个环境变量。
 
 ---
 
@@ -520,8 +520,8 @@ model_meta:
 
 | 键 | 说明 |
 |----|------|
-| `security.api_token` | 访问口令。**只能在服务端本机设置**；白名单设备只是免口令登录，不能改口令 |
-| `security.ip_allowlist` | 免口令 IP/CIDR 白名单，逗号或分号分隔。**白名单内等于无鉴权**（可读全部明文密钥），只应放可信网段 |
+| `security.access_token` | 访问口令。**只能在服务端本机设置**；白名单设备只是免口令登录，不能改口令 |
+| `security.access_token_allowlist` | 免口令 IP/CIDR 白名单，逗号或分号分隔。**白名单内等于无鉴权**（可读全部明文密钥），只应放可信网段 |
 
 **操作安全（在设置页「安全」组）**
 
@@ -595,10 +595,10 @@ model_meta:
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
 | `CORS_ORIGINS` | `network.cors_origins`（CORS 跨域，逗号分隔） |
-| `OMNIAGENT_API_TOKEN` | `security.api_token`（访问口令，优先于配置文件） |
-| `OMNIAGENT_IP_ALLOWLIST` | `security.ip_allowlist`（免口令白名单，逗号/分号分隔） |
+| `OMNIAGENT_ACCESS_TOKEN` | `security.access_token`（访问口令，优先于配置文件） |
+| `OMNIAGENT_ACCESS_TOKEN_ALLOWLIST` | `security.access_token_allowlist`（免口令白名单，逗号/分号分隔） |
 | `OMNIAGENT_REQUIRE_AUTH` | 设为 `0`/`false` 显式关闭鉴权（**仅本机开发/测试**，生产不得设置） |
-| `OMNIAGENT_ENABLE_DOCS` | 设为 `1` 开启 `/docs` `/redoc` `/openapi.json`（**默认关闭**，多机部署下别开） |
+| `OMNIAGENT_ENABLE_API_DOCS` | 设为 `1` 开启 `/docs` `/redoc` `/openapi.json`（**默认关闭**，多机部署下别开） |
 | `FORWARDED_ALLOW_IPS` | uvicorn 信任哪些对端的 XFF。**默认 `127.0.0.1`；填 `*` 会导致回环豁免失效**（见 7.6.1） |
 
 ### 7.10 修改生效方式
