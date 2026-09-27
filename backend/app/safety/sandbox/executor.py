@@ -49,7 +49,7 @@ class PreCheckResult:
     stdout_tail: str = ""        # 输出尾部(截断4096字符)
     stderr_tail: str = ""        # 错误尾部(截断4096字符; v1.22 W4: 4.2 条件1/2"stderr 原文喂 LLM"的承载字段)
 
-# —— 第四章判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
+# —— 判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
 _READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
                       "echo", "pwd", "dir", "whoami", "hostname",
                       "git log", "git diff", "git show",
