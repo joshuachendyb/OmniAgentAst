@@ -1,16 +1,16 @@
 // 编辑历史: 2026-09-20 小强 - 新建：全局单层 state（6 组+脏态+sources+模型管理+mtime 感知+外观本地预应用，见 6.2/6.3/7.0.5）
 // 2026-09-21 小强 - 对齐统一提示规范(no-restricted-syntax)：message.* 改走 errorHandler(showMessage/showSuccess)，移除未用 ModelEntry 导入
 // 2026-09-21 小欧 - ensureModelSaved 保存失败提示由 ERROR 对齐为 MODEL_CONFIG_ERROR（域名级错误码，信息更精确）
-// 2026-09-21 小欧 - P1-2：搜索高亮加 TTL 自动消退（[58] P1-2）
+// 2026-09-21 小欧 - 搜索高亮加 TTL 自动消退
 // 2026-09-21 小欧 - 补 max_retries：providerConfig 两处构建映射补齐 max_retries（load + refreshModels），对齐后端 GET /models 返回字段
 // 2026-09-21 小欧 - 解耦：模型Tab①选择器改为纯前端焦点切换（selectedProvider/selectedModel/参数区联动，不写 ai.model_ref）——
-//   全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal；原 v4.19(P1-6)「双下拉即时落盘 model_ref」设计废弃（[54] v4.20 修正）
+//   全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal；原「双下拉即时落盘 model_ref」设计废弃
 // 2026-09-21 小强 - Tab 标题/分组对齐后端注册表：GROUP_ORDER 由模块级硬编码（含死 chat）改为从 state.schema 键序动态派生，
 //   分组顺序与 Tab 标题 label 唯一源=后端 settings_registry；前端不再维护任何分组名常量（下方 TAB_TITLES 已删）
-// 2026-09-21 小欧 - [59]F-3/F-15/F-16/F-14 修复：①checkMtime 后台配置变化且存在未保存修改时，刷新前明确提示
+// 2026-09-21 小欧 - 脏态与配置变更提示修复：①checkMtime 后台配置变化且存在未保存修改时，刷新前明确提示
 //   「本地修改已丢失」，不再静默覆盖脏态；②saveKeys 将「schema 已删键/值为 undefined/env 接管键」归 ghost 清脏并提示，
-//   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存(F-15)与 env 接管键假保存(F-16)；③有效键为空直接返回不调 API；
-//   ④后端 warnings 全为空文案时给固定兜底提示(F-14)
+//   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存与 env 接管键假保存；③有效键为空直接返回不调 API；
+//   ④后端 warnings 全为空文案时给固定兜底提示
 // 2026-09-21 小强 - 设置页17问题复核修复：高亮TTL 2000→4000+新跳转清旧timer；dirtyCount 模型按实际脏参数量计数；
 //   setParam ①env 接管键禁改（杜绝改假值静默丢失）②越界输入补校正提示（[设置页UI审计] 问题1/13/2/15）
 // 2026-09-22 小强 - 编辑/保存 12 项可测缺陷批次2 修复（settings2-edsave-red）：
@@ -23,24 +23,24 @@
 // 2026-09-22 小强 - 31候选 #22/#17/#15 修复：①load catch 去重（全页 Result 唯一通道，不再叠 toast）；
 //   ②saveKeys 后端 errors 首 token 命中 schema 键 → setHighlightKeyTtl 红框定位；③beforeunload 离开守卫
 //   （脏态下拦截刷新/关闭，对齐 chat useBeforeUnload 语义）
-// 2026-09-22 小欧 - [62]P3 param_options 读链：initialModel 加 paramOptions:{}；
+// 2026-09-22 小欧 - param_options 读链：initialModel 加 paramOptions:{}；
 //   load/selectProvider/selectModel/refreshModels 四处通道补 paramOptions 透传（源 current/first/entry/m.param_options）；
 //   setParam 加枚举拦截（opts.includes(value) 不中 → WARNING+return，禁非法枚举写 state）。P4 将消费渲染 Select。
-// 2026-09-22 小欧 - [62]P6 4.3(6)：load() 与 refreshModels() 两处 providerConfig 构建补 label: p.label
+// 2026-09-22 小欧 - load() 与 refreshModels() 两处 providerConfig 构建补 label: p.label
 //   （与后端 GET /models 返回 p.label 对齐；load 缺则 ProviderConfig 表单无显示名初值，refreshModels
 //   缺则保存 label 后刷新即丢）。前后端写链路 label 编辑闭环。
-// 2026-09-22 小欧 - [62]P8：①4.3(9)-2-d load()/refreshModels() 两处 providerConfig 构建补动态参数值透传
-//   （跳过已具名键，其余标量照抄——rate_limit 保存后重拉不丢）；②4.3(8) 初始态补 paramOptionsModalOpen
+// 2026-09-22 小欧 - ①load/refreshModels 两处 providerConfig 构建补动态参数值透传
+//   （跳过已具名键，其余标量照抄——rate_limit 保存后重拉不丢）；②初始态补 paramOptionsModalOpen
 // 2026-09-22 小欧 - DRY 收口（三堂会审 10 大规范）：①load/refreshModels 两处 providerConfig 构建重复 →
 //   buildProviderConfig 公共函数；②load/selectProvider/selectModel/refreshModels 四处 envOverride 构建模式重复 →
 //   getEnvOverride 公共函数；③saveKeys 内两处手写「查 schema 键归属组」循环与 groupOfKey 重复 → findGroupOfKey 单纯函数
 //   （groupOfKey 改薄封装，setState 回调内传最新 s.schema）；三处均删重复回归单点维护 - 小欧-2026-09-22
-// 2026-09-23 小欧 - [65]§二+§七落码：①新增 addParam（新键注入 defaults 不同步即脏）；②新增 setCapabilities（Q1 未知值合并+联合置脏）；
+// 2026-09-23 小欧 - 参数与能力落码：①新增 addParam（新键注入 defaults 不同步即脏）；②新增 setCapabilities（未知值合并+联合置脏）；
 //   ③四通道回填 capabilities/capabilitiesBaseline；④dirtyCount 计能力脏 +1；⑤saveModelGroup 双通道
-//   （P0：参数无变不带 default_params；新键捎带全量 range/param_options；保存成功 providers 同步 patch 必修②）；
+//   （参数无变不带 default_params；新键捎带全量 range/param_options；保存成功 providers 同步 patch 必修②）；
 //   ⑥ensureModelSaved 放行补 isCapsDirty（必修①）—— import 并入既有 modelUtils 行 - 小欧-2026-09-23
-// 2026-09-23 小欧 - [65]十遍会审：F1 resetParams 联合置脏（重置只清参数脏，能力脏保留）+
-//   F4 已知能力值集改 modelUtils 单源常量（原每次调用重建 Set）- 小欧-2026-09-23
+// 2026-09-23 小欧 - 十遍会审：resetParams 联合置脏（重置只清参数脏，能力脏保留）+
+//   已知能力值集改 modelUtils 单源常量（原每次调用重建 Set）- 小欧-2026-09-23
 // 2026-09-24 小欧 - 修复：saveModelGroup 保存成功后 providers 条目同步补 default_params/range/param_options
 //   （原仅同步 capabilities，default_params 停留在 load 时旧值）——selectModel 切回读 entry.default_params
 //   得陈旧值致参数区显示旧值（big-pickle 保存362144、切走再切回显示10000）- 小欧-2026-09-24
@@ -52,10 +52,10 @@
 //     （恒含 text 防假脏）；setCapabilities 归一并强制含 text；saveModelGroup 送 capsForSave（无增强→[]、
 //     有增强→['text',...extras]）；providers 缓存 capabilities 存保存态（空→[] 防 tags 假显文本）。
 //   initialModel 补 removedParams:[] 与 normalizeCaps 兼容初值 - 小欧-2026-09-24
-// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①BZ-8 addParam 加 env 接管守卫（与 removeParam 同款双防线——
+// 2026-09-24 22:34:33 小欧 - 三堂会审修复：①addParam 加 env 接管守卫（与 removeParam 同款双防线——
 //   UI 入口禁用外 hook 再守一道防绕过；env Provider 加参保存必被后端 _raise_if_env_takeover 拒，无用功+吃报错）；
-//   ②BZ-4 暴露 ensureModelSaved 供 SettingsPage 删除确认前置调用（删除成功后 load() 全量重建 model 态，
-//   不强制保存会静默丢弃模型 Tab 未落库改动，与 selectProvider/selectModel/refreshModels 同款 BUG-D 防线复用）
+//   ②暴露 ensureModelSaved 供 SettingsPage 删除确认前置调用（删除成功后 load() 全量重建 model 态，
+//   不强制保存会静默丢弃模型 Tab 未落库改动，与 selectProvider/selectModel/refreshModels 同款防线复用）
 //   - 小欧-2026-09-24
 // 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求「3修改了, 出现保存的按钮」）：
 //   ①initialModel 补 providerDraft:{}（非 keepModel 的 load 自动清、keepModel 保留）；
@@ -67,8 +67,8 @@
 //   refreshModels→ensureModelSaved→saveProviderDraft 循环依赖；
 //   ⑥saveGroup('model') = saveModelGroup 后串行 saveProviderDraft；saveAll 在 Promise.all 后串行 flush
 //   （串行防 reloadProviderCache 与 saveModelGroup 的 providers patch 竞态）；
-//   ⑦ensureModelSaved 放行条件补 providerDraft（切换前强制落库，BUG-D 同类防线）- 小欧-2026-09-27
-// 2026-09-27 07:38 小欧 - 修 F4/F5/F6/F10/F11：①saveAll 由 Promise.all 改串行（并发两路拿同一旧 mtime
+//   ⑦ensureModelSaved 放行条件补 providerDraft（切换前强制落库，同类防线）- 小欧-2026-09-27
+// 2026-09-27 07:38 小欧 - ①saveAll 由 Promise.all 改串行（并发两路拿同一旧 mtime
 //   做守卫，先落盘者 bump 服务端 mtime 使后一路必然误判"外部更新"→ load(reset) 清空用户全部未保存改动；
 //   且两路共享单个 saving 布尔，先完成者提前解锁按钮可重复提交），守卫只由第一路执行（加 skipMtimeCheck
 //   开关：守卫防的是外部更新，同一次 saveAll 内前一路自写不算）；②saveProviderDraft 补 base_url 空值守卫
@@ -104,7 +104,7 @@ const PREF_KEY = 'omni.prefs.v1';
 
 // 2026-09-22 小欧 - DRY 收口：load()/refreshModels() 两处 providerConfig 构建完全重复 → 抽公共构建函数
 //   api_key/base_url/label/timeout/max_retries/env + 动态参数值（rate_limit 等 param_types 元数据驱动新键，
-//   跳过具名键/元数据/列表类，其余标量照抄 [62]P8 4.3(9)-2-d）；只此一处维护，杜绝改一处漏一处
+//   跳过具名键/元数据/列表类，其余标量照抄）；只此一处维护，杜绝改一处漏一处
 const DYNAMIC_PROVIDER_SKIP_KEYS = [
   'name',
   'label',
@@ -130,10 +130,10 @@ function buildProviderConfig(
         timeout: p.timeout,
         max_retries: p.max_retries,
         env: p.env, // v4.19：provider 级 env 接管标记（对应 ProviderConfig isEnv），与模型参数 envOverride 分离
-        // 2026-09-22 小欧 修 [62]P8 遗漏：param_types 元数据未透传 → ProviderConfig 动态渲染区
+        // 2026-09-22 小欧 修遗漏：param_types 元数据未透传 → ProviderConfig 动态渲染区
         //   永远为空（rate_limit 无「速率限制」行）。补透传，E2E-02 实测复现（E2E 浏览器验证）。
         param_types: p.param_types,
-        // [62]P8 4.3(9)-2-d：动态参数值透传（rate_limit 等）——跳过已具名键 + 元数据 + 列表类，其余标量照抄
+        // 动态参数值透传（rate_limit 等）——跳过已具名键 + 元数据 + 列表类，其余标量照抄
         ...Object.fromEntries(
           Object.entries(p as unknown as Record<string, unknown>).filter(
             ([k]) => !DYNAMIC_PROVIDER_SKIP_KEYS.includes(k)
@@ -163,7 +163,7 @@ function findGroupOfKey(
   return null;
 }
 
-// 2026-09-21 BUG-C 修复：secret 值归一（保存成功后 state 里不能再留明文/clear 标记，
+// 2026-09-21 修复：secret 值归一（保存成功后 state 里不能再留明文/clear 标记，
 // 否则 SettingRow 会误显"未配置"且再次保存重复提交）。
 // 2026-09-27 - 小欧 - 契约收敛为 {configured, masked}：masked 一律由后端生成，
 //   前端只把"未配置"归一成 {configured:false, masked:''}，不再自行 slice/拼星号。
@@ -189,7 +189,7 @@ const initialModel = () => ({
   defaults: {},
   ranges: {},
   paramOptions: {},
-  // 2026-09-23 小欧 - [65]§7.3.4：能力编辑副本+基线（load 四通道回填覆盖）
+  // 2026-09-23 小欧 - 能力编辑副本+基线（load 四通道回填覆盖）
   capabilities: [] as string[],
   capabilitiesBaseline: [] as string[],
   envOverride: {},
@@ -200,9 +200,9 @@ const initialModel = () => ({
   editingProviderConfig: false,
   addModelModalOpen: false,
   addProviderModalOpen: false,
-  // 2026-09-22 小欧 - [62]P8 4.3(8)：初始态补 paramOptionsModalOpen（ModelState 已要求，缺则 tsc 报错）
+  // 2026-09-22 小欧 - 初始态补 paramOptionsModalOpen（ModelState 已要求，缺则 tsc 报错）
   paramOptionsModalOpen: false,
-  // 2026-09-23 小欧 - [65]§4.2.1：「+ 添加参数」内联表单初始关
+  // 2026-09-23 小欧 - 「+ 添加参数」内联表单初始关
   addParamFormOpen: false,
   // 2026-09-24 小欧 - ①参数键级删除待提交名单初始空 — 小欧-2026-09-24
   removedParams: [] as string[],
@@ -434,8 +434,8 @@ export function useSettings() {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [state.dirtyKeys, state.model.isDirty, state.model.providerDraft]);
 
-  /** 切 Tab/刷新 mtime 检查（3.1/9.11）。 */
-  // [59]F-3 修复：后台配置被外部修改导致整体刷新时，若存在未保存的本地修改（脏 keys/模型参数），
+  /** 切 Tab/刷新 mtime 检查。 */
+  // 修复：后台配置被外部修改导致整体刷新时，若存在未保存的本地修改（脏 keys/模型参数），
   // 明确提示「已丢失」，不再只报「已刷新」让用户误以为本地改动还在
   const checkMtime = useCallback(async () => {
     try {
@@ -510,7 +510,7 @@ export function useSettings() {
   );
 
   // 修正(2026-09-21 小强)：脏计数模型按实际脏参数数计（原固定 +1，「保存全部(N 项)」对参数组恒 1 项误导）([设置页UI审计] 问题13)
-  // 2026-09-23 小欧 - [65]§7.3.7 Q3 定案：能力脏计入 +1（isDirty 已联合判定，计数不跟上会「模型(0 项)却可保存」显示失真）
+  // 2026-09-23 小欧 - 定案：能力脏计入 +1（isDirty 已联合判定，计数不跟上会「模型(0 项)却可保存」显示失真）
   const dirtyCount = useMemo(() => {
     const modelDirty = Object.values(
       isDirty(state.model.params, state.model.defaults, state.model.envOverride)
@@ -561,8 +561,8 @@ export function useSettings() {
     ]
   );
 
-  /** 写（参数配置）：schema 校验 → PUT /settings（6.3/7.5）。 */
-  // [59]F-15/F-16 修复：①schema 已删键/值为 undefined/env 接管键一律归 ghost —— 不提交、清脏、提示，
+  /** 写（参数配置）：schema 校验 → PUT /settings。 */
+  // 修复：①schema 已删键/值为 undefined/env 接管键一律归 ghost —— 不提交、清脏、提示，
   //   杜绝 {key:undefined} 被 JSON 序列化丢键的假保存 与 env 接管键被后端跳过后的假保存；
   //   ②有效键(found)为空则直接返回，不再调 API 制造空 patch 假成功
   const saveKeys = useCallback(
@@ -654,7 +654,7 @@ export function useSettings() {
           }
           return { ok: false as const };
         }
-        // [59]F-14 修复：后端 warnings 全为空文案时给固定兜底提示，避免空文案被 showMessage 静默吞掉后用户误以为干净保存
+        // 修复：后端 warnings 全为空文案时给固定兜底提示，避免空文案被 showMessage 静默吞掉后用户误以为干净保存
         const warnMsgs = result.warnings.filter((m) => (m ?? '').trim());
         if (result.warnings.length && !warnMsgs.length) {
           showMessage(
@@ -671,7 +671,7 @@ export function useSettings() {
           found.forEach((k) => {
             delete dirtyKeys[k];
           });
-          // 2026-09-21 BUG-C 修复：secret 项保存成功后把明文/clear 归一回 {configured,suffix}，
+          // 2026-09-21 修复：secret 项保存成功后把明文/clear 归一回 {configured,suffix}，
           // 保证再渲染正确显示且再次保存不重复提交明文
           const values = { ...s.values };
           const baseline = { ...s.baseline };
@@ -746,7 +746,7 @@ export function useSettings() {
           .filter((k) => dirty[k])
           .map((k) => [k, state.model.params[k]])
       );
-      // 2026-09-23 小欧 - [65]§7.3.2 P0：能力脏也算可保存；★空 changed 不带 default_params
+      // 2026-09-23 小欧 - 能力脏也算可保存；★空 changed 不带 default_params
       //   （后端 default_params:{} = 显式清空参数块，仅能力变更送 {} 会误清采样参数）
       const capsChanged = isCapsDirty(
         state.model.capabilities,
@@ -756,8 +756,8 @@ export function useSettings() {
       const hasRemovals = state.model.removedParams.length > 0;
       if (!Object.keys(changed).length && !capsChanged && !hasRemovals)
         return { ok: true as const };
-      // 2026-09-23 小欧 - [65]§4.2.4 v1.3 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
-      //   无新键时 body 与原来完全一致（零行为变化）—— 与 §七 双通道叠加（v1.9 定稿形态）
+      // 2026-09-23 小欧 - 新增键形态持久化：新 key 才带全量 ranges/paramOptions 落 model_meta；
+      //   无新键时 body 与原来完全一致（零行为变化）
       const prevDefaults = state.model.defaults;
       const newKeys = Object.keys(changed).filter((k) => !(k in prevDefaults));
       const body: {
@@ -807,7 +807,7 @@ export function useSettings() {
           return { ok: false as const };
         }
         showSuccess('模型参数已保存');
-        // 2026-09-23 小欧 - [65]§7.3.10 必修②：providers 内该模型 capabilities 同步 patch
+        // 2026-09-23 小欧 - providers 内该模型 capabilities 同步 patch
         //   （否则参数区勾选已改、通用 Tab 卡片 tags 仍旧值直到 F5，同屏两处不同源=显示失真）
         // 2026-09-24 小欧 - 修复：同步补 default_params/range/param_options 回写 providers 缓存
         //   （原仅同步 capabilities——default_params 仍是 load 时旧值，selectModel 切回读 entry.default_params
@@ -918,7 +918,7 @@ export function useSettings() {
     ]
   );
 
-  // v4.25(2026-09-21 小强 修复 BUG-D)：跨模型/Provider 切换前强制保存未落库的模型参数，
+  // 跨模型/Provider 切换前强制保存未落库的模型参数，
   // 杜绝真实场景（agnes 空 dp <-> sensenova 有 dp）切换后参数静默丢失；保存失败则阻止切换。
   const ensureModelSaved = useCallback(async (): Promise<boolean> => {
     const dirtyMap = isDirty(
@@ -926,10 +926,10 @@ export function useSettings() {
       state.model.defaults,
       state.model.envOverride
     );
-    // 2026-09-23 小欧 - [65]§7.3.10 必修①：放行条件补能力脏（否则"能力改了没存就切模型"静默丢失，BUG-D 同类）
+    // 2026-09-23 小欧 - 放行条件补能力脏（否则"能力改了没存就切模型"静默丢失）
     // 2026-09-24 小欧 - ①放行条件补 removedParams（删键未存就切模型会静默丢失删除意图）- 小欧-2026-09-24
-    // 2026-09-27 小欧 - 放行条件补 providerDraft（③区字段改了没存就切 Provider 会随组件重挂静默丢失，
-    //   BUG-D 同类防线；hadParams 拆出是为了只在参数/能力真保存过时才弹参数保存提示，防误导文案）- 小欧-2026-09-27
+    // 2026-09-27 小欧 - 放行条件补 providerDraft（③区字段改了没存就切 Provider 会随组件重挂静默丢失；
+    //   hadParams 拆出是为了只在参数/能力真保存过时才弹参数保存提示，防误导文案）- 小欧-2026-09-27
     const hadParams =
       Object.values(dirtyMap).some(Boolean) ||
       isCapsDirty(state.model.capabilities, state.model.capabilitiesBaseline) ||
@@ -1022,9 +1022,9 @@ export function useSettings() {
         );
         return;
       }
-      // BUG-D 修复：先保存未落库参数，再改焦点，防切换后参数静默丢失/数据不一致
+      // 修复：先保存未落库参数，再改焦点，防切换后参数静默丢失/数据不一致
       if (!(await ensureModelSaved())) return;
-      // v4.20(小欧 2026-09-21 解耦)：①选择器 = 参数编辑焦点（纯前端），只切 selectedProvider/selectedModel
+      // 2026-09-21 小欧 解耦：①选择器 = 参数编辑焦点（纯前端），只切 selectedProvider/selectedModel
       //   + 参数区联动；不再写 ai.model_ref——全局生效模型唯一入口=通用Tab CurrentModelRefCard→ModelSwitchModal
       const defaults = {
         ...((first?.default_params ?? {}) as Record<string, unknown>),

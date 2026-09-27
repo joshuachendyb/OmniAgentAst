@@ -841,7 +841,9 @@ export function showSuccess(msg: string = '操作成功'): void {
 
 // 2026-08-28 小欧 修复review-bugs#1: 统一从各类错误形态提取可读文案(含 axios response.data.detail)
 // 2026-08-28 小沈 修复优先级: response.data.detail/message优先于e.message(后端精确文案优先), 数组detail用JSON.stringify
-function extractErrorMessage(error: unknown): string | undefined {
+// 2026-09-27 小欧 [75]BUG-D 根因修复：改为 export。调用方（如 SettingRow）此前直接取 e.message，
+//   拿到的是 axios 造的英文 "Request failed with status code 403"，后端 detail 被丢弃。
+export function extractErrorMessage(error: unknown): string | undefined {
   if (typeof error === 'string') return error;
   if (error == null) return undefined;
   const e = error as Record<string, unknown>;

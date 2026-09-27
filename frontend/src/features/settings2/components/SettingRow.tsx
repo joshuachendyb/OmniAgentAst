@@ -6,9 +6,10 @@
 //   本地收工不发请求（原会提交 undefined → 后端零改动却回 ok = 假成功）；写成功改走 onRefresh，
 //   不碰 onChange（那是通用通道 setter，调用会置脏 → 保存本组时 secret 键被拒 → 整组失败）
 // 2026-09-27 小欧 - 掩码纯回显（由后端生成，前端不重算）；InputNumber onChange 补 null 守卫
-// 2026-09-27 小欧 - [75]5.3 连带：① writeSecret 的 provider 分支补"保存 API Key 失败："上下文，
-//   auth 分支不加前缀（setToken 错误已自述"已存服务端、浏览器没记住"）—— 原统一加"保存失败："
-//   会与之自相矛盾；② 全文件注释精简为技术表述（判据与后果保留，推导与叙事删除）
+// 2026-09-27 小欧 - [75]BUG-D/F：两处 catch 改用公用 classifyError（403→AUTH_403，原硬编码
+//   NETWORK_ERROR 把"权限不够"说成"网络错误"）+ extractErrorMessage（取后端 detail，
+//   原 e.message 是 axios 的英文 "Request failed with status code 4xx"）；writeSecret 去掉
+//   自包前缀，错误文案统一在调用处给出
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -24,7 +25,13 @@ import type {
   SettingSource,
 } from '@/services/api/settings.api';
 import { EnvTag, CopyIcon, DirtyDot, DefaultTag } from './icons';
-import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import {
+  showMessage,
+  showSuccess,
+  classifyError,
+  extractErrorMessage,
+  ErrorType,
+} from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
 // 2026-09-26 小欧 - [72]第六章(6.5): secret 项的清空改走 provider 通道，需 modelApi
 import { modelApi } from '@/services/api/model.api';
@@ -42,7 +49,7 @@ function secretProviderName(key: string): string {
  *  - ai.{provider}.api_key → modelApi.updateProvider
  *  - security.access_token  → authApi.setToken
  *  value 收窄为非空 string：「清空」是显式 clear 语义，不走本函数（否则 clear 意图会在类型转换中被吃掉）。
- *  [75] 两条通道的错误上下文各自在产生处补齐，本函数不统一包前缀。
+ *  错误文案与类型不在此包装，统一由调用处 classifyError + extractErrorMessage 给出（[75]BUG-D）。
  */
 /** provider 通道的实际写调用；单测可替换以注入失败（默认走真实实现）。 */
 export let providerWrite = (
@@ -52,19 +59,10 @@ export let providerWrite = (
 
 const writeSecret = async (key: string, value: string): Promise<void> => {
   if (key.startsWith('ai.') && key.endsWith('.api_key')) {
-    try {
-      await providerWrite(secretProviderName(key), { api_key: value });
-    } catch (e) {
-      // provider 通道抛的是 HTTP/网络原文，无业务上下文
-      throw new Error(
-        `保存 API Key 失败：${e instanceof Error ? e.message : String(e)}`
-      );
-    }
+    await providerWrite(secretProviderName(key), { api_key: value });
     return;
   }
   if (key === 'security.access_token') {
-    // [75]5.3/5.5 连锁：setToken 的错误信息已自述结论（"服务端已保存、浏览器没记住"），
-    // 此处不包前缀，否则上层统一加"保存失败："会与之自相矛盾
     await authApi.setToken(value);
     return;
   }
@@ -191,11 +189,10 @@ export const SettingRow: React.FC<Props> = ({
                   setEditingSecret(false);
                 })
                 .catch((e) => {
-                  // 前缀由各写通道在产生处补齐（writeSecret 的 provider 分支已补），
-                  // 此处直接呈现完整结论
+                  // [75]BUG-D/F：类型与文案统一走公用函数，后端 detail 不再被丢弃
                   showMessage(
-                    ErrorType.NETWORK_ERROR,
-                    e instanceof Error ? e.message : String(e)
+                    classifyError(e),
+                    extractErrorMessage(e) ?? '保存失败'
                   );
                 });
             }}
@@ -219,8 +216,8 @@ export const SettingRow: React.FC<Props> = ({
                   })
                   .catch((e) => {
                     showMessage(
-                      ErrorType.NETWORK_ERROR,
-                      `清空失败：${e instanceof Error ? e.message : String(e)}`
+                      classifyError(e),
+                      `清空失败：${extractErrorMessage(e) ?? '未知原因'}`
                     );
                   });
               }}

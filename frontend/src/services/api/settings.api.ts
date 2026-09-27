@@ -21,9 +21,10 @@ const AUTH_REQ: ApiRequestConfig = { _skip401: true };
  */
 export const authApi = {
   /**
-   * 查状态（永不回明文），返回三个字段：
+   * 查状态（永不回明文），返回四个字段：
    *   access_token_configured      全局：是否已设口令 → 分流"登录"与"首次设置"
    *   can_set_access_token         本来源：能否设口令 → 分流"填了即设置"与"去本机设"
+   *   set_token_blocked_reason     [75]BUG-B 被拒原因：'not_local' | 'proxy_untrusted' | null
    *   current_client_requires_auth 本来源：是否需要口令 → 免口令来源不误显示登录框
    * [75]5.3：masked/config_key/env_name 已随后端删除（YAGNI），两个按来源的结论为新增。
    */
@@ -32,6 +33,7 @@ export const authApi = {
   ): Promise<{
     access_token_configured: boolean;
     can_set_access_token: boolean;
+    set_token_blocked_reason: 'not_local' | 'proxy_untrusted' | null;
     current_client_requires_auth: boolean;
   }> => {
     // 两种调法（[75]4.2.3）：

@@ -33,8 +33,24 @@ type AuthView =
   | { kind: 'checking' } // 入口查询进行中（结论未到不显示输入框）
   | { kind: 'noAuthNeeded' } // requires_auth=false → 直接进主页
   | { kind: 'firstSetup' } // 未配置 + 可设 → 输入即设置
-  | { kind: 'firstSetupElsewhere' } // 未配置 + 不可设 → 只给指引，不给输入框
+  | { kind: 'firstSetupElsewhere'; reason: BlockedReason } // 未配置 + 不可设 → 只给指引
   | { kind: 'login' }; // 已配置（或查状态失败兜底）→ 登录框，status 当探针验真
+
+/** [75]BUG-B：不可设口令的原因，决定指引怎么写。null=可设。 */
+type BlockedReason = 'not_local' | 'proxy_untrusted' | null;
+
+/** 提示框样式，三处警示文案共用（DRY）。 */
+const WARN_BOX: React.CSSProperties = {
+  maxWidth: 380,
+  padding: 12,
+  border: '1px solid #ffd591',
+  background: '#fffbe6',
+  borderRadius: 6,
+  fontSize: 13,
+  color: '#ad6800',
+  textAlign: 'left',
+  lineHeight: 1.7,
+};
 
 const LoginPage: React.FC = () => {
   const [token, setToken] = useState('');
@@ -62,7 +78,10 @@ const LoginPage: React.FC = () => {
             ? { kind: 'login' }
             : st.can_set_access_token
               ? { kind: 'firstSetup' }
-              : { kind: 'firstSetupElsewhere' }
+              : {
+                  kind: 'firstSetupElsewhere',
+                  reason: st.set_token_blocked_reason,
+                }
         );
       })
       .catch(() => {
@@ -164,29 +183,30 @@ const LoginPage: React.FC = () => {
         </div>
       )}
 
-      {view.kind === 'firstSetupElsewhere' && (
-        <div
-          style={{
-            maxWidth: 380,
-            padding: 12,
-            border: '1px solid #ffd591',
-            background: '#fffbe6',
-            borderRadius: 6,
-            fontSize: 13,
-            color: '#ad6800',
-            textAlign: 'left',
-            lineHeight: 1.7,
-          }}
-        >
-          <strong>服务端尚未配置访问口令，且不能在当前这台机器上设置</strong>
-          <br />
-          设置或更换访问口令<strong>只能在服务端那台电脑上</strong>
-          进行（安全设计）。
-          <br />
-          请到服务端本机打开「设置 → 前端 → 登录与准入 →
-          访问口令」设置完成后，再回到本页访问。
-        </div>
-      )}
+      {view.kind === 'firstSetupElsewhere' &&
+        (view.reason === 'proxy_untrusted' ? (
+          // [75]BUG-B：* 部署下"去本机设置"是死路（照样 403），必须换成 env 变量出路
+          <div style={WARN_BOX}>
+            <strong>服务端尚未配置访问口令</strong>
+            <br />
+            后端被配置成信任任意来源的转发头（FORWARDED_ALLOW_IPS=*），
+            <br />
+            无法确认你是不是本机，故此处不开放设置入口。
+            <br />
+            请在服务端用环境变量 <strong>OMNIAGENT_ACCESS_TOKEN</strong>
+            配置口令后重启，或改为只信任反代所在机器的 IP。
+          </div>
+        ) : (
+          <div style={WARN_BOX}>
+            <strong>服务端尚未配置访问口令，且不能在当前这台机器上设置</strong>
+            <br />
+            设置或更换访问口令<strong>只能在服务端那台电脑上</strong>
+            进行（安全设计）。
+            <br />
+            请到服务端本机打开「设置 → 前端 → 登录与准入 → 访问口令」
+            设置完成后，再回到本页访问。
+          </div>
+        ))}
 
       {(view.kind === 'login' || view.kind === 'firstSetup') && (
         <>
@@ -199,26 +219,12 @@ const LoginPage: React.FC = () => {
             本服务部署在局域网内，需口令才能访问
           </div>
           {view.kind === 'firstSetup' && (
-            <div
-              style={{
-                maxWidth: 380,
-                padding: 12,
-                border: '1px solid #ffd591',
-                background: '#fffbe6',
-                borderRadius: 6,
-                fontSize: 13,
-                color: '#ad6800',
-                textAlign: 'left',
-                lineHeight: 1.7,
-              }}
-            >
+            <div style={WARN_BOX}>
               <strong>服务端尚未配置访问口令</strong>
               <br />
               在下面输入一个口令（至少 8
               位）即可进入并保存；之后每次进入都用它。
               <br />
-              {/* 路径为「设置 → 前端 → 登录与准入 → 访问口令」：access_token 属 appearance 组
-                  （Tab 显示名已改「前端」），security 组只含 4 项操作安全项，照旧文案去 security 组找不到。 */}
               也可稍后在「设置 → 前端 → 登录与准入 → 访问口令」里修改。
             </div>
           )}
