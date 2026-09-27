@@ -280,10 +280,11 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     });
   });
 
-  test('07 外观Tab加载', async ({ page }) => {
+  test('07 前端Tab加载', async ({ page }) => {
     await goto(page);
-    await tab(page, /外\s*观/);
-    await expect(page.getByText('外观').first()).toBeVisible({
+    await tab(page, /前\s*端/);
+    // Tab 显示名已于 2026-09-27 由「外观」改为「前端」（appearance 组 label）
+    await expect(page.getByText('登录与准入')).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -1771,7 +1772,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     console.log(`[E2E] 92 paths.database=${String(raw)}`);
   });
 
-  // ── 外观Tab (93-96) ────────────────────────────────────────
+  // ── 前端Tab (93-96) ─────────────────────────────────────────
   test('93 外观 language读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;

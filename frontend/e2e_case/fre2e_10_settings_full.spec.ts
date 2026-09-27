@@ -17,7 +17,7 @@ import * as fs from 'fs';
  *   7) 安全Tab — 读写 + 危险确认弹窗 + 落盘
  *   8) 沙箱Tab — 读写 + 落盘
  *   9) 通用Tab 采样参数 — llm.sampling.temperature/max_tokens 编辑 + 落盘（2026-09-23 已迁 general）
- *  10) 外观Tab + 搜索跳转 — 主题切换 + 搜索命中行 + Tab切换脏确认
+ *  10) 前端Tab + 搜索跳转 — 主题切换 + 搜索命中行 + Tab切换脏确认
  *
  * 铁规: AGENTS.md 严禁 commit 任何测试代码文件。
  *
@@ -732,8 +732,8 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     console.log('[E2E] case-09 通用采样参数已恢复');
   });
 
-  // ─── 10) 外观Tab + 搜索跳转: 主题切换 + 搜索命中 + Tab切换脏确认 ──
-  test('case-10 外观Tab + 搜索跳转: 主题切换→搜索命中→Tab切换脏确认', async ({
+  // ─── 10) 前端Tab + 搜索跳转: 主题切换 + 搜索命中 + Tab切换脏确认 ──
+  test('case-10 前端Tab + 搜索跳转: 主题切换→搜索命中→Tab切换脏确认', async ({
     page,
     request,
   }) => {
@@ -745,8 +745,10 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     console.log(`[E2E] case-10 当前主题: ${themeBefore}`);
 
     await gotoSettings(page);
-    await clickTab(page, /外\s*观/);
-    await expect(page.getByText('外观')).toBeVisible({ timeout: 15_000 });
+    await clickTab(page, /前\s*端/);
+    // Tab 显示名已于 2026-09-27 由「外观」改为「前端」（appearance 组 label）；
+    // 断言该 Tab 的首个小节标题，比断言旧 Tab 名更贴近"内容确实渲染出来了"
+    await expect(page.getByText('登录与准入')).toBeVisible({ timeout: 15_000 });
 
     // 1) 主题切换（如 theme 是 select）
     const themeRow = page.locator('[data-settings-key="app.theme"]').first();
@@ -838,6 +840,6 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
         patch: { 'app.theme': themeBefore },
       });
     }
-    console.log('[E2E] case-10 外观+搜索+脏确认测试完成');
+    console.log('[E2E] case-10 前端+搜索+脏确认测试完成');
   });
 });
