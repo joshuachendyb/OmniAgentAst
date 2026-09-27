@@ -17,84 +17,84 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
   2026-09-21 - 小欧 - 对齐文档54 9.1.3：delete_provider switched_to 返回 provider 名称（target_p or None），撤销此前误改的模型名称版
   2026-09-21 - 小欧 - 修复 None 陷阱: .get('key','')/get('key',[])/get('key',{}) 在 key 存在但值为 None 时返回 None，
     统一修为 .get('key') or ''/[]/{}/60/3（config_service/config_helpers/model_service/resolver 共 12 处）
-   2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（模型域 M1~M14，对应 config_helpers 的
+   2026-09-21 - 小欧 - 三堂会审第三轮 22 真实 bug 修复（模型域，对应 config_helpers 的
      merge_nested_patch 系列）——①add/update/delete_model 与 add/update/delete_provider 全部改走
      merge_nested_patch 嵌套树写(叶段字面名)：点号模型名 gpt-4.1 不再被拆成 model_params['gpt-4']['1']
-     (M1/M2/M3 错位+孤儿)；②add_provider 校验保留键 provider/model/model_ref 与空名(M4/M5/M6)；
-     ③delete_model 未知 provider 前置 ValueError，不再写入空块污染(M7/M8)；④add_model 空模型名拒绝(M9)；
-     ⑤delete_provider 跳板扫第一个有可用模型的 provider(M10/M11)，deelete_model/deelete_provider
-     无可用回退时抛"禁止删除最后一个可用模型"守卫(M12)；⑥add_provider 接受 models 列表与
-     max_retries(M13 链路透传)；⑦env 接管双标准对齐：{NAME}_API_KEY 命中的 provider 读只读、
-     AI_PROVIDER 命中时当前模型切换/删除只读(M14)；⑧update_provider_config 支持 label 更新(S7)、
-     拒绝非法字段(S8)；⑨get_models 输出补 max_retries 对齐 ProviderInfo DTO
-   2026-09-21 - 小欧 - 建议报告 P8: update_model 对空 default_params 提交由"跳过+无有效配置项 500"改为
+     (错位+孤儿)；②add_provider 校验保留键 provider/model/model_ref 与空名；
+     ③delete_model 未知 provider 前置 ValueError，不再写入空块污染；④add_model 空模型名拒绝；
+     ⑤delete_provider 跳板扫第一个有可用模型的 provider，deelete_model/deelete_provider
+     无可用回退时抛"禁止删除最后一个可用模型"守卫；⑥add_provider 接受 models 列表与
+     max_retries(链路透传)；⑦env 接管双标准对齐：{NAME}_API_KEY 命中的 provider 读只读、
+     AI_PROVIDER 命中时当前模型切换/删除只读；⑧update_provider_config 支持 label 更新、
+     拒绝非法字段；⑨get_models 输出补 max_retries 对齐 ProviderInfo DTO
+     2026-09-21 - 小欧 - 建议报告: update_model 对空 default_params 提交由"跳过+无有效配置项 500"改为
       显式清空（写空块 {}），配合 config_helpers._iter_nested_ops 空 dict 叶值修复根治"清空不落盘"
 # 2026-09-21 - 小欧 - 三堂会审修复：timeout/max_retries 的 `or 60/3` 改为 `is not None` 判断，防止合法值0被吞
 # 2026-09-21 - 小欧 - v4.20 单源收敛: get_current_ref 去扁平键 fallback 只读 ai.model_ref（签名去 providers 参数）；
 #   _sync_current 只写 ai.model_ref（删扁平双写）——与 resolver/config_helpers 统一为单一真相源
-# 2026-09-22 - 小欧 - [62]P1/P2 param_options 读写链落地：①P1 加 DEFAULT_PARAM_OPTIONS 全局兜底 +
+# 2026-09-22 - 小欧 - param_options 读写链落地：①加 DEFAULT_PARAM_OPTIONS 全局兜底 +
 #   _resolve_param_options 三层解析并集（模型级>provider级>全局）、_models_of 组装 param_options；
 #   update_model 先合并本次新选项再校验（避免同批改选项+改值误杀）、unknown 白名单加 param_options、
 #   落 model_meta；update_provider_config key_map 加 param_options（Provider级写入口）。
-#   ②P2 add_model 签名加 param_options + 选项表非空 string[]/值在表内（0拒）校验 + 落 model_meta
+#   ②add_model 签名加 param_options + 选项表非空 string[]/值在表内（0拒）校验 + 落 model_meta
 #   （不送 param_options 与现状兼容，tree 不写该键）。
-# 2026-09-22 - 小欧 - [62]P7 4.3(1)c：get_models 显示层 timeout/max_retries 兜底改读 tuning
+# 2026-09-22 - 小欧 - get_models 显示层 timeout/max_retries 兜底改读 tuning
 #   （timeout→tuning.llm_net.read_timeout 默认150、max_retries→tuning.llm.stream_max_retries 默认3），
 #   import 补 from app.config import get_config——消除显示值60/3与运行时30/3 不一致（显示即真相）。
-# 2026-09-22 - 小欧 - [62]P8 4.3(9)：①常量区加 PROVIDER_PARAM_TYPES + KNOWN_PROVIDER_KEYS（元数据源头，
+# 2026-09-22 - 小欧 - Provider 参数元数据：①常量区加 PROVIDER_PARAM_TYPES + KNOWN_PROVIDER_KEYS（元数据源头，
 #   新增 Provider 参数只需加一行 + config.yaml 对字段，前端零改）；②get_models Provider 段加
 #   param_types 元数据 + 动态标量值透传（KNOWN_PROVIDER_KEYS 之外标量平铺）；③update_provider_config
 #   加 param_types 白名单（key_map + PROVIDER_PARAM_TYPES 之外拒，防任意键注入）+ 动态字段落盘
 #   （param_types 内 key_map 外的标量直写 ai.{provider}.{k}，复用 merge_nested_patch 叶值链路）。
 # 2026-09-24 - 小欧 - 参数键级删除：update_model 白名单加 remove_params——先从 model_params 拷贝删键、
-#   同步清 model_meta.range/param_options 对应键，再 merge default_params（空 dp 仍=整块清空，与既有 P8 语义叠加：
+#   同步清 model_meta.range/param_options 对应键，再 merge default_params（空 dp 仍=整块清空，与既有语义叠加：
 #   remove 先算好 new_params，dp 非空则 update，dp 为空则置 {}）。前端①参数行 × 删除按钮通道 — 小欧-2026-09-24
-# 2026-09-24 - 小欧 - 三堂会审修复（BZ-3/BZ-6/BZ-7/BZ-9 四条，逐条真伪鉴别后落码）：
-#   ①BZ-3 remove 不再无条件 setdefault model_meta（原必建空块落 YAML model_meta.{model}:{} 污染），
+# 2026-09-24 - 小欧 - 三堂会审修复（四条，逐条真伪鉴别后落码）：
+#   ① remove 不再无条件 setdefault model_meta（原必建空块落 YAML model_meta.{model}:{} 污染），
 #     range/param_options 清理仅实际命中才建块；
-#   ②BZ-6 remove 的 meta 清理挪到 fields param_options 写入之后执行（原在前，293 行同批
+#   ② remove 的 meta 清理挪到 fields param_options 写入之后执行（原在前，293 行同批
 #     param_options 全量覆盖使已删键选项复活）；清理跳过 default_params 重加键（keep 集合，
 #     remove+dp 同批恢复值时其 meta 保留不误删）；
-#   ③BZ-7 remove_params 全为不存在键（model_params 均无命中且 meta 无命中、无 default_params、
+#   ③ remove_params 全为不存在键（model_params 均无命中且 meta 无命中、无 default_params、
 #     无其它字段）= 幂等 no-op 成功返回不写盘（原仍全量 merge 空耗备份/原子重写/mtime 抖动）；
-#   ④BZ-9 range/param_options 双份近似清理收敛 for meta_key 单循环（DRY）— 小欧-2026-09-24
-# 2026-09-24 - 小欧 - [68] 模型库：新增 fetch_remote_models（GET 远程列表）与
+#   ④ range/param_options 双份近似清理收敛 for meta_key 单循环（DRY）— 小欧-2026-09-24
+# 2026-09-24 - 小欧 - 模型库：新增 fetch_remote_models（GET 远程列表）与
 #   replace_provider_models（PUT 替换写入 + 差集孤儿清理）— 小欧-2026-09-24
-# 2026-09-24 23:55:00 - 小欧 - [68] 第四章核查修复 2 处：①fetch_remote_models 组头
+# 2026-09-24 23:55:00 - 小欧 - 模型库核查修复 2 处：①fetch_remote_models 组头
 #   api_key 补读 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底；原仅读 YAML，
 #   env 接管时 YAML 可无 api_key 致 Bearer 空 key 远端 401）；②api_base 空的 400
-# 2026-09-25 - 小欧 - 修复 BZ-3/BZ-6 复发（守护测试 verify_bz_remove_params_guard 实证 temperature 残留）：
+# 2026-09-25 - 小欧 - 修复参数删除两处复发（守护测试 verify_bz_remove_params_guard 实证 temperature 残留）：
 #   _iter_nested_ops 对非空 dict 无整块替换语义（递归展平为叶键写），update_model 落 new_params 整块
 #   时删键意图丢失; 改 remove 命中时对残留键显式写 None（_set_nested_path 原生删键），
 #   dp 恢复键原位保留不误删;(verify_cfg_weak_guard 10 passed) — 小欧-2026-09-25
-#   文案补「该 Provider」前缀对齐设计 L138 — 小欧-2026-09-24
+#   文案补「该 Provider」前缀对齐设计 — 小欧-2026-09-24
 # 2026-09-25 - 小健 - 模型列表全链路排序: _parse_remote_models_body 收集后按 id 字母序(不分大小写)单点排序,
 #   远端返回即有序→模型库列表/分组组内/保存落盘 finalList/模型Tab下次保存后下拉全字母序(北京老陈确认全链路方案) — 小健-2026-09-25
-# 2026-09-26 - 小欧 - [72]第三章 + 第四章 + 第八章(8.5-3) + 第一章(1.3-1) 同一函数一次落地(铁律: 同函数禁止拆两次改):
-#   (1)第三章 api_key 三态做实为后端唯一权威: key_map 循环内对 api_key 分流 - 空串/纯空白 continue 跳过(不写入=不修改),
+# 2026-09-26 - 小欧 - api_key 三态/base_url 必填同一函数一次落地(铁律: 同函数禁止拆两次改):
+#   (1)api_key 三态做实为后端唯一权威: key_map 循环内对 api_key 分流 - 空串/纯空白 continue 跳过(不写入=不修改),
 #     非空先 str(v).strip() 再落盘; 字段不出现/None 由 v is not None 拦; clear=true 仍走下方显式写空串分支(唯一清空途径)。
-#     修前缺陷: if k in key_map and v is not None 把空串判为合法, 任何非界面途径传空串即擦除密钥还返回 ok(第三章 3.1/3.2)
-#   (2)第一章 去空格与三态同一处收口(写入前 strip), 与 client_sdk 消费端兜底两侧对齐, 双通道 strip 不一致根因消除
-#   (3)第四章 clear 与设置值互斥: clear is True 且 api_key 非空 -> 400, 不静默丢弃任何一方(修前无条件覆盖新 key)
-#   (4)第八章 base_url 空即错误状态: base_url/api_base 传空或纯空白 -> 400 文案指向填写完整地址, 不再清空后照存
+#     修前缺陷: if k in key_map and v is not None 把空串判为合法, 任何非界面途径传空串即擦除密钥还返回 ok
+#   (2)去空格与三态同一处收口(写入前 strip), 与 client_sdk 消费端兜底两侧对齐, 双通道 strip 不一致根因消除
+#   (3)clear 与设置值互斥: clear is True 且 api_key 非空 -> 400, 不静默丢弃任何一方(修前无条件覆盖新 key)
+#   (4)base_url 空即错误状态: base_url/api_base 传空或纯空白 -> 400 文案指向填写完整地址, 不再清空后照存
 #   (5)三条校验均置于 tree/node 构造与 merge 之前, 失败时配置零改动(满足配置未被修改验收)
 #   (6)ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500, 故显式抛 HTTPException(400);
 #     不改公共装饰器, 避免波及全项目 24 处调用点(OCP/SRP)
-# 2026-09-26 - 小欧 - [72]第八章(8.5-1): add_provider 增加 api_base 必填校验(空/纯空白 -> 400, 文案"api_base 必填:
+# 2026-09-26 - 小欧 - add_provider 增加 api_base 必填校验(空/纯空白 -> 400, 文案"api_base 必填:
 #   API 地址是 Provider 的必要配置"), 置于 _validate_new_provider_name 之后、构造 tree 之前, 失败时配置零改动;
 #   前端 ModelModals.tsx 添加 Provider 弹窗同步加 required + 拒纯空白 validator, 前后端双闸。
-#   不允许"先建后填" - api_key 才可后填(第三章三态), base_url 是必要配置, 与之方向相反 - 小欧 2026-09-26
-# 2026-09-26 - 小欧 - [72]第十章(10.3) 落地: fetch_remote_models 增 probe_key 参数(测未保存的 key) + 错误分类
+#   不允许"先建后填" - api_key 才可后填(三态规则), base_url 是必要配置, 与之方向相反 - 小欧 2026-09-26
+# 2026-09-26 - 小欧 - fetch_remote_models 错误分类落地: 增 probe_key 参数(测未保存的 key) + 错误分类
 #   (1)新增 _classify_remote_result(status_code, network_err): ok / key_invalid(401,403) /
 #      endpoint_unsupported(404,405,501) / network_error(超时与连接失败)。**404/405/501 刻意不判 key 无效** ——
-#      部分 provider 无 /models 端点, 误判会让用户反复改 key 甚至把正确的 key 改坏(设计 10.2 第3条)
+#      部分 provider 无 /models 端点, 误判会让用户反复改 key 甚至把正确的 key 改坏(设计既定第3条)
 #   (2)_fail 增 status_code / category 两字段, 成功返回亦补 status_code + category:"ok", 调用方据此分两套文案
 #   (3)probe_key 仅存内存、只进本次探测的 header: 不落盘、不进日志、不回传响应(设计硬要求)。
 #      优先级 probe_key > {NAME}_API_KEY env > YAML —— 用户输入框里新输的 key 才是待验证的那个
-#   (4)安全前提已实测(设计 10.3 要求先实测): httpx 异常字符串不回显 header、不含 key
+#   (4)安全前提已实测(要求先实测): httpx 异常字符串不回显 header、不含 key
 #      (DNS 失败/连接拒绝/超时三种均验证), 故 _http_get_remote_models 现有 logger.error(f"拉取失败: {e}") 可保留
 #   (5)未动 _http_get_remote_models 与 _parse_remote_models_body(职责单一, 分类在调用层做, 不污染下层) - 小欧 2026-09-26
-# 2026-09-26 - 小欧 - [72]第十二章(12.5) 落地: 增"查看已保存密钥明文"的只读取数出口
+# 2026-09-26 - 小欧 - 增"查看已保存密钥明文"的只读取数出口
 #   审计日志与 env 接管拒绝逻辑在路由层(那里才有 request.client 可取来源 IP) — 小欧 2026-09-26
 # 2026-09-26 (三堂会审后修正) - 小欧 - 10 大规范复核, 本文件 2 处已改:
 #   ①[KISS-DIRECT + YAGNI] **删除** get_raw_ai_for_plain_read / provider_names_for_plain_read 两个函数。
@@ -118,10 +118,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   原为两遍遍历 fields + 第二遍 `k not in key_map` 排除重叠键(timeout/max_retries/label 同属
 #   key_map 与 PROVIDER_PARAM_TYPES)，两循环互相耦合属隐式契约；单遍后该约束由结构天然承担。
 #   行为经 20 万随机组合穷举验证等价(含 v=None/纯空白/非字符串真值/三键重叠)。
-#   同时把 D22 决策史由行内迁至本处：api_key 传空串="不修改" ⇒ node 空 ⇒ `if not node:
+#   同时把该决策史由行内迁至本处：api_key 传空串="不修改" ⇒ node 空 ⇒ `if not node:
 #   raise ValueError` ⇒ 级别纠正只在中央映射 response_utils.handle_api_errors 做(不在 service
 #   层改异常类型, 否则推翻 TDD test_empty_api_key_not_overwrite 固化的"抛错+绝不落盘")。
-# 2026-09-27 - 小欧 - [72]第一章补齐：①add_provider 落盘前 strip（api_key/label/api_base，
+# 2026-09-27 - 小欧 - 字符串落盘前 strip 补齐：①add_provider 落盘前 strip（api_key/label/api_base，
 #   与 update_provider_config 的并行写入路径对齐；label 原未 strip、api_base 校验 strip 判空而落盘原样写，
 #   均致 YAML 存脏值——消费端 get_models/resolver/client_sdk 均不 strip）；②update_provider_config
 #   其余字符串字段同步 strip，与 api_key 同一口径（DRY：清洗只做一次）。留空仍为"未配置" — 小欧 2026-09-27
@@ -134,10 +134,10 @@ from fastapi import HTTPException
 from app.llm.adapters import get_provider_adapter
 
 from app.logger import logger
-# 2026-09-26 - 小欧 - [72]三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
+# 2026-09-26 - 小欧 - 三堂会审后修正(复用优先): 引公用"密钥空白判定"唯一权威
 #   app/utils/secret_utils.is_blank_secret —— 本文件内联重写过一版(probe_key 判空)，已改为复用。
 from app.utils.secret_utils import is_blank_secret
-from app.config import get_config  # [62]P7 4.3(1)c：get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
+from app.config import get_config  # get_models 显示层读 tuning 三层回落 — 小欧 2026-09-22（config_helpers 同层已引，无循环）
 from app.services.model.config_helpers import (
     get_config_path,
     mask_secret_value,
@@ -153,9 +153,9 @@ DEFAULT_PARAM_OPTIONS: Dict[str, List[str]] = {
     "reasoning_effort": ["low", "medium", "high"],
 }
 
-# [62]P8 4.3(9)-1 动态参数元数据表象（小欧 2026-09-22）
+# 动态参数元数据表（小欧 2026-09-22）
 # 新增 Provider 参数：在此加一行 + config.yaml 对应 provider 加字段，前后端自动适配，不再改前端代码
-# （rate_limit 作闭环演示实例保留启用——BY-09 测试以它验证读-写-存-显四段）
+# （rate_limit 作闭环演示实例保留启用——测试以它验证读-写-存-显四段）
 PROVIDER_PARAM_TYPES: Dict[str, Dict[str, Any]] = {
     "timeout":     {"type": "number", "label": "超时(秒)", "min": 1, "default": 60},
     "max_retries": {"type": "number", "label": "重试次数", "min": 0, "default": 3},
@@ -195,7 +195,7 @@ def _provider_names(ai: Dict[str, Any]) -> List[str]:
 
 
 def get_current_ref(ai: Dict[str, Any]) -> Dict[str, str]:
-    """读当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只读结构化 ai.model_ref（删扁平键 fallback，见[54]）"""
+    """读当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只读结构化 ai.model_ref（删扁平键 fallback）"""
     ref = ai.get("model_ref")
     if isinstance(ref, dict) and ref.get("provider") and ref.get("model"):
         return {"provider": str(ref["provider"]), "model": str(ref["model"])}
@@ -236,11 +236,11 @@ def get_models() -> Dict[str, Any]:
                           "api_base": str(p.get("api_base") or ""),
                           "api_key": mask_secret_value(p.get("api_key") or ""),
                           "env": is_env,
-                          "timeout": p.get('timeout') if p.get('timeout') is not None else get_config().get("tuning.llm_net.read_timeout", 150),  # [62]P7 4.3(1)c：显示值=运行时三层回落值（原兜底60≠运行30，显示即真相被打破）
-                          "max_retries": p.get('max_retries') if p.get('max_retries') is not None else get_config().get("tuning.llm.stream_max_retries", 3),  # [62]P7 4.3(1)c：与 __init__ 三层回落同源
-                          "param_types": PROVIDER_PARAM_TYPES,  # [62]P8 4.3(9)-2-a：元数据表下发（前端只渲染不定义）
+                          "timeout": p.get('timeout') if p.get('timeout') is not None else get_config().get("tuning.llm_net.read_timeout", 150),  # 显示值=运行时三层回落值（原兜底60≠运行30，显示即真相被打破）
+                          "max_retries": p.get('max_retries') if p.get('max_retries') is not None else get_config().get("tuning.llm.stream_max_retries", 3),  # 与 __init__ 三层回落同源
+                          "param_types": PROVIDER_PARAM_TYPES,  # 元数据表下发（前端只渲染不定义）
                           **{k: v for k, v in p.items()
-                             if k not in KNOWN_PROVIDER_KEYS and isinstance(v, (str, int, float, bool))},  # [62]P8 4.3(9)-2-a：动态标量值透传（rate_limit 等新参数零改前端）
+                             if k not in KNOWN_PROVIDER_KEYS and isinstance(v, (str, int, float, bool))},  # 动态标量值透传（rate_limit 等新参数零改前端）
                           "models": _models_of(ai, name)})
     return {"providers": providers,
             "current_model_ref": get_current_ref(ai)}
@@ -251,7 +251,7 @@ def get_providers() -> List[Dict[str, Any]]:
 
 
 def _raise_if_env_takeover(name: str) -> None:
-    """env 接管守卫：设 {NAME}_API_KEY 的 provider 整行只读（与 settings 页 env 语义对齐，M14 双标准）。"""
+    """env 接管守卫：设 {NAME}_API_KEY 的 provider 整行只读（与 settings 页 env 语义对齐，双标准）。"""
     if os.environ.get(f"{name.upper()}_API_KEY"):
         raise ValueError(f"Provider '{name}' 由环境变量 {name.upper()}_API_KEY 接管，只读")
 
@@ -263,7 +263,7 @@ def _raise_if_current_ref_env() -> None:
 
 
 def _sync_current(tree: Dict[str, Any], provider: str, model: str) -> None:
-    """更新嵌套树（merge_nested_patch）中的当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只写 ai.model_ref（删扁平双写，见[54]）。"""
+    """更新嵌套树（merge_nested_patch）中的当前模型 — 2026-09-21 小欧 v4.20 单源收敛：只写 ai.model_ref（删扁平双写）。"""
     ai = tree.setdefault("ai", {})
     if provider and model:
         ai["model_ref"] = {"provider": provider, "model": model}
@@ -339,7 +339,7 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
             if k in allowed and v not in allowed[k]:
                 raise ValueError(f"不支持的配置项值: {k}={v!r}，允许{allowed[k]}")
     # 2026-09-24 小欧：remove_params 键级删除——拷贝当前 model_params 删键得 new_params；
-    #   三堂会审修复（BZ-3/BZ-6/BZ-7/BZ-9）：①移除本段原无条件 setdefault model_meta（原 remove
+    #   三堂会审修复：①移除本段原无条件 setdefault model_meta（原 remove
     #   必建空块、YAML 落 model_meta.{model}:{} 污染）；②range/param_options 清理挪到下方
     #   fields 写入完成之后统一做（remove 删除意图最终生效，防同批 param_options 覆盖复活；
     #   且跳过 default_params 重加键 keep——remove+dp 同批恢复值时其 meta 保留）；③双份
@@ -360,12 +360,12 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
                 new_params = dict(orig_params)
             new_params.update(dp)
         else:
-            # 2026-09-21 小欧 修 P8：空 default_params 提交 = 显式清空模型参数块（原实现走
+            # 2026-09-21 小欧 修复：空 default_params 提交 = 显式清空模型参数块（原实现走
             # isinstance 且为空跳过 → node 空 → "无有效配置项" 500）。merge_nested_patch
             # 支持空 dict 叶值直接落 YAML 空块，validate 侧 parseInt 兼容。
             new_params = {}
-    # BZ-7：仅 remove 真命中或 default_params 有变更才写 model_params（全 miss 不空写）
-    # 2026-09-25 小欧 修 BZ-3/BZ-6 复发（守护测试 verify_bz_remove_params_guard 实证）：
+    # 仅 remove 真命中或 default_params 有变更才写 model_params（全 miss 不空写）
+    # 2026-09-25 小欧 修复删除意图丢失复发（守护测试 verify_bz_remove_params_guard 实证）：
     #   _iter_nested_ops 把非空 dict 递归展平为叶键写（无整块替换语义），直接落 new_params 块会丢删键意图
     #   → temperature 残留。改显式 None 删键意向（_set_nested_path 原生删键），保留 dp/keep 语义。
     if new_params is not None and (removed_hit or isinstance(dp, dict)):
@@ -378,7 +378,7 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
     # 选项表落 model_meta（小欧 2026-09-22）
     if isinstance(fields.get("param_options"), dict):
         node.setdefault("model_meta", {}).setdefault(model, {})["param_options"] = fields["param_options"]
-    # BZ-3/BZ-6/BZ-9：remove 同步清 range/param_options——在 fields 写入之后执行（删除意图最终
+    # remove 同步清 range/param_options——在 fields 写入之后执行（删除意图最终
     #   生效，防 293 行同批 param_options 覆盖复活）；跳过 default_params 中重加键（keep）；
     #   仅实际命中才 setdefault 建 model_meta 块（防空块污染）；range/options 单循环（DRY）
     if isinstance(removed, list) and removed:
@@ -393,7 +393,7 @@ def update_model(provider: str, model: str, fields: Dict[str, Any]) -> Dict[str,
                     cur.pop(k, None)
                 node.setdefault("model_meta", {}).setdefault(model, {})[meta_key] = cur
     if not node:
-        # BZ-7：remove_params 全为不存在键 = 幂等 no-op，成功返回不写盘（原仍全量 merge，
+        # remove_params 全为不存在键 = 幂等 no-op，成功返回不写盘（原仍全量 merge，
         #   空耗备份/原子重写/mtime 抖动）；其余无有效配置项仍拒
         if isinstance(removed, list) and removed:
             return {"ok": True, "model": model, "mtime": _config_mtime()}
@@ -457,16 +457,16 @@ def add_provider(name: str, label: str = "", api_base: str = "",
                  max_retries: int = 3) -> Dict[str, Any]:
     ai = _raw_ai()
     _validate_new_provider_name(name, ai)
-    # [72]第八章(8.5-1) - 小欧 - 2026-09-26: api_base 必填，空/纯空白 → 400。
+    # api_base 必填校验 - 小欧 - 2026-09-26: 空/纯空白 → 400。
     # URL 是 Provider 的必要配置，无地址即无法调用；不允许"先建后填"（与 api_key 的"留空=保持原值"方向相反）。
     if not str(api_base or "").strip():
         raise HTTPException(status_code=400, detail="api_base 必填：API 地址是 Provider 的必要配置")
     ms = list(models or [])
     if model and model not in ms:
         ms.append(model)
-    # 2026-09-27 - 小欧 - [72]第一章补齐第二条写入路径：api_key 落盘前 strip。
-    #   add_provider 与 update_provider_config 是**两条并行的 api_key 落盘路径**，第一章 1.3 只覆盖了
-    #   后者（`cleaned = str(v).strip()`），本函数原样落盘 ⇒ 界面新建 Provider 粘贴带空格的 key
+    # 2026-09-27 - 小欧 - 第二条写入路径补 strip：api_key 落盘前 strip。
+    #   add_provider 与 update_provider_config 是**两条并行的 api_key 落盘路径**，另一条已覆盖
+    #   （`cleaned = str(v).strip()`），本函数原样落盘 ⇒ 界面新建 Provider 粘贴带空格的 key
     #   会把脏值写进 YAML。危害不在"当下调用失败"（消费端 service.py:220 / client_sdk:288 /
     #   model_routes:248 各有一道 strip 兜底），而在**脏值长期潜伏**：YAML 里存的是带空格的 key，
     #   任何新增消费端漏 strip 即 401，且界面无从提示病因（用户会反复重输同一串正确 key）。
@@ -474,7 +474,7 @@ def add_provider(name: str, label: str = "", api_base: str = "",
     tree: Dict[str, Any] = {"ai": {name: {
         "name": name,
         "label": str(label or name).strip(),
-        # 2026-09-27 - 小欧 - [72]第一章：api_base 与 label 一并 strip（与 update_provider_config 同一口径）：
+        # 2026-09-27 - 小欧 - api_base 与 label 一并 strip（与 update_provider_config 同一口径）：
         #   校验时用 .strip() 判非空，落盘却原样写，两者不一致 ⇒ YAML 存脏值。
         #   消费端 get_models(:232) / resolver(:274) / client_sdk(:296) 均不 strip，
         #   带空格的 base_url 会让 httpx 拿到 " https://x/v1 " 而真实请求失败。
@@ -493,7 +493,7 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
     key_map = {"api_key": "api_key", "base_url": "api_base", "api_base": "api_base",
                "timeout": "timeout", "retry_times": "max_retries", "max_retries": "max_retries",
                "label": "label", "param_options": "param_options"}
-    # [62]P8 4.3(9)-3-d 白名单：仅 key_map + PROVIDER_PARAM_TYPES + clear（清空标记）内字段可落盘，其余拒（防任意键注入）
+    # 字段白名单：仅 key_map + PROVIDER_PARAM_TYPES + clear（清空标记）内字段可落盘，其余拒（防任意键注入）
     if isinstance(fields, dict):
         unknown_key = next(
             (k for k in fields if k not in set(key_map) and k not in PROVIDER_PARAM_TYPES
@@ -501,11 +501,10 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         )
         if unknown_key:
             raise ValueError(f"不支持的Provider配置项: {unknown_key}")
-    # [72]第三章 + 第四章 + 第八章(8.5-3) - 小欧 - 2026-09-26
     # 三条契约在本函数一次落地（同函数禁止拆两次改）：
-    #   第三章 api_key 三态：字段不出现/None/空串/纯空白 = 不修改（跳过不写）；非空 strip 后写入
-    #   第四章 clear 与设置值互斥：clear=true 且 api_key 非空 → 400，不静默丢弃任何一方
-    #   第八章 base_url 空即错误状态：空/纯空白 → 400，不再"清空后照存"
+    #   api_key 三态：字段不出现/None/空串/纯空白 = 不修改（跳过不写）；非空 strip 后写入
+    #   clear 与设置值互斥：clear=true 且 api_key 非空 → 400，不静默丢弃任何一方
+    #   base_url 空即错误状态：空/纯空白 → 400，不再"清空后照存"
     # ValueError 会被 handle_config_errors(=handle_api_errors) 笼统转 500，故此处显式抛 400 HTTPException
     if fields.get("clear") is True and str(fields.get("api_key") or "").strip():
         raise HTTPException(status_code=400,
@@ -525,12 +524,12 @@ def update_provider_config(name: str, fields: Dict[str, Any]) -> Dict[str, Any]:
         if k in key_map:
             if v is not None:
                 if k == "api_key":
-                    # 第三章三态：空/纯空白视为"不修改"跳过；非空 strip 后落盘
+                    # api_key 三态：空/纯空白视为"不修改"跳过；非空 strip 后落盘
                     cleaned = str(v).strip()
                     if cleaned:
                         node["api_key"] = cleaned
                 else:
-                    # 2026-09-27 - 小欧 - [72]第一章：其余字符串字段（label / base_url / api_base）同样 strip 后落盘，
+                    # 2026-09-27 - 小欧 - 其余字符串字段（label / base_url / api_base）同样 strip 后落盘，
                     # 与 api_key 同一口径（DRY：清洗只做一次，不靠调用方自觉）
                     node[key_map[k]] = v.strip() if isinstance(v, str) else v
         elif k in PROVIDER_PARAM_TYPES:
@@ -574,7 +573,7 @@ def delete_provider(name: str) -> Dict[str, Any]:
 
 
 def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
-    """[68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) — 小欧 2026-09-24"""
+    """拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) — 小欧 2026-09-24"""
     if name not in _provider_names(ai):
         raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
     p = ai[name]  # _provider_names 已保证 isinstance(ai[name], dict)
@@ -585,7 +584,7 @@ def _require_provider_for_fetch(name: str, ai: Dict[str, Any]) -> Tuple[Dict[str
 
 
 async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tuple[Any, Optional[str]]:
-    """[68] HTTP 拉取层 → (resp, err)；网络异常统一 err 文案 — 小欧 2026-09-24"""
+    """HTTP 拉取层 → (resp, err)；网络异常统一 err 文案 — 小欧 2026-09-24"""
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(f"{api_base.rstrip('/')}/models", headers=headers)
@@ -596,7 +595,7 @@ async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tup
 
 
 def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
-    """[68] 响应解析层 → (models, err)；HTTP>=400/非JSON/非数组 → err — 小欧 2026-09-24"""
+    """响应解析层 → (models, err)；HTTP>=400/非JSON/非数组 → err — 小欧 2026-09-24"""
     if resp.status_code >= 400:
         message = f"HTTP {resp.status_code}"
         try:
@@ -633,9 +632,9 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
 
 
 def _classify_remote_result(status_code: Optional[int], network_err: bool) -> str:
-    """[72]第十章(10.3) - 小欧 - 2026-09-26: 远端探测结果分类，供前端给出"地址问题/key 问题"两套文案。
+    """远端探测结果分类，供前端给出"地址问题/key 问题"两套文案 - 小欧 - 2026-09-26。
 
-    分类表（设计 10.3，**404/405/501 不得判 key 无效** —— 部分 provider 没有 /models 端点，
+    分类表（**404/405/501 不得判 key 无效** —— 部分 provider 没有 /models 端点，
     拿 404 判"key 无效"会给用户误报，用户会反复改 key 甚至把本来正确的 key 改坏）：
       ok                     2xx                     key 有效
       key_invalid            401 / 403               key 无效或无权限
@@ -658,7 +657,7 @@ def _classify_remote_result(status_code: Optional[int], network_err: bool) -> st
 def get_provider_raw_entry(name: str) -> Dict[str, Any]:
     """取指定 provider 的 ai 区原始条目（不掩码）—— 明文查看端点的 service 层唯一入口。
 
-    2026-09-26 - 小欧 - [72]三堂会审后修正·二（见文件头）: 做"读 + 存在性校验"两件事，
+    2026-09-26 - 小欧 - 三堂会审后修正·二（见文件头）: 做"读 + 存在性校验"两件事，
     有真实分支逻辑，不是透传壳。路由层只调本函数，不直接碰 _raw_ai/_provider_names。
     """
     ai = _raw_ai()
@@ -668,17 +667,17 @@ def get_provider_raw_entry(name: str) -> Dict[str, Any]:
 
 
 async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dict[str, Any]:
-    """[68] 拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24
+    """拉取 Provider 远程模型列表 — 后端代理绕 CORS；远端失败统一 200+ok:false — 小欧 2026-09-24
 
-    [72]第十章(10.3) - 小欧 - 2026-09-26: 增 probe_key 参数支持"测未保存的 key"（保存前验证场景）。
+    probe_key 支持"测未保存的 key"（保存前验证场景）- 小欧 - 2026-09-26。
     该 key **仅存内存、只用于本次探测的 header，不落盘、不进日志、不回传响应**（设计硬要求）。
     另：失败返回增 status_code + category 字段，供前端区分"地址问题"与"key 问题"两套文案。
     """
     ai = _raw_ai()
     p, api_base = _require_provider_for_fetch(name, ai)
-    # 2026-09-24 23:55:00 - 小欧 - 设计 L137：api_key 含 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底）— 小欧-2026-09-24
-    # [72]第十章(10.3) - 小欧 - 2026-09-26: probe_key 优先于 env/YAML（用户正在输入框里新输的 key 才是待验证的那个）
-    # api_key 为空时传空串给远端、**不回落**到全局默认 provider 的 key（与 resolver 第二章行为 B
+    # 2026-09-24 23:55:00 - 小欧 - api_key 含 {NAME}_API_KEY env 接管值（env 优先，YAML 兜底）— 小欧-2026-09-24
+    # probe_key 优先于 env/YAML（用户正在输入框里新输的 key 才是待验证的那个）- 小欧 - 2026-09-26
+    # api_key 为空时传空串给远端、**不回落**到全局默认 provider 的 key（与 resolver 的 key 空白语义
     # 共同构成"key 空白即失败"的一致语义）。切勿在此加 `or 全局单例.api_key` 之类 fallback。
     api_key = (probe_key.strip() if not is_blank_secret(probe_key)
                else os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or ""))
@@ -696,7 +695,7 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
             "configured": configured,
             "current_model": current_model,
             "message": message,
-            # [72]第十章(10.3): 分类 + 状态码随失败一起返回，调用方才能程序化区分错误类型
+            # 分类 + 状态码随失败一起返回，调用方才能程序化区分错误类型
             "status_code": status_code,
             "category": _classify_remote_result(status_code, network_err),
         }
@@ -720,7 +719,7 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
 
 
 def replace_provider_models(name: str, models: List[str]) -> Dict[str, Any]:
-    """[68] 替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24"""
+    """替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24"""
     ai = _raw_ai()
     if name not in _provider_names(ai):
         raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")

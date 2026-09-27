@@ -5,9 +5,9 @@
 # 2026-07-16 小欧 op_id双表贯通修复
 # 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
 # 2026-07-17 小欧 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
-# 2026-07-18 小欧 #4 fix: _file_tool_names从模块函数名改为注册名(delete/copy/move/edittext/writetext/compress),op_id双表贯通恢复
-# 2026-07-18 小欧 #11 fix: wait_for_confirmation_result超时返回expired=True;超时/拒绝分流
-# 2026-07-18 小欧 #12 fix: check_safety_and_confirm拒绝不再return终止整批,收集_denied后继续,最终只执行通过的call
+# 2026-07-18 小欧 修复: _file_tool_names从模块函数名改为注册名(delete/copy/move/edittext/writetext/compress),op_id双表贯通恢复
+# 2026-07-18 小欧 修复: wait_for_confirmation_result超时返回expired=True;超时/拒绝分流
+# 2026-07-18 小欧 修复: check_safety_and_confirm拒绝不再return终止整批,收集_denied后继续,最终只执行通过的call
 # 2026-07-18 小欧 FinalStep多态自包含终态重构:
 #   【病根】原FinalStep无outcome字段, 终态语义隐含在type中,
 #          action_handler中return_direct提前返回的FinalStep缺少显式终态声明,
@@ -22,8 +22,8 @@
 #          ②用"FO未写入TO的op_id"做差集, 天然排除已消耗项, 杜绝UNIQUE冲突
 #          ③白名单隔离非文件工具使其不参与贯通(op_id=None自生成), 消除误关联
 #          ④纯内部取id(不读result/LLM字段), 符合"operation_id是agent内部字段严禁进LLM返回结构"铁律
-# 2026-07-18 小欧 #4 fix: _file_tool_names 白名单值从模块函数名(delete_file等)改为注册名(delete等); 因 call["tool_name"] 是注册名, 原白名单恒 False 致 op_id 双表贯通完全失效
-# 2026-07-18 小欧 #11+#12 fix: check_safety_and_confirm 重构 — 超时与拒绝分流(expired标记); 拒绝不return终止整批, 收
+# 2026-07-18 小欧 修复: _file_tool_names 白名单值从模块函数名(delete_file等)改为注册名(delete等); 因 call["tool_name"] 是注册名, 原白名单恒 False 致 op_id 双表贯通完全失效
+# 2026-07-18 小欧 修复: check_safety_and_confirm 重构 — 超时与拒绝分流(expired标记); 拒绝不return终止整批, 收
 #   集_denied后continue, 最终只执行通过的call(通过_out参数回传过滤后列表); 调用方对应改_exec_calls
 # 2026-07-19 小欧 build_observation/_add_denial_feedback新增reasoning参数传递
 # 2026-07-21 小欧 - #4 自动纠正: 新增 _auto_correct_file_tool + _EXT_TO_READ/WRITE_TOOL 映射, execute_tools 入口扩展名预检自动切换 tool_name, 结果中 llm_data.summary 追加"(工具自动纠正自:{原始名})"
@@ -45,7 +45,7 @@
 # 2026-07-30 - 小沈 - except:pass补日志: add_tool_result双层catch失败改为logger.debug记录
 # 2026-07-30 - 小欧 - auto_confirm校验: SafetyResult.auto_confirm=True时不等确认直接通过, 提示照出但SUSPENDED不挂起 — 北京老陈驱动三堂会审
 # 2026-07-31 - 小欧 - 撤销auto_confirm: action_handler删auto_confirm判断块, 恢复wait_for_confirmation_result等待逻辑
-# 2026-08-03 - 小沈 - P0-01 E2E修复: 重加auto_confirm消费块(07-30加→07-31撤→重加缺失一半, 仅残留checker返回+字段)
+# 2026-08-03 - 小沈 - E2E修复: 重加auto_confirm消费块(07-30加→07-31撤→重加缺失一半, 仅残留checker返回+字段)
 #           与tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
 # 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), PARAM_ALIASES引用处同步更新
 # 2026-08-07 - 小欧 - P07修复(北京老陈驱动 task001): _EXT_TO_READ_TOOL 从TEXT_EXTENSIONS排除.csv(双域: 文本+表格), 使 read_xlsx(csv)/readtext(csv) 均不被_auto_correct_file_tool自动改写 — 小欧 2026-08-07
@@ -71,7 +71,7 @@
 #   H2 复用现有 HITL 模式: create_confirmation + wait_for_confirmation_result(前端零改动) — 小欧 2026-08-10
 # 2026-08-11 - 小欧 - task002 三堂会审修复A(北京老陈驱动, 问题A窗口并行竞态):
 #   [BUG] window_focus/window_resize/set_window_state 作用于同一窗口时状态变更非幂等, 同批并行调度产生竞态;
-#         实测 P2: set_window_state(restore)+window_resize 同批并行, resize 0.00s 返回 ERR_WINDOW_RESIZE
+#         实测: set_window_state(restore)+window_resize 同批并行, resize 0.00s 返回 ERR_WINDOW_RESIZE
 #   [改法] ①新增 WINDOW_TARGET_TOOLS 常量 ②_parse_paths 新增窗口分支(返回 "window:{window_title}" 冲突键,
 #         缺 title 返回空集——工具参数校验必失败, 不会操作任何窗口, 无竞态风险)
 #         ③_has_conflict 遍历与判定条件纳入窗口工具(同标题≥2次调用即冲突→降级串行)
@@ -86,7 +86,7 @@
 #   由_add_denial_feedback精确到call对象补写tool result(assistant统一由build_observation写), 消除矛盾与重复 — 小欧 2026-08-11
 # 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, get_tool_safety_checker/grant_temp_auth 的 import 由 app.services.safety 改 app.safety(配合 tools 禁 app.services 守护规则)
 # 2026-08-13 小欧 A4收尾解耦: execute_tools 内 5 处 execute_tool 调用显式传入 agent._retry_engine(对齐 tool_executor.execute_tool 新增 retry_engine 显式依赖, 去除对 agent 私有字段强耦合, 行为不变, 无退化)
-# 2026-08-13 - 小沈 - BUG-40修复(三堂会审): bypass 模式(auto_confirm)下白名单外路径(auth_path 存在)仍需 grant_temp_auth,
+# 2026-08-13 - 小沈 - 修复(三堂会审): bypass 模式(auto_confirm)下白名单外路径(auth_path 存在)仍需 grant_temp_auth,
 #   否则工具内 validate_path 会拦截(write 模式白名单外未授权返回 False), 工具返回错误, 违背 bypass"直放"语义;
 #   在 auto_confirm 分支内补 grant_temp_auth(若有 auth_path), 与下方确认后授权逻辑对齐, 不退化
 # 2026-08-13 - 小欧 - unit-06 三堂会审(北京老陈驱动): FILE_OPERATION_TOOLS 扩展纳入8个office读写工具(见tool_constants.py)
@@ -103,7 +103,7 @@
 # 2026-08-17 - 小健 - 三堂会审架构修复(北京老陈驱动): 会话信任预查由 safety 层上移到本 services 层——
 #   check_safety_and_confirm 循环内查 check_session_trust(_conn, _session_id, normalize_tool_name(_cn)),
 #   查得信任后传 check_before_execute(skip_confirmation=True) 豁免二次确认; 消除 safety→services 反向
-#   依赖违规(test_layer_boundaries 护栏); T1 normalize 语义随查询落在本层, 与写保护 BUG-2 同模式(防别名漏检)。
+#   依赖违规(test_layer_boundaries 护栏); T1 normalize 语义随查询落在本层, 与写保护修复同模式(防别名漏检)。
 # 2026-08-18 小欧 - §10.3.3(1/2/3): 新增ThoughtStartStep; handle_action发射新ActionStep(exec_type/tools); build_observation重写为tool_result数组+orchestration收集; 删_merge_llm_data/_merge_other_data
 # 2026-08-18 - 小健 - 三堂会审修复: ①删除无调用点的死代码 _merge_llm_data/_merge_other_data(编排收集改由 build_observation 按 tool_result[i].other_data 1:1 取代); ②删除 build_observation 死变量 _data(原始 data 已由 data_text/dl 承载); ③Bug#7 status/action 可能为 str 防御(isinstance 前判), 防 AttributeError
 # 2026-08-18 - 小健 - 恢复 op_id 双表贯通设计说明注释块(此前某次编辑被误删, 仅留行660短注释); 置于 _file_tool_names 逻辑正上方, 逐条核对当前代码(6文件工具白名单/预取队列/pop(0)分配)一致, 描述准确予以保留

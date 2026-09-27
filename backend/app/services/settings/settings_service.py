@@ -28,13 +28,13 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
      对齐 /health.version（原返回 "v1.0.3"，health 返回 "1.0.3"，两处不一致）
   2026-09-21 - 小欧 - v4.20 单源收敛: update_settings 写 ai.model_ref 时删「同时双写扁平 ai.provider/ai.model」
     （唯一源=ai.model_ref，与 resolver/model_service/config_helpers 读取侧一致）
-   2026-09-21 - 小欧 - [59]B-8/B-9 修复: get_group 对 group 做 strip().lower() 归一，未知分组 Value Error→HTTPException(400)
+   2026-09-21 - 小欧 - 修复: get_group 对 group 做 strip().lower() 归一，未知分组 Value Error→HTTPException(400)
     （原裸 ValueError 被 handle_config_errors 笼统转 500；配合路由空串/大小写归一）
-   2026-09-21 - 小欧 - [59]B-10 修复: _item_data 普通键缺省（YAML 无此键）时 source 由 'yaml' 改标 'default'
+   2026-09-21 - 小欧 - 修复: _item_data 普通键缺省（YAML 无此键）时 source 由 'yaml' 改标 'default'
     （缺失与显式写入同标 yaml 前端无法区分"默认值"与"已落盘"，误导用户以为已保存）
-   2026-09-21 - 小欧 - [59]B-11 修复: is_env 判定改调 config.env_nonempty（原 bool(os.environ.get) 把纯空白 env 误判接管，
+   2026-09-21 - 小欧 - 修复: is_env 判定改调 config.env_nonempty（原 bool(os.environ.get) 把纯空白 env 误判接管，
      api_key/language 该类字段被空白值覆盖显示）
-   2026-09-21 - 小欧 - [59]B-12 修复: get_all_groups/get_group 改调 config_helpers.get_config_snapshot 原子快照
+   2026-09-21 - 小欧 - 修复: get_all_groups/get_group 改调 config_helpers.get_config_snapshot 原子快照
     （data 与 mtime 同一把锁内读出，消除先读文件再单次 stat 的并发窗口）；
     get_mtime 保持 _config_mtime（仅 stat 无数据读，无窗口问题，不引入整文件读开销）
     2026-09-21 - 小欧 - 系统Tab「工程目录/日志目录」7 个 paths.* 只读值实时派生（同 config_path 机制，不落 yaml）：
@@ -56,15 +56,15 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
       ④S16 空 patch 拒绝假成功（#11 ok:True 空保存根治）
     2026-09-22 - 小欧 - int/float 补 range_ 边界校验：type=int/float 且 schema 有 range_ 时，
       校验值不超出 [lo, hi]，与 range 类型对齐（schema.range_ 统一生效，堵住超范围值落盘漏洞）
-    2026-09-26 - 小欧 - [72]第六章(6.5) 落地: _validate_value 增 secret 项显式拒绝（方案 B 主线）
+    2026-09-26 - 小欧 - secret 项显式拒绝（写侧单入口方案）
       secret=True 的项经 /settings 写入时直接报错并指引 provider 通道，不做隐式兜底。
       修前缺陷：secret 三态只在 provider 通道（model_service.update_provider_config）实现，
       而 settings 通用通道会把 secret 项当普通值写入 —— 空串=擦除值、{clear:true} dict 直接落盘写坏结构，
       一旦有人注册 secret=True 立刻生效且界面还显示"留空=保持原值"误导用户。
       配套自检在 settings_registry._build_index（未接 provider 通道的 secret 项拒启），
       二者同批实施：自检保证"不会误开 secret"，本处保证"开了也不被通用通道写坏"。 — 小欧 2026-09-26
-    2026-09-27 - 小欧 - [75]会审根因修复：BUG-C 存在性判据改 has_dotted（原 `is not None` 恒真，
-      缺键也标 'yaml'）；BUG-E/G 白名单落盘前经 allowlist 归一+校验（非法 IP 不再静默失效）
+    2026-09-27 - 小欧 - 根因修复：存在性判据改 has_dotted（原 `is not None` 恒真，
+      缺键也标 'yaml'）；白名单落盘前经 allowlist 归一+校验（非法 IP 不再静默失效）
 """
 from pathlib import Path
 import json
@@ -89,7 +89,7 @@ from app.services.model.config_helpers import (
 from app.services.settings.settings_registry import (
     GROUPS, GROUP_ORDER, get_item,
 )
-# [75]BUG-E/G：白名单语法单一权威在 app/utils/allowlist.py（写侧校验/落盘归一 与 读侧匹配 同源）
+# 白名单语法单一权威在 app/utils/allowlist.py（写侧校验/落盘归一 与 读侧匹配 同源）
 from app.utils.allowlist import (
     invalid_entries as invalid_ip_cidr_entries,
     normalize as normalize_ip_cidr,
@@ -157,11 +157,11 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
         raw_val = json.dumps(raw_val, ensure_ascii=False)
     eff_val = _resolved(key, item["default"])
     is_env = bool(item.get("env_key") and env_nonempty(item["env_key"]))
-    # [75]BUG-C：存在性一律用 has_dotted（raw_val is not None 恒真，缺键会被标 'yaml'）
+    # 存在性一律用 has_dotted（raw_val is not None 恒真，缺键会被标 'yaml'）
     src = "env" if is_env else ("yaml" if has_dotted(raw, key) else "default")
     if item.get("secret"):
         return mask_secret_value(eff_val), src
-    # [75]BUG-G：list_of 项显示归一（YAML list/str、env str 三种来源同形）。用 eff_val —— env 优先
+    # list_of 项显示归一（YAML list/str、env str 三种来源同形）。用 eff_val —— env 优先
     if item.get("list_of") == "ip_cidr":
         return "\n".join(normalize_ip_cidr(eff_val)), src
     if is_env:
@@ -170,7 +170,7 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
 
 
 def get_all_groups() -> Dict[str, Any]:
-    snap = get_config_snapshot()  # [59]B-12: data+mtime 原子
+    snap = get_config_snapshot()  # data+mtime 原子
     raw = snap["data"]
     groups: Dict[str, Any] = {}
     for gname in GROUP_ORDER:
@@ -185,11 +185,11 @@ def get_all_groups() -> Dict[str, Any]:
 
 
 def get_group(group: str) -> Dict[str, Any]:
-    # 2026-09-21 小欧 [59]B-8/B-9: group 归一（strip+lower），未知分组抛 400 透传（不再被 handle 笼统 500）
+    # 2026-09-21 小欧 group 归一（strip+lower），未知分组抛 400 透传（不再被 handle 笼统 500）
     group = (group or "").strip().lower()
     if group not in GROUPS:
         raise HTTPException(status_code=400, detail=f"未知分组: {group}")
-    snap = get_config_snapshot()  # [59]B-12: data+mtime 原子
+    snap = get_config_snapshot()  # data+mtime 原子
     raw = snap["data"]
     data: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
@@ -216,9 +216,9 @@ def get_setting(key: str, default: Any = None) -> Any:
 
 def _to_stored_value(item: Dict[str, Any], value: Any) -> Any:
     """落盘前类型归一：
-    - [75]BUG-E/G：声明 list_of 的项（ip_cidr）先归一为干净 list，形状不因分隔符而变。
-    - 修 S1：textarea(workspace.allowed_dirs) 多行文本→拆 list，满足 get_allowed_dirs() 列表契约。
-    - 修 S17：textarea JSON 型(tuning.llm.stream_options) 提交 JSON 串→还原结构体落盘，
+    - 声明 list_of 的项（ip_cidr）先归一为干净 list，形状不因分隔符而变。
+    - textarea(workspace.allowed_dirs) 多行文本→拆 list，满足 get_allowed_dirs() 列表契约。
+    - textarea JSON 型(tuning.llm.stream_options) 提交 JSON 串→还原结构体落盘，
       与 _item_data 读回序列化对称，保证 LLM 运行时 get_setting 拿到 dict。"""
     if item.get("list_of") == "ip_cidr":
         return normalize_ip_cidr(value)
@@ -236,13 +236,13 @@ def _to_stored_value(item: Dict[str, Any], value: Any) -> Any:
 
 
 def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
-    # [72]第六章(6.5) - 小欧 - 2026-09-26: 方案 B —— secret 项写路径**显式拒绝**，指引 provider 通道。
+    # 2026-09-26 - 小欧 - secret 项写路径**显式拒绝**，指引真实写通道。
     # 修前缺陷：secret=True 的项若有人注册进来，settings 通用通道会把它当普通值写入
     #   （空串=擦除密钥、{clear:true} dict 直接落盘损坏结构），而 secret 三态只在 provider 通道实现。
     # 故此处**不做隐式兜底**，直接报错，让"开了 secret 却没实现写保护"在开发期即暴露（配合 registry 自检）。
     if item.get("secret"):
-        # 2026-09-26 - 小欧 - [72]三堂会审后修正(文案准确性): 原文案对**所有** secret 项一律提示
-        #   "请用 provider 通道"，但 [72]第九章新增的 security.access_token 走的是 **auth 专用端点**
+        # 2026-09-26 - 小欧 - 三堂会审后修正(文案准确性): 原文案对**所有** secret 项一律提示
+        #   "请用 provider 通道"，但 security.access_token 走的是 **auth 专用端点**
         #   (POST /api/v1/auth/token)，根本没有 provider 通道 —— 照原文案指引，用户会去 provider 通道
         #   找入口、根本找不到。**报错文案把人带偏**，比报错本身更有害。改为按 key 前缀给出各自真实的写通道:
         #     ai.{provider}.api_key → provider 通道; security.access_token → auth 专用端点。
@@ -285,7 +285,7 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
         if not (isinstance(value, str) or
                 (isinstance(value, list) and all(isinstance(x, str) for x in value))):
             return f"{item['key']} 应为多行文本"
-    # [75]BUG-E：list_of='ip_cidr' 逐条校验。此前只校验类型，非法值照存照显、读侧静默跳过
+    # list_of='ip_cidr' 逐条校验。此前只校验类型，非法值照存照显、读侧静默跳过
     if item.get("list_of") == "ip_cidr":
         bad = invalid_ip_cidr_entries(value)
         if bad:

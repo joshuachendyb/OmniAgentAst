@@ -12,7 +12,7 @@ from app.logger import logger
 
 @dataclass
 class BuildCallListResult:
-    """_build_call_list 返回值 — M-03 6元组→dataclass — 小欧 2026-07-10"""
+    """_build_call_list 返回值 — 6元组→dataclass — 小欧 2026-07-10"""
     tool_name: str
     tool_params: Dict
     fc_context: Dict
@@ -23,22 +23,22 @@ class BuildCallListResult:
 
 def _build_call_list(parsed: Dict) -> BuildCallListResult:
     """构建工具调用列表 — 小欧 2026-06-18 从handle_action提取
-    chendyg 2026-06-26 P1-10/11修复: 防御tool_name为空和pending_calls缺字段"""
+    chendyg 2026-06-26 修复: 防御tool_name为空和pending_calls缺字段"""
     tool_name = parsed.get("tool_name", "")
     tool_params = parsed.get("tool_params") or {}
     fc_context = parsed.get("fc_context") or {}
     pending_calls = parsed.get("_pending_calls", [])
 
-    # 【P1-10修复】tool_name为空时直接FAILED — chendyg 2026-06-26
+    # 【修复】tool_name为空时直接FAILED — chendyg 2026-06-26
     # handle_action已兜底空检查(ErrorStep+return), 此处删除重复日志 — 小欧 2026-07-25
 
     all_calls = [{
         "tool_name": tool_name, "tool_params": tool_params,
         "_tool_call_id": fc_context.get("tool_call_id", "") if fc_context else "",
         "_repair_warning": parsed.get("_repair_warning", ""),
-        "params_raw_str": parsed.get("params_raw_str", ""),   # #3 透传 LLM 原始参数串(11.7.9-2③) — 小欧 2026-08-23
+        "params_raw_str": parsed.get("params_raw_str", ""),   # 透传 LLM 原始参数串 — 小欧 2026-08-23
     }]
-    # 【P1-11修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
+    # 【修复】pending_calls条目缺tool_name时跳过 — chendyg 2026-06-26
     for pc in pending_calls:
         pc_name = pc.get("tool_name", "")
         if not pc_name:
