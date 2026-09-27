@@ -26,7 +26,7 @@ F10合并: 小欧 - 2026-06-08
 #   "清空模型参数"永远写不落盘）；.get() 的 None 陷阱统一 `or ''/[]`；删无调用方的 _write_system_yaml。
 # 2026-09-21 小欧 - v4.20 键名按域收敛与单源收敛: app.max_steps → agent.max_steps；ai.model_ref 统一
 #   （provider/model → model_ref 读写校验全部对齐），防写出死键"保存成功永不生效"。
-# 2026-09-21 小欧 - [59] 修复: read_yaml_config 坏 YAML 显式抛 500（不静默）、顶层非 dict 归一空 dict；
+# 2026-09-21 小欧 - 修复: read_yaml_config 坏 YAML 显式抛 500（不静默）、顶层非 dict 归一空 dict；
 #   新增 get_config_snapshot 原子快照（同把 .lock），消除"先读数据再 stat"导致前端误判外部更新。
 # 2026-09-22 小欧 - _update_model_ref 加 AI_PROVIDER env 接管守卫（否则写入被 env 读回覆盖=假成功）；
 #   _update_project_root 改写 workspace.project_root（原写 app.project_root 死键）。
@@ -118,7 +118,7 @@ def get_config_path() -> Path:
 def read_yaml_config(config_path: Path) -> dict:
     """读取 YAML 配置文件,文件不存在时返回空 dict
 
-    2026-09-21 小欧 [59]B-1/B-2: ①YAMLError 显式抛 500（坏 YAML 必须被看见，禁静默吞）;
+    2026-09-21 小欧: ①YAMLError 显式抛 500（坏 YAML 必须被看见，禁静默吞）;
     ②顶层非 dict 归一空 dict（str/list 顶层不再对 .get 崩溃，模型/设置读统一空配置语义）
     """
     if not config_path.exists():
@@ -238,7 +238,7 @@ def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
 def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     """完整验证配置文件完整性: (是否通过, 错误列表, 警告列表)
     v4.20 单源收敛（2026-09-21 小欧）：改读结构化 ai.model_ref，删扁平 ai.provider/ai.model
-    （运行时 resolver._extract_provider_model 与 model_service.get_current_ref 均已改读 model_ref，见[54]）。"""
+    （运行时 resolver._extract_provider_model 与 model_service.get_current_ref 均已改读 model_ref）。"""
     errors = []
     warnings = []
     ai_config = config_data.get('ai', {})
@@ -380,7 +380,7 @@ __all__ = [
 
 
 # ====================================================================
-# 模型切换 handler（[72]第十一章: 六个旧 handler 已删, 只留切模型必需的这一个）
+# 模型切换 handler（六个旧 handler 已删, 只留切模型必需的这一个）
 # ====================================================================
 def _update_model_ref(config_data: dict, update) -> None:
     """provider+model(+api_base) 成对原子写入 — 单一权威入口
@@ -405,13 +405,13 @@ def _update_model_ref(config_data: dict, update) -> None:
 
 
 # FIELD_HANDLERS 收敛为只含 "ai_model_ref" 一项。已删的 6 项:
-#   provider_api_keys —— [72]第三章认定的"第二个能擦除密钥的入口"，删除即漏洞消失
+#   provider_api_keys —— 曾被认定为"第二个能擦除密钥的入口"，删除即漏洞消失
 #   theme/language   —— 已迁至 registry（theme 早已是只读项，旧写路径是死键回退）
 #   max_steps/security/project_root —— 已全部迁至 PUT /settings 对应 registry 项
 # 留 ai_model_ref: configApi.switchCurrentModel（顶栏与设置页"切换全局模型"唯一写链）仍走
 # PUT /config，但**只写模型**，不再是第二条通用写路径。
 #
-# ⚠️ 本表当前无消费方（update_config 已直调 _update_model_ref），按 [72]第十一章设计保留该结构。
+# ⚠️ 本表当前无消费方（update_config 已直调 _update_model_ref），按原设计保留该结构。
 #   是否进一步删除待北京老陈裁定，勿自行处置。
 FIELD_HANDLERS: Dict[str, Any] = {
     "ai_model_ref": _update_model_ref,
@@ -430,7 +430,7 @@ def _get_path(data: Dict[str, Any], parts: Tuple[str, ...], default: Any = None)
 
 
 def _get_dotted(data: Dict[str, Any], key: str, default: Any = None) -> Any:
-    """点号键取值（文档 9.3.3）。"""
+    """点号键取值。"""
     return _get_path(data, tuple(key.split(".")), default)
 
 
@@ -440,7 +440,7 @@ _MISSING = object()  # 存在性判定哨兵：与任何合法配置值都不相
 def has_dotted(data: Dict[str, Any], key: str) -> bool:
     """点号键在 data 中是否存在。
 
-    [75]BUG-C：设置页 source 原用 `raw_val is not None` 判存在性，但 _get_dotted 对缺键返回
+    设置页 source 原用 `raw_val is not None` 判存在性，但 _get_dotted 对缺键返回
     registry default（非 None）→ 判据恒真 → 缺键也标 'yaml'。取值与存在性必须各用各的判据。
     """
     return _get_path(data, tuple(key.split(".")), _MISSING) is not _MISSING
@@ -561,7 +561,7 @@ def _config_mtime() -> float:
 
 
 def get_config_snapshot() -> Dict[str, Any]:
-    """配置数据 + mtime 原子快照 — 2026-09-21 小欧 [59]B-12
+    """配置数据 + mtime 原子快照 — 2026-09-21 小欧
     与 merge_region_patch 同一把 config.yaml.lock，读写互斥：读侧不再有
     "先 read_yaml_config 再单独 stat"的窗口（并发写落在两操作间 → 数据旧/mtime 新 → 前端误刷新）。
     锁超时 10s 与写侧一致；缺文件时 data={}、mtime=0.0（不抛错）。"""

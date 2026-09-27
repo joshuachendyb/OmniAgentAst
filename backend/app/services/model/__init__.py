@@ -9,8 +9,8 @@ config — 配置管理模块
 """
 # 编辑历史:
 # 2026-08-14 - 小欧 - 改名名实相符: persistence.py → config_helpers.py(包内re-export同步)
-# 2026-08-23 - 小欧 - 三轮三堂会审修复(P2): docstring resolve_provider_model → resolve_model_ref(F8 改名后名实同步)
-# 2026-09-26 - 小欧 - [72]第十一章(11.5 第1步): 包级导出 FIELD_HANDLERS 随 config_helpers 同步收敛为
+# 2026-08-23 - 小欧 - 三轮三堂会审修复: docstring resolve_provider_model → resolve_model_ref(改名后名实同步)
+# 2026-09-26 - 小欧 - 包级导出 FIELD_HANDLERS 随 config_helpers 同步收敛为
 #   只含 "ai_model_ref" 一项（六个旧 handler 已删，PUT /config 只写切全局模型）。本文件仅同步包级 re-export，
 #   导出集合与名值零变化（仍是同一批符号，只是 FIELD_HANDLERS 字典内容变窄），
 #   故不改 __all__、不改下游 import 写法（禁止 backward：不为"看起来一致"而制造无谓改动）— 小欧 2026-09-26
@@ -38,7 +38,7 @@ from app.services.model.config_helpers import (
 
 __all__ = [
     "AIConfigResolver", "get_ai_config_resolver",
-    # 2026-09-26 小欧 - [72]第十一章: FIELD_HANDLERS 导出保留（已收敛为只含 ai_model_ref 一项）
+    # 2026-09-26 小欧 - FIELD_HANDLERS 导出保留（已收敛为只含 ai_model_ref 一项）
     "FIELD_HANDLERS",
     "_auto_fix_and_validate", "_backup_config",
     "_fix_config_common_issues", "_restore_backup_if_needed",
