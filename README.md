@@ -2,9 +2,11 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v1.0.4 | **更新时间**: 2026-09-23 20:41:01 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-23
+**版本**: v1.0.5 | **更新时间**: 2026-09-27 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-27
 
 > 更新记录（小欧-2026-09-23）：三堂会审一致性修正——①§7.2 配置节总览补 `llm`/`network` 节、`agent` 去掉已迁走的 `max_rounds`；②§7.4 agent 表对齐现键（仅 `max_steps`，历史保留轮数迁 `tuning.trim.max_rounds`）；③§7.7 调优表按 REGISTRY 实测重写为 33 键 9 子组（补 trim/compaction，llm 5 键/agent 1 键，删 network 行与已迁通用的 temperature/max_tokens）；④`CORS_ORIGINS` 覆盖项改 `network.cors_origins`。
+
+> 更新记录（小欧-2026-09-27）：部署安全与鉴权文档补全——①§7.6 补齐 `security.api_token` / `security.ip_allowlist` 两项准入控制键（此前 7.6 只列了操作安全，漏了实际存在且最关键的两项）；②新增 §7.6.1「反向代理与 X-Forwarded-For」，说明 `--forwarded-allow-ips=*` 的伪造风险与三道防线；③§7.9 补 `OMNIAGENT_API_TOKEN` / `OMNIAGENT_IP_ALLOWLIST` / `OMNIAGENT_REQUIRE_AUTH` / `OMNIAGENT_ENABLE_DOCS` / `FORWARDED_ALLOW_IPS` 五个环境变量。
 
 ---
 
@@ -514,6 +516,15 @@ model_meta:
 
 ### 7.6 `security` — 安全配置
 
+**准入控制（在设置页「外观」组展示，键名前缀仍为 `security.*`）**
+
+| 键 | 说明 |
+|----|------|
+| `security.api_token` | 访问口令。**只能在服务端本机设置**；白名单设备只是免口令登录，不能改口令 |
+| `security.ip_allowlist` | 免口令 IP/CIDR 白名单，逗号或分号分隔。**白名单内等于无鉴权**（可读全部明文密钥），只应放可信网段 |
+
+**操作安全（在设置页「安全」组）**
+
 | 键 | 说明 |
 |----|------|
 | `security.enabled` | 全局安全开关（L0；false=关闭） |
@@ -521,7 +532,29 @@ model_meta:
 | `security.auto_confirm_delay` | 自动确认等待秒数 |
 | `security.hitl_timeout` | HITL 确认超时（秒） |
 
-> 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 已从 config.yaml.example 移除（dead keys，后端零消费）。**执行链路真正消费的 security 键仅 `enabled` / `hitl_timeout` / `auto_confirm_delay`**。
+> 2026-09-21 清理：旧版 `contentFilterEnabled` / `contentFilterLevel` / `whitelistEnabled` / `commandWhitelist` / `commandBlacklist` / `maxFileSize` / `strict_mode` 已从 config.yaml.example 移除（dead keys，后端零消费）。
+
+#### 7.6.1 部署安全：反向代理与 X-Forwarded-For（⚠️ 必读）
+
+服务绑 `0.0.0.0` 是多机部署硬前提，因此**来源 IP 判定直接决定谁能免口令进**。后端只读 `request.client.host`，不自行解析 `X-Forwarded-For`（XFF 解析交由 uvicorn 的 `ProxyHeadersMiddleware`）。
+
+| `--forwarded-allow-ips` | 含义 | 风险 |
+|---|---|---|
+| `127.0.0.1`（**默认**） | 只信任本机反代提交的 XFF | ✅ 安全。远程客户端伪造 XFF 改不了 `client.host` |
+| 具体 IP 列表 | 只信任这些反代 | ✅ 安全 |
+| `*` | **信任任意来源的 XFF** | ❌ **危险** |
+
+**`*` 的危害**：任何客户端发一个 `X-Forwarded-For: 127.0.0.1` 就能让 `request.client.host` 变成 `127.0.0.1` → 被判为本机 → **免口令访问全部接口**（含读取所有 Provider 明文密钥、修改/更换访问口令）。
+
+**本项目的三道防线**（`run_server.py` 已显式传参，不再依赖 uvicorn 隐式默认值）：
+
+1. **显式参数**：`run_server.py` 新增 `--forwarded-allow-ips`，默认 `127.0.0.1`，部署者能看见、能改对
+2. **启动告警**：传 `*` 时启动即打印醒目警告（不阻止启动，但让风险可见）
+3. **应用层 fail-closed**：`deps._forwarded_allow_ips_all()` 检测到 `FORWARDED_ALLOW_IPS=*` 时，**取消回环豁免**，一律要求口令。因为此时应用层已无法区分"真回环"与"伪造的 127.0.0.1"，只能选择更严的一侧。
+
+> ⚠️ 已知边界：第 3 道防线只读**环境变量** `FORWARDED_ALLOW_IPS`。若用命令行 `--forwarded-allow-ips=*` 启动，检测不到 —— 所以第 1、2 道防线是主防线，不要绕过。
+>
+> **正确做法**：确需在反代后运行时，只列该反代的 IP，例如 `--forwarded-allow-ips 192.168.1.10`；不要图省事填 `*`。
 
 ### 7.7 `tuning` — 调优参数（33 键，9 子组）
 
@@ -562,6 +595,11 @@ model_meta:
 | `LOG_LEVEL` | `logging.level` |
 | `OMNIAGENT_CONFIG_PATH` | 配置文件路径 |
 | `CORS_ORIGINS` | `network.cors_origins`（CORS 跨域，逗号分隔） |
+| `OMNIAGENT_API_TOKEN` | `security.api_token`（访问口令，优先于配置文件） |
+| `OMNIAGENT_IP_ALLOWLIST` | `security.ip_allowlist`（免口令白名单，逗号/分号分隔） |
+| `OMNIAGENT_REQUIRE_AUTH` | 设为 `0`/`false` 显式关闭鉴权（**仅本机开发/测试**，生产不得设置） |
+| `OMNIAGENT_ENABLE_DOCS` | 设为 `1` 开启 `/docs` `/redoc` `/openapi.json`（**默认关闭**，多机部署下别开） |
+| `FORWARDED_ALLOW_IPS` | uvicorn 信任哪些对端的 XFF。**默认 `127.0.0.1`；填 `*` 会导致回环豁免失效**（见 7.6.1） |
 
 ### 7.10 修改生效方式
 
