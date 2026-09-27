@@ -14,11 +14,10 @@
 // 2026-09-24 小欧 - 参数键级删除：ModelState 补 removedParams: string[]（②参数行 × 删除待落盘键名单，
 //   saveModelGroup 经 remove_params 通道提交；仅 defaults 已有键才入名单，未保存新键删除直接丢弃）- 小欧-2026-09-24
 // 2026-09-24 小欧 - [68] 模型库：TabKey 补 'model_library'（设置页倒数第二 Tab，对齐后端 GROUP_ORDER）- 小欧-2026-09-24
-// 2026-09-26 小欧 - [72]第七章(7.3)+第十二章(12.5)：providerConfig 每条的 api_key 改三键恒定
-//   {configured, prefix, suffix} —— 原 {configured, suffix} 撒谎（后端未配置时只返 {configured:false}）。
+// 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（masked 由后端一次生成，前端纯回显）：
 //   本契约在项目内有 5 处声明：model.api.ts ProviderEntry / config.api.ts ProviderInfo /
 //   ProviderConfig.config / SettingsPage 兜底值 / 本文件（另有 settings.api.ts getTokenStatus 的
-//   masked 为同一形状）。已同步，缺任一处 tsc 即报 prefix 缺失 — 小欧-2026-09-26/27
+//   masked 为同一形状）。缺任一处 tsc 即报 masked 缺失 — 小欧-2026-09-27
 // 2026-09-27 小欧 - ③ Provider 配置改后底部保存栏亮起（北京老陈需求）：ModelState 补
 //   providerDraft: Record<string, unknown> —— ③区表单字段的变更草稿（只含改过的键，空对象=干净），
 //   由 ProviderConfig 经 onDraftChange 上报 diff，dirtyCount/isGroupDirty/saveGroup/saveAll/
@@ -58,10 +57,9 @@ export interface ModelState {
   providerConfig: Record<
     string,
     {
-      // [72]第七章(7.3)+第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}
-      // （原 {configured, suffix} 撒谎：后端未配置时只返 {configured:false}，无 suffix 键；
-      //   本处与 model.api.ts ProviderEntry / ProviderConfig.config / SettingsPage 兜底值同为一份契约）
-      api_key: { configured: boolean; prefix: string; suffix: string };
+      // 2026-09-27 小欧 - 掩码契约 {configured, masked}（masked 由后端生成，前端纯回显；
+      //   与 model.api.ts ProviderEntry / ProviderConfig.config / SettingsPage 兜底值同为一份契约）
+      api_key: { configured: boolean; masked: string };
       base_url: string;
       label: string;
       timeout: number;

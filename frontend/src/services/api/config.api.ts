@@ -4,9 +4,9 @@
 // 2026-09-21 小欧 - 删除无意义白/黑名单类型（whitelistEnabled/commandWhitelist/blacklistEnabled/commandBlacklist）：后端 SecurityConfig 已删，无消费方（北京老陈裁定）
 // 2026-09-21 小强 - DRY收口：新增 configApi.switchCurrentModel 切全局模型唯一写链（Layout.handleModelChange 与 CurrentModelRefCard.onOk 共用，消除重复 updateConfig+ai_model_ref 装配）
 // 2026-09-24 19:38:01 小欧 - 禁止backward死代码清理: 删 /config/provider/* 6个死方法及专属类型 ProviderUpdate/ModelAddRequest/ProviderAddRequest（设置2版已走 modelApi /models /providers）— 小欧-2026-09-24
-// 2026-09-26 小欧 - [72]第七章(7.3): ProviderInfo.api_key 由 string 改为三键恒定对象
-//   {configured, prefix, suffix} —— 后端 /config/full 已改用唯一权威 mask_secret_value（形状变对象），
-//   原 string 声明即"类型撒谎"，与后端实际返回不符。与 model.api.ts ProviderEntry.api_key 同一契约。
+// 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}：masked 由后端唯一权威
+//   mask_secret_value 一次生成（/config/full 已是该形状），前端纯回显。
+//   与 model.api.ts ProviderEntry.api_key 同一契约。
 // 2026-09-26 小欧 - [72]第十一章(11.5 第1步): 删 ConfigUpdate 接口与 updateConfig 方法（均零调用），
 //   其中 provider_api_keys 字段是第三章认定的"第二个能擦除密钥的入口"，删除后前后端一致收敛；
 //   切全局模型由 switchCurrentModel 走收敛后的 PUT /config（只写 ai_model_ref）— 小欧-2026-09-26
@@ -44,10 +44,9 @@ export interface ConfigValidateResponse {
 export interface ProviderInfo {
   name: string;
   api_base: string;
-  // [72]第七章(7.3) - 小欧 - 2026-09-26: /config/full 的 api_key 已改用唯一权威 mask_secret_value，
-  //   **形状由字符串变为对象** {configured, prefix, suffix}（原 string 类型即"类型撒谎"，与后端不符）。
-  //   与 model.api.ts 的 ProviderEntry.api_key 保持同一契约。
-  api_key: { configured: boolean; prefix: string; suffix: string };
+  // 2026-09-27 小欧 - /config/full 的 api_key 由唯一权威 mask_secret_value 生成，
+  //   形状为 {configured, masked}（masked 是最终可显示串）。与 model.api.ts 同一契约。
+  api_key: { configured: boolean; masked: string };
   model: string;
   models: string[];
   timeout: number;

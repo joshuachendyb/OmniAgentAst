@@ -22,14 +22,14 @@ export const authApi = {
   /**
    * 查是否已配置（**永不回明文**）。返回 4 个字段：
    *   configured  是否已配置口令（前端实际只用这一个）
-   *   masked      三键掩码 {configured,prefix,suffix}，与 provider api_key 同一形状
-   *               （mask_secret_value 产物；三键形状被 test_auth_status_shape 锁定，前端目前零消费）
+   *   masked      掩码 {configured, masked}，与 provider api_key 同一形状
+   *               （mask_secret_value 产物；前端目前零消费）
    *   config_key  落盘的配置键名（security.api_token），供设置页定位
    *   env_name    对应环境变量名（OMNIAGENT_API_TOKEN），供提示"也可改环境变量"
    */
   getTokenStatus: async (): Promise<{
     configured: boolean;
-    masked: { configured: boolean; prefix: string; suffix: string };
+    masked: { configured: boolean; masked: string };
     config_key: string;
     env_name: string;
   }> => {

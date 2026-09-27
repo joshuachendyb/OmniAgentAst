@@ -37,13 +37,10 @@ export interface ProviderEntry {
   name: string;
   label: string;
   api_base: string;
-  // [72]第七章(7.3) + 第十二章(12.5) - 小欧 - 2026-09-26: 三键恒定 {configured, prefix, suffix}。
-  // 原类型 `{configured: boolean; suffix: string}` 撒谎：后端未配置时只返 {configured:false}，根本没有 suffix 键。
-  // 两章改同一处，按设计"两处改同一函数须合并一次实施"一次改到位：
-  //   已配且 len>=8 → {true, prefix:s[:4], suffix:s[-4:]}；len<8 → {true, prefix:"****", suffix:s[-4:]}
-  //   （北京老陈 2026-09-26 裁定只分两档「小于8的 显示后4位, 前面加4个*」；原"4<=len<8 不给 prefix"
-  //    的旧分档已按裁定撤销）；未配 → {false, "", ""}
-  api_key: { configured: boolean; prefix: string; suffix: string };
+  // 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}：masked 是后端 mask_secret_value
+  //   一次生成好的最终可显示串（三档：len>8 前4+4星+后4 / 4<len<=8 ****+后4 / len<=4 ****），
+  //   前端只回显，不再判断档位或拼星号。旧 {configured,prefix,suffix} 三键契约已作废。
+  api_key: { configured: boolean; masked: string };
   env: boolean; // v4.19：该 provider 的 api_key 是否被 {NAME}_API_KEY 环境变量接管（config.py _apply_env_overrides 同源判定）
   timeout: number;
   max_retries: number;
