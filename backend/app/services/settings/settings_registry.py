@@ -18,6 +18,9 @@ key 全局唯一，加载自检重复直接拒启。
   2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（后端一次生成，前端纯回显）。
   2026-09-27 小欧 - 修 B6: workspace.project_root 默认值 "E:\test_dir" → ""（原值非空使
     `if root:` 恒真、永不回退用户主目录）。另精简本文件冗长编辑历史（410→285 行，只留决策不留过程）。
+  2026-09-27 小欧 - appearance 组 label「外观」→「前端」（北京老陈指示）：该组实含两块
+    「登录与准入」（口令/白名单）+「外观」（语言/主题/字号），单说"外观"名不副实。
+    只改 label（Tab 显示名），组 key 仍为 appearance（配置路径/前端分组标识全不变）。
   2026-09-27 小欧 - 同轮再精简：_item docstring 与 security/appearance 分组注释去重（原"只有三处"
     那类会腐烂的清单改为直接指向唯一真源 app/config.py::_apply_env_overrides）。
 """
@@ -142,7 +145,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     #   前两项为**准入控制**（谁能进得来），与 security 组的操作安全分开。键名仍为 security.*
     #   （对外契约与已装环境变量 OMNIAGENT_ACCESS_TOKEN 不变），键名前缀只表命名空间，
     #   展示位置由 GROUPS 决定。
-    "appearance": {"label": "外观", "items": [
+    "appearance": {"label": "前端", "items": [
         # 访问口令（secret → 读掩码；写路径被显式拒绝，改口令走 auth_routes 专用端点）
         _item("security.access_token", "secret", "访问口令", None, secret=True,
               env_key="OMNIAGENT_ACCESS_TOKEN",
