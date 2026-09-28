@@ -199,12 +199,20 @@ from app.services.agent.compaction_constants import TEMP_HISTORY_CHAR_LIMIT  # 2
 async def _absorb_inbox(agent) -> int:
     """B机制: 每轮 LLM 调用前合并本任务 inbox 积压的新 user 消息, 返回吸收条数 — 小欧 2026-09-20
     编排语义(SRP): drain_inbox(数据层取走) → add_user_message(消息层并入历史)。
-    置于 trim_history 之前: 新消息参与本轮历史一致性组装, 不滞留尾部跨轮。
-    B组修复(2026-09-20 小欧):
-      B-1/B-2/TDD-30: 单条注入 → 独立成新 user 轮(独立 user_message_id 锚; uid 非空走双参传真实锚,
-       缺失降级单参合成负 id 占位锚);
-      B-5: 多条注入(同轮连发) → 合并为一用户输入块; 若 conversation_history 末条已是 user 则并入末条
-           → 保证无连续 user(交替性); 末条非 user 时仍新建独立 user 轮。
+    置于 trim_history 之前: 让本轮注入的 user 消息计入 trim 预算(always_keep_tokens = system+user,
+      message_builder.py:376), 否则 available_budget 偏大会多保留 FC 对致超上下文。
+    注: user 消息在 trim_history 中**永保**(message_builder.py:344/365-380/474 —— 只裁 observation(tool)
+      与 assistant, 重建时 user 全量放回), 故注入内容不会被裁掉; 顺序只影响预算精度。
+    落位规则(2026-09-28 20:18:31 F7 修正, 设计文档[76] v1.11):
+      ① 末条已是 user → **并入末条**(不论本次 drain 出几条) → 避免连续 user 破 OpenAI 交替性;
+         该分支不演进锚, 锚保持末条原有 uid(注入行的答案落在末条那一行, 与前端渲染一致)。
+      ② 末条非 user(生产常态: 上一轮已产出 assistant/tool 结果) → 独立成新 user 轮,
+         add_user_message(_merged, user_message_id=_uid) 使锚演进到注入 uid(末条 = _uids[-1],
+         设计[30] §4.5 B-5) → 终态 update_user_message_final 把答案落在最后一条注入行, 与 live 顺序一致。
+      ※ 原 B-1/B-2「单条注入一律独立成新 user 轮 + 缺失降级单参合成负 id」的表述已被 F7 与
+        2026-09-28 10轮会审取代: 独立成轮以"末条非 user"为前提; 单参降级是死代码 ——
+        inbox 唯一写入者 inject_message_to_task 入口强制 uid>0(task_registry.py:145), orphan 只搬运
+        已校验元组, 故 _uids 必非空且全为正整数(YAGNI 已删)。
     2026-09-28 小欧(设计文档[76] 6.2): ①inbox 已是(内容,uid)元组, 删 str 兼容分支(禁 backward);
       ②uid 随消息同行 → 删 insert_user_message 重落库(原双重落库是 uid 丢失的派生后果, 落库权责归一至 API 入口);
       ③_merged 超长尾部截断(5.6); ④无锚写回块 — 锚演进单点在 add_user_message(user_message_id=),
