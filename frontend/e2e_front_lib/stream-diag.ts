@@ -121,7 +121,7 @@ export const findAdjacentDup = (text: string): string[] => {
   for (const line of text.split(/\r?\n/)) {
     // 编辑历史: 2026-09-13 小欧 - 跳过纯符号行(表格分隔线 |------|)、重复片段须含字母/汉字:
     //   取证run-on命中全为Markdown表格线(LLM天然输出), 非流式拼接特征 → 误报修复 - 小欧-2026-09-13
-    if (/^[\s|:=\-+*#_.~()\[\]{}'"`\\/]*$/.test(line)) continue;
+    if (/^[\s|:=\-+*#_.~()[\]{}'"`\\/]*$/.test(line)) continue;
     for (let k = 6; k <= 30; k += 3) {
       for (let i = 0; i + 2 * k <= line.length; i++) {
         const seg = line.slice(i, i + k);

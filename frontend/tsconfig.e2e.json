@@ -1,0 +1,31 @@
+{
+  // 2026-09-28 小欧 - E2E / 测试支撑代码的独立类型检查配置 — 小欧 2026-09-28
+  //
+  // 存在的理由（真实问题，非洁癖）：tsconfig.json 只 include ["src"]，而 e2e_case/、
+  // e2e_front_lib/、src/tests/ 全在其外。结果是这些文件**既不被 tsc 检查，也不被
+  // eslint 类型感知规则检查**（.eslintrc.cjs 的 parserOptions.project 指向 tsconfig.json，
+  // 对不在其内的文件直接报 parsing error）。Playwright/Vitest 走 esbuild 转译、不做类型
+  // 检查，于是类型错误不会在构建期暴露，只在运行时变成难定位的失败。
+  //
+  // 隔离不动主 tsconfig：src/tests 早已被主配置 exclude（既有约定），E2E 侧再并入主配置
+  // 会把测试类型错误混进产品构建。故另立本配置，extends 复用同一套编译器选项（DRY 单源），
+  // 只换 include 范围；并由 npm run typecheck:e2e 单独把关。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // E2E 侧引用 node 内置模块（child_process/fs/net/path），与主配置的 lib 合并而非替换
+    "types": ["node"]
+  },
+  "include": [
+    "e2e_case",
+    "e2e_front_lib",
+    "src/tests/support",
+    "src/tests/unit/_chatStateMock.ts",
+    "src/tests/setup.ts",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ],
+  // 归档备份不参与运行（.备份-*.ts 为 2026-09-13 迁移前留档），故不纳入类型检查：
+  // 它含迁移前的旧 import 路径与隐式 any，属历史快照不是活代码，检查它只会制造噪声。
+  "exclude": ["**/*.备份-*.ts", "**/output", "node_modules"],
+  "references": []
+}
