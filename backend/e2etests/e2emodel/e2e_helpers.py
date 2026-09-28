@@ -2295,7 +2295,10 @@ def write_test_record(
         #   仅SSE实时信号)不补。对齐法: 落库步骤随emit同步落库,SSE到达序=落库序,顺序遍历events遇落库
         #   类型即按位消耗db_steps; 对齐守卫: events中落库类型事件数≠len(db_steps)(如断连缺帧)时
         #   位置推断不可靠, 退化为"落库表全量在前+SSE行尾部追加", 宁可乱序不错位 - 小欧 2026-08-22
-        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying")
+        #   2026-09-28 小欧 [76] 10轮会审 D-13: 补 "merged" — 该类型在 steps/__init__.py 归"仅SSE不落库"组,
+        #   漏登记会被 _n_db_ev 当成落库事件计数 → 与 len(db_steps) 不等 → 步骤表顺序退化为
+        #   "落库全量在前+SSE尾部追加"(宁可乱序不错位)。即 5.4 双登记纪律的第三个登记点。
+        _SSE_WANT = ("usage", "error", "paused", "resumed", "retrying", "merged")
         _SSE_SKIP = {"chunk", "thought_start"}
         _rows: List[Any] = []  # 元素二元组: ("db", 落库step) / ("sse", SSE事件)
         _n_db_ev = sum(
