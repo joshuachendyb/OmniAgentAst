@@ -2,6 +2,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: META_STEP_TYPES补入cancelled(6)/取消thought-start特判统一二分(7)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删META_STEP_TYPES的cancelled条目(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.13): META_STEP_TYPES加merged — 小欧-2026-09-28
 /**
  * pipeline 分流工具
  *
@@ -22,6 +23,7 @@ export const META_STEP_TYPES = [
   'paused',
   'resumed',
   'retrying',
+  'merged', // 2026-09-28 小欧: 注入应答, meta 类不进业务流水线
   'usage',
   'stats',
   'final_stats',

@@ -89,6 +89,8 @@
 // 编辑历史: 2026-09-17 小欧 会审V3整改: onDenied 参数/两处透传全链删除(YAGNI 零消费者), onRejected 类型去 from_backend(全链透传零消费) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: ①新增 lastBizTsRef/heartbeatTs 信号源; ②流起始重置业务基线; ③两处 processSSEData 透传 onHeartbeat/onBiz; ④useMemo 打包 waitClock 并暴露 - 小欧-2026-09-17
 // 编辑历史: 2026-09-18 小欧 - 实施: onAuthorizationRequired 类型补 content?: string(与 sseParser/useChatCallbacks 契约一致, 弹窗原因透传) — 小欧-2026-09-18
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 6.14 实施回填): ①签名加 onMerged 回调参数;
+//   ②两处 processSSEData 调用透传 onMerged(原漏接线致 merged 事件解析后即丢弃, 提示条/高亮永不触发) — 小欧-2026-09-28
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -414,6 +416,9 @@ export const useSSE = (
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
   onResumed?: () => void,
+  // 2026-09-28 小欧: 注入应答回调 — 参数=被并入的任务id(消费端据此提示条+高亮左侧目标任务),
+  //   设计文档[76] 6.14 实施回填: 原设计只给 sseParser 侧回调, 本层漏接线致回调永不触发(吞错) — 小欧-2026-09-28
+  onMerged?: (mergedIntoTaskId: string | null) => void,
   // ⭐ 新增：重试回调 - 【小查修复2026-03-13】添加wait_time参数
   onRetry?: (message: string, waitTime?: number) => void,
   // 【v3.4新增 2026-06-09 小沈】授权请求回调
@@ -938,6 +943,7 @@ export const useSSE = (
               onRejected,
               onPaused: wrappedOnPaused,
               onResumed: wrappedOnResumed,
+              onMerged, // 2026-09-28 小欧: 注入应答回调接线(设计[76] 6.14 实施回填) — 小欧-2026-09-28
               onRetry,
               onAuthorizationRequired,
               setCurrentResponse,
@@ -995,6 +1001,7 @@ export const useSSE = (
             onRejected,
             onPaused: wrappedOnPaused,
             onResumed: wrappedOnResumed,
+            onMerged, // 2026-09-28 小欧: 注入应答回调接线(设计[76] 6.14 实施回填) — 小欧-2026-09-28
             onRetry,
             onAuthorizationRequired,
             setCurrentResponse,

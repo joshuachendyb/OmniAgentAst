@@ -7,6 +7,8 @@
 // 编辑历史: 2026-09-13 小欧 - 根治2(北京老陈复测: 展开/折叠仍显旧信息): effect②纯历史默认选中最新任务在切会话当帧
 //   仍持旧tasks/latestTaskId, 会setActiveTaskId(旧latest)→右栏跨会话拉旧步骤残留"复活"; 渲染期复位置justSwitchedRef,
 //   effect②首跑消费该标记跳过旧数据自动选中窗口 — 小欧-2026-09-13
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 5.4④/6.14 实施回填): 加 task_merged 事件监听,
+//   注入应答时高亮左侧目标任务(activeTaskId 属主在本 hook) — 小欧-2026-09-28
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { executionApi } from '../../../services/api/task.api';
 import type { TaskDetail } from '../../../services/api/task.api';
@@ -87,6 +89,19 @@ export function useTaskSelection(
   const handleSelectTask = useCallback((id: string) => {
     setActiveTaskId(id);
   }, []);
+
+  // 2026-09-28 小欧: 注入应答高亮左侧目标任务(设计[76] 5.4④) — activeTaskId 是左栏高亮唯一真源,
+  //   其属主是本 hook, 故在此消费 useChatCallbacks 发来的 task_merged 事件(与 authorization_resumed
+  //   同款 window 事件桥, 复用既有跨层通道); taskId 为空(后端未带)时不改选中态, 不猜 — 小欧-2026-09-28
+  useEffect(() => {
+    const onTaskMerged = (e: Event) => {
+      const taskId = (e as CustomEvent<{ taskId: string | null }>).detail
+        ?.taskId;
+      if (taskId) handleSelectTask(taskId);
+    };
+    window.addEventListener('task_merged', onTaskMerged);
+    return () => window.removeEventListener('task_merged', onTaskMerged);
+  }, [handleSelectTask]);
 
   return { activeTaskId, selectedDetail, handleSelectTask };
 }

@@ -6,6 +6,8 @@
 // 编辑历史: 2026-09-12 小欧 - 三堂会审修复: 删code死字段(只写不读, execution_status含同语义); 删final_status死字段(outcome为终态单一权威) — 小欧-2026-09-12
 // 编辑历史: 2026-09-17 小欧 会审V3(#14): ExecutionStep.type 成员补 'rejected'(统一拒绝事件契约, SSE协议真实存在, 当前不落库/不入执行步骤流, 类型防御) — 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: ExecutionStep.type 加 'heartbeat'(心跳记录到事件列表) — 北京老陈驱动
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.14 遗漏回填): ExecutionStep.type 补 'merged'
+//   (后端 ALL_STEP_TYPES/_SSE_FORWARD_TYPES 已注册, 解析层靠 as 断言掩盖类型缺口 = 吞错, 本次补真源) — 小欧-2026-09-28
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -39,6 +41,7 @@ export interface ExecutionStep {
     | 'resumed'
     | 'retrying'
     | 'rejected'
+    | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
     | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 北京老陈驱动
   //   且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202

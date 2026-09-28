@@ -52,6 +52,7 @@
 // 编辑历史: 2026-09-10 小欧 - S12批量commit: thought-start/thought/chunk/action/observation/paused/resumed六处改push+scheduleFlush,
 //   零同步序列化消除O(N²)主线程阻塞; final分支同步flush防组件卸载前丢尾; handlers新增pendingStepsRef/scheduleFlush — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - S15并发HITL: onPaused/onResumed加可选confirmId参数(并发HITL区分), paused/resumed分支透传rawData.confirm_id — 小欧-2026-09-10
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.14): 加merged分支+onMerged回调 — 小欧-2026-09-28
 // 编辑历史: 2026-09-10 小欧 - S3 seq守卫: handlers新增lastSeqRef, 入口层拦截重复事件(seq<=lastSeqRef.current即跳过), 防断连重连重复帧 — 小欧-2026-09-10
 // 编辑历史: 2026-09-10 小欧 - 阶段三S12.2残留死参清理(v2.17): handlers删saveStepsToStorage字段(:78)+解构(:133,
 //   与useSSE两处传参同步删), 该参已无调用点(S12改用pendingStepsRef+scheduleFlush, 落库收敛于flushPendingSteps) — 小欧-2026-09-10
@@ -148,6 +149,8 @@ const processSSEData = (
     // 小欧 2026-09-10 S15: onPaused/onResumed 加 confirmId 参数（并发 HITL 区分）
     onPaused?: (confirmId?: string) => void;
     onResumed?: (confirmId?: string) => void;
+    // 2026-09-28 小欧: 注入应答回调(merged_into_task_id 供前端高亮目标任务)
+    onMerged?: (mergedIntoTaskId: string | null) => void;
     onRetry?: (message: string, waitTime?: number) => void;
     onAuthorizationRequired?: (data: {
       confirm_id: string;
@@ -921,6 +924,19 @@ const processSSEData = (
         if (rawData.wait_time !== undefined) {
           step.wait_time = rawData.wait_time;
         }
+        break;
+      }
+
+      // 2026-09-28 小欧: 注入应答 — 回调通知消费方(遵循本文件 onPaused/onXxx 回调分层,
+      //   解析层不直接操作 UI 状态), 展示提示条 + 高亮左侧目标任务, 不进 liveMeta 错误位
+      case 'merged': {
+        logTypeArrival(rawData.type, step.step);
+        step.type = rawData.type as ExecutionStep['type'];
+        step.content = rawData.content || '';
+        pushAndFlush(handlers, step);
+        onStep?.(step);
+        handlers.onMerged?.((rawData.merged_into_task_id as string) ?? null);
+        step.timestamp = timestampValue;
         break;
       }
     }

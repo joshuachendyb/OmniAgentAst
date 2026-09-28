@@ -29,6 +29,7 @@
 // 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedEntries 数据结构新增 reject_type 字段; ②markDenied 函数新增 reject_type 参数; ③删除旧 sseOnError/handleDenied; ④新增统一 handleRejected 函数 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 6.14 实施回填): callbacks 解构加 onMerged 并透传 useSSE(中层原漏, 链路断) - 小欧-2026-09-28
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -164,6 +165,7 @@ export const useChatStreaming = (
     onError,
     onPaused,
     onResumed,
+    onMerged, // 2026-09-28 小欧: 注入应答回调透传(设计[76] 6.14 实施回填) — 小欧-2026-09-28
     onRetry,
     onAuthorizationRequired,
   } = callbacks;
@@ -298,6 +300,7 @@ export const useChatStreaming = (
     onError,
     onPaused,
     onResumed,
+    onMerged, // 2026-09-28 小欧: 注入应答回调接线(设计[76] 6.14 实施回填) — 小欧-2026-09-28
     onRetry,
     onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
     handleRejected // 小欧 2026-09-17 会审V3: 原 onDenied 位传 undefined 占位已删(YAGNI 零消费者), 统一拒绝回调直传 — 小欧-2026-09-17
@@ -359,7 +362,7 @@ export const useChatStreaming = (
   // 2026-08-27 小欧 修复#51/B3: 参数名与底层disconnect对齐, 消除stopServer语义混淆
   // 2026-08-27 小欧 修复#10: 底层 useSSE.disconnect 签名为 (manualDisconnect, clearStorage, onDisconnect)。
   //   force 控制 manualDisconnect(禁止自动重连), stopServer 控制 clearStorage; 此前 force 被误当 clearStorage 传入, 语义反转。
-    // 编辑历史: 2026-08-28 小欧 - 修复: disconnect参数用局部变量避免字面量匹配翻转语义
+  // 编辑历史: 2026-08-28 小欧 - 修复: disconnect参数用局部变量避免字面量匹配翻转语义
   const disconnectWithParams = useCallback(
     (stopServer?: boolean, force?: boolean, callback?: () => void) => {
       const manualDisconnect = force ?? false;

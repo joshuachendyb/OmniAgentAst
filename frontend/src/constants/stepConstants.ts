@@ -6,6 +6,7 @@
  * @since 2026-04-20
  */
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删STEP_LABEL_MAP/STEP_ICON_MAP的cancelled条目(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.12): 加merged文案'已并入'+图标'↪' — 小欧-2026-09-28
 
 export const STEP_LABEL_MAP: Record<string, string> = {
   start: '开始',
@@ -18,6 +19,7 @@ export const STEP_LABEL_MAP: Record<string, string> = {
   paused: '暂停',
   resumed: '恢复',
   retrying: '重试',
+  merged: '已并入', // 2026-09-28 小欧: 注入应答语义(非重试)
   rate_limit: '限流',
 };
 
@@ -32,5 +34,6 @@ export const STEP_ICON_MAP: Record<string, string> = {
   paused: '⏸️',
   resumed: '▶️',
   retrying: '🔄',
+  merged: '↪', // 2026-09-28 小欧
   rate_limit: '🚧',
 };

@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-30 小欧 - adaptTaskDetail修复: ①accumulated_usage为null时回退读task_accumulated_tokens(每轮即时落库更可靠); ②tool_stats过滤tool_name为null的条目; TaskDetail新增task_accumulated_tokens字段
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强v0.8: TaskArtifact补tool_name(4字段对齐artifacts)、TaskDetail补provider/model/created_at/updated_at、adaptTaskDetail透传四字段 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案): TrustedTool增path字段、getTrust映射path(null=工具级)、revokeTrust增可选path登录?path=精确撤销(tool,path) — 小欧-2026-09-02
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.10): SessionTaskItem加merged_inputs字段 — 小欧-2026-09-28
 import api from './client';
 
 // ============================================================
@@ -79,6 +80,8 @@ export const taskControlApi = {
 export interface SessionTaskItem {
   task_id: string;
   user_input: string;
+  /** 2026-09-28 小欧: 本任务吸收的追加注入消息(loop 中用户又发的消息) */
+  merged_inputs?: string[];
   response?: string;
   status: string;
   duration: number | null;

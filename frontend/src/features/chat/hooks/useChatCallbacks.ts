@@ -55,6 +55,8 @@
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语 — 小欧-2026-09-15 20:13:04
 // 编辑历史: 2026-09-18 小欧 - 设计稿实施: onAuthorizationRequired 类型(接口101行+useCallback参数819行)补 content?: string, 与 sseParser 下发契约一致 — 小欧-2026-09-18
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 5.4④/6.14 实施回填): 新增 onMerged 回调(接口+实现+返回值三处),
+//   消费端=提示条(showInfo 复用)+task_merged 事件桥交 useTaskSelection 高亮左侧目标任务 — 小欧-2026-09-28
 // 编辑历史: 2026-09-19 小欧: onComplete终态非failed时通过onSuccessRef调最新回调清liveError, 解闭包陈旧(streaming不在deps) — 北京老陈驱动
 /**
  * useChatCallbacks Hook - 统一回调管理
@@ -81,6 +83,7 @@ import type { ExecutionStep } from '../../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
 import { handleSSEError } from '@/services/error/handler';
 import { logAIComplete, logAIError } from '../../../utils/logStyles';
+import { showInfo } from '@/utils/chatMessages'; // 2026-09-28 小欧: 注入应答提示条复用既有 showInfo(零新组件, 复用优先) — 小欧-2026-09-28
 
 // 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
 import type { SSEError, SSEMetadata } from '@/types/sse';
@@ -99,6 +102,9 @@ export interface UseChatCallbacksReturn {
   onError: (error: string | SSEError) => void;
   onPaused: () => void;
   onResumed: () => void;
+  // 2026-09-28 小欧: 注入应答回调(参数=被并入的任务id), 设计[76] 6.14 消费端 —
+  //   不进 liveMeta 错误位, 仅提示条 + 高亮左侧目标任务 — 小欧-2026-09-28
+  onMerged: (mergedIntoTaskId: string | null) => void;
   onRetry: (message: string, waitTime?: number) => void;
   // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError等上层状态 — 北京老陈驱动
   onSuccess?: () => void;
@@ -814,6 +820,19 @@ export const useChatCallbacks = (
     pauseCountRef,
   ]);
 
+  // ==================== onMerged回调 ====================
+
+  // 2026-09-28 小欧: 注入应答消费端(设计[76] 5.4④/6.14) — 运行中的任务收到追加消息并入,
+  //   ①提示条复用既有 showInfo(零新组件/零新样式, 复用优先); 不进 liveMeta 错误位(语义非错误)。
+  //   ②左侧高亮: 本 hook 不持 activeTaskId(左栏状态归 useTaskSelection), 沿用本文件
+  //   onAuthorizationRequired 同款 CustomEvent 桥把任务id交给属主处理, 不跨层直改左栏状态(SLAP) — 小欧-2026-09-28
+  const onMerged = useCallback((mergedIntoTaskId: string | null) => {
+    showInfo('已并入正在运行的任务');
+    window.dispatchEvent(
+      new CustomEvent('task_merged', { detail: { taskId: mergedIntoTaskId } })
+    );
+  }, []);
+
   // ==================== onRetry回调 ====================
 
   const onRetry = useCallback(
@@ -859,6 +878,7 @@ export const useChatCallbacks = (
     onError,
     onPaused,
     onResumed,
+    onMerged, // 2026-09-28 小欧: 注入应答回调(设计[76] 6.14 实施回填) — 小欧-2026-09-28
     onRetry,
     onAuthorizationRequired, // 【v3.4新增】
     onSuccess: onSuccessRef.current, // 2026-09-19 小欧: 通过 ref 取最新回调(解闭包陈旧) — 北京老陈驱动

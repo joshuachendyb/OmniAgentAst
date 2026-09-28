@@ -12,6 +12,7 @@
 // 编辑历史: 2026-09-09 小欧 - 修复formatTime导入缺失(formatTime is not defined) + message.success/error改用showSuccess/handleError(lint规范) + t.response非空断言(TS2345) - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 模型标签条件显示provider前缀: rightOpen=true(右侧展开)只显示model, rightOpen=false(右侧折叠)显示provider/model - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 步数标签改轮次标签: total_steps→llm_call_count, "步"→"轮", 与TaskInfoBar一致; 模型/轮次标签颜色TERTIARY(#999)→PRIMARY(#595959)提亮 - 小欧-2026-09-09
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.11): 加merged_inputs折叠块(默认收起,展开看全文) — 小欧-2026-09-28
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -30,7 +31,7 @@
 
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Empty, Skeleton, Typography } from 'antd';
-import { CopyOutlined } from '@ant-design/icons';
+import { CopyOutlined, CaretDownOutlined } from '@ant-design/icons';
 import type { SessionTaskItem } from '../../../../services/api/task.api';
 import { Colors } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
@@ -74,6 +75,19 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   // 2026-09-01 小欧 方案C: 无外部ref时退化为自建内部ref, 保证定位逻辑始终可用
   const internalRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = latestTaskRef ?? internalRef;
+
+  // 2026-09-28 小欧: 追加注入消息折叠块展开状态(每任务独立)
+  const [expandedTasks, setExpandedTasks] = React.useState<Set<string>>(
+    new Set()
+  );
+  const toggleExpanded = (taskId: string) => {
+    setExpandedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
 
   // 2026-09-01 小欧 方案C: 新任务诞生(latestTaskId变化)且不在可视区时, 滚动带进视野; 可视区内不动不打扰
   const prevLatestIdRef = useRef<string | null>(null);
@@ -239,6 +253,46 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 >
                   <CopyOutlined />
                 </button>
+              </div>
+            )}
+
+            {/* 2026-09-28 小欧: 追加注入消息 — 语义属输入侧, 故置于问题区与回复区之间;
+                默认收起(不撑条目高度), 展开看全文。 */}
+            {t.merged_inputs && t.merged_inputs.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleExpanded(t.task_id);
+                  }}
+                  aria-expanded={expandedTasks.has(t.task_id)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    fontSize: 12,
+                    color: Colors.TEXT.TERTIARY,
+                  }}
+                >
+                  <CaretDownOutlined
+                    rotate={expandedTasks.has(t.task_id) ? 180 : 0}
+                  />{' '}
+                  ↳ 追加 {t.merged_inputs.length} 条
+                </button>
+                {expandedTasks.has(t.task_id) &&
+                  t.merged_inputs.map((m, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        marginTop: 4,
+                        paddingLeft: 10,
+                        borderLeft: '2px solid #d9d9d9',
+                      }}
+                    >
+                      <CollapsibleText text={m} />
+                    </div>
+                  ))}
               </div>
             )}
 
