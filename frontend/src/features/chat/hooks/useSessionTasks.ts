@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-15 小欧(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   refresh() 从 DB 拉取 tasks 后 response 字段一律清空(undefined), 禁止 chat_tasks.response(chunk累积)显示;
 //   左侧只由 updateTaskResponse(final.step.response) 写入(R3实时/RightViewer历史) — 小欧-2026-09-15
+// 编辑历史: 2026-09-29 小欧 - 任务列表陈旧根治: 补 visibilitychange 兜底(切回可见即 refresh), 修任务由别处发起时列表永久冻结在旧快照 — 小欧-2026-09-29
 /**
  * useSessionTasks - 会话任务清单 Hook（消费 6.1.9 B1 接口）
  *
@@ -56,12 +57,27 @@ export const useSessionTasks = (sessionId: string | null) => {
   // 2026-09-13 小欧 新建会话右栏残留根治(北京老陈复测定位·展开折叠仍显旧信息): refresh为异步, 切会话瞬间
   //   旧会话tasks/latestTaskId仍存活, useTaskSelection effect②持旧latestTaskId把activeTaskId拉回旧任务,
   //   RightViewer跨会话拉旧步骤→右栏残留复活; 改"同步清空→再refresh"封死旧数据窗口; refresh依赖[sessionId],
-  //   手动refreshTasks调用不重跑本effect, 无扰 — 小欧-2026-09-13
+  //   手动refreshTasks调用不重跑本effect, 无扰 — 小欧 2026-09-13
   useEffect(() => {
     setTasks([]);
     setTotal(0);
     setLatestTaskId(null);
     void refresh();
+  }, [refresh]);
+
+  // 2026-09-29 小欧 任务列表陈旧根治: refresh 原本只被本标签页的 SSE 派生信号驱动, 任务由别处发起
+  //   (E2E/后台批处理/另一标签页)时收不到任何信号, 列表永久冻结在打开那刻的快照(实测 INJ-02 两条注入
+  //   只显示"追加 1 条")。补可见性兜底: 切回可见即重取。 — 小欧-2026-09-29
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        void refresh();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [refresh]);
 
   // ── useSessionTasks 文件职责: 任务列表状态管理Hook ──
