@@ -7,7 +7,15 @@ module.exports = {
     'plugin:react/recommended',
     'plugin:react-hooks/recommended',
   ],
-  ignorePatterns: ['dist', 'node_modules', '*.config.*', '*.d.ts'],
+  ignorePatterns: [
+    'dist',
+    'node_modules',
+    '*.config.*',
+    '*.d.ts',
+    // 2026-09-28 小欧 - 归档备份不参与 lint（同 tsconfig.e2e.json：历史快照非活代码）
+    '**/*.备份-*.ts',
+    'e2e_case/output',
+  ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     ecmaVersion: 2020,
@@ -15,7 +23,11 @@ module.exports = {
     ecmaFeatures: {
       jsx: true,
     },
-    project: './tsconfig.json',
+    // 2026-09-28 小欧 - 改为按目录双 tsconfig：src/ 与 E2E/测试支撑各自对应一个 project。
+    //   原先只指 tsconfig.json（include 仅 ["src"]），而 e2e_case/、e2e_front_lib/、src/tests/
+    //   全在其外 → 这些文件对类型感知规则直接报 parsing error，等于零检查。
+    //   tsconfig.e2e.json 复用同一套 compilerOptions（extends），仅换 include 范围。
+    project: ['./tsconfig.json', './tsconfig.e2e.json'],
   },
   plugins: ['react', 'react-hooks', '@typescript-eslint'],
   settings: {
