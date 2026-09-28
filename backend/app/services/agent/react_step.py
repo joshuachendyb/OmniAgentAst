@@ -164,7 +164,8 @@
 # 2026-09-20 - 小欧 - TDD-30铁约束回归修正: _absorb_inbox单条注入改条件传参——落库成功传真实uid,
 #   落库失败(_uid=None)回退单参调用(合成负id占位, 行为等价), 兼容既有 add_user_message 单参铁约束断言。
 # 2026-09-28 小欧 设计文档[76] 6.2 实施: _absorb_inbox 删 str 兼容分支/删重落库/超长截断/删锚写回;
-#   19:32:44 三堂会审修过时注释(与删落库矛盾的"落库成功/单参铁约束"表述) — 小欧-2026-09-28
+#   19:32:44 三堂会审修过时注释(与删落库矛盾的"落库成功/单参铁约束"表述);
+#   20:18:31 三堂会审 F7 修: _merge_into_last 去掉 len>1 条件, 单条注入末条user也并入(防连续user) — 小欧-2026-09-28
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -227,8 +228,7 @@ async def _absorb_inbox(agent) -> int:
     _hist = getattr(agent.message_builder, "conversation_history", None)
     _last = _hist[-1] if isinstance(_hist, list) and _hist else None
     _merge_into_last = (
-        len(_injected) > 1                      # B-5: 多条才合并(单条独立成轮, B-1/B-2/TDD-30)
-        and isinstance(_last, dict) and _last.get("role") == "user"   # 末条已是 user(同轮连发) → 避免连续 user
+        isinstance(_last, dict) and _last.get("role") == "user"   # 末条已是 user → 并入避免连续 user
     )
     # 并入末条, 不产生连续 user; 否则独立成轮(2026-09-28 19:32:44 小欧 三堂会审: 原"单参铁约束"过时)
     if _merge_into_last:

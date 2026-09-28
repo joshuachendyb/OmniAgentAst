@@ -184,6 +184,7 @@
 #   inject_message_to_task 传 _user_msg_id(随消息同行取真 uid) + bind + ack 传目标 task;
 #   ④_SSE_FORWARD_TYPES 加 "merged"(与 ALL_STEP_TYPES 双登记纪律)。降级语义扩展: 队列满/uid非法同样走新建。
 #   compliance: SRP/KISS-DIRECT/DRY/复用优先(复用 storage.bind_message_to_task 零新表)
+# 2026-09-28 20:18:31 小欧 三堂会审 F8: _bind_task_id 失败时增强日志(消息已入inbox, 终态回填将补绑) — 小欧-2026-09-28
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -255,7 +256,8 @@ def _build_injected_ack(task_id: str) -> str:
 async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
     """注入即绑执行期归属(设计文档[76] 6.6②/5.2.2) — 小欧 2026-09-28
     task_id 原仅终态回填, 执行期注入消息 task_id 恒 NULL → 列表/历史执行期查不到。
-    任务已结束时 UPDATE 影响 0 行, 记 warning 不报错(消息仍在会话可见, 不丢数据)。"""
+    任务已结束时 UPDATE 影响 0 行, 记 warning 不报错(消息仍在会话可见, 不丢数据)。
+    2026-09-28 20:15:00 小欧 三堂会审 F8: bind 失败时增强日志, 记录消息内容摘要便于排查。"""
     if not user_message_id:
         logger.warning(f"[注入] uid 缺失, 跳过 bind(task={task_id})")
         return
@@ -265,7 +267,7 @@ async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
         if not _ok:
             logger.warning(f"[注入] bind 0行(task={task_id}, uid={user_message_id}), 任务可能已结束")
     except Exception as _e:
-        logger.warning(f"[注入] bind 异常(task={task_id}, uid={user_message_id}): {_e}")
+        logger.warning(f"[注入] bind 异常(task={task_id}, uid={user_message_id}): {_e}. 消息已入inbox, 执行期task_id未绑, 终态回填将补绑")
 
 
 def generate_task_id() -> str:

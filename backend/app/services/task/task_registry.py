@@ -25,6 +25,7 @@
 #   ③Queue(maxsize=INBOX_MAX) 队列上限 + QueueFull 捕获(满则 return False 走编排降级, 防异常上抛);
 #   ④uid<=0 拒注入(5.6 uid 缺失防御)。
 #   compliance: SRP/KISS-DIRECT/DRY/禁止backward(删 str 兼容分支)
+# 2026-09-28 20:18:31 小欧 三堂会审 F10: register_task 同 task_id 重新注册返回 None(防 queue 覆盖丢消息) — 小欧-2026-09-28
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -101,6 +102,10 @@ async def register_task(task_id: str, session_id: Optional[str] = None) -> Optio
                         f"[B-3串行守卫] 会话 {session_id} 已被占位 {_tid}, 拒绝并行注册 {task_id}"
                         f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口, 返回占位tid供注入)")
                     return _tid
+        # 2026-09-28 20:15:00 小欧 三堂会审 F10: 同 task_id 重新注册返回 None, 避免 queue 覆盖丢消息
+        if task_id in running_tasks:
+            logger.warning(f"[TaskRegistry] task_id {task_id} 已存在, 拒绝重复注册(防 queue 覆盖丢消息)")
+            return None
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,

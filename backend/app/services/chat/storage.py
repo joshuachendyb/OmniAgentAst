@@ -95,6 +95,7 @@
 # 2026-09-28 19:32:44 小欧 - 三堂会审修复: ①fetch 补 pair_task_id(行配对任务)作渲染合并同任务判据;
 #   ②list_session_tasks merged_inputs 改会话级 1 次查询(原每任务 1 次子查询 N+1)。
 #   compliance: 复用优先/KISS-DIRECT — 小欧-2026-09-28
+# 2026-09-28 20:18:31 小欧 三堂会审 F16: fetch JOIN 改 COALESCE 优先 task_id 匹配(防跨任务错配) — 小欧-2026-09-28
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -779,9 +780,9 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
                     cum.created_at AS created_at,
                     ct.ai_message_id AS ai_message_id, ct.task_id AS pair_task_id
              FROM chat_user_message cum
-             LEFT JOIN chat_tasks ct ON ct.id = (
-                 SELECT MAX(id) FROM chat_tasks
-                 WHERE task_id = cum.task_id OR user_message_id = cum.id
+             LEFT JOIN chat_tasks ct ON ct.id = COALESCE(
+                 (SELECT MAX(id) FROM chat_tasks WHERE task_id = cum.task_id),
+                 (SELECT MAX(id) FROM chat_tasks WHERE user_message_id = cum.id)
              )
              WHERE cum.session_id = ?"""
     params: list = [session_id]
