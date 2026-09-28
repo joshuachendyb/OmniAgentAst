@@ -960,6 +960,24 @@ def check_db(session_id: str) -> Dict[str, Any]:
     return result
 
 
+# ─── 行级用户消息读取(2026-09-29 小欧 新增) ──────────────────────────
+
+def get_user_message_rows(session_id: str, timeout: int = 30) -> List[Dict[str, Any]]:
+    """取 chat_user_message 行级数据(含每行 task_id / response / content) — 小欧 2026-09-29
+
+    新增原因: check_db 只回传聚合结论(messages_count / has_assistant_message 等), 拿不到行级
+    task_id, 而注入类用例必须逐行验证"绑定到哪个任务"(如 bind_message_to_task 的效果)。
+    只新增不改 check_db 契约, 避免已有 76 个用例受影响。
+
+    返回 [] 表示会话无消息或接口不可达(调用方须显式判空, 禁把空列表当"无注入")。
+    """
+    _data = _api_get(f"/sessions/{session_id}/user_messages", timeout=timeout)
+    if not _data:
+        return []
+    _msgs = _data.get("messages") or []
+    return [m for m in _msgs if isinstance(m, dict)]
+
+
 # ─── 安全错误过滤 ────────────────────────────────────────────
 
 SAFETY_KEYWORDS = [
