@@ -21,6 +21,13 @@
 # 2026-09-22 小欧 - constants.py 配置化迁移：import MAX_CACHE_SIZE 改别名 + cache 改读 tuning 配置
 # 2026-09-24 21:36:38 小欧 - 配置组改名 tuning.stream_task→tuning.live_front：display_name 缓存上限读取键路径同步，
 #   缓存逻辑/_D_CACHE_SIZE 默认值零改动 — 小欧-2026-09-24
+# 2026-09-28 19:07:28 小欧 - 活跃任务注入展示层(设计文档[76] 5.5/6.9): ①新增 _merge_orphan_user_pairs —
+#   连续无独立配对(ai_content空)的注入行合并成 1 个 user 气泡(与 _absorb_inbox 内存合并同一规则, 修刷新前后
+#   UI 跳变); ②渲染循环加 seen_ai_ids — 同一任务 ai_message_id 至多渲染 1 次 assistant(修"同一 assistant
+#   连同 steps 重复 N 次")。compliance: SRP/DRY/KISS/复用优先 — 小欧-2026-09-28
+# 2026-09-28 19:32:44 小欧 - 三堂会审修复: ①合并加 pair_task_id 同任务约束(防相邻不同任务空回复行
+#   串成一个气泡); ②assistant 配对改合并渲染载体(设计[76]决策2): 载体=首个有内容行, 全空回落首见行
+#   (原首见即渲会渲空正文, 真答案落锚行时被跳过) — 小欧-2026-09-28
 """
 message_service — 消息业务服务(services/chat)
 
@@ -52,6 +59,43 @@ def delete_session_display_names(session_id: str) -> None:
     display_name_cache.delete(session_id)
 
 
+def _flush_orphan_run(run: list) -> dict:
+    """无配对连续组收敛为 1 行: 单条保持原样, 多条 user_content 换行拼接、其余字段取首行 — 小欧 2026-09-28"""
+    if len(run) == 1:
+        return run[0]
+    merged = dict(run[0])
+    merged["user_content"] = "\n".join(r.get("user_content") or "" for r in run)
+    return merged
+
+
+def _merge_orphan_user_pairs(pairs: list) -> list:
+    """连续无独立配对的 user 行合并为 1 行 — 小欧 2026-09-28 设计文档[76] 5.5/6.9
+    注入消息(同任务借用 ai_message_id、自身 response 为空)连续出现时, 原样逐行渲染会:
+    ①每行渲染一个空正文 assistant → 同一 assistant 的 steps 重复 N 次;
+    ②与内存侧 _absorb_inbox「多条注入合并成 1 条」形态不一致 → 刷新前后 UI 条数跳变。
+    规则: 连续 ai_content 为空**且 pair_task_id 相同**的行合并成 1 行; 有内容或无任务配对的行原样输出
+    — 同任务约束 2026-09-28 三堂会审补, 防相邻不同任务串并。"""
+    out: list = []
+    run: list = []
+    _run_task = None  # run 的任务键, 异任务立即 flush — 小欧 2026-09-28
+    for p in pairs:
+        if not (p.get("ai_content") or "") and p.get("pair_task_id"):
+            if run and p["pair_task_id"] != _run_task:
+                out.append(_flush_orphan_run(run))
+                run = []
+            run.append(p)
+            _run_task = p["pair_task_id"]
+            continue
+        if run:
+            out.append(_flush_orphan_run(run))
+            run = []
+            _run_task = None
+        out.append(p)
+    if run:
+        out.append(_flush_orphan_run(run))
+    return out
+
+
 def get_session_messages(session_id: str):
     """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施) — 自 api/v1/messages.py 迁入"""
     from fastapi import HTTPException
@@ -72,8 +116,23 @@ def get_session_messages(session_id: str):
         # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
         pairs = fetch_session_user_message_pairs(conn, session_id)
 
+        _rows = _merge_orphan_user_pairs(pairs)
+        # assistant 合并渲染载体(设计[76]决策2, 小欧 2026-09-28 三堂会审): 每 ai_id 仅渲 1 次,
+        # 落在首个有内容行(配首条会渲空正文且真答案被跳过); 全空回落首见行(steps 兜底)。
+        _first_row: dict = {}
+        _carrier: dict = {}
+        for _i, _p in enumerate(_rows):
+            _aid = _p.get("ai_message_id")
+            if _aid is None:
+                continue
+            _first_row.setdefault(_aid, _i)
+            if (_p.get("ai_content") or "") and _aid not in _carrier:
+                _carrier[_aid] = _i
+        for _aid, _i in _first_row.items():
+            _carrier.setdefault(_aid, _i)
+
         messages = []
-        for p in pairs:
+        for _i, p in enumerate(_rows):
             # 用户消息气泡
             messages.append(MessageResponse(
                 id=p['user_id'], session_id=session_id,
@@ -82,7 +141,7 @@ def get_session_messages(session_id: str):
                 execution_steps=[], display_name=None, thought=None,
             ))
             ai_id = p['ai_message_id']
-            if ai_id is None:
+            if ai_id is None or _carrier.get(ai_id) != _i:
                 continue
             # 从 chat_task_steps 表读取步骤列表 — 小欧 2026-07-14; v2.0 表改名 chat_task_steps — 2026-08-19
             steps = load_execution_steps(conn, ai_id)

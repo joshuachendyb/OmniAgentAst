@@ -86,6 +86,15 @@
 # 2026-09-20 - 小欧 - D-1修复(注入消息DB幽灵): update_user_message_final 对"注入吸收的新 uid(非任务登记首条)"补
 #   chat_tasks 配对行(同任务行同源复制 ai_message_id); fetch 侧 D-1兜底: 无配对(ct=NULL)时回退本会话最近任务行的
 #   ai_message_id, 消除前端渲染双栖/linked 误判未回答。
+# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复(设计文档[76] 6.5, 非D-1字面): ①新增 bind_message_to_task(注入即绑
+#   执行期归属, 修 task_id 仅终态写入的空窗); ②删 D-1 补配对整段与 session_id 参数(复制源任务行致列表重复/
+#   React key 冲突/总数虚高, 且 fetch 精确 JOIN 已能配对, 禁 backward); ③fetch 删会话级 fb 兜底改单条精确
+#   JOIN(注入凭 cum.task_id / 首条凭 cum.id 归任务, 消除跨任务错配); ④list_session_tasks 按 task_id 折叠 +
+#   补 merged_inputs(cum.task_id 单一路由, 存量 NULL 副本已按 5.3 一次性 DELETE 清理)。
+#   compliance: SRP/KISS-DIRECT/DRY/禁止backward/YAGNI(零 DDL 零新表)
+# 2026-09-28 19:32:44 小欧 - 三堂会审修复: ①fetch 补 pair_task_id(行配对任务)作渲染合并同任务判据;
+#   ②list_session_tasks merged_inputs 改会话级 1 次查询(原每任务 1 次子查询 N+1)。
+#   compliance: 复用优先/KISS-DIRECT — 小欧-2026-09-28
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -678,19 +687,30 @@ def insert_user_message(
     return cursor.lastrowid
 
 
+def bind_message_to_task(conn: Connection, user_message_id: int, task_id: str) -> bool:
+    """把注入消息绑定到目标任务(执行期归属, 零 DDL, 复用已有 task_id 列) — 小欧 2026-09-28 设计文档[76] 6.5①
+    原本 task_id 仅由 update_user_message_final 在终态回填, 任务执行期注入消息的 task_id 恒 NULL →
+    左侧列表/历史 fetch 执行期均查不到。注入成功即刻回填补该空窗; 终态回填照旧(幂等重写)。
+    返回 True=已绑定; False=影响0行(uid 不存在 或 task_id 已有值/任务已结束, 调用方记 warning)。"""
+    cur = conn.execute(
+        "UPDATE chat_user_message SET task_id=? WHERE id=? AND task_id IS NULL",
+        (task_id, user_message_id))
+    return cur.rowcount > 0
+
+
 def update_user_message_final(
     conn: Connection, *,
-    user_message_id: int, task_id: str, session_id: Optional[str] = None,
+    user_message_id: int, task_id: str,
     response: str, reasoning: str = None,
     outcome: str = None, task_model: Optional[ModelRef] = None,
     accumulated_usage: str = None,
 ) -> None:
     """任务完成后回填 final 字段到 chat_user_message
     2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两分离入参 → task_model: ModelRef 落 chat_model JSON 单列
-    2026-09-20 小欧 D-1修复: 注入消息(B机制)被吸收并答复后, 若其 user_message_id 是该任务登记首条之外
-      的新 uid(chat_tasks 无其配对行), 则补一对——否则 fetch_session_user_message_pairs LEFT JOIN
-      成 DB 幽灵(ai_message_id=NULL, 前端渲染双栖/linked 误判未回答)。配对 ai_message_id 复用任务
-      同源地址(注入回复归属该任务), task 行全部配对列同源复制(禁止 backwar演进, 单点落库)。"""
+    2026-09-20 小欧 D-1修复: 注入消息补配对 INSERT(见编辑历史)
+    2026-09-28 小欧 删 D-1(设计文档[76] 6.5②): 复制源任务行会致列表重复条目/React key 冲突/总数虚高,
+      且其 INSERT 多余(fetch 精确 JOIN 已能配对) → 删除整段与 session_id 参数(唯一用途即 D-1, 禁 backward);
+      注入消息归属改由 bind_message_to_task 执行期绑定 + fetch 按 cum.task_id 精确关联。"""
     conn.execute(
         """UPDATE chat_user_message
            SET task_id=?, response=?, reasoning=?, outcome=?,
@@ -700,27 +720,6 @@ def update_user_message_final(
          task_model.model_dump_json() if task_model else None,
          accumulated_usage, user_message_id),
     )
-    if session_id:
-        _anchor = conn.execute(
-            "SELECT user_message_id FROM chat_tasks WHERE task_id=? LIMIT 1", (task_id,)
-        ).fetchone()
-        _first_uid = _anchor["user_message_id"] if _anchor else None
-        if _first_uid is not None and user_message_id != _first_uid:
-            _paired = conn.execute(
-                "SELECT 1 FROM chat_tasks WHERE user_message_id=? AND task_id=? LIMIT 1",
-                (user_message_id, task_id),
-            ).fetchone()
-            if not _paired:
-                conn.execute(
-                    """INSERT INTO chat_tasks (task_id, session_id, user_message_id, ai_message_id,
-                        user_input, context_link_mode, context_root_task_id, sessionModel, start_time,
-                        status, created_at, updated_at)
-                       SELECT task_id, session_id, ?, ai_message_id, user_input, context_link_mode,
-                              context_root_task_id, sessionModel, start_time, 'terminal', created_at, updated_at
-                       FROM chat_tasks WHERE task_id=? LIMIT 1""",
-                    (user_message_id, task_id),
-                )
-                logger.info(f"[D-1] 注入消息 {user_message_id} 补配对(归属任务 {task_id})")
 
 
 def load_user_message_by_task(conn: Connection, task_id: str) -> Optional[dict]:
@@ -763,27 +762,27 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
     LEFT JOIN chat_tasks 重建"用户+AI"有序消息对(彻底去 chat_messages 读)。
     供 get_session_messages / _load_previous_messages / execution_stream 复用(10规范 DRY/复用优先)。
     返回 list[dict]: 每行一条 user 消息及其配对 assistant(ai_message_id 为 None 表示暂无 AI 回答),
-    字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id
+    字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id,
+    pair_task_id(行配对到的 chat_tasks.task_id — 渲染合并同任务判据, 2026-09-28 小欧)
     2026-08-22 小欧 归一报告v1.25 6.3: cum.model/cum.provider 两列 → cum.chat_model JSON 单列,
     返回 dict 的 model/provider 键由 chat_model 派生(键名不变, 旧列不再读取)
     2026-09-20 小欧 E-4修复: 一条 user 消息仅取最新 task 的配对(chat_tasks 按 user_message_id 取 MAX(id) 行),
     杜绝陈旧 _user_msg_id 复用导致的一对多(前端重复气泡 + 旧终态被覆写)
-    2026-09-20 小欧 D-1兜底: 无配对(ct=NULL)但本会话存在任务时, 兜底取本会话最近任务行的 ai_message_id,
-    消除 B机制注入消息的 DB 幽灵(NULL)——根治链上已由 update_user_message_final 补真实配对, 此兜底仅服务历史缺口"""
+    2026-09-20 小欧 D-1兜底: 会话级模糊兜底(fb)
+    2026-09-28 小欧 精确归属(设计文档[76] 6.5③): 删会话级 fb 兜底, 改单条精确 JOIN —
+      注入消息凭 cum.task_id(bind_message_to_task 执行期绑)归任务, 起始消息凭 cum.id=ct.user_message_id 归任务,
+      二者归一; MAX(id) 兼容同 task 多行(取最新)。删 COALESCE 后无跨任务错配(原兜底可能把消息配到会话最后任务)。
+      注: 存量 task_id=NULL 注入副本已按 5.3 一次性 DELETE 清理, 查询走单一路由。"""
     sql = """SELECT cum.id AS user_id, cum.content AS user_content, cum.response AS ai_content,
                     cum.reasoning AS ai_reasoning,
                     cum.chat_model AS chat_model, cum.task_id AS task_id,
                     cum.created_at AS created_at,
-                    COALESCE(ct.ai_message_id, fb.ai_message_id) AS ai_message_id
+                    ct.ai_message_id AS ai_message_id, ct.task_id AS pair_task_id
              FROM chat_user_message cum
-             LEFT JOIN (
-                 SELECT user_message_id, MAX(id) AS mid FROM chat_tasks GROUP BY user_message_id
-             ) tg ON tg.user_message_id = cum.id
-             LEFT JOIN chat_tasks ct ON ct.id = tg.mid
-             LEFT JOIN (
-                 SELECT session_id, MAX(id) AS lastid FROM chat_tasks GROUP BY session_id
-             ) tsl ON tsl.session_id = cum.session_id
-             LEFT JOIN chat_tasks fb ON fb.id = tsl.lastid
+             LEFT JOIN chat_tasks ct ON ct.id = (
+                 SELECT MAX(id) FROM chat_tasks
+                 WHERE task_id = cum.task_id OR user_message_id = cum.id
+             )
              WHERE cum.session_id = ?"""
     params: list = [session_id]
     if lower_id is not None:
@@ -807,6 +806,7 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
             "task_id": r["task_id"],
             "created_at": r["created_at"],
             "ai_message_id": r["ai_message_id"],
+            "pair_task_id": r["pair_task_id"],   # 2026-09-28 小欧: 渲染合并同任务判据(三堂会审)
         })
     return out
 
@@ -837,24 +837,46 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
     失败/取消亦计入, 与设计文档 3.5.3 口径一致）。chat_tasks 行数即新统计口径 — 小欧 2026-08-20
     2026-08-22 小欧 归一报告v1.25 6.3: model/provider 两列 → sessionModel JSON 列派生(键名不变)
     2026-08-30 小欧 设计文档v1.103: 排序 DESC→ASC(左列时间线, 新任务在底部) +
-    新增 latest_task_id(显式最新锚点, 顶栏/默认选中/结束沿token锚点统一消费, 解耦 8.C-④ DESC 一手双用)"""
+    新增 latest_task_id(显式最新锚点, 顶栏/默认选中/结束沿token锚点统一消费, 解耦 8.C-④ DESC 一手双用)
+    2026-09-28 小欧 注入可见性(设计文档[76] 6.5④): ①按 task_id 折叠同 task 多行(防 D-1 假行致重复条目/
+    React key 冲突, 保留 ASC 首行); ②每行补 merged_inputs(本任务吸收的追加注入消息, 供前端折叠块显示)
+    2026-09-28 19:32:44 小欧 三堂会审: merged_inputs 改会话级 1 次查询+Python 分组(原 N+1 且
+    task_id 无索引); 首条排除改用行自带 user_message_id(免子查询)。"""
     total = conn.execute(
         "SELECT COUNT(*) FROM chat_tasks WHERE session_id=?",
         (session_id,),
     ).fetchone()[0]
     rows = conn.execute(
         """SELECT task_id, user_input, response, status, duration, sessionModel,
-                  total_steps, llm_call_count, context_link_mode,
+                  total_steps, llm_call_count, context_link_mode, user_message_id,
                   created_at, updated_at
            FROM chat_tasks WHERE session_id=? ORDER BY id ASC""",
         (session_id,),
     ).fetchall()
+    # 会话内注入行一次取回按任务分组 — 2026-09-28 小欧 三堂会审(原 N+1)
+    _inj_by_task: Dict[str, list] = {}
+    for _m in conn.execute(
+            """SELECT id, task_id, content FROM chat_user_message
+               WHERE session_id=? AND task_id IS NOT NULL ORDER BY id ASC""",
+            (session_id,)).fetchall():
+        _inj_by_task.setdefault(_m["task_id"], []).append(_m)
     out = []
+    _seen_task_ids = set()
     for r in rows:
         d = dict(r)
+        # 2026-09-28 小欧: 同 task 多行折叠(防御 D-1 假行), 保留首行
+        if d["task_id"] in _seen_task_ids:
+            continue
+        _seen_task_ids.add(d["task_id"])
         _sm = parse_session_model(d.pop("sessionModel", None))
         d["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
         d["provider"] = _sm.provider if _sm else None
+        _reg_uid = d.pop("user_message_id", None)     # 首条 uid 仅用于排除, 不进返回契约 — 小欧 2026-09-28
+        # 追加注入消息(cum.task_id 单一路由: bind_message_to_task 执行期绑定; 排除任务登记首条 uid)
+        d["merged_inputs"] = [
+            _m["content"] for _m in _inj_by_task.get(d["task_id"], [])
+            if _m["id"] != _reg_uid
+        ]
         out.append(d)
     latest_task_id = out[-1]["task_id"] if out else None   # ASC 后最末行为最新任务, 显式锚点 — 小欧 2026-08-30
     return out, total, latest_task_id

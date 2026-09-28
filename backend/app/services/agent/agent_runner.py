@@ -158,6 +158,8 @@
 #   NULL 幽灵(前端双栖渲染/linked 误判未回答)。compliance: KISS-DIRECT/禁止backward
 # 2026-09-25 小欧 - finally 关客户端判据改无条件: resolver 恒返回任务私有快照(_is_snapshot 死判据消亡),
 #   关闭语义由 base_service.close 三分支兜底(共享 lease 归还幂等/独占 aclose/单例 no-op) — 使用说明
+# 2026-09-28 - 小欧 - 活跃任务注入(设计文档[76] 6.4): 终态回填 _active_uid 加 uid>0 守卫,
+#   None/0/合成负id 一律回落 db_ops.user_msg_id 兜底 — 小欧-2026-09-28
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -646,12 +648,14 @@ async def run_agent_in_background(
                         _tf_m = _last_final.get("model") if _last_final else None
                         _active_uid = getattr(
                             getattr(agent, "message_builder", None), "current_user_msg_id", None)
-                        _final_uid = _active_uid if _active_uid is not None else db_ops.user_msg_id
+                        # 2026-09-28 小欧 锚守卫(设计文档[76] 6.4): 仅正整数真 uid 作回填目标;
+                        #   None/0/合成负id(占位锚, WHERE id<0 必落空)一律回落 db_ops.user_msg_id 兜底。
+                        #   property 补齐后 _active_uid 通常为真 uid, 本守卫防传值失误。
+                        _final_uid = _active_uid if (_active_uid or 0) > 0 else db_ops.user_msg_id
                         update_user_message_final(
                             conn,
                             user_message_id=_final_uid,
                             task_id=task_id,
-                            session_id=agent.session_id if getattr(agent, "session_id", None) else None,  # D-1(2026-09-20 小欧): 传 session 供注入消息补配对
                             response=saved_content or "",
                             reasoning=saved_thought or "",
                             outcome=_terminal_status,

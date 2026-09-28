@@ -178,6 +178,12 @@
 #   ⇒ 该会话后续每条消息都被 has_active_task_in_session 改道注入死任务，用户补完 key 重试仍
 #   卡死、只能重启后端。修法: 早退前 reclaim_stream_buffer + cleanup_task（与占位注册早退(:392)
 #   的差别是"本任务已注册成功"，彼时只回收缓冲、无任务可清）。
+# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复(设计文档[76] 6.6): ①新增 _bind_task_id — 注入成功即刻
+#   回填 chat_user_message.task_id(执行期归属, 原仅终态回填致执行期列表/历史查不到); ②_build_injected_ack
+#   type retrying→merged(重试语义误用) + 携带 merged_into_task_id + 加 task_id 形参; ③两注入分支
+#   inject_message_to_task 传 _user_msg_id(随消息同行取真 uid) + bind + ack 传目标 task;
+#   ④_SSE_FORWARD_TYPES 加 "merged"(与 ALL_STEP_TYPES 双登记纪律)。降级语义扩展: 队列满/uid非法同样走新建。
+#   compliance: SRP/KISS-DIRECT/DRY/复用优先(复用 storage.bind_message_to_task 零新表)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -230,20 +236,36 @@ from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥�
 _agent_tasks: set = set()
 
 
-def _build_injected_ack() -> str:
+def _build_injected_ack(task_id: str) -> str:
     """活跃任务注入成功应答 — 小欧 2026-09-20(三堂会审DRY修复): 前段注入与占位注册命中注入共用。
-    正常业务路径, 用 retrying 类型(白名单, 原 error 语义误伤已修正)。
-
-    2026-09-28 小欧 修 BUG: 原返回 LLM 层 StreamChunk, 被调用点直接 yield 给 StreamingResponse,
-      starlette 调 chunk.encode() 崩溃。改与同层 create_error_response 同构, 只产 SSE 字符串。"""
+    2026-09-28 小欧(设计文档[76] 6.6): type retrying→merged(重试语义误用, 前端曾渲染"🔄 重试"),
+    携带 merged_into_task_id 供前端定位目标任务; 修 BUG: 原返回 LLM 层 StreamChunk 被直接 yield
+    给 StreamingResponse, starlette 调 chunk.encode() 崩溃 → 只产 SSE 字符串。"""
     from app.services.agent.steps import MetaStep
     return format_agent_sse(MetaStep(
         step=0,
-        type="retrying",
-        content="消息已注入当前执行中的任务，将在下一轮吸收",
+        type="merged",
+        content="消息已并入当前执行中的任务，将在下一轮吸收",
+        merged_into_task_id=task_id,
         wait_time=None,
         severity="info",
     ).to_dict())
+
+
+async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
+    """注入即绑执行期归属(设计文档[76] 6.6②/5.2.2) — 小欧 2026-09-28
+    task_id 原仅终态回填, 执行期注入消息 task_id 恒 NULL → 列表/历史执行期查不到。
+    任务已结束时 UPDATE 影响 0 行, 记 warning 不报错(消息仍在会话可见, 不丢数据)。"""
+    if not user_message_id:
+        logger.warning(f"[注入] uid 缺失, 跳过 bind(task={task_id})")
+        return
+    try:
+        from app.services.chat.storage import bind_message_to_task
+        _ok = await db.atxn("chat", lambda c: bind_message_to_task(c, user_message_id, task_id))
+        if not _ok:
+            logger.warning(f"[注入] bind 0行(task={task_id}, uid={user_message_id}), 任务可能已结束")
+    except Exception as _e:
+        logger.warning(f"[注入] bind 异常(task={task_id}, uid={user_message_id}): {_e}")
 
 
 def generate_task_id() -> str:
@@ -380,14 +402,14 @@ async def chat_stream_orchestrator(
         #   待其下一轮 LLM 调用前合并吸收; 无活跃任务时走正常新建任务。工具执行不被打断(安全底线)。 — 小欧-2026-09-20
         _active_tid = await has_active_task_in_session(session_id)
         if _active_tid:
-            _injected_ok = await inject_message_to_task(_active_tid, user_input)
+            _injected_ok = await inject_message_to_task(_active_tid, user_input, _user_msg_id)
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
-                # 修复(小欧 2026-09-20): 注入成功是正常业务路径, 非error语义, 改用retrying类型(已在白名单)
-                yield _build_injected_ack()
+                await _bind_task_id(_active_tid, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28(设计文档[76] 6.6)
+                yield _build_injected_ack(_active_tid)
                 return
-            # 注入失败(目标任务恰好终态): 降级新建任务(下述正常路径), 不丢消息
-            logger.warning(f"[chat] 注入失败(目标任务finish), 降级新建任务: session={session_id}, target={_active_tid}")
+            # 注入失败(目标任务恰好终态/队列满/uid非法): 降级新建任务(下述正常路径), 不丢消息
+            logger.warning(f"[chat] 注入失败, 降级新建任务: session={session_id}, target={_active_tid}")
 
         buffer = create_stream_buffer(task_id)
         # 占位注册方案(2026-09-20 小欧, 北京老陈定案): register_task 不再抛异常, 守卫命中返回占位tid —
@@ -395,10 +417,11 @@ async def chat_stream_orchestrator(
         _reg_res = await register_task(task_id, session_id=session_id)  # 删 ai_service — 小欧-2026-09-25
         if _reg_res:
             logger.warning(f"[chat] B-3竞态守卫命中(session={session_id}, 占位={_reg_res}, 本task={task_id}作废), 改道注入")
-            _inj2 = await inject_message_to_task(_reg_res, user_input)
+            _inj2 = await inject_message_to_task(_reg_res, user_input, _user_msg_id)
             if _inj2:
                 reclaim_stream_buffer(task_id)  # 本任务不启动, 回收预建缓冲防残留
-                yield _build_injected_ack()
+                await _bind_task_id(_reg_res, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28
+                yield _build_injected_ack(_reg_res)
                 return
             # 极端: 占位任务恰在守卫命中与注入之间终态(已清出活跃集) → 重试注册(此时守卫应放行), 消息仍不丢
             logger.warning(f"[chat] B-3占位任务 {_reg_res} 已释出, 重试注册新建: session={session_id}")
@@ -599,6 +622,7 @@ _SSE_FORWARD_TYPES = frozenset({
     # 仅SSE(实时信号, 落库由 agent_runner 扫描分支处理)
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
+    "merged",  # 2026-09-28 小欧: 注入应答(设计文档[76] 6.7, 与 ALL_STEP_TYPES 双登记)
     "rejected", "stats", "context_overview", "truncated",
     # 防御性保留: 当前无独立发射源, 若未来新增取消通知类可转发
     "cancelled",

@@ -34,6 +34,9 @@
 #   原估0 token, 严重低估导致上下文越界); _estimate_tokens 复用 _total_chars 自动生效, 最小侵入。compliance: SRP/DRY/KISS
 # 2026-09-23 - 小欧 - trim配置化: __init__ 新增 _trim_trigger_ratio/_compaction_buffer 读 tuning.trim.* 兜底常量; trim_history 增量/绝对值/budget 三处改用实例值
 # 2026-09-23 - 小欧 - wiring假保存修复: _cap_temp_history 改读 tuning.content.temp_history_char_limit 兜底常量（此前设置页可改实际不生效）
+# 2026-09-28 - 小欧 - 锚属性名修复(设计文档[76] 6.3): 新增只读 property current_user_msg_id(读私有 _current_user_msg_id)。
+#   根因: agent_runner 用 getattr(mb, 'current_user_msg_id', None) 读锚恒 None(私有/公开名不匹配), 9-20 锚回填与
+#   D-1 两修复因此从未生效 → 注入消息 task_id 恒 NULL。补公开只读口修根因, 封装禁外部直读私有。compliance: SRP/KISS
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -111,6 +114,14 @@ class MessageBuilder:
         # B组(锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
         self._synth_user_msg_id: int = 0
         self._current_user_msg_id: Optional[int] = None
+
+    @property
+    def current_user_msg_id(self) -> Optional[int]:
+        """当前轮 user 消息真实 uid 锚(只读) — 小欧 2026-09-28 设计文档[76] 6.3
+        此前只有私有 _current_user_msg_id, 而 agent_runner 用 getattr(mb, 'current_user_msg_id', None)
+        取值恒为 None → 9-20 的锚回填与 D-1 两个修复因此从未生效(注入消息 task_id 恒 NULL)。
+        补公开只读口(封装, 禁外部直读私有); 属性名保持与读取方一致(修根因)。"""
+        return self._current_user_msg_id
 
     def reset_per_run(self) -> None:
         """每次 run_react_cycle 仅重置 conversation_history,缓存和计数保留跨会话"""

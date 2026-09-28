@@ -62,6 +62,8 @@
 #  建表后插入迁移段: PRAGMA table_info 检测旧表无 path 列→DROP 重建(存量工具级信任全部视为无效清空, 定案"存量全部清空不迁移")→新库含path列跳过
 # 2026-09-07 - 小欧 - 4.4.1旧case清零: init_chat_db 接 migrate_cancelled_rows_to_final 调用(位于 migrate_v2_chat_restructure
 #  之后, chat_task_steps 表/列收敛后; 函数内延迟 import, 循 migrate_steps 循环导入惯例): 现存 type=cancelled 旧行改写为 final+cancelled
+# 2026-09-28 - 小欧 - 活跃任务注入存量清理(设计文档[76] 5.3): init_chat_db 接 migrate_purge_injected_dupes 调用
+#  (migrate_cancelled_rows_to_final 之后, 一次性 DELETE 存量注入副本, schema_migrations 登记防重跑) — 小欧-2026-09-28
 """
 db_initializer — 数据库初始化
 
@@ -237,6 +239,10 @@ def init_chat_db(get_conn):
         #   须在 v2 结构迁移之后(chat_task_steps 表/列收敛后); 只读写 step_json, 与外键解除无序相关
         from app.services.chat.migrate_steps import migrate_cancelled_rows_to_final
         migrate_cancelled_rows_to_final(get_conn)
+        # 活跃任务注入缺陷修复(2026-09-28 小欧 设计文档[76] 5.3): 存量注入消息副本一次性 DELETE,
+        #   须在 v2 结构迁移后(chat_user_message 收敛); 一次性登记防重跑, 新库无副本零影响
+        from app.services.chat.migrate_steps import migrate_purge_injected_dupes
+        migrate_purge_injected_dupes(get_conn)
 
         # ===== 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): chat_task_steps 外键退役 =====
         # 旧 DDL: FOREIGN KEY(ai_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,

@@ -53,12 +53,15 @@ __all__ = [
 # 全集来源: 当前 HEAD 4bf3ea987 逐字面值实证。
 # 2026-09-17 小欧 会审复核(#3): "user_rejected" 退位 → "rejected"(2026-09-16 统一拒绝事件后 user_rejected 零发射,
 #   登记源同步, 与 stream_orchestrator._SSE_FORWARD_TYPES 白名单/通道路由纪律对齐) — 小欧-2026-09-17
+# 2026-09-28 小欧 活跃任务注入(设计文档[76] 6.7): 新增 "merged"(注入应答, 替代 retrying 语义误用) —
+#   通道路由: SSE✓/DB✗/短信号✗(纯实时提示, 不落库不参与短信号), 仅SSE 组, 自动进 _SSE_FORWARD_TYPES。
 ALL_STEP_TYPES = frozenset({
     # SSE + 落库(SSE✓/DB✓)
     "start", "action", "observation", "final", "final_stats",
     # 仅SSE(SSE✓/DB✗, 实时信号)
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
+    "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
     "rejected", "stats", "context_overview", "truncated",
     # 仅落库(SSE✗/DB✓)
     "thought",

@@ -43,6 +43,7 @@
     2026-09-22 小欧 DEFAULT_CORS_ORIGINS 删除死配置 localhost:3000(全仓零引用, 早期 CRA 遗留) + 补注释说明端口关系(前端:5173 直连后端:8000 走 CORS, proxy 同源不走)
     2026-09-23 小欧 删除 LLM_STREAM_OPTIONS 死常量(消费方 base_service 改读 tuning.llm.stream_options.include_usage 开关组 dict, 全仓零引用, 功能零退化)
     2026-09-23 小欧 删除 MAX_CONSECUTIVE_CHUNKS 死常量(should_promote 死链清理：历史接口全仓零调用，chunk_buffer/initialize_run_state 引用同步删除)
+    2026-09-28 小欧 新增 INBOX_MAX=20 活跃任务注入 inbox 队列上限(设计文档[76] 6.8: 满则注入失败降级新建任务, 消息不丢) — 小欧-2026-09-28
 """
 
 import re
@@ -129,6 +130,11 @@ MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最�
 # ============================================================
 
 TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
+
+# 2026-09-28 小欧: 活跃任务注入 inbox 队列上限(设计文档[76] 6.8) — 防无界堆积致合并超 context 上限;
+# 满则 inject_message_to_task 返回 False, 编排降级走正常新建任务(消息不丢)。
+# 【取值依据】20: 单任务一轮 ReAct 内用户连发超 20 条属异常刷屏, 降级新建比继续堆积更合理(5.6 决策 6)。
+INBOX_MAX = 20  # 【系统级】使用对象: task_registry 注入队列 maxsize
 
 # 2026-09-08 北京老陈裁定+小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
 HEARTBEAT_INTERVAL = 25.0  # 【系统级】使用对象: stream_orchestrator.stream_reader 心跳周期(秒)

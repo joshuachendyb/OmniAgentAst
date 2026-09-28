@@ -20,6 +20,11 @@
 # 2026-09-25 小欧 - v1.12 DRY 归一: 抽出 _drain_inbox(q) 供 drain_inbox / cleanup_task /
 #   cleanup_expired_tasks 三处共用(原三份逐字拷贝, 竞态兜底写法易漂移成不一致); 排空统一用
 #   except asyncio.QueueEmpty 兜底 break, 不用 while q.empty() 单一判据(empty() 与 get_nowait() 之间可能已被取空) — 小欧 2026-09-25); registry 只存任务身份/状态/inbox, 不 import 不持资源句柄(欠账②)
+# 2026-09-28 小欧 - 活跃任务注入缺陷修复(设计文档[76] 6.1): ①inbox 改投(内容, user_message_id)二元组,
+#   uid 随消息同行, agent 侧不再重落库取 id(根治重复落库); ②_orphaned_inbox 值类型同步元组(收尾窗口不丢 uid);
+#   ③Queue(maxsize=INBOX_MAX) 队列上限 + QueueFull 捕获(满则 return False 走编排降级, 防异常上抛);
+#   ④uid<=0 拒注入(5.6 uid 缺失防御)。
+#   compliance: SRP/KISS-DIRECT/DRY/禁止backward(删 str 兼容分支)
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -32,11 +37,12 @@ Author: 小健 - 2026-05-31
 
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需 — 小欧-2026-09-20
+from typing import Any, Dict, List, Optional, Tuple   # 2026-09-20 小欧 13.4.1: drain_inbox 返回 List[str] 所需; 2026-09-28 inbox 元组化加 Tuple — 小欧-2026-09-28
 from app.services.agent.steps import MetaStep  # 小欧 2026-07-13: build_step_dict 统一走 MetaStep
 
 from app.logger import logger
 from app.constants import TASK_TIMEOUT as _D_TASK_TIMEOUT
+from app.constants import INBOX_MAX  # 2026-09-28 小欧: 注入 inbox 队列上限(设计文档[76] 6.8)
 from app.config import get_config
 from datetime import timedelta
 from app.utils.response_utils import api_success, api_failure
@@ -57,7 +63,8 @@ from app.services.task.task_state import (
 
 # B组调制(2026-09-20 小欧): 任务被 cleanup 删除后, 未吸收的 inbox 消息转入此处,
 # drain_inbox 找不到任务时从 orphan 找回, 保证收尾窗口注入不静默丢失 — SRP: 孤儿缓存独立于 running_tasks 生命周期
-_orphaned_inbox: Dict[str, List[str]] = {}
+# 2026-09-28 小欧: 值类型同步元组(内容, uid) — orphan 路径不改则收尾窗口注入的 uid 丢失, 重演同一根因(设计文档[76] 6.1②)
+_orphaned_inbox: Dict[str, List[Tuple[str, int]]] = {}
 
 # 缺口补(2026-09-20 小欧): orphan 上限, 超出丢弃最旧 —— 终态任务不会再有 drain_inbox 消费, 无上限即永久滞留。
 # 受控: 上限100条(dict保持插入序, next(iter)即最旧), KISS不做TTL定时器(该场景值小, 定时器过度设计)
@@ -99,7 +106,7 @@ async def register_task(task_id: str, session_id: Optional[str] = None) -> Optio
             "cancelled": False,
             "paused": False,
             "session_id": session_id,          # X5/X6 同会话判定
-            "_inbox": asyncio.Queue(),         # B机制: 运行中注入消息队列(多条), agent 侧每轮 LLM 调用前合并吸收
+            "_inbox": asyncio.Queue(maxsize=INBOX_MAX),  # B机制: 运行中注入消息队列, agent 侧每轮 LLM 调用前合并吸收; 2026-09-28 小欧 加上限防无界堆积(设计文档[76] 6.1③)
             "created_at": datetime.now(),
             "_task": asyncio.current_task(),
             "_pause_event": asyncio.Event(),
@@ -118,9 +125,11 @@ async def has_active_task_in_session(session_id: str) -> Optional[str]:
     return None
 
 
-async def inject_message_to_task(task_id: str, content: str) -> bool:
+async def inject_message_to_task(task_id: str, content: str, user_message_id: int) -> bool:
     """B机制: 向运行中任务 inbox 投递一条新用户消息(不打断工具执行, 由 agent 下一轮 LLM 调用前合并吸收)。
-    返回 True=已投递; False=任务不存在/已终态(投递失败, 由编排降级为新任务)。 — 小欧 2026-09-20"""
+    返回 True=已投递; False=任务不存在/已终态/队列已满/uid非法(均由编排降级为新任务)。
+    2026-09-28 小欧(设计文档[76] 6.1): 改投(内容, uid)二元组, agent 侧直接取真实 uid 不再重落库;
+    uid<=0 拒注入(防御, 绝不重落库); QueueFull 捕获 — maxsize 后满队列 put_nowait 抛异常上抛会使降级失效。"""
     async with running_tasks_lock:
         _t = running_tasks.get(task_id)
         if not _t or _t.get("status") not in ("running", "paused"):
@@ -128,14 +137,23 @@ async def inject_message_to_task(task_id: str, content: str) -> bool:
         _q = _t.get("_inbox")
         if _q is None:
             return False
-        _q.put_nowait(content)
+        if (user_message_id or 0) <= 0:   # None/0/负 均拒(防 None 传入 TypeError, 兜底编排降级)
+            logger.warning(f"[TaskRegistry] uid={user_message_id} 非法, 拒绝注入(task={task_id})")
+            return False
+        try:
+            _q.put_nowait((content, user_message_id))
+        except asyncio.QueueFull:
+            logger.warning(
+                f"[TaskRegistry] 任务 {task_id} inbox 已满({INBOX_MAX}), 拒绝注入(编排降级新任务)")
+            return False
     return True
 
 
-async def drain_inbox(task_id: str) -> List[str]:
-    """B机制: agent 侧取走 inbox 全部积压消息(每轮 LLM 调用前合并吸收)。返回消息列表(可为空)。
+async def drain_inbox(task_id: str) -> List[Tuple[str, int]]:
+    """B机制: agent 侧取走 inbox 全部积压消息(每轮 LLM 调用前合并吸收)。返回 [(内容, uid)] 列表(可为空)。
     B-4/B-7 兜底(2026-09-20 小欧): 任务已被 cleanup 删除(收尾窗口)时, 从 _orphaned_inbox 找回未吸收注入消息,
-    保证注入成功即不静默丢失(编排可据此降级/续聊)。 — 小欧 2026-09-20"""
+    保证注入成功即不静默丢失(编排可据此降级/续聊)。
+    2026-09-28 小欧: 返回契约改元组(设计文档[76] 6.1⑤), uid 随消息同行。 — 小欧 2026-09-20"""
     async with running_tasks_lock:
         _t = running_tasks.get(task_id)
         if not _t:
