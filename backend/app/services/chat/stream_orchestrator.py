@@ -230,15 +230,20 @@ from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥�
 _agent_tasks: set = set()
 
 
-def _build_injected_ack(ai_service) -> "StreamChunk":
-    """活跃任务注入成功应答 — 小欧 2026-09-20(三堂会审DRY修复): 前段注入(会话活跃)与占位注册命中注入共用。
-    正常业务路径, 用 retrying 类型(白名单, 原 error 语义误伤已修正)。"""
-    from app.llm.core import create_payload_chunk
-    return create_payload_chunk(ai_service.llm_model, {
-        "type": "retrying",
-        "content": "消息已注入当前执行中的任务，将在下一轮吸收",
-        "wait_time": None,
-    })
+def _build_injected_ack() -> str:
+    """活跃任务注入成功应答 — 小欧 2026-09-20(三堂会审DRY修复): 前段注入与占位注册命中注入共用。
+    正常业务路径, 用 retrying 类型(白名单, 原 error 语义误伤已修正)。
+
+    2026-09-28 小欧 修 BUG: 原返回 LLM 层 StreamChunk, 被调用点直接 yield 给 StreamingResponse,
+      starlette 调 chunk.encode() 崩溃。改与同层 create_error_response 同构, 只产 SSE 字符串。"""
+    from app.services.agent.steps import MetaStep
+    return format_agent_sse(MetaStep(
+        step=0,
+        type="retrying",
+        content="消息已注入当前执行中的任务，将在下一轮吸收",
+        wait_time=None,
+        severity="info",
+    ).to_dict())
 
 
 def generate_task_id() -> str:
@@ -379,7 +384,7 @@ async def chat_stream_orchestrator(
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
                 # 修复(小欧 2026-09-20): 注入成功是正常业务路径, 非error语义, 改用retrying类型(已在白名单)
-                yield _build_injected_ack(ai_service)
+                yield _build_injected_ack()
                 return
             # 注入失败(目标任务恰好终态): 降级新建任务(下述正常路径), 不丢消息
             logger.warning(f"[chat] 注入失败(目标任务finish), 降级新建任务: session={session_id}, target={_active_tid}")
@@ -393,7 +398,7 @@ async def chat_stream_orchestrator(
             _inj2 = await inject_message_to_task(_reg_res, user_input)
             if _inj2:
                 reclaim_stream_buffer(task_id)  # 本任务不启动, 回收预建缓冲防残留
-                yield _build_injected_ack(ai_service)
+                yield _build_injected_ack()
                 return
             # 极端: 占位任务恰在守卫命中与注入之间终态(已清出活跃集) → 重试注册(此时守卫应放行), 消息仍不丢
             logger.warning(f"[chat] B-3占位任务 {_reg_res} 已释出, 重试注册新建: session={session_id}")
