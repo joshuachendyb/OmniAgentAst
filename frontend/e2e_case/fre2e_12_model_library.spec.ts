@@ -31,8 +31,22 @@ import * as fs from 'fs';
  *   替换 visibleIds 做排序断言（后者按 ALL_IDS 遍历，集合语义不保序，致假失败 3 轮），
  *   并移除排查期临时调试（API 直连打印 / page response 监听）— 小健-2026-09-25
  */
-const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
-const BASE = 'http://127.0.0.1:8000/api/v1';
+// 2026-09-28 小欧 - 配置隔离铁律落地：本用例 POST/PUT/DELETE /providers、/models 并断言写入落
+//   config.yaml，原先直连开发后端 :8000 + 硬编码真配置路径。改：整个用例跑隔离栈
+//   （后端 :8898 / 代理 :9001 / 页面 vite :5174，配置为真配置副本），
+//   副本内 provider/api_key/models 与真一致 → 仍用真实模型，隔离的只是写的落点。
+import {
+  startIsolatedEnv,
+  stopIsolatedEnv,
+  isoConfigPath,
+  ISO_API,
+  ISO_PAGE,
+} from '../e2e_front_lib/isolated-env';
+
+const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+/** 隔离配置副本路径（beforeAll 里由 startIsolatedEnv 赋值；取代原硬编码真路径） */
+let CONFIG_YAML = '';
+const BASE = ISO_API;
 
 // mock 远端模型（含 free/非 free、多 owned_by，覆盖 D4 三项过滤）
 const SEED_ID = 'e2e-seed-free';
@@ -56,7 +70,7 @@ const stamp = () => {
 };
 
 const goto = async (page: Page) => {
-  await page.goto(`http://localhost:5173/settings2?t=${Date.now()}`);
+  await page.goto(`${ISO_PAGE}/settings2?t=${Date.now()}`);
   await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
 };
 
@@ -147,9 +161,14 @@ test.describe('模型库 Tab 全链路 E2E-12 (有头+mock)', () => {
     });
     expect(mockPort).toBeGreaterThan(0);
     console.log(`[E2E] mock /models 监听 127.0.0.1:${mockPort}`);
+
+    // 2026-09-28 小欧 - 隔离栈并入本 beforeAll：真配置不可写，落盘断言改读副本
+    await startIsolatedEnv(FRONTEND_DIR);
+    CONFIG_YAML = isoConfigPath();
   });
 
   test.afterAll(async () => {
+    await stopIsolatedEnv();
     await new Promise<void>((resolve) => {
       mockServer.close(() => resolve());
     });

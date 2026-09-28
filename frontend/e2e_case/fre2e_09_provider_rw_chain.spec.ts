@@ -20,8 +20,22 @@ import * as fs from 'fs';
  * 编辑历史: 2026-09-25 04:06:45 小健 - 孤儿残留治理: 新增 createdProviders 集合 + afterEach 强制
  *   DELETE 清理（步骤0/白名单注入探针 Provider 失败不再残留）+ prettier 重排 — 小健-2026-09-25
  */
-const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
-const BASE = 'http://127.0.0.1:8000/api/v1';
+// 2026-09-28 小欧 - 配置隔离铁律落地：本用例 POST/PUT/DELETE /providers、/models 并断言写入落
+//   config.yaml，原先直连开发后端 :8000 + 硬编码真配置路径。改：整个用例跑隔离栈
+//   （后端 :8898 / 代理 :9001 / 页面 vite :5174，配置为真配置副本），
+//   副本内 provider/api_key/models 与真一致 → 仍用真实模型，隔离的只是写的落点。
+import {
+  startIsolatedEnv,
+  stopIsolatedEnv,
+  isoConfigPath,
+  ISO_API,
+  ISO_PAGE,
+} from '../e2e_front_lib/isolated-env';
+
+const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+/** 隔离配置副本路径（beforeAll 里由 startIsolatedEnv 赋值；取代原硬编码真路径） */
+let CONFIG_YAML = '';
+const BASE = ISO_API;
 
 const stamp = () => {
   const d = new Date();
@@ -41,6 +55,14 @@ test.afterEach(async ({ request }) => {
 test.describe.configure({ mode: 'serial' });
 
 test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
+  // 2026-09-28 小欧 - 隔离栈生命周期：真配置不可写，断言改读副本
+  test.beforeAll(async () => {
+    await startIsolatedEnv(FRONTEND_DIR);
+    CONFIG_YAML = isoConfigPath();
+  });
+  test.afterAll(async () => {
+    await stopIsolatedEnv();
+  });
   test('添加Provider→label/动态参数/timeout编辑→拒注入→落盘回显', async ({
     page,
     request,
@@ -131,7 +153,7 @@ test.describe('Provider 读写保存显示全链路 E2E-02 (有头)', () => {
           .catch(() => {});
       }
     });
-    await page.goto('http://localhost:5173/settings2');
+    await page.goto(`${ISO_PAGE}/settings2`);
     await expect(page.locator('.settings-page')).toBeVisible({
       timeout: 30_000,
     });

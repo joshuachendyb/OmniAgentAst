@@ -44,17 +44,17 @@ test.describe('心跳等待感知钟面', () => {
     // 环境: 进程分离跨域(同 fre2e_01)
     killPort(9000);
     await expect
-      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(9000), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
     const proxyLog1 = proxyLogPath();
     startProxyServer(FRONTEND_DIR, proxyLog1);
     await expect
-      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(9000), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
     killPort(5173);
     await expect
-      .poll(() => waitPortDown(5173), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(5173), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
     startDevServer(
       FRONTEND_DIR,
@@ -62,7 +62,7 @@ test.describe('心跳等待感知钟面', () => {
       'set "VITE_API_BASE_URL=http://localhost:9000/api/v1" && '
     );
     await expect
-      .poll(() => waitPortUp(5173), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(5173), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
     await chat.gotoChat();
@@ -96,13 +96,33 @@ test.describe('心跳等待感知钟面', () => {
 
     console.log('[E2E-CLOCK] 流已启动, 轮询钟面出现...');
 
+    // 2026-09-28 小欧 - 轮询窗口从「固定 60s」改为「覆盖整个任务生命周期」。
+    //   原缺陷：本 prompt 刻意要求「先完成全部研究再输出报告」，前 ~200s 全是短工具调用
+    //   （实测工具耗时中位 0.26s），文本流式输出要到任务末尾才开始。而钟面挂在
+    //   TextStream 的 `cursor && typing`（打字机输出中）上，无文本输出即无该挂载点；
+    //   工具挂载点虽在但每窗口仅活 0.26s，撞不上 APPEAR_SEC=10 的设计门槛。
+    //   → 原 30×2s=60s 窗口恰好落在「钟面按设计不出现」的时段，30 次全 0 是**误报**，
+    //     而非产品缺陷（实测钟面在长文本流式输出期正常显示）。
+    //   改为：轮询到钟面出现或任务终态为止（上限 300s），终态也算一次探测。
     const clockEl = page.locator('.clock-stopwatch');
     let clockCount = 0;
-    for (let i = 0; i < 30; i += 1) {
+    const pollDeadline = Date.now() + 300_000;
+    for (let i = 0; Date.now() < pollDeadline; i += 1) {
       await page.waitForTimeout(2_000);
       clockCount = await clockEl.count();
-      console.log(`[E2E-CLOCK] 轮询${i + 1}: count=${clockCount}`);
-      if (clockCount >= 1) break;
+      if (clockCount >= 1) {
+        console.log(`[E2E-CLOCK] 轮询${i + 1}: count=${clockCount} (命中)`);
+        break;
+      }
+      // 终态到达则停止：此后不会再有新的文本流式输出窗口
+      // （终态判据复用 chat-page.ts 的 sendBtn —— 它可见即 isReceiving=false，与 waitDone 同源）
+      if (await chat.sendBtn.isVisible().catch(() => false)) {
+        console.log(
+          `[E2E-CLOCK] 轮询${i + 1}: count=${clockCount} (任务已终态, 停止轮询)`
+        );
+        break;
+      }
+      if (i % 5 === 0) console.log(`[E2E-CLOCK] 轮询${i + 1}: count=0`);
     }
     expect(clockCount).toBeGreaterThanOrEqual(1);
 
@@ -114,8 +134,12 @@ test.describe('心跳等待感知钟面', () => {
     }
 
     // === 验证 4: 钟面秒数递增(取两次 DOM 快照对比) ===
+    // 2026-09-28 小欧 - 收窄到 :visible。钟面挂在多个等待窗口(打字机段/ToolCallLine 等待段)，
+    //   每窗口一实例且各自从挂载时刻起算；原取 .first() 可能命中非当前可见的那一个。
+    //   紧接命中后立即连拍，确保两次快照落在同一挂载实例上（窗口切换会重置计时）。
+    const visibleClock = () => page.locator('.clock-stopwatch:visible').first();
     const getText = async () => {
-      const svgTexts = clockEl.first().locator('svg text');
+      const svgTexts = visibleClock().locator('svg text');
       return await svgTexts
         .first()
         .textContent({ timeout: 10_000 })
@@ -125,9 +149,9 @@ test.describe('心跳等待感知钟面', () => {
     await page.waitForTimeout(3000);
     const t2 = await getText();
     console.log(`[E2E-CLOCK] 秒数快照: t1=${t1} t2=${t2}`);
-    if (t1 && t2) {
-      expect(Number(t2)).toBeGreaterThan(Number(t1));
-    }
+    expect(t1).not.toBeNull();
+    expect(t2).not.toBeNull();
+    expect(Number(t2)).toBeGreaterThan(Number(t1));
 
     // 等终态
     await chat.waitDone(300_000);

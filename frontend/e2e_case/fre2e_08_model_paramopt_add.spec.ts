@@ -22,9 +22,23 @@ import * as fs from 'fs';
  *   直 PUT 真实模型 param_options），改临时创建 e2e-sibling-* + createdModels 集合 +
  *   afterEach DELETE 自清理 + prettier 重排 — 小健-2026-09-25
  */
-const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
+// 2026-09-28 小欧 - 配置隔离铁律落地：本用例 POST/DELETE /models 并断言写入落 config.yaml，
+//   原先直连开发后端 :8000 + 硬编码真配置路径（等于把「写真配置」当验收标准）。
+//   改：整个用例跑隔离栈（后端 :8898 / 代理 :9001 / 页面 vite :5174，配置为真配置副本），
+//   副本内 provider/api_key/models 与真配置一致 → 仍用真实模型，隔离的只是写的落点。
+import {
+  startIsolatedEnv,
+  stopIsolatedEnv,
+  isoConfigPath,
+  ISO_API,
+  ISO_PAGE,
+} from '../e2e_front_lib/isolated-env';
+
+const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+/** 隔离配置副本路径（beforeAll 里由 startIsolatedEnv 赋值；取代原硬编码真路径） */
+let CONFIG_YAML = '';
+const BASE = ISO_API;
 const PROVIDER = 'sensenova';
-const BASE = 'http://127.0.0.1:8000/api/v1';
 
 const stamp = () => {
   const d = new Date();
@@ -42,6 +56,15 @@ test.afterEach(async ({ request }) => {
 });
 
 test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
+  // 2026-09-28 小欧 - 隔离栈生命周期：真配置不可写，断言改读副本
+  test.beforeAll(async () => {
+    await startIsolatedEnv(FRONTEND_DIR);
+    CONFIG_YAML = isoConfigPath();
+  });
+  test.afterAll(async () => {
+    await stopIsolatedEnv();
+  });
+
   test('模板区勾选 reasoning_effort=high → 落盘 → 回显下拉', async ({
     page,
     request,
@@ -83,7 +106,7 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
     });
 
     // 2) 打开设置页 → 模型 Tab
-    await page.goto('http://localhost:5173/settings2');
+    await page.goto(`${ISO_PAGE}/settings2`);
     await expect(page.locator('.settings-page')).toBeVisible({
       timeout: 30_000,
     });
@@ -92,7 +115,10 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
     await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
 
     // 3) 打开「添加模型」弹窗
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    // 2026-09-28 小欧 - 不用 getByRole(name)：页面有「添加模型」与「添加模型参数」两个同前缀按钮，
+    //   accessible name 实测带图标前缀（"plus 添加模型"），故按可见文字精确定位，
+    //   并用 .first() 锁定 ModelSelector 行内那个（另一个属参数区入口）。
+    await page.getByText('添加模型', { exact: true }).first().click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(800); // 观察弹窗打开
@@ -155,7 +181,10 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
     await expect
       .poll(() => JSON.stringify(postBody ?? null), { timeout: 30_000 })
       .toContain('"reasoning_effort"');
-    const b = postBody as Record<string, unknown>;
+    // 2026-09-28 小欧 - 上行 poll 已确保非 null；直接断言收窄，去掉会掩盖空值的 as 强转
+    //   （postBody 声明含 null，`as Record` 属 TS2352 不安全断言）。
+    expect(postBody).not.toBeNull();
+    const b = postBody!;
     expect(b.provider).toBe(PROVIDER);
     expect(b.model).toBe(newModel);
     expect((b.default_params as Record<string, unknown>).reasoning_effort).toBe(

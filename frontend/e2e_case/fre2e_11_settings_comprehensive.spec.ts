@@ -18,8 +18,25 @@ import * as fs from 'fs';
  *   body.ok===false 即抛错），apiGet/apiPut/apiPost 泛型化 + deleteIfExists（404 容忍）+
  *   settingValue/expectReadonlyRow 收口抽取 — 小健-2026-09-25
  */
-const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
-const BASE = 'http://127.0.0.1:8000/api/v1';
+// 2026-09-28 小欧 - 配置隔离铁律落地（本用例 34/36 曾把当前 provider 的 label/api_base 改成
+//   测试值再「改回」，中途被杀就把 https://api.e2e-test.example.com/v1 永久留在真配置，
+//   2026-09-28 09:19 实测发生）。改法：整个用例跑在隔离栈上——
+//     BASE/API/request → 隔离后端 :8898（OMNIAGENT_CONFIG_PATH 指 config 临时副本）
+//     页面 goto      → 独立 vite :5174 → 独立代理 :9001 → 隔离后端 :8898
+//   CONFIG_YAML 由硬编码真路径改为 startIsolatedEnv 后取副本路径（落盘断言语义不变）。
+//   副本内 provider/api_key/models 与真配置一致，故本用例仍用真实模型，隔离的只是写的落点。
+import {
+  startIsolatedEnv,
+  stopIsolatedEnv,
+  isoConfigPath,
+  ISO_API,
+  ISO_PAGE,
+} from '../e2e_front_lib/isolated-env';
+
+const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+/** 隔离配置副本路径（beforeAll 里由 startIsolatedEnv 赋值；取代原硬编码真路径） */
+let CONFIG_YAML = '';
+const BASE = ISO_API;
 
 const stamp = () => {
   const d = new Date();
@@ -29,7 +46,7 @@ const stamp = () => {
 
 // ── helpers ──────────────────────────────────────────────────────
 const goto = async (page: import('@playwright/test').Page) => {
-  await page.goto(`http://localhost:5173/settings2?t=${Date.now()}`);
+  await page.goto(`${ISO_PAGE}/settings2?t=${Date.now()}`);
   await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
 };
 
@@ -222,6 +239,15 @@ const editSaveVerify = async (
 // ══════════════════════════════════════════════════════════════════
 test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test.setTimeout(600_000);
+
+  // 2026-09-28 小欧 - 隔离栈生命周期：整个 describe 跑在隔离后端/独立 vite 上，真配置不可写
+  test.beforeAll(async () => {
+    await startIsolatedEnv(FRONTEND_DIR);
+    CONFIG_YAML = isoConfigPath();
+  });
+  test.afterAll(async () => {
+    await stopIsolatedEnv();
+  });
 
   // ── Tab 加载 (1-7) ──────────────────────────────────────────
   test('01 通用Tab加载', async ({ page }) => {
@@ -751,14 +777,18 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       page.getByText(l, { exact: true }).locator('xpath=..');
     const input = rowOf('timeout').locator('.ant-input-number input');
     const before = await input.inputValue();
-    await input.fill('200');
+    // 2026-09-28 小欧 - 原写死 fill('200')：当现值恰为 200 时是空填，表单不脏 →
+    //   「保存 Provider 配置」按钮保持 disabled，click 一直 retry 到超时（本轮实测撞上）。
+    //   改为按现值取一个必然不同的值，用例不再依赖配置当前处于什么值。
+    const next = Number(before) === 200 ? 250 : 200;
+    await input.fill(String(next));
     await page
       .getByRole('button', { name: '保存 Provider 配置（立即生效）' })
       .click();
     await expect(page.locator('.ant-message')).toContainText('已保存', {
       timeout: 20_000,
     });
-    await expect(input).toHaveValue('200', { timeout: 10_000 });
+    await expect(input).toHaveValue(String(next), { timeout: 10_000 });
     // 恢复
     await input.fill(before);
     await page
@@ -788,14 +818,16 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       page.getByText(l, { exact: true }).locator('xpath=..');
     const input = rowOf('max_retries').locator('.ant-input-number input');
     const before = await input.inputValue();
-    await input.fill('5');
+    // 2026-09-28 小欧 - 同 test 30：原写死 fill('5')，现值为 5 时空填 → 表单不脏 → 保存钮 disabled
+    const next = Number(before) === 5 ? 4 : 5;
+    await input.fill(String(next));
     await page
       .getByRole('button', { name: '保存 Provider 配置（立即生效）' })
       .click();
     await expect(page.locator('.ant-message')).toContainText('已保存', {
       timeout: 20_000,
     });
-    await expect(input).toHaveValue('5', { timeout: 10_000 });
+    await expect(input).toHaveValue(String(next), { timeout: 10_000 });
     await input.fill(before);
     await page
       .getByRole('button', { name: '保存 Provider 配置（立即生效）' })
@@ -1819,7 +1851,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     let uiChanged = false;
     try {
       await goto(page);
-      await tab(page, /外\s*观/);
+      // 2026-09-28 小欧 - Tab 显示名 2026-09-27 已由「外观」改为「前端」（registry appearance label），
+      //   用例 93-96 仍按旧名定位 → tab(...) 等待 600s 超时，本轮实测撞上。
+      await tab(page, /前\s*端/);
       const row = page.locator('[data-settings-key="app.language"]').first();
       await expect(row).toBeVisible({ timeout: 10_000 });
       const select = row.locator('.ant-select').first();

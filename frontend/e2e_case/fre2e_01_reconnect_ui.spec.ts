@@ -31,6 +31,10 @@ import {
  *
  * 架构分层: 本 case（断连专项）独立存在、编排内聚于此文件;
  *   通用设施在 ../e2e_front_lib（process.ts: 进程/端口; stream-diag.ts: SSE诊断+日志对账+run-on; chat-page.ts: POM）。
+ *
+ * 2026-09-28 小欧 - expect.poll 的轮询间隔选项是 intervals（复数、数组）。原写 interval 单数 →
+ *   被静默忽略、轮询退回默认 1000ms；本文件 6 处 + fre2e_06 4 处同病。断流重连对时序敏感，
+ *   探测变慢会拖长用例并放大 flake。tsconfig.e2e.json 接入类型检查后，此类笔误由 tsc 兜住。
  * 注: context.setOffline 只拦截新请求, 无法中断 in-flight 的 SSE 流(已实测), 故不用。
  */
 
@@ -55,18 +59,18 @@ test.describe('断线重连 UI 全链路', () => {
     //   故页面API基址注入为 http://localhost:9000/api/v1 直连代理B(跨域CORS), 杀B=浏览器直连RST。
     killPort(9000);
     await expect
-      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(9000), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
     // 编辑历史: 2026-09-13 小欧 - 代理日志按轮落盘(api-proxy-<ts>.log), 断/重启两轮各独立命名 - 小欧-2026-09-13
     const proxyLog1 = proxyLogPath();
     startProxyServer(FRONTEND_DIR, proxyLog1);
     await expect
-      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(9000), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
     killPort(5173);
     await expect
-      .poll(() => waitPortDown(5173), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(5173), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
     startDevServer(
       FRONTEND_DIR,
@@ -74,7 +78,7 @@ test.describe('断线重连 UI 全链路', () => {
       'set "VITE_API_BASE_URL=http://localhost:9000/api/v1" && '
     );
     await expect
-      .poll(() => waitPortUp(5173), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(5173), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
     await chat.gotoChat();
@@ -158,7 +162,7 @@ test.describe('断线重连 UI 全链路', () => {
     // 4) 杀后端代理B(:9000) → 页面<->vite(A)完好, 仅 API 链路 RST → 前端感知断线(页面不 reload)
     killPort(9000);
     await expect
-      .poll(() => waitPortDown(9000), { timeout: 20_000, interval: 500 })
+      .poll(() => waitPortDown(9000), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
 
     // 5) 断言前端检测到断线并进入重连(console 出现 "准备重连"/"重连")
@@ -188,7 +192,7 @@ test.describe('断线重连 UI 全链路', () => {
     const proxyLog2 = proxyLogPath();
     startProxyServer(FRONTEND_DIR, proxyLog2);
     await expect
-      .poll(() => waitPortUp(9000), { timeout: 60_000, interval: 500 })
+      .poll(() => waitPortUp(9000), { timeout: 60_000, intervals: [500] })
       .toBeTruthy();
 
     // 7) 等流结束: "发送"按钮复现(isReceiving=false, done 已处理)

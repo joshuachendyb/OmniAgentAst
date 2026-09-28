@@ -26,8 +26,22 @@ import * as fs from 'fs';
  * 编辑历史: 2026-09-25 04:06:45 小健 - 恢复保存稳健化: 重试次数恢复改 waitForTimeout(500) +
  *   saveAllBtn.isEnabled() 条件点击（按钮未就绪不再硬点失败） — 小健-2026-09-25
  */
-const CONFIG_YAML = 'F:\\OmniAgentAs-repair\\config\\config.yaml';
-const BASE = 'http://127.0.0.1:8000/api/v1';
+// 2026-09-28 小欧 - 配置隔离铁律落地：本用例 PUT/POST /settings 与 provider 配置并断言写入落
+//   config.yaml，原先直连开发后端 :8000 + 硬编码真配置路径。改：整个用例跑隔离栈
+//   （后端 :8898 / 代理 :9001 / 页面 vite :5174，配置为真配置副本），
+//   副本内容与真配置一致 → 仍用真实模型，隔离的只是写的落点。
+import {
+  startIsolatedEnv,
+  stopIsolatedEnv,
+  isoConfigPath,
+  ISO_API,
+  ISO_PAGE,
+} from '../e2e_front_lib/isolated-env';
+
+const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
+/** 隔离配置副本路径（beforeAll 里由 startIsolatedEnv 赋值；取代原硬编码真路径） */
+let CONFIG_YAML = '';
+const BASE = ISO_API;
 
 const stamp = () => {
   const d = new Date();
@@ -37,7 +51,7 @@ const stamp = () => {
 
 // ── helpers ──────────────────────────────────────────────────────
 const gotoSettings = async (page: import('@playwright/test').Page) => {
-  await page.goto('http://localhost:5173/settings2');
+  await page.goto(`${ISO_PAGE}/settings2`);
   await expect(page.locator('.settings-page')).toBeVisible({ timeout: 30_000 });
 };
 
@@ -79,6 +93,15 @@ const apiPost = async (
 // ── 10 个测试串行执行 ───────────────────────────────────────────
 test.describe.serial('设置页全功能 E2E (有头)', () => {
   test.setTimeout(300_000);
+
+  // 2026-09-28 小欧 - 隔离栈生命周期：真配置不可写，断言改读副本
+  test.beforeAll(async () => {
+    await startIsolatedEnv(FRONTEND_DIR);
+    CONFIG_YAML = isoConfigPath();
+  });
+  test.afterAll(async () => {
+    await stopIsolatedEnv();
+  });
 
   // ─── 1) 通用Tab: 当前模型卡 + SettingsGroup 骨架验证 ────────────
   test('case-01 通用Tab: 加载→当前模型卡→SettingsGroup骨架', async ({
@@ -197,7 +220,9 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     await expect(page.getByText('① 选择器')).toBeVisible({ timeout: 15_000 });
 
     // 1) 打开添加模型弹窗
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    // 2026-09-28 小欧 - 同 fre2e_08：另有「添加模型参数」同前缀按钮，且 accessible name 带图标
+    //   前缀（"plus 添加模型"），故按可见文字精确定位并取 .first() 锁定选择器行内那个。
+    await page.getByText('添加模型', { exact: true }).first().click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 15_000 });
     await page.waitForTimeout(600);
@@ -233,7 +258,9 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     await expect
       .poll(() => JSON.stringify(postBody ?? null), { timeout: 30_000 })
       .toContain(newModel);
-    const b = postBody as Record<string, unknown>;
+    // 2026-09-28 小欧 - 同 fre2e_08：上行 poll 已确保非 null，断言收窄替代 as 强转（TS2352）
+    expect(postBody).not.toBeNull();
+    const b = postBody!;
     expect(b.provider).toBe('sensenova');
     expect(b.model).toBe(newModel);
     console.log(
@@ -291,8 +318,9 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     const timeoutBefore = await timeoutInput.inputValue();
     console.log(`[E2E] case-04 当前 timeout=${timeoutBefore}`);
 
-    // 3) 改 timeout = 200
-    await timeoutInput.fill('200');
+    // 3) 改 timeout（2026-09-28 小欧 - 原写死 200，现值恰为 200 时空填 → 表单不脏 → 保存钮 disabled）
+    const nextTimeout = Number(timeoutBefore) === 200 ? 250 : 200;
+    await timeoutInput.fill(String(nextTimeout));
     await page.waitForTimeout(300);
 
     // 4) 保存 Provider 配置
@@ -305,13 +333,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     );
     console.log('[E2E] case-04 Provider配置保存成功');
 
-    // 5) 回显断言
+    // 5) 回显断言（2026-09-28 小欧 - 同步改为 nextTimeout，原写死 '200' 与实际填入值不符）
     await expect(
       rowOf('timeout').locator('.ant-input-number input')
-    ).toHaveValue('200', { timeout: 10_000 });
-    console.log('[E2E] case-04 回显 timeout=200 ok');
+    ).toHaveValue(String(nextTimeout), { timeout: 10_000 });
+    console.log(`[E2E] case-04 回显 timeout=${nextTimeout} ok`);
 
-    // 6) API 回读验证（PUT 了 timeout=200，再 GET 确认）
+    // 6) API 回读验证（PUT 了 nextTimeout，再 GET 确认）
     const models = (await apiGet(request, '/models')) as {
       providers: Array<{ name: string; timeout: number }>;
     };
@@ -679,28 +707,42 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
 
     await gotoSettings(page);
     await clickTab(page, /通\s*用/);
-    await expect(page.getByText('通用')).toBeVisible({ timeout: 15_000 });
+    // 2026-09-28 小欧 - Tab 选中态用 role 断言：正文里也出现「通用」二字（通用兜底模型参数小节），
+    //   getByText 命中 2 个元素 → strict mode violation。
+    await expect(page.getByRole('tab', { name: /通\s*用/ })).toHaveAttribute(
+      'aria-selected',
+      'true',
+      { timeout: 15_000 }
+    );
 
     // 1) temperature 行
+    // 2026-09-28 小欧 - 原写死 0.85，现值恰为 0.85 时空填 → 保存本组钮 disabled（本轮实测撞上）。
+    //   改为按现值取必然不同的值，落盘断言同步用同一变量（避免断言与实填值脱节）。
+    let nextTemp = tempBefore;
     const tempRow = page
       .locator('[data-settings-key="llm.sampling.temperature"]')
       .first();
     if ((await tempRow.count()) > 0) {
       const tempInput = tempRow.locator('input');
-      await tempInput.fill('0.85');
+      const cur = await tempInput.inputValue();
+      nextTemp = Number(cur) === 0.85 ? 0.9 : 0.85;
+      await tempInput.fill(String(nextTemp));
       await page.waitForTimeout(300);
-      console.log('[E2E] case-09 temperature 改为 0.85');
+      console.log(`[E2E] case-09 temperature 改为 ${nextTemp}`);
     }
 
-    // 2) max_tokens 行
+    // 2) max_tokens 行（同样避免写死值撞上现值）
+    let nextTokens = tokensBefore;
     const tokensRow = page
       .locator('[data-settings-key="llm.sampling.max_tokens"]')
       .first();
     if ((await tokensRow.count()) > 0) {
       const tokensInput = tokensRow.locator('input');
-      await tokensInput.fill('8192');
+      const cur = await tokensInput.inputValue();
+      nextTokens = Number(cur) === 8192 ? 16384 : 8192;
+      await tokensInput.fill(String(nextTokens));
       await page.waitForTimeout(300);
-      console.log('[E2E] case-09 max_tokens 改为 8192');
+      console.log(`[E2E] case-09 max_tokens 改为 ${nextTokens}`);
     }
 
     // 3) 保存本组
@@ -710,13 +752,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
     });
     console.log('[E2E] case-09 通用采样参数保存成功');
 
-    // 4) config.yaml 落盘
+    // 4) config.yaml 落盘（2026-09-28 小欧 - 同步断言实际填入的 next 值，原写死 0.85 与之不符）
     await expect
       .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 10_000 })
-      .toContain('temperature: 0.85');
+      .toContain(`temperature: ${nextTemp}`);
     await expect
       .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 10_000 })
-      .toContain('max_tokens: 8192');
+      .toContain(`max_tokens: ${nextTokens}`);
     console.log('[E2E] case-09 config.yaml 落盘 ok');
 
     // 5) 恢复
