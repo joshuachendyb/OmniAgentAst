@@ -9,7 +9,7 @@ key 全局唯一，加载自检重复直接拒启。
     键名按域收敛（app.project_root→workspace.*、app.max_steps→agent.max_steps 等）；
     系统 Tab 重组为 运维日志/工程目录/关于，paths.* 为派生只读值（由 settings_service 实时算）。
   2026-09-22 小欧 - logging.level 补 env_key（否则标 yaml 可编辑却"改了不生效"= 假保存）；
-    无界 int 项补 range_（负数曾当合法值落盘致消费方崩溃）。
+    无界 int 项补 range（负数曾当合法值落盘致消费方崩溃）。
   2026-09-23 小欧 - 补 LLM 采样/裁剪/压缩/网络参数；notice 全量重写为用户语言
     （禁出现 SSE/HITL/信号量等内部黑话）；cors_origins 迁入 system 组并去 tuning 前缀。
   2026-09-24 小欧 - tuning.stream_task→live_front（与 LLM 流式撞名易误读）；新增 model_library 组。
@@ -22,6 +22,9 @@ key 全局唯一，加载自检重复直接拒启。
     与 list_of（白名单落盘前归一+校验）；appearance label「外观」→「前端」
   2026-09-27 小欧 - 同轮再精简：_item docstring 与 security/appearance 分组注释去重（原"只有三处"
     那类会腐烂的清单改为直接指向唯一真源 app/config.py::_apply_env_overrides）。
+  2026-09-28 小欧 - 字典键 range_→range 全链路统一（DTO/前端本就叫 range，Pydantic 静默丢弃
+    range_ 致响应 range 恒 null：值域不显示、InputNumber 失 min/max、字号滑块回落 0~100）。
+    参数名 range_ 保留（避内置 range，同 model_service.add_model）。
 """
 from typing import Any, Dict, List, Optional
 
@@ -37,13 +40,14 @@ def _item(key: str, type_: str, label: str, default: Any = None,
           list_of: Optional[str] = None) -> Dict[str, Any]:
     """单项构造：storage 统一 YAML。
 
+    参数 range_ 的尾下划线只避内置 range，与字典键 range 刻意异名（对齐 model_service.add_model）。
     env_key 只决定页面"来源"标记；env_inject=True 另表示 env 值要注入 get_config()，
-    否则页面显示值≠实际生效值。两者分开：ai.model_ref 是 dict 而 env 是标量，注入会写坏结构。
-    注入清单在 app.config.ENV_INJECTED_KEYS，双向一致性由 _build_index 启动自检保证。
-    list_of 声明"本项是某类元素的列表"，落盘前归一+校验，规则见 app/utils/allowlist.py。
-    """
+否则页面显示值≠实际生效值。两者分开：ai.model_ref 是 dict 而 env 是标量，注入会写坏结构。
+注入清单在 app.config.ENV_INJECTED_KEYS，双向一致性由 _build_index 启动自检保证。
+list_of 声明"本项是某类元素的列表"，落盘前归一+校验，规则见 app/utils/allowlist.py。
+"""
     return {"key": key, "type": type_, "label": label, "default": default,
-            "options": options, "range_": range_, "step": step, "storage": "YAML",
+            "options": options, "range": range_, "step": step, "storage": "YAML",
             "restart": restart, "secret": secret, "readonly": readonly, "notice": notice,
             "env_key": env_key, "env_inject": env_inject, "list_of": list_of}
 

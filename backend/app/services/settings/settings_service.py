@@ -52,9 +52,9 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
     2026-09-22 - 小欧 - 31候选修复 S13~S16（全部经真实红测试转绿）：
      ①S13 text/str/textarea 类型门禁：text 须 str、textarea 须 str 或 list[str]（#5/#6 数字/bool/dict 落盘根治）
      ②S14 model_ref 非空字符串类型校验：provider/model 为 list/None 等一律拒（#1/#2 HTTP500 根治）
-     ③S15 int 项补 registry range_ 上下界（#7 负数拒）+ range 项补 step 校验（#8 fontSize 12.5 拒）
+     ③S15 int 项补 registry range 上下界（#7 负数拒）+ range 项补 step 校验（#8 fontSize 12.5 拒）
       ④S16 空 patch 拒绝假成功（#11 ok:True 空保存根治）
-    2026-09-22 - 小欧 - int/float 补 range_ 边界校验：type=int/float 且 schema 有 range_ 时，
+    2026-09-22 - 小欧 - int/float 补 range 边界校验：type=int/float 且 schema 有 range 时，
       校验值不超出 [lo, hi]，与 range 类型对齐（schema.range_ 统一生效，堵住超范围值落盘漏洞）
     2026-09-26 - 小欧 - secret 项显式拒绝（写侧单入口方案）
       secret=True 的项经 /settings 写入时直接报错并指引 provider 通道，不做隐式兜底。
@@ -65,6 +65,7 @@ settings_service — 设置页 6 组服务（3.1 前门：读独立+写复用旧
       二者同批实施：自检保证"不会误开 secret"，本处保证"开了也不被通用通道写坏"。 — 小欧 2026-09-26
     2026-09-27 - 小欧 - 根因修复：存在性判据改 has_dotted（原 `is not None` 恒真，
       缺键也标 'yaml'）；白名单落盘前经 allowlist 归一+校验（非法 IP 不再静默失效）
+    2026-09-28 - 小欧 - 内部读键 range_→range 随 registry 键名统一（边界校验两处）
 """
 from pathlib import Path
 import json
@@ -271,9 +272,9 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
         return f"{item['key']} 应为整数"
     if t in ("float", "range") and not isinstance(value, (int, float)):
         return f"{item['key']} 应为数字"
-    # 2026-09-22 小欧 - int/float 补 range_ 边界校验（与 range 类型对齐，schema.range_ 统一生效）
-    if t in ("int", "float") and item.get("range_"):
-        lo, hi = item["range_"]
+    # 2026-09-22 小欧 - int/float 补 range 边界校验（与 range 类型对齐，schema.range 统一生效）
+    if t in ("int", "float") and item.get("range"):
+        lo, hi = item["range"]
         num = float(value)
         if not (lo <= num <= hi):
             return f"{item['key']} 超出范围 [{lo}, {hi}]"
@@ -291,8 +292,8 @@ def _validate_value(item: Dict[str, Any], value: Any) -> Optional[str]:
         if bad:
             return (f"{item['key']} 含非法 IP/网段：{'、'.join(bad)}"
                     f"（支持单 IP 或 CIDR，如 10.0.0.5 / 192.168.1.0/24）")
-    if item.get("range_"):
-        lo, hi = item["range_"]
+    if item.get("range"):
+        lo, hi = item["range"]
         num = float(value)
         if not (lo <= num <= hi):
             return f"{item['key']} 超出范围 [{lo}, {hi}]"

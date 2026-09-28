@@ -214,7 +214,7 @@ class Config:
 
         2026-09-27 小欧 - 源头归一 None/非数字/0：yaml 写 `agent.max_steps:`（空值）、手写成
         "10000"（带引号）或 0 时，`self.get` 原样返回 → 下游 int 字段 500 或拿到非法 0。
-        在此归一，调用处就无需各写一套兜底（DRY）。0 是非法值（registry range_ 下界为 1）。
+        在此归一，调用处就无需各写一套兜底（DRY）。0 是非法值（registry range 下界为 1）。
         2026-09-21 小欧 v4.20 键名按域收敛: app.max_steps → agent.max_steps
         """
         steps = to_int_or(self.get('agent.max_steps'), default)
