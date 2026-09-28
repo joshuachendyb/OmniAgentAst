@@ -167,7 +167,8 @@
 | `update_task_accumulation` | 任务级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, task_id, llm_call_count_token | None |
 | `update_session_accumulation` | 会话级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, session_id, llm_call_count_token | None |
 | `query_chain_accumulation` | 上下文链 token 累计(按context_root聚合, 排除当前任务, 计算派生不落库) | conn, context_root_task_id, current_task_id | dict |
-| `fetch_session_user_message_pairs` | 重建"用户消息+其配对AI回答"有序列表(北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 读取; 每项为一条用户消息及可选配对的AI回答, ai_message_id=None表示AI未生成; 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps, 步骤经 load_execution_steps 另行读取) | conn, session_id, lower_id, upper_id | list |
+| `fetch_session_user_message_pairs` | 重建"用户消息+其配对AI回答"有序列表(北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 读取; 每项为一条用户消息及可选配对的AI回答, ai_message_id=None表示AI未生成; 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps, 步骤经 load_execution_steps 另行读取; 2026-09-28 [76] 精确归属: JOIN 改 COALESCE(子查询 task_id=cum.task_id, 子查询 user_message_id=cum.id) 取 MAX(id), 注入行凭 cum.task_id 归任务、登记首条凭 cum.id 归任务, 删会话级模糊兜底防跨任务错配; 增返回 pair_task_id 供渲染层同任务判据) | conn, session_id, lower_id, upper_id | list |
+| `bind_message_to_task` | 把注入消息绑定到目标任务(执行期归属, 2026-09-28 [76] 6.5① 新增, 零 DDL 复用已有 task_id 列; WHERE id=? AND task_id IS NULL 保证不覆盖既有归属; 返回 bool=是否影响行, False 有两成因: 行不存在/task_id 已非 NULL, 调用方记 warning) | conn, user_message_id, task_id | bool |
 
 ### 3.3 沙箱执行闸门（handlers/sandbox_gate.py）
 
@@ -405,6 +406,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.4 | 2026-09-28 21:29:00 | 3.2 新增 bind_message_to_task（[76] 活跃任务注入 6.5① 执行期归属，零 DDL 复用 chat_user_message.task_id 列，WHERE task_id IS NULL 防覆盖，返回 bool 供调用方判别两成因）；同步 fetch_session_user_message_pairs 描述（精确归属 COALESCE 双子查询取 MAX(id) 取代会话级模糊兜底，增返回 pair_task_id）——补 [76] 首轮遗漏的公用函数登记(AGENTS.md §1.3) | 小欧 |
 | v4.3 | 2026-09-24 23:20:00 | 10.3 新增 [68] 模型库 5 函数：_require_provider_for_fetch/_http_get_remote_models/_parse_remote_models_body/fetch_remote_models/replace_provider_models（设置页模型库 Tab 远程拉取+替换写入，HTTPException 防 500，孤儿清理 None 叶） | 小欧 |
 | v4.2 | 2026-09-24 21:16:00 | 10.3 update_model 描述补 remove_params 键级删除通道（②设置页参数行 × 删除按钮，先删 model_params/range/param_options 键再 merge default_params；空 dp=整块清空与既有 P8 叠加） | 小欧 |
 | v4.1 | 2026-09-24 19:34:00 | 9.1 新增常量 READ_TOOLS（北京老陈指示归一helper）: 读类工具名唯一源{"read","readtext","readmedia"}; ling-3.0实调read而非readtext致P9-04 has_read误Fail; case侧禁再散落本地read_tools字面量, 供SSE断言与verify_db_tool_usage共用(DRY) | 小欧 |

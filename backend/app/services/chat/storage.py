@@ -764,7 +764,9 @@ def fetch_session_user_message_pairs(conn: Connection, session_id: str,
     供 get_session_messages / _load_previous_messages / execution_stream 复用(10规范 DRY/复用优先)。
     返回 list[dict]: 每行一条 user 消息及其配对 assistant(ai_message_id 为 None 表示暂无 AI 回答),
     字段: user_id, user_content, ai_reasoning, model, provider, task_id, created_at, ai_message_id,
-    pair_task_id(行配对到的 chat_tasks.task_id — 渲染合并同任务判据, 2026-09-28 小欧)
+    pair_task_id(行配对到的 chat_tasks.task_id — 渲染合并同任务判据; 注入行凭 cum.task_id、登记首条凭
+      cum.id=ct.user_message_id 归任务, 二者归一故同任务行 pair_task_id 一致; 配合 ORDER BY cum.id ASC,
+      同 pair_task_id 分组的首行即登记首条, 供 message_service 合并注入行时排除自身 — 2026-09-28 小欧)
     2026-08-22 小欧 归一报告v1.25 6.3: cum.model/cum.provider 两列 → cum.chat_model JSON 单列,
     返回 dict 的 model/provider 键由 chat_model 派生(键名不变, 旧列不再读取)
     2026-09-20 小欧 E-4修复: 一条 user 消息仅取最新 task 的配对(chat_tasks 按 user_message_id 取 MAX(id) 行),

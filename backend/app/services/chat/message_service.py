@@ -59,43 +59,6 @@ def delete_session_display_names(session_id: str) -> None:
     display_name_cache.delete(session_id)
 
 
-def _flush_orphan_run(run: list) -> dict:
-    """无配对连续组收敛为 1 行: 单条保持原样, 多条 user_content 换行拼接、其余字段取首行 — 小欧 2026-09-28"""
-    if len(run) == 1:
-        return run[0]
-    merged = dict(run[0])
-    merged["user_content"] = "\n".join(r.get("user_content") or "" for r in run)
-    return merged
-
-
-def _merge_orphan_user_pairs(pairs: list) -> list:
-    """连续无独立配对的 user 行合并为 1 行 — 小欧 2026-09-28 设计文档[76] 5.5/6.9
-    注入消息(同任务借用 ai_message_id、自身 response 为空)连续出现时, 原样逐行渲染会:
-    ①每行渲染一个空正文 assistant → 同一 assistant 的 steps 重复 N 次;
-    ②与内存侧 _absorb_inbox「多条注入合并成 1 条」形态不一致 → 刷新前后 UI 条数跳变。
-    规则: 连续 ai_content 为空**且 pair_task_id 相同**的行合并成 1 行; 有内容或无任务配对的行原样输出
-    — 同任务约束 2026-09-28 三堂会审补, 防相邻不同任务串并。"""
-    out: list = []
-    run: list = []
-    _run_task = None  # run 的任务键, 异任务立即 flush — 小欧 2026-09-28
-    for p in pairs:
-        if not (p.get("ai_content") or "") and p.get("pair_task_id"):
-            if run and p["pair_task_id"] != _run_task:
-                out.append(_flush_orphan_run(run))
-                run = []
-            run.append(p)
-            _run_task = p["pair_task_id"]
-            continue
-        if run:
-            out.append(_flush_orphan_run(run))
-            run = []
-            _run_task = None
-        out.append(p)
-    if run:
-        out.append(_flush_orphan_run(run))
-    return out
-
-
 def get_session_messages(session_id: str):
     """获取会话消息历史(21.3 重构,小沈 2026-05-25 实施) — 自 api/v1/messages.py 迁入"""
     from fastapi import HTTPException
@@ -116,12 +79,17 @@ def get_session_messages(session_id: str):
         # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
         pairs = fetch_session_user_message_pairs(conn, session_id)
 
-        _rows = _merge_orphan_user_pairs(pairs)
         # assistant 合并渲染载体(设计[76]决策2, 小欧 2026-09-28 三堂会审): 每 ai_id 仅渲 1 次,
         # 落在首个有内容行(配首条会渲空正文且真答案被跳过); 全空回落首见行(steps 兜底)。
+        # 2026-09-28 21:29 小欧 10轮会审 D-01 删 _merge_orphan_user_pairs: 原合并把同任务多条注入行并成
+        #   1 个气泡, 但前端 useChatSend.ts:135 每次发送都追加一个 user 气泡(live 就是 N 个) →
+        #   后端单方面合并会造成"live N 个 / 刷新 1 个"新跳变, 与 5.5 立意(消除跳变)相反;
+        #   且合并挡在 carrier 之前会使真答案行落到 run 外被丢弃。它要治的"同一 assistant 重复渲染 N 次"
+        #   已由下方 carrier 根治(每 ai_id 只渲 1 次), 故整段删除而非修判据(KISS-DIRECT: 删代码优于加代码)。
+        # 注: conversation_history 侧的合并(为 OpenAI user/assistant 交替性)仍在 _absorb_inbox, 与渲染层无关。
         _first_row: dict = {}
         _carrier: dict = {}
-        for _i, _p in enumerate(_rows):
+        for _i, _p in enumerate(pairs):
             _aid = _p.get("ai_message_id")
             if _aid is None:
                 continue
@@ -132,7 +100,7 @@ def get_session_messages(session_id: str):
             _carrier.setdefault(_aid, _i)
 
         messages = []
-        for _i, p in enumerate(_rows):
+        for _i, p in enumerate(pairs):
             # 用户消息气泡
             messages.append(MessageResponse(
                 id=p['user_id'], session_id=session_id,

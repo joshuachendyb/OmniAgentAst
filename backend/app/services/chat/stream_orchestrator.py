@@ -265,7 +265,9 @@ async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
         from app.services.chat.storage import bind_message_to_task
         _ok = await db.atxn("chat", lambda c: bind_message_to_task(c, user_message_id, task_id))
         if not _ok:
-            logger.warning(f"[注入] bind 0行(task={task_id}, uid={user_message_id}), 任务可能已结束")
+            logger.warning(
+                f"[注入] bind 0行(task={task_id}, uid={user_message_id}): "
+                f"该行不存在, 或 task_id 已被绑定(非 NULL) — 两种成因, 均不影响消息可见")
     except Exception as _e:
         logger.warning(f"[注入] bind 异常(task={task_id}, uid={user_message_id}): {_e}. 消息已入inbox, 执行期task_id未绑, 终态回填将补绑")
 

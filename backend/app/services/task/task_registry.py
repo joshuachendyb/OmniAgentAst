@@ -25,7 +25,12 @@
 #   ③Queue(maxsize=INBOX_MAX) 队列上限 + QueueFull 捕获(满则 return False 走编排降级, 防异常上抛);
 #   ④uid<=0 拒注入(5.6 uid 缺失防御)。
 #   compliance: SRP/KISS-DIRECT/DRY/禁止backward(删 str 兼容分支)
-# 2026-09-28 20:18:31 小欧 三堂会审 F10: register_task 同 task_id 重新注册返回 None(防 queue 覆盖丢消息) — 小欧-2026-09-28
+# 2026-09-28 21:29 小欧 10轮会审 D-03 **撤销**前一版 F10(同 task_id 重复注册 return None 的守卫):
+#   ①YAGNI — task_id 由 generate_task_id()=uuid4().hex 生成, 重复分支不可达;
+#   ②语义二义 — register_task 返回 Optional[str] 中 None=注册成功, 该守卫返 None 会被编排
+#      (stream_orchestrator `if _reg_res:` 假值分支) 误判为"注册成功" → 同一 task_id 启动第二个
+#      agent 共享旧 inbox/pause_event/状态, 比修复前的"覆盖丢消息"失败模式更坏。
+#   故删除守卫恢复原行为, 不留半吊子防御(禁止 backward / KISS-DIRECT)。 — 小欧-2026-09-28
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -102,10 +107,6 @@ async def register_task(task_id: str, session_id: Optional[str] = None) -> Optio
                         f"[B-3串行守卫] 会话 {session_id} 已被占位 {_tid}, 拒绝并行注册 {task_id}"
                         f"(TOCTOU: 编排层 has_active_task 与本注册存在分离窗口, 返回占位tid供注入)")
                     return _tid
-        # 2026-09-28 20:15:00 小欧 三堂会审 F10: 同 task_id 重新注册返回 None, 避免 queue 覆盖丢消息
-        if task_id in running_tasks:
-            logger.warning(f"[TaskRegistry] task_id {task_id} 已存在, 拒绝重复注册(防 queue 覆盖丢消息)")
-            return None
         running_tasks[task_id] = {
             "status": "running",
             "cancelled": False,

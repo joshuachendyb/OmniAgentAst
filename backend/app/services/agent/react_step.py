@@ -223,8 +223,14 @@ async def _absorb_inbox(agent) -> int:
         logger.warning(f"[B] 注入合并超长({len(_merged)}>{_max_chars}), 尾部截断")
         _merged = _merged[:_max_chars]
     # 落库权责归一至 API 入口(前端 POST /sessions/{id}/messages), 此处不再 insert_user_message;
-    # uid 直接取自 inbox 元组(第一条为该轮锚)
-    _uid = _uids[0] if _uids else None
+    # uid 取自 inbox 元组。锚取**最后一条**(设计[30] §4.5 B-5 明文"锚取最后一条 uid"):
+    #   终态 update_user_message_final 只回填锚所在那一行 → 刷新后 carrier 把 assistant 渲在该行,
+    #   与 live 一致(useChatStreaming:494 assistant 追加到末尾 → 答案在最后一条注入之后)。
+    #   若锚取第一条, 刷新后答案会出现在第一条注入行处, 与 live 顺序不一致。
+    # 不变量(2026-09-28 21:29 10轮会审 D-02/D-07 核验): inbox 唯一写入者是 inject_message_to_task,
+    #   其入口强制 uid>0(task_registry.py:145), orphan 路径只搬运已校验元组 → _uids 必非空且全为正整数,
+    #   故原 `_uids[0] if _uids else None` 的 else None 与 `if _uid is not None` 单参降级均为死代码(YAGNI), 一并删。
+    _uid = _uids[-1]
     _hist = getattr(agent.message_builder, "conversation_history", None)
     _last = _hist[-1] if isinstance(_hist, list) and _hist else None
     _merge_into_last = (
@@ -234,13 +240,14 @@ async def _absorb_inbox(agent) -> int:
     if _merge_into_last:
         _last["content"] = str(_last.get("content") or "") + "\n" + _merged
     else:
-        # 2026-09-28 19:32:44 小欧 三堂会审修过时注释: uid 非空双参传真锚, 缺失单参降级;
-        #   锚演进单点在 add_user_message, 此处不写回(设计[76] 6.2)
-        if _uid is not None:
-            agent.message_builder.add_user_message(_merged, user_message_id=_uid)
-        else:
-            agent.message_builder.add_user_message(_merged)  # 单参降级: 合成负 id 占位锚
-    logger.info(f"[B] 每轮LLM前吸入新消息: task={agent.task_id} len={len(_merged)} uid={_uid}")
+        # 锚演进单点在 add_user_message, 此处不写回(设计[76] 6.2)
+        agent.message_builder.add_user_message(_merged, user_message_id=_uid)
+    # 2026-09-28 21:29 小欧 10轮会审 D-08: 原日志恒打 uid, 但并入末条分支根本没用该 uid(锚不变),
+    #   打印它会误导排障。改打真实生效的形态。
+    logger.info(
+        f"[B] 每轮LLM前吸入新消息: task={agent.task_id} len={len(_merged)} "
+        f"形态={'并入末条user(锚不变)' if _merge_into_last else f'独立成轮(锚uid={_uid})'}"
+    )
     return len(_injected)
 
 
