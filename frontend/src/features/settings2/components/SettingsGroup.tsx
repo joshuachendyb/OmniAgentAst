@@ -20,6 +20,8 @@
 //   不新造第二套渲染分支。
 //   连带: 预览小卡（服务于"字号"）从"组首无条件渲染"改为"随「外观」块首项渲染" ——
 //   否则它会孤零零压在「登录与准入」块上方，位置与语义都不对。 — 小欧-2026-09-26
+// 2026-09-28 小欧（北京老陈指示）: general 组小节名「模型参数」→「通用兜底模型参数」——
+//   该块是全局默认采样参数，单模型可在「模型」Tab 单独覆盖，原名易误读为"当前模型的参数"。纯显示名。 — 小欧-2026-09-28
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -53,8 +55,9 @@ interface Props {
 function sectionOf(group: string, key: string): string | null {
   // ✅ general 组加模型参数小节（仿 system/tuning 分支写法）— 小欧 2026-09-23
   if (group === 'general') {
+    // 2026-09-28 小欧: 小节名改「通用兜底模型参数」（全局兜底默认值，单模型值以「模型」Tab 为准）— 小欧-2026-09-28
     if (key.startsWith('llm.sampling.') || key === 'llm.context_limit_default')
-      return '模型参数';
+      return '通用兜底模型参数';
     return null; // 通用组其余项（workspace/logging/agent.*）保持无小节原样
   }
   if (group === 'system') {

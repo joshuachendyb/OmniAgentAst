@@ -10,6 +10,9 @@
 //   NETWORK_ERROR 把"权限不够"说成"网络错误"）+ extractErrorMessage（取后端 detail，
 //   原 e.message 是 axios 的英文 "Request failed with status code 4xx"）；writeSecret 去掉
 //   自包前缀，错误文案统一在调用处给出
+// 2026-09-28 小欧 - 值域提示（hint）单点成文并移入 notice 行尾：原挂行尾最右端，被长 notice
+//   连同「即时生效」一起挤出可视区，用户看不到范围。配套后端 registry 键 range_→range 统一
+//   （此前 DTO range 恒 null，提示压根不渲染）。type=range 走滑块不重复文字。— 小欧-2026-09-28
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -114,6 +117,12 @@ export const SettingRow: React.FC<Props> = ({
   const bp = Grid.useBreakpoint();
   const isNarrow = !bp.md;
   const labelWidth = isNarrow ? 88 : settingsSpacing.labelWidth;
+  // 2026-09-28 小欧 - 值域提示单点成文：原挂在行尾最右端被长 notice 挤出可视区（连「即时生效」一起看不见），
+  //   移入 notice 行尾。type=range 走滑块直示，不重复文字。— 小欧-2026-09-28
+  const hint =
+    item.range && item.type !== 'range'
+      ? `范围 ${item.range[0]} ~ ${item.range[1]}${item.type === 'int' ? '（整数）' : ''}`
+      : '';
 
   const renderControl = (): React.ReactNode => {
     if (item.readonly) {
@@ -374,30 +383,19 @@ export const SettingRow: React.FC<Props> = ({
       <span
         style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}
       >
-        {item.notice && (
+        {(item.notice || hint) && (
           <span
             style={{
               fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
+              color: hint ? Colors.TEXT.SECONDARY : Colors.TEXT.TERTIARY,
             }}
           >
             {item.notice}
+            {hint && ` · ${hint}`}
           </span>
         )}
         <span>{renderControl()}</span>
       </span>
-      {item.range && item.type !== 'range' && (
-        <span
-          style={{
-            fontSize: FontSize.SECONDARY,
-            color: Colors.TEXT.TERTIARY,
-            marginLeft: Spacing.SM,
-          }}
-        >
-          {item.range[0]} ~ {item.range[1]}
-          {item.type === 'int' && ' · 整数'}
-        </span>
-      )}
       {dirty && <DirtyDot />}
       {source === 'env' && <EnvTag />}
       {source === 'default' && <DefaultTag />}
