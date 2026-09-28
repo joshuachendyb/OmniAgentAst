@@ -511,7 +511,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('19 选择器 添加模型按钮可见', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    await expect(page.getByRole('button', { name: /添加模型/ })).toBeVisible({
+    await expect(
+      page.getByRole('button', { name: 'plus 添加模型', exact: true })
+    ).toBeVisible({
       timeout: 10_000,
     });
   });
@@ -557,7 +559,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('23 添加模型 弹窗打开', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    await page
+      .getByRole('button', { name: 'plus 添加模型', exact: true })
+      .click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await modal.locator('.ant-modal-close').click();
@@ -566,7 +570,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('24 添加模型 Provider下拉可选', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    await page
+      .getByRole('button', { name: 'plus 添加模型', exact: true })
+      .click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await page.waitForTimeout(500);
@@ -605,7 +611,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     try {
       await goto(page);
       await tab(page, /模\s*型/);
-      await page.getByRole('button', { name: /添加模型/ }).click();
+      await page
+        .getByRole('button', { name: 'plus 添加模型', exact: true })
+        .click();
       const modal = page.getByRole('dialog', { name: '添加模型' });
       await expect(modal).toBeVisible({ timeout: 10_000 });
       const provSel = modal.locator('.ant-select').first();
@@ -669,7 +677,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('26 添加模型 弹窗取消不保存', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    await page
+      .getByRole('button', { name: 'plus 添加模型', exact: true })
+      .click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await modal
@@ -686,7 +696,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('27 添加模型 重复模型名报错', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    await page
+      .getByRole('button', { name: 'plus 添加模型', exact: true })
+      .click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await modal.getByRole('textbox', { name: /模型名/ }).fill('glm-4.7-flash'); // 已存在
@@ -706,7 +718,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('28 添加模型 空模型名报错', async ({ page }) => {
     await goto(page);
     await tab(page, /模\s*型/);
-    await page.getByRole('button', { name: /添加模型/ }).click();
+    await page
+      .getByRole('button', { name: 'plus 添加模型', exact: true })
+      .click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await modal.getByRole('textbox', { name: /显示名/ }).fill('空模型名');
