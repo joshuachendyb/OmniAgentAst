@@ -220,7 +220,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="压成摘要前，单条工具结果超过这么多字先砍掉再给模型看（防超长输出把摘要过程撑爆）；调大=摘要更全但更费"),
         _item("tuning.compaction.keep_tail", "int", "免压缩原始对话数", 1, range_=[0, 5],
               notice="压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
-        # --- live_front: 连接保活/任务清理/缓存（4 键；原名 stream_task，改名防与 tuning.llm.stream_* 混淆）---
+        # --- live_front: 连接保活/任务清理/缓存/事件流水保留（5 键；原名 stream_task，改名防与 tuning.llm.stream_* 混淆）---
         _item("tuning.live_front.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
               notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活"),
         _item("tuning.live_front.task_timeout_hours", "int", "任务保留(小时)", 1, range_=[1, 24],
@@ -229,6 +229,8 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="同一工具用同样的参数再查一次时，这么多秒内直接给上次的结果、不再真跑一遍；调小=结果更新鲜但重复查询更慢，调大=更快但可能给到过期结果"),
         _item("tuning.live_front.max_cache_size", "int", "缓存条数上限", 1000, range_=[100, 10000],
               notice="内部小缓存最多存多少条，超了自动丢最久没用的；一般不用动，调错也没什么感觉"),
+        _item("tuning.live_front.journal_retention_days", "int", "事件流水保留(天)", 7, range_=[1, 30],
+              notice="[63] 事件流水（chat_stream_events）保留几天：只清已完成/已失败/已取消任务的事件，正在跑的任务永不删；调小省磁盘但更早查不到历史回放，调大能回看更久"),
         # --- hitl: 人工确认（4 键）---
         _item("tuning.hitl.hitl_confirm_lead", "int", "确认倒计时提前(秒)", 10, range_=[0, 60],
               notice="危险操作确认弹窗：页面上的倒计时比后端实际超时（默认120秒）提前这么多秒归零，让你先看到「已超时」提示，而不是弹窗凭空消失；提前量要小于总超时"),
