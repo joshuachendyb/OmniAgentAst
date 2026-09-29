@@ -28,9 +28,8 @@
 #   同轮精简冗长注释（三堂会审叙事压缩为结论）。
 # 2026-09-27 小欧 - 启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
 #   forwarded_allow_ips 注入"与"白名单含全网通配"告警。只观测，不改判定逻辑。
-# 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 在 db.init 后调
-#   storage.reconcile_orphaned_tasks，收尾崩溃遗留的 executing 残行。业务逻辑在 storage，
-#   本文件只一行调用 — 小欧-2026-09-29
+# 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 调 storage.reconcile_orphaned_tasks, 收尾崩溃残留的 executing 残行(按 start_time<进程启动时刻判归属, 不误伤多 worker) — 小欧-2026-09-29
+# 2026-09-29 小欧 - P3 步骤7([63] 3.6.7): 挂 _start_journal_retention_task 清理超保留期的已终态 Journal; shutdown 同生命周期 cancel — 小欧-2026-09-29
 import sys
 import asyncio
 from typing import Optional
@@ -226,6 +225,7 @@ _mount(auth_router, "auth")
 
 
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
+_journal_retention_ref: Optional[asyncio.Task] = None  # [63] 3.6.7 Journal 清理 task 引用, 供 shutdown 时 cancel（同 _cleanup_task_ref 模式）
 
 
 async def _periodic_cleanup_loop() -> None:
@@ -247,16 +247,36 @@ def _start_cleanup_task() -> None:
     logger.info("后台清理任务已启动")
 
 
+def _start_journal_retention_task() -> None:
+    """[63] 3.6.7 Journal 保留期清理（独立任务，绝不进请求链路 3.9；与 [70] drain 正交）"""
+    global _journal_retention_ref
+    from app.services.chat.stream_event_journal import retention_cleanup
+    async def _loop() -> None:
+        while True:
+            try:
+                n = await retention_cleanup(get_config().get("tuning.live_front.journal_retention_days", 7))
+                if n:
+                    logger.info(f"[Journal] 清理已终态过期事件 {n} 个 task")
+            except Exception as exc:            # 清理失败只 warning，不阻断主链路（3.9）
+                logger.warning(f"[Journal] retention 清理失败: {exc}")
+            await asyncio.sleep(3600)
+    _journal_retention_ref = asyncio.create_task(_loop())   # [63] 存引用防 GC（同 _cleanup_task_ref 模式）
+    logger.info("Journal 保留期清理任务已启动")
+
+
 @app.on_event("startup")
 async def startup_event():
     """应用启动时注册工具 + 启动后台任务 — 小健 2026-06-18 内联透传函数"""
     import time as _time
     _t0 = _time.time()
+    # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
+    # 避免同机多 worker/多实例启动时误伤另一进程正在跑的任务 — 小欧 2026-09-29
+    _boot_iso = get_local_iso_timestamp()
     db.init()
     logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")
     # L0 僵尸任务收尾：崩溃遗留的 executing 残行改终态，不让任务列表永远显示"执行中" — 小欧 2026-09-29
     _t_recon = _time.time()
-    _recon_n = await db.atxn("chat", reconcile_orphaned_tasks)
+    _recon_n = await db.atxn("chat", lambda c: reconcile_orphaned_tasks(c, _boot_iso))
     if _recon_n:
         logger.warning(f"[启动] 收尾僵尸任务 {_recon_n} 个（上次进程中断残留，已标 failed/task_interrupted）")
     logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t_recon:.3f}s")
@@ -266,6 +286,7 @@ async def startup_event():
     _t2 = _time.time()
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
+    _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
     # 鉴权配置自检（未注入 forwarded_allow_ips / 白名单全网通配 → 告警），只观测不改判定
     _t3 = _time.time()
     warn_startup_checks()
@@ -284,6 +305,8 @@ async def shutdown_event():
     global _cleanup_task_ref
     if _cleanup_task_ref is not None and not _cleanup_task_ref.done():
         _cleanup_task_ref.cancel()
+    if _journal_retention_ref is not None and not _journal_retention_ref.done():   # [63] 3.6.7 关联：新增任务与 _cleanup_task_ref 同生命周期
+        _journal_retention_ref.cancel()
     # 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
     from app.services.lifecycle import shutdown
     await shutdown()
