@@ -43,6 +43,9 @@
          (与"静默回落"同类陷阱), 文案明确指出真实来源 {NAME}_API_KEY;
       ③上线硬依赖 token 鉴权 —— 无鉴权时局域网任何客户端可直接调走全部明文密钥(见 12.6 依赖表);
       ④新增 _client_ip 辅助(取 request.client.host, 无 request 时返回 unknown 不抛) — 小欧-2026-09-26
+   2026-09-29 - 小欧 - 消除死 DTO 漂移(北京老陈指令)：两 DTO 此前定义了却从未挂路由且字段与现实
+     漂移(缺 status_code/category、只有 id/owned_by)，前端因此只能靠字符串猜免费。现与解析层 8 字段
+     对齐并挂 response_model；错型在解析层归一而非把 DTO 退化成 Any。未改写回契约 — 小欧 2026-09-29
 """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -121,11 +124,34 @@ class ProviderConfigUpdate(BaseModel):
 
 
 class RemoteModelItem(BaseModel):
+    """远端单个模型的展示元数据 — 小欧 2026-09-29
+
+    此前只有 id/owned_by 且从未挂路由(死 DTO)，service 下发的 pricing/context_length 等无契约。
+    容器声明 Dict/List[str] 而非 Any：解析层已就地归一，此处可如实声明类型。
+    """
     id: str
     owned_by: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    # 实测 OpenRouter 460 项全有值(min 4095 / max 2,000,000)；None 仅防御个别 provider 缺该字段 — 小欧 2026-09-29
+    context_length: Optional[int] = None
+    # 子键 prompt/completion/缓存读写/web_search，值为每 token 单价字符串；
+    # 免费判据 prompt=completion=0 — 小欧 2026-09-29
+    pricing: Dict[str, Any] = Field(default_factory=dict)
+    # 子键 input_modalities/output_modalities/modality/instruct_type/tokenizer；
+    # 实测 input_modalities 仅 5 种：text(460 全覆盖)/image(292)/file(182)/video(85)/audio(44) — 小欧 2026-09-29
+    architecture: Dict[str, Any] = Field(default_factory=dict)
+    # 实测 26 种；有筛选价值的是 tools(392)/structured_outputs(377)/reasoning(328) — 小欧 2026-09-29
+    supported_parameters: List[str] = Field(default_factory=list)
 
 
 class RemoteModelsResponse(BaseModel):
+    """拉取远程模型列表的响应 — 小欧 2026-09-29
+
+    status_code/category 是 2026-09-26 起的既有契约(原 DTO 漏掉导致漂移)，
+    category 取值 ok/key_invalid/endpoint_unsupported/network_error。
+    message 仅失败分支下发(成功分支无此键)，故 Optional。
+    """
     ok: bool
     provider: str
     models: List[RemoteModelItem]
@@ -133,6 +159,8 @@ class RemoteModelsResponse(BaseModel):
     configured: List[str]
     current_model: Optional[str] = None
     message: Optional[str] = None
+    status_code: Optional[int] = None
+    category: str
 
 
 class ProviderModelsReplaceRequest(BaseModel):
@@ -207,7 +235,7 @@ async def delete_provider(name: str):
     return svc.delete_provider(name)
 
 
-@router.get("/providers/{name}/remote-models")
+@router.get("/providers/{name}/remote-models", response_model=RemoteModelsResponse)
 @handle_config_errors("获取远程模型列表")
 async def get_remote_models(name: str):
     return await svc.fetch_remote_models(name)
@@ -251,7 +279,7 @@ async def get_provider_api_key_plain(name: str, request: Request):
     return {"provider": name, "api_key": plain, "configured": bool(plain)}
 
 
-@router.post("/providers/{name}/test-connection")
+@router.post("/providers/{name}/test-connection", response_model=RemoteModelsResponse)
 @handle_config_errors("测试 Provider 连接")
 async def test_provider_connection(name: str, req: TestConnectionRequest):
     """复用 fetch_remote_models 的探测能力（DRY，不新造第二套探测逻辑）。

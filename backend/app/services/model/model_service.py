@@ -125,6 +125,10 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   与 update_provider_config 的并行写入路径对齐；label 原未 strip、api_base 校验 strip 判空而落盘原样写，
 #   均致 YAML 存脏值——消费端 get_models/resolver/client_sdk 均不 strip）；②update_provider_config
 #   其余字符串字段同步 strip，与 api_key 同一口径（DRY：清洗只做一次）。留空仍为"未配置" — 小欧 2026-09-27
+# 2026-09-29 - 小欧 - 远程模型元数据透传(北京老陈指令)：原只留 id/owned_by 丢弃远端 100+ 字段，
+#   致前端靠 id.includes('-free') 猜免费(实测 OpenRouter 460 个命中 0)。现提升 8 字段并就地降级为
+#   声明类型(路由已挂 response_model，错型会 500 整个模型库)；结构判别放宽为 dict/裸数组双路。
+#   未动排序与写回契约(仍只落 ID 列表) — 小欧 2026-09-29
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -613,11 +617,15 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         body = resp.json()
     except Exception as e:
         return None, f"响应解析失败: {e}"
-    if not isinstance(body, dict):
+    # 2026-09-29 小欧 - 兼容裸数组(防御性放宽, 本仓 provider 实测均为 dict+data 规范)
+    if isinstance(body, dict):
+        data = body.get("data")
+        if not isinstance(data, list):
+            return None, "远端返回结构异常（data 非数组）"
+    elif isinstance(body, list):
+        data = body
+    else:
         return None, "远端返回结构异常"
-    data = body.get("data")
-    if not isinstance(data, list):
-        return None, "远端返回结构异常（data 非数组）"
     models: List[Dict[str, Any]] = []
     for item in data:
         if not isinstance(item, dict):
@@ -625,7 +633,22 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         mid = item.get("id") or item.get("model")
         if not mid:
             continue
-        models.append({"id": str(mid), "owned_by": item.get("owned_by")})
+        # 2026-09-29 小欧 - 元数据透传(北京老陈指令): 提升表格/筛选要用的 8 字段。
+        #   7 字段就地降级为 DTO 声明类型: 路由已挂 response_model，错型会 500 掉整个模型库。
+        #   非字符串不转 str(会产出 "{'x': 1}" 伪值)；bool 需排除(isinstance(True,int) 为真)。
+        owned_by, name, desc = item.get("owned_by"), item.get("name"), item.get("description")
+        ctx, pricing, architecture = item.get("context_length"), item.get("pricing"), item.get("architecture")
+        supported = item.get("supported_parameters")
+        models.append({
+            "id": str(mid),
+            "owned_by": owned_by if isinstance(owned_by, str) else None,
+            "name": name if isinstance(name, str) else None,
+            "description": desc if isinstance(desc, str) else None,
+            "context_length": ctx if isinstance(ctx, int) and not isinstance(ctx, bool) else None,
+            "pricing": pricing if isinstance(pricing, dict) else {},
+            "architecture": architecture if isinstance(architecture, dict) else {},
+            "supported_parameters": [p for p in supported if isinstance(p, str)] if isinstance(supported, list) else [],
+        })
     # 2026-09-25 04:38:28 小健 - 全链路单点排序: 远端列表按 id 字母序(不分大小写), 下游分组/落盘/下拉自动继承
     models.sort(key=lambda m: m["id"].lower())
     return models, None
