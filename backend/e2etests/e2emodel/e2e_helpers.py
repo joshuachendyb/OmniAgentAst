@@ -344,8 +344,20 @@ def ensure_backend_ready() -> bool:
         import urllib.request
         with urllib.request.urlopen(f"{BASE_URL}{API_PREFIX}/health", timeout=5) as resp:
             return resp.status == 200
-    except Exception:
-        return True  # /health 不可用不阻断（端口已通即视为就绪，避免探活失败误杀用例）
+    except Exception as exc:
+        # 小欧 2026-09-29 修正 fail-open → fail-closed（此前此处 return True 是 30 分钟挂死的直接放大器）
+        #   事故链: 后端僵死(端口仍在听, 但 HTTP 不应答) → socket 探活通过 → /health 抛异常 →
+        #         旧码 return True 放行 → 用例继续 → 真实 LLM 调用永久挂起 →
+        #         2026-09-29 全量单测在 33% 挂死 30 分钟, test_p9_03 停在 asyncio select 无法自愈。
+        #   这里必须 fail-closed: 探活失败 = 后端不可用, 立即让用例失败退出(秒级),
+        #   远优于放行后挂死半小时(静默挂死会让人误判为"测试慢")。
+        #   代价: 若后端未部署 /health 路由, 会误杀用例 —— 但本项目 health 路由是既有事实,
+        #   且 /health 豁免鉴权, 不依赖 token; 误杀风险可接受, 挂死风险不可接受。
+        print(f"[E2E][探活失败] {BASE_URL}{API_PREFIX}/health 无响应: {exc!r}\n"
+              f"       端口在听但 HTTP 不应答 = 后端僵死(疑似 uvicorn 卡在同步阻塞或 reload 卡死)。\n"
+              f"       请重启后端: Stop-Process 占用 8000 的进程, 再按手册 6.1 启动。\n"
+              f"       判为不可用 -> 本用例立即失败(不再挂死)。")
+        return False
 
 
 # ─── 步骤1: 记录测试起始状态 (record_test_baseline) ─────────────
