@@ -1,11 +1,164 @@
 ﻿v1.1.0
 更新时间: 2026-09-29 09:18:58 - 小欧-2026-09-29
-## v1.0.7以来 变更汇总(121个commit: docs57/fix39/test19/feat4/refactor1/doc1) - 小欧-2026-09-29
-[2026-09-29 09:18:58 小欧] 范围=v1.0.7以来全部commit(共121个); 主线: [72]设置界面API Key链路12章实施+[72]第九章统一token鉴权+[75]密钥与地址整改+[76]活跃任务注入落地+[63]会话页方案定版+[77]后端流程解析; MINOR bump v1.0.7→v1.1.0（新功能：统一鉴权/注入机制/保存栏联动/掩码两键契约，北京老陈定版1.1.0）
-- feat(4): [72]12章API Key链路实施(d498f0244); ③区改动接入底部保存栏+按钮状态化(1cedc3587); [76]活跃任务注入落地inbox合并存量清理展示收敛(9cd53e1b9); merged注入应答前端展示链(4949bb797)
-- fix(39): 掩码契约收敛{configured,masked}两键(mask_secret_value一次生成); api_token→access_token改名全链(配置键/环境变量/响应字段); appearance→前端; range_→range; 鉴权判定顺序重排设口令仅本机403+回环伪造fail-closed+forwarded同源注入; 口令状态结论字段; 登录页五状态机; INJ-01/02/03断言同步merged; 探活fail-closed+超时3000→300; logging镜像队列防冻结; settings_service range_键名修正; BUG-B/C/D/E/F/G全收敛
-- test(19): 后端INJ-01/02/03+reconnect/PAR E2E; 前端fre2e批量同步+E2E基建(globalSetup/storageState/双tsconfig/live隔离harness/隔离三件套); E2E从单测主跑隔离又纳入
-- refactor(1)+docs(58): 全仓注释精简去编号前缀(约50个, 零代码改动, AST核验); [72]v3.6→v3.9确立问题决策档案; 新建[75]整改实施报告v1.0→v2.0; [76]设计v1.0→v1.11+10轮会审报告+后端流程解析[77]; [63]v1.30~v1.32; README升v1.0.5鉴权部署安全; FUNCTIONS函数簿同步; 测试记录入库
+## v1.0.7以来 变更汇总(122个commit: feat4/fix39/refactor1/test19/doc1/docs58) - 小欧-2026-09-29
+[2026-09-29 09:18:58 小欧] 范围=v1.0.7以来全部commit(共122个); 主线: [72]设置界面API Key链路12章真实实施+第九章统一token鉴权全链+[75]密钥与地址整改落地+[76]活跃任务注入机制落地+[63]会话页实时step方案八轮修订定版v1.32+[73]系统架构全景解析+[74]实施月度对照+[77]后端流程解析; 注: 122个commit全部为小欧提交; MINOR bump v1.0.7→v1.1.0(新功能: 统一token鉴权+掩码两键契约+Provider底部保存栏联动+活跃任务注入机制, 北京老陈定版1.1.0)
+
+## 1 版本历史说明
+[2026-09-29 09:18:58 小欧] 本次v1.0.7→v1.1.0共122个commit，主线一句话：设置界面API Key链路12章从方案落成真实实施并统一全链token鉴权与掩码两键契约，密钥与地址整改([75])全链修复，活跃任务注入机制([76])后端inbox合并与前端merged展示链完整落地，会话页实时step方案([63])经八轮修订定版v1.32，并新增[73]系统架构全景解析、[74]实施月度对照总表与[77]后端完整流程解析三份文档。
+
+### 1.1 代码功能升级
+[72]设置界面API Key链路12章真实实施（d498f0244，一次三堂会审修40项）：settings_service 掩码契约收敛为两键{masked, configured}（08c32a97c 后端一次生成、B1/B2/B4出口ValidationError修复）、第一端api_key空判走is_blank_secret并前后端落盘trim双路径一致（c5b84c903）、第二端resolver降级收口_fallback_snapshot+stream config_error专属catch+前端CONFIG_ERROR登记（43a065ad9）、第一端add_provider新盘strip补齐+update新盘口径统一+补行内与文件夹差异（eabdd67c3）、ProviderConfig动态参数null守卫+buildDiff基线改原值比较清历史脏空档（da3f29efd）、SecretRevealInput保存成功置空value后退出输入+恢复打码提示（1cb7f75e9）、前端5处声明与api_key类型收敛对齐（7a421b607）、三堂会审F1-F11设置项保存链串行化+掩码红线回显+键盘索引防错位（f9d5cdcdf）、错误文案0基址提示+补缺口文案+补文件头历史（d7587c371）、errorHandler登记表error_type直接索引白屏收敛getErrorConfig唯一兜底（7f33131d6）、settings注册表历史行精简+security两键env注入B5/B7+project_root默认B6（1fe70494f、424f1b1db）、鉴权链收口首次设置兼容改failsafe只读版+统一401文案常量+D01/B03/C01/D14修复+前端统一鉴权注入（2c3a2b7bd）、8a0a4319c 掩码两键前端对齐红线回显+F1输入态+F3 masked变化复位apiKey、a2ab9608f SecretRevealInput打码渲染对齐掩码两档约定+3文件契约注释同步。
+[72]底部保存栏联动与按钮状态化（1cedc3587）：③区Provider配置改动接入底部保存栏，有改动显示脏计数(N项)，无修改灰白disabled、有修改蓝色可点，统一走saveProviderDraft单一落盘通道；ProviderConfig doSave提交来源统一出栈消除buildDiff两套判定（c97f4cb06）。
+[75]密钥与地址整改落地（e4b0a3e0b 口令状态结论字段+判定链4.1+403文案单点+启动自检+500兜底；9898bb338 5.3状态三字段同步+getTokenStatus双调用+setToken写失败分级报错；8e718686f 5.3对密钥通道错误前开单点+状态查询与展示顺序修复+skip401；4d9dcdc26 5.5口令存取收敛+_skipAuth+403透传+5.6鉴权文案对齐；d84e7be80 BUG-6同源空壳+文案裁剪边界+纯文本body回退；e20e02380 BUG-B被拒原因分叉+BUG-C存在性has_dotted+BUG-E/G白名单单一权威；0675d6498 前端错误分类收敛classifyError+被拒原因分叉指引；5556c9aa4 5.4登录页五状态机重写+并发守卫+首设复查；bfb8d2378 appearance组改名前端名副其实登录与准确）。统一token鉴权：47fdcad05 判定项顺序重排(设口令仅本机403+回环伪造fail-closed+docs端点条件态)、53dc62584 env哨兵判定统一env_flag+无依赖type_utils类型归一+forwarded-allow-ips显式值、0eb4a5cd7 api_token改名access_token全链+forwarded_allow_ips同源注入、7e9dfc2c 前端access_token改名对齐+口令状态字段改名、232b7edb6 关闭应用级API文档端点补鉴权缺口+撤回误删api_success恢复对导入。
+[76]活跃任务注入机制落地（9cd53e1b9 后端inbox合并+存量清理+展示收敛；4949bb797 前端merged注入应答展示链/文案/折叠/回调/高亮）：注入消息在ReAct loop中间被_absorb_inbox合并进活跃轮次并落库，注入应答改产merged事件带merged_into_task_id，任务列表折叠展示merged_inputs，目标任务高亮；三堂会审F7连续user合并+F8日志+F10重注册拒收+F16防跨任务错配（65652d6a6）、D-01合并撤销+D-02末条单参函数簿同步（c85aa42b1）；f0d226b9f 注入应答改产SSE字符串修starlette编码500；4c0e3a3a5 任务列表可见性兜底切回可见即重取防冻结；34ceef595 logging控制台走镜像队列防事件循环冻结（ConsoleMirrorHandler投递队列非阻塞，替换同步StreamHandler）。
+其他：5859394da 字典键range_改range全链统一DTO前端不再丢值域、5bb54721d 值域提示移入notice行尾+通用组改名通用兜底模型参数、ae41312af settings_service _validate_value range_键名修正、73e0a617b storage _warn_oversize_step_dict告警改用logger.warning。
+
+### 1.2 文档功能变更
+[72]设置界面API Key链路问题核实与整改方案v3.2→v3.6（68ed6ca54 12章连续+10遍审查修6项不一致、f78bcedc3 全文一致性审计修9类44项+附录关联错误2项+5.6验收+路由13个/E2E12个、db75ce327 10处问题各复核3遍后统一修复+行号共21项光污染、引文记法修正+第五章删除清单补全本链路5文件6处测试+72删item、d498f0244 配套文档升v3.6、7374140c2 口令状态masked同形注释+整改方案文档更新、3cc6499ae 掩码两键契约5处声明注释同步+SecretRevealInput注释简洁逻辑改动）；[72]第九章统一token鉴权实施（91d92b2cb 配套补第九章实施优先线）。
+[75]新建整改实施现状报告（b41527915）与整改实施报告v1.0→v2.0（30806ef85 一致性4处修正+5处diff程序化生成+P2闭环项+升版v1.7、316cb6134 4.2/4.3/4.4改技术性说明文字+20处错误、ff93376d6 升v2.0实施项顺序依赖说明+5.7五列表格验证结果、bfb55a905 同步状态查询与展示顺序复核修正）。
+[76]新建活跃任务注入机制缺陷分析与完整设计（5c06cf01f），经v1.8全文一致性检查修5项（7f03c3f8b）、v1.9后端实施回填8处偏离裁剪（6e4fe8828）、v1.11三堂会审第二轮7项缺陷修复（020d85464）、内容同步本轮实施（d0520604a）；新建[76]10轮三堂会审报告查出12项问题（8d8b5adeb）；新建[77]活跃任务注入机制后端完整流程解析只读解析件（2caa17639）。
+[63]会话页实时step跨页面切换不中断架构方案v1.25→v1.32八轮修订：33个问题三遍复核后落改（a66969d39）、按四层结构重编章节号62标题+130交叉引用+修15处逻辑不一致+方案与UI实名化（413ec322c）、多通道核查修复A删误###与B补7.4/7.5 Store启动时13字段初始化+私有有效方法改名+import单引号补全/getClockSignals补齐waitClock/5.8架构对齐Store契约/订正5.17注释，C处推导（379fc18da）、第三篇30处问题三遍复核落改+新发现2项并入，v1.28（9fe178dce）、第2/5/6章核查29条全数落改v1.29（3.1~5.18逐节重写核实+第2/3章九条diff量校验ALL HUNKS OK）（49d9b3105）、升v1.30第2.19删除会话清理+边界约束（cffd8b59b）、第5章diff按最新HEAD重对齐v1.31（9个hunk重锚+散文8处旧锚同步）（2e30b0b88）、第2章前端diff按最新代码重对齐v1.32（21处hunk修正）（e115618bd）、全文章节号重编排配合内容层次并校正15处标题（2e77911d6）。
+新建：[73]系统架构全景解析-服务端能力详解（8a1eb07fa）、内容主导重排为8部分27章（72bf2a280）、通行号化+版本历史删除+十六通道核查纠错（3b33d530b）、新增8.1执行前闸门链安全权限HITL流程（c3706555d）；[74]设计实施月度对照总结：2~9月152篇文档按9大主题切片，各章节实况情景+未实现版清单+偏差说明（c1a4e9f36）。整理类：全仓注释精简去章节号前缀（4fa8287fa main、896c53595 useSettings、ca16b94f6 SettingsPage+useSettings、2a8424c41 auth_routes、9ebc64030 run_server、3e5edfb4e response_utils、ae6ce9579 model包、b29793051 api层、a5f3b0f96 db/llm/logger/monitoring、ee118cdb7 safety、605139fc9 services/tools、b597d5845 前端、821bc33c1 api层、6982fb072 db/llm/logger/monitoring、472e445dd 根模块、a0164f371 safety、63ddd7193 utils、405b11819 services、434d24207 tools、2ecfd5c4c 前端、9ae76dcf9 e2e基建、463003d2c console/react_step，共22个提交零代码改动）；README升v1.0.5鉴权部署安全补全+整改方案第九章改实施结果誊例（78891d187）、README请求响应双向安全7.6.2 SSE同代理冲突（6ab09c3d3）、README接入密钥与环境变量改名access_token对齐（cd419b446）、文档更新_TOKEN（cb862e112）；函数簿同步：口令存取与请求开关新对向导出（fd38653f6）。
+
+### 1.3 E2E测试case更新
+新增后端E2E：INJ-01活跃任务注入（75b0959f5）、INJ-02多条注入（2cf73b7e7）、INJ-03三连注入（6c0f8bdd0）；e2e_helpers新增get_user_message_rows行级读取与INJ共享断言收口（extract_task_id/assert_injection_ack/assert_merged_point_to/assert_injected_rows_bound/assert_injection_anchor_not_drifted/injection_llm_evidence，2cf73b7e7、6c0f8bdd0）、SSE_WANT补merged防步骤表顺序退化（af2cd5982）、探活改fail-closed防挂死+单测超时3000→300（de39b0878）、E2E从单测主跑隔离后又按北京老陈裁定全量纳入（6c0f8bdd0、88ee8e0c4）。新增前端E2E：[72]E2E前后端统一鉴权注入3文件（91d92b2cb）、[72]前端E2E统一注入设计口令globalSetup+storageState（d7b4b141d、6279b4255）、fre2e用例批量同步产品改动（4f075af5e）、fre2e_11添加模型按钮定位精确化防多匹配（26fbb1b25）、设置页E2E外观改名前端断言对齐（a6d0022bd）、[75]BUG-6普通会话环境改相对路径经proxy转发注释同步（3a38db838）、后端E2E口令环境变量改名ACCESS_TOKEN（00a5c2826）、后端E2E重连封装收口helper中断点续传+鉴权注入30/31改调（9ab2aaf7b）、E2E基建注释去章节号前缀（9ae76dcf9）、E2E双tsconfig+live隔离harness+types-node（ad69af2b3）、E2E lint范围收敛src测试支撑+tsconfig限定react类型防污染（8d482365a）、写配置E2E隔离三件套+stream诊断正则等价简化（d4c45c50f）。测试记录入库：测试记录E2E-INJ-03通过（35f851929）。
+
+## 2 版本commit汇总
+
+### feat(4个):
+- d498f0244 feat:[72]设置界面APIKey链路12章实施+三堂会审40项修复+文档升v3.6 - 小欧-2026-09-26
+- 1cedc3587 feat:settings2 ③Provider配置改动接入底部保存栏(亮起+计数)+③保存按钮状态化(无修改灰白disabled/有修改蓝+N项) - 小欧-2026-09-27
+- 9cd53e1b9 feat:[76]活跃任务注入机制落地inbox合并+存量清理+展示收敛 - 小欧-2026-09-28
+- 4949bb797 feat:[76]merged注入应答前端展示链文案折叠回调高亮 - 小欧-2026-09-29
+
+### fix(39个):
+- 2c3a2b7bd fix:[72]鉴权链收尾:首次设置豁免收窄failsafe只读写+统一401文案常量+D01/B03/C01/D14修复+mask两档裁定+前端统一鉴权注入 - 小欧-2026-09-26
+- a2ab9608f fix:SecretRevealInput.tsx 掩码渲染对齐mask两档裁定+3文件契约注释同步 - 小欧-2026-09-26
+- 73e0a617b fix:storage _warn_oversize_step_dict告警改logger.warning - 小欧-2026-09-27
+- c5b84c903 fix:[72]第一章 api_key空判定收口is_blank_secret+前后端落盘trim双路径 - 小欧-2026-09-27
+- 43a065ad9 fix:[72]第二章 resolver降级收口_fallback_snapshot+stream config_error专属catch早退清任务+前端CONFIG_ERROR登记 - 小欧-2026-09-27
+- d7587c371 fix:[72]8.5-4 订正空api_base警示撒谎文案+补文件头编辑历史 - 小欧-2026-09-27
+- eabdd67c3 fix:[72]第一章 add_provider落盘strip补齐+update落盘口径统一+补行内与文件头署名 - 小欧-2026-09-27
+- da3f29efd fix:ProviderConfig动态数字null守卫+buildDiff基线改原值比较清历史脏空格 - 小欧-2026-09-27
+- 1cb7f75e9 fix:SecretRevealInput保存成功置空value后退出输入态恢复打码提示 - 小欧-2026-09-27
+- 7f33131d6 fix:errorHandler未登记error_type直接索引白屏收敛getErrorConfig唯一兜底 - 小欧-2026-09-27
+- 08c32a97c fix:[72]掩码契约收敛两键masked后端一次生成+B1B2B4出口ValidationError修复 - 小欧-2026-09-27
+- 1fe70494d fix:settings注册表历史精简+security两键env注入B5B7+project_root默认B6 - 小欧-2026-09-27
+- 7a421b607 fix:[72]掩码两键契约前端5处声明对齐+api_key类型收敛 - 小欧-2026-09-27
+- f9d5cdcdf fix:[72]三堂会审F1-F11设置页保存链串行化+掩码纯回显+脏态防线 - 小欧-2026-09-27
+- 232b7edb6 fix:关闭应用级API文档端点补鉴权缺口+撤回误删api_success恢复导入 - 小欧-2026-09-27
+- 8a0a4319c fix:[72]掩码两键前端对齐纯回显+F1输入态+F3 masked变化复位apiKey - 小欧-2026-09-27
+- 47fdcad05 fix:[72]鉴权判定顺序重排设口令仅本机403+回环伪造fail-closed+docs端点条件化 - 小欧-2026-09-27
+- 53dc62584 fix:env布尔判定统一env_flag+无依赖type_utils类型归一+forwarded-allow-ips显式化 - 小欧-2026-09-27
+- 424f1b1db fix:[72]注释精简收敛+SecurityConfig密钥护栏+project_root默认B6 - 小欧-2026-09-27
+- 0eb4a5cd7 fix:[72]api_token改名access_token全链+forwarded_allow_ips同源注入 - 小欧-2026-09-27
+- 7e9dfc2c2 fix:前端access_token改名对齐+口令状态字段改名 - 小欧-2026-09-27
+- e4b0a3e0b fix:[75]口令状态结论字段+判定链5.1+403文案单点+启动自检+500去堆栈 - 小欧-2026-09-27
+- 9898bb338 fix:[75]5.3状态三字段同步+getTokenStatus双调法+setToken写失败分开报错 - 小欧-2026-09-27
+- 8e718686f fix:[75]5.3密钥通道错误前缀单点+状态查询展开顺序保_skip401 - 小欧-2026-09-27
+- 4d9dcdc26 fix:[75]5.5口令存取收敛+_skipAuth+403透传+5.6鉴权文案对齐 - 小欧-2026-09-27
+- d84e7be80 fix:[75]BUG-6同源空串+文案裸值边界+纯文本body回退 - 小欧-2026-09-27
+- bfb8d2378 fix:appearance组改名前端名副实登录与准入 - 小欧-2026-09-27
+- 5556c9aa4 fix:[75]5.4登录页五状态机重写+并发守卫+首设复查 - 小欧-2026-09-27
+- e20e02380 fix:[75]BUG-B被拒原因分叉+BUG-C存在性has_dotted+BUG-E/G白名单单一权威 - 小欧-2026-09-27
+- 0675d6498 fix:[75]前端错误分类收敛classifyError+被拒原因分叉指引 - 小欧-2026-09-27
+- ae41312af fix:settings_service _validate_value range_键名修正 - 小欧-2026-09-28
+- 5859394da fix:字典键range_改range全链统一DTO前端不再丢值域 - 小欧-2026-09-28
+- 5bb54721d fix:值域提示移入notice行尾+通用组改名通用兜底模型参数 - 小欧-2026-09-28
+- f0d226b9f fix:注入应答改产SSE字符串修starlette编码500 - 小欧-2026-09-28
+- 65652d6a6 fix:[76]三堂会审F7连续user合并+F8日志+F10重注册拒收+F16防跨任务错配 - 小欧-2026-09-28
+- c85aa42b1 fix:[76]D-01合并撤销+D-02末条锚+函数簿同步 - 小欧-2026-09-29
+- d15dd28f7 fix:react_step.py _absorb_inbox落位规则docstring按F7与死代码判定改写 - 小欧-2026-09-29
+- 4c0e3a3a5 fix:任务列表可见性兜底切回可见即重取防冻结 - 小欧-2026-09-29
+- 34ceef595 fix:logging控制台走镜像队列防事件循环冻结 - 小欧-2026-09-29
+
+### refactor(1个):
+- c97f4cb06 refactor:ProviderConfig doSave提交源统一走buildDiff消第二套判定+注释收口 - 小欧-2026-09-27
+
+### test(19个):
+- 91d92b2cb test:[72]E2E前后端统一鉴权注入3文件+docs:[74]补第六章实施优先级 - 小欧-2026-09-26
+- d7b4b141d test:[72]前端E2E统一注入访问口令globalSetup+storageState配置 - 小欧-2026-09-27
+- 6279b4255 test:[72]前端E2E globalSetup统一预置访问口令storageState - 小欧-2026-09-27
+- 9ab2aaf7b test:[72]后端E2E重连封装收口helper断点续传+鉴权注入30/31改调 - 小欧-2026-09-27
+- 00a5c2826 test:后端E2E口令环境变量改名ACCESS_TOKEN - 小欧-2026-09-27
+- 3a38db838 test:[75]BUG-6普通会话环境改相对路径经proxy转发注释同步 - 小欧-2026-09-27
+- a6d0022bd test:设置页E2E外观改名前端断言对齐 - 小欧-2026-09-27
+- 9ae76dcf9 test:e2e基建注释去章节号前缀零代码改动 - 小欧-2026-09-28
+- 26fbb1b25 test:fre2e_11添加模型按钮定位精确化防多匹配 - 小欧-2026-09-28
+- ad69af2b3 test:E2E双tsconfig+live隔离harness+types-node - 小欧-2026-09-28
+- 8d482365a test:E2E lint范围收窄src测试支撑+tsconfig限定react类型防污染 - 小欧-2026-09-28
+- 4f075af5e test:fre2e用例批量同步产品改动 - 小欧-2026-09-28
+- d4c45c50f test:写配置E2E隔离三件套+stream诊断正则等价简化 - 小欧-2026-09-28
+- 75b0959f5 test:后端E2E活跃任务注入INJ-01 - 小欧-2026-09-28
+- af2cd5982 test:e2e_helpers_SSE_WANT补merged防步骤表顺序退化 - 小欧-2026-09-29
+- 2cf73b7e7 test:INJ用例同步merged契约+行级task_id读取+新增INJ-02 - 小欧-2026-09-29
+- 6c0f8bdd0 test:INJ共享断言收口+E2E从单测主跑隔离+新增INJ-03 - 小欧-2026-09-29
+- 88ee8e0c4 test:全量纳入e2e用例撤销单测主跑隔离 - 小欧-2026-09-29
+- de39b0878 test:探活改fail-closed防挂死+单测超时3000改300 - 小欧-2026-09-29
+
+### doc(1个):
+- cb862e112 doc:文档更新_TOKEN - 小欧-2026-09-27
+
+### docs(58个):
+- 2e77911d6 docs:[63]全文章节号重编排配合内容层次并校正15处标题 - 小欧-2026-09-26
+- a66969d39 docs:[63]33个问题三遍复核后落改v1.25 - 小欧-2026-09-26
+- 413ec322c docs:[63]按四层结构重编章节号v1.26:62标题+130交叉引用,修15处逻辑不一致,方案与UI实名化 - 小欧-2026-09-26
+- 68ed6ca54 docs:[72]设置界面APIKey链路问题核实与整改方案v3.2:12章连续+10遍审查修6项不一致 - 小欧-2026-09-26
+- 8a1eb07fa docs:[73]系统架构全景解析-服务端能力详解 - 小欧-2026-09-26
+- 72bf2a280 docs:[73]系统架构全景解析 内容主导重排为8部分27章 - 小欧-2026-09-26
+- 379fc18da docs:[63]多遍核查修复v1.27:A删裸###,B补5.4 Store三动作/13字段初始化/私有方法改造/import与restore补全/getClockSignals补齐waitClock/5.8解构对齐Store契约/订正5.17注释,C处措辞 - 小欧-2026-09-26
+- f78bcedc3 docs:[72]设置界面APIKey链路问题核实与整改方案v3.3:全文一致性审计修9类34处,附录关联章22处+5.6验收+路由13个+E2E12个 - 小欧-2026-09-26
+- 3b33d530b docs:[73]系统架构全景解析 去行号化+版本历史删除+十遍核查纠错 - 小欧-2026-09-26
+- c3706555d docs:[73]系统架构全景解析 新增8.1执行前闸门链安全权限HITL流程 - 小欧-2026-09-26
+- 9fe178dce docs:[63]第三章20处问题三遍复核落改+新发现5项并入，v1.28 - 小欧-2026-09-26
+- db75ce327 docs:[72]设置界面APIKey链路问题核实与整改方案v3.4:10处问题各复核3遍后统一修复,行号8处+21项→20项+引文订正+第十一章删除清单补全孤儿链(5文件6处测试)+72处_item - 小欧-2026-09-26
+- c1a4e9f36 docs:[74]设计实施月度对照总结:2~9月252篇文档按9主题切片,各章落实情况+未实现清单+偏差说明 - 小欧-2026-09-26
+- 49d9b3105 docs:[63]第4/5/6章核查89条全数落改v1.29：5.1~5.18逐节重写核实+第6章2条+diff机校验ALL HUNKS OK - 小欧-2026-09-26
+- 3cc6499ae docs:掩码三键契约5处声明注释同步+SecretRevealInput注释精简零逻辑改动 - 小欧-2026-09-27
+- 7374140c2 docs:[72]口令状态masked同形注释+整改方案文档更新 - 小欧-2026-09-27
+- 78891d187 docs:README升v1.0.5鉴权部署安全补全+整改方案第九章改实施结果体例 - 小欧-2026-09-27
+- b41527915 docs:[75]修改[75]整改实施现状报告 - 小欧-2026-09-27
+- cd419b446 docs:README准入键与环境变量改名access_token对齐 - 小欧-2026-09-27
+- 30806ef85 docs:[75]一致性24处修复+5个diff程序化生成+P2四项+升版v1.7 - 小欧-2026-09-27
+- 316cb6134 docs:[75]密钥与地址配置链路整改实施报告 4.2/4.3/4.4改技术说明文字+修10处错误 - 小欧-2026-09-27
+- ff93376d6 docs:[75]升v2.0实施顺序依赖说明+5.7五列表+验证结果 - 小欧-2026-09-27
+- bfb55a905 docs:[75]同步状态查询展开顺序复核修正 - 小欧-2026-09-27
+- fd38653f6 docs:函数簿同步口令存取与请求开关新导出 - 小欧-2026-09-27
+- 6ab09c3d3 docs:README请求响应双方向安全+7.6.2 SSE反代缓冲 - 小欧-2026-09-27
+- cffd8b59b docs:[63]升v1.30补5.19删除会话清理+边界约束 - 小欧-2026-09-27
+- 4fa8287fa docs:main.py注释精简去章节号前缀零代码改动 - 小欧-2026-09-27
+- 896c53595 docs:useSettings注释精简去历史前缀零代码改动 - 小欧-2026-09-27
+- ca16b94f6 docs:SettingsPage+useSettings注释精简去问题编号前缀零代码改动 - 小欧-2026-09-28
+- 2a8424c41 docs:auth_routes注释精简去章节号前缀零代码改动 - 小欧-2026-09-28
+- 9ebc64030 docs:run_server注释精简去章节号前缀零代码改动 - 小欧-2026-09-28
+- 3e5edfb4e docs:response_utils注释精简零代码改动 - 小欧-2026-09-28
+- ae6ce9579 docs:model包注释精简去问题编号前缀零代码改动 - 小欧-2026-09-28
+- b29793051 docs:api层注释去编号前缀零代码改动 - 小欧-2026-09-28
+- a5f3b0f96 docs:db/llm/logger/monitoring注释去编号前缀零代码改动 - 小欧-2026-09-28
+- ee118cdb7 docs:safety注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 605139fc9 docs:services/tools注释去编号前缀零代码改动 - 小欧-2026-09-28
+- b597d5845 docs:前端注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 821bc33c1 docs:api层注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 6982fb072 docs:db/llm/logger/monitoring注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 472e445dd docs:根模块注释去编号前缀零代码改动 - 小欧-2026-09-28
+- a0164f371 docs:safety注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 63ddd7193 docs:utils注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 405b11819 docs:services注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 434d24207 docs:tools注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 2ecfd5c4c docs:前端注释去编号前缀零代码改动 - 小欧-2026-09-28
+- 2e30b0b88 docs:[63]第3章diff按最新HEAD重对齐v1.31:9个hunk重锚+散文8处旧锚同步 - 小欧-2026-09-28
+- e115618bd docs:[63]第5章前端diff按最新代码重对齐v1.32:21处hunk修正 - 小欧-2026-09-28
+- 5c06cf01f docs:新建[76]活跃任务注入机制缺陷分析与完整设计 - 小欧-2026-09-28
+- 7f03c3f8b docs:[76]升v1.8全文一致性检查修正15项 - 小欧-2026-09-28
+- 6e4fe8828 docs:[76]升v1.9后端实施回填8处偏离裁定 - 小欧-2026-09-28
+- 020d85464 docs:[76]升v1.11三堂会审第二轮5缺陷修复 - 小欧-2026-09-28
+- d0520604a docs:[76]内容同步本轮实施 - 小欧-2026-09-29
+- 8d8b5adeb docs:新建[76]10轮三堂会审报告查出12项问题 - 小欧-2026-09-29
+- 2caa17639 docs:新建[77]活跃任务注入后端完整流程解析只读解析件 - 小欧-2026-09-29
+- 35f851929 docs:测试记录E2E-INJ-03通过 - 小欧-2026-09-29
+- 463003d2c docs:console/react_step注释精简零代码改动 - 小欧-2026-09-29
+- 01054a220 docs:version.txt升v1.1.0头插121个commit变更汇总 - 小欧-2026-09-29
+
 v1.0.7
 更新时间: 2026-09-26 00:29:20 - 小欧-2026-09-26
 ## v1.0.6以来 变更汇总(19个commit: docs15/fix3/feat1) - 小欧-2026-09-26
