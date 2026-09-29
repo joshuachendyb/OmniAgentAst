@@ -17,6 +17,9 @@ backend/tests/
 tests/
 tests/output/
 backend/pytest-of-chend/
+# 手工压测/验收脚本(小欧 2026-09-29): 真路径零Mock但不在 pytest testpaths 内, 不会自动跑;
+# 引用内部实现, 内部签名变更后会失效, 需按需同步; 故不入库, 避免 git status 长期脏
+backend/testscompress/
 backend/reports/
 backend/report/
 backend/output/ # 2026-09-11 小欧: 后端pytest junit输出目录, 防测试产物入库 — 小欧-2026-09-11
