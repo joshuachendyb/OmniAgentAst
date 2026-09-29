@@ -24,6 +24,7 @@
 #   (task_id/session_id/source), 排查"前端是否真发了取消"不再靠猜 — 小欧-2026-09-08
 # 2026-09-19 - 小欧 - P-005契约化(北京老陈批准): confirm端点 confirm_id失效响应补 code="confirm_stale" 稳定字段,
 #   前端改读 code 判定(替代字符串includes匹配), 从源头消除"后端message文案变更即前端失效"的脆弱链 — 小欧-2026-09-19
+# 2026-09-29 小欧 - P3 步骤6([63] 3.6.6): chat_stream_reconnect 包 _guarded 生成器, 在生成器体内兜回放异常→persistence_degraded(路由是普通 async 函数不迭代生成器, 直接包 try 捕不到); CancelledError 不捕 — 小欧-2026-09-29
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -32,7 +33,7 @@ chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 """
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.logger import logger  # 2026-09-08 小欧: cancel峰值入口留痕(仅文件, 不双写) — 小欧-2026-09-08
@@ -43,6 +44,7 @@ from app.services.chat.stream_orchestrator import (
     chat_stream_reconnect_orchestrator,
     validate_chat_config,
 )
+from app.services.chat.sse_events import create_error_response   # [63] 3.6.6 统一错误事件（定义 sse_events:47）
 from app.services.task.task_runtime import cancel_task
 from app.services.task.task_registry import pause_task, resume_task
 from app.services.task.hitl_confirmation import resolve_confirmation
@@ -114,9 +116,19 @@ async def validate_config_endpoint():
 
 
 @router.get("/chat/stream/{task_id}")
-async def chat_stream_reconnect(task_id: str, session_id: str = None, after_seq: int = 0):
+async def chat_stream_reconnect(
+    task_id: str,
+    session_id: str = None,
+    after_seq: int = Query(0, ge=0, description="续传起点(seq>=N)；禁负数否则首帧被误判缺口"),
+):
     """SSE 重连端点：读同一任务的流态缓冲，不启动新 agent — 北京老陈 2026-07-12 小欧 2026-07-12"""
-    return StreamingResponse(
-        chat_stream_reconnect_orchestrator(task_id, session_id, after_seq),
-        media_type="text/event-stream",
-    )
+    # [63] 3.6.6：包 guarded 生成器兜住回放内部未预期异常（try 须在 async generator 体内才有效）
+    async def _guarded():
+        try:
+            async for chunk in chat_stream_reconnect_orchestrator(task_id, session_id, after_seq):
+                yield chunk
+        except Exception as exc:   # 仅兜回放异常；CancelledError（客户端断开）不捕，既有取消语义不变
+            logger.warning(f"[SSE] 回放异常(task={task_id}): {exc}")   # logger :38 既有 import
+            yield create_error_response(error_type="persistence_degraded",
+                                        error_message="回放异常，实时流不受影响")
+    return StreamingResponse(_guarded(), media_type="text/event-stream")
