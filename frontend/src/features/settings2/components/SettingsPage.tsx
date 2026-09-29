@@ -58,6 +58,8 @@
 //   （yaml 手写 vision 等非 5 枚举值——设计要点「看得见、本页不提供增删」，原实现未知值完全不可见；
 //   Tag 无 closable + cursor:not-allowed；import 并入既有 antd/modelUtils 行，禁重复）- 小欧-2026-09-23
 // 2026-09-24 小欧 - ①ModelParams 传 onDelete={s.removeParam}（②参数行 × 删除按钮接线，A 方案）- 小欧-2026-09-24
+// 2026-09-29 小欧 - Tab 栏 tabBarStyle.marginBottom 归零：antd 自带 16px 与本行 marginBottom、
+//   Card padding:24 三层叠加成 52px 纯空白（北京老陈指出的"留白太多"）。不动 Card padding(会波及 8 个 Tab) - 小欧-2026-09-29
 // 2026-09-24 22:34:33 小欧 - 三堂会审修复：①groupDirtyCount 补能力脏 +1（与 useSettings dirtyCount/
 //   isGroupDirty 同口径，原仅改能力时「保存本组」可点却显示 0 项计数失真）；②删除确认前置
 //   ensureModelSaved（删除成功后 load() 全量重建会静默丢当前焦点模型未落库改动，与 selectProvider/
@@ -643,7 +645,7 @@ const SettingsPage: React.FC = () => {
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: Spacing.LG,
+            marginBottom: Spacing.SM,
           }}
         >
           <span>
@@ -651,6 +653,9 @@ const SettingsPage: React.FC = () => {
               type="line"
               activeKey={state.activeTab}
               onChange={(k) => requestTab(k as TabKey)}
+              // antd Tab 栏自带 margin-bottom:16px，与本行 marginBottom、Card padding:24
+              // 三层叠加成 52px 纯空白。归零后由外层间距统一控制；不动 Card padding(会波及 8 个 Tab) - 小欧 2026-09-29
+              tabBarStyle={{ marginBottom: 0 }}
               items={s.GROUP_ORDER.map((g) => ({
                 key: g,
                 label: (

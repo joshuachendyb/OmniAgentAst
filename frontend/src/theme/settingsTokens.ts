@@ -8,6 +8,8 @@
 //   重复字面量；标题操作按钮非 180 输入族，单列不混入 inputWidth）- 小欧-2026-09-23
 // 2026-09-24 小欧 - modelNameWidth 180→280（北京老陈指示：模型下拉单独加宽，长模型名截断难读；
 //   与 modelSelectWidth 不必等宽。超 280 的极端长名靠 AntD 悬停 title+下拉面板自适应兜底，不做动态宽防布局抖动）- 小欧-2026-09-24
+// 2026-09-29 小欧 - 新增 filterSearchWidth:160：模型库筛选行搜索条专用宽度(北京老陈两次指正太长)，
+//   不复用 searchWidth(那是右上角全局 SearchBox 的，两者密度诉求不同) - 小欧-2026-09-29
 import {
   Spacing,
   Radius,
@@ -34,6 +36,9 @@ export const settingsControl = {
   rangeNumberWidth: 80,
   textareaWidth: 180,
   searchWidth: 260,
+  // 模型库筛选行专用宽度（北京老陈两次指正：搜索条太长）：不复用 searchWidth(260)——
+  // 那是右上角全局 SearchBox 的，两者密度诉求不同；160 与 inputWidth 同宽族 — 小欧 2026-09-29
+  filterSearchWidth: 160,
   modelSelectWidth: 180,
   modelNameWidth: 240,
   apiKeyWidth: 360,
