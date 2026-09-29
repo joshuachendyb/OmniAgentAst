@@ -96,9 +96,7 @@
 #   ②list_session_tasks merged_inputs 改会话级 1 次查询(原每任务 1 次子查询 N+1)。
 #   compliance: 复用优先/KISS-DIRECT — 小欧-2026-09-28
 # 2026-09-28 20:18:31 小欧 三堂会审 F16: fetch JOIN 改 COALESCE 优先 task_id 匹配(防跨任务错配) — 小欧-2026-09-28
-# 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): 新增 reconcile_orphaned_tasks，启动期把崩溃遗留的
-#   status='executing' 残行改 failed + error_type=task_interrupted。病根: status 只由 agent_runner
-#   finally 改，进程被 kill 时 finally 不执行，残行永久显示"执行中"。零 DDL 零新表零新状态值 — 小欧-2026-09-29
+# 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): 新增 reconcile_orphaned_tasks, 启动期把崩溃残留的 executing 残行改 failed+task_interrupted(病根: status 只由 agent_runner finally 改, 进程被 kill 时 finally 不执行致残行永久"执行中"); 零 DDL 零新状态值 — 小欧-2026-09-29
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -472,15 +470,18 @@ def update_task(
     conn.execute(f"UPDATE chat_tasks SET {', '.join(_f)} WHERE task_id = ?", _v)
 
 
-def reconcile_orphaned_tasks(conn: Connection) -> int:
-    """启动期僵尸任务收尾：崩溃遗留的 status='executing' 残行改终态 — 小欧 2026-09-29
-
+def reconcile_orphaned_tasks(conn: Connection, boot_iso: str) -> int:
+    """启动期僵尸任务收尾：把【上次进程崩溃遗留】的 status='executing' 残行改终态 — 小欧 2026-09-29
     病根：status 只由 agent_runner finally 改（agent_runner.py:624），进程被 kill 时
     finally 不执行 → 残行永久 'executing'，前端徽标永远显示"执行中"。
+    boot_iso 归属判据：只收尾 start_time < boot_iso 的行，即创建于本进程启动之前 → 大幅降低
+    同机多 worker/多实例的误伤（零 DDL，不新增 owner/pid 列）。**非严格归属**：若 A 进程先启动、
+    B 进程后启动而任务由 A 在 B 之后创建，该行仍会被 B 收尾；要严格隔离需加 owner_pid 列（本次未做）。
+    前提：start_time 与 boot_iso 均为本地 naive ISO（get_local_iso_timestamp），同机同时区可比；
+    跨时区多实例共享同一 DB 或系统时钟回拨时不成立（该场景需改用 UTC 存储）。
     终态复用 failed + error_type=task_interrupted（[63] 3.10 同词汇）；不新增状态值
     （'interrupted' 已被前端 ToolCallLine 占用为"工具被拒"语义）。
-    duration 不补算：被打断无真实耗时，补算即编造。幂等，返回受影响行数。
-    """
+    duration 不补算：被打断无真实耗时，补算即编造。幂等，返回受影响行数。"""
     now = get_local_iso_timestamp()
     cur = conn.execute(
         """UPDATE chat_tasks
@@ -488,8 +489,9 @@ def reconcile_orphaned_tasks(conn: Connection) -> int:
                error_type = 'task_interrupted',
                error_message = '服务重启导致任务中断，后端不支持续算，请重新发起',
                end_time = ?, updated_at = ?
-         WHERE status = 'executing'""",
-        (now, now),
+         WHERE status = 'executing'
+           AND (start_time IS NULL OR start_time < ?)""",
+        (now, now, boot_iso),
     )
     return cur.rowcount
 
