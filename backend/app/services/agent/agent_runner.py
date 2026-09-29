@@ -162,6 +162,11 @@
 #   None/0/合成负id 一律回落 db_ops.user_msg_id 兜底 — 小欧 2026-09-28
 # 2026-09-29 小欧 - import 改唯一创建入口 create_task_stream_buffer + reclaim_memory_buffer；
 #   直连兜底建 buffer 时同样注入落库能力（漏注入则跳过编排层直跑的任务只写内存）— 小欧 2026-09-29
+# 2026-09-29 20:42:06 小欧 - 并发撞锁加固: ①_persist 补 ai_message_id is None 防线(对齐异常分支/守卫兜底分支
+#   两处既有 `if ai_message_id is not None` 守卫风格, 落库前 return + ERROR 留痕, 杜绝任务行未建立时
+#   NOT NULL 抛穿成 ERROR/Traceback 风暴); ②_persist/异常终态/守卫兜底终态/终态 UPDATE 四处
+#   append_step+_finalize_task_db 启用 atxn(retry_locked=3) 有限重试(终态 UPDATE 撞锁失败会致任务永久
+#   executing, 严重性最高) — 小欧-2026-09-29
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -325,9 +330,17 @@ async def run_agent_in_background(
                 if isinstance(_v, str):
                     ed[_k] = normalize_blank_lines(_v)
         # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+        # ai_message_id 缺失防线(小欧 2026-09-29): 任务行未建立时 append_step 必撞 NOT NULL,
+        #   抛穿会把扫描循环打成 ERROR+Traceback 风暴(2026-09-29 19:50-19:51 实锤); ERROR 显式留痕,
+        #   跳过写库让内存步数与 SSE 计数照常(守卫前已 append), 与下方异常分支/守卫兜底分支两处
+        #   `if ai_message_id is not None` 同款守卫风格(DRY)。
+        if ai_message_id is None:
+            logger.error(
+                f"[Runner] 步骤落库跳过(ai_message_id 缺失, 任务行未建立): task={task_id}, type={ed.get('type')}")
+            return
         await db.atxn("chat", lambda conn: db_ops.append_step(
             conn, ai_message_id, session_id,
-            len(current_execution_steps) - 1, ed, usage=_usage_json))
+            len(current_execution_steps) - 1, ed, usage=_usage_json), retry_locked=3)
 
     # 2026-09-11 小欧 v1.12: final_stats 延后单发(发布铁律(0) + 方案A t3/t3' 落地)——统计在
     #   react_loop 返回后已全齐; 门禁逐段校验 7 键(缺段绝不发), telemetry 缺失构造 7 键默认合法帧照发(兜底,
@@ -522,7 +535,7 @@ async def run_agent_in_background(
             # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
             await db.atxn("chat", lambda conn: db_ops.append_step(
                 conn, ai_message_id, session_id,
-                len(current_execution_steps) - 1, final_dict))
+                len(current_execution_steps) - 1, final_dict), retry_locked=3)
         await _publish(final_dict)
         if stream_state is not None:
             stream_state.current_content = "任务执行失败"  # 兜底: ③路径 response_text 非空, 根治空 bug
@@ -572,7 +585,7 @@ async def run_agent_in_background(
                 # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
                 await db.atxn("chat", lambda conn: db_ops.append_step(
                     conn, ai_message_id, session_id,
-                    len(current_execution_steps) - 1, _fd))
+                    len(current_execution_steps) - 1, _fd), retry_locked=3)
             if stream_state is not None and _oc != "completed":
                 stream_state.current_content = _resp or stream_state.current_content
             await _publish(_fd)
@@ -674,7 +687,11 @@ async def run_agent_in_background(
                 #   DB chat_tasks.status 落库(成功则已 terminal)后统一补发 final/final_stats,
                 #   根治"SSE final 先到、DB status 后到"致前端 StaticStatsBlock 读 detail.status 卡 executing 的竞态
                 try:
-                    await _persist_final(db.atxn("chat", _finalize_task_db))
+                    # retry_locked=3(小欧 2026-09-29): 终态 UPDATE 撞锁失败仅被下方外层
+                    #   `except Exception as _task_e` 记 warning,
+                    #   chat_tasks.status 永不落库 → 任务永久 executing(前至下次启动 reconcile 才收尾);
+                    #   此处为与 _persist 同级的实证高危写路径, 补齐有限重试。
+                    await _persist_final(db.atxn("chat", _finalize_task_db, retry_locked=3))
                 finally:
                     # X2(2026-09-12 小欧): L642-653 覆写/补发段整体删除——终态形态发射侧已定(event_log 原位
                     #   =应转发形态, 实时 stream_reader 与重连回放读同一形态), 覆写失去作用对象且会逆转终态(G2 复发);

@@ -45,6 +45,8 @@
 Author: 小沈 - 2026-05-28
 小欧 2026-06-18 SRP拆分: 初始化→db_initializer
 小健 2026-06-18 删除向后兼容迁移代码(db_migrator.py)
+# 2026-09-29 20:42:06 小欧 - atxn 增 retry_locked(默认0=旧调用逐字不变): 补 body 执行期 locked 有限重试(退避0.5/1/2s),
+#   仅捕 sqlite3.OperationalError 且含 "locked", 非锁错误/耗尽一律原样抛出 — 根治并发起跑事务体撞写锁 — 小欧-2026-09-29
 """
 
 import asyncio
@@ -254,7 +256,7 @@ class DatabaseManager:
         with self.get_conn(db_name, max_retries=max_retries) as conn:
             yield conn
 
-    async def atxn(self, db_name: str, fn, *args, **kwargs):
+    async def atxn(self, db_name: str, fn, *args, retry_locked: int = 0, **kwargs):
         """异步事务壳(后端卡死修复 小欧 2026-08-24): 在子线程内执行 `with get_conn(db_name) as conn: return fn(conn, *args, **kwargs)`
 
         为什么需要它:
@@ -265,8 +267,28 @@ class DatabaseManager:
             - 整段 `with get_conn` 进 to_thread 子线程, 连接创建/使用/关闭同线程 → 零跨线程(规避 sqlite3.ProgrammingError);
             - storage.* / get_conn / 参数闸门 / 锁重试 全部复用, 零改动(DRY/KISS-DIRECT);
             - 多任务写经线程池并发 + SQLite 文件锁串行化, loop 永不被占(满足"多任务写DB可排队"诉求)。
+
+        retry_locked(小欧 2026-09-29): body 执行期 "database is locked" 的有限重试次数, 默认 0。
+            为什么需要: get_conn 只覆盖连接获取期/提交期(b段)两处锁, body 内 execute 阶段撞锁直接抛出
+              (get_conn(b)注释已明载); 并发多会话起跑时事务体撞写锁是实证高频(PAR-05 19:49 四记 locked)。
+            默认 0 = 现有 29 个调用点行为逐字不变(禁止backward/LSP: 唯一契约是"不传即零重试");
+              仅由已证实暴露的并发热写路径显式开启, 杜绝全局行为扩大(YAGNI)。
+            退避 0.5/1/2s 与 get_conn L188/L206 同一节奏(DRY), 但 sleep 在 async 层,
+              不占 to_thread 子线程, 避免与 get_conn 内部 time.sleep 叠加放大等待(KISS-DIRECT)。
+            仅捕获 sqlite3.OperationalError 且错误串含 "locked": 非锁 SQL 错误/重试耗尽一律原样抛出,
+              杜绝掩盖真实故障(对齐 get_conn "为何不对 IntegrityError 重试" 的既判据)。
         """
-        return await asyncio.to_thread(self._run_txn, db_name, fn, *args, **kwargs)
+        _delay = 0.5
+        for _attempt in range(retry_locked + 1):
+            try:
+                return await asyncio.to_thread(self._run_txn, db_name, fn, *args, **kwargs)
+            except sqlite3.OperationalError as _lock_e:
+                if "locked" not in str(_lock_e) or _attempt >= retry_locked:
+                    raise
+                logger.warning(
+                    f"[db] {db_name} 事务体执行撞锁, 第{_attempt + 1}/{retry_locked}次重试, 等待{_delay:.1f}s: {_lock_e}")
+                await asyncio.sleep(_delay)
+                _delay *= 2
 
     def _run_txn(self, db_name, fn, *args, **kwargs):
         """atxn 的子线程执行体: 在单线程内开连接→执行业务→提交/回滚/关闭 — 小欧 2026-08-24"""

@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-09-16 07:04:06
-**最近更新**: 2026-09-16 07:04:06 小欧 新增 4.4 信任机制辅助(app/tools/trust_db.py) — norm_trust_path 函数化单一来源(文件域 resolve / 非文件信任域 strip, insert/check/delete 落库·查询·撤销双侧一致; DRY 消除 storage 层双份副本)
+**最后更新时间**: 2026-09-29 20:49:50
+**最近更新**: 2026-09-29 20:49:50 小欧 atxn 增 retry_locked(默认0=旧调用零变化) — 补事务体执行期 locked 有限重试, 根治并发起跑静默降级; 5 处实证高危写路径启用 retry_locked=3
 
 ---
 
@@ -417,6 +417,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.5 | 2026-09-29 20:49:50 | 3.3 数据库SDK(app/db/database.py) atxn 签名增关键字参数 retry_locked(默认0=既有 29 个调用点行为逐字不变, 禁止backward): 补 body 执行期 "database is locked" 有限重试(退避 0.5/1/2s 与 get_conn 同节奏, sleep 置 async 层不占 to_thread 子线程), 仅捕 sqlite3.OperationalError 且串含 "locked", 非锁错误/耗尽一律原样抛出; 根治 get_conn 只覆盖连接期+提交期、业务事务体撞写锁直抛的缺口(2026-09-29 19:49 PAR-05 实锤); 已在 5 处实证高危写路径启用 retry_locked=3(编排⑨ _setup_task_db + agent_runner 的 _persist/异常终态/守卫兜底终态/终态 UPDATE), 其余 24 处维持默认 0(YAGNI); 另 storage 新增模块私有 _warn_zero_row 作 UPDATE 影响0行告警统一出口(非公用函数不单列条目), update_task 补 0 行告警 | 小欧 |
 | v4.4 | 2026-09-28 21:29:00 | 3.2 新增 bind_message_to_task（[76] 活跃任务注入 6.5① 执行期归属，零 DDL 复用 chat_user_message.task_id 列，WHERE task_id IS NULL 防覆盖，返回 bool 供调用方判别两成因）；同步 fetch_session_user_message_pairs 描述（精确归属 COALESCE 双子查询取 MAX(id) 取代会话级模糊兜底，增返回 pair_task_id）——补 [76] 首轮遗漏的公用函数登记(AGENTS.md §1.3) | 小欧 |
 | v4.3 | 2026-09-24 23:20:00 | 10.3 新增 [68] 模型库 5 函数：_require_provider_for_fetch/_http_get_remote_models/_parse_remote_models_body/fetch_remote_models/replace_provider_models（设置页模型库 Tab 远程拉取+替换写入，HTTPException 防 500，孤儿清理 None 叶） | 小欧 |
 | v4.2 | 2026-09-24 21:16:00 | 10.3 update_model 描述补 remove_params 键级删除通道（②设置页参数行 × 删除按钮，先删 model_params/range/param_options 键再 merge default_params；空 dp=整块清空与既有 P8 叠加） | 小欧 |

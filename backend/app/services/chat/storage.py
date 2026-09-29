@@ -97,6 +97,9 @@
 #   compliance: 复用优先/KISS-DIRECT — 小欧-2026-09-28
 # 2026-09-28 20:18:31 小欧 三堂会审 F16: fetch JOIN 改 COALESCE 优先 task_id 匹配(防跨任务错配) — 小欧-2026-09-28
 # 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): 新增 reconcile_orphaned_tasks, 启动期把崩溃残留的 executing 残行改 failed+task_interrupted(病根: status 只由 agent_runner finally 改, 进程被 kill 时 finally 不执行致残行永久"执行中"); 零 DDL 零新状态值 — 小欧-2026-09-29
+# 2026-09-29 20:42:06 小欧 - update_task 补 UPDATE 影响 0 行告警(19:49 PAR-05 故障中任务行压根没建成, 终态
+#   UPDATE 静默影响0行且日志无痕, 只能事后比对 DB 定位); 三处同款 0 行判据(本函数/update_task_accumulation/
+#   update_session_accumulation)统一收敛到 _warn_zero_row 单一出口(DRY/复用优先, 既有两条日志文案逐字不变) — 小欧-2026-09-29
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -444,6 +447,17 @@ def insert_task(
     )
 
 
+def _warn_zero_row(op: str, key_label: str, key_value: str, reason: str) -> None:
+    """UPDATE 影响 0 行的统一告警出口 — 小欧 2026-09-29
+
+    病根: UPDATE ... WHERE task_id=? 命中 0 行不报错, 终态/累计静默丢失, 事后无从追溯。
+    为何做成单一出口(DRY/复用优先): 本模块 update_task/update_task_accumulation/update_session_accumulation
+    三处同款判据(log 文案仅 op/主键标签/成因不同), 集中一处后改格式/加字段只动一个点。
+    只告警不改控制流: 保持"缺行不阻断主链路"既有设计(禁止backward), 供日志侧对账定位。
+    """
+    logger.warning(f"[storage] {op} 影响0行({key_label}={key_value}): {reason}")
+
+
 def update_task(
     conn: Connection, *,
     task_id: str, response: Optional[str] = None, status: str = None,
@@ -467,7 +481,10 @@ def update_task(
         return
     _f.append("updated_at = ?"); _v.append(get_local_iso_timestamp())
     _v.append(task_id)
-    conn.execute(f"UPDATE chat_tasks SET {', '.join(_f)} WHERE task_id = ?", _v)
+    _rc = conn.execute(f"UPDATE chat_tasks SET {', '.join(_f)} WHERE task_id = ?", _v).rowcount
+    if _rc == 0:  # 小欧 2026-09-29: 补 0 行告警 —— 2026-09-29 19:49 PAR-05 故障中任务行压根没建成,
+        #   终态 UPDATE 静默影响0行, 当时日志无任何痕迹, 只能靠事后比对 DB 才定位; 现即时留痕。
+        _warn_zero_row("update_task", "task", task_id, "任务行缺失(任务行未建立或已被清理), 终态字段静默丢失")
 
 
 def reconcile_orphaned_tasks(conn: Connection, boot_iso: str) -> int:
@@ -564,7 +581,7 @@ def update_task_accumulation(conn: Connection, *, task_id: str, llm_call_count_t
     _rc = conn.execute("UPDATE chat_tasks SET task_accumulated_tokens = ? WHERE task_id = ?",
                        (safe_json_dumps(_new), task_id)).rowcount
     if _rc == 0:  # 11.1 增强: 任务行缺失时 UPDATE 影响0行致累计静默丢失, 显式告警 — 小欧 2026-08-20
-        logger.warning(f"[storage] update_task_accumulation 影响0行(task={task_id}): 任务行可能缺失或列未落库")
+        _warn_zero_row("update_task_accumulation", "task", task_id, "任务行可能缺失或列未落库")
 
 
 def update_session_accumulation(conn: Connection, *, session_id: str, llm_call_count_token: dict) -> None:
@@ -575,7 +592,7 @@ def update_session_accumulation(conn: Connection, *, session_id: str, llm_call_c
     _rc = conn.execute("UPDATE chat_sessions SET session_accumulated_tokens = ? WHERE id = ?",
                        (safe_json_dumps(_new), session_id)).rowcount
     if _rc == 0:  # 11.1 增强: 会话行缺失时 UPDATE 影响0行致累计静默丢失, 显式告警 — 小欧 2026-08-20
-        logger.warning(f"[storage] update_session_accumulation 影响0行(session={session_id}): 会话行可能缺失或列未落库")
+        _warn_zero_row("update_session_accumulation", "session", session_id, "会话行可能缺失或列未落库")
 
 
 def query_chain_accumulation(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> dict:

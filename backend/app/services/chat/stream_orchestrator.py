@@ -188,6 +188,10 @@
 # 2026-09-29 小欧 - P3: 两条建 buffer 路径统一注入 journal_sink；注入应答改经目标任务
 #   buffer.publish 先落 Journal 取 seq 再发 SSE（禁直 yield 绕过）；新增 journal_reader 兜底回放
 #   — 小欧 2026-09-29
+# 2026-09-29 20:42:06 小欧 - 拆 try 根治并发静默降级(SRP/KISS-DIRECT): ①关键DB事务 _setup_task_db 移出 try,
+#   启用 atxn(retry_locked=3) 有限重试, 重试耗尽/非锁异常向上抛走 router_error 不再静默起跑(原 L595-596 吞异常
+#   致 ai_message_id=None 带病运行, 前端看似在跑而 DB 全空); ②文件 writer 独立 try 仅告警, 原设计意图不变。
+#   — 小欧-2026-09-29
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -550,38 +554,41 @@ async def chat_stream_orchestrator(
         # ── 编排⑨落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) ——— 小健 2026-08-17
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16
         _ai_message_id = None
+        # 目录前导常量局部导入(北京老陈 2026-08-24): files_dir 落库锚与物理目录唯一同源(DRY, 前缀定义于 file_persist)
+        from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
+        # ②-1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
+        #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
+        #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
+        def _setup_task_db(conn):
+            _db_ops.insert_task(conn)
+            # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
+            # 镜像写点(UPDATE chat_messages SET task_id) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
+            # eager分配assistant行+创建时即写chat_tasks.ai_message_id —
+            #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
+            #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
+            _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=_user_msg_id)
+            conn.execute(
+                "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
+                (_aid, task_id),
+            )
+            # 落库 $dir 引用(2026-08-23): 物理目录 = files/Sion_{session_id}/Task_{task_id}/,
+            #   前导 2026-08-24 北京老陈裁定, 与 TaskFileWriter._dir 同源常量拼装),
+            #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
+            conn.execute(
+                "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
+                (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
+            )
+            return _aid
+        # 关键DB事务不再被 try 吞(小欧 2026-09-29 SRP/KISS-DIRECT): 任务行+ai_message_id 是全链路落库地基,
+        #   建立失败却继续起跑 = 前端看着"在跑"而 chat_tasks/chat_task_steps 全空(2026-09-29 19:49 PAR-05 实锤)。
+        #   locked 由 atxn(retry_locked=3) 有限重试; 重试耗尽/非锁异常向上抛, 走下方编排⑪ yield router_error
+        #   (失败显式可见), 杜绝静默降级(原 L595-596 吞异常致 ai_message_id=None 带病起跑, 埋 NOT NULL 崩点)。
+        _ai_message_id = await db.atxn("chat", _setup_task_db, retry_locked=3)
+        # 文件A/B 创建(header)——assistant 分配即建; 创建后挂载
+        #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 小欧 2026-08-23
+        #   非DB文件写, 与关键DB事务分离(SRP): 保持原"仅告警不连坐"设计意图 — writer 失败
+        #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
         try:
-            # 目录前导常量局部导入(北京老陈 2026-08-24): files_dir 落库锚与物理目录唯一同源(DRY, 前缀定义于 file_persist)
-            from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
-            # ②-1 落库热路径 offload 出事件循环(后端卡死修复 小欧 2026-08-24):
-            #   原 `with db.get_conn_with_retry` 在 loop 主线程同步写大 blob + time.sleep 锁重试,
-            #   致 loop 被独占、/health 超时; 整段 DB 操作经 db.atxn 进子线程, conn 同线程闭环零跨线程。
-            def _setup_task_db(conn):
-                _db_ops.insert_task(conn)
-                # v2.0 改动7: user 消息回填 task_id — 小欧 2026-08-19
-                # 镜像写点(UPDATE chat_messages SET task_id) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
-                # eager分配assistant行+创建时即写chat_tasks.ai_message_id —
-                #   任务启动即分配(原首步惰性), 消除agent_runner finally legacy save_steps分支
-                #   (步骤丢失/覆写旧消息双风险根除) — 小欧 2026-08-21
-                _aid = allocate_and_insert_message(conn, session_id, task_id, user_message_id=_user_msg_id)
-                conn.execute(
-                    "UPDATE chat_tasks SET ai_message_id=? WHERE task_id=?",
-                    (_aid, task_id),
-                )
-                # 落库 $dir 引用(2026-08-23): 物理目录 = files/Sion_{session_id}/Task_{task_id}/,
-                #   前导 2026-08-24 北京老陈裁定, 与 TaskFileWriter._dir 同源常量拼装),
-                #   供排查定位(任务→files_dir→文件A 按 step/tool_no/retry_no 定位块→文件B); 不重复落库文件名 — 小欧 2026-08-23
-                conn.execute(
-                    "UPDATE chat_tasks SET files_dir=? WHERE task_id=?",
-                    (f"files/{SESSION_DIR_PREFIX}{session_id}/{TASK_DIR_PREFIX}{task_id}/", task_id),
-                )
-                return _aid
-            _ai_message_id = await db.atxn("chat", _setup_task_db)
-            # 文件A/B 创建(header)——assistant 分配即建; 创建后挂载
-            #   agent.file_persist 供 agent 层钩子使用(telemetry 同模式, agent 零 chat 依赖) — 小欧 2026-08-23
-            #   非DB文件写, 移出DB事务块(后端卡死修复 offload 小欧 2026-08-24):
-            #   成功路径等价; 失败路径更稳——writer 创建失败不再连坐回滚任务落库事务(仅告警),
-            #   任务行/ai_message_id 已持久化, agent.file_persist 缺失由下游 getattr 守卫兜底
             from app.file_persist import create_task_writer
             from app.utils.time_utils import get_local_iso_timestamp  # 局部导入必需(#11: 顶层无该符号, 缺则 NameError 被吞降级无文件)
             _mr = getattr(getattr(agent, "llm_client", None), "llm_model", None)
@@ -592,8 +599,8 @@ async def chat_stream_orchestrator(
                 start_time_iso=get_local_iso_timestamp(),
                 model=(_mr.model_dump(exclude_none=True) if hasattr(_mr, "model_dump") else None),
             )
-        except Exception as _task_e:
-            logger.warning(f"[chat] chat_tasks INSERT/eager分配失败(task={task_id}): {_task_e}")
+        except Exception as _writer_e:
+            logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
         bg_task = asyncio.create_task(run_agent_in_background(
             agent, task_id, user_input, None, session_id, state, _task_start_time,
