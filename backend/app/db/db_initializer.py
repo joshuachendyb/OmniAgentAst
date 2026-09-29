@@ -64,6 +64,9 @@
 #  之后, chat_task_steps 表/列收敛后; 函数内延迟 import, 循 migrate_steps 循环导入惯例): 现存 type=cancelled 旧行改写为 final+cancelled
 # 2026-09-28 - 小欧 - 活跃任务注入存量清理(设计文档[76] 5.3): init_chat_db 接 migrate_purge_injected_dupes 调用
 #  (migrate_cancelled_rows_to_final 之后, 一次性 DELETE 存量注入副本, schema_migrations 登记防重跑) — 小欧-2026-09-28
+# 2026-09-29 小欧 - P3 步骤1(设计文档[63] 3.6.1/3.4): 建 chat_stream_events 表(PRIMARY KEY task_id+seq 唯一)
+#  + idx_stream_events_type(task_id,event_type,seq) 终态查询索引; 位于 chat_user_message 之后, IF NOT EXISTS 幂等,
+#  新库旧库均零报错。表结构照 3.6.1 diff 逐字落地, 字段不多不少 — 小欧-2026-09-29
 """
 db_initializer — 数据库初始化
 
@@ -173,6 +176,19 @@ def init_chat_db(get_conn):
                 created_at TEXT,
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
+
+            -- P3 Journal（[63] 3.4）— 持久事件流，按 task_id + seq 唯一 — 小欧 2026-09-29
+            CREATE TABLE IF NOT EXISTS chat_stream_events (
+                task_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                seq INTEGER NOT NULL,
+                event_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (task_id, seq)
+            );
+            CREATE INDEX IF NOT EXISTS idx_stream_events_type
+                ON chat_stream_events(task_id, event_type, seq);
         ''')
 
         _ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
