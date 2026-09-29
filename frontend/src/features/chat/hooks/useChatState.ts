@@ -5,6 +5,8 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): 删executionStepsRef定义+类型声明+返回值透传(useSSE唯一真源,
 //   useChatStreaming不再从state解构, 无任何消费者); 删废弃类型导入ExecutionStep, warning清零 — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.13 核实: executionStepsRef 已归 Store 推导视图(5.4 getExecutionStepsRef)，
+//   本文件 S2 已清、grep 零代码残留；useSSE 已删(5.6)，本文件仅留历史消息与 UI 态 — 小欧-2026-09-29 21:37:55
 /**
  * useChatState Hook - 统一状态管理
  *

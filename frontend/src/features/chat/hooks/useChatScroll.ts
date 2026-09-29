@@ -5,9 +5,10 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): executionStepsRef 改从 chatStreaming(useSSE 唯一真源)取,
 //   ScrollChatState 类型删该字段、ScrollStreaming 类型补该字段(useChatState 已删其定义) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.12: ScrollStreaming 删 executionStepsRef 字段 + 解构 +
+//   state→ref 同步 effect 整删（Store 推导视图 getter 直读真源，手工同步已冗余）；ExecutionStep 导入随之失效删除 — 小欧-2026-09-29 21:37:55
 import { useCallback, useEffect, useRef } from 'react';
 import type { UseChatFacadeReturn } from './useChatFacade';
-import type { ExecutionStep } from '../../../types/execution'; // 小欧 2026-09-10 S2收尾: ScrollStreaming 类型引用
 
 const SCROLL_THRESHOLD = 150;
 
@@ -19,10 +20,7 @@ type ScrollChatState = Pick<UseChatFacadeReturn['chatState'], 'isPaused'> &
 type ScrollStreaming = Pick<
   UseChatFacadeReturn['streaming'],
   'executionSteps' | 'currentResponse' | 'isReceiving'
-> & {
-  // 小欧 2026-09-10 S2收尾(方案A): executionStepsRef 改从 streaming(useSSE) 取，供 :61 同步 state→ref
-  executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
-};
+>;
 
 /**
  * 滚动控制 hook：同步 isPaused/executionSteps 到 ref、自动滚动到底部、滚动位置监听、可见性变化回滚
@@ -34,8 +32,7 @@ export function useChatScroll(
 ): void {
   const { messagesEndRef, userScrolledUpRef, isPausedRef, messages, isPaused } =
     chatState;
-  const { executionSteps, currentResponse, isReceiving, executionStepsRef } =
-    chatStreaming;
+  const { executionSteps, currentResponse, isReceiving } = chatStreaming;
 
   const timerRef = useRef<number | null>(null);
   const scrollToBottomDelayed = useCallback(() => {
@@ -59,9 +56,8 @@ export function useChatScroll(
     scrollToBottomDelayed();
   }, [messages, currentResponse, executionSteps, scrollToBottomDelayed]);
 
-  useEffect(() => {
-    executionStepsRef.current = executionSteps;
-  }, [executionSteps, executionStepsRef]);
+  // [63] 5.12：删 state→ref 同步 effect——executionStepsRef 已是 Store 推导视图（5.4 getExecutionStepsRef），
+  //   getter 直读 Store 当前值；旧架构 ref 独立于 state 才需手工同步，此处已冗余（写仍回 commit 进 Store）
 
   useEffect(() => {
     let container = messagesEndRef.current?.parentElement;

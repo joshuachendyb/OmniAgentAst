@@ -58,6 +58,11 @@
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 5.4④/6.14 实施回填): 新增 onMerged 回调(接口+实现+返回值三处),
 //   消费端=提示条(showInfo 复用)+task_merged 事件桥交 useTaskSelection 高亮左侧目标任务 — 小欧-2026-09-28
 // 编辑历史: 2026-09-19 小欧: onComplete终态非failed时通过onSuccessRef调最新回调清liveError, 解闭包陈旧(streaming不在deps) — 北京老陈驱动
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.15 HITL 单源化: 删 onAuthorizationRequired 整个回调
+//   (接口字段 + useCallback 实现 + 其 window CustomEvent 派发) —— 授权数据源归位为
+//   sseParser paused帧 → storeHandlers.onAuthorizationRequired → Store.pendingAuthorization
+//   → useAuthorization 快照 effect(5.15 上块)。window 派发端双删之一(另一处 sseParser.ts
+//   authorization_resumed 兜底派发), 防双源复活导致弹窗重复触发 — 小欧-2026-09-29 21:37:55
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -108,18 +113,9 @@ export interface UseChatCallbacksReturn {
   onRetry: (message: string, waitTime?: number) => void;
   // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError等上层状态 — 北京老陈驱动
   onSuccess?: () => void;
-  onAuthorizationRequired: (data: {
-    confirm_id: string;
-    tool_name: string;
-    params: Record<string, unknown>;
-    content?: string;
-    safety_level: string;
-    // 2026-09-03 小欧 修复: 类型补全 4→8 字段(与 sseParser 下发契约一致), 防改代码时缺字段不自知
-    trust_path?: string | null;
-    auto_confirm?: boolean;
-    confirm_timeout?: number;
-    backend_timeout?: number;
-  }) => void;
+  // [63] 5.15 v1.29：onAuthorizationRequired 字段删除——HITL 单源化：
+  //   sseParser → storeHandlers.onAuthorizationRequired → Store.pendingAuthorization
+  //   → useAuthorization 快照 effect（本 window 派发端双删之一，防双源复活）
 }
 
 /**
@@ -849,27 +845,9 @@ export const useChatCallbacks = (
 
   // ==================== 返回值 ====================
 
-  // 【v3.4新增 2026-06-09 小沈】授权请求回调
-  const onAuthorizationRequired = useCallback(
-    (data: {
-      confirm_id: string;
-      tool_name: string;
-      params: Record<string, unknown>;
-      content?: string;
-      safety_level: string;
-      // 2026-09-03 小欧 修复: 类型补全 4→8 字段, 全量透传 trust/计时字段保弹窗正确渲染
-      trust_path?: string | null;
-      auto_confirm?: boolean;
-      confirm_timeout?: number;
-      backend_timeout?: number;
-    }) => {
-      // 触发授权弹窗（通过自定义事件通知NewChatContainer）
-      window.dispatchEvent(
-        new CustomEvent('authorization_required', { detail: data })
-      );
-    },
-    []
-  );
+  // [63] 5.15 v1.29：授权请求派发端删除——HITL 单源化：sseParser → storeHandlers.onAuthorizationRequired
+  //   → Store.pendingAuthorization → useAuthorization 快照 effect（5.15 上块）。
+  //   window 派发双删（本处 + sseParser.ts authorization_resumed 兜底派发）
 
   return {
     onStep,
@@ -880,7 +858,6 @@ export const useChatCallbacks = (
     onResumed,
     onMerged, // 2026-09-28 小欧: 注入应答回调(设计[76] 6.14 实施回填) — 小欧-2026-09-28
     onRetry,
-    onAuthorizationRequired, // 【v3.4新增】
     onSuccess: onSuccessRef.current, // 2026-09-19 小欧: 通过 ref 取最新回调(解闭包陈旧) — 北京老陈驱动
   };
 };

@@ -13,6 +13,11 @@
 //           与 loadSessions 守卫对齐，防过滤态单删污染 totalSessions 致清空守卫误判"没有会话可清空"、总会话 Badge 显示错误数
 // 编辑历史: 2026-09-09 小欧 - 会话页console日志治理(北京老陈指示「该清理的清理」): handleResume 删「✅ 跳转成功」打点——
 //   navigate 未抛异常即成功, 成功打点与「🔄 准备跳转」冗余; 保留准备/失败打点(追踪价值) — 小欧-2026-09-09
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.19 删除会话后清理 Store(4.6.2 语义, destroySession 见 5.4):
+//   ①单删 handleDelete 后端确认成功即 destroySession; ②批量删改先取 targets 快照, 再按
+//   allSettled 结果**只清理 fulfilled 者**(失败者保留以便重试, 不误清可重试会话);
+//   ③清空全部同口径(按 allSessions 下标对齐 deleteResults) —— 后端已删而 Store 残留会导致
+//   快照/草稿泄漏, 重进页重放已删会话内容 — 小欧-2026-09-29 21:37:55
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -40,6 +45,8 @@ import {
   CommentOutlined,
 } from '@ant-design/icons';
 import { sessionApi, type Session } from '../../services/api/session.api';
+// [63] 5.19 v1.30：删除会话确认后清理 Store（4.6.2 语义，destroySession 见 5.4）
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import { useNavigate } from 'react-router-dom';
 import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 import dayjs from 'dayjs';
@@ -161,6 +168,8 @@ const HistoryPage: React.FC = () => {
   const handleDelete = async (sessionId: string) => {
     try {
       await sessionApi.deleteSession(sessionId);
+      // [63] 5.19 v1.30：后端确认删除后清理 Store+快照+草稿（4.6.2，语义见 5.4）
+      chatStreamStore.destroySession(sessionId);
       showSuccess('会话已删除');
       // 2026-08-27 小欧 修复: 删除后从选中集合移除该 id，避免批量删除计数残留(脏选中)
       setSelectedSessions((prev) => {
@@ -211,11 +220,16 @@ const HistoryPage: React.FC = () => {
       return;
     }
     try {
+      const targets = Array.from(selectedSessions);
       const results = await Promise.allSettled(
-        Array.from(selectedSessions).map((sessionId) =>
-          sessionApi.deleteSession(sessionId)
-        )
+        targets.map((sessionId) => sessionApi.deleteSession(sessionId))
       );
+      // [63] 5.19 v1.30：成功者逐个清理 Store，失败者保留可重试（4.6.2）
+      results.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          chatStreamStore.destroySession(targets[i]);
+        }
+      });
       const successCount = results.filter(
         (r) => r.status === 'fulfilled'
       ).length;
@@ -288,6 +302,12 @@ const HistoryPage: React.FC = () => {
           sessionApi.deleteSession(session.session_id)
         )
       );
+      // [63] 5.19 v1.30：清空全部的成功者逐个清理 Store，口径同批量删（4.6.2）
+      deleteResults.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          chatStreamStore.destroySession(allSessions[i].session_id);
+        }
+      });
 
       // 统计成功数量
       const successCount = deleteResults.filter(

@@ -5,6 +5,9 @@
 //   对齐后端现行取消终态契约 type=final+outcome=cancelled(waitForCancelEvent 2处 + handleCancel 1处)——取消事件已不存在,
 //   取消收尾单一由 final+outcome=cancelled 承担(sseParser 4.4.1 所述), 日志反映系统实际 — 小欧-2026-09-09
 // 编辑历史: 2026-09-15 20:13:04 小欧 - 注释清理: 去除取消链路遗留代号, 改描述性术语(与commit b79b79b清理口径一致) — 小欧-2026-09-15 20:13:04
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.14: 取消链路收口 chatStreamStore.stop(内部 cancel 确认终态 +
+//   STOP_RACE 回读权威终态 + clearCompleted 释放); callCancelApi 与 Options.functions.disconnect 整删
+//   (前者唯一调用点已迁, 后者为 useSSE 遗留死代码); 倒计时清理保留(本 hook 的 UI 计时器) — 小欧-2026-09-29 21:37:55
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -25,6 +28,7 @@
 
 import { useCallback } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import {
   showTaskControlInfo,
   showTaskResultMessage,
@@ -69,15 +73,7 @@ export interface UseChatTaskControlOptions {
     waitTimerRef: React.MutableRefObject<number | null>;
     isPausedRef: React.MutableRefObject<boolean>;
   };
-
-  // 函数
-  functions: {
-    disconnect: (
-      stopServer?: boolean,
-      force?: boolean,
-      callback?: () => void
-    ) => void;
-  };
+  // [63] 5.14：原 functions.disconnect 组随 useSSE 退场整删——停止任务唯一入口是 chatStreamStore.stop()
 }
 
 /**
@@ -107,7 +103,8 @@ export const useChatTaskControl = (
   options: UseChatTaskControlOptions
 ): UseChatTaskControlReturn => {
   // 【优化】方案1参数分组解构
-  const { setters, states, refs, functions } = options;
+  // [63] 5.14：functions 组整删（disconnect 为 useSSE 遗留死代码）
+  const { setters, states, refs } = options;
   const { setLoading, setIsPaused, setIsReceiving } = setters;
   const { isPaused, sessionId, serverTaskId } = states;
   const {
@@ -116,7 +113,6 @@ export const useChatTaskControl = (
     waitTimerRef,
     isPausedRef,
   } = refs;
-  const { disconnect } = functions;
 
   // =========================================================================
   // 任务控制函数
@@ -129,34 +125,20 @@ export const useChatTaskControl = (
     if (setIsReceiving) setIsReceiving(false);
   }, [setLoading, setIsPaused, setIsReceiving]);
 
-  const callCancelApi = useCallback(
-    async (
-      taskId: string,
-      sid: string | null
-    ): Promise<{ success: boolean; message: string }> => {
-      const timeoutPromise = new Promise<unknown>((_, reject) => {
-        setTimeout(() => reject(new Error('取消请求超时')), 5000);
-      });
-      return (await Promise.race([
-        taskControlApi.cancel(taskId, sid ?? undefined),
-        timeoutPromise,
-      ])) as { success: boolean; message: string };
-    },
-    []
-  );
-
   /**
    * handleCancel - 取消正在执行的任务
    *
+   * [63] 5.14 v1.29：取消链路收口 chatStreamStore.stop——内部 taskControlApi.cancel 确认终态、
+   *   STOP_RACE（不存在/已结束 → success:false）回读权威终态并 clearCompleted 释放，见 5.4 stop 实现
+   *
    * 功能：
    * 1. 防重复点击检查
-   * 2. 调用 taskControlApi.cancel 取消任务
-   * 3. 智能等待 cancelled 事件
-   * 4. 断开SSE连接
-   * 5. 更新UI状态
+   * 2. stop() 取消并确认终态（方案A 返回文案）
+   * 3. 停倒计时
+   * 4. 更新UI状态
    */
   // 2026-09-15 小欧 v1.3: 删强断连病根+取消失败复位点唯一化
-  // 取消确认由 SSE 自然流到达的 final+cancelled 承载，前端不再主动 disconnect
+  // 取消确认由 chatStreamStore.stop 内部回读权威终态承载，前端不再主动断连
   const handleCancel = useCallback(async () => {
     // 【防重复点击】如果正在取消中，忽略后续点击
     if (cancelInProgressRef.current) {
@@ -174,20 +156,18 @@ export const useChatTaskControl = (
           // ✅【方案1】立即更新UI状态，给用户即时反馈
           resetUiFlags();
 
-          // ✅【关键修复】不立即断开连接！等待后端发送cancelled/final事件
-          const result = await callCancelApi(taskIdToCancel, sessionId);
+          // [63] 5.14 v1.29：停止任务收口 chatStreamStore.stop——内部 taskControlApi.cancel 确认终态，
+          //   STOP_RACE（不存在/已结束 → success:false）回读权威终态并 clearCompleted 释放，
+          //   不报错不重试（4.6.2 红线 + 5.6 STOP_RACE 条）；返回 {success,message}（方案A）
+          const result = await chatStreamStore.stop(sessionId ?? '');
 
-          // 删除多余等待: await waitForCancelOrTimeout() — 死代码（3s<5s，5s分支永不触发）
-
-          // ✅ 停止所有进行中的倒计时
+          // ✅ 停止所有进行中的倒计时（本 hook 的 UI 计时器，与流资源无关，保留）
           if (waitTimerRef.current) {
             clearInterval(waitTimerRef.current);
             waitTimerRef.current = null;
           }
 
-          // 删除强制断连 disconnect(true, true) — 病根（掐死SSE通道，丢final帧的唯一动作）
-
-          // 显示后端返回的具体消息
+          // 显示后端返回的具体消息（方案A：stop 返回值直供后端/回读文案）
           showTaskResultMessage('cancel', result.message);
         } catch (error) {
           // 【增强错误处理】区分错误类型并给出明确提示
@@ -237,9 +217,7 @@ export const useChatTaskControl = (
     serverTaskId,
     sessionId,
     resetUiFlags,
-    callCancelApi,
     waitTimerRef,
-    disconnect,
     hasReceivedCancelEventRef,
     cancelInProgressRef,
   ]);

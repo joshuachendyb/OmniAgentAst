@@ -2,10 +2,14 @@
 // 编辑历史: 2026-09-10 小欧 - thought重复根治(三堂会审定案): 病根=effect依赖searchParams对象引用(每次渲染新引用)反复重跑
 //   initializeSession覆盖流式消息; 根治=effect只依赖稳定session_id字符串, 不再传渲染无关的URL参数对象。
 //   曾用useMemo稳定searchParams(堵截)与isReceiving守卫(边界退化)两案, 复查后均撤销。 — 小欧-2026-09-10
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.17 恢复优先: 同一 effect 内把 initializeSession 包成
+//   chatStreamStore.resume().then 链——非 idle(流活着)且有 URL 会话时只 loadSession 补历史
+//   (F7 不重新 POST、不重建任务); idle 走原三场景分支(参数未改) — 小欧-2026-09-29 21:37:55
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
 import type { UseChatFacadeReturn } from './useChatFacade';
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 
 /**
  * 会话初始化 hook：initializeSession 效果 + loading 挂载/卸载清理
@@ -47,19 +51,27 @@ export function useChatInit(opts: {
       opts.urlSessionId ? { session_id: opts.urlSessionId } : {}
     );
 
-    chatSession.initializeSession({
-      searchParams,
-      retryCount: chatState.retryCount,
-      setRetryCount: chatState.setRetryCount,
-      isLoadingHistoryRef: chatState.isLoadingHistoryRef,
-      setIsInitialized: chatState.setIsInitialized,
-      restoreState: chatPersistence.restoreState,
-      onLoadingStart,
-      onLoadingEnd,
-      onRenderStart,
-      onRenderEnd,
-      onMessageListLoadingStart,
-      onMessageListLoadingEnd,
+    // [63] 5.17 v1.29 恢复优先：非 idle（流活着/已恢复/轮询/中断/降级等 12 态）→ 只补历史
+    //   loadSession（F7：不重新 POST、不重建任务）；idle → 原 initializeSession 三场景原样执行
+    void chatStreamStore.resume(opts.urlSessionId ?? undefined).then((r) => {
+      if (r !== 'idle' && opts.urlSessionId) {
+        void chatSession.loadSession(opts.urlSessionId);
+        return;
+      }
+      chatSession.initializeSession({
+        searchParams,
+        retryCount: chatState.retryCount,
+        setRetryCount: chatState.setRetryCount,
+        isLoadingHistoryRef: chatState.isLoadingHistoryRef,
+        setIsInitialized: chatState.setIsInitialized,
+        restoreState: chatPersistence.restoreState,
+        onLoadingStart,
+        onLoadingEnd,
+        onRenderStart,
+        onRenderEnd,
+        onMessageListLoadingStart,
+        onMessageListLoadingEnd,
+      });
     });
     // 仅保留urlSessionId，避免重复执行initializeSession
     // eslint-disable-next-line react-hooks/exhaustive-deps

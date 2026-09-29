@@ -89,6 +89,11 @@
 // 编辑历史: 2026-09-17 小欧 会审V3更正: 上一版历史"②调用 onRejected + 兼容调用 onDenied"停用——onDenied 回调整链
 //   同日会审V3已删除(YAGNI, 唯一调用方 useChatStreaming 曾传 undefined, 零消费者), 现仅 onRejected 单链(见 :135-137) - 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: 心跳:ping 除调用 onHeartbeat 外, 新增创建 ExecutionStep({type:'heartbeat'}) 并 pushAndFlush 记录到事件列表 — 北京老陈驱动
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.15 HITL 单源化: 删 resumed 帧带 confirm_id 时的
+//   window.dispatchEvent('authorization_resumed') 兜底派发(原 :180-186 小沈 2026-09-03 加的防御兜底)。
+//   S1 超时放行现走 5.3 onResumed(emitEvent + 清 Store.pendingAuthorization) → useAuthorization
+//   快照 effect 关弹窗(5.15 上块); window 派发端双删之一(另一处 useChatCallbacks
+//   onAuthorizationRequired), 防双源复活 — 小欧-2026-09-29 21:37:55
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -260,7 +265,10 @@ const processSSEData = (
     // 小欧 2026-09-29: [63] P3 Journal 降级标记读取（后端 event payload 的 persistence_degraded）。
     //   该帧 Journal 写入失败，故降级事实由后续帧粘滞携带；此处仅 console 观测（UI 提示通路待接，
     //   不预埋无调用方的回调钩子——YAGNI）。
-    if ((rawData as { persistence_degraded?: boolean }).persistence_degraded === true) {
+    if (
+      (rawData as { persistence_degraded?: boolean }).persistence_degraded ===
+      true
+    ) {
       console.warn(
         `[SSE] 事件持久化已降级(seq=${rawData.seq ?? '-'}): 本任务部分过程刷新/重连后不可完整回放`
       );
@@ -905,14 +913,9 @@ const processSSEData = (
             }
             break;
           case 'resumed':
-            // 2026-09-03 小沈 缺陷修复: resumed带confirm_id时派发事件, useAuthorization据此关弹窗(防御性兜底) — 小沈-2026-09-03
-            if (rawData.confirm_id) {
-              window.dispatchEvent(
-                new CustomEvent('authorization_resumed', {
-                  detail: { confirm_id: rawData.confirm_id },
-                })
-              );
-            }
+            // [63] 5.15 v1.29：authorization_resumed window 兜底派发删除（HITL 单源化）——
+            //   S1 超时放行链路走 5.3 onResumed（emitEvent + 清 Store.pendingAuthorization）
+            //   → useAuthorization 快照 effect 关弹窗
             onResumed?.(rawData.confirm_id as string | undefined); // 小欧 2026-09-10 S15: 传 confirmId
             break;
           case 'retrying':

@@ -1,5 +1,7 @@
 # 事件 Journal：SSE 事件的持久流水（落库/回放/判活/读终态/清理），供内存缓冲回收或后端重启后回放
 # SQLite，与 LLM 的 httpx 池正交。表由 db_initializer 建，本模块只读写、零 DDL — 小欧 2026-09-29
+# 编辑历史: 2026-09-29 21:37:55 小欧 - 纯格式零逻辑: retention_cleanup 内注释缩进由 4 空格对齐到函数体 8 空格,
+#   与本文件其余函数体风格统一(缩进错位会让后续维护者误判其为模块级语句) — 小欧-2026-09-29 21:37:55
 import json
 from datetime import datetime, timedelta
 from typing import Optional
@@ -95,8 +97,8 @@ async def retention_cleanup(retention_days: int) -> int:
     """清理已终态且超保留期的事件。活跃/非终态永不删；end_time 缺失的终态任务按 created_at 双倍保留期兜底清理"""
     days = int(retention_days)   # 容忍 yaml 写成 "7"；非数值由 settings range 闸门在配置加载期拦
     def _q(conn):
-    # 全精度 isoformat()：与 get_local_iso_timestamp() 存储格式一致；timespec="seconds"
-    # 截微秒会让同秒边界的字符串比较误判 — 小欧 2026-09-29
+        # 全精度 isoformat()：与 get_local_iso_timestamp() 存储格式一致；timespec="seconds"
+        # 截微秒会让同秒边界的字符串比较误判 — 小欧 2026-09-29 21:37:55
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         fallback = (datetime.now() - timedelta(days=days * 2)).isoformat()
         rows = conn.execute(

@@ -3,6 +3,10 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 删编辑标题辅助函数/删未用messages/deps补setSessionModelOverride
 // 编辑历史: 2026-08-27 小欧 - hooks修复: 重试计数改由 ref 持久化, 破除 options.retryCount 永不回写导致的无限重试死循环
 // 编辑历史: 2026-08-28 小强 - hooks修复#13: 删不可达if(urlSessionId)分支+删重复onLoadingEnd(只保留finally中)
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.18: generationRef 代际守卫(三异步入口各++, 四个 await 后断言,
+//   根治"旧 session 异步结果过期污染新会话" G3 病根); L1修正① handleNewSessionInternal 删断流+清步骤
+//   (新会话不断旧流); L1修正② handleClear 改 stop+clearSteps(显式清空=用户明确终止意图);
+//   streaming 参数与 UseChatStreamingReturn import 零消费整删(5.18 参数收敛) — 小欧-2026-09-29 21:37:55
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -24,8 +28,9 @@
 import { useCallback, useRef } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
-import type { UseChatStreamingReturn } from './useChatStreaming';
 import { sessionApi } from '../../../services/api/session.api';
+// [63] 5.18：stop/clearSteps + 代际守卫（G3 病根修复）
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import {
   loadHistoryMessages,
   loadLatestHistoryMessages,
@@ -128,9 +133,11 @@ export interface InitializeSessionResult {
  * @returns 会话相关状态和函数
  */
 export const useChatSession = (
-  state: UseChatStateReturn,
-  streaming?: UseChatStreamingReturn
+  state: UseChatStateReturn
 ): UseChatSessionReturn => {
+  // [63] 5.18 v1.29：代际号——三异步入口各 ++，await 后比对，旧代结果一律丢弃（G3 病根）
+  const generationRef = useRef(0);
+
   // 从state中解构需要的状态和setter
   const {
     sessionId,
@@ -166,8 +173,12 @@ export const useChatSession = (
    */
   const loadSession = useCallback(
     async (sid: string): Promise<Message[]> => {
+      // [63] 5.18 v1.29 会话切换竞态：代际号单调递增，旧代异步结果一律丢弃
+      //   （loadSession / initializeSession / handleNewSessionInternal 三入口各取一代）
+      const generation = ++generationRef.current;
       try {
         const result = await loadHistoryMessages(sid);
+        if (generation !== generationRef.current) return []; // 旧代过期：丢弃
         if (result) {
           setSessionId(result.sessionId);
           currentSessionIdRef.current = result.sessionId;
@@ -209,6 +220,8 @@ export const useChatSession = (
     async (
       options: InitializeSessionOptions
     ): Promise<InitializeSessionResult> => {
+      // [63] 5.18：初始化取新代，切入中的旧 load 作废
+      const generation = ++generationRef.current;
       const {
         searchParams,
         setRetryCount,
@@ -256,6 +269,8 @@ export const useChatSession = (
 
         try {
           const result = await loadHistoryMessages(urlSessionId);
+          if (generation !== generationRef.current)
+            return { loaded: false, fromCache: false, hasUrlSession: true };
           if (result) {
             setSessionId(result.sessionId);
             currentSessionIdRef.current = result.sessionId;
@@ -334,6 +349,8 @@ export const useChatSession = (
       // 场景2: 缓存恢复
       if (!urlSessionId) {
         const restored = await restoreState();
+        if (generation !== generationRef.current)
+          return { loaded: false, fromCache: false, hasUrlSession: true };
         if (restored) {
           console.log('🟢 从缓存恢复会话状态');
           setSessionId(restored.sessionId);
@@ -369,6 +386,8 @@ export const useChatSession = (
 
       try {
         const result = await loadLatestHistoryMessages();
+        if (generation !== generationRef.current)
+          return { loaded: false, fromCache: false, hasUrlSession: false };
         if (result) {
           setSessionId(result.sessionId);
           currentSessionIdRef.current = result.sessionId;
@@ -461,12 +480,15 @@ export const useChatSession = (
    */
   const handleNewSessionInternal = useCallback(
     async (retry: number = 0): Promise<void> => {
+      // [63] 5.18：新建取新代（重试递归再取新代，自身一致）
+      const generation = ++generationRef.current;
       const maxRetries = 3;
 
       try {
         // 生成智能标题
         const newTitle = generateNewSessionTitle();
         const response = await sessionApi.createSession(newTitle);
+        if (generation !== generationRef.current) return; // 旧代过期：丢弃
         const newSessionId = response.session_id;
 
         setSessionId(newSessionId);
@@ -477,13 +499,8 @@ export const useChatSession = (
         setSessionModelOverride(null);
         setLastSavedTitle(newTitle);
 
-        // 断开之前的SSE连接
-        if (streaming?.disconnect) {
-          streaming.disconnect();
-        }
-        if (streaming?.clearSteps) {
-          streaming.clearSteps();
-        }
+        // [63] 5.18 v1.29：删"断开之前SSE+清steps"（L1：新会话不断旧流、不清旧步——旧流留
+        //   Store 由订阅关系自然让位；视图按新 sessionId 读到的自然是新会话快照，无需手工清）
 
         // 添加系统提示消息
         const systemMessage: Message = {
@@ -523,7 +540,6 @@ export const useChatSession = (
       setLastSavedTitle,
       setSessionModelOverride,
       currentSessionIdRef,
-      streaming,
     ]
   );
 
@@ -544,12 +560,13 @@ export const useChatSession = (
   const handleClear = useCallback(() => {
     console.log('[useChatSession] handleClear - 清空对话');
 
-    // 断开SSE连接
-    if (streaming?.disconnect) {
-      streaming.disconnect();
-    }
-    if (streaming?.clearSteps) {
-      streaming.clearSteps();
+    // [63] 5.18 v1.29 L1 修正②：用户显式"清空"必须真停（与 5.14 停止语义同源），
+    //   与"关视图不停任务"红线并存不悖——切页面不断流，切会话也不断流，唯"清空"是用户明确终止意图。
+    //   清步骤走 Store（清步骤与删备份同一动作，5.4 clearSteps），stop 为 async 故不阻塞 UI 复位。
+    const sidToStop = sessionId ?? '';
+    if (sidToStop) {
+      void chatStreamStore.stop(sidToStop);
+      chatStreamStore.clearSteps(sidToStop);
     }
 
     setSessionId(null);
@@ -561,6 +578,7 @@ export const useChatSession = (
     setSessionModelOverride(null); // 2026-08-27 小欧 修复#41: 清空会话复位L2模型, 避免新会话继承旧模型覆盖
     setLastSavedTitle('新会话');
   }, [
+    sessionId,
     setSessionId,
     setSessionTitle,
     setSessionVersion,
@@ -569,7 +587,6 @@ export const useChatSession = (
     setLastSavedTitle,
     setSessionModelOverride,
     currentSessionIdRef,
-    streaming,
   ]);
 
   // ========================================

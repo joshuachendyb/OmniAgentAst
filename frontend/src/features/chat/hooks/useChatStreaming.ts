@@ -30,6 +30,10 @@
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedEntries 数据结构新增 reject_type 字段; ②markDenied 函数新增 reject_type 参数; ③删除旧 sseOnError/handleDenied; ④新增统一 handleRejected 函数 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock 钟面信号透传(返回类型接口声明/从 useSSE 解构/return 暴露) - 小欧-2026-09-17
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 6.14 实施回填): callbacks 解构加 onMerged 并透传 useSSE(中层原漏, 链路断) - 小欧-2026-09-28
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.8: useSSE 删除(5.6)改订阅 Store(useChatStreamSession);
+//   9 具名回调收敛为 StreamEvent 单入口分发(授权改 pendingAuthorization 快照驱动, 见 5.15);
+//   删 disconnectWithParams(唯一生产消费者 useChatTaskControl 5.14 改走 Store.stop)与 setIsReceiving 注入;
+//   config.baseURL/token 首连消费移交 setTransportConfig(5.3, 应用初始化一次性注入) — 小欧-2026-09-29 21:37:55
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -55,9 +59,10 @@ import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
-import { useSSE } from '@/hooks/useSSE';
+// [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
+import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
+import type { StreamEvent } from '@/features/chat/streams/backupTypes';
 import { sessionApi } from '../../../services/api/session.api';
-import { getAccessToken } from '@/services/api/client';
 import { getClientInfo } from '../../../utils/clientInfo';
 import { handleError } from '@/services/error/handler';
 
@@ -81,9 +86,8 @@ export interface SSEConfig {
  * useChatStreaming Hook返回值
  */
 export interface UseChatStreamingReturn {
-  // 流式接收状态
+  // 流式接收状态（[63] 5.8：状态宿主已移交 Store，本层只读快照，不再暴露 setter）
   isReceiving: boolean;
-  setIsReceiving: (receiving: boolean) => void;
 
   // 执行步骤
   executionSteps: ExecutionStep[];
@@ -97,11 +101,6 @@ export interface UseChatStreamingReturn {
     sessionId?: string,
     contextLinkMode?: 'linked' | 'independent'
   ) => Promise<void>;
-  disconnect: (
-    stopServer?: boolean,
-    force?: boolean,
-    callback?: () => void
-  ) => void; // 2026-08-27 小欧 修复#10: 签名语义 force->manualDisconnect, stopServer->clearStorage
   clearSteps: () => void;
 
   // 服务器任务ID
@@ -149,13 +148,14 @@ export interface UseChatStreamingReturn {
  *
  * @param state - useChatState返回的状态对象
  * @param callbacks - useChatCallbacks返回的回调函数
- * @param config - SSE配置（baseURL, sessionId）
+ * @param _config - SSE配置（[63] 5.8：baseURL/token 首连消费已移交 setTransportConfig，
+ *   本层不再读取；形参保留以免改动 facade 调用形状）
  * @returns SSE相关状态和操作
  */
 export const useChatStreaming = (
   state: UseChatStateReturn,
   callbacks: UseChatCallbacksReturn,
-  config: SSEConfig
+  _config: SSEConfig
 ): UseChatStreamingReturn => {
   const { sessionId, setSessionId, cancelInProgressRef } = state;
   const {
@@ -167,7 +167,6 @@ export const useChatStreaming = (
     onResumed,
     onMerged, // 2026-09-28 小欧: 注入应答回调透传(设计[76] 6.14 实施回填) — 小欧-2026-09-28
     onRetry,
-    onAuthorizationRequired,
   } = callbacks;
 
   // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): 拒绝(user_rejected独立事件)/拦截(blocked)/超时(timeout) 的
@@ -272,39 +271,59 @@ export const useChatStreaming = (
     [markDenied]
   );
 
-  // 使用useSSE Hook
-  // 小欧 2026-09-10 S2收尾(方案A): useSSE 唯一真源，此处从 useSSE 解构 executionStepsRef
+  // [63] 5.8 v1.29：原 9 具名回调参数收敛为 StreamEvent 单入口分发（kind→payload 按 5.1 判别联合窄化）；
+  //   授权不走事件——由 pendingAuthorization 快照驱动（5.15），故 onAuthorizationRequired 已从回调链移除
+  const dispatchStreamEvent = useCallback(
+    (ev: StreamEvent) => {
+      switch (ev.kind) {
+        case 'step':
+          onStep(ev.payload.step);
+          break;
+        case 'chunk':
+          onChunk(ev.payload.chunk, ev.payload.isReasoning);
+          break;
+        case 'complete':
+          onComplete(ev.payload.full, ev.payload.meta, ev.payload.steps);
+          break;
+        case 'error':
+          onError(ev.payload);
+          break;
+        case 'paused':
+          // 2026-09-29 小欧：真实 onPaused/onResumed 均为零参（useChatCallbacks.ts:103-104），
+          //   confirmId 的 HITL 归属由 Store hitlWaitingKeys 承载（5.3 onPaused/onResumed 内部）
+          onPaused();
+          break;
+        case 'resumed':
+          onResumed();
+          break;
+        case 'retry':
+          onRetry(ev.payload.message, ev.payload.waitTime);
+          break;
+        case 'rejected':
+          handleRejected(ev.payload);
+          break;
+        case 'merged':
+          // 2026-09-29 小欧：[76] 6.14 注入应答事件（5.3 storeHandlers 接线），漏则提示条/高亮永不触发
+          onMerged(ev.payload.mergedIntoTaskId);
+          break;
+      }
+    },
+    [onStep, onChunk, onComplete, onError, onPaused, onResumed, onRetry, onMerged, handleRejected]
+  );
+
+  // 使用 Store 订阅桥接
+  // 小欧 2026-09-10 S2收尾(方案A): executionStepsRef 唯一真源在 Store，此处从 5.5 透出的推导视图取
   const {
     isReceiving,
-    setIsReceiving,
     executionSteps,
-    executionStepsRef, // 小欧 2026-09-10 S2: 从 useSSE 取（useSSE 唯一真源）
+    executionStepsRef, // 推导视图（5.4 getExecutionStepsRef），非第二真源
     currentResponse,
     sendMessage: sendStreamMessage,
-    disconnect,
     clearSteps,
     serverTaskId,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
     waitClock, // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
-  } = useSSE(
-    {
-      baseURL: config.baseURL,
-      sessionId: sessionId || 'default-session',
-      // 2026-09-26 小欧 - 鉴权：SSE 走原生 fetch 绕过 axios 拦截器，
-      //   token 必须由调用方显式传入（改前此处不传，config.token 恒 undefined → 聊天 401）。
-      token: getAccessToken() || undefined,
-    },
-    onStep,
-    onChunk,
-    onComplete,
-    onError,
-    onPaused,
-    onResumed,
-    onMerged, // 2026-09-28 小欧: 注入应答回调接线(设计[76] 6.14 实施回填) — 小欧-2026-09-28
-    onRetry,
-    onAuthorizationRequired, // 【v3.4新增 2026-06-09 小沈】
-    handleRejected // 小欧 2026-09-17 会审V3: 原 onDenied 位传 undefined 占位已删(YAGNI 零消费者), 统一拒绝回调直传 — 小欧-2026-09-17
-  );
+  } = useChatStreamSession(sessionId, dispatchStreamEvent);
 
   // 从state中获取Refs
   const {
@@ -338,12 +357,8 @@ export const useChatStreaming = (
           `${DENIED_STORAGE_KEY}_${customSessionId ?? sessionId}`
         );
 
-        // 调用useSSE的sendMessage
-        return await sendStreamMessage(
-          content,
-          customSessionId,
-          contextLinkMode
-        );
+        // 调用 Store 的 sendMessage（内部先落盘 queued 再 POST）
+        await sendStreamMessage(content, customSessionId, contextLinkMode);
       } catch (error) {
         console.error('发送消息失败:', error);
         throw error;
@@ -356,28 +371,6 @@ export const useChatStreaming = (
       executionStepsRef,
       sessionId, // 2026-09-06 小欧 B2(6.4A): 删独立键依赖, 防陈旧会话闭包 — 小欧-2026-09-06
     ]
-  );
-
-  // 【小沈 2026-04-22】中断任务函数
-  // 2026-08-27 小欧 修复#51/B3: 参数名与底层disconnect对齐, 消除stopServer语义混淆
-  // 2026-08-27 小欧 修复#10: 底层 useSSE.disconnect 签名为 (manualDisconnect, clearStorage, onDisconnect)。
-  //   force 控制 manualDisconnect(禁止自动重连), stopServer 控制 clearStorage; 此前 force 被误当 clearStorage 传入, 语义反转。
-  // 编辑历史: 2026-08-28 小欧 - 修复: disconnect参数用局部变量避免字面量匹配翻转语义
-  const disconnectWithParams = useCallback(
-    (stopServer?: boolean, force?: boolean, callback?: () => void) => {
-      const manualDisconnect = force ?? false;
-      const clearStorage = stopServer ?? true;
-      disconnect(manualDisconnect, clearStorage, callback);
-      // 2026-09-06 小欧 B2(6.4A): 清 storage 时同步删被拒点名条独立键(与 steps 备份同清), 防陈旧残留 — 小欧-2026-09-06
-      if (clearStorage) {
-        sessionStorage.removeItem(`${DENIED_STORAGE_KEY}_${sessionId}`);
-      }
-      // 清理流式状态
-      streamingContentRef.current = '';
-
-      executionStepsRef.current = []; // 2026-08-28 小强 修复#14: disconnect时清executionStepsRef
-    },
-    [disconnect, streamingContentRef, executionStepsRef, sessionId] // 2026-09-06 小欧 B2(6.4A): sessionId 入依赖 — 小欧-2026-09-06
   );
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
@@ -519,17 +512,11 @@ export const useChatStreaming = (
   return {
     // 流式状态
     isReceiving,
-    setIsReceiving:
-      setIsReceiving ||
-      ((_: boolean) => {
-        /* no-op */
-      }),
     executionSteps,
     currentResponse,
 
     // SSE操作
     sendMessage,
-    disconnect: disconnectWithParams,
     clearSteps,
     serverTaskId: serverTaskId || null,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传

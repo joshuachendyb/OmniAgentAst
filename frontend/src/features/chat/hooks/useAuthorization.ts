@@ -13,10 +13,21 @@
 // 编辑历史: 2026-09-18 小欧 - 设计稿实施: 组装 AuthorizationRequest 新增 content 字段(弹窗原因, 后端 ConfirmSpec.content 透传) — 小欧-2026-09-18
 // 编辑历史: 2026-09-19 小欧 - confirm_id已失效静默处理: 后端超时清理/重复confirm返回"not found/already processed"时仅log不弹toast(良性竞态) — 北京老陈驱动
 // 编辑历史: 2026-09-19 小欧 - P-005契约化(北京老陈批准): confirm_id失效判定改读后端稳定code字段confirm_stale(替代4关键词字符串includes匹配, 消除"后端message变更即前端失效"脆弱链) — 小欧-2026-09-19
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.15: HITL 单源化——71行 window 双监听 effect 换 Store.pendingAuthorization
+//   快照订阅(useChatStreamSession); 同confirmId去重/覆盖旧请求先confirm(false)/auto_confirm四态/parseTimeout
+//   全保留; Store 置空即关弹窗(S1 放行链路); 用户 confirm/cancel 补 acknowledgeAuthorization 防重弹 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 01:05:17 小欧 - 删本文件内"二次授权覆盖旧 confirmId 先 confirm(false)"分支(原 :69-72),
+//   该职责下沉到 Store 唯一 owner: chatStreamTransport.ts onAuthorizationRequired(覆写发生处)。
+//   根因(BUG-14 真实退化, 非风格改动): 同一 SSE 流内连发两帧 paused 时 Store 同批 commit,
+//   React 只渲染末帧 → effect 里的 pendingRef 镜像拿不到中间帧, 中间 confirm_id 从未
+//   confirm(false), 静默泄漏到后端等自身超时(正是 2026-09-02 ⑭ 要防的);
+//   保留在此还会与 Store 重复发起 confirm(false)(DRY/SRP: 单一 owner) — 小欧-2026-09-30 01:05:17
 import React, { useCallback, useEffect, useState } from 'react';
 import { taskControlApi } from '../../../services/api/task.api';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
 import { handleError, ErrorType } from '@/services/error/handler';
+import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 
 // 2026-09-03 小欧 修复: 计时解析 —— 合法 0(禁倒计时)保留, 仅 NaN/负数兜底 60(改前 Number||60 把 0 兜成 60)
 const parseTimeout = (value: unknown): number => {
@@ -51,78 +62,51 @@ export function useAuthorization(sessionId: string | null) {
     };
   }, []);
 
-  // 【v3.4新增 2026-06-09 小沈】授权请求回调（从useChatCallbacks传递）
+  // [63] 5.15 v1.29：HITL 单源化——订阅 Store.pendingAuthorization（5.1 raw 载荷，5.3 收帧写入）
+  //   派发端双删：useChatCallbacks.ts onAuthorizationRequired window 派发 + sseParser.ts resumed 兜底派发
+  //   S1 超时放行(resumed) → 5.3 onResumed 置空 → 本快照 effect 关弹窗；用户 confirm/cancel → acknowledgeAuthorization
+  //   归一化复用原逻辑：auto_confirm 四态、parseTimeout、同 id 去重与拒旧全保留
+  const { pendingAuthorization } = useChatStreamSession(sessionId);
   useEffect(() => {
-    const handleAuthorizationRequired = (
-      event: CustomEvent<Record<string, unknown>>
-    ) => {
-      const rawData = event.detail;
-      if (!rawData?.confirm_id || !rawData?.tool_name) return;
+    if (pendingAuthorization) {
       const cur = pendingRef.current;
-      // 2026-09-03 小欧 修复: 同confirmId重放去重，不二次resolve
-      if (cur) {
-        if (cur.confirmId === rawData.confirm_id) return;
-        taskControlApi
-          .confirm(cur.confirmId, false, false)
-          .catch(() => undefined);
-      }
+      // 2026-09-03 小欧 修复: 同confirmId重放去重，不二次resolve（原 :63-64）
+      if (cur?.confirmId === pendingAuthorization.confirm_id) return;
+      // 2026-09-30 00:52 小欧 - [63] 5.15 归位：原此处"二次授权覆盖旧 confirmId 先 confirm(false)"
+      //   已下沉到 Store（chatStreamTransport.ts onAuthorizationRequired，覆写发生处）。
+      //   保留在 effect 会与 Store 重复发起 confirm(false)，且同批多帧时 effect 只能看到末帧，
+      //   本就漏拒中间请求 → 单一 owner 在 Store，hook 只负责归一化与展示（DRY/SRP）。
       const newRequest: AuthorizationRequest = {
-        confirmId: rawData.confirm_id as string,
-        toolName: rawData.tool_name as string,
-        params: (rawData.params ?? {}) as Record<string, unknown>,
-        content: (rawData.content as string) ?? '', // 7.4.3: 弹窗原因(后端 ConfirmSpec.content) — 小欧-2026-09-18
-        safetyLevel: (rawData.safety_level as string) ?? 'unknown',
+        confirmId: pendingAuthorization.confirm_id,
+        toolName: pendingAuthorization.tool_name,
+        params: (pendingAuthorization.params ?? {}) as Record<string, unknown>,
+        content: pendingAuthorization.content ?? '', // 7.4.3: 弹窗原因(后端 ConfirmSpec.content) — 小欧-2026-09-18
+        safetyLevel: pendingAuthorization.safety_level ?? 'unknown',
         // 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')
         autoConfirm:
-          rawData.auto_confirm === true ||
-          rawData.auto_confirm === 'true' ||
-          rawData.auto_confirm === 1 ||
-          rawData.auto_confirm === '1',
+          pendingAuthorization.auto_confirm === true ||
+          pendingAuthorization.auto_confirm === 'true' ||
+          pendingAuthorization.auto_confirm === 1 ||
+          pendingAuthorization.auto_confirm === '1',
         // 2026-09-03 小欧 修复: 合法 0(禁倒计时)不被 || 兜成 60; 仅 NaN/负数 兜 60
         trustPath:
-          typeof rawData.trust_path === 'string'
-            ? (rawData.trust_path as string)
+          typeof pendingAuthorization.trust_path === 'string'
+            ? pendingAuthorization.trust_path
             : null,
-        confirmTimeout: parseTimeout(rawData.confirm_timeout),
-        backendTimeout: parseTimeout(rawData.backend_timeout),
+        confirmTimeout: parseTimeout(pendingAuthorization.confirm_timeout),
+        backendTimeout: parseTimeout(pendingAuthorization.backend_timeout),
       };
       // 2026-09-03 小欧 北京老陈 BUG FIX: 同步写入pendingRef, 堵React useEffect子先父后致子auto-confirm读到旧confirmId
       //   根因: React effects执行顺序=子先父后, setAuthorizationPending→子effect先跑→读pendingRef→旧值→发旧ID
       pendingRef.current = newRequest;
       setAuthorizationPending(newRequest);
-    };
-
-    window.addEventListener(
-      'authorization_required',
-      handleAuthorizationRequired as EventListener
-    );
-    // 2026-09-03 小沈 缺陷修复: 监听resumed事件, 后端S1超时兜底放行后据此关弹窗(防御性兜底) — 小沈-2026-09-03
-    const handleAuthorizationResumed = (
-      event: CustomEvent<Record<string, unknown>>
-    ) => {
-      const resumedConfirmId = event.detail?.confirm_id as string | undefined;
-      if (!resumedConfirmId) return;
-      const cur = pendingRef.current;
-      if (cur && cur.confirmId === resumedConfirmId) {
-        setAuthorizationPending(null);
-      }
-    };
-    window.addEventListener(
-      'authorization_resumed',
-      handleAuthorizationResumed as EventListener
-    );
-    return () => {
-      window.removeEventListener(
-        'authorization_required',
-        handleAuthorizationRequired as EventListener
-      );
-      window.removeEventListener(
-        'authorization_resumed',
-        handleAuthorizationResumed as EventListener
-      );
-    };
-    // 2026-09-03 小欧 修复: 依赖改 [] 一次性注册, 不再随 authorizationPending 重建监听器(消闭包窗口)
-  }, []);
+    } else if (pendingRef.current) {
+      // [63] 5.15：Store 侧清空（onResumed S1 放行 / onRejected / acknowledge）→ 关弹窗
+      pendingRef.current = null;
+      setAuthorizationPending(null);
+    }
+    // [63] 5.15：依赖从 [] 改 pendingAuthorization——快照驱动，无监听器即无闭包窗口
+  }, [pendingAuthorization]);
 
   // 【v3.4新增 2026-06-09 小沈】授权确认处理
   // 2026-09-03 小欧/北京老陈 Bug修复: 弹窗立即消失+API后台fire-and-forget
@@ -148,6 +132,12 @@ export function useAuthorization(sessionId: string | null) {
       }
       // 立即关弹窗, 不等API
       setAuthorizationPending(null);
+      // [63] 5.15：同步清 Store.pendingAuthorization——否则切回页面快照 effect 重跑会重弹旧请求
+      //   （流侧 5.3 onResumed/onRejected 也会清，两路幂等；此处保证"用户已处理"即时生效）
+      if (sessionId) {
+        pendingRef.current = null;
+        chatStreamStore.acknowledgeAuthorization(sessionId);
+      }
       // API后台fire-and-forget — 成功/200+success False/网络500均走公用错误弹窗
       taskControlApi
         .confirm(confirmId, confirmed, trustSession)
@@ -157,7 +147,10 @@ export function useAuthorization(sessionId: string | null) {
             // 2026-09-19 小欧 P-005契约化(北京老陈批准): confirm_id失效判定改读后端稳定code字段,
             //   替代字符串includes匹配(改前4关键词脆弱, 后端message文案变更即前端失效) — 小欧-2026-09-19
             if ((res as { code?: string })?.code === 'confirm_stale') {
-              console.warn('[Authorization] confirm_id已失效(良性):', confirmId);
+              console.warn(
+                '[Authorization] confirm_id已失效(良性):',
+                confirmId
+              );
               return;
             }
             const err = (res as { error?: string })?.error ?? '确认失败';

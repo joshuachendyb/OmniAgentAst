@@ -11,6 +11,9 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2收尾(方案A): shared.executionStepsRef 维持从 chatStreaming 取,
 //   useChatCallbacks 不再需要 executionStepsRef(读点用 sseParser 三参、清空点归 useSSE.clearSteps) — 小欧-2026-09-10
 // 编辑历史: 2026-09-19 小欧: options加onSuccess回调, 透传useChatCallbacks(任务成功完成→清liveError) — 北京老陈驱动
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.9: 删 receivingSetterRef 中间层与其注入 effect,
+//   setIsReceiving 改直连 chatStreamStore.setReceiving(5.4 公开动作, 循环依赖已不复存在);
+//   taskControl.functions.disconnect 改 stop(Store.stop, 见 5.14) — 小欧-2026-09-29 21:37:55
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -29,9 +32,10 @@
  * @since 2026-04-24
  */
 
-import { useMemo, useRef, useEffect } from 'react';
+import { useMemo } from 'react';
 import { useChatState } from './useChatState';
 import { useChatCallbacks } from './useChatCallbacks';
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import type {
   InitializeSessionOptions,
   InitializeSessionResult,
@@ -172,10 +176,11 @@ export const useChatFacade = (options?: {
   const chatState = useChatState();
 
   // 2. 回调函数（始终加载）
-  // 2026-08-27 小欧 三堂会审: 透传setIsReceiving, 经ref注入解循环依赖
-  const receivingSetterRef = useRef<(v: boolean) => void>();
+  // [63] 5.9 v1.29：直连 Store——原 receivingSetterRef 解的是与 useChatStreaming 的循环依赖，
+  //   现 setIsReceiving 已是 Store 公开动作（5.4 setReceiving），循环不复存在（KISS：删中间层）
+  const storeSessionId = sessionId || chatState.sessionId;
   const chatCallbacks = useChatCallbacks(chatState, {
-    setIsReceiving: (v: boolean) => receivingSetterRef.current?.(v),
+    setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
     onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
   });
 
@@ -202,18 +207,15 @@ export const useChatFacade = (options?: {
   );
 
   // 3. 流式处理（始终加载，但可UI按需显示）
+  // [63] 5.9：调用形状不变；流状态与连接已常驻 Store（5.3/5.4），本层只拿快照与动作
   const chatStreaming = useChatStreaming(chatState, chatCallbacksWithError, {
     baseURL,
     sessionId: sessionId || chatState.sessionId,
   });
 
-  // 2026-08-27 小欧 三堂会审: 注入setIsReceiving到ref, 解循环依赖
-  useEffect(() => {
-    receivingSetterRef.current = chatStreaming.setIsReceiving;
-  }, [chatStreaming]);
-
   // 4. 会话管理（始终加载）
-  const chatSession = useChatSession(chatState, chatStreaming);
+  // [63] 5.18：streaming 参数收敛（session 内零消费）
+  const chatSession = useChatSession(chatState);
 
   // 5. 持久化（始终加载）
   const chatPersistence = useChatPersistence(chatState, chatStreaming);
@@ -238,7 +240,8 @@ export const useChatFacade = (options?: {
     setters: {
       setLoading: chatState.setLoading,
       setIsPaused: chatState.setIsPaused,
-      setIsReceiving: chatStreaming.setIsReceiving,
+      // [63] 5.14 连带：chatStreaming.setIsReceiving 已被 5.8 删除，改直连 Store
+      setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
     },
     states: {
       isPaused: chatState.isPaused,
@@ -250,9 +253,6 @@ export const useChatFacade = (options?: {
       hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
       waitTimerRef: chatState.waitTimerRef,
       isPausedRef: chatState.isPausedRef,
-    },
-    functions: {
-      disconnect: chatStreaming.disconnect,
     },
   });
 
@@ -298,7 +298,7 @@ export const useChatFacade = (options?: {
         executionSteps: chatStreaming.executionSteps,
         serverTaskId: chatStreaming.serverTaskId,
         currentResponse: chatStreaming.currentResponse,
-        setIsReceiving: chatStreaming.setIsReceiving,
+        setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
         setIsPaused: chatState.setIsPaused,
         setWaitTime: chatState.setWaitTime,
       },
@@ -391,7 +391,7 @@ export const useChatFacade = (options?: {
       chatStreaming.executionSteps,
       chatStreaming.serverTaskId,
       chatStreaming.currentResponse,
-      chatStreaming.setIsReceiving,
+      storeSessionId,
       chatState.isPaused,
       chatState.waitTime,
       chatState.setIsPaused,

@@ -13,7 +13,8 @@
 // 编辑历史: 2026-09-12 小欧 - 三堂会审修复: SSEConfig删taskId死字段(全仓无config.taskId消费点, useSSE只读baseURL/sessionId/token) — 小欧-2026-09-12
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 ClockSignals 信号打包类型(heartbeatTs/lastBizTsRef/lastDataTsRef) + UseSSEReturn 新增 waitClock 字段 - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 对齐设计: ClockSignals 移至 UseSSEReturn 前(与设计一致), 字段序 lastBizTsRef/lastDataTsRef/heartbeatTs, 注释改行内式 - 小欧-2026-09-17
-import type { ExecutionStep } from './execution';
+// 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.7: UseSSEReturn 接口整删（useSSE 已删/5.6，零消费者），
+//   ExecutionStep 导入随之失效删除；ClockSignals 保留（5.3/5.4 钟面信号与 5.5 waitClock 在用） — 小欧-2026-09-29 21:37:55
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
@@ -175,43 +176,9 @@ export interface ClockSignals {
 }
 
 /**
- * SSE Hook返回值
- */
-export interface UseSSEReturn {
-  isConnected: boolean;
-  isReceiving: boolean;
-  setIsReceiving?: (value: boolean) => void; // 【方案3】暴露setter用于中断时立即更新状态
-  executionSteps: ExecutionStep[];
-  executionStepsRef: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S2: 暴露 ref 供外部直接读取（必填，useSSE 总会返回）
-  currentResponse: string;
-  sendMessage: (
-    content: string,
-    sessionId?: string,
-    contextLinkMode?: 'linked' | 'independent'
-  ) => void;
-  disconnect: (
-    manualDisconnect?: boolean,
-    clearStorage?: boolean,
-    onDisconnect?: () => void
-  ) => void;
-  clearSteps: () => void;
-  serverTaskId?: string | null;
-  setServerTaskId?: (taskId: string | null) => void;
-  /** 重连状态 */
-  reconnectStatus: 'idle' | 'connecting' | 'reconnecting' | 'failed';
-  /** 手动重连 */
-  reconnect: () => void;
-  /** 任务元信息帧快照（usage/stats/final_stats/context_overview/truncated/startInfo/上下文摘要） */
-  metaFrames: TaskMetaFrames;
-  /** 2026-09-17 小欧 实施: 心跳等待感知钟面信号(业务静默/数据静默/心跳) — 小欧-2026-09-17 */
-  waitClock: ClockSignals;
-}
-
-/**
  * 错误类型分类
  * 【小强修复 2026-04-11】使用统一错误处理中心
- */
-export type SSEErrorType =
+ */export type SSEErrorType =
   | 'idle_timeout'
   | 'request_timeout'
   | 'network'

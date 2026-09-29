@@ -13,6 +13,8 @@
 // 2026-09-21 小欧 - 去重键由 errorType 改为 errorType+最终文案（同类不同因不再互相吞）
 // 2026-09-27 小欧 - ERROR_CONFIG_MAP 直接索引无 fallback 致白屏，收敛为唯一兜底口 getErrorConfig()；
 //   AUTH_401 文案由「API Key无效」改「访问口令无效」（张冠李戴）；AUTH_403 改兜底措辞
+// 2026-09-29 21:37:55 小欧 - getErrorConfig 加 export 供 [63] 5.3 传输层复用（唯一兜底口，不重建同义表）——
+//   原 useSSE 本地那份 ERROR_CONFIG_MAP 副本随 hook 删除，改由传输层直引本处（DRY：唯一同义表）— 小欧-2026-09-29 21:37:55
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
@@ -657,8 +659,13 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
  * 取错误配置（唯一兜底口）。未登记/空/null 一律降级为 UNKNOWN：
  * classifyError 会把后端 error_type 原样返回，直接索引会因缺键而 config.silent 抛 TypeError 白屏。
  * case: errorhandler-unknown-type.test.ts
+ * 2026-09-29 小欧: 改为 export — [63] 5.3 传输层需按 classifyError 结果查可重试性（原 useSSE 本地
+ *   ERROR_CONFIG_MAP 副本随 hook 删除），复用本唯一兜底口避免重建同义表（DRY，且直索引有白屏前科）
+ *   — 小欧-2026-09-29 21:37:55
  */
-function getErrorConfig(errorType: ErrorType | string | undefined | null) {
+export function getErrorConfig(
+  errorType: ErrorType | string | undefined | null
+) {
   return (
     ERROR_CONFIG_MAP[errorType as ErrorType] ??
     ERROR_CONFIG_MAP[ErrorType.UNKNOWN]
