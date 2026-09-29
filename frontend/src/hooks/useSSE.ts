@@ -91,6 +91,8 @@
 // 编辑历史: 2026-09-18 小欧 - 实施: onAuthorizationRequired 类型补 content?: string(与 sseParser/useChatCallbacks 契约一致, 弹窗原因透传) — 小欧-2026-09-18
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 6.14 实施回填): ①签名加 onMerged 回调参数;
 //   ②两处 processSSEData 调用透传 onMerged(原漏接线致 merged 事件解析后即丢弃, 提示条/高亮永不触发) — 小欧-2026-09-28
+// 编辑历史: 2026-09-29 小欧 - 修编译中断: :847 写成 _pendingMessage?.sessionId，
+//   而本文件的待发消息 ref 实名 pendingMessageRef，全仓无 _pendingMessage - 小欧-2026-09-29
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useStateWithRef } from './useStateWithRef'; // 小欧 2026-09-10 S14: state/ref 双写同步
 // import { message } from "antd";  // 已迁移到errorHandler统一处理
@@ -844,7 +846,11 @@ export const useSSE = (
         // 小欧 2026-09-10 S3: after_seq 改为 lastSeqRef.current + 1（续传从已处理最大 seq 的下一帧开始）
         // 小欧 2026-09-29: session_id 取 sessionId→config.sessionId→待发消息 三级兜底（原来只取
         //   sessionId，缺省时发空串 → 后端归属校验无从做，Journal 回放归属形同虚设）
-        const reconnectSessionId = sessionId || config.sessionId || _pendingMessage?.sessionId || '';
+        const reconnectSessionId =
+          sessionId ||
+          config.sessionId ||
+          pendingMessageRef.current?.sessionId ||
+          '';
         const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(reconnectSessionId)}&after_seq=${lastSeqRef.current + 1}`;
         console.log(
           `[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current + 1}`
