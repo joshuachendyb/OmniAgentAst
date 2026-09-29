@@ -180,7 +180,7 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple  # 2026-09-29 小欧: inject_rows 注解用 Tuple — 小欧-2026-09-29
 
 import httpx
 
@@ -976,6 +976,116 @@ def get_user_message_rows(session_id: str, timeout: int = 30) -> List[Dict[str, 
         return []
     _msgs = _data.get("messages") or []
     return [m for m in _msgs if isinstance(m, dict)]
+
+
+# ─── 活跃任务注入(INJ)共享断言组 ─────────────────────────────
+# 2026-09-29 小欧: INJ-01/02/03 三个 case 的注入断言逐字重复(取 task_id / 校验 merged 应答 /
+#   比对目标任务 / 行级绑定 / 锚不漂 / LLM 吸收证据), 全部收口到本模块 —— case 只留"发消息+编排",
+#   换 case 或改判据只改这一处(DRY/SRP/KISS-DIRECT, 禁 backward: 纯新增函数不改既有契约)。
+
+
+def extract_task_id(result: Dict[str, Any]) -> Optional[str]:
+    """从 send_chat 结果的 events 里取本任务 task_id(取 start 事件的 task_id) — 小欧 2026-09-29
+
+    注意: send_chat 返回 dict **无 task_id 键**, 只能从 events 推导。
+    """
+    for ev in result.get("events") or []:
+        if isinstance(ev, dict) and ev.get("type") == "start" and ev.get("task_id"):
+            return ev["task_id"]
+    return None
+
+
+def assert_injection_ack(res: Dict[str, Any], label: str) -> str:
+    """校验一次注入应答符合契约, 返回 merged_into_task_id 供后续比对目标任务 — 小欧 2026-09-29
+
+    覆盖: 有事件 / type=merged / 注入文案 / merged_into_task_id 非空 / 无 error / 未新开任务(无 start)。
+    """
+    types = [e.get("type") for e in (res.get("events") or [])]
+    print(f"[INJ] {label} type序列={types}, 耗时={res.get('total_time_ms', 0) / 1000.0:.2f}s")
+    assert res.get("events"), f"{label} 无任何 SSE 事件(MUST)"
+    ev = res["events"][0]
+    assert ev.get("type") == "merged", (
+        f"{label} 首事件应为 merged(注入应答), 实际 {ev.get('type')!r} — "
+        "若为 start 说明目标任务已结束(未命中活跃态), 场景未复现")
+    assert "已并入当前执行中的任务" in str(ev.get("content", "")), \
+        f"{label} 注入文案缺失(MUST): {ev.get('content')!r}"
+    tid = ev.get("merged_into_task_id")
+    assert tid, f"{label} merged 缺 merged_into_task_id(MUST): {ev!r}"
+    assert not res.get("has_error"), f"{label} 不应有 error(MUST): {res.get('error_events')}"
+    assert "start" not in types, f"{label} 注入不应新开任务, 事件序列={types}(MUST)"
+    return tid
+
+
+def assert_merged_point_to(acked_tids: List[Optional[str]], first_tid: Optional[str],
+                           labels: Optional[List[str]] = None) -> None:
+    """所有注入应答的 merged_into_task_id 必须等于目标任务 — 小欧 2026-09-29(仅判非空是弱断言)"""
+    assert first_tid, "未能从第一条 events 的 start 事件取到 task_id"
+    _labels = labels or [f"第{i + 2}条" for i in range(len(acked_tids))]
+    for _lbl, _t in zip(_labels, acked_tids):
+        assert _t == first_tid, f"{_lbl} merged_into_task_id 应等于 {first_tid}, 实际 {_t!r}"
+
+
+def assert_injected_rows_bound(rows: List[Dict[str, Any]], user_msg_ids: List[int],
+                              first_tid: str, labels: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """校验每条注入消息行都已绑定到目标任务(锁 bind_message_to_task) — 小欧 2026-09-29
+
+    同时返回这些注入行(供锚校验复用)。**不**校验首条行 task_id: 有注入时锚在最后一条注入行,
+    终态只 UPDATE 锚那一行, 首条行 task_id 恒 NULL(update_user_message_final 语义), 断言它会假红。
+    """
+    _by_id = {r.get("id"): r for r in rows}
+    _labels = labels or [f"第{i + 2}条" for i in range(len(user_msg_ids))]
+    _out = []
+    for _lbl, _uid in zip(_labels, user_msg_ids):
+        _r = _by_id.get(_uid)
+        assert _r is not None, f"找不到{_lbl}注入行(id={_uid}), 实际行 id={list(_by_id)}"
+        assert _r.get("task_id") == first_tid, \
+            f"{_lbl}注入行应绑定 {first_tid}, 实际 {_r.get('task_id')!r}"
+        _out.append(_r)
+    return _out
+
+
+def assert_injection_anchor_not_drifted(first_row: Dict[str, Any],
+                                        last_injected_row: Dict[str, Any]) -> None:
+    """锚不被覆盖(设计[76] 6.15 场景2③) — 小欧 2026-09-29
+
+    锚取本次 drain 最后一条 uid → 答案落在最后一条注入行; 首条行不应持有 response。
+    首条持有即说明锚漂到旧首轮消息。
+    """
+    assert first_row is not None, "找不到首条消息行"
+    assert not str(first_row.get("response") or ""), (
+        "首条行不应持有 response —— 答案应落在最后一条注入行(锚取最后一条 uid), "
+        "首条持有即锚漂到旧首轮消息")
+    assert str(last_injected_row.get("response") or ""), \
+        "最后一条注入行应持有 assistant 答案(锚取最后一条 uid)"
+
+
+def injection_llm_evidence(response: str, keywords: List[str]) -> Dict[str, Any]:
+    """LLM 是否真吸收注入内容 —— 只作证据记录, **不做断言** — 小欧 2026-09-29
+
+    依赖 LLM 是否照做, 非注入机制本身, 硬断言会 flaky(设计[76]: 机制测机制)。
+    """
+    _ev = {f"含{kw}": kw in (response or "") for kw in keywords}
+    _ev["答案字数"] = len(response or "")
+    return _ev
+
+
+def _fetch_injected_messages(session_id: Optional[str]) -> List[str]:
+    """取本会话的注入消息集(= /tasks 的 merged_inputs) — 小欧 2026-09-29 供记录表自推导
+
+    merged_inputs 即后端 list_session_tasks 按 task_id 归集的注入行内容(已排除任务登记首条),
+    正是"本轮插入了哪几条"的权威数据源; 非注入用例返回空。
+    """
+    if not session_id:
+        return []
+    _d = _api_get(f"/sessions/{session_id}/tasks")
+    if not _d or not isinstance(_d, dict):
+        return []
+    _out: List[str] = []
+    for _t in (_d.get("tasks") or []):
+        for _m in (_t.get("merged_inputs") or []):
+            if isinstance(_m, str) and _m:
+                _out.append(_m)
+    return _out
 
 
 # ─── 安全错误过滤 ────────────────────────────────────────────
@@ -2167,6 +2277,18 @@ def write_test_record(
     lines.append(f"| 测试编号 | {test_id} |")
     lines.append(f"| 任务描述 | {test_name} |")
     lines.append(f"| 用户命令 | `{user_input}` |")
+    # 2026-09-29 小欧 注入场景行(插几条/追加几行), 紧跟用户命令。
+    #   **自推导, case 零改动**: 注入消息集就是 /sessions/{id}/tasks 的 merged_inputs
+    #   (后端 list_session_tasks 按 task_id 归集注入行、已排除任务登记首条), 直接取即可;
+    #   非注入用例该字段为空 → 整块不渲染, 既有 76 用例输出零变化。
+    _injected = _fetch_injected_messages(result.get("session_id") or db.get("session_id"))
+    if _injected:
+        _n = len(_injected)
+        lines.append(f"| 注入消息数 | {_n} 条: {' / '.join(_injected)} |")
+        lines.append(
+            f"| 注入落库行数 | chat_user_message 追加 {_n} 行; "
+            f"会话共 {db.get('messages_count', '-')} 行(== 校验, 多一行即重复落库) |"
+        )
     lines.append(f"| 开始时间 | {start_str} |")
     lines.append(f"| 结束时间 | {end_str} |")
     lines.append(f"| 运行耗时 | {test_elapsed:.1f}秒 |")
