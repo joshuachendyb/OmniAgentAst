@@ -169,7 +169,17 @@
 | `query_chain_accumulation` | 上下文链 token 累计(按context_root聚合, 排除当前任务, 计算派生不落库) | conn, context_root_task_id, current_task_id | dict |
 | `fetch_session_user_message_pairs` | 重建"用户消息+其配对AI回答"有序列表(北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 读取; 每项为一条用户消息及可选配对的AI回答, ai_message_id=None表示AI未生成; 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps, 步骤经 load_execution_steps 另行读取; 2026-09-28 [76] 精确归属: JOIN 改 COALESCE(子查询 task_id=cum.task_id, 子查询 user_message_id=cum.id) 取 MAX(id), 注入行凭 cum.task_id 归任务、登记首条凭 cum.id 归任务, 删会话级模糊兜底防跨任务错配; 增返回 pair_task_id 供渲染层同任务判据) | conn, session_id, lower_id, upper_id | list |
 | `bind_message_to_task` | 把注入消息绑定到目标任务(执行期归属, 2026-09-28 [76] 6.5① 新增, 零 DDL 复用已有 task_id 列; WHERE id=? AND task_id IS NULL 保证不覆盖既有归属; 返回 bool=是否影响行, False 有两成因: 行不存在/task_id 已非 NULL, 调用方记 warning) | conn, user_message_id, task_id | bool |
-| `reconcile_orphaned_tasks` | 启动期僵尸任务收尾(2026-09-29 L0 新增, 零 DDL 零新状态值; 启动时把崩溃遗留的 status='executing' 残行一条 bulk UPDATE 改 failed + error_type='task_interrupted' + error_message(服务重启导致任务中断) + end_time, 病根: status 只由 agent_runner finally 改, 进程被 kill 时 finally 不执行致残行永久"执行中"; 幂等, duration 不补算(无真实完成耗时, 补算即编造)) | conn | int(受影响行数) |
+| `reconcile_orphaned_tasks` | 启动期僵尸任务收尾(2026-09-29 L0 新增, 零 DDL 零新状态值; 启动时把崩溃遗留的 status='executing' 残行改 failed + error_type=task_interrupted; 按 start_time<boot_iso 判归属以降低多 worker 误伤; 幂等, duration 不补算) | conn, boot_iso | int(受影响行数) |
+
+### 3.2.1 事件 Journal（stream_event_journal.py，P3 新增 — [63] 3.6.3）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `append` | 单事件落库 chat_stream_events（基线形态；合批挂载点见 [63] 3.5.2，帧 1:1、seq 逐帧） | task_id, session_id, seq, event_type, payload | None |
+| `read_after` | 回放读取 seq >= after_seq，同事务附终态存在性与归属 session_id；**列 seq 为 DB 权威序号**，payload 原样返回由调用方做类型闸门 | task_id, after_seq, limit=PAGE_SIZE(500) | (list[tuple[列seq, payload]], bool has_terminal, Optional[str] owner_session_id) |
+| `is_producer_alive` | producer 存活判定：最近事件在 window 内写入即视为活着(3.7 第5步"后端已重启"前提校正, 零 DDL 判据)；**未来时间戳不判活**(时钟回拨/脏数据，容差 5s)，否则死任务永不收敛 | task_id, window_seconds=60 | bool |
+| `get_persisted_task_status` | 终态权威 chat_tasks.status 唯一读取口（读 DB 持久行；与 task_state 的 get_running_task_status 读内存活跃表语义正交，严禁同名） | task_id | Optional[str] |
+| `retention_cleanup` | 清理已终态且超保留期的事件；活跃/非终态永不删，end_time 缺失的终态按 created_at 双倍保留期兜底 | retention_days | int(清理 task 数) |
 
 ### 3.3 沙箱执行闸门（handlers/sandbox_gate.py）
 

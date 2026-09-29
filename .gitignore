@@ -21,6 +21,9 @@ backend/reports/
 backend/report/
 backend/output/ # 2026-09-11 小欧: 后端pytest junit输出目录, 防测试产物入库 — 小欧-2026-09-11
 backend/notes/测试记录-*.md
+# e2e_helpers.RECORD_DIR 实际解析到项目根 notes/(非 backend/notes), 上行规则路径不匹配从未生效, 补正确路径 — 小欧 2026-09-29
+notes/测试记录-*.md
+backend/e2etests/output/  # 后端E2E pytest junit/stdout/stderr 产物目录, 可重跑再生 — 小欧 2026-09-29
 frontend/src/tests/
 
 # logs & temp
