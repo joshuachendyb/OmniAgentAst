@@ -1,4 +1,12 @@
-﻿v1.0.7
+﻿v1.1.0
+更新时间: 2026-09-29 09:18:58 - 小欧-2026-09-29
+## v1.0.7以来 变更汇总(121个commit: docs57/fix39/test19/feat4/refactor1/doc1) - 小欧-2026-09-29
+[2026-09-29 09:18:58 小欧] 范围=v1.0.7以来全部commit(共121个); 主线: [72]设置界面API Key链路12章实施+[72]第九章统一token鉴权+[75]密钥与地址整改+[76]活跃任务注入落地+[63]会话页方案定版+[77]后端流程解析; MINOR bump v1.0.7→v1.1.0（新功能：统一鉴权/注入机制/保存栏联动/掩码两键契约，北京老陈定版1.1.0）
+- feat(4): [72]12章API Key链路实施(d498f0244); ③区改动接入底部保存栏+按钮状态化(1cedc3587); [76]活跃任务注入落地inbox合并存量清理展示收敛(9cd53e1b9); merged注入应答前端展示链(4949bb797)
+- fix(39): 掩码契约收敛{configured,masked}两键(mask_secret_value一次生成); api_token→access_token改名全链(配置键/环境变量/响应字段); appearance→前端; range_→range; 鉴权判定顺序重排设口令仅本机403+回环伪造fail-closed+forwarded同源注入; 口令状态结论字段; 登录页五状态机; INJ-01/02/03断言同步merged; 探活fail-closed+超时3000→300; logging镜像队列防冻结; settings_service range_键名修正; BUG-B/C/D/E/F/G全收敛
+- test(19): 后端INJ-01/02/03+reconnect/PAR E2E; 前端fre2e批量同步+E2E基建(globalSetup/storageState/双tsconfig/live隔离harness/隔离三件套); E2E从单测主跑隔离又纳入
+- refactor(1)+docs(58): 全仓注释精简去编号前缀(约50个, 零代码改动, AST核验); [72]v3.6→v3.9确立问题决策档案; 新建[75]整改实施报告v1.0→v2.0; [76]设计v1.0→v1.11+10轮会审报告+后端流程解析[77]; [63]v1.30~v1.32; README升v1.0.5鉴权部署安全; FUNCTIONS函数簿同步; 测试记录入库
+v1.0.7
 更新时间: 2026-09-26 00:29:20 - 小欧-2026-09-26
 ## v1.0.6以来 变更汇总(19个commit: docs15/fix3/feat1) - 小欧-2026-09-26
 [2026-09-26 00:29:20 小欧] 范围=v1.0.6以来全部commit(共19个); 主线: [70]ConnectionScope连接池统一所有者14文件落地实施+BUG-A/BUG-B修复+日志链准确性整改+[63]会话页实时step跨页不中断方案v1.14~v1.21定版+[71]模型池与任务内模型切换完整设计方案v1.1; 注: 19个commit全部为小欧提交(docs15/fix3/feat1), 上一版本v1.0.6已含小健本轮6个提交(模型排序+UI布局+context_limit上限+参数范围单源+按钮改名+橘红按钮); PATCH bump v1.0.6→v1.0.7
