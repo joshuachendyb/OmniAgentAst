@@ -98,13 +98,9 @@ def console_put(msg: str) -> None:
 class ConsoleMirrorHandler(logging.Handler):
     """把 logging 记录投递到控制台镜像队列(非阻塞) — 小欧 2026-09-29
 
-    存在的理由: 原 shared_handler 用 logging.StreamHandler 直写 stderr, 与本模块的
-    console_put 是**两条并行的控制台通道**, 后者安全前者不安全 —— 阻塞型 stderr(满管道/
-    控制台被选中)会让 StreamHandler.emit() 永久阻塞, 且 Handler.handle() 持锁,
-    连带把事件循环线程一起锁死(2026-08-30 print 通道已修, logging 通道漏网, 30 天后复发)。
-
-    emit() 只做入队(put_nowait 满则丢), 实际写 stdout 由既有 daemon worker 执行,
-    事件循环线程永不因日志 I/O 阻塞。控制台仅镜像, 权威日志在文件 handler, 丢弃无影响。
+    替换 shared_handler 原用的 logging.StreamHandler(直写 stderr)。与 console_put 同理:
+    同步写 stdout/stderr 遇管道满或控制台卡顿时会阻塞, 且经 Handler.handle() 上锁后
+    连带冻结 asyncio 事件循环线程 —— 与 2026-08-30 print 通道同病根, 当时漏掉 logging 通道。
     """
 
     def __init__(self, level: int = logging.WARNING) -> None:

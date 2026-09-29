@@ -10,6 +10,7 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 # 2026-07-17 - 小欧 - 日志会话维度隔离: 通过 contextvars(context.py) + SessionFilter 将 session_id 注入每条日志记录, formatter 增加 %(session_id)s 字段; 保持全局单例 handler 不变(不破坏 2026-07-11 的 Windows rename 锁竞争修复), 多会话日志可按 session 过滤且不引入多文件描述符, 功能零退化
 # 2026-07-26 - 小欧 - setup_logger.py → shared_handler.py 改名（名实相符: 核心是共享 handler 而非 setup_logger 函数）
 # 2026-07-30 - 小沈 - 从 task_context.py 迁入 session_id ContextVar: 新增 _session_id_var + set_session_id(); SessionFilter 改为直接引用 _session_id_var 消除延迟导入
+# 2026-09-29 - 小欧 - 控制台 handler 换掉同步 logging.StreamHandler(直写 stderr), 改用 ConsoleMirrorHandler(投递队列, 非阻塞): 同一病根第二个入口, 同步写 stderr 阻塞时持 handler 锁连带冻结事件循环线程  小欧-2026-09-29
 
 import logging
 from contextvars import ContextVar
