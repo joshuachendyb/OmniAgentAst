@@ -153,6 +153,11 @@ export const ERROR_TYPE_LABELS: Record<string, string> = {
   agent_operation_error: '智能体异常',
   // 小欧 - 2026-09-26: 补 config_error 中文标签（原缺，formatErrorType 会显示英文）
   config_error: '配置错误',
+  // 小欧 - 2026-09-29: 补 [63] P3 Journal 四个 error_type 中文标签（原缺，界面直接显示英文枚举）
+  task_interrupted: '任务已中断（服务重启，不会自动续算）',
+  task_state_incomplete: '任务记录不完整',
+  persistence_gap: '事件不完整（部分过程无法回放）',
+  persistence_degraded: '事件持久化降级（部分过程刷新后不可恢复）',
 };
 
 // ========== Step 4: 合并内联style常量 ==========

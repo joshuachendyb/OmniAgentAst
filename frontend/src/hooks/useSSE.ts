@@ -842,7 +842,10 @@ export const useSSE = (
       if (isReconnect) {
         // 重连：GET /chat/stream/{task_id}?after_seq=N 续传，不重新发起对话 — 北京老陈 2026-07-12 小欧
         // 小欧 2026-09-10 S3: after_seq 改为 lastSeqRef.current + 1（续传从已处理最大 seq 的下一帧开始）
-        const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(sessionId || '')}&after_seq=${lastSeqRef.current + 1}`;
+        // 小欧 2026-09-29: session_id 取 sessionId→config.sessionId→待发消息 三级兜底（原来只取
+        //   sessionId，缺省时发空串 → 后端归属校验无从做，Journal 回放归属形同虚设）
+        const reconnectSessionId = sessionId || config.sessionId || _pendingMessage?.sessionId || '';
+        const url = `${config.baseURL}/chat/stream/${serverTaskIdRef.current}?session_id=${encodeURIComponent(reconnectSessionId)}&after_seq=${lastSeqRef.current + 1}`;
         console.log(
           `[SSE] [重连] GET ${url} after_seq=${lastSeqRef.current + 1}`
         );

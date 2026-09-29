@@ -257,6 +257,15 @@ const processSSEData = (
       onSeq(rawData.seq);
     }
 
+    // 小欧 2026-09-29: [63] P3 Journal 降级标记读取（后端 event payload 的 persistence_degraded）。
+    //   该帧 Journal 写入失败，故降级事实由后续帧粘滞携带；此处仅 console 观测（UI 提示通路待接，
+    //   不预埋无调用方的回调钩子——YAGNI）。
+    if ((rawData as { persistence_degraded?: boolean }).persistence_degraded === true) {
+      console.warn(
+        `[SSE] 事件持久化已降级(seq=${rawData.seq ?? '-'}): 本任务部分过程刷新/重连后不可完整回放`
+      );
+    }
+
     // 2026-09-17 小欧 实施: 业务帧到达(=后端仍在活跃产出) → 刷新业务时间基线;
     //   长输出期间 chunk 不断, 保证不被误判"业务静默"而升档(与心跳/断连语义正交);
     //   按 6.6#1 校核置于 seq 守卫之后, 仅通过守卫的真正新帧才刷新基线(过期帧不得掩盖真实静默) — 小欧-2026-09-17
