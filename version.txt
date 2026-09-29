@@ -1,4 +1,16 @@
-﻿v1.1.2
+﻿v1.1.3
+更新时间: 2026-09-29 21:32:03 - 小欧-2026-09-29
+## v1.1.2以来 变更汇总(1个commit: fix1) - 小欧-2026-09-29
+[2026-09-29 21:32:03 小欧] 范围=v1.1.2以来全部commit(共1个); 主线: 并发撞锁加固(病根: get_conn 只覆盖连接获取期与提交两处, 事务体 body 的 execute 阶段撞写锁直接抛出, 且静默降级致任务行压根没建立、UPDATE 静默影响0行且日志无痕; 实证 PAR-05 于 19:49 记四记 locked); 处置: database.atxn 增 retry_locked 有限重试(仅捕含 locked 的 OperationalError, 非锁错误与重试耗尽一律原样抛, 杜绝掩盖真实故障) + agent_runner 四处终态 UPDATE 启用重试 + ai_message_id 缺失防线(挡掉 append_step 撞 NOT NULL 抛穿成 Traceback 风暴) + storage._warn_zero_row 单一告警出口(三处 0 行判定收敛) + stream_orchestrator._setup_task_db 重试耗尽后向上抛走 router_error 不再静默起跑; 注: 本批含 .gitignore 90 行行尾翻转噪声(真实内容改动仅2增2删), 按北京老陈指示不处理; PATCH bump v1.1.2→v1.1.3(北京老陈2026-09-29令打tag)
+
+### 1.0.7 并发撞锁加固
+[撞锁] database.py: atxn 增 retry_locked(默认0=旧调用逐字不变) 有限重试, 退避 0.5/1/2s 与 get_conn L188/L206 同节奏(DRY), sleep 走 async 不占 to_thread 子线(KISS-DIRECT); 仅捕 sqlite3.OperationalError 且错误串含 "locked", 非锁 SQL 错误与重试耗尽一律原样抛(对齐 get_conn "为何不对 IntegrityError 重试" 的既判据); 仅由已证实暴露的并发热写路径显式开启, 杜绝全局行为扩大(YAGNI) — 小欧 2026-09-29
+[撞锁] agent_runner.py: _persist 增 ai_message_id is None 防线(落库失败 return + ERROR 留痕, 杜绝任务行未建立时 append_step 撞 NOT NULL 抛穿成 ERROR/Traceback 风暴, 与既有两处 `if ai_message_id is not None` 守卫同款风格 DRY); _persist/异常终态/守卫兜底/终态 UPDATE 四处启用 atxn(retry_locked=3), 终态 UPDATE 撞锁失败会致任务永久 executing, 严重性最高 — 小欧 2026-09-29
+[撞锁] storage.py: 新增 _warn_zero_row 单一告警出口, update_task/update_task_accumulation/update_session_accumulation 三处 0 行判定统一收敛(DRY/复用优先, 既有两条日志文案逐字保留) — 小欧 2026-09-29
+[撞锁] stream_orchestrator.py: _setup_task_db 启用 atxn(retry_locked=3), 重试耗尽与非锁异常向上抛走 router_error, 不再静默起跑(原 L595-59) — 小欧 2026-09-29
+[文档] FUNCTIONS.md: 3.3 数据库SDK atxn 签名同步 retry_locked, 版本历史补 v4.5 行(2026-09-29 20:49:50) — 小欧 2026-09-29
+
+v1.1.2
 更新时间: 2026-09-29 19:51:47 - 小欧-2026-09-29
 ## v1.1.1以来 变更汇总(15个commit: feat6/fix5/refactor1/chore1/docs2) - 小欧-2026-09-29
 [2026-09-29 19:51:47 小欧] 范围=v1.1.1以来全部commit(共15个); 主线: P3后端事件Journal交付(建chat_stream_events表+append/read_after/is_producer_alive/get_persisted_task_status/retention_cleanup五口, create_task_stream_buffer升生产唯一入口防双seq流撞主键, stream_orchestrator/agent_runner两路径统一注入journal_sink, 新增journal_reader回放兜底, 挂_start_journal_retention_task周期清理, 重连端点chat_stream_reconnect包_guarded在生成器体内兜回放异常转persistence_degraded, after_seq改Query(0,ge=0)禁负数, 前端ErrorDetail补task_interrupted等四个error_type中文标签+重连session_id三级兜底, L0僵尸收尾加boot_iso归属判据收窄为只改start_time早于本进程启动的executing残行) + 模型库元数据透传与Table化(解析层提升8字段并就地降级DTO, pricing真值取代id.includes(-free)猜免费, 单行Checkbox改Table承载四类元数据, 加5项筛选) + 设置页UI收窄(tabBarStyle.marginBottom归零+filterSearchWidth:160) + useSSE.ts修TS2552编译中断 + .gitignore补backend/testscompress/与notes/测试记录-*.md; 注: 本批含6条feat按铁规4.4应属MINOR, 北京老陈2026-09-29裁定按PATCH记v1.1.2; PATCH bump v1.1.1→v1.1.2(北京老陈2026-09-29令打tag)
