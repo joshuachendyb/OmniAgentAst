@@ -28,6 +28,9 @@
 #   同轮精简冗长注释（三堂会审叙事压缩为结论）。
 # 2026-09-27 小欧 - 启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
 #   forwarded_allow_ips 注入"与"白名单含全网通配"告警。只观测，不改判定逻辑。
+# 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 在 db.init 后调
+#   storage.reconcile_orphaned_tasks，收尾崩溃遗留的 executing 残行。业务逻辑在 storage，
+#   本文件只一行调用 — 小欧-2026-09-29
 import sys
 import asyncio
 from typing import Optional
@@ -70,6 +73,7 @@ from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.config import get_config
 from app.services.task.task_registry import cleanup_expired_tasks
+from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
 from app.db import db
 
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
@@ -250,6 +254,12 @@ async def startup_event():
     _t0 = _time.time()
     db.init()
     logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")
+    # L0 僵尸任务收尾：崩溃遗留的 executing 残行改终态，不让任务列表永远显示"执行中" — 小欧 2026-09-29
+    _t_recon = _time.time()
+    _recon_n = await db.atxn("chat", reconcile_orphaned_tasks)
+    if _recon_n:
+        logger.warning(f"[启动] 收尾僵尸任务 {_recon_n} 个（上次进程中断残留，已标 failed/task_interrupted）")
+    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t_recon:.3f}s")
     _t1 = _time.time()
     ensure_tools_registered()
     logger.info(f"[启动耗时] ensure_tools_registered: {_time.time()-_t1:.3f}s")
