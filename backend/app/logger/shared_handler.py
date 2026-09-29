@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from typing import Optional
 
 from app.logger.config import SafeRotatingFileHandler, LogConfig
+from app.logger.console_writer import ConsoleMirrorHandler  # 小欧 2026-09-29: 控制台镜像走队列, 禁同步写 stderr
 
 # ---- 会话上下文（session_id），供日志 SessionFilter 注入 — 小沈 2026-07-30 ————
 
@@ -104,12 +105,16 @@ def setup_logger(name: str) -> logging.Logger:
     file_handler.setFormatter(formatter)
     file_handler.setLevel(log_level)
 
-    # console handler — 每 logger 独立
-    console_handler = logging.StreamHandler()
+    # console handler — 2026-09-29 小欧 换掉 logging.StreamHandler(直写 stderr):
+    #   原写法与 app/logger/console_writer.py 的 console_put 是两条并行控制台通道, 后者非阻塞前者阻塞;
+    #   阻塞型 stderr(满管道/控制台被选中)会让 emit() 永久阻塞, 而 Handler.handle() 持 handler 锁,
+    #   连带把事件循环线程一起锁死 —— 实证 py-spy dump: 事件循环线程阻塞在 Handler.handle() 等锁,
+    #   纯内存不碰 DB 的 /metrics/health 也 12s 超时。同一根根因 2026-08-30 已在 print 通道修过一次
+    #   (console_writer 诞生), 本次补上漏网的 logging 通道。级别仍 WARNING, 控制台仅镜像, 权威在文件。
+    console_handler = ConsoleMirrorHandler(level=logging.WARNING)
     console_handler.setFormatter(
         _TruncateConsoleFormatter(fmt=_fmt, datefmt='%Y-%m-%d %H:%M:%S')
     )
-    console_handler.setLevel(logging.WARNING)
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)

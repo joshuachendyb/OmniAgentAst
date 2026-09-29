@@ -32,11 +32,23 @@
 #   ②乱码风险(未修, 记录在案): UTF-8 字节直写在 GBK(cp936) 控制台中文镜像乱码; pytest 捕获端正常,
 #     日常 uvicorn 开发窗口是显示退化, 是否分流环境待北京老陈决策。
 #   ③上条声称 9267 errors→0 真机实测本轮未复跑, 不背书 — 小健-2026-09-25
+# 2026-09-29 - 小欧 - 第二次根治(同一病根第二个入口, 距上次仅 30 天):
+#   病根: 上次只把 print 路径(log_and_print/裸print)接入本队列, **logging 的 StreamHandler 仍是
+#         同步写 stderr**; 且 logging 比 print 更毒 —— Handler.handle() 持 handler 锁调 emit(),
+#         一次 emit 阻塞即让**所有线程**排队等锁, 事件循环线程一并卡死。
+#   实证: py-spy dump 卡死现场 —— 线程(shell_engine 探测) 阻塞在 StreamHandler.emit() 写 stderr;
+#         事件循环线程阻塞在 Handler.handle() 等同一把锁; 纯内存不碰 DB 的 /metrics/health 同样
+#         12s 超时(证明是 loop 停摆而非 DB/线程池); 日志文件正常写入(排除文件 handler)。
+#   方案: 新增 ConsoleMirrorHandler(logging.Handler), emit() 走 console_put 入队 → 由既有 daemon
+#         线程输出, 事件循环永不被占; 队列满则丢弃(控制台仅镜像, 权威留文件), 与既有语义一致。
+#   规范: 复用优先(复用既有 console_put 队列与 worker, 零新通道零新线程) / SRP(投递通道归本模块,
+#         shared_handler 只做装配) / KISS-DIRECT(一个 Handler 子类) / 禁 backward(直替 StreamHandler)。
 """
 console_writer — 控制台镜像输出(事件循环线程零同步 stdout 写)
 编写人 小欧 2026-08-30
 更新人 小欧 2026-09-24 UTF-8 字节写 | 2026-09-25 三堂会审通过 | 2026-09-25 小健 复审修双换行+乱码风险记录
 """
+import logging
 import queue
 import sys
 import threading
@@ -81,3 +93,30 @@ def console_put(msg: str) -> None:
         _console_queue.put_nowait(msg + "\n")
     except queue.Full:
         pass
+
+
+class ConsoleMirrorHandler(logging.Handler):
+    """把 logging 记录投递到控制台镜像队列(非阻塞) — 小欧 2026-09-29
+
+    存在的理由: 原 shared_handler 用 logging.StreamHandler 直写 stderr, 与本模块的
+    console_put 是**两条并行的控制台通道**, 后者安全前者不安全 —— 阻塞型 stderr(满管道/
+    控制台被选中)会让 StreamHandler.emit() 永久阻塞, 且 Handler.handle() 持锁,
+    连带把事件循环线程一起锁死(2026-08-30 print 通道已修, logging 通道漏网, 30 天后复发)。
+
+    emit() 只做入队(put_nowait 满则丢), 实际写 stdout 由既有 daemon worker 执行,
+    事件循环线程永不因日志 I/O 阻塞。控制台仅镜像, 权威日志在文件 handler, 丢弃无影响。
+    """
+
+    def __init__(self, level: int = logging.WARNING) -> None:
+        super().__init__(level=level)
+        # 换行由 console_put 统一补(其内部拼 msg + "\n"), 此处终止符置空防双换行
+        # (2026-09-25 小健复审已踩过一次双换行坑, 勿重犯)
+        self.terminator = ""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            console_put(self.format(record))
+        except Exception:
+            # logging 约定 emit 不得抛异常(否则 handle() 连带炸); 镜像失败静默丢弃,
+            # 权威日志仍由 file handler 落盘
+            pass
