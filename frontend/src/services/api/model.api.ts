@@ -21,6 +21,8 @@
 //   ②RemoteModelsResponse 补 status_code?/category? 两字段（设计文档错误分类，前端据此分两套文案）
 //   ③新增 testConnection(provider, probeKey?) —— POST test-connection，body 传待测 key；
 //     刻意不用 GET query（query 会进浏览器历史与服务器 access log，明文 key 留痕）— 小欧-2026-09-26
+// 2026-09-29 小欧 - RemoteModelItem 补 6 字段：后端改为下发模型元数据(价格/上下文/能力/模态)，
+//   前端原靠 id.includes('-free') 猜免费，实测 OpenRouter 460 个命中 0 — 小欧-2026-09-29
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -72,6 +74,23 @@ export interface ModelMutationResult {
 export interface RemoteModelItem {
   id: string;
   owned_by?: string | null;
+  // 以下 6 项 2026-09-29 起由后端下发。此前只有 id/owned_by，前端靠 id.includes('-free')
+  // 猜免费，实测在 OpenRouter 460 模型上命中 0 个(它用 :free 不是 -free) — 小欧 2026-09-29
+  name?: string | null;
+  description?: string | null;
+  // 实测 OpenRouter 460 项全有值；agnes 等 provider 可能整个字段缺失
+  context_length?: number | null;
+  /** 每 token 单价字符串。免费判据 prompt==="0" && completion==="0" */
+  pricing?: Record<string, string>;
+  /** 声明为 unknown：远端未声明元素类型，交消费方 Array.isArray 收窄 */
+  architecture?: {
+    input_modalities?: unknown;
+    output_modalities?: unknown;
+    modality?: unknown;
+    instruct_type?: unknown;
+    tokenizer?: unknown;
+  };
+  supported_parameters?: string[];
 }
 
 export interface RemoteModelsResponse {
@@ -81,7 +100,7 @@ export interface RemoteModelsResponse {
   count: number;
   configured: string[];
   current_model?: string | null;
-  message?: string;
+  message?: string | null;
   // 小欧 - 2026-09-26: 错误分类与状态码随响应返回，前端据此分流
   // "地址问题"与"key 问题"两套文案（**不得统一显示"失败"**）。
   // **404/405/501 → endpoint_unsupported，刻意不判 key 无效**（部分 provider 无 /models 端点）。
