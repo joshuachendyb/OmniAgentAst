@@ -82,7 +82,7 @@
 #   SSE 实时性不受影响(stream_reader 独立协程按 seq 实时读), DB 落库由本层扫描完成(崩溃前已 publish 事件含
 #   异常路径 error/final 全量可读不丢); 双发修正(设计): 订阅体内已 publish 事件不再 _append(否则 SSE 双发
 #   违反 event_log 单一 seq), _append 仅保留自产事件(startinfo/异常final/守卫补发); 订阅体补 prompt-log
-#   log_step_yield(原 _append 内记录, publish 不记, 订阅侧补齐); buffer 缺省 create_stream_buffer ensure
+#   log_step_yield(原 _append 内记录, publish 不记, 订阅侧补齐); buffer 缺省 create_task_stream_buffer ensure
 #   (react_loop/react_step 需缓冲 publish) — 小欧-2026-09-06
 # 2026-09-06 小欧 4C: 终态 SSE 单发根治——publish 终态(final/final_stats)实时已被 stream_reader
 #   按 seq 读走(完整条), finally 统一补发的剥离(短信号)/统计条改为"覆写 publish 原位(保 seq)", 不再 _append
@@ -143,7 +143,7 @@
 #   改为本函数入参 outcome——_fs_outcome 仅在本函数外 finally 赋值, 闭包耦合潜在 NameError(free variable referenced
 #   before assignment), 现靠唯一调用点先赋值侥幸躲过; 改 outcome 消除闭包耦合(违 KISS-DIRECT/SLAP), 行为不变
 # 2026-09-13 小欧 - TDD 修复(行258-259): X2 删除标记注释改述——原称"L244-251 删除", 但 L244-248
-#   (缓冲缺省 ensure create_stream_buffer) 仍是活代码, 注释与实际矛盾误导读者; 改为仅述"长短判定/终态缓冲/
+#   (缓冲缺省 ensure create_task_stream_buffer) 仍是活代码, 注释与实际矛盾误导读者; 改为仅述"长短判定/终态缓冲/
 #   finally 覆写机制已删除", 明确缓冲 ensure 保留在役
 # 2026-09-17 小欧 - 统一拒绝事件 type="rejected": 行433 SSE集合新增 "rejected"(原 "user_rejected") - 小欧-2026-09-17
 # 2026-09-17 小欧 会审V3(#13): 行435 SSE仅转发集合注释更新(user_rejected 表述更正为已统一 rejected, 原注释过时) - 小欧-2026-09-17
@@ -160,6 +160,7 @@
 #   关闭语义由 base_service.close 三分支兜底(共享 lease 归还幂等/独占 aclose/单例 no-op) — 使用说明
 # 2026-09-28 - 小欧 - 活跃任务注入(设计文档[76] 6.4): 终态回填 _active_uid 加 uid>0 守卫,
 #   None/0/合成负id 一律回落 db_ops.user_msg_id 兜底 — 小欧-2026-09-28
+# 2026-09-29 小欧 - P3 步骤4([63] 3.6.5): import 改唯一入口+reclaim_memory_buffer; 直连兜底建 buffer 同样注入 journal_append sink(3.5.1 两路径统一); 300s 回收改 3.8 新名 — 小欧-2026-09-29
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -188,8 +189,9 @@ from app.services.task.task_registry import task_cleanup
 from app.tools import cleanup_shell_pool_by_task  # P5a: 从门面导入 — 小沈 2026-08-13
 from app.services.task.task_state import (
     running_tasks, running_tasks_lock,
-    agent_streams, create_stream_buffer, reclaim_stream_buffer,
+    agent_streams, create_task_stream_buffer, reclaim_memory_buffer,
 )
+from app.services.chat.stream_event_journal import append as journal_append   # [63] 3.6.5 直连兜底注入 Journal sink
 from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见G路径定级) — 小欧-2026-09-08
 from app.logger.prompt_logger import get_prompt_logger
 from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
@@ -266,7 +268,8 @@ async def run_agent_in_background(
     if buffer is None:
         # 4C(5.8.5): 缓冲缺省 ensure —— react_loop/react_step 在 run_react_cycle 内经 publish 直写 event_log,
         #   无缓冲时 react_loop 抛 RuntimeError; 此处确保既有直连入口(跳过 stream_orchestrator)亦可创建 — 小欧-2026-09-06
-        buffer = create_stream_buffer(task_id)
+        # [63] 3.6.5: 直连兜底同样注入 Journal sink（3.5.1 两路径统一，禁止裸调旧入口）— 小欧-2026-09-29
+        buffer = create_task_stream_buffer(task_id, session_id, journal_append)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
     # 12.2-C4: ai_message_id 局部初始化删除(参数即初值, eager注入) — 小欧 2026-08-21
@@ -767,7 +770,8 @@ async def run_agent_in_background(
 
             try:
                 loop = asyncio.get_event_loop()
-                loop.call_later(300, lambda: reclaim_stream_buffer(task_id))
+                # [63] 3.8 改名：只回收内存缓冲，不删除 Journal（reclaim_stream_buffer → reclaim_memory_buffer）
+                loop.call_later(300, lambda: reclaim_memory_buffer(task_id))
             except Exception as e:
-                logger.debug(f"reclaim_stream_buffer调度失败: {e}")
+                logger.debug(f"reclaim_memory_buffer调度失败: {e}")
 

@@ -2,10 +2,15 @@
 """
 Task 系统模块入口
 
+编辑历史:
+  2026-09-29 小欧 - [63] 3.8 同步导出名: get_task_status → get_running_task_status(读内存 running_tasks
+    活跃表; 与 stream_event_journal.get_persisted_task_status 读 DB 持久终态语义正交, 北京老陈裁定"绝不允许同名",
+    故导出名/docstring/__all__ 三处一并跟进) — 小欧-2026-09-29
+
 导出:
 - Registry: register_task, check_cancelled, check_paused, check_was_paused,
             set_cancelled, set_paused, set_resumed, set_was_paused,
-            get_cancel_request_time, get_task_status, is_task_running,
+            get_cancel_request_time, get_running_task_status, is_task_running,
             pop_task_field, get_task_field, cleanup_task, cleanup_expired_tasks
 - cancel_task: 取消任务
 - pause_task: 暂停任务
@@ -26,7 +31,7 @@ from app.services.task.task_registry import (
     set_resumed,
     set_was_paused,
     get_cancel_request_time,
-    get_task_status,
+    get_running_task_status,
     is_task_running,
     pop_task_field,
     get_task_field,
@@ -53,7 +58,7 @@ __all__ = [
     "set_resumed",
     "set_was_paused",
     "get_cancel_request_time",
-    "get_task_status",
+    "get_running_task_status",
     "is_task_running",
     "pop_task_field",
     "get_task_field",

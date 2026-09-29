@@ -57,7 +57,7 @@ from app.services.task.task_state import (
     check_cancelled,
     check_paused,
     check_was_paused,
-    get_task_status,
+    get_running_task_status,
     is_task_running,
     get_cancel_request_time,
     get_pause_event,

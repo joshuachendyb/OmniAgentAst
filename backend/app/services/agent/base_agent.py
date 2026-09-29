@@ -138,6 +138,6 @@ class BaseAgent(ABC):
         """直接从模块导入 — 小沈 2026-06-09 替代纯委托
         2026-08-20 - 小欧 - 11.2-B 增 start_time 透传(同源起点, stream_orchestrator→agent_runner→此处)
         收敛改动(同commit齐发): run_react_cycle 收敛普通 async(事件 publish 直写 event_log),
-        本透传链(async generator 逐条外发)退役, 缓冲由调用方 agent_runner 以 create_stream_buffer 保证, 直接 await 转发 — 小欧 2026-09-06"""
+        本透传链(async generator 逐条外发)退役, 缓冲由调用方 agent_runner 以 create_task_stream_buffer 保证, 直接 await 转发 — 小欧 2026-09-06"""
         return await _run(self, task, context, max_steps, task_id, start_time)
 
