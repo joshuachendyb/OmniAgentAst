@@ -12,7 +12,7 @@
 # 2026-08-16 - 小欧 - S2(10.1.7②-6/10.1.8 S2): 注册 token_usage_router(token 四维度查询 API, 新建 app/api/v1/token_usage.py), include_router 加 /api/v1 tags=token-usage
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): 启动 tip 两条 print→console_put(语义不变仅控制台, 非阻塞镜像), 事件循环线程零同步 stdout 写
 # 2026-09-20 - 小沈 - v4.19 Phase 2: 注册 settings_router/model_router（/api/v1/settings /api/v1/models）
-# 2026-09-21 - 小欧 - 对齐设计文档 9.3.1：model_router 挂载 tags "model"→"models"（文档字面）
+# 2026-09-21 - 小欧 - model_router 挂载 tags "model"→"models"（OpenAPI 分组标签）
 # 2026-09-21 - 小欧 - v4.20 单源收敛: 启动日志 LLM 配置改读 ai.model_ref（删扁平 ai.provider/ai.model）
 # 2026-09-22 小欧 - constants.py 配置化迁移：import DEFAULT_CORS_ORIGINS 改别名 + CORS 改读 tuning.network.cors_origins
 # 2026-09-23 小欧 - 键名去 tuning 前缀：tuning.network.cors_origins → network.cors_origins（系统组，与调优无关）— 小欧-2026-09-23
@@ -29,7 +29,8 @@
 # 2026-09-27 小欧 - 启动自检：startup_event 调 deps.warn_startup_checks()，对"未收到
 #   forwarded_allow_ips 注入"与"白名单含全网通配"告警。只观测，不改判定逻辑。
 # 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 调 storage.reconcile_orphaned_tasks, 收尾崩溃残留的 executing 残行(按 start_time<进程启动时刻判归属, 不误伤多 worker) — 小欧-2026-09-29
-# 2026-09-29 小欧 - P3 步骤7([63] 3.6.7): 挂 _start_journal_retention_task 清理超保留期的已终态 Journal; shutdown 同生命周期 cancel — 小欧-2026-09-29
+# 2026-09-29 小欧 - 挂 _start_journal_retention_task 定期清理超保留期的已终态事件；
+#   退出时同生命周期 cancel（存引用防 GC）— 小欧 2026-09-29
 import sys
 import asyncio
 from typing import Optional
@@ -248,19 +249,28 @@ def _start_cleanup_task() -> None:
 
 
 def _start_journal_retention_task() -> None:
-    """[63] 3.6.7 Journal 保留期清理（独立任务，绝不进请求链路 3.9；与 [70] drain 正交）"""
+    """Journal 保留期清理：独立后台任务，绝不进请求链路 — 小欧 2026-09-29"""
     global _journal_retention_ref
-    from app.services.chat.stream_event_journal import retention_cleanup
+    from app.services.chat.stream_event_journal import checkpoint_wal, retention_cleanup
+
     async def _loop() -> None:
         while True:
             try:
                 n = await retention_cleanup(get_config().get("tuning.live_front.journal_retention_days", 7))
                 if n:
                     logger.info(f"[Journal] 清理已终态过期事件 {n} 个 task")
-            except Exception as exc:            # 清理失败只 warning，不阻断主链路（3.9）
+            except Exception as exc:            # 清理失败只 warning，不阻断聊天主链路
                 logger.warning(f"[Journal] retention 清理失败: {exc}")
+            try:
+                # 顺带做一次 WAL checkpoint：自动 checkpoint 阈值约 1000 页，写够就同步一次，
+                # 实测会把单帧落库卡到 0.6~1.1s。挪到空闲期做，尖峰只留在清理那一刻
+                ck = await checkpoint_wal()
+                if ck:
+                    logger.info(f"[Journal] WAL checkpoint busy={ck.get('busy')} pages={ck.get('log')}/{ck.get('wal')}")
+            except Exception as exc:
+                logger.warning(f"[Journal] WAL checkpoint 失败: {exc}")
             await asyncio.sleep(3600)
-    _journal_retention_ref = asyncio.create_task(_loop())   # [63] 存引用防 GC（同 _cleanup_task_ref 模式）
+    _journal_retention_ref = asyncio.create_task(_loop())   # 存引用防 GC（同 _cleanup_task_ref 模式）
     logger.info("Journal 保留期清理任务已启动")
 
 
@@ -270,7 +280,7 @@ async def startup_event():
     import time as _time
     _t0 = _time.time()
     # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
-    # 避免同机多 worker/多实例启动时误伤另一进程正在跑的任务 — 小欧 2026-09-29
+    # 只收尾"本进程启动之前创建"的行：防御性护栏，防有人误起第二个后端进程时误伤对方任务 — 小欧 2026-09-29
     _boot_iso = get_local_iso_timestamp()
     db.init()
     logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")

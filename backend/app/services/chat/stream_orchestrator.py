@@ -178,14 +178,16 @@
 #   ⇒ 该会话后续每条消息都被 has_active_task_in_session 改道注入死任务，用户补完 key 重试仍
 #   卡死、只能重启后端。修法: 早退前 reclaim_stream_buffer + cleanup_task（与占位注册早退(:392)
 #   的差别是"本任务已注册成功"，彼时只回收缓冲、无任务可清）。
-# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复(设计文档[76] 6.6): ①新增 _bind_task_id — 注入成功即刻
+# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复: ①新增 _bind_task_id — 注入成功即刻
 #   回填 chat_user_message.task_id(执行期归属, 原仅终态回填致执行期列表/历史查不到); ②_build_injected_ack
 #   type retrying→merged(重试语义误用) + 携带 merged_into_task_id + 加 task_id 形参; ③两注入分支
 #   inject_message_to_task 传 _user_msg_id(随消息同行取真 uid) + bind + ack 传目标 task;
 #   ④_SSE_FORWARD_TYPES 加 "merged"(与 ALL_STEP_TYPES 双登记纪律)。降级语义扩展: 队列满/uid非法同样走新建。
 #   compliance: SRP/KISS-DIRECT/DRY/复用优先(复用 storage.bind_message_to_task 零新表)
 # 2026-09-28 20:18:31 小欧 三堂会审 F8: _bind_task_id 失败时增强日志(消息已入inbox, 终态回填将补绑) — 小欧-2026-09-28
-# 2026-09-29 小欧 - P3 步骤3b/5([63] 3.6.4+3.5第8条): 注入 journal_sink; 两处注入应答改经目标任务 buffer.publish 落 Journal 取 seq 再发 SSE(禁直 yield 绕过 publish), MetaStep 构造抽 build_merged_meta(DRY); 建 buffer 改唯一入口; reclaim 全改 3.8 新名; 新增 journal_reader 回放兜底 — 小欧-2026-09-29
+# 2026-09-29 小欧 - P3: 两条建 buffer 路径统一注入 journal_sink；注入应答改经目标任务
+#   buffer.publish 先落 Journal 取 seq 再发 SSE（禁直 yield 绕过）；新增 journal_reader 兜底回放
+#   — 小欧 2026-09-29
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -240,12 +242,8 @@ _agent_tasks: set = set()
 
 
 def build_merged_meta(task_id: str):
-    """[63] 3.5 第 8 条：注入应答的 MetaStep 构造（与 _build_injected_ack 同一语义，DRY 单一来源）
-
-    拆出本函数的原因：3.5 第 8 条要求注入应答**先落 Journal 再对 SSE 可见**，必须先拿到
-    可进 `buffer.publish` 的 dict（由格式器统一序列化），不能直接产 SSE 字符串绕过 publish。
-    调用方：publish 拿 dict 并回填 seq，再 `format_agent_sse` 产 SSE — 小欧 2026-09-29
-    """
+    """注入应答(merged 事件)的唯一构造来源。产 dict 而非 SSE 串：调用方要先把 dict 送进
+    目标任务 buffer.publish 落 Journal 拿 seq，再由格式器统一序列化发出 — 小欧 2026-09-29"""
     from app.services.agent.steps import MetaStep
     return MetaStep(
         step=0,
@@ -255,16 +253,6 @@ def build_merged_meta(task_id: str):
         wait_time=None,
         severity="info",
     )
-
-
-def _build_injected_ack(task_id: str) -> str:
-    """活跃任务注入成功应答 — 小欧 2026-09-20(三堂会审DRY修复): 前段注入与占位注册命中注入共用。
-    2026-09-28 小欧(设计文档[76] 6.6): type retrying→merged(重试语义误用, 前端曾渲染"🔄 重试"),
-    携带 merged_into_task_id 供前端定位目标任务; 修 BUG: 原返回 LLM 层 StreamChunk 被直接 yield
-    给 StreamingResponse, starlette 调 chunk.encode() 崩溃 → 只产 SSE 字符串。
-    2026-09-29 小欧([63] P3): 降级薄壳——MetaStep 构造已抽到 build_merged_meta(DRY 单一来源)，
-    本函数仅供"目标任务 buffer 已回收"的降级路径直发(3.5 第 6 步)，生产主路径改走 publish。"""
-    return format_agent_sse(build_merged_meta(task_id).to_dict())
 
 
 async def _bind_task_id(task_id: str, user_message_id: Optional[int]) -> None:
@@ -425,13 +413,16 @@ async def chat_stream_orchestrator(
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
                 await _bind_task_id(_active_tid, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28(设计文档[76] 6.6)
-                # [63] 3.5 第 8 条：注入应答先落 Journal 再对 SSE 可见（禁编排层直 yield 绕过 publish）
-                #   publish 内部 dict() 拷贝后才补 seq，故 Journal 那份带 seq（回放可见），
-                #   本请求直发的这份天然无 seq —— 不推进前端 lastSeqRef，不会与目标任务流抢 seq。
-                #   target buffer 已回收（终态竞态）→ 降级直发（3.5 第 6 步）
+                # 注入应答先落 Journal 再发 SSE：直 yield 绕过 publish 会让该帧不入库、
+                # 回放侧拿不到"消息已并入"。直发副本无 seq，不与目标任务流抢序号
                 _ack = build_merged_meta(_active_tid).to_dict()
                 _tgt_buf = get_stream_buffer(_active_tid)
-                await _tgt_buf.publish(_ack) if _tgt_buf else None
+                if _tgt_buf:
+                    await _tgt_buf.publish(_ack)
+                else:
+                    # 目标任务缓冲已回收：降级直发并打标，否则这帧没入库却看不出来
+                    _ack["persistence_degraded"] = True
+                    logger.warning(f"[Journal] 注入应答降级直发(目标任务缓冲已回收): target={_active_tid}")
                 yield format_agent_sse(_ack)
                 return
             # 注入失败(目标任务恰好终态/队列满/uid非法): 降级新建任务(下述正常路径), 不丢消息
@@ -445,13 +436,16 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] B-3竞态守卫命中(session={session_id}, 占位={_reg_res}, 本task={task_id}作废), 改道注入")
             _inj2 = await inject_message_to_task(_reg_res, user_input, _user_msg_id)
             if _inj2:
-                reclaim_memory_buffer(task_id)  # 本任务不启动, 回收预建缓冲防残留 [63] 3.8 改名
+                reclaim_memory_buffer(task_id)  # 本任务不启动, 回收预建缓冲防残留；只清内存不删 Journal
                 await _bind_task_id(_reg_res, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28
-                # [63] 3.5 第 8 条：同上，占位改道注入的应答同样经目标任务 buffer.publish 落 Journal
-                #   （publish 内部拷贝补 seq，直发副本天然无 seq，不与目标任务流抢 seq）
+                # 占位改道注入：同前，应答先经目标任务 publish 落 Journal 再发
                 _ack2 = build_merged_meta(_reg_res).to_dict()
                 _tgt_buf2 = get_stream_buffer(_reg_res)
-                await _tgt_buf2.publish(_ack2) if _tgt_buf2 else None
+                if _tgt_buf2:
+                    await _tgt_buf2.publish(_ack2)
+                else:
+                    _ack2["persistence_degraded"] = True   # 缓冲已回收，降级直发并打标
+                    logger.warning(f"[Journal] 占位改道应答降级直发(目标任务缓冲已回收): target={_reg_res}")
                 yield format_agent_sse(_ack2)
                 return
             # 极端: 占位任务恰在守卫命中与注入之间终态(已清出活跃集) → 重试注册(此时守卫应放行), 消息仍不丢
@@ -632,7 +626,7 @@ async def chat_stream_orchestrator(
         if _session_client is not None and not _snapshot_handed_to_runner:
             # 未交接 runner 的快照统一单点归还(lease 随之 release 归还本代池);
             #   异常/断连/取消/create_task 失败等全部路径经此 finally, 不逐路径 close(DRY);
-            #   try/except 与 3.13 runner 同款: 独占池 aclose 抛错也不得吞掉根因/挡住 ContextVar reset — 小欧 2026-09-25
+            #   try/except 与 agent_runner 的关池同款: 独占池 aclose 抛错也不得吞掉根因/挡住 ContextVar reset — 小欧 2026-09-25
             try:
                 await _session_client.close()
             except Exception as _sce:
@@ -744,8 +738,8 @@ _JOURNAL_POLL_FLOOR_SECONDS = 2.0      # 等待轮询下限，实际取 max(该�
 async def _journal_producer_alive(task_id: str, cursor: int) -> bool:
     """判定 Journal 的 producer 是否还活着：新事件已出现，或最近写入仍在活跃窗口内。
 
-    3.7 第 5 步把"非终态"直接等同于"后端已重启"，隐含单进程假设；多 worker 或慢任务下
-    会误杀仍在跑的任务。零 DDL 判据（不新增表/列），委托 journal.is_producer_alive 单一职责判定。
+    3.7 第 5 步把"非终态"直接等同于"后端已重启"，但那只是必要条件：仍在跑、只是长时间无新事件
+    （慢思考/HITL 静默/工具长耗时）时也会误判。零 DDL 判据，委托 journal.is_producer_alive。
     """
     if await is_producer_alive(task_id, int(_JOURNAL_ALIVE_WINDOW_SECONDS)):
         return True
@@ -772,7 +766,7 @@ async def journal_reader(task_id: str, session_id: str, after_seq: int) -> Async
     while True:
         events, has_terminal, owner = await read_after(task_id, cursor, PAGE_SIZE)   # 显式传，与下方页满判定同一旋钮
         if not owner_checked and owner and session_id and owner != session_id:
-            # 归属校验：Journal 行自带 session_id，与请求不符即拒（3.7 一致性要求）
+            # 归属校验：事件行自带 session_id，与请求不符即拒（防知道 task_id 就能读他人会话流）
             logger.warning(f"[Journal] 重连归属不符(task={task_id}, 请求session={session_id}, 归属session={owner})")
             yield create_error_response(error_type="not_found", error_message="任务不存在或已过期")
             return
@@ -794,19 +788,18 @@ async def journal_reader(task_id: str, session_id: str, after_seq: int) -> Async
             if skipped:
                 logger.warning(f"[Journal] task={task_id} 跳过 {len(skipped)} 个不可转发事件 seq={skipped[:10]}")
             cursor = expected                                 # 列 seq 权威 → 游标只增不减，不会原地打转
-            if len(events) >= PAGE_SIZE:                           # [63] C10 修：只按"页不满=读完"终止
-                continue                                            #   页满 → 继续翻页
-        # 已追平（无新事件 或 最后一页不满）：按 3.7 第 5/6 步做终态判定
-        if has_terminal:                                            # [63] C11 修：终态 seq < cursor，回放完毕正常收尾
-            return                                                  #   不得误报 task_state_incomplete
+            if len(events) >= PAGE_SIZE:                      # 只按"页不满 = 读完"终止，不按帧数猜
+                continue                                     # 页满 → 继续翻下一页
+        # 已追平（无新事件，或最后一页不满）：查权威终态决定怎么收尾
+        if has_terminal:                                     # 终态 seq 可能 < cursor（前端已收完并刷新追平），
+            return                                           # 此时回放已毕，正常收尾，不得误报"终态事件缺失"
         if status in ("completed", "failed", "cancelled"):
             yield create_error_response(error_type="task_state_incomplete",
                                         error_message="任务终态事件缺失，禁止伪造完成")
             return
         if await _journal_producer_alive(task_id, cursor):
-            # 3.7 第 5 步"后端已重启"的前提是 producer 已死。Journal 仍在增长说明 producer 活着
-            # （多 worker / 慢任务），此时报 task_interrupted 会误杀活跃任务 → 发心跳继续等。
-            yield ": ping\n"        # 与内存路径同格式(带换行)，刷新前端 IDLE_TIMEOUT=60000 空闲计时
+            # 仍在跑、只是暂时无新事件（慢思考/HITL 静默/工具长耗时）：发心跳继续等，不误判已死
+            yield ": ping\n"        # 带换行，刷新前端 IDLE_TIMEOUT=60000 空闲计时
             await asyncio.sleep(max(_JOURNAL_POLL_FLOOR_SECONDS,
                                     get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)))
             status = await get_persisted_task_status(task_id)   # 等待期间可能翻终态，下轮用新值判定
@@ -822,7 +815,8 @@ async def chat_stream_reconnect_orchestrator(
     """SSE 重连编排：读同一任务的流态缓冲，不启动新 agent — 自 openai.py 迁入 — 小欧 2026-08-13"""
     buffer = get_stream_buffer(task_id)
     if not buffer:
-        # [63] 3.6.4：内存未命中 → Journal 兜底（300s 后 / 后端重启后），错误事件由 journal_reader 按 3.7 产出
+        # 内存未命中 → 改从 Journal 回放（结束超 300 秒、或后端重启后内存已丢）；
+        # 错误事件由 journal_reader 按其六种结局产出
         logger.info(f"[Journal] 重连走回放兜底(task={task_id}, after_seq={after_seq}, session={session_id or '-'})")
         async for chunk in journal_reader(task_id, session_id or "", after_seq):
             yield chunk

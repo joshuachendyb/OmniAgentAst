@@ -1,10 +1,8 @@
-# backend/app/services/chat/stream_event_journal.py
-# 编辑历史:
-#   2026-09-29 小欧 - 新建([63] 3.6.3): append / read_after / get_persisted_task_status / retention_cleanup
-#     （SQLite 事件流水，与 httpx 池正交）。P3 步骤2 落地，照 3.6.3 代码块逐字实施。
-#     零 DDL 前提：chat_stream_events 表由 db_initializer 建（3.6.1），本模块只做读写 — 小欧-2026-09-29
+# 事件 Journal：SSE 事件的持久流水（落库/回放/判活/读终态/清理），供内存缓冲回收或后端重启后回放
+# SQLite，与 LLM 的 httpx 池正交。表由 db_initializer 建，本模块只读写、零 DDL — 小欧 2026-09-29
 import json
 from datetime import datetime, timedelta
+from typing import Optional
 from app.db import db
 from app.services.chat.storage import get_task_detail
 from app.utils.json_utils import safe_json_dumps   # 复用 SafeJSONEncoder: 裸 json.dumps 遇不可序列化值会整帧丢失
@@ -60,10 +58,9 @@ async def get_persisted_task_status(task_id: str):
 
 
 async def is_producer_alive(task_id: str, window_seconds: int = 60) -> bool:
-    """producer 存活判定：最近一条事件在 window 内写入即视为活着（3.7 第5步"后端已重启"的前提校正）。
-
-    3.7 原文把"task 非终态"直接等同于"后端已重启"，隐含单进程假设；多 worker / 慢思考时
-    会误杀仍在跑的任务。此处零 DDL 判据：Journal 最近写入时间落在窗口内 = producer 活着。
+    """产出方存活判定：最近一条事件的写入时间在 window 内即视为活着。
+    非终态不等于已停摆——任务仍在跑、只是长时间无新事件（慢思考/HITL 静默/工具长耗时）
+    时也会这样，误判会中断回放 — 小欧 2026-09-29
     """
     def _q(conn):
         row = conn.execute(
@@ -81,12 +78,25 @@ async def is_producer_alive(task_id: str, window_seconds: int = 60) -> bool:
     return -_CLOCK_SKEW_TOLERANCE_SECONDS <= age < window_seconds
 
 
+async def checkpoint_wal() -> Optional[dict]:
+    """WAL checkpoint（PASSIVE）：把 WAL 里的页回写主库并截断
+
+    自动 checkpoint 阈值约 1000 页，写够就同步做一次，实测会把单帧落库卡到 0.6~1.1s。
+    挪到保留期任务（每小时）里做，尖峰只落在清理那一刻。
+    PASSIVE 不阻塞其他连接：忙时返回 busy=1 并跳过，不与写入抢锁。
+    """
+    def _q(conn):
+        return conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+    row = await db.atxn("chat", _q)
+    return dict(row) if row else None
+
+
 async def retention_cleanup(retention_days: int) -> int:
     """清理已终态且超保留期的事件。活跃/非终态永不删；end_time 缺失的终态任务按 created_at 双倍保留期兜底清理"""
     days = int(retention_days)   # 容忍 yaml 写成 "7"；非数值由 settings range 闸门在配置加载期拦
     def _q(conn):
-        # [63] E19 修复：isoformat() 全精度，与 get_local_iso_timestamp()（datetime.now().isoformat() 带微秒）
-        # 存储格式严格一致；原 timespec="seconds" 截断微秒会令同秒边界字符串比较误判（end_time 微秒位被丢）
+    # 全精度 isoformat()：与 get_local_iso_timestamp() 存储格式一致；timespec="seconds"
+    # 截微秒会让同秒边界的字符串比较误判 — 小欧 2026-09-29
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         fallback = (datetime.now() - timedelta(days=days * 2)).isoformat()
         rows = conn.execute(

@@ -8,7 +8,10 @@
 #   seq=len与append间无await点不会协程插队, 属防御性加固零行为变化)
 # 2026-09-13 - 小欧 - TDD文案: 改述删除已退役 _append 引用——publish 是 event_log
 #   唯一写入口(agent_runner _publish → buffer.publish 同源), _append 全仓已无定义(09-06 退役), 扫码注释残留清理
-# 2026-09-29 小欧 - P3 步骤3([63] 3.6.2/3.8): 增 logger+publish_lock; create_stream_buffer 升唯一入口 create_task_stream_buffer(带 sink, 并发双建先到者胜, 3 次重试后 degraded 但实时流不中断), 旧入口降 sink=None 薄壳; reclaim→reclaim_memory_buffer; get_task_status→get_running_task_status(读内存活跃表, 与 journal 读 DB 版绝不同名) — 小欧-2026-09-29
+# 2026-09-29 小欧 - 增 publish_lock（同一任务序号分配与落库不并发交叉）；
+#   create_stream_buffer 升为唯一入口 create_task_stream_buffer(带落库能力)，旧入口降纯内存薄壳；
+#   reclaim_stream_buffer → reclaim_memory_buffer(300 秒只回收内存，不删 Journal)；
+#   get_task_status → get_running_task_status(读内存活跃表，与读数据库终态的那只不同名) — 小欧 2026-09-29
 """
 task_state — 运行态任务数据存储 + 只读查询
 
@@ -86,8 +89,7 @@ def create_task_stream_buffer(task_id: str, session_id: str, journal_sink=None) 
     if journal_sink is None:
         return buf
 
-    # 降级粘滞标志：本 buffer 上一帧落库失败后，后续帧 payload 带 persistence_degraded 随帧落库，
-    # 使降级事实可被回放侧看到（失败帧自身写不进 Journal，不能只打在它身上）— [63] 3.5 第 6 步
+    # 降级粘滞：上一帧落库失败后由后续成功帧携带标记，否则回放侧看不到（失败帧自己写不进库）
     state = {"degraded": False}
 
     async def _journal_write_and_append(d: dict) -> int:
@@ -113,7 +115,8 @@ def create_task_stream_buffer(task_id: str, session_id: str, journal_sink=None) 
         return d["seq"]
 
     async def _publish_with_journal(step_dict: dict) -> int:
-        # 持 publish_lock 而非 buffer.cond：DB await 不阻塞 SSE reader（3.5 第 3 步）
+        # 持任务级 publish_lock 而非读者用的 cond：落库的 await 期间不占读者的锁，否则 SQLite
+        # 一慢，正在读的 SSE 连接会被一起卡住
         async with buf.publish_lock:
             d = dict(step_dict)
             d["seq"] = len(buf.event_log)

@@ -158,9 +158,10 @@
 #   NULL 幽灵(前端双栖渲染/linked 误判未回答)。compliance: KISS-DIRECT/禁止backward
 # 2026-09-25 小欧 - finally 关客户端判据改无条件: resolver 恒返回任务私有快照(_is_snapshot 死判据消亡),
 #   关闭语义由 base_service.close 三分支兜底(共享 lease 归还幂等/独占 aclose/单例 no-op) — 使用说明
-# 2026-09-28 - 小欧 - 活跃任务注入(设计文档[76] 6.4): 终态回填 _active_uid 加 uid>0 守卫,
-#   None/0/合成负id 一律回落 db_ops.user_msg_id 兜底 — 小欧-2026-09-28
-# 2026-09-29 小欧 - P3 步骤4([63] 3.6.5): import 改唯一入口+reclaim_memory_buffer; 直连兜底建 buffer 同样注入 journal_append sink(3.5.1 两路径统一); 300s 回收改 3.8 新名 — 小欧-2026-09-29
+# 2026-09-28 - 小欧 - 活跃任务注入：终态回填 _active_uid 加 uid>0 守卫,
+#   None/0/合成负id 一律回落 db_ops.user_msg_id 兜底 — 小欧 2026-09-28
+# 2026-09-29 小欧 - import 改唯一创建入口 create_task_stream_buffer + reclaim_memory_buffer；
+#   直连兜底建 buffer 时同样注入落库能力（漏注入则跳过编排层直跑的任务只写内存）— 小欧 2026-09-29
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -268,7 +269,7 @@ async def run_agent_in_background(
     if buffer is None:
         # 4C(5.8.5): 缓冲缺省 ensure —— react_loop/react_step 在 run_react_cycle 内经 publish 直写 event_log,
         #   无缓冲时 react_loop 抛 RuntimeError; 此处确保既有直连入口(跳过 stream_orchestrator)亦可创建 — 小欧-2026-09-06
-        # [63] 3.6.5: 直连兜底同样注入 Journal sink（3.5.1 两路径统一，禁止裸调旧入口）— 小欧-2026-09-29
+        # 直连兜底同样注入落库能力（与编排层两条路统一，禁裸调旧入口）— 小欧 2026-09-29
         buffer = create_task_stream_buffer(task_id, session_id, journal_append)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
@@ -315,9 +316,9 @@ async def run_agent_in_background(
                         "total_tokens": _u.get("total_tokens"),
                     })
                     break
-        # 12.2-C4: ai_message_id已eager注入,惰性分支移除 — 小欧 2026-08-21
-        # 13.11 落库收口: 仅 thought 步骤规约 content/thought/reasoning 三字段(新数据入库即净);
-        #   其它类型/其它字段绝不触碰(防 tool_result/命令输出代码块多空行语义被误伤) — 小欧 2026-08-30
+        # ai_message_id 已 eager 注入，惰性分支移除 — 小欧 2026-08-21
+        # 落库收口：仅 thought 步骤规约 content/thought/reasoning 三字段（新数据入库即净）；
+        #   其它类型/其它字段绝不触碰（防 tool_result/命令输出代码块多空行语义被误伤）— 小欧 2026-08-30
         if ed.get("type") == "thought":
             for _k in ("content", "thought", "reasoning"):
                 _v = ed.get(_k)
@@ -651,7 +652,7 @@ async def run_agent_in_background(
                         _tf_m = _last_final.get("model") if _last_final else None
                         _active_uid = getattr(
                             getattr(agent, "message_builder", None), "current_user_msg_id", None)
-                        # 2026-09-28 小欧 锚守卫(设计文档[76] 6.4): 仅正整数真 uid 作回填目标;
+                        # 锚守卫：仅正整数真 uid 作回填目标;
                         #   None/0/合成负id(占位锚, WHERE id<0 必落空)一律回落 db_ops.user_msg_id 兜底。
                         #   property 补齐后 _active_uid 通常为真 uid, 本守卫防传值失误。
                         _final_uid = _active_uid if (_active_uid or 0) > 0 else db_ops.user_msg_id
@@ -770,7 +771,7 @@ async def run_agent_in_background(
 
             try:
                 loop = asyncio.get_event_loop()
-                # [63] 3.8 改名：只回收内存缓冲，不删除 Journal（reclaim_stream_buffer → reclaim_memory_buffer）
+                # 只回收内存缓冲（event_log/cond/done），绝不删除 Journal 里已落库的事件
                 loop.call_later(300, lambda: reclaim_memory_buffer(task_id))
             except Exception as e:
                 logger.debug(f"reclaim_memory_buffer调度失败: {e}")

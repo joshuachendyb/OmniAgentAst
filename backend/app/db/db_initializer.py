@@ -62,11 +62,11 @@
 #  建表后插入迁移段: PRAGMA table_info 检测旧表无 path 列→DROP 重建(存量工具级信任全部视为无效清空, 定案"存量全部清空不迁移")→新库含path列跳过
 # 2026-09-07 - 小欧 - 4.4.1旧case清零: init_chat_db 接 migrate_cancelled_rows_to_final 调用(位于 migrate_v2_chat_restructure
 #  之后, chat_task_steps 表/列收敛后; 函数内延迟 import, 循 migrate_steps 循环导入惯例): 现存 type=cancelled 旧行改写为 final+cancelled
-# 2026-09-28 - 小欧 - 活跃任务注入存量清理(设计文档[76] 5.3): init_chat_db 接 migrate_purge_injected_dupes 调用
-#  (migrate_cancelled_rows_to_final 之后, 一次性 DELETE 存量注入副本, schema_migrations 登记防重跑) — 小欧-2026-09-28
-# 2026-09-29 小欧 - P3 步骤1(设计文档[63] 3.6.1/3.4): 建 chat_stream_events 表(PRIMARY KEY task_id+seq 唯一)
-#  + idx_stream_events_type(task_id,event_type,seq) 终态查询索引; 位于 chat_user_message 之后, IF NOT EXISTS 幂等,
-#  新库旧库均零报错。表结构照 3.6.1 diff 逐字落地, 字段不多不少 — 小欧-2026-09-29
+# 2026-09-28 - 小欧 - 存量注入消息副本清理：init_chat_db 内接 migrate_purge_injected_dupes
+#  （在 migrate_cancelled_rows_to_final 之后执行，一次性 DELETE 存量副本，schema_migrations 登记防重跑）— 小欧 2026-09-28
+# 2026-09-29 小欧 - 建 chat_stream_events（SSE 事件持久流水表，PRIMARY KEY task_id+seq
+#   唯一：同时保证事件顺序与重复写入幂等）+ 终态查询索引。IF NOT EXISTS 幂等，新旧库零报错
+#   — 小欧 2026-09-29
 """
 db_initializer — 数据库初始化
 
@@ -204,8 +204,8 @@ def init_chat_db(get_conn):
 
 
 
-        # ===== S0 补列（10.1.7① ②③，幂等只 ADD 缺列、老行 NULL 不丢数据）— 小欧 2026-08-16 =====
-        # ② chat_task_steps 补 task_id 列（B1 挂任务；对齐设计文档 3.1.8-⑥）
+        # ===== 补列（幂等只 ADD 缺列、老行 NULL 不丢数据）— 小欧 2026-08-16 =====
+        # chat_task_steps 补 task_id 列（挂任务用）
         _ensure_column(conn, "chat_task_steps", "task_id", "TEXT")
         # ③ chat_sessions 补 sessionModel 列(会话级模型覆盖落库点, 结构化 provider+model 的 JSON)
         # 旧列 model_override 兼容迁移: 存在则改名(现代 SQLite); 老 SQLite 不支持 RENAME 时降级为
@@ -255,8 +255,8 @@ def init_chat_db(get_conn):
         #   须在 v2 结构迁移之后(chat_task_steps 表/列收敛后); 只读写 step_json, 与外键解除无序相关
         from app.services.chat.migrate_steps import migrate_cancelled_rows_to_final
         migrate_cancelled_rows_to_final(get_conn)
-        # 活跃任务注入缺陷修复(2026-09-28 小欧 设计文档[76] 5.3): 存量注入消息副本一次性 DELETE,
-        #   须在 v2 结构迁移后(chat_user_message 收敛); 一次性登记防重跑, 新库无副本零影响
+        # 存量注入消息副本一次性清理：须在 v2 结构迁移后执行（chat_user_message 已收敛）；
+        #   一次性登记防重跑，新库无副本则零影响 — 小欧 2026-09-28
         from app.services.chat.migrate_steps import migrate_purge_injected_dupes
         migrate_purge_injected_dupes(get_conn)
 
@@ -303,7 +303,7 @@ def init_chat_db(get_conn):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_message ON chat_task_steps(ai_message_id)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_session ON chat_task_steps(session_id, step_index)")
 
-        # ===== S0 新增索引（10.1.7①，对齐设计文档 3.1.8-⑥）— 小欧 2026-08-16 =====
+        # ===== 新增索引（CREATE INDEX IF NOT EXISTS 幂等）— 小欧 2026-08-16 =====
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session ON chat_tasks(session_id)")
         # chat_task_steps 复合索引：按 ai_message_id 与 (task_id, step_index)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_task ON chat_task_steps(task_id, step_index)")

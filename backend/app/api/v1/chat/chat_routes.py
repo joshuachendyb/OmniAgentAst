@@ -24,7 +24,8 @@
 #   (task_id/session_id/source), 排查"前端是否真发了取消"不再靠猜 — 小欧-2026-09-08
 # 2026-09-19 - 小欧 - P-005契约化(北京老陈批准): confirm端点 confirm_id失效响应补 code="confirm_stale" 稳定字段,
 #   前端改读 code 判定(替代字符串includes匹配), 从源头消除"后端message文案变更即前端失效"的脆弱链 — 小欧-2026-09-19
-# 2026-09-29 小欧 - P3 步骤6([63] 3.6.6): chat_stream_reconnect 包 _guarded 生成器, 在生成器体内兜回放异常→persistence_degraded(路由是普通 async 函数不迭代生成器, 直接包 try 捕不到); CancelledError 不捕 — 小欧-2026-09-29
+# 2026-09-29 小欧 - 重连端点包一层 _guarded 生成器兜住回放异常→persistence_degraded（不掐断流）。
+#   try 须写在生成器体内：路由本身不迭代生成器，在路由层 try 捕不到。CancelledError 不捕 — 小欧 2026-09-29
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -118,11 +119,12 @@ async def validate_config_endpoint():
 @router.get("/chat/stream/{task_id}")
 async def chat_stream_reconnect(
     task_id: str,
-    session_id: str = None,
+    # Optional 而非 str：可缺省（缺失时归属无从校验，后端放行并留日志）— 小欧 2026-09-29
+    session_id: Optional[str] = None,
     after_seq: int = Query(0, ge=0, description="续传起点(seq>=N)；禁负数否则首帧被误判缺口"),
 ):
     """SSE 重连端点：读同一任务的流态缓冲，不启动新 agent — 北京老陈 2026-07-12 小欧 2026-07-12"""
-    # [63] 3.6.6：包 guarded 生成器兜住回放内部未预期异常（try 须在 async generator 体内才有效）
+    # try 须写在 async generator 体内才有效（路由不迭代生成器，捕不到执行期异常）— 小欧 2026-09-29
     async def _guarded():
         try:
             async for chunk in chat_stream_reconnect_orchestrator(task_id, session_id, after_seq):

@@ -86,8 +86,8 @@
 # 2026-09-20 - 小欧 - D-1修复(注入消息DB幽灵): update_user_message_final 对"注入吸收的新 uid(非任务登记首条)"补
 #   chat_tasks 配对行(同任务行同源复制 ai_message_id); fetch 侧 D-1兜底: 无配对(ct=NULL)时回退本会话最近任务行的
 #   ai_message_id, 消除前端渲染双栖/linked 误判未回答。
-# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复(设计文档[76] 6.5, 非D-1字面): ①新增 bind_message_to_task(注入即绑
-#   执行期归属, 修 task_id 仅终态写入的空窗); ②删 D-1 补配对整段与 session_id 参数(复制源任务行致列表重复/
+# 2026-09-28 - 小欧 - 活跃任务注入缺陷修复: ①新增 bind_message_to_task(注入即绑执行期归属,
+#   修 task_id 仅终态写入的空窗); ②删"复制源任务行补配对"整段与 session_id 参数(复制源任务行致列表重复/
 #   React key 冲突/总数虚高, 且 fetch 精确 JOIN 已能配对, 禁 backward); ③fetch 删会话级 fb 兜底改单条精确
 #   JOIN(注入凭 cum.task_id / 首条凭 cum.id 归任务, 消除跨任务错配); ④list_session_tasks 按 task_id 折叠 +
 #   补 merged_inputs(cum.task_id 单一路由, 存量 NULL 副本已按 5.3 一次性 DELETE 清理)。
@@ -474,12 +474,10 @@ def reconcile_orphaned_tasks(conn: Connection, boot_iso: str) -> int:
     """启动期僵尸任务收尾：把【上次进程崩溃遗留】的 status='executing' 残行改终态 — 小欧 2026-09-29
     病根：status 只由 agent_runner finally 改（agent_runner.py:624），进程被 kill 时
     finally 不执行 → 残行永久 'executing'，前端徽标永远显示"执行中"。
-    boot_iso 归属判据：只收尾 start_time < boot_iso 的行，即创建于本进程启动之前 → 大幅降低
-    同机多 worker/多实例的误伤（零 DDL，不新增 owner/pid 列）。**非严格归属**：若 A 进程先启动、
-    B 进程后启动而任务由 A 在 B 之后创建，该行仍会被 B 收尾；要严格隔离需加 owner_pid 列（本次未做）。
-    前提：start_time 与 boot_iso 均为本地 naive ISO（get_local_iso_timestamp），同机同时区可比；
-    跨时区多实例共享同一 DB 或系统时钟回拨时不成立（该场景需改用 UTC 存储）。
-    终态复用 failed + error_type=task_interrupted（[63] 3.10 同词汇）；不新增状态值
+    boot_iso 归属判据：只收尾 start_time < boot_iso 的行。本项目固定单进程启动，这是防御性
+    护栏而非已观测场景；非严格归属（若将来多实例共享库，需加 owner_pid/boot_id 列）。
+    前提：两值同为本地 naive ISO，同机同时区可比；时钟回拨则不成立。
+    终态复用 failed + error_type=task_interrupted；不新增状态值
     （'interrupted' 已被前端 ToolCallLine 占用为"工具被拒"语义）。
     duration 不补算：被打断无真实耗时，补算即编造。幂等，返回受影响行数。"""
     now = get_local_iso_timestamp()
@@ -933,7 +931,8 @@ def load_steps_by_task(conn: Connection, task_id: str) -> list:
         (task_id,),
     ).fetchall()
     steps = [parse_json(r["step_json"], label="step_json") for r in rows]
-    # 13.7 C2 两字段契约收口: thought 步骤剥离 content(回显只取 thought/reasoning, 13.3), 仅出 type/step/timestamp/thought/reasoning — 小欧 2026-08-30
+    # thought 步骤的两字段契约收口：回显只取 thought/reasoning，剥掉 content，
+    #   仅保留 type/step/timestamp/thought/reasoning — 小欧 2026-08-30
     return [
         s if s.get("type") != "thought" else {k: v for k, v in s.items() if k != "content"}
         for s in steps
