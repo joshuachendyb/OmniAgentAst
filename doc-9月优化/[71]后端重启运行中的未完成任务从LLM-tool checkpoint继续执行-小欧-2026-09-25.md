@@ -9,6 +9,7 @@
 | v1.0 | 2026-09-25 15:03:52 | 小欧 | 创建本文档：R4（后端重启后未完成任务续算）概要设计，回答"解决什么问题/价值""与 P3 的关系""概要实施方案"三问。 |
 | v1.1 | 2026-09-25 15:25:28 | 小欧 | 补全第四章"现状架构与缺口分析"：后端五层现状架构+9 个缺口（G1~G9）、前端四段现状架构+7 个缺口（F1~F7）、前后端缺口归属对照、目标形态与风险提示；定性结论为补缺口非重新设计。 |
 | v1.2 | 2026-09-25 15:31:37 | 小欧 | 新增第五章"实施时序：待 [63] 实施完成后择机实施"：前置依赖门、择机窗口判据、串行合并纪律、分期落地清单与启动前检查表。 |
+| v1.3 | 2026-09-29 10:46:59 | 小欧 | **G9 实施闭环（L0 僵尸任务收尾，北京老陈驱动）**：`storage.reconcile_orphaned_tasks` + `main.startup_event` 启动期把崩溃残留的 `status='executing'` 改 `failed` + `error_type='task_interrupted'`；真机实测收尾 16 个存量僵尸、幂等、开销 11~30ms。G9 状态由"缺口"转"已实施"，其余 15 个缺口（G1~G8、F1~F7）不动。另附 1.1.0 代码实测复核：G1/G2/G5/G9 四项前提经代码行号复核**仍全部成立**（详见 4.9 节）。 |
 
 > 本文为**概要设计**，定演进方向、能力边界与实施路线；详细设计（checkpoint schema、恢复状态机、事务边界）需在此基础上另行立项细化。
 
@@ -250,7 +251,7 @@ final 之前               → 终态前置 checkpoint（防"差一步没打成"
 | G6 | **不可序列化资源无降级规则**：进行中 shell 会话、文件落盘 `finalize` 未完成、LLM 连接池快照/pause event | 状态层 | 恢复时这些态"假装存在"必然崩，或被静默丢弃造成半成品 |
 | G7 | **无续算信号**：事件类型里没有 `task_resumed`，前端无法区分"历史回放"与"正在续算" | 流态层 | 用户看到流突然继续，误判为重放/重复 |
 | G8 | **checkpoint 写入时机与事务边界未定义**：与 Journal seq、`chat_tasks.status` 的同事务关系缺契约 | 持久层 | 状态与事件可能撕裂（事件已发、状态未落） |
-| G9 | **崩溃后非终态任务无终态收敛**：`chat_tasks.status` 永久停留 `executing`，无 `interrupted` 收敛态 | 持久层 | 前端轮询永远等不到终态，只能提示用户手动确认 |
+| G9 | **崩溃后非终态任务无终态收敛**：`chat_tasks.status` 永久停留 `executing`，无 `interrupted` 收敛态 | 持久层 | ~~前端轮询永远等不到终态，只能提示用户手动确认~~ → **v1.3 已实施（L0 收尾为 `failed` + `error_type=task_interrupted`），见 4.9 节** |
 
 **定性结论：补缺口，不是重新设计。**
 
@@ -346,6 +347,49 @@ final 之前               → 终态前置 checkpoint（防"差一步没打成"
 | `backend/app/db/db_initializer.py` | `chat_tasks`/`chat_task_steps`/`token_usage` 表结构（确认 `chat_stream_events` 不存在） |
 | `frontend/src/hooks/useSSE.ts` | 内存真源、sessionStorage 备份、after_seq 重连、轮询观察 |
 | `frontend/src/features/chat/hooks/useChatSession.ts`、`useChatPersistence.ts` | 会话恢复与 DB 历史降级路径 |
+
+### 4.9 G9 实施闭环与 1.1.0 代码实测复核（v1.3 新增，小欧 2026-09-29）
+
+#### 4.9.1 G9 的实施：L0 僵尸任务收尾
+
+**病根（代码行号实测）**：`chat_tasks.status` 只由 `agent_runner` 的 `finally` 块改终态（`agent_runner.py:624`）。进程被 kill / OOM / 崩溃时 `finally` 不执行 → 残行永久停留 `'executing'` → 前端 `useTaskInfo.ts:120` 把它映射成徽标 `'running'`，**任务列表永远显示"执行中"**。全仓 grep 确认 `'executing'` 无任何 `SELECT` 读取，启动流程也无修正逻辑。
+
+**实施（2 文件 + 1 登记，零 DDL / 零新表 / 零新状态值）**：
+
+| 位置 | 改动 |
+|------|------|
+| `backend/app/services/chat/storage.py` | 新增 `reconcile_orphaned_tasks(conn) -> int`（紧随 `update_task`，`chat_tasks` 状态写入口单一 owner），一条 bulk UPDATE 把 `status='executing'` 改 `failed` + `error_type='task_interrupted'`，幂等，返回受影响行数 |
+| `backend/app/main.py` | `startup_event` 在 `db.init()` 之后 `await db.atxn("chat", reconcile_orphaned_tasks)`，含耗时日志；本文件只做一行调用（业务逻辑不入引导层，SRP/SLAP） |
+| `backend/FUNCTIONS.md` | 登记新公用函数 |
+
+**两处设计决断**：
+
+1. **不新增 DB 状态值**。`'interrupted'` 已被前端 `ToolCallLine` 占用为"工具被拒/中断"语义（23 处引用），当任务状态会撞车；复用既有终态 `'failed'`，前端徽标零改动即正确（`useTaskInfo.ts:123`），精确原因由 `error_type=task_interrupted` 承载——与 [63] 3.10 重启语义同一词汇。
+2. **不落 `db_initializer` 迁移段**。该处是 `schema_migrations` 登记的**一次性**迁移，而 L0 必须**每次启动都跑**（每次崩溃留新僵尸），登记防重跑会导致第二次启动起失效。业务逻辑归 `storage.py`（DRY/SRP），`main.py` 只调用。
+
+**`duration` 不补算**：被重启打断的任务没有真实完成耗时，补算等于编造（YAGNI）。
+
+**实测证据**：
+
+- 单测（临时 SQLite）：6 行样本 → 收尾 2 个 `executing`；`completed`/`failed`/`cancelled`/`paused` 四态 `end_time` 仍 NULL 未被改动；二次调用 0 行（幂等）。
+- 回归：`storage|task_state|task_registry|cancel` 相关 **99 passed**；`test_architecture_boundaries.py` 通过。
+- 真机（1.1.0 实跑）：首次启动 `收尾僵尸任务 16 个（已标 failed/task_interrupted）`，耗时 0.030s；随后 4 次重启均 `0 行`。**该机器真实存在 16 个长期显示"执行中"的僵尸任务，已被收尾。**
+
+**G9 关闭后的边界**：L0 只保证"不骗人"（任务收敛到诚实的失败终态），**不提供任何续算能力**。G1/G2/G3/G5（执行状态与 LLM 上下文持久化、恢复驱动）仍全部未动，续算能力仍为零。
+
+#### 4.9.2 1.1.0 代码实测复核：G1/G2/G5/G9 前提是否仍成立
+
+[71] v1.1/v1.2 写于 2026-09-25，当时基线未含 [76]（`merged` 注入应答、`bind_message_to_task`、删 D-1 补配对）。v1.3 按 1.1.0 HEAD 逐条复核关键缺口前提：
+
+| 缺口 | 1.1.0 实测 | 结论 |
+|------|-----------|------|
+| G1 执行状态无持久化 | `llm_call_count`（`base_agent.py:76`）、`accumulated_usage`（`:80`）、`_consecutive_reasoning_only`（`:79`）仍全在 agent 实例内存；运行中只写 token 累计（`react_step.py:441`），不写执行态 | **仍成立** |
+| G2 LLM 上下文无快照 | `MessageBuilder.conversation_history`（`message_builder.py:106`）仍纯内存，零序列化；`chat_messages` 表**已 DROP**（`db_initializer.py:468`），全库无 `role/tool_calls/tool_call_id` 消息序列表 | **仍成立** |
+| G5 无恢复驱动 | `startup_event`（`main.py`）原本 5 步无恢复扫描；全仓 `'executing'` 无 `SELECT`。v1.3 的 L0 **只做终态收敛，不做恢复驱动**（收尾后状态为 `failed`，不重跑） | **仍成立**（L0 不改变 G5 性质） |
+| G4 Journal 不存在 | `chat_stream_events` 表、`stream_event_journal.py`、`publish_lock`、sink 注入——全仓 grep 全部 MISS；[63] P3 仍为 0 实施 | **仍成立**（门 1/门 2 未满足，R4 不得开工） |
+| G9 非终态无收敛 | 已由 v1.3 L0 实施闭环 | **已关闭** |
+
+**复核结论**：R4 的全部前置前提未被 1.1.0 改变，[71] 第五章的"门 1~门 5"判据依然有效（门 1 门 2 因 [63] P3 未实施仍不满足）。本文档第三章方案与第四章缺口清单**无需修订**。
 
 ---
 
