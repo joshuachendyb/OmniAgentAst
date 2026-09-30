@@ -19,10 +19,17 @@
  * @author 小强
  * @version 2.0.0
  * @since 2026-04-21
+ *
+ * 编辑历史:
+ * 2026-09-30 20:05:00 小欧 - restoreState 完整态分支改用后端最新消息: 原实现把
+ *   loadHistoryMessages(useCache:false) 的返回值只当"会话存在性探针"(仅判 !verifyResult),
+ *   拉回的全量消息被丢弃、转而渲染 sessionStorage 旧快照 → 列表标签显示 DB 真实条数而
+ *   点进去只渲染旧条数(实测"001"标签 4 条、界面 2 条, 刷新才恢复)。改为 fresh 留存,
+ *   网络正常用后端数据(与轻量态分支同口径), 仅弱网 catch 才回退本地快照 — 小欧-2026-09-30
  */
 
 import { useEffect, useCallback, useRef } from 'react';
-import type { Message } from '../../../types/chat';
+import type { Message, HistoryLoadResult } from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatStreamingReturn } from './useChatStreaming';
 import {
@@ -314,6 +321,11 @@ export const useChatPersistence = (
       }
 
       // 完整状态：验证sessionId后端有效性，防止缓存指向已删除的session
+      // 2026-09-30 20:05 小欧 - 修真 bug: 原实现把上面拉回的 verifyResult 只当"存在性探针"
+      //   (只看 !verifyResult), 拉到的全量最新消息被丢弃, 转而渲染 sessionStorage 旧快照
+      //   → 会话列表标签显示 DB 真实条数、点进去却只渲染旧条数(实测"001"显示4条只见2条, 刷新才恢复)。
+      //   改: 留住 fresh, 网络正常用后端最新消息(与轻量态分支同口径), 仅弱网 catch 才回退本地快照。
+      let fresh: HistoryLoadResult | null = null;
       if (data.sessionId) {
         try {
           // 2026-09-30 小欧 [81]v1.4-H3: useCache:false 强制验证走后端——原默认读缓存
@@ -329,6 +341,7 @@ export const useChatPersistence = (
             sessionStorage.removeItem(STORAGE_KEY);
             return null;
           }
+          fresh = verifyResult;
         } catch (verifyError) {
           // 2026-09-30 小欧 - 区分"确实不存在"与"验证失败"：loadHistoryMessages 已只对 404
           //   返回 null（上面分支处理），走到这里的都是网络/5xx。原实现一律清缓存并 return null，
@@ -338,12 +351,12 @@ export const useChatPersistence = (
         }
       }
 
-      // 完整状态
+      // 完整状态：优先后端最新消息, 无后端数据(弱网)才用本地快照
       return {
-        messages: data.messages || [],
-        sessionId: data.sessionId || null,
-        sessionTitle: data.sessionTitle || '新会话',
-        sessionVersion: data.sessionVersion || 1,
+        messages: fresh?.messages || data.messages || [],
+        sessionId: fresh?.sessionId || data.sessionId || null,
+        sessionTitle: fresh?.title || data.sessionTitle || '新会话',
+        sessionVersion: fresh?.version || data.sessionVersion || 1,
         isPaused: data.isPaused || false,
         isReceiving: data.isReceiving || false,
       };
