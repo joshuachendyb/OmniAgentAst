@@ -150,6 +150,13 @@ def isolated_config_dir():
     # ② 改道: 此后全进程配置读写一律落临时副本
     prev_env = os.environ.get("OMNIAGENT_CONFIG_PATH")
     os.environ["OMNIAGENT_CONFIG_PATH"] = str(tmp_path)
+    # ②-2 数据目录同步改道(小欧 2026-09-30 修订): 配置隔离只管住了 config.yaml, 管不到 SQLite ——
+    #   app/db/database.py 原在 __init__ 硬编码 Path.home()/".omniagent", 致任何裸用 db.get_conn() 的
+    #   测试直写真库(实测污染真库: 空会话/hello/v2 垃圾会话)。现 database.resolve_db_dir() 认
+    #   OMNIAGENT_DATA_DIR 且在 get_conn 内惰性解析, 故此处设 env 即让测试"够不到"真库 ——
+    #   无需逐个测试 patch, 也不会漏掉将来新增的测试(AGENTS.md: 根治靠"够不到"而非"事后还原")。
+    prev_data_dir = os.environ.get("OMNIAGENT_DATA_DIR")
+    os.environ["OMNIAGENT_DATA_DIR"] = str(tmp_dir / "data")
     # ③ 清单例强制按新路径重建(见易错点②)
     _app_config._config_instance = None
     try:
@@ -160,6 +167,10 @@ def isolated_config_dir():
             os.environ.pop("OMNIAGENT_CONFIG_PATH", None)
         else:
             os.environ["OMNIAGENT_CONFIG_PATH"] = prev_env
+        if prev_data_dir is None:
+            os.environ.pop("OMNIAGENT_DATA_DIR", None)
+        else:
+            os.environ["OMNIAGENT_DATA_DIR"] = prev_data_dir
         _app_config._config_instance = None
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
