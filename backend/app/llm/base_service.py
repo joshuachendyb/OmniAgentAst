@@ -290,39 +290,58 @@ class BaseAIService:
         tools: Optional[List[Dict]] = None,
         tool_choice: str = "auto",
     ) -> ChatResponse:
-        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11"""
+        """非流式请求 — FC-only: 无mode参数 — 小沈 2026-06-11
+
+        2026-09-30 小欧 补 L1 重试(修真 bug): 原实现单次 try, 任何异常一次即 return error= ——
+        而 429/5xx 属瞬时故障, 一次失败就把整个 Agent 判死。实测 PAR-05 五会话并发顶穿免费额度
+        速率限制(供应商:"您已达到免费用户的 API 速率限制"), 5 个会话各自"调用#3 → 429 → FAILED",
+        零重试, 整片失败; 且 client_sdk 那句"可重试, base_service将重试"对非流式是**假承诺**。
+        现与 request_stream 共用 _should_retry + _retry_wait_seconds(Retry-After/指数退避), 两路径同口径(DRY)。
+        对外契约不变: 仍返回 ChatResponse(重试用尽后 error=str(e)), 不改为抛异常。
+        """
         self._ensure_client()
-        try:
-            response = await self._llm_sdk.request(
-                messages=messages,
-                tools=tools,
-                tool_choice=tool_choice,
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                top_p=self.top_p,  # 新增 — 小欧 2026-09-23
-                frequency_penalty=self.frequency_penalty,  # 新增 — 小欧 2026-09-23
-                presence_penalty=self.presence_penalty,  # 新增 — 小欧 2026-09-23
-                seed=self.seed,
-                extra_body=self.extra_body_params,
-            )
-            choices = response.get("choices", [])
-            if not choices:
-                return ChatResponse(content="", chat_model=self.llm_model, error="无响应")
+        retry_count = 0
+        while True:
+            try:
+                response = await self._llm_sdk.request(
+                    messages=messages,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature,
+                    top_p=self.top_p,  # 新增 — 小欧 2026-09-23
+                    frequency_penalty=self.frequency_penalty,  # 新增 — 小欧 2026-09-23
+                    presence_penalty=self.presence_penalty,  # 新增 — 小欧 2026-09-23
+                    seed=self.seed,
+                    extra_body=self.extra_body_params,
+                )
+                choices = response.get("choices", [])
+                if not choices:
+                    return ChatResponse(content="", chat_model=self.llm_model, error="无响应")
 
-            msg = choices[0].get("message", {})
-            content = msg.get("content", "") or ""
-            tool_calls = msg.get("tool_calls", [])
+                msg = choices[0].get("message", {})
+                content = msg.get("content", "") or ""
+                tool_calls = msg.get("tool_calls", [])
 
-            reasoning = extract_reasoning_from_message(msg) or ""
+                reasoning = extract_reasoning_from_message(msg) or ""
 
-            return ChatResponse(
-                content=content,
-                chat_model=self.llm_model,
-                tool_calls=tool_calls,
-                reasoning=reasoning,
-            )
-        except Exception as e:
-            return ChatResponse(content="", chat_model=self.llm_model, error=str(e))
+                return ChatResponse(
+                    content=content,
+                    chat_model=self.llm_model,
+                    tool_calls=tool_calls,
+                    reasoning=reasoning,
+                )
+            except Exception as e:
+                if self._should_retry(e) and retry_count < self.max_retries:
+                    retry_count += 1
+                    wait_time = self._retry_wait_seconds(e, retry_count)
+                    logger.warning(
+                        f"[Retry][L1] 非流式重试 {retry_count}/{self.max_retries}, "
+                        f"等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}"
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue
+                return ChatResponse(content="", chat_model=self.llm_model, error=str(e))
 
     async def request_stream(
         self,
@@ -499,24 +518,7 @@ class BaseAIService:
             except Exception as e:
                 if self._should_retry(e) and retry_count < max_retries:
                     retry_count += 1
-                    # 429限流: 优先尊重服务端Retry-After头(秒), 未提供才用指数退避 — 小欧 2026-08-11
-                    wait_time = 3 ** retry_count
-                    if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
-                        _ra = e.response.headers.get("Retry-After")
-                        if _ra:
-                            _ra = _ra.strip()
-                            # 2026-08-13 小欧 三堂会审修复: RFC 7231允许整数/浮点秒与HTTP-date, 原仅isdigit整数秒("1.5"/日期静默回落指数退避)
-                            if _ra.replace(".", "", 1).isdigit():
-                                wait_time = max(int(float(_ra)), 1)
-                            else:
-                                try:
-                                    import email.utils as _eu
-                                    _dt = _eu.parsedate_to_datetime(_ra)
-                                    # 2026-08-13 小欧 三堂会审复核修复方法: mktime(timetuple())丢弃时区→东八区偏移8h(实测3600→1秒);
-                                    #   改 _dt.timestamp()(aware→UTC epoch)与 time.time() 直接相减, 时区无关
-                                    wait_time = max(int(_dt.timestamp() - time.time()), 1)
-                                except Exception:
-                                    pass
+                    wait_time = self._retry_wait_seconds(e, retry_count)   # 2026-09-30 小欧: 抽为共用静态方法(DRY)
                     logger.warning(f"[Retry][L1] 重试 {retry_count}/{max_retries}, 等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}")
                     # 小欧 2026-09-02: 实时重试透出 —— L1 重试前发通知, 经 llm_call 消费转 MetaStep(retrying) 发前端;
                     #   不设 stream_error 故不触发读方 break; retry_notice 带原始错误文本。
@@ -646,6 +648,30 @@ class BaseAIService:
     def _should_retry(self, e: Exception) -> bool:
         """判断是否应该重试 — 委托给SystemErrorClassifier - 小沈 2026-06-17"""
         return SystemErrorClassifier.classify_error(e).is_retryable
+
+    @staticmethod
+    def _retry_wait_seconds(e: Exception, retry_count: int) -> int:
+        """重试等待秒数: 429 优先尊重服务端 Retry-After, 否则 3^n 指数退避 — 小欧 2026-08-11
+        2026-09-30 小欧: 从 request_stream 内联块抽为共用静态方法(DRY 单一出口), 供非流式 request 复用
+        """
+        wait_time = 3 ** retry_count
+        if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
+            _ra = e.response.headers.get("Retry-After")
+            if _ra:
+                _ra = _ra.strip()
+                # 2026-08-13 小欧 三堂会审修复: RFC 7231允许整数/浮点秒与HTTP-date, 原仅isdigit整数秒("1.5"/日期静默回落指数退避)
+                if _ra.replace(".", "", 1).isdigit():
+                    wait_time = max(int(float(_ra)), 1)
+                else:
+                    try:
+                        import email.utils as _eu
+                        _dt = _eu.parsedate_to_datetime(_ra)
+                        # 2026-08-13 小欧 三堂会审复核修复方法: mktime(timetuple())丢弃时区→东八区偏移8h(实测3600→1秒);
+                        #   改 _dt.timestamp()(aware→UTC epoch)与 time.time() 直接相减, 时区无关
+                        wait_time = max(int(_dt.timestamp() - time.time()), 1)
+                    except Exception:
+                        pass
+        return wait_time
 
     async def close(self):
         # 三分支(小欧 2026-09-25): ①共享池快照 → 归还 _client_lease(ref-1, 归零由 ConnectionScope 关);

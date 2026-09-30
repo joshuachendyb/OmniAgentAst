@@ -356,7 +356,7 @@ class LLMClient:
         仅不可重试客户端错误(400/401/403等)记 ERROR, 避免 check_logs/测试误判 FAIL。"""
         if response.status_code >= 400:
             if response.status_code in _RETRYABLE_STATUS:
-                logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, base_service将重试): {body_text}")
+                logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, 交 base_service L1 重试): {body_text}")
             else:
                 logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
             server_msg = _extract_server_error_message(body_text)
