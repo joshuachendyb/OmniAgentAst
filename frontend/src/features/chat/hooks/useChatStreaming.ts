@@ -1,3 +1,12 @@
+// 编辑历史: 2026-09-30 10:44:56 小欧 - [79] F①：sendMessage/clearSteps 改直连 chatStreamStore
+//   （桥接透传成员已删，北京老陈授权按可靠性标准裁定）— 小欧-2026-09-30 10:44:56：
+//   §sendMessage 不再经 useChatStreamSession 透传，useCallback 内部直连
+//     chatStreamStore.sendMessage(customSessionId ?? sessionId, content, mode)，
+//     依赖数组 remove 桥接透传身份，改 module 级稳定引用 + sessionId（memo 更简）；
+//   §clearSteps 由"桥接解构"改为本文件 useCallback 直连 chatStreamStore.clearSteps(sessionId)，
+//     对外签名 () => void 与 UseChatStreamingReturn 接口一致（矛盾 D 消费面签名不变）；
+//   §调用链收敛为「useChatStreaming→store」直线，与本项目既有直连惯例同构
+//     （useChatInit:81 / useChatTaskControl:162 / useChatSession:568-569）。
 // 编辑历史: 2026-08-26 小欧 - 参与改造: SSE流式状态管理改造(事件分发/暂停续传)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审H1修复: executeSend内sendMessage加await闭合SSE发送Promise, 防拒绝变unhandled rejection/占位消息永久悬挂
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
@@ -61,6 +70,7 @@ import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
 // [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
 import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
+import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import type { StreamEvent } from '@/features/chat/streams/backupTypes';
 import { sessionApi } from '../../../services/api/session.api';
 import { getClientInfo } from '../../../utils/clientInfo';
@@ -313,13 +323,13 @@ export const useChatStreaming = (
 
   // 使用 Store 订阅桥接
   // 小欧 2026-09-10 S2收尾(方案A): executionStepsRef 唯一真源在 Store，此处从 5.5 透出的推导视图取
+  // 2026-09-30 小欧 - [79] F①：本 hook 改直连 chatStreamStore（sendMessage/clearSteps 不再经桥接
+  //   透传），桥接收敛为纯订阅。理由见 useChatStreamSession.ts 头注释与文件尾编辑历史。
   const {
     isReceiving,
     executionSteps,
     executionStepsRef, // 推导视图（5.4 getExecutionStepsRef），非第二真源
     currentResponse,
-    sendMessage: sendStreamMessage,
-    clearSteps,
     serverTaskId,
     metaFrames, // 【小欧 2026-08-26 8.4.14】任务元信息帧快照透传
     waitClock, // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
@@ -357,20 +367,32 @@ export const useChatStreaming = (
           `${DENIED_STORAGE_KEY}_${customSessionId ?? sessionId}`
         );
 
-        // 调用 Store 的 sendMessage（内部先落盘 queued 再 POST）
-        await sendStreamMessage(content, customSessionId, contextLinkMode);
+        // 调用 Store 的 sendMessage（内部先落盘 queued 再 POST）——
+        // 2026-09-30 小欧 [79] F①：直连 chatStreamStore，不再经桥接透传（签名保持 customSessionId 优先）
+        await chatStreamStore.sendMessage(
+          customSessionId ?? sessionId ?? '',
+          content,
+          contextLinkMode
+        );
       } catch (error) {
         console.error('发送消息失败:', error);
         throw error;
       }
     },
     [
-      sendStreamMessage,
+      sessionId, // 2026-09-30 小欧 [79] F①：直连后替换原桥接透传身份依赖
       streamingContentRef,
 
-      executionStepsRef,
-      sessionId, // 2026-09-06 小欧 B2(6.4A): 删独立键依赖, 防陈旧会话闭包 — 小欧-2026-09-06
+      executionStepsRef, // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
     ]
+  );
+
+  // 2026-09-30 小欧 - [79] F①：clearSteps 改直连 chatStreamStore（原经桥接透传）。
+  //   签名 () => void 与对外契约一致（UseChatStreamingReturn.clearSteps 不变）。
+  //   引用随 sessionId 稳定：sessionId 是父级字符串，变化即换绑定，与 executeSend 同源。
+  const clearSteps = useCallback(
+    () => chatStreamStore.clearSteps(sessionId ?? ''),
+    [sessionId]
   );
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程

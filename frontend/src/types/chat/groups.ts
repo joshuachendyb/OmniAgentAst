@@ -115,11 +115,10 @@ export type StreamingGroupReturn = StreamingGroupState &
     setIsPaused: React.Dispatch<React.SetStateAction<boolean>>;
     setWaitTime: React.Dispatch<React.SetStateAction<number>>;
     sendMessage: (content: string, sessionId?: string) => Promise<void>;
-    disconnect: (
-      stopServer?: boolean,
-      force?: boolean,
-      callback?: () => void
-    ) => void;
+    // [79] F② 2026-09-30 小欧：**删除** `disconnect`（原 3 参 `stopServer/force/callback`）。
+    //   `StreamingGroupReturn` 为死类型：全仓零 import、零构造点（`base-layer-sse-bugs.test.tsx:3`
+    //   仅在注释里提到本文件名，非类型引用）。其 disconnect 语义早已被 [63] 5.14 的
+    //   `chatStreamStore.stop()` 取代，保留即 6.5「无兼容空壳」意义上的僵尸签名。
     clearSteps: () => void;
     executeSend: (userMessage: Message) => Promise<void>;
   };

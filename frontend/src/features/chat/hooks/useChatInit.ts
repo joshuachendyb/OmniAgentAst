@@ -8,8 +8,33 @@
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
+import { showWarning } from '../../../utils/chatMessages';
+import { ERROR_TYPE_LABELS } from '../components/ErrorDetail';
 import type { UseChatFacadeReturn } from './useChatFacade';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
+import type { ResumeResult } from '@/features/chat/streams/backupTypes';
+
+// 编辑历史: 2026-09-30 08:34:56 小欧 - [79] D4 恢复态差异化提示。
+//   病根：resume() 返回 12 值 ResumeResult，此前全仓唯一消费点就是下方 `r !== 'idle'` 一个布尔判断
+//   （12 值塌缩成 2 分支），导致 S5/S11 里"任务被中断 / 事件不完整 / 持久化降级"原地兜底成
+//   "正常历史"——用户只见 DB 里的结果，无从判断该不该重试。
+//   落点选在此处：这是 ResumeResult 唯一的 UI 边界，一次分派即拦住"恢复不完整却被静默吞掉"。
+//   文案复用 ErrorDetail.ERROR_TYPE_LABELS（4 个 error_type 中文标签已存在，不另写一份以免漂移）；
+//   ResumeResult↔error_type 的对应关系见 chatStreamTransport.RECOVERY_ERROR_BRANCH。
+const RESUME_NOTICE: Partial<Record<ResumeResult, string>> = {
+  task_interrupted: ERROR_TYPE_LABELS.task_interrupted,
+  task_state_incomplete: ERROR_TYPE_LABELS.task_state_incomplete,
+  gap: ERROR_TYPE_LABELS.persistence_gap,
+  degraded: ERROR_TYPE_LABELS.persistence_degraded,
+};
+// 有意不提示的 8 值及依据：
+//   idle / recovering / terminal  正常态，提示即噪声；
+//   pending_draft                 草稿本就在客户端（recoverWithoutTaskId 语义），非异常；
+//   aborted                       用户主动停，非故障；
+//   polling                       轮询观察中，reconnectStatus 已在 UI 呈现；
+//   failed                        已走 error 通道 → TaskInfoBar 位4（"error 实时显示唯一位置"定案），再提示即双显示；
+//   not_found                     resumeStreamRequest 无终态短路，任务行被归档的**常见良性场景**同样命中，
+//                                 发提示会对每次切回旧会话误报。
 
 /**
  * 会话初始化 hook：initializeSession 效果 + loading 挂载/卸载清理
@@ -55,6 +80,9 @@ export function useChatInit(opts: {
     //   loadSession（F7：不重新 POST、不重建任务）；idle → 原 initializeSession 三场景原样执行
     void chatStreamStore.resume(opts.urlSessionId ?? undefined).then((r) => {
       if (r !== 'idle' && opts.urlSessionId) {
+        // 2026-09-30 08:34:56 小欧 - [79] D4：恢复不完整必须让用户看见（先提示再补历史，不等 loadSession）。
+        const notice = RESUME_NOTICE[r];
+        if (notice) showWarning(notice);
         void chatSession.loadSession(opts.urlSessionId);
         return;
       }

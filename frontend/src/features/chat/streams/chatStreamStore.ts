@@ -89,6 +89,83 @@ const ZERO_CLOCK: ClockSignals = {
   heartbeatTs: 0,
 };
 
+// 2026-09-30 08:44:31 小欧 - [79] D2：render 期"缺会话"活视图（按 id 缓存）。
+//   病根：getExecutionStepsRef 原无条件 ensureSession，与 [63] 5.4「getSnapshot 路径绝不创建」相悖；
+//   useChatStreamSession 又在 render 期显式 ensureSession（该行已删）。二者使组件首渲染即在 Store
+//   里建出会话条目——render 会被丢弃时这些条目纯属泄漏，且会挤占 D3 的 MAX_SESSIONS 容量。
+//   设计：缺会话时返回**按 id 缓存的活视图**——getter 每次经 sessions.get(id) 现取，
+//   故同一对象在会话出现后自动开始报告真值，既满足"render 不创建"，又不会像冻结零信号那样
+//   把 useChatStreamSession 的 waitClock useMemo([id, heartbeatTs]) 永久钉在零钟面上。
+//   回收：会话一创建即从本表移除（真视图 s.clockSignalsView / s.executionStepsRefView 接管），
+//   evictSession / destroySession 删除条目时同步移除 → 生命周期与 sessions 严格同形，不新增泄漏面。
+const missingViews = new Map<string, { clock: ClockSignals; steps: { current: ExecutionStep[] } }>();
+
+/** 钟面活视图：三个字段全为 getter，写入经 commit 回真会话；会话不存在时写为 no-op（禁凭空建会话） */
+function makeClockView(resolve: () => ChatStreamSession | undefined): ClockSignals {
+  return {
+    lastBizTsRef: {
+      get current() {
+        return resolve()?.lastBizTs ?? 0;
+      },
+      set current(v: number) {
+        const s = resolve();
+        if (s)
+          commit(s, (d) => {
+            d.lastBizTs = v;
+          });
+      },
+    } as MutableRefObject<number>,
+    lastDataTsRef: {
+      get current() {
+        return resolve()?.lastDataTime ?? 0;
+      },
+      set current(v: number) {
+        const s = resolve();
+        if (s)
+          commit(s, (d) => {
+            d.lastDataTime = v;
+          });
+      },
+    } as MutableRefObject<number>,
+    get heartbeatTs() {
+      return resolve()?.heartbeatTs ?? 0;
+    },
+  };
+}
+
+/** 步骤活视图：与 makeClockView 同模式（DRY，不引第二套抽象） */
+function makeStepsView(resolve: () => ChatStreamSession | undefined): {
+  current: ExecutionStep[];
+} {
+  return {
+    get current() {
+      return resolve()?.executionSteps ?? [];
+    },
+    set current(v: ExecutionStep[]) {
+      const s = resolve();
+      if (s)
+        commit(s, (d) => {
+          d.executionSteps = v;
+        });
+    },
+  };
+}
+
+/** 取（并按 id 缓存）缺会话视图；空 id 直接用 ZERO_CLOCK——无 id 即无会话，且 id 变化本身会让 memo 重算 */
+function missingViewsOf(sessionId: string): { clock: ClockSignals; steps: { current: ExecutionStep[] } } {
+  let v = missingViews.get(sessionId);
+  if (!v) {
+    const resolve = (): ChatStreamSession | undefined => sessions.get(sessionId);
+    v = { clock: makeClockView(resolve), steps: makeStepsView(resolve) };
+    missingViews.set(sessionId, v);
+  }
+  return v;
+}
+
+/** 2026-09-30 08:44:31 小欧 - [79] D2：空 id 哨兵（无会话 id 可言，故不建缓存条目，恒零恒空） */
+const EMPTY_STEPS_VIEW: { current: ExecutionStep[] } = makeStepsView(() => undefined);
+
+
 export interface ChatStreamSession extends SessionSnapshot {
   sessionId: string;
   revision: number;
@@ -325,6 +402,8 @@ export const chatStreamStore = {
       terminalEvictTimer: null,
     };
     sessions.set(sessionId, s);
+    // 2026-09-30 08:44:31 小欧 - [79] D2：真会话已建立，缺会话活视图完成交接，即时移除防残留
+    missingViews.delete(sessionId);
     evictOverflow();
     return s;
   },
@@ -398,10 +477,16 @@ export const chatStreamStore = {
       const attached = await attachActiveTask(s, content); // 附着分支内部已 resume + 持久化
       if (attached !== null) return attached;
       this.clearSteps(sessionId); // 新请求清旧步骤（真实 useSSE.ts:791-795）
-      await sendStreamRequest(s, content, mode);
+await sendStreamRequest(s, content, mode);
       commit(s, (d) => {
         if (d.pendingMessage) d.pendingMessage = { ...d.pendingMessage, state: 'sent' };
-        if (d.status === 'idle' || d.status === 'recovering') d.status = 'active';
+        // 2026-09-30 10:35 小欧 - [79] 3.17 三堂会审 P0 修复后清理：原 `idle||recovering → active`
+        //   分支已成**无条件死代码**。病根：P0 修复前 sendStreamRequest 全程不改 status，此处才是
+        //   轮次入口的 active 兜底；P0 修复把 `d.status = 'active'` 移入 sendStreamRequest 开篇 commit
+        //   （transport:143），此处执行时机在 `await sendStreamRequest()` 之后，status 必然已非
+        //   idle/recovering（pump 正常退出置终态、HITL 置 paused、错误路径置 failed/保持 active，
+        //   recovering 仅 GET 续传路径赋值、idle 仅 resume 无 taskId 路径赋值，均不经过 sendMessage
+        //   主流程）→ 守卫条件恒 false，属不可达死码，删除。北京老陈裁定：「死的删除」。
       });
       this.persistNow(sessionId);
       return resumeResultOf(s);
@@ -532,21 +617,13 @@ export const chatStreamStore = {
     bump(s);
   },
 
-  /** 推导 ref 视图：读——session.executionSteps（commit 后即新值）；写——commit 进 Store */
+  /** 推导 ref 视图：读——session.executionSteps（commit 后即新值）；写——commit 进 Store。
+   *  2026-09-30 08:44:31 小欧 - [79] D2：会话不存在时**不再 ensureSession**（render 期禁创建），
+   *   改返回按 id 缓存的活视图——会话稍后出现，同一对象自动开始报告真步骤（冻结空数组会永久陈旧）。 */
   getExecutionStepsRef(sessionId: string): { current: ExecutionStep[] } {
-    const s = this.ensureSession(sessionId);
-    if (!s.executionStepsRefView) {
-      s.executionStepsRefView = {
-        get current() {
-          return s.executionSteps;
-        },
-        set current(v: ExecutionStep[]) {
-          commit(s, (d) => {
-            d.executionSteps = v;
-          });
-        },
-      };
-    }
+    const s = sessions.get(sessionId);
+    if (!s) return sessionId === '' ? EMPTY_STEPS_VIEW : missingViewsOf(sessionId).steps;
+    if (!s.executionStepsRefView) s.executionStepsRefView = makeStepsView(() => s);
     return s.executionStepsRefView;
   },
 
@@ -578,44 +655,15 @@ export const chatStreamStore = {
   },
 
   /** 钟面信号：lastBizTs/lastDataTime 以 getter 桥接 session 数字字段（heartbeatTs 直接读值），
-   *  保持 ref 语义稳定，供 waitClock 消费；session 不存在返回零信号（render 期不创建 session）。 */
+   *  保持 ref 语义稳定，供 waitClock 消费；session 不存在返回按 id 缓存的零信号活视图（render 期不创建 session）。
+   *  2026-09-30 08:44:31 小欧 - [79] D2：原缺会话分支返回**冻结的** ZERO_CLOCK，而 5.5 桥接的
+   *   waitClock 用 useMemo([id, snapshot.heartbeatTs]) 缓存——首渲染拿到冻结零信号后，会话随后
+   *   建立也不会换引用（heartbeatTs 仍 0）→ 组件永久持有零钟面，等待动画与静默升档全失效。
+   *   改为与真会话视图同构的活视图（同一 makeClockView 构造器，DRY）：会话出现后自动报真值。 */
   getClockSignals(sessionId: string): ClockSignals {
     const s = sessions.get(sessionId);
-    if (!s) return ZERO_CLOCK;
-    // 2026-09-29 22:47:10 小欧（[63] 5.4 防退化修复）：本函数原先每次调用都新建 ref 对象。
-    //   5.5 桥接的 waitClock 用 useMemo([id, snapshot.heartbeatTs]) 缓存，而首次 render 时
-    //   session 还没被 useEffect 的 ensureSession 建出来 → 那一刻返回 ZERO_CLOCK（恒 0）；
-    //   空流/无心跳场景下 heartbeatTs 恒 0，memo 永不重算 → 组件永久持有零钟面
-    //   （lastBizTs 永远读 0，等待动画与静默升档全失效）。
-    //   改为与 getExecutionStepsRef 同模式：按会话惰性缓存、字段全为活 getter，
-    //   引用稳定且恒读真值，memo 缓存与否都不再影响正确性。
-    if (s.clockSignalsView) return s.clockSignalsView;
-    s.clockSignalsView = {
-      lastBizTsRef: {
-        get current() {
-          return s.lastBizTs;
-        },
-        set current(v: number) {
-          commit(s, (d) => {
-            d.lastBizTs = v;
-          });
-        },
-      } as MutableRefObject<number>,
-      lastDataTsRef: {
-        get current() {
-          return s.lastDataTime;
-        },
-        set current(v: number) {
-          commit(s, (d) => {
-            d.lastDataTime = v;
-          });
-        },
-      } as MutableRefObject<number>,
-      // 活 getter：缓存对象也恒反映最新心跳（否则 memo 依赖命中却拿到陈旧值）
-      get heartbeatTs() {
-        return s.heartbeatTs;
-      },
-    };
+    if (!s) return sessionId === '' ? ZERO_CLOCK : missingViewsOf(sessionId).clock;
+    if (!s.clockSignalsView) s.clockSignalsView = makeClockView(() => s);
     return s.clockSignalsView;
   },
 
@@ -674,6 +722,8 @@ export const chatStreamStore = {
     cur.terminalEvictTimer = null;
     cur.pollSignal.aborted = true;
     sessions.delete(sessionId);
+    // 2026-09-30 08:44:31 小欧 - [79] D2：与条目同生命周期回收缺会话活视图，防该表独立增长
+    missingViews.delete(sessionId);
   },
 
   /** 删除会话专用（4.6.2）：后端删除接口确认成功后调用——断连接+清定时器+移除条目+删快照与草稿。
@@ -701,6 +751,7 @@ export const chatStreamStore = {
       cur.firstChunkTimeout = null;
       cur.intentionalAbortTimer = null;
       sessions.delete(sessionId); // 移除 Map 条目（显式终局，不看 listeners.size）
+      missingViews.delete(sessionId); // 2026-09-30 08:44:31 小欧 - [79] D2：同 evictSession 回收缺会话活视图
     }
     backupRemove(sessionId); // 删快照
     saveDraft(sessionId, ''); // 清草稿
@@ -796,3 +847,12 @@ export const chatStreamStore = {
 //   （heartbeatTs 亦改活 getter，否则缓存对象会钉住陈旧心跳），与既有
 //   getExecutionStepsRef 的 executionStepsRefView 同一模式（DRY，不引第二套抽象）。
 //   修复后引用天然稳定，桥接侧 memo 是否命中都不再影响正确性。
+
+// 编辑历史: 2026-09-30 10:35 小欧 - [79] 3.17 P0 根因修复后的死代码清理（北京老陈裁定「死的删除」）：
+//   sendMessage 尾原 `if (d.status === 'idle' || d.status === 'recovering') d.status = 'active'` 删除。
+//   不可达性（逐路径证毕）：P0 修复已把 active 兜底移入 sendStreamRequest 开篇 commit（transport:143），
+//   本行执行时机在 `await sendStreamRequest()` 之后，status 必然是 pump 退出后的终态/paused/failed/active；
+//   'recovering' 仅 GET 续传路径（transport:309 handleGetNotFound）赋值、'idle' 仅 resume 无 taskId 路径
+//   （backup invalid / recoverWithoutTaskId）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
+//   与 P0 修复配套：修复前该分支是"已完成会话发新消息 final 被吞"（P0）的反向误修点，
+//   修复后语义由 transport 单点承担，store 侧仅剩 pendingMessage 置 sent。

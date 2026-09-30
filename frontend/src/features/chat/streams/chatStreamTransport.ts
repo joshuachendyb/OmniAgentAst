@@ -117,16 +117,30 @@ export async function sendStreamRequest(
   s.pollSignal.aborted = true; // 中止旧轮询观察
   s.pollSignal = { aborted: false }; // 本轮新信号，供本轮新流/新轮询
   commit(s, (d) => {
-    d.lastSeq = -1; // 新请求复位（useSSE.ts:823），防上一任务 seq 守卫拦掉新帧
+    d.lastSeq = -1; // 起点位（useSSE.ts:823），本轮第一个 seq 到达后自然被覆盖
     d.isReceiving = true;
     d.isConnected = true;
     if (d.reconnectStatus !== 'reconnecting') d.reconnectStatus = 'connecting';
     d.abortController = new AbortController();
-    // 2026-09-30 07:58 小欧 - [79] D1：控制器易主即清主动中断标志。
-    //   该标志语义是"这一次 abort 是主动的"，只覆盖当次 abort；新连接接管后旧 abort 已了结。
-    //   漏清的后果：stop()→clearCompleted 置真后再发新消息，本流 final 帧会被 onComplete 的
-    //   intentionalAbort 守卫误判为"已取消"而丢弃，正常完成永不收尾（守卫反成退化源）。
+    // 2026-09-30 07:58 小欧 - [79] D1：控制器易主即清主动中断标志 —
+    //   该标志语义是"这一轮 abort 是主动的"，只覆盖当次 abort；新连接接管后旧 abort 已了结。
+    //   漏清的后果：stop()→clearCompleted 置真后再发新消息，本轮 final 帧会被 onComplete 的
+    //   intentionalAbort 守卫误判"已取消"而丢弃，正常完成永不收尾（守卫反成退化源）
     d.intentionalAbort = false;
+    // 2026-09-30 10:12 小欧 - [79] 三堂会审 P0 修复：**新一轮入口必须把 status 拉回非终态**。
+    //   病根（10 遍会审实测复现）：POST 是"开新轮"的唯一入口，但此前**任何位置都不在轮次开始时
+    //   写 status** —— sendMessage 的 `status='active'` 位于 `await sendStreamRequest()` **之后**
+    //   （store:480 先跑完整轮流、:483 才赋值），对"轮次开始"根本无效；clearSteps 不改 status。
+    //   于是已完成会话发新消息时 status 全程停在 'completed'，本轮 final 帧命中 D1 守卫的
+    //   `isTerminalStatus(s.status)` 半边 → emitEvent('complete') 被跳过 → 助手消息永不收尾、
+    //   isReceiving/isConnected 残留 true。探针实测：起始 active 时事件含 complete，
+    //   起始 completed 时不含（对照组锁定帧构造正确）。
+    //   为何改这里而非改守卫：状态机缺的是"新一轮入口"，补入口后守卫的终态半边**自动变正确**，
+    //   D1 对 S3（停止后迟到 final）与"failed 被迟到 final 覆盖为 completed"的保护一分不丢。
+    //   已评估并否决两个替代：(a) 守卫只看 intentionalAbort —— 会丢掉 failed 被覆盖的保护，属新退化；
+    //   (b) 用 `lastSeq === -1` 当"本轮是否已开始" —— lastSeq 首个带 seq 事件后即 ≥0、且与 resume
+    //   的 after_seq 续传语义耦合，一个字段两种含义，逻辑不直线。
+    d.status = 'active';
   });
   const ctl = s.abortController!;
   commit(s, (d) => {
@@ -733,8 +747,12 @@ function storeHandlers(s: ChatStreamSession) {
           d.isConnected = v;
         }
       ),
-      // 2026-09-29 小欧：全链零调用点（sseParser 内 0 处 disconnect 调用），保持空实现不做断流
-      disconnect: () => undefined,
+      // [79] F② 2026-09-30 小欧：**删除** `disconnect: () => undefined` 空实现。
+      //   原注释称"全链零调用点"，实施中复核确认成立：sseParser.ts 内 `disconnect` 解构后零使用
+      //   （全文件仅 L216 一处解构，无任何调用），生产代码亦无 `storeHandlers.disconnect(...)` 调用点。
+      //   该空壳违反 [63] 6.5「无兼容空壳」；停止语义唯一入口是 [63] 5.14 的 `chatStreamStore.stop()`
+      //   （`useChatTaskControl.handleCancel` 已改调 Store.stop），断流则由 `pump()` 的
+      //   `s.abortController?.abort()` 负责——二者均不经本空壳，故删除零功能影响。
       setServerTaskId: set(
         () => s.serverTaskId,
         (d, v) => {

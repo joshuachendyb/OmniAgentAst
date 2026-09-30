@@ -172,11 +172,10 @@ const processSSEData = (
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
-    disconnect: (
-      manualDisconnect?: boolean,
-      clearStorage?: boolean,
-      onDisconnect?: () => void
-    ) => void;
+    // [79] F② 2026-09-30 小欧：**删除** `disconnect` 成员声明（原 3 参 `manualDisconnect/clearStorage/
+    //   onDisconnect`）。该成员自 [63] 5.14 起零消费：全文件仅解构一次（L216）且解构后从未使用，
+    //   生产代码亦无调用点；唯一实现是 transport 侧的空壳。停止语义已由 `chatStreamStore.stop()` 承担，
+    //   保留空壳违反 6.5「无兼容空壳」，故连类型带解构一并删（YAGNI）。
     setServerTaskId?: (taskId: string) => void;
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，用于断线重连 after_seq 续传
     onSeq?: (seq: number) => void;
@@ -213,7 +212,8 @@ const processSSEData = (
     responseBufferRef,
     setIsReceiving,
     setIsConnected,
-    disconnect: _disconnect,
+    // [79] F② 2026-09-30 小欧：原 `disconnect: _disconnect` 解构已删（成员与解构同时退役，
+    //   见上方 handlers 类型注释）。解构后零使用，属纯冗余绑定。
     setServerTaskId,
     onSeq,
     // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 解构已删除(作废守卫退役) — 小欧-2026-09-12
