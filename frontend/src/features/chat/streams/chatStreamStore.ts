@@ -561,7 +561,10 @@ export const chatStreamStore = {
     sessionId: string,
     content: string,
     mode: 'linked' | 'independent' = 'independent'
-  ): Promise<ResumeResult> {
+): Promise<ResumeResult> {
+    // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
+    //   已有守卫，本入口补齐对称防御；hook 侧 customSessionId??sessionId??'' 双 null 落空串即由此挡住）
+    if (!sessionId) return 'idle';
     const s = this.ensureSession(sessionId);
     if (s.isProcessing) return 'recovering'; // 防双发
     commit(s, (d) => {
@@ -604,7 +607,12 @@ await sendStreamRequest(s, content, mode);
     //   落点选在 restore() 的唯一调用方 resume()：一次拦住"覆盖状态"与"起第二条流"两个后果
     //   （restore 不再重复设防，避免同一不变量两处判断）。
     const cur = sessions.get(sessionId);
-    if (cur && hasInflightWork(cur)) return resumeResultOf(cur);
+    // 2026-09-30 小欧（T1 修复）：重连退避排期(reconnectTimeout≠null)也属于"状态正在被写"的窗口——
+    //   仅凭三瞬态守卫会穿透：退避期 pumpActive/resumeInFlight/isProcessing 全 false，restore() 用旧备份
+    //   覆盖在飞 lastSeq/steps（序号倒退）并提前 GET。reconnectTimeout 即"退避进行中"可靠标志，
+    //   非 null 一律回读当前状态，绝不 restore/续传。
+    if (cur && (hasInflightWork(cur) || cur.reconnectTimeout !== null))
+      return resumeResultOf(cur);
     const s = this.ensureSession(sessionId);
     const restored = await this.restore(sessionId);
     if (restored === 'invalid') {
@@ -911,3 +919,6 @@ await sendStreamRequest(s, content, mode);
 //   与 P0 修复配套：修复前该分支是"已完成会话发新消息 final 被吞"（P0）的反向误修点，
 //   修复后语义由 transport 单点承担，store 侧仅剩 pendingMessage 置 sent。
 // 编辑历史: 2026-09-30 14:30 小欧 - 删 clearCompleted 越权写瞬态标志；evictOverflow 查在飞工作；清理收敛单一出口；restore 改展开式
+// 编辑历史: 2026-09-30 18:14:06 小欧 - T1/H13 守卫修复（[81] v1.1 复核确认的实质项）：
+//   T1: resume 补退避窗口守卫（reconnectTimeout≠null 回读当前态），防 restore 覆盖在飞状态致序号倒退 + 提前 GET；
+//   H13: sendMessage 补空串守卫（return 'idle'），禁 ensureSession 造 '' 鬼会话，与 resume/stop 对称 — 小欧-2026-09-30 18:14:06
