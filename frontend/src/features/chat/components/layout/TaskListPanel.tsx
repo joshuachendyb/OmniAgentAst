@@ -13,6 +13,9 @@
 // 编辑历史: 2026-09-09 小欧 - 模型标签条件显示provider前缀: rightOpen=true(右侧展开)只显示model, rightOpen=false(右侧折叠)显示provider/model - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 步数标签改轮次标签: total_steps→llm_call_count, "步"→"轮", 与TaskInfoBar一致; 模型/轮次标签颜色TERTIARY(#999)→PRIMARY(#595959)提亮 - 小欧-2026-09-09
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.11): 加merged_inputs折叠块(默认收起,展开看全文) — 小欧-2026-09-28
+// 编辑历史: 2026-09-30 小欧 - [81]v1.4-H18修复: 状态标签按后端 status 字段正确映射
+//   (completed→已完成/executing→执行中/paused→已暂停/failed→失败/cancelled→已取消)，
+//   原实现`t.status==='failed'?'失败':'成功'`把 executing/paused/cancelled 全标成"成功" — 小欧-2026-09-30
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -37,6 +40,16 @@ import { Colors } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
 import { showSuccess, handleError } from '@/services/error/handler';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
+
+// 2026-09-30 小欧 [81]v1.4-H18: 左列任务状态标签——按后端 status 枚举正确显示。
+//   DB 合法值: completing→completed/executing/paused/failed/cancelled（db_initializer 默认 'executing'）
+const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
+  completed: { name: '已完成', color: Colors.TEXT.TERTIARY },
+  executing: { name: '执行中', color: Colors.PRIMARY },
+  paused: { name: '已暂停', color: Colors.WARNING },
+  failed: { name: '失败', color: '#ff4d4f' },
+  cancelled: { name: '已取消', color: Colors.TEXT.TERTIARY },
+};
 
 interface TaskListPanelProps {
   tasks: SessionTaskItem[];
@@ -199,19 +212,24 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               )}
 
               {/* 状态标签 */}
-              <span
-                style={{
-                  fontSize: 11,
-                  color:
-                    t.status === 'failed' ? '#ff4d4f' : Colors.TEXT.TERTIARY,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                }}
-              >
-                <span style={{ fontSize: 6 }}>●</span>
-                {t.status === 'failed' ? '失败' : '成功'}
-              </span>
+              {/* 2026-09-30 小欧 [81]v1.4-H18: 按 TASK_STATUS_LABEL 映射，未知状态兜底回退展示原始值 */}
+              {(() => {
+                const st = TASK_STATUS_LABEL[t.status];
+                return (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: st ? st.color : Colors.TEXT.TERTIARY,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                    }}
+                  >
+                    <span style={{ fontSize: 6 }}>●</span>
+                    {st ? st.name : t.status}
+                  </span>
+                );
+              })()}
 
               {/* 轮次标签（显示LLM调用轮次） */}
               {t.llm_call_count > 0 && (

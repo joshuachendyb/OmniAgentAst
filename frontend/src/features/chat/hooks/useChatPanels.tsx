@@ -358,6 +358,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       updateTaskResponse, // 2026-09-15 小欧: RightViewer 透传写 final.response — 小欧-2026-09-15
       latestTaskId, // 2026-09-01 小欧 方案C
       latestTaskRef, // 2026-09-01 小欧 方案C
+      rightOpen, // 2026-09-30 小欧 [81]v1.4-H1: TaskListPanel 模型标签按 rightOpen 派生(折叠显 provider 前缀), 不入依赖则开合不重算
     ]
   );
 }

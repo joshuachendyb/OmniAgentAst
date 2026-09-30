@@ -114,6 +114,16 @@ export const useTaskInfo = (
     const hasFailedFinal =
       steps.some((s) => s.type === 'final' && s.outcome === 'failed') ||
       frames.finalStats?.final_status === 'failed';
+    // 2026-09-30 小欧 [81]v1.4-H12修复: detail 分支终态判定改以 steps 中的 final step 为权威
+    //   真实终态（completed/cancelled），替代原 `duration>0 || updated_at` 滞后兜底——
+    //   updated_at 对运行中任务恒真，致 running 任务被误判「已完成」。final step 到达即证已终态，
+    //   steps 未含 final（任务仍执行中）则保持 running
+    const hasCompletedFinal = steps.some(
+      (s) => s.type === 'final' && s.outcome === 'completed'
+    );
+    const hasCancelledFinal = steps.some(
+      (s) => s.type === 'final' && s.outcome === 'cancelled'
+    );
     // 【小欧 2026-08-26 修复 A3】选中历史任务：详情优先派生动态信息(状态/耗时/步骤/轮次/重试/token)
     if (detail) {
       const map: Record<string, TaskBadge> = {
@@ -133,12 +143,12 @@ export const useTaskInfo = (
         liveError
       )
         badge = 'failed';
-      // 2026-09-11 小欧 DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed - 小欧-2026-09-11
-      if (
-        badge === 'running' &&
-        ((detail.duration != null && detail.duration > 0) || detail.updated_at)
-      )
+      // 2026-09-30 小欧 [81]v1.4-H12: 以 final step 权威判定终态，杜绝 `updated_at` 恒真误判
+      if (hasCancelledFinal || detail.status === 'cancelled')
+        badge = 'cancelled';
+      if (hasCompletedFinal || detail.status === 'completed')
         badge = 'completed';
+      // DB 滞后兜底废弃：之前用 `duration>0||updated_at` 把 running 误判 completed — 已由 final step 判定替代
       return {
         badge,
         elapsedSec: detail.duration ?? 0,

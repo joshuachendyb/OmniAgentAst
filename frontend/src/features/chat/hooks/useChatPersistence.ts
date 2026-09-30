@@ -281,7 +281,11 @@ export const useChatPersistence = (
       if (data.messageCount !== undefined) {
         // 轻量级状态，需要从服务器加载完整消息
         if (data.sessionId) {
-          const result = await loadHistoryMessages(data.sessionId);
+          // 2026-09-30 小欧 [81]v1.4-H3: useCache:false 强制走后端——缓存即本快照自证，
+          //   命中 5min 内同类缓存会返回缓存而非 DB 全量消息，DB 与 UI 失联不察觉
+          const result = await loadHistoryMessages(data.sessionId, {
+            useCache: false,
+          });
           if (result) {
             return {
               messages: result.messages || [],
@@ -312,7 +316,11 @@ export const useChatPersistence = (
       // 完整状态：验证sessionId后端有效性，防止缓存指向已删除的session
       if (data.sessionId) {
         try {
-          const verifyResult = await loadHistoryMessages(data.sessionId);
+          // 2026-09-30 小欧 [81]v1.4-H3: useCache:false 强制验证走后端——原默认读缓存
+          //   5min 内命中"刚写入的快照"自证，后端已删该会话仍被当存在，DB 与 UI 失联
+          const verifyResult = await loadHistoryMessages(data.sessionId, {
+            useCache: false,
+          });
           if (!verifyResult) {
             console.warn(
               '🔴 缓存中的sessionId后端不存在，清除缓存:',

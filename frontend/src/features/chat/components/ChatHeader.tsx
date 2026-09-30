@@ -76,6 +76,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
   const savingRef = useRef(false); // 2026-08-27 小欧 修复#12: 防回车与失焦重复保存(双发409)的重入守卫
   // 编辑历史: 2026-08-28 小欧 - 修复卸载触发blur双发: 保存成功后标记本次编辑已落库, 拦截Input卸载时的blur二度保存 - 小欧-2026-08-28
   const savedThisEditRef = useRef(false);
+  // 2026-09-30 小欧 [81]v1.4-H19修复: Escape取消被卸载onBlur强迫保存——
+  //   Escape keydown→onEditingCancel→setEditingTitle(false)→Input卸载→blur触发→onBlur走到保存分支。
+  //   加 cancelRef: Escape按下时置true, onBlur 读到即跳过保存并复位
+  const cancelThisEditRef = useRef(false);
   // 处理标题编辑保存（回车和失焦共用的保存逻辑）
   const handleSaveTitle = async () => {
     if (savingRef.current) return; // 2026-08-27 小欧 修复#12: 重入守卫, 防回车与失焦双发
@@ -152,6 +156,8 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
           onChange={(e) => setTitleInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
+              // 2026-09-30 小欧 [81]v1.4-H19: 先标记取消再退出编辑, 拦截随后卸载触发的 onBlur 强迫保存
+              cancelThisEditRef.current = true;
               onEditingCancel();
             }
           }}
@@ -160,6 +166,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             await handleSaveTitle();
           }}
           onBlur={async () => {
+            // 2026-09-30 小欧 [81]v1.4-H19: Escape 取消路径在此拦截保存（原实现卸载 blur 把"取消"变"保存"）
+            if (cancelThisEditRef.current) {
+              cancelThisEditRef.current = false;
+              return;
+            }
             if (savingRef.current || savedThisEditRef.current) {
               savedThisEditRef.current = false;
               return;
@@ -182,6 +193,12 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
             onClick={(e) => {
               e.stopPropagation();
               if (sessionId) {
+                // 2026-09-30 小欧 [81]v1.4-H19 三堂会审修正: 每次进入新编辑显式复位 cancelRef。
+                //   原复位只挂在 onBlur 上, 但 React 组件卸载不派发合成 onBlur(事件到不了 root 委托),
+                //   Escape 后标记残留 true → 下一次编辑的正常失焦被误吞, 内容静默丢失(比原 H19 更隐蔽的退化)。
+                //   在编辑入口复位, 使正确性不依赖"卸载是否派发 blur"这一未定义行为。
+                cancelThisEditRef.current = false;
+                savedThisEditRef.current = false; // 2026-09-30 小欧 同理复位上次编辑的已保存标记
                 setTitleInput(sessionTitle || '');
                 onEditingStart();
               }
