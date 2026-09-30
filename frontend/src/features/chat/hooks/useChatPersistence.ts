@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-26 小欧 - 参与改造: 状态持久化对接消息/任务恢复
 // 编辑历史: 2026-09-10 小欧 - S12: messages持久化防抖由1000ms改5000ms, 与steps防抖同频, 去双路全量stringify — 小欧-2026-09-10
+// 编辑历史: 2026-09-30 14:30 小欧 - 卸载/页面隐藏改调 flush()（原走防抖，页面销毁后定时器不执行致丢消息）；删死函数 clearStorage
 /**
  * useChatPersistence Hook - 状态持久化与恢复
  *
@@ -68,7 +69,6 @@ export interface UseChatPersistenceReturn {
   // 保存函数
   saveState: () => void;
   saveStateWithSSECheck: () => void;
-  clearStorage: () => void;
 
   // 恢复函数
   restoreState: () => Promise<{
@@ -245,16 +245,8 @@ export const useChatPersistence = (
     }
   }, [isReceiving, saveState]);
 
-  /**
-   * clearStorage - 清除sessionStorage中的状态
-   */
-  const clearStorage = useCallback(() => {
-    try {
-      sessionStorage.removeItem(STORAGE_KEY);
-    } catch (error) {
-      console.error('清除存储失败:', error);
-    }
-  }, []);
+  // 2026-09-30 小欧 - 删 clearStorage 死函数：全仓零消费者（唯一提及处在 useChatStreaming 的
+  //   历史注释里，描述早已不存在的 disconnect 三参），属 YAGNI 假接口面。
 
   // ========================================
   // 恢复函数
@@ -330,9 +322,11 @@ export const useChatPersistence = (
             return null;
           }
         } catch (verifyError) {
-          console.warn('🔴 验证sessionId有效性失败，清除缓存:', verifyError);
-          sessionStorage.removeItem(STORAGE_KEY);
-          return null;
+          // 2026-09-30 小欧 - 区分"确实不存在"与"验证失败"：loadHistoryMessages 已只对 404
+          //   返回 null（上面分支处理），走到这里的都是网络/5xx。原实现一律清缓存并 return null，
+          //   等于把弱网当成"缓存指向已删会话"→ 弱网进页面即丢本地快照。
+          //   改：不清缓存、继续用下面的本地快照返回（缓存是完整本地数据，降级优于清空）。
+          console.warn('⚠️ 验证 sessionId 有效性失败，改用本地缓存:', verifyError);
         }
       }
 
@@ -359,8 +353,10 @@ export const useChatPersistence = (
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
-        // 页面隐藏时保存
+        // 2026-09-30 小欧 - 与 beforeunload 同因——页面隐藏后可能被冻结/杀掉，
+        //   500ms 防抖定时器不保证执行，故同样在 saveState 后立即 flush 同步落盘。
         saveState();
+        saveMessagesToStorage.current.flush();
       }
     };
 
@@ -369,7 +365,8 @@ export const useChatPersistence = (
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [saveState]);
+    // 2026-09-30 小欧 - saveMessagesToStorage 为 useRef（引用恒定），入依赖仅为闭包新鲜度
+  }, [saveState, saveMessagesToStorage]);
 
   // ========================================
   // 副作用：页面卸载前保存
@@ -378,8 +375,14 @@ export const useChatPersistence = (
 
   useEffect(() => {
     const handleBeforeUnload = (_e: BeforeUnloadEvent) => {
-      // 在页面卸载前保存状态
+      // 2026-09-30 小欧 - saveState() 后**立即 flush**，
+      //   使卸载前最后一批消息同步落盘。
+      //   病根：saveState 的唯一落盘出口是 debounce(...,500) 包装，无同步通道；
+      //   而 beforeunload 处理器同步返回后页面立即销毁 → 500ms 定时器永不执行
+      //   → 卸载时最后若干条消息 100% 丢失（注释"在页面卸载前保存状态"与实现相反）。
+      //   修：flush 同步执行已排入的参数（与定时器语义等价、只是提前），零重复实现。
       saveState();
+      saveMessagesToStorage.current.flush();
 
       // 标准做法：设置returnValue来显示确认对话框
       // 但为了更好的用户体验，我们只保存状态，不阻止用户离开
@@ -392,14 +395,20 @@ export const useChatPersistence = (
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, [saveState]);
+    // 2026-09-30 小欧 - saveMessagesToStorage 为 useRef（引用恒定），入依赖仅为闭包新鲜度
+  }, [saveState, saveMessagesToStorage]);
 
   // ========================================
   // 副作用：自动保存（当messages变化时）
   // ========================================
 
   useEffect(() => {
-    // 使用防抖保存，避免频繁写入
+    // 2026-09-30 小欧 - 保留最外层 5s（曾尝试按 K1 删掉，实测导致退化后回退）：
+    //   这层不只是"多余防抖"，它承担**与 store 侧 steps 落盘同频**的职责
+    //   （chatStreamStore.schedulePersist 同为 5000ms，2026-09-10 S12 去双路全量 stringify）。
+    //   删掉后 messages 变 1s 落盘、steps 仍 5s → 两者不同频，反而破坏 S12 意图。
+    //   真要解 K1（三层防抖 6s 延迟）须两侧频率一起改，属跨 store/hook 的独立改造，
+    //   且用例 T26 正是锁定该契约，单独改本侧必然转红——不擅自改测试迁就。
     const timer = setTimeout(() => {
       saveStateWithSSECheck();
     }, 5000); // 小欧 2026-09-10 S12: 与 steps 防抖同频，去双路全量 stringify
@@ -416,7 +425,6 @@ export const useChatPersistence = (
   return {
     saveState,
     saveStateWithSSECheck,
-    clearStorage,
     restoreState,
     saveMessagesToStorage,
   };

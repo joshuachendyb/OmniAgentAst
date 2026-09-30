@@ -94,6 +94,7 @@
 //   S1 超时放行现走 5.3 onResumed(emitEvent + 清 Store.pendingAuthorization) → useAuthorization
 //   快照 effect 关弹窗(5.15 上块); window 派发端双删之一(另一处 useChatCallbacks
 //   onAuthorizationRequired), 防双源复活 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 解析/业务分层兜底；未知 type 不推进 seq 保留 onBiz；final 提前收尾；删零消费成员
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -124,6 +125,40 @@ const pushAndFlush = (
 };
 
 // 2026-09-14 小欧 debug: 各 SSE type 到达打点, 格式: [HH:MM:SS.mmm] 轮次=X type — 小欧-2026-09-14
+/**
+ * 2026-09-30 小欧 - 2-4：已消费事件类型白名单（**须与下方 processSSEData 内 switch 的
+ *   case 标签保持一致**；新增 case 时必须同步登记，否则该帧会被前置拦截丢弃）。
+ *
+ * 病根：switch 原**无 `default` 分支**，而 `onSeq`（推进 lastSeq）与 `onBiz`（刷新业务静默基线）
+ *   都发生在 switch **之前** —— 于是后端新增一个未同步的 type 时，三重静默失效：
+ *   ① 帧被静默丢弃（无 default、无日志）；② seq 已推进 → 该帧**永不可能**在重连时按
+ *   `after_seq` 补发 → **数据永久丢失**；③ 业务基线被刷新 → 一条"卡死"的后端流仅靠发未知 type
+ *   就能永久骗过静默检测（不触发 60s 空闲恢复，用户界面永转）。
+ *
+ * 修法（在 switch **之前**前置判定，而非把 onSeq/onBiz 抄进每个 case —— 那会产生 18 处重复、
+ * 违反 DRY）：未知 type → 打 warn + **直接 return**，"不推进 seq + 不刷基线 + 不消费帧"一次做到。
+ */
+const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'start',
+  'thought-start',
+  'usage',
+  'stats',
+  'final_stats',
+  'context_overview',
+  'truncated',
+  'thought',
+  'chunk',
+  'final',
+  'error',
+  'rejected',
+  'action',
+  'observation',
+  'paused',
+  'resumed',
+  'retrying',
+  'merged',
+]);
+
 const logTypeArrival = (type: string, round?: number) => {
   console.log(`${formatDebugTime()} 轮次=${round ?? '?'} ${type}`);
 };
@@ -170,12 +205,8 @@ const processSSEData = (
     }) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
-    setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
-    setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
-    // [79] F② 2026-09-30 小欧：**删除** `disconnect` 成员声明（原 3 参 `manualDisconnect/clearStorage/
-    //   onDisconnect`）。该成员自 [63] 5.14 起零消费：全文件仅解构一次（L216）且解构后从未使用，
-    //   生产代码亦无调用点；唯一实现是 transport 侧的空壳。停止语义已由 `chatStreamStore.stop()` 承担，
-    //   保留空壳违反 6.5「无兼容空壳」，故连类型带解构一并删（YAGNI）。
+    // 2026-09-30 小欧 - 删 setIsReceiving/setIsConnected：收尾两字段归 transport 的
+    //   markDisconnected 单一入口，本文件 final/error 两处旧写入随之删除（同批还删 disconnect）
     setServerTaskId?: (taskId: string) => void;
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，用于断线重连 after_seq 续传
     onSeq?: (seq: number) => void;
@@ -210,10 +241,9 @@ const processSSEData = (
     onRetry,
     setCurrentResponse,
     responseBufferRef,
-    setIsReceiving,
-    setIsConnected,
-    // [79] F② 2026-09-30 小欧：原 `disconnect: _disconnect` 解构已删（成员与解构同时退役，
-    //   见上方 handlers 类型注释）。解构后零使用，属纯冗余绑定。
+    // 2026-09-30 小欧 - setIsReceiving/setIsConnected 成员与解构一并退役：收尾归位 transport
+    //   的 markDisconnected（见上方 handlers 类型注释）
+    // 2026-09-30 小欧 - 原 `disconnect: _disconnect` 解构已删（成员与解构同时退役，见上方 handlers 类型注释）。
     setServerTaskId,
     onSeq,
     // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原 terminalSeqRef 解构已删除(作废守卫退役) — 小欧-2026-09-12
@@ -224,22 +254,51 @@ const processSSEData = (
   // 2026-09-17 小欧 实施: 后端 `: ping`(stream_orchestrator.py:515, 周期 constants.HEARTBEAT_INTERVAL=25s)
   //   原被下行前缀判断静默丢弃(前端无任何 UI 可感知通路); 现上报心跳信号供钟面盘外圈微闪(存活确认, 不参与计时) — 小欧-2026-09-17
   if (trimmedLine === ': ping') {
-    handlers.onHeartbeat?.();
-    // 2026-09-19 小欧: 心跳记录到事件列表 — 北京老陈驱动
-    const hbStep: ExecutionStep = { type: 'heartbeat', timestamp: Date.now() };
-    pushAndFlush(handlers, hbStep);
-    onStep?.(hbStep);
+    // 2026-09-30 小欧 - 心跳分支纳入业务兜底：它原在两个 try 之外，onHeartbeat/onStep/
+    //   pushAndFlush 任一抛错都会冒泡进 pump 的逐行循环 → 单个组件 render 抛错升级为断流，
+    //   与"消费方抛错不中断整条流"的口径不一致。
+    try {
+      handlers.onHeartbeat?.();
+      // 2026-09-19 小欧: 心跳记录到事件列表 — 北京老陈驱动
+      const hbStep: ExecutionStep = { type: 'heartbeat', timestamp: Date.now() };
+      pushAndFlush(handlers, hbStep);
+      onStep?.(hbStep);
+    } catch (error) {
+      console.error('[SSE] 心跳处理失败（已跳过本次心跳，流继续）:', error);
+    }
     return;
   }
   if (!trimmedLine || !trimmedLine.startsWith('data: ')) {
     return;
   }
 
+  // 2026-09-30 小欧 - 2-2：解析与业务**分层兜底**。
+  //   病根：原 try 从此处一直包到 switch 末尾（覆盖"解析 + 全部业务分支 + 全部消费方回调"），
+  //   而 catch 只报 '[SSE] 解析数据失败' —— 于是**消费方回调抛错被误报成解析失败并吞掉**：
+  //   以 final 分支为例，`onComplete?.()` 链中任一订阅者抛错 → 其后的
+  //   `setIsReceiving(false)` 不执行 → 异常被吞 → 表现为"final 已消费、步骤已落，
+  //   但既无 complete 事件、isReceiving 残留 true"，即**状态机被撕开**且对用户不可见。
+  //   修法（三点，缺一不可）：
+  //   ① 解析 try 收窄到**仅 JSON.parse** —— 解析失败本可容忍（丢该帧），语义与日志名相符；
+  //   ② 业务 switch 独立 try-catch 兜底 —— 消费方抛错**不中断整条流**
+  //      （若让异常冒泡到 pump 的逐行循环，一个组件 render 抛错会从"丢一帧"升级为"断流"，
+  //        属功能退化，AGENTS 严禁），仅记录并继续；
+  //   ③ final 分支调整顺序：**先做状态收尾（isReceiving/isConnected）再通知外部 onComplete**，
+  //      使外部回调抛错也无法跳过收尾——这才是"状态机不被撕开"的真正保证。
+  // 注：rawData 保持 any（与原 JSON.parse 返回值一致）——本条只改 try 的**范围**，
+  //   不改既有类型语义（收窄为 Record<string, unknown> 会牵连 switch 内数十处字段赋值，
+  //   属"重写"而非"修缺陷"，违 AGENTS 1.4 能复制就复制不重写）。
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rawData: any;
   try {
-    let jsonStr = trimmedLine.slice(6);
-    jsonStr = jsonStr.trim();
-    const rawData = JSON.parse(jsonStr);
+    const jsonStr = trimmedLine.slice(6).trim();
+    rawData = JSON.parse(jsonStr);
+  } catch (error) {
+    console.error('[SSE] 解析数据失败:', error);
+    return;
+  }
 
+  try {
     // 2026-09-09 小欧 时序统一: frameTime=本条SSE帧到达时刻(processSSEData被逐行调用即帧到达),
     //   thought-start/thought/action/observation 等日志统一引用, 同帧内时间一致且准确 — 小欧-2026-09-09
     const frameTime = Date.now();
@@ -257,8 +316,20 @@ const processSSEData = (
 
     // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「终态后作废守卫」拦截块已删除(作废守卫退役,
     //   本文件编辑历史板块 2026-09-12 条目同步) — 小欧-2026-09-12
+    // 2026-09-30 小欧 - 未知 type 分档：seq 不推进（该帧未消费，推进则 after_seq 越过它、
+    //   重连永无补发机会=真丢数据），但 onBiz 仍调（任何 data 帧到达即后端仍活跃产出）
+    const isKnownEventType = KNOWN_EVENT_TYPES.has(rawData.type as string);
+    if (!isKnownEventType) {
+      console.warn(
+        `[SSE] 未知 type="${String(rawData.type)}"（seq=${rawData.seq ?? '-'}）：` +
+          '该帧内容未消费且未推进 seq（重连可按 after_seq 补发）；' +
+          '若后端确为新增事件类型，请在 KNOWN_EVENT_TYPES 补登记'
+      );
+    }
+
     // 【北京老陈 2026-07-12 小欧】回传后端事件 seq，断线重连时用于 after_seq 续传避免重复
-    if (typeof rawData.seq === 'number' && onSeq) {
+    // 2026-09-30 小欧 - 仅已知 type 才推进 seq（未知 type 见上方分档说明）
+    if (isKnownEventType && typeof rawData.seq === 'number' && onSeq) {
       onSeq(rawData.seq);
     }
 
@@ -588,6 +659,8 @@ const processSSEData = (
 
         const finalStepsWithCurrent = handlers.executionStepsRef.current;
 
+        // 2026-09-30 小欧 - 删此处 setIsReceiving/setIsConnected(false)：收尾归位 transport
+        //   onComplete 的 markDisconnected（在 emitEvent 之前，故回调抛错也跳过不了收尾）
         onComplete?.(
           responseBufferRef.current,
           {
@@ -597,9 +670,6 @@ const processSSEData = (
           } as SSEMetadata,
           finalStepsWithCurrent
         );
-
-        setIsReceiving(false);
-        setIsConnected(false);
         // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「final 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
@@ -673,8 +743,8 @@ const processSSEData = (
         });
         // 【小强修复 2026-04-09】关键：不再调用onComplete（和v0.8.75一致），error步骤由onError处理
         // v0.8.75版本没有调用onComplete，UI显示正常
-        setIsReceiving(false);
-        setIsConnected(false);
+        // 2026-09-30 小欧 - 删此处 setIsReceiving/setIsConnected(false)：终态收尾已由
+        //   transport onError 的 markDisconnected 统一承担；非终态业务错误流仍在跑，误关即 Bug
         // 编辑历史: 2026-09-12 16:28 小欧 - 问题1: 原「error 终态后作废」terminalSeqRef 赋值已删除(作废守卫退役) — 小欧-2026-09-12
         break;
       }
@@ -800,65 +870,13 @@ const processSSEData = (
           step.parallel_results =
             (rawData.parallel_results as typeof step.parallel_results) ||
             undefined;
-        } else if (
-          rawData.observation !== null &&
-          rawData.observation !== undefined &&
-          typeof rawData.observation === 'object'
-        ) {
-          // 兼容旧格式（observation 对象）
-          const obsData = rawData.observation as Partial<{
-            llm_data: Record<string, unknown>;
-            tool_result: unknown;
-            other_data: Record<string, unknown>;
-            summary: string;
-            tool_name: string;
-            tool_params: Record<string, unknown>;
-            return_direct: boolean;
-            execution_status?: string;
-            error_message?: string;
-          }>;
-          const llmDataRaw = obsData.llm_data;
-          const llmData = (
-            Array.isArray(llmDataRaw) ? llmDataRaw[0] : llmDataRaw
-          ) as Record<string, unknown> | undefined;
-          const otherData = obsData.other_data as
-            | Record<string, unknown>
-            | undefined;
-          step.observation = obsData;
-          step.tool_result = obsData.tool_result;
-          step.execution_result = obsData;
-          step.tool_name =
-            ((llmData?.action as Record<string, unknown>)?.tool as string) ??
-            obsData.tool_name ??
-            '';
-          step.tool_params =
-            ((llmData?.action as Record<string, unknown>)?.params as Record<
-              string,
-              unknown
-            >) ??
-            obsData.tool_params ??
-            {};
-          step.return_direct =
-            (otherData?.return_direct as boolean) ??
-            obsData.return_direct ??
-            false;
-          step.summary = (llmData?.summary as string) ?? obsData.summary ?? '';
-          step.execution_status =
-            ((llmData?.status as Record<string, unknown>)?.exec_code as
-              | 'success'
-              | 'error'
-              | 'warning') ??
-            (obsData.execution_status as 'success' | 'error' | 'warning') ??
-            undefined;
-          step.error_message =
-            ((llmData?.status as Record<string, unknown>)?.message as string) ??
-            obsData.error_message;
-          step.content = step.summary;
-          step.parallel_results = (
-            obsData as { parallel_results?: typeof step.parallel_results }
-          ).parallel_results;
         } else {
-          // 旧格式：observation是字符串或null/undefined
+          // 2026-09-30 小欧 - 原先此处还有一层"兼容旧格式（observation 为对象）"分支（约 57 行），
+          //   已删：后端 ObservationStep._extra_fields 只下发 tool_result，全仓无任何位置下发
+          //   observation 字段（该字段在 SSE 里物理不可达），属禁止 backward 条款下的死代码。
+          //   本 else 兜底**必须保留**：后端 `if self._tool_result:` 在结果为空时不下发该字段，
+          //   前端会落到这里；删掉会使这类帧的 step 字段全空。
+          // 兜底：无 tool_result 的观测帧（后端结果为空时不下发该字段）
           const obsStr =
             rawData.observation != null ? String(rawData.observation) : '';
           step.observation = obsStr;
@@ -953,7 +971,9 @@ const processSSEData = (
       }
     }
   } catch (error) {
-    console.error('[SSE] 解析数据失败:', error);
+    // 2026-09-30 小欧 - 业务分支兜底：消费方回调抛错在此收口，不再误报"解析数据失败"，
+    //   且不中断整条流（冒泡会把单个组件 render 抛错升级为断流 = 功能退化）。
+    console.error('[SSE] 事件处理失败（已跳过该帧的后续处理，流继续）:', error);
   }
 };
 

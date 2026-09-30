@@ -1,6 +1,7 @@
 // 编辑历史: 2026-07-16 小欧 - parseMessage 解析 thought 字段
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep改从types/execution导入; 删execution_steps camel兼容分支(后端仅发snake); 删装饰性console.log
+// 编辑历史: 2026-09-30 14:30 小欧 - 查会话改判 404 返回 null 其余冒泡（原吞异常致"不存在"与"取不到"不可区分）；debounce 加 flush()
 /**
  * 聊天历史工具函数
  *
@@ -13,6 +14,8 @@
  */
 
 import { sessionApi } from '../services/api/session.api';
+// 2026-09-30 小欧 - 判 404 以把 null 语义收窄为"确实不存在"（其余异常冒泡给调用方重试）
+import axios from 'axios';
 import type { Message, HistoryLoadResult } from '../types/chat';
 import type { ExecutionStep } from '../types/execution';
 
@@ -30,21 +33,54 @@ export const DEBUG_LOAD_FROM_API = import.meta.env.DEV || false;
 
 /**
  * 防抖函数
+ *
+ * 2026-09-30 小欧 - 新增 flush()：beforeunload 同步调 saveState 后即返回，而落盘唯一出口是
+ *   本防抖（无同步通道）→ 页面销毁后定时器永不执行、最后一批消息 100% 丢；卸载路径改调 flush。
  */
+export type Debounced<T extends (...args: Parameters<T>) => void> = T & {
+  /** 同步执行最近一次实参并取消待触发定时器（用于 beforeunload 等"同步返回即销毁"的场景） */
+  flush: () => void;
+};
+
 export const debounce = <T extends (...args: Parameters<T>) => void>(
   func: T,
   delay: number
-): T => {
+): Debounced<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let lastArgs: Parameters<T> | null = null;
 
-  return ((...args: Parameters<T>) => {
+  // 2026-09-30 小欧 - 单一调用点，供 debounced / flush 共用（DRY）。
+  //   T 为自引用泛型，`func(...args)` 展开时 TS 报 "Parameters<T> must have a
+  //   [Symbol.iterator]"（自引用约束下 TS 丢失元组可迭代性），故经 unknown 断言后展开。
+  const invoke = (args: Parameters<T>): void => {
+    (func as unknown as (...a: unknown[]) => void)(...(args as unknown[]));
+  };
+
+  const debounced = ((...args: Parameters<T>) => {
+    lastArgs = args;
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
     timeoutId = setTimeout(() => {
-      func(...args);
+      timeoutId = null;
+      lastArgs = null;
+      invoke(args);
     }, delay);
-  }) as T;
+  }) as Debounced<T>;
+
+  debounced.flush = (): void => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = null;
+    }
+    if (lastArgs) {
+      const args = lastArgs;
+      lastArgs = null;
+      invoke(args);
+    }
+  };
+
+  return debounced;
 };
 
 /**
@@ -152,8 +188,11 @@ export const loadHistoryMessages = async (
       sessionModel: sessionData.sessionModel ?? null,
     };
   } catch (error) {
+    // 2026-09-30 小欧 - null 语义收窄为"确实不存在"（仅 404）。原 catch 吞全部异常统一
+    //   return null，致弱网/5xx 也被当"已删除"→ 清空正在看的内容并抹 URL，且调用方重试成死码。
     console.error('加载历史消息失败:', error);
-    return null;
+    if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+    throw error;
   }
 };
 
@@ -173,8 +212,12 @@ export const loadLatestHistoryMessages =
       }
       return null;
     } catch (error) {
+      // 2026-09-30 小欧 - 与 loadHistoryMessages 同因：异常冒泡，不再吞成 null。
+      //   病根：调用方把 null 一律当"没有找到任何会话"→ setMessages([])+setSessionId(null)，
+      //   故弱网/5xx 进聊天页会清空正在看的内容。这里吞异常即等于误报"用户没有任何会话"。
+      //   "确实没有会话"由上面 listSessions 返回空列表表达，不需要异常来表达。
       console.error('加载最近会话失败:', error);
-      return null;
+      throw error;
     }
   };
 

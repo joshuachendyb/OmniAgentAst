@@ -14,13 +14,14 @@ import type { UseChatFacadeReturn } from './useChatFacade';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import type { ResumeResult } from '@/features/chat/streams/backupTypes';
 
-// 编辑历史: 2026-09-30 08:34:56 小欧 - [79] D4 恢复态差异化提示。
+// 编辑历史: 2026-09-30 08:34:56 小欧 - 恢复态差异化提示。
 //   病根：resume() 返回 12 值 ResumeResult，此前全仓唯一消费点就是下方 `r !== 'idle'` 一个布尔判断
 //   （12 值塌缩成 2 分支），导致 S5/S11 里"任务被中断 / 事件不完整 / 持久化降级"原地兜底成
 //   "正常历史"——用户只见 DB 里的结果，无从判断该不该重试。
 //   落点选在此处：这是 ResumeResult 唯一的 UI 边界，一次分派即拦住"恢复不完整却被静默吞掉"。
 //   文案复用 ErrorDetail.ERROR_TYPE_LABELS（4 个 error_type 中文标签已存在，不另写一份以免漂移）；
 //   ResumeResult↔error_type 的对应关系见 chatStreamTransport.RECOVERY_ERROR_BRANCH。
+// 编辑历史: 2026-09-30 14:30 小欧 - URL 回填加幂等守卫；删 No-op 入参 onMessageListLoadingStart
 const RESUME_NOTICE: Partial<Record<ResumeResult, string>> = {
   task_interrupted: ERROR_TYPE_LABELS.task_interrupted,
   task_state_incomplete: ERROR_TYPE_LABELS.task_state_incomplete,
@@ -49,6 +50,10 @@ export function useChatInit(opts: {
 
   // 会话状态持久化 - 仅 URL session_id 真正变化重新初始化（依赖稳定字符串, 非渲染无关的对象引用）
   useEffect(() => {
+    // 2026-09-30 小欧 - 初始化幂等守卫：URL 指向的会话若已是当前会话，说明刚被
+    //   handleNewSessionInternal 初始化过，跳过（否则会 resume+loadSession，用后端历史
+    //   覆盖刚设的"新会话已创建"提示）。404 清理/列表切回时两者不等，不受影响。
+    if (opts.urlSessionId && chatState.sessionId === opts.urlSessionId) return;
     const onLoadingStart = () => {
       chatState.setSessionJumpLoading(true);
       show('正在加载会话...', 'session-load');
@@ -63,9 +68,8 @@ export function useChatInit(opts: {
     const onRenderEnd = () => {
       chatState.setIsRenderingMessages(false);
     };
-    const onMessageListLoadingStart = () => {
-      // No-op: rendered inside initializeSession
-    };
+    // 2026-09-30 小欧 - 删 onMessageListLoadingStart：其函数体本就是 No-op 空壳，
+    //   useChatSession 解构后零调用（靠 eslint-disable 压着），整条链是纯接口污染
     const onMessageListLoadingEnd = () => {
       chatState.setIsMessageListLoading(false);
     };
@@ -80,7 +84,7 @@ export function useChatInit(opts: {
     //   loadSession（F7：不重新 POST、不重建任务）；idle → 原 initializeSession 三场景原样执行
     void chatStreamStore.resume(opts.urlSessionId ?? undefined).then((r) => {
       if (r !== 'idle' && opts.urlSessionId) {
-        // 2026-09-30 08:34:56 小欧 - [79] D4：恢复不完整必须让用户看见（先提示再补历史，不等 loadSession）。
+        // 2026-09-30 08:34:56 小欧 - 恢复不完整必须让用户看见（先提示再补历史，不等 loadSession）。
         const notice = RESUME_NOTICE[r];
         if (notice) showWarning(notice);
         void chatSession.loadSession(opts.urlSessionId);
@@ -97,7 +101,6 @@ export function useChatInit(opts: {
         onLoadingEnd,
         onRenderStart,
         onRenderEnd,
-        onMessageListLoadingStart,
         onMessageListLoadingEnd,
       });
     });

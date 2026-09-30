@@ -1,4 +1,4 @@
-// 编辑历史: 2026-09-30 10:44:56 小欧 - [79] F①：sendMessage/clearSteps 改直连 chatStreamStore
+// 编辑历史: 2026-09-30 10:44:56 小欧 - sendMessage/clearSteps 改直连 chatStreamStore
 //   （桥接透传成员已删，北京老陈授权按可靠性标准裁定）— 小欧-2026-09-30 10:44:56：
 //   §sendMessage 不再经 useChatStreamSession 透传，useCallback 内部直连
 //     chatStreamStore.sendMessage(customSessionId ?? sessionId, content, mode)，
@@ -43,6 +43,7 @@
 //   9 具名回调收敛为 StreamEvent 单入口分发(授权改 pendingAuthorization 快照驱动, 见 5.15);
 //   删 disconnectWithParams(唯一生产消费者 useChatTaskControl 5.14 改走 Store.stop)与 setIsReceiving 注入;
 //   config.baseURL/token 首连消费移交 setTransportConfig(5.3, 应用初始化一次性注入) — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 删 deniedSteps 改由 deniedEntries 派生（两套口径致误判全拒）；切会话复位会话级 ref
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -63,7 +64,7 @@
  * @update 2026-04-22 添加executeSend方法，迁移executeStreamSend逻辑
  */
 
-import { useCallback, useState, useEffect } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条 — 小欧-2026-09-06
+import { useCallback, useState, useEffect, useMemo } from 'react'; // 2026-09-06 小欧 B2(6.4A): useEffect 持久化被拒点名条 — 小欧-2026-09-06
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
@@ -128,7 +129,8 @@ export interface UseChatStreamingReturn {
   //   user_rejected(独立事件, reason=content) + blocked/timeout(error 通道, reason=error_message) 两路 — 小欧-2026-09-06
   deniedEntries: ReadonlyMap<
     number,
-    Array<{ tool: string; reason: string; reject_type?: string }>
+    // 2026-09-30 小欧 - tool/reason 转**可选**：无名条目也要入表（保证计数），显示侧由渲染层过滤。
+    Array<{ tool?: string; reason?: string; reject_type?: string }>
   >;
 
   // Refs - 用于累积流式内容（供外部访问）
@@ -167,7 +169,15 @@ export const useChatStreaming = (
   callbacks: UseChatCallbacksReturn,
   _config: SSEConfig
 ): UseChatStreamingReturn => {
-  const { sessionId, setSessionId, cancelInProgressRef } = state;
+  const {
+    sessionId,
+    setSessionId,
+    cancelInProgressRef,
+    isPausedRef,
+    displayBufferRef,
+    hasReceivedCancelEventRef,
+    logFlagsRef,
+  } = state;
   const {
     onStep,
     onChunk,
@@ -179,39 +189,36 @@ export const useChatStreaming = (
     onRetry,
   } = callbacks;
 
-  // 2026-09-06 小欧 B2(方案C, 北京老陈裁定): 拒绝(user_rejected独立事件)/拦截(blocked)/超时(timeout) 的
-  //   工具执行轮 step 计数聚合(Map: step→denied计数), 供流水线"齿轮停转/灰字"整批计数判定;
-  //   error 事件仍不进 executionSteps(8.4.5 收敛), 仅在此按 step 记计数——聚合复用三 deny 型
-  //   与后端 safety_gate/sandbox_gate 发射点同集合 — 小欧-2026-09-06
-  const [deniedSteps, setDeniedSteps] = useState<ReadonlyMap<number, number>>(
-    new Map()
-  );
   // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 被拒工具点名条聚合(Map: step→[{tool,reason}] 按工具去重),
   //   供 ToolCallLine 对被拒工具显橘红灰字点名单 — 小欧-2026-09-06
+  //
+  // 2026-09-30 小欧 - 删独立 deniedSteps state 改由 deniedEntries 派生：原两套计数口径致
+  //   `deniedCount >= candidateCount` 量纲不一致（同一工具拒 2 次即误判"全部拒绝"而提前停齿轮）
   const [deniedEntries, setDeniedEntries] = useState<
     ReadonlyMap<
       number,
-      Array<{ tool: string; reason: string; reject_type?: string }>
+      Array<{ tool?: string; reason?: string; reject_type?: string }>
     >
   >(new Map());
+  // 派生视图：每 step 的"被拒条目数" = 被拒的不同工具数（与 candidateCount 同量纲）
+  const deniedSteps = useMemo<ReadonlyMap<number, number>>(
+    () => new Map(Array.from(deniedEntries, ([step, list]) => [step, list.length])),
+    [deniedEntries]
+  );
   const markDenied = useCallback(
     (step: number, tool?: string, reason?: string, reject_type?: string) => {
       if (typeof step === 'number' && step >= 0) {
-        setDeniedSteps((prev) => {
+        // 2026-09-30 小欧 - 无条件建条目，删掉 `if (tool && reason)` 护栏。
+        //   病根：沿用护栏时 tool 缺失不建条目 → 派生计数丢失 → 齿轮不停（功能退化）；
+        //   "tool 缺失也必须计数"是已裁定硬需求。无名工具不显示于点名条，由渲染侧过滤，
+        //   但必须计入 —— 二者分层职责。
+        setDeniedEntries((prev) => {
           const next = new Map(prev);
-          next.set(step, (next.get(step) ?? 0) + 1);
+          const existing = next.get(step) ?? [];
+          if (tool && existing.some((e) => e.tool === tool)) return prev; // 同一 tool 不重复入列
+          next.set(step, [...existing, { tool, reason, reject_type }]);
           return next;
         });
-        // 2026-09-06 小欧 B2(6.4): tool 有名才聚点名条(拒绝事件带 tool_name 是灰字链路前提), 按工具去重 — 小欧-2026-09-06
-        if (tool && reason) {
-          setDeniedEntries((prev) => {
-            const next = new Map(prev);
-            const existing = next.get(step) ?? [];
-            if (!existing.some((e) => e.tool === tool))
-              next.set(step, [...existing, { tool, reason, reject_type }]);
-            return next;
-          });
-        }
       }
     },
     []
@@ -232,7 +239,7 @@ export const useChatStreaming = (
               parsed as Array<
                 [
                   number,
-                  Array<{ tool: string; reason: string; reject_type?: string }>,
+                  Array<{ tool?: string; reason?: string; reject_type?: string }>,
                 ]
               >
             )
@@ -323,8 +330,7 @@ export const useChatStreaming = (
 
   // 使用 Store 订阅桥接
   // 小欧 2026-09-10 S2收尾(方案A): executionStepsRef 唯一真源在 Store，此处从 5.5 透出的推导视图取
-  // 2026-09-30 小欧 - [79] F①：本 hook 改直连 chatStreamStore（sendMessage/clearSteps 不再经桥接
-  //   透传），桥接收敛为纯订阅。理由见 useChatStreamSession.ts 头注释与文件尾编辑历史。
+  // 2026-09-30 小欧 - 本 hook 改直连 chatStreamStore，桥接触敛为纯订阅（理由见文件尾编辑历史）
   const {
     isReceiving,
     executionSteps,
@@ -345,7 +351,51 @@ export const useChatStreaming = (
   } = state;
 
   // 【小强 2026-04-22】从state解构需要的setters
-  const { setLoading, setWaitTime, setIsRetrying, setMessages } = state;
+  const { setLoading, setWaitTime, setIsRetrying, setMessages, setIsPaused } = state;
+
+  // 2026-09-30 小欧 - 会话切换时复位**会话级** ref（与 useChatCallbacks 内同名 effect 配对，
+  //   两组各在其所有者内复位，不跨层、不扩 facade 接口面）。
+  //   病根：Store 已按 sessionId 严格隔离，但这批视图 ref 是全局单例、四条切换入口无一复位
+  //   → 跨会话污染。最重实证：A 取消中（cancelInProgressRef=true）→ 切 B → B 的取消被
+  //   useChatTaskControl 守卫直接 return → B 的取消按钮永久失效。
+  //   只清会话相关：userScrolledUpRef / messagesEndRef / messagesCountRef 属视图级全局，
+  //   跨会话应保留滚动位置，一并清会引入新退化。
+  useEffect(() => {
+    cancelInProgressRef.current = false;
+    hasReceivedCancelEventRef.current = false;
+    isPausedRef.current = false;
+    // 2026-09-30 小欧 - 补 state 侧配对：isPausedRef 是写侧、isPaused state 是读侧，
+    //   useChatState 的同步 effect deps 是 [isPaused]，state 未变则不同步 → 只清 ref 会
+    //   造成 ref=false / state=true 分裂（下游按 state 读，仍以为在暂停）。
+    setIsPaused(false);
+    // 2026-09-30 小欧 - 补清等待计时器：A 会话等待中的 interval 切到 B 后仍在跑，
+    //   持续 setWaitTime 污染 B 的等待秒数（原复位清单漏了它）。
+    if (waitTimerRef.current !== null) {
+      clearInterval(waitTimerRef.current);
+      waitTimerRef.current = null;
+    }
+    displayBufferRef.current = [];
+    streamingContentRef.current = '';
+    replyUserMessageIdRef.current = null;
+    // 日志标志归零（chunkFirstDone / showSteps*Done）：跨会话残留会让新会话首块 chunk 不再打点、
+    // 或步骤显示判断被上一会话的"已打点"状态污染（LogFlags 三字段全为一次性闸门）。
+    logFlagsRef.current = {
+      chunkFirstDone: false,
+      showStepsFalseDone: false,
+      showStepsTrueDone: false,
+    };
+  }, [
+    sessionId,
+    cancelInProgressRef,
+    hasReceivedCancelEventRef,
+    isPausedRef,
+    displayBufferRef,
+    streamingContentRef,
+    replyUserMessageIdRef,
+    logFlagsRef,
+    waitTimerRef,
+    setIsPaused,
+  ]);
 
   // 发送消息函数（包装useSSE的sendMessage）
   const sendMessage = useCallback(
@@ -359,7 +409,8 @@ export const useChatStreaming = (
         streamingContentRef.current = '';
 
         executionStepsRef.current = []; // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
-        setDeniedSteps(new Map()); // 2026-09-06 小欧 B2: 新任务清空 denied 标记(与 executionSteps 同生命周期) — 小欧-2026-09-06
+        // 2026-09-30 小欧 - **删除** setDeniedSteps(new Map()) —— deniedSteps 已降级为
+        //   deniedEntries 的派生视图，清唯一真源即自动清零，无需第二处同步（消除漏改点）。
         setDeniedEntries(new Map()); // 2026-09-06 小欧 B2(6.4): 新任务同步清空被拒工具点名条 — 小欧-2026-09-06
         // 2026-09-06 小欧 B2(6.4A): 新任务删独立键, 防带旧会话/旧任务点名残留 — 小欧-2026-09-06
         sessionStorage.removeItem(`${DENIED_STORAGE_KEY}_${sessionId}`);
@@ -368,7 +419,7 @@ export const useChatStreaming = (
         );
 
         // 调用 Store 的 sendMessage（内部先落盘 queued 再 POST）——
-        // 2026-09-30 小欧 [79] F①：直连 chatStreamStore，不再经桥接透传（签名保持 customSessionId 优先）
+        // 2026-09-30 小欧 直连 chatStreamStore，不再经桥接透传（签名保持 customSessionId 优先）
         await chatStreamStore.sendMessage(
           customSessionId ?? sessionId ?? '',
           content,
@@ -380,14 +431,14 @@ export const useChatStreaming = (
       }
     },
     [
-      sessionId, // 2026-09-30 小欧 [79] F①：直连后替换原桥接透传身份依赖
+      sessionId, // 2026-09-30 小欧 直连后替换原桥接透传身份依赖
       streamingContentRef,
 
       executionStepsRef, // 2026-08-28 小强 修复#14: 清空executionStepsRef, 防旧数据残留
     ]
   );
 
-  // 2026-09-30 小欧 - [79] F①：clearSteps 改直连 chatStreamStore（原经桥接透传）。
+  // 2026-09-30 小欧 - clearSteps 改直连 chatStreamStore（原经桥接透传）。
   //   签名 () => void 与对外契约一致（UseChatStreamingReturn.clearSteps 不变）。
   //   引用随 sessionId 稳定：sessionId 是父级字符串，变化即换绑定，与 executeSend 同源。
   const clearSteps = useCallback(

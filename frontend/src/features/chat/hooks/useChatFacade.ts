@@ -14,6 +14,7 @@
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.9: 删 receivingSetterRef 中间层与其注入 effect,
 //   setIsReceiving 改直连 chatStreamStore.setReceiving(5.4 公开动作, 循环依赖已不复存在);
 //   taskControl.functions.disconnect 改 stop(Store.stop, 见 5.14) — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - URL 归页面层 Router 唯一写；会话真源改 state 优先；删九组零消费分组；onSuccess 移出流接口
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -36,120 +37,25 @@ import { useMemo } from 'react';
 import { useChatState } from './useChatState';
 import { useChatCallbacks } from './useChatCallbacks';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
-import type {
-  InitializeSessionOptions,
-  InitializeSessionResult,
-} from './useChatSession';
+// 2026-09-30 小欧 - 删 InitializeSessionOptions/Result、Message、ExecutionStep 四个 import：
+//   它们原只服务于已删除的九组结构化分组（K2），分组内联过这些类型
 import { useChatStreaming } from './useChatStreaming';
 import { useChatSession } from './useChatSession';
 import { useChatPersistence } from './useChatPersistence';
 import { useChatSend } from './useChatSend';
 import { useChatTaskControl } from './useChatTaskControl';
-import type { Message } from '../../../types/chat';
-import type { ExecutionStep } from '../../../types/execution';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: 页面级错误数据源对象形态 — 小欧-2026-09-08
 
 /**
  * useChatFacade 返回类型定义
  */
 export interface UseChatFacadeReturn {
-  // ===== 状态组 =====
-  session: {
-    sessionId: string | null;
-    sessionTitle: string;
-    sessionVersion: number;
-    titleLocked: boolean;
-    editingTitle: boolean;
-    titleInput: string;
-    setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
-    setSessionTitle: React.Dispatch<React.SetStateAction<string>>;
-    setSessionVersion: React.Dispatch<React.SetStateAction<number>>;
-    setTitleLocked: React.Dispatch<React.SetStateAction<boolean>>;
-    setEditingTitle: React.Dispatch<React.SetStateAction<boolean>>;
-    setTitleInput: React.Dispatch<React.SetStateAction<string>>;
-    currentSessionIdRef: React.MutableRefObject<string | null>;
-  };
-
-  message: {
-    messages: Message[];
-    loading: boolean;
-    isRetrying: boolean;
-    setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
-    setLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    setIsRetrying: React.Dispatch<React.SetStateAction<boolean>>;
-    messagesRef: React.MutableRefObject<Message[]>;
-    messagesEndRef: React.MutableRefObject<HTMLDivElement | null>;
-  };
-
-  streaming: {
-    isReceiving: boolean;
-    isPaused: boolean;
-    waitTime: number;
-    executionSteps: ExecutionStep[];
-    serverTaskId: string | null;
-    currentResponse: string;
-    setIsReceiving: (v: boolean) => void;
-    setIsPaused: React.Dispatch<React.SetStateAction<boolean>>;
-    setWaitTime: React.Dispatch<React.SetStateAction<number>>;
-  };
-
-  ui: {
-    useStream: boolean;
-    isInitialized: boolean;
-    sessionJumpLoading: boolean;
-    isMessageListLoading: boolean;
-    setUseStream: React.Dispatch<React.SetStateAction<boolean>>;
-    setIsInitialized: React.Dispatch<React.SetStateAction<boolean>>;
-    setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    setIsMessageListLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    userScrolledUpRef: React.MutableRefObject<boolean>;
-    lastScrollTimeRef: React.MutableRefObject<number>;
-  };
-
-  // ===== 操作组 =====
-  send: {
-    handleSend: (
-      content: string,
-      contextLinkMode?: 'linked' | 'independent'
-    ) => Promise<void>;
-  };
-
-  interrupt: {
-    handleCancel: () => Promise<void>;
-    handleTogglePause: () => Promise<void>;
-  };
-
-  sessionOps: {
-    initializeSession: (
-      options: InitializeSessionOptions
-    ) => Promise<InitializeSessionResult>;
-    handleNewSession: (retry?: number) => Promise<void>;
-    handleClear: () => void;
-  };
-
-  persistence: {
-    saveStateWithSSECheck: (msg: Message) => void;
-    saveMessagesToStorage: React.MutableRefObject<
-      (
-        msgs: Message[],
-        sid: string,
-        title: string,
-        paused: boolean,
-        receiving: boolean
-      ) => void
-    >;
-  };
-
-  // ===== 共享Refs =====
-  shared: {
-    waitTimerRef: React.MutableRefObject<number | null>;
-    executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
-    isPausedRef: React.MutableRefObject<boolean>;
-    hasReceivedCancelEventRef: React.MutableRefObject<boolean>;
-    cancelInProgressRef: React.MutableRefObject<boolean>;
-  };
-
-  // ===== 原有Hook对象（兼容旧引用）=====
+  // 2026-09-30 小欧 - 删九组结构化分组（session/message/streaming/ui/send/interrupt/
+  //   sessionOps/persistence/shared，约 96 行）：全仓零消费者——ChatPage 自始只解构
+  //   chatState / chatStreaming / chatSend / chatTaskControl 四个原始 Hook 对象，
+  //   分组既未被消费也未被测试引用，属 YAGNI（K2）。删后本接口只剩下面一套 Hook 对象，
+  //   "新旧两套暴露面并存"随之消失（B2，不再需要"兼容旧引用"的说法）。
+  // ===== 本 Hook 组装并透出的各子 Hook（唯一一套暴露面）=====
   chatState: ReturnType<typeof useChatState>;
   chatCallbacks: ReturnType<typeof useChatCallbacks>;
   chatStreaming: ReturnType<typeof useChatStreaming>;
@@ -167,10 +73,17 @@ export const useChatFacade = (options?: {
   sessionId?: string | null;
   onError?: (liveError: LiveError) => void;
   onSuccess?: () => void; // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError — 北京老陈驱动
+  // 2026-09-30 小欧 - URL 写入出口透传（原 useChatSession 直接调原生
+  //   window.history.pushState/replaceState 绕过 React Router，导致 urlSessionId 陈旧、
+  //   本层的 `sessionId || chatState.sessionId` 让陈旧值优先 → setIsReceiving 写错会话）。
+  //   改由页面层（唯一与 Router 接触处，ChatPage 用 setSearchParams）写，URL 写入单一入口。
+  //   同一注入也透给 useChatSend，使"发消息自动建会话"同样进 URL，写入口彻底收口。
+  onUrlSessionChange?: (sessionId: string | null) => void;
 }): UseChatFacadeReturn => {
   const { baseURL = '', sessionId } = options || {};
   const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
   const onSuccess = options?.onSuccess;
+  const onUrlSessionChange = options?.onUrlSessionChange;
 
   // 1. 基础状态（始终加载）
   const chatState = useChatState();
@@ -178,11 +91,31 @@ export const useChatFacade = (options?: {
   // 2. 回调函数（始终加载）
   // [63] 5.9 v1.29：直连 Store——原 receivingSetterRef 解的是与 useChatStreaming 的循环依赖，
   //   现 setIsReceiving 已是 Store 公开动作（5.4 setReceiving），循环不复存在（KISS：删中间层）
-  const storeSessionId = sessionId || chatState.sessionId;
-  const chatCallbacks = useChatCallbacks(chatState, {
-    setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
-    onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
-  });
+  // 2026-09-30 小欧 - 会话真源判据改为"state 优先、URL 仅在 state 尚未建立时兜底"（?? 而非 ||）。
+  //   病根：原 `sessionId || chatState.sessionId` 让 URL 恒优先，而 URL 由 Router 同步更新、
+  //   state 由异步初始化收敛 → 切会话的窗口内 URL 已是新会话、state 仍是旧会话，
+  //   旧会话在跑的流其 setIsReceiving/setReceiving 就会写到新会话槽位（跨会话污染）。
+  //   首屏不受影响：此时 state.sessionId 仍为 null，正好取 URL 作初始化兜底。
+  const storeSessionId = chatState.sessionId ?? sessionId;
+  // 2026-09-30 小欧 - 流对象只留流的事（setIsReceiving）；页面级 onSuccess 移到第三个参数
+  //   pageCallbacks（ISP：页面 UI 回调不再混进流对象/流事件接口）
+  const chatCallbacksStreaming = useMemo(
+    () => ({
+      setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
+    }),
+    [storeSessionId]
+  );
+  const chatCallbacksPages = useMemo(
+    () => ({
+      onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
+    }),
+    [onSuccess]
+  );
+  const chatCallbacks = useChatCallbacks(
+    chatState,
+    chatCallbacksStreaming,
+    chatCallbacksPages
+  );
 
   // 2.1 透传 SSE 错误给上层（页面级错误数据源对象形态，6.3.4——不再压 string）
   const chatCallbacksWithError = useMemo<ReturnType<typeof useChatCallbacks>>(
@@ -210,22 +143,19 @@ export const useChatFacade = (options?: {
   // [63] 5.9：调用形状不变；流状态与连接已常驻 Store（5.3/5.4），本层只拿快照与动作
   const chatStreaming = useChatStreaming(chatState, chatCallbacksWithError, {
     baseURL,
-    sessionId: sessionId || chatState.sessionId,
+    sessionId: storeSessionId ?? null, // 复用同一真源判据，不另写一份（DRY）；undefined 归一为 null
   });
 
   // 4. 会话管理（始终加载）
   // [63] 5.18：streaming 参数收敛（session 内零消费）
-  const chatSession = useChatSession(chatState);
+  const chatSession = useChatSession(chatState, onUrlSessionChange);
 
   // 5. 持久化（始终加载）
   const chatPersistence = useChatPersistence(chatState, chatStreaming);
 
   // 6. 消息发送（始终加载）
   const chatSend = useChatSend({
-    loading: chatState.loading,
     sessionId: chatState.sessionId,
-    messages: chatState.messages,
-    waitTime: chatState.waitTime,
     setLoading: chatState.setLoading,
     setSessionId: chatState.setSessionId,
     setMessages: chatState.setMessages,
@@ -233,6 +163,8 @@ export const useChatFacade = (options?: {
     waitTimerRef: chatState.waitTimerRef,
     currentSessionIdRef: chatState.currentSessionIdRef,
     executeSend: chatStreaming.executeSend,
+    // 2026-09-30 小欧 - 自动建会话也要写 URL，故把同一注入形状透到 useChatSend（写入口收口）
+    onUrlSessionChange,
   });
 
   // 7. 中断控制（始终加载）
@@ -250,7 +182,6 @@ export const useChatFacade = (options?: {
     },
     refs: {
       cancelInProgressRef: chatState.cancelInProgressRef,
-      hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
       waitTimerRef: chatState.waitTimerRef,
       isPausedRef: chatState.isPausedRef,
     },
@@ -259,100 +190,11 @@ export const useChatFacade = (options?: {
   // 通过useMemo统一返回，避免不必要的重渲染
   return useMemo(
     () => ({
-      // ===== 状态组 =====
-
-      // 会话状态
-      session: {
-        sessionId: chatState.sessionId,
-        sessionTitle: chatState.sessionTitle,
-        sessionVersion: chatState.sessionVersion,
-        titleLocked: chatState.titleLocked,
-        editingTitle: chatState.editingTitle,
-        titleInput: chatState.titleInput,
-        setSessionId: chatState.setSessionId,
-        setSessionTitle: chatState.setSessionTitle,
-        setSessionVersion: chatState.setSessionVersion,
-        setTitleLocked: chatState.setTitleLocked,
-        setEditingTitle: chatState.setEditingTitle,
-        setTitleInput: chatState.setTitleInput,
-        currentSessionIdRef: chatState.currentSessionIdRef,
-      },
-
-      // 消息状态
-      message: {
-        messages: chatState.messages,
-        loading: chatState.loading,
-        isRetrying: chatState.isRetrying,
-        setMessages: chatState.setMessages,
-        setLoading: chatState.setLoading,
-        setIsRetrying: chatState.setIsRetrying,
-        messagesRef: chatState.messagesRef,
-        messagesEndRef: chatState.messagesEndRef,
-      },
-
-      // 流式状态
-      streaming: {
-        isReceiving: chatStreaming.isReceiving,
-        isPaused: chatState.isPaused,
-        waitTime: chatState.waitTime,
-        executionSteps: chatStreaming.executionSteps,
-        serverTaskId: chatStreaming.serverTaskId,
-        currentResponse: chatStreaming.currentResponse,
-        setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
-        setIsPaused: chatState.setIsPaused,
-        setWaitTime: chatState.setWaitTime,
-      },
-
-      // UI状态
-      ui: {
-        useStream: chatState.useStream,
-        isInitialized: chatState.isInitialized,
-        sessionJumpLoading: chatState.sessionJumpLoading,
-        isMessageListLoading: chatState.isMessageListLoading,
-        setUseStream: chatState.setUseStream,
-        setIsInitialized: chatState.setIsInitialized,
-        setSessionJumpLoading: chatState.setSessionJumpLoading,
-        setIsMessageListLoading: chatState.setIsMessageListLoading,
-        userScrolledUpRef: chatState.userScrolledUpRef,
-        lastScrollTimeRef: chatState.lastScrollTimeRef,
-      },
-
-      // ===== 操作组 =====
-
-      // 发送操作
-      send: {
-        handleSend: chatSend.handleSend,
-      },
-
-      // 中断操作
-      interrupt: {
-        handleCancel: chatTaskControl.handleCancel,
-        handleTogglePause: chatTaskControl.handleTogglePause,
-      },
-
-      // 会话操作
-      sessionOps: {
-        initializeSession: chatSession.initializeSession,
-        handleNewSession: chatSession.handleNewSession,
-        handleClear: chatSession.handleClear,
-      },
-
-      // 持久化操作
-      persistence: {
-        saveStateWithSSECheck: chatPersistence.saveStateWithSSECheck,
-        saveMessagesToStorage: chatPersistence.saveMessagesToStorage,
-      },
-
-      // ===== 共享Refs =====
-      shared: {
-        waitTimerRef: chatState.waitTimerRef,
-        executionStepsRef: chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: 改从 chatStreaming 取（useSSE 单一真源）
-        isPausedRef: chatState.isPausedRef,
-        hasReceivedCancelEventRef: chatState.hasReceivedCancelEventRef,
-        cancelInProgressRef: chatState.cancelInProgressRef,
-      },
-
-      // ===== 原有Hook对象（兼容旧引用）=====
+      // 2026-09-30 小欧 - 删九组结构化分组的构造（原 session/message/streaming/ui/send/
+      //   interrupt/sessionOps/persistence/shared）：运行时零消费者（ChatPage 自始只解构
+      //   四个子 Hook；useChatScroll 仅把分组当**类型引用源**、运行时仍传原始对象，
+      //   该类型引用已改指 UseChatStateReturn/UseChatStreamingReturn）。详见 K2 说明。
+      // ===== 本 Hook 组装并透出的各子 Hook（唯一一套暴露面）=====
       chatState,
       chatCallbacks,
       chatStreaming,
@@ -455,9 +297,11 @@ export const useChatFacade = (options?: {
 export const useShouldLoadStreaming = (
   chat: ReturnType<typeof useChatFacade>
 ) => {
-  // 从chat中获取streaming状态
-  const streaming = chat?.streaming;
-  const ui = chat?.ui;
+  // 2026-09-30 小欧 - 改读子 Hook 原始对象（K2）：原经 chat.streaming / chat.ui 两个
+  //   分组间接取值，而分组本身是 facade 手工拼装的派生视图（同一份数据再抄一遍），
+  //   删分组后此处直连唯一真源，语义完全等价。
+  const streaming = chat?.chatStreaming;
+  const ui = chat?.chatState;
 
   return useMemo(
     () => ({

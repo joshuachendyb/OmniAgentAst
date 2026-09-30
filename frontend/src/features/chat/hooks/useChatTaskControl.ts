@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.14: 取消链路收口 chatStreamStore.stop(内部 cancel 确认终态 +
 //   STOP_RACE 回读权威终态 + clearCompleted 释放); callCancelApi 与 Options.functions.disconnect 整删
 //   (前者唯一调用点已迁, 后者为 useSSE 遗留死代码); 倒计时清理保留(本 hook 的 UI 计时器) — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 删 hasReceivedCancelEventRef 入参与 deps（handleCancel 函数体零引用，useSSE 时代残留）
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -69,7 +70,8 @@ export interface UseChatTaskControlOptions {
   // Refs
   refs: {
     cancelInProgressRef: React.MutableRefObject<boolean>;
-    hasReceivedCancelEventRef: React.MutableRefObject<boolean>;
+    // 2026-09-30 小欧 - 删 hasReceivedCancelEventRef 入参：handleCancel 函数体零引用（useSSE 时代残留）。
+    //   它在 useChatCallbacks/useChatStreaming 仍真实使用，故只删本 hook 的接收，不动上游 ref 定义。
     waitTimerRef: React.MutableRefObject<number | null>;
     isPausedRef: React.MutableRefObject<boolean>;
   };
@@ -109,7 +111,6 @@ export const useChatTaskControl = (
   const { isPaused, sessionId, serverTaskId } = states;
   const {
     cancelInProgressRef,
-    hasReceivedCancelEventRef,
     waitTimerRef,
     isPausedRef,
   } = refs;
@@ -218,7 +219,6 @@ export const useChatTaskControl = (
     sessionId,
     resetUiFlags,
     waitTimerRef,
-    hasReceivedCancelEventRef,
     cancelInProgressRef,
   ]);
 

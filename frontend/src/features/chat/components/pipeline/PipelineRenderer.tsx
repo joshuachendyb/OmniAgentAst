@@ -79,6 +79,7 @@
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop 并透传; waiting段 ThoughtWaitingIcon / TextStream / ToolCallLine 三处挂钟面(历史回放不传→无钟面) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 修改: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
+// 编辑历史: 2026-09-30 14:30 小欧 - 传 ToolCallLine 的 deniedEntries 过滤 tool 存在者（无名条目会渲染 undefined 点名行）
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -280,7 +281,7 @@ interface PipelineRendererProps {
   deniedSteps?: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 供停齿轮判定 — 小欧-2026-09-06
   deniedEntries?: ReadonlyMap<
     number,
-    Array<{ tool: string; reason: string; reject_type?: string }>
+    Array<{ tool?: string; reason?: string; reject_type?: string }>
   >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 传 ToolCallLine 对被拒工具显橘红灰字 — 小欧-2026-09-06
   waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(历史回放不传→无钟面, 语义自洽) — 小欧-2026-09-17
 }
@@ -430,7 +431,11 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 !!seg.action.tools?.some((t) => t.tool === highlightToolName)
               }
               deniedTools={// 2026-09-06 小欧 B2(6.4): 本执行轮被拒工具点名条(橘红灰字数据源, 按 step 取) — 小欧-2026-09-06
-              deniedEntries?.get(seg.action.step as number)}
+              // 2026-09-30 小欧 - 过滤掉无名条目（tool 缺失）。
+              //   因 P2-7 改为"deniedEntries 单一真源 + deniedSteps 派生"后，无 tool 的条目也必须入表
+              //   （守护 2026-09-17 会审 V3 裁定的"tool 缺失时齿轮仍须停转"），故在**渲染侧**过滤，
+              //   使"无名工具只参与计数、不进点名文本"——计数与显示分层职责，不丢硬约束。
+              deniedEntries?.get(seg.action.step as number)?.filter((e) => e.tool)}
               waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             />
           );

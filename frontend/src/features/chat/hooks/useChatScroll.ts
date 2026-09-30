@@ -7,18 +7,24 @@
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.12: ScrollStreaming 删 executionStepsRef 字段 + 解构 +
 //   state→ref 同步 effect 整删（Store 推导视图 getter 直读真源，手工同步已冗余）；ExecutionStep 导入随之失效删除 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 类型引用改指 UseChatStateReturn/StreamingReturn（原经 facade 分组，该组已删）
 import { useCallback, useEffect, useRef } from 'react';
-import type { UseChatFacadeReturn } from './useChatFacade';
+import type { UseChatStateReturn } from './useChatState';
+import type { UseChatStreamingReturn } from './useChatStreaming';
 
 const SCROLL_THRESHOLD = 150;
 
-type ScrollChatState = Pick<UseChatFacadeReturn['chatState'], 'isPaused'> &
-  Pick<UseChatFacadeReturn['message'], 'messagesEndRef' | 'messages'> &
-  Pick<UseChatFacadeReturn['ui'], 'userScrolledUpRef'> &
-  Pick<UseChatFacadeReturn['shared'], 'isPausedRef'>;
+// 2026-09-30 小欧 - 类型引用改指真实来源（K2）：原先经 UseChatFacadeReturn 的
+//   message/ui/shared/streaming 四个分组做 Pick，而那四组运行时零消费、已随 K2 删除。
+//   本 hook 运行时接收的本来就是 useChatState / useChatStreaming 的原始返回对象，
+//   故类型直接引 UseChatStateReturn / UseChatStreamingReturn，语义等价且解除对分组的依赖。
+type ScrollChatState = Pick<
+  UseChatStateReturn,
+  'isPaused' | 'messagesEndRef' | 'messages' | 'userScrolledUpRef' | 'isPausedRef'
+>;
 
 type ScrollStreaming = Pick<
-  UseChatFacadeReturn['streaming'],
+  UseChatStreamingReturn,
   'executionSteps' | 'currentResponse' | 'isReceiving'
 >;
 

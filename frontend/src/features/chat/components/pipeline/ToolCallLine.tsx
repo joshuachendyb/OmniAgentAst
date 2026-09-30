@@ -41,6 +41,7 @@
 // 编辑历史: 2026-09-17 小欧 - 统一拒绝事件 type="rejected": ①deniedTools 类型新增 reject_type 字段; ②根据 reject_type 显示不同图标+文字标签(🔒[安全]/⏱️[超时]/🚫[拒绝]/🛡️[沙箱]); ③拒绝工具不再显示水滴图标; ④视觉分层优化(标签橘红/工具名深灰加粗/原因浅灰弱化) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3整改(#6/#8): 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop, 齿轮 ToolWaitingIcon 挂钟面并存(回放/中断/有结果守卫条件不变) - 小欧-2026-09-17
+// 编辑历史: 2026-09-30 14:30 小欧 - deniedEntries 内联类型 tool/reason 转可选，以承载 tool 缺失的拒绝记录
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -82,7 +83,9 @@ interface ToolCallLineProps {
   highlight?: boolean; // HITL 联动高亮
   interrupted?: boolean; // 2026-09-06 小欧 B2: 用户拒绝/确认超时且无结果——停齿轮(替换等待动画) — 小欧-2026-09-06
   replay?: boolean; // 2026-09-06 小欧 B2(北京老陈裁定): 历史回放标志——历史数据不需要齿轮转动, 免齿轮动画 — 小欧-2026-09-06
-  deniedTools?: Array<{ tool: string; reason: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
+  // 2026-09-30 小欧 - tool/reason 转可选以匹配上游 deniedEntries（单一真源）类型；
+  //   无名条目已由 PipelineRenderer 渲染前 .filter(e => e.tool) 拦掉，此处只需类型一致。
+  deniedTools?: Array<{ tool?: string; reason?: string; reject_type?: string }>; // 2026-09-06 小欧 B2(6.4, 北京老陈裁定): 本执行轮被拒工具点名条(带拒绝理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
   waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(与齿轮并存) — 小欧-2026-09-17
 }
 

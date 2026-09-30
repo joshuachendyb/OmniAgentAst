@@ -4,9 +4,10 @@
 // 编辑历史: 2026-08-27 小欧 - hooks修复: 重试计数改由 ref 持久化, 破除 options.retryCount 永不回写导致的无限重试死循环
 // 编辑历史: 2026-08-28 小强 - hooks修复#13: 删不可达if(urlSessionId)分支+删重复onLoadingEnd(只保留finally中)
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.18: generationRef 代际守卫(三异步入口各++, 四个 await 后断言,
-//   根治"旧 session 异步结果过期污染新会话" G3 病根); L1修正① handleNewSessionInternal 删断流+清步骤
+//   根治"旧 session 异步结果过期污染新会话" G3 病根); L1修正① handleNewSession 删断流+清步骤
 //   (新会话不断旧流); L1修正② handleClear 改 stop+clearSteps(显式清空=用户明确终止意图);
 //   streaming 参数与 UseChatStreamingReturn import 零消费整删(5.18 参数收敛) — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - loadSession 补写 setMessages；loading 复位进 finally；URL 写入上抛；合并透传壳
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -29,6 +30,8 @@ import { useCallback, useRef } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
 import { sessionApi } from '../../../services/api/session.api';
+// 2026-09-30 小欧 - 标题生成已迁出本 hook（S4：纯文案拼装不属生命周期编排）
+import { generateNewSessionTitle } from '@/utils/sessionTitle';
 // [63] 5.18：stop/clearSteps + 代际守卫（G3 病根修复）
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import {
@@ -66,7 +69,6 @@ export interface UseChatSessionReturn {
   // 会话函数
   loadSession: (sessionId: string) => Promise<Message[]>;
   handleNewSession: (retry?: number) => Promise<void>;
-  handleNewSessionInternal: (retry?: number) => Promise<void>;
   handleClear: () => void;
   updateSessionTitle: (newTitle: string) => Promise<void>;
   initializeSession: (
@@ -103,7 +105,8 @@ export interface InitializeSessionOptions {
   onLoadingEnd: () => void;
   onRenderStart: () => void;
   onRenderEnd: () => void;
-  onMessageListLoadingStart: () => void;
+  // 2026-09-30 小欧 - 删 onMessageListLoadingStart：解构进来后函数体零调用（原先靠
+  //   eslint-disable no-unused-vars 压着），属接口污染（O1）。配套删 useChatInit 的定义与传参。
   onMessageListLoadingEnd: () => void;
 }
 
@@ -133,7 +136,15 @@ export interface InitializeSessionResult {
  * @returns 会话相关状态和函数
  */
 export const useChatSession = (
-  state: UseChatStateReturn
+  state: UseChatStateReturn,
+  /**
+   * 2026-09-30 小欧 - URL 写入的唯一出口（依赖注入，不引隐式 Router 上下文）。
+   *   病根：原直接调 history.pushState/replaceState 绕过 Router，而 pushState 不派发
+   *   popstate、Router 收不到通知 → urlSessionId 恒为旧值 → 陈旧 URL 优先于真实会话
+   *   → 写旧会话而界面读新会话（两个真源分叉）。改为只上抛意图、由页面层用 Router 写。
+   *   传 null = 清 URL 参数；不传 = 本 hook 不写 URL（无 Router 场景，YAGNI）。
+   */
+  onUrlSessionChange?: (sessionId: string | null) => void
 ): UseChatSessionReturn => {
   // [63] 5.18 v1.29：代际号——三异步入口各 ++，await 后比对，旧代结果一律丢弃（G3 病根）
   const generationRef = useRef(0);
@@ -174,7 +185,7 @@ export const useChatSession = (
   const loadSession = useCallback(
     async (sid: string): Promise<Message[]> => {
       // [63] 5.18 v1.29 会话切换竞态：代际号单调递增，旧代异步结果一律丢弃
-      //   （loadSession / initializeSession / handleNewSessionInternal 三入口各取一代）
+      //   （loadSession / initializeSession / handleNewSession 三入口各取一代）
       const generation = ++generationRef.current;
       try {
         const result = await loadHistoryMessages(sid);
@@ -187,12 +198,25 @@ export const useChatSession = (
           setTitleLocked(result.title_locked || false);
           setLastSavedTitle(result.title || '新会话');
           setSessionModelOverride(result.sessionModel ?? null);
+          // 2026-09-30 小欧 - 补写 setMessages：其余分支都写，唯独本成功分支漏写。
+          //   病根：漏写 + 上游 void 丢弃返回值，两处叠加致返回值彻底蒸发 →
+          //   刷新进会话消息恒空；会话间切换则保留上个会话消息（跨会话串消息）。
+          setMessages(result.messages || []);
           return result.messages || [];
         }
+        // 2026-09-30 小欧 - 失败路径也必须清理，不能只清成功路径。
+        //   病根：URL 已切到新会话后本分支既不写也不清 → chatState.messages 保留上个会话内容，
+        //   而 title/sessionId 语境已是新会话 → 跨会话串消息（与成功分支漏写同型）。
+        //   404 = 会话确实不存在 → 按"空会话"清理；与 initializeSession 的 404 分支保持对称。
+        setMessages([]);
+        setSessionId(null);
+        setLastSavedTitle('新会话');
         return [];
       } catch (error) {
         console.error('加载会话失败:', error);
         showLoadErrorWithKey('加载失败', sid);
+        // 网络/5xx 不等于"会话不存在"：不清状态，保留当前界面，交由调用方重试，
+        // 否则弱网切会话会把用户正在看的内容清空。
         return [];
       }
     },
@@ -202,6 +226,7 @@ export const useChatSession = (
       setSessionVersion,
       setTitleLocked,
       setLastSavedTitle,
+      setMessages, // 2026-09-30 小欧: 成功分支与 404 分支均已写入，补进依赖
       setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
       currentSessionIdRef,
     ]
@@ -232,8 +257,6 @@ export const useChatSession = (
         onLoadingEnd,
         onRenderStart,
         onRenderEnd,
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        onMessageListLoadingStart,
         onMessageListLoadingEnd,
       } = options;
 
@@ -266,6 +289,10 @@ export const useChatSession = (
         isLoadingHistoryRef.current = true;
         onLoadingStart();
         onRenderStart();
+        // 2026-09-30 小欧 - 标记"本层已自行释放锁"：递归重试那条路径会在 return 前显式释放，
+        //   而 `return expr` 是先求值 expr 再执行 finally，递归体内已重新上锁并点亮 loading，
+        //   若 finally 无条件复位会把它清掉（锁失效 + 指示器提前消失）。
+        let releasedLock = false;
 
         try {
           const result = await loadHistoryMessages(urlSessionId);
@@ -285,8 +312,6 @@ export const useChatSession = (
             setLastSavedTitle(result.title || '新会话');
             setSessionModelOverride(result.sessionModel ?? null);
 
-            onLoadingEnd();
-            onRenderEnd();
             onMessageListLoadingEnd();
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 2026-08-27 小欧 修复: 同步重置 ref 计数
@@ -300,7 +325,6 @@ export const useChatSession = (
               '版本:',
               result.version
             );
-            isLoadingHistoryRef.current = false;
             return { loaded: true, fromCache: false, hasUrlSession: true };
           } else {
             // URL会话没有消息（可能已被删除/404），清理状态+URL参数
@@ -313,17 +337,13 @@ export const useChatSession = (
             setTitleLocked(false);
             setSessionModelOverride(null);
             setLastSavedTitle('新会话');
-            window.history.replaceState({}, '', '/');
+            // 2026-09-30 小欧 - 删原生 replaceState，改上抛意图交页面层用 Router 写（见第二参注释）
+            onUrlSessionChange?.(null);
 
-            onLoadingEnd();
-            onRenderEnd();
-            isLoadingHistoryRef.current = false;
             return { loaded: false, fromCache: false, hasUrlSession: false };
           }
         } catch (error) {
           console.warn('加载URL会话失败:', error);
-          onRenderEnd();
-          isLoadingHistoryRef.current = false;
 
           // 重试机制 - 最多3次
           if (currentRetry < 3) {
@@ -332,16 +352,33 @@ export const useChatSession = (
             sessionRetryRef.current[retryKey] = newRetry;
             setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
 
+            // 2026-09-30 小欧 - 必须先释放 loading 锁再递归：`return expr` 是先求值 expr
+            //   再执行 finally，故递归会卡在"正在加载中"被拦 → 重试由 4 次退化为 1 次。
+            isLoadingHistoryRef.current = false;
+            onLoadingEnd();
+            onRenderEnd();
+            releasedLock = true;
+
             // 延迟1秒后重试
             await new Promise((resolve) => setTimeout(resolve, 1000));
             return initializeSession(options); // 递归重试
           } else {
             // 超过重试次数
-            onLoadingEnd();
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 2026-08-27 小欧 修复: 同步重置 ref 计数
             sessionRetryRef.current[retryKey] = 0;
             return { loaded: false, fromCache: false, hasUrlSession: true };
+          }
+        } finally {
+          // 2026-09-30 小欧 - loading 复位移入 finally 单一出口。
+          //   病根：原复位散在 4 处分支，而代际守卫早退发生在复位点之前 → 锁卡在 true
+          //   → 后续初始化全被"正在加载中"拦下 → 会话初始化死锁（loading 圈永转）。
+          //   onLoadingEnd/onRenderEnd 幂等，故取代原各分支内复位而非叠加。
+          //   releasedLock 分支跳过：递归已在上层重新上锁，此处复位会把它清掉。
+          if (!releasedLock) {
+            isLoadingHistoryRef.current = false;
+            onLoadingEnd();
+            onRenderEnd();
           }
         }
       }
@@ -402,7 +439,6 @@ export const useChatSession = (
 
           setMessages(result.messages);
 
-          onRenderEnd();
           onMessageListLoadingEnd();
 
           console.log(
@@ -419,22 +455,20 @@ export const useChatSession = (
           setMessages([]);
           setSessionId(null);
           setLastSavedTitle('新会话');
-          onRenderEnd();
           onMessageListLoadingEnd();
         }
 
-        // 编辑历史: 2026-08-28 小欧 - 修复: onLoadingEnd移到if/else之后单次调用
-        onLoadingEnd();
-        isLoadingHistoryRef.current = false;
         setIsInitialized(true);
         return { loaded: true, fromCache: false, hasUrlSession: false };
       } catch (error) {
         console.warn('加载最近会话失败:', error);
-        onLoadingEnd();
-        onRenderEnd();
-        isLoadingHistoryRef.current = false;
         setIsInitialized(true);
         return { loaded: false, fromCache: false, hasUrlSession: false };
+      } finally {
+        // 2026-09-30 小欧 - 同上方 URL 分支，loading 复位移入 finally 单一出口
+        isLoadingHistoryRef.current = false;
+        onLoadingEnd();
+        onRenderEnd();
       }
     },
     [
@@ -446,6 +480,7 @@ export const useChatSession = (
       setLastSavedTitle,
       setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
       currentSessionIdRef,
+      onUrlSessionChange, // 2026-09-30 小欧 - URL 写入出口入依赖（闭包新鲜度）
     ]
   );
 
@@ -453,32 +488,16 @@ export const useChatSession = (
   // 会话操作函数
   // ========================================
 
-  /**
-   * generateNewSessionTitle - 生成智能会话标题
-   * 迁移自：NewChatContainer.tsx 第1351行
-   */
-  const generateNewSessionTitle = (): string => {
-    const now = new Date();
-    const hours = now.getHours();
-    let timeOfDay = '';
-
-    if (hours >= 5 && hours < 8) timeOfDay = '清晨';
-    else if (hours >= 8 && hours < 12) timeOfDay = '上午';
-    else if (hours >= 12 && hours < 14) timeOfDay = '午间';
-    else if (hours >= 14 && hours < 18) timeOfDay = '下午';
-    else if (hours >= 18 && hours < 21) timeOfDay = '晚间';
-    else if (hours >= 21 && hours < 24) timeOfDay = '深夜';
-    else timeOfDay = '深夜';
-
-    const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
-    return `${dateStr} ${timeOfDay}会话 ${hours}:${now.getMinutes().toString().padStart(2, '0')}`;
-  };
+  // 2026-09-30 小欧 - generateNewSessionTitle 已迁至 utils/sessionTitle.ts
+  //   （S4：纯文案拼装混在生命周期编排里，违反 SRP），本处改为直接调用。
 
   /**
-   * handleNewSessionInternal - 新建会话内部实现，支持重试机制
+   * handleNewSession - 新建会话（支持重试机制）
    * 迁移自：NewChatContainer.tsx handleNewSessionInternal
+   * 2026-09-30 小欧 - 原先另有 handleNewSession 作为纯透传壳（仅 return handleNewSessionInternal(retry)），
+   *   属"无透传函数"违反；现把实现并入本函数、对外签名与成员名不变，壳与多余成员一并消除。
    */
-  const handleNewSessionInternal = useCallback(
+  const handleNewSession = useCallback(
     async (retry: number = 0): Promise<void> => {
       // [63] 5.18：新建取新代（重试递归再取新代，自身一致）
       const generation = ++generationRef.current;
@@ -514,8 +533,9 @@ export const useChatSession = (
         // 清除sessionStorage
         sessionStorage.removeItem(STORAGE_KEY);
 
-        // 更新URL
-        window.history.pushState({}, '', `/?session_id=${newSessionId}`);
+        // 2026-09-30 小欧 - 删原生 pushState，改上抛意图交页面层用 Router 写（见第二参注释）
+        //   配套：useChatInit 已加幂等守卫，URL 更新触发的 effect 重跑不会重复初始化
+        onUrlSessionChange?.(newSessionId);
 
         showNewSessionSuccess(newTitle);
       } catch (error: unknown) {
@@ -525,7 +545,7 @@ export const useChatSession = (
           showNewSessionRetryWarning(newRetry, maxRetries);
           // 延迟1秒后重试
           await new Promise((resolve) => setTimeout(resolve, 1000));
-          return handleNewSessionInternal(newRetry);
+          return handleNewSession(newRetry);
         }
         const errMsg = err?.message || '未知错误';
         showNewSessionError(errMsg);
@@ -540,17 +560,8 @@ export const useChatSession = (
       setLastSavedTitle,
       setSessionModelOverride,
       currentSessionIdRef,
+      onUrlSessionChange, // 2026-09-30 小欧 - URL 写入出口入依赖（闭包新鲜度）
     ]
-  );
-
-  /**
-   * handleNewSession - 新建会话入口
-   */
-  const handleNewSession = useCallback(
-    async (retry: number = 0): Promise<void> => {
-      return handleNewSessionInternal(retry);
-    },
-    [handleNewSessionInternal]
   );
 
   /**
@@ -673,7 +684,6 @@ export const useChatSession = (
     loadSession,
     initializeSession,
     handleNewSession,
-    handleNewSessionInternal,
     handleClear,
     updateSessionTitle,
 

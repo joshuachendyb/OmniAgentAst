@@ -9,6 +9,7 @@
 //   (loading复位职责归SSE终态: 正常完成→onFinal(:510)/error→onError(:655)/取消→resetUiFlags(:126)——根治
 //   "任务执行中finally提前掐loading → 停止/暂停按钮消失"病根) ②catch分支显式兜底setLoading(false)
 //   (取消失败/网络失败/发送异常路径不依赖SSE终态, 防loading永久为true卡"思考中") — 小欧-2026-09-15
+// 编辑历史: 2026-09-30 14:30 小欧 - 自动建会话也上抛写 URL（原只 setSessionId，刷新后地址栏无 id）；删零读取的三入参
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -36,10 +37,9 @@ import type { Message } from '../../../types/chat';
 
 interface UseChatSendOptions {
   // 状态
-  loading: boolean;
+  // 2026-09-30 小欧 - 删 loading/messages/waitTime 三入参：声明并全量传入却函数体零读取，
+  //   属假接口面（每加一处调用方都要跟着传三个没人用的值）
   sessionId: string | null;
-  messages: Message[];
-  waitTime: number;
   // 设置方法
   setLoading: React.Dispatch<React.SetStateAction<boolean>>;
   setSessionId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -53,6 +53,10 @@ interface UseChatSendOptions {
     userMessage: Message,
     contextLinkMode?: 'linked' | 'independent'
   ) => Promise<void>;
+  // 2026-09-30 小欧 - URL 写入的唯一出口（与 useChatSession 同一注入形状）：
+  //   自动建会话原先只 setSessionId 不写 URL，导致该会话 id 从不进地址栏，刷新后退回
+  //   "最近会话"猜测，且与 handleNewSessionInternal 的写 URL 行为不一致（写入口未收口）。
+  onUrlSessionChange?: (sessionId: string | null) => void;
 }
 
 interface UseChatSendReturn {
@@ -67,7 +71,6 @@ interface UseChatSendReturn {
  */
 export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const {
-    loading: _loading, // 2026-08-28 小强: 保留接口兼容, 实际用isSendingRef防重
     sessionId,
     setLoading,
     setSessionId,
@@ -76,6 +79,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
     waitTimerRef,
     currentSessionIdRef,
     executeSend,
+    onUrlSessionChange,
   } = options;
 
   // 2026-08-27 小欧 三堂会审: 回滚改靠userMessage.id, 删pendingMessageIdRef
@@ -145,6 +149,9 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           currentSessionId = newSession.session_id;
           setSessionId(currentSessionId);
           currentSessionIdRef.current = currentSessionId;
+          // 2026-09-30 小欧 - 自动建会话同样要把 id 写进 URL（经唯一写入口上抛），
+          //   否则刷新后地址栏无 session_id，只能回退到"最近会话"猜测
+          onUrlSessionChange?.(currentSessionId);
         } else {
           currentSessionIdRef.current = currentSessionId;
         }
@@ -194,6 +201,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       waitTimerRef,
       currentSessionIdRef,
       executeSend,
+      onUrlSessionChange,
     ]
   );
 

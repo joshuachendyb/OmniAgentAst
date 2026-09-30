@@ -43,6 +43,7 @@
 //   本组件仅订阅, 不再承担流的生命周期; ②useChatInit 入参 sessionId 由 urlSessionId 改
 //   `urlSessionId ?? undefined` —— 5.4 约束: 未解析出真实 sessionId 时不得 ensureSession
 //   (建空会话会污染 Store 注册表与历史列表) — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-09-30 14:30 小欧 - 新增 onUrlSessionChange，用 setSearchParams 作 URL 唯一写入口（原直接改地址栏致前进后退不同步）
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -64,7 +65,7 @@ import AuthorizationModal from '../components/AuthorizationModal';
 import { Colors } from '@/utils/stepStyles';
 
 const ChatPage: React.FC = () => {
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   // 2026-09-10 小欧: thought重复根治(三堂会审定案): 传稳定urlSessionId字符串给useChatInit,
   //   effect依赖它(非全局searchParams对象引用), 流式期间session_id不变即不重跑initializeSession。 — 小欧-2026-09-10
   const urlSessionId = searchParams.get('session_id');
@@ -79,6 +80,11 @@ const ChatPage: React.FC = () => {
     onError: (liveError: LiveError) => setLiveError(liveError),
     // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
     onSuccess: () => setLiveError(null),
+    // 2026-09-30 小欧 - URL 写入唯一出口：本页是唯一与 Router 接触处。原生 pushState 不派发
+    //   popstate、Router v7 只监听 popstate → urlSessionId 陈旧 → 写错会话
+    onUrlSessionChange: (id: string | null) => {
+      setSearchParams(id ? { session_id: id } : {});
+    },
   });
   const { chatState, chatStreaming, chatSend, chatTaskControl } = chatFacade;
   const { sessionId } = chatState;

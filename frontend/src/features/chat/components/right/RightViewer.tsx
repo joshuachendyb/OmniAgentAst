@@ -137,6 +137,7 @@
 //   内容塌陷 Empty → scrollTop 被夹回 0; 当前任务在快照未就绪时沿用 liveSteps, 消除塌陷帧;
 //   ③清2个只写不读的死变量 prevIsCurrentLiveRef / _prevSrcRef;
 //   验证: tsc 0 / eslint 0 / AS 7绿 / 真实浏览器带工具长任务 894 采样 longestDist>120=0(全程贴底) — 小欧-2026-09-18
+// 编辑历史: 2026-09-30 14:30 小欧 - deniedEntries 透传类型 tool/reason 转可选，以承载 tool 缺失的拒绝记录
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -193,7 +194,7 @@ interface RightViewerProps {
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
   deniedEntries: ReadonlyMap<
     number,
-    Array<{ tool: string; reason: string; reject_type?: string }>
+    Array<{ tool?: string; reason?: string; reject_type?: string }>
   >; // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(step→[{tool,reason}]), 透传 ToolCallLine 灰字 — 小欧-2026-09-06
   waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号, 透传 PipelineRenderer — 小欧-2026-09-17
   // 2026-09-11 小欧 三堂会审修复: 复用公用 TokenLayer——原 {prompt_tokens?: number;...} | null 与 StaticStatsBlock 必选字段形状不匹配(TS2322), 统一后 DRY — 小欧-2026-09-11

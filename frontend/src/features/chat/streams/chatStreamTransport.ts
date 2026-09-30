@@ -45,6 +45,9 @@ function clearFirstChunkTimer(s: ChatStreamSession): void {
 
 const IDLE_TIMEOUT = 60_000; // 无数据判定断连（心跳刷新；HITL 等待期暂停，useSSE.ts:912-933）
 const MAX_ATTEMPTS = 3; // 重连次数上限（useSSE reconnectAttemptsRef 口径 useSSE.ts:543-547）
+// 2026-09-30 小欧 - SSE 单帧字节上限（残包 buf 的内存护栏）。
+//   取 8MB：远大于正常帧，又远低于能让标签页 OOM 的量级，与快照的 4MB 阈值同数量级。
+const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024;
 const RECONNECT = { maxAttempts: 3, baseDelay: 1000, maxDelay: 10_000 }; // useSSE.ts:543-547 原值
 const TASK_POLL_INTERVAL = 5000; // ┐ 迁移自 useSSE.ts:179-181（pollSessionTaskStatus 配套常量）
 const TASK_POLL_MAX = 30; // │ 5s×30≈2.5 分钟
@@ -86,6 +89,23 @@ function authHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+/**
+ * 2026-09-30 小欧 - 连接收尾两字段的单点写入口：这一对手抄 10 处且逐字相同，"漏抄 2 个"正是
+ *   流被截断不重连的成因。只收这两字段，不连带 status（10 处 status 各有语义，统一会改变行为）。
+ */
+function markDisconnected(d: ChatStreamSession): void {
+  d.isReceiving = false;
+  d.isConnected = false;
+}
+
+/**
+ * 2026-09-30 小欧 - 轮询信号复位单点归口：pollSignal 原只置位不复位，终态收尾/宽限期满置位后
+ *   GET 续传的 observeByPolling 首行即 return 'aborted' → 轮询降级对该会话永久失效。
+ */
+function resetPollSignal(s: ChatStreamSession): void {
+  s.pollSignal = { aborted: false };
+}
+
 /** 2026-09-29 小欧：统一构造 SSEError 事件载荷（5.1 StreamEvent error 载荷为 SSEError 全结构） */
 function transportError(errorType: string, errorMessage: string): SSEError {
   return {
@@ -115,31 +135,22 @@ export async function sendStreamRequest(
   //   又 pollSignal 自建会话起只置 true 从不复位，故此处先置位旧信号中止旧轮询、再换新对象，
   //   使本轮新流/新轮询可用（否则本会话后续轮询永久死掉）。
   s.pollSignal.aborted = true; // 中止旧轮询观察
-  s.pollSignal = { aborted: false }; // 本轮新信号，供本轮新流/新轮询
+  resetPollSignal(s); // 本轮新信号，供本轮新流/新轮询
   commit(s, (d) => {
     d.lastSeq = -1; // 起点位（useSSE.ts:823），本轮第一个 seq 到达后自然被覆盖
     d.isReceiving = true;
     d.isConnected = true;
     if (d.reconnectStatus !== 'reconnecting') d.reconnectStatus = 'connecting';
     d.abortController = new AbortController();
-    // 2026-09-30 07:58 小欧 - [79] D1：控制器易主即清主动中断标志 —
-    //   该标志语义是"这一轮 abort 是主动的"，只覆盖当次 abort；新连接接管后旧 abort 已了结。
-    //   漏清的后果：stop()→clearCompleted 置真后再发新消息，本轮 final 帧会被 onComplete 的
-    //   intentionalAbort 守卫误判"已取消"而丢弃，正常完成永不收尾（守卫反成退化源）
+    // 2026-09-30 07:58 小欧 - 控制器易主即清主动中断标志（只覆盖当次 abort）：漏清则 stop 后
+    //   再发新消息时，本轮 final 被 onComplete 的 intentionalAbort 守卫误判"已取消"而丢弃
     d.intentionalAbort = false;
-    // 2026-09-30 10:12 小欧 - [79] 三堂会审 P0 修复：**新一轮入口必须把 status 拉回非终态**。
-    //   病根（10 遍会审实测复现）：POST 是"开新轮"的唯一入口，但此前**任何位置都不在轮次开始时
-    //   写 status** —— sendMessage 的 `status='active'` 位于 `await sendStreamRequest()` **之后**
-    //   （store:480 先跑完整轮流、:483 才赋值），对"轮次开始"根本无效；clearSteps 不改 status。
-    //   于是已完成会话发新消息时 status 全程停在 'completed'，本轮 final 帧命中 D1 守卫的
-    //   `isTerminalStatus(s.status)` 半边 → emitEvent('complete') 被跳过 → 助手消息永不收尾、
-    //   isReceiving/isConnected 残留 true。探针实测：起始 active 时事件含 complete，
-    //   起始 completed 时不含（对照组锁定帧构造正确）。
-    //   为何改这里而非改守卫：状态机缺的是"新一轮入口"，补入口后守卫的终态半边**自动变正确**，
-    //   D1 对 S3（停止后迟到 final）与"failed 被迟到 final 覆盖为 completed"的保护一分不丢。
-    //   已评估并否决两个替代：(a) 守卫只看 intentionalAbort —— 会丢掉 failed 被覆盖的保护，属新退化；
-    //   (b) 用 `lastSeq === -1` 当"本轮是否已开始" —— lastSeq 首个带 seq 事件后即 ≥0、且与 resume
-    //   的 after_seq 续传语义耦合，一个字段两种含义，逻辑不直线。
+    // 2026-09-30 10:12 小欧 - 新一轮入口必须把 status 拉回非终态。
+    //   病根：POST 是"开新轮"的唯一入口，但此前无任何位置在轮次开始时写 status
+    //   （sendMessage 的 status='active' 在 await 之后，对轮次开始无效），
+    //   故已完成会话发新消息时 status 全程停在 'completed'，本轮 final 命中 onComplete
+    //   守卫的 isTerminalStatus 半边 → complete 事件被跳过 → 消息永不收尾。
+    //   改入口而非改守卫：守卫的终态半边保护（停止后迟到 final、failed 不被覆盖）自动变正确。
     d.status = 'active';
   });
   const ctl = s.abortController!;
@@ -176,9 +187,16 @@ export async function sendStreamRequest(
 export async function resumeStreamRequest(
   s: ChatStreamSession
 ): Promise<ResumeResult> {
+  // 2026-09-30 小欧 - GET 续传入口补复位 pollSignal（与 POST 首连同形态）：否则终态收尾/
+  //   宽限期满置位后，本路径的 observeByPolling 首行即 return 'aborted' → 轮询降级永久失效。
+  //   位置须在三道守卫**之前**：守卫弹回说明调用方还会再来（重试/换发），此时不复位则随后
+  //   降级的 observeByPolling 会捕获到 aborted 对象并立即中止（轮询直接失效）。
+  //   "复位会不会复活刚被中止的旧轮询"已由 observeByPolling 捕获本轮信号对象根治：
+  //   换对象不影响在跑的旧轮询（它只看自己那一个），置位则必然被它看到。
+  resetPollSignal(s);
   if (!s.serverTaskId) return 'pending_draft';
   if (s.resumeInFlight) return 'recovering'; // 防双 pump（V4）
-  // 2026-09-30 07:58 小欧 - [79] D1：控制器所有权——读循环在飞时不得抢占 abortController。
+  // 2026-09-30 07:58 小欧 - 控制器所有权：读循环在飞时不得抢占 abortController。
   //   下方循环每次 attempt 都 commit d.abortController = ctl，旧流就此失去唯一 abort 句柄——
   //   stop()/clearCompleted() 只能断新流，旧流继续吐帧并继续 emitEvent（双事件 + 连接泄漏）。
   //   判据只用瞬态标志 pumpActive（读循环单飞位，退出即 false）。
@@ -195,7 +213,7 @@ export async function resumeStreamRequest(
         d.reconnectAttempts = attempt;
         d.reconnectStatus = attempt === 0 ? 'connecting' : 'reconnecting';
         d.abortController = ctl;
-        // 2026-09-30 07:58 小欧 - [79] D1：同上，续传连接接管时清主动中断标志。
+        // 2026-09-30 07:58 小欧 - 同上，续传连接接管时清主动中断标志。
         //   recoverFromIdle 先 abort 旧读并 await pumpDone（旧泵 AbortError 已在标志为真时静默收尾），
         //   此处再清不影响该静默口径，顺序不产生回退。
         d.intentionalAbort = false;
@@ -218,9 +236,14 @@ export async function resumeStreamRequest(
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (!res.body) throw new Error('响应体为空');
         const r = await pump(res, s);
-        commit(s, (d) => {
-          d.reconnectAttempts = 0; // 成功建连即复位重连计数（useSSE.ts:1043-1044）
-        });
+        // 2026-09-30 小欧 - 仅真落终态才复位重连计数。原先"建连成功即复位 0"，
+        //   而 EOF 非终态会接回重连 → 每轮都从 attempt 0 起算 → 退避恒为最小值，
+        //   且 scheduleReconnect 无次数上限 → 形成约 1 req/s 的永久重连环。
+        if (r !== 'recovering') {
+          commit(s, (d) => {
+            d.reconnectAttempts = 0; // 真终止（terminal/failed/aborted）才清零重来
+          });
+        }
         return r;
       } catch (e) {
         clearFirstChunkTimer(s);
@@ -230,9 +253,8 @@ export async function resumeStreamRequest(
           // 不可重试类直接失败，不空转 3 次（useSSE.ts:292-297 口径）
           commit(s, (d) => {
             d.reconnectStatus = 'failed';
-            d.status = 'failed';
-            d.isReceiving = false;
-            d.isConnected = false;
+        d.status = 'failed';
+        markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
           });
           emitEvent(s, 'error', transportError(t, String(e)));
           return 'failed';
@@ -285,6 +307,20 @@ export async function resumeStreamRequest(
   }
 }
 
+/** 任务条目类型（由 API 签名推导，避免手写漂移） */
+type TaskEntry = Awaited<ReturnType<typeof sessionTaskApi.listTasks>>['tasks'][number];
+
+/** 以 chat_tasks 为唯一权威源回读该会话当前 task 的任务条目（DRY，S1）。
+ *  2026-09-30 小欧 - 抽此 helper：原先「listTasks → find(task_id)」在 store.stop(STOP_RACE)、
+ *  transport.handleGetNotFound、transport.observeByPolling 各写一份，三份口径极易漂移。
+ *  只抽"回读"这一重复点；命中终态后的落盘/释放/文案三处语义确有差异，各自保留。 */
+export async function readAuthoritativeTask(
+  s: ChatStreamSession
+): Promise<TaskEntry | null> {
+  const resp = await sessionTaskApi.listTasks(s.sessionId);
+  return resp.tasks.find((x) => x.task_id === s.serverTaskId) ?? null;
+}
+
 /**
  * GET 404（3.7 GET_NOT_FOUND 族）：以 chat_tasks 为权威回读终态，禁伪造完成。
  * 2026-09-29 小欧：原口径用 store.local 的 status 判定并强写 completed（可能与后端 failed/cancelled
@@ -293,14 +329,12 @@ export async function resumeStreamRequest(
 async function handleGetNotFound(s: ChatStreamSession): Promise<ResumeResult> {
   const taskId = s.serverTaskId;
   if (!taskId) return 'not_found';
-  const resp = await sessionTaskApi.listTasks(s.sessionId);
-  const t = resp.tasks.find((x) => x.task_id === taskId);
+  const t = await readAuthoritativeTask(s);
   if (!t) return 'not_found';
   if (isTerminalStatus(t.status)) {
     commit(s, (d) => {
       d.status = t.status as StreamStatus;
-      d.isReceiving = false;
-      d.isConnected = false;
+      markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
     });
     chatStreamStore.clearCompleted(s.sessionId);
     return 'terminal';
@@ -315,18 +349,22 @@ async function handleGetNotFound(s: ChatStreamSession): Promise<ResumeResult> {
 async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
   const taskId = s.serverTaskId;
   if (!taskId) return 'not_found';
+  // 2026-09-30 小欧 - 捕获**本轮**信号对象，不每 tick 重新读 s.pollSignal。
+  //   病根：sendStreamRequest 换发消息时是"先置位旧信号、紧接着 resetPollSignal 换新对象"，
+  //   而每 tick 重读 s.pollSignal 的旧轮询下一 tick 读到的就是**新对象**（aborted=false）
+  //   → 旧轮询永不休止，与新流叠加：两路都发 listTasks、都 emitEvent（重复事件 + 重复请求）。
+  //   改为捕获后，轮询自始至终只看自己那一个信号对象：换对象不再影响它，置位则必然被它看到。
+  const signal = s.pollSignal;
   for (let i = 0; i < TASK_POLL_MAX; i += 1) {
-    if (s.pollSignal.aborted) return 'aborted'; // 终态释放/删除即中止（useSSE.ts:1069 语义）
+    if (signal.aborted) return 'aborted'; // 终态释放/删除即中止（useSSE.ts:1069 语义）
     await sleep(TASK_POLL_INTERVAL);
     try {
-      const resp = await sessionTaskApi.listTasks(s.sessionId);
-      const t = resp.tasks.find((x) => x.task_id === taskId);
+      const t = await readAuthoritativeTask(s);
       if (!t) return 'not_found';
       if (isTerminalStatus(t.status)) {
         commit(s, (d) => {
           d.status = t.status as StreamStatus;
-          d.isReceiving = false;
-          d.isConnected = false;
+          markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
         });
         chatStreamStore.clearCompleted(s.sessionId);
         return 'terminal'; // 命中终态即静默收尾（不误报错误）
@@ -335,10 +373,9 @@ async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
       /* 单次轮询失败不中断，下一轮重试 */
     }
   }
-  commit(s, (d) => {
-    d.isReceiving = false;
-    d.isConnected = false;
-  });
+    commit(s, (d) => {
+      markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+    });
   // 2026-09-29 23:22:19 小欧（[63] 5.3 防退化修复）：轮询耗尽事件两处退化，一并复原——
   //   ① 文案：原 useSSE.ts.bak:227 为「连接已断开且任务仍在执行，请手动确认任务状态」，
   //      迁移稿写成「轮询观察超时：任务终态未知」，把"请手动确认"的用户指引整段丢了
@@ -442,7 +479,7 @@ async function pump(
   res: Response,
   s: ChatStreamSession
 ): Promise<ResumeResult> {
-  // 2026-09-30 07:58 小欧 - [79] D1：单飞早退必须释放本次响应体。
+  // 2026-09-30 07:58 小欧 - 单飞早退必须释放本次响应体。
   //   原稿直接 return，本次 fetch 的 res.body 无人取消——单飞命中时该连接与缓冲就此泄漏
   //   （口径对齐下方 frame 分流路径的 reader.cancel()：拿到 body 的一方负责关 body）。
   if (s.pumpActive) {
@@ -478,16 +515,29 @@ async function pump(
           if (branch0) return branch0;
           if (s.lastSeq >= 0) {
             // 正常结束：final 已收到（useSSE.ts:981-985 以 lastSeq>=0 判定，语义等价 terminalSeqRef）
+            // 2026-09-30 小欧 - 核心修复：EOF 分两路——补收尾字段 + 非终态接回重连。
+            //   病根：原实现漏抄 isReceiving/isConnected，且 return 'recovering' 不抛异常 →
+            //   sendStreamRequest 丢弃 pump 返回值 → catch 不触发 → 唯一重连入口永不启动，
+            //   而 finally 已 disarm 空闲看门狗 → 无兜底（后端 --reload / 网关 FIN 等优雅 EOF
+            //   时 UI 永久停在"接收中"）。修法：补两字段 + 非终态主动重连（只走 GET，绝不 POST）。
+            const eofIsTerminal = s.status === 'completed';
+            // 2026-09-30 小欧 - 接回重连前补终态/主动中断守卫。
+            //   病根：原判据只看 completed，而 stop() 置的是 cancelled、错误路径置 failed
+            //   → 这些"其实已终止"的会话被当非终态接回重连，拉回已取消/已失败任务的缓冲后
+            //   再次 EOF，无限循环且持续打后端。
+            const mayResume = !eofIsTerminal && !s.intentionalAbort && !isTerminalStatus(s.status);
             commit(s, (d) => {
               if (d.idleTimeout !== null) window.clearTimeout(d.idleTimeout);
-              d.reconnectStatus = 'idle';
+              markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+              d.reconnectStatus = mayResume ? 'reconnecting' : 'idle';
             });
-            return s.status === 'completed' ? 'terminal' : 'recovering';
+            // 只走 GET after_seq，绝不 POST；重连次数上限由 scheduleReconnect 统一把关
+            if (mayResume) void scheduleReconnect(s);
+            return mayResume ? 'recovering' : 'terminal';
           }
           // 空流终态（useSSE.ts:986-993 B1：200+空 body 不得永久接收中）
           commit(s, (d) => {
-            d.isReceiving = false;
-            d.isConnected = false;
+            markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
             d.status = 'failed';
             d.reconnectStatus = 'idle';
           });
@@ -499,6 +549,31 @@ async function pump(
           return 'failed';
         }
         buf += decoder.decode(value, { stream: true });
+        // 2026-09-30 小欧 - 残包长度护栏（内存无界增长的唯一出口在此）。
+        //   残包只按 '\n' 切分、末段留作下次拼接，全程无上限——任何不含换行的字节流
+        //   （代理改写去换行、超大 observation）都会无界追加直到标签页 OOM。
+        //   超限即判帧损坏：报错 + 断本轮读循环 + 落 failed（宁可不显示该帧，不静默丢弃）。
+        if (buf.length > MAX_SSE_FRAME_BYTES) {
+          console.error(
+            `[SSE] 单帧超长（${buf.length} > ${MAX_SSE_FRAME_BYTES} 字节），判定帧损坏并终止本轮流`
+          );
+          try {
+            await reader.cancel();
+          } catch {
+            /* 已结束 */
+          }
+          commit(s, (d) => {
+            markDisconnected(d);
+            d.status = 'failed';
+            d.reconnectStatus = 'idle';
+          });
+          emitEvent(
+            s,
+            'error',
+            transportError('server', 'SSE 单帧超长（帧损坏），已终止本轮连接')
+          );
+          return 'failed';
+        }
         const lines = buf.split('\n');
         buf = lines.pop() ?? '';
         for (const line of lines) processSSEData(line, h.hooks);
@@ -551,18 +626,23 @@ async function pump(
  * @param s 目标会话
  * @returns hooks 供 processSSEData 调用；takeBranch 读取本轮读循环是否被错误帧短路
  */
-function storeHandlers(s: ChatStreamSession) {
-  let branch: ResumeResult | null = null;
-  const set =
-    <T>(
-      read: () => T,
-      apply: (d: ChatStreamSession, v: T) => void
-    ): Dispatch<SetStateAction<T>> =>
-    (u) =>
-      commit(s, (d) => {
-        apply(d, typeof u === 'function' ? (u as (p: T) => T)(read()) : u);
-      });
-  const seqRef = {
+/** Store 写入口工厂：把 React 的 setState 形状适配成 Store 的 commit 写入。
+ *  2026-09-30 小欧 - 由 storeHandlers 内部局部 helper 提为模块级（S3 拆分用，逻辑逐字不变）。 */
+function makeSetter<T>(
+  s: ChatStreamSession,
+  read: () => T,
+  apply: (d: ChatStreamSession, v: T) => void
+): Dispatch<SetStateAction<T>> {
+  return (u) =>
+    commit(s, (d) => {
+      apply(d, typeof u === 'function' ? (u as (p: T) => T)(read()) : u);
+    });
+}
+
+/** lastSeq 双向视图：sseParser 侧按 ref 语义读写，落到 Store 的 lastSeq（取 max，单调不回退）。
+ *  2026-09-30 小欧 - 由 storeHandlers 内部局部对象提为模块级（S3 拆分用，逻辑逐字不变）。 */
+function makeSeqRef(s: ChatStreamSession) {
+  return {
     get current() {
       return s.lastSeq;
     },
@@ -572,221 +652,244 @@ function storeHandlers(s: ChatStreamSession) {
       });
     },
   };
+}
+
+/** handler 组①：ref/状态形状适配——只做"setState 形状 ↔ Store 写入"的翻译，不含任何业务判断（SLAP）。 */
+function refHandlers(s: ChatStreamSession) {
+  const set = <T>(read: () => T, apply: (d: ChatStreamSession, v: T) => void) =>
+    makeSetter(s, read, apply);
+  const seqRef = makeSeqRef(s);
   return {
-    hooks: {
-      setExecutionSteps: set(
-        () => s.executionSteps,
-        (d, v) => {
-          d.executionSteps = v;
+    setExecutionSteps: set(
+      () => s.executionSteps,
+      (d, v) => {
+        d.executionSteps = v;
+      }
+    ),
+    getCurrentExecutionSteps: () => s.executionSteps,
+    // 2026-09-29 小欧：引 Store 推导视图，与 5.5 组件层同一对象（字面量各自创建即第二真源）
+    executionStepsRef: chatStreamStore.getExecutionStepsRef(s.sessionId),
+    pendingStepsRef: {
+      // sseParser.ts:117 push / :575 splice 原地改写
+      get current() {
+        return s.pendingSteps;
+      },
+      set current(v: ExecutionStep[]) {
+        commit(s, (d) => {
+          d.pendingSteps = v;
+        });
+      },
+    },
+    scheduleFlush: () => flushPending(s), // rAF 批量刷新（S12，useSSE.ts:504-509 同构）
+    setCurrentResponse: set(
+      () => s.currentResponse,
+      (d, v) => {
+        d.currentResponse = v;
+      }
+    ),
+    responseBufferRef: {
+      // 可写：sseParser.ts:487 `+=`、:546 赋值
+      // 与 currentResponse 合一：buffer 全量即渲染值，不引入第三真源
+      get current() {
+        return s.currentResponse;
+      },
+      set current(v: string) {
+        commit(s, (d) => {
+          d.currentResponse = v;
+        });
+      },
+    },
+    // 2026-09-30 小欧 - 删 setIsReceiving/setIsConnected 两个注入：sseParser 侧两处旧写入
+    //   已随之删除，收尾两字段全链改由 markDisconnected 单一入口承担（DRY）
+    // 2026-09-30 小欧 - 删 `disconnect: () => undefined` 空壳：sseParser 侧解构后零使用，
+    //   停止语义唯一入口是 chatStreamStore.stop()，断流由 pump() 的 abort() 负责
+    setServerTaskId: set(
+      () => s.serverTaskId,
+      (d, v) => {
+        d.serverTaskId = v; // start 帧落 taskId（useSSE.ts:1021）
+      }
+    ),
+    lastSeqRef: seqRef,
+    setMetaFrames: set(
+      () => s.metaFrames,
+      (d, v) => {
+        d.metaFrames = v;
+      }
+    ),
+    usageAccumRef: {
+      get current() {
+        return s.usageAccum;
+      },
+      set current(v: SessionSnapshot['usageAccum']) {
+        commit(s, (d) => {
+          d.usageAccum = v;
+        });
+      },
+    },
+  };
+}
+
+/** handler 组②：帧事件广播 + onComplete 的终态守卫（只管"把帧转成事件投出去"）。 */
+function broadcastHandlers(s: ChatStreamSession) {
+  return {
+    onStep: (step: ExecutionStep, isReasoning?: boolean) =>
+      emitEvent(s, 'step', { step, isReasoning }),
+    onChunk: (chunk: string, isReasoning?: boolean) =>
+      emitEvent(s, 'chunk', { chunk, isReasoning }),
+    // 2026-09-29 小欧：metadata 类型对齐 sseParser.ts:136 真实契约
+    //   （string | SSEMetadata），非 unknown——unknown 会在 5.1 载荷类型处断裂成断言
+    onComplete: (full: string, meta?: string | SSEMetadata, steps?: ExecutionStep[]) => {
+      // 2026-09-30 07:58 小欧 - 主动中断/已落终态后，迟到的 final 帧不得改写终态。
+      //   成因：stop() 已置 status='cancelled' 且 clearCompleted 前置 intentionalAbort=true，
+      //   但在途响应仍可能把 final 帧喂进来，此处无条件写 completed → 点"停止"却显示"已完成"。
+      //   守卫同时覆盖 emitEvent：被取消的任务不得再以"正常完成"收尾追加助手消息
+      //   （已收 chunk 仍在 UI，取消态文案由 stop() 返回值经 showTaskResultMessage 呈现）。
+      if (s.intentionalAbort || isTerminalStatus(s.status)) return;
+      commit(s, (d) => {
+        d.status = 'completed'; // 终态写入点①
+        markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+      });
+      emitEvent(s, 'complete', { full, meta, steps });
+    },
+    onMerged: (mergedIntoTaskId: string | null) =>
+      // 2026-09-29 小欧：[76] 6.14 注入应答事件（sseParser.ts:947）——5.3 原稿漏接，漏则提示条/高亮永不触发
+      emitEvent(s, 'merged', { mergedIntoTaskId }),
+    onRetry: (message: string, waitTime?: number) =>
+      emitEvent(s, 'retry', { message, waitTime }),
+    onSeq: (seq: number) => {
+      makeSeqRef(s).current = seq;
+    },
+    onHeartbeat: () =>
+      commit(s, (d) => {
+        d.heartbeatTs = Date.now();
+      }),
+    onBiz: () =>
+      commit(s, (d) => {
+        d.lastBizTs = Date.now();
+      }),
+  };
+}
+
+/** handler 组③：HITL 业务（授权请求/暂停/恢复/被拒），只管 pendingAuthorization 与 hitlWaitingKeys。 */
+function hitlHandlers(s: ChatStreamSession) {
+  return {
+    onAuthorizationRequired: (data: PendingAuthorizationPayload) => {
+      // 2026-09-30 00:52 小欧 - [63] 5.15 归位补漏(BUG-14 退化)：Store 单源化后"顶替即拒"
+      //   必须落在 Store。原实现只在 useAuthorization 的 React effect 里拒旧 pendingRef，
+      //   但同一条 SSE 流内连发多帧（同批 commit）时 React 只渲染末帧 → 中间 confirm_id
+      //   从未经 confirm(false)，静默泄漏到后端等到自身超时（原 2026-09-02 修的正是这个）。
+      //   覆写发生处即 Store，prev 在此处必然可见，是唯一可靠归属点（DRY：单一 owner）。
+      const prev = s.pendingAuthorization;
+      if (prev && prev.confirm_id !== data.confirm_id) {
+        void taskControlApi
+          .confirm(prev.confirm_id, false, false)
+          .catch(() => undefined);
+      }
+      commit(s, (d) => {
+        d.pendingAuthorization = { ...data };
+        d.hitlWaitingKeys.add(data.confirm_id);
+        d.status = 'paused';
+        d.isReceiving = true; // 2026-09-29 小欧：HITL 等待期保持接收态，UI 不得回落"无响应"
+      });
+    },
+    onPaused: (confirmId?: string) => {
+      commit(s, (d) => {
+        if (confirmId) d.hitlWaitingKeys.add(confirmId);
+        d.status = 'paused';
+        d.isReceiving = true; // 同上：暂停≠停流
+      });
+      emitEvent(s, 'paused', { confirmId });
+    },
+    onResumed: (confirmId?: string) => {
+      commit(s, (d) => {
+        if (confirmId) d.hitlWaitingKeys.delete(confirmId);
+        if (!confirmId || d.pendingAuthorization?.confirm_id === confirmId) {
+          d.pendingAuthorization = null;
         }
-      ),
-      getCurrentExecutionSteps: () => s.executionSteps,
-      // 2026-09-29 小欧：引 Store 推导视图，与 5.5 组件层同一对象（字面量各自创建即第二真源）
-      executionStepsRef: chatStreamStore.getExecutionStepsRef(s.sessionId),
-      pendingStepsRef: {
-        // sseParser.ts:117 push / :575 splice 原地改写
-        get current() {
-          return s.pendingSteps;
-        },
-        set current(v: ExecutionStep[]) {
-          commit(s, (d) => {
-            d.pendingSteps = v;
-          });
-        },
-      },
-      scheduleFlush: () => flushPending(s), // rAF 批量刷新（S12，useSSE.ts:504-509 同构）
-      onStep: (step: ExecutionStep, isReasoning?: boolean) =>
-        emitEvent(s, 'step', { step, isReasoning }),
-      onChunk: (chunk: string, isReasoning?: boolean) =>
-        emitEvent(s, 'chunk', { chunk, isReasoning }),
-      // 2026-09-29 小欧：metadata 类型对齐 sseParser.ts:136 真实契约
-      //   （string | SSEMetadata），非 unknown——unknown 会在 5.1 载荷类型处断裂成断言
-      onComplete: (
-        full: string,
-        meta?: string | SSEMetadata,
-        steps?: ExecutionStep[]
-      ) => {
-        // 2026-09-30 07:58 小欧 - [79] D1：主动中断/已落终态后，迟到的 final 帧不得改写终态。
-        //   成因：stop() 已置 status='cancelled' 且 clearCompleted 前置 intentionalAbort=true，
-        //   但在途响应仍可能把 final 帧喂进来，此处无条件写 completed → 点"停止"却显示"已完成"。
-        //   守卫同时覆盖 emitEvent：被取消的任务不得再以"正常完成"收尾追加助手消息
-        //   （已收 chunk 仍在 UI，取消态文案由 stop() 返回值经 showTaskResultMessage 呈现）。
-        if (s.intentionalAbort || isTerminalStatus(s.status)) return;
-        commit(s, (d) => {
-          d.status = 'completed'; // 终态写入点①
-          d.isReceiving = false;
-          d.isConnected = false;
-        });
-        emitEvent(s, 'complete', { full, meta, steps });
-      },
-      onMerged: (mergedIntoTaskId: string | null) =>
-        // 2026-09-29 小欧：[76] 6.14 注入应答事件（sseParser.ts:947）——5.3 原稿漏接，漏则提示条/高亮永不触发
-        emitEvent(s, 'merged', { mergedIntoTaskId }),
-      onRejected: (data: {
-        step: number;
-        message: string;
-        tool_name?: string;
-        reject_type: string;
-        confirm_id?: string;
-      }) => {
-        commit(s, (d) => {
-          // HITL 被拒同样清 pendingAuthorization（与 5.15 acknowledge、onResumed 三路幂等）
-          if (
-            !data.confirm_id ||
-            d.pendingAuthorization?.confirm_id === data.confirm_id
-          ) {
-            d.pendingAuthorization = null;
-          }
-        });
-        emitEvent(s, 'rejected', {
-          step: data.step,
-          message: data.message,
-          tool_name: data.tool_name,
-          reject_type: data.reject_type,
-        });
-      },
-      onRetry: (message: string, waitTime?: number) =>
-        emitEvent(s, 'retry', { message, waitTime }),
-      onAuthorizationRequired: (data: PendingAuthorizationPayload) => {
-        // 2026-09-30 00:52 小欧 - [63] 5.15 归位补漏(BUG-14 退化)：Store 单源化后"顶替即拒"
-        //   必须落在 Store。原实现只在 useAuthorization 的 React effect 里拒旧 pendingRef，
-        //   但同一条 SSE 流内连发多帧（同批 commit）时 React 只渲染末帧 → 中间 confirm_id
-        //   从未经 confirm(false)，静默泄漏到后端等到自身超时（原 2026-09-02 修的正是这个）。
-        //   覆写发生处即 Store，prev 在此处必然可见，是唯一可靠归属点（DRY：单一 owner）。
-        const prev = s.pendingAuthorization;
-        if (prev && prev.confirm_id !== data.confirm_id) {
-          void taskControlApi
-            .confirm(prev.confirm_id, false, false)
-            .catch(() => undefined);
+        // 2026-09-29 22:22:12 小欧：恢复即回 active（2026-09-29 原稿无条件置 active），
+        //   但并发 HITL（paused a + paused b，resumed 仅 a）时 b 仍在等待——无条件置 active 会让
+        //   UI 显示"流式中"而实际卡在等用户确认 b，状态与 hitlWaitingKeys 自相矛盾。
+        //   故按等待集合判定：无人在等才回 active，仍有人在等则保持 paused。
+        d.status = d.hitlWaitingKeys.size === 0 ? 'active' : 'paused';
+        d.isReceiving = true;
+      });
+      emitEvent(s, 'resumed', { confirmId });
+    },
+    onRejected: (data: {
+      step: number;
+      message: string;
+      tool_name?: string;
+      reject_type: string;
+      confirm_id?: string;
+    }) => {
+      commit(s, (d) => {
+        // HITL 被拒同样清 pendingAuthorization（与 5.15 acknowledge、onResumed 三路幂等）
+        if (
+          !data.confirm_id ||
+          d.pendingAuthorization?.confirm_id === data.confirm_id
+        ) {
+          d.pendingAuthorization = null;
         }
-        commit(s, (d) => {
-          d.pendingAuthorization = { ...data };
-          d.hitlWaitingKeys.add(data.confirm_id);
-          d.status = 'paused';
-          d.isReceiving = true; // 2026-09-29 小欧：HITL 等待期保持接收态，UI 不得回落"无响应"
-        });
-      },
-      onPaused: (confirmId?: string) => {
-        commit(s, (d) => {
-          if (confirmId) d.hitlWaitingKeys.add(confirmId);
-          d.status = 'paused';
-          d.isReceiving = true; // 同上：暂停≠停流
-        });
-        emitEvent(s, 'paused', { confirmId });
-      },
-      onResumed: (confirmId?: string) => {
-        commit(s, (d) => {
-          if (confirmId) d.hitlWaitingKeys.delete(confirmId);
-          if (!confirmId || d.pendingAuthorization?.confirm_id === confirmId) {
-            d.pendingAuthorization = null;
-          }
-          // 2026-09-29 22:22:12 小欧：恢复即回 active（2026-09-29 原稿无条件置 active），
-          //   但并发 HITL（paused a + paused b，resumed 仅 a）时 b 仍在等待——无条件置 active 会让
-          //   UI 显示"流式中"而实际卡在等用户确认 b，状态与 hitlWaitingKeys 自相矛盾。
-          //   故按等待集合判定：无人在等才回 active，仍有人在等则保持 paused。
-          d.status = d.hitlWaitingKeys.size === 0 ? 'active' : 'paused';
-          d.isReceiving = true;
-        });
-        emitEvent(s, 'resumed', { confirmId });
-      },
-      onError: (e: SSEError | string) => {
-        if (typeof e === 'string') {
-          branch = 'failed';
-          commit(s, (d) => {
-            d.status = 'failed';
-            d.isReceiving = false;
-            d.isConnected = false;
-          });
-          emitEvent(s, 'error', e);
-          return;
-        }
-        const recovery = RECOVERY_ERROR_BRANCH[e.error_type];
-        // 2026-09-29 小欧：业务错误帧（blocked/timeout/user_rejected 等）**不终止流**——
-        //   后端 event_emitter.py:84-109 在 ReAct 循环内 yield，Agent 继续执行并最终发 final；
-        //   5.3 原稿 `ERROR_BRANCH[t] ?? 'failed'` 会把这类中间帧当终态杀掉读循环、丢掉 final（功能退化）。
-        //   判据用 sseParser 既有契约 from_backend（sseParser.ts:654 无条件置 true）+ 恢复类 error_type 白名单。
-        if (!recovery && e.from_backend) {
-          emitEvent(s, 'error', e); // 仅投事件（HITL 齿轮/被拒点名/错误行由 5.8 消费），流继续
-          return;
-        }
-        branch = recovery ?? 'failed';
+      });
+      emitEvent(s, 'rejected', {
+        step: data.step,
+        message: data.message,
+        tool_name: data.tool_name,
+        reject_type: data.reject_type,
+      });
+    },
+  };
+}
+
+/** handler 组④：终态裁决——按错误类别决定"是否终止本轮读循环"，并回写 branch 标记。 */
+function errorHandlers(s: ChatStreamSession, setBranch: (b: ResumeResult) => void) {
+  return {
+    onError: (e: SSEError | string) => {
+      if (typeof e === 'string') {
+        setBranch('failed');
         commit(s, (d) => {
           d.status = 'failed';
-          d.isReceiving = false;
-          d.isConnected = false;
+          markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
         });
         emitEvent(s, 'error', e);
-      },
-      setCurrentResponse: set(
-        () => s.currentResponse,
-        (d, v) => {
-          d.currentResponse = v;
-        }
-      ),
-      responseBufferRef: {
-        // 可写：sseParser.ts:487 `+=`、:546 赋值
-        // 与 currentResponse 合一：buffer 全量即渲染值，不引入第三真源
-        get current() {
-          return s.currentResponse;
-        },
-        set current(v: string) {
-          commit(s, (d) => {
-            d.currentResponse = v;
-          });
-        },
-      },
-      setIsReceiving: set(
-        () => s.isReceiving,
-        (d, v) => {
-          d.isReceiving = v;
-        }
-      ),
-      setIsConnected: set(
-        () => s.isConnected,
-        (d, v) => {
-          d.isConnected = v;
-        }
-      ),
-      // [79] F② 2026-09-30 小欧：**删除** `disconnect: () => undefined` 空实现。
-      //   原注释称"全链零调用点"，实施中复核确认成立：sseParser.ts 内 `disconnect` 解构后零使用
-      //   （全文件仅 L216 一处解构，无任何调用），生产代码亦无 `storeHandlers.disconnect(...)` 调用点。
-      //   该空壳违反 [63] 6.5「无兼容空壳」；停止语义唯一入口是 [63] 5.14 的 `chatStreamStore.stop()`
-      //   （`useChatTaskControl.handleCancel` 已改调 Store.stop），断流则由 `pump()` 的
-      //   `s.abortController?.abort()` 负责——二者均不经本空壳，故删除零功能影响。
-      setServerTaskId: set(
-        () => s.serverTaskId,
-        (d, v) => {
-          d.serverTaskId = v; // start 帧落 taskId（useSSE.ts:1021）
-        }
-      ),
-      onSeq: (seq: number) => {
-        seqRef.current = seq;
-      },
-      lastSeqRef: seqRef,
-      setMetaFrames: set(
-        () => s.metaFrames,
-        (d, v) => {
-          d.metaFrames = v;
-        }
-      ),
-      usageAccumRef: {
-        get current() {
-          return s.usageAccum;
-        },
-        set current(v: SessionSnapshot['usageAccum']) {
-          commit(s, (d) => {
-            d.usageAccum = v;
-          });
-        },
-      },
-      onHeartbeat: () =>
-        commit(s, (d) => {
-          d.heartbeatTs = Date.now();
-        }),
-      onBiz: () =>
-        commit(s, (d) => {
-          d.lastBizTs = Date.now();
-        }),
+        return;
+      }
+      const recovery = RECOVERY_ERROR_BRANCH[e.error_type];
+      // 2026-09-29 小欧：业务错误帧（blocked/timeout/user_rejected 等）**不终止流**——
+      //   后端 event_emitter.py:84-109 在 ReAct 循环内 yield，Agent 继续执行并最终发 final；
+      //   5.3 原稿 `ERROR_BRANCH[t] ?? 'failed'` 会把这类中间帧当终态杀掉读循环、丢掉 final（功能退化）。
+      //   判据用 sseParser 既有契约 from_backend（sseParser.ts:654 无条件置 true）+ 恢复类 error_type 白名单。
+      if (!recovery && e.from_backend) {
+        emitEvent(s, 'error', e); // 仅投事件（HITL 齿轮/被拒点名/错误行由 5.8 消费），流继续
+        return;
+      }
+      setBranch(recovery ?? 'failed');
+      commit(s, (d) => {
+        d.status = 'failed';
+        markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+      });
+      emitEvent(s, 'error', e);
+    },
+  };
+}
+
+function storeHandlers(s: ChatStreamSession) {
+  let branch: ResumeResult | null = null;
+  return {
+    hooks: {
+      // 2026-09-30 小欧 - storeHandlers 瘦身为纯组装器（S3 SLAP）：原 223 行把
+      //   ref 形状适配 / 帧事件广播 / HITL 业务 / 终态裁决四类职责混在一个函数里，
+      //   已按职责拆为四个工厂（实现逐字搬迁，逻辑零改动）：
+      //     refHandlers      —— setState 形状 ↔ Store 写入的翻译，不含业务判断
+      //     broadcastHandlers —— 帧事件广播 + onComplete 终态守卫
+      //     hitlHandlers      —— pendingAuthorization / hitlWaitingKeys 的 HITL 业务
+      //     errorHandlers     —— 按错误类别裁决是否终止本轮读循环（回写 branch）
+      ...refHandlers(s),
+      ...broadcastHandlers(s),
+      ...hitlHandlers(s),
+      ...errorHandlers(s, (b) => {
+        branch = b;
+      }),
     },
     takeBranch: (): ResumeResult | null => branch,
   };
@@ -833,8 +936,7 @@ export async function handleTransportError(
     // 主动断开引发的 AbortError 静默收尾（useSSE.ts:1049-1062）：不误判 request_timeout、不复活重连
     commit(s, (d) => {
       d.intentionalAbort = false;
-      d.isConnected = false;
-      d.isReceiving = false;
+      markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
     });
     return 'aborted';
   }
@@ -856,8 +958,7 @@ export async function handleTransportError(
   if (canRetry) return 'recovering'; // 退避重连已调度，语义同"恢复中"（retry 态由 reconnectStatus 承载）
   commit(s, (d) => {
     d.reconnectStatus = 'failed';
-    d.isConnected = false;
-    d.isReceiving = false;
+    markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
   });
   // 重试耗尽不自动取消（2026-07-12 北京老陈裁定）：任务可能仍在执行，轮询会话任务列表观察终态
   if (s.serverTaskId) return await observeByPolling(s);
@@ -883,6 +984,22 @@ function scheduleReconnect(s: ChatStreamSession): void {
       transportError(
         'task_interrupted',
         'SSE 重连终止: 尚无任务ID(首响应未到), 未重复发起新任务'
+      )
+    );
+    return;
+  }
+  // 2026-09-30 小欧 - 补次数上限：原判据只看"无 taskId"，而 attempts 上限仅存在于
+  //   handleTransportError 的 canRetry，本函数无上限 → 任何反复 EOF 的场景都不会停。
+  if (s.reconnectAttempts >= RECONNECT.maxAttempts) {
+    commit(s, (d) => {
+      d.reconnectStatus = 'failed';
+    });
+    emitEvent(
+      s,
+      'error',
+      transportError(
+        'task_interrupted',
+        `SSE 重连终止: 已重连 ${s.reconnectAttempts} 次仍未完成`
       )
     );
     return;
@@ -939,3 +1056,4 @@ function scheduleReconnect(s: ChatStreamSession): void {
 //      pendingRef，同批 commit 的中间帧拿不到 → 中间请求静默泄漏到后端等超时。覆写发生处即本处，
 //      prev 必然可见，是唯一可靠归属点（DRY: 单一 owner，hook 侧同步删重复分支）；
 //      为此 import 增补 taskControlApi（与 sessionTaskApi 同模块）— 小欧-2026-09-30 01:05:17
+// 编辑历史: 2026-09-30 14:30 小欧 - EOF 补收尾接回重连（加终态守卫与上限）；抽 markDisconnected/resetPollSignal；轮询捕获信号对象
