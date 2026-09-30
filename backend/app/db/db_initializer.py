@@ -305,6 +305,8 @@ def init_chat_db(get_conn):
 
         # ===== 新增索引（CREATE INDEX IF NOT EXISTS 幂等）— 小欧 2026-08-16 =====
         conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_session ON chat_tasks(session_id)")
+        # chat_user_message(session_id): 消息数改按真值 COUNT, 本表此前零索引(每次计数全表扫 2.37ms) — 小欧 2026-09-30
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_umsess ON chat_user_message(session_id)")
         # chat_task_steps 复合索引：按 ai_message_id 与 (task_id, step_index)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_steps_task ON chat_task_steps(task_id, step_index)")
 

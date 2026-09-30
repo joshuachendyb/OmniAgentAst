@@ -32,7 +32,7 @@
 #   E2: line69-77 新增 get_last_user_message_id(DB兜底), 供 orchestrator 在 track 缺失时为 linked 续聊恢复 upper 上界。
 #   AM2/STORAGE_1: AssistantMessageIdAllocator.allocate 增 always_new 参数(默认False保留legacy复用语义);
 #       allocate_and_insert_message 设 always_new=True 每任务独立新行——绝 user 未track时 expected 命中已存在
-#       assistant 行导致内容覆盖(is_new=False仍message_count+1虚高, 同session多任务共用一行)。
+#       assistant 行导致内容覆盖(同session多任务共用一行)。[2026-09-30 小欧: 原"is_new=False 仍 +1 虚高"半句随计数器退役删]
 #   STORAGE_2: 每任务独立行后, load_execution_steps 按 task_id 双条件不再混任务步骤。
 # 2026-08-17 - 小健 - 必备日志补齐(老陈驱动「昨天今天提交代码都必须加」): allocate 的 always_new 递增寻空位
 #   打 logger.warning 留痕(异常回落/越界审计点, 仅落文件不刷 console)。
@@ -100,6 +100,9 @@
 # 2026-09-29 20:42:06 小欧 - update_task 补 UPDATE 影响 0 行告警(19:49 PAR-05 故障中任务行压根没建成, 终态
 #   UPDATE 静默影响0行且日志无痕, 只能事后比对 DB 定位); 三处同款 0 行判据(本函数/update_task_accumulation/
 #   update_session_accumulation)统一收敛到 _warn_zero_row 单一出口(DRY/复用优先, 既有两条日志文案逐字不变) — 小欧-2026-09-29
+# 2026-09-30 20:05:00 小欧 - 计数器退役: message_count 只增不减致列表虚高(实测清理前 1879/3195 会话"有计数无回答"),
+#   读取侧改走新增的 count_session_messages() 真值(列表/详情共用); update_session_message_count 去计数改名
+#   touch_session_updated_at(只留刷时间戳), allocate_and_insert_message 的 +1 同步删除; is_valid 语义不动 — 小欧-2026-09-30
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -109,7 +112,7 @@ storage — 会话存储业务逻辑
 import json
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from sqlite3 import Connection
 
 from fastapi import HTTPException
@@ -292,22 +295,12 @@ def ensure_session_exists(session_id: str, conn: Connection) -> None:
 # 镜像写点 W4(update_message_fields 写 chat_messages) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
 
 
-def update_session_message_count(
-    conn: Connection, session_id: str, increment: bool,
-) -> None:
-    """拷贝自 conversation.py 第159-177行"""
-    cursor = conn.cursor()
-    local_time = get_local_iso_timestamp()
-    if increment:
-        cursor.execute(
-            "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
-            (local_time, session_id),
-        )
-    else:
-        cursor.execute(
-            "UPDATE chat_sessions SET updated_at=? WHERE id=?",
-            (local_time, session_id),
-        )
+def touch_session_updated_at(conn: Connection, session_id: str) -> None:
+    """刷会话 updated_at(列表按其排序)。原 update_session_message_count 的计数职责已退役 — 小欧 2026-09-30"""
+    conn.execute(
+        "UPDATE chat_sessions SET updated_at=? WHERE id=?",
+        (get_local_iso_timestamp(), session_id),
+    )
 
 
 async def save_execution_steps(session_id: str, update_data):
@@ -318,7 +311,7 @@ async def save_execution_steps(session_id: str, update_data):
             ensure_session_exists(session_id, conn)
             ai_message_id, is_new = _allocator.allocate(session_id, conn)
             # 镜像写点 W2/W4 已移除, 终态/步骤真实存储由 chat_task_steps / chat_tasks 承载 — 小欧 2026-08-27
-            update_session_message_count(conn, session_id, is_new)
+            touch_session_updated_at(conn, session_id)
         logger.info(f"保存执行步骤成功: session_id={session_id}, ai_message_id={ai_message_id}, is_new={is_new}")
         return {"success": True, "ai_message_id": ai_message_id, "is_new_message": is_new}
     except HTTPException:
@@ -339,17 +332,13 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
       消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError
     2026-08-16 - 小欧 - S2②-2: chat_messages 补 task_id 列（任务级贯通，10.1.7②-2）
     2026-08-17 - 小健 - 三堂会审-AM2/STORAGE_1修复: 任务级分配新行(always_new=True),
-      杜绝同 session 多任务复用同一 assistant 行(内容互相覆盖)与 is_new=False 仍 message_count+1(虚高);
+      杜绝同 session 多任务复用同一 assistant 行(内容互相覆盖); [2026-09-30 小欧: 原"+1 虚高"半句随计数器退役删]
       is_new 恒 True 后每次+1 正确, 且各任务独立行 -> load_execution_steps 不再混任务步骤(STORAGE_2)
     2026-08-19 - 小欧 - v2.0: 加 user_message_id 参数，INSERT 同步写入 assistant→user 互指"""
     ensure_session_exists(session_id, conn)  # 修复: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
     ai_message_id, is_new = _allocator.allocate(session_id, conn, always_new=True)
-    local_time = get_local_iso_timestamp()
     # 镜像写点 W3(INSERT chat_messages 空白 assistant 行) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
-    conn.execute(
-        "UPDATE chat_sessions SET message_count=message_count+1, updated_at=? WHERE id=?",
-        (local_time, session_id),
-    )
+    touch_session_updated_at(conn, session_id)
     return ai_message_id
 
 
@@ -796,6 +785,21 @@ def load_user_messages_by_session(conn: Connection, session_id: str) -> list:
         d["provider"] = _cm.provider if _cm else None
         out.append(d)
     return out
+
+
+def count_session_messages(conn: Connection, session_ids: List[str]) -> Dict[str, int]:
+    """消息数唯一口径: COUNT(chat_user_message)+COUNT(chat_tasks), 列表/详情共用 — 小欧 2026-09-30"""
+    if not session_ids:
+        return {}
+    counts: Dict[str, int] = {sid: 0 for sid in session_ids}
+    placeholders = ",".join("?" * len(session_ids))
+    for table in ("chat_user_message", "chat_tasks"):   # 表名为硬编码常量
+        for row in conn.execute(
+                f"SELECT session_id, COUNT(*) FROM {table} "
+                f"WHERE session_id IN ({placeholders}) GROUP BY session_id", session_ids
+        ).fetchall():
+            counts[row["session_id"]] += row["COUNT(*)"]
+    return counts
 
 
 def fetch_session_user_message_pairs(conn: Connection, session_id: str,

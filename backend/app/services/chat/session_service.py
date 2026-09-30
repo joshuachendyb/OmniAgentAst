@@ -44,7 +44,7 @@ from app.utils.time_utils import get_local_iso_timestamp, now_str, format_timest
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
 from app.services.chat.message_service import delete_session_display_names
-from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate, parse_session_model, forget_session_message_ids  # D-2(2026-09-20 小欧): forget_session_message_ids 内存ID清理
+from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate, parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
 
 
 class SessionUpdate(BaseModel):
@@ -57,7 +57,7 @@ class SessionUpdate(BaseModel):
 
 def build_list_where(keyword: Optional[str], is_valid: Optional[bool],
                       for_count: bool = False) -> Tuple[str, List]:
-    """拷贝自 sessions.py 第38-49行"""
+    """过滤条件。追加"有真实内容"(北京老陈裁定隐藏空会话); 不用 is_valid——它建会话即 true, 过滤等于不过滤 — 小欧 2026-09-30"""
     where = "WHERE is_deleted = FALSE"
     params: List = []
     if keyword:
@@ -66,6 +66,8 @@ def build_list_where(keyword: Optional[str], is_valid: Optional[bool],
     if is_valid is not None:
         where += " AND is_valid = ?"
         params.append(1 if is_valid else 0)
+    where += (" AND (EXISTS(SELECT 1 FROM chat_user_message u WHERE u.session_id = chat_sessions.id)"
+              "      OR EXISTS(SELECT 1 FROM chat_tasks t WHERE t.session_id = chat_sessions.id))")
     return where, params
 
 
@@ -116,12 +118,14 @@ def list_sessions(
         where, params = build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
         cursor.execute(
-            f"SELECT id, title, created_at, updated_at, message_count, is_valid, sessionModel "
+            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel "
             f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [page_size, offset]
         )
         rows = cursor.fetchall()
+        # message_count 计数器退役, 改真值: 只数本页这些 id, 不扫全表(0.65ms/页) — 小欧 2026-09-30
+        message_counts = count_session_messages(conn, [row['id'] for row in rows])
 
     sessions = [
         SessionResponse(
@@ -129,7 +133,7 @@ def list_sessions(
             title=row['title'],
             created_at=format_timestamp(row['created_at']),
             updated_at=format_timestamp(row['updated_at']),
-            message_count=row['message_count'],
+            message_count=message_counts[row['id']],
             is_valid=row['is_valid'],
             sessionModel=parse_session_model(row['sessionModel'])
         )
@@ -326,23 +330,25 @@ def get_session_titles_batch(session_ids: str):
 
 
 def get_session_info(session_id: str):
-    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/message_count/is_valid/sessionModel)。
-    使用场景: 设置界面读取会话级信息(8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26"""
+    """D-2(8.D): 单会话信息 — 返回 chat_sessions 单行(title/created_at/updated_at/is_valid/sessionModel) + 真值消息数。
+    使用场景: 设置界面读取会话级信息(8.D-2 验收) + 顶栏创建/更新时间悬浮数据源(8.B 已知事项①), 现有端点无单会话信息 — 小欧 2026-08-26
+    message_count 改真值(计数器退役) — 小欧 2026-09-30"""
     with db.get_conn("chat") as conn:
         row = conn.execute(
-            "SELECT id, title, created_at, updated_at, message_count, is_valid, "
+            "SELECT id, title, created_at, updated_at, is_valid, "
             "sessionModel "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
             (session_id,),
         ).fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        if not row:
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        message_count = count_session_messages(conn, [session_id])[session_id]
     return SessionResponse(
         session_id=row['id'],
         title=row['title'],
         created_at=format_timestamp(row['created_at']),
         updated_at=format_timestamp(row['updated_at']),
-        message_count=row['message_count'],
+        message_count=message_count,
         is_valid=row['is_valid'],
         sessionModel=parse_session_model(row['sessionModel']),
     )

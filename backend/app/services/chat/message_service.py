@@ -28,6 +28,9 @@
 # 2026-09-28 19:32:44 小欧 - 三堂会审修复: ①合并加 pair_task_id 同任务约束(防相邻不同任务空回复行
 #   串成一个气泡); ②assistant 配对改合并渲染载体(设计[76]决策2): 载体=首个有内容行, 全空回落首见行
 #   (原首见即渲会渲空正文, 真答案落锚行时被跳过) — 小欧-2026-09-28
+# 2026-09-30 20:05:00 小欧 - 计数器退役: save_message 删 message_count+1 只留刷 updated_at(列表按其排序),
+#   SELECT 不再取该列, 返回值删 message_count 影子字段(前端未消费); 读取侧改走 count_session_messages 真值;
+#   _try_mark_valid 与 is_valid 语义不动 — 小欧-2026-09-30
 """
 message_service — 消息业务服务(services/chat)
 
@@ -167,17 +170,15 @@ def save_message(session_id: str, message):
     from fastapi import HTTPException
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
-        new_message_count = 0
 
         cursor.execute(
-            "SELECT id, title, message_count, COALESCE(title_locked, 0) as title_locked "
+            "SELECT id, title, COALESCE(title_locked, 0) as title_locked "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
         session = cursor.fetchone()
         if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
 
         local_time = get_local_iso_timestamp()
-        new_message_count = session["message_count"] + 1
 
         display_name_to_save = message.display_name
         if message.role == "assistant" and not display_name_to_save:
@@ -202,11 +203,11 @@ def save_message(session_id: str, message):
         # 镜像写点 W1-assistant(legacy 助手直存 INSERT chat_messages) 已随 chat_messages 表退役整体移除;
         # assistant 消息现由任务/步骤体系(chat_tasks.ai_message_id / chat_task_steps)管理 — 小欧 2026-08-27
 
-        # 12.2-Q6附带修复: 绝对值覆盖→SQL自增(与storage.py:297 allocate路径同口径), 消除并发丢计数 — 小欧 2026-08-21
+        # 只刷 updated_at(列表按其排序), 计数器已退役 — 小欧 2026-09-30
         cursor.execute(
-            "UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?",
+            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
             (local_time, session_id))
 
         _try_mark_valid(cursor, session_id)
 
-    return {"success": True, "message_id": message_id, "message_count": new_message_count}
+    return {"success": True, "message_id": message_id}
