@@ -18,6 +18,8 @@ import React, { Suspense, lazy } from 'react';
 //   从整页白屏降级为 Result 提示 + 一键刷新 — 小欧-2026-09-09
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
+// 2026-09-30 小欧 [63]7.x - 引入 readStoredSessionId: 菜单「对话任务」回跳当前会话的 storage 读出口 — 小欧-2026-09-30
+import { readStoredSessionId } from './utils/sessionStorage';
 import ChatPage from './pages/ChatPage';
 import { AppProvider } from './contexts/AppContext';
 // 编辑历史: 2026-08-28 小欧 - 挂载AntdAppBridge桥接antd<App>上下文message/notification实例 - 小欧-2026-08-28
@@ -67,8 +69,20 @@ const RouterContent: React.FC = () => {
     return <LoginPage />;
   }
 
+  // 2026-09-30 小欧 [63]7.x - 实施: 解析「当前会话」id 供左侧菜单「对话任务」显式回跳
+  //   病根: 菜单原为 navigate('/') 不带 session_id,会话归属隐式依赖 sessionStorage 缓存,
+  //   缓存缺失/降级时静默漂到"最近会话"。本处 URL 优先(会话页权威)、sessionStorage 回落
+  //   (离开会话页后 /history 等场景 URL 已无 session_id),两者皆无则 null → 菜单保持原 '/' 行为。
+  //   URL 职责留在唯一持有 location 的 RouterContent,不外泄给纯壳 AppLayout。 — 小欧-2026-09-30
+  const currentSessionId =
+    new URLSearchParams(location.search).get('session_id') ??
+    readStoredSessionId();
+
   return (
-    <AppLayout activeKey={location.pathname}>
+    <AppLayout
+      activeKey={location.pathname}
+      currentSessionId={currentSessionId}
+    >
       <Suspense fallback={<LazyLoadingFallback />}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

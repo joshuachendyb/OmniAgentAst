@@ -101,6 +101,8 @@ type MenuItem = Required<MenuProps>['items'][number];
 interface LayoutProps {
   children: React.ReactNode;
   activeKey?: string;
+  // 2026-09-30 小欧 [63]7.x - 实施: 当前会话 id(由 App 壳解析: URL 优先/sessionStorage 回落),供「对话任务」显式回跳 — 小欧-2026-09-30
+  currentSessionId?: string | null;
 }
 
 /**
@@ -121,7 +123,11 @@ interface LayoutProps {
  * @since 2026-02-17
  * @update 2026-02-18 集成React Router导航 - by 小新
  */
-const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
+const AppLayout: React.FC<LayoutProps> = ({
+  children,
+  activeKey = '/',
+  currentSessionId = null,
+}) => {
   // 路由导航
   const navigate = useNavigate();
   // 导航折叠状态
@@ -479,8 +485,16 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       }
       return;
     }
-    // 使用React Router导航到对应页面
-    navigate(key);
+    // 2026-09-30 小欧 [63]7.x - 实施: 「对话任务」显式回到当前会话(北京老陈定案 2026-09-30)
+    //   病根: 原 navigate('/') 不带 session_id,会话归属隐式依赖 sessionStorage 缓存,
+    //   缓存缺失/降级(lightState/QuotaExceeded/被清)时静默漂到"最近会话",无显式契约。
+    //   改法: 有当前会话则带 session_id 走场景1确定性加载; 无则保持原 '/' 行为(场景2/3),不退化。
+    //   其它菜单项一律原样 navigate(key),不附加无关查询参数。
+    if (key === '/' && currentSessionId) {
+      navigate(`/?session_id=${encodeURIComponent(currentSessionId)}`);
+    } else {
+      navigate(key);
+    }
     // 移动端点击后关闭抽屉
     if (isMobile) {
       setDrawerVisible(false);
