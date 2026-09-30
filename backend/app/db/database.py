@@ -50,11 +50,12 @@ Author: 小沈 - 2026-05-28
 """
 
 import asyncio
+import os
 import sqlite3
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import datetime, date, timezone
-from typing import Iterator
+from typing import Any, Dict, Iterator
 from app.logger import logger
 from app.utils.time_utils import to_local_iso  # 小欧 2026-08-08: datetime/date 归一化为本地ISO无Z
 from app.db.db_initializer import (
@@ -113,20 +114,40 @@ class _ParamSafeConnection:
         return getattr(self._conn, name)
 
 
+_DB_FILES = {
+    "chat": "chat_history.db",
+    "operations": "operations.db",
+    "timers": "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
+    "task_tracker": "task_tracker.db",
+    "monitoring": "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
+}
+
+
+def resolve_db_dir() -> Path:
+    """数据目录唯一解析点: OMNIAGENT_DATA_DIR 优先, 否则 ~/.omniagent — 小欧 2026-09-30
+
+    病根: 路径原在 __init__ 硬编码 Path.home()/".omniagent" 且 db=DatabaseManager() 在导入期构造,
+      路径被冻结; 而 conftest 的 isolated_config_dir 只重定向配置文件(OMNIAGENT_CONFIG_PATH),
+      管不到数据库 → 任何裸用 db.get_conn() 的测试都写真库(实测污染真库: 空会话/hello/v2 等)。
+    改法: 与系统已有的 OMNIAGENT_CONFIG_PATH 对称, 增加 OMNIAGENT_DATA_DIR 开关, 且**在 get_conn
+      内惰性解析**(不在 __init__ 冻结) —— 惰性是必须的: db 单例在模块导入期即构造, 若在 __init__ 读 env
+      便受导入顺序影响, conftest 来不及设。改后测试只需设 env 即"够不到"真库(AGENTS.md 铁律:
+      根治靠"够不到"而非"事后还原"), 无需逐个测试 patch, 也不会漏掉将来新增的测试。
+    """
+    env = (os.getenv("OMNIAGENT_DATA_DIR") or "").strip()
+    return Path(env) if env else Path.home() / ".omniagent"
+
+
 class DatabaseManager:
     """统一数据库管理器(SDK核心) — 仅负责连接管理"""
-    
+
     def __init__(self):
         """初始化数据库管理器"""
-        self._db_dir = Path.home() / ".omniagent"
-        self._db_paths = {
-            "chat": self._db_dir / "chat_history.db",
-            "operations": self._db_dir / "operations.db",
-            "timers": self._db_dir / "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
-            "task_tracker": self._db_dir / "task_tracker.db",
-            "monitoring": self._db_dir / "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
-        }
-        self._db_dir.mkdir(parents=True, exist_ok=True)
+        d = resolve_db_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        # 测试注入用覆盖口: {"chat": 任意路径} 优先于 _DB_FILES 解析, 并可注册 _DB_FILES 之外的
+        # 库名(纯单测需要, 如 test_db_atxn 用 "test")。生产路径不读它, 故不构成第二套解析逻辑 — 小欧 2026-09-30
+        self._db_overrides: Dict[str, Any] = {}
 
     @contextmanager
     def get_conn(self, db_name: str = "chat", max_retries: int = 3) -> Iterator[sqlite3.Connection]:
@@ -150,13 +171,16 @@ class DatabaseManager:
             修复(小欧 2026-08-07): 重试逻辑下沉至get_conn统一入口, 47处调用方零改动即获重试能力(DRY).
         """
         import time as _time
-        if db_name not in self._db_paths:
+        _override = self._db_overrides.get(db_name)
+        if _override is None and db_name not in _DB_FILES:
             raise ValueError(
                 f"Unknown database: {db_name}. "
-                f"Supported: {list(self._db_paths.keys())}"
+                f"Supported: {list(_DB_FILES.keys())}"
             )
 
-        db_path = self._db_paths[db_name]
+        # 惰性解析(见 resolve_db_dir docstring) — 小欧 2026-09-30
+        db_path = Path(_override) if _override else resolve_db_dir() / _DB_FILES[db_name]
+        db_path.parent.mkdir(parents=True, exist_ok=True)   # env 指向的临时目录可能尚不存在
         conn = None
 
         # (a) 连接获取: 对 connected前的 lock 指数退避重试(单次连接, 无re-yield) — 小欧 2026-08-07
