@@ -25,8 +25,31 @@ import { taskControlApi, sessionTaskApi } from '@/services/api/task.api';
 /** 终态状态集（3.10.1 权威口径）：completed/failed/cancelled 由 chat_tasks 与 final 帧共同决定 */
 export const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const;
 
+/** 2026-09-30 08:31 小欧 - [79] D3：终态条目内存保留时长（沿用原 10 分钟口径）。
+ *  仅删内存条目，sessionStorage 备份不受影响——重开该会话按 5.2 正常恢复。 */
+const TERMINAL_TTL_MS = 600_000;
+
+/** 2026-09-30 08:31 小欧 - [79] D3：内存会话条目容量上限。
+ *  超出时按"可回收时刻"先后 LRU 淘汰；活跃（在飞/非终态）与被订阅的会话永不被淘汰。 */
+const MAX_SESSIONS = 32;
+
 export function isTerminalStatus(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
+/** 2026-09-30 07:58 小欧 - [79] D1：会话状态 → ResumeResult 单一判定口。
+ *  sendMessage 尾与 resume 活流守卫共用同一口径（DRY：终态/非终态二分只写一次，不两处各抄一遍）。 */
+function resumeResultOf(s: ChatStreamSession): ResumeResult {
+  return s.status === 'completed' || isTerminalStatus(s.status) ? 'terminal' : 'recovering';
+}
+
+/** 2026-09-30 07:58 小欧 - [79] D1：该会话是否有在飞工作（活流守卫判据，单一判定口）。
+ *  只认三个瞬态标志：读循环在飞(pumpActive)/发送在途(isProcessing)/续传在途(resumeInFlight)——
+ *  三者各自在对应流程收尾时复位，能精确覆盖"状态正在被写"的所有窗口。
+ *  刻意不认 isConnected：它非瞬态，仅在终态与错误路径才置 false，断线后残留 true，
+ *  用它判活会把断线待重连的会话误判为活流，从而跳过本该做的恢复（实测 8 项重连用例转红）。 */
+function hasInflightWork(s: ChatStreamSession): boolean {
+  return s.pumpActive || s.isProcessing || s.resumeInFlight;
 }
 
 const EMPTY_SNAPSHOT: SessionSnapshot = Object.freeze({
@@ -101,6 +124,11 @@ export interface ChatStreamSession extends SessionSnapshot {
   eventListeners: Set<(e: StreamEvent) => void>;
   /** 无人订阅回收的宽限起点（epoch ms）；null 表示当前有订阅者 */
   releasedAt: number | null;
+  /** 2026-09-30 08:31 小欧 - [79] D3：首次落终态的时刻（null = 未落终态）。
+   *  双重职责：① 终态 TTL 排期的计时起点（与"是否曾零订阅"解耦）；② 容量淘汰的 LRU 排序键。 */
+  terminalAt: number | null;
+  /** 2026-09-30 08:31 小欧 - [79] D3：终态 TTL 排期句柄（重排前先清，幂等不叠定时器）。 */
+  terminalEvictTimer: number | null;
   /** executionSteps 推导 ref 视图（getExecutionStepsRef 惰性创建、引用稳定）——
    *  读写均落 Store 快照，非第二真源；5.3 parser 与 5.5 组件层共用同一对象 */
   executionStepsRefView?: { current: ExecutionStep[] };
@@ -113,9 +141,23 @@ const sessions = new Map<string, ChatStreamSession>();
 
 /** 唯一写入口：一切字段变更经此函数，尾随快照重建与订阅通知 */
 export function commit(s: ChatStreamSession, fn: (d: ChatStreamSession) => void): void {
+  // 2026-09-30 08:31 小欧 - [79] D3：终态跃迁在此单点捕获（所有终态写入路径都经 commit，
+  //   无需在各写入点分别设防），落终态即排期 TTL —— 排期与"是否曾零订阅"解耦。
+  //   原稿把终态 TTL 嵌在 releaseUnsubscribed 的宽限期回调内，导致"用户盯着看完"的会话
+  //   （全程有订阅者，宽限期回调首行即 return）永不被排期，标签页不关即永久泄漏。
+  const wasTerminal = isTerminalStatus(s.status);
   fn(s);
   bump(s);
   schedulePersist(s);
+  if (!wasTerminal && isTerminalStatus(s.status)) {
+    s.terminalAt = Date.now();
+    chatStreamStore.scheduleTerminalEviction(s.sessionId);
+  } else if (wasTerminal && !isTerminalStatus(s.status)) {
+    // 2026-09-30 08:31 小欧 - [79] D3：离开终态即作废 terminalAt，维持"该字段 ⟺ 当前处于终态"
+    //   的不变式。不作废则复用的会话带着陈旧极旧值，LRU 序里会被优先淘汰（该会话明明刚被用过）。
+    //   已武装的 TTL 句柄无需在此清：到点 evictSession 见非终态自会拒收，且下次落终态时幂等重排。
+    s.terminalAt = null;
+  }
 }
 
 /** 快照重建与订阅通知；不合成事件，事件只由 emitEvent 按真实帧发出。
@@ -216,6 +258,29 @@ async function attachActiveTask(
   return resumeStreamRequest(s);
 }
 
+/** 2026-09-30 08:31 小欧 - [79] D3：容量上限淘汰（终态 LRU）。
+ *  只淘汰"已无人订阅且已可回收"的条目，排序键 = 终态时刻 terminalAt ?? 退订时刻 releasedAt。
+ *  两键皆 null（仍有订阅者）即不可回收——故正在跑/正在看的会话永不被淘汰。
+ *  刚建的条目两键皆 null，天然不在候选内，无需特判"别淘汰自己"。
+ *  逐个交 evictSession 复用其断连接/清定时器/删条目全套动作，不另写删除逻辑。 */
+function evictOverflow(): void {
+  if (sessions.size <= MAX_SESSIONS) return;
+  const candidates = [...sessions.values()]
+    .filter(
+      (s) =>
+        s.listeners.size === 0 &&
+        s.eventListeners.size === 0 &&
+        (isTerminalStatus(s.status) || s.status === 'idle')
+    )
+    .map((s) => ({ s, key: s.terminalAt ?? s.releasedAt }))
+    .filter((x): x is { s: ChatStreamSession; key: number } => x.key !== null)
+    .sort((a, b) => a.key - b.key); // 最旧可回收者先走
+  for (const { s } of candidates) {
+    if (sessions.size <= MAX_SESSIONS) break;
+    chatStreamStore.evictSession(s.sessionId);
+  }
+}
+
 export const chatStreamStore = {
   /** 显式创建；getSnapshot 路径绝不创建 */
   ensureSession(sessionId: string): ChatStreamSession {
@@ -256,12 +321,28 @@ export const chatStreamStore = {
       listeners: new Set(),
       eventListeners: new Set(),
       releasedAt: null,
+      terminalAt: null,
+      terminalEvictTimer: null,
     };
     sessions.set(sessionId, s);
+    evictOverflow();
     return s;
   },
 
   hasSession: (sessionId: string) => sessions.has(sessionId),
+
+  /** 终态 TTL 排期（幂等）：重排前先清旧句柄，终态时起算，到点交 evictSession 删内存条目。
+   *  两个触发点共用本方法：① commit 检测到终态跃迁（与"是否曾零订阅"解耦的主路径）；
+   *  ② releaseUnsubscribed 发现已落终态——补上"上次 TTL 到点因有订阅者被拒、计时空转"的缺口。 */
+  scheduleTerminalEviction(sessionId: string): void {
+    const s = sessions.get(sessionId);
+    if (!s || !isTerminalStatus(s.status)) return;
+    if (s.terminalEvictTimer !== null) window.clearTimeout(s.terminalEvictTimer);
+    s.terminalEvictTimer = window.setTimeout(() => {
+      s.terminalEvictTimer = null;
+      this.evictSession(sessionId);
+    }, TERMINAL_TTL_MS);
+  },
 
   /** 返回缓存引用；session 不存在时返回冻结空快照，不惰性创建 */
   getSnapshot(sessionId: string): SessionSnapshot {
@@ -323,7 +404,7 @@ export const chatStreamStore = {
         if (d.status === 'idle' || d.status === 'recovering') d.status = 'active';
       });
       this.persistNow(sessionId);
-      return s.status === 'completed' || isTerminalStatus(s.status) ? 'terminal' : 'recovering';
+      return resumeResultOf(s);
     } finally {
       commit(s, (d) => {
         d.isProcessing = false;
@@ -339,6 +420,14 @@ export const chatStreamStore = {
   async resume(sessionId?: string): Promise<ResumeResult> {
     // 2026-09-29 小欧：无 id（如首屏无 URL session_id）即无可恢复对象，短路防造幽灵会话（5.17 调用形态）
     if (!sessionId) return 'idle';
+    // 2026-09-30 07:58 小欧 - [79] D1：活流守卫——该会话已有在飞读循环/连接时直接回读当前状态。
+    //   成因：useChatInit 每次 urlSessionId 变化都调 resume()，切回正在跑的会话时 restore() 用备份
+    //   覆盖在飞状态（lastSeq/steps/currentResponse 倒退闪烁、isConnected 假 false），
+    //   随后 resumeStreamRequest 再抢占 abortController，泄漏旧连接并起第二条流。
+    //   落点选在 restore() 的唯一调用方 resume()：一次拦住"覆盖状态"与"起第二条流"两个后果
+    //   （restore 不再重复设防，避免同一不变量两处判断）。
+    const cur = sessions.get(sessionId);
+    if (cur && hasInflightWork(cur)) return resumeResultOf(cur);
     const s = this.ensureSession(sessionId);
     const restored = await this.restore(sessionId);
     if (restored === 'invalid') {
@@ -536,6 +625,9 @@ export const chatStreamStore = {
     const s = sessions.get(sessionId);
     if (!s || s.listeners.size > 0) return;
     s.releasedAt = Date.now();
+    // 2026-09-30 08:31 小欧 - [79] D3：已落终态者立即排期 TTL，不等宽限期。
+    //   覆盖"上次 TTL 到点时仍有订阅者被 evictSession 拒收、计时空转"的情形——退订即补排。
+    if (isTerminalStatus(s.status)) this.scheduleTerminalEviction(sessionId);
     window.setTimeout(() => {
       const cur = sessions.get(sessionId);
       if (!cur || cur.listeners.size > 0 || cur.releasedAt === null) return;
@@ -557,9 +649,9 @@ export const chatStreamStore = {
       console.info(
         `[Store] 无人订阅宽限期到，释放客户端资源 session=${sessionId}（任务未停，条目保留）`
       );
-      if (isTerminalStatus(cur.status)) {
-        window.setTimeout(() => this.evictSession(sessionId), 600_000); // 终态条目 10 分钟后删
-      }
+      // 2026-09-30 08:31 小欧 - [79] D3：原此处"终态再 setTimeout(evictSession, 600_000)"
+      //   整删——终态 TTL 已改由 commit 终态跃迁 / 本方法入口统一排期（scheduleTerminalEviction），
+      //   保留会在有订阅者时静默空转，是 D3"用户盯着看完的会话永不被回收"的病根之一。
     }, graceMs);
   },
 
@@ -575,6 +667,11 @@ export const chatStreamStore = {
     if (cur.saveStepsTimer !== null) window.clearTimeout(cur.saveStepsTimer);
     cur.idleTimeout = null;
     cur.saveStepsTimer = null;
+    // 2026-09-30 08:31 小欧 - [79] D3：清本路径新增的终态 TTL 句柄。
+    //   evictOverflow 走本方法删除条目时该定时器仍武装着，不清则白挂 10 分钟
+    //   （到点 sessions.get 已空，空跑一次；无害但属资源遗留）。
+    if (cur.terminalEvictTimer !== null) window.clearTimeout(cur.terminalEvictTimer);
+    cur.terminalEvictTimer = null;
     cur.pollSignal.aborted = true;
     sessions.delete(sessionId);
   },
@@ -594,6 +691,7 @@ export const chatStreamStore = {
         cur.saveStepsTimer,
         cur.firstChunkTimeout,
         cur.intentionalAbortTimer,
+        cur.terminalEvictTimer, // 2026-09-30 08:31 小欧 - [79] D3：并入既有五定时器清理循环
       ]) {
         if (t !== null) window.clearTimeout(t);
       }

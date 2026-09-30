@@ -122,6 +122,11 @@ export async function sendStreamRequest(
     d.isConnected = true;
     if (d.reconnectStatus !== 'reconnecting') d.reconnectStatus = 'connecting';
     d.abortController = new AbortController();
+    // 2026-09-30 07:58 小欧 - [79] D1：控制器易主即清主动中断标志。
+    //   该标志语义是"这一次 abort 是主动的"，只覆盖当次 abort；新连接接管后旧 abort 已了结。
+    //   漏清的后果：stop()→clearCompleted 置真后再发新消息，本流 final 帧会被 onComplete 的
+    //   intentionalAbort 守卫误判为"已取消"而丢弃，正常完成永不收尾（守卫反成退化源）。
+    d.intentionalAbort = false;
   });
   const ctl = s.abortController!;
   commit(s, (d) => {
@@ -159,6 +164,13 @@ export async function resumeStreamRequest(
 ): Promise<ResumeResult> {
   if (!s.serverTaskId) return 'pending_draft';
   if (s.resumeInFlight) return 'recovering'; // 防双 pump（V4）
+  // 2026-09-30 07:58 小欧 - [79] D1：控制器所有权——读循环在飞时不得抢占 abortController。
+  //   下方循环每次 attempt 都 commit d.abortController = ctl，旧流就此失去唯一 abort 句柄——
+  //   stop()/clearCompleted() 只能断新流，旧流继续吐帧并继续 emitEvent（双事件 + 连接泄漏）。
+  //   判据只用瞬态标志 pumpActive（读循环单飞位，退出即 false）。
+  //   不可并用 isConnected：它非瞬态，仅在终态/错误路径才置 false，断线后残留 true，
+  //   会把合法重连一并挡掉（实测 8 项重连/轮询用例由该误判转红）。
+  if (s.pumpActive) return 'recovering';
   commit(s, (d) => {
     d.resumeInFlight = true;
   });
@@ -169,6 +181,10 @@ export async function resumeStreamRequest(
         d.reconnectAttempts = attempt;
         d.reconnectStatus = attempt === 0 ? 'connecting' : 'reconnecting';
         d.abortController = ctl;
+        // 2026-09-30 07:58 小欧 - [79] D1：同上，续传连接接管时清主动中断标志。
+        //   recoverFromIdle 先 abort 旧读并 await pumpDone（旧泵 AbortError 已在标志为真时静默收尾），
+        //   此处再清不影响该静默口径，顺序不产生回退。
+        d.intentionalAbort = false;
         d.firstChunkTimeout = window.setTimeout(
           () => ctl.abort(),
           HEADER_TIMEOUT
@@ -412,7 +428,13 @@ async function pump(
   res: Response,
   s: ChatStreamSession
 ): Promise<ResumeResult> {
-  if (s.pumpActive) return 'recovering';
+  // 2026-09-30 07:58 小欧 - [79] D1：单飞早退必须释放本次响应体。
+  //   原稿直接 return，本次 fetch 的 res.body 无人取消——单飞命中时该连接与缓冲就此泄漏
+  //   （口径对齐下方 frame 分流路径的 reader.cancel()：拿到 body 的一方负责关 body）。
+  if (s.pumpActive) {
+    await res.body?.cancel();
+    return 'recovering';
+  }
   commit(s, (d) => {
     d.pumpActive = true;
   });
@@ -570,6 +592,12 @@ function storeHandlers(s: ChatStreamSession) {
         meta?: string | SSEMetadata,
         steps?: ExecutionStep[]
       ) => {
+        // 2026-09-30 07:58 小欧 - [79] D1：主动中断/已落终态后，迟到的 final 帧不得改写终态。
+        //   成因：stop() 已置 status='cancelled' 且 clearCompleted 前置 intentionalAbort=true，
+        //   但在途响应仍可能把 final 帧喂进来，此处无条件写 completed → 点"停止"却显示"已完成"。
+        //   守卫同时覆盖 emitEvent：被取消的任务不得再以"正常完成"收尾追加助手消息
+        //   （已收 chunk 仍在 UI，取消态文案由 stop() 返回值经 showTaskResultMessage 呈现）。
+        if (s.intentionalAbort || isTerminalStatus(s.status)) return;
         commit(s, (d) => {
           d.status = 'completed'; // 终态写入点①
           d.isReceiving = false;
