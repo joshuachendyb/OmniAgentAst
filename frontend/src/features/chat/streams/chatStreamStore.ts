@@ -36,7 +36,7 @@
 //   不可达性（逐路径证毕）：P0 修复已把 active 兜底移入 sendStreamRequest 开篇 commit（transport:143），
 //   本行执行时机在 `await sendStreamRequest()` 之后，status 必然是 pump 退出后的终态/paused/failed/active；
 //   'recovering' 仅 GET 续传路径（transport:309 handleGetNotFound）赋值、'idle' 仅 resume 无 taskId 路径
-//   （backup invalid / recoverWithoutTaskId）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
+    //   （backup invalid / adoptLiveTaskOrDraft）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
 //   与 P0 修复配套：修复前该分支是"已完成会话发新消息 final 被吞"（P0）的反向误修点，
 //   修复后语义由 transport 单点承担，store 侧仅剩 pendingMessage 置 sent。
 // 编辑历史: 2026-09-30 14:30 小欧 - 删 clearCompleted 越权写瞬态标志；evictOverflow 查在飞工作；清理收敛单一出口；restore 改展开式
@@ -437,7 +437,7 @@ async function findLiveTask(
  *  附着即置 taskId/active 并 resume（不发第二 POST）；未附着返回 null 交调用方走正常路径。
  *
  *  2026-10-01 小欧 [1] B5: content 由"必填精确比对"放宽为"可选过滤"。
- *   原实现 `t.user_input !== content` 硬性精确比对，而 recoverWithoutTaskId 传入的是
+ *   原实现 `t.user_input !== content` 硬性精确比对，而 adoptLiveTaskOrDraft 传入的是
  *   **备份里的 pendingMessage.content**——刷新时该字段往往为空/陈旧/与在跑任务无关
  *   （任务由另一标签页、E2E、后台发起时本标签页根本无该内容）。结果是刷新后必然匹配不上，
  *   直接放弃该 executing 任务 → 无 serverTaskId → 右栏把在跑任务当历史任务读 DB → 显示别的任务结果。
@@ -692,17 +692,18 @@ await sendStreamRequest(s, content, mode);
       return resumeResultOf(cur);
     const s = this.ensureSession(sessionId);
     const restored = await this.restore(sessionId);
-    if (restored === 'invalid') {
-      commit(s, (d) => {
-        d.status = 'idle';
-      });
-      return 'idle';
-    }
-    if (!s.serverTaskId) return this.recoverWithoutTaskId(s);
+    // 2026-10-01 小欧 [1] B7: 备份判废(sessionStorage 已空, 如关标签页后重开)时也去 DB 找活任务。
+    //   原先此处早退 'idle', 而备份是 sessionStorage 级的 —— 关掉标签页即整体消失, 于是
+    //   "关页面再进来"永远恢复不了, 尽管后端 agent 仍在跑、结果也落库(纯前端没跟上)。
+    //   两处 whenNone 各自保持改前的返回值语义: 判废路仍回 'idle'(书签访问等无活任务场景
+    //   照旧走 initializeSession, loading/重试/404 处理一概不变), 备份有效但无 taskId 路仍回
+    //   'pending_draft'。只有真附着到活任务才返回非 idle, 即只有那一种情况行为变。
+    if (restored === 'invalid') return this.adoptLiveTaskOrDraft(s, 'idle');
+    if (!s.serverTaskId) return this.adoptLiveTaskOrDraft(s, 'pending_draft');
     // 2026-10-01 小欧 [1] B4: DB 权威校验 —— 备份的 serverTaskId 只是缓存, 可能陈旧
     //   (旧任务非终态备份未被覆盖 / 另一入口发起的任务)。若 DB 显示该会话另有一个 executing
     //   任务, 备份锚点即错, 继续对它发 GET 会取回错误任务的数据。改以 DB 为准重新锚定。
-    //   不选"丢弃备份走 recoverWithoutTaskId", 因那会多绕一层且丢掉备份里的 lastSeq/steps。
+    //   不选"丢弃备份走 adoptLiveTaskOrDraft", 因那会多绕一层且丢掉备份里的 lastSeq/steps。
     const live = await findLiveTask(s.sessionId, s.serverTaskId);
     if (live && live.task_id !== s.serverTaskId) {
       commit(s, (d) => {
@@ -714,17 +715,21 @@ await sendStreamRequest(s, content, mode);
     return resumeStreamRequest(s);
   },
 
-  /** 无 taskId 的恢复：查重附着同内容活动任务；无则交还显式待发草稿，绝不自动 POST
-   *  2026-10-01 小欧 [1] B5: 传空串而非 pendingMessage.content —— 恢复路径下该字段不可信
-   *   (刷新时多为空或陈旧)，传它会让 attachActiveTask 的同内容比对必然失败。
-   *   空串表示"只按该会话是否还有在跑任务附着"，这正是刷新恢复需要的语义。 */
-  async recoverWithoutTaskId(s: ChatStreamSession): Promise<ResumeResult> {
+  /**
+   * 去 DB 找出本会话正在跑的任务并附着；没有则交还草稿本，绝不自动 POST。
+   * 2026-10-01 小欧 [1] B6: 原名 recoverWithoutTaskId 名不副实(它并非将就恢复, 而是主动查 taskId), 故改名。
+   * @param whenNone 没附着到活任务时返回什么 —— 调用点各自的原语义, 不得统一。
+   */
+  async adoptLiveTaskOrDraft(
+    s: ChatStreamSession,
+    whenNone: ResumeResult
+  ): Promise<ResumeResult> {
     const attached = await attachActiveTask(s, '');
     if (attached !== null) return attached;
     commit(s, (d) => {
       d.status = 'idle';
     });
-    return 'pending_draft';
+    return whenNone;
   },
 
   /**
@@ -809,7 +814,7 @@ await sendStreamRequest(s, content, mode);
     backupRemove(sessionId);
     // [1] B2: 即落空态快照(无旧 taskId/旧 steps 但结构完整), 消除删备份到重建之间的裸窗口——
     //   该窗口内刷新 → restore 读不到快照 → serverTaskId/metaFrames 全空, 右栏把在跑任务
-    //   当历史任务读 DB。恢复路径据此走 recoverWithoutTaskId 按会话在跑任务附着(B5)。
+    //   当历史任务读 DB。恢复路径据此走 adoptLiveTaskOrDraft 按会话在跑任务附着(B5)。
     persistNowOf(sessionId);
     bump(s);
   },
