@@ -225,7 +225,7 @@ test.describe('[63] P1 实时切页 · step 断点续显/不重初始化', () =>
     // lastSeq 取不到就无法验"续增", 显式判失败而非静默降级
     expect(seqBefore).toBeGreaterThanOrEqual(0);
 
-    // 4) 真切走到「设置2版」(/settings2) —— 只关视图, 不点停止
+    // 4) 真切走到「设置2版」(/settings2) —— 只切走页面, 不点「停止」按钮
     //    2026-10-01 小欧: 原实现切走也点「对话任务」, 与切回同 URL = 从未切走(假通过), 详见 gotoAway 注释
     //    urlAtSwitch 已在上面(取 taskId 处)记录, 此处直接用
     await gotoAway(page, AWAY_MENU_TEXT);

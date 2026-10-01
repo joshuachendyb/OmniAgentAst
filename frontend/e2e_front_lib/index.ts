@@ -16,3 +16,9 @@ export * from './chat-page';
 export * from './normal-chat';
 // 访问口令注入（E2E 统一入口，不逐个用例改）
 export * from './auth';
+// 顶栏「轮数/步骤数」计数器读取(fre2e_14/15/16/17 共用, 口径必须一致) - 小欧 2026-10-01
+export * from './step-counter';
+// 后端任务状态读取(按 task_id 精确查, 统一"不回落最新任务"语义) - 小欧 2026-10-01
+export * from './task-status';
+// 页面锚点(左侧任务列表 active/task 读取 + 地址栏 session_id) - 小欧 2026-10-01
+export * from './page-anchors';

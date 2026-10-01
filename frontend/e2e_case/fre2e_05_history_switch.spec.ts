@@ -184,12 +184,26 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     await chat.gotoChat();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
 
-    // 发 A 之前记录既有任务集合 → A 的 task_id = 之后新增者(差集, 防多历史残留误命)
-    const idsBeforeA = await taskIds(page);
-
     // 发消息防拦截(历史会话加载窗口), 见 ChatPage.sendPrompt
+    // 2026-10-01 小欧 [1] A 升级为多步带工具任务(北京老陈指示: 每个 case 必须多步带真实工具调用,
+    //   纯问答单轮测不出问题; 实测 5 步左右可稳定跑 2-3 分钟, 足够撑开"切走→切回"的观察窗口)。
+    //   工具动作与 B/C 完全不同, 保证右栏步骤可区分来源(否则 aTail 断言无指向性):
+    //     A = file 只读链(探测→列目录→读 README→读配置→读依赖清单), 全程不写任何文件;
+    //     B = file 建+写 + network 查参(建目录→写骨架→查网络→填入→读回);
+    //     C = network 先查 → file 建/写/读(查时延→写清单→读回)。
+    //   A 的读链与 B/C 的写链相反, 切到 A 时右栏应呈现"读"类步骤, 切回 B 应呈现"写/查"类步骤。
     const PROMPT_A =
-      '请用300字以内简要论述"深空探测任务与近地轨道任务在工程难度上的三大差异"。本题仅供思辨，无需任何工具。';
+      '请完成一份"深空探测任务与近地轨道任务工程难度对比"的论证材料(800-1200字, 三大差异逐条给具体参数)。' +
+      '本次任务只允许读取、禁止创建或修改任何文件, 请严格按以下五步实际操作(不要停留在思考层面): ' +
+      '第一步：用文件工具探测当前工作区根目录, 列出你看到的子目录名; ' +
+      '第二步：读取根目录下的 README 文件(若不存在则读 docs 目录下的同名文件), 用一段话说明它是做什么的; ' +
+      '第三步：读取根目录主配置文件(config.yaml / pyproject.toml / package.json 之一), ' +
+      '原样列出其中的项目名与版本号两项键值; ' +
+      '第四步：读取依赖声明文件(requirements.txt / package.json 的 dependencies 段), ' +
+      '数一下一共声明了多少个依赖, 并列出其中与网络或数据库相关的三个; ' +
+      '第五步：基于以上读到的真实内容, 在对话中给出"深空探测与近地轨道"工程难度对比正文, ' +
+      '三大差异每条至少配一个来自上述文件的真实参数佐证。' +
+      '请务必在最终回答中包含"深空探测与近地轨道"这几个字。';
     // 编辑历史: 2026-09-14 小欧 - B 复杂度升级(北京老陈指示: 任务复杂数据才多判定才准): 原B仅21-26s活期、
     //   steps少, 步骤7/8观察窗口稍长即落在B活性外; 新B要求八部分1200字技术报告+具体数值参数, 活期拉长至60s+,
     //   让"切走→切回"在B运行窗口内宽裕完成, 消除时序竞争, 使产品语义在宽裕条件下受验 - 小欧-2026-09-14
@@ -220,12 +234,24 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     //   全文 prettier 重排 — 小健-2026-09-25
     const aReal = await readRightText(page);
     expect(aReal.trim().length).toBeGreaterThan(30);
+    // 2026-10-01 小欧 [1] aTail 锚点随 A 提示词同步更新 + 任务定位改用 active 项(不靠差集猜)。
+    //   病根1: A 改写成多步任务后, 断言锚点必须仍能在 A 的最终正文里出现(现仍用独占短语
+    //          '深空探测与近地轨道', PROMPT_A 第五步与"请务必包含"两处都强制了它)。
+    //   病根2: aId 原靠 `idsAfterA.find(未在idsBeforeA)` 取"首个新增", 列表里存在别的并发/残留任务时
+    //          会取到非 A 的 id(实测取到 C), 随后点它就点开了别的任务 → 右栏显示 C 的正文。
+    //   现 aTail 取 A 提示词里的独占短语; aId 取"A 跑完时的 active 项"(A 刚至终态, active 必是 A),
+    //   并断言其不等于后续 B, 定位确定、无猜测。
     const aTail = '深空探测与近地轨道';
     const idsAfterA = await taskIds(page);
 
-    // 处理历史残留掩码滚动时以增量厘定 A 任务项(A 之前差集非空时取首个新 id)
-    const aId = idsAfterA.find((id) => !idsBeforeA.includes(id)) ?? '';
+    // A 刚跑完, active 项即 A 任务(终态但仍是当前任务); 用它定位, 不靠差集猜
+    const aActiveLabel = await page
+      .locator('.task-list-item.active')
+      .first()
+      .getAttribute('aria-label');
+    const aId = aActiveLabel?.match(/^任务 (\S+) (\S+)$/)?.[1] ?? '';
     expect(aId).toBeTruthy();
+    expect(idsAfterA).toContain(aId);
 
     // 4) 发 B(独立话题长思考) → 等 active task 切到 B + sseParser 帧日志确认流活跃
     // 编辑历史: 2026-09-17 小欧 - 删 DBG-1 轮询, 改 DOM active task + sseParser 帧日志检测 — 小欧-2026-09-17
@@ -266,7 +292,13 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     // 5) 录 B 实时正文基线(右栏同源)
     const b5Text = await readRightText(page);
     const len5 = b5Text.length;
-    const b5Tail = norm(b5Text).slice(-40);
+    // 2026-10-01 小欧 [1] b5Tail 锚点治理: 原取 norm(b5Text).slice(-40) —— 该尾串取自"步骤5 那一刻"的
+    //   正文末尾, 而 B 正在流式增长, 数十秒后正文已推进数百字, 尾串必然消失 → L372
+    //   `toContain(b5Tail)` 恒红。这是断言锚点绑在移动文本上的自伤, 与产品缺陷无关。
+    //   改判据: 切回 B 后校验「B 的主题词仍在右栏」+「正文长度继续增长」两条独立证据。
+    //   主题词取 B 提示词里的独占短语(近地小行星采矿工程), 与 A 的'深空探测与近地轨道'不重叠,
+    //   故可区分来源, 不会误判成读到了 A 历史。
+    const bKeyword = '近地小行星采矿工程';
 
     // 6) 点历史任务 A(精确按 aId, 非"任意非 active")
     const aItem = page.locator(`.task-list-item[aria-label*="${aId}"]`).first();
@@ -350,9 +382,14 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
       '切回后 action/thought 帧'
     );
     const len8 = await waitBodyGrowth(page, len5, 30_000);
-    const b8Text = await readRightText(page);
     expect(len8).toBeGreaterThan(len5);
-    expect(norm(b8Text)).toContain(b5Tail);
+    // 2026-10-01 小欧 [1] b5Tail → bKeyword(锚点不再随流式正文漂移, 理由见步骤5 注释)
+    await expect
+      .poll(
+        async () => norm(await readRightText(page)).includes(bKeyword),
+        { timeout: 30_000 }
+      )
+      .toBeTruthy();
     const frames8 = countFrameType(
       diag.consoleAll,
       frameBase8,
@@ -405,15 +442,26 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
 
     // 2) 发 C 长思考
     // 编辑历史: 2026-09-17 小欧 - 删 DBG-1 扫描, 改 sseParser 帧日志连续性检测 — 小欧-2026-09-17
+    // 2026-10-01 小欧 [1] C 升级为多步带工具任务(北京老陈指示: 每个 case 必须多步带真实工具调用;
+    //   实测 5 步左右可稳定跑 2-3 分钟, 足够撑开流间隔观察窗口)。
+    //   原 C 结尾明写「无需工具」→ LLM 单轮直出 final, 根本不产生 action/thought 帧,
+    //   故 L466 `expect(actionFrames + thoughtFrames).toBeGreaterThan(0)` 恒为 0 → test02 必红。
+    //   该红与生产代码无关(已做受控 A/B: 有/无本次修复两侧同点同值同红), 根因是用例自身是纯问答。
+    //   工具链与 A(只读)/B(建+写+查参)均不同: C 是 network 先行 → file 建/写/读, 先取数后落盘。
     const PROMPT_C =
-      '请撰写一篇关于"深空通信延迟与探测器自主决策"的系统性说明文，全文不少于1000字，必须包含六个部分：' +
+      '请撰写一份关于"深空通信延迟与探测器自主决策"的系统性说明材料，全文不少于1000字，必须包含六个部分：' +
       '①深空通信为何延迟严重（列出光速极限、距离、时延-误码-带宽权衡三个原因并给出火星/木星/柯伊伯带三档具体时延数值）；' +
       '②延迟如何迫使探测器提高自主性（给出"指令周期"与"事件窗口期"的量化对比）；' +
       '③三个依赖高自主性的深空任务案例（Deep Space 1、勇气号/机遇号、毅力号，逐一对比其自主程度与决策权限）；' +
       '④自主决策的主要风险与约束（燃料安全、地形感知、科学价值损失三方面）；' +
       '⑤未来深空任务的自主发展趋势（至少给出3个方向）；' +
-      '⑥综合启示（联系本任务是否需要自主: 给出明确判断）。' +
-      '行文需分章节、每条给出具体参数对照。无需工具。' +
+      '⑥综合启示（联系本任务是否需要自主: 给出明确判断）。行文需分章节、每条给出具体参数对照。' +
+      '请按以下五步实际操作（不要停留在思考层面）：' +
+      '第一步：用网络工具查询一次真实的深空单程通信时延公开资料，取到一个可引用的具体数值并注明来源; ' +
+      '第二步：新建一个临时工作目录 fe05_c_net，并在其中创建一份 markdown 清单文件; ' +
+      '第三步：把第一步查到的时延数值、以及六个部分各自的关键词写成清单条目写入该文件; ' +
+      '第四步：读回该清单文件，核对条目数与内容是否完整; ' +
+      '第五步：在对话中给出六部分正文，①与③必须引用第一步查到的真实数值。' +
       '请务必在回答中包含"深空通信延迟自主"这几个字。';
     const frameBase3 = diag.consoleAll.length;
     await chat.sendPrompt(PROMPT_C);

@@ -9,55 +9,89 @@ import {
   printDiag,
   readLogSince,
   startNormalUiEnv,
+  activeTaskId,
+  taskStatusInList,
+  readStepCounter,
+  counterFailMsg,
 } from '../e2e_front_lib';
 import type { DiagBundle } from '../e2e_front_lib/stream-diag';
 
 /**
- * [63] 第六章 P2「刷新续传」全链路 E2E — 小欧 2026-09-30
+ * E2E-14 新会话·任务执行中·按 F5·验刷新后从断点续传
  *
- * 环境: 普通会话流 `startNormalUiEnv`(vite dev:5173 + API 经 proxy → :8000)。真实浏览器/后端/LLM/SQLite。
+ * 做什么: 发一条长任务, 等它跑到第 3 轮(执行中), 按 F5, 等它跑完。
+ *   刷新前地址栏是 /?session_id=<id>, 刷新后不变 → 走 useChatSession 场景1。
+ * 断什么: F5 清空内存, 步骤全没。必须自己发 GET /chat/stream/{task}?after_seq=N
+ *   从「最后一个序号+1」接着收, 而不是从头重收。
+ * 判据: ①发出带 after_seq 的 GET ②after_seq == 刷新前 lastSeq+1
+ *      ③后端续传起点 seq 与之一致且帧数>0 ④已转发==缓冲总长(不漏帧), 末帧是 final_stats
+ *      ⑤刷新前的轮次不丢 ⑥左侧列表从「执行中」自己到「已完成」
  *
- * 验证目标(第六章 6.1 的 L2 防线 + 6.3 的 P2):
- *   刷新页面(300s 窗口内)自动发 `GET /chat/stream/{id}?after_seq=N` 续传, 拿回刷新期间新步骤。
- *
- * 判据(第六章 M6 seq 单调性校验):
- *   ① 出现带 after_seq 的 GET 续传请求
- *   ② after_seq == 刷新前 lastSeq + 1(前端单基线语义: 已处理最大 seq 的下一个)
- *   ③ 后端续传汇总行 起点seq == 同一 after_seq(前后端口径闭环), 续传帧数 > 0
- *   ④ 已转发 == 缓冲总长(续传不漏帧), 且末类型 = final_stats(终态靠续传送达)
- *   ⑤ 刷新前已收到的轮次, 恢复后不得丢失
- *
- *   注: ③ 不用"逐帧 seq 序列单调"来判 —— 实测续传阶段后端**不再逐帧打 seq DEBUG**
- *   (那 2,964 条逐帧行全部来自刷新前的开流阶段), 只有收尾一行汇总。改用后端权威记账,
- *   比前端侧推算更可信。两次踩坑记录见该段"编辑历史"。
- *
- * 与第六章原文的差异(勿误读):
- *   第六章 P4 写"超 300s → GET 返回 not_found"。现状核实: **后端没有 300 秒硬窗** ——
- *   300s 只是内存缓冲回收(agent_runner.py:792 call_later(300, reclaim_memory_buffer)),
- *   Journal 保留期 7 天(config.yaml:264), 回放终止判据是 producer 60 秒活窗 + 终态事件。
- *   故本 case 只验"300s 窗口内刷新能续传"(L2 本义); 超窗/重启回放由后端 BE-1/BE-2 覆盖。
- *
- * 取证锚点:
- *   - 续传请求与 after_seq: attachStreamDiag.streamReqs(网络面) + 后端日志 `重连请求接收 ... after_seq=N`
- *   - lastSeq: 后端当日日志 `[SSE] seq=<N> task=<task_id>`(DB 权威序号)
- *   - 轮次:    sseParser 帧日志 `轮次=X`
- *
- * 铁规提醒: AGENTS.md 严令禁止 commit 任何测试相关代码文件 —— 本 spec 严禁提交。
+ * 编辑历史: 曾在此 page.goto('/') 剥掉 session_id 去测裸地址栏刷新, 与 fre2e_17 场景①
+ *   重复且丢了本 case 该守的带参路径, 已撤销(2026-10-01 小欧)。
+ * 铁规: AGENTS.md 禁止 commit 测试文件。
  */
 
 const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
 const BACKEND_DIR = 'F:\\OmniAgentAs-repair\\backend';
 
-/** 任务列表 active 项的 task_id */
-const activeTaskId = async (
+/**
+ * 2026-10-01 小欧 [1] D组: 从页面内直读恢复链真实状态(诊断用)。
+ *
+ * 背景: 续传请求没发出, 但不知卡在恢复链哪一环。生产代码不留 log(不污染),
+ * 故 E2E 侧从 sessionStorage 备份 + 运行时可见状态取证, 定位是
+ *   restore(invalid? / status 终态?) → recoverWithoutTaskId → attachActiveTask → resumeStreamRequest
+ * 哪一步断的。读不到给空串, 不猜。
+ */
+const readRestoreState = async (
   page: import('@playwright/test').Page
-): Promise<string> => {
-  const label = await page
-    .locator('.task-list-item.active')
-    .first()
-    .getAttribute('aria-label');
-  return label?.match(/^任务 (\S+) (\S+)$/)?.[1] ?? '';
-};
+): Promise<Record<string, unknown>> =>
+  page.evaluate(async () => {
+    const backups: Record<string, unknown> = {};
+    for (const k of Object.keys(sessionStorage)) {
+      try {
+        const parsed = JSON.parse(sessionStorage.getItem(k) ?? 'null');
+        // 备份只取顶层标量字段(steps/frames 体积极大, 截断会淹掉锚点真值)
+        if (parsed && typeof parsed === 'object' && 'taskId' in parsed) {
+          const { steps, frames: _frames, ...anchors } = parsed as Record<
+            string,
+            unknown
+          >;
+          backups[k] = {
+            ...anchors,
+            _stepsLen: Array.isArray(steps) ? steps.length : -1,
+          };
+        } else {
+          backups[k] = parsed;
+        }
+      } catch {
+        backups[k] = '<非JSON>';
+      }
+    }
+    const activeEl = document.querySelector('.task-list-item.active');
+    return {
+      storageKeys: Object.keys(sessionStorage),
+      backups,
+      activeAriaLabel: activeEl?.getAttribute('aria-label') ?? '',
+      allTaskLabels: Array.from(
+        document.querySelectorAll('.task-list-item')
+      ).map((e) => e.getAttribute('aria-label')),
+    };
+  });
+
+/** 直调 listTasks API 取原始返回(created_at 格式/status 是 findLiveTask 的判据, 必须看真值) */
+const readRawTasks = async (
+  page: import('@playwright/test').Page,
+  sessionId: string
+): Promise<unknown> =>
+  page.evaluate(async (sid) => {
+    try {
+      const r = await fetch(`/api/v1/chat/sessions/${sid}/tasks?limit=10`);
+      return { status: r.status, body: (await r.text()).slice(0, 1500) };
+    } catch (e) {
+      return { error: String(e) };
+    }
+  }, sessionId);
 
 /** 从日志片段里取该 task 已转发过的最大 seq */
 const maxSeqOf = (logText: string, taskId: string): number => {
@@ -156,12 +190,33 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     }
 
     const lastSeqBefore = maxSeqOf(readLogSince(BLOG, logBase), taskId);
+    // 2026-10-01 小欧 [1] D组: 记下列表 status 基线, 供刷新后比对(判「列表能否自动到终态」)
+    const statusBefore = await taskStatusInList(page, taskId);
     console.log(
-      `[E2E] 刷新前: task=${taskId} 轮次=${roundsBefore.length} lastSeq=${lastSeqBefore}`
+      `[E2E] 刷新前: task=${taskId} 轮次=${roundsBefore.length} lastSeq=${lastSeqBefore} 列表status=${statusBefore}`
     );
 
-    // 4) 刷新(整页重载, JS 上下文重建 —— 内存 Store 全失, 只能靠持久化 + 续传恢复)
-    await page.reload();
+    // 北京老陈 2026-10-01 要求: 刷新后 step 还在不在正常显示、计数器还在不在正常计数。
+    //   先读刷新前的基线, 刷新后与它比 —— 刷新后计数器"从 0 重来"或"整个不显示"都是缺陷。
+    const counterBefore = await readStepCounter(page);
+    console.log(
+      `[E2E] 刷新前计数器: ${counterBefore ? `轮=${counterBefore.rounds} 步=${counterBefore.steps}` : '(读不到)'}`
+    );
+    if (!counterBefore) {
+      throw new Error(
+        `[E2E] 刷新前读不到顶栏计数器 —— 步骤/step 本来就没显示。不当通过处理`
+      );
+    }
+    expect(counterBefore.steps).toBeGreaterThan(0);
+
+// ═══ 动作: 按 F5 整页重载(JS 上下文重建 —— 内存 Store 全失, 只能靠持久化 + 续传恢复) ═══
+    // 2026-10-01 小欧 场景归属: 本 case 只管**「地址栏带 session_id 时刷新」**这一支。
+    //   编辑历史: 此前我曾在此加 `page.goto('/')` 剥掉 query 改测「裸地址栏刷新」, 那与
+    //   fre2e_17 场景①完全重复, 且把本 case 原本要守的「带参」路径丢了 —— 已撤销, 恢复原状。
+    //   裸地址栏刷新(useChatSession 场景3)由 fre2e_16(无 taskId)、fre2e_17(旧会话)各守其位。
+    //   依据 useChatSend.ts:145-154 —— 地址栏参数只在本标签页「新建会话」时写入;
+    //   所以本 case 新建会话后地址栏必带 id, F5 后走 useChatSession 场景1, 是该分支的正当防线。
+await page.reload();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
 
     // 5) 等续传请求出现(网络面: GET /chat/stream/{task_id}?…&after_seq=N)
@@ -174,7 +229,87 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
       );
     await expect
       .poll(hasAfterSeqReq, { timeout: 120_000, intervals: [500] })
-      .toBeTruthy();
+      .toBeTruthy()
+      .catch(async (e) => {
+        // 2026-10-01 小欧 [1] D组: 续传未发出时先取证再抛 —— 定位恢复链断在哪一环
+        const st = await readRestoreState(page);
+        console.log(
+          `[E2E][DIAG] 续传未发出。storageKeys=${JSON.stringify(st.storageKeys)}`
+        );
+        console.log(
+          `[E2E][DIAG] activeAriaLabel=${String(st.activeAriaLabel)}`
+        );
+        console.log(
+          `[E2E][DIAG] allTaskLabels=${JSON.stringify(st.allTaskLabels)}`
+        );
+        for (const k of st.storageKeys) {
+          console.log(
+            `[E2E][DIAG] backup[${k}]=${JSON.stringify(
+              (st.backups as Record<string, unknown>)[k]
+            )}`
+          );
+        }
+        const sidFromKey = st.storageKeys
+          .map((k) =>
+            /^sse_execution_steps_backup_v2_(.+)$/.exec(String(k))?.[1]
+          )
+          .find(Boolean) as string | undefined;
+        if (sidFromKey) {
+          const raw = await readRawTasks(page, sidFromKey);
+          console.log(
+            `[E2E][DIAG] rawTasks(session=${sidFromKey})=${JSON.stringify(raw)}`
+          );
+        }
+        printDiag(
+          diag.streamReqs,
+          diag.reconnectLogs,
+          diag.sseErrors,
+          diag.consoleAll,
+          readLogSince(BLOG, logBase),
+          diag.allFailed,
+          getCaseId()
+        );
+        throw e;
+      });
+
+    // 北京老陈 2026-10-01 要求: 刷新后 step 还在不在正常显示、计数器还在不在正常计数。
+    //   14 的核心是「续传」, 所以此处不只判"计数没丢", 更判**它还在继续涨** ——
+    //   续传 GET 发出、帧也到了后端日志, 但页面计数器不涨 = 帧没真正落到 UI,
+    //   那正是老陈截图的现象(任务在跑, 页面 step 不动)。
+    //   判据(与 15/16/17 同口径, 共用 lib/step-counter):
+    //   ① 计数器读得到      —— 读不到 = step 不显示 = 不过
+    //   ② 轮/步 >= 刷新前   —— 变小 = 累计被清零 = 不过
+    //   ③ 90s 内继续上涨    —— 不涨 = 续传没真推帧 = 不过
+    //   基线是刷新前的 counterBefore。刻意放在**续传请求已发出之后**再判:
+    //   刷新瞬间页面刚重建, 计数器尚未接上, 那时的读数不作数。
+    const counterResume = await waitCounterIncreases(
+      page,
+      counterBefore.rounds,
+      counterBefore.steps,
+      90_000
+    );
+    console.log(
+      `[E2E] 刷新后续传中计数器: ${counterResume ? `轮=${counterResume.rounds} 步=${counterResume.steps}` : '(读不到)'}` +
+        ` (刷新前 轮=${counterBefore.rounds} 步=${counterBefore.steps})`
+    );
+    if (!counterResume) {
+      throw new Error(
+        `[E2E] 刷新后续传中读不到顶栏计数器 —— step 没有正常显示。` +
+          counterFailMsg('TaskInfoBar 刷新后未渲染', counterBefore, null) +
+          ` —— 不当通过处理`
+      );
+    }
+    expect(counterResume.rounds).toBeGreaterThanOrEqual(counterBefore.rounds);
+    expect(counterResume.steps).toBeGreaterThanOrEqual(counterBefore.steps);
+    expect(
+      counterResume.rounds > counterBefore.rounds ||
+        counterResume.steps > counterBefore.steps,
+      counterFailMsg(
+        '续传请求已发出, 但刷新后计数器一直不涨 —— 帧没落到 UI, 页面看着像卡住',
+        counterBefore,
+        counterResume
+      )
+    ).toBeTruthy();
 
     const reqLine =
       diag.streamReqs.find(
@@ -275,6 +410,93 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     const finalText = await chat.getFinalText();
     expect(finalText.trim().length).toBeGreaterThan(30);
     expect(finalText).toContain('近地小行星采矿工程');
+
+    // ⑤ [1] D组 左侧任务列表终态断言
+    //   背景: 此前本 case 只断言 SSE 层(续传帧数/含final_stats/末类型), 从未断言 UI 层列表状态 ——
+    //   后端终态帧确实补回来了, 但左侧列表可能仍停在「执行中」(老陈截图现象: 左侧还指向、右侧已完成)。
+    //   刷新后无 SSE 之外的任何列表刷新信号, 故此处必须显式断言, 否则该缺陷能全绿通过。
+    //   判据: 终态帧已由续传送达(hasFs=True/末类型=final_stats 已断言), 则列表 status 必须离开 executing。
+    //   给 30s 观察窗 —— 若真靠轮询兜底(当前无), 3s 内也该到; 30s 是宽松上限, 超时即 FAIL(不豁免)。
+    const dlStatus = Date.now() + 30_000;
+    let statusAfter = await taskStatusInList(page, taskId);
+    while (
+      Date.now() < dlStatus &&
+      (statusAfter === 'executing' || statusAfter === '')
+    ) {
+      await page.waitForTimeout(500);
+      statusAfter = await taskStatusInList(page, taskId);
+    }
+    console.log(
+      `[E2E] 列表status: 刷新前=${statusBefore} 终态后=${statusAfter} (task=${taskId})`
+    );
+    if (statusAfter === statusBefore && statusAfter === 'executing') {
+      printDiag(
+        diag.streamReqs,
+        diag.reconnectLogs,
+        diag.sseErrors,
+        diag.consoleAll,
+        tailAfter,
+        diag.allFailed,
+        getCaseId()
+      );
+    }
+    // 列表不得停在 executing —— 终态帧已送达却仍显示执行中 = D 组缺陷复现
+    expect(
+      statusAfter,
+      `左侧列表 status 卡在 ${statusAfter}(刷新前=${statusBefore}); 终态帧已续传送达但列表未刷新 —— D 组缺陷复现`
+    ).not.toBe('executing');
+    // 且必须落到真实终态(不猜具体值, 只排除非终态)
+    // 2026-10-01 小欧 [1] 纠错: 原列表含 'interrupted' —— 核实后端 storage.py:490-491,
+    //   孤儿任务收尾写的是 `status='failed', error_type='task_interrupted'`,
+    //   **interrupted 是 error_type 不是 status**, 永不会是 chat_tasks.status 的值。
+    //   列进去等于给"不可能发生"开了个口子, 反向放宽判据。已删。
+    expect(['completed', 'failed', 'cancelled']).toContain(statusAfter);
+    // 2026-10-01 小欧 [1] 自查补漏: 上面那行把 failed/cancelled 也算"合法终态"放过了,
+    //   但本 case 全程没点停止、任务是纯文稿, 落到 failed 必是产品问题, 不能就这么绿过去。
+    //   与 fre2e_15/16 同口径: failed → 打后端 ERROR 行并显式红, 逼出根因。
+    if (statusAfter === 'failed' || statusAfter === 'cancelled') {
+      const errLines = tailAfter
+        .split('\n')
+        .filter((l) => l.includes(taskId) && /ERROR|失败|error|Traceback/i.test(l))
+        .slice(-25);
+      for (const l of errLines) console.log(`[E2E][DIAG] ${l.slice(0, 220)}`);
+      throw new Error(
+        `[E2E] 续传后任务终态为 ${statusAfter}(本 case 未点停止, 非正常终态)。` +
+          `后端相关日志行数=${errLines.length}，见上方 DIAG`
+      );
+    }
+
+    // 6) 【北京老陈 2026-10-01 要求】刷新后 step 还在正常显示, 计数器还在正常计数。
+    //   本 case 的判据重心是续传帧, 但"帧到了"不等于"页面上看得到 step 在走" ——
+    //   若续传只补了终态帧而没把累计计数带回来, 页面会显示 step 很小甚至不显示, 老陈截图
+    //   就是这类现象。故补 UI 层判据, 与 15/16/17 同口径(共用 lib/step-counter)。
+    // 判据:
+    //   ① 刷新后计数器读得到        —— 读不到 = step 不显示 = 不过
+    //   ② 轮/步都 >= 刷新前         —— 变小 = 累计被清零/挂错任务 = 不过
+    //   ③ 步数 > 0 且 <= 刷新前+本次续传的自然增量(不猜具体值, 只卡"必须至少有步")
+    const counterAfter = await readStepCounter(page);
+    console.log(
+      `[E2E] 刷新后计数器: ${counterAfter ? `轮=${counterAfter.rounds} 步=${counterAfter.steps}` : '(读不到)'}` +
+        ` (刷新前 轮=${counterBefore.rounds} 步=${counterBefore.steps})`
+    );
+    if (!counterAfter) {
+      throw new Error(
+        `[E2E] 刷新后读不到顶栏计数器 —— step 没有正常显示。` +
+          counterFailMsg('TaskInfoBar 刷新后未渲染', counterBefore, null) +
+          ` —— 不当通过处理`
+      );
+    }
+    expect(counterAfter.rounds).toBeGreaterThanOrEqual(counterBefore.rounds);
+    expect(counterAfter.steps).toBeGreaterThanOrEqual(counterBefore.steps);
+    // 步数必须为正: 刷新后若 step 显示 0, 说明累计没恢复, 页面等于"从头空白"在跑
+    expect(
+      counterAfter.steps,
+      counterFailMsg(
+        '刷新后步数为 0 —— 累计计数没恢复, 页面看起来像从头开始',
+        counterBefore,
+        counterAfter
+      )
+    ).toBeGreaterThan(0);
 
     // 5) 通用区
     printDiag(
