@@ -807,10 +807,12 @@ await sendStreamRequest(s, content, mode);
       window.clearTimeout(s.saveStepsTimer);
       s.saveStepsTimer = null;
     }
-    s.executionSteps = [];
+s.executionSteps = [];
     s.currentResponse = '';
     s.pendingSteps = [];
     s.isReceiving = false;
+    // 2026-10-01 小欧 metaFrames 是任务级帧状态却按会话级存且全仓无清空点, 上个任务的 finalStats 残留使次任务 taskFinished 恒真、秒表 interval 从不启动、耗时恒显上一任务 duration; 此处补齐任务边界重置(其余任务级字段已清, 唯此漏项)
+    s.metaFrames = emptyMetaFrames();
     backupRemove(sessionId);
     // [1] B2: 即落空态快照(无旧 taskId/旧 steps 但结构完整), 消除删备份到重建之间的裸窗口——
     //   该窗口内刷新 → restore 读不到快照 → serverTaskId/metaFrames 全空, 右栏把在跑任务
