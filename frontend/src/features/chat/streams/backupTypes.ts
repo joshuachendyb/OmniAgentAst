@@ -3,6 +3,10 @@
 //   设计[76] 6.14 活跃任务注入应答)：[63] 5.1 原稿 8 项缺此项，5.3 接线将无载荷可投、注入提示条永不触发 — 小欧-2026-09-29 21:37:55
 //   增补2: 2026-09-29 21:37:55 小欧 - complete 载荷 meta 由 unknown 改 string|SSEMetadata，
 //   对齐 useChatCallbacks.ts:97-101 真实 onComplete 签名，消除分发侧断言 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-01 小欧 - 解 [1] B13：SessionSnapshot 增可选 lastBizTs/lastDataTime 并随备份落盘。
+//   二者原只在内存 session 上、备份不含，刷新后恒 0，而 ClockStopwatch 的"静默升档"判据正是 lastBizTs
+//   （见 makeClockView），致刷新后等待期升档计时基线丢失（长时间无业务帧不再升档）。缺失时按 0 处理，
+//   与 ensureSession 初值一致，向后无害 — 小欧-2026-10-01
 // [63] 5.1：StreamBackup / SessionSnapshot / StreamEvent 唯一定义处（5.4 内存态与 5.2 备份态同源）
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
@@ -124,4 +128,10 @@ export interface StreamBackup
   } | null;
   lastContextLinkMode: 'linked' | 'independent';
   updatedAt: number;
+  // 2026-10-01 小欧 [1] B13: 钟面静默升档基线落盘。lastBizTs/lastDataTime 原只在内存 session 上，
+  //   备份不含二者 → 刷新后恒 0，而 ClockStopwatch 的"静默升档"判据正是 lastBizTs
+  //   (见 makeClockView), 致刷新后等待期升档计时基线丢失(长时间无业务帧不再升档)。
+  //   缺失时按 0 处理, 与 ensureSession 初值一致, 向后无害。
+  lastBizTs?: number;
+  lastDataTime?: number;
 }

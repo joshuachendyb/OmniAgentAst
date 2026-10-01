@@ -1,3 +1,7 @@
+// 编辑历史: 2026-10-01 小欧 - 解 [1] E4/E2-1（见 doc-10月优化/[1]刷新后显示其他任务结果）：
+//   ①ApiMessage 增可选 task_id（后端 MessageResponse 配对任务ID）——此前消息只带 execution_steps 而无归属，
+//     消费方无法判断步骤属于哪个任务，这是前端"跨任务降级把别的任务步骤当本任务显示"的契约层根因；
+//   ②删 saveExecutionSteps（随 [1] E8 后端 execution_steps 端点与空壳退役，前端零调用方）— 小欧-2026-10-01
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride } from '@/types/chat';
@@ -32,6 +36,10 @@ export interface ApiMessage {
   display_name?: string;
   is_reasoning?: boolean;
   thought?: string;
+  // 2026-10-01 小欧 解 [1] E4/E2-1: 后端 MessageResponse 新增该字段(配对任务ID)。
+  //   此前消息只带 execution_steps 而无归属, 消费方无法判断步骤属于哪个任务 ——
+  //   这是前端"跨任务降级把别的任务步骤当本任务显示"(RightViewer C3)的契约层根因。
+  task_id?: string | null;
 }
 
 export interface GetSessionMessagesResponse {
@@ -172,29 +180,9 @@ export const sessionApi = {
     return response.data;
   },
 
-  saveExecutionSteps: async (
-    sessionId: string,
-    executionSteps: unknown[],
-    content?: string,
-    replyUserMessageId?: number
-  ): Promise<{
-    success: boolean;
-    message_id?: number;
-    is_new_message?: boolean;
-  }> => {
-    const response = await api.post<{
-      success: boolean;
-      message_id?: number;
-      is_new_message?: boolean;
-    }>(`/sessions/${sessionId}/execution_steps`, {
-      execution_steps: executionSteps,
-      ...(content !== undefined && { content }),
-      ...(replyUserMessageId !== undefined && {
-        reply_to_message_id: replyUserMessageId,
-      }),
-    });
-    return response.data;
-  },
+  // 2026-10-01 小欧 解 [1] E8: 原 saveExecutionSteps 删除 ——
+  //   全仓零调用, 且后端端点已下线(其实现自 2026-08-27 起不写任何步骤, 只分配 ai_message_id)。
+  //   留着会 POST 到已不存在的端点。步骤数据一律由 SSE 实时 + 运行期逐步落库产生。
 
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
     const response = await api.delete<{ success: boolean }>(

@@ -2,6 +2,10 @@
 // 编辑历史: 2026-09-29 21:37:55 小欧 - 两处按本章纪律"写入失败必须可诊断且不得伪装成功"补 try/catch:
 //   ① saveDraft/loadDraft 文档原稿裸调 sessionStorage，容量满/隐私模式会把异常抛进草稿保存调用方;
 //   ② load 原稿 getItem 在 try 外，同类环境下读快照直接抛给页面。逻辑与接口签名零变化 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-01 小欧 - 解 [1] B9：isAnchorGroupIntact 末条判据由 `b.taskId !== null ||
+//   b.pendingMessage === null` 改为"按已发/待发区分"（sent = pendingMessage 非 null 且 state !== 'queued'
+//   时才要求 taskId 非空）。原判据在"待发草稿落盘"窗口（sendMessage 先 commit pendingMessage.state='queued'
+//   + persistNow，而 start 帧尚未到达、taskId 仍是上一任务旧值或 null）会整份判废 → 待发草稿与已发意图全丢 — 小欧-2026-10-01
 // [63] 5.2：三窄接口 + 同文件辅助（isAnchorGroupIntact、saveDraft/loadDraft），
 //        不碰 Store 内部字段、不触发 SSE、不改 React 状态
 import type { StreamBackup } from './backupTypes';
@@ -12,6 +16,12 @@ import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（ty
 //   sendMessage 后 pendingMessage 恒 'sent' 而完成时 isReceiving=false，终态快照恒被判 invalid 丢弃；
 //   业务态不参与结构校验（步骤恢复另见"恢复合并规则"：合法快照的 steps 一律不丢）
 export function isAnchorGroupIntact(b: StreamBackup): boolean {
+  const pending = b.pendingMessage;
+  // 2026-10-01 小欧 [1] B9: 原末条写作 `b.taskId !== null || b.pendingMessage === null`，
+  //   在"待发草稿落盘"窗口(sendMessage 先 commit pendingMessage.state='queued' + persistNow,
+  //   start 帧尚未到达, taskId 仍是上一任务旧值或 null)会整份判废 → 待发草稿与已发意图全丢。
+  //   判据应区分"已发"与"待发": 仅当消息确实已发出(state≠queued)才要求 taskId 非空。
+  const sent = pending !== null && pending.state !== 'queued';
   return (
     b.version === 2 &&
     typeof b.sessionId === 'string' &&
@@ -19,7 +29,7 @@ export function isAnchorGroupIntact(b: StreamBackup): boolean {
     typeof b.revision === 'number' &&
     b.revision >= 0 &&
     b.lastSeq >= -1 &&
-    (b.taskId !== null || b.pendingMessage === null) // 无 taskId 不得声称已发
+    (!sent || b.taskId !== null)
   );
 }
 

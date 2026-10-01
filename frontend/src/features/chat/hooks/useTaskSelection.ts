@@ -9,6 +9,10 @@
 //   effect②首跑消费该标记跳过旧数据自动选中窗口 — 小欧-2026-09-13
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计[76] 5.4④/6.14 实施回填): 加 task_merged 事件监听,
 //   注入应答时高亮左侧目标任务(activeTaskId 属主在本 hook) — 小欧-2026-09-28
+// 编辑历史: 2026-10-01 小欧 - [1] B1 双写竞态根治: effect①(锚 serverTaskId)与 effect②(兜底 latestTaskId)
+//   在同一次提交内互不知情 —— ②的 if(activeTaskId) return 读的是本次渲染旧值, 看不到①的 pending
+//   更新, 故两者都能通过守卫, 最终 activeTaskId=latestTaskId 而 serverTaskId 为 null/陈旧, 右栏
+//   因此把「正在执行的任务」当「历史任务」处理(本次缺陷直接成因)。修: effect② 显式让位, 两者互斥。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { executionApi } from '../../../services/api/task.api';
 import type { TaskDetail } from '../../../services/api/task.api';
@@ -63,28 +67,29 @@ export function useTaskSelection(
     }
   }, [activeTaskId, serverTaskId]);
 
-  // 2026-08-30 小欧 diff⑥ effect①: serverTaskId 变化即锚定当前任务(G3修复, 4.5.1 有正在执行任务=当前任务; 用户点历史不改serverTaskId不受影响)
+  // 2026-09-30 小欧 - 单一真源(解 [1] B1 双写竞态): 原 effect① 无条件 setActiveTaskId(serverTaskId)
+  //   与 effect② 的 "if (activeTaskId) return" 守卫互不知情 —— ②读的是本次渲染的旧值, 看不到①的
+  //   pending 更新, 故同一次提交里两者都能通过守卫, 最终值取决于 React 批处理顺序, 产生
+  //   "activeTaskId 正确(=latestTaskId) 而 serverTaskId 陈旧/为 null" 的自相矛盾组合
+  //   (本次缺陷的直接成因)。现由②显式让位给①: 有当前任务锚点时②不再兜底, 两 effect 互斥。
   useEffect(() => {
-    if (serverTaskId) {
-      setActiveTaskId(serverTaskId);
-    }
+    if (serverTaskId) setActiveTaskId(serverTaskId);
   }, [serverTaskId]);
 
-  // 2026-08-30 小欧 diff⑥ effect②: 纯历史会话默认选中最新任务(ASC后tasks[0]≈最旧, 改显式latestTaskId)
-  // 2026-09-13 小欧 根治2(北京老陈复测驱动): 切会话当帧渲染期复位已置justSwitchedRef, 本effect首跑仍见旧会话
-  //   tasks/latestTaskId, 若直接选中会把activeTaskId拉回旧任务→右栏跨会话拉旧步骤残留复活;
-  //   先消费justSwitchedRef跳过该旧数据自动选中窗口, 新会话数据到齐(next tasks/latestTaskId更新触发)后再正常选中 — 小欧-2026-09-13
+  // 2026-09-30 小欧 - 纯历史会话默认选中最新任务(原 effect②)。serverTaskId 非空即让位给上面锚点,
+  //   保证"有在飞/最近任务必锚当前、无则锚最新", 不再两个 effect 争同一状态。
   useEffect(() => {
     if (justSwitchedRef.current) {
       justSwitchedRef.current = false;
       return;
     }
+    if (serverTaskId) return; // ★单一真源: 当前任务锚点优先, 本 effect 不参与(解 B1)
     if (activeTaskId) return;
     if (tasks.length === 0) return;
     if (!isReceiving && latestTaskId) {
       setActiveTaskId(latestTaskId);
     }
-  }, [latestTaskId, activeTaskId, isReceiving, tasks]);
+  }, [serverTaskId, latestTaskId, activeTaskId, isReceiving, tasks]);
 
   const handleSelectTask = useCallback((id: string) => {
     setActiveTaskId(id);

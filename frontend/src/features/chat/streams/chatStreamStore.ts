@@ -1,6 +1,54 @@
 // [63] 5.4：会话级流运行时唯一真源——模块级单例 Store 持有 Map<sessionId, ChatStreamSession>、
 //   SSE 连接、步骤与任务锚点。页面只订阅，卸载仅解绑（订阅者链表保证 L1：卸载不销毁流）。
 //   状态写入唯一入口 commit()（SLAP：transport 只调 commit，不直写字段）。
+
+// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: [63] 5.4 会话级流运行时唯一真源(commit 唯一写入口/快照 bump/
+//   事件 emitEvent 双通道/终态资源释放/destroySession) — 小欧-2026-09-29 21:37:55
+//   相对 [63] 5.4 原稿的 5 处修正 — 小欧-2026-09-29 21:37:55：
+//   ① releaseUnsubscribed 原稿调 logger.info(frontend 无 logger 模块, 全仓 0 命中)→ 改 console.info。
+//   ② clearTimeout(null) 显式守卫：浏览器虽容忍 null，但 ESLint no-restricted-globals 会报。
+//   ③ 终态集抽为导出 TERMINAL_STATUSES + isTerminalStatus（原稿 store 的 TERMINAL 与 transport 的
+//      TASK_TERMINAL_STATUSES 两份同义副本，DRY 违规）；transport 已改引本处。
+//   ④ clearCompleted/evictSession/releaseUnsubscribed/destroySession 断连接前置 intentionalAbort=true：
+//      否则主动 abort 引发的 AbortError 会被 5.3 handleTransportError 判为连接故障，弹错误并复活重连。
+//   ⑤ 新增 pumpDone 字段（5.3 recoverFromIdle 依赖）：原稿仅 pumpActive 布尔，无法 await 旧泵退出。
+//   另：sendMessage 返回 ResumeResult（原稿 void，UI 无从判断空流/失败终态）；
+//   lastContextLinkMode 在 sendMessage 落值（原字段零写入，5.2 备份口径失真）；
+//   状态机去 TERMINAL.includes(x as never) 断言，isTerminalStatus(string) 单一判定口。
+
+// 编辑历史: 2026-09-29 22:47:10 小欧 - [63] 5.3/5.4 补齐 heartbeatTs 落点 3 处 — 小欧-2026-09-29 22:47:10：
+//   ① EMPTY_SNAPSHOT 补 heartbeatTs: 0（0=未收到，与 ZERO_CLOCK 钟面恒 0 同口径）；
+//   ② toBackup 落 heartbeatTs: s.heartbeatTs（随备份持久化，供刷新后恢复心跳钟面）；
+//   ③ chatStreamPersistence.legacyToBackup 补 heartbeatTs: 0（legacy 数据无心跳信息）。
+//   起因：5.6 迁移把 heartbeatTs 加入 SessionSnapshot 后三处初始化未补齐，tsc TS2741 报错。
+//
+// 编辑历史: 2026-09-29 23:22:19 小欧 - [63] 5.4 防退化修复：getClockSignals 改按会话缓存 — 小欧-2026-09-29 23:22:19：
+//   症状：同 A5 零钟面锁死（本文件侧成因）。
+//   成因：getClockSignals 原每次调用都新建 ref 对象；而 5.5 桥接 waitClock 用 useMemo 缓存，
+//   首渲染时 session 未创建 → 拿到 ZERO_CLOCK 后被永久缓存（heartbeatTs 恒 0 时依赖永不变化）。
+//   修复：新增会话字段 clockSignalsView，按会话惰性缓存、三个字段全为活 getter
+//   （heartbeatTs 亦改活 getter，否则缓存对象会钉住陈旧心跳），与既有
+//   getExecutionStepsRef 的 executionStepsRefView 同一模式（DRY，不引第二套抽象）。
+//   修复后引用天然稳定，桥接侧 memo 是否命中都不再影响正确性。
+
+// 编辑历史: 2026-09-30 10:35 小欧 - P0 根因修复后的死代码清理（北京老陈裁定「死的删除」）：
+//   sendMessage 尾原 `if (d.status === 'idle' || d.status === 'recovering') d.status = 'active'` 删除。
+//   不可达性（逐路径证毕）：P0 修复已把 active 兜底移入 sendStreamRequest 开篇 commit（transport:143），
+//   本行执行时机在 `await sendStreamRequest()` 之后，status 必然是 pump 退出后的终态/paused/failed/active；
+//   'recovering' 仅 GET 续传路径（transport:309 handleGetNotFound）赋值、'idle' 仅 resume 无 taskId 路径
+//   （backup invalid / recoverWithoutTaskId）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
+//   与 P0 修复配套：修复前该分支是"已完成会话发新消息 final 被吞"（P0）的反向误修点，
+//   修复后语义由 transport 单点承担，store 侧仅剩 pendingMessage 置 sent。
+// 编辑历史: 2026-09-30 14:30 小欧 - 删 clearCompleted 越权写瞬态标志；evictOverflow 查在飞工作；清理收敛单一出口；restore 改展开式
+// 编辑历史: 2026-09-30 18:14:06 小欧 - T1/H13 守卫修复（[81] v1.1 复核确认的实质项）：
+//   T1: resume 补退避窗口守卫（reconnectTimeout≠null 回读当前态），防 restore 覆盖在飞状态致序号倒退 + 提前 GET；
+//   H13: sendMessage 补空串守卫（return 'idle'），禁 ensureSession 造 '' 鬼会话，与 resume/stop 对称 — 小欧-2026-09-30 18:14:06
+// 编辑历史: 2026-10-01 小欧 - 解 [1] B13/B4/B5（见 doc-10月优化/[1]刷新后显示其他任务结果）：
+//   ①toBackup 补 lastBizTs/lastDataTime（钟面"静默升档"判据所依，原只在内存，刷新后恒 0 致长静默期不再升档）；
+//   ②新增 findLiveTask(sessionId, excludeTaskId) 抽 DB 权威的"近 300s 内仍在执行"判定，由 attachActiveTask 与
+//   resume 共用（DRY）——原判定散在两处且口径不一（B4 处根本没有 DB 校验），致"备份锚点陈旧"无处纠正 — 小欧-2026-10-01
+
+
 import type { ExecutionStep } from '@/types/execution';
 import type { MutableRefObject } from 'react';
 import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（type-only 不可调用）
@@ -25,6 +73,7 @@ import {
   readAuthoritativeTask,
 } from './chatStreamTransport';
 import { taskControlApi, sessionTaskApi } from '@/services/api/task.api';
+import type { SessionTaskItem } from '@/services/api/task.api';
 
 /** 终态状态集（3.10.1 权威口径）：completed/failed/cancelled 由 chat_tasks 与 final 帧共同决定 */
 export const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'] as const;
@@ -326,6 +375,9 @@ function toBackupOf(sessionId: string): StreamBackup {
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：随备份落盘，供刷新后恢复心跳钟面（0=未收到）
     heartbeatTs: s.heartbeatTs,
+    // 2026-10-01 小欧 [1] B13: 钟面静默升档基线随备份落盘(刷新后不丢, 见 backupTypes 注释)
+    lastBizTs: s.lastBizTs,
+    lastDataTime: s.lastDataTime,
   };
 }
 
@@ -364,22 +416,40 @@ export function emitEvent<K extends StreamEvent['kind']>(
   s.eventListeners.forEach((cb) => cb(e));
 }
 
-/** POST 前查重附着：同内容 + created_at 300s 窗内 + executing 的活动任务只读跟随。
- *  附着即置 taskId/active 并 resume（不发第二 POST）；未附着返回 null 交调用方走正常路径。 */
+/** 查该会话近 300s 内仍在执行的任务（DB 权威）；excludeTaskId 用于排除已知锚点。
+ *  2026-10-01 小欧 [1] B4/B5: 由 attachActiveTask 与 resume 共用(DRY)——
+ *  原本判定散在两处且口径不一(B4 处根本没有 DB 校验), 致"备份锚点陈旧"无处纠正。 */
+async function findLiveTask(
+  sessionId: string,
+  excludeTaskId: string | null
+): Promise<SessionTaskItem | undefined> {
+  const resp = await sessionTaskApi.listTasks(sessionId);
+  const now = Date.now();
+  const hits = resp.tasks.filter((t) => {
+    if (t.status !== 'executing' || t.task_id === excludeTaskId) return false;
+    const created = Date.parse(t.created_at);
+    return Number.isNaN(now - created) || now - created <= 300_000;
+  });
+  return hits[hits.length - 1]; // 取最新
+}
+
+/** POST 前查重附着：created_at 300s 窗内 + executing 的活动任务只读跟随。
+ *  附着即置 taskId/active 并 resume（不发第二 POST）；未附着返回 null 交调用方走正常路径。
+ *
+ *  2026-10-01 小欧 [1] B5: content 由"必填精确比对"放宽为"可选过滤"。
+ *   原实现 `t.user_input !== content` 硬性精确比对，而 recoverWithoutTaskId 传入的是
+ *   **备份里的 pendingMessage.content**——刷新时该字段往往为空/陈旧/与在跑任务无关
+ *   （任务由另一标签页、E2E、后台发起时本标签页根本无该内容）。结果是刷新后必然匹配不上，
+ *   直接放弃该 executing 任务 → 无 serverTaskId → 右栏把在跑任务当历史任务读 DB → 显示别的任务结果。
+ *   现 content 为空时只按"该会话最新 executing 任务"附着(listTasks 已按 sessionId 限定，不会串会话)；
+ *   content 非空时保持原精确比对(POST 防双发场景需要同内容语义)。
+ */
 async function attachActiveTask(
   s: ChatStreamSession,
   content: string
 ): Promise<ResumeResult | null> {
-  const resp = await sessionTaskApi.listTasks(s.sessionId);
-  const now = Date.now();
-  const active = resp.tasks.find((t) => {
-    if (t.status !== 'executing' || t.user_input !== content || t.task_id === s.serverTaskId) {
-      return false;
-    }
-    const age = now - Date.parse(t.created_at);
-    return Number.isNaN(age) || age <= 300_000; // 300s 窗；解析失败不拦，后端并发保护兜底
-  });
-  if (!active) return null;
+  const active = await findLiveTask(s.sessionId, s.serverTaskId);
+  if (!active || (content && active.user_input !== content)) return null;
   commit(s, (d) => {
     d.serverTaskId = active.task_id;
     d.pendingMessage = null;
@@ -451,8 +521,15 @@ function evictOverflow(): void {
   if (sessions.size > MAX_SESSIONS) {
     const rest = [...sessions.values()]
       .filter(
-        (s) =>
-          s.listeners.size === 0 && s.eventListeners.size === 0 && !hasInflightWork(s)
+        s =>
+          s.listeners.size === 0 &&
+          s.eventListeners.size === 0 &&
+          !hasInflightWork(s) &&
+          // 2026-10-01 小欧 [1] B14: 补终态/idle 守卫。原兜底分支不看 status, 遇"零订阅 + 无在飞
+          //   工作判据未覆盖的中间态"(status=active 但连接刚断、瞬态已复位)会 purge 非终态会话,
+          //   其内存态(含 pendingMessage/重连意图)被静默丢弃。本兜底只在超硬上限时触发, 仍按
+          //   最旧先删, 但不得删掉终态之外尚有恢复价值的条目。
+          (isTerminalStatus(s.status) || s.status === 'idle')
       )
       .sort((a, b) => (a.heartbeatTs ?? 0) - (b.heartbeatTs ?? 0));
     for (const s of rest) {
@@ -622,12 +699,27 @@ await sendStreamRequest(s, content, mode);
       return 'idle';
     }
     if (!s.serverTaskId) return this.recoverWithoutTaskId(s);
+    // 2026-10-01 小欧 [1] B4: DB 权威校验 —— 备份的 serverTaskId 只是缓存, 可能陈旧
+    //   (旧任务非终态备份未被覆盖 / 另一入口发起的任务)。若 DB 显示该会话另有一个 executing
+    //   任务, 备份锚点即错, 继续对它发 GET 会取回错误任务的数据。改以 DB 为准重新锚定。
+    //   不选"丢弃备份走 recoverWithoutTaskId", 因那会多绕一层且丢掉备份里的 lastSeq/steps。
+    const live = await findLiveTask(s.sessionId, s.serverTaskId);
+    if (live && live.task_id !== s.serverTaskId) {
+      commit(s, (d) => {
+        d.serverTaskId = live.task_id;
+        d.status = 'active';
+      });
+      persistNowOf(s.sessionId);
+    }
     return resumeStreamRequest(s);
   },
 
-  /** 无 taskId 的恢复：查重附着同内容活动任务；无则交还显式待发草稿，绝不自动 POST */
+  /** 无 taskId 的恢复：查重附着同内容活动任务；无则交还显式待发草稿，绝不自动 POST
+   *  2026-10-01 小欧 [1] B5: 传空串而非 pendingMessage.content —— 恢复路径下该字段不可信
+   *   (刷新时多为空或陈旧)，传它会让 attachActiveTask 的同内容比对必然失败。
+   *   空串表示"只按该会话是否还有在跑任务附着"，这正是刷新恢复需要的语义。 */
   async recoverWithoutTaskId(s: ChatStreamSession): Promise<ResumeResult> {
-    const attached = await attachActiveTask(s, s.pendingMessage?.content ?? '');
+    const attached = await attachActiveTask(s, '');
     if (attached !== null) return attached;
     commit(s, (d) => {
       d.status = 'idle';
@@ -699,7 +791,10 @@ await sendStreamRequest(s, content, mode);
   },
 
   /** 清空该会话已收步骤与正文缓冲（新请求/停止后置空）；真源清空与备份删除同一动作，
-   *  故不走 commit 的落盘调度（防抖会把已删备份重新写回），截断在途防抖后直接 bump 通知。 */
+   *  故不走 commit 的落盘调度（防抖会把已删备份重新写回），截断在途防抖后直接 bump 通知。
+   *  2026-10-01 小欧 [1] B2: 删除备份后**立即落一份空态快照**，消除"删了到重建"之间的裸窗口 ——
+   *   原实现 backupRemove 后直到首个 commit(经 5s 防抖)才有备份，该窗口内刷新 → restore 读不到
+   *   任何快照 → serverTaskId 与 metaFrames 全空，右栏遂把在跑任务当历史任务读 DB(缺陷成因之一)。 */
   clearSteps(sessionId: string): void {
     const s = sessions.get(sessionId);
     if (!s) return;
@@ -712,6 +807,10 @@ await sendStreamRequest(s, content, mode);
     s.pendingSteps = [];
     s.isReceiving = false;
     backupRemove(sessionId);
+    // [1] B2: 即落空态快照(无旧 taskId/旧 steps 但结构完整), 消除删备份到重建之间的裸窗口——
+    //   该窗口内刷新 → restore 读不到快照 → serverTaskId/metaFrames 全空, 右栏把在跑任务
+    //   当历史任务读 DB。恢复路径据此走 recoverWithoutTaskId 按会话在跑任务附着(B5)。
+    persistNowOf(sessionId);
     bump(s);
   },
 
@@ -791,6 +890,19 @@ await sendStreamRequest(s, content, mode);
       //   口径：卸载**不立即**停（5.2 规定只退订、不 abort/清会话，给重渲染/切页留 60s 缓冲），
       //   宽限期满仍无订阅才停——既守住 5.2，又保证轮询有界不失控。
       cur.pollSignal.aborted = true;
+      // [1] B3: clearSessionTimers 会杀掉待执行的 saveStepsTimer, 若此后该任务再无 SSE 帧
+      //   (连接已 abort), 这次落盘永久丢失 → 备份停留在旧内容(可能仍是上一个任务的 taskId)。
+      //   故在清定时器**之前**先落一次盘, 保证备份与内存一致。
+      // [1] B10: 原实现只断连接不清条目、也不复位 status, 条目 status 仍为 active;
+      //   下次 resume 的活流守卫只看 pumpActive/resumeInFlight/isProcessing/reconnectTimeout
+      //   四个瞬态(此时全 false) → 放行 → restore 用旧备份覆盖, 序号倒退/数据串。
+      //   释放即客户端不再持有在飞状态, 非终态一律回落 idle(终态不动, 由 terminalEvict 回收)。
+      if (!isTerminalStatus(cur.status)) {
+        commit(cur, d => {
+          d.status = 'idle';
+        });
+      }
+      persistNowOf(sessionId);
       // 2026-09-30 小欧 - 改走 clearSessionTimers 单一出口（D2）：原只手抄 idle/reconnect 两个，
       //   字段集与另三处不一致，漏 firstChunkTimeout/saveStepsTimer/intentionalAbortTimer
       //   （漏 firstChunkTimeout 会留下到点才 abort 的僵尸定时器，正是 P1-5 同型病根）。
@@ -859,7 +971,12 @@ await sendStreamRequest(s, content, mode);
     void isConnected;
     commit(s, (d) =>
       Object.assign(d, rest, {
-        serverTaskId: b.taskId,
+        // 2026-10-01 小欧 [1] B8: 终态快照的 taskId 不作续传锚点。
+        //   原无条件 serverTaskId = b.taskId，使"上次已完成任务"被当当前任务 → resumeStreamRequest
+        //   对已完结 taskId 发 GET(after_seq)，同时守卫 activeTaskId===serverTaskId 被迫成立，
+        //   右栏把在跑任务误判为"当前任务"或反之。终态任务无需续传(G3)，置 null 即可；
+        //   steps/metaFrames 仍照常恢复，供给历史回放。
+        serverTaskId: isTerminalStatus(b.status) ? null : b.taskId,
         executionSteps: b.steps.filter(
           (st) => !(st.type === 'action' && st.preview === true)
         ),
@@ -880,45 +997,3 @@ await sendStreamRequest(s, content, mode);
     return toBackupOf(sessionId);
   },
 };
-
-// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: [63] 5.4 会话级流运行时唯一真源(commit 唯一写入口/快照 bump/
-//   事件 emitEvent 双通道/终态资源释放/destroySession) — 小欧-2026-09-29 21:37:55
-//   相对 [63] 5.4 原稿的 5 处修正 — 小欧-2026-09-29 21:37:55：
-//   ① releaseUnsubscribed 原稿调 logger.info(frontend 无 logger 模块, 全仓 0 命中)→ 改 console.info。
-//   ② clearTimeout(null) 显式守卫：浏览器虽容忍 null，但 ESLint no-restricted-globals 会报。
-//   ③ 终态集抽为导出 TERMINAL_STATUSES + isTerminalStatus（原稿 store 的 TERMINAL 与 transport 的
-//      TASK_TERMINAL_STATUSES 两份同义副本，DRY 违规）；transport 已改引本处。
-//   ④ clearCompleted/evictSession/releaseUnsubscribed/destroySession 断连接前置 intentionalAbort=true：
-//      否则主动 abort 引发的 AbortError 会被 5.3 handleTransportError 判为连接故障，弹错误并复活重连。
-//   ⑤ 新增 pumpDone 字段（5.3 recoverFromIdle 依赖）：原稿仅 pumpActive 布尔，无法 await 旧泵退出。
-//   另：sendMessage 返回 ResumeResult（原稿 void，UI 无从判断空流/失败终态）；
-//   lastContextLinkMode 在 sendMessage 落值（原字段零写入，5.2 备份口径失真）；
-//   状态机去 TERMINAL.includes(x as never) 断言，isTerminalStatus(string) 单一判定口。
-
-// 编辑历史: 2026-09-29 22:47:10 小欧 - [63] 5.3/5.4 补齐 heartbeatTs 落点 3 处 — 小欧-2026-09-29 22:47:10：
-//   ① EMPTY_SNAPSHOT 补 heartbeatTs: 0（0=未收到，与 ZERO_CLOCK 钟面恒 0 同口径）；
-//   ② toBackup 落 heartbeatTs: s.heartbeatTs（随备份持久化，供刷新后恢复心跳钟面）；
-//   ③ chatStreamPersistence.legacyToBackup 补 heartbeatTs: 0（legacy 数据无心跳信息）。
-//   起因：5.6 迁移把 heartbeatTs 加入 SessionSnapshot 后三处初始化未补齐，tsc TS2741 报错。
-//
-// 编辑历史: 2026-09-29 23:22:19 小欧 - [63] 5.4 防退化修复：getClockSignals 改按会话缓存 — 小欧-2026-09-29 23:22:19：
-//   症状：同 A5 零钟面锁死（本文件侧成因）。
-//   成因：getClockSignals 原每次调用都新建 ref 对象；而 5.5 桥接 waitClock 用 useMemo 缓存，
-//   首渲染时 session 未创建 → 拿到 ZERO_CLOCK 后被永久缓存（heartbeatTs 恒 0 时依赖永不变化）。
-//   修复：新增会话字段 clockSignalsView，按会话惰性缓存、三个字段全为活 getter
-//   （heartbeatTs 亦改活 getter，否则缓存对象会钉住陈旧心跳），与既有
-//   getExecutionStepsRef 的 executionStepsRefView 同一模式（DRY，不引第二套抽象）。
-//   修复后引用天然稳定，桥接侧 memo 是否命中都不再影响正确性。
-
-// 编辑历史: 2026-09-30 10:35 小欧 - P0 根因修复后的死代码清理（北京老陈裁定「死的删除」）：
-//   sendMessage 尾原 `if (d.status === 'idle' || d.status === 'recovering') d.status = 'active'` 删除。
-//   不可达性（逐路径证毕）：P0 修复已把 active 兜底移入 sendStreamRequest 开篇 commit（transport:143），
-//   本行执行时机在 `await sendStreamRequest()` 之后，status 必然是 pump 退出后的终态/paused/failed/active；
-//   'recovering' 仅 GET 续传路径（transport:309 handleGetNotFound）赋值、'idle' 仅 resume 无 taskId 路径
-//   （backup invalid / recoverWithoutTaskId）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
-//   与 P0 修复配套：修复前该分支是"已完成会话发新消息 final 被吞"（P0）的反向误修点，
-//   修复后语义由 transport 单点承担，store 侧仅剩 pendingMessage 置 sent。
-// 编辑历史: 2026-09-30 14:30 小欧 - 删 clearCompleted 越权写瞬态标志；evictOverflow 查在飞工作；清理收敛单一出口；restore 改展开式
-// 编辑历史: 2026-09-30 18:14:06 小欧 - T1/H13 守卫修复（[81] v1.1 复核确认的实质项）：
-//   T1: resume 补退避窗口守卫（reconnectTimeout≠null 回读当前态），防 restore 覆盖在飞状态致序号倒退 + 提前 GET；
-//   H13: sendMessage 补空串守卫（return 'idle'），禁 ensureSession 造 '' 鬼会话，与 resume/stop 对称 — 小欧-2026-09-30 18:14:06
