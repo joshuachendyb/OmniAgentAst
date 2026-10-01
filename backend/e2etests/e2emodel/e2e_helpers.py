@@ -513,10 +513,17 @@ def _sse_line_to_event(line: str) -> Optional[Dict[str, Any]]:
 
 async def open_chat_stream_partial(
     session_id: str, user_input: str, cutoff: int, api_prefix: str = "",
+    stop_on_type: Optional[str] = None,
 ) -> tuple:
     """POST /chat/stream 只读 cutoff 个事件后主动断开（模拟真实断线）。
 
     返回 (task_id, events, last_seq)；last_seq 为断开时最后一个事件的 seq（续传断点，-1=无事件）。
+
+    stop_on_type=None: 纯按帧数 cutoff 断开。
+    stop_on_type="observation": 读到首个该类型事件即断开（cutoff 退化为防挂死上限）。
+      2026-09-30 小欧 新增: 按帧数断开会断在 start/chunk 这类前导噪声里, 此时任务还没
+      走到任何工具调用, DB 里 execution_steps 为 0, "步骤不丢"无从验证。按业务帧断
+      (action=工具调用 / observation=工具结果)才能造出"已产生步骤"的在飞任务。
     """
     prefix = api_prefix or API_PREFIX
     url = f"{BASE_URL}{prefix}/chat/stream"
@@ -536,10 +543,16 @@ async def open_chat_stream_partial(
                 if not task_id and ev.get("type") == "start" and ev.get("task_id"):
                     task_id = ev["task_id"]
                 events.append(ev)
+                if stop_on_type is not None and ev.get("type") == stop_on_type:
+                    break
                 if len(events) >= cutoff:
                     break
             await resp.aclose()   # 立即关底层连接，服务端感知客户端断开
-    return task_id, events, (events[-1].get("seq", 0) if events else -1)
+    last_seq = max(
+        (e["seq"] for e in events if isinstance(e.get("seq"), int)),
+        default=events[-1].get("seq", 0) if events else -1,
+    )
+    return task_id, events, last_seq
 
 
 async def resume_chat_stream(
@@ -549,6 +562,12 @@ async def resume_chat_stream(
 
     usage_cutoff=None: 读到流自然结束；=N: 收到第 N 个 usage 事件后主动断开（模拟二次掉线）。
     返回 (events, last_seq, finished)：finished=True 仅表示读到流自然结束。
+
+    2026-09-30 小欧 - 修 last_seq 取值错误: 原实现取 events[-1].get("seq", 0), 即
+      **最后一帧**的 seq。但流末尾的终止帧(done / final_stats / error)**不带 seq**,
+      于是 last_seq 恒为 0 —— 而 last_seq 的语义是"本次读到的最大 seq", 也是下一次
+      续传的 after_seq 断点, 恒 0 会让断点续传从 0 重放。改为取最大 seq(无带 seq 帧时
+      回落到 after_seq-1, 即"本段无新增")。实测证据: E2E-33 回放 52 帧而 last_seq=0。
     """
     url = f"{BASE_URL}{API_PREFIX}/chat/stream/{task_id}"
     events: List[Dict[str, Any]] = []
@@ -570,7 +589,11 @@ async def resume_chat_stream(
                         break
             else:
                 finished = True   # for 正常结束 = 流自然结束(读到 done)
-    return events, (events[-1].get("seq", 0) if events else after_seq - 1), finished
+    last_seq = max(
+        (e["seq"] for e in events if isinstance(e.get("seq"), int)),
+        default=after_seq - 1,
+    )
+    return events, last_seq, finished
 
 
 # ─── 步骤2+3: 发送用户请求 + SSE事件解析 (send_chat) ─────────
@@ -2001,6 +2024,14 @@ def verify_test_record_exists(test_id: str) -> bool:
     return exists
 
 
+# 2026-09-30 小欧 - "任务未正常结束"语义的 error_type(打断在飞任务的用例预期见到这些)
+#   task_state_incomplete: 回放时任务已被收尾成终态, 但 Journal 无 final 帧,
+#                         后端拒绝伪造完成(「任务终态事件缺失，禁止伪造完成」)如实报错;
+#   task_interrupted:     收尾残行的终态错误标记。
+#   二者都是"如实报错"而非故障, 故在 interrupted_by_design 场景算预期; 其他 error_type 一律照实 FAIL。
+_INTERRUPT_ERROR_TYPES = frozenset({"task_state_incomplete", "task_interrupted"})
+
+
 def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
     """主动验证 token_usage 真实落库(消除"日志无ERROR即PASS"盲区) — 小欧 2026-08-23
     原 write_test_record 的 passed 仅依赖日志ERROR扫描; 若 token_usage_insert 静默失败(不打ERROR),
@@ -2043,6 +2074,7 @@ def write_test_record(
     dpi: Optional[List[str]] = None,
     error_info: Optional[str] = None,
     test_title: Optional[str] = None,
+    interrupted_by_design: bool = False,
 ) -> Optional[Path]:
     """手册步骤6+11: 写入测试记录文件 + 输出[CALL CHAIN]+[RECORD OK] -- 小健 2026-06-18
 
@@ -2064,6 +2096,12 @@ def write_test_record(
     v2.1增强: 返回记录文件路径；写入后验证文件存在；失败时尝试备用路径
     v2.2增强: 新的PASS/FAIL判断标准 - final=通过, 任何error=失败, DB-Prompt严格对比
     v2.3增强: 计时统一由核心脚本处理，case脚本不传start_time -- 小欧 2026-07-03
+    v2.4增强: interrupted_by_design —— 供"故意打断任务"的用例(如后端重启打断在飞任务)声明
+      本用例的预期终态就是"无 final 事件"。默认 False, 行为与 v2.3 完全一致。
+      2026-09-30 小欧: v2.2 的"没有final事件 → 直接判FAILED"对这类用例是误判 ——
+        任务被重启打断本就永远不会有 final 帧, 记录却落 FAILED, 与 pytest 真实 PASSED 相矛盾,
+        会误导人工复核。开启后: 跳过该条启发式(仍保留"用例自身断言失败即 FAILED"),
+        并把 DB-Prompt 口径改为"无步骤属预期", 同时在记录里显式打印声明, 不掩盖任何真问题。
     -- 小健 2026-06-24
     """
     if test_title:
@@ -2128,13 +2166,19 @@ def write_test_record(
         if _fatal_error or _final_outcome in ("failed", "cancelled"):
             passed = False
 
-    else:
+    elif not interrupted_by_design:
         # 没有final事件，失败
+        # 2026-09-30 小欧: interrupted_by_design=True 时跳过本条 —— 该用例就是故意打断任务的,
+        #   "无final事件"是预期终态而非失败信号(用例自身的断言才是判据, 失败仍会 passed=False)
         passed = False
-    
+
     # DB-Prompt一致性FAIL则整体FAILED
+    # 2026-09-30 小欧: 故意打断的任务本就无最终 AI 消息 → chat_task_steps 无行(设计如此),
+    #   verify_db_prompt_consistency 会报"DB无执行步骤数据"。这在该用例里是预期, 不该拉 FAILED;
+    #   但只放行这一条明确口径, 其余一致性问题照旧致命(不掩盖任何真问题)。
     if passed and dpi is not None and len(dpi) > 0:
-        passed = False
+        if not (interrupted_by_design and all("无执行步骤数据" in str(i) for i in dpi)):
+            passed = False
     
     # 日志中有ERROR或traceback则失败
     if passed:
@@ -2143,10 +2187,15 @@ def write_test_record(
         if len(log_check.get("tracebacks", [])) > 0:
             passed = False
     # 2026-08-23 小欧: 主动核查 token_usage 落库(消除"日志无ERROR即PASS"盲区)
+    # 2026-09-30 小欧: interrupted_by_design 时只放行"行数不足"类问题。实测(真DB):
+    #   被重启打断的任务 token_usage=0 / steps=0, completed 任务 token_usage=5 / steps=22 ——
+    #   二者都随任务终态化才落库, 被打断本就一行不会有。核查异常仍不放行。
     if passed:
         _tu_sid = result.get("session_id", "")
         if _tu_sid:
             _tu_issues = verify_token_usage(_tu_sid, result.get("llm_call_count", 0))
+            if interrupted_by_design:
+                _tu_issues = [i for i in _tu_issues if "核查异常" in i]
             if _tu_issues:
                 passed = False
     tool_calls = result.get("tool_calls", [])
@@ -2590,6 +2639,13 @@ def write_test_record(
     db_prompt_issues = dpi if dpi is not None else (extra or {}).get("DbPromptIssues", [])
     db_prompt_ok = len(db_prompt_issues) == 0
     db_prompt_detail = f"{len(db_prompt_issues)}个问题" if db_prompt_issues else "PASS"
+    # 2026-09-30 小欧: 与上面的 passed 判定同口径 —— 故意打断的任务"DB无执行步骤数据"是预期,
+    #   不该在表格里显示成 FAIL(否则与"测试结果 PASSED"自相矛盾)。其余问题照旧算问题。
+    if not db_prompt_ok and interrupted_by_design and all(
+        "无执行步骤数据" in str(i) for i in db_prompt_issues
+    ):
+        db_prompt_ok = True
+        db_prompt_detail = "PASS(本用例故意打断任务, 无最终AI消息故无步骤, 属预期)"
 
     # 第6节：验证结果
     lines.append("## 6 验证结果")
@@ -2597,7 +2653,11 @@ def write_test_record(
     lines.append("| 验证项 | 结果 | 说明 |")
     lines.append("|--------|------|------|")
     stream_end_type = assert_stream_ended(result)
-    lines.append(f"| 流结束 | {stream_end_type} | - |")
+    # 2026-09-30 小欧: 故意打断任务的用例, error帧/无回复/无步骤都是预期, 标注清楚避免误读为失败
+    _ibd_note = " [本用例故意打断任务, 无final/无回复属预期]" if interrupted_by_design else ""
+    if interrupted_by_design:
+        lines.append(f"| 任务终态声明 | PASS | 故意打断在飞任务, 预期无final事件{_ibd_note} |")
+    lines.append(f"| 流结束 | {stream_end_type} |{_ibd_note} |")
     # 2026-08-12 小欧 COM_03误判修复: error事件区分可恢复(blocked/user_rejected,拒绝≠失败)/不可恢复
     _recoverable_errors = [
         f"step={_e.get('step')}({_e.get('error_type','')})"
@@ -2605,8 +2665,21 @@ def write_test_record(
         if _e.get("type") == "error" and _e.get("error_type", "") in _RECOVERABLE_ERROR_TYPES
     ]
     _fatal_error_desc = "不可恢复error事件" if _fatal_error else ("无error事件" if not _recoverable_errors else f"仅可恢复拒绝事件({';'.join(_recoverable_errors)})")
-    lines.append(f"| 是否有error事件 | {'FAIL' if _fatal_error else 'PASS'} | {_fatal_error_desc} |")
-    lines.append(f"| 回复内容 | {'FAIL' if not resp or resp_has_error else 'PASS'} | {len(resp)}字{' [含错误关键词]' if resp_has_error else ''} |")
+    # 2026-09-30 小欧: 打断场景下只把"任务未正常结束"语义的error帧算预期, 换成别的error仍照实FAIL。
+    #   实测两种(均无 seq, 是回放时合成的终止帧, 不入 Journal):
+    #     task_state_incomplete「任务终态事件缺失，禁止伪造完成」—— 回放时任务已被收尾成终态,
+    #       但 Journal 里没有 final 帧, 后端拒绝伪造完成, 如实报错;
+    #     task_interrupted —— 收尾残行的终态错误标记。
+    _ibd_expected_err = interrupted_by_design and all(
+        _e.get("error_type") in _INTERRUPT_ERROR_TYPES
+        for _e in result.get("events", [])
+        if _e.get("type") == "error" and _e.get("error_type", "") not in _RECOVERABLE_ERROR_TYPES
+    )
+    if _ibd_expected_err:
+        _fatal_error_desc = "仅任务未正常结束的终止帧(task_state_incomplete/task_interrupted, 属预期)"
+    lines.append(f"| 是否有error事件 | {'FAIL' if (_fatal_error and not _ibd_expected_err) else 'PASS'} | {_fatal_error_desc} |")
+    _resp_fail = (not resp or resp_has_error) and not interrupted_by_design
+    lines.append(f"| 回复内容 | {'FAIL' if _resp_fail else 'PASS'} | {len(resp)}字{' [含错误关键词]' if resp_has_error else ''}{_ibd_note} |")
     lines.append(f"| 数据库验证 | {'PASS' if db.get('session_exists') else 'FAIL'} | - |")
     lines.append(f"| SSE-DB一致性 | {'PASS' if len(consistency_issues) == 0 else 'FAIL'} | {len(consistency_issues)}个问题 |")
     lines.append(f"| DB-Prompt日志一致性 | {'PASS' if db_prompt_ok else 'FAIL'} | {db_prompt_detail} |")
@@ -2619,8 +2692,15 @@ def write_test_record(
     
     # DB-Prompt日志不一致详情
     if db_prompt_issues:
+        # 2026-09-30 小欧: 打断场景下"无执行步骤数据"已在上表判PASS, 这里仍照实列出并标注
+        # "属预期", 避免"上表PASS/下表列问题"的自相矛盾; 不隐藏任何条目。
         lines.append("### DB-Prompt日志不一致详情")
         lines.append("")
+        if interrupted_by_design:
+            lines.append(
+                f"> 本用例故意打断任务, 无最终AI消息故无步骤。以下条目**已按预期放行**(非失败):"
+            )
+            lines.append("")
         for i, issue in enumerate(db_prompt_issues):
             lines.append(f"{i+1}. {issue}")
         lines.append("")
@@ -2679,12 +2759,8 @@ def write_test_record(
             lines.append(f"- {iss}")
         lines.append("")
 
-    if db_prompt_issues:
-        lines.append("### DB-Prompt日志不一致详情")
-        lines.append("")
-        for iss in db_prompt_issues:
-            lines.append(f"- {iss}")
-        lines.append("")
+    # 2026-09-30 小欧: 此处原有第二段 "### DB-Prompt日志不一致详情"(破折号格式), 与上方
+    #   第6节内那段(编号格式)内容完全相同 → 记录里会出现两个同名小节重复罗列。已删除, DRY。
 
     # 第7节：三方一致性对比（DB/应用日志/Prompt日志）
     lines.append("## 7 三方一致性（DB/应用日志/Prompt日志）")
