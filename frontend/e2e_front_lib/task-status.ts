@@ -70,14 +70,59 @@ export const pollTaskStatus = async (
  * 与 page-anchors 的 `allTaskIdsInList`(UI 左侧列表, 可能截断)是两个不同用途:
  * 本函数走 REST, 是"这个会话到底有哪些任务"的权威答案, 可用于硬断言。
  */
-export const allTaskIdsOfApi = async (
-  sessionId: string
-): Promise<string[]> => {
+export const allTaskIdsOfApi = async (sessionId: string): Promise<string[]> => {
   if (!sessionId) return [];
   const res = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`);
   if (!res.ok) return [];
   const d = (await res.json()) as { tasks?: { task_id: string }[] };
   return (d.tasks ?? []).map((t) => t.task_id);
+};
+
+/**
+ * 按 **task_id 反查 session_id**(DB 权威) —— 小欧 2026-10-01
+ *
+ * 【为什么必须走这个, 不能靠标题反查】
+ *   fre2e_15 原用「取 title 含 PROMPT 片段的第一个会话」反查 session_id, 其注释断言
+ *   "不会串到别的会话" —— **已被实测证伪**: 反复跑 case 会在库里堆出 20+ 个同名会话,
+ *   `find` 取第一个必然命中**旧**会话, 于是 `statusOfTask(旧session, 新task)` → `__not_found__`。
+ *   本函数按 `GET /chat/execution/task/{task_id}` → `task.session_id` 取, task_id 唯一,
+ *   **结构上不存在串台可能**。
+ *
+ * 取不到(含 404 / 字段缺失) → 返回空串, 交调用方显式判红, **不返回任何猜测值**。
+ */
+export const sessionIdOfTask = async (taskId: string): Promise<string> => {
+  if (!taskId) return '';
+  const res = await fetch(`${API_BASE}/chat/execution/task/${taskId}`);
+  if (!res.ok) return '';
+  const d = (await res.json()) as { task?: { session_id?: string } };
+  return d.task?.session_id ?? '';
+};
+
+/**
+ * 该任务的"已运行时长"(ms), 取 `chat_tasks.created_at` 算 —— 小欧 2026-10-01
+ *
+ * 【为什么需要】
+ *   前端 `findLiveTask` 有一条 300s 活跃窗口(按 created_at 过滤), 所以 E2E 必须
+ *   自己掌握"任务现在多大了": 若关页面重开时任务已超窗, 恢复失败是**预期行为**而非缺陷,
+ *   此时判红是假红。调用方据此在窗口耗尽前收尾, 并把边界情况显式报错而非静默通过。
+ *
+ * 读不到/格式异常 → 返回 -1, 交调用方显式判红, 不返回 0 假装"刚刚创建"。
+ */
+export const taskAgeMsOf = async (
+  sessionId: string,
+  taskId: string
+): Promise<number> => {
+  if (!sessionId || !taskId) return -1;
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`);
+  if (!res.ok) return -1;
+  const d = (await res.json()) as {
+    tasks?: { task_id: string; created_at?: string }[];
+  };
+  const created = (d.tasks ?? []).find((t) => t.task_id === taskId)?.created_at;
+  if (!created) return -1;
+  const born = Date.parse(created);
+  if (Number.isNaN(born)) return -1;
+  return Date.now() - born;
 };
 
 /**
@@ -93,7 +138,6 @@ export const errorLinesOfTask = (
     .split('\n')
     .filter(
       (l) =>
-        l.includes(taskId) &&
-        /ERROR|失败|error|Traceback|Exception/i.test(l)
+        l.includes(taskId) && /ERROR|失败|error|Traceback|Exception/i.test(l)
     )
     .slice(-limit);

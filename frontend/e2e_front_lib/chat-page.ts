@@ -9,15 +9,42 @@ import type { Page } from '@playwright/test';
 
 export class ChatPage {
   readonly input = this.page.getByPlaceholder('输入消息，Shift+Enter 换行');
-  readonly sendBtn = this.page.locator('button.ant-btn-primary:has-text("发送")');
+  readonly sendBtn = this.page.locator(
+    'button.ant-btn-primary:has-text("发送")'
+  );
   readonly stopBtn = this.page.getByRole('button', { name: '停止' });
-  readonly greenDot = this.page.locator('span.waiting-cursor[aria-label="等待下一个思考内容"]');
+  readonly greenDot = this.page.locator(
+    'span.waiting-cursor[aria-label="等待下一个思考内容"]'
+  );
 
   constructor(private readonly page: Page) {}
 
   /** 打开聊天首页 */
   async gotoChat(): Promise<void> {
     await this.page.goto('/');
+  }
+
+  /**
+   * 显式点「新建会话」, 等 URL 真正带上 session_id。
+   *
+   * 【为什么必须显式新建 —— 连续跑轮次的会话残留, 2026-10-01 小欧】
+   *   `gotoChat()` 走裸 URL, 会命中 `useChatSession` 场景3(loadLatestHistoryMessages),
+   *   前端**自动加载最近一次会话**并把它显示成当前会话。于是第 2 轮及以后的跑:
+   *     - 消息追加进上一轮遗留的会话 → 该会话 task 数从 1 累积成 2, "task 数===1"类判据必红;
+   *     - URL 不带 `session_id`(不是新建流程, 没走 URL 回填) → 取 sessionId 的判据直接拿空串红。
+   *   2026-09-13 已在 `sendPrompt` 加"重发兜底"抗过同一现象的**表象**(POST 未达),
+   *   但没解根因; 本方法补上根因侧入口。
+   *   依赖"新会话 + URL 带参"的 case(14/15/16/17)发消息前必须先调它 —— 这也是真实用户路径。
+   *
+   * 【为什么不能靠"发完消息再等 URL"】
+   *   实测(2026-10-01 首跑失败取证): 在已加载的旧会话里发消息, URL 全程不带 session_id,
+   *   等多久都不会有 —— 那条路径根本不写 URL。故必须先新建, 不能等。
+   */
+  async newSession(): Promise<void> {
+    await this.page.getByRole('button', { name: /新建会话/ }).click();
+    // 后端建会话后前端回填 URL; 等它落定再返回, 否则调用方紧接着读 URL 必拿空串
+    await this.page.waitForURL(/[?&]session_id=/, { timeout: 30_000 });
+    await expect(this.input).toBeVisible({ timeout: 60_000 });
   }
 
   /** 输入并发送一条消息（发送后 isReceiving=true，页面切"停止"按钮）
@@ -48,7 +75,9 @@ export class ChatPage {
 
   /** 等绿圈（已收 thinking 帧、实质开流）；非强制，等不到仅 catch 忽略 */
   async waitGreenDot(timeout = 90_000): Promise<void> {
-    await expect(this.greenDot).toBeVisible({ timeout }).catch(() => {});
+    await expect(this.greenDot)
+      .toBeVisible({ timeout })
+      .catch(() => {});
   }
 
   /** 等流结束："发送"按钮复现（isReceiving=false，done 已处理） */

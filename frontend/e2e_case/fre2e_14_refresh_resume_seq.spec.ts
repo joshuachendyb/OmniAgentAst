@@ -8,10 +8,13 @@ import {
   logBaseOf,
   printDiag,
   readLogSince,
+  sessionIdFromUrl,
   startNormalUiEnv,
+  statusOfTask,
   activeTaskId,
   taskStatusInList,
   readStepCounter,
+  waitCounterIncreases,
   counterFailMsg,
 } from '../e2e_front_lib';
 import type { DiagBundle } from '../e2e_front_lib/stream-diag';
@@ -40,12 +43,21 @@ const BACKEND_DIR = 'F:\\OmniAgentAs-repair\\backend';
  *
  * 背景: 续传请求没发出, 但不知卡在恢复链哪一环。生产代码不留 log(不污染),
  * 故 E2E 侧从 sessionStorage 备份 + 运行时可见状态取证, 定位是
-    *   restore(invalid? / status 终态?) → adoptLiveTaskOrDraft → attachActiveTask → resumeStreamRequest
+ *   restore(invalid? / status 终态?) → adoptLiveTaskOrDraft → attachActiveTask → resumeStreamRequest
  * 哪一步断的。读不到给空串, 不猜。
  */
+/** readRestoreState 的返回形状(2026-10-01 小欧: 原声明 Record<string, unknown> 使调用侧
+ *  st.storageKeys / st.backups 退化为 unknown, tsc -p tsconfig.e2e.json 报 TS18046/TS7006) */
+interface RestoreState {
+  storageKeys: string[];
+  backups: Record<string, unknown>;
+  activeAriaLabel: string;
+  allTaskLabels: (string | null)[];
+}
+
 const readRestoreState = async (
   page: import('@playwright/test').Page
-): Promise<Record<string, unknown>> =>
+): Promise<RestoreState> =>
   page.evaluate(async () => {
     const backups: Record<string, unknown> = {};
     for (const k of Object.keys(sessionStorage)) {
@@ -53,10 +65,11 @@ const readRestoreState = async (
         const parsed = JSON.parse(sessionStorage.getItem(k) ?? 'null');
         // 备份只取顶层标量字段(steps/frames 体积极大, 截断会淹掉锚点真值)
         if (parsed && typeof parsed === 'object' && 'taskId' in parsed) {
-          const { steps, frames: _frames, ...anchors } = parsed as Record<
-            string,
-            unknown
-          >;
+          const {
+            steps,
+            frames: _frames,
+            ...anchors
+          } = parsed as Record<string, unknown>;
           backups[k] = {
             ...anchors,
             _stepsLen: Array.isArray(steps) ? steps.length : -1,
@@ -130,6 +143,9 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     // 1) 环境 + 进页
     await startNormalUiEnv(FRONTEND_DIR);
     await chat.gotoChat();
+    // 2026-10-01 小欧: 显式新建会话。gotoChat() 裸 URL 会命中 useChatSession 场景3 自动加载
+    //   "最近会话" → 连续跑轮次时消息落进上一轮残留会话, URL 不带 id、task 数累积, 判据失效。
+    await chat.newSession();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
     const logBase = logBaseOf(BLOG);
 
@@ -226,14 +242,14 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     }
     expect(counterBefore.steps).toBeGreaterThan(0);
 
-// ═══ 动作: 按 F5 整页重载(JS 上下文重建 —— 内存 Store 全失, 只能靠持久化 + 续传恢复) ═══
+    // ═══ 动作: 按 F5 整页重载(JS 上下文重建 —— 内存 Store 全失, 只能靠持久化 + 续传恢复) ═══
     // 2026-10-01 小欧 场景归属: 本 case 只管**「地址栏带 session_id 时刷新」**这一支。
     //   编辑历史: 此前我曾在此加 `page.goto('/')` 剥掉 query 改测「裸地址栏刷新」, 那与
     //   fre2e_17 场景①完全重复, 且把本 case 原本要守的「带参」路径丢了 —— 已撤销, 恢复原状。
     //   裸地址栏刷新(useChatSession 场景3)由 fre2e_16(无 taskId)、fre2e_17(旧会话)各守其位。
     //   依据 useChatSend.ts:145-154 —— 地址栏参数只在本标签页「新建会话」时写入;
     //   所以本 case 新建会话后地址栏必带 id, F5 后走 useChatSession 场景1, 是该分支的正当防线。
-await page.reload();
+    await page.reload();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
 
     // 2026-10-01 小欧 [2] 收紧: 原实现全量扫 diag.streamReqs 找含 after_seq 的 GET, **不限 taskId**。
@@ -245,7 +261,8 @@ await page.reload();
       l.includes(`/chat/stream/${taskId}`) &&
       l.includes('after_seq=');
     // 5) 等续传请求出现(网络面: GET /chat/stream/{task_id}?…&after_seq=N)
-    const hasAfterSeqReq = (): boolean => diag.streamReqs.some(isResumeReqOfTask);
+    const hasAfterSeqReq = (): boolean =>
+      diag.streamReqs.some(isResumeReqOfTask);
     await expect
       .poll(hasAfterSeqReq, { timeout: 120_000, intervals: [500] })
       .toBeTruthy()
@@ -269,8 +286,8 @@ await page.reload();
           );
         }
         const sidFromKey = st.storageKeys
-          .map((k) =>
-            /^sse_execution_steps_backup_v2_(.+)$/.exec(String(k))?.[1]
+          .map(
+            (k) => /^sse_execution_steps_backup_v2_(.+)$/.exec(String(k))?.[1]
           )
           .find(Boolean) as string | undefined;
         if (sidFromKey) {
@@ -470,7 +487,9 @@ await page.reload();
     if (statusAfter === 'failed' || statusAfter === 'cancelled') {
       const errLines = tailAfter
         .split('\n')
-        .filter((l) => l.includes(taskId) && /ERROR|失败|error|Traceback/i.test(l))
+        .filter(
+          (l) => l.includes(taskId) && /ERROR|失败|error|Traceback/i.test(l)
+        )
         .slice(-25);
       for (const l of errLines) console.log(`[E2E][DIAG] ${l.slice(0, 220)}`);
       throw new Error(

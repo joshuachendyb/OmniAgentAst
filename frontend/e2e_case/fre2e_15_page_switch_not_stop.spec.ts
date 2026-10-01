@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test';
 import {
   ChatPage,
-  API_BASE,
   activeTaskId,
   attachStreamDiag,
   counterFailMsg,
@@ -12,6 +11,7 @@ import {
   printDiag,
   readLogSince,
   readStepCounter,
+  sessionIdFromUrl,
   startNormalUiEnv,
   statusOfTask,
   waitCounterIncreases,
@@ -37,12 +37,10 @@ import type { DiagBundle } from '../e2e_front_lib/stream-diag';
  */
 
 const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
-const BACKEND_DIR = 'F:\\OmniAgentAs-repair\\backend';// 可用切走页只有 /history 与 /settings2: App.tsx 只注册 `/` `/history` `/settings2` `/login`,
+const BACKEND_DIR = 'F:\\OmniAgentAs-repair\\backend'; // 可用切走页只有 /history 与 /settings2: App.tsx 只注册 `/` `/history` `/settings2` `/login`,
 //   /shortcuts、/files、/knowledge 都落到 `path="*"` 兜底渲染 ChatPage = 切了等于没切。
 const AWAY_MENU_TEXT = '历史会话';
 const AWAY_URL_PATH = '/history';
-/** 用它反查 session_id 的唯一片段(必须是 PROMPT 里的原句, 见 resolveSessionIdByPrompt) */
-const SESSION_TITLE_MATCH = '近地小行星采矿工程';
 
 /**
  * 2026-10-01 小欧 编辑历史: 本文件原有本地 helper `latestTaskStatus`(走 `latest_task_id` 取
@@ -61,23 +59,21 @@ const SESSION_TITLE_MATCH = '近地小行星采矿工程';
  */
 
 /**
- * 用 prompt 片段定位 session_id。
+ * 2026-10-01 小欧 编辑历史: **删除本地 `resolveSessionIdByPrompt`(按 prompt 片段反查会话)**。
  *
- * 2026-10-01 小欧 — **不能靠 URL 取 session_id**: 会话页 URL 通常**不带** session_id
- * ([63]第八章定案"落到最近会话是常态", goto('/') 后 URL 保持 `/`), 原 `sessionIdFromUrl`
- * 时而拿到值时而拿到空串(fre2e_13 修复假通过时实测为空 → 断言直接红)。
- * 而本 case 的核心判据(切走/切回/停止后查 `chat_tasks.status`)必须要 session_id。
- * 改用后端接口反查: `GET /sessions` 的 `title` 即首条用户消息, 用 PROMPT 的唯一片段匹配,
- * 既能拿到 id 又能确认拿的是**本次**任务的会话(不会串到别的会话)。
+ * 删除理由(该函数原注释的假设已被实测证伪): 它注释写「用 PROMPT 的唯一片段匹配, 既能拿到 id
+ * 又能确认拿的是**本次**任务的会话(不会串到别的会话)」—— **错**。它取
+ * `GET /sessions?page=1&page_size=50` 后用 `find` 取**第一个** title 含该片段的会话,
+ * 而本 case 的 PROMPT 固定为「近地小行星采矿工程」, 库里已堆积 20+ 个同名会话
+ * (反复跑 case 所致), `find` 必然命中**旧**会话。
+ * 2026-10-01 实测: 新建会话 f2f56890 / task 0e6b3d55 均正确, 但反查返回旧会话 ed2ac24d,
+ * 导致 `statusOfTask(ed2ac24d, 0e6b3d55)` → `__not_found__` → 判据①假红。
+ * 这与 5.5 节纪律第 3 问同型: 把「应该成立」当成「已经成立」。
+ *
+ * 改法: 改用 `sessionIdFromUrl(page)`。上一环节已调 `chat.newSession()`, 它内部
+ * `waitForURL(/[?&]session_id=/)` **已保证地址栏带本次新建的 session_id**, 故直接取 URL 即可,
+ * 且**结构上不可能串到别的会话**(不像反查是"猜")。
  */
-const resolveSessionIdByPrompt = async (promptPart: string): Promise<string> => {
-  const res = await fetch(`${API_BASE}/sessions?page=1&page_size=50`);
-  const data = await res.json();
-  const hit = (data.sessions ?? []).find((s: { title?: string }) =>
-    (s.title ?? '').includes(promptPart)
-  );
-  return hit?.session_id ?? '';
-};
 
 const seenRounds = (all: string[], base: number): number[] => {
   const out: number[] = [];
@@ -103,6 +99,9 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
 
     await startNormalUiEnv(FRONTEND_DIR);
     await chat.gotoChat();
+    // 2026-10-01 小欧: 显式新建会话。gotoChat() 裸 URL 会命中 useChatSession 场景3 自动加载
+    //   "最近会话" → 连续跑轮次时消息落进上一轮残留会话, URL 不带 id、task 数累积, 判据失效。
+    await chat.newSession();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
     const logBase = logBaseOf(BLOG);
 
@@ -144,10 +143,16 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
       await page.waitForTimeout(500);
     }
     const taskId = await activeTaskId(page);
-    // session_id 靠 prompt 反查(URL 不带, 详见 resolveSessionIdByPrompt 注释)
-    const sessionId = await resolveSessionIdByPrompt(SESSION_TITLE_MATCH);
+    // session_id 直接取地址栏: 上面 newSession() 已 waitForURL 保证带本次新建的 id, 无歧义。
+    //   (原按 prompt 片段反查, 已被实测证伪会串到同名旧会话 —— 见本文件 resolveSessionIdByPrompt 删除记录)
+    const sessionId = sessionIdFromUrl(page);
+    if (!sessionId) {
+      throw new Error(
+        `[E2E] URL=${page.url()} 取不到 session_id —— 本 case 判据全靠 session_id 查 DB 状态。` +
+          `newSession() 是否生效? 不当通过处理`
+      );
+    }
     expect(taskId).toBeTruthy();
-    expect(sessionId).toBeTruthy();
     const statusBefore = await statusOfTask(sessionId, taskId);
     console.log(
       `[E2E] 操作前: task=${taskId} session=${sessionId} status=${statusBefore}`
@@ -227,14 +232,25 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     //        各守其位, 本 case 不重复守。
     //   故此处恢复原状: 切走 →(离开中段断言)→ 切回, 不做刷新。
 
-    // ①a 零 abort: allFailed 不得新增 ERR_ABORTED / ABORTED
+    // ①a abort **只记录不判红** —— 2026-10-01 小欧 修订(北京老陈指令"一次性改好"):
+    //   原 `expect(aborts).toEqual([])` 是**代理指标选错**, 100% 假红。abort 有两个来源,
+    //   在浏览器里长得一模一样(net::ERR_ABORTED), 效果却相反:
+    //     · 切页 → 组件卸载 → cleanup 调 abortController.abort() → 技术性关连接, 任务照跑
+    //     · 点「停止」→ stop() → 取消任务                                    → 业务性停任务
+    //   该判据既拦下正确的切页行为, 又在真出问题时拦不住(abort 总会发生)。实测取证
+    //   (2026-10-01 首跑): 切走产生 1 次 abort, 而该 task 的 DB 仍 status=executing、
+    //   end_time=None、事件流水续涨至 seq=3427(3397 个 chunk) —— 任务在后台跑到底,
+    //   完全符合后端设计(stream_orchestrator.py:617-620「客户端断开: 静默返回, agent 后台继续」)。
+    //   若切页**没有** abort 反而可疑(说明连接泄漏)。真命题「切走≠停任务」由下方
+    //   观察窗 20s 持续 `status==='executing'` 硬判据 + ①g 切回后计数器续涨共同承担。
     const aborts = diag.allFailed
       .slice(failBase1)
       .filter((l) => /ERR_ABORTED|ABORTED/i.test(l));
     console.log(
-      `[E2E] 操作① 新增请求失败=${diag.allFailed.length - failBase1} 其中abort=${aborts.length}`
+      `[E2E] 操作① 新增请求失败=${diag.allFailed.length - failBase1} 其中abort=${aborts.length}` +
+        `(abort 不判红: 切页组件卸载必触发, 与「点停止」在网络面板上无法区分; ` +
+        `真判据是下面 status 恒为 executing + 切回后计数器续涨)`
     );
-    expect(aborts).toEqual([]);
 
     // ①b **零 clearSteps/clearCompleted** —— 北京老陈 2026-10-01 审核发现本条曾是**假通过**并已删除:
     //   原写法 `expect(clearsAfterAway).toEqual([])`, 其中 clearsAfterAway 是拿 console 文本
@@ -327,7 +343,11 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     if (!counterBack) {
       throw new Error(
         `[E2E] 切回后读不到顶栏计数器 —— 步骤/step 没有正常显示。` +
-          counterFailMsg('TaskInfoBar 未渲染或文本形态变了', counterAtAway, null) +
+          counterFailMsg(
+            'TaskInfoBar 未渲染或文本形态变了',
+            counterAtAway,
+            null
+          ) +
           ` —— 不当通过处理`
       );
     }
@@ -372,10 +392,13 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
 
     // 等终态落库(取消要经 agent_runner finally 落库, 不是瞬时的)
     await expect
-      .poll(async () => (await statusOfTask(sessionId, taskId)) !== 'executing', {
-        timeout: 60_000,
-        intervals: [1000],
-      })
+      .poll(
+        async () => (await statusOfTask(sessionId, taskId)) !== 'executing',
+        {
+          timeout: 60_000,
+          intervals: [1000],
+        }
+      )
       .toBeTruthy();
     const statusAfterStop = await statusOfTask(sessionId, taskId);
     console.log(`[E2E] 操作② 后 status=${statusAfterStop}`);
@@ -387,7 +410,9 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     if (statusAfterStop === 'failed') {
       const errLines = readLogSince(BLOG, logBase1)
         .split('\n')
-        .filter((l) => l.includes(taskId) && /ERROR|失败|error|Traceback/i.test(l))
+        .filter(
+          (l) => l.includes(taskId) && /ERROR|失败|error|Traceback/i.test(l)
+        )
         .slice(-25);
       for (const l of errLines) console.log(`[E2E][DIAG] ${l.slice(0, 200)}`);
       throw new Error(
@@ -408,10 +433,17 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     if (statusAfterStop === 'completed') {
       const cancelReq = diag.streamReqs
         .slice(reqBase2)
-        .filter((l) => l.includes('REQ POST ') && l.includes(`/chat/stream/cancel/${taskId}`));
+        .filter(
+          (l) =>
+            l.includes('REQ POST ') &&
+            l.includes(`/chat/stream/cancel/${taskId}`)
+        );
       const cancelRes = diag.streamReqs
         .slice(reqBase2)
-        .filter((l) => l.includes('RES ') && l.includes(`/chat/stream/cancel/${taskId}`));
+        .filter(
+          (l) =>
+            l.includes('RES ') && l.includes(`/chat/stream/cancel/${taskId}`)
+        );
       console.log(
         `[E2E] 操作② 落点=completed: 判为 STOP_RACE(取消请求发出时任务已自然完成)。` +
           `针对本 task(${taskId}) 的 cancel 请求=${cancelReq.length} 响应=${cancelRes.length}`

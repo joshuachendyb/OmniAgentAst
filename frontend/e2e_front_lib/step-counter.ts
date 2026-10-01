@@ -79,6 +79,52 @@ export const waitCounterIncreases = async (
 };
 
 /**
+ * 读顶栏「耗时」(TaskInfoBar 的秒表文本, 形如 `耗时 00:07:43`)。
+ *
+ * 【为什么单独抽一个 —— 北京老陈 2026-10-01 肉眼发现「第二个任务计时一直不动」】
+ *   计时与轮/步**不同源**:
+ *     · 轮数/步骤数 = 后端 `stats` 帧的 step_count / 轮次, 跨业务步骤才变;
+ *     · 耗时 = TaskInfoBar `shownElapsed`, 走哪条路由 `selectedDetail` 决定
+ *       (useTaskSelection.ts:52: activeTaskId !== serverTaskId → 拉 detail → 用后端 duration;
+ *        相等 → selectedDetail=null → 走本地 setInterval 秒表)。
+ *   即"轮/步在动而耗时不动"是**可能**的组合, 两者必须分别验, 不能互相代替。
+ *
+ * 读不到 → 返回 null, 交调用方显式判红(不返回 0 假装"没耗时")。
+ */
+export const readElapsed = async (page: Page): Promise<string | null> => {
+  const bar = page.locator('.taskinfo-bar');
+  if ((await bar.count()) === 0) return null;
+  const raw = (await bar.first().innerText()).replace(/\s+/g, ' ');
+  // 宽/中档只显「轮数: N · 步骤: M」, 无耗时; 窄档/极窄档才带「耗时 mm:ss / hh:mm:ss」
+  const m = raw.match(/耗时\s*(\d{1,2}:\d{2}(?::\d{2})?)/);
+  return m ? m[1] : null;
+};
+
+/**
+ * 轮询等耗时文本**发生变化**(即秒表真的在走), 返回前后两次读数。
+ *
+ * 用途: 判「任务还在跑」最直接的正面证据 —— 后端在推帧、界面在走表。
+ * 超时未变 → 返回 null, 由调用方决定判红。
+ *
+ * @param before 起点耗时文本(通常是动作发生前读到的)
+ * @param timeoutMs 最多等多久
+ */
+export const waitElapsedAdvances = async (
+  page: Page,
+  before: string | null,
+  timeoutMs: number
+): Promise<{ before: string | null; after: string | null }> => {
+  const deadline = Date.now() + timeoutMs;
+  let last = await readElapsed(page);
+  while (Date.now() < deadline) {
+    await page.waitForTimeout(1000);
+    last = await readElapsed(page);
+    if (last && before && last !== before) return { before, after: last };
+  }
+  return { before, after: last };
+};
+
+/**
  * 截一条「计数器」判据的失败说明, 统一口径, 免得各 case 自己拼文字。
  * 返回可直接传给 expect(x, msg) 的字符串。
  */

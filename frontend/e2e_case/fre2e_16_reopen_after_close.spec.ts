@@ -19,6 +19,8 @@ import {
   sessionIdFromUrl,
   startNormalUiEnv,
   statusOfTask,
+  taskAgeMsOf,
+  waitCounterIncreases,
 } from '../e2e_front_lib';
 
 const FRONTEND_DIR = 'F:\\OmniAgentAs-repair\\frontend';
@@ -56,22 +58,21 @@ const seenRounds = (all: string[], base: number): number[] => {
  *   重新打开时前端应当把那个还在跑的任务重新挂上。
  *
  * 【为什么必须另起一个标签页, 不能用 page.reload()】
- *   恢复能力 100% 依赖 **sessionStorage**, 而 sessionStorage 是**标签页级**的:
+ *   恢复能力分两条独立路径, sessionStorage 是**标签页级**的:
  *     - 同一标签页 F5 刷新 → sessionStorage 存活 → 走 `sse_execution_steps_backup_v2_<id>`
  *       锚点续传, **无时间限制**。fre2e_14/15 守的正是这条。
  *     - 关掉标签页再新开 → sessionStorage **整体消失** → 备份判废
- *       (chatStreamStore.ts:955 `version !== 2` → 'invalid') → 走
-    *       → adoptLiveTaskOrDraft。但实际**到不了**: backupLoad 返回 null → restore='invalid'
-    *       → resume() 直接早退 'idle'(chatStreamStore.ts resume/restore), findLiveTask 不会被调。
-    *       即"关页面重进"目前恢复不了 —— 本 case 判据③会红, 那正是要暴露的缺陷。
- *   也就是说: **最容易出问题的那条恢复路径(fre2e_14/15/16 原版/17 全部不覆盖)**。
- *   page.reload() 永远走不到它, 所以本 case 必须 close + newPage。
+ *       (chatStreamStore.ts:960 `raw.version !== 2` → 'invalid') → **无备份可续**,
+ *       只能靠 `findLiveTask` 回 DB 反查该会话在跑的任务再挂上。
+ *   本 case 守的正是第二条(原 fre2e_16 判红暴露了该缺陷, 已于 2026-10-01 修复:
+ *   `resume()` 在 `restored === 'invalid'` 时改走 `adoptLiveTaskOrDraft(s, 'idle')`,
+ *   不再早退 'idle'), page.reload() 永远走不到它, 所以必须 close + newPage。
  *
  * 【已知产品边界 —— 本 case 在窗口内验证, 窗口外不测】
  *   findLiveTask 有 300s 窗口, 且**从 task.created_at 起算**(chatStreamStore.ts:430-431,
- *   裸字面量 300_000)。即: 任务已跑 4'50" 时关页面, 只剩 10s 窗口。
- *   本 case 关闭后只等 SHORT_CLOSE_WAIT_MS(远小于 300s), 故必在窗口内;
- *   **窗口外(恢复不了)的分支本 case 不覆盖** —— 等 5 分钟不可接受, 已在文档登记为盲区。
+ *   裸字面量 300_000)。即: 任务已跑 4'50" 时关页面, 只剩 10s 窗口, 恢复不了是**预期行为**。
+ *   故阶段2 关页面前显式核对 `taskAgeMsOf` 余量(见下 CLOSE_GUARD_MS), 不足即当次不作通过,
+ *   绝不把"窗口耗尽"记成 B7 缺陷。**窗口外分支本 case 不覆盖**, 已登记为盲区。
  *
  * 判据(逐条说清过/不过):
  *   ① 关页面前任务在飞(DB=executing)且计数器 step>0 —— 否则前提不成立, 显式报错
@@ -102,6 +103,11 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
 
     await startNormalUiEnv(FRONTEND_DIR);
     await chat.gotoChat();
+    // 2026-10-01 小欧: 必须先显式新建会话。gotoChat() 走裸 URL 会命中 useChatSession 场景3,
+    //   前端自动加载"最近会话" → 第 2 轮及以后的跑落在上一轮遗留会话里(URL 不带 id、
+    //   task 数累积到 2), 前置与判据④双双失效。实测取证: ed2ac24d 会话里出现了两个 task
+    //   (19:58:59 与 20:10:03), 正是两次跑的残留。
+    await chat.newSession();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
     const logBase = logBaseOf(BLOG);
 
@@ -138,7 +144,23 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
       (l) => l.includes('REQ POST ') && l.includes('/chat/stream')
     ).length;
     const liveSession = sessionIdFromUrl(page);
-    expect(liveSession).toBeTruthy();
+    if (!liveSession) {
+      throw new Error(
+        `[E2E] 任务已发出但 URL 仍不带 session_id —— 取不到会话 id, 后续关页面恢复无从校验。` +
+          `URL=${page.url()}。newSession() 是否生效? 不当通过处理`
+      );
+    }
+    // 新建会话必须是"干净"的: task 数为 0。若 >0 说明落在残留会话里, 判据④必假红。
+    const tasksAtStart = await taskCountOf(liveSession);
+    console.log(
+      `[E2E] 新建会话 ${liveSession} 发消息后 task 数=${tasksAtStart}(期望 1)`
+    );
+    if (tasksAtStart > 1) {
+      throw new Error(
+        `[E2E] 会话 ${liveSession} 里已有 ${tasksAtStart} 个 task —— ` +
+          `说明消息落进了上一轮残留会话(URL 带参但会话不干净)。请重跑 —— 不当通过处理`
+      );
+    }
     const taskIdOf16 = await activeTaskId(page);
     expect(taskIdOf16).toBeTruthy();
 
@@ -177,10 +199,35 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
     }
     expect(counterBefore.steps).toBeGreaterThan(0);
 
+    // ③ 关页面前必须核对 300s 活跃窗口余量 —— 否则后面判红是**假红**。
+    //   病根: findLiveTask 按 created_at 过滤 ≤300_000ms(chatStreamStore.ts), 而"等 ≥2 轮"
+    //   上限 240s。任务若已接近 300s, 关页面+等 15s+重开就必然超窗 → findLiveTask 找不到
+    //   → tasksAfterReopen 拿不到任务, 看起来像 B7 没修好, 实则是窗口设计使然。
+    //   故此处显式量化余量, 不足则**当次不作通过**(交老陈重跑), 不把预期行为记成缺陷。
+    const CLOSE_GUARD_MS = 15_000 + 25_000 + 60_000; // 关页等待 + 观察窗 + 重开/挂载上限
+    const ageAtClose = await taskAgeMsOf(liveSession, taskIdOf16);
+    console.log(
+      `[E2E] 关页面时任务已运行 ${Math.round(ageAtClose / 1000)}s ` +
+        `(300s 窗口余量需 ≥${Math.round(CLOSE_GUARD_MS / 1000)}s)`
+    );
+    if (ageAtClose < 0) {
+      throw new Error(
+        `[E2E] 读不到 task=${taskIdOf16} 的 created_at —— 无法核对 300s 活跃窗口余量, ` +
+          `后续恢复失败会分不清是缺陷还是超窗。不当通过处理`
+      );
+    }
+    if (ageAtClose > 300_000 - CLOSE_GUARD_MS) {
+      throw new Error(
+        `[E2E] 任务已运行 ${Math.round(ageAtClose / 1000)}s, 超过 300s 活跃窗口余量 ` +
+          `(${Math.round((300_000 - ageAtClose) / 1000)}s < 需求 ${Math.round(CLOSE_GUARD_MS / 1000)}s) —— ` +
+          `此轮若恢复失败属预期(窗口耗尽)而非 B7 缺陷。请重跑 —— 不当通过处理`
+      );
+    }
+
     // ══ 阶段2: 整个关掉标签页①(这才是"关页面", 不是刷新) ══
     //   close() 会真断 SSE, 与用户关标签页同构。关掉后 sessionStorage 随之销毁 ——
-    //   下一阶段新开标签页, sessionStorage 已空, 走的是 backupLoad 判废 → restore='invalid'
-    //   → resume() 早退 'idle' 这条路(产品缺陷, 见文件头注释)。
+    //   下一阶段新开标签页, sessionStorage 已空 → backupLoad 返回 null → restore='invalid',
+    //   产品侧改走 adoptLiveTaskOrDraft(s,'idle') → findLiveTask 回 DB 找回在跑任务(窗口内)。
     await page.close();
     console.log(
       `[E2E] 标签页① 已关闭(轮次=${roundsBefore.length}, 计数器步=${counterBefore.steps}) —— 等 ${SHORT_CLOSE_WAIT_MS / 1000}s 后重开`
@@ -190,7 +237,9 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
     //   等一段(15s)足够暴露"断开即误回收"这类缺陷: 若后端把断连当取消, 这 15s 内就会落终态。
     await new Promise((r) => setTimeout(r, SHORT_CLOSE_WAIT_MS));
     const statusAfterClose = await statusOfTask(liveSession, taskIdOf16);
-    console.log(`[E2E] 关页面 ${SHORT_CLOSE_WAIT_MS / 1000}s 后 DB status=${statusAfterClose}`);
+    console.log(
+      `[E2E] 关页面 ${SHORT_CLOSE_WAIT_MS / 1000}s 后 DB status=${statusAfterClose}`
+    );
     if (statusAfterClose === STATUS_NOT_FOUND) {
       throw new Error(
         `[E2E] 关页面后查不到 task=${taskIdOf16} —— 任务被误删/误回收。` +
@@ -278,7 +327,44 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
           ` —— 不当通过处理`
       );
     }
+    // 口径与 14/15/17 对齐(改前只有 steps>0, 比其他三个松一档): ①不回退 ②仍在跑就要继续增长。
+    expect(
+      counterAfter.rounds,
+      counterFailMsg('重开后轮数倒退(序号回退)', counterBefore, counterAfter)
+    ).toBeGreaterThanOrEqual(counterBefore.rounds);
+    expect(
+      counterAfter.steps,
+      counterFailMsg('重开后步骤数倒退(步骤丢失)', counterBefore, counterAfter)
+    ).toBeGreaterThanOrEqual(counterBefore.steps);
     expect(counterAfter.steps).toBeGreaterThan(0);
+    // ⑥ 正面证据: 重开后 SSE 必须真在推帧, 否则"挂回任务"只是 UI 假象。
+    //   口径**不能**用「步骤数必须继续增长」—— 步数由 stats 帧驱动
+    //   (useTaskInfo.ts:321 `frames.stats` → stepCount), 任务处于单轮长文本输出时
+    //   后端连发 chunk、不发新 stats 帧, 步数本来就不动; 拿它当判据 100% 假红
+    //   (2026-10-01 首跑实测: 后端持续推到 seq=2225, 步数停在 9 —— 是断言错, 非缺陷)。
+    //   改用「20s 内前端真收到 SSE 帧」(sseParser.ts:163 每帧 console.log) 或计数器增长,
+    //   任一成立即算续传在推数据。
+    if (statusAfterReopen === 'executing') {
+      const consoleBaseReopen = diag2.consoleAll.length;
+      const grew = await waitCounterIncreases(
+        page2,
+        counterAfter.rounds,
+        counterAfter.steps,
+        20_000
+      );
+      const framesIn = diag2.consoleAll.length - consoleBaseReopen;
+      console.log(
+        `[E2E] 重开后 20s 内: SSE帧=${framesIn} 计数器 轮${counterAfter.rounds}->${grew?.rounds} 步${counterAfter.steps}->${grew?.steps}`
+      );
+      expect(
+        framesIn > 0 ||
+          (grew?.steps ?? 0) > counterAfter.steps ||
+          (grew?.rounds ?? 0) > counterAfter.rounds,
+        `重开后 20s 内既无 SSE 帧流入(帧=${framesIn})、计数器也没动` +
+          `(轮${counterAfter.rounds}->${grew?.rounds} 步${counterAfter.steps}->${grew?.steps}) —— ` +
+          `续传没真在推数据(挂回任务 ≠ 收到帧)`
+      ).toBe(true);
+    }
 
     // ⑥ 任务最终 completed; failed/cancelled 打后端 ERROR 行后显式红
     const dlFinal = Date.now() + FINAL_WAIT_MS;
