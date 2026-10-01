@@ -1,4 +1,38 @@
-﻿v1.1.3
+﻿v1.1.4
+更新时间: 2026-10-01 23:59:47 - 小欧-2026-10-01
+## v1.1.3以来 变更汇总(38个commit: fix14/test8/docs8/refactor1/style6/chore1) - 小欧-2026-10-01
+[2026-10-01 23:59:47 小欧] 范围=v1.1.3以来全部commit(共38个); 主线: [1]刷新后显示其他任务结果全链路修复(A/B/E/D组落码+文档v1.0~v1.6)、[79]会话流常驻架构SSE单源化(删useSSE 779行)、[81]三堂会审缺陷实施、数据与配置隔离铁律、计时冻结根因修复、Prettier门禁91→0
+
+### 1.1.4 计时冻结根因修复(本轮核心)
+[计时] chatStreamStore.ts clearSteps 补 metaFrames 任务边界重置(1行根治): metaFrames 是任务级帧状态却按会话级存于 ChatStreamSession、仅 ensureSession 首次创建时初始化一次, 全仓无任何清空点 —— 上个任务 finalStats 残留使次任务 TaskInfoBar taskFinished=!!frames.finalStats 恒真, 秒表 setInterval 从不启动, shownElapsed 回退 useTaskInfo 的 frames.finalStats?.duration(优先级高于 stats.duration, 故后端 stats 正常递增亦被挡), 表现为「第二个任务计时全程不动」; 首任务正常因 metaFrames 初始为空
+[计时] 该行同时根治三个消费方: TaskInfoBar秒表 / useTaskInfo live-detail分支 / RightViewer hasFinalStats 判在飞; 停止路径 stop() 不调 clearSteps 故终态耗时显示不受影响
+[文档] [1]全文精简重写升v1.6(1153行压至300行, 60+条编号清单按A~G七组浓缩为一张表, 保留v1.0~v1.5完整版本历史不删), 新增第七章计时冻结与格式门禁修复、第六章帧数与步数口径对照表(帧=含chunk的细粒度事件/步=只统计业务事件, 实测25步对应5333帧)
+[文档] 记录未修真缺陷: storage.py reconcile_orphaned_tasks 判据 start_time < boot_iso 分不清「上个进程遗留僵尸」与「当前在飞任务」, --reload 下第二实例启动即误标 status 为 failed/task_interrupted 且任务真跑完无逻辑改回 completed, 前端 findLiveTask 靠 status=='executing' 找在飞任务故产品会挂不回任务; 根治需加 boot_id/owner_pid 列, 临时规避为 E2E 用无 --reload 的单实例后端
+
+### 1.1.4 Prettier 门禁清零
+[格式] .prettierignore 扩充15项非源码排除(backup备份档案 / playwright-report与e2e_case/output运行产物 / .pytest_cache / .auth-state登录态 / src/tests/fixtures契约数据 / scripts工具页 / *.md) —— 对这些「格式化」是制造噪声
+[格式] 逐个 Prettier 格式化75个文件: 生产28 + 测试41 + e2e6, 每个都跑 eslint; 生产28个中27个为纯LF真排版问题、chatStreamStore.ts 兼有EOL混杂(原CRLF481/LF525)已统一为LF; 逐文件核查注释零丢失 + tsc前后0错误
+[格式] 改动类型分布: 缩进对齐196行(56%)/尾逗号77行(22%)/括号换行32行(9%)/其他表达式换行27行(7.7%)/注释行重排15行(4.3%); 根因为 printWidth=80 + trailingComma=es5 而该批文件按更宽行宽写成
+[门禁] npm run check:full 全绿(typecheck / typecheck:e2e / lint / lint:e2e / format:check 全通过0错误)
+
+### 1.1.4 E2E FE-17/FE-18 补齐与通过
+[FE-17] 补阶段0自造旧任务(原靠「最近会话恰好有旧任务」才成立, 命中空会话时旧task=[]致「旧任务不被误改」核心判据落空): 发短任务PROMPT_OLD → waitDone → 取taskId → pollTaskStatus 必须completed → 再发新任务, 复用18已有helper未重造; 另加硬判据 oldTasks.includes(taskOld) 确保验的是本case造的那个A
+[FE-18] 多任务刷新场景: A(多步)完成后同会话发B, B执行中走「切走页→切回→刷新」三动作, 硬校验刷新确已执行(页面标记消失)+A不被误改+全程DELETE=0
+[验收] FE-18 headed 通过(5.9m): 计时 21s→52s 递增(计时修复直接实证)/ 切回后active挂的是B / A仍completed; FE-17 headed 通过(3.1m): 刷新后挂的是新任务 / 旧任务未被误改 / 计数器轮2→3步3→6 / 续传 after_seq=4576 / 正文17100字
+[提交流程] AGENTS.md 提交前门槛改 check:full(check 不含任何 typecheck, 而 tsconfig.json 只 include ["src"]、tsconfig.e2e.json 才管 e2e_case/ 与 e2e_front_lib/, 漏跑 typecheck:e2e 时 e2e 类型错误构建期完全不可见 —— 实测4处漏补import + 1处传错参数全靠 typecheck:e2e 抓出)
+
+### 1.1.3以来 其他主线(摘要)
+[SSE单源化] refactor 删 useSSE.ts 779行, 会话流常驻架构落地(D1活流守卫/控制器归属/终态不可回写/D2删render期ensureSession/D3终态TTL与容量LRU/D4恢复态4值提示/F①直连Store/F②删disconnect空壳), 18条会审缺陷实施 + 十遍复核收口
+[[1]全链路] A组步骤/token落库前移运行期(退役末尾扫event_log机制改StreamBuffer.persist_sink实时投递) / E组契约与统计口径(消息补task_id、total_steps与step_count同源恒等) / B组解刷新丢任务结果(B1双写竞态互斥/B4B5抽findLiveTask共用/B6B7锚点即时落盘/B9备份判据区分已发待发/B13钟面基线落盘) / D组任务列表永久冻结修复; C组9条经复核全为误判(把既有设计当缺陷, C4若改会造成功能退化), 固化「清单条目动手前必答三问」纪律
+[[1]B6B7] 关标签页再进来恢复不了(备份判废时也去DB找活任务, 原逻辑早退idle而备份是sessionStorage级关掉标签页即消失, 致后端agent仍在跑结果也落库却纯前端没跟上); recoverWithoutTaskId 改名 adoptLiveTaskOrDraft 并参数化 whenNone 保留两调用点各自原返回语义
+[[1]根因] task_runtime.py 删任务级 _cancel_sent 标记改回连接级去重cancelled终态(该标记使同任务后到连接重连或新标签页恢复永远收不到终态、界面永停执行中; execution_steps 本就是每连接专属累积列表, 列表扫描天然只对本连接去重)
+[测试隔离] 数据隔离铁律: 配���隔离只管住config.yaml管不到SQLite —— 数据目录唯一解析点改 resolve_db_dir() 认 OMNIAGENT_DATA_DIR 并在 get_conn 内惰性解析(原 __init__ 硬编码 Path.home 且 db 单例导入期构造路径被冻结, 测试无法隔离真库) + 新增 _db_overrides 测试覆盖口; conftest 的 isolated_config_dir 同时设 OMNIAGENT_DATA_DIR, 使任何走 db.get_conn 的测试自动够不到真库
+[后端] 非流式LLM请求补L1重试(原单次try一次异常即return error致429整片失败; 实测PAR-05五会话并发顶穿免费额度速率限制, 各会话调用#3即FAILED零重试) + _retry_wait_seconds 抽为共用(429尊重Retry-After否则3^n退避); database.py atxn 增 retry_locked 有限重试(事务体 execute 阶段撞写锁直接抛出)
+[数据] 会话消息数去计数器改真值(COUNT(chat_user_message)+COUNT(chat_tasks)) + 列表隐藏空会话 + 补 chat_user_message(session_id) 索引; useChatPersistence restoreState 完整态分支改用后端最新消息(原把返回值只当存在性探针, 拉回的全量消息被丢弃转渲染旧快照, 致列表显示DB真实4条而界面只渲染2条, 刷新才恢复)
+[菜单] 菜单「对话任务」显式回到当前会话: 原 navigate('/') 不带session_id, 归属隐式依赖sessionStorage缓存而 restoreState 有5分钟有效期(超期即清key返回null), 5分钟远短于一次真实跨页往返故落到最近会话是常态; 改URL优先+sessionStorage回落后带session_id走场景1
+[[81]] 三堂会审缺陷实施 H1/H3/H12/H18/H19: H12终态改由final step权威判定(废 duration>0||updated_at 恒真兜底致running误判完成) / H18任务状态标签按后端status映射5态(原executing/paused/cancelled全显成功) / H19 Escape取消加cancelRef拦卸载blur强迫保存(自审发现首版复位只挂onBlur, 而React18卸载不派发合成onBlur致标记残留吞下次保存) / H3恢复验证补useCache:false绕缓存自证 / H1 useMemo补rightOpen依赖
+
+v1.1.3
 更新时间: 2026-09-29 21:32:03 - 小欧-2026-09-29
 ## v1.1.2以来 变更汇总(1个commit: fix1) - 小欧-2026-09-29
 [2026-09-29 21:32:03 小欧] 范围=v1.1.2以来全部commit(共1个); 主线: 并发撞锁加固(病根: get_conn 只覆盖连接获取期与提交两处, 事务体 body 的 execute 阶段撞写锁直接抛出, 且静默降级致任务行压根没建立、UPDATE 静默影响0行且日志无痕; 实证 PAR-05 于 19:49 记四记 locked); 处置: database.atxn 增 retry_locked 有限重试(仅捕含 locked 的 OperationalError, 非锁错误与重试耗尽一律原样抛, 杜绝掩盖真实故障) + agent_runner 四处终态 UPDATE 启用重试 + ai_message_id 缺失防线(挡掉 append_step 撞 NOT NULL 抛穿成 Traceback 风暴) + storage._warn_zero_row 单一告警出口(三处 0 行判定收敛) + stream_orchestrator._setup_task_db 重试耗尽后向上抛走 router_error 不再静默起跑; 注: 本批含 .gitignore 90 行行尾翻转噪声(真实内容改动仅2增2删), 按北京老陈指示不处理; PATCH bump v1.1.2→v1.1.3(北京老陈2026-09-29令打tag)
