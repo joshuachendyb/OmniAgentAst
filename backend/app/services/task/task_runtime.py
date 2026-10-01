@@ -31,6 +31,9 @@
 # 2026-09-20 - 小欧 - D-8修复(F7重连终态重复下发): task_cancel_check_and_yield 增任务级 _cancel_sent 标记——
 #   重连编排层以空 execution_steps 进入时原列表扫描恒 False, cancelled 终态帧被重复下发; 本次下发置位标记,
 #   任务存活期为界(服务重启后任务即不在 running_tasks 无从重连), 非空列表含 DB 旧帧且未置位时保留原列表扫描。
+# 2026-10-01 - 小欧 - 删任务级 _cancel_sent 标记: 它把 cancelled 终态去重从连接级提升为任务级, 令同一任务的
+#   后到连接(重连/新标签页恢复)永远收不到终态、界面停在"执行中"。去重改回只认本连接 execution_steps 列表 ——
+#   该列表每连接专属(首连/重连各传本连接对象), 天然只对本连接去重。compliance: KISS-DIRECT/YAGNI/SRP
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -150,26 +153,21 @@ async def task_cancel_check_and_yield(
         # 2026-09-07 小欧 4.4.1(B9): 去重只认 type=final+outcome=cancelled, 删 type=cancelled
         #   与 incident_value 两枝历史兼容分支(禁止backward; incident_value 线上零生产者, 迁移后亦无,
         #   运行任务只产新契约终态, 单条件即完备)
-        # 2026-09-20 小欧 D-8(F7): 去重信号增"任务级 cancelled 终态已下发"标记(_cancel_sent)——重连时
-        #   编排层以空 execution_steps 传入(_stream_with_control 每次循环), 原列表扫描恒False,
-        #   终态帧重复下发; sent 标记以任务存活期为界(重连必存活, 服务重启后任务即不在 running_tasks,
-        #   无从重连), 免 DB 查询, KISS-DIRECT; 非空列表含 DB 旧帧且 sent 未置时保留原列表扫描语义(不重复)
-        async with running_tasks_lock:
-            _sent = running_tasks.get(task_id, {}).get("_cancel_sent")
-        has_cancelled = any(
+        # 2026-10-01 小欧 D修: 删任务级 _cancel_sent 标记, 去重只认本连接 execution_steps 列表。
+        #   病根: 该标记把去重从连接级提升为任务级, 同一任务的后到连接(重连/新标签页恢复)一律跳过,
+        #   收不到 cancelled 终态 → 界面永久停在"执行中"。execution_steps 是每连接专属累积列表
+        #   (首连 stream_orchestrator:383 / 重连 :833 均传本连接对象), 列表扫描天然只对本连接去重。
+        if any(
             s.get('type') == 'final' and s.get('outcome') == 'cancelled'
             for s in current_execution_steps
-        )
-        if _sent or (current_execution_steps and has_cancelled):
-            logger.info(f"[CancelCheck] 任务 {task_id} 已有cancelled终态(sent={_sent}),跳过")
+        ):
+            logger.info(f"[CancelCheck] 任务 {task_id} 本连接已下发cancelled终态,跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
         _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")  # 方案五: source 随落库值带出 — 小欧 2026-09-08
         step_dict = _cancel_final_dict(task_id, _cancel_source)
         logger.info(f"[Step] 发送 final(cancelled) 步骤")
         current_execution_steps.append(step_dict)
-        async with running_tasks_lock:
-            running_tasks[task_id]["_cancel_sent"] = True
         return format_agent_sse(step_dict)
     return None
 
