@@ -14,6 +14,7 @@ execution_stream — 执行步骤流式查看
 # 2026-08-22 - 小欧 - 北京老陈 2026-08-22 铁律(chat_messages 只写严禁读): _generate_execution_stream 改读 fetch_session_user_message_pairs
 #     (chat_user_message+chat_tasks 重建历史, assistant 正文取 response; 不读 chat_messages)
 # 2026-08-29 - 小沈 - 修复#16: 两处读库(生成器内 + 端点内)由同步 db.get_conn 改为 db.atxn 离载子线程, 不阻塞事件循环
+# 2026-10-01 - 小欧 - 解 [1] E3: 读步骤补传 task_id(p["pair_task_id"]), 与 message_service/history_loader 同源; 不传则同 ai_message_id 下的多任务步骤被跨任务混读
 
 import json
 import asyncio
@@ -76,7 +77,11 @@ async def _generate_execution_stream(session_id: str):
                 ai_id = p["ai_message_id"]
                 if ai_id is None:
                     continue
-                rows_with_steps.append(("assistant", p["ai_content"] or "", load_execution_steps(conn, ai_id)))
+                # 2026-10-01 小欧: 补传 task_id(解 [1] E3), 归属取 pair_task_id 与 message_service 同源
+                rows_with_steps.append((
+                    "assistant", p["ai_content"] or "",
+                    load_execution_steps(conn, ai_id, p.get("pair_task_id")),
+                ))
             return rows_with_steps
         _rows_with_steps = await db.atxn("chat", _read)
         if _rows_with_steps is None:

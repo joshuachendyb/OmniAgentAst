@@ -14,6 +14,7 @@
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): DELETE /sessions/{id}/trust/{tool_name} 端点增可选 query `path` 精确撤销——
 #   path 传入则精确 DELETE (session_id, tool_name, path) 该路径行; path=None(默认) 删工具级通配行(path IS NULL); 无匹配行返回 404 Trust not found
 # 2026-09-03 - 小欧/北京老陈 - sessions端点补日志: trust相关端点(list/delete)补info/warning, 改前无log无法排查信任操作
+# 2026-10-01 - 小欧 - 解 [1] E8: 删除 POST /sessions/{id}/execution_steps 端点及其 save_execution_steps/ExecutionStepsUpdate 导入(连带 session_service 同名导入)。该端点全仓零调用方，其底层实现自 2026-08-27 起已不写任何步骤，留着会误导为"步骤落库入口"。真入口见 storage.append_execution_step
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -33,7 +34,6 @@ from app.services.chat.session_service import (
     get_session_info,
     SessionUpdate,
 )
-from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate  # noqa: F401
 from app.services.chat.storage import (
     list_session_tasks,
     list_session_trust,
@@ -78,11 +78,6 @@ def get_session_titles_batch_endpoint(
     session_ids: str = Query(..., description="逗号分隔的会话ID列表")
 ):
     return get_session_titles_batch(session_ids)
-
-
-@router.post("/sessions/{session_id}/execution_steps")
-async def save_execution_steps_endpoint(session_id: str, update_data: ExecutionStepsUpdate):
-    return await save_execution_steps(session_id, update_data)
 
 
 @router.get("/sessions/{session_id}/tasks")

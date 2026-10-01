@@ -12,6 +12,7 @@
 #   create_stream_buffer 升为唯一入口 create_task_stream_buffer(带落库能力)，旧入口降纯内存薄壳；
 #   reclaim_stream_buffer → reclaim_memory_buffer(300 秒只回收内存，不删 Journal)；
 #   get_task_status → get_running_task_status(读内存活跃表，与读数据库终态的那只不同名) — 小欧 2026-09-29
+# 2026-10-01 小欧 - 解 [1] A1(运行期逐步落库): StreamBuffer 增 persist_sink 可选 async 回调(由 agent_runner 注入 chat_task_steps 落库路由)，挂在 publish 收口而非调用点——事件有三条发布路径(_emit_publish / handle_action 直连 _buf.publish / _events 批量)，挂调用点必漏 thought/observation；纯内存 publish 与 Journal 版 publish_with_journal 同步承接。sink 调用于 publish_lock 锁外(注入方含 Prompt 日志文件写，持锁会把所有 publish 串行化)，seq 分配与 append 已在锁内原子完成故顺序安全。本模块保持 DB-agnostic，不感知 chat_task_steps
 """
 task_state — 运行态任务数据存储 + 只读查询
 
@@ -23,9 +24,14 @@ task_state — 运行态任务数据存储 + 只读查询
 与"控制态"(running_tasks) 分离，支撑前端 SSE 断线重连 — 小欧 2026-07-12
 """
 
+# 2026-10-01 小欧 - 运行期逐步落库(解 [1] A1, 见 doc-10月优化/[1]刷新后显示其他任务结果):
+#   StreamBuffer 新增 persist_sink 可选回调, 由 agent_runner 注入 chat_task_steps 落库路由;
+#   挂在 publish 收口(三条事件发布路径唯一交点)而非调用点, 否则 handle_action 直连 _buf.publish 的
+#   thought/observation 必漏; 纯内存 publish 与 Journal 版 publish_with_journal 同步承接。
+#   本模块保持 DB-agnostic: 不感知 chat_task_steps, 落库口径全归注入方。
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 from app.logger import logger          # [63] 3.6.2：降级日志需要（本文件此前无 logger）
 
 running_tasks_lock = asyncio.Lock()
@@ -53,6 +59,11 @@ class StreamBuffer:
     done: asyncio.Event = field(default_factory=asyncio.Event)
     publish_lock: asyncio.Lock = field(default_factory=asyncio.Lock)  # [63] 同一 task 的 seq 分配与 Journal 写入不并发交叉（3.5 第 1 步）
     journal_backed: bool = False
+    # 运行期逐步落库回调(可选, 由 agent_runner 注入) — 小欧 2026-10-01
+    #   签名: async sink(step_dict: dict) -> None。挂在 publish 收口而非调用点, 因事件有三条发布路径
+    #   (_emit_publish / handle_action 直连 _buf.publish / _events 批量), 挂调用点必漏(解 [1] A1)。
+    #   本模块 DB-agnostic, 不感知 chat_task_steps; 具体落库口径由注入方决定。
+    persist_sink: Optional[Callable[[Dict], Awaitable[None]]] = None
 
     async def publish(self, step_dict: dict) -> int:
         """生产者直写：append + seq + 唤醒消费者。返回seq。
@@ -64,7 +75,10 @@ class StreamBuffer:
             step_dict["seq"] = len(self.event_log)
             self.event_log.append(step_dict)
             self.cond.notify_all()
-        return step_dict["seq"]
+        seq = step_dict["seq"]
+        if self.persist_sink is not None:
+            await self.persist_sink(step_dict)   # 锁外调用: sink 只做 O(1) 投递, 不持读者锁
+        return seq
 
 
 # 流态缓冲表: task_id -> StreamBuffer(独立于 running_tasks 的生命周期)
@@ -125,13 +139,18 @@ def create_task_stream_buffer(task_id: str, session_id: str, journal_sink=None) 
             # INSERT OR IGNORE 静默吞掉。故把整段放进独立 task 并 shield，取消时等它跑完再传播。
             t = asyncio.ensure_future(_journal_write_and_append(d))
             try:
-                return await asyncio.shield(t)
+                seq = await asyncio.shield(t)
             except asyncio.CancelledError:
                 # 等落库+入内存完成，保证 seq 连续不被复用；加超时防 SQLite 永久锁死时挂住停机
                 _done, _pending = await asyncio.wait([t], timeout=10)
                 if _pending:
                     logger.error(f"[Journal] 落库未在 10s 内完成(task={task_id} seq={d['seq']}): 该帧可能丢 Journal")
                 raise
+        # persist_sink 放锁外调用: 注入方含 Prompt 日志文件写, 持 publish_lock 会把
+        # 所有 publish 串行化(小欧 2026-10-01)。seq/append 已在锁内原子完成, 此处顺序安全。
+        if buf.persist_sink is not None:
+            await buf.persist_sink(d)
+        return seq
 
     buf.publish = _publish_with_journal   # type: ignore[method-assign]
     return buf

@@ -234,8 +234,8 @@
 # 2026-09-06 小欧 修复(问题挖掘文档, 取证测试 红→绿): thought-start/thought 原仅 append
 #   _events 延迟发布, 预览 ActionStep 直接 publish 提前插队 → SSE/前端顺序错乱(思考正文逆到工具行下/被隔断)
 #   且 HITL 弹窗等待期思考不可见; [改法] thought 先行直接 publish(buffer 统一提前获取至 thought 前), 从 _events
-#   摘除防 react_step.py:485 二次 publish 双发; DB 落库不经 _events(agent_runner._scan L344 读 buffer.event_log
-#   已 publish 的 thought 落库, 无退化) — 小欧-2026-09-06
+#   摘除防 react_step.py:485 二次 publish 双发; DB 落库不经 _events(直连 _buf.publish 即经
+#   StreamBuffer.persist_sink 实时落库; 原"agent_runner 末尾扫描 event_log"机制已于 2026-10-01 退役) — 小欧-2026-09-06
 # 2026-09-07 小欧 4.4.2 thought-start 时序根治(前端消息分类处理分析及设计-小欧-2026-09-06.md 4.4.2):
 #   [问题] 旧 thought-start 发射点在本函数开头(thought 前)=LLM 响应后发(错), 前端 waiting 图标随 obs 到即收、时序错乱;
 #   [改法] ①删除本函数开头(原 L348)的直接 publish 旧发射点(thought-start 移出 thought 前);
@@ -243,6 +243,7 @@
 #            承接"下一次 LLM 请求前"的等待信号, 与 react_loop 进 loop 前发射点合计=loop 内调工具次数+1(发射公式);
 #         return_direct 终态轮豁免不发(4.4.2 元规则) — 小欧-2026-09-07
 # 2026-09-22 小欧 - constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 _D_LOG_MAX_CHARS
+# 2026-10-01 小欧 - 注释订正(零代码改动): 头部与文件内 2 处"'DB 落库不经 _events(原由 agent_runner 末尾扫描 buffer.event_log 已 publish 的 thought 落库)'"改为"直连 _buf.publish 即经 StreamBuffer.persist_sink 实时落库"——原机制已于 2026-10-01 随 [1] A 组运行期逐步落库退役, 旧表述会误导以为落库仍靠末尾扫描
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -348,7 +349,8 @@ async def handle_action(agent, parsed: Dict) -> dict:
     #   — 原实现 thought 仅 append _events 延迟发布, 预览 ActionStep 于 L367 直接 publish
     #   提前插队 → SSE/前端顺序错乱(思考正文逆到工具行下/被隔断)且 HITL 弹窗等待期思考不可见;
     #   [改法] thought 先行直接 publish(先于预览与弹窗), 同步从 _events 摘除, 防 react_step.py:485 二次 publish 双发;
-    #   DB 落库不经 _events(agent_runner._scan L344 读 buffer.event_log 已 publish 的 thought 落库, 无退化);
+    #   DB 落库不经 _events: 直连 _buf.publish 即经 StreamBuffer.persist_sink 实时落库
+    #   (2026-10-01 运行期逐步落库, 原"agent_runner 末尾扫描 event_log"机制已退役);
     #   [4.4.2 2026-09-07 小欧] thought-start 旧发射点(原 L348)已删除移走(时序根治, 见下方 build_observation 后新增) — 小欧-2026-09-06
     from app.services.task.task_state import get_stream_buffer  # 延迟import防环 — 小欧-2026-09-06
     _buf = get_stream_buffer(agent.task_id)

@@ -103,6 +103,8 @@
 # 2026-09-30 20:05:00 小欧 - 计数器退役: message_count 只增不减致列表虚高(实测清理前 1879/3195 会话"有计数无回答"),
 #   读取侧改走新增的 count_session_messages() 真值(列表/详情共用); update_session_message_count 去计数改名
 #   touch_session_updated_at(只留刷时间戳), allocate_and_insert_message 的 +1 同步删除; is_valid 语义不动 — 小欧-2026-09-30
+# 2026-10-01 小欧 - 解 [1] E5~E9/E11: ①append_execution_step 补 task_id 缺失即抛 fail-loud(实测 SQLite 唯一索引中 NULL 互不相等, 缺 task_id 落库恒幂等失败) + ON CONFLICT DO NOTHING 幂等化配 idx_steps_unique; ②load_steps_by_task 工具名提取 json_extract 路径 $.tools[0].name 改 $.tools[0].tool(ActionStep 写入键为 tool 非 name, 原致工具汇总全归 null); ③thought 收口抽为公用 _strip_thought_content 供 load_execution_steps 复用, 两入口形状一致(原仅 load_steps_by_task 做); ④_warn_zero_row 增 level 参数, "字段永久丢失且不可事后补算"场景(如 ai_message_id)提级 error; ⑤删 save_execution_steps 与 ExecutionStepsUpdate(随 E8 空壳退役, save_execution_steps 自 2026-08-27 起已不写任何步骤) 及 derive_status_from_steps(唯一调用方随删)
+#   compliance: DRY(单一真源)/fail-loud/YAGNI(零调用方即删)/复用优先 — 小欧-2026-10-01
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -163,27 +165,11 @@ def forget_session_message_ids(session_id: str) -> None:
     _allocator.forget_session(session_id)
 
 
-class ExecutionStepsUpdate(BaseModel):
-    """执行步骤更新请求体 — 小欧 2026-07-10"""
-    execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
-    content: Optional[str] = Field(None, description="AI生成的文本内容")
-    reply_to_message_id: Optional[int] = Field(None, description="回复的用户消息ID")
-    status: Optional[str] = Field(None, description="任务终态: completed/failed/cancelled/paused — 小欧 2026-07-13")
-
-
-def derive_status_from_steps(steps: Optional[list]) -> str:
-    """从 execution_steps 推导任务终态(status列兜底) — 小欧 2026-07-13 初版
-    2026-07-18 小欧 重构: 读最后一条 final.outcome(显式声明终态结果),
-    无向后/旧数据兼容(用户: 旧数据不合适可删除或清库)。
-    失败默认"failed"(fail-safe, 与 agent_runner 终态兜底一致): 空步骤/无终态步一律判失败,
-    杜绝"空步骤谎报完成"。— 北京老陈 2026-07-18"""
-    if not steps:
-        return "failed"
-    last_final = None
-    for s in steps:
-        if isinstance(s, dict) and s.get("type") == "final":
-            last_final = s
-    return last_final.get("outcome", "failed") if last_final else "failed"
+# 2026-10-01 小欧 解 [1] E8 连带 YAGNI 清理: ExecutionStepsUpdate(Pydantic 请求体) 与
+#   derive_status_from_steps 整删 —— 二者唯一使用方是已下线的 POST /sessions/{id}/execution_steps
+#   (其实现 save_execution_steps 自 2026-08-27 起不写任何步骤) 与同链的 sse_events 死函数。
+#   全仓零调用方。终态不再由步骤派生(权威是 chat_tasks.status, 由 agent_runner finally 写),
+#   故 derive_status_from_steps 的兜底语义亦无残留消费者。
 
 
 class AssistantMessageIdAllocator:
@@ -303,24 +289,6 @@ def touch_session_updated_at(conn: Connection, session_id: str) -> None:
     )
 
 
-async def save_execution_steps(session_id: str, update_data):
-    """拷贝自 conversation.py 第198-221行; 镜像写点 W2/W4(insert_assistant_message / update_message_fields 均写 chat_messages)
-    已随 chat_messages 表退役整体移除, 本函数仅负责分配 assistant id + 会话消息计数 — 小欧 2026-08-27"""
-    try:
-        with db.get_conn("chat") as conn:
-            ensure_session_exists(session_id, conn)
-            ai_message_id, is_new = _allocator.allocate(session_id, conn)
-            # 镜像写点 W2/W4 已移除, 终态/步骤真实存储由 chat_task_steps / chat_tasks 承载 — 小欧 2026-08-27
-            touch_session_updated_at(conn, session_id)
-        logger.info(f"保存执行步骤成功: session_id={session_id}, ai_message_id={ai_message_id}, is_new={is_new}")
-        return {"success": True, "ai_message_id": ai_message_id, "is_new_message": is_new}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"保存执行步骤失败: {e}")
-        raise HTTPException(status_code=500, detail=f"保存执行步骤失败: {str(e)}")
-
-
 # ====================================================================
 # 独立步骤表操作 — 小欧 2026-07-14
 # ====================================================================
@@ -377,20 +345,46 @@ def append_execution_step(conn: Connection, ai_message_id: int, session_id: str,
     2026-08-19 - 小欧 - v2.0: 表改名 chat_task_steps + 参数 message_id→ai_message_id + 新增 usage/user_message_id 列
     2026-08-23 - 小欧 - 截断退役(文档落码): 截断退役→超限 error 告警(现役表不截断);
       完整 step_json 落库保回放源(5.1); 签名/返回值保持原样(-> None)——文件A 定位键已改
-      step/tool_no/retry_no 三键组(实时落盘), 不再需要本函数返回主键"""
+      step/tool_no/retry_no 三键组(实时落盘), 不再需要本函数返回主键
+    2026-10-01 - 小欧 - 幂等化: ON CONFLICT DO NOTHING 配 idx_steps_unique,
+      实时落库后重试/并发不再撞 IntegrityError(解 [1] A3)
+    2026-10-01 - 小欧 - task_id 缺失即抛(解 [1] E5/E6): 实测 SQLite 唯一索引中 NULL 互不相等,
+      task_id 为 NULL 时 idx_steps_unique 完全失效(重复行可无限插入, 已构造实证);
+      表达式索引 COALESCE(task_id,'') 虽可归一, 但无法作 ON CONFLICT 的冲突目标(实测报
+      "does not match any PRIMARY KEY or UNIQUE constraint"), 会连带废掉 A3 的幂等。
+      故不改索引结构, 改为在写入口 fail-loud: task_id 缺失直接抛, 杜绝 NULL 行产生。"""
+    if not task_id:
+        raise ValueError(
+            f"append_execution_step 缺 task_id(唯一索引对 NULL 失效, 须 fail-loud): "
+            f"ai_message_id={ai_message_id}, step_index={step_index}"
+        )
     _warn_oversize_step_dict(step_dict)
     conn.execute(
         "INSERT INTO chat_task_steps(ai_message_id, task_id, session_id, step_index, step_json, created_at, usage, user_message_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+        "ON CONFLICT(ai_message_id, task_id, step_index) DO NOTHING",
         (ai_message_id, task_id, session_id, step_index, safe_json_dumps(step_dict),
          get_local_iso_timestamp(), usage, user_message_id),
     )
 
 
+def _strip_thought_content(steps: list) -> list:
+    """thought 步骤两字段契约收口：回显只取 thought/reasoning，剥掉 content,
+    仅保留 type/step/timestamp/thought/reasoning — 小欧 2026-08-30
+    2026-10-01 小欧: 提为公用函数(解 [1] E11)——原只有 load_steps_by_task 做此收口,
+    load_execution_steps 不做, 同一份数据经两条读入口出参形状不同(前端拿到 content 会双渲
+    thought 与 response, 见 final步骤历史回放重复显示)。"""
+    return [
+        s if s.get("type") != "thought" else {k: v for k, v in s.items() if k != "content"}
+        for s in steps
+    ]
+
+
 def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional[str] = None) -> Optional[list]:
     """从 chat_task_steps 表组装步骤列表（v2.0: 不再回退读 chat_messages.execution_steps）
     返回结构与原签名完全一致：命中返回 list[step_dict]（按 step_index 升序），未命中返回 []，
-    调用方（_load_previous_messages / stream_reader 回放）行为不变 — 小欧 2026-08-19"""
+    调用方（_load_previous_messages / stream_reader 回放）行为不变 — 小欧 2026-08-19
+    2026-10-01 小欧: thought 收口与 load_steps_by_task 统一(解 [1] E11, 见 _strip_thought_content)"""
     if task_id is not None:
         rows = conn.execute(
             "SELECT step_json FROM chat_task_steps WHERE ai_message_id=? AND task_id=? ORDER BY step_index ASC",
@@ -402,7 +396,7 @@ def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional
             (ai_message_id,),
         ).fetchall()
     if rows:
-        return [parse_json(r["step_json"], label="step_json") for r in rows]
+        return _strip_thought_content([parse_json(r["step_json"], label="step_json") for r in rows])
     return []
 
 
@@ -436,15 +430,19 @@ def insert_task(
     )
 
 
-def _warn_zero_row(op: str, key_label: str, key_value: str, reason: str) -> None:
+def _warn_zero_row(op: str, key_label: str, key_value: str, reason: str,
+                    level: str = "warning") -> None:
     """UPDATE 影响 0 行的统一告警出口 — 小欧 2026-09-29
 
     病根: UPDATE ... WHERE task_id=? 命中 0 行不报错, 终态/累计静默丢失, 事后无从追溯。
     为何做成单一出口(DRY/复用优先): 本模块 update_task/update_task_accumulation/update_session_accumulation
     三处同款判据(log 文案仅 op/主键标签/成因不同), 集中一处后改格式/加字段只动一个点。
     只告警不改控制流: 保持"缺行不阻断主链路"既有设计(禁止backward), 供日志侧对账定位。
+    2026-10-01 小欧: 增 level 参数(解 [1] E9)——"字段永久丢失且不可事后补算"的场景提级 error,
+      仅"可由后续流程覆盖"的场景留 warning。
     """
-    logger.warning(f"[storage] {op} 影响0行({key_label}={key_value}): {reason}")
+    _msg = f"[storage] {op} 影响0行({key_label}={key_value}): {reason}"
+    (logger.error if level == "error" else logger.warning)(_msg)
 
 
 def update_task(
@@ -473,7 +471,13 @@ def update_task(
     _rc = conn.execute(f"UPDATE chat_tasks SET {', '.join(_f)} WHERE task_id = ?", _v).rowcount
     if _rc == 0:  # 小欧 2026-09-29: 补 0 行告警 —— 2026-09-29 19:49 PAR-05 故障中任务行压根没建成,
         #   终态 UPDATE 静默影响0行, 当时日志无任何痕迹, 只能靠事后比对 DB 才定位; 现即时留痕。
-        _warn_zero_row("update_task", "task", task_id, "任务行缺失(任务行未建立或已被清理), 终态字段静默丢失")
+        # 2026-10-01 小欧 解 [1] E9: 升级为 ERROR 且补齐"本可救回"的判据 ——
+        #   update_task 命中 0 行意味着终态/耗时/统计永久丢失(不可事后补算), 且后续
+        #   reconcile_orphaned_tasks 只改 status 不会修这些字段, 故属不可恢复丢失。
+        #   仍是 warning+不阻断控制流(禁止 backward, 缺行不阻断主链路), 但提级确保对账能发现。
+        _warn_zero_row("update_task", "task", task_id,
+                       "任务行缺失(未建立或已清理), 终态/耗时/统计永久丢失且无法事后补算",
+                       level="error")
 
 
 def reconcile_orphaned_tasks(conn: Connection, boot_iso: str) -> int:
@@ -932,13 +936,19 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
 
 
 def get_task_tool_stats(conn: Connection, task_id: str) -> list:
-    """C1: 从 chat_task_steps 统计该任务的工具调用次数"""
+    """C1: 从 chat_task_steps 统计该任务的工具调用次数
+    2026-10-01 小欧 解 [1] E7: 原用 json_extract(step_json,'$.tools[0].tool') 只取首个工具,
+      一步内并行多工具调用时其余工具既不进分组也不进计数, 统计偏低。
+      改用 json_each 逐元素展开, 一步 N 个工具计 N 次(与 getTaskToolStats 语义"工具调用次数"一致)。
+      json_each 遇非数组/非对象返回一行 NULL, 故 WHERE 内再判 json_type='array'。"""
     rows = conn.execute(
         """SELECT
-             json_extract(step_json, '$.tools[0].tool') as tool_name,
+             json_extract(value, '$.tool') as tool_name,
              COUNT(*) as call_count
-           FROM chat_task_steps
+           FROM chat_task_steps, json_each(chat_task_steps.step_json, '$.tools')
            WHERE task_id=? AND json_extract(step_json, '$.type')='action'
+             AND json_type(step_json, '$.tools')='array'
+             AND json_extract(value, '$.tool') IS NOT NULL
            GROUP BY tool_name""",
         (task_id,),
     ).fetchall()
@@ -951,10 +961,5 @@ def load_steps_by_task(conn: Connection, task_id: str) -> list:
         "SELECT step_json FROM chat_task_steps WHERE task_id=? ORDER BY step_index ASC",
         (task_id,),
     ).fetchall()
-    steps = [parse_json(r["step_json"], label="step_json") for r in rows]
-    # thought 步骤的两字段契约收口：回显只取 thought/reasoning，剥掉 content，
-    #   仅保留 type/step/timestamp/thought/reasoning — 小欧 2026-08-30
-    return [
-        s if s.get("type") != "thought" else {k: v for k, v in s.items() if k != "content"}
-        for s in steps
-    ]
+    # thought 收口复用公用函数, 与 load_execution_steps 同源(解 [1] E11)
+    return _strip_thought_content([parse_json(r["step_json"], label="step_json") for r in rows])

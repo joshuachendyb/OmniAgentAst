@@ -4,6 +4,7 @@
 #   _parse_tool_calls/_parse_observations/_load_previous_messages 三函数(逐字复制零改动),
 #   与 storage.py 的 fetch_session_user_message_pairs 做邻居(复用优先)。仅改导入归属, 业务逻辑一字不改,
 #   删 stream_reader.py 空壳时不留垫片(禁 backward)。
+# 2026-10-01 小欧 - 解 [1] E3: load_execution_steps 调用补传 task_id(p["pair_task_id"]), 与 message_service/execution_stream 同源。本函数是"喂 LLM 的历史", 安全性依赖 fetch 的 upper_id 严格上界(排除本任务自身已实时落库的步骤, 防自我回灌), 补 task_id 只收窄不放开, 不改变该边界语义
 """
 history_loader — 会话历史加载(多轮上下文DB读取)
 
@@ -207,7 +208,10 @@ def _load_previous_messages(session_id: str, context_link_mode: str = "independe
                 ai_id = p["ai_message_id"]
                 if ai_id is None:
                     continue
-                steps = load_execution_steps(conn, ai_id)
+                # 2026-10-01 小欧: 补传 task_id(解 [1] E3), 与 message_service/execution_stream 同源。
+                #   本函数是"喂 LLM 的历史", 安全性依赖 fetch 的 upper_id < 严格上界(排除本任务自身
+                #   已实时落库的步骤, 防自我回灌); 补 task_id 只收窄不放开, 不改变该边界语义。
+                steps = load_execution_steps(conn, ai_id, p.get("pair_task_id"))
                 steps_json = safe_json_dumps(steps) if steps else None
                 tool_calls = _parse_tool_calls(ai_id, steps_json) if steps_json else []
                 if tool_calls:

@@ -18,6 +18,7 @@
 #   error_model: Optional[ModelRef] 结构承载(设计要求1)
 # 2026-08-23 小欧 - 三轮三堂会审修复(YAGNI): create_final_response 全仓零调用(终态实际由
 #   step_emitter.emit_final_with_stats 产出), 死函数删除不改造, FinalStep import 随删
+# 2026-10-01 小欧 - 解 [1] E8: 删除 save_execution_steps_to_db 整段(含 save_execution_steps/ExecutionStepsUpdate/get_user_message_id 三处导入)。该函数全仓零调用方, 且其 docstring 自称"唯一保存入口"与运行期逐步落库的 append_execution_step 直接矛盾, 留着会误导; 其底层 save_execution_steps 自 2026-08-27 起已不写任何步骤(仅分配 ai_message_id + touch 会话)
 """
 sse_events — SSE事件流处理模块
 从 react_sse_wrapper/chat_stream.py 移入
@@ -34,9 +35,6 @@ from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结
 from app.services.agent.steps import ErrorStep   # 三堂会审: create_final_response 死函数删除, FinalStep import 随删 — 小欧 2026-08-22
 from app.llm.error_classifier import SystemErrorClassifier
 from app.logger import logger
-from app.services.chat.storage import save_execution_steps
-from app.services.chat.storage import ExecutionStepsUpdate
-from app.services.chat.storage import get_user_message_id
 
 
 # ====================================================================
@@ -77,43 +75,14 @@ def get_error_info(error: Exception) -> Dict[str, Any]:
 
 # ====================================================================
 # 消息保存
+#   2026-10-01 小欧 解 [1] E8: 原 save_execution_steps_to_db 整段删除 ——
+#   全仓零调用方, 且其唯一实现 save_execution_steps 自 2026-08-27 起已不写任何步骤
+#   (chat_messages 退役时镜像写点整体移除), 仅分配 ai_message_id + touch 会话。
+#   留着会被误认为"步骤落库入口"(其 docstring 自称"唯一保存入口", 与运行期
+#   逐步落库的 append_execution_step 直接矛盾)。真入口见 storage.append_execution_step。
 # ====================================================================
-
-async def save_execution_steps_to_db(
-    session_id: Optional[str],
-    execution_steps: List[Dict],
-    content: Optional[str] = None,
-    user_message_id: Optional[int] = None,
-    status: Optional[str] = None
-) -> None:
-    """保存execution_steps到DB — 唯一保存入口 — 小健 2026-06-18 内联_get_user_message_id
-    小欧 2026-07-13: 新增 status 参数，落 chat_messages.status 列（终态），正常路径依赖该列"""
-
-    if session_id is None:
-        return
-
-    try:
-        if user_message_id is None:
-            user_message_id = get_user_message_id(session_id)
-        result = await save_execution_steps(
-            session_id,
-            ExecutionStepsUpdate(
-                execution_steps=execution_steps,
-                content=content,
-                reply_to_message_id=user_message_id,
-                **({"status": status} if status else {})
-            )
-        )
-        ai_message_id = result.get("ai_message_id") if isinstance(result, dict) else None
-        return ai_message_id
-
-    except Exception as e:
-        if "会话不存在" in str(e) or "404" in str(e):
-            logger.warning(f"[Save] 会话不存在,跳过本次: session_id={session_id}")
-        else:
-            logger.error(f"[Save] 保存失败: {e}", exc_info=True)
-        return None
 
 # 三堂会审修复(YAGNI·小欧 2026-08-22): create_final_response 经全仓 grep 零调用
 #   (终态实际由 step_emitter.emit_final_with_stats 产出 FinalStep, 见 react_cycle/agent_runner/handlers),
 #   死函数按 YAGNI 直接删除不改造; FinalStep import 随之仅余 ErrorStep 使用方 — 已同步删除 import
+

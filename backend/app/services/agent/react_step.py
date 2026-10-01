@@ -167,6 +167,7 @@
 #   19:32:44 三堂会审修过时注释(与删落库矛盾的"落库成功/单参铁约束"表述);
 #   20:18:31 三堂会审 F7 修: _merge_into_last 去掉 len>1 条件, 单条注入末条user也并入(防连续user) — 小欧-2026-09-28
 # 2026-09-29 - 小欧 - _absorb_inbox 落位规则 docstring 按 F7 与死代码判定改写: 删"落库成功/单参铁约束"等已随代码删除的过时表述, 只留"必须在 trim_history 之前(否则 user token 不计入 always_keep_tokens 预算)"这一条有效约束  小欧-2026-09-29
+# 2026-10-01 小欧 - 解 [1] A13: _process_single_step 内 update_task 补 retry_locked=3。运行期逐步落库后每事件写事务翻倍, SQLite busy_timeout 仅 500ms, 并发多任务下撞写锁概率显著上升; 原缺省 retry_locked=0 致撞锁即降级 warning(丢 token 明细), 与 A13 同源必修
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -437,10 +438,13 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 #   DB 异常降级不阻断主链路; agent_runner S2 已同步移除 update 防重复累加(翻倍)。
                 try:
                     # 落库 offload 出事件循环(后端卡死修复 小欧 2026-08-24)
+                    # retry_locked=3 — 小欧 2026-10-01: 实时落库后每事件写事务翻倍(解 [1] A13),
+                    #   SQLite busy_timeout 仅 500ms, 并发多任务下撞写锁概率显著上升;
+                    #   原缺省 retry_locked=0 致撞锁即失败降级为 warning(丢 token 明细), 与 A13 同源必修。
                     await db.atxn("chat", lambda conn: (
                         storage.update_task_accumulation(conn, task_id=agent.task_id, llm_call_count_token=_llm_call_count_token),
                         storage.update_session_accumulation(conn, session_id=agent._start_meta.get("session_id"), llm_call_count_token=_llm_call_count_token)
-                        if (getattr(agent, "_start_meta", None) and agent._start_meta.get("session_id")) else None))
+                        if (getattr(agent, "_start_meta", None) and agent._start_meta.get("session_id")) else None), retry_locked=3)
                 except Exception as _sce_e:
                     logger.warning(f"[react_cycle] 每轮token累计落库失败(降级, 不影响主链路): {_sce_e}")
 

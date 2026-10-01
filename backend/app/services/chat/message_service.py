@@ -31,6 +31,7 @@
 # 2026-09-30 20:05:00 小欧 - 计数器退役: save_message 删 message_count+1 只留刷 updated_at(列表按其排序),
 #   SELECT 不再取该列, 返回值删 message_count 影子字段(前端未消费); 读取侧改走 count_session_messages 真值;
 #   _try_mark_valid 与 is_valid 语义不动 — 小欧-2026-09-30
+# 2026-10-01 小欧 - 解 [1] E3/E4/E11: ①消息对象补 task_id 字段(取 p["pair_task_id"], 归属以 LEFT JOIN 配对结果为准, cum.task_id 是消息侧原值、起始消息可能为 NULL); ②load_execution_steps 调用补传该 task_id(同 ai_message_id 可挂多任务, 不传则跨任务混读); ③thought 取键改 thought/reasoning(content 已被 _strip_thought_content 剥除, 且 reasoning-only 分支正文落在 thought 键上, 原式两键皆空致消息级 thought 退化为 None、历史回放推理区空白); ④删 get_user_message_id 导入(随 E8 空壳退役)
 """
 message_service — 消息业务服务(services/chat)
 
@@ -47,7 +48,7 @@ from app.config import get_config
 from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.db.models.chat_models import MessageResponse
-from app.services.chat.storage import track_user_message, get_user_message_id, load_execution_steps
+from app.services.chat.storage import track_user_message, load_execution_steps
 from app.services.chat.storage import insert_user_message  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
 from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
 from app.utils.display_utils import extract_display_name_from_steps, build_display_name
@@ -104,27 +105,37 @@ def get_session_messages(session_id: str):
 
         messages = []
         for _i, p in enumerate(pairs):
+            # 2026-10-01 小欧: 任务归属以 pair_task_id 为准(LEFT JOIN 配对结果, 注入行与起始行已归一,
+            #   见 fetch_session_user_message_pairs 文档); cum.task_id 是消息侧原值, 起始消息可能为 NULL。
+            _p_tid = p.get('pair_task_id')
             # 用户消息气泡
             messages.append(MessageResponse(
                 id=p['user_id'], session_id=session_id,
                 role="user", content=p['user_content'] or "",
                 timestamp=format_timestamp(p['created_at']),
                 execution_steps=[], display_name=None, thought=None,
+                task_id=_p_tid,
             ))
             ai_id = p['ai_message_id']
             if ai_id is None or _carrier.get(ai_id) != _i:
                 continue
             # 从 chat_task_steps 表读取步骤列表 — 小欧 2026-07-14; v2.0 表改名 chat_task_steps — 2026-08-19
-            steps = load_execution_steps(conn, ai_id)
+            # 2026-10-01 小欧: 补传 task_id(解 [1] E3)——同 ai_message_id 可挂多个 task
+            #   (同任务多行兼容), 不传则退化为"该 ai_id 的全部步骤"跨任务混读。
+            steps = load_execution_steps(conn, ai_id, _p_tid)
             display_name = build_display_name(p['provider'], p['model']) if p['provider'] or p['model'] else None
             if not display_name and steps:
                 display_name = extract_display_name_from_steps(steps)
             # thought 派生: 从 execution_steps 的 thought 类型步骤取(北京老陈 2026-08-22: 不读 chat_messages)
+            # 2026-10-01 小欧: 取键改 thought/reasoning(解 [1] E11 连带)——content 已被
+            #   _strip_thought_content 剥除(回显只取 thought/reasoning), 且 reasoning-only 分支的
+            #   thought 步正文落在 thought 键上(ThoughtStep._thought = thought or content),
+            #   原式 "content or reasoning" 两键皆空 → 消息级 thought 退化为 None, 历史回放推理区空白。
             thought = None
             if steps:
                 for s in steps:
                     if isinstance(s, dict) and s.get("type") == "thought":
-                        thought = s.get("content") or s.get("reasoning")
+                        thought = s.get("thought") or s.get("reasoning")
                         if thought:
                             break
 
@@ -133,7 +144,7 @@ def get_session_messages(session_id: str):
                 role="assistant", content=p['ai_content'] or "",
                 timestamp=format_timestamp(p['created_at']),
                 execution_steps=steps, display_name=display_name,
-                thought=thought,
+                thought=thought, task_id=_p_tid,
             ))
 
         title_locked = bool(session['title_locked'])

@@ -26,6 +26,7 @@
 # 2026-09-20 - 小欧 - D-2修复(删会话内存ID泄漏): delete_session 级联取消后调用 storage.forget_session_message_ids
 #   (内存 track 字典 + allocator _user_ids/_assistant_ids 双侧清空), 防同 session_id 复用/内存无限增长。
 #   compliance: SRP(历史归属 service)/禁止backward
+# 2026-10-01 小欧 - 解 [1] E8: 删除 save_execution_steps/ExecutionStepsUpdate 导入(随 sessions.py 端点与 storage 空壳退役, 本文件零使用)
 """
 session_service — 会话业务服务(services/chat)
 
@@ -44,7 +45,7 @@ from app.utils.time_utils import get_local_iso_timestamp, now_str, format_timest
 from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
 from app.services.chat.message_service import delete_session_display_names
-from app.services.chat.storage import save_execution_steps, ExecutionStepsUpdate, parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
+from app.services.chat.storage import parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
 
 
 class SessionUpdate(BaseModel):

@@ -67,6 +67,7 @@
 # 2026-09-29 小欧 - 建 chat_stream_events（SSE 事件持久流水表，PRIMARY KEY task_id+seq
 #   唯一：同时保证事件顺序与重复写入幂等）+ 终态查询索引。IF NOT EXISTS 幂等，新旧库零报错
 #   — 小欧 2026-09-29
+# 2026-10-01 - 小欧 - 解 [1] E6: 启动期去重 SQL 的分组判据由 IFNULL(task_id,'') 改裸 task_id，与唯一索引 idx_steps_unique 完全一致。原两套判据在"存量同时存在 NULL 与 '' 两行"时不同构，去重后仍可能留下两行；task_id 空值已由 append_execution_step fail-loud 杜绝，故此处无需归一化
 """
 db_initializer — 数据库初始化
 
@@ -337,10 +338,14 @@ def init_chat_db(get_conn):
         # ===== 12.2-C1: 步骤唯一性下沉DB — 同一AI行×同一任务×同一序号恰一行 =====
         # 老库先去重(保首行)再建唯一索引(均幂等); append_execution_step 保持裸INSERT不改,
         # UNIQUE冲突即bug, fail-loud暴露(与database.py get_conn_with_retry 哲学一致) — 小欧 2026-08-21
+        # 2026-10-01 小欧 解 [1] E6: 去重判据改为裸 task_id, 与唯一索引 idx_steps_unique 完全一致。
+        #   原用 IFNULL(task_id,'') 分组而索引用裸值, 二者在"存量同时存在 NULL 与 '' 两行"时
+        #   判据不同构, 去重后仍可能留下两行。task_id 空值已由 append_execution_step fail-loud
+        #   杜绝(见 storage.py, 含 SQLite NULL 唯一性失效的实测依据), 故此处无需归一化。
         conn.execute(
             "DELETE FROM chat_task_steps WHERE rowid NOT IN ("
             "  SELECT MIN(rowid) FROM chat_task_steps"
-            "  GROUP BY ai_message_id, IFNULL(task_id,''), step_index)")
+            "  GROUP BY ai_message_id, task_id, step_index)")
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_steps_unique "
             "ON chat_task_steps(ai_message_id, task_id, step_index)")

@@ -37,6 +37,7 @@
 #   消除同文件同目的两套维护, 防后续加类型时漏改导致 total_steps 不一致 — 小欧-2026-09-11
 # 2026-09-11 - 小欧 - BUG-D修复: build_stats_step 的 _agent.steps 改为 getattr(_agent, "steps", []),
 #   与 build_final_stats_step L219 对齐防御风格, 防 agent 无 steps 属性时崩溃 — 小欧-2026-09-11
+# 2026-10-01 - 小欧 - 解 [1] E1/E2/4-1: ①_M_SKIP 提为公开常量 M_SKIP 并由 agent_runner 复用(原 agent_runner 另有一份硬编码 3 项子集, 两处口径不一致致两统计源不等), 补齐 chunk/thought-start/error/rejected 四类仅 SSE 不落库步; ②新增 count_business_steps() 作业务步计数单一真源, 兼容 dict(落库 step_json)与 Step 对象(运行期)两种形态统一取键, 原各写一份只认对象形态的列表推导在改读落库权威后会计成全量; ③三处 step_count 改走该函数且优先取落库权威源 _persisted_steps(原按 agent.steps 计会多计 preview action, 该标记 _emit_publish 才登记, 实测每轮多 1)
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -54,10 +55,21 @@ from app.monitoring import storage  # 落库层（独立，storage 内部惰性�
 
 
 # 统计 step_count 时剔除的全部非业务 MetaStep type（与 11.2-B / 12.17 完全一致，单一来源）
-_M_SKIP = {
-    "usage", "paused", "resumed", "retrying", "cancelled",
-    "authorization_required", "start", "stats", "context_overview", "final_stats",
-}
+# 2026-10-01 小欧: 提为公开常量 M_SKIP 并由 agent_runner 复用(解 [1] E1/E2)——
+#   原 agent_runner 另有一份硬编码 3 项子集, 两处口径不一致致两统计源不等。
+#   补齐 chunk/thought-start/error/rejected 四类仅 SSE 步(与 agent_runner._SSE_ONLY_TYPES 对齐):
+#   它们自 2026-09 起不落 chat_task_steps, 故落库口径天然不含, 不补则两源恒不等。
+#   剔除后仅剩业务步: action / observation / thought / final。
+M_SKIP = frozenset({
+    # 瞬态/状态类
+    "usage", "paused", "resumed", "retrying", "cancelled", "rejected",
+    "authorization_required",
+    # 生命周期/统计类
+    "start", "stats", "context_overview", "final_stats",
+    # 仅 SSE 不落库类
+    "chunk", "thought-start", "error",
+})
+_M_SKIP = M_SKIP  # 本模块内原名保持, 零改动既有引用
 
 
 def _model_to_json(_m):
@@ -77,6 +89,23 @@ def _model_to_json(_m):
         return json.dumps({k: v for k, v in _d.items() if not k.startswith("_")},
                           ensure_ascii=False, default=str)
     return None
+
+
+def count_business_steps(steps) -> int:
+    """业务步计数(单一真源) — 小欧 2026-10-01 解 [1] E1/E2/4-1
+
+    口径: 剔除 M_SKIP 的全部非业务步后计数, 余下即 action/observation/thought/final。
+    元素兼容 dict(落库后的 step_json 形态) 与 Step 对象(运行期 agent.steps 形态):
+    两者取键方式不同(dict 走 ["type"], 对象走 .TYPE), 在此统一收口——
+    原先各写一份只认对象形态的列表推导, 换读落库权威(dict 列表)后会取不到 type 而计成全量。
+    调用方: agent_runner 的 chat_tasks.total_steps 与本模块两处 step_count。
+    """
+    n = 0
+    for s in steps:
+        t = s.get("type") if isinstance(s, dict) else getattr(s, "TYPE", "")
+        if t not in M_SKIP:
+            n += 1
+    return n
 
 
 class TaskTelemetry:
@@ -191,7 +220,14 @@ class TaskTelemetry:
         """产出 MetaStep(type="stats") —— 与 11.2-B 字段口径一致"""
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
-        _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
+        # 2026-10-01 小欧 解 [1] 4-1: 落库权威源优先(agent._persisted_steps, dict 列表),
+        #   与 chat_tasks.total_steps 同源等值; 缺失时回落 agent.steps(直调 telemetry 未跑 runner)。
+        #   原按 agent.steps 计会多计 preview action(齿轮先行, _live_only 不落库),
+        #   preview 标记在 _emit_publish 才登记, agent.steps 无从剔除, 实测每轮多 1。
+        _db_steps = getattr(_agent, "_persisted_steps", None)
+        _step_count = count_business_steps(
+            _db_steps if _db_steps is not None else getattr(_agent, "steps", [])
+        )
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
@@ -220,7 +256,14 @@ class TaskTelemetry:
         # 2026-09-04 小健 SLAP修复: outcome显式传入优先, fallback到agent.status — 消除监控层隐式依赖核心状态
         _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
         # 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
-        _step_count = len([s for s in getattr(_agent, "steps", []) if getattr(s, "TYPE", "") not in _M_SKIP])
+        # 2026-10-01 小欧 解 [1] 4-1: 落库权威源优先(agent._persisted_steps, dict 列表),
+        #   与 chat_tasks.total_steps 同源等值; 缺失时回落 agent.steps(直调 telemetry 未跑 runner)。
+        #   原按 agent.steps 计会多计 preview action(齿轮先行, _live_only 不落库),
+        #   preview 标记在 _emit_publish 才登记, agent.steps 无从剔除, 实测每轮多 1。
+        _db_steps = getattr(_agent, "_persisted_steps", None)
+        _step_count = count_business_steps(
+            _db_steps if _db_steps is not None else getattr(_agent, "steps", [])
+        )
         return FinalStatsStep(
             step=getattr(_agent, "llm_call_count", 0),    #  llm_call_count 而非 step 序号 — 小欧 2026-08-20
             duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）— 小欧 2026-08-20
@@ -303,7 +346,7 @@ class TaskTelemetry:
             "error_type": _error_type,
             # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两键 → task_model JSON 串(F1 补写入源)
             "task_model": _model_to_json(_tm),
-            "total_steps": len([s for s in _agent.steps if getattr(s, "TYPE", "") not in _M_SKIP]),
+            "total_steps": count_business_steps(_agent.steps),
             "llm_call_count": getattr(_agent, "llm_call_count", 0),
             "retry_count": getattr(_agent, "_retry_count", 0),
             "tool_call_count": int(sum(t["call_count"] for t in self._tool_stats.values())),

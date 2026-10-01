@@ -5,6 +5,7 @@
 # 2026-08-22 - 小欧 - 6.1.1 L2 会话级 sessionModel 回读字段(SessionResponse/Session)落地，与 SessionUpdate 写入口、storage.get_session_model 执行侧读取闭环
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.1: SessionModelOverride 增 api_base 可选字段(端点定位,私有/本地必需),
 #   新增全系统统一别名 ModelRef = SessionModelOverride; display_name 收敛为仅用户自定义别名(系统不拼接)
+# 2026-10-01 - 小欧 - 解 [1] E4: MessageResponse 增 task_id 字段(该消息配对的任务ID)。此前 execution_steps 无任务归属，前端拿到整会话所有消息的步骤却无法区分属于哪个任务，只能平铺合并当本任务展示(RightViewer C3 跨任务降级)；本字段使前端可按 task 精确过滤
 """
 聊天数据模型 (Chat Data Models)
 定义会话、消息等数据结构
@@ -86,7 +87,11 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
-    timestamp: str = Field(..., description="时间戳(本地ISO无Z)")  # 小欧 2026-08-08 全程统一本地时区: 本地无Z
+    timestamp: str = Field(..., description="时间戳(本地ISO无Z)")  # 小欧 2026-08-08 全量统一本地时区: 本地无Z
     execution_steps: Optional[list] = Field(None, description="执行步骤(数组格式)")
     display_name: Optional[str] = Field(None, description="模型显示名称(记录消息收发时使用的模型)")
     thought: Optional[str] = Field(None, description="LLM 推理过程")  # 小欧 2026-07-16
+    # 2026-10-01 小欧 - 补所属任务(解 [1] E4): 此前 execution_steps 无 task 归属, 前端拿到
+    #   整会话所有消息的步骤却无法区分属于哪个任务, 只能平铺合并当本任务展示
+    #   (RightViewer C3 跨任务降级)。本字段使前端可按 task 精确过滤。
+    task_id: Optional[str] = Field(None, description="该消息配对的任务ID(user 气泡为其所发起的任务)")
