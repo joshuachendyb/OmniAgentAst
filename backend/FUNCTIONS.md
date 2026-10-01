@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-09-29 20:49:50
-**最近更新**: 2026-09-29 20:49:50 小欧 atxn 增 retry_locked(默认0=旧调用零变化) — 补事务体执行期 locked 有限重试, 根治并发起跑静默降级; 5 处实证高危写路径启用 retry_locked=3
+**最后更新时间**: 2026-10-01 12:04:56
+**最近更新**: 2026-10-01 12:04:56 小欧 [1] 刷新显示其他任务结果修复同步 — append_execution_step 改运行期逐步落库签名(增 task_id/usage, task_id 缺失即抛 fail-loud + ON CONFLICT DO NOTHING 幂等); 新增 _strip_thought_content 供 load_execution_steps 与 load_steps_by_task 共用 thought 收口(两入口形状一致); load_execution_steps 标注 thought 经该函数收口。详见下方版本历史 v4.6
 
 ---
 
@@ -159,8 +159,9 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `allocate_and_insert_message` | 预分配 assistant 消息ID + 插入空白行(幂等) | conn, session_id | int(message_id) |
-| `append_execution_step` | 逐步落库:一行=一步 | conn, message_id, session_id, step_index, step_dict | None |
-| `load_execution_steps` | 从 chat_task_steps 表组装步骤列表(v2.0 起不再回退读 chat_messages.execution_steps, 未命中返回[]) | conn, ai_message_id, task_id | Optional[list] |
+| `append_execution_step` | 运行期逐步落库:一行=一步(task_id 缺失即抛, fail-loud; ON CONFLICT DO NOTHING 幂等) | conn, ai_message_id, session_id, step_index, step_dict, task_id, usage, user_message_id | None |
+| `load_execution_steps` | 从 chat_task_steps 表组装步骤列表(v2.0 起不再回退读 chat_messages.execution_steps, 未命中返回[]; thought 经 `_strip_thought_content` 收口) | conn, ai_message_id, task_id | Optional[list] |
+| `_strip_thought_content` | thought 步骤出参收口:剥 content, 只留 thought/reasoning(`load_execution_steps` 与 `load_steps_by_task` 共用, 两入口形状一致) | steps(list) | list |
 | `finalize_message` | finally 轻量终态更新(content+status) | conn, message_id, content, status | None |
 | `query_task_accumulation` | 读取任务级 token 累计(JSON, 缺行/缺键归一3键零值) | conn, task_id | dict |
 | `query_session_accumulation` | 读取会话级 token 累计(JSON, 缺行/缺键归一) | conn, session_id | dict |
@@ -417,6 +418,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.6 | 2026-10-01 | [1] 刷新显示其他任务结果 修复(全链根因+契约)。**A组 运行期逐步落库**: agent_runner 末尾扫描 event_log 机制退役, step 落库前移到 StreamBuffer.persist_sink(buffer.publish 唯一收口, 覆盖 _emit_publish/handle_action 直连/_events 批量三条发布路径), 单消费者 FIFO 队列零背压, finally flush; step_index 改独立计数器(itertools.count, 解耦内存列表); append_execution_step 增 ON CONFLICT DO NOTHING 幂等 + task_id fail-loud; token_usage 明细改实时。**E组**: MessageResponse 增 task_id(E4) + load_execution_steps 三调用点补传 pair_task_id(E3, 堵跨任务混读); chat_user_message 正文回填前移至 final 帧(E13); total_steps 剔除集统一复用 agent_telemetry.M_SKIP(E1/E2, 含补齐 chunk/thought-start/error/rejected 使两统计源恒等); 新增 _strip_thought_content 供两读入口共用(E11); get_task_tool_stats 改 json_each 支持并行多工具(E7); _warn_zero_row 增 level 参数, update_task 0 行升级 error(E9)。**YAGNI 清理**: save_execution_steps/其端点/sse_events 死函数/前端 saveExecutionSteps/ExecutionStepsUpdate/derive_status_from_steps 整删(E8) | 小欧 |
 | v4.5 | 2026-09-29 20:49:50 | 3.3 数据库SDK(app/db/database.py) atxn 签名增关键字参数 retry_locked(默认0=既有 29 个调用点行为逐字不变, 禁止backward): 补 body 执行期 "database is locked" 有限重试(退避 0.5/1/2s 与 get_conn 同节奏, sleep 置 async 层不占 to_thread 子线程), 仅捕 sqlite3.OperationalError 且串含 "locked", 非锁错误/耗尽一律原样抛出; 根治 get_conn 只覆盖连接期+提交期、业务事务体撞写锁直抛的缺口(2026-09-29 19:49 PAR-05 实锤); 已在 5 处实证高危写路径启用 retry_locked=3(编排⑨ _setup_task_db + agent_runner 的 _persist/异常终态/守卫兜底终态/终态 UPDATE), 其余 24 处维持默认 0(YAGNI); 另 storage 新增模块私有 _warn_zero_row 作 UPDATE 影响0行告警统一出口(非公用函数不单列条目), update_task 补 0 行告警 | 小欧 |
 | v4.4 | 2026-09-28 21:29:00 | 3.2 新增 bind_message_to_task（[76] 活跃任务注入 6.5① 执行期归属，零 DDL 复用 chat_user_message.task_id 列，WHERE task_id IS NULL 防覆盖，返回 bool 供调用方判别两成因）；同步 fetch_session_user_message_pairs 描述（精确归属 COALESCE 双子查询取 MAX(id) 取代会话级模糊兜底，增返回 pair_task_id）——补 [76] 首轮遗漏的公用函数登记(AGENTS.md §1.3) | 小欧 |
 | v4.3 | 2026-09-24 23:20:00 | 10.3 新增 [68] 模型库 5 函数：_require_provider_for_fetch/_http_get_remote_models/_parse_remote_models_body/fetch_remote_models/replace_provider_models（设置页模型库 Tab 远程拉取+替换写入，HTTPException 防 500，孤儿清理 None 叶） | 小欧 |
