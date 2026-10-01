@@ -56,8 +56,13 @@ test.describe('量化交易研究-复杂多步', () => {
       await chat.waitReceiving(120_000);
     } catch (e) {
       printDiag(
-        streamReqs, reconnectLogs, sseErrors, consoleAll,
-        readLogSince(BLOG, 0), allFailed, getCaseId()
+        streamReqs,
+        reconnectLogs,
+        sseErrors,
+        consoleAll,
+        readLogSince(BLOG, 0),
+        allFailed,
+        getCaseId()
       );
       throw e;
     }
@@ -107,8 +112,13 @@ test.describe('量化交易研究-复杂多步', () => {
     }
 
     printDiag(
-      streamReqs, reconnectLogs, sseErrors, consoleAll,
-      readLogSince(BLOG, logBase), allFailed, getCaseId()
+      streamReqs,
+      reconnectLogs,
+      sseErrors,
+      consoleAll,
+      readLogSince(BLOG, logBase),
+      allFailed,
+      getCaseId()
     );
 
     await keepBrowserOpenIfRequested(page);

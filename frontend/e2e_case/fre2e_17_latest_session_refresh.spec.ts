@@ -37,6 +37,13 @@ import type { DiagBundle } from '../e2e_front_lib/stream-diag';
  *   · 17(本文件): **不新建会话**, 用页面自动加载的**最近会话**发一条任务 + **只刷新**一个动作
  *     → 覆盖"回到久别的会话续新任务"。两者动作数与入口都不同, 不可互相替代。
  *
+ * 【阶段0 —— 旧任务由本 case 自己造, 不靠环境自带】
+ *   命题②是「旧任务不被误改」, 所以会话里**必须**先有一个已落终态的历史任务。
+ *   原实现进页面直接发新任务, 靠"最近会话恰好留有上一轮的任务"才成立 —— 实测命中空会话时
+ *   `旧task=[]`, 命题②形同虚设, case 变成靠运气绿。现补阶段0: 先发一步即完成的短任务当 A,
+ *   waitDone + pollTaskStatus 双源确认 completed(与 18 阶段1 同款, 复用同一套 helper),
+ *   再发新任务 B; 并硬校验 A ∈ oldTasks, 否则命题②验的不是本 case 造的那个任务。
+ *
  * 【为什么刻意不调 newSession()】
  *   老陈要的就是"从当前/最新会话" —— 真实用户关掉页面再回来, 打开就是最近会话。
  *   `gotoChat()` 裸 URL 命中 `useChatSession` 场景3(loadLatestHistoryMessages) 自动加载它,
@@ -77,6 +84,13 @@ const seenRounds = (all: string[], base: number): number[] => {
 /** 本 case 的新任务: 长活期多步, 保证有足够执行中段供刷新落点。
  *  与 18 的 PROMPT_A/PROMPT_B **刻意不同**: 避免两个 case 在库里造出同名会话,
  *  一旦将来需要按标题排查, 能一眼分清是哪条 case 留下的。 */
+/** 前置旧任务 A: 一步即完成, 只为在当前会话里造出一个"已落终态的历史任务"。
+ *  2026-10-01 小欧 [北京老陈裁定 补阶段0]: 原 case 进页面直接发新任务, 而裸 URL 入口会命中
+ *  「最近会话」——该会话可能一个任务都没有, 于是 oldTasks=[] , 命题②「旧任务不被误改」在结构上
+ *  无从成立(实测 旧task=[] ), case 变成靠环境运气绿。旧任务必须由本 case 自己造, 不能指望环境。
+ *  刻意取最短 prompt(18 的 PROMPT_A 是三步文件操作, 对本 case 过重, 白烧 2~3 分钟)。 */
+const PROMPT_OLD = '请只回答两个字：就绪';
+
 const PROMPT_NEW =
   '请撰写一份关于"深空通信延迟与探测器自主决策"的系统性说明材料，全文不少于1000字，必须包含：' +
   '①信号单程光时延的量级推算(按日地距离量级)；②延迟对地面在轨控制的实际约束；' +
@@ -102,6 +116,36 @@ test.describe('[1] 17 当前(最近)会话发新任务 · 执行中刷新', () =
     const logBase = logBaseOf(BLOG);
     const urlAtEntry = page.url();
     console.log(`[E2E] 进入页面(裸 URL, 前端自动加载最近会话): ${urlAtEntry}`);
+
+    // ═══ 阶段0: 前置旧任务 A(短, 必完成) —— 造出命题②要验的"历史任务" ═══
+    // 2026-10-01 小欧 [北京老陈裁定 补阶段0]: 旧任务不能指望环境自带。裸 URL 入口命中的
+    //   「最近会话」可能是空会话(实测 旧task=[]), 那样命题②「旧任务不被误改」形同虚设。
+    //   本段与 18 的阶段1 同款(复用同一套 helper, 不重造): 发短任务 → 等终态 → DB 校验 completed。
+    await chat.sendPrompt(PROMPT_OLD);
+    await chat.waitDone(180_000);
+    const taskOld = await activeTaskId(page);
+    if (!taskOld) {
+      throw new Error(
+        `[E2E] 读不到前置任务A 的 task_id —— 左侧列表没有 active 项。不当通过处理`
+      );
+    }
+    const sessionOfOld = await sessionIdOfTask(taskOld);
+    if (!sessionOfOld) {
+      throw new Error(
+        `[E2E] 反查不到前置任务A(${taskOld}) 的 session_id。不当通过处理`
+      );
+    }
+    // 不能只信 waitDone(它看最后一条消息有没有终态文案, 与列表 status 是两套数据源)
+    const statusOld = await pollTaskStatus(sessionOfOld, taskOld, 120_000);
+    console.log(
+      `[E2E] 阶段0 前置任务A: session=${sessionOfOld} task=${taskOld} status=${statusOld}`
+    );
+    if (statusOld !== 'completed') {
+      throw new Error(
+        `[E2E] 前置任务A status=${statusOld} 不是 completed —— A 必须真落终态才有资格当"历史任务"。` +
+          `请重跑 —— 不当通过处理`
+      );
+    }
 
     // ═══ 阶段1: 在当前会话发新任务 ═══
     const baseNew = diag.consoleAll.length;
@@ -192,13 +236,22 @@ test.describe('[1] 17 当前(最近)会话发新任务 · 执行中刷新', () =
     //   **前提不成立就不当通过处理**, 显式报错交老陈重跑, 绝不静默降级。
     if (oldTasks.length === 0) {
       throw new Error(
-        `[E2E] 当前(最近)会话 ${sessionOfNew} 里除新任务外**一个旧任务都没有** —— ` +
-          `「旧任务不被误改」这条判据无从验证(它就是本 case 的核心命题之一)。` +
-          `本轮不算通过, 请重跑(重跑会落到上一轮跑完、留有已完成任务的会话上)。不当通过处理`
+        `[E2E] 会话 ${sessionOfNew} 里除新任务外一个旧任务都没有 —— 「旧任务不被误改」无从验证` +
+          `(它就是本 case 的核心命题之一)。阶段0 已造过前置任务A(${taskOld}), 它不在其中说明` +
+          `A 与新任务落到了不同会话。不当通过处理, 请重跑`
+      );
+    }
+    // 阶段0 造的 A 必须在 oldTasks 里, 否则命题②验的是别的历史任务, 不是本 case 造的那个
+    if (!oldTasks.includes(taskOld)) {
+      throw new Error(
+        `[E2E] 阶段0 造的前置任务A(${taskOld}, session=${sessionOfOld}) 不在 oldTasks` +
+          `${JSON.stringify(oldTasks)} 里 —— A 与新任务(${taskNew}, session=${sessionOfNew}) 不同会话,` +
+          `「旧任务不被误改」验的不是 A。不当通过处理, 请重跑`
       );
     }
     console.log(
-      `[E2E] 旧任务数=${oldTasks.length}(必须 ≥1, 否则本 case 核心判据落空)`
+      `[E2E] 旧任务数=${oldTasks.length}(含前置A=${taskOld}); ` +
+        `仍executing的=${JSON.stringify(oldStillRunning)}`
     );
 
     // 刷新前读顶栏计数器基线, 刷新后与它比(同 14/15/16 口径)

@@ -385,10 +385,9 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     expect(len8).toBeGreaterThan(len5);
     // 2026-10-01 小欧 [1] b5Tail → bKeyword(锚点不再随流式正文漂移, 理由见步骤5 注释)
     await expect
-      .poll(
-        async () => norm(await readRightText(page)).includes(bKeyword),
-        { timeout: 30_000 }
-      )
+      .poll(async () => norm(await readRightText(page)).includes(bKeyword), {
+        timeout: 30_000,
+      })
       .toBeTruthy();
     const frames8 = countFrameType(
       diag.consoleAll,
