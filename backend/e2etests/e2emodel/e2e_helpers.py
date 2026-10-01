@@ -886,7 +886,7 @@ def _api_delete(path: str) -> bool:
 
 # ─── 步骤7: DB记录完整性验证 (check_db) ────────────────────────
 
-def check_db(session_id: str) -> Dict[str, Any]:
+def check_db(session_id: str, task_id: Optional[str] = None) -> Dict[str, Any]:
     """手册步骤7: 检查数据库记录完整性(通过后端API) -- 小健 2026-06-14
 
     验证项:
@@ -951,40 +951,42 @@ def check_db(session_id: str) -> Dict[str, Any]:
             result["has_assistant_message"] = any(m.get("response") or m.get("task_id") for m in user_msgs)
             result["message_order_correct"] = True  # chat_user_message 按 created_at 升序，天然有序
 
-            # 取最后一个有 execution_steps 的任务步骤
-            for _um in reversed(user_msgs):
-                _task_id = _um.get("task_id")
-                if _task_id:
-                    _steps_data = _api_get(f"/chat/execution/task/{_task_id}/steps", timeout=30)
-                    if _steps_data and _steps_data.get("steps"):
-                        steps = _steps_data["steps"]
-                        result["execution_steps"] = steps
-                        result["execution_steps_count"] = len(steps)
+            # 步骤取数 — 小欧 2026-10-01: 精确锁定单一任务, 绝不跨任务回退
+            #   原实现从后往前找"第一个有非空 steps 的任务"并 break: 本任务 steps 为空
+            #   (未落库/被打断)时回退到上一个已完成任务, 校验对象错位 —— 与前端
+            #   RightViewer C3 跨任务降级同一缺陷模式(解 [1] F2)。
+            #   实时落库后"本任务 steps 为空"本身就是问题, 必须暴露而非用别的任务掩盖。
+            _target_tid = task_id or (user_msgs[-1].get("task_id") if user_msgs else None)
+            result["execution_steps_task_id"] = _target_tid
+            if _target_tid:
+                _steps_data = _api_get(f"/chat/execution/task/{_target_tid}/steps", timeout=30)
+                steps = (_steps_data or {}).get("steps") or []
+                result["execution_steps"] = steps
+                result["execution_steps_count"] = len(steps)
 
-                        for si, step in enumerate(steps):
-                            step_type = step.get("type", "")
-                            if _is_action_step(step):
-                                _entries = _action_entries(step)
-                                if not _entries:
-                                    result["step_field_issues"].append(
-                                        f"step[{si}](type={step_type}): 无工具调用信息(MUST)"
-                                    )
-                                for _ei, _en in enumerate(_entries):
-                                    if not _en.get("tool_name"):
-                                        result["step_field_issues"].append(
-                                            f"step[{si}]#{_ei}: tool_name empty(MUST)"
-                                        )
-                                    _tp = _en.get("tool_params")
-                                    if not isinstance(_tp, dict):
-                                        result["step_field_issues"].append(
-                                            f"step[{si}]#{_ei}: tool_params非dict(MUST)"
-                                        )
-                            elif step_type == "observation":
-                                if not step.get("tool_result"):
-                                    result["step_field_issues"].append(
-                                        f"step[{si}]: tool_result empty(MUST)"
-                                    )
-                        break  # 取到步骤即退出
+                for si, step in enumerate(steps):
+                    step_type = step.get("type", "")
+                    if _is_action_step(step):
+                        _entries = _action_entries(step)
+                        if not _entries:
+                            result["step_field_issues"].append(
+                                f"step[{si}](type={step_type}): 无工具调用信息(MUST)"
+                            )
+                        for _ei, _en in enumerate(_entries):
+                            if not _en.get("tool_name"):
+                                result["step_field_issues"].append(
+                                    f"step[{si}]#{_ei}: tool_name empty(MUST)"
+                                )
+                            _tp = _en.get("tool_params")
+                            if not isinstance(_tp, dict):
+                                result["step_field_issues"].append(
+                                    f"step[{si}]#{_ei}: tool_params非dict(MUST)"
+                                )
+                    elif step_type == "observation":
+                        if not step.get("tool_result"):
+                            result["step_field_issues"].append(
+                                f"step[{si}]: tool_result empty(MUST)"
+                            )
 
     except Exception as e:
         result["errors"].append(f"API query error: {e}")
@@ -1302,7 +1304,7 @@ def _step_brief(step: Any, limit: int = 40) -> str:
 
 
 def verify_consistency(
-    result: Dict[str, Any], session_id: str
+    result: Dict[str, Any], session_id: str, task_id: Optional[str] = None
 ) -> List[str]:
     """手册步骤8: 验证SSE事件与DB记录的一致性 -- 小健 2026-06-14
 
@@ -1314,7 +1316,7 @@ def verify_consistency(
     """
     issues: List[str] = []
 
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     if db["errors"]:
         issues.extend(db["errors"])
         return issues
@@ -1403,6 +1405,7 @@ def verify_consistency(
 def verify_db_prompt_consistency(
     session_id: str,
     user_msg_id: Optional[int] = None,
+    task_id: Optional[str] = None,
 ) -> List[str]:
     """验证DB execution_steps与Prompt日志«步骤产出»严格一致性 -- 小健 2026-06-24
 
@@ -1417,7 +1420,7 @@ def verify_db_prompt_consistency(
     """
     issues: List[str] = []
 
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     db_steps = db.get("execution_steps", [])
     if not db_steps:
         issues.append("DB无执行步骤数据")
@@ -1569,6 +1572,7 @@ def verify_db_prompt_consistency(
 
 def verify_db_steps_data_completeness(
     session_id: str,
+    task_id: Optional[str] = None,
 ) -> List[str]:
     """验证DB执行步骤数据完整性 -- 小健 2026-06-24
 
@@ -1581,7 +1585,7 @@ def verify_db_steps_data_completeness(
     """
     issues: List[str] = []
     
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     db_steps = db.get("execution_steps", [])
     
     if not db_steps:
@@ -1619,7 +1623,7 @@ def verify_db_steps_data_completeness(
 # ─── 步骤9: 步骤合理性验证 (verify_steps) ──────────────────────
 
 def verify_steps(
-    result: Dict[str, Any], session_id: str
+    result: Dict[str, Any], session_id: str, task_id: Optional[str] = None
 ) -> List[str]:
     """手册步骤9: 验证步骤合理性 -- 小健 2026-06-14
 
@@ -1630,7 +1634,7 @@ def verify_steps(
     """
     issues: List[str] = []
 
-    db = check_db(session_id)
+    db = check_db(session_id, task_id)
     if not db["session_exists"] or not db["execution_steps"]:
         return issues
 
@@ -1876,7 +1880,9 @@ def print_report(
     db_valid = mark if db_check.get("is_valid") else "[WARN]"
     db_order = mark if db_check.get("message_order_correct") else "[WARN]"
     db_msg = mark if db_check.get("has_assistant_message") else "[FAIL]"
-    db_step = mark if db_check.get("execution_steps_count", 0) > 0 else "[WARN]"
+    # 2026-10-01 小欧: 逐步落库后 0 行是硬失败, 与 passed 判定(无豁免)同口径,
+    #   原降级为 [WARN] 会造成"判定 FAIL 但表格标 WARN"的自相矛盾(解 [1] F3)。
+    db_step = mark if db_check.get("execution_steps_count", 0) > 0 else "[FAIL]"
     db_field = mark if len(db_check.get("step_field_issues", [])) == 0 else "[FAIL]"
 
     sse_ok = mark if len(consistency_issues) == 0 else "[FAIL]"
@@ -2173,13 +2179,13 @@ def write_test_record(
         passed = False
 
     # DB-Prompt一致性FAIL则整体FAILED
-    # 2026-09-30 小欧: 故意打断的任务本就无最终 AI 消息 → chat_task_steps 无行(设计如此),
-    #   verify_db_prompt_consistency 会报"DB无执行步骤数据"。这在该用例里是预期, 不该拉 FAILED;
-    #   但只放行这一条明确口径, 其余一致性问题照旧致命(不掩盖任何真问题)。
+    # 2026-10-01 小欧: 撤销"被打断任务 steps 无行"豁免(解 [1] F1)。
+    #   原豁免前提是"step 只在终态落库", 故被打断任务必然 0 行 —— 而该前提本身是缺陷
+    #   (storage.py:3/374/380 设计明写"运行期逐步落库"), 已于 2026-10-01 修为逐步落库。
+    #   修复后被打断任务已执行部分必有行, 0 行即真实缺陷, 不得放行, 否则测试反向固化缺陷。
     if passed and dpi is not None and len(dpi) > 0:
-        if not (interrupted_by_design and all("无执行步骤数据" in str(i) for i in dpi)):
-            passed = False
-    
+        passed = False
+
     # 日志中有ERROR或traceback则失败
     if passed:
         if len(log_check.get("errors", [])) > 0:
@@ -2187,9 +2193,8 @@ def write_test_record(
         if len(log_check.get("tracebacks", [])) > 0:
             passed = False
     # 2026-08-23 小欧: 主动核查 token_usage 落库(消除"日志无ERROR即PASS"盲区)
-    # 2026-09-30 小欧: interrupted_by_design 时只放行"行数不足"类问题。实测(真DB):
-    #   被重启打断的任务 token_usage=0 / steps=0, completed 任务 token_usage=5 / steps=22 ——
-    #   二者都随任务终态化才落库, 被打断本就一行不会有。核查异常仍不放行。
+    # 2026-10-01 小欧: 同上撤销行数豁免 —— token_usage 明细已改实时落库(解 [1] A10),
+    #   被打断任务已完成的 LLM 轮必有明细行; 仅"核查异常"类(查询本身失败)可放行。
     if passed:
         _tu_sid = result.get("session_id", "")
         if _tu_sid:
@@ -2210,7 +2215,8 @@ def write_test_record(
         sid = result.get("session_id", "")
         if sid:
             try:
-                fb = check_db(sid)
+                # 2026-10-01 小欧: 补 task_id(解 [1] F2 透传链), 理由同上
+                fb = check_db(sid, result.get("task_id"))
                 if fb.get("session_exists"):
                     db = fb
             except Exception:
@@ -2222,7 +2228,9 @@ def write_test_record(
         _umid = result.get("user_msg_id")
         if _sid:
             try:
-                dpi = verify_db_prompt_consistency(_sid, _umid)
+                # 2026-10-01 小欧: 补 task_id(解 [1] F2 透传链)——不传则回落"最后一条消息的任务",
+                #   多轮会话(par_01 同会话两任务)校验对象会错位。
+                dpi = verify_db_prompt_consistency(_sid, _umid, result.get("task_id"))
             except Exception:
                 dpi = []
 
@@ -2641,11 +2649,9 @@ def write_test_record(
     db_prompt_detail = f"{len(db_prompt_issues)}个问题" if db_prompt_issues else "PASS"
     # 2026-09-30 小欧: 与上面的 passed 判定同口径 —— 故意打断的任务"DB无执行步骤数据"是预期,
     #   不该在表格里显示成 FAIL(否则与"测试结果 PASSED"自相矛盾)。其余问题照旧算问题。
-    if not db_prompt_ok and interrupted_by_design and all(
-        "无执行步骤数据" in str(i) for i in db_prompt_issues
-    ):
-        db_prompt_ok = True
-        db_prompt_detail = "PASS(本用例故意打断任务, 无最终AI消息故无步骤, 属预期)"
+    # 2026-10-01 小欧: 撤销"本用例故意打断任务故无步骤"显示豁免(解 [1] F1)——
+    #   step 已改运行期逐步落库, 被打断任务已执行部分必有行, 0 行是真实缺陷不得显示 PASS。
+    #   与上面的 passed 判定保持同口径, 避免"表格 PASSED 但列 FAIL"的自相矛盾。
 
     # 第6节：验证结果
     lines.append("## 6 验证结果")
@@ -2692,15 +2698,11 @@ def write_test_record(
     
     # DB-Prompt日志不一致详情
     if db_prompt_issues:
-        # 2026-09-30 小欧: 打断场景下"无执行步骤数据"已在上表判PASS, 这里仍照实列出并标注
-        # "属预期", 避免"上表PASS/下表列问题"的自相矛盾; 不隐藏任何条目。
+        # 2026-10-01 小欧: 撤销"已按预期放行"文案(解 [1] F1)——步骤改逐步落库后,
+        #   被打断任务已执行部分必有行, 0 行是真实缺陷; 上表已判 FAIL, 此处不得再称"预期放行",
+        #   否则正文与表格自相矛盾。条目照实列出, 不隐藏。
         lines.append("### DB-Prompt日志不一致详情")
         lines.append("")
-        if interrupted_by_design:
-            lines.append(
-                f"> 本用例故意打断任务, 无最终AI消息故无步骤。以下条目**已按预期放行**(非失败):"
-            )
-            lines.append("")
         for i, issue in enumerate(db_prompt_issues):
             lines.append(f"{i+1}. {issue}")
         lines.append("")

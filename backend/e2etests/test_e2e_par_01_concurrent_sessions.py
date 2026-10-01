@@ -136,10 +136,12 @@ async def test_e2e_par_01_concurrent_sessions():
         assert r2["session_id"] == sid_s1, "追加轮必须落回S1会话(MUST)"
         end2 = assert_stream_ended(r2)
         assert not r2["has_error"], "S1追加轮不应有error(MUST)"
-        db2 = check_db(sid_s1)
+        # 2026-10-01 小欧: 传本轮 task_id(解 [1] F2 透传)——S1 会话内已有首轮任务,
+        #   不传则回落"最后一条消息的任务"。追加轮恰为最后一条故当前等价, 显式传以防后续改序。
+        db2 = check_db(sid_s1, r2.get("task_id"))
         assert db2["has_user_message"] and db2["has_assistant_message"], "S1追加后消息必须完整(MUST)"
         assert db2["message_order_correct"], "S1追加后消息顺序必须正确(MUST)"
-        ci2 = verify_consistency(r2, sid_s1)
+        ci2 = verify_consistency(r2, sid_s1, r2.get("task_id"))
         assert len(ci2) == 0, f"S1追加轮一致性失败(MUST): {ci2}"
 
         passed = True

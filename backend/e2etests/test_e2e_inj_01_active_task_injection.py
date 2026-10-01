@@ -161,7 +161,9 @@ async def test_e2e_inj_01_active_task_injection():
         assert len(first["response_text"]) > 50, f"第一条回复过短(MUST): {len(first['response_text'])}字"
         assert first["unique_step_numbers"] < 300, f"第一条疑似死循环(MUST): {first['unique_step_numbers']}步"
 
-        db = check_db(session_id)
+        # 2026-10-01 小欧: 传首轮 task_id(解 [1] F2 透传)——本会话含注入产生的多个任务,
+        #   不传则回落"最后一条消息的任务", 校验对象可能不是首轮。
+        db = check_db(session_id, first.get("task_id"))
         assert db["session_exists"], "session必须落库(MUST)"
         assert db["is_valid"], f"session is_valid必须为true(MUST), got {db['is_valid']}"
         assert db["has_user_message"], "user消息必须落库(MUST)"

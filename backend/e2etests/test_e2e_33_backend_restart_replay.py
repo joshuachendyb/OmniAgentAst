@@ -70,6 +70,7 @@ from e2emodel.e2e_helpers import (
     ensure_backend_ready,
     open_chat_stream_partial,
     register_pending_record,
+    _is_action_step,  # 2026-10-01 小欧: ⑦b 逐步落库判据需区分 action/observation(与 e2e_helpers 同款判定)
     remove_pending_record,
     resume_chat_stream,
     save_user_message,
@@ -373,10 +374,9 @@ async def test_e2e_33_backend_restart_replay():
         assert not lost, f"可转发帧跨重启后丢失(MUST): 丢失 {len(lost)} 个, 例 {lost[:20]}"
 
         # ── ⑦a 先取 DB 步骤事实(供 r 记录; 断言在 ⑦b) ──
-        #   chat_task_steps 的步骤随**最终 AI 消息**一起落库(表列含 ai_message_id)。
-        #   任务被重启打断 → 无最终 response → 步骤不落库, 设计如此, 不是丢步骤。
-        #   实证: 前半场已跑出 observation(工具确实执行了)而步骤行为 0; 同期 completed 任务 9~30 行。
-        db = check_db(session_id)
+        #   2026-10-01 小欧: 步骤改为**运行期逐步落库**(解 [1] A1, 原为终态批量),
+        #   故被打断任务已执行部分亦必有行。查本任务(传 task_id, 不跨任务回退)。
+        db = check_db(session_id, task_id)
         assert db.get("session_exists"), "会话必须存在于DB(MUST)"
         um_row = _user_message_row(session_id, task_id)
         has_final = bool((um_row.get("response") or "").strip())
@@ -432,21 +432,29 @@ async def test_e2e_33_backend_restart_replay():
             print(f"[E2E-33] 日志含僵尸任务收尾追踪点={has_recon}(全局日志, 非本 task 行)")
 
         # ── ⑦ DB + 日志核查(重启后重跑, 验证跨重启后数据完整) ──
-        # ── ⑦b 步骤落库判据: 不得出现孤儿步骤 ──
+        # ── ⑦b 步骤落库判据(2026-10-01 小欧 随 A1 改写): 不得出现孤儿步骤 ──
         #   有最终 response          → 步骤必须 >= 1;
-        #   无最终 response(被打断) → 步骤必须 == 0(>0 即半截落库的脏数据);
-        #   被打断任务的步骤由 Journal 回放交付(⑤ 已验)。
+        #   无最终 response(被打断) → 步骤必须 >= 已跑出的业务步骤数(LLM 已出轮次即必有行);
+        #     原判据 "== 0(>0 即半截落库脏数据)" 前提是"终态才落库", 该前提已随 A1 撤销,
+        #     被打断任务留下已执行步骤是**逐步落库的正确表现**, 非脏数据。
+        #   真正的脏数据是"有最终回复却无任何步骤"或"步骤数超过已出轮次所能产生的上限"。
         #   注: 不能用 check_db 的 has_assistant_message 判, 它"有 task_id 即为真",
         #   对被打断任务会误判成已有 AI 消息(见 _user_message_row 注释)。
+        _db_obs_n = sum(
+            1 for s in db.get("execution_steps", [])
+            if (s.get("type") == "observation") or _is_action_step(s)
+        )
         print(
-            f"[E2E-33] DB execution_steps={steps_n}, 该 task 有最终回复={has_final}, "
-            f"task终态={status_after}/{error_type_after}"
+            f"[E2E-33] DB execution_steps={steps_n}(其中 action/observation={_db_obs_n}), "
+            f"该 task 有最终回复={has_final}, task终态={status_after}/{error_type_after}"
         )
         if has_final:
             assert steps_n >= 1, f"任务已有最终回复却无执行步骤(MUST): steps={steps_n}"
         else:
-            assert steps_n == 0, (
-                f"任务无最终回复(被重启打断)却留下 {steps_n} 行步骤(孤儿步骤/半截落库)(MUST)"
+            # 被打断: 已跑出的工具步骤必须已落库(逐步落库的核心断言), 不再断言 == 0
+            assert _db_obs_n >= 1, (
+                f"被打断任务已跑出 observation 却无任何步骤落库(逐步落库失效)(MUST): "
+                f"steps={steps_n}, observation={_db_obs_n}"
             )
         # 跨重启终态权威: REST 读回的 status 应与 DB 一致
         import httpx
