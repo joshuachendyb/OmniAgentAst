@@ -347,7 +347,10 @@ export const useChatPersistence = (
           //   返回 null（上面分支处理），走到这里的都是网络/5xx。原实现一律清缓存并 return null，
           //   等于把弱网当成"缓存指向已删会话"→ 弱网进页面即丢本地快照。
           //   改：不清缓存、继续用下面的本地快照返回（缓存是完整本地数据，降级优于清空）。
-          console.warn('⚠️ 验证 sessionId 有效性失败，改用本地缓存:', verifyError);
+          console.warn(
+            '⚠️ 验证 sessionId 有效性失败，改用本地缓存:',
+            verifyError
+          );
         }
       }
 

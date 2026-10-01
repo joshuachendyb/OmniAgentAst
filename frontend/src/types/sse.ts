@@ -178,7 +178,7 @@ export interface ClockSignals {
 /**
  * 错误类型分类
  * 【小强修复 2026-04-11】使用统一错误处理中心
- */export type SSEErrorType =
+ */ export type SSEErrorType =
   | 'idle_timeout'
   | 'request_timeout'
   | 'network'

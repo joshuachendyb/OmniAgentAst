@@ -45,7 +45,9 @@ const CircleArrow: React.FC<CircleArrowProps> = ({
         borderRadius: '50%',
         background: Colors.BORDER.LIGHT,
         flexShrink: 0,
-        boxShadow: glow ? `0 0 4px ${triColor}, 0 0 8px ${triColor}44` : undefined,
+        boxShadow: glow
+          ? `0 0 4px ${triColor}, 0 0 8px ${triColor}44`
+          : undefined,
         transition: 'box-shadow 0.3s',
         ...style,
       }}

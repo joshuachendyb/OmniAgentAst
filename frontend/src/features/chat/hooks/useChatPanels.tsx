@@ -70,7 +70,7 @@ interface UseChatPanelsOptions {
   total: number;
   tasksLoading: boolean;
   refreshTasks: () => void;
-            // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+  // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
   //   updateTaskResponse 由 ChatPage 解构自 useSessionTasks 传入, 透传 RightViewer 供历史任务写 final.response — 小欧-2026-09-15
   updateTaskResponse: (taskId: string, response: string) => void;
   effective: EffectiveModel | null;
@@ -263,7 +263,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             sessionTokens={sessionTokens} // 2026-09-11 小欧: 折叠区4组token显示
             chainTokens={chainTokens}
-  // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
+            // 2026-09-15 小欧 (北京老陈定案): 左侧回复区只用 final.step.response 渲染——
             //   历史任务加载 steps 后写 final.response 到左侧(替代原 onSettledRefresh 从 DB 拉 chat_tasks.response) — 小欧-2026-09-15
             updateTaskResponse={updateTaskResponse}
           />

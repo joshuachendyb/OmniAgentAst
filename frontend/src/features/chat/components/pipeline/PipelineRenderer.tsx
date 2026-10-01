@@ -435,7 +435,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               //   因 P2-7 改为"deniedEntries 单一真源 + deniedSteps 派生"后，无 tool 的条目也必须入表
               //   （守护 2026-09-17 会审 V3 裁定的"tool 缺失时齿轮仍须停转"），故在**渲染侧**过滤，
               //   使"无名工具只参与计数、不进点名文本"——计数与显示分层职责，不丢硬约束。
-              deniedEntries?.get(seg.action.step as number)?.filter((e) => e.tool)}
+              deniedEntries
+                ?.get(seg.action.step as number)
+                ?.filter((e) => e.tool)}
               waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
             />
           );

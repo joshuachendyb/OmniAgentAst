@@ -260,7 +260,10 @@ const processSSEData = (
     try {
       handlers.onHeartbeat?.();
       // 2026-09-19 小欧: 心跳记录到事件列表 — 北京老陈驱动
-      const hbStep: ExecutionStep = { type: 'heartbeat', timestamp: Date.now() };
+      const hbStep: ExecutionStep = {
+        type: 'heartbeat',
+        timestamp: Date.now(),
+      };
       pushAndFlush(handlers, hbStep);
       onStep?.(hbStep);
     } catch (error) {

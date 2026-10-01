@@ -294,8 +294,8 @@ export async function resumeStreamRequest(
           // 不可重试类直接失败，不空转 3 次（useSSE.ts:292-297 口径）
           commit(s, (d) => {
             d.reconnectStatus = 'failed';
-        d.status = 'failed';
-        markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+            d.status = 'failed';
+            markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
           });
           emitEvent(s, 'error', transportError(t, String(e)));
           return 'failed';
@@ -349,7 +349,9 @@ export async function resumeStreamRequest(
 }
 
 /** 任务条目类型（由 API 签名推导，避免手写漂移） */
-type TaskEntry = Awaited<ReturnType<typeof sessionTaskApi.listTasks>>['tasks'][number];
+type TaskEntry = Awaited<
+  ReturnType<typeof sessionTaskApi.listTasks>
+>['tasks'][number];
 
 /** 以 chat_tasks 为唯一权威源回读该会话当前 task 的任务条目（DRY，S1）。
  *  2026-09-30 小欧 - 抽此 helper：原先「listTasks → find(task_id)」在 store.stop(STOP_RACE)、
@@ -414,9 +416,9 @@ async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
       /* 单次轮询失败不中断，下一轮重试 */
     }
   }
-    commit(s, (d) => {
-      markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
-    });
+  commit(s, (d) => {
+    markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+  });
   // 2026-09-29 23:22:19 小欧（[63] 5.3 防退化修复）：轮询耗尽事件两处退化，一并复原——
   //   ① 文案：原 useSSE.ts.bak:227 为「连接已断开且任务仍在执行，请手动确认任务状态」，
   //      迁移稿写成「轮询观察超时：任务终态未知」，把"请手动确认"的用户指引整段丢了
@@ -566,7 +568,10 @@ async function pump(
             //   病根：原判据只看 completed，而 stop() 置的是 cancelled、错误路径置 failed
             //   → 这些"其实已终止"的会话被当非终态接回重连，拉回已取消/已失败任务的缓冲后
             //   再次 EOF，无限循环且持续打后端。
-            const mayResume = !eofIsTerminal && !s.intentionalAbort && !isTerminalStatus(s.status);
+            const mayResume =
+              !eofIsTerminal &&
+              !s.intentionalAbort &&
+              !isTerminalStatus(s.status);
             commit(s, (d) => {
               if (d.idleTimeout !== null) window.clearTimeout(d.idleTimeout);
               markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
@@ -749,7 +754,8 @@ function refHandlers(s: ChatStreamSession) {
     //   锚点已换而备份未换，形成"刷新落在防抖窗内 → restore 拿到旧 taskId 或 null"的窗口，
     //   正是 [1] 缺陷的第二个成因。setServerTaskId 内部 commit 后立即 persistNow(锚点变更即时落盘)，
     //   且它此前是全仓唯一带 persistNow 的安全写入口却零调用(生产走不到)，本次复活。
-    setServerTaskId: (v: string) => chatStreamStore.setServerTaskId(s.sessionId, v),
+    setServerTaskId: (v: string) =>
+      chatStreamStore.setServerTaskId(s.sessionId, v),
     lastSeqRef: seqRef,
     setMetaFrames: set(
       () => s.metaFrames,
@@ -779,7 +785,11 @@ function broadcastHandlers(s: ChatStreamSession) {
       emitEvent(s, 'chunk', { chunk, isReasoning }),
     // 2026-09-29 小欧：metadata 类型对齐 sseParser.ts:136 真实契约
     //   （string | SSEMetadata），非 unknown——unknown 会在 5.1 载荷类型处断裂成断言
-    onComplete: (full: string, meta?: string | SSEMetadata, steps?: ExecutionStep[]) => {
+    onComplete: (
+      full: string,
+      meta?: string | SSEMetadata,
+      steps?: ExecutionStep[]
+    ) => {
       // 2026-09-30 07:58 小欧 - 主动中断/已落终态后，迟到的 final 帧不得改写终态。
       //   成因：stop() 已置 status='cancelled' 且 clearCompleted 前置 intentionalAbort=true，
       //   但在途响应仍可能把 final 帧喂进来，此处无条件写 completed → 点"停止"却显示"已完成"。
@@ -883,7 +893,10 @@ function hitlHandlers(s: ChatStreamSession) {
 }
 
 /** handler 组④：终态裁决——按错误类别决定"是否终止本轮读循环"，并回写 branch 标记。 */
-function errorHandlers(s: ChatStreamSession, setBranch: (b: ResumeResult) => void) {
+function errorHandlers(
+  s: ChatStreamSession,
+  setBranch: (b: ResumeResult) => void
+) {
   return {
     onError: (e: SSEError | string) => {
       if (typeof e === 'string') {

@@ -202,7 +202,8 @@ export const useChatStreaming = (
   >(new Map());
   // 派生视图：每 step 的"被拒条目数" = 被拒的不同工具数（与 candidateCount 同量纲）
   const deniedSteps = useMemo<ReadonlyMap<number, number>>(
-    () => new Map(Array.from(deniedEntries, ([step, list]) => [step, list.length])),
+    () =>
+      new Map(Array.from(deniedEntries, ([step, list]) => [step, list.length])),
     [deniedEntries]
   );
   const markDenied = useCallback(
@@ -239,7 +240,11 @@ export const useChatStreaming = (
               parsed as Array<
                 [
                   number,
-                  Array<{ tool?: string; reason?: string; reject_type?: string }>,
+                  Array<{
+                    tool?: string;
+                    reason?: string;
+                    reject_type?: string;
+                  }>,
                 ]
               >
             )
@@ -325,7 +330,17 @@ export const useChatStreaming = (
           break;
       }
     },
-    [onStep, onChunk, onComplete, onError, onPaused, onResumed, onRetry, onMerged, handleRejected]
+    [
+      onStep,
+      onChunk,
+      onComplete,
+      onError,
+      onPaused,
+      onResumed,
+      onRetry,
+      onMerged,
+      handleRejected,
+    ]
   );
 
   // 使用 Store 订阅桥接
@@ -351,7 +366,8 @@ export const useChatStreaming = (
   } = state;
 
   // 【小强 2026-04-22】从state解构需要的setters
-  const { setLoading, setWaitTime, setIsRetrying, setMessages, setIsPaused } = state;
+  const { setLoading, setWaitTime, setIsRetrying, setMessages, setIsPaused } =
+    state;
 
   // 2026-09-30 小欧 - 会话切换时复位**会话级** ref（与 useChatCallbacks 内同名 effect 配对，
   //   两组各在其所有者内复位，不跨层、不扩 facade 接口面）。

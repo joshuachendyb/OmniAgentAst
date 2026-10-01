@@ -379,7 +379,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
       passive: true,
     });
     window.addEventListener('pointerup', handlePointerUp, { passive: true });
-    window.addEventListener('pointercancel', handlePointerUp, { passive: true });
+    window.addEventListener('pointercancel', handlePointerUp, {
+      passive: true,
+    });
     // 内容高度变化驱动(覆盖新增step与打字机段逐字增长) + 首帧立即滚底(历史数据到达亦立即滚底)
     const ro = new ResizeObserver(scrollToBottomNow);
     ro.observe(pipeline);

@@ -75,11 +75,10 @@ const TextStream: React.FC<TextStreamProps> = ({
   }, [clean, typing]);
 
   return (
-    <div
-      style={getStreamStyle(compact)}
-    >
+    <div style={getStreamStyle(compact)}>
       {clean.slice(0, typing ? shown : clean.length)}
-      {cursor && typing && <ActionWaitingIcon waitClock={waitClock} />} {/* 2026-09-17 小欧: 波纹与钟面并存(追加) — 小欧-2026-09-17 */}
+      {cursor && typing && <ActionWaitingIcon waitClock={waitClock} />}{' '}
+      {/* 2026-09-17 小欧: 波纹与钟面并存(追加) — 小欧-2026-09-17 */}
     </div>
   );
 };

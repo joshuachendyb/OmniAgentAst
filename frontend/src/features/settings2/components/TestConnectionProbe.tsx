@@ -28,7 +28,8 @@ import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
  */
 const CATEGORY_TEXT: Record<string, string> = {
   ok: '连接成功，key 有效',
-  key_invalid: 'key 无效或无权限（HTTP 401/403），请检查该 key 是否正确、是否已过期',
+  key_invalid:
+    'key 无效或无权限（HTTP 401/403），请检查该 key 是否正确、是否已过期',
   endpoint_unsupported:
     '该 Provider 不支持模型列表检测（无 /models 端点），key 未验证 —— 不代表 key 无效',
   network_error:

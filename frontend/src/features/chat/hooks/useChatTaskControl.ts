@@ -109,11 +109,7 @@ export const useChatTaskControl = (
   const { setters, states, refs } = options;
   const { setLoading, setIsPaused, setIsReceiving } = setters;
   const { isPaused, sessionId, serverTaskId } = states;
-  const {
-    cancelInProgressRef,
-    waitTimerRef,
-    isPausedRef,
-  } = refs;
+  const { cancelInProgressRef, waitTimerRef, isPausedRef } = refs;
 
   // =========================================================================
   // 任务控制函数

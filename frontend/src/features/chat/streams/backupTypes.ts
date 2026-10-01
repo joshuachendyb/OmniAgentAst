@@ -84,13 +84,23 @@ interface StreamEventBase {
   occurredAt: number;
 }
 export type StreamEvent =
-  | (StreamEventBase & { kind: 'step'; payload: { step: ExecutionStep; isReasoning?: boolean } })
-  | (StreamEventBase & { kind: 'chunk'; payload: { chunk: string; isReasoning?: boolean } })
+  | (StreamEventBase & {
+      kind: 'step';
+      payload: { step: ExecutionStep; isReasoning?: boolean };
+    })
+  | (StreamEventBase & {
+      kind: 'chunk';
+      payload: { chunk: string; isReasoning?: boolean };
+    })
   | (StreamEventBase & {
       kind: 'complete';
       // 2026-09-29 小欧：meta 对齐真实 onComplete 签名（useChatCallbacks.ts:97-101
       //   `metadata?: string | SSEMetadata`）；原稿写 unknown 会迫使分发侧断言，违类型安全
-      payload: { full: string; meta?: string | SSEMetadata; steps?: ExecutionStep[] };
+      payload: {
+        full: string;
+        meta?: string | SSEMetadata;
+        steps?: ExecutionStep[];
+      };
     })
   | (StreamEventBase & { kind: 'error'; payload: SSEError | string })
   | (StreamEventBase & { kind: 'paused'; payload: { confirmId?: string } })
@@ -111,10 +121,15 @@ export type StreamEvent =
   // 2026-09-29 小欧：[63] 5.1 原稿缺 'merged' kind，但 sseParser.ts:153/:947 已有 onMerged 回调
   //   （设计[76] 6.14 活跃任务注入应答 2026-09-28 落地）。缺则 5.3 接线无载荷可投，
   //   注入提示条/目标高亮永不触发（功能退化）——按真实回调签名补齐。
-  | (StreamEventBase & { kind: 'merged'; payload: { mergedIntoTaskId: string | null } });
+  | (StreamEventBase & {
+      kind: 'merged';
+      payload: { mergedIntoTaskId: string | null };
+    });
 
-export interface StreamBackup
-  extends Omit<SessionSnapshot, 'serverTaskId' | 'executionSteps' | 'reconnectStatus'> {
+export interface StreamBackup extends Omit<
+  SessionSnapshot,
+  'serverTaskId' | 'executionSteps' | 'reconnectStatus'
+> {
   version: 2;
   revision: number;
   sessionId: string;

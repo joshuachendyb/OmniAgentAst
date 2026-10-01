@@ -38,7 +38,8 @@ export function isAnchorGroupIntact(b: StreamBackup): boolean {
 //   新锚点组格式用 `_v2_` 后缀新 key；load 必须**双 key 读取**——先 v2、没有再读旧 key 归一，
 //   禁止旧数据读不到（原稿只读新 key，legacy 分支恒不可达 = 丢用户已见步骤）
 const KEY = (sessionId: string) => `sse_execution_steps_backup_v2_${sessionId}`;
-const LEGACY_KEY = (sessionId: string) => `sse_execution_steps_backup_${sessionId}`;
+const LEGACY_KEY = (sessionId: string) =>
+  `sse_execution_steps_backup_${sessionId}`;
 
 // legacy（v1/裸数组）→ v2 最小完整快照归一：步骤与来源保留，锚点给保守初值
 function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
@@ -74,7 +75,8 @@ export function load(sessionId: string): StreamBackup | null {
   let raw: string | null = null;
   try {
     raw =
-      sessionStorage.getItem(KEY(sessionId)) ?? sessionStorage.getItem(LEGACY_KEY(sessionId));
+      sessionStorage.getItem(KEY(sessionId)) ??
+      sessionStorage.getItem(LEGACY_KEY(sessionId));
   } catch (e) {
     // 隐私模式/存储被禁用：读取不可用即按"无快照"处理，不得把异常抛给页面
     console.warn('[Persistence] 快照读取失败，按无快照处理:', e);

@@ -36,7 +36,7 @@
 //   不可达性（逐路径证毕）：P0 修复已把 active 兜底移入 sendStreamRequest 开篇 commit（transport:143），
 //   本行执行时机在 `await sendStreamRequest()` 之后，status 必然是 pump 退出后的终态/paused/failed/active；
 //   'recovering' 仅 GET 续传路径（transport:309 handleGetNotFound）赋值、'idle' 仅 resume 无 taskId 路径
-    //   （backup invalid / adoptLiveTaskOrDraft）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
+//   （backup invalid / adoptLiveTaskOrDraft）赋值，均不经过 sendMessage 主流程 → 条件恒 false。
 //   与 P0 修复配套：修复前该分支是"已完成会话发新消息 final 被吞"（P0）的反向误修点，
 //   修复后语义由 transport 单点承担，store 侧仅剩 pendingMessage 置 sent。
 // 编辑历史: 2026-09-30 14:30 小欧 - 删 clearCompleted 越权写瞬态标志；evictOverflow 查在飞工作；清理收敛单一出口；restore 改展开式
@@ -47,7 +47,6 @@
 //   ①toBackup 补 lastBizTs/lastDataTime（钟面"静默升档"判据所依，原只在内存，刷新后恒 0 致长静默期不再升档）；
 //   ②新增 findLiveTask(sessionId, excludeTaskId) 抽 DB 权威的"近 300s 内仍在执行"判定，由 attachActiveTask 与
 //   resume 共用（DRY）——原判定散在两处且口径不一（B4 处根本没有 DB 校验），致"备份锚点陈旧"无处纠正 — 小欧-2026-10-01
-
 
 import type { ExecutionStep } from '@/types/execution';
 import type { MutableRefObject } from 'react';
@@ -93,7 +92,9 @@ export function isTerminalStatus(status: string): boolean {
 /** 2026-09-30 07:58 小欧 - 会话状态 → ResumeResult 单一判定口。
  *  sendMessage 尾与 resume 活流守卫共用同一口径（DRY：终态/非终态二分只写一次，不两处各抄一遍）。 */
 function resumeResultOf(s: ChatStreamSession): ResumeResult {
-  return s.status === 'completed' || isTerminalStatus(s.status) ? 'terminal' : 'recovering';
+  return s.status === 'completed' || isTerminalStatus(s.status)
+    ? 'terminal'
+    : 'recovering';
 }
 
 /** 2026-09-30 07:58 小欧 - 该会话是否有在飞工作（活流守卫判据，单一判定口）。
@@ -155,10 +156,15 @@ const ZERO_CLOCK: ClockSignals = {
 // 2026-09-30 小欧 - 补回收上限：本表对"永不建运行时"的 id 只进不出、无回收路径；
 //   上限复用 MAX_SESSIONS，条目为可重建派生视图故超限整表清空而非 LRU
 const MAX_MISSING_VIEWS = MAX_SESSIONS;
-const missingViews = new Map<string, { clock: ClockSignals; steps: { current: ExecutionStep[] } }>();
+const missingViews = new Map<
+  string,
+  { clock: ClockSignals; steps: { current: ExecutionStep[] } }
+>();
 
 /** 钟面活视图：三个字段全为 getter，写入经 commit 回真会话；会话不存在时写为 no-op（禁凭空建会话） */
-function makeClockView(resolve: () => ChatStreamSession | undefined): ClockSignals {
+function makeClockView(
+  resolve: () => ChatStreamSession | undefined
+): ClockSignals {
   return {
     lastBizTsRef: {
       get current() {
@@ -209,12 +215,16 @@ function makeStepsView(resolve: () => ChatStreamSession | undefined): {
 }
 
 /** 取（并按 id 缓存）缺会话视图；空 id 直接用 ZERO_CLOCK——无 id 即无会话，且 id 变化本身会让 memo 重算 */
-function missingViewsOf(sessionId: string): { clock: ClockSignals; steps: { current: ExecutionStep[] } } {
+function missingViewsOf(sessionId: string): {
+  clock: ClockSignals;
+  steps: { current: ExecutionStep[] };
+} {
   let v = missingViews.get(sessionId);
   if (!v) {
     // 2026-09-30 小欧 - 超上限整表清空（本表为可重建派生视图，清空不丢真实数据）
     if (missingViews.size >= MAX_MISSING_VIEWS) missingViews.clear();
-    const resolve = (): ChatStreamSession | undefined => sessions.get(sessionId);
+    const resolve = (): ChatStreamSession | undefined =>
+      sessions.get(sessionId);
     v = { clock: makeClockView(resolve), steps: makeStepsView(resolve) };
     missingViews.set(sessionId, v);
   }
@@ -225,7 +235,11 @@ export interface ChatStreamSession extends SessionSnapshot {
   sessionId: string;
   revision: number;
   // 锚点组（5.2 落盘口径，四元组 + 接收中标记已在 SessionSnapshot 内）
-  pendingMessage: { clientMessageId: string; content: string; state: 'queued' | 'sent' } | null;
+  pendingMessage: {
+    clientMessageId: string;
+    content: string;
+    state: 'queued' | 'sent';
+  } | null;
   lastContextLinkMode: 'linked' | 'independent';
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
@@ -288,7 +302,10 @@ function scheduleTerminalEvictOf(sessionId: string): void {
   }, TERMINAL_TTL_MS);
 }
 
-export function commit(s: ChatStreamSession, fn: (d: ChatStreamSession) => void): void {
+export function commit(
+  s: ChatStreamSession,
+  fn: (d: ChatStreamSession) => void
+): void {
   // 2026-09-30 08:31 小欧 - 终态跃迁在此单点捕获（所有终态写入路径都经 commit，
   //   无需在各写入点分别设防），落终态即排期 TTL —— 排期与"是否曾零订阅"解耦。
   //   原稿把终态 TTL 嵌在 releaseUnsubscribed 的宽限期回调内，导致"用户盯着看完"的会话
@@ -473,7 +490,8 @@ function clearSessionTimers(s: ChatStreamSession): void {
   if (s.reconnectTimeout !== null) window.clearTimeout(s.reconnectTimeout);
   if (s.firstChunkTimeout !== null) window.clearTimeout(s.firstChunkTimeout);
   if (s.saveStepsTimer !== null) window.clearTimeout(s.saveStepsTimer);
-  if (s.intentionalAbortTimer !== null) window.clearTimeout(s.intentionalAbortTimer);
+  if (s.intentionalAbortTimer !== null)
+    window.clearTimeout(s.intentionalAbortTimer);
   if (s.terminalEvictTimer !== null) window.clearTimeout(s.terminalEvictTimer);
   s.idleTimeout = null;
   s.reconnectTimeout = null;
@@ -521,7 +539,7 @@ function evictOverflow(): void {
   if (sessions.size > MAX_SESSIONS) {
     const rest = [...sessions.values()]
       .filter(
-        s =>
+        (s) =>
           s.listeners.size === 0 &&
           s.eventListeners.size === 0 &&
           !hasInflightWork(s) &&
@@ -614,7 +632,10 @@ export const chatStreamStore = {
     };
   },
 
-  subscribeEvents(sessionId: string, listener: (e: StreamEvent) => void): () => void {
+  subscribeEvents(
+    sessionId: string,
+    listener: (e: StreamEvent) => void
+  ): () => void {
     const s = this.ensureSession(sessionId);
     s.eventListeners.add(listener);
     s.releasedAt = null;
@@ -638,7 +659,7 @@ export const chatStreamStore = {
     sessionId: string,
     content: string,
     mode: 'linked' | 'independent' = 'independent'
-): Promise<ResumeResult> {
+  ): Promise<ResumeResult> {
     // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
     //   已有守卫，本入口补齐对称防御；hook 侧 customSessionId??sessionId??'' 双 null 落空串即由此挡住）
     if (!sessionId) return 'idle';
@@ -646,7 +667,11 @@ export const chatStreamStore = {
     if (s.isProcessing) return 'recovering'; // 防双发
     commit(s, (d) => {
       d.isProcessing = true;
-      d.pendingMessage = { clientMessageId: crypto.randomUUID(), content, state: 'queued' };
+      d.pendingMessage = {
+        clientMessageId: crypto.randomUUID(),
+        content,
+        state: 'queued',
+      };
       d.lastContextLinkMode = mode; // 2026-09-29 小欧：记录本次模式，续传/回放沿用（原字段零写入即死字段）
     });
     this.persistNow(sessionId);
@@ -654,9 +679,10 @@ export const chatStreamStore = {
       const attached = await attachActiveTask(s, content); // 附着分支内部已 resume + 持久化
       if (attached !== null) return attached;
       this.clearSteps(sessionId); // 新请求清旧步骤（真实 useSSE.ts:791-795）
-await sendStreamRequest(s, content, mode);
+      await sendStreamRequest(s, content, mode);
       commit(s, (d) => {
-        if (d.pendingMessage) d.pendingMessage = { ...d.pendingMessage, state: 'sent' };
+        if (d.pendingMessage)
+          d.pendingMessage = { ...d.pendingMessage, state: 'sent' };
         // 2026-09-30 10:35 小欧 - 删原 `idle||recovering → active` 死分支：active 兜底已移入
         //   sendStreamRequest 开篇，本行执行时机在其后 → 守卫恒 false（北京老陈裁定「死的删除」）
       });
@@ -739,7 +765,9 @@ await sendStreamRequest(s, content, mode);
    * @param sessionId 会话 id
    * @returns 后端/回读文案（5.14 showTaskResultMessage 直接展示）
    */
-  async stop(sessionId: string): Promise<{ success: boolean; message: string }> {
+  async stop(
+    sessionId: string
+  ): Promise<{ success: boolean; message: string }> {
     // 2026-09-29 小欧：无会话 id / 该会话未建运行时 → 直接短路，
     //   禁走 ensureSession（否则凭空造出 '' 幽灵会话，违反 4.6 空会话不落库原则）
     if (!sessionId) return { success: false, message: '无进行中的任务' };
@@ -751,11 +779,17 @@ await sendStreamRequest(s, content, mode);
       //   readAuthoritativeTask，本处只保留本路径特有的"兜底落 completed + 释放 + 文案"）
       const t = await readAuthoritativeTask(s);
       commit(s, (d) => {
-        d.status = t && isTerminalStatus(t.status) ? (t.status as StreamStatus) : 'completed';
+        d.status =
+          t && isTerminalStatus(t.status)
+            ? (t.status as StreamStatus)
+            : 'completed';
       });
       this.clearCompleted(sessionId); // 终态确认 → 释放全套流资源
       this.persistNow(sessionId);
-      return { success: true, message: t ? `任务已结束（${t.status}）` : '任务不存在，可能已结束' };
+      return {
+        success: true,
+        message: t ? `任务已结束（${t.status}）` : '任务不存在，可能已结束',
+      };
     }
     commit(s, (d) => {
       d.status = 'cancelled';
@@ -807,7 +841,7 @@ await sendStreamRequest(s, content, mode);
       window.clearTimeout(s.saveStepsTimer);
       s.saveStepsTimer = null;
     }
-s.executionSteps = [];
+    s.executionSteps = [];
     s.currentResponse = '';
     s.pendingSteps = [];
     s.isReceiving = false;
@@ -830,7 +864,8 @@ s.executionSteps = [];
   getExecutionStepsRef(sessionId: string): { current: ExecutionStep[] } {
     const s = sessions.get(sessionId);
     if (!s) return missingViewsOf(sessionId).steps;
-    if (!s.executionStepsRefView) s.executionStepsRefView = makeStepsView(() => s);
+    if (!s.executionStepsRefView)
+      s.executionStepsRefView = makeStepsView(() => s);
     return s.executionStepsRefView;
   },
 
@@ -869,7 +904,8 @@ s.executionSteps = [];
    *   改为与真会话视图同构的活视图（同一 makeClockView 构造器，DRY）：会话出现后自动报真值。 */
   getClockSignals(sessionId: string): ClockSignals {
     const s = sessions.get(sessionId);
-    if (!s) return sessionId === '' ? ZERO_CLOCK : missingViewsOf(sessionId).clock;
+    if (!s)
+      return sessionId === '' ? ZERO_CLOCK : missingViewsOf(sessionId).clock;
     if (!s.clockSignalsView) s.clockSignalsView = makeClockView(() => s);
     return s.clockSignalsView;
   },
@@ -905,7 +941,7 @@ s.executionSteps = [];
       //   四个瞬态(此时全 false) → 放行 → restore 用旧备份覆盖, 序号倒退/数据串。
       //   释放即客户端不再持有在飞状态, 非终态一律回落 idle(终态不动, 由 terminalEvict 回收)。
       if (!isTerminalStatus(cur.status)) {
-        commit(cur, d => {
+        commit(cur, (d) => {
           d.status = 'idle';
         });
       }
@@ -967,7 +1003,17 @@ s.executionSteps = [];
     //   被静默丢弃（恢复后心跳钟面恒 0）；展开式使今后新增快照字段自动纳入，遗漏会被 TS 捕获。
     //   pendingMessage / lastContextLinkMode 是会话真实字段且备份里同名，必须留在 rest 内随之恢复
     //   （曾被一并 void 掉致待发草稿与上下文链接模式丢失，比原缺陷更严重）。
-    const { version, revision, sessionId: _sid, taskId, steps, hitlWaitingKeys, updatedAt, isConnected, ...rest } = b;
+    const {
+      version,
+      revision,
+      sessionId: _sid,
+      taskId,
+      steps,
+      hitlWaitingKeys,
+      updatedAt,
+      isConnected,
+      ...rest
+    } = b;
     void version;
     void revision;
     void _sid;

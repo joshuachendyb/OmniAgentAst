@@ -344,15 +344,21 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         )}
 
         {/* 确认稿: 信任勾选紧跟信任范围行、工具名称之前(勾选=信任上方范围, 语义连贯) — 小欧-2026-09-18 */}
-        <div style={{ marginBottom: 6, textAlign: 'left', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div
+          style={{
+            marginBottom: 6,
+            textAlign: 'left',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}
+        >
           <Checkbox
             checked={trustSession}
             disabled={submitting || isBypass} // 2026-09-16 小欧 缺陷①修复: bypass 禁用勾选框, 防静默失效误导(原仅 handleConfirm 强改 false, UI 仍可勾) — 小欧-2026-09-16
             onChange={(e) => setTrustSession(e.target.checked)}
             title={
-              isBypass
-                ? undefined
-                : '信任后：同会话同工具+下方操作范围免弹框'
+              isBypass ? undefined : '信任后：同会话同工具+下方操作范围免弹框'
             }
           >
             信任此操作（本次会话）

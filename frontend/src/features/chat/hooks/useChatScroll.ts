@@ -20,7 +20,11 @@ const SCROLL_THRESHOLD = 150;
 //   故类型直接引 UseChatStateReturn / UseChatStreamingReturn，语义等价且解除对分组的依赖。
 type ScrollChatState = Pick<
   UseChatStateReturn,
-  'isPaused' | 'messagesEndRef' | 'messages' | 'userScrolledUpRef' | 'isPausedRef'
+  | 'isPaused'
+  | 'messagesEndRef'
+  | 'messages'
+  | 'userScrolledUpRef'
+  | 'isPausedRef'
 >;
 
 type ScrollStreaming = Pick<

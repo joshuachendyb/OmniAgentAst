@@ -265,7 +265,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               </span>
             )}
           {!hasResult && tools.length > 0 && !interrupted && !replay && (
-            <ToolWaitingIcon waitClock={waitClock} /> /* 2026-09-17 小欧: 齿轮与钟面并存(追加) — 小欧-2026-09-17 */
+            <ToolWaitingIcon
+              waitClock={waitClock}
+            /> /* 2026-09-17 小欧: 齿轮与钟面并存(追加) — 小欧-2026-09-17 */
           )}
           {/* 工具子行(results 非空); observation 到 → 子行在同容器盖住动画位置 */}
           {hasResult && tools.length === 0 && (

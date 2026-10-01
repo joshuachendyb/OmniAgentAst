@@ -27,13 +27,18 @@ export function useChatStreamSession(
   //   makeClockView / makeStepsView / missingViewsOf）——引用稳定满足 useMemo，而 getter 现取真值，
   //   会话一出现即自动报真值，故零钟面不再被钉死，无需在 render 期抢跑建会话。
   const snapshot = useSyncExternalStore(
-    (callback) => (sessionId ? chatStreamStore.subscribe(sessionId, callback) : () => undefined),
+    (callback) =>
+      sessionId
+        ? chatStreamStore.subscribe(sessionId, callback)
+        : () => undefined,
     () => chatStreamStore.getSnapshot(id),
     () => chatStreamStore.getSnapshot(id)
   );
   useEffect(() => {
     if (!sessionId) return undefined; // 空 id 不订阅（只有真实 id 才有会话）
-    return onEvent ? chatStreamStore.subscribeEvents(sessionId, onEvent) : undefined;
+    return onEvent
+      ? chatStreamStore.subscribeEvents(sessionId, onEvent)
+      : undefined;
   }, [sessionId, onEvent]);
   return {
     ...snapshot,
@@ -63,7 +68,9 @@ export function useChatStreamSession(
       [id, snapshot.heartbeatTs]
     ),
     // 推导 ref 视图——5.3 parser 与组件层同一对象（非第二真源）；空 id 走只读空视图
-    executionStepsRef: sessionId ? chatStreamStore.getExecutionStepsRef(id) : EMPTY_STEPS_REF,
+    executionStepsRef: sessionId
+      ? chatStreamStore.getExecutionStepsRef(id)
+      : EMPTY_STEPS_REF,
   };
 }
 
@@ -86,9 +93,9 @@ export function useChatStreamSession(
 //   waitClock 的 useMemo **之后**——首渲染 waitClock 先算，session 尚未创建，
 //   getClockSignals 只能返回 ZERO_CLOCK（恒 0）；空流场景 heartbeatTs 恒 0，memo 依赖永不
 //   变化 → 组件永久持有零钟面。
-    //   修复：render 期显式 if (id) ensureSession(id)（幂等 Map 命中即返回；空 id 不建，防造
-    //   '' 假会话），effect 退化为纯订阅。heartbeatTs 仍留在 memo 依赖里——心跳微闪要靠它触发
-    //   useChatPanels 的 useMemo 重渲。
+//   修复：render 期显式 if (id) ensureSession(id)（幂等 Map 命中即返回；空 id 不建，防造
+//   '' 假会话），effect 退化为纯订阅。heartbeatTs 仍留在 memo 依赖里——心跳微闪要靠它触发
+//   useChatPanels 的 useMemo 重渲。
 //
 // 编辑历史: 2026-09-30 08:44:31 小欧 - [79] D2：撤销上一条的 render 期 ensureSession，改为根治 — 小欧-2026-09-30 08:44:31：
 //   上一条（22:47:10）用 render 期 ensureSession 治"零钟面锁死"，代价是违反 [63] 5.4「render 期绝不创建」

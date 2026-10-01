@@ -10,7 +10,12 @@
 import React from 'react';
 import { Typography } from 'antd';
 import type { ExecutionStep } from '@/types/execution';
-import { Colors, FontSize, Spacing, formatTokenCompact } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontSize,
+  Spacing,
+  formatTokenCompact,
+} from '@/utils/stepStyles';
 import { CircleArrow } from '@/components/CircleArrow';
 import { PillBadge } from '@/components/PillBadge';
 
@@ -33,7 +38,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
   // 2026-09-15 小欧 实施: 字号11→FontSize.SMALL; 新增 strong——累计组整行强调(PRIMARY色+500字重) — 小欧-2026-09-15
   const renderToken = (
     text: string | false | null | undefined,
-    strong = false,
+    strong = false
   ) =>
     text ? (
       <Typography.Text

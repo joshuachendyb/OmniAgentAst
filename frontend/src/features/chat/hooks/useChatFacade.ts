@@ -101,7 +101,8 @@ export const useChatFacade = (options?: {
   //   pageCallbacks（ISP：页面 UI 回调不再混进流对象/流事件接口）
   const chatCallbacksStreaming = useMemo(
     () => ({
-      setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
+      setIsReceiving: (v: boolean) =>
+        chatStreamStore.setReceiving(storeSessionId ?? '', v),
     }),
     [storeSessionId]
   );
@@ -173,7 +174,8 @@ export const useChatFacade = (options?: {
       setLoading: chatState.setLoading,
       setIsPaused: chatState.setIsPaused,
       // [63] 5.14 连带：chatStreaming.setIsReceiving 已被 5.8 删除，改直连 Store
-      setIsReceiving: (v: boolean) => chatStreamStore.setReceiving(storeSessionId ?? '', v),
+      setIsReceiving: (v: boolean) =>
+        chatStreamStore.setReceiving(storeSessionId ?? '', v),
     },
     states: {
       isPaused: chatState.isPaused,

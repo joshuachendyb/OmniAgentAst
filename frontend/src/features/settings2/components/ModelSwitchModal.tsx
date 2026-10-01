@@ -32,26 +32,43 @@ export const ModelSwitchModal: React.FC<Props> = ({
     }
   }, [open, currentProvider, currentModel]);
 
-  const providerModels = providers
-    .find((p) => p.name === selProvider)
-    ?.models ?? [];
+  const providerModels =
+    providers.find((p) => p.name === selProvider)?.models ?? [];
 
   return (
     <Modal
       open={open}
-      title={<span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>更换当前系统全局使用模型</span>}
+      title={
+        <span
+          style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
+        >
+          更换当前系统全局使用模型
+        </span>
+      }
       width={settingsModalWidth.form}
       onCancel={onCancel}
       onOk={() => onOk(selProvider, selModel)}
       okText="确认更换"
       cancelText="取消"
     >
-      <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY, marginBottom: Spacing.LG }}>
+      <div
+        style={{
+          fontSize: FontSize.SECONDARY,
+          color: Colors.TEXT.SECONDARY,
+          marginBottom: Spacing.LG,
+        }}
+      >
         选择新的 Provider 和模型，确认后立即生效
       </div>
       <Form layout="vertical">
         <Form.Item label="Provider" required>
-          <Select value={selProvider} onChange={(v) => { setSelProvider(v); setSelModel(''); }}>
+          <Select
+            value={selProvider}
+            onChange={(v) => {
+              setSelProvider(v);
+              setSelModel('');
+            }}
+          >
             {providers.map((p) => (
               <Select.Option key={p.name} value={p.name}>
                 {p.label || p.name}
@@ -69,7 +86,9 @@ export const ModelSwitchModal: React.FC<Props> = ({
           </Select>
         </Form.Item>
       </Form>
-      <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+      <div
+        style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+      >
         当前生效：{currentProvider} / {currentModel}
       </div>
     </Modal>

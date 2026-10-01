@@ -25,7 +25,10 @@ interface DropletIconProps {
   size?: number;
 }
 
-export const DropletIcon: React.FC<DropletIconProps> = ({ status, size = 10 }) => (
+export const DropletIcon: React.FC<DropletIconProps> = ({
+  status,
+  size = 10,
+}) => (
   <svg
     width={size}
     height={Math.round(size * 1.2)}

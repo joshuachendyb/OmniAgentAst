@@ -32,7 +32,7 @@ const RESUME_NOTICE: Partial<Record<ResumeResult, string>> = {
 };
 // 有意不提示的 8 值及依据：
 //   idle / recovering / terminal  正常态，提示即噪声；
-    //   pending_draft                 草稿本就在客户端（adoptLiveTaskOrDraft 语义），非异常；
+//   pending_draft                 草稿本就在客户端（adoptLiveTaskOrDraft 语义），非异常；
 //   aborted                       用户主动停，非故障；
 //   polling                       轮询观察中，reconnectStatus 已在 UI 呈现；
 //   failed                        已走 error 通道 → TaskInfoBar 位4（"error 实时显示唯一位置"定案），再提示即双显示；
@@ -98,9 +98,7 @@ export function useChatInit(opts: {
         //   慢网络下会长时间空白。故补上与 initializeSession 同款的 loading 指示器 ——
         //   否则 B7 就是"恢复流变强、历史加载指示变弱"的净退化。
         onLoadingStart();
-        void chatSession
-          .loadSession(opts.urlSessionId)
-          .finally(onLoadingEnd);
+        void chatSession.loadSession(opts.urlSessionId).finally(onLoadingEnd);
         return;
       }
       chatSession.initializeSession({

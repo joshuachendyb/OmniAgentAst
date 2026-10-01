@@ -191,7 +191,8 @@ export const loadHistoryMessages = async (
     // 2026-09-30 小欧 - null 语义收窄为"确实不存在"（仅 404）。原 catch 吞全部异常统一
     //   return null，致弱网/5xx 也被当"已删除"→ 清空正在看的内容并抹 URL，且调用方重试成死码。
     console.error('加载历史消息失败:', error);
-    if (axios.isAxiosError(error) && error.response?.status === 404) return null;
+    if (axios.isAxiosError(error) && error.response?.status === 404)
+      return null;
     throw error;
   }
 };

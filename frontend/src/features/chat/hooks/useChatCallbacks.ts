@@ -206,7 +206,9 @@ export const useChatCallbacks = (
 
   // 2026-09-19 小欧: onSuccessRef 持有最新回调引用, 解 onComplete 闭包陈旧 — 北京老陈驱动
   // 2026-09-30 小欧 - 来源改为独立的 pageCallbacks（不再搭 streaming 对象，见入参注释）
-  const onSuccessRef = useRef<(() => void) | undefined>(pageCallbacks?.onSuccess);
+  const onSuccessRef = useRef<(() => void) | undefined>(
+    pageCallbacks?.onSuccess
+  );
   onSuccessRef.current = pageCallbacks?.onSuccess;
 
   const onStep = useCallback(
@@ -891,6 +893,15 @@ export const useChatCallbacks = (
       onMerged, // 2026-09-28 小欧: 注入应答回调(设计[76] 6.14 实施回填) — 小欧-2026-09-28
       onRetry,
     }),
-    [onStep, onChunk, onComplete, onError, onPaused, onResumed, onMerged, onRetry]
+    [
+      onStep,
+      onChunk,
+      onComplete,
+      onError,
+      onPaused,
+      onResumed,
+      onMerged,
+      onRetry,
+    ]
   );
 };
