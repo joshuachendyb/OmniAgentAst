@@ -100,10 +100,18 @@ pytest -k test_name                               # match by name
 npm run dev          # Vite dev server (port 5173)
 npm run test         # Vitest
 npm run test -- --run <name>  # single test
-npm run lint         # ESLint
-npm run format:check # Prettier
-npm run check        # lint + format:check (run before commit)
-npm run test:e2e     # Playwright
+  npm run lint         # ESLint
+  npm run lint:e2e     # ESLint (e2e_case / e2e_front_lib / src/tests/support)
+  npm run typecheck     # tsc -p tsconfig.json      (仅 src)
+  npm run typecheck:e2e # tsc -p tsconfig.e2e.json  (e2e_case / e2e_front_lib)
+  npm run format:check # Prettier
+  npm run check        # lint + format:check（不含 typecheck）
+  npm run check:full   # typecheck + typecheck:e2e + lint + lint:e2e + format:check
+                       # ← 提交前跑这条。npm run check 不含任何 typecheck,
+                       #   而 tsconfig.json 只 include ["src"], e2e_case/ 与 e2e_front_lib/
+                       #   不在其内(Playwright/Vitest 走 esbuild 转译, 不做类型检查),
+                       #   故漏跑 typecheck:e2e 时 e2e 的类型错误在构建期完全不可见。
+  npm run test:e2e     # Playwright
 ```
 
 ---
@@ -260,6 +268,6 @@ FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` �
 - kebab-case filenames (`my-component.tsx`)
 - No default exports for components
 - Use `@/` alias for absolute imports
-- Run `npm run check` before commit
+- Run `npm run check:full` before commit — 2026-10-01 小欧 修订：`check` 只含 `lint` + `format:check`，**不含任何 typecheck**；而 `tsconfig.json` 只 `include ["src"]`、`tsconfig.e2e.json` 才管 `e2e_case/`+`e2e_front_lib/`，故漏跑 `typecheck:e2e` 时 e2e 类型错误在构建期完全不可见（2026-10-01 实测：4 处漏补 import + 1 处传错参数，全靠 `typecheck:e2e` 抓出，`tsc --noEmit` 抓不到）
 
 -
