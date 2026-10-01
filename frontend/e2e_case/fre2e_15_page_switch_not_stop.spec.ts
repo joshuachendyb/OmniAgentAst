@@ -178,7 +178,6 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
 
     // ══ 操作①: 点菜单「历史会话」切走(离开会话页), 不点「停止」 ══
     const reqBase1 = diag.streamReqs.length;
-    const consoleBase1 = diag.consoleAll.length;
     const failBase1 = diag.allFailed.length;
     const logBase1 = logBaseOf(BLOG);
 
@@ -195,7 +194,25 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
       .locator('.ant-menu-item', { hasText: AWAY_MENU_TEXT })
       .first()
       .click();
-    await page.waitForTimeout(6000);
+    // 2026-10-01 小欧 [2] 北京老陈: 什么算通过要真实 —— 把"点完菜单干等 6 秒再看一眼"改成
+    //   **显式观察窗**: 在窗口内持续盯着"任务级资源"是否被动(DELETE / cancel / abort)。
+    //   为什么必须这样: 固定 sleep 只覆盖"6 秒内发生"的情形。若产品把清理挂在定时器/防抖上
+    //   (例如切走 10s 后才发 DELETE), sleep 6s 后立刻断言 → 请求还没发 → 断言通过 → **假通过**。
+    //   这正是本 case 红线要抓的那类缺陷, 用固定 sleep 去抓它自相矛盾。
+    //   窗口 20s: 覆盖防抖/短定时器; 代价是本 case 多花 14s, 换判据真实, 值。
+    const AWAY_OBSERVE_MS = 20_000;
+    const dlObserve = Date.now() + AWAY_OBSERVE_MS;
+    while (Date.now() < dlObserve) {
+      await page.waitForTimeout(1000);
+      // 观察期内若任务自己跑完了, 后面的 status 判据就没有"在飞"可言了, 提前如实报错
+      const stMid = await statusOfTask(sessionId, taskId);
+      if (stMid !== 'executing') {
+        throw new Error(
+          `[E2E] 操作① 观察窗内任务已离开 executing(status=${stMid}) —— ` +
+            `「切走时任务仍在跑」无法验证(它是自己跑完的, 不是被切走害的)。请重跑 —— 不当通过处理`
+        );
+      }
+    }
     // 防假通过硬断言: 视图必须真的关闭(URL 变了且落在目标页), 否则后续红线断言全部空转
     const urlAfterAway = page.url();
     console.log(`[E2E] 操作① 切走: ${urlAtAway} -> ${urlAfterAway}`);
@@ -219,30 +236,18 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     );
     expect(aborts).toEqual([]);
 
-    // ①b 零 clear: 切走不得触发 clearSteps / clearCompleted
-    //    编辑历史 2026-09-30 小欧 - 两处修正:
-    //      ① 原 `clearsInConsole` 用 .slice(0) 取全量、`clearsAfterAway` 写成
-    //         .slice(len-(len-0)) 等价也是全量 —— 所谓"新增"是废表达式, 恒等于全量。改用真基线。
-    //      ② **删掉"STORAGE_KEY 必须还在"这条断言**(首跑即红, 经查证是我的断言写错, 非产品缺陷):
-    //         STORAGE_KEY 是**单槽**(只存一个会话的态), 且有两条正当清除路径 ——
-    //           useChatPersistence.ts:309 缓存消息无 display_name 即丢弃(在飞任务的用户消息此刻
-    //             还没有 display_name, 它随 AI 回复才写入 → 切走必然命中该分支);
-    //           useChatSession.ts:534 新建会话时清槽。
-    //         二者都是**缓存有效性规则**, 不是 P6 红线所指"删任务备份/掐断任务"。P6 红线是任务级
-    //         资源(abort / clearSteps / cancel / DELETE), 那些在下面逐条断言。
-    const clearsAfterAway = diag.consoleAll
-      .slice(consoleBase1)
-      .filter((l) => /clearSteps|clearCompleted/.test(l));
-    const storageKeyGone = await page.evaluate(
-      () => sessionStorage.getItem('chat_session_state') === null
-    );
-    console.log(
-      `[E2E] 操作① 切走后新增 clear类console=${clearsAfterAway.length}` +
-        `(STORAGE_KEY 已消失=${storageKeyGone} — 单槽+缺display_name规则, 非红线, 仅记录)`
-    );
-    expect(clearsAfterAway).toEqual([]);
-
-    // ①c 零 DELETE /chat/**
+    // ①b **零 clearSteps/clearCompleted** —— 北京老陈 2026-10-01 审核发现本条曾是**假通过**并已删除:
+    //   原写法 `expect(clearsAfterAway).toEqual([])`, 其中 clearsAfterAway 是拿 console 文本
+    //   过滤 /clearSteps|clearCompleted/ 得来的。核实生产代码:
+    //     useChatStreaming.ts:444 `clearSteps = useCallback(() => chatStreamStore.clearSteps(...))`
+    //     —— 全程**不打任何 console**; clearSteps/clearCompleted 在 src 下没有任何日志输出。
+    //   即"切走时触发了 clearSteps"这件事在 console 里**根本没有痕迹** → 那个数组恒为空 →
+    //   断言恒真。看似硬判据, 实则永远抓不到东西(比没有判据更坏: 给人"已覆盖"的错觉)。
+    //   现改为**用可观测的真实状态覆盖同一红线**: 见 ①g 的计数器判据 ——
+    //   clearSteps 的实际效果是清掉步骤, 所以"切走/切回后 step 不减"就是"没被 clear"的直接证据。
+    //   (若日后要在生产侧加日志, 应加 `[clearSteps] session=...` 之类再回填此处, 不能凭空断言)
+    //
+    // ①b2 零 DELETE /chat/**(守任务级资源: 删会话/删任务接口不得被切走触发)
     const deletes = diag.streamReqs
       .slice(reqBase1)
       .filter((l) => l.includes('REQ DELETE') && l.includes('/chat/'));
@@ -253,16 +258,13 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     //   若切走那一瞬间任务已自然跑完(statusBefore='completed'), 整段 if 不进, 断言被跳过,
     //   而"切走时误取消"这个 bug 恰恰只在任务在飞时才会犯 → 假通过。
     //   改为: 切走前必须真的是 executing, 否则显式报错要求重跑(不把跳过当通过)。
+    // 2026-10-01 小欧 [2] 删重复: 此处原有**第二份** `if (statusBefore !== 'executing') throw`,
+    //   与 L157 那份逐字重复。因 L157 已抛错走到这里时 statusBefore 必为 'executing',
+    //   第二份是**永不可达的死代码**(读起来像"又确认了一遍", 实际永远不执行)。已删。
     const statusAfterAway = await statusOfTask(sessionId, taskId);
     console.log(
       `[E2E] 操作① 后 status=${statusAfterAway}(操作前=${statusBefore})`
     );
-    if (statusBefore !== 'executing') {
-      throw new Error(
-        `[E2E] 操作① 前置不成立: 切走前 status=${statusBefore} 不是 executing —— ` +
-          `「切走时任务仍在跑」这条判据无法验证(任务可能已自然跑完)。请重跑覆盖该分支`
-      );
-    }
     expect(statusAfterAway).toBe('executing');
 
     // ①e 后端日志无该 task 的 cancel/abort 痕迹
@@ -395,18 +397,37 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     expect(['cancelled', 'completed']).toContain(statusAfterStop);
 
     // ②b 落点语义校验: 走到 cancelled 说明"点停止真的取消了任务";
-    //    走到 completed 只能是 STOP_RACE(取消请求发出时任务已自然完成), 记日志不静默放过。
+    //    走到 completed 只能是 STOP_RACE —— 即取消请求发出时, 后端 set_cancelled 落空
+    //    (chatStreamStore.ts stop(): `if (!r.success)` → 回读 DB 权威终态)。
+    //    注意: STOP_RACE **无法用 HTTP 状态码区分** —— 后端 cancel_task 在任务不在 running_tasks 时
+    //    仍返回 200 + {success:false}(task_runtime.cancel_task → set_cancelled 返回 False),
+    //    所以 RES 是 200。真正的证据是"针对本 task 的取消请求确实发出、且拿到了响应"。
+    // 2026-10-01 小欧 [2] 收紧: 原写法只数 `/cancel/i` 的请求条数 > 0 —— 该正则会命中任何
+    //   含 "cancel" 字样的行(包括别的会话/别的 URL), 不是"本任务的取消请求已生效"的证据。
+    //   改为同时要求: ① 针对本 task 的 cancel 请求 ② 它有对应响应。
     if (statusAfterStop === 'completed') {
-      const cancelReqs = diag.streamReqs
+      const cancelReq = diag.streamReqs
         .slice(reqBase2)
-        .filter((l) => /cancel/i.test(l));
+        .filter((l) => l.includes('REQ POST ') && l.includes(`/chat/stream/cancel/${taskId}`));
+      const cancelRes = diag.streamReqs
+        .slice(reqBase2)
+        .filter((l) => l.includes('RES ') && l.includes(`/chat/stream/cancel/${taskId}`));
       console.log(
-        `[E2E] 操作② 落点=completed: 判为 STOP_RACE(取消请求发出时任务已自然完成), ` +
-          `cancel 请求数=${cancelReqs.length}`
+        `[E2E] 操作② 落点=completed: 判为 STOP_RACE(取消请求发出时任务已自然完成)。` +
+          `针对本 task(${taskId}) 的 cancel 请求=${cancelReq.length} 响应=${cancelRes.length}`
       );
-      // STOP_RACE 时取消请求**确实发出过**, 后端回 not_found 是合理的; 若压根没发请求就 completed,
-      //   说明任务在切走期间就自己跑完了, 那"点停止"这个动作其实没作用到任何东西 —— 也算不成立。
-      expect(cancelReqs.length).toBeGreaterThan(0);
+      // 没发出针对本任务的取消请求 → 「点停止」这个动作没作用到任何东西, 判据不成立
+      expect(
+        cancelReq.length,
+        `落点 completed 但没有针对本 task(${taskId}) 的取消请求 —— ` +
+          `说明「点停止」没作用到任务上, 本条判据不成立`
+      ).toBeGreaterThan(0);
+      // 请求发出但没响应 → 前端根本没拿到结果, STOP_RACE 的解释不成立
+      expect(
+        cancelRes.length,
+        `针对本 task 的取消请求发出但无响应(${cancelReq.length} 请求 / ${cancelRes.length} 响应) —— ` +
+          `前端未拿到 cancel 结果, 不能按 STOP_RACE 放行`
+      ).toBeGreaterThan(0);
     }
 
     // ②c 允许出现 cancel/取消 请求(红线只禁出现在 ①, 此处不设否)

@@ -40,7 +40,7 @@ const BACKEND_DIR = 'F:\\OmniAgentAs-repair\\backend';
  *
  * 背景: 续传请求没发出, 但不知卡在恢复链哪一环。生产代码不留 log(不污染),
  * 故 E2E 侧从 sessionStorage 备份 + 运行时可见状态取证, 定位是
- *   restore(invalid? / status 终态?) → recoverWithoutTaskId → attachActiveTask → resumeStreamRequest
+    *   restore(invalid? / status 终态?) → adoptLiveTaskOrDraft → attachActiveTask → resumeStreamRequest
  * 哪一步断的。读不到给空串, 不猜。
  */
 const readRestoreState = async (
@@ -195,6 +195,23 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     console.log(
       `[E2E] 刷新前: task=${taskId} 轮次=${roundsBefore.length} lastSeq=${lastSeqBefore} 列表status=${statusBefore}`
     );
+    // 2026-10-01 小欧 [2] 北京老陈: 补前置硬校验 —— 本 case 守的是「执行中刷新后续传」,
+    //   若刷新前任务已自然跑完, 续传拿到的就是终态尾巴, "续传"这条判据形同虚设。
+    //   原实现只查了轮次 ≥3(轮次够 ≠ 任务还在跑), 没查 status。
+    // 本 case 的场景就是「地址栏带 session_id」, 所以 session_id 直接从 URL 取最可靠
+    // (15 之所以要靠 prompt 反查, 是因为菜单回跳刻意不带 id —— 见该文件注释)
+    const sessionId = sessionIdFromUrl(page);
+    expect(
+      sessionId,
+      '本 case 前提是地址栏带 session_id; 取不到说明场景不符, 请检查发消息后 URL 是否写入 id'
+    ).toBeTruthy();
+    const statusBeforeDb = await statusOfTask(sessionId, taskId);
+    if (statusBeforeDb !== 'executing') {
+      throw new Error(
+        `[E2E] 前置不成立: 刷新前 DB status=${statusBeforeDb}(列表=${statusBefore}) 不是 executing —— ` +
+          `「执行中刷新后续传」无从验证(任务已跑完, 续传只是拉了个尾巴)。请重跑 —— 不当通过处理`
+      );
+    }
 
     // 北京老陈 2026-10-01 要求: 刷新后 step 还在不在正常显示、计数器还在不在正常计数。
     //   先读刷新前的基线, 刷新后与它比 —— 刷新后计数器"从 0 重来"或"整个不显示"都是缺陷。
@@ -219,14 +236,16 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
 await page.reload();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
 
+    // 2026-10-01 小欧 [2] 收紧: 原实现全量扫 diag.streamReqs 找含 after_seq 的 GET, **不限 taskId**。
+    //   本 case 单会话单任务时恰好只有一个, 但口径上不该依赖这个巧合 —— 一旦页面里还有别的
+    //   续传请求(例如另一标签页/另一会话), 抓到的就可能是别人的, 后续 after_seq 断言跟着错。
+    //   改为同时限定 taskId。
+    const isResumeReqOfTask = (l: string): boolean =>
+      l.includes('REQ GET ') &&
+      l.includes(`/chat/stream/${taskId}`) &&
+      l.includes('after_seq=');
     // 5) 等续传请求出现(网络面: GET /chat/stream/{task_id}?…&after_seq=N)
-    const hasAfterSeqReq = (): boolean =>
-      diag.streamReqs.some(
-        (l) =>
-          l.includes('REQ GET ') &&
-          l.includes('/chat/stream/') &&
-          l.includes('after_seq=')
-      );
+    const hasAfterSeqReq = (): boolean => diag.streamReqs.some(isResumeReqOfTask);
     await expect
       .poll(hasAfterSeqReq, { timeout: 120_000, intervals: [500] })
       .toBeTruthy()
@@ -311,13 +330,7 @@ await page.reload();
       )
     ).toBeTruthy();
 
-    const reqLine =
-      diag.streamReqs.find(
-        (l) =>
-          l.includes('REQ GET ') &&
-          l.includes('/chat/stream/') &&
-          l.includes('after_seq=')
-      ) ?? '';
+    const reqLine = diag.streamReqs.find(isResumeReqOfTask) ?? '';
     const afterSeqReq = Number(reqLine.match(/after_seq=(\d+)/)?.[1] ?? '-1');
     console.log(`[E2E] 续传请求: after_seq=${afterSeqReq}  <- ${reqLine}`);
 

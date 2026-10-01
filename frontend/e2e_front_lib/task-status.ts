@@ -65,6 +65,22 @@ export const pollTaskStatus = async (
 };
 
 /**
+ * 该会话的**全部** task_id(后端权威, 按 id ASC)。
+ *
+ * 与 page-anchors 的 `allTaskIdsInList`(UI 左侧列表, 可能截断)是两个不同用途:
+ * 本函数走 REST, 是"这个会话到底有哪些任务"的权威答案, 可用于硬断言。
+ */
+export const allTaskIdsOfApi = async (
+  sessionId: string
+): Promise<string[]> => {
+  if (!sessionId) return [];
+  const res = await fetch(`${API_BASE}/sessions/${sessionId}/tasks`);
+  if (!res.ok) return [];
+  const d = (await res.json()) as { tasks?: { task_id: string }[] };
+  return (d.tasks ?? []).map((t) => t.task_id);
+};
+
+/**
  * 任务失败(cancelled 同理)时, 从后端当日日志里捞该 task 的 ERROR 行作证据。
  * 铁规: 失败就是问题, 必须把根因线索打出来, 不当正常收尾放过。
  */

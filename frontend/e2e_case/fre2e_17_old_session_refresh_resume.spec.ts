@@ -225,7 +225,21 @@ test.describe('[1] 旧会话多任务 · 切页面 + 刷新续传', () => {
       .locator('.ant-menu-item', { hasText: AWAY_MENU_TEXT })
       .first()
       .click();
-    await page.waitForTimeout(6000);
+    // 2026-10-01 小欧 [2] 北京老陈"什么算通过要真实" —— 裸 sleep 6000 换成观察窗。
+    //   固定 sleep 只覆盖"6 秒内发生"的效应; 若产品把清理挂定时器(切走 10s 后才 DELETE/cancel),
+    //   sleep 6s 后断言 → 请求还没发 → 通过 → 假通过。用固定 sleep 抓"切走误伤任务"自相矛盾。
+    const AWAY_OBSERVE_MS = 20_000;
+    const dlObs17 = Date.now() + AWAY_OBSERVE_MS;
+    while (Date.now() < dlObs17) {
+      await page.waitForTimeout(1000);
+      const stMid = await statusOfTask(sessionIdOfA, taskIdB);
+      if (stMid !== 'executing') {
+        throw new Error(
+          `[E2E] 动作① 观察窗内任务 B 已离开 executing(status=${stMid}) —— ` +
+            `「切走时在跑的任务不受影响」无法验证。请重跑 —— 不当通过处理`
+        );
+      }
+    }
     const urlAfterAway = page.url();
     console.log(`[E2E] 动作① 切走: ${urlAtAway} -> ${urlAfterAway}`);
     expect(urlAfterAway).not.toBe(urlAtAway);
@@ -436,55 +450,44 @@ test.describe('[1] 旧会话多任务 · 切页面 + 刷新续传', () => {
       page.url().match(/session_id=([^&]+)/) ?? []
     )[1] ?? '';
 
-    const listResp = (await fetch(
+    // ── 旧会话选取: 自造, 不依赖外部历史库的残留数据 ──
+    // 2026-10-01 小欧 [2] 北京老陈"测试烂代码能不能都消灭"—— 这里是本 case 最大的设计缺陷, 已重写:
+    //   原实现扫 `GET /sessions?page=1&page_size=50` 找"有 task 且全部终态"的**外部遗留**会话,
+    //   找不到就 `test.skip(true, '无合适的历史遗留旧会话可测 —— 不伪造')`。
+    //   问题有三, 每一件都足以让这条 case 失去意义:
+    //     ① **依赖外部环境** —— 跑在谁机器上结果不同; 干净库里必然无可选 → 整条 case 静默跳过。
+    //     ② skip 让"没测"和"通过"在报告里长得一样 —— 违反 AGENTS.md
+    //        "测试目的是发现问题, 严禁看到 FAIL 跳过"。
+    //     ③ 每次跑挑中的旧会话都不同, 历史任务数量不可控, 判据无法收敛。
+    //   改为**自己造这个旧会话**: 上一步 PROMPT_A 已在本次运行里建好一个会话并跑完一个任务,
+    //   它此刻就是"一个已存在的、有已完成任务的会话"。只需把它从历史列表重新打开,
+    //   就能走通「打开旧会话 → 直接发新任务 → 刷新」这条真实路径, 且**零额外 LLM 开销**、
+    //   **零跳过、结果可复现**。
+    //   注: 「面板里有若干个已完成旧任务」的更大暴露面由上一个 test(场景①, A+B 两个任务)覆盖,
+    //       本 test 的定位是**入口路径**(URL 带 id → 场景1), 不重复承担任务数量维度。
+    const staleSession = freshSessionOfThisRun;
+    const staleTaskIds = await allTaskIdsOfApi(staleSession);
+    const staleTitleResp = (await fetch(
       `${API_BASE}/sessions?page=1&page_size=50`
     ).then((r) => r.json())) as {
       sessions?: { session_id: string; title?: string }[];
     };
-    const candidates = (listResp.sessions ?? []).filter(
-      (s) => s.session_id !== freshSessionOfThisRun
-    );
-    // 逐个查 tasks, 取"有 task 且全部已终态"的第一个 —— 它就是可安全发新任务的历史遗留会话
-    let staleSession = '';
-    let staleTitle = '';
-    let staleTaskIds: string[] = [];
-    for (const c of candidates.slice(0, 15)) {
-      const title = (c.title ?? '').trim();
-      // 必须有标题: 进入旧会话要靠搜索框按标题定位(见下), 无标题无从下手
-      if (title.length === 0) continue;
-      // 标题在候选集里必须唯一 —— 否则搜索会命中多个会话, 点"继续"就点不准了。
-      // 历史里同 prompt 反复跑会产生同名会话(近地小行星/深海矿产), 故必须查重后宁缺勿滥。
-      const sameTitle = candidates.filter(
-        (x) => (x.title ?? '').trim() === title
+    const staleTitle = (
+      staleTitleResp.sessions ?? []).find(
+        (s) => s.session_id === staleSession
+      )?.title ?? '';
+    if (staleTitle.trim().length === 0) {
+      throw new Error(
+        `[E2E] 自造旧会话 ${staleSession} 取不到标题 —— 进入旧会话要靠搜索框按标题定位, 无标题无从下手`
       );
-      if (sameTitle.length !== 1) {
-        console.log(
-          `[E2E] 跳过会话 ${c.session_id}: 标题"${title.slice(0, 24)}…"在候选中有 ${sameTitle.length} 个同名, 无法唯一定位`
-        );
-        continue;
-      }
-      const t = (await fetch(
-        `${API_BASE}/sessions/${c.session_id}/tasks`
-      ).then((r) => r.json())) as {
-        tasks?: { task_id: string; status: string }[];
-      };
-      const list = t.tasks ?? [];
-      if (list.length === 0) continue;
-      if (list.some((x) => x.status === 'executing')) continue; // 有在飞任务的不碰
-      staleSession = c.session_id;
-      staleTitle = title;
-      staleTaskIds = list.map((x) => x.task_id);
-      break;
     }
-    if (!staleSession) {
-      console.log(
-        `[E2E] skip: 历史里找不到"标题唯一 + 有历史task + 无在飞任务"的旧会话(候选 ${candidates.length} 个)`
+    if (staleTaskIds.length === 0) {
+      throw new Error(
+        `[E2E] 自造旧会话 ${staleSession} 一个 task 都没有 —— 「旧会话里发新任务」无从验证`
       );
-      test.skip(true, '无合适的历史遗留旧会话可测 —— 不伪造');
-      return;
     }
     console.log(
-      `[E2E] 选定历史遗留旧会话=${staleSession} 标题="${staleTitle.slice(0, 40)}" 历史task=${JSON.stringify(staleTaskIds)}`
+      `[E2E] 自造旧会话=${staleSession} 标题="${staleTitle.slice(0, 40)}" 历史task=${JSON.stringify(staleTaskIds)}`
     );
 
     // ── 从历史列表搜索并点「继续」进入该旧会话(真实入口, 不直接改 URL) ──
@@ -512,7 +515,9 @@ test.describe('[1] 旧会话多任务 · 切页面 + 刷新续传', () => {
       .locator('.history-page .ant-btn', { hasText: '继续' })
       .first()
       .click();
-    await page.waitForTimeout(6000);
+    // 2026-10-01 小欧 [2]: 裸 sleep 6000 换成等输入框真正可见 —— 睡固定时长可能页面还没挂完,
+    //   后面立刻读 URL/active 会读到中间态(假红)。等具体元素出现才是"确实进来了"。
+    await expect(chat.input).toBeVisible({ timeout: 60_000 });
     const urlAfterResume = page.url();
     console.log(`[E2E] 历史列表搜标题后点继续 -> ${urlAfterResume}`);
     // 该入口刻意带 session_id(History/index.tsx:343 navigate(`/?session_id=${id}`)),
