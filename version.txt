@@ -1,4 +1,24 @@
-﻿v1.1.4
+﻿v1.1.5
+更新时间: 2026-10-02 15:00:28 - 小欧-2026-10-02
+## v1.1.5 工具注册名归位与strict报错修复(20个commit: feat1/fix2/refactor7/test3/docs6/chore1) - 小欧-2026-10-02
+[2026-10-02 15:00:28 小欧] 范围=v1.1.4起全部commit(共20个)。主线四件事:[1]工具注册名归位与改短(shell→bash、readtext→read、writetext→write、edittext→edit、which+sysinfo归system、extract/compress/readmedia归document、searchweb/fetchpage归fundamental), 分类10→9, 初始加载21→19; [2]searchtool BM25索引追加category使按分类名可召回+描述同步; [3]strict默认值True→False解除opencodeZen必报400(全仓29模型/7provider无一需strict, additionalProperties校验自2026-06-17起从未生效, 日志确认报错文案全仓唯一1种); [4]前端渲染器/安全判定/sandbox/E2E用例跟随注册名同步。
+
+### 1.1.5 strict默认值False解除opencodeZen 400
+[代码] tool_description.py: strict=True→False; 全仓核实29模型/7provider无一需strict; 其余provider本就收原样schema, 仅opencodeZen由全挂变为可用; 验收opencodeZen big-pickle基本正常400消失, 提交5043d3428
+[文档] strict报错分析文档升v4.4: 第八章回写实测结论+第七章裁定落实(B降级/C采纳/V2不跑/自由map保持A档), 提交9763eaa97
+
+### 1.1.5 searchtool按分类名可召回
+[代码] tool_search.py _build_bm25索引文本追加category; 31组查询改前/改后排序比对, 能力词类首位零倒置, 分类名类由空变有; fundamental_schema.py描述同步; 提交723841bcc
+
+### 1.1.5 工具归组与注册名归位
+[重构] SHELL分类消亡(which+sysinfo迁system), extract/compress/readmedia归document, searchweb/fetchpage归fundamental(分类10→9); 注册名shell→bash、readtext→read、writetext→write、edittext→edit, 别名表与参数归一同步; validate timeout_validator表键跟随改名+入口归一; 前端渲染器/安全判定/sandbox/E2E跟随同步
+[测试] E2E用例跟随注册名同步(shell→bash断言归位、read/write/edit)
+[文档] 系统新增能力说明v3.1、工具名单化方案v1.5改写为实施方案、10月优化+打包E2E目录5份文档入库
+
+### 1.1.5 工程杂项
+[chore] gitignore补backend/e2etests/output忽略规则(防E2E产物入库)
+
+v1.1.4
 更新时间: 2026-10-01 23:59:47 - 小欧-2026-10-01
 ## v1.1.3以来 变更汇总(38个commit: fix14/test8/docs8/refactor1/style6/chore1) - 小欧-2026-10-01
 [2026-10-01 23:59:47 小欧] 范围=v1.1.3以来全部commit(共38个); 主线: [1]刷新后显示其他任务结果全链路修复(A/B/E/D组落码+文档v1.0~v1.6)、[79]会话流常驻架构SSE单源化(删useSSE 779行)、[81]三堂会审缺陷实施、数据与配置隔离铁律、计时冻结根因修复、Prettier门禁91→0
