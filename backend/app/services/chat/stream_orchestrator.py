@@ -192,6 +192,7 @@
 #   启用 atxn(retry_locked=3) 有限重试, 重试耗尽/非锁异常向上抛走 router_error 不再静默起跑(原 L595-596 吞异常
 #   致 ai_message_id=None 带病运行, 前端看似在跑而 DB 全空); ②文件 writer 独立 try 仅告警, 原设计意图不变。
 #   — 小欧-2026-09-29
+# 2026-10-02 20:14 小欧 - 无 session_id 时改走 create_session(None) 建会话(原凭空造 UUID 撞外键致整流 500) 
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -235,6 +236,7 @@ from app.services.chat.storage import insert_task, update_task, token_usage_inse
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
+from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
 from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
 
 
@@ -358,7 +360,7 @@ async def chat_stream_orchestrator(
     scope = get_scope()            # 原子取本代唯一所有者(防换代窗口双代) — 小欧-2026-09-25
     ai_service = scope.ai_service  # 同代单例(UniversalAgent 兜底/注入应答用) — 小欧-2026-09-25
     journal_sink = journal_append                                  # [63] 3.6.4：与 3.6.3 append 同签名，生命周期与 scope 一致
-    session_id = session_id or str(uuid.uuid4())
+    session_id = session_id or create_session(None).session_id
     _model_warning = get_ai_config_resolver().pop_model_warning()
 
     task_id = generate_task_id()
