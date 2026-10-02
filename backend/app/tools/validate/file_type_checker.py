@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-02 - 小欧 - 注册名归位: 4处 LLM 引导语 read→read(含建议工具名返回值), 与新注册名同源
 """
 文件类型检查器 - 共享函数 - 小健 2026-06-24
 
@@ -256,7 +258,7 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
     """检查是否为媒体文件 — 小欧 2026-06-24 修正错误信息格式"""
     if suffix not in MEDIA_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用readtext工具", "readtext"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用媒体工具操作。建议使用read工具", "read"
         elif suffix in DOCUMENT_EXTENSIONS:
             doc_tool = _suggest_doc_tool(suffix)
             return False, f"工具选择错误：'{suffix}'是文档文件，不能用媒体工具操作。{doc_tool}", None
@@ -264,7 +266,7 @@ def _check_media_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[str]
             hint = UNSUPPORTED_FORMAT_HINTS.get(suffix, "不支持的格式")
             return False, f"工具选择错误：'{suffix}'是不支持的格式。{hint}", None
         else:
-            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用readtext或对应的文档工具", None
+            return False, f"工具选择错误：'{suffix}'不是支持的媒体格式。建议使用read或对应的文档工具", None
     
     return True, "", None
 
@@ -276,7 +278,7 @@ def _check_document_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[s
         return False, f"工具选择错误：'{suffix}'是不支持的文档格式。{hint}。支持的格式: {', '.join(sorted(DOCUMENT_EXTENSIONS))}", None
     if suffix not in DOCUMENT_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用readtext工具", "readtext"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不能用文档工具操作。建议使用read工具", "read"
         elif suffix in MEDIA_EXTENSIONS:
             return False, f"工具选择错误：'{suffix}'是媒体文件，不能用文档工具操作。建议使用readmedia工具", "readmedia"
         else:
@@ -304,7 +306,7 @@ def _check_archive_file(path: Path, suffix: str) -> Tuple[bool, str, Optional[st
         return True, "", None
     if suffix not in ARCHIVE_EXTENSIONS:
         if suffix in TEXT_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用readtext工具", "readtext"
+            return False, f"工具选择错误：'{suffix}'是文本文件，不是压缩文件。建议使用read工具", "read"
         else:
             return False, f"工具选择错误：'{suffix}'不是支持的压缩格式。支持的格式: {', '.join(sorted(ARCHIVE_EXTENSIONS))}", None
     
@@ -361,7 +363,7 @@ def check_for_text_tool(
     allow_create: bool = False,
     op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供readtext/writetext/edittext调用 — 路径检查+类型检查
+    """供read/write/edit调用 — 路径检查+类型检查
     北京老陈 2026-07-09"""
     is_valid, err, _ = validate_path(op_category, file_path)
     if not is_valid:

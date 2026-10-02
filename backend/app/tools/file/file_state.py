@@ -11,6 +11,7 @@ file_state — 文件状态追踪，取代 edit_text_file 的本地 mtime 缓存
 #   根治多会话并行时无锁竞态导致 mtime 缓存污染(同文件跨任务并发读写)。
 #   compliance: SRP/禁止backward
 # 2026-09-20 - 小欧 - 三堂会审修复: _state三元组(mtime,hash,modified_by_self); record_write标记self; check_conflict跳过self(防TOCTOU误报)
+# 2026-10-02 - 小欧 - 注册名归位: 冲突提示语 read→read
 import hashlib
 import threading  # 2026-09-20 小欧 X1修复: 多会话并行时 file_state 无锁, 跨任务并发读写污染 mtime 缓存 — 小欧-2026-09-20
 from pathlib import Path
@@ -76,7 +77,7 @@ def check_conflict(file_path: str) -> Optional[str]:
     if current != recorded_mtime:
         return (
             f"文件 {file_path} 自上次读取后被外部修改，"
-            "当前操作可能覆盖外部变更。建议先 readtext 确认最新内容"
+            "当前操作可能覆盖外部变更。建议先 read 确认最新内容"
         )
     return None
 
@@ -113,7 +114,7 @@ def check_conflict_strict(file_path: str) -> Optional[str]:
     if current != recorded_mtime:
         return (
             f"文件 {file_path} 自上次读取后被外部修改，"
-            "请先 readtext 确认最新内容后再操作"
+            "请先 read 确认最新内容后再操作"
         )
     return None
 

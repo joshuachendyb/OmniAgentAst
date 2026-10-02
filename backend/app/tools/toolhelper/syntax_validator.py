@@ -19,9 +19,9 @@
 #                   json→json.loads()   yaml→yaml.safe_load()(懒加载避免硬依赖)
 #
 # 【阻断 vs 警告】
-#   edittext 任意模式         → 阻断(每次结果都是完整文件, 语法错即损坏)
-#   writetext append=False    → 阻断(整文件覆盖, 语法错=文件损坏)
-#   writetext append=True     → 仅警告(片段无法整体校验, 且为增量)
+#   edit 任意模式         → 阻断(每次结果都是完整文件, 语法错即损坏)
+#   write append=False    → 阻断(整文件覆盖, 语法错=文件损坏)
+#   write append=True     → 仅警告(片段无法整体校验, 且为增量)
 #   未知扩展名(.md/.csv/.txt) → 放行(无语法可言, 防误杀)
 #
 # 【误杀防护】仅对可解析语言校验; 追加模式不阻断; 不引入风格类lint

@@ -4,6 +4,7 @@
 # 2026-07-26 - 小欧 - OOD: 删 READMEDIA_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小沈 - 修复: path参数不覆盖; hint传完整路径
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-02 - 小欧 - 注册名归位: 提示语 read→read
 """
 F3: readmedia — 读媒体文件
 
@@ -84,7 +85,7 @@ async def readmedia(
             elif suggested_tool == "":
                 _hint = "请检查文件路径和文件名是否正确"
             else:
-                _hint = "请检查文件类型，或使用 readtext/read_document 工具"
+                _hint = "请检查文件类型，或使用 read/read_document 工具"
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 

@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-17 - 小欧 - 早期encoding校验: writetext()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
+# 2026-07-17 - 小欧 - 早期encoding校验: write()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 # 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
 # 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter #544 行×列收口+两态呈现; data 仅留 content_preview(#23), 严禁与 llm_data 段重复显示
-# 2026-07-25 - 小欧 - 截断治理: content[:50]/[-50:] → WRITETEXT_INER_PREVIEW_CHARS 命名常量
+# 2026-07-25 - 小欧 - 截断治理: content[:50]/[-50:] → WRITE_INER_PREVIEW_CHARS 命名常量
 # 2026-07-29 - 小欧 - hint优化: 语法错误hint从死的"请修复语法错误后重试"改为动态"Python语法错误(行N)，建议:xxxx"; metrics新增error_line+suggestion
 # 2026-07-29 - 小欧 - PYEOF容错: Python文件末尾整行PYEOF自动剥离(heredoc泄漏), 前置在validate_syntax之前; metrics新增auto_removed_pyeof
 # 2026-07-30 - 小沈 - except:pass补日志: diff生成失败改为logger.debug记录
@@ -24,12 +24,13 @@
 #   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
 # 2026-08-21 - 小欧 - 11.6.1 exemplar: success分支调 with_artifact_file 声明产出物
 # 2026-09-20 - 小欧 - X2/13.3.4 跨任务文件写仲裁接入 + 修复:
-#   ①writetext 主函数 acquire_write 登记 + 全部返回路径 finally 统一 release(13.3.4, 冲突仅提示不阻断);
+#   ①write 主函数 acquire_write 登记 + 全部返回路径 finally 统一 release(13.3.4, 冲突仅提示不阻断);
 #   ②修复(红case驱动): _arb_warning = acquire_write 返回的占用者 task_id 即冲突信号, 此前从未读取(死变量),
 #     现消费并入 conflict_warning/llm_data arb_warning 段, X2 冲突提示真实落地(占用者非本人时为并行写警告)。
 #   compliance: SRP(仲裁职责归 arbiter)/KISS-DIRECT/禁止backward
+# 2026-10-02 - 小欧 - 注册名收敛: action.tool "write"→"write"(3处), 与新注册名同源
 """
-F2: writetext — 写文本文件
+F2: write — 写文本文件
 
 从file_tools.py拆分而来 — 小欧 2026-06-22
 """
@@ -47,12 +48,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file  # 2026-08-21 小欧 11.6.1: 产出物声明
-from app.tools.tool_constants import WRITETEXT_INER_PREVIEW_CHARS
+from app.tools.tool_constants import WRITE_INER_PREVIEW_CHARS
 
 
 def _build_content_preview(content: str) -> str:
     """文首+文末预览 — 小沈 2026-07-08；2026-07-20 用户裁定恢复此 Tool 层预览(write 工具不需回显全文)"""
-    _pc = WRITETEXT_INER_PREVIEW_CHARS
+    _pc = WRITE_INER_PREVIEW_CHARS
     if len(content) <= _pc * 2:
         return content
     return f"文首({_pc}字符):{content[:_pc]}\n...(中间省略)...\n文末({_pc}字符):{content[-_pc:]}"
@@ -83,7 +84,7 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
         if result and result.get("data", {}).get("encoding"):
             return result["data"]["encoding"]
     except Exception:
-        logger.warning(f"[writetext] 编码检测失败: {file_path}")
+        logger.warning(f"[write] 编码检测失败: {file_path}")
     return "utf-8"
 
 
@@ -176,7 +177,7 @@ def _build_write_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入文件{file_path}，失败",
-            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "action": {"tool": "write", "tool_zh": "写入", "target": file_path, "params": _act_params},
             "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查路径和写入权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -186,7 +187,7 @@ def _build_write_text_file_llm_data(
             hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
         return {
             "summary": f"写入文件{file_path}，成功,提示说明: {detail or mtime_warning}，{bytes_written}字节",
-            "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "action": {"tool": "write", "tool_zh": "写入", "target": file_path, "params": _act_params},
             "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -195,7 +196,7 @@ def _build_write_text_file_llm_data(
         }
     return {
         "summary": f"写入文件 {file_path}，成功，共 {bytes_written} 字节",
-        "action": {"tool": "writetext", "tool_zh": "写入", "target": file_path, "params": _act_params},
+        "action": {"tool": "write", "tool_zh": "写入", "target": file_path, "params": _act_params},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -204,7 +205,7 @@ def _build_write_text_file_llm_data(
     }
 
 
-async def writetext(
+async def write(
     path: str,
     content: str,
     encoding: Optional[str] = None,
@@ -255,7 +256,7 @@ async def writetext(
         if _stripped.endswith("\nPYEOF"):
             checked_content = _stripped[:-5] + "\n"
             auto_removed_pyeof = True
-            logger.warning(f"[writetext] 自动移除Python文件末尾的heredoc标记PYEOF: {file_path}")
+            logger.warning(f"[write] 自动移除Python文件末尾的heredoc标记PYEOF: {file_path}")
 
     # 语法检测 — 整文件代码写阻断; 追加仅警告(片段无法整体校验) — 小欧 2026-07-21 — 小欧 2026-07-29 优化hint带行号+建议
     _syn = validate_syntax(checked_content, _lang, file_path)
@@ -272,7 +273,7 @@ async def writetext(
             if _syn.suggestion:
                 llm_data["metrics"]["suggestion"] = {"value": _syn.suggestion, "text": _syn.suggestion}
             return build_error(data={}, llm_data=llm_data)
-        logger.warning(f"[writetext] 追加模式语法警告: {_syn.error_text()}")
+        logger.warning(f"[write] 追加模式语法警告: {_syn.error_text()}")
         syntax_warn = _syn.error_text()
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
@@ -305,14 +306,14 @@ async def writetext(
         # mtime 冲突检查 — 小欧 2026-07-05
         conflict_warning = check_conflict(file_path)
         if conflict_warning:
-            logger.warning(f"[writetext] {conflict_warning}")
+            logger.warning(f"[write] {conflict_warning}")
 
         # 修复(小欧 2026-09-20): 消费 arbiter 冲突占用者提示——占用者非本人时为并行写警告,
         #   并入 conflict_warning 通道 → 成功/警告路径均带 arb_warning 语义(冲突提示真实落地, 不阻断写)。
         if _arb_warning:
             _arb_tip = f"目标文件正被任务[{_arb_warning}]写入(并行覆盖风险), 本次写入可能覆盖他人结果"
             conflict_warning = "；".join(filter(None, [conflict_warning, _arb_tip]))
-            logger.warning(f"[writetext] {_arb_tip}")
+            logger.warning(f"[write] {_arb_tip}")
 
         # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
         old_content = None
@@ -331,7 +332,7 @@ async def writetext(
                     )
                     llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
                     # ---- observation_formatter route -------------------------------------------
-                    # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                    # branch: #23 write (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
                     # trigger: "content_preview" in data
                     # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                     # file:    observation_formatter.py
@@ -424,7 +425,7 @@ async def writetext(
                 if diff_text:
                     llm_data["diff"] = diff_text
                 # ---- observation_formatter route -------------------------------------------
-                # branch: #23 writetext (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                # branch: #23 write (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
                 # trigger: "content_preview" in data
                 # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                 # file:    observation_formatter.py

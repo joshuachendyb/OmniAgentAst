@@ -9,7 +9,7 @@
 #   翻页参数,但schema漏更新致LLM看不到
 #   且tool_retry_engine校验拒收(非法参数)
 # 2026-07-21 - 小欧 - 修pages字段类型不安全(KISS-DIRECT): Optional[Any]→Optional[Union[int,str,List[int]]], 与运行时_parse_pdf_pages接受类型对齐, Pydantic层即拦截非法类型
-# 2026-07-21 - 小欧 - ReadDocxInput.limit description 引用 OBS_READTEXT_MAX_ROWS 常量, 加建议不超过上限说明
+# 2026-07-21 - 小欧 - ReadDocxInput.limit description 引用 OBS_READ_MAX_ROWS 常量, 加建议不超过上限说明
 # 2026-07-21 - 小欧 - 入参即信任: ReadDocxInput.limit 加 ge=1,le=1000, 支撑LLM指定1000以内段落数
 # 2026-07-25 - 小欧 - description去冗余+Field精简
 # 2026-07-26 - 小沈 - 欧阳报告: WriteDocxInput/WritePdfInput validator放宽, content+table_data都空时默认""而非报错

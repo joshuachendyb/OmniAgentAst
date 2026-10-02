@@ -43,6 +43,7 @@
 #   tool_safety_checker 用户 message 的拼接尾部)由黑话改"术语+人话"——代码库根:「路径位于受保护区域(项目代码库)」;
 #   系统敏感文件/目录:「路径位于系统禁区(敏感文件/敏感目录)」; 异常:「路径安全检查异常,已拒绝访问」;
 #   与前缀「该路径在受保护区域/系统禁区...」拼读通顺且保留禁区分级定位; 仅改文案不改逻辑(category 判定/hard-block 不变), 测试不断言文案, 逻辑零退化
+# 2026-10-02 - 小欧 - 注册名归位: _READ_ONLY_TOOLS 文本项 read→read, 删重复的 "read" 项(合并为一条)
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -356,11 +357,9 @@ _PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "dest")
 
 # 只读工具集合(以真实注册名为准, stat 无对应注册工具已剔除) — 小欧 2026-08-10 v1.43
-# 2026-09-24 北京老陈 方案1: 加"read"(fundamental别名工具, 虽经normalize归一到readtext, 此处双保险)
 _READ_ONLY_TOOLS = frozenset({
-    "listdir", "tree", "find", "grep", "readtext", "readmedia",
+    "listdir", "tree", "find", "grep", "read", "readmedia",
     "read_pdf", "read_docx", "read_pptx", "read_xlsx",
-    "read",  # 方案1别名工具 — 北京老陈 2026-09-24
 })
 
 

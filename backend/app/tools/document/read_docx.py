@@ -108,7 +108,7 @@ def read_docx(
         llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail="python-docx库未安装", hint="请安装python-docx库")
         return build_error(data={}, llm_data=llm_data)
 
-    # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 readtext 的 offset/limit/tail 语义)
+    # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 read 的 offset/limit/tail 语义)
     if limit is not None and (limit < 1 or limit > 1000):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间,传入值: {limit}", hint="limit参数必须设置在1-1000之间")

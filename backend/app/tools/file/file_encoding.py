@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.tools.tool_fc_helper import _detect_encoding
 from app.logger import logger
-from app.tools.tool_constants import READTEXT_INER_CJK_SAMPLE  # 小欧 2026-08-09: mojibake检测迁入公共
+from app.tools.tool_constants import READ_INER_CJK_SAMPLE  # 小欧 2026-08-09: mojibake检测迁入公共
 
 
 _ENCODING_PRIORITY = [
@@ -122,7 +122,7 @@ def get_file_encoding(file_path: str) -> Dict[str, Any]:
 # ============================================================
 # 统一编码回退读取 — 小欧 2026-08-09 (DRY 合并)
 # 病根: read_text_file 与 edit_text_file 各有一份 _try_read_file_with_encodings,
-#       行为不一致(edittext对preferred也做替换符检查, readtext对preferred直接返回)。
+#       行为不一致(edit对preferred也做替换符检查, read对preferred直接返回)。
 # 合并为公共 read_file_with_encodings(取"增强"语义): 所有编码统一替换符阈值检查 + mojibake 检测,
 # 调用契约不变 (content, used_encoding, error)。
 # ============================================================
@@ -138,7 +138,7 @@ def _looks_like_mojibake(content: str, file_path: str = "") -> bool:
     if not content or len(content) < 10:
         return False
     has_cjk = any('\u4e00' <= c <= '\u9fff' for c in file_path)
-    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:READTEXT_INER_CJK_SAMPLE])
+    has_cjk = has_cjk or any('\u4e00' <= c <= '\u9fff' for c in content[:READ_INER_CJK_SAMPLE])
     if not has_cjk:
         return False
     total = len(content)

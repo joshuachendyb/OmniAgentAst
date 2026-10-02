@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-F4: fuzzy_match — edittext模糊匹配策略链
+F4: fuzzy_match — edit模糊匹配策略链
 
 仅用于 mode=once 的精确匹配失败后回退。mode=all/before/after 不走模糊匹配。
 
