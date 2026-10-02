@@ -13,6 +13,8 @@
 #   4. searchtool 空token分支(纯符号)不再返回全部工具top10, 返回空matches+warning
 # 2026-08-07 - 小欧 - searchtool结果选取增加"分类级名额保底"(_apply_category_floor):
 #   修复多类型混合搜索时高分类霸占top10名额, 低分分类被挤出导致一次搜索注不全分类(实测7类型混合仅命中4类)
+# 2026-10-02 - 小欧 - BM25 索引文本追加分类名: 工具改名与挪分类后按分类名搜必然零结果(category 原不进索引),
+#   使检索有"能力词"与"分类名"双路召回; category 重复率高, IDF 自动压权故不加权(不写×3); 实测能力词类查询首位无倒置
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -76,11 +78,14 @@ def _tokenize(text: str) -> List[str]:
 
 
 def _build_bm25() -> Tuple[List[List[str]], List[str], float, Counter]:
-    """从工具注册表构建 BM25 语料库 — 小沈 2026-06-14"""
+    """从工具注册表构建 BM25 语料库 — 小沈 2026-06-14
+
+    2026-10-02 小欧: 索引文本追加分类名, 使按分类搜也能召回(category 重复率高, IDF 自动压权, 不加权)
+    """
     docs: List[List[str]] = []
     tool_names: List[str] = []
     for name, metadata in tool_registry._tools.items():
-        text = " ".join([name] * 3) + " " + metadata.description
+        text = " ".join([name] * 3) + " " + metadata.description + " " + metadata.category.value
         docs.append(_tokenize(text))
         tool_names.append(name)
 
