@@ -4,6 +4,15 @@
 工具格式转换 — 将注册表数据转换为各种展示格式
 
 拆分自 registry.py — 小沈 2026-05-29
+
+# 编辑历史:
+# 2026-10-02 小欧 strict 默认值 True→False: 验证 opencodeZen 是否接受 strict=false。
+#   起因: opencodeZen 必报 400(Object schemas must have 'additionalProperties: false' in strict mode),
+#         该要求由 strict 校验提出; 关掉 strict 校验即不执行, 报错应自动消失。
+#   为何先试这个而非补 additionalProperties: 本仓库无任何模型需要 strict(gpt-5/o 系 0 个),
+#         且该校验从未生效过(65/65 工具全缺 additionalProperties), 关掉不丢已有保护。
+#   影响: 其余 6 provider 本就收原样 schema, 行为不变; 仅 opencodeZen 由全挂变为可用。
+#   状态: 临时验证用, 结论落地后按结果决定保留或改走 strict 归一化。
 """
 
 from typing import Dict, Any
@@ -13,7 +22,7 @@ from app.utils.display_utils import format_param_value
 
 
 def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
-                    tool_names: Optional[Set[str]] = None, strict: bool = True) -> list:
+                    tool_names: Optional[Set[str]] = None, strict: bool = False) -> list:
     """
     生成OpenAI API格式的tools定义 - 小沈 2026-05-09
 
@@ -21,7 +30,8 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
         registry: ToolRegistry实例
         categories: 工具分类集合,None=全部
         tool_names: 额外包含的指定工具名集合(即使其分类不在categories中) — 修复 2026-06-23 小欧
-        strict: 是否启用strict模式(强制arguments符合Schema) - 小沈 2026-06-17
+        strict: 是否启用strict模式(强制arguments符合Schema) - 小沈 2026-06-17;
+               默认False(opencodeZen 会校验 strict 且本仓 schema 不合规) - 小欧 2026-10-02
 
     Returns:
         [{"type": "function", "function": {...}}, ...]
