@@ -94,7 +94,7 @@ async def test_e2e_p0_03a_file_shell():
         has_write = any(n in write_tools for n in tool_names)
         assert has_write, f"应调用写文件工具(MUST P0-03), 实际: {tool_names}"
 
-        shell_tools = {"shell"}
+        shell_tools = {"bash"}
         has_shell = any(n in shell_tools for n in tool_names)
         assert has_shell, f"应调用Shell执行工具(MUST P0-03), 实际: {tool_names}"
 
