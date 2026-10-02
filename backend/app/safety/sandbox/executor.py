@@ -62,7 +62,7 @@ _READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
     # 毛病2评审纪要(2026-09-18 小欧, 逐条过安全评审, 任意无拼接符后缀仍只读才准入):
     #   准入: git log/diff/show(纯展示); python/node --version(打印即退); npm --version/ls, pip list/show/--version(只读查询);
     #   docker ps/images(只读列表); tasklist/systeminfo/netstat/ver(系统只读展示); ipconfig /all(精确子命令, /flushdns等不匹配);
-    #   test-path(纯测试); kubectl get(只读API, 与 readtext 读敏感文件同政策).
+    #   test-path(纯测试); kubectl get(只读API, 与 read 读敏感文件同政策).
     #   否决: git branch(-D/-M可删分支); ipconfig裸前缀(/release//renew//flushdns可变更网络); gh/set/npm run/pip install/docker exec等(可写).
 _FAST_CHANNEL_FORBIDDEN = ("|", ";", "&", ">", ">>")                  # 单命令收紧(v1.10 FP1 管道/分号/调用符 + v1.17 N5 重定向)
 _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
@@ -309,7 +309,7 @@ class SandboxExecutor:
         """Phase 2: 高危文件操作预检 — delete/copy/move 影子副本预演 + registry 静态分析"""
         normalized = normalize_tool_name(tool_name)
         if normalized not in ("registrywrite", "registrydelete", "delete", "copy", "move"):
-            # v1.23 V-B: 未支持的操作类型不猜分支——原 writetext/extractarchive 落入 else 被当 move
+            # v1.23 V-B: 未支持的操作类型不猜分支——原 write/extractarchive 落入 else 被当 move
             # 重演副本, rc=0 产生虚假 passed=True 放行(预检形同虚设); 一律转用户裁决
             logger.warning(f"[sandbox][exec] 未支持操作类型转HITL: op={normalized}")
             return PreCheckResult(passed=False, needs_ruling=True,

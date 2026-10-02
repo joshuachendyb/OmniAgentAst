@@ -52,7 +52,7 @@
 #   ③用户拒绝content "用户拒绝执行"→"用户拒绝执行工具"(与safety_gate B3措辞统一) - 小欧-2026-09-18
 # 2026-09-18 小欧 - 7.3.0-A3/7.3.1-B4 精化(重查挖掘): executor blocked_reason 经 _attach_stderr_tail 附 " | 英文stderr尾部"(喂LLM自纠),
 #   A3弹窗content与B4拒绝content均改 split(" | ",1)[0] 只秀中文人话原因(英文tail仍随denied_list完整喂LLM, 前后端可读/LLM纠错职责分离);
-#   A3 问句尾不再接 {tool_name}(工具名在弹窗头部自有展示, 原"…直接执行？writetext"句读生硬) — 小欧-2026-09-18
+#   A3 问句尾不再接 {tool_name}(工具名在弹窗头部自有展示, 原"…直接执行？write"句读生硬) — 小欧-2026-09-18
 # 2026-09-18 小欧 - 毛病4精化(弹窗过宽核查): B5 用户裁决拒绝写入拒绝记忆(refusal_key 与 safety_gate 组键同口径, 延迟导入复用防环);
 #   sandbox_resolve 开头加检查点 B(覆盖豁免直通 requires=False 路径): 记忆命中不弹裁决窗直接 rejected(user),
 #   信任清除记忆, 主路刚确认(main_confirmed)不受历史约束 — 小欧-2026-09-18

@@ -5,7 +5,7 @@
 # 2026-07-16 小欧 op_id双表贯通修复
 # 2026-07-17 小欧 handle_action执行工具后重置_consecutive_reasoning_only(空转检测: 本步LLM发起工具调用=非reasoning-only空转, 归零)
 # 2026-07-17 小欧 计数器修正: handle_action-tool_name空early-return处补归零(空转检测非reasoning-only出口完备, 不变量严格成立)
-# 2026-07-18 小欧 修复: _file_tool_names从模块函数名改为注册名(delete/copy/move/edittext/writetext/compress),op_id双表贯通恢复
+# 2026-07-18 小欧 修复: _file_tool_names从模块函数名改为注册名(delete/copy/move/edit/write/compress),op_id双表贯通恢复
 # 2026-07-18 小欧 修复: wait_for_confirmation_result超时返回expired=True;超时/拒绝分流
 # 2026-07-18 小欧 修复: check_safety_and_confirm拒绝不再return终止整批,收集_denied后继续,最终只执行通过的call
 # 2026-07-18 小欧 FinalStep多态自包含终态重构:
@@ -30,8 +30,8 @@
 # 2026-07-23 小欧 - log_and_print统一: 删局部_log_and_print函数, 改为import from app.logger.log_and_print; execute_tools中3处logger.info()+print()替换为log_and_print()
 # 2026-07-23 小欧 - 局部常量迁移: 删 _MAX_LOG_RESULT_CHARS=5000,
 #            改为 from app.constants import ACTION_LOG_RESULT_MAX_CHARS
-# 2026-07-25 - 小欧 - 修复readmedia被自动纠错为readtext: _auto_correct_file_tool fallback硬编码"readtext"→tool_name, 无专用映射时不篡改原工具
-# 2026-07-25 小欧 - 三分类映射表重构: _EXT_TO_READ/WRITE_TOOL换用file_type_checker常量(TEXT_EXTENSIONS/MEDIA_EXTENSIONS)构建, 删fallback; _auto_correct_file_tool简化: None短路+!=判断; 文本→readtext/文档→专用工具/多媒体→readmedia 三分类全覆盖
+# 2026-07-25 - 小欧 - 修复readmedia被自动纠错为read: _auto_correct_file_tool fallback硬编码"read"→tool_name, 无专用映射时不篡改原工具
+# 2026-07-25 小欧 - 三分类映射表重构: _EXT_TO_READ/WRITE_TOOL换用file_type_checker常量(TEXT_EXTENSIONS/MEDIA_EXTENSIONS)构建, 删fallback; _auto_correct_file_tool简化: None短路+!=判断; 文本→read/文档→专用工具/多媒体→readmedia 三分类全覆盖
 # 2026-07-25 小欧 - task006-issue1: operation_id候选查询加task_id类型守卫(isinstance str/int); 非str/int提前短路并降WARNING为DEBUG, 消除测试环境MagicMock刷52次WARNING噪声
 # 2026-07-25 小欧 - 回退上述类型守卫: 根因在测试fixture缺task_id而非生产代码(生产代码generate_task_id()永远返回str), 改为测试fixture源头修复; 生产代码恢复原始try-except
 # 2026-07-25 小欧 - 欧阳报告缺陷修复:
@@ -48,9 +48,9 @@
 # 2026-08-03 - 小沈 - E2E修复: 重加auto_confirm消费块(07-30加→07-31撤→重加缺失一半, 仅残留checker返回+字段)
 #           与tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
 # 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), PARAM_ALIASES引用处同步更新
-# 2026-08-07 - 小欧 - P07修复(北京老陈驱动 task001): _EXT_TO_READ_TOOL 从TEXT_EXTENSIONS排除.csv(双域: 文本+表格), 使 read_xlsx(csv)/readtext(csv) 均不被_auto_correct_file_tool自动改写 — 小欧 2026-08-07
-# 2026-08-09 - 小欧 - edittext并发竞态修复(北京老陈驱动, 方案二分组调度版):
-#   [BUG] 旧_has_conflict用set存工具名不计数, 3×edittext同文件被去重漏检→误走并行→read-modify-write竞态致内容丢失(after模式插入位置异常, log step=11)
+# 2026-08-07 - 小欧 - P07修复(北京老陈驱动 task001): _EXT_TO_READ_TOOL 从TEXT_EXTENSIONS排除.csv(双域: 文本+表格), 使 read_xlsx(csv)/read(csv) 均不被_auto_correct_file_tool自动改写 — 小欧 2026-08-07
+# 2026-08-09 - 小欧 - edit并发竞态修复(北京老陈驱动, 方案二分组调度版):
+#   [BUG] 旧_has_conflict用set存工具名不计数, 3×edit同文件被去重漏检→误走并行→read-modify-write竞态致内容丢失(after模式插入位置异常, log step=11)
 #   [改法] ①新增_parse_paths(从旧_has_conflict路径解析循环提取, DRY) ②_has_conflict改为计数版(count>=2且含写操作即冲突)
 #         ③新增_partition_calls(并查集连通分量分组) ④分支B改分组调度B': 冲突组内串行+无冲突组并行+组间失败隔离(results保序)
 #         ⑤C分支_reason死代码清理(进入B'后C分支仅is_parallel=False触发, "文件路径冲突"永假)
@@ -63,7 +63,7 @@
 #   [目的] 原B'仅"分组并行执行"开头日志+总耗时, 无法观察每组是并行/串行及各组实际耗时
 #   [改法] ①进入B'后打印分组明细(每组工具+模式: 单工具/并行/串行) ②_run_group内计时,
 #          每组执行完打印"分组执行完成: tools=..., 模式=..., 耗时=x.xxs" ③执行逻辑零改动(仅return改为赋值_res后return)
-#   [验证] py_compile + verify_prod_smoke(生产代码直接import) + handlers/edittext测试
+#   [验证] py_compile + verify_prod_smoke(生产代码直接import) + handlers/edit测试
 # 2026-08-10 - 小欧 - BUG-E修复(补A"操作结束即清除"落地): handle_action 工具批执行结束后 finally 调 clear_temp_auth(),
 #   清空本请求作用域 ContextVar 临时授权, 杜绝"一次一申请"授权跨工具跨步骤残留复用;
 #   try/finally 保证执行异常时也清除(不残留授权) — 小欧 2026-08-10
@@ -79,7 +79,7 @@
 #   [验证] py_compile + verify_partition_v13 + verify_refactor_consistency + pytest 回归 — 小欧 2026-08-11
 # 2026-08-11 - 小欧 - fix D2: check_safety_and_confirm 同批同名工具误杀修复;
 #   _denied从2元组(tool_name,reason)扩展为3元组(tool_name,reason,call), 过滤从按tool_name改按id(call)对象标识;
-#   原按tool_name过滤→同批2×edittext(1被拒1通过)全被移除(误杀); 新逻辑仅移除被拒call对象, 保留同名合法调用 — 小欧 2026-08-11
+#   原按tool_name过滤→同批2×edit(1被拒1通过)全被移除(误杀); 新逻辑仅移除被拒call对象, 保留同名合法调用 — 小欧 2026-08-11
 # 2026-08-11 - 小欧 - fix D2反馈层同步(北京老陈三堂会审驱动): 原_add_denial_feedback按tool_name粗粒度遍历all_calls写反馈,
 #   ①会执行的同名工具被误标"被安全策略拦截"(与真实执行矛盾) ②自行add_assistant_tool_call与build_observation重复写assistant;
 #   现改: check_safety_and_confirm经_denied_out回传被拒call(tool_name,reason,call), handle_action在build_observation之后
@@ -93,7 +93,7 @@
 #   [BUG] write_xlsx+read_xlsx 同路径同批误走并行 → read 先于 write 执行, validate_path 的 p.exists()=False 报"路径不存在"
 #         (实测 prompt_003749 LLM 并行调用=7: write 67ms后 read 2ms失败, 重试成功)
 #   [根因] _parse_paths/_has_conflict 仅认 FILE_OPERATION_TOOLS(文本工具), 8个office工具不在其中→空冲突键→并行
-#   [改法] ①tool_constants.FILE_OPERATION_TOOLS 并入8个office工具 ②_WRITE_OPS 排除集 {"readtext"}→_READ_TOOLS
+#   [改法] ①tool_constants.FILE_OPERATION_TOOLS 并入8个office工具 ②_WRITE_OPS 排除集 {"read"}→_READ_TOOLS
 #         (含4个office读工具, 防 read_xlsx 等被误判写操作致读-读并行退化串行)
 #   [效果] 同路径写+读/写×2 并组串行, 同路径读×2/不同路径 仍并行, 无性能退化
 # 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): HITL 确认链 tool_name 透传 + 豁免读取 session_id 接入——
@@ -111,7 +111,7 @@
 # 2026-08-18 - 小欧 - 错误全仅SSE: blocked/timeout/user_rejected/invalid_action 四处 ErrorStep→MetaStep(type="error", content=错误信息, error_type=); 删 ErrorStep import
 # 2026-08-18 - 小欧 - severity: error 四处加 severity="warn"; paused 加 severity="attention"; resumed 加 severity="info"
 # 2026-08-18 小健 三堂会审: 删除硬编码_TARGE_FIELD——该映射对文件类工具及部分键失配, 使_extract_target回退为工具名(真实bug):
-#   ①键失配: 映射键"read"/"web_search"与注册名"readtext"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
+#   ①键失配: 映射键"read"/"web_search"与注册名"read"/未注册不符, _TARGET_FIELD.get()返回None→回退tool_name;
 #   ②字段失配: 文件类映射值file_path/dir_path/search_dir 与真实schema属性名path/pattern不符, _params.get(...)取到空串→回退tool_name;
 #   (注: grep/shell/httpget/fetchpage/download/ping_port/query_sql/execute_sql 映射值恰与schema一致, 旧代码本可工作; 推导化后统一正确且新增工具自动获得)
 #   字段名由_resolve_target_field从tool_registry真实input_schema.properties推导; target值取自call["tool_params"]的LLM已回传确定入参值(非结果)。

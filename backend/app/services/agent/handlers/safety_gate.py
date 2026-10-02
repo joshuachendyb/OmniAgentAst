@@ -40,7 +40,7 @@
 #   安全检查异常→command_block/兜底tool_execute); content改载_message原样(去拼接问句), bypass改"安全开关已绕过，自动确认执行" - 小欧-2026-09-18
 # 2026-09-18 小欧 - 三思三省精确化(9类全量核查): keyword链尾部补 `elif not _msg` 按工具名二次归属 —
 #   无message确认类(needs_confirmation=True且无风险文案)原全落tool_execute兜底, 与归属规则不符:
-#   shell确认→shellparam(中风险弹窗即needs_confirmation驱动, 命令确认主场景)、create_task/writetext/edittext/writetool→tool_write、
+#   shell确认→shellparam(中风险弹窗即needs_confirmation驱动, 命令确认主场景)、create_task/write/edit/writetool→tool_write、
 #   delete_task→tool_delete; execute_sql/registry_write/registry_delete保持tool_execute兜底(本就准确) — 小欧-2026-09-18
 # 2026-09-18 小欧 - 毛病3精化(弹窗过宽核查): 3.4同批合并组键 (tool, auth/trust_path) 对 shell 恒退化 ("shell", None)
 #   (shell 不在 trust FILE_OPERATION/NON_FILE_TRUST 两集合, extract_trust_path 恒 None),
@@ -55,6 +55,7 @@
 #   改auto_confirm=_bypass布尔单源(唯一真相源), 避免"布尔→字符串→布尔"无意义往返 — 小欧-2026-09-18
 # 2026-09-19 小欧 - bypass恢复_bypass_confirmed透传: 改动4误删run_sandbox_gate的_bypass_confirmed参数(main_confirmed),
 #   恢复透传, 避免bypass下sandbox走110s+超时拒绝; sandbox_gate同步修复auto_confirm读safety_result — 北京老陈驱动(三堂会审)
+# 2026-10-02 - 小欧 - 注册名收敛: 写操作确认集合 write/edit→write/edit
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -209,7 +210,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute兜底 ✓
                         if _cn == "shell":
                             _sl = "shellparam"
-                        elif _cn in ("create_task", "writetext", "edittext", "writetool"):
+                        elif _cn in ("create_task", "write", "edit", "writetool"):
                             _sl = "tool_write"
                         elif _cn == "delete_task":
                             _sl = "tool_delete"
@@ -305,7 +306,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
 
         # 回传未被拒的call索引给调用方 — 小欧 2026-07-18 修复
         # 2026-08-11 小欧 fix D2: 用call对象id标识被拒调用,而非tool_name;
-        #   原按tool_name过滤→同批同名工具(如2×edittext)1个被拒全部误杀
+        #   原按tool_name过滤→同批同名工具(如2×edit)1个被拒全部误杀
         if _out is not None:
             _denied_call_ids = {id(d[2]) for d in _denied}
             _out[:] = [c for c in all_calls if id(c) not in _denied_call_ids]

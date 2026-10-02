@@ -443,7 +443,7 @@ class BaseAIService:
                             logger.warning(f"[BaseAIService] 收到完全为空的 tool_call delta, 跳过: idx={idx}, entry={entry}")
 
                     # ③ tool_call流式超时（总时长的3/5）— 2026-07-16 小欧
-                    # 工具参数(如 writetext content)可能极长(>10万字符), LLM 生成期间
+                    # 工具参数(如 write content)可能极长(>10万字符), LLM 生成期间
                     # _parse_sse_data 对 tool_call delta 返回 None(静默跳过), Console 无输出。
                     # 此超时专卡 tool_call 参数流式阶段, 不误伤普通文本回答。
                     # 首次检测到 tool_call delta 时开始计时, 超时 break→accumulator→截断修复。

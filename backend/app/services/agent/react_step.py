@@ -33,7 +33,7 @@
 # 2026-07-23 小欧 - log_and_print统一: 3处print()替换为log_and_print()(Thought/Error/Cancel控制台输出), 导入log_and_print
 # 2026-08-08 小欧 相同工具调用死循环检测(场景F)新增:
 #   【病根】超时根因: LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数
-#          (writetext写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
+#          (write写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
 #          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
 #   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
 #           双阈值: count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
@@ -585,7 +585,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
 
 # ── 场景F: 相同工具调用死循环检测(双阈值纠偏/硬终止) ──────────
     # 2026-08-08 - 小欧 - 超时根因修复(file_not_found):
-    #   【病根】LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数(writetext写同一diff_tool.py),
+    #   【病根】LLM连续40+步逐字重复同一Thought并反复调用完全相同工具+相同参数(write写同一diff_tool.py),
     #          每次工具执行均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具调用"空转, 本模式漏检,
     #          致死循环直抵max_steps=10000(约40+分钟)。
     #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 含并行pending),

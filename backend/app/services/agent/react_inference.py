@@ -26,7 +26,7 @@ _MAX_CONSECUTIVE_TRUNCATIONS = 3
 # 第2次(count==2)、第3次(count==3)、第4次(count==4)各注入一条assistant role纠偏消息尝试唤醒调整(共3条);
 # count>=5(第5次)判定死循环硬终止。
 # 2026-08-08 - 小欧 - 文件不存在超时根因: LLM连续40+步逐字重复同一Thought并反复调用
-#   相同writetext(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
+#   相同write(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
 #   空转, 本模式漏检, 致死循环直抵max_steps=10000。v1.6升级为由单阈值硬终止改为双阈值(纠偏+硬终止)。
 # v1.7(北京老陈 2026-08-08): 纠偏起点提前——第2次(count==2)就发第1条纠偏(原第3次), 第2/3/4次共发3条,
 #   硬终止 count>=5(原count>5第6次)收紧; 给LLM尽早调整机会(第2次发现完全相同即提醒)。

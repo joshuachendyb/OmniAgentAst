@@ -7,7 +7,7 @@
 # 2026-08-04 - 小欧 - 开关false仍拒绝已知风险: bypass只跳过确认询问不跳过危险防护, _check_known_risks(路径越权/写入保护/代码注入)检测到即blocked拒绝执行; 普通needs_confirmation仍auto_confirm放行 — 北京老陈驱动
 # 2026-08-04 - 小欧 - 重构DRY: _check_known_risks提到两分支共同入口(无条件防线), 未注册check前置统一; 开关只分流"确认策略", 危险防护与开关解耦 — 三堂会审驱动(合规SRP/DRY/KISS最优)
 # 2026-08-04 - 小欧 - delete专属安全(双轨接入): check_before_execute 一次性计算 delete_risk; R1/R2 仍由 known_risks(_is_forbidden_path) 覆盖, R6 入 _check_known_risks 无条件拦截, R3-R5 入 _get_needs_confirmation 确认分流; 惰性导入 delete_safety 避免循环依赖 — 北京老陈驱动(设计文档 v1.15)
-# 2026-08-04 - 小欧 - fix: _check_known_risks 中 writetext 的 content 可能为 dict/list(LLM结构化传参), content.encode() 崩溃致误拦; 对齐工具层 check_content_safety 的 dict/list→json 转换 — E2E 回归发现
+# 2026-08-04 - 小欧 - fix: _check_known_risks 中 write 的 content 可能为 dict/list(LLM结构化传参), content.encode() 崩溃致误拦; 对齐工具层 check_content_safety 的 dict/list→json 转换 — E2E 回归发现
 # 2026-08-04 - 小欧 - 三堂会审(YAGNI)撤销转换方案: 写保护只需量字节数, content为dict/list(非str)走 isinstance(str) 判typeskip(new_size=0), 不崩不误拦且无需把dict转json; 与工具层json转换职责解耦 — 北京老陈审出多余转换
 # 2026-08-10 - 小欧 - 步骤1实施(⑮, 北京老陈驱动「项目根=tool工作区, 代码库根=tool禁区」): SafetyResult新增auth_path字段; _check_known_risks白名单外路径(非禁区/系统目录)转为临时授权请求(requires_confirmation+auth_path), 由action_handler HITL确认后grant_temp_auth放行
 # 2026-08-10 - 小欧 - 修复: delete R6(项目根/授权目录外递归)外层先于 _check_known_risks 判定(if delete_risk.blocked: return), 杜绝R6被白名单临时授权绕过
@@ -18,8 +18,8 @@
 # 2026-08-10 - 小欧 - T2 缺陷修复(三堂会审关联逻辑复核发现): category=="non_system" 分支未区分写/删——validate_path 删mode返回
 #   (False, msg, "non_system") 时, 原代码一律返回 requires_confirmation(可授权), 违反「非系统禁区删❌硬拦永不授权」;
 #   修复: 按 normalize_tool_name 判断 delete 操作 → 硬拦 blocked; 写操作保持任务级授权请求(3.2.13)
-# 2026-08-10 - 小欧 - 三堂会审修复(v1.45): _check_known_risks 写保护判定原 `tool_name == _WRITE_RISK_TOOL("writetext")`
-#   用 LLM 原始名, 别名(write_text/writefile等) normalize 前不等于 writetext → 写入大小保护被绕过;
+# 2026-08-10 - 小欧 - 三堂会审修复(v1.45): _check_known_risks 写保护判定原 `tool_name == _WRITE_RISK_TOOL("write")`
+#   用 LLM 原始名, 别名(write_text/writefile等) normalize 前不等于 write → 写入大小保护被绕过;
 #   统一走 normalize_tool_name 再判(防别名漏检补齐, 与 delete 判定同模式) — 小欧 2026-08-10
 # 2026-08-11 - 小欧 - 回归修复: security.enabled=false(bypass)时 _check_known_risks 白名单外临时授权请求
 #   (requires_confirmation+auth_path) 未设 auto_confirm, 仍挂起HITL等确认; E2E自动化无人在线确认→确认超时→任务failed。
@@ -59,7 +59,7 @@
 #    白名单外拼"仅允许:list"超长), 改拼 failed_path(真实越权路径, 读/删边界, 前缀关键词不变故safety_gate分类不受影响),
 #   failed_path为空(如空路径)兜底 display msg 保原因; 用户可见 message 干净, 日志仍留 {msg} 完整审计 — 小欧-2026-09-18
 # 2026-09-18 小欧 - 毛病1精化(弹窗过宽核查): execute_sql 注册 needs_confirmation=True 一刀切, 纯读 SELECT 也弹
-#   (与 shell 只读短路/readtext 等读工具免确认矛盾); _get_needs_confirmation 加纯读短路 _is_readonly_sql:
+#   (与 shell 只读短路/read 等读工具免确认矛盾); _get_needs_confirmation 加纯读短路 _is_readonly_sql:
 #   首词 SELECT/SHOW/DESCRIBE/DESC/EXPLAIN/VALUES/TABLE + 单语句(无分号)才免, 注释头/WITH/PRAGMA/多语句/空串
 #   保守回弹窗(宁弹不错); 免确认后 severity 走 safe, 沙箱零开销直通 — 小欧-2026-09-18
 # 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): bypass需确认分支 message 由"安全开关已绕过，自动确认执行"改空串,
@@ -74,6 +74,7 @@
 #   改 _get_needs_confirmation 返回三元组(needs_confirm, shell_msg, shell_blocked)直线传递, 三处调用点解包直接构造SafetyResult,
 #   彻底删除 tool_meta._shell_risk_* setattr/getattr; 同步修复skip_confirmation分支丢弃blocked(会话信任下HIGH shell被放行,
 #   违反"豁免只跳确认不跳危险防护") — 小欧-2026-09-19
+# 2026-10-02 - 小欧 - 注册名收敛: _WRITE_RISK_TOOL "write"→"write"(写保护判定按新注册名)
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -112,7 +113,7 @@ from app.tools.tool_types import ToolCategory
 from app.tools.security.path_safe_check import validate_tool_path as _validate_tool_path
 from app.tools.security.safety_result import SafetyResult  # A1盲点四: SafetyResult 迁 tools/security — 小欧 2026-08-12
 
-_WRITE_RISK_TOOL = "writetext"
+_WRITE_RISK_TOOL = "write"
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 
@@ -345,8 +346,8 @@ class ToolSafetyChecker:
                                 auth_path=failed_path or (params.get("path") or params.get("dest")))
 
         # 修复 (三堂会审复核发现, v1.45): 写保护判定用归一化名 —
-        #   原代码 `tool_name == _WRITE_RISK_TOOL("writetext")` 用 LLM 原始名, 别名(write_text/writefile等)
-        #   normalize 前不等于 writetext → 写入大小保护被绕过; 统一走 normalize_tool_name 再判(补齐)
+        #   原代码 `tool_name == _WRITE_RISK_TOOL("write")` 用 LLM 原始名, 别名(write_text/writefile等)
+        #   normalize 前不等于 write → 写入大小保护被绕过; 统一走 normalize_tool_name 再判(补齐)
         from app.tools.tools_alias_mapper import normalize_tool_name as _norm_tool
         if _norm_tool(tool_name) == _WRITE_RISK_TOOL:
             try:
