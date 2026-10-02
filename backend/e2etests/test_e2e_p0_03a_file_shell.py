@@ -90,7 +90,7 @@ async def test_e2e_p0_03a_file_shell():
 
         assert len(result["tool_calls"]) > 0, "必须调用工具(MUST P0-03)"
 
-        write_tools = {"writetext"}
+        write_tools = {"write"}
         has_write = any(n in write_tools for n in tool_names)
         assert has_write, f"应调用写文件工具(MUST P0-03), 实际: {tool_names}"
 

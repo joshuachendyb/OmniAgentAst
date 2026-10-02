@@ -6,7 +6,7 @@
      用户输入: "读取任务书E:\\test_dir\\task\\task004.txt,分析可行性和实施方案,逐一执行全部任务,做任务总结"
       前置数据: E:\task\task004.txt存在
      预期过程: 读取任务书→分析任务个数→逐一执行→任务总结
-     通过标准: 调用readtext;回复包含任务总结关键词;DB三表完整;日志无ERROR
+     通过标准: 调用read;回复包含任务总结关键词;DB三表完整;日志无ERROR
      失败标准: 未读任务书;无总结;DB记录不完整;日志有ERROR
 
    铁律:
@@ -76,11 +76,11 @@ async def test_e2e_unit_09_task_execution():
         end_type = assert_stream_ended(result)
         assert end_type == "final", f"任务必须以final正常结束(MUST), actual: {end_type}"
 
-        # unit-07核心: 必须调用readtext读取任务书
+        # unit-07核心: 必须调用read读取任务书
         tool_names = [t["tool_name"] for t in result["tool_calls"]]
-        file_tools = {"readtext"}
+        file_tools = {"read"}
         has_read = any(n in file_tools for n in tool_names)
-        assert has_read, f"必须调用readtext(MUST unit-07), 实际: {tool_names}"
+        assert has_read, f"必须调用read(MUST unit-07), 实际: {tool_names}"
 
         # unit-07核心: 回复应包含任务总结关键词
         resp = result["response_text"]
@@ -103,7 +103,7 @@ async def test_e2e_unit_09_task_execution():
         )
         # 2026-08-22 小欧 §10.3适配: 旧action_tool取数块收敛为verify_db_tool_usage单点校验(FUNCTIONS.md 9.1)
         _ti = verify_db_tool_usage(db, expect_any_tools=file_tools)
-        assert len(_ti) == 0, f"DB steps中应有readtext操作(MUST unit-07): {_ti}"
+        assert len(_ti) == 0, f"DB steps中应有read操作(MUST unit-07): {_ti}"
 
         # 2026-08-07 小欧: 原assert_data_consistency→verify_consistency+verify_steps
         ci = verify_consistency(result, sid)

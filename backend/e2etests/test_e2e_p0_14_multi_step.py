@@ -85,7 +85,7 @@ async def test_e2e_p0_14_multi_step_reasoning():
         if result["has_error"]:
             print(f"  [WARN] 有error事件(SHOULD)，流结束: {end_type}")
 
-        # 2026-09-24 小欧 归一helper: READ_TOOLS唯一源含read/readtext/readmedia(DRY)
+        # 2026-09-24 小欧 归一helper: READ_TOOLS唯一源含read/read/readmedia(DRY)
         read_tools = READ_TOOLS
         has_read = any(n in read_tools for n in tool_names)
         assert has_read, f"must call read tool(MUST P0-14), actual: {tool_names}"

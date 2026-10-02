@@ -75,7 +75,7 @@ async def test_e2e_p0_03_multi_step_reasoning():
         end_type = assert_stream_ended(result)
         assert end_type == "final", f"任务必须以final正常结束(MUST), actual: {end_type}"
 
-        # 2026-09-24 小欧 归一helper: READ_TOOLS唯一源含read/readtext/readmedia(DRY)
+        # 2026-09-24 小欧 归一helper: READ_TOOLS唯一源含read/read/readmedia(DRY)
         read_tools = READ_TOOLS
         has_read = any(n in read_tools for n in tool_names)
         assert has_read, f"must call read tool(文本/媒体/文档任一读取,MUST P0-03), actual: {tool_names}"

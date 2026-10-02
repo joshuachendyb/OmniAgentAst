@@ -4,7 +4,7 @@
 操作手册对照:
   用例: E2E-P0-02
   用户输入: "在E盘创建一个e2e_test_p0.txt,内容为hello"
-  预期过程: Agent调用writetext,返回成功
+  预期过程: Agent调用write,返回成功
   通过标准: SSE包含action事件;DB有execution_steps记录;文件存在且内容正认
   失败标准: 未调用工具;文件未创建;DB无记录
 
