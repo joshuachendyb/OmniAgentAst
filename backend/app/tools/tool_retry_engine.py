@@ -46,11 +46,11 @@
 #   与现有"对象→字符串"容错形成双向闭环, 不静默删除非法字段)
 # 2026-08-12 - 小欧 - 三堂会审修正: 反向容错由parse_json手写分支改为复用公共coerce_json(DRY铁规,
 #   与write_xlsx/analyze_data/filter_data共用同一参数归一化层; 非法JSON原样返回不误改, 二维List[List]不误伤, 行为等价更优)
-# 2026-08-12 - 小欧 - 三堂会审修复: 值范围clamp兼容Pydantic v2 anyOf嵌套(日志实证2026-08-11 readtext limit=1200漏过引擎层)
+# 2026-08-12 - 小欧 - 三堂会审修复: 值范围clamp兼容Pydantic v2 anyOf嵌套(日志实证2026-08-11 read limit=1200漏过引擎层)
 #   【病根】Pydantic v2对Optional[int]生成{"anyOf":[{...min/max},{"type":"null"}], "type":"integer"},
 #      maximum/minimum在anyOf[0]子结构, 顶层spec.get("minimum"/"maximum")取None→clamp全程失效,
 #      越界值(limit=1200等)直抵工具运行时靠read_text_file.py:166兜底报错
-#   【影响面】全部Optional数字+ge/le字段: readtext(offset/limit/tail)、analyze_data(top_n/limit)、
+#   【影响面】全部Optional数字+ge/le字段: read(offset/limit/tail)、analyze_data(top_n/limit)、
 #      read_docx/read_pdf(limit)、network port(1-65535)、timer year(1900-2100), 一并修复
 #   【解决】新增_extract_numeric_bounds(spec)范围提取helper(顶层优先, 无则取anyOf[0]),
 #      clamp逻辑与既有钳制语义完全一致(v<min→min, v>max→max), 仅提取路径修正, 增强无退化
@@ -405,7 +405,7 @@ class ToolRetryEngine:
     def _extract_numeric_bounds(self, spec: Dict[str, Any]) -> tuple:
         """从工具schema提取数值范围(minimum/maximum), 兼容Pydantic v2 Optional字段的anyOf嵌套 — 小欧 2026-08-12
         Pydantic v2对Optional[int]生成{"anyOf":[{...,"minimum"/"maximum"...},{"type":"null"}], "type":"integer"},
-        顶层不直接含min/max, 若直接spec.get("maximum")取None会导致clamp失效(日志实证readtext limit=1200漏过引擎层)。
+        顶层不直接含min/max, 若直接spec.get("maximum")取None会导致clamp失效(日志实证read limit=1200漏过引擎层)。
         提取顺序: 顶层优先(普通非Optional字段), 无则取anyOf[0](Optional字段), 再无返回(None,None)表示无范围约束。
         """
         if not isinstance(spec, dict):

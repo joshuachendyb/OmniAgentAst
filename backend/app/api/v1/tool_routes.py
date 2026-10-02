@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-08-12 - 小欧 - 新建: A4 /tool/list + /tool/execute 由 health.py 迁出独立(方案4.4.3步骤3)。health.py 回归健康检查单一职责;
 #   API 层只调 services/tool 门面, 不再import app.tools(守护测试 api禁tools 规则变绿); /tool/execute 加 X-Test-Mode 校验 + 生产开关默认关闭(步骤4, D2决策)。
+# 2026-10-02 - 小欧 - 注册名归位: /tool/execute 用法示例 read→read
 """
 tool_routes — 工具测试路由(独立模块)
 
@@ -52,7 +53,7 @@ async def execute_tool_endpoint(request: ToolExecuteRequest, http_request: Reque
     """工具测试执行接口(仅测试用) — 小欧 2026-08-12
 
     安全栏值: 需 X-Test-Mode 头 = '1'/'true' 且 tools.execute_tool_enabled 开关打开; 否则生产拒执行。
-    Usage: POST /api/v1/tool/execute   Body: {"tool_name": "readtext", "params": {"path": "app/main.py"}}
+    Usage: POST /api/v1/tool/execute   Body: {"tool_name": "read", "params": {"path": "app/main.py"}}
     """
     tool_name = request.tool_name
     params = request.params

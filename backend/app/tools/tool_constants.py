@@ -33,11 +33,11 @@
 #     /OBS_FETCHPAGE_MAX_ROW_CHARS=500
 #   2. 删 WEB_FETCH_MAX_CHARS
 #   3. MAX_READ_BYTES/MAX_CONTENT_LENGTH 改名
-# 2026-07-20 - 小欧 - readtext 门限治理(章11.4):
-#   1. 新增 OBS_READTEXT_MAX_ROWS=200
-#     /OBS_READTEXT_MAX_ROW_CHARS=1000
+# 2026-07-20 - 小欧 - read 门限治理(章11.4):
+#   1. 新增 OBS_READ_MAX_ROWS=200
+#     /OBS_READ_MAX_ROW_CHARS=1000
 #   2. 去 _select_lines max_line_length 截断
-#   3. MAX_READ_SIZE 改名 INER_READTEXT_READ_SIZE
+#   3. MAX_READ_SIZE 改名 INER_READ_READ_SIZE
 # 2026-07-20 - 小欧 - 门限复查:
 #   1. 删僵尸常量 FIND_PAGE_SIZE
 #   2. 删 READ_FILE_DEFAULT_LIMIT(无引用)
@@ -55,9 +55,9 @@
 #   1. TOOL_TIMEOUTS default 120→30(未注册tool缺省超时)
 #   2. 新增 OBS_ANALYZE_MAX_ROWS=100/OBS_ANALYZE_MAX_COLS=100(analyze_data行×列收口)
 # 2026-07-21 - 小欧 - 字节安全治理: 新增 INER_READ_DOCX_MAX_BYTES/PPTX_MAX_BYTES/XLSX_MAX_BYTES/PDF_MAX_BYTES 常量; 移除 INER_READ_XLSX_MAX_ROWS/INER_READ_PDF_MAX_PAGES(改为参考值,非截断门限)
-# 2026-07-22 - 小欧 - OBS_READTEXT_MAX_ROW_CHARS 1000→2000 对齐 opencode-old MaxLineLength
+# 2026-07-22 - 小欧 - OBS_READ_MAX_ROW_CHARS 1000→2000 对齐 opencode-old MaxLineLength
 # 2026-07-22 - 小欧 - OBS_LISTDIR_MAX_ROWS 200→500 对齐 opencode-old ls 输出量级
-# 2026-07-22 - 小欧 - OBS_READTEXT_MAX_ROWS 200→1000 对标 opencode-old DefaultReadLimit=2000
+# 2026-07-22 - 小欧 - OBS_READ_MAX_ROWS 200→1000 对标 opencode-old DefaultReadLimit=2000
 # 2026-07-23 - 小欧 - 北京老陈驱动: 新增 SHELL_OUTLIMIT_STDOUT_MAX_CHARS=50000
 #         /SHELL_OUTLIMIT_STDERR_MAX_CHARS=20000 (shell输出截断)
 #         注意: OBS_SHELL_MAX_ROWS×OBS_SHELL_MAX_ROW_CHARS=200K
@@ -72,15 +72,15 @@
 #    INER_FETCHPAGE_MAX_CONTENT_LENGTH 100MB→10MB(Content-Length拒绝)
 #    INER_HTTPGET_JSON_PREVIEW_MAX_BYTES 5MB→2MB(JSON预览截断)
 # 2026-07-23 - 小欧 - 北京老陈驱动: INER_前缀两分法重构
-#    输入闸门 {TOOL}_INPUT_*: READTEXT/EDITTEXT/READMEDIA/READ_PDF/READ_DOCX/READ_PPTX/READ_XLSX/FETCHPAGE_INPUT_MAX_CONTENT_LENGTH/DOWNLOAD/CLIPBOARD
+#    输入闸门 {TOOL}_INPUT_*: READ/EDIT/READMEDIA/READ_PDF/READ_DOCX/READ_PPTX/READ_XLSX/FETCHPAGE_INPUT_MAX_CONTENT_LENGTH/DOWNLOAD/CLIPBOARD
 #    输出截断 {TOOL}_OUTLIMIT_*: SHELL_OUTLIMIT_RAW_BYTES/FETCHPAGE_OUTLIMIT_BODY_BYTES/HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES/HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS/READ_PDF_OUTLIMIT_DEFAULT_PAGES
-# 2026-07-23 - 小欧 - 北京老陈驱动: 删 READTEXT/READ_DOCX/READ_PPTX/READ_PDF_INPUT_MAX_BYTES(字节门→全量读+outlimit截断)
-#         新增 READTEXT_OUTLIMIT_CHARS/READ_DOCX_OUTLIMIT_CHARS/READ_PPTX_OUTLIMIT_CHARS=500K
+# 2026-07-23 - 小欧 - 北京老陈驱动: 删 READ/READ_DOCX/READ_PPTX/READ_PDF_INPUT_MAX_BYTES(字节门→全量读+outlimit截断)
+#         新增 READ_OUTLIMIT_CHARS/READ_DOCX_OUTLIMIT_CHARS/READ_PPTX_OUTLIMIT_CHARS=500K
 # 2026-07-23 - 小欧 - 北京老陈驱动: 删 SHELL_OUTLIMIT_RAW_BYTES(10MB 读/解码层硬安全网, 50K/20K 存储截断足够, 去掉叠床架屋)
 # 2026-07-23 - 小欧 - 三堂会审5bug修复: read_text_file/read_docx outlimit len截断后求值+read_pptx total_slides/notes_data截断同步+删_os_mod死import
 # 2026-07-24 - 小欧 - 新增: EXECUTE_SQL_OUTPARM_LIMIT_SQL / QUERY_SQL_OUTPARM_LIMIT_SQL(SQL预览截断) + OBS_QUERY_SQL_PREVIEW_COLUMNS(列名预览)
 # 2026-07-24 - 小欧 - 新增: SEARCH_WEB_OUTPARM_LIMIT_RAW / FETCH_WEBPAGE_OUTPARM_LIMIT_DESC / GENERATE_CHART_OUTPARM_LIMIT_DATA / FILTER_DATA_OUTPARM_LIMIT_CONDITIONS / GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES / TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS(魔数→命名常量)
-# 2026-07-25 - 小欧 - 新增第2批 outparam/iner 常量: SEND_NOTIFICATION_OUTPARM_LIMIT_MSG / EXECUTE_SHELL_OUTPARM_LIMIT_CMD / WRITETEXT_INER_PREVIEW_CHARS / READTEXT_INER_CJK_SAMPLE / TOOL_SEARCH_INER_RESULTS_TOP / SEARCH_WEB_INER_HTML_PARSE / QUERY_SQL_INER_LOG_SQL
+# 2026-07-25 - 小欧 - 新增第2批 outparam/iner 常量: SEND_NOTIFICATION_OUTPARM_LIMIT_MSG / EXECUTE_SHELL_OUTPARM_LIMIT_CMD / WRITE_INER_PREVIEW_CHARS / READ_INER_CJK_SAMPLE / TOOL_SEARCH_INER_RESULTS_TOP / SEARCH_WEB_INER_HTML_PARSE / QUERY_SQL_INER_LOG_SQL
 # 2026-07-25 - 小欧 - 三堂会审修复bug×2:
 #         ① EXECUTE_SHELL_OUTPARM_LIMIT_CMD误归# fundamental→改# shell
 #         ② TOOL_SEARCH_INER_RESULTS_TOP误归# file/internal→改# fundamental/internal
@@ -107,6 +107,7 @@
 #   非文件信任域 —— 信任路径不能做文件系统 resolve; 单一来源 trust.extract_trust_path /
 #   trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
 # 2026-10-02 - 小欧 - 归类调整: 新增 TOOL_CATEGORY_OVERRIDE(归类单一真相源, — 小欧-2026-10-02
+# 2026-10-02 - 小欧 - 注册名收敛: TOOL_TIMEOUT_HINTS/TOOL_TIMEOUTS/FILE_OPERATION_TOOLS 键 write→write, edit→edit
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -146,8 +147,8 @@ TOOL_TIMEOUT_HINTS = {  # tool 超时时的 LLM hint，指引 LLM 缩小范围�
     # 原则上只收录「无 timeout 参数」的 tool。compress例外: zf.write()内部I/O卡住时保险丝先于内部timed_out返回,
     # 引擎TIMEOUT路径必须直接给hint,否则LLM收到空串无操作指引。
     "delete": "删除操作超时（120秒），部分文件可能已被删除。建议缩小删除范围：分批删除或指定文件路径后重试。可以先 list_directory 查看剩余文件。",
-    "writetext": "文件写入超时，可能内容过大或磁盘繁忙。建议分批写入或检查磁盘状态后重试。",
-    "edittext": "文件编辑超时，可能文件过大。建议直接重写整个文件或减小修改范围。",
+    "write": "文件写入超时，可能内容过大或磁盘繁忙。建议分批写入或检查磁盘状态后重试。",
+    "edit": "文件编辑超时，可能文件过大。建议直接重写整个文件或减小修改范围。",
     "readmedia": "媒体读取超时，可能文件损坏或过大。建议检查文件完整性后重试。",
     "searchweb": "搜索超时，可能搜索服务不稳定。建议简化搜索词后重试。",
     "compress": "压缩超时，目标目录可能过大或包含超大文件。建议：①增大timeout参数重试；②添加exclude_patterns排除大文件；③将大目录分成多个子目录分批压缩。",
@@ -160,7 +161,7 @@ TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 保险丝超时（ToolRetryEngi
     "find": 120,
     "grep": 120,
     "readmedia": 60,
-    "edittext": 60,
+    "edit": 60,
     "tree": 120,
     "session": 60,
     "event_log": 60,
@@ -264,19 +265,19 @@ OBS_HTTPGET_MAX_ROW_CHARS: int = 1000    # 【系统级】使用对象: observat
 OBS_FETCHPAGE_MAX_ROWS: int = 200         # 【系统级】使用对象: observation_formatter.py(_format_fetchpage_result fetchpage 行数上限)
 OBS_FETCHPAGE_MAX_ROW_CHARS: int = 500    # 【系统级】使用对象: observation_formatter.py(_format_fetchpage_result fetchpage 单行上限)
 
-# —— readtext 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
-OBS_READTEXT_MAX_ROWS: int = 1000        # 【系统级】使用对象: observation_formatter.py(_format_readtext_result readtext 行数上限, 对标 opencode-old DefaultReadLimit=2000)
-OBS_READTEXT_MAX_ROW_CHARS: int = 2000  # 【系统级】使用对象: observation_formatter.py(_format_readtext_result readtext 单行上限, 对标 opencode-old MaxLineLength=2000)
+# —— read 专属观察截断常量（显示域行×列；Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_READ_MAX_ROWS: int = 1000        # 【系统级】使用对象: observation_formatter.py(_format_read_result read 行数上限, 对标 opencode-old DefaultReadLimit=2000)
+OBS_READ_MAX_ROW_CHARS: int = 2000  # 【系统级】使用对象: observation_formatter.py(_format_read_result read 单行上限, 对标 opencode-old MaxLineLength=2000)
 
-# —— edittext 专属观察截断常量（显示域行×列；diff 为大文本, Tool 输出不截断, 仅显示域按行×列收口） ——
-OBS_EDITTEXT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 行数上限)
-OBS_EDITTEXT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_edittext_result edittext 单行上限, 长行放宽至1000减少截断)
+# —— edit 专属观察截断常量（显示域行×列；diff 为大文本, Tool 输出不截断, 仅显示域按行×列收口） ——
+OBS_EDIT_MAX_ROWS: int = 200        # 【系统级】使用对象: observation_formatter.py(_format_edit_result edit 行数上限)
+OBS_EDIT_MAX_ROW_CHARS: int = 1000  # 【系统级】使用对象: observation_formatter.py(_format_edit_result edit 单行上限, 长行放宽至1000减少截断)
 
 # —— 读取类工具「按被读物自然单位」观察截断常量（2026-07-20 小欧 自然单位治理: PDF=页 / DOCX=段落 / PPTX=幻灯片 / tree=层级 / clipboard=文本行）
 #     设计原则: 显示域窗口以介质自然单位为粒度(如 PDF 前几页、PPTX 整本提纲), 非盲目按行数一刀切; 截断均可由原单位取回(page=N/slide=N/进子目录/offset段落)
 OBS_PDF_MAX_ROWS: int = 150            # 【系统级】使用对象: observation_formatter.py(_format_pdf_result PDF 显示行数上限, ≈前3页起头, 保留 "--- 第 N 页 ---" 页标记)
 OBS_PDF_MAX_ROW_CHARS: int = 1000      # 【系统级】使用对象: observation_formatter.py(_format_pdf_result PDF 单行上限)
-#   注: DOCX/clipboard 无页码, 复用 OBS_READTEXT_MAX_ROWS/CHARS(段落/文本行窗口, 与人类读 Word/文本方式一致), 不另增 OBS_DOCTEXT_*(避免死代码)
+#   注: DOCX/clipboard 无页码, 复用 OBS_READ_MAX_ROWS/CHARS(段落/文本行窗口, 与人类读 Word/文本方式一致), 不另增 OBS_DOCTEXT_*(避免死代码)
 OBS_PPTX_MAX_ROWS: int = 60            # 【系统级】使用对象: observation_formatter.py(_format_slides PPTX 单张幻灯片正文行数上限, 幻灯片本短, 仅超长单页收口)
 OBS_PPTX_MAX_ROW_CHARS: int = 1000     # 【系统级】使用对象: observation_formatter.py(_format_slides PPTX 单行上限)
 OBS_TREE_MAX_ROWS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_tree tree 显示总行数上限, 层级感知: 与 max_depth + 每节点子项封顶配合, 非盲目行数)
@@ -299,7 +300,7 @@ OBS_QUERY_SQL_PREVIEW_COLUMNS: int = 5   # 【系统级】使用对象: query_sq
 #     (原 INER_ 前缀废弃, 依 3.4→3.5 改名后, 2026-07-23 再按两分法改名)
 # ============================================================
 # —— 输入闸门 {TOOL}_INPUT_* ——
-EDITTEXT_INPUT_MAX_BYTES: int = 10 * 1024 * 1024     # 使用对象: edit_text_file.py(编辑前文件字节上限, 超则拒绝)
+EDIT_INPUT_MAX_BYTES: int = 10 * 1024 * 1024     # 使用对象: edit_text_file.py(编辑前文件字节上限, 超则拒绝)
 FETCHPAGE_INPUT_MAX_CONTENT_LENGTH: int = 10 * 1024 * 1024  # 使用对象: fetch_webpage.py(Content-Length 超阈值拒绝下载)
 DOWNLOAD_INPUT_MAX_BYTES: int = 1 * 1024 * 1024 * 1024     # 使用对象: download_file.py(下载文件大小上限, 超则拒绝)
 CLIPBOARD_INPUT_MAX_CHARS: int = 200 * 1024          # 使用对象: clipboard_control.py(剪贴板读取最大字符数, 超则截断)
@@ -319,7 +320,7 @@ FETCHPAGE_OUTLIMIT_BODY_BYTES: int = 2 * 1024 * 1024 # 使用对象: fetch_webpa
 HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES: int = 2 * 1024 * 1024   # 使用对象: http_request.py(JSON body 预览截断)
 HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS: int = 200 * 1024        # 使用对象: http_request.py(data内联预览字符上限)
 # document/text
-READTEXT_OUTLIMIT_CHARS: int = 500 * 1024             # 使用对象: read_text_file.py(文本内容字符上限, 超则截断)
+READ_OUTLIMIT_CHARS: int = 500 * 1024             # 使用对象: read_text_file.py(文本内容字符上限, 超则截断)
 READ_DOCX_OUTLIMIT_CHARS: int = 500 * 1024            # 使用对象: read_docx.py(DOCX文本字符上限, 超则截断)
 READ_PPTX_OUTLIMIT_CHARS: int = 500 * 1024            # 使用对象: read_pptx.py(PPTX全部幻灯片文本字符上限, 超则截断)
 # document
@@ -341,8 +342,8 @@ SEND_NOTIFICATION_OUTPARM_LIMIT_MSG: int = 50          # 使用对象: send_noti
 # shell
 EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 50              # 使用对象: execute_shell_command.py(cmd_short命令预览截断)
 # file/internal
-WRITETEXT_INER_PREVIEW_CHARS: int = 50                 # 使用对象: write_text_file.py(文首文末预览字符数)
-READTEXT_INER_CJK_SAMPLE: int = 100                    # 使用对象: read_text_file.py(CJK检测采样字符数)
+WRITE_INER_PREVIEW_CHARS: int = 50                 # 使用对象: write_text_file.py(文首文末预览字符数)
+READ_INER_CJK_SAMPLE: int = 100                    # 使用对象: read_text_file.py(CJK检测采样字符数)
 # fundamental/internal
 TOOL_SEARCH_INER_RESULTS_TOP: int = 10                 # 使用对象: tool_search.py(搜索结果top N)
 # network/internal
@@ -350,9 +351,9 @@ SEARCH_WEB_INER_HTML_PARSE: int = 3000                 # 使用对象: search_we
 # sql/internal
 QUERY_SQL_INER_LOG_SQL: int = 50                       # 使用对象: query_sql.py(logger SQL截断)
 # file/edit
-EDITTEXT_OUTPARM_LIMIT_OLD: int = 80                   # 使用对象: edit_text_file.py(old_string params/detail统一截断)
-EDITTEXT_OUTPARM_LIMIT_NEW: int = 50                   # 使用对象: edit_text_file.py(new_string params统一截断)
-EDITTEXT_OUTPARM_LIMIT_SAFETY: int = 200               # 使用对象: edit_text_file.py(safety_hint hint统一截断)
+EDIT_OUTPARM_LIMIT_OLD: int = 80                   # 使用对象: edit_text_file.py(old_string params/detail统一截断)
+EDIT_OUTPARM_LIMIT_NEW: int = 50                   # 使用对象: edit_text_file.py(new_string params统一截断)
+EDIT_OUTPARM_LIMIT_SAFETY: int = 200               # 使用对象: edit_text_file.py(safety_hint hint统一截断)
 
 # ============================================================
 # 🕐 6. 文件工具配置（FILE_OPERATION_TOOLS / BINARY / SKIP_DIRS）— 【工具层】
@@ -361,8 +362,7 @@ EDITTEXT_OUTPARM_LIMIT_SAFETY: int = 200               # 使用对象: edit_text
 # ============================================================
 
 FILE_OPERATION_TOOLS: set[str] = {  # 【tool 级】使用对象: 文件操作类工具集合(安全/分批判定)
-    "readtext", "writetext", "edittext",
-    "read",  # 方案1别名工具(复用readtext), 参与路径冲突检测 — 北京老陈 2026-09-24
+    "read", "write", "edit",
     "move", "copy", "delete", "rename",
     "compress", "extract",
     # office 8工具(读写) — 小欧 2026-08-13: 与文本文件工具同机制参与路径冲突检测, 消除并行读写竞态
@@ -385,7 +385,7 @@ NON_FILE_TRUST_TOOLS: set[str] = {
 
 # 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 依3.7作废删除(2026-07-20 章18): Tool 层条数截断违反3.7, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
 # 注: FIND_PAGE_SIZE/READ_FILE_DEFAULT_LIMIT 依门限复查(2026-07-20)删除: 全代码检索仅定义处存在, 无任何工具引用(僵尸常量);
-#      find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READTEXT_READ_SIZE/INER_EDITTEXT_READ_SIZE 取代, 二者均不再使用
+#      find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READ_READ_SIZE/INER_EDIT_READ_SIZE 取代, 二者均不再使用
 
 # 二进制文件扩展名 — 小健 2026-06-24 更新：补充媒体扩展名
 BINARY_EXTENSIONS: set[str] = {
@@ -397,7 +397,7 @@ BINARY_EXTENSIONS: set[str] = {
     '.exe', '.msi', '.dll', '.so', '.dylib',
     '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.pdf',
     '.odt', '.ods', '.odp', '.rtf',
-}  # 【tool 级】使用对象: 文本工具(readtext/writetext/edittext)拒绝二进制文件扩展名集合
+}  # 【tool 级】使用对象: 文本工具(read/write/edit)拒绝二进制文件扩展名集合
 
 SKIP_DIRS: frozenset[str] = frozenset({
     'node_modules', 'bower_components',

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-09-04 小健 - 新建: 冲突检测下沉, 解耦 action_handler - 小健-2026-09-04
+# 2026-10-02 - 小欧 - 注册名归位: _READ_TOOLS 文本项 read→read, 与 FUNDAMENTAL 侧 read 别名删除同步
 """
 conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并查集分组
 
@@ -17,8 +18,8 @@ from app.logger import logger
 
 # 工具文件读操作集合（冲突检测用）— 小欧 2026-08-13
 # 同路径多次调用判定: 读-读无竞态不冲突(仍并行), 仅需从写集合排除, 防 read_xlsx 等被误判写操作致并行退化串行
-# 2026-09-24 北京老陈 方案1: 加"read"(fundamental别名工具, 与readtext同参与冲突检测)
-_READ_TOOLS = {"readtext", "read_xlsx", "read_docx", "read_pdf", "read_pptx", "read"}
+# 2026-09-24 北京老陈 方案1: 加"read"(fundamental别名工具, 与read同参与冲突检测)
+_READ_TOOLS = {"read", "read_xlsx", "read_docx", "read_pdf", "read_pptx"}
 # 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
 _WRITE_OPS = FILE_OPERATION_TOOLS - _READ_TOOLS
 

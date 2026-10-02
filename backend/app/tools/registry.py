@@ -3,7 +3,7 @@
 # 编辑历史:
 # 2026-07-25 - 小欧 - ensure_tools_registered加即时重试(3次,500ms间隔),应对并发写导致的瞬态文件损坏
 # 2026-07-25 - 小欧 - 错误日志加filename:lineno上下文(欧阳建议)
-# 2026-08-07 - 小欧 - get_tool工具名别名归一化: LLM常生成变体名(write_text等), 经tools_alias_mapper.normalize_tool_name映射到注册名(writetext), 防"工具未注册"误拦截(com-test 03暴露)
+# 2026-08-07 - 小欧 - get_tool工具名别名归一化: LLM常生成变体名(write_text等), 经tools_alias_mapper.normalize_tool_name映射到注册名(write), 防"工具未注册"误拦截(com-test 03暴露)
 # 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), register/register_tool 贯通透传; 供 action_handler._resolve_target_field 优先采用, 留空则按schema属性自动推导(DRY/OCP)
 """
 工具注册表模块 - 统一入口
@@ -257,7 +257,7 @@ class ToolRegistry:
     def get_tool(self, name: str) -> Optional[ToolMetadata]:
         """获取工具元数据(返回dataclass)
         2026-08-07 小欧: 工具名别名归一化——LLM常生成变体名(write_text等),
-        精确匹配失败时经 tools_alias_mapper.normalize_tool_name 映射到注册名(writetext),
+        精确匹配失败时经 tools_alias_mapper.normalize_tool_name 映射到注册名(write),
         防止"工具未注册"误拦截(com-test 03暴露)。
         """
         if not isinstance(name, str) or not name:
