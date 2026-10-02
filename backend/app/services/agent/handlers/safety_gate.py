@@ -55,7 +55,8 @@
 #   改auto_confirm=_bypass布尔单源(唯一真相源), 避免"布尔→字符串→布尔"无意义往返 — 小欧-2026-09-18
 # 2026-09-19 小欧 - bypass恢复_bypass_confirmed透传: 改动4误删run_sandbox_gate的_bypass_confirmed参数(main_confirmed),
 #   恢复透传, 避免bypass下sandbox走110s+超时拒绝; sandbox_gate同步修复auto_confirm读safety_result — 北京老陈驱动(三堂会审)
-# 2026-10-02 - 小欧 - 注册名收敛: 写操作确认集合 write/edit→write/edit
+# 2026-10-02 - 小欧 - 注册名收敛: 写操作确认集合 write/edit
+# 2026-10-02 - 小欧 - 注册名归位: shell 确认门与合并组键 4 处 shell→bash
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -77,7 +78,7 @@ def refusal_key(tool_name: str, params: dict, safety_result=None):
     from app.tools.trust import extract_trust_path  # 延迟导入(与本函数内既有模式一致) — 小欧-2026-09-18
     _ref = (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
         or extract_trust_path(tool_name, params or {})
-    if _ref is None and tool_name == "shell":
+    if _ref is None and tool_name == "bash":
         _ref = "cmd:" + str((params or {}).get("command") or "")
     return (tool_name, _ref)
 
@@ -174,10 +175,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     _denied.append((_cn, f"被用户拒绝执行(本任务内已有拒绝记录，不再重复确认): {_rej_content}", call))
                     continue
                 if _group_lead:
-                    if _cn == "shell":
+                    if _cn == "bash":
                         _group_size = sum(
                             1 for c in all_calls
-                            if c.get("tool_name") == "shell"
+                            if c.get("tool_name") == "bash"
                             and str((c.get("tool_params") or {}).get("command") or "") == str(_cp.get("command") or ""))
                     else:
                         _group_size = sum(
@@ -208,7 +209,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         # 三思三省(2026-09-18 小欧): 无message确认类(keyword无内容)按工具名精确归属 —
                         #   归属: shell确认→shellparam(命令确认主场景, 中风险弹窗即needs_confirmation驱动),
                         #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute兜底 ✓
-                        if _cn == "shell":
+                        if _cn == "bash":
                             _sl = "shellparam"
                         elif _cn in ("create_task", "write", "edit", "writetool"):
                             _sl = "tool_write"

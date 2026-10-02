@@ -19,6 +19,7 @@
 # 2026-09-18 小欧 - 毛病2精化(弹窗过宽核查): _READONLY_PREFIXES 新增二十一项(git log/diff/show, python/node --version,
 #   npm --version/ls, pip list/show/--version, docker ps/images, tasklist, ipconfig /all, systeminfo, netstat, ver,
 #   test-path, kubectl get), 逐条过安全评审(任意无拼接符后缀仍只读); 否决 git branch/ipconfig裸前缀等可写口 - 小欧-2026-09-18
+# 2026-10-02 - 小欧 - 注册名归位: _shell 集合 "shell"→"bash", 并清 2 个从未注册的死项(executeshellcommand/executeshellcommandsafety)
 import asyncio
 import os
 import re
@@ -68,10 +69,10 @@ _FAST_CHANNEL_FORBIDDEN = ("|", ";", "&", ">", ">>")                  # 单命�
 _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
                         "being used by another process", "找不到路径")  # 4.2 规则6 环境性失败识别(FP2)
 def _is_shell_tool(tool_name: str) -> bool:
-    """shell 类判定以注册表真实工具名为准(v1.25 F4 回归修正): execute_shell_command 注册名'shell'且
-    category=FUNDAMENTAL(fundamental_register.py:122, 2026-07-28自SHELL迁入), 不能仅凭ToolCategory.SHELL
-    判定(该枚举已于2026-10-02删除, 仅剩which也归SYSTEM); 显式列 shell 执行类归一名, 新增须同步加入本集合"""
-    _shell = frozenset({"shell", "executeshellcommand", "executeshellcommandsafety"})
+    """shell 类判定以注册表真实工具名为准(v1.25 F4 回归修正): execute_shell_command 注册名'bash'且
+    category=FUNDAMENTAL, 不能仅凭ToolCategory.SHELL判定(该枚举已于2026-10-02删除, 仅剩which也归SYSTEM);
+    显式列 shell 执行类归一名, 新增须同步加入本集合"""
+    _shell = frozenset({"bash"})  # 2026-10-02 小欧 - 随注册名改名; 原 executeshellcommand/executeshellcommandsafety 为从未注册的死项, 一并清
     return normalize_tool_name(tool_name) in _shell
 
 

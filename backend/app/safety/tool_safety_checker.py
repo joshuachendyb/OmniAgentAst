@@ -74,7 +74,8 @@
 #   改 _get_needs_confirmation 返回三元组(needs_confirm, shell_msg, shell_blocked)直线传递, 三处调用点解包直接构造SafetyResult,
 #   彻底删除 tool_meta._shell_risk_* setattr/getattr; 同步修复skip_confirmation分支丢弃blocked(会话信任下HIGH shell被放行,
 #   违反"豁免只跳确认不跳危险防护") — 小欧-2026-09-19
-# 2026-10-02 - 小欧 - 注册名收敛: _WRITE_RISK_TOOL "write"→"write"(写保护判定按新注册名)
+# 2026-10-02 - 小欧 - 注册名收敛: _WRITE_RISK_TOOL 改为 write(写保护判定按新注册名)
+# 2026-10-02 - 小欧 - 注册名归位: shell 类风险判定元组 "shell"→"bash"
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -265,7 +266,7 @@ class ToolSafetyChecker:
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
                 and _is_readonly_sql((params or {}).get("sql", "")):
             return False, "", False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
-        if normalize_tool_name(tool_meta.name or "") in ("shell", "execute_command"):
+        if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
             from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
             _risk = check_shell_command_risk((params or {}).get("command", ""))
             if _risk:
