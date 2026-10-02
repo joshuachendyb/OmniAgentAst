@@ -49,7 +49,8 @@
 #   react_loop 各路径 return 后 runner finally 必执行(与守卫补发/取消/异常路径同受保护) — 小欧-2026-09-12
 # 2026-09-12 小欧 - 追踪关键日志(北京老陈指令): max_steps<=0 早退分支补 logger.info 发布留痕,
 #   供后续核对"早退终态是否已 publish、done 是否交 runner 置位"(E2E-X2-01 竞态监控点延伸) — 小欧-2026-09-12
-
+# 2026-10-02 小欧 - 轮次边界 flush(北京老陈定案): _buf.flush_sink 取为 _flush, 每轮迭代顶(取消/暂停
+#   检测之后、本轮 LLM 请求之前) await 一次, 等上一轮全部事件落库。被打断最多丢本轮, 无工具副作用。
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -100,6 +101,9 @@ async def run_react_cycle(
     if _buf is None:
         raise RuntimeError(f"[react_loop] StreamBuffer缺失(task={task_id or getattr(agent, 'task_id', '')})")
     _publish = _buf.publish
+    # 2026-10-02 小欧 - 轮次边界 flush: 与 _publish 同源别名, 排在取消/暂停检测之后。
+    #   等上一轮全部落库再发本轮 LLM 请求; None 时零开销跳过。
+    _flush = _buf.flush_sink
     # 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 由顶层import迁至运行期局部import
     #   (E/F/D 三路径共用; task包冷启动 load-time 循环治理, 见编辑历史) — 小欧-2026-09-08
     from app.services.task.task_runtime import cancel_terminal_text
@@ -227,6 +231,9 @@ async def run_react_cycle(
                 #   暂停/恢复 SSE 统一由前端消费路径 openai._stream_with_control 的
                 #   task_pause_check_and_yield 下发, 职责单一无死路。
                 await wait_for_resume(task_id)
+            # 轮次边界 flush: 上一轮事件已全部入队, 等落库完成再进本轮 LLM 请求 — 小欧 2026-10-02
+            if _flush is not None:
+                await _flush()
             try:
                 # 4C(5.8.3/5.8.2): _process_single_step 普通 async 返 list, 逐条 publish(事件直写 event_log, 订阅端消费) — 小欧-2026-09-06
                 for event in await _process_single_step(agent, chunk_buffer):

@@ -177,6 +177,9 @@
 #   ③total_steps 改走 agent_telemetry.count_business_steps(解 E1/E2/4-1, 口径单一真源);
 #   ④落库消费者收尾: 哨兵移至 done.set 之前(实测原顺序致消费者提前退出后 join 永久挂起 → finally 永不完成
 #      → done 不置位 → SSE 挂死); 存量数据不回填(北京老陈裁定只改代码不碰存量) — 小欧-2026-10-01
+# 2026-10-02 小欧 - 轮次边界 flush(北京老陈定案): 增 buffer.flush_sink = _flush_steps, 由 react_loop
+#   每轮迭代顶调用。_enqueue_step 只入队即返回, 进程被杀则队列内帧全丢(实测 task_interrupted 样本
+#   chat_task_steps 0 行而 Journal 事件齐全)。每轮 join 一次, 被打断最多丢本轮(无工具副作用)。
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -537,6 +540,10 @@ async def run_agent_in_background(
     else:
         buffer.persist_sink = _persist_sink
     _drain_task = asyncio.create_task(_drain_steps())
+    # 2026-10-02 小欧 - 轮次边界 flush(北京老陈定案): _enqueue_step 只入队即返回, 真落库在
+    #   _drain_steps 协程; 进程被杀则队列内帧全丢(实测 task_interrupted 样本 steps 0 行而 Journal 齐)。
+    #   每轮迭代顶 join 一次, 被打断最多丢本轮(无工具副作用), 不丢已完成轮次。
+    buffer.flush_sink = _flush_steps
 
     # 退出分支与DB保存保证 — 小欧 2026-07-13
     # 本函数有 3 个退出路径，无论哪条路径 finally 都会执行 DB 保存：
