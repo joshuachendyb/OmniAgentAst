@@ -5,15 +5,15 @@
 **代码编辑历史**： 格式: 日期+署名+修改的目和逻辑说明
                   插入: 最新的编辑历史在板块最下边,<严禁中间插入>
 **提交标题**:   格式 `<type>:<代码名> <description> - <签名>-<日期>`，types: feat/fix/refactor/perf/test/docs
-        严令禁止 commit任何测试相关的代码文件
-**打tag**：1.在version.txt文件头部插入从上一个tag以来的所有commit的变更信息的说明.2.打tag
+    严令禁止commit任何测试case代码--不提交不是不可以修改错误的case 必须修改本地代码.
+**打tag**：1.在version.txt文件头部插入版本汇总升级信息和从上一个tag以来的所有commit的变更信息的说明.2.打tag
 
 **严禁** 用PowerShell 脚本来操作代码编辑\替换,否则导致代码编码错误
 
-## 1.2 编码铁规（必须遵守）--代码落盘前和落盘后进行<三堂会审>= 合规\合理\关联逻辑审查
+## 1.2 <三堂会审>编码铁规（必须遵守）--代码落盘前和落盘后审核 合规\合理\关联逻辑审查
 **合规检查**  严格检查代码是否遵守10大规范--合规检查,
 **合理检查**  逻辑流程是否最优雅/最佳,杜绝绕来绕去
-**关联逻辑检查**相关代码上上下下,前前后后的逻辑功能,必须增强且进化功能,严禁退化功能
+**关联检查**相关的上上下下,前前后后的代码的逻辑功能,必须增强且进化功能,严禁退化功能
 **10大规范**  日常6条 + 重构4条:
 
 **日常编码**  6 条规范
@@ -68,7 +68,7 @@
 
 **后端为主**: 前端迎合后端的策略,逻辑和参数对应进行设计和修改
 ## 1.6 代码复核 复查纪律
-1. 读取最新本地代码 熟读3遍, 复核10遍
+1. 读取最新本地代码 熟读10遍, 复核3遍---三堂会审
 2. 复查的要求,功能只能正确\增强\优化, 杜绝退化
 3. 合规检查和合理检查
 
@@ -119,6 +119,13 @@ npm run test -- --run <name>  # single test
 ## E2E 全链路测试（核心要点）
 
 > 后端完整流程见 `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md`（v2.16）。前端 E2E 见第八章。本节抽取每次 E2E 必读要点。
+
+**配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；`backend/tests/conftest.py` 的会话级 `isolated_config_dir` 已把全链指向临时副本，测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**（曾实测污染真配置 2 次：进程被杀时 teardown 不执行，还原不可靠；根治靠"够不到"而非"事后还原"）
+- **数据隔离铁律（2026-09-30 修订）**：上一条只管住了 `config.yaml`，**管不到 SQLite** —— `app/db/database.py` 原在 `__init__` 硬编码 `Path.home()/".omniagent"`，且 `db=DatabaseManager()` 在导入期即构造、路径被冻结，故任何裸用 `db.get_conn()` 的测试都直写真库（实测污染真库：空会话 / `hello` / `v2` 垃圾会话，每跑一次全量单测多几个）。**修订**：
+  - 数据目录唯一解析点 = `app/db/database.py` 的 `resolve_db_dir()`，认环境变量 `OMNIAGENT_DATA_DIR`，未设则回落 `~/.omniagent`；**在 `get_conn` 内惰性解析**，不在 `__init__` 冻结（db 单例导入期构造，冻结会受导入顺序影响，conftest 来不及设 env）
+  - `isolated_config_dir` 现在**同时**设 `OMNIAGENT_DATA_DIR` 指向同一临时目录，teardown 一并还原
+  - 测试要指向任意库（含 `_DB_FILES` 之外的库名，如 `test_db_atxn` 的 `"test"`）走 `db._db_overrides` 覆盖口，**禁止改生产解析逻辑迁就测试**
+  - **效果**：任何走 `db.get_conn()` 的测试自动"够不到"真库，无需逐个 patch，也不会漏掉将来新增的测试。**E2E 不受影响** —— E2E 走 HTTP 打后端进程，库路径由后端进程 env 决定，与测试进程无关
 
 ### 后端 E2E（pytest + 真实后端 + 真实 LLM）
 
@@ -200,17 +207,10 @@ npm run test:e2e:debug # 调试模式
 
 ---
 
-### 铁律（前后端共用）
+### 测试的铁律（前后端共用）
 
 - 测试目的是**发现问题**，不是跑脚本；严禁看到 FAIL 跳过
 - 一律真实后端 + 真实 LLM + 真实工具 + 真实 SQLite（`~/.omniagent/chat_history.db`），**禁止 Mock**
-- **配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；`backend/tests/conftest.py` 的会话级 `isolated_config_dir` 已把全链指向临时副本，测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**（曾实测污染真配置 2 次：进程被杀时 teardown 不执行，还原不可靠；根治靠"够不到"而非"事后还原"）
-- **数据隔离铁律（2026-09-30 修订）**：上一条只管住了 `config.yaml`，**管不到 SQLite** —— `app/db/database.py` 原在 `__init__` 硬编码 `Path.home()/".omniagent"`，且 `db=DatabaseManager()` 在导入期即构造、路径被冻结，故任何裸用 `db.get_conn()` 的测试都直写真库（实测污染真库：空会话 / `hello` / `v2` 垃圾会话，每跑一次全量单测多几个）。**修订**：
-  - 数据目录唯一解析点 = `app/db/database.py` 的 `resolve_db_dir()`，认环境变量 `OMNIAGENT_DATA_DIR`，未设则回落 `~/.omniagent`；**在 `get_conn` 内惰性解析**，不在 `__init__` 冻结（db 单例导入期构造，冻结会受导入顺序影响，conftest 来不及设 env）
-  - `isolated_config_dir` 现在**同时**设 `OMNIAGENT_DATA_DIR` 指向同一临时目录，teardown 一并还原
-  - 测试要指向任意库（含 `_DB_FILES` 之外的库名，如 `test_db_atxn` 的 `"test"`）走 `db._db_overrides` 覆盖口，**禁止改生产解析逻辑迁就测试**
-  - **效果**：任何走 `db.get_conn()` 的测试自动"够不到"真库，无需逐个 patch，也不会漏掉将来新增的测试。**E2E 不受影响** —— E2E 走 HTTP 打后端进程，库路径由后端进程 env 决定，与测试进程无关
-
 ---
 
 ## Request Flow
