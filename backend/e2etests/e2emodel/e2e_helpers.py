@@ -275,8 +275,8 @@ DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 PROMPT_LOG_DIR = LOG_DIR / "prompt-logs"
 # 读类工具名唯一源(DRY): SSE has_read断言 + verify_db_tool_usage(expect_any_tools) 共用
-# 含read(ling-3.0实调)/read/readmedia — 小欧 2026-09-24 北京老陈指示归一helper
-READ_TOOLS = {"read", "read", "readmedia"}
+# 2026-10-02 小欧 - readtext→read 改名 + FUNDAMENTAL 侧 read 别名删除后去重(原为 {"readtext","read","readmedia"})
+READ_TOOLS = {"read", "readmedia"}
 
 # [72]第九章(9.6-3) - 小欧 - 2026-09-26: E2E 统一注入访问口令。
 #   第九章给 12 个 router 挂了统一 token 鉴权（/health 豁免），若 E2E 不带 token，
