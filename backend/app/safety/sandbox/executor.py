@@ -70,7 +70,7 @@ _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
 def _is_shell_tool(tool_name: str) -> bool:
     """shell 类判定以注册表真实工具名为准(v1.25 F4 回归修正): execute_shell_command 注册名'shell'且
     category=FUNDAMENTAL(fundamental_register.py:122, 2026-07-28自SHELL迁入), 不能仅凭ToolCategory.SHELL
-    判定(该枚举仅'which'); 显式列 shell 执行类归一名, 新增须同步加入本集合"""
+    判定(该枚举已于2026-10-02删除, 仅剩which也归SYSTEM); 显式列 shell 执行类归一名, 新增须同步加入本集合"""
     _shell = frozenset({"shell", "executeshellcommand", "executeshellcommandsafety"})
     return normalize_tool_name(tool_name) in _shell
 

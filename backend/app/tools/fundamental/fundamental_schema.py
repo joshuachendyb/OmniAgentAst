@@ -60,13 +60,6 @@ class SendNotificationInput(BaseModel):
     )
 
 
-class GetSystemInfoInput(BaseModel):
-    info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
-        default="all",
-        description="系统信息类型:basic(基础)/cpu/内存/磁盘/网络/all(全部)"
-    )
-
-
 class ShellInput(BaseModel):
     """Shell命令执行 - 语法翻译、安全检查、编码处理
 
@@ -126,7 +119,6 @@ __all__ = [
     "ToolSearchInput",
     "TimeNowInput",
     "SendNotificationInput",
-    "GetSystemInfoInput",
     "ShellInput",
 ]
 

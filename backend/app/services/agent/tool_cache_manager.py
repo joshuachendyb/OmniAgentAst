@@ -9,6 +9,7 @@ tool_cache_manager — 工具缓存管理
 # 编辑历史:
 # 2026-08-05 小欧 patch_search_desc默认已注入分类去SHELL: shell工具已迁入FUNDAMENTAL, SHELL分类仅剩which, 不再列为默认注入(需要时经searchtool动态注入)
 # 2026-08-05 小欧 修复BUG A(DRY): unloaded计算删除硬编码默认分类{FUNDAMENTAL,FILE}, 改由_loaded_categories全权决定, 消除与_INITIAL_CATEGORIES重复定义失配隐患
+# 2026-10-02 小欧 patch_search_desc的unloaded叠加"该分类确有实现"条件: 零工具分类(SHELL消亡后)若进searchtool描述, LLM搜索无果、搜3次触发熔断FAILED
 
 from app.tools.tool_types import ToolCategory
 from app.tools.registry import tool_registry
@@ -82,6 +83,7 @@ def patch_search_desc(agent):
     unloaded = [
         cat for cat in ToolCategory
         if cat not in agent._loaded_categories
+        and tool_registry.get_implementations_by_category(cat)
     ]
     
     if not unloaded:

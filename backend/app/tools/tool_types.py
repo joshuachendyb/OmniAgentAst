@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), 供 action_handler._resolve_target_field 优先采用; 留空则按schema属性自动推导(DRY/OCP)
+# 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM);
+#   order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -29,7 +31,7 @@ class ToolCategory(Enum):
     """
     FILE = ("file", 0, "文件操作工具")
     FUNDAMENTAL = ("fundamental", 1, "基础工具")
-    SHELL = ("shell", 2, "命令执行工具")
+    # 2026-10-02 小欧 - SHELL 分类已删, order 留空位号2不动(避免 searchtool 排序变化)
     NETWORK = ("network", 3, "网络请求工具")
     DESKTOP = ("desktop", 4, "桌面交互工具")
     DOCUMENT = ("document", 5, "文档操作工具")

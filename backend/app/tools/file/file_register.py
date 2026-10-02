@@ -6,6 +6,7 @@
 # 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源),
 #    默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源;
 #    与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
+# 2026-10-02 - 小欧 - 归组调整: category 改读 TOOL_CATEGORY_OVERRIDE(extract/compress/readmedia 归 DOCUMENT) — 小欧-2026-10-02
 """
 File Register - 文件工具注册点 v3.0
 
@@ -71,6 +72,7 @@ from app.tools.file.delete_file import delete
 from app.tools.file.rename_file import rename
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
+from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
 from app.logger import logger
 
 # 文件工具依赖配置 — 小健 2026-06-18
@@ -255,7 +257,7 @@ def _register_file_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.FILE,
+            category=TOOL_CATEGORY_OVERRIDE.get(name, ToolCategory.FILE),
             implementation=method,
             version="2.0.0",
             input_model=input_model,

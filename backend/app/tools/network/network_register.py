@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-02 - 小欧 - 归组调整: searchweb/fetchpage 改读 TOOL_CATEGORY_OVERRIDE(归类单一真相源), 归 FUNDAMENTAL — 小欧-2026-10-02
 """
 Network Register - 网络通信工具注册点
 
@@ -26,6 +28,7 @@ Network Register - 网络通信工具注册点
 # ============================================================
 from app.tools.registry import register_tool, tool_registry
 from app.tools.tool_types import ToolCategory
+from app.tools.tool_constants import TOOL_CATEGORY_OVERRIDE  # 2026-10-02 小欧 - 归类覆盖表
 from app.logger import logger
 import socket
 import time
@@ -163,7 +166,7 @@ def _register_network_tools():
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
             implementation=NETWORK_TOOL_IMPLEMENTATIONS[tool_name],
             input_model=input_model,
-            category=ToolCategory.NETWORK,
+            category=TOOL_CATEGORY_OVERRIDE.get(tool_name, ToolCategory.NETWORK),
             examples=examples,
             failure_hint_fn=failure_hint_fn,
             dependencies=NETWORK_TOOL_DEPENDENCIES.get(tool_name, []),

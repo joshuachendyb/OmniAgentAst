@@ -106,6 +106,7 @@
 # 2026-09-16 - 小欧 - 问题修复(文档落码): 新增 NON_FILE_TRUST_TOOLS(registry_write/registry_delete/execute_sql)
 #   非文件信任域 —— 信任路径不能做文件系统 resolve; 单一来源 trust.extract_trust_path /
 #   trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
+# 2026-10-02 - 小欧 - 归类调整: 新增 TOOL_CATEGORY_OVERRIDE(归类单一真相源, — 小欧-2026-10-02
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -129,6 +130,8 @@
   ❌ 本文件 import constants.py 的任何内容（SUPPORTED_ALGORITHMS re-export 除外 — 小沈 2026-08-13 迁移过渡）
   ❌ 本文件的常量被系统层代码引用（系统层应引用 constants.py 的 SYS_* 常量）
 """
+
+from app.tools.tool_types import ToolCategory  # 2026-10-02 小欧 - TOOL_CATEGORY_OVERRIDE 用(无循环)
 
 # ============================================================
 # 🕐 1. 工具级保险丝超时（TOOL_TIMEOUTS）— 【工具层】
@@ -409,9 +412,20 @@ SKIP_DIRS: frozenset[str] = frozenset({
 # 🕐 7. 工具注册模块映射(从 lazy_loader.py 迁移) — 【工具层】
 # ============================================================
 
+# 2026-10-02 小欧 - 工具归类覆盖单一真相源: 各 register 模块从本表取 category, 不另写覆盖字典
+#   sysinfo/which 已整体迁入 system/ 不在本表; 删工具或改归属只改这一处。 — 小欧-2026-10-02
+TOOL_CATEGORY_OVERRIDE: dict[str, ToolCategory] = {
+    # FILE → DOCUMENT: 解压/压缩/媒体读取归文档处理
+    "extract": ToolCategory.DOCUMENT,
+    "compress": ToolCategory.DOCUMENT,
+    "readmedia": ToolCategory.DOCUMENT,
+    # NETWORK → FUNDAMENTAL: 属基础信息获取
+    "searchweb": ToolCategory.FUNDAMENTAL,
+    "fetchpage": ToolCategory.FUNDAMENTAL,
+}
+
 CATEGORY_MODULES: dict[str, tuple[str, str]] = {  # 【tool 级】使用对象: ToolRegistry 各分类→注册函数模块映射
     "file": ("app.tools.file", "_register_file_tools"),
-    "shell": ("app.tools.shell", "_register_shell_tools"),
     "network": ("app.tools.network", "_register_network_tools"),
     "system": ("app.tools.system", "_register_system_tools"),
     "desktop": ("app.tools.desktop", "_register_desktop_tools"),

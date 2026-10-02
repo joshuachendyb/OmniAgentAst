@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-02 - 小欧 - 归组调整: sysinfo 整体迁出本模块(实现/schema/依赖/描述/示例/注册项均已移至 system_register), 回归 SYSTEM — 小欧-2026-10-02
 """
 FUNDAMENTAL Register — 基础工具注册点
 
@@ -13,7 +15,7 @@ FUNDAMENTAL Register — 基础工具注册点
 7个工具:
 - searchtool — BM25全文检索搜索工具
 - timenow — 获取当前时间
-- sysinfo — 获取系统信息 (从SYSTEM迁入)
+- sysinfo — 获取系统信息 (2026-07 从SYSTEM迁入FUNDAMENTAL; 2026-10-02 整体迁回 SYSTEM, 已移出本模块)
 - notify — 发送系统通知 (从DESKTOP迁入)
 - shell — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入)
 - bash — shell别名工具, 复用ShellInput schema (方案1根治GATE_STUBS)
@@ -30,7 +32,6 @@ FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "timenow": [],  # 使用内置库
     "shell": [],  # 使用内置库
     "bash": [],  # 方案1别名工具, 复用shell实现 — 北京老陈 2026-09-24
-    "sysinfo": ["psutil"],  # 从SYSTEM迁入
     "notify": ["win10toast"],
     "read": [],  # 方案1别名工具, 复用readtext实现 — 北京老陈 2026-09-24
 }
@@ -40,12 +41,10 @@ from app.tools.fundamental.fundamental_schema import (
     TimeNowInput,
     ShellInput,
     SendNotificationInput,
-    GetSystemInfoInput,
 )
 from app.tools.fundamental.tool_search import searchtool
 from app.tools.fundamental.time_now import timenow
 from app.tools.fundamental.execute_shell_command import shell
-from app.tools.fundamental.get_system_info import sysinfo
 from app.tools.fundamental.send_notification import notify
 # 方案1: bash/read别名工具复用file包schema+impl — 北京老陈 2026-09-24
 # file包不依赖fundamental, 无循环导入
@@ -60,7 +59,7 @@ FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "searchtool": """搜索备用工具。按工具名称和类型关键词检索,支持一次搜索多个类型(如'网络 文档 时间'),命中几个分类就自动注入几个分类的整类工具;结果最多返回10个工具;无命中时提示更换关键词重搜,不注入分类。适用场景:当前工具列表无对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
     "shell": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
-    "sysinfo": """获取系统信息,包括操作系统、CPU、内存、磁盘和网络。适用场景:需要诊断系统问题(CPU高、内存不足、磁盘满)、了解硬件规格时使用。""",
+    # 2026-10-02 小欧 - sysinfo 7条示例随工具迁至 system_register, 此处移除
     "notify": """发送Windows系统通知弹窗。适用场景:需要向用户发送桌面通知时使用。""",
     "bash": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。与shell工具功能完全相同,任选其一即可""",
     "read": """读取文本文件内容。适用场景:需要查看或分析源代码、日志、配置文件等纯文本时使用。与readtext工具功能完全相同,任选其一即可""",
@@ -82,15 +81,7 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
         {"command": "ls -la", "shell_type": "bash", "timeout": 10},
         {"command": "Get-ChildItem", "shell_type": "ps5", "timeout": 10},
     ],
-    "sysinfo": [
-        {},
-        {"info_type": "all"},
-        {"info_type": "basic"},
-        {"info_type": "cpu"},
-        {"info_type": "memory"},
-        {"info_type": "disk"},
-        {"info_type": "network"},
-    ],
+    # 2026-10-02 小欧 - sysinfo 7条示例随工具迁至 system_register, 此处移除
     "notify": [
         {"title": "AI热点新闻", "message": "已为您搜索到最新AI行业新闻"},
         {"title": "任务完成", "message": "全部操作已完成", "duration": 5},
@@ -121,7 +112,7 @@ def _register_fundamental_tools():
         "searchtool": searchtool,
         "timenow": timenow,
         "shell": shell,
-        "sysinfo": sysinfo,
+        # 2026-10-02 小欧 - sysinfo 实现映射随工具迁至 system_register, 此处移除
         "notify": notify,
         "bash": shell,   # 方案1: 复用shell实现 — 北京老陈 2026-09-24
         "read": readtext,  # 方案1: 复用readtext实现 — 北京老陈 2026-09-24
@@ -131,7 +122,7 @@ def _register_fundamental_tools():
         "searchtool": ToolSearchInput,
         "timenow": TimeNowInput,
         "shell": ShellInput,
-        "sysinfo": GetSystemInfoInput,
+        # 2026-10-02 小欧 - sysinfo schema(GetSystemInfoInput)已迁入 system_schema, 此处移除
         "notify": SendNotificationInput,
         "bash": ShellInput,      # 方案1: 复用ShellInput schema, FC parameters逐字节一致 — 北京老陈 2026-09-24
         "read": ReadtextInput,   # 方案1: 复用ReadtextInput schema, FC parameters逐字节一致 — 北京老陈 2026-09-24
@@ -162,7 +153,7 @@ __all__ = [
     "searchtool",
     "timenow",
     "shell",
-    "sysinfo",
+    # 2026-10-02 小欧 - sysinfo 已整体迁出本模块, __all__ 导出随之移除
     "notify",
     "bash",
     "read",
