@@ -9,7 +9,7 @@
 # 2026-08-09 - 小欧 - TOOL_NAME_ALIASES 新增 writeetext/readetext/editetext(多一个e的拼写幻觉)→write/read/edit: sensenova-flash-lite 将 write 幻觉为 writeetext, 因未注册被拦截致任务尾部空转防循环失败(与 writefile 同源, 拼写变异变体)
 # 2026-08-22 - 小欧 - TOOL_NAME_ALIASES 新增裸名 write/read/edit→write/read/edit: 实证 LLM 三轮幻觉调用裸名"write"(最自然通用名), 因不在别名表被拦截, 同名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后若扩展名为 .docx/.pdf 等仍由 execute_tools 扩展名预检二次路由, 无歧义风险
 # 2026-08-26 - 小欧 - TOOL_NAME_ALIASES 新增 write_content→write: com-test 12(任务007)实证 LLM 幻觉调用 write_content(最自然"写内容"名), 因不在别名表被安全检查以"工具未注册"拦截, 同一工具名 blocked 达3次触发防死循环熔断致任务 FAILED; 归一化后走 write 正常执行(与 writefile/writeetext 同源修复)
-# 2026-10-02 - 小欧 - 注册名改 read/write/edit: PARAM_ALIASES 键与 TOOL_NAME_ALIASES 值同步改; 删 read/write/edit 恒等映射(新名即注册名), 旧名降级为幻觉名兜底; read 与 read 两键合一
+# 2026-10-02 - 小欧 - 注册名归位: PARAM_ALIASES 键 shell→bash; TOOL_NAME_ALIASES "bash"→"shell" 反转为 "shell"→"bash"(旧名降级为幻觉名兜底)
 """
 参数名别名映射 - 解决LLM返回参数名不匹配问题
 
@@ -159,7 +159,7 @@ PARAM_ALIASES = {
         "new_name": "dest",
         "destination": "dest",
     },
-    "shell": {
+    "bash": {
         "workdir": "cwd",
         "work_dir": "cwd",
         "working_directory": "cwd",
@@ -356,7 +356,7 @@ TOOL_NAME_ALIASES = {
     "list_directory": "listdir",
     "http_get": "httpget",
     "http_request": "httpget",
-    "bash": "shell",  # LLM幻觉名→shell - 小欧 2026-09-24(实证: big-pickle把shell_type值bash当工具名, 各被拦3次致FAILED)
+    "shell": "bash",  # 2026-10-02 小欧 - 注册名已改 bash, 旧名 shell 降级为幻觉名兜底
 }
 
 

@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-10-02 - 小欧 - 归组调整: sysinfo 整体迁出本模块(实现/schema/依赖/描述/示例/注册项均已移至 system_register), 回归 SYSTEM — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名归位: read 别名工具删除(与 FILE 侧 read 改名后的 read 重复), 6处注册项+2处 import 同步清理
+# 2026-10-02 - 小欧 - 注册名归位: shell 改名 bash 并删 bash 别名(8处注册项+docstring+__all__), needs_confirmation 收敛为 == "bash"; 实现函数名 shell 不动
 """
 FUNDAMENTAL Register — 基础工具注册点
 
@@ -12,14 +13,14 @@ FUNDAMENTAL Register — 基础工具注册点
 【2026-08-05 小欧】searchtool描述说明多分类关键词一次搜索即注入多个分类整类工具; 无命中提示换词重搜不注入
 【2026-08-07 小欧】searchtool examples精简为4条(2多类型+2单类型), 引导"一次搜索多个类型"并保留单类型用法
 【2026-09-24 北京老陈】方案1: 注册bash别名工具(impl=shell), 根治opencodeZen GATE_STUBS假tool问题
-【2026-10-02 小欧】read 别名工具删除: FILE 侧 read 已改名 read, 二者同功能重复注册; 归一后默认注入 19→18
+【2026-10-02 小欧】read 别名工具删除: FILE 侧 readtext 已改名 read, 二者同功能重复注册; 归一后默认注入 19→18
+【2026-10-02 小欧】shell 改名 bash 并删除 bash 别名: 二者同功能重复注册, 保留短名 bash; 默认注入 18→17
 
 5个工具:
 - searchtool — BM25全文检索搜索工具
 - timenow — 获取当前时间
 - notify — 发送系统通知 (从DESKTOP迁入)
-- shell — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入)
-- bash — shell别名工具, 复用ShellInput schema (方案1根治GATE_STUBS)
+- bash — 执行系统命令(ps7/ps5/cmd/bash) (从SHELL迁入, 2026-10-02 由 shell 改名)
 """
 
 from app.tools.registry import tool_registry
@@ -30,8 +31,7 @@ from app.logger import logger
 FUNDAMENTAL_TOOL_DEPENDENCIES = {
     "searchtool": [],  # 使用内置库
     "timenow": [],  # 使用内置库
-    "shell": [],  # 使用内置库
-    "bash": [],  # 方案1别名工具, 复用shell实现 — 北京老陈 2026-09-24
+    "bash": [],  # 使用内置库
     "notify": ["win10toast"],
 }
 
@@ -54,9 +54,8 @@ from app.tools.fundamental.send_notification import notify
 FUNDAMENTAL_TOOL_DESCRIPTIONS = {
     "searchtool": """搜索备用工具。按工具名称和类型关键词检索,支持一次搜索多个类型(如'网络 文档 时间'),命中几个分类就自动注入几个分类的整类工具;结果最多返回10个工具;无命中时提示更换关键词重搜,不注入分类。适用场景:当前工具列表无对应的专用工具时使用。""",
     "timenow": """获取当前系统时间,返回ISO格式、时间戳、格式化字符串、时区、星期等信息。适用场景:需要获取当前时间时使用。""",
-    "shell": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
+    "bash": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。""",
     "notify": """发送Windows系统通知弹窗。适用场景:需要向用户发送桌面通知时使用。""",
-    "bash": """执行系统命令(ps7/ps5/cmd/bash)。适用场景:需要运行系统命令、执行脚本、启动程序时使用。与shell工具功能完全相同,任选其一即可""",
 }
 
 FUNDAMENTAL_TOOL_EXAMPLES = {
@@ -69,7 +68,7 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
     "timenow": [
         {},
     ],
-    "shell": [
+    "bash": [
         {"command": "dir", "timeout": 10},
         {"command": "python --version", "shell_type": "ps7", "timeout": 10},
         {"command": "ls -la", "shell_type": "bash", "timeout": 10},
@@ -81,35 +80,27 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
         {"title": "系统提醒", "message": "这是一条包含特殊字符<>&\"'的通知消息", "duration": 10},
         {"title": "长文本测试标题用于验证通知系统的稳定性", "message": "这是一条较长的通知内容，用于测试系统对长文本的处理能力，确保不会出现截断或显示异常", "duration": 8},
     ],
-    "bash": [
-        {"command": "dir", "timeout": 10},
-        {"command": "python --version", "shell_type": "ps7", "timeout": 10},
-        {"command": "ls -la", "shell_type": "bash", "timeout": 10},
-    ],
 }
 
 
 def _register_fundamental_tools():
-    """注册7个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18; 方案1+2工具 — 北京老陈 2026-09-24"""
+    """注册5个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
     CONFIRMATION_MAP = {
-        "shell": {"write": True},
-        "bash": {"write": True},  # 方案1: bash与shell同等确认门 — 北京老陈 2026-09-24
+        "bash": {"write": True},
     }
-    
+
     tool_methods = {
         "searchtool": searchtool,
         "timenow": timenow,
-        "shell": shell,
+        "bash": shell,
         "notify": notify,
-        "bash": shell,   # 方案1: 复用shell实现 — 北京老陈 2026-09-24
     }
 
     TOOL_INPUT_MODELS = {
         "searchtool": ToolSearchInput,
         "timenow": TimeNowInput,
-        "shell": ShellInput,
+        "bash": ShellInput,
         "notify": SendNotificationInput,
-        "bash": ShellInput,      # 方案1: 复用ShellInput schema, FC parameters逐字节一致 — 北京老陈 2026-09-24
     }
 
     for name, method in tool_methods.items():
@@ -125,7 +116,7 @@ def _register_fundamental_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name in ("shell", "bash")),  # 方案1: bash同等确认门 — 北京老陈 2026-09-24
+            needs_confirmation=(name == "bash"),
             action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=FUNDAMENTAL_TOOL_DEPENDENCIES.get(name, []),
         )
@@ -138,5 +129,4 @@ __all__ = [
     "timenow",
     "shell",
     "notify",
-    "bash",
 ]

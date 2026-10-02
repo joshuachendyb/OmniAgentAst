@@ -132,6 +132,7 @@
 #   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, get_current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
+# 2026-10-02 - 小欧 - 注册名归位: action.tool "shell"→"bash"(3处), validate_timeout(timeout,"shell")→"bash"; 实现函数名 shell 不动
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -564,7 +565,7 @@ def _build_execute_shell_command_llm_data(
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"执行Shell命令{cmd_short}，失败",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+            "action": {"tool": "bash", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
@@ -573,14 +574,14 @@ def _build_execute_shell_command_llm_data(
         _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
         return {
             "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
-            "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+            "action": {"tool": "bash", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     return {
         "summary": f"执行Shell命令{cmd_short}，成功: 退出码{returncode}，输出{output_len}字符",
-        "action": {"tool": "shell", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+        "action": {"tool": "bash", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
@@ -989,7 +990,7 @@ def shell(
         llm_data: 完整 status/metrics/summary（含 returncode/exit_code、shell_type、duration_ms）
     """
     # ── 阶段 1【通用】: 参数校验 ──
-    timeout_valid, timeout_err, _ = validate_timeout(timeout, "shell")
+    timeout_valid, timeout_err, _ = validate_timeout(timeout, "bash")
     t0 = _time_mod.perf_counter()
     _cmd_limit = EXECUTE_SHELL_OUTPARM_LIMIT_CMD
     cmd_short = (command[:_SHELL_CMD_HEAD] + "..." + command[-_SHELL_CMD_TAIL:]) if command and len(command) > _cmd_limit else (command[:_cmd_limit] if command else "(空命令)")
