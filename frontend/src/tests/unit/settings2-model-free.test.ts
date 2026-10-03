@@ -25,7 +25,9 @@ describe('[69] isFreeNameSuffix — 名称 free 尾巴（endsWith 非 includes�
 
   it('OpenRouter 实证 :free 尾巴命中（2026-09-29 用 includes("-free") 实测 460 个命中 0）', () => {
     expect(isFreeNameSuffix('deepseek/deepseek-v3.1:free')).toBe(true);
-    expect(isFreeNameSuffix('meta-llama/llama-3.3-70b-instruct:free')).toBe(true);
+    expect(isFreeNameSuffix('meta-llama/llama-3.3-70b-instruct:free')).toBe(
+      true
+    );
   });
 
   it('free 在中间或词首不命中（守卫 includes 误伤）', () => {
@@ -88,7 +90,10 @@ describe('[69] isFreeModel — 三判据 OR 并集', () => {
   it('半免费不算：prompt=0 但 completion≠0 判不免费', () => {
     expect(
       isFreeModel(
-        M({ id: 'odd-model', pricing: { prompt: '0', completion: '0.0000003' } })
+        M({
+          id: 'odd-model',
+          pricing: { prompt: '0', completion: '0.0000003' },
+        })
       )
     ).toBe(false);
   });
@@ -146,7 +151,11 @@ describe('[69] isFreeModel — 三判据 OR 并集', () => {
     amd.forEach((m) =>
       expect(
         isFreeModel(
-          M({ id: m.id, free: false, pricing: { prompt: m.p, completion: m.c } })
+          M({
+            id: m.id,
+            free: false,
+            pricing: { prompt: m.p, completion: m.c },
+          })
         )
       ).toBe(false)
     );
