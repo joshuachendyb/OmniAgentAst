@@ -5,7 +5,7 @@
    用例: E2E-P9-08(文档[4] 新增)
    场景: 同一会话连发多条消息, 每条为真实多步工具任务, 验证 link 的分组与状态口径
    通过标准:
-     门3 会话隔离 : link 开关经两读点(GET /sessions/{id} 与 /sessions/{id}/messages)读回一致
+     门3 会话隔离 : link 开关经唯一读真源出口(GET /sessions/{id}/messages)读回, 且 /sessions/{id} 不得下发该字段
      门2 分组正确 : link 开时新任务并入"最近一条任务所在组"(context_root_task_id 相同)
      门5 任意状态 : 上一任务为 failed 时, link 开 -> 新任务**仍并入该组**
                    (本次口径变更核心风险点: 原仅认 completed, 现改为最近一条任意状态)
@@ -26,7 +26,7 @@
      但核心断言(DB 链根 + 工具真实调用)是确定性的, 不受此影响。
 
 【门5 为何直连 sqlite】(确定性验证, 非蒙人)
-   无任何 API 能把任务置 failed(已核实 sessions.py 仅 POST/PUT/DELETE/PATCH link/trust)。
+   无任何 API 能把任务置 failed(已核实 sessions.py 仅 POST/PUT/DELETE/trust)。
    直连 sqlite 改 status 属"造前置数据"让被测逻辑进入特定初始状态, 与 e2e_helpers:2050
    verify_token_usage 落库核查同款惯例; 被测的链根计算与分组全程走生产代码, 未 Mock 任何逻辑。
    门5 若用"等上一任务恰好 failed"的观察式写法, 断言恒成立 = 蒙人测试, 严禁。
@@ -40,8 +40,10 @@
 
 -- 小欧 2026-10-03
 -- 更新: 2026-10-03 北京老陈指正"任务太简单, 怎么也要有几步" -> 任务1/任务2 改为多步工具链路强因果任务
--- 更新: 2026-10-03 小欧 文档[4] 5.7.14.4 -> 任务2 改由 send_chat(link_enabled=True) 携带开关(不调 PATCH),
-   两读点断言移到发消息之后; 任务3/4 仍用 PATCH, 两个写入口各覆盖一轮
+-- 更新: 2026-10-03 小欧 文档[4] 5.7.14.4 -> 任务2 改由 send_chat(link_enabled=True) 携带开关,
+   读回断言移到发消息之后
+-- 更新: 2026-10-03 小欧 PATCH /sessions/{id}/link 端点废止(北京老陈定案: 开关只准随消息发出,
+   严禁独立影响后端), 任务3/4/5 一并改为 send_chat(link_enabled=...) 携带, 全用例只剩一条写路径
 """
 
 import json
@@ -109,9 +111,9 @@ INPUT_R5 = (
 #   ----+-------------+---------------------+------------------+--------------------------------
 #    1   | INPUT_R1    | 默认关(新会话)      | completed        | 自身(条款4: 关则自成新组)
 #    2   | INPUT_R2    | **随消息携带 True**  | completed        | 任务1 所在组(门2 分组正确 + 覆盖携带链路)
-#    3   | INPUT_R3    | PATCH /link 关       | completed        | 自身 = 组B(条款4)
-#    4   | INPUT_R4    | PATCH /link 关       | failed(人为置入) | 自身 = 组C, 且 C≠B(门5前提)
-#    5   | INPUT_R5    | 开   | completed        | 组C(门5: 上一任务failed仍并入, 不回溯到组B)
+#    3   | INPUT_R3    | 随消息携带 False    | completed        | 自身 = 组B(条款4)
+#    4   | INPUT_R4    | 随消息携带 False    | failed(人为置入) | 自身 = 组C, 且 C≠B(门5前提)
+#    5   | INPUT_R5    | 随消息携带 True     | completed        | 组C(门5: 上一任务failed仍并入, 不回溯到组B)
 #
 #   任务3/4/5 的内容刻意做成"读文件第N行"这种轻任务: 它们的作用不是考验 LLM 能力,
 #   而只是**产生新任务供观测链根**(门4/门5 需要新任务才能看到分组结果), 用最少 LLM 调用达成。
@@ -165,15 +167,6 @@ def _record_round(no: int, user_input: str, result: dict, session_id: str,
     )
 
 
-def _patch_link(session_id: str, enabled: bool) -> dict:
-    """PATCH /sessions/{id}/link?enabled= (文档[4] 5.7 项5)"""
-    q = urllib.parse.urlencode({"enabled": "true" if enabled else "false"})
-    url = f"{BASE_URL}{API_PREFIX}/sessions/{session_id}/link?{q}"
-    req = urllib.request.Request(url, method="PATCH", headers=AUTH_HEADERS)
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        return json.loads(resp.read().decode("utf-8"))
-
-
 def _tasks(session_id: str) -> list:
     """取该会话任务 (task_id, context_root_task_id, status), 按创建序"""
     data = _api_get(f"/sessions/{session_id}/tasks", timeout=30)
@@ -183,10 +176,18 @@ def _tasks(session_id: str) -> list:
 
 
 def _link_read(session_id: str):
-    """两读点读回 link_enabled, 必须一致(门3 后端侧)"""
-    a = (_api_get(f"/sessions/{session_id}", timeout=30) or {}).get("link_enabled")
-    b = (_api_get(f"/sessions/{session_id}/messages", timeout=30) or {}).get("link_enabled")
-    return a, b
+    """读回 link_enabled —— 唯一读真源出口是 GET /sessions/{id}/messages(5.7.13)。
+
+    2026-10-03: 原实现同时读 /sessions/{id} 与 /messages 做"两读点一致"校验。该第二读点
+    已按 YAGNI/DRY 废止(零消费字段 = 同一真源开两个 HTTP 出口 = 双通道隐患), 故此处只留
+    messages 一条; 另加一条反向断言, 防 SessionResponse 又长回 link_enabled。
+    """
+    a = (_api_get(f"/sessions/{session_id}", timeout=30) or {})
+    b = (_api_get(f"/sessions/{session_id}/messages", timeout=30) or {})
+    assert (
+        "link_enabled" not in a
+    ), f"/sessions/{{id}} 不得下发 link_enabled(5.7.5/5.7.6 已废止), 实得 {a.get('link_enabled')}"
+    return None, b.get("link_enabled")
 
 
 def _aggregate_rounds(results: list, checks: list, task_ids: list = None) -> dict:
@@ -322,9 +323,9 @@ async def test_e2e_p9_08_link_grouping_contract():
         print(f"  [Setup] session={sid}")
 
         a0, b0 = _link_read(sid)
-        assert a0 is False and b0 is False, \
-            f"新会话默认应为关闭且两读点一致, 实得 get={a0} msg={b0}"
-        _ck(checks,"新会话link默认关闭, 两读点一致")
+        assert b0 is False, \
+            f"新会话默认为关闭(唯一读点 messages), 实得 msg={b0}"
+        _ck(checks,"新会话link默认关闭(messages 唯一读点)")
 
         r1 = await send_chat(in1, session_id=sid)
         rounds.append(r1)
@@ -352,9 +353,10 @@ async def test_e2e_p9_08_link_grouping_contract():
         _record_round(1, in1, r1, sid, t1[0][0], test_start, checks, rounds, task_ids)
         print(f"  [记录] 任务1 已落盘: {TEST_CASE_ID}-T1")
 
-        # ── 任务2: link 值随消息携带(不调 PATCH), 同时校验两读点 ──
-        # 2026-10-03 小欧 - 文档[4] 5.7.14: 覆盖"值随消息携带"这条新链路。
-        #   读回断言移到发消息之后(此前在发消息之前读, 只能验证 PATCH 效果)。
+        # ── 任务2: link 值随消息携带(与前端真实链路一致), 同时校验唯一读真源出口 ──
+        # 2026-10-03 小欧 - 文档[4] 5.7.14: 覆盖"值随消息携带"这条链路。
+        #   读回断言必须放在发消息之后 —— 发之前后端还没有新值, 测不出携带是否生效。
+        #   PATCH /sessions/{id}/link 已废止, 全5 个任务统一走send_chat(link_enabled=...) 携带。
         in2 = INPUT_R2
         inputs.append(in2)
         r2 = await send_chat(in2, session_id=sid, link_enabled=True)
@@ -368,9 +370,9 @@ async def test_e2e_p9_08_link_grouping_contract():
               f"resp={r2['response_text'][:120]}")
 
         a1, b1 = _link_read(sid)
-        assert a1 is True and b1 is True, \
-            f"任务2 携带 link_enabled=True 后两读点应均为True, 实得 get={a1} msg={b1}"
-        _ck(checks,"随消息携带 link_enabled=True 生效: 发消息后两读点(getSession/messages)均读到True")
+        assert b1 is True, \
+            f"任务2 携带 link_enabled=True 后唯一读点应为True, 实得 msg={b1}"
+        _ck(checks,"随消息携带 link_enabled=True 生效: 发消息后 messages 读点读到True")
 
         # 门2: 链根必须并入任务1 所在组
         t2 = _tasks(sid)
@@ -397,10 +399,11 @@ async def test_e2e_p9_08_link_grouping_contract():
         print(f"  [记录] 任务2 已落盘: {TEST_CASE_ID}-T2")
 
         # ── 任务3 (link 关): 自成新组(条款4) ──
-        _patch_link(sid, False)
+        # 2026-10-03 小欧 - PATCH /sessions/{id}/link 已废止(北京老陈定案: 开关只准随消息发出,
+        #   严禁独立影响后端), 改由 send_chat(link_enabled=...) 携带, 与前端真实链路一致。
         in3 = INPUT_R3.format(src=str(SRC_FILE))
         inputs.append(in3)
-        r3 = await send_chat(in3, session_id=sid)
+        r3 = await send_chat(in3, session_id=sid, link_enabled=False)
         rounds.append(r3)
         # 串行固定间隔: 等上个任务的后端异步收尾落库完成再发下一个(见顶部 JOB_GAP_SECONDS)
         time.sleep(JOB_GAP_SECONDS)
@@ -423,10 +426,9 @@ async def test_e2e_p9_08_link_grouping_contract():
         #     新口径(最近一条任意状态) -> 任务5 并入 组C
         #     旧口径(仅认completed)      -> 跳过failed的任务4, 回溯到任务3 -> 任务5 并入 组B
         #   两者结论不同, 断言才真正有分辨力。
-        _patch_link(sid, False)
         in4 = INPUT_R4.format(src=str(SRC_FILE))
         inputs.append(in4)
-        r4 = await send_chat(in4, session_id=sid)
+        r4 = await send_chat(in4, session_id=sid, link_enabled=False)
         rounds.append(r4)
         # 串行固定间隔: 等上个任务的后端异步收尾落库完成再发下一个(见顶部 JOB_GAP_SECONDS)
         time.sleep(JOB_GAP_SECONDS)
@@ -448,10 +450,9 @@ async def test_e2e_p9_08_link_grouping_contract():
 
         # ── 门5(核心): 上一任务(任务4)置 failed, link 开 -> 任务5 仍并入组C ──
         _force_status(sid, t4[3][0], "failed")
-        _patch_link(sid, True)
         in5 = INPUT_R5.format(src=str(SRC_FILE))
         inputs.append(in5)
-        r5 = await send_chat(in5, session_id=sid)
+        r5 = await send_chat(in5, session_id=sid, link_enabled=True)
         rounds.append(r5)
         end5 = assert_stream_ended(r5)
         assert end5 == "final", f"任务5必须成功结束(MUST): {end5}"
