@@ -33,6 +33,7 @@
 #   退出时同生命周期 cancel（存引用防 GC）— 小欧 2026-09-29
 # 2026-10-03 小欧 - startup_event 增 journal_steps_reconcile 一次性对账 Journal(③) vs chat_task_steps(②);
 #   只告警不自动补, 失败仅 warning 不阻断启动 — 文档[5] 5.3 D2 — 小欧 2026-10-03
+# 2026-10-03 - 小欧 - 笔误修正: _t4con 改回 _t_recon(与 _recon_n 配对的 reconcile 计时变量; 同批新增 _t4 串扰致误改, 读写一致故功能未坏)。
 import sys
 import asyncio
 from typing import Optional
@@ -287,11 +288,11 @@ async def startup_event():
     db.init()
     logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")
     # L0 僵尸任务收尾：崩溃遗留的 executing 残行改终态，不让任务列表永远显示"执行中" — 小欧 2026-09-29
-    _t4con = _time.time()
+    _t_recon = _time.time()
     _recon_n = await db.atxn("chat", lambda c: reconcile_orphaned_tasks(c, _boot_iso))
     if _recon_n:
         logger.warning(f"[启动] 收尾僵尸任务 {_recon_n} 个（上次进程中断残留，已标 failed/task_interrupted）")
-    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t4con:.3f}s")
+    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t_recon:.3f}s")
     _t1 = _time.time()
     ensure_tools_registered()
     logger.info(f"[启动耗时] ensure_tools_registered: {_time.time()-_t1:.3f}s")
