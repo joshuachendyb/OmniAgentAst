@@ -105,6 +105,13 @@
 #   touch_session_updated_at(只留刷时间戳), allocate_and_insert_message 的 +1 同步删除; is_valid 语义不动 — 小欧-2026-09-30
 # 2026-10-01 小欧 - 解 [1] E5~E9/E11: ①append_execution_step 补 task_id 缺失即抛 fail-loud(实测 SQLite 唯一索引中 NULL 互不相等, 缺 task_id 落库恒幂等失败) + ON CONFLICT DO NOTHING 幂等化配 idx_steps_unique; ②load_steps_by_task 工具名提取 json_extract 路径 $.tools[0].name 改 $.tools[0].tool(ActionStep 写入键为 tool 非 name, 原致工具汇总全归 null); ③thought 收口抽为公用 _strip_thought_content 供 load_execution_steps 复用, 两入口形状一致(原仅 load_steps_by_task 做); ④_warn_zero_row 增 level 参数, "字段永久丢失且不可事后补算"场景(如 ai_message_id)提级 error; ⑤删 save_execution_steps 与 ExecutionStepsUpdate(随 E8 空壳退役, save_execution_steps 自 2026-08-27 起已不写任何步骤) 及 derive_status_from_steps(唯一调用方随删)
 #   compliance: DRY(单一真源)/fail-loud/YAGNI(零调用方即删)/复用优先 — 小欧-2026-10-01
+# 2026-10-02 - 小欧 - 文档[4] 5.7 项2：get_previous_task_chain 口径改「最近一条任务任意状态」
+#   (原仅认 completed, 致上一任务 failed 时链根错误回溯), 返回值由 dict 收窄为链根字符串(删死键 task_id)。
+#   项10: list_session_tasks 的 SELECT 补 context_root_task_id —— 前端徽标按它归链的唯一分组键。
+# 2026-10-03 - 小欧 - 文档[4] 5.10.1：新增 conn 级读函数 get_session_link(会话级 link 真源),
+#   与 get_previous_task_chain 同族同出口, 供编排器经 db.atxn offload 调用。
+#   不复用 session_service.get_session_info: 它含 2 条 COUNT(*) GROUP BY 且同步取连接, 放进
+#   async 生成器等于每条消息在 loop 上同步跑 3 条 SQL, 违反编排器「loop 零同步 DB I/O」纪律。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -684,19 +691,33 @@ def query_token_usage(
     return dict(row)
 
 
-def get_previous_task_chain(conn: Connection, session_id: str) -> Optional[Dict]:
-    """取本会话最近一条成功(final 终态=completed)任务的链根 — S1 ④⑧(10.1.4)
-    链根计算取最近一条 success 任务；cancelled/failed 跳过不继承(避免链到失败任务) — 北京老陈 2026-08-16
-    返回 {task_id, context_root_task_id}；无成功任务返回 None(调用方使自身为链根)"""
+def get_previous_task_chain(conn: Connection, session_id: str) -> Optional[str]:
+    """取本会话最近一条任务的链根 — 文档[4] 5.7 项2（2026-10-02 北京老陈定案）
+    口径：最近一条任务任意状态均参与（原仅认 completed，致上一任务 failed/interrupted 时链根错误回溯）。
+    并发：同会话存在 running/paused 活跃任务时新消息走注入不新建任务（task_registry.has_active_task_in_session），
+    故此处取到的任务必为非活跃态，不存在同组并发。
+    返回 context_root_task_id（为空回退其自身 task_id）；无任务返回 None（调用方使自身为链根）"""
     row = conn.execute(
         "SELECT task_id, context_root_task_id FROM chat_tasks "
-        "WHERE session_id=? AND status='completed' ORDER BY id DESC LIMIT 1",
+        "WHERE session_id=? ORDER BY id DESC LIMIT 1",
         (session_id,),
     ).fetchone()
     if row:
-        return {"task_id": row["task_id"],
-                "context_root_task_id": row["context_root_task_id"] or row["task_id"]}
+        return row["context_root_task_id"] or row["task_id"]
     return None
+
+
+def get_session_link(conn: Connection, session_id: str) -> bool:
+    """取会话级 link 粘性开关（chat_sessions.link_enabled 唯一真源）— 文档[4] 5.7 项8 / 5.10.1。
+    conn 级读，供编排器经 db.atxn offload 调用（与 get_previous_task_chain 同族同出口, 判定只在 storage 层）。
+    COALESCE 兜 ALTER ADD COLUMN 前存量 NULL 行（=关闭）；会话不存在亦返回 False（fail-closed, 不抛
+    HTTPException——避免 HTTP 层异常类型漏进 service 层编排代码）— 小欧 2026-10-03"""
+    row = conn.execute(
+        "SELECT COALESCE(link_enabled, 0) FROM chat_sessions "
+        "WHERE id = ? AND is_deleted = FALSE",
+        (session_id,),
+    ).fetchone()
+    return bool(row[0]) if row else False
 
 
 # ====================================================================
@@ -901,7 +922,7 @@ def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Op
     ).fetchone()[0]
     rows = conn.execute(
         """SELECT task_id, user_input, response, status, duration, sessionModel,
-                  total_steps, llm_call_count, context_link_mode, user_message_id,
+                  total_steps, llm_call_count, context_link_mode, context_root_task_id, user_message_id,
                   created_at, updated_at
            FROM chat_tasks WHERE session_id=? ORDER BY id ASC""",
         (session_id,),

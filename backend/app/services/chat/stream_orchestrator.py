@@ -193,6 +193,9 @@
 #   致 ai_message_id=None 带病运行, 前端看似在跑而 DB 全空); ②文件 writer 独立 try 仅告警, 原设计意图不变。
 #   — 小欧-2026-09-29
 # 2026-10-02 20:14 小欧 - 无 session_id 时改走 create_session(None) 建会话(原凭空造 UUID 撞外键致整流 500) 
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项8: 编排器废止逐请求 context_link_mode, 链根真源改为会话 link 开关;
+#   三堂会审 S3: 链根计算块下移至活跃任务注入判定之后; 关联审查风险1: 拆出 _history_root(装历史用根,
+#   无链根时为 None), 与落库用根区分, 避免无链根时误把自身 task_id 当根导致全量灌历史。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -234,6 +237,7 @@ from app.services.task.task_context import _current_task_id
 from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 追加权威累计查询 — 小欧 2026-08-21
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05
+from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
@@ -331,20 +335,16 @@ class StreamState:
 async def chat_stream_orchestrator(
     messages: list,
     session_id: Optional[str] = None,
-    context_link_mode: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     """聊天流编排入口：负责任务生命周期、Agent 启动、SSE 消费。
 
     由 API 层解包 ChatRequest 后以 (messages, session_id) 调用；services 层不反向依赖 api/v1 DTO。
     2026-08-16 - 小欧 - 增 context_link_mode(任务上下文链);
       白名单校验: 非法值/缺失一律按 independent, 防误灌历史(防退化)
+    2026-10-02 小欧 - 文档[4] 5.7 项8: context_link_mode 形参与白名单校验已废止（真源上移至会话 link 开关），
+      历史条目按"编辑历史禁删"保留不改。
     """
-    # ── 编排①输入校验(链模式白名单 + 消息非空) ———————————————————————————— 小健 2026-08-17
-    # 白名单校验: {"linked","independent"} 之外的非法值按 independent 处理并记 warning
-    if context_link_mode not in ("linked", "independent"):
-        if context_link_mode is not None:
-            logger.warning(f"[chat] context_link_mode 非法值 '{context_link_mode}', 按 independent 处理")
-        context_link_mode = "independent"
+    # ── 编排①输入校验(消息非空) ———————————————————————————————————————— 小健 2026-08-17
     if not messages:
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
         logger.warning("[chat] 输入校验失败: 消息列表为空")
@@ -365,20 +365,12 @@ async def chat_stream_orchestrator(
     _model_warning = get_ai_config_resolver().pop_model_warning()
 
     task_id = generate_task_id()
-    # ── 编排③算任务上下文链根(linked继承 / independent自为链根) ————————————————— 小健 2026-08-17
-    # 上下文链计算：context_root_task_id
-    #   linked=续聊(需显式): 继承本会话最近一条成功任务的链根(曾续则沿链根); 无成功任务则=自身
-    #   independent=新任务(默认): =自身(从零自为链根)；cancelled/failed 不继承(防链到失败任务)
-    _context_root_task_id = task_id
-    if context_link_mode == "linked" and session_id:
-        _prev_chain = None
-        try:
-            # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
-            _prev_chain = await db.atxn("chat", lambda conn: get_previous_task_chain(conn, session_id))
-        except Exception as _e:
-            logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
-        if _prev_chain:
-            _context_root_task_id = _prev_chain["context_root_task_id"]
+    # 2026-10-03 小欧 三堂会审 S3: 链根计算下移到活跃任务注入判定之后(见下方编排③)。
+    #   原位置在判定之前, 则注入失败降级新建时会把新任务并入活跃任务的组根。
+    _context_root_task_id = task_id      # 默认自为链根; link 开且查到链根时由下方覆盖 — 小欧 2026-10-03
+    _history_root = None              # 装历史用的根: 无真实链根时为 None(= 不装历史), 与落库用根区分
+    _link_on = False
+    _context_link_mode = "independent"
     _task_token = _current_task_id.set(task_id)  # try/finally reset, 防 ContextVar 泄漏(方案设计对齐)
     set_session_id(session_id)
     # ── 编排④建运行基元(步号计数器 + SSE流状态容器) ———————————————————————————— 小健 2026-08-17
@@ -434,6 +426,34 @@ async def chat_stream_orchestrator(
                 return
             # 注入失败(目标任务恰好终态/队列满/uid非法): 降级新建任务(下述正常路径), 不丢消息
             logger.warning(f"[chat] 注入失败, 降级新建任务: session={session_id}, target={_active_tid}")
+
+        # ── 编排③算任务上下文链根(会话 link 粘性开关) ———————————————————————— 小健 2026-08-17
+        # 2026-10-03 小欧 三堂会审 S3: 本块须位于活跃任务注入判定**之后** —— 只有确定新建任务才需算链根。
+        # 上下文链计算：context_root_task_id
+        #   link 开(粘性，唯一真源 chat_sessions.link_enabled): 并入会话内最近一条任务所在组(任意状态口径)；
+        #     会话内无任何任务时 =自身(从零自为链根, 此时不装历史)
+        #   link 关: =自身(从零自为新组链根)
+        # 读真源走 conn 级读函数 get_session_link(storage 层), 并同样经 db.atxn offload 出事件循环 ——
+        #   本文件 :83-84 登记「请求编排期 loop 零同步 DB I/O」(2026-08-24 后端卡死事故修复结论)。
+        #   不复用 get_session_info: 它含 2 条 COUNT(*) GROUP BY 且同步取连接, 放进 async 生成器
+        #   等于每条消息在 loop 上同步跑 3 条 SQL, 且会话不存在时抛 HTTPException(分层越界)。
+        try:
+            _link_on = await db.atxn("chat", lambda conn: get_session_link(conn, session_id))
+        except Exception as _e:
+            logger.warning(f"[chat] 读会话 link 开关失败(session={session_id}), 按关闭处理: {_e}")
+        _context_link_mode = "linked" if _link_on else "independent"
+        if _link_on:
+            try:
+                # 落库 offload 出事件循环(后端卡死修复收尾 小欧 2026-08-24)
+                _prev_root = await db.atxn("chat", lambda conn: get_previous_task_chain(conn, session_id))
+            except Exception as _e:
+                logger.warning(f"[chat] 取上一任务链根失败(session={session_id}): {_e}")
+            else:
+                if _prev_root:
+                    _context_root_task_id = _prev_root
+                    _history_root = _prev_root
+        # 2026-10-03 小欧 关联审查风险1: 无链根时 _history_root 保持 None(装历史早退),
+        #   不可沿用落库用的自身 task_id —— 该行此刻尚未 insert, 会致下界缺失而全量灌入会话旧消息。
 
         buffer = create_task_stream_buffer(task_id, session_id, journal_sink)
         # 占位注册方案(2026-09-20 小欧, 北京老陈定案): register_task 不再抛异常, 守卫命中返回占位tid —
@@ -521,14 +541,14 @@ async def chat_stream_orchestrator(
         import types as _types
         _db_ops = _types.SimpleNamespace(
             append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（原生自增权威锚, 北京老陈 2026-08-23 锚迁移）— 小健 2026-08-19
-            load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤，经闭包注入链路计算的 context 两字段+上界(_user_msg_id)
-                sid, context_link_mode=context_link_mode, context_root_task_id=_context_root_task_id,
+            load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤，经闭包注入装历史用根+上界(_user_msg_id)
+                sid, context_root_task_id=_history_root,
                 upper_message_id=_user_msg_id),
             log_task_end=_log_task_end,
             insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建 — 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) — 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,
                 ai_message_id=None,  # agent_runner 分配后回填 — 小欧 2026-08-19
-                user_input=user_input, context_link_mode=context_link_mode,
+                user_input=user_input, context_link_mode=_context_link_mode,
                 context_root_task_id=_context_root_task_id,
                 task_model=agent.llm_client.llm_model),
             update_task=lambda c, **kw: update_task(c, task_id=task_id, **kw),  # ②-1 chat_tasks 终态
@@ -550,7 +570,7 @@ async def chat_stream_orchestrator(
         agent._start_meta = {
             "user_input": user_input,
             "session_id": session_id,
-            "context_link_mode": context_link_mode,
+            "context_link_mode": _context_link_mode,
             "context_root_task_id": _context_root_task_id,
             "warning": _model_warning,
         }

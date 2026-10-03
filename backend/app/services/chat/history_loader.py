@@ -5,6 +5,8 @@
 #   与 storage.py 的 fetch_session_user_message_pairs 做邻居(复用优先)。仅改导入归属, 业务逻辑一字不改,
 #   删 stream_reader.py 空壳时不留垫片(禁 backward)。
 # 2026-10-01 小欧 - 解 [1] E3: load_execution_steps 调用补传 task_id(p["pair_task_id"]), 与 message_service/execution_stream 同源。本函数是"喂 LLM 的历史", 安全性依赖 fetch 的 upper_id 严格上界(排除本任务自身已实时落库的步骤, 防自我回灌), 补 task_id 只收窄不放开, 不改变该边界语义
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项9: _load_previous_messages 删 context_link_mode 形参与二次白名单;
+#   三堂会审 S1/S2: 两种兜底退化(仅下界=自我回灌 / 仅上界=越链灌入)均不安全, 塌缩为双边界齐全才装历史。
 """
 history_loader — 会话历史加载(多轮上下文DB读取)
 
@@ -163,45 +165,38 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
         return []
 
 
-def _load_previous_messages(session_id: str, context_link_mode: str = "independent",
-                            context_root_task_id: Optional[str] = None,
-                            upper_message_id: Optional[int] = None) -> List[Dict[str, Any]]:
+def _load_previous_messages(session_id: str, context_root_task_id: Optional[str] = None,
+                             upper_message_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
     小欧 2026-06-25: 抽取_parse_tool_calls/_parse_observations消除嵌套try/except
     小欧 2026-07-14: 从chat_message_steps组装
     2026-08-16 - 小欧 - S1(10.1.4⑤): 按任务链范围过滤——
-      independent(新任务,默认): 直接返回[](从零,不带链上历史,防误灌);
-      linked(续聊): 沿"链根任务首条user消息id → 本任务用户消息id前"范围加载(BETWEEN 下界 AND 上界),链外消息不进LLM;
+      2026-10-02 小欧 - 文档[4] 5.7 项9: 链模式形参废止，开关改由 context_root_task_id 承载——
+        None(link 关): 直接返回[](从零,不带历史,防误灌,等价原 independent);
+        非空(link 开): 沿"链根任务首条user消息id → 本任务用户消息id前"范围加载(BETWEEN 下界 AND 上界),链外消息不进LLM;
       upper_message_id=本任务user消息id(上界,由 orchestrator _user_msg_id 闭包注入;设计1643 SQL语义要求,签名补充该参)"""
-    # S1 判断兜底(10.1.4⑧)：非法/缺失值由 orchestrator 已归一为 independent；此处二次兜底(仅接受 linked/independent)
-    if context_link_mode not in ("linked", "independent"):
-        context_link_mode = "independent"
-    if context_link_mode == "independent":
+    # link 关闭(链根为空)即无链可沿: 不装任何历史 — 小欧 2026-10-02
+    if not context_root_task_id:
         return []
     try:
         with db.get_conn("chat") as conn:
-            # linked: 按链根范围过滤。链根首条user消息id = chat_tasks(chain_root).user_message_id 起
-            _lo = context_root_task_id  # 链根task_id(=context_root_task_id 自身或其根)
-            _lower_id = None
-            if _lo:
-                _r = conn.execute(
-                    "SELECT user_message_id FROM chat_tasks WHERE task_id=?",
-                    (_lo,),
-                ).fetchone()
-                if _r and _r["user_message_id"]:
-                    _lower_id = _r["user_message_id"]
-            if _lower_id is not None and upper_message_id is not None:
-                # 设计1643: 链根首消息id → 本任务user消息id"前"(链外消息不进LLM)
-                # 2026-08-17 - 小健 - 三堂会审-E1修复: 原 BETWEEN lo AND upper 含上界,
-                #   把本任务自身的 user 消息(id=upper)也装入上下文, 与本次 user_input 重复;
-                #   改 id < upper(不含本任务 user 消息), 语义对齐"本任务前"
-                # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks(复用 fetch_session_user_message_pairs)
-                pairs = fetch_session_user_message_pairs(conn, session_id, lower_id=_lower_id, upper_id=upper_message_id)
-            elif _lower_id is not None:  # 链根存在但无上界(异常兜底): 仅下界过滤
-                pairs = fetch_session_user_message_pairs(conn, session_id, lower_id=_lower_id)
-            else:  # 链根无 user_message_id(异常兜底)时退化为按会话加载, 防回退丢历史的退化
-                logger.warning(f"[SSE] linked 链根 {_lo} 无 user_message_id, 退化为按会话加载(session={session_id})")
-                pairs = fetch_session_user_message_pairs(conn, session_id)
+            # 链根首条user消息id = chat_tasks(chain_root).user_message_id 起
+            _r = conn.execute(
+                "SELECT user_message_id FROM chat_tasks WHERE task_id=?",
+                (context_root_task_id,),
+            ).fetchone()
+            _lower_id = _r["user_message_id"] if (_r and _r["user_message_id"]) else None
+            # 2026-10-03 小欧 三堂会审 S1/S2: 链范围须双边界齐全才装历史, 否则 fail-closed。
+            #   原两种兜底都不安全(仅下界=自我回灌; 仅上界=越链灌入), 故全部删除。
+            if _lower_id is None or upper_message_id is None:
+                logger.warning(
+                    f"[SSE] linked 链范围边界缺失(lower={_lower_id}, upper={upper_message_id}), "
+                    f"按不装历史处理(session={session_id}, root={context_root_task_id})"
+                )
+                return []
+            # 2026-08-17 - 小健 - 三堂会审-E1: 改 id<upper(不含本任务 user 消息), 语义对齐"本任务前"
+            # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 改读 chat_user_message+chat_tasks
+            pairs = fetch_session_user_message_pairs(conn, session_id, lower_id=_lower_id, upper_id=upper_message_id)
             messages = []
             for p in pairs:
                 messages.append({"role": "user", "content": p["user_content"] or ""})
