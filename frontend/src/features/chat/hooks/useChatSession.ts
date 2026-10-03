@@ -8,6 +8,10 @@
 //   (新会话不断旧流); L1修正② handleClear 改 stop+clearSteps(显式清空=用户明确终止意图);
 //   streaming 参数与 UseChatStreamingReturn import 零消费整删(5.18 参数收敛) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - loadSession 补写 setMessages；loading 复位进 finally；URL 写入上抛；合并透传壳
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.7 + 5.10.3(c): 消费 setLinkEnabled 并在 5 处注入 —— 场景3 加载最近会话
+//   (result.linkEnabled ?? false, F5 刷新恒走该路径)、场景2 缓存恢复(restored.linkEnabled)、三处复位(新建/清空/失败)
+//   归 false。缓存恢复分支原以"与 setSessionModelOverride 同构"为由不注入, 但那是复制既有缺口而非正当性:
+//   漏注入则 UI 显示关、DB 为 true, 用户一次点击即被静默改坏真源。 — 小欧-2026-10-03
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -65,6 +69,7 @@ export interface UseChatSessionReturn {
   lastSavedTitle: string;
   sessionModelOverride: SessionModelOverride | null;
   setSessionModelOverride: (v: SessionModelOverride | null) => void;
+  setLinkEnabled: (v: boolean) => void;
 
   // 会话函数
   loadSession: (sessionId: string) => Promise<Message[]>;
@@ -100,6 +105,7 @@ export interface InitializeSessionOptions {
     sessionId: string | null;
     sessionTitle: string;
     sessionVersion: number;
+    linkEnabled: boolean;
   } | null>;
   onLoadingStart: () => void;
   onLoadingEnd: () => void;
@@ -167,6 +173,7 @@ export const useChatSession = (
     setLastSavedTitle,
     sessionModelOverride,
     setSessionModelOverride,
+    setLinkEnabled,
     setMessages,
     currentSessionIdRef,
   } = state;
@@ -198,6 +205,7 @@ export const useChatSession = (
           setTitleLocked(result.title_locked || false);
           setLastSavedTitle(result.title || '新会话');
           setSessionModelOverride(result.sessionModel ?? null);
+          setLinkEnabled(result.linkEnabled ?? false);
           // 2026-09-30 小欧 - 补写 setMessages：其余分支都写，唯独本成功分支漏写。
           //   病根：漏写 + 上游 void 丢弃返回值，两处叠加致返回值彻底蒸发 →
           //   刷新进会话消息恒空；会话间切换则保留上个会话消息（跨会话串消息）。
@@ -210,6 +218,7 @@ export const useChatSession = (
         //   404 = 会话确实不存在 → 按"空会话"清理；与 initializeSession 的 404 分支保持对称。
         setMessages([]);
         setSessionId(null);
+        setLinkEnabled(false);
         setLastSavedTitle('新会话');
         return [];
       } catch (error) {
@@ -228,6 +237,7 @@ export const useChatSession = (
       setLastSavedTitle,
       setMessages, // 2026-09-30 小欧: 成功分支与 404 分支均已写入，补进依赖
       setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
+      setLinkEnabled,
       currentSessionIdRef,
     ]
   );
@@ -311,6 +321,7 @@ export const useChatSession = (
             }
             setLastSavedTitle(result.title || '新会话');
             setSessionModelOverride(result.sessionModel ?? null);
+            setLinkEnabled(result.linkEnabled ?? false);
 
             onMessageListLoadingEnd();
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
@@ -336,6 +347,7 @@ export const useChatSession = (
             setSessionVersion(1);
             setTitleLocked(false);
             setSessionModelOverride(null);
+            setLinkEnabled(false);
             setLastSavedTitle('新会话');
             // 2026-09-30 小欧 - 删原生 replaceState，改上抛意图交页面层用 Router 写（见第二参注释）
             onUrlSessionChange?.(null);
@@ -396,6 +408,8 @@ export const useChatSession = (
           setSessionTitle(restored.sessionTitle);
           setSessionVersion(restored.sessionVersion);
           setLastSavedTitle(restored.sessionTitle);
+          // 缓存恢复必须注入会话级真源(复制 setSessionModelOverride 的缺口不构成正当性; 漏注入则 UI 显示关而 DB 为 true)。
+          setLinkEnabled(restored.linkEnabled);
           // 2026-08-27 小欧 修复#55: 缓存恢复分支补调onRenderEnd/onMessageListLoadingEnd(URL加载分支已调用, 此处遗漏导致渲染/加载结束信号缺失)
           onRenderEnd();
           onMessageListLoadingEnd();
@@ -437,6 +451,7 @@ export const useChatSession = (
           }
           setLastSavedTitle(result.title);
 
+          setLinkEnabled(result.linkEnabled ?? false);
           setMessages(result.messages);
 
           onMessageListLoadingEnd();
@@ -479,6 +494,7 @@ export const useChatSession = (
       setTitleLocked,
       setLastSavedTitle,
       setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
+      setLinkEnabled,
       currentSessionIdRef,
       onUrlSessionChange, // 2026-09-30 小欧 - URL 写入出口入依赖（闭包新鲜度）
     ]
@@ -516,6 +532,7 @@ export const useChatSession = (
         setSessionVersion(1);
         setTitleLocked(false);
         setSessionModelOverride(null);
+        setLinkEnabled(false);
         setLastSavedTitle(newTitle);
 
         // [63] 5.18 v1.29：删"断开之前SSE+清steps"（L1：新会话不断旧流、不清旧步——旧流留
@@ -559,6 +576,7 @@ export const useChatSession = (
       setMessages,
       setLastSavedTitle,
       setSessionModelOverride,
+      setLinkEnabled,
       currentSessionIdRef,
       onUrlSessionChange, // 2026-09-30 小欧 - URL 写入出口入依赖（闭包新鲜度）
     ]
@@ -587,6 +605,7 @@ export const useChatSession = (
     setTitleLocked(false);
     setMessages([]);
     setSessionModelOverride(null); // 2026-08-27 小欧 修复#41: 清空会话复位L2模型, 避免新会话继承旧模型覆盖
+    setLinkEnabled(false); // 同源复位会话级 link 开关, 避免新会话继承旧开关
     setLastSavedTitle('新会话');
   }, [
     sessionId,
@@ -597,6 +616,7 @@ export const useChatSession = (
     setMessages,
     setLastSavedTitle,
     setSessionModelOverride,
+    setLinkEnabled,
     currentSessionIdRef,
   ]);
 
@@ -695,6 +715,7 @@ export const useChatSession = (
     // 会话级模型覆盖(L2)
     sessionModelOverride,
     setSessionModelOverride,
+    setLinkEnabled,
 
     // Refs
     currentSessionIdRef,

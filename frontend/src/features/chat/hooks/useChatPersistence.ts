@@ -28,6 +28,16 @@
  *   网络正常用后端数据(与轻量态分支同口径), 仅弱网 catch 才回退本地快照 — 小欧-2026-09-30
  */
 
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.10.3(a′)(b): 持久化载荷补 linkEnabled。①写入侧(完整态
+//   PersistenceState + 降级态 LightState + saveMessagesToStorage 第6参 + saveState 传参 + 依赖)——
+//   5.10.3(a′) 明列 3 处写入点, 本文件是第 2 处, 只补读侧不补写侧会让 state.linkEnabled 恒 undefined(测试假绿);
+//   ②restoreState 两条返回路径(轻量态 result / 完整态 fresh)补 linkEnabled, 两条路径均 useCache:false
+//   走后端故 result/fresh 天然含该字段; ③restoreState 返回类型补 linkEnabled。— 小欧-2026-10-03
+// 编辑历史: 2026-10-03 小欧 - restoreState 两条路径的 linkEnabled 取值改为"本地优先, 后端兜底"。
+//   原为后端优先, 与 5.8.19"勾选随消息携带"矛盾: 勾选在消息发出前只存在于浏览器, 后端存的还是
+//   上一次发消息时的旧值, 后端优先会把用户刚勾的意图抹掉(勾了不发再刷新即丢)。
+//   消息发出后该值随 link_enabled 上送, 两端一致, 故改优先级不影响已落库场景。— 小欧-2026-10-03
+
 import { useEffect, useCallback, useRef } from 'react';
 import type { Message, HistoryLoadResult } from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
@@ -55,6 +65,7 @@ interface PersistenceState {
   scrollPosition: number;
   isPaused: boolean;
   isReceiving: boolean;
+  linkEnabled: boolean;
 }
 
 /**
@@ -67,6 +78,7 @@ interface LightState {
   messageCount: number;
   isPaused: boolean;
   isReceiving: boolean;
+  linkEnabled: boolean;
 }
 
 /**
@@ -85,6 +97,7 @@ export interface UseChatPersistenceReturn {
     sessionVersion: number;
     isPaused: boolean;
     isReceiving: boolean;
+    linkEnabled: boolean;
   } | null>;
 
   // 防抖保存函数Ref
@@ -94,7 +107,8 @@ export interface UseChatPersistenceReturn {
       sid: string,
       title: string,
       paused: boolean,
-      receiving: boolean
+      receiving: boolean,
+      linkEnabled: boolean
     ) => void
   >;
 }
@@ -128,6 +142,7 @@ export const useChatPersistence = (
     isPaused,
     messagesEndRef,
     messagesRef,
+    linkEnabled,
   } = state;
 
   const { isReceiving, executionStepsRef } = streaming;
@@ -144,7 +159,8 @@ export const useChatPersistence = (
         sid: string,
         title: string,
         paused: boolean,
-        receiving: boolean
+        receiving: boolean,
+        linkEnabled: boolean
       ) => {
         if (sid) {
           const state: PersistenceState = {
@@ -157,6 +173,7 @@ export const useChatPersistence = (
               messagesEndRef.current?.parentElement?.scrollTop || 0,
             isPaused: paused,
             isReceiving: receiving,
+            linkEnabled,
           };
 
           try {
@@ -170,6 +187,7 @@ export const useChatPersistence = (
                 messageCount: msgs.length,
                 isPaused: paused,
                 isReceiving: receiving,
+                linkEnabled,
               };
               sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
             } else {
@@ -224,7 +242,8 @@ export const useChatPersistence = (
         sessionId,
         sessionTitle,
         isPaused,
-        isReceiving
+        isReceiving,
+        linkEnabled
       );
     }
   }, [
@@ -233,6 +252,7 @@ export const useChatPersistence = (
     sessionTitle,
     isPaused,
     isReceiving,
+    linkEnabled,
     executionStepsRef,
     saveMessagesToStorage,
   ]);
@@ -299,6 +319,8 @@ export const useChatPersistence = (
               sessionId: result.sessionId,
               sessionTitle: result.title || '新会话',
               sessionVersion: result.version || 1,
+              // 本地勾选优先于后端, 理由同完整状态分支(见该处注释)
+              linkEnabled: (data.linkEnabled ?? result.linkEnabled) === true,
               isPaused: data.isPaused || false,
               isReceiving: data.isReceiving || false,
             };
@@ -360,6 +382,10 @@ export const useChatPersistence = (
         sessionId: fresh?.sessionId || data.sessionId || null,
         sessionTitle: fresh?.title || data.sessionTitle || '新会话',
         sessionVersion: fresh?.version || data.sessionVersion || 1,
+        // 本地勾选优先于后端: 勾选随消息携带(文档[4] 5.8.19), 未发出前只存在于浏览器,
+        // 此时本地值即用户意图, 后端存的还是上一次发消息时的旧值。
+        // 消息一旦发出, 该值随 link_enabled 上送后端, 此后两端一致, 谁优先都不影响结果。
+        linkEnabled: (data.linkEnabled ?? fresh?.linkEnabled) === true,
         isPaused: data.isPaused || false,
         isReceiving: data.isReceiving || false,
       };

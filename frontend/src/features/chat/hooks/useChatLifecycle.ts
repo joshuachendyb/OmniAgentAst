@@ -1,6 +1,7 @@
 // 编辑历史: 2026-08-28 小欧 - 从NewChatContainer抽离保存/离开拦截/快捷键生命周期至独立hook(三堂会审: 零逻辑变更,仅复制重组) - 小欧-2026-08-28
 // 编辑历史: 2026-09-10 小欧 - 阶段二S2提前实施: executionStepsRef改从chatStreaming取(useSSE单一真源, 25/34/58行) — 小欧-2026-09-10
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.10.3(a): beforeunload 写入点补 linkEnabled(与 useChatPersistence.saveState 写同一 STORAGE_KEY, 漏此字段会把带值版本覆盖成不带, 刷新丢勾选) — 小欧-2026-10-03
 import { useCallback, useEffect } from 'react';
 import { useBeforeUnload } from '../../../hooks/useBeforeUnload';
 import { saveChatState } from '../../../utils/sessionStorage';
@@ -49,6 +50,9 @@ export function useChatLifecycle(opts: { chatFacade: UseChatFacadeReturn }): {
       scrollPosition: 0,
       isPaused: chatState.isPaused,
       isReceiving: chatStreaming.isReceiving,
+      // 2026-10-03 小欧 - 文档[4] 5.10.3(a): 本写入点与 useChatPersistence.saveState 写同一个
+      //   STORAGE_KEY, 漏此字段会在 beforeunload 时把带 linkEnabled 的版本覆盖成不带 -> 刷新丢勾选。
+      linkEnabled: chatState.linkEnabled,
     };
 
     // 2026-08-27 小欧 三堂会审: 会话状态保存下沉至 saveChatState
@@ -58,6 +62,7 @@ export function useChatLifecycle(opts: { chatFacade: UseChatFacadeReturn }): {
     chatState.sessionId,
     chatState.sessionTitle,
     chatState.isPaused,
+    chatState.linkEnabled,
     chatStreaming.executionStepsRef, // 小欧 2026-09-10 S2: deps 同步改源
     chatState.messagesRef,
   ]);

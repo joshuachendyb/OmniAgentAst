@@ -13,7 +13,7 @@
 //      否则主动 abort 引发的 AbortError 会被 5.3 handleTransportError 判为连接故障，弹错误并复活重连。
 //   ⑤ 新增 pumpDone 字段（5.3 recoverFromIdle 依赖）：原稿仅 pumpActive 布尔，无法 await 旧泵退出。
 //   另：sendMessage 返回 ResumeResult（原稿 void，UI 无从判断空流/失败终态）；
-//   lastContextLinkMode 在 sendMessage 落值（原字段零写入，5.2 备份口径失真）；
+//   lastContextLinkMode 已于 2026-10-03 改名 linkEnabled(布尔), 仍是本链路在 store 侧的唯一载体;
 //   状态机去 TERMINAL.includes(x as never) 断言，isTerminalStatus(string) 单一判定口。
 
 // 编辑历史: 2026-09-29 22:47:10 小欧 - [63] 5.3/5.4 补齐 heartbeatTs 落点 3 处 — 小欧-2026-09-29 22:47:10：
@@ -29,7 +29,7 @@
 //   修复：新增会话字段 clockSignalsView，按会话惰性缓存、三个字段全为活 getter
 //   （heartbeatTs 亦改活 getter，否则缓存对象会钉住陈旧心跳），与既有
 //   getExecutionStepsRef 的 executionStepsRefView 同一模式（DRY，不引第二套抽象）。
-//   修复后引用天然稳定，桥接侧 memo 是否命中都不再影响正确性。
+//   修复后引用天然稳定，桥接侧 memo 是否命中都不再影响正确性.
 
 // 编辑历史: 2026-09-30 10:35 小欧 - P0 根因修复后的死代码清理（北京老陈裁定「死的删除」）：
 //   sendMessage 尾原 `if (d.status === 'idle' || d.status === 'recovering') d.status = 'active'` 删除。
@@ -47,6 +47,9 @@
 //   ①toBackup 补 lastBizTs/lastDataTime（钟面"静默升档"判据所依，原只在内存，刷新后恒 0 致长静默期不再升档）；
 //   ②新增 findLiveTask(sessionId, excludeTaskId) 抽 DB 权威的"近 300s 内仍在执行"判定，由 attachActiveTask 与
 //   resume 共用（DRY）——原判定散在两处且口径不一（B4 处根本没有 DB 校验），致"备份锚点陈旧"无处纠正 — 小欧-2026-10-01
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.13: lastContextLinkMode 改名 linkEnabled: boolean(保留, 非删除 ——
+//   它随备份落盘、随恢复还原, 是重连/回放天然带值的前提); sendMessage 第3参 mode 改 linkEnabled: boolean,
+//   落 d.linkEnabled; sendStreamRequest 调用去第三参。 — 小欧-2026-10-03
 
 import type { ExecutionStep } from '@/types/execution';
 import type { MutableRefObject } from 'react';
@@ -240,7 +243,7 @@ export interface ChatStreamSession extends SessionSnapshot {
     content: string;
     state: 'queued' | 'sent';
   } | null;
-  lastContextLinkMode: 'linked' | 'independent';
+  linkEnabled: boolean;
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
   // 连接与定时器资源句柄（clearAllTimers 五件套：idle/firstChunk/reconnect/saveSteps/intentionalAbort）
@@ -388,7 +391,7 @@ function toBackupOf(sessionId: string): StreamBackup {
     pendingAuthorization: s.pendingAuthorization,
     hitlWaitingKeys: [...s.hitlWaitingKeys],
     pendingMessage: s.pendingMessage,
-    lastContextLinkMode: s.lastContextLinkMode,
+    linkEnabled: s.linkEnabled,
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：随备份落盘，供刷新后恢复心跳钟面（0=未收到）
     heartbeatTs: s.heartbeatTs,
@@ -573,7 +576,7 @@ export const chatStreamStore = {
       usageAccum: { prompt: 0, completion: 0, total: 0 },
       pendingAuthorization: null,
       pendingMessage: null,
-      lastContextLinkMode: 'independent',
+      linkEnabled: false,
       hitlWaitingKeys: new Set(),
       abortController: null,
       idleTimeout: null,
@@ -652,13 +655,13 @@ export const chatStreamStore = {
    * POST 前经 attachActiveTask 查重附着（同内容 + 300s 窗内活动任务只读跟随，不发第二 POST）。
    * @param sessionId 会话 id
    * @param content 用户消息正文
-   * @param mode 上下文链接模式
+   * @param linkEnabled 会话link开关值(随消息落库, 存session快照供transport直读)
    * @returns 发送与恢复结果（UI 据此提示）
    */
   async sendMessage(
     sessionId: string,
     content: string,
-    mode: 'linked' | 'independent' = 'independent'
+    linkEnabled: boolean = false
   ): Promise<ResumeResult> {
     // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
     //   已有守卫，本入口补齐对称防御；hook 侧 customSessionId??sessionId??'' 双 null 落空串即由此挡住）
@@ -672,14 +675,14 @@ export const chatStreamStore = {
         content,
         state: 'queued',
       };
-      d.lastContextLinkMode = mode; // 2026-09-29 小欧：记录本次模式，续传/回放沿用（原字段零写入即死字段）
+      d.linkEnabled = linkEnabled; // 记录本次开关值, 续传/回放沿用(transport 直读本字段)
     });
     this.persistNow(sessionId);
     try {
       const attached = await attachActiveTask(s, content); // 附着分支内部已 resume + 持久化
       if (attached !== null) return attached;
       this.clearSteps(sessionId); // 新请求清旧步骤（真实 useSSE.ts:791-795）
-      await sendStreamRequest(s, content, mode);
+      await sendStreamRequest(s, content);
       commit(s, (d) => {
         if (d.pendingMessage)
           d.pendingMessage = { ...d.pendingMessage, state: 'sent' };
@@ -1001,7 +1004,7 @@ export const chatStreamStore = {
     if (!isAnchorGroupIntact(b)) return 'invalid'; // 锚点组非同一快照即丢弃，走历史加载
     // 2026-09-30 小欧 - 剥掉备份专属字段后整体展开：原手工列举 13 字段致已落盘的 heartbeatTs
     //   被静默丢弃（恢复后心跳钟面恒 0）；展开式使今后新增快照字段自动纳入，遗漏会被 TS 捕获。
-    //   pendingMessage / lastContextLinkMode 是会话真实字段且备份里同名，必须留在 rest 内随之恢复
+    //   pendingMessage / linkEnabled 是会话真实字段且备份里同名，必须留在 rest 内随之恢复
     //   （曾被一并 void 掉致待发草稿与上下文链接模式丢失，比原缺陷更严重）。
     const {
       version,

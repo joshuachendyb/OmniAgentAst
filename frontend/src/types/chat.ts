@@ -7,6 +7,8 @@
 // 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数签名多行→单行(行长度超80字符), 防止格式再次出错
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StatusValue/StatusMessage的cancelled分支与isStatusMessage的cancelled判断(取消收尾单一由final+cancelled承担)
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.6: HistoryLoadResult 补 linkEnabled(会话 link 开关镜像);
+//   ChatRequest 删死字段 context_link_mode(后端 5.7.9 已删该请求字段) 并补 link_enabled(随消息携带的新契约字段) — 小欧-2026-10-03
 /**
  * 流式API响应类型定义
  *
@@ -296,7 +298,8 @@ export interface ChatRequest {
   model?: string;
   task_id?: string;
   session_id?: string;
-  context_link_mode?: 'linked' | 'independent'; // 默认 independent（后端 ChatRequest 同名默认）
+  // 会话 link 开关值随消息携带(后端新增契约字段)。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
+  link_enabled?: boolean;
 }
 
 /**
@@ -380,4 +383,6 @@ export interface HistoryLoadResult {
   version?: number;
   title_locked?: boolean;
   sessionModel?: SessionModelOverride | null;
+  // 会话级 link 开关镜像(后端真源, 随会话加载下发)
+  linkEnabled?: boolean;
 }

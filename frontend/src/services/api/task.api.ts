@@ -2,6 +2,8 @@
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强v0.8: TaskArtifact补tool_name(4字段对齐artifacts)、TaskDetail补provider/model/created_at/updated_at、adaptTaskDetail透传四字段 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5(北京老陈定案): TrustedTool增path字段、getTrust映射path(null=工具级)、revokeTrust增可选path登录?path=精确撤销(tool,path) — 小欧-2026-09-02
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.10): SessionTaskItem加merged_inputs字段 — 小欧-2026-09-28
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.4: SessionTaskItem 补 context_root_task_id(后端 5.7.4 已返回),
+//   作为 TaskListPanel 组号徽标的唯一分组键; context_link_mode 保留(列仍在返回, 供快照展示, 非分组键) — 小欧-2026-10-03
 import api from './client';
 
 // ============================================================
@@ -92,6 +94,8 @@ export interface SessionTaskItem {
   created_at: string;
   updated_at: string;
   context_link_mode?: 'linked' | 'independent';
+  // 本任务所属对话组根任务ID(后端已返回)。TaskListPanel 组号徽标的唯一分组键(落库恒非空)。
+  context_root_task_id?: string;
 }
 
 export interface SessionTasksResponse {

@@ -6,6 +6,8 @@
 //   b.pendingMessage === null` 改为"按已发/待发区分"（sent = pendingMessage 非 null 且 state !== 'queued'
 //   时才要求 taskId 非空）。原判据在"待发草稿落盘"窗口（sendMessage 先 commit pendingMessage.state='queued'
 //   + persistNow，而 start 帧尚未到达、taskId 仍是上一任务旧值或 null）会整份判废 → 待发草稿与已发意图全丢 — 小欧-2026-10-01
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.16: legacyToBackup lastContextLinkMode 改名 linkEnabled
+//   (与 backupTypes 同步) — 小欧-2026-10-03
 // [63] 5.2：三窄接口 + 同文件辅助（isAnchorGroupIntact、saveDraft/loadDraft），
 //        不碰 Store 内部字段、不触发 SSE、不改 React 状态
 import type { StreamBackup } from './backupTypes';
@@ -56,7 +58,7 @@ function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
     steps: steps as StreamBackup['steps'],
     hitlWaitingKeys: [],
     pendingMessage: null,
-    lastContextLinkMode: 'independent',
+    linkEnabled: false,
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：legacy 数据无心跳信息，按"未收到"给 0
     heartbeatTs: 0,

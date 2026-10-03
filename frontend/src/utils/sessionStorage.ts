@@ -3,6 +3,8 @@
 //   病根: 左侧菜单「对话任务」navigate('/') 不带 session_id,会话归属隐式依赖本键的缓存;
 //   缓存缺失/降级时静默漂到"最近会话",无显式契约。本函数是该 storage 结构的唯一读出口,
 //   避免调用方各自 getItem+JSON.parse(重复解析反模式)。 — 小欧-2026-09-30
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.10.3(a′): 降级态载荷补 linkEnabled(3 处写入点中的第 3 处)。
+//   beforeunload 抽离路径若不带该字段, 页面关闭再打开时镜像缺值。 — 小欧-2026-10-03
 import { STORAGE_KEY } from './chatHistory';
 
 interface LightChatState {
@@ -12,6 +14,7 @@ interface LightChatState {
   messageCount: number;
   isPaused?: boolean;
   isReceiving?: boolean;
+  linkEnabled?: boolean;
 }
 
 /**
@@ -32,6 +35,7 @@ export function saveChatState(state: unknown): void {
         sessionTitle?: string;
         isPaused?: boolean;
         isReceiving?: boolean;
+        linkEnabled?: boolean;
         messages?: unknown[];
       };
       const lightState: LightChatState = {
@@ -41,6 +45,7 @@ export function saveChatState(state: unknown): void {
         messageCount: s.messages?.length ?? 0,
         isPaused: s.isPaused,
         isReceiving: s.isReceiving,
+        linkEnabled: s.linkEnabled,
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
     } else {

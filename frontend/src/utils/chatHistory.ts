@@ -2,6 +2,10 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep改从types/execution导入; 删execution_steps camel兼容分支(后端仅发snake); 删装饰性console.log
 // 编辑历史: 2026-09-30 14:30 小欧 - 查会话改判 404 返回 null 其余冒泡（原吞异常致"不存在"与"取不到"不可区分）；debounce 加 flush()
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.5 + 5.10.3(a)(a′): ①两个后端返回点(空会话/有消息)补
+//   linkEnabled(源 sessionData.link_enabled); ②缓存读侧返回补 linkEnabled: state.linkEnabled === true
+//   (生产构建命中缓存即 return, 不补则镜像恒 false —— dev 因 DEBUG_LOAD_FROM_API 短路不可达, 故 dev 全绿 prod 假绿);
+//   ③写入点 saveSessionToCache 补 linkEnabled(3 处写入点中的第 1 处)。 — 小欧-2026-10-03
 /**
  * 聊天历史工具函数
  *
@@ -146,6 +150,7 @@ export const loadHistoryMessages = async (
               messages: state.messages,
               title: state.sessionTitle || '会话',
               sessionId: state.sessionId,
+              linkEnabled: state.linkEnabled === true,
             };
           }
         } catch (e) {
@@ -168,6 +173,7 @@ export const loadHistoryMessages = async (
           version: sessionData.version,
           title_locked: sessionData.title_locked, // 2026-08-27 小欧 修复#34: 空会话分支补title_locked(与有消息分支结构对齐)
           sessionModel: sessionData.sessionModel ?? null,
+          linkEnabled: sessionData.link_enabled ?? false,
         };
       }
       return null;
@@ -186,6 +192,7 @@ export const loadHistoryMessages = async (
       version: sessionData.version,
       title_locked: sessionData.title_locked,
       sessionModel: sessionData.sessionModel ?? null,
+      linkEnabled: sessionData.link_enabled ?? false,
     };
   } catch (error) {
     // 2026-09-30 小欧 - null 语义收窄为"确实不存在"（仅 404）。原 catch 吞全部异常统一
@@ -224,11 +231,13 @@ export const loadLatestHistoryMessages =
 
 /**
  * 保存会话到缓存
+ * 暂无调用方, 为与另两处写入点(useChatPersistence/useChatState-sessionStorage)同 key schema 对齐保留, 勿删。
  */
 export const saveSessionToCache = (
   sessionId: string,
   messages: Message[],
-  sessionTitle: string
+  sessionTitle: string,
+  linkEnabled: boolean = false
 ): void => {
   try {
     sessionStorage.setItem(
@@ -237,6 +246,7 @@ export const saveSessionToCache = (
         sessionId,
         messages,
         sessionTitle,
+        linkEnabled,
         timestamp: Date.now(),
       })
     );

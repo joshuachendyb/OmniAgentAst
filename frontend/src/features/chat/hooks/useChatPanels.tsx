@@ -31,6 +31,8 @@
 //   UseChatPanelsOptions 新增 updateTaskResponse prop, 解构并透传 RightViewer; 删除 onSettledRefresh(不再传) — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小沈 - TopbarStats 包 span 加 marginLeft:12, 标题与任务数间距加大到约20px(5字符留白) — 小沈-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.10: ChatInput 的 chatLink 改受控 — 从 chatState 解构 linkEnabled
+//   透传, opts 新增 onToggleLink 透传; handleSendWithMode 改名 handleSend 并把第二参改 linkEnabled: boolean — 小欧-2026-10-03
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -83,10 +85,9 @@ interface UseChatPanelsOptions {
   handleNewSession: () => void;
   handleEditingStart: () => void;
   handleEditingCancel: () => void;
-  handleSendWithMode: (
-    content: string,
-    mode?: 'linked' | 'independent'
-  ) => void;
+  handleSend: (content: string, linkEnabled: boolean) => void;
+  // 会话级 link 开关写回(由 ChatPage 注入, 纯本地态不发请求)
+  onToggleLink: (enabled: boolean) => void;
   // 2026-09-01 小欧 方案C: 最新任务锚点id + 挂到最新任务项的ref(左列滚动定位透传)
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
@@ -121,7 +122,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     handleNewSession,
     handleEditingStart,
     handleEditingCancel,
-    handleSendWithMode,
+    handleSend,
+    onToggleLink,
     latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
     latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
     rightOpen, // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
@@ -141,6 +143,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     setSessionVersion,
     sessionModelOverride,
     setSessionModelOverride,
+    linkEnabled,
     loading,
     isPaused,
   } = chatState;
@@ -293,9 +296,11 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             loading={loading}
             isReceiving={isReceiving}
             isPaused={isPaused}
-            onSend={handleSendWithMode}
+            onSend={handleSend}
             onCancel={handleCancel}
             onTogglePause={handleTogglePause}
+            linkEnabled={linkEnabled}
+            onToggleLink={onToggleLink}
             modelPickerSlot={
               <ModelPicker
                 sessionId={sessionId}
@@ -348,7 +353,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       selectedDetail,
       loading,
       isPaused,
-      handleSendWithMode,
+      handleSend,
+      onToggleLink,
+      linkEnabled,
       handleCancel,
       handleTogglePause,
       liveError,

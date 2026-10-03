@@ -1,7 +1,7 @@
 // 编辑历史: 2026-09-30 10:44:56 小欧 - sendMessage/clearSteps 改直连 chatStreamStore
 //   （桥接透传成员已删，北京老陈授权按可靠性标准裁定）— 小欧-2026-09-30 10:44:56：
 //   §sendMessage 不再经 useChatStreamSession 透传，useCallback 内部直连
-//     chatStreamStore.sendMessage(customSessionId ?? sessionId, content, mode)，
+//     chatStreamStore.sendMessage(customSessionId ?? sessionId, content, linkEnabled)，
 //     依赖数组 remove 桥接透传身份，改 module 级稳定引用 + sessionId（memo 更简）；
 //   §clearSteps 由"桥接解构"改为本文件 useCallback 直连 chatStreamStore.clearSteps(sessionId)，
 //     对外签名 () => void 与 UseChatStreamingReturn 接口一致（矛盾 D 消费面签名不变）；
@@ -44,6 +44,8 @@
 //   删 disconnectWithParams(唯一生产消费者 useChatTaskControl 5.14 改走 Store.stop)与 setIsReceiving 注入;
 //   config.baseURL/token 首连消费移交 setTransportConfig(5.3, 应用初始化一次性注入) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 删 deniedSteps 改由 deniedEntries 派生（两套口径致误判全拒）；切会话复位会话级 ref
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.12: sendMessage/executeSend 形参改名 linkEnabled: boolean
+//   并继续透传给 chatStreamStore.sendMessage — 小欧-2026-10-03
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -109,8 +111,8 @@ export interface UseChatStreamingReturn {
   // SSE操作
   sendMessage: (
     content: string,
-    sessionId?: string,
-    contextLinkMode?: 'linked' | 'independent'
+    linkEnabled: boolean,
+    sessionId?: string
   ) => Promise<void>;
   clearSteps: () => void;
 
@@ -139,7 +141,7 @@ export interface UseChatStreamingReturn {
   executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
-  executeSend: (userMessage: Message) => Promise<void>;
+  executeSend: (userMessage: Message, linkEnabled: boolean) => Promise<void>;
 
   // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
   waitClock: import('@/types/sse').ClockSignals;
@@ -415,11 +417,7 @@ export const useChatStreaming = (
 
   // 发送消息函数（包装useSSE的sendMessage）
   const sendMessage = useCallback(
-    async (
-      content: string,
-      customSessionId?: string,
-      contextLinkMode?: 'linked' | 'independent'
-    ) => {
+    async (content: string, linkEnabled: boolean, customSessionId?: string) => {
       try {
         // 清理之前的流式内容
         streamingContentRef.current = '';
@@ -439,7 +437,7 @@ export const useChatStreaming = (
         await chatStreamStore.sendMessage(
           customSessionId ?? sessionId ?? '',
           content,
-          contextLinkMode
+          linkEnabled
         );
       } catch (error) {
         console.error('发送消息失败:', error);
@@ -465,10 +463,7 @@ export const useChatStreaming = (
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   // 迁移自：NewChatContainer.tsx 的 executeStreamSend 函数
   const executeSend = useCallback(
-    async (
-      userMessage: Message,
-      contextLinkMode?: 'linked' | 'independent'
-    ) => {
+    async (userMessage: Message, linkEnabled: boolean) => {
       // 2026-09-15 小欧 v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
       cancelInProgressRef.current = false;
 
@@ -579,8 +574,8 @@ export const useChatStreaming = (
       // 2026-08-27 小欧 三堂会审H1: await闭合SSE发送Promise, 防拒绝变unhandled rejection导致占位消息永久悬挂
       await sendMessage(
         userMessage.content,
-        currentSessionIdRef.current ?? sessionId ?? undefined,
-        contextLinkMode
+        linkEnabled,
+        currentSessionIdRef.current ?? sessionId ?? undefined
       );
     },
     [

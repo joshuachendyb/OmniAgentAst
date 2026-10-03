@@ -7,6 +7,8 @@
 // 编辑历史: 2026-09-13 小欧 - Prettier 格式统一(前端源码格式专项, 纯格式零逻辑): 对齐项目 prettier 排版规范 — 小欧-2026-09-13
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.13 核实: executionStepsRef 已归 Store 推导视图(5.4 getExecutionStepsRef)，
 //   本文件 S2 已清、grep 零代码残留；useSSE 已删(5.6)，本文件仅留历史消息与 UI 态 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.3: 会话相关状态区新增 linkEnabled/setLinkEnabled(类型/state/返回 3 处),
+//   作为后端 chat_sessions.link_enabled 的前端镜像, 与会话同生命周期; 组件不再自持开关 — 小欧-2026-10-03
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -84,6 +86,8 @@ export interface UseChatStateReturn {
   setSessionModelOverride: React.Dispatch<
     React.SetStateAction<SessionModelOverride | null>
   >;
+  linkEnabled: boolean;
+  setLinkEnabled: React.Dispatch<React.SetStateAction<boolean>>;
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -206,6 +210,7 @@ export const useChatState = (): UseChatStateReturn => {
   const [titleLocked, setTitleLocked] = useState<boolean>(false);
   const [sessionModelOverride, setSessionModelOverride] =
     useState<SessionModelOverride | null>(null);
+  const [linkEnabled, setLinkEnabled] = useState<boolean>(false);
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -326,6 +331,8 @@ export const useChatState = (): UseChatStateReturn => {
     setTitleLocked,
     sessionModelOverride,
     setSessionModelOverride,
+    linkEnabled,
+    setLinkEnabled,
     editingTitle,
     setEditingTitle,
     titleInput,

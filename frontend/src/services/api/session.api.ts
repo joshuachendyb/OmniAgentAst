@@ -2,6 +2,9 @@
 //   ①ApiMessage 增可选 task_id（后端 MessageResponse 配对任务ID）——此前消息只带 execution_steps 而无归属，
 //     消费方无法判断步骤属于哪个任务，这是前端"跨任务降级把别的任务步骤当本任务显示"的契约层根因；
 //   ②删 saveExecutionSteps（随 [1] E8 后端 execution_steps 端点与空壳退役，前端零调用方）— 小欧-2026-10-01
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.2: GetSessionMessagesResponse 补 link_enabled(会话 link 开关真源
+//   随会话加载主路径下发, 前端唯一读取点); getSessionMessages 映射处补值(缺省 false)。不新增 setSessionLink
+//   ——值随消息落库, PATCH 端点前端零调用方, 按 YAGNI 不引入 — 小欧-2026-10-03
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride } from '@/types/chat';
@@ -50,6 +53,7 @@ export interface GetSessionMessagesResponse {
   title_updated_at: string | null;
   version?: number;
   sessionModel?: SessionModelOverride | null;
+  link_enabled: boolean; // 会话 link 开关真源, 随会话加载主路径下发(唯一读取点)
   messages: ApiMessage[];
 }
 
@@ -134,6 +138,7 @@ export const sessionApi = {
       title_source: response.data.title_source ?? 'auto',
       title_updated_at: response.data.title_updated_at ?? null,
       version: response.data.version ?? 1,
+      link_enabled: response.data.link_enabled ?? false, // 缺省 false(fail-closed)
       messages: (response.data.messages ?? []).map((m) => ({
         ...m,
         thought:

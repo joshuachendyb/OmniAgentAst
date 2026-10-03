@@ -44,6 +44,8 @@
 //   chatStreamStore.setServerTaskId（commit 后立即 persistNow）——serverTaskId 是断点续传的唯一锚点，
 //   锚点已换而备份未换即形成"刷新落在防抖窗内 → restore 拿到旧 taskId 或 null"窗口，为本缺陷第二成因；
 //   该方法此前是全仓唯一带 persistNow 的安全写入口却零调用（生产走不到），本次复活 — 小欧-2026-10-01
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.14: body 字段 context_link_mode 改 link_enabled, 删 mode 形参
+//   (值取自已提交的会话快照 s.linkEnabled, 不增形参) — 小欧-2026-10-03
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -163,8 +165,7 @@ function transportError(errorType: string, errorMessage: string): SSEError {
  */
 export async function sendStreamRequest(
   s: ChatStreamSession,
-  content: string,
-  mode: 'linked' | 'independent'
+  content: string
 ): Promise<void> {
   // 前置状态（迁自 useSSE.ts:791-802：非重连才复位 seq、置接收/连接态）
   s.abortController?.abort(); // 2026-09-29 小欧：断上一条连接（等价 useSSE.ts:796 disconnect(false,...)），防连接泄漏
@@ -206,7 +207,7 @@ export async function sendStreamRequest(
         messages: [{ role: 'user', content: content }],
         stream: true,
         session_id: s.sessionId,
-        context_link_mode: mode,
+        link_enabled: s.linkEnabled,
       }),
       signal: ctl.signal,
     });

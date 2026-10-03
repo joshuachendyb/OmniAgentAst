@@ -8,6 +8,8 @@
 //   （见 makeClockView），致刷新后等待期升档计时基线丢失（长时间无业务帧不再升档）。缺失时按 0 处理，
 //   与 ensureSession 初值一致，向后无害 — 小欧-2026-10-01
 // [63] 5.1：StreamBackup / SessionSnapshot / StreamEvent 唯一定义处（5.4 内存态与 5.2 备份态同源）
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.15: StreamBackup lastContextLinkMode 改名 linkEnabled: boolean
+//   (保留持久化, 非删除) — 小欧-2026-10-03
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
 //   ① TaskMetaFrames 重复 import 两次（文档 v1.29 修订时追加未删旧行）；② SSEError 使用却未 import。
@@ -141,7 +143,7 @@ export interface StreamBackup extends Omit<
     content: string;
     state: 'queued' | 'sent';
   } | null;
-  lastContextLinkMode: 'linked' | 'independent';
+  linkEnabled: boolean;
   updatedAt: number;
   // 2026-10-01 小欧 [1] B13: 钟面静默升档基线落盘。lastBizTs/lastDataTime 原只在内存 session 上，
   //   备份不含二者 → 刷新后恒 0，而 ClockStopwatch 的"静默升档"判据正是 lastBizTs

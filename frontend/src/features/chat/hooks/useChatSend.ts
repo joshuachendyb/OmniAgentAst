@@ -10,6 +10,8 @@
 //   "任务执行中finally提前掐loading → 停止/暂停按钮消失"病根) ②catch分支显式兜底setLoading(false)
 //   (取消失败/网络失败/发送异常路径不依赖SSE终态, 防loading永久为true卡"思考中") — 小欧-2026-09-15
 // 编辑历史: 2026-09-30 14:30 小欧 - 自动建会话也上抛写 URL（原只 setSessionId，刷新后地址栏无 id）；删零读取的三入参
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.11: 第二参 contextLinkMode 改名 linkEnabled: boolean
+//   (值随消息落库, 见 5.7.14), 继续透传至 chatStreamStore; 建会话逻辑(:142-157)不动 — 小欧-2026-10-03
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -49,10 +51,7 @@ interface UseChatSendOptions {
   waitTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   currentSessionIdRef: React.MutableRefObject<string | null>;
   // 发送方法
-  executeSend: (
-    userMessage: Message,
-    contextLinkMode?: 'linked' | 'independent'
-  ) => Promise<void>;
+  executeSend: (userMessage: Message, linkEnabled: boolean) => Promise<void>;
   // 2026-09-30 小欧 - URL 写入的唯一出口（与 useChatSession 同一注入形状）：
   //   自动建会话原先只 setSessionId 不写 URL，导致该会话 id 从不进地址栏，刷新后退回
   //   "最近会话"猜测，且与 handleNewSessionInternal 的写 URL 行为不一致（写入口未收口）。
@@ -60,10 +59,7 @@ interface UseChatSendOptions {
 }
 
 interface UseChatSendReturn {
-  handleSend: (
-    messageContent: string,
-    contextLinkMode?: 'linked' | 'independent'
-  ) => Promise<void>;
+  handleSend: (messageContent: string, linkEnabled: boolean) => Promise<void>;
 }
 
 /**
@@ -87,10 +83,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const isSendingRef = useRef(false);
 
   const handleSend = useCallback(
-    async (
-      messageContent: string,
-      contextLinkMode?: 'linked' | 'independent'
-    ) => {
+    async (messageContent: string, linkEnabled: boolean) => {
       // 1. 基础验证
       if (!messageContent.trim() || isSendingRef.current) return;
       isSendingRef.current = true;
@@ -157,7 +150,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         }
 
         // 8. 发送消息
-        await executeSend(userMessage, contextLinkMode);
+        await executeSend(userMessage, linkEnabled);
 
         // 9. 发送成功，不需要额外操作（用户消息已在列表中）
       } catch (error) {

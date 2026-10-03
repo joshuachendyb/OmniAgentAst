@@ -44,6 +44,8 @@
 //   `urlSessionId ?? undefined` —— 5.4 约束: 未解析出真实 sessionId 时不得 ensureSession
 //   (建空会话会污染 Store 注册表与历史列表) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 新增 onUrlSessionChange，用 setSearchParams 作 URL 唯一写入口（原直接改地址栏致前进后退不同步）
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.9 + 5.8.20: handleSendWithMode 改名 handleSend, 第二参由 mode
+//   改 linkEnabled: boolean; 新增 handleToggleLink 为纯本地态(setLinkEnabled, 不发请求) — 小欧 2026-10-03
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -184,13 +186,19 @@ const ChatPage: React.FC = () => {
     refreshTasks,
     chatStreaming.metaFrames // 2026-09-01 小欧: SSE实时token帧源
   );
-  const handleSendWithMode = useCallback(
-    async (content: string, mode?: 'linked' | 'independent') => {
+  const handleSend = useCallback(
+    async (content: string, linkEnabled: boolean) => {
       setLiveError(null);
       setRightOpen(true); // 2026-09-15 小欧: 新任务发送即展开右侧step面板(方案B, 直线入口) — 小欧-2026-09-15
-      await chatSend.handleSend(content, mode);
+      await chatSend.handleSend(content, linkEnabled);
     },
     [chatSend, setLiveError, setRightOpen]
+  );
+
+  // 会话级 link 开关 — 纯本地态。值随消息落库, 勾选无需请求; 无 sessionId 也能勾选, 发消息时携带。
+  const handleToggleLink = useCallback(
+    (enabled: boolean) => chatState.setLinkEnabled(enabled),
+    [chatState.setLinkEnabled]
   );
 
   // 2026-08-27 小欧 修复#42: 切换会话时重置跨会话泄漏状态(liveError)
@@ -241,7 +249,8 @@ const ChatPage: React.FC = () => {
     handleNewSession,
     handleEditingStart,
     handleEditingCancel,
-    handleSendWithMode,
+    handleSend,
+    onToggleLink: handleToggleLink,
     latestTaskId, // 2026-09-01 小欧 方案C: 左列最新任务锚点透传
     latestTaskRef, // 2026-09-01 小欧 方案C: 滚动定位ref透传
     rightOpen, // 2026-09-09 小欧: 右侧展开状态透传TaskListPanel

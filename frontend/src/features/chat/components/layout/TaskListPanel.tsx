@@ -16,10 +16,15 @@
 // 编辑历史: 2026-09-30 小欧 - [81]v1.4-H18修复: 状态标签按后端 status 字段正确映射
 //   (completed→已完成/executing→执行中/paused→已暂停/failed→失败/cancelled→已取消)，
 //   原实现`t.status==='failed'?'失败':'成功'`把 executing/paused/cancelled 全标成"成功" — 小欧-2026-09-30
+// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.18 + 5.10.5 + 5.10.8: 新增上下文链接链号徽标 —— 按
+//   context_root_task_id 归链(升序首遇链根递增), 仅链长>1 才编号与渲染(判据合一, 消断号), 配色改
+//   Colors.INFO 达 WCAG AA; 并纠正下方头注释"类型徽标(context_link_mode)"之过时描述(本文件该字段零使用) — 小欧-2026-10-03
+// 编辑历史: 2026-10-03 小欧 - 视觉修正: 链号徽标背景 #e6f4ff 与激活行背景(#e6f4ff)撞色, 激活行上徽标底色融入行背景丢分层
+//   → 徽标背景改 #f5f5f5 与同行轮次标签一致, 字色保留 Colors.INFO(#096dd9 on #f5f5f5 ≈ 4.9:1, 达 WCAG AA) — 小欧-2026-10-03
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
- * 【小欧 2026-08-26 8.2】时间+类型徽标(context_link_mode)+状态+耗时；
+ * 【小欧 2026-08-26 8.2】时间+状态徽标+耗时(原注释称"类型徽标(context_link_mode)"，该字段本文件零使用、实际从未渲染);
  * 当前任务高亮、点击联动右侧查看区（7.5）；不展示 token（4.5.1 三分归位）。
  *
  * 【小欧 2026-09-01 方案C】新任务在数组末尾+左列滚动容器→被隐藏。依赖外部 latestTaskRef
@@ -138,6 +143,23 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       />
     );
   }
+
+  // 上下文链接分组——按 t.context_root_task_id 归链(缺省=自身, 独立任务自成链),
+  //   升序(旧→新)首次遇到链根即分配组号。5.10.5: 只对链长>1 的根编号, 否则独立任务也占号,
+  //   用户会看到"链2"却无"链1"(空洞); 渲染判据同步改为"无组号不渲染", 与分配判据合一(单一判据)。
+  const chainSizeOf = new Map<string, number>();
+  for (const t of tasks) {
+    const root = t.context_root_task_id ?? t.task_id;
+    chainSizeOf.set(root, (chainSizeOf.get(root) ?? 0) + 1);
+  }
+  const groupNoOf = new Map<string, number>();
+  for (const t of tasks) {
+    const root = t.context_root_task_id ?? t.task_id;
+    if ((chainSizeOf.get(root) ?? 0) > 1 && !groupNoOf.has(root)) {
+      groupNoOf.set(root, groupNoOf.size + 1);
+    }
+  }
+
   return (
     <div
       style={{
@@ -227,6 +249,29 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                   >
                     <span style={{ fontSize: 6 }}>●</span>
                     {st ? st.name : t.status}
+                  </span>
+                );
+              })()}
+
+              {/* 上下文链接链号徽标(仅链长>1时显示, 独立任务不成链不贴标) */}
+              {(() => {
+                const root = t.context_root_task_id ?? t.task_id;
+                const groupNo = groupNoOf.get(root);
+                if (groupNo === undefined) return null; // 独立任务不成链, 不贴标
+                return (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      // 2026-10-03 小欧 视觉修正: 原背景 #e6f4ff 与激活行背景同色(#e6f4ff),
+                      // 激活行上徽标底色与行背景融为一体、丢了分层感 → 改与同行轮次标签一致 #f5f5f5,
+                      // 字色仍用 Colors.INFO(#096dd9) 强调"链"语义; 对比度 #096dd9 on #f5f5f5 ≈ 4.9:1 达 WCAG AA
+                      color: Colors.INFO,
+                      backgroundColor: '#f5f5f5',
+                      padding: '1px 5px',
+                      borderRadius: 3,
+                    }}
+                  >
+                    链{groupNo}
                   </span>
                 );
               })()}
