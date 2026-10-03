@@ -68,6 +68,10 @@
 #   唯一：同时保证事件顺序与重复写入幂等）+ 终态查询索引。IF NOT EXISTS 幂等，新旧库零报错
 #   — 小欧 2026-09-29
 # 2026-10-01 - 小欧 - 解 [1] E6: 启动期去重 SQL 的分组判据由 IFNULL(task_id,'') 改裸 task_id，与唯一索引 idx_steps_unique 完全一致。原两套判据在"存量同时存在 NULL 与 '' 两行"时不同构，去重后仍可能留下两行；task_id 空值已由 append_execution_step fail-loud 杜绝，故此处无需归一化
+# 2026-10-02 - 小欧 - 文档[4] 5.7 项1：chat_sessions 增 link_enabled 列（会话级 link 粘性开关唯一真源）。
+#   走既有幂等迁移器 _ensure_column（复用优先，与 version/title_locked 同款写法），不新建迁移分支、不改解析逻辑；
+#   DEFAULT FALSE 使新行天然为关闭态，读侧再用 COALESCE 兜住存量 NULL 行（ALTER ADD COLUMN 不回填旧行）。
+#   compliance: 复用优先 / DRY（单一迁移出口）/ KISS-DIRECT — 小欧 2026-10-02
 """
 db_initializer — 数据库初始化
 
@@ -198,6 +202,8 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_sessions", "title_locked", "BOOLEAN DEFAULT FALSE")
         _ensure_column(conn, "chat_sessions", "title_updated_at", "TEXT")
         _ensure_column(conn, "chat_sessions", "version", "INTEGER DEFAULT 1")
+        # 2026-10-02 小欧 - 文档[4] 5.7 项1：会话级 link 粘性开关（唯一真源），旧库经 _ensure_column 幂等补列
+        _ensure_column(conn, "chat_sessions", "link_enabled", "BOOLEAN DEFAULT FALSE")
         
 
         
