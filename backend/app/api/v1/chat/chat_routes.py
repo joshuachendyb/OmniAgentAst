@@ -27,6 +27,8 @@
 # 2026-09-29 小欧 - 重连端点包一层 _guarded 生成器兜住回放异常→persistence_degraded（不掐断流）。
 #   try 须写在生成器体内：路由本身不迭代生成器，在路由层 try 捕不到。CancelledError 不捕 — 小欧 2026-09-29
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项7: /chat/stream 停止向编排器透传 context_link_mode(形参已废止)
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元2: /chat/stream 改以关键字透传 link_enabled(会话 link 开关
+#   开关真值随消息到达), 关键字传防与编排器后续新增形参错位。
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -60,8 +62,13 @@ router.include_router(task_execution_router, tags=["task-execution"])  # v2.0 C1
 @router.post("/chat/stream")
 async def chat_stream_endpoint(request: ChatRequest):
     # DTO 在 API 层解包，避免 services 层反向依赖 api/v1 — 方案4.7.3 DTO边界约定
+    # link_enabled 用关键字传, 防与编排器后续新增形参错位 — 小欧 2026-10-03
     return StreamingResponse(
-        chat_stream_orchestrator(request.messages, request.session_id),
+        chat_stream_orchestrator(
+            request.messages,
+            request.session_id,
+            link_enabled=request.link_enabled,
+        ),
         media_type="text/event-stream",
     )
 

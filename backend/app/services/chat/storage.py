@@ -112,6 +112,9 @@
 #   与 get_previous_task_chain 同族同出口, 供编排器经 db.atxn offload 调用。
 #   不复用 session_service.get_session_info: 它含 2 条 COUNT(*) GROUP BY 且同步取连接, 放进
 #   async 生成器等于每条消息在 loop 上同步跑 3 条 SQL, 违反编排器「loop 零同步 DB I/O」纪律。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元3: 新增 conn 级写函数 set_session_link_conn(与 get_session_link 对称),
+#   返回 rowcount 供调用方直接判定(不用 conn.total_changes 差值反推), 供编排器经 db.atxn offload 落
+#   随消息携带的 link 值; session_service.set_session_link 改为委托之, UPDATE SQL 单一来源(DRY)。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -718,6 +721,18 @@ def get_session_link(conn: Connection, session_id: str) -> bool:
         (session_id,),
     ).fetchone()
     return bool(row[0]) if row else False
+
+
+def set_session_link_conn(conn: Connection, session_id: str, enabled: bool) -> int:
+    """写会话 link 开关，返回命中行数(0=会话不存在) — 文档[4] 5.7.14。
+    conn 级写，与同族 get_session_link 对称，供编排器经 db.atxn offload 调用。
+    返回 rowcount 供调用方直接判定，不需 total_changes 差值反推 — 小欧 2026-10-03"""
+    cursor = conn.execute(
+        "UPDATE chat_sessions SET link_enabled = ?, updated_at = ? "
+        "WHERE id = ? AND is_deleted = FALSE",
+        (1 if enabled else 0, get_local_iso_timestamp(), session_id),
+    )
+    return cursor.rowcount
 
 
 # ====================================================================

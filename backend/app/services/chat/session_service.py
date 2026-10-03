@@ -28,6 +28,9 @@
 #   compliance: SRP(历史归属 service)/禁止backward
 # 2026-10-01 小欧 - 解 [1] E8: 删除 save_execution_steps/ExecutionStepsUpdate 导入(随 sessions.py 端点与 storage 空壳退役, 本文件零使用)
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项3/4: SessionResponse 补 link_enabled + 新增窄写函数 set_session_link
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元4: set_session_link 的 UPDATE 下沉 storage.set_session_link_conn,
+#   本函数改为委托(DRY, SQL 单一来源); 改判 rowcount 返回值, 不用 conn.total_changes 差值反推。
+#   对外签名与 404 fail-loud 语义不变, 故 test_session_link_api.py 读写 case 继续有效。
 """
 session_service — 会话业务服务(services/chat)
 
@@ -47,6 +50,7 @@ from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
 from app.services.chat.message_service import delete_session_display_names
 from app.services.chat.storage import parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
+from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关写入 conn 级(与 get_session_link 同族), 本文件 set_session_link 委托之 — 小欧 2026-10-03
 
 
 class SessionUpdate(BaseModel):
@@ -365,14 +369,10 @@ def set_session_link(session_id: str, enabled: bool) -> dict:
 
     不扩 update_session: 其WHERE 带 COALESCE(version,1)=? 乐观锁且每次 version+1, 并入会让
     "切开关"与"改标题"互相 409。返回值是写后真值(前端据此收敛镜像, 不做乐观推演);
-    rowcount==0 即会话不存在或已删 -> 404(fail-loud)。"""
+    rowcount==0 即会话不存在或已删 -> 404(fail-loud)。
+    UPDATE 已下沉 storage.set_session_link_conn, 本函数只做委托与 404 判定(DRY) — 小欧 2026-10-03。"""
     with db.get_conn("chat") as conn:
-        cursor = conn.execute(
-            "UPDATE chat_sessions SET link_enabled = ?, updated_at = ? "
-            "WHERE id = ? AND is_deleted = FALSE",
-            (1 if enabled else 0, get_local_iso_timestamp(), session_id),
-        )
-        if cursor.rowcount == 0:
+        if set_session_link_conn(conn, session_id, enabled) == 0:
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
     logger.info(f"设置会话 link 开关: id={session_id}, link_enabled={enabled}")
     return {"success": True, "session_id": session_id, "link_enabled": bool(enabled)}

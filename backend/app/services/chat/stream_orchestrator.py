@@ -70,6 +70,11 @@
 # 2026-08-23 - 小欧 - 三轮三堂会审修复: L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
 #   保 api_base/model 实连一致(配 base_service.reset_sdk 新方法)
 # 2026-08-23 - 小欧 - 修复: L265 display_name 补 fallback 逻辑，session 未设置时继承原配置 display_name
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元5: link 改为随消息携带。函数签名增 link_enabled: Optional[bool];
+#   取 link 处改为「携带值即本次权威值, 直接赋值不回读(省一次 SELECT); 未携带(None)才读库」, 并把该值落库
+#   (经 db.atxn 调 storage.set_session_link_conn, 保持请求编排期 loop 零同步 DB I/O)。
+#   落值放在本块原位(读 link 处, 已在活跃任务注入判定之后)而非建会话处 —— 注入/占位合并两条早退路径
+#   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
 # 2026-08-23 - 小欧 - 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 镜像写点
 #   (user 消息回填 task_id 的 UPDATE chat_messages)加 TODO 删除注释; :278 _user_msg_id 注释修正为
 #   "chat_user_message.id 原生自增权威锚"(原"与chat_messages.id一对一"口径随锚迁移过时)
@@ -238,6 +243,7 @@ from app.logger.shared_handler import set_session_id
 from app.services.chat.storage import get_user_message_id, allocate_and_insert_message, append_execution_step, query_task_accumulation  # 追加权威累计查询 — 小欧 2026-08-21
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05
 from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
+from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
@@ -335,6 +341,7 @@ class StreamState:
 async def chat_stream_orchestrator(
     messages: list,
     session_id: Optional[str] = None,
+    link_enabled: Optional[bool] = None,   # 会话 link 开关值(随消息携带, None=沿用会话当前值)
 ) -> AsyncGenerator[str, None]:
     """聊天流编排入口：负责任务生命周期、Agent 启动、SSE 消费。
 
@@ -437,10 +444,24 @@ async def chat_stream_orchestrator(
         #   本文件 :83-84 登记「请求编排期 loop 零同步 DB I/O」(2026-08-24 后端卡死事故修复结论)。
         #   不复用 get_session_info: 它含 2 条 COUNT(*) GROUP BY 且同步取连接, 放进 async 生成器
         #   等于每条消息在 loop 上同步跑 3 条 SQL, 且会话不存在时抛 HTTPException(分层越界)。
-        try:
-            _link_on = await db.atxn("chat", lambda conn: get_session_link(conn, session_id))
-        except Exception as _e:
-            logger.warning(f"[chat] 读会话 link 开关失败(session={session_id}), 按关闭处理: {_e}")
+        # 值随消息到达: 携带值即本次权威值, 直接赋值不回读(省一次 SELECT); 未携带(None)才读库, 并落库。
+        # 本块位于活跃任务注入判定之后 —— 注入/占位合并两条早退路径不生成任务, 不会走到这里改写会话真源。
+        # — 小欧 2026-10-03 文档[4] 5.7.14 单元5
+        if link_enabled is not None:
+            _link_on = link_enabled
+            try:
+                await db.atxn(
+                    "chat", lambda conn: set_session_link_conn(conn, session_id, link_enabled)
+                )
+            except Exception as _e:
+                logger.warning(
+                    f"[chat] 落会话 link 开关失败(session={session_id}), 本条仍按携带值处理: {_e}")
+        else:
+            try:
+                _link_on = await db.atxn("chat", lambda conn: get_session_link(conn, session_id))
+            except Exception as _e:
+                logger.warning(f"[chat] 读会话 link 开关失败(session={session_id}), 按关闭处理: {_e}")
+                _link_on = False   # 显式兜底, 不依赖上方 _link_on 初值 — 小欧 2026-10-03
         _context_link_mode = "linked" if _link_on else "independent"
         if _link_on:
             try:
