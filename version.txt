@@ -1,4 +1,41 @@
-﻿v1.1.5
+﻿v1.1.6
+更新时间: 2026-10-04 05:14:02 - 小欧-2026-10-04
+## v1.1.6 link随消息携带全链路落地+taskinfo卡片优化(43个commit: feat8/fix7/refactor3/test10/docs13/style2) - 小欧-2026-10-04
+[2026-10-04 05:14:02 小欧] 范围=v1.1.5→全部commit(共43个)。四条主线:①会话级 link 开关由「独立 PATCH 端点」推翻为「值随消息携带」全链路落地(后端5文件+前端19文件);②taskinfo「历史上下文」卡片优化(修P0:摘要键读错致卡片恒显"–");③前端 E2E 14~19 全绿并新增 link 分组用例;④远端模型元数据补free/stability 与免费判据收口纯函数。
+
+### 1.1.6 P0修复: context_overview 摘要键读错致卡片恒显"–"(真帧零覆盖暴露)
+[问题] 后端 MetaStep 唯一权威文本字段是 content(steps/base.py:80-88), 帧里从无 summary 键; 前端 sseParser.ts:521 读 rawData.summary → 摘要恒空 → infoMaps.mapStatus 的 `??` 不穿透空串(第二条死路: `?? contextSummary` 同样被打死, sseParser.ts:412 写入的 start 帧摘要被屏蔽) → 状态恒 empty → taskinfo 卡片恒显"–"/"上下文缺失"。流再健康也如此, 且全库零真帧覆盖(所有测试用 mock 造 build_context_overview 返回值, 把 telemetry 字典的键误当帧的键), 故长期未暴露
+[修复] sseParser 摘要键 summary→content(前后端同批交付, 不留 `?? content` 回退分支, 禁 backward)+补收 injected 两键(后端一直在发, 此前丢弃); sse.ts/execution.ts 平行类型对齐; 新增真帧契约测试(Red门, 改前必红且红因正确) - 小欧-2026-10-04, 提交 08f921339
+[关联] 文档[6] 三堂会审(合规/合理/关联3独立代理+本人实读复核18条)撤回4项: A3快照移位是no-op(_maybe_compact只置标志, 真压缩在 react_loop.py:164)、message_count改口径会制造count/token不同源、链组短号与 TaskListPanel groupNoOf 口径不可对齐、content回退属backward
+
+### 1.1.6 taskinfo 历史上下文卡片重构 + 历史任务态拆分
+[问题] 卡片是 TaskInfoBar 内 78 行内联 IIFE(4派生量+整块JSX+FloatingEntry配置混层); 底部恒显一行状态提示, ok 态显示"正常"是纯噪声, empty 态提示"上下文缺失，检查 frames 数据链路"把排查方向带偏(实际最常见成因是 useTaskInfo.ts:169 历史任务按设计恒置空), 且 frames 是内部变量名对用户为黑话
+[修复] 抽出 ContextOverviewCard 组件(SRP/SLAP), 卡片收敛为「装入 N 条 · 约 X.XK」+「最近: 摘要(默认3行折叠可展开)」(北京老陈 2026-09-09 令"摘要不截断"落为可展开见全文); ContextState 4态→5态新增 historical(经 useTaskInfo 的 isLiveContext 透出, 该分支本身即真源不另立判断); 删冗余状态提示仅留 truncated 警示 - 小欧-2026-10-04, 提交 6674190f0
+
+### 1.1.6 link 写入口收敛为唯一通道(废止 PATCH)
+[问题] 北京老陈定案"切换开关发到后端只能和消息一起发出, 严禁独立去影响后端的任何东西"; 原 PATCH /sessions/{id}/link + set_session_link 前端零调用, 属零消费死端点(YAGNI); SessionResponse.link_enabled 与 messages 端点构成同真源两个读出口(DRY隐患)
+[修复] 删 PATCH 端点 + set_session_link 函数 + SessionResponse.link_enabled 及两处 SELECT; set_session_link_conn 删 updated_at 写入(改开关非内容变更, 顺带刷新会把会话顶到列表首位); 编排器落值加 rowcount 判定留痕。判据纪律: 生产代码质量由自身判据裁决, 不得以"已有 case 断言"保留死代码 - 小欧-2026-10-03, 提交 c10c0e35c
+
+### 1.1.6 link 随消息携带落地(前端19文件+后端5文件)
+[修复] 前端 contextLinkMode/mode 改名 linkEnabled 继续透传(4层9处→3层3处, 不删参数); 链号徽标(TaskListPanel 按 context_root_task_id 归链, 仅链长>1 编号, Colors.INFO 达 WCAG AA); 持久化三写入点补齐 + 本地优先(修勾选后不发再刷新丢失); 后端 ChatRequest 增 link_enabled + 路由关键字透传 + storage 新增 conn 级写 - 小欧-2026-10-03, 提交 d72fe596a/d73ac92cd
+[修复] chatStreamTransport resume 续传建连成功即置 isReceiving(此前续传路从不置接收态, 切路由回来后帧在流但"停止"钮永不出现, fre2e_15 红线) - 小欧-2026-10-03, 提交 9197506c3
+[修复] main.py _t4con 笔误改回 _t_recon(同批新增 _t4 串扰致误改, 读写一致故功能未坏) - 小欧-2026-10-03, 提交 e5f29cddd
+
+### 1.1.6 前端 E2E 14~19 全绿 + 新增 link 分组用例
+[修复] fre2e_15 切页≠停止红线由红转绿(真 bug 已修); fre2e_16 首跑20s窗口撞后端静默期假红, 重跑绿; fre2e_18 任务B由八大部分采矿长文(实测616秒, 终态等待不够)改为三步文件链后 3.3 分钟通过; 新建 fre2e_19_link_grouping(10任务 link 组合: 单点/2连/3连/开跟在关后并入关组, 断言徽标+魔数+链根+真源读回), 其中修正自身两处错误: 分组模型(开≠自成新链, 开=并入上一任务所在组)、取 taskId 走 UI 选中态有竞态改走 DB 权威 - 小欧-2026-10-03, 提交 c80fe68e1/7ec3d50f6/6ddcd4e3e
+
+### 1.1.6 远端模型元数据补 free/stability 与免费判据收口
+[修复] model_service 透传 free/stability(AMD Radeon Cloud 实测下发, 此前被解析层静默丢弃); 免费判定由 pricing 单判据扩为 free字段/-free|:free尾巴/pricing双0 三判据 OR 收口纯函数层(切勿 includes('-free'): 实测 OpenRouter 460 个命中 0 且会误伤 free-tier); 模型库增"添加 Provider"入口 + 修 ModelModals 未挂载(model_library Tab 不调 renderModelTab, 置 open 无人渲染); 添加 Provider 弹窗三处修(api_key 补 autoComplete=new-password 防 Chrome 密码管理器把已存口令写进 config.yaml) - 小欧-2026-10-03, 提交 93bad733d/8508a1890/235c10e1c
+
+### 1.1.6 其他
+- journal_steps_reconcile 启动期对账(Journal③ vs chat_task_steps②, 只告警不自动补) + telemetry 步骤类型集合按语义二分去重 - 提交 3ca9fd37d/37a56b0c4
+- 编辑历史合规整改(chat_models 旧行归位块尾/message_service 新史拆独立行/orchestrator 历史移块尾/agent_runner 换行恢复 CRLF+补历史行) - 提交 dee20e606
+- 事故复盘: git stash 误 pop 致 5 个后端文件冲突(根因: 链式命令中 push 空操作而 pop 命中他人 stash; 6条护栏已落 notes, AGENTS.md 按老陈要求未改) - 提交 9dd82414d
+- prettier 格式补账 5 文件(今日早些提交带入的不合规, 致 check:full 不可过) - 提交 5ed797176/eb25f797c
+- react_step.py 正名 context_overview 发射节奏注释(原称"每次必发", 实受 if 门控: 首轮/裁剪轮/每5轮) - 提交 687615412
+
+---
+v1.1.5
 更新时间: 2026-10-02 15:00:28 - 小欧-2026-10-02
 ## v1.1.5 工具注册名归位与strict报错修复(20个commit: feat1/fix2/refactor7/test3/docs6/chore1) - 小欧-2026-10-02
 [2026-10-02 15:00:28 小欧] 范围=v1.1.4起全部commit(共20个)。主线四件事:[1]工具注册名归位与改短(shell→bash、readtext→read、writetext→write、edittext→edit、which+sysinfo归system、extract/compress/readmedia归document、searchweb/fetchpage归fundamental), 分类10→9, 初始加载21→19; [2]searchtool BM25索引追加category使按分类名可召回+描述同步; [3]strict默认值True→False解除opencodeZen必报400(全仓29模型/7provider无一需strict, additionalProperties校验自2026-06-17起从未生效, 日志确认报错文案全仓唯一1种); [4]前端渲染器/安全判定/sandbox/E2E用例跟随注册名同步。
