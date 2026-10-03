@@ -18,6 +18,8 @@
 //   零区分度；「状态」与 Checkbox 的 checked+disabled 重复，改为内联 id 旁 Tag - 小欧-2026-09-29
 // 2026-09-29 小欧 - 修 5 处漏洞：env 接管仍可保存(后端必 400)、当前全局模型被踢出提交集、
 //   未拉取即误置灰筛选、远端下线项使弹窗数字对不上、关键词搜 description 致命中不可解释 - 小欧-2026-09-29
+// 2026-10-03 小欧 - 免费判定迁至 utils/modelUtils；判据扩为三判据 OR，「仅看免费」可筛性改看 freeAvail — 小欧 2026-10-03
+// 2026-10-03 小欧 - 「获取模型列表」后增「添加 Provider」按钮（复用同一弹窗/回调，组件不持弹窗状态）— 小欧 2026-10-03
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -32,7 +34,7 @@ import {
   Tag,
   Tooltip,
 } from 'antd';
-import { CloudDownloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CloudDownloadOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 // 2026-09-29 小欧 - 删 settingsRowStyle: 列表改 Table 后已无行容器，import 成了死引用(ESLint 报 unused)
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
@@ -44,10 +46,15 @@ import type {
 } from '@/services/api/model.api';
 import { showSuccess } from '@/services/error/handler';
 import { SectionTitle } from './SectionTitle';
+// 2026-10-03 小欧 - 免费判定自 utils/modelUtils 导入（组件内零重定义，与单测同源）— 小欧 2026-10-03
+import { isFreeModel } from '../utils/modelUtils';
 
 interface Props {
   providers: ProviderEntry[];
   onSaved: (mtime: number) => Promise<void>;
+  // 2026-10-03 小欧 - 「添加 Provider」入口：复用 ModelSelector 同一回调与同一弹窗，
+  //   本组件不持弹窗状态、不重复实现表单（SLAP/DRY）— 小欧 2026-10-03
+  onAddProvider: () => void;
 }
 
 // 2026-09-29 小欧 - 筛选/判定的词表与判据全部来自 OpenRouter 460 模型实勘(非臆造取值) — 小欧-2026-09-29
@@ -86,17 +93,8 @@ const CONTEXT_OPTIONS = [
   { label: '≥ 1M', value: 1_000_000 },
 ];
 
-/** 免费判据：远端报价 prompt 与 completion 同时为 0。
- *  Number() 而非 `=== '0'`：兼容 "0" / 0 / "0.000" 三种写法；
- *  v != null 必留 —— Number(null) === 0 为真，漏判会把无报价的模型误标免费。 */
-const isZeroPrice = (v: string | undefined): boolean =>
-  v != null && Number(v) === 0;
-
-const isFreeModel = (m: RemoteModelItem): boolean =>
-  isZeroPrice(m.pricing?.prompt) && isZeroPrice(m.pricing?.completion);
-
 /** 每百万 token 报价：远端是每 token 字符串(0.0000008 → $0.80/M)，按百万量级才可读。
- *  **本函数不判"免费"**：免费是 prompt+completion 双 0 的整体语义，只由 isFreeModel 判一次。
+ *  **本函数不判"免费"**：免费是"三判据 OR"的整体语义，只由 isFreeModel 判一次（小欧 2026-10-03 修订）。
  *  若这里也对 0 返回"免费"，会出现 prompt>0 而 completion=0 的模型被显示成"免费"（误报）。 */
 const pricePerMillion = (v: string | undefined): string => {
   if (v == null || v === '') return '–';
@@ -166,7 +164,11 @@ const MISSING_LABEL: Record<MetaKey, string> = {
   context: 'context_length（上下文）',
 };
 
-export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
+export const ModelLibraryTab: React.FC<Props> = ({
+  providers,
+  onSaved,
+  onAddProvider,
+}) => {
   const [selectedProvider, setSelectedProvider] = useState<string>(
     providers[0]?.name ?? ''
   );
@@ -234,6 +236,10 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
   const missingMeta: MetaKey[] = metaAvail
     ? (Object.keys(metaAvail) as MetaKey[]).filter((k) => !metaAvail[k])
     : [];
+
+  // 免费判据已扩为三判据（free 字段/名称尾巴），不再只依赖 pricing，故可筛性改看 freeAvail：
+  // 原 metaBlocked('pricing') 会让「无 pricing 但满屏 -free」的 provider（本仓 alpha/beta）永远勾不上。
+  const freeAvail = remote?.ok ? remote.models.length > 0 : null;
 
   // D4 过滤叠加：关键词 + 免费 + 输入模态 + 智能体能力 + 最小上下文（判据收口 matchFilters）
   // 2026-09-29 小欧 - 不加防抖: 漏洞5 根因是 description 千字进 hay，移除后每次按键开销
@@ -582,6 +588,11 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
             >
               获取模型列表
             </Button>
+            {/* 2026-10-03 小欧 - 「添加 Provider」紧邻获取按钮：拉模型前常需先建 Provider，
+                放此处省去切回模型 Tab。与 ModelSelector 同款默认 Button + PlusOutlined。 */}
+            <Button icon={<PlusOutlined />} onClick={onAddProvider}>
+              添加 Provider
+            </Button>
             {apiBaseEmpty && (
               <span
                 style={{
@@ -628,16 +639,10 @@ export const ModelLibraryTab: React.FC<Props> = ({ providers, onSaved }) => {
               }
               style={{ width: settingsControl.filterSearchWidth }}
             />
-            <Tooltip
-              title={
-                metaBlocked('pricing')
-                  ? '该 Provider 未返回 pricing，无法判定免费'
-                  : '输入报价与输出报价同时为 0'
-              }
-            >
+            <Tooltip title="远端标记免费 / 模型名带 -free 或 :free / 报价输入输出同时为 0">
               <Checkbox
                 checked={filters.freeOnly}
-                disabled={metaBlocked('pricing')}
+                disabled={!freeAvail}
                 onChange={(e) =>
                   setFilters((f) => ({ ...f, freeOnly: e.target.checked }))
                 }

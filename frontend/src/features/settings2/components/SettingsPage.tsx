@@ -90,6 +90,9 @@
 //   （onOk 是 void...then() 不返 Promise，antd 不自带 loading，双击会连发两次 saveGroup）；
 //   ③jumpToProviderConfig 判脏对象改 'model'（原判 state.activeTab，而唯一调用点在通用 Tab 恒为 general，
 //   查错组致闸口形同虚设）- 小欧-2026-09-27
+// 2026-10-03 小欧 - ModelLibraryTab 增「添加 Provider」入口，回调复用 :323 给 ModelSelector 的同一处（不新建弹窗/状态）— 小欧 2026-10-03
+// 2026-10-03 小欧 - 修「模型库 Tab 点添加 Provider 无反应」：ModelModals 原挂在 renderModelTab 内，
+//   model_library Tab 不调该函数致弹窗组件不挂载，置 open 也无人渲染；已上提到页面顶层（全 Tab 挂载）— 小欧 2026-10-03
 import React, { useState } from 'react';
 import {
   Button,
@@ -521,6 +524,40 @@ const SettingsPage: React.FC = () => {
           })
         }
       />
+      {/* 2026-09-22 小欧 - 管理选项弹窗（②区标题行「管理选项」入口；保存后
+          refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
+      <ParamOptionsModal
+        open={state.model.paramOptionsModalOpen}
+        provider={state.model.selectedProvider}
+        model={state.model.selectedModel}
+        paramOptions={state.model.paramOptions}
+        defaults={state.model.defaults}
+        onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
+        // 2026-09-24 小欧 - 闭环：保存中禁用弹窗提交（三堂会审边角）— 小欧-2026-09-24
+        disabled={s.saving}
+        onSaved={async () => {
+          if (state.model.selectedProvider && state.model.selectedModel)
+            await s.refreshModels({
+              provider: state.model.selectedProvider,
+              model: state.model.selectedModel,
+            });
+        }}
+      />
+    </div>
+  );
+
+  return (
+    <div
+      className="settings-page"
+      style={{
+        padding: settingsSpacing.pagePadding,
+        background: Colors.BG.PRIMARY,
+      }}
+    >
+      {/* 2026-10-03 小欧 - ModelModals 由 renderModelTab 内提到页面顶层：原挂在 model Tab 渲染函数
+          (310-633) 里，而 model_library Tab 不调该函数 -> 弹窗组件根本不挂载，置
+          addProviderModalOpen=true 也无人渲染，表现为「点了没反应」。弹窗走 portal 挂
+          document.body，移出不影响 DOM 位置，也不改 model Tab 原行为。 */}
       <ModelModals
         providers={state.model.providers}
         addModelOpen={state.model.addModelModalOpen}
@@ -609,36 +646,6 @@ const SettingsPage: React.FC = () => {
           }
         }}
       />
-      {/* 2026-09-22 小欧 - 管理选项弹窗（②区标题行「管理选项」入口；保存后
-          refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
-      <ParamOptionsModal
-        open={state.model.paramOptionsModalOpen}
-        provider={state.model.selectedProvider}
-        model={state.model.selectedModel}
-        paramOptions={state.model.paramOptions}
-        defaults={state.model.defaults}
-        onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
-        // 2026-09-24 小欧 - 闭环：保存中禁用弹窗提交（三堂会审边角）— 小欧-2026-09-24
-        disabled={s.saving}
-        onSaved={async () => {
-          if (state.model.selectedProvider && state.model.selectedModel)
-            await s.refreshModels({
-              provider: state.model.selectedProvider,
-              model: state.model.selectedModel,
-            });
-        }}
-      />
-    </div>
-  );
-
-  return (
-    <div
-      className="settings-page"
-      style={{
-        padding: settingsSpacing.pagePadding,
-        background: Colors.BG.PRIMARY,
-      }}
-    >
       <Card>
         <div
           style={{
@@ -679,6 +686,8 @@ const SettingsPage: React.FC = () => {
           <ModelLibraryTab
             providers={state.model.providers}
             onSaved={afterModelSaved}
+            // 2026-10-03 小欧 - 与 :322 给 ModelSelector 的回调逐字相同，复用同一弹窗与同一状态
+            onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
           />
         ) : (
           <SettingsGroup
