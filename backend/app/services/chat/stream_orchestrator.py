@@ -224,6 +224,7 @@ from app.services.task.task_runtime import (
 )
 from app.utils.sse_formatter import format_agent_sse  # 消费转发并回本模块(SSE格式化) — 小健 2026-09-05
 from app.services.agent.agent_runner import run_agent_in_background
+from app.services.agent.steps import ALL_STEP_TYPES  # SSE 转发表推导源(见 _SSE_FORWARD_TYPES)— 小欧 2026-10-03
 from app.services.agent.universal_agent import UniversalAgent
 from app.services.chat.stream_event_journal import append as journal_append, read_after, get_persisted_task_status, is_producer_alive, PAGE_SIZE   # [63] 3.6.4 Journal 四口
 from app.services.task.task_state import create_task_stream_buffer, get_stream_buffer, reclaim_memory_buffer  # [63] 3.6.4 生产唯一入口 + 3.8 改名（回收语义不变）
@@ -643,24 +644,12 @@ async def chat_stream_orchestrator(
         _current_task_id.reset(_task_token)
 
 
-# ============================================================
-# SSE 转发通道路由表(白名单, 北京老陈 2026-09-12 复核定案; 按白名单纪律实施定稿) — 小欧-2026-09-12
-# event_log = 落库与 SSE 共源(生产端 publish 直写); stream_reader = 唯一转发咽喉点(实时/重连共用)。
-# 白名单语义: 仅下列类型被实时转发前端; 未登记类型一律不转发(默认拦截, 结构性杜绝 thought 事故)。
-# 纪律: 新增任何 Step/事件类型必须·在此登记 + ·steps/__init__.py ALL_STEP_TYPES 登记源登记, 缺一不放行。
-# 全集来源: 全仓逐字面值实证(当前 HEAD 4bf3ea987)。
-# ============================================================
-_SSE_FORWARD_TYPES = frozenset({
-    # SSE + 落库
-    "start", "action", "observation", "final", "final_stats",
-    # 仅SSE(实时信号, 落库由 agent_runner 扫描分支处理)
-    "chunk", "thought-start",
-    "error", "usage", "paused", "resumed", "retrying",
-    "merged",  # 2026-09-28 小欧: 注入应答(设计文档[76] 6.7, 与 ALL_STEP_TYPES 双登记)
-    "rejected", "stats", "context_overview", "truncated",
-    # 防御性保留: 当前无独立发射源, 若未来新增取消通知类可转发
-    "cancelled",
-})
+# SSE 转发白名单 — 小欧 2026-09-12
+# event_log = 落库与 SSE 共源; stream_reader = 唯一转发咽喉点(实时/重连共用)。
+# 未登记类型一律不转发(默认拦截, 防 thought 事故)。新增类型先在 ALL_STEP_TYPES 登记。
+# 2026-10-03 小欧 - 转发表改由 ALL_STEP_TYPES 推导(原 18 个字面量手工重复, 登记源增项会漏转发)
+_SSE_FORWARD_TYPES = frozenset(ALL_STEP_TYPES - {"thought"})
+assert "thought" not in _SSE_FORWARD_TYPES, "thought 仅落库, 不得进转发表(思维链外泄风险)"
 
 
 async def stream_reader(buffer, task_id: str, after_seq: int = 0):

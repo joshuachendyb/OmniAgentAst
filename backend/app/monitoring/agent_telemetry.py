@@ -38,6 +38,7 @@
 # 2026-09-11 - 小欧 - BUG-D修复: build_stats_step 的 _agent.steps 改为 getattr(_agent, "steps", []),
 #   与 build_final_stats_step L219 对齐防御风格, 防 agent 无 steps 属性时崩溃 — 小欧-2026-09-11
 # 2026-10-01 - 小欧 - 解 [1] E1/E2/4-1: ①_M_SKIP 提为公开常量 M_SKIP 并由 agent_runner 复用(原 agent_runner 另有一份硬编码 3 项子集, 两处口径不一致致两统计源不等), 补齐 chunk/thought-start/error/rejected 四类仅 SSE 不落库步; ②新增 count_business_steps() 作业务步计数单一真源, 兼容 dict(落库 step_json)与 Step 对象(运行期)两种形态统一取键, 原各写一份只认对象形态的列表推导在改读落库权威后会计成全量; ③三处 step_count 改走该函数且优先取落库权威源 _persisted_steps(原按 agent.steps 计会多计 preview action, 该标记 _emit_publish 才登记, 实测每轮多 1)
+# 2026-10-03 小欧 - M_SKIP 内部按语义二分 SSE_ONLY_TYPES + PERSISTED_NON_BIZ_TYPES, 加断言保二分完备; agent_runner._SSE_ONLY_TYPES 改 import 消除重复定义(DRY), 内容与行为零变化 — 文档[5] 5.2 D4
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -60,15 +61,20 @@ from app.monitoring import storage  # 落库层（独立，storage 内部惰性�
 #   补齐 chunk/thought-start/error/rejected 四类仅 SSE 步(与 agent_runner._SSE_ONLY_TYPES 对齐):
 #   它们自 2026-09 起不落 chat_task_steps, 故落库口径天然不含, 不补则两源恒不等。
 #   剔除后仅剩业务步: action / observation / thought / final。
-M_SKIP = frozenset({
-    # 瞬态/状态类
-    "usage", "paused", "resumed", "retrying", "cancelled", "rejected",
-    "authorization_required",
-    # 生命周期/统计类
-    "start", "stats", "context_overview", "final_stats",
-    # 仅 SSE 不落库类
-    "chunk", "thought-start", "error",
+# 非业务步剔除集: 落库侧(不落 chat_task_steps) + 统计侧(落库但不计业务步) 两个维度之和。
+# 2026-10-03 小欧 - 原为 14 字面量字面量块, 其内"仅SSE不落库类=3项"分组注释与真实路由矛盾
+#   (实为 9 项不落库), 且与 agent_runner._SSE_ONLY_TYPES 重复定义; 改为按语义二分后由并集得出。
+#   业务步 = 全部 − 本集合 = action / observation / thought / final。
+# 2026-10-03 小欧 - agent_runner._SSE_ONLY_TYPES 改 import 本模块 SSE_ONLY_TYPES(DRY) — 文档[5] 5.2 D4
+SSE_ONLY_TYPES = frozenset({          # 维度1: 仅 SSE 下发, 不落 chat_task_steps
+    "chunk", "thought-start", "error", "usage", "paused",
+    "resumed", "retrying", "cancelled", "rejected",
 })
+PERSISTED_NON_BIZ_TYPES = frozenset({ # 维度2: 落库(需回放)但不计业务步
+    "start", "stats", "context_overview", "final_stats", "authorization_required",
+})
+M_SKIP = SSE_ONLY_TYPES | PERSISTED_NON_BIZ_TYPES
+assert not (SSE_ONLY_TYPES & PERSISTED_NON_BIZ_TYPES), "两维度互斥, 同一类型不可同时归属"
 _M_SKIP = M_SKIP  # 本模块内原名保持, 零改动既有引用
 
 

@@ -216,7 +216,7 @@ from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print
 from app.logger.prompt_logger import get_prompt_logger
 from app.utils.time_utils import get_local_iso_timestamp  # S2 update_task end_time(10.1.7②-1) — 小欧 2026-08-16
 from app.services.chat.storage import update_user_message_final  # v2.0 改动2 — 小欧 2026-08-19
-from app.monitoring.agent_telemetry import count_business_steps  # total_steps 口径单一真源(解 [1] E1/E2/4-1) — 小欧 2026-10-01
+from app.monitoring.agent_telemetry import count_business_steps, SSE_ONLY_TYPES  # total_steps 口径单一真源(解 [1] E1/E2/4-1); SSE_ONLY_TYPES 落库侧过滤集(文档[5] 5.2 D4 去重) — 小欧 2026-10-01 / 2026-10-03
 from app.utils.json_utils import safe_json_dumps  # v2.0 改动2: accumulated_usage序列化 — 小欧 2026-08-19
 from app.utils.text_utils import normalize_blank_lines  # 13.11 落库收口 — 小欧 2026-08-30
 
@@ -227,15 +227,8 @@ from app.utils.text_utils import normalize_blank_lines  # 13.11 落库收口 —
 _background_tasks: set = set()
 
 
-# 仅 SSE 不落库的事件类型集合 — 小欧 2026-10-01
-#   逐条取自末尾扫描循环原路由分支, 扫描机制退役后本集合为唯一真源(解 R4 双份漂移)。
-#   与 stream_orchestrator._SSE_FORWARD_TYPES 的闭合纪律同款: 新增 Step/事件类型须两侧同时登记。
-#   含 preview/瞬态类(error/usage/paused/resumed/retrying/cancelled/rejected)与
-#   实时流专属类(chunk 仅 SSE、正文靠 thought/final 回放; thought-start 仅 SSE)。
-_SSE_ONLY_TYPES = frozenset({
-    "thought-start", "chunk",
-    "error", "usage", "paused", "resumed", "retrying", "cancelled", "rejected",
-})
+# 仅 SSE 不落库的事件类型 — 直接用 agent_telemetry.SSE_ONLY_TYPES(落库侧唯一真源, 2026-10-03 由本地
+# 硬编码改 import; 原别名 _SSE_ONLY_TYPES 已删, 禁 backward 不留同义名) — 小欧 2026-10-03
 
 # 落库队列排空超时上限(秒) — 小欧 2026-10-01
 #   单帧落库实测 0.6~1.1s(stream_event_journal 注释), 百步任务约 1~2 分钟, 留足余量;
@@ -463,7 +456,7 @@ async def run_agent_in_background(
         落库的步(含 preview 过滤与 final 长短分流决策)即"业务步"权威集合 —— 统计口径亦取自此,
         保证 chat_tasks.total_steps 与 final_stats.step_count 同源等值(见 _business_step_count)。"""
         _t = ed.get("type", "")
-        if _t in _SSE_ONLY_TYPES:
+        if _t in SSE_ONLY_TYPES:
             if _t == "usage":
                 _step_queue.put_nowait(("token", int(ed.get("step") or 0), ed))   # 明细实时落库(解 A10)
             return                                    # 仅 SSE 不落 chat_task_steps
