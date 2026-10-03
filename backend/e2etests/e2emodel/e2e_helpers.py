@@ -2329,14 +2329,25 @@ def write_test_record(
 
     # 跨任务注入上下文(小欧 2026-08-23): 取自 context_overview 事件的 injected_message_count/injected_estimated_tokens,
     # 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
+    # 2026-10-03 北京老陈指正 + 小欧 修: 原实现取 events 里**第一个** context_overview 就 break,
+    #   这只对"单轮 case"成立。同会话连续发送多个任务时(如 E2E-P9-08 连发5个任务),
+    #   第一个 context_overview 来自首个任务(新会话首条消息, 注入必然为0),
+    #   于是该字段恒显示"无(本任务单轮/无历史注入)" —— 而后续任务确实有注入(实测 7条/851tok),
+    #   属记录失真, 会让复核者误判"整个用例都没有历史注入"。
+    #   改为遍历全部 context_overview 取**最大值**(峰值注入体量), 单轮 case 只有一个事件,
+    #   取最大值等价于原取值, 行为完全不变。
     _inj_info = "无(本任务单轮/无历史注入)"
+    _inj_max_n = 0
+    _inj_max_tok = 0
     for _ev in result.get("events", []):
         if isinstance(_ev, dict) and _ev.get("type") == "context_overview":
             _inj_n = _ev.get("injected_message_count", 0) or 0
             _inj_tok = _ev.get("injected_estimated_tokens", 0) or 0
-            if _inj_n or _inj_tok:
-                _inj_info = f"消息{_inj_n}条/≈{_inj_tok}tok(估算)"
-            break
+            # 先比消息数, 消息数相同时比 tok 数, 保证峰值取到
+            if _inj_n > _inj_max_n or (_inj_n == _inj_max_n and _inj_tok > _inj_max_tok):
+                _inj_max_n, _inj_max_tok = _inj_n, _inj_tok
+    if _inj_max_n or _inj_max_tok:
+        _inj_info = f"消息{_inj_max_n}条/≈{_inj_max_tok}tok(估算)"
 
     # 第1节：测试基本信息
     lines.append("## 1 测试基本信息")
@@ -2799,7 +2810,20 @@ def write_test_record(
         for k, v in extra.items():
             if k == "DbPromptIssues":
                 continue
-            lines.append(f"- {k}: {v}")
+            # 2026-10-03 小欧: list/dict 原先走 f"- {k}: {v}" 被 str() 压成一整行,
+            #   元素一多(多轮任务的轮次明细、逐条断言清单)就长到无法人工复核 ——
+            #   P9-08 五轮明细+8条断言共13项, 单行渲染等于没记录。改为按元素分行。
+            #   标量分支保持原样, 不影响既有 case(如 P9-04 的 "LLM calls": 2)。
+            if isinstance(v, (list, tuple)):
+                lines.append(f"- **{k}**:")
+                for _item in v:
+                    lines.append(f"  - {_item}")
+            elif isinstance(v, dict):
+                lines.append(f"- **{k}**:")
+                for _k2, _v2 in v.items():
+                    lines.append(f"  - {_k2}: {_v2}")
+            else:
+                lines.append(f"- {k}: {v}")
         lines.append("")
 
     lines.append("---")
