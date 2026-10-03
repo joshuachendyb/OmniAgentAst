@@ -2,6 +2,8 @@
 # SQLite，与 LLM 的 httpx 池正交。表由 db_initializer 建，本模块只读写、零 DDL — 小欧 2026-09-29
 # 编辑历史: 2026-09-29 21:37:55 小欧 - 纯格式零逻辑: retention_cleanup 内注释缩进由 4 空格对齐到函数体 8 空格,
 #   与本文件其余函数体风格统一(缩进错位会让后续维护者误判其为模块级语句) — 小欧-2026-09-29 21:37:55
+# 编辑历史: 2026-10-03 小欧 - 新增 journal_steps_reconcile: Journal(③) vs chat_task_steps(②) 启动期对账,
+#   只告警不自动修(反推业务步需重放落库过滤判定 = 第二套真源, 违反 DRY/SRP) — 文档[5] 5.3 D2 — 小欧-2026-10-03
 import json
 from datetime import datetime, timedelta
 from typing import Optional
@@ -115,4 +117,26 @@ async def retention_cleanup(retention_days: int) -> int:
         for tid in ids:
             conn.execute("DELETE FROM chat_stream_events WHERE task_id=?", (tid,))
         return len(ids)
+    return await db.atxn("chat", _q)
+
+
+async def journal_steps_reconcile() -> list:
+    """③ Journal vs ② chat_task_steps 启动期对账, 只告警不自动补 — 文档[5] 5.3 D2 - 小欧 2026-10-03
+
+    不自动补写: 反推业务步需重放落库侧过滤判定 = 第二套真源(违反 DRY/SRP), 且该集合增项时会静默漏补。
+    不做运行期实时对账: 矛盾只在进程被杀时产生, 启动期一次性可检出; 实时比对 = O(n) 扫描拖慢热路径(KISS-DIRECT)。
+
+    口径: Journal 不过滤、业务步含 4 类 + 5 类"落库但不计业务步"的框架步, 故帧数 > 行数属正常;
+    **行数 > 帧数才是异常**(Journal 丢帧 → 该任务重连回放缺内容)。
+    返回: 仅异常项 [{task_id, journal_frames, step_rows}], 无异常返回 []。
+    """
+    def _q(conn):
+        rows = conn.execute(
+            "SELECT e.task_id AS task_id, COUNT(*) AS journal_frames, "
+            "(SELECT COUNT(*) FROM chat_task_steps s WHERE s.task_id = e.task_id) AS step_rows "
+            "FROM chat_stream_events e GROUP BY e.task_id"
+        ).fetchall()
+        return [{"task_id": r["task_id"], "journal_frames": r["journal_frames"],
+                 "step_rows": r["step_rows"]}
+                for r in rows if r["step_rows"] > r["journal_frames"]]
     return await db.atxn("chat", _q)

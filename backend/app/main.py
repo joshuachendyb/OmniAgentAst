@@ -31,6 +31,8 @@
 # 2026-09-29 小欧 - L0 僵尸任务收尾(北京老陈驱动): startup_event 调 storage.reconcile_orphaned_tasks, 收尾崩溃残留的 executing 残行(按 start_time<进程启动时刻判归属, 不误伤多 worker) — 小欧-2026-09-29
 # 2026-09-29 小欧 - 挂 _start_journal_retention_task 定期清理超保留期的已终态事件；
 #   退出时同生命周期 cancel（存引用防 GC）— 小欧 2026-09-29
+# 2026-10-03 小欧 - startup_event 增 journal_steps_reconcile 一次性对账 Journal(③) vs chat_task_steps(②);
+#   只告警不自动补, 失败仅 warning 不阻断启动 — 文档[5] 5.3 D2 — 小欧 2026-10-03
 import sys
 import asyncio
 from typing import Optional
@@ -285,11 +287,11 @@ async def startup_event():
     db.init()
     logger.info(f"[启动耗时] db.init: {_time.time()-_t0:.3f}s")
     # L0 僵尸任务收尾：崩溃遗留的 executing 残行改终态，不让任务列表永远显示"执行中" — 小欧 2026-09-29
-    _t_recon = _time.time()
+    _t4con = _time.time()
     _recon_n = await db.atxn("chat", lambda c: reconcile_orphaned_tasks(c, _boot_iso))
     if _recon_n:
         logger.warning(f"[启动] 收尾僵尸任务 {_recon_n} 个（上次进程中断残留，已标 failed/task_interrupted）")
-    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t_recon:.3f}s")
+    logger.info(f"[启动耗时] reconcile_orphaned_tasks({_recon_n} 行): {_time.time()-_t4con:.3f}s")
     _t1 = _time.time()
     ensure_tools_registered()
     logger.info(f"[启动耗时] ensure_tools_registered: {_time.time()-_t1:.3f}s")
@@ -297,6 +299,17 @@ async def startup_event():
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
     _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
+    # 2026-10-03 小欧 - 启动期一次性对账 Journal(③) vs chat_task_steps(②), 只告警不自动补 — 文档[5] 5.3 D2
+    _t4 = _time.time()
+    try:
+        from app.services.chat.stream_event_journal import journal_steps_reconcile as _reconcile
+        for _bad in await _reconcile():
+            logger.error(f"[Reconcile] Journal({_bad['journal_frames']}帧) vs steps"
+                         f"({_bad['step_rows']}行) 不一致: task={_bad['task_id']} —— "
+                         f"步骤已落库但 Journal 缺帧, 该任务重连回放将缺内容")
+    except Exception as exc:            # 对账失败只 warning, 不阻断启动(同 retention_cleanup 降级范式)
+        logger.warning(f"[Reconcile] Journal/steps 对账失败: {exc}")
+    logger.info(f"[启动耗时] journal_steps_reconcile: {_time.time()-_t4:.3f}s")
     # 鉴权配置自检（未注入 forwarded_allow_ips / 白名单全网通配 → 告警），只观测不改判定
     _t3 = _time.time()
     warn_startup_checks()
