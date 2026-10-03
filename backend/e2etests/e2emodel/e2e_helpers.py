@@ -104,6 +104,9 @@
 #   OMNIAGENT_ACCESS_TOKEN(与后端同一份来源, 不在用例里硬编码, 免口令一换全库用例失效);
 #   后端显式关闭鉴权(OMNIAGENT_REQUIRE_AUTH=0)时返回空 dict, 用例代码零分支(KISS-DIRECT)。
 #   连带: SSE 流式请求头与普通 GET 校验头统一走 auth_headers(), 不再两处各拼一遍(DRY) — 小欧-2026-09-26
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14.4 必改: send_chat 增可选形参 link_enabled 并入 POST /chat/stream
+#   payload, 以覆盖"会话 link 开关值随消息携带"这条新链路(默认 None=不携带, 后端沿用会话现值,
+#   故其余 76 个 case 行为不变) — 小欧-2026-10-03
 """
 E2E测试核心测试脚本和代码
 **公共函数**: 所有E2E测试脚本共用的辅助函数和验证逻辑
@@ -616,6 +619,7 @@ async def send_chat(
     session_id: Optional[str] = None,
     timeout_seconds: int = 180,
     partial_result: Optional[Dict[str, Any]] = None,
+    link_enabled: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """手册步骤2+3: 发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
 
@@ -623,8 +627,10 @@ async def send_chat(
       - wall clock计时: start_time/end_time写入result，供write_test_record直接取
       - SSE流接收: httpx timeout=None，由pytest.ini的timeout统一管理
       - 事件解析: 组装events/tool_calls/response_text等结构化数据
-      模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
+    模拟真实前端流程: 创建session -> POST /messages保存user消息 -> POST /chat/stream
     -- 小健 2026-06-14
+    link_enabled: 会话link开关值随消息携带(文档[4] 5.7.14); None=不携带, 后端沿用会话现值
+    -- 小欧 2026-10-03
     """
     if not session_id:
         session_id = await create_session()
@@ -639,6 +645,8 @@ async def send_chat(
         "stream": True,
         "session_id": session_id,
     }
+    if link_enabled is not None:
+        payload["link_enabled"] = link_enabled  # 随消息携带会话link开关(文档[4] 5.7.14) — 小欧 2026-10-03
 
     start_time = time.monotonic()
     wall_start = datetime.now()

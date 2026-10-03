@@ -40,6 +40,8 @@
 
 -- 小欧 2026-10-03
 -- 更新: 2026-10-03 北京老陈指正"任务太简单, 怎么也要有几步" -> 任务1/任务2 改为多步工具链路强因果任务
+-- 更新: 2026-10-03 小欧 文档[4] 5.7.14.4 -> 任务2 改由 send_chat(link_enabled=True) 携带开关(不调 PATCH),
+   两读点断言移到发消息之后; 任务3/4 仍用 PATCH, 两个写入口各覆盖一轮
 """
 
 import json
@@ -103,12 +105,12 @@ INPUT_R5 = (
 #   内联字符串写在断言逻辑中间, 只有任务1/2 提到顶部常量, 审查时数不出总数。
 #   现全部提到顶部, 并用下表固化"任务 × link 状态 × 预期链根", 便于一眼核对:
 #
-#   任务 | 输入        | link | 该任务自身状态   | 预期 context_root_task_id
-#   ----+-------------+------+------------------+--------------------------------
-#    1   | INPUT_R1    | 关   | completed        | 自身(条款4: 关则自成新组)
-#    2   | INPUT_R2    | 开   | completed        | 任务1 所在组(门2 分组正确)
-#    3   | INPUT_R3    | 关   | completed        | 自身 = 组B(条款4)
-#    4   | INPUT_R4    | 关   | failed(人为置入) | 自身 = 组C, 且 C≠B(门5前提)
+#   任务 | 输入        | link 开关怎么设       | 该任务自身状态   | 预期 context_root_task_id
+#   ----+-------------+---------------------+------------------+--------------------------------
+#    1   | INPUT_R1    | 默认关(新会话)      | completed        | 自身(条款4: 关则自成新组)
+#    2   | INPUT_R2    | **随消息携带 True**  | completed        | 任务1 所在组(门2 分组正确 + 覆盖携带链路)
+#    3   | INPUT_R3    | PATCH /link 关       | completed        | 自身 = 组B(条款4)
+#    4   | INPUT_R4    | PATCH /link 关       | failed(人为置入) | 自身 = 组C, 且 C≠B(门5前提)
 #    5   | INPUT_R5    | 开   | completed        | 组C(门5: 上一任务failed仍并入, 不回溯到组B)
 #
 #   任务3/4/5 的内容刻意做成"读文件第N行"这种轻任务: 它们的作用不是考验 LLM 能力,
@@ -350,16 +352,12 @@ async def test_e2e_p9_08_link_grouping_contract():
         _record_round(1, in1, r1, sid, t1[0][0], test_start, checks, rounds, task_ids)
         print(f"  [记录] 任务1 已落盘: {TEST_CASE_ID}-T1")
 
-        # ── 开 link 并校验两读点 ──
-        _patch_link(sid, True)
-        a1, b1 = _link_read(sid)
-        assert a1 is True and b1 is True, f"开link后两读点应均为True, 实得 get={a1} msg={b1}"
-        _ck(checks,"开link后两读点(getSession/messages)均读到True")
-
-        # ── 任务2 (link 开): 不告知路径, 必须靠注入的历史答出魔数 ──
+        # ── 任务2: link 值随消息携带(不调 PATCH), 同时校验两读点 ──
+        # 2026-10-03 小欧 - 文档[4] 5.7.14: 覆盖"值随消息携带"这条新链路。
+        #   读回断言移到发消息之后(此前在发消息之前读, 只能验证 PATCH 效果)。
         in2 = INPUT_R2
         inputs.append(in2)
-        r2 = await send_chat(in2, session_id=sid)
+        r2 = await send_chat(in2, session_id=sid, link_enabled=True)
         rounds.append(r2)
         # 串行固定间隔: 等上个任务的后端异步收尾落库完成再发下一个(见顶部 JOB_GAP_SECONDS)
         time.sleep(JOB_GAP_SECONDS)
@@ -368,6 +366,11 @@ async def test_e2e_p9_08_link_grouping_contract():
         tools2 = [t["tool_name"] for t in r2["tool_calls"]]
         print(f"  [任务2] tools: {tools2}, steps={r2['total_steps']}, "
               f"resp={r2['response_text'][:120]}")
+
+        a1, b1 = _link_read(sid)
+        assert a1 is True and b1 is True, \
+            f"任务2 携带 link_enabled=True 后两读点应均为True, 实得 get={a1} msg={b1}"
+        _ck(checks,"随消息携带 link_enabled=True 生效: 发消息后两读点(getSession/messages)均读到True")
 
         # 门2: 链根必须并入任务1 所在组
         t2 = _tasks(sid)
