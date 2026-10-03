@@ -95,6 +95,8 @@
 //   快照 effect 关弹窗(5.15 上块); window 派发端双删之一(另一处 useChatCallbacks
 //   onAuthorizationRequired), 防双源复活 — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 解析/业务分层兜底；未知 type 不推进 seq 保留 onBiz；final 提前收尾；删零消费成员
+// 编辑历史: 2026-10-04 小欧 - context_overview 摘要键修正 summary→content(帧的权威文本字段是 content,
+//   从无 summary 键, 原读法致卡片恒显"–")＋补收 injected 两键 — 小欧 2026-10-04
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -518,11 +520,14 @@ const processSSEData = (
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           contextOverview: {
-            summary: rawData.summary ?? '',
+            summary: typeof rawData.content === 'string' ? rawData.content : '',
             message_count: rawData.message_count,
             estimated_tokens: rawData.estimated_tokens,
             truncated: rawData.truncated === true,
             injected_ratio: rawData.injected_ratio,
+            injected_message_count: rawData.injected_message_count ?? null,
+            injected_estimated_tokens:
+              rawData.injected_estimated_tokens ?? null,
           },
         }));
         break;

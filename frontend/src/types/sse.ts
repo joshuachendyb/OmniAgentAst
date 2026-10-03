@@ -15,6 +15,8 @@
 // 编辑历史: 2026-09-17 小欧 - 对齐设计: ClockSignals 移至 UseSSEReturn 前(与设计一致), 字段序 lastBizTsRef/lastDataTsRef/heartbeatTs, 注释改行内式 - 小欧-2026-09-17
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.7: UseSSEReturn 接口整删（useSSE 已删/5.6，零消费者），
 //   ExecutionStep 导入随之失效删除；ClockSignals 保留（5.3/5.4 钟面信号与 5.5 waitClock 在用） — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-04 小欧 - ContextOverviewFrame 补两个 injected 键(后端一直在发, parser 此前丢弃),
+//   与 types/execution.ts 的平行声明对齐 — 小欧 2026-10-04
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
@@ -54,6 +56,9 @@ export interface ContextOverviewFrame {
   estimated_tokens?: number;
   truncated: boolean;
   injected_ratio?: number;
+  // 2026-10-04 小欧 - 补两个 injected 键 — 小欧 2026-10-04
+  injected_message_count?: number | null;
+  injected_estimated_tokens?: number | null;
 }
 export interface TaskMetaFrames {
   contextSummary: string; // start.content

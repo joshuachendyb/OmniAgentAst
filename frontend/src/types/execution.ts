@@ -8,6 +8,8 @@
 // 编辑历史: 2026-09-19 小欧: ExecutionStep.type 加 'heartbeat'(心跳记录到事件列表) — 北京老陈驱动
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.14 遗漏回填): ExecutionStep.type 补 'merged'
 //   (后端 ALL_STEP_TYPES/_SSE_FORWARD_TYPES 已注册, 解析层靠 as 断言掩盖类型缺口 = 吞错, 本次补真源) — 小欧-2026-09-28
+// 编辑历史: 2026-10-04 小欧 - context_overview 字段块补两个 injected 键, 与 sse.ts 的
+//   ContextOverviewFrame 对齐(两处长期分裂, 本次只对齐不合并) — 小欧 2026-10-04
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -195,6 +197,9 @@ export interface ExecutionStep {
   message_count?: number;
   estimated_tokens?: number;
   injected_ratio?: number;
+  // 2026-10-04 小欧 - 与 sse.ts 的 ContextOverviewFrame 对齐 — 小欧 2026-10-04
+  injected_message_count?: number | null;
+  injected_estimated_tokens?: number | null;
 
   // === 前端额外字段 ===
   timestamp: number; // 前端生成的时间戳
