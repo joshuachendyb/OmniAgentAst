@@ -31,7 +31,8 @@
 # 2026-09-30 20:05:00 小欧 - 计数器退役: save_message 删 message_count+1 只留刷 updated_at(列表按其排序),
 #   SELECT 不再取该列, 返回值删 message_count 影子字段(前端未消费); 读取侧改走 count_session_messages 真值;
 #   _try_mark_valid 与 is_valid 语义不动 — 小欧-2026-09-30
-# 2026-10-01 小欧 - 解 [1] E3/E4/E11: ①消息对象补 task_id 字段(取 p["pair_task_id"], 归属以 LEFT JOIN 配对结果为准, cum.task_id 是消息侧原值、起始消息可能为 NULL); ②load_execution_steps 调用补传该 task_id(同 ai_message_id 可挂多任务, 不传则跨任务混读); ③thought 取键改 thought/reasoning(content 已被 _strip_thought_content 剥除, 且 reasoning-only 分支正文落在 thought 键上, 原式两键皆空致消息级 thought 退化为 None、历史回放推理区空白); ④删 get_user_message_id 导入(随 E8 空壳退役)# 2026-10-03 - 小欧 - 文档[4] 5.7 项13: get_session_messages 响应补 link_enabled(前端读真源主路径)
+# 2026-10-01 小欧 - 解 [1] E3/E4/E11: ①消息对象补 task_id 字段(取 p["pair_task_id"], 归属以 LEFT JOIN 配对结果为准, cum.task_id 是消息侧原值、起始消息可能为 NULL); ②load_execution_steps 调用补传该 task_id(同 ai_message_id 可挂多任务, 不传则跨任务混读); ③thought 取键改 thought/reasoning(content 已被 _strip_thought_content 剥除, 且 reasoning-only 分支正文落在 thought 键上, 原式两键皆空致消息级 thought 退化为 None、历史回放推理区空白); ④删 get_user_message_id 导入(随 E8 空壳退役)
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项13: get_session_messages 响应补 link_enabled(前端读真源主路径)
 """
 message_service — 消息业务服务(services/chat)
 

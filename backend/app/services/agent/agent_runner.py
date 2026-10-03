@@ -180,6 +180,7 @@
 # 2026-10-02 小欧 - 轮次边界 flush(北京老陈定案): 增 buffer.flush_sink = _flush_steps, 由 react_loop
 #   每轮迭代顶调用。_enqueue_step 只入队即返回, 进程被杀则队列内帧全丢(实测 task_interrupted 样本
 #   chat_task_steps 0 行而 Journal 事件齐全)。每轮 join 一次, 被打断最多丢本轮(无工具副作用)。
+# 2026-10-03 - 小欧 - refactor: SSE 不落库集合去重(删本地 _SSE_ONLY_TYPES 硬编码, 改 import agent_telemetry.SSE_ONLY_TYPES 唯一真源; 转发表改由 ALL_STEP_TYPES 推导。文档[5] 5.2 D4)
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 

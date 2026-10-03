@@ -70,11 +70,6 @@
 # 2026-08-23 - 小欧 - 三轮三堂会审修复: L2 覆盖与 finally 还原后各调 ai_service.reset_sdk()——SDK 缓存重建,
 #   保 api_base/model 实连一致(配 base_service.reset_sdk 新方法)
 # 2026-08-23 - 小欧 - 修复: L265 display_name 补 fallback 逻辑，session 未设置时继承原配置 display_name
-# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元5: link 改为随消息携带。函数签名增 link_enabled: Optional[bool];
-#   取 link 处改为「携带值即本次权威值, 直接赋值不回读(省一次 SELECT); 未携带(None)才读库」, 并把该值落库
-#   (经 db.atxn 调 storage.set_session_link_conn, 保持请求编排期 loop 零同步 DB I/O)。
-#   落值放在本块原位(读 link 处, 已在活跃任务注入判定之后)而非建会话处 —— 注入/占位合并两条早退路径
-#   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
 # 2026-08-23 - 小欧 - 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 镜像写点
 #   (user 消息回填 task_id 的 UPDATE chat_messages)加 TODO 删除注释; :278 _user_msg_id 注释修正为
 #   "chat_user_message.id 原生自增权威锚"(原"与chat_messages.id一对一"口径随锚迁移过时)
@@ -201,6 +196,11 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项8: 编排器废止逐请求 context_link_mode, 链根真源改为会话 link 开关;
 #   三堂会审 S3: 链根计算块下移至活跃任务注入判定之后; 关联审查风险1: 拆出 _history_root(装历史用根,
 #   无链根时为 None), 与落库用根区分, 避免无链根时误把自身 task_id 当根导致全量灌历史。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元5: link 改为随消息携带。函数签名增 link_enabled: Optional[bool];
+#   取 link 处改为「携带值即本次权威值, 直接赋值不回读(省一次 SELECT); 未携带(None)才读库」, 并把该值落库
+#   (经 db.atxn 调 storage.set_session_link_conn, 保持请求编排期 loop 零同步 DB I/O)。
+#   落值放在本块原位(读 link 处, 已在活跃任务注入判定之后)而非建会话处 —— 注入/占位合并两条早退路径
+#   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
