@@ -168,6 +168,7 @@
 #   20:18:31 三堂会审 F7 修: _merge_into_last 去掉 len>1 条件, 单条注入末条user也并入(防连续user) — 小欧-2026-09-28
 # 2026-09-29 - 小欧 - _absorb_inbox 落位规则 docstring 按 F7 与死代码判定改写: 删"落库成功/单参铁约束"等已随代码删除的过时表述, 只留"必须在 trim_history 之前(否则 user token 不计入 always_keep_tokens 预算)"这一条有效约束  小欧-2026-09-29
 # 2026-10-01 小欧 - 解 [1] A13: _process_single_step 内 update_task 补 retry_locked=3。运行期逐步落库后每事件写事务翻倍, SQLite busy_timeout 仅 500ms, 并发多任务下撞写锁概率显著上升; 原缺省 retry_locked=0 致撞锁即降级 warning(丢 token 明细), 与 A13 同源必修
+# 2026-10-04 小欧 - 文档[6]: 正名 context_overview 发射节奏注释(原称"每次必发", 实受下方 if 门控: 首轮/裁剪轮/每5轮), 逻辑未动 — 小欧 2026-10-04
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -453,7 +454,8 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                 if _tel is not None:
                     _tel.checkpoint_llm_calls()
 
-            # 11.2-C 遥测 + 11.2-B stats/11.3 context_overview —— 不依赖 usage，每次 LLM 响应必发（11.2-C 逐次明细）
+            # 11.2-C 遥测 + 11.2-B stats —— 不依赖 usage，每次 LLM 响应必发（11.2-C 逐次明细）
+            #   11.3 context_overview 另受下方 if 门控(首轮/裁剪轮/每5轮), 非每轮必发 — 小欧 2026-10-04
             # 修复A(小欧 2026-08-20 复核确认): 原置于 usage 门控内, 无 usage 的响应 llm_calls/stats/context_overview 全丢,
             #   违背 11.2-C"每次调用一行"、11.2-B"每轮 stats"契约; 移出后 usage 存在不改变行为(纯增强不退化) — 小欧 2026-08-20
             _llm_err = None
