@@ -46,6 +46,7 @@
    2026-09-29 - 小欧 - 消除死 DTO 漂移(北京老陈指令)：两 DTO 此前定义了却从未挂路由且字段与现实
      漂移(缺 status_code/category、只有 id/owned_by)，前端因此只能靠字符串猜免费。现与解析层 8 字段
      对齐并挂 response_model；错型在解析层归一而非把 DTO 退化成 Any。未改写回契约 — 小欧 2026-09-29
+  2026-10-03 - 小欧 - RemoteModelItem 增 free/stability（AMD 实测下发，此前被静默丢弃）— 小欧 2026-10-03
 """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -143,6 +144,11 @@ class RemoteModelItem(BaseModel):
     architecture: Dict[str, Any] = Field(default_factory=dict)
     # 实测 26 种；有筛选价值的是 tools(392)/structured_outputs(377)/reasoning(328) — 小欧 2026-09-29
     supported_parameters: List[str] = Field(default_factory=list)
+    # 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD provider 不返回 → None。
+    #   free 是「是否落在每日免费额度内零计费」的记账标记，不等于要花钱。
+    #   【如实告知】stability 现无消费方（YAGNI 违规已知并被接受，北京老陈 2026-10-03 决定保留）。
+    free: Optional[bool] = None
+    stability: Optional[str] = None
 
 
 class RemoteModelsResponse(BaseModel):

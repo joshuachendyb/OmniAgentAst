@@ -129,6 +129,7 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   致前端靠 id.includes('-free') 猜免费(实测 OpenRouter 460 个命中 0)。现提升 8 字段并就地降级为
 #   声明类型(路由已挂 response_model，错型会 500 整个模型库)；结构判别放宽为 dict/裸数组双路。
 #   未动排序与写回契约(仍只落 ID 列表) — 小欧 2026-09-29
+# 2026-10-03 - 小欧 - _parse_remote_models_body 增补 free/stability 透传(AMD 实测下发，此前静默丢弃) — 小欧 2026-10-03
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -639,6 +640,8 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         owned_by, name, desc = item.get("owned_by"), item.get("name"), item.get("description")
         ctx, pricing, architecture = item.get("context_length"), item.get("pricing"), item.get("architecture")
         supported = item.get("supported_parameters")
+# 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD 不返回 → None。
+        free, stability = item.get("free"), item.get("stability")
         models.append({
             "id": str(mid),
             "owned_by": owned_by if isinstance(owned_by, str) else None,
@@ -648,6 +651,9 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
             "pricing": pricing if isinstance(pricing, dict) else {},
             "architecture": architecture if isinstance(architecture, dict) else {},
             "supported_parameters": [p for p in supported if isinstance(p, str)] if isinstance(supported, list) else [],
+            # free 用 bool 收（isinstance(True,int) 为真，按 int 收会吞掉 1/0）
+            "free": free if isinstance(free, bool) else None,
+            "stability": stability if isinstance(stability, str) and stability.strip() else None,
         })
     # 2026-09-25 04:38:28 小健 - 全链路单点排序: 远端列表按 id 字母序(不分大小写), 下游分组/落盘/下拉自动继承
     models.sort(key=lambda m: m["id"].lower())

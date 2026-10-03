@@ -23,6 +23,7 @@
 //     刻意不用 GET query（query 会进浏览器历史与服务器 access log，明文 key 留痕）— 小欧-2026-09-26
 // 2026-09-29 小欧 - RemoteModelItem 补 6 字段：后端改为下发模型元数据(价格/上下文/能力/模态)，
 //   前端原靠 id.includes('-free') 猜免费，实测 OpenRouter 460 个命中 0 — 小欧-2026-09-29
+// 2026-10-03 小欧 - RemoteModelItem 补 free/stability（AMD 实测下发，此前被解析层丢弃）— 小欧 2026-10-03
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -91,6 +92,11 @@ export interface RemoteModelItem {
     tokenizer?: unknown;
   };
   supported_parameters?: string[];
+  /** 远端免费标记。是「是否落在每日免费额度内零计费」的记账标记，不等于"要花钱"。
+   *  非 AMD provider 不返回 → undefined，由 isFreeModel 回退到名称尾巴/pricing 判据。 */
+  free?: boolean | null;
+  /** stable/beta/unstable/experimental。AMD 9 项实测全 experimental。现无消费方（已知 YAGNI）。 */
+  stability?: string | null;
 }
 
 export interface RemoteModelsResponse {

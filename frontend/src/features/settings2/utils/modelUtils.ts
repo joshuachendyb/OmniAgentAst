@@ -10,7 +10,28 @@
 //   F4 增 KNOWN_CAPABILITY_VALUES 单源（setCapabilities 每次重建 Set → 模块常量）- 小欧-2026-09-23
 // 2026-09-24 小欧 - 能力默认值语义（北京老陈拍板）：①文本项 disabled 恒勾选；②normalizeCaps 归一恒含 text
 //   （load/select 四通道防假脏）；③capsForSave 保存转换——无增强送 []、有增强送 ['text',...extras] - 小欧-2026-09-24
+// 2026-10-03 小欧 - 免费判定迁入本纯函数层（原组件内私有，无法单测）；判据扩为三判据 OR — 小欧 2026-10-03
 import type { SettingSchemaItem } from '@/services/api/settings.api';
+import type { RemoteModelItem } from '@/services/api/model.api';
+
+/** 报价是否为 0。Number() 兼容 "0"/0/"0.000"；v != null 必留（Number(null)===0 会误标免费）。 */
+const isZeroPrice = (v: string | undefined): boolean => v != null && Number(v) === 0;
+
+/** 名称 free 尾巴。必须 endsWith：includes('-free') 实测 OpenRouter 460 个命中 0（它用 :free），
+ *  且会误伤 free-tier。`-free` 本仓实证 / `:free` OpenRouter 实证；_free 无实证不引入(YAGNI)。 */
+export const isFreeNameSuffix = (v: string | undefined | null): boolean => {
+  const s = (v ?? '').trim().toLowerCase(); // (v ?? '') 防 undefined 调 endsWith 抛错
+  return s.endsWith('-free') || s.endsWith(':free');
+};
+
+/** 免费判据单点收口，三判据 OR（北京老陈 2026-10-03 定案，兼容优先）：
+ *  ①free === true（AMD 记账标记，非"要花钱"）②名称 free 尾巴 ③pricing 双 0（2026-09-29 原判据不变）。
+ *  OR 的已知代价：AMD MinerU2.5-Pro（free=false + pricing 双 0）会显示「免费」，已如实告知并接受。
+ *  严格 === true：远端下发字符串 "true" 时不冒充免费。 */
+export const isFreeModel = (m: RemoteModelItem): boolean =>
+  m.free === true ||
+  isFreeNameSuffix(m.id) ||
+  (isZeroPrice(m.pricing?.prompt) && isZeroPrice(m.pricing?.completion));
 
 /** 值深比较——同一引用/Object.is 相同立即真；双方对象则 JSON 深比；其余恒假。 */
 function sameValue(a: unknown, b: unknown): boolean {
