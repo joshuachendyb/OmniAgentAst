@@ -5,6 +5,8 @@
 // 编辑历史: 2026-09-17 小欧 会审V3(#2): 删除 heartbeat 事件图标——后端心跳是 SSE 协议层 ":ping"(stream_orchestrator)，
 //   永不被前端解析成 ProcessEvent, EVENT_ICON_MAP 中 heartbeat 为死代码(YAGNI 清理); 事件清单实为8类 — 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: 恢复 heartbeat 事件图标(SyncOutlined)——心跳记录到事件列表(后端":ping" → ExecutionStep.heartbeat → processEvents) — 北京老陈驱动
+// 编辑历史: 2026-10-04 小欧 - 文档[6]: ContextState 增 historical 态(4态→5态), mapStatus 经 isLiveContext
+//   区分「历史任务无实时帧(设计如此)」与「真缺失」; empty 提示文案去内部变量名 frames — 小欧 2026-10-04
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
@@ -33,7 +35,12 @@ export const BADGE_MAP: Record<TaskBadge, BadgeEntry> = {
 };
 
 // ---------- CONTEXT_STATE_MAP（4 态文案状态机） ----------
-export type ContextState = 'ok' | 'summary-only' | 'truncated' | 'empty';
+export type ContextState =
+  | 'ok'
+  | 'summary-only'
+  | 'truncated'
+  | 'historical'
+  | 'empty';
 export interface ContextStateEntry {
   text: string; // 数值区文案（ok 态由调用方传入 token，此处留空）
   tone: 'primary' | 'secondary' | 'warning' | 'tertiary';
@@ -54,10 +61,17 @@ export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
     icon: <WarningOutlined />,
     tooltip: '上下文被截断，可能影响回答质量',
   },
+  // 2026-10-04 小欧: 历史任务按设计无实时帧(useTaskInfo 的 detail 分支恒置 overview:''),
+  //   与真缺失是两回事，故拆独立态 — 小欧 2026-10-04
+  historical: {
+    text: '历史',
+    tone: 'tertiary',
+    tooltip: '历史任务无实时上下文帧（设计如此）',
+  },
   empty: {
     text: '–',
     tone: 'tertiary',
-    tooltip: '上下文缺失，检查 frames 数据链路',
+    tooltip: '未收到上下文信息',
   },
 };
 
@@ -73,6 +87,8 @@ export interface ContextSource {
       }
     | null;
   contextSummary?: string | null;
+  /** false = 历史任务(按设计无实时帧)。只在无任何数据时参与判态；有数据一律以数据为准 */
+  isLiveContext?: boolean;
 }
 export const mapStatus = (src: ContextSource): ContextState => {
   const o = src.overview;
@@ -84,7 +100,8 @@ export const mapStatus = (src: ContextSource): ContextState => {
     typeof o === 'object' && o !== null && o.estimated_tokens != null;
   if (truncated) return 'truncated';
   if (summary) return hasTokens ? 'ok' : 'summary-only';
-  return 'empty';
+  // 2026-10-04 小欧: 无数据时区分「历史任务(设计如此)」与「真缺失」 — 小欧 2026-10-04
+  return src.isLiveContext === false ? 'historical' : 'empty';
 };
 
 // ---------- EVENT_ICON_MAP（过程事件统一 antd SVG，禁 emoji） ----------

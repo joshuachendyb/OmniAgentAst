@@ -167,6 +167,7 @@ export const useTaskInfo = (
         // 历史任务无实时 metaFrames 源：contextOverview/truncated 仅实时流产生，
         // 取实时 frames 会串味当前任务，故历史任务恒为空（2026-08-27 小欧 修复#5#6）
         overview: '',
+        isLiveContext: false, // 2026-10-04 小欧: 本分支=历史任务, 供 mapStatus 判 historical — 小欧 2026-10-04
         truncatedTip: null,
         processEvents: [],
         stuckWarning: false,
@@ -387,6 +388,7 @@ export const useTaskInfo = (
       sessionAccumulated: frames.sessionAccumulated ?? null,
       chainAccumulated: frames.chainAccumulated ?? null,
       overview: frames.contextOverview,
+      isLiveContext: true, // 2026-10-04 小欧: 实时流分支, 与上面 detail 分支对称 — 小欧 2026-10-04
       truncatedTip: frames.truncated?.content ?? null,
       processEvents: recentEvents, // 最早事件在上，保留最近20条
       stuckWarning,

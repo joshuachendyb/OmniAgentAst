@@ -53,6 +53,8 @@
 //   ②耗时 G2 秒值改"时分秒"结构(formatDurationHMS, 如 00:07:43), ③G3 步轮组三档重排——
 //   宽: 轮数:N · 步骤:M / 窄: 轮:N · 步:M(或保持紧凑) / 极窄(xsmall): 随耗时合并为 耗时 h:mm:ss · 轮:N · 步:M,
 //   语义补正: 数3000+实为业务步骤数(后端total_steps, 非消息数/非发送次数) — 小欧-2026-09-18
+// 编辑历史: 2026-10-04 小欧 - 文档[6]: G6 上下文浮层卡片抽为 ContextOverviewCard(删本文件内 78 行内联 IIFE
+//   及其 CONTEXT_STATE_MAP/mapStatus/FloatingEntry 导入与 ctxOpen 状态, 卡片自持折叠态; 行为等价) — 小欧 2026-10-04
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -86,12 +88,12 @@ import { MetricItem } from './MetricItem';
 import { FloatingEntry } from './FloatingEntry'; // v4.2: G6/G8 双浮层入口公共壳(见 6.5.2.4)
 import {
   BADGE_MAP,
-  CONTEXT_STATE_MAP,
   EVENT_ICON_MAP,
   TABULAR_NUMS,
   formatToken,
-  mapStatus,
 } from './infoMaps';
+// 2026-10-04 小欧: 上下文浮层卡片已抽至 ContextOverviewCard, 故不再需 CONTEXT_STATE_MAP/mapStatus/FloatingEntry — 小欧 2026-10-04
+import { ContextOverviewCard } from './ContextOverviewCard';
 
 // 2026-09-09 小欧 - 位4 liveMeta 文本字符上限: 超长 error/truncated 文案截断加…, 全文进 Tooltip — 小欧-2026-09-09
 const LIVE_META_TEXT_MAX = 60;
@@ -114,9 +116,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   liveError,
 }) => {
   // v4.1: 取消整行折叠, collapsed 状态机/localStorage 键已删除
-  // 新增: eventsOpen、ctxOpen 各 useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
+  // 新增: eventsOpen useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
+  // 2026-10-04 小欧: ctxOpen/setCtxOpen 随上下文浮层卡片迁至 ContextOverviewCard — 小欧 2026-10-04
   const [eventsOpen, setEventsOpen] = useState(false);
-  const [ctxOpen, setCtxOpen] = useState(false);
   // 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名, receiving prop 本身保留
   //   (秒表 interval 启停仍以 receiving 为准, D3 契约); 仅不再透传给徽标派生 — 小欧-2026-09-14
   const info = useTaskInfo(steps, frames, detail, liveError);
@@ -371,85 +373,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             }
             tooltip="任务 P/C/T" // 2026-09-18 小欧: 同步去"累计" — 小欧-2026-09-18
           />
-          {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试 */}
-          {(() => {
-            const ctxState = mapStatus({
-              overview: info.overview,
-              contextSummary: frames.contextSummary,
-            });
-            const ctx = CONTEXT_STATE_MAP[ctxState];
-            const tokens =
-              typeof info.overview === 'object' && info.overview
-                ? info.overview.estimated_tokens
-                : null;
-            const summary =
-              typeof info.overview === 'string'
-                ? info.overview
-                : (info.overview?.summary ?? frames.contextSummary ?? '');
-            // 3.3 状态机: ok/truncated 均显 "{n} tok"(truncated 警告色+图标); summary-only/empty 用态文案
-            const showTokens = ctxState === 'ok' || ctxState === 'truncated';
-            // v4.2: G6 入口经 FloatingEntry 实现(见 6.5.2.4), onClick 保持仅 stopPropagation(与 G8 对齐后单真源)
-            return (
-              <FloatingEntry
-                open={ctxOpen}
-                onOpenChange={setCtxOpen}
-                placement="bottomLeft" // v4.1: 左缘对齐 G6; 窄屏右贴安全边距(v4.1 定案)(antd 真值, 见 FloatingEntry)
-                cardId="taskinfo-context-card"
-                ariaLabel="历史上下文"
-                cardStyle={{
-                  width: 320,
-                  maxWidth: '90vw',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: Spacing.SM,
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.SECONDARY,
-                }}
-                content={
-                  <>
-                    <div
-                      style={{
-                        fontWeight: FontWeight.BOLD,
-                        color: Colors.TEXT.PRIMARY,
-                      }}
-                    >
-                      历史上下文
-                    </div>
-                    {/* 2026-09-09 北京老陈令: 摘要不截断, 完整显示 */}
-                    <div>摘要: {summary}</div>
-                    <div>
-                      估算 token:{' '}
-                      {showTokens
-                        ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
-                        : '—'}
-                    </div>
-                    <div
-                      style={{
-                        color:
-                          ctx.tone === 'warning'
-                            ? Colors.WARNING
-                            : Colors.TEXT.TERTIARY,
-                      }}
-                    >
-                      {ctxState === 'ok' ? '正常' : ctx.tooltip}
-                    </div>
-                  </>
-                }
-              >
-                <MetricItem
-                  label="历史上下文"
-                  value={
-                    showTokens
-                      ? `${(tokens ?? 0).toLocaleString('en-US')} tok`
-                      : ctx.text
-                  }
-                  tone={ctx.tone}
-                  icon={ctx.icon}
-                  dataState={ctxState}
-                />
-              </FloatingEntry>
-            );
-          })()}
+          {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试。
+              2026-10-04 小欧: 浮层内容抽至 ContextOverviewCard — 小欧 2026-10-04 */}
+          <ContextOverviewCard
+            overview={info.overview}
+            contextSummary={frames.contextSummary}
+            isLiveContext={info.isLiveContext}
+          />
         </div>
         <div
           style={{
