@@ -21,11 +21,102 @@ tests/conftest.py — 全局测试夹具
      故此时设 OMNIAGENT_REQUIRE_AUTH=0 由 fixture 兜底，见下方 _autouse_force_off_when_unset）
 """
 import os
+import sqlite3
 from pathlib import Path
 
 import pytest
 
 TEST_TOKEN = "test-only-token-for-local-cases"
+
+
+# 2026-10-03 小欧 - 文档[4] 5.11.1 P0: 新增共享内存库夹具(供文档[4] 第5章新增 case 复用)。
+#   逐字搬运自 test_s2_s4_review_bugs.py:27-85(AGENTS 1.4「能复制就复制, 不重写」), 仅两处改动:
+#     ① chat_sessions 增 link_enabled 列(文档[4] 5.7 项1 的会话级真源列, Phase B′ 的 case 依赖它)
+#     ② _build_schema 增加一行差异说明
+#   范围说明(重要): 存量有 7 份各自独立的 _build_schema(test_artifacts_11_6 / test_s2_s4_review_bugs /
+#     test_t3_trust_norm_domain / test_t4_trust_revoke_consistency / test_token_accumulation_11_1 /
+#     test_trust_v15 / test_v2_storage_regression)与 4 份模块内 conn fixture。本次**刻意不合并、不删除**任何
+#     存量副本 —— 模块内定义优先于 conftest, 保留它们对既有测试行为零影响; 7 份建表脚本副本属存量 DRY 债务,
+#     与本次改造无关, 按 YAGNI 不在本次范围内重构。新 case 一律用本 conftest 提供的 conn。
+def _build_schema(conn) -> None:
+    """构建与 db_initializer 一致的最小表结构（v2.0 + 2026-08-22 model归一 JSON 列 — 小欧 2026-08-23 同步）
+    2026-10-03 小欧 - 文档[4] 5.11.1: chat_sessions 增 link_enabled BOOLEAN DEFAULT FALSE
+      （生产侧由 db_initializer._ensure_column 幂等补列, 见 5.7 项1；测试侧须同步, 否则
+        get_session_link 的 case 会红在 sqlite3.OperationalError: no such column —— 属环境错(无效 Red)）"""
+    conn.executescript("""
+        CREATE TABLE chat_sessions (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, created_at TEXT, updated_at TEXT,
+            message_count INTEGER DEFAULT 0, is_deleted BOOLEAN DEFAULT FALSE, is_valid BOOLEAN DEFAULT FALSE,
+            title_locked BOOLEAN DEFAULT FALSE, title_updated_at TEXT, version INTEGER DEFAULT 1,
+            sessionModel TEXT,
+            link_enabled BOOLEAN DEFAULT FALSE
+        );
+        CREATE TABLE chat_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL,
+            content TEXT NOT NULL, timestamp TEXT, display_name TEXT, task_id TEXT,
+            client_os TEXT, browser TEXT, device TEXT, network TEXT, user_message_id INTEGER,
+            status TEXT, thought TEXT
+        );
+        CREATE TABLE chat_task_steps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ai_message_id INTEGER NOT NULL, session_id TEXT NOT NULL,
+            step_index INTEGER NOT NULL, step_json TEXT NOT NULL, created_at TEXT, task_id TEXT,
+            usage TEXT, user_message_id INTEGER
+        );
+        -- 2026-10-02 小欧 - 补生产唯一索引(对齐 db_initializer.py:350), ON CONFLICT 幂等化依赖它
+        CREATE UNIQUE INDEX idx_steps_unique
+            ON chat_task_steps(ai_message_id, task_id, step_index);
+        CREATE TABLE chat_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT UNIQUE NOT NULL, session_id TEXT NOT NULL,
+            user_message_id INTEGER, user_input TEXT, response TEXT, artifacts TEXT DEFAULT '[]',
+            status TEXT DEFAULT 'executing', start_time TEXT, end_time TEXT, duration REAL,
+            context_link_mode TEXT, context_root_task_id TEXT, sessionModel TEXT NOT NULL,
+            accumulated_usage TEXT DEFAULT '{}', llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
+            retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0, error_type TEXT, error_message TEXT,
+            ai_message_id INTEGER, created_at TEXT, updated_at TEXT
+        );
+        CREATE TABLE chat_user_message (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, content TEXT NOT NULL,
+            task_id TEXT, response TEXT, reasoning TEXT, outcome TEXT, chat_model TEXT,
+            accumulated_usage TEXT, client_os TEXT, browser TEXT, device TEXT, network TEXT, created_at TEXT
+        );
+        CREATE TABLE token_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, task_id TEXT NOT NULL,
+            llm_call_count INTEGER NOT NULL, task_model TEXT NOT NULL,
+            prompt_tokens INTEGER DEFAULT 0, completion_tokens INTEGER DEFAULT 0, total_tokens INTEGER DEFAULT 0,
+            created_at TEXT
+        );
+        CREATE TABLE chat_session_trust (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
+            tool_name TEXT NOT NULL,
+            created_at TEXT,
+            UNIQUE(session_id, tool_name)
+        );
+    """)
+
+
+@pytest.fixture()
+def conn():
+    """内存 SQLite + 建表 —— 供 storage / history_loader 层单测直接使用（文档[4] 5.11）。"""
+    cn = sqlite3.connect(":memory:")
+    cn.row_factory = sqlite3.Row
+    _build_schema(cn)
+    yield cn
+    cn.close()
+
+
+@pytest.fixture()
+def chat_db(tmp_path, monkeypatch):
+    """独立 chat 文件库 + 走真 init_chat_db 建表（与 conftest.isolated_config_dir 同款隔离，够不到真库）。
+
+    2026-10-03 小欧 - 文档[4] 5.11.1 P0: 逐字搬运自 test_journal_steps_reconcile.py:26-33（不重写，AGENTS 1.4）。
+      用途：凡需驱动**真** db_initializer（含 _ensure_column 补列）的 case 必须用它 —— 内存 conn 的
+      _build_schema 是手写脚本、**不经** _ensure_column，用 conn 测补列属无效验证。
+    """
+    from app.db import db as db_manager
+    from app.db.db_initializer import init_chat_db
+    monkeypatch.setitem(db_manager._db_overrides, "chat", str(tmp_path / "chat.db"))
+    init_chat_db(db_manager.get_conn)
+    yield
 
 
 def _resolve_token() -> str:
