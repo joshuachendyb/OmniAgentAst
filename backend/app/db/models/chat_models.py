@@ -7,6 +7,7 @@
 #   新增全系统统一别名 ModelRef = SessionModelOverride; display_name 收敛为仅用户自定义别名(系统不拼接)
 # 2026-10-01 - 小欧 - 解 [1] E4: MessageResponse 增 task_id 字段(该消息配对的任务ID)。此前 execution_steps 无任务归属，前端拿到整会话所有消息的步骤却无法区分属于哪个任务，只能平铺合并当本任务展示(RightViewer C3 跨任务降级)；本字段使前端可按 task 精确过滤
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项3: SessionResponse 增 link_enabled(会话级 link 粘性开关)
+# 2026-10-03 - 小欧 - 文档[4] 5.7.5/5.7.6 废止: 回退 SessionResponse.link_enabled(零消费死字段; 前端唯一读真源是 GET /sessions/{id}/messages, 同一真源两个 HTTP 读出口即双通道隐患)。
 """
 聊天数据模型 (Chat Data Models)
 定义会话、消息等数据结构
@@ -67,9 +68,6 @@ class SessionResponse(BaseModel):
     message_count: int = Field(..., description="消息数量")
     sessionModel: Optional[SessionModelOverride] = Field(None, description="会话级模型覆盖(L2)，空=跟随全局")
     is_valid: Optional[bool] = Field(None, description="是否为有效会话")
-    # 2026-10-02 小欧 - 文档[4] 5.7 项3: 会话级 link 粘性开关(唯一真源 chat_sessions.link_enabled)。
-    #   Optional + 默认 False: 与读侧 COALESCE(link_enabled,0) 口径一致, 存量 NULL 行不炸。
-    link_enabled: Optional[bool] = Field(False, description="会话级续聊开关(粘性)，True=并入会话内最近一条任务所在组")
 
 
 class SessionListResponse(BaseModel):

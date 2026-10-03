@@ -115,6 +115,7 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元3: 新增 conn 级写函数 set_session_link_conn(与 get_session_link 对称),
 #   返回 rowcount 供调用方直接判定(不用 conn.total_changes 差值反推), 供编排器经 db.atxn offload 落
 #   随消息携带的 link 值; session_service.set_session_link 改为委托之, UPDATE SQL 单一来源(DRY)。
+# 2026-10-03 - 小欧 - 文档[4] 5.12.3 副作用修复: set_session_link_conn 删 updated_at 写入(改开关非内容变更, 顺带刷新会把会话顶到列表首位; set_session_info/PATCH 路径是真内容修改, 其 updated_at 保留)。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -726,11 +727,16 @@ def get_session_link(conn: Connection, session_id: str) -> bool:
 def set_session_link_conn(conn: Connection, session_id: str, enabled: bool) -> int:
     """写会话 link 开关，返回命中行数(0=会话不存在) — 文档[4] 5.7.14。
     conn 级写，与同族 get_session_link 对称，供编排器经 db.atxn offload 调用。
-    返回 rowcount 供调用方直接判定，不需 total_changes 差值反推 — 小欧 2026-10-03"""
+    返回 rowcount 供调用方直接判定，不需total_changes 差值反推 — 小欧 2026-10-03
+
+    2026-10-03 小欧 - 删掉 updated_at 写入(文档[4] 5.12.3 第1条副作用修复):
+      updated_at 语义是"内容变更时间", 而 list_sessions 按它 ORDER BY DESC 排序、顶栏"更新时间"
+      悬浮也读它。改开关不是内容变更, 顺带刷新会把会话顶到列表首位, 属不可预期行为。
+      与 set_session_info 的 PATCH 路径不同(那是真内容修改, 刷 updated_at 正确)。"""
     cursor = conn.execute(
-        "UPDATE chat_sessions SET link_enabled = ?, updated_at = ? "
+        "UPDATE chat_sessions SET link_enabled = ? "
         "WHERE id = ? AND is_deleted = FALSE",
-        (1 if enabled else 0, get_local_iso_timestamp(), session_id),
+        (1 if enabled else 0, session_id),
     )
     return cursor.rowcount
 

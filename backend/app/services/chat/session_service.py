@@ -31,6 +31,14 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元4: set_session_link 的 UPDATE 下沉 storage.set_session_link_conn,
 #   本函数改为委托(DRY, SQL 单一来源); 改判 rowcount 返回值, 不用 conn.total_changes 差值反推。
 #   对外签名与 404 fail-loud 语义不变, 故 test_session_link_api.py 读写 case 继续有效。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.5/5.7.6 废止: 回退 SessionResponse.link_enabled 与 list_sessions/get_session_info
+#   的 COALESCE(link_enabled) 两处 SELECT。理由: 前端唯一读真源是 GET /sessions/{id}/messages(5.7.13),
+#   本字段零消费 —— 同一真源两个 HTTP 读出口即双通道隐患(DRY), 零消费字段即死重量(YAGNI)。
+#   本条以"生产代码质量由自身判据裁决"为准, 不因既有 case 断言而保留(错误 case 一并废止, 禁以测试背书烂代码)。
+# 2026-10-03 - 小欧 - 文档[4] 5.7.7/5.7.8 废止: 删除 set_session_link 函数与 PATCH /sessions/{id}/link 端点。
+#   北京老陈定案: "切换开关 发到后端只能和消息一起发出, 严禁独立去影响后端的任何东西"。
+#   该端点前端零调用, 即零消费死端点, 与 5.7.5/5.7.6 同类同判据(YAGNI)。写入口收敛为唯一一条:
+#   消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
 """
 session_service — 会话业务服务(services/chat)
 
@@ -50,7 +58,6 @@ from app.db import db
 from app.db.models.chat_models import SessionCreate, SessionResponse, SessionListResponse, BatchTitleResponse, SessionModelOverride
 from app.services.chat.message_service import delete_session_display_names
 from app.services.chat.storage import parse_session_model, forget_session_message_ids, count_session_messages  # count_session_messages: 消息数真值唯一出口(小欧 2026-09-30)
-from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关写入 conn 级(与 get_session_link 同族), 本文件 set_session_link 委托之 — 小欧 2026-10-03
 
 
 class SessionUpdate(BaseModel):
@@ -124,7 +131,7 @@ def list_sessions(
         where, params = build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
         cursor.execute(
-            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel, COALESCE(link_enabled, 0) as link_enabled "
+            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel "
             f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [page_size, offset]
@@ -141,9 +148,7 @@ def list_sessions(
             updated_at=format_timestamp(row['updated_at']),
             message_count=message_counts[row['id']],
             is_valid=row['is_valid'],
-            sessionModel=parse_session_model(row['sessionModel']),
-            # 2026-10-02 小欧 - 文档[4] 5.7 项3: 列表同步补 link_enabled(COALESCE 兜存量 NULL 行)
-            link_enabled=bool(row['link_enabled'])
+            sessionModel=parse_session_model(row['sessionModel'])
         )
         for row in rows
     ]
@@ -344,7 +349,7 @@ def get_session_info(session_id: str):
     with db.get_conn("chat") as conn:
         row = conn.execute(
             "SELECT id, title, created_at, updated_at, is_valid, "
-            "sessionModel, COALESCE(link_enabled, 0) as link_enabled "
+            "sessionModel "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
             (session_id,),
         ).fetchone()
@@ -359,20 +364,4 @@ def get_session_info(session_id: str):
         message_count=message_count,
         is_valid=row['is_valid'],
         sessionModel=parse_session_model(row['sessionModel']),
-        # 2026-10-02 小欧 - 文档[4] 5.7 项3: 补 link_enabled(COALESCE 兜存量 NULL 行 = 关闭)
-        link_enabled=bool(row['link_enabled']),
     )
-
-
-def set_session_link(session_id: str, enabled: bool) -> dict:
-    """文档[4] 5.7 项4: 会话级 link 粘性开关窄写函数 —— 只 UPDATE 该列 + updated_at(ISP)。
-
-    不扩 update_session: 其WHERE 带 COALESCE(version,1)=? 乐观锁且每次 version+1, 并入会让
-    "切开关"与"改标题"互相 409。返回值是写后真值(前端据此收敛镜像, 不做乐观推演);
-    rowcount==0 即会话不存在或已删 -> 404(fail-loud)。
-    UPDATE 已下沉 storage.set_session_link_conn, 本函数只做委托与 404 判定(DRY) — 小欧 2026-10-03。"""
-    with db.get_conn("chat") as conn:
-        if set_session_link_conn(conn, session_id, enabled) == 0:
-            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-    logger.info(f"设置会话 link 开关: id={session_id}, link_enabled={enabled}")
-    return {"success": True, "session_id": session_id, "link_enabled": bool(enabled)}

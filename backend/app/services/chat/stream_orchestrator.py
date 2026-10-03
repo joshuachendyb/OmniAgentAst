@@ -201,6 +201,7 @@
 #   (经 db.atxn 调 storage.set_session_link_conn, 保持请求编排期 loop 零同步 DB I/O)。
 #   落值放在本块原位(读 link 处, 已在活跃任务注入判定之后)而非建会话处 —— 注入/占位合并两条早退路径
 #   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
+# 2026-10-03 - 小欧 - 落值加命中判定: set_session_link_conn 返回 rowcount, 0 行即会话不存在, warning 留痕但本条仍按携带值处理(fail-open 用携带值, 不掐断流)。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -450,9 +451,12 @@ async def chat_stream_orchestrator(
         if link_enabled is not None:
             _link_on = link_enabled
             try:
-                await db.atxn(
+                _rows = await db.atxn(
                     "chat", lambda conn: set_session_link_conn(conn, session_id, link_enabled)
                 )
+                if _rows == 0:
+                    logger.warning(
+                        f"[chat] 落会话 link 开关命中0行(session={session_id}), 本条仍按携带值处理")
             except Exception as _e:
                 logger.warning(
                     f"[chat] 落会话 link 开关失败(session={session_id}), 本条仍按携带值处理: {_e}")
