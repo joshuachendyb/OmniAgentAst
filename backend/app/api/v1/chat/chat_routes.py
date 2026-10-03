@@ -26,6 +26,7 @@
 #   前端改读 code 判定(替代字符串includes匹配), 从源头消除"后端message文案变更即前端失效"的脆弱链 — 小欧-2026-09-19
 # 2026-09-29 小欧 - 重连端点包一层 _guarded 生成器兜住回放异常→persistence_degraded（不掐断流）。
 #   try 须写在生成器体内：路由本身不迭代生成器，在路由层 try 捕不到。CancelledError 不捕 — 小欧 2026-09-29
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项7: /chat/stream 停止向编排器透传 context_link_mode(形参已废止)
 """
 chat_routes — Chat API 路由薄壳（A7 后仅保留路由与 DTO 解包）
 
@@ -60,7 +61,7 @@ router.include_router(task_execution_router, tags=["task-execution"])  # v2.0 C1
 async def chat_stream_endpoint(request: ChatRequest):
     # DTO 在 API 层解包，避免 services 层反向依赖 api/v1 — 方案4.7.3 DTO边界约定
     return StreamingResponse(
-        chat_stream_orchestrator(request.messages, request.session_id, request.context_link_mode),
+        chat_stream_orchestrator(request.messages, request.session_id),
         media_type="text/event-stream",
     )
 

@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-08-16 - 小欧 - S1(10.1.4②): ChatRequest 增 context_link_mode(任务上下文链, 默认 independent 新任务/linked 续聊需显式),
 #   白名单校验在 orchestrator(10.1.4⑧), 本处仅 DTO 默认值定义
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项6: ChatRequest 删 context_link_mode(真源上移至会话 link 开关)
 """
 models — 从 chat_router.py 拷出
 
@@ -26,5 +27,6 @@ class ChatRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="前端指定的提供商")
     model: Optional[str] = Field(default=None, description="前端指定的模型")
     session_id: Optional[str] = Field(default=None, description="会话ID")
-    context_link_mode: Optional[str] = Field(default="independent",
-        description="任务类型: independent新任务(默认)/linked续聊需显式")  # 10.1.4② 任务上下文链
+    # 2026-10-02 小欧 - 文档[4] 5.7 项6: context_link_mode 已废止删除(真源上移至会话 link 开关)。
+    #   本 DTO 未设 model_config, Pydantic v2 默认 extra='ignore' → 旧前端多发该字段被静默丢弃,
+    #   故前后端必须同批交付(决策 9)。

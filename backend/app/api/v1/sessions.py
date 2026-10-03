@@ -15,6 +15,7 @@
 #   path 传入则精确 DELETE (session_id, tool_name, path) 该路径行; path=None(默认) 删工具级通配行(path IS NULL); 无匹配行返回 404 Trust not found
 # 2026-09-03 - 小欧/北京老陈 - sessions端点补日志: trust相关端点(list/delete)补info/warning, 改前无log无法排查信任操作
 # 2026-10-01 - 小欧 - 解 [1] E8: 删除 POST /sessions/{id}/execution_steps 端点及其 save_execution_steps/ExecutionStepsUpdate 导入(连带 session_service 同名导入)。该端点全仓零调用方，其底层实现自 2026-08-27 起已不写任何步骤，留着会误导为"步骤落库入口"。真入口见 storage.append_execution_step
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项5: 新增 PATCH /sessions/{id}/link(全链路唯一新增端点)
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -32,6 +33,7 @@ from app.services.chat.session_service import (
     delete_session,
     get_session_titles_batch,
     get_session_info,
+    set_session_link,
     SessionUpdate,
 )
 from app.services.chat.storage import (
@@ -119,3 +121,16 @@ def delete_session_trust_endpoint(session_id: str, tool_name: str, path: Optiona
 def get_session_detail_endpoint(session_id: str):
     """D-2(8.D): 单会话信息 — 设置界面读取会话级信息 + 顶栏创建/更新时间悬浮数据源, 现有端点无单会话信息 — 小欧 2026-08-26"""
     return get_session_info(session_id)
+
+
+@router.patch("/sessions/{session_id}/link")
+def set_session_link_endpoint(session_id: str, enabled: bool = Query(..., description="link 粘性开关: true=并入会话内最近任务所在组")) -> dict:
+    """文档[4] 5.7 项5: 会话级 link 开关写入(薄壳, 全链路唯一新增端点) — 小欧 2026-10-02
+
+    开关走 query 而非 body: 单布尔无嵌套结构, 建 DTO 类属 YAGNI。
+    薄壳只调 service, 不掺业务判定; 不复用 PUT /sessions/{id}(其 version 乐观锁会与改标题互相 409)。
+    """
+    # 2026-10-02 小欧: 开关变更补日志(沿用本文件 trust 两端点的函数内导入写法)
+    from app.logger import logger as _log
+    _log.info(f"[link] 设置会话 link 开关: session_id={session_id}, enabled={enabled}")
+    return set_session_link(session_id, enabled)

@@ -27,6 +27,7 @@
 #   (内存 track 字典 + allocator _user_ids/_assistant_ids 双侧清空), 防同 session_id 复用/内存无限增长。
 #   compliance: SRP(历史归属 service)/禁止backward
 # 2026-10-01 小欧 - 解 [1] E8: 删除 save_execution_steps/ExecutionStepsUpdate 导入(随 sessions.py 端点与 storage 空壳退役, 本文件零使用)
+# 2026-10-03 - 小欧 - 文档[4] 5.7 项3/4: SessionResponse 补 link_enabled + 新增窄写函数 set_session_link
 """
 session_service — 会话业务服务(services/chat)
 
@@ -119,7 +120,7 @@ def list_sessions(
         where, params = build_list_where(keyword, is_valid, for_count=False)
         offset = (page - 1) * page_size
         cursor.execute(
-            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel "
+            f"SELECT id, title, created_at, updated_at, is_valid, sessionModel, COALESCE(link_enabled, 0) as link_enabled "
             f"FROM chat_sessions {where} ORDER BY updated_at DESC, created_at DESC "
             f"LIMIT ? OFFSET ?",
             params + [page_size, offset]
@@ -136,7 +137,9 @@ def list_sessions(
             updated_at=format_timestamp(row['updated_at']),
             message_count=message_counts[row['id']],
             is_valid=row['is_valid'],
-            sessionModel=parse_session_model(row['sessionModel'])
+            sessionModel=parse_session_model(row['sessionModel']),
+            # 2026-10-02 小欧 - 文档[4] 5.7 项3: 列表同步补 link_enabled(COALESCE 兜存量 NULL 行)
+            link_enabled=bool(row['link_enabled'])
         )
         for row in rows
     ]
@@ -337,7 +340,7 @@ def get_session_info(session_id: str):
     with db.get_conn("chat") as conn:
         row = conn.execute(
             "SELECT id, title, created_at, updated_at, is_valid, "
-            "sessionModel "
+            "sessionModel, COALESCE(link_enabled, 0) as link_enabled "
             "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE",
             (session_id,),
         ).fetchone()
@@ -352,4 +355,24 @@ def get_session_info(session_id: str):
         message_count=message_count,
         is_valid=row['is_valid'],
         sessionModel=parse_session_model(row['sessionModel']),
+        # 2026-10-02 小欧 - 文档[4] 5.7 项3: 补 link_enabled(COALESCE 兜存量 NULL 行 = 关闭)
+        link_enabled=bool(row['link_enabled']),
     )
+
+
+def set_session_link(session_id: str, enabled: bool) -> dict:
+    """文档[4] 5.7 项4: 会话级 link 粘性开关窄写函数 —— 只 UPDATE 该列 + updated_at(ISP)。
+
+    不扩 update_session: 其WHERE 带 COALESCE(version,1)=? 乐观锁且每次 version+1, 并入会让
+    "切开关"与"改标题"互相 409。返回值是写后真值(前端据此收敛镜像, 不做乐观推演);
+    rowcount==0 即会话不存在或已删 -> 404(fail-loud)。"""
+    with db.get_conn("chat") as conn:
+        cursor = conn.execute(
+            "UPDATE chat_sessions SET link_enabled = ?, updated_at = ? "
+            "WHERE id = ? AND is_deleted = FALSE",
+            (1 if enabled else 0, get_local_iso_timestamp(), session_id),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+    logger.info(f"设置会话 link 开关: id={session_id}, link_enabled={enabled}")
+    return {"success": True, "session_id": session_id, "link_enabled": bool(enabled)}
