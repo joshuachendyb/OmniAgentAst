@@ -46,6 +46,9 @@
 //   该方法此前是全仓唯一带 persistNow 的安全写入口却零调用（生产走不到），本次复活 — 小欧-2026-10-01
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.14: body 字段 context_link_mode 改 link_enabled, 删 mode 形参
 //   (值取自已提交的会话快照 s.linkEnabled, 不增形参) — 小欧-2026-10-03
+// 编辑历史: 2026-10-03 小欧 - fre2e_15 红线修复: resumeStreamRequest 里 GET 建连成功即置
+//   isReceiving/isConnected=true(与 POST 首连同语义)。此前续传路从不置接收态, 切路由回来后帧在流但
+//   停止钮永不出现; 终态/失败/404/中止出口已由 markDisconnected 清零, 不残留 — 小欧-2026-10-03
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -277,6 +280,13 @@ export async function resumeStreamRequest(
         if (res.status === 404) return await handleGetNotFound(s);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         if (!res.body) throw new Error('响应体为空');
+        // 2026-10-03 小欧 - GET 续传建连成功即置接收态(与 POST 首连:183-184 同语义):
+        //   切路由回来/pump 意外中止后重连时, 帧在流但 isReceiving 恒 false → 停止钮永不出现(fre2e_15)。
+        //   终态/失败/404/中止出口一律走 markDisconnected 清零, 此处置 true 不会残留 — 小欧-2026-10-03
+        commit(s, (d) => {
+          d.isReceiving = true;
+          d.isConnected = true;
+        });
         const r = await pump(res, s);
         // 2026-09-30 小欧 - 仅真落终态才复位重连计数。原先"建连成功即复位 0"，
         //   而 EOF 非终态会接回重连 → 每轮都从 attempt 0 起算 → 退避恒为最小值，
