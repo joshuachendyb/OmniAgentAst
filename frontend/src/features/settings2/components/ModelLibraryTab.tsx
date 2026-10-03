@@ -34,7 +34,11 @@ import {
   Tag,
   Tooltip,
 } from 'antd';
-import { CloudDownloadOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+  CloudDownloadOutlined,
+  PlusOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 // 2026-09-29 小欧 - 删 settingsRowStyle: 列表改 Table 后已无行容器，import 成了死引用(ESLint 报 unused)
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';

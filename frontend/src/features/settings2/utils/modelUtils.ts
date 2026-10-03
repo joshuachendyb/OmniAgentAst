@@ -15,7 +15,8 @@ import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
 /** 报价是否为 0。Number() 兼容 "0"/0/"0.000"；v != null 必留（Number(null)===0 会误标免费）。 */
-const isZeroPrice = (v: string | undefined): boolean => v != null && Number(v) === 0;
+const isZeroPrice = (v: string | undefined): boolean =>
+  v != null && Number(v) === 0;
 
 /** 名称 free 尾巴。必须 endsWith：includes('-free') 实测 OpenRouter 460 个命中 0（它用 :free），
  *  且会误伤 free-tier。`-free` 本仓实证 / `:free` OpenRouter 实证；_free 无实证不引入(YAGNI)。 */

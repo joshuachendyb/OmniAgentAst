@@ -31,7 +31,16 @@
 //     填写（此前只在提交成功后重置）。③timeout/max_retries 改 Row/Col 并排一行 — 小欧 2026-10-03
 
 import React, { useEffect, useState } from 'react';
-import { Checkbox, Col, Form, Input, InputNumber, Modal, Row, Select } from 'antd';
+import {
+  Checkbox,
+  Col,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Select,
+} from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
@@ -365,19 +374,30 @@ export const ModelModals: React.FC<Props> = (props) => {
                 而 Input.Password 渲染 type="password" 会被 Chrome 密码管理器自动填入已存口令
                 （表现为浅蓝底 + 掩码点，且不察觉直接保存就把浏览器口令写进 config.yaml 当 api_key）。
                 口径与 SecretRevealInput:141 同款 —「新密钥一律不让浏览器自动填充」。 */}
-            <Input.Password placeholder="未配置则留空" autoComplete="new-password" />
+            <Input.Password
+              placeholder="未配置则留空"
+              autoComplete="new-password"
+            />
           </Form.Item>
           {/* 创建 Provider 可自定义 timeout/max_retries（后端 DTO 默认 60/3，留空走默认）。
               2026-10-03 小欧 - 两项改并排一行（同款 antd Row/Col，弹窗宽度下纵向浪费一屏）。 */}
           <Row gutter={Spacing.MD}>
             <Col span={12}>
               <Form.Item label="timeout(秒)" name="timeout">
-                <InputNumber min={1} placeholder="默认60" style={{ width: '100%' }} />
+                <InputNumber
+                  min={1}
+                  placeholder="默认60"
+                  style={{ width: '100%' }}
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item label="max_retries" name="max_retries">
-                <InputNumber min={0} placeholder="默认3" style={{ width: '100%' }} />
+                <InputNumber
+                  min={0}
+                  placeholder="默认3"
+                  style={{ width: '100%' }}
+                />
               </Form.Item>
             </Col>
           </Row>
