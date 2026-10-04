@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-25 - 小欧 - 不存在的键reg export失败日志WARNING→INFO(正常业务场景不应报WARNING)
 # 2026-07-31 - 小欧 - CRITICAL: _backup_registry 失败路径不缓存备份路径(原在 returncode!=0/FileNotFoundError/Exception 3 处均缓存)。失败后续操作命中缓存跳过备份, 导致 registry_write/delete 丢失安全保障
@@ -145,14 +146,14 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, v
     if exec_code == "error":
         return {
             "summary": f"读取注册表{path}，失败",
-            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": path, "params": _act_params},
+            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"读取注册表{path}，成功: {value_name}={value}（{value_type}）",
-        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "target": path, "params": _act_params},
+        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "params": _act_params},
         "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 window_focus — 聚焦窗口
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -44,13 +45,13 @@ def _build_window_focus_llm_data(exec_code: str, duration_ms: int, window_title:
     if exec_code == "error":
         return {
             "summary": f"聚焦窗口失败,其窗口标题为 {window_title}",
-            "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": window_title, "params": {"window_title": window_title}},
+            "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "params": {"window_title": window_title}},
             "status": {"exec_code": "error", "message": "聚焦窗口失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": hint if hint else "请检查窗口标题是否正确"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"窗口已聚焦: 其窗口标题为 {window_title}",
-        "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "target": window_title, "params": {"window_title": window_title}},
+        "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "params": {"window_title": window_title}},
         "status": {"exec_code": "success", "message": "窗口聚焦完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

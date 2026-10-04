@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 目录遍历跳过名单(_SKIP_DIRS)合并为公用 SKIP_DIRS(从 tool_constants 导入), 去除 list_directory 与 grep 两处私有重复定义, 统一维护
 # 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
@@ -159,7 +160,7 @@ def _build_list_directory_llm_data(
     if exec_code == "error":
         return {
             "summary": f"列出目录{dir_path}，失败",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -177,7 +178,7 @@ def _build_list_directory_llm_data(
         _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
             "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+            "action": {"tool": "listdir", "tool_zh": "列出目录", "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
@@ -188,7 +189,7 @@ def _build_list_directory_llm_data(
         summary += f"，第{user_offset+1}-{end_offset}项"
     return {
         "summary": summary,
-        "action": {"tool": "listdir", "tool_zh": "列出目录", "target": dir_path, "params": _act_params},
+        "action": {"tool": "listdir", "tool_zh": "列出目录", "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,

@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-14 - 小沈 - grep搜索结果上限改用OBS_MAX_DISPLAY_ITEMS，区分"超时"与"达上限"两种截断
 # 2026-07-18 - 小沈 - 灰区后缀跳过逻辑改为内容级探测(复用_detect_binary_content),修复日志轮转文件.log.1/.2被误判二进制跳过
@@ -95,7 +96,7 @@ def _build_grep_file_content_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索内容'{pattern}'，失败",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "params": _act_params},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -115,7 +116,7 @@ def _build_grep_file_content_llm_data(
                 warning_hint = ""
         return {
             "summary": f"搜索内容'{pattern}'，成功,提示说明: {total_files}个文件{total_matches}行匹配{summary_suffix}",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
+            "action": {"tool": "grep", "tool_zh": "内容搜索", "params": _act_params},
             "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": {
@@ -125,7 +126,7 @@ def _build_grep_file_content_llm_data(
         }
     return {
         "summary": f"搜索内容'{pattern}'，成功: {total_files}个文件{total_matches}行匹配",
-        "action": {"tool": "grep", "tool_zh": "内容搜索", "target": pattern, "params": _act_params},
+        "action": {"tool": "grep", "tool_zh": "内容搜索", "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-13 - 小欧 - #3 http请求异常详情丢失修复为类型:repr兜底
 # 2026-07-15 - 小欧 - 常量归一化治理: JSON body 预览截断改引用 tool_constants.HTTP_JSON_PREVIEW_MAX_BYTES(原 _MAX_JSON_SIZE=10MB), 功能零退化
@@ -80,7 +81,7 @@ def _build_http_request_llm_data(
     if exec_code == "error":
         return {
             "summary": f"HTTP请求:{url}，方法: {method} 失败",
-            "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": _act_params},
+            "action": {"tool": "httpget", "tool_zh": "HTTP请求", "params": _act_params},
             "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -88,7 +89,7 @@ def _build_http_request_llm_data(
     ctype_label = f" [{content_type}]" if content_type else ""
     return {
         "summary": f"HTTP请求:{url}成功: (HTTP {status_code}) ({ctype_label})",
-        "action": {"tool": "httpget", "tool_zh": "HTTP请求", "target": url, "params": _act_params},
+        "action": {"tool": "httpget", "tool_zh": "HTTP请求", "params": _act_params},
         "status": {"exec_code": "success", "message": "HTTP请求成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},

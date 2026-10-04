@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-13 - 小欧 - win10toast改为独立子进程通知隔离Tk/WndProc窗口
 # 2026-07-25 - 小欧 - 截断治理: _build_send_notification_llm_data message[:50] → 删截断移至main函数入口 _msg_preview + SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
@@ -44,14 +45,14 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
     if exec_code == "error":
         return {
             "summary": f"发送系统通知，\"{title}\"，失败",
-            "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": act_params},
+            "action": {"tool": "notify", "tool_zh": "系统通知", "params": act_params},
             "status": {"exec_code": "error", "message": "通知发送失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"发送系统通知，\"{title}\"，{notif_duration}秒，成功",
-        "action": {"tool": "notify", "tool_zh": "系统通知", "target": title, "params": act_params},
+        "action": {"tool": "notify", "tool_zh": "系统通知", "params": act_params},
         "status": {"exec_code": "success", "message": "通知发送成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

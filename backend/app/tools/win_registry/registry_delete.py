@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 registry_delete — 删除Windows注册表键值或子键
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -28,14 +29,14 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, path: str,
     if exec_code == "error":
         return {
             "summary": f"删除注册表{path}，失败",
-            "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": path, "params": {"path": path}},
+            "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "params": {"path": path}},
             "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"删除注册表{path}，成功: {action}",
-        "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "target": path, "params": {"path": path}},
+        "action": {"tool": "registry_delete", "tool_zh": "删除注册表", "params": {"path": path}},
         "status": {"exec_code": "success", "message": "删除注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

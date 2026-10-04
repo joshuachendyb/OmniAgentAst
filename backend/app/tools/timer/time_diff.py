@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 time_diff — 时间差值计算
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
@@ -28,14 +29,14 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
     if exec_code == "error":
         return {
             "summary": "计算时间差，失败",
-            "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
+            "action": {"tool": "timediff", "tool_zh": "时间差值", "params": _act_params},
             "status": {"exec_code": "error", "message": "计算时间差失败", "code": ERR_TIME_DIFF, "detail": detail, "hint": hint if hint else "请检查时间格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"计算时间差，{humanized}（{round(days, 2)}天），成功",
-        "action": {"tool": "timediff", "tool_zh": "时间差值", "target": "", "params": _act_params},
+        "action": {"tool": "timediff", "tool_zh": "时间差值", "params": _act_params},
         "status": {"exec_code": "success", "message": "计算时间差成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"seconds": {"value": seconds, "text": f"{seconds}秒"}, "days": {"value": round(days, 2), "text": f"{round(days, 2)}天"}},

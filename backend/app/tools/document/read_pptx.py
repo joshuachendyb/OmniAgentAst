@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位翻页 feat:
 #   1. read_pptx 增加 slide=N 按页翻页参数
@@ -47,7 +48,7 @@ def _build_read_pptx_llm_data(
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取PPT{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -61,7 +62,7 @@ def _build_read_pptx_llm_data(
         summary_str = f"读取PPT{file_path}，成功: {slide_count}页，{text_len}字符"
     return {
         "summary": summary_str,
-        "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "params": {"path": file_path}},
         "status": {"exec_code": exec_code, "message": "读取PPT成功", "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {

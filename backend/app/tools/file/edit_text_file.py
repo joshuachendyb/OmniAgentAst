@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-16 - 小欧 - _precise_replace_in_file 返回值移除未消费的 operation_id(YAGNI, 调用方不读取)
 # 2026-07-17 - 小欧 - 新增护栏3项: ①锚点重叠检查(before/after拒绝); ②语法校验(all拒绝+增量warning); ③all宽匹配/边界拦截(拒绝+warning)
@@ -291,7 +292,7 @@ def _build_edit_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"编辑文件{file_path}，失败",
-            "action": {"tool": "edit", "tool_zh": "编辑文件", "target": file_path, "params": _act_params},
+            "action": {"tool": "edit", "tool_zh": "编辑文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和编辑参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -316,7 +317,7 @@ def _build_edit_text_file_llm_data(
         _summary = f"编辑文件{file_path}，成功: 替换 {applied}/{total_matches} 处"
     return {
         "summary": _summary,
-        "action": {"tool": "edit", "tool_zh": "编辑文件", "target": file_path, "params": _act_params},
+        "action": {"tool": "edit", "tool_zh": "编辑文件", "params": _act_params},
         "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {

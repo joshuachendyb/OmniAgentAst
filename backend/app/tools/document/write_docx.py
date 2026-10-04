@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-05 - 小欧 - 加hint参数
@@ -108,20 +109,20 @@ def _build_write_docx_llm_data(
     table_count: int = 0,
 ) -> Dict[str, Any]:
     """write_docx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_title:
         _act_params["title"] = user_title
     if exec_code == "error":
         return {
             "summary": f"写入Word {file_path}，失败: {detail}",
-            "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
+            "action": {"tool": "write_docx", "tool_zh": "写入Word", "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
-        "action": {"tool": "write_docx", "tool_zh": "写入Word", "target": file_path, "params": _act_params},
+        "action": {"tool": "write_docx", "tool_zh": "写入Word", "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: snippet 截断改引用 tool_constants.SEARCH_SNIPPET_MAX_CHARS(原硬编码300), 功能零退化
 # 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 删 SEARCH_SNIPPET_MAX_CHARS Tool层snippet截断(返回完整snippet, 3.7); 删 _MAX_SEARCH_DEPTH=3 递归深度限制(3.6); 删 len(query)<2 查询最小长度校验(3.6, 空/单字符现透传引擎); 截断唯一收口于 observation_formatter OBS_SEARCHWEB_MAX_ROWS/CHARS(两态说明); 保留 query is None 显式报错(防None透传Bing异常被吞为success空结果-正确性回归防护)
@@ -99,14 +100,14 @@ def _build_search_web_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索{query}，失败",
-            "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
+            "action": {"tool": "searchweb", "tool_zh": "搜索", "params": _act_params},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": hint if hint else "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"搜索{query}，成功: {result_count}条结果",
-        "action": {"tool": "searchweb", "tool_zh": "搜索", "target": query, "params": _act_params},
+        "action": {"tool": "searchweb", "tool_zh": "搜索", "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},

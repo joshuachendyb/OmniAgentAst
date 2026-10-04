@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 create_task — 创建Windows计划任务
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -88,14 +89,14 @@ def _build_create_task_llm_data(exec_code: str, duration_ms: int, task_name: str
     if exec_code == "error":
         return {
             "summary": f"创建计划任务{task_name}，失败",
-            "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": _act_params},
+            "action": {"tool": "create_task", "tool_zh": "创建任务", "params": _act_params},
             "status": {"exec_code": "error", "message": "创建计划任务失败", "code": err_code or ERR_TASK_CREATE, "detail": detail, "hint": hint if hint else "请检查任务名称和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"创建计划任务{task_name}，成功",
-        "action": {"tool": "create_task", "tool_zh": "创建任务", "target": task_name, "params": _act_params},
+        "action": {"tool": "create_task", "tool_zh": "创建任务", "params": _act_params},
         "status": {"exec_code": "success", "message": "创建计划任务成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

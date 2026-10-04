@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 下载大小上限改引用 tool_constants.DOWNLOAD_MAX_BYTES(原 _MAX_FILE_SIZE=100MB), 功能零退化
 # 2026-07-17 - 小欧 - HTTPStatusError hint 按状态码精化(4xx/5xx/429)
@@ -76,7 +77,7 @@ def _build_download_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"下载文件{url}，失败",
-            "action": {"tool": "download", "tool_zh": "文件下载", "target": url, "params": _act_params},
+            "action": {"tool": "download", "tool_zh": "文件下载", "params": _act_params},
             "status": {"exec_code": "error", "message": "文件下载失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -86,7 +87,7 @@ def _build_download_file_llm_data(
     summary = f"下载并成功保存文件{dest_path},文件信息:" + (f":大小: {size_str}类型:{type_str}" if size_str or type_str else "")
     return {
         "summary": summary,
-        "action": {"tool": "download", "tool_zh": "文件下载", "target": url, "params": _act_params},
+        "action": {"tool": "download", "tool_zh": "文件下载", "params": _act_params},
         "status": {"exec_code": "success", "message": "文件下载成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"file_size": {"value": file_size, "text": size_str}, "content_type": {"value": content_type, "text": content_type}},

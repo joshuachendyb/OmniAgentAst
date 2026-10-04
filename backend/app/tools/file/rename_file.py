@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - rename新增overwrite参数并透传_move_file_impl: 原硬编码overwrite=False且不向LLM暴露该参数, 目标已存在时FileExistsError无法被LLM用overwrite=True纠正。对齐move/copy新增overwrite字段(默认False, 向后兼容)。另修复执行失败时被execute_with_safety吞掉真因的问题。
 # 2026-08-21 - 小欧 - 11.6.1: 两个success分支调 with_artifact_file 声明产出物
@@ -41,7 +42,7 @@ def _build_rename_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"重命名{source}，失败",
-            "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": _act_params},
+            "action": {"tool": "rename", "tool_zh": "重命名", "params": _act_params},
             "status": {"exec_code": "error", "message": "重命名失败", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -49,7 +50,7 @@ def _build_rename_file_llm_data(
     _summary = f"重命名 {source} → {new_name} 成功" if new_name else f"重命名 {source}"
     return {
         "summary": _summary,
-        "action": {"tool": "rename", "tool_zh": "重命名", "target": source, "params": _act_params},
+        "action": {"tool": "rename", "tool_zh": "重命名", "params": _act_params},
         "status": {"exec_code": "success", "message": "重命名成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位翻页治理 feat:
 #   1. 新增 _parse_pdf_pages() 解析器
@@ -133,7 +134,7 @@ def _build_read_pdf_llm_data(
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取PDF{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -147,7 +148,7 @@ def _build_read_pdf_llm_data(
     summary_str = f"读取PDF{file_path}，成功: " + "，".join(parts)
     return {
         "summary": summary_str,
-        "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "params": {"path": file_path}},
         "status": {"exec_code": "success", "message": "读取PDF成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

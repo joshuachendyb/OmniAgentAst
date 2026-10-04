@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - 入参即信任: top_n/max_rows 加 ge=1,le=1000 校验
 # 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制,统计在head之前计算,读全部数据
@@ -84,14 +85,14 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
     if exec_code == "error":
         return {
             "summary": f"分析数据{_target}，失败: {detail}",
-            "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
+            "action": {"tool": "analyze_data", "tool_zh": "分析数据", "params": _act_params},
             "status": {"exec_code": "error", "message": "分析失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": hint if hint else "请检查数据格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"分析数据{_target}，成功: {row_count}行, {numeric_col_count}个数值列",
-        "action": {"tool": "analyze_data", "tool_zh": "分析数据", "target": "dataset", "params": _act_params},
+        "action": {"tool": "analyze_data", "tool_zh": "分析数据", "params": _act_params},
         "status": {"exec_code": "success", "message": "分析成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "numeric_cols": {"value": numeric_col_count, "text": f"{numeric_col_count}列"}},

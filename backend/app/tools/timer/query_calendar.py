@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 query_calendar — 节日/日期查询
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
@@ -42,7 +43,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     if exec_code == "error":
         return {
             "summary": f"日历查询:\"{user_name}\"，失败" if user_name else "日历查询失败",
-            "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str or user_name, "params": act_params},
+            "action": {"tool": "calendar", "tool_zh": "日历查询", "params": act_params},
             "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -51,7 +52,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     type_str = f"（{holiday_type_cn}）" if holiday_type_cn else ""
     return {
         "summary": f"日历查询成功:{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
-        "action": {"tool": "calendar", "tool_zh": "日历查询", "target": date_str, "params": act_params},
+        "action": {"tool": "calendar", "tool_zh": "日历查询", "params": act_params},
         "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

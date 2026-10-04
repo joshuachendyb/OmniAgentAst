@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 去噪 refactor:
 #   safe_data 排除 original_size 和
@@ -96,7 +97,7 @@ def _build_compress_files_llm_data(
     if exec_code == "error":
         return {
             "summary": f"压缩{source}，失败",
-            "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
+            "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
             "status": {"exec_code": "error", "message": "压缩失败", "code": _code, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -104,7 +105,7 @@ def _build_compress_files_llm_data(
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
         "summary": f"压缩{source}，成功: {file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",
-        "action": {"tool": "compress", "tool_zh": "压缩", "target": source, "params": _act_params},
+        "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
         "status": {"exec_code": "success", "message": "压缩成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

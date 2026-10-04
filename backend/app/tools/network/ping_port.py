@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 去噪 refactor:
 #   1. ping 路径移除 _note 噪声字段
@@ -66,14 +67,14 @@ def _build_ping_port_llm_data(
     if exec_code == "error":
         return {
             "summary": f"网络诊断{host}，失败",
-            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": _act_params},
+            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
             "status": {"exec_code": "error", "message": "网络诊断失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"网络诊断{host}，成功",
-        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": _act_params},
+        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
         "status": {"exec_code": "success", "message": "网络诊断成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
@@ -90,7 +91,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
     if exec_code == "error":
         return {
             "summary": f"Ping{host}，失败",
-            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": _act_params},
+            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
             "status": {"exec_code": "error", "message": "Ping测试失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms, "metrics": {},
         }
@@ -104,7 +105,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
             latency_str = f"，延迟{avg_latency}ms"
     return {
         "summary": f"Ping{host}，{'成功' if is_reachable else '失败'}: {status_text} {latency_str}",
-        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": host, "params": _act_params},
+        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
         "status": {"exec_code": "success" if is_reachable else "error", "message": f"Ping {status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
@@ -119,14 +120,14 @@ def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "",
     if exec_code == "error":
         return {
             "summary": f"端口{host}:{port}检查失败",
-            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": _act_params},
+            "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
             "status": {"exec_code": "error", "message": "端口检查失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms, "metrics": {},
         }
     status_text = "开放" if is_open else "关闭"
     return {
         "summary": f"端口{host}:{port}检查成功: {port}（{service}）{status_text}",
-        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "target": f"{host}:{port}", "params": _act_params},
+        "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
         "status": {"exec_code": "success", "message": f"端口{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

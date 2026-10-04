@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 Tool函数公共辅助代码 — 纯逻辑函数集合
 【创建时间】2026-06-22 小欧

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 registry_write — 写入Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -88,14 +89,14 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, path: str, 
     if exec_code == "error":
         return {
             "summary": f"写入注册表{path}，失败",
-            "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": path, "params": {"path": path, "value_name": value_name}},
+            "action": {"tool": "registry_write", "tool_zh": "写入注册表", "params": {"path": path, "value_name": value_name}},
             "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入注册表{path}，成功: {value_name}={value}（{value_type}）",
-        "action": {"tool": "registry_write", "tool_zh": "写入注册表", "target": path, "params": {"path": path, "value_name": value_name}},
+        "action": {"tool": "registry_write", "tool_zh": "写入注册表", "params": {"path": path, "value_name": value_name}},
         "status": {"exec_code": "success", "message": "写入注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

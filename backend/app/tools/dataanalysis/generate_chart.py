@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-24 - 小欧 - 2处 data[:200] → GENERATE_CHART_OUTPARM_LIMIT_DATA(魔数→命名常量)
 # 2026-07-26 - 小欧 - OOD重构:文件路径读取改用load_data_to_df统一数据加载(analyze_data/filter_data共享),删内联pd.read_csv/read_excel(DRY+安全校验)
@@ -67,7 +68,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     if exec_code == "error":
         return {
             "summary": f"生成图表{_target}，失败: {detail}",
-            "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
+            "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
             "status": {"exec_code": "error", "message": "生成图表失败", "code": ERR_DOC_CHART_GENERATE, "detail": detail, "hint": hint if hint else "请检查数据和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -77,7 +78,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
         metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
     return {
         "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{dest}",
-        "action": {"tool": "generate_chart", "tool_zh": "生成图表", "target": chart_type, "params": _act_params},
+        "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
         "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": metrics,

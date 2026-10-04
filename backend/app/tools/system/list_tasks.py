@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 list_tasks — 列出Windows计划任务
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -85,14 +86,14 @@ def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dic
     if exec_code == "error":
         return {
             "summary": f"获取计划任务列表失败: {detail}",
-            "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
+            "action": {"tool": "list_tasks", "tool_zh": "列出任务", "params": _params},
             "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": err_code or ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取计划任务成功: 共{total_raw}个，匹配{total_matched}个",
-        "action": {"tool": "list_tasks", "tool_zh": "列出任务", "target": "", "params": _params},
+        "action": {"tool": "list_tasks", "tool_zh": "列出任务", "params": _params},
         "status": {"exec_code": "success", "message": "获取计划任务列表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_raw, "text": f"{total_raw}个"}, "matched": {"value": total_matched, "text": f"{total_matched}个"}},

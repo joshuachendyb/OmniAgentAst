@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 mouse_click — 鼠标单击
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -35,13 +36,13 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
     if exec_code == "error":
         return {
             "summary": f"{click_type_text}({x_str},{y_str})，失败: {detail}",
-            "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x_str},{y_str})", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
+            "action": {"tool": "mouse_click", "tool_zh": "点击", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
             "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"{click_type_text}({x_str},{y_str})，成功",
-        "action": {"tool": "mouse_click", "tool_zh": "点击", "target": f"({x_str},{y_str})", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
+        "action": {"tool": "mouse_click", "tool_zh": "点击", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
         "status": {"exec_code": "success", "message": f"{click_type_text}成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"x": {"value": x, "text": f"X={x_str}"}, "y": {"value": y, "text": f"Y={y_str}"}, "button": {"value": button, "text": button_cn}, "click_type": {"value": click_type, "text": click_type_text}},

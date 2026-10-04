@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 window_info — 列出所有窗口
 【2026-06-22 小健】从 desktop_tools.py 拆分为独立文件
@@ -128,13 +129,13 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
     if exec_code == "error":
         return {
             "summary": f"获取窗口{_target}信息失败" + (f": {detail}" if detail else ""),
-            "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
+            "action": {"tool": "window_info", "tool_zh": "获取", "params": _act_params},
             "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": hint if hint else "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"获取窗口{_target}信息成功: 共{window_count}个窗口",
-        "action": {"tool": "window_info", "tool_zh": "获取", "target": filter_title or "全部", "params": _act_params},
+        "action": {"tool": "window_info", "tool_zh": "获取", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},

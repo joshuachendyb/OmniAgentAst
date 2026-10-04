@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
 #   data 只保留 output_dir/file_list,
@@ -53,7 +54,7 @@ def _build_extract_archive_llm_data(
     if exec_code == "error":
         return {
             "summary": f"解压文件{source}，失败",
-            "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
+            "action": {"tool": "extract", "tool_zh": "解压文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "解压失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -70,7 +71,7 @@ def _build_extract_archive_llm_data(
         parts.append(f"跳过{skipped_files}个文件")
     return {
         "summary": f"解压文件{source}，成功: {'，'.join(parts)}",
-        "action": {"tool": "extract", "tool_zh": "解压文件", "target": source, "params": _act_params},
+        "action": {"tool": "extract", "tool_zh": "解压文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": _m,

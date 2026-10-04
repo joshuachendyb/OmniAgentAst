@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - 入参即信任: _build_event_log_llm_data 加 user_max_events 参数, 入 action.params, 支撑 formatter 动态调行数上限
 # 2026-07-31 - 小欧 - 超时错误提示优化: 补充超时 hint 文本, user_max_events 参数传递到错误响应
@@ -42,7 +43,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
         err_summary = f"获取事件{log_name}日志，失败,说明信息:" + (f": {detail}" if detail else "")
         return {
             "summary": err_summary,
-            "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
+            "action": {"tool": "event_log", "tool_zh": "获取", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else f"获取事件日志{log_name}，失败", "code": err_code or ERR_SYSTEM_EVENT_LOG, "detail": detail, "hint": hint if hint else "请检查日志名称、级别和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -50,7 +51,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
     summary_text = f"获取事件{log_name}日志，成功,说明信息: {event_count}条事件" if event_count > 0 else f"获取事件日志{log_name}，成功,提示说明: 指定时间范围内无匹配事件"
     return {
         "summary": summary_text,
-        "action": {"tool": "event_log", "tool_zh": "获取", "target": log_name, "params": _act_params},
+        "action": {"tool": "event_log", "tool_zh": "获取", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},

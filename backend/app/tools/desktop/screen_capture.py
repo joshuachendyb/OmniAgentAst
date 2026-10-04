@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(截图文件)
 """
@@ -46,7 +47,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: Optio
         summary = f"{mode}截图失败" if mode else "截图失败"
         return {
             "summary": summary,
-            "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": "", "params": _act_params},
+            "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "params": _act_params},
             "status": {"exec_code": "error", "message": summary, "code": err_code or ERR_SCREENSHOT, "detail": detail, "hint": hint if hint else "请检查屏幕显示设置和权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
@@ -58,7 +59,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: Optio
         summary = f"截图成功: 已保存到{dest}"
     return {
         "summary": summary,
-        "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "target": dest, "params": _act_params},
+        "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "params": _act_params},
         "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }

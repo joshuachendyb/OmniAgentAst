@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 time_now — 获取当前系统时间
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
@@ -20,14 +21,14 @@ def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatt
     if exec_code == "error":
         return {
             "summary": "获取当前时间失败",
-            "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
+            "action": {"tool": "timenow", "tool_zh": "获取时间", "params": {}},
             "status": {"exec_code": "error", "message": "获取当前时间失败", "code": ERR_TIME_NOW, "detail": detail if detail else "", "hint": hint if hint else "请重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取当前时间成功:{formatted}，{weekday}",
-        "action": {"tool": "timenow", "tool_zh": "获取时间", "target": "", "params": {}},
+        "action": {"tool": "timenow", "tool_zh": "获取时间", "params": {}},
         "status": {"exec_code": "success", "message": "获取当前时间成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

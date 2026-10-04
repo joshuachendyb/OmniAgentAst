@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"删除文件失败,safety拦截"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-15 - 小欧 - _force_delete_sync改(bool,str)透传真实失败原因, 替代原返bool(False)导致_delete_sync包装(False,"permanent")致error_detail=模式字串而非真因。
@@ -223,7 +224,7 @@ def _build_delete_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"删除{source}，失败",
-            "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
+            "action": {"tool": "delete", "tool_zh": "删除", "params": _act_params},
             "status": {"exec_code": "error", "message": "删除失败", "code": ERR_FILE_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查文件是否存在"},
             "duration_ms": duration_ms,
             "metrics": extra_metrics,
@@ -236,7 +237,7 @@ def _build_delete_file_llm_data(
     _suffix = _st_text or _dl_text
     return {
         "summary": f"删除{source}，成功: {_suffix}" if _suffix else f"删除{source}，成功",
-        "action": {"tool": "delete", "tool_zh": "删除", "target": source, "params": _act_params},
+        "action": {"tool": "delete", "tool_zh": "删除", "params": _act_params},
         "status": {"exec_code": "success", "message": "删除成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics,

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 get_system_info — 获取系统信息
 【2026-06-22 小健】从 system/system_tools.py 迁入 fundamental 为独立文件
@@ -26,7 +27,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     if exec_code == "error":
         return {
             "summary": f"获取系统信息，{info_type}，失败",
-            "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+            "action": {"tool": "sysinfo", "tool_zh": "系统信息", "params": {"info_type": info_type}},
             "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -34,7 +35,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     _summary = custom_summary if custom_summary else f"获取系统信息，{info_type}，成功"
     return {
         "summary": _summary,
-        "action": {"tool": "sysinfo", "tool_zh": "系统信息", "target": info_type, "params": {"info_type": info_type}},
+        "action": {"tool": "sysinfo", "tool_zh": "系统信息", "params": {"info_type": info_type}},
         "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

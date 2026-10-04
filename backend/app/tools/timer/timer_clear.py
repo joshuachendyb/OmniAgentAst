@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 单口径落地(按文档 diff设计落地): cancelled 状态 UPDATE 的 except 静默 pass→
 #   logger.error 提级留痕(带 timer_id+失败后果说明), 内存取消行为零改动, 仅补可追溯性
@@ -27,7 +28,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     if exec_code == "error":
         return {
             "summary": f"清除定时器{timer_id}，失败",
-            "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
+            "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "params": {"timer_id": timer_id}},
             "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -35,7 +36,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     status_text = "已取消" if cancelled else "不存在或已触发"
     return {
         "summary": f"清除定时器{timer_id}，成功: {status_text}",
-        "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "target": timer_id, "params": {"timer_id": timer_id}},
+        "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "params": {"timer_id": timer_id}},
         "status": {"exec_code": "success", "message": f"定时器{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

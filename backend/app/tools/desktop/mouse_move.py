@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 mouse_move — 移动鼠标到指定位置
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -24,13 +25,13 @@ def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
     if exec_code == "error":
         return {
             "summary": f"鼠标移动到({x},{y})，失败",
-            "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {"x": x, "y": y}},
+            "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "params": {"x": x, "y": y}},
             "status": {"exec_code": "error", "message": "鼠标移动失败", "code": err_code or ERR_DESKTOP_MOUSE_MOVE, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"鼠标移动到({x},{y})，成功",
-        "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "target": f"({x},{y})", "params": {"x": x, "y": y}},
+        "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "params": {"x": x, "y": y}},
         "status": {"exec_code": "success", "message": "鼠标移动完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

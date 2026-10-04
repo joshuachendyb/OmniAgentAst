@@ -31,6 +31,7 @@ def build_success(data: Any = None, llm_data: Optional[Dict] = None,
     """构建成功响应 — 小欧 2026-06-21，小欧 2026-06-27 修复默认llm_data一致性"""
     if llm_data is None:
         llm_data = {"status": {"exec_code": "success"}}
+    # 2026-10-04 小欧 - data层与llm_data层可同名出现 action(同名不同层): data.action 是工具自带快照, llm_data.action 是LLM展示目标, 取值勿混
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,
@@ -47,6 +48,7 @@ def build_error(data: Any = None, llm_data: Optional[Dict] = None,
     """构建错误响应 — 小欧 2026-06-21，小欧 2026-06-27 修复默认llm_data一致性"""
     if llm_data is None:
         llm_data = {"status": {"exec_code": "error"}}
+    # 2026-10-04 小欧 - data层与llm_data层可同名出现 action(同名不同层): data.action 是工具自带快照, llm_data.action 是LLM展示目标, 取值勿混
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,
@@ -63,6 +65,7 @@ def build_warning(data: Any = None, llm_data: Optional[Dict] = None,
     """构建警告响应 — 小欧 2026-06-21，小欧 2026-06-27 修复默认llm_data一致性"""
     if llm_data is None:
         llm_data = {"status": {"exec_code": "warning"}}
+    # 2026-10-04 小欧 - data层与llm_data层可同名出现 action(同名不同层): data.action 是工具自带快照, llm_data.action 是LLM展示目标, 取值勿混
     result: Dict[str, Any] = {
         "data": data,
         "llm_data": llm_data,

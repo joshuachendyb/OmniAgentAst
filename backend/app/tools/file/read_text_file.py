@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 F1: read — 读取文本文件
 
@@ -84,7 +85,7 @@ def _build_read_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"读取文件{file_path}，失败",
-            "action": {"tool": "read", "tool_zh": "读取", "target": file_path, "params": _act_params},
+            "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和参数是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -92,7 +93,7 @@ def _build_read_text_file_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"读取文件{file_path}，成功,提示说明: {line_count}/{total_lines}行，{file_size}字节{_pi}",
-            "action": {"tool": "read", "tool_zh": "读取", "target": file_path, "params": _act_params},
+            "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -118,7 +119,7 @@ def _build_read_text_file_llm_data(
         hint_text = ""
     return {
         "summary": f"读取文件{file_path}，成功: {line_count}/{total_lines}行，{file_size}字节{_pi}",
-        "action": {"tool": "read", "tool_zh": "读取", "target": file_path, "params": _act_params},
+        "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,
         "metrics": {

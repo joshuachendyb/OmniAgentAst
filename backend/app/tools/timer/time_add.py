@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 time_add — 时间加减运算
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
@@ -27,14 +28,14 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
     if exec_code == "error":
         return {
             "summary": f"时间加减，{delta:+g} {unit}，失败",
-            "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": _act_params},
+            "action": {"tool": "timeadd", "tool_zh": "时间加减", "params": _act_params},
             "status": {"exec_code": "error", "message": "时间加减失败", "code": ERR_TIME_ADD, "detail": detail, "hint": hint if hint else "请检查参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"时间加减，{delta:+g} {unit}后为 {result_time}，成功",
-        "action": {"tool": "timeadd", "tool_zh": "时间加减", "target": str(delta), "params": _act_params},
+        "action": {"tool": "timeadd", "tool_zh": "时间加减", "params": _act_params},
         "status": {"exec_code": "success", "message": "时间加减成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

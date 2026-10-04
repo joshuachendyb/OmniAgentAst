@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-26 - 小欧 - summary加路径前空格
@@ -95,13 +96,13 @@ def _build_write_xlsx_llm_data(
     user_sheet_name: str = "", hint: str = "",
 ) -> Dict[str, Any]:
     """write_xlsx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     if exec_code == "error":
         return {
             "summary": f"写入Excel {file_path}，失败: {detail}",
-            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
+            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -110,14 +111,14 @@ def _build_write_xlsx_llm_data(
         # 追加模式无数据可写等非致命异常: 走warning, 让LLM感知追加无效(非静默success) — 小欧 2026-08-08
         return {
             "summary": f"写入Excel {file_path}，警告: {detail}",
-            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
+            "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "params": _act_params},
             "status": {"exec_code": "warning", "message": "写入Excel警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Excel {file_path}，成功: {row_count}行",
-        "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "target": file_path, "params": _act_params},
+        "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

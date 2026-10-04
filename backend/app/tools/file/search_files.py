@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """find 文件搜索工具 — 文件名匹配搜索(支持正则/通配符/类型过滤)"""
 # 编辑历史:
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 移除 MAX_SEARCH_RESULTS 收集上限与 max_depth=50 递归限制; 移除 FIND_PAGE_SIZE 分页, 返回全部匹配(offset 仅作跳过); 截断唯一收口于 observation_formatter OBS_FIND_MAX_ROWS/CHARS(两态说明); deadline 超时保留为保护
@@ -75,7 +76,7 @@ def _build_search_files_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索文件{search_dir}，失败",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
+            "action": {"tool": "find", "tool_zh": "搜索文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -89,7 +90,7 @@ def _build_search_files_llm_data(
         _default_hint = "可缩小搜索范围或使用更精确的匹配模式以减少匹配数量; 或使用 offset 跳过前 N 项分批查看"
         return {
             "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断{_timeout_str}",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
+            "action": {"tool": "find", "tool_zh": "搜索文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
             "duration_ms": duration_ms,
             "metrics": {
@@ -101,7 +102,7 @@ def _build_search_files_llm_data(
         summary += f"，第{user_offset+1}-{total}项"
     return {
         "summary": summary,
-        "action": {"tool": "find", "tool_zh": "搜索文件", "target": search_dir, "params": _act_params},
+        "action": {"tool": "find", "tool_zh": "搜索文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

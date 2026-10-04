@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: shell 输出超长截断改引用 tool_constants.SHELL_OUTPUT_MAX_CHARS(30000→20000), 功能零退化
 # 2026-07-20 - 小欧 - 门限治理(shell章6.4): 删除 SHELL_OUTPUT_MAX_CHARS 头尾截断, stdout/stderr 原样全量返回(Tool输出零限制3.7); 显示限量收口 observation_formatter 行×列(OBS_SHELL_MAX_ROWS/CHARS)
@@ -566,7 +567,7 @@ def _build_execute_shell_command_llm_data(
         _detail = detail or (f"退出码{returncode}" if returncode is not None else "执行异常")
         return {
             "summary": f"执行Shell命令{cmd_short}，失败",
-            "action": {"tool": "bash", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+            "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
@@ -575,14 +576,14 @@ def _build_execute_shell_command_llm_data(
         _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
         return {
             "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
-            "action": {"tool": "bash", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+            "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
     return {
         "summary": f"执行Shell命令{cmd_short}，成功: 退出码{returncode}，输出{output_len}字符",
-        "action": {"tool": "bash", "tool_zh": "执行", "target": cmd_short, "params": _act_params},
+        "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},

@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - 入参即信任: top_n/max_rows 加 ge=1,le=1000 校验
 # 2026-07-24 - 小欧 - str(conditions)[:200] → FILTER_DATA_OUTPARM_LIMIT_CONDITIONS(魔数→命名常量)
@@ -49,14 +50,14 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
     if exec_code == "error":
         return {
             "summary": f"筛选数据{_target}，失败: {detail}",
-            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
+            "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
             "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"筛选数据{_target}，成功: 从{original_count}行筛选出{filtered_count}行",
-        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "target": "dataset", "params": _act_params},
+        "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
         "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"original_count": {"value": original_count, "text": f"{original_count}行"}, "filtered_count": {"value": filtered_count, "text": f"{filtered_count}行"}},

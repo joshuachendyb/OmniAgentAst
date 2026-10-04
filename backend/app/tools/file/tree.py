@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位页感知 feat:
 #   1. 新增 statistics(file/dir/size) 数据
@@ -135,14 +136,14 @@ def _build_tree_llm_data(
     if exec_code == "error":
         return {
             "summary": f"列出目录树{dir_path}，失败",
-            "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
+            "action": {"tool": "tree", "tool_zh": "列出目录树", "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录树失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"列出目录树{dir_path}，成功: {file_count}个文件，{dir_count}个目录",
-        "action": {"tool": "tree", "tool_zh": "列出目录树", "target": dir_path, "params": _act_params},
+        "action": {"tool": "tree", "tool_zh": "列出目录树", "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录树成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},

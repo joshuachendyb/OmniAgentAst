@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 execute_sql — 执行写操作SQL
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -99,7 +100,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
     if exec_code == "error":
         return {
             "summary": f"执行{_target}，失败: {detail}",
-            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql, "params": _act_params},
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "执行失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -115,14 +116,14 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
             hint_msg = "建议使用 dry_run=true 先验证"
         return {
             "summary": f"执行{_target}，{detail_msg}",
-            "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql, "params": _act_params},
+            "action": {"tool": "execute_sql", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "warning", "message": msg, "code": "WARNING_DB_SAFETY", "detail": detail_msg, "hint": hint_msg},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }
     return {
         "summary": f"执行{_target}，成功: 影响{affected_rows}行",
-        "action": {"tool": "execute_sql", "tool_zh": "执行", "target": sql, "params": _act_params},
+        "action": {"tool": "execute_sql", "tool_zh": "执行", "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"affected_rows": {"value": affected_rows, "text": f"影响{affected_rows}行"}},

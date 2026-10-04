@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 """
@@ -53,14 +54,14 @@ def _build_write_pptx_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入PPT{file_path}，失败: {detail}",
-            "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "target": file_path, "params": {"file_path": file_path}},
+            "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "写入PPT失败", "code": ERR_DOC_WRITE_PPTX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入PPT{file_path}，成功: {slide_count}页",
-        "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "target": file_path, "params": {"file_path": file_path}},
+        "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "params": {"path": file_path}},
         "status": {"exec_code": "success", "message": "写入PPT成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

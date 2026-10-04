@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-21 - 小欧 - query_sql limit: schema暴露limit字段给LLM, 加范围校验
 # 2026-07-21 - 小欧 - Bug修: 删_format_table死代码; 多条SQL; 查询超时; if limit→is not None; 增量fetch
@@ -74,7 +75,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     if exec_code == "error":
         return {
             "summary": f"查询{_target}，失败: {detail}",
-            "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql, "params": _act_params},
+            "action": {"tool": "query_sql", "tool_zh": "查询", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "查询失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -85,7 +86,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
         col_text += "..."
     return {
         "summary": f"查询{_target}，成功: {row_count}行, 列: {col_text}",
-        "action": {"tool": "query_sql", "tool_zh": "查询", "target": sql, "params": _act_params},
+        "action": {"tool": "query_sql", "tool_zh": "查询", "params": _act_params},
         "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "columns": {"value": _preview_cols, "text": f"列: {col_text}"}},

@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 timer_list — 列出所有定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -27,14 +28,14 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
     if exec_code == "error":
         return {
             "summary": "获取定时器列表失败",
-            "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
+            "action": {"tool": "timer_list", "tool_zh": "列出定时器", "params": {}},
             "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": detail, "hint": hint if hint else "请检查定时器状态"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取定时器列表成功: 共{count}个",
-        "action": {"tool": "timer_list", "tool_zh": "列出定时器", "target": "", "params": {}},
+        "action": {"tool": "timer_list", "tool_zh": "列出定时器", "params": {}},
         "status": {"exec_code": "success", "message": "获取定时器列表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"count": {"value": count, "text": f"{count}个"}},

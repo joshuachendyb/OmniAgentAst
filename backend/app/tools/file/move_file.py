@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"移动文件失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-26 - 小沈 - _move_sync预期失败改raise为return(False,msg)并对齐6工具范式; else分支解包tuple对齐executor返回格式
@@ -62,14 +63,14 @@ def _build_move_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"移动文件{source}，失败",
-            "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": _act_params},
+            "action": {"tool": "move", "tool_zh": "移动文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "移动失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"移动成功: {source} -> {destination}",
-        "action": {"tool": "move", "tool_zh": "移动文件", "target": source, "params": _act_params},
+        "action": {"tool": "move", "tool_zh": "移动文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},

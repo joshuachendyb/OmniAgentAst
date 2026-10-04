@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-31 - 小欧 - 新增 CALLBACK_MAX_LENGTH 限制(4096字符), 防止回调内容过长导致执行失败
 # 2026-08-05 - 小欧 - 修复: _invoke_timer_callback 外层 except httpx.TimeoutException 在文本提醒(log_message)分支引用未导入的 httpx, 分支异常时触发 UnboundLocalError 掩盖真实错误; 将该 except 移入 http 分支内部(httpx 导入处), 文本分支异常统一由外层 except Exception 捕获
@@ -77,14 +78,14 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
     if exec_code == "error":
         return {
             "summary": f"设置定时器{_delay_sec}秒，失败: {detail}",
-            "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
+            "action": {"tool": "timer_set", "tool_zh": "设置定时器", "params": _act_params},
             "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"设置定时器{_delay_sec}秒，成功: {timer_id}，{_delay_sec // 60}分钟后触发",
-        "action": {"tool": "timer_set", "tool_zh": "设置定时器", "target": str(delay), "params": _act_params},
+        "action": {"tool": "timer_set", "tool_zh": "设置定时器", "params": _act_params},
         "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"delay": {"value": delay, "text": f"{_delay_sec // 60}分钟"}},

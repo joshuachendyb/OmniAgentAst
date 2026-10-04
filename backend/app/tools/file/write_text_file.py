@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-17 - 小欧 - 早期encoding校验: write()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 # 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
@@ -177,7 +178,7 @@ def _build_write_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"写入文件{file_path}，失败",
-            "action": {"tool": "write", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "action": {"tool": "write", "tool_zh": "写入", "params": _act_params},
             "status": {"exec_code": "error", "message": "写入失败", "code": ERR_FILE_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查路径和写入权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -187,7 +188,7 @@ def _build_write_text_file_llm_data(
             hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
         return {
             "summary": f"写入文件{file_path}，成功,提示说明: {detail or mtime_warning}，{bytes_written}字节",
-            "action": {"tool": "write", "tool_zh": "写入", "target": file_path, "params": _act_params},
+            "action": {"tool": "write", "tool_zh": "写入", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -196,7 +197,7 @@ def _build_write_text_file_llm_data(
         }
     return {
         "summary": f"写入文件 {file_path}，成功，共 {bytes_written} 字节",
-        "action": {"tool": "write", "tool_zh": "写入", "target": file_path, "params": _act_params},
+        "action": {"tool": "write", "tool_zh": "写入", "params": _act_params},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

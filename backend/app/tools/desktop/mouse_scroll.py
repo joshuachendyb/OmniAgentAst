@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """
 mouse_scroll — 鼠标滚轮滚动
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -29,14 +30,14 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
     if exec_code == "error":
         return {
             "summary": "鼠标滚动失败",
-            "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
+            "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "params": {"direction": direction, "amount": amount}},
             "status": {"exec_code": "error", "message": "滚动失败", "code": err_code or ERR_DESKTOP_MOUSE_SCROLL, "detail": detail, "hint": hint if hint else "请检查滚动参数"},
             "duration_ms": duration_ms, "metrics": {},
         }
     direction_cn = {"up": "向上", "down": "向下"}.get(direction, direction)
     return {
         "summary": f"滚动完成: {direction_cn},滚动{amount}次",
-        "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "target": "", "params": {"direction": direction, "amount": amount}},
+        "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "params": {"direction": direction, "amount": amount}},
         "status": {"exec_code": "success", "message": "滚动完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

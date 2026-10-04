@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 常量归一化治理: 读取行数上限改引用 tool_constants.XLSX_MAX_ROWS(原硬编码10000), 功能零退化
 # 2026-07-20 - 小欧 - 章15 门限治理:
@@ -59,23 +60,23 @@ def _build_read_xlsx_llm_data(
 ) -> Dict[str, Any]:
     """read_xlsx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
-        _act_params = {"file_path": file_path}
+        _act_params = {"path": file_path}
         if user_sheet_name:
             _act_params["sheet_name"] = user_sheet_name
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取Excel{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
+            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     return {
         "summary": f"读取Excel{file_path}，成功: {row_count}行，{sheet_count}个工作表",
-        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "target": file_path, "params": _act_params},
+        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "params": _act_params},
         "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
@@ -103,7 +104,7 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 1000000, sheet_name: Option
     try:
         sheet_names = wb.sheetnames
         if sheet_name and sheet_name not in sheet_names:
-            return {"error_detail": f"工作表不存在: {sheet_name}", "hint": f"工作表 {sheet_name} 不存在,请确认工作表名称是否正确", "params": {"file_path": str(file_path), "sheet_name": sheet_name}}
+            return {"error_detail": f"工作表不存在: {sheet_name}", "hint": f"工作表 {sheet_name} 不存在,请确认工作表名称是否正确", "params": {"path": str(file_path), "sheet_name": sheet_name}}
         target_sheets = [sheet_name] if sheet_name else sheet_names
 
         all_sheets_data = []
@@ -169,7 +170,7 @@ def _read_csv_stdlib_inner(
         except UnicodeDecodeError:
             continue
     if not read_ok:
-        return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取,请确认文件编码格式", "params": {"file_path": str(file_path), "encodings_tried": encodings_to_try}}
+        return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取,请确认文件编码格式", "params": {"path": str(file_path), "encodings_tried": encodings_to_try}}
 
     return {"headers": headers, "rows": rows, "row_count": len(rows)}
 

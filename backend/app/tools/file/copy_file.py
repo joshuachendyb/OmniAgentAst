@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - 解包execute_with_safety返回的(success, detail), 用真实错误细节替代笼统"复制失败"提示(根因: execute_with_safety原吞掉细节只返bool), 修复LLM拿不到真因无法自我纠正的问题。
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
@@ -75,14 +76,14 @@ def _build_copy_file_llm_data(
         detail = (extra_metrics or {}).get("detail", "复制失败")
         return {
             "summary": f"复制文件{source}，失败",
-            "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": _act_params},
+            "action": {"tool": "copy", "tool_zh": "复制文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "复制失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
             "summary": f"复制成功: {source} -> {destination}",
-        "action": {"tool": "copy", "tool_zh": "复制文件", "target": source, "params": _act_params},
+        "action": {"tool": "copy", "tool_zh": "复制文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},

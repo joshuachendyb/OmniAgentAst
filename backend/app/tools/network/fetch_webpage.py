@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-15 - 小欧 - fetchpage异常日志修复: 某些httpx底层异常__str__返回空串, 致logger.error("未知错误:")后空白, 开发排查丢失异常类型。LLM侧detail(line 672)早已用type(e).__name__: str(e) or repr(e)正确传递, 本次仅增强开发日志可读性, 非功能缺陷。
 # 2026-07-15 - 小欧 - 常量归一化治理: 网页正文提取上限改引用 tool_constants.WEB_FETCH_MAX_CHARS(原 max_tokens=8000→32000字符, 现对齐 OBS 10000字符), 功能零退化
@@ -439,7 +440,7 @@ def _build_fetch_webpage_llm_data(
     if exec_code == "error":
         return {
             "summary": f"获取{url}网页，失败",
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
+            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "params": _act_params},
             "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -450,7 +451,7 @@ def _build_fetch_webpage_llm_data(
             base_msg = f"获取{url}资源，成功但有警告: {mime_type}，HTTP {status_code}"
         return {
             "summary": base_msg,
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
+            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "params": _act_params},
             "status": {"exec_code": "warning", "message": "获取网页完成但有警告", "code": "", "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}} if status_code else {},
@@ -463,7 +464,7 @@ def _build_fetch_webpage_llm_data(
         summary += "（内容有部分截断）"
     return {
         "summary": summary,
-        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "target": url, "params": _act_params},
+        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取网页内容成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},

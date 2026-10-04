@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 自然单位翻页 feat:
 #   1. read_docx 增加 offset/limit/tail 参数
@@ -45,14 +46,14 @@ def _build_read_docx_llm_data(
 ) -> Dict[str, Any]:
     """read_docx的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 丰富summary
     2026-07-21 入参即信任: 补 user_limit 写入 action.params — 小欧"""
-    _act_params = {"file_path": file_path}
+    _act_params = {"path": file_path}
     if user_limit is not None:
         _act_params["limit"] = user_limit
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": _act_params},
+            "action": {"tool": "read_docx", "tool_zh": "读取Word", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -69,7 +70,7 @@ def _build_read_docx_llm_data(
     summary_str = f"读取Word{file_path}，成功: " + "，".join(parts)
     return {
         "summary": summary_str,
-        "action": {"tool": "read_docx", "tool_zh": "读取Word", "target": file_path, "params": _act_params},
+        "action": {"tool": "read_docx", "tool_zh": "读取Word", "params": _act_params},
         "status": {"exec_code": exec_code, "message": "读取Word成功" if exec_code == "success" else "读取Word有警告", "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {

@@ -1,5 +1,6 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-05-27 - 小沈 - 创建文件
 # 2026-06-08 - 小沈 - 参数校验与实例化: 参数非法改报错, 删全局单例改Agent实例变量, 合并tool_executor重复查找
@@ -219,7 +220,7 @@ class ToolRetryEngine:
             data={},
             llm_data={
                 "summary": message[:200],
-                "action": {"tool": action_name, "tool_zh": "", "target": "", "params": action_params or {}},
+                "action": {"tool": action_name, "tool_zh": "", "params": action_params or {}},
                 "status": {"exec_code": "error", "message": message[:200], "code": code, "detail": message, "hint": hint or ""},
                 "duration_ms": 0,
                 "metrics": {},
@@ -303,7 +304,7 @@ class ToolRetryEngine:
                 data={},
                 llm_data={
                     "summary": f"工具 '{action}' 未找到",
-                    "action": {"tool": action, "tool_zh": "", "target": "", "params": {"action": action}},
+                    "action": {"tool": action, "tool_zh": "", "params": {"action": action}},
                     "status": {"exec_code": "error", "message": f"工具 '{action}' 未找到", "code": ERR_TOOL_NOT_FOUND, "detail": f"可用工具: {list(self._tools.keys())}", "hint": "该工具未注入。请先调用 searchtool 搜索备用工具的类型(可选:文档/数据分析/数据库/网络/系统/桌面/时间定时)，如'网络 搜索'，系统会自动注入整个工具分类。"},
                     "duration_ms": 0,
                     "metrics": {},
