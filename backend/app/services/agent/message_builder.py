@@ -37,6 +37,7 @@
 # 2026-09-28 - 小欧 - 锚属性名修复(设计文档[76] 6.3): 新增只读 property current_user_msg_id(读私有 _current_user_msg_id)。
 #   根因: agent_runner 用 getattr(mb, 'current_user_msg_id', None) 读锚恒 None(私有/公开名不匹配), 9-20 锚回填与
 #   D-1 两修复因此从未生效 → 注入消息 task_id 恒 NULL。补公开只读口修根因, 封装禁外部直读私有。compliance: SRP/KISS
+# 2026-10-04 小欧 - _estimate_tokens 取整方式: 系数改浮点(1.8)后 `chars // c` 返回 float, 改 int(chars / c) 保 int 契约
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -566,9 +567,10 @@ class MessageBuilder:
 
     @staticmethod
     def _estimate_tokens(messages: List[Dict]) -> int:
-        """纯数学估算 token 数 — chars//4，零外部依赖
+        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(1.8, 中文主导), 零外部依赖
 
         对标 OpenCode Token.estimate / Hermes estimate_tokens_rough
+        2026-10-04 小欧: 系数 4→1.8 后 `// float` 会返回 float, 改 int(x / c) 显式取整保 int 契约
         """
-        return MessageBuilder._total_chars(messages) // CHARS_PER_TOKEN
+        return int(MessageBuilder._total_chars(messages) / CHARS_PER_TOKEN)
 

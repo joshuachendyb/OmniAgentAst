@@ -11,6 +11,7 @@
 #                        t1_compress_observations→compress_long_tool_output, value_first_prune→keep_valuable_messages;
 #                        模块级注释/函数关系/设计文档引用同步, 编辑历史保留原名(历史事实)
 #   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
+#   2026-10-04 小欧 CHARS_PER_TOKEN 改浮点(1.8)后两处 `// c` 返回 float, 改 int(x / c) 与 MessageBuilder 同口径
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -40,7 +41,8 @@ logger = logging.getLogger(__name__)
 
 def _released_tokens(content: str) -> int:
     """按 CHARS_PER_TOKEN 估算释放 token(与 MessageBuilder._estimate_tokens 同款纯数学, 零依赖) — 小健 2026-08-17"""
-    return len(str(content)) // CHARS_PER_TOKEN
+    # 2026-10-04 小欧: 系数 4→1.8 后 `// float` 返回 float, 改显式取整保 int 契约
+    return int(len(str(content)) / CHARS_PER_TOKEN)
 
 
 # ---- C3 策略实现: clear_tool_outputs 通用清零(14.9.3②) ————————————————————————————————
@@ -164,7 +166,8 @@ def keep_valuable_messages(messages: List[Dict], budget_tokens: int) -> List[Dic
     kept_idx = []
     used = 0
     for i, msg in sorted(indexed, key=lambda t: _value_weight(t[1]), reverse=True):
-        cost = len(str(msg.get("content", ""))) // CHARS_PER_TOKEN
+        # 2026-10-04 小欧: 同上, 系数改浮点后显式取整
+        cost = int(len(str(msg.get("content", ""))) / CHARS_PER_TOKEN)
         if used + cost <= budget_tokens or _value_weight(msg) >= 70:
             kept_idx.append(i)
             used += cost
