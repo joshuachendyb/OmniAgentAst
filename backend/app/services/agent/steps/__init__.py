@@ -62,7 +62,7 @@ ALL_STEP_TYPES = frozenset({
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
     "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
-    "rejected", "stats", "context_overview", "truncated",
+    "rejected", "stats", "history_context", "truncated",  # 2026-10-04 小欧: context_overview 改名 history_context(北京老陈令)
     # 仅落库(SSE✗/DB✓)
     "thought",
     # 防御性保留(当前无独立发射源)

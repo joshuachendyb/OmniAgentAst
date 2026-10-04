@@ -168,7 +168,9 @@
 #   20:18:31 三堂会审 F7 修: _merge_into_last 去掉 len>1 条件, 单条注入末条user也并入(防连续user) — 小欧-2026-09-28
 # 2026-09-29 - 小欧 - _absorb_inbox 落位规则 docstring 按 F7 与死代码判定改写: 删"落库成功/单参铁约束"等已随代码删除的过时表述, 只留"必须在 trim_history 之前(否则 user token 不计入 always_keep_tokens 预算)"这一条有效约束  小欧-2026-09-29
 # 2026-10-01 小欧 - 解 [1] A13: _process_single_step 内 update_task 补 retry_locked=3。运行期逐步落库后每事件写事务翻倍, SQLite busy_timeout 仅 500ms, 并发多任务下撞写锁概率显著上升; 原缺省 retry_locked=0 致撞锁即降级 warning(丢 token 明细), 与 A13 同源必修
-# 2026-10-04 小欧 - 文档[6]: 正名 context_overview 发射节奏注释(原称"每次必发", 实受下方 if 门控: 首轮/裁剪轮/每5轮), 逻辑未动 — 小欧 2026-10-04
+# 2026-10-04 小欧 - 文档[6]: 正名 context_overview 发射节奏注释(原称"每次必发", 实受下方 if 门控: 首轮/裁剪轮/每5轮), 逻辑未动
+# 2026-10-04 小欧 - usage 帧新增 context_window(运行时上下文窗口, 取 message_builder.MAX_CONTEXT_TOKENS,
+#   由 agent_runner 按 llm_service.context_limit 覆盖): 前端据此算占窗率, 不新增数据源
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -431,6 +433,9 @@ async def _process_single_step(agent, chunk_buffer) -> List:
                     task_accumulated_tokens=agent.task_accumulated_tokens,         # 11.1 新增
                     session_accumulated_tokens=agent.session_accumulated_tokens,   # 11.1 新增
                     chain_accumulated_tokens=agent.chain_accumulated_tokens,       # 11.1 新增
+                    # 2026-10-04 小欧: 随 usage 帧下发当前任务模型上下文窗口(运行时权威值, agent_runner 已按 llm_service.context_limit 覆盖),
+                    #   前端据此算"本轮 P / 窗口"占用率; 不新增数据源, 复用 message_builder 唯一真源 — 小欧 2026-10-04
+                    context_window=int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0),
                 )
                 await _emit_publish(agent._step_emitter.emit(_usage_step).to_dict())
 
@@ -471,12 +476,15 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             # 11.2-B stats 事件（独立模块产出 MetaStep(type="stats", ...)）— 小欧 2026-08-20
             _stats_step = agent.telemetry.build_stats_step()   # → MetaStep(type="stats", step_count/llm_call_count/retry_count/duration)
             await _emit_publish(agent._step_emitter.emit(_stats_step).to_dict())
-            # 11.3 context_overview 事件（独立模块产出 MetaStep(type="context_overview", ...)）
+            # 11.3 history_context 事件（独立模块产出 MetaStep(type="history_context", ...)）
+            # 2026-10-04 小欧 - 帧类型改名 context_overview→history_context(北京老陈令): 原名易被误读为"当前轮上下文概览",
+            #   实为装入的历史对话水位; 跨层契约同步改: steps.ALL_STEP_TYPES / telemetry.PERSISTED_NON_BIZ_TYPES /
+            #   前端 execution.StepType / stepStyles / stepFilter / sseParser case
             _overview = agent.telemetry.build_context_overview()
             _llm_n = agent.llm_call_count
             if _llm_n == 1 or getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
                 await _emit_publish(agent._step_emitter.emit(MetaStep(
-                    step=_llm_n, type="context_overview", content=_overview.get("summary", ""),
+                    step=_llm_n, type="history_context", content=_overview.get("summary", ""),
                     message_count=_overview["message_count"], estimated_tokens=_overview["estimated_tokens"],
                     truncated=_overview["truncated"],
                     injected_message_count=_overview["injected_message_count"],

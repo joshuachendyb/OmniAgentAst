@@ -71,7 +71,7 @@ SSE_ONLY_TYPES = frozenset({          # 维度1: 仅 SSE 下发, 不落 chat_tas
     "resumed", "retrying", "cancelled", "rejected",
 })
 PERSISTED_NON_BIZ_TYPES = frozenset({ # 维度2: 落库(需回放)但不计业务步
-    "start", "stats", "context_overview", "final_stats", "authorization_required",
+    "start", "stats", "history_context", "final_stats", "authorization_required",  # 2026-10-04 小欧: context_overview 改名 history_context
 })
 M_SKIP = SSE_ONLY_TYPES | PERSISTED_NON_BIZ_TYPES
 assert not (SSE_ONLY_TYPES & PERSISTED_NON_BIZ_TYPES), "两维度互斥, 同一类型不可同时归属"
