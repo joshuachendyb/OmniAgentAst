@@ -17,6 +17,7 @@
 //   ExecutionStep 导入随之失效删除；ClockSignals 保留（5.3/5.4 钟面信号与 5.5 waitClock 在用） — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-10-04 小欧 - ContextOverviewFrame 补两个 injected 键(后端一直在发, parser 此前丢弃),
 //   与 types/execution.ts 的平行声明对齐 — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - TaskMetaFrames 加 contextWindow(运行时上下文窗口, 来自 usage 帧), emptyMetaFrames 同步置 null
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
@@ -56,7 +57,7 @@ export interface ContextOverviewFrame {
   estimated_tokens?: number;
   truncated: boolean;
   injected_ratio?: number;
-  // 2026-10-04 小欧 - 补两个 injected 键 — 小欧 2026-10-04
+  // 2026-10-04 小欧 - 补两个 injected 键
   injected_message_count?: number | null;
   injected_estimated_tokens?: number | null;
 }
@@ -66,6 +67,8 @@ export interface TaskMetaFrames {
   startTimestamp: number; // start 事件时间戳（供 useTaskInfo 过程条首行使用）
   // 2026-09-12 小欧: 删 usage 死字段(与 taskAccumulated 完全同值的 P/C/T 映射, useTaskInfo 已归一到 taskAccumulated) — 小欧-2026-09-12
   roundUsage?: { prompt: number; completion: number; total: number } | null; // 本轮三值（后端 prompt_tokens 直取）
+  // 2026-10-04 小欧: usage 帧带来的运行时上下文窗口(message_builder.MAX_CONTEXT_TOKENS), 供"本轮 P / 窗口"占用率
+  contextWindow?: number | null;
   taskAccumulated?: {
     prompt_tokens: number;
     completion_tokens: number;
@@ -91,6 +94,7 @@ export const emptyMetaFrames = (): TaskMetaFrames => ({
   startInfo: null,
   startTimestamp: 0,
   roundUsage: null,
+  contextWindow: null,
   taskAccumulated: null,
   sessionAccumulated: null,
   chainAccumulated: null,

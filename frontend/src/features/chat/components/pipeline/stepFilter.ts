@@ -8,7 +8,7 @@
  *
  * 【小欧 2026-08-26 8.4/8.10】4.4.4 权威过滤：查看区只渲染业务内容步骤
  * chunk/thought/action/observation/final/error；meta 小事件(start/paused/resumed/
- * retrying)与统计类(usage/stats/final_stats/context_overview/truncated/startinfo)
+ * retrying)与统计类(usage/stats/final_stats/history_context/truncated/startinfo)
  * 归任务信息条。thought-start 是 ThinkingStream 的起始信号标记，保留在业务流。
  *
  * @author 小欧
@@ -27,7 +27,7 @@ export const META_STEP_TYPES = [
   'usage',
   'stats',
   'final_stats',
-  'context_overview',
+  'history_context', // 2026-10-04 小欧: 原 context_overview, 改名(与后端帧类型同步)
   'truncated',
 ] as const;
 

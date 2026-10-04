@@ -12,6 +12,9 @@
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: Colors 新增 WAIT_ACTION 令牌(#fa8c16 工具执行等待齿轮橘, ToolWaitingIcon loader 色), WaitingIcons 硬编码色令牌化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - DRY: 新增 getStreamStyle 公共样式函数, ThinkingStream/TextStream 复用 — 小欧-2026-09-14
 // 编辑历史: 2026-09-15 小欧 - 第一阶段: Colors 新增 FOLD_COLLAPSED/FOLD_EXPANDED(主折叠箭头蓝/粉, 2026-09-13定案) 与 ERROR_BG/ERROR_BORDER(错误警示条), 消除 CircleArrow 双色与警示条硬编码 — 小欧-2026-09-15
+// 编辑历史: 2026-10-04 小欧 - Colors.BORDER 新增 ACCENT=#69b1ff(antd blue-3): taskinfo 信息带分隔点色。
+//   选型: 绿=成功语义(与 completed 徽标撞义, 失败任务也显绿点会误导)、主蓝#1677ff 过抢(hover 强调色),
+//   淡蓝保品牌色相且与状态色不冲突, #fafafa 底上可见又不抢内容
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -37,7 +40,7 @@ export type StepType =
   | 'usage'
   | 'stats'
   | 'final_stats'
-  | 'context_overview'
+  | 'history_context' // 2026-10-04 小欧: 原 context_overview, 改名(与后端/前端帧类型同步)
   | 'truncated'
   | 'final'
   | 'error'
@@ -133,6 +136,10 @@ export const Colors = {
     VERTICAL: '#e8e8e8', // 垂直左线（Pipeline/通用嵌套统一）
     DEFAULT: '#d9d9d9', // 中边框（通用嵌套旧值，逐步收敛至 VERTICAL）
     STRONG: '#bfbfbf', // 深边框（仍是浅色）
+    // 2026-10-04 小欧: 信息带内分隔点色(antd blue-3)。选淡蓝而非绿/主蓝的理由:
+    //   绿=成功状态(与徽标 completed 撞义, 失败任务也显绿点→误导), 主蓝 #1677ff 过抢(hover 强调色);
+    //   淡蓝保品牌色相且与状态色不冲突。#fafafa 底上对比度约1.9:1, 纯装饰可接受 — 小欧 2026-10-04
+    ACCENT: '#69b1ff',
   },
   // 功能颜色（6种）
   PRIMARY: '#1677ff', // 主色调 - 蓝色
@@ -181,8 +188,9 @@ const stepMeta: Record<StepType, StepMeta> = {
     priority: 'secondary',
     layout: 'inline',
   },
-  context_overview: {
-    label: '📑 上下文概览',
+  history_context: {
+    // 2026-10-04 小欧: 键名随帧类型改名; label 同步正名为"历史上下文"(北京老陈令) — 小欧 2026-10-04
+    label: '📑 历史上下文',
     priority: 'secondary',
     layout: 'inline',
   },

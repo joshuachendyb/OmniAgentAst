@@ -1,47 +1,48 @@
 /**
- * ContextOverviewCard —— taskinfo「历史上下文」浮层卡片
- * 小欧 2026-10-04（设计见 doc-10月优化/[6]，v1.1 三堂会审定案）
+ * ContextOverviewCard —— taskinfo「上下文」浮层卡片
+ * 小欧 2026-10-04（设计见 doc-10月优化/[6]）
  *
- * 3 行：装入 N 条 · 约 X.XK ／ 最近: 摘要(默认3行，点击展开) ／ truncated 才补一行警示。
- * 从 TaskInfoBar 的 78 行内联 IIFE 抽出，因新增折叠态继续堆叠会混层(SRP/SLAP)。
+ * 历史任务只显行内值、不挂弹框（无实时数据可展示）；实时任务见卡片内容。
+ * 编辑历史: 2026-10-04 小欧 - 自 TaskInfoBar 抽出为独立组件(G6 浮层①); 历史任务只显行不挂弹框(isLiveContext=false 早返回);
+ *   摘要单行省略(去展开按钮), 仅 truncated 补警示行; token 折算复用 infoMaps.formatTokenK(DRY)
+ * 编辑历史: 2026-10-04 小欧 - 新增可选 prop contextWindow: 装入条补「占窗率 = 估算token/窗口」, 窗口缺失则不渲染
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
-import { CONTEXT_STATE_MAP, mapStatus, type ContextState } from './infoMaps';
+import {
+  CONTEXT_STATE_MAP,
+  mapStatus,
+  formatTokenK,
+  type ContextState,
+} from './infoMaps';
 import { FloatingEntry } from './FloatingEntry';
 import { MetricItem } from './MetricItem';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 
-/** token 估算值格式化：9200 → “9.2K”。仅本组件用，不建公用工具 */
-const fmtApproxTokens = (n: number | null | undefined): string => {
-  if (n == null || Number.isNaN(n)) return '–';
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-};
-
 interface Props {
-  /** 与 mapStatus 的 ContextSource.overview 同形：实时帧为对象，历史任务为空串 */
+  /** 与 mapStatus 的 ContextSource.overview 同形：实时帧为对象，历史任务为空串 — 小欧 2026-10-04 */
   overview: string | ContextOverviewFrame | null;
-  /** start 帧的 context_summary 兜底（mapStatus 的第二个数据源） */
+  /** start 帧的 context_summary 兜底（mapStatus 的第二个数据源） — 小欧 2026-10-04 */
   contextSummary: string;
-  /** false = 历史任务（无实时帧，设计如此）— 小欧 2026-10-04 */
+  /** false = 历史任务：只显行内值，不挂弹框 — 小欧 2026-10-04 */
   isLiveContext: boolean;
+  /** 当前任务模型上下文窗口(usage 帧带来)；缺失则不显占窗率 — 小欧 2026-10-04 */
+  contextWindow?: number | null;
 }
 
 export const ContextOverviewCard: React.FC<Props> = ({
   overview,
   contextSummary,
   isLiveContext,
+  contextWindow,
 }) => {
   const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  // 2026-10-04 小欧: 切到历史任务时清弹框态, 否则切回实时任务弹框自动重开
+  useEffect(() => {
+    if (!isLiveContext) setOpen(false);
+  }, [isLiveContext]);
 
-  const ctxState: ContextState = mapStatus({
-    overview,
-    contextSummary,
-    isLiveContext,
-  });
+  const ctxState: ContextState = mapStatus({ overview, contextSummary });
   const ctx = CONTEXT_STATE_MAP[ctxState];
   const tokens =
     typeof overview === 'object' && overview ? overview.estimated_tokens : null;
@@ -53,12 +54,34 @@ export const ContextOverviewCard: React.FC<Props> = ({
   const count =
     typeof overview === 'object' && overview ? overview.message_count : null;
 
-  const metrics = [
-    count != null ? `装入 ${count} 条` : null,
-    hasTokens ? `约 ${fmtApproxTokens(tokens)}` : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // 2026-10-04 小欧: 装入条数 + 估算 token + 占窗率 同行(北京老陈定); 占窗率=估算 token / 窗口, 窗口缺失则不显
+  const usedPct =
+    tokens != null && contextWindow
+      ? Math.round((tokens / contextWindow) * 100)
+      : null;
+  const metricLine =
+    count != null || hasTokens ? (
+      <div>
+        {count != null && <span>装入历史对话 {count} 条</span>}
+        {count != null && hasTokens && <span> · </span>}
+        {hasTokens && <span>估算Token约 {formatTokenK(tokens)}</span>}
+        {hasTokens && usedPct != null && <span> · 占窗率 {usedPct}%</span>}
+      </div>
+    ) : null;
+
+  // 2026-10-04 小欧: 行内 MetricItem 抽出(历史任务只显行不挂弹框, 北京老陈定)
+  const metric = (
+    <MetricItem
+      // 2026-10-04 小欧: 标签"上下文"(短, 与卡片标题区分)
+      label="上下文"
+      value={hasTokens ? formatTokenK(tokens) : ctx.text}
+      tone={ctx.tone}
+      icon={ctx.icon}
+      dataState={ctxState}
+    />
+  );
+  // 2026-10-04 小欧: 历史任务无实时数据可展示, 只显行、不挂弹框(北京老陈定)
+  if (!isLiveContext) return metric;
 
   return (
     <FloatingEntry
@@ -83,51 +106,28 @@ export const ContextOverviewCard: React.FC<Props> = ({
           >
             历史上下文
           </div>
-          <div>{metrics || ctx.text}</div>
+          <div>{metricLine ?? ctx.text}</div>
           {summary && (
-            <div>
-              {/* 北京老陈 2026-09-09 令: 摘要不截断 —— 落为默认 3 行 + 可展开见全文 */}
-              <div
-                style={{
-                  display: '-webkit-box',
-                  WebkitLineClamp: expanded ? undefined : 3,
-                  WebkitBoxOrient: 'vertical',
-                  overflow: 'auto',
-                }}
-              >
-                最近: {summary}
-              </div>
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  padding: 0,
-                  cursor: 'pointer',
-                  color: Colors.INFO,
-                  fontSize: FontSize.SECONDARY,
-                }}
-              >
-                {expanded ? '收起' : '展开全文'}
-              </button>
+            // 2026-10-04 小欧: 摘要单行省略, 去展开按钮(北京老陈: 按钮不好看)
+            <div
+              style={{
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={summary}
+            >
+              最近: {summary}
             </div>
           )}
-          {/* 2026-10-04 小欧: 仅 truncated 补一行警示——唯一有用户影响且不能自解释的态;
-              原先恒显一行(ok 态显示"正常")与卡片重复且是噪声 — 小欧 2026-10-04 */}
+          {/* 2026-10-04 小欧: 仅 truncated 补警示行, ok 态不重复卡片内容 */}
           {ctxState === 'truncated' && (
             <div style={{ color: Colors.WARNING }}>{ctx.tooltip}</div>
           )}
         </>
       }
     >
-      <MetricItem
-        label="历史上下文"
-        value={hasTokens ? fmtApproxTokens(tokens) : ctx.text}
-        tone={ctx.tone}
-        icon={ctx.icon}
-        dataState={ctxState}
-      />
+      {metric}
     </FloatingEntry>
   );
 };

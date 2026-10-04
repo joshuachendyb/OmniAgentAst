@@ -37,6 +37,7 @@
 | `getStreamStyle` | 流式样式 | compact: boolean | CSSProperties |
 | `TokenLayer` | token 三字段公用类型（替代各处私有 TokenTriple，DRY） | — | type |
 | `formatTokenCompact` / `formatTokenFull` | token 紧凑/完整格式化 | TokenLayer | string |
+| `formatTokenK` | taskinfo 行内 token 折 K/M 格式化（9200→"9.2K"，无值→"–"） | number \| null \| undefined | string |
 
 ### 1.2 设置页令牌（theme/settingsTokens.ts，派生自 stepStyles+chatTokens，不建大表）
 

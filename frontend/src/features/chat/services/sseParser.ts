@@ -97,6 +97,8 @@
 // 编辑历史: 2026-09-30 14:30 小欧 - 解析/业务分层兜底；未知 type 不推进 seq 保留 onBiz；final 提前收尾；删零消费成员
 // 编辑历史: 2026-10-04 小欧 - context_overview 摘要键修正 summary→content(帧的权威文本字段是 content,
 //   从无 summary 键, 原读法致卡片恒显"–")＋补收 injected 两键 — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - usage 帧新增解析 context_window → metaFrames.contextWindow(运行时上下文窗口),
+//   供 taskinfo「占窗率 = 本轮P/窗口」; 窗口为常量, 无新值时沿用上一帧(prev.contextWindow)
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -146,7 +148,7 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'usage',
   'stats',
   'final_stats',
-  'context_overview',
+  'history_context', // 2026-10-04 小欧: 原 context_overview, 改名(与后端 MetaStep.type 同步)
   'truncated',
   'thought',
   'chunk',
@@ -471,6 +473,8 @@ const processSSEData = (
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           roundUsage: round,
+          // 2026-10-04 小欧: 保留最后一帧窗口值(窗口为常量, 无新值时沿用), 供"本轮 P / 窗口"占用率
+          contextWindow: rawData.context_window ?? prev.contextWindow ?? null,
           taskAccumulated: taskAcc,
           sessionAccumulated: sessAcc,
           chainAccumulated: chainAcc,
@@ -514,9 +518,10 @@ const processSSEData = (
         break;
       }
 
-      // context_overview：上下文概况帧
-      case 'context_overview': {
-        logTypeArrival('context_overview'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
+      // history_context：装入历史对话水位帧
+      // 2026-10-04 小欧: 帧类型改名 context_overview→history_context(与后端 MetaStep.type 同步) — 小欧 2026-10-04
+      case 'history_context': {
+        logTypeArrival('history_context'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           contextOverview: {

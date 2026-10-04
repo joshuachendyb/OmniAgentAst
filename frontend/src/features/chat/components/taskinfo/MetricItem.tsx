@@ -1,5 +1,7 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.5: 抽"标签灰 + 数值加粗 + 可选分项/图标"两段式通用组件(DRY, G5/G6 ≥4 处复用)
 //   支持 detail(P/C 中灰)、tone、icon、maxWidth 截断态、tooltip、data-state(测试钩子) — 小欧-2026-09-08
+// 编辑历史: 2026-10-04 小欧 - Tooltip 加 styles.root.whiteSpace='nowrap'(禁行统一由浮层层负责, 调用方不再包 span);
+//   label 改可选(为空则不渲染标签 span, 本轮项只显数值)
 import React from 'react';
 import { Tooltip } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -8,13 +10,14 @@ import { EllipsisTip } from './EllipsisTip';
 export type MetricTone = 'primary' | 'secondary' | 'warning' | 'tertiary';
 
 export interface MetricItemProps {
-  label: string; // 标签（灰 11px）
+  label?: string; // 标签（灰 11px）; 2026-10-04 小欧 改可选: 本轮项只显数值不显标签(北京老陈令)
   value: string; // 数值（加粗 12px 或 warning）
   detail?: string; // 可选分项（P/C 等，中灰 12px 500）
   tone?: MetricTone;
   icon?: React.ReactNode;
   maxWidth?: number; // >0 时数值区 ellipsis + Tooltip 全文
-  tooltip?: string;
+  // 2026-10-04 小欧: 保持 string(不引入 ReactNode 兼容分支); 禁行改由 Tooltip styles.root 承担
+  tooltip?: string; // 悬停全文; 一律不折行
   dataState?: string; // aria/data 钩子（测试断言）
 }
 
@@ -74,7 +77,10 @@ export const MetricItem: React.FC<MetricItemProps> = ({
       {body}
     </EllipsisTip>
   ) : tooltip ? (
-    <Tooltip title={tooltip}>{body}</Tooltip>
+    // 2026-10-04 小欧: tooltip 一律不折行(北京老陈令), 禁行由浮层层负责, 调用方不必再包 nowrap span
+    <Tooltip title={tooltip} styles={{ root: { whiteSpace: 'nowrap' } }}>
+      {body}
+    </Tooltip>
   ) : (
     body
   );
@@ -95,9 +101,11 @@ export const MetricItem: React.FC<MetricItemProps> = ({
         color: Colors.TEXT.TERTIARY,
       }}
     >
-      <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
-        {label}
-      </span>
+      {label && (
+        <span style={{ fontSize: FontSize.SMALL, color: Colors.TEXT.TERTIARY }}>
+          {label}
+        </span>
+      )}
       {wrapped}
     </span>
   );

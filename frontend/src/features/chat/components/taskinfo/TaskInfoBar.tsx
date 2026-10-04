@@ -54,18 +54,22 @@
 //   宽: 轮数:N · 步骤:M / 窄: 轮:N · 步:M(或保持紧凑) / 极窄(xsmall): 随耗时合并为 耗时 h:mm:ss · 轮:N · 步:M,
 //   语义补正: 数3000+实为业务步骤数(后端total_steps, 非消息数/非发送次数) — 小欧-2026-09-18
 // 编辑历史: 2026-10-04 小欧 - 文档[6]: G6 上下文浮层卡片抽为 ContextOverviewCard(删本文件内 78 行内联 IIFE
-//   及其 CONTEXT_STATE_MAP/mapStatus/FloatingEntry 导入与 ctxOpen 状态, 卡片自持折叠态; 行为等价) — 小欧 2026-10-04
+//   及其 CONTEXT_STATE_MAP/mapStatus/FloatingEntry 导入与 ctxOpen 状态, 卡片自持折叠态; 行为等价)
+// 编辑历史: 2026-10-04 小欧 - token 两项改版: 序改 P/C/T(P 加粗)、行内折 K/M、tooltip 原始值且不折行、
+//   无数据显示 –; G3 轮步拆两段移到「任务」前(删 xsmall 合并串, 耗时位置未动); 分隔点统一「•」(BORDER.ACCENT);
+//   新增「占窗率 = 本轮P/窗口」置于「任务」前(缺窗口不显); 断点门统一 isNarrow, 删 isMid
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
  * 【小欧 2026-08-26 8.6】7 项信息点（7.6 目标）：①状态徽标(startinfo)②耗时③轮次
- * ④token实时累计(usage)⑤上下文概况(context_overview)⑥过程状态条(start已开始/
+ * ④token实时累计(usage)⑤装入历史对话水位(history_context)⑥过程状态条(start已开始/
  * paused/resumed/retrying)+取消终态⑦truncated提示。可折叠；纯 SSE 收流。
  *
  * @author 小欧
  * @date 2026-08-26
  */
 
+import type { CSSProperties } from 'react';
 import React, { useEffect, useState, useRef } from 'react';
 import { Badge, Tooltip } from 'antd';
 import {
@@ -90,13 +94,27 @@ import {
   BADGE_MAP,
   EVENT_ICON_MAP,
   TABULAR_NUMS,
-  formatToken,
+  formatTokenK,
 } from './infoMaps';
-// 2026-10-04 小欧: 上下文浮层卡片已抽至 ContextOverviewCard, 故不再需 CONTEXT_STATE_MAP/mapStatus/FloatingEntry — 小欧 2026-10-04
+// 2026-10-04 小欧: 上下文浮层卡片已抽至 ContextOverviewCard, 故不再需 CONTEXT_STATE_MAP/mapStatus
+//   (FloatingEntry 仍在, G8 事件浮层在用)
 import { ContextOverviewCard } from './ContextOverviewCard';
 
 // 2026-09-09 小欧 - 位4 liveMeta 文本字符上限: 超长 error/truncated 文案截断加…, 全文进 Tooltip — 小欧-2026-09-09
 const LIVE_META_TEXT_MAX = 60;
+
+// 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
+//   点用淡蓝 BORDER.ACCENT(明显但不抢, 避开绿=成功/红=失败语义色), 字符取真圆点"•"、字号 SECONDARY,
+//   原"·"+CAPTION 10px 太小看不见(北京老陈令)
+const DOT_STYLE: CSSProperties = {
+  fontSize: FontSize.SECONDARY,
+  color: Colors.BORDER.ACCENT,
+};
+const STAT_STYLE: CSSProperties = {
+  fontSize: FontSize.SECONDARY,
+  color: Colors.TEXT.SECONDARY,
+  ...TABULAR_NUMS,
+};
 
 // BADGE_MAP 由 6.5.2.1 infoMaps.ts 定义，本文件经 import 使用（6.5.3.2），不再内联定义
 
@@ -117,17 +135,24 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
 }) => {
   // v4.1: 取消整行折叠, collapsed 状态机/localStorage 键已删除
   // 新增: eventsOpen useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
-  // 2026-10-04 小欧: ctxOpen/setCtxOpen 随上下文浮层卡片迁至 ContextOverviewCard — 小欧 2026-10-04
+  // 2026-10-04 小欧: ctxOpen/setCtxOpen 随上下文浮层卡片迁至 ContextOverviewCard
   const [eventsOpen, setEventsOpen] = useState(false);
   // 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名, receiving prop 本身保留
   //   (秒表 interval 启停仍以 receiving 为准, D3 契约); 仅不再透传给徽标派生 — 小欧-2026-09-14
   const info = useTaskInfo(steps, frames, detail, liveError);
   const b = BADGE_MAP[info.badge];
+  // 2026-10-04 小欧: 占窗率=本轮 P / 运行时窗口(usage 帧的 context_window); 窗口缺失(历史任务/未收到帧)→ null 不显
+  const windowUsePct =
+    info.contextWindow && info.roundUsage
+      ? Math.round((info.roundUsage.prompt / info.contextWindow) * 100)
+      : null;
   // 3.9 断点矩阵（v4.4 修复#3）：wide≥1280 / mid 1280~960 / narrow 960~768 / xsmall<768
   const bp = useInfoBreakpoint();
   const isNarrow = bp === 'narrow' || bp === 'xsmall';
+  // 2026-10-04 小欧: 极窄档(<768)备用, 当前两项收窄门统一用 isNarrow; 保留待极窄档单独策略时直接用(北京老陈令留)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 有意保留的备用断点档, 非死代码
   const isXSmall = bp === 'xsmall';
-  const isMid = bp === 'mid';
+  // 2026-10-04 小欧: 删 isMid(步轮拆独立两段后无调用方, YAGNI)
   // 【2026-09-03 小欧 复用TrustPanel】信任查询/刷新/撤销/折叠逻辑已移入 TrustPanel 组件(TaskInfoBar 删除内联重复, DRY)
 
   // 【小欧 2026-08-26 修复 B2】实时计时：实时流期间按 start 时刻走表
@@ -344,41 +369,56 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexWrap: 'wrap',
           }}
         >
-          {/* G5 本轮: 标签灰 + T 加粗 + P/C 中灰(两段对称) */}
-          {/* 3.9 断点矩阵: narrow 累计段进浮层(累计 detail 收进 tooltip)、xsmall 明细全部进浮层(两段 detail 全收, 基础行恒 label+value) — v4.4 修复#3 */}
+          {/* G3 步轮: 2026-10-04 小欧 拆为轮/步两段独立 span, 删 xsmall "耗时·轮·步" 合并串(北京老陈: 不要纠缠在一起) */}
+          <span style={STAT_STYLE}>轮:{info.llmCallCount}</span>
+          <span style={DOT_STYLE}>•</span>
+          {/* G5 本轮/任务: P 加粗 + C/T 中灰, 序 P/C/T, 折 K(M); narrow 起 C/T 收进 tooltip; 无数据显示 –;
+              本轮项不显标签(北京老陈令), 轮已前移至其前 — 小欧 2026-10-04 */}
           <MetricItem
-            label="本轮"
-            value={formatToken(info.roundUsage?.total ?? 0)}
-            detail={
-              isXSmall
-                ? undefined
-                : `P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0}`
-            }
-            tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
-          />
-          <span
-            style={{ fontSize: FontSize.SECONDARY, color: Colors.BORDER.LIGHT }}
-          >
-            ·
-          </span>
-          <MetricItem
-            label="任务" // 2026-09-18 小欧: 北京老陈令 "累计"→"任务" — 小欧-2026-09-18
-            value={formatToken(
-              info.taskAccumulated?.total_tokens ?? info.usage.total
-            )}
+            value={`P ${formatTokenK(info.roundUsage?.prompt)}`}
             detail={
               isNarrow
                 ? undefined
-                : `P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion}`
+                : `/ C ${formatTokenK(info.roundUsage?.completion)} / T ${formatTokenK(info.roundUsage?.total)}`
             }
-            tooltip="任务 P/C/T" // 2026-09-18 小欧: 同步去"累计" — 小欧-2026-09-18
+            tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
           />
+          <span style={DOT_STYLE}>•</span>
+          <span style={STAT_STYLE}>步:{info.stepCount}</span>
+          <span style={DOT_STYLE}>•</span>
+          {/* G8 占窗率: 本轮 P / 当前任务模型上下文窗口(usage 帧带来, 见 react_step context_window);
+              恒 ≤100%(单轮受压缩裁剪约束), 分子不用任务累计 —— 累计是多轮相加会超 100%(北京老陈 2026-10-04 定) */}
+          {windowUsePct != null && (
+            <>
+              <MetricItem
+                label="占窗率"
+                value={`${windowUsePct}%`}
+                tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / 窗口 ${info.contextWindow ?? 0} = ${windowUsePct}%`}
+              />
+              <span style={DOT_STYLE}>•</span>
+            </>
+          )}
+          <MetricItem
+            label="任务" // 2026-09-18 小欧: 北京老陈令 "累计"→"任务" — 小欧-2026-09-18
+            value={`P ${formatTokenK(
+              info.taskAccumulated?.prompt_tokens ?? info.usage.prompt
+            )}`}
+            detail={
+              isNarrow
+                ? undefined
+                : `/ C ${formatTokenK(info.taskAccumulated?.completion_tokens ?? info.usage.completion)} / T ${formatTokenK(info.taskAccumulated?.total_tokens ?? info.usage.total)}`
+            }
+            // 原为占位死串"任务 P/C/T", 收窄档 tooltip 是唯一明细源 — 小欧 2026-10-04
+            tooltip={`任务 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
+          />
+          <span style={DOT_STYLE}>•</span>
           {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试。
-              2026-10-04 小欧: 浮层内容抽至 ContextOverviewCard — 小欧 2026-10-04 */}
+              2026-10-04 小欧: 浮层内容抽至 ContextOverviewCard */}
           <ContextOverviewCard
             overview={info.overview}
             contextSummary={frames.contextSummary}
             isLiveContext={info.isLiveContext}
+            contextWindow={info.contextWindow}
           />
         </div>
         <div
@@ -390,45 +430,17 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
-          {/* 耗时+步轮 移至信任前(2026-09-17) */}
-          {/* 2026-09-18 小欧 北京老陈令: 秒值改时分秒(formatDurationHMS); G3 宽: 轮数:N · 步骤:M — 小欧-2026-09-18 */}
-          {!isXSmall && (
-            <span
-              style={{
-                fontSize: FontSize.SECONDARY,
-                color: Colors.TEXT.PRIMARY,
-                fontWeight: FontWeight.BOLD,
-                ...TABULAR_NUMS,
-              }}
-            >
-              耗时 {formatDurationHMS(shownElapsed)}
-            </span>
-          )}
+          {/* G2 耗时(独立小组, 位置未动): 2026-10-04 小欧 去掉 !isXSmall 门 —— 原为与步轮合并成"耗时·轮·步"让位,
+              步轮独立迁至中组后, 若仍隐藏则极窄屏丢失耗时, 故改为各档常显 — 小欧 2026-10-04 */}
           <span
             style={{
               fontSize: FontSize.SECONDARY,
-              color: Colors.TEXT.SECONDARY,
+              color: Colors.TEXT.PRIMARY,
+              fontWeight: FontWeight.BOLD,
+              ...TABULAR_NUMS,
             }}
           >
-            {isXSmall ? (
-              <>
-                {'耗时 '}
-                {formatDurationHMS(shownElapsed)}·轮:{info.llmCallCount} · 步:
-                {info.stepCount}
-              </>
-            ) : isNarrow || isMid ? (
-              <Tooltip
-                title={`轮数: ${info.llmCallCount} · 步骤: ${info.stepCount}`}
-              >
-                <span style={TABULAR_NUMS}>
-                  轮:{info.llmCallCount} · 步:{info.stepCount}
-                </span>
-              </Tooltip>
-            ) : (
-              <>
-                轮数: {info.llmCallCount} · 步骤: {info.stepCount}
-              </>
-            )}
+            耗时 {formatDurationHMS(shownElapsed)}
           </span>
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
           <TrustPanel sessionId={sessionId} compact={isNarrow} />

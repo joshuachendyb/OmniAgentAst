@@ -22,7 +22,7 @@ export interface ExecutionStep {
   // === 通用字段 ===
   // 【小欧 2026-08-26 8.4】①'动作类型名'全链替换为'action'（后端 ActionStep.TYPE 已改，
   //   禁止 backward，见 4.9.2.9）；②新增 MetaStep 类事件 type：
-  //   thought-start/usage/stats/final_stats/context_overview/truncated/startinfo
+  //   thought-start/usage/stats/final_stats/history_context/truncated/startinfo
   //   （数据源仍是一条 executionSteps 不拆流，渲染入口按 7.10 分流）
   type:
     | 'thought'
@@ -37,7 +37,7 @@ export interface ExecutionStep {
     | 'usage'
     | 'stats'
     | 'final_stats'
-    | 'context_overview'
+    | 'history_context' // 2026-10-04 小欧: 原 context_overview, 改名(装入历史对话水位, 非当前轮概览)
     | 'truncated'
     | 'paused'
     | 'resumed'
@@ -193,7 +193,7 @@ export interface ExecutionStep {
     type: string;
   }> | null;
   // 2026-09-12 小欧: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12
-  // context_overview
+  // history_context
   message_count?: number;
   estimated_tokens?: number;
   injected_ratio?: number;

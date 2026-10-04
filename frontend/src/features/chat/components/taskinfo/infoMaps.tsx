@@ -1,12 +1,14 @@
 // 编辑历史: 2026-09-08 小欧 - 六章6.5: 自 TaskInfoBar 抽取状态映射常量+纯函数(DRY/SRP/OCP, 禁止backward 不兼容旧写法)
 //   职责: BADGE_MAP(cancelled 区分) / CONTEXT_STATE_MAP(4态状态机) / EVENT_ICON_MAP(9事件+新增)
-//   / mapStatus(纯函数) / formatToken(千分位 3.2) — 小欧-2026-09-08
+//   / mapStatus(纯函数) / formatTokenK(K/M 折算 3.2) — 小欧-2026-09-08
 // 编辑历史: 2026-09-17 小欧 - 新增5个事件图标: error/rejected/cancelled/heartbeat/final - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 会审V3(#2): 删除 heartbeat 事件图标——后端心跳是 SSE 协议层 ":ping"(stream_orchestrator)，
 //   永不被前端解析成 ProcessEvent, EVENT_ICON_MAP 中 heartbeat 为死代码(YAGNI 清理); 事件清单实为8类 — 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: 恢复 heartbeat 事件图标(SyncOutlined)——心跳记录到事件列表(后端":ping" → ExecutionStep.heartbeat → processEvents) — 北京老陈驱动
-// 编辑历史: 2026-10-04 小欧 - 文档[6]: ContextState 增 historical 态(4态→5态), mapStatus 经 isLiveContext
-//   区分「历史任务无实时帧(设计如此)」与「真缺失」; empty 提示文案去内部变量名 frames — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - 文档[6]: ContextState 增 historical 态(4态→5态), mapStatus 依 isLiveContext
+//   区分「历史任务无实时帧(设计如此)」与「真缺失」, empty 提示文案去内部变量名 frames — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - token 显示序改 P→C→T, 行内折 K/M; formatToken 去 "T " 前缀后无调用方已删(YAGNI)
+//   同日回退: historical 态与 mapStatus 的 isLiveContext 判据已撤, 改由卡片 isLiveContext 决定是否挂弹框
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
@@ -35,12 +37,7 @@ export const BADGE_MAP: Record<TaskBadge, BadgeEntry> = {
 };
 
 // ---------- CONTEXT_STATE_MAP（4 态文案状态机） ----------
-export type ContextState =
-  | 'ok'
-  | 'summary-only'
-  | 'truncated'
-  | 'historical'
-  | 'empty';
+export type ContextState = 'ok' | 'summary-only' | 'truncated' | 'empty';
 export interface ContextStateEntry {
   text: string; // 数值区文案（ok 态由调用方传入 token，此处留空）
   tone: 'primary' | 'secondary' | 'warning' | 'tertiary';
@@ -61,13 +58,6 @@ export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
     icon: <WarningOutlined />,
     tooltip: '上下文被截断，可能影响回答质量',
   },
-  // 2026-10-04 小欧: 历史任务按设计无实时帧(useTaskInfo 的 detail 分支恒置 overview:''),
-  //   与真缺失是两回事，故拆独立态 — 小欧 2026-10-04
-  historical: {
-    text: '历史',
-    tone: 'tertiary',
-    tooltip: '历史任务无实时上下文帧（设计如此）',
-  },
   empty: {
     text: '–',
     tone: 'tertiary',
@@ -87,8 +77,6 @@ export interface ContextSource {
       }
     | null;
   contextSummary?: string | null;
-  /** false = 历史任务(按设计无实时帧)。只在无任何数据时参与判态；有数据一律以数据为准 */
-  isLiveContext?: boolean;
 }
 export const mapStatus = (src: ContextSource): ContextState => {
   const o = src.overview;
@@ -100,8 +88,7 @@ export const mapStatus = (src: ContextSource): ContextState => {
     typeof o === 'object' && o !== null && o.estimated_tokens != null;
   if (truncated) return 'truncated';
   if (summary) return hasTokens ? 'ok' : 'summary-only';
-  // 2026-10-04 小欧: 无数据时区分「历史任务(设计如此)」与「真缺失」 — 小欧 2026-10-04
-  return src.isLiveContext === false ? 'historical' : 'empty';
+  return 'empty';
 };
 
 // ---------- EVENT_ICON_MAP（过程事件统一 antd SVG，禁 emoji） ----------
@@ -119,11 +106,14 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   heartbeat: <SyncOutlined />, // 2026-09-19 小欧: 心跳事件 — 北京老陈驱动
 };
 
-// ---------- formatToken（3.2：T 千分位，1234 → "T 1,234"；无值 → "–"） ----------
-// 先查后建结论: src/utils/ 无千分位工具(en-US toLocaleString 全库无命中), 新建
-export const formatToken = (n: number | null | undefined): string => {
-  if (n == null || Number.isNaN(n)) return '–';
-  return `T ${n.toLocaleString('en-US')}`;
+// ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------
+// 先查后建: src/utils/ 无折算工具, 新建; 2026-10-04 小欧 由 ContextOverviewCard 私有 fmtApproxTokens 提升共用(DRY),
+// 原 formatToken(千分位) 因行内折 K、tooltip 用原始值而无调用方, 已删(YAGNI)
+export const formatTokenK = (n: number | null | undefined): string => {
+  if (n == null || Number.isNaN(n) || !Number.isFinite(n)) return '–';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
 };
 
 // ---------- 等宽数字共享样式（耗时、事件时间均用） ----------

@@ -41,6 +41,7 @@
 // 编辑历史: 2026-09-17 小欧 会审V3(#5)修复 复核三遍: failed 终态事件 kind: 'final' → 'error'(原用 final 对勾图标
 //   致失败任务事件列表显示成功绿勾, 成功/失败不可区分; 改 error 走 WarningOutlined 警告图标) — 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: ProcessEvent.kind 恢复 'heartbeat', steps 遍历加 case 'heartbeat' 推入 processEvents — 北京老陈驱动
+// 编辑历史: 2026-10-04 小欧 - 透出 contextWindow(来自 usage 帧 context_window)供占窗率; 历史任务无 usage 帧故为 null
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -161,13 +162,14 @@ export const useTaskInfo = (
           total: u?.total_tokens ?? 0,
         },
         roundUsage: null,
+        contextWindow: null,
         taskAccumulated: u ?? null,
         sessionAccumulated: null,
         chainAccumulated: null,
         // 历史任务无实时 metaFrames 源：contextOverview/truncated 仅实时流产生，
         // 取实时 frames 会串味当前任务，故历史任务恒为空（2026-08-27 小欧 修复#5#6）
         overview: '',
-        isLiveContext: false, // 2026-10-04 小欧: 本分支=历史任务, 供 mapStatus 判 historical — 小欧 2026-10-04
+        isLiveContext: false, // 2026-10-04 小欧: 本分支=历史任务, 供卡片决定是否挂弹框
         truncatedTip: null,
         processEvents: [],
         stuckWarning: false,
@@ -384,11 +386,13 @@ export const useTaskInfo = (
           }
         : { prompt: 0, completion: 0, total: 0 },
       roundUsage: frames.roundUsage ?? null,
+      // 2026-10-04 小欧: 窗口值与 roundUsage 同源(usage 帧), 历史任务无 usage 帧故为 null
+      contextWindow: frames.contextWindow ?? null,
       taskAccumulated: frames.taskAccumulated ?? null,
       sessionAccumulated: frames.sessionAccumulated ?? null,
       chainAccumulated: frames.chainAccumulated ?? null,
       overview: frames.contextOverview,
-      isLiveContext: true, // 2026-10-04 小欧: 实时流分支, 与上面 detail 分支对称 — 小欧 2026-10-04
+      isLiveContext: true, // 2026-10-04 小欧: 实时流分支, 与上面 detail 分支对称
       truncatedTip: frames.truncated?.content ?? null,
       processEvents: recentEvents, // 最早事件在上，保留最近20条
       stuckWarning,
