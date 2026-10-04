@@ -138,6 +138,8 @@
 #   ReAct 执行期 loop 不再被锁重试 time.sleep 短暂独占
 # 2026-08-25 - 小欧 - 合规重构(北京老陈驱动): M3 沙箱闸门逻辑从 check_safety_and_confirm 内嵌闭包(_sandbox_precheck/_sandbox_resolve)拆出至新建 app/services/agent/handlers/sandbox_gate.py(模块级函数+显式参数, 去隐式捕获约10个外层变量的"七绕八绕", 修正违反1.3公用函数规范-分层/先查后建/登记FUNCTIONS.md 与 KISS-DIRECT); 三处汇合点(①auto_confirm ②用户确认 ③循环体兜底)改显式调用; 业务语义/分支/状态机零改动(复制不重写)
 # 2026-08-25 - 小欧 - 合规重构: build_observation 内嵌闭包 _format_llm_data_text(纯展示格式化函数被囚为闭包, 违反1.3/复用优先)拆出至全局层 app/utils/display_utils.format_llm_data_text; 同步删除仅服务于该闭包的死 import json; 逻辑零改动(复制不重写)
+# 2026-10-04 - 小欧 - 字段精简(文档[8]第六章第0步): 真实调用点在 observation_builder, 本模块的 import 一直是死 import;
+#   format_llm_data_text 随 llm_data_text 字段删除后零调用方, 故本 import 一并删除 — 小欧-2026-10-04
 # 2026-08-26 小欧 - action步落库记录层修复(com-test 09实证): 原_exec_calls=_safe_calls if _safe_calls else [], 当全部调用被安全拦截时_exec_calls=[]→ActionStep.tools=[]→DB步骤完整性FAIL(无工具调用信息); 改法: 记录层新增_record_calls=_exec_calls if _exec_calls else call_result.all_calls(兜底取LLM意图调用含被拒项), 仅用于ActionStep.tools落库补全; 执行层仍用_exec_calls(绝不回退all_calls, 不绕过安全检查)
 # 2026-08-28 小欧 - yield日志审计: check_safety_and_confirm 关键决策点(blocked/paused/timeout/rejected/resumed)补 logger(warning/info), 覆盖11个无日志yield(SRP); 三堂会审无逻辑修正
 # 2026-08-30 小欧 - 控制台写离线化收口(case09挂起根治): handle_action 内唯一裸 print([Action]step=) → log_and_print, 延续2026-07-23统一治理; 事件循环线程零同步stdout写 + [Action]获得文件留痕增强
@@ -273,7 +275,6 @@ from app.logger import logger, log_and_print
 
 from app.constants import ACTION_LOG_RESULT_MAX_CHARS as _D_LOG_CHARS
 from app.config import get_config
-from app.utils.display_utils import format_llm_data_text  # 小欧 2026-08-25 合规重构: 纯展示格式化函数拆至全局层 display_utils(去内嵌闭包)
 from app.logger.prompt_logger import get_prompt_logger
 from app.services.agent.steps import ThoughtStep, ThoughtStartStep, ActionStep, ObservationStep, MetaStep, FinalStep  # 小欧 2026-07-13: 移除 ChunkStep; 2026-08-18 ThoughtStartStep新增; 2026-08-18 ErrorStep→MetaStep(type="error")
 from app.services.agent.status_table import AgentStatus, set_status

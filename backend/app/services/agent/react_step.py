@@ -587,9 +587,10 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             content=f"LLM输出截断(连续第{agent._consecutive_truncations}次)，已注入重试Observation",
             severity="warn",
         )).to_dict())
+        # 2026-10-04 小欧 字段精简(第六章第0步): 删 llm_data_text(硬编码空串, 零消费) — 小欧-2026-10-04
         await _emit_publish(agent._step_emitter.emit(ObservationStep(
             step=step,
-            tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "llm_data_text": "", "data_text": obs_text, "other_data": {}}],
+            tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {}, "status": {"exec_code": "error", "message": obs_text}}, "data_text": obs_text, "other_data": {}}],
         )).to_dict())
         return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
 

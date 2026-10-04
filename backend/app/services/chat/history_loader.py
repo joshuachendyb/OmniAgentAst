@@ -7,6 +7,8 @@
 # 2026-10-01 小欧 - 解 [1] E3: load_execution_steps 调用补传 task_id(p["pair_task_id"]), 与 message_service/execution_stream 同源。本函数是"喂 LLM 的历史", 安全性依赖 fetch 的 upper_id 严格上界(排除本任务自身已实时落库的步骤, 防自我回灌), 补 task_id 只收窄不放开, 不改变该边界语义
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项9: _load_previous_messages 删 context_link_mode 形参与二次白名单;
 #   三堂会审 S1/S2: 两种兜底退化(仅下界=自我回灌 / 仅上界=越链灌入)均不安全, 塌缩为双边界齐全才装历史。
+# 2026-10-04 - 小欧 - 字段精简(文档[8]第六章第0步): :53/:139 删 llm_data_text 兜底——前端零引用,
+#   实测 2306 条 tool_result 的 data_text 空值数为 0(兜底从未触发), 删后回放零退化 — 小欧-2026-10-04
 """
 history_loader — 会话历史加载(多轮上下文DB读取)
 
@@ -50,7 +52,7 @@ def _parse_tool_calls(msg_id: int, exec_steps_json: str) -> List[Dict]:
             for _oi, _el in enumerate(_tr):
                 if not isinstance(_el, dict):
                     continue
-                if not (_el.get("data_text") or _el.get("llm_data_text") or ""):
+                if not (_el.get("data_text") or ""):
                     continue
                 _obs_ids.add(f"call_{msg_id}_{_os}_{_oi}")
         else:
@@ -136,7 +138,7 @@ def _parse_observations(msg_id: int, exec_steps_json: str) -> List[Dict]:
                 for _i, el in enumerate(tool_result):
                     if not isinstance(el, dict):
                         continue
-                    content = el.get("data_text") or el.get("llm_data_text") or ""
+                    content = el.get("data_text") or ""
                     if not content:
                         continue
                     _cum = el.get("tool_name", "") == "truncated_output"
