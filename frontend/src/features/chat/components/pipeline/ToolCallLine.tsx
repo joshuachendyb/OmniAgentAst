@@ -150,32 +150,12 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   // 2026-09-06 小欧 B2(6.4): 被拒工具点名条(本执行轮被拒工具名+理由), 对被拒工具显橘红灰字留痕 — 小欧-2026-09-06
   const deniedList = Array.isArray(deniedTools) ? deniedTools : [];
   const deniedCount = deniedList.length;
-  // 2026-09-03 小欧 修复: 并行工具结果按tool_name配对(非索引), 防乱序到达时A工具显示B结果; 无tool_name则回退索引
+  // 2026-10-04 小欧 修同名工具串味(文档[8]第六章第3条): 改为按数组下标配对, 删按 tool_name find —
+  //   后端保证 tool_result[i] ↔ action.tools[i] 严格对齐(tool_runner 按下标回填 + zip_longest 位置配对, 文档[8]§3.4),
+  //   按名 find 在并行同名工具(如两个 read)时两个子行都命中首个 → 串味显示别人的结果。
   const getResultForIndex = (
     idx: number
-  ): Record<string, unknown> | undefined => {
-    const toolName = tools[idx]?.tool;
-    if (toolName) {
-      const hit = results.find((r) => {
-        const rr = r as Record<string, unknown>;
-        if ((rr.tool as string) === toolName) return true;
-        if ((rr.tool_name as string) === toolName) return true;
-        if ((rr.name as string) === toolName) return true;
-        const llm = (rr.llm_data || rr.llmData) as
-          | Record<string, unknown>
-          | undefined;
-        if (
-          llm &&
-          ((llm.tool as string) === toolName ||
-            (llm.tool_name as string) === toolName)
-        )
-          return true;
-        return false;
-      });
-      if (hit) return hit;
-    }
-    return results[idx];
-  };
+  ): Record<string, unknown> | undefined => results[idx];
   // 每工具结果摘要 + 状态（按tool_name配对, 兜底索引）（2026-09-01 小欧）
   // 三堂会审(2026-09-01): 保留旧 getObsSummary 摘要容错(llm_data.summary→data_text→summary→兜底'-'), 防关联退化
   const getResultSummary = (i: number): string => {
