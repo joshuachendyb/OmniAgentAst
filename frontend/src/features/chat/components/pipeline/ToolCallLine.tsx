@@ -119,8 +119,12 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
+  // 2026-10-04 小欧 文档[8]§5.4(丙案): 参数块独立折叠状态(每工具一份), 仅参数项数 >5 时才出现"展开" — 小欧 2026-10-04
+  const [paramsOpen, setParamsOpen] = useState<boolean[]>([]);
+  const PARAMS_FOLD_THRESHOLD = 5;
   useEffect(() => {
     setExpanded([]);
+    setParamsOpen([]);
   }, [action]);
   const tools = action.tools || [];
   // 2026-09-03 小欧 重订(KISS/SLAP/DRY): 字符串 tool_result 不并入 results(保持数组契约),
@@ -156,20 +160,16 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const getResultForIndex = (
     idx: number
   ): Record<string, unknown> | undefined => results[idx];
-  // 每工具结果摘要 + 状态（按tool_name配对, 兜底索引）（2026-09-01 小欧）
-  // 三堂会审(2026-09-01): 保留旧 getObsSummary 摘要容错(llm_data.summary→data_text→summary→兜底'-'), 防关联退化
+  // 每工具结果摘要（按数组下标配对, 2026-10-04）
+  // 文档[8]§5.4.2 第2条: 摘要只取 llm_data.summary, 不再兜底 data_text/r.summary
+  // (data_text 是长观察文本, 截前 60 字即"乱码片段"; 无 summary 时不渲染摘要块) — 小欧 2026-10-04
   const getResultSummary = (i: number): string => {
     const r = getResultForIndex(i);
     if (!r) return '';
     const llm = (r.llm_data || r.llmData) as
       | Record<string, unknown>
       | undefined;
-    return (
-      (llm?.summary as string) ||
-      (r.data_text as string) ||
-      (r.summary as string) ||
-      ''
-    );
+    return (llm?.summary as string) || '';
   };
   const getResultStatus = (
     i: number
@@ -263,12 +263,26 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {hasResult &&
             tools.length > 0 &&
             tools.map((t, i) => {
-              let tParamText: string;
-              try {
-                tParamText = JSON.stringify(t.params ?? {});
-              } catch {
-                tParamText = '[序列化错误]';
-              }
+              // 2026-10-04 小欧 文档[8]§5.4 乙案: 参数改"每键一行"可读格式(不再一行压缩JSON,
+              //   值直接取原值不二次序列化 → 路径里的 \\ 不再双重转义); 丙案: 项数 >5 才折叠 — 小欧 2026-10-04
+              const paramEntries = Object.entries(
+                (t.params ?? {}) as Record<string, unknown>
+              );
+              const paramRows = paramEntries.map(([k, v]) => ({
+                k,
+                v:
+                  typeof v === 'string'
+                    ? v
+                    : (() => {
+                        try {
+                          return JSON.stringify(v);
+                        } catch {
+                          return String(v);
+                        }
+                      })(),
+              }));
+              const paramsFoldable = paramRows.length > PARAMS_FOLD_THRESHOLD;
+              const paramsShown = !paramsFoldable || !!paramsOpen[i];
               const sum = getResultSummary(i);
               const st = getResultStatus(i);
               const isOpen = !!expanded[i];
@@ -319,7 +333,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       >
                         {t.tool}
                       </span>
-                      {/* 结果摘要：右列，flexGrow填满 */}
+                      {/* 结果摘要：右列，flexGrow填满 + CSS 单行省略
+                          2026-10-04 小欧 文档[8]§5.4.2 第1条: 删 sum.slice(0,60) 硬截(与本容器 CSS 省略重复, 半句切断) — 小欧 2026-10-04 */}
                       {sum && (
                         <span
                           style={{
@@ -331,7 +346,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                             fontSize: FontSize.SECONDARY,
                           }}
                         >
-                          {sum.slice(0, 60)}
+                          {sum}
                         </span>
                       )}
                       {/* 展开箭头 */}
@@ -342,7 +357,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                         animated={false}
                       />
                     </div>
-                    {/* 参数：默认隐藏，展开后显示 */}
+                    {/* 参数：子行展开后显示(乙案每键一行); 丙案项数>5 时先只显一行"参数(N项)"并可点开
+                        2026-10-04 小欧 文档[8]§5.4 乙/丙 — 小欧 2026-10-04 */}
                     {isOpen && (
                       <div
                         style={{
@@ -352,7 +368,70 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                           color: Colors.TEXT.SECONDARY,
                         }}
                       >
-                        参数：{tParamText}
+                        {paramsFoldable ? (
+                          <>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setParamsOpen((prev) => {
+                                  const next = [...prev];
+                                  next[i] = !prev[i];
+                                  return next;
+                                });
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setParamsOpen((prev) => {
+                                    const next = [...prev];
+                                    next[i] = !prev[i];
+                                    return next;
+                                  });
+                                }
+                              }}
+                              style={{
+                                cursor: 'pointer',
+                                display: 'inline-block',
+                              }}
+                            >
+                              {paramsShown
+                                ? `▾ 参数（${paramRows.length} 项）`
+                                : `▸ 参数（${paramRows.length} 项）`}
+                            </span>
+                            {paramsShown && (
+                              <div style={{ marginTop: Spacing.XS }}>
+                                {paramRows.map((r) => (
+                                  <div
+                                    key={r.k}
+                                    style={{
+                                      fontFamily:
+                                        'Consolas, Monaco, "Courier New", monospace',
+                                      wordBreak: 'break-all',
+                                    }}
+                                  >
+                                    {r.k}: {r.v}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          paramRows.map((r) => (
+                            <div
+                              key={r.k}
+                              style={{
+                                fontFamily:
+                                  'Consolas, Monaco, "Courier New", monospace',
+                                wordBreak: 'break-all',
+                              }}
+                            >
+                              {r.k}: {r.v}
+                            </div>
+                          ))
+                        )}
                       </div>
                     )}
                   </div>
