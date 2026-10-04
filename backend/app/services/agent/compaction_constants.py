@@ -34,9 +34,7 @@
                         判定使用, 其他任何模块不得引用); 值置 True(放开 R4 锚定摘要); start_step 超窗 gate 同步改名
   2026-09-23 小欧 trim/compaction配置化: 本文件5常量保留作配置缺省兜底(TRIM_TRIGGER_RATIO/COMPACTION_BUFFER/START_TRIGGER_RATIO/START_COMPACTION_ENABLED/SUMMARY_FEED_MAX_CHARS)，消费方优先读 tuning.trim.*/tuning.compaction.* 配置；keep_tail 缺省 1（start_step 内联兜底，ASSEMBLE_KEEP_TAIL 仍为装配函数保留常量）
   2026-09-23 小欧 7死常量以备后用标注: C3/T1四阈值+Hermes Pass3两阈值+ASSEMBLE_KEEP_TAIL暂无消费方，留定义供后续接线，禁止删除
-  2026-10-04 小欧 CHARS_PER_TOKEN 4→1.8(北京老陈定): 原值4为纯英文经验值, 对中文低估约2-4倍(OpenAI官方1汉字≈2token;
-                         DeepSeek官方0.6token/字; 实测1000汉字≈1900token; 通义/Qwen约1token≈1字)。本项目消息以中文为主,
-                         取1.8偏保守(低估致撞窗, 高估仅多裁几轮)。连带: 两处除法改显式取整(浮点系数下 // 返回 float)
+  2026-10-04 小欧 CHARS_PER_TOKEN 4→1.8→2.5(北京老陈两次定): 中文 1 字真实约 1~2 token, 4 严重低估致撞窗, 1.8 偏保守过多致提前裁剪徒丢上下文; 2.5 居中。连带: 浮点系数下两处除法改显式取整(// 返回 float)
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
@@ -53,13 +51,9 @@ TRIM_TRIGGER_RATIO = 0.75
 # 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
 COMPACTION_BUFFER = 20000
 # 意义: chars→token 换算系数
-# 2026-10-04 小欧: 4 → 1.8(北京老陈定)。原值 4 是纯英文经验值(1 token≈4 字符), 对中文严重低估:
-#   权威口径 —— OpenAI 官方 1000 token≈500 汉字(即 1 字≈2 token); DeepSeek 官方 1 中文字符≈0.6 token;
-#   实测 1000 字中文段落≈1900 token; Claude 3.x/4.x 约 1.5~2 token/字; 通义/Qwen 等中文母语模型约 1 token≈1 字。
-#   本项目消息以中文为主, 取 1.8(≈中文 1 字 1.8 token, 落在各方口径中间偏保守侧):
-#   低估的代价(真撞窗口才裁剪→请求失败)高于高估的代价(多裁几轮历史), 故宁偏保守。
-#   注意: 本系数同时决定显示估算值与 trim/prune 裁剪预算, 改大后裁剪更早触发(需 E2E 回归) — 小欧 2026-10-04
-CHARS_PER_TOKEN = 1.8
+# 2026-10-04 小欧: 4→1.8→2.5(北京老陈定)。中文 1 字真实约 1~2 token(OpenAI≈2/DeepSeek≈0.6), 4 严重低估致撞窗,
+#   1.8 偏保守过多致提前裁剪徒丢上下文; 2.5 居中, 少算 28% 使裁剪更晚。改浮点后取整写法 int(x/c) 不可回退 — 小欧 2026-10-04
+CHARS_PER_TOKEN = 2.5
 # 意义: 临时历史字符上限
 TEMP_HISTORY_CHAR_LIMIT = 50000
 

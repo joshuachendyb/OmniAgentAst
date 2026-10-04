@@ -567,10 +567,10 @@ class MessageBuilder:
 
     @staticmethod
     def _estimate_tokens(messages: List[Dict]) -> int:
-        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(1.8, 中文主导), 零外部依赖
+        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(2.5, 中文主导), 零外部依赖
 
         对标 OpenCode Token.estimate / Hermes estimate_tokens_rough
-        2026-10-04 小欧: 系数 4→1.8 后 `// float` 会返回 float, 改 int(x / c) 显式取整保 int 契约
+        2026-10-04 小欧: 系数 4→1.8→2.5(当日两次); 浮点系数下 // 返回 float, 故恒用 int(x / c) 显式取整
         """
         return int(MessageBuilder._total_chars(messages) / CHARS_PER_TOKEN)
 
