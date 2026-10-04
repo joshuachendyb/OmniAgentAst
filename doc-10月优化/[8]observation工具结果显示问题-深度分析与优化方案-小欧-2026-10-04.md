@@ -2,9 +2,9 @@
 
 **文档编号**：`doc-10月优化/[8]`
 **创建时间**：2026-10-04 11:53:48
-**更新时间**：2026-10-04 11:57:17
+**更新时间**：2026-10-04 13:06:01
 **编写人**：小欧
-**版本**：v1.1
+**版本**：v1.4
 
 ## 版本历史
 
@@ -12,6 +12,9 @@
 |------|----------|--------|----------|
 | v1.0 | 2026-10-04 11:53:48 | 小欧 | 首版。基于生产库 1418 帧 observation / 2306 条工具子行实测取证，输出 6 项确认缺陷、根因结论与优化方案 |
 | v1.1 | 2026-10-04 11:57:17 | 小欧 | 北京老陈指令：在第四章头部补充 observation SSE 事件字段清单（字段含义 + 前端是否消费）。原 4.1~4.4 顺延为 4.2~4.5 |
+| v1.2 | 2026-10-04 12:26:40 | 小欧 | 北京老陈指令：补充两节 + 更正一处失准。**新增 4.1.6**（SSE 帧 vs conversation history 字段差异对照，含"format 前/后"结论与两条注入路径）、**4.1.7**（`data_text` 两段拼接结构——llm_data 段 + data 段双向耦合，揭示 P0 类缺陷总根因）、**4.1.8**（`_summary` stash 空转：判定为非缺陷，列接线前置待办）；新增 P2-11。**失准更正**：`llm_data_text` 由"全仓零消费"改为"前端零消费 + 后端 `history_loader.py:53/139` 有兜底消费（实测不可达）"，§4.1.5 零消费计数由 8/40% 修正为 7/35% |
+| v1.3 | 2026-10-04 12:39:58 | 小欧 | 北京老陈指令："分析好了，有多余的就可以去掉的，要在设计文档中设计说明好了"。**新增第九章「observation 字段精简设计」**（原九/十顺延为十/十一）：9.1 删字段三条判据、9.2 `llm_data` 整删可行性前置核实（telemetry/formatter 均读原始 `result`，与下发副本解耦）、9.3 甲乙丙丁四类逐字段裁决表、9.4 体积收益（**删 3,973,267 字符 = 25.60%**）、9.5 目标契约（~~20 字段 → 12 字段~~，见 v1.4 更正）、9.6 逐文件改动清单（后端 3 + 前端 5 + 测试 5，含铁规澄清）、9.7 附带发现 `chat.ts` 旧契约死类型（违反禁止 backward）、9.8 历史数据兼容论证（只删字段不改语义 → 回放不退化）、9.9 规范逐条判定、9.10 风险与回归防护 |
+| v1.4 | 2026-10-04 13:06:01 | 小欧 | **算术更正**：9.5 字段数 "20 → 12" 更正为 **18 → 10**（按一级字段口径 4+3+3=10）。原 20 的口径把 `status` 5 个子键逐个计入却漏计 `truncated`/`truncated_reason`，两处误差方向相反。另补记 link 模式装历史的三层发现（`context_link_mode` 不被读 / independent 靠空区间巧合实现 / 实际装入仅 1~3 轮）——详见 §4.1.9 |
 
 ---
 
@@ -171,7 +174,7 @@ shapeRenderers.tsx:251/403/498
 |------|------|----------|--------------|
 | `tool_name` | `str` | 工具注册名（经自动纠正） | ✅ `ToolCallLine.tsx:157` 子行配对；`sseParser.ts:889` → `resolveResultType` 选渲染器 |
 | `llm_data` | `dict` | 结构化 LLM 观察（见 4.1.3） | ✅ `ToolCallLine.tsx:164/184/199` 取 `summary` / `status` |
-| `llm_data_text` | `str` | `llm_data` 的完整 JSON 副本（`indent=2`） | ❌ **全仓零消费**，纯冗余（详见 P2-9） |
+| `llm_data_text` | `str` | `llm_data` 的完整 JSON 副本（`indent=2`） | ⚠️ **前端零消费**；后端 `history_loader.py:53/139` 作 `data_text` 空值兜底回放（实测 `data_text` 非空率 100%，故该兜底实际永不触发）。详见 P2-9 |
 | `data_text` | `str` | **喂 LLM 的格式化展示文本**（非 JSON） | ✅ `shapeRenderers.tsx:49` 尝试 `JSON.parse`（必失败）→ 兜底 `content`；`ToolCallLine.tsx:189` 摘要兜底 |
 | `other_data` | `dict` | 旁路数据（`retry_count`/`attachment`/`category`/`return_direct`/`warning`/`synthetic`） | ❌ `sseParser.ts:887` 写入 `execution_result.other_data` 后**无人读取**；`return_direct` 派生出的 `step.return_direct` 亦**零消费** |
 
@@ -207,12 +210,108 @@ shapeRenderers.tsx:251/403/498
 |------|------|------|
 | ✅ 有真实读取点 | 7 | 35% |
 | ⚠️ 有读取代码但语义失效/路径不可达 | 5 | 25% |
-| ❌ 零消费（只写不读 / 读不存在的键） | 8 | 40% |
+| ❌ 零消费（只写不读 / 读不存在的键） | 7 | 35% |
 
 **结论**：后端下发 20 个有效字段（顶层 5 + `tool_result[i]` 5 + `llm_data` 子字段 10），
 前端**真实用上的仅 7 个**（`type` / `step` / `timestamp` / `tool_result` / `tool_name` / `llm_data.summary` / `llm_data.status.exec_code`），
 其中最关键的 `data_text` 处于"被读取但前提错误"状态。
-**40% 的字段是纯负担**——`llm_data_text` 更是每条 observation 都携带一份完整 JSON 副本，只写不读。
+**40% 的字段对前端是纯负担**——`llm_data_text` 更是每条 observation 都携带一份完整 JSON 副本，前端只写不读。
+
+#### 4.1.6 SSE 帧字段 vs conversation history 字段差异
+
+> 本节核实于 2026-10-04 12:23。回答一个关键问题：**后端 observation 哪些字段真正喂给了 LLM？**
+
+**先答"format 前还是 format 后"：格式化后。** 且 SSE 的 `data_text` 与 conversation history 的 `content`
+是**同一个字符串变量**（`obs_text`），逐字相同、零差异。
+
+**两条注入路径**：
+
+```
+路径1 实时（同进程同轮）
+  observation_builder.py:89   obs_text = build_observation_text(...)      ← 格式化后
+  observation_builder.py:113  add_tool_result(tc_id, obs_text)
+  message_builder.py:186      ToolResultMessage(content=obs_text, tool_call_id=tc_id)
+                              → conversation_history
+
+路径2 回放（DB → 下一轮 LLM）
+  history_loader.py:139       content = el.get("data_text") or el.get("llm_data_text") or ""
+  history_loader.py:79        arguments = json.dumps(t.get("params"))     ← action.tools[i].params，未格式化
+```
+
+**字段差异对照**：
+
+| 字段 | SSE observation 帧 | conversation history | 说明 |
+|------|--------------------|---------------------|------|
+| `type="observation"` | ✅ | ➡️ 变身为 `role="tool"` | 帧类型标记，LLM 不需要 |
+| `step` | ✅ | ❌ | |
+| `timestamp` | ✅ | ❌ | |
+| `content` | ✅ 恒 `""` | ❌ | 空串，不进 |
+| `tool_result[].tool_name` | ✅ | ❌ | LLM 靠 `data_text` 文本内的"调用工具-X"字样得知 |
+| `tool_result[].llm_data` | ✅ 完整结构 | ❌ | **`summary` / `status` / `action` / `metrics` 全部不进** |
+| `tool_result[].llm_data_text` | ✅ | ⚠️ 仅 `data_text` 为空时兜底 | 实测非空率 100%，兜底不可达 |
+| `tool_result[].data_text` | ✅ | ✅ **唯一载体** | 与 SSE 逐字相同 |
+| `tool_result[].other_data` | ✅ | ❌ | `return_direct`/`warning`/`attachment` 等编排信号不进 LLM |
+| （action 帧）`tools[].params` | ✅ | ✅ | `tool_calls[].function.arguments`，**未格式化** |
+
+**净结论**：
+
+- **SSE 帧** = 面向**前端 + 落库**的完整结构（20 字段）
+- **conversation history** = 面向 **LLM** 的极简二元组（格式化文本 + 工具入参）
+- **`llm_data` 这套结构化数据 LLM 一次都看不到**，其信息已被 formatter 压平进 `data_text` 文本
+
+**由此解释一个关键现象**：`llm_data.metrics`（行数/字节数/文件数）是结构化的，但 formatter 的"去掉统计"逻辑
+（`observation_formatter.py:626`）已使其不进结构段 —— 故 LLM 看到的只有 `data_text` 里
+"第1-60行,共3081行"这类**自然语言统计**，而非可计算的 `metrics` 字典。
+
+#### 4.1.7 `data_text` 的两段拼接结构（llm_data 与 data 的耦合点）
+
+**`data_text` = llm_data 段 + data 段，两者链在一起且双向耦合。**
+
+`format_llm_observation(data, llm_data)`（`observation_formatter.py:695-734`）：
+
+```
+text = _format_llm_data(llm_data)              ← 第1段：llm_data 渲染（:712）
+        ↓
+if exec_code == "error":                        ← error 路径特殊（:719-725）
+    if detail 为空 and data 非空:
+        text += "\n错误详情:\n" + format_data_detail(data, llm_data)
+    return text                                  ← 提前返回，不再出"详情:"段
+if data:                                         ← success / warning 路径（:727-732）
+    text += "\n详情:\n" + format_data_detail(data, llm_data)
+else:
+    text += "\n详情: 结果已在观察中完整说明"
+```
+
+**两处耦合事实**：
+
+1. `format_data_detail(data, llm_data)` 的**第二参数就是 `llm_data`** —— "data 段"的渲染过程
+   **也要读 `llm_data`**（用于 dispatch 判断工具类型、取 metrics）。故不只是前后拼接，是**互相依赖**。
+2. llm_data 段内部再含 `status`（`exec_code`/`message`/`detail`/`hint`）+ `action`（`tool`/`tool_zh`/`target`）
+   + `summary` + `llm_data["diff"]`（`:676-690`，行×列收口）。
+
+**这正是 P0 类缺陷的总根因**：原始业务 `data` 在 formatter 内部就被**消费成文本**，
+原始结构不落任何处 —— 前端 `sseParser.ts:877` 的 `JSON.parse(dataText)` 是**双重错误**：
+既误判它是 JSON，又误以为它承载了分开的 `llm_data` / `data` 结构。
+
+#### 4.1.8 `_summary` stash 空转（compaction 未接线）
+
+| 项 | 事实 |
+|----|------|
+| 现象 | `add_tool_result(tool_call_id, content, summary="")` 的 `summary` 形参，**6 处调用点全部只传 2 个参数**（`observation_builder.py:46/50/113/117`、`fc_message_types.py:64`、`message_builder.py:258`） |
+| 后果 | `_summary` 永不 stash → `compaction.use_tool_summary` 按其 docstring"无 `_summary` 时函数空转安全"**永远空转** |
+| 是否 bug | **否** —— 与 compaction 未接线状态自洽 |
+| 证据 | `use_tool_summary` / `clear_tool_outputs` / `keep_valuable_messages` / `compress_long_tool_output` 全仓搜索，**所有匹配均在 compaction 包内**（prune.py 定义处、`__init__.py` 桶导出、trigger.py / compaction_constants.py / message_builder.py 注释），**零生产调用方** |
+| 设计自述 | `message_builder.py:19` 注释："因 `_pruned`/`_summary` 现为短下划线而非 `_temp_` 前缀（**compaction 模块落地备用后**这些标记留 bool/短名前缀）" |
+
+**现在不补的理由**：补 `summary=_llm.get("summary")` 等于**为不存在的消费方写数据，违反 YAGNI**。
+
+**接线时必须一并处理的前置待办**（本轮不动，仅记录）：
+
+| # | 待办项 | 说明 |
+|---|--------|------|
+| 1 | `summary` 实参透传 | 6 处调用点**必须同时补**，否则出现"部分工具有 `_summary`、部分没有"的不一致 |
+| 2 | `data` → `summary` 取值口径 | `observation_builder.py:90` 已算出 `_llm`，可直接取 `_llm.get("summary")`，无需重算（DRY） |
+| 3 | 三处空转代码归属 | `summary` 形参 + `_summary` 分支 + `prepare_messages_for_llm` 的 `_COMPACTION_TEMP_KEYS` 剥离逻辑，均属 compaction 未接线的正常伴生物，**不应单独拆改**（拆了即违反"不拆已有设计"） |
 
 ---
 
@@ -256,221 +355,52 @@ const TOOL_RESULT_TYPE: Record<string, ResultType> = {
 |------|------|----------|------|
 | `CollapsibleText`（项目自研） | 5 行 / 200 字 | **仅字符串 `tool_result`** | 有 `stopPropagation` + Enter/Space 键盘 |
 | antd `Paragraph ellipsis` | 100 字符 / 2 行 | 数组 `tool_result` 内的长字符串 | 无 `stopPropagation` |
+## 4.6 保留清单：link 装配实际依赖 6 个字段，一个不删
+
+逐行核对 `history_loader._parse_tool_calls`（`:40-105`）与 `_parse_observations`（`:127-165`）：
+
+| # | 字段 | 装配处行号 | 作用 | 保留 |
+|---|------|-----------|------|------|
+| 1 | 顶层 `type` | `:45` / `:130` | 过滤 `== "observation"` | ✅ |
+| 2 | 顶层 `step` | `:47` / `:132` | 合成 `tool_call_id` 第 2 段 | ✅ |
+| 3 | `tool_result` | `:48` / `:133` | 结果数组载体 | ✅ |
+| 4 | `tool_result[i]` 的**数组下标** | `:50` / `:136` | 合成 `tool_call_id` 第 3 段（**配对唯一依据**） | ✅ |
+| 5 | `tool_result[].data_text` | `:53` / `:139` | **唯一内容载体**；`:53` 还用它判空建 `_obs_ids` | ✅ |
+| 6 | `tool_result[].tool_name` | `:142` | 判 `== "truncated_output"`，决定是否跳过孤儿 | ✅ |
+| 7 | 顶层 `content` | `:57` / `:154` | 老数据格式回退分支（实测 0/1418 帧走到，但**代码路径存在** → 按判据保留） | ✅ |
 
 ---
 
-## 五、确认缺陷清单
+## 五、什么问题
 
-### P0-1 `listdir` / `tree` 展开区 100% 显示"目录为空"
+1. `listdir` / `tree` 展开后显示"目录为空"
+2. 统计数字显示不出来（要么不显示，要么显示 `[object Object]`）
+3. 并行同名工具显示别人的结果
+4. 展开的工具标题显示错（展开 bash 却显示"读取文件成功"）
+5. 通用工具展示 5 行内部字段，看不到结果本身
+6. 摘要硬截 60 字；无摘要时变成乱码片段
+7. 5 个文件是死代码
+8. 测试用假数据，掩盖了上面这些问题
 
-**实测：97 / 97（100%）**
+---
 
-**根因链**：
+## 六、要怎么解决
 
-1. `data_text` JSON 可解析率 0%；
-2. `sseParser.ts:875-883` `JSON.parse` 必失败 → `dataObj = { raw: dataText }`（`:879`）；
-3. `shapeRenderers.tsx:51-61` `JSON.parse` 必失败 → 仅 `textData.content = dt`；
-4. `data.entries` / `data.tree` **永不存在**；
-5. `TreeResultRenderer` 分支A（`:259` `entries.length > 0`）与分支B（`:330` `if (tree)`）**全部不可达** → 落到 `:386-399` 兜底 → 渲染"目录为空"。
-
-**用户可见矛盾**（生产库真实对照）：
-
-| 折叠头摘要（正确） | 展开区（错误） |
-|---|---|
-| `列出目录成功: 922项, 863文件, 59目录, 94611352字节` | **`目录为空`** |
-
-分支A 的"共 N 项（目录 x / 文件 y），总大小 z"统计**从未渲染过一次**。
-
-### P0-2 `metrics` 渲染全链路失效（双重破坏）
-
-后端 `metrics` 已是 `{value, text}` 对象（实测 `{'value': 922, 'text': '922项'}`），前端仍按 `number` 使用：
-
-| 位置 | 代码 | 实际后果 |
-|------|------|----------|
-| `shapeRenderers.tsx:260-263` | `(metrics.total as number) \|\| 0` | 对象 truthy → 渲染出 **`共 [object Object] 项`** |
-| `shapeRenderers.tsx:409-411` | `const lines = (metrics.lines as number) \|\| 0` 后 `lines > 0` | `{...} > 0` → `false` → **"本次 60 行 / 共 3081 行"永不显示** |
-
-**即：即使 P0-1 修复，统计行依然错误。** 两缺陷叠加。
-
-### P0-3 并行同名工具结果串味 —— 407 / 2306（17.6%）
-
-**实测**：
-- 多工具帧 529 个，其中 **256 个（48.4%）含重名工具**；
-- 真实样本：`['bash','bash','bash','bash']`、`['read','read']`、`['write','write']`、`['searchweb','searchweb']`、`['listdir','bash']` …
-
-**根因**：`ToolCallLine.tsx:159-175` 用 `results.find(r => r.tool_name === name)` 取**首个命中**。同名组内第 2/3/4 个子行全部绑定到 `results[0]` → **显示第 1 个工具的结果**。
-
-**串味槽位按工具名分布**：
-
-| 工具名 | 串味子行数 |
-|--------|-----------|
-| searchweb | 111 |
-| shell | 51 |
-| readtext | 49 |
-| find | 26 |
-| searchtool | 23 |
-| fetchpage | 21 |
-| listdir | 20 |
-| writetext | 15 |
-| read | 14 |
-| edit | 13 |
-| httpget | 13 |
-| bash | 12 |
-
-> **不是理论风险，是高频场景。** `searchweb` 单项就占 111 个子行。
-
-### P0-4 形状分派读错工具名 —— 164 / 2306（7.1%）
-
-**根因**：`ToolCallLine.tsx:297-300`
-
-```tsx
-const singleStep = { ...(obsStep as ExecutionStep), tool_result: singleResult };
-```
-
-**未覆盖 `tool_name`**，而 `obsStep.tool_name` 来自 `sseParser.ts:889` 的 `tr[0].tool_name`。于是展开第 i 个工具时，用**第 0 个工具**的名字选渲染器。
-
-**实测错配分布**（子行数）：
-
-| 展开的工具 | `obsStep.tool_name` | 实际走的渲染器 | 子行数 |
+| # | 问题 | 怎么办 | 状态 |
 |---|---|---|---|
-| `bash` | `read` | **CodeResultRenderer** | 217 |
-| `bash` | `searchweb` | generic | 172 |
-| `bash` | `write` | generic | 135 |
-| `bash` | `readtext` | generic | 90 |
-| `bash` | `writetext` | generic | 89 |
-| `bash` | `fetchpage` | generic | 77 |
-| `bash` | **`listdir`** | **TreeResultRenderer** | 53 |
-| `timenow` | `read` | CodeResultRenderer | 42 |
+**第 0 步先做**：删 `llm_data_text` 字段（零行为变化  后端修改和前端修改）。
+| 1 | 目录显示"目录为空" | 删掉 `TreeResultRenderer`（它要的数据永远拿不到） | 已定 |
+| 2 | 统计数字显示不出 | 同第 1 条，一起删掉；要正确统计就改用 `data_text` 里的文本 | 已定 |
+| 3 | 同名工具串味 | **按数组下标配对**，不用工具名找 | 已定 |
+| 4 | 标题显示错 | 删掉形状分派（和第 1 条一起做） | 已定 |
+| 5 | 展示内部字段 | — | 本阶段不动，下一阶段再说 |
+| 6 | 摘要乱码 | 去掉 `data_text` 兜底，摘要只用 `summary` | 本阶段不动，下一阶段再说  |
+| 7 | 死代码 | 删 5 个零引用文件 | 已定 |
+| 8 | 假数据测试 | 重写测试，用真实 `data_text` 形态 | 已定 |
 
-**用户可见后果**：在 `read + bash` 批次中展开 bash 子行 → 看到 **"读取文件成功" + 代码块**，内容却是 shell 的 stdout。
 
-### P1-5 generic 路径展示内部契约裸_dump（1940 / 2376 子行，81.6%）
 
-如 §4.4 所述：`data_text`（唯一有用的可读结果）被挤在 5 行 Descriptions 的第 4 行、且被 antd 折叠成 2 行；`llm_data_text`（2306/2306 全有）是 `llm_data` 的**冗余 JSON 副本**，零语义消费。
 
-### P1-6 摘要硬截断且兜底污染
-
-- `ToolCallLine.tsx:354` `sum.slice(0, 60)` —— 硬截 60 字符，无省略号；
-- `ToolCallLine.tsx:187-192` 摘要兜底链 `llm_data.summary → data_text → summary`，其中 `data_text` 是**整个 KB 级展示文本**，空 `summary` 时摘要会变成乱码片段；
-- `r.summary`（顶层）后端**从不下发**，该分支恒不命中。
-
-### P2 其他确认项
-
-| # | 问题 | 位置 |
-|---|------|------|
-| P2-1 | **死代码**：`renderers/` 7 文件中 5 个零生产引用（`SmartContentRenderer` / `ToolInfo` / `WarningBox` / `NextActions` / `StatusIcon`），仅靠 `index.ts` 桶导出"看起来在用" → 违 YAGNI | `renderers/` |
-| P2-2 | `GenericResultRenderer` 递归**无深度上限、无循环引用防护**（对比 `ToolCallLine:286`、`shapeRenderers:51` 均已加 try/catch）；大数组逐项铺开无上限 → 千级 DOM 节点 | `GenericResultRenderer.tsx:106-196` |
-| P2-3 | `sseParser.ts:890` 读 `el.tool_params` —— 后端不下发 → 恒 `{}`；`else` 分支读 `rawData.observation` / `tool_name` —— 同样不下发 → 恒 `''` | `sseParser.ts:890-913` |
-| P2-4 | `getResultForIndex` 的 5 个配对探测中仅 `r.tool_name` 命中，`r.tool` / `r.name` / `llm_data.tool` / `llm_data.tool_name` 全为死分支 | `ToolCallLine.tsx:159-173` |
-| P2-5 | `resolveResultType` **零直接测试**；`extractResult` 模块私有未 export | `resultTypes.ts` / `shapeRenderers.tsx:40` |
-| P2-6 | **测试与真码脱钩**：`shapeRenderers-fix.test.ts:12-35` 本地**重实现了一份 `extractResult` 副本**，从不 import 真码 | `src/tests/unit/shapeRenderers-fix.test.ts` |
-| P2-7 | 测试用**假数据掩盖缺陷**：`chat-audit-2026-08-27.test.tsx` BUG-A 构造 JSON 形态 `data_text`（后端从不产生），使 tree 分派"可达"；`pipeline-rendering.test.ts:183-250` 的 `shouldCollapse` 本地模拟用 `maxLines=30/2000`，与组件真实默认 `5/200` 不一致 | 多处 |
-| P2-8 | 多处 `expect(true).toBe(true)` 强制绿（`audit-chat-page-30bugs.test.tsx:127,133,155,164,182,190`） | 测试 |
-| P2-9 | `llm_data_text` 零消费却是每条 observation 的**完整 JSON 副本**；对 `llm_data["diff"]`（`write` 全文 diff，生成端 `write_text_file.py:385-389` 无截断）、`action.params.content`（`clipboard_control.py:36`，上限 204800）、`action.params.text_or_keys`（`keyboard_control.py:27`，**无任何上限**）三个大内容向量直接翻倍 | `observation_builder.py:131` |
-| P2-10 | 展开区与 `aria-expanded` 所在的 `role="button"` 头是**兄弟节点**（`ToolCallLine.tsx:313` vs `:380`），辅助技术无法关联 | `ToolCallLine.tsx` |
-
----
-
-## 六、根因结论
-
-**一句话根因**：
-
-> 前端 observation 渲染体系是照着 **"`data_text` 是 JSON"** 这一**错误前提**建立的（2026-08-27 `ToolResultRenderer` 重构时的假设），而后端从来只发格式化展示文本。2026-08-28 / 09-01 两次补丁（`data_text` 兜底为 `content`）**只修了 `read` 一条路径**，`listdir` / `tree` / `generic` 三类一直没修，且被**使用假数据的测试**长期掩盖。
-
-**结构性问题**（比单个 bug 更值得注意）：
-
-1. **契约假设未落地为断言** —— 前后端对 `data_text` 形态的理解从未被任何测试或类型约束固定，导致错误假设能存活 6 周（08-27 → 10-04）。
-2. **测试用假数据自证正确** —— BUG-A 用 JSON `data_text` 断言 tree 分派可达，而这个场景生产中 0% 存在。测试给了虚假绿灯。
-3. **修复打补丁而非修根因** —— 09-01 的 `content` 兜底是"让 `read` 不空"，没有回头质疑"`entries`/`tree` 为什么永远拿不到"，于是 `listdir` 的"目录为空"被留到今天。
-
----
-
-## 七、已裁定方向（北京老陈 2026-10-04 决定）
-
-| # | 事项 | 裁定 |
-|---|------|------|
-| 1 | `TreeResultRenderer` / `CodeResultRenderer` 去留 | **删掉 tree/code 渲染器**（两个分支已实测永不可达，属过度设计；全走统一的 `data_text` 展示） |
-| 2 | 死代码与脱钩测试 | **删死代码 + 重写脱钩测试**（清 YAGNI 违规；测试改为 import 真码并使用生产真实 `data_text` 形态） |
-
----
-
-## 八、待裁定事项
-
-### 8.1 P0-3 同名串味修法
-
-| 方案 | 做法 | 优点 | 缺点 |
-|------|------|------|------|
-| **A（推荐）** | `getResultForIndex` 改为**索引优先**（`results[idx]`），去掉 `find()` 探测 | 后端已保证索引严格对齐（§3.4），一行改动即彻底解决 17.6% 串味 | 无 |
-| B | 后端 `tool_result[i]` 补 `tool_call_id` 供精确配对 | 契约更严谨 | 改动面大（后端 + SSE + 落库 + 回放），且索引对齐本已可靠 |
-| C | 保留 `find()` 但同名组内顺序消耗（消耗式匹配） | 兼容乱序 | 复杂度显著上升（违反 KISS-DIRECT） |
-
-**小欧建议 A**：后端索引对齐是硬保证，`find()` 的"防乱序"设计属于**解决不存在的问题**（违反 KISS-DIRECT / YAGNI），反而制造了 17.6% 的真实缺陷。
-
-### 8.2 P0-4 形状分派修法
-
-若采纳第七章裁定 1（删 tree/code 渲染器），则 `resolveResultType` 与 `shapeRenderers` 一并删除，P0-4 **自动消失**（无分派即无错配）。这是裁定 1 的连带收益，需确认接受。
-
-### 8.3 generic 路径是否保留内部契约表
-
-| 选项 | 说明 |
-|------|------|
-| **A** | 有价值 —— 原始数据是排查依据。保留但优化：`llm_data_text` 去重折叠、`data_text` 提为首行主区、`llm_data` 收进二级折叠 |
-| **B** | 无价值 —— 只显示 `data_text` 可读文本，契约表整体收进二级折叠（默认收起） |
-
-**待北京老陈裁定。**
-
----
-
-## 九、实施影响面与风险
-
-### 9.1 拟定改动范围（待批准后执行）
-
-| 文件 | 改动 | 关联缺陷 |
-|------|------|----------|
-| `ToolResultRenderer/index.tsx` | 删形状分派，统一走单一渲染器 | P0-1 P0-2 P0-4 |
-| `ToolResultRenderer/resultTypes.ts` | **整文件删除** | P0-1 P0-4 |
-| `ToolResultRenderer/shapeRenderers.tsx` | 删 `TreeResultRenderer` / `CodeResultRenderer` / `extractResult` / `formatFileSize` / `formatMtime` / `TreeDirItem` / `TreeTreeNode` | P0-1 P0-2 |
-| `renderers/` 5 个死代码文件 | 删除；`index.ts` 桶收缩为仅 `GenericResultRenderer` | P2-1 |
-| `ToolCallLine.tsx` | `getResultForIndex` 改索引优先；删 4 个死探测分支 | P0-3 P2-4 |
-| `sseParser.ts` | 删 `el.tool_params` 死读与 `else` 死分支 | P2-3 |
-| `src/tests/` | 重写脱钩测试；新增同名批次、真实 `data_text` 形态回归 | P2-5~P2-8 |
-
-### 9.2 风险与回归防护
-
-| 风险 | 防护 |
-|------|------|
-| 删除 tree/code 后目录树交互能力丢失 | 已知并接受（分支实测 0% 可达，等于无能力）；`data_text` 仍含完整目录文本 |
-| 删死代码误伤 | 逐文件确认零生产引用（本文 §4 已列 grep 证据），删除后跑 `npm run check:full` |
-| 索引优先后若后端真出现乱序 | 后端 `tool_runner.py:123-130` 按下标回填，乱序不可能；若未来契约变更，须同步改此逻辑（注释留痕） |
-| `npm run check:full` 不含 e2e typecheck | 提交前必须跑 `npm run typecheck` + `npm run typecheck:e2e`（AGENTS.md 2026-10-01 修订） |
-
----
-
-## 十、附录：取证方法与可复现脚本
-
-### 10.1 取证脚本位置
-
-| 脚本 | 用途 |
-|------|------|
-| `C:\Users\chend\AppData\Local\Temp\opencode\probe_obs.py` | `data_text` JSON 可解析率、各工具 `data_text` 样本 |
-| `C:\Users\chend\AppData\Local\Temp\opencode\probe_obs2.py` | `tool_result[i]` 键频、`llm_data.metrics` 键频、多工具批次样本 |
-| `C:\Users\chend\AppData\Local\Temp\opencode\probe_obs3.py` | 重名批次占比、串味槽位统计、listdir/tree/read 可用性 |
-| `C:\Users\chend\AppData\Local\Temp\opencode\replay_frontend.py` | **1:1 复刻前端渲染管线**，喂真实数据观测实际分支 |
-| `C:\Users\chend\AppData\Local\Temp\opencode\probe_final.py` | 最终权威量化（1418 帧 / 2306 子行） |
-
-### 10.2 数据库只读连接方式
-
-```python
-sqlite3.connect('file:' + os.path.expanduser('~/.omniagent/chat_history.db') + '?mode=ro', uri=True)
-```
-
-### 10.3 声明
-
-- 本报告全部数据取自生产库**只读**查询，未修改任何数据。
-- 本报告结论均可由上述脚本复现验证。
-- 本轮**未修改任何代码**。
-
----
 
 **编写人**：小欧
 **编写时间**：2026-10-04 11:53:48
