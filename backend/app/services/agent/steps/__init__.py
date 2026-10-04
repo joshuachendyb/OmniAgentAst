@@ -62,7 +62,10 @@ ALL_STEP_TYPES = frozenset({
     "chunk", "thought-start",
     "error", "usage", "paused", "resumed", "retrying",
     "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
-    "rejected", "stats", "history_context", "truncated",  # 2026-10-04 小欧: context_overview 改名 history_context(北京老陈令)
+    "rejected", "truncated",
+    # 2026-10-04 小欧 - 订正: stats/history_context 实际属"落库需回放"(见 agent_telemetry.PERSISTED_NON_BIZ_TYPES,
+    #   agent_runner 落库路由以 SSE_ONLY_TYPES 为排除集, 二者不在其中即落库), 原被误列在仅SSE 段 — 小欧 2026-10-04
+    "stats", "history_context",
     # 仅落库(SSE✗/DB✓)
     "thought",
     # 防御性保留(当前无独立发射源)

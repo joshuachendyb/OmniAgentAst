@@ -72,6 +72,10 @@
 #   走既有幂等迁移器 _ensure_column（复用优先，与 version/title_locked 同款写法），不新建迁移分支、不改解析逻辑；
 #   DEFAULT FALSE 使新行天然为关闭态，读侧再用 COALESCE 兜住存量 NULL 行（ALTER ADD COLUMN 不回填旧行）。
 #   compliance: 复用优先 / DRY（单一迁移出口）/ KISS-DIRECT — 小欧 2026-10-02
+# 2026-10-04 - 小欧 - 帧类型改名的一次性数据迁移(北京老陈令 context_overview→history_context): 新增
+#   _migrate_step_type_context_rename，改写 chat_task_steps.step_json 内旧 type 行；仿 _migrate_model_ref_columns
+#   幂等写法(查旧名行→json 解析→改 type→回写)，异常降级不阻断启动。接在 _verify_model_ref_columns 之后。
+#   不迁则旧行 type 旧名不在前端 META_STEP_TYPES，isBusinessStep 误判业务步 → 历史回放渲染未知卡片 — 小欧 2026-10-04
 """
 db_initializer — 数据库初始化
 
@@ -251,6 +255,10 @@ def init_chat_db(get_conn):
         # 三堂会审修复(小欧): 三写路径(insert_task/token_usage_insert/update_user_message_final)每任务强依赖
         #   新 JSON 列, 补列失败若静默降级则全部任务落库崩溃——仿 _verify_acc_columns 先例 fail-loud 硬校验
         _verify_model_ref_columns(conn)
+
+        # 2026-10-04 小欧: step_json 内帧类型改名迁移(北京老陈令 context_overview→history_context)
+        #   不迁则旧行 type 旧名不在前端 META_STEP_TYPES 内, isBusinessStep 会误判为业务步 → 回放渲染未知卡片
+        _migrate_step_type_context_rename(conn)
 
         # v2.0 结构迁移 — 小欧 2026-08-19
         #  ①必须在 _ensure_column 之后(_ensure_column 为回灌 SELECT 补齐 client_os/timestamp 等列)
@@ -516,6 +524,33 @@ def _verify_acc_columns(conn: sqlite3.Connection) -> None:
         _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()
         if _c.lower() not in {r["name"].lower() for r in _rows}:
             raise RuntimeError(f"token 累计列缺失(迁移失败): {_t}.{_c}")
+
+
+def _migrate_step_type_context_rename(conn: sqlite3.Connection) -> None:
+    """chat_task_steps.step_json 内 type=context_overview → history_context, 幂等(仿 _migrate_model_ref_columns 写法)
+
+    2026-10-04 小欧 - 帧类型改名(北京老陈令)的一次性数据迁移: 旧行不改则 type 旧名不在前端 META_STEP_TYPES,
+    isBusinessStep 取反即误判业务步, 历史回放会渲染出未知卡片。异常降级不阻断启动(同 _migrate_model_ref_columns)。
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id, step_json FROM chat_task_steps WHERE step_json LIKE '%context_overview%'"
+        ).fetchall()
+        for r in rows:
+            try:
+                data = _json.loads(r["step_json"])
+            except Exception:
+                continue
+            if isinstance(data, dict) and data.get("type") == "context_overview":
+                data["type"] = "history_context"
+                conn.execute(
+                    "UPDATE chat_task_steps SET step_json=? WHERE id=?",
+                    (_json.dumps(data, ensure_ascii=False), r["id"]),
+                )
+        if rows:
+            logger.info(f"[帧类型迁移] context_overview→history_context 回灌 {len(rows)} 行(其中含非该 type 的其他文本命中)")
+    except Exception as e:
+        logger.warning(f"[帧类型迁移] chat_task_steps 回灌失败(降级不阻断启动): {e}")
 
 
 def _verify_model_ref_columns(conn: sqlite3.Connection) -> None:
