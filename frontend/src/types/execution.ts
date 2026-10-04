@@ -10,6 +10,8 @@
 //   (后端 ALL_STEP_TYPES/_SSE_FORWARD_TYPES 已注册, 解析层靠 as 断言掩盖类型缺口 = 吞错, 本次补真源) — 小欧-2026-09-28
 // 编辑历史: 2026-10-04 小欧 - context_overview 字段块补两个 injected 键, 与 sse.ts 的
 //   ContextOverviewFrame 对齐(两处长期分裂, 本次只对齐不合并) — 小欧 2026-10-04
+// 编辑历史: 2026-10-04 小欧 - 增 truncated?: boolean(仅 history_context 帧有效, 与 type='truncated' 的输出截断帧无关):
+//   供 useTaskInfo 从 steps 派生"历史对话已裁剪"事件
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，
@@ -197,9 +199,11 @@ export interface ExecutionStep {
   message_count?: number;
   estimated_tokens?: number;
   injected_ratio?: number;
-  // 2026-10-04 小欧 - 与 sse.ts 的 ContextOverviewFrame 对齐 — 小欧 2026-10-04
+  // 2026-10-04 小欧 - 与 sse.ts 的 ContextOverviewFrame 对齐
   injected_message_count?: number | null;
   injected_estimated_tokens?: number | null;
+  // 2026-10-04 小欧 - 裁剪标志随帧入 steps, 供 useTaskInfo 生成"历史对话已裁剪"事件(帧级字段, 与 metaFrames 同源不重复发)
+  truncated?: boolean;
 
   // === 前端额外字段 ===
   timestamp: number; // 前端生成的时间戳

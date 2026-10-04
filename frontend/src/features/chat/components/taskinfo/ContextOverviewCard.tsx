@@ -6,6 +6,8 @@
  * 编辑历史: 2026-10-04 小欧 - 自 TaskInfoBar 抽出为独立组件(G6 浮层①); 历史任务只显行不挂弹框(isLiveContext=false 早返回);
  *   摘要单行省略(去展开按钮), 仅 truncated 补警示行; token 折算复用 infoMaps.formatTokenK(DRY)
  * 编辑历史: 2026-10-04 小欧 - 新增可选 prop contextWindow: 装入条补「占窗率 = 估算token/窗口」, 窗口缺失则不渲染
+ * 编辑历史: 2026-10-04 小欧 - 显出跨任务注入三字段(injected_message_count/injected_estimated_tokens/injected_ratio,
+ *   此前帧收了未渲染): 增第二行, 仅注入条数>0 时显示(多数任务为 0, 显示是噪声)
  */
 import React, { useEffect, useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -54,6 +56,17 @@ export const ContextOverviewCard: React.FC<Props> = ({
   const count =
     typeof overview === 'object' && overview ? overview.message_count : null;
 
+  // 2026-10-04 小欧: 跨任务注入三字段(injected_*)此前收了未显; 仅 injected_message_count>0 时增一行,
+  //   避免多数任务显示"注入 0 条"噪声(YAGNI); 两行顺序=注入在上、装入在下(北京老陈令) — 小欧 2026-10-04
+  const injected =
+    typeof overview === 'object' && overview
+      ? {
+          count: overview.injected_message_count ?? 0,
+          tokens: overview.injected_estimated_tokens ?? 0,
+          ratio: overview.injected_ratio ?? 0,
+        }
+      : null;
+
   // 2026-10-04 小欧: 装入条数 + 估算 token + 占窗率 同行(北京老陈定); 占窗率=估算 token / 窗口, 窗口缺失则不显
   const usedPct =
     tokens != null && contextWindow
@@ -62,10 +75,19 @@ export const ContextOverviewCard: React.FC<Props> = ({
   const metricLine =
     count != null || hasTokens ? (
       <div>
-        {count != null && <span>装入历史对话 {count} 条</span>}
-        {count != null && hasTokens && <span> · </span>}
-        {hasTokens && <span>估算Token约 {formatTokenK(tokens)}</span>}
-        {hasTokens && usedPct != null && <span> · 占窗率 {usedPct}%</span>}
+        {injected && injected.count > 0 && (
+          <div>
+            跨任务注入 {injected.count} 条 · 估算Token约{' '}
+            {formatTokenK(injected.tokens)} · 占装入{' '}
+            {Math.round(injected.ratio * 100)}%
+          </div>
+        )}
+        <div>
+          {count != null && <span>装入历史对话 {count} 条</span>}
+          {count != null && hasTokens && <span> · </span>}
+          {hasTokens && <span>估算Token约 {formatTokenK(tokens)}</span>}
+          {hasTokens && usedPct != null && <span> · 占窗率 {usedPct}%</span>}
+        </div>
       </div>
     ) : null;
 

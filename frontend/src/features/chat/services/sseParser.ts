@@ -99,6 +99,8 @@
 //   从无 summary 键, 原读法致卡片恒显"–")＋补收 injected 两键 — 小欧 2026-10-04
 // 编辑历史: 2026-10-04 小欧 - usage 帧新增解析 context_window → metaFrames.contextWindow(运行时上下文窗口),
 //   供 taskinfo「占窗率 = 本轮P/窗口」; 窗口为常量, 无新值时沿用上一帧(prev.contextWindow)
+// 编辑历史: 2026-10-04 小欧 - history_context 帧仅在 truncated 时入 executionSteps(供行尾事件列表派生"历史对话已裁剪"),
+//   事件派生与现有 9 类同源且取帧内真实 timestamp; 非裁剪帧不入, 免影响 RightViewer 步骤数比较
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -519,22 +521,36 @@ const processSSEData = (
       }
 
       // history_context：装入历史对话水位帧
-      // 2026-10-04 小欧: 帧类型改名 context_overview→history_context(与后端 MetaStep.type 同步) — 小欧 2026-10-04
+      // 2026-10-04 小欧: 帧类型改名 context_overview→history_context(与后端 MetaStep.type 同步)
       case 'history_context': {
         logTypeArrival('history_context'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
+        const content =
+          typeof rawData.content === 'string' ? rawData.content : '';
+        const trimmed = rawData.truncated === true;
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
           contextOverview: {
-            summary: typeof rawData.content === 'string' ? rawData.content : '',
+            summary: content,
             message_count: rawData.message_count,
             estimated_tokens: rawData.estimated_tokens,
-            truncated: rawData.truncated === true,
+            truncated: trimmed,
             injected_ratio: rawData.injected_ratio,
             injected_message_count: rawData.injected_message_count ?? null,
             injected_estimated_tokens:
               rawData.injected_estimated_tokens ?? null,
           },
         }));
+        // 2026-10-04 小欧: 仅裁剪轮入 steps(北京老陈令: truncated=1 要在行尾事件列表留一条); 事件派生与现有 9 类同源(走 steps 扫描),
+        //   取帧内真实 timestamp; 非裁剪帧不入, 免每5轮里程碑灌入无用帧影响步骤数比较; 该类型已在 META_STEP_TYPES 不进业务流水线
+        if (trimmed) {
+          pushAndFlush(handlers, {
+            type: 'history_context',
+            content,
+            step: toStepNumber(rawData.step),
+            timestamp: timestampValue,
+            truncated: true,
+          });
+        }
         break;
       }
 

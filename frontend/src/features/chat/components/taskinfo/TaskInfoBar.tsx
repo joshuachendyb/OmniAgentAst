@@ -459,6 +459,24 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               <DownOutlined style={{ fontSize: FontSize.CAPTION }} />{' '}
               {/* v4.1: 方向=弹出语义 */}
               事件
+              {/* 2026-10-04 小欧: 事件计数胶囊(北京老陈令): 橘底(Colors.ACCENT_ORANGE #d4380d)白字加粗, 白字对比约4.8:1达AA,
+                  亮橘 #fa8c16 配白字仅 2.4:1 故弃用; 0 条不显, 数据源 useTaskInfo.processEventCount(未截断真值) — 小欧 2026-10-04 */}
+              {info.processEventCount > 0 && (
+                <Badge
+                  count={info.processEventCount}
+                  overflowCount={99}
+                  style={{
+                    marginLeft: Spacing.XS,
+                    fontSize: FontSize.CAPTION,
+                    fontWeight: FontWeight.BOLD,
+                    color: '#fff',
+                    backgroundColor: Colors.ACCENT_ORANGE,
+                    height: 14,
+                    lineHeight: '14px',
+                    paddingInline: 4,
+                  }}
+                />
+              )}
             </span>
           </FloatingEntry>
         </div>

@@ -15,6 +15,8 @@
 // 编辑历史: 2026-10-04 小欧 - Colors.BORDER 新增 ACCENT=#69b1ff(antd blue-3): taskinfo 信息带分隔点色。
 //   选型: 绿=成功语义(与 completed 徽标撞义, 失败任务也显绿点会误导)、主蓝#1677ff 过抢(hover 强调色),
 //   淡蓝保品牌色相且与状态色不冲突, #fafafa 底上可见又不抢内容
+// 编辑历史: 2026-10-04 小欧 - 新增 ACCENT_ORANGE=#d4380d: 事件计数胶囊底色(橘底白字, 白字对比约4.8:1达AA;
+//   亮橘 #fa8c16 配白字仅 2.4:1 弃用)
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -152,6 +154,9 @@ export const Colors = {
   WARNING: '#AD6800', // 警告/思考状态 - 深琥珀(白底对比度约 4.7:1, 定案 3.7)
   INFO: '#096dd9', // 信息/开始状态 - 蓝色
   ORANGE_RED: '#fa541c', // 未执行/被安全拦截/确认超时提示 - 火山橘红(AntD5 volcano-6, 2026-09-06 北京老陈定案 替灰字不醒目) — 小欧-2026-09-06
+  // 2026-10-04 小欧 - 事件计数胶囊底色(北京老陈令: 橘底白字, 对比要强烈): 取 AntD volcano-7 而非 WAIT_ACTION #fa8c16,
+  //   因后者配白字仅 2.4:1 远低于 AA, 本色配白字约 4.8:1 达 AA 且醒目不惊炸 — 小欧 2026-10-04
+  ACCENT_ORANGE: '#d4380d',
   WAIT_ACTION: '#fa8c16', // 工具执行等待齿轮橘(ToolWaitingIcon loader, 北京老陈钦定名 WAIT_ACTION, 与 ORANGE_RED/WARNING 同色带不冲突) — 小欧-2026-09-14
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
 } as const;
@@ -189,7 +194,7 @@ const stepMeta: Record<StepType, StepMeta> = {
     layout: 'inline',
   },
   history_context: {
-    // 2026-10-04 小欧: 键名随帧类型改名; label 同步正名为"历史上下文"(北京老陈令) — 小欧 2026-10-04
+    // 2026-10-04 小欧: 键名随帧类型改名; label 同步正名为"历史上下文"(北京老陈令)
     label: '📑 历史上下文',
     priority: 'secondary',
     layout: 'inline',

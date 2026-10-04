@@ -9,6 +9,7 @@
 //   区分「历史任务无实时帧(设计如此)」与「真缺失」, empty 提示文案去内部变量名 frames — 小欧 2026-10-04
 // 编辑历史: 2026-10-04 小欧 - token 显示序改 P→C→T, 行内折 K/M; formatToken 去 "T " 前缀后无调用方已删(YAGNI)
 //   同日回退: historical 态与 mapStatus 的 isLiveContext 判据已撤, 改由卡片 isLiveContext 决定是否挂弹框
+// 编辑历史: 2026-10-04 小欧 - EVENT_ICON_MAP 新增 context_trimmed(历史对话裁剪, 北京老陈令), 复用 WarningOutlined
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
@@ -104,6 +105,8 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   cancelled: <CloseCircleOutlined />, // 2026-09-17 小欧: 取消事件 - 小欧-2026-09-17
   final: <CheckCircleOutlined />, // 2026-09-17 小欧: 任务完成/失败 - 小欧-2026-09-17
   heartbeat: <SyncOutlined />, // 2026-09-19 小欧: 心跳事件 — 北京老陈驱动
+  // 2026-10-04 小欧: 历史对话裁剪事件(北京老陈令改名 context_trimmed, 与输出截断 truncated 区分), 复用警示图标
+  context_trimmed: <WarningOutlined />,
 };
 
 // ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------

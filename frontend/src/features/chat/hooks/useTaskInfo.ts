@@ -42,6 +42,8 @@
 //   致失败任务事件列表显示成功绿勾, 成功/失败不可区分; 改 error 走 WarningOutlined 警告图标) — 小欧-2026-09-17
 // 编辑历史: 2026-09-19 小欧: ProcessEvent.kind 恢复 'heartbeat', steps 遍历加 case 'heartbeat' 推入 processEvents — 北京老陈驱动
 // 编辑历史: 2026-10-04 小欧 - 透出 contextWindow(来自 usage 帧 context_window)供占窗率; 历史任务无 usage 帧故为 null
+// 编辑历史: 2026-10-04 小欧 - ProcessEvent.kind 新增 truncated(历史对话裁剪, 北京老陈令): steps 扫描新增 case 'history_context',
+//   本任务只记首条(裁剪可连续多轮, 事件列表仅存最近20条, 每轮一条会挤掉 paused/final 等有效事件)
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -79,7 +81,10 @@ export interface ProcessEvent {
     | 'rejected'
     | 'cancelled'
     | 'final'
-    | 'heartbeat';
+    | 'heartbeat'
+    // 2026-10-04 小欧: 历史对话裁剪事件(北京老陈令改名 context_trimmed): 原 truncated 一名三义
+    //   (输出截断帧类型 / 位4 输出截断 / 本事件), 视觉上无法与 error 区分
+    | 'context_trimmed';
   text: string;
   time: number;
 }
@@ -172,6 +177,7 @@ export const useTaskInfo = (
         isLiveContext: false, // 2026-10-04 小欧: 本分支=历史任务, 供卡片决定是否挂弹框
         truncatedTip: null,
         processEvents: [],
+        processEventCount: 0,
         stuckWarning: false,
         liveMeta: null, // 小欧 2026-09-02: 历史回放位4置空不占位(无实时源)
       };
@@ -189,6 +195,8 @@ export const useTaskInfo = (
     } | null = null;
     // 2026-09-03 小欧 修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
     let _badgeRecovered = false;
+    // 2026-10-04 小欧: 历史对话裁剪只留首条事件(裁剪可连续多轮触发, 每轮一条会刷屏并挤掉有效事件, 事件列表仅存最近20条)
+    let _trimSeen = false;
 
     // ① 过程状态条事件 + 终态徽标（全量步骤流内派生）
     // 【小欧 2026-08-26 18:49 修正】startinfo 不进 executionSteps（8.4.3 只写 metaFrames），
@@ -269,6 +277,17 @@ export const useTaskInfo = (
             text: s.content || '心跳',
             time: s.timestamp,
           });
+          break;
+        // 2026-10-04 小欧: 历史对话裁剪事件(北京老陈令) —— 只记本任务首条, 文本固定不用帧内摘要(摘要是最近一条对话内容, 与"已裁剪"无关会误导)
+        case 'history_context':
+          if (s.truncated && !_trimSeen) {
+            _trimSeen = true;
+            processEvents.push({
+              kind: 'context_trimmed',
+              text: '历史对话已裁剪',
+              time: s.timestamp,
+            });
+          }
           break;
         // 2026-09-11 小欧 契约化(method2): thought=仅历史回显事件(DB), 实时 SSE 永不发,
         //   执行中信号剔除 thought(thought-start/action/observation 仍实时兜住 idle→running) — 小欧-2026-09-11
@@ -395,6 +414,8 @@ export const useTaskInfo = (
       isLiveContext: true, // 2026-10-04 小欧: 实时流分支, 与上面 detail 分支对称
       truncatedTip: frames.truncated?.content ?? null,
       processEvents: recentEvents, // 最早事件在上，保留最近20条
+      // 2026-10-04 小欧: 事件总数(未截断; processEvents 已 slice(-20), 直接取其 length 会卡在 20)供"事件"标签计数
+      processEventCount: processEvents.length,
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
