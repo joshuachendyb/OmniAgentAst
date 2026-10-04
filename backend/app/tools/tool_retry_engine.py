@@ -195,6 +195,8 @@ class ToolRetryEngine:
           normalized_input 是校验后参数, 内含 timeout 则随 tool(**normalized_input) 原样传给 tool(①线);
           timeout 参数是保险丝(②线), 仅用于 asyncio.wait_for 掐整个调用, 不传给 tool 本身。
         """
+        # 治理第0步(2026-10-04 小欧): 同步工具经下方to_thread卸载出事件循环;
+        #   禁止把shell()改成async def — 改协程会走本分支直调, 卸载被取消, 阻塞回到事件循环(功能退化)。
         if inspect.iscoroutinefunction(tool):
             return await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
         result = await asyncio.wait_for(

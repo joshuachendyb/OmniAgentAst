@@ -198,6 +198,9 @@ _UNLINK_RETRY_DELAY = 0.05      # unlink重试间隔(秒)：50ms×3≈150ms, 覆
 _CLEANUP_GUARD_TIMEOUT = 15     # [M1] 清理链守护线程join超时(秒): M6守卫线程清理的最长等待+探针观测阈值 — 小欧 2026-09-19
                                  # SUBPROCESS_TIMEOUT_SHORT=5×(taskkill+_poll_pid_exit二次确认)≈10s + unlink重试0.15s → 取15s,
                                  # 正常清理10s内必完成, 只有OS级挂起才拖满15s — 小欧 2026-09-19
+_LOCK_WAIT_GUARD = 10        # 实例锁等待护栏(秒): 等锁上限=_LOCK_WAIT_GUARD+命令timeout, 超时返回_ERROR_LOCK_BUSY — 治理层3 小欧 2026-10-04
+_STDIN_WRITE_TIMEOUT = 5     # stdin写入上限(秒): 超时=存活不读(管道背压/半死) → M6守卫清理+重启 — 治理层3 小欧 2026-10-04
+_ERROR_LOCK_BUSY = {"stdout": "", "stderr": "shell instance lock busy", "exit_code": -1}   # 等锁超时明确失败,dict模式同:188 — 治理层3 小欧 2026-10-04
 
 # ═══════════════════════════════════════════════════════
 #  _TempFiles — 临时文件 contextmanager
@@ -377,8 +380,15 @@ class PersistentShell:
         # [守卫拆分 小欧 2026-09-19] 原封装: 外层 with self._lock 包裹整个 exec(含 _exec 内 await) →
         # 守卫 join(≤15s) 仍被 exec 外层锁包住, 同实例并发调用最长阻塞 15s(违反"锁立即释放"承诺, wave6 实测3.85s)。
         # 修复: 本层直调 _exec_locked(锁内仅微秒级 start), join/兜底(_await_cleanup_guard) 放最外层锁外。
+        _t_enter = time.perf_counter()
+        logger.info(f"[Shell打点] exec进入 cmd={command[:80]!r} timeout={timeout} (pid={getattr(getattr(self, '_proc', None), 'pid', None)})")  # 治理观测: 进入段之前落盘, 卡死时末行即断点 — 小欧 2026-10-04
         result = None
-        with self._lock:
+        # 治理层3(2026-10-04 小欧): 等锁有界, 上限=_LOCK_WAIT_GUARD+timeout; 持有方异常时明确失败, 不无限排队。
+        if not self._lock.acquire(timeout=_LOCK_WAIT_GUARD + timeout):
+            logger.warning(f"[卡死C3b] 实例锁等待{_LOCK_WAIT_GUARD + timeout}s超时 → 返回shell instance lock busy (cmd={command[:64]!r})")
+            return dict(_ERROR_LOCK_BUSY)
+        try:
+            logger.info(f"[Shell打点] exec持锁(等待{int((time.perf_counter() - _t_enter) * 1000)}ms) cmd={command[:80]!r}")  # 治理观测: 进入→持锁间隔=等锁耗时 — 小欧 2026-10-04
             for attempt in range(2):
                 if not self._ensure_alive(env):
                     if attempt == 0:
@@ -391,8 +401,11 @@ class PersistentShell:
                 self._close()
             else:
                 return dict(_ERROR_NO_SHELL)
+        finally:
+            self._lock.release()
         if result and result.get("timed_out"):
             self._await_cleanup_guard()       # 锁外: join(≤15s) + 异常兜底 + 观测留痕, 不阻塞任何调用方
+        logger.info(f"[Shell打点] exec返回 elapsed={int((time.perf_counter() - _t_enter) * 1000)}ms exit_code={result.get('exit_code') if isinstance(result, dict) else None} cmd={command[:80]!r}")  # 治理观测 — 小欧 2026-10-04
         return result
 
     def close(self):
@@ -520,8 +533,14 @@ class PersistentShell:
         # 两处可并发写同一 stdin → 命令交错/串扰。收敛为所有 _exec 调用统一持锁。
         # [守卫拆分 小欧 2026-09-19] 超时守卫 join/兜底 移到锁外(_await_cleanup_guard): 锁内仅微秒级 start,
         # 使"锁立即释放"契约成立(实测修复前第二线程被 join 阻塞 3s; 修复后立即放行).
-        with self._lock:
+        # 治理层3(2026-10-04 小欧): 同exec等锁有界; _probe调用拿不到锁→返回lock busy→stdout无探活标记→判False走C13重建。
+        if not self._lock.acquire(timeout=_LOCK_WAIT_GUARD + timeout):
+            logger.warning(f"[卡死C3b] _exec实例锁等待{_LOCK_WAIT_GUARD + timeout}s超时 → 返回shell instance lock busy (cmd={command[:64]!r})")
+            return dict(_ERROR_LOCK_BUSY)
+        try:
             result = self._exec_locked(command, timeout)
+        finally:
+            self._lock.release()
         if result.get("timed_out"):
             self._await_cleanup_guard()       # 锁外: join(≤15s) + 异常兜底 + 观测留痕, 不阻塞任何调用方
         return result
@@ -578,8 +597,25 @@ class PersistentShell:
                 if self._proc is None or self._proc.poll() is not None:
                     logger.warning(f"[卡死C5] 写stdin前探活: 进程已死, 返回_EXIT_PROCESS_DIED → 走重启分支 (pid={self._proc.pid if self._proc else None})")
                     return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
-                self._proc.stdin.write(feed.encode(locale.getpreferredencoding(), errors="replace"))
-                self._proc.stdin.flush()
+                # 治理层3(2026-10-04 小欧): stdin写入有界化, daemon线程+join(_STDIN_WRITE_TIMEOUT), 异常归集回抛复用下方C5分支。
+                #   超时=存活不读(管道背压/半死) → M6守卫清理, 返回_EXIT_PROCESS_DIED走重启, 不再无限阻塞。
+                _stdin = self._proc.stdin
+                _wr_err: list = []
+                def _do_write():
+                    try:
+                        _stdin.write(feed.encode(locale.getpreferredencoding(), errors="replace"))
+                        _stdin.flush()
+                    except (BrokenPipeError, OSError, ValueError) as _e:
+                        _wr_err.append(_e)
+                _wrt = threading.Thread(target=_do_write, daemon=True, name="shell-stdin-writer")
+                _wrt.start()
+                _wrt.join(_STDIN_WRITE_TIMEOUT)
+                if _wr_err:
+                    raise _wr_err[0]
+                if _wrt.is_alive():
+                    logger.warning(f"[卡死C5b] stdin写入{_STDIN_WRITE_TIMEOUT}s未返回(管道背压/半死) → M6守卫清理+重启 (pid={self._proc.pid if self._proc else None})")
+                    self._cleanup_guard_start()
+                    return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
             except (BrokenPipeError, OSError, ValueError):
                 logger.warning(f"[卡死C5] 向死进程写stdin触发管道异常(BrokenPipe/OSError/ValueError) → 返回_EXIT_PROCESS_DIED, 走重启分支")
                 return {"stdout": "", "stderr": "", "exit_code": _EXIT_PROCESS_DIED}
@@ -865,6 +901,11 @@ class ShellPoolManager:
 
     def _pool_key(self, task_id: str, shell_type: str) -> tuple:
         return (task_id, shell_type)
+
+    def has_session(self, task_id: str, shell_type: str) -> bool:
+        """只读查询该key下是否存在池实例(存在⇒任务可能已有会话态); 不取槽/不探活/不改池状态 — 治理层2 小欧 2026-10-04"""
+        with self._lock:
+            return bool(self._pool.get(self._pool_key(task_id, shell_type)))
 
     def _make_shell(self, shell_type: str, workdir: str = None) -> PersistentShell:
         """创建 PersistentShell 实例（解锁执行，不持池锁）"""

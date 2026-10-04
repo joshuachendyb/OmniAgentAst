@@ -233,6 +233,7 @@ from app.tools.file.file_encoding import get_file_encoding
 from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
 from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
+from app.utils.shell_readonly import is_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
@@ -1109,7 +1110,33 @@ def shell(
 
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     try:
-        if shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5专属】: 持久进程引擎 — 小欧 2026-07-28 ──
+        task_id = get_current_task_id()
+        # 治理层2(2026-10-04 小欧): 出池=无池实例+白名单, 全过走一次性进程; 仅执行路由, 扫描定序属沙箱闸。
+        _one_shot = (
+            shell_type in ("ps7", "ps5")
+            and not shell_pool.has_session(task_id, shell_type)
+            and is_readonly_whitelisted(processed_command)
+        )
+        pwsh_exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") if _one_shot else None
+        if pwsh_exe:
+            # 治理层2(2026-10-04 小欧): 同解释器一次性子进程, 结构复用bash分支(进程退出判定+communicate硬超时)。
+            proc = subprocess.Popen(
+                [pwsh_exe, "-NoProfile", "-Command", processed_command],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                cwd=cwd, env=_sanitize_env(),
+            )
+            timed_out = False
+            try:
+                stdout_b, stderr_b = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                logger.warning(f"[卡死C10] PS只读一次性命令超时{timeout}s → 杀进程树+读残存 (cmd={cmd_short})")
+                stdout_b, stderr_b = _kill_and_read_output(proc)
+            stdout_str = _fix_encoding(_decode_bytes_safe(stdout_b))
+            stderr_str = _fix_encoding(_decode_bytes_safe(stderr_b))
+            returncode = proc.returncode if proc.returncode is not None else -1
+
+        elif shell_type in ("ps7", "ps5"):  # ── 【PS7/PS5专属】: 持久进程引擎 — 小欧 2026-07-28 ──
             # BUG#2修复: ps5需要翻译&&→;if($?){cmd2}; ps7原生支持&&无需翻译 — 小欧 2026-07-28
             # v2.11 BugFix(小欧 2026-08-06): ps7 `&& $env:X='utf-8'`是PS7语法错误(ParserError)导致命令
             # 从未执行→假超时(C8/C14)→连锁C13; 仅此赋值场景复用翻译器兜底, 其余&&保持ps7原生 — 小欧 2026-08-06
