@@ -132,6 +132,14 @@
 |--------|------|------|--------|
 | `console_put` | 控制台镜像写(非阻塞): 全局 queue+daemon写线程, stdout阻塞时队列满则丢弃新消息, 绝不阻塞调用线程; log_and_print(logger/__init__.py)及裸print收口点(action_handler/main/config)统一出口 | msg: str | None |
 
+### 1.14 shell 只读白名单（shell_readonly.py，位于 app/utils/）
+
+shell 只读判定的单一权威（2026-10-04 自 `app/safety/sandbox/executor.py` 迁入，架构边界要求 tools 禁 import safety，而白名单需 safety 沙箱快速通道与 tools 层2出池双侧共用）。常量 `READONLY_PREFIXES`（只读前缀）与 `FAST_CHANNEL_FORBIDDEN`（管道/分号/重定向符）同在此模块。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `is_readonly_whitelisted` | 只读白名单快速通道判定：前缀命中且无管道/分号/重定向符（须在写意图扫描之后调用的定序约束见函数 docstring） | command: str | bool |
+
 ---
 
 ## 二、工具返回层（app/tools/）
