@@ -20,6 +20,7 @@
 #   npm --version/ls, pip list/show/--version, docker ps/images, tasklist, ipconfig /all, systeminfo, netstat, ver,
 #   test-path, kubectl get), 逐条过安全评审(任意无拼接符后缀仍只读); 否决 git branch/ipconfig裸前缀等可写口 - 小欧-2026-09-18
 # 2026-10-02 - 小欧 - 注册名归位: _shell 集合 "shell"→"bash", 并清 2 个从未注册的死项(executeshellcommand/executeshellcommandsafety)
+# 2026-10-04 - 小欧 - 只读白名单三元迁 app/utils/shell_readonly.py(tools需共用、边界禁直连), 本文件同名转发零变化
 import asyncio
 import os
 import re
@@ -34,6 +35,7 @@ from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
 
 from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
+from app.utils.shell_readonly import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源迁utils, 别名存引用 — 小欧 2026-10-04
 
 _semaphore = asyncio.Semaphore(get_config().get("sandbox.max_concurrent_sandboxes", 3))   # 并发限流(3.1.3)
 
@@ -50,22 +52,7 @@ class PreCheckResult:
     stdout_tail: str = ""        # 输出尾部(截断4096字符)
     stderr_tail: str = ""        # 错误尾部(截断4096字符; v1.22 W4: 4.2 条件1/2"stderr 原文喂 LLM"的承载字段)
 
-# —— 判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
-_READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
-                      "echo", "pwd", "dir", "whoami", "hostname",
-                      "git log", "git diff", "git show",
-                      "python --version", "node --version", "node -v",
-                      "npm --version", "npm ls",
-                      "pip list", "pip show", "pip --version",
-                      "docker ps", "docker images",
-                      "tasklist", "ipconfig /all", "systeminfo", "netstat", "ver",
-                      "test-path", "kubectl get")     # 4.1#4 只读白名单前缀(3.2.1 五项 + 毛病2精化二十一项) — 小欧-2026-09-18
-    # 毛病2评审纪要(2026-09-18 小欧, 逐条过安全评审, 任意无拼接符后缀仍只读才准入):
-    #   准入: git log/diff/show(纯展示); python/node --version(打印即退); npm --version/ls, pip list/show/--version(只读查询);
-    #   docker ps/images(只读列表); tasklist/systeminfo/netstat/ver(系统只读展示); ipconfig /all(精确子命令, /flushdns等不匹配);
-    #   test-path(纯测试); kubectl get(只读API, 与 read 读敏感文件同政策).
-    #   否决: git branch(-D/-M可删分支); ipconfig裸前缀(/release//renew//flushdns可变更网络); gh/set/npm run/pip install/docker exec等(可写).
-_FAST_CHANNEL_FORBIDDEN = ("|", ";", "&", ">", ">>")                  # 单命令收紧(v1.10 FP1 管道/分号/调用符 + v1.17 N5 重定向)
+# —— 只读白名单常量与判定已迁 app/utils/shell_readonly.py(2026-10-04 小欧, 单源见该模块) ———
 _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
                         "being used by another process", "找不到路径")  # 4.2 规则6 环境性失败识别(FP2)
 def _is_shell_tool(tool_name: str) -> bool:
@@ -151,14 +138,6 @@ def _scan_command_write_intent(command: str) -> bool:
         if _is_outside_write_target(match.group(1)) is True:
             return True
     return False                            # 无越界写意图: 正常预检
-
-
-def _is_readonly_whitelisted(command: str) -> bool:
-    """4.1#4 只读白名单快速通道判定(必须在 _scan_command_write_intent 之后调用, 定序防重定向逃逸绕过扫描)"""
-    lowered = command.strip().lower()
-    if not lowered.startswith(_READONLY_PREFIXES):                     # 3.2.1 与常量单源(消除双源双维护) — 小欧-2026-09-18
-        return False
-    return not any(op in command for op in _FAST_CHANNEL_FORBIDDEN)
 
 
 class SandboxExecutor:
