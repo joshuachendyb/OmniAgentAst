@@ -137,12 +137,25 @@ def _safe_llm_sub(llm_data, key: str) -> dict:
 
 
 def _tool_target(llm_data) -> str:
-    """2026-08-18 小健 三堂会审: 统一从 llm_data.action.target 取展示目标(收敛 _format_llm_data 与
-    4 个 per-tool formatter 共 5 处重复读取, DRY); 防御 action 为 str(见上同源防御), 顺带补齐 per-tool
-    formatter 原缺失的该防御。返回未截断原始串, 截断由调用方按需处理。"""
+    """处理对象(target)统一取法。
+
+    2026-10-04 北京老陈裁定 + 文档[8]第六章方案A/B: action.target 已删除(与 action.params 大量重复,
+      前端零消费), "处理对象"改由 action.params 按规范名派生 —— 实测 144 处 action 字面量中
+      138 处 params 键已是规范名(path/source/url/sql/query/command), 故 6 个规范名即可全覆盖。
+    2026-08-18 小健 三堂会审: 统一取值口径(收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处重复读取, DRY);
+      防御 action/params 为非 dict。返回未截断原始串, 截断由调用方按需处理。
+    """
     _action = _safe_llm_sub(llm_data, "action")
-    _t = _action.get("target", "") if isinstance(_action, dict) else ""
-    return str(_t) if _t else ""
+    if not isinstance(_action, dict):
+        return ""
+    _params = _action.get("params")
+    if not isinstance(_params, dict):
+        return ""
+    for _k in ("path", "source", "url", "sql", "query", "command"):
+        _v = _params.get(_k)
+        if _v:
+            return str(_v)   # 2026-07-12 防御: target 可能非 str(如 WindowsPath), 统一 str() 化
+    return ""
 
 
 def _truncation_msg(llm_data: dict = None) -> str:
