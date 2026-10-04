@@ -250,6 +250,7 @@ from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一�
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
 from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
 from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
+from app.monitoring import loop_watchdog  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
 
 
 # 后台 agent 任务强引用表: asyncio 仅持有 Task 弱引用, 若 SSE 消费者(generate)断开后任务再无强引用,
@@ -707,52 +708,57 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
     """
     offset = after_seq
     heartbeat_seq = 0  # 2026-09-08 小欧: 心跳计数器(北京老陈指令心跳双写+计数, 见编辑历史) — 小欧-2026-09-08
-    while True:
-        # 锁内阶段: 只取"待转发事件/心跳动作", 绝不 yield —— 2026-09-20 小欧 E-1修复:
-        #   原 549/574 行在 buffer.cond 锁内 yield, 挂起期间 producer(agent 侧) acquire 不到锁无法 publish,
-        #   事件被阻塞在写缓冲, 前端帧间断流/终态滞留; 现改为锁内扫描+推进 offset, 锁外统一 yield(单一出口, DRY)
-        _pending = None  # 待锁外 yield 的 SSE 字符串; None=无待发动作, 继续循环重检
-        async with buffer.cond:
-            while offset < len(buffer.event_log):
-                # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
-                _ev = buffer.event_log[offset]
-                offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
-                if _ev and _ev.get("type") in _SSE_FORWARD_TYPES:
-                    logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
-                    _pending = format_agent_sse(_ev)
-                    break
-            if _pending is None:
-                if buffer.done.is_set():
-                    # 2026-09-12 小欧 - 追踪关键点: sole 流结束/断流截断点——offset 为已转发事件数(≤len),
-                    #   与远端 [Runner] final_stats 已发布 seq 比对即可判定"SSE 是否漏发终态"(offset 停在 fs seq 之前
-                    #   = 截断) 或"正常全量"(offset 越过 fs seq)。重连场景 offset 为续传起点, 同语义。
-                    #   — 小欧-2026-09-12
-                    _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
-                    _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
-                    logger.info(f"[SSE] reader退出(task={task_id}, is_reconnect={after_seq > 0}, 起点seq={after_seq}, "
-                                f"续传帧数={offset - after_seq}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
-                                f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-13 补点B: 首连/重连可区分, 对账闭环
-                    return
-                # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
-                # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
-                try:
-                    _hb = get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
-                    await asyncio.wait_for(buffer.cond.wait(), timeout=_hb)  # 心跳周期(错开关系见 constants.py, 与前端 IDLE_TIMEOUT=60s 错开)
-                except asyncio.TimeoutError:
-                    heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(北京老陈指令双写+计数) — 小欧-2026-09-08
-                    log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {_hb}s超时, 发 :ping 保活")  # 2026-09-08 小欧: debug→双写(北京老陈指令) — 小欧-2026-09-08
-                    # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
-                    #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
-                    #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),
-                    #   刷新前端 IDLE_TIMEOUT=60000 空闲计时; 心跳 HEARTBEAT_INTERVAL 与前端 60s 错开(constants.py), 无同时到期竞态;
-                    #   前端 processSSEData 对非 'data: ' 前缀行直接 return(sseParser.ts:112-115), 零业务解析零副作用。
-                    #   真断连时 heartbeat 随连接自然停发, 前端仍按 60s 判死走重连/兜底。 — 小欧 2026-09-08
+    loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 活跃reader注册, 心跳监管起点(首次调用启动看门狗线程)
+    try:
+        while True:
+            loop_watchdog.beat()  # 治理观测§4.4(2026-10-04 小欧): 本轮可调度=事件循环活着; 停止调用即循环停摆, 看门狗自动dump留证
+            # 锁内阶段: 只取"待转发事件/心跳动作", 绝不 yield —— 2026-09-20 小欧 E-1修复:
+            #   原 549/574 行在 buffer.cond 锁内 yield, 挂起期间 producer(agent 侧) acquire 不到锁无法 publish,
+            #   事件被阻塞在写缓冲, 前端帧间断流/终态滞留; 现改为锁内扫描+推进 offset, 锁外统一 yield(单一出口, DRY)
+            _pending = None  # 待锁外 yield 的 SSE 字符串; None=无待发动作, 继续循环重检
+            async with buffer.cond:
+                while offset < len(buffer.event_log):
+                    # 2026-08-28 小欧 yield日志审计: SSE发送统一入口(覆盖全部SSE yield, KISS)
+                    _ev = buffer.event_log[offset]
+                    offset += 1  # 2026-09-11 小欧 先推进再判: 过滤不卡循环, event_log 序号恒单调连续 — 小欧-2026-09-11
+                    if _ev and _ev.get("type") in _SSE_FORWARD_TYPES:
+                        logger.debug(f"[SSE] seq={offset - 1} task={task_id}")
+                        _pending = format_agent_sse(_ev)
+                        break
+                if _pending is None:
                     if buffer.done.is_set():
+                        # 2026-09-12 小欧 - 追踪关键点: sole 流结束/断流截断点——offset 为已转发事件数(≤len),
+                        #   与远端 [Runner] final_stats 已发布 seq 比对即可判定"SSE 是否漏发终态"(offset 停在 fs seq 之前
+                        #   = 截断) 或"正常全量"(offset 越过 fs seq)。重连场景 offset 为续传起点, 同语义。
+                        #   — 小欧-2026-09-12
+                        _tail_type = (buffer.event_log[-1] or {}).get("type") if buffer.event_log else "empty"
+                        _has_fs = any((e or {}).get("type") == "final_stats" for e in (buffer.event_log or []))
+                        logger.info(f"[SSE] reader退出(task={task_id}, is_reconnect={after_seq > 0}, 起点seq={after_seq}, "
+                                    f"续传帧数={offset - after_seq}, 已转发={offset}, 缓冲总长={len(buffer.event_log or [])}, "
+                                    f"末类型={_tail_type}, 含final_stats={_has_fs})")  # 小欧-2026-09-13 补点B: 首连/重连可区分, 对账闭环
                         return
-                    _pending = ": ping\n"
-        # 锁外阶段: producer 不受阻塞, 统一在此 yield(转发事件/心跳两部分唯一出口) — 小欧 2026-09-20
-        if _pending is not None:
-            yield _pending
+                    # cond.wait()无超时: 若producer崩溃永不set.done, 消费者永久挂起泄漏HTTP连接
+                    # 加超时并循环重检done — 北京老陈 2026-07-30; 2026-09-08 小欧: timeout 60s→25s(兼心跳保活周期, 见编辑历史)
+                    try:
+                        _hb = get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)  # 2026-09-24 小欧 组名 stream_task→live_front — 小欧-2026-09-24
+                        await asyncio.wait_for(buffer.cond.wait(), timeout=_hb)  # 心跳周期(错开关系见 constants.py, 与前端 IDLE_TIMEOUT=60s 错开)
+                    except asyncio.TimeoutError:
+                        heartbeat_seq += 1  # 2026-09-08 小欧: 心跳计数递增(北京老陈指令双写+计数) — 小欧-2026-09-08
+                        log_and_print(f"{time.strftime('%H:%M:%S')} [SSE] 心跳#{heartbeat_seq} task={task_id} cond.wait {_hb}s超时, 发 :ping 保活")  # 2026-09-08 小欧: debug→双写(北京老陈指令) — 小欧-2026-09-08
+                        # 方案一 SSE keep-alive 心跳(北京老陈 2026-09-08, 周期 HEARTBEAT_INTERVAL): 该周期内无业务事件(如 tool 参数流式期间)时
+                        #   向前端发 SSE 注释行 ": ping\n" —— 注意带换行尾(修订: 原 ": ping" 无换行会与下一条 data: 事件粘连,
+                        #   前端 split('\n') 后整行前缀非 'data: ' 被 sseParser.ts:113 整行丢弃, 吞掉心跳后的第一个业务事件),
+                        #   刷新前端 IDLE_TIMEOUT=60000 空闲计时; 心跳 HEARTBEAT_INTERVAL 与前端 60s 错开(constants.py), 无同时到期竞态;
+                        #   前端 processSSEData 对非 'data: ' 前缀行直接 return(sseParser.ts:112-115), 零业务解析零副作用。
+                        #   真断连时 heartbeat 随连接自然停发, 前端仍按 60s 判死走重连/兜底。 — 小欧 2026-09-08
+                        if buffer.done.is_set():
+                            return
+                        _pending = ": ping\n"
+            # 锁外阶段: producer 不受阻塞, 统一在此 yield(转发事件/心跳两部分唯一出口) — 小欧 2026-09-20
+            if _pending is not None:
+                yield _pending
+    finally:
+        loop_watchdog.deactivate()  # 治理观测§4.4(2026-10-04 小欧): 含断连GeneratorExit路径, reader计数必须归零
 
 
 async def _stream_with_control(buffer, task_id: str, session_id: str,
@@ -796,60 +802,65 @@ async def journal_reader(task_id: str, session_id: str, after_seq: int) -> Async
     终止判据唯一 = is_producer_alive 的活窗（最近事件超 60s 未更新即判已死），不设第二套总预算，
     避免"预算 < 活窗"自相矛盾而误杀健康慢任务（如 HITL 人工确认默认 120s 静默）。
     """
-    cursor = max(after_seq, 0)      # 负数钳到 0：否则 expected 初值为 -1，首帧 seq=0 被误报缺口
-    status = await get_persisted_task_status(task_id)          # 3.7 第 6 步：chat_tasks 权威，前置判存在性
-    if status is None:
-        # 任务行不存在：先判后放，绝不"先回放历史内容、再报任务不存在" — 小欧 2026-09-29
-        yield create_error_response(error_type="not_found", error_message="任务不存在或已过期")
-        return
-    if not session_id:
-        # 重连端点允许省略 session_id，归属无从校验；不静默放行，留痕可追 — 小欧 2026-09-29
-        logger.warning(f"[Journal] 重连未带 session_id，归属无法校验(task={task_id})")
-    owner_checked = False
-    while True:
-        events, has_terminal, owner = await read_after(task_id, cursor, PAGE_SIZE)   # 显式传，与下方页满判定同一旋钮
-        if not owner_checked and owner and session_id and owner != session_id:
-            # 归属校验：事件行自带 session_id，与请求不符即拒（防知道 task_id 就能读他人会话流）
-            logger.warning(f"[Journal] 重连归属不符(task={task_id}, 请求session={session_id}, 归属session={owner})")
+    loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 重连reader同样纳管心跳监管
+    try:
+        cursor = max(after_seq, 0)      # 负数钳到 0：否则 expected 初值为 -1，首帧 seq=0 被误报缺口
+        status = await get_persisted_task_status(task_id)          # 3.7 第 6 步：chat_tasks 权威，前置判存在性
+        if status is None:
+            # 任务行不存在：先判后放，绝不"先回放历史内容、再报任务不存在" — 小欧 2026-09-29
             yield create_error_response(error_type="not_found", error_message="任务不存在或已过期")
             return
-        owner_checked = True
-        if events:
-            expected = cursor
-            skipped = []
-            for seq, payload in events:      # seq = DB 列权威序号（整数、单调）；payload 形状不可信
-                if seq != expected:                                # 3.7.1 缺口检测
-                    logger.warning(f"[Journal] seq 缺口 task={task_id} 期望={expected} 实际={seq}")
-                    yield create_error_response(error_type="persistence_gap",
-                                                error_message=f"事件不连续，缺失 {expected}~{seq - 1}")
-                    expected = seq
-                expected += 1
-                if not isinstance(payload, dict) or payload.get("type") not in _SSE_FORWARD_TYPES:
-                    skipped.append(seq)     # 脏帧/仅内存信号：消费掉不转发，游标照常前进
-                    continue
-                yield format_agent_sse(payload)                     # 3.7 第 3 条：禁止第二套格式器
-            if skipped:
-                logger.warning(f"[Journal] task={task_id} 跳过 {len(skipped)} 个不可转发事件 seq={skipped[:10]}")
-            cursor = expected                                 # 列 seq 权威 → 游标只增不减，不会原地打转
-            if len(events) >= PAGE_SIZE:                      # 只按"页不满 = 读完"终止，不按帧数猜
-                continue                                     # 页满 → 继续翻下一页
-        # 已追平（无新事件，或最后一页不满）：查权威终态决定怎么收尾
-        if has_terminal:                                     # 终态 seq 可能 < cursor（前端已收完并刷新追平），
-            return                                           # 此时回放已毕，正常收尾，不得误报"终态事件缺失"
-        if status in ("completed", "failed", "cancelled"):
-            yield create_error_response(error_type="task_state_incomplete",
-                                        error_message="任务终态事件缺失，禁止伪造完成")
+        if not session_id:
+            # 重连端点允许省略 session_id，归属无从校验；不静默放行，留痕可追 — 小欧 2026-09-29
+            logger.warning(f"[Journal] 重连未带 session_id，归属无法校验(task={task_id})")
+        owner_checked = False
+        while True:
+            loop_watchdog.beat()  # 治理观测§4.4(2026-10-04 小欧): 本轮可调度=事件循环活着; 停止调用即循环停摆, 看门狗自动dump留证
+            events, has_terminal, owner = await read_after(task_id, cursor, PAGE_SIZE)   # 显式传，与下方页满判定同一旋钮
+            if not owner_checked and owner and session_id and owner != session_id:
+                # 归属校验：事件行自带 session_id，与请求不符即拒（防知道 task_id 就能读他人会话流）
+                logger.warning(f"[Journal] 重连归属不符(task={task_id}, 请求session={session_id}, 归属session={owner})")
+                yield create_error_response(error_type="not_found", error_message="任务不存在或已过期")
+                return
+            owner_checked = True
+            if events:
+                expected = cursor
+                skipped = []
+                for seq, payload in events:      # seq = DB 列权威序号（整数、单调）；payload 形状不可信
+                    if seq != expected:                                # 3.7.1 缺口检测
+                        logger.warning(f"[Journal] seq 缺口 task={task_id} 期望={expected} 实际={seq}")
+                        yield create_error_response(error_type="persistence_gap",
+                                                    error_message=f"事件不连续，缺失 {expected}~{seq - 1}")
+                        expected = seq
+                    expected += 1
+                    if not isinstance(payload, dict) or payload.get("type") not in _SSE_FORWARD_TYPES:
+                        skipped.append(seq)     # 脏帧/仅内存信号：消费掉不转发，游标照常前进
+                        continue
+                    yield format_agent_sse(payload)                     # 3.7 第 3 条：禁止第二套格式器
+                if skipped:
+                    logger.warning(f"[Journal] task={task_id} 跳过 {len(skipped)} 个不可转发事件 seq={skipped[:10]}")
+                cursor = expected                                 # 列 seq 权威 → 游标只增不减，不会原地打转
+                if len(events) >= PAGE_SIZE:                      # 只按"页不满 = 读完"终止，不按帧数猜
+                    continue                                     # 页满 → 继续翻下一页
+            # 已追平（无新事件，或最后一页不满）：查权威终态决定怎么收尾
+            if has_terminal:                                     # 终态 seq 可能 < cursor（前端已收完并刷新追平），
+                return                                           # 此时回放已毕，正常收尾，不得误报"终态事件缺失"
+            if status in ("completed", "failed", "cancelled"):
+                yield create_error_response(error_type="task_state_incomplete",
+                                            error_message="任务终态事件缺失，禁止伪造完成")
+                return
+            if await _journal_producer_alive(task_id, cursor):
+                # 仍在跑、只是暂时无新事件（慢思考/HITL 静默/工具长耗时）：发心跳继续等，不误判已死
+                yield ": ping\n"        # 带换行，刷新前端 IDLE_TIMEOUT=60000 空闲计时
+                await asyncio.sleep(max(_JOURNAL_POLL_FLOOR_SECONDS,
+                                        get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)))
+                status = await get_persisted_task_status(task_id)   # 等待期间可能翻终态，下轮用新值判定
+                continue
+            yield create_error_response(error_type="task_interrupted",
+                                        error_message="任务未完成且后端已重启，请从历史继续")
             return
-        if await _journal_producer_alive(task_id, cursor):
-            # 仍在跑、只是暂时无新事件（慢思考/HITL 静默/工具长耗时）：发心跳继续等，不误判已死
-            yield ": ping\n"        # 带换行，刷新前端 IDLE_TIMEOUT=60000 空闲计时
-            await asyncio.sleep(max(_JOURNAL_POLL_FLOOR_SECONDS,
-                                    get_config().get("tuning.live_front.heartbeat_interval", _D_HEARTBEAT)))
-            status = await get_persisted_task_status(task_id)   # 等待期间可能翻终态，下轮用新值判定
-            continue
-        yield create_error_response(error_type="task_interrupted",
-                                    error_message="任务未完成且后端已重启，请从历史继续")
-        return
+    finally:
+        loop_watchdog.deactivate()  # 治理观测§4.4(2026-10-04 小欧): 含断连GeneratorExit路径, reader计数必须归零
 
 
 async def chat_stream_reconnect_orchestrator(

@@ -846,7 +846,8 @@ async def run_agent_in_background(
         await task_cleanup(task_id, getattr(agent, "llm_call_count", 0) if agent else 0)
 
         # Shell 池清理：关闭该任务的所有 PersistentShell 实例 — 小沈 2026-07-30
-        cleanup_shell_pool_by_task(task_id)
+        # 治理第1步-H2(2026-10-04 小欧): cleanup_by_task持池锁+taskkill属同步重活, 移出事件循环。
+        await asyncio.to_thread(cleanup_shell_pool_by_task, task_id)
 
         # 落库消费者收尾 — 小欧 2026-10-01
         #   位置铁律: 必须在本 finally 最末(done.set 前)。此前置于守卫块之后, 而下方
