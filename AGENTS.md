@@ -240,6 +240,17 @@ FastAPI `/api/v1` → `stream_orchestrator.py`(SSE 编排) → `agent_runner` �
 | **Tool impl vs registration** | Functions in `{cat}_tools.py`, registration in `{cat}_register.py`. Don't confuse them. |
 | **`_loaded_categories`** | Per-agent set for tool loading. Initialized to `{FUNDAMENTAL, FILE}`. |
 
+## Shell 卡死取证（偶发，必读）
+
+症状：SSE 空闲超时 60 秒 + 日志停写 + `/health` 超时（**端口在监听 ≠ 服务活着**）。
+
+```powershell
+py-spy dump --pid (Get-NetTCPConnection -LocalPort 8000 -State Listen).OwningProcess   # 唯一可靠定位手段
+Get-NetTCPConnection -LocalPort 8000 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }   # 重启: --reload 双进程，只 kill 父进程无效
+```
+
+根因结构：`shell_engine` 同步 `exec()` 跑在事件循环里（挂死→全服务僵死）、完成信号靠临时文件轮询（进程半死则永不到达）、常驻池锁跨任务共享。根治＝`to_thread` 卸载 + 只读命令改独立子进程。详见 `doc-9月优化/[53]`。
+
 
 
 ## Git Workflow
