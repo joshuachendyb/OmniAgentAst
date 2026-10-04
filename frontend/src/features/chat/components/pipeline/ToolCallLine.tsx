@@ -369,14 +369,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                           <CollapsibleText
                             text={obsStep.tool_result as string}
                           />
-                        ) : (
-                          <CollapsibleText text={obsStep?.content ?? ''} />
-                        )
+                        ) : null
                       ) : singleResult.length > 0 ? (
                         <ToolResultRenderer step={singleStep} />
-                      ) : (
-                        <CollapsibleText text={obsStep?.content ?? ''} />
-                      )}
+                      ) : null}
+                      {/* 2026-10-04 小欧 文档[8]§4.1.4: 原两处兜底 CollapsibleText(text=obsStep.content),
+                          该字段恒等于 summary 副本(名不副实, 正文真身是 tool_result[i].data_text), 已随 sseParser 一并删除;
+                          无结果时不再渲空折叠块 — 小欧-2026-10-04 */}
                     </div>
                   )}
                 </div>

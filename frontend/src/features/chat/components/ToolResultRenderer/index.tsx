@@ -7,7 +7,9 @@
 /**
  * ToolResultRenderer - 工具结果渲染器(统一 generic)
  *
- * 取数优先级: tool_result 数组 → execution_result → content。
+ * 取数: 只认 tool_result(唯一载体)。
+ *   2026-10-04 小欧 文档[8]§4.1.4: 两层兜底链全删 —— execution_result 是前端自造派生字段(只在 tool_result
+ *   非空分支内赋值, 兜底永不可达); content 恒等于 summary 副本(名不副实, 正文真身是 tool_result[i].data_text)。
  * 渲染交 GenericResultRenderer(它按值类型递归渲染: 字符串/数字/数组/对象)。
  *
  * @author 小欧
@@ -22,14 +24,10 @@ interface ToolResultRendererProps {
 }
 
 const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ step }) => {
-  const raw = step.tool_result ?? step.execution_result ?? step.content;
-  if (raw == null) return null;
-  const data =
-    (typeof raw === 'object' && raw !== null
-      ? (raw as Record<string, unknown>).data
-      : raw) ?? (raw as Record<string, unknown>);
-  if (!data) return null;
-  return <GenericResultRenderer data={data as Record<string, unknown>} />;
+  if (step.tool_result == null) return null;
+  return (
+    <GenericResultRenderer data={step.tool_result as Record<string, unknown>} />
+  );
 };
 
 export default React.memo(ToolResultRenderer);

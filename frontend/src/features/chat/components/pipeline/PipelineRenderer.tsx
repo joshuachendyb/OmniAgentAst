@@ -455,7 +455,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 margin: stepMargin(false),
               }}
             >
-              {seg.step.summary || seg.step.content || ''}
+              {seg.step.summary || ''}
+              {/* 2026-10-04 小欧 文档[8]§4.1.4: 原 || seg.step.content 兜底已删(该字段恒为 summary 副本, 无独立信息) — 小欧-2026-10-04 */}
             </div>
           );
         }

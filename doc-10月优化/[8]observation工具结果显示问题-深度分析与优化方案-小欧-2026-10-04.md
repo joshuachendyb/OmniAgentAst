@@ -2,19 +2,18 @@
 
 **文档编号**：`doc-10月优化/[8]`
 **创建时间**：2026-10-04 11:53:48
-**更新时间**：2026-10-04 13:06:01
+**更新时间**：2026-10-04 18:23:29
 **编写人**：小欧
-**版本**：v1.4
+**版本**：v1.6
 
 ## 版本历史
 
 | 版本 | 更新时间 | 更新人 | 修改简介 |
 |------|----------|--------|----------|
 | v1.0 | 2026-10-04 11:53:48 | 小欧 | 首版。基于生产库 1418 帧 observation / 2306 条工具子行实测取证，输出 6 项确认缺陷、根因结论与优化方案 |
-| v1.1 | 2026-10-04 11:57:17 | 小欧 | 北京老陈指令：在第四章头部补充 observation SSE 事件字段清单（字段含义 + 前端是否消费）。原 4.1~4.4 顺延为 4.2~4.5 |
-| v1.2 | 2026-10-04 12:26:40 | 小欧 | 北京老陈指令：补充两节 + 更正一处失准。**新增 4.1.6**（SSE 帧 vs conversation history 字段差异对照，含"format 前/后"结论与两条注入路径）、**4.1.7**（`data_text` 两段拼接结构——llm_data 段 + data 段双向耦合，揭示 P0 类缺陷总根因）、**4.1.8**（`_summary` stash 空转：判定为非缺陷，列接线前置待办）；新增 P2-11。**失准更正**：`llm_data_text` 由"全仓零消费"改为"前端零消费 + 后端 `history_loader.py:53/139` 有兜底消费（实测不可达）"，§4.1.5 零消费计数由 8/40% 修正为 7/35% |
-| v1.3 | 2026-10-04 12:39:58 | 小欧 | 北京老陈指令："分析好了，有多余的就可以去掉的，要在设计文档中设计说明好了"。**新增第九章「observation 字段精简设计」**（原九/十顺延为十/十一）：9.1 删字段三条判据、9.2 `llm_data` 整删可行性前置核实（telemetry/formatter 均读原始 `result`，与下发副本解耦）、9.3 甲乙丙丁四类逐字段裁决表、9.4 体积收益（**删 3,973,267 字符 = 25.60%**）、9.5 目标契约（~~20 字段 → 12 字段~~，见 v1.4 更正）、9.6 逐文件改动清单（后端 3 + 前端 5 + 测试 5，含铁规澄清）、9.7 附带发现 `chat.ts` 旧契约死类型（违反禁止 backward）、9.8 历史数据兼容论证（只删字段不改语义 → 回放不退化）、9.9 规范逐条判定、9.10 风险与回归防护 |
-| v1.4 | 2026-10-04 13:06:01 | 小欧 | **算术更正**：9.5 字段数 "20 → 12" 更正为 **18 → 10**（按一级字段口径 4+3+3=10）。原 20 的口径把 `status` 5 个子键逐个计入却漏计 `truncated`/`truncated_reason`，两处误差方向相反。另补记 link 模式装历史的三层发现（`context_link_mode` 不被读 / independent 靠空区间巧合实现 / 实际装入仅 1~3 轮）——详见 §4.1.9 |
+|
+| v1.5 | 2026-10-04 17:43:47 | 小欧 | 北京老陈指令：分析文档所述与现状的差异，并在第五章提出可优化的 UI 显示方法。**重建第五章「什么问题」**（8 条清单逐条标注已修/仍在）+ **5.1 现状复核**（逐条回代码核实，附提交号与行号证据，另记 2 处原文档未记的现状 A/B）+ **5.2 UI 显示优化建议五条**（子行去硬截、摘要不兜底 data_text、展开区改"结果本体"三段式、目录按行渲染不自造树、两套折叠收敛）。**说明**：精简章节时第五章与第六章（原方案表）被一并删除，本版按裁定重建问题章并补回文末落款；第六章是否重建待裁定 |
+| v1.6 | 2026-10-04 18:23:29 | 小欧 | 北京老陈指令：§4.2/4.3/4.4 三节所述代码已全部下线，按裁定**三节合并重写为新 §4.2「当前渲染实现」**（①不做形状分派：列出已删的 `resultTypes.ts`/`shapeRenderers.tsx` ②取数链三级收一级，只认 `tool_result` ③实际渲染形态：4 键对象 + `Descriptions column=1` + `data_text` 仍被折叠 2 行，含 `MAX_*` 阈值出处），§4.3/§4.4 按裁定留空并标注失效原因。同批落地的死字段清理（`execution_result`/`execution_status`/`tool_params`/`parallel_results`/`observation`/`return_direct` 及 `content`）见 §5.1 |
 
 ---
 
@@ -174,7 +173,6 @@ shapeRenderers.tsx:251/403/498
 |------|------|----------|--------------|
 | `tool_name` | `str` | 工具注册名（经自动纠正） | ✅ `ToolCallLine.tsx:157` 子行配对；`sseParser.ts:889` → `resolveResultType` 选渲染器 |
 | `llm_data` | `dict` | 结构化 LLM 观察（见 4.1.3） | ✅ `ToolCallLine.tsx:164/184/199` 取 `summary` / `status` |
-| `llm_data_text` | `str` | `llm_data` 的完整 JSON 副本（`indent=2`） | ⚠️ **前端零消费**；后端 `history_loader.py:53/139` 作 `data_text` 空值兜底回放（实测 `data_text` 非空率 100%，故该兜底实际永不触发）。详见 P2-9 |
 | `data_text` | `str` | **喂 LLM 的格式化展示文本**（非 JSON） | ✅ `shapeRenderers.tsx:49` 尝试 `JSON.parse`（必失败）→ 兜底 `content`；`ToolCallLine.tsx:189` 摘要兜底 |
 | `other_data` | `dict` | 旁路数据（`retry_count`/`attachment`/`category`/`return_direct`/`warning`/`synthetic`） | ❌ `sseParser.ts:887` 写入 `execution_result.other_data` 后**无人读取**；`return_direct` 派生出的 `step.return_direct` 亦**零消费** |
 
@@ -195,14 +193,7 @@ shapeRenderers.tsx:251/403/498
 #### 4.1.4 前端自行合成的派生字段（非后端下发）
 
 | 派生字段 | 来源 | 说明 | 前端是否使用 |
-|----------|------|------|--------------|
-| `execution_result` | `sseParser.ts:884` | `{data: {raw: data_text}, llm_data, other_data}` | ⚠️ 仅 tree/code 死路径读取；generic 路径被 `tool_result` 绕过 |
-| `execution_status` | `sseParser.ts:895` | 取 `tr[0].status.exec_code` | ❌ observation 步骤零读取 |
-| `summary` / `content` | `sseParser.ts:894/898` | 均取 `tr[0].llm_data.summary` | ⚠️ `content` 恒为摘要副本；`summary` 仅孤儿 obs 段读（`PipelineRenderer.tsx:458`） |
-| `tool_name` | `sseParser.ts:889` | **只取 `tr[0]`** | ⚠️ 是 P0-4 错配根因 |
-| `tool_params` | `sseParser.ts:890` | 读 `el.tool_params` —— **后端不下发该键** | ❌ 恒取到 `{}`，且无人消费 |
-| `parallel_results` | `sseParser.ts:899` | 读 `rawData.parallel_results` —— **后端不下发** | ❌ 恒 `undefined` |
-| `observation` | `sseParser.ts:911` | else 兜底分支读 `rawData.observation` —— **后端不下发** | ❌ 恒 `''` |
+| `summary`  | `sseParser.ts:894/898` | 均取 `tr[0].llm_data.summary` | ⚠️ `content` 恒为摘要副本；`summary` 仅孤儿 obs 段读（`PipelineRenderer.tsx:458`） |
 
 #### 4.1.5 字段消费统计
 
@@ -212,10 +203,6 @@ shapeRenderers.tsx:251/403/498
 | ⚠️ 有读取代码但语义失效/路径不可达 | 5 | 25% |
 | ❌ 零消费（只写不读 / 读不存在的键） | 7 | 35% |
 
-**结论**：后端下发 20 个有效字段（顶层 5 + `tool_result[i]` 5 + `llm_data` 子字段 10），
-前端**真实用上的仅 7 个**（`type` / `step` / `timestamp` / `tool_result` / `tool_name` / `llm_data.summary` / `llm_data.status.exec_code`），
-其中最关键的 `data_text` 处于"被读取但前提错误"状态。
-**40% 的字段对前端是纯负担**——`llm_data_text` 更是每条 observation 都携带一份完整 JSON 副本，前端只写不读。
 
 #### 4.1.6 SSE 帧字段 vs conversation history 字段差异
 
@@ -295,13 +282,6 @@ else:
 
 #### 4.1.8 `_summary` stash 空转（compaction 未接线）
 
-| 项 | 事实 |
-|----|------|
-| 现象 | `add_tool_result(tool_call_id, content, summary="")` 的 `summary` 形参，**6 处调用点全部只传 2 个参数**（`observation_builder.py:46/50/113/117`、`fc_message_types.py:64`、`message_builder.py:258`） |
-| 后果 | `_summary` 永不 stash → `compaction.use_tool_summary` 按其 docstring"无 `_summary` 时函数空转安全"**永远空转** |
-| 是否 bug | **否** —— 与 compaction 未接线状态自洽 |
-| 证据 | `use_tool_summary` / `clear_tool_outputs` / `keep_valuable_messages` / `compress_long_tool_output` 全仓搜索，**所有匹配均在 compaction 包内**（prune.py 定义处、`__init__.py` 桶导出、trigger.py / compaction_constants.py / message_builder.py 注释），**零生产调用方** |
-| 设计自述 | `message_builder.py:19` 注释："因 `_pruned`/`_summary` 现为短下划线而非 `_temp_` 前缀（**compaction 模块落地备用后**这些标记留 bool/短名前缀）" |
 
 **现在不补的理由**：补 `summary=_llm.get("summary")` 等于**为不存在的消费方写数据，违反 YAGNI**。
 
@@ -315,93 +295,96 @@ else:
 
 ---
 
-### 4.2 形状分派
+### 4.2 当前渲染实现（2026-10-04 18:23:29 小欧 按清理后代码重写）
 
-`resultTypes.ts:18-22` 仅 3 条映射：
+**一、不做形状分派**
 
-```ts
-const TOOL_RESULT_TYPE: Record<string, ResultType> = {
-  listdir: 'tree',  tree: 'tree',  read: 'code',
-};   // 未列者 → generic
-```
-
-### 4.3 三类渲染器
-
-| 渲染器 | 取数 | 触发条件 |
-|--------|------|----------|
-| `TreeResultRenderer` | `data.entries`（分支A）/ `data.tree`（分支B），否则"目录为空" | `listdir` / `tree` |
-| `CodeResultRenderer` | `data.content` | `read` |
-| `DefaultResultRenderer` | `step.tool_result ?? step.execution_result ?? step.content` | 其余全部（81.6%） |
-
-### 4.4 generic 路径实际渲染形态
-
-`DefaultResultRenderer`（`shapeRenderers.tsx:503-510`）：`tool_result` 是数组 → `raw.data` 为 `undefined` → `?? raw` 回落 → `data` = **整个数组** → 交给 `GenericResultRenderer`：
+**二、取数链：只认 `tool_result`**
 
 ```
-└ 1px 左侧竖线块 (#e8e8e8)
-  └ 长度 1 的数组 → 嵌套块 → 元素(5 键对象) → antd Descriptions column=1
+ToolResultRenderer/index.tsx（当前实现全文逻辑）
+  if (step.tool_result == null) return null;
+  return <GenericResultRenderer data={step.tool_result} />;
+```
+
+- 原兜底 `step.tool_result ?? step.execution_result ?? step.content` 三级链已收成一级：
+  `execution_result` 是前端自造派生字段（只在 `tool_result` 非空分支内赋值 → 兜底永不可达），
+  `content` 恒等于 `summary` 副本（名不副实，正文真身是 `tool_result[i].data_text`），二者本轮随死字段清理删除。
+
+**三、实际渲染形态**（`tool_result` 长度 1 时；阈值取自 `GenericResultRenderer`）
+
+```
+└ 1px 左侧竖线块 (Colors.BORDER.VERTICAL #e8e8e8)
+  └ 长度 1 的数组 → 嵌套块 → 元素(4 键对象) → antd Descriptions column=1
       tool_name      bash
-      llm_data       {summary / action{...} / status{...} / duration_ms / metrics{...}}   ← 递归嵌套 4 层
-      llm_data_text  {"summary": "...", ...}    ← llm_data 的完整 JSON 副本，纯噪音
-      data_text      工具执行: 执行 调用工具-bash...   ← 唯一有用，但被折叠成 2 行
+      llm_data       {summary / status / metrics}                  ← 递归嵌套
+      data_text      观察: 执行成功: exit=0 …                      ← 唯一有用，但被折叠成 2 行
       other_data     {}
 ```
 
-即：**通用 observation 展示的是内部契约字段表，而非结果本身。**
+- 数组内联阈值 `MAX_INLINE_TAGS=5`，但元素含对象 → 不走 Tag 内联，落到嵌套块；
+- 对象键值内联阈值 `MAX_INLINE_ENTRIES=3`，4 键对象 → 落 `Descriptions`（`column={1}`）；
+- 字符串超 `MAX_STRING_LENGTH=100` → antd `Paragraph` `ellipsis={{ rows: 2, expandable: true }}`，即**唯一有用的 `data_text` 被折叠成 2 行**；
+- `llm_data_text` 行已消失（后端第 0 步删除，commit `ad32a7777`）；`metrics` 值是 `{value,text}` 对象，故内联展开为 `value/text` 键值（不显 `[object Object]`）。
 
-### 4.5 两套折叠实现并存
+**结论（与旧 4.4 同判）**：**通用 observation 展示的是内部契约字段表，而非结果本身**——这正是第五章问题 5 的现状根因，改造方案见 §5.2 建议三。
+
+### 4.3 两套折叠实现并存
 
 | 组件 | 阈值 | 使用场景 | 交互 |
 |------|------|----------|------|
 | `CollapsibleText`（项目自研） | 5 行 / 200 字 | **仅字符串 `tool_result`** | 有 `stopPropagation` + Enter/Space 键盘 |
 | antd `Paragraph ellipsis` | 100 字符 / 2 行 | 数组 `tool_result` 内的长字符串 | 无 `stopPropagation` |
-## 4.6 保留清单：link 装配实际依赖 6 个字段，一个不删
-
-逐行核对 `history_loader._parse_tool_calls`（`:40-105`）与 `_parse_observations`（`:127-165`）：
-
-| # | 字段 | 装配处行号 | 作用 | 保留 |
-|---|------|-----------|------|------|
-| 1 | 顶层 `type` | `:45` / `:130` | 过滤 `== "observation"` | ✅ |
-| 2 | 顶层 `step` | `:47` / `:132` | 合成 `tool_call_id` 第 2 段 | ✅ |
-| 3 | `tool_result` | `:48` / `:133` | 结果数组载体 | ✅ |
-| 4 | `tool_result[i]` 的**数组下标** | `:50` / `:136` | 合成 `tool_call_id` 第 3 段（**配对唯一依据**） | ✅ |
-| 5 | `tool_result[].data_text` | `:53` / `:139` | **唯一内容载体**；`:53` 还用它判空建 `_obs_ids` | ✅ |
-| 6 | `tool_result[].tool_name` | `:142` | 判 `== "truncated_output"`，决定是否跳过孤儿 | ✅ |
-| 7 | 顶层 `content` | `:57` / `:154` | 老数据格式回退分支（实测 0/1418 帧走到，但**代码路径存在** → 按判据保留） | ✅ |
 
 ---
 
 ## 五、什么问题
 
-1. `listdir` / `tree` 展开后显示"目录为空"
-2. 统计数字显示不出来（要么不显示，要么显示 `[object Object]`）
-3. 并行同名工具显示别人的结果
-4. 展开的工具标题显示错（展开 bash 却显示"读取文件成功"）
-5. 通用工具展示 5 行内部字段，看不到结果本身
-6. 摘要硬截 60 字；无摘要时变成乱码片段
-7. 5 个文件是死代码
-8. 测试用假数据，掩盖了上面这些问题
+### 5.1  现存的情况
+| 5 | ❌ 仍在 | `GenericResultRenderer` 仍按契约表渲染 `tool_name`/`llm_data`/`data_text`/`other_data`；唯一有用的 `data_text` 反被 antd `Paragraph` 折叠 2 行（§4.4 形态未变） |
+| 6 | ❌ 仍在 | 硬截在 `ToolCallLine.tsx:334` `sum.slice(0, 60)`；乱码片段来自 `:169` 兜底链 `llm_data.summary → data_text → summary`，无 summary 时拿长观察文本当前 60 字 |
+|
+**另发现两处原文档未记的现状**（第 5/6 条的根因落点）：
+
+| # | 现象 | 位置 | 说明 |
+|---|------|------|------|
+| A | 子行同时存在 CSS 省略与硬截 60 字 | `ToolCallLine.tsx:334` + 同行 `textOverflow:ellipsis` | 硬截在半句处切断并吞掉真实结尾；CSS 省略已足够，硬截纯多余 |
+| B | 展开区 `singleStep` 继承 `obsStep` | `ToolCallLine.tsx` 展开区构造处 | `obsStep.tool_name` 只取 `tool_result[0]`；形状分派已删故当前无害，**一旦在展开区显示工具名即复现问题 4** |
+
+### 5.2 UI 显示优化建议（2026-10-04 17:43:47 小欧 新发现，待北京老陈裁定）
+
+> 均为只改前端、不改后端契约的最小改动；依据是数据契约实测形态（`metrics` 值自带面向人的 `text`），不新造结构。
+
+**建议一：子行摘要去掉硬截（治问题 6 之一）**
+- 改法：删 `slice(0, 60)`，交回同行已有的 CSS 单行省略。
+- 收益：不再半句切断；纯删冗余，行为只增强。
+
+**建议二：子行摘要不再拿 `data_text` 兜底（治问题 6 之二）**
+- 改法：摘要只取 `llm_data.summary`；无 `summary` 就留空。
+- 理由：`data_text` 是长观察文本，截前 60 字必然是"乱码片段"；文本展示职责归展开区即可。
+
+**建议三：展开区改为"结果本体"三段式（治问题 5 主症）**
+```
+① 头：状态图标 + 工具名 + 完整 summary（一行，CSS 省略，不硬截）
+② 主体：data_text 全文，等宽字体 + maxHeight 滚动，不折叠
+        （用户点开就是要看结果，折叠 2 行等于不给看）
+③ 尾：metrics 渲染为一排小标签，只取契约里的 text 字段
+隐藏：tool_name（与子行重复）、other_data（编排信号，前端零消费）
+```
+- 顺带收掉问题 2 残留：`metrics` 的 `text` 本就是给人看的（§3.3），无需后端加字段即可正确显示统计。
+- 依据：`GenericResultRenderer` 全仓仅 `ToolResultRenderer` 一处调用，改契约无外部牵连。
+- 注意：头部工具名必须取 `tools[i].tool`，**不可取 `obsStep.tool_name`**（见 5.1 现状 B）。
+
+**建议四：目录类结果按行渲染，不自造树**
+- 改法：`data_text` 以换行拆分，每行一条、等宽字体。
+- 禁止项：**不得 `JSON.parse` 造树**——实测 0/2306 条可解析（§2.2），凭空造结构即重犯问题 1/2 的根因。
+
+**建议五：两套折叠实现收敛（对应 §4.5）**
+- 现状：`CollapsibleText`（5 行/200 字）用于字符串 `tool_result`/`content` 兜底；antd `Paragraph`（2 行）用于数组内长字符串。
+- 建议：按建议三，展开区 `data_text` 不折叠 → `Paragraph` 折叠路径自然消失，只剩 `CollapsibleText` 一处；随问题 5 一并在下一阶段收，本阶段仅记录不改动。
 
 ---
 
-## 六、要怎么解决
-
-| # | 问题 | 怎么办 | 状态 |
-|---|---|---|---|
-**第 0 步先做**：删 `llm_data_text` 字段（零行为变化  后端修改和前端修改）。
-| 1 | 目录显示"目录为空" | 删掉 `TreeResultRenderer`（它要的数据永远拿不到） | 已定 |
-| 2 | 统计数字显示不出 | 同第 1 条，一起删掉；要正确统计就改用 `data_text` 里的文本 | 已定 |
-| 3 | 同名工具串味 | **按数组下标配对**，不用工具名找 | 已定 |
-| 4 | 标题显示错 | 删掉形状分派（和第 1 条一起做） | 已定 |
-| 5 | 展示内部字段 | — | 本阶段不动，下一阶段再说 |
-| 6 | 摘要乱码 | 去掉 `data_text` 兜底，摘要只用 `summary` | 本阶段不动，下一阶段再说  |
-| 7 | 死代码 | 删 5 个零引用文件 | 已定 |
-| 8 | 假数据测试 | 重写测试，用真实 `data_text` 形态 | 已定 |
-
-
-
-
-
 **编写人**：小欧
-**编写时间**：2026-10-04 11:53:48
-**版本**：v1.0
+**编写时间**：2026-10-04 17:43:47
+**版本**：v1.5

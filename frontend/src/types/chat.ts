@@ -83,60 +83,12 @@ export interface ActionMessage {
 }
 
 /**
- * Observation数据结构
- * 【Phase 2 2026-06-22 小欧】observation改为llm_data+tool_result+other_data三字段
+ * 2026-10-04 小欧 文档[8]§4.1.4 死契约清理(禁 backward, 不留兼容壳): 删 ObservationData 与 ObservationMessage ——
+ *   二者描述的是后端 08-18 之前的旧 observation 消息契约(parallel_results/tool_params/return_direct/
+ *   execution_status 等键后端从不下发), 全仓零生产消费(仅本文件 StreamMessage 联合成员 + 一个无人调用的
+ *   类型守卫 isObservationMessage); 现行契约由 sseParser 解析进 ExecutionStep, 载体是 tool_result 数组。
+ *   同时删 isObservationMessage 守卫与其在 StreamMessage 中的联合成员 — 小欧-2026-10-04
  */
-export interface ObservationData {
-  llm_data?: Record<string, unknown>; // 完整llm_data（含summary/action/status/duration_ms/metrics）
-  tool_result?: unknown; // 完整data（工具返回的业务数据）
-  other_data?: {
-    // 控制字段
-    return_direct?: boolean;
-    warning?: string;
-    attachment?: unknown;
-    retry_count?: number;
-    [key: string]: unknown;
-  };
-  // 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
-  parallel_results?: Array<{
-    tool_name: string;
-    tool_params: Record<string, unknown>;
-    llm_data: Record<string, unknown>;
-    tool_result: unknown;
-    other_data: Record<string, unknown>;
-  }>;
-  // 兼容旧格式字段（Phase 1遗留，可选）
-  summary?: string;
-  tool_name?: string;
-  tool_params?: Record<string, unknown>;
-  return_direct?: boolean;
-  execution_status?: string;
-  error_message?: string;
-  warning?: string;
-  next_actions?: Array<{
-    tool: string;
-    description: string;
-    when?: string;
-    params?: Record<string, unknown>;
-  }>;
-  attachment?: unknown;
-}
-
-/**
- * observation类型 - 工具执行完成提示
- * 发送时机：ReAct第3阶段，工具执行完成后
- * 【2026-05-22 小沈】observation改为JSON对象（设计方案）
- * 【向后兼容】保留content字段，但优先使用observation.summary
- */
-export interface ObservationMessage {
-  type: 'observation';
-  step: number;
-  timestamp: number;
-  observation: ObservationData; // observation JSON对象
-  code?: string; // 状态码（SUCCESS/ERROR/WARNING）
-  content?: string; // 【废弃】保留向后兼容，使用observation.summary
-  tool_name?: string; // 【废弃】保留向后兼容，使用observation.tool_name
-}
 
 /**
  * chunk类型 - 流式内容片段
@@ -216,7 +168,6 @@ export type StreamMessage =
   | StartInfoMessage
   | ThoughtMessage
   | ActionMessage
-  | ObservationMessage
   | ChunkMessage
   | FinalMessage
   | ErrorMessage
@@ -251,11 +202,7 @@ export function isActionMessage(msg: StreamMessage): msg is ActionMessage {
   return msg.type === 'action';
 }
 
-export function isObservationMessage(
-  msg: StreamMessage
-): msg is ObservationMessage {
-  return msg.type === 'observation';
-}
+// 2026-10-04 小欧: 删 isObservationMessage 守卫(随 ObservationMessage 一起下线, 全仓零调用) — 小欧-2026-10-04
 
 export function isChunkMessage(msg: StreamMessage): msg is ChunkMessage {
   return msg.type === 'chunk';

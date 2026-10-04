@@ -69,16 +69,16 @@ export interface ExecutionStep {
 
   step?: number;
   thought?: string;
-  observation?: unknown; // ObservationData对象或字符串
+  // 2026-10-04 小欧 文档[8]§4.1.4 死字段清理: 删 observation?(sseParser:911 唯一写点, 读的是后端不存在的 rawData.observation, 恒''且零消费) — 小欧-2026-10-04
   // 【小欧 2026-08-26 4.9.3】observation 新字段：工具结果数组，优先于 content/summary 读取
   tool_result?: unknown;
   result?: string;
   // 2026-09-12 小欧: 删 code 死字段(只写不读, sseParser:721赋值无人消费; execution_status(L65)含同语义) — 小欧-2026-09-12
 
   // === 【小新重构】type=action 新字段（与thought类型共用tool_name/tool_params）===
-  execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
+  // 2026-10-04 小欧 文档[8]§4.1.4 死字段清理: 删 execution_status/execution_result(前端自造派生字段, 写点唯一且
+  //   execution_result 的渲染兜底永不可达, 全仓零消费; execution_status 写点在 observation 分支, 零读取) — 小欧-2026-10-04
   summary?: string; // 执行摘要（新）
-  execution_result?: Record<string, unknown> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
   execution_time_ms?: number; // 执行耗时 【新增2026-04-15】
   action_retry_count?: number; // 重试次数（新）
 
@@ -105,16 +105,8 @@ export interface ExecutionStep {
   // 2026-09-11 小欧 北京老陈定案: cancelled终态渲染第二行✕取消来源, 前端补解析该字段(后端FinalStep.to_dict恒输出) — 小欧-2026-09-11
   cancel_source?: string; // 取消来源(user_requested/client_disconnect_timeout/config_limit/status_inconsistency/orchestrator_error)
 
-  // === type=observation 字段 【新增2026-04-15】===
-  return_direct?: boolean; // 是否直接返回
-  // 并行tool call时保留每个call的完整数据映射 — 小健 2026-06-25
-  parallel_results?: Array<{
-    tool_name: string;
-    tool_params: Record<string, unknown>;
-    llm_data: Record<string, unknown>;
-    tool_result: unknown;
-    other_data: Record<string, unknown>;
-  }>;
+  // 2026-10-04 小欧 文档[8]§4.1.4 死字段清理: 删 return_direct/parallel_results(前端自造派生字段,
+  //   写点唯一、读的是后端 other_data/rawData 里不存在的键, 全仓零消费) — 小欧-2026-10-04
 
   // === 思考过程与正式内容区分字段（统一使用 is_reasoning snake_case）===
   is_reasoning?: boolean; // 是否为思考过程（true=思考过程，false=正式内容）

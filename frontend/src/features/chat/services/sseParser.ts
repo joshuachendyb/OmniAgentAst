@@ -389,7 +389,8 @@ const processSSEData = (
       outcome: rawData.outcome,
       error_type: rawData.error_type,
       action: rawData.action, // 执行动作名称，与后端一致
-      observation: rawData.observation, // 保留原始对象，用于调试
+      // 2026-10-04 小欧 文档[8]§4.1.4 死字段清理: 删 observation(thought分支"保留原始对象用于调试"的赋值,
+      //   全仓零读取, 且 observation 的正式载体是 tool_result 数组) — 小欧-2026-10-04
       result: rawData.result, // simplify_observation处理后的文本
       action_input: rawData.action_input, // 工具调用参数
 
@@ -862,57 +863,32 @@ const processSSEData = (
         // 【兼容层 2026-05-22 小资】支持两种格式，添加完整性验证
         // 先检查null（typeof null === 'object'是历史bug）
         // 2026-08-27 小欧 三堂会审: 适配后端08-18新契约 — observation步骤仅携带rawData.tool_result数组(顶层), 无observation字段
+        // 2026-10-04 小欧 文档[8]§4.1.4 死派生字段清理(零消费, 禁backward不留兼容壳): 删 execution_result/execution_status/
+        //   tool_params/parallel_results/observation/return_direct 六处赋值——后三个读的是后端根本不存在的键(恒空壳);
+        //   execution_result 虽曾被 ToolResultRenderer 当兜底, 但它只在 tool_result 非空分支内赋值, 该兜底永不可达。
+        //   连带删仅服务于 execution_result 的 JSON.parse(data_text)(实测 0/2306 可解析, 解析必失败)。
         if (Array.isArray(rawData.tool_result) && rawData.tool_result.length) {
           // 新契约: tool_result数组在rawData顶层, 每元素自包含{tool_name,llm_data,data_text,other_data}
           const tr = rawData.tool_result as Array<Record<string, unknown>>;
-          step.tool_result = tr; // 供ToolResultRenderer早退/DefaultRenderer读取
+          step.tool_result = tr; // 供ToolResultRenderer与工具子行按下标配对读取
           const el = (tr[0] || {}) as Record<string, unknown>;
           const llmData = (el.llm_data as Record<string, unknown>) || {};
           const status = (llmData.status as Record<string, unknown>) || {};
-          // data_text承载原data对象(JSON字符串), 解析为data供专用渲染器读取data.* — 2026-08-27 小欧 三堂会审
-          let dataObj: Record<string, unknown> = {};
-          const dataText = el.data_text;
-          if (typeof dataText === 'string' && dataText.trim()) {
-            try {
-              dataObj = JSON.parse(dataText) as Record<string, unknown>;
-            } catch {
-              dataObj = { raw: dataText };
-            }
-          } else if (dataText && typeof dataText === 'object') {
-            dataObj = dataText as Record<string, unknown>;
-          }
-          step.execution_result = {
-            data: dataObj,
-            llm_data: llmData,
-            other_data: (el.other_data as Record<string, unknown>) || {},
-          }; // 2026-08-27 小欧 三堂会审: 构造execution_result供专用渲染器读取data/llm_data, 修复删早退后渲染空回归
           step.tool_name = (el.tool_name as string) || '';
-          step.tool_params = (el.tool_params as Record<string, unknown>) || {};
-          step.return_direct = Boolean(
-            (el.other_data as Record<string, unknown>)?.return_direct
-          );
           step.summary = (llmData.summary as string) || '';
-          step.execution_status =
-            (status.exec_code as 'success' | 'error' | 'warning') || undefined;
           step.error_message = (status.message as string) || undefined;
-          step.content = step.summary;
-          step.parallel_results =
-            (rawData.parallel_results as typeof step.parallel_results) ||
-            undefined;
+          // 2026-10-04 小欧 文档[8]§4.1.4: 删 step.content = step.summary(名不副实——顶着"正文"名字装的是摘要副本,
+          //   后端真正正文是 tool_result[i].data_text, 从未进过 content); 孤儿 obs 段只读 summary, 兜底链同步收敛 — 小欧-2026-10-04
         } else {
           // 2026-09-30 小欧 - 原先此处还有一层"兼容旧格式（observation 为对象）"分支（约 57 行），
           //   已删：后端 ObservationStep._extra_fields 只下发 tool_result，全仓无任何位置下发
           //   observation 字段（该字段在 SSE 里物理不可达），属禁止 backward 条款下的死代码。
           //   本 else 兜底**必须保留**：后端 `if self._tool_result:` 在结果为空时不下发该字段，
           //   前端会落到这里；删掉会使这类帧的 step 字段全空。
+          // 2026-10-04 小欧: 删 step.observation/tool_params/return_direct 三处死赋值(零消费+键不存在) — 小欧-2026-10-04
           // 兜底：无 tool_result 的观测帧（后端结果为空时不下发该字段）
-          const obsStr =
-            rawData.observation != null ? String(rawData.observation) : '';
-          step.observation = obsStr;
           step.tool_name = rawData.tool_name ?? '';
-          step.tool_params = rawData.tool_params ?? {};
-          step.return_direct = rawData.return_direct ?? false;
-          step.content = obsStr;
+          // 2026-10-04 小欧: 原读 rawData.observation 拼 content, 但后端全仓不下发该键(恒空串, 零信息量) → 不再兜底 — 小欧-2026-10-04
         }
 
         // 小欧 2026-09-10 S12: 批量 append，零同步序列化
