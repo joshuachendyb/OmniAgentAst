@@ -2,7 +2,7 @@
 
 **文档编号**：`doc-10月优化/[8]`
 **创建时间**：2026-10-04 11:53:48
-**更新时间**：2026-10-04 22:20:00
+**更新时间**：2026-10-05 05:59:27
 
 ## 版本历史
 
@@ -17,6 +17,7 @@
 | v1.9 | 2026-10-04 21:12:20 | 小欧 | 北京老陈指令：按 observation 现在的实现实际情况完全替换第五章。第五章由待优化方案改写为实施后现状：5.1 四层结构（集合行/子行/展开区/被拒工具行）5.2 逐元素字段来源+令牌规格（含乙案参数每键一行、丙案超5项折叠、亮蓝五角星）5.3 结论区不显示清单（data_text 与契约字段表等）5.4 折叠实现只剩 CollapsibleText 5.5 UI 与字段来源总览 5.6 实跑证据（截图+展开区文本）5.7 已知取舍与遗留 |
 | v1.10 | 2026-10-04 21:32:48 | 小欧 | 北京老陈指令：把 action 字段的前一轮分析与全量普查一起整理成第六章（只读分析，代码未改）。6.1 三消费端各用哪些子键（formatter: tool/tool_zh/target/params.extract_format；telemetry: 只认 artifacts；前端零消费）6.2 赋值质量三类问题与甲乙丙丁四方案评估 6.3 AST 全量普查（163 处 action / 144 非空且四键 100% 齐备 / 14 处 data.action 同名脏数据 / 1 处空 action / 66 文件）6.4 target 与 params 重复铁证（tree.py:130/138，144/144 全含）6.5 五条优化方案（去重为核心）+ 建议顺序 6.6 三项待裁定 |
 | v1.11 | 2026-10-04 22:03:47 | 小欧 | 北京老陈指令：参数键名统一方案写入第七章。7.1 现状诊断三套命名体系并存（LLM侧别名已归一/实现侧未统一/别名表残留）7.2 规范名清单5类（path/source/destination/output_path/url等）7.3 三步落地（实现统一79文件→注册schema与别名同步→删action.target并按6规范名派生）7.4 风险（历史回放缺target需裁定/测试断言/面广/schema与实现须同批）7.5 三项待裁定 |
+| v1.13 | 2026-10-05 05:38:15 | 小欧 | 北京老陈指令：按"LLM 信息无损优先、UI 渲染次之"原则，深挖 FILE(14工具)+FUNDAMENTAL(4工具) 字段生成与 formatter 链路，新增**第八章**：8.1 全链路+字段现状 / 8.2 八条问题（**P1 metrics 数字 LLM 拿不到**（formatter 不渲染，旧码仅存注释）/ **P2·P6 shell 命令被裁两遍**（cmd_short 同时进 params 与 summary）/ **P3 error 分支仅 detail 空时才渲染 data**（遮蔽"部分成功"字段）/ P4 hint 兜底废话句 / P5 diff 双通道防退化 / **P7 summary 内嵌路径不截断**（整句截尾会丢统计数字，改掐中保尾）/ **P8 cmd_short 掐头去尾产生假连续文本**（北京老陈裁定总预算 150 = 头 130 + 尾 20，标注「已截N字符」）8.3 修复优先级 8 项 8.4 待裁定 2 条 |
 | v1.12 | 2026-10-04 22:20:00 | 小欧 | 北京老陈指令：按实测收窄更新第七章范围。复核发现初稿「79 文件/8 种命名」判断有误——AST 普查 144 处 action 字面量后确认 **138 处params 键已规范**（FILE 类全部用 path/source/destination），仅 document/read_pdf、read_pptx、write_pptx **3 文件 6 处**用 file_path。7.1 改为「键名基本已统一，只剩 3 处」7.2 标注现状已基本达成 7.3 改为四步（144 处删 action.target / 3 文件改键名+3 处 schema / formatter 派生 6 规范名 / 截断帧补齐），明确不动工具函数名与内部变量名 7.4 面广风险由 79 文件降为 3 文件 7.5 待裁定减为 2 条；6.6 方案A 表述同步校正 |
 
 ---
@@ -635,9 +636,119 @@ _t = (_p.get("path") or _p.get("source") or _p.get("url")
 | 1 | **历史回放**：旧数据缺 `params` 规范键时如何补（建议 `history_loader` 派生时兼容旧键名，不在运行时代码留兼容壳） |
 | 2 | 实施节奏：144 处删键一次性做完，还是分批（FILE 类 → document 类 → 其余）提交 |
 
-**编写人**：小欧
-**版本**：v1.12
+---
+
+## 八、tool 执行后字段生成与 formatter 链路的深度挖掘（2026-10-05 北京老陈指令）
+
+> **北京老陈定调的分析原则（本章最高优先级）**：
+> 1. **首先**保证 tool result 喂给 LLM 的 conversation history **信息无损**；
+> 2. **其次**才是前端 UI 渲染所需。
+> **数据来源**：逐文件实测 `backend/app/tools/file/`（14 工具）+ `backend/app/tools/fundamental/`（4 工具）builder，与 `observation_formatter.py` 全文对读。
+
+### 8.1 字段生成与消费全链路（实测）
+
+```
+工具 _build_*_llm_data → result = {data, llm_data{summary/action/status/duration_ms/metrics/diff?}, other_data}
+  ↓ observation_builder.build_observation (observation_builder.py:88)
+obs_text = format_llm_observation(data, llm_data)
+         = _format_llm_data(llm_data)        # 第1行状态+处理对象 / 第2行观察 / ✖错误 / 建议 / 差异
+         + format_data_detail(data, llm_data) # 详情段（按 data 形状分发 30+ handler）
+  ↓ 三处消费
+  ① agent.message_builder.add_tool_result(tc_id, obs_text)   → LLM conversation history
+  ② tool_result[i] = {tool_name, llm_data, data_text=obs_text, other_data} → 前端 + 落库
+  ③ prompt_logger.log_observation(obs_text)                  → 调试日志
+```
+
+**FILE / FUNDAMENTAL 14 工具 builder 现状（实测一致）**：
+
+| 字段 | 现状 |
+|------|------|
+| `summary` | 成功恒带 path+数字（`读取文件X，成功: a/b行`）；warning 加"提示说明:…"；error 只写"XX失败"（原因移入 status.detail，由 formatter `✖` 行呈现） |
+| `status.message` | 与 summary 叠字（copy/move/listdir/tree/search/grep/compress/extract/notify/timenow） |
+| `action.params` | 本轮已统一 path/source/destination/query/command |
+| `metrics` | 统一 `{key:{value,text}}` |
+
+### 8.2 问题清单
+
+**P1【信息丢失】`metrics` 里的数字 LLM 拿不到**
+
+- **证据**：`_format_llm_data`（`observation_formatter.py:638-705`）不渲染 metrics；旧版渲染代码仅存于注释（:620-623）；只有 2 处特例读死键——`_format_read_result:383`（`total_lines`）、`_format_pdf_result:410`（`page_count`）
+- **影响**：builder 未把数字拼进 `summary` 的，该数字在 LLM 观察里不存在。实测：`search_files.py:108`、`grep_file_content.py:132`、`tree.py:149`、`read_text_file.py:125`
+- **修法**：`_format_llm_data` 补 metrics 行；`{value,text}` 统一取 `.text`，跳过 dict/非标量；限行数与总长
+
+**P2【误导】shell 的"处理对象"是掐头去尾的缩写命令**（与 P6 同源，P6 为完整表述）
+
+- **证据**：`_act_params={"command": cmd_short}`（:559），而 `cmd_short` 是掐头去尾缩写串（:998）
+- **影响**：§7.3 派生链取 `params["command"]` → 观察首行"处理对象"显示缩写命令，LLM 照缩写复现/排查会错
+- **修法**：见 P6（同处一并修）
+
+**P3【信息遮蔽】error 分支只在 detail 为空时才渲染 data**
+
+- **证据**：`format_llm_observation:732-738`——`exec_code=="error"` 且 `status.detail` 非空时直接 return，不碰 data
+- **影响**：detail 非空但 data 携带 detail 没有的关键字段时被丢弃。实测：`delete_file.py:338`（`deleted_files` 已删/未删清单）、`extract_archive.py:242`（`skipped_files`）——"部分成功"信息在 detail 非空时 LLM 看不到
+- **修法**：error 分支补"诊断补充"段——仅当 data 存在 detail 未覆盖的键时渲染，限长
+
+**P4【噪声】hint 兜底句是废话**
+
+- **证据**：`read_text_file` / `write_text_file` 的 error 分支 `hint if hint else "读取失败,详见错误明细"`，而 detail 已在 `✖` 行完整展示
+- **修法**：空则留空，不塞废话；或统一为可操作建议（检查路径是否存在/权限）
+
+**P5【防退化】diff 双通道需固化约束**
+
+- **证据**：`_format_llm_data:689` 渲染 `llm_data["diff"]`；`format_data_detail:340` 渲染 `data["diff"]`。当前 write 走 llm_data 顶层、edit 走 data（2026-07-20 编辑历史），非 bug
+- **修法**：加一行注释固化"diff 二选一"约束，防将来两处都填导致双显
+
+**P6【信息丢失·参数被裁】shell 命令被裁两遍，完整命令从未出现在 observation 里**
+
+- **证据**：`execute_shell_command.py:998` `cmd_short = command[:_SHELL_CMD_HEAD]+"..."+command[-_SHELL_CMD_TAIL:]`（掐头去尾）；`_act_params={"command": cmd_short}`（:559）；`summary = f"执行Shell命令{cmd_short}，…"`（:569/578/585）
+- **影响**：params（处理对象派生来源）与 summary 两处**都是缩写串**，完整命令在 observation 文本中完全不存在 → LLM 无法核对"实际执行的命令是否与自己请求的一致"；本轮删 `action.target` 改 params 派生后该问题被放大（派生链取到的也是缩写）
+- **说明**：LLM 自己发的 tool_call 里本就有完整命令（conversation history 内），它不缺命令原文，缺的是**核对能力**；而掐头去尾的 `cmd_short` 恰好使核对失败
+- **修法（经三堂会审收窄）**：只改 `_act_params={"command": command}` 一行；summary 仍用 `cmd_short`（其截断策略另见 P8）。改后 LLM 从"处理对象"看到命令**前 130 字符完整前缀**，可与自己的 tool_call 核对；改动面 1 行、无副作用
+
+**P7【不对称·无保护超长】summary 内嵌路径不截断，而"处理对象"截 200**
+
+- **证据**：`_format_llm_data:672` `parts = [p for p in [message, summary] if p]` 直接 join，**summary 零截断**；而 target 走 `truncate_text(target, 200)`（:655-657）。`read/write/edit/listdir/tree/search` 的 summary 均为 `f"…{file_path}，成功:…"`
+- **影响**：同一路径两套口径——处理对象截 200，summary 里的它不截。Windows 深路径 + 中文项目名轻易超 200 字符，整串进 LLM 且**无"已截断"标注** → LLM 误以为看到完整路径；这是信息无损的反面（无保护超长）
+- **附带**：`truncate_summary(detail, 200)`（`text_utils.py:257`，document 4 工具引用）只截 detail 首行并加 `...`，**不加"原N字符"** → LLM 无法区分"路径本来就这么长"与"被截断"
+- **修法（经三堂会审修正，否决"整句截 200"）**：整句截尾会把**尾部统计数字截掉**——如 `读取文件{180字符路径}，成功: 12/100行，500字节`，按 200 截尾后 `12/100行，500字节` 全丢，**比原问题更糟（数字比路径重要）**。故采用**掐中保尾**：`head[:150] + "…(中段省略X字符) " + tail[-50:]`，路径有界 + 尾部统计必存活 + 超长有标注，且只动 formatter 一处不碰 144 处 builder
+
+**P8【截断策略·假连续】`cmd_short` 掐头去尾产生"看似连续实则不连续"的文本**
+
+- **证据**：`execute_shell_command.py:288-289` `_SHELL_CMD_TAIL=15`、`_SHELL_CMD_HEAD=EXECUTE_SHELL_OUTPARM_LIMIT_CMD-15`；`tool_constants.py:343` `EXECUTE_SHELL_OUTPARM_LIMIT_CMD=50`（→ HEAD=35）；`:998` `cmd_short = command[:35] + "..." + command[-15:]`（超 50 字符时）
+- **问题**：头尾两段**不连续**的文本用 `...` 直接拼接，LLM 会把 `...output.txt"` 当成真实相邻内容，形成错误因果；命令的**头部才是身份**（程序名 + 核心参数），尾部多是收尾（引号闭合 / 重定向目标），保留尾部 15 字符收益低而误导成本高
+- **对比**：
+  | 策略 | 输入（超长命令） | 阅读效果 |
+  |------|----------------|---------|
+  | 现状 掐头去尾 | `python build.py --config ...output.txt"` | ❌ 假连续，误导 |
+  | 掐头保尾 | `python build.py --config x…(已截N字符)` | ✅ 可识别，尾部参数丢失 |
+  | **掐中保尾（选定）** | `python build.py --config…--output out.txt` + 标注 | ✅ 命令身份 + 结尾参数均在，标注明确 |
+- **修法（北京老陈裁定）**：**总预算 150 字符 = 头 130 + 尾 20**，超限则 `command[:130] + f"…(已截{len(command)-150}字符)" + command[-20:]`；标注文案用「已截」不用「已省略」
+  - 改动落点：`_SHELL_CMD_TAIL` 15→20、`EXECUTE_SHELL_OUTPARM_LIMIT_CMD` 50→150（`_SHELL_CMD_HEAD` 自动为 130）、`:998` 拼接行加标注
+  - 两分支（超限 / 未超限）语义统一：仅超限时截断并标注，短命令原样输出
+
+### 8.3 修复优先级（按"信息无损优先"排列）
+
+| 序 | 修什么 | 影响面 |
+|---|--------|--------|
+| 1 | **P1 metrics 通用渲染** | formatter 一处 + 单测 |
+| 2 | **P2 + P6 shell 参数存完整 command**（P2 派生态，同一处修） | fundamental 一处 1 行 |
+| 3 | **P8 cmd_short 掐中保尾**（常量 150/130/20 + 「已截N字符」标注） | fundamental 2 常量 + 1 拼接行 |
+| 4 | **P3 error 分支补 data 诊断** | formatter 一处 + 单测 |
+| 5 | **P7 summary 掐中保尾截断**（保尾部统计数字） | formatter 一处 + 单测 |
+| 6 | P4 删 hint 废话兜底 | read/write 各 1 处 |
+| 7 | P5 diff 双通道注释固化 | 注释 1 行 |
+| 8 | message/summary 去重（只省 token，不损信息） | formatter 一处 3 行 |
+
+### 8.4 待裁定事项
+
+| # | 待裁定 |
+|---|---------|
+| 1 | 是否按 8.4 序 1~4 立即实施（序 5/6 可选） |
+| 2 | `metrics` 渲染是否需要限长上限（建议：单工具最多 10 项 + 单值 100 字符，防 metrics 膨胀撑爆 observation） |
 
 **编写人**：小欧
-**编写时间**：2026-10-04 22:20:00
-**版本**：v1.12
+**版本**：v1.13
+
+**编写人**：小欧
+**编写时间**：2026-10-05 05:59:27
+**版本**：v1.13
