@@ -1271,7 +1271,7 @@ def _step_brief(step: Any, limit: int = 40) -> str:
     t = step.get("type", "")
     if t == "start":
         return _cut(step.get("user_message"))
-    if t == "context_overview":
+    if t == "history_context":  # 2026-10-04 小欧: 帧改名 context_overview→history_context(不改则此栏恒空, 证据链静默归零)
         return f"消息{step.get('message_count', 0)}条/≈{step.get('estimated_tokens', 0)}tok(估算)" + ("/已裁剪" if step.get("truncated") else "")
     if t == "stats":
         # 2026-08-22 小欧 补展示retry_count(仅非零追加): stats落库字段=llm_call_count/duration/
@@ -2348,7 +2348,7 @@ def write_test_record(
     _inj_max_n = 0
     _inj_max_tok = 0
     for _ev in result.get("events", []):
-        if isinstance(_ev, dict) and _ev.get("type") == "context_overview":
+        if isinstance(_ev, dict) and _ev.get("type") == "history_context":  # 2026-10-04 小欧: 随帧改名同步(不改则注入峰值恒 0)
             _inj_n = _ev.get("injected_message_count", 0) or 0
             _inj_tok = _ev.get("injected_estimated_tokens", 0) or 0
             # 先比消息数, 消息数相同时比 tok 数, 保证峰值取到

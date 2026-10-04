@@ -251,7 +251,7 @@ def _injection_of(r: dict) -> dict:
     """
     out = {"注入消息数": 0, "注入tok": 0, "有无注入": "无"}
     for e in r.get("events", []):
-        if isinstance(e, dict) and e.get("type") == "context_overview":
+        if isinstance(e, dict) and e.get("type") == "history_context":  # 2026-10-04 小欧: 随帧改名同步(不改则本用例注入明细恒 0)
             n = e.get("injected_message_count", 0) or 0
             tok = e.get("injected_estimated_tokens", 0) or 0
             out = {
