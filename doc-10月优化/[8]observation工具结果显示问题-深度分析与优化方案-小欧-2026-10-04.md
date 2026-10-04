@@ -2,9 +2,7 @@
 
 **文档编号**：`doc-10月优化/[8]`
 **创建时间**：2026-10-04 11:53:48
-**更新时间**：2026-10-04 18:44:44
-**编写人**：小欧
-**版本**：v1.8
+**更新时间**：2026-10-04 22:20:00
 
 ## 版本历史
 
@@ -16,6 +14,10 @@
 | v1.6 | 2026-10-04 18:23:29 | 小欧 | 北京老陈指令：§4.2/4.3/4.4 三节所述代码已全部下线，按裁定**三节合并重写为新 §4.2「当前渲染实现」**（①不做形状分派：列出已删的 `resultTypes.ts`/`shapeRenderers.tsx` ②取数链三级收一级，只认 `tool_result` ③实际渲染形态：4 键对象 + `Descriptions column=1` + `data_text` 仍被折叠 2 行，含 `MAX_*` 阈值出处），§4.3/§4.4 按裁定留空并标注失效原因。同批落地的死字段清理（`execution_result`/`execution_status`/`tool_params`/`parallel_results`/`observation`/`return_direct` 及 `content`）见 §5.1 |
 | v1.7 | 2026-10-04 18:41:52 | 小欧 | 北京老陈指令："这个要在第 5 章的修改清单上说明这个问题，以及如何处理的策略"。**§5.2 建议五改写为完整条目**（问题/危害/现状/处理策略/风险/状态六栏）：两套折叠实现并存（自研 `CollapsibleText` 5行200字带 `stopPropagation` vs antd `Paragraph` 100字符2行无 `stopPropagation`）→ 策略定为**保留 `CollapsibleText` 作唯一折叠实现**（全仓 50 处引用不可删）、**删 `GenericResultRenderer` 的 antd 折叠分支**改长文本全量渲染 + 400px 滚动 + 等宽字体，零后端改动。**明确记载代码未动**（`GenericResultRenderer.tsx` 与 HEAD 一致），待裁定后随建议三一起实施 |
 | v1.8 | 2026-10-04 18:44:44 | 小欧 | 北京老陈指令："重新梳理，这里是不是有重复的问题？"。**第五章去重梳理**：核实出 4 处交叉重复（5.1 的 A 与建议一同一件事、建议五 ⊂ 建议三、建议四 ⊂ 建议三②、B 只是实施注意），改为**问题与建议一一对应**——5.1 改列 3 条现存问题（⑤展示内部契约字段表 ⑥摘要硬截+乱码兜底 ⑦两套折叠实现并存〔新增条目，原只在 §4.5 记录〕），A 并入问题 6 的证据、B 降级为「实施注意（非独立问题）」；5.2 由五条建议收敛为两条（建议一 ↔ 问题 6；建议二 ↔ 问题 5+7），折叠收敛与目录按行渲染并入建议二子项，删独立的建议四/建议五。**代码未动。** |
+| v1.9 | 2026-10-04 21:12:20 | 小欧 | 北京老陈指令：按 observation 现在的实现实际情况完全替换第五章。第五章由待优化方案改写为实施后现状：5.1 四层结构（集合行/子行/展开区/被拒工具行）5.2 逐元素字段来源+令牌规格（含乙案参数每键一行、丙案超5项折叠、亮蓝五角星）5.3 结论区不显示清单（data_text 与契约字段表等）5.4 折叠实现只剩 CollapsibleText 5.5 UI 与字段来源总览 5.6 实跑证据（截图+展开区文本）5.7 已知取舍与遗留 |
+| v1.10 | 2026-10-04 21:32:48 | 小欧 | 北京老陈指令：把 action 字段的前一轮分析与全量普查一起整理成第六章（只读分析，代码未改）。6.1 三消费端各用哪些子键（formatter: tool/tool_zh/target/params.extract_format；telemetry: 只认 artifacts；前端零消费）6.2 赋值质量三类问题与甲乙丙丁四方案评估 6.3 AST 全量普查（163 处 action / 144 非空且四键 100% 齐备 / 14 处 data.action 同名脏数据 / 1 处空 action / 66 文件）6.4 target 与 params 重复铁证（tree.py:130/138，144/144 全含）6.5 五条优化方案（去重为核心）+ 建议顺序 6.6 三项待裁定 |
+| v1.11 | 2026-10-04 22:03:47 | 小欧 | 北京老陈指令：参数键名统一方案写入第七章。7.1 现状诊断三套命名体系并存（LLM侧别名已归一/实现侧未统一/别名表残留）7.2 规范名清单5类（path/source/destination/output_path/url等）7.3 三步落地（实现统一79文件→注册schema与别名同步→删action.target并按6规范名派生）7.4 风险（历史回放缺target需裁定/测试断言/面广/schema与实现须同批）7.5 三项待裁定 |
+| v1.12 | 2026-10-04 22:20:00 | 小欧 | 北京老陈指令：按实测收窄更新第七章范围。复核发现初稿「79 文件/8 种命名」判断有误——AST 普查 144 处 action 字面量后确认 **138 处params 键已规范**（FILE 类全部用 path/source/destination），仅 document/read_pdf、read_pptx、write_pptx **3 文件 6 处**用 file_path。7.1 改为「键名基本已统一，只剩 3 处」7.2 标注现状已基本达成 7.3 改为四步（144 处删 action.target / 3 文件改键名+3 处 schema / formatter 派生 6 规范名 / 截断帧补齐），明确不动工具函数名与内部变量名 7.4 面广风险由 79 文件降为 3 文件 7.5 待裁定减为 2 条；6.6 方案A 表述同步校正 |
 
 ---
 
@@ -341,161 +343,301 @@ ToolResultRenderer/index.tsx（当前实现全文逻辑）
 
 ---
 
-## 五、待优化的observationUI显示问题
+## 五、observation UI 显示的实际情况（2026-10-04 实施后）
 
+> 本章按 **实施后的代码实际状态** 描述（不再是"待优化方案"）。
+> 涉及文件：`ToolCallLine.tsx`（集合行/子行/参数块）、`ToolResultRenderer/index.tsx`（展开区结论区）。
+> 相关提交：`d26f2a15e`（删形状分派+下标配对）、`61ed58963`/`3b8630519`（死字段与死文件清理）、`29b0ba2c3`（结论区+子行/参数优化）、`be85d69d6`（实跑截图脚本）。
 
-### 5.1 问题列表
+### 5.1 整体结构（四层）
 
-| # | 问题 | 现象 | 状态 |
-|---|------|------|------|
-| 1 | 通用工具展示内部字段，看不到结果本身 | 展开区是一张 `tool_name`/`llm_data`/`data_text`/`other_data` 契约表 | ❌ 仍在 |
-| 2 | 摘要硬截 60 字；无摘要时变乱码片段 | 子行摘要半句被切断，或显示观察文本碎片 | ❌ 仍在 |
-| 3 | 两套折叠实现并存 | 同一份长文本两套阈值；数组分支点文本会误收起整行 | ❌ 仍在 |
-
-### 5.2 每条问题的修改策略
-
-> 均为只改前端、不改后端契约的最小改动；依据是数据契约实测形态（`metrics` 值自带面向人的 `text`），不新造结构。
-
-**问题 1——改法：展开区只展示"结论"，不展示原始字段与原文**
 ```
-① 头：● 状态图标 + 完整摘要（FontWeight.MEDIUM，一行 CSS 省略，不硬截）
-      （不显示工具名——子行已有，重复即噪音；参数已由子行展开时的"参数：…"承载）
-② 主体：不显示 data_text 全文（2026-10-04 北京老陈裁定）
-      理由一：data_text 是喂 LLM 的"请求-处理对象-结果"三段拼接文本，原样铺满等于
-              把内部话术（"请求/处理对象"）怼到用户脸上；
-      理由二：工具结果正文已由 assistant 回答承载（实测截图：回答里已用表格完整列出目录项），
-              observation 属过程痕迹，不必重复承载结果正文；
-      代价（如实记录）：目录/文件清单不再出现在 observation 展开区，需看 assistant 回答。
-③ 尾：metrics 渲染为一排小标签，只取契约里的 text 字段（text 本就是给人看的，§3.3）
+集合行（每轮 action 一条）
+  ⚙ + "并行 N 个工具" 或 "调用 1 个工具" + [工具名列表, 逗号分隔] + (重试N次)
+子行（每工具一条，折叠态一直可见的那一行）
+  💧水滴(按 status.exec_code 上色) + 工具名 + 结果摘要(单行 CSS 省略) + ⌄箭头
+  └ 点开 → 展开区（下面两层）
+展开区
+  ├ 参数块  每键一行等宽字体；项数 >5 时折叠为"▸ 参数（N 项）"，点击展开
+  └ 结论区  ★(亮蓝五角星) + 完整摘要(单行省略) + metrics 小标签排
+被拒工具行（有被拦截/拒绝时追加在子行之后）
+  [图标] [安全]/[超时]/[拒绝]/[沙箱] + 工具名 + "未执行：{原因}"
 ```
-- **"零后端改动"前提成立**：本条只减前端展示，不新增/不改任何后端字段与契约。
-- 隐藏清单本阶段**维持现状不扩大**（`llm_data.status.code/detail/hint`、`duration_ms`、`other_data.retry_count` 目前仍在屏上）——已实跑发现，但按裁定**留到下一阶段**再优化，本阶段不动。
-- 依据：`GenericResultRenderer` 全仓仅 `ToolResultRenderer` 一处调用，改契约无外部牵连。
 
-**问题 2——改法：两处一起改**
-- 删 `sum.slice(0, 60)`，交回同行已有的 CSS 单行省略（不再半句切断）。
-- 摘要只取 `llm_data.summary`，**不再拿 `data_text` 兜底**；无 `summary` 就留空（`data_text` 是长观察文本，截前 60 字必然是乱码片段；文本展示职责归 assistant 回答与展开区结论区）。
-- 落地方法见 §5.4.2（子行侧，本章不重复列）。
+### 5.2 各层渲染的字段与样式（全部用现成令牌，无新增设计变量）
 
-**问题 3——改法：折叠实现收敛为一套**
-> 详细方法与风险表见 §5.3 方法三（此处不重复）。
+| 层 | 元素 | 数据来源 | 样式规格 |
+|---|------|---------|---------|
+| 集合行 | 齿轮图标 + 集合文案 | `action.tools[]` | `并行 ${toolCount} 个工具` / `调用 1 个工具`；`exec_type === 'multi'` 判并行 |
+| | 工具名列表 | `action.tools[].tool` | 逗号分隔 |
+| | 重试标记 | `action.action_retry_count` | >0 时 `(重试N次)` |
+| 子行 | 水滴图标 | `tool_result[i].llm_data.status.exec_code` | `success`→`Colors.SUCCESS` / `error`→`Colors.ERROR` / `warning`→`Colors.WARNING`；`size=10` |
+| | 工具名 | `action.tools[i].tool`（**不是** `step.tool_name`，后者只取 `tool_result[0]`） | `FontSize.SECONDARY(12)`，`flexShrink:0` |
+| | 结果摘要 | `tool_result[i].llm_data.summary`（**唯一来源，无兜底**） | `FontSize.SECONDARY` + `Colors.TEXT.SECONDARY`；`flexGrow:1` + `overflow:hidden` + `textOverflow:ellipsis` + `whiteSpace:nowrap`；**无摘要整块不渲染** |
+| | 箭头 | — | `CircleArrow size=16`，随展开态翻转 |
+| 展开区·参数块 | 每键一行 | `action.tools[i].params` | 等宽 `Consolas/Monaco/Courier New`；格式 `${key}: ${value}`，字符串值直接取原值（**不二次序列化**，故路径 `\` 不双重转义）；项数 >5 才出现 `▸/▾ 参数（N 项）` 可点行（`Enter/Space` 同样切换） |
+| 展开区·结论区 | 五角星 | — | `StarOutlined` + `Colors.PRIMARY(#1677ff)` 固定亮蓝，`FontSize.SECONDARY` |
+| | 完整摘要 | `tool_result[i].llm_data.summary` | `FontSize.SECONDARY` + `FontWeight.MEDIUM(500)` + `Colors.TEXT.PRIMARY`；单行 CSS 省略 |
+| | metrics 标签 | `tool_result[i].llm_data.metrics[k]` | 每键一枚 `${k}: ${text ?? value}`；`FontSize.SMALL(11)`、`Radius.SM(4)`、边框 `Colors.BORDER.VERTICAL`、行高 `11+Spacing.XS` |
 
-| 项 | 内容 |
+### 5.3 结论区**不显示**的内容（2026-10-04 北京老陈裁定，已实施）
+
+| 不显示 | 原因 |
+|--------|------|
+| `data_text` | 是喂 LLM 的"请求-处理对象-结果"三段拼接文本，原样铺满等于把内部话术怼给用户；且工具结果正文已由 assistant 回答承载 |
+| `tool_name`（契约键） | 与子行显示的工具名重复 |
+| `llm_data.action` | 前端零消费 |
+| `status.code` / `status.detail` / `status.hint` | 前端零消费 |
+| `duration_ms` | 前端零消费 |
+| `other_data`（`retry_count` 等） | 编排信号，前端零消费 |
+| 原契约字段表（antd `Descriptions` 键值表） | 已下线：结论区不再消费整份 `tool_result`，`GenericResultRenderer` 随之整体下线 |
+
+> 代价（如实记录）：**目录/文件清单不再出现在 observation 展开区**，需看 assistant 回答正文。
+
+### 5.4 折叠实现的现状
+
+| 组件 | 阈值 | 使用场景 | 交互 |
+|------|------|---------|------|
+| `CollapsibleText`（项目自研，唯一折叠实现） | 5 行 / 200 字 | ① `tool_result` 为**字符串**时的结果块；② AI 长消息 | `stopPropagation` + `Enter/Space` |
+
+
+即：折叠实现从 2 套收敛为 1 套；数组形态的 `tool_result` 不再走任何折叠分支。
+
+### 5.5 数据来源总览
+
+| UI 元素 | 后端字段 | 是否进 LLM |
+|--------|---------|-----------|
+| 集合行工具名/参数 | action 帧 `tools[].tool` / `tools[].params` | ✅（`tool_calls[].function.arguments`，未格式化） |
+| 子行工具名 | action 帧 `tools[].tool` | ✅ |
+| 子行摘要 / 结论区摘要 | `tool_result[i].llm_data.summary` | ❌ 不进 |
+| 子行水滴状态 | `tool_result[i].llm_data.status.exec_code` | ❌ 不进 |
+| 结论区 metrics 标签 | `tool_result[i].llm_data.metrics[k].text` | ❌ 不进（其信息已被 formatter 压平进 `data_text` 文本） |
+| （不显示）`data_text` | `tool_result[i].data_text` | ✅ **唯一载体**（conversation history 靠它） |
+
+### 5.6 实跑证据（2026-10-04）
+
+- 截图：`frontend/e2e_case/output/ui-shots/observation-light.png`、`observation-dark.png`（脚本 `frontend/e2e_case/shot_observation_ui.mjs`，亮/暗两态）
+- 展开区实抓文本（`listdir`）：
+  ```
+  listdir
+  列出目录F:\OmniAgentAs-repair\backend\app\utils，成功: 18项，18个文件，0个目录
+  参数：
+  path: F:\OmniAgentAs-repair\backend\app\utils
+  total: 18项   dir_count: 0个目录   file_count: 18个文件   total_size: 73094字节
+  ```
+- 自动化护栏：`npm run typecheck` 0 error；`npm run test` 134 文件 1483 用例全绿（含 4 例按新口径改写的契约测试）。
+
+### 5.7 已知取舍与遗留
+
+| 项 | 说明 |
 |---|---|
-| 保留谁 | 自研 `CollapsibleText` 作唯一折叠实现（全仓 50 处引用，带 `stopPropagation` + 键盘，不可删） |
-| 删什么 | `GenericResultRenderer` 内 antd `Paragraph` 折叠分支（`MAX_STRING_LENGTH=100` + `ellipsis={{rows:2}}`） |
-| 连带效应 | 问题 1 决定"不显示 `data_text`"后，observation 路径不再渲染长字符串，该折叠分支基本失去触发条件 → 问题 3 随之基本消解 |
-
-### 5.3 UI 优化方法（2026-10-04 18:58:11 小欧 落地方法与视觉规格；含自评修正）
-
-> 令牌全部取自 `frontend/src/utils/stepStyles.ts` 现值（`FontSize.PRIMARY=14/SECONDARY=TERTIARY=12/CODE=12/SMALL=11`、`FontWeight.MEDIUM=500/BOLD=600`、`Spacing.XS=4/SM=6/MD=8`、`BorderWidth.THICK=2`、`Radius.SM=4`、`Colors.BORDER.VERTICAL=#e8e8e8`、`Colors.SUCCESS=#52c41a`、`Colors.ERROR=#ff4d4f`、`Colors.WARNING=#AD6800`、`Colors.PRIMARY=#1677ff`），**不新增设计令牌**。
-
-**方法一：子行摘要交给 CSS，删硬截**（治问题 2｜**子行侧改动的唯一维护处是 §5.4.2，本节只作索引，不重复列**）
-
-**方法二：展开区只展示"结论"区**（治问题 1，含治问题 3）
-```
-┌ 子行（点此展开，独立于其它工具行）
-│  💧 摘要文本                        ⌄/›     ← 复用现有 DropletIcon + CircleArrow
-└─ 展开区（paddingLeft: Spacing.SM，左竖线 BorderWidth.THICK × Colors.BORDER.VERTICAL）
-   ① 头  一行：● 状态图标 + 完整摘要（FontWeight.MEDIUM，CSS 单行省略，不硬截）
-             不显示工具名（子行已有）、不显示参数（子行展开已有）
-   ② 主体 不显示 data_text（2026-10-04 北京老陈裁定）
-             理由：data_text 是喂 LLM 的"请求-处理对象-结果"三段拼接文本，原样铺满
-                   等于把内部话术怼到用户脸上；且结果正文已由 assistant 回答承载
-             代价（如实记录）：目录/文件清单不再出现在 observation 展开区
-   ③ 尾  metrics 小标签排：borderRadius:Radius.SM；FontSize.SMALL(11)
-             每个标签显示 metrics[k].text（契约里现成，面向人）；无 text 则显示 value
-```
-- **隐藏清单本阶段不扩大**：`llm_data.status.code/detail/hint`、`duration_ms`、`other_data.retry_count` 实跑仍在屏上，**留到下一阶段**再优化（2026-10-04 裁定）。
-- 头部若将来要加工具名，**必须取 `tools[i].tool`**（`obsStep.tool_name` 只取 `tool_result[0]`，会复现已修的"展开标题显示错"）。
-- 自评修正 3（信息层级）：项目字号只有 14/12 两档（"留白全 0"定案），层级靠字重/颜色/左线，故头部摘要提为 `FontWeight.MEDIUM`。
-
-**方法三：折叠实现只留一套**（治问题 3）
-| 动作 | 对象 | 结果 |
-|------|------|------|
-| 保留 | 自研 `CollapsibleText`（`maxLines=5` / `maxChars=200`，带 `stopPropagation` + Enter/Space） | 唯一折叠实现，继续服务字符串 `tool_result` 与 AI 长消息 |
-| 删除 | `GenericResultRenderer` 内 `MAX_STRING_LENGTH=100` + `Paragraph ellipsis={{rows:2, expandable:true}}` 分支 | 数组内长字符串不再折叠 |
-| 连带效应 | 方法二②决定不显示 `data_text` 后，observation 路径不再渲染长字符串 → 该分支基本失去触发条件，问题 3 基本消解 |
-| 现状 | 代码未动（`GenericResultRenderer.tsx` 与 HEAD 一致） |
-
-**方法四：目录类结果按行渲染 + 恢复图标层级** —— **作废（2026-10-04 19:56 北京老陈裁定）**
-> 原方案基于"显示 `data_text` 全文并按行渲染"（含 ` [目录]`/` [文件, N字节]` 后缀识别 + Folder/File 图标）。
-> 现方法二②已裁定**不显示 `data_text`**，故本方案无实施对象，作废保留记录。
-> 当初的**防退化考量仍然有效**：若将来恢复显示 `data_text`，必须按行识别后缀并配图标，否则目录层级会低于旧 `TreeResultRenderer`；**禁止 `JSON.parse` 造树**（实测 0/2306 可解析）。
-
-**方法五：暗色适配与实跑验证（实施前必做）**
-0. **已完成的实跑取证（2026-10-04 19:0x，`fre2e_04_file_dir_analysis` headed 通过 1.7 分钟）**：
-   - 截图存档：`frontend/e2e_case/output/ui-shots/observation-light.png`、`observation-dark.png`（抓图脚本 `frontend/e2e_case/shot_observation_ui.mjs`，可重跑）；
-   - 截图所见（与本章方案直接相关）：展开区呈 `code:` / `detail:` / `hint:` / `duration_ms:` / `metrics:` 等内部键名，`metrics` 再展开成 `total: value: 18 text: 18项` 双层键值；`data_text` 被压成 2 行且内容是"请求-处理对象-结果"拼接文本；`other_data: retry_count: 0` 独占一行。
-   - 由此得出的两条决策：主体②**不显示 `data_text`**（见方法二）；隐藏清单扩大**留到下一阶段**。
-1. **暗色**：项目自 2026-04-28 支持深色模式（`stepStyles.ts:30`）。本方案全部走令牌，天然适配，但**必须在暗色下实测对比度**——尤其 `Colors.TEXT.PRIMARY #595959`、`Colors.WARNING #AD6800` 在深底上的可读性（不可用则改用同档更亮令牌，不新增色值）。
-2. **实跑**：`fre2e_04_file_dir_analysis`（唯一真正渲染 listdir/read 结果的 case）亮/暗两态截图核对：摘要与 metrics 标签可读、无 `code/detail/hint` 之外的新噪音、无"目录为空"。
-3. **落地顺序**：§5.4.2（子行两条）→ 方法三（删折叠分支）→ 方法二（展开区结论区）。
-4. **回归护栏**：`npm run check:full` 0 error；`npm run test` 全绿（现有 4 例真实 `data_text` 契约测试须按新口径调整：不再断言 `data_text` 文本可见，改为断言结论区元素可见）。
-
-### 5.4 折叠态那一行（子行）的信息与渲染规格（2026-10-04 19:16:35 小欧 补；19:20:12 按裁定收口）
-
-> §5.3 只写了展开区；折叠态一直可见的子行同样需要规格与优化，故补本章。
-> 现状代码：`features/chat/components/pipeline/ToolCallLine.tsx`。
-> **裁定（2026-10-04 北京老陈）**：集合行**不动**；子行**要优化**；展开区**按 §5.3 原文保留**。
-
-**5.4.1 三层结构与现状信息**
-
-```
-集合行（每轮 action 一条）—— 裁定：不动，本章不提出任何改法
-  ├ GearIcon + "并行 N 个工具" 或 "调用 1 个工具"
-  ├ [工具名列表]        现状 tools.map(t=>t.tool).join(', ')
-  └ (重试N次)           现状 action.action_retry_count>0 时追加
-子行（每工具一条，折叠态可见的那一行）—— 裁定：要优化（见 5.4.2）
-  ├ DropletIcon        按 llm_data.status.exec_code 上色(success/error/warning)
-  ├ 工具名             取 tools[i].tool（正确来源，非 obsStep.tool_name）
-  ├ 结果摘要           现状 sum.slice(0,60) + 同容器 CSS 省略（双重处理）
-  └ CircleArrow        展开/收起箭头
-展开区（点开后才见）—— 裁定：按 §5.3 方法一~五原文保留，不在本章改动
-被拒工具行（追加在子行之后）—— 维持现状，不动
-  ├ REJECT_ICON_MAP 图标 + [安全]/[超时]/[拒绝]/[沙箱] 标签
-  └ 工具名 + "未执行：{reason}"
-```
-
-**5.4.2 子行的优化项（只有 2 条改动，均不触碰展开区与集合行；与 §5.2 问题 2 一一对应）**
-
-| # | 现状问题 | 改法 |
-|---|---------|------|
-| 1 | 摘要被硬截 60 字后又走 CSS 省略（双重处理，半句切断且吞掉真实结尾） | 删 `sum.slice(0, 60)`，只留容器 CSS 单行省略三件套 |
-| 2 | 摘要取值链兜底到 `data_text`，无 `summary` 时拿长观察文本当前 60 字 → 显示乱码片段 | 摘要**只取 `llm_data.summary`**；无 `summary` 时**摘要整块不渲染**，水滴图标与工具名自然左对齐，不留空槽 |
-
-> 本节是"子行摘要"的**唯一维护处**，§5.3 方法一仅作索引指向本节，不重复列改法。
-
-**5.4.3 子行不得退化的既有能力（实施时逐条守住）**
-
-| 项 | 现状能力 |
-|---|---------|
-| 状态着色 | `DropletIcon` 按 `success/error/warning` 上色（`Colors.SUCCESS/ERROR/WARNING`） |
-| 工具名来源 | 必须取 `tools[i].tool`；若改用 `obsStep.tool_name` 会复现已修的"展开标题显示错" |
-| 参数查看 | 子行展开时先显示 `参数：{JSON}` |
-| 可点区 | 整行 `role="button"` + `tabIndex=0` + `aria-expanded` + Enter/Space 切换 |
-| 独立展开 | 每工具独立展开/收起，状态按 `boolean[]` 独立保存 |
-| 下标配对 | 摘要/状态按下标配对（`results[idx]`），不得改回按工具名 find |
-
-**5.4.4 渲染规格（全部用现成令牌，不新增）**
-```
-子行  ：外层 paddingTop=Spacing.XS(4)，paddingLeft=Spacing.SM(6)；marginTop=Spacing.XS
-        水滴 size=10（DropletIcon 现状值）
-        工具名 FontSize.SECONDARY(12)，flexShrink:0（不被摘要挤走）
-        摘要 FontSize.SECONDARY + Colors.TEXT.SECONDARY，flexGrow:1
-              + overflow:hidden + textOverflow:ellipsis + whiteSpace:nowrap
-        箭头 CircleArrow size=16
-交互  ：整行可点 + 键盘（Enter/Space）；展开区内的 stopPropagation 需求
-        由"折叠只留 CollapsibleText"满足（§5.3 方法三）
-```
-
-**5.4.5 与 §5.3 的实施关系**
-- 子行侧（5.4.2 两条）**不触碰展开区逻辑**，可独立先落，风险最低；
-- 集合行不动 → 原"集合行次数聚合""重试次数弱化"两条**作废**，不在本次范围；
-- 落地顺序：5.4.2 的 1、2（子行两条）→ §5.3 方法三（删折叠分支）→ §5.3 方法二（展开区结论区）→ 方法五实跑验证（`fre2e_04` 亮/暗两态）。
+| 目录清单不可见 | 展开区不再显示 `data_text`，目录/文件清单需看 assistant 回答 |
+| 失败/警告在结论区无色 | 结论区五角星固定亮蓝（不按 `exec_code` 变色），状态语义由**子行水滴**承担 |
+| 参数 >5 项需点开 | 已按阈值 5 折叠；若某工具参数长期很多，可考虑改为默认展开首屏 |
+| 回归防护 | 契约测试守护"摘要可见 + metrics 标签可见 + `data_text`/契约字段不可见"；新增 UI 改动须同步这 4 例 |
 
 ---
 
+## 六、`llm_data.action` 字段深度分析与优化方案（2026-10-04）
+
+> **分析口径（2026-10-04 北京老陈定案）**：`llm_data.action` 的**第一目的是服务 formatter 拼 `data_text`**（喂 LLM 的观察文本），**次要目的才是给前端显示**。因此评估标准是"对 formatter 有用且赋值准确"，而不是"前端有没有读"。
+> 本章为**只读分析**产出，代码未改动。
+
+### 6.1 三个消费端各自用了哪些子键（决定字段去留的唯一依据）
+
+| 消费端 | 实际读取的子键 | 代码位置 | 目的 |
+|--------|---------------|---------|------|
+| **`observation_formatter`（第一目的）** | `action.tool`、`action.tool_zh`、`action.target`（经 `_tool_target()` 取，统一 `truncate_text` 截到 200 字）、`action.params.extract_format` | `observation_formatter.py:634-652`、`:1322-1324` | 拼喂 LLM 的第 1 行：`工具执行: {tool_zh} 调用工具-{tool},处理对象-{target} - 执行结果: 成功` |
+| **`agent_telemetry`（统计）** | **只认 `action.artifacts`**（注释明言"仅认写工具 with_artifacts 自声明，兜底派生已删"） | `app/monitoring/agent_telemetry.py` | 产出物清单 → `final_stats.tool_stats` |
+| **前端** | **零消费**（`tool_zh` 在 `frontend/src` 0 匹配；`artifacts` 的读取点全属 `final_stats` 帧） | — | — |
+
+**关键结论**：`action.params` **从不整体进入文本**，只在 `:1324` 被读了一个 `extract_format`（read 工具的输出格式分支）。而 `action.target` 是 formatter 第 1 行的**唯一"处理对象"来源**——它比 `params` 更重要。
+
+### 6.2 `action` 子键被读取的全量清单（含第一目的之外的隐性依赖）
+
+> 前一轮只统计了"拼文本用到哪些"，**遗漏了截断提示/handler 分派也在读 `action.tool`**。下表为 formatter 内全部读取点：
+
+| 读取点 | 读的子键 | 用途 | 缺 `action.tool` 的后果 |
+|---|---|---|---|
+| `_format_llm_data` :632-637 | `tool` / `tool_zh` | 拼第 1 行 `工具执行: …` | 工具名退化 |
+| `format_data_detail` :143-144 | `target` | per-tool 详情里的处理对象 | 处理对象缺失 |
+| `_truncation_msg` | `tool` | **截断提示按工具分流**（`read`/`edit` → "完整内容见文件"，其他 → 通用截断） | **提示文案错配** |
+| handler 分派 :151 / :228 / :251 / :366 | `tool` | 按工具选不同详情格式器 | 走错格式分支 |
+
+**结论**：`action.tool` 与 `action.target` 是 formatter 的**双刚需**（文本 + 分流），`tool_zh` 次要（仅文本），`params` **只被读一个 `extract_format`**。
+
+### 6.3 赋值质量的前一轮结论 + 本轮补充发现
+
+| # | 问题 | 证据 | 对第一目的的影响 |
+|---|------|------|----------------|
+| 1 | **类型不统一** | `observation_formatter.py:23` 注释："status/action 可能为 str（工具实现不规范）"，全文件 6 处读取均用 `_safe_llm_sub()` + `isinstance` 兜底 | 工具把 `action` 填成字符串时，`tool`/`target`/`tool_zh` 全丢，第 1 行退化 |
+| 2 | **`target` 曾泄漏非 str 类型** | formatter 内注释（2026-07-12）："action.target 可能为非 str 类型（如文档工具泄漏的 WindowsPath），直接 `len()` 会 TypeError，统一 str() 化兜底"；`_tool_target` 现有 `str(_t)` 兜底 | 已修，但说明"赋值规范"未被工具层遵守，只是被 formatter 吸收 |
+| 3 | **空 `action`** | `react_step.py:593` 截断帧为 `"action": {}` | 第 1 行工具名为空；`_truncation_msg` 也走通用分支 |
+| 4 | **与 action 帧语义重叠** | `action.params`（工具**实际生效**）vs action 帧 `tools[].params`（LLM **下发**），仅沙箱改写/默认值时不同 | 双份传输（体积） |
+| 5 | **本轮补充：`data.action` 命名撞车** | 14 处 `data.action`（`rollback` / 桌面动作类 / `delete`）与 `llm_data.action` **完全同名不同层** | 现状不冲突（formatter 只取 llm_data 层），但将来 data 串层即污染 |
+| 6 | **本轮补充：`action` 统一入口存在但未强制** | `app/tools/tool_response.py:117` 有 `llm_data["action"] = _act` 的统一写入点，但 144 处工具仍各填各的 dict 字面量 | 入口形同虚设，类型/字段一致性无人把关 |
+
+（前一轮的四方向评估——甲保持现状 / 乙前端用起来 / 丙后端精简下发 / 丁删冗余子键——结论仍成立：**丁最贴近第一目的**，因为 `params` 只被读一个 `extract_format`，而 `tool/tool_zh/target` 是刚需。）
+
+### 6.4 全量普查（AST 解析，只读）
+
+普查口径：AST 遍历 `backend/app/**/*.py`，抓所有 `"action": {...}` 字典字面量，统计子键覆盖与异常形态。
+
+| 指标 | 数值 |
+|------|------|
+| `"action"` 字面量出现总数 | **163** |
+| 其中非空字典 | **144** |
+| 非空字典中含 `tool` / `tool_zh` / `target` / `params` | **各 144（100% 齐备，无一例外）** |
+| `"action"` 为非 dict 字面量（脏数据） | **14** |
+| `"action"` 为表达式（运行时填充，未普查） | 4 |
+| `"action": {}` 空字典 | **1**（`react_step.py:593` 截断帧） |
+| 含 action 字面量的文件数 | **66** |
+
+**脏数据明细（14 处，全部是 `data.action` 同名撞车，不是 `llm_data.action`）**：
+
+| 文件 | 键值示例 |
+|------|---------|
+| `tools/dataanalysis/execute_sql.py:266/277` | `"action": "rollback"`（与 `llm_data.action` 同名不同层） |
+| `tools/desktop/desktop_register.py:141-145/163-166/175-176` | `"action": "maximize"/"minimize"/"restore"/"topmost"/"unpin"/"type"/"shortcut"/"read"/"write"` |
+| `tools/file/delete_file.py:258` | `"action": "delete"` |
+
+**结论**：`llm_data.action` 的填充一致性其实**很好**（144/144 四键齐备）；真正的问题是 ①`data.action` 与 `llm_data.action` **命名撞车**（将来谁把 data 塞进 llm_data 即污染）②截断帧空 action。
+
+### 6.5 用户指出的重复问题：`target` 与 `params` 高度重复（已证实）
+
+**铁证**（`app/tools/file/tree.py:130/138`）：
+```python
+_act_params = {"path": dir_path}
+"action": {"tool": "tree", "tool_zh": "列出目录树",
+           "target": dir_path,          # ← 与 params["path"] 同值
+           "params": _act_params}
+```
+- 普查确认：**144 处 action 全部同时含 `target` 与 `params`**；
+- FILE 类工具（read/write/listdir/tree/edit…）的 `params` 主体就是路径，`target` 正是该路径（或其 basename）；
+- 即：**同一个"处理对象"信息在一条 observation 里存了两份**（`target` 一份 + `params.path` 一份），每帧多传一份 params 副本。
+
+### 6.6 优化方案（以"删除 `action.target`"为基础改动，2026-10-04 北京老陈裁定）
+
+> **裁定（用户）**：`action.params` **不删**（以后要用）；`action.target` **删掉**（前端零消费），这是**基础改动**，其余围绕它展开。
+> **关键收益**：删掉 `target` 后，运行时"处理对象"只剩 `params` 一份 → §6.5 的重复问题**真正消除**，且**工具内部变量名一个都不用改**（符合项目既定原则"对外注册名/schema 统一，内部实现不动"，见 `file_register.py` 2026-10-02 编辑历史）。
+
+**问题 → 方案对照总表**（每行可追溯到前面小节）：
+
+| 问题出处 | 问题 | 处理 |
+|---------|------|------|
+| §6.5 / §6.2 | `action.target` 与 `action.params` 重复（144/144 全含） | **基础改动：删 `action.target`**，formatter 改从 `params` 派生 |
+| §6.2 | `action.tool` 被 6 处读取（文本 + 截断提示分流 + handler 分派） | **保留，不动** |
+| §6.2 | `action.tool_zh` 拼文本用 | **保留**（前端将来显示也用它） |
+| §6.2 | `action.params.extract_format` 被读（read 输出格式分支） | **保留 params**，该行不改 |
+| §6.3-1 | `action` 类型不统一（str 脏数据） | 不单独治理（现状 144/144 全为 dict 且四键齐备）；派生时统一 `str()` 即可 |
+| §6.3-3 | 空 `action`（`react_step.py:593` 截断帧） | 顺带补 `tool`/`tool_zh`（1 处零风险） |
+| §6.3-5 | `data.action` 与 `llm_data.action` 同名不同层（14 处） | **不改名**，仅加注释说明"同名不同层"（现状分层取值不会冲突） |
+| §6.3-6 | `tool_response` 统一入口形同虚设（144 处各填各的） | **不做**（普查证明无缺失，统一入口改造属过度设计） |
+| §6.1 | 前端零消费 | **需求已确认需要**（用 `tool_zh`+处理对象），**暂不实施** |
+
+**方案明细**：
+
+| # | 方案 | 具体做法 | 影响面 | 风险 |
+|---|------|---------|--------|------|
+| **A（基础）** | **删除 `action.target`** | 144 处工具 action 字面量去掉 `target` 键；`tool`/`tool_zh`/`params`/`artifacts` 保留 | 工具实现（仅删一个键，**不改内部变量名**） | 低。派生链按 §7.2 规范名（实测 138/144 处 params 键已规范，仅 3 处待补，见第七章） |
+| **B（配套）** | **`formatter._tool_target` 改为派生** | 从 `action.params` 按候选链取"处理对象"，命中即用、全空则省略该段 | `observation_formatter`（一处） | 低。派生规则集中单点 + 单测覆盖 |
+| **C（配套）** | **截断帧补齐** | `react_step.py:593` 的 `"action": {}` 补 `tool="truncated_output"`、`tool_zh="输出截断"` | 1 处 | 零风险 |
+| **D（配套）** | **`data.action` 加注释** | 明确"与 `llm_data.action` 同名不同层"，不改名 | 1~2 处注释 | 零风险 |
+| **E（记录）** | **前端消费 `tool_zh` + 处理对象** | 需求已确认，**暂不实施**；将来实施时从 `action.params` 派生链取处理对象 | 前端 | 需与子行 `tool_name` 去重评估 |
+
+**建议顺序**：C（零风险）→ A+B（同批，必须一起改否则 formatter 拿不到处理对象）→ D → E（待排期）。
+
+### 6.7 待裁定事项
+
+| # | 待裁定 |
+|---|---------|
+| 1 | 方案 3：`action.params` 是否从下发中删除；`extract_format` 改从何处取（`data`？工具上下文？保留 params 但不入帧？） |
+| 2 | 方案 2：统一入口时 `tool` 缺失的兜底来源（调用上下文注册名？）与 66 文件改造是否安排 |
+| 3 | 方案 5：`data.action` 是否改名 |
+| 4 | 方案 6：前端是否消费 `tool_zh`+`target`（或继续零消费） |
+
+---
+
+## 七、工具参数键名统一方案（2026-10-04 北京老陈指令：在注册层统一名称）
+
+> 起因：第六章确认 `action.target` 与 `action.params` 大量重复，且 `target` 前端零消费 → 决定删 `target`、改由 `params` 派生。
+> **本章为方案设计（代码未改动）**。数据来源：AST 普查 `backend/app/tools` 的 **144 处 action 字面量**（工具实现内）+ `tools_alias_mapper.PARAM_ALIASES`（覆盖 37 工具）。
+> **2026-10-04 复核修正**：初稿据"79 文件/8 种命名"判断需大规模统一，实测**138/144 处 params 键已规范**，仅 **3 文件 6 处**例外（见 §7.1），故范围大幅收窄。
+
+### 7.1 现状诊断：键名基本已统一，只剩 3 处
+
+| 体系 | 现状（实测） |
+|------|------------|
+| ① LLM 下发侧容错别名 | `PARAM_ALIASES`（2026-07-11 起）把 `file_path`/`filepath`/`file`/`filename`/`file_name`/`filePath`/`dir_path` 等降级为 `path`，覆盖 37 工具 → **属输入侧容错，必须保留** |
+| ② **工具实现内 `action.params` 键名** | **138/144 处已是规范名**（`path` / `source` / `destination` / `url` / `query` / `command` / `sql` 等）；FILE 类全部工具（read/write/edit/listdir/tree/search/copy/rename/move/compress…）均已用 `path`/`source`/`destination` |
+| ③ **仅剩的非规范项** | **3 文件 6 处**：<br>· `app/tools/document/read_pdf.py` → `file_path`<br>· `app/tools/document/read_pptx.py` → `file_path`<br>· `app/tools/document/write_pptx.py` → `file_path` |
+
+**结论**：键名统一的历史工作**基本已完成**（项目 2026-07~2026-10 陆续做过），本次只需补 3 处 + 删 `action.target`。
+
+### 7.2 规范名清单（目标口径，现状已基本达成）
+
+| 类别 | 规范名 | 待统一的散名 |
+|------|--------|------------|
+| 主对象路径 | **`path`** | `file_path` / `filepath` / `filePath` / `file` / `filename` / `file_name` / `dir_path` / `dir` / `directory`（**实现侧仅剩 `file_path`×3 处**） |
+| 源位置 | **`source`** | `src` / `from` / `src_path` / `source_path`（实现侧暂无） |
+| 目标位置 | **`destination`** | `dst` / `to` / `dst_path` / `dest` / `destination_path`（实现侧暂无） |
+| 产出物 | **`output_path`** | `output` / `output_file` / `archive_path`（实现侧暂无） |
+| 网络 / 检索 / 命令 / 数据 | `url` / `query`(+`pattern`) / `command` / `sql` / `dataset` / `table` | 已一致 |
+
+### 7.3 落地方案（按实测范围收窄；不动工具内部变量名与函数名）
+
+**第 1 步 · 删除 `action.target`（基础改动，144 处）**
+```python
+# 现状（tree.py:138）
+"action": {"tool": "tree", "tool_zh": "列出目录树",
+           "target": dir_path,                 # ← 删这一项
+           "params": _act_params},             # _act_params = {"path": dir_path} 原样保留
+```
+- **只删 action 里那一个键**，`_act_params` 与内部变量（`dir_path`/`file_path`）一行不动；
+- 144 处机械删除，遵循 AGENTS 1.4「复制不重写」。
+
+**第 2 步 · 补 3 处非规范键 + 对应 schema（3 文件）**
+```python
+# document/read_pdf.py、read_pptx.py、write_pptx.py
+_act_params = {"file_path": pdf_path}   →   {"path": pdf_path}
+```
+- 同时同步 `document_register.py` 里这三个工具的 schema 字段名（否则 LLM 下发 `path`、实现读不到）；
+- `PARAM_ALIASES` 已有 `file_path → path` 别名（`read_pdf`/`read_pptx` 在覆盖列表内），LLM 侧容错不受影响。
+
+**第 3 步 · formatter 派生"处理对象"（一处改动）**
+```python
+# observation_formatter._tool_target：由读 action.target 改为从 params 派生
+_p = _action.get("params", {})
+_t = (_p.get("path") or _p.get("source") or _p.get("url")
+       or _p.get("sql") or _p.get("query") or _p.get("command") or "")
+```
+- **行为等价性已验证**：FILE 类原手写 `target` 与 `params["path"]` 同值（§6.5），派生结果与现状一致，**喂 LLM 的观察文本不变**；
+- 全空则省略"处理对象"段（formatter 已有 `if target:` 分支）；
+- 补单测：6 个规范名各 1 例 + 全空 1 例。
+
+**第 4 步 · 顺带（1 处）**：截断帧 `react_step.py:593` 的 `"action": {}` 补 `tool="truncated_output"`、`tool_zh="输出截断"`。
+
+**总计改动**：144 处删键 + 3 文件改键名 + 3 处 schema + formatter 一处 + 1 处截断帧；**工具函数名与内部变量名零改动**。
+
+### 7.4 风险与影响面
+
+| 风险 | 说明 | 兜底 |
+|------|------|------|
+| **历史 observation 回放**（关键） | 旧 `execution_steps` 存的是旧结构（**带 `action.target`**）；新代码不写 target、派生靠 `params`——旧数据的 params 里键名可能是 `file_path` 等旧名，派生链可能取不到 → 回放时"处理对象"为空，**影响历史多轮会话的 LLM 注入质量** | **建议**：`history_loader` 回放时按派生链 + 旧键名兜底（一次性修历史，运行时不留兼容壳）——**需北京老陈裁定** |
+| 单测 / E2E 断言 | 少量测试直接传 `file_path` 或断言 `action.target` | 别名层先归一，多不受影响；需跑全量验证 |
+| schema 与实现不同步 | 第 2 步必须同批改 | 强制同提交 |
+| 派生链需全覆盖 | 若将来新工具用非规范键，派生会取不到 | 单测兜底 + 新增工具时 schema 评审 |
+
+### 7.5 待裁定事项
+
+| # | 待裁定 |
+|---|---------|
+| 1 | **历史回放**：旧数据缺 `params` 规范键时如何补（建议 `history_loader` 派生时兼容旧键名，不在运行时代码留兼容壳） |
+| 2 | 实施节奏：144 处删键一次性做完，还是分批（FILE 类 → document 类 → 其余）提交 |
+
 **编写人**：小欧
-**编写时间**：2026-10-04 18:44:44
-**版本**：v1.8
+**版本**：v1.12
+
+**编写人**：小欧
+**编写时间**：2026-10-04 22:20:00
+**版本**：v1.12
