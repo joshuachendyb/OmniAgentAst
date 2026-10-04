@@ -108,6 +108,7 @@
 #   trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
 # 2026-10-02 - 小欧 - 归类调整: 新增 TOOL_CATEGORY_OVERRIDE(归类单一真相源, — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名收敛: TOOL_TIMEOUT_HINTS/TOOL_TIMEOUTS/FILE_OPERATION_TOOLS 键 write→write, edit→edit
+# 2026-10-05 - 小欧 - 文档[8]第八章: ①P8 EXECUTE_SHELL_OUTPARM_LIMIT_CMD 50→150(cmd_short掐中保尾=头130+尾20) ②P1新增OBS_METRICS_MAX_ITEMS=10/OBS_METRICS_VALUE_MAX_CHARS=100 ③P3新增OBS_ERROR_SUPPLEMENT_MAX_CHARS=600
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -235,6 +236,9 @@ OBS_LISTDIR_MAX_ROWS: int = 500         # 【系统级】使用对象: observati
 OBS_LISTDIR_MAX_ROW_CHARS: int = 300    # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 单行上限, 深路径保文件名)
 OBS_MAX_STRING_LENGTH: int = 1000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
 OBS_DICT_MAX_KEYS: int = 100           # 【系统级】使用对象: observation_formatter.py(_format_key_value 最大键数)
+OBS_METRICS_MAX_ITEMS: int = 10           # 【系统级】使用对象: observation_formatter.py(metrics 渲染最大项数, 防撑爆 observation)
+OBS_METRICS_VALUE_MAX_CHARS: int = 100    # 【系统级】使用对象: observation_formatter.py(metrics 单个值最大显示长度)
+OBS_ERROR_SUPPLEMENT_MAX_CHARS: int = 600 # 【系统级】使用对象: observation_formatter.py(error分支"诊断补充"段最大长度)
 # —— 以下 B 组: 原 observation_formatter.py 内硬编码, 迁入统一(【系统级】) ——
 OBS_HTML_SUMMARY_MAX_CHARS: int = 500  # 【系统级】使用对象: observation_formatter.py(HTML→纯文本摘要上限; 原 _extract_html_summary max_len)
 OBS_SYSINFO_FIELD_MAX_CHARS: int = 120 # 【系统级】使用对象: observation_formatter.py(sysinfo 每节字段值截断)
@@ -340,7 +344,7 @@ TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS: int = 5            # 使用对象: timer_lis
 # fundamental
 SEND_NOTIFICATION_OUTPARM_LIMIT_MSG: int = 50          # 使用对象: send_notification.py(message params预览截断)
 # shell
-EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 50              # 使用对象: execute_shell_command.py(cmd_short命令预览截断)
+EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 150             # 使用对象: execute_shell_command.py(cmd_short掐中保尾截断总预算=头130+尾20)
 # file/internal
 WRITE_INER_PREVIEW_CHARS: int = 50                 # 使用对象: write_text_file.py(文首文末预览字符数)
 READ_INER_CJK_SAMPLE: int = 100                    # 使用对象: read_text_file.py(CJK检测采样字符数)

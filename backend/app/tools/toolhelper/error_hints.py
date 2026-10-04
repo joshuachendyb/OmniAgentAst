@@ -4,6 +4,7 @@
 #   错误提示函数(permission_error_hint/hint_for_write_error/hint_for_read_error/sql_error_hint/hint_for_data_error)，
 #   仅改导入归属(validate → toolhelper)，函数签名与业务逻辑一字不改。
 #   依赖随迁: sqlite3、pandas 可选导入(_pd)。原文件仅保留路径/参数校验。
+# 2026-10-05 - 小欧 - 文档[8]P4降噪: 删未知异常hint尾部"，详见错误明细"(4处, detail已由formatter呈现, 该尾巴指向上一行属噪声); hint_for_read_error的"读取文件失败(OSError)"改用e.strerror给出真实原因
 """
 toolhelper/error_hints.py — 工具结果解释层：错误提示函数（内部辅助，不暴露给LLM）
 
@@ -57,7 +58,7 @@ def hint_for_write_error(e: Exception, file_name: str) -> str:
         return "文档内容的 Markdown 表格列数不一致，请检查表格每行单元格数量是否相同"
     if isinstance(e, ValueError):
         return "文档内容或格式异常，请检查表格或参数后重试"
-    return f"写入失败({type(e).__name__})，详见错误明细"
+    return f"写入失败({type(e).__name__})"
 
 
 def hint_for_read_error(e: Exception, file_name: str) -> str:
@@ -81,10 +82,10 @@ def hint_for_read_error(e: Exception, file_name: str) -> str:
     if isinstance(e, OSError) and e.errno == 13:
         return f"无读取权限: {file_name}，请检查文件权限"
     if isinstance(e, OSError):
-        return f"读取文件失败(OSError)，详见错误明细"
+        return f"读取文件失败({e.strerror or type(e).__name__})"
     if isinstance(e, MemoryError):
         return f"文件过大导致内存不足(OOM)，建议使用offset/limit/page等参数分批读取"
-    return f"读取失败({type(e).__name__})，详见错误明细"
+    return f"读取失败({type(e).__name__})"
 
 
 def sql_error_hint(e: Exception) -> str:
@@ -125,7 +126,7 @@ def hint_for_data_error(e: Exception) -> str:
     if isinstance(e, OSError) and getattr(e, "errno", None) == 28:
         return "磁盘空间不足，请清理磁盘后重试"
     if isinstance(e, OSError):
-        return f"文件操作失败({e.strerror or type(e).__name__})，详见错误明细"
+        return f"文件操作失败({e.strerror or type(e).__name__})"
     # pandas errors (需在ValueError前检查，均继承自ValueError) - 小欧 2026-07-26
     if _pd is not None:
         if isinstance(e, _pd.errors.EmptyDataError):
@@ -142,4 +143,4 @@ def hint_for_data_error(e: Exception) -> str:
         return "所需库未安装，请安装缺失依赖"
     if isinstance(e, MemoryError):
         return "文件数据过大导致内存不足(OOM)，请根据工具或者参数分批处理"
-    return f"处理失败({type(e).__name__})，详见错误明细"
+    return f"处理失败({type(e).__name__})"

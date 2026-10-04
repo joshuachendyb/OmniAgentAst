@@ -14,6 +14,7 @@
 # 2026-07-26 - 小欧 - OOD: 确认READ_DOCX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式); 删doc_path多余变量(KISS-DIRECT)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
 """
 D2: read_docx — 读取Word文档
 
@@ -54,7 +55,7 @@ def _build_read_docx_llm_data(
         return {
             "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_docx", "tool_zh": "读取Word", "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
+            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

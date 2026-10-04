@@ -25,6 +25,7 @@
 # 2026-08-18 - 小健 - 三堂会审(target去重): 新增 _tool_target(llm_data) 助手, 收敛 _format_llm_data 与 4 个 per-tool formatter 共 5 处 llm_data.action.target 重复读取(DRY), 并补齐 per-tool formatter 缺失的 str action 防御
 # 2026-08-18 - 小欧 - 三堂会审 补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
 # 2026-10-02 - 小欧 - 注册名收敛: _truncation_msg 分流 edit→edit(按 action.tool 新注册名)
+# 2026-10-05 - 小欧 - 文档[8]第八章(信息无损优先): ①P1 metrics通用渲染(此前完全不渲染, 未拼进summary的数字LLM拿不到) ②P3 error分支补data诊断补充段(detail非空时data被跳过, 遮蔽deleted_files等部分成功信息) ③P5 diff双通道固化"二选一"约束注释 ④序7 message/summary叠字去重(前缀同义与完全同义均去重, 语义不同保双段)
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -96,6 +97,9 @@ from app.tools.tool_constants import (
     OBS_MAX_DISPLAY_ITEMS,
     OBS_MAX_STRING_LENGTH,
     OBS_DICT_MAX_KEYS,
+    OBS_METRICS_MAX_ITEMS,
+    OBS_METRICS_VALUE_MAX_CHARS,
+    OBS_ERROR_SUPPLEMENT_MAX_CHARS,
     OBS_HTML_SUMMARY_MAX_CHARS,
     OBS_SYSINFO_FIELD_MAX_CHARS,
     OBS_GREP_MAX_ROWS,
@@ -123,6 +127,10 @@ from app.tools.tool_constants import (
     OBS_TREE_MAX_ROWS,
     OBS_TREE_MAX_CHILDREN,
 )
+
+
+# 2026-10-05 小欧 文档[8]P1: 已被 handler 自行呈现的 metrics 键, 通用渲染跳过防重复 — 小欧 2026-10-05
+_METRICS_RENDERED_BY_HANDLER = frozenset({"total_lines", "page_count"})
 
 
 def _safe_llm_sub(llm_data, key: str) -> dict:
@@ -337,6 +345,8 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             return _format_analyze_data(data)
 
         # ── #24 edit — 1 tool: edit（diff 专属行×列 + 两态） ──
+        # 2026-10-05 小欧 文档[8]P5: diff 双通道必须二选一(本通道 data["diff"] / llm_data顶层diff),
+        #   同填会双显 — 小欧 2026-10-05
         if "diff" in data:
             return _format_edit_result(data["diff"], llm_data)
 
@@ -669,7 +679,10 @@ def _format_llm_data(llm_data: Dict) -> str:
         status_line = f"工具执行: {_st} - 执行结果: 未知({exec_code})"
 
     # 第2行: 观察: {message} - {summary} — 小沈 2026-07-06
+    # 2026-10-05 小欧 文档[8]序7: summary 以 message 开头时只取其一带内容, 去叠字; 语义不同保双段 — 小欧 2026-10-05
     parts = [p for p in [message, summary] if p]
+    if len(parts) == 2 and summary.startswith(message):
+        parts = [summary if summary[len(message):].lstrip(" -—:：,，") else message]
     obs_text = ' - '.join(parts) if parts else '(无额外信息)'
     text = f"{status_line}\n观察: {obs_text}"
 
@@ -685,6 +698,29 @@ def _format_llm_data(llm_data: Dict) -> str:
         hint = status.get("hint", "")
         if hint:
             text += f"\n建议: {hint}"
+
+    # 2026-10-05 小欧 文档[8]P1: metrics 此前不渲染, 未拼进summary的数字LLM拿不到; 现补通用渲染(取text/标量, 限项数与单值长) — 小欧 2026-10-05
+    metrics = llm_data.get("metrics")
+    if isinstance(metrics, dict) and metrics:
+        _lines = []
+        for _mk, _mv in list(metrics.items())[:OBS_METRICS_MAX_ITEMS]:
+            if _mk in _METRICS_RENDERED_BY_HANDLER:
+                continue
+            if isinstance(_mv, dict):
+                _val = _mv.get("text")
+                if _val is None:
+                    _val = _mv.get("value")
+            else:
+                _val = _mv
+            if _val is None or isinstance(_val, (dict, list, tuple, set)):
+                continue
+            _s = str(_val).replace("\n", " ")[:OBS_METRICS_VALUE_MAX_CHARS]
+            if _s:
+                _lines.append(f"  {_mk}: {_s}")
+        if len(metrics) > OBS_METRICS_MAX_ITEMS:
+            _lines.append(f"  ⚠ 另有 {len(metrics) - OBS_METRICS_MAX_ITEMS} 项指标未显示")
+        if _lines:
+            text += "\n统计:" + "\n".join(_lines)
 
     diff = llm_data.get("diff", "")
     if diff:
@@ -728,6 +764,7 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
     # 仅当 detail 为空且 data 含诊断信息时,受控渲染 data(复用既有 format_data_detail),
     # 收敛 build_error(data={}) 不一致且不退化已有 detail 的工具 — 小欧 2026-07-13
     # 2026-08-18 小健 修复: status 可能为 str, .get 前防御
+    # 2026-10-05 小欧 文档[8]P3: detail非空时data被跳过会遮蔽deleted_files等部分成功信息, 故补诊断补充段 — 小欧 2026-10-05
     _status = llm_data.get("status") if isinstance(llm_data.get("status"), dict) else {}
     if _status.get("exec_code") == "error":
         _detail = _status.get("detail", "")
@@ -735,6 +772,19 @@ def format_llm_observation(data: Any, llm_data: Dict) -> str:
             _extra = format_data_detail(data, llm_data)
             if _extra:
                 text += f"\n错误详情:\n{_extra}"
+        elif data and isinstance(data, dict):
+            # detail 非空: 仅补充 data 中"未被 detail 文本覆盖"的键, 防重复又防遮蔽
+            _dtext = str(_detail)
+            _miss = {
+                k: v for k, v in data.items()
+                if k not in ("success", "params", "hint") and v not in (None, "", [], {})
+                and str(k) not in _dtext and str(v)[:40] not in _dtext
+            }
+            if _miss:
+                _sup = json.dumps(_miss, ensure_ascii=False, default=str)
+                if len(_sup) > OBS_ERROR_SUPPLEMENT_MAX_CHARS:
+                    _sup = _sup[: OBS_ERROR_SUPPLEMENT_MAX_CHARS] + f"…(已截{len(_sup) - OBS_ERROR_SUPPLEMENT_MAX_CHARS}字符)"
+                text += f"\n诊断补充:\n{_sup}"
         return text
 
     if data:

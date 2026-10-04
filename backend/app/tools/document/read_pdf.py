@@ -22,6 +22,7 @@
 # 2026-07-26 - 小沈 - 修复: path参数不覆盖
 # 2026-07-31 - 小欧 - Bug⑦修复: _is_garbled_text 仅统计 \ufffd 替换字符, 不再统计普通'?'(正文合法问号占比高时误触发fitz后备); Bug⑮修复: _extract_with_fitz 返回按页对齐文本列表, 防页内含空行 split("\n\n") 页码错位 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
 """
 D1: read_pdf — 读取PDF文档
 
@@ -135,7 +136,7 @@ def _build_read_pdf_llm_data(
         return {
             "summary": f"读取PDF{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_pdf", "tool_zh": "读取PDF", "params": {"path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,详见错误明细"},
+            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }

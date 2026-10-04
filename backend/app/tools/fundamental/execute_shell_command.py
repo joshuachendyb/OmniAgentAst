@@ -133,7 +133,8 @@
 #   白名单方案(8004/8007/C000列表)漏0x80004005(E_FAIL)等真实错误码, 故用段匹配; 实测用例全过 — 小欧 2026-08-09
 # 2026-08-12 - 小欧 - A1下沉: task_id ContextVar 迁至 app.tools.context, get_current_task_id import 由 app.services.task.task_context 改 app.tools.context,
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
-# 2026-10-02 - 小欧 - 注册名归位: action.tool "shell"→"bash"(3处), validate_timeout(timeout,"shell")→"bash"; 实现函数名 shell 不动
+# 2026-10-02 - 小欧 - 注册名归位: action.tool "shell"→"bash"(3处), validate_timeout(timeout,"shell")→"bash"; 实现函数名 shell 不动 实现函数名 shell 不动
+# 2026-10-05 - 小欧 - 文档[8]第八章: ①P6 params存完整command(原存cmd_short缩写致LLM无法核对命令) ②P8 cmd_short掐头去尾改掐中保尾150=头130+尾20(原式拼出不连续文本致LLM误认相邻内容), 标注「已截N字符」
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -284,8 +285,9 @@ def _sanitize_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return result
 
 
-# ── cmd_short 缩写常量（头部字数 = 总预算 - 尾部保留） ──
-_SHELL_CMD_TAIL = 15
+# ── cmd_short 截断常量（总预算 = 头 + 尾；掐中保尾，防掐头去尾产生假连续文本） ──
+# 2026-10-05 小欧 文档[8]P8: 尾15→20、预算50→150(头自动130) — 小欧 2026-10-05
+_SHELL_CMD_TAIL = 20
 _SHELL_CMD_HEAD = EXECUTE_SHELL_OUTPARM_LIMIT_CMD - _SHELL_CMD_TAIL
 
 # ═══════════════════════════════════════════════════════
@@ -556,7 +558,8 @@ def _build_execute_shell_command_llm_data(
     """execute_shell_command 的 llm_data 构建函数
     cmd_short: 命令预览（由调用者构造传入）"""
     logger.debug(f"[Shell] _build llm: cmd_len={len(command)}, exec_code={exec_code}, rc={returncode}")
-    _act_params = {"command": cmd_short}
+    # 2026-10-05 小欧 文档[8]P6: params存完整command(原存cmd_short缩写致LLM无法核对命令) — 小欧 2026-10-05
+    _act_params = {"command": command}
     if shell_type:
         _act_params["shell_type"] = shell_type
     if timeout:
@@ -995,7 +998,15 @@ def shell(
     timeout_valid, timeout_err, _ = validate_timeout(timeout, "bash")
     t0 = _time_mod.perf_counter()
     _cmd_limit = EXECUTE_SHELL_OUTPARM_LIMIT_CMD
-    cmd_short = (command[:_SHELL_CMD_HEAD] + "..." + command[-_SHELL_CMD_TAIL:]) if command and len(command) > _cmd_limit else (command[:_cmd_limit] if command else "(空命令)")
+    # 2026-10-05 小欧 文档[8]P8: 掐中保尾替代掐头去尾(原式拼出不连续文本致LLM误认相邻内容) — 小欧 2026-10-05
+    if command and len(command) > _cmd_limit:
+        cmd_short = (
+            command[:_SHELL_CMD_HEAD]
+            + f"…(已截{len(command) - _cmd_limit}字符) "
+            + command[-_SHELL_CMD_TAIL:]
+        )
+    else:
+        cmd_short = command or "(空命令)"
 
     if not timeout_valid:
         llm = _build_execute_shell_command_llm_data("error", 0, command, -1,
