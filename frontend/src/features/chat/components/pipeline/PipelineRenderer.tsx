@@ -81,6 +81,7 @@
 // 编辑历史: 2026-09-17 小欧 - 修改: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
 // 编辑历史: 2026-09-30 14:30 小欧 - 传 ToolCallLine 的 deniedEntries 过滤 tool 存在者（无名条目会渲染 undefined 点名行）
 // 编辑历史: 2026-10-05 小欧 - 接「思考排版」「推理内容」两开关(文档[9] §5.8); 三堂会审: thinking段key 去文本切片(流式前16字内每chunk换key致折叠态被弹回); 等待期把标题行提到绿圈上一行(§5.14.2) — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 第2轮会审: 段key改「下标+步号」双因子(修切任务折叠态/打字机串味); 撤ready门控(致正文消失、打破waiting-segment-442断言); 等待段传text=" "不传cursor(去多余▍与误打CURSOR T) — 小欧-2026-10-05
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -380,7 +381,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               //   切片随流式增长而变 → 前 16 字内每收一个 chunk 就换 key → 组件卸载重建 →
               //   用户刚点开的折叠态被弹回初值(表现为"点了没反应"), 10~16 次后才稳定。
               //   段身份由下标 i 唯一确定(流式只追加段, 不前插, i 稳定); 换段即换 key 天然重建。
-              key={`thinking-${i}`}
+              //   第2轮会审再修: 纯下标 key 切任务时会串味(RightViewer 不加 key → 实例复用, i=0 被
+              //   新任务复用), 折叠态跨任务残留。改用 下标+段归属步号 双因子(与 text 段同构)。
+              key={`thinking-${i}-${seg.step ?? i}`}
               text={seg.text}
               cursor={cursor}
               compact={seg.sameStep}
@@ -397,7 +400,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               //   原 key 带 seg.text.slice(0,16) → 流式前 16 字内每收一个 chunk 就换 key →
               //   TextStream 卸载重建 → 打字机进度 shown 归零(前 16 字反复从头打; 整段不足 16 字则
               //   完全没有打字机效果)。段身份同样由下标 i 唯一确定。 — 小欧-2026-10-05
-              key={`text-${i}`}
+              //   第2轮会审再修: 纯下标 key 在**切任务**时会串味(RightViewer 不加 key → 组件实例复用,
+              //   i=0 被新任务复用), 表现为折叠态与打字机进度跨任务残留。改用 下标+段归属步号 双因子。
+              key={`text-${i}-${seg.step ?? i}`}
               text={seg.text}
               typing={isLive}
               cursor={isLive}
