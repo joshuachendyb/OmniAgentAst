@@ -44,6 +44,8 @@
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "edit"→"edit"(2处), 与新注册名同源
+# 2026-10-05 - 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): summary 改 `新增{added}行，删除{removed}行`,
+#   增减从 unified_diff 现算(`+` 去 `+++` 头 / `-` 去 `---` 头, 零新依赖); added/removed 同步入 metrics
 """
 F4: edit — 编辑文本文件
 
@@ -309,12 +311,16 @@ def _build_edit_text_file_llm_data(
         _hint_parts.append("建议使用 mode='all' 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
     _exec_code = "warning" if (_warning_msg or mtime_warning or safety_hint) else "success"
+    # 2026-10-05 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): 增减行数从 diff 现算
+    #   (`+` 去 `+++` 头, `-` 去 `---` 头), summary 带 `新增N行，删除M行`; applied/total_matches 仍由 metrics 呈现
+    _added = sum(1 for _ln in (diff or "").splitlines() if _ln.startswith("+") and not _ln.startswith("+++"))
+    _removed = sum(1 for _ln in (diff or "").splitlines() if _ln.startswith("-") and not _ln.startswith("---"))
     if _exec_code == "warning":
-        _summary = f"编辑文件{file_path}，成功,提示说明: 替换 {applied}/{total_matches} 处"
+        _summary = f"编辑文件{file_path}，成功:替换 {applied}/{total_matches} 处;新增{_added}行，删除{_removed}行"
         if _warning_msg:
             _summary += f"，注意: {_warning_msg}"
     else:
-        _summary = f"编辑文件{file_path}，成功: 替换 {applied}/{total_matches} 处"
+        _summary = f"编辑文件{file_path}，成功: 替换 {applied}/{total_matches} 处;新增{_added}行，删除{_removed}行"
     return {
         "summary": _summary,
         "action": {"tool": "edit", "tool_zh": "编辑文件", "params": _act_params},
@@ -323,6 +329,8 @@ def _build_edit_text_file_llm_data(
         "metrics": {
             "applied": {"value": applied, "text": f"{applied}/{total}处"},
             "total_matches": {"value": total_matches, "text": f"共{total_matches}处"},
+            "added": {"value": _added, "text": f"新增{_added}行"},
+            "removed": {"value": _removed, "text": f"删除{_removed}行"},
         },
     }
 
