@@ -20,6 +20,11 @@
 //   未拉取即误置灰筛选、远端下线项使弹窗数字对不上、关键词搜 description 致命中不可解释 - 小欧-2026-09-29
 // 2026-10-03 小欧 - 免费判定迁至 utils/modelUtils；判据扩为三判据 OR，「仅看免费」可筛性改看 freeAvail — 小欧 2026-10-03
 // 2026-10-03 小欧 - 「获取模型列表」后增「添加 Provider」按钮（复用同一弹窗/回调，组件不持弹窗状态）— 小欧 2026-10-03
+// 2026-10-05 22:16:38 小欧 - 表格增「输出上限」列并排在「上下文」之前（后端随厂商适配新增该字段，
+//   北京老陈指令）：两者量级常差 8~16 倍（SenseNova glm-5.2 输出 131072 / 上下文 1048576），
+//   并排且输出在前，读表顺序即"先看能吐多少"；复用 formatContext 不另立格式化函数(DRY)。
+//   readModalities 改读 input_modalities —— 后端已把厂商两种层级（SenseNova 顶层 / OpenRouter 嵌
+//   architecture）归一到该字段，原读 architecture 会让 SenseNova 恒显示"–" — 小欧 2026-10-05
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -116,9 +121,10 @@ const formatContext = (n: number | null | undefined): string => {
   return String(n);
 };
 
-/** 远端模态数组收窄：architecture 子键声明为 unknown，用 Array.isArray 收窄而非强转 */
+/** 远端模态数组收窄：后端已把厂商两种层级（顶层 / architecture 嵌套）归一到 input_modalities，
+ *  此处只读归一后的字段并用 Array.isArray 收窄 — 小欧 2026-10-05 */
 const readModalities = (m: RemoteModelItem): string[] => {
-  const v = m.architecture?.input_modalities;
+  const v = m.input_modalities;
   return Array.isArray(v)
     ? v.filter((x): x is string => typeof x === 'string')
     : [];
@@ -441,6 +447,23 @@ export const ModelLibraryTab: React.FC<Props> = ({
             idCell
           );
         }}
+      />
+      {/* 2026-10-05 22:16:38 小欧 - 增补「输出上限」列并排在「上下文」之前：两者量级常差
+       *  8~16 倍（SenseNova 实测 glm-5.2 输出 131072 / 上下文 1048576），并排且输出在前，
+       *  读表顺序即"先看能吐多少再看能吃多少"。复用 formatContext，不另立格式化函数(DRY)。 */}
+      <Table.Column
+        title="输出上限"
+        dataIndex="max_output_length"
+        width={88}
+        align="right"
+        sorter={(a: RemoteModelItem, b: RemoteModelItem) =>
+          (a.max_output_length ?? 0) - (b.max_output_length ?? 0)
+        }
+        render={(n: number | null | undefined) => (
+          <span style={{ fontSize: FontSize.SECONDARY }}>
+            {formatContext(n)}
+          </span>
+        )}
       />
       <Table.Column
         title="上下文"

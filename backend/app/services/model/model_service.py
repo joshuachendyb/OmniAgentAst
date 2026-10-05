@@ -130,6 +130,14 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   声明类型(路由已挂 response_model，错型会 500 整个模型库)；结构判别放宽为 dict/裸数组双路。
 #   未动排序与写回契约(仍只落 ID 列表) — 小欧 2026-09-29
 # 2026-10-03 - 小欧 - _parse_remote_models_body 增补 free/stability 透传(AMD 实测下发，此前静默丢弃) — 小欧 2026-10-03
+# 2026-10-05 22:16:38 - 小欧 - 模型库厂商适配两处(SenseNova 实抓 9 模型 16 字段后改，北京老陈指令)：
+#   ①_parse_remote_models_body 增 max_output_length/input_modalities/output_modalities/supported_features
+#     并做厂商字段别名归一 —— 同义键层级不一(SenseNova 顶层 vs OpenRouter 嵌 architecture)用
+#     {**architecture, **item} 合成单一查找视图(顶层优先)，命名不一走新公用 _first_alias 别名链；
+#     逐字段仍就地降级为 DTO 声明类型(错型会 500 掉整个模型库)。既有 10 字段口径未动。
+#   ②fetch_remote_models 三级取 key(probe_key→env→config)后，key 空白时 pop 掉 Authorization
+#     (基类无条件造空 "Bearer " 畸形头，无鉴权自建端点会 400)；只在调用层摘该头、不动 adapter 基类，
+#     避免波及 LLM 主链 7 个走默认基类的 provider — 小欧 2026-10-05
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -599,6 +607,29 @@ async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tup
     return resp, None
 
 
+def _first_alias(item: Dict[str, Any], *keys: str) -> Any:
+    """按别名顺序取首个非 None 值——同一语义键各厂商命名不统一时的单点取值口 — 小欧 2026-10-05
+
+    命名不统一实例（SenseNova 实测 9 模型 16 字段）：`supported_parameters`（OpenRouter/AMD 风格）
+    与 `supported_sampling_parameters`（SenseNova 风格）语义相同，此前只认前者致后者被静默丢弃。
+    取「非 None」而非「真值」：空列表 [] 是厂商的显式表达，应原样透出，不该被当成缺失而回退。
+    """
+    for key in keys:
+        value = item.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def _str_list(value: Any) -> List[str]:
+    """把远端值收敛为 List[str]——非数组退空列表、非字符串成员丢弃（防错型打挂 DTO）— 小欧 2026-10-05
+
+    抽成公用函数是为消 DRY 重复：supported_parameters 原有内联写法与新增的 modalities/features
+    三处同一逻辑，且每处都必须同步 isinstance 双重校验，漏一处即在 response_model 上 500 掉整个模型库。
+    """
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
 def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
     """响应解析层 → (models, err)；HTTP>=400/非JSON/非数组 → err — 小欧 2026-09-24"""
     if resp.status_code >= 400:
@@ -639,18 +670,33 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         #   非字符串不转 str(会产出 "{'x': 1}" 伪值)；bool 需排除(isinstance(True,int) 为真)。
         owned_by, name, desc = item.get("owned_by"), item.get("name"), item.get("description")
         ctx, pricing, architecture = item.get("context_length"), item.get("pricing"), item.get("architecture")
-        supported = item.get("supported_parameters")
 # 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD 不返回 → None。
         free, stability = item.get("free"), item.get("stability")
+        arch = architecture if isinstance(architecture, dict) else {}
+        # 2026-10-05 22:16:38 - 小欧 - 厂商字段别名归一（SenseNova 实抓 9 模型 16 字段后补，丢弃 11 个）：
+        #   ①层级不统一（SenseNova 顶层 input_modalities / OpenRouter 嵌 architecture）
+        #     → {**arch, **item} 合成单一查找视图，顶层优先、嵌套兜底，替掉按厂商写if 分支（KISS-DIRECT）。
+        #   ②命名不统一（同义键多名）→ 走 _first_alias 别名链，见该函数说明。
+        merged = {**arch, **item}
+        max_out = item.get("max_output_length")
         models.append({
             "id": str(mid),
             "owned_by": owned_by if isinstance(owned_by, str) else None,
             "name": name if isinstance(name, str) else None,
             "description": desc if isinstance(desc, str) else None,
             "context_length": ctx if isinstance(ctx, int) and not isinstance(ctx, bool) else None,
+            # 与 context_length 常差 8~16 倍（SenseNova 实测 glm-5.2 输出上限 131072 / 上下文 1048576），
+            # 只给上下文会让用户误以为单次也能输出 1M → 必须同屏可比（2026-10-05 小欧）。
+            "max_output_length": max_out if isinstance(max_out, int) and not isinstance(max_out, bool) else None,
             "pricing": pricing if isinstance(pricing, dict) else {},
-            "architecture": architecture if isinstance(architecture, dict) else {},
-            "supported_parameters": [p for p in supported if isinstance(p, str)] if isinstance(supported, list) else [],
+            "architecture": arch,
+            # 图像生成模型 vs 对话模型的唯一判据（SenseNova u1/u1.5 输出模态为 image，其余为 text）
+            "input_modalities": _str_list(merged.get("input_modalities")),
+            "output_modalities": _str_list(merged.get("output_modalities")),
+            # 别名链：OpenRouter/AMD 走 supported_parameters，SenseNova 走 supported_sampling_parameters
+            "supported_parameters": _str_list(_first_alias(item, "supported_parameters", "supported_sampling_parameters")),
+            # 实测含 tools/json_mode/reasoning，直接决定"能不能挂工具"，与 sampling 参数不同语义故分列
+            "supported_features": _str_list(merged.get("supported_features")),
             # free 用 bool 收（isinstance(True,int) 为真，按 int 收会吞掉 1/0）
             "free": free if isinstance(free, bool) else None,
             "stability": stability if isinstance(stability, str) and stability.strip() else None,
@@ -711,6 +757,13 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
     api_key = (probe_key.strip() if not is_blank_secret(probe_key)
                else os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or ""))
     headers = get_provider_adapter(name).static_headers(api_key)
+    # 2026-10-05 22:16:38 - 小欧 - 有key 才发 Authorization（三级取key 见上，取不到就不带）。
+    #   基类 static_headers 无条件返回 "Bearer {api_key}"，key 空白时会发出值为空的畸形头
+    #   ("Authorization: Bearer ")，严格校验的无鉴权自建端点（Ollama/vLLM 类）会直接 400。
+    #   只摘 Authorization 一项，其余定制头（opencodeZen 的 UA/session 族，其免费层正是靠 UA 身份
+    #   而非 key 通过）原样保留 —— 故不在基类里改，避免波及 LLM 主链 7 个走默认基类的 provider。
+    if is_blank_secret(api_key):
+        headers.pop("Authorization", None)
     configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
     ref = get_current_ref(ai)
     current_model = ref["model"] if ref["provider"] == name else None

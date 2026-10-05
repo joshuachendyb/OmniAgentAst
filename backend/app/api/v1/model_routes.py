@@ -47,6 +47,11 @@
      漂移(缺 status_code/category、只有 id/owned_by)，前端因此只能靠字符串猜免费。现与解析层 8 字段
      对齐并挂 response_model；错型在解析层归一而非把 DTO 退化成 Any。未改写回契约 — 小欧 2026-09-29
   2026-10-03 - 小欧 - RemoteModelItem 增 free/stability（AMD 实测下发，此前被静默丢弃）— 小欧 2026-10-03
+  2026-10-05 22:16:38 - 小欧 - RemoteModelItem 增 4 字段对齐解析层(北京老陈指令)：max_output_length/
+   input_modalities/output_modalities/supported_features。SenseNova 实抓 9 模型 16 字段，此前 11 个被
+   静默丢弃；其中输出上限与上下文量级常差 8~16 倍、output_modalities 区分图像生成与对话模型，
+   不下发即选型无据。modalities 为对齐 architecture 同名子键而设（厂商层级差异已在 service 归一，
+   此处只承接归一结果）；字段口径与既有 10 项一致：Optional/默认空容器、错型在解析层归一 — 小欧 2026-10-05
 """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -136,14 +141,27 @@ class RemoteModelItem(BaseModel):
     description: Optional[str] = None
     # 实测 OpenRouter 460 项全有值(min 4095 / max 2,000,000)；None 仅防御个别 provider 缺该字段 — 小欧 2026-09-29
     context_length: Optional[int] = None
+    # 2026-10-05 22:16:38 - 小欧 - 增补（SenseNova 实抓后补，此前静默丢弃）。与 context_length 常差 8~16 倍
+    #   （实测 glm-5.2 输出 131072 / 上下文 1048576），缺此项会让用户误判单次输出上限。None = 该厂商不下发。
+    max_output_length: Optional[int] = None
     # 子键 prompt/completion/缓存读写/web_search，值为每 token 单价字符串；
     # 免费判据 prompt=completion=0 — 小欧 2026-09-29
     pricing: Dict[str, Any] = Field(default_factory=dict)
     # 子键 input_modalities/output_modalities/modality/instruct_type/tokenizer；
     # 实测 input_modalities 仅 5 种：text(460 全覆盖)/image(292)/file(182)/video(85)/audio(44) — 小欧 2026-09-29
     architecture: Dict[str, Any] = Field(default_factory=dict)
+    # 2026-10-05 22:16:38 - 小欧 - 增补 modalities（对齐 architecture 同名子键，消除"前端只知 architecture 一处"的分裂）。
+    #   厂商层级不一：SenseNova 顶层下发，OpenRouter 嵌在 architecture 里，service 层已归一到本字段。
+    #   选模型必需：output_modalities=image 才是图像生成模型（SenseNova u1/u1.5），text 则是对话模型。
+    input_modalities: List[str] = Field(default_factory=list)
+    output_modalities: List[str] = Field(default_factory=list)
     # 实测 26 种；有筛选价值的是 tools(392)/structured_outputs(377)/reasoning(328) — 小欧 2026-09-29
+    # 厂商命名不统一：OpenRouter/AMD 为 supported_parameters，SenseNova 为 supported_sampling_parameters，
+    #   service 层已按别名链合并入本字段（前端零改动）。
     supported_parameters: List[str] = Field(default_factory=list)
+    # 2026-10-05 22:16:38 - 小欧 - 增补 supported_features（与 sampling 参数不同语义，故分列）：
+    #   实测 values 为 tools/json_mode/reasoning，直接决定能否挂工具调用。
+    supported_features: List[str] = Field(default_factory=list)
     # 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD provider 不返回 → None。
     #   free 是「是否落在每日免费额度内零计费」的记账标记，不等于要花钱。
     #   【如实告知】stability 现无消费方（YAGNI 违规已知并被接受，北京老陈 2026-10-03 决定保留）。

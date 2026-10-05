@@ -294,6 +294,9 @@ shell 只读判定的单一权威（2026-10-04 自 `app/safety/sandbox/executor.
 | `get_scope` | [70] 取当前代 ConnectionScope(无则经 get_service 惰性建代); **orchestrator 唯一所有者入口** | — | ConnectionScope |
 | `get_retired_scopes` | [70] 已退休代快照(list 拷贝), 供 `shutdown` 逐个 drain | — | List[ConnectionScope] |
 | `shutdown` | [70] 停机收口 = `reset()` 换代归还 + 逐退休代 `drain`(timeout 为**全停机总预算**, 各代按剩余预算等, 耗尽即 warning 放行不阻塞退出) | timeout: float = 30.0 | None |
+| `get_provider_adapter` | provider 适配层唯一查询口(注册表分派, 未注册回落默认单例)；**消费点 2 处**: client_sdk 组头/门禁/body 转换, model_service 组 Authorization。新 provider 接入 = `_ADAPTERS` 加一行 + adapters/ 加文件, 其余代码零改动 | provider: str | ProviderAdapter |
+| `ProviderAdapter` | 适配基类(普通 class + 全 staticmethod, 非 Protocol/ABC 故无强制实现约束), 7 钩子默认行为==现状: `static_headers`(仅 Authorization) / `per_request_headers`(空) / `ensure_gate_body`(原样) / `endpoint_for`("/chat/completions") / `force_stream`(False) / `to_responses_body`(原样) / `error_message_map`(空)。**边界**: 只承载 HTTP 接缝差异与门禁 body/端点路由; schema/reasoning/工具别名属全局层绝不 provider 化 | — | Dict / bool / body |
+
 
 ---
 
@@ -416,8 +419,10 @@ def my_parse_json(json_str):
 | `delete_provider` | DELETE /providers：级联删 ai.{name} 全块 + 删当前自动切换（switched_to）；禁删最后一个 | name | Dict: {ok, switched_to, mtime} |
 | `_require_provider_for_fetch` | [68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) | name, ai | Tuple[Dict[str, Any], str] |
 | `_http_get_remote_models` | [68] HTTP 拉取层 GET {api_base}/models → (resp, err)；网络异常统一 err 文案；timeout 30s | api_base, headers | Tuple[Any, Optional[str]] |
-| `_parse_remote_models_body` | [68] 响应解析层 → (models, err)；HTTP>=400 提取 error.message / 非JSON / data 非数组 → err；id 缺失回退 model | resp | Tuple[Optional[List[Dict]], Optional[str]] |
-| `fetch_remote_models` | [68] GET /providers/{name}/remote-models：后端代理绕 CORS；本地校验 400/404，远端失败统一 200+ok:false | name | Dict: {ok, provider, models, count, configured, current_model, message?} |
+| `_first_alias` | [68] 厂商字段别名取值：按传入顺序取首个非 None 值（空 [] 视为显式表达不回退）。同义键多名时唯一取值口（`supported_parameters` / `supported_sampling_parameters`） | item, *keys | Any |
+| `_str_list` | [68] 远端值收敛为 List[str]：非数组退空列表、非字符串成员丢弃（防错型打挂挂 response_model 的 DTO） | value | List[str] |
+| `_parse_remote_models_body` | [68] 响应解析层 → (models, err)；HTTP>=400 提取 error.message / 非JSON / data 非数组 → err；id 缺失回退 model；**厂商字段别名归一**（`{**architecture, **item}` 合成查找视图，顶层优先嵌套兜底 → input/output_modalities；命名不统一走 `_first_alias`）；下发 14 字段含 max_output_length/input_modalities/output_modalities/supported_features | resp | Tuple[Optional[List[Dict]], Optional[str]] |
+| `fetch_remote_models` | [68] GET /providers/{name}/remote-models：后端代理绕 CORS；本地校验 400/404，远端失败统一 200+ok:false；key 取值三级优先（probe_key → env `{NAME}_API_KEY` → config）；**key 空白时 pop 掉 Authorization 头**（基类无条件造空 Bearer，无鉴权端点会 400），不动 adapter 基类以免波及 LLM 主链 | name, probe_key=None | Dict: {ok, provider, models, count, configured, current_model, status_code, category, message?} |
 | `replace_provider_models` | [68] PUT /providers/{name}/models：替换式写 ai.{name}.models + 差集孤儿清理（removed 键写 None 叶，禁空 dict）；env 接管/空列表/移除当前全局模型 → 400 | name, models | Dict: {ok, mtime, added, removed} |
 
 ---
@@ -426,6 +431,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.7 | 2026-10-05 23:05:00 | ①**补登记漏项**(AGENTS.md §1.3 违反修复): 五章新增适配层 3 条 `get_provider_adapter`/`ProviderAdapter`(7 钩子与边界"schema 类绝不 provider 化")/`OpencodeZenAdapter`, 适配层 2026-09-23 落地至今零登记; ②10.3 `_parse_remote_models_body`/`fetch_remote_models` 描述订正漂移(补 probe_key 参数、status_code/category 字段, 前者 2026-09-26 起即缺) + 新登记 `_first_alias`/`_str_list`; ③记录 2026-10-05 模型库增强: 厂商字段别名归一(SenseNova 实抓 9 模型 16 字段, 此前静默丢弃 11 个)+ 4 字段下发 + key 空白时不发 Authorization。**本次未动解析层既有 10 字段口径**(裸数组兼容/id 回退 model/字母序排序/opencodeZen 的 supported_parameters 全部逐字回归验证通过) | 小欧 |
 | v4.6 | 2026-10-01 | [1] 刷新显示其他任务结果 修复(全链根因+契约)。**A组 运行期逐步落库**: agent_runner 末尾扫描 event_log 机制退役, step 落库前移到 StreamBuffer.persist_sink(buffer.publish 唯一收口, 覆盖 _emit_publish/handle_action 直连/_events 批量三条发布路径), 单消费者 FIFO 队列零背压, finally flush; step_index 改独立计数器(itertools.count, 解耦内存列表); append_execution_step 增 ON CONFLICT DO NOTHING 幂等 + task_id fail-loud; token_usage 明细改实时。**E组**: MessageResponse 增 task_id(E4) + load_execution_steps 三调用点补传 pair_task_id(E3, 堵跨任务混读); chat_user_message 正文回填前移至 final 帧(E13); total_steps 剔除集统一复用 agent_telemetry.M_SKIP(E1/E2, 含补齐 chunk/thought-start/error/rejected 使两统计源恒等); 新增 _strip_thought_content 供两读入口共用(E11); get_task_tool_stats 改 json_each 支持并行多工具(E7); _warn_zero_row 增 level 参数, update_task 0 行升级 error(E9)。**YAGNI 清理**: save_execution_steps/其端点/sse_events 死函数/前端 saveExecutionSteps/ExecutionStepsUpdate/derive_status_from_steps 整删(E8) | 小欧 |
 | v4.5 | 2026-09-29 20:49:50 | 3.3 数据库SDK(app/db/database.py) atxn 签名增关键字参数 retry_locked(默认0=既有 29 个调用点行为逐字不变, 禁止backward): 补 body 执行期 "database is locked" 有限重试(退避 0.5/1/2s 与 get_conn 同节奏, sleep 置 async 层不占 to_thread 子线程), 仅捕 sqlite3.OperationalError 且串含 "locked", 非锁错误/耗尽一律原样抛出; 根治 get_conn 只覆盖连接期+提交期、业务事务体撞写锁直抛的缺口(2026-09-29 19:49 PAR-05 实锤); 已在 5 处实证高危写路径启用 retry_locked=3(编排⑨ _setup_task_db + agent_runner 的 _persist/异常终态/守卫兜底终态/终态 UPDATE), 其余 24 处维持默认 0(YAGNI); 另 storage 新增模块私有 _warn_zero_row 作 UPDATE 影响0行告警统一出口(非公用函数不单列条目), update_task 补 0 行告警 | 小欧 |
 | v4.4 | 2026-09-28 21:29:00 | 3.2 新增 bind_message_to_task（[76] 活跃任务注入 6.5① 执行期归属，零 DDL 复用 chat_user_message.task_id 列，WHERE task_id IS NULL 防覆盖，返回 bool 供调用方判别两成因）；同步 fetch_session_user_message_pairs 描述（精确归属 COALESCE 双子查询取 MAX(id) 取代会话级模糊兜底，增返回 pair_task_id）——补 [76] 首轮遗漏的公用函数登记(AGENTS.md §1.3) | 小欧 |

@@ -24,6 +24,10 @@
 // 2026-09-29 小欧 - RemoteModelItem 补 6 字段：后端改为下发模型元数据(价格/上下文/能力/模态)，
 //   前端原靠 id.includes('-free') 猜免费，实测 OpenRouter 460 个命中 0 — 小欧-2026-09-29
 // 2026-10-03 小欧 - RemoteModelItem 补 free/stability（AMD 实测下发，此前被解析层丢弃）— 小欧 2026-10-03
+// 2026-10-05 22:16:38 小欧 - RemoteModelItem 补 max_output_length/input_modalities/output_modalities/
+//   supported_features（后端厂商适配新增并已归一）：类型须与后端 DTO 逐字段对齐，否则消费方读不到
+//   实测值（SenseNova 顶层下发 modalities、OpenRouter 嵌 architecture，归一后统一读 input_modalities）
+//   — 小欧 2026-10-05
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -81,6 +85,10 @@ export interface RemoteModelItem {
   description?: string | null;
   // 实测 OpenRouter 460 项全有值；agnes 等 provider 可能整个字段缺失
   context_length?: number | null;
+  /** 单次请求最大输出 token。与 context_length 常差 8~16 倍（SenseNova 实测 glm-5.2
+   *  输出 131072 / 上下文 1048576），缺此项会让人误判单次输出上限。
+   *  该厂商不下发 → undefined，前端显示 –。 — 小欧 2026-10-05 */
+  max_output_length?: number | null;
   /** 每 token 单价字符串。免费判据 prompt==="0" && completion==="0" */
   pricing?: Record<string, string>;
   /** 声明为 unknown：远端未声明元素类型，交消费方 Array.isArray 收窄 */
@@ -91,7 +99,15 @@ export interface RemoteModelItem {
     instruct_type?: unknown;
     tokenizer?: unknown;
   };
+  /** 输入模态。后端已把厂商两种层级归一：SenseNova 顶层下发 / OpenRouter 嵌在
+   *  architecture.input_modalities，故此处只需读归一后的字段。 — 小欧 2026-10-05 */
+  input_modalities?: string[];
+  /** 输出模态。output 出现 image 即图像生成模型（SenseNova u1/u1.5），非对话模型。 */
+  output_modalities?: string[];
   supported_parameters?: string[];
+  /** 能力特性（tools/json_mode/reasoning），与上面的采样参数不同语义，故分列。
+   *  厂商命名不统一（SenseNova 下发 supported_sampling_parameters），后端已按别名链合并。 */
+  supported_features?: string[];
   /** 远端免费标记。是「是否落在每日免费额度内零计费」的记账标记，不等于"要花钱"。
    *  非 AMD provider 不返回 → undefined，由 isFreeModel 回退到名称尾巴/pricing 判据。 */
   free?: boolean | null;
