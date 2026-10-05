@@ -15,6 +15,7 @@
 //   thinking-cursor, 打点在折叠分支外会让诊断日志报"光标亮"而屏幕上无光标, 诊断说谎)
 //   ②图标按 expanded 传 dim(收起=亮+动画 / 展开=暗+静止, CSS 侧两态)
 //   ③defaultExpanded 改为"设置变化即跟随"(此前仅挂载读一次, 设为关对已渲染段无反应) — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 第2轮会审: 统一"手动折叠vs设置默认值"三处相反注释为单一语义(设置是默认值, 变即新基线) — 小欧-2026-10-05
 /**
  * ThinkingStream - 思考流（思考图标行 + 尾随光标）
  *
@@ -93,7 +94,7 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
         aria-expanded={expanded}
         aria-label={expanded ? '收起思考' : '展开思考'}
         onClick={(e) => {
-          touched.current = true; // 用户手动折过 → 后续设置变化不再覆盖(设置是默认值, 用户选择优先)
+          touched.current = true; // 用户手动折过 → 设置值不变时不再被纠正(设置是默认值, 临时覆盖优先)
           onToggleClick(e);
         }}
         onKeyDown={(e) => {

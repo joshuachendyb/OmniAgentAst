@@ -7,6 +7,7 @@
 //              但其白名单**不含**本两个键; 新键若走该层会指向 registry 里不存在的键, 故一律不走 — 小欧-2026-10-05
 //   消费方: PipelineRenderer 顶层调一次, 经 props 各下其位(禁在 segs.map 回调内调 hook, 违 Rules of Hooks):
 //           thoughtMarkdown→TextStream(markdown), reasoningVisible→ThinkingStream(defaultExpanded) — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 第2轮会审: 读取失败改为沿用上次成功值(原置全关且不重试, 收起=内容不可见); 删ready残留 — 小欧-2026-10-05
 import { useEffect, useState } from 'react';
 import { settingsApi } from '@/services/api/settings.api';
 import { SETTINGS_SAVED_EVT } from '@/constants/settingsEvents';
@@ -23,7 +24,8 @@ export interface StepRenderPrefs {
   thoughtMarkdown: boolean;
   /** 设置页标签「推理内容」: reasoning 块(ThinkingStream)折叠态的初值,
    *  只作每段新思考的初始态; 每段思考可自行折叠/展开(独立 state, 不写回设置);
-   *  语义=**默认值**: 设置到达后由 ThinkingStream 的跟随逻辑纠正已渲染段(用户手动折过的不覆盖) */
+   *  语义=**默认值**: 设置值变化时由 ThinkingStream 的跟随逻辑纠正已渲染段,
+   *  此时用户先前的临时折叠会被重置(设置一改即新基线, 见 ThinkingStream 的 touched 说明) */
   reasoningVisible: boolean;
 }
 
@@ -48,13 +50,13 @@ export const useStepRenderPrefs = (): StepRenderPrefs => {
           });
         })
         .catch(() => {
-          // 2026-10-05 小欧: 读取失败不再静默按占位值(true=两个开关都开)渲染 —— 那会让用户
-          //   以为自己的设置没生效。改为按"两个开关都关"渲染(安全侧: 不套 Markdown、不自动展开),
-          //   并在控制台留一条痕(渲染偏好非阻断项, 不弹 toast 打扰用户)。
+          // 2026-10-05 小欧 第2轮会审修复: 原实现失败即置 {false,false} 且不重试, 一次网络抖动就让
+          //   「推理内容」永久收起 —— 而"收起"是**内容不可见**(不是无害降级), 且改动前本组件
+          //   完全不依赖网络, 属本次新引入的失败模式。现改为: 保持上一次成功值(首次失败则用默认值
+          //   全开), 并在控制台留痕(渲染偏好非阻断项, 不弹 toast 打扰用户)。
           if (!alive) return;
-          setPrefs({ thoughtMarkdown: false, reasoningVisible: false });
           console.warn(
-            '[useStepRenderPrefs] 读取 appearance 组设置失败, 按两个开关关闭渲染'
+            '[useStepRenderPrefs] 读取 appearance 组设置失败, 沿用上一次成功值'
           );
         });
     };
