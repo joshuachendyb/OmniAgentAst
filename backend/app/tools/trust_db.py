@@ -10,6 +10,11 @@
 # 2026-09-16 小欧 - 函数化(DRY/KISS核查, 文档三堂会审): _norm_trust_path 公开化改名 norm_trust_path 单一来源,
 #   storage.delete_session_trust 撤销侧改 import 消费本函数 —— 消除 split 双份 13 行逐字重复(5.4 曾因双份漏同步引入退化),
 #   方向 services→tools 合法单向, 走既有模块内延迟导入同模式 — 小欧-2026-09-16
+# 2026-10-05 小欧 - 设计决策B(北京老陈裁定): check_session_trust 从"按(session_id,tool_name,path)隔离"改为
+#   "目录信任跨工具生效" —— 只改path非空查询的行集: WHERE session_id=? AND (tool_name=? OR path IS NOT NULL);
+#   path=None(无路径工具: shell/execute_sql/registry_*)仍只命中本工具的通配行path IS NULL, 目录信任不会误放行shell。
+#   本文件行 4-12 既往认"按tool_name隔离", 2026-10-05起此前记录为历史存档; 落库/查询/撤销路径分开:
+#   save仍按(session_id,tool_name,path)写(UNIQUE保留), 只改豁免放行的判定。— 小欧-2026-10-05
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from pathlib import Path
 from typing import Optional
@@ -45,12 +50,19 @@ def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path
 
 
 def check_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
-    """工具安全检查豁免查询：会话已信任该 tool+path 则免二次 HITL 确认 — 小欧 2026-08-16; v1.5 增 path 前缀递归匹配
-    匹配规则(北京老陈 2026-09-02 定案):
-      path=None: 仅命中工具级通配行(path IS NULL);
-      path 给定: 命中工具级通配行, 或任一行信任路径等于/为目标的父目录(前缀递归, 与 temp_auth 语义对齐)。"""
+    """    工具安全检查豁免查询：会话已信任该 tool+path 则免二次 HITL 确认 — 小欧 2026-08-16; v1.5 增 path 前缀递归匹配
+    匹配规则(北京老陈 2026-09-02 定案, 2026-10-05 修订为B):
+      path=None: 仅命中本工具的通配行(path IS NULL);
+      path 给定: 命中的是【本工具的path IS NULL通配行】, 或【任意工具登记的具体信任路径为该目标前缀祖先/等于】——
+        即目录信任按 session_id 跨工具前缀豁免。path是None的无路径工具(execute_shell等)不受指定路径的其他工具信任影响。
+    """
+
+    # 2026-10-05 小欧 北京老陈裁定B: 目录信任按(session_id)跨工具生效 —— 语义:"本会话内在某路径下操作过 → 其它带path的工具在该路径前缀下也不再弹HITL"。
+    #   行为边界(安全): ①path=None的无路径工具(execute_shell/execute_sql/registry_*)仍走"本工具自己的通配行path IS NULL",
+    #     不会因为别的目录信任而被放行; ②路径前缀命中的放行放宽的是"同会话同路径树"的做信任操作,
+    #     不放宽为无限制(仍要同session、仍要路径前缀覆盖)。
     rows = conn.execute(
-        "SELECT path FROM chat_session_trust WHERE session_id=? AND tool_name=?",
+        "SELECT path FROM chat_session_trust WHERE session_id=? AND (tool_name=? OR path IS NOT NULL)",
         (session_id, tool_name),
     ).fetchall()
     if path is None:
