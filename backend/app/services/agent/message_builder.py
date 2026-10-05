@@ -38,6 +38,12 @@
 #   根因: agent_runner 用 getattr(mb, 'current_user_msg_id', None) 读锚恒 None(私有/公开名不匹配), 9-20 锚回填与
 #   D-1 两修复因此从未生效 → 注入消息 task_id 恒 NULL。补公开只读口修根因, 封装禁外部直读私有。compliance: SRP/KISS
 # 2026-10-04 小欧 - _estimate_tokens 取整方式: 系数改浮点(1.8)后 `chars // c` 返回 float, 改 int(chars / c) 保 int 契约
+# 2026-10-05 - 小欧 - wire 推理字段去冲突(北京老陈裁定): prepare_messages_for_llm 剥离段追加 内部字段 reasoning
+#   → API 标准 reasoning_content(单次改名, 同 fc_message_types.message_to_dict 规则)后删除, 空的 reasoning_content 不上线。
+#   根因: reasoning-only 轮(handle_answer.py:182 / react_step.py:532 两处裸 dict)把两个字段写进同一消息,
+#   sensenova 拒绝 reasoning 与 reasoning_content 并存 → HTTP 400 "inference request is invalid", 且被 error_classifier
+#   误分类 CLIENT(重试无用) → B3 空转后必然 400。实测: 单字段任一 200 / 双字段 400 / 修后形状 200。
+#   收口在唯一出站边界, 覆盖全部生产者(含未来新增), 不改写入点。compliance: SRP/DRY/KISS-DIRECT/禁backward
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -316,9 +322,16 @@ class MessageBuilder:
         # 2026-09-20 - 小欧 - B组(锚演进): 一并剥离 user_message_id(锚), conversation_history 源保留锚供 assistant 回复配对落库,
         #   wire 层不携带该内部锚(对齐 __all__ 同源锚演进)。自检: 剥离后 message 纯 payload 无内部锚 — SRP(锚=状态域, wire=传输域)
         _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated", "user_message_id")
+        # 2026-10-05 - 小欧 - wire 推理字段去冲突: 内部字段 reasoning 提升为 API 标准 reasoning_content(单次改名,
+        #   同 message_to_dict 规则)后删除; 空 reasoning_content 不上线。服务商拒绝同一消息并存两个推理字段(见文件头)。
         for msg in messages:
             for _k in [k for k in msg if k.startswith("_temp_") or k in _COMPACTION_TEMP_KEYS]:
                 msg.pop(_k, None)
+            if msg.get("reasoning") and not msg.get("reasoning_content"):
+                msg["reasoning_content"] = msg["reasoning"]
+            msg.pop("reasoning", None)
+            if not msg.get("reasoning_content"):
+                msg.pop("reasoning_content", None)
         # 发送即清: 本轮发送的_temp_*临时消息(纠偏/推理)仅活"本轮发送这一次", 已浅拷贝进messages后
         # 由conversation_history源中立即剔除, 防后续轮次/压缩/持久化残留(北京老陈 2026-08-09 指示) — 小欧 2026-08-09
         self.conversation_history = [m for m in self.conversation_history
