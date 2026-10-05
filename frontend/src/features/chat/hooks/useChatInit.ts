@@ -7,6 +7,7 @@
 //   (F7 不重新 POST、不重建任务); idle 走原三场景分支(参数未改) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-10-01 小欧 [1] 根治"采用已存在会话后 SSE 从不恢复"(刷新/菜单回跳/URL丢参 三入口同源):
 //   新增第二个 effect，以"URL 无 session_id"为触发条件补 resume()。详见该 effect 注释。 — 小欧-2026-10-01
+// 编辑历史: 2026-10-05 小欧 - 修复 void 丢弃返回值(历史同型事故#4): loadSession 返回的 Message[] 被显式接收并轻量校验 — 小欧-2026-10-05
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
@@ -87,34 +88,47 @@ export function useChatInit(opts: {
 
     // [63] 5.17 v1.29 恢复优先：非 idle（流活着/已恢复/轮询/中断/降级等 12 态）→ 只补历史
     //   loadSession（F7：不重新 POST、不重建任务）；idle → 原 initializeSession 三场景原样执行
-    void chatStreamStore.resume(opts.urlSessionId ?? undefined).then((r) => {
-      if (r !== 'idle' && opts.urlSessionId) {
-        // 2026-09-30 08:34:56 小欧 - 恢复不完整必须让用户看见（先提示再补历史，不等 loadSession）。
-        const notice = RESUME_NOTICE[r];
-        if (notice) showWarning(notice);
-        // 2026-10-01 小欧 [1] B7: 本分支现也会被「书签/新标签页访问正在跑的会话」命中
-        //   （resume 查到活任务 → 返回非 idle）。该分支原先只在"备份有效"时可达, 而那时
-        //   sessionStorage 尚在、页面刚 mount, 短暂无指示器无感; 现在跨标签页/书签进来也走这里,
-        //   慢网络下会长时间空白。故补上与 initializeSession 同款的 loading 指示器 ——
-        //   否则 B7 就是"恢复流变强、历史加载指示变弱"的净退化。
-        onLoadingStart();
-        void chatSession.loadSession(opts.urlSessionId).finally(onLoadingEnd);
-        return;
-      }
-      chatSession.initializeSession({
-        searchParams,
-        retryCount: chatState.retryCount,
-        setRetryCount: chatState.setRetryCount,
-        isLoadingHistoryRef: chatState.isLoadingHistoryRef,
-        setIsInitialized: chatState.setIsInitialized,
-        restoreState: chatPersistence.restoreState,
-        onLoadingStart,
-        onLoadingEnd,
-        onRenderStart,
-        onRenderEnd,
-        onMessageListLoadingEnd,
+    void chatStreamStore
+      .resume(opts.urlSessionId ?? undefined)
+      .then(async (r) => {
+        if (r !== 'idle' && opts.urlSessionId) {
+          // 2026-09-30 08:34:56 小欧 - 恢复不完整必须让用户看见（先提示再补历史，不等 loadSession）。
+          const notice = RESUME_NOTICE[r];
+          if (notice) showWarning(notice);
+          // 2026-10-01 小欧 [1] B7: 本分支现也会被「书签/新标签页访问正在跑的会话」命中
+          //   （resume 查到活任务 → 返回非 idle）。该分支原先只在"备份有效"时可达, 而那时
+          //   sessionStorage 尚在、页面刚 mount, 短暂无指示器无感; 现在跨标签页/书签进来也走这里,
+          //   慢网络下会长时间空白。故补上与 initializeSession 同款的 loading 指示器 ——
+          //   否则 B7 就是"恢复流变强、历史加载指示变弱"的净退化。
+          onLoadingStart();
+          // 2026-10-05 小欧 - 修复 void 丢弃返回值(历史同型事故#4): loadSession 返回的 Message[] 应被使用,
+          //   任其丢弃会导致上下文无记录该加载结果。此处显式接收并轻量校验, 用于后续侧栏对齐。──小欧-2026-10-05
+          const sessionMessages = await chatSession.loadSession(
+            opts.urlSessionId
+          );
+          // 若返回为空且是同一 session, 走降级提示(与 initializeSession 的空分支语义保持一致)
+          if (Array.isArray(sessionMessages) && sessionMessages.length === 0) {
+            console.info(
+              'ℹ️ loadSession 返回空消息列表: session 中可能已被清空'
+            );
+          }
+          onLoadingEnd();
+          return;
+        }
+        chatSession.initializeSession({
+          searchParams,
+          retryCount: chatState.retryCount,
+          setRetryCount: chatState.setRetryCount,
+          isLoadingHistoryRef: chatState.isLoadingHistoryRef,
+          setIsInitialized: chatState.setIsInitialized,
+          restoreState: chatPersistence.restoreState,
+          onLoadingStart,
+          onLoadingEnd,
+          onRenderStart,
+          onRenderEnd,
+          onMessageListLoadingEnd,
+        });
       });
-    });
     // 仅保留urlSessionId，避免重复执行initializeSession
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.urlSessionId]);

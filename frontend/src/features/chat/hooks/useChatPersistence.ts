@@ -101,6 +101,9 @@ export interface UseChatPersistenceReturn {
     isPaused: boolean;
     isReceiving: boolean;
     linkEnabled: boolean;
+    // 2026-10-05 小欧 - 补 sessionModel: 本函数与 loadHistoryMessages 是两条独立的会话恢复路径,
+    //   前者此前同样漏该字段, 只修后者会留下"刷新仍误显示跟随全局"的另一半缺口。
+    sessionModel: SessionModelOverride | null;
   } | null>;
 
   // 防抖保存函数Ref
@@ -347,11 +350,13 @@ export const useChatPersistence = (
               messages: result.messages || [],
               sessionId: result.sessionId,
               sessionTitle: result.title || '新会话',
-              sessionVersion: result.version || 1,
+              sessionVersion: result.version ?? 1,
               // 本地勾选优先于后端, 理由同完整状态分支(见该处注释)
               linkEnabled: (data.linkEnabled ?? result.linkEnabled) === true,
               isPaused: data.isPaused || false,
               isReceiving: data.isReceiving || false,
+              // 2026-10-05 小欧(文档[10] §4.3): 轻量态返回体补 sessionModel(否则缓存分支无从注入)
+              sessionModel: data.sessionModel ?? result.sessionModel ?? null,
             };
           }
         }
@@ -417,6 +422,10 @@ export const useChatPersistence = (
         linkEnabled: (data.linkEnabled ?? fresh?.linkEnabled) === true,
         isPaused: data.isPaused || false,
         isReceiving: data.isReceiving || false,
+        // 2026-10-05 小欧(文档[10] §4.3): 完整态返回体补 sessionModel。
+        //   取值同 linkEnabled 的"本地优先"语义: 模型覆盖未发出前只存在于浏览器(用户意图),
+        //   后端存的还是上次发消息时的旧值; 消息发出后两端一致, 谁优先都不影响结果。
+        sessionModel: data.sessionModel ?? fresh?.sessionModel ?? null,
       };
     } catch (error) {
       console.error('恢复状态失败:', error);

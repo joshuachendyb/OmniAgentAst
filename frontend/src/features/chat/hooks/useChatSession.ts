@@ -106,6 +106,9 @@ export interface InitializeSessionOptions {
     sessionTitle: string;
     sessionVersion: number;
     linkEnabled: boolean;
+    // 2026-10-05 小欧(文档[10] §4.3): 补 sessionModel —— 缓存恢复分支要拿它注入选择器,
+    //   此前本接口不返回它, 是"刷新后误显示跟随全局"的另一半原因。
+    sessionModel: SessionModelOverride | null;
   } | null>;
   onLoadingStart: () => void;
   onLoadingEnd: () => void;
@@ -182,6 +185,81 @@ export const useChatSession = (
   const sessionRetryRef = useRef<Record<string, number>>({});
 
   // ========================================
+  // 会话状态注入唯一出口(文档[10] 方案B)
+  // ========================================
+
+  /**
+   * applySessionState - 会话快照写入 state 的**唯一出口**。
+   *
+   * 2026-10-05 小欧(文档[10])新增, 存在理由是结构性的而非风格:
+   *   会话快照共 8 个状态字段, 此前在**6 个注入点手工同步**(loadSession /
+   *   initializeSession 的 URL·缓存·最近会话三处 / handleNewSession / handleClear),
+   *   各点字段清单还不一致 —— 缓存分支少 titleLocked+modelOverride, 最近会话分支少 modelOverride。
+   *   这已连出三次同型事故(每次都只在出事的那个点补字段, 没动结构, 所以必然复发):
+   *     2026-09-30 sessionVersion 硬编码 1  → 恢复后下一次 updateSession 必撞 409
+   *     2026-10-03 linkEnabled 漏传         → 刷新丢失"续聊任务"勾选
+   *     2026-10-05 sessionModel 漏注       → 刷新误显示"跟随全局", 而后端仍按会话覆盖跑
+   *   收口后新增字段只改本函数一处, 6 个调用点自动覆盖。
+   *
+   * 语义(逐字段显式声明, 不隐式继承):
+   *   - 本函数只做"写 state", 不发请求、不读缓存、不做业务判断(KISS-DIRECT);
+   *   - **传 undefined = 该字段本次不动**(保持现值)。这样"漏传"最多是"这次没更新",
+   *     绝不可能变成"被清零" —— 后者才是真正伤人的方向(旧代码的 undefined 语义即如此);
+   *   - **显式传 null 才是"清空"**(用于新建会话/清空场景的复位);
+   *   - 取值兜底(|| 1 / ?? false 等)一律留在调用点, 不搬进本函数, 以保证行为逐条等价。
+   */
+  const applySessionState = useCallback(
+    (snapshot: {
+      sessionId?: string | null;
+      title?: string;
+      version?: number;
+      titleLocked?: boolean;
+      lastSavedTitle?: string;
+      sessionModel?: SessionModelOverride | null;
+      linkEnabled?: boolean;
+      messages?: Message[];
+    }) => {
+      if (snapshot.sessionId !== undefined) {
+        // 2026-10-05 小欧 - 修复签名不对称(issue 6): sessionId 只有 string|null, 其它字段若不传不动。
+        //   但传空串 "" 或 " " 会误报为有效会话，且意味着会话已丢失; 作为显式防御,
+        //   空白串不更新 ref 并打印警告。──小欧-2026-10-05
+        const sid = snapshot.sessionId;
+        if (sid !== null && sid.trim() === '') {
+          console.warn(
+            '⚠️ applySessionState: sessionId 为空字符串，已忽略该字段。若需清空请传 null。'
+          );
+        } else {
+          setSessionId(sid);
+        }
+      }
+      if (snapshot.title !== undefined) setSessionTitle(snapshot.title);
+      if (snapshot.version !== undefined) setSessionVersion(snapshot.version);
+      if (snapshot.titleLocked !== undefined)
+        setTitleLocked(snapshot.titleLocked);
+      if (snapshot.lastSavedTitle !== undefined)
+        setLastSavedTitle(snapshot.lastSavedTitle);
+      if (snapshot.sessionModel !== undefined)
+        setSessionModelOverride(snapshot.sessionModel);
+      if (snapshot.linkEnabled !== undefined)
+        setLinkEnabled(snapshot.linkEnabled);
+      if (snapshot.messages !== undefined) setMessages(snapshot.messages);
+    },
+    // 2026-10-05 小欧: 全部 setter/ref 均为 useState 恒定引用或 useRef 恒定引用,
+    //   列入依赖仅为闭包新鲜度(exhaustive-deps 要求), 实际不会引起重挂载
+    [
+      setSessionId,
+      setSessionTitle,
+      setSessionVersion,
+      setTitleLocked,
+      setLastSavedTitle,
+      setSessionModelOverride,
+      setLinkEnabled,
+      setMessages,
+      // currentSessionIdRef 已从 applySessionState 移除(由 useChatState 单一同步), 依赖同步删
+    ]
+  );
+
+  // ========================================
   // 会话加载函数
   // ========================================
 
@@ -198,28 +276,32 @@ export const useChatSession = (
         const result = await loadHistoryMessages(sid);
         if (generation !== generationRef.current) return []; // 旧代过期：丢弃
         if (result) {
-          setSessionId(result.sessionId);
-          currentSessionIdRef.current = result.sessionId;
-          setSessionTitle(result.title || '新会话');
-          setSessionVersion(result.version || 1);
-          setTitleLocked(result.title_locked || false);
-          setLastSavedTitle(result.title || '新会话');
-          setSessionModelOverride(result.sessionModel ?? null);
-          setLinkEnabled(result.linkEnabled ?? false);
-          // 2026-09-30 小欧 - 补写 setMessages：其余分支都写，唯独本成功分支漏写。
-          //   病根：漏写 + 上游 void 丢弃返回值，两处叠加致返回值彻底蒸发 →
-          //   刷新进会话消息恒空；会话间切换则保留上个会话消息（跨会话串消息）。
-          setMessages(result.messages || []);
+          // 2026-10-05 小欧(文档[10]): 8 字段手工 setter → applySessionState 单一出口。
+          //   取值兜底原样保留在此(result.version||1 / title_locked||false / messages||[]), 未搬进函数。
+          applySessionState({
+            sessionId: result.sessionId,
+            title: result.title || '新会话',
+            version: result.version ?? 1,
+            titleLocked: result.title_locked || false,
+            lastSavedTitle: result.title || '新会话',
+            sessionModel: result.sessionModel ?? null,
+            linkEnabled: result.linkEnabled ?? false,
+            messages: result.messages || [],
+          });
           return result.messages || [];
         }
         // 2026-09-30 小欧 - 失败路径也必须清理，不能只清成功路径。
         //   病根：URL 已切到新会话后本分支既不写也不清 → chatState.messages 保留上个会话内容，
         //   而 title/sessionId 语境已是新会话 → 跨会话串消息（与成功分支漏写同型）。
         //   404 = 会话确实不存在 → 按"空会话"清理；与 initializeSession 的 404 分支保持对称。
-        setMessages([]);
-        setSessionId(null);
-        setLinkEnabled(false);
-        setLastSavedTitle('新会话');
+        // 2026-10-05 小欧(文档[10]): 同样收口走 applySessionState; 不传 version/titleLocked/
+        //   sessionModel —— 原代码此处也没写这三项, 保持等价(不借收口之名改语义)。
+        applySessionState({
+          sessionId: null,
+          messages: [],
+          linkEnabled: false,
+          lastSavedTitle: '新会话',
+        });
         return [];
       } catch (error) {
         console.error('加载会话失败:', error);
@@ -230,15 +312,8 @@ export const useChatSession = (
       }
     },
     [
-      setSessionId,
-      setSessionTitle,
-      setSessionVersion,
-      setTitleLocked,
-      setLastSavedTitle,
-      setMessages, // 2026-09-30 小欧: 成功分支与 404 分支均已写入，补进依赖
-      setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
-      setLinkEnabled,
-      currentSessionIdRef,
+      // 2026-10-05 小欧(文档[10]): 原 8 个 setter + ref 入依赖 → 收口后只需 applySessionState
+      applySessionState,
     ]
   );
 
@@ -309,19 +384,21 @@ export const useChatSession = (
           if (generation !== generationRef.current)
             return { loaded: false, fromCache: false, hasUrlSession: true };
           if (result) {
-            setSessionId(result.sessionId);
-            currentSessionIdRef.current = result.sessionId;
-            setMessages(result.messages);
-            setSessionTitle(result.title);
-            if (result.version !== undefined) {
-              setSessionVersion(result.version);
-            }
-            if (result.title_locked !== undefined) {
-              setTitleLocked(result.title_locked);
-            }
-            setLastSavedTitle(result.title || '新会话');
-            setSessionModelOverride(result.sessionModel ?? null);
-            setLinkEnabled(result.linkEnabled ?? false);
+            // 2026-10-05 小欧(文档[10]): 收口走 applySessionState。
+            //   ⚠️ 本分支是全部 6 处里唯一的"条件写入"差异点: 原代码对 version/title_locked
+            //   用 `!== undefined` 才写(缺值时保留现值), 其余字段是无条件写。
+            //   收口后由 applySessionState 的 "undefined=不动" 语义天然等价, 无需在此再判断 ——
+            //   即 result.version 为 undefined 时不传 version, 函数内该字段跳过。
+            applySessionState({
+              sessionId: result.sessionId,
+              title: result.title,
+              version: result.version,
+              titleLocked: result.title_locked,
+              lastSavedTitle: result.title || '新会话',
+              sessionModel: result.sessionModel ?? null,
+              linkEnabled: result.linkEnabled ?? false,
+              messages: result.messages,
+            });
 
             onMessageListLoadingEnd();
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
@@ -340,15 +417,17 @@ export const useChatSession = (
           } else {
             // URL会话没有消息（可能已被删除/404），清理状态+URL参数
             console.warn('🔴 URL会话不存在，清除URL参数和状态:', urlSessionId);
-            setSessionId(null);
-            currentSessionIdRef.current = null;
-            setMessages([]);
-            setSessionTitle('新会话');
-            setSessionVersion(1);
-            setTitleLocked(false);
-            setSessionModelOverride(null);
-            setLinkEnabled(false);
-            setLastSavedTitle('新会话');
+            // 2026-10-05 小欧(文档[10]): 收口走 applySessionState(8 字段全显式复位, 与原写法逐条等价)
+            applySessionState({
+              sessionId: null,
+              messages: [],
+              title: '新会话',
+              version: 1,
+              titleLocked: false,
+              sessionModel: null,
+              linkEnabled: false,
+              lastSavedTitle: '新会话',
+            });
             // 2026-09-30 小欧 - 删原生 replaceState，改上抛意图交页面层用 Router 写（见第二参注释）
             onUrlSessionChange?.(null);
 
@@ -402,14 +481,19 @@ export const useChatSession = (
           return { loaded: false, fromCache: false, hasUrlSession: true };
         if (restored) {
           console.log('🟢 从缓存恢复会话状态');
-          setSessionId(restored.sessionId);
-          currentSessionIdRef.current = restored.sessionId;
-          setMessages(restored.messages);
-          setSessionTitle(restored.sessionTitle);
-          setSessionVersion(restored.sessionVersion);
-          setLastSavedTitle(restored.sessionTitle);
-          // 缓存恢复必须注入会话级真源(复制 setSessionModelOverride 的缺口不构成正当性; 漏注入则 UI 显示关而 DB 为 true)。
-          setLinkEnabled(restored.linkEnabled);
+          // 2026-10-05 小欧(文档[10]): 收口走 applySessionState, 并补上两处历史缺失字段:
+          //   ①sessionModel —— 本分支此前漏注, 是"刷新后模型选择器误显示跟随全局"的直接原因
+          //     (restoreState 返回体已带 sessionModel, 此前一路丢在这里);
+          //   ②titleLocked  —— 本分支此前也没写(缓存无该数据源, 故不传 = 保持现值, 不臆造)。
+          applySessionState({
+            sessionId: restored.sessionId,
+            title: restored.sessionTitle,
+            version: restored.sessionVersion,
+            lastSavedTitle: restored.sessionTitle,
+            sessionModel: restored.sessionModel ?? null,
+            linkEnabled: restored.linkEnabled,
+            messages: restored.messages,
+          });
           // 2026-08-27 小欧 修复#55: 缓存恢复分支补调onRenderEnd/onMessageListLoadingEnd(URL加载分支已调用, 此处遗漏导致渲染/加载结束信号缺失)
           onRenderEnd();
           onMessageListLoadingEnd();
@@ -440,19 +524,20 @@ export const useChatSession = (
         if (generation !== generationRef.current)
           return { loaded: false, fromCache: false, hasUrlSession: false };
         if (result) {
-          setSessionId(result.sessionId);
-          currentSessionIdRef.current = result.sessionId;
-          setSessionTitle(result.title);
-          if (result.version !== undefined) {
-            setSessionVersion(result.version);
-          }
-          if (result.title_locked !== undefined) {
-            setTitleLocked(result.title_locked);
-          }
-          setLastSavedTitle(result.title);
-
-          setLinkEnabled(result.linkEnabled ?? false);
-          setMessages(result.messages);
+          // 2026-10-05 小欧(文档[10]): 收口走 applySessionState, 并补上历史缺失字段 sessionModel
+          //   (本分支此前漏注 → 走"最近会话"进入时模型选择器同样误显示跟随全局;
+          //    数据源 loadLatestHistoryMessages 内部即 loadHistoryMessages, 必带 sessionModel)。
+          //   version/titleLocked 保留原"!== undefined 才写"的条件写入语义。
+          applySessionState({
+            sessionId: result.sessionId,
+            title: result.title,
+            version: result.version,
+            titleLocked: result.title_locked,
+            lastSavedTitle: result.title || '新会话',
+            sessionModel: result.sessionModel ?? null,
+            linkEnabled: result.linkEnabled ?? false,
+            messages: result.messages,
+          });
 
           onMessageListLoadingEnd();
 
@@ -466,10 +551,14 @@ export const useChatSession = (
           );
         } else {
           console.log('🟡 没有找到任何会话，显示新会话界面');
-          setSessionTitle('新会话');
-          setMessages([]);
-          setSessionId(null);
-          setLastSavedTitle('新会话');
+          // 2026-10-05 小欧(文档[10]): 收口走 applySessionState; 原代码此处只写 4 个字段,
+          //   version/titleLocked/sessionModel/linkEnabled 原本就不动, 保持等价(不传即不动)。
+          applySessionState({
+            title: '新会话',
+            messages: [],
+            sessionId: null,
+            lastSavedTitle: '新会话',
+          });
           onMessageListLoadingEnd();
         }
 
@@ -487,15 +576,9 @@ export const useChatSession = (
       }
     },
     [
-      setSessionId,
-      setMessages,
-      setSessionTitle,
-      setSessionVersion,
-      setTitleLocked,
-      setLastSavedTitle,
-      setSessionModelOverride, // 2026-08-27 小欧 三堂会审: 补全依赖
-      setLinkEnabled,
-      currentSessionIdRef,
+      // 2026-10-05 小欧(文档[10]): 原 8 个 setter + ref 入依赖 → 收口后只需 applySessionState
+      //   (系统提示消息那行 setMessages 由 applySessionState 内部同一 setter 承载, 无需重复入依赖)
+      applySessionState,
       onUrlSessionChange, // 2026-09-30 小欧 - URL 写入出口入依赖（闭包新鲜度）
     ]
   );
@@ -526,14 +609,16 @@ export const useChatSession = (
         if (generation !== generationRef.current) return; // 旧代过期：丢弃
         const newSessionId = response.session_id;
 
-        setSessionId(newSessionId);
-        currentSessionIdRef.current = newSessionId;
-        setSessionTitle(newTitle);
-        setSessionVersion(1);
-        setTitleLocked(false);
-        setSessionModelOverride(null);
-        setLinkEnabled(false);
-        setLastSavedTitle(newTitle);
+        // 2026-10-05 小欧(文档[10]): 收口走 applySessionState(8 字段显式复位, 逐条等价)
+        applySessionState({
+          sessionId: newSessionId,
+          title: newTitle,
+          version: 1,
+          titleLocked: false,
+          sessionModel: null,
+          linkEnabled: false,
+          lastSavedTitle: newTitle,
+        });
 
         // [63] 5.18 v1.29：删"断开之前SSE+清steps"（L1：新会话不断旧流、不清旧步——旧流留
         //   Store 由订阅关系自然让位；视图按新 sessionId 读到的自然是新会话快照，无需手工清）
@@ -569,15 +654,9 @@ export const useChatSession = (
       }
     },
     [
-      setSessionId,
-      setSessionTitle,
-      setSessionVersion,
-      setTitleLocked,
-      setMessages,
-      setLastSavedTitle,
-      setSessionModelOverride,
-      setLinkEnabled,
-      currentSessionIdRef,
+      // 2026-10-05 小欧(文档[10]): 原 8 个 setter + ref 入依赖 → 收口后只需 applySessionState
+      applySessionState,
+      setMessages, // 仍直接写: 系统提示消息那条不走 applySessionState(见该处注释)
       onUrlSessionChange, // 2026-09-30 小欧 - URL 写入出口入依赖（闭包新鲜度）
     ]
   );
@@ -598,27 +677,19 @@ export const useChatSession = (
       chatStreamStore.clearSteps(sidToStop);
     }
 
-    setSessionId(null);
-    currentSessionIdRef.current = null;
-    setSessionTitle('新会话');
-    setSessionVersion(1);
-    setTitleLocked(false);
-    setMessages([]);
-    setSessionModelOverride(null); // 2026-08-27 小欧 修复#41: 清空会话复位L2模型, 避免新会话继承旧模型覆盖
-    setLinkEnabled(false); // 同源复位会话级 link 开关, 避免新会话继承旧开关
-    setLastSavedTitle('新会话');
-  }, [
-    sessionId,
-    setSessionId,
-    setSessionTitle,
-    setSessionVersion,
-    setTitleLocked,
-    setMessages,
-    setLastSavedTitle,
-    setSessionModelOverride,
-    setLinkEnabled,
-    currentSessionIdRef,
-  ]);
+    // 2026-10-05 小欧(文档[10]): 收口走 applySessionState(8 字段显式复位, 逐条等价)
+    applySessionState({
+      sessionId: null,
+      title: '新会话',
+      version: 1,
+      titleLocked: false,
+      messages: [],
+      sessionModel: null, // 2026-08-27 小欧 修复#41: 清空会话复位L2模型, 避免新会话继承旧模型覆盖
+      linkEnabled: false, // 同源复位会话级 link 开关, 避免新会话继承旧开关
+      lastSavedTitle: '新会话',
+    });
+    // 2026-10-05 小欧(文档[10]): currentSessionIdRef 已收口进 applySessionState, 故从依赖移除
+  }, [sessionId, applySessionState]);
 
   // ========================================
   // 标题管理函数
@@ -641,9 +712,12 @@ export const useChatSession = (
           sessionVersion
         );
 
-        setSessionTitle(newTitle.trim());
-        setSessionVersion(response.version || sessionVersion);
-        setLastSavedTitle(newTitle.trim());
+        // 2026-10-05 小欧(文档[10]): 收口走 applySessionState(逐条等价, 不传其余 5 字段即保持不动)
+        applySessionState({
+          title: newTitle.trim(),
+          version: response.version ?? sessionVersion,
+          lastSavedTitle: newTitle.trim(),
+        });
 
         console.log('✅ 标题更新成功:', newTitle, '版本:', response.version);
       } catch (error: unknown) {
@@ -658,10 +732,13 @@ export const useChatSession = (
           try {
             const result = await loadHistoryMessages(sessionId);
             if (result) {
-              setSessionTitle(result.title || newTitle);
-              setSessionVersion(result.version || sessionVersion + 1);
-              setTitleLocked(result.title_locked || false);
-              setLastSavedTitle(result.title || newTitle);
+              // 2026-10-05 小欧(文档[10]): 收口走 applySessionState, 取值兜底逐条保留在调用点
+              applySessionState({
+                title: result.title || newTitle,
+                version: result.version ?? sessionVersion + 1,
+                titleLocked: result.title_locked || false,
+                lastSavedTitle: result.title || newTitle,
+              });
 
               // 提示用户重新编辑
               showSaveError('会话标题已被其他人修改，已自动更新为最新版本');
@@ -679,10 +756,8 @@ export const useChatSession = (
     [
       sessionId,
       sessionVersion,
-      setSessionTitle,
-      setSessionVersion,
-      setTitleLocked,
-      setLastSavedTitle,
+      // 2026-10-05 小欧(文档[10]): 原 5 个 setter 入依赖 → 收口后只需 applySessionState(恒定引用)
+      applySessionState,
     ]
   );
 

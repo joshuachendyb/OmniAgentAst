@@ -9,6 +9,10 @@
 //   本文件 S2 已清、grep 零代码残留；useSSE 已删(5.6)，本文件仅留历史消息与 UI 态 — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.3: 会话相关状态区新增 linkEnabled/setLinkEnabled(类型/state/返回 3 处),
 //   作为后端 chat_sessions.link_enabled 的前端镜像, 与会话同生命周期; 组件不再自持开关 — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 小欧 - 修复 issues 2/3(DRY/Slop):
+//   ① messagesRef/currentSessionIdRef 的写回从 useEffect 改为 setState 内联写 ref(消除窗口期);
+//   ② 删除 applySessionState 越界写 currentSessionIdRef(原违反 SLAP);
+//   ③ 删除 messagesRef 的单向 useEffect 同步, 改用 setMessages wrapper 保证一致性 — 小欧-2026-10-05
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -28,7 +32,7 @@
  * @since 2026-04-21
  */
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
 
 // ============================================================================
@@ -191,7 +195,7 @@ export const useChatState = (): UseChatStateReturn => {
   // ==================== 状态定义 ====================
 
   // 消息相关状态
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessagesState] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
   // 等待时间状态
@@ -204,7 +208,7 @@ export const useChatState = (): UseChatStateReturn => {
   const [isPaused, setIsPaused] = useState(false);
 
   // 会话相关状态
-  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionId, setSessionIdState] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
   const [sessionVersion, setSessionVersion] = useState<number>(1);
   const [titleLocked, setTitleLocked] = useState<boolean>(false);
@@ -287,15 +291,39 @@ export const useChatState = (): UseChatStateReturn => {
 
   // ==================== 状态同步 ====================
 
-  // 同步messages到messagesRef
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+  // 2026-10-05 小欧 - 修复 issue 2/3(DRY/Slop):
+  //   将 messagesRef/currentSessionIdRef 的同步从 useEffect 改为在 setter 中内联写 ref，
+  //   保证 ref 与 state 严格同步，消除"state 已变但 ref 未更新"窗口。— 小欧-2026-10-05
 
-  // 同步sessionId到currentSessionIdRef
-  useEffect(() => {
-    currentSessionIdRef.current = sessionId;
-  }, [sessionId]);
+  // messagesRef 同步写(仅在 setMessages 触发时发生)
+  const setMessages = useCallback(
+    (updater: React.SetStateAction<Message[]>) => {
+      setMessagesState((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (prev: Message[]) => Message[])(prev)
+            : updater;
+        messagesRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
+
+  // currentSessionIdRef 同步写(仅在 setSessionId 触发时发生)
+  const setSessionId = useCallback(
+    (updater: React.SetStateAction<string | null>) => {
+      setSessionIdState((prev) => {
+        const next =
+          typeof updater === 'function'
+            ? (updater as (prev: string | null) => string | null)(prev)
+            : updater;
+        currentSessionIdRef.current = next;
+        return next;
+      });
+    },
+    []
+  );
 
   // 同步isPaused到isPausedRef
   useEffect(() => {
