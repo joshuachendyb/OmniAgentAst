@@ -2,6 +2,7 @@
 // 编辑历史: 2026-09-13 小欧 - ActionWaitingIcon换型(北京老陈令选title-icon-compare G波纹扩散): 蓝色270°弧线旋转改蓝核心圆+双层扩散波纹(SVG36x36, .action-ripple-1/.action-ripple-2, 1.8s不旋转) — 小欧-2026-09-13
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: 组件内5处硬编码SVG色令牌化(绿#52c41a→Colors.SUCCESS / 橙#fa8c16→Colors.WAIT_ACTION / 蓝#1677ff→Colors.PRIMARY), 零行为变化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 - 实施: 三角色等待图标接 waitClock 可选信号, 图标保留+钟面追加并存(Thought/Action→kind="llm", Tool→kind="tool") - 小欧-2026-09-17
+// 编辑历史: 2026-10-05 小欧 - 新增 ReasoningIcon 思考点光圈(文档[9] §5.3) + dim prop: 三堂会审发现 .reasoning-icon-dim 只写在CSS 无组件挂载, 裁定两态零落地, 现按 dim 挂载 — 小欧-2026-10-05
 import React from 'react';
 import { Colors } from '@/utils/stepStyles';
 import { ClockStopwatch } from './clockStopwatch'; // 2026-09-17 小欧 实施: 微型钟面(追加并存) — 小欧-2026-09-17
@@ -105,4 +106,47 @@ export const ActionWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
     </span>
     {waitClock && <ClockStopwatch {...waitClock} kind="llm" />}
   </>
+);
+
+/**
+ * ReasoningIcon — 思考点扩散光圈
+ * 用途: reasoning 折叠行左侧图标(替换原"🤖 AI"emoji, 见文档[9] §5.3)
+ * 取形: 绿点 + 半径 13 上弧, 三色依次扩散(Green #52c41a / Primary #1677ff / Orange #fa8c16 三道, 遵 §3 继承规则: 禁颜色硬编码)
+ * 动画: beampulse 1.8s 三道依次扩散, 唯一真源在 index.css(见 §5.4), 本组件无自身计时器;
+ *   动画节奏与"暗/亮"两态的样式全在 CSS, 组件只按 dim 传一个意图(不内联样式, 不透传 className 逃生舱)
+ *   两态(北京老陈 2026-10-05 裁定): dim=false 收起态=亮+扩散动画(提醒"内有思考");
+ *   dim=true 展开态=暗(opacity .3)+静止(正文已在眼前, 不再闪)
+ *   与 ThoughtWaitingIcon 无耦合: "等待思考段"是另一回事 —— 前者恒显, 后者是 waiting 分支 — 小欧-2026-10-05
+ */
+export const ReasoningIcon: React.FC<{ size?: number; dim?: boolean }> = ({
+  size = 24,
+  dim = false,
+}) => (
+  <svg
+    viewBox="0 0 36 36"
+    width={size}
+    height={size}
+    fill="none"
+    strokeWidth={2.5}
+    strokeLinecap="round"
+    className={dim ? 'reasoning-icon-dim' : undefined}
+    aria-hidden="true" // 装饰性图标, 不给读屏重复播报, 与折叠按钮文本并列
+  >
+    <circle cx="18" cy="18" r="2.5" fill={Colors.SUCCESS} />
+    <path
+      className="reasoning-beam1"
+      d="M6 18 A13 13 0 0 1 30 18"
+      stroke={Colors.SUCCESS}
+    />
+    <path
+      className="reasoning-beam2"
+      d="M6 18 A13 13 0 0 1 30 18"
+      stroke={Colors.PRIMARY}
+    />
+    <path
+      className="reasoning-beam3"
+      d="M6 18 A13 13 0 0 1 30 18"
+      stroke={Colors.WAIT_ACTION}
+    />
+  </svg>
 );

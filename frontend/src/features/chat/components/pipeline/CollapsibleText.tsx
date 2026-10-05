@@ -12,6 +12,7 @@
 //   去掉 display:block/marginLeft, 按钮置于文本末行右侧, 视觉更协调 — 小沈-2026-09-17
 // 编辑历史: 2026-09-17 小沈 - 折叠按钮改为内联跟在文本末尾不另起新行: 去掉外层 flex div,
 //   span display:inline + whiteSpace:nowrap 直接跟在 shown 文本流末尾(最后一行右侧尾巴) — 小沈-2026-09-17
+// 编辑历史: 2026-10-05 小欧 - 折叠 state 与事件处理交公用 hook useDisclosure(文档[9] §5.7), 与 ThinkingStream 去重; 5 处调用行为零回归 — 小欧-2026-10-05
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -23,9 +24,12 @@
  * @date 2026-08-26
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+// 2026-10-05 小欧 - 折叠状态交公用 hook(文档[9] §5.7): 与 ThinkingStream 思考行共用,
+//   原 onClick/onKeyDown 逻辑重复两处, 违 DRY/健壮性; 本组件 5 处调用行为零变化 — 小欧-2026-10-05
+import { useDisclosure } from '@/features/chat/hooks/useDisclosure';
 
 interface CollapsibleTextProps {
   text: string;
@@ -38,7 +42,9 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   maxLines = 5,
   maxChars = 200,
 }) => {
-  const [expanded, setExpanded] = useState(false);
+  // 2026-10-05 小欧 - 折叠 state 交公用 hook(文档[9] §5.7), 替 ThinkingStream 复写同逻辑 — 小欧-2026-10-05
+  const { expanded, setExpanded, onToggleClick, onToggleKeyDown } =
+    useDisclosure(false);
   // 2026-09-03 小欧 修复: text变化(跨消息切换)时重置expanded, 用首100字符做key区分同消息内流式追加
   const _textKey = text.slice(0, 100);
   const _prevTextKeyRef = React.useRef(_textKey);
@@ -47,7 +53,7 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
       setExpanded(false);
       _prevTextKeyRef.current = _textKey;
     }
-  }, [_textKey]);
+  }, [_textKey, setExpanded]); // 2026-10-05 小欧: setExpanded 来自 useState 恒稳定, 列入依赖消 exhaustive-deps 告警(实际零重跑) — 小欧-2026-10-05
   const overflow = useMemo(() => {
     const lineCount = text.split('\n').length;
     return lineCount > maxLines || text.length > maxChars;
@@ -66,8 +72,6 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
     return text;
   }, [text, overflow, expanded, maxChars]);
 
-  const toggle = () => setExpanded((prev) => !prev);
-
   return (
     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
       {shown}
@@ -76,19 +80,8 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
           role="button"
           tabIndex={0}
           aria-expanded={expanded}
-          onClick={(e) => {
-            e.stopPropagation();
-            toggle();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              toggle();
-            } else {
-              e.stopPropagation();
-            }
-          }}
+          onClick={onToggleClick}
+          onKeyDown={onToggleKeyDown}
           style={{
             fontSize: FontSize.SECONDARY,
             marginLeft: Spacing.XS,

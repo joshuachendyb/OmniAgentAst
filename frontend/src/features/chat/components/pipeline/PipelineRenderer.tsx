@@ -80,6 +80,7 @@
 // 编辑历史: 2026-09-17 小欧 会审V3修复(复核三遍): Prettier 格式对齐——deniedEntries 内联类型超长行展开为多行(项目 prettier 排版规范, 纯格式零逻辑) — 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 修改: 失败细节行英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled; 取消行 ! 号换 StopOutlined — 小欧-2026-09-17
 // 编辑历史: 2026-09-30 14:30 小欧 - 传 ToolCallLine 的 deniedEntries 过滤 tool 存在者（无名条目会渲染 undefined 点名行）
+// 编辑历史: 2026-10-05 小欧 - 接「思考排版」「推理内容」两开关(文档[9] §5.8); 三堂会审: thinking段key 去文本切片(流式前16字内每chunk换key致折叠态被弹回); 等待期把标题行提到绿圈上一行(§5.14.2) — 小欧-2026-10-05
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -100,6 +101,8 @@ import { ResponseStream } from './ResponseStream';
 import { ToolCallLine } from './ToolCallLine';
 import { StatusLine } from './StatusLine';
 import { TextStream } from './TextStream'; // 13.8 正文打字机 — 小欧 2026-08-30
+// 2026-10-05 小欧 - step 渲染显示偏好(文档[9] §5.8) — 小欧-2026-10-05
+import { useStepRenderPrefs } from './useStepRenderPrefs';
 import { ThoughtWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ThoughtWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 import { formatErrorType } from '@/features/chat/components/ErrorDetail'; // 2026-09-17 小欧 修改: 中文标签映射复用, 失败细节行英文枚举转中文 — 小欧-2026-09-17
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
@@ -113,8 +116,8 @@ import {
 import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
 
 export type PipelineSegment =
-  | { kind: 'thinking'; text: string; sameStep?: boolean } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6)
-  | { kind: 'text'; text: string; sameStep?: boolean }
+  | { kind: 'thinking'; text: string; sameStep?: boolean; step?: number } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6); step: 2026-10-05 小欧 段归属步号(合并条件用, 使折叠粒度=每步)
+  | { kind: 'text'; text: string; sameStep?: boolean; step?: number }
   | { kind: 'final'; step: ExecutionStep }
   | {
       kind: 'tool';
@@ -139,21 +142,25 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   let pendingPreviewToolIdx = -1;
   const appendToLast = (
     kind: 'thinking' | 'text',
-    text: string
+    text: string,
+    step?: number
   ): TextishSegment => {
     const last = segs[segs.length - 1];
     // 4.4.2(2026-09-07 小欧): 末段为 waiting(首列等待图标)时, 首个内容就地覆盖接管(图标位变文字)
     if (last && last.kind === 'waiting') {
-      const updated = { kind, text } as TextishSegment;
+      const updated = { kind, text, step } as TextishSegment;
       segs[segs.length - 1] = updated;
       return updated;
     }
-    if (last && last.kind === kind) {
+    // 2026-10-05 小欧: 合并条件加"同一步" —— 原只比 kind, 导致 step1 的 reasoning 尾与
+    //   step2 的 reasoning 头拼进同一段, 折叠粒度对不上步(开关=关时整个合并段一起收起,
+    //   而非"每步各自收起", 也无法显示步号)。thinking/text 段此前不保留 step, 现补上。
+    if (last && last.kind === kind && last.step === step) {
       const updated = { ...last, text: last.text + text } as TextishSegment;
       segs[segs.length - 1] = updated;
       return updated;
     }
-    const seg = { kind, text } as TextishSegment;
+    const seg = { kind, text, step } as TextishSegment;
     segs.push(seg);
     return seg;
   };
@@ -163,8 +170,8 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         segs.push({ kind: 'waiting', step: s.step }); // 4.4.2(2026-09-07 小欧): 产 waiting 段, 首个内容到达被覆盖
         break;
       case 'chunk':
-        if (s.is_reasoning) appendToLast('thinking', s.content ?? '');
-        else appendToLast('text', s.content ?? '');
+        if (s.is_reasoning) appendToLast('thinking', s.content ?? '', s.step);
+        else appendToLast('text', s.content ?? '', s.step);
         break;
       case 'thought': {
         // 13.6① 两字段契约：reasoning 在前(thinking 灰斜体)、thought 在后(text 正体)；s.content 永不下发不使用
@@ -180,8 +187,9 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
           const alreadyHas =
             lastSeg &&
             lastSeg.kind === 'thinking' &&
+            lastSeg.step === s.step &&
             lastSeg.text.endsWith(s.reasoning);
-          if (!alreadyHas) appendToLast('thinking', s.reasoning);
+          if (!alreadyHas) appendToLast('thinking', s.reasoning, s.step);
         }
         // 2026-09-11 小欧 去重: chunk已流式累积text段, thought字段与之重叠时不再追加防双倍
         let thoughtSeg: TextishSegment | null = null;
@@ -190,8 +198,10 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
           const textAlreadyHas =
             lastTextSeg &&
             lastTextSeg.kind === 'text' &&
+            lastTextSeg.step === s.step &&
             lastTextSeg.text.endsWith(s.thought);
-          if (!textAlreadyHas) thoughtSeg = appendToLast('text', s.thought);
+          if (!textAlreadyHas)
+            thoughtSeg = appendToLast('text', s.thought, s.step);
         }
         if (hasBoth && thoughtSeg) {
           thoughtSeg.sameStep = true;
@@ -298,6 +308,17 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
 }) => {
   const segs = buildSegments(steps);
   const taskActive = computeTaskActive(highlightToolName, badge);
+  // 2026-10-05 小欧 - step 渲染显示偏好(文档[9] 方案设计 §5.8 / 北京老陈裁定「两个独立开关」):
+  //   hook 顶层调一次取值(Rules of Hooks: 严禁写在 segs.map 回调内), 经 prop 各下其位:
+  //   ①thoughtMarkdown(设置页标签「思考排版」)→ text 段 = thought 块(TextStream)的 Markdown 渲染
+  //   ②reasoningVisible(设置页标签「推理内容」)→ thinking 段 = reasoning 块(ThinkingStream)的折叠初值
+  //   两块两开关, 各自独立互不干涉。
+  //   2026-10-05 小欧 三堂会审撤除 ready 门控: 曾用 `ready &&` 让"真值到手前按关渲染", 但设置在
+  //   服务端只能异步取, 门控会让**首帧 reasoning 正文整段不渲染**(已打破既有测试
+  //   src/tests/reality/waiting-segment-442.test.tsx: "expected '推理内容...' to contain ..."),
+  //   且历史回放时正文先消失再撑开、下方内容整体位移。改为**跟随**语义: 首帧按占位值渲染(与改动前
+  //   行为一致, 无闪), 真值到达后由 ThinkingStream/TextStream 的跟随逻辑一次性纠正 — 小欧-2026-10-05
+  const { thoughtMarkdown, reasoningVisible } = useStepRenderPrefs();
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
   const toolStepSet = new Set(
     segs
@@ -331,10 +352,23 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           //   final/error/停止后非末段自动灭, 杜绝常驻
           if (i !== segs.length - 1 || !taskActive) return null;
           return (
-            <div key={`waiting-${i}`} style={{ margin: stepMargin(false) }}>
-              <ThoughtWaitingIcon waitClock={waitClock} />{' '}
-              {/* 2026-09-17 小欧: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
-            </div>
+            <React.Fragment key={`waiting-${i}`}>
+              {/* 2026-10-05 小欧（北京老陈裁定 §5.14.2）: 「推理内容...」标题行排在等待绿圈的上一行,
+                  且等待期就先出现(首个推理文本到达前), 不再"先冒一个孤零零绿圈、文本到达后整行替换"。
+                  绿圈本身的下沿逻辑(末段+taskActive 门控 / 挂钟面)一字未动。
+                  text 传单个空格而非空串: ThinkingStream 的早退条件是 `!text && !cursor`, 传空串
+                  配 cursor=true 会额外渲染一个 ▍ 尾随光标并在无正文时误打 CURSOR T 诊断点;
+                  传空格则只出标题行, 零多余光标、零误打点(空格由 normalizeBlankLines 规约为空)。 */}
+              <ThinkingStream
+                text=" "
+                compact
+                defaultExpanded={reasoningVisible}
+              />
+              <div style={{ margin: stepMargin(false) }}>
+                <ThoughtWaitingIcon waitClock={waitClock} />{' '}
+                {/* 2026-09-17 小欧: 等待图标与钟面并存(追加) — 小欧-2026-09-17 */}
+              </div>
+            </React.Fragment>
           );
         }
         if (seg.kind === 'thinking') {
@@ -342,10 +376,15 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           const cursor = streaming && i === lastThink && i === segs.length - 1;
           return (
             <ThinkingStream
-              key={`thinking-${i}-${seg.text.slice(0, 16)}`}
+              // 2026-10-05 小欧 三堂会审修复: key 去掉文本切片(原 `thinking-${i}-${seg.text.slice(0,16)}`)。
+              //   切片随流式增长而变 → 前 16 字内每收一个 chunk 就换 key → 组件卸载重建 →
+              //   用户刚点开的折叠态被弹回初值(表现为"点了没反应"), 10~16 次后才稳定。
+              //   段身份由下标 i 唯一确定(流式只追加段, 不前插, i 稳定); 换段即换 key 天然重建。
+              key={`thinking-${i}`}
               text={seg.text}
               cursor={cursor}
               compact={seg.sameStep}
+              defaultExpanded={reasoningVisible} // 2026-10-05 小欧: 「推理内容」折叠初值(文档[9] §5.5) — 小欧-2026-10-05
             />
           );
         }
@@ -354,12 +393,17 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           const isLive = streaming && i === lastText && i === segs.length - 1;
           return (
             <TextStream
-              key={`text-${i}-${seg.text.slice(0, 16)}`}
+              // 2026-10-05 小欧 三堂会审修复(与 thinking 段同类缺陷, 此前只修了一半):
+              //   原 key 带 seg.text.slice(0,16) → 流式前 16 字内每收一个 chunk 就换 key →
+              //   TextStream 卸载重建 → 打字机进度 shown 归零(前 16 字反复从头打; 整段不足 16 字则
+              //   完全没有打字机效果)。段身份同样由下标 i 唯一确定。 — 小欧-2026-10-05
+              key={`text-${i}`}
               text={seg.text}
               typing={isLive}
               cursor={isLive}
               compact={seg.sameStep}
               waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
+              markdown={thoughtMarkdown} // 2026-10-05 小欧: thought 块 Markdown 渲染(「思考排版」, 文档[9] §5.8) — 小欧-2026-10-05
             />
           );
         }
@@ -376,9 +420,14 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           return (
             <React.Fragment key={`final-${i}-${seg.step.step ?? i}`}>
               {reasoning && (
-                <div style={terminalDetailStyle(Colors.TEXT.SECONDARY)}>
-                  {reasoning}
-                </div>
+                /* 2026-10-05 小欧: 终态回放(无 chunks, final 是唯一载体)的 reasoning 原走裸 div,
+                   不经过 ThinkingStream → 「推理内容」开关与标题行在此形态下完全失效(同一开关
+                   不同数据形态表现不一致)。现统一走 ThinkingStream, 与流式形态同款。 */
+                <ThinkingStream
+                  text={reasoning}
+                  compact={false}
+                  defaultExpanded={reasoningVisible}
+                />
               )}
               <ResponseStream
                 text={seg.step.response || seg.step.content || ''}
