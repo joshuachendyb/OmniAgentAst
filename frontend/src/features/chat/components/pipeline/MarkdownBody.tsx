@@ -13,6 +13,7 @@
 //     被 HTML 折叠(LLM 输出的 JSON/树/伪代码不可读, 相对旧纯文本属渲染退化)
 //     ③切分改 split(/\r?\n/) 剥 CRLF 的 \r(否则 Windows 来源文本每行尾部留不可见字符,
 //     且会污染标题正则的 $ 锚点) ④等宽字体改走 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 第2轮会审修3处内容丢失: 剥标记加闭合+长度守卫(裸*/**、半闭合不再整行消失); 词边界补CJK(中文_测试_不再被吃); 未闭合围栏降级纯文本(不再闪空pre+吞后续正文) — 小欧-2026-10-05
 import React from 'react';
 import {
   BorderWidth,
@@ -26,14 +27,16 @@ import {
 
 /**
  * 行内标记: 代码 > 粗体 > 斜体, 按优先级单趟切分(不递归, 免嵌套自匹配)。
- * 2026-10-05 小欧 三堂会审修复: 单星号/单下划线加**词边界**断言, 否则会吃掉普通文本的字符 ——
- *   `snake_case_name`(丢两个下划线且中间变斜体)、`2*3*4`(丢两颗星号)。判据: 定界符前后都不是词内字符。
- *   注意: 断言写在捕获组**内部**(零宽, 不改变组的起止), 不可另立捕获组 —— String.split 会把每个
- *   捕获组都作为独立片段返回, 多一个组就会把标记内容重复渲染一遍。
- *   依赖: lookbehind 需 ES2018 运行时(Chrome/Edge/modern Node 均支持, 本项目 antd 桌面端满足)。
+ * 2026-10-05 小欧 三堂会审修复2处:
+ *   ①单星号/单下划线加**词边界**断言, 否则吃掉普通文本字符: `snake_case_name`(丢两个下划线)、
+ *     `2*3*4`(丢两颗星号)。字符类含 CJK: LLM thought 以中文为主, 只拦 ASCII 会让
+ *     `中文_测试_`、`前缀*强调*后缀` 照样被吃(第2轮会审实测)。
+ *   ②断言写在捕获组**内部**(零宽, 不改变组的起止), 不可另立捕获组 —— String.split 会把每个
+ *     捕获组都作为独立片段返回, 多一个组就会把标记内容重复渲染一遍。
+ * 依赖: lookbehind 需 ES2018 运行时(Chrome/Edge/modern Node 均支持, 本项目 antd 桌面端满足)。
  */
 const INLINE_RE =
-  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|((?<![*\w`])\*[^*\n]+\*(?![*\w*`]))|((?<![_\w`])_[^_\n]+_(?![_\w`]))/g;
+  /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|((?<![*[\w`一-龥])\*[^*\n]+\*(?![*\w`一-龥]))|((?<![_[\w`一-龥])_[^_\n]+_(?![_\w`一-龥]))/g;
 
 /** 行级容器统一样式: pre-wrap 保留源文本缩进与连续空格(LLM 输出大量缩进结构) */
 const LINE_STYLE: React.CSSProperties = { whiteSpace: 'pre-wrap' };
@@ -62,11 +65,17 @@ const renderInline = (text: string, keyBase: string): React.ReactNode[] =>
         );
       }
       // 2026-10-05 小欧 - 定界符长度决定剥几层: 粗体 ** __ 是 2 字符对, 斜体 * _ 是 1 字符对,
-      //   统一 slice(2,-2) 会把单星号内容整段吃掉(三堂会审实测 '*强调*' => '') — 小欧-2026-10-05
+      //   统一 slice(2,-2) 会把单星号内容整段吃掉(三堂会审实测 '*强调*' => '')。
+      //   第2轮会审补长度守卫: 剥之前必须"标记确实成对且内部非空", 否则 1~2 字的残片
+      //   (裸 `*`、裸 `**`、单独一行 `_`) 会被剥成空串 → 整行消失。
       const boldMark = seg.startsWith('**') || seg.startsWith('__') ? 2 : 0;
       const italicMark = boldMark === 0 && /^(\*|_)/.test(seg) ? 1 : 0;
-      if (boldMark || italicMark) {
-        const n = boldMark || italicMark;
+      const n = boldMark || italicMark;
+      const closing =
+        n === 2
+          ? seg.endsWith('**') || seg.endsWith('__')
+          : seg.endsWith(n === 1 ? '*' : '_');
+      if (n && closing && seg.length > n * 2) {
         return (
           <span
             key={key}
@@ -94,17 +103,23 @@ const MarkdownBody: React.FC<MarkdownBodyProps> = ({ text }) => {
   while (i < blocks.length) {
     const line = blocks[i];
     const fence = /^```/.test(line.trim());
-    if (fence) {
-      // 2026-10-05 小欧 三堂会审修复: key 必须用围栏**起始**下标 —— 原先用自增后的 i,
-      //   与紧随其后那一块(=同一个 i)的 key 同值, 触发 React 重复 key 并复用错节点。
+    // 2026-10-05 小欧 第2轮会审修复: 未闭合围栏降级为纯文本 ——
+    //   打字机逐字喂入时 ``` 刚出头就成立, 原实现立刻 push 一个 buf=[] 的**空 pre**(肉眼可见闪现),
+    //   且 while 会把其后**所有已到达正文全吞进 pre**, 直到模型补上收尾围栏才整块跳回(内容瞬移)。
+    //   判据: 先探测是否存在配对收尾围栏, 无则不进 fence 分支(落到末尾纯文本分支逐行渲染)。
+    const closeIdx = fence
+      ? blocks.findIndex((l, k) => k > i && /^```/.test(l.trim()))
+      : -1;
+    if (fence && closeIdx > 0) {
+      // key 必须用围栏**起始**下标 —— 用自增后的 i 会与紧随其后那一块 key 同值(第1轮会审: 重复 key)
       const start = i;
       const buf: string[] = [];
       i += 1;
-      while (i < blocks.length && !/^```/.test(blocks[i].trim())) {
+      while (i < blocks.length && i < closeIdx) {
         buf.push(blocks[i]);
         i += 1;
       }
-      i += 1; // 跳过收尾围栏(缺收尾时 i 已越界, 自然终止)
+      i += 1; // 跳过收尾围栏
       out.push(
         <pre
           key={`b${start}`}
