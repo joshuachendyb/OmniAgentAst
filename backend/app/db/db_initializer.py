@@ -19,8 +19,7 @@
 #   与 10.1.9 迁移章节对齐(现网老库幂等补建不丢数据)
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.1→9.5→9.7): chat_message_steps→chat_task_steps全局改名
 #   (message_id→ai_message_id)、删chat_messages.execution_steps列、删chat_session_title_history DDL、
-#   删migrate_steps调用、reply_to_message_id→user_message_id ensure(改动7)、删metadata×2+冗余索引、
-#   chat_tasks加ai_message_id(改动9)、新建chat_user_message表(改动1)
+#   删migrate_steps调用、reply_to_message_id→user_message_id ensure(改动7)、删metadata×2+冗余索引、#   chat_tasks加ai_message_id(改动9)、新建chat_user_message表(改动1)
 # 2026-08-19 - 小欧 - 恢复 migrate_v2_chat_restructure 调用(必须在建 idx_steps_message 索引之前):
 #   现网库处于 v2.0 中间态(chat_task_steps 旧结构空表重名), init_chat_db 在 executescript 建表后
 #   CREATE INDEX idx_steps_message ON chat_task_steps(ai_message_id) 必报 no such column,
@@ -76,6 +75,10 @@
 #   _migrate_step_type_context_rename，改写 chat_task_steps.step_json 内旧 type 行；仿 _migrate_model_ref_columns
 #   幂等写法(查旧名行→json 解析→改 type→回写)，异常降级不阻断启动。接在 _verify_model_ref_columns 之后。
 #   不迁则旧行 type 旧名不在前端 META_STEP_TYPES，isBusinessStep 误判业务步 → 历史回放渲染未知卡片 — 小欧 2026-10-04
+# 2026-10-05 - 小欧 - 12.2-C3(③a): chat_tasks.ai_message_id 加 UNIQUE 索引(先保首行去重再建, 幂等, 同 12.2-C1/C2);
+#   该列此前无唯一约束, 分配器重号即静默重复。实测存量 501 行零重复、去重零删除、重复插被拒新 id 放行
+# 2026-10-05 - 小欧 - 12.2-C4(③b): 新建 id_sequence 表作 user/assistant 消息 id 单一序列, 替掉 app 侧线性探测
+#   (探测上限10次+耗尽退化全局MAX+1+threading.Lock 仅单进程有效); 空表时幂等播种到存量 id 上界之上
 """
 db_initializer — 数据库初始化
 
@@ -372,6 +375,31 @@ def init_chat_db(get_conn):
         conn.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_task_call "
             "ON token_usage(task_id, llm_call_count)")
+
+# ===== 12.2-C3: chat_tasks.ai_message_id 唯一性下沉DB(③a) — 一任务恰一行 =====
+        # 去重保首行再建唯一索引(均幂等, 同 C1/C2): 存量若有重复, 直接建索引会抛错致启动崩溃
+        # ai_message_id 可空, SQLite UNIQUE 视 NULL 互异, 多 NULL 行安全 — 小欧 2026-10-05
+        conn.execute(
+            "DELETE FROM chat_tasks WHERE ai_message_id IS NOT NULL AND rowid NOT IN ("
+            "  SELECT MIN(rowid) FROM chat_tasks WHERE ai_message_id IS NOT NULL"
+            "  GROUP BY ai_message_id)")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_ai_message "
+            "ON chat_tasks(ai_message_id)")
+
+        # ===== 12.2-C4(③b): 消息 id 单一序列 — user 与 assistant 共用, 跨进程原子 =====
+        # 原由 app 侧线性探测分配 assistant id(上限10次, 耗尽退化全局MAX+1), 而 user id 走
+        # chat_user_message AUTOINCREMENT —— 两者各自计数, 只能靠探测防撞, 且探测用的锁是
+        # threading.Lock(仅单进程有效, uvicorn --reload 即两进程)。现改由本序列表统一发号:
+        # AUTOINCREMENT 由 SQLite 写操作串行化保证原子性, 撞号在构造上不可能发生。
+        # 播种仅在序列表为空时抬到现有两 id 空间上界之上, 幂等(存量 MAX=1006979/1006977) — 小欧 2026-10-05
+        conn.execute("CREATE TABLE IF NOT EXISTS id_sequence (id INTEGER PRIMARY KEY AUTOINCREMENT)")
+        conn.execute(
+            "INSERT INTO id_sequence(id) "
+            "SELECT MAX(m) FROM ("
+            "  SELECT MAX(id) AS m FROM chat_user_message"
+            "  UNION ALL SELECT MAX(ai_message_id) AS m FROM chat_tasks) "
+            "WHERE NOT EXISTS (SELECT 1 FROM id_sequence)")
 
         # 镜像写点 W7(启动清扫 UPDATE chat_messages 崩溃残留空白AI行) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
 

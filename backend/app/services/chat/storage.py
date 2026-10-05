@@ -145,6 +145,15 @@ _user_message_ids: Dict[str, int] = {}
 _message_ids_lock = threading.Lock()
 
 
+def next_message_id(conn: Connection) -> int:
+    """从 id_sequence 取下一个消息 id(③b: user/assistant 单一序列, AUTOINCREMENT 跨进程原子)
+
+    原 app 侧线性探测(上限10次/耗尽退化全局MAX+1)依赖 threading.Lock, 仅单进程有效;
+    序列由 SQLite 写锁串行化, 撞号在构造上不可能。播种见 db_initializer 12.2-C4 — 小欧 2026-10-05
+    """
+    return conn.execute("INSERT INTO id_sequence DEFAULT VALUES").lastrowid
+
+
 def track_user_message(session_id: str, message_id: int):
     """记录用户消息ID"""
     with _message_ids_lock:
@@ -168,12 +177,11 @@ def get_last_user_message_id(conn: Connection, session_id: str) -> Optional[int]
 
 
 def forget_session_message_ids(session_id: str) -> None:
-    """删除会话时清理内存消息ID缓存(track 字典 + allocator 双缓存) — 小欧 2026-09-20 D-2修复:
+    """删除会话时清理内存消息ID缓存(track 字典) — 小欧 2026-09-20 D-2修复:
     delete_session 原从不清内存, 会话删除后 dict 无限驻留(长驻内存泄漏)且陈旧 id 可能复活。
-    allocator 与 track 同源同锁, 一并清; 供 session_service.delete_session 调用(DRY)。"""
+    ③b 起 allocator 无内存缓存, 故此处只清 track 字典 — 小欧 2026-10-05"""
     with _message_ids_lock:
         _user_message_ids.pop(session_id, None)
-    _allocator.forget_session(session_id)
 
 
 # 2026-10-01 小欧 解 [1] E8 连带 YAGNI 清理: ExecutionStepsUpdate(Pydantic 请求体) 与
@@ -183,99 +191,17 @@ def forget_session_message_ids(session_id: str) -> None:
 #   故 derive_status_from_steps 的兜底语义亦无残留消费者。
 
 
-class AssistantMessageIdAllocator:
-    """拷贝自 conversation.py 第34-79行
-
-    【id 枢纽架构(北京老陈 2026-08-23 定调: chat_tasks 是任务中心表)】— 小欧 2026-08-23
-      用户侧 id: chat_user_message AUTOINCREMENT 原生自增分配(锚迁移, 本表=回放权威源);
-                 登记于 chat_tasks.user_message_id。
-      助手侧 id(ai_message_id): 本 allocator 分配, 占用检查并查 chat_user_message.id ∪
-                 chat_tasks.ai_message_id 两表——两 id 同属一个历史序列, 必须防撞号
-                 (前端同一消息列表渲染 user/assistant 两种气泡 id 不可重号);
-                 chat_tasks.ai_message_id 是中心登记点(orchestrator eager 创建任务即写入)。
-      引用方: chat_task_steps.ai_message_id/user_message_id(步骤挂靠)、chat_messages(纯镜像行同id,
-              北京老陈 2026-08-23 裁定"写保留当空气", 系统零依赖、外键已解除)。
-      chat_tasks 持双 id 登记+任务全部终态, 所有回放/统计以它为枢纽——中心地位不动。"""
-
-    def __init__(self, user_ids: Dict[str, int], lock: threading.Lock):
-        self._user_ids = user_ids
-        self._assistant_ids: Dict[str, int] = {}
-        self._lock = lock
-
-    def allocate(self, session_id: str, conn: Connection,
-                 always_new: bool = False) -> Tuple[int, bool]:
-        """拷贝自 conversation.py 第48-79行
-
-        10规范(SRP): 只负责分配assistant消息ID
-        10规范(DRY): 复用conn执行查询
-        修复: 并发场景下检查session_id归属+递增寻空位
-        # 修复: 锁范围扩大覆盖 SELECT+dict写,消除竞态 — 小欧 2026-07-18
-        2026-08-17 小健 三堂会审-AM2/STORAGE_1修复: 增 always_new 参数——
-          always_new=True(任务级 allocate_and_insert_message)时, 若 expected 命中已存在的
-          assistant 行(多为 user 未 track/未落库导致 expected 回落为1), 递增寻新空位而非复用,
-          使每个任务独立成行(杜绝内容覆盖/虚高); 默认 False 保留 legacy save_execution_steps 复用语义
-        """
-        with self._lock:
-            user_id = self._user_ids.get(session_id)
-            cached_aid = self._assistant_ids.get(session_id)  # D-2读缓存(2026-09-20 小欧): 缓存列优先当起点,
-            #   复用上轮分配结果, 免全局撞号校验时递增寻空位(原仅track入口, 缓存只写不读, 分配准确性受损)
-            if cached_aid is not None:
-                expected = cached_aid + 1
-            elif user_id is not None:
-                expected = user_id + 1
-            else:
-                c = conn.cursor()
-                c.execute(
-                    "SELECT id FROM chat_user_message WHERE session_id=? ORDER BY id DESC LIMIT 1",
-                    (session_id,),
-                )
-                row = c.fetchone()
-                expected = (row["id"] + 1) if row else 1
-
-            c = conn.cursor()
-            for _ in range(10):
-                # 北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 占用检查改查 chat_user_message(id) + chat_tasks(ai_message_id)
-                c.execute(
-                    "SELECT 'user' AS role, session_id FROM chat_user_message WHERE id=? "
-                    "UNION ALL "
-                    "SELECT 'assistant' AS role, session_id FROM chat_tasks WHERE ai_message_id=?",
-                    (expected, expected),
-                )
-                existing = c.fetchone()
-                if existing is None:
-                    break
-                if existing["role"] == "assistant" and existing["session_id"] == session_id:
-                    if not always_new:
-                        return expected, False
-                    # always_new: 跳过本会话已占用的行, 递增寻新空位(每任务独立成行)
-                    logger.warning(f"[allocator] {session_id} id={expected} 本会话行已占用, always_new 递增寻空位(防复用/覆盖)")
-                    expected += 1
-                    continue
-                logger.warning(f"[allocator] {session_id} id={expected} 被占用(role={existing['role']}, sid={existing['session_id']}), 递增寻空位")
-                expected += 1
-            else:
-                # 全局最大 id = chat_user_message.id 与 chat_tasks.ai_message_id 的并集中最大者
-                c.execute(
-                    "SELECT MAX(m) AS m FROM ("
-                    "SELECT MAX(id) AS m FROM chat_user_message "
-                    "UNION ALL SELECT MAX(ai_message_id) AS m FROM chat_tasks)"
-                )
-                max_row = c.fetchone()
-                expected = (max_row["m"] + 1) if max_row and max_row["m"] is not None else 1
-
-            self._assistant_ids[session_id] = expected
-        return expected, True
-
-    def forget_session(self, session_id: str) -> None:
-        """删除会话时清理本 allocator 的内存缓存(_user_ids 与 _assistant_ids) — 小欧 2026-09-20 D-2修复:
-        防 cache 无限驻留 + 陈旧值复活(与会话同生命周期, 会话删除即应失效)"""
-        with self._lock:
-            self._user_ids.pop(session_id, None)
-            self._assistant_ids.pop(session_id, None)
-
-
-# 模块级单例:AssistantMessageIdAllocator复用实例(避免每次调用新建,缓存失效)
-_allocator = AssistantMessageIdAllocator(_user_message_ids, _message_ids_lock)
+# 【id 枢纽架构(北京老陈 2026-08-23 定调: chat_tasks 是任务中心表)】— 小欧 2026-08-23
+#   user id 登记于 chat_tasks.user_message_id, 助手 id 登记于 chat_tasks.ai_message_id,
+#   全部回放/统计以 chat_tasks 为枢纽——中心地位不动。两 id 共用 id_sequence 一个序列,
+#   因前端同一消息列表渲染 user/assistant 两种气泡, id 不可重号(见 next_message_id)。
+# 2026-10-05 小欧 ③b: AssistantMessageIdAllocator 整类退役(连同 _assistant_ids 缓存、
+#   threading.Lock、10次线性探测、always_new 分支、模块级 _allocator 单例)。
+#   发号改由 next_message_id 走 id_sequence, 撞号在构造上不可能, 故 ③c 补的耗尽告警随之消失。
+#   _user_message_ids 保留: 仍服务 get_user_message_id / stream_orchestrator 兜底, 与分配机制无关。
+def allocate_assistant_message_id(conn: Connection) -> int:
+    """分配助手消息 id(单一序列, 恒为新号, 天然满足"每任务独立成行")"""
+    return next_message_id(conn)
 
 
 def ensure_session_exists(session_id: str, conn: Connection) -> None:
@@ -307,6 +233,7 @@ def touch_session_updated_at(conn: Connection, session_id: str) -> None:
 def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Optional[str] = None,
                                 user_message_id: Optional[int] = None) -> int:
     """预分配 assistant 消息ID + 插入空白行 — 小欧 2026-07-14
+    ③b: 改调 allocate_assistant_message_id(单一序列), is_new 恒真故该返回位随之退役 — 小欧 2026-10-05
     2026-08-13 - 小欧 - 三堂会审修复#1: local_time 提前到 if is_new 之外赋值,
       消除 is_new=False(同session二次任务, agent_runner路径)时 UPDATE 引用未绑定变量 NameError
     2026-08-16 - 小欧 - S2②-2: chat_messages 补 task_id 列（任务级贯通，10.1.7②-2）
@@ -315,7 +242,7 @@ def allocate_and_insert_message(conn: Connection, session_id: str, task_id: Opti
       is_new 恒 True 后每次+1 正确, 且各任务独立行 -> load_execution_steps 不再混任务步骤(STORAGE_2)
     2026-08-19 - 小欧 - v2.0: 加 user_message_id 参数，INSERT 同步写入 assistant→user 互指"""
     ensure_session_exists(session_id, conn)  # 修复: 写入前确保会话存在, 消除孤儿消息 — 小欧 2026-07-18
-    ai_message_id, is_new = _allocator.allocate(session_id, conn, always_new=True)
+    ai_message_id = allocate_assistant_message_id(conn)
     # 镜像写点 W3(INSERT chat_messages 空白 assistant 行) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
     touch_session_updated_at(conn, session_id)
     return ai_message_id
@@ -331,6 +258,9 @@ _ALARM_STEP_STR_LEN: int = 100000
 #   _truncate_tool_result_strings 三函数, 换 _warn_oversize_step_dict 告警扫描 —
 #   step_json.tool_result 数组是历史回放唯一权威数据源(5.1 铁律), storage 二次截断=砍坏回放源;
 #   工具层自截断(5.7)为唯一合法截断层, 文件A 全量落盘不截断
+# 2026-10-05 - 小欧 - ③c: allocator 探测10次耗尽退化全局MAX(m)+1 的 for-else 分支补 ERROR 日志(此前无任何日志, 无法确证是否发生)
+# 2026-10-05 - 小欧 - ③b: 新增 next_message_id(发号自 id_sequence); user/assistant 两侧 id 收口同一序列;
+#   AssistantMessageIdAllocator 整类退役(连同 _assistant_ids 缓存/threading.Lock/10次探测/always_new/_allocator 单例)
 def _warn_oversize_step_dict(step_dict, tag: str = "") -> None:
     """递归统计超限(列表>1000项/字符串>10万字符)仅 error 告警 — 安全网不砍数据 — 小欧 2026-08-23"""
     if isinstance(step_dict, dict):
@@ -753,16 +683,18 @@ def insert_user_message(
     client_os: str = None, browser: str = None,
     device: str = None, network: str = None,
 ) -> int:
-    """新建 chat_user_message 行（用户发消息时落库），返回本表原生自增 id。
+    """新建 chat_user_message 行（用户发消息时落库），返回本表 id。
+    ③b: id 改由 id_sequence 显式指定(与 assistant 侧同一序列, 前端 user/assistant 气泡 id 不可重号);
+    原依赖本表 AUTOINCREMENT 独立计数, 与 assistant 侧只能靠探测防撞 — 小欧 2026-10-05
     锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): id 分配锚由
     chat_messages.lastrowid 显式指定 → 本表 AUTOINCREMENT 原生自增, user_message_id 入参退役;
     原 INSERT OR REPLACE 随显式 id 一并退役——自增 id 无撞键场景, 退化为普通 INSERT — 小欧 2026-08-23"""
     now = get_local_iso_timestamp()
     cursor = conn.execute(
         """INSERT INTO chat_user_message
-           (session_id, content, client_os, browser, device, network, created_at)
-           VALUES (?,?,?,?,?,?,?)""",
-        (session_id, content, client_os, browser, device, network, now),
+           (id, session_id, content, client_os, browser, device, network, created_at)
+           VALUES (?,?,?,?,?,?,?,?)""",
+        (next_message_id(conn), session_id, content, client_os, browser, device, network, now),
     )
     return cursor.lastrowid
 

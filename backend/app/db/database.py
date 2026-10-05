@@ -47,6 +47,7 @@ Author: 小沈 - 2026-05-28
 小健 2026-06-18 删除向后兼容迁移代码(db_migrator.py)
 # 2026-09-29 20:42:06 小欧 - atxn 增 retry_locked(默认0=旧调用逐字不变): 补 body 执行期 locked 有限重试(退避0.5/1/2s),
 #   仅捕 sqlite3.OperationalError 且含 "locked", 非锁错误/耗尽一律原样抛出 — 根治并发起跑事务体撞写锁 — 小欧-2026-09-29
+# 2026-10-06 - 小欧 - ①: get_conn 增就绪自证(判据表缺失即就地幂等建表, 复用当前连接避免递归, 失败仅告警不阻断)
 """
 
 import asyncio
@@ -62,6 +63,15 @@ from app.db.db_initializer import (
     init_chat_db, init_operations_db, init_task_tracker_db, init_timers_db,  # 12.2-Q7: 加 init_timers_db — 小欧 2026-08-21
 )
 from app.monitoring.storage import init_monitoring_db  # 11.2-C 监控独立库 init — 小欧 2026-08-20
+
+# db_name → 建表函数(① 资源层自证就绪用; 与 _DB_READY_TABLE 同键) — 小欧 2026-10-06
+_INIT_BY_DB = {
+    "chat": init_chat_db,
+    "operations": init_operations_db,
+    "timers": init_timers_db,
+    "task_tracker": init_task_tracker_db,
+    "monitoring": init_monitoring_db,
+}
 
 
 class _ParamSafeConnection:
@@ -120,6 +130,15 @@ _DB_FILES = {
     "timers": "timers.db",   # 12.2-Q7: 定时器独立库(SRP一库一域) — 小欧 2026-08-21
     "task_tracker": "task_tracker.db",
     "monitoring": "monitoring.db",   # 11.2-C 监控独立库 — 小欧 2026-08-20
+}
+
+# 各库就绪判据表(①): 与 _DB_FILES 一一对应, get_conn 见缺即就地幂等建表 — 小欧 2026-10-06
+_DB_READY_TABLE = {
+    "chat": "chat_sessions",
+    "operations": "file_operations",
+    "timers": "timers",
+    "task_tracker": "tasks",
+    "monitoring": "http_requests",
 }
 
 
@@ -214,6 +233,25 @@ class DatabaseManager:
                 delay = 0.5 * (2 ** attempt)  # 0.5, 1, 2 (max_retries=3, 总~3.5s, 不阻塞事件循环过长) — 小欧 2026-07-23
                 logger.warning(f"[db] {db_name} 连接locked, 第{attempt+1}/{max_retries}次重试, 等待{delay:.1f}s")
                 _time.sleep(delay)
+
+        # ① 资源层自证就绪: 判据表缺失即就地幂等建表(健康探测实测空目录只建出4KB空壳库,
+        #   全部写入报 no such table; 建表原先只挂在 app 启动 db.init(), 任何不经 lifespan 的
+        #   上下文——单测/裸脚本/worker——都拿到空库)。init_* 复用 db_initializer 既幂等实现。
+        #   复用当前连接执行(不走 get_conn 避免递归), 失败仅告警不阻断: 调用方的真实操作
+        #   自会暴露问题, 此处绝不把"建表失败"变成新的失败源 — 小欧 2026-10-06
+        _ready = _DB_READY_TABLE.get(db_name)
+        if _ready and conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (_ready,)
+        ).fetchone() is None:
+            try:
+                @contextmanager
+                def _reuse(_db_name=None):
+                    yield _ParamSafeConnection(conn)
+                    conn.commit()
+                _INIT_BY_DB.get(db_name)(_reuse)
+                logger.info(f"[db] {db_name} 缺判据表 {_ready}, 已就地初始化 schema")
+            except Exception as _init_e:
+                logger.warning(f"[db] {db_name} 就地初始化 schema 失败(不阻断): {_init_e}")
 
         try:
             yield _ParamSafeConnection(conn)  # 小欧 2026-07-18: 参数安全闸门包装, 校验SQL参数类型(非基元类型抛清晰错误)

@@ -143,7 +143,7 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from app.logger import logger
+from app.logger import logger, log_recovered  # ② 已自愈档 — 小欧 2026-10-06
 from app.tools.tool_constants import DEFAULT_TIMEOUT_SEC, SHELL_POOL_IDLE_TIMEOUT, SUBPROCESS_TIMEOUT_SHORT
 
 
@@ -501,7 +501,8 @@ class PersistentShell:
             # v2.7 BugFix(小欧 2026-08-06): 握手用 _READY_PROBE_TIMEOUT(10s), 避免冷启动>3s被误杀
             # [卡死场景C8] 半死进程假活防护: 冷启动慢/杀软/慢盘不误杀, 真半死则销毁重建 — 小欧 2026-08-06
             if not self._probe(env, timeout=_READY_PROBE_TIMEOUT):
-                logger.error("[PersistentShell] 就绪握手失败，进程未就绪")
+                # ② 补偿已完整: 半死进程被 _close 销毁并由调用方重建, 无泄漏无损坏 → RECOVERED(②)
+                log_recovered(logger, "[PersistentShell] 就绪握手失败，进程未就绪(已销毁待重建)")
                 self._close()
                 return False
             logger.info(f"[PersistentShell] 进程就绪 (pid={self._proc.pid}, stderr={self._stderr_path}, cwd={self._cwd}, shell_type={self._shell_type})")

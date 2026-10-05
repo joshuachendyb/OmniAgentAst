@@ -9,11 +9,13 @@
 # 编辑历史:
 # 2026-07-23 小欧 - 新增公共函数 log_and_print(): 将 logger.info(msg)+print(msg) 双输出模式收口到统一函数, 解决 console handler 仅 WARNING 以上级别时 info 日志无法上控制台的问题; 导出至 __all__
 # 2026-08-30 小欧 - 控制台镜像离线化(根治 case09 挂起): log_and_print 的 print(msg)→console_put(msg), 事件循环线程零同步 stdout 写; stdout 阻塞时只丢控制台镜像, logger.info 文件日志始终完整
+# 2026-10-06 小欧 - ② 导出 RECOVERED/log_recovered(已自愈档 25) 并入 __all__
 
 from app.logger.config import SafeRotatingFileHandler, LogConfig, LOG_DIR
 from app.logger.shared_handler import setup_logger
 from app.logger.api_logger import APILogger
 from app.logger.console_writer import console_put  # 小欧 2026-08-30 控制台镜像离线化(根治 case09 挂起)
+from app.logger.levels import RECOVERED, log_recovered  # ② 已自愈档(25) — 小欧 2026-10-06
 
 api_logger = APILogger()
 logger = setup_logger(__name__)
@@ -41,5 +43,7 @@ __all__ = [
     "logger",
     "api_logger",
     "log_and_print",
+    "RECOVERED",
+    "log_recovered",
 ]
 
