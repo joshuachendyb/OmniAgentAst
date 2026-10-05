@@ -18,6 +18,8 @@ execute_sql — 执行写操作SQL
 【2026-08-11 小欧】三堂会审复核落地: 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
    外层SAVEPOINT/ROLLBACK/RELEASE失败(连接异常)不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果, 增强不退化
 【2026-08-13 小欧】职责拆分: sql_error_hint/hint_for_data_error 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
+【2026-10-05 小欧】单通道去数字化/去冗余(北京老陈裁定): error/warning summary 去 `{detail}`系, success
+   去 `影响{affected_rows}行`, 统一 `执行{_target}，成功/失败`; affected_rows 在 metrics 统计段呈现
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -99,7 +101,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
-            "summary": f"执行{_target}，失败: {detail}",
+            "summary": f"执行{_target}，失败",
             "action": {"tool": "execute_sql", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "执行失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
@@ -115,14 +117,14 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
             detail_msg = f"检测到危险SQL操作（{sql}），已回滚"
             hint_msg = "建议使用 dry_run=true 先验证"
         return {
-            "summary": f"执行{_target}，{detail_msg}",
+            "summary": f"执行{_target}，成功",
             "action": {"tool": "execute_sql", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "warning", "message": msg, "code": "WARNING_DB_SAFETY", "detail": detail_msg, "hint": hint_msg},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }
     return {
-        "summary": f"执行{_target}，成功: 影响{affected_rows}行",
+        "summary": f"执行{_target}，成功",
         "action": {"tool": "execute_sql", "tool_zh": "执行", "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

@@ -12,6 +12,8 @@
 # 2026-07-31 - 小欧 - CRITICAL: WITH CTE体绕过只读检测修复。原代码跳过CTE括号体仅检查外层SELECT, 导致 `WITH malicious AS (DELETE FROM users) SELECT * FROM malicious` 通过检测。补充CTE体内容的DML/DDL关键字扫描 | py_compile ✓
 # 2026-07-31 - 小欧 - 只读安全增强(Bug②/⑤/⑲): PRAGMA写操作检测(赋值=或非只读白名单拒绝); 检测前剥离注释与字符串字面量(修复"-- SELECT"前导注释误拒、'a;b'字符串分号误判、SET note='WHERE'漏判); timeout None/<=0 防御
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): error summary 去 `{detail}`, success summary
+#   去行数/列预览, 统一 `查询{_target}，成功/失败`; 行数/列预览在 metrics 统计段呈现(通用渲染)
 """
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -74,7 +76,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
-            "summary": f"查询{_target}，失败: {detail}",
+            "summary": f"查询{_target}，失败",
             "action": {"tool": "query_sql", "tool_zh": "查询", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "查询失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
@@ -85,7 +87,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     if len(columns) > OBS_QUERY_SQL_PREVIEW_COLUMNS:
         col_text += "..."
     return {
-        "summary": f"查询{_target}，成功: {row_count}行, 列: {col_text}",
+        "summary": f"查询{_target}，成功",
         "action": {"tool": "query_sql", "tool_zh": "查询", "params": _act_params},
         "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

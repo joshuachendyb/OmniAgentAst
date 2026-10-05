@@ -12,6 +12,8 @@
 # 2026-07-26 - 小欧 - OOD重构:数据加载_load_data_to_df抽取至data_loader.load_data_to_df公用函数(analyze_data/filter_data共享)
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): error summary 去 `{detail}`, success summary
+#   去筛选行数, 统一 `筛选数据{_target}，成功/失败`; 两数在 metrics 统计段呈现(通用渲染)
 """
 filter_data  按条件筛选/过滤数据
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -49,14 +51,14 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
     _target = path or "数据集"
     if exec_code == "error":
         return {
-            "summary": f"筛选数据{_target}，失败: {detail}",
+            "summary": f"筛选数据{_target}，失败",
             "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
             "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"筛选数据{_target}，成功: 从{original_count}行筛选出{filtered_count}行",
+        "summary": f"筛选数据{_target}，成功",
         "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
         "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
