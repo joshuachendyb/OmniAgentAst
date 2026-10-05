@@ -71,6 +71,7 @@
 # 2026-09-23 小欧 - stream_options 开关化: 删 _D_STREAM_OPTIONS 常量直读, 改读 tuning.llm.stream_options.include_usage 布尔组 {"include_usage": bool}（textarea 改 bool 开关）
 # 2026-09-23 小欧 - wiring假保存修复: request_stream 流总硬超时 3 处改读 tuning.llm_net.stream_total_timeout 兜底常量（此前设置页可改实际不生效）
 # 2026-09-25 小欧 - ConnectionScope连接池统一所有者: ①新增 ensure_client_pool()(建池+relinquish移交+返回client); ②__init__/snapshot 增 client_lease 参数(与 shared_client 成对), close() 改三分支(共享归还lease/独占aclose/单例no-op), 删 _owns_client 跨层判据; ③删 snap._is_snapshot 死判据(runner 无条件 close); ④删除零调用的 reset_sdk(裸置None泄漏独占池, YAGNI)
+# 2026-10-05 小欧 - 修复5fe9ecc76引入的取消倒退(用户实测: 取消后非流式/流式L1退避睡眠不可中断, agent空转3+9+27+81≈120s致SSE断流104, 取消final推不出去)。改动: ①新增_cancel_event + _cancel_signal()(绕过__init__的测试兜底); ②cancel()置位该事件; ③两处L1退避 sleep(非流式:342/流式:532)改为 wait_for(_cancel_signal().wait(), timeout) 可中断式等待, 超时继续重试, 被唤醒立即返取消; ④两处retry循环顶部+except块入口均先查self._cancelled再决定退避, 取消引发的连接错误不再当"可重试"退避; ⑤request/request_stream入口复位_cancel_event。验证: tests/test_llm_retry_visibility.py 10项+tests/test_7_02_pause_stops_llm.py+test_rate_limit_llm_stream_fix.py 15项全过; 取消在退避窗口内可终止生成器(实测即返取消chunk) — 小欧-2026-10-05
 """
 LLM 核心模块 — BaseAIService
 
@@ -165,6 +166,7 @@ class BaseAIService:
         else:
             self.max_retries = int(get_config().get("tuning.llm.stream_max_retries", _D_STREAM_MAX_RETRIES))
         self._cancelled = False
+        self._cancel_event = asyncio.Event()  # 2026-10-05 小欧: 取消唤醒信号。退避用 _cancel_event 中断式等待而非裸 sleep(见 5fe9ecc76 倒退修复)
         self._current_response: Optional[httpx.Response] = None
         self._stop_check: Optional[Callable] = None
         self._stop_checks: list = []  # 小欧 2026-09-20: stop_check 累积去重列表, 防多任务共享单例时后注册任务覆盖前者(串号) — 小欧-2026-09-20
@@ -229,6 +231,7 @@ class BaseAIService:
     async def cancel(self):
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.llm_model.model}")
         self._cancelled = True
+        self._cancel_signal().set()  # 2026-10-05 小欧: 唤醒正在退避中的 retry 睡眠, 让 cancel 立即生效(防粗暴先关连接后才空转5次退避)
         # 小欧 2026-09-20: 优先委托 SDK 直达HTTP层强关(LLMClient.cancel), SDK 无 cancel 时回落关闭镜像响应
         _sdk_cancel = getattr(self._llm_sdk, "cancel", None)
         if _sdk_cancel is not None and callable(_sdk_cancel):
@@ -254,6 +257,16 @@ class BaseAIService:
         # 小欧 2026-09-20: 只清 _current_response 镜像, 绝不清 _cancelled ——
         # 取消是终态语义, reset_cancel 不得吃掉取消标志(病根: fallback 前清取消致已取消任务继续降级请求)
         self._current_response = None
+
+    def _cancel_signal(self) -> asyncio.Event:
+        """2026-10-05 小欧: 取消唤醒信号。__init__ 时创建, 但测试中 BaseAIService 可用
+        __new__ 绕过 __init__(见 tests/test_llm_retry_visibility.py::_make_service),
+        故这里容错兜底创建, 避免 AttributeError。"""
+        ev = getattr(self, "_cancel_event", None)
+        if ev is None:
+            ev = asyncio.Event()
+            self._cancel_event = ev
+        return ev
 
     def set_stop_check(self, check_fn: Callable):
         """设置停止检查回调 — 由调用方注入，消除llm→task反向依赖 — 小沈 2026-06-17
@@ -300,8 +313,15 @@ class BaseAIService:
         对外契约不变: 仍返回 ChatResponse(重试用尽后 error=str(e)), 不改为抛异常。
         """
         self._ensure_client()
+        if self._cancelled:  # 2026-10-05 小欧: 取消是终态, 新请求前已置取消则直接终止(与流式同口径)
+            logger.info("[request] 已标记cancelled, 跳过非流式请求")
+            return ChatResponse(content="", chat_model=self.llm_model, error="cancelled")
+        self._cancel_signal().clear()  # 2026-10-05 小欧: 新非流式调用开始, 复位唤醒信号
         retry_count = 0
         while True:
+            if self._cancelled:  # 2026-10-05 小欧: 顶部短路(与流式同口径)
+                logger.info("[request] 取消检查: 已标记cancelled, 终止重试循环")
+                return ChatResponse(content="", chat_model=self.llm_model, error="cancelled")
             try:
                 response = await self._llm_sdk.request(
                     messages=messages,
@@ -332,6 +352,9 @@ class BaseAIService:
                     reasoning=reasoning,
                 )
             except Exception as e:
+                if self._cancelled:  # 2026-10-05 小欧: cancel引发的错误直接返取消, 不当可重试退避(5fe9ecc76倒退修复)
+                    logger.info("[request] 取消触发的错误即返取消, 不退避重试")
+                    return ChatResponse(content="", chat_model=self.llm_model, error="cancelled")
                 if self._should_retry(e) and retry_count < self.max_retries:
                     retry_count += 1
                     wait_time = self._retry_wait_seconds(e, retry_count)
@@ -339,7 +362,14 @@ class BaseAIService:
                         f"[Retry][L1] 非流式重试 {retry_count}/{self.max_retries}, "
                         f"等待{wait_time}秒, 错误: [{type(e).__name__}] {str(e) or type(e).__name__}"
                     )
-                    await asyncio.sleep(wait_time)
+                    # 2026-10-05 小欧: 退避改为可被 cancel 唤醒的等待(与流式同口径, 5fe9ecc76倒退修复)
+                    try:
+                        await asyncio.wait_for(self._cancel_signal().wait(), timeout=wait_time)
+                    except asyncio.TimeoutError:
+                        pass  # 退避时长到了, 继续重试
+                    if self._cancelled:
+                        logger.info("[request] 退避期间收到取消, 终止重试")
+                        return ChatResponse(content="", chat_model=self.llm_model, error="cancelled")
                     continue
                 return ChatResponse(content="", chat_model=self.llm_model, error=str(e))
 
@@ -355,6 +385,7 @@ class BaseAIService:
         if self._cancelled:
             logger.info("[request_stream] 已标记cancelled, 跳过流式请求")
             return
+        self._cancel_signal().clear()  # 2026-10-05 小欧: 新流式调用开始, 复位唤醒信号(上次的cancel是给旧任务的)
         self._ensure_client()
 
         retry_count = 0
@@ -369,6 +400,10 @@ class BaseAIService:
         # Agent 层感知不到这里重试了几次。
         # retry_count=0,1,2,3 共4次机会，每次超时递增20s。
         while retry_count <= max_retries:
+            if self._cancelled:  # 2026-10-05 小欧: 重试循环顶部短路, 取消不再继续发下一次请求(5fe9ecc76倒退修复)
+                logger.info("[request_stream] 取消检查: 已标记cancelled, 终止重试循环")
+                yield create_cancelled_chunk(self.llm_model)
+                return
             effective_timeout = self.timeout + (retry_count + 1) * 20
             try:
                 tool_call_accumulator = {}
@@ -516,6 +551,10 @@ class BaseAIService:
             except LLMResponseError:
                 raise  # 穿透给call_llm_with_fallback重试/降级 — 2026-06-26
             except Exception as e:
+                if self._cancelled:  # 2026-10-05 小欧: cancel引发的连接错误不得当"可重试"退避(5fe9ecc76倒退修复)
+                    logger.info("[request_stream] 取消触发的错误即返取消, 不退避重试")
+                    yield create_cancelled_chunk(self.llm_model)
+                    return
                 if self._should_retry(e) and retry_count < max_retries:
                     retry_count += 1
                     wait_time = self._retry_wait_seconds(e, retry_count)   # 2026-09-30 小欧: 抽为共用静态方法(DRY)
@@ -529,7 +568,15 @@ class BaseAIService:
                         content="", chunk_model=self.llm_model, is_done=False,
                         retry_notice=str(e) or type(e).__name__, retry_attempt=retry_count, retry_total=max_retries,
                     )
-                    await asyncio.sleep(wait_time)
+                    # 2026-10-05 小欧: 退避改为可被 cancel 唤醒的等待 —— 取消立即唤醒, 不再空转满退避时长(5fe9ecc76倒退修复)
+                    try:
+                        await asyncio.wait_for(self._cancel_signal().wait(), timeout=wait_time)
+                    except asyncio.TimeoutError:
+                        pass  # 退避时长到了, 继续重试
+                    if self._cancelled:
+                        logger.info("[request_stream] 退避期间收到取消, 终止重试")
+                        yield create_cancelled_chunk(self.llm_model)
+                        return
                     continue
                 else:
                     # 检出 429 重试耗尽 → 明确"配额/限流"提示, 非泛化"服务器错误" — 小欧 2026-07-17
