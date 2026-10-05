@@ -37,6 +37,10 @@ F1: read — 读取文本文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-02 - 小欧 - 注册名归位: action.tool "read"→"read"(3处), 与新注册名同源
+# 2026-10-05 - 小欧 - 信息顺序整改(北京老陈裁定): summary/message 信息次序统一为
+#   「路径 → 成功 → 用户参数(第N行起/取M行/尾部K行/编码) → 读取量(N/M行) → 字节」, 原次序把用户参数排到末尾;
+#   _pi 逐条累加前导逗号改分段列表 join 且不再自带前导逗号(靠 _ps 补分隔空格), _ps 空段省略防双空格;
+#   status.message 同步改「第start-end行,共total行」前置于参数段, warning 与 success 两分支同改保持一致
 
 import time as _time_mod
 from pathlib import Path
@@ -73,15 +77,21 @@ def _build_read_text_file_llm_data(
         _act_params["tail"] = user_tail
     if user_encoding:
         _act_params["encoding"] = user_encoding
-    _pi = ""
+    # 2026-10-05 小欧 - 信息顺序整改(北京老陈裁定): _pi 由"拼在结果量尾部"改为"分段列表 join 后前置",
+    #   呈现次序统一为「路径 → 成功 → 用户参数(行起/取N行/尾部N行/编码) → 读取量(行/总行) → 字节」;
+    #   先说读哪一段(定位信息), 再说读回多少(结果量)。原实现逐条 if 累加前导逗号, 改 join 后无多余分隔符。
+    _seg: list = []
     if user_offset is not None:
-        _pi += f"，第{user_offset}行起"
+        _seg.append(f"第{user_offset}行起")
     if user_limit is not None:
-        _pi += f"，取{user_limit}行"
+        _seg.append(f"取{user_limit}行")
     if user_tail is not None:
-        _pi += f"，尾部{user_tail}行"
+        _seg.append(f"尾部{user_tail}行")
     if encoding_name:
-        _pi += f"，编码{encoding_name}"
+        _seg.append(f"编码{encoding_name}")
+    _pi = "，".join(_seg) if _seg else ""
+    # 2026-10-05 小欧 - 参数段前置 + 空段不产生双空格: _pi 为空(无 offset/limit/tail/编码)时省略该段
+    _ps = f"{_pi} " if _pi else ""
     if exec_code == "error":
         return {
             "summary": f"读取文件{file_path}，失败",
@@ -92,7 +102,7 @@ def _build_read_text_file_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"读取文件{file_path}，成功,提示说明: {line_count}/{total_lines}行，{file_size}字节{_pi}",
+            "summary": f"读取文件{file_path}，成功,提示说明: {_ps}{line_count}/{total_lines}行，{file_size}字节",
             "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
@@ -110,15 +120,13 @@ def _build_read_text_file_llm_data(
         msg = "已无更多内容，当前读取结果为空"
         hint_text = "请调整offset/limit参数"
     elif line_count < total_lines:
-        enc = f",编码:{encoding_name}" if encoding_name else ""
-        msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
+        msg = f"读取成功:{_ps}第{start_line}-{end_line}行,共{total_lines}行"
         hint_text = "可使用offset+limit继续读取后续内容"
     else:
-        enc = f",编码:{encoding_name}" if encoding_name else ""
-        msg = f"读取成功:第{start_line}-{end_line}行,共{total_lines}行{enc}"
+        msg = f"读取成功:{_ps}第{start_line}-{end_line}行,共{total_lines}行"
         hint_text = ""
     return {
-        "summary": f"读取文件{file_path}，成功: {line_count}/{total_lines}行，{file_size}字节{_pi}",
+        "summary": f"读取文件{file_path}，成功: {_ps}{line_count}/{total_lines}行，{file_size}字节",
         "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,
