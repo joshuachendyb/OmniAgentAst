@@ -181,6 +181,7 @@
 #   每轮迭代顶调用。_enqueue_step 只入队即返回, 进程被杀则队列内帧全丢(实测 task_interrupted 样本
 #   chat_task_steps 0 行而 Journal 事件齐全)。每轮 join 一次, 被打断最多丢本轮(无工具副作用)。
 # 2026-10-03 - 小欧 - refactor: SSE 不落库集合去重(删本地 _SSE_ONLY_TYPES 硬编码, 改 import agent_telemetry.SSE_ONLY_TYPES 唯一真源; 转发表改由 ALL_STEP_TYPES 推导。文档[5] 5.2 D4)
+# 2026-10-05 小欧 - _flush_steps: 消费者死亡即时止损(原只等 join 120s 超时); file_persist 落库队列入队改工厂化(杜绝 never awaited 泄漏告警)。
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -436,7 +437,23 @@ async def run_agent_in_background(
         超时兜底: 万一消费者不可用(已被 _drain_steps 异常护栏排除), 宁可带未落库帧进入终态,
         也不得让 finally 永久挂起致 done 不置位、SSE 挂死。"""
         try:
-            await asyncio.wait_for(_step_queue.join(), timeout=_STEP_FLUSH_TIMEOUT_SEC)
+            # 2026-10-05 小欧 - 消费者死亡即时止损: 原只 wait_for(join), 消费者被 cancel
+            #   退出后 join 永久挂起直至 120s 超时; 改 wait(join_t, drain_task) 任一完成即返回,
+            #   消费者先退即立即报残留帧而非干等 120s。
+            _join_t = asyncio.ensure_future(_step_queue.join())
+            try:
+                _done, _pending = await asyncio.wait(
+                    {_join_t, _drain_task}, return_when=asyncio.FIRST_COMPLETED,
+                    timeout=_STEP_FLUSH_TIMEOUT_SEC)
+                if not _done:
+                    raise asyncio.TimeoutError()
+                if not _join_t.done() and _drain_task.done():
+                    logger.error(
+                        f"[Runner] 落库消费者已退出(task={task_id}, 残留 {_step_queue.qsize()} 帧), 终态继续"
+                    )
+            finally:
+                if not _join_t.done():
+                    _join_t.cancel()
         except asyncio.TimeoutError:
             logger.error(
                 f"[Runner] 落库队列排空超时(task={task_id}, 残留 {_step_queue.qsize()} 帧), 继续终态"

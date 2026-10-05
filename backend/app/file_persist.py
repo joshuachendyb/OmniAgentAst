@@ -20,6 +20,8 @@
 #       action_handler 不再持有文件落盘细节; 函数体完整复制不改逻辑(闭包捕获 agent/step/exec_calls)
 #   2026-09-19 - 小欧 - exe打包frozen支持: 调试分流 frozen时改走exe所在目录/files(源码保持backend/files不变) - 小欧-2026-09-19
 #   2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（_files_root 调试分流读键同步）
+#   2026-10-05 - 小欧 - 入队工厂化: _worker_loop 消费时才实例化协程(_do/_do_footer 原为裸协程入队,
+#       worker 未消费即被 cancel 时产生 "coroutine '...' was never awaited" 泄漏告警, footer 文件收尾丢)
 # ============================================================================
 from __future__ import annotations
 
@@ -114,14 +116,17 @@ class TaskFileWriter:
 
     # ---------- 内部: 队列与磁盘 ----------
     async def _worker_loop(self) -> None:
+        # 2026-10-05 小欧 - 入队工厂化: 不在 put 时构造协程对象, 消费时才实例化
+        #   (原 _do()/_do_footer() 裸协程入队, worker 被 cancel 未消费时即
+        #   "coroutine '...' was never awaited" 告警; 工厂化则未消费项只是函数对象, 无泄漏)
         while True:
             item = await self._queue.get()
             if item is None:                       # 关闭哨兵
                 self._queue.task_done()
                 return
-            coro = item
+            factory = item
             try:
-                await coro
+                await factory()
             except Exception as e:                 # 尽力而为: 失败仅留痕(11.7.6)
                 logger.error(f"[file_persist] {self.task_id} 写盘失败(降级不阻塞): "
                              f"{type(e).__name__}: {e!r}")
@@ -143,7 +148,7 @@ class TaskFileWriter:
             elif count == "b":
                 self.b_written += 1
 
-        self._queue.put_nowait(_do())
+        self._queue.put_nowait(_do)          # 入队协程工厂, 非协程对象(见 _worker_loop 注释)
 
     # ---------- H1: header ----------
     def write_headers(self) -> None:
@@ -238,7 +243,7 @@ class TaskFileWriter:
                     f.write(sep + _dump_block(blk) + "\n")
                 # header/footer 不计入 a_written/b_written(count 语义不变)
 
-        self._queue.put_nowait(_do_footer())
+        self._queue.put_nowait(_do_footer)   # 入队协程工厂, 非协程对象(见 _worker_loop 注释)
         self._queue.put_nowait(None)               # 哨兵: 排空后 worker 自然退出
 
     async def drain(self, timeout: float = 5.0) -> None:
