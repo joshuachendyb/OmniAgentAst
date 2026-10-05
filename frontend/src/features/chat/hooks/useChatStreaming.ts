@@ -46,6 +46,7 @@
 // 编辑历史: 2026-09-30 14:30 小欧 - 删 deniedSteps 改由 deniedEntries 派生（两套口径致误判全拒）；切会话复位会话级 ref
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.12: sendMessage/executeSend 形参改名 linkEnabled: boolean
 //   并继续透传给 chatStreamStore.sendMessage — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 小欧 - assistant 占位'🤔 AI 正在思考...' 改空串(文档[9] §5.9): 该字段前端零渲染消费(死数据), 思考态视觉已由 reasoning 标题行承担 — 小欧-2026-10-05
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -562,7 +563,11 @@ export const useChatStreaming = (
       const assistantMessage: Message = {
         id: assistantId,
         role: 'assistant',
-        content: '🤔 AI 正在思考...',
+        // 2026-10-05 小欧 - 占位符归零(文档[9] §5.9): 思考态由 "思考中…" 思考行提供
+        //   (ThinkingStream 思考行, §5.5), 消息级占位不再重复展示; 空串也覆盖 final 帧
+        //   真实内容替换路径(见 useChatCallbacks.ts:311), 两种情形的占位都消失, 不再刷屏
+        //   无信息占位(此前 isStreaming=true, 提示用户有 assistant 消息位 + 光标等待图标, 属死视觉) — 小欧-2026-10-05
+        content: '',
         timestamp: new Date(),
         executionSteps: [],
         isStreaming: true,

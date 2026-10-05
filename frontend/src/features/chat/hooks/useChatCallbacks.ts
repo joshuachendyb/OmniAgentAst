@@ -64,6 +64,7 @@
 //   → useAuthorization 快照 effect(5.15 上块)。window 派发端双删之一(另一处 sseParser.ts
 //   authorization_resumed 兜底派发), 防双源复活导致弹窗重复触发 — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 切会话复位会话级 ref；onResumed 依赖改稳定 ref；返回值 memo 化
+// 编辑历史: 2026-10-05 小欧 - 占位'🤔 AI 正在思考...' 两处改空串(文档[9] §5.10); 连带修 hooks-chat-send-bug.test.ts:87 孤儿断言假绿(谓词写死旧文案恒不匹配, 改与文案解耦) — 小欧-2026-10-05
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -282,13 +283,11 @@ export const useChatCallbacks = (
             role: 'assistant',
             content:
               step.type === 'final'
-                ? (step.response as string) ||
-                  (step.content as string) ||
-                  '🤔 AI 正在思考...'
+                ? (step.response as string) || (step.content as string) || '' // 2026-10-05 小欧 - 原 '🤔 AI 正在思考...': 思考态已由思考行承担(§5.5), 重复占位刷屏 — 小欧-2026-10-05
                 : step.content ||
                   (step.type === 'error'
                     ? step.error_message || '执行出错'
-                    : '🤔 AI 正在思考...'),
+                    : ''), // 2026-10-05 小欧 - 同上; 空串也覆盖 final 帧占位(承接 §5.9 前置) — 小欧-2026-10-05
             timestamp: step.timestamp ? new Date(step.timestamp) : new Date(),
             executionSteps: [step], // 直接使用当前step
             isStreaming: step.type !== 'error' && step.type !== 'final',
