@@ -20,7 +20,11 @@
 import { sessionApi } from '../services/api/session.api';
 // 2026-09-30 小欧 - 判 404 以把 null 语义收窄为"确实不存在"（其余异常冒泡给调用方重试）
 import axios from 'axios';
-import type { Message, HistoryLoadResult } from '../types/chat';
+import type {
+  Message,
+  HistoryLoadResult,
+  SessionModelOverride,
+} from '../types/chat';
 import type { ExecutionStep } from '../types/execution';
 
 // ============================================================
@@ -30,6 +34,70 @@ import type { ExecutionStep } from '../types/execution';
 export const SESSION_EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
 export const STORAGE_KEY = 'chat_session_state';
 export const DEBUG_LOAD_FROM_API = import.meta.env.DEV || false;
+
+// ============================================================
+// 缓存 schema 单一来源(DRY: 写侧4处 + 读侧1处共用, 杜绝"漏字段"重复发生)
+// ============================================================
+
+/**
+ * 会话缓存 schema —— STORAGE_KEY 的唯一权威形状。
+ *
+ * 2026-10-05 小欧 新增(修"刷新后模型选择器误显示跟随全局"):
+ *   病根: STORAGE_KEY 有 4 个写入点(useChatPersistence.saveState /
+ *         useChatLifecycle.beforeunload / sessionStorage.saveChatState /
+ *         chatHistory.saveSessionToCache), 各写各的字段, 谁漏一个字段
+ *         刷新命中缓存时就丢一个字段。linkEnabled 已于 2026-10-03 踩过同型坑
+ *         (useChatLifecycle.ts 注释留证), 这次轮到 sessionModel:
+ *         4 处都没写 → 刷新后 loadHistoryMessages 缓存分支返回体无 sessionModel
+ *         → useChatSession.ts:207 `result.sessionModel ?? null` 置 null
+ *         → 选择器显示"跟随全局", 而后端 DB 该会话实有覆盖 → 界面与实际用型不符。
+ *   修法: 本 interface + buildChatCacheState/parseChatCacheState 收口 schema,
+ *         写侧只传字段不再各自拼对象, 读侧只走 parse。新增字段只需改这一处。
+ *   不做旧 schema 兼容(禁止 backward): 缺字段自然降级为 undefined/null,
+ *         缓存本就是同窗口短期态, 兼容层只会再制造一处"看起来有值其实没有"。
+ */
+export interface ChatCacheState {
+  sessionId: string | null;
+  sessionTitle: string;
+  timestamp: number;
+  /** 4MB 超限降级时用消息数代替全量 messages */
+  messageCount?: number;
+  messages?: Message[];
+  scrollPosition?: number;
+  isPaused?: boolean;
+  isReceiving?: boolean;
+  /** 会话 link 续聊开关(2026-10-03 补) */
+  linkEnabled?: boolean;
+  /** 乐观锁版本号(读侧回填 sessionVersion, 缺则调用方回落 1) */
+  sessionVersion?: number;
+  /**
+   * 会话级模型覆盖(L2, null=跟随全局) —— 本次修复的主角。
+   * 类型与 HistoryLoadResult.sessionModel 同源, 读侧直传不做二次映射。
+   */
+  sessionModel?: SessionModelOverride | null;
+}
+
+/**
+ * 写侧唯一出口: 构造缓存 JSON。所有写入点必须经本函数(DRY 单一来源)。
+ */
+export const buildChatCacheState = (state: ChatCacheState): string =>
+  JSON.stringify(state);
+
+/**
+ * 读侧唯一入口: 解析缓存 JSON。损坏/非法一律 null(交调用方按"无缓存"走 API),
+ * 不抛异常 —— 存储损坏不得阻断会话加载。
+ */
+export const parseChatCacheState = (
+  raw: string | null
+): ChatCacheState | null => {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as ChatCacheState;
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
 
 // ============================================================
 // 工具函数
@@ -132,29 +200,32 @@ export const loadHistoryMessages = async (
   try {
     // 先尝试从缓存读取（如果启用且不在DEBUG模式）
     if (options?.useCache !== false && !DEBUG_LOAD_FROM_API) {
-      const saved = sessionStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try {
-          const state = JSON.parse(saved);
-          const currentTime = Date.now();
-          const savedTime = state.timestamp || 0;
-          const timeDiff = currentTime - savedTime;
+      // 2026-10-05 小欧 - 读侧改走 parseChatCacheState(缓存 schema 单一来源):
+      //   原实现自己 JSON.parse 再逐字段手挑, 漏一个字段就是一次"刷新丢状态"
+      //   (sessionModel 即因此丢失 → 模型选择器误显示跟随全局)。
+      const state = parseChatCacheState(sessionStorage.getItem(STORAGE_KEY));
+      if (state) {
+        const currentTime = Date.now();
+        const savedTime = state.timestamp || 0;
+        const timeDiff = currentTime - savedTime;
 
-          // 缓存有效（5分钟内），且sessionId匹配
-          if (
-            timeDiff <= SESSION_EXPIRY_TIME &&
-            state.sessionId === sessionId &&
-            state.messages?.length > 0
-          ) {
-            return {
-              messages: state.messages,
-              title: state.sessionTitle || '会话',
-              sessionId: state.sessionId,
-              linkEnabled: state.linkEnabled === true,
-            };
-          }
-        } catch (e) {
-          console.warn('缓存解析失败:', e);
+        // 缓存有效（5分钟内），且sessionId匹配
+        if (
+          timeDiff <= SESSION_EXPIRY_TIME &&
+          state.sessionId &&
+          state.sessionId === sessionId &&
+          (state.messages?.length ?? 0) > 0
+        ) {
+          return {
+            messages: state.messages ?? [],
+            title: state.sessionTitle || '会话',
+            sessionId: state.sessionId,
+            version: state.sessionVersion,
+            // 2026-10-05 小欧 - 补回 sessionModel/sessionVersion: 缓存态与 API 态字段对齐,
+            //   否则刷新命中缓存后选择器拿不到覆盖值而显示"跟随全局"(老陈 2026-10-05 报)
+            sessionModel: state.sessionModel ?? null,
+            linkEnabled: state.linkEnabled === true,
+          };
         }
       }
     }
@@ -237,16 +308,22 @@ export const saveSessionToCache = (
   sessionId: string,
   messages: Message[],
   sessionTitle: string,
-  linkEnabled: boolean = false
+  linkEnabled: boolean = false,
+  sessionModel?: SessionModelOverride | null,
+  sessionVersion?: number
 ): void => {
   try {
+    // 2026-10-05 小欧 - 经 buildChatCacheState 写(缓存 schema 单一来源), 并补 sessionModel:
+    //   本写入点此前漏该字段, 与另 3 处同为"刷新丢状态"的病根(linkEnabled 同型事故 2026-10-03)
     sessionStorage.setItem(
       STORAGE_KEY,
-      JSON.stringify({
+      buildChatCacheState({
         sessionId,
         messages,
         sessionTitle,
         linkEnabled,
+        sessionModel: sessionModel ?? null,
+        sessionVersion,
         timestamp: Date.now(),
       })
     );

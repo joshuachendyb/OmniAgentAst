@@ -39,7 +39,11 @@
 //   消息发出后该值随 link_enabled 上送, 两端一致, 故改优先级不影响已落库场景。— 小欧-2026-10-03
 
 import { useEffect, useCallback, useRef } from 'react';
-import type { Message, HistoryLoadResult } from '../../../types/chat';
+import type {
+  Message,
+  HistoryLoadResult,
+  SessionModelOverride,
+} from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
 import type { UseChatStreamingReturn } from './useChatStreaming';
 import {
@@ -47,6 +51,11 @@ import {
   STORAGE_KEY,
   SESSION_EXPIRY_TIME,
   loadHistoryMessages,
+  // 2026-10-05 小欧 - 缓存 schema 单一来源: 写侧统一经 buildChatCacheState, 形状经 ChatCacheState,
+  //   本文件不再自建平行 interface(见下方 PersistenceState/LightState 收窄别名)
+  buildChatCacheState,
+  parseChatCacheState,
+  type ChatCacheState,
 } from '../../../utils/chatHistory';
 
 // ============================================================================
@@ -55,31 +64,25 @@ import {
 
 /**
  * 持久化状态接口
+ * 2026-10-05 小欧 - 改为 ChatCacheState 的收窄别名(缓存 schema 单一来源在 chatHistory.ts):
+ *   此前本文件另立 PersistenceState/LightState 两份平行形状, 与 utils/sessionStorage.ts 的
+ *   LightChatState 各自演化, 已实际漂移出两类故障(漏 sessionModel / 漏 linkEnabled)。
+ *   形状不再本地声明, 新增字段只需改 chatHistory.ts 一处。 — 小欧-2026-10-05
  */
-interface PersistenceState {
+type PersistenceState = ChatCacheState & {
   messages: Message[];
-  sessionId: string | null;
-  sessionTitle: string;
-  sessionVersion: number;
-  timestamp: number;
   scrollPosition: number;
   isPaused: boolean;
   isReceiving: boolean;
   linkEnabled: boolean;
-}
+  sessionVersion: number;
+};
 
 /**
  * 轻量级状态（用于大容量情况）
+ * 2026-10-05 小欧 - 降级形状同样收窄到 ChatCacheState(删平行 interface, DRY)。
  */
-interface LightState {
-  sessionId: string | null;
-  sessionTitle: string;
-  timestamp: number;
-  messageCount: number;
-  isPaused: boolean;
-  isReceiving: boolean;
-  linkEnabled: boolean;
-}
+type LightState = ChatCacheState & { messageCount: number };
 
 /**
  * useChatPersistence Hook返回值
@@ -108,7 +111,10 @@ export interface UseChatPersistenceReturn {
       title: string,
       paused: boolean,
       receiving: boolean,
-      linkEnabled: boolean
+      linkEnabled: boolean,
+      // 2026-10-05 小欧 - 补两参: 会话模型覆盖(刷新后选择器状态) 与真实版本(原硬编码 1 会撞 409)
+      sessionModel?: SessionModelOverride | null,
+      version?: number
     ) => void
   >;
 }
@@ -143,6 +149,11 @@ export const useChatPersistence = (
     messagesEndRef,
     messagesRef,
     linkEnabled,
+    // 2026-10-05 小欧 - 缓存 schema 补 sessionModel 的数据源(刷新后模型选择器状态):
+    //   本 hook 此前不解构该字段, 写出的缓存无此项 → 读侧命中缓存后选择器显示"跟随全局"。
+    //   同 linkEnabled 同型事故(2026-10-03 已修过一次, 病根同为"写入点漏字段")。 — 小欧-2026-10-05
+    sessionModelOverride,
+    sessionVersion,
   } = state;
 
   const { isReceiving, executionStepsRef } = streaming;
@@ -160,24 +171,30 @@ export const useChatPersistence = (
         title: string,
         paused: boolean,
         receiving: boolean,
-        linkEnabled: boolean
+        linkEnabled: boolean,
+        sessionModel?: SessionModelOverride | null,
+        version?: number
       ) => {
         if (sid) {
+          // 2026-10-05 小欧 - ①补 sessionModel(刷新后模型选择器状态, 本次修复主体);
+          //   ②sessionVersion 原硬编码 1, 缓存态因此永远声明"版本 1", 读侧回填会把
+          //   乐观锁版本冲成 1 → 下一次 updateSession 必撞后端 409。改用真实版本(缺失才回落 1)。
           const state: PersistenceState = {
             messages: msgs,
             sessionId: sid,
             sessionTitle: title,
-            sessionVersion: 1, // 默认版本
+            sessionVersion: version ?? 1,
             timestamp: Date.now(),
             scrollPosition:
               messagesEndRef.current?.parentElement?.scrollTop || 0,
             isPaused: paused,
             isReceiving: receiving,
             linkEnabled,
+            sessionModel: sessionModel ?? null,
           };
 
           try {
-            const stateStr = JSON.stringify(state);
+            const stateStr = buildChatCacheState(state);
             // 原有4MB检查保留
             if (stateStr.length > 4 * 1024 * 1024) {
               const lightState: LightState = {
@@ -188,8 +205,13 @@ export const useChatPersistence = (
                 isPaused: paused,
                 isReceiving: receiving,
                 linkEnabled,
+                sessionVersion: state.sessionVersion,
+                sessionModel: state.sessionModel,
               };
-              sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+              sessionStorage.setItem(
+                STORAGE_KEY,
+                buildChatCacheState(lightState)
+              );
             } else {
               sessionStorage.setItem(STORAGE_KEY, stateStr);
             }
@@ -243,7 +265,10 @@ export const useChatPersistence = (
         sessionTitle,
         isPaused,
         isReceiving,
-        linkEnabled
+        linkEnabled,
+        // 2026-10-05 小欧 - 随保存透传模型覆盖与真实版本(否则缓存丢 sessionModel, 刷新后误显示跟随全局)
+        sessionModelOverride,
+        sessionVersion
       );
     }
   }, [
@@ -255,6 +280,9 @@ export const useChatPersistence = (
     linkEnabled,
     executionStepsRef,
     saveMessagesToStorage,
+    // 2026-10-05 小欧 - 新增两个依赖: 缓存内容随之变化, 漏依赖会写进过期值
+    sessionModelOverride,
+    sessionVersion,
   ]);
 
   /**
@@ -285,12 +313,13 @@ export const useChatPersistence = (
    */
   const restoreState = useCallback(async () => {
     try {
-      const stored = sessionStorage.getItem(STORAGE_KEY);
-      if (!stored) {
+      // 2026-10-05 小欧 - 改走 parseChatCacheState(缓存 schema 单一来源): 原实现自己 JSON.parse,
+      //   与写侧/chatHistory 读侧各一套解析, 是"漏字段"能反复发生的结构原因。
+      //   解析失败/损坏一律 null(按无缓存走), 语义与 chatHistory 读侧一致。
+      const data = parseChatCacheState(sessionStorage.getItem(STORAGE_KEY));
+      if (!data) {
         return null;
       }
-
-      const data = JSON.parse(stored);
 
       // 检查时间戳，避免恢复过时的状态（超过5分钟）
       const currentTime = Date.now();
