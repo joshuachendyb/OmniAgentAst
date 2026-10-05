@@ -35,6 +35,7 @@
   2026-09-23 小欧 trim/compaction配置化: 本文件5常量保留作配置缺省兜底(TRIM_TRIGGER_RATIO/COMPACTION_BUFFER/START_TRIGGER_RATIO/START_COMPACTION_ENABLED/SUMMARY_FEED_MAX_CHARS)，消费方优先读 tuning.trim.*/tuning.compaction.* 配置；keep_tail 缺省 1（start_step 内联兜底，ASSEMBLE_KEEP_TAIL 仍为装配函数保留常量）
   2026-09-23 小欧 7死常量以备后用标注: C3/T1四阈值+Hermes Pass3两阈值+ASSEMBLE_KEEP_TAIL暂无消费方，留定义供后续接线，禁止删除
   2026-10-04 小欧 CHARS_PER_TOKEN 4→1.8→2.5(北京老陈两次定): 中文 1 字真实约 1~2 token, 4 严重低估致撞窗, 1.8 偏保守过多致提前裁剪徒丢上下文; 2.5 居中。连带: 浮点系数下两处除法改显式取整(// 返回 float)
+  2026-10-05 小欧 报告 P7: 现值 2.5 仍低估约 4.8 倍, 改值须先有 E2E 基线, 值由测试钉桩。
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健

@@ -28,10 +28,11 @@ execute_shell_command 分级安全检查 — 独立safety模块
 对齐 execute_code_safety.py 设计原则：规则数量>5、规则复杂、规则特殊 → 单独文件
 
 HIGH: blocked=True, 拒绝执行
-MEDIUM: requires_confirmation=True, 需用户确认（action_handler.py:70处理确认流程）
+MEDIUM: requires_confirmation=True —— 本函数只置位; 真确认在 handlers/safety_gate.py:149(只读白名单短路不弹窗)。
 
 — 北京老陈 2026-06-27
 — 小健 2026-06-27 迁出到独立safety文件
+— 小欧 2026-10-05 更正 MEDIUM 说明(本函数只置位, 真确认在上游 safety_gate, 删失效的 action_handler 引用)
 """
 import re
 from typing import Optional

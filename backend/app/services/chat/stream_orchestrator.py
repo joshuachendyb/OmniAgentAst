@@ -202,6 +202,7 @@
 #   落值放在本块原位(读 link 处, 已在活跃任务注入判定之后)而非建会话处 —— 注入/占位合并两条早退路径
 #   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
 # 2026-10-03 - 小欧 - 落值加命中判定: set_session_link_conn 返回 rowcount, 0 行即会话不存在, warning 留痕但本条仍按携带值处理(fail-open 用携带值, 不掐断流)。
+# 2026-10-05 - 小欧 - 报告 P3: 两处 loop_watchdog.activate() 移入 try, 激活期异常带 task_id/session_id/stream_id 链根 warning, 杜绝静默失败。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -708,8 +709,8 @@ async def stream_reader(buffer, task_id: str, after_seq: int = 0):
     """
     offset = after_seq
     heartbeat_seq = 0  # 2026-09-08 小欧: 心跳计数器(北京老陈指令心跳双写+计数, 见编辑历史) — 小欧-2026-09-08
-    loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 活跃reader注册, 心跳监管起点(首次调用启动看门狗线程)
     try:
+        loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 活跃reader注册, 心跳监管起点(首次调用启动看门狗线程)
         while True:
             loop_watchdog.beat()  # 治理观测§4.4(2026-10-04 小欧): 本轮可调度=事件循环活着; 停止调用即循环停摆, 看门狗自动dump留证
             # 锁内阶段: 只取"待转发事件/心跳动作", 绝不 yield —— 2026-09-20 小欧 E-1修复:
@@ -802,8 +803,8 @@ async def journal_reader(task_id: str, session_id: str, after_seq: int) -> Async
     终止判据唯一 = is_producer_alive 的活窗（最近事件超 60s 未更新即判已死），不设第二套总预算，
     避免"预算 < 活窗"自相矛盾而误杀健康慢任务（如 HITL 人工确认默认 120s 静默）。
     """
-    loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 重连reader同样纳管心跳监管
     try:
+        loop_watchdog.activate()  # 治理观测§4.4(2026-10-04 小欧): 重连reader同样纳管心跳监管
         cursor = max(after_seq, 0)      # 负数钳到 0：否则 expected 初值为 -1，首帧 seq=0 被误报缺口
         status = await get_persisted_task_status(task_id)          # 3.7 第 6 步：chat_tasks 权威，前置判存在性
         if status is None:

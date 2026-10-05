@@ -26,6 +26,7 @@
 # 2026-08-18 - 小欧 - 三堂会审 补全(同源防御): _safe_llm_sub / _format_llm_data / format_llm_observation 三处入口补 llm_data 顶层非 dict(str 等工具实现不规范真值) 前置归一为空 dict, 防下游 .get('…') 崩——原 (llm_data or {}) 仅防 None/空值, 真值 str 仍触发, 与 _safe_llm_sub 同源
 # 2026-10-02 - 小欧 - 注册名收敛: _truncation_msg 分流 edit→edit(按 action.tool 新注册名)
 # 2026-10-05 - 小欧 - 文档[8]第八章(信息无损优先): ①P1 metrics通用渲染(此前完全不渲染, 未拼进summary的数字LLM拿不到) ②P3 error分支补data诊断补充段(detail非空时data被跳过, 遮蔽deleted_files等部分成功信息) ③P5 diff双通道固化"二选一"约束注释 ④序7 message/summary叠字去重(前缀同义与完全同义均去重, 语义不同保双段)
+# 2026-10-05 - 小欧 - 报告 P6: 新增 _TARGET_KEYS_BY_TOOL 按工具名覆盖 target 取键优先级(未列走 FALLBACK), 修多参工具固定序显示不准; 新工具只加一行。
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -144,6 +145,19 @@ def _safe_llm_sub(llm_data, key: str) -> dict:
     return _v if isinstance(_v, dict) else {}
 
 
+# 处理对象候选键(通用优先级)
+_TARGET_KEYS_FALLBACK = ("path", "source", "url", "sql", "query", "command")
+# 按工具名覆盖优先级(键名小写); 未列的走 FALLBACK
+_TARGET_KEYS_BY_TOOL = {
+    "fetchpage": ("url", "source", "path"),
+    "webfetch": ("url", "source", "path"),
+    "fetchurl": ("url", "source", "path"),
+    "search": ("query", "source", "url"),
+    "websearch": ("query", "source", "url"),
+    "query": ("sql", "source", "path"),
+}
+
+
 def _tool_target(llm_data) -> str:
     """处理对象(target)统一取法。
 
@@ -159,7 +173,8 @@ def _tool_target(llm_data) -> str:
     _params = _action.get("params")
     if not isinstance(_params, dict):
         return ""
-    for _k in ("path", "source", "url", "sql", "query", "command"):
+    _tool = str(_action.get("tool") or "").strip().lower()
+    for _k in _TARGET_KEYS_BY_TOOL.get(_tool, _TARGET_KEYS_FALLBACK):
         _v = _params.get(_k)
         if _v:
             return str(_v)   # 2026-07-12 防御: target 可能非 str(如 WindowsPath), 统一 str() 化

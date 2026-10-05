@@ -135,6 +135,7 @@
 #   消除 tools 层对 app.services 越层依赖(守护测试 tools 禁 app.services 规则), 行为零变化(同一 ContextVar 对象)
 # 2026-10-02 - 小欧 - 注册名归位: action.tool "shell"→"bash"(3处), validate_timeout(timeout,"shell")→"bash"; 实现函数名 shell 不动 实现函数名 shell 不动
 # 2026-10-05 - 小欧 - 文档[8]第八章: ①P6 params存完整command(原存cmd_short缩写致LLM无法核对命令) ②P8 cmd_short掐头去尾改掐中保尾150=头130+尾20(原式拼出不连续文本致LLM误认相邻内容), 标注「已截N字符」
+# 2026-10-05 - 小欧 - 报告 N2/P2: N2 更正"需用户确认"误导文案(本函数不发起确认); P2 明确 one-shot 仅性能路由非放行依据, 不调扫描是架构边界所致(禁 tools→safety), 残余面由白名单禁换行收窄。
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -1118,7 +1119,7 @@ def shell(
                 timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截", cmd_short=cmd_short)
             return build_error(data={}, llm_data=llm)
         if safety.requires_confirmation:
-            logger.warning(f"[Shell] 中风险命令已放行（需用户确认）: {safety.message}")
+            logger.warning(f"[Shell] 中风险命令本级放行(确认由上游安全门禁承担, 无弹窗非缺陷): {safety.message}")
 
     # ── 阶段 3【PS/CMD分支】: 执行 ──
     try:
