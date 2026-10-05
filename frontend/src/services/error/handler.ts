@@ -15,6 +15,9 @@
 //   AUTH_401 文案由「API Key无效」改「访问口令无效」（张冠李戴）；AUTH_403 改兜底措辞
 // 2026-09-29 21:37:55 小欧 - getErrorConfig 加 export 供 [63] 5.3 传输层复用（唯一兜底口，不重建同义表）——
 //   原 useSSE 本地那份 ERROR_CONFIG_MAP 副本随 hook 删除，改由传输层直引本处（DRY：唯一同义表）— 小欧-2026-09-29 21:37:55
+// 2026-10-05 小欧 - 超时文案人话化(C方案, 老陈裁定): axios默认超时消息"timeout of 60000ms exceeded"
+//   是完整英文句, 不被sanitize纯数字拦, 直接弹给用户看不懂 —— 在sanitizeDisplayMessage内将其
+//   及同类超时文案改写成"后端响应超时，请重试"。不修根本根因(axios超时仍是超时), 只解决展示 — 小欧-2026-10-05
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
@@ -767,6 +770,10 @@ const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   if (typeof raw !== 'string') return undefined;
   const t = raw.trim();
   if (!t) return undefined;
+  // 2026-10-05 小欧 C方案: axios实例timeout(默认60s)超时消息渲染为人话; 完整报文仍由 console.info([Toast])留存
+  if (/timeout\s*of\s*[\d.]+\s*ms\s*exceeded/i.test(t))
+    return '后端响应超时，请重试';
+  if (/^\s*timeout\s+exceeded\s*$/i.test(t)) return '后端响应超时，请重试';
   if (/^-?\d+(\.\d+)?$/.test(t)) return undefined; // 纯数字(含负数/小数), 如 "60000"
   if (/^[0-9,.\s]+$/.test(t)) return undefined; // 纯数字字符集(防千分位 "60,000"), 排除科学记数/字母
   if (/^(undefined|null|nan|\[object object\])$/i.test(t)) return undefined;
