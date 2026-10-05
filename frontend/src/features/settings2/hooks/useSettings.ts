@@ -76,11 +76,15 @@
 //   ③patchModel 支持函数式更新，saveModelGroup 成功回写按最新 params 重算 isDirty（原先硬置 false，
 //   请求在飞期间的新编辑变成保存按钮都点不亮的隐形脏）；④ghost 键连 values 一并复位到 baseline
 //   （原先只删 dirtyKeys，值还留着改后内容，界面照显却已不算未保存）—— 小欧-2026-09-27
+// 2026-10-05 小欧 - saveKeys 成功派发设置保存事件(文档[9] §5.12); 事件名上移 constants/settingsEvents, 解除 settings2→chat 跨feature 反向依赖 — 小欧-2026-10-05
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   settingsApi,
   type SettingSchemaItem,
 } from '@/services/api/settings.api';
+// 2026-10-05 小欧 - step 渲染显示偏好(文档[9] §5.12): 事件名唯一定义点在中立层,
+//   解除此前 settings2 → features/chat/components/pipeline 的跨 feature 反向依赖 — 小欧-2026-10-05
+import { SETTINGS_SAVED_EVT } from '@/constants/settingsEvents';
 import { modelApi, type ProviderEntry } from '@/services/api/model.api';
 import {
   isDirty,
@@ -697,6 +701,10 @@ export function useSettings() {
         });
         // A7：用落盘后 mtime 覆盖缓存，防假后门刷新误判
         syncMtime(result.mtime);
+        // 2026-10-05 小欧 - step渲染显示偏好(文档[9] §5.12): 保存成功后广播, chat 页 hook
+        //   appearance.step_render.* 只有设置页能改, 受影响页要刷新才生效
+        //   事件名 import 自 @/constants/settingsEvents(唯一定义点, 禁前端硬编码第二份字符串) — 小欧-2026-10-05
+        window.dispatchEvent(new Event(SETTINGS_SAVED_EVT));
         return { ok: true as const };
       } catch (e) {
         handleApiError(e);

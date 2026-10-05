@@ -22,6 +22,7 @@
 //   否则它会孤零零压在「登录与准入」块上方，位置与语义都不对。 — 小欧-2026-09-26
 // 2026-09-28 小欧（北京老陈指示）: general 组小节名「模型参数」→「通用兜底模型参数」——
 //   该块是全局默认采样参数，单模型可在「模型」Tab 单独覆盖，原名易误读为"当前模型的参数"。纯显示名。 — 小欧-2026-09-28
+// 2026-10-05 小欧 - appearance 组加前缀支, 新分节「step渲染控制」(文档[9] §5.11): 不加会被 return '外观' 吞掉 — 小欧-2026-10-05
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -75,6 +76,9 @@ function sectionOf(group: string, key: string): string | null {
   //   语义切分理由同后端：准入控制 ≠ 外观偏好，混在一块会让人误以为"改外观就能改准入"。
   if (group === 'appearance') {
     if (key.startsWith('security.')) return '登录与准入';
+    // 2026-10-05 小欧 - step渲染控制分组(文档[9] §5.11, 实施后现状): 令两个 step 渲染开关独立成节,
+    //   此前无前缀支 一律落 '外观' 兜底 与显示无关项混同; 前缀与后端 registry 同序同键名 - 小欧-2026-10-05
+    if (key.startsWith('appearance.step_render.')) return 'step渲染控制';
     return '外观';
   }
   if (group === 'tuning') {
