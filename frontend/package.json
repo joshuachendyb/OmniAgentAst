@@ -29,7 +29,11 @@
     "dayjs": "^1.11.19",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-router-dom": "^7.13.0"
+    "react-markdown": "^9.1.0",
+    "react-router-dom": "^7.13.0",
+    "rehype-sanitize": "^6.0.0",
+    "remark-breaks": "^2.0.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@bit-ocean/auto-import": "^0.0.54",
@@ -37,6 +41,7 @@
     "@testing-library/jest-dom": "^6.2.0",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.5.2",
+    "@types/hast": "^3.0.5",
     "@types/node": "^20.19.43",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
