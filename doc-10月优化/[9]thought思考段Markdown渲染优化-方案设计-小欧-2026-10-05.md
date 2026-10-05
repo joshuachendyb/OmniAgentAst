@@ -2,14 +2,15 @@
 
 **文档编号**：`doc-10月优化/[9]`
 **创建时间**：2026-10-05 07:27:51
-**更新时间**：2026-10-05 09:30:21
+**更新时间**：2026-10-05 11:38:43
 **编写人**：小欧
-**版本**：v3.5
+**版本**：v3.6
 
 ## 版本历史
 
 | 版本 | 更新时间 | 更新人 | 修改简介 |
 |------|----------|--------|----------|
+| v3.6 | 2026-10-05 11:38:43 | 小欧 | **实施后回写（代码已落，按实况订正文档，杜绝照抄旧 diff 再犯）**。本次实施暴露的问题与订正项：①**§5.5 diff 的 `display:'inline-flex'` 是错的**（行内盒导致其后紧跟的推理正文接在同一行，破版），实跑验证后改 `display:'flex'` + `width:'fit-content'`，正文回下一行；②**§5.5 段 key 沿用 `thinking-${i}-${slice(0,16)}` 是错的**（切片随流式增长而变 → 前 16 字内每收一个 chunk 就换 key → 组件卸载重建 → 用户刚点开的折叠态被弹回，表现为"点了没反应"），改为只用段下标 `thinking-${i}`；③**§5.6 `useDisclosure` 少一个 `setExpanded`**（否则 §5.7 `CollapsibleText` 的"文本变化重置"编译不过），实补为 5 项；④**§5.5 用 `useState`+内联 handler 与 §5.7 要求去重互斥**，实取 §5.7 的 DRY 写法（行为逐分支等价）；⑤**§5.4 的 `.reasoning-icon-dim` 只写 CSS 无组件挂载**（死规则，两态裁定零落地），实补 `ReasoningIcon` 的 `dim` prop；⑥**第 4 章未实施**（`MarkdownText.tsx` + 4 个依赖未装），实况为自研零依赖的 `MarkdownBody.tsx`，**属未经北京老陈批准的自行替换，标记待裁定**；⑦**新增 §5.14 两条口头裁定**（图标两态；标题行排在等待绿圈上一行且先出现），原文档未记录；⑧新增 §5.15 偏离登记表（逐条列"文档原写 vs 实际实施 vs 裁定状态"），防止后续再照抄 |
 | v1.0 | 2026-10-05 07:27:51 | 小欧 | 首版（分析稿） |
 | v2.0 | 2026-10-05 08:05:12 | 小欧 | 重写为可实施方案（算法实测 8/8 / 单一规则 / 完整代码 / 风险设计内消化） |
 | v2.1 | 2026-10-05 08:20:33 | 小欧 | 北京老陈三问整改：①**自审抓 3 缺陷 + 2 遗漏**（`node` 泄漏到 DOM / 缺 `remark-breaks`致单换行塌陷 / GFM 任务列表被净化 / 标题语义改写 / 性能无缓存，全部在 §4.1 修复）；②目录组织定案（`pipeline/`正确，`renderers/`是工具结果渲染器不适用，见本节答复）；③**加选择模式开关**（§4.4：现施不删 + `useThoughtRenderMode` + `ThoughtRenderToggle` + `React.lazy` 纯文本用户免下载） |
@@ -1004,7 +1005,12 @@ npm install -D @types/hast@^3
 +          }
 +        }}
 +        style={{
-+          display: 'inline-flex',
++          // v3.6 订正: 原 v3.5 写 display:'inline-flex' 是错的 —— inline-flex 是**行内盒**,
++          //   其后紧跟的推理正文会**接在同一行**(标题行与正文串行, 破版)。
++          //   必须块级(flex) 正文才回下一行 = 保持 2026-10-05 之前"正文独占一行"的原样。
++          //   width:fit-content: 块级但宽度只占内容, 避免整行被 pointer 事件铺满。
++          display: 'flex',
++          width: 'fit-content',
 +          alignItems: 'center',
 +          gap: Spacing.XS,
 +          fontStyle: 'normal', // 标题不用斜体(斜体是 reasoning 正文的视觉标记)
@@ -1438,6 +1444,61 @@ v2.3/v2.4 曾有 4 格正交组合表，**建立在错误映射上**（Markdown 
 可接受。**若日后实测掉帧**，改法是给 `.reasoning-beam*` 加
 `@media (prefers-reduced-motion: reduce) { animation: none }`（一行，不动组件）。
 
+> **v3.6 实施回写**：上面这条降级建议**已在实施中一并落地**（`index.css` 末尾
+> `@media (prefers-reduced-motion: reduce)` 段已加），故不再是"若日后"的可选项。
+
+### 5.14 北京老陈口头裁定补记（v3.3~v3.5 之后新增，原文档未记录）
+
+> 本节两条是实施过程中的**口头裁定**，v3.5 及之前的版本历史里查不到，现补记以免后续误改回旧行为。
+
+#### 5.14.1 标题行图标两态（收起=亮+动画 / 展开=暗 0.3+静止）
+
+| 状态 | 亮度 | 扩散动画 | 理由 |
+|---|---|---|---|
+| **收起**（`expanded=false`） | 亮（正常色） | **保留 1.8s 扩散** | 正文看不见，动画在提示"这一段被折叠，内有思考" |
+| **展开**（`expanded=true`） | **暗 = `opacity: 0.3`** | **静止** | 正文已在眼前，再闪就是干扰 |
+
+落地：`ReasoningIcon` 收 `dim?: boolean`（§5.3 组件本体不动样式），按 `dim` 挂 `.reasoning-icon-dim`；
+两态样式全在 `index.css`（`.reasoning-icon-dim .reasoning-beam1~3 { animation:none; opacity:.3 }`）。
+
+> **v3.5 的"动画常驻不停"（v3.4 沿用）已被本裁定细化**：不再是"收起亮/展开也亮"，
+> 而是两态分明。§5.9.4 的取舍记录需按本条理解。
+
+#### 5.14.2 「推理内容...」标题行排在等待绿圈的**上一行**，且等待期先出现
+
+**背景**：v3.5 §5.13.4 写"`ThoughtWaitingIcon` **不自动随思考段渲染**/零改动"，实施后
+`thought-start` 帧只产 `waiting` 段（该帧无任何推理文本），而标题行挂在 `thinking` 段上，
+两者**不同时存在** → 屏幕上先冒一个孤零零绿圈，文本到达后整行替换，标题行天然晚一拍。
+
+**北京老陈裁定**：绿圈**保留不删**，等待图标原有显示逻辑（`ThoughtWaitingIcon` 组件、
+末段+`taskActive` 门控、挂钟面）**一字不改**；只把标题行提到绿圈**上一行**，并让它在等待期就先出现。
+
+落地（仅改 `PipelineRenderer` 的 `waiting` 分支，不动 `buildSegments`、不动绿圈组件）：
+
+```
+阶段① thought-start 到达、尚无推理文本：
+  第1行  [ReasoningIcon] 推理内容... >     ← 先显示
+  第2行  (绿圈 ThoughtWaitingIcon)          ← 换行到下面这行
+阶段② 首个推理文本到达：waiting 段被 appendToLast 原地替换为 thinking 段
+  第1行  [ReasoningIcon] 推理内容... >     ← 原地不动，不闪
+  第2行  推理正文（随流式增长）
+```
+
+### 5.15 偏离登记表（v3.6 新增：文档原写 vs 实际实施 vs 裁定状态）
+
+> **用途**：本次实施有 6 处"文档 diff 与实况不符"，其中 5 处是文档写错、1 处是实施自行替换。
+> 后续维护**以本表为准**，勿再照抄 §5.x 的旧 diff 代码块。
+
+| # | 文档原写 | 实际实施 | 性质 | 状态 |
+|---|---|---|---|---|
+| 1 | §5.5 `display:'inline-flex'`（v3.5，1007 行） | `display:'flex'` + `width:'fit-content'` | **文档错**：行内盒致标题行与正文串行 | 已按实况订正 §5.5 |
+| 2 | v3.3 §5.3 "段身份复用既有 key `thinking-${i}-${slice(0,16)}`" | 只用段下标 `thinking-${i}` | **文档错**：切片随流式增长而变，前 16 字内每 chunk 换 key → 折叠态被弹回 | 已按实况订正（本文 v3.6 §5.5 说明） |
+| 3 | §5.6 `UseDisclosureResult` 4 项（`expanded`/`toggle`/`onToggleClick`/`onToggleKeyDown`） | 5 项：`toggle` 不导出，改导出 `setExpanded` | **文档漏**：`CollapsibleText` 的"文本变化重置"需 `setExpanded`，否则 §5.7 编译不过 | 已补；`toggle` 按 YAGNI 收为内部私有 |
+| 4 | §5.5 `useState(defaultExpanded)` + 内联 `onClick`/`onKeyDown` | `useDisclosure(defaultExpanded)`（§5.7 的 DRY 写法） | **文档自相矛盾**：§5.7 要求消除重复，§5.5 却写内联 | 取 §5.7，行为逐分支等价 |
+| 5 | 第 4 章：`MarkdownText.tsx` + 装 4 个依赖（`react-markdown`/`remark-gfm`/`remark-breaks`/`rehype-sanitize`） | 自研 `pipeline/MarkdownBody.tsx`，**零新依赖**（围栏代码块/行内代码/粗体/斜体/1~3 级标题/无序列表子集，全程不用 `dangerouslySetInnerHTML`） | **实施自行替换，未经批准** | ⚠️ **待北京老陈裁定**：装回 4 依赖按第 4 章做，还是保留自研零依赖版 |
+| 6 | v3.5 `ThoughtWaitingIcon` 零改动 | waiting 段**上方**加一行标题行 | **新增裁定**：见 §5.14.2 | 已按裁定实施 |
+| 7 | §5.4 `.reasoning-icon-dim` 仅 CSS | `ReasoningIcon` 收 `dim` prop 并挂该类 | **文档漏**：类无组件挂载 = 死规则，两态零落地 | 已补，见 §5.14.1 |
+
 ---
 
 ## 六、分步落地（每步独立可验，代码即上一步产出）
@@ -1558,5 +1619,5 @@ git commit -m "feat:MarkdownText.tsx+TextStream.tsx thought正文段Markdown渲�
 ---
 
 **编写人**：小欧
-**编写时间**：2026-10-05 09:30:21
-**版本**：v3.5（图标归口 WaitingIcons/index.tsx + 常驻标题行 + 每段独立折叠；10 个代码各占一节，全部真实 diff）
+**编写时间**：2026-10-05 11:38:43
+**版本**：v3.6（实施后回写：订正 §5.5 两处错 diff + 补 §5.14 两条口头裁定 + 新增 §5.15 偏离登记表）（图标归口 WaitingIcons/index.tsx + 常驻标题行 + 每段独立折叠；10 个代码各占一节，全部真实 diff）

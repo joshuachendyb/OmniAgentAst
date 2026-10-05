@@ -30,6 +30,7 @@
 | `FontWeight` | 字重（BOLD/REGULAR 等） | — | 对象 |
 | `Radius` | 圆角（SM=4/LG=8 等） | — | 对象 |
 | `BorderWidth` | 边框宽度 | — | 对象 |
+| `FontFamily` | 等宽字体族（MONO，代码/路径/技术文本；收敛目标，存量 5 处待统一）— 小欧 2026-10-05 | — | 对象 |
 | `stepMargin` | 步骤间距（compact 区分） | compact: boolean | string |
 | `isValidStepType` / `getAllStepTypes` | 步骤类型守卫/全量 | stepType | boolean / StepType[] |
 | `getStepLabel` / `getStepPriority` / `getStepLayout` | 步骤标签/优先级/布局 | stepType | string / StepPriority / LayoutMode |
@@ -209,6 +210,16 @@
 | `useLoadingMessage` | 加载提示 | options | 加载态 |
 | `useInitializationProgress` | 初始化进度 | 入参 | InitializationProgress |
 | `useSSE` | SSE 流式连接（断线重连+任务轮询兜底+idle 监视；复用 sessionTaskApi.listTasks） | 会话/任务入参 | 连接态+数据 |
+
+### 4.1 chat 特征层公用件（src/features/chat/，小欧 2026-10-05 新增）
+
+| 导出名 | 位置 | 功能 | 参数 | 返回值 |
+|--------|------|------|------|--------|
+| `useDisclosure` | `hooks/useDisclosure.ts` | 折叠/展开状态 + 两道 a11y 事件聚合（Enter/Space 切换、全分支 stopPropagation）；只管切换与事件阻断，不管阈值/文案 | initial?: boolean | `{expanded, setExpanded, onToggleClick, onToggleKeyDown}` |
+| `useStepRenderPrefs` | `components/pipeline/useStepRenderPrefs.ts` | 读后端 `appearance` 组的两个 step 渲染开关（「思考排版」「推理内容」）+ 订阅保存事件刷新；唯一真源=服务端 YAML | 无 | `StepRenderPrefs` |
+| `SETTINGS_SAVED_EVT` | `src/constants/settingsEvents.ts` | 设置保存成功广播事件名（唯一定义点；生产侧仅 useSettings 派发，消费侧仅 useStepRenderPrefs 订阅）— 小欧 2026-10-05 | — | string |
+| `MarkdownBody` | `components/pipeline/MarkdownBody.tsx` | thought 块正文 Markdown 渲染（围栏代码块/行内代码/粗体/斜体/1~3 级标题/无序列表子集；零新依赖，全程不用 dangerouslySetInnerHTML） | `{ text: string }` | JSX |
+| `ReasoningIcon` | `components/WaitingIcons/index.tsx` | 思考点扩散光圈（`dim` 传两态意图：收起=亮+动画 / 展开=暗+静止，样式在 index.css） | `{ size?: number; dim?: boolean }` | JSX |
 
 ---
 
