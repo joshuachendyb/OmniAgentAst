@@ -1,5 +1,57 @@
-﻿v1.1.7
-更新时间: 2026-10-05 08:30:50 - 小欧-2026-10-05
+﻿v1.2.0
+更新时间: 2026-10-05 16:23:00 - 小欧-2026-10-05
+## v1.2.0 思考段Markdown排版+推理内容折叠两个独立开关(22个commit: feat8/fix4/refactor1/chore4/docs5)
+[范围=v1.1.7之后HEAD(共22个commit); 主线=设置页加两个独立bool开关控制思考段渲染, 默认皆开, 顺序推理内容在前; 实现第4章按参考代码落地, 三堂会审3遍挖出参考代码自带缺陷3项已修; 遗留=左列response接排版首帧纯文本(React.lazy Suspense fallback)与展开后14px偏松(未加compact档)]
+
+### 1.2.0 后端开关(2个设置项)
+[新增] settings_registry.py+config.yaml.example appearance组加两个独立bool开关(北京老陈裁定: 思考排版=thought段Markdown渲染/推理内容=reasoning段折叠初值, 默认皆true, 顺序推理内容在前) - 提交 73d11e19f
+
+### 1.2.0 前端设置读取与广播链路
+[新增] settingsEvents.ts 事件名上移constants中立层(解除settings2→chat跨feature反向依赖); useStepRenderPrefs.ts 建hook(唯一真源=后端YAML只读getGroup('appearance'), 无localStorage无第二真源); SettingsGroup.tsx appearance组加step渲染控制分节; useSettings.ts saveKeys成功派发omni-settings-saved - 提交 a4118d772
+[新增] useDisclosure.ts 公用折叠hook(CollapsibleText与ThinkingStream去重, 5处调用零回归) - 提交 593c2b8ee
+
+### 1.2.0 推理内容(reasoning段)可折叠
+[新增] ThinkingStream.tsx 标题行[思考点图标]+"推理内容..."+箭头, 每段独立折叠(收起态只显标题行不显正文); WaitingIcons/index.tsx 新增ReasoningIcon; index.css 图标动画; PipelineRenderer.tsx 下传defaultExpanded; 段带step不跨step拼段(老陈裁定两态+标题行排在等待绿圈上一行且等待期先出现) - 提交 593c2b8ee
+[修正] 段key去掉文本切片(原key带前16字, 流式每收一个chunk即换key致组件卸载重建, 用户刚点开的折叠态被弹回表现为"点了没反应") - 提交 593c2b8ee
+
+### 1.2.0 思考排版(Markdown)渲染
+[新增] MarkdownText.tsx 按文档[9]第4章参考代码落地(装react-markdown@9.1.0+remark-gfm@4.0.1+remark-breaks@2.0.2+rehype-sanitize@6.0.0+dev@types/hast@3.0.5; 含findUnclosedFenceTail未闭合围栏切分+20个组件映射+SANITIZE_SCHEMA补code[className]与input) - 提交 e8f0de10c
+[修正] P1真缺陷(参考代码自带): code靠className猜"是否围栏"+pre被覆盖成<>{children}</>, 而react-markdown v9 info string为空时hast无className → 无语言围栏整段退化成行内code(pre数=0/块级样式全丢); 按语义归位pre管块级容器code管行内样式, 不加依赖不加插件不留分支 - 提交 e8f0de10c
+[修正] P2 闭围栏长度未校验(4反引号开/3反引号闭误判闭合) → 按CommonMark补"闭围栏长度>=开围栏" - 提交 e8f0de10c
+[修正] P3 wordBreak:break-word与overflow:auto语义抵消(折行后永不出滚动条) → 老陈裁定二选一取横向滚动, wordBreak显式写normal不依赖继承 - 提交 e8f0de10c
+[修正] P4 `2*3*4`渲染成2斜体3斜体4 **不修**: CommonMark标准行为, 实测误伤面仅紧凑乘法(长*宽/*.ts/src/**/*.tsx/a * b * c 全部安全), 旧自研版正则属非标准hack - 提交 e8f0de10c
+[新增] MarkdownSlot.tsx 思考排版开关统一入口(抽lazy+Suspense+纯文本fallback唯一入口, TextStream与ResponseStream共用杜绝同段逻辑写两遍; 两处lazy同模块经打包器去重, 实测生产构建仍只产一份163KB独立chunk) - 提交 ecb2924a1
+[新增] 思考段与答复段共用「思考排版」开关(老陈裁定不分开关: 答复段也是thought text; 实测定位"开关开了不起作用"真因=答复段走ResponseStream的CollapsibleText纯文本strong=0/ul=0) - 提交 ecb2924a1
+[修正] 答复段markdown=true全量渲染不折叠 / markdown=false保留原CollapsibleText长文折叠零退化(删折叠会连关闭开关的老路径一起删掉) - 提交 6c1367555
+[新增] CollapsibleText.tsx 加可选renderExpanded(展开态渲染由调用方注入; 折叠态与其余4处调用零变化) - 提交 6c1367555
+[新增] TaskListPanel.tsx 左列task卡response接Markdown(传renderExpanded且markdown恒true, 受折叠开关控制不受设置开关控制; 同文件user_input与追加注入两处不动) - 提交 6c1367555
+[新增] MarkdownBody.tsx 零依赖手写正则版(6类格式子集)与MarkdownText并存, 由MarkdownSlot内MD_IMPL变量0/1切换(改一个数字即切换, 调用方零改动) - 提交 f6480daa8
+[修正] MarkdownText代码块容器按老陈裁定方案A改四边整框(1px#d9d9d9+圆角4+浅底#fafafa, 删原左边线避免叠双线) - 提交 f6480daa8
+[修正] MD_IMPL用`0 as 0|1`断言而非`const x: 0|1 = 0`(后者被TS按初始化值窄化成字面量, 另一分支===1直接报TS2367, 改切换数字即编译不过) - 提交 f6480daa8
+
+### 1.2.0 三堂会审修复(2轮)
+[修正] useStepRenderPrefs读取失败改为沿用上次成功值(原置全关且不重试, 而收起=内容不可见, 一次网络抖动致思考内容静默消失); 删ready残留; 统一手动折叠与设置默认值三处相反注释为单一语义 - 提交 fdfe7154d
+[修正] PipelineRenderer段key改下标+步号双因子(修切任务折叠态与打字机进度跨任务串味); 撤ready门控(致首帧reasoning正文整段不渲染并打破既有测试waiting-segment-442.test.tsx:195); 等待段传text=空格不传cursor(去多余▍与误打CURSOR T) - 提交 4db6a347c
+[修正] MarkdownBody剥标记加闭合校验与长度守卫(裸*/**与半闭合不再整行消失); 词边界字符类补CJK(中文_测试_不再被吃); 未闭合围栏降级纯文本(不再闪空pre且不吞后续正文) - 提交 5d4fbc076
+[修正] 问题报告6真问题修复(P1/P3/P6/P7/N1/N2) - 提交 8005381df
+
+### 1.2.0 清理与重构
+[重构] useChatStreaming.ts+useChatCallbacks.ts 3处消息占位'🤔 AI 正在思考...'归零(message.content前端零渲染消费属死数据; 思考态视觉已由reasoning标题行承载, 空串不留空白气泡, 不断流时由final帧走真实内容替换) - 提交 7307049a6
+[清理] _legacy/markdown.tsx(2026-04小强件, LaTeX早已被注释禁用故renderContent仅包一层span原样返回, 从诞生起即无任何Markdown渲染能力; 全仓零引用) 与其后的恢复/移动/改名/删除共5个chore提交 - 提交 44aa7c35e/39d67fe7d/3fa7d05b9/da4d13b02
+[修正] stepStyles.ts FontFamily.MONO注释订正(原指向已删的MarkdownBody, 改为MarkdownText) - 提交 e8f0de10c
+
+### 1.2.0 文档
+[新增] doc-10月优化/[9]thought思考段Markdown渲染优化-方案设计-小欧-2026-10-05.md 首版+实施现状(升v3.6~v3.9, 补记实施结果与偏离登记: §3.3补第9条闭围栏长度用例/§3.4长内容折叠整节撤回因thought长度不定/§5.15偏离登记) - 提交 a80422b5d/b3e4704a5/d80a07e3e
+[整理] 3个html演示文件从doc-9月优化移至frontend/scripts; 前端后端接口契约说明-小欧-2026-09-22.txt移入doc-打包与E2E - 提交 e73db7e29/838eea0e6
+
+### 1.2.0 未做与遗留(待办)
+[遗留] 左列task卡response展开后首帧是Suspense fallback纯文本, 加载完才变排版(React.lazy分块所致, 第二次起秒变)
+[遗留] 左列展开后正文14px而原为12px, 观感偏松; 未加compact档(需MarkdownText加档位)
+[遗留] 思考排版开关关闭时, 「推理内容」收起态下整个思考期无任何活动指示(仅绿圈转)
+[遗留] final帧reasoning改走折叠后, 关态下历史回放的推理内容默认不可见(改前恒可见)
+[遗留] useStepRenderPrefs无缓存: 同页N个PipelineRenderer各发一次getGroup请求
+[遗留] MarkdownText打字机×未闭合标记的结构性突变; pre未重置wordBreak致横向滚动失效
+[遗留] FontFamily.MONO存量5处未统一; 文档文档[9]第5步的fre2e_13/fre2e_14 spec在本仓不存在(悬空名, E2E未跑)
 ## v1.1.7 shell卡死治理+observation契约收敛+taskinfo改版+action.target清理(35个commit: feat4/fix3/refactor8/test2/docs15/perf1) - 小欧-2026-10-05
 [2026-10-05 08:30:50 小欧] 范围=v1.1.6→HEAD(共35个commit)。四条主线:①shell卡死治理(shell_engine实例池有界化/只读白名单单一权威迁出safety层/loop_watchdog事件循环心跳看门狗/AGENTS.md新增取证小节);②observation契约收敛(sseParser+execution删6处死派生字段、observation_builder删llm_data_text、66个工具删action.target、observation_formatter改从params派生处理对象);③taskinfo信息带改版(token链序P/C/T、折K/M、tooltip原始值、占窗率、帧类型context_overview改名history_context、CHARS_PER_TOKEN 1.8→2.5);④文档入库([1]系统架构全景解析V1.0.2/[7]shell卡死治理方案/[8]observation工具结果显示问题)。
 
