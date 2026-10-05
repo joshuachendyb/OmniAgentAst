@@ -26,7 +26,9 @@ import { normalizeBlankLines } from '@/utils/textNormalize';
 import { useRiseLog } from '@/features/chat/hooks/useRiseLog'; // 2026-09-14 小欧: CURSOR F 翻转打点(抽公用 hook) — 小欧-2026-09-14
 import { ActionWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-14 小欧: 正文末位光标换型(蓝色波纹扩散圈) — 小欧-2026-09-14
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
-import { MarkdownBody } from './MarkdownBody'; // 2026-10-05 小欧: 思考排版渲染器(文档[9] §5.8) — 小欧-2026-10-05
+// 2026-10-05 小欧 v3.9: lazy + Suspense + 纯文本 fallback 三件事已抽到 MarkdownSlot(唯一入口),
+//   思考内容段与最终答复段共用同一开关同一逻辑, 此处不再重复一遍 —— 小欧-2026-10-05
+import { MarkdownSlot } from './MarkdownSlot';
 
 interface TextStreamProps {
   text: string;
@@ -86,14 +88,14 @@ const TextStream: React.FC<TextStreamProps> = ({
 
   return (
     <div style={getStreamStyle(compact)}>
-      {/* 2026-10-05 小欧 - 思考排版开关(文档[9] 方案设计 §5.8): 开=按 Markdown 语法渲染本段正文,
-          关=原样纯文本(打字机逐字切片原逻辑)。切片仍在渲染前完成, 故打字机与 Markdown 各管一段:
-          打字机管"显示到第几个字", MarkdownBody 管"这些字怎么画", 两层互不干扰 — 小欧-2026-10-05 */}
-      {markdown ? (
-        <MarkdownBody text={clean.slice(0, typing ? shown : clean.length)} />
-      ) : (
-        clean.slice(0, typing ? shown : clean.length)
-      )}
+      {/* 2026-10-05 小欧 - 「思考排版」开关(文档[9] §4.2/§5.8): markdown=false 时走 2026-10-04 前的
+          原纯文本切片路径, 一字不改; markdown=true 时把同一份打字机切片喂 MarkdownText
+          (切片是不完整源码, 由 findUnclosedFenceTail 按未闭合围栏规则兜住, 见 §3.1)。
+          光标永远在 Markdown 之外, 不进解析器。lazy/Suspense/fallback 已抽到 MarkdownSlot。 */}
+      <MarkdownSlot
+        text={clean.slice(0, typing ? shown : clean.length)}
+        markdown={markdown}
+      />
       {cursor && typing && <ActionWaitingIcon waitClock={waitClock} />}{' '}
       {/* 2026-09-17 小欧: 波纹与钟面并存(追加) — 小欧-2026-09-17 */}
     </div>

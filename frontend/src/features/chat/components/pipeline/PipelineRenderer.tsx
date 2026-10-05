@@ -436,6 +436,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               )}
               <ResponseStream
                 text={seg.step.response || seg.step.content || ''}
+                markdown={thoughtMarkdown} // 2026-10-05 小欧: 答复段与思考段共用「思考排版」开关(北京老陈裁定不分开关) — 小欧-2026-10-05
               />
               {isCancelled && seg.step.cancel_source && (
                 <div style={terminalDetailStyle(Colors.ORANGE_RED)}>
