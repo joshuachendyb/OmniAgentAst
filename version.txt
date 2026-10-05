@@ -52,6 +52,9 @@
 [遗留] useStepRenderPrefs无缓存: 同页N个PipelineRenderer各发一次getGroup请求
 [遗留] MarkdownText打字机×未闭合标记的结构性突变; pre未重置wordBreak致横向滚动失效
 [遗留] FontFamily.MONO存量5处未统一; 文档文档[9]第5步的fre2e_13/fre2e_14 spec在本仓不存在(悬空名, E2E未跑)
+
+v1.1.7
+更新时间: 2026-10-05 08:30:50 - 小欧-2026-10-05
 ## v1.1.7 shell卡死治理+observation契约收敛+taskinfo改版+action.target清理(35个commit: feat4/fix3/refactor8/test2/docs15/perf1) - 小欧-2026-10-05
 [2026-10-05 08:30:50 小欧] 范围=v1.1.6→HEAD(共35个commit)。四条主线:①shell卡死治理(shell_engine实例池有界化/只读白名单单一权威迁出safety层/loop_watchdog事件循环心跳看门狗/AGENTS.md新增取证小节);②observation契约收敛(sseParser+execution删6处死派生字段、observation_builder删llm_data_text、66个工具删action.target、observation_formatter改从params派生处理对象);③taskinfo信息带改版(token链序P/C/T、折K/M、tooltip原始值、占窗率、帧类型context_overview改名history_context、CHARS_PER_TOKEN 1.8→2.5);④文档入库([1]系统架构全景解析V1.0.2/[7]shell卡死治理方案/[8]observation工具结果显示问题)。
 
