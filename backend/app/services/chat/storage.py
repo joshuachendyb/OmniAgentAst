@@ -654,7 +654,9 @@ def list_session_trust(conn: Connection, session_id: str) -> list:
 
 
 def delete_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
-    """D3(10.5 问题4): 撤销会话对指定信任对象的信任——(tool, path) 精确撤销, path=None 仅删工具级通配行 — 小欧 2026-08-20; v1.5 增 path 匹配"""
+    """D3(10.5 问题4): 撤销会话对指定信任对象的信任——(tool, path) 精确撤销, path=None 仅删工具级通配行 — 小欧 2026-08-20; v1.5 增 path 匹配
+    2026-10-05 小欧 提示(B语义下): 本函数仍按(session_id,tool_name,path)精确删; 而check_session_trust已改为按path跨工具放行 ——
+      若只删某一工具的那行, 同路径下其它工具的登记仍使该目录豁免。要"撤销整个目录的信任"需遍历删除该session下同路径的所有工具行。— 小欧-2026-10-05"""
     if path is None:
         cur = conn.execute(
             "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=? AND path IS NULL",
