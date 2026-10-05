@@ -20,6 +20,9 @@
 //     ④P4 `2*3*4` 渲染成 2<em>3</em>4: **不修**。这是 CommonMark 标准行为(单星号内不为空即成斜体),
 //       旧自研版为防它写的正则属非标准 hack; 修它需再引 remark 插件自造偏离标准的行为, 违
 //       "不自造轮子/KISS"且徒增维护面。如实回归标准并在此登记, 便于日后有人再问时有据可查。
+//   v3.8.1 小欧 老陈指令: 围栏代码块右上角加"复制"按钮。pre 容器改为 PreBlock(position:relative + 绝对定位按钮,
+//     复制源取原始children字符串不含按钮文字, copied后1.5s回退); code 组件不动(透传 className)。— 小欧-2026-10-05
+//   申明订正: 上一条"已加复制按钮"为总结误报, 实际未落盘; 本次才真正落盘并入单测。— 小欧-2026-10-05
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -34,6 +37,7 @@ import {
   Radius,
   Spacing,
 } from '@/utils/stepStyles';
+import { CopyButton } from './CopyButton';
 
 /**
  * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(§3.5 缺陷 1)。
@@ -188,7 +192,7 @@ const mdComponents = {
   //   故 ```\\nplain\\n``` 这类无语言围栏被误判为行内代码, 且 pre 覆盖又把块级容器一并抹掉 →
   //   实测 pre 数=0, 多行代码挤成一行内联、换行压平、左线/限高/等宽块样式全丢(thought 贴代码极常见)。
   // 现按语义归位: pre = 块级容器(本组件), code = 行内样式(不论在不在 pre 内, 前者字体/换行由 pre 管) — 小欧-2026-10-05
-  pre: (props: MdProps) => <pre style={codeBlockStyle}>{props.children}</pre>,
+  pre: (props: MdProps) => <PreBlock {...props} />,
   a: (props: MdProps) => (
     <a
       href={props.href}
@@ -293,6 +297,31 @@ export const findUnclosedFenceTail = (
     closedPart: lines.slice(0, openIdx).join('\n'),
     openTail: lines.slice(openIdx).join('\n'),
   };
+};
+
+// 2026-10-05 小欧 - 围栏代码块右上角"复制"按钮(老陈指令):
+//   取原始 children 字符串做复制源(不含按钮文本, 保证复制=代码原文), 复制后 1.5s 变"已复制"回退。
+const extractPlainText = (node: React.ReactNode): string => {
+  if (node == null || node === false) return '';
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(extractPlainText).join('');
+  if (React.isValidElement(node)) {
+    return extractPlainText(
+      (node.props as { children?: React.ReactNode }).children
+    );
+  }
+  return '';
+};
+
+const PreBlock: React.FC<MdProps> = (props) => {
+  // 2026-10-05 小欧: 按钮交互抽到共用 CopyButton(消除本文件与 MarkdownBody 重复实现, DRY)。
+  //   复制源=extractPlainText(props.children) 取原始字符串(不含按钮文本); 详见 CopyButton.tsx。
+  return (
+    <pre style={{ position: 'relative', ...codeBlockStyle }}>
+      <CopyButton text={extractPlainText(props.children)} />
+      {props.children}
+    </pre>
+  );
 };
 
 interface MarkdownTextProps {

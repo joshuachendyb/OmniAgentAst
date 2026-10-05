@@ -24,6 +24,7 @@ import {
   Radius,
   Spacing,
 } from '@/utils/stepStyles';
+import { CopyButton } from './CopyButton';
 
 /**
  * 行内标记: 代码 > 粗体 > 斜体, 按优先级单趟切分(不递归, 免嵌套自匹配)。
@@ -95,6 +96,7 @@ interface MarkdownBodyProps {
   text: string;
 }
 
+// 2026-10-05 小欧 - 围栏代码块右上角"复制"按钮复用共用组件 CopyButton(与 MarkdownText 同源, 消除DRY重复) — 小欧-2026-10-05
 /** 块级解析: 仅 fenced 代码块与标题/列表为块, 其余逐行走行内解析 */
 const MarkdownBody: React.FC<MarkdownBodyProps> = ({ text }) => {
   const blocks = text.split(/\r?\n/);
@@ -133,8 +135,10 @@ const MarkdownBody: React.FC<MarkdownBodyProps> = ({ text }) => {
             margin: `${Spacing.XS}px 0`,
             overflowX: 'auto',
             whiteSpace: 'pre',
+            position: 'relative',
           }}
         >
+          <CopyButton text={buf.join('\n')} />
           {buf.join('\n')}
         </pre>
       );
