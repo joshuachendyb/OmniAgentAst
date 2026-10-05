@@ -1,4 +1,37 @@
-﻿v1.1.6
+﻿v1.1.7
+更新时间: 2026-10-05 08:30:50 - 小欧-2026-10-05
+## v1.1.7 shell卡死治理+observation契约收敛+taskinfo改版+action.target清理(35个commit: feat4/fix3/refactor8/test2/docs15/perf1) - 小欧-2026-10-05
+[2026-10-05 08:30:50 小欧] 范围=v1.1.6→HEAD(共35个commit)。四条主线:①shell卡死治理(shell_engine实例池有界化/只读白名单单一权威迁出safety层/loop_watchdog事件循环心跳看门狗/AGENTS.md新增取证小节);②observation契约收敛(sseParser+execution删6处死派生字段、observation_builder删llm_data_text、66个工具删action.target、observation_formatter改从params派生处理对象);③taskinfo信息带改版(token链序P/C/T、折K/M、tooltip原始值、占窗率、帧类型context_overview改名history_context、CHARS_PER_TOKEN 1.8→2.5);④文档入库([1]系统架构全景解析V1.0.2/[7]shell卡死治理方案/[8]observation工具结果显示问题)。
+
+### 1.1.7 shell卡死治理(三层实施)
+[修复] shell_engine.py+execute_shell_command.py+tool_retry_engine.py 实例池有界化根治卡死(同步exec跑在事件循环里挂死→全服务僵死) - 提交 518686d1a
+[重构] shell_readonly.py+executor.py 只读白名单单一权威迁出safety层; FAST_CHANNEL_FORBIDDEN补4类命令替换载体堵白名单绕过 - 提交 16a3de345/435742c7e
+[新增] loop_watchdog.py+stream_orchestrator.py+agent_runner.py 事件循环心跳看门狗接线 - 提交 5b3f79d7d
+[文档] AGENTS.md 新增Shell卡死取证小节(py-spy dump全PID定位+8000端口重启命令); [7]shell卡死治理方案新建并修订至v1.2 - 提交 e62d5d561/6d5777c8f
+
+### 1.1.7 observation契约收敛(删死字段+action.target清理)
+[重构] sseParser+chat.ts+execution.ts+ToolResultRenderer+PipelineRenderer+ToolCallLine 删6处死派生字段(execution_result/execution_status/tool_params/parallel_results/observation/return_direct)+content兜底链收敛为只认tool_result+删ObservationData/ObservationMessage旧契约类型 - 提交 3b8630519
+[重构] observation_builder.py+react_step.py+history_loader.py+handle_action.py+display_utils.py 删llm_data_text字段(前端零引用+回放兜底实测0/2306不可达) - 提交 ad32a7777
+[重构] renderers/删5个零生产引用死文件+stepConstants/markdown/stepContentUtils删3个零import死代码文件+ToolResultRenderer删形状分派统一generic - 提交 61ed58963/f17143584/d26f2a15e
+[重构] tools/ 66个工具文件删action.target(params承载目标)+文件头标注; agent/ observation_formatter+react_step 适配action.target删除(改从params派生处理对象) - 提交 8033881ed/f97ec2083
+[新增] ToolCallLine展开区改结论区(亮蓝五角星+完整摘要+metrics标签,不显示data_text与契约字段)+子行删硬截/摘要只取llm_data.summary/参数每键一行且超5项折叠+GenericResultRenderer下线 - 提交 29b0ba2c3
+
+### 1.1.7 taskinfo信息带改版+帧类型改名history_context
+[新增] TaskInfoBar等11文件 taskinfo改版: token两项链序改P/C/T且P加粗、行内折K/M、tooltip原始值不折行、无数据显示–、G3轮步拆两段、分隔点统一•、新增占窗率=本轮P/窗口、断点门统一isNarrow - 提交 ad0b1c3c0
+[新增] TaskInfoBar等7文件 截断事件+计数胶囊+注入字段显出: history_context帧仅truncated时入steps、事件标签加antdBadge计数胶囊、卡片显出跨任务注入三字段、新增Colors.ACCENT_ORANGE令牌 - 提交 4e4847fe2
+[重构] react_step.py+steps/__init__.py+agent_telemetry.py usage帧新增context_window且帧类型context_overview改名history_context - 提交 88334809f
+[修复] compaction_constants.py+message_builder.py+prune.py CHARS_PER_TOKEN 4→1.8→2.5(中文低估2-4倍;实测1000汉字≈1900token) - 提交 871fbe015/1730a51f4
+[修复] db_initializer.py+steps/__init__.py 新增帧类型改名一次性迁移_migrate_step_type_context_rename(旧step_json行context_overview→history_context) - 提交 ace0269e5
+
+### 1.1.7 文档入库
+- [1]系统架构全景解析及能力详解说明V1.0.2入库(基于git tag v1.0.2代码取证) - 提交 71c0e0610
+- [6]taskinfo历史上下文卡片优化补记今日改动 - 提交 70571f502
+- [7]shell卡死治理方案+[8]observation工具结果显示问题章节合并精简+字段删除方案+全文对齐清理后现状 - 提交 937644a94/99e55e533/289889bda/a9b3efbbe/2c0ec896c
+- FUNCTIONS.md+[7]shell卡死治理方案1.14白名单登记+实施diff同步 - 提交 5bcc3688a
+- notes/ 9份E2E测试记录归档后删除 - 提交 3749173d5/24439fbe7/72a0b0769/018f136c1
+
+---
+v1.1.6
 更新时间: 2026-10-04 05:14:02 - 小欧-2026-10-04
 ## v1.1.6 link随消息携带全链路落地+taskinfo卡片优化(43个commit: feat8/fix7/refactor3/test10/docs13/style2) - 小欧-2026-10-04
 [2026-10-04 05:14:02 小欧] 范围=v1.1.5→全部commit(共43个)。四条主线:①会话级 link 开关由「独立 PATCH 端点」推翻为「值随消息携带」全链路落地(后端5文件+前端19文件);②taskinfo「历史上下文」卡片优化(修P0:摘要键读错致卡片恒显"–");③前端 E2E 14~19 全绿并新增 link 分组用例;④远端模型元数据补free/stability 与免费判据收口纯函数。
