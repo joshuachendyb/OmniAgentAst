@@ -13,6 +13,8 @@
 // 编辑历史: 2026-09-17 小沈 - 折叠按钮改为内联跟在文本末尾不另起新行: 去掉外层 flex div,
 //   span display:inline + whiteSpace:nowrap 直接跟在 shown 文本流末尾(最后一行右侧尾巴) — 小沈-2026-09-17
 // 编辑历史: 2026-10-05 小欧 - 折叠 state 与事件处理交公用 hook useDisclosure(文档[9] §5.7), 与 ThinkingStream 去重; 5 处调用行为零回归 — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 加可选 renderExpanded: 展开态渲染由调用方注入(左列 task 卡 response 传 MarkdownSlot);
+//   不传则展开仍显纯文本, 折叠态与其余 4 处调用零变化 — 小欧-2026-10-05
 /**
  * CollapsibleText - 统一折叠组件（折叠非截断）
  *
@@ -35,12 +37,23 @@ interface CollapsibleTextProps {
   text: string;
   maxLines?: number; // 默认 5 行阈值
   maxChars?: number; // 默认 200 字阈值
+  /**
+   * 2026-10-05 小欧 北京老陈指令(左列 task 卡 response 接 Markdown): **展开态**的渲染方式,
+   *   由调用方注入(左列传入 MarkdownSlot 按排版渲染)。不传则保持原样(展开仍是纯文本全文),
+   *   其余 4 处调用零变化。
+   *   为何用"渲染策略注入"而不是把 expanded state 提到外面: 提state 需在 TaskListPanel 复刻
+   *   阈值判定+首2行摘要+箭头 UI 约 30 行(违 DRY, 且 CollapsibleText 自 2026-08-28 起
+   *   有 text 首100字符重置 expanded 等一整套状态机, 复制必漏)。本组件职责仍是"折叠/展开两态怎么显示",
+   *   展开态内容属调用方 —— 本组件不需要知道 Markdown 是什么(SRP)。
+   */
+  renderExpanded?: (text: string) => React.ReactNode;
 }
 
 const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   text,
   maxLines = 5,
   maxChars = 200,
+  renderExpanded,
 }) => {
   // 2026-10-05 小欧 - 折叠 state 交公用 hook(文档[9] §5.7), 替 ThinkingStream 复写同逻辑 — 小欧-2026-10-05
   const { expanded, setExpanded, onToggleClick, onToggleKeyDown } =
@@ -60,7 +73,10 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
   }, [text, maxLines, maxChars]);
 
   const shown = useMemo(() => {
-    if (!overflow || expanded) return text;
+    // 展开态: 有注入渲染器则用它(左列 task 卡 response 走 Markdown), 否则原样显示全文
+    if (!overflow || expanded) {
+      return expanded && renderExpanded ? renderExpanded(text) : text;
+    }
     const lines = text.split('\n');
     // 2026-08-27 小欧 修复: 多行内容优先取首2行摘要(BUG-G), 单行超长无换行才按字符截断(修复#7)
     if (lines.length > 1) {
@@ -70,7 +86,7 @@ const CollapsibleText: React.FC<CollapsibleTextProps> = ({
     }
     if (text.length > maxChars) return text.slice(0, maxChars) + '…';
     return text;
-  }, [text, overflow, expanded, maxChars]);
+  }, [text, overflow, expanded, maxChars, renderExpanded]);
 
   return (
     <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>

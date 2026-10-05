@@ -21,6 +21,8 @@
 //   Colors.INFO 达 WCAG AA; 并纠正下方头注释"类型徽标(context_link_mode)"之过时描述(本文件该字段零使用) — 小欧-2026-10-03
 // 编辑历史: 2026-10-03 小欧 - 视觉修正: 链号徽标背景 #e6f4ff 与激活行背景(#e6f4ff)撞色, 激活行上徽标底色融入行背景丢分层
 //   → 徽标背景改 #f5f5f5 与同行轮次标签一致, 字色保留 Colors.INFO(#096dd9 on #f5f5f5 ≈ 4.9:1, 达 WCAG AA) — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 小欧 - 左列 task 卡 response 接 Markdown: 传 renderExpanded 使展开态排版、折叠态维持原首2行纯文本;
+//   恒 markdown=true 不受设置开关控制(仅受折叠开关控制) — 小欧-2026-10-05
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -45,6 +47,9 @@ import { Colors } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
 import { showSuccess, handleError } from '@/services/error/handler';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
+// 2026-10-05 小欧 北京老陈指令(左列 task 卡 response 接 Markdown): 展开态渲染器, 恒开不受设置开关控制
+//   (用户明示"task 下的 mark 显示不受设置的开关的控制") —— 直接传 markdown={true} 绕过 MD_IMPL 之外的开关
+import { MarkdownSlot } from '../pipeline/MarkdownSlot';
 
 // 2026-09-30 小欧 [81]v1.4-H18: 左列任务状态标签——按后端 status 枚举正确显示。
 //   DB 合法值: completing→completed/executing/paused/failed/cancelled（db_initializer 默认 'executing'）
@@ -380,7 +385,15 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                     wordBreak: 'break-word',
                   }}
                 >
-                  <CollapsibleText text={t.response} />
+                  {/* 2026-10-05 小欧 北京老陈指令: response 展开态按 Markdown 渲染, 折叠态维持原首2行纯文本。
+                      renderExpanded 只在"已展开"时被 CollapsibleText 调用(不传则原样显示全文),
+                      故折叠表现与改动前逐字一致; markdown 恒 true —— 本处不受「思考排版」设置开关控制。 */}
+                  <CollapsibleText
+                    text={t.response}
+                    renderExpanded={(expandedText) => (
+                      <MarkdownSlot text={expandedText} markdown />
+                    )}
+                  />
                 </div>
                 {/* 2026-09-09 小欧 复制按钮: 回复区域右上角, hover时显示 */}
                 <button
