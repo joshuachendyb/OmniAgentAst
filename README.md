@@ -2,7 +2,9 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v1.0.5 | **更新时间**: 2026-09-27 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-09-27
+**版本**: v1.0.6 | **更新时间**: 2026-10-05 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-10-05
+
+> 更新记录（小欧-2026-10-05）：新增 §8.4.1「铁律：清场只按端口杀，严禁按进程名批量杀」——起因是实测事故：清场误用 `Stop-Process -Name "node"`，连带杀死前端 vite `:5173`、E2E 代理 `:9000` 及 **OpenCode 自身 Web UI `:3080`**（AI 会话界面弹「网络链接失效」），且 vite 日志零报错、进程数秒后凭空消失，极易误判为服务自崩。内容含禁止/正确写法对照、本项目端口对照表（含「3080 严禁杀」）、`--reload` 双进程提醒、代码侧 `killPort()` 已合规的结论，以及「后台启动长驻服务被工具链误杀」的规避（独立窗口或计划任务）。
 
 > 更新记录（小欧-2026-09-23）：三堂会审一致性修正——①§7.2 配置节总览补 `llm`/`network` 节、`agent` 去掉已迁走的 `max_rounds`；②§7.4 agent 表对齐现键（仅 `max_steps`，历史保留轮数迁 `tuning.trim.max_rounds`）；③§7.7 调优表按 REGISTRY 实测重写为 33 键 9 子组（补 trim/compaction，llm 5 键/agent 1 键，删 network 行与已迁通用的 temperature/max_tokens）；④`CORS_ORIGINS` 覆盖项改 `network.cors_origins`。
 
@@ -765,6 +767,61 @@ python -c "import subprocess; p=subprocess.Popen(['python','-m','pytest','e2etes
 | ① 代码错误/异常（最高优先级） | 日志 traceback/ERROR、SSE error 事件 → 有则立即停，走修复 |
 | ② 调用链分析 | 工具选择/顺序、LLM 调用次数是否合理，输出 `[CALL CHAIN]` |
 | ③ 参数正确性 | tool_params 中路径/关键词是否正确 |
+
+### 8.4.1 铁律：清场只按端口杀，严禁按进程名批量杀
+
+> 2026-10-05 小欧 新增（北京老陈裁定）。本节为**红线**，违反会连带杀死无关服务。
+
+**禁止**（按进程名批量杀）：
+
+```powershell
+# ❌ 严禁：会杀死本机所有 node 进程
+Get-Process -Name "node" -ErrorAction SilentlyContinue | Stop-Process -Force
+# ❌ 严禁：会杀死本机所有 python 进程（含其他项目的解释器/服务）
+Get-Process -Name "python*" -ErrorAction SilentlyContinue | Stop-Process -Force
+# ❌ 严禁：等价批量杀
+taskkill /F /IM node.exe
+```
+
+**真实事故（2026-10-05 实测）**：清场时误用 `Stop-Process -Name "node"`，
+把三类进程一起杀掉——①前端 vite dev `:5173`；②E2E 后端代理 `:9000`；
+③**OpenCode 自身的 Web UI `:3080`（它也是 node 进程）**，导致 AI 会话界面弹出「网络链接失效」。
+现象极具迷惑性：vite 日志**无任何报错**、`vite-dev.err.log` 长度 0、进程数秒后凭空消失，
+看起来像「服务自己崩了」，实为被外部批量清场误杀。
+
+**正确做法（唯一允许的两种）**：
+
+```powershell
+# ✅ 方式一（推荐）：PowerShell 按端口精确杀，可重复执行、无竞态
+Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue |
+  ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+
+# ✅ 方式二：先查 PID 再杀（需人工核对 PID 归属，勿复制粘贴盲用）
+netstat -ano | findstr :8000
+taskkill /F /PID <上一步确认的PID>
+```
+
+**本项目端口对照表**（清场时务必对号入座，勿按进程名猜）：
+
+| 端口 | 进程 | 能否杀 |
+|------|------|--------|
+| 5173 | 前端 vite dev（长驻页面服务） | 仅前端 E2E 断流 case 需要，且优先复用不杀 |
+| 8000 | 后端 uvicorn（`--reload` 双进程） | 可杀，须连父进程一起（见下方提醒） |
+| 9000 | E2E 后端代理 `api-proxy.ts` | 可杀，断流 case 专用手段 |
+| 3080 | **OpenCode Web UI（非本项目）** | **严禁杀** |
+
+**`--reload` 双进程提醒**：后端 `--reload` 会派生父子两进程，只杀监听 8000 的子进程，
+父进程会立刻拉起新的；须 `Get-NetTCPConnection -LocalPort 8000 -State Listen` 取全部
+`OwningProcess` 一并杀掉（上面的写法已含此能力），再 `Start-Sleep 3` 等端口释放。
+
+**代码侧已合规**：`frontend/e2e_front_lib/process.ts` 的 `killPort(port)` 走
+`Get-NetTCPConnection -LocalPort` 精确杀，**不按进程名**，无需改动；本节仅约束**手工命令**。
+
+**附：后台启动服务被工具链误杀的规避**（2026-10-05 实测）——用 AI 的 bash 工具
+`Start-Process` / `Win32_Process.Create` 拉起的长驻服务，其进程树挂在工具的 job object 内，
+工具调用结束会被 `ChildProcess.kill` 连带清理，表现为「启动成功、数秒后无声消失、日志零报错」。
+需长驻的 vite / uvicorn 应走**独立 PowerShell 窗口**（如 8.4 第 1 步）或**计划任务**
+（`schtasks /create` + `/run`，由 Task Scheduler 服务派生，完全脱离工具进程树）。
 
 ### 8.5 后端 E2E：case 编写（重点）
 
