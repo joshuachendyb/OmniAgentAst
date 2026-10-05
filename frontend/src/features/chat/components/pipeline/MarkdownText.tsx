@@ -26,12 +26,13 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import {
+  BorderWidth,
   Colors,
+  FontFamily,
   FontSize,
   FontWeight,
+  Radius,
   Spacing,
-  BorderWidth,
-  FontFamily,
 } from '@/utils/stepStyles';
 
 /**
@@ -66,11 +67,16 @@ const SANITIZE_SCHEMA = {
 //   原同时写 wordBreak 与 overflow 两者语义抵消(折行后永不出滚动条), 二者只能留一。
 //   选滚动理由: 代码块按代码语义应保列对齐, 折行破坏缩进层级; 且与 GitHub/CommonMark 生态一致。
 //   wordBreak 显式写 normal 而非删净 —— 不依赖祖先继承, 意图可读且防上游将来改 getStreamStyle 串味。
+//   2026-10-05 北京老陈裁定(方案A): 代码块改**四边整框 + 圆角 + 浅底**(此前只有左边一条 2px 竖线、
+//   透明底、直角, 三面无边)。逐项对齐 MarkdownBody 版观感: border 1px #d9d9d9(BorderWidth.DEFAULT ×
+//   Colors.BORDER.DEFAULT)、borderRadius Radius.SM、background Colors.BG.SECONDARY;
+//   **原borderLeft 竖线删除** —— 整框已含左边, 两条并存会叠成双线。
 const codeBlockStyle: React.CSSProperties = {
   margin: `${Spacing.XS}px 0 ${Spacing.SM}px`,
   padding: `${Spacing.XS}px ${Spacing.SM}px`,
-  borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.VERTICAL}`,
-  background: 'transparent',
+  border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
+  borderRadius: Radius.SM,
+  background: Colors.BG.SECONDARY,
   fontSize: FontSize.CODE,
   fontStyle: 'normal',
   fontFamily: FontFamily.MONO,
@@ -78,7 +84,6 @@ const codeBlockStyle: React.CSSProperties = {
   wordBreak: 'normal',
   maxHeight: 400,
   overflow: 'auto',
-  borderRadius: 0,
 };
 
 // 行内代码: 加浅底以与正文区分(不加背景色块, 与项目"内容即容器"风格一致)
