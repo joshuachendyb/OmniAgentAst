@@ -17,6 +17,10 @@
 //   淡蓝保品牌色相且与状态色不冲突, #fafafa 底上可见又不抢内容
 // 编辑历史: 2026-10-04 小欧 - 新增 ACCENT_ORANGE=#d4380d: 事件计数胶囊底色(橘底白字, 白字对比约4.8:1达AA;
 //   亮橘 #fa8c16 配白字仅 2.4:1 弃用)
+// 编辑历史: 2026-10-05 小欧 - 新增 FontFamily.MONO 令牌: 代码文本字体栈此前散落 5 处
+//   (MarkdownBody / ToolCallLine 2 处 / AboutFiles CODE_FONT / StaticStatsBlock 2 处 / SecretRevealInput),
+//   两种字形并存违 DRY。**本次仅新增令牌并改 MarkdownBody 一处**, 存量 5 处尚未收敛(改动面超出本次
+//   范围, 需单独一轮统一), 故此处不作"已统一"表述, 避免注释失真 — 小欧-2026-10-05
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -76,6 +80,12 @@ export const FontSize = {
   EMOJI: 14, // 表情符号大小
 } as const;
 
+// 等宽字体族(代码/路径/技术文本) —— 2026-10-05 小欧 新增:
+//   仓内曾有 5 处各写各的字体栈(两种字形并存), 本令牌作为收敛目标; 当前仅 MarkdownBody 已切换,
+//   存量待单独一轮统一。新增代码文本一律引用本令牌。 — 小欧-2026-10-05
+export const FontFamily = {
+  MONO: 'Consolas, Menlo, monospace',
+} as const;
 // 字重规范
 export const FontWeight = {
   BOLD: 600, // 标题、重要标签

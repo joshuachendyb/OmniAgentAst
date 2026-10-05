@@ -9,6 +9,7 @@
 //   2026-09-14 小欧 - DRY: 反转检测打点抽取公用 hook useRiseLog(与 ThinkingStream 同款逻辑去重) — 小欧-2026-09-14
 // 编辑历史: 2026-09-14 小欧 - 正文末位光标换型(北京老陈驱动): 静态<span>▍</span>(无动画)→复用 WaitingIcons/ActionWaitingIcon(蓝#1677ff核心圆+双层波纹扩散, 复用既有CSS零新增, 清理后首次启用) — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop, 打字机末位波纹光标 ActionWaitingIcon 挂钟面并存 - 小欧-2026-09-17
+// 编辑历史: 2026-10-05 小欧 - 新增 markdown prop 接「思考排版」开关(文档[9] §5.8): 开=按Markdown 渲染本段, 关=原样纯文本(旧行为不变); 打字机切片在前、渲染在后, 两层不干涉 — 小欧-2026-10-05
 /**
  * TextStream - 正文打字机（真逐字 + 末位光标）
  *
@@ -25,6 +26,7 @@ import { normalizeBlankLines } from '@/utils/textNormalize';
 import { useRiseLog } from '@/features/chat/hooks/useRiseLog'; // 2026-09-14 小欧: CURSOR F 翻转打点(抽公用 hook) — 小欧-2026-09-14
 import { ActionWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-14 小欧: 正文末位光标换型(蓝色波纹扩散圈) — 小欧-2026-09-14
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
+import { MarkdownBody } from './MarkdownBody'; // 2026-10-05 小欧: 思考排版渲染器(文档[9] §5.8) — 小欧-2026-10-05
 
 interface TextStreamProps {
   text: string;
@@ -32,6 +34,13 @@ interface TextStreamProps {
   cursor?: boolean; // 末位闪烁光标
   compact?: boolean; // 同 step 内部(13.6 拆出的 reasoning→thought 相邻): 段距 SM(6)
   waitClock?: ClockSignals; // 2026-09-17 小欧 实施: 钟面信号(与波纹光标并存) — 小欧-2026-09-17
+  /**
+   * 2026-10-05 小欧 - 思考排版开关(文档[9] 方案设计 §5.8 / 北京老陈裁定「两个独立开关」):
+   *   本段(thought 段)正文是否按 Markdown 语法渲染。与 reasoning 段的折叠初值开关
+   *   (reasoningVisible → ThinkingStream)是两个独立开关, 互不干涉。
+   *   默认 false=按纯文本(与本组件 2026-08-30 以来行为完全一致, 不退化) — 小欧-2026-10-05
+   */
+  markdown?: boolean;
 }
 
 const TextStream: React.FC<TextStreamProps> = ({
@@ -40,6 +49,7 @@ const TextStream: React.FC<TextStreamProps> = ({
   cursor = false,
   compact = false,
   waitClock, // 2026-09-17 小欧 实施
+  markdown = false, // 2026-10-05 小欧: 思考排版(默认关=纯文本旧行为) — 小欧-2026-10-05
 }) => {
   const clean = normalizeBlankLines(text, { streaming: typing });
   const [shown, setShown] = useState(0);
@@ -76,7 +86,14 @@ const TextStream: React.FC<TextStreamProps> = ({
 
   return (
     <div style={getStreamStyle(compact)}>
-      {clean.slice(0, typing ? shown : clean.length)}
+      {/* 2026-10-05 小欧 - 思考排版开关(文档[9] 方案设计 §5.8): 开=按 Markdown 语法渲染本段正文,
+          关=原样纯文本(打字机逐字切片原逻辑)。切片仍在渲染前完成, 故打字机与 Markdown 各管一段:
+          打字机管"显示到第几个字", MarkdownBody 管"这些字怎么画", 两层互不干扰 — 小欧-2026-10-05 */}
+      {markdown ? (
+        <MarkdownBody text={clean.slice(0, typing ? shown : clean.length)} />
+      ) : (
+        clean.slice(0, typing ? shown : clean.length)
+      )}
       {cursor && typing && <ActionWaitingIcon waitClock={waitClock} />}{' '}
       {/* 2026-09-17 小欧: 波纹与钟面并存(追加) — 小欧-2026-09-17 */}
     </div>
