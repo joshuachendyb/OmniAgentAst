@@ -6,6 +6,8 @@
 # 2026-09-20 - 小欧 - 写仲裁落地: 重命名目标 with claim_write 登记文件写仲裁(外层包裹显式声明重命名写意图,
 #   impl 内层同任务登记幂等), 防跨任务并行覆盖; 仅仲裁不强制, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
+# 2026-10-05 - 小欧 - 单通道补 metrics(北京老陈裁定): success 补 size(重命名后目标 stat)/同名分支 size 取原文件
+#   + changed=0, 结构化承接结果量; summary 不动
 """
 F13: rename_file — 重命名文件
 
@@ -32,6 +34,7 @@ def _build_rename_file_llm_data(
     exec_code: str, duration_ms: int,
     source: str = "", new_name: str = "", detail: str = "", hint: str = "",
     user_destination: str = "", user_overwrite: Optional[bool] = None,
+    file_size: int = 0, changed: Optional[int] = None,
 ) -> Dict[str, Any]:
     """rename_file的llm_data构建函数 — 小健 2026-06-22 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-15 新增overwrite"""
     _act_params = {"source": source, "new_name": new_name}
@@ -48,12 +51,18 @@ def _build_rename_file_llm_data(
             "metrics": {},
         }
     _summary = f"重命名 {source} → {new_name} 成功" if new_name else f"重命名 {source}"
+    # 2026-10-05 小欧 - 单通道补 metrics(北京老陈裁定): size 结构化承接文件大小; summary 不动
+    _metrics: Dict[str, Any] = {}
+    if file_size:
+        _metrics["size"] = {"value": file_size, "text": f"{file_size}字节"}
+    if changed is not None:
+        _metrics["changed"] = {"value": changed, "text": f"{changed}项改动"}
     return {
         "summary": _summary,
         "action": {"tool": "rename", "tool_zh": "重命名", "params": _act_params},
         "status": {"exec_code": "success", "message": "重命名成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {},
+        "metrics": _metrics,
     }
 
 
@@ -97,7 +106,11 @@ async def rename(
 
     if src.name == new_name:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite)
+        try:
+            _same_size = src.stat().st_size if src.is_file() else 0
+        except OSError:
+            _same_size = 0
+        llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite, file_size=_same_size, changed=0)
         llm_data["summary"] = f"重命名{source}，成功: {new_name}（名称相同，无操作）"
         llm_data["status"]["message"] = "名称相同，无需重命名"
         with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
@@ -115,7 +128,11 @@ async def rename(
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
 
     if result.get("success"):
-        llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite)
+        try:
+            _new_size = dst.stat().st_size if dst.is_file() else 0
+        except OSError:
+            _new_size = 0
+        llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite, file_size=_new_size)
         with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
         # branch: #21 fallback (key:val)

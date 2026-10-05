@@ -30,6 +30,8 @@
 #     现消费并入 conflict_warning/llm_data arb_warning 段, X2 冲突提示真实落地(占用者非本人时为并行写警告)。
 #   compliance: SRP(仲裁职责归 arbiter)/KISS-DIRECT/禁止backward
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "write"→"write"(3处), 与新注册名同源
+# 2026-10-05 - 小欧 - 单通道去数字化(北京老陈裁定): success/warning summary 去 `{bytes_written}字节`
+#   与「提示说明」段, 统一为 `写入文件{file_path}，成功`; bytes 在 metrics 统计段呈现(通用渲染)
 """
 F2: write — 写文本文件
 
@@ -187,7 +189,7 @@ def _build_write_text_file_llm_data(
         if mtime_warning:
             hint = ("；".join([hint, mtime_warning]) if hint else mtime_warning)
         return {
-            "summary": f"写入文件{file_path}，成功,提示说明: {detail or mtime_warning}，{bytes_written}字节",
+            "summary": f"写入文件{file_path}，成功",
             "action": {"tool": "write", "tool_zh": "写入", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
@@ -196,7 +198,7 @@ def _build_write_text_file_llm_data(
             },
         }
     return {
-        "summary": f"写入文件 {file_path}，成功，共 {bytes_written} 字节",
+        "summary": f"写入文件{file_path}，成功",
         "action": {"tool": "write", "tool_zh": "写入", "params": _act_params},
         "status": {"exec_code": "success", "message": "写入成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

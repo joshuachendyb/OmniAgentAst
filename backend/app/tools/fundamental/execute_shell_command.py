@@ -136,6 +136,8 @@
 # 2026-10-02 - 小欧 - 注册名归位: action.tool "shell"→"bash"(3处), validate_timeout(timeout,"shell")→"bash"; 实现函数名 shell 不动 实现函数名 shell 不动
 # 2026-10-05 - 小欧 - 文档[8]第八章: ①P6 params存完整command(原存cmd_short缩写致LLM无法核对命令) ②P8 cmd_short掐头去尾改掐中保尾150=头130+尾20(原式拼出不连续文本致LLM误认相邻内容), 标注「已截N字符」
 # 2026-10-05 - 小欧 - 报告 N2/P2: N2 更正"需用户确认"误导文案(本函数不发起确认); P2 明确 one-shot 仅性能路由非放行依据, 不调扫描是架构边界所致(禁 tools→safety), 残余面由白名单禁换行收窄。
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): success summary 去 `退出码/输出字符`, warning summary 去 `_warn_msg`,
+#   统一 `执行Shell命令{cmd_short}，成功`; output_len/stderr_len 入 metrics 结构化承接(通用渲染)
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -578,19 +580,23 @@ def _build_execute_shell_command_llm_data(
         }
     if exec_code == "warning":
         _warn_msg = detail or f"退出码{returncode}，标准错误{stderr_len}字符"
+        # 2026-10-05 小欧 - 单通道去冗余(北京老陈裁定): summary 不再嵌 _warn_msg, 统一 `执行Shell命令{cmd_short}，成功`;
+        #   stderr 长度入 metrics 结构化承接, _warn_msg 仍由 detail 承载(⚠ 警告行)
         return {
             "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
             "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,
-            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
+            "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "stderr_len": {"value": stderr_len, "text": f"stderr {stderr_len}字符"}},
         }
+    # 2026-10-05 小欧 - 单通道去数字化(北京老陈裁定): summary 去 `退出码{returncode}，输出{output_len}字符`,
+    #   统一 `执行Shell命令{cmd_short}，成功`; 两数在 metrics 统计段呈现(通用渲染)
     return {
-        "summary": f"执行Shell命令{cmd_short}，成功: 退出码{returncode}，输出{output_len}字符",
+        "summary": f"执行Shell命令{cmd_short}，成功",
         "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
         "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
-        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
+        "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "output_len": {"value": output_len, "text": f"输出{output_len}字符"}},
     }
 
 
