@@ -80,6 +80,9 @@ def _build_schema(conn) -> None:
             task_id TEXT, response TEXT, reasoning TEXT, outcome TEXT, chat_model TEXT,
             accumulated_usage TEXT, client_os TEXT, browser TEXT, device TEXT, network TEXT, created_at TEXT
         );
+        -- 2026-10-05 小欧(③b): 消息 id 单一序列(生产侧 db_initializer 12.2-C4)。
+        -- 测试侧须同步, 否则 storage.insert_user_message 会在 no such table: id_sequence 处红(环境错, 无效 Red)
+        CREATE TABLE id_sequence (id INTEGER PRIMARY KEY AUTOINCREMENT);
         CREATE TABLE token_usage (
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, task_id TEXT NOT NULL,
             llm_call_count INTEGER NOT NULL, task_model TEXT NOT NULL,

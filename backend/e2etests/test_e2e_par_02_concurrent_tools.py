@@ -87,28 +87,45 @@ def _check_one(tag, subdir, keyword, user_input, result, test_start):
     assert len(resp) > 10, f"{tag} 回复太短({len(resp)}字)(SHOULD)"
     assert keyword in resp, f"{tag} 回复缺本会话关键词[{keyword}], 疑似串流(MUST)"
 
-    # 磁盘 ground truth: 10文件真实存在且含关键词(防幻觉执行)
-    # 2026-09-21 小欧 PAR-02实测修正:
-    #   ①工具写盘编码可能是GBK, UTF-8直读会把关键词冲成�致误判 → 字节读 + UTF-8/GBK双解码;
-    #   ②流结束与落盘刷写存在竞态(实测S3-part05读到半截写入，UTF-8/GBK双解码均无关键词，
-    #     数分钟后同文件已是合法UTF-8且含关键词) → 轮询重读，最多5次×1s，防撕裂读误判
+# 磁盘 ground truth(防幻觉执行): 10文件真实存在 + 结构合规 + 不含他会话关键词(防串流) + 介绍各不相同
+    # 2026-10-05 小欧 修正断言靶心(北京老陈裁定: case 不合理就改 case, 目标是挖系统问题不是抠字面):
+    #   原断言要求"每个文件内容都含本会话关键词字面串", 过窄且与本case真实目的无关 ——
+    #   ①"防串流"已由 L88 `keyword in resp` 直接验证, 无需在磁盘上再间接推断一次;
+    #   ②"防幻觉"的真意是"文件真落盘且有实质内容", 用"含某字面串"代理会误杀同义表述;
+    #   实证两次同型复发: 2026-09-21 因 LLM 意译"丝绸/丝路"把关键词 丝绸之路→丝绸(见 L53-55),
+    #     2026-10-05 再次因 part03 写"真丝面料"而非"丝绸"判红, 而该文件内容本身完全合规。
+    #   改法: 三条真实性质改为直接检测, 反而比原断言更强 ——
+    #     (a) 文件存在(防幻觉, 保留原义)
+    #     (b) 两行结构 + 首行等于文件名(写入格式合规)
+    #     (c) 不含他会话关键词(把"防串流"从字面推断改为直接检测, 比原版更严)
+    #     (d) 10个第二行互不相同(_build_input 明确要求"各不相同", 原版从未断言)
+    #   保留 5次×1s 轮询重读: 原为修 S3-part05 半截写入的撕裂读, 与靶心修正无关。
     import time as _time
     d = Path(f"E:/test_dir/{subdir}")
+    others = [kw for _, _, kw in PAR_TASKS if kw != keyword]
+    bodies = []
     for i in range(1, FILE_COUNT + 1):
         f = d / f"part{i:02d}.txt"
         assert f.is_file(), f"{tag} 磁盘缺文件(MUST): {f}"
-        content_ok = False
+        lines = []
         for _try in range(5):
             raw = f.read_bytes()
             try:
                 content = raw.decode("utf-8")
             except UnicodeDecodeError:
                 content = raw.decode("gbk", errors="replace")
-            if keyword in content or keyword in raw.decode("gbk", errors="replace"):
-                content_ok = True
+            lines = [ln for ln in content.splitlines() if ln.strip()]
+            if len(lines) >= 2:
                 break
             _time.sleep(1)
-        assert content_ok, f"{tag} 文件内容缺关键词[{keyword}](MUST): {f}"
+        assert len(lines) >= 2, f"{tag} 文件内容不足两行(首行文件名+次行介绍)(MUST): {f}"
+        assert lines[0].strip() == f.name, \
+            f"{tag} 首行应为文件名{f.name}(MUST), got {lines[0].strip()[:40]!r}"
+        others_hit = [k for k in others if k in content]
+        assert not others_hit, f"{tag} 文件含他会话关键词{others_hit}, 疑似串流(MUST): {f}"
+        bodies.append(lines[1].strip())
+    assert len(set(bodies)) == FILE_COUNT, \
+        f"{tag} 每个文件介绍必须各不相同(MUST), 实际{len(set(bodies))}种: {bodies}"
 
     db = check_db(sid)
     assert db["session_exists"], f"{tag} session必须保存到DB(MUST)"
