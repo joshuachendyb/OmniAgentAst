@@ -25,6 +25,9 @@ key 全局唯一，加载自检重复直接拒启。
   2026-09-28 小欧 - 字典键 range_→range 全链路统一（DTO/前端本就叫 range，Pydantic 静默丢弃
     range_ 致响应 range 恒 null：值域不显示、InputNumber 失 min/max、字号滑块回落 0~100）。
     参数名 range_ 保留（避内置 range，同 model_service.add_model）。
+  2026-10-05 小欧 - appearance 组加两个独立 bool: step_render.thoughtMarkdown「思考排版」(thought块
+    Markdown渲染) + step_render.reasoningVisible「推理内容」(reasoning块折叠初值), 默认皆开; 置于
+    fontSize 之后(sectionOf 只比相邻项), 不加 restart/secret/env_key。缺键由 get_group 回填默认值。
 """
 from typing import Any, Dict, List, Optional
 
@@ -166,6 +169,15 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("app.theme", "readonly", "主题", "light", readonly=True,
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
+        # 2026-10-05 小欧 - step 渲染显示选项(文档[9] 方案设计 §5.1, 北京老陈裁定两个独立开关):
+        #   走前缀 appearance.step_render.*, 不加会被 SettingsGroup.tsx 的"外观"兜底吞掉;
+        #   置于 appearance.fontSize 之后, 令 sectionOf 只多一节(§5.11 对齐)
+        #   ①思考排版=thought 段(text)是否按 Markdown 语法渲染 ②推理内容=reasoning 段折叠初值, 两者互不干涉
+        #   顺序=北京老陈定的「推理内容 在前、思考排版 在后」, 不按文档表格重排 — 小欧-2026-10-05
+        _item("appearance.step_render.reasoningVisible", "bool", "推理内容", True,
+              notice="推理内容折叠开关：开=每段思考进来就展开；关=新出现的推理段默认只显示标题行，点标题行的箭头可单独展开/收起"),
+        _item("appearance.step_render.thoughtMarkdown", "bool", "思考排版", True,
+              notice="思考内容(thought)用 Markdown 语法渲染的开关：开=按标题/加粗/列表/代码等语法渲染，关=按纯文本实时显示（效果同加粗）"),
     ]},
     # 2026-09-24 小欧 - 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支
     "model_library": {"label": "模型库", "items": []},

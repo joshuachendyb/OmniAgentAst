@@ -90,6 +90,17 @@ app:
   language: zh-CN
   theme: light
 
+# 前端(step)渲染显示配置 — 北京老陈 2026-10-05 定两个独立开关，默认皆开
+#   step_render.thoughtMarkdown = 「思考排版」: thought 块正文是否按 Markdown 语法渲染
+#       (标题/粗体/列表/代码; 关掉则按纯文本实时显示)
+#   step_render.reasoningVisible = 「推理内容」: reasoning 块每段的折叠初值
+#       (开=每段进来就展开; 关=每段进来只留标题行, 点标题行的箭头可单独展开/收起)
+# 两个开关互不干涉: 前者只管 thought 块怎么画, 后者只管 reasoning 块初始折叠态 — 小欧-2026-10-05
+appearance:
+  step_render:
+    thoughtMarkdown: true
+    reasoningVisible: true
+
 # 工作区配置（项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①）
 workspace:
   project_root: ""  # 项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①
