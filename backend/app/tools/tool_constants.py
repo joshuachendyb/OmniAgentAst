@@ -109,6 +109,7 @@
 # 2026-10-02 - 小欧 - 归类调整: 新增 TOOL_CATEGORY_OVERRIDE(归类单一真相源, — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名收敛: TOOL_TIMEOUT_HINTS/TOOL_TIMEOUTS/FILE_OPERATION_TOOLS 键 write→write, edit→edit
 # 2026-10-05 - 小欧 - 文档[8]第八章: ①P8 EXECUTE_SHELL_OUTPARM_LIMIT_CMD 50→150(cmd_short掐中保尾=头130+尾20) ②P1新增OBS_METRICS_MAX_ITEMS=10/OBS_METRICS_VALUE_MAX_CHARS=100 ③P3新增OBS_ERROR_SUPPLEMENT_MAX_CHARS=600
+# 2026-10-05 - 小欧 - 总预算150→130(北京老陈裁定): EXECUTE_SHELL_OUTPARM_LIMIT_CMD 150→130, 头变为110(尾20不变)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -344,7 +345,7 @@ TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS: int = 5            # 使用对象: timer_lis
 # fundamental
 SEND_NOTIFICATION_OUTPARM_LIMIT_MSG: int = 50          # 使用对象: send_notification.py(message params预览截断)
 # shell
-EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 150             # 使用对象: execute_shell_command.py(cmd_short掐中保尾截断总预算=头130+尾20)
+EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 130             # 使用对象: execute_shell_command.py(cmd_short掐中保尾截断总预算=头110+尾20)
 # file/internal
 WRITE_INER_PREVIEW_CHARS: int = 50                 # 使用对象: write_text_file.py(文首文末预览字符数)
 READ_INER_CJK_SAMPLE: int = 100                    # 使用对象: read_text_file.py(CJK检测采样字符数)

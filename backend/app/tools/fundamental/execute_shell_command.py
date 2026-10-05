@@ -290,6 +290,7 @@ def _sanitize_env(base_env: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 # ── cmd_short 截断常量（总预算 = 头 + 尾；掐中保尾，防掐头去尾产生假连续文本） ──
 # 2026-10-05 小欧 文档[8]P8: 尾15→20、预算50→150(头自动130) — 小欧 2026-10-05
+# 2026-10-05 小欧 总预算150→130(北京老陈裁定): 头变为110(尾20不变) — 小欧 2026-10-05
 _SHELL_CMD_TAIL = 20
 _SHELL_CMD_HEAD = EXECUTE_SHELL_OUTPARM_LIMIT_CMD - _SHELL_CMD_TAIL
 
