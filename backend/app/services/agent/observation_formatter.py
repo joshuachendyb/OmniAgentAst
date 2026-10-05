@@ -27,6 +27,8 @@
 # 2026-10-02 - 小欧 - 注册名收敛: _truncation_msg 分流 edit→edit(按 action.tool 新注册名)
 # 2026-10-05 - 小欧 - 文档[8]第八章(信息无损优先): ①P1 metrics通用渲染(此前完全不渲染, 未拼进summary的数字LLM拿不到) ②P3 error分支补data诊断补充段(detail非空时data被跳过, 遮蔽deleted_files等部分成功信息) ③P5 diff双通道固化"二选一"约束注释 ④序7 message/summary叠字去重(前缀同义与完全同义均去重, 语义不同保双段)
 # 2026-10-05 - 小欧 - 报告 P6: 新增 _TARGET_KEYS_BY_TOOL 按工具名覆盖 target 取键优先级(未列走 FALLBACK), 修多参工具固定序显示不准; 新工具只加一行。
+# 2026-10-05 - 小欧 - 文档[10]5.1.1: _METRICS_RENDERED_BY_HANDLER 移出 total_lines(改走统计段通用渲染);
+#   read_docx 的 hint 去「共 N 行」防统计段双出(单通道)
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -131,7 +133,10 @@ from app.tools.tool_constants import (
 
 
 # 2026-10-05 小欧 文档[8]P1: 已被 handler 自行呈现的 metrics 键, 通用渲染跳过防重复 — 小欧 2026-10-05
-_METRICS_RENDERED_BY_HANDLER = frozenset({"total_lines", "page_count"})
+# 2026-10-05 小欧 [10]4.5/5.1.1: total_lines 移出跳集合, 改走统计段通用渲染(单呈现源);
+#   配套 read_text_file summary 去 `/{total_lines}`、read_docx hint 去「共 N 行」(以下本函数的 hint 同步),
+#   三处同批落地防 total_lines 从 LLM text 消失或双出。
+_METRICS_RENDERED_BY_HANDLER = frozenset({"page_count"})
 
 
 def _safe_llm_sub(llm_data, key: str) -> dict:
@@ -405,9 +410,8 @@ def _format_text_content(data: dict, llm_data: dict = None) -> str:
     if tool == "read_pdf":
         return _format_pdf_result(content, data, llm_data)
     if tool == "read_docx":
-        total_lines = ((llm_data or {}).get("metrics", {}) or {}).get("total_lines", {}) or {}
-        total_lines = total_lines.get("value") if isinstance(total_lines, dict) else None
-        hint = f"共 {total_lines} 行，用 offset/limit 分段读取剩余" if total_lines else ""
+        # 2026-10-05 小欧 [10]5.1.1: total_lines 改走统计段通用渲染, hint 去「共 N 行」防双出
+        hint = "用 offset/limit 分段读取剩余" if (((llm_data or {}).get("metrics", {}) or {}).get("total_lines", {}) or {}) else ""
         return _format_prose_result(content, data, hint)
     # clipboard 等纯文本: 文本行窗口(复用 read 行数/单行上限)
     return _format_prose_result(content, data, "")
