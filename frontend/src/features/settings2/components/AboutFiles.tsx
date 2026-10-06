@@ -1,3 +1,4 @@
+// AboutFiles.tsx — 关于区「查看配置文件 / 查看版本文件」全文弹框（只读，Modal）
 // 编辑历史: 2026-09-21 小强 - 新建：关于区文件查看（配置文件全文 / version 文件全文，Modal 只读展示）
 // 2026-09-21 小强 - 视觉对齐项目 tokens（FontSize/Colors/Spacing/settingsRadius），全 antd SVG 图标，
 //   代码区等宽 CODE 字号 + VERTICAL 边框 + TERTIARY 底，不硬编码色值/字号（stepStyles 铁律）。
@@ -10,6 +11,13 @@
 // 2026-09-21 小强 - 按钮改名：查看配置文件/查看版本文件（去"全文"，北京老陈定）
 // 2026-09-21 小强 - 弹框优化：标题与按钮统一去"全文"（单源 docName 派生，删 title/btnLabel/报错三处双写）；行号栏 sticky；复制失败走框内错误条；空文件占位；Modal 加 destroyOnHidden（北京老陈定）
 // 2026-09-22 小欧 - DRY+魔数收口：lineHeight:1.7 两处重复 → CODE_LINE_HEIGHT 常量；行号栏 minWidth:48 → LINE_NO_MIN_WIDTH 命名常量 - 小欧-2026-09-22
+// 2026-10-06 小欧 - 修 bug：行号与内容整体错位。根因=正文 <pre> whiteSpace:'pre-wrap' 折行，
+//   而行号栏 <pre> 是 'pre' 不折行 → 长行占 2 个视觉行、行号栏仍 1 行，其后所有行号集体下偏。
+//   改法=弃「两列并排 pre」改「每条逻辑行 = 一个 grid row(行号格+文本格)」：折行只长高本行、
+//   行号恒在行顶，结构上不可能错位；两格样式收口为 GUTTER_CELL/CODE_CELL 模块常量(共享
+//   fontSize/lineHeight/fontFamily，防两处各写一遍再漂移)；容器 overflowX:'hidden'+overflowY:'auto'
+//   且文本格 overflowWrap:'anywhere' → 超长 token 折行，不出横向滚动条(北京老陈要求不加横滚)。
+//   同步删正文 wordBreak:'normal'(与新方案冲突)；content 不再直接渲染，全走 lines 逐行渲染。 - 小欧-2026-10-06
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Modal, Spin } from 'antd';
 import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
@@ -32,6 +40,31 @@ const CODE_FONT = 'Consolas, Menlo, monospace';
 const CODE_LINE_HEIGHT = 1.7;
 // 2026-09-22 小欧 - 魔数收口：行号栏固定最小宽 48 提取命名常量（代码区等宽布局固有值）
 const LINE_NO_MIN_WIDTH = 48;
+
+// 2026-10-06 小欧 - 行号格/文本格样式提为模块常量：同一逻辑行的两格必须共享 fontSize/lineHeight/fontFamily，
+//   否则行高不一致会再次错位（DRY：杜绝两处各写一遍又漂移）。
+const GUTTER_CELL: React.CSSProperties = {
+  padding: `0 ${Spacing.MD}px`,
+  background: Colors.BG.TERTIARY,
+  color: Colors.TEXT.SECONDARY,
+  textAlign: 'right',
+  userSelect: 'none',
+  fontSize: FontSize.CODE,
+  lineHeight: CODE_LINE_HEIGHT,
+  fontFamily: CODE_FONT,
+  minWidth: LINE_NO_MIN_WIDTH,
+  borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
+};
+const CODE_CELL: React.CSSProperties = {
+  padding: `0 ${Spacing.XL}px`,
+  background: Colors.BG.PRIMARY,
+  color: Colors.TEXT.PRIMARY,
+  fontSize: FontSize.CODE,
+  lineHeight: CODE_LINE_HEIGHT,
+  fontFamily: CODE_FONT,
+  whiteSpace: 'pre-wrap',
+  overflowWrap: 'anywhere',
+};
 
 const stripBom = (s: string): string => s.replace(/^\uFEFF/, '');
 
@@ -239,46 +272,23 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
               display: 'grid',
               gridTemplateColumns: 'auto 1fr',
               maxHeight: '60vh',
-              overflow: 'auto',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              padding: `${Spacing.LG}px 0`,
               border: `1px solid ${Colors.BORDER.VERTICAL}`,
               borderRadius: settingsRadius.LG,
             }}
           >
-            <pre
-              style={{
-                margin: 0,
-                padding: `${Spacing.LG}px ${Spacing.MD}px`,
-                background: Colors.BG.TERTIARY,
-                color: Colors.TEXT.SECONDARY,
-                textAlign: 'right',
-                userSelect: 'none',
-                fontSize: FontSize.CODE,
-                lineHeight: CODE_LINE_HEIGHT,
-                fontFamily: CODE_FONT,
-                minWidth: LINE_NO_MIN_WIDTH,
-                whiteSpace: 'pre',
-                borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
-                flexShrink: 0,
-              }}
-            >
-              {lines.map((_, i) => i + 1).join('\n')}
-            </pre>
-            <pre
-              style={{
-                margin: 0,
-                padding: `${Spacing.LG}px ${Spacing.XL}px`,
-                background: Colors.BG.PRIMARY,
-                fontSize: FontSize.CODE,
-                lineHeight: CODE_LINE_HEIGHT,
-                fontFamily: CODE_FONT,
-                whiteSpace: 'pre-wrap',
-                wordBreak: 'normal',
-                color: Colors.TEXT.PRIMARY,
-                flex: 1,
-              }}
-            >
-              {content}
-            </pre>
+            {lines.map((line, i) => (
+              <React.Fragment key={i}>
+                <div data-line-no={i + 1} style={GUTTER_CELL}>
+                  {i + 1}
+                </div>
+                <div data-line-text={i + 1} style={CODE_CELL}>
+                  {line}
+                </div>
+              </React.Fragment>
+            ))}
           </div>
         )}
         {!loading && !error && !content && (
