@@ -1,3 +1,4 @@
+// 编辑历史: 2026-10-06 小欧 - MarkdownSlot 上移中立层后改指 @/components/markdown/MarkdownSlot(原 ./MarkdownSlot), 内容未改。 — 小欧-2026-10-06
 // 编辑历史: 2026-08-26 小欧 - 8.4.12 实施: 最终答复同列同等字号, cancelled弱化小字, 长文折叠(4.4.3/4.9.1④⑤/8.11)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审边距修复: 段距margin6px0→8px0(正文/cancelled)统一流水线节奏
 // 编辑历史: 2026-08-30 小欧 - 设计稿实施(北京老陈 2026-08-30 批准): 段距落 Spacing.MD 常量(数值不变8px, 去魔法数字); 新增 normalizeBlankLines final 终态统一规约兜底(历史 answer 轮虽已压缩仍无条件兜底) - 小欧-2026-08-30
@@ -30,7 +31,7 @@ import React from 'react';
 import { CollapsibleText } from './CollapsibleText'; // 2026-10-05 小欧 v3.9.1: 仅 markdown=false 分支用(见文件头裁定) — 小欧-2026-10-05
 import { FontSize, Spacing, stepMargin } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize'; // 13.11 final 兜底 — 小欧 2026-08-30
-import { MarkdownSlot } from './MarkdownSlot'; // 2026-10-05 小欧: 思考排版开关统一入口 — 小欧-2026-10-05
+import { MarkdownSlot } from '@/components/markdown/MarkdownSlot'; // 2026-10-05 小欧: 思考排版开关统一入口 — 小欧-2026-10-05
 
 interface ResponseStreamProps {
   text: string;

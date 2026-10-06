@@ -1,3 +1,9 @@
+// 编辑历史: 2026-10-06 小欧 - 随 markdown 四件套从 features/chat/components/pipeline/ 整体上移到
+//   components/markdown/ 中立层(解除 settings2 → chat 跨 feature 反向依赖)。本文件另加:
+//   ①code 分支识别 language-mermaid 交 MermaidBlock 画流程图; ②pre 分支对 mermaid 围栏
+//   不套代码块的边框/灰底/限高(靠 node 里的 hast className 判定); ③表格拆出 MdTable 支持
+//   fixedTable(仅安全Tab 分类表用, 聊天侧默认 auto 观感不变); ④th/td 加 overflowWrap。
+//   — 小欧-2026-10-06
 // 编辑历史: 2026-10-05 小欧 - 新增: thought 思考段 Markdown 渲染器(文档[9] §4.1 参考代码落地, v3.7)
 //   未闭合围栏尾段按纯文本渲染(避免空 <pre> 容器凭空出现致页面位移), 其余按 Markdown 渲染 — 小欧-2026-10-05
 //   v2.1 自审整改(随参考代码一并落地): ①全部自定义组件显式剥 node 防泄漏到 DOM(react-markdown v9
@@ -38,6 +44,7 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
+import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
 
 /**
  * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(§3.5 缺陷 1)。
@@ -143,6 +150,47 @@ const LI: React.CSSProperties = {
   lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
 };
 
+// 2026-10-06 小欧 - 识别 pre 的内容是不是 mermaid 围栏(见下方 pre 组件的说明)
+//   ⚠️ 不能靠 props.children 判: 实测 react-markdown v9 传给自定义组件的 children
+//      是**普通对象**(constructor.name === 'Object'), React.isValidElement 恒 false。
+//      改用 react-markdown 明确提供的 node(hast 元素): pre > code > properties.className。
+//      node 只用于判断, 绝不透传到 DOM(§3.5 铁律)。
+function isMermaidFence(node: unknown): boolean {
+  const pre = node as
+    | {
+        children?: Array<{
+          tagName?: string;
+          properties?: { className?: string[] };
+        }>;
+      }
+    | null
+    | undefined;
+  const code = pre?.children?.[0];
+  return (
+    code?.tagName === 'code' &&
+    (code.properties?.className ?? []).includes('language-mermaid')
+  );
+}
+
+// 2026-10-06 小欧: md 表格容器。fixed 模式用于安全Tab 分类表(auto 下超长单元格会独占宽度)。
+const MdTable: React.FC<MdProps & { layout: 'auto' | 'fixed' }> = ({
+  children,
+  layout,
+}) => (
+  <div style={{ overflowX: 'auto', margin: `${Spacing.XS}px 0` }}>
+    <table
+      style={{
+        borderCollapse: 'collapse',
+        tableLayout: layout,
+        width: '100%',
+        fontSize: FontSize.SECONDARY,
+      }}
+    >
+      {children}
+    </table>
+  </div>
+);
+
 // Markdown 元素样式映射: 全部走 stepStyles 既有令牌, 零硬编码颜色 — 小欧-2026-10-05
 // 规则: 所有组件必须显式丢弃 node(§3.5 缺陷 1), 禁止 ...rest 透传到 DOM
 // 标题保留语义标签 h1..h6(a11y 大纲不断), 只统一样式压小(§3.5 遗漏 4)
@@ -181,18 +229,36 @@ const mdComponents = {
   // className 原样透传: 围栏语言标记(language-js)是 react-markdown 挂在 code 节点上的唯一可观测
   //   信息(设计 §4.1 要求保留, SANITIZE_SCHEMA 亦为它放行 className), 丢了就只剩肉眼看不出区别的
   //   两种代码块; 行内代码 hast 上无此属性, React 自动省略该属性, 无需条件分支。
-  code: (props: MdProps) => (
-    <code className={props.className} style={inlineCodeStyle}>
-      {props.children}
-    </code>
-  ),
+  // 2026-10-06 小欧: ```mermaid 围栏交给 MermaidBlock 画流程图, 其余照旧走代码块样式。
+  //   className 是 react-markdown 挂在 code 节点上的唯一可观测信息(见上方注释), 故据此分流。
+  code: (props: MdProps) => {
+    if (props.className === 'language-mermaid') {
+      const raw = Array.isArray(props.children)
+        ? props.children.join('')
+        : String(props.children ?? '');
+      return <MermaidBlock chart={raw.trim()} />;
+    }
+    return (
+      <code className={props.className} style={inlineCodeStyle}>
+        {props.children}
+      </code>
+    );
+  },
   // pre 块级容器: 直接渲染, 由本组件负责块级样式。
   // 2026-10-05 小欧 P1 修复(原实现把 pre 覆盖成 <>{children}</> 让 code 组件自行产 pre, 靠 className
   //   判断"是否围栏"): react-markdown v9 中 **info string 为空时 hast 的 code 节点没有 className**,
   //   故 ```\\nplain\\n``` 这类无语言围栏被误判为行内代码, 且 pre 覆盖又把块级容器一并抹掉 →
   //   实测 pre 数=0, 多行代码挤成一行内联、换行压平、左线/限高/等宽块样式全丢(thought 贴代码极常见)。
   // 现按语义归位: pre = 块级容器(本组件), code = 行内样式(不论在不在 pre 内, 前者字体/换行由 pre 管) — 小欧-2026-10-05
-  pre: (props: MdProps) => <PreBlock {...props} />,
+  // 2026-10-06 小欧(三堂会审 #1): mermaid 围栏不走 PreBlock —— 代码块的边框/灰底/400px 限高
+  //   会把流程图压成一个带滚动条的代码框, 图还被截断。识别靠 code 组件打的 data-md-fence 标记。
+  //   连带修掉 #18: 不再需要 CSS `pre:has(.mermaid-block)` 隐藏复制按钮(老浏览器 :has() 不生效)。
+  pre: (props: MdProps) =>
+    isMermaidFence(props.node) ? (
+      <div style={{ margin: `${Spacing.XS}px 0` }}>{props.children}</div>
+    ) : (
+      <PreBlock {...props} />
+    ),
   a: (props: MdProps) => (
     <a
       href={props.href}
@@ -207,22 +273,17 @@ const mdComponents = {
       {props.children}
     </a>
   ),
-  table: (props: MdProps) => (
-    <div style={{ overflowX: 'auto', margin: `${Spacing.XS}px 0` }}>
-      <table
-        style={{
-          borderCollapse: 'collapse',
-          width: '100%',
-          fontSize: FontSize.SECONDARY,
-        }}
-      >
-        {props.children}
-      </table>
-    </div>
-  ),
+  // 2026-10-06 小欧: 表格布局两种模式。auto 下超长单元格(如分类表那 10 条路径)会吃掉几乎全部
+  //   宽度、把窄列压成逐字竖排, 且 maxWidth 在 auto 布局里不生效; fixed 才能按比例限宽。
+  //   默认 auto, 聊天侧表格观感零变化。
+  table: (props: MdProps) => <MdTable {...props} layout="auto" />,
   thead: (props: MdProps) => (
     <thead style={{ background: Colors.BG.TERTIARY }}>{props.children}</thead>
   ),
+  // 2026-10-06 小欧: 长 token 可断行。分类表的「目录列表」列有超长路径
+  //   (如 \Windows\System32\config\SECURITY), 不断行会把该列撑到极宽、其余列被挤成逐字竖排。
+  //   ⚠️ 本项目未装 rehype-raw, md 里的 <br/> 会被 rehype-sanitize 整段丢弃, 故 md 单元格
+  //   一律用「、」分隔 + 靠本行折行, 不要写 <br/>。
   th: (props: MdProps) => (
     <th
       style={{
@@ -231,6 +292,7 @@ const mdComponents = {
         textAlign: 'left',
         fontWeight: FontWeight.MEDIUM,
         color: Colors.TEXT.STRONG,
+        overflowWrap: 'anywhere',
       }}
     >
       {props.children}
@@ -242,6 +304,7 @@ const mdComponents = {
         border: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
         padding: `${Spacing.XS}px ${Spacing.SM}px`,
         color: Colors.TEXT.PRIMARY,
+        overflowWrap: 'anywhere', // 同 th
       }}
     >
       {props.children}
@@ -324,11 +387,21 @@ const PreBlock: React.FC<MdProps> = (props) => {
   );
 };
 
+// 2026-10-06 小欧: fixed 布局的表格(仅安全Tab 分类表用), 与 mdComponents 里的 auto 版同一组件不同参数
+const fixedTableComponent = (props: MdProps) => (
+  <MdTable {...props} layout="fixed" />
+);
+
 interface MarkdownTextProps {
   text: string;
+  /** 表格按固定列宽排(见 MdTable); 默认 auto, 聊天侧表格观感不变 */
+  fixedTable?: boolean;
 }
 
-const MarkdownText: React.FC<MarkdownTextProps> = ({ text }) => {
+const MarkdownText: React.FC<MarkdownTextProps> = ({
+  text,
+  fixedTable = false,
+}) => {
   // §3.5 遗漏 5: 切分按 text 缓存, 长推理 × 高频 chunk 不再重复分段
   const { closedPart, openTail } = useMemo(
     () => findUnclosedFenceTail(text),
@@ -341,12 +414,16 @@ const MarkdownText: React.FC<MarkdownTextProps> = ({ text }) => {
         <ReactMarkdown
           remarkPlugins={[remarkGfm, remarkBreaks]}
           rehypePlugins={[[rehypeSanitize, SANITIZE_SCHEMA]]}
-          components={mdComponents}
+          components={
+            fixedTable
+              ? { ...mdComponents, table: fixedTableComponent }
+              : mdComponents
+          }
         >
           {closedPart}
         </ReactMarkdown>
       ) : null,
-    [closedPart]
+    [closedPart, fixedTable]
   );
 
   // 无折叠分支: thought 长度不定, 阈值无意义(2026-10-05 北京老陈裁定, 详见文件头编辑历史)

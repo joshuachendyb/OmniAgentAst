@@ -1,3 +1,4 @@
+// 编辑历史: 2026-10-06 小欧 - MarkdownSlot 上移中立层后改指 @/components/markdown/MarkdownSlot(原 ../pipeline/MarkdownSlot), 内容未改。 — 小欧-2026-10-06
 // 编辑历史: 2026-08-30 小欧 - 13.8 实施: 正文 text 段真逐字打字机(打字机效果+末位光标), 回放/终态整段静态(13.8.5);
 //   集成 13.10 step 间段距与 13.11 空行规约(normalizeBlankLines 尾随守卫);
 //   2026-08-30 北京老陈定案纠正(step间8/内部6/折叠4): 主段12px(LG)废止 → margin 默认 MD(8)=step 间段距, compact=SM(6)=同 step 内部 - 小欧-2026-08-30
@@ -28,7 +29,7 @@ import { ActionWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-14 小
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 // 2026-10-05 小欧 v3.9: lazy + Suspense + 纯文本 fallback 三件事已抽到 MarkdownSlot(唯一入口),
 //   思考内容段与最终答复段共用同一开关同一逻辑, 此处不再重复一遍 —— 小欧-2026-10-05
-import { MarkdownSlot } from './MarkdownSlot';
+import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
 
 interface TextStreamProps {
   text: string;

@@ -1,3 +1,6 @@
+// 编辑历史: 2026-10-06 小欧 - 随 markdown 四件套从 features/chat/components/pipeline/ 整体上移到
+//   components/markdown/ 中立层(解除 settings2 → chat 跨 feature 反向依赖)。
+//   本文件内容逐字未改, 仅换目录。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-05 小欧 - 新增: 代码块右上角"复制"小按钮共用组件(老陈指令)。
 //   原MarkdownText的PreBlock与MarkdownBody各写了一份同款逻辑(violation: DRY重复), 抽为单一来源 — 小欧-2026-10-05
 import React, { useState } from 'react';

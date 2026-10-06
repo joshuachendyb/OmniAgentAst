@@ -1,3 +1,4 @@
+// 编辑历史: 2026-10-06 小欧 - MarkdownSlot 上移中立层后改指 @/components/markdown/MarkdownSlot(原 ../pipeline/MarkdownSlot), 内容未改。 — 小欧-2026-10-06
 // 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
 // 编辑历史: 2026-08-27 小欧 - 任务项新增response全文显示（设计文档4.8.2要求user_input+response双列）
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
@@ -49,7 +50,7 @@ import { showSuccess, handleError } from '@/services/error/handler';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
 // 2026-10-05 小欧 北京老陈指令(左列 task 卡 response 接 Markdown): 展开态渲染器, 恒开不受设置开关控制
 //   (用户明示"task 下的 mark 显示不受设置的开关的控制") —— 直接传 markdown={true} 绕过 MD_IMPL 之外的开关
-import { MarkdownSlot } from '../pipeline/MarkdownSlot';
+import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
 
 // 2026-09-30 小欧 [81]v1.4-H18: 左列任务状态标签——按后端 status 枚举正确显示。
 //   DB 合法值: completing→completed/executing/paused/failed/cancelled（db_initializer 默认 'executing'）

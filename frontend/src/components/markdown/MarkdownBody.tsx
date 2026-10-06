@@ -1,3 +1,6 @@
+// 编辑历史: 2026-10-06 小欧 - 随 markdown 四件套从 features/chat/components/pipeline/ 整体上移到
+//   components/markdown/ 中立层: 安全Tab 块2 要用 MarkdownSlot, 若留在 chat 下就成了
+//   settings2 → chat 的跨 feature 反向依赖。本文件内容逐字未改, 仅换目录。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-05 小欧 - 新建: thought 块正文 Markdown 渲染(文档[9] 方案设计 §5.8 消费端)
 //   动因: 设置项 appearance.step_render.thoughtMarkdown(设置页标签「思考排版」)只管 thought 块
 //   (TextStream)正文的显示方式, 与「推理内容」(reasoningVisible → reasoning 块 ThinkingStream 折叠初值)
