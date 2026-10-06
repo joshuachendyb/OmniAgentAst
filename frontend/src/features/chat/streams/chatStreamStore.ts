@@ -52,6 +52,8 @@
 //   落 d.linkEnabled; sendStreamRequest 调用去第三参。 — 小欧-2026-10-03
 // 编辑历史: 2026-10-05 22:16:38 小欧 - 新增 getActiveSessionStatusList 导出：列出「status 非终态且非 idle」的会话，
 //   供 History 页在跑指示器(SIG-A+B)做唯一对外查询口。各会话仍可独立 subscribe 驱动 UI 重渲染，无新事件、无新接口 — 小欧-2026-10-05
+// 编辑历史: 2026-10-06 小欧 - 取消等帧看门狗并入本单一出口(否则终态释放后残留定时器仍会打 DB);
+//   终态帧到达即撤看门狗并释放全套流资源; 看门狗超时兜底 DB 权威落状态; 终态帧 outcome 不再恒写 completed。 — 小欧-2026-10-06
 
 import type { ExecutionStep } from '@/types/execution';
 import type { MutableRefObject } from 'react';

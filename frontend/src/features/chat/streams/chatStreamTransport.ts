@@ -49,6 +49,9 @@
 // 编辑历史: 2026-10-03 小欧 - fre2e_15 红线修复: resumeStreamRequest 里 GET 建连成功即置
 //   isReceiving/isConnected=true(与 POST 首连同语义)。此前续传路从不置接收态, 切路由回来后帧在流但
 //   停止钮永不出现; 终态/失败/404/中止出口已由 markDisconnected 清零, 不残留 — 小欧-2026-10-03
+// 编辑历史: 2026-10-06 小欧 - 取消终态帧兜底: 点中断后 UI 无反应(北京老陈实测, 4ad89f7ed 回归),
+//   武装取消等帧看门狗(幂等不叠定时器), 终态由 final 步 outcome 决定不再恒写 completed,
+//   看门狗超时兜底时 DB 已终态则以 DB 为准落状态并释放资源。 — 小欧-2026-10-06
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
