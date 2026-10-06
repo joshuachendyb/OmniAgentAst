@@ -50,6 +50,8 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.13: lastContextLinkMode 改名 linkEnabled: boolean(保留, 非删除 ——
 //   它随备份落盘、随恢复还原, 是重连/回放天然带值的前提); sendMessage 第3参 mode 改 linkEnabled: boolean,
 //   落 d.linkEnabled; sendStreamRequest 调用去第三参。 — 小欧-2026-10-03
+// 编辑历史: 2026-10-05 22:16:38 小欧 - 新增 getActiveSessionStatusList 导出：列出「status 非终态且非 idle」的会话，
+//   供 History 页在跑指示器(SIG-A+B)做唯一对外查询口。各会话仍可独立 subscribe 驱动 UI 重渲染，无新事件、无新接口 — 小欧-2026-10-05
 
 import type { ExecutionStep } from '@/types/execution';
 import type { MutableRefObject } from 'react';
@@ -90,6 +92,24 @@ const MAX_SESSIONS = 32;
 
 export function isTerminalStatus(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
+/** 列出当前仍有未结束任务的会话（供 History 页「运行中」角标与顶部一览条）。
+ *  2026-10-05 22:16:38 小欧 - 北京老陈指令 SIG-A+B: 后端多会话并发已支持，但此前用户无从知晓
+ *  哪个会话的任务还在跑；本函数是「在跑会话」的唯一对外查询口，无任何新 SSE 事件、零新接口。
+ *  判据: status 非终态 且非 idle（idle 是无任务或已静默的会话，不算「在跑」）。
+ *  返回快照而非引用，防止调用方改写内部状态；调用方只做读-渲染。 */
+export function getActiveSessionStatusList(): Array<{
+  sessionId: string;
+  status: string;
+}> {
+  const out: Array<{ sessionId: string; status: string }> = [];
+  sessions.forEach((s) => {
+    if (!isTerminalStatus(s.status) && s.status !== 'idle') {
+      out.push({ sessionId: s.sessionId, status: s.status });
+    }
+  });
+  return out;
 }
 
 /** 2026-09-30 07:58 小欧 - 会话状态 → ResumeResult 单一判定口。

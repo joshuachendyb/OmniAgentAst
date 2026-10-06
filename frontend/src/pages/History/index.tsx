@@ -18,6 +18,11 @@
 //   allSettled 结果**只清理 fulfilled 者**(失败者保留以便重试, 不误清可重试会话);
 //   ③清空全部同口径(按 allSessions 下标对齐 deleteResults) —— 后端已删而 Store 残留会导致
 //   快照/草稿泄漏, 重进页重放已删会话内容 — 小欧-2026-09-29 21:37:55
+// 编辑历史: 2026-10-05 22:16:38 小欧 - 新增在跑任务指示(北京老陈指令, SIG-A+B):
+//   ①顶部一览条(Alert)列「当前 N 个会话在跑」+每个会话 Tag 可点直达(仅提醒, 用户主动点击才进入, 不抢占当前页面);
+//   ②卡片角标 Tag(状态=运行中/已暂停/重连中)。数据源复用 chatStreamStore.getSnapshot(session_id).status
+//   与新增的 getActiveSessionStatusList(), 零新接口。活性刷新: 用 chatStreamStore.subscribe 对当前在跑会话订阅,
+//   终态转变时 tick 重渲染; 列表每次增删改查也会重跑 loadSessions 从而换绑订阅(不可见的已暂停→恢复→终态翻转仍可见) — 小欧-2026-10-05
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -34,6 +39,7 @@ import {
   Tooltip,
   Pagination,
   Checkbox,
+  Alert,
 } from 'antd';
 import {
   HistoryOutlined,
@@ -43,10 +49,13 @@ import {
   ReloadOutlined,
   ClockCircleOutlined,
   CommentOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import { sessionApi, type Session } from '../../services/api/session.api';
 // [63] 5.19 v1.30：删除会话确认后清理 Store（4.6.2 语义，destroySession 见 5.4）
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
+import { getActiveSessionStatusList } from '@/features/chat/streams/chatStreamStore';
+import { Spacing } from '@/utils/stepStyles';
 import { useNavigate } from 'react-router-dom';
 import { handleError, showSuccess, ErrorType } from '@/services/error/handler';
 import dayjs from 'dayjs';
@@ -89,6 +98,24 @@ const HistoryPage: React.FC = () => {
   );
   // 2026-08-27 小欧 修复: 真实总会话数(totalSessions)，与过滤命中数(pagination.total)区分，用于清空守卫与顶部 Badge
   const [totalSessions, setTotalSessions] = useState(0);
+
+  // 2026-10-05 22:16:38 小欧 - 在跑任务指示(SIG-A+B)：tick 只驱动重渲染，真源在 chatStreamStore。
+  //   非订阅时历史列表不刷新；此处对当前在跑会话各自 subscribe，终态翻转时 tick 一次即驱动角标/条隐藏 —
+  //   列表每次 loadSessions 也会换绑订阅(增/删/改后重新读 getActiveSessionStatusList)。
+  const [, setRunTick] = useState(0);
+  useEffect(() => {
+    const active = getActiveSessionStatusList();
+    const unsubs = active.map(({ sessionId }) =>
+      chatStreamStore.subscribe(sessionId, () => setRunTick((n) => n + 1))
+    );
+    return () => unsubs.forEach((u) => u());
+  }, [sessions]);
+
+  // 渲染期一次性读取「会话→在跑状态」表，角标与顶部条共用，不拆两次扫描（DRY）
+  const activeStatusById = new Map<string, string>(
+    getActiveSessionStatusList().map((a) => [a.sessionId, a.status])
+  );
+  const activeCount = activeStatusById.size;
 
   useEffect(() => {
     keywordRef.current = keyword;
@@ -429,6 +456,44 @@ const HistoryPage: React.FC = () => {
             loading={loading}
           />
 
+          {/* 2026-10-05 22:16:38 小欧 - 顶部一览条(方案B)：有活跃会话时显示「当前 N 个会话在跑」，
+              每个 Tag 点击直达（用户主动导航，不抢占当前页面）；空状态直接不渲染，避免占位 */}
+          {activeCount > 0 && (
+            <Alert
+              type="info"
+              showIcon
+              icon={<LoadingOutlined spin />}
+              style={{ marginTop: Spacing.MD, marginBottom: Spacing.MD }}
+              message={
+                <Space wrap size={Spacing.SM}>
+                  <Text strong>当前 {activeCount} 个会话在跑：</Text>
+                  {getActiveSessionStatusList()
+                    .slice(0, 3)
+                    .map((a) => {
+                      const s = sessions.find(
+                        (x) => x.session_id === a.sessionId
+                      );
+                      return (
+                        <Tag
+                          key={a.sessionId}
+                          style={{ cursor: 'pointer' }}
+                          color={
+                            a.status === 'paused' ? 'warning' : 'processing'
+                          }
+                          onClick={() => handleResume(a.sessionId)}
+                        >
+                          {s?.title || '未命名会话'}
+                        </Tag>
+                      );
+                    })}
+                  {activeCount > 3 && (
+                    <Text type="secondary">另 {activeCount - 3} 条</Text>
+                  )}
+                </Space>
+              }
+            />
+          )}
+
           {/* 会话列表 */}
           <Spin spinning={loading}>
             <List
@@ -559,6 +624,37 @@ const HistoryPage: React.FC = () => {
                               <Tag icon={<CommentOutlined />} color="blue">
                                 {session.message_count} 条消息
                               </Tag>
+                              {/* 2026-10-05 22:16:38 小欧 - 卡片角标(方案A)：在跑/已暂停/重连中才渲染，终态或
+                                  idle 不吵用户视线；状态 → 颜色与文案由同一张表驱动（DRY，改一处全卡联动） */}
+                              {(() => {
+                                const st = activeStatusById.get(
+                                  session.session_id
+                                );
+                                if (!st) return null;
+                                const TAG: Record<
+                                  string,
+                                  { color: string; text: string }
+                                > = {
+                                  active: {
+                                    color: 'processing',
+                                    text: '运行中',
+                                  },
+                                  paused: { color: 'warning', text: '已暂停' },
+                                  recovering: {
+                                    color: 'blue',
+                                    text: '重连中',
+                                  },
+                                };
+                                const t = TAG[st];
+                                return t ? (
+                                  <Tag
+                                    color={t.color}
+                                    icon={<LoadingOutlined spin />}
+                                  >
+                                    {t.text}
+                                  </Tag>
+                                ) : null;
+                              })()}
                             </Space>
                             <Space>
                               <ClockCircleOutlined style={{ color: '#999' }} />

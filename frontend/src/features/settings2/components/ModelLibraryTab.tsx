@@ -38,6 +38,7 @@ import {
   Table,
   Tag,
   Tooltip,
+  Typography,
 } from 'antd';
 import {
   CloudDownloadOutlined,
@@ -85,13 +86,24 @@ const MODALITY_LABEL: Record<string, string> = {
   audio: '音频',
 };
 
-/** 智能体能力筛选项：supported_parameters 实测 26 种，但 temperature(360)/max_tokens(446)
- *  几乎全支持、筛了无区分度；只留决定本项目能否用的三项。 */
+/** 智能体能力筛选项：真实函数能力走 supported_features（后端厂商适配新增）。
+ *  OpenRouter 写法 tools/structured_outputs/reasoning，SenseNova 写法 tools/json_mode/reasoning
+ *  —— 同一语义两个名，本表做 canonical value → 厂商别名 的映射(DRY，两处判定共用)。 */
 const FEATURE_FILTERS = [
   { label: '工具调用', value: 'tools' },
   { label: '结构化输出', value: 'structured_outputs' },
   { label: '推理', value: 'reasoning' },
 ];
+// canonical → 厂商别名集（同一语义，各厂商命名不一）：结构化输出 = structured_outputs / json_mode
+const FEATURE_ALIASES: Record<string, string[]> = {
+  tools: ['tools'],
+  structured_outputs: ['structured_outputs', 'json_mode'],
+  reasoning: ['reasoning'],
+};
+const hasFeature = (m: RemoteModelItem, canonical: string): boolean =>
+  (FEATURE_ALIASES[canonical] ?? [canonical]).some((alias) =>
+    (m.supported_features ?? []).includes(alias)
+  );
 
 /** 最小上下文阈值：实测 460 个全有值(min 4095 / max 2,000,000)，<32K 仅 16 个、<128K 43 个，筛有区分度 */
 const CONTEXT_OPTIONS = [
@@ -150,8 +162,10 @@ const matchFilters = (m: RemoteModelItem, f: LibraryFilters): boolean => {
     if (!f.modalities.some((v) => inputs.includes(v))) return false;
   }
   if (f.features.length > 0) {
-    const params = m.supported_parameters ?? [];
-    if (!f.features.some((v) => params.includes(v))) return false;
+    // 2026-10-05 22:16:38 小欧 - 能力判定源由 supported_parameters 切到 supported_features：
+    //   前者只含 temperature/stop（采样参数，和"工具/结构化/推理"无关），勾上恒 0 命中；
+    //   后者才是模型真能力值，经 hasFeature 按 FEATURE_ALIASES 认厂商别名(structured_outputs≈json_mode)。
+    if (!f.features.some((v) => hasFeature(m, v))) return false;
   }
   const kw = f.keyword.trim().toLowerCase();
   if (kw) {
@@ -164,13 +178,14 @@ const matchFilters = (m: RemoteModelItem, f: LibraryFilters): boolean => {
 };
 
 const TAG_STYLE = { marginRight: Spacing.XS, marginBottom: 2 };
+const { Text } = Typography;
 
 /** 元数据缺失项的展示名：Alert 与 Tooltip 共用一处词表 — 小欧 2026-09-29 */
 type MetaKey = 'pricing' | 'modality' | 'capability' | 'context';
 const MISSING_LABEL: Record<MetaKey, string> = {
   pricing: 'pricing（免费判定）',
   modality: 'architecture.input_modalities（模态）',
-  capability: 'supported_parameters（能力）',
+  capability: 'supported_features（能力）',
   context: 'context_length（上下文）',
 };
 
@@ -237,7 +252,8 @@ export const ModelLibraryTab: React.FC<Props> = ({
     return {
       pricing: models.some((m) => Object.keys(m.pricing ?? {}).length > 0),
       modality: models.some((m) => readModalities(m).length > 0),
-      capability: models.some((m) => (m.supported_parameters ?? []).length > 0),
+      // 2026-10-05 22:16:38 小欧 - capability 可用性改以 supported_features 为据（能力的真源）。
+      capability: models.some((m) => (m.supported_features ?? []).length > 0),
       context: models.some((m) => (m.context_length ?? 0) > 0),
     };
   }, [remote]);
@@ -376,7 +392,22 @@ export const ModelLibraryTab: React.FC<Props> = ({
       onOk: async () => {
         setSaving(true);
         try {
-          const res = await modelApi.replaceModels(selectedProvider, finalList);
+          // 2026-10-05 22:16:38 小欧 - 保存时把每个勾选模型的「上下文/输入模态」一并上送持久化
+          //   （北京老陈指令）；远端已下线保留项只送 id（元数据 unknown，不伪造）。
+          const saveModels = finalList.map((id) => {
+            const m = remote?.models.find((x) => x.id === id);
+            return m
+              ? {
+                  id,
+                  context_length: m.context_length ?? undefined,
+                  input_modalities: m.input_modalities ?? [],
+                }
+              : { id };
+          });
+          const res = await modelApi.replaceModels(
+            selectedProvider,
+            saveModels
+          );
           showSuccess(
             `已保存：新增 ${res.added.length} 个、移除 ${res.removed.length} 个`
           );
@@ -466,7 +497,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
         )}
       />
       <Table.Column
-        title="上下文"
+        title="上下文窗口"
         dataIndex="context_length"
         width={88}
         align="right"
@@ -506,8 +537,9 @@ export const ModelLibraryTab: React.FC<Props> = ({
         title="能力"
         width={168}
         render={(_, m: RemoteModelItem) => {
-          const p = m.supported_parameters ?? [];
-          const tags = FEATURE_FILTERS.filter((f) => p.includes(f.value));
+          // 2026-10-05 22:16:38 小欧 - 能力列由 supported_parameters（采样参数 temperature/stop）
+          //   切到 supported_features（模型真能力 tools/json_mode/reasoning），经 hasFeature 认厂商别名。
+          const tags = FEATURE_FILTERS.filter((f) => hasFeature(m, f.value));
           return tags.length > 0 ? (
             <>
               {tags.map((t) => (
@@ -600,7 +632,10 @@ export const ModelLibraryTab: React.FC<Props> = ({
           >
             <Select
               value={selectedProvider}
-              style={{ width: settingsControl.modelSelectWidth }}
+              // 2026-10-05 22:16:38 小欧 - 位置① provider 下拉与位置② 模型名搜索框同宽（北京老陈指令）：
+              //   ② 用 filterSearchWidth=160。因 modelSelectWidth=180 为全宽令牌、其它页在用，本页
+              //   直接复用 filterSearchWidth，①② 齐平且不动其它页面。
+              style={{ width: settingsControl.filterSearchWidth }}
               onChange={onSelectProvider}
               options={providers.map((p) => ({
                 value: p.name,
@@ -653,7 +688,10 @@ export const ModelLibraryTab: React.FC<Props> = ({
               display: 'flex',
               gap: Spacing.MD,
               alignItems: 'center',
-              flexWrap: 'wrap',
+              // 2026-10-05 22:16:38 小欧 - 北京老陈指令：位置1过滤行尽量在一行不折行。
+              //   nowrap 强制单行；极窄场景靠 overflowX 横滑兜底，杜绝 flexWrap:'wrap' 撑出第二行。
+              flexWrap: 'nowrap',
+              overflowX: 'auto',
             }}
           >
             <Input
@@ -700,7 +738,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
             <Tooltip
               title={
                 metaBlocked('capability')
-                  ? '该 Provider 未返回 supported_parameters，无法按能力筛选'
+                  ? '该 Provider 未返回 supported_features，无法按能力筛选'
                   : '智能体能力（组内任一命中即可）'
               }
             >
@@ -725,7 +763,9 @@ export const ModelLibraryTab: React.FC<Props> = ({
                 options={CONTEXT_OPTIONS}
                 disabled={metaBlocked('context')}
                 onChange={(v) => setFilters((f) => ({ ...f, minContext: v }))}
-                style={{ width: settingsControl.modelSelectWidth }}
+                // 2026-10-05 22:16:38 小欧 - 位置1尽量一行不折行：上下文下拉由 modelSelectWidth(180)
+                //   砍为 contextSelectWidth(96)。北京老陈指令。
+                style={{ width: settingsControl.contextSelectWidth }}
               />
             </Tooltip>
             {filterCount > 0 && (
@@ -809,6 +849,19 @@ export const ModelLibraryTab: React.FC<Props> = ({
           </Button>
         </div>
       </div>
+      {/* 2026-10-05 22:16:38 小欧 - 保存口径提醒：取消勾选某模型 = 该模型已配参数一并清空
+          （replace_provider_models 差集孤儿清理：model_params/model_meta 置 None 删块），仅做「隐藏」
+          会丢参数。独立一行小字置按钮行下方，贴右对齐，北京老陈要求在保存处明示。 */}
+      <Text
+        type="secondary"
+        style={{
+          fontSize: FontSize.TERTIARY,
+          display: 'block',
+          textAlign: 'right',
+        }}
+      >
+        取消勾选某模型会清空其已配置参数
+      </Text>
       {loading && <Skeleton active paragraph={{ rows: 4 }} />}
       {!loading && !remote && (
         <Empty description="点击「获取模型列表」拉取该 Provider 远程模型" />

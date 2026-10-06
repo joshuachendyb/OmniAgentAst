@@ -10,6 +10,8 @@
 //   与 modelSelectWidth 不必等宽。超 280 的极端长名靠 AntD 悬停 title+下拉面板自适应兜底，不做动态宽防布局抖动）- 小欧-2026-09-24
 // 2026-09-29 小欧 - 新增 filterSearchWidth:160：模型库筛选行搜索条专用宽度(北京老陈两次指正太长)，
 //   不复用 searchWidth(那是右上角全局 SearchBox 的，两者密度诉求不同) - 小欧-2026-09-29
+// 2026-10-05 22:16:38 小欧 - 新增 contextSelectWidth:96：模型库筛选行「上下文」下拉宽度令牌（原复用
+//   modelSelectWidth:180 过长，北京老陈指令位置1尽量一行不折行），不散落硬编码 - 小欧-2026-10-05
 import {
   Spacing,
   Radius,
@@ -40,6 +42,9 @@ export const settingsControl = {
   // 那是右上角全局 SearchBox 的，两者密度诉求不同；160 与 inputWidth 同宽族 — 小欧 2026-09-29
   filterSearchWidth: 160,
   modelSelectWidth: 180,
+  // 2026-10-05 22:16:38 小欧 - 模型库筛选行「上下文」下拉：原复用 modelSelectWidth=180 过长，
+  //   北京老陈指令"位置1尽量一行不折行"下砍为 96，只容纳"≥ 32K"/"不限"量级的选项文案。
+  contextSelectWidth: 96,
   modelNameWidth: 240,
   apiKeyWidth: 360,
   baseUrlWidth: 360,

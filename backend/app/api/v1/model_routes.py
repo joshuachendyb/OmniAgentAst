@@ -187,8 +187,15 @@ class RemoteModelsResponse(BaseModel):
     category: str
 
 
+class ProviderModelSelection(BaseModel):
+    """单灯保留模型名 + 顺手持久化的静态元数据（北京老陈 2026-10-05 指令：上下文/输入模态要落配置）"""
+    id: str
+    context_length: Optional[int] = None
+    input_modalities: Optional[List[str]] = None
+
+
 class ProviderModelsReplaceRequest(BaseModel):
-    models: List[str]
+    models: List[ProviderModelSelection]
 
 
 class TestConnectionRequest(BaseModel):
@@ -316,4 +323,4 @@ async def test_provider_connection(name: str, req: TestConnectionRequest):
 @router.put("/providers/{name}/models")
 @handle_config_errors("替换 Provider 模型列表")
 async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
-    return svc.replace_provider_models(name, req.models)
+    return svc.replace_provider_models(name, [m.model_dump() for m in req.models])

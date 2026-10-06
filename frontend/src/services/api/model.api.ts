@@ -271,9 +271,14 @@ export const modelApi = {
   },
 
   // 2026-09-24 小欧 - 替换式写入 models 列表 — 小欧-2026-09-24
+  // 2026-10-05 22:16:38 小欧 - models 由 List[str] 扩为 List<{id, context_length?, input_modalities?}>，
+  //   保存勾选模型时把「上下文/输入模态」静态元数据持久化（北京老陈指令）。保留 id-only 兼容：
+  //   元素可直接是 {id} 对象，id 提升为模型名。
   replaceModels: async (
     provider: string,
-    models: string[]
+    models: Array<
+      Pick<RemoteModelItem, 'id' | 'context_length' | 'input_modalities'>
+    >
   ): Promise<ReplaceModelsResult> => {
     const response = await api.put<ReplaceModelsResult>(
       `/providers/${enc(provider)}/models`,

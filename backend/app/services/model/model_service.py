@@ -800,8 +800,15 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
     }
 
 
-def replace_provider_models(name: str, models: List[str]) -> Dict[str, Any]:
-    """替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24"""
+def replace_provider_models(name: str, models: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24
+
+    models 元素契约 2026-10-05 22:16:38 扩：Dict{id: str, context_length?, input_modalities?}。
+    旧 List[str] 等价于元素只含 id。保存时把每个勾选模型的「上下文/输入模态」静态元数据
+    同步落 ai.{provider}.model_meta.{model}（北京老陈指令——它们是模型自身属性，此前只在页面展示、
+    重新拉取即丢，现在持久化到配置，离线/重启后仍可见）。removed 模型的 model_params/model_meta 块
+    仍按既有差集孤儿清理整块置 None。
+    """
     ai = _raw_ai()
     if name not in _provider_names(ai):
         raise HTTPException(status_code=404, detail=f"Provider {name} 不存在")
@@ -812,12 +819,15 @@ def replace_provider_models(name: str, models: List[str]) -> Dict[str, Any]:
             detail=f"Provider '{name}' 由环境变量 {name.upper()}_API_KEY 接管，只读",
         )
     new_list: List[str] = []
+    meta_by_id: Dict[str, Dict[str, Any]] = {}
     seen = set()
     for m in models:
-        s = str(m).strip()
+        s = str(m.get("id")).strip() if isinstance(m, dict) else str(m).strip()
         if s and s not in seen:
             seen.add(s)
             new_list.append(s)
+            if isinstance(m, dict):
+                meta_by_id[s] = m
     if not new_list:
         raise HTTPException(status_code=400, detail="模型列表不能为空")
     ref = get_current_ref(ai)
@@ -841,5 +851,18 @@ def replace_provider_models(name: str, models: List[str]) -> Dict[str, Any]:
         orphans = {m: None for m in removed if m in meta_block}
         if orphans:
             node["model_meta"] = orphans
+    # 2026-10-05 22:16:38 小欧 - 把勾选模型的「上下文/输入模态」静态元数据持久化到 model_meta：
+    #   它们此前只在页面展示、重新拉取即丢，北京老陈指令要随保存一并落配置。仅对 payload 中
+    #   非 None 的字段写入（防用空值改写远端数据），merge_nested_patch 负责与既有 model_meta 块合并。
+    for mid, md in meta_by_id.items():
+        if mid not in new_list or not isinstance(md, dict):
+            continue
+        leaf: Dict[str, Any] = {}
+        if isinstance(md.get("context_length"), int) and not isinstance(md.get("context_length"), bool):
+            leaf["context_length"] = md.get("context_length")
+        if isinstance(md.get("input_modalities"), list):
+            leaf["input_modalities"] = [v for v in md["input_modalities"] if isinstance(v, str)]
+        if leaf:
+            node.setdefault("model_meta", {}).setdefault(mid, {}).update(leaf)
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "mtime": _config_mtime(), "added": added, "removed": removed}
