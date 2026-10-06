@@ -119,7 +119,9 @@ export interface SettingsUpdateResult {
   mtime: number;
 }
 
-// 2026-10-06 小欧 - 安全 Tab 说明文案三段(均已由后端插值好真实路径, 前端零字符串逻辑)
+// 编辑历史: 2026-10-06 小欧 - 新增 SecurityDocsResponse + getSecurityDocs: 安全Tab说明文案三段
+//   (均已由后端插值真实路径, 前端零字符串逻辑)。刻意不并入 getAll —— 那边返可配置项的值,
+//   混一起前端分不清哪个能改。 — 小欧-2026-10-06
 export interface SecurityDocsResponse {
   /** 弹框1「安全策略说明」: 5 组 22 条 */
   policy: string;
@@ -130,7 +132,6 @@ export interface SecurityDocsResponse {
 }
 
 export const settingsApi = {
-  // 2026-10-06 小欧: 安全说明文案只读, 不并入 getAll —— 那边是可配置项的值, 混一起前端分不清哪个能改
   getSecurityDocs: async (): Promise<SecurityDocsResponse> => {
     const response = await api.get<SecurityDocsResponse>(
       '/settings/security-docs'

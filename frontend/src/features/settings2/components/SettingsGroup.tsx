@@ -24,8 +24,8 @@
 //   该块是全局默认采样参数，单模型可在「模型」Tab 单独覆盖，原名易误读为"当前模型的参数"。纯显示名。 — 小欧-2026-09-28
 // 2026-10-05 小欧 - appearance 组加前缀支, 新分节「step渲染控制」(文档[9] §5.11): 不加会被 return '外观' 吞掉 — 小欧-2026-10-05
 import React from 'react';
-// 2026-10-06 小欧 - security 组加块2「安全策略说明」: sectionOf 归块 + items.map 后追加 DirectoryAccessNote
-//   ——「分类表 + 两个说明弹框」纯只读, 无 props 不调 /settings 读组, 文案由后端 datafile 插值后直供
+// 编辑历史: 2026-10-06 小欧 - security 组加块2「安全策略说明」: sectionOf 归块 + items.map 后追加
+//   DirectoryAccessNote(纯说明无配置项故不进 registry, 与 appearancePreview 同款做法)。 — 小欧-2026-10-06
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
 import type {

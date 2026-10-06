@@ -3,13 +3,13 @@
 //   文案源全在后端 app/datafile/*.md(已插值真实路径), 前端只取一次数 + MarkdownSlot 渲染, 零字符串逻辑。
 //   两个弹框保持独立(决策41): 按钮1=策略说明, 按钮2=读写判定, 各挂各的 md。
 //   POPUPS 单源派生: 按钮与 Modal 由同一份配置生成, 杜绝两处各写一遍再漂移。
-// 2026-10-06 小欧(三堂会审)修 4 项:
+// 编辑历史: 2026-10-06 小欧(三堂会审)修 4 项:
 //   #2 加载失败原本走三选一只剩一条 Alert → 分类表和两个按钮全消失, 降级成了"功能没了"。
 //      改为: 按钮恒在, 只有分类表区域按 docs 有无切换 提示/表格。
 //   #3 关闭弹框时 {current && <Modal>} 直接卸载 → 丢失退出动画(body overflow 也会闪一下)。
 //      改为 Modal 常驻, open 由 openKey 决定; 文案用 lastKey 兜住关闭动画那一帧。
 //   #8 POPUPS 里 mdKey 与 key 同值冗余 → 删掉, 直接用 key。
-//   #9 外层 div 的 color/fontSize 被 MarkdownText 内部每个元素的样式覆盖, 是死代码 → 删掉。
+//   #9 外层 div 的 color/fontSize 被 MarkdownText 内部每个元素的样式覆盖, 是死代码 → 删掉。 — 小欧-2026-10-06
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin } from 'antd';
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
