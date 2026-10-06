@@ -33,6 +33,8 @@
 // 编辑历史: 2026-09-17 小欧 - 实施: 从 chatStreaming 解构 waitClock, 透传 RightViewer 并纳入 useMemo 依赖(heartbeatTs 变化触发面板重渲) - 小欧-2026-09-17
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.10: ChatInput 的 chatLink 改受控 — 从 chatState 解构 linkEnabled
 //   透传, opts 新增 onToggleLink 透传; handleSendWithMode 改名 handleSend 并把第二参改 linkEnabled: boolean — 小欧-2026-10-03
+// 编辑历史: 2026-10-06 小欧 - 取消终态兜底需读 store 快照(getSnapshot 不建条目, 安全),
+//   ChatInput/聊天流状态透传 storeStatus 给 TaskInfoBar。 — 小欧-2026-10-06
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -44,6 +46,8 @@ import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
+// 2026-10-06 22:52 小欧 - 取消终态兜底需读 store 快照（getSnapshot 不建条目，安全）
+import { chatStreamStore } from '../streams/chatStreamStore';
 import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
 import type {
   TaskDetail,
@@ -283,6 +287,13 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             detail={selectedDetail}
             sessionId={sessionId}
             liveError={liveError} // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
+            // 2026-10-06 22:52 小欧 - 取消终态兜底：store 已确认的终态透给徽标派生
+            //   （终态帧未送达时靠它脱离"执行中"）。取快照不建条目，故不会凭空造会话。
+            storeStatus={
+              sessionId
+                ? chatStreamStore.getSnapshot(sessionId).status
+                : undefined
+            }
           />
         ),
         defaultVisible: true,

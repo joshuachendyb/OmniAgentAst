@@ -801,16 +801,31 @@ function broadcastHandlers(s: ChatStreamSession) {
       meta?: string | SSEMetadata,
       steps?: ExecutionStep[]
     ) => {
+      // 2026-10-06 22:52 小欧 - 终态由 final 步的 outcome 决定，不再恒写 completed：
+      //   取消链路下后端推来的 final 步 outcome='cancelled'，恒写 completed 会让 store 说"已完成"，
+      //   与左侧列表(读 DB 的 cancelled)、与 badge(读 steps.outcome)三处口径打架。
+      const lastStep = steps?.[steps.length - 1];
+      const outcome = lastStep?.type === 'final' ? lastStep.outcome : undefined;
       // 2026-09-30 07:58 小欧 - 主动中断/已落终态后，迟到的 final 帧不得改写终态。
       //   成因：stop() 已置 status='cancelled' 且 clearCompleted 前置 intentionalAbort=true，
       //   但在途响应仍可能把 final 帧喂进来，此处无条件写 completed → 点"停止"却显示"已完成"。
       //   守卫同时覆盖 emitEvent：被取消的任务不得再以"正常完成"收尾追加助手消息
       //   （已收 chunk 仍在 UI，取消态文案由 stop() 返回值经 showTaskResultMessage 呈现）。
+      // 2026-10-06 22:52 小欧 - 该守卫只挡"真卸载/另一次终态"，**不再挡取消后的正常终态帧**：
+      //   stop() 成功路径已改为不置 intentionalAbort、不提前落终态，故取消帧能进到这里。
       if (s.intentionalAbort || isTerminalStatus(s.status)) return;
       commit(s, (d) => {
-        d.status = 'completed'; // 终态写入点①
+        d.status =
+          outcome === 'cancelled'
+            ? 'cancelled'
+            : outcome === 'failed'
+              ? 'failed'
+              : 'completed'; // 终态写入点①
         markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
       });
+      // 2026-10-06 22:52 小欧 - 取消等帧成功：撤看门狗 + 释放资源（此刻 abort 安全，帧已收到）。
+      //   非取消场景 clearCompleted 内有 isTerminalStatus 守卫，且此时 status 刚落终态亦可释放。
+      chatStreamStore.settleCancelByFrame(s.sessionId);
       emitEvent(s, 'complete', { full, meta, steps });
     },
     onMerged: (mergedIntoTaskId: string | null) =>

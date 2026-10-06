@@ -58,6 +58,7 @@
 // 编辑历史: 2026-10-04 小欧 - token 两项改版: 序改 P/C/T(P 加粗)、行内折 K/M、tooltip 原始值且不折行、
 //   无数据显示 –; G3 轮步拆两段移到「任务」前(删 xsmall 合并串, 耗时位置未动); 分隔点统一「•」(BORDER.ACCENT);
 //   新增「占窗率 = 本轮P/窗口」置于「任务」前(缺窗口不显); 断点门统一 isNarrow, 删 isMid
+// 编辑历史: 2026-10-06 小欧 - 增 storeStatus 入参(useTaskInfo 补第 5 参), 用于取消终态帧没送达时的徽标兜底。 — 小欧-2026-10-06
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -124,6 +125,8 @@ interface TaskInfoBarProps {
   detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
   sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
   liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
+  // 2026-10-06 22:52 小欧 - storeStatus：chatStreamStore 会话状态，取消终态帧未送达时的 badge 兜底
+  storeStatus?: string;
 }
 
 const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
@@ -132,6 +135,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   detail,
   sessionId,
   liveError,
+  storeStatus,
 }) => {
   // v4.1: 取消整行折叠, collapsed 状态机/localStorage 键已删除
   // 新增: eventsOpen useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
@@ -139,7 +143,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   const [eventsOpen, setEventsOpen] = useState(false);
   // 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): useTaskInfo 改四参签名, receiving prop 本身保留
   //   (秒表 interval 启停仍以 receiving 为准, D3 契约); 仅不再透传给徽标派生 — 小欧-2026-09-14
-  const info = useTaskInfo(steps, frames, detail, liveError);
+  const info = useTaskInfo(steps, frames, detail, liveError, storeStatus);
   const b = BADGE_MAP[info.badge];
   // 2026-10-04 小欧: 占窗率=本轮 P / 运行时窗口(usage 帧的 context_window); 窗口缺失(历史任务/未收到帧)→ null 不显
   const windowUsePct =

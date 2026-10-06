@@ -44,6 +44,8 @@
 // 编辑历史: 2026-10-04 小欧 - 透出 contextWindow(来自 usage 帧 context_window)供占窗率; 历史任务无 usage 帧故为 null
 // 编辑历史: 2026-10-04 小欧 - ProcessEvent.kind 新增 truncated(历史对话裁剪, 北京老陈令): steps 扫描新增 case 'history_context',
 //   本任务只记首条(裁剪可连续多轮, 事件列表仅存最近20条, 每轮一条会挤掉 paused/final 等有效事件)
+// 编辑历史: 2026-10-06 小欧 - useTaskInfo 补第 5 参 storeStatus: 取消终态帧没送到时徽标停在 running,
+//   由 store 已确认的终态(cancelled/failed/completed)兜底, 仅 steps 无 final 步时生效, 不覆盖帧路径。 — 小欧-2026-10-06
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -111,7 +113,10 @@ export const useTaskInfo = (
   frames: TaskMetaFrames,
   detail?: TaskDetail | null,
   // 小欧 2026-09-02+09-08: 位4 error 实时源(页面级错误数据源对象形态; undefined 时 candidates 不含 error)
-  liveError?: LiveError | null
+  liveError?: LiveError | null,
+  // 2026-10-06 22:52 小欧 - 补第5参 storeStatus（chatStreamStore 的会话状态）：
+  //   取消终态帧没送达时的兜底判据（见下方 startinfo 门后的注释）。可选=不传则行为与从前逐字一致。
+  storeStatus?: string
   // 2026-09-14 小欧 删 receiving 参数(方案A, 北京老陈批准): 断连窗已由 startinfo 门无条件 running
   //   平滑承接, receiving=SSE连接级信号不再参与徽标派生; 新签名四参 (steps, frames, detail?, liveError?) — 小欧-2026-09-14
 ) => {
@@ -332,6 +337,31 @@ export const useTaskInfo = (
     if (hasStartInfo && badge === 'idle') {
       badge = 'running';
     }
+    // 2026-10-06 22:52 小欧 - 取消终态兜底（北京老陈实测「点中断 UI 无反应」的第二层保险）：
+    //   badge 的第一真源是 steps 里的 final 步；若终态帧彻底没送到（连接已死/后端异常），
+    //   steps 里永远没有 final，上面 startinfo 门会把 badge 钉在 running —— 即"UI 永久执行中"。
+    //   此处用 store 已确认的终态（stop 看门狗超时后由 settleCancelByDb 从 DB 权威落 status）兜底，
+    //   补上"Store 的 status 在 UI 层零消费"这个缺口（此前只用于资源回收/TTL/历史页在跑指示）。
+    //   仅在 steps 无任何 final 步时生效，故不会覆盖帧路径的判定（帧路径优先级更高）。
+    if (
+      badge === 'running' &&
+      !steps.some((s) => s.type === 'final') &&
+      (storeStatus === 'cancelled' ||
+        storeStatus === 'failed' ||
+        storeStatus === 'completed')
+    ) {
+      badge = storeStatus;
+      processEvents.push({
+        kind: storeStatus === 'cancelled' ? 'cancelled' : 'error',
+        text:
+          storeStatus === 'cancelled'
+            ? '任务已取消'
+            : storeStatus === 'failed'
+              ? '任务失败'
+              : '任务已完成',
+        time: Date.now(),
+      });
+    }
     if (hasStartInfo) {
       processEvents.unshift({
         kind: 'started',
@@ -419,5 +449,5 @@ export const useTaskInfo = (
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
-  }, [steps, frames, detail, liveError]);
+  }, [steps, frames, detail, liveError, storeStatus]);
 };

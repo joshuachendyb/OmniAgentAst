@@ -90,6 +90,11 @@ const TERMINAL_TTL_MS = 600_000;
  *  超出时按"可回收时刻"先后 LRU 淘汰；活跃（在飞/非终态）与被订阅的会话永不被淘汰。 */
 const MAX_SESSIONS = 32;
 
+/** 2026-10-06 22:52 小欧 - 取消后等终态帧的看门狗时长。
+ *  取 5s：后端实测在同一秒内就推 final(cancelled)（日志 22:37:39），5s 已是数量级冗余；
+ *  超时即转 DB 权威兜底，故宁短勿长（用户等的是「已取消」三个字，不是 5 秒）。 */
+const CANCEL_FRAME_TIMEOUT_MS = 5_000;
+
 export function isTerminalStatus(status: string): boolean {
   return (TERMINAL_STATUSES as readonly string[]).includes(status);
 }
@@ -298,6 +303,10 @@ export interface ChatStreamSession extends SessionSnapshot {
   terminalAt: number | null;
   /** 2026-09-30 08:31 小欧 - 终态 TTL 排期句柄（重排前先清，幂等不叠定时器）。 */
   terminalEvictTimer: number | null;
+  /** 2026-10-06 小欧 - 取消后「等终态帧」看门狗句柄；null = 未在等。
+   *  取消成功**不再立即 abort**，改为等后端经 SSE 推来的 final(cancelled) 帧（见 stop() 注释），
+   *  本句柄到点仍未收到则走 DB 权威兜底，绝不让 UI 永久停在「执行中」。 */
+  cancelFrameTimer: number | null;
   /** executionSteps 推导 ref 视图（getExecutionStepsRef 惰性创建、引用稳定）——
    *  读写均落 Store 快照，非第二真源；5.3 parser 与 5.5 组件层共用同一对象 */
   executionStepsRefView?: { current: ExecutionStep[] };
@@ -516,12 +525,15 @@ function clearSessionTimers(s: ChatStreamSession): void {
   if (s.intentionalAbortTimer !== null)
     window.clearTimeout(s.intentionalAbortTimer);
   if (s.terminalEvictTimer !== null) window.clearTimeout(s.terminalEvictTimer);
+  // 2026-10-06 小欧 - 取消等帧看门狗并入本单一出口（否则终态释放后残留定时器仍会打 DB）
+  if (s.cancelFrameTimer !== null) window.clearTimeout(s.cancelFrameTimer);
   s.idleTimeout = null;
   s.reconnectTimeout = null;
   s.firstChunkTimeout = null;
   s.saveStepsTimer = null;
   s.intentionalAbortTimer = null;
   s.terminalEvictTimer = null;
+  s.cancelFrameTimer = null;
 }
 
 /** 条目纯清理（自身不做任何准入判断）：断流 + 清全部定时器 + 删两处 Map。
@@ -622,6 +634,7 @@ export const chatStreamStore = {
       releasedAt: null,
       terminalAt: null,
       terminalEvictTimer: null,
+      cancelFrameTimer: null,
     };
     sessions.set(sessionId, s);
     // 2026-09-30 08:44:31 小欧 - 真会话已建立，缺会话活视图完成交接，即时移除防残留
@@ -814,12 +827,68 @@ export const chatStreamStore = {
         message: t ? `任务已结束（${t.status}）` : '任务不存在，可能已结束',
       };
     }
-    commit(s, (d) => {
-      d.status = 'cancelled';
-    }); // 以后端 set_cancelled 为准，不强写
-    this.clearCompleted(sessionId);
+    // 2026-10-06 22:52 小欧 - 缺陷修复（北京老陈实测「点中断后 UI 无任何反应」，2026-09-30 4ad89f7ed 回归）：
+    //   旧序：commit(status='cancelled') → clearCompleted() → abortController.abort()。
+    //   病根：终态 final(cancelled) 帧**唯一的通道就是这条 SSE**，先 abort 等于掐死自己的送达路径。
+    //   后端实测确实产了帧（app_2026-10-06.log 22:37:39 [Runner] final_stats 已下发(seq=28, status=cancelled)），
+    //   但 abort 后 intentionalAbort 静默吞掉 AbortError、pollSignal.aborted 又关掉 DB 回读，
+    //   于是 UI 永远停在「执行中」+「连接疑似中断」，只有左侧列表（读 DB）正确显示已取消。
+    //   新序：**不提前 abort**，等帧到达（transport onComplete → settleCancelByFrame）才释放；
+    //   并在看门狗超时后走 DB 权威兜底（settleCancelByDb），保证任何情况下 UI 都能落到终态。
+    //   注意此处**不**提前写 status='cancelled'：提前落终态会让 commit 的终态跃迁提前排期 TTL，
+    //   且 badge 的真源是 executionSteps 里的 final 步（useTaskInfo case 'final'），此刻写它没有消费者。
+    this.armCancelFrameWatch(sessionId);
     this.persistNow(sessionId);
     return { success: true, message: r.message || '任务已取消' };
+  },
+
+  /** 2026-10-06 22:52 小欧 - 武装「取消等帧」看门狗（幂等，不叠定时器）。
+   *  到点仍无终态帧（后端异常/连接已死）即转 DB 权威兜底，绝不让 UI 卡在执行中。 */
+  armCancelFrameWatch(sessionId: string): void {
+    const s = sessions.get(sessionId);
+    if (!s) return;
+    if (s.cancelFrameTimer !== null) window.clearTimeout(s.cancelFrameTimer);
+    s.cancelFrameTimer = window.setTimeout(() => {
+      s.cancelFrameTimer = null;
+      void chatStreamStore.settleCancelByDb(sessionId);
+    }, CANCEL_FRAME_TIMEOUT_MS);
+  },
+
+  /** 2026-10-06 22:52 小欧 - 终态帧已到达：撤看门狗并释放全套流资源（此时 abort 才是安全的）。
+   *  **仅在确有取消在等时生效**（cancelFrameTimer 非空即 stop() 已在等帧）：普通完成路径不经过
+   *  此函数，避免给"自然跑完"也套一次 abort —— 那会平白把 fetch signal 翻成 aborted 并改写
+   *  T20 等既有用例可观测到的状态。终态资源在自然完成时由既收尾路径承担，不在此重复释放。 */
+  settleCancelByFrame(sessionId: string): void {
+    const s = sessions.get(sessionId);
+    if (!s || s.cancelFrameTimer === null) return; // 无取消在等 → 不碰
+    if (s.cancelFrameTimer !== null) window.clearTimeout(s.cancelFrameTimer);
+    s.cancelFrameTimer = null;
+    chatStreamStore.clearCompleted(sessionId);
+  },
+
+  /** 2026-10-06 22:52 小欧 - 看门狗超时兜底：DB 已是终态就以它为准落状态并释放。
+   *  只落 store 状态不伪造 executionSteps（steps 是 DB/帧的真源快照，宁缺勿造）；
+   *  badge 侧的兜底见 useTaskInfo 的 storeStatus 分支。 */
+  async settleCancelByDb(sessionId: string): Promise<void> {
+    const s = sessions.get(sessionId);
+    if (!s) return;
+    // 2026-10-06 22:52 小欧 - 必须 try/catch：DB 不可用时 readAuthoritativeTask 会抛，
+    //   而本函数是看门狗的终点，抛出即成 unhandled rejection 且状态永不变（UI 依旧卡死），
+    //   故降级为「按用户确实点了取消」落 cancelled（用户诉求优先于读权威）。
+    let t: { status?: string } | null = null;
+    try {
+      t = (await readAuthoritativeTask(s)) as { status?: string } | null;
+    } catch {
+      t = null;
+    }
+    commit(s, (d) => {
+      d.status =
+        t && isTerminalStatus(t.status as StreamStatus)
+          ? (t.status as StreamStatus)
+          : 'cancelled';
+    });
+    chatStreamStore.clearCompleted(sessionId);
+    chatStreamStore.persistNow(sessionId);
   },
 
   /** 终态资源全套释放——与真实卸载五件套等价；只释放客户端资源：
