@@ -44,6 +44,11 @@
 #   系统敏感文件/目录:「路径位于系统禁区(敏感文件/敏感目录)」; 异常:「路径安全检查异常,已拒绝访问」;
 #   与前缀「该路径在受保护区域/系统禁区...」拼读通顺且保留禁区分级定位; 仅改文案不改逻辑(category 判定/hard-block 不变), 测试不断言文案, 逻辑零退化
 # 2026-10-02 - 小欧 - 注册名归位: _READ_ONLY_TOOLS 文本项 read→read, 删重复的 "read" 项(合并为一条)
+# 2026-10-06 - 小欧 - 去硬编码盘符(北京老陈驱动): ①import 改 FORBIDDEN_PATHS_WINDOWS_REL_EXACT/_REL_PREFIX,
+#   Windows 禁用路径改为盘符前置拼接(get_system_drive() + 相对段), 去掉 .replace("C:", ...) 字符串替换
+#   (旧写法一旦某条漏写盘符前缀, startswith("C:") 守卫会静默不替换→真漏拦); ②get_system_drive 的兜底值
+#   收口为模块内常量 FALLBACK_SYSTEM_DRIVE(原先 3 处散落); ③_SYSTEM_PROTECTED 改用 tool_constants 的
+#   SYSTEM_PROTECTED_DIR_NAMES(原先定义在 validate_path 函数体内, 每次调用重建 frozenset, 且展示层拿不到)。
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -73,11 +78,15 @@ from app.tools.tool_types import ToolCategory
 from app.tools.tool_constants import (
     FORBIDDEN_PATHS_EXACT,
     FORBIDDEN_PATHS_PREFIX,
-    FORBIDDEN_PATHS_WINDOWS_EXACT,
-    FORBIDDEN_PATHS_WINDOWS_PREFIX,
+    FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
+    FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
+    SYSTEM_PROTECTED_DIR_NAMES,
 )
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params  # 三堂会审: 工具名+参数名别名归一防漏检 — 小欧 2026-08-10
 from app.logger import logger
+
+# 2026-10-06 小欧 - 系统盘符三级探测全部失败时的最后兜底(归位本模块: 唯一消费方就是 get_system_drive)
+FALLBACK_SYSTEM_DRIVE = "C:"
 
 
 def get_existing_drives() -> List[Path]:
@@ -110,7 +119,7 @@ def get_system_drive() -> str:
         for c in "CDEFGHIJKLMNOPQRSTUVWXYZ":
             if os.path.isdir(f"{c}:\\Windows"):
                 return f"{c}:"
-    return "C:"
+    return FALLBACK_SYSTEM_DRIVE
 
 
 def get_default_allowed_paths() -> List[Path]:
@@ -178,13 +187,14 @@ def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
             pass
         
         if os.name == 'nt':
-            sys_drive = get_system_drive()  # 真实系统盘符(写死C:模板作默认, 运行时动态替换) — 小欧 2026-08-04
-            for forbidden in FORBIDDEN_PATHS_WINDOWS_EXACT:
-                _f = forbidden.replace("C:", sys_drive, 1) if forbidden.upper().startswith("C:") else forbidden
+            sys_drive = get_system_drive()  # 真实系统盘符 — 小欧 2026-08-04
+            # 2026-10-06 小欧 - 常量改相对段, 盘符前置拼接, 去字符串替换
+            for forbidden in FORBIDDEN_PATHS_WINDOWS_REL_EXACT:
+                _f = sys_drive + forbidden
                 if real_path_lower == _f.lower():
                     return "system", f"路径位于系统禁区(敏感文件): {file_path}"
-            for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_PREFIX:
-                _f = forbidden_prefix.replace("C:", sys_drive, 1) if forbidden_prefix.upper().startswith("C:") else forbidden_prefix
+            for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_REL_PREFIX:
+                _f = sys_drive + forbidden_prefix
                 if real_path_lower.startswith(_f.lower()):
                     return "system", f"路径位于系统禁区(敏感目录): {file_path}"
 
@@ -292,12 +302,10 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
 
         # 白名单盘符下仍拒绝系统保护目录（收紧范围）— 小欧 2026-07-18 修复
-        _SYSTEM_PROTECTED = frozenset({
-            "windows", "program files", "program files (x86)",
-            "programdata", "boot", "recovery",
-        })
+        # 2026-10-06 小欧 - 名单提到 tool_constants.SYSTEM_PROTECTED_DIR_NAMES(原先在此函数内
+        #   每调用重建一遍 frozenset, 且展示层拿不到导致分类表只能硬编码这 3 个名字)
         _real_parts = real_path.parts
-        if len(_real_parts) > 1 and _real_parts[1].lower() in _SYSTEM_PROTECTED:
+        if len(_real_parts) > 1 and _real_parts[1].lower() in SYSTEM_PROTECTED_DIR_NAMES:
             # 读放行(v1.43): 读放行(内容敏感性 contentFilter 兜底, 与禁区读一致);
             #   写/删 → 系统禁区(category="system") — _is_forbidden_path 仅精确锁 WIN_EXACT 本身,
             #   其子路径(如 C:\Windows\a.txt) 靠本处兜底, 归类 system 使 T2 硬拦永不授权(表五/3.2.9)

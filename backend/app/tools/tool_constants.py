@@ -5,6 +5,9 @@
 # 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃
 # 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 从1.1/10节移至第4节(网络工具HTTP常量), 消除散落
 # 2026-07-15 - 小欧 - TOOL_RETRY_CONFIG 从 tool_retry_engine.py 迁入第4节, 与 TOOL_RETRYABLE_HTTP_CODES 相邻
+# 2026-10-06 - 小欧 - FORBIDDEN_PATHS_WINDOWS_EXACT/PREFIX 改名为 _REL_ 变体并改存**与盘符无关的相对段**
+#    (原先每条写死 C:\..., 运行时靠 .replace("C:", sys_drive) 字符串替换, 漏写盘符前缀会静默不替换);
+#    另把 path_safe_check 函数体内的 _SYSTEM_PROTECTED 提为模块级 SYSTEM_PROTECTED_DIR_NAMES(判定与展示共用一份)。
 # 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 # 2026-07-18 - 小欧 - TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
 # 2026-07-20 - 小欧 - grep 门限治理:
@@ -535,21 +538,32 @@ FORBIDDEN_PATHS_PREFIX: set[str] = {  # 【tool 级】使用对象: 文件安全
     "/sys",
 }
 
-FORBIDDEN_PATHS_WINDOWS_EXACT: set[str] = {  # 【tool 级】使用对象: Windows 禁用路径(精确匹配)
-    r"C:\Windows",
-    r"C:\Program Files",
-    r"C:\Program Files (x86)",
-    r"C:\Windows\System32\config\SAM",
-    r"C:\Windows\System32\config\SYSTEM",
-    r"C:\Windows\System32\config\SECURITY",
-    r"C:\Windows\System32\config\SOFTWARE",
-    r"C:\Windows\System32\config\DEFAULT",
+FORBIDDEN_PATHS_WINDOWS_REL_EXACT: set[str] = {  # 【tool 级】使用对象: Windows 禁用路径(精确匹配)(相对段, 无盘符)
+    # 2026-10-06 小欧 - 相对段改为与盘符无关, 运行时由 path_safe_check 前置真实盘符
+    r"\Windows",
+    r"\Program Files",
+    r"\Program Files (x86)",
+    r"\Windows\System32\config\SAM",
+    r"\Windows\System32\config\SYSTEM",
+    r"\Windows\System32\config\SECURITY",
+    r"\Windows\System32\config\SOFTWARE",
+    r"\Windows\System32\config\DEFAULT",
 }
 
-FORBIDDEN_PATHS_WINDOWS_PREFIX: set[str] = {  # 【tool 级】使用对象: Windows 禁用路径(前缀匹配)
-    r"C:\Windows\System32\config",
-    r"C:\Windows\WinSxS",
+FORBIDDEN_PATHS_WINDOWS_REL_PREFIX: set[str] = {  # 【tool 级】使用对象: Windows 禁用路径(前缀匹配)(相对段)
+    # 2026-10-06 小欧 - 同上
+    r"\Windows\System32\config",
+    r"\Windows\WinSxS",
 }
+
+SYSTEM_PROTECTED_DIR_NAMES: frozenset[str] = frozenset({
+    # 2026-10-06 小欧 - 从 path_safe_check.validate_path 函数体内提到模块级(常量归位):
+    #   原先定义在函数里, 每次调用都重建一遍 frozenset; 且只有 path_safe_check 用得到,
+    #   展示层(security_docs)拿不到 → 安全Tab 分类表只能硬编码 \ProgramData 等 3 条,
+    #   改这里不同步展示。现两处共用同一份定义。
+    "windows", "program files", "program files (x86)",
+    "programdata", "boot", "recovery",
+})
 
 # ============================================================
 # 🕐 13. 工具错误码(从 constants.py 整节迁入) — 小欧 2026-06-30
