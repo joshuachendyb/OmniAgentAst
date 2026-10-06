@@ -31,6 +31,7 @@ datafile 目录定位为什么不用 get_frozen_dir():
     ②异常捕获放宽到 Exception(原先只捕 OSError/ValueError, get_config() 抛别的会穿透成 500,
     与本模块"不抛异常"的承诺矛盾); ③降级文案不再回显异常细节(会泄露服务器路径);
     ④新增 {{system_protected}} 占位符, 分类表不再硬编码 \ProgramData 等 3 个名字。
+  2026-10-06 小欧 - 禁区路径去掉反引号: 内联 code 的背景+圆角把分类表路径列撑成灰底碎块(实测 13 个)。
 """
 from pathlib import Path
 from typing import Dict
@@ -75,9 +76,12 @@ def _windows_forbidden_text() -> str:
     必须单行输出: 该占位符落在 md 表格单元格里, 换行会把表格行撑破(5 行变 14 行);
     <br/> 也不行 —— 本项目未装 rehype-raw, rehype-sanitize 会把它整段丢掉。
     故用「、」连成一行, 由前端 overflowWrap 负责折行。
+
+    2026-10-06 三堂会审 #5: 路径**不加反引号** —— 内联 code 各带背景+圆角, 实测 13 个
+    code 把「目录列表」列撑成一片灰底碎块。路径是正文不是代码, 交由 overflowWrap 折行。
     """
     paths = sorted(FORBIDDEN_PATHS_WINDOWS_REL_EXACT | FORBIDDEN_PATHS_WINDOWS_REL_PREFIX)
-    return "、".join(f"`{p}`" for p in paths)
+    return "、".join(paths)
 
 
 def _system_protected_text() -> str:
@@ -88,7 +92,7 @@ def _system_protected_text() -> str:
     """
     covered = {p.lstrip("\\").lower() for p in FORBIDDEN_PATHS_WINDOWS_REL_EXACT}
     rest = sorted(SYSTEM_PROTECTED_DIR_NAMES - covered)
-    return "、".join(f"`\\{n}`" for n in rest)
+    return "、".join(f"\\{n}" for n in rest)
 
 
 def _render(filename: str, values: Dict[str, str]) -> str:
