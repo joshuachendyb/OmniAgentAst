@@ -28,6 +28,13 @@ key 全局唯一，加载自检重复直接拒启。
   2026-10-05 小欧 - appearance 组加两个独立 bool: step_render.thoughtMarkdown「思考排版」(thought块
     Markdown渲染) + step_render.reasoningVisible「推理内容」(reasoning块折叠初值), 默认皆开; 置于
     fontSize 之后(sectionOf 只比相邻项), 不加 restart/secret/env_key。缺键由 get_group 回填默认值。
+  2026-10-05 22:16:38 小欧 - 指人后监下调优与安全的四个标签/notice 修正（更准确、更贴近实际语义）：
+    tuning.llm.response_fallback「工具失败转文字」→「响应无工具转文本」；
+    tuning.llm.response_retries「内容错误重试」→「响应内容错重试限额」；
+    tuning.concurrency.shell_pool_max_per_type「终端会话槽位」→「PS并发池限额」；
+    security.enabled「安全开关」→「HTL人工开关」，notice 同步为"关闭后，无需人工确认，
+    无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）"。
+    仅改展示文案与说明，不改 key、默认值与域，旧配置文件不受影响。
 """
 from typing import Any, Dict, List, Optional
 
@@ -89,8 +96,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，
     #   两者语义分开，避免误以为"关掉安全开关就不用输口令"。
     "security": {"label": "安全", "items": [
-        _item("security.enabled", "bool", "安全开关", False,
-              notice="关闭后跳过所有安全检查（盘根/项目根等删除硬防线仍生效）"),
+        # 2026-10-05 22:16:38 小欧 - 北京老陈指令：标签「安全开关」改「HTL人工开关」；notice 文案更新。
+        #   注意语义：confirmDangerousOps 仍负责操作前的人工确认弹窗，本项管「要不要走人工确认链路」。
+        _item("security.enabled", "bool", "HTL人工开关", False,
+              notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）"),
         _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
               notice="保存时再弹一次确认框（防误触）；后端的安全拦截不依赖这个开关"),
         _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10, range_=[0, 3600],
@@ -187,9 +196,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               options=["auto", "none"], notice="控制模型能不能用工具：auto=正常模式，模型自己决定要不要调用工具；none=禁止用工具，只回纯文字（怀疑工具出问题时用它对照）"),
         _item("tuning.llm.stream_max_retries", "int", "传输失败重试", 3, range_=[0, 10],
               notice="请求中途断线或超时时自动重新发起，最多再试 N 次（每次比上次多等一会）；0=不重试直接失败。与下面「内容错误重试」分工：本项管根本没收到回复，下面管收到了但内容不对"),
-        _item("tuning.llm.response_fallback", "bool", "工具失败转文字", True,
+        # 2026-10-05 22:16:38 小欧 - 北京老陈指令：设置页「调优」四个标签重命名，更准确反映实际语义。
+        _item("tuning.llm.response_fallback", "bool", "响应无工具转文本", True,
               notice="让模型用工具干活时如果一直失败，重试用完后自动改成「不用工具、直接写文字回答」再试一次；关掉则失败就直接报错"),
-        _item("tuning.llm.response_retries", "int", "内容错误重试", 2, range_=[0, 5],
+        _item("tuning.llm.response_retries", "int", "响应内容错重试限额", 2, range_=[0, 5],
               notice="模型返回空回复或明显坏内容时自动重试，最多 N 次，越等越久；配额用完、被限流、请求本身写错这三种情况不走这里。与上面「传输失败重试」分工：本项管内容坏，上面管没收到"),
         _item("tuning.llm.stream_options.include_usage", "bool", "统计 Token 用量", True,
               notice="回答结束后附带本次消耗了多少 token（输入+输出）；关掉后任务统计页的 token 数会显示为 0"),
@@ -211,7 +221,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # --- concurrency: 并发配额（2 键）---
         _item("tuning.concurrency.soft_pool_wait_timeout", "float", "排队最多等(秒)", 30.0, range_=[5, 120],
               notice="同时请求达到上限时新请求先排队，最多等这么多秒；等超了就不排了、照样放行（宁可挤一点也不让任务卡死）。与上面「等空闲连接超时」分工：本项管应用层排队，那边管网络连接层"),
-        _item("tuning.concurrency.shell_pool_max_per_type", "int", "终端会话槽位", 8, range_=[1, 20],
+        _item("tuning.concurrency.shell_pool_max_per_type", "int", "PS并发池限额", 8, range_=[1, 20],
               notice="同一任务里同一种终端（如 PowerShell）最多同时开几个常驻会话：满了新命令要等空位；调大=并行命令更顺但更占内存"),
         # --- agent: Agent 循环参数（1 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
