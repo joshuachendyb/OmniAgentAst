@@ -24,6 +24,8 @@
 //   该块是全局默认采样参数，单模型可在「模型」Tab 单独覆盖，原名易误读为"当前模型的参数"。纯显示名。 — 小欧-2026-09-28
 // 2026-10-05 小欧 - appearance 组加前缀支, 新分节「step渲染控制」(文档[9] §5.11): 不加会被 return '外观' 吞掉 — 小欧-2026-10-05
 import React from 'react';
+// 2026-10-06 小欧 - security 组加块2「安全策略说明」: sectionOf 归块 + items.map 后追加 DirectoryAccessNote
+//   ——「分类表 + 两个说明弹框」纯只读, 无 props 不调 /settings 读组, 文案由后端 datafile 插值后直供
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
 import type {
@@ -33,6 +35,7 @@ import type {
 import { SettingRow } from './SettingRow';
 import { SectionTitle } from './SectionTitle';
 import { AboutFiles } from './AboutFiles';
+import { DirectoryAccessNote } from './DirectoryAccessNote';
 
 interface Props {
   group: string;
@@ -81,6 +84,9 @@ function sectionOf(group: string, key: string): string | null {
     if (key.startsWith('appearance.step_render.')) return 'step渲染控制';
     return '外观';
   }
+  // 2026-10-06 小欧: security 组现有 4 项(HTL人工开关/危险操作确认/两个延迟秒数)全归「人工确认」一块,
+  //   块 2「安全策略说明」不是配置项, 由 items.map 循环后追加 DirectoryAccessNote(见文件末)
+  if (group === 'security') return '人工确认';
   if (group === 'tuning') {
     if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
     if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
@@ -219,6 +225,14 @@ export const SettingsGroup: React.FC<Props> = ({
           </React.Fragment>
         );
       })}
+      {/* 2026-10-06 小欧 - 块2「安全策略说明」：纯说明(分类表 + 两个说明弹框), 无配置项故不进 registry,
+          只能在此追加(与 appearancePreview 同款做法)。仅 security 组出现。 */}
+      {group === 'security' && (
+        <>
+          <SectionTitle title="── 安全策略说明 ──" />
+          <DirectoryAccessNote />
+        </>
+      )}
     </div>
   );
 };
