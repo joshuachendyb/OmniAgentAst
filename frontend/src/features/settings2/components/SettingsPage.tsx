@@ -93,6 +93,7 @@
 // 2026-10-03 小欧 - ModelLibraryTab 增「添加 Provider」入口，回调复用 :323 给 ModelSelector 的同一处（不新建弹窗/状态）— 小欧 2026-10-03
 // 2026-10-03 小欧 - 修「模型库 Tab 点添加 Provider 无反应」：ModelModals 原挂在 renderModelTab 内，
 //   model_library Tab 不调该函数致弹窗组件不挂载，置 open 也无人渲染；已上提到页面顶层（全 Tab 挂载）— 小欧 2026-10-03
+// 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名「HTL人工开关」，危险键判定处注释同步 — 小欧 2026-10-05
 import React, { useState } from 'react';
 import {
   Button,
@@ -207,7 +208,7 @@ const SettingsPage: React.FC = () => {
   };
 
   // 修正(2026-09-21 小强)：危险判定拆分「保存本组/保存全部」——原全局判定致保存其它组误弹；
-  // 危险键=安全开关/危险操作确认的变更（含 security.enabled 关闭场景，原仅认 confirmDangerousOps）
+  // 危险键=HTL人工开关/危险操作确认的变更（含 security.enabled 关闭场景，原仅认 confirmDangerousOps）
   // （[设置页UI审计] 问题7/8）
   const DANGEROUS_KEYS = ['security.enabled', 'security.confirmDangerousOps'];
   const dangerousGroup =

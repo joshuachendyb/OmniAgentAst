@@ -63,6 +63,8 @@
  * - KISS: 简单Modal + 3个按钮，不搞复杂状态
  * - DRY: 复用Ant Design Modal组件
  */
+// 编辑历史: 2026-10-05 22:16:38 小欧 - bypass 弹窗标题「将自动确认（安全开关已绕开）」随 settings_registry
+//   标签改名为「HTL人工开关已绕开」，与设置页新标签一致（纯文案同步，bypass 分支逻辑与倒计时不变）— 小欧-2026-10-05
 
 import React from 'react';
 import { Button, Typography, Tag, Checkbox } from 'antd';
@@ -246,7 +248,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
             />
           )}
           <Title level={5} style={{ marginBottom: 0 }}>
-            {isBypass ? '将自动确认（安全开关已绕开）' : '安全确认请求'}
+            {isBypass ? '将自动确认（HTL人工开关已绕开）' : '安全确认请求'}
           </Title>
           <Tag
             color={safetyConfig.color}

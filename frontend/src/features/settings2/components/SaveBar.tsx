@@ -9,6 +9,7 @@
 //   antd 确认框 OK 按钮携带 Promise 自动 loading，杜绝「保存中」连点 OK 双发保存
 // 2026-09-21 小强 - 设置页17问题复核修复：危险确认拆分 dangerousGroup/dangerousAll（保存其他组不再误弹）；
 //   content 去残留「黑白名单」文案（黑白名单键已从注册表删除）（[设置页UI审计] 问题7/8/10）
+// 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名「HTL人工开关」，危险操作确认弹窗文案同步 - 小欧-2026-10-05
 import React from 'react';
 import { Button, Modal } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -56,7 +57,8 @@ export const SaveBar: React.FC<Props> = ({
         content: (
           <span style={{ color: Colors.TEXT.SECONDARY }}>
             {/* 修正(2026-09-21 小强)：去残留"黑白名单"文案（黑白名单键已从注册表删除）([设置页UI审计] 问题10) */}
-            本次保存涉及危险操作相关配置（安全开关/危险操作确认），确认提交吗？
+            {/* 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名为「HTL人工开关」，此处同步 */}
+            本次保存涉及危险操作相关配置（HTL人工开关/危险操作确认），确认提交吗？
           </span>
         ),
         okText: '确认保存',
