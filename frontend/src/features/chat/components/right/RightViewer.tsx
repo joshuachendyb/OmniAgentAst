@@ -412,6 +412,11 @@ const RightViewer: React.FC<RightViewerProps> = ({
     if (!activeTaskId || isCurrentLive) {
       // 2026-08-27 小欧 修复#45: 切到实时任务时清空历史detail, 避免StaticStatsBlock残留旧任务统计
       setDetail(null);
+      // 2026-10-06 小欧 - 清 loading: 取消链路修复后终态帧能如期送达, isCurrentLive 由 true 翻 false,
+      //   上一轮 effect 若已 setLoading(true) 而其 fetch 被 cleanup 置 cancelled=true, finally 的
+      //   `if (!cancelled) setLoading(false)` 会被跳过 → loading 永久 true → <Spin> 白纱永久罩住右栏
+      //   (北京老陈实截图)。此分支早退不发 fetch, 故必须就地清干净, 不能指望别的分支兜。
+      setLoading(false);
       // 2026-09-13 小欧 根治(北京老陈三思三省定位): 活跃任务为空时同步清终态快照/历史步骤——会话切换首帧
       //   旧activeTaskId跨会话拉旧任务REST回填historySteps后, activeTaskId归空早退仅清detail不清steps,
       //   右栏永久残留旧执行记录; 补清后"无活动任务必空态", 不依赖effect执行时序 — 小欧-2026-09-13
@@ -426,6 +431,9 @@ const RightViewer: React.FC<RightViewerProps> = ({
     //   须显式守卫挡住此路径; 历史任务选择(activeTaskId!==serverTaskId)DB 已稳定, 不受守卫
     if (activeTaskId === serverTaskId && !hasFinalStats) {
       setDetail(null);
+      // 2026-10-06 小欧 - 同上: 本分支早退不发 fetch, 残留的 loading 必须在此清, 否则取消后
+      //   <Spin> 白纱永久不落(取消不产生 final_stats 时正是走这条)。
+      setLoading(false);
       return;
     }
     let cancelled = false;
