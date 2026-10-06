@@ -1,6 +1,8 @@
 // 编辑历史: 2026-10-06 小欧 - 新建: fre2e_20 安全Tab块2（分类表直出 + 两个说明弹框 + mermaid 流程图）
 //   把原先 6 个临时诊断脚本合并成一个正式 case: 覆盖页面结构、分类表行列、两个弹框内容、mermaid 真实渲染。
 //   诊断期的 console 输出已并入断言, 不再保留一次性脚本。
+// 编辑历史: 2026-10-06 小欧 - 增 2 条回归断言: 分类表字号须 14px(设置页正文档),
+//   「目录列表」列不得残留内联 code(灰底碎块)。 — 小欧-2026-10-06
 import { test, expect } from '@playwright/test';
 
 test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定(mermaid)', async ({
@@ -87,6 +89,20 @@ test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定
   });
   await page.keyboard.press('Escape');
   await page.waitForTimeout(700);
+
+  // 2026-10-06 三堂会审回归断言:
+  //   ①分类表字号须为设置页正文档(PRIMARY=14px), 缺省 SECONDARY(12px) 会比周围正文小 2px
+  //   ②「目录列表」列不得残留内联 code —— 内联 code 各带背景+圆角, 会把该列撑成灰底碎块
+  const audit = await page.evaluate(() => {
+    const t = document.querySelector('table')!;
+    const cell = t.querySelector('tbody tr td:nth-child(2)')!;
+    return {
+      tableFont: getComputedStyle(t).fontSize,
+      codeCount: cell.querySelectorAll('code').length,
+    };
+  });
+  expect(audit.tableFont).toBe('14px');
+  expect(audit.codeCount).toBe(0);
 
   // console 只允许 antd 既有的 findDOMNode deprecation(项目噪音, 与本用例无关)
   expect(
