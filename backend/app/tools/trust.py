@@ -4,6 +4,9 @@
 # 2026-09-16 小欧 - 问题修复(文档落码): extract_trust_path 补非文件信任域专用提取 —— 仅认规范 path 及
 #   定向别名(key_path/registry_key/db_path → path), 排除 data→value 非路径别名污染; 不动 _parse_paths
 #   (保护 conflict_detector 并查集分组); 与 FILE 流程共用 PARAM_ALIASES 只取规范 path — 小欧-2026-09-16
+# 2026-10-06 - 小欧 - save_session_trust 落库日志补 raw_path 与「登记范围」两字段: 原先只打 tool_name,
+#   实际登记的是文件还是目录从日志无从判断, 「信任4次仍反复弹窗」正是因此长期查不出根因。
+#   落库侧粒度修复见 app/tools/trust_db.py trust_scope_path。 — 小欧-2026-10-06
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -134,4 +137,11 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
         insert_session_trust(conn, _sid, normalize_tool_name(tool_name), path)
 
     await db.atxn("chat", _do)
-    logger.info(f"[HITL] 会话信任落库: task_id={task_id}, tool_name={normalize_tool_name(tool_name)}")
+    # 2026-10-06 小欧 - 日志补登记范围: 原先只打 tool_name, 落库的是文件还是目录根本看不出来,
+    #   "信任4次仍反复弹窗"正是因此查不出根因(表里4行全是叶子文件)。改为打印 trust_scope_path 归一后的值。
+    #   弹了弹窗但登记范围不符预期时, 这一行即第一现场证据。
+    from app.tools.trust_db import trust_scope_path as _scope
+    logger.info(
+        f"[HITL] 会话信任落库: task_id={task_id}, tool_name={normalize_tool_name(tool_name)}, "
+        f"raw_path={path!r}, 登记范围={_scope(path, normalize_tool_name(tool_name))!r}"
+    )

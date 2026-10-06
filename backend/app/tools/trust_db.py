@@ -15,6 +15,11 @@
 #   path=None(无路径工具: shell/execute_sql/registry_*)仍只命中本工具的通配行path IS NULL, 目录信任不会误放行shell。
 #   本文件行 4-12 既往认"按tool_name隔离", 2026-10-05起此前记录为历史存档; 落库/查询/撤销路径分开:
 #   save仍按(session_id,tool_name,path)写(UNIQUE保留), 只改豁免放行的判定。— 小欧-2026-10-05
+# 2026-10-06 - 小欧 - 缺陷修复(北京老陈实测「连续信任4次仍反复弹窗」): 新增 trust_scope_path, 落库前把
+#   文件类工具的 path 收敛到【所在目录】。根因: 读取端 check_session_trust 的 `trusted_p in target_p.parents`
+#   早已支持目录前缀继承, 但写入端恒登记叶子文件, 生产者从不产出目录 —— 「信任此操作」退化为「只信任这一个
+#   文件名」, 换个文件名即重新弹窗(DB 实测同 session 4 行全为 analysis\*.py 单文件, 无一行目录)。
+#   读取端零改动(本就不需要改), 仅让生产者产出它能匹配的东西。 — 小欧-2026-10-06
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from pathlib import Path
 from typing import Optional
@@ -40,12 +45,43 @@ def norm_trust_path(path: Optional[str], tool_name: Optional[str] = None) -> Opt
         return None
 
 
+def trust_scope_path(path: Optional[str], tool_name: Optional[str] = None) -> Optional[str]:
+    """信任登记范围归一：文件类工具登记其【所在目录】, 目录/非文件信任域原样 — 小欧 2026-10-06
+
+    2026-10-06 小欧 缺陷修复（北京老陈实测「连续信任4次仍反复弹窗」）：写入端此前恒登记叶子文件
+    路径，而读取端 check_session_trust 的 `trusted_p in target_p.parents` 本就支持目录前缀继承
+    —— 生产者从不产出目录，致「信任此操作」退化为「只信任这一个文件名」，换个文件名即重新弹窗。
+    故落库前把文件收敛到所在目录，让既有读取端的前缀匹配真正生效（读取端零改动）。
+
+    文件/目录判据（**不可用 is_dir()**：写入目标常常尚不存在，实测把 D:/a 这类不存在的目录
+    误判为文件而收敛成盘根 D:\\，致整盘豁免的真退化）——按路径形态判，与 temp_auth.py:62-65
+    「带后缀=文件」同一口径（DRY，不引第二套判据）：
+      ① 真实存在的目录 → 原样保留（is_dir 为真）
+      ② 带后缀 → 视为文件，收敛到所在目录
+      ③ 不存在且无后缀 → 视为目录，原样保留（新建目录场景）
+
+    非文件信任域(registry/sql)原样返回：其 path 是注册表键/SQL db 路径，非文件系统目录 — 小欧-2026-10-06
+    """
+    normalized = norm_trust_path(path, tool_name)
+    if not normalized or tool_name in NON_FILE_TRUST_TOOLS:
+        return normalized
+    p = Path(normalized)
+    try:
+        if p.is_dir():
+            return str(p)          # ① 真实目录
+    except OSError:
+        pass
+    return str(p.parent) if p.suffix else str(p)
+
+
 def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> None:
     """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name, path) 幂等）— 小欧 2026-08-16; v1.5 增 path 参数
-    path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免"""
+    path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免
+    2026-10-06 小欧 - 落库前经 trust_scope_path 归一：文件类工具登记【所在目录】而非叶子文件，
+      否则"信任此操作"只对那一个文件名生效(实测连续信任 4 个文件仍 4 次弹窗) — 小欧-2026-10-06"""
     conn.execute(
         "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, path, created_at) VALUES (?,?,?,?)",
-        (session_id, tool_name, norm_trust_path(path, tool_name), get_local_iso_timestamp()),
+        (session_id, tool_name, trust_scope_path(path, tool_name), get_local_iso_timestamp()),
     )
 
 

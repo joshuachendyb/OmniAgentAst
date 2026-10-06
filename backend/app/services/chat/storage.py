@@ -137,7 +137,8 @@ from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一:
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 撤销侧规范化同位(与 trust_db:15 同步)
-from app.tools.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧-2026-09-16
+from app.tools.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧 2026-09-16
+from app.tools.trust_db import trust_scope_path             # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
 
 # 存储每个session的消息ID
 # key: session_id, value: user_message_id 或 assistant_message_id
@@ -585,17 +586,22 @@ def list_session_trust(conn: Connection, session_id: str) -> list:
 
 def delete_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
     """D3(10.5 问题4): 撤销会话对指定信任对象的信任——(tool, path) 精确撤销, path=None 仅删工具级通配行 — 小欧 2026-08-20; v1.5 增 path 匹配
-    2026-10-05 小欧 提示(B语义下): 本函数仍按(session_id,tool_name,path)精确删; 而check_session_trust已改为按path跨工具放行 ——
-      若只删某一工具的那行, 同路径下其它工具的登记仍使该目录豁免。要"撤销整个目录的信任"需遍历删除该session下同路径的所有工具行。— 小欧-2026-10-05"""
+    2026-10-05 小欧 提示(B语义下): check_session_trust 已改为按 path 跨工具放行 —— 只删某一工具的那行,
+      同路径下其它工具的登记仍使该目录豁免。
+    2026-10-06 小欧 撤销侧对齐落库侧与放行侧(北京老陈"信任反复弹窗"修复配套): 落库已改为登记【所在目录】,
+      故撤销一律经 trust_scope_path 归一(传文件或传目录都能命中同一行), 且**跨工具一并删** ——
+      放行是跨工具的, 撤销若只删本工具行则该目录实际仍被信任, 撤销形同虚设(安全缺口)。
+      path=None 仍只删本工具的通配行(无路径工具之间不互相牵连)。"""
     if path is None:
         cur = conn.execute(
             "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=? AND path IS NULL",
             (session_id, tool_name),
         )
     else:
+        # 跨工具删除: WHERE 不带 tool_name, 与 check_session_trust 的跨工具放行口径对称
         cur = conn.execute(
-            "DELETE FROM chat_session_trust WHERE session_id=? AND tool_name=? AND path=?",
-            (session_id, tool_name, norm_trust_path(path, tool_name)),
+            "DELETE FROM chat_session_trust WHERE session_id=? AND path=?",
+            (session_id, trust_scope_path(path, tool_name)),
         )
     return cur.rowcount > 0
 
