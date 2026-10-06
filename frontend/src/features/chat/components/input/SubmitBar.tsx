@@ -1,6 +1,8 @@
 // 编辑历史: 2026-08-26 小欧 - 8.12 实施: 底部功能行 模型按钮+附件+发送/停止+暂停继续(4.3.6)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: modelPickerSlot改为可选属性(调用方可不传)
 // 编辑历史: 2026-08-28 小欧 - ①A/a2: 新增leftExtra插槽(指令+续聊), 左侧序leftExtra/modelPicker/附件, 去marginTop4, gap8节奏
+// 编辑历史: 2026-10-06 小欧 - 北京老陈指令: 附件区调用点补 visible(不再隐藏) + disabled(置灰占位)，
+//   上传功能仍暂缓（AttachmentArea 内 beforeUpload 照旧拦），此处仅改渲染参数不改左插槽顺序 — 小欧-2026-10-06
 /**
  * SubmitBar - 底部功能行：模型按钮(ModelPicker) + 附件 + 发送/停止 + 暂停·继续
  *
@@ -46,7 +48,8 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
     <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
       {leftExtra}
       {modelPickerSlot}
-      <AttachmentArea />
+      {/* 2026-10-06 小欧 - 北京老陈指令: 附件按钮不再隐藏, 显示+置灰占位（上传仍暂缓） */}
+      <AttachmentArea visible disabled />
     </Space>
     <Space>
       {loading || isReceiving ? (
