@@ -1,4 +1,7 @@
 // 编辑历史: 2026-10-06 小欧 - 新建：Markdown 中的 mermaid 围栏渲染为流程图（security Tab 弹框2 用）
+// 编辑历史: 2026-10-06 小欧 - 配色改用项目 Colors/FontSize 令牌(原先 fontSize:12 与 mermaid 自带
+//   蓝紫默认主题都是硬编码/脱离令牌); 线色取 TEXT.SECONDARY —— 用 BORDER.VERTICAL 实测渲成
+//   #e8e8e8, 比节点填充 #f5f5f5 还浅, 线几乎不可见; flowchart 加 wrappingWidth 放宽节点标签折行。
 //
 // 为什么单独一个组件:
 //   mermaid 体积不小且只在少数场景用到, 故动态 import 懒加载, 不进主包。
@@ -11,6 +14,7 @@
 //   mermaid 是**全局单例**, initialize 会改它的全局配置。原实现每次 effect 都调,
 //   多个图/重渲染时互相覆盖且重复初始化。现用模块级 Promise 缓存, 首次并发调用也只初始化一次。
 import { useEffect, useId, useRef, useState } from 'react';
+import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface MermaidBlockProps {
   /** mermaid 源码(已从 ```mermaid 围栏中剥出) */
@@ -24,11 +28,28 @@ function loadMermaid(): Promise<typeof import('mermaid').default> {
     m.default.initialize({
       startOnLoad: false,
       securityLevel: 'strict',
-      theme: 'default',
-      // 2026-10-06 小欧: 判定流程有 15+ 节点, 默认字号/间距在弹框里过高、需大量滚动。
-      // 收紧后整图更紧凑, 仍由 CSS max-width 兜底不溢出。
-      fontSize: 12,
-      flowchart: { nodeSpacing: 30, rankSpacing: 34, padding: 6 },
+      // 2026-10-06 小欧(三堂会审): 配色改用项目 Colors 体系, 不再用 mermaid 自带蓝紫默认主题
+      //   (默认主题色与 settings2 的浅灰底/中灰字完全脱节, 深浅色模式下也不会跟着变)。
+      //   ⚠️ 复测: 线色不能用 BORDER.VERTICAL —— 实测渲成 #e8e8e8, 比节点填充 #f5f5f5 还浅,
+      //   线几乎不可见。故线与箭头统一取 TEXT.SECONDARY(#8c8c8c), 与节点填充拉得开。
+      theme: 'base',
+      themeVariables: {
+        background: Colors.BG.PRIMARY,
+        primaryColor: Colors.BG.TERTIARY,
+        primaryBorderColor: Colors.TEXT.SECONDARY,
+        primaryTextColor: Colors.TEXT.PRIMARY,
+        lineColor: Colors.TEXT.SECONDARY,
+        textColor: Colors.TEXT.PRIMARY,
+        fontSize: `${FontSize.SECONDARY}px`,
+      },
+      // 2026-10-06 小欧: 节点标签折行才是图高的主因(实测节点被压到 68px 宽、文字挤成 5 行,
+      //   整图 1566px 高 vs 弹框 634px)。故用 wrappingWidth 放宽单节点可用宽度, 让标签少折行。
+      flowchart: {
+        wrappingWidth: 220,
+        nodeSpacing: 40,
+        rankSpacing: 40,
+        padding: 8,
+      },
     });
     return m.default;
   });
@@ -76,7 +97,7 @@ export function MermaidBlock({ chart }: MermaidBlockProps) {
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           fontFamily: 'monospace',
-          fontSize: 12,
+          fontSize: FontSize.CODE,
           lineHeight: 1.5,
         }}
       >

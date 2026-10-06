@@ -29,6 +29,8 @@
 //   v3.8.1 小欧 老陈指令: 围栏代码块右上角加"复制"按钮。pre 容器改为 PreBlock(position:relative + 绝对定位按钮,
 //     复制源取原始children字符串不含按钮文字, copied后1.5s回退); code 组件不动(透传 className)。— 小欧-2026-10-05
 //   申明订正: 上一条"已加复制按钮"为总结误报, 实际未落盘; 本次才真正落盘并入单测。— 小欧-2026-10-05
+// 编辑历史: 2026-10-06 小欧 - MdTable 加 fontSize 参数(缺省 SECONDARY, 聊天侧零变化),
+//   安全Tab 分类表传 PRIMARY: 该表是设置页正文(周围 14px), 用 12px 会小 2px 层级拉不开。 — 小欧-2026-10-06
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -172,18 +174,19 @@ function isMermaidFence(node: unknown): boolean {
   );
 }
 
-// 2026-10-06 小欧: md 表格容器。fixed 模式用于安全Tab 分类表(auto 下超长单元格会独占宽度)。
-const MdTable: React.FC<MdProps & { layout: 'auto' | 'fixed' }> = ({
-  children,
-  layout,
-}) => (
+// 2026-10-06 小欧 - md 表格容器。fixed 模式用于安全Tab 分类表(auto 下超长单元格会独占宽度)。
+//   fontSize 缺省走 FontSize.SECONDARY(聊天流原样, 零变化); 安全Tab 分类表传 PRIMARY,
+//   否则在设置页里比周围正文小 2px、层级拉不开。
+const MdTable: React.FC<
+  MdProps & { layout: 'auto' | 'fixed'; fontSize?: number }
+> = ({ children, layout, fontSize = FontSize.SECONDARY }) => (
   <div style={{ overflowX: 'auto', margin: `${Spacing.XS}px 0` }}>
     <table
       style={{
         borderCollapse: 'collapse',
         tableLayout: layout,
         width: '100%',
-        fontSize: FontSize.SECONDARY,
+        fontSize,
       }}
     >
       {children}
@@ -273,9 +276,6 @@ const mdComponents = {
       {props.children}
     </a>
   ),
-  // 2026-10-06 小欧: 表格布局两种模式。auto 下超长单元格(如分类表那 10 条路径)会吃掉几乎全部
-  //   宽度、把窄列压成逐字竖排, 且 maxWidth 在 auto 布局里不生效; fixed 才能按比例限宽。
-  //   默认 auto, 聊天侧表格观感零变化。
   table: (props: MdProps) => <MdTable {...props} layout="auto" />,
   thead: (props: MdProps) => (
     <thead style={{ background: Colors.BG.TERTIARY }}>{props.children}</thead>
@@ -387,9 +387,10 @@ const PreBlock: React.FC<MdProps> = (props) => {
   );
 };
 
-// 2026-10-06 小欧: fixed 布局的表格(仅安全Tab 分类表用), 与 mdComponents 里的 auto 版同一组件不同参数
+// 2026-10-06 小欧(三堂会审 #6): 安全Tab 分类表走 fixed + PRIMARY 字号 —— 该表是设置页正文
+//   (周围都是 14px), 缺省 auto+SECONDARY(12px) 会比周围小 2px 且长路径列独占宽度把窄列压成竖排。
 const fixedTableComponent = (props: MdProps) => (
-  <MdTable {...props} layout="fixed" />
+  <MdTable {...props} layout="fixed" fontSize={FontSize.PRIMARY} />
 );
 
 interface MarkdownTextProps {

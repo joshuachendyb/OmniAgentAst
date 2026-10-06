@@ -34,10 +34,10 @@ interface MarkdownSlotProps {
   /** 「思考排版」开关值(PipelineRenderer 顶层 hook 取一次后下传, 禁在 map 回调内调 hook) */
   markdown?: boolean;
   /**
-   * 2026-10-06 小欧: 表格按固定列宽排(auto 布局下超长单元格会吃掉全部宽度、把窄列压成逐字竖排)。
-   *   仅安全Tab 分类表开 —— 聊天侧一律保持默认 auto, 零视觉变化。
+   * 编辑历史: 2026-10-06 小欧 - 新增 fixedTable: 表格按固定列宽排(auto 布局下超长单元格会吃掉
+   *   全部宽度、把窄列压成逐字竖排)。仅安全Tab 分类表开, 聊天侧一律默认 auto, 零视觉变化。
    *   ⚠️ 仅 MD_IMPL=0(react-markdown) 分支支持; MD_IMPL=1 的 MarkdownBody 不解析表格, 该参数无效。
-   */
+   *   — 小欧-2026-10-06 */
   fixedTable?: boolean;
 }
 
