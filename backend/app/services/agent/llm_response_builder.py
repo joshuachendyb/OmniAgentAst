@@ -6,6 +6,8 @@
 # 2026-09-06 小欧 文档落码: 三装配函数 return由("response",dict) 改 create_payload_chunk(payload=dict),
 #   载荷与改造前全等; 新增模块私有 _resolve_chunk_model(任务快照优先, 三堂会审同react_step判定)
 # 2026-09-17 小欧 文案修改: _format_response_error 去LLM前缀改口语"模型响应解析失败" — 小欧-2026-09-17
+# 2026-10-06 小欧 修 P1-02: _log_llm_response 的 response_content 走公共 truncate_text 截断预览
+#   (契约要求 截断版/完整版 分离, 原同传 assembled_json 致落盘两字段全等且体积翻倍)
 """
 llm_response_builder — LLM响应组装纯函数
 
@@ -23,6 +25,8 @@ from typing import Optional
 from app.llm.core import LLMResponseError, create_payload_chunk
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
+from app.tools.tool_constants import RESPONSE_PREVIEW_LIMIT_CHARS
+from app.utils.text_utils import truncate_text  # 2026-10-06 小欧 P1-02: response_content 截断预览复用公共函数
 
 
 def _resolve_chunk_model(agent):
@@ -76,8 +80,12 @@ def _log_llm_response(agent, assembled_json, response_type, usage_data, finish_r
     """统一LLM响应日志 — 小欧 2026-06-25 SRP提取"""
     if finish_reason is None:
         finish_reason = "tool_calls" if response_type == "action" else "stop"
+    # 2026-10-06 小欧 修 P1-02: 契约要求 response_content=截断预览 / raw_response=完整不截断
+    #   (prompt_logger.log_llm_response docstring 明述), 原两者同传 assembled_json →
+    #   落盘「解析结果」恒等于「原始响应」且体积翻倍; 截断复用公共 truncate_text(复用优先)
+    _preview, _ = truncate_text(assembled_json, RESPONSE_PREVIEW_LIMIT_CHARS)
     get_prompt_logger().log_llm_response(
-        round_number=agent.llm_call_count, response_content=assembled_json,
+        round_number=agent.llm_call_count, response_content=_preview,
         raw_response=assembled_json, response_type=response_type,
         finish_reason=finish_reason,
         extra_info={**extra, "usage": usage_data} if usage_data else {**extra},

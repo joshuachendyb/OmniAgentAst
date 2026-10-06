@@ -16,6 +16,9 @@
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.4③: log_llm_call 形参 (model, provider) 分离 → llm_model:
 #   ModelRef 结构; 日志落盘"模型"/"提供商"键取 llm_model.model/.provider(展示派生); import 补 ModelRef
 # 2026-09-19 - 小欧 - exe打包frozen支持: log_dir frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
+# 2026-10-06 - 小欧 - 报告核查修复 P3-07/P3-06: ①log_llm_call 入口 messages 归一(默认 None 而下方
+#   len(messages) 直接崩, _summarize_messages 内仅改局部变量); ②save() 显式返回 True/False 且二次失败
+#   补路径+轮次留痕(原仅一行 error, 该条日志随内存对象覆盖无声丢失)
 """
 Prompt 日志记录器 - 记录 Prompt 组装全过程
 
@@ -289,6 +292,10 @@ class PromptLogger:
         if not current_log:
             return
 
+        # 2026-10-06 小欧 修 P3-07: 入参默认 messages=None 而下方 entry 构造直接 len(messages) 崩;
+        #   _summarize_messages 内 `if not messages: messages=[]` 只改局部变量, 外层拿不到 →
+        #   入口归一一次, 覆盖 _summarize_messages 与 len(messages) 两个消费点(SRP/KISS-DIRECT)
+        messages = messages or []
         message_stats, message_summaries = self._summarize_messages(messages)
         tools_summary = self._summarize_tools(tools)
 
@@ -477,12 +484,18 @@ class PromptLogger:
                 with open(log_file_path, 'w', encoding='utf-8') as f:
                     f.write(safe_json_dumps(current_log, ensure_ascii=False, indent=2))
                 logger.info(f"[PromptLogger] 日志已保存: {log_file_path}")
-                return
+                return True   # 2026-10-06 小欧 P3-06: 返回成功标志, 供调用方判成败
             except Exception as e:
                 if retry == 0:
                     logger.warning(f"[PromptLogger] 保存失败,重试: {e}")
                 else:
-                    logger.error(f"[PromptLogger] 保存失败: {e}")
+                    # 2026-10-06 小欧 修 P3-06: 二次失败原先仅一行 error, 该条 prompt 日志无声消失
+                    #   (内存对象随线程局部被下次 start_request 覆盖, 不可恢复); 补轮次与路径留痕
+                    logger.error(
+                        f"[PromptLogger] 保存失败(已重试1次), 该条 prompt 日志丢失: "
+                        f"path={log_file_path}, LLM调用轮次={len(current_log.get('LLM调用记录', []))}, 原因={e}"
+                    )
+        return False
     
     def get_current_log(self) -> Optional[Dict[str, Any]]:
         """获取当前日志数据"""

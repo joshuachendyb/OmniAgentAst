@@ -113,6 +113,8 @@
 # 2026-10-02 - 小欧 - 注册名收敛: TOOL_TIMEOUT_HINTS/TOOL_TIMEOUTS/FILE_OPERATION_TOOLS 键 write→write, edit→edit
 # 2026-10-05 - 小欧 - 文档[8]第八章: ①P8 EXECUTE_SHELL_OUTPARM_LIMIT_CMD 50→150(cmd_short掐中保尾=头130+尾20) ②P1新增OBS_METRICS_MAX_ITEMS=10/OBS_METRICS_VALUE_MAX_CHARS=100 ③P3新增OBS_ERROR_SUPPLEMENT_MAX_CHARS=600
 # 2026-10-05 - 小欧 - 总预算150→130(北京老陈裁定): EXECUTE_SHELL_OUTPARM_LIMIT_CMD 150→130, 头变为110(尾20不变)
+# 2026-10-06 - 小欧 - 新增 RESPONSE_PREVIEW_LIMIT_CHARS=2000(报告 P1-02): llm_response_builder 的
+#   log_llm_response「解析结果」预览截断上限(与既有 *_OUTPARM_LIMIT_* 同族, 复用优先)
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -347,6 +349,8 @@ GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES: int = 5            # 使用对象: get_db_sc
 TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS: int = 5            # 使用对象: timer_list.py(params timer_id 预览数量)
 # fundamental
 SEND_NOTIFICATION_OUTPARM_LIMIT_MSG: int = 50          # 使用对象: send_notification.py(message params预览截断)
+# llm 日志(2026-10-06 小欧 P1-02 新增)
+RESPONSE_PREVIEW_LIMIT_CHARS: int = 2000               # 使用对象: llm_response_builder.py(log_llm_response 的 response_content 预览截断; raw_response 全量不截)
 # shell
 EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 130             # 使用对象: execute_shell_command.py(cmd_short掐中保尾截断总预算=头110+尾20)
 # file/internal

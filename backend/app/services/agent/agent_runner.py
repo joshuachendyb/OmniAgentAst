@@ -181,7 +181,10 @@
 #   每轮迭代顶调用。_enqueue_step 只入队即返回, 进程被杀则队列内帧全丢(实测 task_interrupted 样本
 #   chat_task_steps 0 行而 Journal 事件齐全)。每轮 join 一次, 被打断最多丢本轮(无工具副作用)。
 # 2026-10-03 - 小欧 - refactor: SSE 不落库集合去重(删本地 _SSE_ONLY_TYPES 硬编码, 改 import agent_telemetry.SSE_ONLY_TYPES 唯一真源; 转发表改由 ALL_STEP_TYPES 推导。文档[5] 5.2 D4)
-# 2026-10-05 小欧 - _flush_steps: 消费者死亡即时止损(原只等 join 120s 超时); file_persist 落库队列入队改工厂化(杜绝 never awaited 泄漏告警)。
+# 2026-10-05 小欧 - _flush_steps: 消费者死亡即时止损(原只等 join 120s 超时); file_persist 落库队列入队改工厂化(杜绝 ne
+# 2026-10-06 小欧 - 报告核查修 P0-01/P3-08: ①update_ai_message_id 移到 start_request 之后(原序写入上一请求
+#   残留 log 且新 log 该字段恒 None, 实测 79.13% 落盘为 null); ②log_step_yield 的 round_number 改取
+#   agent.llm_call_count(原取 ed["step"], 致「轮次」恒等于步骤, 实测 100%)ver awaited 泄漏告警)。
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -304,10 +307,6 @@ async def run_agent_in_background(
         buffer = create_task_stream_buffer(task_id, session_id, journal_append)
     current_execution_steps: List[Dict] = []
     end_type = "unknown"
-    # 12.2-C4: ai_message_id 局部初始化删除(参数即初值, eager注入) — 小欧 2026-08-21
-    # 12.2-C4: eager绑定prompt-logger(原惰性分支内update_ai_message_id迁至此) — 小欧 2026-08-21
-    if ai_message_id is not None:
-        get_prompt_logger().update_ai_message_id(str(ai_message_id))
     # 4.4.3(2026-09-07 小欧): ai_message_id 透传 agent 层, 供 react_loop start 发布时携带;
     #   startinfo 合并入 start 的前提(eager 值在 run_react_cycle 启动前已就绪, 无需延迟 publish)
     agent._ai_message_id = ai_message_id
@@ -316,6 +315,11 @@ async def run_agent_in_background(
 
     # [新] 生产者全权拥有 prompt-log 生命周期(创建) — 小欧 2026-07-18
     get_prompt_logger().start_request(last_message, session_id)
+    # 2026-10-06 小欧 修 P0-01 时序倒置: 必须 AFTER start_request(建新 log) 再填 ID;
+    #   原在本行之前(12.2-C4 eager 注入), 写入的是上一请求的残留 log, 而 start_request 新建的
+    #   log 里 AI消息ID=None 且无后续补写 → 实测 2426/3066 落盘文件(79.13%)该字段为 null
+    if ai_message_id is not None:
+        get_prompt_logger().update_ai_message_id(str(ai_message_id))
 
     async def _publish(event_dict: Dict) -> int:
         # 4C 收尾(2026-09-06 小欧): 自产/边缘事件统一改经 StreamBuffer.publish 发射,
@@ -465,7 +469,10 @@ async def run_agent_in_background(
         _buf.publish / _events 批量), 挂调用点必漏(解 [1] A1)。仅 O(1) 投递, 不 await 事务。"""
         _t = ed.get("type", "")
         if not ed.get("_live_only"):
-            get_prompt_logger().log_step_yield(ed, round_number=ed.get("step", 0))
+            # 2026-10-06 小欧 修 P3-08: round_number 语义是 LLM 调用轮次, 原取 ed["step"](事件序号),
+            #   致落盘「轮次」恒等于步骤(实测 3609560/3609560 = 100%); 改取 agent.llm_call_count,
+            #   与 llm_response_builder._log_llm_response 同源, 消除两处口径分叉
+            get_prompt_logger().log_step_yield(ed, round_number=getattr(agent, "llm_call_count", 0) or 0)
         _route_step_to_db(ed)
 
     def _route_step_to_db(ed: Dict) -> None:
