@@ -87,22 +87,22 @@ def _check_one(tag, subdir, keyword, user_input, result, test_start):
     assert len(resp) > 10, f"{tag} 回复太短({len(resp)}字)(SHOULD)"
     assert keyword in resp, f"{tag} 回复缺本会话关键词[{keyword}], 疑似串流(MUST)"
 
-# 磁盘 ground truth(防幻觉执行): 10文件真实存在 + 结构合规 + 不含他会话关键词(防串流) + 介绍各不相同
+    # 磁盘 ground truth(防幻觉执行): 10文件真实存在 + 两行结构合规 + 10个介绍互不相同
     # 2026-10-05 小欧 修正断言靶心(北京老陈裁定: case 不合理就改 case, 目标是挖系统问题不是抠字面):
     #   原断言要求"每个文件内容都含本会话关键词字面串", 过窄且与本case真实目的无关 ——
-    #   ①"防串流"已由 L88 `keyword in resp` 直接验证, 无需在磁盘上再间接推断一次;
-    #   ②"防幻觉"的真意是"文件真落盘且有实质内容", 用"含某字面串"代理会误杀同义表述;
+    #   "防串流"已由 L88 `keyword in resp` 在回复级直接验证, 无需在磁盘上再间接推断一次。
     #   实证两次同型复发: 2026-09-21 因 LLM 意译"丝绸/丝路"把关键词 丝绸之路→丝绸(见 L53-55),
     #     2026-10-05 再次因 part03 写"真丝面料"而非"丝绸"判红, 而该文件内容本身完全合规。
-    #   改法: 三条真实性质改为直接检测, 反而比原断言更强 ——
-    #     (a) 文件存在(防幻觉, 保留原义)
-    #     (b) 两行结构 + 首行等于文件名(写入格式合规)
-    #     (c) 不含他会话关键词(把"防串流"从字面推断改为直接检测, 比原版更严)
+    #   【2026-10-06 撤回一项】曾补"文件不含他会话关键词"作串流兜底, 实测误判: par_s1/part05 写
+    #     "青花瓷是海上丝绸之路的见证"(史实正确, 青花瓷确经丝路外销), 10 个文件仅此一处提及,
+    #     属话题邻接而非串流。此类断言与原断言同属脆断言(都假设 LLM 不会自然提及他关键词), 故撤,
+    #     串流仍由 L88 + session_id 唯一双重覆盖。
+    # 现保留三条站得住的不变量, 均比原版覆盖面更广:
+    #     (a) 文件存在(防幻觉, 保留原义)  (b) 两行结构 + 首行等于文件名(写入格式合规)
     #     (d) 10个第二行互不相同(_build_input 明确要求"各不相同", 原版从未断言)
     #   保留 5次×1s 轮询重读: 原为修 S3-part05 半截写入的撕裂读, 与靶心修正无关。
     import time as _time
     d = Path(f"E:/test_dir/{subdir}")
-    others = [kw for _, _, kw in PAR_TASKS if kw != keyword]
     bodies = []
     for i in range(1, FILE_COUNT + 1):
         f = d / f"part{i:02d}.txt"
@@ -121,8 +121,6 @@ def _check_one(tag, subdir, keyword, user_input, result, test_start):
         assert len(lines) >= 2, f"{tag} 文件内容不足两行(首行文件名+次行介绍)(MUST): {f}"
         assert lines[0].strip() == f.name, \
             f"{tag} 首行应为文件名{f.name}(MUST), got {lines[0].strip()[:40]!r}"
-        others_hit = [k for k in others if k in content]
-        assert not others_hit, f"{tag} 文件含他会话关键词{others_hit}, 疑似串流(MUST): {f}"
         bodies.append(lines[1].strip())
     assert len(set(bodies)) == FILE_COUNT, \
         f"{tag} 每个文件介绍必须各不相同(MUST), 实际{len(set(bodies))}种: {bodies}"
