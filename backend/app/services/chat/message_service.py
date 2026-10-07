@@ -53,6 +53,8 @@ from app.services.chat.storage import track_user_message, load_execution_steps
 from app.services.chat.storage import insert_user_message  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
 from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
 from app.utils.display_utils import extract_display_name_from_steps, build_display_name
+from app.services.task.task_registry import has_active_task_in_session   # 2026-10-07 小欧 - 文档[11] 3.4.5.1
+from app.services.chat.storage import get_session_interject              # 2026-10-07 小欧 - 文档[11] 3.4.5.1
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
@@ -75,7 +77,9 @@ def get_session_messages(session_id: str):
                           COALESCE(title_updated_at, created_at) as title_updated_at,
                            COALESCE(version, 1) as version, COALESCE(is_valid, 1) as is_valid,
                           sessionModel,
-                          COALESCE(link_enabled, 0) as link_enabled
+                          COALESCE(link_enabled, 0) as link_enabled,
+                          -- 2026-10-06 小欧 - 文档[11] 3.4.6: 插话开关读真源(注释符须用 --, # 非 SQLite 注释)
+                          COALESCE(allow_interject, 0) as allow_interject
                        FROM chat_sessions WHERE id = ? AND is_deleted = FALSE''', (session_id,))
 
         session = cursor.fetchone()
@@ -162,6 +166,8 @@ def get_session_messages(session_id: str):
             # 2026-10-02 小欧 - 文档[4] 5.7 项13: 随会话下发 link_enabled —— 前端读真源主路径是本端点(非 getSession),
             #   缺此字段则刷新/切会话后镜像恒 false。
             "link_enabled": bool(session['link_enabled']),
+            # 2026-10-06 小欧 - 文档[11] 3.4.6: 插话开关随会话下发(唯一读真源, 同 link_enabled)
+            "allow_interject": bool(session['allow_interject']),
             "messages": messages,
         }
 
@@ -181,11 +187,22 @@ def _track_user_message(session_id: str, message_id: str) -> None:
     logger.info(f"[save_message] 记录user消息ID: {message_id}, 会话: {session_id}")
 
 
-def save_message(session_id: str, message):
+async def save_message(session_id: str, message):
     """保存消息到会话 — 小健 2026-05-25 重构 — 自 api/v1/messages.py 迁入"""
     from fastapi import HTTPException
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
+        # ── 插话开关: 关态且同会话有活跃任务 → 409(落库之前, 消息不入库) ──
+        #   2026-10-07 小欧 - 文档[11] 3.4.5: 方案①"门口就拦"。前端 error/handler.ts
+        #   已有 409 处理分支, 本方案零新增前端错误分支; 若改在 SSE 生成器内则无法转 409(见 3.3)。
+        #   2026-10-07 小欧 三堂会审补：仅拦 user 角色。save_message 同承 assistant/system 直存
+        #   （内部流转），一律拦会把任务体系内部写入误伤成 409。
+        if message.role == "user" and await has_active_task_in_session(session_id):
+            if not get_session_interject(conn, session_id):   # 同 conn 直读, 不另开 atxn(连接已在手)
+                raise HTTPException(
+                    status_code=409,
+                    detail="任务执行中，插话开关未开启；请等待完成或先取消",  # 与编排器兜底 error_message、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
+                )
 
         cursor.execute(
             "SELECT id, title, COALESCE(title_locked, 0) as title_locked "

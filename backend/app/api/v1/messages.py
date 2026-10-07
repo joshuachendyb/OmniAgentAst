@@ -49,8 +49,8 @@ def get_session_messages_endpoint(session_id: str):
 
 
 @router.post("/sessions/{session_id}/messages")
-def save_message_endpoint(session_id: str, message: MessageCreate):
-    return save_message(session_id, message)
+async def save_message_endpoint(session_id: str, message: MessageCreate):
+    return await save_message(session_id, message)
 
 
 @router.get("/sessions/{session_id}/user_messages")

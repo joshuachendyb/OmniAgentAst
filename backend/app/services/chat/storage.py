@@ -679,6 +679,30 @@ def set_session_link_conn(conn: Connection, session_id: str, enabled: bool) -> i
     return cursor.rowcount
 
 
+def get_session_interject(conn: Connection, session_id: str) -> bool:
+    """取会话级插话开关（chat_sessions.allow_interject 唯一真源）— 文档[11] 3.2。
+    供编排器经 db.atxn offload 调用（与 get_session_link 同族同出口）。
+    COALESCE → ALTER 前存量 NULL 行（=关闭）；会话不存在返回 False（fail-closed）。"""
+    row = conn.execute(
+        "SELECT COALESCE(allow_interject, 0) FROM chat_sessions "
+        "WHERE id = ? AND is_deleted = FALSE",
+        (session_id,),
+    ).fetchone()
+    return bool(row[0]) if row else False
+
+
+def set_session_interject_conn(conn: Connection, session_id: str, enabled: bool) -> int:
+    """写会话插话开关，返回命中行数 — 文档[11] 3.4。
+    **不写 updated_at**（与 set_session_link_conn 同理，见 storage.py:118 副作用修复：
+    改开关非内容变更，顺带刷新会把会话顶到列表首位）。"""
+    cursor = conn.execute(
+        "UPDATE chat_sessions SET allow_interject = ? "
+        "WHERE id = ? AND is_deleted = FALSE",
+        (1 if enabled else 0, session_id),
+    )
+    return cursor.rowcount
+
+
 # ====================================================================
 # v2.0 chat_user_message 读写（2026-08-19）
 # ====================================================================

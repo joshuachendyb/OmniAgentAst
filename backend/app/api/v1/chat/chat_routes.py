@@ -68,6 +68,7 @@ async def chat_stream_endpoint(request: ChatRequest):
             request.messages,
             request.session_id,
             link_enabled=request.link_enabled,
+            allow_interject=request.allow_interject,   # 2026-10-06 小欧 - 文档[11] 3.4.4: 关键字透传(防与编排器形参错位)
         ),
         media_type="text/event-stream",
     )
