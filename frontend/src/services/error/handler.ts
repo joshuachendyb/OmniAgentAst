@@ -72,6 +72,9 @@ export enum ErrorType {
 
   // 业务错误
   SESSION_CONFLICT = 'session_conflict',
+  // 2026-10-06 小欧 - 文档[11] 决策 19: 会话有活跃任务且插话开关关 → 后端 message_service.save_message 落库前 409。
+  //   必与 SESSION_CONFLICT(版本冲突)分开: 后者"请刷新页面重试"对本场景是错误引导。
+  SESSION_BUSY = 'session_busy',
   SESSION_NOT_FOUND = 'session_not_found',
   VERSION_CONFLICT = 'version_conflict',
   CONTENT_TOO_LONG = 'content_too_long',
@@ -271,6 +274,14 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     retryDelay: 0,
     message: '会话冲突，请刷新页面重试',
     severity: 'warning',
+  },
+  [ErrorType.SESSION_BUSY]: {
+    retryable: false, // 2026-10-07 小欧 - 文档[11] 3.5.8(决策 19): 非瞬时故障(需等任务结束或先取消), 自动重试无意义
+    maxRetries: 0,
+    retryDelay: 0,
+    // 2026-10-07 小欧: 本 message 仅兜底; 真源是后端 detail/error_message(handleError 经 extractErrorMessage 已优先使用)。改文案须三处同步。
+    message: '任务执行中，插话开关未开启；请等待完成或先取消',
+    severity: 'warning', // 非 critical: 这是"现在不方便"而非"故障"
   },
   [ErrorType.SESSION_NOT_FOUND]: {
     retryable: false,
@@ -930,6 +941,11 @@ export function classifyError(error: unknown): ErrorType {
         }
         return ErrorType.BACKEND_ERROR;
       case 409:
+        // 2026-10-06 小欧 - 文档[11] 决策 19: 按 URL 细分, 防版本冲突与插话拒发共用一个错误类型。
+        //   做法同构既有 404 先例(404 仅当 url 含 sessions 才归 SESSION_NOT_FOUND)。
+        if (err.response?.config?.url?.includes('/messages')) {
+          return ErrorType.SESSION_BUSY;
+        }
         return ErrorType.SESSION_CONFLICT;
       case 429:
         return ErrorType.RATE_LIMIT_429;

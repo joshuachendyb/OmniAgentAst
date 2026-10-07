@@ -214,6 +214,7 @@ export async function sendStreamRequest(
         stream: true,
         session_id: s.sessionId,
         link_enabled: s.linkEnabled,
+        allow_interject: s.allowInterject, // 2026-10-06 小欧 - 文档[11] 3.4.4: 随消息携带, 后端 None=沿用会话当前值
       }),
       signal: ctl.signal,
     });

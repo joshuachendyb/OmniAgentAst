@@ -75,6 +75,7 @@ type PersistenceState = ChatCacheState & {
   isPaused: boolean;
   isReceiving: boolean;
   linkEnabled: boolean;
+  allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.6: PersistenceState
   sessionVersion: number;
 };
 
@@ -101,6 +102,7 @@ export interface UseChatPersistenceReturn {
     isPaused: boolean;
     isReceiving: boolean;
     linkEnabled: boolean;
+    allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.6: restoreState 返回类型
     // 2026-10-05 小欧 - 补 sessionModel: 本函数与 loadHistoryMessages 是两条独立的会话恢复路径,
     //   前者此前同样漏该字段, 只修后者会留下"刷新仍误显示跟随全局"的另一半缺口。
     sessionModel: SessionModelOverride | null;
@@ -115,6 +117,7 @@ export interface UseChatPersistenceReturn {
       paused: boolean,
       receiving: boolean,
       linkEnabled: boolean,
+      allowInterject: boolean, // 2026-10-07 小欧 - 文档[11] 3.5.6: 8→9 参, 插 linkEnabled 后/sessionModel 前
       // 2026-10-05 小欧 - 补两参: 会话模型覆盖(刷新后选择器状态) 与真实版本(原硬编码 1 会撞 409)
       sessionModel?: SessionModelOverride | null,
       version?: number
@@ -152,6 +155,7 @@ export const useChatPersistence = (
     messagesEndRef,
     messagesRef,
     linkEnabled,
+    allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: 从 state 解构
     // 2026-10-05 小欧 - 缓存 schema 补 sessionModel 的数据源(刷新后模型选择器状态):
     //   本 hook 此前不解构该字段, 写出的缓存无此项 → 读侧命中缓存后选择器显示"跟随全局"。
     //   同 linkEnabled 同型事故(2026-10-03 已修过一次, 病根同为"写入点漏字段")。 — 小欧-2026-10-05
@@ -175,6 +179,7 @@ export const useChatPersistence = (
         paused: boolean,
         receiving: boolean,
         linkEnabled: boolean,
+        allowInterject: boolean, // 2026-10-07 小欧 - 文档[11] 3.5.6: 8→9 参形参
         sessionModel?: SessionModelOverride | null,
         version?: number
       ) => {
@@ -193,6 +198,7 @@ export const useChatPersistence = (
             isPaused: paused,
             isReceiving: receiving,
             linkEnabled,
+            allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: 完整态 state 构造
             sessionModel: sessionModel ?? null,
           };
 
@@ -208,6 +214,7 @@ export const useChatPersistence = (
                 isPaused: paused,
                 isReceiving: receiving,
                 linkEnabled,
+                allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: 4MB 降级 lightState 构造
                 sessionVersion: state.sessionVersion,
                 sessionModel: state.sessionModel,
               };
@@ -269,6 +276,7 @@ export const useChatPersistence = (
         isPaused,
         isReceiving,
         linkEnabled,
+        allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: saveState 实参调用(漏=保存恒 undefined)
         // 2026-10-05 小欧 - 随保存透传模型覆盖与真实版本(否则缓存丢 sessionModel, 刷新后误显示跟随全局)
         sessionModelOverride,
         sessionVersion
@@ -281,6 +289,7 @@ export const useChatPersistence = (
     isPaused,
     isReceiving,
     linkEnabled,
+    allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: saveState deps(漏依赖=闭包过期值)
     executionStepsRef,
     saveMessagesToStorage,
     // 2026-10-05 小欧 - 新增两个依赖: 缓存内容随之变化, 漏依赖会写进过期值
@@ -353,6 +362,8 @@ export const useChatPersistence = (
               sessionVersion: result.version ?? 1,
               // 本地勾选优先于后端, 理由同完整状态分支(见该处注释)
               linkEnabled: (data.linkEnabled ?? result.linkEnabled) === true,
+              allowInterject:
+                (data.allowInterject ?? result.allowInterject) === true, // 2026-10-07 小欧 - 文档[11] 3.5.6: restoreState 轻量路径
               isPaused: data.isPaused || false,
               isReceiving: data.isReceiving || false,
               // 2026-10-05 小欧(文档[10] §4.3): 轻量态返回体补 sessionModel(否则缓存分支无从注入)
@@ -420,6 +431,7 @@ export const useChatPersistence = (
         // 此时本地值即用户意图, 后端存的还是上一次发消息时的旧值。
         // 消息一旦发出, 该值随 link_enabled 上送后端, 此后两端一致, 谁优先都不影响结果。
         linkEnabled: (data.linkEnabled ?? fresh?.linkEnabled) === true,
+        allowInterject: (data.allowInterject ?? fresh?.allowInterject) === true, // 2026-10-07 小欧 - 文档[11] 3.5.6: restoreState 完整 fresh 路径(取 HistoryLoadResult 镜像)
         isPaused: data.isPaused || false,
         isReceiving: data.isReceiving || false,
         // 2026-10-05 小欧(文档[10] §4.3): 完整态返回体补 sessionModel。

@@ -144,6 +144,7 @@ export interface StreamBackup extends Omit<
     state: 'queued' | 'sent';
   } | null;
   linkEnabled: boolean;
+  allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.6: 随备份落盘/恢复(重连回放前提)
   updatedAt: number;
   // 2026-10-01 小欧 [1] B13: 钟面静默升档基线落盘。lastBizTs/lastDataTime 原只在内存 session 上，
   //   备份不含二者 → 刷新后恒 0，而 ClockStopwatch 的"静默升档"判据正是 lastBizTs

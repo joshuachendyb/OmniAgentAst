@@ -23,18 +23,21 @@ import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 
 interface ChatInputProps {
   loading: boolean;
   isReceiving: boolean;
   isPaused: boolean;
-  onSend: (content: string, linkEnabled: boolean) => void | Promise<void>;
+  onSend: (content: string, opts: SendOpts) => void | Promise<void>;
   onCancel: () => void;
   onTogglePause: () => void;
   modelPickerSlot?: React.ReactNode;
   sessionId?: string | null;
   linkEnabled: boolean;
   onToggleLink: (enabled: boolean) => void;
+  allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.2
+  onToggleInterject: (enabled: boolean) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -48,6 +51,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   sessionId,
   linkEnabled,
   onToggleLink,
+  allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.2
+  onToggleInterject,
 }) => {
   const [draft, setDraft] = useState('');
   useEffect(() => {
@@ -58,11 +63,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // linked 不再复位(违背用户粘性意图), 开关真源在 useChatState.linkEnabled
   const handleSendInternal = async () => {
     const content = draft.trim();
-    if (!content || loading || isReceiving) return;
+    // 2026-10-06 小欧 - 文档[11] 3.5: 执行中是否放行取决于会话级插话开关
+    //   (仅前端放行, 不做裁决; 真裁决在后端 stream_orchestrator, 防 TOCTOU)
+    if (!content || loading || (isReceiving && !allowInterject)) return;
     const backup = draft;
     setDraft('');
     try {
-      await onSend(content, linkEnabled);
+      await onSend(content, { linkEnabled, allowInterject }); // 对象参数, 见 3.5.4
     } catch {
       setDraft(backup);
     }
@@ -92,6 +99,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <TaskTypeToggle checked={linkEnabled} onChange={onToggleLink} />
           </Space>
         }
+        allowInterject={allowInterject} // 2026-10-07 小欧 - 文档[11] 3.5.3: 下传给 SubmitBar(开关落在附件之后)
+        onToggleInterject={onToggleInterject}
         onSend={handleSendInternal}
         onCancel={onCancel}
         onTogglePause={onTogglePause}

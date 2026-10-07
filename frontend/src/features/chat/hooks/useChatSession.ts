@@ -70,6 +70,7 @@ export interface UseChatSessionReturn {
   sessionModelOverride: SessionModelOverride | null;
   setSessionModelOverride: (v: SessionModelOverride | null) => void;
   setLinkEnabled: (v: boolean) => void;
+  setAllowInterject: (v: boolean) => void; // 2026-10-07 小欧 - 文档[11] 3.5.7: 复位/切换时跟会话走
 
   // 会话函数
   loadSession: (sessionId: string) => Promise<Message[]>;
@@ -106,6 +107,7 @@ export interface InitializeSessionOptions {
     sessionTitle: string;
     sessionVersion: number;
     linkEnabled: boolean;
+    allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.7: restoreState 结果类型
     // 2026-10-05 小欧(文档[10] §4.3): 补 sessionModel —— 缓存恢复分支要拿它注入选择器,
     //   此前本接口不返回它, 是"刷新后误显示跟随全局"的另一半原因。
     sessionModel: SessionModelOverride | null;
@@ -177,6 +179,7 @@ export const useChatSession = (
     sessionModelOverride,
     setSessionModelOverride,
     setLinkEnabled,
+    setAllowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.7: 复位/切换用
     setMessages,
     currentSessionIdRef,
   } = state;
@@ -217,6 +220,7 @@ export const useChatSession = (
       lastSavedTitle?: string;
       sessionModel?: SessionModelOverride | null;
       linkEnabled?: boolean;
+      allowInterject?: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.7: snapshot 可选字段
       messages?: Message[];
     }) => {
       if (snapshot.sessionId !== undefined) {
@@ -242,6 +246,8 @@ export const useChatSession = (
         setSessionModelOverride(snapshot.sessionModel);
       if (snapshot.linkEnabled !== undefined)
         setLinkEnabled(snapshot.linkEnabled);
+      if (snapshot.allowInterject !== undefined)
+        setAllowInterject(snapshot.allowInterject); // 2026-10-07 小欧 - 文档[11] 3.5.7: 切换会话时跟会话走
       if (snapshot.messages !== undefined) setMessages(snapshot.messages);
     },
     // 2026-10-05 小欧: 全部 setter/ref 均为 useState 恒定引用或 useRef 恒定引用,
@@ -254,6 +260,7 @@ export const useChatSession = (
       setLastSavedTitle,
       setSessionModelOverride,
       setLinkEnabled,
+      setAllowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.7: deps(applySessionState 引用的 setter 必须入依赖)
       setMessages,
       // currentSessionIdRef 已从 applySessionState 移除(由 useChatState 单一同步), 依赖同步删
     ]
@@ -286,6 +293,7 @@ export const useChatSession = (
             lastSavedTitle: result.title || '新会话',
             sessionModel: result.sessionModel ?? null,
             linkEnabled: result.linkEnabled ?? false,
+            allowInterject: result.allowInterject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 三处"取历史结果"分支同步
             messages: result.messages || [],
           });
           return result.messages || [];
@@ -300,6 +308,7 @@ export const useChatSession = (
           sessionId: null,
           messages: [],
           linkEnabled: false,
+          allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 四处复位点同步(开关复位与会话同生命周期)
           lastSavedTitle: '新会话',
         });
         return [];
@@ -397,6 +406,7 @@ export const useChatSession = (
               lastSavedTitle: result.title || '新会话',
               sessionModel: result.sessionModel ?? null,
               linkEnabled: result.linkEnabled ?? false,
+              allowInterject: result.allowInterject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 三处"取历史结果"分支同步
               messages: result.messages,
             });
 
@@ -426,6 +436,7 @@ export const useChatSession = (
               titleLocked: false,
               sessionModel: null,
               linkEnabled: false,
+              allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 复位点同步(开关复位与会话同生命周期)
               lastSavedTitle: '新会话',
             });
             // 2026-09-30 小欧 - 删原生 replaceState，改上抛意图交页面层用 Router 写（见第二参注释）
@@ -492,6 +503,7 @@ export const useChatSession = (
             lastSavedTitle: restored.sessionTitle,
             sessionModel: restored.sessionModel ?? null,
             linkEnabled: restored.linkEnabled,
+            allowInterject: restored.allowInterject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 场景2 缓存恢复
             messages: restored.messages,
           });
           // 2026-08-27 小欧 修复#55: 缓存恢复分支补调onRenderEnd/onMessageListLoadingEnd(URL加载分支已调用, 此处遗漏导致渲染/加载结束信号缺失)
@@ -536,6 +548,7 @@ export const useChatSession = (
             lastSavedTitle: result.title || '新会话',
             sessionModel: result.sessionModel ?? null,
             linkEnabled: result.linkEnabled ?? false,
+            allowInterject: result.allowInterject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 三处"取历史结果"分支同步
             messages: result.messages,
           });
 
@@ -617,6 +630,7 @@ export const useChatSession = (
           titleLocked: false,
           sessionModel: null,
           linkEnabled: false,
+          allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 复位点同步(开关复位与会话同生命周期)
           lastSavedTitle: newTitle,
         });
 
@@ -686,6 +700,7 @@ export const useChatSession = (
       messages: [],
       sessionModel: null, // 2026-08-27 小欧 修复#41: 清空会话复位L2模型, 避免新会话继承旧模型覆盖
       linkEnabled: false, // 同源复位会话级 link 开关, 避免新会话继承旧开关
+      allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 同源复位会话级插话开关, 避免新会话继承旧开关
       lastSavedTitle: '新会话',
     });
     // 2026-10-05 小欧(文档[10]): currentSessionIdRef 已收口进 applySessionState, 故从依赖移除
@@ -791,6 +806,7 @@ export const useChatSession = (
     sessionModelOverride,
     setSessionModelOverride,
     setLinkEnabled,
+    setAllowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.7: 返回给 ChatPage 透传
 
     // Refs
     currentSessionIdRef,

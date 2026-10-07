@@ -624,6 +624,34 @@ export const useChatCallbacks = (
         onStepFingerprintRef.current.clear();
       }
 
+      // 2026-10-07 小欧 - 文档[11] 3.5.9: 兜底路径 session_busy(竞态/绕过, 消息已入库):
+      //   仅提示(WARNING, 复用 ERROR_CONFIG_MAP 兜底文案), 不替换 assistant 消息/不弹 critical/不回填草稿。
+      if (errorObj.error_type === 'session_busy') {
+        handleSSEError(errorObj, {
+          reconnectAttempts: 0,
+          maxRetries: 0,
+          onReconnect: undefined,
+        });
+        setMessages((prev) =>
+          prev.filter(
+            (m) => !(m.role === 'assistant' && m.isStreaming === true)
+          )
+        );
+        // 2026-10-07 小欧 三省补: 本分支提前 return 会跳过 onError 尾部"清理状态"块(原 :694-709)。
+        //   该 SSE 流后端已 return 关闭, 不补清理则 loading 恒 true → 发送钮永久禁用。
+        //   必须镜像既有清理: loading/计时器/ref(与主流程同款, 重复两行优于漏清卡死)。
+        setLoading(false);
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
+        setWaitTime(0);
+        setIsRetrying(false);
+        streamingContentRef.current = '';
+        onStepFingerprintRef.current.clear();
+        return;
+      }
+
       console.error('🔴 [onError] SSE 流式错误:', errorObj);
 
       // ⭐ 使用统一错误处理中心errorHandler处理提示

@@ -271,6 +271,7 @@ export interface ChatStreamSession extends SessionSnapshot {
     state: 'queued' | 'sent';
   } | null;
   linkEnabled: boolean;
+  allowInterject: boolean;
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
   // 连接与定时器资源句柄（clearAllTimers 五件套：idle/firstChunk/reconnect/saveSteps/intentionalAbort）
@@ -423,6 +424,7 @@ function toBackupOf(sessionId: string): StreamBackup {
     hitlWaitingKeys: [...s.hitlWaitingKeys],
     pendingMessage: s.pendingMessage,
     linkEnabled: s.linkEnabled,
+    allowInterject: s.allowInterject,
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：随备份落盘，供刷新后恢复心跳钟面（0=未收到）
     heartbeatTs: s.heartbeatTs,
@@ -611,6 +613,7 @@ export const chatStreamStore = {
       pendingAuthorization: null,
       pendingMessage: null,
       linkEnabled: false,
+      allowInterject: false,
       hitlWaitingKeys: new Set(),
       abortController: null,
       idleTimeout: null,
@@ -691,12 +694,14 @@ export const chatStreamStore = {
    * @param sessionId 会话 id
    * @param content 用户消息正文
    * @param linkEnabled 会话link开关值(随消息落库, 存session快照供transport直读)
+   * @param allowInterject 会话插话开关值(随消息落库, 存session快照供transport直读) — 2026-10-06 小欧 - 文档[11] 3.5.5
    * @returns 发送与恢复结果（UI 据此提示）
    */
   async sendMessage(
     sessionId: string,
     content: string,
-    linkEnabled: boolean = false
+    linkEnabled: boolean = false,
+    allowInterject: boolean = false
   ): Promise<ResumeResult> {
     // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
     //   已有守卫，本入口补齐对称防御；hook 侧 customSessionId??sessionId??'' 双 null 落空串即由此挡住）
@@ -711,6 +716,7 @@ export const chatStreamStore = {
         state: 'queued',
       };
       d.linkEnabled = linkEnabled; // 记录本次开关值, 续传/回放沿用(transport 直读本字段)
+      d.allowInterject = allowInterject; // 2026-10-06 小欧 - 文档[11] 3.5.5: 存会话快照, 续传/回放沿用(transport 直读本字段)
     });
     this.persistNow(sessionId);
     try {

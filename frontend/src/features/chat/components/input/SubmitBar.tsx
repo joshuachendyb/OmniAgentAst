@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { Button, Space } from 'antd';
+import { Button, Space, Checkbox } from 'antd'; // 2026-10-07 小欧 三堂会审补 - 文档[11] 3.5.3(插话开关 Checkbox, 合并为同行 import)
 import {
   PauseOutlined,
   PlayCircleOutlined,
@@ -29,6 +29,8 @@ interface SubmitBarProps {
   isPaused: boolean;
   modelPickerSlot?: React.ReactNode; // 既有 ModelPicker 实例（可选）
   leftExtra?: React.ReactNode; // 2026-08-28 小欧 ①A: 指令+续聊插槽，置最左（工具>模型>附件）
+  allowInterject?: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.3: 插话开关值(可选, 缺省不渲染)
+  onToggleInterject?: (v: boolean) => void;
   onSend: () => void;
   onCancel: () => void;
   onTogglePause: () => void;
@@ -40,6 +42,8 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   isPaused,
   modelPickerSlot,
   leftExtra,
+  allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.3
+  onToggleInterject,
   onSend,
   onCancel,
   onTogglePause,
@@ -50,6 +54,15 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
       {modelPickerSlot}
       {/* 2026-10-06 小欧 - 北京老陈指令: 附件按钮不再隐藏, 显示+置灰占位（上传仍暂缓） */}
       <AttachmentArea visible disabled />
+      {/* 插话开关: 附件之后(2026-10-06 北京老陈定); 复用 TaskTypeToggle 邻位 Checkbox 样式不新造组件 */}
+      {onToggleInterject && (
+        <Checkbox
+          checked={!!allowInterject}
+          onChange={(e) => onToggleInterject(e.target.checked)}
+        >
+          插话开关
+        </Checkbox>
+      )}
     </Space>
     <Space>
       {loading || isReceiving ? (

@@ -29,13 +29,18 @@
  */
 
 import { useCallback, useRef } from 'react'; // 2026-08-28 小强: 加回useRef(isSendingRef同步防重)
-import { handleError, ErrorType } from '@/services/error/handler';
+import {
+  handleError,
+  classifyError,
+  ErrorType,
+} from '@/services/error/handler'; // 2026-10-07 小欧 - 文档[11] 3.5.4: classifyError 供 :174 SESSION_BUSY 分支
 import { checkNetworkConnection } from '../../../utils/network';
 import { showNetworkError } from '../../../utils/chatMessages';
 import { sessionApi } from '../../../services/api/session.api';
 import { API_BASE_URL } from '../../../services/api/client';
 import { logUserSend } from '../../../utils/logStyles';
 import type { Message } from '../../../types/chat';
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 
 interface UseChatSendOptions {
   // 状态
@@ -51,7 +56,7 @@ interface UseChatSendOptions {
   waitTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   currentSessionIdRef: React.MutableRefObject<string | null>;
   // 发送方法
-  executeSend: (userMessage: Message, linkEnabled: boolean) => Promise<void>;
+  executeSend: (userMessage: Message, opts: SendOpts) => Promise<void>;
   // 2026-09-30 小欧 - URL 写入的唯一出口（与 useChatSession 同一注入形状）：
   //   自动建会话原先只 setSessionId 不写 URL，导致该会话 id 从不进地址栏，刷新后退回
   //   "最近会话"猜测，且与 handleNewSessionInternal 的写 URL 行为不一致（写入口未收口）。
@@ -59,7 +64,7 @@ interface UseChatSendOptions {
 }
 
 interface UseChatSendReturn {
-  handleSend: (messageContent: string, linkEnabled: boolean) => Promise<void>;
+  handleSend: (messageContent: string, opts: SendOpts) => Promise<void>;
 }
 
 /**
@@ -83,7 +88,10 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const isSendingRef = useRef(false);
 
   const handleSend = useCallback(
-    async (messageContent: string, linkEnabled: boolean) => {
+    async (
+      messageContent: string,
+      { linkEnabled, allowInterject }: SendOpts
+    ) => {
       // 1. 基础验证
       if (!messageContent.trim() || isSendingRef.current) return;
       isSendingRef.current = true;
@@ -150,7 +158,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         }
 
         // 8. 发送消息
-        await executeSend(userMessage, linkEnabled);
+        await executeSend(userMessage, { linkEnabled, allowInterject });
 
         // 9. 发送成功，不需要额外操作（用户消息已在列表中）
       } catch (error) {
@@ -171,6 +179,16 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         );
         // 2026-09-15 小欧 [暂停/取消按钮不显示根因修复]: send失败时兜底重置loading（finally不再无条件重置）
         setLoading(false);
+        // 2026-10-07 小欧 三堂会审补 - 文档[11] 决策 20: SESSION_BUSY 分支先撤回乐观消息再上抛。
+        //   决策 13 是"退回输入框"(消息不应留气泡), 但本函数 :159 已把该条标 failed 留在列表、
+        //   ChatInput 回填 draft 后会形成"失败气泡 + 输入框草稿"双份。不撤回即与决策 13 矛盾。
+        if (classifyError(error) === ErrorType.SESSION_BUSY) {
+          setMessages((prev) =>
+            prev.filter((msg) => msg.id !== userMessage.id)
+          );
+          handleError(error, { source: 'api' }); // 先按既有流程弹提示
+          throw error; // 再上抛, 触发 ChatInput draft 回填
+        }
         handleError(error, { source: 'api' });
       } finally {
         // 2026-09-15 小欧 [暂停/取消按钮不显示根因修复]: 删除finally中无条件setLoading(false)

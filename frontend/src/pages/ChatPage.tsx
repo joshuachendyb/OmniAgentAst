@@ -62,6 +62,7 @@ import { useChatInit } from '../features/chat/hooks/useChatInit';
 import { useChatLifecycle } from '../features/chat/hooks/useChatLifecycle';
 import { useChatTitle } from '../features/chat/hooks/useChatTitle';
 import { useChatPanels } from '../features/chat/hooks/useChatPanels';
+import type { SendOpts } from '../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 import { SessionLayout } from '../features/chat/components/layout/SessionLayout';
 import AuthorizationModal from '../components/AuthorizationModal';
 import { Colors } from '@/utils/stepStyles';
@@ -187,10 +188,10 @@ const ChatPage: React.FC = () => {
     chatStreaming.metaFrames // 2026-09-01 小欧: SSE实时token帧源
   );
   const handleSend = useCallback(
-    async (content: string, linkEnabled: boolean) => {
+    async (content: string, opts: SendOpts) => {
       setLiveError(null);
       setRightOpen(true); // 2026-09-15 小欧: 新任务发送即展开右侧step面板(方案B, 直线入口) — 小欧-2026-09-15
-      await chatSend.handleSend(content, linkEnabled);
+      await chatSend.handleSend(content, opts);
     },
     [chatSend, setLiveError, setRightOpen]
   );
@@ -251,6 +252,8 @@ const ChatPage: React.FC = () => {
     handleEditingCancel,
     handleSend,
     onToggleLink: handleToggleLink,
+    allowInterject: chatState.allowInterject,
+    onToggleInterject: (v: boolean) => chatState.setAllowInterject(v), // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatPage 是开关本地态唯一写入口
     latestTaskId, // 2026-09-01 小欧 方案C: 左列最新任务锚点透传
     latestTaskRef, // 2026-09-01 小欧 方案C: 滚动定位ref透传
     rightOpen, // 2026-09-09 小欧: 右侧展开状态透传TaskListPanel
