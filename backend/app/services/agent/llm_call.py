@@ -75,6 +75,7 @@ from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RET
 from app.config import get_config
 from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk, create_cancelled_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 小欧 2026-09-20 修复 +create_cancelled_chunk(降级前取消短路收尾)
 from app.utils.text_utils import extract_tool_call_xml
+from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
 
@@ -90,10 +91,14 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
     _finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason(None→_log_llm_response回退stop)
 
     llm_start = time.time()
+    # 2026-10-08 小欧 - 上游流先取引用再进 try: 提前退出(break/异常)时在 finally 关它,
+    #   否则 BaseAIService.request_stream 异步生成器悬挂, httpx 在飞响应不归还连接池
+    #   (每轮 LLM 调用泄漏一次) — 小欧-2026-10-08
+    _llm_stream = agent.llm_client.request_stream(
+        messages=messages, tools=openai_tools, tool_choice=tool_choice,
+    )
     try:
-        async for chunk in agent.llm_client.request_stream(
-            messages=messages, tools=openai_tools, tool_choice=tool_choice,
-        ):
+        async for chunk in _llm_stream:
 
             if chunk.stream_error:
                 stream_error = chunk.stream_error
@@ -148,6 +153,9 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
             raw_response="", response_type="answer", finish_reason="cancelled",
         )
         raise
+    finally:
+        # 2026-10-08 小欧 - 无论正常 break(is_done)/stream_error break/异常/取消, 都在此收尾
+        await aclose_stream(_llm_stream)
 
     if stream_error:
         if tool_calls_result:

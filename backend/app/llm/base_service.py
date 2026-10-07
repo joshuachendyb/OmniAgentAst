@@ -88,6 +88,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 import httpx
 from app.logger import logger
 from app.utils.json_utils import parse_json, _try_fix_incomplete_json, _normalize_tool_params
+from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游 SDK 异步流(防连接池泄漏) — 小欧-2026-10-08
 from app.db.models.chat_models import ModelRef   # 归一: 模型身份唯一结构 — 小欧 2026-08-22
 from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_exception
 # 注: LLM_*/FC_*/TOOL_CACHE_TTL 已集中迁移至 app.constants(2026-07-14 小欧)
@@ -413,7 +414,10 @@ class BaseAIService:
                 tool_call_streaming_start = None
                 deadline = time.monotonic() + _stream_total_timeout
                 finish_reason = None  # 2026-07-19 小欧 新增: SSE最后chunk的finish_reason
-                async for data_str in self._llm_sdk.request_stream(
+                # 2026-10-08 小欧 - 先取引用再进 try: 本层 async for 有三处提前退出
+                #   (取消 return / 总时长超时 break / tool_call参数流式超时 break), 每次都悬挂
+                #   LLMClient.request_stream 生成器 → httpx 连接不归还池; 收尾见下方 finally — 小欧-2026-10-08
+                _sdk_stream = self._llm_sdk.request_stream(
                     messages=messages,
                     tools=tools,
                     tool_choice=tool_choice,
@@ -426,7 +430,8 @@ class BaseAIService:
                     stream_options=stream_options,
                     request_timeout=effective_timeout,
                     extra_body=self.extra_body_params,
-                ):
+                )
+                async for data_str in _sdk_stream:
                     # 小欧 2026-09-20: 循环体顶部镜像 SDK 在飞HTTP响应到 _current_response,
                     #   供 cancel() 强关(真实 LLMClient 流期间持有 httpx.Response) — 修复: None时直接None, 不回落SDK对象(防cancel对错误对象调aclose)
                     _sdk_resp = getattr(self._llm_sdk, "_current_response", None)
@@ -589,6 +594,10 @@ class BaseAIService:
                         return
                     yield self._create_stream_error_chunk(e)
                     return
+            finally:
+                # 2026-10-08 小欧 - 每次尝试(成功耗尽/取消/超时break/异常/退避continue)都收尾上游 SDK 流,
+                #   防 httpx 连接池泄漏; 无 aclose 能力的流实现(测试 mock 等)自动跳过 — 小欧-2026-10-08
+                await aclose_stream(_sdk_stream)
 
 
     def _extract_tool_calls(self, data_str: str) -> Dict[int, Dict]:
