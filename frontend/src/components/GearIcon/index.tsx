@@ -1,6 +1,10 @@
 // 编辑历史: 2026-09-15 老杨 - 齿轮图标组件: 替代🔧emoji，用于工具调用行标题 - 老杨-2026-09-15
+// 编辑历史: 2026-10-07 小欧 - 图标列中心对齐(北京老陈: 图标要好看中心对齐, 不许犬牙交错):
+//   size 默认 '1em'(随字号漂) → Icon.BOX(16px 固定); 删 verticalAlign:-0.125em
+//   (ToolCallLine 标题行是 inline-flex, verticalAlign 对 flex item 无效=死代码);
+//   补 flexShrink:0。viewBox/path 不动——feather settings 图形外缘 1..23 + stroke2 = 0..24 本就填满盒子 — 小欧-2026-10-07
 import React from 'react';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, Icon } from '@/utils/stepStyles';
 
 /**
  * GearIcon - 齿轮图标组件
@@ -17,19 +21,19 @@ interface GearIconProps {
 }
 
 export const GearIcon: React.FC<GearIconProps> = ({
-  size = '1em',
+  size,
   color = Colors.WAIT_ACTION,
 }) => (
   <svg
-    width={size}
-    height={size}
+    width={size ?? Icon.BOX}
+    height={size ?? Icon.BOX}
     viewBox="0 0 24 24"
     fill="none"
     stroke={color}
     strokeWidth="2"
     strokeLinecap="round"
     strokeLinejoin="round"
-    style={{ verticalAlign: '-0.125em' }}
+    style={{ flexShrink: 0 }} // 2026-10-07 小欧 - 防 flex 压扁(与方框/水滴一致) — 小欧-2026-10-07
   >
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />

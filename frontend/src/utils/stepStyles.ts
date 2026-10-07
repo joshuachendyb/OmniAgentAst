@@ -121,8 +121,20 @@ export const BorderWidth = {
 // 圆角常量 - 小强 2026-05-22
 export const Radius = {
   SM: 4, // 小圆角
-  DEFAULT: 6, // 默认圆角
+  DEFAULT: 6, // 中圆角
   LG: 8, // 大圆角
+} as const;
+
+// 2026-10-07 小欧 - step 行首图标统一规格(解决"犬牙交错": 盒子不等宽/图形内缩/gap 不一致 三重叠加):
+//   BOX: 所有行首图标盒子边长恒定, 各图标图形描边外缘正好等于 BOX(消除 viewBox 内缩差异),
+//        使多个图标的左边缘、视觉宽度、垂直中心落在同一条竖线上;
+//   STROKE: 统一描边宽, 避免同一图标列里粗细不一。
+//   用法: 图标组件 size 默认取 Icon.BOX, strokeWidth 取 Icon.STROKE;
+//        图形需"填满盒子"时, 让描边外缘 = viewBox 边界(即 rect 起点 = STROKE/2, 终点 = viewBox - STROKE/2)。
+//   注意: 子行状态标记(DropletIcon, 已缩进一级)不属行首图标, 保持小一号 — 小欧-2026-10-07
+export const Icon = {
+  BOX: 16, // 盒子边长(与正文 FontSize.SECONDARY 同级)
+  STROKE: 2, // 统一描边宽
 } as const;
 
 // 颜色常量 - 语义化功能色 + 文字/背景/边框中性色

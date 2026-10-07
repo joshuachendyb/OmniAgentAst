@@ -199,7 +199,10 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
         // 2026-09-03 小欧 修复: minHeight 占位稳定高度, 动画与子行切换(0行→N行/整批涌入)不引起页面高度突变晃动
         minHeight: 32,
         margin: stepMargin(false),
-        padding: `${Spacing.XS}px ${Spacing.SM}px ${Spacing.XS}px ${Spacing.XS + Spacing.SM}px`, // 4/6/4/10
+        // 2026-10-07 小欧 - 左内边距 10 → 0(北京老陈: 缩进不好看/图标列不许犬牙交错)。
+        //   原 `4/6/4/10` 的左侧 10px 使本行图标盒左比 .thinking-stream(推理内容行)右移 10px,
+        //   实测两列盒左 25 vs 15 → 图标左边缘锯齿。垂直内边距(4/6)保留不动。
+        padding: `${Spacing.XS}px ${Spacing.SM}px ${Spacing.XS}px 0px`,
         borderRadius: highlight ? 6 : 0,
         // 13.10.4: 常态去掉自带左线(去双线, 容器总轴线唯一); HITL 高亮态 THIN 黄线保留
         borderLeft: highlight
@@ -302,7 +305,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               return (
                 <div
                   key={t.tool ? `${t.tool}-${i}` : `tool-${i}`}
-                  style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
+                  style={{ marginTop: Spacing.XS }} // 2026-10-07 小欧 - 删 paddingLeft: Spacing.SM 缩进
+                  //   (北京老陈: 缩进不好看): 工具子行图标与标题行图标同列, 左边缘/盒子/文字起始x 全对齐 — 小欧-2026-10-07
                 >
                   <div
                     role="button"
@@ -325,8 +329,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                         gap: Spacing.SM,
                       }}
                     >
-                      {/* 水滴图标：成功绿/失败红/警告黄 */}
-                      <DropletIcon status={st ?? 'success'} size={10} />
+                      {/* 水滴图标：成功绿/失败红/警告黄(尺寸走 Icon.BOX, 与标题行图标同列同宽) */}
+                      <DropletIcon status={st ?? 'success'} />
                       {/* 工具名：左列 */}
                       <span
                         style={{ color: Colors.TEXT.PRIMARY, flexShrink: 0 }}
@@ -472,7 +476,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               return (
                 <div
                   key={`denied-${d.tool}`}
-                  style={{ marginTop: Spacing.XS, paddingLeft: Spacing.SM }}
+                  style={{ marginTop: Spacing.XS }} // 2026-10-07 小欧 - 删 paddingLeft: Spacing.SM 缩进,
+                  //   被拒工具行的图标同样归入统一图标列 — 小欧-2026-10-07
                 >
                   <div
                     style={{

@@ -12,7 +12,7 @@
 //   (北京老陈裁定动画与展开/收起解耦后 dim 已无消费方); 5图标接口统一为 {size, animating},
 //   换图标只改 ReasoningIcon 别名取值, 调用方零改动 — 小欧-2026-10-07
 import React from 'react';
-import { Colors } from '@/utils/stepStyles';
+import { Colors, Icon } from '@/utils/stepStyles';
 import { ClockStopwatch } from './clockStopwatch'; // 2026-09-17 小欧 实施: 微型钟面(追加并存) — 小欧-2026-09-17
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 
@@ -122,18 +122,21 @@ export const ActionWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
  * 动画: animating=true 挂 reasoning-beam1~3(beampulse 1.8s 依次扩散), false 不挂类即静止;
  *   节奏唯一真源 index.css, 组件无自身计时器(不内联样式)
  * 状态: 备用候选(与其余4图标同接口 {size, animating}), 换用时只改 ReasoningIcon 别名取值 — 小欧-2026-10-07
+ * 对齐: viewBox 收为图形外接框(描边外缘 x5..31 / y4..21.5), 缩放后水平填满盒子、垂直居中,
+ *   与 GearIcon 同一左边缘与中心线 — 小欧-2026-10-07
  */
 export const EyeIcon: React.FC<{ size?: number; animating?: boolean }> = ({
-  size = 24,
+  size = Icon.BOX,
   animating = false,
 }) => (
   <svg
-    viewBox="0 0 36 36"
+    viewBox="5 4 26 17.5"
     width={size}
     height={size}
     fill="none"
-    strokeWidth={2.5}
+    strokeWidth={Icon.STROKE}
     strokeLinecap="round"
+    style={{ flexShrink: 0 }}
     aria-hidden="true" // 装饰性图标, 不给读屏重复播报, 与折叠按钮文本并列
   >
     <circle cx="18" cy="18" r="2.5" fill={Colors.SUCCESS} />
@@ -165,12 +168,13 @@ export const EyeIcon: React.FC<{ size?: number; animating?: boolean }> = ({
 export const SignalBarsIcon: React.FC<{
   size?: number;
   animating?: boolean;
-}> = ({ size = 24, animating = false }) => (
+}> = ({ size = Icon.BOX, animating = false }) => (
   <svg
-    viewBox="0 0 36 36"
+    viewBox="5.5 8 24.5 22"
     width={size}
     height={size}
     fill="none"
+    style={{ flexShrink: 0 }}
     aria-hidden="true"
   >
     <rect
@@ -220,18 +224,19 @@ export const SignalBarsIcon: React.FC<{
  * 状态: 备用候选(与其余4图标同接口 {size, animating}), 换用时只改 ReasoningIcon 别名取值 — 小欧-2026-10-07
  */
 export const SunIcon: React.FC<{ size?: number; animating?: boolean }> = ({
-  size = 24,
+  size = Icon.BOX,
   animating = false,
 }) => (
   <svg
-    viewBox="0 0 36 36"
+    viewBox="7.5 1.5 21 30.5"
     width={size}
     height={size}
     fill="none"
     stroke={Colors.WAIT_ACTION}
-    strokeWidth={2}
+    strokeWidth={Icon.STROKE}
     strokeLinecap="round"
     className={animating ? 'icon-spin15' : undefined}
+    style={{ flexShrink: 0 }}
     aria-hidden="true"
   >
     <circle cx="18" cy="18" r="5" fill={Colors.WAIT_ACTION} stroke="none" />
@@ -257,13 +262,14 @@ export const SunIcon: React.FC<{ size?: number; animating?: boolean }> = ({
 export const ApproachDotsIcon: React.FC<{
   size?: number;
   animating?: boolean;
-}> = ({ size = 24, animating = false }) => (
+}> = ({ size = Icon.BOX, animating = false }) => (
   <svg
-    viewBox="0 0 36 36"
+    viewBox="2.5 15.5 31 9"
     width={size}
     height={size}
     fill="none"
-    strokeWidth={2}
+    strokeWidth={Icon.STROKE}
+    style={{ flexShrink: 0 }}
     aria-hidden="true"
   >
     <path d="M4 20 H32" stroke={Colors.PRIMARY} opacity={0.3} />
@@ -289,23 +295,26 @@ export const ApproachDotsIcon: React.FC<{
  * 取形: 圆角方框单描边(PRIMARY 色), 整体旋转 1s
  * 动画: animating=true 挂 .icon-spin1 旋转, false 不挂类即静止; 节奏唯一真源 index.css @keyframes icon-spin
  *   animating 由调用方 ThinkingStream 按 text 自判传入, 组件本身不感知 SSE — 小欧-2026-10-07
+ * 对齐(北京老陈 2026-10-07 "图标要好看中心对齐, 不许犬牙交错"): viewBox 取描边外缘正好=盒子边界,
+ *   图形填满 Icon.BOX 不留内缩空白, 与 GearIcon(同样填满)左边缘/视觉宽度/中心线一致 — 小欧-2026-10-07
  */
 export const SpinSquareIcon: React.FC<{
   size?: number;
   animating?: boolean;
-}> = ({ size = 24, animating = false }) => (
+}> = ({ size = Icon.BOX, animating = false }) => (
   <svg
-    viewBox="0 0 24 24"
+    viewBox="0 0 18 18"
     width={size}
     height={size}
     fill="none"
     stroke={Colors.PRIMARY}
-    strokeWidth={2.5}
+    strokeWidth={Icon.STROKE}
     strokeLinecap="round"
     className={animating ? 'icon-spin1' : undefined}
+    style={{ flexShrink: 0 }} // 2026-10-07 小欧 - 与 DropletIcon 一致防 flex 压扁 — 小欧-2026-10-07
     aria-hidden="true"
   >
-    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <rect x="1" y="1" width="16" height="16" rx="2" />
   </svg>
 );
 /**
