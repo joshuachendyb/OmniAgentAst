@@ -110,12 +110,16 @@ async def test_e2e_inj_02_multi_injection():
         assert session_id, "建会话失败"
 
         # ── 第一条后台跑(标准 send_chat, 拿完整 result) ─────────────
-        first_task = asyncio.create_task(send_chat(FIRST_INPUT, session_id=session_id))
+        # 2026-10-07 小欧 - 文档[11] 决策2/11: 插话开关默认关, 关态下第2条起落库前 409 拒绝;
+        #   本用例三条消息全部显式携带 allow_interject=True(注入用例的前提条件)。
+        first_task = asyncio.create_task(
+            send_chat(FIRST_INPUT, session_id=session_id, allow_interject=True)
+        )
         await asyncio.sleep(FIRST_WAIT_SEC)
         print(f"[INJ2] 第一条已后台运行 {FIRST_WAIT_SEC}s, 发第二条")
 
         # ── 第二条: 间隔插入的第一条 ──────────────────────────────
-        second = await send_chat(SECOND_INPUT, session_id=session_id)
+        second = await send_chat(SECOND_INPUT, session_id=session_id, allow_interject=True)
         second_types = [e.get("type") for e in second["events"]]
         print(f"[INJ2] 第二条 type序列={second_types}, 耗时={second['total_time_ms']/1000.0:.2f}s")
 
@@ -135,7 +139,7 @@ async def test_e2e_inj_02_multi_injection():
         # ── 间隔 INTERVAL_SEC 后发第三条 ──────────────────────────
         await asyncio.sleep(INTERVAL_SEC)
         print(f"[INJ2] 间隔 {INTERVAL_SEC}s 后发第三条")
-        third = await send_chat(THIRD_INPUT, session_id=session_id)
+        third = await send_chat(THIRD_INPUT, session_id=session_id, allow_interject=True)
         third_types = [e.get("type") for e in third["events"]]
         print(f"[INJ2] 第三条 type序列={third_types}, 耗时={third['total_time_ms']/1000.0:.2f}s")
 

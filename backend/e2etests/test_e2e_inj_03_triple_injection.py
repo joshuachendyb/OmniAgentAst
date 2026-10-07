@@ -111,7 +111,11 @@ async def test_e2e_inj_03_triple_injection():
         assert session_id, "建会话失败"
 
         # ── 第一条后台跑(标准 send_chat, 拿完整 result) ─────────────
-        first_task = asyncio.create_task(send_chat(FIRST_INPUT, session_id=session_id))
+        # 2026-10-07 小欧 - 文档[11] 决策2/11: 插话开关默认关, 关态下同会话第2条起落库前 409 拒绝;
+        #   本用例四条消息全部显式携带 allow_interject=True(否则注入场景根本不成立)。
+        first_task = asyncio.create_task(
+            send_chat(FIRST_INPUT, session_id=session_id, allow_interject=True)
+        )
         await asyncio.sleep(FIRST_WAIT_SEC)
         print(f"[INJ3] 第一条已后台运行 {FIRST_WAIT_SEC}s, 发第二条")
 
@@ -124,7 +128,7 @@ async def test_e2e_inj_03_triple_injection():
             if i:
                 await asyncio.sleep(INTERVAL_SEC)
                 print(f"[INJ3] 间隔 {INTERVAL_SEC}s 后发{label}")
-            res = await send_chat(text, session_id=session_id)
+            res = await send_chat(text, session_id=session_id, allow_interject=True)
             injs.append(res)
             acked_tids.append(assert_injection_ack(res, label))
 

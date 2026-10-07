@@ -620,6 +620,7 @@ async def send_chat(
     timeout_seconds: int = 180,
     partial_result: Optional[Dict[str, Any]] = None,
     link_enabled: Optional[bool] = None,
+    allow_interject: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """手册步骤2+3: 发送POST /chat/stream, 接收SSE事件流, 返回结构化结果
 
@@ -631,6 +632,10 @@ async def send_chat(
     -- 小健 2026-06-14
     link_enabled: 会话link开关值随消息携带(文档[4] 5.7.14); None=不携带, 后端沿用会话现值
     -- 小欧 2026-10-03
+    allow_interject: 会话插话开关值随消息携带(文档[11] 3.4.3/3.4.4); None=不携带, 后端沿用会话现值。
+    插话场景(同会话已有活跃任务时继续发消息)**必须显式传 True** —— 新会话默认关(决策 2),
+    关态下第2条起会被 save_message 落库前 409 拒绝(决策 11), 不传即失败。
+    -- 小欧 2026-10-07
     """
     if not session_id:
         session_id = await create_session()
@@ -647,6 +652,8 @@ async def send_chat(
     }
     if link_enabled is not None:
         payload["link_enabled"] = link_enabled  # 随消息携带会话link开关(文档[4] 5.7.14) — 小欧 2026-10-03
+    if allow_interject is not None:
+        payload["allow_interject"] = allow_interject  # 插话开关随消息携带(文档[11] 3.4.3/3.4.4) — 小欧 2026-10-07
 
     start_time = time.monotonic()
     wall_start = datetime.now()

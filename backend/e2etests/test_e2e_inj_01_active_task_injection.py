@@ -104,12 +104,17 @@ async def test_e2e_inj_01_active_task_injection():
         assert session_id, "建会话失败"
 
         # ── 第一条后台跑(标准 send_chat, 拿到完整 result) ─────────────
-        first_task = asyncio.create_task(send_chat(FIRST_INPUT, session_id=session_id))
+        # 2026-10-07 小欧 - 文档[11] 决策2/11: 新会话插话开关默认**关**, 关态下同会话第2条起
+        #   会被 save_message 落库前 409 拒绝。本用例要验的是"注入", 故每条都显式携带
+        #   allow_interject=True(不复用前一条的落值, 避免落值失败时整个用例静默走偏)。
+        first_task = asyncio.create_task(
+            send_chat(FIRST_INPUT, session_id=session_id, allow_interject=True)
+        )
         await asyncio.sleep(ACTIVE_WAIT_SEC)
         print(f"[INJ] 第一条已后台运行 {ACTIVE_WAIT_SEC}s, 发第二条试探活跃态")
 
         # ── 第二条同会话追加: 命中则立即返回 merged ─────────────────
-        second = await send_chat(SECOND_INPUT, session_id=session_id)
+        second = await send_chat(SECOND_INPUT, session_id=session_id, allow_interject=True)
         second_elapsed = second["total_time_ms"] / 1000.0
         types = [e.get("type") for e in second["events"]]
         print(f"[INJ] 第二条 type序列={types}, 耗时={second_elapsed:.2f}s")
