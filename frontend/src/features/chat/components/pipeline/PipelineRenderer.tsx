@@ -133,6 +133,18 @@ export type PipelineSegment =
 // 可承载 sameStep 的段(thinking/text) — 2026-08-30 小欧 三堂会审: union 含 sameStep 的仅两类, 抽取避免写包任一段
 type TextishSegment = Extract<PipelineSegment, { kind: 'thinking' | 'text' }>;
 
+// 2026-10-07 小欧 - "结束思考"的段种类(模块级单一真源): 这些段一出现即说明模型已想完,
+//   推理图标不该再转。提模块级避免每次渲染重建, 策略不藏在 JSX 堆里(KISS/SLAP)。
+//   北京老陈 2026-10-07 裁定: 推理图标自 thought-start 起转, 到 text(正文)/工具调用/终态出现才停
+//   (模型只推理不输出正文、直接调工具时, 由 tool 段满足该终止条件)。 — 小欧-2026-10-07
+const THINK_END_KINDS: ReadonlySet<PipelineSegment['kind']> = new Set([
+  'text',
+  'tool',
+  'obs',
+  'final',
+  'error',
+]);
+
 /** 纯函数：业务步骤 -> 顺序段（可单测） */
 export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
   const segs: PipelineSegment[] = [];
@@ -171,6 +183,11 @@ export const buildSegments = (steps: ExecutionStep[]): PipelineSegment[] => {
         segs.push({ kind: 'waiting', step: s.step }); // 4.4.2(2026-09-07 小欧): 产 waiting 段, 首个内容到达被覆盖
         break;
       case 'chunk':
+        // 2026-10-07 小欧 - 空内容 chunk 跳过, 不消费 waiting 段。
+        //   根因: 后端 react_step.py:376 无条件发 ChunkStep, 而 tool_calls 参数增量帧 content 为空
+        //   (llm/core.py StreamChunk 仅带 tool_calls) → 经 appendToLast 无条件顶掉末段 waiting
+        //   → 推理图标停转但屏幕无正文。空 chunk 无视觉意义, 直接跳过。 — 小欧-2026-10-07
+        if (!(s.content ?? '')) break;
         if (s.is_reasoning) appendToLast('thinking', s.content ?? '', s.step);
         else appendToLast('text', s.content ?? '', s.step);
         break;
@@ -329,13 +346,18 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       )
       .map((s) => s.action.step)
   );
-  // 2026-08-27 小欧 三堂会审: 预计算最后一个思考段索引, 消除map内自增副作用与额外filter
-  const lastThink = segs.reduce(
-    (a, s, i) => (s.kind === 'thinking' ? i : a),
-    -1
+  // 2026-10-07 小欧 - 单趟扫描同时取三个下标(原为两次同型 reduce, 属 DRY 欠账且多扫一遍):
+  //   lastThink 打字机光标位(末段 thinking, 2026-08-27 三堂会审: 消除map内自增副作用与额外filter)
+  //   lastText  正文打字机位(13.8: 最后一个 text 段为实时累积段, 前序已完成段静态呈现)
+  //   thinkEndIdx 推理图标停转位(北京老陈 2026-10-07: 下标大于它的 thinking/waiting 段即仍在转) — 小欧-2026-10-07
+  const { lastThink, lastText, thinkEndIdx } = segs.reduce(
+    (acc, s, i) => ({
+      lastThink: s.kind === 'thinking' ? i : acc.lastThink,
+      lastText: s.kind === 'text' ? i : acc.lastText,
+      thinkEndIdx: THINK_END_KINDS.has(s.kind) ? i : acc.thinkEndIdx,
+    }),
+    { lastThink: -1, lastText: -1, thinkEndIdx: -1 }
   );
-  // 13.8 打字机: 最后一个 text 段为实时累积段(打字), 前序已完成段静态呈现
-  const lastText = segs.reduce((a, s, i) => (s.kind === 'text' ? i : a), -1);
   return (
     <div
       style={{
@@ -364,6 +386,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 text=" "
                 compact
                 defaultExpanded={reasoningVisible}
+                running={i > thinkEndIdx} // 2026-10-07 小欧 - 转: 尚无 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
               />
               <div style={{ margin: stepMargin(false) }}>
                 <ThoughtWaitingIcon waitClock={waitClock} />{' '}
@@ -388,6 +411,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               cursor={cursor}
               compact={seg.sameStep}
               defaultExpanded={reasoningVisible} // 2026-10-05 小欧: 「推理内容」折叠初值(文档[9] §5.5) — 小欧-2026-10-05
+              running={i > thinkEndIdx} // 2026-10-07 小欧 - 停: 下标之后已有 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
             />
           );
         }
