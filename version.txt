@@ -1,4 +1,74 @@
-﻿v1.2.0
+﻿v1.2.1
+更新时间: 2026-10-07 17:39:32 - 小欧-2026-10-07
+## v1.2.1 会话插话开关与安全Tab块2落地+取消/刷新/模型库等修复(56个commit: docs16/fix25/feat8/refactor2/test4/chore2)
+[范围=v1.2.0之后HEAD(共56个commit); 主线=①文档[11]第三章会话级插话开关设计经七轮审查定稿(设计侧, 代码零改动) ②安全Tab块2分类表+两个说明弹框从后端datafile取文案真源 ③取消终态/刷新模型选择器/模型库厂商字段等一批真缺陷修复; 方法论教训=审计基准必须取自代码(机械grep全量同构落点成矩阵), 禁用"按文档自身清单逐节核"(v1.9~v1.14连续六轮漏项的根因)]
+
+### 1.2.1 文档[11] 第三章 会话级插话开关(设计定稿, 代码零改动)
+[新增] 会话插话开关完整设计: 现状分析(MAX_SESSIONS=32只是前端内存水位/同会话串行在前端输入门不在后端) + registry放不下会话级开关的订正 + 决策台账1~20 + 后端6文件diff + 前端18文件同构链路diff(只改导入路径与字段名不重写逻辑) + 五批次实施计划 - 提交 2016e72a4
+[修正] 安全Tab块2改分类表页面直出+两个独立弹框(后端datafile三个md随app整树打包), 分类表字号走PRIMARY令牌, mermaid配色走项目令牌并放宽wrappingWidth - 提交 e8d8501d0
+[新增] 一致性复查修8项 + mermaid落定 + ASCII纯文本版恢复 + 守护测试增至9条 + 验证门扩至10项 + safety_gate路径修正 - 提交 77df5ff92
+[修正] 第一至五章一致性核查: 决策引用5→24/示例目录名取前3字/决策36并入29/决策15措辞回写/验收8→9项 - 提交 368920ed2
+[修正] 台账补决策39(落值三态null/[]/列表, 否则"删空目录"被当null静默失效)、决策40(物理目录生命周期+前缀守卫防误删用户目录)、决策41(添加已有目录必须校验存在性); §4.4补FK ON DELETE CASCADE(原缺, 删会话留孤儿行且session_id复用会复活旧目录) - 提交 ab821b9a9/ca35a21aa
+[修正] 第三轮三省三思(矛盾6+遗漏8+违规2, 全部落码到diff非仅记录): 决策13加作用域限定/台账messages.py:51三处残留订正为message_service.save_message/3.5.9落点定位useChatCallbacks:579 onError并纠正"兜底路径与主路径同一套动作"的错(兜底消息已入库故只提示不回填草稿)/补useChatSend的classifyError import与两处接口/补useChatStreaming的sendMessage实现:421/补chatStreamStore五处(原稿只给2处且行号全偏)/补useChatPersistence十处含正文说"两条都要带"却漏掉的:422/补useChatSession第4处复位:688; 3.5.9分支提前return补6行清理(跳过onError尾部清理块致loading恒真发送钮卡死) - 提交 c9aea3c2d
+[修正] P0漏链修复: useChatStreaming:530 executeSend内部catch吞掉saveMessage的409(非404走handleError continueOnError不rethrow, 随后照常建占位并开流), 致决策20的rethrow永不到达"退回输入框"第二次空转且消息未入库却空开一圈SSE; 修法=加SESSION_BUSY分支(撤回乐观气泡+throw) - 提交 d8b3b32a5
+[新增] §3.6同构覆盖矩阵(机械grep全仓link_enabled得后端8文件+前端18文件+E2E helper逐处落点, 附可复现扫描命令, 覆盖可证); 矩阵查出补:580第二个sendMessage调用点 + e2e_helpers.py:622 send_chat形参(本地改不提交); 通道核实(create_error_response→data.type="error"→sseParser:707→onError, 与3.5.9同通道) - 提交 1c355da47
+[修正] 决策31改判(北京老陈): 会话目录注入由system prompt改为拼接到本任务user消息尾部(user尾部当前回合注意力更强), 且仅在目录列表非空时追加; W2/W4批次同步 - 提交 dd0d23c9e
+[新增] 文档[14] 注入压缩误调用工具与前端静默显示问题分析(新建并删除[13]) - 提交 946868381
+
+### 1.2.1 安全Tab 块2 与说明文案真源(后端datafile + 前端中立层)
+[新增] security_docs.py + settings_routes.py + app/datafile 三个md: policy弹框1五组22条/flow弹框2含mermaid八步表/classification块2页面直出4类5行; 5个占位符后端插值取用户真实路径, 前端零字符串逻辑; 新增GET /api/v1/settings/security-docs(刻意不并入/settings, 那条返可配置项的值混一起前端分不清哪个能改); 单文件缺失降级一行提示不抛异常; FUNCTIONS.md登记 - 提交 014889830
+[新增] DirectoryAccessNote.tsx + SettingsGroup.tsx + settings.api.ts 块2: sectionOf加security组归人工确认一块, items.map后追加DirectoryAccessNote(纯说明无配置项不进registry); settings.api加SecurityDocsResponse+getSecurityDocs(不并入getAll); 分类表走fixedTable防auto布局下超长单元格独占宽度把窄列压成竖排; 加载失败保留两按钮只降级表格区, Modal常驻保退出动画 - 提交 3e9f279be
+[重构] markdown四件套上移中立层: CopyButton/MarkdownBody/MarkdownSlot/MarkdownText由features/chat/components/pipeline上移到components/markdown(解除settings2→chat跨feature反向依赖); 新增MermaidBlock(动态import懒加载+securityLevel=strict+initialize收成模块级单例+失败降级原文pre); 表格拆MdTable支持fixedTable仅分类表用; 装mermaid ^12.1.0 - 提交 f0264d854
+[修正] 三堂会审4项: 加载失败不再三选一只剩Alert(那样分类表和两按钮全消失=功能没了), 改按钮恒在只降级表格区; Modal改常驻用openKey控制; POPUPS删冗余mdKey; 删外层无效color/fontSize死代码 - 提交 5db873ec3
+[修正] 图三件事(北京老陈实测): 配色/字号全走项目Colors/FontSize令牌, 线色取TEXT.SECONDARY(用BORDER.VERTICAL实测渲成#e8e8e8比节点填充还浅不可见), flowchart加wrappingWidth:220; index.css去掉max-height/overflow(双滚动条); MdTable加fontSize参数分类表传PRIMARY聊天侧零变化 - 提交 04ee67f30
+[修正] security_docs三堂会审: 分类表路径去内联反引号(13个code把路径列撑成灰底碎块)+禁区路径统一不带反引号; path_decision异常兜底分支改挂在入口虚线旁注(原先ERR无入边被mermaid提到最前语义误导); 三个md加统一格式编辑历史注释 - 提交 877bc2c4d
+[修正] tool_constants.py + path_safe_check.py Windows禁用路径去硬编码盘符(改存与盘符无关相对段+运行时前置拼接, 去掉.replace(C:)字符串替换——旧写法漏写盘符前缀会被startswith守卫静默放过即真漏拦); _SYSTEM_PROTECTED提为模块常量(原先每次调用重建frozenset) - 提交 bc8fa66df
+[新增] trust_db.py 目录信任跨工具生效(老陈裁定B替原per-tool隔离): WHERE放宽为session_id=? AND (tool_name=? OR path IS NOT NULL), path=None的无路径工具仍只命中本工具通配行shell等不受误放行 - 提交 66fcea66f
+[修正] trust_db.py + storage.py 三堂会审(删与docstring重复的判定注释块, 文档补B语义下撤销粒度(tool_name,path)≠放行粒度(path)提示) - 提交 e9761d9ca
+[修正] trust_db.py + trust.py + storage.py 信任登记粒度由叶子文件改为所在目录(北京老陈实测信任4次仍反复弹窗根因) - 提交 ce769d866
+
+### 1.2.1 前端会话/流真缺陷修复
+[修正] 取消后UI无反应(点中断后永久执行中+连接疑似中断) - 提交 e60a58dfe
+[修正] 取消终态帧未送达兜底(北京老陈实测点中断UI无反应): 武装取消等帧看门狗(幂等不叠定时器), 终态由final步outcome决定不再恒写completed, 看门狗超时兜底以DB权威为准落终态并释放流资源, 终态帧到达即撤看门狗 - 提交 be903a477
+[修正] RightViewer.tsx 取消后右栏永久蒙一层白纱(Spin loading卡死) - 提交 c402ccd6f
+[修正] 刷新后模型选择器误显示跟随全局(根因STORAGE_KEY四写入点各写各字段全漏sessionModel; 同linkEnabled 2026-10-03同型事故): 按DRY收口schema新增ChatCacheState+buildChatCacheState/parseChatCacheState单一来源, 四写入点+三读取点全改走; 并修sessionVersion硬编码1导致恢复后必撞409 - 提交 68b5bf6d8
+[修正] useChatSession+useChatState+useChatInit+useChatPersistence 三堂会审6项(||吞版本0改??; 删applySessionState越界写currentSessionIdRef(SLAP违规)并在setter内同步ref; setMessages wrapper内联写messagesRef替代useEffect单向同步; 恢复loadSession返回值被void丢弃; 签名对称空串防御; 补全sessionVersion透传) - 提交 12b3bb0e1
+[新增] SubmitBar.tsx + AttachmentArea.tsx 附件区暂缓期改显示+置灰占位(北京老陈指令, 上传仍暂缓) - 提交 b45274d7d
+[修正] AboutFiles.tsx 查看文件弹框行号与内容整体错位(行号栏whiteSpace:pre不折行vs正文pre-wrap折行, 长行起行号全下偏) - 提交 120f1a071
+[修正] handler.ts axios超时消息人话化(把timeout of 60000ms exceeded这类完整英文改写为后端响应超时请重试, 不改根本只修展示) - 提交 06c778c44
+[新增] CopyButton.tsx 围栏代码块复制按钮(PreBlock与MarkdownBody两处复用消除DRY重复; 申明订正此前"已加复制按钮"为误报未落盘, 本次才真实加入) - 提交 16c7c3e7b
+
+### 1.2.1 工具 summary/文案治理与后端修复
+[修正] write/move/rename/shell的summary单通道去数字化与metrics补齐 - 提交 3ca31f08f
+[修正] read_text_file的summary去total_lines与total_lines改走metrics统计段 - 提交 818c20ffe
+[修正] execute_sql/filter_data/query_sql的summary单通道去数字化与去detail - 提交 95ceb9da8
+[修正] edit_text_file的summary带增减行数与metrics补added/removed - 提交 1227303eb
+[修正] read_text_file的summary/message信息顺序整改(用户参数前置于读取量) - 提交 438c0528c
+[修正] message_builder.py wire推理字段去冲突(B3空转后必400根因修复) - 提交 8077b3c1a
+[修正] compaction摘要/start_step/history_loader三处系统代码更新 - 提交 1a87c28cc
+[修正] prompt日志5项核查缺陷修复(P0-01时序/P1-02双传/P3-06无降级/P3-07 None崩/P3-08轮次口径) - 提交 9fcb61ba5
+[修正] base_service.py 取消导致的L1退避倒退修复(退避sleep不可中断且循环内不查_cancelled, 取消后agent空转3+9+27+81直至SSE断104): 增_cancel_event唤醒信号, 两处sleep改wait_for可中断等待, retry循环顶部与except入口先短路_cancelled - 提交 8219bf1c7
+[修正] 落库队列消费者死亡即时止损 + TaskFileWriter入队工厂化 - 提交 6163b439a
+[修正] db/storage/logger/shell_engine 与E2E测试记录批量提交 - 提交 42294babb
+[修正] shell的cmd_short总预算150改130(头变110) - 提交 0e446b88c
+
+### 1.2.1 模型库与其他功能
+[新增] model_service.py + ModelLibraryTab.tsx 模型库厂商字段适配(SenseNova实抓后改): 解析层此前白名单逐字段提取, 厂商同义键命名与层级不统一致11个字段被静默丢弃; 按北京老陈指令不写per-provider定制(8家api_base实测均为OpenAI兼容), 改单点归一(_first_alias别名链+合成查找视图); 增下发max_output_length(缺此项误判单次输出上限)/input_modalities/output_modalities/supported_features; fetch_remote_models三级取key后key空白时pop掉Authorization畸形头; 补FUNCTIONS.md漏登记3条与行号漂移 - 提交 52a0e98a4
+[新增] ModelLibraryTab.tsx + model.api.ts + History/index.tsx + chatStreamStore.ts 模型库能力列+保存落配置+在跑指示器+布局对齐 - 提交 fbbabf60e
+[新增] query_sql.py summary补row_count与col_text - 提交 ffa2fc087
+[修正] docs: README.md + E2E测试手册两个文档更新 - 提交 e962e69c8
+[修正] docs[10] observation关键字段信息承载分配统一规范v1.7 - 提交 477ccbf05
+[修正] docs[10]方案v1.1实施后校正(登记与v1.0设计的5处差异+1处设计缺陷: §2.2注入点人工阅读数出6处, 机械全量扫描实为9处; 方法论教训=统计调用点禁用人工阅读数) - 提交 d86b14451
+[修正] docs: SaveBar/SettingsPage/AuthorizationModal 安全开关文案同步为HTL人工开关; settings_registry调优/安全四标签与notice更正 - 提交 8e2522ccf/84aff38f3
+
+### 1.2.1 测试与工程治理
+[新增] fre2e_20_security_block2.spec.ts 安全Tab块2全链路浏览器实测; 合并原6个临时诊断脚本为一个符合fre2e_NN规范的case - 提交 d59460d9c
+[新增] fre2e_20 增2条回归断言: 分类表字号须14px(设置页正文档), 目录列表列不得残留内联code(内联code的背景+圆角会把该列撑成灰底碎块, 实测13个) - 提交 4e4f3a0a5
+[新增] e2e par_02 concurrent tools + .codegraph 提交(北京老陈强制指令, 违反AGENTS.md铁规: 测试case不入库) - 提交 b9c406447
+[新增] par_02与conftest测试更新(北京老陈明确指令提交) - 提交 f4297fc53
+[清理] test_remote_models_free_fields.py 去除git跟踪(该文件被git add -f强制提交, 绕过.gitignore两条规则; 本次git rm --cached去跟踪文件保留本地; 已确认.gitignore:17 tests/现接管该文件) - 提交 5687dd9d5
+
+v1.2.0
 更新时间: 2026-10-05 16:23:00 - 小欧-2026-10-05
 ## v1.2.0 思考段Markdown排版+推理内容折叠两个独立开关(22个commit: feat8/fix4/refactor1/chore4/docs5)
 [范围=v1.1.7之后HEAD(共22个commit); 主线=设置页加两个独立bool开关控制思考段渲染, 默认皆开, 顺序推理内容在前; 实现第4章按参考代码落地, 三堂会审3遍挖出参考代码自带缺陷3项已修; 遗留=左列response接排版首帧纯文本(React.lazy Suspense fallback)与展开后14px偏松(未加compact档)]
