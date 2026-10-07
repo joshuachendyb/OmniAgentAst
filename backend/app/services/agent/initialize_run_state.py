@@ -27,10 +27,13 @@
 # 2026-08-18 - 小欧 - usage剔step_json: 重置区加 agent._usage_events=[]
 # 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + ChunkBuffer() 无参调用
 # 2026-09-23 小欧 - 删死 import MAX_CONSECUTIVE_CHUNKS（should_promote 死链清理，ChunkBuffer 无参构造零使用）
+# 2026-10-07 北京老陈 - 删 agent.message_builder.init_history(sys_prompt, task):
+#   system/task 两条与超窗判定、C4 摘要无关(判定只算注入历史量, 摘要只吃 _injected_history_msgs),
+#   推迟到压缩决策后由 react_loop 装配段建[system, 摘要或原历史, task]; 本函数退化为纯状态重置。
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
-职责: 重置steps/message_builder/status/llm_call_count, 注入system prompt和task
+职责: 重置steps/message_builder/status/llm_call_count, 取 system prompt 存 agent._sys_prompt(不建消息)
 
 Author: 小沈 - 2026-05-31
 """
@@ -91,6 +94,5 @@ def initialize_run_state(
     )
 
     agent._on_before_loop(sys_prompt, task, context)
-    agent.message_builder.init_history(sys_prompt, task)
-
+    # 2026-10-07 北京老陈: 此处不再 init_history 建 [system, task]; 推迟到压缩决策后由 react_loop 装配段建
     return ChunkBuffer()

@@ -10,7 +10,7 @@
 """
 SUMMARY_TEMPLATE = """你是专业的汇总分析助手。
 根据**历史对话数据**。
-严格按照下面的格式顺序输出六段 Markdown 摘要. 
+铁规:严格按照下面的格式顺序输出六段 Markdown 摘要. 
 
 - Goal: 当前任务目标
 - Key Decisions: 关键决策与结论
@@ -21,5 +21,4 @@ SUMMARY_TEMPLATE = """你是专业的汇总分析助手。
  [2]InProgress-当前进展情况如何
  [3]Blocked-遇到什么阻碍和问题
 - Next Steps: 下一步计划
-铁规:严格按照要求执行
 若已有 previousSummary, 请增量合并(保留已有结论, 追加新发现), 不重复不遗漏。"""

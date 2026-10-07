@@ -5,8 +5,7 @@
 #   越权调工具(实测glm-5.2: finish=tool_calls并写文件); ② summary.py:69 是"追加"system而非替换,
 #   带上原system会让feed出现两条system→模型困惑。
 # 2026-08-17 小健 新建: start 任务输入装配完整过程独立模块(北京老陈驱动, 痛斥 start 业务割裂散落多处)——把
-#   start 全部业务收拢一个文件: 注入会话历史 _inject_conversation_history / 超窗判定 _maybe_compact_injected_history
-#   / C4 锚定摘要回填 _compact_injected_history / 装配入口 assemble_start_step; 自 initialize_run_state.py 与
+#   start 全部业务收拢一个文件: 注入会话历史 / 超窗判定 / C4 锚定摘要 / 装配入口; 自 initialize_run_state.py 与
 #   react_cycle.py 迁入, 单一归属; react_cycle 只保留薄调用(不 import chat 层, 解耦)
 # 2026-08-17 小健 三思三省彻底收敛(老陈驱动): 契约构造业务自 sse_events 迁入本模块——新增 _build_start_contract
 #   在单模块内算 context_summary 快照(message_count/total_tokens) + 构造 MetaStep(type="start", step=0),
@@ -17,6 +16,7 @@
 #   agent.llm_client 同对象, orchestrator 构造 agent 时注入), _build_start_contract 直接读 agent.llm_client;
 #   _start_meta 仅装 agent 拿不到的 chat 数据(task_id/next_step/user_input/session_id/链字段/warning);
 #   ② KISS/SLAP——assemble_start_step/_build_start_contract 去掉无谓 async(内部零 await), 同步函数直线返回
+#     (注: 2026-10-07 因摘要需 await LLM, assemble_start_step 已改回 async, 本条仅记当时结论)
 # 2026-08-17 小健 全系统DRY扫描收敛(老陈指示按10大规范): task_id 改读 agent.task_id(base_agent:59 权威持有,
 #   orchestrator 构造时注入), 不再依赖 _start_meta["task_id"]; _start_meta 只承载 next_step/session_id/user_input/
 #   链字段/warning(react_cycle 拿不到的必需运行数据), 与 ai_service 删除同属真冗余收敛(单一归属) — 小健 2026-08-17
@@ -34,16 +34,27 @@
 #   start_model=_ai.llm_model(ModelRef 单结构), 删 display_name=f"{provider} ({model})" 拼装与
 #   provider=/model= 分离入参(设计要求2: display_name 不再落库, 前端派生)
 # 2026-08-29 - 小沈 - 修复: _compact_injected_history 摘要回填后加末条 tool 孤儿守卫, 丢弃尾随无配对 assistant 的 tool 消息(中段已被丢→孤儿→LLM 400)
-# 2026-09-23 - 小欧 - compaction配置化: _maybe 读 tuning.compaction.start_enabled/start_trigger_ratio; _compact 内联保尾 history[-1:] 改读 tuning.compaction.keep_tail（0=不保尾）
+# 2026-09-23 - 小欧 - compaction配置化: _maybe 读 tuning.compaction.start_enabled/start_trigger_ratio
+# 2026-10-07 北京老陈 _build_injected_history: 原名 _inject_conversation_history(会调 inject_history 写
+#   conversation_history)→ 改名并只构建+留存 _injected_history_msgs; 同批历史原被写两次(本阶段写205条,
+#   随后 react_loop init_history 清空再写), 现 conversation_history 唯一写入点在 react_loop 装配段。
+# 2026-10-07 北京老陈 _maybe_compact_injected_history: 判定数据源 conversation_history → _injected_history_msgs
+#   (口径=注入历史, 不含 system/task; init_history 已推迟, 此刻 conversation_history 为空)。
+# 2026-10-07 北京老陈 _compact_injected_history: 改返回摘要文本, 不再装配 conversation_history、不碰 system/task。
+# 2026-10-07 北京老陈 assemble_start_step: 判定+摘要下沉回本函数并置于契约构造之前; 因摘要 await LLM,
+#   本函数改 async(调用方 react_loop 已加 await)。_start_summary 首行清零防异常残留上次值。
+# 2026-10-07 北京老陈 _compact_injected_history: 摘要 await(30~60s)前后各查一次 check_cancelled,
+#   避免长等待期间暂停/取消/新消息无响应; 被取消返回空串由调用方零退化装配原历史。
+# 2026-10-07 北京老陈: 校正 5 处与代码不符的 docstring(判定数据源/摘要调用方/init_history 阶段/步骤序号/前置条件)。
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
 职责(SRP): 仅承载「start 前置装配环节」全部业务——
-  - _inject_conversation_history: 注入会话历史(多轮对话上下文回填 message_builder)
-  - _maybe_compact_injected_history: 超窗判定(C4, 置 _needs_compact 标记)
-  - _compact_injected_history: C4 锚定摘要回填(超窗时一次性清洗注入历史)
-  - _build_start_contract: 契约构造(context_summary 快照 + StartStep 任务输入契约, 自 sse_events 迁入; 改产 StartStep)
-  - assemble_start_step: 唯一对外入口(注入历史 → 超窗判定 → 契约构造)
+  - _build_injected_history: 构建注入历史并存 agent._injected_history_msgs(不写 conversation_history)
+  - _maybe_compact_injected_history: 超窗判定(C4, 读 _injected_history_msgs, 置 _needs_compact 标记)
+  - _compact_injected_history: C4 锚定摘要生成(超窗时产出摘要文本, 不装配 conv)
+  - _build_start_contract: 契约构造(context_summary 快照 + StartStep, 自 sse_events 迁入)
+  - assemble_start_step: 唯一对外入口(async; 构建注入历史 → 判定 → 摘要 → 契约)
 依据: [1] 10.1.1(功能逻辑) / 10.1.2(字段清单) / 10.1.6(C4 清洗) / 10.1.7④⑤(装配落点) / 10.1.8 S3/S4/S5。
 """
 from typing import Any, Dict, List, Optional
@@ -52,22 +63,23 @@ from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tu
 from app.logger import logger
 
 
-def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> None:
-    """注入会话历史(多轮对话支持) — 北京老陈 2026-06-13; 小沈 2026-06-17 参数名self→agent
-    小健 2026-06-26: 修复丢失tool消息和带tool_calls的assistant消息的bug，保留FC协议完整性
-    chendyg 2026-06-30: 修复重复user消息bug——previous_messages中最后一条user与init_history注入的task重复
-    小健 2026-08-17: 自 initialize_run_state 迁入 start_step(单一归属)
+def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
+    """构建注入历史并存到 agent._injected_history_msgs(不写 conversation_history) — 北京老陈 2026-10-07
 
-    适用场景: start 装配第一步——把 context.previous_messages 回填 message_builder(多轮对话上下文)。
+    适用场景: start 装配第一步——从 context.previous_messages 构建 history_msgs。
     使用方法: 直接调用, 传 agent + context; context 无 previous_messages 则空转安全。
-    输入: agent 含 message_builder; context 含 previous_messages 历史消息列表。
-    输出: 无(内部调用 message_builder.inject_history 装载历史)。
-    前置条件: init_history 已装载(system + task); 最后一条 user 跳过(防与 task 重复)。
+    输入: agent; context 含 previous_messages 历史消息列表。
+    输出: 无(内部置 agent._injected_history_msgs)。
+    前置条件: 无。
+    关联逻辑: 跳过 previous_messages 末条 user(防与本轮 task 重复); tool_calls 逐元素 isinstance 校验
+      (非 dict 元素剥离, 防 provider 400); 合法输入输出与原实现 100% 一致。
     """
     if not context or not isinstance(context, dict):
+        agent._injected_history_msgs = []
         return
     prev = context.get("previous_messages")
     if not prev or not isinstance(prev, list):
+        agent._injected_history_msgs = []
         return
     last_user_idx = -1
     for i in range(len(prev) - 1, -1, -1):
@@ -110,22 +122,20 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
             history_msgs.append({"role": "user", "content": msg["content"]})
         elif role == "system" and msg.get("content"):
             history_msgs.append({"role": "system", "content": msg["content"]})
-    agent.message_builder.inject_history(history_msgs)
-    # 2026-10-07 小欧: 把注入后的历史消息挂到 agent, 供 C4 压缩直接取用。
-    #   原先压缩从 conversation_history[1:-1] 反推(猜首条system/末条task), 结构一变就误删;
-    #   此处显式留存, 压缩零猜测。
     agent._injected_history_msgs = history_msgs
 
 
 def _maybe_compact_injected_history(agent) -> None:
-    """C4 超窗标记(10.1.7⑤ / 10.1.8 S5): 注入历史后估算 token, 超窗则置 _needs_compact — 小健 2026-08-17
+    """C4 超窗标记(10.1.7⑤ / 10.1.8 S5): 构建注入历史后估算 token, 超窗则置 _needs_compact — 小健 2026-08-17
 
-    适用场景: start 装配第二步——注入历史后立即判定是否超窗, 为 while 前 C4 摘要回填铺标记。
+    适用场景: start 装配第二步——构建注入历史后判定是否超窗, 为同函数内摘要生成铺标记。
     使用方法: 直接调用, 传 agent; 超窗置 agent._needs_compact=True(仅标记不触发 LLM)。
-    输入: agent 含 message_builder.conversation_history。
+    输入: agent 含 _injected_history_msgs(由 _build_injected_history 构建留存; 不读 conversation_history)。
     输出: 无(置 agent._needs_compact 布尔标记)。
-    前置条件: 注入历史已装载。
+    前置条件: _build_injected_history 已执行。
     关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 门限=运行时上下文窗口 × START_TRIGGER_RATIO(北京老陈 2026-08-17 定案, start 超窗=上下文×1/2)。
+    2026-10-07 北京老陈: 数据源由 conversation_history 改 _injected_history_msgs(判定口径=注入历史,
+      不含 system/task; init_history 已推迟到 react_loop 装配段, 此刻 conversation_history 为空)。
     """
     agent._needs_compact = False
     from app.services.agent.compaction_constants import (  # 小健 2026-08-17: 常量权威迁 agent/compaction_constants(局部导入防包级依赖)
@@ -136,7 +146,10 @@ def _maybe_compact_injected_history(agent) -> None:
     if not _start_enabled:
         return
     from app.services.agent.message_builder import MessageBuilder
-    history = agent.message_builder.conversation_history
+    # 2026-10-07 北京老陈: 判定改读 _injected_history_msgs(注入历史本体), 不读 conversation_history。
+    #   init_history 已推迟到压缩后装配, 此处 conversation_history 尚无 system/task 容器;
+    #   判定只关心"注入历史有多大", 故以 _injected_history_msgs 为准(与压缩输入同源, 零猜测)。
+    history = list(getattr(agent, "_injected_history_msgs", None) or [])
     if not history:
         return
     # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
@@ -150,55 +163,50 @@ def _maybe_compact_injected_history(agent) -> None:
         logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_start_ratio}), 置 _needs_compact")
 
 
-async def _compact_injected_history(agent) -> None:
-    """C4 超窗锚定摘要回填(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
+async def _compact_injected_history(agent) -> str:
+    """C4 锚定摘要生成(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
 
-    适用场景: start 装配后、while 前一次性清洗注入的历史(超窗时)。
-    使用方法: 由 assemble 后置条件调用或 run_react_cycle while 前 await; 摘要回填 conversation_history。
-    输入: agent 含 message_builder.conversation_history。
-    输出: 无(超窗时以 assistant 摘要消息回填: system[:1] + 摘要 + 最新 task[-1:])。
-    前置条件: _maybe_compact_injected_history 已置 _needs_compact=True; 失败兜底原样保留零退化。
-    关联逻辑: 摘要生成/模板/截断全归 compaction 模块(SRP); tools=None 走 llm_stream Text 模式。
-    2026-10-07 小欧: 摘要只归档注入的历史(agent._injected_history_msgs) — 见 _hist_for_summary。
+    适用场景: start 装配第三步——超窗时生成注入历史的锚定摘要。
+    使用方法: 由 assemble_start_step await 调用; 只生成摘要文本, 不装配 conversation_history。
+    输入: agent 含 _injected_history_msgs(注入历史本体, 由 _build_injected_history 留存)。
+    输出: str 摘要文本; 空串表示未产出(调用方按零退化装配原历史)。同时复位 _needs_compact。
+    前置条件: _maybe_compact_injected_history 已置 _needs_compact=True。
+    关联逻辑: 摘要生成/模板/截断全归 compaction 模块(SRP); tools=None 走 llm_stream Text 模式;
+      摘要只归档 _injected_history_msgs(不含 system/task); await 前后各查一次取消(见编辑历史)。
     """
     from app.services.agent.compaction.summary import generate_anchored_summary
 
-    history = agent.message_builder.conversation_history
-    if not history:
-        agent._needs_compact = False
-        return
-# 2026-10-07 小欧 修复: 摘要只归档"注入的历史"。取 agent._injected_history_msgs
-    #   (_inject_conversation_history 显式留存), 不从 conversation_history 反推:
-    #   ① 原实现把含首条system与末尾task的整条历史喂给摘要LLM, 末尾task让模型当成待执行指令
-    #     → 越权调工具(实测glm-5.2: finish=tool_calls并写文件);
-    #   ② summary.py:69 是"追加"system而非替换, 带上原system会让feed出现两条system → 模型困惑。
+    # 摘要只归档注入的历史(不含 system/task): 原实现把含末尾 task 的整条历史喂LLM, 模型当待执行指令
+    #   → 越权调工具(实测 glm-5.2 finish=tool_calls 并写文件)
     _hist_for_summary = list(getattr(agent, "_injected_history_msgs", None) or [])
     if not _hist_for_summary:
         agent._needs_compact = False
-        return
+        return ""
     try:
+        _task_id = getattr(agent, "task_id", None)
+        if _task_id:
+            from app.services.task.task_runtime import check_cancelled
+            if await check_cancelled(_task_id):
+                logger.info("[start_step] 摘要前检测到任务取消, 跳过摘要(调用方零退化装配原历史)")
+                agent._needs_compact = False
+                return ""
         summary_text = await generate_anchored_summary(agent, _hist_for_summary)
+        if _task_id and await check_cancelled(_task_id):
+            logger.info("[start_step] 摘要后检测到任务取消, 丢弃摘要结果(调用方零退化装配原历史)")
+            summary_text = ""
     except Exception as e:
-        logger.warning(f"[start_step] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
+        logger.warning(f"[start_step] 锚定摘要失败, 返回空(调用方零退化装配原历史): {type(e).__name__}: {e!r}")
         summary_text = ""
     if summary_text:
-        _keep = max(0, int(get_config().get('tuning.compaction.keep_tail', 1)))  # 小欧 2026-09-23 compaction配置化，0=不保尾
-        compacted = (
-            history[:1] + [{"role": "assistant", "content": summary_text}] + (history[-_keep:] if _keep else [])
-        )
-        # 修复(小沈 2026-08-29): 中段 assistant 已被丢弃, 末条若仍是 tool 消息则成孤儿→发LLM 400;
-        # 最小守卫: 丢弃尾随无配对 assistant 的 tool 消息
-        while compacted and compacted[-1].get("role") == "tool":
-            compacted = compacted[:-1]
-        agent.message_builder.conversation_history = compacted
-        logger.debug(f"[start_step] 摘要回填完成 (tok={len(summary_text)}, 历史 {len(history)}→{len(compacted)})")
+        logger.debug(f"[start_step] 锚定摘要生成完成 (len={len(summary_text)})")
     agent._needs_compact = False
+    return summary_text
 
 
 def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional["StartStep"]:
     """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
-    适用场景: start 装配第③步——据 orchestrator 注入的运行元数据(_start_meta)算 context_summary 快照,
+    适用场景: start 装配第四步——据 orchestrator 注入的运行元数据(_start_meta)算 context_summary 快照,
     构造 StartStep(type="start", step=0, content=context_summary); 自 sse_events 迁入(start 契约构造业务完整归此模块)。
     使用方法: 由 assemble_start_step 调用; previous_messages 用于快照 message_count/total_tokens。
     输入: agent 含 _sys_prompt(initialize_run_state 已取) / llm_client(orchestrator 构造时注入, provider/model)
@@ -236,22 +244,29 @@ def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional[
     )
 
 
-def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]:
+async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]:
     """start 任务输入装配完整过程(唯一对外入口, 单模块单归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
     适用场景: run_react_cycle 在 initialize_run_state 之后、while 之前调用一次, 完成 start 全部业务。
-    使用方法: 传 agent + context, 返回构造好的 StartStep(调用方 emit); 无 _start_meta 时返回 None。
-    业务顺序(不可乱): ① 注入会话历史 → ② 超窗判定(C4 置 _needs_compact) → ③ 构造任务输入契约 StartStep
-    (语境 summary 快照 + 任务输入契约); 超窗时由调用方在 while 前 await _compact_injected_history 回填。
+    使用方法: 传 agent + context, await 返回 StartStep(调用方 emit); 无 _start_meta 时返回 None。
+    业务顺序(不可乱): ① 构建注入历史 → ② 超窗判定(C4) → ③ 锚定摘要生成 → ④ 构造任务输入契约 StartStep
     输入: agent 含 _sys_prompt(initialize_run_state 已取) / llm_client / _start_meta(orchestrator 注入的运行元数据);
           context 含 previous_messages(注入历史 + 快照 message_count/total_tokens)。
-    输出: StartStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容)。
-    前置条件: initialize_run_state 已执行(agent.steps 已重置、init_history 已装载、_sys_prompt 已就绪)。
+    输出: StartStep(type="start", step=0) 或 None(无 _start_meta 时保持旁路兼容);
+          摘要文本挂 agent._start_summary(供调用方装配 conversation_history)。
+    前置条件: initialize_run_state 已执行(agent.steps 已重置、_sys_prompt 已就绪; init_history 不在此阶段)。
     依赖方向: 只读 agent 属性 + context, 不 import chat 层(解耦); 运行元数据由 orchestrator 注入 _start_meta。
     设计文档: start契约设计章节。
+    2026-10-07 北京老陈: 判定与摘要下沉回本函数, 置于契约构造之前; 因摘要需 await LLM, 本函数改 async。
     """
-    # ① 注入会话历史(任务输入装配第一步)
-    _inject_conversation_history(agent, context)
+    agent._start_summary = ""    # 首行清零, 防后续步骤抛异常时残留上次任务的值
+    # ① 构建注入历史(只留存 agent._injected_history_msgs, 不写 conversation_history)
+    _build_injected_history(agent, context)
+    # ② 超窗判定(C4, 读 _injected_history_msgs)
+    _maybe_compact_injected_history(agent)
+    # ③ 锚定摘要生成(超窗时; 结果挂 agent._start_summary 供调用方装配)
+    if getattr(agent, "_needs_compact", False):
+        agent._start_summary = await _compact_injected_history(agent)
     # 11.3-A 跨任务注入基线快照（独立模块 TaskTelemetry 存储，固定不漂移）— 小欧 2026-08-20
     _tele = getattr(agent, "telemetry", None)
     if _tele is not None:
@@ -262,9 +277,6 @@ def assemble_start_step(agent, context: Optional[Dict]) -> Optional["StartStep"]
             "message_count": len(_prev),
             "estimated_tokens": MessageBuilder._estimate_tokens(_prev),
         })
-    # ② 超窗判定(C4, 注入后立即判定, 置 _needs_compact 供 while 前回填用)
-    _maybe_compact_injected_history(agent)
-
-    # ③ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
+    # ④ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
     _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None
     return _build_start_contract(agent, _prev_msgs)

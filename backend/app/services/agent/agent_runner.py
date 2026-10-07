@@ -184,7 +184,9 @@
 # 2026-10-05 小欧 - _flush_steps: 消费者死亡即时止损(原只等 join 120s 超时); file_persist 落库队列入队改工厂化(杜绝 ne
 # 2026-10-06 小欧 - 报告核查修 P0-01/P3-08: ①update_ai_message_id 移到 start_request 之后(原序写入上一请求
 #   残留 log 且新 log 该字段恒 None, 实测 79.13% 落盘为 null); ②log_step_yield 的 round_number 改取
-#   agent.llm_call_count(原取 ed["step"], 致「轮次」恒等于步骤, 实测 100%)ver awaited 泄漏告警)。
+#   agent.llm_call_count(原取 ed["step"], 致「轮次」恒等于步骤, 实测 100%)
+# 2026-10-07 北京老陈 thought-start 第1发前移至历史加载判断前(覆盖 DB还原+压缩等待);
+#   react_loop 原第1发同步移除。
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -598,6 +600,9 @@ async def run_agent_in_background(
                 # (符合人类认知"原地等"); 否则暂停会令在飞 LLM 流被打断→忙等空转/误判。 — 小欧 2026-07-13
                 return await check_cancelled(task_id)
             llm_service.set_stop_check(_stop_check)
+
+        from app.services.agent.steps import ThoughtStartStep  # 2026-10-07 北京老陈 第1发前移至此
+        await _publish(agent._step_emitter.emit(ThoughtStartStep(step=1)).to_dict())
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         ctx = {}

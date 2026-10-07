@@ -39,6 +39,13 @@
 #   与 build_final_stats_step L219 对齐防御风格, 防 agent 无 steps 属性时崩溃 — 小欧-2026-09-11
 # 2026-10-01 - 小欧 - 解 [1] E1/E2/4-1: ①_M_SKIP 提为公开常量 M_SKIP 并由 agent_runner 复用(原 agent_runner 另有一份硬编码 3 项子集, 两处口径不一致致两统计源不等), 补齐 chunk/thought-start/error/rejected 四类仅 SSE 不落库步; ②新增 count_business_steps() 作业务步计数单一真源, 兼容 dict(落库 step_json)与 Step 对象(运行期)两种形态统一取键, 原各写一份只认对象形态的列表推导在改读落库权威后会计成全量; ③三处 step_count 改走该函数且优先取落库权威源 _persisted_steps(原按 agent.steps 计会多计 preview action, 该标记 _emit_publish 才登记, 实测每轮多 1)
 # 2026-10-03 小欧 - M_SKIP 内部按语义二分 SSE_ONLY_TYPES + PERSISTED_NON_BIZ_TYPES, 加断言保二分完备; agent_runner._SSE_ONLY_TYPES 改 import 消除重复定义(DRY), 内容与行为零变化 — 文档[5] 5.2 D4
+# 2026-10-07 北京老陈 injected_ratio 语义纠正: 去掉 2026-08-20 加的 min() clamp, 改为注入量/装入量
+#   (压缩比)。原式分子取 min 后, 只要注入≥装入比值恒为 1.0, 压缩前后无区别(无信息量);
+#   现压缩成功显示 56.5×(226023/4000)、未压缩 1.1×、无注入 0.0×。前端 ContextOverviewCard 同步改倍数显示。
+# 2026-10-07 北京老陈 summary 去截断: 原取最后一条 user/assistant content 的前 120 字,
+#   半句切断且与前端已改的完整显示(TaskInfoBar 2026-09-09 移除 slice)不一致; 现取完整文本。
+# 2026-10-07 北京老陈 新增 build_history_context_step(): history_context 帧构造单一出口,
+#   react_loop 首帧(emit start 前)与 react_step 裁剪轮/每5轮共用(DRY); telemetry 只造帧, emit/publish 归调用方。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -282,7 +289,7 @@ class TaskTelemetry:
         )
 
     def build_context_overview(self) -> Dict[str, Any]:
-        """产出 context_overview 字典 —— 复用 message_builder 既有能力（11.3-A）"""
+        """产出 history_context 帧的数据字典(11.3-A) —— injected_ratio 为压缩比(注入量/装入量)"""
         from app.services.agent.message_builder import MessageBuilder
         _mb = self.agent.message_builder
         _history = _mb.conversation_history
@@ -291,12 +298,12 @@ class TaskTelemetry:
         _truncated = bool(getattr(_mb, "_trimmed_this_round", False))
         _inj = self._injected_context or {"message_count": 0, "estimated_tokens": 0}
         _inj_tokens = _inj["estimated_tokens"]
-        _ratio = round(min(_inj_tokens, _estimated) / max(_estimated, 1), 3)   # clamp 到 0~1
+        _ratio = round(_inj_tokens / max(_estimated, 1), 3)   # 压缩比=注入量/装入量; 无注入时=0
         _summary = ""
         for _m in reversed(_history):
             _c = _m.get("content") or ""
             if _c and _m.get("role") in ("user", "assistant"):
-                _summary = _c[:120]
+                _summary = _c
                 break
         return {
             "message_count": _message_count,
@@ -307,6 +314,29 @@ class TaskTelemetry:
             "injected_ratio": _ratio,
             "summary": _summary,
         }
+
+    def build_history_context_step(self, step: int = 0):
+        """构造 history_context MetaStep(单一出口, react_loop 首帧与 react_step 逐轮共用) — 北京老陈 2026-10-07
+
+        适用场景: ① react_loop 装配完 conv 后、emit start 之前发首帧(压缩与不压缩都发);
+                  ② react_step 裁剪轮/每5轮发水位更新。
+        使用方法: 取本方法返回值交给 agent._step_emitter.emit(...).to_dict() 再 publish。
+        输出: MetaStep(type="history_context"); telemetry 未挂载时返回 None(调用方跳过)。
+        """
+        _emitter = getattr(self.agent, "_step_emitter", None)
+        if _emitter is None:
+            return None
+        from app.services.agent.steps import MetaStep
+        _ov = self.build_context_overview()
+        return _emitter.emit(MetaStep(
+            step=step, type="history_context", content=_ov.get("summary", ""),
+            message_count=_ov["message_count"], estimated_tokens=_ov["estimated_tokens"],
+            truncated=_ov["truncated"],
+            injected_message_count=_ov["injected_message_count"],
+            injected_estimated_tokens=_ov["injected_estimated_tokens"],
+            injected_ratio=_ov["injected_ratio"],
+            severity="info",
+        ))
 
     # ── 终态聚合 + 落库 ─────────────────────────────────
     def finalize(self) -> Dict[str, Any]:

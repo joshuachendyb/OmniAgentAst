@@ -51,6 +51,12 @@
 #   供后续核对"早退终态是否已 publish、done 是否交 runner 置位"(E2E-X2-01 竞态监控点延伸) — 小欧-2026-09-12
 # 2026-10-02 小欧 - 轮次边界 flush(北京老陈定案): _buf.flush_sink 取为 _flush, 每轮迭代顶(取消/暂停
 #   检测之后、本轮 LLM 请求之前) await 一次, 等上一轮全部事件落库。被打断最多丢本轮, 无工具副作用。
+# 2026-10-07 北京老陈 判定+摘要下沉: _maybe_compact_injected_history/_compact_injected_history 的调用
+#   从本文件移入 start_step.assemble_start_step(契约之前); _assemble_start_step 调用加 await(该函数改 async)。
+# 2026-10-07 北京老陈 装配段前移: init_history + inject_history 从 emit start 之后移到之前,
+#   使 history_context 首帧能读到压缩后的真实水位(压缩与未压缩两种路径都发)。
+# 2026-10-07 北京老陈 history_context 首帧提前: 新增 emit history_context(step=0) 于 emit start 之前;
+#   原第1轮 LLM 响应后那次由 react_step 移除(裁剪轮/每5轮的水位更新不变)。
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -62,11 +68,10 @@ import time  # 2026-09-08 小欧: 双写console带时间戳 — 小欧-2026-09-0
 from typing import Any, Dict, List, Optional
 from app.logger import logger, log_and_print  # 2026-09-08 小欧: log_and_print 双写(console可见取消检出) — 小欧-2026-09-08
 from app.config import get_config
-from app.services.agent.steps import FinalStep, MetaStep, ThoughtStartStep  # 4.4.2 2026-09-07 小欧 ThoughtStartStep新增(进 loop 前发射点)
+from app.services.agent.steps import FinalStep, MetaStep  # 4.4.2 ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
 from app.services.agent.start_step import assemble_start_step as _assemble_start_step
-from app.services.agent.start_step import _compact_injected_history
 from app.services.agent.react_step import _process_single_step
 from app.services.agent.react_inference import handle_react_error, _is_recoverable_error
 from app.db import db
@@ -145,23 +150,29 @@ async def run_react_cycle(
             agent._chain_acc_base = None
 
     # S4/S5(10.1.7④⑤/10.1.8): start 装配进 agent.steps(占 step 0) — 任务输入装配完整过程收拢为一个模块。
-    #   注入模式: 运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获),
-    #   start_step.assemble_start_step 从 _start_meta/_sys_prompt/context 读齐装配, 不 import chat 层。
-    #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step, 不再 execution_steps 双写。 — 小欧/小健 2026-08-17
-    _start_step = _assemble_start_step(agent, context)  # 同步装配(内部零 await, KISS — 小健 2026-08-17)
+    #   运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获), assemble_start_step 读齐装配。
+    #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step。 — 小欧/小健 2026-08-17
+    _start_step = await _assemble_start_step(agent, context)  # 构建→判定→摘要→契约
+
+    # 装配 conv → 发 history_context 首帧 → 再发 start(压缩与未压缩都发首帧)
+    agent.message_builder.init_history(getattr(agent, "_sys_prompt", "") or "", task or "")
+    _summary = getattr(agent, "_start_summary", "") or ""
+    if _summary:
+        agent.message_builder.inject_history([{"role": "assistant", "content": _summary}])
+    else:
+        agent.message_builder.inject_history(getattr(agent, "_injected_history_msgs", None) or [])
+    _tele_hc = getattr(agent, "telemetry", None)
+    if _tele_hc is not None:
+        _hc_first = _tele_hc.build_history_context_step(step=0)
+        if _hc_first is not None:
+            await _publish(_hc_first.to_dict())
+
     if _start_step is not None:
         # 4.4.3(2026-09-07 小欧): start 携带 ai_message_id 发布, startinfo 合并入 start;
         #   publish 前装配(publish 做 dict 浅拷贝, 事后回填追不上实时流, 见 task_state.py:49)
         _start_dict = agent._step_emitter.emit(_start_step).to_dict()
         _start_dict["ai_message_id"] = getattr(agent, "_ai_message_id", None)
         await _publish(_start_dict)
-
-    # S5(10.1.7⑤/10.1.8): C4 超窗锚定摘要回填 —— start 装配后、while 前一次性清洗注入的历史。
-    #   仅当 start 超窗判定(start_step._maybe_compact_injected_history)置 _needs_compact(=True) 才触发;
-    #   摘要以 assistant 消息回填, 保 system + 摘要 + 最新 task; 原库 conversation_history 被替换为新列表。
-    #   关联逻辑(增强不退化): 未超窗时 _needs_compact=False, 本段跳过, 主链路零改动。 — 小健 2026-08-17
-    if getattr(agent, "_needs_compact", False):
-        await _compact_injected_history(agent)
 
     if max_steps <= 0:
         logger.warning(f"[run_react_cycle] max_steps={max_steps}, 直接终止 source=config_limit")
@@ -180,13 +191,6 @@ async def run_react_cycle(
         logger.info(f"[run_react_cycle] max_steps<=0 早退终态已发布(task={task_id or ''}, status=cancelled)")
         _finalize_cycle(agent)
         return
-
-    # 4.4.2 thought-start 第1发射点(2026-09-07 小欧, 时序根治 前端消息分类处理分析及设计):
-    #   进 loop 前(首个可见轮 LLM 请求之前)发第 1 个等待信号 — 前缀"等待第一个 thought 出现";
-    #   与 handle_action 每工具轮 observation 后各 1 个合计=loop 内调工具次数+1(发射公式);
-    #   [时序根治] 旧 5 点均在 LLM 响应后发(错); 本点在请求前发;
-    #   retrying 空轮/真空重试(不可见中间轮)不进本代码路径不加发; 纯实时不落库 — 小欧-2026-09-07
-    await _publish(agent._step_emitter.emit(ThoughtStartStep(step=agent.llm_call_count or 1)).to_dict())
 
     try:
         while agent.llm_call_count < max_steps:

@@ -171,6 +171,9 @@
 # 2026-10-04 小欧 - 文档[6]: 正名 context_overview 发射节奏注释(原称"每次必发", 实受下方 if 门控: 首轮/裁剪轮/每5轮), 逻辑未动
 # 2026-10-04 小欧 - usage 帧新增 context_window(运行时上下文窗口, 取 message_builder.MAX_CONTEXT_TOKENS,
 #   由 agent_runner 按 llm_service.context_limit 覆盖): 前端据此算占窗率, 不新增数据源
+# 2026-10-07 北京老陈 history_context 首帧前移: 第1轮那次移除(改由 react_loop 在 emit start 之前发,
+#   压缩决策后即知真实水位); 帧构造收归 telemetry.build_history_context_step(与 react_loop 共用, DRY);
+#   裁剪轮/每5轮的水位更新条件不变。
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -477,21 +480,12 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             _stats_step = agent.telemetry.build_stats_step()   # → MetaStep(type="stats", step_count/llm_call_count/retry_count/duration)
             await _emit_publish(agent._step_emitter.emit(_stats_step).to_dict())
             # 11.3 history_context 事件（独立模块产出 MetaStep(type="history_context", ...)）
-            # 2026-10-04 小欧 - 帧类型改名 context_overview→history_context(北京老陈令): 原名易被误读为"当前轮上下文概览",
-            #   实为装入的历史对话水位; 跨层契约同步改: steps.ALL_STEP_TYPES / telemetry.PERSISTED_NON_BIZ_TYPES /
-            #   前端 execution.StepType / stepStyles / stepFilter / sseParser case
-            _overview = agent.telemetry.build_context_overview()
+            # 首帧(step=0)由 react_loop 在 emit start 之前发出, 此处只发裁剪轮/每5轮水位更新。
             _llm_n = agent.llm_call_count
-            if _llm_n == 1 or getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
-                await _emit_publish(agent._step_emitter.emit(MetaStep(
-                    step=_llm_n, type="history_context", content=_overview.get("summary", ""),
-                    message_count=_overview["message_count"], estimated_tokens=_overview["estimated_tokens"],
-                    truncated=_overview["truncated"],
-                    injected_message_count=_overview["injected_message_count"],
-                    injected_estimated_tokens=_overview["injected_estimated_tokens"],
-                    injected_ratio=_overview["injected_ratio"],
-                    severity="info",
-                )).to_dict())
+            if getattr(agent.message_builder, "_trimmed_this_round", False) or _llm_n % 5 == 0:
+                _hc_step = agent.telemetry.build_history_context_step(step=_llm_n)
+                if _hc_step is not None:
+                    await _emit_publish(_hc_step.to_dict())
 
     # ── Phase 3: 响应分发 ──────────────────────────────────────
     set_status(agent, AgentStatus.EXECUTING)
