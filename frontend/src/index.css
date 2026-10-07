@@ -11,7 +11,7 @@
 /* 编辑历史: 2026-09-15 小欧 - 左侧Logo图形化+品牌文字移位(北京老陈令): ①新建.logo-gridwave-icon(3x3九色点阵, 新增@keyframes gridwave斜向波浪2s波动, 尺寸36px, 复用原html 70号图标); ②新建.brand-title-text(右侧顶栏动画圈圈后品牌名, 16px/600/#1677ff与左侧一致) — 小欧-2026-09-15 */
 /* 编辑历史: 2026-09-17 小欧 - [46]第五章实施: 文件末尾新增心跳等待感知微型钟面样式——@keyframes clock-beat + .clock-stopwatch(inline-flex并存) + .clock-stopwatch-note(12px) + .clock-beat-wave(外圈单次光波) - 小欧-2026-09-17 */
 /* 编辑历史: 2026-09-18 小欧 - 居中修复(北京老陈驱动): .waiting-cursor/.action-waiting-cursor 1.4em 盒子 baseline 对齐致等待圈上浮如上标，改 vertical-align:middle 与文字中线对齐(尺寸/动画/颜色不动) — 小欧-2026-09-18 */
-/* 编辑历史: 2026-10-05 小欧 - reasoning 光圈动画(文档[9] §5.4) + .reasoning-icon-dim 两态 + prefers-reduced-motion;
+/* 编辑历史: 2026-10-05 小欧 - ReasoningIcon(=EyeIcon 眼睛, step 页面"推理内容..."折叠行前置图标) 动画 + .reasoning-icon-dim 两态 + prefers-reduced-motion;
    三堂会审: dim 类原无组件挂载(死规则)致裁定两态零落地, 现由 ReasoningIcon 按 dim 挂载; 订正"CSS变量"误导注释 — 小欧-2026-10-05 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
@@ -294,11 +294,13 @@
   animation: clock-beat 0.6s ease-out 1;
 }
 
-/* 2026-10-05 小欧 - reasoning 思考点三色光圈、图标外扩散(文档[9] §5.4):
-   绿色中心点 + 三道半圆弧依次扩散(半径 0.4→1.15, 淡出 1.8s 无穷循环);
-   收起态(亮, 动画在跑)= 提醒"这一段被折叠, 内有思考"; 展开态由 .reasoning-icon-dim 转暗并静止;
-   本段只管动画节奏与两态样式, 颜色令牌来自 WaitingIcons/index.tsx 的 Colors.*(不定义 CSS 变量);
-   唯一真源=此 CSS 动画节奏 + WaitingIcons 的 ReasoningIcon 消费 — 小欧-2026-10-05 */
+/* ReasoningIcon — step 页面"推理内容..."折叠行的前置图标
+   本段图标可换(备用件常驻, 改 ReasoningIcon 别名取值即可): 眼睛(EyeIcon) / 信号柱(SignalBarsIcon) /
+   太阳(SunIcon) / 对向双球(ApproachDotsIcon) / 方框旋转(SpinSquareIcon, 当前) — 换图标时同步改下方类名与 @keyframes
+   何时转/何时停: 由组件 animating prop 决定(北京老陈裁定: 与展开/收起解耦, 只跟 thought-start→chunk), 本段只管"怎么转"
+   颜色令牌来自 WaitingIcons/index.tsx 的 Colors.*(禁硬编码)
+   唯一真源=此 CSS 动画节奏 + WaitingIcons 的 ReasoningIcon 消费 — 小欧-2026-10-05
+   编辑历史: 2026-10-07 小欧 - 全部备用图标动画零删除(备用件常驻); 更正块头"恒亮恒转/dim 两态"(已由 animating prop 取代) — 小欧-2026-10-07 */
 @keyframes beampulse {
   0% {
     transform: scale(0.4);
@@ -325,21 +327,97 @@
 .reasoning-beam3 {
   animation-delay: 1.2s;
 }
-/* 2026-10-05 小欧 - 北京老陈裁定两态(北京老陈 2026-10-05):
-   收起态 = 亮 + 保留扩散动画(提醒"这一段被折叠, 内有思考");
-   展开态 = 暗(透明度 0.3) 且静止(光已在眼前, 不再闪)。
-   作用面只限图标(类挂图标包裹层), 不影响同行的"推理内容..."文字与箭头 — 小欧-2026-10-05 */
-.reasoning-icon-dim .reasoning-beam1,
-.reasoning-icon-dim .reasoning-beam2,
-.reasoning-icon-dim .reasoning-beam3 {
-  animation: none;
-  opacity: 0.3;
-}
-/* 无障碍降级: 系统开启"减少动态效果"时停全部扩散动画(保留静态光圈可读性) */
+/* 2026-10-07 小欧 - 删 .reasoning-icon-dim 两态规则(EyeIcon 删 dim prop 后零引用):
+   北京老陈裁定动画与展开/收起解耦后, 暗/亮两态不再需要 — 小欧-2026-10-07 */
+/* 无障碍降级: 系统开启"减少动态效果"时停全部扩散动画(保留静态眼睛可读性) */
 @media (prefers-reduced-motion: reduce) {
   .reasoning-beam1,
   .reasoning-beam2,
   .reasoning-beam3 {
+    animation: none;
+  }
+}
+
+/* 2026-10-07 小欧 - 备用图标动画(北京老陈令备用常驻, 想用即改 ReasoningIcon 别名取值):
+   信号柱(43号)/太阳(58号)/对向双球(65号)/方框旋转(13号), 四者节奏全在 CSS,
+   组件只挂 class 不内联样式; 颜色令牌来自 WaitingIcons 的 Colors.*(禁硬编码) — 小欧-2026-10-07
+ 2026-10-07 小欧 - 更正"零消费方"(方框旋转经 ReasoningIcon 已在用); .icon-spin1 改按 animating 挂载(不挂即静止), 规则本身零改动 — 小欧-2026-10-07 */
+@keyframes barsgrow {
+  0%,
+  100% {
+    transform: scaleY(0.15);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+.bars-grow1,
+.bars-grow2,
+.bars-grow3,
+.bars-grow4 {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+  animation: barsgrow 1.6s ease-in-out infinite;
+}
+.bars-grow2 {
+  animation-delay: 0.2s;
+}
+.bars-grow3 {
+  animation-delay: 0.4s;
+}
+.bars-grow4 {
+  animation-delay: 0.6s;
+}
+
+@keyframes icon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.icon-spin1 {
+  animation: icon-spin 1s linear infinite;
+}
+.icon-spin15 {
+  animation: icon-spin 1.5s linear infinite;
+}
+
+@keyframes dots-meeta {
+  0%,
+  100% {
+    transform: translateX(0px);
+  }
+  50% {
+    transform: translateX(22px);
+  }
+}
+@keyframes dots-meetb {
+  0%,
+  100% {
+    transform: translateX(22px);
+  }
+  50% {
+    transform: translateX(0px);
+  }
+}
+.dots-meetA {
+  animation: dots-meeta 2s ease-in-out infinite;
+}
+.dots-meetB {
+  animation: dots-meetb 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars-grow1,
+  .bars-grow2,
+  .bars-grow3,
+  .bars-grow4,
+  .icon-spin1,
+  .icon-spin15,
+  .dots-meetA,
+  .dots-meetB {
     animation: none;
   }
 }

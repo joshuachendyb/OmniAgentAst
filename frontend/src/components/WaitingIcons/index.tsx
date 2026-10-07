@@ -2,7 +2,15 @@
 // 编辑历史: 2026-09-13 小欧 - ActionWaitingIcon换型(北京老陈令选title-icon-compare G波纹扩散): 蓝色270°弧线旋转改蓝核心圆+双层扩散波纹(SVG36x36, .action-ripple-1/.action-ripple-2, 1.8s不旋转) — 小欧-2026-09-13
 // 编辑历史: 2026-09-14 小欧 - 漏洞2修复: 组件内5处硬编码SVG色令牌化(绿#52c41a→Colors.SUCCESS / 橙#fa8c16→Colors.WAIT_ACTION / 蓝#1677ff→Colors.PRIMARY), 零行为变化 — 小欧-2026-09-14
 // 编辑历史: 2026-09-17 小欧 - 实施: 三角色等待图标接 waitClock 可选信号, 图标保留+钟面追加并存(Thought/Action→kind="llm", Tool→kind="tool") - 小欧-2026-09-17
-// 编辑历史: 2026-10-05 小欧 - 新增 ReasoningIcon 思考点光圈(文档[9] §5.3) + dim prop: 三堂会审发现 .reasoning-icon-dim 只写在CSS 无组件挂载, 裁定两态零落地, 现按 dim 挂载 — 小欧-2026-10-05
+// 编辑历史: 2026-10-05 小欧 - 新增 ReasoningIcon 眼睛(文档[9] §5.3) + dim prop: 三堂会审发现 .reasoning-icon-dim 只写在CSS 无组件挂载, 裁定两态零落地, 现按 dim 挂载 — 小欧-2026-10-05
+// 编辑历史: 2026-10-07 小欧 - 新增4个备用图标(北京老陈令备用常驻, 想用即改 ReasoningIcon 别名取值):
+//   SignalBarsIcon(43号信号柱)/SunIcon(58号太阳)/ApproachDotsIcon(65号对向双球)/SpinSquareIcon(13号方框旋转);
+//   动画节奏统一在 index.css — 小欧-2026-10-07
+// 编辑历史: 2026-10-07 小欧 - 原 ReasoningIcon 实体改名 EyeIcon 转备用; 别名行改指 SpinSquareIcon(北京老陈 2026-10-07 选定候选13号);
+//   SpinSquareIcon 加 animating prop: 转/停只跟 SSE 时序, 与展开/收起解耦(北京老陈裁定) — 小欧-2026-10-07
+// 编辑历史: 2026-10-07 小欧 - EyeIcon/SignalBarsIcon/SunIcon/ApproachDotsIcon 统一加 animating prop, EyeIcon 删 dim prop
+//   (北京老陈裁定动画与展开/收起解耦后 dim 已无消费方); 5图标接口统一为 {size, animating},
+//   换图标只改 ReasoningIcon 别名取值, 调用方零改动 — 小欧-2026-10-07
 import React from 'react';
 import { Colors } from '@/utils/stepStyles';
 import { ClockStopwatch } from './clockStopwatch'; // 2026-09-17 小欧 实施: 微型钟面(追加并存) — 小欧-2026-09-17
@@ -109,18 +117,15 @@ export const ActionWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
 );
 
 /**
- * ReasoningIcon — 思考点扩散光圈
- * 用途: reasoning 折叠行左侧图标(替换原"🤖 AI"emoji, 见文档[9] §5.3)
- * 取形: 绿点 + 半径 13 上弧, 三色依次扩散(Green #52c41a / Primary #1677ff / Orange #fa8c16 三道, 遵 §3 继承规则: 禁颜色硬编码)
- * 动画: beampulse 1.8s 三道依次扩散, 唯一真源在 index.css(见 §5.4), 本组件无自身计时器;
- *   动画节奏与"暗/亮"两态的样式全在 CSS, 组件只按 dim 传一个意图(不内联样式, 不透传 className 逃生舱)
- *   两态(北京老陈 2026-10-05 裁定): dim=false 收起态=亮+扩散动画(提醒"内有思考");
- *   dim=true 展开态=暗(opacity .3)+静止(正文已在眼前, 不再闪)
- *   与 ThoughtWaitingIcon 无耦合: "等待思考段"是另一回事 —— 前者恒显, 后者是 waiting 分支 — 小欧-2026-10-05
+ * EyeIcon — 眼睛(备用候选, 可作 ReasoningIcon 取值)
+ * 取形: 绿点瞳孔 + 半径 13 上弧眼睑, 三色依次扩散(遵 §3 继承规则: 禁颜色硬编码)
+ * 动画: animating=true 挂 reasoning-beam1~3(beampulse 1.8s 依次扩散), false 不挂类即静止;
+ *   节奏唯一真源 index.css, 组件无自身计时器(不内联样式)
+ * 状态: 备用候选(与其余4图标同接口 {size, animating}), 换用时只改 ReasoningIcon 别名取值 — 小欧-2026-10-07
  */
-export const ReasoningIcon: React.FC<{ size?: number; dim?: boolean }> = ({
+export const EyeIcon: React.FC<{ size?: number; animating?: boolean }> = ({
   size = 24,
-  dim = false,
+  animating = false,
 }) => (
   <svg
     viewBox="0 0 36 36"
@@ -129,24 +134,183 @@ export const ReasoningIcon: React.FC<{ size?: number; dim?: boolean }> = ({
     fill="none"
     strokeWidth={2.5}
     strokeLinecap="round"
-    className={dim ? 'reasoning-icon-dim' : undefined}
     aria-hidden="true" // 装饰性图标, 不给读屏重复播报, 与折叠按钮文本并列
   >
     <circle cx="18" cy="18" r="2.5" fill={Colors.SUCCESS} />
     <path
-      className="reasoning-beam1"
+      className={animating ? 'reasoning-beam1' : undefined}
       d="M6 18 A13 13 0 0 1 30 18"
       stroke={Colors.SUCCESS}
     />
     <path
-      className="reasoning-beam2"
+      className={animating ? 'reasoning-beam2' : undefined}
       d="M6 18 A13 13 0 0 1 30 18"
       stroke={Colors.PRIMARY}
     />
     <path
-      className="reasoning-beam3"
+      className={animating ? 'reasoning-beam3' : undefined}
       d="M6 18 A13 13 0 0 1 30 18"
       stroke={Colors.WAIT_ACTION}
     />
   </svg>
 );
+
+/**
+ * SignalBarsIcon — 信号柱(候选43号, 备用未接线)
+ * 取形: 四柱错峰长高(Primary/SUCCESS/WAIT_ACTION/ERROR 四色, 遵 §3 继承规则: 禁颜色硬编码)
+ * 动画: animating=true 挂 bars-grow1~4(barsgrow 1.6s 错峰长高), false 不挂类即静止;
+ *   节奏唯一真源 index.css, 组件无自身计时器(不内联样式)
+ * 状态: 备用候选(与其余4图标同接口 {size, animating}), 换用时只改 ReasoningIcon 别名取值 — 小欧-2026-10-07
+ */
+export const SignalBarsIcon: React.FC<{
+  size?: number;
+  animating?: boolean;
+}> = ({ size = 24, animating = false }) => (
+  <svg
+    viewBox="0 0 36 36"
+    width={size}
+    height={size}
+    fill="none"
+    aria-hidden="true"
+  >
+    <rect
+      className={animating ? 'bars-grow1' : undefined}
+      x="5.5"
+      y="8"
+      width="5"
+      height="22"
+      rx="1.5"
+      fill={Colors.PRIMARY}
+    />
+    <rect
+      className={animating ? 'bars-grow2' : undefined}
+      x="12"
+      y="8"
+      width="5"
+      height="22"
+      rx="1.5"
+      fill={Colors.SUCCESS}
+    />
+    <rect
+      className={animating ? 'bars-grow3' : undefined}
+      x="18.5"
+      y="8"
+      width="5"
+      height="22"
+      rx="1.5"
+      fill={Colors.WAIT_ACTION}
+    />
+    <rect
+      className={animating ? 'bars-grow4' : undefined}
+      x="25"
+      y="8"
+      width="5"
+      height="22"
+      rx="1.5"
+      fill={Colors.ERROR}
+    />
+  </svg>
+);
+
+/**
+ * SunIcon — 太阳光芒(候选58号, 备用未接线)
+ * 取形: 实心橙心 + 八向光芒短线, 整体旋转 1.5s(WAIT_ACTION 色)
+ * 动画: animating=true 挂 icon-spin15(icon-spin 1.5s), false 不挂类即静止;
+ *   节奏唯一真源 index.css, 组件无自身计时器
+ * 状态: 备用候选(与其余4图标同接口 {size, animating}), 换用时只改 ReasoningIcon 别名取值 — 小欧-2026-10-07
+ */
+export const SunIcon: React.FC<{ size?: number; animating?: boolean }> = ({
+  size = 24,
+  animating = false,
+}) => (
+  <svg
+    viewBox="0 0 36 36"
+    width={size}
+    height={size}
+    fill="none"
+    stroke={Colors.WAIT_ACTION}
+    strokeWidth={2}
+    strokeLinecap="round"
+    className={animating ? 'icon-spin15' : undefined}
+    aria-hidden="true"
+  >
+    <circle cx="18" cy="18" r="5" fill={Colors.WAIT_ACTION} stroke="none" />
+    <path d="M18 3.5 V7" />
+    <path d="M22.4 5.6 L20.4 8.2" />
+    <path d="M26.5 14.5 H23.5" />
+    <path d="M26.5 21.5 H23.5" />
+    <path d="M22.4 30.4 L20.4 27.8" />
+    <path d="M13.6 30.4 L15.6 27.8" />
+    <path d="M9.5 21.5 H12.5" />
+    <path d="M9.5 14.5 H12.5" />
+    <path d="M13.6 5.6 L15.6 8.2" />
+  </svg>
+);
+
+/**
+ * ApproachDotsIcon — 对向双球(候选65号, 备用未接线)
+ * 取形: 淡蓝基准线 + 蓝/橙双球相向相碰后弹回(PRIMARY/WAIT_ACTION 两色)
+ * 动画: animating=true 挂 dots-meetA/B(dots-meeta/b 2s translateX 往返), false 不挂类即静止;
+ *   节奏唯一真源 index.css, 组件无自身计时器
+ * 状态: 备用候选(与其余4图标同接口 {size, animating}), 换用时只改 ReasoningIcon 别名取值 — 小欧-2026-10-07
+ */
+export const ApproachDotsIcon: React.FC<{
+  size?: number;
+  animating?: boolean;
+}> = ({ size = 24, animating = false }) => (
+  <svg
+    viewBox="0 0 36 36"
+    width={size}
+    height={size}
+    fill="none"
+    strokeWidth={2}
+    aria-hidden="true"
+  >
+    <path d="M4 20 H32" stroke={Colors.PRIMARY} opacity={0.3} />
+    <circle
+      className={animating ? 'dots-meetA' : undefined}
+      cx="7"
+      cy="20"
+      r="3.5"
+      fill={Colors.PRIMARY}
+    />
+    <circle
+      className={animating ? 'dots-meetB' : undefined}
+      cx="29"
+      cy="20"
+      r="3.5"
+      fill={Colors.WAIT_ACTION}
+    />
+  </svg>
+);
+
+/**
+ * SpinSquareIcon — 方框旋转(候选13号)
+ * 取形: 圆角方框单描边(PRIMARY 色), 整体旋转 1s
+ * 动画: animating=true 挂 .icon-spin1 旋转, false 不挂类即静止; 节奏唯一真源 index.css @keyframes icon-spin
+ *   animating 由调用方 ThinkingStream 按 text 自判传入, 组件本身不感知 SSE — 小欧-2026-10-07
+ */
+export const SpinSquareIcon: React.FC<{
+  size?: number;
+  animating?: boolean;
+}> = ({ size = 24, animating = false }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width={size}
+    height={size}
+    fill="none"
+    stroke={Colors.PRIMARY}
+    strokeWidth={2.5}
+    strokeLinecap="round"
+    className={animating ? 'icon-spin1' : undefined}
+    aria-hidden="true"
+  >
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+/**
+ * ReasoningIcon = SpinSquareIcon — 推理折叠行前置图标(实体取候选13号方框旋转, 北京老陈 2026-10-07 选定)
+ * 取值赋值非包装: 两者指向同一函数对象, 渲染结果与组件类型完全一致(不触发重挂载), 仅多一个模块级绑定
+ * 编辑历史: 2026-10-07 小欧 - 取值由 EyeIcon 改为 SpinSquareIcon; 旧实体转备用名 EyeIcon — 小欧-2026-10-07
+ */
+export const ReasoningIcon = SpinSquareIcon;

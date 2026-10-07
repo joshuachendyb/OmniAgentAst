@@ -4,11 +4,13 @@
 // 编辑历史: 2026-08-30 小欧 - 北京老陈定案纠正(step间8/内部6/折叠4): 加 compact prop, 同 step 内部(reasoning 与后置 thought 相邻)段距 SM(6), 默认仍是 MD(8)=step 间 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈新定案(step间6/内部4/折叠2=常量-2派生): 段距走 stepMargin → 默认=(MD)-2=6, compact=(SM)-2=4, 数值不写死 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - 北京老陈最新定案(斜体视觉平衡): thought 斜体 14→12(secondary), 行高16(12+4), step间6/内4 层次不变 - 小欧-2026-08-30
-// 编辑历史: 2026-09-14 小欧 - 思考光标不显示问题修复(北京老陈驱动): thinking 光圈本无需改动
+// 编辑历史: 2026-10-07 小欧 - 图标去 dim 改接 animating: 北京老陈裁定动画与展开/收起解耦, 转/停只跟 SSE 时序;
+//   判定收在组件内(!clean), PipelineRenderer 三处调用点零改动 — 小欧-2026-10-07
+// 编辑历史: 2026-09-14 小欧 - 思考光标不显示问题修复(北京老陈驱动): thinking 眼睛本无需改动
 //   (bind cursor 无打字机进度门槛); CURSOR T 打点下放本组件反转检测(false→true 才打, ref 去重) — 小欧-2026-09-14
 //   2026-09-14 小欧 - DRY: 反转检测打点抽取公用 hook useRiseLog(本组件与 TextStream 同款逻辑去重) — 小欧-2026-09-14
 // 编辑历史: 2026-10-05 小欧 - 思考图标行 + 每次可折叠展开(文档[9] §5.5):
-//   ①每次 reasoning 一行([思考点图标 24px] + "推理内容..." + >); ②图标=绿色光圈 ReasoningIcon(替换原 🤖 AI emoji)
+//   ①每次 reasoning 一行([眼睛图标 24px] + "推理内容..." + >); ②图标=ReasoningIcon(名称=眼睛, 替换原 🤖 AI emoji)
 //   ③`>` 每次折叠是独立 state, 初值=reasoningVisible; ④收起态只显思考行(不显正文, 防刷屏挤掉后续 step)
 //   ⑤折叠切换交公用 hook useDisclosure(同 CollapsibleText, 零逻辑复写) — 小欧-2026-10-05
 // 编辑历史: 2026-10-05 小欧 - 三堂会审修复3处: ①useRiseLog 打点补 expanded 条件(收起态不渲染
@@ -31,7 +33,7 @@ import { Colors, FontSize, Spacing, getStreamStyle } from '@/utils/stepStyles';
 import { normalizeBlankLines } from '@/utils/textNormalize'; // 13.11 显示兜底 — 小欧 2026-08-30
 import { useRiseLog } from '@/features/chat/hooks/useRiseLog'; // 2026-09-14 小欧: CURSOR T 翻转打点(抽公用 hook) — 小欧-2026-09-14
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-10-05 小欧: 折叠箭头(同 CollapsibleText) — 小欧-2026-10-05
-import { ReasoningIcon } from '@/components/WaitingIcons'; // 2026-10-05 小欧: 思考点图标(文档[9] §5.3) — 小欧-2026-10-05
+import { ReasoningIcon } from '@/components/WaitingIcons'; // 2026-10-05 小欧: 思考点图标 ReasoningIcon(名称=眼睛, 文档[9] §5.3) — 小欧-2026-10-05
 import { useDisclosure } from '@/features/chat/hooks/useDisclosure'; // 2026-10-05 小欧: 折叠切换公用 hook(§5.6) — 小欧-2026-10-05
 
 interface ThinkingStreamProps {
@@ -53,6 +55,10 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
   defaultExpanded = true,
 }) => {
   const clean = normalizeBlankLines(text, { streaming: cursor }); // 13.11: 思考段规约, 光标态(实时末段)走尾随守卫
+  // 2026-10-07 小欧 - 图标动画开关(不新增 prop, 由 text 自判): PipelineRenderer 的 waiting 段传占位空格,
+  //   clean 为空 = thought-start 已到、首个 chunk 未到 → 旋转; 正文段传真实推理内容, clean 非空 → 静止。
+  //   刻意不取 expanded: 北京老陈裁定展开/收起与动画无关 — 小欧-2026-10-07
+  const iconAnimating = !clean;
   // 2026-10-05 小欧 - 设置跟随(北京老陈: 开关设为关后 reasoning 必须收着):
   //   defaultExpanded 此前只在挂载读一次(设置异步到达, 数据回来时标题行已把旧值吃进
   //   useState), 改成关对已渲染段完全无反应、切页面也无效。现改为:
@@ -86,7 +92,7 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
       }}
     >
       {/* 2026-10-05 小欧 - 思考图标行 + 每次可折叠(文档[9] §5.5, 北京老陈裁定):
-          思考段每一行一个; 图标=绿色光圈 ReasoningIcon(§5.3) 替换原 🤖 AI emoji,
+          思考段每一行一个; 图标=ReasoningIcon(实体 EyeIcon, §5.3) 替换原 🤖 AI emoji,
           后文只留"推理内容..."; 折叠层只有文本 state(每次独立), 不写回设置(见 §5.11) — 小欧-2026-10-05 */}
       <span
         role="button"
@@ -116,7 +122,7 @@ const ThinkingStream: React.FC<ThinkingStreamProps> = ({
           userSelect: 'none',
         }}
       >
-        <ReasoningIcon size={24} dim={expanded} />
+        <ReasoningIcon size={24} animating={iconAnimating} />
         {'推理内容...'}
         <CircleArrow
           size={14}
