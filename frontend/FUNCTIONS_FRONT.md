@@ -219,7 +219,9 @@
 | `useStepRenderPrefs` | `components/pipeline/useStepRenderPrefs.ts` | 读后端 `appearance` 组的两个 step 渲染开关（「思考排版」「推理内容」）+ 订阅保存事件刷新；唯一真源=服务端 YAML | 无 | `StepRenderPrefs` |
 | `SETTINGS_SAVED_EVT` | `src/constants/settingsEvents.ts` | 设置保存成功广播事件名（唯一定义点；生产侧仅 useSettings 派发，消费侧仅 useStepRenderPrefs 订阅）— 小欧 2026-10-05 | — | string |
 | `MarkdownBody` | `components/pipeline/MarkdownBody.tsx` | thought 块正文 Markdown 渲染（围栏代码块/行内代码/粗体/斜体/1~3 级标题/无序列表子集；零新依赖，全程不用 dangerouslySetInnerHTML） | `{ text: string }` | JSX |
-| `ReasoningIcon` | `components/WaitingIcons/index.tsx` | 思考点扩散光圈（`dim` 传两态意图：收起=亮+动画 / 展开=暗+静止，样式在 index.css） | `{ size?: number; dim?: boolean }` | JSX |
+| `ReasoningIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行前置图标（step 页面「推理内容...」左端）。`export const ReasoningIcon = SpinSquareIcon` 运行时代理别名（`ReasoningIcon = EyeIcon`），换图标只改该行取值；5 个备用图标 `EyeIcon`(眼睛) / `SignalBarsIcon`(43号) / `SunIcon`(58号) / `ApproachDotsIcon`(65号) / `SpinSquareIcon`(13号, 当前在用) 接口统一。`animating=true` 挂动画类(false 不挂即静止)，节奏唯一真源 `index.css`；`size` 默认 `Icon.BOX`(16px)，图形描边外缘正好填满盒子(与 `GearIcon` 同列齐整)。转/停由 `ThinkingStream` 的 `running` prop 按段序列派生传入 — 小欧 2026-10-07 | `{ size?: number; animating?: boolean }` | JSX |
+| `EyeIcon` / `SignalBarsIcon` / `SunIcon` / `ApproachDotsIcon` / `SpinSquareIcon` | `components/WaitingIcons/index.tsx` | 推理折叠行图标组：当前在用 1 个（`SpinSquareIcon`）+ 备用 4 个（北京老陈令备用常驻，想用即改 `ReasoningIcon` 别名取值）。`viewBox` 统一收为图形外接框，缩放后填满 `Icon.BOX`、垂直居中；`animating` 条件挂动画类 | `{ size?: number; animating?: boolean }` | JSX |
+| `Icon`（图标规格令牌） | `src/utils/stepStyles.ts` | step 行首图标统一规格：`BOX: 16`(盒子边长) + `STROKE: 2`(统一描边宽)。图标组件 `size` 默认取 `Icon.BOX`、`strokeWidth` 取 `Icon.STROKE`；图形需"填满盒子"时令描边外缘=viewBox 边界 — 小欧 2026-10-07 | — | `{ BOX: 16; STROKE: 2 }` |
 
 ---
 
