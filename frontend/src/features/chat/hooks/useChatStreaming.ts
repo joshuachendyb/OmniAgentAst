@@ -149,6 +149,11 @@ export interface UseChatStreamingReturn {
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   executeSend: (userMessage: Message, opts: SendOpts) => Promise<void>;
 
+  // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送（执行中追加一条输入；插话必然是开态, 故无需 opts）
+  //   与 executeSend 的分工(SRP)：executeSend = 新建任务流(含清 steps/建占位/重置取消态等"新任务"编排)；
+  //   本方法 = 投递一条输入给运行中任务，**刻意不做**上述任何一项(做了会破坏正在跑的任务显示与状态)。
+  interjectSend: (userMessage: Message) => Promise<void>;
+
   // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
   waitClock: import('@/types/sse').ClockSignals;
 }
@@ -615,6 +620,41 @@ export const useChatStreaming = (
     ]
   );
 
+  // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送实现
+  //   刻意只做两件事: ①落库(经 saveMessage, 后端 409 门在此生效, 决策 11) ②投递 inbox。
+  //   刻意不做(做了即破坏运行中任务): clearSteps / setDeniedEntries / DENIED 键清理 /
+  //   cancelInProgressRef 复位 / 等待计时器 / assistant 占位 / isProcessing 与 abortController 改动。
+  const interjectSend = useCallback(
+    async (userMessage: Message) => {
+      const sid = currentSessionIdRef.current ?? sessionId ?? undefined;
+      if (!sid) {
+        throw new Error('插话失败：会话 id 缺失');
+      }
+      // 1. 落库(409 门在 save_message 落库前; 抛错即由 useChatSend 的 SESSION_BUSY 分支接管草稿回填)
+      const clientInfo = getClientInfo();
+      const saveResult = await sessionApi.saveMessage(sid, {
+        role: 'user',
+        content: userMessage.content,
+        client_os: clientInfo.client_os,
+        browser: clientInfo.browser,
+        device: clientInfo.device,
+        network: clientInfo.network,
+      });
+      const backendId = saveResult?.message_id;
+      if (backendId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userMessage.id ? { ...m, id: String(backendId) } : m
+          )
+        );
+        replyUserMessageIdRef.current = backendId;
+      }
+      // 2. 投递(独立路径: 不掐断运行中流, 不改流状态机)
+      await chatStreamStore.interjectMessage(sid, userMessage.content);
+    },
+    [sessionId, setMessages, currentSessionIdRef, replyUserMessageIdRef]
+  );
+
   return {
     // 流式状态
     isReceiving,
@@ -637,5 +677,6 @@ export const useChatStreaming = (
 
     // 【小强 2026-04-22】executeSend
     executeSend,
+    interjectSend, // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送(供 useChatSend 分流)
   };
 };

@@ -164,6 +164,9 @@ export const useChatFacade = (options?: {
     waitTimerRef: chatState.waitTimerRef,
     currentSessionIdRef: chatState.currentSessionIdRef,
     executeSend: chatStreaming.executeSend,
+    // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话投递(独立于 executeSend) + 插话判定所需的执行中标志
+    interjectSend: chatStreaming.interjectSend,
+    isReceiving: chatStreaming.isReceiving,
     // 2026-09-30 小欧 - 自动建会话也要写 URL，故把同一注入形状透到 useChatSend（写入口收口）
     onUrlSessionChange,
   });

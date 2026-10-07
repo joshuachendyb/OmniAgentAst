@@ -77,6 +77,7 @@ import {
   sendStreamRequest,
   resumeStreamRequest,
   readAuthoritativeTask,
+  postInterject, // 2026-10-07 小欧 - 文档[11] 决策 9/11: 插话投递(独立于 sendStreamRequest, 不掐断运行中流)
 } from './chatStreamTransport';
 import { taskControlApi, sessionTaskApi } from '@/services/api/task.api';
 import type { SessionTaskItem } from '@/services/api/task.api';
@@ -271,7 +272,7 @@ export interface ChatStreamSession extends SessionSnapshot {
     state: 'queued' | 'sent';
   } | null;
   linkEnabled: boolean;
-  allowInterject: boolean;
+  allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.5: 会话快照字段(供 transport 直读)
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
   // 连接与定时器资源句柄（clearAllTimers 五件套：idle/firstChunk/reconnect/saveSteps/intentionalAbort）
@@ -424,7 +425,7 @@ function toBackupOf(sessionId: string): StreamBackup {
     hitlWaitingKeys: [...s.hitlWaitingKeys],
     pendingMessage: s.pendingMessage,
     linkEnabled: s.linkEnabled,
-    allowInterject: s.allowInterject,
+    allowInterject: s.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.5: 快照拷贝(备份/恢复, 漏=刷新重连丢开关)
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：随备份落盘，供刷新后恢复心跳钟面（0=未收到）
     heartbeatTs: s.heartbeatTs,
@@ -613,7 +614,7 @@ export const chatStreamStore = {
       pendingAuthorization: null,
       pendingMessage: null,
       linkEnabled: false,
-      allowInterject: false,
+      allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.5: EMPTY_SNAPSHOT 默认(与 link 同款)
       hitlWaitingKeys: new Set(),
       abortController: null,
       idleTimeout: null,
@@ -701,7 +702,7 @@ export const chatStreamStore = {
     sessionId: string,
     content: string,
     linkEnabled: boolean = false,
-    allowInterject: boolean = false
+    allowInterject: boolean = false // 2026-10-07 小欧 - 文档[11] 3.5.5: sendMessage 第4参(唯一调用方在 useChatStreaming:441, 默认 false 保旧调用)
   ): Promise<ResumeResult> {
     // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
     //   已有守卫，本入口补齐对称防御；hook 侧 customSessionId??sessionId??'' 双 null 落空串即由此挡住）
@@ -737,6 +738,26 @@ export const chatStreamStore = {
         d.isProcessing = false;
       }); // 无论成败复位
     }
+  },
+
+  /**
+   * 插话投递（2026-10-07 小欧 - 文档[11] 决策 9/11）
+   *
+   * 与 sendMessage 的分工（SRP：新建任务流 vs 给运行中任务追加输入，两件事不混）:
+   *   本方法**刻意不做** sendMessage 的四件事——不查 isProcessing 防双发、不 commit
+   *   isProcessing/pendingMessage/lastSeq/status、不 clearSteps、不走 attachActiveTask。
+   *   原因：这些都是"新任务流"的编排状态，插话时改动会污染正在跑的任务（详见
+   *   chatStreamTransport.postInterject 顶部注释：复用 sendStreamRequest 会掐断运行中的流）。
+   *   落值：allowInterject 落会话快照（与 link 同款语义），供刷新/重连后仍为开。
+   */
+  async interjectMessage(sessionId: string, content: string): Promise<void> {
+    if (!sessionId) return;
+    const s = this.ensureSession(sessionId);
+    commit(s, (d) => {
+      d.allowInterject = true; // 插话已发生 → 开关落快照(刷新/重连后仍为开, 与 link 同款语义)
+    });
+    persistNowOf(sessionId);
+    await postInterject(s, content);
   },
 
   /**

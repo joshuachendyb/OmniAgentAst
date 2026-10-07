@@ -252,7 +252,7 @@ const ChatPage: React.FC = () => {
     handleEditingCancel,
     handleSend,
     onToggleLink: handleToggleLink,
-    allowInterject: chatState.allowInterject,
+    allowInterject: chatState.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: 透传给 useChatPanels→ChatInput
     onToggleInterject: (v: boolean) => chatState.setAllowInterject(v), // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatPage 是开关本地态唯一写入口
     latestTaskId, // 2026-09-01 小欧 方案C: 左列最新任务锚点透传
     latestTaskRef, // 2026-09-01 小欧 方案C: 滚动定位ref透传
