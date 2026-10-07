@@ -423,22 +423,33 @@ async def chat_stream_orchestrator(
         #   位置必须在 has_active_task_in_session 之前：link_enabled 的落值块在注入之后，
         #   照抄位置会让"刚打开开关的第一条消息"读不到新值 —— 小欧 2026-10-06
         #   判定与落值同处一次执行, 读到即生效。
-        _allow_interject = await db.atxn(
-            "chat", lambda conn: get_session_interject(conn, session_id)
-        )
-        if allow_interject is not None:
-            _rc = await db.atxn(
-                "chat", lambda conn: set_session_interject_conn(conn, session_id, allow_interject)
+        #   2026-10-07 小欧 三堂会审修复: get/set 两处 atxn 补 try/except(此前抄 link 的同款两行而漏抄护网),
+        #   读失败→按关处理(fail-closed)/写失败→沿用携带值(fail-open), 与 link 两处护网语义一一对应。
+        try:
+            _allow_interject = await db.atxn(
+                "chat", lambda conn: get_session_interject(conn, session_id)
             )
-            if _rc == 0:
-                logger.warning(f"[interject] 会话不存在, 开关未落库(session={session_id})")
+        except Exception as _e:
+            logger.warning(f"[interject] 读开关失败, 按关处理(fail-closed, 与 get_session_link 策略同款): {_e}")
+            _allow_interject = False
+        if allow_interject is not None:
+            try:
+                _rc = await db.atxn(
+                    "chat", lambda conn: set_session_interject_conn(conn, session_id, allow_interject)
+                )
+                if _rc == 0:
+                    logger.warning(f"[interject] 会话不存在, 开关未落库(session={session_id})")
+            except Exception as _e:
+                logger.warning(f"[interject] 落开关失败, 沿用携带值继续(fail-open, 与 set_session_link_conn 同款): {_e}")
             _allow_interject = allow_interject   # fail-open 沿用携带值, 同 link 落值处理
 
         _active_tid = await has_active_task_in_session(session_id)
         if _active_tid:
             if not _allow_interject:
                 # 兜底(3.4.5.1 已拦下绝大多数): 生成器内无法抛 409, 只能以 SSE error 事件告知。
-                #   此路径消息已入库, 前端按 3.5.9 处理: 仅提示(warning)+保留气泡, 不回填草稿。
+                #   触发入口两种: ①竞态(save_message 入库成功、会话在入库后被切为关态) ⟸ 此路径消息已在库;
+                #   ②绕过(直接 POST /chat/stream 而未经 /messages) ⟸ 此路径消息**未**入库。
+                #   两者都走同一帧文案; 前端按 3.5.9 处理: 仅提示(warning)+不回填草稿。
                 yield create_error_response(
                     error_type="session_busy",
                     error_message="任务执行中，插话开关未开启；请等待完成或先取消",  # 与 messages 409 detail、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
