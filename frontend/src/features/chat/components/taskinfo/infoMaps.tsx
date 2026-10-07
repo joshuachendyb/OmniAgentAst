@@ -10,6 +10,10 @@
 // 编辑历史: 2026-10-04 小欧 - token 显示序改 P→C→T, 行内折 K/M; formatToken 去 "T " 前缀后无调用方已删(YAGNI)
 //   同日回退: historical 态与 mapStatus 的 isLiveContext 判据已撤, 改由卡片 isLiveContext 决定是否挂弹框
 // 编辑历史: 2026-10-04 小欧 - EVENT_ICON_MAP 新增 context_trimmed(历史对话裁剪, 北京老陈令), 复用 WarningOutlined
+
+// 编辑历史: 2026-10-07 小欧 - ContextSource 删 contextSummary: 上下文数据只认 history_context 帧(overview);
+//   原 fallback 到 start.content(contextSummary) 会让未压缩/未注入的任务显示错误上下文
+
 import type { CSSProperties, ReactNode } from 'react';
 import {
   PauseCircleOutlined,
@@ -67,7 +71,7 @@ export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
 };
 
 // ---------- mapStatus（纯函数：输入数据源 → 4 态，供测试直接断言 data-state） ----------
-// 输入形态对齐现状三数据源: overview 字符串 / overview 对象{summary,estimated_tokens,truncated} / frames.contextSummary
+// 输入形态: overview 字符串 / overview 对象{summary,estimated_tokens,truncated}(均来自 history_context 帧)
 export interface ContextSource {
   overview?:
     | string
@@ -77,12 +81,11 @@ export interface ContextSource {
         truncated?: boolean;
       }
     | null;
-  contextSummary?: string | null;
 }
 export const mapStatus = (src: ContextSource): ContextState => {
   const o = src.overview;
-  const summary =
-    typeof o === 'string' ? o : (o?.summary ?? src.contextSummary ?? null);
+  // 2026-10-07 小欧: 上下文数据只认 history_context 帧(overview), 不再回退 start.content(contextSummary)
+  const summary = typeof o === 'string' ? o : (o?.summary ?? null);
   const truncated =
     typeof o === 'object' && o !== null ? o.truncated === true : false;
   const hasTokens =

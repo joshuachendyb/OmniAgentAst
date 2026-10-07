@@ -8,6 +8,10 @@
  * 编辑历史: 2026-10-04 小欧 - 新增可选 prop contextWindow: 装入条补「占窗率 = 估算token/窗口」, 窗口缺失则不渲染
  * 编辑历史: 2026-10-04 小欧 - 显出跨任务注入三字段(injected_message_count/injected_estimated_tokens/injected_ratio,
  *   此前帧收了未渲染): 增第二行, 仅注入条数>0 时显示(多数任务为 0, 显示是噪声)
+ * 编辑历史: 2026-10-07 小欧 - injected_ratio 由百分比改为倍数(后端语义改为压缩比=注入量/装入量,
+ *   原百分比在压缩场景会显示成 5650%); token 同时给完整值与 K 缩写(格式由 formatTokenK 收于 K)
+ * 编辑历史: 2026-10-07 小欧 - 删 contextSummary prop 与其兜底: 上下文数据只认 history_context 帧(overview);
+ *   原在 overview 非对象时回退 start.content, 会让未压缩/未注入任务显示错误上下文
  */
 import React, { useEffect, useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -22,10 +26,8 @@ import { MetricItem } from './MetricItem';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 
 interface Props {
-  /** 与 mapStatus 的 ContextSource.overview 同形：实时帧为对象，历史任务为空串 — 小欧 2026-10-04 */
+  /** history_context 帧数据(实时唯一来源); 历史任务为空串 — 小欧 2026-10-04 */
   overview: string | ContextOverviewFrame | null;
-  /** start 帧的 context_summary 兜底（mapStatus 的第二个数据源） — 小欧 2026-10-04 */
-  contextSummary: string;
   /** false = 历史任务：只显行内值，不挂弹框 — 小欧 2026-10-04 */
   isLiveContext: boolean;
   /** 当前任务模型上下文窗口(usage 帧带来)；缺失则不显占窗率 — 小欧 2026-10-04 */
@@ -34,7 +36,6 @@ interface Props {
 
 export const ContextOverviewCard: React.FC<Props> = ({
   overview,
-  contextSummary,
   isLiveContext,
   contextWindow,
 }) => {
@@ -44,14 +45,12 @@ export const ContextOverviewCard: React.FC<Props> = ({
     if (!isLiveContext) setOpen(false);
   }, [isLiveContext]);
 
-  const ctxState: ContextState = mapStatus({ overview, contextSummary });
+  const ctxState: ContextState = mapStatus({ overview });
   const ctx = CONTEXT_STATE_MAP[ctxState];
   const tokens =
     typeof overview === 'object' && overview ? overview.estimated_tokens : null;
   const summary =
-    typeof overview === 'object' && overview
-      ? (overview.summary ?? '')
-      : (contextSummary ?? '');
+    typeof overview === 'object' && overview ? (overview.summary ?? '') : '';
   const hasTokens = ctxState === 'ok' || ctxState === 'truncated';
   const count =
     typeof overview === 'object' && overview ? overview.message_count : null;
@@ -78,8 +77,8 @@ export const ContextOverviewCard: React.FC<Props> = ({
         {injected && injected.count > 0 && (
           <div>
             跨任务注入 {injected.count} 条 · 估算Token约{' '}
-            {formatTokenK(injected.tokens)} · 占装入{' '}
-            {Math.round(injected.ratio * 100)}%
+            {injected.tokens.toLocaleString()} ({formatTokenK(injected.tokens)})
+            · 压缩比 {injected.ratio.toFixed(1)}×
           </div>
         )}
         <div>

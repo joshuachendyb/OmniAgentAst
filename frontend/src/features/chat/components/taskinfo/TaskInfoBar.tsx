@@ -420,7 +420,6 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               2026-10-04 小欧: 浮层内容抽至 ContextOverviewCard */}
           <ContextOverviewCard
             overview={info.overview}
-            contextSummary={frames.contextSummary}
             isLiveContext={info.isLiveContext}
             contextWindow={info.contextWindow}
           />
