@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
+# 2026-10-07 小欧 修复: 摘要输入只取"注入的历史" agent._injected_history_msgs, 不再从 conversation_history
+#   反推(猜首条system/末条task)。① 原实现把含末尾本轮task的历史喂给摘要LLM, 模型当成待执行指令→
+#   越权调工具(实测glm-5.2: finish=tool_calls并写文件); ② summary.py:69 是"追加"system而非替换,
+#   带上原system会让feed出现两条system→模型困惑。
 # 2026-08-17 小健 新建: start 任务输入装配完整过程独立模块(北京老陈驱动, 痛斥 start 业务割裂散落多处)——把
 #   start 全部业务收拢一个文件: 注入会话历史 _inject_conversation_history / 超窗判定 _maybe_compact_injected_history
 #   / C4 锚定摘要回填 _compact_injected_history / 装配入口 assemble_start_step; 自 initialize_run_state.py 与
@@ -107,6 +111,10 @@ def _inject_conversation_history(agent, context: Optional[Dict[str, Any]]) -> No
         elif role == "system" and msg.get("content"):
             history_msgs.append({"role": "system", "content": msg["content"]})
     agent.message_builder.inject_history(history_msgs)
+    # 2026-10-07 小欧: 把注入后的历史消息挂到 agent, 供 C4 压缩直接取用。
+    #   原先压缩从 conversation_history[1:-1] 反推(猜首条system/末条task), 结构一变就误删;
+    #   此处显式留存, 压缩零猜测。
+    agent._injected_history_msgs = history_msgs
 
 
 def _maybe_compact_injected_history(agent) -> None:
@@ -151,6 +159,7 @@ async def _compact_injected_history(agent) -> None:
     输出: 无(超窗时以 assistant 摘要消息回填: system[:1] + 摘要 + 最新 task[-1:])。
     前置条件: _maybe_compact_injected_history 已置 _needs_compact=True; 失败兜底原样保留零退化。
     关联逻辑: 摘要生成/模板/截断全归 compaction 模块(SRP); tools=None 走 llm_stream Text 模式。
+    2026-10-07 小欧: 摘要只归档注入的历史(agent._injected_history_msgs) — 见 _hist_for_summary。
     """
     from app.services.agent.compaction.summary import generate_anchored_summary
 
@@ -158,8 +167,17 @@ async def _compact_injected_history(agent) -> None:
     if not history:
         agent._needs_compact = False
         return
+# 2026-10-07 小欧 修复: 摘要只归档"注入的历史"。取 agent._injected_history_msgs
+    #   (_inject_conversation_history 显式留存), 不从 conversation_history 反推:
+    #   ① 原实现把含首条system与末尾task的整条历史喂给摘要LLM, 末尾task让模型当成待执行指令
+    #     → 越权调工具(实测glm-5.2: finish=tool_calls并写文件);
+    #   ② summary.py:69 是"追加"system而非替换, 带上原system会让feed出现两条system → 模型困惑。
+    _hist_for_summary = list(getattr(agent, "_injected_history_msgs", None) or [])
+    if not _hist_for_summary:
+        agent._needs_compact = False
+        return
     try:
-        summary_text = await generate_anchored_summary(agent, history)
+        summary_text = await generate_anchored_summary(agent, _hist_for_summary)
     except Exception as e:
         logger.warning(f"[start_step] 锚定摘要失败, 保留原历史(零退化): {type(e).__name__}: {e!r}")
         summary_text = ""
