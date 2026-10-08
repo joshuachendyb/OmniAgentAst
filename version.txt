@@ -1,4 +1,39 @@
-﻿v1.2.1
+v1.2.2
+更新时间: 2026-10-08 11:24:45 - 小欧
+## v1.2.2 插话开关死锁闭环+发送门归一/单飞+左栏回显自动刷+全链路E2E(26 个 commit)
+[范围=v1.2.1 之后到 HEAD; feat/interject-switch 已合入 optimize-1.0.2(d468b4fd3), 无冲突, 分支已删, worktree 已移除]
+
+### 1.2.2 修复 · 插话开关死锁闭环 + 发送门归一 + 插话单飞
+[修复] save_message 携带值先落库再判 409(原值在 orchestrator 才落, 409 门读会话旧值 → 插话第一条必被拒, 开关永远打不开) — 提交 772aae71b
+[修复] 取值+落值收敛 storage.resolve_session_interject(编排器与 save_message 共用 单一真源) — 提交 772aae71b
+[修复] 消息落库随携带 allow_interject=true + MessageCreate 补字段 — 提交 ed258dc27
+[修复] 发送门判据归一为 utils/sendGate 单一真源(原 ChatInput 与 useChatSend 两处分叉)— 提交 ed258dc27
+[修复] 插话在飞单飞(resetSendFlags 统一复位, 防网络失败/超限早退卡死) — 提交 ed258dc27
+[修复] 插话执行中第二发此前 100% 被挡死且会误伤运行中任务(独立路径 postInterject/interjectSend, isSendingRef 按 isInterject 分流) — 提交 cd8ff4996
+[修复] stream_orchestrator 落值块两处 atxn 补 try/except(读 fail-closed/写 fail-open)— 提交 506b3c367
+[重构] 追加注入消息逐条独立成块(原 marginTop:4 共用一条竖线, 多条连成一串无间距) — 提交 813f36da8
+
+### 1.2.2 特性 · 插话回显左栏自动刷新 + 注入应答帧 toast 下线
+[特性] onMerged 删 showInfo toast(30s 去重吞可见性; 设计[76] 6.13 无 toast 位)— 提交 4e48be4d1
+[特性] 插话被后端并入后左栏自动重取任务列表(onTasksChanged→refreshTasksRef), 「追加N条」回显实时可见 — 提交 4e48be4d1
+
+### 1.2.2 测试 · 插话全链路 E2E fre2e_21
+[测试] tests/e2e_case/fre2e_21_interject.spec.ts 新增(关态锁输入/开态连插3条真入库/左栏下挂回显/toast 下线)+ 独立 playwright/vite config — 提交 a56adabfa/c8ad4044e
+[测试] test_inject_compact_pipeline start 注入/压缩链路 7 环节逐环节验证 — 提交 0059f469d/a13d16284
+[测试] e2e_helpers+inj 三例补插话开关 allow_interject — 提交 ca3518a34
+[测试] 插话开关后端 6 文件+前端 20 文件落码(§3.5 全链路 state 真源/对象参数透传/吞点/SendOpts/持久化11处/UI门+SESSION_BUSY+onError 兜底) — 提交 feb7d29ba/b2c3b0fe5
+
+### 1.2.2 压缩/start 主链重构+贪心反推进
+[特性] compaction/start_step C4 锚定摘要前降本接入+保尾保留+旧轮清零 — 提交 dcd65dd8e/e9ccb9693/babe6a0bf/bdb77b9b8
+[重构] start_step/react_loop/agent_runner start 主链重构+锚定摘要 C4 接入 — 提交 e9ccb9693
+[修复] safety/sandbox 杀进程防护四阶(预检不再真跑+保护盾接入 JobObject 双限流)+ base_service/llm_call/astream 三处系统代码更新 — 提交 3bffa5f3e/53df3e446
+
+### 1.2.2 图标/上下文概览/文档
+[重构] PipelineRenderer/ThinkingStream/WaitingIcons 推理图标改 SSE 时序驱动+空 chunk 守卫; stepStyles/GearIcon/DropletIcon 图标列几何齐整 — 提交 952a02e4d/324cb3e2c
+[特性] ContextOverviewCard/TaskInfoBar/infoMaps 上下文概览单一数据源; FUNCTIONS.md 补 v4.9 — 提交 e9ccb9693/927a53a9d
+[文档] 文档[11] 第四章三堂会审修订 / 文档[15] 会话事务 workspace 设计实施状态快照+硬约束13条+W1-W7 批次+验收10项 — 提交 826b35995/fb1fb69b4
+
+v1.2.1
 更新时间: 2026-10-07 17:39:32 - 小欧-2026-10-07
 ## v1.2.1 会话插话开关与安全Tab块2落地+取消/刷新/模型库等修复(56个commit: docs16/fix25/feat8/refactor2/test4/chore2)
 [范围=v1.2.0之后HEAD(共56个commit); 主线=①文档[11]第三章会话级插话开关设计经七轮审查定稿(设计侧, 代码零改动) ②安全Tab块2分类表+两个说明弹框从后端datafile取文案真源 ③取消终态/刷新模型选择器/模型库厂商字段等一批真缺陷修复; 方法论教训=审计基准必须取自代码(机械grep全量同构落点成矩阵), 禁用"按文档自身清单逐节核"(v1.9~v1.14连续六轮漏项的根因)]
