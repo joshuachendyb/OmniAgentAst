@@ -16,7 +16,8 @@ import { ChatPage } from '../e2e_front_lib';
 const BACKEND = 'http://127.0.0.1:8010';
 const N = 3;
 const mark = (i: number) => `插话标记${i}`;
-const interjectText = (i: number) => `补充第${i}条：请在最终总结里加一句"${mark(i)}"。`;
+const interjectText = (i: number) =>
+  `补充第${i}条：请在最终总结里加一句"${mark(i)}"。`;
 
 const LONG_TASK =
   '请分步骤完成下面八件事，每步都要真实调用工具执行并回报结果，一步做完再做下一步：' +
@@ -30,7 +31,10 @@ const LONG_TASK =
   '第8步：分别读取两个 probe 文件做最终比对，确认内容与行数都符合预期。' +
   '最后请用一段话总结八步的结果。';
 
-type MsgResp = { allow_interject?: boolean; messages: Array<{ role: string; content: string }> };
+type MsgResp = {
+  allow_interject?: boolean;
+  messages: Array<{ role: string; content: string }>;
+};
 type TaskItem = { task_id: string; merged_inputs?: string[] };
 
 async function readSession(
@@ -55,7 +59,11 @@ async function readTasks(sid: string): Promise<TaskItem[]> {
   return d.tasks;
 }
 
-async function waitMark(sid: string, m: string, timeoutMs: number): Promise<boolean> {
+async function waitMark(
+  sid: string,
+  m: string,
+  timeoutMs: number
+): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
@@ -72,9 +80,12 @@ async function waitMark(sid: string, m: string, timeoutMs: number): Promise<bool
   return false;
 }
 
-const userCount = (d: MsgResp) => d.messages.filter((m) => m.role === 'user').length;
+const userCount = (d: MsgResp) =>
+  d.messages.filter((m) => m.role === 'user').length;
 
-test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下挂回显 / toast已下线', async ({ page }) => {
+test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下挂回显 / toast已下线', async ({
+  page,
+}) => {
   const chat = new ChatPage(page);
   const errors: string[] = [];
   page.on('console', (m) => {
@@ -97,13 +108,18 @@ test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下�
     const w = window as unknown as { __toastMount: number };
     w.__toastMount = 0;
     const hasText = (n: Node): boolean => {
-      if (n.nodeType === 3) return (n.textContent || '').includes('已并入正在运行的任务');
+      if (n.nodeType === 3)
+        return (n.textContent || '').includes('已并入正在运行的任务');
       if (n.nodeType !== 1) return false;
       const el = n as Element;
-      return el.children.length === 0 && (el.textContent || '').includes('已并入正在运行的任务');
+      return (
+        el.children.length === 0 &&
+        (el.textContent || '').includes('已并入正在运行的任务')
+      );
     };
     new MutationObserver((records) => {
-      for (const r of records) r.addedNodes.forEach((n) => hasText(n) && (w.__toastMount += 1));
+      for (const r of records)
+        r.addedNodes.forEach((n) => hasText(n) && (w.__toastMount += 1));
     }).observe(document.body, { childList: true, subtree: true });
   });
 
@@ -129,7 +145,9 @@ test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下�
   for (let i = 1; i <= N; i += 1) {
     await input.fill(interjectText(i));
     await input.press('Enter');
-    expect(await waitMark(sid, mark(i), 30_000), `第${i}条插话必须真入库`).toBe(true);
+    expect(await waitMark(sid, mark(i), 30_000), `第${i}条插话必须真入库`).toBe(
+      true
+    );
     await expect(stopBtn, `第${i}条插话后任务必须仍在跑`).toHaveCount(1);
     console.log(`[验证] 第${i}条插话已入库（任务未中断）`);
     if (i < N) {
@@ -142,14 +160,19 @@ test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下�
   const after = (await readSession(page)).data;
   expect(userCount(after), '3 条插话应恰好多 3 条 user').toBe(baseUsers + N);
   expect(after.allow_interject, '会话真源应为开').toBe(true);
-  console.log('[验证] 3 条插话全部入库、无重复无丢失；会话真源 allow_interject=true');
+  console.log(
+    '[验证] 3 条插话全部入库、无重复无丢失；会话真源 allow_interject=true'
+  );
 
   // 左栏下挂回显（历史+实时同一真源 merged_inputs）
   const tasks = await readTasks(sid);
   const merged = tasks.flatMap((t) => t.merged_inputs ?? []);
   expect(merged.length, '左栏下挂的「追加N条」应恰有 3 条').toBe(N);
   for (let i = 1; i <= N; i += 1) {
-    expect(merged.some((m) => m.includes(mark(i))), `下挂回显应含第${i}条`).toBe(true);
+    expect(
+      merged.some((m) => m.includes(mark(i))),
+      `下挂回显应含第${i}条`
+    ).toBe(true);
   }
   await expect(
     page.locator('text=/追加 \\d+ 条/').first(),

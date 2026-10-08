@@ -16,7 +16,8 @@ export default defineConfig({
     navigationTimeout: 60_000,
     headless: false,
     viewport: { width: 1600, height: 950 },
-    slowMo: 250,
+    // slowMo 在 Playwright 需走 launchOptions, 直接放 use 会 TS2769
+    launchOptions: { slowMo: 250 },
     trace: 'off',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
