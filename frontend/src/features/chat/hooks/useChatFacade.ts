@@ -16,6 +16,8 @@
 //   taskControl.functions.disconnect 改 stop(Store.stop, 见 5.14) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - URL 归页面层 Router 唯一写；会话真源改 state 优先；删九组零消费分组；onSuccess 移出流接口
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: options 加 onTasksChanged 透传(插话并入后刷新左栏)
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.7.2: useMemo deps 删 sessionJumpLoading/isRenderingMessages
+//   及其 setter(死旗, 生产零读取, 之前仅凑 deps 数组), 随 useChatState 一并删净 — 小欧-2026-10-08
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -251,11 +253,9 @@ export const useChatFacade = (options?: {
       // ===== UI状态 =====
       chatState.useStream,
       chatState.isInitialized,
-      chatState.sessionJumpLoading,
       chatState.isMessageListLoading,
       chatState.setUseStream,
       chatState.setIsInitialized,
-      chatState.setSessionJumpLoading,
       chatState.setIsMessageListLoading,
       chatState.userScrolledUpRef,
       chatState.lastScrollTimeRef,

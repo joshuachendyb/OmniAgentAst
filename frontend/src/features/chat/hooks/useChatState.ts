@@ -13,6 +13,12 @@
 //   ① messagesRef/currentSessionIdRef 的写回从 useEffect 改为 setState 内联写 ref(消除窗口期);
 //   ② 删除 applySessionState 越界写 currentSessionIdRef(原违反 SLAP);
 //   ③ 删除 messagesRef 的单向 useEffect 同步, 改用 setMessages wrapper 保证一致性 — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5+3.7 减锁与死状态清理(删 34 行):
+//   ① Refs 删 isLoadingHistoryRef(loading 锁, 与代际守卫职责重复且互斥);
+//   ② UI 态删 retryCount/setRetryCount(写而不读镜像, 真读在 useChatSession 的 sessionRetryRef);
+//   ③ UI 态删 sessionJumpLoading/setSessionJumpLoading 与 isRenderingMessages/setIsRenderingMessages
+//      (生产零读取的死旗); isMessageListLoading 有真实消费者(useChatFacade showWaitTime)故保留;
+//   ④ 类型 / useState 定义 / 返回对象三处同步删净, 不留兼容层 — 小欧-2026-10-08
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -115,17 +121,9 @@ export interface UseChatStateReturn {
   saveStatus: SaveStatus;
   setSaveStatus: React.Dispatch<React.SetStateAction<SaveStatus>>;
 
-  // 会话跳转加载状态
-  sessionJumpLoading: boolean;
-  setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
-
   // 消息列表加载状态
   isMessageListLoading: boolean;
   setIsMessageListLoading: React.Dispatch<React.SetStateAction<boolean>>;
-
-  // 重试计数
-  retryCount: Record<string, number>;
-  setRetryCount: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 
   // 保存标题状态
   isSavingTitle: boolean;
@@ -134,10 +132,6 @@ export interface UseChatStateReturn {
   // 最后保存时间
   lastSaveTime: number;
   setLastSaveTime: React.Dispatch<React.SetStateAction<number>>;
-
-  // 渲染大量消息时的loading状态
-  isRenderingMessages: boolean;
-  setIsRenderingMessages: React.Dispatch<React.SetStateAction<boolean>>;
 
   // ==================== Refs ====================
 
@@ -165,9 +159,6 @@ export interface UseChatStateReturn {
   // 滚动相关Refs
   userScrolledUpRef: React.MutableRefObject<boolean>;
   lastScrollTimeRef: React.MutableRefObject<number>;
-
-  // 加载状态Refs
-  isLoadingHistoryRef: React.MutableRefObject<boolean>;
 
   // 日志标记Refs
   logFlagsRef: React.MutableRefObject<LogFlags>;
@@ -233,23 +224,14 @@ export const useChatState = (): UseChatStateReturn => {
   // 保存状态
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
 
-  // 会话跳转加载状态
-  const [sessionJumpLoading, setSessionJumpLoading] = useState(false);
-
   // 消息列表加载状态
   const [isMessageListLoading, setIsMessageListLoading] = useState(true);
-
-  // 重试计数
-  const [retryCount, setRetryCount] = useState<Record<string, number>>({});
 
   // 保存标题状态
   const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   // 最后保存时间
   const [lastSaveTime, setLastSaveTime] = useState<number>(0);
-
-  // 渲染大量消息时的loading状态
-  const [isRenderingMessages, setIsRenderingMessages] = useState(false);
 
   // ==================== Refs定义 ====================
 
@@ -277,9 +259,6 @@ export const useChatState = (): UseChatStateReturn => {
   // 滚动相关Refs
   const userScrolledUpRef = useRef(false);
   const lastScrollTimeRef = useRef(0);
-
-  // 加载状态Refs
-  const isLoadingHistoryRef = useRef(false);
 
   // 日志标记Refs
   const logFlagsRef = useRef<LogFlags>({
@@ -379,18 +358,12 @@ export const useChatState = (): UseChatStateReturn => {
     setIsInitialized,
     saveStatus,
     setSaveStatus,
-    sessionJumpLoading,
-    setSessionJumpLoading,
     isMessageListLoading,
     setIsMessageListLoading,
-    retryCount,
-    setRetryCount,
     isSavingTitle,
     setIsSavingTitle,
     lastSaveTime,
     setLastSaveTime,
-    isRenderingMessages,
-    setIsRenderingMessages,
 
     // Refs
     waitTimerRef,
@@ -405,7 +378,6 @@ export const useChatState = (): UseChatStateReturn => {
 
     userScrolledUpRef,
     lastScrollTimeRef,
-    isLoadingHistoryRef,
     logFlagsRef,
     hasReceivedCancelEventRef,
     cancelInProgressRef,

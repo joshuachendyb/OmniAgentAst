@@ -1,4 +1,7 @@
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: StreamingGroupRefs接口删streamingStepsRef字段(104行) — 小欧-2026-09-10
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5+3.7 同步删净已从 useChatState 移除的字段(不留兼容层):
+//   UIGroupRefs 删 isLoadingHistoryRef; UIGroupState 删 sessionJumpLoading / isRenderingMessages / retryCount;
+//   UIGroupReturn 删 setSessionJumpLoading / setIsRenderingMessages / setRetryCount — 小欧-2026-10-08
 /**
  * 状态分组类型定义
  *
@@ -131,10 +134,7 @@ export interface UIGroupState {
   useStream: boolean;
   isInitialized: boolean;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
-  sessionJumpLoading: boolean;
   isMessageListLoading: boolean;
-  isRenderingMessages: boolean;
-  retryCount: Record<string, number>;
   isSavingTitle: boolean;
   lastSaveTime: number;
 }
@@ -142,7 +142,6 @@ export interface UIGroupState {
 export interface UIGroupRefs {
   userScrolledUpRef: React.MutableRefObject<boolean>;
   lastScrollTimeRef: React.MutableRefObject<number>;
-  isLoadingHistoryRef: React.MutableRefObject<boolean>;
   logFlagsRef: React.MutableRefObject<{
     chunkFirstDone: boolean;
     showStepsFalseDone: boolean;
@@ -157,10 +156,7 @@ export type UIGroupReturn = UIGroupState &
     setSaveStatus: React.Dispatch<
       React.SetStateAction<'idle' | 'saving' | 'saved' | 'error'>
     >;
-    setSessionJumpLoading: React.Dispatch<React.SetStateAction<boolean>>;
     setIsMessageListLoading: React.Dispatch<React.SetStateAction<boolean>>;
-    setIsRenderingMessages: React.Dispatch<React.SetStateAction<boolean>>;
-    setRetryCount: React.Dispatch<React.SetStateAction<Record<string, number>>>;
     setIsSavingTitle: React.Dispatch<React.SetStateAction<boolean>>;
     setLastSaveTime: React.Dispatch<React.SetStateAction<number>>;
   };

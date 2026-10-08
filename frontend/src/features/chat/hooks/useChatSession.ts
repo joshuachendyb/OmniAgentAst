@@ -12,6 +12,19 @@
 //   (result.linkEnabled ?? false, F5 刷新恒走该路径)、场景2 缓存恢复(restored.linkEnabled)、三处复位(新建/清空/失败)
 //   归 false。缓存恢复分支原以"与 setSessionModelOverride 同构"为由不注入, 但那是复制既有缺口而非正当性:
 //   漏注入则 UI 显示关、DB 为 true, 用户一次点击即被静默改坏真源。 — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5 减锁(删 65 行, 核心修复):
+//   ① 删 loading 锁 isLoadingHistoryRef 全部 14 处(接口字段/解构/场景1与场景3的早退+上锁/4 处释放/releasedLock);
+//      病根: 该锁 2026-03-13 引入作"防重复调用", 2026-09-29 加代际守卫时未收口, 两者职责重复且互斥——
+//      StrictMode 双调用下"取到数据的被作废、能干活的被锁拦下" → 历史会话进不去且左栏恒 0 任务;
+//   ② 递归重试 return initializeSession 改 return await: 删 releasedLock 后若不加 await,
+//      外层 finally 会在递归仍在加载时提前熄灭 loading 指示器(净退化);
+//   ③ finally 复位改无条件单一出口(无锁可释放);
+// ④ 保留 generationRef(唯一守卫)与 sessionRetryRef(重试计数真源) — 小欧-2026-10-08
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.7 死状态清理(同批):
+//   ① 删 retryCount/setRetryCount(接口+解构+3 处写入): 写而不读镜像, 真读一直是 sessionRetryRef;
+//   ② 删 onRenderStart/onRenderEnd(接口+解构+4 调用点): 唯一写位 isRenderingMessages 生产零读取,
+//      删后成空壳, 按 2026-09-30 删 onMessageListLoadingStart 同例整链删;
+//   ③ 场景2 缓存恢复分支补调 onMessageListLoadingEnd 时同步去掉已删的 onRenderEnd — 小欧-2026-10-08
 /**
  * useChatSession Hook - 会话生命周期管理
  *
@@ -95,11 +108,6 @@ export interface UseChatSessionReturn {
  */
 export interface InitializeSessionOptions {
   searchParams: URLSearchParams;
-  retryCount: Record<string, number>;
-  setRetryCount: (
-    fn: (prev: Record<string, number>) => Record<string, number>
-  ) => void;
-  isLoadingHistoryRef: React.MutableRefObject<boolean>;
   setIsInitialized: (v: boolean) => void;
   restoreState: () => Promise<{
     messages: Message[];
@@ -114,8 +122,8 @@ export interface InitializeSessionOptions {
   } | null>;
   onLoadingStart: () => void;
   onLoadingEnd: () => void;
-  onRenderStart: () => void;
-  onRenderEnd: () => void;
+  // 2026-10-08 小欧 - 文档[19] 3.7.2: 删 onRenderStart/onRenderEnd(唯一写位isRenderingMessages 生产零读取,
+  //   删后为空壳回调, 按 2026-09-30 删 onMessageListLoadingStart 同例整链删, 含 useChatInit 定义与传参)
   // 2026-09-30 小欧 - 删 onMessageListLoadingStart：解构进来后函数体零调用（原先靠
   //   eslint-disable no-unused-vars 压着），属接口污染（O1）。配套删 useChatInit 的定义与传参。
   onMessageListLoadingEnd: () => void;
@@ -343,14 +351,10 @@ export const useChatSession = (
       const generation = ++generationRef.current;
       const {
         searchParams,
-        setRetryCount,
-        isLoadingHistoryRef,
         setIsInitialized,
         restoreState,
         onLoadingStart,
         onLoadingEnd,
-        onRenderStart,
-        onRenderEnd,
         onMessageListLoadingEnd,
       } = options;
 
@@ -373,20 +377,9 @@ export const useChatSession = (
         // 2026-08-27 小欧 修复: currentRetry 以 ref 为准(跨递归持久), 不再读永不更新的 options.retryCount
         const currentRetry = sessionRetryRef.current[retryKey] || 0;
 
-        // 如果正在加载中，跳过此次调用
-        if (isLoadingHistoryRef.current) {
-          console.log('⏭️ 正在加载中，跳过重复调用');
-          onLoadingEnd();
-          return { loaded: false, fromCache: false, hasUrlSession: true };
-        }
-
-        isLoadingHistoryRef.current = true;
+        // 2026-10-08 小欧 - 减锁(文档[19] 3.5): 删 loading 锁早退与上锁。重复调用由代际守卫作废旧结果,
+        //   不再需要这把锁(它与代际号互斥, 正是历史会话进不去的病根)。
         onLoadingStart();
-        onRenderStart();
-        // 2026-09-30 小欧 - 标记"本层已自行释放锁"：递归重试那条路径会在 return 前显式释放，
-        //   而 `return expr` 是先求值 expr 再执行 finally，递归体内已重新上锁并点亮 loading，
-        //   若 finally 无条件复位会把它清掉（锁失效 + 指示器提前消失）。
-        let releasedLock = false;
 
         try {
           const result = await loadHistoryMessages(urlSessionId);
@@ -411,7 +404,6 @@ export const useChatSession = (
             });
 
             onMessageListLoadingEnd();
-            setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 2026-08-27 小欧 修复: 同步重置 ref 计数
             sessionRetryRef.current[retryKey] = 0;
 
@@ -452,36 +444,21 @@ export const useChatSession = (
             const newRetry = currentRetry + 1;
             // 2026-08-27 小欧 修复: 写入 ref 计数(跨递归持久), 并同步 React state
             sessionRetryRef.current[retryKey] = newRetry;
-            setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
-
-            // 2026-09-30 小欧 - 必须先释放 loading 锁再递归：`return expr` 是先求值 expr
-            //   再执行 finally，故递归会卡在"正在加载中"被拦 → 重试由 4 次退化为 1 次。
-            isLoadingHistoryRef.current = false;
-            onLoadingEnd();
-            onRenderEnd();
-            releasedLock = true;
 
             // 延迟1秒后重试
             await new Promise((resolve) => setTimeout(resolve, 1000));
-            return initializeSession(options); // 递归重试
+            // 2026-10-08 小欧 - 减锁后必须补 await(文档[19] 3.5.17): 否则外层 finally 会在递归
+            //   仍在加载时提前熄灭 loading 指示器。加 await 后外层 finally 在递归完全结束后才跑。
+            return await initializeSession(options); // 递归重试
           } else {
             // 超过重试次数
-            setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 2026-08-27 小欧 修复: 同步重置 ref 计数
             sessionRetryRef.current[retryKey] = 0;
             return { loaded: false, fromCache: false, hasUrlSession: true };
           }
         } finally {
-          // 2026-09-30 小欧 - loading 复位移入 finally 单一出口。
-          //   病根：原复位散在 4 处分支，而代际守卫早退发生在复位点之前 → 锁卡在 true
-          //   → 后续初始化全被"正在加载中"拦下 → 会话初始化死锁（loading 圈永转）。
-          //   onLoadingEnd/onRenderEnd 幂等，故取代原各分支内复位而非叠加。
-          //   releasedLock 分支跳过：递归已在上层重新上锁，此处复位会把它清掉。
-          if (!releasedLock) {
-            isLoadingHistoryRef.current = false;
-            onLoadingEnd();
-            onRenderEnd();
-          }
+          // 2026-10-08 小欧 - 减锁后无锁可判断, 指示器复位无条件回 finally 单一出口
+          onLoadingEnd();
         }
       }
 
@@ -506,30 +483,19 @@ export const useChatSession = (
             allowInterject: restored.allowInterject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.7: 场景2 缓存恢复
             messages: restored.messages,
           });
-          // 2026-08-27 小欧 修复#55: 缓存恢复分支补调onRenderEnd/onMessageListLoadingEnd(URL加载分支已调用, 此处遗漏导致渲染/加载结束信号缺失)
-          onRenderEnd();
+          // 2026-08-27 小欧 修复#55: 缓存恢复分支补调 onMessageListLoadingEnd(URL加载分支已调用, 此处遗漏导致加载结束信号缺失)
           onMessageListLoadingEnd();
 
           onLoadingEnd();
-          isLoadingHistoryRef.current = false;
           return { loaded: true, fromCache: true, hasUrlSession: false };
         }
       }
 
       // 场景3: 加载最近会话
       // 2026-08-28 小强 修复#13: 删除不可达if(urlSessionId)分支(场景1已return)
+      // 2026-10-08 小欧 - 减锁(文档[19] 3.5): 删 loading 锁, 重复调用由代际守卫作废旧结果
 
-      // 检查是否正在加载
-      if (isLoadingHistoryRef.current) {
-        console.log('⏭️ 正在加载中，跳过重复调用');
-        onLoadingEnd();
-        setIsInitialized(true);
-        return { loaded: false, fromCache: false, hasUrlSession: false };
-      }
-
-      isLoadingHistoryRef.current = true;
       onLoadingStart();
-      onRenderStart();
 
       try {
         const result = await loadLatestHistoryMessages();
@@ -582,10 +548,8 @@ export const useChatSession = (
         setIsInitialized(true);
         return { loaded: false, fromCache: false, hasUrlSession: false };
       } finally {
-        // 2026-09-30 小欧 - 同上方 URL 分支，loading 复位移入 finally 单一出口
-        isLoadingHistoryRef.current = false;
+        // 2026-10-08 小欧 - 减锁(文档[19] 3.5): 删锁释放, 指示器复位保留
         onLoadingEnd();
-        onRenderEnd();
       }
     },
     [

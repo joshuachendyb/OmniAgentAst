@@ -8,6 +8,13 @@
 // 编辑历史: 2026-10-01 小欧 [1] 根治"采用已存在会话后 SSE 从不恢复"(刷新/菜单回跳/URL丢参 三入口同源):
 //   新增第二个 effect，以"URL 无 session_id"为触发条件补 resume()。详见该 effect 注释。 — 小欧-2026-10-01
 // 编辑历史: 2026-10-05 小欧 - 修复 void 丢弃返回值(历史同型事故#4): loadSession 返回的 Message[] 被显式接收并轻量校验 — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5+3.7 减锁与死状态清理(净减101行):
+//   ① initializeSession 入参删 isLoadingHistoryRef(锁) / retryCount / setRetryCount / onRenderStart / onRenderEnd;
+//   ② onLoadingStart/End 只留 antd 'session-load' 消息(唯一真指示器), 删 setSessionJumpLoading 死旗;
+//   ③ onRenderStart/End 唯一写位 isRenderingMessages 生产零读取, 删后成空壳故按 2026-09-30 同例整链删
+//      (含 useChatSession 接口/解构/4 调用点);
+//   ④ 病根: loading 锁(2026-03-13 引入)与代际守卫(2026-09-29 引入)职责重复且互斥, StrictMode 双调用下
+//      "取到数据的被作废、能干活的被锁拦下" → 历史会话进不去且左栏恒 0; 根治=删锁只留代际守卫 — 小欧-2026-10-08
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
@@ -60,19 +67,12 @@ export function useChatInit(opts: {
     //   handleNewSessionInternal 初始化过，跳过（否则会 resume+loadSession，用后端历史
     //   覆盖刚设的"新会话已创建"提示）。404 清理/列表切回时两者不等，不受影响。
     if (opts.urlSessionId && chatState.sessionId === opts.urlSessionId) return;
+    // 编辑历史: 2026-10-08 小欧 - 详见文件头: onLoadingStart/End 只留 antd 消息, 死旗已删
     const onLoadingStart = () => {
-      chatState.setSessionJumpLoading(true);
       show('正在加载会话...', 'session-load');
     };
     const onLoadingEnd = () => {
       hide('session-load');
-      chatState.setSessionJumpLoading(false);
-    };
-    const onRenderStart = () => {
-      chatState.setIsRenderingMessages(true);
-    };
-    const onRenderEnd = () => {
-      chatState.setIsRenderingMessages(false);
     };
     // 2026-09-30 小欧 - 删 onMessageListLoadingStart：其函数体本就是 No-op 空壳，
     //   useChatSession 解构后零调用（靠 eslint-disable 压着），整条链是纯接口污染
@@ -117,15 +117,10 @@ export function useChatInit(opts: {
         }
         chatSession.initializeSession({
           searchParams,
-          retryCount: chatState.retryCount,
-          setRetryCount: chatState.setRetryCount,
-          isLoadingHistoryRef: chatState.isLoadingHistoryRef,
           setIsInitialized: chatState.setIsInitialized,
           restoreState: chatPersistence.restoreState,
           onLoadingStart,
           onLoadingEnd,
-          onRenderStart,
-          onRenderEnd,
           onMessageListLoadingEnd,
         });
       });
