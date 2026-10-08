@@ -33,6 +33,7 @@
 #   _try_mark_valid 与 is_valid 语义不动 — 小欧-2026-09-30
 # 2026-10-01 小欧 - 解 [1] E3/E4/E11: ①消息对象补 task_id 字段(取 p["pair_task_id"], 归属以 LEFT JOIN 配对结果为准, cum.task_id 是消息侧原值、起始消息可能为 NULL); ②load_execution_steps 调用补传该 task_id(同 ai_message_id 可挂多任务, 不传则跨任务混读); ③thought 取键改 thought/reasoning(content 已被 _strip_thought_content 剥除, 且 reasoning-only 分支正文落在 thought 键上, 原式两键皆空致消息级 thought 退化为 None、历史回放推理区空白); ④删 get_user_message_id 导入(随 E8 空壳退役)
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项13: get_session_messages 响应补 link_enabled(前端读真源主路径)
+# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: save_message 改调 resolve_session_interject(携带值先落库再判 409, 破插话死锁)
 """
 message_service — 消息业务服务(services/chat)
 
@@ -54,7 +55,7 @@ from app.services.chat.storage import insert_user_message  # v2.0 改动2: user�
 from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
 from app.utils.display_utils import extract_display_name_from_steps, build_display_name
 from app.services.task.task_registry import has_active_task_in_session   # 2026-10-07 小欧 - 文档[11] 3.4.5.1
-from app.services.chat.storage import get_session_interject              # 2026-10-07 小欧 - 文档[11] 3.4.5.1
+from app.services.chat.storage import resolve_session_interject         # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
@@ -192,13 +193,20 @@ async def save_message(session_id: str, message):
     from fastapi import HTTPException
     with db.get_conn("chat") as conn:
         cursor = conn.cursor()
+# 2026-10-08 小欧 - 文档[11] 3.4.5.2: 携带值先落会话开关再做下方 409 判定(死锁: 值原先只由
+        #   orchestrator 落, 而 409 门读会话当前值 → 插话第一条必被拒)。只拦 user(开关随用户消息携带)。
+        _eff_allow = resolve_session_interject(
+            conn,
+            session_id,
+            getattr(message, "allow_interject", None) if message.role == "user" else None,
+        )
         # ── 插话开关: 关态且同会话有活跃任务 → 409(落库之前, 消息不入库) ──
         #   2026-10-07 小欧 - 文档[11] 3.4.5: 方案①"门口就拦"。前端 error/handler.ts
         #   已有 409 处理分支, 本方案零新增前端错误分支; 若改在 SSE 生成器内则无法转 409(见 3.3)。
         #   2026-10-07 小欧 三堂会审补：仅拦 user 角色。save_message 同承 assistant/system 直存
         #   （内部流转），一律拦会把任务体系内部写入误伤成 409。
         if message.role == "user" and await has_active_task_in_session(session_id):
-            if not get_session_interject(conn, session_id):   # 同 conn 直读, 不另开 atxn(连接已在手)
+            if not _eff_allow:   # 携带值优先, 否则读会话当前值(同 conn 直读, 不另开 atxn)
                 raise HTTPException(
                     status_code=409,
                     detail="任务执行中，插话开关未开启；请等待完成或先取消",  # 与编排器兜底 error_message、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)

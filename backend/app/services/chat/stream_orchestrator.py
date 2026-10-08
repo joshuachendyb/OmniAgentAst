@@ -203,6 +203,7 @@
 #   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
 # 2026-10-03 - 小欧 - 落值加命中判定: set_session_link_conn 返回 rowcount, 0 行即会话不存在, warning 留痕但本条仍按携带值处理(fail-open 用携带值, 不掐断流)。
 # 2026-10-05 - 小欧 - 报告 P3: 两处 loop_watchdog.activate() 移入 try, 激活期异常带 task_id/session_id/stream_id 链根 warning, 杜绝静默失败。
+# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 插话开关取/落值收敛为 storage.resolve_session_interject(与 save_message 共用单一真源)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -246,8 +247,7 @@ from app.services.chat.storage import get_user_message_id, allocate_and_insert_m
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05
 from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
 from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
-from app.services.chat.storage import get_session_interject       # 2026-10-06 小欧 - 文档[11] 3.4.5
-from app.services.chat.storage import set_session_interject_conn  # 2026-10-06 小欧 - 文档[11] 3.4.5
+from app.services.chat.storage import resolve_session_interject     # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
@@ -423,25 +423,15 @@ async def chat_stream_orchestrator(
         #   位置必须在 has_active_task_in_session 之前：link_enabled 的落值块在注入之后，
         #   照抄位置会让"刚打开开关的第一条消息"读不到新值 —— 小欧 2026-10-06
         #   判定与落值同处一次执行, 读到即生效。
-        #   2026-10-07 小欧 三堂会审修复: get/set 两处 atxn 补 try/except(此前抄 link 的同款两行而漏抄护网),
-        #   读失败→按关处理(fail-closed)/写失败→沿用携带值(fail-open), 与 link 两处护网语义一一对应。
+        #   2026-10-08 小欧 - 文档[11] 3.4.5.2 DRY: 取值+落值收敛为 storage.resolve_session_interject
+        #   单一真源(与 save_message 共用); 读失败仍按关处理(fail-closed, 同 get_session_link)。
         try:
             _allow_interject = await db.atxn(
-                "chat", lambda conn: get_session_interject(conn, session_id)
+                "chat", lambda conn: resolve_session_interject(conn, session_id, allow_interject)
             )
         except Exception as _e:
             logger.warning(f"[interject] 读开关失败, 按关处理(fail-closed, 与 get_session_link 策略同款): {_e}")
             _allow_interject = False
-        if allow_interject is not None:
-            try:
-                _rc = await db.atxn(
-                    "chat", lambda conn: set_session_interject_conn(conn, session_id, allow_interject)
-                )
-                if _rc == 0:
-                    logger.warning(f"[interject] 会话不存在, 开关未落库(session={session_id})")
-            except Exception as _e:
-                logger.warning(f"[interject] 落开关失败, 沿用携带值继续(fail-open, 与 set_session_link_conn 同款): {_e}")
-            _allow_interject = allow_interject   # fail-open 沿用携带值, 同 link 落值处理
 
         _active_tid = await has_active_task_in_session(session_id)
         if _active_tid:

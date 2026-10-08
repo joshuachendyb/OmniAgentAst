@@ -10,6 +10,7 @@
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): 业务逻辑(get_session_messages/save_message/display_name_cache)迁入
 #   services/chat/message_service.py, 本文件降为路由薄壳(DTO+路由+调service)。display_name_cache 归属 message_service 独占。
 # 2026-08-21 - 小欧 - 新增 GET /sessions/{session_id}/user_messages 从 chat_user_message 读取（替代 chat_messages）— 小欧 2026-08-21
+# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: MessageCreate 补 allow_interject(开关随消息携带, 后端插话判定必须用它)
  
 """
 消息管理API路由(薄壳)
@@ -41,6 +42,8 @@ class MessageCreate(BaseModel):
     browser: Optional[str] = Field(None, description="浏览器类型")
     device: Optional[str] = Field(None, description="设备类型")
     network: Optional[str] = Field(None, description="网络类型")
+    # 2026-10-08 小欧 - 文档[11] 3.4.5.2: 开关随消息携带, 后端插话判定必须用它
+    allow_interject: Optional[bool] = Field(None, description="插话开关; None=沿用会话当前值")
 
 
 @router.get("/sessions/{session_id}/messages")
