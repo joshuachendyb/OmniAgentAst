@@ -22,14 +22,18 @@ import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: �
  * 原位置：PipelineRenderer.tsx 内联 const WaitingIcon（私有）
  */
 // 2026-09-17 小欧 实施: 等待图标(类型身份: 绿=思考) 与钟面(等待时长) 并存, 语义正交 — 小欧-2026-09-17
+// 2026-10-08 小欧 尺寸归一 Icon.BOX(北京老陈令"统一完成后再看效果再微调"):
+//   原 width="1.4em"(em 相对父字号, 实测父14→27.67px 父12→23.72px 会漂移), 且与 index.css
+//   的 .waiting-cursor svg{width:1.4em} 重复两处(CSS 类选择器赢, 改一处漏一处)。
+//   现尺寸真源唯一在本 SVG 属性, CSS 只留 display/animation/vertical-align。— 小欧-2026-10-08
 export const ThoughtWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
   waitClock,
 }) => (
   <>
     <span className="waiting-cursor" aria-label="等待思考输出">
       <svg
-        width="1.4em"
-        height="1.4em"
+        width={Icon.BOX}
+        height={Icon.BOX}
         viewBox="0 0 24 24"
         fill="none"
         stroke={Colors.SUCCESS}
@@ -48,12 +52,16 @@ export const ThoughtWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
  * 用途：action步到达后、observation到达前的工具执行等待状态
  * 原位置：ToolCallLine.tsx 内联 <svg>（直接嵌JSX无封装）
  */
+// 2026-10-08 小欧: 补 width/height=Icon.BOX —— 原 SVG 无尺寸属性, 完全靠 index.css 的
+//   .tool-waiting-cursor svg{width:1.1em} 给, 机制与绿圈(靠SVG)相反。尺寸真源归一。— 小欧-2026-10-08
 export const ToolWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
   waitClock,
 }) => (
   <>
     <span className="tool-waiting-cursor" aria-label="等待工具完成">
       <svg
+        width={Icon.BOX}
+        height={Icon.BOX}
         viewBox="0 0 24 24"
         fill="none"
         stroke={Colors.WAIT_ACTION}
@@ -81,6 +89,7 @@ export const ToolWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
  * 新增位置：全新组件
  * 动画：蓝核心圆 + 两层扩散波纹，scale 0.5→1.4 + opacity 1→0，1.8s周期，不旋转
  */
+// 2026-10-08 小欧: width/height="1.4em" → Icon.BOX —— 与绿圈同源问题(em 随父字号漂移)。— 小欧-2026-10-08
 export const ActionWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
   waitClock,
 }) => (
@@ -88,8 +97,8 @@ export const ActionWaitingIcon: React.FC<{ waitClock?: ClockSignals }> = ({
     <span className="action-waiting-cursor" aria-label="等待action到达">
       <svg
         viewBox="0 0 36 36"
-        width="1.4em"
-        height="1.4em"
+        width={Icon.BOX}
+        height={Icon.BOX}
         fill="none"
         strokeWidth={2}
       >

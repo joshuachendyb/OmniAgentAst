@@ -106,19 +106,31 @@
 }
 
 /* 等待光标（2026-09-02 小欧 · 北京老陈定案：SVG 缺口圆弧=↻ 视觉，stroke-width 精确控粗，
-   高亮绿，逆时针转圈 1s，尺寸 1.4em≈20px；无 margin/padding——首 chunk 到达由本符号
-   让出的位置被内容覆盖接管，禁止常驻） */
+   高亮绿，逆时针转圈 1s；无 margin/padding——首 chunk 到达由本符号
+   让出的位置被内容覆盖接管，禁止常驻）
+
+   2026-10-08 小欧 尺寸统一(Icon.BOX=16px, 北京老陈令"统一完成后再看效果再微调"):
+     病根 — 尺寸曾三处并存且机制互相冲突: ①SVG width="1.4em" 与本文件 .waiting-cursor svg
+     的 width:1.4em 重复两处(CSS 类选择器赢 SVG 表现属性, 改一处漏一处, 09-03 那次
+     1.4em→1em 就只改了 CSS 留下 SVG 里的 1.4em); ②ToolWaitingIcon 的 SVG 根本没有
+     width 属性, 尺寸只靠本文件 .tool-waiting-cursor svg(与①相反方向); ③ActionWaitingIcon
+     反过来 CSS 不设尺寸只设 display, 全靠 SVG 自己的 1.4em。四个图标三套机制。
+     实测(Playwright 离屏渲染, 父字号14px): 绿27.67px / 橙21.50px / 蓝19.59px / 方块16px,
+     跨 11.7px, 与 stepStyles.ts:130 定的"多图标落在同一条竖线上"直接冲突。
+     改法 — 尺寸真源唯一化到 SVG 属性(WaitingIcons/index.tsx 四组件统一 size=Icon.BOX),
+     本文件只留 SVG 属性管不了的(display/vertical-align/animation), 尺寸规则全删。
+     em 是相对单位会随父字号漂移(实测父14→27.67, 父12→23.72), 故一律不用。 */
 .waiting-cursor {
   display: inline-block;
-  /* 2026-09-18 小欧 - 居中修复: 1.4em 盒子 baseline 对齐致图标上浮如上标，改 middle 与文字中线对齐(尺寸/动画不动) — 小欧-2026-09-18 */
+  /* 2026-09-18 小欧 - 居中修复: 盒子 baseline 对齐致图标上浮如上标，改 middle 与文字中线对齐 — 小欧-2026-09-18 */
   vertical-align: middle;
   animation: waiting-spin 1s linear infinite;
 }
+/* 2026-10-08 小欧: 删 .waiting-cursor svg { width/height } —— 尺寸归 SVG 属性 Icon.BOX */
 .waiting-cursor svg {
   display: block;
-  width: 1.4em;
-  height: 1.4em;
 }
+
 @keyframes waiting-spin {
   from {
     transform: rotate(0deg);
@@ -133,11 +145,9 @@
   vertical-align: baseline;
   animation: waiting-spin 1s linear infinite;
 }
+/* 2026-10-08 小欧: 删 width/height(原 1.1em) —— 尺寸归 SVG 属性 Icon.BOX, 消除"SVG无width靠CSS给"的反向依赖 */
 .tool-waiting-cursor svg {
   display: block;
-  /* 2026-09-08 小欧 - 图标换型(北京老陈令): 尺寸1em→1.1em(≈15px), 与loader弧段视觉更协调 — 小欧-2026-09-08 */
-  width: 1.1em;
-  height: 1.1em;
 }
 
 /* 2026-09-08 小欧 - 标题图标(北京老陈令): 顶部"对话与任务"文字换D三色弧段loader, 复用waiting-spin逆时针1s常转, 尺寸20px — 小欧-2026-09-08 */
@@ -197,9 +207,12 @@
 }
 .action-waiting-cursor {
   display: inline-block;
-  /* 2026-09-18 小欧 - 居中修复(北京老陈驱动): 蓝色波纹光标跟文字后呈上标状，根因 1.4em 盒子 baseline 对齐，改 middle 与文字中线对齐(尺寸/波纹动画不动) — 小欧-2026-09-18 */
+  /* 2026-09-18 小欧 - 居中修复(北京老陈驱动): 蓝色波纹光标跟文字后呈上标状，根因盒子 baseline 对齐，改 middle 与文字中线对齐(波纹动画不动) — 小欧-2026-09-18 */
   vertical-align: middle;
 }
+/* 2026-10-08 小欧: 本规则原本就只设 display(尺寸全靠 SVG 自己的 width="1.4em")——
+   与 .waiting-cursor 的"CSS 给尺寸"方向相反, 是四图标三套机制之一。
+   现尺寸统一由 SVG 属性 Icon.BOX 给, 本规则与另两个保持一致, 只管 display。 */
 .action-waiting-cursor svg {
   display: block;
 }
