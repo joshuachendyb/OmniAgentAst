@@ -5,6 +5,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.2: GetSessionMessagesResponse 补 link_enabled(会话 link 开关真源
 //   随会话加载主路径下发, 前端唯一读取点); getSessionMessages 映射处补值(缺省 false)。不新增 setSessionLink
 //   ——值随消息落库, PATCH 端点前端零调用方, 按 YAGNI 不引入 — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride } from '@/types/chat';
@@ -173,6 +174,7 @@ export const sessionApi = {
       browser?: string;
       device?: string;
       network?: string;
+      allow_interject?: boolean; // 2026-10-08 小欧 - 文档[11] 3.4.5.2: 开关随消息携带, 不带则 None=沿用会话值
     }
   ): Promise<{
     success: boolean;

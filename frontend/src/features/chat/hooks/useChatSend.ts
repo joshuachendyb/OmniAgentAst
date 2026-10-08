@@ -12,6 +12,7 @@
 // 编辑历史: 2026-09-30 14:30 小欧 - 自动建会话也上抛写 URL（原只 setSessionId，刷新后地址栏无 id）；删零读取的三入参
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.11: 第二参 contextLinkMode 改名 linkEnabled: boolean
 //   (值随消息落库, 见 5.7.14), 继续透传至 chatStreamStore; 建会话逻辑(:142-157)不动 — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.5.2: 插话判据改用 sendGate; 补插话在飞单飞(早退路径统一 resetSendFlags, 防永久卡死)
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -41,6 +42,7 @@ import { API_BASE_URL } from '../../../services/api/client';
 import { logUserSend } from '../../../utils/logStyles';
 import type { Message } from '../../../types/chat';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import { isInterjectRoute } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
 
 interface UseChatSendOptions {
   // 状态
@@ -93,6 +95,8 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   // 2026-08-27 小欧 三堂会审: 回滚改靠userMessage.id, 删pendingMessageIdRef
   // 2026-08-28 小强 修复#12: useRef同步防重, 消除Boolean state异步绕过竞态
   const isSendingRef = useRef(false);
+  // 2026-10-08 小欧 - 文档[11] 3.5.2: 插话在飞单飞。isSendingRef 不可复用(它 finally 要等整条 SSE 跑完, 会把插话永久挡死)
+  const isInterjectingRef = useRef(false);
 
   const handleSend = useCallback(
     async (
@@ -100,14 +104,21 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
       { linkEnabled, allowInterject }: SendOpts
     ) => {
       // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话判定（执行中 + 开关开 = 追加输入, 非新任务）
-      //   isSendingRef 只锁"新任务流"：它在 finally 复位, 而 finally 要等整条 SSE 跑完,
-      //   即任务执行期间恒为 true。若不区分, 插话永远被本行挡掉(决策 9"开=执行中可用"落空)。
-      const isInterject = allowInterject && isReceiving;
+      const isInterject = isInterjectRoute(isReceiving, allowInterject);
+      // 2026-10-08 小欧 - 早退路径统一复位标记(isSendingRef/isInterjectingRef 二者其一)
+      const resetSendFlags = () => {
+        if (isInterject) isInterjectingRef.current = false;
+        else isSendingRef.current = false;
+      };
       // 1. 基础验证（插话不受 isSendingRef 约束, 也不占用该标记）
       if (!messageContent.trim()) return;
       if (!isInterject) {
         if (isSendingRef.current) return;
         isSendingRef.current = true;
+      } else if (isInterjectingRef.current) {
+        return; // 2026-10-08 小欧 - 插话在飞, 拒重复提交
+      } else {
+        isInterjectingRef.current = true;
       }
 
       // 2. 消息长度验证
@@ -116,7 +127,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
           message: '消息过长，请精简到5000字符以内',
           error_type: ErrorType.CONTENT_TOO_LONG,
         });
-        isSendingRef.current = false; // 2026-08-29 小强 修复#20: early-return前复位防重标记, 避免绕过finally永久卡死
+        resetSendFlags(); // 2026-10-08 小欧 - 早退须复位标记, 否则插话永久卡死(同 isSendingRef 当年那处病根)
         return;
       }
 
@@ -136,7 +147,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
             waitTimerRef.current = null;
           }
           setWaitTime(0);
-          isSendingRef.current = false; // 2026-08-29 小强 修复#20: 网络失败early-return前复位防重标记
+          resetSendFlags(); // 2026-10-08 小欧 - 网络失败早退同样须复位标记(否则插话永久卡死)
           return;
         }
       } catch (error) {
@@ -227,6 +238,8 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
             waitTimerRef.current = null;
           }
           setWaitTime(0);
+        } else {
+          isInterjectingRef.current = false; // 2026-10-08 小欧 - 插话在飞标记复位
         }
       }
     },

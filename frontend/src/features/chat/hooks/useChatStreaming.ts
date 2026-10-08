@@ -47,6 +47,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.12: sendMessage/executeSend 形参改名 linkEnabled: boolean
 //   并继续透传给 chatStreamStore.sendMessage — 小欧-2026-10-03
 // 编辑历史: 2026-10-05 小欧 - assistant 占位'🤔 AI 正在思考...' 改空串(文档[9] §5.9): 该字段前端零渲染消费(死数据), 思考态视觉已由 reasoning 标题行承担 — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: interjectSend 落库携带 allow_interject=true(否则插话第一条被 409)
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -631,10 +632,13 @@ export const useChatStreaming = (
         throw new Error('插话失败：会话 id 缺失');
       }
       // 1. 落库(409 门在 save_message 落库前; 抛错即由 useChatSend 的 SESSION_BUSY 分支接管草稿回填)
+      //   2026-10-08 小欧 - 文档[11] 3.4.5.2: 必须携带 allow_interject=true,
+      //   后端按携带值落会话开关后再判 409; 不带则读到旧值(false)→ 插话第一条被拒
       const clientInfo = getClientInfo();
       const saveResult = await sessionApi.saveMessage(sid, {
         role: 'user',
         content: userMessage.content,
+        allow_interject: true,
         client_os: clientInfo.client_os,
         browser: clientInfo.browser,
         device: clientInfo.device,
