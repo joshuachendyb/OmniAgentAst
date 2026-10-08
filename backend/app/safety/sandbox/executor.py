@@ -21,6 +21,10 @@
 #   test-path, kubectl get), 逐条过安全评审(任意无拼接符后缀仍只读); 否决 git branch/ipconfig裸前缀等可写口 - 小欧-2026-09-18
 # 2026-10-02 - 小欧 - 注册名归位: _shell 集合 "shell"→"bash", 并清 2 个从未注册的死项(executeshellcommand/executeshellcommandsafety)
 # 2026-10-04 - 小欧 - 只读白名单三元迁 app/utils/shell_readonly.py(tools需共用、边界禁直连), 本文件同名转发零变化
+# 2026-10-08 - 小欧 - 杀进程防护(事故驱动, E2E P9-03 后端被 agent 的 `Get-Process python | Stop-Process -Force` 杀掉):
+#   ①_scan_command_write_intent 改名 _scan_command_danger_intent 并扩职责, 前置调 has_uncontainable_intent, 命中即转
+#   HITL 不 run(根因: 预检在宿主真跑, Job Object 非硬墙, 词表漏则预检即真跑); ②守卫②注释/日志同步"危险意图";
+#   ③新增 has_uncontainable_intent import。旧名零残留不留别名(禁止 backward)。 — 小欧-2026-10-08
 import asyncio
 import os
 import re
@@ -35,6 +39,7 @@ from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
 
 from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
+from app.utils.shell_readonly import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08
 from app.utils.shell_readonly import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源迁utils, 别名存引用 — 小欧 2026-10-04
 
 _semaphore = asyncio.Semaphore(get_config().get("sandbox.max_concurrent_sandboxes", 3))   # 并发限流(3.1.3)
@@ -120,12 +125,15 @@ def _is_outside_write_target(tail: str) -> Optional[bool]:
     return True                          # 命中越界写意图: 转 HITL 裁决
 
 
-def _scan_command_write_intent(command: str) -> bool:
-    """F-B 核心(保 2.1 预检不改状态): 写动词/重定向目标 越界 → True 不运行 backend。
+def _scan_command_danger_intent(command: str) -> bool:
+    """F-B 核心(保 2.1 预检不改状态): 越界写意图 或 不可隔离动词 → True 不运行 backend。
+
+    2026-10-08 小欧 改名 write→danger 并扩职责(事故驱动): 原只判"越界写"漏杀进程类, 而预检是在宿主真跑,
+    词表一漏即防线自破(E2E P9-03 后端自杀实录)。两类一律只转 HITL 不判等级, 词表为持续维护项(见 R7)。
     v1.21 Z1: 重定向 `>`/`>>` 目标与写动词参数走同一套越界判定——堵死
-    `Get-Date > D:\\evil.ps1` 无写动词穿透全链路的逃逸(N5 白名单侧已堵, 此为扫描器侧)。
-    正则风格参考 execute_shell_command_safety.py 既有危险命令匹配; 本扫描只判"越界写意图"不判危险等级;
-    Job Object 非硬墙(2.5.1)物理拦不住越界写, run 前本预扫描是唯一防线, 词表为持续维护项(见 R7)。"""
+    `Get-Date > D:\\evil.ps1` 无写动词穿透全链路的逃逸(N5 白名单侧已堵, 此为扫描器侧)。"""
+    if has_uncontainable_intent(command):
+        return True                         # 2026-10-08 小欧: 杀进程/停服务绝不进 run(预检真跑=防线自破)
     for match in _WRITE_CMD_RE.finditer(command):
         if match.group(0).rstrip().lower() in _REGISTRY_SYSTEM_VERBS:   # v1.23 V-A: rstrip 双保险
             return True                     # v1.22 W1: 注册表/系统配置写无法被沙箱隔离, 命中即转裁决
@@ -230,9 +238,9 @@ class SandboxExecutor:
                 passed=False, needs_ruling=True,
                 blocked_reason=f"工具执行超时设置不合理（{declared}秒），请调整后重试",
             )
-        # 守卫②(F-B): 命令文本越界写意图扫描 -> 不运行 backend, 直接转 HITL(保 2.1 预检不改状态)
-        if _scan_command_write_intent(command):
-            logger.warning(f"[sandbox][exec] 命令含越界写意图, 转HITL: command_head={command[:120]!r}")
+        # 守卫②(F-B): 命令文本危险意图扫描(越界写 + 杀进程/停服务) -> 不运行 backend, 直接转 HITL(保 2.1 预检不改状态)
+        if _scan_command_danger_intent(command):
+            logger.warning(f"[sandbox][exec] 命令含危险意图, 转HITL: command_head={command[:120]!r}")
             return PreCheckResult(
                 passed=False, needs_ruling=True,
                 blocked_reason="命令包含危险操作，需要用户确认",

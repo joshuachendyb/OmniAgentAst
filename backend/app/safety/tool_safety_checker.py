@@ -76,6 +76,10 @@
 #   违反"豁免只跳确认不跳危险防护") — 小欧-2026-09-19
 # 2026-10-02 - 小欧 - 注册名收敛: _WRITE_RISK_TOOL 改为 write(写保护判定按新注册名)
 # 2026-10-02 - 小欧 - 注册名归位: shell 类风险判定元组 "shell"→"bash"
+# 2026-10-08 - 小欧 - 补接从未生效的保护盾(事故驱动, E2E P9-03 后端被 agent 扫射杀进程杀掉):
+#   ①新增 _protected_pids(): 自身+父进程+shell池(uvicorn --reload 父子双进程故 getppid 必带);
+#   ②_get_needs_confirmation shell 分支前置 is_process_kill_protected 判定, 命中即 blocked=True 直返。
+#   根因: 原实现全项目无第二处传 protected_pids, 故 check_shell_command_risk 内 `if protected_pids:` 恒不生效。 — 小欧-2026-10-08
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -139,6 +143,22 @@ def _is_skip_safety() -> bool:
         return not get_config().get("security.enabled", True)
     except Exception:
         return False
+
+
+def _protected_pids() -> set:
+    """宿主关键进程 PID 集合(后端自身+父进程+shell 池) — 小欧 2026-10-08
+
+    2026-10-08 小欧 新增: 原 protected_pids 全项目从未接线, 保护盾恒不生效。
+    getppid() 必带: uvicorn --reload 是父子双进程, 只护自己漏一半。
+    已知不完美: 覆盖不到 --reload 派生的 worker 子进程, 待办(不假装解决)。"""
+    import os
+    pids = {os.getpid(), os.getppid()}
+    try:
+        from app.tools.fundamental.shell_engine import shell_pool
+        pids |= set(shell_pool.get_all_pids() or ())
+    except Exception:                        # 池未初始化不应拖垮安全判定(降级为只护自身)
+        pass
+    return pids
 
 
 class ToolSafetyChecker:
@@ -267,8 +287,13 @@ class ToolSafetyChecker:
                 and _is_readonly_sql((params or {}).get("sql", "")):
             return False, "", False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
+            _cmd = (params or {}).get("command", "")
+            # 2026-10-08 小欧 补上从未接线的保护盾: 目标命中受保护PID(后端自身/父进程/shell池)即拦截。
             from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
-            _risk = check_shell_command_risk((params or {}).get("command", ""))
+            from app.utils.shell_readonly import is_process_kill_protected
+            if is_process_kill_protected(_cmd, _protected_pids()):
+                return True, "系统保护进程，禁止终止", True
+            _risk = check_shell_command_risk(_cmd)
             if _risk:
                 if _risk.blocked:
                     return True, (_risk.message or "高风险Shell命令拦截"), True   # HIGH: 拦截, 不弹窗
