@@ -23,6 +23,18 @@
 //   ②卡片角标 Tag(状态=运行中/已暂停/重连中)。数据源复用 chatStreamStore.getSnapshot(session_id).status
 //   与新增的 getActiveSessionStatusList(), 零新接口。活性刷新: 用 chatStreamStore.subscribe 对当前在跑会话订阅,
 //   终态转变时 tick 重渲染; 列表每次增删改查也会重跑 loadSessions 从而换绑订阅(不可见的已暂停→恢复→终态翻转仍可见) — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[19] 遗留缺口修复 + 历史卡片版式定案(北京老陈逐条定案):
+//   病根: 卡片标题只作展示, 能进会话的入口只有"继续"小图标与顶部 Alert 里的 Tag —— 点标题(最自然的
+//   入口)毫无反应, 观感即"历史会话进不去"。
+//   定案(全部零新增状态变量, 一律复用既有 handleResume 与 is_valid 语义):
+//   ① 标题可点进入会话: 置于卡片左上角(与右上角勾选框同一行)、左对齐; 无效会话标题 not-allowed 且不跳,
+//      与"继续"按钮 disabled 语义一致; is_valid 判定提为 renderItem 内局部常量 invalid 供四处复用(DRY)。
+//   ② 跳转入口收敛为「继续」按钮 + 「标题」两处(实测点卡片正文/底栏空白不再跳转), 避免"看卡片就跳走"。
+//   ③ 中间区域保留消息数 + 原卡片状态角标(运行中/已暂停/重连中, 北京老陈确认保留; 中间不再新增其他信息)。
+//   ④ 更新时间与创建时间合并为同一行。
+//   ⑤ 不再给 Card 挂整卡 onClick —— 实测该做法会把"点勾选框"也带进会话(click 先于 change 冒泡,
+//      靠 onChange 里的 stopPropagation 拦不住), 故从根上不加整卡点击, 只保留上述两个显式入口。
+//   治法与文档[19] 减锁同源: 修根因(入口缺失/入口过多)而非在调用点打补丁 — 小欧-2026-10-08
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
@@ -522,159 +534,195 @@ const HistoryPage: React.FC = () => {
                   />
                 ),
               }}
-              renderItem={(session) => (
-                <List.Item>
-                  <Card
-                    hoverable
-                    size="small"
-                    style={{
-                      height: '100%',
-                      opacity: session.is_valid === false ? 0.5 : 1,
-                      backgroundColor:
-                        session.is_valid === false ? '#f5f5f5' : '#fff',
-                      transition: 'all 0.3s ease',
-                    }}
-                    actions={[
-                      <Tooltip
-                        key="resume"
-                        title={
-                          session.is_valid === false
-                            ? '无效会话，无法继续'
-                            : '继续对话'
-                        }
+              renderItem={(session) => {
+                // 2026-10-08 小欧 - 无效会话不可继续的单一判定, 供 style/Tooltip/disabled/标题点击四处复用(DRY)
+                const invalid = session.is_valid === false;
+                return (
+                  <List.Item>
+                    <Card
+                      hoverable
+                      size="small"
+                      style={{
+                        height: '100%',
+                        opacity: invalid ? 0.5 : 1,
+                        backgroundColor: invalid ? '#f5f5f5' : '#fff',
+                        transition: 'all 0.3s ease',
+                      }}
+                      // 2026-10-08 小欧(北京老陈定案) - 卡片四行全部自排版, 不用 antd 的 extra/actions:
+                      //   ① extra 渲染在 Card 的 head 行, 与 body 里的 Card.Meta 标题不同行, 会多出一条
+                      //      "只有勾选框的空带"(截图实证); ② styles.actions 只压得住容器 padding, 压不动
+                      //      actions>li 自身 padding, 操作行仍过高。改为 body 内自排版后两问题同时消失,
+                      //      且不新增 CSS 文件、不用全局选择器。
+                      styles={{ body: { padding: '10px 12px' } }}
+                    >
+                      <Space
+                        direction="vertical"
+                        size={6}
+                        style={{ width: '100%' }}
                       >
-                        <Button
-                          type="link"
-                          icon={<MessageOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleResume(session.session_id);
+                        {/* 第1行(卡片左上角): 标题(左, 可点进入会话) + 勾选框(右);
+                          行下加一条分割线, 把标题区与其下的信息区分开(北京老陈定案) */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 8,
+                            borderBottom: '1px solid #f0f0f0',
+                            paddingBottom: 6,
                           }}
-                          loading={loadingSessionId === session.session_id}
-                          disabled={session.is_valid === false}
                         >
-                          {/* 2026-08-27 小欧 修复: 将 loading 类同步到文本节点，保证 getByText('继续') 可断言 loading 状态持续展示 */}
-                          <span
-                            className={
-                              loadingSessionId === session.session_id
-                                ? 'ant-btn-loading'
-                                : undefined
-                            }
-                          >
-                            继续
-                          </span>
-                        </Button>
-                      </Tooltip>,
-                      <Popconfirm
-                        key="delete"
-                        title="删除会话"
-                        description={`确定要删除"${session.title || '未命名会话'}"吗？此操作不可恢复。`}
-                        onConfirm={() => {
-                          handleDelete(session.session_id);
-                        }}
-                        okText="删除"
-                        cancelText="取消"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Tooltip title="删除会话">
-                          <Button
-                            type="link"
-                            danger
-                            icon={<DeleteOutlined />}
-                            onClick={(e) => e.stopPropagation()} // 防止事件冒泡
-                          >
-                            删除
-                          </Button>
-                        </Tooltip>
-                      </Popconfirm>,
-                    ]}
-                    extra={
-                      <Checkbox
-                        checked={selectedSessions.has(session.session_id)}
-                        onChange={(e) => {
-                          e.stopPropagation(); // 防止事件冒泡
-                          const newSelected = new Set(selectedSessions);
-                          if (e.target.checked) {
-                            newSelected.add(session.session_id);
-                          } else {
-                            newSelected.delete(session.session_id);
-                          }
-                          setSelectedSessions(newSelected);
-                        }}
-                      />
-                    }
-                  >
-                    {/* 前端小新代修改 VIS-H02: 会话方块内部文字左侧留白 */}
-                    <div style={{ padding: '0 10px' }}>
-                      <Card.Meta
-                        title={
                           <Tooltip title={session.title || '未命名会话'}>
-                            <Text strong ellipsis style={{ maxWidth: 200 }}>
+                            <Text
+                              strong
+                              ellipsis
+                              style={{
+                                flex: 1,
+                                minWidth: 0,
+                                textAlign: 'left',
+                                cursor: invalid ? 'not-allowed' : 'pointer',
+                              }}
+                              onClick={() => {
+                                if (invalid) return;
+                                handleResume(session.session_id);
+                              }}
+                            >
                               {session.title || '未命名会话'}
                             </Text>
                           </Tooltip>
-                        }
-                        description={
-                          <Space
-                            direction="vertical"
-                            size="small"
-                            style={{ width: '100%' }}
-                          >
-                            <Space>
-                              <Tag icon={<CommentOutlined />} color="blue">
-                                {session.message_count} 条消息
-                              </Tag>
-                              {/* 2026-10-05 22:16:38 小欧 - 卡片角标(方案A)：在跑/已暂停/重连中才渲染，终态或
-                                  idle 不吵用户视线；状态 → 颜色与文案由同一张表驱动（DRY，改一处全卡联动） */}
-                              {(() => {
-                                const st = activeStatusById.get(
-                                  session.session_id
-                                );
-                                if (!st) return null;
-                                const TAG: Record<
-                                  string,
-                                  { color: string; text: string }
-                                > = {
-                                  active: {
-                                    color: 'processing',
-                                    text: '运行中',
-                                  },
-                                  paused: { color: 'warning', text: '已暂停' },
-                                  recovering: {
-                                    color: 'blue',
-                                    text: '重连中',
-                                  },
-                                };
-                                const t = TAG[st];
-                                return t ? (
-                                  <Tag
-                                    color={t.color}
-                                    icon={<LoadingOutlined spin />}
-                                  >
-                                    {t.text}
-                                  </Tag>
-                                ) : null;
-                              })()}
-                            </Space>
-                            <Space>
-                              <ClockCircleOutlined style={{ color: '#999' }} />
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                更新于 {formatDate(session.updated_at)}
-                              </Text>
-                            </Space>
-                            <Text type="secondary" style={{ fontSize: 11 }}>
-                              创建于{' '}
-                              {dayjs(session.created_at).format(
-                                'YYYY-MM-DD HH:mm'
-                              )}
-                            </Text>
+                          <Checkbox
+                            checked={selectedSessions.has(session.session_id)}
+                            onChange={(e) => {
+                              const newSelected = new Set(selectedSessions);
+                              if (e.target.checked) {
+                                newSelected.add(session.session_id);
+                              } else {
+                                newSelected.delete(session.session_id);
+                              }
+                              setSelectedSessions(newSelected);
+                            }}
+                          />
+                        </div>
+
+                        {/* 第2行(中间): 消息数 + 卡片状态角标(运行中/已暂停/重连中);
+                        后者由 activeStatusById 驱动, 北京老陈确认保留(此前误删, 已恢复原位置) */}
+                        <div>
+                          <Space size={6} wrap>
+                            <Tag icon={<CommentOutlined />} color="blue">
+                              {session.message_count} 条消息
+                            </Tag>
+                            {/* 2026-10-05 22:16:38 小欧 - 卡片角标(方案A)：在跑/已暂停/重连中才渲染，终态或
+                            idle 不吵用户视线；状态 → 颜色与文案由同一张表驱动（DRY，改一处全卡联动） */}
+                            {(() => {
+                              const st = activeStatusById.get(
+                                session.session_id
+                              );
+                              if (!st) return null;
+                              const TAG: Record<
+                                string,
+                                { color: string; text: string }
+                              > = {
+                                active: { color: 'processing', text: '运行中' },
+                                paused: { color: 'warning', text: '已暂停' },
+                                recovering: { color: 'blue', text: '重连中' },
+                                // 2026-10-08 小欧(北京老陈定案) - 补 retrying: StreamStatus 活跃态共 4 个
+                                //   (active/paused/recovering/retrying), 原 TAG 表漏了它, t 为 undefined
+                                //   直接返回 null → 重试中的会话卡片不显示任何角标(静默丢失)。独立显示「重试中」。
+                                retrying: { color: 'gold', text: '重试中' },
+                              };
+                              const t = TAG[st];
+                              return t ? (
+                                <Tag
+                                  color={t.color}
+                                  icon={<LoadingOutlined spin />}
+                                >
+                                  {t.text}
+                                </Tag>
+                              ) : null;
+                            })()}
                           </Space>
-                        }
-                      />
-                    </div>
-                  </Card>
-                </List.Item>
-              )}
+                        </div>
+
+                        {/* 第3行: 更新时间靠左、创建时间靠右(同一行, 北京老陈定案) */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 6,
+                          }}
+                        >
+                          <ClockCircleOutlined style={{ color: '#999' }} />
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            更新于 {formatDate(session.updated_at)}
+                          </Text>
+                          <span style={{ flex: 1 }} />
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            创建于{' '}
+                            {dayjs(session.created_at).format(
+                              'YYYY-MM-DD HH:mm'
+                            )}
+                          </Text>
+                        </div>
+
+                        {/* 第4行: 继续 / 删除(自排版, 高度可控) */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            gap: 4,
+                            borderTop: '1px solid #f0f0f0',
+                            paddingTop: 4,
+                          }}
+                        >
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<MessageOutlined />}
+                            onClick={() => handleResume(session.session_id)}
+                            loading={loadingSessionId === session.session_id}
+                            disabled={invalid}
+                            style={{ padding: '0 4px', height: 22 }}
+                          >
+                            {/* 2026-08-27 小欧 修复: 将 loading 类同步到文本节点，保证 getByText('继续') 可断言 loading 状态持续展示 */}
+                            <span
+                              className={
+                                loadingSessionId === session.session_id
+                                  ? 'ant-btn-loading'
+                                  : undefined
+                              }
+                            >
+                              继续
+                            </span>
+                          </Button>
+                          <Popconfirm
+                            title="删除会话"
+                            description={`确定要删除"${
+                              session.title || '未命名会话'
+                            }"吗？此操作不可恢复。`}
+                            onConfirm={() => {
+                              handleDelete(session.session_id);
+                            }}
+                            okText="删除"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                          >
+                            <Tooltip title="删除会话">
+                              <Button
+                                type="link"
+                                size="small"
+                                danger
+                                icon={<DeleteOutlined />}
+                                style={{ padding: '0 4px', height: 22 }}
+                              >
+                                删除
+                              </Button>
+                            </Tooltip>
+                          </Popconfirm>
+                        </div>
+                      </Space>
+                    </Card>
+                  </List.Item>
+                );
+              }}
             />
           </Spin>
 
