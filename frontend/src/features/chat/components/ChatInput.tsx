@@ -5,6 +5,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.8: 删本地 linked 自持 state(跨会话泄漏根因), 改受控 linkEnabled+
 //   onToggleLink(真源寄存 useChatState); onSend 第二参由 contextLinkMode 改 linkEnabled: boolean;
 //   删发送后 setLinked(false)(违背用户意图的根因行), draft 回补保留 — 小欧 2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门判据抽 utils/sendGate 单一真源(原裸 loading 挡死开态插话), disabled 与发送门共用
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -23,18 +24,22 @@ import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
 
 interface ChatInputProps {
   loading: boolean;
   isReceiving: boolean;
   isPaused: boolean;
-  onSend: (content: string, linkEnabled: boolean) => void | Promise<void>;
+  onSend: (content: string, opts: SendOpts) => void | Promise<void>;
   onCancel: () => void;
   onTogglePause: () => void;
   modelPickerSlot?: React.ReactNode;
   sessionId?: string | null;
   linkEnabled: boolean;
   onToggleLink: (enabled: boolean) => void;
+  allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.2
+  onToggleInterject: (enabled: boolean) => void;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -48,21 +53,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
   sessionId,
   linkEnabled,
   onToggleLink,
+  allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.2
+  onToggleInterject,
 }) => {
   const [draft, setDraft] = useState('');
   useEffect(() => {
     setDraft('');
   }, [sessionId]);
 
+  // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门与输入框禁用共用此一处
+  const sendBlocked = isSendBlocked(loading, isReceiving, allowInterject);
+
   // 2026-09-03 小欧 修复: 乐观清空改可回补 — 备份draft, onSend失败时回填防输入永久丢失 - 小欧-2026-09-03
   // linked 不再复位(违背用户粘性意图), 开关真源在 useChatState.linkEnabled
   const handleSendInternal = async () => {
     const content = draft.trim();
-    if (!content || loading || isReceiving) return;
+    if (!content || sendBlocked) return;
     const backup = draft;
     setDraft('');
     try {
-      await onSend(content, linkEnabled);
+      await onSend(content, { linkEnabled, allowInterject }); // 对象参数, 见 3.5.4
     } catch {
       setDraft(backup);
     }
@@ -74,7 +84,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         value={draft}
         onChange={setDraft}
         onPressEnter={handleSendInternal}
-        disabled={loading}
+        disabled={sendBlocked}
       />
       <SubmitBar
         loading={loading}
@@ -92,6 +102,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <TaskTypeToggle checked={linkEnabled} onChange={onToggleLink} />
           </Space>
         }
+        allowInterject={allowInterject} // 2026-10-07 小欧 - 文档[11] 3.5.3: 下传给 SubmitBar(开关落在附件之后)
+        onToggleInterject={onToggleInterject}
         onSend={handleSendInternal}
         onCancel={onCancel}
         onTogglePause={onTogglePause}

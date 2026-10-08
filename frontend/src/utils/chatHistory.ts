@@ -68,6 +68,7 @@ export interface ChatCacheState {
   isReceiving?: boolean;
   /** 会话 link 续聊开关(2026-10-03 补) */
   linkEnabled?: boolean;
+  allowInterject?: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.6: 插话开关镜像
   /** 乐观锁版本号(读侧回填 sessionVersion, 缺则调用方回落 1) */
   sessionVersion?: number;
   /**
@@ -225,6 +226,7 @@ export const loadHistoryMessages = async (
             //   否则刷新命中缓存后选择器拿不到覆盖值而显示"跟随全局"(老陈 2026-10-05 报)
             sessionModel: state.sessionModel ?? null,
             linkEnabled: state.linkEnabled === true,
+            allowInterject: state.allowInterject === true, // 2026-10-07 小欧 - 文档[11] 3.5.6: 写入点②(读侧还原)
           };
         }
       }
@@ -245,6 +247,7 @@ export const loadHistoryMessages = async (
           title_locked: sessionData.title_locked, // 2026-08-27 小欧 修复#34: 空会话分支补title_locked(与有消息分支结构对齐)
           sessionModel: sessionData.sessionModel ?? null,
           linkEnabled: sessionData.link_enabled ?? false,
+          allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.6(空会话分支)
         };
       }
       return null;
@@ -264,6 +267,7 @@ export const loadHistoryMessages = async (
       title_locked: sessionData.title_locked,
       sessionModel: sessionData.sessionModel ?? null,
       linkEnabled: sessionData.link_enabled ?? false,
+      allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.6(有消息分支)
     };
   } catch (error) {
     // 2026-09-30 小欧 - null 语义收窄为"确实不存在"（仅 404）。原 catch 吞全部异常统一
@@ -309,6 +313,7 @@ export const saveSessionToCache = (
   messages: Message[],
   sessionTitle: string,
   linkEnabled: boolean = false,
+  allowInterject: boolean = false, // 2026-10-07 小欧 - 文档[11] 3.5.6
   sessionModel?: SessionModelOverride | null,
   sessionVersion?: number
 ): void => {
@@ -322,6 +327,7 @@ export const saveSessionToCache = (
         messages,
         sessionTitle,
         linkEnabled,
+        allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: 写入点①
         sessionModel: sessionModel ?? null,
         sessionVersion,
         timestamp: Date.now(),

@@ -24,6 +24,7 @@
 //   → 徽标背景改 #f5f5f5 与同行轮次标签一致, 字色保留 Colors.INFO(#096dd9 on #f5f5f5 ≈ 4.9:1, 达 WCAG AA) — 小欧-2026-10-03
 // 编辑历史: 2026-10-05 小欧 - 左列 task 卡 response 接 Markdown: 传 renderExpanded 使展开态排版、折叠态维持原首2行纯文本;
 //   恒 markdown=true 不受设置开关控制(仅受折叠开关控制) — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[11]: 追加注入消息逐条独立成块(原先 marginTop:4 共用一条竖线, 多条连成一串无间隔)
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -354,9 +355,12 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                     <div
                       key={i}
                       style={{
-                        marginTop: 4,
-                        paddingLeft: 10,
+                        // 2026-10-08 小欧 - 文档[11]: 逐条独立成块, 多条不连成串
+                        marginTop: 6,
+                        padding: '4px 8px',
+                        backgroundColor: '#fafafa',
                         borderLeft: '2px solid #d9d9d9',
+                        borderRadius: '0 3px 3px 0',
                       }}
                     >
                       <CollapsibleText text={m} />

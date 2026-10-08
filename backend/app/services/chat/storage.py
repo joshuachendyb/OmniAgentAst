@@ -116,6 +116,7 @@
 #   返回 rowcount 供调用方直接判定(不用 conn.total_changes 差值反推), 供编排器经 db.atxn offload 落
 #   随消息携带的 link 值; session_service.set_session_link 改为委托之, UPDATE SQL 单一来源(DRY)。
 # 2026-10-03 - 小欧 - 文档[4] 5.12.3 副作用修复: set_session_link_conn 删 updated_at 写入(改开关非内容变更, 顺带刷新会把会话顶到列表首位; set_session_info/PATCH 路径是真内容修改, 其 updated_at 保留)。
+# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 新增 resolve_session_interject(取值+落值单一真源, 编排器与 save_message 共用)
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -673,6 +674,44 @@ def set_session_link_conn(conn: Connection, session_id: str, enabled: bool) -> i
       与 set_session_info 的 PATCH 路径不同(那是真内容修改, 刷 updated_at 正确)。"""
     cursor = conn.execute(
         "UPDATE chat_sessions SET link_enabled = ? "
+        "WHERE id = ? AND is_deleted = FALSE",
+        (1 if enabled else 0, session_id),
+    )
+    return cursor.rowcount
+
+
+def get_session_interject(conn: Connection, session_id: str) -> bool:
+    """取会话级插话开关（chat_sessions.allow_interject 唯一真源）— 文档[11] 3.2。
+    供编排器经 db.atxn offload 调用（与 get_session_link 同族同出口）。
+    COALESCE → ALTER 前存量 NULL 行（=关闭）；会话不存在返回 False（fail-closed）。"""
+    row = conn.execute(
+        "SELECT COALESCE(allow_interject, 0) FROM chat_sessions "
+        "WHERE id = ? AND is_deleted = FALSE",
+        (session_id,),
+    ).fetchone()
+    return bool(row[0]) if row else False
+
+
+def resolve_session_interject(
+    conn: Connection, session_id: str, carry: Optional[bool]
+) -> bool:
+    """插话开关生效值(携带值优先; None=沿用会话当前值) + 携带值落库 — 文档[11] 3.4.5.2 单一真源。
+    编排器(开流期)与 save_message(落库期门禁)共用; 落值失败 fail-open, 仍按携带值返回。"""
+    if carry is None:
+        return get_session_interject(conn, session_id)
+    try:
+        set_session_interject_conn(conn, session_id, carry)
+    except Exception as e:  # noqa: BLE001 - 落值失败不阻断调用方(fail-open, 同 set_session_link_conn)
+        logger.warning(f"[interject] 落开关失败, 按携带值继续: {e}")
+    return carry
+
+
+def set_session_interject_conn(conn: Connection, session_id: str, enabled: bool) -> int:
+    """写会话插话开关，返回命中行数 — 文档[11] 3.4。
+    **不写 updated_at**（与 set_session_link_conn 同理，见 storage.py:118 副作用修复：
+    改开关非内容变更，顺带刷新会把会话顶到列表首位）。"""
+    cursor = conn.execute(
+        "UPDATE chat_sessions SET allow_interject = ? "
         "WHERE id = ? AND is_deleted = FALSE",
         (1 if enabled else 0, session_id),
     )

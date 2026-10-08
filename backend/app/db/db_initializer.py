@@ -211,6 +211,9 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_sessions", "version", "INTEGER DEFAULT 1")
         # 2026-10-02 小欧 - 文档[4] 5.7 项1：会话级 link 粘性开关（唯一真源），旧库经 _ensure_column 幂等补列
         _ensure_column(conn, "chat_sessions", "link_enabled", "BOOLEAN DEFAULT FALSE")
+        # 2026-10-06 小欧 - 文档[11] 3.2: chat_sessions 增 allow_interject(会话级插话开关唯一真源)。
+        #   仿 link_enabled; 存量行 ALTER 后为 NULL, 读方 COALESCE → 关(fail-closed), 不写回填脚本(YAGNI)。
+        _ensure_column(conn, "chat_sessions", "allow_interject", "BOOLEAN DEFAULT FALSE")
         
 
         

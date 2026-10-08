@@ -247,6 +247,7 @@ export interface ChatRequest {
   session_id?: string;
   // 会话 link 开关值随消息携带(后端新增契约字段)。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
   link_enabled?: boolean;
+  allow_interject?: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.3: 请求体随消息携带(后端唯一写入口)
 }
 
 /**
@@ -332,4 +333,14 @@ export interface HistoryLoadResult {
   sessionModel?: SessionModelOverride | null;
   // 会话级 link 开关镜像(后端真源, 随会话加载下发)
   linkEnabled?: boolean;
+  allowInterject?: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.6: 历史读取结果镜像
+}
+
+/**
+ * 发送选项（对象参数 — 文档[11] 决策 14: 两个相邻 boolean 位置参数 TS 拦不住错位；
+ * 集中单点定义，消费方 import，不散在各处写字面量（DRY）。
+ */
+export interface SendOpts {
+  linkEnabled: boolean;
+  allowInterject: boolean;
 }

@@ -47,6 +47,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.12: sendMessage/executeSend 形参改名 linkEnabled: boolean
 //   并继续透传给 chatStreamStore.sendMessage — 小欧-2026-10-03
 // 编辑历史: 2026-10-05 小欧 - assistant 占位'🤔 AI 正在思考...' 改空串(文档[9] §5.9): 该字段前端零渲染消费(死数据), 思考态视觉已由 reasoning 标题行承担 — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: interjectSend 落库携带 allow_interject=true(否则插话第一条被 409)
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -72,13 +73,18 @@ import type { UseChatStateReturn } from './useChatState';
 import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 // [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
 import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import type { StreamEvent } from '@/features/chat/streams/backupTypes';
 import { sessionApi } from '../../../services/api/session.api';
 import { getClientInfo } from '../../../utils/clientInfo';
-import { handleError } from '@/services/error/handler';
+import {
+  handleError,
+  classifyError,
+  ErrorType,
+} from '@/services/error/handler'; // 2026-10-07 小欧 - 文档[11] 3.5.4: classifyError 供 :530 SESSION_BUSY 吞点
 
 // 2026-09-06 小欧 B2(6.4A, 北京老陈裁定): 被拒工具点名条 sessionStorage 备份 key——
 //   与 useSSE.ts:43 `sse_execution_steps_backup`(steps 备份)平行命名, 本会话内刷新/重看恢复点名灰字 — 小欧-2026-09-06
@@ -112,7 +118,7 @@ export interface UseChatStreamingReturn {
   // SSE操作
   sendMessage: (
     content: string,
-    linkEnabled: boolean,
+    opts: SendOpts,
     sessionId?: string
   ) => Promise<void>;
   clearSteps: () => void;
@@ -142,7 +148,12 @@ export interface UseChatStreamingReturn {
   executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
 
   // 【小强 2026-04-22】executeSend - 完整的发送流程
-  executeSend: (userMessage: Message, linkEnabled: boolean) => Promise<void>;
+  executeSend: (userMessage: Message, opts: SendOpts) => Promise<void>;
+
+  // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送（执行中追加一条输入；插话必然是开态, 故无需 opts）
+  //   与 executeSend 的分工(SRP)：executeSend = 新建任务流(含清 steps/建占位/重置取消态等"新任务"编排)；
+  //   本方法 = 投递一条输入给运行中任务，**刻意不做**上述任何一项(做了会破坏正在跑的任务显示与状态)。
+  interjectSend: (userMessage: Message) => Promise<void>;
 
   // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
   waitClock: import('@/types/sse').ClockSignals;
@@ -418,7 +429,11 @@ export const useChatStreaming = (
 
   // 发送消息函数（包装useSSE的sendMessage）
   const sendMessage = useCallback(
-    async (content: string, linkEnabled: boolean, customSessionId?: string) => {
+    async (
+      content: string,
+      { linkEnabled, allowInterject }: SendOpts,
+      customSessionId?: string
+    ) => {
       try {
         // 清理之前的流式内容
         streamingContentRef.current = '';
@@ -438,7 +453,8 @@ export const useChatStreaming = (
         await chatStreamStore.sendMessage(
           customSessionId ?? sessionId ?? '',
           content,
-          linkEnabled
+          linkEnabled,
+          allowInterject // 2026-10-06 小欧 - 文档[11] 3.5.5: 存会话快照供 transport 直读
         );
       } catch (error) {
         console.error('发送消息失败:', error);
@@ -464,7 +480,7 @@ export const useChatStreaming = (
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   // 迁移自：NewChatContainer.tsx 的 executeStreamSend 函数
   const executeSend = useCallback(
-    async (userMessage: Message, linkEnabled: boolean) => {
+    async (userMessage: Message, { linkEnabled, allowInterject }: SendOpts) => {
       // 2026-09-15 小欧 v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
       cancelInProgressRef.current = false;
 
@@ -538,6 +554,13 @@ export const useChatStreaming = (
             );
             currentSessionIdRef.current = null;
             setSessionId(null);
+          } else if (classifyError(error) === ErrorType.SESSION_BUSY) {
+            // 2026-10-07 小欧 - 文档[11] 决策 11/13/20: 关态拒插话(消息未入库)。
+            //   必须在此中止本次发送: ①撤回乐观 user 气泡 ②上抛, 让 useChatSend:174 的
+            //   SESSION_BUSY 分支激活 ChatInput 草稿回填(决策 13)。
+            //   不上抛则继续往下建占位并开 SSE —— 消息不入库却空转一圈, 提示还弹两次。
+            setMessages((prev) => prev.filter((m) => m.id !== userMessage.id));
+            throw error;
           } else {
             const result = handleError(error, {
               source: 'api',
@@ -579,7 +602,7 @@ export const useChatStreaming = (
       // 2026-08-27 小欧 三堂会审H1: await闭合SSE发送Promise, 防拒绝变unhandled rejection导致占位消息永久悬挂
       await sendMessage(
         userMessage.content,
-        linkEnabled,
+        { linkEnabled, allowInterject },
         currentSessionIdRef.current ?? sessionId ?? undefined
       );
     },
@@ -596,6 +619,44 @@ export const useChatStreaming = (
       clearSteps,
       sendMessage,
     ]
+  );
+
+  // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送实现
+  //   刻意只做两件事: ①落库(经 saveMessage, 后端 409 门在此生效, 决策 11) ②投递 inbox。
+  //   刻意不做(做了即破坏运行中任务): clearSteps / setDeniedEntries / DENIED 键清理 /
+  //   cancelInProgressRef 复位 / 等待计时器 / assistant 占位 / isProcessing 与 abortController 改动。
+  const interjectSend = useCallback(
+    async (userMessage: Message) => {
+      const sid = currentSessionIdRef.current ?? sessionId ?? undefined;
+      if (!sid) {
+        throw new Error('插话失败：会话 id 缺失');
+      }
+      // 1. 落库(409 门在 save_message 落库前; 抛错即由 useChatSend 的 SESSION_BUSY 分支接管草稿回填)
+      //   2026-10-08 小欧 - 文档[11] 3.4.5.2: 必须携带 allow_interject=true,
+      //   后端按携带值落会话开关后再判 409; 不带则读到旧值(false)→ 插话第一条被拒
+      const clientInfo = getClientInfo();
+      const saveResult = await sessionApi.saveMessage(sid, {
+        role: 'user',
+        content: userMessage.content,
+        allow_interject: true,
+        client_os: clientInfo.client_os,
+        browser: clientInfo.browser,
+        device: clientInfo.device,
+        network: clientInfo.network,
+      });
+      const backendId = saveResult?.message_id;
+      if (backendId) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === userMessage.id ? { ...m, id: String(backendId) } : m
+          )
+        );
+        replyUserMessageIdRef.current = backendId;
+      }
+      // 2. 投递(独立路径: 不掐断运行中流, 不改流状态机)
+      await chatStreamStore.interjectMessage(sid, userMessage.content);
+    },
+    [sessionId, setMessages, currentSessionIdRef, replyUserMessageIdRef]
   );
 
   return {
@@ -620,5 +681,6 @@ export const useChatStreaming = (
 
     // 【小强 2026-04-22】executeSend
     executeSend,
+    interjectSend, // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送(供 useChatSend 分流)
   };
 };

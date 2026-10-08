@@ -92,6 +92,8 @@ export interface UseChatStateReturn {
   >;
   linkEnabled: boolean;
   setLinkEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  allowInterject: boolean; // 2026-10-06 小欧 - 文档[11] 3.5: 与会话同生命周期
+  setAllowInterject: React.Dispatch<React.SetStateAction<boolean>>;
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -215,6 +217,7 @@ export const useChatState = (): UseChatStateReturn => {
   const [sessionModelOverride, setSessionModelOverride] =
     useState<SessionModelOverride | null>(null);
   const [linkEnabled, setLinkEnabled] = useState<boolean>(false);
+  const [allowInterject, setAllowInterject] = useState<boolean>(false); // 2026-10-06 小欧 - 文档[11] 3.5: 与会话同生命周期
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -361,6 +364,9 @@ export const useChatState = (): UseChatStateReturn => {
     setSessionModelOverride,
     linkEnabled,
     setLinkEnabled,
+    allowInterject,
+    setAllowInterject, // 2026-10-06 小欧 - 文档[11] 3.5: 与 linkEnabled/setLinkEnabled 同组返回
+
     editingTitle,
     setEditingTitle,
     titleInput,

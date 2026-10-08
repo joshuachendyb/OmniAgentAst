@@ -15,6 +15,7 @@
 //   setIsReceiving 改直连 chatStreamStore.setReceiving(5.4 公开动作, 循环依赖已不复存在);
 //   taskControl.functions.disconnect 改 stop(Store.stop, 见 5.14) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - URL 归页面层 Router 唯一写；会话真源改 state 优先；删九组零消费分组；onSuccess 移出流接口
+// 编辑历史: 2026-10-08 小欧 - 文档[11]: options 加 onTasksChanged 透传(插话并入后刷新左栏)
 /**
  * useChatFacade Hook - 便捷的Chat状态组合
  *
@@ -73,6 +74,8 @@ export const useChatFacade = (options?: {
   sessionId?: string | null;
   onError?: (liveError: LiveError) => void;
   onSuccess?: () => void; // 2026-09-19 小欧: 任务成功完成回调(终态非failed), 用于清liveError — 北京老陈驱动
+  // 2026-10-08 小欧 - 文档[11]: 插话被后端并入后重取左栏任务列表(「追加N条」回显)
+  onTasksChanged?: () => void;
   // 2026-09-30 小欧 - URL 写入出口透传（原 useChatSession 直接调原生
   //   window.history.pushState/replaceState 绕过 React Router，导致 urlSessionId 陈旧、
   //   本层的 `sessionId || chatState.sessionId` 让陈旧值优先 → setIsReceiving 写错会话）。
@@ -83,6 +86,7 @@ export const useChatFacade = (options?: {
   const { baseURL = '', sessionId } = options || {};
   const onError = options?.onError; // 2026-08-27 小欧 三堂会审: 透传SSE错误用
   const onSuccess = options?.onSuccess;
+  const onTasksChanged = options?.onTasksChanged; // 2026-10-08 小欧 - 插话回显刷新左栏
   const onUrlSessionChange = options?.onUrlSessionChange;
 
   // 1. 基础状态（始终加载）
@@ -109,8 +113,9 @@ export const useChatFacade = (options?: {
   const chatCallbacksPages = useMemo(
     () => ({
       onSuccess, // 2026-09-19 小欧: 任务成功完成回调透传 — 北京老陈驱动
+      onTasksChanged, // 2026-10-08 小欧 - 插话并入后刷新左栏
     }),
-    [onSuccess]
+    [onSuccess, onTasksChanged]
   );
   const chatCallbacks = useChatCallbacks(
     chatState,
@@ -164,6 +169,9 @@ export const useChatFacade = (options?: {
     waitTimerRef: chatState.waitTimerRef,
     currentSessionIdRef: chatState.currentSessionIdRef,
     executeSend: chatStreaming.executeSend,
+    // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话投递(独立于 executeSend) + 插话判定所需的执行中标志
+    interjectSend: chatStreaming.interjectSend,
+    isReceiving: chatStreaming.isReceiving,
     // 2026-09-30 小欧 - 自动建会话也要写 URL，故把同一注入形状透到 useChatSend（写入口收口）
     onUrlSessionChange,
   });

@@ -40,6 +40,7 @@ export function saveChatState(state: unknown): void {
         isPaused: s.isPaused,
         isReceiving: s.isReceiving,
         linkEnabled: s.linkEnabled,
+        allowInterject: s.allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: 写入点③(降级态)
         sessionVersion: s.sessionVersion,
         sessionModel: s.sessionModel ?? null,
       };

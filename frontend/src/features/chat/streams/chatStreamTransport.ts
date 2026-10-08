@@ -214,6 +214,7 @@ export async function sendStreamRequest(
         stream: true,
         session_id: s.sessionId,
         link_enabled: s.linkEnabled,
+        allow_interject: s.allowInterject, // 2026-10-06 小欧 - 文档[11] 3.4.4: 随消息携带, 后端 None=沿用会话当前值
       }),
       signal: ctl.signal,
     });
@@ -225,6 +226,50 @@ export async function sendStreamRequest(
     await handleTransportError(s, e);
   } finally {
     clearFirstChunkTimer(s); // 异常路径兜底
+  }
+}
+
+/**
+ * 插话投递（2026-10-07 小欧 - 文档[11] 决策 9/11；独立于 sendStreamRequest）
+ *
+ * 为什么必须独立（本函数存在的全部理由，勿与 sendStreamRequest 合并）：
+ *   sendStreamRequest 开头即 s.abortController?.abort() 并重置 lastSeq/isReceiving/status/
+ *   pendingMessage —— 那是"新建任务流"语义；插话是"给正在跑的任务追加一条输入"，复用它会：
+ *     ① 掐断正在跑的第一条 SSE 流（断流 → 走重连/轮询，运行中任务显示断裂）
+ *     ② 清 lastSeq/status/pendingMessage/isProcessing → 污染运行中任务的快照与终态判定
+ *   故本函数只做一件事：POST 一次 /chat/stream，让后端把消息投进活跃任务 inbox。
+ *   注入应答(merged 帧)由编排器 publish 到**目标任务**的流缓冲，随第一条流的 pump 送达前端，
+ *   渲染走既有 onMerged 链路（零改动）；本函数读到流结束即返回。
+ */
+export async function postInterject(
+  s: ChatStreamSession,
+  content: string
+): Promise<void> {
+  const ctl = new AbortController();
+  const res = await fetch(`${cfg.baseURL}/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: content }],
+      stream: true,
+      session_id: s.sessionId,
+      link_enabled: s.linkEnabled,
+      // 插话必然显式置开：前端门已判 allowInterject，这里保证后端落值同语义(None=沿用会误伤)
+      allow_interject: true,
+    }),
+    signal: ctl.signal,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+  if (!res.body) throw new Error('响应体为空');
+  await readToEnd(res.body); // 只读到结束，不解析/不派发：merged 帧由目标任务流转发，重复消费会双渲
+}
+
+/** 2026-10-07 小欧 - 文档[11]: 插话响应体只读到结束（不解析），避免与目标任务流重复消费同一帧 */
+async function readToEnd(body: ReadableStream<Uint8Array>): Promise<void> {
+  const reader = body.getReader();
+  for (;;) {
+    const { done } = await reader.read();
+    if (done) return;
   }
 }
 

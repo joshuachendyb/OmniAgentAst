@@ -34,3 +34,6 @@ class ChatRequest(BaseModel):
     # link_enabled 是新的唯一写入口: 禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
     # — 小欧 2026-10-03 文档[4] 5.7.14 单元1
     link_enabled: Optional[bool] = Field(default=None, description="会话link开关值(随消息携带; None=沿用会话当前值)")
+    # 2026-10-06 小欧 - 文档[11] 3.4.3: 会话插话开关值随消息携带, None=沿用会话当前值(与 link_enabled 同语义)。
+    #   唯一写入口同 link: 严禁另开 PATCH 端点(见 sessions.py:19 已废止先例)。
+    allow_interject: Optional[bool] = Field(default=None, description="会话插话开关值(随消息携带; None=沿用会话当前值)")

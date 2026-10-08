@@ -203,6 +203,7 @@
 #   不生成任务, 在建会话处落值会让它们改写会话真源。链根计算与历史装入逻辑一行未动。
 # 2026-10-03 - 小欧 - 落值加命中判定: set_session_link_conn 返回 rowcount, 0 行即会话不存在, warning 留痕但本条仍按携带值处理(fail-open 用携带值, 不掐断流)。
 # 2026-10-05 - 小欧 - 报告 P3: 两处 loop_watchdog.activate() 移入 try, 激活期异常带 task_id/session_id/stream_id 链根 warning, 杜绝静默失败。
+# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 插话开关取/落值收敛为 storage.resolve_session_interject(与 save_message 共用单一真源)
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -246,6 +247,7 @@ from app.services.chat.storage import get_user_message_id, allocate_and_insert_m
 from app.services.chat.storage import insert_task, update_task, token_usage_insert, get_previous_task_chain  # 任务级读写; get_session_model 已随外迁 resolver 侧 — 小健 2026-09-05
 from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - 文档[4] 5.10.1: link 开关真值 conn 级读(与 get_previous_task_chain 同族同出口), 经 db.atxn offload 出事件循环
 from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
+from app.services.chat.storage import resolve_session_interject     # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
@@ -345,6 +347,7 @@ async def chat_stream_orchestrator(
     messages: list,
     session_id: Optional[str] = None,
     link_enabled: Optional[bool] = None,   # 会话 link 开关值(随消息携带, None=沿用会话当前值)
+    allow_interject: Optional[bool] = None,   # 2026-10-06 小欧 - 文档[11]: 插话开关值(随消息携带, None=沿用会话当前值)
 ) -> AsyncGenerator[str, None]:
     """聊天流编排入口：负责任务生命周期、Agent 启动、SSE 消费。
 
@@ -416,8 +419,32 @@ async def chat_stream_orchestrator(
 
         # 2026-09-20 小欧 活跃任务注入机制(北京老陈定案): 同会话已有活跃任务时, 新消息注入该任务 inbox(可多条),
         #   待其下一轮 LLM 调用前合并吸收; 无活跃任务时走正常新建任务。工具执行不被打断(安全底线)。 — 小欧-2026-09-20
+        # ── 插话开关: 落值 → 取生效值（携带值优先）→ 关态兜底 ──────────
+        #   位置必须在 has_active_task_in_session 之前：link_enabled 的落值块在注入之后，
+        #   照抄位置会让"刚打开开关的第一条消息"读不到新值 —— 小欧 2026-10-06
+        #   判定与落值同处一次执行, 读到即生效。
+        #   2026-10-08 小欧 - 文档[11] 3.4.5.2 DRY: 取值+落值收敛为 storage.resolve_session_interject
+        #   单一真源(与 save_message 共用); 读失败仍按关处理(fail-closed, 同 get_session_link)。
+        try:
+            _allow_interject = await db.atxn(
+                "chat", lambda conn: resolve_session_interject(conn, session_id, allow_interject)
+            )
+        except Exception as _e:
+            logger.warning(f"[interject] 读开关失败, 按关处理(fail-closed, 与 get_session_link 策略同款): {_e}")
+            _allow_interject = False
+
         _active_tid = await has_active_task_in_session(session_id)
         if _active_tid:
+            if not _allow_interject:
+                # 兜底(3.4.5.1 已拦下绝大多数): 生成器内无法抛 409, 只能以 SSE error 事件告知。
+                #   触发入口两种: ①竞态(save_message 入库成功、会话在入库后被切为关态) ⟸ 此路径消息已在库;
+                #   ②绕过(直接 POST /chat/stream 而未经 /messages) ⟸ 此路径消息**未**入库。
+                #   两者都走同一帧文案; 前端按 3.5.9 处理: 仅提示(warning)+不回填草稿。
+                yield create_error_response(
+                    error_type="session_busy",
+                    error_message="任务执行中，插话开关未开启；请等待完成或先取消",  # 与 messages 409 detail、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
+                )
+                return
             _injected_ok = await inject_message_to_task(_active_tid, user_input, _user_msg_id)
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")

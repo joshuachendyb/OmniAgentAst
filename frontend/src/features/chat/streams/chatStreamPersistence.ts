@@ -59,6 +59,7 @@ function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
     hitlWaitingKeys: [],
     pendingMessage: null,
     linkEnabled: false,
+    allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.6: legacy 迁移默认
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：legacy 数据无心跳信息，按"未收到"给 0
     heartbeatTs: 0,

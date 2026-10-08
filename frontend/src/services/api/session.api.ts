@@ -5,6 +5,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.2: GetSessionMessagesResponse 补 link_enabled(会话 link 开关真源
 //   随会话加载主路径下发, 前端唯一读取点); getSessionMessages 映射处补值(缺省 false)。不新增 setSessionLink
 //   ——值随消息落库, PATCH 端点前端零调用方, 按 YAGNI 不引入 — 小欧-2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride } from '@/types/chat';
@@ -54,6 +55,7 @@ export interface GetSessionMessagesResponse {
   version?: number;
   sessionModel?: SessionModelOverride | null;
   link_enabled: boolean; // 会话 link 开关真源, 随会话加载主路径下发(唯一读取点)
+  allow_interject: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.6: 插话开关真源(同 link_enabled, 唯一读取点)
   messages: ApiMessage[];
 }
 
@@ -139,6 +141,7 @@ export const sessionApi = {
       title_updated_at: response.data.title_updated_at ?? null,
       version: response.data.version ?? 1,
       link_enabled: response.data.link_enabled ?? false, // 缺省 false(fail-closed)
+      allow_interject: response.data.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.4.6: 缺省 false(fail-closed)。注意本对象是 GetSessionMessagesResponse(蛇形), 驼峰 AllowInterject 的变换在下游 chatHistory/useChatSession 做, 与 link_enabled 同款。
       messages: (response.data.messages ?? []).map((m) => ({
         ...m,
         thought:
@@ -171,6 +174,7 @@ export const sessionApi = {
       browser?: string;
       device?: string;
       network?: string;
+      allow_interject?: boolean; // 2026-10-08 小欧 - 文档[11] 3.4.5.2: 开关随消息携带, 不带则 None=沿用会话值
     }
   ): Promise<{
     success: boolean;

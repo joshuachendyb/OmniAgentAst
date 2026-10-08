@@ -56,6 +56,7 @@ import type {
 import type { EffectiveModel } from './useModelLayer';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
 import type { LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 import type { UseChatFacadeReturn } from './useChatFacade';
 
 interface UseChatPanelsOptions {
@@ -89,9 +90,11 @@ interface UseChatPanelsOptions {
   handleNewSession: () => void;
   handleEditingStart: () => void;
   handleEditingCancel: () => void;
-  handleSend: (content: string, linkEnabled: boolean) => void;
+  handleSend: (content: string, opts: SendOpts) => void;
   // 会话级 link 开关写回(由 ChatPage 注入, 纯本地态不发请求)
   onToggleLink: (enabled: boolean) => void;
+  allowInterject: boolean; // 2026-10-07 小欧 三堂会审补: 透传给 ChatInput
+  onToggleInterject: (enabled: boolean) => void;
   // 2026-09-01 小欧 方案C: 最新任务锚点id + 挂到最新任务项的ref(左列滚动定位透传)
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
@@ -128,6 +131,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     handleEditingCancel,
     handleSend,
     onToggleLink,
+    allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: 透传给 ChatInput
+    onToggleInterject,
     latestTaskId, // 2026-09-01 小欧 方案C: 透传最新任务锚点
     latestTaskRef, // 2026-09-01 小欧 方案C: 透传挂最新任务的ref
     rightOpen, // 2026-09-09 小欧: 右侧展开状态, 透传TaskListPanel控制模型标签provider显示
@@ -148,6 +153,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     sessionModelOverride,
     setSessionModelOverride,
     linkEnabled,
+    // allowInterject/onToggleInterject 同组透传, 见上(opts 解构) — 2026-10-07 小欧 - 文档[11] 3.5.4
     loading,
     isPaused,
   } = chatState;
@@ -312,6 +318,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             onTogglePause={handleTogglePause}
             linkEnabled={linkEnabled}
             onToggleLink={onToggleLink}
+            allowInterject={allowInterject}
+            onToggleInterject={onToggleInterject}
             modelPickerSlot={
               <ModelPicker
                 sessionId={sessionId}
@@ -367,6 +375,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       handleSend,
       onToggleLink,
       linkEnabled,
+      allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatInput 渲染依赖(漏=开关值变后面板不刷新)
+      onToggleInterject,
       handleCancel,
       handleTogglePause,
       liveError,
