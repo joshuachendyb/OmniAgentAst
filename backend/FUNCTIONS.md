@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-01 12:04:56
-**最近更新**: 2026-10-01 12:04:56 小欧 [1] 刷新显示其他任务结果修复同步 — append_execution_step 改运行期逐步落库签名(增 task_id/usage, task_id 缺失即抛 fail-loud + ON CONFLICT DO NOTHING 幂等); 新增 _strip_thought_content 供 load_execution_steps 与 load_steps_by_task 共用 thought 收口(两入口形状一致); load_execution_steps 标注 thought 经该函数收口。详见下方版本历史 v4.6
+**最后更新时间**: 2026-10-08 10:26:28
+**最近更新**: 2026-10-08 10:26:28 小欧 补登记漏项(AGENTS.md §1.3 违反修复): ①新增 1.15 shell 杀进程/停服务防护(shell_readonly.py 三函数, E2E P9-03 后端被 agent 扫射杀进程事故驱动) ②新增 1.16 异步流收尾(astream.aclose_stream, 2026-10-07 随 llm_call/base_service 三处修复同批漏登记) ③新增 3.5 上下文压缩(compaction 三函数: prune_tool_output_keeping_tail 降本策略 + _fc_atomic_units FC 原子单元 + _msg_cost 统一 token 口径) ④新增 8.4 受保护进程集合(_protected_pids, 补上 protected_pids 从未接线的洞)N CONFLICT DO NOTHING 幂等); 新增 _strip_thought_content 供 load_execution_steps 与 load_steps_by_task 共用 thought 收口(两入口形状一致); load_execution_steps 标注 thought 经该函数收口。详见下方版本历史 v4.6
 
 ---
 
@@ -140,6 +140,24 @@ shell 只读判定的单一权威（2026-10-04 自 `app/safety/sandbox/executor.
 |--------|------|------|--------|
 | `is_readonly_whitelisted` | 只读白名单快速通道判定：前缀命中且无管道/分号/重定向符（须在写意图扫描之后调用的定序约束见函数 docstring） | command: str | bool |
 
+### 1.15 shell 杀进程/停服务防护（shell_readonly.py，位于 app/utils/）
+
+不可隔离动词的单源词表与判定（2026-10-08 事故驱动新增）。根因：shell 沙箱预检会在宿主**真跑一遍**命令，而 Job Object 非硬墙拦不住子进程杀别的进程 —— 词表漏判则预检即真跑，E2E P9-03 实录后端被 agent 的 `Get-Process python | Stop-Process -Force` 杀掉。命中即须转 HITL，**不得进入预检 run**。与 1.14 同文件不同关注点（1.14 管"可直放"，1.15 管"绝不可跑"）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `has_uncontainable_intent` | 不可隔离动词判定：杀进程（Stop-Process 任意形态 / taskkill / wmic process / pkill / killall / kill）与停服务（Stop-Service / Restart-Service）；大小写不敏感，只认完整独立动词。收录标准= 现有 `SHELL_DANGEROUS_PATTERNS` 只到 MEDIUM（弹窗后仍进预检）拦不住者；HIGH 级（Stop-Computer / Format-Volume / shutdown）预检前已 blocked，不重复收录 | command: str | bool |
+| `extract_kill_target_pids` | 提取命令显式指定的杀进程目标 PID：覆盖 `Stop-Process -Id a,b` / `taskkill /PID n` / `kill [-9] n` 三形态；按名与 pkill 形态目标由名字决定、静态枚举不了，返回空集 | command: str | set[int] |
+| `is_process_kill_protected` | 命令目标是否命中受保护 PID（后端自身/父进程/shell 池），命中即 blocked。`protected_pids` 由调用方注入（utils 禁 import tools，组装归 safety 侧，见 8.4）；空集合或按名形态返 False | command: str, protected_pids: set | bool |
+
+### 1.16 异步流收尾（astream.py，位于 app/utils/）
+
+异步生成器上抛收尾的统一入口（2026-10-07 新增）。上游流在提前退出（取消/异常/break）时若不关闭会残留连接与协程；本函数做能力探测式关闭，兼容无 `aclose()` 的测试 mock。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `aclose_stream` | 安全关闭异步流：存在 `aclose()` 则 await 并吞掉收尾期异常（收尾失败不应掩盖主流程异常），无则退化为 `close()`；供 `llm_call.py` / `base_service.py` 的 finally 复用 | stream: Any | None |
+
 ---
 
 ## 二、工具返回层（app/tools/）
@@ -206,6 +224,18 @@ shell 只读判定的单一权威（2026-10-04 自 `app/safety/sandbox/executor.
 | `parse_model_params` | 解析 provider 配置的 model_params → (extra_body_params, context_limit)；DRY 唯一权威(create_service_instance 与 stream_orchestrator L2 快照同用)；context_limit 配置优先否则 DEFAULT_CONTEXT_LIMIT 兜底，余量作 extra_body_params(无则 None) | provider_config: dict, model: str | Tuple[Optional[dict], int] |
 
 > 落点说明(2026-09-01 小欧 复用优先/DRY 归一): 原逻辑双份嵌在 create_service_instance(service.py) 与 stream_orchestrator(L2 跨 provider 快照), 归一为本函数唯一权威, 消除双份漂移; 行为与历史一致(仅去重, 不改逻辑)。
+
+### 3.5 上下文压缩（services/agent/compaction/）
+
+C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线时新增/修正）。降本原则：工具输出原文只对最近几轮有价值，故保尾区保留、更早的清零。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `prune_tool_output_keeping_tail` | 摘要降本策略（已接入 `start_step._compact_injected_history`）：保尾区 tool 结果原样保留，只清零更早的。边界由调用方给（`split_turn.find_tail_start` 按保尾预算算），故本模块不 import split_turn（零新依赖、职责不混）；不改入参，越界下标由切片语义兜住 | messages: List[Dict], tail_start: int | (新列表, 释放 token 估算) |
+| `_fc_atomic_units` | 把 assistant(tool_calls) 与其 tool 结果编成 FC 原子单元（整组取舍，永不拆散），修"决策留下/结果被删"导致 provider 400；单元权重取成员最高、成本取成员之和 | messages: List[Dict] | List[List[int]] |
+| `_msg_cost` | 单条消息的预算占用 token，复用 `MessageBuilder._estimate_tokens` 同一真源（原 `len(content)/CHARS_PER_TOKEN` 自算漏算 tool_calls 结构开销，实测决策消息 0 vs 41，致 budget 约束不准） | msg: Dict | int |
+
+> 落点说明(2026-10-08 小欧): 真实 205 条实测，未降本 feed 135362 tok；本策略降至 86472 tok（省 36%）且摘要保住可核对的具体数字/签名/时间戳（纯全清零版 83673 tok 但摘要仅 1521 字符且失掉证据）。开关见 `compaction_constants.SUMMARY_PRUNE_TOOL_OUTPUT`，置 False 即刻回退全量喂。
 
 ---
 
@@ -373,6 +403,16 @@ def my_parse_json(json_str):
 
 > 消费链：tool_safety_checker._check_known_risks 检测到白名单外路径(非禁区) → SafetyResult(requires_confirmation+auth_path，auth_path=failed_path 真正越权参数, 非固定path-or-dest) → action_handler 确认后 grant_temp_auth → validate_path 放行本次；**react_cycle.run_react_cycle task结束 finally 调 clear_temp_auth() 清除(task级清零点)**；禁区(代码库根/系统目录)不受临时授权影响永久封锁
 
+### 8.4 受保护进程集合（tool_safety_checker.py，位于 app/safety/）
+
+宿主关键进程 PID 的唯一组装点（2026-10-08 事故驱动新增）。供给 1.15 的 `is_process_kill_protected` 判定"命令是否要杀宿主自己"。此前 `check_shell_command_risk` 的 `protected_pids` 参数全项目无第二处传值，保护盾恒不生效。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `_protected_pids` | 组装宿主关键进程集合：后端自身 `getpid()` + 父进程 `getppid()`（uvicorn `--reload` 为父子双进程，只护自己漏一半）+ shell 池 `get_all_pids()`（池未初始化时降级为只护自身，不拖垮安全判定）。**已知不完美**：`getppid()` 覆盖不到 `--reload` 派生的 worker 子进程，待办 | 无 | set[int] |
+
+> 消费链：`_get_needs_confirmation` 的 shell 分支前置 `is_process_kill_protected(cmd, _protected_pids())`，命中即 `blocked=True` 直返（不进弹窗、不进沙箱预检）。
+
 ---
 
 ## 九、E2E测试层（backend/e2etests/e2emodel/）
@@ -432,6 +472,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v4.9 | 2026-10-08 10:26:28 | 补登记漏项(AGENTS.md §1.3 违反修复, 小欧): ①**1.15 shell 杀进程/停服务防护**(shell_readonly.py: `has_uncontainable_intent`/`extract_kill_target_pids`/`is_process_kill_protected`) — 事故驱动, E2E P9-03 实录 agent 发 `Get-Process python \| Stop-Process -Force`、沙箱预检在宿主真跑一遍即杀死后端自身; 收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者, HIGH 级不重复收录(DRY); ②**1.16 异步流收尾**(astream.py: `aclose_stream`) — 2026-10-07 随 llm_call/base_service 流关闭修复同批, 当时漏登记; ③**3.5 上下文压缩**(compaction/: `prune_tool_output_keeping_tail` 摘要降本策略已接入 start_step + `_fc_atomic_units` FC 原子单元修 provider 400 + `_msg_cost` 统一 token 口径), 真实 205 条 feed 135362→86472 tok; ④**8.4 受保护进程集合**(`_protected_pids`) — 此前 protected_pids 全项目无第二处传值致保护盾恒不生效。已知不完美如实登记: getppid() 覆盖不到 --reload worker 子进程(待办) | 小欧 |
 | v4.8 | 2026-10-06 20:15:00 | 10.1 新登记 `load_security_docs`（读 `app/datafile/*.md` 三段说明 + 5 个占位符插值 + 缺文件降级）；同批 `FORBIDDEN_PATHS_WINDOWS_*` 改存与盘符无关相对段并抽出 `FALLBACK_SYSTEM_DRIVE`，去掉 `.replace("C:", ...)` 字符串替换 | 小欧 |
 | v4.7 | 2026-10-05 23:05:00 | ①**补登记漏项**(AGENTS.md §1.3 违反修复): 五章新增适配层 3 条 `get_provider_adapter`/`ProviderAdapter`(7 钩子与边界"schema 类绝不 provider 化")/`OpencodeZenAdapter`, 适配层 2026-09-23 落地至今零登记; ②10.3 `_parse_remote_models_body`/`fetch_remote_models` 描述订正漂移(补 probe_key 参数、status_code/category 字段, 前者 2026-09-26 起即缺) + 新登记 `_first_alias`/`_str_list`; ③记录 2026-10-05 模型库增强: 厂商字段别名归一(SenseNova 实抓 9 模型 16 字段, 此前静默丢弃 11 个)+ 4 字段下发 + key 空白时不发 Authorization。**本次未动解析层既有 10 字段口径**(裸数组兼容/id 回退 model/字母序排序/opencodeZen 的 supported_parameters 全部逐字回归验证通过) | 小欧 |
 | v4.6 | 2026-10-01 | [1] 刷新显示其他任务结果 修复(全链根因+契约)。**A组 运行期逐步落库**: agent_runner 末尾扫描 event_log 机制退役, step 落库前移到 StreamBuffer.persist_sink(buffer.publish 唯一收口, 覆盖 _emit_publish/handle_action 直连/_events 批量三条发布路径), 单消费者 FIFO 队列零背压, finally flush; step_index 改独立计数器(itertools.count, 解耦内存列表); append_execution_step 增 ON CONFLICT DO NOTHING 幂等 + task_id fail-loud; token_usage 明细改实时。**E组**: MessageResponse 增 task_id(E4) + load_execution_steps 三调用点补传 pair_task_id(E3, 堵跨任务混读); chat_user_message 正文回填前移至 final 帧(E13); total_steps 剔除集统一复用 agent_telemetry.M_SKIP(E1/E2, 含补齐 chunk/thought-start/error/rejected 使两统计源恒等); 新增 _strip_thought_content 供两读入口共用(E11); get_task_tool_stats 改 json_each 支持并行多工具(E7); _warn_zero_row 增 level 参数, update_task 0 行升级 error(E9)。**YAGNI 清理**: save_execution_steps/其端点/sse_events 死函数/前端 saveExecutionSteps/ExecutionStepsUpdate/derive_status_from_steps 整删(E8) | 小欧 |
