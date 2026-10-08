@@ -101,6 +101,9 @@
 //   供 taskinfo「占窗率 = 本轮P/窗口」; 窗口为常量, 无新值时沿用上一帧(prev.contextWindow)
 // 编辑历史: 2026-10-04 小欧 - history_context 帧仅在 truncated 时入 executionSteps(供行尾事件列表派生"历史对话已裁剪"),
 //   事件派生与现有 9 类同源且取帧内真实 timestamp; 非裁剪帧不入, 免影响 RightViewer 步骤数比较
+// 编辑历史: 2026-10-08 小欧 北京老陈裁定"不能误导用户"(与 ContextOverviewCard 同批): contextOverview 帧
+//   解析改 compressed/compress_saved_pct 两字段, 删 injected_ratio —— 该值>1 才代表压缩生效但标签叫"压缩比"
+//   方向相反, 且未压缩时≠1.0(装入含 system+本轮提问), 会让用户误读。
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -535,7 +538,8 @@ const processSSEData = (
             message_count: rawData.message_count,
             estimated_tokens: rawData.estimated_tokens,
             truncated: trimmed,
-            injected_ratio: rawData.injected_ratio,
+            compressed: rawData.compressed === true,
+            compress_saved_pct: rawData.compress_saved_pct ?? 0,
             injected_message_count: rawData.injected_message_count ?? null,
             injected_estimated_tokens:
               rawData.injected_estimated_tokens ?? null,

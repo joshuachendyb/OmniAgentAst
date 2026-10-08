@@ -12,6 +12,12 @@
  *   原百分比在压缩场景会显示成 5650%); token 同时给完整值与 K 缩写(格式由 formatTokenK 收于 K)
  * 编辑历史: 2026-10-07 小欧 - 删 contextSummary prop 与其兜底: 上下文数据只认 history_context 帧(overview);
  *   原在 overview 非对象时回退 start.content, 会让未压缩/未注入任务显示错误上下文
+ * 编辑历史: 2026-10-08 小欧 北京老陈裁定"不能误导用户" 四处纠正: ①`压缩比 R×`→`已压缩 X%`且仅
+ *   compressed=true 时显(后端 injected_ratio 下线: 该值>1 才代表压缩生效, 标签方向相反且未压缩时≠1.0);
+ *   ②`装入历史对话 N 条`→`上下文 N 条`+tooltip 说明口径(message_count 是 conv 全量, 含本轮提问与工具调用);
+ *   ③`最近: X`→`最近提问: X`(后端 summary 改取注入源最后一条 user, 不再回显本轮提问); ④占窗率加(估算)标注。
+ * 编辑历史: 2026-10-08 小欧 北京老陈裁定 B 全展开不折叠: ⑤summary 段去单行省略, 改 pre-wrap 保留六段换行,
+ *   限高 52vh 可滚(内容一字不删); ⑥标题随场景显式化(已注入摘要/最近提问); ⑦卡片宽 320→560(2048 字符在窄栏不可读)。
  */
 import React, { useEffect, useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -55,15 +61,20 @@ export const ContextOverviewCard: React.FC<Props> = ({
   const count =
     typeof overview === 'object' && overview ? overview.message_count : null;
 
-  // 2026-10-04 小欧: 跨任务注入三字段(injected_*)此前收了未显; 仅 injected_message_count>0 时增一行,
-  //   避免多数任务显示"注入 0 条"噪声(YAGNI); 两行顺序=注入在上、装入在下(北京老陈令) — 小欧 2026-10-04
+  // 2026-10-04 小欧: 跨任务注入字段仅 injected_message_count>0 时显(多数任务为 0, 显示是噪声 YAGNI)。
+  //   2026-10-08 删 ratio 字段: 后端 injected_ratio 已下线, 压缩率改由 overview.compressed 直渲。
   const injected =
     typeof overview === 'object' && overview
       ? {
           count: overview.injected_message_count ?? 0,
           tokens: overview.injected_estimated_tokens ?? 0,
-          ratio: overview.injected_ratio ?? 0,
         }
+      : null;
+  // 2026-10-08 小欧 压缩率: 派生时收窄 union 类型, 不在 JSX 内直接访问(TS18047/TS2339);
+  //   仅压缩时产出, 未压缩返 null → 整段不显, 不用"1.0×"冒充"压缩了"
+  const compressInfo =
+    typeof overview === 'object' && overview && overview.compressed === true
+      ? { savedPct: overview.compress_saved_pct ?? 0 }
       : null;
 
   // 2026-10-04 小欧: 装入条数 + 估算 token + 占窗率 同行(北京老陈定); 占窗率=估算 token / 窗口, 窗口缺失则不显
@@ -78,14 +89,36 @@ export const ContextOverviewCard: React.FC<Props> = ({
           <div>
             跨任务注入 {injected.count} 条 · 估算Token约{' '}
             {injected.tokens.toLocaleString()} ({formatTokenK(injected.tokens)})
-            · 压缩比 {injected.ratio.toFixed(1)}×
+            {/* 2026-10-08 小欧 北京老陈裁定"不能误导用户": 原显 `压缩比 R×`, 而该值>1 才代表压缩生效 →
+                标签与数值方向相反, 且未压缩时也不等于 1.0。改显"已压缩 X%"且仅压缩时才显。 */}
+            {compressInfo && (
+              <>
+                {' · 已压缩 '}
+                {compressInfo.savedPct.toFixed(1)}%
+              </>
+            )}
           </div>
         )}
         <div>
-          {count != null && <span>装入历史对话 {count} 条</span>}
+          {/* 2026-10-08 小欧 标签订正: 原 `装入历史对话 N 条`, 但 message_count 是 conversation_history
+              全量(含本轮 system/提问/工具调用), 注入105装入117 时用户会以为多出 12 条不知来路。 */}
+          {count != null && (
+            <span title="上下文全部消息条数（含本轮提问与工具调用），非仅历史对话">
+              上下文 {count} 条
+            </span>
+          )}
           {count != null && hasTokens && <span> · </span>}
           {hasTokens && <span>估算Token约 {formatTokenK(tokens)}</span>}
-          {hasTokens && usedPct != null && <span> · 占窗率 {usedPct}%</span>}
+          {/* 占窗率: 分子是 MessageBuilder 粗估 token, 与 TaskInfoBar 的 prompt token 不同口径,
+              故标注(估算)并在 title 里说明, 避免用户误当精确值。 */}
+          {hasTokens && usedPct != null && (
+            <span
+              title={`按估算 token ${tokens} ÷ 窗口 ${contextWindow} 计算，非 LLM 实测 prompt`}
+            >
+              {' · 占窗率(估算) '}
+              {usedPct}%
+            </span>
+          )}
         </div>
       </div>
     ) : null;
@@ -112,7 +145,9 @@ export const ContextOverviewCard: React.FC<Props> = ({
       cardId="taskinfo-context-card"
       ariaLabel="历史上下文"
       cardStyle={{
-        width: 320,
+        // 2026-10-08 小欧 320→560: 摘要全文可达 2048 字符(六段 Markdown), 320px 窄栏会挤成细长条。
+        //   纵向不设上限(北京老陈令: 全展开不折叠), 只放宽宽让每行可读。
+        width: 560,
         maxWidth: '90vw',
         display: 'flex',
         flexDirection: 'column',
@@ -129,16 +164,30 @@ export const ContextOverviewCard: React.FC<Props> = ({
           </div>
           <div>{metricLine ?? ctx.text}</div>
           {summary && (
-            // 2026-10-04 小欧: 摘要单行省略, 去展开按钮(北京老陈: 按钮不好看)
+            // 2026-10-08 小欧 北京老陈裁定 B(全展开不折叠): ①内容改真来源 —— 后端 compressed 时给「真正注入 conv
+            //   的那段摘要」, 未压缩给最近一次历史提问(原字段恒为用户本轮提问, 等于回显自己, 属误导);
+            //   ②去单行省略与 textOverflow, 改 pre-wrap 保留六段换行; ③标题随场景显式化, 不让用户猜。
             <div
               style={{
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                color: Colors.TEXT.PRIMARY,
+                // 2026-10-08 小欧: 全展开但可滚(北京老陈"不能折叠"≠"不可达")。摘要实测 2048 字符
+                //   ≈ 800~1200px 高, 不限高会溢出视口底部看不到; maxHeight+overflowY 令全文在框内滚动。
+                maxHeight: '52vh',
+                overflowY: 'auto',
               }}
-              title={summary}
             >
-              最近: {summary}
+              <div
+                style={{
+                  fontWeight: FontWeight.BOLD,
+                  position: 'sticky',
+                  top: 0,
+                }}
+              >
+                {compressInfo ? '已注入摘要' : '最近提问'}
+              </div>
+              <div>{summary}</div>
             </div>
           )}
           {/* 2026-10-04 小欧: 仅 truncated 补警示行, ok 态不重复卡片内容 */}

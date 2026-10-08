@@ -49,6 +49,9 @@
 # 2026-10-08 小欧 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、只清零更早的,
 #   编排为 preserve_recent_budget/find_tail_start(split_turn) 算边界 + prune_tool_output_keeping_tail(prune) 执行,
 #   本模块零算法; 逐条浅拷贝隔离防清零原地改污染 _injected_history_msgs(摘要失败时零退化要用)。 — 小欧-2026-10-08
+# 2026-10-08 小欧 北京老陈裁定"不能误导用户" — set_injected_context 增传 last_user_text: 遥测原从 conversation_history
+#   末条取 summary, 首帧时那正是用户刚发的本轮提问, 标签"最近"等于把自己的提问回显一遍(实测四条帧全是用户原话);
+#   改由注入源取最近一条历史提问, 语义才成立。 — 小欧-2026-10-08
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -184,9 +187,8 @@ async def _compact_injected_history(agent) -> str:
 
     # 摘要只归档注入的历史(不含 system/task): 原实现把含末尾 task 的整条历史喂LLM, 模型当待执行指令
     #   → 越权调工具(实测 glm-5.2 finish=tool_calls 并写文件)
-    # 2026-10-07 北京老陈 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、
-    #   只清零更早的; 逻辑全在 compaction 包(prune_tool_output_keeping_tail + split_turn), 此处只编排。
-    #   实测 205 条: 省 48890 tok(36%), 保尾 13 条工具原文, 摘要 2048 字符/六段 6/6。
+# 2026-10-07 北京老陈 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、只清零更早的;
+    #   编排=split_turn 两函数算边界 + prune_tool_output_keeping_tail 执行, 本模块零算法; 实测省 48890 tok(36%), 摘要 2048 字符/六段 6/6。
     #   ⚠ 逐条浅拷贝: 清零原地改 dict, 直接传会污染 _injected_history_msgs(摘要失败时零退化要用)。
     _src = getattr(agent, "_injected_history_msgs", None) or []
     _hist_for_summary = [dict(m) for m in _src]
@@ -308,6 +310,11 @@ async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["Start
         _tele.set_injected_context({
             "message_count": len(_prev),
             "estimated_tokens": MessageBuilder._estimate_tokens(_prev),
+            # 2026-10-08 小欧 传最近一条历史提问: telemetry 原从 conv 末条取, 首帧时那正是本轮提问,
+            #   标签叫"最近"等于回显用户自己的话。改由注入源取, 语义才成立。
+            "last_user_text": next(
+                (str(m.get("content") or "") for m in reversed(_prev)
+                 if m.get("role") == "user" and (m.get("content") or "").strip()), ""),
         })
     # ④ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
     _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None

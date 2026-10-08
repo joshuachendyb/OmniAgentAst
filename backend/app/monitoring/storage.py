@@ -16,6 +16,9 @@
 #   persist 层序列化 ModelRef.model_dump_json(), 旧两列废弃保留不删
 # 2026-08-23 - 小欧 - 三轮三堂会审修复: ModelRef 改 persist_llm_calls 函数内惰性导入——本文件设计声明
 #   "不依赖、纯 DB 操作、惰性导入防环", 顶层 app import 破坏该隔离承诺
+# 2026-10-08 - 小欧 - context_injected_ratio 改语义明确列(context_compressed INTEGER + context_compress_saved_pct REAL):
+#   同步 CREATE TABLE、persist _cols、PRAGMA 幂等补列三处; 旧列保留不删但不再写(禁 backward 不删历史数据)。
+#   漏补列会导致老库 INSERT 报 no column named context_compressed(动态列名 INSERT, 见 persist_task_metrics)。
 """监控独立库 monitoring.db 落库层（独立模块）—— 小欧 2026-08-20
 
 - 库路径由 database.py._db_paths["monitoring"] 注册，复用 get_conn("monitoring")（WAL+闸门+退避全复用）。
@@ -47,7 +50,8 @@ def init_monitoring_db(get_conn) -> None:
                 prompt_tokens INTEGER, completion_tokens INTEGER, total_tokens INTEGER,
                 context_message_count INTEGER, context_estimated_tokens INTEGER,
                 context_truncated INTEGER, context_injected_message_count INTEGER,
-                context_injected_estimated_tokens INTEGER, context_injected_ratio REAL,
+                context_injected_estimated_tokens INTEGER, context_compressed INTEGER,
+                context_compress_saved_pct REAL,
                 created_at TEXT
             );
             CREATE TABLE IF NOT EXISTS task_tool_metrics (
@@ -93,6 +97,14 @@ def init_monitoring_db(get_conn) -> None:
         for _c in _need_cols:
             if _c not in _has_cols:
                 conn.execute(f"ALTER TABLE task_metrics ADD COLUMN {_c} INTEGER")
+        # 2026-10-08 小欧 context_injected_ratio → context_compressed/context_compress_saved_pct(老库幂等补列):
+        #   persist_task_metrics 用动态列名 INSERT(见下), 老库缺列会报 no column named context_compressed
+        #   —— 实测本机 monitoring.db 2307 行 32 列无这两列, 故必须补。旧列保留不删但不再写。
+        _ctx_compress_cols = (("context_compressed", "INTEGER"),
+                              ("context_compress_saved_pct", "REAL"))
+        for _c, _ty in _ctx_compress_cols:
+            if _c not in _has_cols:
+                conn.execute(f"ALTER TABLE task_metrics ADD COLUMN {_c} {_ty}")
         # 归一迁移(小欧 2026-08-22 报告v1.25 6.2): task_metrics/llm_calls 老库幂等补 JSON 单列(旧列废弃保留不删)
         _norm_cols = {"task_metrics": "task_model", "llm_calls": "llm_model"}
         for _t, _c in _norm_cols.items():
@@ -110,7 +122,7 @@ def persist_task_metrics(row: Dict[str, Any]) -> None:
              "estimated_cost",
              "prompt_tokens", "completion_tokens", "total_tokens", "context_message_count", "context_estimated_tokens",
              "context_truncated", "context_injected_message_count", "context_injected_estimated_tokens",
-             "context_injected_ratio", "created_at"]
+             "context_compressed", "context_compress_saved_pct", "created_at"]
     _vals = [row.get(c) for c in _cols]
     _ph = ",".join(["?"] * len(_cols))
     _sql = f"INSERT OR REPLACE INTO task_metrics({','.join(_cols)}) VALUES ({_ph})"

@@ -19,6 +19,8 @@
  *
  * 【重要】type 取值与后端一致，详见 utils/sse.ts 内分类说明。
  */
+// 编辑历史: 2026-10-08 小欧 - history_context 字段块: 删 injected_ratio, 改 compressed + compress_saved_pct
+//   (同 sse.ts 的 ContextOverviewFrame, 后端 build_context_overview 为唯一真源, 两处声明须同步)
 
 export interface ExecutionStep {
   // === 通用字段 ===
@@ -190,7 +192,9 @@ export interface ExecutionStep {
   // history_context
   message_count?: number;
   estimated_tokens?: number;
-  injected_ratio?: number;
+  // 2026-10-08 小欧 - 删 injected_ratio(误导源), 与 sse.ts 的 ContextOverviewFrame 同步改语义明确的两个字段
+  compressed?: boolean;
+  compress_saved_pct?: number;
   // 2026-10-04 小欧 - 与 sse.ts 的 ContextOverviewFrame 对齐
   injected_message_count?: number | null;
   injected_estimated_tokens?: number | null;

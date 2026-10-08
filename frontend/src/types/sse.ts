@@ -18,6 +18,8 @@
 // 编辑历史: 2026-10-04 小欧 - ContextOverviewFrame 补两个 injected 键(后端一直在发, parser 此前丢弃),
 //   与 types/execution.ts 的平行声明对齐 — 小欧 2026-10-04
 // 编辑历史: 2026-10-04 小欧 - TaskMetaFrames 加 contextWindow(运行时上下文窗口, 来自 usage 帧), emptyMetaFrames 同步置 null
+// 编辑历史: 2026-10-08 小欧 - ContextOverviewFrame: 删 injected_ratio(>1 才代表压缩生效, 标签"压缩比"方向相反),
+//   改 compressed(是否压缩) + compress_saved_pct(省了多少%); 字段契约须与后端 build_context_overview 同步。
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
@@ -56,8 +58,10 @@ export interface ContextOverviewFrame {
   message_count?: number;
   estimated_tokens?: number;
   truncated: boolean;
-  injected_ratio?: number;
-  // 2026-10-04 小欧 - 补两个 injected 键
+  // 2026-10-08 小欧 - 删 injected_ratio(注入量/装入量, >1 才代表压缩生效但标签叫"压缩比"方向相反,
+  //   且未压缩时因装入含 system+本轮提问而不等于 1.0, 两语义混淆)。改为下面两个语义明确的字段。
+  compressed?: boolean;
+  compress_saved_pct?: number;
   injected_message_count?: number | null;
   injected_estimated_tokens?: number | null;
 }

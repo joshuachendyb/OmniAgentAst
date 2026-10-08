@@ -46,6 +46,12 @@
 #   半句切断且与前端已改的完整显示(TaskInfoBar 2026-09-09 移除 slice)不一致; 现取完整文本。
 # 2026-10-07 北京老陈 新增 build_history_context_step(): history_context 帧构造单一出口,
 #   react_loop 首帧(emit start 前)与 react_step 裁剪轮/每5轮共用(DRY); telemetry 只造帧, emit/publish 归调用方。
+# 2026-10-08 北京老陈 裁定"不能误导用户" — 上下文卡片误导修正(小欧): ①删 injected_ratio(该值=注入量/装入量,
+#   >1 才代表压缩生效但标签叫"压缩比"方向相反, 且未压缩时也不等于1.0 —— 实测 step=0 压缩后 1.056×、step=5 未压缩
+#   0.921×, 同一字段两种场景语义相反), 改 compressed(_start_summary 非空权威判定)+compress_saved_pct(省%,夹逼≥0);
+#   ②summary 改取注入源最后一条 user(set_injected_context 增 last_user_text 传入, 原取 conv 末条=用户本轮提问,
+#     标签"最近"等于回显自己, 实测四条帧全是用户原话);
+#   ③落库列 context_injected_ratio → context_compressed + context_compress_saved_pct(禁backward 不留旧列)。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -132,7 +138,7 @@ class TaskTelemetry:
         self._first_token_ts: Optional[float] = None        # 首 chunk 时延基准
         self._llm_calls: List[Dict[str, Any]] = []          # 逐次 LLM 调用明细（落 llm_calls）
         self._tool_stats: Dict[str, Dict[str, float]] = {}  # 工具聚合（落 task_tool_metrics）
-        self._injected_context: Optional[Dict[str, int]] = None  # 跨任务注入基线（固定快照）
+        self._injected_context: Optional[Dict[str, Any]] = None  # 跨任务注入基线（固定快照）
         self._trim_count = 0
         self._trim_tokens = 0
         self._artifacts: List[Dict[str, str]] = []   # 任务产出物收集（内存态，终态随 final_stats / update_task 下发）— 小欧 2026-08-21
@@ -141,11 +147,16 @@ class TaskTelemetry:
     def on_start(self, start_time: Optional[float]) -> None:
         self._run_start_ts = start_time if start_time else time.time()
 
-    def set_injected_context(self, snapshot: Dict[str, int]) -> None:
-        """跨任务注入上下文基线快照（start_step 注入后一次性写入，固定不随裁剪变）"""
+    def set_injected_context(self, snapshot: Dict[str, Any]) -> None:
+        """跨任务注入上下文基线快照（start_step 注入后一次性写入，固定不随裁剪变）
+
+        2026-10-08 小欧 增 last_user_text: 原 summary 取 conv 最后一条 user/assistant, 首帧时那正是
+        用户刚发的本轮提问, 标签却叫"最近" → 用户看到自己的提问被回显, 属误导。改由注入源提供。
+        """
         self._injected_context = {
             "message_count": int(snapshot.get("message_count", 0) or 0),
             "estimated_tokens": int(snapshot.get("estimated_tokens", 0) or 0),
+            "last_user_text": str(snapshot.get("last_user_text", "") or ""),
         }
 
     def mark_first_token(self) -> None:
@@ -289,30 +300,39 @@ class TaskTelemetry:
         )
 
     def build_context_overview(self) -> Dict[str, Any]:
-        """产出 history_context 帧的数据字典(11.3-A) —— injected_ratio 为压缩比(注入量/装入量)"""
+        """产出 history_context 帧的数据字典(11.3-A) — 小欧 2026-10-08 重写压缩语义
+
+        ①删 injected_ratio(注入量/装入量): >1 才代表压缩生效但标签叫"压缩比"方向相反, 且未压缩时
+          因装入含 system+本轮提问而不等于 1.0。改 compressed + compress_saved_pct(详见文件头编辑历史)。
+        ②summary 按场景给真内容: 压缩给真正注入 conv 的那段摘要, 未压缩给注入源最后一条 user。
+        """
         from app.services.agent.message_builder import MessageBuilder
         _mb = self.agent.message_builder
         _history = _mb.conversation_history
         _message_count = len(_history)
         _estimated = MessageBuilder._estimate_tokens(_history)
         _truncated = bool(getattr(_mb, "_trimmed_this_round", False))
-        _inj = self._injected_context or {"message_count": 0, "estimated_tokens": 0}
-        _inj_tokens = _inj["estimated_tokens"]
-        _ratio = round(_inj_tokens / max(_estimated, 1), 3)   # 压缩比=注入量/装入量; 无注入时=0
-        _summary = ""
-        for _m in reversed(_history):
-            _c = _m.get("content") or ""
-            if _c and _m.get("role") in ("user", "assistant"):
-                _summary = _c
-                break
+        _inj = self._injected_context or {}
+        _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
+        # 摘要取一次复用(DRY): 是否压缩与摘要正文同源, 不重复读 agent 属性
+        _start_summary = str(getattr(self.agent, "_start_summary", "") or "").strip()
+        _compressed = bool(_start_summary)
+        # 省了多少%: 未压缩显式 0, 不让 system+本轮提问的固定开销冒充"压缩收益"。
+        #   口径近似: 分母=注入的原始历史, 分子=装入全部消息(含摘要+system+本轮提问), 实测占比 <1%。
+        #   夹逼 ≥0: 摘要仅在原文 > 窗口一半(实测 121868 tok)时生成, 负数实际不可达, 仍夹逼为防御。
+        _saved_pct = 0.0
+        if _compressed and _inj_tokens > 0:
+            _saved_pct = max(0.0, round((1 - _estimated / _inj_tokens) * 100, 1))
+        # summary 按场景给真内容(北京老陈 2026-10-08 裁定 B: 卡片全展开不折叠, 故须给全文)
         return {
             "message_count": _message_count,
             "estimated_tokens": _estimated,
             "truncated": _truncated,
-            "injected_message_count": _inj["message_count"],
+            "injected_message_count": int(_inj.get("message_count", 0) or 0),
             "injected_estimated_tokens": _inj_tokens,
-            "injected_ratio": _ratio,
-            "summary": _summary,
+            "compressed": _compressed,
+            "compress_saved_pct": _saved_pct,
+            "summary": _start_summary if _compressed else str(_inj.get("last_user_text", "") or ""),
         }
 
     def build_history_context_step(self, step: int = 0):
@@ -334,7 +354,8 @@ class TaskTelemetry:
             truncated=_ov["truncated"],
             injected_message_count=_ov["injected_message_count"],
             injected_estimated_tokens=_ov["injected_estimated_tokens"],
-            injected_ratio=_ov["injected_ratio"],
+            compressed=_ov["compressed"],
+            compress_saved_pct=_ov["compress_saved_pct"],
             severity="info",
         ))
 
@@ -399,7 +420,10 @@ class TaskTelemetry:
             "context_truncated": 1 if self._trim_count > 0 else 0,   # B1修复(复核确认): 任务级裁剪判定, 原读末轮瞬时标志致"裁剪早于末轮则漏报" — 小欧 2026-08-20
             "context_injected_message_count": _overview["injected_message_count"],
             "context_injected_estimated_tokens": _overview["injected_estimated_tokens"],
-            "context_injected_ratio": _overview["injected_ratio"],
+            # 2026-10-08 小欧 context_injected_ratio → 拆两个语义明确的列(禁 backward 不留旧列别名)。
+            #   落库列名须与 storage._cols 同步, 且老库须走 PRAGMA 幂等补列(见 storage.init_monitoring_db)。
+            "context_compressed": 1 if _overview["compressed"] else 0,
+            "context_compress_saved_pct": _overview["compress_saved_pct"],
             "trim_count": self._trim_count,     # C1修复(复核确认): 原 on_trim 采集数据不进 finalize, 裁剪遥测死链路 — 小欧 2026-08-20
             "trim_tokens": self._trim_tokens,
             "created_at": datetime.now().isoformat(sep=" "),
