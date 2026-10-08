@@ -46,6 +46,7 @@
 // 编辑历史: 2026-09-30 14:30 小欧 - 新增 onUrlSessionChange，用 setSearchParams 作 URL 唯一写入口（原直接改地址栏致前进后退不同步）
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.9 + 5.8.20: handleSendWithMode 改名 handleSend, 第二参由 mode
 //   改 linkEnabled: boolean; 新增 handleToggleLink 为纯本地态(setLinkEnabled, 不发请求) — 小欧 2026-10-03
+// 编辑历史: 2026-10-08 小欧 - 文档[11]: 注入 onTasksChanged(ref 中转 refreshTasks, 插话并入后左栏「追加N条」才刷新)
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -76,6 +77,9 @@ const ChatPage: React.FC = () => {
   const [rightOpen, setRightOpen] = useState(true);
   // 2026-09-01 小欧 方案C: 左列最新任务锚点ref(常驻, 传入useChatPanels→TaskListPanel滚动定位)
   const latestTaskRef = useRef<HTMLDivElement | null>(null);
+  // 2026-10-08 小欧 - 文档[11]: refreshTasks 在本组件下方(useSessionTasks)才声明, 而 onTasksChanged
+  //   要在 useChatFacade 入参里给 → 用 ref 中转(同 useChatCallbacks 的 onSuccessRef 模式, 解闭包陈旧)
+  const refreshTasksRef = useRef<() => void>(() => undefined);
   // [63] 5.16：流状态已常驻 Store，本组件只订阅，不再拥有流的生命周期
   const chatFacade = useChatFacade({
     baseURL: API_BASE_URL,
@@ -83,6 +87,8 @@ const ChatPage: React.FC = () => {
     onError: (liveError: LiveError) => setLiveError(liveError),
     // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
     onSuccess: () => setLiveError(null),
+    // 2026-10-08 小欧 - 文档[11]: 插话被后端并入后重取左栏, 否则「追加N条」停在旧快照不出现
+    onTasksChanged: () => refreshTasksRef.current(),
     // 2026-09-30 小欧 - URL 写入唯一出口：本页是唯一与 Router 接触处。原生 pushState 不派发
     //   popstate、Router v7 只监听 popstate → urlSessionId 陈旧 → 写错会话
     onUrlSessionChange: (id: string | null) => {
@@ -99,6 +105,8 @@ const ChatPage: React.FC = () => {
     latestTaskId,
     updateTaskResponse, // 小欧 2026-09-11 SSE final 帧到达时即时更新 task response — 小欧-2026-09-11
   } = useSessionTasks(sessionId);
+  // 2026-10-08 小欧 - 文档[11]: 挂上真实 refresh(渲染期赋值, 供上方 onTasksChanged 经 ref 调用)
+  refreshTasksRef.current = refreshTasks;
   const { effective } = useModelLayer({
     sessionId,
     sessionTitle: chatState.sessionTitle,

@@ -65,6 +65,7 @@
 //   authorization_resumed 兜底派发), 防双源复活导致弹窗重复触发 — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 切会话复位会话级 ref；onResumed 依赖改稳定 ref；返回值 memo 化
 // 编辑历史: 2026-10-05 小欧 - 占位'🤔 AI 正在思考...' 两处改空串(文档[9] §5.10); 连带修 hooks-chat-send-bug.test.ts:87 孤儿断言假绿(谓词写死旧文案恒不匹配, 改与文案解耦) — 小欧-2026-10-05
+// 编辑历史: 2026-10-08 小欧 - 文档[11]: onMerged 删 showInfo 提示条(左栏已承担回显), 改调 pageCallbacks.onTasksChanged 刷左栏
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -90,7 +91,6 @@ import type { ExecutionStep } from '../../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
 import { handleSSEError } from '@/services/error/handler';
 import { logAIComplete, logAIError } from '../../../utils/logStyles';
-import { showInfo } from '@/utils/chatMessages'; // 2026-09-28 小欧: 注入应答提示条复用既有 showInfo(零新组件, 复用优先) — 小欧-2026-09-28
 
 // 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
 import type { SSEError, SSEMetadata } from '@/types/sse';
@@ -158,6 +158,8 @@ export const useChatCallbacks = (
   //   就得改一次。现改为独立命名参数，与流对象职责分清。
   pageCallbacks?: {
     onSuccess?: () => void; // 任务成功完成（终态非 failed）— 北京老陈驱动
+    // 2026-10-08 小欧 - 文档[11]: 插话并入后重取左栏(「追加N条」由 list_session_tasks.merged_inputs 供给)
+    onTasksChanged?: () => void;
   }
 ): UseChatCallbacksReturn => {
   // 解构状态
@@ -873,16 +875,17 @@ export const useChatCallbacks = (
 
   // ==================== onMerged回调 ====================
 
-  // 2026-09-28 小欧: 注入应答消费端(设计[76] 5.4④/6.14) — 运行中的任务收到追加消息并入,
-  //   ①提示条复用既有 showInfo(零新组件/零新样式, 复用优先); 不进 liveMeta 错误位(语义非错误)。
-  //   ②左侧高亮: 本 hook 不持 activeTaskId(左栏状态归 useTaskSelection), 沿用本文件
-  //   onAuthorizationRequired 同款 CustomEvent 桥把任务id交给属主处理, 不跨层直改左栏状态(SLAP) — 小欧-2026-09-28
-  const onMerged = useCallback((mergedIntoTaskId: string | null) => {
-    showInfo('已并入正在运行的任务');
-    window.dispatchEvent(
-      new CustomEvent('task_merged', { detail: { taskId: mergedIntoTaskId } })
-    );
-  }, []);
+  // 2026-10-08 小欧 - 文档[11]: 删提示条(左栏「追加N条」已承担回显, 且该条恒同文案必被
+  //   handler.ts:814 30s 去重吞掉)。刷新左栏: merged 帧到达即插话已被并入, 不刷则左栏停旧快照。
+  const onMerged = useCallback(
+    (mergedIntoTaskId: string | null) => {
+      window.dispatchEvent(
+        new CustomEvent('task_merged', { detail: { taskId: mergedIntoTaskId } })
+      );
+      pageCallbacks?.onTasksChanged?.();
+    },
+    [pageCallbacks?.onTasksChanged]
+  );
 
   // ==================== onRetry回调 ====================
 
