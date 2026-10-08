@@ -46,6 +46,9 @@
 # 2026-10-07 北京老陈 _compact_injected_history: 摘要 await(30~60s)前后各查一次 check_cancelled,
 #   避免长等待期间暂停/取消/新消息无响应; 被取消返回空串由调用方零退化装配原历史。
 # 2026-10-07 北京老陈: 校正 5 处与代码不符的 docstring(判定数据源/摘要调用方/init_history 阶段/步骤序号/前置条件)。
+# 2026-10-08 小欧 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、只清零更早的,
+#   编排为 preserve_recent_budget/find_tail_start(split_turn) 算边界 + prune_tool_output_keeping_tail(prune) 执行,
+#   本模块零算法; 逐条浅拷贝隔离防清零原地改污染 _injected_history_msgs(摘要失败时零退化要用)。 — 小欧-2026-10-08
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -173,15 +176,44 @@ async def _compact_injected_history(agent) -> str:
     前置条件: _maybe_compact_injected_history 已置 _needs_compact=True。
     关联逻辑: 摘要生成/模板/截断全归 compaction 模块(SRP); tools=None 走 llm_stream Text 模式;
       摘要只归档 _injected_history_msgs(不含 system/task); await 前后各查一次取消(见编辑历史)。
+      2026-10-07 北京老陈: 摘要前对拷贝副本调 prune.clear_tool_outputs 清零 tool 结果(降本 38%),
+      开关 tuning.compaction.summary_prune_tool_output; 原 _injected_history_msgs 不受影响,
+      保证摘要失败/取消时调用方零退化装配原历史仍拿到完整历史。
     """
     from app.services.agent.compaction.summary import generate_anchored_summary
 
     # 摘要只归档注入的历史(不含 system/task): 原实现把含末尾 task 的整条历史喂LLM, 模型当待执行指令
     #   → 越权调工具(实测 glm-5.2 finish=tool_calls 并写文件)
-    _hist_for_summary = list(getattr(agent, "_injected_history_msgs", None) or [])
+    # 2026-10-07 北京老陈 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、
+    #   只清零更早的; 逻辑全在 compaction 包(prune_tool_output_keeping_tail + split_turn), 此处只编排。
+    #   实测 205 条: 省 48890 tok(36%), 保尾 13 条工具原文, 摘要 2048 字符/六段 6/6。
+    #   ⚠ 逐条浅拷贝: 清零原地改 dict, 直接传会污染 _injected_history_msgs(摘要失败时零退化要用)。
+    _src = getattr(agent, "_injected_history_msgs", None) or []
+    _hist_for_summary = [dict(m) for m in _src]
     if not _hist_for_summary:
         agent._needs_compact = False
         return ""
+    try:
+        from app.services.agent.compaction_constants import (
+            COMPACTION_BUFFER, SUMMARY_PRUNE_TOOL_OUTPUT,
+        )
+        if bool(get_config().get('tuning.compaction.summary_prune_tool_output',
+                                 SUMMARY_PRUNE_TOOL_OUTPUT)):
+            from app.services.agent.compaction.prune import prune_tool_output_keeping_tail
+            from app.services.agent.compaction.split_turn import (
+                find_tail_start, preserve_recent_budget,
+            )
+            _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
+            _tail_budget = preserve_recent_budget(max(1, _ctx - COMPACTION_BUFFER))
+            _tail_start = find_tail_start(_hist_for_summary, _tail_budget)
+            _hist_for_summary, _released = prune_tool_output_keeping_tail(
+                _hist_for_summary, _tail_start)
+            logger.info(
+                f"[start_step] 摘要前降本(保尾保留+旧轮清零): 省 {_released} tok; "
+                f"保尾区保留最近 {len(_hist_for_summary) - _tail_start} 条(预算 {_tail_budget} tok)")
+    except Exception as e:
+        # 清零是纯优化, 失败不得影响摘要主链(降级为全量喂)
+        logger.warning(f"[start_step] 摘要前清零 tool 结果失败, 降级为全量喂: {type(e).__name__}: {e!r}")
     try:
         _task_id = getattr(agent, "task_id", None)
         if _task_id:

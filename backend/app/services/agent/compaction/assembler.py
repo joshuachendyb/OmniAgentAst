@@ -4,6 +4,9 @@
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 改名: extract_new_block→get_new_messages_since, trim_orphan_pairs_proactive→remove_dangling_tool_calls;
 #                        模块职责/函数引用/与 prune 协同描述同步(编辑历史保留原名)
+#   2026-10-08 小欧 - remove_dangling_tool_calls 双向剪孤儿: 原 tool 侧判据恒真(seen_ids 由同一份 messages 的
+#     tool 收集, "该 id 在 seen_ids"永远成立)→ tool 侧从未真被剪过, 连缺 tool_call_id 的也因 None in seen_ids 留下,
+#     与函数名/文档承诺不符; 现 tool 侧改比对调用方 id 集合(assistant.tool_calls), 双向各剪一次, 不改结构与入参。 — 小欧-2026-10-08
 """compaction.assembler — 装配适配(保尾区保留 + 压缩消息注入 + 配对修剪) — 小健 2026-08-17
 
 职责(SRP): 仅承载「装配」三步:
@@ -75,25 +78,37 @@ def inject_compressed_summary(messages: List[Dict], summary_text: str,
 
 
 def remove_dangling_tool_calls(messages: List[Dict]) -> List[Dict]:
-    """保留有对应 tool_call_id 的工具消息, 删孤儿 assistant/tool — 小健 2026-08-17
+    """双向剪孤儿: 无结果的 assistant(tool_calls) + 无调用方的 tool — 小健 2026-08-17
 
     适用场景: 凡做删除式裁剪(C3 prune 删 tool / keep_valuable_messages)必须随后调用, 保 FC 配对。
     使用方法: 对裁剪后的消息列表调用, 返回清理孤儿后的新列表。
     输入: messages 消息列表。
-    输出: 过滤后的新列表——只保留有对应 tool_call_id 的 tool 消息、及 tool_calls 全部有对应 tool 的 assistant。
-    前置条件: 无; 防孤儿 assistant(tool_calls) 无对应 tool 致 LLM 400。
+    输出: 过滤后的新列表——assistant 的 tool_calls 全部拿到对应 tool 结果才留;
+          tool 的 tool_call_id 确有调用方(某 assistant 的 tool_calls 引用了它)才留; 其余角色原样透传。
+    前置条件: 无; 双向剪除孤儿, 防 (a) assistant 带 tool_calls 无 tool 结果 (b) tool 无调用方,
+              两者回传 provider 均 400。
     设计文档: [4] 14.9.6 K3。
+    2026-10-08 小欧 修判据空转: 原 seen_ids 由同一份 messages 的 tool 收集 → "该 id 在 seen_ids"恒真
+      (自己也在集合里) → tool 侧从未真被剪过, 连缺 tool_call_id 的也因 None in seen_ids 留下, 与函数名不符;
+      现 tool 侧改比对"调用方 id 集合"(assistant.tool_calls), 双向各剪一次。仅改判据不改结构与入参。 — 小欧-2026-10-08
     """
-    seen_ids = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+    tool_ids = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+    called_ids = {
+        tc.get("id")
+        for m in messages if m.get("role") == "assistant"
+        for tc in (m.get("tool_calls") or [])
+        if isinstance(tc, dict)
+    }
     result: List[Dict] = []
     for m in messages:
         if m.get("role") == "assistant" and m.get("tool_calls"):
-            keep = all(tc.get("id") in seen_ids for tc in m["tool_calls"])
-            if keep:
+            # 只留"全部 tool_calls 都拿到结果"的决策, 防留一个指向不存在结果的调用
+            if all(tc.get("id") in tool_ids for tc in m["tool_calls"] if isinstance(tc, dict)):
                 result.append(m)
             continue
         if m.get("role") == "tool":
-            if m.get("tool_call_id") in seen_ids:
+            # 只留"确有调用方"的 tool 结果, 防留一条无对应 tool_calls 的孤立结果
+            if m.get("tool_call_id") in called_ids:
                 result.append(m)
             continue
         result.append(m)

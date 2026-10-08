@@ -8,7 +8,7 @@
 
 模块能力集(14.9.2 目录树 + 14.9.6 归并总览):
   - 触发判定: trigger.py      CompactionTrigger / should_compact_now / CompactionCooldown
-  - 剪枝压缩: prune.py        clear_tool_outputs / use_tool_summary / compress_long_tool_output / keep_valuable_messages
+  - 剪枝压缩: prune.py        clear_tool_outputs / use_tool_summary / compress_long_tool_output / keep_valuable_messages / prune_tool_output_keeping_tail(摘要降本, 已接入)
   - 语义摘要: summary.py      generate_anchored_summary(C4, 唯一接入主链路) / generate_chunked_summary(降本变体)
   - 固定模板: summary_prompt  SUMMARY_TEMPLATE
   - 保尾切分: split_turn.py   preserve_recent_budget / find_tail_start / truncate_oversized_message
@@ -26,6 +26,7 @@ from app.services.agent.compaction.prune import (
     clear_tool_outputs,
     compress_long_tool_output,
     keep_valuable_messages,
+    prune_tool_output_keeping_tail,
     use_tool_summary,
 )
 from app.services.agent.compaction.split_turn import (
@@ -54,6 +55,7 @@ __all__ = [
     "use_tool_summary",
     "compress_long_tool_output",
     "keep_valuable_messages",
+    "prune_tool_output_keeping_tail",  # 2026-10-07 小欧 - 摘要降本策略(保尾保留+旧轮清零), 已接入 start_step — 小欧-2026-10-07
     # 语义摘要
     "generate_anchored_summary",
     "generate_chunked_summary",
