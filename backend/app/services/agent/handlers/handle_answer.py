@@ -74,7 +74,7 @@ from typing import Dict
 
 from app.services.agent.steps import ThoughtStep, FinalStep, MetaStep  # 2026-09-07 小欧: 4.4.2 时序根治删除ThoughtStartStep导入(全分支已移走) — 2026-08-18 小欧 ThoughtStartStep新增
 from app.utils.text_utils import format_tool_call_markup, dedup_repeat, REPEAT_CHECK_MIN_LEN  # 小健 2026-09-05：去重函数归位文本层；门槛常量随迁，供L182预检引用
-from app.services.agent.reasoning_guard import note_progress, note_reasoning_only  # 小健 2026-09-05：空转计数唯一写者收口
+from app.services.agent.reasoning_guard import note_progress, note_reasoning_only, notify_stagnation  # 小健 2026-09-05：空转计数唯一写者收口；2026-10-09 小欧 北京老陈裁定加 notify_stagnation
 from app.logger import logger, log_and_print
 
 
@@ -176,22 +176,15 @@ async def handle_answer(agent, parsed: Dict) -> dict:
                 reasoning=_deduped,
             ))  # 小健 2026-09-05：error_type/message 缺省空串，set_failed 取 response 兜底(补09-03顺序); 4A: yield转发→extend — 小欧-2026-09-06
             return {"events": _events, "type": parsed_type}
-        if _deduped == reasoning:
-            # ── 好的: 无重复 → 贴便签(仿Hermes: content空 + 双字段reasoning/reasoning_content以OpenAI为主兼容DeepSeek) ── 小欧 2026-07-19
-            logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 注入临时推理(连续reasoning-only={agent._consecutive_reasoning_only})")
-            agent.message_builder.conversation_history.append({
-                "role": "assistant",
-                "content": "",
-                "reasoning": _deduped,
-                "reasoning_content": _deduped,
-                "_temp_reasoning": True,
-            })
-            _events.append(agent._step_emitter.emit(ThoughtStep(
-                step=step, content=_deduped, reasoning="",
-            )))  # 4A(5.5): yield→append — 小欧-2026-09-06
-        else:
-            # ── 坏的: 有重复去重 → 不注入不持久不发射, 仅warning ── 小欧 2026-07-19
-            logger.warning(f"[handle_answer] reasoning检测到重复去重(step={step}), 跳过注入")
+        # 2026-10-09 北京老陈裁定: 检测到即注入 user 警告, 删原 assistant 推理回灌。
+        #   删除理由与回灌动机未达成的原因, 见 reasoning_guard.notify_stagnation 的 docstring(不重复)。
+        #   原 :179 的好/坏分支(_deduped == reasoning)一并作废 —— 两分支改后行为相同,
+        #   恰修掉一处反直觉缺陷: 原先重复最严重那次(最需警告)反倒什么都不注入。
+        notify_stagnation(agent)
+        logger.info(f"[handle_answer] LLM返回推理内容(step={step}), 已注入user警告(连续reasoning-only={agent._consecutive_reasoning_only})")
+        _events.append(agent._step_emitter.emit(ThoughtStep(
+            step=step, content=_deduped, reasoning=_deduped,
+        )))  # 4A(5.5): yield→append — 小欧-2026-09-06
         return {"events": _events, "type": parsed_type}
 
     note_progress(agent)  # 小健 2026-09-05：空转计数唯一写者收口(原注解 2026-07-17 小欧 正常final answer 归零空转计数 缀回行尾，语义不变)
