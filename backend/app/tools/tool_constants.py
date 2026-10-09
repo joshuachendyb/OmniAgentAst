@@ -115,6 +115,8 @@
 # 2026-10-05 - 小欧 - 总预算150→130(北京老陈裁定): EXECUTE_SHELL_OUTPARM_LIMIT_CMD 150→130, 头变为110(尾20不变)
 # 2026-10-06 - 小欧 - 新增 RESPONSE_PREVIEW_LIMIT_CHARS=2000(报告 P1-02): llm_response_builder 的
 #   log_llm_response「解析结果」预览截断上限(与既有 *_OUTPARM_LIMIT_* 同族, 复用优先)
+# 2026-10-09 - 小欧 - timeout不再重试(北京老陈裁定): 5工具(httpget/download/fetchpage/searchweb/ping_port)retryable移除"timeout", 理由=超时已耗尽30~600s再重试只是多等一轮同样失败; 保留connect/network/protocol(瞬时故障重试廉价且高收益)。代价(已确认): ping_port/searchweb遇抖动直接失败, 以鲁棒性换响应速度。
+# 2026-10-09 - 小欧 - compress hint改写(同上裁定): 原「①增大timeout」列首位属反向引导(与bash hint同源, 实测LLM因此300→600而真正解决问题的是重写算法), 改为问题侧解法优先(排除大文件/分批)、调大timeout降末位加前置条件, 与本表既有delete/write/edit/readmedia四条已正确写法对齐。防误判: 删本表"timeout"≠删干净, _struct_error_category仍有message关键词兜底。compliance: DRY/禁止backward
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -158,7 +160,9 @@ TOOL_TIMEOUT_HINTS = {  # tool 超时时的 LLM hint，指引 LLM 缩小范围�
     "edit": "文件编辑超时，可能文件过大。建议直接重写整个文件或减小修改范围。",
     "readmedia": "媒体读取超时，可能文件损坏或过大。建议检查文件完整性后重试。",
     "searchweb": "搜索超时，可能搜索服务不稳定。建议简化搜索词后重试。",
-    "compress": "压缩超时，目标目录可能过大或包含超大文件。建议：①增大timeout参数重试；②添加exclude_patterns排除大文件；③将大目录分成多个子目录分批压缩。",
+    # 2026-10-09 - 小欧 - compress hint改写: 原「①增大timeout参数」列首位属反向引导(与bash hint同源),
+    #   改为问题侧解法优先(排除大文件/分批), 调大timeout降末位并加前置条件; 详见文件头编辑历史
+    "compress": "压缩超时,目标目录可能过大或包含超大文件。建议: 1. 添加 exclude_patterns 排除无关/大文件 2. 将大目录分批压缩,缩小单次范围 3. 确认文件规模合理、非IO瓶颈后, 再考虑增大 timeout 参数",
 }
 
 TOOL_TIMEOUTS = {  # 【tool 级】使用对象: 保险丝超时（ToolRetryEngine 用 asyncio.wait_for 杀整个工具调用）
@@ -512,12 +516,19 @@ TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}  # 【tool 级�
 # 不在字典中的 tool → max_retries=0（不重试）
 # 格式: {tool名: {"max_retries": int, "retryable": list[str]}}
 # retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
+# 2026-10-09 - 小欧 - 北京老陈裁定「timeout 不能重试」: 5个工具的 retryable 全部移除 "timeout"。
+#   理由: 超时意味着资源已耗尽 30~600 秒，再重试一次只是让用户多等一轮同样的失败。
+#   保留 connect/network/protocol —— 瞬时网络故障重试廉价且高收益(与超时性质不同)。
+#   接受的代价(北京老陈已确认): ping_port/searchweb 遇瞬时网络抖动将直接失败，以鲁棒性换响应速度。
+#   ★ 注意: 删本表不等于删干净 —— tool_retry_engine._struct_error_category 有 message 关键词兜底，
+#     错误串含 "timeout"/"timed out"/"time out" 即判 ToolErrorCategory.TIMEOUT(不受本表控制)。
+#     该通道保留符合裁定意图(TIMEOUT 即不重试), 但需留痕免得后人误以为删表即全清。
 TOOL_RETRY_CONFIG: dict[str, dict] = {
-    "httpget": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "download": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "fetchpage": {"max_retries": 2, "retryable": ["timeout", "connect", "network", "protocol"]},
-    "searchweb": {"max_retries": 2, "retryable": ["timeout", "connect", "network"]},
-    "ping_port": {"max_retries": 2, "retryable": ["timeout", "connect"]},
+    "httpget": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
+    "download": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
+    "fetchpage": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
+    "searchweb": {"max_retries": 2, "retryable": ["connect", "network"]},
+    "ping_port": {"max_retries": 2, "retryable": ["connect"]},
 }  # 【tool 级】使用对象: ToolRetryEngine per-tool 重试参数
 
 # 工具层错误码(从 constants.py 迁入) — 小欧 2026-06-30

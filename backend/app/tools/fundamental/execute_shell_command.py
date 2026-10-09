@@ -138,6 +138,8 @@
 # 2026-10-05 - 小欧 - 报告 N2/P2: N2 更正"需用户确认"误导文案(本函数不发起确认); P2 明确 one-shot 仅性能路由非放行依据, 不调扫描是架构边界所致(禁 tools→safety), 残余面由白名单禁换行收窄。
 # 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): success summary 去 `退出码/输出字符`, warning summary 去 `_warn_msg`,
 #   统一 `执行Shell命令{cmd_short}，成功`; output_len/stderr_len 入 metrics 结构化承接(通用渲染)
+# 2026-10-09 - 小欧 - bash 超时hint改写(北京老陈裁定「hint要一起优化」): 原「②增大timeout参数」属反向引导 —— 实测(卡死事故复盘)LLM写了逐字符扫描52MB文本的脚本, timeout=300超时后采纳本hint提到600, 而同轮真正解决问题的是"重写算法"(改完37.5s跑完), 即加预算对性能问题无效且徒增5分钟等待。
+# 改为按「先诊断命令本身→再考虑调预算」排序: ①查低效写法(逐字符循环/大文件全量扫描)优先优化算法 ②写入.py脚本便于定位 ③确认已排除性能问题后才考虑增大timeout(加前置条件); 与TOOL_TIMEOUT_HINTS中delete/write/edit/readmedia已正确写法(分批/减小范围)对齐。
 """
 S1: execute_shell_command — 执行Shell命令（v2 引擎版）— 小欧 2026-07-05
 
@@ -1314,10 +1316,12 @@ def shell(
             _exec_code = "warning"
             _err_code = ERR_SHELL_TIMEOUT
             _detail = f"命令执行超时({timeout}秒)"
-            # 引导脚本化+增大超时 — 小欧 2026-08-07
-            _hint = ("命令执行超时，建议: "
-                     "1. 复杂代码请先写入相应的代码脚本文件再执行(规避单行引号转义) "
-                     "2. 增大timeout参数(上限600) 3. 分步执行")
+            # 2026-10-09 - 小欧 - hint改写: 把「优化命令」提到首位, 「调大timeout」降为末位且加前置条件
+            #   (原「②增大timeout」属反向引导, 实测LLM因此把timeout 300→600而算法问题未解; 详见文件头编辑历史)
+            _hint = ("命令执行超时,通常说明命令本身执行过慢, 而非时间不够。建议: "
+                     "1. 检查命令逻辑是否存在低效写法(如逐字符循环 / 大文件全量扫描), 优先优化算法 "
+                     "2. 复杂逻辑请先写入 .py 脚本再执行, 便于定位与优化 "
+                     "3. 确认已排除性能问题后, 再考虑增大 timeout 参数(上限600)")
         elif returncode == 0 or returncode in (success_codes or []):
             stderr_clean = stderr_str.strip()
             if stderr_clean:
