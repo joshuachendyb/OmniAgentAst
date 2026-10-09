@@ -138,6 +138,9 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 #   ②fetch_remote_models 三级取 key(probe_key→env→config)后，key 空白时 pop 掉 Authorization
 #     (基类无条件造空 "Bearer " 畸形头，无鉴权自建端点会 400)；只在调用层摘该头、不动 adapter 基类，
 #     避免波及 LLM 主链 7 个走默认基类的 provider — 小欧 2026-10-05
+# 2026-10-10 小欧 - DEFAULT_PARAM_OPTIONS 的 reasoning_effort 加 minimal 档：与前端预设表
+#   utils/modelUtils.PARAM_PRESETS 同步。本表是 update_model 校验 dp 值域的唯一依据（:_resolve_param_options
+#   全局兜底亦取此），两边不同步则存 minimal 报"不支持的配置项值"。fre2e_08 自带列表，不受影响 — 小欧-2026-10-10
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -163,7 +166,7 @@ RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
 
 # v1.1：仅全局兜底默认，不同模型3/4/5个选项走config覆盖，不写死（小欧 2026-09-22）
 DEFAULT_PARAM_OPTIONS: Dict[str, List[str]] = {
-    "reasoning_effort": ["low", "medium", "high"],
+    "reasoning_effort": ["minimal", "low", "medium", "high"],
 }
 
 # 动态参数元数据表（小欧 2026-09-22）

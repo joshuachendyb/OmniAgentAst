@@ -11,6 +11,10 @@
 // 2026-09-24 小欧 - 能力默认值语义（北京老陈拍板）：①文本项 disabled 恒勾选；②normalizeCaps 归一恒含 text
 //   （load/select 四通道防假脏）；③capsForSave 保存转换——无增强送 []、有增强送 ['text',...extras] - 小欧-2026-09-24
 // 2026-10-03 小欧 - 免费判定迁入本纯函数层（原组件内私有，无法单测）；判据扩为三判据 OR — 小欧 2026-10-03
+// 2026-10-10 小欧 - PARAM_PRESETS 自 AddParamForm 整块迁移至此（与 PARAM_DEFAULT_RANGES 同数据层）：
+//   AddParamForm（勾选添加参数）与 ModelModals（新建模型参数模板）双消费，组件间互引数据是分层异味。
+//   同步：reasoning_effort options 加 minimal 档（与后端 DEFAULT_PARAM_OPTIONS 同步，校验只认后端那张表，
+//   漏同步则存 minimal 报"非法选项"；fre2e_08 用自带列表，不受影响） — 小欧-2026-10-10
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
@@ -179,3 +183,87 @@ export const PARAM_DEFAULT_RANGES: Readonly<
   frequency_penalty: { min: -2, max: 2 },
   presence_penalty: { min: -2, max: 2 },
 };
+
+// 2026-10-10 小欧 - PARAM_PRESETS 自 AddParamForm 整块迁移至此（与 PARAM_DEFAULT_RANGES 同数据层；AddParamForm/ModelModals 双消费，禁组件间数据互引） — 小欧-2026-10-10
+/** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐设计 v1.2；显示顺序按北京老陈指定 - 小欧-2026-09-24） */
+export const PARAM_PRESETS = [
+  {
+    key: 'context_limit',
+    type: 'number' as const,
+    default: 262144,
+    range: PARAM_DEFAULT_RANGES.context_limit,
+    label: '上下文限制',
+    desc: '上下文窗口上限，超限裁剪旧轮',
+  },
+  {
+    key: 'temperature',
+    type: 'number' as const,
+    default: 0.7,
+    range: PARAM_DEFAULT_RANGES.temperature,
+    label: '温度',
+    desc: '采样温度：0=完全确定，2=最随机',
+  },
+  {
+    key: 'max_tokens',
+    type: 'number' as const,
+    default: 16384,
+    range: PARAM_DEFAULT_RANGES.max_tokens,
+    label: '最大Token',
+    desc: 'LLM的单次最大输出 token 数，超长截断',
+  },
+  {
+    key: 'reasoning_effort',
+    type: 'enum' as const,
+    default: 'medium',
+    options: ['minimal', 'low', 'medium', 'high'],
+    label: '推理深度',
+    desc: '推理深度模式选择,，仅推理模型有效',
+  },
+  {
+    key: 'enable_thinking',
+    type: 'boolean' as const,
+    default: true,
+    label: '思考开关',
+    desc: '开启后模型先思考再回答',
+  },
+  {
+    key: 'thinking_budget',
+    type: 'number' as const,
+    default: 4000,
+    range: { min: 512, max: 32000 },
+    label: '思考预算',
+    desc: '思考 token 上限，512~32000',
+  },
+  {
+    key: 'top_p',
+    type: 'number' as const,
+    default: 1.0,
+    range: PARAM_DEFAULT_RANGES.top_p,
+    label: '核采样',
+    desc: '只从概率最高的前 p 部分词里选词；1=全都不筛，调小=更保守、只留高概率词',
+  },
+  {
+    key: 'seed',
+    type: 'number' as const,
+    default: null,
+    range: PARAM_DEFAULT_RANGES.seed,
+    label: '随机种子',
+    desc: '数字本身无好坏：同一数字=每次结果固定不变，换一个数字=换一组新的随机结果；留空=每次都不固定',
+  },
+  {
+    key: 'frequency_penalty',
+    type: 'number' as const,
+    default: 0,
+    range: PARAM_DEFAULT_RANGES.frequency_penalty,
+    label: '频次惩罚',
+    desc: '正值减少重复（更多样），负值增加重复，0=不启用',
+  },
+  {
+    key: 'presence_penalty',
+    type: 'number' as const,
+    default: 0,
+    range: PARAM_DEFAULT_RANGES.presence_penalty,
+    label: '存在惩罚',
+    desc: '正值鼓励新话题，负值鼓励重复，0=不启用',
+  },
+];

@@ -36,6 +36,12 @@
 //   （原范围仅在 placeholder，输入后不可见，填 1000000 越界无提示且确认按钮灰）— 小健-2026-09-25
 // 2026-09-25 05:44:50 小健 - 预设 range 改引用单源 PARAM_DEFAULT_RANGES（与 ModelParams 兜底共用，
 //   杜绝两处范围字面量漂移）— 小健-2026-09-25
+// 2026-10-10 小欧 - thinking 两参数可配（北京老陈：模型参数区无法配思考类型）：①PARAM_PRESETS 新增
+//   enable_thinking(boolean 默认 true)/thinking_budget(number 默认 4000，range 512~32000)；②预设渲染新增
+//   boolean 分支走 Switch（此前只有 enum→Select 与其余→Input 两支，布尔落 Input 显示成手打 true/false）；
+//   ③handleAdd 补 boolean 转布尔值(values 全为字符串，直接存会让 ModelParams 走 Input 分支显示错位);
+//   ④PARAM_PRESETS 整块迁移至 modelUtils.ts(ModelModals 亦需消费，组件间互引数据是分层异味，
+//   数据层与 PARAM_DEFAULT_RANGES 同住)，本文件只消费不定义，initValuesOf/presetValid 取型不变 — 小欧-2026-10-10
 import React, { useState } from 'react';
 import { Button, Checkbox, Input, Radio, Select, Switch } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
@@ -45,94 +51,11 @@ import {
   settingsLabelStyle,
   settingsRadius,
 } from '@/theme/settingsTokens';
-import { PARAM_DEFAULT_RANGES } from '../utils/modelUtils';
+import { PARAM_DEFAULT_RANGES, PARAM_PRESETS } from '../utils/modelUtils';
 
 // 行内名称列宽（☐ 右侧）：最长预设名「频次惩罚 (frequency_penalty)」@14px≈205px，取 240 保单行+列对齐
 // （settingsLabelStyle.width=180 装不下会折行；不改共享令牌以免影响 ModelParams 等既有行）- 小欧-2026-09-23
 const NAME_COL_WIDTH = 240;
-
-/** 预定义参数表：从项目实际使用的模型参数中提取（v1.9：补 8 项 desc 字段，对齐设计 v1.2；显示顺序按北京老陈指定 - 小欧-2026-09-24） */
-const PARAM_PRESETS = [
-  {
-    key: 'context_limit',
-    type: 'number' as const,
-    default: 262144,
-    range: PARAM_DEFAULT_RANGES.context_limit,
-    label: '上下文限制',
-    desc: '上下文窗口上限，超限裁剪旧轮',
-  },
-  {
-    key: 'temperature',
-    type: 'number' as const,
-    default: 0.7,
-    range: PARAM_DEFAULT_RANGES.temperature,
-    label: '温度',
-    desc: '采样温度：0=完全确定，2=最随机',
-  },
-  {
-    key: 'max_tokens',
-    type: 'number' as const,
-    default: 16384,
-    range: PARAM_DEFAULT_RANGES.max_tokens,
-    label: '最大Token',
-    desc: 'LLM的单次最大输出 token 数，超长截断',
-  },
-  {
-    key: 'reasoning_effort',
-    type: 'enum' as const,
-    default: 'medium',
-    options: ['low', 'medium', 'high'],
-    label: '推理深度',
-    desc: '推理深度模式选择,，仅推理模型有效',
-  },
-  {
-    key: 'enable_thinking',
-    type: 'boolean' as const,
-    default: true,
-    label: '思考开关',
-    desc: '开启后模型先思考再回答',
-  },
-  {
-    key: 'thinking_budget',
-    type: 'number' as const,
-    default: 4000,
-    range: { min: 512, max: 32000 },
-    label: '思考预算',
-    desc: '思考 token 上限，512~32000',
-  },
-  {
-    key: 'top_p',
-    type: 'number' as const,
-    default: 1.0,
-    range: PARAM_DEFAULT_RANGES.top_p,
-    label: '核采样',
-    desc: '只从概率最高的前 p 部分词里选词；1=全都不筛，调小=更保守、只留高概率词',
-  },
-  {
-    key: 'seed',
-    type: 'number' as const,
-    default: null,
-    range: PARAM_DEFAULT_RANGES.seed,
-    label: '随机种子',
-    desc: '数字本身无好坏：同一数字=每次结果固定不变，换一个数字=换一组新的随机结果；留空=每次都不固定',
-  },
-  {
-    key: 'frequency_penalty',
-    type: 'number' as const,
-    default: 0,
-    range: PARAM_DEFAULT_RANGES.frequency_penalty,
-    label: '频次惩罚',
-    desc: '正值减少重复（更多样），负值增加重复，0=不启用',
-  },
-  {
-    key: 'presence_penalty',
-    type: 'number' as const,
-    default: 0,
-    range: PARAM_DEFAULT_RANGES.presence_penalty,
-    label: '存在惩罚',
-    desc: '正值鼓励新话题，负值鼓励重复，0=不启用',
-  },
-];
 
 interface AddParamFormProps {
   onAdd: (
