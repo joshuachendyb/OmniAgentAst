@@ -345,7 +345,11 @@ build_history_context_step(step)                      agent_telemetry.py:338
 | 归类 | `PERSISTED_NON_BIZ_TYPES`（`agent_telemetry.py:86-88`）=落库需回放、不计业务步 |
 | 结论 | 首帧 `step=0` 与之后每帧**逐帧落库** |
 
-**结论**：context 信息已全量落库，**不需要新增任何表或列**。历史任务要显示「历史上下文」时，从 `chat_task_steps` 取 `step=0` 那帧即可。
+**结论**：context 信息已全量落库，**不需要新增任何表或列**。历史任务要显示「历史上下文」时，详情接口直给首帧（`get_task_detail` 附带 `history_context_first`，`storage.get_history_context_first()` 只取 `step=0` 那帧）。
+
+> 2026-10-10 小欧[20]实施注：原方案"前端从 `chat_task_steps` 取 `step=0` 帧"改为"后端详情接口直给" ——
+> 实证发现 `TaskInfoBar` 传的是实时 steps 数组（历史任务时为空），前端根本拿不到历史 steps；
+> 跨组件传历史 steps 改动大，不如详情接口多带一个字段（一处改，后端为主）。
 
 ### 3.2 两个分组职责
 
@@ -427,13 +431,13 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
 
 ## 五、后端代码改动（一个代码文件一小节 · 每处代码一个 unified diff）
 
-### 5.0 改动总览（5 个代码文件 · 13 处）
+### 5.0 改动总览（5 个代码文件 · 14 处）
 
 | 代码文件 | 改动处数 | 改动点 | 对应 §3.1 要求 |
 |---|---|---|---|
 | `backend/app/services/agent/initialize_run_state.py` | 1 处 | ① `_start_summary` / `_compact_attempted` 每轮初始化 | 初始化（替代 `start_step.py:296` 重复清零）|
 | `backend/app/services/agent/start_step.py` | 3 处 | ② 删 L296 重复清零 ③ `_compact_attempted = True` 压缩分支内置位 ④ 删 `last_user_text` 计算 | §5.15 失败判据；§2.6缺陷2 |
-| `backend/app/services/chat/storage.py` | 1 处 | ⑤ 新增 `count_chain_siblings()` | §3.1.1.4 前缀数据源；3.1.1.7 代码缺口 |
+| `backend/app/services/chat/storage.py` | 2 处 | ⑤ 新增 `count_chain_siblings()` ⑥ `get_task_detail` 附带首帧 + `get_history_context_first()` | §3.1.1.4 前缀数据源；历史任务回显 |
 | `backend/app/services/chat/stream_orchestrator.py` | 2 处 | ⑥ 取 `_chain_sibling_count` ⑦ `_start_meta` 注入 `context_link_index` | §3.1.1.4 序号 |
 | `backend/app/monitoring/agent_telemetry.py` | 9 处 | ⑧ `_inject_frame` 快照槽 ⑨ `set_injected_context()` 删 `last_user_text` ⑩ **删 `build_context_overview()`** ⑪ `build_history_context_step()` 改编排（判据与空组内联） ⑫ `_build_frame_content()` ⑬ `_build_conv_frame()` ⑭ `_build_inject_frame(meta)` ⑮ `build_task_snapshot()` 删 `_overview` 调用并自取数字 ⑯ `build_task_snapshot()` 落库 7 列改自取 | §3.1.1 首帧分工制；§3.3；§3.5；§2.4；§九 零迁移 |
 
@@ -441,7 +445,7 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
 
 ---
 
-### 5.1 `storage.py`（1 处）
+### 5.1 `storage.py`（2 处）
 
 **文件**：`backend/app/services/chat/storage.py`
 
@@ -470,6 +474,35 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
  def query_chain_accumulation(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> dict:
 ```
 
+
+**改动 2/2** — `get_task_detail` 附带首帧 + 新增 `get_history_context_first()`（L916-935）
+
+```diff
+--- a/backend/app/services/chat/storage.py
++++ b/backend/app/services/chat/storage.py
+@@ -916,6 +916,22 @@
+     _r["model"] = _sm.model if _sm else None
+     _r["provider"] = _sm.provider if _sm else None
++    # 2026-10-10 小欧[20]: 历史任务回显历史上下文 —— 首帧定稿后不变, 取 step=0 那帧即可
++    _r["history_context_first"] = get_history_context_first(conn, task_id)
+     return _r
+
+
++def get_history_context_first(conn: Connection, task_id: str) -> Optional[dict]:
++    """取首帧 history_context 的 content/inject_context(历史任务回显用) — 小欧 2026-10-10
+
++    2026-10-10 小欧[20]: inject 首帧定稿后不变, 故只取 step=0 那帧, 不扫全表;
++      老任务帧是扁平结构(无 inject_context), 原样返回, 前端如实显示, 不做迁移。
++    """
++    rows = conn.execute(
++        "SELECT step_json FROM chat_task_steps WHERE task_id=?", (task_id,)).fetchall()
++    for r in rows:
++        d = parse_json(r["step_json"], label="step_json")
++        if isinstance(d, dict) and d.get("type") == "history_context" and d.get("step") == 0:
++            return {"content": d.get("content", ""),
++                    "inject_context": d.get("inject_context")}
++    return None
+```
 ---
 
 ### 5.2 `stream_orchestrator.py`（2 处）
@@ -811,7 +844,7 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
 ```
 ## 六、前端代码改动（一个代码文件一小节 · 每处代码一个 unified diff）
 
-### 6.0 改动总览（7 个代码文件 · 23 处）
+### 6.0 改动总览（7 个代码文件 · 24 处）
 
 | 代码文件 | 改动处数 | 改动点 | 对应 §3.1 要求 |
 |---|---|---|---|
@@ -1308,7 +1341,7 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
 
 ---
 
-### 6.6 `useTaskInfo.ts`（3 处）
+### 6.6 `useTaskInfo.ts`（4 处）
 
 **文件**：`frontend/src/features/chat/hooks/useTaskInfo.ts`
 
@@ -1338,7 +1371,7 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
 +    let _compressedSeen = false;
 ```
 
-**改动 3/3** — `history_context` 分支加压缩事件（L286-296）
+**改动 3/4** — `history_context` 分支加压缩事件（L286-296）
 
 ```diff
 --- a/frontend/src/features/chat/hooks/useTaskInfo.ts
@@ -1355,21 +1388,35 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
                time: s.timestamp,
              });
            }
-+          // 2026-10-09 北京老陈令: 有压缩加一条压缩事件 —— 判据用 compressed 的情况文字(成功带率/失败)，
-+          //   不用 summary(摘要只在成功时有, 失败时为空, 拿它判会漏失败事件)。
-+          //   前缀「第N个link任务, 」固定格式(§3.4), 剥掉后看剩余文字: 非空且非"无历史上下文注入"即压缩动作发生过
-+          const _compressedText = s.inject_context?.compressed ?? '';
-+          const _compressCase = _compressedText.split(', ')[1] ?? '';
-+          if ((_compressCase !== '' && _compressCase !== '无历史上下文注入') && !_compressedSeen) {
++          // 2026-10-10 北京老陈令: 不拆 compressed 成品 —— 事件条件只用 summary 非空(有摘要⟺压缩成功)。
++          //   失败态不发事件(只在卡片标题行全文显示); 后缀空/无注入天然不触发
++          if (s.inject_context?.summary && !_compressedSeen) {
 +            _compressedSeen = true;
 +            processEvents.push({
 +              kind: 'context_compressed',
-+              // 文本直接显示后端成品(含前缀), 不拼装; 失败态成品即失败原因
-+              text: _compressedText,
++              text: s.inject_context.compressed || '历史已压缩',
 +              time: s.timestamp,
 +            });
 +          }
            break;
+
+**改动 4/4** — detail 分支 overview 取详情直给首帧（L181-190）
+
+```diff
+--- a/frontend/src/features/chat/hooks/useTaskInfo.ts
++++ b/frontend/src/features/chat/hooks/useTaskInfo.ts
+@@ -181,9 +181,12 @@
+         // 历史任务无实时 metaFrames 源：contextOverview/truncated 仅实时流产生，
+         // 取实时 frames 会串味当前任务(2026-08-27 小欧 修复#5#6)。
+-        overview: 
+''
+,
++        // 2026-10-10 北京老陈令[20]: 历史任务显示历史上下文 —— overview 取详情接口直给的首帧,
++        //   不从 steps 数组找(TaskInfoBar 传的是实时 steps, 历史任务时为空, find 永空)
++        overview: (() => {
++          const hc = detail.history_context_first;
++          return hc ? { content: hc.content ?? '', inject_context: hc.inject_context ?? undefined } : '';
++        })(),
 
 ---
 
@@ -1400,9 +1447,8 @@ pct = max(0.0, round((1 - 装入tokens / 注入tokens) × 100, 1))
 +  inject_context: {
 +    injected_message_count: 8,
 +    injected_estimated_tokens: 2100,
-+    // 2026-10-09 小欧: 有注入条数(8)故不能是"第1个link任务, 无历史上下文注入" ——
-+    //   那是致命 #47 的测试自相矛盾。改第2个link任务未超窗(空串), conv 置空守分工制
-+    compressed: '第2个link任务, ',
++    // 2026-10-10 小欧[20]: 未超窗无信息不挂光杆前缀, 全空(后端行为, 前端原样透传)
++    compressed: '',
 +    summary: '',
 +  },
  };
