@@ -56,6 +56,9 @@
 #   action 多计致 task_metrics 与 chat_tasks 对不上账) → 三处重复取数收敛为 business_step_count(DRY);
 #   ②compress_saved_pct 原用终态快照被夹逼成 0.0、与前端对不上账 → 改用首帧 conv token;
 #   ③前缀「第N个link任务,」归 content 且前置拼接, compressed 只留情况文字, 并删冗余三元。
+# 2026-10-10 - 小欧 补 _inject_frame 防御: 槽位由 None 改为预填四键空模板 —— 原为 None 时若未发首帧
+#   就发后续帧(telemetry 中途挂载/首帧被跳过), dict(None) 抛 TypeError 整帧崩; 预填后返回同"无注入"
+#   形态的空串四键, 前端按缺字段读出空 UI 如实显示。补单测 tests/test_history_context_frame.py(19 例)。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -160,7 +163,13 @@ class TaskTelemetry:
         self._tool_stats: Dict[str, Dict[str, float]] = {}  # 工具聚合（落 task_tool_metrics）
         self._injected_context: Optional[Dict[str, Any]] = None  # 跨任务注入基线（固定快照）
         # 首帧 inject 定稿存此槽, 第2帧起复用(§3.1.1.6)
-        self._inject_frame: Optional[Dict[str, Any]] = None
+        # 2026-10-10 小欧: 预填四键空模板而非 None —— 原为 None 时若未发首帧就发后续帧
+        #   (telemetry 中途挂载/首帧被跳过), dict(None) 抛 TypeError 整帧崩。预填后返回空模板,
+        #   与"无注入"同形, 前端 contextFrame 按缺字段读出空 UI 如实显示。— 小欧-2026-10-10
+        self._inject_frame: Dict[str, Any] = {
+            "injected_message_count": "", "injected_estimated_tokens": "",
+            "compressed": "", "summary": "",
+        }
         # 2026-10-10 小欧[20] 审计 B2: 首帧 conv token 快照 —— 落库 compress_saved_pct 必须与
         #   帧内展示同源(首帧口径)。原落库用终态快照喂同一公式, 终态含全部工具结果,
         #   conv 远大于 inj → 百分比被夹逼成 0.0, 与前端显示的数对不上账。
