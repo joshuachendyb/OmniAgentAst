@@ -72,6 +72,10 @@
 # 2026-09-23 小欧 - wiring假保存修复: request_stream 流总硬超时 3 处改读 tuning.llm_net.stream_total_timeout 兜底常量（此前设置页可改实际不生效）
 # 2026-09-25 小欧 - ConnectionScope连接池统一所有者: ①新增 ensure_client_pool()(建池+relinquish移交+返回client); ②__init__/snapshot 增 client_lease 参数(与 shared_client 成对), close() 改三分支(共享归还lease/独占aclose/单例no-op), 删 _owns_client 跨层判据; ③删 snap._is_snapshot 死判据(runner 无条件 close); ④删除零调用的 reset_sdk(裸置None泄漏独占池, YAGNI)
 # 2026-10-05 小欧 - 修复5fe9ecc76引入的取消倒退(用户实测: 取消后非流式/流式L1退避睡眠不可中断, agent空转3+9+27+81≈120s致SSE断流104, 取消final推不出去)。改动: ①新增_cancel_event + _cancel_signal()(绕过__init__的测试兜底); ②cancel()置位该事件; ③两处L1退避 sleep(非流式:342/流式:532)改为 wait_for(_cancel_signal().wait(), timeout) 可中断式等待, 超时继续重试, 被唤醒立即返取消; ④两处retry循环顶部+except块入口均先查self._cancelled再决定退避, 取消引发的连接错误不再当"可重试"退避; ⑤request/request_stream入口复位_cancel_event。验证: tests/test_llm_retry_visibility.py 10项+tests/test_7_02_pause_stops_llm.py+test_rate_limit_llm_stream_fix.py 15项全过; 取消在退避窗口内可终止生成器(实测即返取消chunk) — 小欧-2026-10-05
+# 2026-10-10 小欧 - thinking 全局可配接线: 删 DEFAULT_EXTRA_BODY_PARAMS 常量(enable_thinking 改读全局键
+#   llm.sampling.enable_thinking，通用 Tab 可配，默认 True 由 __init__ 内联兜底，全仓已无该常量引用);
+#   __init__ 合并改三层=全局键作底 → extra_body_params(模型级)覆盖 → chat_template_kwargs 深合并;
+#   缺省值与改前一致(开关True/深度medium)，模型级配置不受影响 — 小欧-2026-10-10
 """
 LLM 核心模块 — BaseAIService
 
@@ -99,10 +103,6 @@ from app.llm.error_classifier import SystemErrorClassifier
 
 from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS
 from app.config import get_config
-
-# 默认extra_body: 开启thinking模式; 配置文件model_params可覆盖/扩展, 合并策略见__init__ — 小欧 2026-08-06
-DEFAULT_EXTRA_BODY_PARAMS: Dict = {"chat_template_kwargs": {"enable_thinking": True}}
-
 
 class BaseAIService:
     """通用AI服务 — request/request_stream/chat — FC-only重构 2026-06-11 小沈"""
@@ -141,13 +141,17 @@ class BaseAIService:
         self.frequency_penalty = frequency_penalty
         self.presence_penalty = presence_penalty
         self.seed = seed
-        # 默认开启 thinking 模式；配置文件传参可覆盖（如 chat_template_kwargs.enable_thinking: false 可关）— 小欧 2026-07-26
+# 默认开启 thinking 模式；配置文件传参可覆盖（如 chat_template_kwargs.enable_thinking: false 可关）— 小欧 2026-07-26
         # 2026-08-06 小欧 合并而非替换: 顶层键用户覆盖优先, chat_template_kwargs 层深合并保 enable_thinking:True 兜底
         # 2026-08-06 小欧 修复: 嵌套dict深拷贝, 避免与全局常量共享引用污染后续实例
-        merged_params = {"chat_template_kwargs": dict(DEFAULT_EXTRA_BODY_PARAMS["chat_template_kwargs"])}
+        _think_default = get_config().get("llm.sampling.enable_thinking", True)
+        _effort_default = get_config().get("llm.sampling.reasoning_effort", "medium")
+        merged_params = {"chat_template_kwargs": {"enable_thinking": _think_default}}
+        if _effort_default:
+            merged_params["reasoning_effort"] = _effort_default
         if extra_body_params:
             merged_params.update(extra_body_params)
-            default_ctk = DEFAULT_EXTRA_BODY_PARAMS.get("chat_template_kwargs", {})
+            default_ctk = {"enable_thinking": _think_default}
             user_ctk = extra_body_params.get("chat_template_kwargs")
             if isinstance(user_ctk, dict) and default_ctk:
                 merged_params["chat_template_kwargs"] = {**default_ctk, **user_ctk}

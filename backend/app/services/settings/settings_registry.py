@@ -35,6 +35,10 @@ key 全局唯一，加载自检重复直接拒启。
     security.enabled「安全开关」→「HTL人工开关」，notice 同步为"关闭后，无需人工确认，
     无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）"。
     仅改展示文案与说明，不改 key、默认值与域，旧配置文件不受影响。
+  2026-10-10 小欧 - general 组新增两项全局 thinking 兜底（北京老陈：通用兜底模型参数区缺思考项）：
+    llm.sampling.enable_thinking(bool,默认 True) 与 llm.sampling.reasoning_effort(select,默认 medium,
+    四档 minimal/low/medium/high)，单模型没单独配置时用这两个，已在模型 Tab 配了的不受影响。
+    group 项数 10 → 12。前端 SettingRow 按 type 渲染(bool→Switch / select→下拉)，零改动 — 小欧-2026-10-10
 """
 from typing import Any, Dict, List, Optional
 
@@ -63,7 +67,7 @@ list_of 声明"本项是某类元素的列表"，落盘前归一+校验，规则
 
 
 GROUPS: Dict[str, Dict[str, Any]] = {
-    # 4.1 通用（general，10 项）
+    # 4.1 通用（general，12 项）
     "general": {"label": "通用", "items": [
         # 默认空：config.get_project_root 靠 `if root:` 判空后回退用户主目录（Path.home()）
         _item("workspace.project_root", "text", "项目根目录", ""),
@@ -83,6 +87,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="正值减少重复词频（更多样），负值增加重复词频（更聚焦），0=不启用"),
         _item("llm.sampling.presence_penalty", "float", "存在惩罚 (presence_penalty)", 0, range_=[-2, 2],
               notice="正值惩罚已出现过的词（鼓励新话题），负值鼓励重复已出现的词，0=不启用"),
+        _item("llm.sampling.enable_thinking", "bool", "思考开关", True,
+              notice="全局思考开关默认值（单个模型没单独配置时用这个）：开=模型先思考再回答；关=直接回答。单模型可在模型参数里单独覆盖"),
+        _item("llm.sampling.reasoning_effort", "select", "推理深度", "medium",
+              options=["minimal", "low", "medium", "high"],
+              notice="全局推理深度默认值（单个模型没单独配置时用这个）：minimal最省，high最深。单模型可在模型参数里单独覆盖"),
         _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
               notice="模型一次能记住的内容总量默认值（单个模型没单独配置时用这个），约 25.6 万 token"),
     ]},
