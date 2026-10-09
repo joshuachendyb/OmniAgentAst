@@ -14,6 +14,7 @@
 # 2026-10-07 北京老陈 新增 _SUMMARY_TAIL_USER 收尾指令: 注入历史末条是 assistant, 摘要 feed 以 assistant
 #   收尾构成半截对话 → 模型按对话补全续写而非汇总(实测六段命中率 16%); 末条补 user 请求后 6/6=100%。
 #   两摘要函数均适用(generate_chunked_summary 同理)。
+# 2026-10-10 小欧 摘要只取 type=="answer": error 的 content 是错误文案, 收下会让上层拿它顶替历史注入、历史全丢。
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -31,20 +32,13 @@ _SUMMARY_TAIL_USER = "以上是历史对话数据。请按 system 指定格式�
 
 
 async def _extract_response_content(llm_agent, feed: List[Dict]) -> str:
-    """调 call_llm_with_fallback 并提取最终文本(路径2 StreamChunk 单协议) — 小健 2026-08-17; 2026-09-05 小健 协议升级 / 2026-09-06 小欧 落码
-
-    真实协议(llm_call.py): call_llm_with_fallback(agent, messages, openai_tools) 为 async generator,
-    item 为 StreamChunk, payload 非空且 type!=retrying 即终结响应, 文本在 payload["content"]
-    (type="answer" 时=正文, type="error" 时=错误文案; type="action" 时无content键仅thought, 提取得空串——
-    与改造前一致, 改造前 resp.get("content") 同样取不到, parity成立; 摘要有效输入仅answer/error)。
-    """
+    """取 LLM 最终正文; error/action 返回空串, 交调用方装原历史(零退化) — 小欧 2026-10-10"""
     from app.services.agent.llm_call import call_llm_with_fallback  # 2026-09-05 小健 8.5拆分: llm_stream→llm_call改名
 
     content = ""
     async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None):
         _p = getattr(item, "payload", None)
-        if _p is not None and isinstance(_p, dict) and _p.get("type") != "retrying":
-            # 终结响应(answer/error 可取 content 键; action 无 content 键取空串, 与改造前 parity) — 小欧 2026-09-06
+        if _p is not None and isinstance(_p, dict) and _p.get("type") == "answer":
             c = str(_p.get("content") or "").strip()
             if c:
                 content = c
