@@ -37,7 +37,7 @@
 // 2026-09-25 05:44:50 小健 - 预设 range 改引用单源 PARAM_DEFAULT_RANGES（与 ModelParams 兜底共用，
 //   杜绝两处范围字面量漂移）— 小健-2026-09-25
 import React, { useState } from 'react';
-import { Button, Checkbox, Input, Radio, Select } from 'antd';
+import { Button, Checkbox, Input, Radio, Select, Switch } from 'antd';
 import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import {
   settingsControl,
@@ -84,6 +84,21 @@ const PARAM_PRESETS = [
     options: ['low', 'medium', 'high'],
     label: '推理深度',
     desc: '推理深度模式选择,，仅推理模型有效',
+  },
+  {
+    key: 'enable_thinking',
+    type: 'boolean' as const,
+    default: true,
+    label: '思考开关',
+    desc: '开启后模型先思考再回答',
+  },
+  {
+    key: 'thinking_budget',
+    type: 'number' as const,
+    default: 4000,
+    range: { min: 512, max: 32000 },
+    label: '思考预算',
+    desc: '思考 token 上限，512~32000',
   },
   {
     key: 'top_p',
@@ -196,8 +211,13 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
         .forEach((k) => {
           const p = presets.find((x) => x.key === k);
           if (!p) return;
+          // 2026-10-10 小欧 boolean 转布尔值(values 全 string, 直接存会让 ModelParams 走 Input 分支) — 小欧-2026-10-10
           const v: unknown =
-            p.type === 'number' ? Number(values[k]) : values[k];
+            p.type === 'number'
+              ? Number(values[k])
+              : p.type === 'boolean'
+                ? values[k] === 'true'
+                : values[k];
           onAdd(p.key, v, { range: p.range, options: p.options });
         });
     } else {
@@ -299,6 +319,13 @@ export const AddParamForm: React.FC<AddParamFormProps> = ({
                     value: o,
                     label: o,
                   }))}
+                />
+              ) : p.type === 'boolean' ? (
+                <Switch
+                  checked={values[p.key] === 'true'}
+                  onChange={(v) =>
+                    setValues((s) => ({ ...s, [p.key]: String(v) }))
+                  }
                 />
               ) : (
                 <Input

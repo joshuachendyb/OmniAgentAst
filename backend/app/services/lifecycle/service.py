@@ -196,6 +196,10 @@ def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict
     specific_params = dict(model_params.get(model, {})) if model_params else {}
     # ✅ pop 缺省改读全局兜底 — 小欧 2026-09-23
     context_limit = specific_params.pop("context_limit", get_config().get("llm.context_limit_default", DEFAULT_CONTEXT_LIMIT))
+    # 2026-10-10 小欧 enable_thinking 移进 chat_template_kwargs(provider 期望的位置) — 小欧-2026-10-10
+    enable_thinking = specific_params.pop("enable_thinking", None)
+    if enable_thinking is not None:
+        specific_params.setdefault("chat_template_kwargs", {})["enable_thinking"] = enable_thinking
     return (specific_params or None), context_limit
 
 
