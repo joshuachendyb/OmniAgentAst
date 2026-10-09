@@ -52,6 +52,10 @@
 #   ②summary 改取注入源最后一条 user(set_injected_context 增 last_user_text 传入, 原取 conv 末条=用户本轮提问,
 #     标签"最近"等于回显自己, 实测四条帧全是用户原话);
 #   ③落库列 context_injected_ratio → context_compressed + context_compress_saved_pct(禁backward 不留旧列)。
+# 2026-10-10 - 小欧  ①finalize 的 total_steps 漏走落库权威源(preview
+#   action 多计致 task_metrics 与 chat_tasks 对不上账) → 三处重复取数收敛为 business_step_count(DRY);
+#   ②compress_saved_pct 原用终态快照被夹逼成 0.0、与前端对不上账 → 改用首帧 conv token;
+#   ③前缀「第N个link任务,」归 content 且前置拼接, compressed 只留情况文字, 并删冗余三元。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -127,6 +131,22 @@ def count_business_steps(steps) -> int:
     return n
 
 
+def business_step_count(agent) -> int:
+    """业务步计数(落库权威源优先) —— 单一真源 2026-10-10 小欧[20] 审计 B1
+
+    病根: 落库权威源优先的取数逻辑曾逐字重复三处(build_stats_step / build_final_stats_step /
+      finalize), 2026-10-01 改两处漏一处 —— finalize 仍按 agent.steps 计, 含 preview action
+      (齿轮先行, _live_only 不落库) 时多计, 致 task_metrics.total_steps 比 chat_tasks.total_steps
+      大, 监控面板与任务列表对不上账(违反"不能误导")。
+    DRY: 三处收敛到本函数, 口径只有一处, 后续变更无处可漏。
+    回落 agent.steps: 直调 telemetry 未跑 runner 时无 _persisted_steps。
+    """
+    db_steps = getattr(agent, "_persisted_steps", None)
+    return count_business_steps(
+        db_steps if db_steps is not None else getattr(agent, "steps", [])
+    )
+
+
 class TaskTelemetry:
     """单任务遥测采集器：状态 + 计算 + 产出（独立，不污染核心 agent）"""
 
@@ -139,6 +159,12 @@ class TaskTelemetry:
         self._llm_calls: List[Dict[str, Any]] = []          # 逐次 LLM 调用明细（落 llm_calls）
         self._tool_stats: Dict[str, Dict[str, float]] = {}  # 工具聚合（落 task_tool_metrics）
         self._injected_context: Optional[Dict[str, Any]] = None  # 跨任务注入基线（固定快照）
+        # 首帧 inject 定稿存此槽, 第2帧起复用(§3.1.1.6)
+        self._inject_frame: Optional[Dict[str, Any]] = None
+        # 2026-10-10 小欧[20] 审计 B2: 首帧 conv token 快照 —— 落库 compress_saved_pct 必须与
+        #   帧内展示同源(首帧口径)。原落库用终态快照喂同一公式, 终态含全部工具结果,
+        #   conv 远大于 inj → 百分比被夹逼成 0.0, 与前端显示的数对不上账。
+        self._first_frame_conv_tokens: Optional[int] = None
         self._trim_count = 0
         self._trim_tokens = 0
         self._artifacts: List[Dict[str, str]] = []   # 任务产出物收集（内存态，终态随 final_stats / update_task 下发）— 小欧 2026-08-21
@@ -150,13 +176,11 @@ class TaskTelemetry:
     def set_injected_context(self, snapshot: Dict[str, Any]) -> None:
         """跨任务注入上下文基线快照（start_step 注入后一次性写入，固定不随裁剪变）
 
-        2026-10-08 小欧 增 last_user_text: 原 summary 取 conv 最后一条 user/assistant, 首帧时那正是
-        用户刚发的本轮提问, 标签却叫"最近" → 用户看到自己的提问被回显, 属误导。改由注入源提供。
+        2026-10-09 北京老陈裁定[20]: 删 last_user_text(死字段, 串味见 [20] §2.6)
         """
         self._injected_context = {
             "message_count": int(snapshot.get("message_count", 0) or 0),
             "estimated_tokens": int(snapshot.get("estimated_tokens", 0) or 0),
-            "last_user_text": str(snapshot.get("last_user_text", "") or ""),
         }
 
     def mark_first_token(self) -> None:
@@ -244,14 +268,9 @@ class TaskTelemetry:
         """产出 MetaStep(type="stats") —— 与 11.2-B 字段口径一致"""
         from app.services.agent.steps.base import MetaStep  # 局部导入防环
         _agent = self.agent
-        # 2026-10-01 小欧 解 [1] 4-1: 落库权威源优先(agent._persisted_steps, dict 列表),
-        #   与 chat_tasks.total_steps 同源等值; 缺失时回落 agent.steps(直调 telemetry 未跑 runner)。
-        #   原按 agent.steps 计会多计 preview action(齿轮先行, _live_only 不落库),
-        #   preview 标记在 _emit_publish 才登记, agent.steps 无从剔除, 实测每轮多 1。
-        _db_steps = getattr(_agent, "_persisted_steps", None)
-        _step_count = count_business_steps(
-            _db_steps if _db_steps is not None else getattr(_agent, "steps", [])
-        )
+        # 2026-10-01 小欧 解 [1] 4-1: 落库权威源优先, 与 chat_tasks.total_steps 同源等值;
+        #   2026-10-10 小欧[20] 审计 B1: 取数收敛到 business_step_count(DRY, 三处一处口径)
+        _step_count = business_step_count(_agent)
         _duration = round(time.time() - self._run_start_ts, 1) if self._run_start_ts else 0.0
         return MetaStep(
             step=getattr(_agent, "llm_call_count", 0),
@@ -280,14 +299,9 @@ class TaskTelemetry:
         # 2026-09-04 小健 SLAP修复: outcome显式传入优先, fallback到agent.status — 消除监控层隐式依赖核心状态
         _final_status = outcome if outcome else getattr(getattr(_agent, "status", None), "value", None)
         # 2026-09-11 小欧: step_count 算法同 build_stats_step(L188, _M_SKIP 过滤后计数) — 小欧-2026-09-11
-        # 2026-10-01 小欧 解 [1] 4-1: 落库权威源优先(agent._persisted_steps, dict 列表),
-        #   与 chat_tasks.total_steps 同源等值; 缺失时回落 agent.steps(直调 telemetry 未跑 runner)。
-        #   原按 agent.steps 计会多计 preview action(齿轮先行, _live_only 不落库),
-        #   preview 标记在 _emit_publish 才登记, agent.steps 无从剔除, 实测每轮多 1。
-        _db_steps = getattr(_agent, "_persisted_steps", None)
-        _step_count = count_business_steps(
-            _db_steps if _db_steps is not None else getattr(_agent, "steps", [])
-        )
+        # 2026-10-01 小欧 解 [1] 4-1: 落库权威源优先, 与 chat_tasks.total_steps 同源等值;
+        #   2026-10-10 小欧[20] 审计 B1: 取数收敛到 business_step_count(DRY)
+        _step_count = business_step_count(_agent)
         return FinalStatsStep(
             step=getattr(_agent, "llm_call_count", 0),    #  llm_call_count 而非 step 序号 — 小欧 2026-08-20
             duration=_duration,                            # 同源：now - _run_start_ts（与 DB update_task 同一算式）— 小欧 2026-08-20
@@ -299,64 +313,103 @@ class TaskTelemetry:
             final_status=_final_status or outcome,         # outcome 显式传入兜底，永不 None — 小欧 2026-09-11
         )
 
-    def build_context_overview(self) -> Dict[str, Any]:
-        """产出 history_context 帧的数据字典(11.3-A) — 小欧 2026-10-08 重写压缩语义
+    @staticmethod
+    def _compress_pct(conv_tokens: int, inj_tokens: int) -> float:
+        """压缩率 —— (1 - 装入/注入)×100, 夹逼 ≥0, 1位小数([20] §3.6 沿用现状口径)
 
-        ①删 injected_ratio(注入量/装入量): >1 才代表压缩生效但标签叫"压缩比"方向相反, 且未压缩时
-          因装入含 system+本轮提问而不等于 1.0。改 compressed + compress_saved_pct(详见文件头编辑历史)。
-        ②summary 按场景给真内容: 压缩给真正注入 conv 的那段摘要, 未压缩给注入源最后一条 user。
+        2026-10-09 小欧: 帧内与落库两处共用, 单一真源防分叉(DRY); 分母为0返0.0。
+        """
+        return max(0.0, round((1 - conv_tokens / inj_tokens) * 100, 1)) if inj_tokens else 0.0
+
+    def _build_history_context_frame(self, step: int, meta: Dict[str, Any]) -> Dict[str, Any]:
+        """组装 history_context 整帧 —— content/conv/inject 一次成型([20] §3.1.1)
+
+        2026-10-09 小欧: conv 实数只取一次复用于帧与压缩率; 两组互斥填充实(首帧 link 时 conv 全空);
+          inject 首帧定稿存槽、第2帧起复用; summary 只在压缩成功时非空; link 判据内联。
         """
         from app.services.agent.message_builder import MessageBuilder
         _mb = self.agent.message_builder
-        _history = _mb.conversation_history
-        _message_count = len(_history)
-        _estimated = MessageBuilder._estimate_tokens(_history)
-        _truncated = bool(getattr(_mb, "_trimmed_this_round", False))
-        _inj = self._injected_context or {}
-        _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
-        # 摘要取一次复用(DRY): 是否压缩与摘要正文同源, 不重复读 agent 属性
-        _start_summary = str(getattr(self.agent, "_start_summary", "") or "").strip()
-        _compressed = bool(_start_summary)
-        # 省了多少%: 未压缩显式 0, 不让 system+本轮提问的固定开销冒充"压缩收益"。
-        #   口径近似: 分母=注入的原始历史, 分子=装入全部消息(含摘要+system+本轮提问), 实测占比 <1%。
-        #   夹逼 ≥0: 摘要仅在原文 > 窗口一半(实测 121868 tok)时生成, 负数实际不可达, 仍夹逼为防御。
-        _saved_pct = 0.0
-        if _compressed and _inj_tokens > 0:
-            _saved_pct = max(0.0, round((1 - _estimated / _inj_tokens) * 100, 1))
-        # summary 按场景给真内容(北京老陈 2026-10-08 裁定 B: 卡片全展开不折叠, 故须给全文)
+        _conv_count = len(_mb.conversation_history)
+        _conv_tokens = MessageBuilder._estimate_tokens(_mb.conversation_history)
+        _conv_truncated = bool(getattr(_mb, "_trimmed_this_round", False))
+        # link 判据: context_link_mode == "linked"。严禁取 context_root_task_id 非空
+        #   (独立任务该字段=自身, 会误判; 见 stream_orchestrator)
+        _linked = meta.get("context_link_mode") == "linked"
+
+        if step > 0:
+            _content = f"第{step}轮的对话历史上下文信息"
+        elif _linked:
+            _content = "连续任务,注入历史上下文"
+        else:
+            _content = "独立任务,无历史上下文注入"
+        # conv 实填当且仅当非"首帧link任务"(§3.1.1.1 总原则: 两组互斥)
+        if step == 0 and _linked:
+            _conv = {"message_count": "", "estimated_tokens": "", "truncated": ""}
+        else:
+            _conv = {
+                "message_count": _conv_count,
+                "estimated_tokens": _conv_tokens,
+                "truncated": _conv_truncated,
+            }
+
+        if step == 0:
+            # 首帧 conv token 定稿存槽, 供落库 compress_saved_pct 与帧内同源(审计 B2)
+            self._first_frame_conv_tokens = _conv_tokens
+            if _linked:
+                # 前缀格式固定「第N个link任务, 」(§3.1.1.4), 归 content(身份标识)
+                _prefix = f"第{meta.get('context_link_index') or 1}个link任务, "
+                _inj = self._injected_context or {}
+                _inj_count = int(_inj.get("message_count", 0) or 0)
+                _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
+                _summary = str(getattr(self.agent, "_start_summary", "") or "").strip()
+                # 前缀在前 —— 拼在句尾会得到"连续任务,注入历史上下文.第2个link任务, ", 序号悬空
+                _content = _prefix + _content
+                if not _inj_count:
+                    _compressed = "无历史上下文注入"
+                elif _summary:
+                    _compressed = f"本次注入历史信息压缩率= {self._compress_pct(_conv_tokens, _inj_tokens)}%"
+                elif getattr(self.agent, "_compact_attempted", False):
+                    # 尝试压缩却无摘要 = 失败/取消, 如实上报; 未触发则空串
+                    _compressed = "本次注入历史信息压缩失败"
+                else:
+                    # 未超窗: 无情况文字(前缀已归 content, 此处只放压缩情况)
+                    _compressed = ""
+                self._inject_frame = {
+                    "injected_message_count": _inj_count,
+                    "injected_estimated_tokens": _inj_tokens,
+                    # compressed 只放上面四种互斥情况文字, 不含前缀。
+                    #   原 `_compressed if _compressed else ""` 三元冗余(YAGNI)已删 —— 四分支必为
+                    #   字符串且空串时两支同值, 直接取 _compressed
+                    "compressed": _compressed,
+                    "summary": _summary,
+                }
+            else:
+                self._inject_frame = {
+                    "injected_message_count": "", "injected_estimated_tokens": "",
+                    "compressed": "", "summary": "",
+                }
         return {
-            "message_count": _message_count,
-            "estimated_tokens": _estimated,
-            "truncated": _truncated,
-            "injected_message_count": int(_inj.get("message_count", 0) or 0),
-            "injected_estimated_tokens": _inj_tokens,
-            "compressed": _compressed,
-            "compress_saved_pct": _saved_pct,
-            "summary": _start_summary if _compressed else str(_inj.get("last_user_text", "") or ""),
+            "content": _content,
+            "conv_context": _conv,
+            # 浅拷贝出槽 —— MetaStep 存引用, 直接给槽会被调用方改写污染后续帧
+            "inject_context": dict(self._inject_frame),
         }
 
     def build_history_context_step(self, step: int = 0):
-        """构造 history_context MetaStep(单一出口, react_loop 首帧与 react_step 逐轮共用) — 北京老陈 2026-10-07
+        """构造 history_context MetaStep(单一出口, react_loop 首帧与 react_step 逐轮共用)
 
         适用场景: ① react_loop 装配完 conv 后、emit start 之前发首帧(压缩与不压缩都发);
                   ② react_step 裁剪轮/每5轮发水位更新。
-        使用方法: 取本方法返回值交给 agent._step_emitter.emit(...).to_dict() 再 publish。
         输出: MetaStep(type="history_context"); telemetry 未挂载时返回 None(调用方跳过)。
         """
         _emitter = getattr(self.agent, "_step_emitter", None)
         if _emitter is None:
             return None
         from app.services.agent.steps import MetaStep
-        _ov = self.build_context_overview()
+        _meta = getattr(self.agent, "_start_meta", None) or {}
+        _frame = self._build_history_context_frame(step, _meta)
         return _emitter.emit(MetaStep(
-            step=step, type="history_context", content=_ov.get("summary", ""),
-            message_count=_ov["message_count"], estimated_tokens=_ov["estimated_tokens"],
-            truncated=_ov["truncated"],
-            injected_message_count=_ov["injected_message_count"],
-            injected_estimated_tokens=_ov["injected_estimated_tokens"],
-            compressed=_ov["compressed"],
-            compress_saved_pct=_ov["compress_saved_pct"],
-            severity="info",
+            step=step, type="history_context", severity="info", **_frame,
         ))
 
     # ── 终态聚合 + 落库 ─────────────────────────────────
@@ -389,7 +442,15 @@ class TaskTelemetry:
         _llm_latency = round(sum(r["duration_seconds"] for r in self._llm_calls), 3)
         _tool_exec = round(sum(t["latency"] for t in self._tool_stats.values()), 3)
         _tokens = getattr(_agent, "task_accumulated_tokens", {}) or {}
-        _overview = self.build_context_overview()
+        from app.services.agent.message_builder import MessageBuilder
+        _mb = getattr(_agent, "message_builder", None)
+        # 2026-10-10 小欧[20]: 落库快照自取数字(不再调 build_context_overview, 该函数已随双分组改造删除)
+        _snap_count = len(_mb.conversation_history) if _mb is not None else 0
+        _snap_tokens = MessageBuilder._estimate_tokens(_mb.conversation_history) if _mb is not None else 0
+        _inj = self._injected_context or {}
+        _inj_count = int(_inj.get("message_count", 0) or 0)
+        _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
+        _snap_summary = str(getattr(_agent, "_start_summary", "") or "").strip()
         _llm_client = getattr(_agent, "llm_client", None)
         _meta = getattr(_agent, "_start_meta", None)
         # 三堂会审修复: 任务快照优先——防单例被并发还原后 finalize 记录到他人模型 — 小欧 2026-08-22
@@ -403,7 +464,9 @@ class TaskTelemetry:
             "error_type": _error_type,
             # 归一(小欧 2026-08-22 报告v1.25 6.7): model/provider 两键 → task_model JSON 串(F1 补写入源)
             "task_model": _model_to_json(_tm),
-            "total_steps": count_business_steps(_agent.steps),
+            # 2026-10-10 小欧[20] 审计 B1: 原 count_business_steps(_agent.steps) 用错源(preview action 多计),
+            #   致 task_metrics.total_steps 比 chat_tasks.total_steps 大。改走落库权威(同源等值)
+            "total_steps": business_step_count(_agent),
             "llm_call_count": getattr(_agent, "llm_call_count", 0),
             "retry_count": getattr(_agent, "_retry_count", 0),
             "tool_call_count": int(sum(t["call_count"] for t in self._tool_stats.values())),
@@ -415,15 +478,23 @@ class TaskTelemetry:
             "prompt_tokens": int(_tokens.get("prompt_tokens", 0) or 0),
             "completion_tokens": int(_tokens.get("completion_tokens", 0) or 0),
             "total_tokens": int(_tokens.get("total_tokens", 0) or 0),
-            "context_message_count": _overview["message_count"],
-            "context_estimated_tokens": _overview["estimated_tokens"],
+            "context_message_count": _snap_count,
+            "context_estimated_tokens": _snap_tokens,
             "context_truncated": 1 if self._trim_count > 0 else 0,   # B1修复(复核确认): 任务级裁剪判定, 原读末轮瞬时标志致"裁剪早于末轮则漏报" — 小欧 2026-08-20
-            "context_injected_message_count": _overview["injected_message_count"],
-            "context_injected_estimated_tokens": _overview["injected_estimated_tokens"],
+            "context_injected_message_count": _inj_count,
+            "context_injected_estimated_tokens": _inj_tokens,
             # 2026-10-08 小欧 context_injected_ratio → 拆两个语义明确的列(禁 backward 不留旧列别名)。
             #   落库列名须与 storage._cols 同步, 且老库须走 PRAGMA 幂等补列(见 storage.init_monitoring_db)。
-            "context_compressed": 1 if _overview["compressed"] else 0,
-            "context_compress_saved_pct": _overview["compress_saved_pct"],
+            "context_compressed": 1 if _snap_summary else 0,
+            # 2026-10-09 小欧[20]: DB 列仍要 float(表结构不可变)
+            #   2026-10-10 小欧[20] 审计 B2: 改用首帧 conv token —— 与帧内展示同源(可对账);
+            #   原用终态 _snap_tokens 致被 max(0.0)夹逼成 0.0, 与前端显示的压缩率对不上账
+            "context_compress_saved_pct": (
+                self._compress_pct(
+                    self._first_frame_conv_tokens
+                    if self._first_frame_conv_tokens is not None else _snap_tokens,
+                    _inj_tokens,
+                ) if _snap_summary else 0.0),
             "trim_count": self._trim_count,     # C1修复(复核确认): 原 on_trim 采集数据不进 finalize, 裁剪遥测死链路 — 小欧 2026-08-20
             "trim_tokens": self._trim_tokens,
             "created_at": datetime.now().isoformat(sep=" "),

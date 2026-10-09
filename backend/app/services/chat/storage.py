@@ -115,8 +115,13 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元3: 新增 conn 级写函数 set_session_link_conn(与 get_session_link 对称),
 #   返回 rowcount 供调用方直接判定(不用 conn.total_changes 差值反推), 供编排器经 db.atxn offload 落
 #   随消息携带的 link 值; session_service.set_session_link 改为委托之, UPDATE SQL 单一来源(DRY)。
-# 2026-10-03 - 小欧 - 文档[4] 5.12.3 副作用修复: set_session_link_conn 删 updated_at 写入(改开关非内容变更, 顺带刷新会把会话顶到列表首位; set_session_info/PATCH 路径是真内容修改, 其 updated_at 保留)。
-# 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 新增 resolve_session_interject(取值+落值单一真源, 编排器与 save_message 共用)
+# 2026-10-03 - 小欧 -  5.12.3 副作用修复: set_session_link_conn 删 updated_at 写入(改开关非内容变更, 顺带刷新会把会话顶到列表首位; set_session_info/PATCH 路径是真内容修改, 其 updated_at 保留)。
+# 2026-10-08 - 小欧 - 3.4.5.2: 新增 resolve_session_interject(取值+落值单一真源, 编排器与 save_message 共用)
+# 2026-10-09 - 小欧 -  新增 count_chain_siblings(同链任务计数, link 序号 N 数据源)
+# 2026-10-10 - 小欧 -  get_task_detail 附带 history_context_first
+#   (历史任务回显首帧, 整帧原封不动返回不重塑); count_chain_siblings 补 'linked' 限定 —— 链根自身在表内
+#   (root=自身/independent)致每个 link 任务序号全体 +1, 已按真库 16 任务逐一验证修正; 首帧查询过滤
+#   下推 SQL(原 Python 侧过滤全量拉 step_json), 缺表降级返 None 不拖垮详情接口。
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -124,6 +129,7 @@ storage — 会话存储业务逻辑
 """
 
 import json
+import sqlite3
 import threading
 import types  # 11.1 冻结 token 零值常量, 防外部 mutate 污染全局 — 小欧 2026-08-20
 from typing import Any, Dict, List, Optional, Tuple
@@ -531,6 +537,23 @@ def update_session_accumulation(conn: Connection, *, session_id: str, llm_call_c
         _warn_zero_row("update_session_accumulation", "session", session_id, "会话行可能缺失或列未落库")
 
 
+def count_chain_siblings(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> int:
+    """统计同链内**已存在的 link 任务**数(不含当前任务) —— link 序号 N 的数据源(北京老陈 2026-10-08 裁定)
+
+    2026-10-09 小欧: 新增。history_context 首帧 compressed 需要"第N个link任务"前缀,
+      而全仓无 link 序号字段([20] §3.1.1.7 代码缺口)。N = 本函数返回值 + 1。
+    2026-10-10 小欧[20] 北京老陈裁定修正: 必须限定 context_link_mode='linked'。
+      病根: 链根自身就在 chat_tasks 里(实测 root=自身/mode=independent, 且是链内最早一行),
+      原 SQL 只排除 task_id != 当前, 链根被计入兄弟 → 第1个 link 任务显示"第16个link任务"。
+      限定 linked 后 N 恰为 link 任务序; 独立任务(root=自身)恒 0 → N=1。
+    """
+    return conn.execute(
+        "SELECT COUNT(*) FROM chat_tasks "
+        "WHERE context_root_task_id = ? AND task_id != ? AND context_link_mode = 'linked'",
+        (context_root_task_id, current_task_id),
+    ).fetchone()[0]
+
+
 def query_chain_accumulation(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> dict:
     """上下文链 token 累计（计算派生，不落库）— 满足链根聚合语义
     对同 context_root_task_id 的所有「已完成」任务聚合 token_usage（排除当前运行中任务），
@@ -903,7 +926,35 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
     _sm = parse_session_model(_r.pop("sessionModel", None))
     _r["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
     _r["provider"] = _sm.provider if _sm else None
+    # 2026-10-10 - 小欧 - 文档[20]: 附带首帧(历史任务回显历史上下文用)
+    _r["history_context_first"] = get_history_context_first(conn, task_id)
     return _r
+
+
+def get_history_context_first(conn: Connection, task_id: str) -> Optional[dict]:
+    """取首帧 history_context 整帧(历史任务回显用) — 小欧 2026-10-10
+
+    2026-10-10 小欧[20]: inject 首帧定稿后不变, 故只取最早一条, 不扫全表。
+    2026-10-10 小欧[20] 北京老陈裁定: 首帧整帧原封不动返回(d 本身), 不重塑不补键不置空 ——
+      定稿结构由前端按实到字段显示, 后端不做任何形状归一(禁 backward)。
+    2026-10-10 小欧: 取最早一条不用 step==0 —— 首帧前移是 10/07 才做的。
+    """
+    # 2026-10-10 小欧[20] KISS-DIRECT: 过滤下推 SQL(复用同文件 json_extract 模式, 见 query_*),
+    #   原 Python 侧过滤要把长任务全部 step_json 拉进内存逐条解析(长任务单步可达数百 KB)
+    # 缺表降级: chat_task_steps 是历史回显的增强项, 不存在时不得拖垮整个详情接口
+    #   (原会抛 sqlite3.OperationalError, 实测打挂 test_artifacts_11_6 三个既有用例)。降级返 None。
+    try:
+        row = conn.execute(
+            "SELECT step_json FROM chat_task_steps "
+            "WHERE task_id=? AND json_extract(step_json,'$.type')='history_context' "
+            "ORDER BY rowid LIMIT 1",
+            (task_id,)).fetchone()
+    except sqlite3.Error:
+        return None
+    if row is None:
+        return None
+    d = parse_json(row["step_json"], label="step_json")
+    return d if isinstance(d, dict) else None
 
 
 def list_session_tasks(conn: Connection, session_id: str) -> Tuple[list, int, Optional[str]]:

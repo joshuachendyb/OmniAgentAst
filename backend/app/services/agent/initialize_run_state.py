@@ -30,6 +30,8 @@
 # 2026-10-07 北京老陈 - 删 agent.message_builder.init_history(sys_prompt, task):
 #   system/task 两条与超窗判定、C4 摘要无关(判定只算注入历史量, 摘要只吃 _injected_history_msgs),
 #   推迟到压缩决策后由 react_loop 装配段建[system, 摘要或原历史, task]; 本函数退化为纯状态重置。
+# 2026-10-10 - 小欧 -  新增 _start_summary / _compact_attempted
+#   每轮初始化(替代 start_step 内重复清零), 二者被 telemetry 读以区分"未超窗"与"压缩失败"。
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -64,6 +66,9 @@ def initialize_run_state(
     agent._warned_same_tool_loop = 0   # v1.7双阈值: 纠偏注入条数计数(int, 第2/3/4次共3条), 落码新增字段 — 小欧 2026-08-08
     agent._last_error = None  # 2026-08-18 - 小欧 - error全仅SSE: 每轮重置, step_emitter.emit统一出口记录, 守卫读此填充final
     agent._usage_events = []  # 2026-08-18 - 小欧 - usage剔step_json: 每轮重置, react_cycle usage emit时append, agent_runner终态insert_token读
+    # 摘要与压缩标记每轮初始化(替代 start_step 内重复清零)
+    agent._start_summary = ""
+    agent._compact_attempted = False
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

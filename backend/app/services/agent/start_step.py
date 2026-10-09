@@ -293,13 +293,15 @@ async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["Start
     设计文档: start契约设计章节。
     2026-10-07 北京老陈: 判定与摘要下沉回本函数, 置于契约构造之前; 因摘要需 await LLM, 本函数改 async。
     """
-    agent._start_summary = ""    # 首行清零, 防后续步骤抛异常时残留上次任务的值
     # ① 构建注入历史(只留存 agent._injected_history_msgs, 不写 conversation_history)
     _build_injected_history(agent, context)
     # ② 超窗判定(C4, 读 _injected_history_msgs)
     _maybe_compact_injected_history(agent)
     # ③ 锚定摘要生成(超窗时; 结果挂 agent._start_summary 供调用方装配)
     if getattr(agent, "_needs_compact", False):
+        # 2026-10-09  语义=确实调用了摘要生成(非"判定超窗"), 故置执行分支内,
+        #   供 telemetry 区分"未触发压缩"与"压缩失败"; 每轮清零已移至 initialize_run_state
+        agent._compact_attempted = True
         agent._start_summary = await _compact_injected_history(agent)
     # 11.3-A 跨任务注入基线快照（独立模块 TaskTelemetry 存储，固定不漂移）— 小欧 2026-08-20
     _tele = getattr(agent, "telemetry", None)
@@ -310,12 +312,7 @@ async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["Start
         _tele.set_injected_context({
             "message_count": len(_prev),
             "estimated_tokens": MessageBuilder._estimate_tokens(_prev),
-            # 2026-10-08 小欧 传最近一条历史提问: telemetry 原从 conv 末条取, 首帧时那正是本轮提问,
-            #   标签叫"最近"等于回显用户自己的话。改由注入源取, 语义才成立。
-            "last_user_text": next(
-                (str(m.get("content") or "") for m in reversed(_prev)
-                 if m.get("role") == "user" and (m.get("content") or "").strip()), ""),
-        })
+          })
     # ④ 构造任务输入契约(StartStep): 据 _start_meta 运行元数据 + previous_messages 快照, 缺 _start_meta 则 None
     _prev_msgs = context.get("previous_messages") if isinstance(context, dict) else None
     return _build_start_contract(agent, _prev_msgs)

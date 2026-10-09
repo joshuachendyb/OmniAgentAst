@@ -204,6 +204,8 @@
 # 2026-10-03 - 小欧 - 落值加命中判定: set_session_link_conn 返回 rowcount, 0 行即会话不存在, warning 留痕但本条仍按携带值处理(fail-open 用携带值, 不掐断流)。
 # 2026-10-05 - 小欧 - 报告 P3: 两处 loop_watchdog.activate() 移入 try, 激活期异常带 task_id/session_id/stream_id 链根 warning, 杜绝静默失败。
 # 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 插话开关取/落值收敛为 storage.resolve_session_interject(与 save_message 共用单一真源)
+# 2026-10-10 - 小欧 - [20]  取链内序号注入 _start_meta.context_link_index
+#   (第几个 link 任务, telemetry 只读不算); 查询失败降级为 0 不拖死任务(序号仅供前缀文案)。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -249,6 +251,7 @@ from app.services.chat.storage import get_session_link  # 2026-10-03 小欧 - �
 from app.services.chat.storage import set_session_link_conn  # 2026-10-03 小欧 - 文档[4] 5.7.14: link 开关真值 conn 级写, 随消息落库
 from app.services.chat.storage import resolve_session_interject     # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
 from app.services.chat.storage import update_task_accumulation, update_session_accumulation  # token 四层同构累计 — 小欧 2026-08-20
+from app.services.chat.storage import count_chain_siblings  # 2026-10-09 小欧 - [20] link 序号 N 取数(第几个 link 任务)
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
 from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
@@ -621,11 +624,27 @@ async def chat_stream_orchestrator(
         #   只注入 agent 拿不到的 chat 运行数据: task_id(agent.task_id 已持有)、provider/model(agent.llm_client
         #   已持有)、user_input? 见下——next_step/session_id/链字段/warning 为必需 (react_cycle 无权威源)
         #   2026-08-17 小健 收敛真冗余: task_id 由 agent.task_id 权威持有(base_agent:59), 不重复注入; 余键保留
+        # 2026-10-09 北京老陈裁定: 取链内序号(第几个 link 任务)供 _start_meta 注入([20] §5.2)。
+        #   口径与 query_chain_accumulation 同源; 闭包形态与相邻 db_ops 一致, 不用 partial(省 import)
+        # 2026-10-10 小欧: 查询失败不拖死任务(序号只影响前缀文案) —— 默认 0
+        _chain_sibling_count = 0
+        try:
+            _chain_sibling_count = await db.atxn(
+                "chat",
+                lambda conn: count_chain_siblings(
+                    conn,
+                    context_root_task_id=_context_root_task_id,
+                    current_task_id=task_id),
+            )
+        except Exception as _e:  # noqa: BLE001 - 序号仅供文案, 失败降级不阻断任务
+            logger.warning(f"[chat] 取链内序号失败(session={session_id}), 序号默认0: {_e}")
         agent._start_meta = {
             "user_input": user_input,
             "session_id": session_id,
             "context_link_mode": _context_link_mode,
             "context_root_task_id": _context_root_task_id,
+            # 2026-10-09 小欧: link 序号 N(第几个 link 任务), telemetry 直接读不算(单一写点)
+            "context_link_index": _chain_sibling_count + 1,
             "warning": _model_warning,
         }
         # ── 编排⑨落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) ——— 小健 2026-08-17
