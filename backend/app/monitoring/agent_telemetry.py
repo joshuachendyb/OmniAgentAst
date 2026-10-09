@@ -56,9 +56,11 @@
 #   action 多计致 task_metrics 与 chat_tasks 对不上账) → 三处重复取数收敛为 business_step_count(DRY);
 #   ②compress_saved_pct 原用终态快照被夹逼成 0.0、与前端对不上账 → 改用首帧 conv token;
 #   ③前缀「第N个link任务,」归 content 且前置拼接, compressed 只留情况文字, 并删冗余三元。
-# 2026-10-10 - 小欧 补 _inject_frame 防御: 槽位由 None 改为预填四键空模板 —— 原为 None 时若未发首帧
+# 2026-10-10 - 小欧 补 _inject_frame 防御: 槽位由 None 改为预填空模板 —— 原为 None 时若未发首帧
 #   就发后续帧(telemetry 中途挂载/首帧被跳过), dict(None) 抛 TypeError 整帧崩; 预填后返回同"无注入"
-#   形态的空串四键, 前端按缺字段读出空 UI 如实显示。补单测 tests/test_history_context_frame.py(19 例)。
+#   形态的空串键集, 前端按缺字段读出空 UI 如实显示。补单测 tests/test_history_context_frame.py(19 例)。
+# 2026-10-10 - 小欧 _inject_frame 空模板四键→五键(增 content_link_mode): 该键随双字段拆分一并入库,
+#   保持"未发首帧就发后续帧"时返回形状与"无注入"同形, 不靠调用方分支(DRY)。
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -168,7 +170,7 @@ class TaskTelemetry:
         #   与"无注入"同形, 前端 contextFrame 按缺字段读出空 UI 如实显示。— 小欧-2026-10-10
         self._inject_frame: Dict[str, Any] = {
             "injected_message_count": "", "injected_estimated_tokens": "",
-            "compressed": "", "summary": "",
+            "compressed": "", "summary": "", "content_link_mode": "",
         }
         # 2026-10-10 小欧[20] 审计 B2: 首帧 conv token 快照 —— 落库 compress_saved_pct 必须与
         #   帧内展示同源(首帧口径)。原落库用终态快照喂同一公式, 终态含全部工具结果,
@@ -331,8 +333,11 @@ class TaskTelemetry:
         return max(0.0, round((1 - conv_tokens / inj_tokens) * 100, 1)) if inj_tokens else 0.0
 
     def _build_history_context_frame(self, step: int, meta: Dict[str, Any]) -> Dict[str, Any]:
-        """组装 history_context 整帧 —— content/conv/inject 一次成型([20] §3.1.1)
+        """组装 history_context 整帧 —— conv/inject 双分组一次成型([20] §3.1.1)
 
+        2026-10-10 小欧: 顶层 content 拆进两个分组 —— conv.content / inject.content_link_mode,
+          两段标题右侧各读各的(此前挤同一字段, 同一句在对话段与历史段显两遍); 顶层不再输出。
+          禁 backward: 前端不做顶层回落读法。
         2026-10-09 小欧: conv 实数只取一次复用于帧与压缩率; 两组互斥填充实(首帧 link 时 conv 全空);
           inject 首帧定稿存槽、第2帧起复用; summary 只在压缩成功时非空; link 判据内联。
         """
@@ -346,16 +351,23 @@ class TaskTelemetry:
         _linked = meta.get("context_link_mode") == "linked"
 
         if step > 0:
-            _content = f"第{step}轮的对话历史上下文信息"
+            _conv_content = f"第{step}轮的对话历史上下文信息"
+            # inject 组首帧已定稿存槽, 第2帧起直接复用, 此处不重算(YAGNI)
+            _link_mode_content = ""
         elif _linked:
-            _content = "连续任务,注入历史上下文"
+            # link 首帧 conv/inject 互斥: 本帧身份归 inject 组, conv 侧全空
+            _conv_content = ""
+            _link_mode_content = (f"第{meta.get('context_link_index') or 1}个link任务, "
+                                  f"连续任务,注入历史上下文")
         else:
-            _content = "独立任务,无历史上下文注入"
+            _conv_content = "独立任务,无历史上下文注入"
+            _link_mode_content = ""
         # conv 实填当且仅当非"首帧link任务"(§3.1.1.1 总原则: 两组互斥)
         if step == 0 and _linked:
-            _conv = {"message_count": "", "estimated_tokens": "", "truncated": ""}
+            _conv = {"content": "", "message_count": "", "estimated_tokens": "", "truncated": ""}
         else:
             _conv = {
+                "content": _conv_content,
                 "message_count": _conv_count,
                 "estimated_tokens": _conv_tokens,
                 "truncated": _conv_truncated,
@@ -365,14 +377,10 @@ class TaskTelemetry:
             # 首帧 conv token 定稿存槽, 供落库 compress_saved_pct 与帧内同源(审计 B2)
             self._first_frame_conv_tokens = _conv_tokens
             if _linked:
-                # 前缀格式固定「第N个link任务, 」(§3.1.1.4), 归 content(身份标识)
-                _prefix = f"第{meta.get('context_link_index') or 1}个link任务, "
                 _inj = self._injected_context or {}
                 _inj_count = int(_inj.get("message_count", 0) or 0)
                 _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
                 _summary = str(getattr(self.agent, "_start_summary", "") or "").strip()
-                # 前缀在前 —— 拼在句尾会得到"连续任务,注入历史上下文.第2个link任务, ", 序号悬空
-                _content = _prefix + _content
                 if not _inj_count:
                     _compressed = "无历史上下文注入"
                 elif _summary:
@@ -381,9 +389,11 @@ class TaskTelemetry:
                     # 尝试压缩却无摘要 = 失败/取消, 如实上报; 未触发则空串
                     _compressed = "本次注入历史信息压缩失败"
                 else:
-                    # 未超窗: 无情况文字(前缀已归 content, 此处只放压缩情况)
+                    # 未超窗: 无情况文字(身份标识已归 content_link_mode, 此处只放压缩情况)
                     _compressed = ""
                 self._inject_frame = {
+                    # 2026-10-10 小欧 身份标识归本组(「历史上下文」段右侧); 前缀生成时即带, 不事后拼
+                    "content_link_mode": _link_mode_content,
                     "injected_message_count": _inj_count,
                     "injected_estimated_tokens": _inj_tokens,
                     # compressed 只放上面四种互斥情况文字, 不含前缀。
@@ -395,10 +405,9 @@ class TaskTelemetry:
             else:
                 self._inject_frame = {
                     "injected_message_count": "", "injected_estimated_tokens": "",
-                    "compressed": "", "summary": "",
+                    "compressed": "", "summary": "", "content_link_mode": "",
                 }
         return {
-            "content": _content,
             "conv_context": _conv,
             # 浅拷贝出槽 —— MetaStep 存引用, 直接给槽会被调用方改写污染后续帧
             "inject_context": dict(self._inject_frame),

@@ -2083,18 +2083,19 @@ def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
 def injected_context_frames(events):
     """从 events 逐帧取出跨任务注入量与成品状态文字, 返回 [dict, ...]。
 
-    每项: {"injected_message_count": int, "injected_estimated_tokens": int, "content": str}
+    每项: {"injected_message_count": int, "injected_estimated_tokens": int, "content_link_mode": str}
       injected_message_count  注入的连续对话条数
       injected_estimated_tokens  注入的估算 token
-      content  后端给的**成品状态文字**(如"第1个link任务, 连续任务,注入历史上下文" /
-               "本次注入历史信息压缩率= 38%")。这是帧的权威文本字段, 定稿后前缀归 content、
-               情况文字归 compressed, 只记条数/token 会把这段关键信息整个丢掉, 故一并取回。
+      content_link_mode  后端给的**成品身份文字**(如"第1个link任务, 连续任务,注入历史上下文")。
+               2026-10-10 小欧: 顶层 content 已拆两组 —— 本项取 inject 组这一个。压缩率文字另在
+               compressed 字段, 两者同属「历史上下文」段右侧同行显示。
 
     2026-10-10 小欧: 帧结构改双分组嵌套(conv_context/inject_context), 扁平 injected_message_count /
     injected_estimated_tokens 键**已删除**。旧读法 ev.get("injected_message_count") 恒返回 None
     → 注入量恒 0 → 测试记录第1节"跨任务注入上下文"恒显"无(本任务单轮/无历史注入)"(记录失真)。
     真库实测 P9-08 首帧实为 20条/11100tok, 记录却写"无"。
     禁 backward: 只认 history_context 帧的 inject_context 分组, 不回落扁平键。
+    2026-10-10 小欧 同理不回落顶层 content —— 只读 inject_context.content_link_mode。
 
     单一真源(SRP/DRY): 写记录取峰值、各用例逐任务明细取首帧, 全部走本函数, 杜绝同一读帧逻辑
     在两处各写一遍、改一处漏另一处(该缺陷已实际发生过: e2e_helpers 与 test_p9_08 各写一份)。
@@ -2106,7 +2107,7 @@ def injected_context_frames(events):
             out.append({
                 "injected_message_count": grp.get("injected_message_count") or 0,
                 "injected_estimated_tokens": grp.get("injected_estimated_tokens") or 0,
-                "content": ev.get("content") or "",
+                "content_link_mode": grp.get("content_link_mode") or "",
             })
     return out
 
@@ -2118,8 +2119,8 @@ def format_injected_context(events):
     取峰值(遍历全部帧求最大)已废除: 峰值反映的是"本次运行里最大的那次", 与本行语义
     (本任务装入量)不是一回事, 多任务连发时会把别的任务的注入量记到本任务头上, 属张冠李戴。
 
-    帧的成品状态文字(content, 如"第1个link任务, 连续任务,注入历史上下文")一并带出:
-    定稿后前缀归 content、情况文字归 compressed, 只记条数/token 会把这段关键信息丢掉。
+    帧的成品身份文字(inject_context.content_link_mode, 如"第1个link任务, 连续任务,注入历史上下文")
+    一并带出: 它与压缩率文字同属「历史上下文」段右侧, 只记条数/token 会把这段关键信息丢掉。
 
     无帧或首帧无注入时沿用文案"无(本任务单轮/无历史注入)"。
     """
@@ -2130,7 +2131,7 @@ def format_injected_context(events):
     n, tok = f["injected_message_count"], f["injected_estimated_tokens"]
     if not (n or tok):
         return "无(本任务单轮/无历史注入)"
-    return "消息{}条/≈{}tok(估算); {}".format(n, tok, f["content"] or "-")
+    return "消息{}条/≈{}tok(估算); {}".format(n, tok, f["content_link_mode"] or "-")
 
 
 def write_test_record(

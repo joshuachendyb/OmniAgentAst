@@ -60,20 +60,24 @@ export interface ContextOverviewFrame {
   // 2026-10-10 小欧: 结构定稿, 只认这两个分组(禁 backward: 不再加其他形状)
   conv_context?: ConvContextFrame;
   inject_context?: InjectContextFrame;
-  content?: string;
+  // 2026-10-10 小欧 顶层 content 已删 —— 身份标识按段拆进两分组(见下), 禁顶层回落读法
 }
 // 2026-10-09 小欧: conv 侧独立成 interface —— 「对话上下文」段只读这一个, 不越界
+// 2026-10-10 小欧: 补 content —— 本段身份标识, 「对话上下文」段标题右侧显示
 export interface ConvContextFrame {
+  content?: string;
   message_count?: number | '';
   estimated_tokens?: number | '';
   truncated?: boolean | '';
 }
 // 2026-10-09 小欧: inject 侧独立成 interface —— 「历史上下文」段只读这一个
+// 2026-10-10 小欧: 补 content_link_mode —— 本段身份标识, 「历史上下文」段标题右侧显示(与 compressed 并排)
 export interface InjectContextFrame {
+  content_link_mode?: string;
   injected_message_count?: number | '';
   injected_estimated_tokens?: number | '';
   // 后端成品情况文字(压缩率/无注入/压缩失败), 前端原样直显不拼装不拆解不改写。
-  //   2026-10-10: 「第N个link任务, 」前缀归 content(身份标识), 不在本字段
+  //   2026-10-10 小欧: 「第N个link任务, 」前缀归 content_link_mode(身份标识), 不在本字段
   compressed?: string;
   summary?: string;
 }
