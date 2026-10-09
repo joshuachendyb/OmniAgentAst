@@ -43,8 +43,10 @@ import {
 } from '@/utils/stepStyles';
 
 interface Props {
-  /** history_context 帧数据(实时唯一来源); 历史任务为空串 — 小欧 2026-10-04 */
-  overview: string | ContextOverviewFrame | null;
+  /** history_context 帧数据(实时唯一来源); 历史任务无帧时为 null — 小欧 2026-10-04
+   *  2026-10-10 小欧[20] 删 string 联合: 生产路径恒为 object|null(useTaskInfo 直传
+   *  frames.contextOverview), string 联合是纯 phantom 且只有测试在喂 —— 禁 backward 必删。 */
+  overview: ContextOverviewFrame | null;
   /** false = 历史任务：弹框只显历史上下文段（DB 首帧回放，无对话上下文段） — 小欧 2026-10-09 */
   isLiveContext: boolean;
   /** 当前任务模型上下文窗口(usage 帧带来)；缺失则不显占窗率 — 小欧 2026-10-04 */
@@ -108,40 +110,23 @@ export const ContextOverviewCard: React.FC<Props> = ({
 
   const ctxState: ContextState = mapStatus({ overview });
   const ctx = CONTEXT_STATE_MAP[ctxState];
-  // 2026-10-09: 读路径只认定稿双分组。typeof 守卫保留(string 无分组键)
+  // 读路径只认定稿双分组, 唯一真源 contextFrame
   const convCtx = pickConv(overview);
   const injectCtx = pickInject(overview);
-  // 2026-10-09 后端给什么显示什么 —— 空位 "" 直显为空, 不转换不设开关
+  // 后端给什么显示什么 —— 空位 "" 直显为空, 不转换不设开关
   const convTokens = convCtx?.estimated_tokens ?? '';
-  const injectTokens = injectCtx?.injected_estimated_tokens ?? '';
   // 2026-10-10 行内一个数, 代表"当前能看到的那个上下文"
   // (实时=对话 conv, 历史=跨任务注入 inject), 两组都空则 formatTokenK 返回 '–'
-  const tokens = isLiveContext ? convTokens : injectTokens;
+  const tokens = isLiveContext ? convTokens : (injectCtx?.injected_estimated_tokens ?? '');
   const summary = injectCtx?.summary ?? '';
   const count = convCtx?.message_count ?? '';
-  // 2026-10-10 小欧: 空段兜底用 content 原文(后端成品状态文案), 比"–"诚实
-  const contentText =
-    (typeof overview === 'object' && overview ? overview.content : null) ||
-    null;
-
-  // 2026-10-04 小欧: 跨任务注入字段仅 injected_message_count>0 时显(多数任务为 0, 显示是噪声 YAGNI)。
-  const injected = injectCtx
-    ? {
-        count: injectCtx.injected_message_count ?? '',
-        tokens: injectCtx.injected_estimated_tokens ?? '',
-      }
-    : null;
-  // 2026-10-09: compressed 是后端成品情况文字, 原样直显不截不断
+  // 2026-10-10 小欧[20]: content 是**帧级身份标识**(第N个link任务/独立任务/第N轮), 不属于任何一段
+  //   → 归卡片标题下单次渲染; 此前塞进两段标题右侧, 同一句在对话段与历史段各显一遍(内容重复)
+  const contentText = overview?.content ?? '';
+  const injectCount = injectCtx?.injected_message_count ?? '';
+  const injectTokens = injectCtx?.injected_estimated_tokens ?? '';
+  // compressed 是后端成品情况文字, 原样直显不截不断(不拆解不解析不改写)
   const compressedText = injectCtx?.compressed ?? '';
-  // 2026-10-10 「历史上下文」段标题行右侧 = content + compressed,
-  // 实时任务与历史任务**同此一条**, 其他区块一律不动。
-  // content 内含后端拼好的「第N个link任务, 」前缀(前缀已归 content), 两字段相邻直显, 原样不加工
-  // 2026-10-10 布局优化: 两字段拆成两个 span —— content 用 TERTIARY、compressed 用 SECONDARY
-  // 区分身份, 用 gap 留白分隔(不造分隔符, 不改文字); 任一为空则不占位
-  const historyHeadParts = [
-    { text: contentText ?? '', color: Colors.TEXT.TERTIARY },
-    { text: compressedText, color: Colors.TEXT.SECONDARY },
-  ].filter((p) => p.text);
   // 2026-10-10 小欧: 历史段状态点只表"有无注入"(有绿/无灰) —— 不解析 compressed 判失败(不拆成品)
 
   // 2026-10-04 小欧: 装入条数 + 估算 token + 占窗率 同行; 占窗率=估算 token / 窗口, 窗口缺失则不显
@@ -150,21 +135,19 @@ export const ContextOverviewCard: React.FC<Props> = ({
     typeof convTokens === 'number' && contextWindow
       ? Math.round((convTokens / contextWindow) * 100)
       : null;
-  // 2026-10-09: 两段各读一组, 行内 metric 用两者组合; 空值真值性即不渲染
-  const injectPart =
-    injected && injected.count ? (
-      <div>
-        跨任务注入 {injected.count} 条
-        {/* 2026-10-10: token 空位不合成 —— 原写死"估算Token约 {''}(–)"
- 渲染成"跨任务注入 5 条 · 估算Token约 (–)"。改为条数/token 各按真值性显, 空则不显 */}
-        {typeof injected.tokens === 'number' ? (
-          <span>
-            {' · 估算Token约 '}
-            {injected.tokens.toLocaleString()} ({formatTokenK(injected.tokens)})
-          </span>
-        ) : null}
-      </div>
-    ) : null;
+// 2026-10-10 小欧[20]: 直接读 injectCtx, 删 injected 中间层(此前同源三处解构, 违反 DRY)
+  const injectPart = injectCount ? (
+    <div>
+      跨任务注入 {injectCount} 条
+      {/* token 空位不合成 —— 否则渲染成"跨任务注入 5 条 · 估算Token约 (–)" */}
+      {typeof injectTokens === 'number' ? (
+        <span>
+          {' · 估算Token约 '}
+          {injectTokens.toLocaleString()} ({formatTokenK(injectTokens)})
+        </span>
+      ) : null}
+    </div>
+  ) : null;
   const convPart =
     count || tokens ? (
       <div>
@@ -226,21 +209,15 @@ export const ContextOverviewCard: React.FC<Props> = ({
       }}
       content={
         <>
+          {/* 2026-10-10 小欧[20] content 上移卡片级单次渲染 —— 它是帧级身份标识(第N个link任务/
+              独立任务/第N轮), 不属于任何一段; 此前塞进两段标题右侧导致同一句显示两遍 */}
+          {contentText && (
+            <div style={{ color: Colors.TEXT.TERTIARY }}>{contentText}</div>
+          )}
           {/* 2026-10-09: 对话上下文段仅实时任务可见 —— conv 是逐轮水位, 历史任务不定格显示 */}
           {isLiveContext && (
             <>
-              <SectionHead dotColor={Colors.PRIMARY} title="对话上下文">
-                {contentText && (
-                  <div
-                    style={{
-                      color: Colors.TEXT.TERTIARY,
-                      whiteSpace: 'nowrap', // 2026-10-10 禁折行: 单行直显
-                    }}
-                  >
-                    {contentText}
-                  </div>
-                )}
-              </SectionHead>
+              <SectionHead dotColor={Colors.PRIMARY} title="对话上下文" />
               {/* 2026-10-10 数据行按 HEAD_LABEL_WIDTH 缩进, 起点与标题行右侧文字对齐;
  值为 null 不渲染(否则被容器 gap 撑出空白带) */}
               {convPart && (
@@ -272,27 +249,14 @@ export const ContextOverviewCard: React.FC<Props> = ({
             </>
           )}
           <SectionHead
-            dotColor={
-              injectCtx?.injected_message_count
-                ? Colors.SUCCESS
-                : Colors.TEXT.TERTIARY
-            }
+            dotColor={injectCount ? Colors.SUCCESS : Colors.TEXT.TERTIARY}
             title="历史上下文"
           >
-            {/* 2026-10-10 标题行右侧 = content + compressed, 实时/历史同此一条 */}
-            {historyHeadParts.length > 0 && (
-              <div
-                style={{
-                  display: 'flex',
-                  gap: Spacing.XS,
-                  whiteSpace: 'nowrap', // 2026-10-10 禁折行: content 与 compressed 单行直显
-                }}
-              >
-                {historyHeadParts.map((p) => (
-                  <span key={p.color} style={{ color: p.color }}>
-                    {p.text}
-                  </span>
-                ))}
+            {/* 2026-10-10 小欧[20]: 右侧只留本段专属的 compressed(成品情况文字);
+                content 已上移卡片级单次渲染, 不再塞进两段标题右侧 */}
+            {compressedText && (
+              <div style={{ color: Colors.TEXT.SECONDARY, whiteSpace: 'nowrap' }}>
+                {compressedText}
               </div>
             )}
           </SectionHead>

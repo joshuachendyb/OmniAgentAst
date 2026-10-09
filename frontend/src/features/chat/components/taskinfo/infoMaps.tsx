@@ -72,22 +72,23 @@ export const CONTEXT_STATE_MAP: Record<ContextState, ContextStateEntry> = {
 };
 
 // ---------- mapStatus（纯函数：输入数据源 → 3 态，供测试直接断言 data-state） ----------
-// 输入形态: overview 字符串 / overview 对象(来自 history_context 帧)
+// 输入形态: overview 对象(来自 history_context 帧)
+// 2026-10-10 小欧[20]: 删 string 联合 —— 生产路径恒为 object|null(useTaskInfo 直传
+//   frames.contextOverview), string 联合是纯 phantom 且只有测试在喂, 属 backward 双写面必删。
 export interface ContextSource {
-  overview?: string | ContextOverviewFrame | null;
+  overview?: ContextOverviewFrame | null;
 }
 export const mapStatus = (src: ContextSource): ContextState => {
-  const o = src.overview;
-  // 2026-10-07 小欧: 上下文数据只认 history_context 帧(overview), 不再回退 start.content
-  const mode = typeof o === 'string' ? o : (o?.content ?? '');
+  const o = src.overview ?? null;
   const convCtx = pickConv(o);
   const injectCtx = pickInject(o);
   if (convCtx?.truncated === true) return 'truncated';
   const hasTokens =
     typeof convCtx?.estimated_tokens === 'number' ||
     typeof injectCtx?.injected_estimated_tokens === 'number';
-  // content 有值即 ok(后端只给了状态文字), 不再编第四个态 —— 后端给什么显什么
-  return hasTokens || mode ? 'ok' : 'empty';
+  // 判据=两段 key 有没有来; 不拿 content 当"有无数据"信号(它是帧级身份文案, 后端恒非空)
+  const hasFrame = !!convCtx || !!injectCtx;
+  return hasTokens || hasFrame ? 'ok' : 'empty';
 };
 
 // ---------- EVENT_ICON_MAP（过程事件统一 antd SVG，禁 emoji） ----------

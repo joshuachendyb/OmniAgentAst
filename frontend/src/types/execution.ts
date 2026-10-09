@@ -195,8 +195,10 @@ export interface ExecutionStep {
   }> | null;
   // 2026-09-12 小欧: 删 final_status 死字段(useTaskInfo 读 frames.finalStats.final_status, 不读 step; outcome(L88)为终态单一权威) — 小欧-2026-09-12
   // 2026-10-09: 与 sse.ts 的 ContextOverviewFrame 同步(双分组嵌套, 两处长期分裂本次一并改)
-  conv_context?: ConvContextFrame;
-  inject_context?: InjectContextFrame;
+  // 2026-10-10 小欧[20]: 允许 null —— pickConv/pickInject 帧缺失时返回 null, 如实表达"该段没来",
+  //   不用 ?? undefined 转一道(转了就是第二次形状猜测, 与定稿真源不符)
+  conv_context?: ConvContextFrame | null;
+  inject_context?: InjectContextFrame | null;
   // 2026-10-09 小欧: truncated 保留顶层 —— "该帧因裁剪而入 steps"门控标记(sseParser push 时写), 与帧内 conv_context.truncated 语义不同
   truncated?: boolean;
 

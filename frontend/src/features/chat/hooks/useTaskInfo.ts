@@ -186,7 +186,7 @@ export const useTaskInfo = (
         chainAccumulated: null,
         // 2026-10-10 北京老陈令[20]: 历史任务显示历史上下文 —— overview 取详情接口直给的首帧(整帧透出,
         //   结构定稿不重塑), 不从 steps 数组找(TaskInfoBar 传的是实时 steps, 历史任务时为空, find 永空)
-        overview: detail.history_context_first || '',
+        overview: detail.history_context_first ?? null,
         isLiveContext: false, // 2026-10-04 小欧: 本分支=历史任务, 供卡片决定是否挂弹框
         truncatedTip: null,
         processEvents: [],

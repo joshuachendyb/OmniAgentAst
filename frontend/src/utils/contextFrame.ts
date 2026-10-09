@@ -10,22 +10,25 @@
  */
 import type {
   ConvContextFrame,
-  ContextOverviewFrame,
   InjectContextFrame,
 } from '@/types/sse';
 
-/** 取「对话上下文」分组(定稿结构唯一来源); 缺失返回 null */
-export const pickConv = (
-  o: string | ContextOverviewFrame | null | undefined
-): ConvContextFrame | null => {
-  const frame = typeof o === 'object' && o !== null ? o : null;
-  return frame?.conv_context ?? null;
+/**
+ * 帧载体最小结构契约 —— ContextOverviewFrame 与 ExecutionStep 都靠结构化子类型满足,
+ *   故本真源一处即可服务两个载体(调用点无需各自转类型, 避免第二处形状猜测)。
+ */
+type FrameLike = {
+  conv_context?: ConvContextFrame | null;
+  inject_context?: InjectContextFrame | null;
+} | null
+  | undefined;
+
+/** 取「对话上下文」分组(定稿结构唯一来源); 缺失或载体为 null 返回 null */
+export const pickConv = (o: FrameLike): ConvContextFrame | null => {
+  return o?.conv_context ?? null;
 };
 
-/** 取「历史上下文」分组(定稿结构唯一来源); 缺失返回 null */
-export const pickInject = (
-  o: string | ContextOverviewFrame | null | undefined
-): InjectContextFrame | null => {
-  const frame = typeof o === 'object' && o !== null ? o : null;
-  return frame?.inject_context ?? null;
+/** 取「历史上下文」分组(定稿结构唯一来源); 缺失或载体为 null 返回 null */
+export const pickInject = (o: FrameLike): InjectContextFrame | null => {
+  return o?.inject_context ?? null;
 };

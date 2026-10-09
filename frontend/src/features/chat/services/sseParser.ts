@@ -536,7 +536,8 @@ const processSSEData = (
         logTypeArrival('history_context'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         const content =
           typeof rawData.content === 'string' ? rawData.content : '';
-        const trimmed = pickConv(rawData)?.truncated === true;
+        const _conv = pickConv(rawData);
+        const trimmed = _conv?.truncated === true;
         // 2026-10-10 北京老陈裁定[20]: 首帧也入 steps —— summary 只在 step==0 首帧写入(后端 agent_telemetry),
         //   压缩事件唯一派生源是 steps 扫描; 原门只有 trimmed 才入, 首帧 linked 时 conv.truncated=false
         //   → 首帧被挡在 steps 外 → 压缩事件永不产生(EVENT_ICON_MAP.context_compressed 是死分支)
@@ -559,8 +560,11 @@ const processSSEData = (
             step: toStepNumber(rawData.step),
             timestamp: timestampValue,
             truncated: trimmed,
-            conv_context: rawData.conv_context,
-            inject_context: rawData.inject_context,
+            // 2026-10-10 小欧[20] 读侧真源收敛: 复用上方已算好的 pickConv/pickInject 结果,
+            //   不再 rawData.conv_context / rawData.inject_context 直取 —— 后者绕过 contextFrame
+            //   唯一真源, 同一帧两条读路径, pick 逻辑一改必分叉。
+            conv_context: _conv,
+            inject_context: _inj,
           });
         }
         break;
