@@ -28,7 +28,13 @@
 //   ①api_key 补 autoComplete="new-password" —— Input.Password 的 type=password 被 Chrome 密码
 //     管理器自动填已存口令（浅蓝底+掩码点），不察觉直接保存会把浏览器口令写进 config.yaml；
 //     口径对齐 SecretRevealInput:141。②onCancel 补 pForm.resetFields()，取消再打开不再残留上次
-//     填写（此前只在提交成功后重置）。③timeout/max_retries 改 Row/Col 并排一行 — 小欧 2026-10-03
+//   填写（此前只在提交成功后重置）。③timeout/max_retries 改 Row/Col 并排一行 — 小欧 2026-10-03
+// 2026-10-10 小欧 - 添加模型弹窗四处（北京老陈截图指出）：①Provider/模型名改 Row/Col 并排一行（照抄本文件
+//   timeout/max_retries 同款写法）；②删除「显示名」输入项——与模型名恒一致，无输入意义，提交 label 同步
+//   恒等模型名；③参数模板候选追加 PARAM_PRESETS 且默认值/选项回落预设表——无兄弟模型时不再空白
+//   （原仅取 sibModels[0]，且 reasoning_effort→medium 写死特例由预设 default 替代删除）；
+//   ④模板行 key 定宽 180 对齐输入框起点（此前参差），布尔项改 Switch 渲染、旧字符串 "true" 仅管显示
+//   提交一律布尔，seed 等 default:null 显示改 ?? '' 兜底（String(null) 会显示字面量 "null"）— 小欧-2026-10-10
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -40,10 +46,12 @@ import {
   Modal,
   Row,
   Select,
+  Switch,
 } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
+import { PARAM_PRESETS } from '../utils/modelUtils';
 
 interface Props {
   providers: ProviderEntry[];
@@ -92,12 +100,13 @@ export const ModelModals: React.FC<Props> = (props) => {
   // 模板区：候选 = 所选 Provider 已有模型 default_params ∪ param_options key 并集
   const sibModels = providers.find((p) => p.name === mProvider)?.models ?? [];
   const candKeys = Array.from(
-    new Set(
-      sibModels.flatMap((m) => [
+    new Set([
+      ...sibModels.flatMap((m) => [
         ...Object.keys(m.default_params ?? {}),
         ...Object.keys(m.param_options ?? {}),
-      ])
-    )
+      ]),
+      ...PARAM_PRESETS.map((p) => p.key),
+    ])
   );
   // 勾选状态 + 值收集（勾中才送后端，未勾不送该 key——与现状 {} 兼容）
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -129,7 +138,7 @@ export const ModelModals: React.FC<Props> = (props) => {
       await props.onSubmitAddModel({
         provider: mProvider,
         model: v.model,
-        label: v.label ?? v.model,
+        label: v.model,
         ...(Object.keys(collected.params).length
           ? { default_params: collected.params }
           : {}),
@@ -200,25 +209,29 @@ export const ModelModals: React.FC<Props> = (props) => {
           为指定 Provider 添加新模型，创建后可在①选择器中选用
         </div>
         <Form form={mForm} layout="vertical">
-          <Form.Item label="Provider" required>
-            <Select value={mProvider} onChange={setMProvider}>
-              {providers.map((p) => (
-                <Select.Option key={p.name} value={p.name}>
-                  {p.label || p.name}
-                </Select.Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item
-            name="model"
-            label="模型名"
-            rules={[{ required: true, message: '请输入模型名' }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name="label" label="显示名">
-            <Input />
-          </Form.Item>
+          {/* Provider/模型名并排；显示名删除（详见文件头编辑历史） */}
+          <Row gutter={Spacing.MD}>
+            <Col span={12}>
+              <Form.Item label="Provider" required>
+                <Select value={mProvider} onChange={setMProvider}>
+                  {providers.map((p) => (
+                    <Select.Option key={p.name} value={p.name}>
+                      {p.label || p.name}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="model"
+                label="模型名"
+                rules={[{ required: true, message: '请输入模型名' }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
           {/* 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集 */}
           {candKeys.length > 0 && (
             <div
@@ -238,12 +251,17 @@ export const ModelModals: React.FC<Props> = (props) => {
                 参数模板（勾选即带入新模型）
               </div>
               {candKeys.map((key) => {
-                const opts = sibModels[0]?.param_options?.[key];
+                const preset = PARAM_PRESETS.find((p) => p.key === key);
+                const opts =
+                  sibModels[0]?.param_options?.[key] ?? preset?.options;
                 const siblingValue = sibModels[0]?.default_params?.[key];
                 const defaultVal =
-                  collected.params[key] ??
-                  siblingValue ??
-                  (key === 'reasoning_effort' ? 'medium' : undefined);
+                  collected.params[key] ?? siblingValue ?? preset?.default;
+                // 布尔判定一次求值：兄弟模型旧数据可能是字符串 "true"（与布尔同义，显示不错位）
+                const isBoolVal =
+                  typeof defaultVal === 'boolean' ||
+                  defaultVal === 'true' ||
+                  defaultVal === 'false';
                 return (
                   <div
                     key={key}
@@ -274,7 +292,9 @@ export const ModelModals: React.FC<Props> = (props) => {
                         setCollected({ ...collected, params, options });
                       }}
                     >
-                      {key}
+                      <span style={{ display: 'inline-block', width: 180 }}>
+                        {key}
+                      </span>
                     </Checkbox>
                     {opts ? (
                       <Select
@@ -293,11 +313,16 @@ export const ModelModals: React.FC<Props> = (props) => {
                         style={{ width: settingsControl.inputNumberWidth }}
                         onChange={(v) => updateCollectedParam(key, v)}
                       />
+                    ) : isBoolVal ? (
+                      <Switch
+                        checked={
+                          defaultVal === true || defaultVal === 'true'
+                        }
+                        onChange={(v) => updateCollectedParam(key, v)}
+                      />
                     ) : (
                       <Input
-                        value={
-                          defaultVal !== undefined ? String(defaultVal) : ''
-                        }
+                        value={String(defaultVal ?? '')}
                         style={{ width: settingsControl.inputWidth }}
                         onChange={(e) =>
                           updateCollectedParam(key, e.target.value)
