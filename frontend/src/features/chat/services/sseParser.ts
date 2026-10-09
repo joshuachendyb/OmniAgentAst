@@ -107,6 +107,12 @@
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
+// 编辑历史: 2026-10-10 小欧[20]  history_context: contextOverview 改整帧
+//   原样透出(原白名单重建只留少数键, 会静默丢字段并逼出下游形状兼容); 裁剪读法改走 utils/contextFrame;
+//   入 steps 门补 hasSummary —— summary 只在 step==0 首帧写入而该帧 conv.truncated=false, 原 if(trimmed)
+//   把唯一携带 summary 的帧挡在 steps 外, 致压缩事件永不产生
+// 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(禁在本文件重判形状)
+import { pickConv, pickInject } from '@/utils/contextFrame';
 
 // 2026-09-12 小欧 修复: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12
 const normalizeBoolean = (v: unknown): boolean =>
@@ -530,30 +536,31 @@ const processSSEData = (
         logTypeArrival('history_context'); // 2026-09-14 小欧 debug 各 type 统一打点 — 小欧-2026-09-14
         const content =
           typeof rawData.content === 'string' ? rawData.content : '';
-        const trimmed = rawData.truncated === true;
+        const trimmed = pickConv(rawData)?.truncated === true;
+        // 2026-10-10 北京老陈裁定[20]: 首帧也入 steps —— summary 只在 step==0 首帧写入(后端 agent_telemetry),
+        //   压缩事件唯一派生源是 steps 扫描; 原门只有 trimmed 才入, 首帧 linked 时 conv.truncated=false
+        //   → 首帧被挡在 steps 外 → 压缩事件永不产生(EVENT_ICON_MAP.context_compressed 是死分支)
+        const _inj = pickInject(rawData);
+        const hasSummary =
+          typeof _inj?.summary === 'string' && _inj.summary !== '';
+        // 2026-10-10 北京老陈裁定[20]: 整帧原封不动透出, 不重塑不补键 —— 定稿结构原样传递。
+        //   白名单式重建会静默丢字段, 且逼出下游各自做形状兼容(backward 双写法)
         handlers.setMetaFrames?.((prev) => ({
           ...prev,
-          contextOverview: {
-            summary: content,
-            message_count: rawData.message_count,
-            estimated_tokens: rawData.estimated_tokens,
-            truncated: trimmed,
-            compressed: rawData.compressed === true,
-            compress_saved_pct: rawData.compress_saved_pct ?? 0,
-            injected_message_count: rawData.injected_message_count ?? null,
-            injected_estimated_tokens:
-              rawData.injected_estimated_tokens ?? null,
-          },
+          contextOverview: rawData,
         }));
         // 2026-10-04 小欧: 仅裁剪轮入 steps(北京老陈令: truncated=1 要在行尾事件列表留一条); 事件派生与现有 9 类同源(走 steps 扫描),
         //   取帧内真实 timestamp; 非裁剪帧不入, 免每5轮里程碑灌入无用帧影响步骤数比较; 该类型已在 META_STEP_TYPES 不进业务流水线
-        if (trimmed) {
+        // 2026-10-09 小欧[20]: 入 steps 帧带两组字段(useTaskInfo 裁剪/压缩事件从 steps 派生, 不带永不触发)
+        if (trimmed || hasSummary) {
           pushAndFlush(handlers, {
             type: 'history_context',
             content,
             step: toStepNumber(rawData.step),
             timestamp: timestampValue,
-            truncated: true,
+            truncated: trimmed,
+            conv_context: rawData.conv_context,
+            inject_context: rawData.inject_context,
           });
         }
         break;

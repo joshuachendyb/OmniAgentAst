@@ -1,9 +1,12 @@
 // 编辑历史: 2026-08-28 小欧 - 由 utils/sse.ts 抽离SSE专属类型归一至横切层; ExecutionStep已居types/execution.ts故不重复导出 - 小欧-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 13.14 新增 roundUsage/taskAccumulated/sessionAccumulated/chainAccumulated 四字段（后端直发P/C/T三数字，废止前端累加） - 小欧-2026-08-30
-// 编辑历史: 2026-09-06 小欧 - B2方案C(北京老陈裁定): error 事件补充可选 step 字段(blocked/timeout 带 step 供 sseOnError 聚合 deniedStepSet 停齿轮) — 小欧-2026-09-06
-// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4, 北京老陈裁定): SSEError 补可选 tool_name(被拒工具名)——blocked/timeout 错误
+// 编辑历史: 2026-10-10 小欧 (本日汇总, 仅留此一条) - 结构定稿: ContextOverviewFrame 只保留
+//   conv_context/inject_context 双分组, compressed 定为 string(禁backward), 删 compress_saved_pct
+// 编辑历史: 2026-09-06 小欧 - B2方案C: error 事件补充可选 step 字段(blocked/timeout 带 step 供 sseOnError 聚合 deniedStepSet 停齿轮) —
+//   小欧-2026-09-06
+// 编辑历史: 2026-09-06 小欧 - B2方案C(6.4): SSEError 补可选 tool_name(被拒工具名)——blocked/timeout 错误
 //   携带, 供 sseOnError 聚合被拒工具点名条(deniedEntries: tool+reason)承灰字链路数据源 — 小欧-2026-09-06
-// 编辑历史: 2026-09-08 小欧 - 六章6.3.1(北京老陈裁定回归总原则): SSEError 补可选 from_backend(后端业务错误来源标记,
+// 编辑历史: 2026-09-08 小欧 - 六章6.3.1(回归总原则): SSEError 补可选 from_backend(后端业务错误来源标记,
 //   useChatCallbacks 据此分道只进页面级错误提示不弹窗); 6.3.4 补可选 request_level(请求级step=0标记, 位4图标分层);
 //   新增 LiveError 接口(页面级错误数据源对象形态) — 小欧-2026-09-08
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: ReconnectConfig接口删enabled字段; 阶段二S2提前实施:
@@ -54,16 +57,25 @@ export interface FinalStatsFrame {
   llm_call_count?: number;
 }
 export interface ContextOverviewFrame {
-  summary: string;
-  message_count?: number;
-  estimated_tokens?: number;
-  truncated: boolean;
-  // 2026-10-08 小欧 - 删 injected_ratio(注入量/装入量, >1 才代表压缩生效但标签叫"压缩比"方向相反,
-  //   且未压缩时因装入含 system+本轮提问而不等于 1.0, 两语义混淆)。改为下面两个语义明确的字段。
-  compressed?: boolean;
-  compress_saved_pct?: number;
-  injected_message_count?: number | null;
-  injected_estimated_tokens?: number | null;
+  // 2026-10-10 小欧: 结构定稿, 只认这两个分组(禁 backward: 不再加其他形状)
+  conv_context?: ConvContextFrame;
+  inject_context?: InjectContextFrame;
+  content?: string;
+}
+// 2026-10-09 小欧: conv 侧独立成 interface —— 「对话上下文」段只读这一个, 不越界
+export interface ConvContextFrame {
+  message_count?: number | '';
+  estimated_tokens?: number | '';
+  truncated?: boolean | '';
+}
+// 2026-10-09 小欧: inject 侧独立成 interface —— 「历史上下文」段只读这一个
+export interface InjectContextFrame {
+  injected_message_count?: number | '';
+  injected_estimated_tokens?: number | '';
+  // 后端成品情况文字(压缩率/无注入/压缩失败), 前端原样直显不拼装不拆解不改写。
+  //   2026-10-10: 「第N个link任务, 」前缀归 content(身份标识), 不在本字段
+  compressed?: string;
+  summary?: string;
 }
 export interface TaskMetaFrames {
   contextSummary: string; // start.content
@@ -142,7 +154,7 @@ export interface SSEError {
 
 /**
  * 页面级实时错误数据源对象形态
- * 文档：前端消息分类处理分析及设计 6.3.4（北京老陈 2026-09-08 裁定）
+ * 文档：前端消息分类处理分析及设计 6.3.4（2026-09-08 裁定）
  * useChatFacade onError 包装器不再把 SSEError 压成 string, 改构 LiveError{text, requestLevel} 上抛;
  * 前端本地错误(string) 缺 requestLevel → false, 位4 沿用执行级样式。
  */

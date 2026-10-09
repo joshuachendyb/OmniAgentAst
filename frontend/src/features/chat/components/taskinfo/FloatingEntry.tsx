@@ -1,5 +1,8 @@
 // 编辑历史: 2026-09-09 小欧 - v4.2: 抽 G6/G8 双浮层入口公共壳(DRY, 17 行×2 处重复收敛)
 //   Popover 配置 + taskinfo-entry 热区 a11y + Enter/Space/Esc 键盘 + 单真源开合 + 焦点管理(3.8/7.3); 卡片内容/样式调用方注入 — 小欧-2026-09-09
+// 编辑历史: 2026-10-10 小欧[20] 三堂会审 10 规范审计 B5 - hover 打开的浮层点击不得反向关闭: trigger
+//   ['hover','click'] 共享受控 open, 鼠标未移出时无 mouseenter 纠正 → 卡在关闭态"点一下反而关掉"。记来源后
+//   hover 态点击只确保打开; 键盘路径同步清标记, 不影响既有"点开再点关"契约
 import React, { useEffect, useRef } from 'react';
 import { Popover } from 'antd';
 
@@ -27,6 +30,11 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
   const entryRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const wasOpen = useRef(open);
+  // 2026-10-10 小欧[20] 审计 B5: hover 打开的浮层, 点击不得反向关闭。
+  //   病根: trigger=['hover','click'] 共享受控 open —— 鼠标已悬停打开时点击置 false,
+  //   而鼠标未移出不会再有 mouseenter 纠正 → 卡在关闭态, 用户观感"点了一下反而关掉, 再点打不开"。
+  //   修法(KISS-DIRECT): 记来源, hover 态的点击只"确保打开"不关闭; 再点一次才关(测试契约仍成立)。
+  const hoverOpenedRef = useRef(false);
   // 打开后焦点入卡(3.8/7.3)：仅当入口持有焦点时跟进（hover 打开不抢焦点）
   useEffect(() => {
     if (
@@ -83,10 +91,22 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
           aria-label={ariaLabel}
           aria-controls={cardId}
           tabIndex={0}
-          onClick={(e) => e.stopPropagation()} // 仅止冒泡；开合交还 antd trigger（v4.2 双写修复：删手动 toggle）
+          onMouseEnter={() => {
+            hoverOpenedRef.current = true;
+          }}
+          onClick={(e) => {
+            e.stopPropagation(); // 仅止冒泡；开合交还 antd trigger（v4.2 双写修复：删手动 toggle）
+            // 审计 B5: hover 打开的态, 点击改为"确保打开"(吃掉这次关闭意图), 避免无 mouseenter 纠正
+            if (open && hoverOpenedRef.current) {
+              hoverOpenedRef.current = false;
+              return;
+            }
+            hoverOpenedRef.current = false;
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
+              hoverOpenedRef.current = false;
               onOpenChange(!open);
             }
           }}

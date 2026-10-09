@@ -2,6 +2,7 @@
 //   支持 detail(P/C 中灰)、tone、icon、maxWidth 截断态、tooltip、data-state(测试钩子) — 小欧-2026-09-08
 // 编辑历史: 2026-10-04 小欧 - Tooltip 加 styles.root.whiteSpace='nowrap'(禁行统一由浮层层负责, 调用方不再包 span);
 //   label 改可选(为空则不渲染标签 span, 本轮项只显数值)
+// 编辑历史: 2026-10-10 小欧 三堂会审 10 规范审计 - tertiary 色调注释同步(summary-only 态已下线, 只剩 empty)
 import React from 'react';
 import { Tooltip } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -10,7 +11,7 @@ import { EllipsisTip } from './EllipsisTip';
 export type MetricTone = 'primary' | 'secondary' | 'warning' | 'tertiary';
 
 export interface MetricItemProps {
-  label?: string; // 标签（灰 11px）; 2026-10-04 小欧 改可选: 本轮项只显数值不显标签(北京老陈令)
+  label?: string; // 标签（灰 11px）; 2026-10-04 小欧 改可选: 本轮项只显数值不显标签
   value: string; // 数值（加粗 12px 或 warning）
   detail?: string; // 可选分项（P/C 等，中灰 12px 500）
   tone?: MetricTone;
@@ -24,7 +25,7 @@ export interface MetricItemProps {
 const TONE_COLOR: Record<MetricTone, string> = {
   primary: Colors.TEXT.PRIMARY,
   secondary: Colors.TEXT.SECONDARY,
-  tertiary: Colors.TEXT.TERTIARY, // 3.3: summary-only/empty 标签级弱文字
+  tertiary: Colors.TEXT.TERTIARY, // 3.3: empty 标签级弱文字
   warning: Colors.WARNING,
 };
 
@@ -77,7 +78,7 @@ export const MetricItem: React.FC<MetricItemProps> = ({
       {body}
     </EllipsisTip>
   ) : tooltip ? (
-    // 2026-10-04 小欧: tooltip 一律不折行(北京老陈令), 禁行由浮层层负责, 调用方不必再包 nowrap span
+    // 2026-10-04 小欧: tooltip 一律不折行, 禁行由浮层层负责, 调用方不必再包 nowrap span
     <Tooltip title={tooltip} styles={{ root: { whiteSpace: 'nowrap' } }}>
       {body}
     </Tooltip>

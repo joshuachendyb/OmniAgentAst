@@ -35,6 +35,8 @@
 //   透传, opts 新增 onToggleLink 透传; handleSendWithMode 改名 handleSend 并把第二参改 linkEnabled: boolean — 小欧-2026-10-03
 // 编辑历史: 2026-10-06 小欧 - 取消终态兜底需读 store 快照(getSnapshot 不建条目, 安全),
 //   ChatInput/聊天流状态透传 storeStatus 给 TaskInfoBar。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-10 小欧[20]  - TaskInfoBar 加 key 随任务身份:
+//   瞬态 UI 态(事件/上下文浮层 open、秒表 startRef)必须随任务切换归零, 原无 key 不重挂载致旧浮层挂在新任务上
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -288,6 +290,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         key: 'taskinfo.bar',
         component: (
           <TaskInfoBar
+            // 2026-10-10 小欧[20] 审计 B7: key 随任务身份 —— 瞬态 UI 态(事件/上下文浮层 open、秒表
+            //   startRef)必须随任务切换归零, 原无 key 不重挂载致旧浮层挂在新任务上
+            key={activeTaskId ?? serverTaskId ?? 'taskinfo-bar'}
             steps={executionSteps}
             frames={metaFrames}
             detail={selectedDetail}
