@@ -293,9 +293,9 @@ export const ModelLibraryTab: React.FC<Props> = ({
     return { configuredGroup: configured, unconfiguredGroup: unconfigured };
   }, [filtered, remote]);
 
-  // 远端已下线但配置保留的模型: 无条件并入 finalList(防静默丢配置)，但它们不在
-  // remote.models 里故不渲染成行 —— 用户核对不出 finalList.length 的构成。单点算出，
-  // 统计行与保存弹窗报出 — 小欧 2026-09-29
+  // 已下线项（在配置里但远端列表无）：2026-10-09 起不再并入 finalList（保存时直接删，
+  //   与"未勾选即删除"的替换语义统一）。本计算仅供展示（统计行 + 确认弹窗点名），
+  //   不参与保存。注意：保存后其 model_params/model_meta 会被后端差集清理一并清空。— 小欧 2026-10-09
   const preservedIds = useMemo(() => {
     if (!remote?.ok) return [];
     const listed = new Set(remote.models.map((m) => m.id));
@@ -304,7 +304,10 @@ export const ModelLibraryTab: React.FC<Props> = ({
     );
   }, [remote]);
 
-  // D2 替换式：勾选集 = 最终列表；远端未回但配置里仍有的模型自动保留（防静默丢配置）
+  // D2 替换式：勾选集 = 最终列表。
+  // 2026-10-09 小欧 - 北京老陈裁定"保存时直接删"：下线保留机制整体废止。
+  //   理由：替换语义下"未勾选即删除"已被接受，下线项（不可勾选）同理删除才是自洽；
+  //   保留是双重标准。删下一行即删机制，无其他分叉。
   // 当前全局模型无条件保留: 后端守卫会拒「移除当前全局模型」，而表格里的 disabled 只管 UI 手感、
   // 管不到这里的提交集。两道兜底缺一不可: 在远端列表里靠 id===cur，已下线则靠末尾 ids.add — 小欧 2026-09-29
   const finalList = useMemo(() => {
@@ -314,15 +317,14 @@ export const ModelLibraryTab: React.FC<Props> = ({
       ...remote.models
         .map((m) => m.id)
         .filter((id) => checked.has(id) || id === cur),
-      ...preservedIds,
     ]);
     // 当前全局模型既不在远端列表、也不在 configured 时仍须保它，否则后端守卫必拒
     if (cur) ids.add(cur);
-    // 2026-09-25 04:38:28 小健 - 全链路字母序: checked 部分继承远端已排序序, preserve 保留项并入后整体排序
+    // 2026-10-05 22:16:38 小健 - 全链路字母序: checked 部分继承远端已排序序
     return [...ids].sort((a, b) =>
       a.toLowerCase().localeCompare(b.toLowerCase())
     );
-  }, [remote, checked, preservedIds]);
+  }, [remote, checked]);
 
   const removedCount = useMemo(
     () =>
@@ -384,16 +386,16 @@ export const ModelLibraryTab: React.FC<Props> = ({
         <span style={{ color: Colors.TEXT.SECONDARY }}>
           将替换该 Provider 的模型列表为已勾选的 {finalList.length} 个（移除{' '}
           {removedCount} 个）
-          {/* 2026-09-29 小欧 - 漏洞4: 隐形保留项单列说明，否则用户核对不出 finalList.length 的构成 */}
+          {/* 2026-10-09 小欧 - 下线项已计入移除数，此处点名以便保存前知情（其已配参数将被一并清空） */}
           {preservedIds.length > 0 &&
-            `；其中 ${preservedIds.length} 个远端已下线但配置保留：${preservedIds.join('、')}`}
+            `（含已下线项 ${preservedIds.join('、')}，其已配参数将被一并清空）`}
         </span>
       ),
       onOk: async () => {
         setSaving(true);
         try {
           // 2026-10-05 22:16:38 小欧 - 保存时把每个勾选模型的「上下文/输入模态」一并上送持久化
-          //   （北京老陈指令）；远端已下线保留项只送 id（元数据 unknown，不伪造）。
+          //   （北京老陈指令）。
           const saveModels = finalList.map((id) => {
             const m = remote?.models.find((x) => x.id === id);
             return m
@@ -815,9 +817,9 @@ export const ModelLibraryTab: React.FC<Props> = ({
           共 {remote.models.length} 个模型
           {filterCount > 0 ? `，命中 ${filtered.length} 个` : ''}
           ，已配置 {remote.configured.length} 个，已勾选 {finalList.length} 个
-          {/* 2026-09-29 小欧 - 漏洞4: 保留项不渲染成行(远端无此模型)，此处补数避免与表格对不上 */}
+          {/* 2026-10-09 小欧 - 下线项不再计入勾选；此处改报"保存时将移除"并点名，未保存前配置不动 */}
           {preservedIds.length > 0 &&
-            `（含 ${preservedIds.length} 个远端已下线保留项）`}
+            `（另有 ${preservedIds.length} 个已下线项将在保存时移除：${preservedIds.join('、')}）`}
         </div>
       )}
 
