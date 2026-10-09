@@ -2080,6 +2080,59 @@ def verify_token_usage(session_id: str, expected_calls: int) -> List[str]:
     return issues
 
 
+def injected_context_frames(events):
+    """从 events 逐帧取出跨任务注入量与成品状态文字, 返回 [dict, ...]。
+
+    每项: {"injected_message_count": int, "injected_estimated_tokens": int, "content": str}
+      injected_message_count  注入的连续对话条数
+      injected_estimated_tokens  注入的估算 token
+      content  后端给的**成品状态文字**(如"第1个link任务, 连续任务,注入历史上下文" /
+               "本次注入历史信息压缩率= 38%")。这是帧的权威文本字段, 定稿后前缀归 content、
+               情况文字归 compressed, 只记条数/token 会把这段关键信息整个丢掉, 故一并取回。
+
+    2026-10-10 小欧: 帧结构改双分组嵌套(conv_context/inject_context), 扁平 injected_message_count /
+    injected_estimated_tokens 键**已删除**。旧读法 ev.get("injected_message_count") 恒返回 None
+    → 注入量恒 0 → 测试记录第1节"跨任务注入上下文"恒显"无(本任务单轮/无历史注入)"(记录失真)。
+    真库实测 P9-08 首帧实为 20条/11100tok, 记录却写"无"。
+    禁 backward: 只认 history_context 帧的 inject_context 分组, 不回落扁平键。
+
+    单一真源(SRP/DRY): 写记录取峰值、各用例逐任务明细取首帧, 全部走本函数, 杜绝同一读帧逻辑
+    在两处各写一遍、改一处漏另一处(该缺陷已实际发生过: e2e_helpers 与 test_p9_08 各写一份)。
+    """
+    out = []
+    for ev in events or []:
+        if isinstance(ev, dict) and ev.get("type") == "history_context":
+            grp = ev.get("inject_context") or {}
+            out.append({
+                "injected_message_count": grp.get("injected_message_count") or 0,
+                "injected_estimated_tokens": grp.get("injected_estimated_tokens") or 0,
+                "content": ev.get("content") or "",
+            })
+    return out
+
+
+def format_injected_context(events):
+    """渲染测试记录第1节"跨任务注入上下文"那一行 —— **只取首帧**(2026-10-10 北京老陈裁定)。
+
+    只认首帧: 一个任务一条 history_context 首帧, 它就是"本任务装入了多少历史"的权威快照。
+    取峰值(遍历全部帧求最大)已废除: 峰值反映的是"本次运行里最大的那次", 与本行语义
+    (本任务装入量)不是一回事, 多任务连发时会把别的任务的注入量记到本任务头上, 属张冠李戴。
+
+    帧的成品状态文字(content, 如"第1个link任务, 连续任务,注入历史上下文")一并带出:
+    定稿后前缀归 content、情况文字归 compressed, 只记条数/token 会把这段关键信息丢掉。
+
+    无帧或首帧无注入时沿用文案"无(本任务单轮/无历史注入)"。
+    """
+    frames = injected_context_frames(events)
+    if not frames:
+        return "无(本任务单轮/无历史注入)"
+    f = frames[0]
+    n, tok = f["injected_message_count"], f["injected_estimated_tokens"]
+    if not (n or tok):
+        return "无(本任务单轮/无历史注入)"
+    return "消息{}条/≈{}tok(估算); {}".format(n, tok, f["content"] or "-")
+
+
 def write_test_record(
     test_id: str,
     test_name: str,
@@ -2342,27 +2395,15 @@ def write_test_record(
     except Exception:
         _model_info = "-"
 
-    # 跨任务注入上下文(小欧 2026-08-23): 取自 context_overview 事件的 injected_message_count/injected_estimated_tokens,
-    # 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
-    # 2026-10-03 北京老陈指正 + 小欧 修: 原实现取 events 里**第一个** context_overview 就 break,
-    #   这只对"单轮 case"成立。同会话连续发送多个任务时(如 E2E-P9-08 连发5个任务),
-    #   第一个 context_overview 来自首个任务(新会话首条消息, 注入必然为0),
-    #   于是该字段恒显示"无(本任务单轮/无历史注入)" —— 而后续任务确实有注入(实测 7条/851tok),
-    #   属记录失真, 会让复核者误判"整个用例都没有历史注入"。
-    #   改为遍历全部 context_overview 取**最大值**(峰值注入体量), 单轮 case 只有一个事件,
-    #   取最大值等价于原取值, 行为完全不变。
-    _inj_info = "无(本任务单轮/无历史注入)"
-    _inj_max_n = 0
-    _inj_max_tok = 0
-    for _ev in result.get("events", []):
-        if isinstance(_ev, dict) and _ev.get("type") == "history_context":  # 2026-10-04 小欧: 随帧改名同步(不改则注入峰值恒 0)
-            _inj_n = _ev.get("injected_message_count", 0) or 0
-            _inj_tok = _ev.get("injected_estimated_tokens", 0) or 0
-            # 先比消息数, 消息数相同时比 tok 数, 保证峰值取到
-            if _inj_n > _inj_max_n or (_inj_n == _inj_max_n and _inj_tok > _inj_max_tok):
-                _inj_max_n, _inj_max_tok = _inj_n, _inj_tok
-    if _inj_max_n or _inj_max_tok:
-        _inj_info = f"消息{_inj_max_n}条/≈{_inj_max_tok}tok(估算)"
+    # 跨任务注入上下文(小欧 2026-08-23): 展示本任务之前注入的连续对话历史体量(多轮历史注入机制, 单轮任务为0)
+    # 2026-10-03 北京老陈指正 + 小欧 修: 原实现取 events 里**第一个**帧就 break, 只对"单轮 case"成立。
+    #   同会话连续发送多个任务时(如 E2E-P9-08 连发5个任务), 首帧来自首个任务(新会话首条消息, 注入必然为0),
+    #   该字段恒显示"无(本任务单轮/无历史注入)" —— 而后续任务确实有注入, 属记录失真。
+    #   改为遍历全部帧取**最大值**(峰值注入体量), 单轮 case 只有一个事件, 取最大值等价于原取值。
+    # 2026-10-10 小欧: 取值统一走 injected_context_frames(单一真源), 本函数不再自带读帧循环。
+    #   原内联读法读扁平键 injected_message_count, 帧改双分组嵌套后该键已删 → 恒 None → 峰值恒 0,
+    #   记录恒显"无"(真库实测 P9-08 首帧实为 20条/11100tok, 记录却写"无")。
+    _inj_info = format_injected_context(result.get("events"))
 
     # 第1节：测试基本信息
     lines.append("## 1 测试基本信息")
