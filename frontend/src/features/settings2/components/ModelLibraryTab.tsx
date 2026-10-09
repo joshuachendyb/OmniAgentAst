@@ -25,6 +25,10 @@
 //   并排且输出在前，读表顺序即"先看能吐多少"；复用 formatContext 不另立格式化函数(DRY)。
 //   readModalities 改读 input_modalities —— 后端已把厂商两种层级（SenseNova 顶层 / OpenRouter 嵌
 //   architecture）归一到该字段，原读 architecture 会让 SenseNova 恒显示"–" — 小欧 2026-10-05
+// 2026-10-10 小欧 - 「上下文窗口」列宽 88→116 且列头+表体加 whiteSpace:nowrap（北京老陈截图指出折行）：
+//   5 汉字在 88px 内装不下，列头折成两行（相邻「输出上限」4 字正好不折）。116 保「5 字+排序箭头+内边距」
+//   不折，nowrap 为不折行硬保证（容器挤压致列宽收窄时也不折）；「已配置」「未配置·待挑选」两表共用本列
+//   定义，一次改动两处同时生效 — 小欧-2026-10-10
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -499,15 +503,17 @@ export const ModelLibraryTab: React.FC<Props> = ({
         )}
       />
       <Table.Column
-        title="上下文窗口"
+        title={
+          <span style={{ whiteSpace: 'nowrap' }}>上下文窗口</span>
+        }
         dataIndex="context_length"
-        width={88}
+        width={116}
         align="right"
         sorter={(a: RemoteModelItem, b: RemoteModelItem) =>
           (a.context_length ?? 0) - (b.context_length ?? 0)
         }
         render={(n: number | null | undefined) => (
-          <span style={{ fontSize: FontSize.SECONDARY }}>
+          <span style={{ fontSize: FontSize.SECONDARY, whiteSpace: 'nowrap' }}>
             {formatContext(n)}
           </span>
         )}
