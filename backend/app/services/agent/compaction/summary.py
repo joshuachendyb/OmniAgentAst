@@ -32,7 +32,27 @@ _SUMMARY_TAIL_USER = "以上是历史对话数据。请按 system 指定格式�
 
 
 async def _extract_response_content(llm_agent, feed: List[Dict]) -> str:
-    """取 LLM 最终正文; error/action 返回空串, 交调用方装原历史(零退化) — 小欧 2026-10-10"""
+    """取 LLM 最终正文; error/action 返回空串, 交调用方装原历史(零退化) — 小欧 2026-10-10
+
+    2026-10-09 小欧: 先问适配器要不要接管本次纯文本调用(裁定"细节对摘要主过程隐藏、
+    调用者透明" —— 故此处不提任何 provider 名, 也不写门禁/端点细节, 那些全在适配器内):
+      - 接管(返回 str)   → 直接用, 由适配器按该 provider 的约定发起
+      - 不接管(返回 None) → 走下方既有 call_llm_with_fallback, **行为与改动前完全一致**
+    """
+    from app.llm.adapters import get_provider_adapter
+
+    try:
+        _lc = getattr(llm_agent, "llm_client", None)
+        # 任务级模型快照优先(同 react_step.py:341 写法); 摘要用全局当前模型, 不另配
+        _tl = getattr(llm_agent, "_task_llm_model", None) or getattr(_lc, "llm_model", None)
+        _adapter = get_provider_adapter(getattr(_tl, "provider", "") or "")
+        _txt = await _adapter.callTextForTask(_lc, feed)
+        if _txt is not None:
+            return _txt
+    except Exception as e:
+        # 定制路径自身异常不得影响主链, 落回通用路径
+        logger.warning(f"[compaction.summary] 定制调用钩子异常, 回落通用路径: {type(e).__name__}: {e}")
+
     from app.services.agent.llm_call import call_llm_with_fallback  # 2026-09-05 小健 8.5拆分: llm_stream→llm_call改名
 
     content = ""

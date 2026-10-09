@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 # 模块说明: provider 适配基类 — 默认行为==现状(仅 Authorization, 无动态头, body 原样, chat 端点)
 #   新 provider 特殊 HTTP 握手 = 继承本基类覆写对应钩子; 未覆写即完全默认(现状语义)。
-#   归属依据(北京老陈核查): 承载 HTTP 接缝差异与门禁 body/端点路由;
+#   归属依据(北京老陈核查): 承载 provider 的请求适配与调用约定差异 ——
+#   前者指 HTTP 接缝差异与门禁 body/端点路由(7 个纯变换钩子), 后者指纯文本任务的
+#   调用约定(callTextForTask, 带 I/O)。两者同源于"provider 约定变化", 故同处一基类。
 #   schema/reasoning/工具别名(#3/4/5)为全局层, 绝不 provider 化。
 # 编辑历史: 2026-09-23 小欧 新建
+# 编辑历史: 2026-10-09 小欧 加 callTextForTask 钩子(纯文本任务定制调用, 默认不接管) — 小欧-2026-10-09
 
-from typing import Dict
+from typing import Dict, Optional
 
 
 class ProviderAdapter:
@@ -45,3 +48,13 @@ class ProviderAdapter:
     def error_message_map() -> Dict[int, str]:
         """provider 特有错误码 → 用户友好消息 — 默认空(走全局 error_classifier)"""
         return {}
+
+    @staticmethod
+    async def callTextForTask(client, messages) -> Optional[str]:
+        """纯文本任务的定制化调用钩子 — 默认不接管, 返回 None 由调用方走通用路径
+
+        用途: 压缩摘要这类"不要工具、只要一段文本"的任务, 若某 provider 的调用约定与
+        通用路径不同, 由其适配器覆写本钩子接管。默认不接管故对既有链路零影响。
+        返回 None = 未接管, 调用方自行走通用路径; 本钩子绝不抛异常, 以免波及既有链路。
+        """
+        return None

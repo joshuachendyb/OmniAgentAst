@@ -11,8 +11,11 @@
 import os
 import time
 from typing import Dict, List  # List: 仅注释块GATE_STUBS备用代码使用, 取消注释时无需再加 — 北京老陈 2026-09-24
+import logging
 
 from app.llm.adapters.base import ProviderAdapter
+
+logger = logging.getLogger(__name__)
 
 _ZEN_USER_AGENT = "opencode/1.18.31 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14"
 
@@ -71,19 +74,22 @@ def _gen_request_id() -> str:
 # 2026-09-24 北京老陈 方案1: 删GATE_STUBS假tool — bash/read已在fundamental_register注册真实工具,
 # FC正常调用get_openai_tools已含真实bash/read, ensure_gate_body的missing注入成为死代码, 整体删除
 # <留着以后面备用>
-# GATE_STUBS: List[Dict] = [
-#     {"type": "function", "function": {
-#         "name": "bash", "description": "Executes a given command.",
-#         "parameters": {"type": "object",
-#                        "properties": {"command": {"type": "string"}},
-#                        "required": ["command"]}}},
-#     {"type": "function", "function": {
-#         "name": "read", "description": "Read a file.",
-#         "parameters": {"type": "object",
-#                        "properties": {"filePath": {"type": "string"}},
-#                        "required": ["filePath"]}}},
-# ]
-# <留着以后面备用>
+# 2026-10-09 小欧 恢复(北京老陈裁定): 上面"方案1 删 stub 注入"删的是 ensure_gate_body 里的
+#   missing 注入逻辑 —— FC 流程自带真工具时它确是死代码。纯文本任务(压缩摘要)不经
+#   get_openai_tools, 无真工具可依, 必须靠本常量过门禁第③条(ZenFree-Test §10.1.1)。
+#   场景不同故不矛盾。门禁只认 function.name 精确为 bash/read(§10.1.4(1) 近义名一律403)。
+GATE_STUBS: List[Dict] = [
+    {"type": "function", "function": {
+        "name": "bash", "description": "Executes a given command.",
+        "parameters": {"type": "object",
+                       "properties": {"command": {"type": "string"}},
+                       "required": ["command"]}}},
+    {"type": "function", "function": {
+        "name": "read", "description": "Read a file.",
+        "parameters": {"type": "object",
+                       "properties": {"filePath": {"type": "string"}},
+                       "required": ["filePath"]}}},
+]
 
 class OpencodeZenAdapter(ProviderAdapter):
     """zen_free 匿名免费层适配 — 小欧 2026-09-23"""
@@ -157,3 +163,40 @@ class OpencodeZenAdapter(ProviderAdapter):
             403: "Opencode Zen 免费层准入失败: 请检查 UA/session 头注入(适配层)或改用付费 key",
             426: "Opencode Zen 要求客户端升级(UpgradeRequired)",
         }
+
+    @staticmethod
+    async def callTextForTask(client, messages) -> str:
+        """纯文本任务的定制化调用 — opencode Zen 免费层实现 — 小欧 2026-10-09
+
+        【为什么需要它】压缩摘要走 call_llm_with_fallback(openai_tools=None), 请求体里没有
+        tools 键, 而门禁第③条要求 tools 同含 bash/read(ZenFree-Test §10.1.1) → 403。
+        FC 主循环之所以没事: 经 get_openai_tools() 走 tools_alias_mapper 别名映射, 对外名恰为
+        bash(shell→bash)/read(readtext→read); 摘要 openai_tools=None 整条映射链路都绕过了。
+
+        【门禁四条件在本方法内的分工】
+          ① UA≥1.17.0    ② 合法 session 头      → 客户端构造期 static_headers 已保证
+          ③ body tools 含 bash/read              → 【本方法负责】GATE_STUBS
+          ④ stream:true                        → ensure_gate_body 已强制
+          muse-* 走 /responses 需 flat tools     → to_responses_body 已自动转换
+        故本方法只补第③条, 其余全部复用 BaseAIService/client_sdk 既有机制, 不重复实现。
+
+        【provider 区分】不在本函数内判断 —— 本方法定义在 opencodeZen.py 即代表 zen 专用,
+        由 get_provider_adapter 挑实例实现分发。
+
+        【重试】本方法只调一次, 不写重试。调用层(BaseAIService)自带什么就用什么。
+
+        【返回值】client 是 BaseAIService(上层), 其 request() 返回 ChatResponse 对象
+        (core.py:74) 而非 dict, 且失败不抛异常、错误塞在 .error 里 —— 故取 .content。
+
+        【tool_choice】不传, 取 BaseAIService.request() 默认 "auto"。模型若真返回
+        tool_calls, content 为空 → 返回 "", 零退化。
+        """
+        try:
+            _resp = await client.request(messages=messages, tools=GATE_STUBS)
+        except Exception as e:   # 上层已吞掉 HTTP 错误, 此处兜非 HTTP 异常
+            logger.warning(f"[callTextForTask] zen 纯文本调用异常({type(e).__name__}: {e}), 返回空串零退化")
+            return ""
+        if getattr(_resp, "error", None):
+            logger.warning(f"[callTextForTask] zen 纯文本调用失败({_resp.error}), 返回空串零退化")
+            return ""
+        return str(getattr(_resp, "content", "") or "").strip()
