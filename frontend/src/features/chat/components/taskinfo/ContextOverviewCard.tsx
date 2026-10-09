@@ -16,6 +16,9 @@
  * ③`最近: X`→`最近提问: X`(后端 summary 改取注入源最后一条 user, 不再回显本轮提问); ④占窗率加(估算)标注;
  * ⑤summary 段去单行省略改 pre-wrap 保留换行(全文一字不删); ⑥卡片宽 320→560(2048 字符在窄栏不可读)
  * 编辑历史: 2026-10-09 小欧 - 双分组嵌套直显(删 hasTokens/numOrNull 开关); 卡片内拆两段+分割线
+ * 编辑历史: 2026-10-10 小欧 两字段各自归属 —— 删顶层 content 读法; 对话段右侧改读
+ *   conv_context.content, 历史段右侧改读 inject_context.content_link_mode(与 compressed 并排)。
+ *   此前两段读同一字段致同一句显两遍, 拆字段后各归其位。禁 backward: 不做顶层回落。
  * 编辑历史: 2026-10-10 小欧 (本日汇总, 仅留此一条): ①只读 conv_context/inject_context
  * 定稿结构(禁旧扁平兼容), compressed 原样直显; ②删两段 `?? ctx.text` 兜底与 summary-only 态(见
  * infoMaps), 行内值历史任务改取 inject token; ③排版: 标题行抽 <SectionHead> 共用(DRY), 标签列定宽
@@ -117,12 +120,14 @@ export const ContextOverviewCard: React.FC<Props> = ({
   const convTokens = convCtx?.estimated_tokens ?? '';
   // 2026-10-10 行内一个数, 代表"当前能看到的那个上下文"
   // (实时=对话 conv, 历史=跨任务注入 inject), 两组都空则 formatTokenK 返回 '–'
-  const tokens = isLiveContext ? convTokens : (injectCtx?.injected_estimated_tokens ?? '');
+  const tokens = isLiveContext
+    ? convTokens
+    : (injectCtx?.injected_estimated_tokens ?? '');
   const summary = injectCtx?.summary ?? '';
   const count = convCtx?.message_count ?? '';
-  // 2026-10-10 小欧[20]: content 是**帧级身份标识**(第N个link任务/独立任务/第N轮), 不属于任何一段
-  //   → 归卡片标题下单次渲染; 此前塞进两段标题右侧, 同一句在对话段与历史段各显一遍(内容重复)
-  const contentText = overview?.content ?? '';
+  // 2026-10-10 小欧: 身份标识按段拆分 —— 对话段读 conv.content, 历史段读 inject.content_link_mode
+  const convContentText = convCtx?.content ?? '';
+  const linkModeText = injectCtx?.content_link_mode ?? '';
   const injectCount = injectCtx?.injected_message_count ?? '';
   const injectTokens = injectCtx?.injected_estimated_tokens ?? '';
   // compressed 是后端成品情况文字, 原样直显不截不断(不拆解不解析不改写)
@@ -135,17 +140,31 @@ export const ContextOverviewCard: React.FC<Props> = ({
     typeof convTokens === 'number' && contextWindow
       ? Math.round((convTokens / contextWindow) * 100)
       : null;
-// 2026-10-10 小欧[20]: 直接读 injectCtx, 删 injected 中间层(此前同源三处解构, 违反 DRY)
-  const injectPart = injectCount ? (
+  // 2026-10-10 小欧[20] 修复「历史上下文」整段空白:
+  //   原门控是 injectCount —— 而 injected_message_count 在"无注入"时后端给 0/'' (agent_telemetry
+  //   :381 `_inj_count` 与 :407 未 link 分支的 ''), 于是整段输出 null, 把 content_link_mode /
+  //   compressed / summary 一起吞掉。后端在无注入时同样会发压缩情况文字(如"无历史上下文注入"),
+  //   信息到了前端却被自己的门控挡掉 —— 这是"该显示的没显示"的根因, 不是数据缺失。
+  //   改法: 门控从"条数大于0" 改为"该分组任一字段有值"(有情况即该显示), 且各字段各自判空,
+  //   避免再出现"一个字段缺失连带整段消失"。
+  const hasInjectInfo = Boolean(injectCount || injectTokens || linkModeText || compressedText || summary);
+  const injectPart = hasInjectInfo ? (
     <div>
-      跨任务注入 {injectCount} 条
-      {/* token 空位不合成 —— 否则渲染成"跨任务注入 5 条 · 估算Token约 (–)" */}
-      {typeof injectTokens === 'number' ? (
+      {injectCount ? (
         <span>
-          {' · 估算Token约 '}
-          {injectTokens.toLocaleString()} ({formatTokenK(injectTokens)})
+          跨任务注入 {injectCount} 条
+          {/* token 空位不合成 —— 否则渲染成"跨任务注入 5 条 · 估算Token约 (–)" */}
+          {typeof injectTokens === 'number' ? (
+            <span>
+              {' · 估算Token约 '}
+              {injectTokens.toLocaleString()} ({formatTokenK(injectTokens)})
+            </span>
+          ) : null}
         </span>
       ) : null}
+      {injectCount && compressedText ? <span> · </span> : null}
+      {/* compressed 是后端成品情况文字, 原样直显不拆不改 —— 无注入时它就是唯一可显的信息 */}
+      {compressedText ? <span>{compressedText}</span> : null}
     </div>
   ) : null;
   const convPart =
@@ -209,15 +228,22 @@ export const ContextOverviewCard: React.FC<Props> = ({
       }}
       content={
         <>
-          {/* 2026-10-10 小欧[20] content 上移卡片级单次渲染 —— 它是帧级身份标识(第N个link任务/
-              独立任务/第N轮), 不属于任何一段; 此前塞进两段标题右侧导致同一句显示两遍 */}
-          {contentText && (
-            <div style={{ color: Colors.TEXT.TERTIARY }}>{contentText}</div>
-          )}
           {/* 2026-10-09: 对话上下文段仅实时任务可见 —— conv 是逐轮水位, 历史任务不定格显示 */}
           {isLiveContext && (
             <>
-              <SectionHead dotColor={Colors.PRIMARY} title="对话上下文" />
+              {/* 2026-10-10 小欧 本段身份标识读 conv 组 —— 与历史段各读各的, 不再显同一句 */}
+              <SectionHead dotColor={Colors.PRIMARY} title="对话上下文">
+                {convContentText && (
+                  <div
+                    style={{
+                      color: Colors.TEXT.TERTIARY,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {convContentText}
+                  </div>
+                )}
+              </SectionHead>
               {/* 2026-10-10 数据行按 HEAD_LABEL_WIDTH 缩进, 起点与标题行右侧文字对齐;
  值为 null 不渲染(否则被容器 gap 撑出空白带) */}
               {convPart && (
@@ -248,17 +274,31 @@ export const ContextOverviewCard: React.FC<Props> = ({
               />
             </>
           )}
+          {/* 2026-10-10 小欧[20] 状态点判据与数据行门控 hasInjectInfo 同源 ——
+              原用 injectCount, 会出现"标题右侧有压缩情况文字但点是灰的"自相矛盾 */}
           <SectionHead
-            dotColor={injectCount ? Colors.SUCCESS : Colors.TEXT.TERTIARY}
+            dotColor={hasInjectInfo ? Colors.SUCCESS : Colors.TEXT.TERTIARY}
             title="历史上下文"
           >
-            {/* 2026-10-10 小欧[20]: 右侧只留本段专属的 compressed(成品情况文字);
-                content 已上移卡片级单次渲染, 不再塞进两段标题右侧 */}
-            {compressedText && (
-              <div style={{ color: Colors.TEXT.SECONDARY, whiteSpace: 'nowrap' }}>
-                {compressedText}
-              </div>
-            )}
+            {/* 2026-10-10 小欧: 本段右侧 = content_link_mode(身份) + compressed(压缩情况),
+                同行顺序直显(同一 div 内并排, 不被容器 gap 撑开), 均 nowrap 不折行 */}
+            <div style={{ display: 'flex', whiteSpace: 'nowrap' }}>
+              {linkModeText && (
+                <span style={{ color: Colors.TEXT.TERTIARY }}>
+                  {linkModeText}
+                </span>
+              )}
+              {compressedText && (
+                <span
+                  style={{
+                    color: Colors.TEXT.SECONDARY,
+                    marginLeft: linkModeText ? Spacing.MD : 0,
+                  }}
+                >
+                  {compressedText}
+                </span>
+              )}
+            </div>
           </SectionHead>
           {/* 2026-10-10 同对话段, 数据行起点与标题行右侧文字对齐; null 不渲染空 div */}
           {injectPart && (
