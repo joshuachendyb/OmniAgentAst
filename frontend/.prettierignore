@@ -12,6 +12,8 @@ node_modules
 #     src/tests/fixtures/*.json  测试 fixture 契约数据, 格式非其语义, 改动会污染用例输入
 #     scripts/*.html           一次性对比用工具页, 非构建产物亦非源码
 #     *.md                     文档不参与代码格式门禁
+#     test-results/            Playwright 运行产物(每次跑 e2e 重新生成), 与 .gitignore:90 同源,
+#                               非源码不参与门禁 —— 每次跑测试都会重新生成, 格式化它等于白做
 backup
 *.备份-*
 playwright-report
@@ -21,3 +23,4 @@ e2e_front_lib/.auth-state.json
 src/tests/fixtures
 scripts/*.html
 *.md
+test-results

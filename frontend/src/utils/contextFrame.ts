@@ -8,19 +8,18 @@
  * @author 小欧
  * @date 2026-10-10
  */
-import type {
-  ConvContextFrame,
-  InjectContextFrame,
-} from '@/types/sse';
+import type { ConvContextFrame, InjectContextFrame } from '@/types/sse';
 
 /**
  * 帧载体最小结构契约 —— ContextOverviewFrame 与 ExecutionStep 都靠结构化子类型满足,
  *   故本真源一处即可服务两个载体(调用点无需各自转类型, 避免第二处形状猜测)。
  */
-type FrameLike = {
-  conv_context?: ConvContextFrame | null;
-  inject_context?: InjectContextFrame | null;
-} | null
+type FrameLike =
+  | {
+      conv_context?: ConvContextFrame | null;
+      inject_context?: InjectContextFrame | null;
+    }
+  | null
   | undefined;
 
 /** 取「对话上下文」分组(定稿结构唯一来源); 缺失或载体为 null 返回 null */

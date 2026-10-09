@@ -147,7 +147,9 @@ export const ContextOverviewCard: React.FC<Props> = ({
   //   信息到了前端却被自己的门控挡掉 —— 这是"该显示的没显示"的根因, 不是数据缺失。
   //   改法: 门控从"条数大于0" 改为"该分组任一字段有值"(有情况即该显示), 且各字段各自判空,
   //   避免再出现"一个字段缺失连带整段消失"。
-  const hasInjectInfo = Boolean(injectCount || injectTokens || linkModeText || compressedText || summary);
+  const hasInjectInfo = Boolean(
+    injectCount || injectTokens || linkModeText || compressedText || summary
+  );
   const injectPart = hasInjectInfo ? (
     <div>
       {injectCount ? (
