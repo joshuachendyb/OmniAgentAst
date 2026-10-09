@@ -96,6 +96,8 @@
 #     命令级_TempFiles 6文件登记ctx["temp_files"], await join后补unlink(进程未死时_TempFiles.finally的_safe_unlink必失败残留)。
 #   验证: 全量回归 6波42 + 池33 + 组合3689 全绿, Temp ps_*.err清零无孤儿进程(超出原计划追加波回归由测试文件承载)。 — 小欧-2026-09-19 10:40
 # 2026-09-22 小欧 - constants.py 配置化迁移：shell_pool 槽位改读 tuning 配置
+# 2026-10-09 - 小欧 - _CLEANUP_GUARD_TIMEOUT 15→10(北京老陈裁定「全局15 清理阀门为10」): 本值是OS级挂起时清理链最长等待的设计上限非实测值(实测365.2ms, 不可用实测替代设计阈值定档); 10s仍完整覆盖taskkill(5s)+_poll_pid_exit二次确认(5s)+unlink(0.15s)。
+# 强耦合·改一须破一同步: 本值 < INSURANCE_BUFFER(15) ⇒ 保险丝恒晚于_await_cleanup_guard返回, 绝不截断补清理; 日后若调到>15须同步上调BUFFER否则临时文件残留。实测timeout=2死循环: 清理365.2ms/总3.92s(<窗口17s)/6临时文件零残留; 边界留痕: "守卫线程异常死亡"兜底分支理论最坏 join(10)+_kill_tree(≤10)=20s>15, 触发前提极苛刻不改(该兜底是清理残留最后一道, 削它属本末倒置)。compliance: KISS-DIRECT/禁止backward
 """
 PersistentShell — 持久 PowerShell 进程引擎(ps7/ps5) — 小欧 2026-07-05
 
@@ -195,9 +197,14 @@ ACQUIRE_WAIT_TIMEOUT = 2        # acquire 并发限流等待超时(秒)：有界
 _CWD_WAIT_TIMEOUT = 3           # .cwd落地等待超时(秒)：ps_cmd最后一行才写.cwd, code有内容≠PS执行完, 等.cwd非空=PS已完成最后Out-File(句柄已释放) — v2.11 小欧 2026-08-08
 _UNLINK_RETRY = 3               # 临时文件unlink失败重试次数：覆盖Out-File句柄延迟释放竞态窗口(作用于全部6个临时文件) — v2.11 小欧 2026-08-08
 _UNLINK_RETRY_DELAY = 0.05      # unlink重试间隔(秒)：50ms×3≈150ms, 覆盖PS进程写完文件到句柄释放的毫秒级窗口 — v2.11 小欧 2026-08-08
-_CLEANUP_GUARD_TIMEOUT = 15     # [M1] 清理链守护线程join超时(秒): M6守卫线程清理的最长等待+探针观测阈值 — 小欧 2026-09-19
-                                 # SUBPROCESS_TIMEOUT_SHORT=5×(taskkill+_poll_pid_exit二次确认)≈10s + unlink重试0.15s → 取15s,
-                                 # 正常清理10s内必完成, 只有OS级挂起才拖满15s — 小欧 2026-09-19
+_CLEANUP_GUARD_TIMEOUT = 10     # [M1] 清理链守护线程join超时(秒): M6守卫线程清理的最长等待+探针观测阈值 — 小欧 2026-09-19
+                                 # 2026-10-09 - 小欧 - 15→10(北京老陈裁定「清理阀门为10」):
+                                 #   清理链实测 349.7ms, 但本值是"OS级挂起时的设计上限", 不可用实测值替代设计阈值定档。
+                                 #   10s 仍覆盖 taskkill(SUBPROCESS_TIMEOUT_SHORT=5) + _poll_pid_exit 二次确认(5) + unlink重试0.15s。
+                                 #   ★ 与保险丝的关系(必须同步, 否则改一破一):
+                                 #     tool_retry_engine.INSURANCE_BUFFER = 15 > 本值 10,
+                                 #     ⇒ bash 超时后保险丝恒晚于 _await_cleanup_guard 返回, 绝不截断补清理(:731-733)。
+                                 #   若日后有人把本值调到 >15, 必须同步上调 INSURANCE_BUFFER, 否则临时文件将残留。
 _LOCK_WAIT_GUARD = 10        # 实例锁等待护栏(秒): 等锁上限=_LOCK_WAIT_GUARD+命令timeout, 超时返回_ERROR_LOCK_BUSY — 治理层3 小欧 2026-10-04
 _STDIN_WRITE_TIMEOUT = 5     # stdin写入上限(秒): 超时=存活不读(管道背压/半死) → M6守卫清理+重启 — 治理层3 小欧 2026-10-04
 _ERROR_LOCK_BUSY = {"stdout": "", "stderr": "shell instance lock busy", "exit_code": -1}   # 等锁超时明确失败,dict模式同:188 — 治理层3 小欧 2026-10-04
@@ -404,7 +411,7 @@ class PersistentShell:
         finally:
             self._lock.release()
         if result and result.get("timed_out"):
-            self._await_cleanup_guard()       # 锁外: join(≤15s) + 异常兜底 + 观测留痕, 不阻塞任何调用方
+            self._await_cleanup_guard()       # 锁外: join(≤_CLEANUP_GUARD_TIMEOUT) + 异常兜底 + 观测留痕, 不阻塞任何调用方
         logger.info(f"[Shell打点] exec返回 elapsed={int((time.perf_counter() - _t_enter) * 1000)}ms exit_code={result.get('exit_code') if isinstance(result, dict) else None} cmd={command[:80]!r}")  # 治理观测 — 小欧 2026-10-04
         return result
 
@@ -543,7 +550,7 @@ class PersistentShell:
         finally:
             self._lock.release()
         if result.get("timed_out"):
-            self._await_cleanup_guard()       # 锁外: join(≤15s) + 异常兜底 + 观测留痕, 不阻塞任何调用方
+            self._await_cleanup_guard()       # 锁外: join(≤_CLEANUP_GUARD_TIMEOUT) + 异常兜底 + 观测留痕, 不阻塞任何调用方
         return result
 
     def _exec_locked(self, command: str, timeout: int) -> Dict[str, Any]:
@@ -735,7 +742,13 @@ class PersistentShell:
             logger.error(f"[卡死C8/C14] 清理链超守卫阈值{_CLEANUP_GUARD_TIMEOUT}s仍在清理(OS级挂起) → 已放行, 后台线程继续 (pid={pid})")
         elif err_box:
             # [异常兜底 小欧 2026-09-19] daemon 线程异常死亡 → 不再假报"清理链完成";
-            # 异常场景证明 _kill_tree 可返回(非 OS 挂死) → 主线程有界兜底重试一次(≤10s, 仍<15s守卫阈值)
+            # 异常场景证明 _kill_tree 可返回(非 OS 挂死) → 主线程有界兜底重试一次(≤10s)
+            # 2026-10-09 - 小欧 - 边界留痕(北京老陈裁定 BUFFER=15/守卫=10 后新增, 只标注不改逻辑):
+            #   本分支理论最坏 = join(10) + 兜底 _kill_tree(≤10) = 20s > INSURANCE_BUFFER(15),
+            #   即保险丝理论上可能早于本兜底返回而掐断(to_thread 线程不会被强杀, 只是结果被丢弃)。
+            #   触发前提极苛刻: 守卫线程先耗满 10s 且恰好抛异常。实测清理链 349.7ms, 属理论边界非现实路径。
+            #   不改动的理由: 兜底本身是"清理进程残留"的最后一道, 削它换保险丝对齐属本末倒置;
+            #   且此路径下进程残留有 release/GC 兜底(:749 已留痕)。若日后见到相关误报再议。
             logger.error(f"[卡死C8/C14] 清理线程异常死亡(pid={pid}) → 主线程有界兜底清理一次 (err={err_box[0]!r})")
             try:
                 self._kill_tree(ctx["proc"])
