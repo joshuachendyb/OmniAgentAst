@@ -38,16 +38,21 @@
 
 import React, { useEffect, useState } from 'react';
 import {
+  Button,
   Checkbox,
   Col,
   Form,
   Input,
   InputNumber,
+  List,
   Modal,
   Row,
   Select,
+  Space,
   Switch,
+  Typography,
 } from 'antd';
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'; // 2026-10-10 小欧: 模型增删行图标
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
@@ -79,6 +84,9 @@ interface Props {
     api_key?: string;
     timeout?: number;
     max_retries?: number;
+    // 2026-10-10 小欧 - models 随 Provider 一并提交（后端 add_provider 原生透传 req.models，
+    //   一次调用；此前此处置空、靠循环调 N 次单模型接口，又慢又有半成功窗口）
+    models?: string[];
   }) => Promise<void>;
   onConfirmDelete: () => void;
 }
@@ -92,6 +100,12 @@ export const ModelModals: React.FC<Props> = (props) => {
   // 修正(2026-09-21 小强)：busy 态驱动 Modal confirmLoading 防连点双发（原 onOk 走 .then() 无 loading，
   // 双击触发两次提交）；失败父级 rethrow 不关窗，输入保留（[设置页UI审计] 问题9）
   const [busy, setBusy] = useState<'model' | 'provider' | null>(null);
+  // 2026-10-10 小欧 - Provider 弹窗底部顺带加模型：输入框 + 按钮攒列表，
+  //   确定时先建 Provider 再逐个调 onSubmitAddModel（复用既有单模型接口，不新增后端）。
+  //   失败任一即停并保留输入（与 handleAddProvider 同款"输入保留、弹窗不关"）。
+  const [newModels, setNewModels] = useState<string[]>([]);
+  const [modelInput, setModelInput] = useState('');
+  const [modelErr, setModelErr] = useState('');
   // 2026-09-21 BUG-A 修复：父级切换所选 Provider 时联动弹窗内 Provider 下拉，防陈旧值
   useEffect(() => {
     setMProvider(props.selectedProvider);
@@ -167,8 +181,14 @@ export const ModelModals: React.FC<Props> = (props) => {
     if (typeof v.api_key === 'string') v.api_key = v.api_key.trim();
     setBusy('provider');
     try {
-      await props.onSubmitAddProvider(v);
+      // 2026-10-10 小欧 - 一次提交：Provider + 模型列表随 models 字段一并发送。
+      //   后端 add_provider 原生透传 req.models（M13），一次调用无半成功窗口；
+      //   此前循环调 N 次单模型接口，又慢又可能 Provider 建成而模型部分失败。
+      await props.onSubmitAddProvider({ ...v, models: newModels });
       pForm.resetFields();
+      setNewModels([]);
+      setModelInput('');
+      setModelErr('');
     } catch {
       /* 保存失败：输入保留、弹窗不关（父级已弹错） */
     } finally {
@@ -315,9 +335,7 @@ export const ModelModals: React.FC<Props> = (props) => {
                       />
                     ) : isBoolVal ? (
                       <Switch
-                        checked={
-                          defaultVal === true || defaultVal === 'true'
-                        }
+                        checked={defaultVal === true || defaultVal === 'true'}
                         onChange={(v) => updateCollectedParam(key, v)}
                       />
                     ) : (
@@ -342,6 +360,9 @@ export const ModelModals: React.FC<Props> = (props) => {
         //   名称/地址/密钥，属"添加"弹窗不该有的残留（易误提交成第二个 Provider）。
         onCancel={() => {
           pForm.resetFields();
+          setNewModels([]);
+          setModelInput('');
+          setModelErr('');
           props.onCloseAddProvider();
         }}
         title={
@@ -367,16 +388,28 @@ export const ModelModals: React.FC<Props> = (props) => {
           创建后可在③Provider配置区修改 API Key / API 地址
         </div>
         <Form form={pForm} layout="vertical">
-          <Form.Item
-            name="name"
-            label="名称"
-            rules={[{ required: true, message: '请输入名称' }]}
-          >
-            <Input />
-          </Form.Item>
-          <Form.Item name="label" label="显示名">
-            <Input />
-          </Form.Item>
+          {/* 2026-10-10 小欧 - 名称/显示名并排一行（同款 Row/Col，弹窗纵向太稀疏） */}
+          <Row gutter={Spacing.MD}>
+            <Col span={12}>
+              <Form.Item
+                name="name"
+                label="名称"
+                style={{ marginBottom: Spacing.LG }}
+                rules={[{ required: true, message: '请输入名称' }]}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="label"
+                label="显示名"
+                style={{ marginBottom: Spacing.LG }}
+              >
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item
             name="api_base"
             label="API 地址"
@@ -391,10 +424,15 @@ export const ModelModals: React.FC<Props> = (props) => {
                     : Promise.resolve(),
               },
             ]}
+            style={{ marginBottom: Spacing.LG }}
           >
             <Input placeholder="https://api.deepseek.com" />
           </Form.Item>
-          <Form.Item name="api_key" label="API Key">
+          <Form.Item
+            name="api_key"
+            label="API Key"
+            style={{ marginBottom: Spacing.LG }}
+          >
             {/* 2026-10-03 小欧 - 补 autoComplete="new-password"：新增 Provider 时该框必须为空，
                 而 Input.Password 渲染 type="password" 会被 Chrome 密码管理器自动填入已存口令
                 （表现为浅蓝底 + 掩码点，且不察觉直接保存就把浏览器口令写进 config.yaml 当 api_key）。
@@ -408,7 +446,11 @@ export const ModelModals: React.FC<Props> = (props) => {
               2026-10-03 小欧 - 两项改并排一行（同款 antd Row/Col，弹窗宽度下纵向浪费一屏）。 */}
           <Row gutter={Spacing.MD}>
             <Col span={12}>
-              <Form.Item label="timeout(秒)" name="timeout">
+              <Form.Item
+                label="timeout(秒)"
+                name="timeout"
+                style={{ marginBottom: Spacing.LG }}
+              >
                 <InputNumber
                   min={1}
                   placeholder="默认60"
@@ -417,7 +459,11 @@ export const ModelModals: React.FC<Props> = (props) => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item label="max_retries" name="max_retries">
+              <Form.Item
+                label="max_retries"
+                name="max_retries"
+                style={{ marginBottom: Spacing.LG }}
+              >
                 <InputNumber
                   min={0}
                   placeholder="默认3"
@@ -426,6 +472,82 @@ export const ModelModals: React.FC<Props> = (props) => {
               </Form.Item>
             </Col>
           </Row>
+          {/* 2026-10-10 小欧 - 底部顺带加模型：输入框 + 按钮攒列表，确定时随 Provider 一并提交。
+              只攒名字（label 与 model 同值）；复杂参数去模型弹窗里配，此处不展开（KISS）。 */}
+          <div
+            style={{ marginBottom: Spacing.SM, fontSize: FontSize.SECONDARY }}
+          >
+            模型（可选，保存时随 Provider 一并创建）
+          </div>
+          <Space.Compact style={{ width: '100%', marginBottom: Spacing.SM }}>
+            <Input
+              style={{ flex: 1 }}
+              placeholder="输入模型名，回车添加"
+              status={modelErr ? 'error' : undefined}
+              value={modelInput}
+              onChange={(e) => {
+                setModelInput(e.target.value);
+                setModelErr('');
+              }}
+              onPressEnter={() => {
+                const v = modelInput.trim();
+                if (!v) {
+                  setModelErr('请输入模型名');
+                  return;
+                }
+                setModelErr('');
+                setNewModels((ps) => (ps.includes(v) ? ps : [...ps, v]));
+                setModelInput('');
+              }}
+            />
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => {
+                const v = modelInput.trim();
+                if (!v) {
+                  setModelErr('请输入模型名');
+                  return;
+                }
+                setModelErr('');
+                setNewModels((ps) => (ps.includes(v) ? ps : [...ps, v]));
+                setModelInput('');
+              }}
+              aria-label="添加模型"
+            />
+          </Space.Compact>
+          {modelErr && (
+            <div style={{ fontSize: FontSize.SECONDARY, color: Colors.ERROR }}>
+              {modelErr}
+            </div>
+          )}
+          {newModels.length > 0 && (
+            <List
+              size="small"
+              style={{ marginTop: Spacing.SM }}
+              dataSource={newModels}
+              renderItem={(m) => (
+                <List.Item
+                  actions={[
+                    <Button
+                      key="del"
+                      type="text"
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={() =>
+                        setNewModels((ps) => ps.filter((x) => x !== m))
+                      }
+                      aria-label={`移除${m}`}
+                    />,
+                  ]}
+                >
+                  <Typography.Text style={{ fontSize: FontSize.SECONDARY }}>
+                    {m}
+                  </Typography.Text>
+                </List.Item>
+              )}
+            />
+          )}
         </Form>
       </Modal>
       <Modal

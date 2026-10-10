@@ -276,6 +276,9 @@ export const modelApi = {
     api_key?: string;
     timeout?: number;
     max_retries?: number;
+    // 2026-10-10 小欧 - 透传 models（后端 ProviderAddRequest.models 原生支持，
+    //   建 Provider 时一并建模型，一次调用无半成功窗口；此前前端无此字段只能调 N 次）
+    models?: string[];
   }): Promise<ModelMutationResult> => {
     const response = await api.post('/providers', data);
     return response.data;
