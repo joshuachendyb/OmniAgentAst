@@ -172,6 +172,9 @@ class RemoteModelItem(BaseModel):
     #   【如实告知】stability 现无消费方（YAGNI 违规已知并被接受，北京老陈 2026-10-03 决定保留）。
     free: Optional[bool] = None
     stability: Optional[str] = None
+    # 2026-10-10 小欧 - 增 publish_time（zenmux 真发布时间，如 2026-09-03；created 全假不可用）。
+    #   非 zenmux provider 不返回 → None（与 free/stability 同政策）。
+    publish_time: Optional[str] = None
 
 
 class RemoteModelsResponse(BaseModel):

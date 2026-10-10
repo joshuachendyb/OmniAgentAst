@@ -141,6 +141,9 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-10-10 小欧 - DEFAULT_PARAM_OPTIONS 的 reasoning_effort 加 minimal 档：与前端预设表
 #   utils/modelUtils.PARAM_PRESETS 同步。本表是 update_model 校验 dp 值域的唯一依据（:_resolve_param_options
 #   全局兜底亦取此），两边不同步则存 minimal 报"不支持的配置项值"。fre2e_08 自带列表，不受影响 — 小欧-2026-10-10
+# 2026-10-10 小欧 - 中央别名表收敛厂商键名漂移：_KEY_ALIASES + _canon_item 入口归一，
+#   _first_alias 退役删除（唯一调用点改直读）；longcat 两变体（context_window/max_output_tokens）首批入表，
+#   新厂商只加表行不碰逻辑 — 小欧-2026-10-10
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -610,20 +613,6 @@ async def _http_get_remote_models(api_base: str, headers: Dict[str, str]) -> Tup
     return resp, None
 
 
-def _first_alias(item: Dict[str, Any], *keys: str) -> Any:
-    """按别名顺序取首个非 None 值——同一语义键各厂商命名不统一时的单点取值口 — 小欧 2026-10-05
-
-    命名不统一实例（SenseNova 实测 9 模型 16 字段）：`supported_parameters`（OpenRouter/AMD 风格）
-    与 `supported_sampling_parameters`（SenseNova 风格）语义相同，此前只认前者致后者被静默丢弃。
-    取「非 None」而非「真值」：空列表 [] 是厂商的显式表达，应原样透出，不该被当成缺失而回退。
-    """
-    for key in keys:
-        value = item.get(key)
-        if value is not None:
-            return value
-    return None
-
-
 def _str_list(value: Any) -> List[str]:
     """把远端值收敛为 List[str]——非数组退空列表、非字符串成员丢弃（防错型打挂 DTO）— 小欧 2026-10-05
 
@@ -631,6 +620,79 @@ def _str_list(value: Any) -> List[str]:
     三处同一逻辑，且每处都必须同步 isinstance 双重校验，漏一处即在 response_model 上 500 掉整个模型库。
     """
     return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
+def _flatten_pricings(pricings: Any) -> Dict[str, str]:
+    """zenmux 式 pricings（复数嵌套）拍平 → {prompt/completion/…: str} — 小欧 2026-10-10
+
+    形状: {"prompt": [{"value": 0.1, "unit": "perMTokens", "currency": "USD"}], …}。
+    只取 unit == perMTokens 的首项值转 str；perCount（如 web_search 按次）跳过——
+    免费判据 prompt === "0" && completion === "0" 只认 token 计费，不许按次项污染。
+    bool 需排除（isinstance(True, int) 为真）；非标形状退 {}。
+    """
+    flat: Dict[str, str] = {}
+    if not isinstance(pricings, dict):
+        return flat
+    for k, v in pricings.items():
+        if not isinstance(k, str) or not isinstance(v, list):
+            continue
+        for e in v:
+            if (isinstance(e, dict) and e.get("unit") == "perMTokens"
+                    and isinstance(e.get("value"), (int, float))
+                    and not isinstance(e.get("value"), bool)):
+                flat[k] = str(e["value"])
+                break
+    return flat
+
+
+def _merge_capabilities(feats: List[str], capabilities: Any) -> List[str]:
+    """capabilities:{reasoning:bool} 对象并入 supported_features（去重）— 小欧 2026-10-10
+
+    zenmux 把推理能力放在 capabilities.reasoning 布尔上，而非 supported_features 列表；
+    不认则推理模型标不出来。True 才追加；其它键原样忽略（不猜语义）。
+    """
+    if isinstance(capabilities, dict) and capabilities.get("reasoning") is True \
+            and "reasoning" not in feats:
+        return [*feats, "reasoning"]
+    return feats
+
+
+# 远端模型键名中央别名表 — 小欧 2026-10-10：
+#   OpenAI /models 无 schema 标准，各厂商同义键各叫各的名（name/display_name、
+#   pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、
+#   supported_parameters/supported_sampling_parameters），散写 if 越补越多。
+#   收敛：解析入口 _canon_item 先把键名归一，后面逻辑只认 canonical 键；
+#   新厂商只加表行，不碰逻辑。顺序即优先级（同命中取首个非 None）。
+_KEY_ALIASES = {
+    "id": ["id", "model"],
+    "owned_by": ["owned_by"],
+    "name": ["name", "display_name", "title"],
+    "description": ["description"],
+    "context_length": ["context_length", "context_window"],
+    "max_output_length": ["max_output_length", "max_output_tokens"],
+    "pricing": ["pricing", "pricings"],
+    "architecture": ["architecture"],
+    "input_modalities": ["input_modalities"],
+    "output_modalities": ["output_modalities"],
+    "supported_parameters": ["supported_parameters", "supported_sampling_parameters"],
+    "supported_features": ["supported_features"],
+    "capabilities": ["capabilities"],
+    "free": ["free"],
+    "stability": ["stability"],
+    "publish_time": ["publish_time"],
+}
+
+
+def _canon_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """单条模型键名归一：别名落到 canonical 键，原键保留（merged 合成视图与下游直读不受影响）。"""
+    out = dict(item)
+    for canon, aliases in _KEY_ALIASES.items():
+        for key in aliases:
+            value = item.get(key)
+            if value is not None:
+                out[canon] = value
+                break
+    return out
 
 
 def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
@@ -665,7 +727,10 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
     for item in data:
         if not isinstance(item, dict):
             continue
-        mid = item.get("id") or item.get("model")
+        # 2026-10-10 小欧 - 键名先归一（_canon_item）：id/model、name/display_name 等别名在此收敛，
+        #   后面只认 canonical 键；_first_alias 别名链退役（唯一调用点已改直读，函数删除，见下方）。
+        item = _canon_item(item)
+        mid = item.get("id")
         if not mid:
             continue
         # 2026-09-29 小欧 - 元数据透传(北京老陈指令): 提升表格/筛选要用的 8 字段。
@@ -673,15 +738,21 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         #   非字符串不转 str(会产出 "{'x': 1}" 伪值)；bool 需排除(isinstance(True,int) 为真)。
         owned_by, name, desc = item.get("owned_by"), item.get("name"), item.get("description")
         ctx, pricing, architecture = item.get("context_length"), item.get("pricing"), item.get("architecture")
+        # 2026-10-10 小欧 - pricing 形状分流（键名已由 _canon_item 归一）：老厂商扁平 dict 原样用；
+        #   zenmux 式复数嵌套才走 _flatten_pricings 拍平（只取 perMTokens，perCount 跳过）。
+        if isinstance(pricing, dict) and any(isinstance(v, list) for v in pricing.values()):
+            pricing = _flatten_pricings(pricing)
 # 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD 不返回 → None。
         free, stability = item.get("free"), item.get("stability")
         arch = architecture if isinstance(architecture, dict) else {}
         # 2026-10-05 22:16:38 - 小欧 - 厂商字段别名归一（SenseNova 实抓 9 模型 16 字段后补，丢弃 11 个）：
         #   ①层级不统一（SenseNova 顶层 input_modalities / OpenRouter 嵌 architecture）
         #     → {**arch, **item} 合成单一查找视图，顶层优先、嵌套兜底，替掉按厂商写if 分支（KISS-DIRECT）。
-        #   ②命名不统一（同义键多名）→ 走 _first_alias 别名链，见该函数说明。
+        #   ②命名不统一（同义键多名）→ 2026-10-10 起走入口 _canon_item 中央别名表（_first_alias 已退役删除）。
         merged = {**arch, **item}
         max_out = item.get("max_output_length")
+        # 2026-10-10 小欧 - zenmux publish_time 透传（created 全假，publish_time 如 2026-09-03 才是真发布时间）。
+        _pub = item.get("publish_time")
         models.append({
             "id": str(mid),
             "owned_by": owned_by if isinstance(owned_by, str) else None,
@@ -696,13 +767,18 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
             # 图像生成模型 vs 对话模型的唯一判据（SenseNova u1/u1.5 输出模态为 image，其余为 text）
             "input_modalities": _str_list(merged.get("input_modalities")),
             "output_modalities": _str_list(merged.get("output_modalities")),
-            # 别名链：OpenRouter/AMD 走 supported_parameters，SenseNova 走 supported_sampling_parameters
-            "supported_parameters": _str_list(_first_alias(item, "supported_parameters", "supported_sampling_parameters")),
+            # 别名链已收敛到入口 _canon_item（OpenRouter/AMD supported_parameters、
+            #   SenseNova supported_sampling_parameters 在此已是同一键）：直读即可。
+            "supported_parameters": _str_list(item.get("supported_parameters")),
             # 实测含 tools/json_mode/reasoning，直接决定"能不能挂工具"，与 sampling 参数不同语义故分列
-            "supported_features": _str_list(merged.get("supported_features")),
+            # 2026-10-10 小欧 - zenmux 别名 capabilities:{reasoning:bool} 对象 → 并入列表（去重追加）。
+            "supported_features": _merge_capabilities(_str_list(merged.get("supported_features")),
+                                                      merged.get("capabilities")),
             # free 用 bool 收（isinstance(True,int) 为真，按 int 收会吞掉 1/0）
             "free": free if isinstance(free, bool) else None,
             "stability": stability if isinstance(stability, str) and stability.strip() else None,
+            # 2026-10-10 小欧 - zenmux publish_time 透传（见上）。
+            "publish_time": _pub if isinstance(_pub, str) and _pub.strip() else None,
         })
     # 2026-09-25 04:38:28 小健 - 全链路单点排序: 远端列表按 id 字母序(不分大小写), 下游分组/落盘/下拉自动继承
     models.sort(key=lambda m: m["id"].lower())
