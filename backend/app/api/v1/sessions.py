@@ -136,7 +136,10 @@ def get_session_workspaces_endpoint(session_id: str):
     BUG-6 订正：不再纯读表直吐 —— 禁区行会原样进面板误导用户。
     改走 `classify_workspace_rows` 同一真源过滤，有效进 `workspaces`，
     不可用(禁区/非法/非目录)进 `unusable` 带原因，前端可置灰。
-    会话不存在/已删 → 404(不再对垃圾 id 返回空 200)。"""
+    会话不存在/已删 → 404(不再对垃圾 id 返回空 200)。
+    [16]§3.1#4：顺带返回 `project_root`＋`allowed_dirs` 只读字段，
+    供面板只读区展示（全局 config 口径，与删除根同源；只读，绝不进 PATCH）。"""
+    from app.config import get_config
     from app.services.chat.workspace_service import (
         get_session_workspaces,
         classify_workspace_rows,
@@ -147,10 +150,13 @@ def get_session_workspaces_endpoint(session_id: str):
             raise HTTPException(status_code=404, detail="会话不存在")
         rows = get_session_workspaces(conn, session_id)
     effective, unusable = classify_workspace_rows(rows)
+    _cfg = get_config()
     return {
         "session_id": session_id,
         "workspaces": [{"path": p} for p in effective],
         "unusable": unusable,
+        "project_root": _cfg.get_project_root(),
+        "allowed_dirs": list(_cfg.get_allowed_dirs() or []),
     }
 
 
