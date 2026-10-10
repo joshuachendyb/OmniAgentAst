@@ -24,7 +24,9 @@ import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
-import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 文档[16] §3.6.6 面板挂载(默认导出)
+import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 文档[16]: 关闭面板时重拉徽标数
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
 
 interface ChatInputProps {
@@ -40,6 +42,9 @@ interface ChatInputProps {
   onToggleLink: (enabled: boolean) => void;
   allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.2
   onToggleInterject: (enabled: boolean) => void;
+  // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话使用的目录（徽标数 + 面板回写）
+  sessionWorkspaces: WorkspaceEntry[];
+  setSessionWorkspaces: React.Dispatch<React.SetStateAction<WorkspaceEntry[]>>;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -55,8 +60,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onToggleLink,
   allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.2
   onToggleInterject,
+  sessionWorkspaces, // 2026-10-10 小欧 - 文档[16]
+  setSessionWorkspaces,
 }) => {
   const [draft, setDraft] = useState('');
+  // 2026-10-10 小欧 - 文档[16] §3.6.6: 面板挂载点
+  const [wsPanelOpen, setWsPanelOpen] = useState(false);
+  // 2026-10-10 小欧: 面板关闭时重拉一次徽标数（后端 reconcile/禁区清理可能改行，
+  //   前端只在 sessionId 变化时刷新，此处补齐漂移；失败静默（具名 noop 过 no-empty-function 门禁），会话本身可用）
+  const noop = () => undefined;
+  const handleWsClose = () => {
+    setWsPanelOpen(false);
+    if (sessionId) {
+      sessionApi
+        .getWorkspaces(sessionId)
+        .then((r) => setSessionWorkspaces(r.workspaces))
+        .catch(noop);
+    }
+  };
   useEffect(() => {
     setDraft('');
   }, [sessionId]);
@@ -104,9 +125,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
         allowInterject={allowInterject} // 2026-10-07 小欧 - 文档[11] 3.5.3: 下传给 SubmitBar(开关落在附件之后)
         onToggleInterject={onToggleInterject}
+        // 2026-10-10 小欧 - 文档[16] §3.6.5: 徽标现算(决策72 已作废, 无 dirty 角标)
+        // 无会话时不传 onOpenWorkspaces → SubmitBar 不渲染入口（GET 空 id 必 422，不如不显示）
+        workspaceCount={sessionWorkspaces.length}
+        onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
         onSend={handleSendInternal}
         onCancel={onCancel}
         onTogglePause={onTogglePause}
+      />
+      {/* 2026-10-10 小欧 - 文档[16] §3.6.6: 会话使用目录面板(决策70 入口在此打开) */}
+      <SessionWorkspacePanel
+        sessionId={sessionId ?? ''}
+        open={wsPanelOpen}
+        onClose={handleWsClose}
+        onSaved={setSessionWorkspaces}
       />
     </div>
   );

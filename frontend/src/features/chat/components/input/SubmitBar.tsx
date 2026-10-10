@@ -14,7 +14,7 @@
  */
 
 import React from 'react';
-import { Button, Space, Checkbox } from 'antd'; // 2026-10-07 小欧 三堂会审补 - 文档[11] 3.5.3(插话开关 Checkbox, 合并为同行 import)
+import { Button, Space, Checkbox, Badge } from 'antd'; // 2026-10-07 小欧 三堂会审补 - 文档[11] 3.5.3(插话开关 Checkbox, 合并为同行 import); 2026-10-10 小欧 - 文档[16] §3.6.5(加 Badge 徽标)
 import {
   PauseOutlined,
   PlayCircleOutlined,
@@ -31,6 +31,9 @@ interface SubmitBarProps {
   leftExtra?: React.ReactNode; // 2026-08-28 小欧 ①A: 指令+续聊插槽，置最左（工具>模型>附件）
   allowInterject?: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.3: 插话开关值(可选, 缺省不渲染)
   onToggleInterject?: (v: boolean) => void;
+  // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话事务空间入口(决策70: 插话开关之后、发送按钮之前)
+  workspaceCount?: number;
+  onOpenWorkspaces?: () => void;
   onSend: () => void;
   onCancel: () => void;
   onTogglePause: () => void;
@@ -44,6 +47,8 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   leftExtra,
   allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.3
   onToggleInterject,
+  workspaceCount, // 2026-10-10 小欧 - 文档[16] §3.6.5
+  onOpenWorkspaces,
   onSend,
   onCancel,
   onTogglePause,
@@ -62,6 +67,14 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
         >
           插话开关
         </Checkbox>
+      )}
+      {/* 2026-10-10 小欧 - 文档[16] §3.6.5: 会话事务空间入口(决策70 位置) */}
+      {onOpenWorkspaces && (
+        <Badge count={workspaceCount ?? 0} size="small">
+          <Button size="small" onClick={onOpenWorkspaces}>
+            会话事务空间
+          </Button>
+        </Badge>
       )}
     </Space>
     <Space>

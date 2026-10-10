@@ -43,7 +43,7 @@
  * @since 2026-04-21
  */
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
 import { sessionApi } from '../../../services/api/session.api';
@@ -188,6 +188,7 @@ export const useChatSession = (
     setSessionModelOverride,
     setLinkEnabled,
     setAllowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.7: 复位/切换用
+    setSessionWorkspaces, // 2026-10-10 小欧 - 文档[16] §3.6.4: 会话目录 GET 灌入
     setMessages,
     currentSessionIdRef,
   } = state;
@@ -277,6 +278,31 @@ export const useChatSession = (
   // ========================================
   // 会话加载函数
   // ========================================
+
+  // 2026-10-10 小欧 - 文档[16] §3.6.4：会话切换/新建/复位/清空时重拉会话使用目录
+  //   ⚠ 偏离文档原 diff（文档是"在 applySessionState 内逐调用点塞 GET"）——
+  //     实读 applySessionState 有 10+ 调用点，逐点塞必漏（违 DRY）；改用**单点 useEffect**
+  //     跟随 sessionId，一处覆盖全部场景，且天然带竞态守卫（sessionId 变才跑）。
+  //   语义与决策77简化一致：一切走 GET，不读本地（无暂存可读）。
+  useEffect(() => {
+    if (!sessionId) {
+      setSessionWorkspaces([]); // 清空会话 → 列表置空
+      return;
+    }
+    let cancelled = false;
+    sessionApi
+      .getWorkspaces(sessionId)
+      .then((r) => {
+        if (!cancelled) setSessionWorkspaces(r.workspaces);
+      })
+      .catch(() => {
+        // GET 404/500：置空不断链，会话本身照常可用
+        if (!cancelled) setSessionWorkspaces([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId, setSessionWorkspaces]);
 
   /**
    * loadSession - 加载会话历史

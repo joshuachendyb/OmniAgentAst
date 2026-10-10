@@ -8,7 +8,7 @@
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
-import type { SessionModelOverride } from '@/types/chat';
+import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';
 
 export interface Session {
   session_id: string;
@@ -251,6 +251,37 @@ export const sessionApi = {
       throw new Error('请求URL过长，请减少会话数量');
     }
     const response = await api.get<BatchTitleResponse>(url);
+    return response.data;
+  },
+
+  // 2026-10-10 小欧 - 文档[16] §3.6.1 新增：会话使用的目录读口
+  //   ⚠ 响应含 project_root/allowed_dirs 只读字段（决策82）：只展示，永不进 PATCH
+  getWorkspaces: async (sessionId: string): Promise<WorkspacesResponse> => {
+    if (!sessionId || !sessionId.trim()) {
+      throw new Error('会话ID不能为空');
+    }
+    const response = await api.get<WorkspacesResponse>(
+      `/sessions/${encodeURIComponent(sessionId)}/workspaces`
+    );
+    return response.data;
+  },
+
+  // 2026-10-10 小欧 - 文档[16] §3.6.1 新增：会话使用的目录写口
+  //   body 即全量覆盖写（[] = 清空）；命中禁区整单 422，detail 落在 error.workspace_rejected
+  patchWorkspaces: async (
+    sessionId: string,
+    sessionWorkspaces: string[]
+  ): Promise<{ success: boolean; session_id: string }> => {
+    if (!sessionId || !sessionId.trim()) {
+      throw new Error('会话ID不能为空');
+    }
+    if (!Array.isArray(sessionWorkspaces)) {
+      throw new Error('目录列表必须是数组');
+    }
+    const response = await api.patch<{ success: boolean; session_id: string }>(
+      `/sessions/${encodeURIComponent(sessionId)}/workspaces`,
+      { session_workspaces: sessionWorkspaces }
+    );
     return response.data;
   },
 };

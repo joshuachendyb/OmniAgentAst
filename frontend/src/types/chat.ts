@@ -344,3 +344,36 @@ export interface SendOpts {
   linkEnabled: boolean;
   allowInterject: boolean;
 }
+
+/**
+ * 会话使用的目录（后端 chat_session_workspaces 表）
+ * 2026-10-10 小欧 - 文档[16] §3.6.2 新增
+ * ⚠ 不进 SendOpts：前端不携带目录列表，只调 GET/PATCH 端点（独立端点，决策77简化）
+ */
+export interface WorkspaceEntry {
+  path: string;
+}
+
+/**
+ * 不可用目录（禁区/非法/非目录），后端 classify_workspace_rows 判定
+ * 2026-10-10 小欧 - 文档[16] §3.6.2 新增
+ * kind 与后端 unusable 项的机器可读分类一一对应（reconcile 按 kind 行事）
+ */
+export interface UnusableEntry {
+  path: string;
+  reason: string;
+  kind: 'illegal' | 'denied' | 'missing';
+}
+
+/**
+ * GET /sessions/{id}/workspaces 响应
+ * 2026-10-10 小欧 - 文档[16] §3.6.1/3.6.6
+ * project_root/allowed_dirs 为只读字段（决策82），只展示不提交
+ */
+export interface WorkspacesResponse {
+  session_id: string;
+  workspaces: WorkspaceEntry[];
+  unusable: UnusableEntry[];
+  project_root: string;
+  allowed_dirs: string[];
+}

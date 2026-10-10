@@ -141,6 +141,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
   } = opts;
 
   const {
+    // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话使用目录(徽标数 + 面板回写), 取自 chatState 真源
+    sessionWorkspaces,
+    setSessionWorkspaces,
     sessionId,
     sessionTitle,
     titleLocked,
@@ -325,6 +328,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             onToggleLink={onToggleLink}
             allowInterject={allowInterject}
             onToggleInterject={onToggleInterject}
+            // 2026-10-10 小欧 - 文档[16] §3.6.5: 目录列表透传(徽标现算 + 面板回写)
+            sessionWorkspaces={sessionWorkspaces}
+            setSessionWorkspaces={setSessionWorkspaces}
             modelPickerSlot={
               <ModelPicker
                 sessionId={sessionId}
@@ -382,6 +388,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       linkEnabled,
       allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatInput 渲染依赖(漏=开关值变后面板不刷新)
       onToggleInterject,
+      sessionWorkspaces, // 2026-10-10 小欧 - 文档[16] §3.6.5: 徽标数随目录列表变(漏=徽标不刷新)
       handleCancel,
       handleTogglePause,
       liveError,

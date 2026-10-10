@@ -150,6 +150,12 @@ export enum ErrorType {
   // 通用提示类型（非错误）
   WARNING = 'warning',
   INFO = 'info',
+
+  // 会话目录被拒
+  // 2026-10-10 小欧 - 文档[16] §3.6.7 新增：PATCH /sessions/{id}/workspaces 命中禁区
+  //   整单 422，detail 为 {workspace_rejected: [{path, reason}]}。
+  //   ⚠ 该响应体里没有 error_type 字段，classifyError 必须走显式提取分支（见下）
+  WORKSPACE_REJECTED = 'workspace_rejected',
 }
 
 // ============================================
@@ -652,6 +658,19 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     severity: 'warning',
   },
 
+  // 会话目录被拒
+  // 2026-10-10 小欧 - 文档[16] §3.6.7 新增
+  //   severity=warning：用户可自行纠正的校验问题，不是 critical
+  [ErrorType.WORKSPACE_REJECTED]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    message: '目录被拒绝',
+    description:
+      '被拒路径与原因见 error.workspace_rejected（Panel 内逐条展示）',
+    severity: 'warning',
+  },
+
   // 通用提示类型（非错误）
   [ErrorType.WARNING]: {
     retryable: false,
@@ -1009,6 +1028,17 @@ export function classifyError(error: unknown): ErrorType {
       case 'server':
         return ErrorType.SERVER_500;
     }
+  }
+
+  // 2026-10-10 小欧 - 文档[16] §3.6.7 新增：422 workspace_rejected 显式提取
+  //   ⚠ 该响应体是 {success:false, error:{workspace_rejected:[...]}}，**没有 error_type 字段**，
+  //     故上面的自映射永远走不到，必须按特征字段识别。
+  //   主流程在 SessionWorkspacePanel 内直接读并自动清除被拒条目，本分支是全局兜底。
+  if (
+    (err as { response?: { data?: { error?: Record<string, unknown> } } })
+      ?.response?.data?.error?.workspace_rejected
+  ) {
+    return ErrorType.WORKSPACE_REJECTED;
   }
 
   if (err.code === 'ECONNABORTED') {

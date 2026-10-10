@@ -39,7 +39,11 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import type { Message, SessionModelOverride } from '../../../types/chat';
+import type {
+  Message,
+  SessionModelOverride,
+  WorkspaceEntry,
+} from '../../../types/chat';
 
 // ============================================================================
 // 类型定义
@@ -100,6 +104,10 @@ export interface UseChatStateReturn {
   setLinkEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   allowInterject: boolean; // 2026-10-06 小欧 - 文档[11] 3.5: 与会话同生命周期
   setAllowInterject: React.Dispatch<React.SetStateAction<boolean>>;
+  // 2026-10-10 小欧 - 文档[16] §3.6.3 新增：会话使用的目录列表（徽标现算源）
+  //   无 dirty 无暂存：PATCH 即时生效，徽标 = 本列表长度
+  sessionWorkspaces: WorkspaceEntry[];
+  setSessionWorkspaces: React.Dispatch<React.SetStateAction<WorkspaceEntry[]>>;
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -208,7 +216,11 @@ export const useChatState = (): UseChatStateReturn => {
   const [sessionModelOverride, setSessionModelOverride] =
     useState<SessionModelOverride | null>(null);
   const [linkEnabled, setLinkEnabled] = useState<boolean>(false);
-  const [allowInterject, setAllowInterject] = useState<boolean>(false); // 2026-10-06 小欧 - 文档[11] 3.5: 与会话同生命周期
+  const [allowInterject, setAllowInterject] = useState<boolean>(false); // 2026-10-06 小欧 - 文档[11] 3.5:
+  // 2026-10-10 小欧 - 文档[16] §3.6.3: 会话使用的目录列表（无 dirty，PATCH 即时生效）
+  const [sessionWorkspaces, setSessionWorkspaces] = useState<WorkspaceEntry[]>(
+    []
+  ); // 与会话同生命周期
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -345,6 +357,8 @@ export const useChatState = (): UseChatStateReturn => {
     setLinkEnabled,
     allowInterject,
     setAllowInterject, // 2026-10-06 小欧 - 文档[11] 3.5: 与 linkEnabled/setLinkEnabled 同组返回
+    sessionWorkspaces,
+    setSessionWorkspaces, // 2026-10-10 小欧 - 文档[16] §3.6.3
 
     editingTitle,
     setEditingTitle,
