@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-10 09:55:09
-**最近更新**: 2026-10-10 09:55:09 小欧 位置与命名更正（北京老陈指出"代码名称确实要名副其实"）：shell 三类静态判定函数由 `app/utils/shell_readonly.py` 迁至 **`app/tools/fundamental/shell_static_guard.py`**（与 execute_shell_command.py / shell_engine.py 等 shell 代码同目录，不散落 utils），注册表 **1.14/1.15/1.17 合并为 1.14 shell 命令静态守卫**。原落 utils 的理由经架构守卫实证不成立（`safety→tools` 合法）。详见版本历史 v5.1
+**最后更新时间**: 2026-10-10 10:32:51
+**最近更新**: 2026-10-10 10:32:51 小欧 猎杀 10 bug 全修：1.14 四函数口径同步（归一 v2/方法杀动词/名提取补口径/无目标兜底）。详见版本历史 v5.2
 
 ---
 
@@ -141,10 +141,10 @@ shell 命令执行前的**静态风险判定**单一权威。三类同域关注�
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `is_readonly_whitelisted` | 只读白名单快速通道判定：前缀命中且无管道/分号/重定向符（须在写意图扫描之后调用的定序约束见函数 docstring） | command: str | bool |
-| `normalize_for_intent` | 折叠字符串拼接（循环至不动点，`'a'+'b'+'c'` 三段拼接单趟必漏）后去引号，使 `'Stop'+'-Process'` 还原为 `Stop-Process`。**只服务"检测"不服务"执行"**：归一只可能让词更易命中、不会让已命中的词消失，故只增不减（取严）。根因：字面量被 `+` 拆开时词表查不到连续动词 → 判定放行 → 预检在宿主真跑 → 后端自杀（审计 P1-1） | command: str | str |
-| `has_uncontainable_intent` | 不可隔离动词判定：杀进程（Stop-Process 任意形态 / taskkill / wmic process / pkill / killall / kill）与停服务（Stop-Service / Restart-Service）；大小写不敏感，只认完整独立动词；取原文与归一文并集。根因：shell 沙箱预检会在宿主**真跑一遍**命令，而 Job Object 非硬墙拦不住子进程杀别的进程 —— 词表漏判则预检即真跑，E2E P9-03 实录后端被 agent 的 `Get-Process python \| Stop-Process -Force` 杀掉。命中即须转 HITL，**不得进入预检 run** | command: str | bool |
-| `extract_kill_target_pids` | 提取命令显式指定的杀进程目标 PID：覆盖 `Stop-Process -Id a,b` / `taskkill /PID n` / `kill [-9] n` 三形态；按名与 pkill 形态目标由名字决定、静态枚举不了，返回空集 | command: str | set[int] |
-| `is_process_kill_protected` | 命令目标是否命中受保护进程（后端自身/父进程/shell 池），命中即 blocked。**PID + 名字双口径**：2026-10-10 审计 P1-3 补按名匹配（`-Name` / 管道 / `/IM` / `killall` 四形态），修掉原只抽显式 PID 时对事故原形恒返空集的盲区；名字归一化（去 `.exe` + casefold + fnmatch 通配）在内。`protected_pids`/`protected_names` 均由调用方注入（组装归 safety 侧，见 8.4） | command: str, protected_pids: set, protected_names: set = None | bool |
+| `normalize_for_intent` | 折叠字符串拼接（循环至不动点，`'a'+'b'+'c'` 三段拼接单趟必漏）后去引号，使 `'Stop'+'-Process'` 还原为 `Stop-Process`；2026-10-10 猎杀补 `[char]N` 解码 + `()[]{}` 噪音剥离（顺序解码→剥噪音→折叠→去引号）。**只服务"检测"不服务"执行"**：归一只可能让词更易命中、不会让已命中的词消失，故只增不减（取严）。根因：字面量被 `+` 拆开时词表查不到连续动词 → 判定放行 → 预检在宿主真跑 → 后端自杀（审计 P1-1） | command: str | str |
+| `has_uncontainable_intent` | 不可隔离动词判定：杀进程（Stop-Process 任意形态 / taskkill / wmic process / pkill / killall / kill）与停服务（Stop-Service / Restart-Service）；大小写不敏感，只认完整独立动词；取原文与归一文并集；2026-10-10 猎杀补 `.Terminate()`/`.Kill()` 方法调用（只认调用点，不认裸词）、`Invoke-CimMethod`、`-EncodedCommand`/`-enc`（内容不可见，转 HITL 为残留风险）。根因：shell 沙箱预检会在宿主**真跑一遍**命令，而 Job Object 非硬墙拦不住子进程杀别的进程 —— 词表漏判则预检即真跑，E2E P9-03 实录后端被 agent 的 `Get-Process python \| Stop-Process -Force` 杀掉。命中即须转 HITL，**不得进入预检 run** | command: str | bool |
+| `extract_kill_target_pids` | 提取命令显式指定的杀进程目标 PID：覆盖 `Stop-Process -Id a,b` / `taskkill /PID n` / `kill [-9] n` 三形态；2026-10-10 猎杀补 `taskkill /FI "PID eq N"`；按名与 pkill 形态目标由名字决定、静态枚举不了，返回空集 | command: str | set[int] |
+| `is_process_kill_protected` | 命令目标是否命中受保护进程（后端自身/父进程/shell 池），命中即 blocked。**PID + 名字双口径**：2026-10-10 审计 P1-3 补按名匹配（`-Name` / 管道 / `/IM` / `killall` 四形态），修掉原只抽显式 PID 时对事故原形恒返空集的盲区；2026-10-10 猎杀补引号名（同步扫归一文）、`/FI IMAGENAME`、WMI `where`/`Name=`、pkill 实参（含 `-f` 模式串，fnmatch 双向匹配）；名字归一化（去 `.exe` + casefold + fnmatch 通配）在内。**无目标兜底**：有杀意但抽不出任何目标（管线裸杀/无参 taskkill/wmic 质量动作/方法杀无名/`kill %1` 之类）直接 blocked（停服务动词、`/?`/`--help`/`-WhatIf`、wmic 裸查询、引号内纯提及不在此列）。`protected_pids`/`protected_names` 均由调用方注入（组装归 safety 侧，见 8.4） | command: str, protected_pids: set, protected_names: set = None | bool |
 
 > 曾用条目 **1.15 shell 杀进程/停服务防护**、**1.17 shell 命令规范化** —— 2026-10-10 已随位置更正并入本节，历史见版本历史 v5.0/v5.1。
 
@@ -470,6 +470,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.2 | 2026-10-10 10:32:51 | **猎杀 10 bug 全修**(本地探针门级 verdict 逐条实证, 小欧): 1.14 四函数口径同步更新 — ①`normalize_for_intent` 增 `[char]N` 解码 + `()[]{}` 噪音剥离(顺序解码→剥噪音→折叠→去引号; 逗号/分号不动)；②`has_uncontainable_intent` 增 `.Terminate()`/`.Kill()` 方法调用(只认调用点, 不认裸词)、`Invoke-CimMethod`、`-EncodedCommand`/`-enc`(内容不可见, 转 HITL 为残留风险)；③`extract_kill_target_pids` 增 `taskkill /FI "PID eq N"`；④`is_process_kill_protected` 增引号名(同步扫归一文)、`/FI IMAGENAME`、WMI `where`/`Name=`、pkill 实参(含 `-f` 模式串) + **无目标兜底**(有杀意无目标直接 blocked；停服务动词、`/?`/`--help`/`-WhatIf`、wmic 裸查询、引号内纯提及不在此列)。回归 303 passed 零退化 | 小欧 |
 | v5.1 | 2026-10-10 09:55:09 | **位置与命名更正**(北京老陈指出"代码名称确实要名副其实", 小欧): ①**落点** `app/utils/` → `app/tools/fundamental/shell_static_guard.py` — 原落 utils 的理由"架构边界要求 tools 禁 import safety"经 `tests/test_architecture_boundaries.py` 实证**不成立**(该守卫只禁 `"tools": {"app.services","app.safety"}`, `safety→tools` 合法, 先例= tool_safety_checker 一直 import execute_shell_command_safety), 无需中转 utils; shell 代码归 shell 代码同目录, 不散落。②**更名** `shell_readonly.py` → `shell_static_guard.py`(名副其实: 对 shell 命令做静态守卫判定, 原名仅覆盖约 1/3 内容)。③**并回一处** 曾短暂拆为 shell_readonly/shell_danger/shell_normalize 三文件, 复核判定属**过度拆分** — normalize_for_intent 只服务杀进程判定、非独立可复用能力, 单独成文件违反 YAGNI, 且制造 shell_danger→shell_normalize 跨文件依赖。④注册表 1.15/1.17 并入 **1.14 shell 命令静态守卫**(条目号保留作指引, 不重排后续编号)。生产调用点 4 处、测试 4 处、守卫 CHECKS 已同步。按 AGENTS.md 1.4 逐行合并未改业务逻辑 | 小欧 |
 | v5.0 | 2026-10-10 09:46:42 | SRP 拆分同步(AGENTS.md §1.4「能复制就复制，不重写」, 小欧): `app/utils/shell_readonly.py` 原同时承载**只读白名单 / 杀进程防护 / 命令规范化**三类互不相干关注点，文件名与职责不符(仅约 1/3 内容与 readonly 有关)，故拆分为三文件并同步注册表 — ①**1.15 落点变更**: `shell_readonly.py` → `shell_danger.py`(含 `UNCONTAINABLE_VERBS`/`_UNCONTAINABLE_RE`/`_PID_TARGET_RES`/`_KILL_NAME_RES` 词表与 5 个函数)，业务逻辑逐行照搬未改；②**新增 1.17 shell 命令规范化**(`shell_normalize.py`: `normalize_for_intent`，审计 P1-1 产物，被 1.15 依赖)；③**1.14 不变**(`is_readonly_whitelisted`/`READONLY_PREFIXES`/`FAST_CHANNEL_FORBIDDEN` 留在 `shell_readonly.py`，既有调用方落点不变)。同步更新生产调用点 2 处(tool_safety_checker/executor)、测试导入 3 处、`test_functions_md_consistency.py` 注册表 4 条。回归 262 passed 零退化 | 小欧 |
 | v4.9 | 2026-10-08 10:26:28 | 补登记漏项(AGENTS.md §1.3 违反修复, 小欧): ①**1.15 shell 杀进程/停服务防护**(shell_readonly.py: `has_uncontainable_intent`/`extract_kill_target_pids`/`is_process_kill_protected`) — 事故驱动, E2E P9-03 实录 agent 发 `Get-Process python \| Stop-Process -Force`、沙箱预检在宿主真跑一遍即杀死后端自身; 收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者, HIGH 级不重复收录(DRY); ②**1.16 异步流收尾**(astream.py: `aclose_stream`) — 2026-10-07 随 llm_call/base_service 流关闭修复同批, 当时漏登记; ③**3.5 上下文压缩**(compaction/: `prune_tool_output_keeping_tail` 摘要降本策略已接入 start_step + `_fc_atomic_units` FC 原子单元修 provider 400 + `_msg_cost` 统一 token 口径), 真实 205 条 feed 135362→86472 tok; ④**8.4 受保护进程集合**(`_protected_pids`) — 此前 protected_pids 全项目无第二处传值致保护盾恒不生效。已知不完美如实登记: getppid() 覆盖不到 --reload worker 子进程(待办) | 小欧 |
