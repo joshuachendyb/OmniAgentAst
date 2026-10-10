@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-10 10:32:51
-**最近更新**: 2026-10-10 10:32:51 小欧 猎杀 10 bug 全修：1.14 四函数口径同步（归一 v2/方法杀动词/名提取补口径/无目标兜底）。详见版本历史 v5.2
+**最后更新时间**: 2026-10-11 07:30:12
+**最近更新**: 2026-10-11 07:30:12 小欧 中央别名表收敛厂商键名漂移（_KEY_ALIASES/_canon_item，_first_alias 退役）。详见版本历史 v5.6
 
 ---
 
@@ -479,9 +479,11 @@ def my_parse_json(json_str):
 | `delete_provider` | DELETE /providers：级联删 ai.{name} 全块 + 删当前自动切换（switched_to）；禁删最后一个 | name | Dict: {ok, switched_to, mtime} |
 | `_require_provider_for_fetch` | [68] 拉取前置校验层：provider 存在性 + api_base 非空，返回 (p, api_base) | name, ai | Tuple[Dict[str, Any], str] |
 | `_http_get_remote_models` | [68] HTTP 拉取层 GET {api_base}/models → (resp, err)；网络异常统一 err 文案；timeout 30s | api_base, headers | Tuple[Any, Optional[str]] |
-| `_first_alias` | [68] 厂商字段别名取值：按传入顺序取首个非 None 值（空 [] 视为显式表达不回退）。同义键多名时唯一取值口（`supported_parameters` / `supported_sampling_parameters`） | item, *keys | Any |
+| `_KEY_ALIASES` + `_canon_item` | [68] 中央别名表 + 入口归一：同义键（name/display_name/title、pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、supported_parameters/supported_sampling_parameters）在此收敛，新厂商只加表行不碰逻辑；`_first_alias` 已退役删除 | 表 + item | Dict |
 | `_str_list` | [68] 远端值收敛为 List[str]：非数组退空列表、非字符串成员丢弃（防错型打挂挂 response_model 的 DTO） | value | List[str] |
-| `_parse_remote_models_body` | [68] 响应解析层 → (models, err)；HTTP>=400 提取 error.message / 非JSON / data 非数组 → err；id 缺失回退 model；**厂商字段别名归一**（`{**architecture, **item}` 合成查找视图，顶层优先嵌套兜底 → input/output_modalities；命名不统一走 `_first_alias`）；下发 14 字段含 max_output_length/input_modalities/output_modalities/supported_features | resp | Tuple[Optional[List[Dict]], Optional[str]] |
+| `_flatten_pricings` | [68] zenmux 式 pricings（复数嵌套）拍平 → {prompt/completion: str}；只取 perMTokens（perCount 跳过，不污染免费判据） | pricings | Dict[str, str] |
+| `_merge_capabilities` | [68] capabilities:{reasoning:bool} 对象并入 supported_features（去重）；其它键不猜语义 | feats, capabilities | List[str] |
+| `_parse_remote_models_body` | [68] 响应解析层 → (models, err)；HTTP>=400 提取 error.message / 非JSON / data 非数组 → err；id 缺失丢弃；**键名先经 `_canon_item` 中央别名表归一**（`{**architecture, **item}` 合成查找视图管层级，顶层优先嵌套兜底 → input/output_modalities）；下发 15 字段含 max_output_length/input_modalities/output_modalities/supported_features/publish_time | resp | Tuple[Optional[List[Dict]], Optional[str]] |
 | `fetch_remote_models` | [68] GET /providers/{name}/remote-models：后端代理绕 CORS；本地校验 400/404，远端失败统一 200+ok:false；key 取值三级优先（probe_key → env `{NAME}_API_KEY` → config）；**key 空白时 pop 掉 Authorization 头**（基类无条件造空 Bearer，无鉴权端点会 400），不动 adapter 基类以免波及 LLM 主链 | name, probe_key=None | Dict: {ok, provider, models, count, configured, current_model, status_code, category, message?} |
 | `replace_provider_models` | [68] PUT /providers/{name}/models：替换式写 ai.{name}.models + 差集孤儿清理（removed 键写 None 叶，禁空 dict）；env 接管/空列表/移除当前全局模型 → 400 | name, models | Dict: {ok, mtime, added, removed} |
 
@@ -491,6 +493,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.6 | 2026-10-11 07:30:12 | **中央别名表收敛厂商键名漂移**(小欧): `_KEY_ALIASES` + `_canon_item` 入口归一（name/display_name/title、pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、supported_parameters/supported_sampling_parameters），`_first_alias` 退役删除（唯一调用点改直读）；longcat 两变体首批入表；zenmux 映射（_flatten_pricings/_merge_capabilities/publish_time）保持。回归 94 passed + 真实 zenmux 201 条/DTO 零失败 + 老厂商口径零变化 | 小欧 |
 | v5.5 | 2026-10-10 12:50 | **10轮会审21bug修复(小欧)**: §3.6 函数清单同步新契约 —— 新增 `reconcile_session_workspaces`(进入会话唯一真源)/`_build_default_workspace_dir`(下沉)/`_drop_nested`(context 快照去嵌套); 删 `load_effective_workspaces` 死函数; `MAX_PATH_CHARS` 240→200 | 小欧 |
 | v5.4 | 2026-10-10 12:40 | **会话使用目录概念订正(小欧)**: 三、Agent层 §3.6 全面重写 —— "会话授权目录"改称**会话使用目录**(授权目录归全局 config 管, 不在本模块); 删 `resolve_ws_initialized()` 与 `is_default` 分档(表里无"授权目录"可区分); 补 `_ws_apply` 登记; 落点说明加"只改库行、绝不删磁盘目录"硬约束 | 小欧 |
 | v5.3 | 2026-10-10 10:49:50 | **登记会话 Workspace 落地(10 轮会审后, 小欧)**: 三、Agent层 新增 §3.6 `workspace_service.py` 共 10 个函数(`classify_workspace_rows` 过滤唯一真源 / `_ws_deny_reason` 授权判据 / `_is_broad_root` 宽根判据 / `_normalize_ws_path` 归一化唯一源 等)。**判据全部复用全局真源**(`_is_forbidden_path` 串联 `validate_path`),不自造黑名单 —— 会审实证此前只用了较弱判据,导致 `C:\Program Files`/`ProgramData` 可被授权 | 小欧 |

@@ -119,6 +119,9 @@ export interface RemoteModelItem {
   free?: boolean | null;
   /** stable/beta/unstable/experimental。AMD 9 项实测全 experimental。现无消费方（已知 YAGNI）。 */
   stability?: string | null;
+  /** 真发布时间（如 2026-09-03，zenmux 下发）。created 全假不可用；非 zenmux 不返回 → undefined。
+   *  — 小欧 2026-10-10（对齐后端 DTO publish_time） */
+  publish_time?: string | null;
 }
 
 export interface RemoteModelsResponse {
