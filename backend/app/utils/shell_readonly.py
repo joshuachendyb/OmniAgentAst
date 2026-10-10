@@ -7,7 +7,13 @@
 2026-10-08 小欧 新增不可隔离动词判定(事故驱动): UNCONTAINABLE_VERBS 词表 + has_uncontainable_intent /
   extract_kill_target_pids / is_process_kill_protected 三函数。根因: 沙箱预检是在宿主真跑一遍命令, 而
   Job Object 非硬墙拦不住子进程杀别的进程 → 词表漏 Stop-Process 时预检即真跑, 当场杀掉后端自身(E2E P9-03 实录)。
-  收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者; HIGH 级不重复收录(DRY)。— 小欧-2026-10-08"""
+  收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者; HIGH 级不重复收录(DRY)。— 小欧-2026-10-08
+2026-10-10 小欧 审计 P1-1 新增 normalize_for_intent: 词表命中前先折叠字符串拼接再去引号, 使
+  & ('Stop'+'-Process') -Id 5 / $v='Stop'+'-Process'; & $v -Id 5 这类"字面量被 + 拆开"的形态可被查杀。
+  根因: 预检在宿主真跑, 词表一漏即防线自破, 而黑名单必被绕过, 归一是不改执行链前提下的最低成本止血。
+  has_uncontainable_intent / extract_kill_target_pids 取原文与归一文并集(原文漏、归一补)。
+  归一只用于检测不用于执行, 只增不减(取严)。本项只覆盖拼接类, WMI/别名/CIM/Base64 仍需另行收词(未做)。— 小欧-2026-10-10"""
+import fnmatch
 import re
 # —— 判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
 READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
@@ -45,10 +51,71 @@ _UNCONTAINABLE_RE = re.compile(
     re.IGNORECASE)
 # 2026-10-08 小欧 PID 目标提取三形态: Stop-Process -Id / taskkill /PID / kill [-9] PID; 按名与 pkill 返空集。
 _PID_TARGET_RES = (
-    re.compile(r"stop-process\s+(?:.*?\s)?-id\s+([\d,\s]+)", re.IGNORECASE),
+    re.compile(r"stop-process\W*(?:[\w-]+\s+)*-id\s+([\d,\s]+)", re.IGNORECASE),
     re.compile(r"/pid\s+(\d+)", re.IGNORECASE),
     re.compile(r"(?<![a-z0-9_-])kill\s+(?:-[\w]+\s+)*(\d+)", re.IGNORECASE),
 )
+
+# —— 按名杀目标提取(2026-10-10 小欧 新增, 审计 P1-3): 补保护盾对真实事故形态的盲区 ————————
+# E2E P9-03 事故命令 `Get-Process python | Stop-Process -Force` 是按名杀, _PID_TARGET_RES 只认 -Id,
+# 抽出恒为空集 → 原保护盾对事故形态贡献为 0。四个形态: -Name / Get-Process 管道 / taskkill /IM / killall。
+# 组装(受保护进程名从哪来)仍归 safety 侧 tool_safety_checker._protected_process_names, 本模块只出纯函数。
+_NAME_TOKEN = r"[\w.*?+-]+(?:\.exe)?"
+_KILL_NAME_RES = (
+    re.compile(r"(?<![a-z0-9_-])-name\s+(" + _NAME_TOKEN + r"(?:\s*,\s*" + _NAME_TOKEN + r")*)", re.IGNORECASE),
+    re.compile(r"(?<![a-z0-9_-])/im\s+(" + _NAME_TOKEN + r")", re.IGNORECASE),
+    re.compile(r"(?<![a-z0-9_-])killall\s+(" + _NAME_TOKEN + r")", re.IGNORECASE),
+)
+
+
+def extract_kill_target_names(command: str) -> set:
+    """按名杀的进程名目标集合(逗号多值已拆开) — 小欧 2026-10-10
+
+    适用: 供 is_process_kill_protected 补按名口径; 按名形态抽不出 PID(extract_kill_target_pids 返空集),
+    只靠 PID 的保护盾会漏。归一化(.exe 去尾 + casefold + 通配)在 _name_matches 内做, 此处只出原样名。
+    """
+    names = set()
+    if has_uncontainable_intent(command):
+        for rx in _KILL_NAME_RES:
+            for m in rx.finditer(command or ""):
+                names.update(n.strip().strip("\"'") for n in re.split(r"\s*,\s*", m.group(1)))
+        names.update(extract_kill_target_names_from_pipeline(command))
+    return {n for n in names if n}
+
+
+def extract_kill_target_names_from_pipeline(command: str) -> set:
+    """`Get-Process <名> | Stop-Process` 管道形态的目标名 — 小欧 2026-10-10
+
+    独立成函数: 该形态不经 -Name 参数, 但正是 P9-03 事故原形, 不抽则保护盾对事故形态依旧为 0。
+    """
+    out = set()
+    for m in re.finditer(r"(?<![a-z0-9_-])get-process\s+((?![\s|;&]*\|)[\w.*?-]+(?:\.exe)?)",
+                         command or "", re.IGNORECASE):
+        out.add(m.group(1).strip().strip("\"'"))
+    return {n for n in out if n}
+
+
+# —— 命令规范化(2026-10-10 小欧 新增, 审计 P1-1): 判危险前先把"拼出来的动词"还原 ————————
+# 审计实证的绕过: & ('Stop'+'-Process') -Id 5 / $v='Stop'+'-Process'; & $v -Id 5
+#   字面量被 + 拆开, _UNCONTAINABLE_RE 查不到连续词, 判定放行 → 预检在宿主真跑 → 后端自杀。
+# 本函数只服务"检测", 不服务"执行": 归一只可能让词更易命中、不会让已命中的词消失, 故只增不减(取严)。
+# 折叠 '+' 必须先于去引号: 'Stop'+'-Process' → 'Stop'-'Process' → Stop-Process。
+_CONCAT_PART = r"'[^']*'|\"[^\"]*\"|[A-Za-z0-9_.-]+"
+_CONCAT_RE = re.compile(r"(" + _CONCAT_PART + r")\s*\+\s*(" + _CONCAT_PART + r")")
+
+
+def normalize_for_intent(command: str) -> str:
+    """把字符串拼接折叠、去引号, 使 'Stop'+'-Process' 还原为 Stop-Process — 小欧 2026-10-10
+
+    适用: 仅供静态危险判定前置归一(词表命中前置), 结果不用于执行。
+    循环折叠至不动点: 'a'+'b'+'c' 三段拼接一次只能合两段, 单趟必漏。
+    """
+    text = command or ""
+    prev = None
+    while prev != text:                      # 每趟至少消掉一个 '+', 必然收敛(不动点退出)
+        prev = text
+        text = _CONCAT_RE.sub(r"\1\2", text)
+    return text.replace("'", "").replace('"', "")
 
 
 def has_uncontainable_intent(command: str) -> bool:
@@ -56,31 +123,63 @@ def has_uncontainable_intent(command: str) -> bool:
 
     适用: shell 沙箱预检前静态判定, 命中转 HITL 不得 run(预检在宿主真跑, 跑即防线自破)。
     排除: Stop-Computer/Format-Volume/shutdown 已是 HIGH 级, 安全检查阶段就 blocked, 收录即重复(DRY)。
+    2026-10-10 小欧 补: 原文与归一文取并集(拼接还原的 'Stop'+'-Process' 原文查不到, 归一后查得到)。
     """
-    return bool(_UNCONTAINABLE_RE.search(command or ""))
+    if not command:
+        return False
+    return bool(_UNCONTAINABLE_RE.search(command)) or bool(_UNCONTAINABLE_RE.search(normalize_for_intent(command)))
 
 
 def extract_kill_target_pids(command: str) -> set:
     """命令显式指定的杀进程目标 PID 集合 — 小欧 2026-10-08
 
     覆盖 Stop-Process -Id a,b / taskkill /PID n / kill [-9] n; 按名与管线形态枚举不了, 返回空集。
+    2026-10-10 小欧 补: 同样取原文与归一文并集, 覆盖 & ('Stop-Process') -Id n 这类带引号形态。
     """
     pids = set()
-    for rx in _PID_TARGET_RES:
-        for m in rx.finditer(command or ""):
-            pids.update(int(x) for x in re.split(r"[\s,]+", m.group(1)) if x.isdigit())
+    for text in {command or "", normalize_for_intent(command)}:
+        for rx in _PID_TARGET_RES:
+            for m in rx.finditer(text):
+                pids.update(int(x) for x in re.split(r"[\s,]+", m.group(1)) if x.isdigit())
     return pids
 
 
-def is_process_kill_protected(command: str, protected_pids: set) -> bool:
-    """命令目标是否命中受保护 PID — 小欧 2026-10-08
+def _name_matches(target: str, protected_names: set) -> bool:
+    """杀进程目标名是否命中受保护进程名 — 小欧 2026-10-10
+
+    口径: 统一去 .exe 后缀 + casefold(PowerShell -Name 用无后缀名, taskkill /IM 用带后缀镜像名);
+    含通配符走 fnmatch(PowerShell -Name python* / pkill -f 支持通配)。
+    """
+    norm = lambda s: (s or "").strip().casefold().removesuffix(".exe")
+    tgt = norm(target)
+    if not tgt:
+        return False
+    for name in protected_names or ():
+        pname = norm(name)
+        if not pname:
+            continue
+        if fnmatch.fnmatch(pname, tgt) or fnmatch.fnmatch(tgt, pname):
+            return True
+    return False
+
+
+def is_process_kill_protected(command: str, protected_pids: set, protected_names: set = None) -> bool:
+    """命令目标是否命中受保护进程 — 小欧 2026-10-08
 
     适用: 阻止杀宿主关键进程(后端自身/父进程/shell 池), 命中即 blocked。
-    取值: protected_pids 由调用方注入(utils 禁 import tools, 组装归 safety 侧); 按名形态返 False。
+    取值: protected_pids/protected_names 均由调用方注入(utils 禁 import tools, 组装归 safety 侧)。
+    2026-10-10 小欧 增按名匹配(审计 P1-3): 事故命令 `Get-Process python | Stop-Process -Force`
+      属按名杀, 原实现只抽显式 PID 恒返空集, 保护盾对真实事故形态贡献为 0;
+      补 protected_names 后该形态才拦得住。签名新增第三参(可选, 不传则退化为仅 PID 口径)。
     """
-    if not protected_pids:
+    if not command:
         return False
-    return bool(extract_kill_target_pids(command) & set(protected_pids))
+    if protected_pids and (extract_kill_target_pids(command) & set(protected_pids)):
+        return True
+    if not protected_names:
+        return False
+    return any(_name_matches(target, protected_names)
+               for target in extract_kill_target_names(command))
 
 
 def is_readonly_whitelisted(command: str) -> bool:

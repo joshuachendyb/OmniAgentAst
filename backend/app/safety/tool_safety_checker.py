@@ -145,6 +145,27 @@ def _is_skip_safety() -> bool:
         return False
 
 
+def _protected_process_names() -> set:
+    """受保护进程名集合(由 _protected_pids 的 PID 反查名) — 小欧 2026-10-10
+
+    2026-10-10 小欧 审计 P1-3 新增: 原保护盾只认显式 -Id, 而 P9-03 事故命令
+    `Get-Process python | Stop-Process -Force` 是按名杀, 抽出 PID 恒空 → 盾对事故形态贡献为 0。
+    补本函数提供名维度, 按名杀才拦得住。进程名解析放 safety 侧(本模块不 import tools, 组装归此)。
+    psutil 不可用/进程已退出时降级为空集(退化为仅 PID 口径), 不拖垮安全判定。
+    """
+    names = set()
+    try:
+        import psutil
+    except ImportError:
+        return names
+    for pid in _protected_pids():
+        try:
+            names.add(psutil.Process(pid).name())
+        except Exception:
+            continue
+    return names
+
+
 def _protected_pids() -> set:
     """宿主关键进程 PID 集合(后端自身+父进程+shell 池) — 小欧 2026-10-08
 
@@ -288,10 +309,12 @@ class ToolSafetyChecker:
             return False, "", False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
             _cmd = (params or {}).get("command", "")
-            # 2026-10-08 小欧 补上从未接线的保护盾: 目标命中受保护PID(后端自身/父进程/shell池)即拦截。
+            # 2026-10-08 小欧 补上从未接线的保护盾(2026-10-10 审计P1-3 增名维度):
+            #   目标命中受保护PID(后端自身/父进程/shell池)或受保护进程名即拦截;
+            #   名维度补的是按名杀形态(P9-03 事故原形 Get-Process python | Stop-Process)。
             from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
             from app.utils.shell_readonly import is_process_kill_protected
-            if is_process_kill_protected(_cmd, _protected_pids()):
+            if is_process_kill_protected(_cmd, _protected_pids(), _protected_process_names()):
                 return True, "系统保护进程，禁止终止", True
             _risk = check_shell_command_risk(_cmd)
             if _risk:
