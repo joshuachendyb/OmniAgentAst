@@ -296,8 +296,13 @@ export function dangerConfirm(opts: {
   title: string;
   /** 具体变更：label=键的中文名，from/to=旧值/新值 */
   changes: { label: string; from: string; to: string }[];
-  /** 后果说明（如关闭 HTL 的含义），可为空数组 */
-  hint?: string[];
+  /**
+   * 后果说明**按变更分组**：key = changes[].label，值为该条变更自己的后果文案。
+   * 2026-10-11 00:50 小欧 - 由扁平 string[] 改为按 label 索引：
+   *   改 N 项时后果必须各自成组挂在对应变更下方，汇总成一个块会分不清谁对应谁。
+   *   某条无后果（如"开启"方向）则该 label 不出现在本对象里，不占空间。
+   */
+  hintByChange?: Record<string, string[]>;
   okText?: string;
   onOk: () => void | Promise<void>;
 }) {
@@ -313,49 +318,68 @@ export function dangerConfirm(opts: {
     ),
     content: (
       <div style={{ fontSize: FontSize.SECONDARY }}>
-        <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: 6 }}>
+        <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: Spacing.MD }}>
           以下改动提交后立即生效：
         </div>
-        {opts.changes.map((c) => (
-          <div
-            key={c.label}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: Spacing.SM,
-              marginBottom: 4,
-            }}
-          >
-            <CodeChip>{c.label}</CodeChip>
-            <span style={{ color: Colors.TEXT.TERTIARY }}>：</span>
-            <span style={{ color: Colors.TEXT.SECONDARY }}>{c.from}</span>
-            <span style={{ color: Colors.TEXT.TERTIARY }}>→</span>
-            <span
-              style={{
-                color: Colors.ERROR,
-                fontWeight: FontWeight.BOLD,
-              }}
+        {/* 2026-10-11 00:50 小欧 - 每条变更自成一组（北京老陈："如果同时改变俩个 信息是两组 不要混排"）。
+            改前两个毛病：
+              ① 标签用 CodeChip，宽度随文字变 → 两条的「：」和值起始 x 对不齐，看着参差；
+              ② 所有后果汇总进同一个琥珀框 → 分不清哪句后果对应哪条变更。
+            改后：标签走**定宽列**（各组「：」与值同一 x），后果**挂在各自变更下方**，
+            组间留 8px —— 改 N 项就是 N 个独立可读的信息组。 */}
+        {opts.changes.map((c, i) => {
+          const hint = opts.hintByChange?.[c.label] ?? [];
+          return (
+            <div
+              key={c.label}
+              style={{ marginBottom: i === opts.changes.length - 1 ? 0 : 10 }}
             >
-              {c.to}
-            </span>
-          </div>
-        ))}
-        {opts.hint && opts.hint.length > 0 && (
-          <div
-            style={{
-              marginTop: Spacing.MD,
-              padding: '6px 10px',
-              background: Colors.BG.WARNING_LIGHT,
-              borderLeft: `3px solid ${Colors.WARNING}`,
-              borderRadius: `0 ${Radius.SM}px ${Radius.SM}px 0`,
-              color: Colors.TEXT.SECONDARY,
-            }}
-          >
-            {opts.hint.map((h, i) => (
-              <div key={i}>{h}</div>
-            ))}
-          </div>
-        )}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'baseline',
+                  gap: Spacing.SM,
+                }}
+              >
+                {/* 定宽标签列：不用 CodeChip，宽度随字变会导致各组值不对齐 */}
+                <span
+                  style={{
+                    width: 88,
+                    flexShrink: 0,
+                    color: Colors.TEXT.STRONG,
+                    fontWeight: FontWeight.BOLD,
+                  }}
+                >
+                  {c.label}
+                </span>
+                <span style={{ color: Colors.TEXT.SECONDARY }}>{c.from}</span>
+                <span style={{ color: Colors.TEXT.TERTIARY }}>→</span>
+                <span
+                  style={{ color: Colors.ERROR, fontWeight: FontWeight.BOLD }}
+                >
+                  {c.to}
+                </span>
+              </div>
+              {hint.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 6,
+                    marginLeft: 88 + Spacing.SM,
+                    padding: '6px 10px',
+                    background: Colors.BG.WARNING_LIGHT,
+                    borderLeft: `3px solid ${Colors.WARNING}`,
+                    borderRadius: `0 ${Radius.SM}px ${Radius.SM}px 0`,
+                    color: Colors.TEXT.SECONDARY,
+                  }}
+                >
+                  {hint.map((h, j) => (
+                    <div key={j}>{h}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     ),
     // onOk 返回 Promise → antd OK 按钮自动 loading，保存期间防连点双发

@@ -34,7 +34,7 @@ interface Props {
   // 2026-10-11 00:05 小欧 - 危险确认要展示「具体改了什么」+「后果」，
   //   由 SettingsPage 按 dirtyKeys 实算后下传（本组件不认 schema，避免重复实现取值口径）。
   dangerChanges: { label: string; from: string; to: string }[];
-  dangerHints: string[];
+  dangerHintByChange: Record<string, string[]>;
   onSaveGroup: () => Promise<unknown>;
   onSaveAll: () => Promise<unknown>;
   onCloseRestart: () => void;
@@ -50,7 +50,7 @@ export const SaveBar: React.FC<Props> = ({
   dangerousGroup,
   dangerousAll,
   dangerChanges,
-  dangerHints,
+  dangerHintByChange,
   onSaveGroup,
   onSaveAll,
   onCloseRestart,
@@ -80,7 +80,7 @@ export const SaveBar: React.FC<Props> = ({
       dangerConfirm({
         title: '含危险操作相关改动',
         changes,
-        hint: dangerHints,
+        hintByChange: dangerHintByChange,
         okText: '确认保存',
         onOk: async () => {
           await fn();

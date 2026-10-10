@@ -236,15 +236,32 @@ const SettingsPage: React.FC = () => {
     'security.confirmDangerousOps': ['关闭后：高危操作将不再二次询问，直接执行'],
   };
   const dangerDirtyKeys = DANGEROUS_KEYS.filter((k) => state.dirtyKeys[k]);
+  // ⚠ 2026-10-11 00:35 小欧 - 自己写错两处，均由浏览器实测抓出（不是理论推断）：
+  //   ① dirtyKeys[key] 只是"该键脏了"的布尔标记（useSettings L498-499：`dirtyKeys[key] = true`），
+  //      不是旧值。拿它当 from 会导致无论往哪个方向改都显示"开启→关闭"。
+  //   ② state.values 是**按组分层的** `{ [group]: { [key]: value } }`（useSettings L476-479），
+  //      不是扁平 `values[key]`。扁平取会恒为 undefined → to 恒为"关闭"。
+  //   旧值权威在 state.baseline[tab][key]（与 L498 判脏那行同源），新值在 state.values[tab][key]。
+  const readBool = (
+    src: Record<string, Record<string, unknown>> | undefined,
+    key: string
+  ): boolean => {
+    const tab = s.groupOfKey(key);
+    const v = tab ? src?.[tab]?.[key] : undefined;
+    return typeof v === 'boolean' ? v : v === 'true';
+  };
   const dangerChanges = dangerDirtyKeys.map((k) => ({
     label: DANGER_LABELS[k] ?? k,
-    from: state.dirtyKeys[k] ? '开启' : '关闭',
-    to: state.values[k] ? '开启' : '关闭',
+    from: readBool(state.baseline, k) ? '开启' : '关闭',
+    to: readBool(state.values, k) ? '开启' : '关闭',
   }));
-  // 后果提示只列"本次真的要关掉"的项；全是开启类变更时无后果可讲，不占地方
-  const dangerHints = dangerDirtyKeys
-    .filter((k) => !state.values[k])
-    .flatMap((k) => DANGER_EFFECTS[k] ?? []);
+  // 后果按变更分组：只有"本次真的要关掉"的项才有后果，各自成组挂在对应变更下方
+  // （2026-10-11 00:50 小欧 - 北京老陈："如果同时改变俩个 信息是两组 不要混排"）
+  const dangerHintByChange = Object.fromEntries(
+    dangerDirtyKeys
+      .filter((k) => !readBool(state.values, k))
+      .map((k) => [DANGER_LABELS[k] ?? k, DANGER_EFFECTS[k] ?? []])
+  );
 
   // 2026-09-24 小欧 - 收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
@@ -749,7 +766,7 @@ const SettingsPage: React.FC = () => {
           dangerousGroup={dangerousGroup}
           dangerousAll={dangerousAll}
           dangerChanges={dangerChanges}
-          dangerHints={dangerHints}
+          dangerHintByChange={dangerHintByChange}
           // 修复：直接透出 Promise，SaveBar 确认弹窗 onOk await 化后自带 loading 防连点
           onSaveGroup={() => s.saveGroup(state.activeTab)}
           onSaveAll={() => s.saveAll()}
