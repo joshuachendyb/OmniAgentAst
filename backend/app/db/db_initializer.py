@@ -203,7 +203,7 @@ def init_chat_db(get_conn):
                 ON chat_stream_events(task_id, event_type, seq);
 
             -- 会话使用的目录列表：一个会话本次任务产物落在这里(可以有多个)
-            -- BUG-14: path 列 COLLATE NOCASE。Windows 大小写不敏感是"比较规则"，
+            -- 2026-10-10 小欧 - 文档[16]: path 列 COLLATE NOCASE。Windows 大小写不敏感是"比较规则"，
             --   `C:/A` 与 `c:/a` 是同一目录，库级必须判重；存储本身保大小写(面板可读)。
             CREATE TABLE IF NOT EXISTS chat_session_workspaces (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,7 +214,7 @@ def init_chat_db(get_conn):
             );
             CREATE INDEX IF NOT EXISTS idx_csw_session ON chat_session_workspaces(session_id);
         ''')
-        # BUG-14 存量迁移：今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
+        # 2026-10-10 小欧 - 文档[16]: 存量迁移。今日建的旧表 path 列大小写敏感，`C:\A`/`c:\a` 可并存两行。
         #   查 sqlite_master 建表语句，无 COLLATE 即重建（表是今日新建，正常 0 行；有行照搬）。
         _csw = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='chat_session_workspaces'"

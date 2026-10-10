@@ -235,7 +235,7 @@ def delete_session(session_id: str):
             'UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? WHERE id = ?',
             (local_time, session_id)
         )
-        # 硬删该会话 workspace 行：软删下 FK 永不触发, 此处是唯一清理出口
+        # 2026-10-10 小欧 - 文档[16]: 硬删该会话 workspace 行。软删下 FK 永不触发, 此处是唯一清理出口
         # 不删物理目录（目录留存项目根, 用户自行清理）
         cursor.execute("DELETE FROM chat_session_workspaces WHERE session_id = ?", (session_id,))
 
