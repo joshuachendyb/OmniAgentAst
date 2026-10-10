@@ -13,6 +13,7 @@
 //     0 = MarkdownText.tsx(react-markdown, 34 类格式, XSS 净化)
 //     1 = MarkdownBody.tsx(零依赖手写正则, 6 类子集: 围栏码块/行内码/粗体/斜体/1~3级标题/无序列表)
 //   两文件同在 components/markdown/ 目录, 改这一个数字即切换, 无需改任何调用方。 — 小欧-2026-10-05
+// 编辑历史: 2026-10-06 小欧 - 新增 fixedTable: 表格按固定列宽排(仅安全Tab 分类表用) — 小欧-2026-10-06
 import React from 'react';
 import { MarkdownBody } from './MarkdownBody'; // MD_IMPL=1 分支(零依赖, 静态引入)
 /** MD_IMPL=0 分支: lazy 分块, 避免纯文本用户下载 react-markdown 三件套 */
@@ -34,10 +35,11 @@ interface MarkdownSlotProps {
   /** 「思考排版」开关值(PipelineRenderer 顶层 hook 取一次后下传, 禁在 map 回调内调 hook) */
   markdown?: boolean;
   /**
-   * 编辑历史: 2026-10-06 小欧 - 新增 fixedTable: 表格按固定列宽排(auto 布局下超长单元格会吃掉
-   *   全部宽度、把窄列压成逐字竖排)。仅安全Tab 分类表开, 聊天侧一律默认 auto, 零视觉变化。
-   *   ⚠️ 仅 MD_IMPL=0(react-markdown) 分支支持; MD_IMPL=1 的 MarkdownBody 不解析表格, 该参数无效。
-   *   — 小欧-2026-10-06 */
+   * 「表格按固定列宽排」开关: auto 布局下超长单元格会吃掉全部宽度、把窄列压成逐字竖排。
+   * 仅安全Tab 分类表开, 聊天侧一律默认 auto, 零视觉变化。
+   * ⚠️ 仅 MD_IMPL=0(react-markdown) 分支支持; MD_IMPL=1 的 MarkdownBody 不解析表格, 该参数无效。
+   * — 小欧-2026-10-06
+   */
   fixedTable?: boolean;
 }
 

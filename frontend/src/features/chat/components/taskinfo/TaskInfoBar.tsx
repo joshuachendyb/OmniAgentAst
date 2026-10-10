@@ -311,7 +311,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       }}
     >
       {/* v4.1: 信息带恒定 1 行, 整行折叠态机已删除; G1~G6 渲染其中, 无整行点击 */}
-      {/* 编辑历史: 2026-09-09 小欧 - v4.4 修复: 接线 .taskinfo-bar(G5 可换行, 消死 CSS) — 小欧-2026-09-09 */}
+      {/* v4.4: 接线 .taskinfo-bar(G5 可换行, 消死 CSS) — 小欧-2026-09-09 */}
       <div
         className="taskinfo-bar"
         style={{
@@ -328,7 +328,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            // 编辑历史: 2026-09-09 小欧 - v4.4 修复: gap:8 硬码 → Spacing.MD — 小欧-2026-09-09
+            // v4.4: gap 硬码 8 → Spacing.MD — 小欧-2026-09-09
             gap: Spacing.MD,
             flexShrink: 0,
           }}

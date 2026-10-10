@@ -3,6 +3,7 @@
 // 编辑历史: 2026-10-04 小欧 - Tooltip 加 styles.root.whiteSpace='nowrap'(禁行统一由浮层层负责, 调用方不再包 span);
 //   label 改可选(为空则不渲染标签 span, 本轮项只显数值)
 // 编辑历史: 2026-10-10 小欧 三堂会审 10 规范审计 - tertiary 色调注释同步(summary-only 态已下线, 只剩 empty)
+// 编辑历史: 2026-09-09 小欧 - v4.4 修复#1(数值 hover 变 PRIMARY):
 import React from 'react';
 import { Tooltip } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -52,7 +53,6 @@ export const MetricItem: React.FC<MetricItemProps> = ({
         style={{
           fontSize: FontSize.SECONDARY,
           fontWeight: FontWeight.BOLD,
-          // 编辑历史: 2026-09-09 小欧 - v4.4 修复#1(数值 hover 变 PRIMARY):
           //   数值色唯一机制 = CSS 变量 --taskinfo-entry-active(回退 tone 色);
           //   .taskinfo-entry:hover 注入蓝值即可覆盖任意 tone, 无分支无 !important。 — 小欧-2026-09-09
           color: `var(--taskinfo-entry-active, ${TONE_COLOR[tone]})`,
