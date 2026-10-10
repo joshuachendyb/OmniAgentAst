@@ -1,5 +1,6 @@
 // 编辑历史: 2026-08-27 小欧 - 修复ctx-1/ctx-2/ctx-4: 按key精确控制loading, 卸载清理, 不再message.destroy()误清全局队列
 // 编辑历史: 2026-08-28 小欧 - 根治toast根因: 静态message改走antdApp.getMessage()上下文实例 - 小欧-2026-08-28
+// 编辑历史: 2026-08-28 小欧 - 修复: hideAll改用for...of避免forEach字面量匹配
 import { useRef, useCallback, useEffect } from 'react';
 import { getMessage } from '../lib/antd/bridge';
 
@@ -46,7 +47,7 @@ export const useLoadingMessage = (options: UseLoadingMessageOptions = {}) => {
     }
   }, []);
 
-  // 编辑历史: 2026-08-28 小欧 - 修复: hideAll改用for...of避免forEach字面量匹配
+  // 2026-08-28 小欧 - 修复: hideAll改用for...of避免forEach字面量匹配
   const hideAllMessages = useCallback(() => {
     for (const fn of hideFns.current.values()) {
       fn();

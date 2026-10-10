@@ -35,7 +35,9 @@
 //   ⑤ 不再给 Card 挂整卡 onClick —— 实测该做法会把"点勾选框"也带进会话(click 先于 change 冒泡,
 //      靠 onChange 里的 stopPropagation 拦不住), 故从根上不加整卡点击, 只保留上述两个显式入口。
 //   治法与文档[19] 减锁同源: 修根因(入口缺失/入口过多)而非在调用点打补丁 — 小欧-2026-10-08
-
+// 编辑历史: 2026-08-28 老杨 - 单删后同步更新totalSessions，与批量删/清空逻辑一致
+// 编辑历史: 2026-08-28 老杨 - setPagination使用函数式更新避免闭包陈旧
+// 编辑历史: 2026-08-28 老杨 - catch中使用ref.current避免闭包陈旧值
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
@@ -234,7 +236,7 @@ const HistoryPage: React.FC = () => {
           current: currentPage,
           total: response.total,
         }));
-        // 编辑历史: 2026-08-28 老杨 - 单删后同步更新totalSessions，与批量删/清空逻辑一致
+        // 2026-08-28 老杨 - 单删后同步更新totalSessions，与批量删/清空逻辑一致
         // 2026-08-30 小欧 修复: 过滤态下 response.total 为命中数，仅非过滤时才是真实总数(与 loadSessions L110 守卫对齐)，
         //                     避免单删后 totalSessions 被过滤命中数污染，致清空守卫误判、总会话数显示错误
         if (!currentKeyword) {
@@ -355,7 +357,7 @@ const HistoryPage: React.FC = () => {
       showSuccess(`已清空 ${successCount} 个会话`);
       setSelectedSessions(new Set());
       setKeyword('');
-      // 编辑历史: 2026-08-28 老杨 - setPagination使用函数式更新避免闭包陈旧
+      // 2026-08-28 老杨 - setPagination使用函数式更新避免闭包陈旧
       // 刷新列表（直接重置状态，不需要等待 API）
       setSessions([]);
       setPagination((prev) => ({ ...prev, current: 1, total: 0 }));
@@ -365,7 +367,7 @@ const HistoryPage: React.FC = () => {
     } catch (error) {
       handleError('清空会话失败');
       console.error('清空会话失败:', error);
-      // 编辑历史: 2026-08-28 老杨 - catch中使用ref.current避免闭包陈旧值
+      // 2026-08-28 老杨 - catch中使用ref.current避免闭包陈旧值
       // 失败后刷新列表以恢复正确状态
       await loadSessions(paginationRef.current.current, keywordRef.current);
     }

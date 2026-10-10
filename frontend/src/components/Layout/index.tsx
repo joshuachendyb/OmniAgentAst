@@ -41,7 +41,7 @@
  * @update 2026-02-18 添加移动端响应式支持
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): updateConfig 改传 ai_model_ref 结构; serviceStatus 的 provider/model 读取点(4处)改经 status.model_ref 派生
  */
-
+// 编辑历史: 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -254,7 +254,7 @@ const AppLayout: React.FC<LayoutProps> = ({
     }
 
     // 检查 serviceStatus 是否发生变化（比较关键字段避免引用不等导致重复弹窗）
-    // 编辑历史: 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
+    // 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
     const statusChanged =
       lastServiceStatusRef.current?.valid !== serviceStatus?.valid ||
       lastServiceStatusRef.current?.status !== serviceStatus?.status ||

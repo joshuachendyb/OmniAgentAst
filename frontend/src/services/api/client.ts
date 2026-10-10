@@ -51,7 +51,6 @@ const VITE_ENV =
  *
  * 端口联动：后端改端口 → 同步 Vite proxy 的 target 与 VITE_API_PORT。
  *
- * 编辑历史:
  *   2026-09-22 小欧 硬编码 :8000 → 读 VITE_API_PORT
  *   2026-09-27 小欧 默认由"拼 hostname:port 绝对地址"改为"空串（同源）"——
  *     原默认值使 REST（axios，绝对地址）与 SSE（fetch，'/api/v1' 相对）分属两条通道，

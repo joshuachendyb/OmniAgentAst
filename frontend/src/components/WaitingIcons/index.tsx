@@ -329,6 +329,6 @@ export const SpinSquareIcon: React.FC<{
 /**
  * ReasoningIcon = SpinSquareIcon — 推理折叠行前置图标(实体取候选13号方框旋转, 北京老陈 2026-10-07 选定)
  * 取值赋值非包装: 两者指向同一函数对象, 渲染结果与组件类型完全一致(不触发重挂载), 仅多一个模块级绑定
- * 编辑历史: 2026-10-07 小欧 - 取值由 EyeIcon 改为 SpinSquareIcon; 旧实体转备用名 EyeIcon — 小欧-2026-10-07
+ * — 小欧-2026-10-07
  */
 export const ReasoningIcon = SpinSquareIcon;
