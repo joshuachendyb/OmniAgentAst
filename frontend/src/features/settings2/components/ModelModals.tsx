@@ -344,11 +344,14 @@ export const ModelModals: React.FC<Props> = (props) => {
         {/* 2026-10-10 23:50 小欧 - vertical → horizontal：label 左置，与「添加 Provider」同款。
             23:55 小欧 - labelCol 4→5：实测 span4 时 label 可用宽 ≈65px，而"Provider"8 个
             拉丁字符需 ≈60px，paddingRight 被挤没、下拉框紧贴 label（实测截图确认）。
-            span5 ≈81px 才留得出间距。 */}
+            span5 ≈81px 才留得出间距。
+            10-11 01:58 小欧 - textAlign right → left（北京老陈标红四条竖线要求）：
+            原右对齐让标签右边缘贴住控件，同一列里「名称/API 地址/timeout」长短不一、
+            左边缘参差；改左对齐后标签列起点统一（竖线1/竖线3），控件起点统一（竖线2/竖线4）。 */}
         <Form
           form={mForm}
           layout="horizontal"
-          labelCol={{ span: 5, style: { textAlign: 'right', paddingRight: Spacing.LG } }}
+          labelCol={{ span: 5, style: { textAlign: 'left', paddingRight: Spacing.LG } }}
           wrapperCol={{ span: 19 }}
           colon={false}
         >
@@ -464,12 +467,14 @@ export const ModelModals: React.FC<Props> = (props) => {
         </div>
         {/* 2026-10-10 23:30 小欧 - vertical → horizontal：label 左置与控件同行。
             23:35 小欧 - labelCol 5→9 / 加 wrapperCol：span 是相对所在 Col 的百分比，
-            Form.Item 在 Col span=12 内，9/24≈37.5% 约 105px，够放"API 地址"且右对齐成一条竖线。
-            （原 5/24 只有约 58px，"API 地址"会被挤断行。） */}
+            Form.Item 在 Col span=12 内，9/24≈37.5% 约 105px，够放"API 地址"。
+            10-11 01:58 小欧 - textAlign right → left（北京老陈标红四条竖线要求）：
+            右对齐时标签右边缘贴控件、同列左边缘参差；左对齐后标签列起点统一、
+            控件起点统一，「名称/API 地址/timeout」三块形成三条对齐竖线。 */}
         <Form
           form={pForm}
           layout="horizontal"
-          labelCol={{ span: 9, style: { textAlign: 'right', paddingRight: Spacing.MD } }}
+          labelCol={{ span: 9, style: { textAlign: 'left', paddingRight: Spacing.LG } }}
           wrapperCol={{ span: 15 }}
           colon={false}
         >

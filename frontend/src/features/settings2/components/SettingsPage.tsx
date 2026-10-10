@@ -117,7 +117,7 @@ import {
   settingsRowStyle,
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
-import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 未保存拦截弹窗归一到设置页壳
+import { SettingsModal, confirmDanger } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 未保存拦截弹窗归一到设置页壳; 10-11 补 confirmDanger
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SearchBox } from './SearchBox';
@@ -228,13 +228,25 @@ const SettingsPage: React.FC = () => {
     'security.enabled': 'HTL人工开关',
     'security.confirmDangerousOps': '危险操作确认',
   };
-  const DANGER_EFFECTS: Record<string, string[]> = {
-    'security.enabled': [
+// 2026-10-11 01:20 小欧 - 后果说明**两个方向都给**（北京老陈："你自己不是说俩个方向都有说明信息吗"）。
+//   原实现只在"关闭"方向挂说明、"开启"方向留空 → 只改一项且是开启方向时，说明区整片空白，
+//   弹框下半部塌陷、左右失衡。改为按 `${key}:${方向}` 取，开与关各有对应后果。
+const DANGER_EFFECTS: Record<string, { on: string[]; off: string[] }> = {
+  'security.enabled': {
+    on: [
+      '开启后：每次高危操作都会弹窗请你人工确认，不会自动放行',
+      '（更安全，代价是每次操作都要点一次）',
+    ],
+    off: [
       '关闭后：无需人工确认，无信任，自动延时确认安全检查',
       '（磁盘根、项目根等删除硬防线仍生效）',
     ],
-    'security.confirmDangerousOps': ['关闭后：高危操作将不再二次询问，直接执行'],
-  };
+  },
+  'security.confirmDangerousOps': {
+    on: ['开启后：高危操作会额外二次询问，多一步确认'],
+    off: ['关闭后：高危操作将不再二次询问，直接执行'],
+  },
+};
   const dangerDirtyKeys = DANGEROUS_KEYS.filter((k) => state.dirtyKeys[k]);
   // ⚠ 2026-10-11 00:35 小欧 - 自己写错两处，均由浏览器实测抓出（不是理论推断）：
   //   ① dirtyKeys[key] 只是"该键脏了"的布尔标记（useSettings L498-499：`dirtyKeys[key] = true`），
@@ -255,13 +267,15 @@ const SettingsPage: React.FC = () => {
     from: readBool(state.baseline, k) ? '开启' : '关闭',
     to: readBool(state.values, k) ? '开启' : '关闭',
   }));
-  // 后果按变更分组：只有"本次真的要关掉"的项才有后果，各自成组挂在对应变更下方
-  // （2026-10-11 00:50 小欧 - 北京老陈："如果同时改变俩个 信息是两组 不要混排"）
-  const dangerHintByChange = Object.fromEntries(
-    dangerDirtyKeys
-      .filter((k) => !readBool(state.values, k))
-      .map((k) => [DANGER_LABELS[k] ?? k, DANGER_EFFECTS[k] ?? []])
-  );
+  // 后果按变更分组：**开与关两个方向都给说明**（只给关闭方向会导致"改一项且是开启方向"时说明区空白）
+const dangerHintByChange = Object.fromEntries(
+  dangerDirtyKeys.map((k) => {
+    const label = DANGER_LABELS[k] ?? k;
+    const eff = DANGER_EFFECTS[k];
+    const lines = eff ? (readBool(state.values, k) ? eff.on : eff.off) : [];
+    return [label, lines];
+  })
+);
 
   // 2026-09-24 小欧 - 收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
@@ -545,19 +559,42 @@ const SettingsPage: React.FC = () => {
         // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原独立 `?? false` 表达式与能力行重复）
         envManaged={envManaged}
         onClearApiKey={async () => {
-          try {
-            const r = await modelApi.updateProvider(
-              state.model.selectedProvider,
-              { clear: true }
-            );
-            showSuccess('api_key 已清空');
-            // 2026-09-27 小欧 - 修 F7：清空是 api_key 的第二个写入口，须同清草稿，
-            //   否则用户接着点保存会把刚清空的密钥写回。ProviderConfig 的 apiKey 由 masked 变化自动复位。
-            s.patchModel({ providerDraft: {} });
-            await afterModelSaved(r.mtime);
-          } catch (e) {
-            handleApiError(e);
-          }
+          // 2026-10-11 01:50 小欧 - 补二次确认（北京老陈："这些危险按钮为什么没有二次确认？"）。
+          // 查证：三个危险按钮里「删除此模型」「删除此 Provider」都走 deleteConfirmOpen 有确认，
+          // 只有「清空 api_key」直调 updateProvider({clear:true}) 一步到位 —— 危险度却最高：
+          // 密钥一清空该 Provider 全部调用立即失败，且不可撤销、只能重新配置才能恢复。
+          // 统一走 dangerConfirm 口径（与删除确认同一套壳/危险键），文案说明后果。
+          confirmDanger({
+            title: '确定清空 api_key？',
+            content: (
+              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+                清空后：
+                <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
+                  <li>
+                    「{state.model.selectedProvider}」的密钥被抹除，不可撤销
+                  </li>
+                  <li>该 Provider 的全部模型将立即无法调用</li>
+                  <li>需重新填写 api_key 才能恢复使用</li>
+                </ul>
+              </div>
+            ),
+            okText: '确认清空',
+            onOk: async () => {
+              try {
+                const r = await modelApi.updateProvider(
+                  state.model.selectedProvider,
+                  { clear: true }
+                );
+                showSuccess('api_key 已清空');
+                // 2026-09-27 小欧 - 修 F7：清空是 api_key 的第二个写入口，须同清草稿，
+                //   否则用户接着点保存会把刚清空的密钥写回。ProviderConfig 的 apiKey 由 masked 变化自动复位。
+                s.patchModel({ providerDraft: {} });
+                await afterModelSaved(r.mtime);
+              } catch (e) {
+                handleApiError(e);
+              }
+            },
+          });
         }}
         onDeleteModel={() =>
           s.patchModel({
@@ -781,35 +818,67 @@ const SettingsPage: React.FC = () => {
         //   双击「保存并切换」会连发两次 saveGroup。复现 SaveBar 同源：saving → confirmLoading
         confirmLoading={s.saving}
         onCancel={() => setPendingJump(null)}
-        onOk={() => {
-          const jump = pendingJump;
-          if (!jump) return;
-          void s.saveGroup(state.activeTab).then((r) => {
-            if ((r as { ok: boolean }).ok) {
+        // 2026-10-11 01:35 小欧 - 三键（原两键缺一条路，北京老陈："我不想保存，要切走，怎么办？"）
+        //   改前只有「保存并切换」/「留在本页」：用户想**不保存直接切走**时无路可走，
+        //   只能先保存或被迫留在本页 → 功能缺口（非视觉问题）。
+        //   现三键覆盖三种意图，且危险度递减排列：
+        //     留在本页（次要，= 关闭弹窗，改动保留）
+        //     放弃修改并切换（默认键但 danger，明确告知会丢弃）
+        //     保存并切换（primary，= 主动作）
+        //   走 footer 数组而非 ok/cancel 两键，SettingsModal 已支持 footer 直传。
+        footer={[
+          <Button key="stay" onClick={() => setPendingJump(null)}>
+            留在本页
+          </Button>,
+          <Button
+            key="discard"
+            danger
+            onClick={() => {
+              const jump = pendingJump;
+              setPendingJump(null);
+              // 放弃当前组未保存改动：load(reset) 清 dirtyKeys/values 回基线，与 SettingsPage 其它复位同源
+              s.load({ reset: true });
+              if (!jump) return;
               s.setActiveTab(jump.tab);
               if (jump.key) {
                 s.setHighlightKey(jump.key);
                 scrollToKey(jump.key);
               }
-              // 修正(2026-09-21 小强)：确认保存成功后滚动到待跳锚点（添加 Provider 引导场景）（[设置页UI审计] 问题11）
               if (jump.anchor)
                 requestAnimationFrame(() => scrollTo(jump.anchor as string));
-            }
-            setPendingJump(null);
-          });
-        }}
-        okText="保存并切换"
-        cancelText="留在本页"
+            }}
+          >
+            放弃修改并切换
+          </Button>,
+          <Button key="save" type="primary" loading={s.saving} onClick={() => {
+            const jump = pendingJump;
+            if (!jump) return;
+            void s.saveGroup(state.activeTab).then((r) => {
+              if ((r as { ok: boolean }).ok) {
+                s.setActiveTab(jump.tab);
+                if (jump.key) {
+                  s.setHighlightKey(jump.key);
+                  scrollToKey(jump.key);
+                }
+                if (jump.anchor)
+                  requestAnimationFrame(() => scrollTo(jump.anchor as string));
+              }
+              setPendingJump(null);
+            });
+          }}>
+            保存并切换
+          </Button>,
+        ]}
       >
-        {/* 2026-10-10 22:15 小欧 - 视觉优化（问题#18）：原文案把两个按钮名用「」引号复述一遍，
-            而按钮就在正下方，属于重复表达；且拦截弹窗无任何警示信号。改为"两条后果各一行"，
-            按钮名由按钮自己承载，文案只说后果。保留原有"修改不会丢失"的准确语义
-            （修正2026-09-21 小强：文案与行为对齐，[设置页UI审计] 问题4）。 */}
+        {/* 2026-10-11 01:35 小欧 - 文案随之改三行，与三个按钮一一对应（按钮名由按钮承载，
+            正文只讲后果，避免复述）。保留"修改不会丢失"的准确语义
+            （修正2026-09-21 小强，[设置页UI审计] 问题4）。 */}
         <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
           当前组有未保存的修改：
           <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
-            <li>保存后跳转到目标页</li>
-            <li>留在本页则修改会保留，不会丢失</li>
+            <li>保存并切换：－改动写入配置文件后跳转</li>
+            <li>放弃修改并切换：－本次改动丢弃、不可恢复，直接跳转</li>
+            <li>留在本页：－改动保留不丢，弹窗关闭</li>
           </ul>
         </div>
       </SettingsModal>
