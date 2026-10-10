@@ -12,27 +12,27 @@
  * @update 2026-04-12 添加路由懒加载 - by 小强
  * @update 2026-06-09 删除未使用的SecurityProvider - by 小沈
  */
-
-import React, { Suspense, lazy } from 'react';
+// 编辑历史: 2026-08-28 小欧 - 挂载AntdAppBridge桥接antd<App>上下文message/notification实例 - 小欧-2026-08-28
 // 编辑历史: 2026-09-09 小欧 - 根挂 ErrorBoundary 包住 RouterContent: 渲染期异常(含 dev HMR hook 变更崩溃)
 //   从整页白屏降级为 Result 提示 + 一键刷新 — 小欧-2026-09-09
+// 编辑历史: 2026-09-21 小欧 - 旧设置页(pages/Settings=settings1版)整体退休: 移除 /settings 路由与懒加载, 唯一入口为 /settings2(settings2版)
+// 编辑历史: 2026-09-26 小欧 - 实施: 引入登录页（访问口令输入）
+// 编辑历史: 2026-09-26 小欧 - 实施: 新增 /login 路由（输入访问口令）。
+import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
 // 2026-09-30 小欧 [63]7.x - 引入 readStoredSessionId: 菜单「对话任务」回跳当前会话的 storage 读出口 — 小欧-2026-09-30
 import { readStoredSessionId } from './utils/sessionStorage';
 import ChatPage from './pages/ChatPage';
 import { AppProvider } from './contexts/AppContext';
-// 编辑历史: 2026-08-28 小欧 - 挂载AntdAppBridge桥接antd<App>上下文message/notification实例 - 小欧-2026-08-28
 import { AntdAppBridge } from './lib/antd/bridge';
 // 2026-09-09 小欧: 应用级错误边界(渲染异常白屏兜底)
 import { ErrorBoundary } from './components/ErrorBoundary';
-// 编辑历史: 2026-09-26 小欧 - 实施: 引入登录页（访问口令输入）
 import LoginPage from './pages/LoginPage';
 
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));
 const Settings2 = lazy(() => import('./pages/Settings2')); // 2026-09-20 小强 - 设置2版（6 Tab + 模型管理）
-// 编辑历史: 2026-09-21 小欧 - 旧设置页(pages/Settings=settings1版)整体退休: 移除 /settings 路由与懒加载, 唯一入口为 /settings2(settings2版)
 
 // 懒加载加载中组件
 const LazyLoadingFallback: React.FC = () => (
@@ -61,7 +61,6 @@ const LazyLoadingFallback: React.FC = () => (
 const RouterContent: React.FC = () => {
   const location = useLocation();
 
-  // 编辑历史: 2026-09-26 小欧 - 实施: 新增 /login 路由（输入访问口令）。
   //   登录页**不进 AppLayout**（无侧边栏/顶栏），避免未鉴权用户看到界面骨架。
   //   逻辑: 未登录访问任意页 → 401 拦截器跳 /login；已登录正常进入。
   // @update 2026-09-26 设计稿: 新增 /login 路由 — by 小欧

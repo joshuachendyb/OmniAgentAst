@@ -104,14 +104,14 @@
 // 编辑历史: 2026-10-08 小欧 北京老陈裁定"不能误导用户"(与 ContextOverviewCard 同批): contextOverview 帧
 //   解析改 compressed/compress_saved_pct 两字段, 删 injected_ratio —— 该值>1 才代表压缩生效但标签叫"压缩比"
 //   方向相反, 且未压缩时≠1.0(装入含 system+本轮提问), 会让用户误读。
+// 编辑历史: 2026-10-10 小欧[20]  history_context: contextOverview 改整→
+//   原样透出(原白名单重建只留少数 → 会静默丢字段并逼出下游形状兼容); 裁剪读法改走 utils/contextFrame;
+//   「steps 门补 hasSummary — 「summary 只在 step==0 首帧写入而该帧 conv.truncated=false, 「if(trimmed)
+//   把唯一携带 summary 的帧挡在 steps 外 → 致压缩事件永不产出」
+// 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(禁在本文件重判形状)
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
-// 编辑历史: 2026-10-10 小欧[20]  history_context: contextOverview 改整帧
-//   原样透出(原白名单重建只留少数键, 会静默丢字段并逼出下游形状兼容); 裁剪读法改走 utils/contextFrame;
-//   入 steps 门补 hasSummary —— summary 只在 step==0 首帧写入而该帧 conv.truncated=false, 原 if(trimmed)
-//   把唯一携带 summary 的帧挡在 steps 外, 致压缩事件永不产生
-// 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(禁在本文件重判形状)
 import { pickConv, pickInject } from '@/utils/contextFrame';
 
 // 2026-09-12 小欧 修复: normalizeIsReasoning/normalizeAutoConfirm同名同体, 合并为单一 normalizeBoolean(DRY) — 小欧-2026-09-12

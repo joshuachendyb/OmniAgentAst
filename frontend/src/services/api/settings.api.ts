@@ -5,9 +5,12 @@
 // 2026-09-27 小欧 - getTokenStatus 返回类型同步后端（删 3 个死字段、补 2 个按来源结论）、
 //   增 config 参数区分入口查询（_skipAuth）与验真查询、_skip401 恒真（config 在前 AUTH_REQ 在后）、
 //   setToken 包 try/catch 区分"服务端已保存、浏览器没记住"
+// 编辑历史: 2026-09-26 小欧 - 鉴权C04: 改口令成功后需同步内存 token，否则下一请求带旧口令返 401 踢出 — 小欧-2026-09-26
+// 编辑历史: 2026-10-06 小欧 - 新增 SecurityDocsResponse + getSecurityDocs: 安全Tab说明文案三段
+//   (均已由后端插值真实路径, 前端零字符串逻辑)。刻意不并入 getAll — 那边返可配置项的,
+//   混一起前端分不清哪个能改) — 小欧-2026-10-06
 import api from './client';
 import type { ApiRequestConfig } from './client';
-// 2026-09-26 小欧 - 修 C04: 改口令成功后需同步内存 token，否则下一请求带旧口令被 401 踢出 — 小欧-2026-09-26
 import { setAccessToken } from './client';
 
 /** 2026-09-26 - 小沈(三遍复核): auth 通道的 401 是"口令不对"这一正常分支，一律不触发全局跳登录页 */
@@ -119,9 +122,6 @@ export interface SettingsUpdateResult {
   mtime: number;
 }
 
-// 编辑历史: 2026-10-06 小欧 - 新增 SecurityDocsResponse + getSecurityDocs: 安全Tab说明文案三段
-//   (均已由后端插值真实路径, 前端零字符串逻辑)。刻意不并入 getAll —— 那边返可配置项的值,
-//   混一起前端分不清哪个能改。 — 小欧-2026-10-06
 export interface SecurityDocsResponse {
   /** 弹框1「安全策略说明」: 5 组 22 条 */
   policy: string;

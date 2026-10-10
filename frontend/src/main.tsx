@@ -1,9 +1,3 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import { App as AntdApp, ConfigProvider } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
-// 【小强 2026-04-21】引入 antd v5 重置样式，统一浏览器默认样式差异
-import 'antd/dist/reset.css';
 // 编辑历史: 2026-08-28 小欧 - 包裹antd<App>使message/notification消费ConfigProvider主题上下文, 根治toast显示异常/不可点击 - 小欧-2026-08-28
 // 编辑历史: 2026-09-15 小欧 - 全站Tooltip白底浅卡片统一(北京老陈令, 效果最佳标准):
 //   页面整体为白底浅色体系, AntD默认黑底黑块突兀且灰字对黑底对比度仅1.9:1不可读;
@@ -12,6 +6,12 @@ import 'antd/dist/reset.css';
 //   【三堂会审修正】箭头背景由antd ::before + --antd-arrow-background-color变量自动继承colorBgSpotlight,
 //   白底shadow/radius走antd自带boxShadowSecondary+tooltipBorderRadius, 无需index.css任何覆盖(YAGNI/DRY) — 小欧-2026-09-15
 // 编辑历史: 2026-09-29 21:37:55 小欧 - [63] 5.3: main.tsx 注入 setTransportConfig(baseURL)（render 前模块级一次）— 小欧-2026-09-29 21:37:55
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import { App as AntdApp, ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+// 【小强 2026-04-21】引入 antd v5 重置样式，统一浏览器默认样式差异
+import 'antd/dist/reset.css';
 import App from './App';
 import './index.css';
 // [63] 5.3：SSE 传输层连接参数模块级注入一次（替代 useSSE 的 React 入参；React render 前注入）。
