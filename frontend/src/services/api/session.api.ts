@@ -6,6 +6,7 @@
 //   随会话加载主路径下发, 前端唯一读取点); getSessionMessages 映射处补值(缺省 false)。不新增 setSessionLink
 //   ——值随消息落库, PATCH 端点前端零调用方, 按 YAGNI 不引入 — 小欧-2026-10-03
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.1: 新增 getWorkspaces(读会话目录, 含 project_root/allowed_dirs 只读字段) + patchWorkspaces(全量覆盖写, [] = 清空)
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';

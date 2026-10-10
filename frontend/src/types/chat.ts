@@ -9,6 +9,7 @@
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StatusValue/StatusMessage的cancelled分支与isStatusMessage的cancelled判断(取消收尾单一由final+cancelled承担)
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.6: HistoryLoadResult 补 linkEnabled(会话 link 开关镜像);
 //   ChatRequest 删死字段 context_link_mode(后端 5.7.9 已删该请求字段) 并补 link_enabled(随消息携带的新契约字段) — 小欧-2026-10-03
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.2/§3.6.6: 新增 WorkspaceEntry / UnusableEntry / WorkspacesResponse 三类型（会话使用的目录；不进 SendOpts，前端不携带只调 GET/PATCH）
 /**
  * 流式API响应类型定义
  *

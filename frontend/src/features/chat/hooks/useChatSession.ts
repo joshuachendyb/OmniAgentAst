@@ -25,6 +25,9 @@
 //   ② 删 onRenderStart/onRenderEnd(接口+解构+4 调用点): 唯一写位 isRenderingMessages 生产零读取,
 //      删后成空壳, 按 2026-09-30 删 onMessageListLoadingStart 同例整链删;
 //   ③ 场景2 缓存恢复分支补调 onMessageListLoadingEnd 时同步去掉已删的 onRenderEnd — 小欧-2026-10-08
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.4: 新增单点 useEffect 跟随 sessionId 重拉会话使用目录
+//   (偏离原设计"在 applySessionState 逐调用点塞 GET"——实读该函数有 10+ 调用点, 逐点塞必漏;
+//    改单点覆盖切换/新建/复位/清空, 天然带竞态守卫; 失败置空不断链)
 /**
  * useChatSession Hook - 会话生命周期管理
  *

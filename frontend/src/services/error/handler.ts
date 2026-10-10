@@ -18,6 +18,8 @@
 // 2026-10-05 小欧 - 超时文案人话化(C方案, 老陈裁定): axios默认超时消息"timeout of 60000ms exceeded"
 //   是完整英文句, 不被sanitize纯数字拦, 直接弹给用户看不懂 —— 在sanitizeDisplayMessage内将其
 //   及同类超时文案改写成"后端响应超时，请重试"。不修根本根因(axios超时仍是超时), 只解决展示 — 小欧-2026-10-05
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.7: 新增 ErrorType.WORKSPACE_REJECTED + ERROR_CONFIG_MAP 条目(severity=warning)
+  //   + classifyError 显式提取分支(422 信封体里无 error_type，自映射走不到，须按 error.workspace_rejected 特征识别)
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *

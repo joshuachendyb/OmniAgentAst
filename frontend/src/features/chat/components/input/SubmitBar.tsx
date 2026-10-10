@@ -3,6 +3,8 @@
 // 编辑历史: 2026-08-28 小欧 - ①A/a2: 新增leftExtra插槽(指令+续聊), 左侧序leftExtra/modelPicker/附件, 去marginTop4, gap8节奏
 // 编辑历史: 2026-10-06 小欧 - 北京老陈指令: 附件区调用点补 visible(不再隐藏) + disabled(置灰占位)，
 //   上传功能仍暂缓（AttachmentArea 内 beforeUpload 照旧拦），此处仅改渲染参数不改左插槽顺序 — 小欧-2026-10-06
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5: Props 补 workspaceCount/onOpenWorkspaces;
+//   插话开关之后、发送按钮之前(决策70)加「会话事务空间」入口, antd Badge count 现算(0 自动隐藏) — 小欧-2026-10-10
 /**
  * SubmitBar - 底部功能行：模型按钮(ModelPicker) + 附件 + 发送/停止 + 暂停·继续
  *

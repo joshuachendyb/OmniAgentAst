@@ -6,6 +6,9 @@
 //   onToggleLink(真源寄存 useChatState); onSend 第二参由 contextLinkMode 改 linkEnabled: boolean;
 //   删发送后 setLinked(false)(违背用户意图的根因行), draft 回补保留 — 小欧 2026-10-03
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门判据抽 utils/sendGate 单一真源(原裸 loading 挡死开态插话), disabled 与发送门共用
+// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5/§3.6.6: Props 补 sessionWorkspaces/setSessionWorkspaces;
+//   挂载 SessionWorkspacePanel(wsPanelOpen 受控); 传 SubmitBar 的 workspaceCount(现算)与 onOpenWorkspaces
+//   (无会话时不传 → SubmitBar 不渲染入口, GET 空 id 必 422 干脆不显示); 关闭面板时重拉一次同步徽标(失败静默) — 小欧-2026-10-10
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
