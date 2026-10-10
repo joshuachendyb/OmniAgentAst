@@ -1,11 +1,15 @@
 // 编辑历史: 2026-09-21 小欧 - 新建：更换模型独立弹框（通用区"更换模型 →"按钮触发）
-// 编辑历史: 2026-10-10 小欧 - 弹窗归一：Modal → SettingsModal 标准壳（form=520 宽度档、discard
-//   关闭语义、confirmLoading）；补防连发（切模型期间锁提交），业务逻辑与文案未改。
-//   实测：宽 520 / ESC 可关 / 主键「确认更换」，符合设计。
+// 编辑历史: 2026-10-10 小欧 - 弹窗归一 + 防连发：补 busy 态（切换模型要发 HTTP，原无防连发，
+//   连点两下=发两次请求），失败不关窗（父级已弹错），成功由父级关。
+// 2026-10-10 22:15 小欧 - 更正上一条不实记录并真正迁移：前次归一批次里，本文件被标为"已迁 SettingsModal"
+//   并补了对应历史条目，但实际代码仍是裸 antd <Modal>（import { Modal }），归一未发生。
+//   本次真正迁移到 SettingsModal，并落实视觉优化问题#17（见下）。
+//   视觉优化#17：「当前生效 provider / model」是本次操作的影响预告（当前值 → 将变更），
+//   原为裸灰字，与表单字段同权重，关键信息读不出来。改 ModalSection 容器 + CodeChip 键名。
 import React, { useEffect, useState } from 'react';
-import { Form, Modal, Select } from 'antd';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
-import { settingsModalWidth } from '@/theme/settingsTokens';
+import { Form, Select } from 'antd';
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { SettingsModal, ModalSection, CodeChip } from '@/theme/SettingsModal';
 import type { ProviderEntry } from '@/services/api/model.api';
 
 interface Props {
@@ -42,17 +46,12 @@ export const ModelSwitchModal: React.FC<Props> = ({
     providers.find((p) => p.name === selProvider)?.models ?? [];
 
   return (
-    <Modal
+    <SettingsModal
       open={open}
-      title={
-        <span
-          style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-        >
-          更换当前系统全局使用模型
-        </span>
-      }
-      width={settingsModalWidth.form}
-      destroyOnHidden
+      title="更换当前系统全局使用模型"
+      description="选择新的 Provider 和模型，确认后立即生效"
+      width="form"
+      confirmLoading={busy}
       onCancel={onCancel}
       onOk={async () => {
         if (busy) return;
@@ -63,19 +62,9 @@ export const ModelSwitchModal: React.FC<Props> = ({
           setBusy(false);
         }
       }}
-      confirmLoading={busy}
       okText="确认更换"
       cancelText="取消"
     >
-      <div
-        style={{
-          fontSize: FontSize.SECONDARY,
-          color: Colors.TEXT.SECONDARY,
-          marginBottom: Spacing.LG,
-        }}
-      >
-        选择新的 Provider 和模型，确认后立即生效
-      </div>
       <Form layout="vertical">
         <Form.Item label="Provider" required>
           <Select
@@ -92,7 +81,7 @@ export const ModelSwitchModal: React.FC<Props> = ({
             ))}
           </Select>
         </Form.Item>
-        <Form.Item label="模型" required>
+        <Form.Item label="模型" required style={{ marginBottom: 0 }}>
           <Select value={selModel || undefined} onChange={setSelModel}>
             {providerModels.map((m) => (
               <Select.Option key={m.name} value={m.name}>
@@ -102,11 +91,18 @@ export const ModelSwitchModal: React.FC<Props> = ({
           </Select>
         </Form.Item>
       </Form>
-      <div
-        style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+      {/* 变更影响预告：容器化 + 键名等宽（问题#17） */}
+      <ModalSection
+        title="当前生效"
+        hint="确认后将切换为"
+        style={{ marginTop: Spacing.LG }}
       >
-        当前生效：{currentProvider} / {currentModel}
-      </div>
-    </Modal>
+        <div style={{ display: 'flex', gap: Spacing.SM, flexWrap: 'wrap' }}>
+          <CodeChip>{currentProvider}</CodeChip>
+          <span style={{ color: Colors.TEXT.TERTIARY }}>/</span>
+          <CodeChip>{currentModel}</CodeChip>
+        </div>
+      </ModalSection>
+    </SettingsModal>
   );
 };

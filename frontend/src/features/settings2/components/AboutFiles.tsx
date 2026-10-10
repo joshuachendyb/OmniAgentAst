@@ -21,6 +21,11 @@
 // 2026-10-10 小欧 - 弹窗归一：Modal → SettingsModal 标准壳。只读弹窗语义（display=800 宽度档、
 //   关闭语义 ignore——遮罩/ESC 不关闭、只能点按钮关）；壳只统一标准行为，业务排版与行号正文样式原样保留。
 //   实测：宽 800 / 遮罩不关 / ESC 不关 / 点主键才关，符合设计。
+// 2026-10-10 北京老陈裁定 - 【定案，后续勿再翻】：配置文件全文含 api_key 等敏感项**明文直出**属预期行为，
+//   不做掩码、不做脱敏、不做折叠。本弹窗是「自己看自己配置」的运维自检入口，只在已登录的本机页面
+//   手动打开、非 URL 可直达、无后台定时推送/分享链路，与「列表里给旁人看的字段」是两类不同场景。
+//   （此前小欧按"通用安全直觉"把它列为 P0 提报，属误判，已撤回。）
+//   ⚠ 后续任何人再以此理由建议加掩码，先读这条，按"已裁定"处理，不要重开讨论 — 小欧-2026-10-10
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Spin } from 'antd';
 import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
@@ -31,9 +36,9 @@ import {
   FontSize,
   FontWeight,
   Spacing,
-  Radius as Radius_SM,
 } from '@/utils/stepStyles';
-import { settingsRadius, settingsModalWidth } from '@/theme/settingsTokens';
+// 2026-10-10 22:15 小欧 - 随「只读」badge 删除，同步清 Radius_SM / settingsModalWidth 两个失效 import
+import { settingsRadius } from '@/theme/settingsTokens';
 import { showSuccess } from '@/services/error/handler';
 import { CopyIcon } from './icons';
 
@@ -181,16 +186,20 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
         width="display"
         closeBehavior="ignore"
         onCancel={close}
+        // 2026-10-10 22:15 小欧 - 视觉优化（问题#15）：只读窗的**主动作是「复制」不是「关闭」——
+        //   用户打开文件预览九成是为了拿走内容，原实现把蓝色主键给「关闭」，「复制」退化成灰键，
+        //   主次颠倒。改为「复制」primary、「关闭」default。
         footer={[
           <Button
             key="copy"
+            type="primary"
             icon={<CopyIcon />}
             onClick={copyAll}
             disabled={!content}
           >
             复制{docName}
           </Button>,
-          <Button key="close" type="primary" onClick={close}>
+          <Button key="close" onClick={close}>
             关闭
           </Button>,
         ]}
@@ -238,16 +247,17 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
             <span>{formatSize(meta.size)}</span>
             <span>·</span>
             <span>更新 {formatTime(meta.mtime)}</span>
+            {/* 2026-10-10 22:15 小欧 - 视觉优化（问题#14/#16）：删「只读」badge（整窗就是只读的，
+                右挂标签零信息量还占位）；补「共 N 行 · 可滚动」溢出提示（原 321 行内容被裁到
+                ~20 行，底部无任何可滚动提示，用户以为文件就这么长）。 */}
             <span
               style={{
                 marginLeft: 'auto',
-                padding: `0 ${Spacing.SM}px`,
-                borderRadius: Radius_SM.SM,
-                background: Colors.BG.SECONDARY,
-                fontSize: FontSize.SECONDARY,
+                fontSize: FontSize.SMALL,
+                color: Colors.TEXT.TERTIARY,
               }}
             >
-              只读
+              可滚动查看全部 {meta.lines} 行
             </span>
           </div>
         )}

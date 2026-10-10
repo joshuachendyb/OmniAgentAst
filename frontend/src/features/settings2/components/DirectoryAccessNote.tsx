@@ -12,10 +12,13 @@
 //   #9 外层 div 的 color/fontSize 被 MarkdownText 内部每个元素的样式覆盖, 是死代码 → 删掉。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-10 小欧 - 点按钮即后台重取: 弹框用存量秒开(手感不变), 新文案到了自动刷新;
 //   取失败只走左上 Alert 原有位, 不挡弹框。 — 小欧-2026-10-10 11:00:40
+// 2026-10-10 22:15 小欧 - 两个说明弹框归一到 SettingsModal 标准壳（此前是裸 antd Modal，归一批次漏掉）。
+//   行为零变更：壳默认 discard 关闭语义 + destroyOnHidden，与原裸 Modal 的默认值完全一致；
+//   宽度仍走 settingsModalWidth.display 令牌，footer={null}（只读说明，无操作键）保持。
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Modal, Spin } from 'antd';
+import { Alert, Button, Spin } from 'antd';
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
-import { settingsModalWidth } from '@/theme/settingsTokens';
+import { SettingsModal } from '@/theme/SettingsModal';
 import {
   settingsApi,
   type SecurityDocsResponse,
@@ -92,17 +95,16 @@ export function DirectoryAccessNote() {
         ))}
       </div>
 
-      <Modal
+      <SettingsModal
         open={openKey !== null}
         title={current.title}
-        width={settingsModalWidth.display}
+        width="display"
         onCancel={close}
         footer={null}
-        destroyOnHidden
-        styles={{ body: { maxHeight: '78vh', overflow: 'auto' } }}
+        bodyMaxHeight="78vh"
       >
         {docs && <MarkdownSlot text={docs[current.key]} markdown />}
-      </Modal>
+      </SettingsModal>
     </div>
   );
 }

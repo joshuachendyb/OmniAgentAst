@@ -55,12 +55,27 @@ import {
   Switch,
   Typography,
 } from 'antd';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'; // 2026-10-10 小欧: 模型增删行图标
-import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 3个弹窗归一到底壳
+import {
+  DeleteOutlined,
+  ExclamationCircleFilled,
+  PlusOutlined,
+} from '@ant-design/icons'; // 2026-10-10 小欧: 模型增删行图标; 22:15 删除确认 emoji⚠ 换矢量图标
+import { SettingsModal, ModalSection, CodeChip } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 3个弹窗归一到底壳; 22:15 补 ModalSection/CodeChip
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
 import { PARAM_PRESETS } from '../utils/modelUtils';
+
+/**
+ * 2026-10-10 22:15 小欧 - 模板区分组顺序：枚举 → 数值/文本 → 开关。
+ * 枚举最需选值排最前，开关只勾选无值排最后；顺序即"操作密度"从高到低。
+ * 三组互斥且并集覆盖全部候选 key（判定见 collectDefaultVal/collectOpts），无第四组。
+ */
+const PARAM_GROUPS = [
+  { kind: 'enum', label: '枚举参数（可多选）' },
+  { kind: 'value', label: '数值 / 文本参数' },
+  { kind: 'bool', label: '开关参数' },
+] as const;
 
 interface Props {
   providers: ProviderEntry[];
@@ -205,6 +220,101 @@ export const ModelModals: React.FC<Props> = (props) => {
     if (!checked[key]) return;
     setCollected((c) => ({ ...c, params: { ...c.params, [key]: value } }));
   };
+
+  // 2026-10-10 22:15 小欧 - DRY：模板区取值/勾选/控件分派三件事从内联 map 抽成函数。
+  //   内联版既难读，也让"按类型分组"无从下手（分组判定与渲染耦合在一处），抽出后 map 只负责排版。
+  const collectOpts = (key: string): string[] | undefined => {
+    const preset = PARAM_PRESETS.find((p) => p.key === key);
+    return sibModels[0]?.param_options?.[key] ?? preset?.options;
+  };
+
+  const collectDefaultVal = (key: string): unknown => {
+    const preset = PARAM_PRESETS.find((p) => p.key === key);
+    return (
+      collected.params[key] ?? sibModels[0]?.default_params?.[key] ?? preset?.default
+    );
+  };
+
+  const toggleParam = (key: string, next: boolean) => {
+    const opts = collectOpts(key);
+    const dv = collectDefaultVal(key);
+    setChecked((c) => ({ ...c, [key]: next }));
+    setCollected((c) => {
+      const params = { ...c.params };
+      const options = { ...c.options };
+      if (next) {
+        // 勾选即带入当前默认值（不含则保持未送）
+        if (dv !== undefined) params[key] = dv;
+        // 兄弟有枚举则一并带入新模型（回显下拉）
+        if (opts) options[key] = opts;
+      } else {
+        delete params[key];
+        delete options[key];
+      }
+      return { params, options };
+    });
+  };
+
+  /** 模板行：标签改CodeChip 等宽（机器键名不该和中文说明同字体），三列定宽对齐 */
+  const renderParamRow = (key: string) => {
+    const opts = collectOpts(key);
+    const defaultVal = collectDefaultVal(key);
+    // 布尔判定一次求值：兄弟模型旧数据可能是字符串 "true"（与布尔同义，显示不错位）
+    const isBoolVal =
+      typeof defaultVal === 'boolean' ||
+      defaultVal === 'true' ||
+      defaultVal === 'false';
+    return (
+      <div
+        key={key}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: Spacing.MD,
+          marginBottom: Spacing.SM,
+        }}
+      >
+        <Checkbox
+          checked={!!checked[key]}
+          onChange={(e) => toggleParam(key, e.target.checked)}
+        >
+          <span style={{ display: 'inline-block', width: 176 }}>
+            <CodeChip>{key}</CodeChip>
+          </span>
+        </Checkbox>
+        {opts ? (
+          <Select
+            value={
+              typeof defaultVal === 'string'
+                ? defaultVal
+                : String(defaultVal ?? '')
+            }
+            options={opts.map((v) => ({ label: v, value: v }))}
+            style={{ width: settingsControl.selectWidth }}
+            onChange={(v) => updateCollectedParam(key, v)}
+          />
+        ) : typeof defaultVal === 'number' ? (
+          <InputNumber
+            value={defaultVal as number}
+            style={{ width: settingsControl.inputNumberWidth }}
+            onChange={(v) => updateCollectedParam(key, v)}
+          />
+        ) : isBoolVal ? (
+          <Switch
+            checked={defaultVal === true || defaultVal === 'true'}
+            onChange={(v) => updateCollectedParam(key, v)}
+          />
+        ) : (
+          <Input
+            value={String(defaultVal ?? '')}
+            style={{ width: settingsControl.inputWidth }}
+            onChange={(e) => updateCollectedParam(key, e.target.value)}
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
       <SettingsModal
@@ -250,105 +360,48 @@ export const ModelModals: React.FC<Props> = (props) => {
               </Form.Item>
             </Col>
           </Row>
-          {/* 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集 */}
+          {/* 参数模板：勾选即带入，候选=兄弟模型 default_params ∪ param_options key 并集
+              2026-10-10 22:15 小欧 - 视觉优化：①裸排的11 行套 ModalSection 弱容器，与必填表单分层
+              （原为一行灰字浮在表单下，11 行 checkbox+input 连成一片"墙"，看不出这是可选区）；
+              ②按 枚举/数值/开关 三类分组（用户能按类型定位，不再逐行扫）；
+              ③行内键名改等宽 chip，机器标识符与中文说明一眼可分。 */}
           {candKeys.length > 0 && (
-            <div
-              style={{
-                borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
-                paddingTop: Spacing.MD,
-                marginTop: Spacing.MD,
-              }}
+            <ModalSection
+              title="参数模板"
+              hint="勾选即带入新模型，不勾则不写入"
+              style={{ marginTop: Spacing.MD }}
             >
-              <div
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.SECONDARY,
-                  marginBottom: Spacing.MD,
-                }}
-              >
-                参数模板（勾选即带入新模型）
-              </div>
-              {candKeys.map((key) => {
-                const preset = PARAM_PRESETS.find((p) => p.key === key);
-                const opts =
-                  sibModels[0]?.param_options?.[key] ?? preset?.options;
-                const siblingValue = sibModels[0]?.default_params?.[key];
-                const defaultVal =
-                  collected.params[key] ?? siblingValue ?? preset?.default;
-                // 布尔判定一次求值：兄弟模型旧数据可能是字符串 "true"（与布尔同义，显示不错位）
-                const isBoolVal =
-                  typeof defaultVal === 'boolean' ||
-                  defaultVal === 'true' ||
-                  defaultVal === 'false';
+              {PARAM_GROUPS.map((grp) => {
+                const keys = candKeys.filter((key) => {
+                  const preset = PARAM_PRESETS.find((p) => p.key === key);
+                  const opts =
+                    sibModels[0]?.param_options?.[key] ?? preset?.options;
+                  const dv = collectDefaultVal(key);
+                  if (grp.kind === 'enum') return !!opts;
+                  if (grp.kind === 'bool')
+                    return (
+                      !opts &&
+                      (typeof dv === 'boolean' || dv === 'true' || dv === 'false')
+                    );
+                  return !opts && typeof dv !== 'boolean';
+                });
+                if (!keys.length) return null;
                 return (
-                  <div
-                    key={key}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: Spacing.MD,
-                      marginBottom: Spacing.SM,
-                    }}
-                  >
-                    <Checkbox
-                      checked={!!checked[key]}
-                      onChange={(e) => {
-                        const next = { ...checked, [key]: e.target.checked };
-                        setChecked(next);
-                        const params = { ...collected.params };
-                        const options = { ...collected.options };
-                        if (e.target.checked) {
-                          // 勾选即带入当前默认值（不含则保持未送）
-                          if (defaultVal !== undefined)
-                            params[key] = defaultVal;
-                          // 兄弟有枚举则一并带入新模型（回显下拉）
-                          if (opts) options[key] = opts;
-                        } else {
-                          delete params[key];
-                          delete options[key];
-                        }
-                        setCollected({ ...collected, params, options });
+                  <div key={grp.kind} style={{ marginBottom: Spacing.MD }}>
+                    <div
+                      style={{
+                        fontSize: FontSize.CAPTION,
+                        color: Colors.TEXT.TERTIARY,
+                        marginBottom: Spacing.SM,
                       }}
                     >
-                      <span style={{ display: 'inline-block', width: 180 }}>
-                        {key}
-                      </span>
-                    </Checkbox>
-                    {opts ? (
-                      <Select
-                        value={
-                          typeof defaultVal === 'string'
-                            ? defaultVal
-                            : String(defaultVal ?? '')
-                        }
-                        options={opts.map((v) => ({ label: v, value: v }))}
-                        style={{ width: settingsControl.selectWidth }}
-                        onChange={(v) => updateCollectedParam(key, v)}
-                      />
-                    ) : typeof defaultVal === 'number' ? (
-                      <InputNumber
-                        value={defaultVal as number}
-                        style={{ width: settingsControl.inputNumberWidth }}
-                        onChange={(v) => updateCollectedParam(key, v)}
-                      />
-                    ) : isBoolVal ? (
-                      <Switch
-                        checked={defaultVal === true || defaultVal === 'true'}
-                        onChange={(v) => updateCollectedParam(key, v)}
-                      />
-                    ) : (
-                      <Input
-                        value={String(defaultVal ?? '')}
-                        style={{ width: settingsControl.inputWidth }}
-                        onChange={(e) =>
-                          updateCollectedParam(key, e.target.value)
-                        }
-                      />
-                    )}
+                      {grp.label}
+                    </div>
+                    {keys.map(renderParamRow)}
                   </div>
                 );
               })}
-            </div>
+            </ModalSection>
           )}
         </Form>
       </SettingsModal>
@@ -380,98 +433,111 @@ export const ModelModals: React.FC<Props> = (props) => {
           创建后可在③Provider配置区修改 API Key / API 地址
         </div>
         <Form form={pForm} layout="vertical">
-          {/* 2026-10-10 小欧 - 名称/显示名并排一行（同款 Row/Col，弹窗纵向太稀疏） */}
-          <Row gutter={Spacing.MD}>
-            <Col span={12}>
-              <Form.Item
-                name="name"
-                label="名称"
-                style={{ marginBottom: Spacing.LG }}
-                rules={[{ required: true, message: '请输入名称' }]}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="label"
-                label="显示名"
-                style={{ marginBottom: Spacing.LG }}
-              >
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item
-            name="api_base"
-            label="API 地址"
-            // 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
-            // 无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
-            rules={[
-              { required: true, message: '请输入 API 地址' },
-              {
-                validator: (_rule, value: string) =>
-                  value && value.trim() === ''
-                    ? Promise.reject(new Error('API 地址不能为空白'))
-                    : Promise.resolve(),
-              },
-            ]}
-            style={{ marginBottom: Spacing.LG }}
+          {/* 2026-10-10 22:15 小欧 - 视觉优化：四个语义块套 ModalSection 分区。
+              原为 6 个 Form.Item 平铺，"模型（可选…）"与 timeout 同权重平铺，用户读不出
+              「身份 / 连接 / 性能 / 批量模型」是四件事。分块后层级立刻成立。
+              块内 Form.Item 一律 marginBottom:0（末项）——此前每项都写 marginBottom:Spacing.LG，
+              与 Row 的 gutter 叠加后出现 40/74/74 三种间距（问题#5），现由 ModalSection 内距统一。 */}
+          <ModalSection title="身份" hint="名称即配置文件里的 key，创建后不可改">
+            <Row gutter={Spacing.MD}>
+              <Col span={12}>
+                <Form.Item
+                  name="name"
+                  label="名称"
+                  style={{ marginBottom: 0 }}
+                  rules={[{ required: true, message: '请输入名称' }]}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="label"
+                  label="显示名"
+                  style={{ marginBottom: 0 }}
+                >
+                  <Input />
+                </Form.Item>
+              </Col>
+            </Row>
+          </ModalSection>
+
+          <ModalSection
+            title="连接"
+            style={{ marginTop: Spacing.MD }}
           >
-            <Input placeholder="https://api.deepseek.com" />
-          </Form.Item>
-          <Form.Item
-            name="api_key"
-            label="API Key"
-            style={{ marginBottom: Spacing.LG }}
-          >
-            {/* 2026-10-03 小欧 - 补 autoComplete="new-password"：新增 Provider 时该框必须为空，
-                而 Input.Password 渲染 type="password" 会被 Chrome 密码管理器自动填入已存口令
-                （表现为浅蓝底 + 掩码点，且不察觉直接保存就把浏览器口令写进 config.yaml 当 api_key）。
-                口径与 SecretRevealInput:141 同款 —「新密钥一律不让浏览器自动填充」。 */}
-            <Input.Password
-              placeholder="未配置则留空"
-              autoComplete="new-password"
-            />
-          </Form.Item>
+            {/* 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
+                无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
+                2026-10-10 22:35 小欧 - API 地址/API Key 改并排（原上下排把「批量模型」块
+                顶出可视区，滚动区正好切在输入框中间像坏掉了）。两者都是连接配置，同块同语义。 */}
+            <Row gutter={Spacing.MD}>
+              <Col span={14}>
+                <Form.Item
+                  name="api_base"
+                  label="API 地址"
+                  style={{ marginBottom: 0 }}
+                  rules={[
+                    { required: true, message: '请输入 API 地址' },
+                    {
+                      validator: (_rule, value: string) =>
+                        value && value.trim() === ''
+                          ? Promise.reject(new Error('API 地址不能为空白'))
+                          : Promise.resolve(),
+                    },
+                  ]}
+                >
+                  <Input placeholder="https://api.deepseek.com" />
+                </Form.Item>
+              </Col>
+              <Col span={10}>
+                {/* 2026-10-03 小欧 - 补 autoComplete="new-password"：新增 Provider 时该框必须为空，
+                    而 Input.Password 渲染 type="password" 会被 Chrome 密码管理器自动填入已存口令
+                    （表现为浅蓝底 + 掩码点，且不察觉直接保存就把浏览器口令写进 config.yaml 当 api_key）。
+                    口径与 SecretRevealInput:141 同款 —「新密钥一律不让浏览器自动填充」。 */}
+                <Form.Item name="api_key" label="API Key" style={{ marginBottom: 0 }}>
+                  <Input.Password
+                    placeholder="未配置则留空"
+                    autoComplete="new-password"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+          </ModalSection>
+
           {/* 创建 Provider 可自定义 timeout/max_retries（后端 DTO 默认 60/3，留空走默认）。
-              2026-10-03 小欧 - 两项改并排一行（同款 antd Row/Col，弹窗宽度下纵向浪费一屏）。 */}
-          <Row gutter={Spacing.MD}>
-            <Col span={12}>
-              <Form.Item
-                label="timeout(秒)"
-                name="timeout"
-                style={{ marginBottom: Spacing.LG }}
-              >
-                <InputNumber
-                  min={1}
-                  placeholder="默认60"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="max_retries"
-                name="max_retries"
-                style={{ marginBottom: Spacing.LG }}
-              >
-                <InputNumber
-                  min={0}
-                  placeholder="默认3"
-                  style={{ width: '100%' }}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-          {/* 2026-10-10 小欧 - 底部顺带加模型：输入框 + 按钮攒列表，确定时随 Provider 一并提交。
-              只攒名字（label 与 model 同值）；复杂参数去模型弹窗里配，此处不展开（KISS）。 */}
-          <div
-            style={{ marginBottom: Spacing.SM, fontSize: FontSize.SECONDARY }}
+              2026-10-03 小欧 - 两项改并排一行；22:15 小欧 - 独立成「性能」块。 */}
+          <ModalSection
+            title="性能"
+            hint="留空走默认 60 秒 / 3 次"
+            style={{ marginTop: Spacing.MD }}
           >
-            模型（可选，保存时随 Provider 一并创建）
-          </div>
-          <Space.Compact style={{ width: '100%', marginBottom: Spacing.SM }}>
+            <Row gutter={Spacing.MD}>
+              <Col span={12}>
+                <Form.Item label="timeout(秒)" name="timeout" style={{ marginBottom: 0 }}>
+                  <InputNumber min={1} placeholder="默认60" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label="max_retries"
+                  name="max_retries"
+                  style={{ marginBottom: 0 }}
+                >
+                  <InputNumber min={0} placeholder="默认3" style={{ width: '100%' }} />
+                </Form.Item>
+              </Col>
+            </Row>
+          </ModalSection>
+
+          {/* 2026-10-10 小欧 - 底部顺带加模型：输入框 + 按钮攒列表，确定时随 Provider 一并提交。
+              只攒名字（label 与 model 同值）；复杂参数去模型弹窗里配，此处不展开（KISS）。
+              22:15 小欧 - 独立成「批量模型」块（此前裸奔在 timeout 下方，语义层级缺失）。 */}
+          <ModalSection
+            title="批量模型"
+            hint="可选，保存时随 Provider 一并创建"
+            style={{ marginTop: Spacing.MD }}
+          >
+            <Space.Compact style={{ width: '100%', marginBottom: Spacing.SM }}>
             <Input
               style={{ flex: 1 }}
               placeholder="输入模型名，回车添加"
@@ -529,8 +595,8 @@ export const ModelModals: React.FC<Props> = (props) => {
                       onClick={() =>
                         setNewModels((ps) => ps.filter((x) => x !== m))
                       }
-                      aria-label={`移除${m}`}
-                    />,
+aria-label={`移除${m}`}
+                    />
                   ]}
                 >
                   <Typography.Text style={{ fontSize: FontSize.SECONDARY }}>
@@ -540,22 +606,42 @@ export const ModelModals: React.FC<Props> = (props) => {
               )}
             />
           )}
+          </ModalSection>
         </Form>
       </SettingsModal>
       <SettingsModal
         open={deleteOpen}
         width="confirm"
-        title={`⚠ 确定要删除 "${deleteLabel(deleteTarget)}"？`}
+        // 2026-10-10 22:15 小欧 - 视觉优化（问题#9/#10/#11）：
+        //   ①标题的 deleteLabel(deleteTarget) 是 provider::model 结构化键，原与中文标题同字体，
+        //     读不出是标识符 → 改 CodeChip（tone=danger 红底，破坏性语境更醒目）；
+        //   ②⚠ emoji 换 ExclamationCircleFilled + Colors.ERROR —— emoji 跨平台形态不一
+        //     （Windows 彩色/安卓彩色/Mac 单色），且与 danger 按钮语义重复；
+        //   ③后果文案由单段灰字拆成"逐条列项 + 后果分级"，危险提示不再被淹没在说明里。
+        title={
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <ExclamationCircleFilled style={{ color: Colors.ERROR }} />
+            确定要删除
+            <CodeChip tone="danger">{deleteLabel(deleteTarget)}</CodeChip>
+            ？
+          </span>
+        }
         danger
         onCancel={props.onCloseDelete}
         onOk={() => void props.onConfirmDelete()}
         okText="删除"
         cancelText="取消"
       >
-        <span style={{ color: Colors.TEXT.SECONDARY }}>
-          警告：如果这是当前使用的模型，将自动切换为默认模型；删除 Provider
-          将级联删除其下所有模型！
-        </span>
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+          删除后：
+          <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
+            <li>若它是当前使用的模型，将自动切换到默认模型</li>
+            <li>若是 Provider，将级联删除其下所有模型</li>
+          </ul>
+          <span style={{ color: Colors.TEXT.TERTIARY, fontSize: FontSize.SMALL }}>
+            该操作不可撤销
+          </span>
+        </div>
       </SettingsModal>
     </>
   );

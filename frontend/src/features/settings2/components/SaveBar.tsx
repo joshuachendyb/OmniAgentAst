@@ -16,7 +16,7 @@ import React from 'react';
 import { Button, Modal } from 'antd'; // Modal 仍需：L49 的 Modal.confirm
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsShadow, settingsModalWidth } from '@/theme/settingsTokens';
-import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳
+import { SettingsModal, CodeChip } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳; 22:15 补 CodeChip
 
 interface Props {
   canSaveGroup: boolean;
@@ -110,20 +110,27 @@ export const SaveBar: React.FC<Props> = ({
         open={restartKeys.length > 0}
         width="confirm"
         title="含重启生效项"
+        // 2026-10-10 22:15 小欧 - 视觉优化（问题#12）：键名列表由 <ul> bullet 改 CodeChip 行。
+        //   原为一条 bullet 列表：单条时 bullet 过重，且 sandbox.enabled 这类机器键与中文说明同字体。
         onOk={onCloseRestart}
         onCancel={onCloseRestart}
         okText="知道了"
         cancelButtonProps={{ style: { display: 'none' } }}
       >
-        <div style={{ fontSize: FontSize.SECONDARY }}>
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
           以下改动需重启后端生效：
-          <ul>
-            {restartKeys.map((k) => (
-              <li key={k} style={{ color: Colors.TEXT.SECONDARY }}>
-                {k}
-              </li>
-            ))}
-          </ul>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: Spacing.SM,
+            marginTop: Spacing.MD,
+          }}
+        >
+          {restartKeys.map((k) => (
+            <CodeChip key={k}>{k}</CodeChip>
+          ))}
         </div>
       </SettingsModal>
     </div>

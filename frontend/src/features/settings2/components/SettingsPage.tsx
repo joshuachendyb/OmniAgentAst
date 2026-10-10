@@ -754,13 +754,19 @@ const SettingsPage: React.FC = () => {
           });
         }}
         okText="保存并切换"
-        cancelText="放弃切换"
+        cancelText="留在本页"
       >
-        <span style={{ color: Colors.TEXT.SECONDARY }}>
-          {/* 修正(2026-09-21 小强)：文案与行为对齐——原"修改将丢失"与"保存并切换"自相矛盾，
-              实际是保存后切换/取消则留在本页（修改不丢）（[设置页UI审计] 问题4） */}
-          当前组存在未保存修改：点击「保存并切换」将保存当前修改后跳转；点击「放弃切换」将留在本页，修改不会丢失。
-        </span>
+        {/* 2026-10-10 22:15 小欧 - 视觉优化（问题#18）：原文案把两个按钮名用「」引号复述一遍，
+            而按钮就在正下方，属于重复表达；且拦截弹窗无任何警示信号。改为"两条后果各一行"，
+            按钮名由按钮自己承载，文案只说后果。保留原有"修改不会丢失"的准确语义
+            （修正2026-09-21 小强：文案与行为对齐，[设置页UI审计] 问题4）。 */}
+        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+          当前组有未保存的修改：
+          <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
+            <li>保存后跳转到目标页</li>
+            <li>留在本页则修改会保留，不会丢失</li>
+          </ul>
+        </div>
       </SettingsModal>
     </div>
   );
