@@ -1,4 +1,7 @@
 // 编辑历史: 2026-09-21 小欧 - 新建：更换模型独立弹框（通用区"更换模型 →"按钮触发）
+// 编辑历史: 2026-10-10 小欧 - 弹窗归一：Modal → SettingsModal 标准壳（form=520 宽度档、discard
+//   关闭语义、confirmLoading）；补防连发（切模型期间锁提交），业务逻辑与文案未改。
+//   实测：宽 520 / ESC 可关 / 主键「确认更换」，符合设计。
 import React, { useEffect, useState } from 'react';
 import { Form, Modal, Select } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
@@ -10,7 +13,7 @@ interface Props {
   providers: ProviderEntry[];
   currentProvider: string;
   currentModel: string;
-  onOk: (provider: string, model: string) => void;
+  onOk: (provider: string, model: string) => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -24,6 +27,9 @@ export const ModelSwitchModal: React.FC<Props> = ({
 }) => {
   const [selProvider, setSelProvider] = useState(currentProvider);
   const [selModel, setSelModel] = useState(currentModel);
+  // 2026-10-10 小欧 - 审计修复：切换模型要发 HTTP，弹窗内原无防连发，
+  //   连点两下=发两次请求。补 busy 态，失败不关窗（父级已弹错），成功由父级关。
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -46,8 +52,18 @@ export const ModelSwitchModal: React.FC<Props> = ({
         </span>
       }
       width={settingsModalWidth.form}
+      destroyOnHidden
       onCancel={onCancel}
-      onOk={() => onOk(selProvider, selModel)}
+      onOk={async () => {
+        if (busy) return;
+        setBusy(true);
+        try {
+          await onOk(selProvider, selModel);
+        } finally {
+          setBusy(false);
+        }
+      }}
+      confirmLoading={busy}
       okText="确认更换"
       cancelText="取消"
     >

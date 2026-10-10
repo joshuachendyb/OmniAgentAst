@@ -7,10 +7,13 @@
 //   同 YAML 不同字段（服务端非事务），快照错位同类风险；保存/取消关窗不改模型 state 不禁 - 小欧-2026-09-24
 // 2026-09-25 06:17:07 小健 - 「添加」按钮改橘红底白字（Colors.ORANGE_RED 标准令牌 + inline style，
 //   北京老陈指示）；同批撤销首版 12 行 antd color 对象与 stepStyles 派生色令牌（过度设计/YAGNI）— 小健-2026-09-25
+// 2026-10-10 小欧 - 弹窗归一：主 Modal → SettingsModal 标准壳（form=520 宽度档、confirmLoading、
+//   discard 关闭语义、destroyOnHidden）；warning/confirm 静态弹用仍走 antd Modal（无统一壳需求，不动）。
+//   实测：宽 520 / ESC 可关，符合设计。
 import React, { useState } from 'react';
-import { Button, Input, Modal, Space, Tag } from 'antd';
+import { Button, Input, Modal, Space, Tag } from 'antd'; // Modal 仍需：warning/confirm 静态弹用
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
-import { settingsModalWidth } from '@/theme/settingsTokens';
+import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳
 import { modelApi } from '@/services/api/model.api';
 
 interface Props {
@@ -101,6 +104,8 @@ export const ParamOptionsModal: React.FC<Props> = ({
         content: `将重置为该参数第一选项 '${(draft[dangling] ?? [])[0] ?? ''}'，继续？`,
         okText: '确认重置',
         cancelText: '取消',
+        // 2026-10-10 小欧 - 审计修复：会重写已存模型的默认值（不可逆），原 ok 键无 danger 标识
+        okButtonProps: { danger: true },
         onOk: async () => {
           setSaving(true);
           try {
@@ -132,16 +137,10 @@ export const ParamOptionsModal: React.FC<Props> = ({
   };
 
   return (
-    <Modal
+    <SettingsModal
       open={open}
-      title={
-        <span
-          style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-        >
-          管理 {model} 的参数选项
-        </span>
-      }
-      width={settingsModalWidth.form}
+      title={`管理 ${model} 的参数选项`}
+      width="form"
       onCancel={onClose}
       onOk={doSave}
       okText="保存"
@@ -211,6 +210,6 @@ export const ParamOptionsModal: React.FC<Props> = ({
           </div>
         ))
       )}
-    </Modal>
+    </SettingsModal>
   );
 };

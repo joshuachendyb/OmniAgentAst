@@ -28,6 +28,8 @@
 //   supported_features（后端厂商适配新增并已归一）：类型须与后端 DTO 逐字段对齐，否则消费方读不到
 //   实测值（SenseNova 顶层下发 modalities、OpenRouter 嵌 architecture，归一后统一读 input_modalities）
 //   — 小欧 2026-10-05
+// 编辑历史: 2026-10-10 小欧 - 文档[16] ModelModals 底部加模型: addProvider 入参补 models?: string[] 透传
+//   （后端 ProviderAddRequest.models 原生支持，一次调用建完 Provider+模型，无半成功窗口）
 // 2026-10-10 小欧 - 新增 ZenithFree 双路验证三接口（北京老陈 2026-10-10）：zenVerify 触发双路验证
 //   （两套方法各跑一遍远端最新免费模型并对比），zenVerifyReports / zenVerifyReport 取历史报告。
 //   zenVerify 耗时长（免费模型 20+ × 双路并发 5），故显式放宽超时到 600s；后两条为普通读接口，

@@ -94,6 +94,9 @@
 // 2026-10-03 小欧 - 修「模型库 Tab 点添加 Provider 无反应」：ModelModals 原挂在 renderModelTab 内，
 //   model_library Tab 不调该函数致弹窗组件不挂载，置 open 也无人渲染；已上提到页面顶层（全 Tab 挂载）— 小欧 2026-10-03
 // 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名「HTL人工开关」，危险键判定处注释同步 — 小欧 2026-10-05
+// 编辑历史: 2026-10-10 小欧 - 弹窗归一：切 Tab 未保存拦截 Modal → SettingsModal 标准壳（confirm=480
+//   宽度档、双键「放弃切换/保存并切换」、discard 关闭语义）；业务逻辑与文案一字未改，只换壳。
+//   实测：宽 480 / ESC 可关 / 双键文案正确，符合设计。
 import React, { useState } from 'react';
 import {
   Button,
@@ -114,6 +117,7 @@ import {
   settingsRowStyle,
   settingsLabelStyle,
 } from '@/theme/settingsTokens';
+import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 未保存拦截弹窗归一到设置页壳
 import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SearchBox } from './SearchBox';
@@ -724,18 +728,12 @@ const SettingsPage: React.FC = () => {
           onCloseRestart={() => s.setRestartKeys([])}
         />
       </Card>
-      <Modal
+      <SettingsModal
         open={pendingJump !== null}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            有未保存的修改
-          </span>
-        }
-        width={settingsModalWidth.confirm}
-        // 2026-09-27 小欧 - 修 F8：onOk 是 void ...then() 不返回 Promise，antd 不会自带 loading，
-        //   双击「保存并切换」会连发两次 saveGroup。复用 SaveBar 同源的 saving 做 confirmLoading。
+        title="有未保存的修改"
+        width="confirm"
+        // 2026-09-27 小欧 - 修 F8：onOk 走 void ...then() 不返回 Promise，antd 不会自带 loading，
+        //   双击「保存并切换」会连发两次 saveGroup。复现 SaveBar 同源：saving → confirmLoading
         confirmLoading={s.saving}
         onCancel={() => setPendingJump(null)}
         onOk={() => {
@@ -763,7 +761,7 @@ const SettingsPage: React.FC = () => {
               实际是保存后切换/取消则留在本页（修改不丢）（[设置页UI审计] 问题4） */}
           当前组存在未保存修改：点击「保存并切换」将保存当前修改后跳转；点击「放弃切换」将留在本页，修改不会丢失。
         </span>
-      </Modal>
+      </SettingsModal>
     </div>
   );
 };

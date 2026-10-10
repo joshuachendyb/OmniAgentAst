@@ -18,10 +18,14 @@
 //   fontSize/lineHeight/fontFamily，防两处各写一遍再漂移)；容器 overflowX:'hidden'+overflowY:'auto'
 //   且文本格 overflowWrap:'anywhere' → 超长 token 折行，不出横向滚动条(北京老陈要求不加横滚)。
 //   同步删正文 wordBreak:'normal'(与新方案冲突)；content 不再直接渲染，全走 lines 逐行渲染。 - 小欧-2026-10-06
+// 2026-10-10 小欧 - 弹窗归一：Modal → SettingsModal 标准壳。只读弹窗语义（display=800 宽度档、
+//   关闭语义 ignore——遮罩/ESC 不关闭、只能点按钮关）；壳只统一标准行为，业务排版与行号正文样式原样保留。
+//   实测：宽 800 / 遮罩不关 / ESC 不关 / 点主键才关，符合设计。
 import React, { useCallback, useMemo, useState } from 'react';
-import { Button, Modal, Spin } from 'antd';
+import { Button, Spin } from 'antd';
 import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
 import { configApi } from '@/services/api/config.api';
+import { SettingsModal } from '@/theme/SettingsModal';
 import {
   Colors,
   FontSize,
@@ -172,10 +176,10 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
       <Button icon={icon} style={btnStyle} loading={loading} onClick={openFile}>
         查看{docName}
       </Button>
-      <Modal
+      <SettingsModal
         open={open}
-        width={settingsModalWidth.display}
-        destroyOnHidden
+        width="display"
+        closeBehavior="ignore"
         onCancel={close}
         footer={[
           <Button
@@ -303,7 +307,7 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
             文件为空
           </div>
         )}
-      </Modal>
+      </SettingsModal>
     </>
   );
 };

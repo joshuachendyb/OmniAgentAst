@@ -417,6 +417,10 @@ export const ModelLibraryTab: React.FC<Props> = ({
         </span>
       ),
       width: settingsModalWidth.confirm,
+      // 2026-10-10 小欧 - 审计修复：本确认会**删除** finalList 里不在选中的模型（不可逆），
+      //   原 ok 键与「取消」同款，用户看不出危险度。补 danger + okText 明说动作。
+      okText: '确认替换',
+      okButtonProps: { danger: true },
       content: (
         <span style={{ color: Colors.TEXT.SECONDARY }}>
           将替换该 Provider 的模型列表为已勾选的 {finalList.length} 个（移除{' '}
@@ -534,9 +538,7 @@ export const ModelLibraryTab: React.FC<Props> = ({
         )}
       />
       <Table.Column
-        title={
-          <span style={{ whiteSpace: 'nowrap' }}>上下文窗口</span>
-        }
+        title={<span style={{ whiteSpace: 'nowrap' }}>上下文窗口</span>}
         dataIndex="context_length"
         width={116}
         align="right"

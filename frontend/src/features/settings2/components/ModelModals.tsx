@@ -35,6 +35,9 @@
 //   （原仅取 sibModels[0]，且 reasoning_effort→medium 写死特例由预设 default 替代删除）；
 //   ④模板行 key 定宽 180 对齐输入框起点（此前参差），布尔项改 Switch 渲染、旧字符串 "true" 仅管显示
 //   提交一律布尔，seed 等 default:null 显示改 ?? '' 兜底（String(null) 会显示字面量 "null"）— 小欧-2026-10-10
+// 编辑历史: 2026-10-10 小欧 - 添加 Provider 弹窗三项: ①名称/显示名改并排一行(Row+Col12, 同款 timeout/max_retries);
+//   ②底部加「模型」区(输入框+＋按钮攒列表, 确定时随 models 字段一次提交, 后端 add_provider 原生透传无半成功窗口);
+//   ③收紧留白(每个 Form.Item marginBottom 12px, antd 默认 24px 砍半)治纵向稀疏 — 小欧-2026-10-10
 
 import React, { useEffect, useState } from 'react';
 import {
@@ -53,6 +56,7 @@ import {
   Typography,
 } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'; // 2026-10-10 小欧: 模型增删行图标
+import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 3个弹窗归一到底壳
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsControl, settingsModalWidth } from '@/theme/settingsTokens';
 import type { ProviderEntry } from '@/services/api/model.api';
@@ -203,16 +207,10 @@ export const ModelModals: React.FC<Props> = (props) => {
   };
   return (
     <>
-      <Modal
+      <SettingsModal
         open={addModelOpen}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            添加模型
-          </span>
-        }
-        width={settingsModalWidth.form}
+        title="添加模型"
+        width="form"
         confirmLoading={busy === 'model'}
         onCancel={props.onCloseAddModel}
         onOk={() => void handleAddModel()}
@@ -353,8 +351,8 @@ export const ModelModals: React.FC<Props> = (props) => {
             </div>
           )}
         </Form>
-      </Modal>
-      <Modal
+      </SettingsModal>
+      <SettingsModal
         open={addProviderOpen}
         // 2026-10-03 小欧 - 关闭即清空：此前只在提交成功后 resetFields，取消再打开会留着上次填的
         //   名称/地址/密钥，属"添加"弹窗不该有的残留（易误提交成第二个 Provider）。
@@ -365,14 +363,8 @@ export const ModelModals: React.FC<Props> = (props) => {
           setModelErr('');
           props.onCloseAddProvider();
         }}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            添加 Provider
-          </span>
-        }
-        width={settingsModalWidth.form}
+        title="添加 Provider"
+        width="form"
         confirmLoading={busy === 'provider'}
         onOk={() => void handleAddProvider()}
         okText="保存"
@@ -549,26 +541,22 @@ export const ModelModals: React.FC<Props> = (props) => {
             />
           )}
         </Form>
-      </Modal>
-      <Modal
+      </SettingsModal>
+      <SettingsModal
         open={deleteOpen}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >{`⚠ 确定要删除 "${deleteLabel(deleteTarget)}"？`}</span>
-        }
+        width="confirm"
+        title={`⚠ 确定要删除 "${deleteLabel(deleteTarget)}"？`}
+        danger
         onCancel={props.onCloseDelete}
         onOk={() => void props.onConfirmDelete()}
         okText="删除"
-        okButtonProps={{ danger: true }}
         cancelText="取消"
-        width={settingsModalWidth.confirm}
       >
         <span style={{ color: Colors.TEXT.SECONDARY }}>
           警告：如果这是当前使用的模型，将自动切换为默认模型；删除 Provider
           将级联删除其下所有模型！
         </span>
-      </Modal>
+      </SettingsModal>
     </>
   );
 };

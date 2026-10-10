@@ -13,7 +13,8 @@
 //     省略号改为整段折行完整展示（北京老陈「不能省略」） — 小欧-2026-10-10
 
 import React, { useEffect, useState } from 'react';
-import { Button, Divider, Empty, Modal, Tag } from 'antd';
+import { Button, Divider, Empty, Tag } from 'antd';
+import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 2个只读弹窗归一到设置页壳
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsModalWidth } from '@/theme/settingsTokens';
 import { ErrorType, showMessage } from '@/services/error/handler';
@@ -40,7 +41,11 @@ const VERDICT_META: Record<
   { text: string; color: string; bg: string }
 > = {
   both_pass: { text: '一致通过', color: Colors.SUCCESS, bg: 'transparent' },
-  both_fail: { text: '一致失败', color: Colors.TEXT.SECONDARY, bg: 'transparent' },
+  both_fail: {
+    text: '一致失败',
+    color: Colors.TEXT.SECONDARY,
+    bg: 'transparent',
+  },
   diverge: { text: '分歧', color: Colors.WARNING, bg: Colors.BG.WARNING_LIGHT },
   zen_unavailable: {
     text: '未比对',
@@ -66,7 +71,8 @@ const VERDICT_TEXT: Record<ZenVerdict, string> = {
 
 /** 两路侧的结果文案：状态码 + 通过标记；失败才带原因（下方独占行已展示） */
 function sideText(s: ZenVerifyItem['zen_gate']): string {
-  if (s.status === -1 && s.error.startsWith('zen_gate 库不可用')) return '库不可用';
+  if (s.status === -1 && s.error.startsWith('zen_gate 库不可用'))
+    return '库不可用';
   return `${s.status} ${s.ok ? 'OK' : '✗'}`;
 }
 
@@ -80,13 +86,13 @@ function sideText(s: ZenVerifyItem['zen_gate']): string {
 function endpointTag(endpoint: string, ok: boolean) {
   if (!endpoint) return null;
   /** zen_gate 库用 chat/responses 简称，adapter 用完整路径，统一到完整路径 */
-const ENDPOINT_ALIAS: Record<string, string> = {
-  chat: '/chat/completions',
-  responses: '/responses',
-};
-const path = endpoint.startsWith('/')
-  ? endpoint
-  : (ENDPOINT_ALIAS[endpoint] ?? endpoint);
+  const ENDPOINT_ALIAS: Record<string, string> = {
+    chat: '/chat/completions',
+    responses: '/responses',
+  };
+  const path = endpoint.startsWith('/')
+    ? endpoint
+    : (ENDPOINT_ALIAS[endpoint] ?? endpoint);
   return (
     <Tag
       color={ok ? (path === '/responses' ? 'purple' : 'blue') : 'red'}
@@ -136,8 +142,10 @@ const ZenVerifyModal: React.FC<{
 
   return (
     <>
-      <Modal
+      <SettingsModal
         open={open}
+        width="display"
+        closeBehavior="ignore"
         onCancel={onClose}
         footer={
           <>
@@ -149,14 +157,7 @@ const ZenVerifyModal: React.FC<{
             </Button>
           </>
         }
-        width={settingsModalWidth.display}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            ZenithFree 双路验证 — {provider}
-          </span>
-        }
+        title={`ZenithFree 双路验证 · ${provider}`}
       >
         {/* 空态：本次无结果（接口失败时父组件不传 result） */}
         {!result || result.results.length === 0 ? (
@@ -169,7 +170,9 @@ const ZenVerifyModal: React.FC<{
               const isDiverged = r.verdict === 'diverge';
               return (
                 <div key={r.model}>
-                  {idx > 0 && <Divider style={{ margin: `${Spacing.SM}px 0` }} />}
+                  {idx > 0 && (
+                    <Divider style={{ margin: `${Spacing.SM}px 0` }} />
+                  )}
                   <div
                     style={{
                       display: 'flex',
@@ -266,7 +269,8 @@ const ZenVerifyModal: React.FC<{
                         borderRadius: 4,
                       }}
                     >
-                      两路结果不一致 —— 可能是 zen_gate 已更新配方而 adapter 未跟上
+                      两路结果不一致 —— 可能是 zen_gate 已更新配方而 adapter
+                      未跟上
                     </div>
                   )}
                 </div>
@@ -303,21 +307,15 @@ const ZenVerifyModal: React.FC<{
             )}
           </div>
         )}
-      </Modal>
+      </SettingsModal>
 
       {/* 历史报告列表 + 内容 */}
-      <Modal
+      <SettingsModal
         open={historyOpen}
         onCancel={() => setHistoryOpen(false)}
         footer={null}
-        width={settingsModalWidth.form}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            历史验证报告
-          </span>
-        }
+        width="form"
+        title="历史验证报告"
       >
         <div style={{ maxHeight: 360, overflow: 'auto' }}>
           {reports.length === 0 ? (
@@ -337,7 +335,9 @@ const ZenVerifyModal: React.FC<{
                       ? Colors.PRIMARY
                       : Colors.TEXT.PRIMARY,
                   background:
-                    f.name === historyName ? Colors.BG.SECONDARY : 'transparent',
+                    f.name === historyName
+                      ? Colors.BG.SECONDARY
+                      : 'transparent',
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -365,7 +365,7 @@ const ZenVerifyModal: React.FC<{
             </pre>
           </>
         )}
-      </Modal>
+      </SettingsModal>
     </>
   );
 };

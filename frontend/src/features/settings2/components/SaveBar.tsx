@@ -10,10 +10,13 @@
 // 2026-09-21 小强 - 设置页17问题复核修复：危险确认拆分 dangerousGroup/dangerousAll（保存其他组不再误弹）；
 //   content 去残留「黑白名单」文案（黑白名单键已从注册表删除）（[设置页UI审计] 问题7/8/10）
 // 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名「HTL人工开关」，危险操作确认弹窗文案同步 - 小欧-2026-10-05
+// 2026-10-10 小欧 - 弹窗归一：重启生效提示 Modal → SettingsModal 标准壳，confirm 宽度档 480、单主键「知道了」
+//   （cancelButtonProps 隐藏）、discard 关闭语义；Modal.confirm 危险确认保留原样（L49 走 confirmThen，非标准壳范围）。
 import React from 'react';
-import { Button, Modal } from 'antd';
+import { Button, Modal } from 'antd'; // Modal 仍需：L49 的 Modal.confirm
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { settingsShadow, settingsModalWidth } from '@/theme/settingsTokens';
+import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳
 
 interface Props {
   canSaveGroup: boolean;
@@ -103,19 +106,13 @@ export const SaveBar: React.FC<Props> = ({
       >
         保存全部{dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
       </Button>
-      <Modal
+      <SettingsModal
         open={restartKeys.length > 0}
-        title={
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            含重启生效项
-          </span>
-        }
+        width="confirm"
+        title="含重启生效项"
         onOk={onCloseRestart}
         onCancel={onCloseRestart}
         okText="知道了"
-        width={settingsModalWidth.confirm}
         cancelButtonProps={{ style: { display: 'none' } }}
       >
         <div style={{ fontSize: FontSize.SECONDARY }}>
@@ -128,7 +125,7 @@ export const SaveBar: React.FC<Props> = ({
             ))}
           </ul>
         </div>
-      </Modal>
+      </SettingsModal>
     </div>
   );
 };
