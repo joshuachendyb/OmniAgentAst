@@ -52,7 +52,11 @@
    静默丢弃；其中输出上限与上下文量级常差 8~16 倍、output_modalities 区分图像生成与对话模型，
    不下发即选型无据。modalities 为对齐 architecture 同名子键而设（厂商层级差异已在 service 归一，
    此处只承接归一结果）；字段口径与既有 10 项一致：Optional/默认空容器、错型在解析层归一 — 小欧 2026-10-05
-"""
+  2026-10-10 - 小欧 - 新增 ZenithFree 双路验证三条路由（北京老陈指令）：POST /providers/{name}/zen-verify
+    触发验证 + GET /zen-verify/reports 列历史报告 + GET /zen-verify/report 读报告内容。三条同族，
+    业务全在 zen_verify 服务模块，路由层只做转发（不新造第二套逻辑，DRY/KISS-DIRECT）；读报告
+    路由按报告名取文件，经服务层路径校验拦截目录穿越。原行内注释已按规矩上提归并至本板块底部
+    """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request
@@ -64,6 +68,7 @@ from app.api.v1.config_schemas import (
 from app.logger import logger  # 明文查看审计日志
 from app.services.model.config_helpers import handle_config_errors
 from app.services.model import model_service as svc
+from app.services.model import zen_verify as zen_verify_svc
 # 2026-09-26 - 小欧 - 三堂会审后修正(DRY): 审计用来源 IP 复用 deps._client_ip（唯一权威），
 #   不在本文件另写一份。本文件原先自带的 _client_ip 与 deps 版是"同一逻辑两份实现"，
 #   且语义还不一致（deps 版曾懂 TRUST_PROXY_HEADERS/X-Forwarded-For，本版不懂），
@@ -324,3 +329,27 @@ async def test_provider_connection(name: str, req: TestConnectionRequest):
 @handle_config_errors("替换 Provider 模型列表")
 async def replace_provider_models(name: str, req: ProviderModelsReplaceRequest):
     return svc.replace_provider_models(name, [m.model_dump() for m in req.models])
+
+
+# ── ZenithFree 双路验证（北京老陈 2026-10-10）──────────────────────────
+
+
+@router.post("/providers/{name}/zen-verify")
+@handle_config_errors("ZenithFree 验证")
+async def zen_verify(name: str):
+    """双路验证远端最新免费模型(zen_gate 外部库 vs opencodeZenAdapter)，结果落 txt"""
+    return await zen_verify_svc.verify_provider_zen(name)
+
+
+@router.get("/zen-verify/reports")
+@handle_config_errors("列验证报告")
+async def zen_verify_reports():
+    """列历史验证报告(时间倒序)"""
+    return zen_verify_svc.list_reports()
+
+
+@router.get("/zen-verify/report")
+@handle_config_errors("读验证报告")
+async def zen_verify_report(name: str):
+    """读指定验证报告内容"""
+    return zen_verify_svc.read_report(name)
