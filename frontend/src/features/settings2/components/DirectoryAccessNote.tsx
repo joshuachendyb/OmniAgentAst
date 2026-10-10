@@ -10,6 +10,8 @@
 //      改为 Modal 常驻, open 由 openKey 决定; 文案用 lastKey 兜住关闭动画那一帧。
 //   #8 POPUPS 里 mdKey 与 key 同值冗余 → 删掉, 直接用 key。
 //   #9 外层 div 的 color/fontSize 被 MarkdownText 内部每个元素的样式覆盖, 是死代码 → 删掉。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-10 小欧 - 点按钮即后台重取: 弹框用存量秒开(手感不变), 新文案到了自动刷新;
+//   取失败只走左上 Alert 原有位, 不挡弹框。 — 小欧-2026-10-10 11:00:40
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Modal, Spin } from 'antd';
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
@@ -50,6 +52,12 @@ export function DirectoryAccessNote() {
   }, [load]);
 
   const close = useCallback(() => setOpenKey(null), []);
+  // 2026-10-10 小欧 - 点任一按钮即后台重取两份文案: 弹框用存量秒开, 新文案到了自动刷新;
+  //   两个按钮同走 POPUPS.map, 改这一处即全覆盖。
+  const open = useCallback((k: PopupKey) => {
+    setOpenKey(k);
+    void load();
+  }, [load]);
   // 关闭动画那一帧 openKey 已是 null, 用 lastKey 兜住; POPUPS 是非空字面量数组, 末位兜底
   const current =
     POPUPS.find((p) => p.key === openKey) ??
@@ -76,7 +84,7 @@ export function DirectoryAccessNote() {
         {POPUPS.map((p) => (
           <Button
             key={p.key}
-            onClick={() => setOpenKey(p.key)}
+            onClick={() => open(p.key)}
             disabled={!docs}
           >
             {p.title}
