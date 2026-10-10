@@ -80,6 +80,14 @@
 #   ①新增 _protected_pids(): 自身+父进程+shell池(uvicorn --reload 父子双进程故 getppid 必带);
 #   ②_get_needs_confirmation shell 分支前置 is_process_kill_protected 判定, 命中即 blocked=True 直返。
 #   根因: 原实现全项目无第二处传 protected_pids, 故 check_shell_command_risk 内 `if protected_pids:` 恒不生效。 — 小欧-2026-10-08
+# 2026-10-10 - 小欧 - 预检21/43条规则死代码缺口修复(三壳并集): _get_needs_confirmation 中 check_shell_command_risk(_cmd)
+#   只传 command, shell_type 吃默认 "ps7" → 按第4元素 st_tag 过滤时 cmd(14条)/bash(7条)标签规则全被跳过
+#   (实测 ps7 下仅 22/43 条生效), diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/chown/reg add/net stop/sc config/icacls
+#   等在预检一律返回 None, 仅执行层(execute_shell_command:1122 传真实 shell)才拦, 两层判定口径不一致。
+#   改调 check_shell_command_risk_all_shells(ps7/cmd/bash 各查一遍取最高严重度); 实测召回15条、
+#   白名单误伤0/30、日常命令误伤0/24、降级回归0。同日 is_process_kill_protected 导入点更正为
+#   app.tools.fundamental.shell_static_guard(shell 代码归 shell 代码同目录; 原落 utils 的理由
+#   "tools 禁 import safety"经 test_architecture_boundaries 实证不成立, safety→tools 合法) — 小欧-2026-10-10
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -312,11 +320,16 @@ class ToolSafetyChecker:
             # 2026-10-08 小欧 补上从未接线的保护盾(2026-10-10 审计P1-3 增名维度):
             #   目标命中受保护PID(后端自身/父进程/shell池)或受保护进程名即拦截;
             #   名维度补的是按名杀形态(P9-03 事故原形 Get-Process python | Stop-Process)。
-            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
-            from app.utils.shell_readonly import is_process_kill_protected
+            # 2026-10-10 小欧 修预检21/43条规则死代码缺口: 改用三壳并集(见 execute_shell_command_safety:187)。
+            #   病根: 原调用 check_shell_command_risk(_cmd) 只传 command, shell_type 吃默认 "ps7",
+            #   使 cmd/bash 标签规则在预检全被跳过 — diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/
+            #   chown/reg add 等预检一律 None, 仅执行层才拦(两层判定口径不一致)。
+            #   并集实测: 召回15条 / 白名单误伤0/30 / 日常命令误伤0/24 / 降级回归0。
+            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk_all_shells
+            from app.tools.fundamental.shell_static_guard import is_process_kill_protected  # 2026-10-10 小欧 位置更正: shell 代码归 shell 代码同目录 — 小欧 2026-10-10
             if is_process_kill_protected(_cmd, _protected_pids(), _protected_process_names()):
                 return True, "系统保护进程，禁止终止", True
-            _risk = check_shell_command_risk(_cmd)
+            _risk = check_shell_command_risk_all_shells(_cmd)
             if _risk:
                 if _risk.blocked:
                     return True, (_risk.message or "高风险Shell命令拦截"), True   # HIGH: 拦截, 不弹窗

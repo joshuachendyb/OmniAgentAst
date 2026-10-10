@@ -22,6 +22,15 @@
 #   C19"高风险Shell操作，已阻止执行"/C20-C22"系统保护进程，禁止终止: PID {pid}"/C23"中风险Shell操作，需确认后执行"（半角逗号统一全角） — 小欧-2026-09-18
 # 2026-09-18 小欧 - 7.3.4-C18精化(重查挖掘): "不允许降级"为安全内部术语(降危/临时目录豁免机制), 普通用户看不懂;
 #   改"路径含穿越符号，已阻止"(说明=命令危险+穿越符号导致不放行+已阻止), 分级blocked不变, 所注参数#20语义保持 — 小欧-2026-09-18
+# 2026-10-10 小欧 - 新增 check_shell_command_risk_all_shells(三壳并集): 修预检层21/43条规则死代码缺口。
+#   【病根】本函数按第4元素 st_tag 过滤规则, 但调用方 tool_safety_checker:319 只传 command,
+#          shell_type 吃默认 "ps7" → cmd(14条)/bash(7条)标签规则在预检全被跳过(实测生效22/43),
+#          diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/chown/reg add 等预检一律返回 None, 仅执行层才拦。
+#   【改法】新增并集函数: ps7/cmd/bash 各跑一遍, 取最高严重度(dangerous>destructive>None);
+#          实测召回15条、白名单误伤0/30、日常命令误伤0/24、降级回归0。
+#   【为什么不用探测复用】_looks_like_* 探测本身有洞(sc delete 被判 ps7), 并集不依赖探测准确性。
+#   【顺带修正】docstring 旧称"None不过滤"与实现相反: None 会把 ps/cmd/bash 三种标签全跳过,
+#          仅剩9条双兼容规则(实测), 属假契约, 已改为描述真实行为 — 小欧 2026-10-10
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -154,7 +163,11 @@ def _extract_bash_kill_pids(command: str) -> set:
 def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pids: Optional[set] = None) -> Optional[SafetyResult]:
     """Shell命令风险分级检查 - HIGH立即拦截, MEDIUM收集合并
 
-    shell_type: "ps7"/"ps5"/"cmd"/"bash" — 过滤不匹配规则; None不过滤
+    shell_type: "ps7"/"ps5"/"cmd"/"bash" — 仅匹配该 shell 标签的规则 + 9条双兼容规则(st_tag=None);
+                ps7/ps5 生效22条, cmd 生效23条, bash 生效16条。
+                传 None 会把 ps/cmd/bash 三种标签全部跳过, 仅剩9条双兼容规则生效 —
+                旧注释「None不过滤」与实现相反(2026-10-10 小欧 修正)。
+                要查全 shell 请用 check_shell_command_risk_all_shells(), 不要传 None。
     """
     medium_hits = []
     normalized = command.replace('\r\n', ' ').replace('\n', ' ')
@@ -229,4 +242,33 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
             severity="destructive",
         )
     return None
+
+
+# 严重度排序: 取最高者为并集结果。dangerous(blocked) > destructive(需确认) > 无风险
+_SEVERITY_RANK = {"dangerous": 2, "destructive": 1, None: 0, "": 0}
+
+
+def check_shell_command_risk_all_shells(command: str,
+                                        protected_pids: Optional[set] = None) -> Optional[SafetyResult]:
+    """Shell命令风险检查(三壳并集) - ps7/cmd/bash 各查一遍, 取最高严重度。
+
+    供不掌握真实 shell_type 的调用方(如 safety 预检门)使用: 单查某一个 shell 会漏掉
+    该 shell 之外标签的规则(实测默认ps7下43条规则仅22条生效)。
+    会写死 shell 的调用方(如 execute_shell_command 执行层)应继续传真实 shell_type,
+    不要改用本函数, 否则可能把非当前 shell 的规则误命中。
+
+    无任何 shell 命中时返回 None(无风险)。 — 小欧 2026-10-10
+    """
+    best = None
+    best_rank = 0
+    for _st in ("ps7", "cmd", "bash"):
+        r = check_shell_command_risk(command, _st, protected_pids=protected_pids)
+        if r is None:
+            continue
+        rank = _SEVERITY_RANK.get(r.severity, 0)
+        if rank > best_rank:
+            best, best_rank = r, rank
+        if best_rank >= _SEVERITY_RANK["dangerous"]:
+            break   # 已是最高级, 无需再查 — 小欧 2026-10-10
+    return best
 

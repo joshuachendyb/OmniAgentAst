@@ -25,6 +25,12 @@
 #   ①_scan_command_write_intent 改名 _scan_command_danger_intent 并扩职责, 前置调 has_uncontainable_intent, 命中即转
 #   HITL 不 run(根因: 预检在宿主真跑, Job Object 非硬墙, 词表漏则预检即真跑); ②守卫②注释/日志同步"危险意图";
 #   ③新增 has_uncontainable_intent import。旧名零残留不留别名(禁止 backward)。 — 小欧-2026-10-08
+# 2026-10-10 - 小欧 - 导入点位置更正: has_uncontainable_intent / is_readonly_whitelisted 由 app/utils/shell_readonly.py
+#   改为 app.tools.fundamental.shell_static_guard(三类同域关注点已并回一处, 与 execute_shell_command.py /
+#   shell_engine.py 同目录)。理由: 原落 utils 的依据"架构边界要求 tools 禁 import safety"经
+#   tests/test_architecture_boundaries.py 实证不成立 —— 该守卫只禁 "tools"→services/safety 单向,
+#   safety→tools 合法(先例: tool_safety_checker 一直 import execute_shell_command_safety), 无需中转 utils。
+#   本文件属 app/safety, safety→tools 方向合法; 业务逻辑零变化, 仅改导入路径。 — 小欧-2026-10-10
 import asyncio
 import os
 import re
@@ -39,8 +45,8 @@ from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
 
 from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
-from app.utils.shell_readonly import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08
-from app.utils.shell_readonly import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源迁utils, 别名存引用 — 小欧 2026-10-04
+from app.tools.fundamental.shell_static_guard import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
+from app.tools.fundamental.shell_static_guard import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源, 别名存引用 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
 
 _semaphore = asyncio.Semaphore(get_config().get("sandbox.max_concurrent_sandboxes", 3))   # 并发限流(3.1.3)
 

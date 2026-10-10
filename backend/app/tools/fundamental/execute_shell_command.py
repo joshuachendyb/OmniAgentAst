@@ -240,7 +240,7 @@ from app.tools.file.file_encoding import get_file_encoding
 from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
 from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
-from app.utils.shell_readonly import is_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04
+from app.tools.fundamental.shell_static_guard import is_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools 同目录 — 小欧 2026-10-10
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
