@@ -256,17 +256,24 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           >
             {safetyConfig.label}
           </Tag>
-          {/* 2026-10-11 00:20 小欧 - 计时钟改位（不删，只换位置 + 缩小）。
+          {/* 2026-10-11 02:10 小欧 - 计时钟改位（不删，只换位置 + 缩小）。
               改前：60px 圆环独占一整行居中（+4 外距），与下方 13px 粗体秒数文字上下堆叠
               ≈100px，占确认弹框（总高 420）的 24%——辅助信息拿到了最大的视觉权重，
               而用户该先看"要我确认什么"。
               改后：圆环挪到标题行**右侧**（右上角是视线终点，仍醒目但不抢主内容），
-              直径 60→44 与次级信息同量级，标题行用 space-between 让标题靠左、环靠右。 */}
-          <CountdownRing
-            countdown={countdown}
-            confirmTimeout={confirmTimeout}
-            size={44}
-          />
+              直径 60→44 与次级信息同量级，标题行用 space-between 让标题靠左、环靠右。
+
+              02:25 追加 confirmTimeout=0 特例：0 的语义是**禁倒计时**
+              （useAuthorization.parseTimeout 注释：「合法 0(禁倒计时保留)」），
+              此时根本没有"到点"这回事 —— 显示环和"到点后自动拒绝"都是事实错误，
+              正是 D2-09 用例名所说「文案割裂」。故 0 时不渲染环，文案改「不自动拒绝」。 */}
+          {confirmTimeout > 0 && (
+            <CountdownRing
+              countdown={countdown}
+              confirmTimeout={confirmTimeout}
+              size={44}
+            />
+          )}
         </div>
 
         <div
@@ -278,9 +285,15 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           }}
         >
           {/* 2026-09-03 小欧 修复: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
-          {isBypass
-            ? `将在 ${countdown}s 后自动确认`
-            : `未响应将在 ${countdown}s 后自动拒绝`}
+          {/* 2026-10-11 02:10 小欧 - 秒数去重（单一信息源）：原文案「将在 Xs 后自动确认」
+              与上方 CountdownRing 环内的大号数字重复表述同一秒数。环里已有数字+饼环进度，
+              文字只讲**到点会怎样**（自动确认 / 自动拒绝），不重复报数。
+              （2026-09-18 北京老陈定的是「恢复圆圈倒计时」——环保留不动，本轮只去重文字。）*/}
+          {confirmTimeout === 0
+            ? '不自动拒绝（倒计时已禁用）'
+            : isBypass
+              ? '到点后自动确认放行'
+              : '到点未响应将自动拒绝'}
         </div>
 
         {/* content 原因展示区: 倒计时下方, 告知用户"为什么要问" — 小欧-2026-09-18 */}
