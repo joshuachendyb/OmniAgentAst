@@ -318,7 +318,16 @@ export function dangerConfirm(opts: {
     ),
     content: (
       <div style={{ fontSize: FontSize.SECONDARY }}>
-        <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: Spacing.MD }}>
+        <div
+          style={{
+            color: Colors.TEXT.SECONDARY,
+            marginBottom: Spacing.MD,
+            paddingBottom: Spacing.SM,
+            // 2026-10-11 00:58 小欧 - 加下边框：说明行与其下的变更组分层，
+            //   否则「以下改动…」与变更行同左边距、同一灰度，读起来是一整块糊在一起。
+            borderBottom: `1px solid ${Colors.BORDER.LIGHT}`,
+          }}
+        >
           以下改动提交后立即生效：
         </div>
         {/* 2026-10-11 00:50 小欧 - 每条变更自成一组（北京老陈："如果同时改变俩个 信息是两组 不要混排"）。
@@ -332,7 +341,13 @@ export function dangerConfirm(opts: {
           return (
             <div
               key={c.label}
-              style={{ marginBottom: i === opts.changes.length - 1 ? 0 : 10 }}
+              style={{
+                marginBottom: i === opts.changes.length - 1 ? 0 : 10,
+                // 2026-10-11 01:02 小欧 - 整组左侧对齐到「以下改动…」那行的 x。
+                //   截图复核发现说明行在 x=418、变更行在 x=458，三层左边缘不齐、读起来像阶梯。
+                //   改为同一起点：说明行与变更组共享同一左边缘（content 内边距由 Modal 统一给）。
+                marginLeft: 0,
+              }}
             >
               <div
                 style={{
@@ -363,9 +378,14 @@ export function dangerConfirm(opts: {
               {hint.length > 0 && (
                 <div
                   style={{
-                    marginTop: 6,
+                    marginTop: 4,
+                    // 2026-10-11 01:05 小欧 - 后果块缩进到「值列」（= 标签定宽 88 + 缝 6）。
+                    //   截图复核后修正自己上一版：曾把它拉回 marginLeft:0 与标签同行 x，
+                    //   结果丢了"说明从属于上面那行变更"的嵌套感，两行说明读起来像平级内容。
+                    //   正确形态（北京老陈定）：一组 = 变更行 + 其下缩进的说明，二者紧挨；
+                    //   组与组之间靠外层 marginBottom 拉开 —— 改 N 项就是 N 组。
                     marginLeft: 88 + Spacing.SM,
-                    padding: '6px 10px',
+                    padding: '4px 10px',
                     background: Colors.BG.WARNING_LIGHT,
                     borderLeft: `3px solid ${Colors.WARNING}`,
                     borderRadius: `0 ${Radius.SM}px ${Radius.SM}px 0`,
