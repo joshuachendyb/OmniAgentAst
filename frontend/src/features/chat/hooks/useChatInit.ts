@@ -15,6 +15,14 @@
 //      (含 useChatSession 接口/解构/4 调用点);
 //   ④ 病根: loading 锁(2026-03-13 引入)与代际守卫(2026-09-29 引入)职责重复且互斥, StrictMode 双调用下
 //      "取到数据的被作废、能干活的被锁拦下" → 历史会话进不去且左栏恒 0; 根治=删锁只留代际守卫 — 小欧-2026-10-08
+// 编辑历史: 2026-09-30 08:34:56 小欧 - 恢复态差异化提示。
+//   病根：resume() 返回 12 值 ResumeResult，此前全仓唯一消费点就是下方 `r !== 'idle'` 一个布尔判断
+//   （12 值塌缩成 2 分支），导致 S5/S11 里"任务被中断 / 事件不完整 / 持久化降级"原地兜底成
+//   "正常历史"——用户只见 DB 里的结果，无从判断该不该重试。
+//   落点选在此处：这是 ResumeResult 唯一的 UI 边界，一次分派即拦住"恢复不完整却被静默吞掉"。
+//   文案复用 ErrorDetail.ERROR_TYPE_LABELS（4 个 error_type 中文标签已存在，不另写一份以免漂移）；
+//   ResumeResult↔error_type 的对应关系见 chatStreamTransport.RECOVERY_ERROR_BRANCH。
+// 编辑历史: 2026-09-30 14:30 小欧 - URL 回填加幂等守卫；删 No-op 入参 onMessageListLoadingStart
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
@@ -24,14 +32,6 @@ import type { UseChatFacadeReturn } from './useChatFacade';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import type { ResumeResult } from '@/features/chat/streams/backupTypes';
 
-// 编辑历史: 2026-09-30 08:34:56 小欧 - 恢复态差异化提示。
-//   病根：resume() 返回 12 值 ResumeResult，此前全仓唯一消费点就是下方 `r !== 'idle'` 一个布尔判断
-//   （12 值塌缩成 2 分支），导致 S5/S11 里"任务被中断 / 事件不完整 / 持久化降级"原地兜底成
-//   "正常历史"——用户只见 DB 里的结果，无从判断该不该重试。
-//   落点选在此处：这是 ResumeResult 唯一的 UI 边界，一次分派即拦住"恢复不完整却被静默吞掉"。
-//   文案复用 ErrorDetail.ERROR_TYPE_LABELS（4 个 error_type 中文标签已存在，不另写一份以免漂移）；
-//   ResumeResult↔error_type 的对应关系见 chatStreamTransport.RECOVERY_ERROR_BRANCH。
-// 编辑历史: 2026-09-30 14:30 小欧 - URL 回填加幂等守卫；删 No-op 入参 onMessageListLoadingStart
 const RESUME_NOTICE: Partial<Record<ResumeResult, string>> = {
   task_interrupted: ERROR_TYPE_LABELS.task_interrupted,
   task_state_incomplete: ERROR_TYPE_LABELS.task_state_incomplete,
@@ -67,7 +67,7 @@ export function useChatInit(opts: {
     //   handleNewSessionInternal 初始化过，跳过（否则会 resume+loadSession，用后端历史
     //   覆盖刚设的"新会话已创建"提示）。404 清理/列表切回时两者不等，不受影响。
     if (opts.urlSessionId && chatState.sessionId === opts.urlSessionId) return;
-    // 编辑历史: 2026-10-08 小欧 - 详见文件头: onLoadingStart/End 只留 antd 消息, 死旗已删
+    // 2026-10-08 小欧 - 详见文件头: onLoadingStart/End 只留 antd 消息, 死旗已删
     const onLoadingStart = () => {
       show('正在加载会话...', 'session-load');
     };

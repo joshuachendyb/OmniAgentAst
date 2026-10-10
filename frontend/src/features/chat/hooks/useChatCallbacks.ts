@@ -84,6 +84,7 @@
  * @version 1.0.0
  * @since 2026-04-21
  */
+// 编辑历史: 2026-08-28 小欧 - 修复: onResumed改用单次setMessages原子合并(防批处理乱序)
 
 import { useCallback, useRef, useEffect, useMemo } from 'react'; // 2026-09-09 小欧 A1: 加useRef(任务内指纹去重Set) — 小欧-2026-09-09
 import type { Message } from '../../../types/chat';
@@ -790,7 +791,7 @@ export const useChatCallbacks = (
       }
     }
 
-    // 编辑历史: 2026-08-28 小欧 - 修复: onResumed改用单次setMessages原子合并(防批处理乱序)
+    // 2026-08-28 小欧 - 修复: onResumed改用单次setMessages原子合并(防批处理乱序)
     if (hasReplayable) {
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];

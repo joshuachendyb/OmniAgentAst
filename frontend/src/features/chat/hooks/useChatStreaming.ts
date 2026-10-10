@@ -359,7 +359,7 @@ export const useChatStreaming = (
 
   // 使用 Store 订阅桥接
   // 小欧 2026-09-10 S2收尾(方案A): executionStepsRef 唯一真源在 Store，此处从 5.5 透出的推导视图取
-  // 2026-09-30 小欧 - 本 hook 改直连 chatStreamStore，桥接触敛为纯订阅（理由见文件尾编辑历史）
+  // 2026-09-30 小欧 - 本 hook 改直连 chatStreamStore，桥接触敛为纯订阅（理由见 useChatStreamSession.ts 文件头编辑历史）
   const {
     isReceiving,
     executionSteps,

@@ -65,9 +65,10 @@
  * @author 小欧
  * @date 2026-08-26
  */
+// 编辑历史: 2026-08-28 小欧 - 修复: ExecutionStep统一从types/execution导入
 
 import { useMemo } from 'react';
-import type { ExecutionStep } from '../../../types/execution'; // 编辑历史: 2026-08-28 小欧 - 修复: ExecutionStep统一从types/execution导入
+import type { ExecutionStep } from '../../../types/execution'; // 2026-08-28 小欧 - 修复: ExecutionStep统一从types/execution导入
 import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
 import type { TaskDetail } from '../../../services/api/task.api';
 // 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(结构定稿, 只读双分组)
