@@ -34,6 +34,22 @@ interface Props {
   onAddProvider: () => void;
 }
 
+/** 2026-10-10 23:58 小欧 - label:value 行样式单点（能力/作用两行复用，DRY） */
+const metaRowStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'baseline',
+  gap: Spacing.MD,
+  marginTop: Spacing.SM,
+};
+
+/** 左标签定宽：中文标签（能力/作用）等宽，右侧内容起于同一 x，中英混排不参差 */
+const metaLabelStyle: React.CSSProperties = {
+  width: 28,
+  flexShrink: 0,
+  fontSize: FontSize.SECONDARY,
+  color: Colors.TEXT.TERTIARY,
+};
+
 type Status = 'normal' | 'fallback' | 'no_available';
 
 function resolveStatus(
@@ -89,15 +105,51 @@ export const CurrentModelRefCard: React.FC<Props> = ({
 
   return (
     <div>
+      {/* 2026-10-10 23:58 小欧 - 卡片重排（人类设计师单一信息源原则）。
+          改前实测的冗余：normal 态下 `provider / model` 出现在 2 处（状态说明行 + 大标题行）、
+          「当前系统全局使用模型」出现在 2 处（区块标题 + 状态说明行）、
+          「全局默认」出现在 2 处（"—— 全局默认生效" + "全局默认：所有会话…"）。
+          三组重复让一个只有 1 条事实的卡片占了 200px 高、读三遍才拼出完整信息。
+          现改为：
+            ① 模型名只出现一次（标题行，粗体，与状态图标同行）；
+            ② 「更换模型」从卡片左下角提到区块标题行右侧——动作和它所作用的标题同处一行，
+               符合"动作贴着对象"原则，也省掉一行垂直空间；
+            ③ 能力/作用改 label:value 两行对齐，左标签固定宽，中文与英文混排时不参差；
+            ④ 状态文字只在异常态出现（normal 态有"使用中"即可，再写一遍是废话）；
+            ⑤ 「使用中」Tag 框 → 小圆点 + 文字，不为一个词占一个带边框的盒子。 */}
       <div
         style={{
-          fontSize: FontSize.PRIMARY,
-          fontWeight: FontWeight.BOLD,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
           marginBottom: Spacing.SM,
         }}
       >
-        当前系统全局使用模型
+        <span
+          style={{
+            fontSize: FontSize.PRIMARY,
+            fontWeight: FontWeight.BOLD,
+          }}
+        >
+          当前系统全局使用模型
+        </span>
+        {status === 'normal' && (
+          <Button size="small" onClick={() => setSwitchOpen(true)}>
+            更换模型
+          </Button>
+        )}
+        {status === 'fallback' && (
+          <Button size="small" type="primary" onClick={() => setSwitchOpen(true)}>
+            去选择
+          </Button>
+        )}
+        {status === 'no_available' && (
+          <Button size="small" type="primary" danger onClick={onAddProvider}>
+            添加 Provider
+          </Button>
+        )}
       </div>
+
       <div
         style={{
           padding: `${Spacing.MD}px ${Spacing.LG}px`,
@@ -107,89 +159,82 @@ export const CurrentModelRefCard: React.FC<Props> = ({
           borderRadius: settingsRadius.DEFAULT,
         }}
       >
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: Spacing.SM,
-            marginBottom: Spacing.SM,
-          }}
-        >
+        {/* 主值行：图标 + 模型名（全卡唯一一次）+ 状态点 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: Spacing.MD }}>
           {icon}
+          <span
+            style={{
+              fontSize: FontSize.PRIMARY,
+              fontWeight: FontWeight.BOLD,
+              color: Colors.TEXT.STRONG,
+            }}
+          >
+            {providerName && modelName ? `${providerName} / ${modelName}` : '（无）'}
+          </span>
+          {status === 'normal' && (
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                fontSize: FontSize.SECONDARY,
+                color: Colors.TEXT.SECONDARY,
+              }}
+            >
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: Colors.PRIMARY,
+                }}
+              />
+              使用中
+            </span>
+          )}
+        </div>
+
+        {/* 异常态专属说明：normal 态不需要（模型名 + 使用中 已说清），写在这里是重复表达 */}
+        {(status === 'fallback' || status === 'no_available') && (
+          <div
+            style={{
+              fontSize: FontSize.SECONDARY,
+              color: Colors.TEXT.SECONDARY,
+              marginTop: Spacing.SM,
+            }}
+          >
+            {status === 'fallback'
+              ? '配置文件中 ai 块缺失或模型不可用，系统已自动使用推荐模型。请确认或更换。'
+              : '未配置任何可用模型，所有会话将无法调用 LLM。请先添加 Provider。'}
+          </div>
+        )}
+
+        {/* label:value 两行：左标签定宽，右内容对齐，中英混排不参差 */}
+        {capabilities.length > 0 && (
+          <div style={{ ...metaRowStyle, marginTop: Spacing.MD }}>
+            <span style={metaLabelStyle}>能力</span>
+            <span>
+              {capabilities.map((c) => (
+                <Tag
+                  key={c}
+                  style={{ fontSize: FontSize.SECONDARY, marginRight: Spacing.SM }}
+                >
+                  {c}
+                </Tag>
+              ))}
+            </span>
+          </div>
+        )}
+        <div style={metaRowStyle}>
+          <span style={metaLabelStyle}>作用</span>
           <span
             style={{
               fontSize: FontSize.SECONDARY,
               color: Colors.TEXT.SECONDARY,
             }}
           >
-            {status === 'normal' &&
-              `当前系统全局使用模型：${providerName} / ${modelName} —— 全局默认生效`}
-            {status === 'fallback' &&
-              `配置文件中 ai 块缺失或模型不可用，系统已自动使用推荐模型：${providerName} / ${modelName}。请确认或更换。`}
-            {status === 'no_available' &&
-              '未配置任何可用模型，所有会话将无法调用 LLM。请先添加 Provider。'}
+            所有会话默认使用此模型；单个会话可另行覆盖（L2）
           </span>
-          {status === 'normal' && (
-            <Tag color="blue" style={{ fontSize: FontSize.SECONDARY }}>
-              使用中
-            </Tag>
-          )}
-        </div>
-        <div
-          style={{
-            fontSize: FontSize.PRIMARY,
-            fontWeight: FontWeight.BOLD,
-            marginBottom: capabilities.length ? Spacing.SM : Spacing.MD,
-          }}
-        >
-          {providerName && modelName
-            ? `${providerName} / ${modelName}`
-            : '（无）'}
-        </div>
-        {capabilities.length > 0 && (
-          <div style={{ marginBottom: Spacing.MD }}>
-            {capabilities.map((c) => (
-              <Tag
-                key={c}
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  marginRight: Spacing.SM,
-                }}
-              >
-                {c}
-              </Tag>
-            ))}
-          </div>
-        )}
-        <div
-          style={{
-            fontSize: FontSize.SECONDARY,
-            color: Colors.TEXT.SECONDARY,
-            marginBottom: Spacing.MD,
-          }}
-        >
-          全局默认：所有会话默认使用此模型；单个会话可另行覆盖（L2）
-        </div>
-        <div>
-          {status === 'normal' && (
-            <Button size="small" onClick={() => setSwitchOpen(true)}>
-              更换模型 →
-            </Button>
-          )}
-          {status === 'fallback' && (
-            <Button
-              size="small"
-              type="primary"
-              onClick={() => setSwitchOpen(true)}
-            >
-              去选择
-            </Button>
-          )}
-          {status === 'no_available' && (
-            <Button size="small" type="primary" danger onClick={onAddProvider}>
-              添加 Provider
-            </Button>
-          )}
         </div>
       </div>
       <ModelSwitchModal

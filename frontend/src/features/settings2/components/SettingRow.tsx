@@ -328,7 +328,12 @@ export const SettingRow: React.FC<Props> = ({
           <Input.TextArea
             value={value as string}
             disabled={disabled}
-            rows={3}
+            // 2026-10-10 23:35 小欧 - 3行 → 2行（北京老陈："2行就可以了"，原 72px 偏高）。
+            //   实测全项目仅 2 项用此控件（workspace.allowed_dirs 授权目录 /
+            //   security.access_token_allowlist 免口令IP白名单），内容都不长，3 行是空耗。
+            //   高度 72 → 约 50px。resize 保留（antd 默认 vertical）：偶尔要填长列表用户可自行拉大，
+            //   拉大是用户主动行为，不影响默认排版。
+            rows={2}
             style={{
               width: isNarrow ? '100%' : settingsControl.textareaWidth,
             }}
@@ -381,7 +386,17 @@ export const SettingRow: React.FC<Props> = ({
         {item.label}
       </span>
       <span
-        style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 4,
+          // 2026-10-10 23:15 小欧 - 修开关行视觉错位：本列是 column 布局，
+          //   「无 notice 的开关」会贴列顶（开关高 18 vs 控件高 28），比同行的 label/输入框中心线高出一截，
+          //   整行看着开关在"浮"。改为列整体垂直居中：有 notice 时仍按 notice+控件纵向排，
+          //   无 notice 时开关直接与 label 对齐。justifyContent 换 center 即解决，不动 notice 的位置/显示。
+          justifyContent: 'center',
+        }}
       >
         {(item.notice || hint) && (
           <span

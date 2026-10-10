@@ -121,9 +121,9 @@ export function ModalSection({
         background: Colors.BG.LIGHT,
         border: `1px solid ${Colors.BORDER.LIGHT}`,
         borderRadius: Radius.DEFAULT,
-        // 2026-10-10 22:35 小欧 - 竖向内距 12→10：四块分区时上下内距×4 是纯开销，
-        //   实测把「批量模型」块顶出可视区。横向留 12 保可点区舒适度。
-        padding: '10px 12px',
+// 2026-10-10 23:25 小欧 - 竖向内距 12→10→6：北京老陈两轮指出"框框里上下留白还是多了"。
+//   分区靠 bg + border 区分，不靠空白撑开；6px 是不显挤的下限。
+        padding: '6px 12px',
         ...style,
       }}
     >
@@ -133,7 +133,10 @@ export function ModalSection({
             display: 'flex',
             alignItems: 'baseline',
             gap: Spacing.MD,
-            marginBottom: Spacing.MD,
+            // 2026-10-10 23:45 小欧 - 标题行 22→18（显式 lineHeight，字号不变仍是 14 粗体，
+            //   只收行盒）+ 下缝 8→4。北京老陈"框框里上下留白还是多了"：
+            //   原标题行+下缝占整块 38%，对"身份"两字太奢侈。
+            marginBottom: 4,
           }}
         >
           {title && (
@@ -142,6 +145,7 @@ export function ModalSection({
                 fontSize: FontSize.PRIMARY,
                 fontWeight: FontWeight.BOLD,
                 color: Colors.TEXT.PRIMARY,
+                lineHeight: '18px',
                 flexShrink: 0,
               }}
             >
@@ -150,7 +154,11 @@ export function ModalSection({
           )}
           {hint && (
             <span
-              style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+              style={{
+                fontSize: FontSize.SECONDARY,
+                color: Colors.TEXT.SECONDARY,
+                lineHeight: '18px',
+              }}
             >
               {hint}
             </span>

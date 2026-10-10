@@ -278,7 +278,7 @@ export const ModelModals: React.FC<Props> = (props) => {
           checked={!!checked[key]}
           onChange={(e) => toggleParam(key, e.target.checked)}
         >
-          <span style={{ display: 'inline-block', width: 176 }}>
+          <span style={{ display: 'inline-block', width: 140 }}>
             <CodeChip>{key}</CodeChip>
           </span>
         </Checkbox>
@@ -320,7 +320,12 @@ export const ModelModals: React.FC<Props> = (props) => {
       <SettingsModal
         open={addModelOpen}
         title="添加模型"
-        width="form"
+        // 2026-10-10 23:50 小欧 - 宽档 form(520)→display(800)：与「添加 Provider」统一为同一套版式
+        //   （北京老陈："两个弹框自己截图仔细分析UI布局"）。此前本窗竖排 label（表单项 58px）、
+        //   那个 520 宽（label 28px），填一个字段一个高 58、一个高 28，明显不是一套设计；
+        //   且本窗正文 446 可视 / 572 内容，溢出 126px 必须滚动。
+        //   改 800 + label 左置 + 参数模板分两列后，纵向大幅压缩。
+        width="display"
         confirmLoading={busy === 'model'}
         onCancel={props.onCloseAddModel}
         onOk={() => void handleAddModel()}
@@ -336,11 +341,21 @@ export const ModelModals: React.FC<Props> = (props) => {
         >
           为指定 Provider 添加新模型，创建后可在①选择器中选用
         </div>
-        <Form form={mForm} layout="vertical">
+        {/* 2026-10-10 23:50 小欧 - vertical → horizontal：label 左置，与「添加 Provider」同款。
+            23:55 小欧 - labelCol 4→5：实测 span4 时 label 可用宽 ≈65px，而"Provider"8 个
+            拉丁字符需 ≈60px，paddingRight 被挤没、下拉框紧贴 label（实测截图确认）。
+            span5 ≈81px 才留得出间距。 */}
+        <Form
+          form={mForm}
+          layout="horizontal"
+          labelCol={{ span: 5, style: { textAlign: 'right', paddingRight: Spacing.LG } }}
+          wrapperCol={{ span: 19 }}
+          colon={false}
+        >
           {/* Provider/模型名并排；显示名删除（详见文件头编辑历史） */}
           <Row gutter={Spacing.MD}>
             <Col span={12}>
-              <Form.Item label="Provider" required>
+              <Form.Item label="Provider" required style={{ marginBottom: 0 }}>
                 <Select value={mProvider} onChange={setMProvider}>
                   {providers.map((p) => (
                     <Select.Option key={p.name} value={p.name}>
@@ -354,6 +369,7 @@ export const ModelModals: React.FC<Props> = (props) => {
               <Form.Item
                 name="model"
                 label="模型名"
+                style={{ marginBottom: 0 }}
                 rules={[{ required: true, message: '请输入模型名' }]}
               >
                 <Input />
@@ -392,12 +408,22 @@ export const ModelModals: React.FC<Props> = (props) => {
                       style={{
                         fontSize: FontSize.CAPTION,
                         color: Colors.TEXT.TERTIARY,
-                        marginBottom: Spacing.SM,
+                        lineHeight: '16px',
+                        marginBottom: 4,
                       }}
                     >
                       {grp.label}
                     </div>
-                    {keys.map(renderParamRow)}
+                    {/* 2026-10-10 23:50 小欧 - 组内分两列：弹窗改 800 宽后单列排 11 行会让
+                        参数模板区纵向 451px 独占整个弹窗（实测正文溢出 126px）。
+                        组内按 Col span=12 两列排，纵向行数约减半。 */}
+                    <Row gutter={Spacing.MD}>
+                      {keys.map((k) => (
+                        <Col span={12} key={k}>
+                          {renderParamRow(k)}
+                        </Col>
+                      ))}
+                    </Row>
                   </div>
                 );
               })}
@@ -417,7 +443,11 @@ export const ModelModals: React.FC<Props> = (props) => {
           props.onCloseAddProvider();
         }}
         title="添加 Provider"
-        width="form"
+        // 2026-10-10 23:30 小欧 - 宽档 520→800：北京老陈"这个页面弹框高度很金贵"。
+        //   原 520 窄弹窗被迫 label 在上、控件在下，每个字段独占 label 行 22px，
+        //   四块分区实测 558px 且仍要滚动。800 宽弹窗改 label 左置后，
+        //   身份/连接/性能三块各只剩"标题行 + 一行控件"，高度砍掉约 150px。
+        width="display"
         confirmLoading={busy === 'provider'}
         onOk={() => void handleAddProvider()}
         okText="保存"
@@ -432,7 +462,17 @@ export const ModelModals: React.FC<Props> = (props) => {
         >
           创建后可在③Provider配置区修改 API Key / API 地址
         </div>
-        <Form form={pForm} layout="vertical">
+        {/* 2026-10-10 23:30 小欧 - vertical → horizontal：label 左置与控件同行。
+            23:35 小欧 - labelCol 5→9 / 加 wrapperCol：span 是相对所在 Col 的百分比，
+            Form.Item 在 Col span=12 内，9/24≈37.5% 约 105px，够放"API 地址"且右对齐成一条竖线。
+            （原 5/24 只有约 58px，"API 地址"会被挤断行。） */}
+        <Form
+          form={pForm}
+          layout="horizontal"
+          labelCol={{ span: 9, style: { textAlign: 'right', paddingRight: Spacing.MD } }}
+          wrapperCol={{ span: 15 }}
+          colon={false}
+        >
           {/* 2026-10-10 22:15 小欧 - 视觉优化：四个语义块套 ModalSection 分区。
               原为 6 个 Form.Item 平铺，"模型（可选…）"与 timeout 同权重平铺，用户读不出
               「身份 / 连接 / 性能 / 批量模型」是四件事。分块后层级立刻成立。
@@ -469,9 +509,12 @@ export const ModelModals: React.FC<Props> = (props) => {
             {/* 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
                 无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
                 2026-10-10 22:35 小欧 - API 地址/API Key 改并排（原上下排把「批量模型」块
-                顶出可视区，滚动区正好切在输入框中间像坏掉了）。两者都是连接配置，同块同语义。 */}
+                顶出可视区，滚动区正好切在输入框中间像坏掉了）。
+                23:40 小欧 - 14/10 改回 12/12：三个分区（身份/连接/性能）都是两列，但本块
+                原用 14/10，切分点比另两块右移 36px，三块的竖向分隔线对不齐（"不齐整"）。
+                统一按中线对半分，三块竖线贯通。API Key 分到半宽仍远超输入所需。 */}
             <Row gutter={Spacing.MD}>
-              <Col span={14}>
+              <Col span={12}>
                 <Form.Item
                   name="api_base"
                   label="API 地址"
@@ -489,7 +532,7 @@ export const ModelModals: React.FC<Props> = (props) => {
                   <Input placeholder="https://api.deepseek.com" />
                 </Form.Item>
               </Col>
-              <Col span={10}>
+              <Col span={12}>
                 {/* 2026-10-03 小欧 - 补 autoComplete="new-password"：新增 Provider 时该框必须为空，
                     而 Input.Password 渲染 type="password" 会被 Chrome 密码管理器自动填入已存口令
                     （表现为浅蓝底 + 掩码点，且不察觉直接保存就把浏览器口令写进 config.yaml 当 api_key）。
