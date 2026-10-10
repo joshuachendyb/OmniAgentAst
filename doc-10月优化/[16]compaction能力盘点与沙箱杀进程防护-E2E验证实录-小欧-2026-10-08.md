@@ -90,12 +90,23 @@
 
 ### 1.7 后续接线优先级建议
 
+> **2026-10-10 小欧 复核补注（YAGNI 定性）**：下表把未接入项**排队**是错的处置。
+> YAGNI 的含义是「当下不需要就不需要」，不是「当下不需要但先留着」。
+> 实测 `keep_valuable_messages` + `_value_weight` + `_fc_atomic_units` + `_msg_cost` + `_released_tokens`
+> 五个函数（约 90 行）**互相调用形成自洽闭环、外部零引用**——为修它的判据改了 4 处（§2.4），
+> 但**这些修复在生产链路上一次都不会执行**，另有 81 个单测在测这批死代码。
+> compaction 包合计 628 行 / 20 函数 / 接入 4，**死代码约 350+ 行**。
+> 正确处置是**二选一**：接 C5 就接，不接就删（至多保留 assembler/trigger 到需求明确）。留待接线是沉没成本。
+
 | 序 | 目标 | 理由 |
 |---|---|---|
 | 1 | `remove_dangling_tool_calls` | 2026-10-08 刚修好且已单测；**任何删除式裁剪都必须先过它**，属安全前置 |
 | 2 | `use_tool_summary` | **前置条件未满足**（1.5：上游无 summary 生产者），接了也是空跑；须先有工具产出 summary |
 | 3 | `truncate_oversized_message` | 解决「单条超长 tool 撑爆窗口」，比整体裁剪更精准 |
 | 4 | C5 三件套 + `generate_chunked_summary` | 长任务多次压缩场景才需要，工作量最大；`generate_chunked_summary` 已完成真实实测（见 2.5），接线风险已降低 |
+
+> 补充：已接入的 `prune_tool_output_keeping_tail` **不删消息、只清 tool content**，FC 配对天然不受影响，
+> 故第 1 项规则**当前未被违反**。规则应保留，用于约束未来真正的删除式裁剪。
 
 ---
 
@@ -234,28 +245,179 @@ JobObject 只设了单进程内存限额（`0x100`），**无 CPU/时间/进程�
 | B 需裁决 | 有副作用但不确定 | 静态命中 → 直接 `needs_ruling` 转 HITL，**不预检** |
 | C 可预检 | 只读，或只写工作区 | 才允许进沙箱真跑（无伤） |
 
+> **2026-10-10 小欧 更正：本表是「设计意图」，与已落地代码不一致。**
+> 实测 `sandbox/executor.py:244-247`，A/B 两类命中后返回的是 `PreCheckResult(passed=False, needs_ruling=True)`，
+> 即 **转 HITL 弹窗，并非 §3.5 所称的 blocked**。故本表的 A 类「静态命中即 blocked」当前**未实现**。
+> 二者只能存其一，已在 §3.5 阶段二按实际代码口径注明，**本文档不作事后合理化**。
+
 **双执行问题在三类分流下自然收敛**：A/B 不真跑；C 类预检写的是临时工作区（`workspace.destroy()` 销毁），真实文件只被真机那次写入。故不需要单独立项改执行链，也不需要做「全面静态化」（PS 语法太动态，误伤无穷，违反 YAGNI）。
 
-### 3.5 四阶段落地
+### 3.5 四阶段止血落地（非「防护体系」，见 §3.7）
 
-| 阶段 | 文件 | 内容 |
-|---|---|---|
-| 一 | `utils/shell_readonly.py` +62 | `UNCONTAINABLE_VERBS`（8 词表）+ `has_uncontainable_intent` / `extract_kill_target_pids` / `is_process_kill_protected` 三纯函数 |
-| 二 | `sandbox/executor.py` | `_scan_command_write_intent` 改名 `_scan_command_danger_intent` 并扩职责，命中即转 HITL **而不 run**；旧名零残留不留别名 |
-| 三 | `safety/tool_safety_checker.py` | 新增 `_protected_pids()`（自身+父进程+shell池）+ 接线，命中即 `blocked=True` 直返 |
-| 四 | `sandbox/job_object.py` | 补 `KILL_ON_JOB_CLOSE` + `ACTIVE_PROCESS_LIMIT`（默认 64） |
+> **2026-10-10 小欧 更名**：原标题「四阶段落地」易被读成「防护已建立」。
+> 实测四阶段**未消除根因**（预检仍在宿主真跑），只是把绕过面收窄。准确表述是**止血**，不是防护。
+
+| 阶段 | 文件 | 内容 | 对「后端自杀」的实贡献 |
+|---|---|---|---|
+| 一 | `utils/shell_readonly.py` +62 | `UNCONTAINABLE_VERBS`（8 词表）+ `has_uncontainable_intent` / `extract_kill_target_pids` / `is_process_kill_protected` 三纯函数 | **有效但可绕过**（黑名单，见 §3.7） |
+| 二 | `sandbox/executor.py` | `_scan_command_write_intent` 改名 `_scan_command_danger_intent` 并扩职责，命中即转 HITL **而不 run**；旧名零残留不留别名 | 拦住原事故形态；注意是 HITL 非 blocked（见 §3.4 更正） |
+| 三 | `safety/tool_safety_checker.py` | 新增 `_protected_pids()`（自身+父进程+shell池）+ 接线，命中即 `blocked=True` 直返 | **对原事故贡献为 0**：事故命令是**按名杀**，抽不出 PID（见 §3.8 实证） |
+| 四 | `sandbox/job_object.py` | 补 `KILL_ON_JOB_CLOSE` + `ACTIVE_PROCESS_LIMIT`（默认 64） | **0**（属「防失控」不属「防杀宿主」，非同一抽屉） |
 
 收录标准：`SHELL_DANGEROUS_PATTERNS` 只到 MEDIUM（弹窗后仍进预检）拦不住者才收；HIGH 级（`Stop-Computer`/`Format-Volume`/`shutdown`）预检前已 blocked，收录即重复（DRY）。前后向断言用 `[a-z0-9_-]` 字符类而非 `\b`，避免 `kill` 命中 `killall`/`taskkill` 内部。
 
 ### 3.6 已知不完美（如实登记，不假装解决）
 
-| 项 | 说明 |
+> **2026-10-10 小欧 复核补登**：下表原 5 项均为**次要**问题。审计时发现**唯一能复现原事故的形态未被登记**，
+> 已补为第 1 项并置顶。原表遗漏它，属**登记失职**而非疏忽淡忘，此处如实记入。
+
+| 项 | 说明 | 严重度 |
+|---|---|---|
+| **① 静态词表可被绕过（黑名单固有）** | `UNCONTAINABLE_VERBS` 是**黑名单**。**拼接类已于 2026-10-10 修复**（`normalize_for_intent` 折叠 `+` + 去引号，取并集）；**WMI/CIM/`.Kill()` 方法调用/`-EncodedCommand` Base64/中文变形仍 MISS**，详见 §3.7 | **高（已收窄，未清零）** |
+| `_protected_pids` 覆盖不全 | `getppid()` 是 reloader 父进程，覆盖不到 `--reload` 派生的 worker 子进程 | 中 |
+| ~~③ 保护盾对事故形态无效~~ **已修(2026-10-10)** | 按名杀抽不出 PID。已补名维度 `_protected_process_names` + `extract_kill_target_names`，事故原形现 `blocked` | ~~中~~ 已闭环 |
+| `echo "kill"` 误命中 | 引号内裸词亦命中 → 转 HITL 而非直放。与该文件既有「取严」哲学一致 | 低 |
+| JobObject 两项限额不阻止杀宿主 | 代码注释已明确该职责由 `shell_readonly` 静态判定承担 | 低（已在 §3.5 标注） |
+| **④ 命令双执行（预检+真跑）** | 原表记「仅 C 类存在，已论证无害」——**该论证不成立**：预检只覆盖**静态可判的写动词**，脚本内部行为完全不可见。`python deploy.py` 无写动词、非白名单、危险扫描不命中 → 预检在宿主跑一次（脚本往 `D:\` 写），真机再跑一次（又写一遍）。**对任意脚本类命令双执行是有害的** | **高** |
+| 网络外传未收词 | `Invoke-WebRequest`/`curl` POST 误伤面大，**待裁定** | 待裁定 |
+
+---
+
+### 3.7 【致命】词表绕过实证（2026-10-10 小欧 复核补录）
+
+真实调用 `has_uncontainable_intent` 复现：
+
+| 输入 | 判定 | 说明 |
+|---|---|---|
+| `Get-Process python \| Stop-Process -Force` | HIT | 原事故命令，拦住 ✓ |
+| `taskkill /F /IM python.exe` | HIT | §3.3 原「无风险」，已补 ✓ |
+| `pkill -9 -f python` | HIT | §3.3 原「无风险」，已补 ✓ |
+| `$a='stop'; $b='process'; & $a$b -Id 999` | **MISS** | 字符串拼接 |
+| `iex ('Stop'+'Process -Id 5')` | **MISS** | iex + 拼接 |
+| `Get-CimInstance Win32_Process \| Invoke-CimMethod -MethodName Terminate` | **MISS** | WMI 绕开词表 |
+
+> **2026-10-10 小欧 复核补注**：上表为 10-08 实测原始记录，**保留不改写**。
+> 复核后实测：前两行（拼接类）已由 `normalize_for_intent` 收口为 **HIT**；
+> 第三行（WMI）**仍 MISS**。详见本节末「部分修复」补记。
+
+MISS 之后的链路（已逐行核对 `executor.py`）：
+
+```
+_scan_command_danger_intent → False（未命中）
+_is_readonly_whitelisted     → False（非白名单前缀）
+executor.py:264              → backend.run(command, workspace.path) 在宿主真跑
+```
+
+**结论：一条与 10-08 事故等价的「后端自杀」命令，可原样穿透全部四阶段。**
+触发路径与原事故完全相同（agent 生成一条 bash 命令），故**该事故可以复发**。
+
+#### 3.7.1 根因定性：黑名单路线不可能收敛
+
+§3.4 立论「安全靠静态判定」——**「静态」解决的是确定性（可复现、无 TOCTOU），不是安全性**。
+安全控制的第一定律是 **allowlist > denylist**：
+
+- 黑名单 = 默认放行 + 列举危险 → 完备性**不可能**（危险命令空间无限：新工具、新别名、新参数形式、新编码）
+- 白名单 = 默认拒绝 + 列举安全 → 完备性**可证**（不在表内即拒）
+
+讽刺之处：项目内 `is_readonly_whitelisted` 的 `READONLY_PREFIXES`（23 项前缀，逐条过安全评审，
+还否决了 `git branch`/`ipconfig` 裸前缀）**已经是一个合格的白名单**——**最好的那部分安全设计，
+恰是本文档未打算推广的那部分**。C 类事实上已用白名单，A/B 类却仍走黑名单+弹窗。
+
+#### 3.7.2 根因未消除：预检仍在宿主真跑
+
+§3.4 曾论证「不需要单独立项改执行链」。该推理形式为：
+**给定「预检必然在宿主真跑」这个前提**，推出「故须精确分类以尽量少真跑」——逻辑自洽，
+**但前提本身可改且应当改**。真隔离三方案在本项目均可行：
+低权限独立账户 / AppContainer(Restricted Token) / WSL2 容器。
+任一落地，§3.7 全部绕过形态**一次性归零，且永久免维护词表**。
+
+> 原否决理由（「PS 语法太动态，全面静态化误伤无穷，违反 YAGNI」）本身即**证明了黑名单路线不收敛**：
+> 一条需永久维护、必然被绕过、绕过后果是系统自杀的防线，
+> 成本远高于一次性改执行链。此处属**误用 YAGNI 为技术债辩护**，如实记录。
+
+#### 3.7.3 【2026-10-10 小欧 部分修复，审计 P1-1】
+
+上表**拼接类**两行已由 `normalize_for_intent` 收口（折叠 `+` 拼接 + 去引号，判定取原文与归一文并集），实测：
+
+```
+HIT | & ('Stop'+'-Process') -Id 5              归一后 → & (Stop-Process) -Id 5
+HIT | $v='Stop'+'-Process'; & $v -Id 5         归一后 → $v=Stop-Process; & $v -Id 5
+HIT | & ('task'+'kill') /PID 5                 归一后 → & (taskkill) /PID 5
+MISS | Get-CimInstance Win32_Process | Invoke-CimMethod -MethodName Terminate   ← 仍漏
+```
+
+**但归一只解决「字面量被拆开」这一种手法，属点修复不属线修复。**下述手法**仍然 MISS**：
+
+| 仍 MISS 的手法 | 为何归一救不了 |
 |---|---|
-| `_protected_pids` 覆盖不全 | `getppid()` 是 reloader 父进程，覆盖不到 `--reload` 派生的 worker 子进程，**待办** |
-| `echo "kill"` 误命中 | 引号内裸词亦命中 → 转 HITL 而非直放。与该文件既有「取严」哲学一致（漏放是真机执行，误拒只是多弹一次窗） |
-| JobObject 两项限额不阻止杀宿主 | 代码注释已明确该职责由 `shell_readonly` 静态判定承担 |
-| 命令双执行 | 仅 C 类仍存在（预检+真跑），已论证无害，不动 |
-| 网络外传未收词 | `Invoke-WebRequest`/`curl` POST 误伤面大，**待裁定** |
+| `Get-CimInstance Win32_Process \| Invoke-CimMethod -MethodName Terminate` | 动词是 `Terminate` 方法名，不在词表，需**收词**而非归一 |
+| `[Diagnostics.Process]::GetProcesses() \| % { $_.Kill() }` | 同上，`.Kill()` 是方法调用 |
+| `powershell -EncodedCommand <Base64>` | 动词藏在 Base64 里，**归一不解码** |
+| 中文/全角字符变形 | 需 Unicode NFKC 归一化，本项未做 |
+
+> 故 §3.7「黑名单路线不收敛、事故可复发」的结论**依然成立**，本次仅把绕过面收窄，**未清零**。
+> **根治仍只能靠 §3.7.2 的预检真隔离（P0-1）**——那时 ① 整层连同词表与归一都可删除。
+> 另需诚实记录：本次修复在**无真隔离的前提下给词表续了命**，属边际收益递减的补丁，
+> 不应被读作「沙箱已加固」。
+
+---
+
+### 3.8 保护盾实证：事故形态贡献为 0（2026-10-10 小欧 复核补录）
+
+```
+protected-self   = True    Stop-Process -Id <自身>
+protected-byName = False   Stop-Process -Name python
+```
+
+`extract_kill_target_pids` 三条正则只能抽**显式 PID**（`-Id n` / `/PID n` / `kill [-9] n`）；
+事故命令 `Get-Process python | Stop-Process -Force` 是**按名杀**，抽出空集。
+
+> §3.5 阶段三「接线 `_protected_pids()`」修复的是**真 bug**（原 `if protected_pids:` 恒不执行），接线本身正确。
+> 但它保护的形态**恰好不是出事的形态**，故在真实事故中贡献为 0。原表把它列为四大成果之一，易高估。
+
+**【2026-10-10 小欧 已修复，审计 P1-3】**
+
+补名维度，按名杀现可拦：
+
+| 改动 | 文件 | 内容 |
+|---|---|---|
+| 新增 | `utils/shell_readonly.py` | `extract_kill_target_names`（四形态：`-Name` / `Get-Process` 管道 / `taskkill /IM` / `killall`）+ `_name_matches`（去 `.exe`、casefold、`fnmatch` 通配）；`is_process_kill_protected` 增第三参 `protected_names` |
+| 新增 | `safety/tool_safety_checker.py` | `_protected_process_names()`——由 `_protected_pids()` 的 PID 经 psutil 反查进程名（进程名解析归 safety 侧，`utils` 保持纯函数不 import tools） |
+| 接线 | 同上 | 调用点补传第三个参数 |
+
+实测（真实 `check_before_execute('bash', ...)`）：
+
+```
+受保护PID = [13028, 27304]     受保护名 = ['powershell.exe', 'python.exe']
+
+BLOCKED   Get-Process python | Stop-Process -Force    ← P9-03 事故原形, 修复前恒不命中
+BLOCKED   Stop-Process -Name python
+直放/HITL  Stop-Process -Name node                    ← 不相关进程名不误拦
+直放      git status
+```
+
+> 只读查询 `Get-Process -Name python`（无杀动词）**不误判为杀**，靠 `has_uncontainable_intent` 前置闸门区分。
+> PID 口径与拼接归一（P1-1）口径均未退化。回归 **219 passed**。
+
+---
+
+### 3.9 【更正】§4.4 证据边界（2026-10-10 小欧 复核补录）
+
+§4.4 原述「端到端过 `pre_execute`：`needs_ruling=True`、`stdout_tail`/`stderr_tail` 均为空、
+日志无 `run 启动` —— 证明 `backend.run` **从未被调用**」。
+
+**该证据只证明「预检那次没跑」，未证明「真机那次没跑」。**
+而 10-08 事故的死因发生在**真机执行**环节，不在预检环节。
+叠加 §3.4 更正（A 类实为 HITL 非 blocked），真实链路为：
+
+```
+check_before_execute → MEDIUM → 弹窗① ← 用户点「允许」
+sandbox_gate        → needs_ruling(risky) → 弹窗② ← 用户点「允许」
+真实执行 → 后端死亡
+```
+
+两个弹窗挡不住点了两次「允许」的用户，更挡不住 Prompt Injection 把命令包装成无害查询。
+`ruling_kind="risky"` 使受信会话**也拿不到豁免**（`sandbox_gate.py:122` 仅对 `unsupported` 豁免）——此点设计正确，特此保留。
 
 ---
 
@@ -330,14 +492,38 @@ ActiveProcessLimit=64   ProcessMemoryLimit=2048MB
 
 ## 五、遗留待办
 
-| 序 | 事项 | 性质 |
+> **2026-10-10 小欧 复核重排**：复核发现原 6 项遗漏了**事故可复发**的根因项，故重排。
+> 排序= **处置优先级**：1~2 为事故复发防控(P0)，3~11 为 P1 与原 6 项顺延。
+> 序号连续无跳号，优先级单列一栏，不再与序号混写。
+
+| 序 | 事项 | 优先级 |
 |---|---|---|
-| 1 | p9_03 重跑（换 big-pickle 后唯一未复验 case） | 待办 |
-| 2 | `_protected_pids` 覆盖 `--reload` worker 子进程 | 安全待办 |
-| 3 | 网络外传命令是否收词 | **待北京老陈裁定** |
-| 4 | 429 限流无退避重试（tpm/rpm 属可重试错误，当前直接判 failed） | 独立问题，不在本次范围 |
-| 5 | 打 tag（需先在 `version.txt` 头部插 commit 汇总） | 待办 |
-| 6 | 增量摘要「旧声称残留」的成对校验手段（见 2.5.1） | 待办，与 `[17]` §4.2 呼应 |
+| 1 | **预检改真隔离**（低权限独立账户 / AppContainer / WSL2 任一）——落地后 §3.7 全部绕过形态一次性归零，**永久免维护词表** | **P0 根治** |
+| 2 | **A 类命中改 `blocked`**（对齐 §3.4 原则，消掉「两次弹窗」假象） | **P0 止血** |
+| ~~3~~ **已撤回** | ~~白名单模式推广：不在 `READONLY_PREFIXES` 内 → 不进预检，直接 HITL~~ **2026-10-10 撤回，理由见下方注记；原 3~12 顺延为 3~11** | ~~P0~~ 撤回 |
+| 3 | 补 evasion 单测集（拼接/引号/通配/大小写/只读查询不误判）固化进 `sandbox_bugs` 防回归 | P1 |
+| 4 | 补 `--reload` worker 子进程进 `_protected_pids`（`getppid()` 覆盖不到派生 worker） | P1 |
+| 5 | p9_03 重跑（换 big-pickle 后唯一未复验 case） | 待办 |
+| 6 | 网络外传命令是否收词 | **待北京老陈裁定** |
+| 7 | 429 限流无退避重试（tpm/rpm 属可重试错误，当前直接判 failed） | 独立问题 |
+| 8 | compaction 死代码二选一：接 C5 或删除约 350 行（见 §1.7 补注） | 待办 |
+| 9 | 打 tag（需先在 `version.txt` 头部插 commit 汇总） | 待办 |
+| 10 | 增量摘要「旧声称残留」的成对校验手段（见 2.5.1） | 待办，与 `[17]` §4.2 呼应 |
+
+#### 撤回记录：原第 3 项「白名单模式推广」（2026-10-10 小欧）
+
+该建议由本次审计提出，复核后**自查判定错误并撤回**，如实留痕不无声删除：
+
+| 项 | 说明 |
+|---|---|
+| 原建议 | 凡不在 `READONLY_PREFIXES` 只读白名单内的命令，一律不进预检，直接转 HITL |
+| **撤回理由一** | 日常命令全不在该白名单内（`python script.py` / `npm run build` / `pytest`），照此执行将导致**几乎每条命令都弹窗**，安全检查沦为骚扰，工作流不可用 |
+| **撤回理由二** | **问题问错了**。在「预检跑宿主」前提下，预检的危险不在于「挑错了命令去跑」，而在于「**它在宿主上跑**」——挑谁去跑都一样危险，收紧准入名单解决不了问题 |
+| 正确归属 | 本项**只有在第 1 项（预检真隔离）落地后才有意义**：届时跑什么命令都无害，A/B/C 三类分类整套失去意义，本项自动作废 |
+| 教训 | **误用局部收紧冒充安全提升**。与 §3.7.2 指出「误用 YAGNI 为技术债辩护」是同一类错误——以调整参数冒充改变前提 |
+
+> 原第 4/5/6 项（命令规范化 / evasion 验证 / 按名匹配）已于 2026-10-10 实施完毕并闭环，
+> 逐项实测见 §3.7.3 与 §3.8，详见 v1.3 版本历史。
 
 ---
 
@@ -347,3 +533,5 @@ ActiveProcessLimit=64   ProcessMemoryLimit=2048MB
 |--------|------|---------|------|
 | v1.0 | 2026-10-08 11:19:17 | 新建。①第一章 compaction 包能力盘点（20 函数/已接入 4/未接入 16，含盘点脚本两处误判修正记录与接线优先级建议）；②第二章摘要降本三方案实测对比与方案2 裁定依据、顺带修复的 4 项既有缺陷；③第三章 agent 杀进程事故实录、根因（预检即真跑）、三层防护失效分析、A/B/C 三类分流设计原则与四阶段落地、5 项已知不完美；④第四章 E2E 三轮实录（p9 全量 8 case + p9_08 详情）、单测数据、内核读回验证、提交与文档回写；⑤第五章遗留待办 5 项 | 小欧 |
 | v1.1 | 2026-10-08 11:49:26 | 北京老陈追问"都加全了吗"，自查发现缺口并补齐。①新增 §2.5 `generate_chunked_summary` 补测(此前全仓唯一"存在但零验证"的 LLM 摘要功能): 三列对照表(A 基线 anchored 全量 7220 tok/40.9s/1834 字符/6-6、B 段1 anchored 前150 4968 tok、B 段2 chunked 后56 4337 tok/4387 字符/6-6)、结论一单次压缩合计 9305 tok 比全量贵 29% 故不划算、结论二价值在多次压缩(线性而非平方增长)、§2.5.1 质量风险「增量版 Key Decisions 残留旧声称 158 份而 Progress 已更正 3066 份，同摘要内口径不一致」并给出成对校验硬约束、§2.5.2 暂不接入三条理由; ②新增 §2.6 待补 p9_03 复验说明; ③§1.6 表格 generate_chunked_summary 行由"见 2.5"改为已补测并暂不接入; ④第五章新增待办第 6 项(旧声称残留成对校验手段)。v1.0 保留 | 小欧 |
+| v1.2 | 2026-10-10 08:48:19 | 北京老陈指令「评价设计可行性和漏洞、代码逻辑是最佳还是最差」，逐条与实际代码对账并实证复现后修订。**核心结论：四阶段止血有效但未消除根因，原事故可复发。**①§3.4 加更正说明——A 类「静态命中即 blocked」属设计意图, 实测 `executor.py:244-247` 返回 `needs_ruling=True` 转 HITL, 二者只能存其一, 本文档不作事后合理化; ②§3.5 更名「四阶段止血落地(非防护体系)」并新增「对后端自杀的实贡献」列, 阶段三贡献 0、阶段四属防失控非防杀宿主; ③**§3.6 补登漏登记的致命项: 静态词表可被绕过(黑名单固有)**, 置顶并标严重度; ④**新增 §3.7 词表绕过实证**——`$a='stop'; $b='process'; & $a$b` / `iex ('Stop'+'Process')` / `Get-CimInstance Win32_Process Invoke-CimMethod Terminate` 三类实测 MISS, MISS 后经 `executor.py:264` 在宿主真跑, 穿透路径与原事故一致; 含 §3.7.1 黑名单路线不可能收敛(allowlist>denylist, 且项目内 `READONLY_PREFIXES` 已是合格白名单却未推广)、§3.7.2 根因未消除(预检仍在宿主真跑, 原否决理由误用 YAGNI 为技术债辩护); ⑤**新增 §3.8 保护盾实证**——`protected-byName=False`, 阶段三保护的形态恰非出事形态, 真实事故贡献为 0(接线本身仍是对的, 修了真 bug); ⑥**新增 §3.9 更正 §4.4 证据边界**——该证据只证预检没跑, 未证真机没跑, 而事故死因在真机环节, 补记真实两弹窗链路; ⑦§1.7 加 YAGNI 定性补注——compaction 628 行/20 函数/接入 4, 死代码约 350+ 行, 五个函数自闭环外部零引用, 正确处置是二选一而非排队; 并澄清已接入的 `prune_tool_output_keeping_tail` 只清 content 不删消息, 故「删除式裁剪先过 remove_dangling_tool_calls」规则当前未被违反; ⑧第五章按优先级重排, 新增 P0-1 预检改真隔离(根治)/P0-2 A 类改 blocked/P0-3 白名单模式推广 三项事故复发防控, 原 6 项顺延。v1.0/v1.1 全部保留 | 小欧 |
+| v1.3 | 2026-10-10 09:03:48 | 北京老陈批准实施审计 P1-1 + P1-3 后同步实录。**P1-1 命令规范化**：`utils/shell_readonly.py` 新增 `normalize_for_intent`（折叠 `+` 字符串拼接 + 去引号，循环至不动点，必收敛），`has_uncontainable_intent`/`extract_kill_target_pids` 取**原文与归一文并集**，`_PID_TARGET_RES` 首条分隔符改 `\W*` 以覆盖 `& ('Stop-Process') -Id n` 括号形态；拼接类绕过 MISS→HIT 收口。**P1-3 按名匹配**：新增 `extract_kill_target_names`（四形态：`-Name`/`Get-Process` 管道/`taskkill /IM`/`killall`）+ `extract_kill_target_names_from_pipeline` + `_name_matches`（去 `.exe`、casefold、`fnmatch` 通配），`is_process_kill_protected` 增第三参 `protected_names`；safety 侧新增 `_protected_process_names()`（由 `_protected_pids()` 经 psutil 反查名，`utils` 保持纯函数不 import tools），调用点接线。**实测**：P9-03 事故原形 `Get-Process python | Stop-Process -Force` 与 `Stop-Process -Name python` 现均 `blocked`（修复前恒不命中），`Stop-Process -Name node` 不误拦，只读查询 `Get-Process -Name python` 不误判为杀（靠 `has_uncontainable_intent` 前置闸门）。**回归 219 passed**（sandbox/shell_guard/hitl 共 15 文件），零退化。**文档**：§3.6 新增「④ 命令双执行」致命项（原「已论证无害」论证被推翻，见 `python deploy.py` 反例）；§3.6 ①③ 两项标注已修并降级；§3.7.3 新增「部分修复」小节，明列 WMI/`.Kill()`/`-EncodedCommand` Base64/中文变形**仍 MISS**，并如实记录「本次是在无真隔离前提下给词表续命，属边际收益递减，不应读作沙箱已加固」；§3.8 补修复后实测；第五章待办 4/5/6 划线闭环。**P0-2（A 类改 blocked）未获批准，未实施**。**同日复核撤回原第 3 项「白名单模式推广」**——日常命令（`python script.py`/`npm run build`/`pytest`）全不在只读白名单内，照此执行将致几乎每条命令弹窗；且在「预检跑宿主」前提下收紧准入名单解决不了问题（危险在于「在宿主上跑」而非「挑错命令」）。该项**只有第 1 项真隔离落地后才有意义**，已划线撤回并新增「撤回记录」小节留痕；第五章序号顺延为 3~11（原 4/5/6 已闭环者移入撤回记录下方说明）。v1.0/v1.1/v1.2 全部保留 | 小欧 |
