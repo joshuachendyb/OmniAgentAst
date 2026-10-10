@@ -235,6 +235,27 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 
 > 落点说明(2026-10-08 小欧): 真实 205 条实测，未降本 feed 135362 tok；本策略降至 86472 tok（省 36%）且摘要保住可核对的具体数字/签名/时间戳（纯全清零版 83673 tok 但摘要仅 1521 字符且失掉证据）。开关见 `compaction_constants.SUMMARY_PRUNE_TOOL_OUTPUT`，置 False 即刻回退全量喂。
 
+### 3.6 会话使用目录（`services/chat/workspace_service.py`）
+
+**会话使用的目录**（本次任务产物落在这里）的存储与落值（2026-10-10 新增，2026-10-10 概念订正重写）。⚠ **授权目录不在本模块** —— 授权目录归全局配置管（`workspace.allowed_dirs` / `project_root`）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `get_session_workspaces` | 读该会话使用的目录行（`ORDER BY rowid`） | conn, session_id | list[Row] |
+| `_normalize_ws_path` | **归一化唯一源**：空串/非绝对/超长硬拒 → resolve + 去尾分隔符，**保大小写入库**（去重键 casefold + 库级 NOCASE，存储无损）。⚠ 空串必须硬拒；仍可能抛 OSError/ValueError，调用方必须捕获 | p: str | str |
+| `_ws_deny_reason` | 会话目录**合法性判据**：`_is_forbidden_path` **串联** `validate_path(mode="write")` 的 `category=="system"` + 宽根规则 | p: str | Optional[str] |
+| `_is_broad_root` | 宽根判据：家目录本身及其上级禁；家目录**之内**不拦。**fail-closed**：解析异常按宽根拒绝 + 告警 | p: str | bool |
+| `_ws_precheck` | 逐条走合法性判据，返回被拒清单（不抛异常，调用方整单 422） | paths: list[str] | list[dict] |
+| `set_session_workspaces` | **PATCH 唯一写入口**：数量先拦 → 归一化 → 去重(casefold 键) → 预检 → 写库。⚠ **只改数据库行，绝不删除磁盘目录** | conn, session_id, raw_paths | list[dict] |
+| `_ws_apply` | 覆盖写（PATCH 唯一写库实现）：DELETE 全删 → executemany INSERT | conn, session_id, paths | None |
+| `classify_workspace_rows` | **过滤唯一真源**：行→(有效路径集 `list[str]`, 不可用清单)。禁区判定先于存在判定；`is_dir()`（文件不收）；unusable 带机器可读 `kind`(illegal/denied/missing) | rows | Tuple[list, list] |
+| `reconcile_session_workspaces` | **进入会话唯一真源**：空则造默认目录 → classify 裁决 → 禁区行清库 / 缺目录建目录 → 返回有效路径集 | conn, session_id | list[str] |
+| `_load_workspaces_conn` | 任务快照源：读行→过滤，不可用行告警；conn 由调用方经 db.atxn 传入 | conn, session_id | list[str] |
+| `_build_default_workspace_dir` | 默认目录名 = `{项目根}\{时间}-{会话标识前4位}`（编排器下沉至此；BUG-13 撤回：完整 session_id 属过度工程，已恢复 [:4]） | session_id: str | Optional[str] |
+| `session_exists` | 会话存在且未删才放行（`COALESCE(is_deleted,FALSE)`，NULL 按未删）；否则端点返 404 | conn, session_id | bool |
+
+> 落点说明(2026-10-10 小欧): ①判据接全局 `validate_path` 是会审关键修正。②**10轮会审20bug已修**(v5.5)：过滤收敛到 classify 单一真源（删 `load_effective_workspaces` 死函数、删 `(path,恒0)` 裸 tuple）；`is_dir()` 拒文件；上限前置；NULL 用 COALESCE；宽根 fail-closed；存值保大小写 + 库级 NOCASE；上限 200；快照 build 去嵌套。（BUG-13“目录名前4位重名”系误报已撤回：验证场景系人为构造，真实概率可忽略，恢复 [:4] 原设计。）常量 `MAX_WORKSPACES=64` / `MAX_PATH_CHARS=200` 同文件定义。
+
 ---
 
 ## 四、工具辅助层（app/tools/）
@@ -470,6 +491,9 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.5 | 2026-10-10 12:50 | **10轮会审21bug修复(小欧)**: §3.6 函数清单同步新契约 —— 新增 `reconcile_session_workspaces`(进入会话唯一真源)/`_build_default_workspace_dir`(下沉)/`_drop_nested`(context 快照去嵌套); 删 `load_effective_workspaces` 死函数; `MAX_PATH_CHARS` 240→200 | 小欧 |
+| v5.4 | 2026-10-10 12:40 | **会话使用目录概念订正(小欧)**: 三、Agent层 §3.6 全面重写 —— "会话授权目录"改称**会话使用目录**(授权目录归全局 config 管, 不在本模块); 删 `resolve_ws_initialized()` 与 `is_default` 分档(表里无"授权目录"可区分); 补 `_ws_apply` 登记; 落点说明加"只改库行、绝不删磁盘目录"硬约束 | 小欧 |
+| v5.3 | 2026-10-10 10:49:50 | **登记会话 Workspace 落地(10 轮会审后, 小欧)**: 三、Agent层 新增 §3.6 `workspace_service.py` 共 10 个函数(`classify_workspace_rows` 过滤唯一真源 / `_ws_deny_reason` 授权判据 / `_is_broad_root` 宽根判据 / `_normalize_ws_path` 归一化唯一源 等)。**判据全部复用全局真源**(`_is_forbidden_path` 串联 `validate_path`),不自造黑名单 —— 会审实证此前只用了较弱判据,导致 `C:\Program Files`/`ProgramData` 可被授权 | 小欧 |
 | v5.2 | 2026-10-10 10:32:51 | **猎杀 10 bug 全修**(本地探针门级 verdict 逐条实证, 小欧): 1.14 四函数口径同步更新 — ①`normalize_for_intent` 增 `[char]N` 解码 + `()[]{}` 噪音剥离(顺序解码→剥噪音→折叠→去引号; 逗号/分号不动)；②`has_uncontainable_intent` 增 `.Terminate()`/`.Kill()` 方法调用(只认调用点, 不认裸词)、`Invoke-CimMethod`、`-EncodedCommand`/`-enc`(内容不可见, 转 HITL 为残留风险)；③`extract_kill_target_pids` 增 `taskkill /FI "PID eq N"`；④`is_process_kill_protected` 增引号名(同步扫归一文)、`/FI IMAGENAME`、WMI `where`/`Name=`、pkill 实参(含 `-f` 模式串) + **无目标兜底**(有杀意无目标直接 blocked；停服务动词、`/?`/`--help`/`-WhatIf`、wmic 裸查询、引号内纯提及不在此列)。回归 303 passed 零退化 | 小欧 |
 | v5.1 | 2026-10-10 09:55:09 | **位置与命名更正**(北京老陈指出"代码名称确实要名副其实", 小欧): ①**落点** `app/utils/` → `app/tools/fundamental/shell_static_guard.py` — 原落 utils 的理由"架构边界要求 tools 禁 import safety"经 `tests/test_architecture_boundaries.py` 实证**不成立**(该守卫只禁 `"tools": {"app.services","app.safety"}`, `safety→tools` 合法, 先例= tool_safety_checker 一直 import execute_shell_command_safety), 无需中转 utils; shell 代码归 shell 代码同目录, 不散落。②**更名** `shell_readonly.py` → `shell_static_guard.py`(名副其实: 对 shell 命令做静态守卫判定, 原名仅覆盖约 1/3 内容)。③**并回一处** 曾短暂拆为 shell_readonly/shell_danger/shell_normalize 三文件, 复核判定属**过度拆分** — normalize_for_intent 只服务杀进程判定、非独立可复用能力, 单独成文件违反 YAGNI, 且制造 shell_danger→shell_normalize 跨文件依赖。④注册表 1.15/1.17 并入 **1.14 shell 命令静态守卫**(条目号保留作指引, 不重排后续编号)。生产调用点 4 处、测试 4 处、守卫 CHECKS 已同步。按 AGENTS.md 1.4 逐行合并未改业务逻辑 | 小欧 |
 | v5.0 | 2026-10-10 09:46:42 | SRP 拆分同步(AGENTS.md §1.4「能复制就复制，不重写」, 小欧): `app/utils/shell_readonly.py` 原同时承载**只读白名单 / 杀进程防护 / 命令规范化**三类互不相干关注点，文件名与职责不符(仅约 1/3 内容与 readonly 有关)，故拆分为三文件并同步注册表 — ①**1.15 落点变更**: `shell_readonly.py` → `shell_danger.py`(含 `UNCONTAINABLE_VERBS`/`_UNCONTAINABLE_RE`/`_PID_TARGET_RES`/`_KILL_NAME_RES` 词表与 5 个函数)，业务逻辑逐行照搬未改；②**新增 1.17 shell 命令规范化**(`shell_normalize.py`: `normalize_for_intent`，审计 P1-1 产物，被 1.15 依赖)；③**1.14 不变**(`is_readonly_whitelisted`/`READONLY_PREFIXES`/`FAST_CHANNEL_FORBIDDEN` 留在 `shell_readonly.py`，既有调用方落点不变)。同步更新生产调用点 2 处(tool_safety_checker/executor)、测试导入 3 处、`test_functions_md_consistency.py` 注册表 4 条。回归 262 passed 零退化 | 小欧 |
