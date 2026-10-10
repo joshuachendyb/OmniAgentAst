@@ -10,28 +10,37 @@ import { Progress } from 'antd';
 interface CountdownRingProps {
   countdown: number;
   confirmTimeout: number;
+  /**
+   * 2026-10-11 00:20 小欧 - 直径可调（北京老陈："弹框中的计时钟不能删除，但是可以改变位置"）。
+   * 原为写死 60px 独占一整行居中，倒计时这个**辅助信息**占了确认弹框最大的视觉权重——
+   * 用户该先看"要我确认什么"，其次才是"还有多久自动放行"。改为可传入更小直径，
+   * 挪到标题行右侧（视线终点）后缩到 44，与次级信息同一量级。
+   */
+  size?: number;
 }
 
 const CountdownRing: React.FC<CountdownRingProps> = React.memo(
-  ({ countdown, confirmTimeout }) => {
+  ({ countdown, confirmTimeout, size = 60 }) => {
     const progressPercent =
       confirmTimeout > 0 ? Math.round((countdown / confirmTimeout) * 100) : 0;
     const strokeColor =
       countdown <= 3 ? '#fa541c' : countdown <= 5 ? '#faad14' : '#1677ff';
+    // 数字随环一起缩，避免 60→44 后数字撑破圆环
+    const numFont = Math.round(size * 0.36);
 
     return (
       <div style={{ textAlign: 'center', marginBottom: 4 }}>
         <Progress
           type="circle"
-          size={60}
+          size={size}
           percent={progressPercent}
           strokeColor={strokeColor}
-          strokeWidth={5}
+          strokeWidth={size > 50 ? 5 : 4}
           format={() => (
             <div style={{ textAlign: 'center', lineHeight: 1.2 }}>
               <div
                 style={{
-                  fontSize: 22,
+                  fontSize: numFont,
                   fontWeight: 600,
                   color: countdown <= 3 ? '#fa541c' : '#333',
                   animation:

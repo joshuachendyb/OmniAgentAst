@@ -280,3 +280,85 @@ export function confirmDanger(opts: {
     okButtonProps: { danger: true },
   });
 }
+
+/**
+ * 2026-10-11 00:05 小欧 - dangerConfirm：危险确认弹框的**内容可传具体变更**。
+ *
+ * 为什么不在 SettingsModal 里直接挂 <SettingsModal>：Modal.confirm 是命令式 API，
+ * 内容需要 ReactNode（CodeChip / label:value 行），用命令式传 ReactNode 会让调用方
+ * 在模块顶层建元素、拿不到当次 state。此处只约定「变更清单 + 后果提示」两个结构化数据，
+ * 由本函数内部渲染成 ReactNode —— 调用方只传数据不传元素（SLAP/DRY）。
+ *
+ * 单条变更与多条变更同构渲染；键名走 CodeChip 与「删除模型确认」同款，避免机器标识符
+ * 与中文混排时辨识不出是标识符。
+ */
+export function dangerConfirm(opts: {
+  title: string;
+  /** 具体变更：label=键的中文名，from/to=旧值/新值 */
+  changes: { label: string; from: string; to: string }[];
+  /** 后果说明（如关闭 HTL 的含义），可为空数组 */
+  hint?: string[];
+  okText?: string;
+  onOk: () => void | Promise<void>;
+}) {
+  Modal.confirm({
+    width: settingsModalWidth.confirm,
+    okText: opts.okText ?? '确认保存',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    title: (
+      <span style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}>
+        {opts.title}
+      </span>
+    ),
+    content: (
+      <div style={{ fontSize: FontSize.SECONDARY }}>
+        <div style={{ color: Colors.TEXT.SECONDARY, marginBottom: 6 }}>
+          以下改动提交后立即生效：
+        </div>
+        {opts.changes.map((c) => (
+          <div
+            key={c.label}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: Spacing.SM,
+              marginBottom: 4,
+            }}
+          >
+            <CodeChip>{c.label}</CodeChip>
+            <span style={{ color: Colors.TEXT.TERTIARY }}>：</span>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>{c.from}</span>
+            <span style={{ color: Colors.TEXT.TERTIARY }}>→</span>
+            <span
+              style={{
+                color: Colors.ERROR,
+                fontWeight: FontWeight.BOLD,
+              }}
+            >
+              {c.to}
+            </span>
+          </div>
+        ))}
+        {opts.hint && opts.hint.length > 0 && (
+          <div
+            style={{
+              marginTop: Spacing.MD,
+              padding: '6px 10px',
+              background: Colors.BG.WARNING_LIGHT,
+              borderLeft: `3px solid ${Colors.WARNING}`,
+              borderRadius: `0 ${Radius.SM}px ${Radius.SM}px 0`,
+              color: Colors.TEXT.SECONDARY,
+            }}
+          >
+            {opts.hint.map((h, i) => (
+              <div key={i}>{h}</div>
+            ))}
+          </div>
+        )}
+      </div>
+    ),
+    // onOk 返回 Promise → antd OK 按钮自动 loading，保存期间防连点双发
+    onOk: opts.onOk,
+  });
+}

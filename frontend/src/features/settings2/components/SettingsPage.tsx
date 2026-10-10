@@ -220,6 +220,32 @@ const SettingsPage: React.FC = () => {
     DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
   const dangerousAll = DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
 
+  // 2026-10-11 00:05 小欧 - 危险确认弹框要展示「具体改了什么」+「改完意味着什么」。
+  // 改前只笼统说"涉及危险操作相关配置（HTL人工开关/危险操作确认）"，用户看不出提交内容，
+  // 也不知道关闭 HTL 的后果——确认弹框的全部意义就是让人看清即将生效的变更。
+  // 取值口径与 SettingsGroup 一致：values[key] 为准（脏键的缓冲值，不回落到已落盘值）。
+  const DANGER_LABELS: Record<string, string> = {
+    'security.enabled': 'HTL人工开关',
+    'security.confirmDangerousOps': '危险操作确认',
+  };
+  const DANGER_EFFECTS: Record<string, string[]> = {
+    'security.enabled': [
+      '关闭后：无需人工确认，无信任，自动延时确认安全检查',
+      '（磁盘根、项目根等删除硬防线仍生效）',
+    ],
+    'security.confirmDangerousOps': ['关闭后：高危操作将不再二次询问，直接执行'],
+  };
+  const dangerDirtyKeys = DANGEROUS_KEYS.filter((k) => state.dirtyKeys[k]);
+  const dangerChanges = dangerDirtyKeys.map((k) => ({
+    label: DANGER_LABELS[k] ?? k,
+    from: state.dirtyKeys[k] ? '开启' : '关闭',
+    to: state.values[k] ? '开启' : '关闭',
+  }));
+  // 后果提示只列"本次真的要关掉"的项；全是开启类变更时无后果可讲，不占地方
+  const dangerHints = dangerDirtyKeys
+    .filter((k) => !state.values[k])
+    .flatMap((k) => DANGER_EFFECTS[k] ?? []);
+
   // 2026-09-24 小欧 - 收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
   const envManaged =
@@ -722,6 +748,8 @@ const SettingsPage: React.FC = () => {
           restartKeys={s.restartKeys}
           dangerousGroup={dangerousGroup}
           dangerousAll={dangerousAll}
+          dangerChanges={dangerChanges}
+          dangerHints={dangerHints}
           // 修复：直接透出 Promise，SaveBar 确认弹窗 onOk await 化后自带 loading 防连点
           onSaveGroup={() => s.saveGroup(state.activeTab)}
           onSaveAll={() => s.saveAll()}

@@ -13,10 +13,12 @@
 // 2026-10-10 小欧 - 弹窗归一：重启生效提示 Modal → SettingsModal 标准壳，confirm 宽度档 480、单主键「知道了」
 //   （cancelButtonProps 隐藏）、discard 关闭语义；Modal.confirm 危险确认保留原样（L49 走 confirmThen，非标准壳范围）。
 import React from 'react';
-import { Button, Modal } from 'antd'; // Modal 仍需：L49 的 Modal.confirm
+// 2026-10-11 00:05 小欧 - 危险确认迁至 SettingsModal.dangerConfirm 后，
+//   本文件不再直接用 antd Modal，也不再自己算 480 宽度 —— 一并清掉这两个失效 import。
+import { Button } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
-import { settingsShadow, settingsModalWidth } from '@/theme/settingsTokens';
-import { SettingsModal, CodeChip } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳; 22:15 补 CodeChip
+import { settingsShadow } from '@/theme/settingsTokens';
+import { SettingsModal, CodeChip, dangerConfirm } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳; 22:15 补 CodeChip; 10-11 补 dangerConfirm
 
 interface Props {
   canSaveGroup: boolean;
@@ -29,6 +31,10 @@ interface Props {
   // 安全组危险键脏时保存其它组也误弹（[设置页UI审计] 问题7/8）
   dangerousGroup: boolean;
   dangerousAll: boolean;
+  // 2026-10-11 00:05 小欧 - 危险确认要展示「具体改了什么」+「后果」，
+  //   由 SettingsPage 按 dirtyKeys 实算后下传（本组件不认 schema，避免重复实现取值口径）。
+  dangerChanges: { label: string; from: string; to: string }[];
+  dangerHints: string[];
   onSaveGroup: () => Promise<unknown>;
   onSaveAll: () => Promise<unknown>;
   onCloseRestart: () => void;
@@ -43,32 +49,39 @@ export const SaveBar: React.FC<Props> = ({
   restartKeys,
   dangerousGroup,
   dangerousAll,
+  dangerChanges,
+  dangerHints,
   onSaveGroup,
   onSaveAll,
   onCloseRestart,
 }) => {
-  const confirmThen = (fn: () => Promise<unknown>, dangerous: boolean) => {
+  /**
+   * 2026-10-11 00:05 小欧 - 危险确认改为「具体变更 + 后果」，并收进 SettingsModal 标准壳。
+   *
+   * 改前实测的问题（北京老陈审核后批准）：
+   *   ① 双图标重复——antd Modal.confirm 自动加一个矢量图标，title 里又手写了一个 emoji ⚠，
+   *      同一意思画两遍；且 emoji 跨平台形态不一（与删除确认弹框早已改掉的是同一毛病，此处漏改）。
+   *   ② 只说"涉及危险操作相关配置（HTL人工开关/危险操作确认）"，用户看不出**具体要提交什么**。
+   *      危险确认弹框存在的全部意义就是让人看清即将提交的变更。
+   *   ③ 不说后果——设置页那行 notice 写明"关闭后无需人工确认…"，但弹窗里没有，用户点确认时
+   *      不知道自己正在放弃人工确认这道防线。
+   *   ④ 与删除确认弹框两套实现（那边已是 SettingsModal 标准壳）。
+   *
+   * 改法：dangerKeys 传入实际变更的键名，逐条列「键名：旧值 → 新值」；
+   *   键名走 CodeChip（与删除确认同款等宽 chip）；正文改 label:value 对齐；
+   *   标题不再手写图标（交回标准壳/antd 默认 danger 图标）。
+   */
+  const confirmThen = (
+    fn: () => Promise<unknown>,
+    dangerous: boolean,
+    changes: { label: string; from: string; to: string }[]
+  ) => {
     if (dangerous) {
-      Modal.confirm({
-        title: (
-          <span
-            style={{ fontSize: FontSize.PRIMARY, fontWeight: FontWeight.BOLD }}
-          >
-            ⚠ 含危险操作相关改动
-          </span>
-        ),
-        content: (
-          <span style={{ color: Colors.TEXT.SECONDARY }}>
-            {/* 修正(2026-09-21 小强)：去残留"黑白名单"文案（黑白名单键已从注册表删除）([设置页UI审计] 问题10) */}
-            {/* 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名为「HTL人工开关」，此处同步 */}
-            本次保存涉及危险操作相关配置（HTL人工开关/危险操作确认），确认提交吗？
-          </span>
-        ),
+      dangerConfirm({
+        title: '含危险操作相关改动',
+        changes,
+        hint: dangerHints,
         okText: '确认保存',
-        okButtonProps: { danger: true },
-        cancelText: '取消',
-        width: settingsModalWidth.confirm,
-        // 修复：onOk 返回 Promise → antd OK 按钮 loading，保存期间防连点双发
         onOk: async () => {
           await fn();
         },
@@ -93,7 +106,7 @@ export const SaveBar: React.FC<Props> = ({
       <Button
         disabled={!canSaveGroup || saving}
         loading={saving}
-        onClick={() => confirmThen(onSaveGroup, dangerousGroup)}
+        onClick={() => confirmThen(onSaveGroup, dangerousGroup, dangerChanges)}
       >
         保存本组{groupDirtyCount > 0 ? `（${groupDirtyCount} 项）` : ''}
       </Button>
@@ -102,7 +115,7 @@ export const SaveBar: React.FC<Props> = ({
         disabled={!canSaveAll || saving}
         loading={saving}
         style={{ marginLeft: Spacing.MD }}
-        onClick={() => confirmThen(onSaveAll, dangerousAll)}
+        onClick={() => confirmThen(onSaveAll, dangerousAll, dangerChanges)}
       >
         保存全部{dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
       </Button>

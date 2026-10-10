@@ -233,7 +233,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent: 'space-between',
             gap: 6,
             marginBottom: 2,
           }}
@@ -256,15 +256,24 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           >
             {safetyConfig.label}
           </Tag>
+          {/* 2026-10-11 00:20 小欧 - 计时钟改位（不删，只换位置 + 缩小）。
+              改前：60px 圆环独占一整行居中（+4 外距），与下方 13px 粗体秒数文字上下堆叠
+              ≈100px，占确认弹框（总高 420）的 24%——辅助信息拿到了最大的视觉权重，
+              而用户该先看"要我确认什么"。
+              改后：圆环挪到标题行**右侧**（右上角是视线终点，仍醒目但不抢主内容），
+              直径 60→44 与次级信息同量级，标题行用 space-between 让标题靠左、环靠右。 */}
+          <CountdownRing
+            countdown={countdown}
+            confirmTimeout={confirmTimeout}
+            size={44}
+          />
         </div>
 
-        {/* 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 回传confirmTimeout供饼环进度 - 小欧-2026-09-18 */}
-        <CountdownRing countdown={countdown} confirmTimeout={confirmTimeout} />
         <div
           style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#262626',
+            fontSize: 12,
+            fontWeight: 400,
+            color: '#8c8c8c',
             marginBottom: 6,
           }}
         >
