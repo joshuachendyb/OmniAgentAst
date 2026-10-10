@@ -1,20 +1,44 @@
 # -*- coding: utf-8 -*-
-"""shell 只读白名单单源(纯函数), 沙箱闸与出池判定共用; 落 utils 因 tools 禁 import safety(架构边界)。
-编辑历史: 2026-10-04 小欧 - 自 executor.py 迁入, 内容未改, 行内署名保留。
+"""shell 命令静态守卫（纯函数单源）—— 执行前的静态风险判定，沙箱闸与出池判定共用。
+
+三类同域关注点合居一处（同属「这条 shell 命令静态看起来有什么风险」，故不拆分）：
+  · 只读白名单判定    —— 可否免预检直放（READONLY_PREFIXES / FAST_CHANNEL_FORBIDDEN / is_readonly_whitelisted）
+  · 命令规范化        —— 拼接折叠与去引号（normalize_for_intent，供下两者前置）
+  · 杀进程防护        —— 不可隔离动词与受保护进程（UNCONTAINABLE_VERBS / is_process_kill_protected）
+
+位置: app/tools/fundamental/，与 execute_shell_command.py / execute_shell_command_safety.py /
+shell_engine.py 同目录（shell 代码同置，不散落 utils）。依赖方向由 tests/test_architecture_boundaries.py
+强制守护: tools 禁 import services/safety, safety 禁 import services —— 本模块仅依赖 fnmatch/re,
+且 safety→tools 属合法方向(先例: tool_safety_checker 一直 import execute_shell_command_safety)。
+
+编辑历史:
+2026-10-04 小欧 - 自 executor.py 迁入(原名 shell_readonly.py, 落 app/utils/), 内容未改, 行内署名保留。
 2026-10-05 小欧 - 安全修复: FAST_CHANNEL_FORBIDDEN 补 $ ( ) 反引号 < 四类子表达式/命令替换/输入重定向载体
   (北京老陈裁定; 原缺口致 `echo $(Start-Process calc)` 等既过白名单又过 F-B 扫描, 直通真机执行任意命令)。
 2026-10-05 小欧 - 补 \n \r: 换行符同为语句分隔符, 此前未禁致白名单可被绕过。
-2026-10-08 小欧 新增不可隔离动词判定(事故驱动): UNCONTAINABLE_VERBS 词表 + has_uncontainable_intent /
-  extract_kill_target_pids / is_process_kill_protected 三函数。根因: 沙箱预检是在宿主真跑一遍命令, 而
-  Job Object 非硬墙拦不住子进程杀别的进程 → 词表漏 Stop-Process 时预检即真跑, 当场杀掉后端自身(E2E P9-03 实录)。
-  收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者; HIGH 级不重复收录(DRY)。— 小欧-2026-10-08
-2026-10-10 小欧 审计 P1-1 新增 normalize_for_intent: 词表命中前先折叠字符串拼接再去引号, 使
+2026-10-08 小欧 - 新增不可隔离动词判定(事故驱动): UNCONTAINABLE_VERBS 词表 + has_uncontainable_intent /
+  extract_kill_target_pids / is_process_kill_protected。根因: 沙箱预检是在宿主真跑一遍命令, 而 Job Object
+  非硬墙拦不住子进程杀别的进程 → 词表漏 Stop-Process 时预检即真跑, 当场杀掉后端自身(E2E P9-03 实录)。
+  收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者; HIGH 级不重复收录(DRY)。
+2026-10-10 小欧 - 审计 P1-1 新增 normalize_for_intent: 词表命中前先折叠字符串拼接再去引号, 使
   & ('Stop'+'-Process') -Id 5 / $v='Stop'+'-Process'; & $v -Id 5 这类"字面量被 + 拆开"的形态可被查杀。
-  根因: 预检在宿主真跑, 词表一漏即防线自破, 而黑名单必被绕过, 归一是不改执行链前提下的最低成本止血。
-  has_uncontainable_intent / extract_kill_target_pids 取原文与归一文并集(原文漏、归一补)。
-  归一只用于检测不用于执行, 只增不减(取严)。本项只覆盖拼接类, WMI/别名/CIM/Base64 仍需另行收词(未做)。— 小欧-2026-10-10"""
+  归一只用于检测不用于执行, 只增不减(取严)。本项只覆盖拼接类, WMI/别名/CIM/Base64 仍需另行收词(未做)。
+2026-10-10 小欧 - 审计 P1-3 新增按名杀目标提取(extract_kill_target_names 等): 补保护盾对
+  `Get-Process python | Stop-Process -Force` 这类按名杀形态的盲区(原只抽显式 PID, 事故形态恒返空集)。
+2026-10-10 小欧 09:55:09 - 位置与命名修正(北京老陈指出"代码名称确实要名副其实"):
+  原 shell_readonly.py 名不副实(仅约 1/3 内容与 readonly 有关), 且落 utils 是为绕开一条并不存在的障碍
+  ——"tools 禁 import safety"只单向禁止, safety→tools 合法, 故无需中转 utils。
+  按 AGENTS.md 1.4「能复制就复制, 不重写」逐行合并未改业务逻辑, 仅调整文件位置与导入路径:
+  ①位置 app/utils/ → app/tools/fundamental/(与其余 shell 代码同目录, 不散落)
+  ②更名 shell_readonly.py → shell_static_guard.py(名副其实: 对 shell 命令做静态守卫判定)
+  ③曾短暂拆为 shell_readonly/shell_danger/shell_normalize 三文件, 复核后判定属过度拆分
+    (normalize_for_intent 只服务杀进程判定, 非独立可复用能力, 单独成文件违反 YAGNI), 故并回一处。"""
 import fnmatch
 import re
+
+# ══════════════════════════════════════════════════════════════════════
+# 一、只读白名单: 可否免预检直放
+# ══════════════════════════════════════════════════════════════════════
 # —— 判定规则的真实代码落点(v1.18 按北京老陈要求全部代码化) ———
 READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
                      "echo", "pwd", "dir", "whoami", "hostname",
@@ -37,8 +61,36 @@ FAST_CHANNEL_FORBIDDEN = ("|", ";", "&", ">", ">>", "$", "(", ")", "`", "<", "\n
 # 误拒含括号的合法只读命令可接受(转沙箱预检仍能执行), 漏放是真机执行, 取严。 — 小欧 2026-10-05
 
 
+# ══════════════════════════════════════════════════════════════════════
+# 二、命令规范化: 判危险前先把"拼出来的动词"还原(2026-10-10 审计 P1-1)
+# ══════════════════════════════════════════════════════════════════════
+# 审计实证的绕过: & ('Stop'+'-Process') -Id 5 / $v='Stop'+'-Process'; & $v -Id 5
+#   字面量被 + 拆开, _UNCONTAINABLE_RE 查不到连续词, 判定放行 → 预检在宿主真跑 → 后端自杀。
+# 本函数只服务"检测", 不服务"执行": 归一只可能让词更易命中、不会让已命中的词消失, 故只增不减(取严)。
+# 折叠 '+' 必须先于去引号: 'Stop'+'-Process' → 'Stop'-'Process' → Stop-Process。
+_CONCAT_PART = r"'[^']*'|\"[^\"]*\"|[A-Za-z0-9_.-]+"
+_CONCAT_RE = re.compile(r"(" + _CONCAT_PART + r")\s*\+\s*(" + _CONCAT_PART + r")")
+
+
+def normalize_for_intent(command: str) -> str:
+    """把字符串拼接折叠、去引号, 使 'Stop'+'-Process' 还原为 Stop-Process — 小欧 2026-10-10
+
+    适用: 仅供静态危险判定前置归一(词表命中前置), 结果不用于执行。
+    循环折叠至不动点: 'a'+'b'+'c' 三段拼接一次只能合两段, 单趟必漏。
+    """
+    text = command or ""
+    prev = None
+    while prev != text:                      # 每趟至少消掉一个 '+', 必然收敛(不动点退出)
+        prev = text
+        text = _CONCAT_RE.sub(r"\1\2", text)
+    return text.replace("'", "").replace('"', "")
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 三、杀进程防护: 不可隔离动词 + 受保护进程(2026-10-08 事故驱动)
+# ══════════════════════════════════════════════════════════════════════
 # —— 不可隔离动词: 沙箱预检"真跑"时副作用必落宿主, 不得进预检 ————————————————————
-# 2026-10-08 小欧 新增。收录标准= 副作用与 cwd 无关且现有词表只到 MEDIUM(弹窗后仍进预检)拦不住者;
+# 收录标准= 副作用与 cwd 无关且现有词表只到 MEDIUM(弹窗后仍进预检)拦不住者;
 #   HIGH 项(Stop-Computer/Format-Volume/shutdown)预检前就 blocked, 不重复收录(DRY)。
 UNCONTAINABLE_VERBS = (
     "stop-process", "taskkill", "wmic process",     # 杀进程(任意形态: -Id/-Name/管线/按镜像名)
@@ -95,29 +147,6 @@ def extract_kill_target_names_from_pipeline(command: str) -> set:
     return {n for n in out if n}
 
 
-# —— 命令规范化(2026-10-10 小欧 新增, 审计 P1-1): 判危险前先把"拼出来的动词"还原 ————————
-# 审计实证的绕过: & ('Stop'+'-Process') -Id 5 / $v='Stop'+'-Process'; & $v -Id 5
-#   字面量被 + 拆开, _UNCONTAINABLE_RE 查不到连续词, 判定放行 → 预检在宿主真跑 → 后端自杀。
-# 本函数只服务"检测", 不服务"执行": 归一只可能让词更易命中、不会让已命中的词消失, 故只增不减(取严)。
-# 折叠 '+' 必须先于去引号: 'Stop'+'-Process' → 'Stop'-'Process' → Stop-Process。
-_CONCAT_PART = r"'[^']*'|\"[^\"]*\"|[A-Za-z0-9_.-]+"
-_CONCAT_RE = re.compile(r"(" + _CONCAT_PART + r")\s*\+\s*(" + _CONCAT_PART + r")")
-
-
-def normalize_for_intent(command: str) -> str:
-    """把字符串拼接折叠、去引号, 使 'Stop'+'-Process' 还原为 Stop-Process — 小欧 2026-10-10
-
-    适用: 仅供静态危险判定前置归一(词表命中前置), 结果不用于执行。
-    循环折叠至不动点: 'a'+'b'+'c' 三段拼接一次只能合两段, 单趟必漏。
-    """
-    text = command or ""
-    prev = None
-    while prev != text:                      # 每趟至少消掉一个 '+', 必然收敛(不动点退出)
-        prev = text
-        text = _CONCAT_RE.sub(r"\1\2", text)
-    return text.replace("'", "").replace('"', "")
-
-
 def has_uncontainable_intent(command: str) -> bool:
     """命令是否含不可隔离动词(杀进程/停服务) — 小欧 2026-10-08
 
@@ -167,7 +196,7 @@ def is_process_kill_protected(command: str, protected_pids: set, protected_names
     """命令目标是否命中受保护进程 — 小欧 2026-10-08
 
     适用: 阻止杀宿主关键进程(后端自身/父进程/shell 池), 命中即 blocked。
-    取值: protected_pids/protected_names 均由调用方注入(utils 禁 import tools, 组装归 safety 侧)。
+    取值: protected_pids/protected_names 均由调用方注入(组装归 safety 侧 tool_safety_checker, 见 8.4)。
     2026-10-10 小欧 增按名匹配(审计 P1-3): 事故命令 `Get-Process python | Stop-Process -Force`
       属按名杀, 原实现只抽显式 PID 恒返空集, 保护盾对真实事故形态贡献为 0;
       补 protected_names 后该形态才拦得住。签名新增第三参(可选, 不传则退化为仅 PID 口径)。
@@ -182,6 +211,9 @@ def is_process_kill_protected(command: str, protected_pids: set, protected_names
                for target in extract_kill_target_names(command))
 
 
+# ══════════════════════════════════════════════════════════════════════
+# 四、白名单判定入口
+# ══════════════════════════════════════════════════════════════════════
 def is_readonly_whitelisted(command: str) -> bool:
     """4.1#4 只读白名单判定; 安全放行须先跑 _scan_command_danger_intent, 纯路由调用点不适用 — 小欧 2026-10-04"""
     lowered = command.strip().lower()
