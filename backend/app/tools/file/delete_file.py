@@ -102,14 +102,23 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
             protected_roots_ += [Path(d).resolve() for d in allowed_dirs]
         except Exception:
             pass
+        # 2026-10-10 小欧 — 并入会话使用的目录: 这些目录的**根本身**与其上级不可删;
+        #   快照是 frozenset[str], **必须转 Path**: 下面要遍历 root_.parents, 混入 str 会
+        #   AttributeError, 而整个块被本函数的 except 吞掉 → 保护整体失效。
+        from app.tools.context import get_ws_snapshot
+        _snap = get_ws_snapshot()
+        if _snap:
+            protected_roots_ += [Path(p).resolve() for p in _snap.all_paths]
         for root_ in protected_roots_:
             if p == root_:
                 return f"禁止删除项目根/授权根目录: {file_path}"
             for ancestor in root_.parents:
                 if p == ancestor:
                     return f"禁止删除项目根/授权根上级目录: {file_path}"
-    except Exception:
-        pass
+    except Exception as e:
+        # 静默吞异常会让"删除保护判定失败"完全无痕(实测: 混入 str 即 AttributeError → 全块失效),
+        # 故必须留日志, 否则连本用例都发现不了 — 小欧 2026-10-10
+        logger.warning(f"[delete_file] 删除保护根判定异常, 本次降级放行(判定未生效): {e}")
     return None
 
 

@@ -41,7 +41,7 @@ _PASS = SafetyResult(blocked=False, requires_confirmation=False,
 
 
 def _get_allowed_roots() -> list:
-    """获取删除判定允许根列表 = [项目根] + 授权目录 — 小欧 2026-08-10 ⑫多授权域"""
+    """获取删除判定允许根列表 = [项目根] + 授权目录 + 会话 workspace — 小欧 2026-08-10 ⑫多授权域"""
     from app.config import get_config
     roots = [_get_project_root_safety()]
     try:
@@ -50,6 +50,13 @@ def _get_allowed_roots() -> list:
     except Exception as e:
         # #25修复: 授权目录读取失败不再静默吞, 留warning日志(避免安全判定根集缺失无痕) — 小欧 2026-08-13
         logger.warning(f"[delete_safety] 读取授权目录失败, 授权根集不完整: {e}")
+    # 2026-10-10 小欧 — 并入会话使用的目录; 快照是 frozenset[str], **必须转 Path**:
+    #   _is_inside_any 用 `root in p.parents` 逐个比较, 混入 str 恒为 False 且不抛 → 静默漏判,
+    #   表现为"会话目录里的文件删不掉"。
+    from app.tools.context import get_ws_snapshot
+    _snap = get_ws_snapshot()
+    if _snap:
+        roots.extend(Path(p).resolve() for p in _snap.all_paths)
     return roots
 
 

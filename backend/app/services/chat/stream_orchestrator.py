@@ -255,6 +255,13 @@ from app.services.chat.storage import count_chain_siblings  # 2026-10-09 小欧 
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
 from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
+from app.tools.context import (  # 会话 Workspace 任务级快照(工具层 ContextVar) — 小欧 2026-10-10
+    WorkspaceEntry,
+    WorkspaceSnapshot,
+    get_ws_snapshot,
+    reset_current_session_workspaces,
+    set_current_session_workspaces,
+)
 from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
 from app.monitoring import loop_watchdog  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
 
@@ -331,6 +338,63 @@ async def validate_chat_config():
             "message": f"验证失败: {str(e)}",
             "model_ref": None,
         }
+
+
+def _ensure_and_load_workspaces(conn, session_id: str) -> list[str]:
+    """进入会话·建立一条规则 —— 委托 `workspace_service.reconcile_session_workspaces`
+    （过滤唯一真源）。本函数只剩 atxn 回调壳。
+
+    ⚠ 必须是**同步 def**：本函数是 db.atxn 回调，在 to_thread worker 内执行，
+      atxn→_run_txn 只 return fn(conn)、**不会 await** —— 写成 async def 则 lambda
+      返回未 await 的协程对象，for 解包必抛
+      TypeError: 'coroutine' object is not iterable（每个任务启动即崩）。
+
+    BUG-1 根因订正：自写循环已删（脏行归一化无 try 会抛异常掀翻整个任务），
+    裁决收敛到 classify；`_build_default_workspace_dir` 下沉到 workspace_service
+   （它是 workspace 的事不是编排的事，倒挂 import 破分层）。"""
+    from app.services.chat.workspace_service import reconcile_session_workspaces
+    return reconcile_session_workspaces(conn, session_id)
+
+
+async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot], bool]:
+    """取本任务 workspace 快照(懒建+读库一体)。**失败一律降级为 (None, False), 绝不抛出**。
+
+    独立成函数(SLAP): 编排器只负责"拿到就设、没拿到就跳过", 异常边界集中在此一处,
+    可被单测直接驱动(旧实现内联在编排器里, 只能靠源码字符串断言, 等于没测)。
+
+    retry_locked=2: atxn 默认 0(database.py:321 明示"不传即零重试"), 而 busy_timeout=500ms
+    + WAL 单写者下, 多会话并发起跑撞锁概率上升; 有限重试是本仓既有惯例。
+    返回 (快照, 是否成功) —— 调用方据此决定要不要 set ContextVar。"""
+    try:
+        rows = await db.atxn("chat", lambda c: _ensure_and_load_workspaces(c, session_id),
+                             retry_locked=2)
+        return WorkspaceSnapshot.build([WorkspaceEntry(path=p) for p in rows]), True
+    except Exception as _wse:
+        logger.warning(f"[chat] workspace 快照构建失败, 本任务按无 workspace 兜底运行: {_wse}")
+        return None, False
+
+
+def _append_ws_suffix(user_input: str) -> str:
+    """拼 user 尾注入块（非空才拼）。独立成函数，编排器内联即 SLAP 违规。
+
+    两层标签都用（定案）：
+      外层 <system-reminder> —— 这是系统级指令，语义上就该由 system-reminder 框住；
+      内层 <会话工作目录>   —— [15] 决策 29/51 定的块名与文案，逐字保留。
+    文案与实际权限对齐：白名单是**并集**(本目录是"额外授权"而非"唯一可写范围")，
+    越界只是需要临时授权而非禁止 —— 故只说"优先写入"，不宣称"不得越界"，
+    否则给 LLM 一个假的权限模型(实测 system 层并未如此强制)。"""
+    snap = get_ws_snapshot()
+    if not snap or not snap.all_paths:
+        return user_input                    # 空/无快照不追加，不污染 prompt
+    lines = "\n".join(f"  - {p}" for p in sorted(snap.all_paths))
+    return (
+        f"{user_input}\n\n<system-reminder>\n"
+        "<会话工作目录>\n"
+        "本次任务产生的文件（文件类工具写入）**优先**写入以下目录之一：\n"
+        "（例外：图表与下载工具有各自的固定落点；写入未列明目录需另行临时授权）\n"
+        f"{lines}\n</会话工作目录>\n"
+        "</system-reminder>"
+    )
 
 
 @dataclass
@@ -418,7 +482,19 @@ async def chat_stream_orchestrator(
     bg_task = None  # 修复: 预初始化, 防 except 块 NameError — 小沈 2026-08-13
     _session_client = None  # 快照预初始化: finally 交接守卫用(防 NameError) — 小欧-2026-09-25
     _snapshot_handed_to_runner = False  # 交接标记: create_task 后置 True, finally 据此定归还方 — 小欧-2026-09-25
+    _ws_token = None  # workspace 快照 token 预初始化: 供 finally 判空(未注入时不还牌)
     try:
+
+        # ── 会话 Workspace 快照(懒建 → 取快照 → 设 ContextVar) ——————————— 小欧 2026-10-10
+        #   位置必须在主 try 内: pre-try 段抛异常发生在首个 yield 之前, 上游 chat_routes 是裸
+        #   StreamingResponse 无兜底 → 整请求 500 且本 finally 不执行(ContextVar 泄漏)。
+        #   异常边界在 _load_ws_snapshot 内(失败降级为无 workspace, 不掀任务)。
+        #   ⚠ 不改写 user_input: 它在本函数有 7 个落点(落库 chat_tasks.user_input / 插话 /
+        #     运行日志), 改写即污染落库值与前端 POST 防双发的精确比对。注入块只在
+        #     交给 agent 的 last_message(真 prompt 入口)上叠加, user_input 保持用户原话。
+        _ws_snap, _ws_ok = await _load_ws_snapshot(session_id)
+        if _ws_ok:
+            _ws_token = set_current_session_workspaces(_ws_snap)
 
         # 2026-09-20 小欧 活跃任务注入机制(北京老陈定案): 同会话已有活跃任务时, 新消息注入该任务 inbox(可多条),
         #   待其下一轮 LLM 调用前合并吸收; 无活跃任务时走正常新建任务。工具执行不被打断(安全底线)。 — 小欧-2026-09-20
@@ -699,7 +775,7 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
         bg_task = asyncio.create_task(run_agent_in_background(
-            agent, task_id, user_input, None, session_id, state, _task_start_time,
+            agent, task_id, _append_ws_suffix(user_input), None, session_id, state, _task_start_time,
             db_ops=_db_ops, ai_message_id=_ai_message_id))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
@@ -735,6 +811,8 @@ async def chat_stream_orchestrator(
             except Exception as _sce:
                 logger.warning(f"[chat] 未交接快照关闭失败(task={task_id}): {_sce}")
         _current_task_id.reset(_task_token)
+        if _ws_token is not None:                # 判空: 快照段没走到则不还牌
+            reset_current_session_workspaces(_ws_token)   # 必须传 token
 
 
 # SSE 转发白名单 — 小欧 2026-09-12

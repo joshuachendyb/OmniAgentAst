@@ -141,6 +141,12 @@ def get_default_allowed_paths() -> List[Path]:
             paths.append(Path(d))
     except Exception:
         pass
+    # 2026-10-10 小欧 — 并入会话使用的目录(快照是 frozenset[str], 此处收成 Path 与宿主一致;
+    #   validate_path 内层还会 realpath 一次, str/Path 都吃得下, 统一转 Path 免得下游再踩类型坑)
+    from app.tools.context import get_ws_snapshot
+    _snap = get_ws_snapshot()
+    if _snap:
+        paths.extend(Path(p) for p in _snap.all_paths)
     return paths
 
 

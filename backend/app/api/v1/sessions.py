@@ -17,6 +17,8 @@
 # 2026-10-01 - 小欧 - 解 [1] E8: 删除 POST /sessions/{id}/execution_steps 端点及其 save_execution_steps/ExecutionStepsUpdate 导入(连带 session_service 同名导入)。该端点全仓零调用方，其底层实现自 2026-08-27 起已不写任何步骤，留着会误导为"步骤落库入口"。真入口见 storage.append_execution_step
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项5: 新增 PATCH /sessions/{id}/link(全链路唯一新增端点)
 # 2026-10-03 - 小欧 - 文档[4] 5.7.7/5.7.8 废止: 删除 PATCH /sessions/{id}/link 端点(北京老陈定案开关只准随消息发出, 严禁独立影响后端; 前端零调用)。写入口收敛为唯一一条: 消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
+# 2026-10-10 - 小欧 - 新增会话 Workspace 读写端点(GET/PATCH /sessions/{id}/workspaces), 写口唯一,
+#   body 即全量覆盖; 禁区整单 422, 会话不存在 404。
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -121,3 +123,57 @@ def delete_session_trust_endpoint(session_id: str, tool_name: str, path: Optiona
 def get_session_detail_endpoint(session_id: str):
     """D-2(8.D): 单会话信息 — 设置界面读取会话级信息 + 顶栏创建/更新时间悬浮数据源, 现有端点无单会话信息 — 小欧 2026-08-26"""
     return get_session_info(session_id)
+
+
+class WorkspaceUpdate(BaseModel):
+    """PATCH body 即全量覆盖写: 传完整新数组, 空数组=显式清空, 不存在 null 语义"""
+    session_workspaces: list[str] = Field(..., description="会话事务目录列表（全量覆盖；[] = 清空）")
+
+
+@router.get("/sessions/{session_id}/workspaces")
+def get_session_workspaces_endpoint(session_id: str):
+    """读该会话使用的目录列表。
+    BUG-6 订正：不再纯读表直吐 —— 禁区行会原样进面板误导用户。
+    改走 `classify_workspace_rows` 同一真源过滤，有效进 `workspaces`，
+    不可用(禁区/非法/非目录)进 `unusable` 带原因，前端可置灰。
+    会话不存在/已删 → 404(不再对垃圾 id 返回空 200)。"""
+    from app.services.chat.workspace_service import (
+        get_session_workspaces,
+        classify_workspace_rows,
+        session_exists,
+    )
+    with db.get_conn("chat") as conn:
+        if not session_exists(conn, session_id):
+            raise HTTPException(status_code=404, detail="会话不存在")
+        rows = get_session_workspaces(conn, session_id)
+    effective, unusable = classify_workspace_rows(rows)
+    return {
+        "session_id": session_id,
+        "workspaces": [{"path": p} for p in effective],
+        "unusable": unusable,
+    }
+
+
+@router.patch("/sessions/{session_id}/workspaces")
+def set_session_workspaces_endpoint(session_id: str, body: WorkspaceUpdate):
+    """写该会话使用的目录列表 —— body 即全量覆盖写, 空数组=清空列表。
+    命中禁区整单 422, 只拒本次 PATCH, 不牵连任何消息。
+    会话不存在/已删 → 404, 先于写库(FK=ON 下免 sqlite3.IntegrityError→500)。
+    ⚠ 只改数据库行: **不删除磁盘目录** —— 面板移除条目, 目录留在磁盘由用户自行处置。
+    元素类型由 WorkspaceUpdate: list[str] 兜底, 路径非法(空串/相对路径)由
+    _normalize_ws_path 单一真源归入 rejected, 此处不重复校验。"""
+    from app.services.chat.workspace_service import (
+        set_session_workspaces,
+        session_exists,
+        WORKSPACE_REJECTED_FIELD,
+    )
+    with db.get_conn("chat") as conn:
+        if not session_exists(conn, session_id):
+            raise HTTPException(status_code=404, detail="会话不存在")
+        rejected = set_session_workspaces(conn, session_id, body.session_workspaces)
+    if rejected:
+        raise HTTPException(
+            status_code=422,
+            detail={WORKSPACE_REJECTED_FIELD: rejected},
+        )
+    return {"success": True, "session_id": session_id}
