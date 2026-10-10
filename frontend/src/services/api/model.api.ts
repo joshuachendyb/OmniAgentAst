@@ -28,6 +28,10 @@
 //   supported_features（后端厂商适配新增并已归一）：类型须与后端 DTO 逐字段对齐，否则消费方读不到
 //   实测值（SenseNova 顶层下发 modalities、OpenRouter 嵌 architecture，归一后统一读 input_modalities）
 //   — 小欧 2026-10-05
+// 2026-10-10 小欧 - 新增 ZenithFree 双路验证三接口（北京老陈 2026-10-10）：zenVerify 触发双路验证
+//   （两套方法各跑一遍远端最新免费模型并对比），zenVerifyReports / zenVerifyReport 取历史报告。
+//   zenVerify 耗时长（免费模型 20+ × 双路并发 5），故显式放宽超时到 600s；后两条为普通读接口，
+//   不加超时。本板块行内注释已按规矩上提归并 — 小欧-2026-10-10
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -142,6 +146,60 @@ export interface ApiKeyPlainResponse {
   provider: string;
   api_key: string;
   configured: boolean;
+}
+
+/** ZenithFree 双路验证（北京老陈 2026-10-10）：外部 zen_gate 库 vs 系统 opencodeZenAdapter */
+export interface ZenVerifySide {
+  ok: boolean;
+  /** chat / responses；zen_gate 不可用时为空串 */
+  endpoint: string;
+  status: number;
+  error: string;
+}
+/** 一致性判定。zen_unavailable 是独立态：外部库缺失只说明"没比成"，
+ *  与 diverge 严格分开（否则会误导用户去改 adapter 修不存在的问题）。 */
+export type ZenVerdict =
+  | 'both_pass'
+  | 'both_fail'
+  | 'diverge'
+  | 'zen_unavailable';
+
+export interface ZenVerifyItem {
+  model: string;
+  zen_gate: ZenVerifySide;
+  adapter: ZenVerifySide;
+  verdict: ZenVerdict;
+}
+
+export interface ZenVerifyResponse {
+  ok: boolean;
+  provider: string;
+  message?: string;
+  results: ZenVerifyItem[];
+  /** 报告绝对路径（后端 files/ 下），空串表示未生成 */
+  report_path: string;
+  summary: {
+    total: number;
+    both_pass: number;
+    both_fail: number;
+    diverge: number;
+    zen_unavailable: number;
+    /** remote = 远端最新；configured = 远端拉失败回落已配置 */
+    source: string;
+    zen_gate_available: boolean;
+  };
+}
+
+export interface ZenVerifyReport {
+  ok: boolean;
+  message?: string;
+  content?: string;
+}
+
+export interface ZenReportItem {
+  name: string;
+  mtime: number;
+  size: number;
 }
 
 export interface ProviderConfigPatch {
@@ -284,6 +342,32 @@ export const modelApi = {
       `/providers/${enc(provider)}/models`,
       { models }
     );
+    return response.data;
+  },
+
+  zenVerify: async (provider: string): Promise<ZenVerifyResponse> => {
+    const response = await api.post<ZenVerifyResponse>(
+      `/providers/${enc(provider)}/zen-verify`,
+      null,
+      { timeout: 600_000 }
+    );
+    return response.data;
+  },
+
+  zenVerifyReports: async (): Promise<{
+    ok: boolean;
+    reports: ZenReportItem[];
+  }> => {
+    const response = await api.get<{ ok: boolean; reports: ZenReportItem[] }>(
+      '/zen-verify/reports'
+    );
+    return response.data;
+  },
+
+  zenVerifyReport: async (name: string): Promise<ZenVerifyReport> => {
+    const response = await api.get<ZenVerifyReport>('/zen-verify/report', {
+      params: { name },
+    });
     return response.data;
   },
 };

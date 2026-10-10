@@ -29,6 +29,11 @@
 //   5 汉字在 88px 内装不下，列头折成两行（相邻「输出上限」4 字正好不折）。116 保「5 字+排序箭头+内边距」
 //   不折，nowrap 为不折行硬保证（容器挤压致列宽收窄时也不折）；「已配置」「未配置·待挑选」两表共用本列
 //   定义，一次改动两处同时生效 — 小欧-2026-10-10
+// 2026-10-10 小欧 - 「ZenithFree验证」按钮（北京老陈 2026-10-10）：紧邻「添加 Provider」，
+//   仅 opencodeZen 显隐（只有它有 zen 适配器与免费层语义）。点击调后端双路验证(外部 zen_gate 库 vs
+//   系统 opencodeZenAdapter)，结果写 ZenVerifyModal 弹框；耗时按后端 5 并发估 2-3 分钟，按钮
+//   loading 期间不给假进度文案(无真实进度可报)，只锁重复点击。错误提示走 showMessage(ErrorType.WARNING)
+//   而非 antd message —— 后者被项目 lint 规则 no-restricted-syntax 禁用 — 小欧-2026-10-10
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -46,6 +51,7 @@ import {
 } from 'antd';
 import {
   CloudDownloadOutlined,
+  ExperimentOutlined,
   PlusOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
@@ -57,8 +63,10 @@ import type {
   ProviderEntry,
   RemoteModelItem,
   RemoteModelsResponse,
+  ZenVerifyResponse,
 } from '@/services/api/model.api';
-import { showSuccess } from '@/services/error/handler';
+import { ErrorType, showMessage, showSuccess } from '@/services/error/handler';
+import ZenVerifyModal from './ZenVerifyModal';
 import { SectionTitle } from './SectionTitle';
 // 2026-10-03 小欧 - 免费判定自 utils/modelUtils 导入（组件内零重定义，与单测同源）— 小欧 2026-10-03
 import { isFreeModel } from '../utils/modelUtils';
@@ -213,6 +221,10 @@ export const ModelLibraryTab: React.FC<Props> = ({
   });
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  // 2026-10-10 小欧 - ZenithFree 双路验证（北京老陈）：结果弹框 + 验证中态
+  const [zenVerifying, setZenVerifying] = useState(false);
+  const [zenResult, setZenResult] = useState<ZenVerifyResponse | null>(null);
+  const [zenOpen, setZenOpen] = useState(false);
 
   // 2026-09-24 小欧 - v1.7 DRY：切换/失效守卫共用的选中态重置收口 — 小欧-2026-09-24
   // 2026-09-25 小欧：勾选重置为目标 Provider 已配置集（原空集与设计字面不符）— 小欧-2026-09-25
@@ -362,6 +374,25 @@ export const ModelLibraryTab: React.FC<Props> = ({
       setChecked(new Set());
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 2026-10-10 小欧 - ZenithFree 双路验证（北京老陈）：两套方法各跑一遍远端最新免费模型并对比。
+  // 耗时按后端 5 并发估 2-3 分钟，故按钮 loading 期间不给假进度文案，只锁住重复点击。
+  const runZenVerify = async () => {
+    setZenVerifying(true);
+    try {
+      const res = await modelApi.zenVerify(selectedProvider);
+      if (!res.ok) {
+        showMessage(ErrorType.WARNING, res.message || '验证失败');
+        return;
+      }
+      setZenResult(res);
+      setZenOpen(true);
+    } catch {
+      // 400/500 已由 client 拦截器统一提示
+    } finally {
+      setZenVerifying(false);
     }
   };
 
@@ -663,6 +694,18 @@ export const ModelLibraryTab: React.FC<Props> = ({
             <Button icon={<PlusOutlined />} onClick={onAddProvider}>
               添加 Provider
             </Button>
+            {/* 2026-10-10 小欧 - 「ZenithFree验证」紧邻添加 Provider：北京老陈要求用两套验证方法
+                （外部 zen_gate 库 vs 系统 opencodeZenAdapter）对比远端最新免费模型，结果弹框显示。
+                仅 opencodeZen 语义可用（其他 provider 无此适配器），故按 provider 名显隐。 */}
+            {selectedProvider === 'opencodeZen' && (
+              <Button
+                icon={<ExperimentOutlined />}
+                loading={zenVerifying}
+                onClick={() => void runZenVerify()}
+              >
+                ZenithFree验证
+              </Button>
+            )}
             {apiBaseEmpty && (
               <span
                 style={{
@@ -883,6 +926,14 @@ export const ModelLibraryTab: React.FC<Props> = ({
           )}
         </>
       )}
+      {/* 2026-10-10 小欧 - ZenithFree 双路验证结果弹框（北京老陈）：结果由 runZenVerify 写入 zenResult，
+          组件内自持历史报告清单，不另设状态（SLAP） */}
+      <ZenVerifyModal
+        open={zenOpen}
+        provider={selectedProvider}
+        result={zenResult}
+        onClose={() => setZenOpen(false)}
+      />
     </div>
   );
 };
