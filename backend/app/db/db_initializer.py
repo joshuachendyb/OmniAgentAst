@@ -133,6 +133,11 @@ def init_chat_db(get_conn):
                 session_id TEXT NOT NULL,
                 user_message_id INTEGER, user_input TEXT, response TEXT,
                 artifacts TEXT DEFAULT '[]',
+                -- 2026-10-11 小欧 - 事件列表快照(北京老陈令「final 的时候回填事件列表」):
+                --   前端收到 final 帧时把 useTaskInfo 产出的 processEvents(排除 heartbeat)POST 回填,
+                --   存条目本体{kind,text,time}而非原始帧 —— 历史回放直接渲染不重跑派生, 实时与历史文案零漂移。
+                --   与 chat_task_steps 是两条独立存储: 前者存业务步, 本列存过程事件快照, 互不覆盖。 — 小欧-2026-10-11
+                process_events TEXT DEFAULT '[]',
                 status TEXT DEFAULT 'executing',
                 start_time TEXT, end_time TEXT, duration REAL,          -- 开始/结束/耗时（文档2 3.1.2 时间三字段）
                 context_link_mode TEXT, context_root_task_id TEXT,   -- 上下文链：续聊/新任务 + 链根任务id
@@ -279,6 +284,9 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")
         # 文件A/B 排查目录引用(文档落码 $dir) — 物理目录 = files/Sion_{session_id}/Task_{task_id}/(前导 2026-08-24 北京老陈裁定)
         _ensure_column(conn, "chat_tasks", "files_dir", "TEXT DEFAULT ''")   # 落盘文件A/B — 小欧 2026-08-23
+        # 2026-10-11 小欧 - 事件列表快照(北京老陈令「final 的时候回填事件列表」): 存量库幂等补列,
+        #   DEFAULT '[]' 使改动前的历史任务读出为空列表, 前端兜底后行为与今天一致。 — 小欧-2026-10-11
+        _ensure_column(conn, "chat_tasks", "process_events", "TEXT DEFAULT '[]'")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 

@@ -923,6 +923,11 @@ def get_task_detail(conn: Connection, task_id: str) -> Optional[dict]:
         return None
     _r = dict(row)
     _r["artifacts"] = parse_json(_r.get("artifacts")) if _r.get("artifacts") else []
+    # 2026-10-11 小欧 - 事件列表快照回放(北京老陈令): 与 artifacts 同款解析, 原样透传不加工。
+    #   前端收到 final 帧时回填的 processEvents(条目本体{kind,text,time}, 已排除 heartbeat),
+    #   历史任务由前端 useTaskInfo 第三参 detail 读回直接渲染, 不重跑派生逻辑。
+    #   存量行为空列表, 前端兜底后与改动前一致。 — 小欧-2026-10-11
+    _r["process_events"] = parse_json(_r.get("process_events")) if _r.get("process_events") else []
     _sm = parse_session_model(_r.pop("sessionModel", None))
     _r["model"] = _sm.model if _sm else None       # 键名保留供消费方渐进迁移 — 小欧 2026-08-22
     _r["provider"] = _sm.provider if _sm else None
@@ -1035,3 +1040,25 @@ def load_steps_by_task(conn: Connection, task_id: str) -> list:
     ).fetchall()
     # thought 收口复用公用函数, 与 load_execution_steps 同源(解 [1] E11)
     return _strip_thought_content([parse_json(r["step_json"], label="step_json") for r in rows])
+
+
+def save_process_events(conn: Connection, task_id: str, events: list) -> None:
+    """事件列表快照落库(北京老陈令「final 的时候回填事件列表」) — 小欧 2026-10-11
+
+    写入端点 POST /chat/execution/task/{task_id}/process-events 的唯一实现
+    (调用方在 app/api/v1/chat/task_execution.py, 与本文件 get_task_detail 同域)。
+    与 append_execution_step 同族写法, 但**仅 UPDATE 不 INSERT**: 本列是 chat_tasks
+    既有任务行上的补充快照, 任务行必已存在(final 帧到达即任务已落库), 故不新建行。
+
+    幂等: 同 task_id 重复回填覆盖为最新快照(前端 ref 保证只发一次, 此处为双保险)。
+
+    **不校验 kind 合法性**(北京老陈定案「送什么存什么」): 本层零事件类型知识,
+    也不维护任何类型清单, 后端新增/删除事件类型与本函数无关。
+    不做条数限制(北京老陈令「不能限制」), 原样存调用方送来的列表。
+
+    不碰 chat_task_steps: 那是业务步存储, 与本列(过程事件快照)是两条独立存储, 互不覆盖。
+    """
+    conn.execute(
+        "UPDATE chat_tasks SET process_events=? WHERE task_id=?",
+        (safe_json_dumps(events), task_id),
+    )
