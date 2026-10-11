@@ -154,7 +154,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("paths.project_root", "readonly", "生效项目根目录", None, readonly=True,
               notice="workspace.project_root 已配置时用配置值；未配置时=用户主目录"),
         _item("paths.omniagent_md", "readonly", "项目规则文件", None, readonly=True,
-              notice="项目根目录\\OmniAgent.md；项目根未配置时=用户主目录\\OmniAgent.md"),
+              notice="代码根目录\\OmniAgent.md；文件名大小写不敏感；不存在时自动创建空文件"),
         _item("paths.download", "readonly", "下载目录", None, readonly=True,
               notice="项目根目录\\download；项目根未配置时=用户主目录\\download；download.dest 相对本目录"),
         _item("paths.database", "readonly", "数据库目录", None, readonly=True,

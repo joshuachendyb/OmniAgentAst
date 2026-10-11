@@ -129,13 +129,15 @@ def _item_data(key: str, item: Dict[str, Any], raw: Dict[str, Any]) -> Tuple[Any
     if key.startswith("paths."):
         from app.file_persist import SESSION_DIR_PREFIX, TASK_DIR_PREFIX
         from app.logger.config import LOG_DIR
+        from app.config import get_code_root
+        from app.services.prompts.project_context import CONTEXT_FILE, resolve_context_path
         _p_root = get_config().get_project_root()
         # 2026-09-21 - 小欧 - 本字典 keys 必须与 settings_registry system 组全部 paths.* 条目一一对应；
         #   registry 新增 paths.* 条目时必须同步到此加派值。直接 dict[key] 取(fail-fast)：
         #   漏配即抛 KeyError 点亮问题，杜绝前端静默取 default(None) 空白(对端说明见 registry 同小节注释)
         return {
             "paths.project_root": _p_root,
-            "paths.omniagent_md": str(Path(_p_root) / "OmniAgent.md"),
+            "paths.omniagent_md": resolve_context_path(get_code_root()),
             "paths.download": str(Path(_p_root) / "download"),
             "paths.database": str(Path.home() / ".omniagent"),
             "paths.record_tool": f"{SESSION_DIR_PREFIX}<会话ID>\\{TASK_DIR_PREFIX}<任务ID>\\tool_data_<短任务ID>_<消息ID>_<时间去冒号>.jsonl",
