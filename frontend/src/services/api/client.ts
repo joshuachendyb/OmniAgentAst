@@ -7,6 +7,15 @@
  *   收敛为"读包络 → 合并 → 单次 setItem"三步且写失败抛错（原静默吞掉，调用方无从得知）；
  *   请求拦截器新增 _skipAuth（入口查询不带已作废旧口令）；响应拦截器新增 403 分支
  *   （不跳登录页、不清口令，detail 原话交调用方呈现）。
+ * 2026-10-11 小欧 - 修复打包版全站 404：北京老陈驱动。API_BASE_URL 原为
+ *   `import.meta.env.VITE_API_BASE_URL || '/api/v1'` —— 默认值含 /api/v1 前缀，但被 env 覆盖时
+ *   是裸源地址，同一变量被当「含前缀」与「裸源地址」两种语义使用：axios baseURL 走后者
+ *   （`${getApiBaseUrl()}/api/v1`），而 network.ts / main.tsx / ChatPage.tsx 走前者
+ *   （`${API_BASE_URL}/health`、`${cfg.baseURL}/chat/stream`）。故显式设 VITE_API_BASE_URL 打生产包时，
+ *   /health 与 /chat/stream 全部少一段前缀而 404，前端报"网络连接异常"。
+ *   改法：API_BASE_URL 统一为 `${getApiBaseUrl()}/api/v1`（复用既有 getApiBaseUrl，与 axios baseURL
+ *   完全同源），并删掉重复定义的一份 VITE_ENV。dev 未设 env 时仍得 '/api/v1'，走 Vite proxy，
+ *   调试行为零变化。
  */
 import axios from 'axios';
 import type {
@@ -17,7 +26,20 @@ import type {
 } from 'axios';
 import { handleApiError } from '../error/handler';
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+/** Vite 注入的环境变量（测试环境无 import.meta.env 时的类型兜底）。 */
+const VITE_ENV =
+  (import.meta as unknown as { env: Record<string, string> }).env ?? {};
+
+/**
+ * 后端 API 基础地址（**含 `/api/v1` 前缀**）。
+ *
+ * 2026-10-11 小欧 - 修复打包版全站 404：本常量原默认值 `/api/v1`、被 env 覆盖时却是裸源地址，
+ *   同一变量被当"含前缀"与"裸源地址"两种语义使用（axios baseURL 走后者，network/ChatPage 走前者），
+ *   于是显式设 VITE_API_BASE_URL 打生产包时，/health 与 /chat/stream 全部少一段前缀而 404。
+ *   现统一为"含前缀"单一口径，与 axios baseURL（同为 `${getApiBaseUrl()}/api/v1`）完全同源。
+ *   dev 环境未设 env 时仍得 `/api/v1`，走 Vite proxy，**调试行为零变化**。
+ */
+export const API_BASE_URL = `${getApiBaseUrl()}/api/v1`;
 
 /** 访问口令的 localStorage 键名（原字面量散落 7 处，改键必漏一处）。 */
 export const AUTH_STORAGE_KEY = 'omniagent_auth';
@@ -36,10 +58,6 @@ export interface ApiRequestConfig extends AxiosRequestConfig {
    */
   _skipAuth?: boolean;
 }
-
-/** Vite 注入的环境变量（测试环境无 import.meta.env 时的类型兜底）。 */
-const VITE_ENV =
-  (import.meta as unknown as { env: Record<string, string> }).env ?? {};
 
 /**
  * 后端 API 基础地址（不含 /api/v1），返回空串即"走同源相对路径"。
