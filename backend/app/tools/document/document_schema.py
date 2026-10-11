@@ -17,6 +17,9 @@
 # 2026-07-28 - 小欧 - description精确化: write_pptx.path/write_docx.path/write_xlsx.path/write_pdf.path 全部加"必填"标注
 # 2026-07-31 - 小欧 - ReadPdfInput 补 page/pages 互斥校验(model_validator): 二者同时指定时报 ValueError, 与运行时逻辑对齐(Pydantic 层即拦截非法组合); 移除未使用 Literal 导入
 # 2026-08-07 - 小欧 - WriteXlsxInput 新增 append_mode 字段(追加模式): True=文件已存在时末尾追加, False=默认覆盖; 与 write_xlsx 实现层同步 — 小欧 2026-08-07
+# 2026-10-11 - 小欧 - _SLIDE_DESC 增补硬约束首行: "⚠️ 必须直接传JSON数组(list)，禁止序列化为字符串。"
+#   起因: LLM 误把整个slides数组序列化成字符串传入 write_pptx, coerce_json 无法还原为list 而报错,
+#   且原schema描述未警示类型, LLM 重试仍照旧。首行显式约束以从源头阻断 — 小欧 2026-10-11
 """
 Document Schema - 文档工具参数模型
 
@@ -146,7 +149,8 @@ class WritePdfInput(_DocContentOrTableMixin, BaseModel):
     )
 
 
-_SLIDE_DESC = """幻灯片列表。每项Dict包含：
+_SLIDE_DESC = """⚠️ 幻灯片列表必须直接传JSON数组(list)，禁止序列化为字符串。每项Dict包含
+幻灯片列表。每项Dict包含：
 - title（必填）：标题
 - subtitle（可选）：副标题（仅封面页type=0或"cover"时显示）
 - type（可选）：布局类型，0/"cover"=封面页，1/"content"=内容页，2/"two"=两栏页，默认1

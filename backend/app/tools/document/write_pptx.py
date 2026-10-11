@@ -2,6 +2,13 @@
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-10-11 - 小欧 - slides 类型放宽 str + 失败提示增补格式示例(对齐 schema 侧 _SLIDE_DESC 首行约束):
+#   ①签名 Optional[List[Dict]] → Optional[Union[List[Dict], str]]: 此前类型标注拒绝 str, 但 LLM
+#      实际会传 JSON 字符串, Pydantic 校验阶段先于 coerce_json 抛错, 后面的解析逻辑根本走不到;
+#   ②coerce_json 之后补 isinstance(slides, str) 分支告警: 走到这里仍为 str 说明 JSON 解析失败,
+#      是 LLM 格式错误的直接信号;
+#   ③cs_error 的 hint 补"必须是JSON数组如[{'title':..,'content':..}], 禁止整个数组序列化后传入",
+#      给 LLM 可执行的纠正指令(原先只报类型名, 无从修正) — 小欧 2026-10-11
 """
 D8: write_pptx — 写入PPT文档
 
@@ -18,7 +25,7 @@ D8: write_pptx — 写入PPT文档
 
 import time as _time_mod
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error, with_artifact_file
@@ -350,7 +357,7 @@ def _build_pptx_presentation(slides: list):
 
 def write_pptx(
     path: str,
-    slides: Optional[List[Dict]] = None,
+    slides: Optional[Union[List[Dict], str]] = None,
 ) -> Dict[str, Any]:
     """写入PPT文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
@@ -363,11 +370,18 @@ def write_pptx(
         return build_error(data={}, llm_data=llm_data)
 
     slides = coerce_json(slides)
+    if isinstance(slides, str):
+        logger.warning("[write_pptx] slides参数为str且coerce_json未能解析为list, 检查coerce_json日志")
 
     cs_error, safe_slides = check_content_safety(slides, "pptx", param_name="slides")
     if cs_error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=cs_error, hint=f"请检查slides参数(当前类型: {type(slides).__name__})")
+        hint = (
+            f"请检查slides参数(当前类型: {type(slides).__name__})。"
+            "slides必须是JSON数组格式如[{'title':'标题','content':'正文'}],"
+            "禁止将整个数组序列化为字符串后传入"
+        )
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=cs_error, hint=hint)
         return build_error(data={}, llm_data=llm_data)
     slides = safe_slides
 
