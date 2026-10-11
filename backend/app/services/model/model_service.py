@@ -144,6 +144,13 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-10-10 小欧 - 中央别名表收敛厂商键名漂移：_KEY_ALIASES + _canon_item 入口归一，
 #   _first_alias 退役删除（唯一调用点改直读）；longcat 两变体（context_window/max_output_tokens）首批入表，
 #   新厂商只加表行不碰逻辑 — 小欧-2026-10-10
+# 2026-10-11 - 小欧 - DeepSeek effort 透传：fetch_remote_models 输出字典补 effort_levels/effort_default
+#   (取 item.effort.supported_levels/default_level, 仿 publish_time 同款先抽后填写法; 非 DeepSeek 不返回 → 空列表/None) — 小欧-2026-10-11
+# 2026-10-11 - 小欧 - Moonshot 子键兼容：_KEY_ALIASES 加 effort 顶层别名(think_efforts/reasoning_efforts);
+#   提取处兼容 valid_efforts/default_effort 子键(or 兜底, 与本文件 params_block.get(m) or {} 同款惯用法) — 小欧-2026-10-11
+# 2026-10-11 - 小欧 - Moonshot supports_* 布尔组归并(表上能力/模态列全空)：_merge_supports_modalities
+#   (image_in/video_in→input_modalities) + _merge_supports_features(reasoning/dynamic_tools→
+#   supported_features 的 reasoning/tools)，与 _merge_capabilities 同模式(True 才追加，去重) — 小欧-2026-10-11
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -657,6 +664,33 @@ def _merge_capabilities(feats: List[str], capabilities: Any) -> List[str]:
     return feats
 
 
+def _merge_supports_modalities(modalities: List[str], item: Any) -> List[str]:
+    """Moonshot supports_image_in/video_in 布尔并入 input_modalities（去重）— 小欧 2026-10-11
+
+    Moonshot 把输入模态放在顶层布尔上，而非 input_modalities 列表；
+    不认则表上"输入模态"列与图片/视频筛选全空。True 才追加；其它键原样忽略（不猜语义）。
+    """
+    out = list(modalities)
+    for flag, value in (("supports_image_in", "image"), ("supports_video_in", "video")):
+        if isinstance(item, dict) and item.get(flag) is True and value not in out:
+            out.append(value)
+    return out
+
+
+def _merge_supports_features(feats: List[str], item: Any) -> List[str]:
+    """Moonshot supports_reasoning/dynamic_tools 布尔并入 supported_features（去重）— 小欧 2026-10-11
+
+    reasoning→'reasoning'；dynamic_tools→'tools'（动态工具调用即挂工具能力，
+    与 supported_features 现有 'tools' 同语义，见 DTO 注释"直接决定能不能挂工具"）。
+    True 才追加；其它键原样忽略。
+    """
+    out = list(feats)
+    for flag, value in (("supports_reasoning", "reasoning"), ("supports_dynamic_tools", "tools")):
+        if isinstance(item, dict) and item.get(flag) is True and value not in out:
+            out.append(value)
+    return out
+
+
 # 远端模型键名中央别名表 — 小欧 2026-10-10：
 #   OpenAI /models 无 schema 标准，各厂商同义键各叫各的名（name/display_name、
 #   pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、
@@ -677,10 +711,15 @@ _KEY_ALIASES = {
     "supported_parameters": ["supported_parameters", "supported_sampling_parameters"],
     "supported_features": ["supported_features"],
     "capabilities": ["capabilities"],
-    "free": ["free"],
-    "stability": ["stability"],
-    "publish_time": ["publish_time"],
-}
+  "free": ["free"],
+  "stability": ["stability"],
+  "publish_time": ["publish_time"],
+  # 2026-10-11 小欧 - effort 顶层别名：DeepSeek 用 effort，Moonshot 用 think_efforts
+  #   与 reasoning_efforts（k3 上两者并存且内容一致，先命中者胜）。
+  #   子键差异（supported_levels/default_level vs valid_efforts/default_effort）
+  #   在提取处兼容，见下 effort 透传注释 — 小欧-2026-10-11
+  "effort": ["effort", "think_efforts", "reasoning_efforts"],
+  }
 
 
 def _canon_item(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -753,6 +792,17 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         max_out = item.get("max_output_length")
         # 2026-10-10 小欧 - zenmux publish_time 透传（created 全假，publish_time 如 2026-09-03 才是真发布时间）。
         _pub = item.get("publish_time")
+        # 2026-10-11 小欧 - DeepSeek effort 透传（实测下发，此前被静默丢弃）：
+        #   effort.supported_levels（如 low/high/max）是推理强度档位，
+        #   effort.default_level 是默认值；非 DeepSeek 不返回 → 空列表/None。
+        #   北京老陈令：两个都加。
+        # 2026-10-11 小欧 - Moonshot 子键兼容：其形状为 valid_efforts/default_effort
+        #   （顶层 think_efforts/reasoning_efforts 已由 _KEY_ALIASES 归一到 effort）。
+        #   用 or 兜底而非 is None 判断 —— 与本文件 params_block.get(m) or {} 同款惯用法；
+        #   显式空列表属异常形态，回落另一键可接受。
+        _eff = item.get("effort") if isinstance(item.get("effort"), dict) else {}
+        _eff_levels = _eff.get("supported_levels") or _eff.get("valid_efforts")
+        _eff_d = _eff.get("default_level") or _eff.get("default_effort")
         models.append({
             "id": str(mid),
             "owned_by": owned_by if isinstance(owned_by, str) else None,
@@ -765,20 +815,24 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
             "pricing": pricing if isinstance(pricing, dict) else {},
             "architecture": arch,
             # 图像生成模型 vs 对话模型的唯一判据（SenseNova u1/u1.5 输出模态为 image，其余为 text）
-            "input_modalities": _str_list(merged.get("input_modalities")),
+            # 2026-10-11 小欧 - Moonshot supports_image_in/video_in 并入（同 _merge_capabilities 模式）。
+            "input_modalities": _merge_supports_modalities(_str_list(merged.get("input_modalities")), item),
             "output_modalities": _str_list(merged.get("output_modalities")),
             # 别名链已收敛到入口 _canon_item（OpenRouter/AMD supported_parameters、
             #   SenseNova supported_sampling_parameters 在此已是同一键）：直读即可。
             "supported_parameters": _str_list(item.get("supported_parameters")),
             # 实测含 tools/json_mode/reasoning，直接决定"能不能挂工具"，与 sampling 参数不同语义故分列
             # 2026-10-10 小欧 - zenmux 别名 capabilities:{reasoning:bool} 对象 → 并入列表（去重追加）。
-            "supported_features": _merge_capabilities(_str_list(merged.get("supported_features")),
-                                                      merged.get("capabilities")),
+            # 2026-10-11 小欧 - Moonshot supports_reasoning/dynamic_tools 并入（同模式，见 _merge_supports_features）。
+            "supported_features": _merge_supports_features(_merge_capabilities(_str_list(merged.get("supported_features")),
+                                                      merged.get("capabilities")), item),
             # free 用 bool 收（isinstance(True,int) 为真，按 int 收会吞掉 1/0）
             "free": free if isinstance(free, bool) else None,
             "stability": stability if isinstance(stability, str) and stability.strip() else None,
             # 2026-10-10 小欧 - zenmux publish_time 透传（见上）。
             "publish_time": _pub if isinstance(_pub, str) and _pub.strip() else None,
+            "effort_levels": _str_list(_eff_levels),
+            "effort_default": _eff_d if isinstance(_eff_d, str) and _eff_d.strip() else None,
         })
     # 2026-09-25 04:38:28 小健 - 全链路单点排序: 远端列表按 id 字母序(不分大小写), 下游分组/落盘/下拉自动继承
     models.sort(key=lambda m: m["id"].lower())

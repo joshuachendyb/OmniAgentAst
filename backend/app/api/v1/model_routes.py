@@ -57,6 +57,7 @@
     业务全在 zen_verify 服务模块，路由层只做转发（不新造第二套逻辑，DRY/KISS-DIRECT）；读报告
     路由按报告名取文件，经服务层路径校验拦截目录穿越。原行内注释已按规矩上提归并至本板块底部
    2026-10-11 07:33:47 - 小欧 - RemoteModelItem 增 publish_time(zenmux 真发布时间, created 全假不可用; 不下发则 None, 与 free/stability 同政策; 字段内联已记 2026-10-10) — 小欧 2026-10-11
+   2026-10-11 - 小欧 - RemoteModelItem 增 effort_levels/effort_default(DeepSeek 实测下发, 此前被静默丢弃; 非 DeepSeek 不返回 → 空列表/None; 北京老陈令两个都加) — 小欧 2026-10-11
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -176,6 +177,12 @@ class RemoteModelItem(BaseModel):
     # 2026-10-10 小欧 - 增 publish_time（zenmux 真发布时间，如 2026-09-03；created 全假不可用）。
     #   非 zenmux provider 不返回 → None（与 free/stability 同政策）。
     publish_time: Optional[str] = None
+    # 2026-10-11 小欧 - 增 effort_levels/effort_default（DeepSeek 实测下发，此前被静默丢弃）：
+    #   effort.supported_levels（如 low/high/max）是推理强度档位，effort.default_level 是默认值；
+    #   非 DeepSeek provider 不返回 → 空列表/None（与 free/stability/publish_time 同政策）。
+    #   北京老陈令：两个都加。
+    effort_levels: List[str] = Field(default_factory=list)
+    effort_default: Optional[str] = None
 
 
 class RemoteModelsResponse(BaseModel):
