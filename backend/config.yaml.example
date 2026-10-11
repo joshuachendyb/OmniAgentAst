@@ -309,4 +309,4 @@ tuning:
 
 # 网络（1 键，顶层 network 域，系统组显示）— 小欧-2026-09-23 键名去 tuning 前缀
 network:
-  cors_origins: "http://localhost:5173,http://127.0.0.1:5173"  # 允许访问的页面地址白名单,换端口要加新地址
+  cors_origins: "http://localhost:2000,http://127.0.0.1:2000"  # 允许访问的页面地址白名单,换端口要加新地址
