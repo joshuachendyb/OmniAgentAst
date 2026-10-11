@@ -151,7 +151,10 @@ def ensure_dependency(
 
     try:
         __import__(import_name)
-        if version and version.startswith("=="):
+        # 2026-10-11 小欧 - frozen 下跳过版本核对: 打包时版本已由构建机锁定并随包落地,
+        #   而 importlib.metadata.version() 在 frozen 里读不到 dist-info, 必然抛 PackageNotFoundError
+        #   被误判成"依赖缺失"(实测 httpx==0.26.0 已正确打进包却被判失败)。非 frozen 行为不变。
+        if version and version.startswith("==") and not getattr(sys, "frozen", False):
             try:
                 installed = importlib.metadata.version(pip_package or import_name)
                 if installed != version[2:]:
