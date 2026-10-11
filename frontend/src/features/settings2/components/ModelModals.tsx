@@ -115,6 +115,9 @@ export const ModelModals: React.FC<Props> = (props) => {
     props;
   const [mForm] = Form.useForm();
   const [pForm] = Form.useForm();
+  // 2026-10-11 小欧 - API 地址 hover 看全长：超长地址框内放不下，原生 title 跟随输入值实时显示完整串；
+  //   空值不弹（title undefined 即隐藏）。API Key 是掩码，hover 弹明文等于屏幕共享泄密，故只给地址加。
+  const apiBaseWatch = Form.useWatch('api_base', pForm);
   const [mProvider, setMProvider] = useState(props.selectedProvider);
   // 修正(2026-09-21 小强)：busy 态驱动 Modal confirmLoading 防连点双发（原 onOk 走 .then() 无 loading，
   // 双击触发两次提交）；失败父级 rethrow 不关窗，输入保留（[设置页UI审计] 问题9）
@@ -470,12 +473,16 @@ export const ModelModals: React.FC<Props> = (props) => {
             Form.Item 在 Col span=12 内，9/24≈37.5% 约 105px，够放"API 地址"。
             10-11 01:58 小欧 - textAlign right → left（北京老陈标红四条竖线要求）：
             右对齐时标签右边缘贴控件、同列左边缘参差；左对齐后标签列起点统一、
-            控件起点统一，「名称/API 地址/timeout」三块形成三条对齐竖线。 */}
+            控件起点统一，「名称/API 地址/timeout」三块形成三条对齐竖线。
+            2026-10-11 小欧 - labelCol 9→7：9/24 给标签约 138px，但最长标签 max_retries
+            只需约 80px，每列浪费近 60px，输入框仅剩约 220px，32 字符 URL 被截
+            （北京老陈截图指出）。7/24 约 107px 仍装得下所有标签；三块统一改，
+            竖线贯通与两列等长都不变。 */}
         <Form
           form={pForm}
           layout="horizontal"
-          labelCol={{ span: 9, style: { textAlign: 'left', paddingRight: Spacing.LG } }}
-          wrapperCol={{ span: 15 }}
+          labelCol={{ span: 7, style: { textAlign: 'left', paddingRight: Spacing.LG } }}
+          wrapperCol={{ span: 17 }}
           colon={false}
         >
           {/* 2026-10-10 22:15 小欧 - 视觉优化：四个语义块套 ModalSection 分区。
@@ -534,7 +541,14 @@ export const ModelModals: React.FC<Props> = (props) => {
                     },
                   ]}
                 >
-                  <Input placeholder="https://api.deepseek.com" />
+                  <Input
+                    placeholder="https://api.deepseek.com"
+                    style={{ width: '100%' }}
+                    // 2026-10-11 小欧 - 超长地址 hover 看全长：原生 title 跟随输入值实时更新。
+                    //   不用 Tooltip 包裹——Tooltip 会吞掉 Form.Item 注入的 value/onChange，字段绑定断掉。
+                    //   API Key 是掩码，hover 弹明文等于屏幕共享泄密，故只给地址加。
+                    title={apiBaseWatch || undefined}
+                  />
                 </Form.Item>
               </Col>
               <Col span={12}>
