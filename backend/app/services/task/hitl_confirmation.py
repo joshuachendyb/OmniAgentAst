@@ -20,6 +20,9 @@
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
 # 2026-09-03 - 小欧/北京老陈 - HITL全链路补日志: create_confirmation/wait_for_confirmation/resolve_confirmation
 #   _cleanup_stale_confirmations 四处关键路径补info/warning日志, 改前静默返回False无法排查confirm_id去向
+# 2026-10-11 - 小欧 - 等待超时日志措辞去歧义(北京老陈令): 等待结束处日志原写"[HITL] 确认超时", 易被读成
+#   "工具执行慢", 改写为"确认窗口已关闭(未获人工授权)"。expired 返回值/键名/超时时长来源均不变,
+#   仅日志措辞; 该措辞经 safety_gate 转译为 rejected.content 反馈给 LLM(同批 safety_gate 改动) — 小欧 2026-10-11
 # 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
 #   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
 #   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
@@ -151,7 +154,9 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
                 if task_id and await check_cancelled(task_id):
                     logger.info(f"[HITL] 任务已取消,终止确认等待: confirm_id={confirm_id}")
                     return {"confirmed": False, "trust_session": False}
-        logger.warning(f"[HITL] 确认超时: confirm_id={confirm_id}, timeout={timeout}s")
+        # 2026-10-11 小欧 - 日志措辞对齐(北京老陈令): expired 的语义是"确认窗口关闭、未收到人工授权",
+        #   与工具执行耗时无关; 原写"确认超时"易被误读为工具慢。键名/返回值不变。
+        logger.warning(f"[HITL] 确认窗口已关闭(未获人工授权): confirm_id={confirm_id}, timeout={timeout}s")
         return {"confirmed": False, "trust_session": False, "expired": True}
     finally:
         with _pending_lock:

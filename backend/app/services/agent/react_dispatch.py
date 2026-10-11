@@ -27,6 +27,10 @@
 #   (统一 rejected 后 blocked/timeout 不再走 type="error", step_emitter 不记录, 守卫读空→终态退化成通用文案);
 #   ②(#2)拒绝计数桶合并——计数键按 reject_type 细分(safety/sandbox/user/timeout 分桶, 防"拦截1+超时1+拒绝1"合并误判≥3),
 #   成功重置清桶遍历 _DENY_KEY_TYPES 全量 6 键防残留; _ERR_CN 扩 safety/sandbox/user 中文映射 — 小欧-2026-09-17
+# 2026-10-11 小欧 - _ERR_CN["timeout"] 中文名"超时"→"未获授权"(北京老陈令): 该 reject_type 的真实语义是
+#   HITL 确认窗口关闭、未收到人工授权, 与"执行耗时"无关; 原写"超时"使 LLM 误判工具慢而反复重试同一受保护
+#   路径, 连撞3次判死胡同(实测 2026-10-11 zen_verify.py)。仅改中文呈现, 键名 timeout(前端
+#   deniedStepSet 停齿轮控制信号 + 分桶计数键 _deny_counts 的键) 保持不变 — 小欧-2026-10-11
 
 """react_dispatch — 类型分派 + 状态推断
 
@@ -89,7 +93,11 @@ async def _dispatch_handler(agent, llm_response):
     # 2026-09-17 小欧 会审V3(#12): 失败文案 err_type 英文→中文映射(用户可见, 原样透出 "rejected"/"blocked"/"timeout" 生硬);
     #   #2整改: 分桶的拒绝类型扩展——rejected 的 reject_type(safety/sandbox/user/timeout) 直接入文案 — 小欧-2026-09-17
     _ERR_CN: Dict[str, str] = {
-        "rejected": "拒绝", "blocked": "拦截", "timeout": "超时",
+        # 2026-10-11 小欧 - "timeout" 的中文名改"未获授权"(北京老陈令): 该reject_type 的真实语义
+        #   是 HITL 确认窗口关闭、没收到人工授权, 与"执行耗时"无关; 原写"超时"会让 LLM 误判为
+        #   工具慢/文件大而反复重试同一受保护路径, 连撞 3 次判死胡同(实测 2026-10-11 zen_verify.py)。
+        #   键名 timeout 为前端 deniedStepSet 控制信号, 保持不变, 仅中文呈现去歧义。
+        "rejected": "拒绝", "blocked": "拦截", "timeout": "未获授权",
         "safety": "安全拦截", "sandbox": "沙箱拦截", "user": "用户拒绝",
     }
     seen_types = set()

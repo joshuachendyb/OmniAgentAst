@@ -57,6 +57,11 @@
 #   恢复透传, 避免bypass下sandbox走110s+超时拒绝; sandbox_gate同步修复auto_confirm读safety_result — 北京老陈驱动(三堂会审)
 # 2026-10-02 - 小欧 - 注册名收敛: 写操作确认集合 write/edit
 # 2026-10-02 - 小欧 - 注册名归位: shell 确认门与合并组键 4 处 shell→bash
+# 2026-10-11 小欧 - 超时分支文案去歧义(北京老陈令): rejected.content 原写"工具执行确认超时: {_cn}",
+#   主语说成"执行"→ LLM 误判为工具慢/文件大, 改用 write 整文件重写再试, 同一受保护路径连撞3次判死胡同
+#   (实测 2026-10-11 task-2bb 写 backend/app/services/model/zen_verify.py)。真实语义=确认窗口关闭、
+#   未收到人工授权, 与执行耗时无关。现措辞直指"未获授权+路径受保护+换策略"; _denied 原因同步改"未获授权"。
+#   reject_type 仍为 "timeout"(前端 deniedStepSet 停齿轮控制信号, 不变) - 小欧-2026-10-11
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -251,11 +256,20 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     if _verdict["expired"]:
                         # 修复: 超时与拒绝分流 — 小欧 2026-07-18 (3B: 错误併入列表)
                         logger.warning(f"[action] step={step} timeout: tool={_cn}")
+                        # 2026-10-11 小欧 - 文案去歧义(北京老陈令): 原写"工具执行确认超时: {_cn}"把
+                        #   主语说成"执行"，LLM 读到即以为工具慢/文件大，改用 write 重写整个文件再试，
+                        #   同一受保护路径连撞 3 次判死胡同(实测 2026-10-11 task-2bb 写 zen_verify.py)。
+                        #   真实语义=确认窗口关闭、没收到人工授权，与"执行耗时"无关。
+                        #   现措辞直指"未获授权 + 路径受保护 + 换策略"，让 LLM 换工具/换路径而非死磕。
+                        #   reject_type 仍为 "timeout"(前端 deniedStepSet 停齿轮的控制信号, 不变)。
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="rejected", content=f"工具执行确认超时: {_cn}", reject_type="timeout",
+                            step=step, type="rejected",
+                            content=(f"工具 {_cn} 未获授权: 该路径受保护, 需人工在确认窗口内授权; "
+                                     f"确认窗口已关闭(未收到授权, 与执行耗时无关)。" ),
+                            reject_type="timeout",
                             tool_name=_cn
                         )))
-                        _denied.append((_cn, "确认超时", call))
+                        _denied.append((_cn, "未获授权", call))
                     else:
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
                         # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发
