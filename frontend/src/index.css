@@ -436,10 +436,91 @@
 }
 
 /* 编辑历史: 2026-10-06 小欧 - 新增 .mermaid-block svg 自适应容器: mermaid 按原始尺寸出 svg,
-   宽图会溢出被裁; 限宽 + 等比缩高保证整张图完整可见(安全Tab 弹框2「读写判定流程」用)。
-   同块去掉限高与内部滚动: 图区再套一层滚动条会与 Modal body 的滚动重复(双滚动条),
+   宽图会溢出被截, 限宽 + 等比缩高保证整张图完整可见(安全Tab 弹框2「读写判定流程」用)。
+   同块去掉限高与内部滚动(图区再套一层滚动条会与 Modal body 的滚动重复=双滚动条),
    纵向滚动交给 Modal body 统一承担。 — 小欧-2026-10-06 */
 .mermaid-block svg {
   max-width: 100%;
   height: auto;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   编辑历史: 2026-10-11 小欧 北京老陈令「按人类设计师设计优化」: 新增 .doc-body 作用域样式。
+   只作用于安全Tab 两个说明弹框(安全策略说明/读写判定流程)的 Markdown 渲染结果,
+   不影响全局 MarkdownText(thought/答复/任务列表共用)。
+
+   ⚠️ 铁律: 只依赖 markdown **结构标签**(h2/ol/ul/code/p/strong), 零文本假设 ——
+      后端 .md 改措辞/增删条目/改代码名, 样式都跟着结构走, 不会失效(北京老陈 2026-10-11)。
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* 章节标题(一、二、三): 与正文拉开层级, 底部细分隔线便于扫读跳转 */
+.doc-body h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #262626;
+  margin: 24px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0f0f0;
+  line-height: 26px;
+}
+.doc-body h2:first-child {
+  margin-top: 0;
+}
+
+/* 三级标题: 比 h2 小一档, 保持层级 */
+.doc-body h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333333;
+  margin: 16px 0 8px;
+  line-height: 22px;
+}
+
+/* 段落: 行高与间距给呼吸感(原默认偏挤) */
+.doc-body p {
+  line-height: 1.7;
+  margin: 8px 0;
+  color: #595959;
+}
+
+/* 有序列表: 条目间距 + 行高, 密集规则可读 */
+.doc-body ol {
+  margin: 8px 0;
+  padding-left: 24px;
+}
+.doc-body ol > li {
+  line-height: 1.7;
+  margin: 10px 0;
+  padding-left: 4px;
+  color: #595959;
+}
+
+/* 无序列表(子项): 缩进 + 圆点, 与有序列表区分层级 */
+.doc-body ul {
+  margin: 6px 0;
+  padding-left: 20px;
+  list-style: disc;
+}
+.doc-body ul > li {
+  line-height: 1.6;
+  margin: 6px 0;
+  color: #595959;
+}
+
+/* 行内代码: 浅蓝底 + 左侧品牌色竖线 + 等宽字体, 技术术语从正文里跳出来 */
+.doc-body code {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  background: #e6f4ff;
+  color: #1677ff;
+  border-left: 2px solid #69b1ff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
+/* 加粗: 关键动作结论(直接执行/直接拒绝/转 HITL)从文字中跳出来 */
+.doc-body strong {
+  font-weight: 600;
+  color: #262626;
 }
