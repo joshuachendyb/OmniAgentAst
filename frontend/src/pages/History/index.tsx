@@ -38,6 +38,7 @@
 // 编辑历史: 2026-08-28 老杨 - 单删后同步更新totalSessions，与批量删/清空逻辑一致
 // 编辑历史: 2026-08-28 老杨 - setPagination使用函数式更新避免闭包陈旧
 // 编辑历史: 2026-08-28 老杨 - catch中使用ref.current避免闭包陈旧值
+// 编辑历史: 2026-10-11 11:38:21 小欧 - 北京老陈令「会话卡片加会话事务目录」: 卡片第2/3行之间插独立目录行(FolderOutlined 图标 + 路径, 只取 workspaces 用户工作目录, 不取 project_root/allowed_dirs 配置字段); 0 个不渲染, 多个取前 2 +N, 超长省略 + Tooltip 全文; 列表加载后 Promise.all 并发取各会话 workspaces(单个失败降级空数组) — 小欧-2026-10-11
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
@@ -64,6 +65,7 @@ import {
   ClockCircleOutlined,
   CommentOutlined,
   LoadingOutlined,
+  FolderOutlined,
 } from '@ant-design/icons';
 import { sessionApi, type Session } from '../../services/api/session.api';
 // [63] 5.19 v1.30：删除会话确认后清理 Store（4.6.2 语义，destroySession 见 5.4）
@@ -96,6 +98,12 @@ const { Search } = Input;
  */
 const HistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
+  // 2026-10-11 小欧 北京老陈令「会话卡片加会话事务目录」: 每个会话的工作目录列表
+  //   只取 workspaces(用户可增删的工作目录), 不取 project_root/allowed_dirs(配置决定的只读字段,
+  //   已在设置页展示, 卡片是"会话卡片"不是"配置卡片", 避免信息过载)。0 个不显示, 多个截断+Tooltip。
+  const [workspaceMap, setWorkspaceMap] = useState<Map<string, string[]>>(
+    new Map()
+  );
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
   const keywordRef = useRef(keyword);
@@ -152,6 +160,19 @@ const HistoryPage: React.FC = () => {
           undefined
         );
         setSessions(response.sessions);
+        // 2026-10-11 小欧 北京老陈令「会话卡片加会话事务目录」: 列表加载后并发取所有会话的
+        //   workspaces(单个失败不影响其他, 降级为空数组)。Promise.all 并发而非串行 for-await,
+        //   避免 N 个会话 = N 次串行 RTT 拖慢首屏。
+        Promise.all(
+          response.sessions.map(async (s) => {
+            try {
+              const r = await sessionApi.getWorkspaces(s.session_id);
+              return [s.session_id, r.workspaces.map((w) => w.path)] as const;
+            } catch {
+              return [s.session_id, [] as string[]] as const;
+            }
+          })
+        ).then((entries) => setWorkspaceMap(new Map(entries)));
         setPagination((prev) => ({
           ...prev,
           current: page,
@@ -644,6 +665,45 @@ const HistoryPage: React.FC = () => {
                             })()}
                           </Space>
                         </div>
+
+                        {/* 2026-10-11 小欧 北京老陈令「会话事务目录」: 独立行, 0个不显示, 多个截断+Tooltip */}
+                        {(() => {
+                          const paths = workspaceMap.get(session.session_id);
+                          if (!paths || paths.length === 0) return null;
+                          const display = paths.slice(0, 2);
+                          const extra = paths.length - display.length;
+                          return (
+                            <div
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                marginTop: 4,
+                              }}
+                            >
+                              <FolderOutlined
+                                style={{
+                                  color: '#69b1ff',
+                                  fontSize: 12,
+                                  flexShrink: 0,
+                                }}
+                              />
+                              <Tooltip title={paths.join('\n')}>
+                                <Typography.Text
+                                  style={{
+                                    fontSize: 12,
+                                    color: '#1677ff',
+                                    maxWidth: '100%',
+                                  }}
+                                  ellipsis
+                                >
+                                  {display.join(' · ')}
+                                  {extra > 0 && ` +${extra}`}
+                                </Typography.Text>
+                              </Tooltip>
+                            </div>
+                          );
+                        })()}
 
                         {/* 第3行: 更新时间靠左、创建时间靠右(同一行, 北京老陈定案) */}
                         <div
