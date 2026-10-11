@@ -65,6 +65,22 @@
  */
 // 编辑历史: 2026-10-05 22:16:38 小欧 - bypass 弹窗标题「将自动确认（安全开关已绕开）」随 settings_registry
 //   标签改名为「HTL人工开关已绕开」，与设置页新标签一致（纯文案同步，bypass 分支逻辑与倒计时不变）— 小欧-2026-10-05
+// 编辑历史: 2026-10-11 08:01:05 小欧 - 弹框整体视觉统一（北京老陈「标题最好是短且准确」+ 截图复核定案）：
+//   ①标题短化：安全确认请求→需要你确认；将自动确认（HTL人工开关已绕开）17字→将自动确认，
+//     「为什么」交给 Tag 承载（[删除确认]/[HTL 已绕过]），标题不再被 Tag+环挤到折行；
+//   ②标题行单一轴线：图标内联 + 标题左 + Tag + 环右（同基线），摘除外层 textAlign:center；
+//   ③倒计时后果文案由「独占一整行居中」移入按钮行左侧 —— 改前该行居中而其下全左对齐，轴线断裂、
+//     视觉上是无主浮字；现与操作同轴。文案禁折（whiteSpace:nowrap+flexShrink:0），
+//     否则会被按钮挤压折成「到点未响应将自动拒/绝」孤字；
+//   ④按钮改不等宽（拒绝 flexShrink:0 / 允许 flex:1.4），改前两键等宽=破坏性操作与主动作视觉等权；
+//   ⑤摘除 Typography.Title 解构（03:05 起标题已自绘 span，留着是死变量告警）。
+//   撤回项(自查发现，未实施)：原计划新增一行醒目 trustPath，实测 request.trustPath 已由
+//   「操作范围」行展示(truncateDir 剥末段得目录)，新增即重复渲染违反 DRY；
+//   参数区折叠/信任勾选改版经北京老陈指示一并撤回(参数与信任展示不动)。
+//   核查澄清(避免误修): 后端信任本就是【目录级】——trust_db.trust_scope_path 落库前按
+//   「有后缀→p.parent」把叶子文件收敛到父目录(2026-10-06 已修)；SSE 帧走 hitl_gateway
+//   extract_trust_path 发的是叶子文件路径，前端 truncateDir 剥末段与之匹配，二者各自正确不可混改。
+//   验证：typecheck 0 错 / lint 0 错 / Vitest 1484 全过 / 人工确认态+bypass 态双截图复核 — 小欧-2026-10-11
 
 import React from 'react';
 import { Button, Typography, Tag, Checkbox } from 'antd';
@@ -81,9 +97,12 @@ import { injectKeyframes } from '../AnimatedIcons/animations';
 // 2026-09-16 老杨 - S3:引入CountdownRing子组件,countdown/progress隔离 - 老杨-2026-09-16
 import CountdownRing from './CountdownRing';
 // 2026-09-16 老杨 - T1:引入HITLModalShell统一壳+HITL_TOKENS设计令牌 - 老杨-2026-09-16
+// 2026-10-11 02:40 小欧 - 标题改自绘 span 后不再用 Typography.Title（原生 h5 带默认 margin，
+//   在 flex 行里会被挤折行），字重直接给数值 600，与原 h5 视觉一致。
 import HITLModalShell, { HITL_TOKENS } from './HITLModalShell';
 
-const { Text, Title } = Typography;
+// 2026-10-11 03:30 小欧 - Title 已彻底不用（03:05 起标题自绘 span），同步摘除解构避免死变量告警
+const { Text } = Typography;
 
 export interface AuthorizationRequest {
   confirmId: string;
@@ -226,77 +245,68 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
     setTrustSession(false);
   };
 
+  // 2026-10-11 03:05 小欧 - 标题改短且准确（北京老陈："标题最好是短且准确"）。
+  //   改前 bypass 态「将自动确认（HTL人工开关已绕开）」17 字，必然被 Tag+环挤到折行/截断。
+  //   拆法：标题只说「现在会发生什么」，「为什么」交给 Tag 承载 —— 语义不丢、字数减半。
+  const titleText = isBypass ? '将自动确认' : '需要你确认';
+  const statusTagText = isBypass ? 'HTL 已绕过' : safetyConfig.label;
+
   return (
     <HITLModalShell open={visible} isBypass={isBypass}>
-      <div style={{ textAlign: 'center' }}>
+      <div>
+        {/* 3.1 单一轴线：图标内联 + 标题左 + Tag + 环 右，共用一条基线 */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 6,
-            marginBottom: 2,
+            gap: 8,
+            marginBottom: 8,
+            minWidth: 0,
           }}
         >
           {isBypass ? (
             <ThunderboltOutlined
-              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff' }}
+              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', flexShrink: 0 }}
             />
           ) : (
             <WarningOutlined
-              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#faad14' }}
+              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#faad14', flexShrink: 0 }}
             />
           )}
-          <Title level={5} style={{ marginBottom: 0 }}>
-            {isBypass ? '将自动确认（HTL人工开关已绕开）' : '安全确认请求'}
-          </Title>
+          <span
+            title={titleText}
+            style={{
+              fontSize: 16,
+              fontWeight: 600,
+              lineHeight: '22px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              minWidth: 0,
+            }}
+          >
+            {titleText}
+          </span>
           <Tag
             color={safetyConfig.color}
-            style={{ marginBottom: 0, fontSize: 14 }}
+            style={{ marginBottom: 0, fontSize: 12, flexShrink: 0 }}
           >
-            {safetyConfig.label}
+            {statusTagText}
           </Tag>
-          {/* 2026-10-11 02:10 小欧 - 计时钟改位（不删，只换位置 + 缩小）。
-              改前：60px 圆环独占一整行居中（+4 外距），与下方 13px 粗体秒数文字上下堆叠
-              ≈100px，占确认弹框（总高 420）的 24%——辅助信息拿到了最大的视觉权重，
-              而用户该先看"要我确认什么"。
-              改后：圆环挪到标题行**右侧**（右上角是视线终点，仍醒目但不抢主内容），
-              直径 60→44 与次级信息同量级，标题行用 space-between 让标题靠左、环靠右。
-
-              02:25 追加 confirmTimeout=0 特例：0 的语义是**禁倒计时**
-              （useAuthorization.parseTimeout 注释：「合法 0(禁倒计时保留)」），
-              此时根本没有"到点"这回事 —— 显示环和"到点后自动拒绝"都是事实错误，
-              正是 D2-09 用例名所说「文案割裂」。故 0 时不渲染环，文案改「不自动拒绝」。 */}
-          {confirmTimeout > 0 && (
-            <CountdownRing
-              countdown={countdown}
-              confirmTimeout={confirmTimeout}
-              size={44}
-            />
-          )}
+          <span style={{ marginLeft: 'auto', flexShrink: 0, display: 'flex' }}>
+            {/* 计时钟：不删，只改位 + 缩小。confirmTimeout=0 语义为禁倒计时，
+                此时无"到点"可言，显示环与文案都是事实错误，故不渲染。 */}
+            {confirmTimeout > 0 && (
+              <CountdownRing
+                countdown={countdown}
+                confirmTimeout={confirmTimeout}
+                size={44}
+              />
+            )}
+          </span>
         </div>
 
-        <div
-          style={{
-            fontSize: 12,
-            fontWeight: 400,
-            color: '#8c8c8c',
-            marginBottom: 6,
-          }}
-        >
-          {/* 2026-09-03 小欧 修复: 后端兜底原文案 5s 与实际 60s 不符(useAuthorization 兜底即 60), 统一为 60 防文案欺骗 */}
-          {/* 2026-10-11 02:10 小欧 - 秒数去重（单一信息源）：原文案「将在 Xs 后自动确认」
-              与上方 CountdownRing 环内的大号数字重复表述同一秒数。环里已有数字+饼环进度，
-              文字只讲**到点会怎样**（自动确认 / 自动拒绝），不重复报数。
-              （2026-09-18 北京老陈定的是「恢复圆圈倒计时」——环保留不动，本轮只去重文字。）*/}
-          {confirmTimeout === 0
-            ? '不自动拒绝（倒计时已禁用）'
-            : isBypass
-              ? '到点后自动确认放行'
-              : '到点未响应将自动拒绝'}
-        </div>
-
-        {/* content 原因展示区: 倒计时下方, 告知用户"为什么要问" — 小欧-2026-09-18 */}
+        {/* content 原因展示区: 告知用户"为什么要问" — 小欧-2026-09-18 */}
         {request.content && (
           <div
             style={{
@@ -444,15 +454,48 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
           </span>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+        {/* 3.5 单一底轴：倒计时后果文案左、按钮右。
+            改前该文案独占一整行居中悬在头部下方，而其下所有块左对齐 —— 轴线断裂，
+            视觉上像无主的浮字。现移到按钮行左侧与操作同轴，消除断裂。 */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            width: '100%',
+            marginTop: 8,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 400,
+              color: '#8c8c8c',
+              // 2026-10-11 03:20 小欧 - 修文案折行：原 flex:1 + minWidth:0 允许文本被按钮挤压到
+              //   折成两行（「到点未响应将自动拒/绝」孤字）。改为不参与收缩且禁折，
+              //   富余宽度由「允许执行」(flex:1.4) 吸收 —— 实测 120+8+76+8+余量 << 内容宽422。
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {/* 2026-09-03 小欧 修复: 后端兜底原文案 5s 与实际 60s 不符, 统一防文案欺骗 */}
+            {/* 2026-10-11 03:05 小欧 - 秒数去重（单一信息源）：环内已有大号数字，
+                文字只讲**到点会怎样**，不重复报数。
+                confirmTimeout=0 语义为禁倒计时，此时无"到点"可言，改「不自动拒绝」。 */}
+            {confirmTimeout === 0
+              ? '不自动拒绝（倒计时已禁用）'
+              : isBypass
+                ? '到点后自动确认放行'
+                : '到点未响应将自动拒绝'}
+          </span>
           <Button
             onClick={() => handleConfirm(false)}
             size="middle"
             disabled={submitting}
             danger
             ghost
-            style={{ flex: 1 }}
             aria-label="拒绝执行此工具操作"
+            style={{ flexShrink: 0 }}
           >
             拒绝执行
           </Button>
@@ -467,7 +510,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
               backgroundColor: '#faad14',
               borderColor: '#faad14',
               color: '#fff',
-              flex: 1,
+              flex: 1.4,
             }}
           >
             {isBypass && !submitting ? `允许执行 (${countdown}s)` : '允许执行'}
