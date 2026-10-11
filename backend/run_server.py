@@ -12,6 +12,8 @@
 #     而 `*` 意味着任意客户端可伪造 X-Forwarded-For 把来源 IP 伪造成 127.0.0.1 →
 #     免口令进（可读全部明文密钥、可改口令）。显式暴露该参数 + 启动告警 + 应用层
 #     fail-closed（deps._is_trusted_localhost）三道防线。
+#   2026-10-11 小欧 - 北京老陈令「打包版默认 8500」(--port 默认值 8000→常量 DEFAULT_PORT=8500;
+#     打包配套文件非 app/ 系统代码, 可改; 配套删 pyi_rthook_default_port, 单一机制)。
 # ============================================================================
 import argparse
 import shutil
@@ -26,6 +28,11 @@ if sys.platform == "win32":
         sys.stdout.reconfigure(encoding="utf-8")
     except AttributeError:
         pass
+
+
+# 打包版默认端口(北京老陈令: 与代码库惯例 :8000 双开不冲突; 避开 E2E 代理 :9000)。
+# 改端口只改这里, 重打即生效; 显式传 --port 恒优先 — 小欧-2026-10-11
+DEFAULT_PORT = 8500
 
 
 def _exe_dir() -> Path:
@@ -53,7 +60,10 @@ def main() -> None:
     freeze_support()
     parser = argparse.ArgumentParser(description="OmniAgentAst 后端服务")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8000)
+    # 2026-10-11 小欧 - 北京老陈令「打包版默认 8500」(代码库占惯例 :8000 不动):
+    #   本文件属打包配套(非 app/ 系统代码,可改); 改默认值不锁死, 显式传 --port 恒优先。
+    #   配套删 pyi_rthook_default_port(同一目的不再留两套机制) — 小欧-2026-10-11
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument(
         "--forwarded-allow-ips", default="127.0.0.1",
         help="信任哪些对端的 X-Forwarded-For。默认仅本机反代。"

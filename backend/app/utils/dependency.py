@@ -8,6 +8,9 @@
 
 【小欧 2026-06-16】新增：DRY原则从gui_tools.py send_notification抽取
 【小健 2026-06-18】增强：支持版本控制和前置依赖，集成到工具注册系统
+【小欧 2026-10-11】新增：打包版(frozen)短路（北京老陈令「搞了不能用要解决，不能逃避」）：
+  exe 里 sys.executable 是自身，调 pip 必被自家 argparse 拦下刷屏；且即便装上 frozen
+  进程也看不见（只认 _MEIPASS）。缺失时直接返回 False 并给可操作提示，不调 pip。
 
 ===============================================================================
                          依赖管理系统使用指南
@@ -95,6 +98,8 @@ import subprocess
 import sys
 from typing import Optional
 
+from app.logger import logger  # 小欧 2026-10-11: frozen 短路分支需记可操作提示日志
+
 
 def _pip_install(pkg: str, version: Optional[str] = None) -> bool:
     """尝试pip安装，先普通模式失败后自动降级为--user
@@ -155,6 +160,15 @@ def ensure_dependency(
                 raise ImportError(f"依赖{import_name}版本不可查")
         return True
     except ImportError:
+        # 2026-10-11 小欧 - 打包版短路(北京老陈令)：frozen 下 sys.executable 是 exe 自身，
+        #   调 pip 会被自家 argparse 以 unrecognized arguments 打回刷屏；且即便装上 frozen
+        #   进程也看不见(只认 _MEIPASS)。直接返回 False，并给出可操作提示（要加包重打）。
+        if getattr(sys, "frozen", False):
+            logger.warning(
+                f"[依赖] 打包版(exe)缺失依赖 '{pip_package}'：不支持运行时 pip 安装，已跳过。"
+                f"需要该功能请重打包含该依赖的版本；或改用源码运行并执行 `pip install {pip_package}`。"
+            )
+            return False
         if not _pip_install(pip_package, version):
             return False
         try:

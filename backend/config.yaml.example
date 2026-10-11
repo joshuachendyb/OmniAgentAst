@@ -27,63 +27,153 @@
 
 ai:
   # ✅ 顶层配置（全局）— 唯一源 ai.model_ref（v4.20 单源收敛，删扁平 provider/model）
-  model_ref: {provider: opencode, model: kimi-k2.5-free}
+  # 2026-10-11 小欧 - provider 块与 models 列表按运行配置 1:1 镜像（键名大小写原样：
+  #   ZenFree/DeepSeek/Z_AI/Discoversh；api_key 一律占位符，真 key 只进 config/config.yaml；
+  #   timeout/max_retries 取运行值原样；空 models 表示尚未拉取，配好 key 后到模型库拉取）。
+  model_ref: {provider: agnes, model: agnes-3.0-flash}
 
   # ✅ Provider配置（多个）
-  # timeout=max_retries 优先级高于全局 tuning.llm_net.read_timeout / tuning.llm.stream_max_retries — 小欧-2026-09-23
-  opencode:
-    api_base: https://opencode.ai/zen/v1
-    api_key: sk_xxx...
+  # timeout/max_retries 优先级高于全局 tuning.llm_net.read_timeout / tuning.llm.stream_max_retries — 小欧-2026-09-23
+  agnes:
+    api_base: https://api.agnes-ai.cn/v1
+    api_key: sk-xxx...
     models:
-      - minimax-m2.5-free
-      - kimi-k2.5-free
-    timeout: 120                 # Provider级读超时(秒)：优先于 tuning.llm_net.read_timeout(150)，未配则用全局
+      - agnes-2.5-flash
+      - agnes-2.5-pro
+      - agnes-3.0-flash
+      - agnes-image-2.1-flash
+      - agnes-video-2.5
+      - agnes-video-2.5-flash
+    timeout: 120
+    max_retries: 3
 
-  longcat:
-    api_base: https://api.longcat.chat/v1
-    api_key: ak_xxx...
+  sensenova:
+    api_base: https://token.sensenova.cn/v1
+    api_key: sk-xxx...
     models:
-      - LongCat-Flash-Thinking
-    timeout: 120                 # Provider级读超时(秒)：优先于 tuning.llm_net.read_timeout(150)，未配则用全局
+      - deepseek-v4-flash
+      - glm-5.2
+      - sensenova-6.8-flash-lite
+      - kimi-k3
+    timeout: 200
+    max_retries: 3
+
+  ZenFree:
+    api_base: https://opencode.ai/zen/v1
+    api_key: public
+    models:
+      - big-pickle
+      - longcat-2.5-preview-free
+      - mimo-v2.6-flash-free
+      - muse-spark-1.2-contributor-free
+      - muse-spark-1.3-contributor-free
+      - space-bunny-free
+      - step-5-preview-free
+    timeout: 151
+    max_retries: 4
+
+  qiniu:
+    api_base: https://api.qnaigc.com/v1
+    api_key: sk-xxx...
+    models:
+      - deepseek-r1
+      - deepseek-v3.1
+      - minimax/minimax-m2.5
+      - moonshotai/kimi-k2
+      - moonshotai/kimi-k2.5
+      - z-ai/glm-4.5-air-free
+    timeout: 90
+    max_retries: 3
 
   zhipuai:
-    api_base: https://test.com
-    api_key: test123
-    max_retries: 3               # Provider级流式最大重试：优先于 tuning.llm.stream_max_retries(3)，未配则用全局
+    api_base: https://open.bigmodel.cn/api/paas/v4/
+    api_key: sk-xxx...
     models:
-      - glm-4.7-flash
-      - cogview-3-flash
-    timeout: 90                  # Provider级读超时(秒)：优先于 tuning.llm_net.read_timeout(150)，未配则用全局
-    # 模型参数当前值（运行时透传 extra_body/context_limit）— 小欧 2026-09-22
-    # key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）
-    model_params:
-      glm-4.7-flash:
-        reasoning_effort: medium
-        # ↓ 设置页「+ 添加参数」勾选预设后保存写入的样子：新键缀尾 — 小欧 2026-09-23 [65]
-        temperature: 0.7
-        top_p: 1.0
-        # my_custom_key: 1.0  # 自定义参数同理缀尾；无 range/options 时只进 model_params，不写 model_meta
-    # 模型元数据：枚举选项 SSOT（按模型各配各的）— 小欧 2026-09-22
-    # 三层解析：model_meta.param_options（本级最高）> provider级 param_options > 代码兜底
-    # 不写 model_meta 的模型走兜底 [low, medium, high]；3/4/5个选项各写各的单子
-    model_meta:
-      glm-4.7-flash: # 3个选项
-        param_options:
-          reasoning_effort: [low, medium, high]
-        # ↓ 带 range 的预设保存时捎带全量 range 表（[65]§4.2.4 新键时全量捎带）— 小欧 2026-09-23
-        range:
-          temperature:
-            min: 0
-            max: 2
-          top_p:
-            min: 0
-            max: 1
-      # cogview-3-flash: # 4个选项示例（按需解开）
-      #   param_options:
-      #     reasoning_effort: [low, medium, high, xhigh]
-      # new-big-model: # 5个选项示例（按需解开）
-      #   param_options:
-      #     reasoning_effort: [low, medium, high, xhigh, ultra]
+      - glm-4.5
+      - glm-4.5-air
+      - glm-5.3
+    timeout: 90
+    max_retries: 3
+
+  Discoversh:
+    api_base: https://discovery-api.intern-ai.org.cn/v1
+    api_key: sk-xxx...
+    models:
+      - Agents-A1
+      - Atria-Dawn-Preview
+    timeout: 120
+    max_retries: 3
+
+  openrouter:
+    api_base: https://openrouter.ai/api/v1
+    api_key: sk-xxx...
+    models: []  # 尚未拉取：配好 key 后到模型库「获取模型列表」
+    timeout: 60
+    max_retries: 3
+
+  amdapi:
+    api_base: https://developer.amd.com.cn/radeon/api/v1
+    api_key: sk-xxx...
+    models: []  # 尚未拉取：配好 key 后到模型库「获取模型列表」
+    timeout: 60
+    max_retries: 3
+
+  longcat:
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: sk-xxx...
+    models:
+      - LongCat-2.0
+      - LongCat-2.5-Preview
+    timeout: 60
+    max_retries: 3
+
+  zenmux:
+    api_base: https://zenmux.ai/api/v1
+    api_key: sk-xxx...
+    models:
+      - atria-asi/atria-dawn-preview
+      - dots-studio/dots3-note-prev
+      - z-ai/glm-4.7-flash-free
+    timeout: 60
+    max_retries: 3
+  # 模型参数当前值（运行时透传 extra_body/context_limit）：写法是在对应模型下挂 model_params，
+  #   key=参数名，value=当前值（字符串保持字符串，如 reasoning_effort: medium）；
+  #   设置页「+ 添加参数」勾选预设后保存即按此形状写入 — 小欧-2026-10-11
+
+  Z_AI:
+    api_base: https://api.z.ai/api/paas/v4
+    api_key: sk-xxx...
+    models:
+      - glm-5.3-flash
+    timeout: 60
+    max_retries: 3
+
+  DeepSeek:
+    api_base: https://api.deepseek.com/v1
+    api_key: sk-xxx...
+    models:
+      - deepseek-flash
+      - deepseek-v4-pro
+    timeout: 60
+    max_retries: 3
+
+  moonshot:
+    api_base: https://api.moonshot.cn/v1
+    api_key: sk-xxx...
+    models:
+      - kimi-k2.6
+      - kimi-k3
+    timeout: 60
+    max_retries: 3
+
+  minimax:
+    api_base: https://api.minimax.cn/v1
+    api_key: sk-xxx...
+    models:
+      - MiniMax-M2.7
+      - MiniMax-M3
+    timeout: 60
+    max_retries: 3
 
 # 外观配置（app 保留块；language/theme 暂留本块，深色主题二期再归 appearance）
 app:
