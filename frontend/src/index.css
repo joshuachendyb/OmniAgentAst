@@ -524,3 +524,11 @@
   font-weight: 600;
   color: #262626;
 }
+
+/* 2026-10-11 小欧 北京老陈令「表线要看得见」: 表格边框从几乎不可见的 #f0f0f0
+   加深到 #d9d9d9。MarkdownText 的 th/td 是内联样式, CSS 类优先级不够, 故用 !important。
+   仅作用于 .doc-body(安全Tab弹框), 不影响全局 markdown 表格。 — 小欧-2026-10-11 */
+.doc-body th,
+.doc-body td {
+  border: 1px solid #d9d9d9 !important;
+}
