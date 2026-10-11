@@ -62,6 +62,9 @@
 #   (实测 2026-10-11 task-2bb 写 backend/app/services/model/zen_verify.py)。真实语义=确认窗口关闭、
 #   未收到人工授权, 与执行耗时无关。现措辞直指"未获授权+路径受保护+换策略"; _denied 原因同步改"未获授权"。
 #   reject_type 仍为 "timeout"(前端 deniedStepSet 停齿轮控制信号, 不变) - 小欧-2026-10-11
+# 2026-10-11 小欧 - 未获授权报错补路径(北京老陈令): content 与 _denied 原因均带上具体路径
+#   (call 参数 path 优先, 回落 auth_path/trust_path), 原只说"该路径受保护"无从定位该授权何处 —
+#   实测 2026-10-11 三条同文案无法区分 backend/tests/test_adapters.py 与其他受保护路径 - 小欧-2026-10-11
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -262,14 +265,20 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         #   真实语义=确认窗口关闭、没收到人工授权，与"执行耗时"无关。
                         #   现措辞直指"未获授权 + 路径受保护 + 换策略"，让 LLM 换工具/换路径而非死磕。
                         #   reject_type 仍为 "timeout"(前端 deniedStepSet 停齿轮的控制信号, 不变)。
+                        # 2026-10-11 小欧 - 报错补路径(北京老陈令): 原文案只说"该路径受保护"却不说哪个路径,
+                        #   人工排查时无从判断该去授权哪一处(实测 2026-10-11 三条同文案无法区分
+                        #   backend/tests/test_adapters.py 与其他受保护路径)。现取 call 参数 path 优先、
+                        #   回落 auth_path/trust_path, 让报错自带定位信息。
+                        _tp = str(_cp.get("path") or getattr(safety_result, "auth_path", None)
+                                   or getattr(safety_result, "trust_path", None) or "未知路径")
                         _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="rejected",
-                            content=(f"工具 {_cn} 未获授权: 该路径受保护, 需人工在确认窗口内授权; "
-                                     f"确认窗口已关闭(未收到授权, 与执行耗时无关)。" ),
+                            content=(f"工具 {_cn} 未获授权: 路径 {_tp} 属受保护区域, 需人工在确认窗口内授权; "
+                                     f"确认窗口已关闭(未收到授权)。"),
                             reject_type="timeout",
                             tool_name=_cn
                         )))
-                        _denied.append((_cn, "未获授权", call))
+                        _denied.append((_cn, f"未获授权({_tp})", call))
                     else:
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
                         # 2026-09-06 小欧 B2(北京老陈裁定): 拒绝不是error事件, 独立 type="user_rejected" 单独发
