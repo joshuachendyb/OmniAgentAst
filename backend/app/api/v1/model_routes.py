@@ -56,6 +56,7 @@
     触发验证 + GET /zen-verify/reports 列历史报告 + GET /zen-verify/report 读报告内容。三条同族，
     业务全在 zen_verify 服务模块，路由层只做转发（不新造第二套逻辑，DRY/KISS-DIRECT）；读报告
     路由按报告名取文件，经服务层路径校验拦截目录穿越。原行内注释已按规矩上提归并至本板块底部
+   2026-10-11 07:33:47 - 小欧 - RemoteModelItem 增 publish_time(zenmux 真发布时间, created 全假不可用; 不下发则 None, 与 free/stability 同政策; 字段内联已记 2026-10-10) — 小欧 2026-10-11
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional

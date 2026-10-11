@@ -15,6 +15,7 @@
 // 2026-10-10 22:15 小欧 - 两个说明弹框归一到 SettingsModal 标准壳（此前是裸 antd Modal，归一批次漏掉）。
 //   行为零变更：壳默认 discard 关闭语义 + destroyOnHidden，与原裸 Modal 的默认值完全一致；
 //   宽度仍走 settingsModalWidth.display 令牌，footer={null}（只读说明，无操作键）保持。
+// 编辑历史: 2026-10-11 10:37:22 小欧 - 北京老陈令「按人类设计师设计优化」: 说明入口由通用 Button 改文档卡片(图标 FileText/Branches + 标题 + 描述, POPUPS 同源派生, hover 边框+阴影反馈); Modal 标题同步加图标; 弹框内容包 .doc-body 作用域容器(样式见 index.css, 只依赖 markdown 结构标签, 后端文案改动不失效) — 小欧-2026-10-11
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Spin } from 'antd';
 import { BranchesOutlined, FileTextOutlined } from '@ant-design/icons';

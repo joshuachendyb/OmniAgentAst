@@ -82,6 +82,8 @@
 //   extract_trust_path 发的是叶子文件路径，前端 truncateDir 剥末段与之匹配，二者各自正确不可混改。
 //   验证：typecheck 0 错 / lint 0 错 / Vitest 1484 全过 / 人工确认态+bypass 态双截图复核 — 小欧-2026-10-11
 
+// 编辑历史: 2026-10-11 00:55:20 小欧 - HTL危险确认列出具体变更+后果提示; 计时钟移标题行右侧并缩至44(辅助信息退位, 主内容优先); CountdownRing 直径可调配套 — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 07:18:01 小欧 - 计时钟44px定稿 + 秒数去重(环内已有数字, 文字只讲到点会怎样); confirmTimeout=0(禁倒计时)不渲染环, 改显式文案「不自动拒绝(倒计时已禁用)」— 小欧-2026-10-11
 import React from 'react';
 import { Button, Typography, Tag, Checkbox } from 'antd';
 import {

@@ -12,6 +12,7 @@
 // ContextOverviewFrame 对齐(两处长期分裂, 本次只对齐不合并) — 小欧 2026-10-04
 // 编辑历史: 2026-10-04 小欧 - 增 truncated?: boolean(仅 history_context 帧有效, 与 type='truncated' 的输出截断帧无关):
 // 供 useTaskInfo 从 steps 派生"历史对话已裁剪"事件
+// 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: ExecutionStep 补 reject_type?: string(拒绝归因 safety/user/timeout/sandbox, 供 useTaskInfo 生成事件文案前缀); type 成员 'rejected' 本就存在(2026-09-17), 本次只补归因字段 — 小欧-2026-10-11
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 原定义位于 utils/sse.ts，因 sse.ts 与 services/api.ts 相互引用形成类型环，

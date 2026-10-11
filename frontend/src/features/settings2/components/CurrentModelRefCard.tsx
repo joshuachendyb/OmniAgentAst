@@ -7,6 +7,7 @@
 // 2026-09-21 小强 - DRY收口：onOk改经configApi.switchCurrentModel调共用切全局模型唯一写链
 // 2026-09-24 18:56:06 小欧 - 修顶栏下拉不刷新：切全局模型成功后补调 AppContext.refreshModelList()，使顶栏收起态带★即时更新（对齐顶栏 handleModelChange 路径）
 // 2026-09-24 19:15:58 小欧 - DRY收口：onOk改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
+// 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一之模型卡去重排: 模型名/标题/全局默认三组重复只留一处; 「更换模型」提至标题行右侧(动作贴对象); 能力/作用改 label:value 定宽对齐; 状态文字仅异常态出现; 「使用中」Tag 改小圆点+文字 — 小欧-2026-10-11
 import React, { useState } from 'react';
 import { Button, Tag } from 'antd';
 import {

@@ -6,6 +6,7 @@
 //   作为 TaskListPanel 组号徽标的唯一分组键; context_link_mode 保留(列仍在返回, 供快照展示, 非分组键) — 小欧-2026-10-03
 // 编辑历史: 2026-10-10 小欧 (- TaskDetail 加 history_context_first
 //   (历史任务回显首帧); 其类型复用 ContextOverviewFrame 单一真源, 禁在本文件手写窄类型副本(禁 backward)
+// 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskDetail 补 process_events(事件列表快照条目本体, 类型复用 useTaskInfo.ProcessEvent 单一真源, 内联 import() 避 api→hooks 反向依赖); adaptTaskDetail 同款透传(Array.isArray 守卫, 存量 null 兜底); executionApi 新增 saveTaskProcessEvents(POST /chat/execution/task/{id}/process-events, 失败只 reject 不抛业务链) — 小欧-2026-10-11
 import api from './client';
 
 // ============================================================

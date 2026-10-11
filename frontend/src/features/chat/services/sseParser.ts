@@ -109,6 +109,7 @@
 //   「steps 门补 hasSummary — 「summary 只在 step==0 首帧写入而该帧 conv.truncated=false, 「if(trimmed)
 //   把唯一携带 summary 的帧挡在 steps 外 → 致压缩事件永不产出」
 // 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(禁在本文件重判形状)
+// 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: case 'rejected' 在 onRejected 回调外补 pushAndFlush 入 executionSteps(透传 reject_type/tool_name), 使 useTaskInfo 能从 steps 派生 rejected 过程事件; 改前只调回调不入流, 事件列表永无 rejected — 小欧-2026-10-11
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14

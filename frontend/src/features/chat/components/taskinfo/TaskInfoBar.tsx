@@ -59,6 +59,7 @@
 //   无数据显示 –; G3 轮步拆两段移到「任务」前(删 xsmall 合并串, 耗时位置未动); 分隔点统一「•」(BORDER.ACCENT);
 //   新增「占窗率 = 本轮P/窗口」置于「任务」前(缺窗口不显); 断点门统一 isNarrow, 删 isMid
 // 编辑历史: 2026-10-06 小欧 - 增 storeStatus 入参(useTaskInfo 补第 5 参), 用于取消终态帧没送达时的徽标兜底。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 taskId prop(取值与组件 key 同源 activeTaskId ?? serverTaskId, 不新造标识); final 到达时调 saveTaskProcessEvents 回传快照(_sentRef 幂等只发一次, _latestRef 读最新值避 exhaustive-deps, effect 首行 if (detail) return 防历史态误回填覆盖/跨任务污染; 失败只 console.warn 不阻断) — 小欧-2026-10-11
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *

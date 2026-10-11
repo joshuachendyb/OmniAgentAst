@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删META_STEP_TYPES的cancelled条目(取消收尾单一由final+cancelled承担)
 // 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.13): META_STEP_TYPES加merged — 小欧-2026-09-28
+// 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: META_STEP_TYPES 补 'rejected'(meta/业务分流归位, 非新增事件类型; rejected 本就在 ProcessEvent['kind'] 且由后端 rejected 帧驱动), 防 pipeline 把 rejected 当业务步渲染致与 deniedTools 点名条同帧双绘 — 小欧-2026-10-11
 /**
  * pipeline 分流工具
  *

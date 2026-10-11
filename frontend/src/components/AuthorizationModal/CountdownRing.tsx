@@ -2,6 +2,7 @@
 // 编辑历史: 2026-09-16 老杨 - 拆分CountdownRing子组件,React.memo隔离重渲染 - 老杨-2026-09-16
 // 编辑历史: 2026-09-16 小欧 - 修复: React.FC+memo内联解构致react/prop-types误报2error, 对齐ErrorDetail.tsx惯例文件级disable - 小欧-2026-09-16
 // 编辑历史: 2026-09-18 小欧 - 恢复圆圈倒计时(北京老陈令): 回退a59aaff8e的扁平纯文本, 恢复Progress circle饼环+双层格式化div嵌套, 恢复confirmTimeout prop - 小欧-2026-09-18
+// 编辑历史: 2026-10-11 00:55:20 小欧 - 直径可调(北京老陈「计时钟不能删除但可以改变位置」配套): 新增 size prop(默认 60), 数字随环缩放, 供标题行右侧 44px 调用(见 index.tsx 同批) — 小欧-2026-10-11
 /* eslint-disable react/prop-types */
 
 import React from 'react';

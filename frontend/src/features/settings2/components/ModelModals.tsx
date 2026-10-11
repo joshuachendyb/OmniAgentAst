@@ -38,6 +38,9 @@
 // 编辑历史: 2026-10-10 小欧 - 添加 Provider 弹窗三项: ①名称/显示名改并排一行(Row+Col12, 同款 timeout/max_retries);
 //   ②底部加「模型」区(输入框+＋按钮攒列表, 确定时随 models 字段一次提交, 后端 add_provider 原生透传无半成功窗口);
 //   ③收紧留白(每个 Form.Item marginBottom 12px, antd 默认 24px 砍半)治纵向稀疏 — 小欧-2026-10-10
+// 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: 添加模型窗 width form(520)→display(800) + layout vertical→horizontal + labelCol(span5, 右对齐), 与「添加 Provider」同款版式 — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 06:31:51 小欧 - 标签改左对齐成三条竖线: labelCol textAlign right→left(标签列起点统一, 控件起点统一); labelCol span 9 相关(详见内联注释) — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 08:02:51 小欧 - Provider 输入框加长与地址 hover 看全长: 超长地址框内放不下, 原生 title 跟随输入值实时显示完整串(空值不弹); API Key 是掩码不加(hover 弹明文等于泄密) — 小欧-2026-10-11
 
 import React, { useEffect, useState } from 'react';
 import {

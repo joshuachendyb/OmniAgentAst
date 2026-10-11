@@ -122,6 +122,7 @@
 #   (历史任务回显首帧, 整帧原封不动返回不重塑); count_chain_siblings 补 'linked' 限定 —— 链根自身在表内
 #   (root=自身/independent)致每个 link 任务序号全体 +1, 已按真库 16 任务逐一验证修正; 首帧查询过滤
 #   下推 SQL(原 Python 侧过滤全量拉 step_json), 缺表降级返 None 不拖垮详情接口。
+# 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 save_process_events(仅 UPDATE 不 INSERT, 幂等覆盖; 不校验 kind/不设条数上限, 与 append_execution_step 同族写法); get_task_detail 补 process_events 解析(与 artifacts 同款, SELECT * 自动含列, 存量空列表前端兜底) — 小欧-2026-10-11
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入

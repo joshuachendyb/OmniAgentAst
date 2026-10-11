@@ -50,6 +50,8 @@
 //   直给的首帧(不再恒空, 结构定稿不重塑); ②ProcessEvent.kind 加 context_compressed, 裁剪/压缩事件判据
 //   改走 utils/contextFrame 定稿双分组; ③now 上提至事件段前算一次(DRY) —— 原终态事件恒用 Date.now(),
 //   memo 每帧重算致事件时间每帧漂移。
+// 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: 恢复 case 'rejected'(2026-09-17 删除的两个理由已解除: sseParser 已 pushAndFlush 入流; 不落库仍成立但实时链路不再依赖落库), 文案带归因前缀, 归因词复用 ToolCallLine.REJECT_LABEL_MAP(DRY, 已核无循环引用); 与 pipeline 点名条双写共存 — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 返回值补 processEventsSnapshot(排除 heartbeat, 全链路唯一过滤); 历史分支改读 detail.process_events(快照条目直接铺列表, 不进 switch 防 badge 被覆写); 实时分支删 slice(-20) 上限(北京老陈令「不能限制」, 溢出由 TaskInfoBar 浮层滚动承载) — 小欧-2026-10-11
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *

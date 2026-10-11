@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # v2.0 C1/C2 任务级回放与统计接口 — 小欧 2026-08-19
 # 2026-08-29 - 小沈 - 修复#17: 两端点读库由同步 db.get_conn 改为 db.atxn 离载子线程, 不阻塞事件循环
+# 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 POST /chat/execution/task/{task_id}/process-events 端点 + ProcessEventsBody(不设条数上限/不校验 kind, 送什么存什么); 落库经 db.atxn offload(同文件 C1/C2 范式), 存在性用轻量 SELECT 1(不用 get_task_detail 避白跑解析), 404 显式回抛、其余异常只记日志不阻断 — 小欧-2026-10-11
 """
 task_execution — C1 任务详情统计 + C2 按 task_id 步骤回放
 落在 chat 域（与 execution_stream C3 同域）

@@ -13,6 +13,8 @@
 /* 编辑历史: 2026-09-18 小欧 - 居中修复(北京老陈驱动): .waiting-cursor/.action-waiting-cursor 1.4em 盒子 baseline 对齐致等待圈上浮如上标，改 vertical-align:middle 与文字中线对齐(尺寸/动画/颜色不动) — 小欧-2026-09-18 */
 /* 编辑历史: 2026-10-05 小欧 - ReasoningIcon(=EyeIcon 眼睛, step 页面"推理内容..."折叠行前置图标) 动画 + .reasoning-icon-dim 两态 + prefers-reduced-motion;
    三堂会审: dim 类原无组件挂载(死规则)致裁定两态零落地, 现由 ReasoningIcon 按 dim 挂载; 订正"CSS变量"误导注释 — 小欧-2026-10-05 */
+/* 编辑历史: 2026-10-11 10:37:22 小欧 - 北京老陈令「按人类设计师设计优化」: 新增 .doc-body 作用域样式(只作用安全Tab说明弹框的 markdown 渲染: h2 章节分隔/ol 条目间距/code 浅蓝底+品牌色左线/strong 深色; 只依赖结构标签 h2/ol/ul/code/p/strong, 零文本假设, 后端文案改动不失效) - 小欧-2026-10-11 */
+/* 编辑历史: 2026-10-11 11:03:03 小欧 - 北京老陈令「表线要看得见」: .doc-body th/td 边框 #f0f0f0→#d9d9d9(!important 覆盖 MarkdownText 内联样式, 仅安全Tab作用域, 不影响全局 markdown 表格) - 小欧-2026-10-11 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;

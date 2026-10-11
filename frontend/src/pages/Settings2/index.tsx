@@ -8,6 +8,7 @@
 //   数值与推导依据都在 settingsTokens 定义，此处只做落地。
 //   ⚠ 更正本文件 23:05 第一版：曾误加 token.controlHeightSM=18 想压开关轨道——该token 会连带压全页
 //     所有 size="small" 控件（是错的），已移除。开关尺寸改走 CSS 精确覆盖，见下方 switchCss。
+// 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: 控件高 28/圆角 4px/开关 40x18 落地(ConfigProvider + CSS 精确覆盖 switchCss; 曾误加 controlHeightSM=18 会连带压全部 small 控件, 已移除; 推导见 settingsTokens) — 小欧-2026-10-11
 import React from 'react';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';

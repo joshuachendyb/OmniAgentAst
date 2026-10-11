@@ -79,6 +79,7 @@
 #   该列此前无唯一约束, 分配器重号即静默重复。实测存量 501 行零重复、去重零删除、重复插被拒新 id 放行
 # 2026-10-05 - 小欧 - 12.2-C4(③b): 新建 id_sequence 表作 user/assistant 消息 id 单一序列, 替掉 app 侧线性探测
 #   (探测上限10次+耗尽退化全局MAX+1+threading.Lock 仅单进程有效); 空表时幂等播种到存量 id 上界之上
+# 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: chat_tasks 加 process_events TEXT DEFAULT '[]'(事件列表快照列, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 与 artifacts 同款形态) — 小欧-2026-10-11
 """
 db_initializer — 数据库初始化
 

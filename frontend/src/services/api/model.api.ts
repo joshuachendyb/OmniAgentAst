@@ -34,6 +34,7 @@
 //   （两套方法各跑一遍远端最新免费模型并对比），zenVerifyReports / zenVerifyReport 取历史报告。
 //   zenVerify 耗时长（免费模型 20+ × 双路并发 5），故显式放宽超时到 600s；后两条为普通读接口，
 //   不加超时。本板块行内注释已按规矩上提归并 — 小欧-2026-10-10
+// 编辑历史: 2026-10-11 07:33:53 小欧 - 对齐后端 DTO publish_time: 增 publish_time?: string | null(真发布时间, created 全假不可用; 不下发则 undefined) — 小欧-2026-10-11
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 

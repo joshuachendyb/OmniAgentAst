@@ -12,6 +12,7 @@
 //   不复用 searchWidth(那是右上角全局 SearchBox 的，两者密度诉求不同) - 小欧-2026-09-29
 // 2026-10-05 22:16:38 小欧 - 新增 contextSelectWidth:96：模型库筛选行「上下文」下拉宽度令牌（原复用
 //   modelSelectWidth:180 过长，北京老陈指令位置1尽量一行不折行），不散落硬编码 - 小欧-2026-10-05
+// 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: 新增 SETTINGS_CONTROL_HEIGHT=28/SETTINGS_RADIUS/SETTINGS_SWITCH 设计令牌(推导见注释: 不许拿 UI 库默认值当标准, 28=文字行盒20×1.4 取整) — 小欧-2026-10-11
 import {
   Spacing,
   Radius,

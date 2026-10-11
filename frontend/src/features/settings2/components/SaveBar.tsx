@@ -12,6 +12,8 @@
 // 2026-10-05 22:16:38 小欧 - 「安全开关」随 settings_registry 标签改名「HTL人工开关」，危险操作确认弹窗文案同步 - 小欧-2026-10-05
 // 2026-10-10 小欧 - 弹窗归一：重启生效提示 Modal → SettingsModal 标准壳，confirm 宽度档 480、单主键「知道了」
 //   （cancelButtonProps 隐藏）、discard 关闭语义；Modal.confirm 危险确认保留原样（L49 走 confirmThen，非标准壳范围）。
+// 编辑历史: 2026-10-11 00:55:20 小欧 - 危险确认迁至 SettingsModal.dangerConfirm + 展示「具体变更+后果」: 本文件侧调用改造(传具体变更与后果, 不再只笼统提示); 旧文件头历史块随重构迁移, 详见 git — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 01:24:25 小欧 - dangerHints 扁平数组改 dangerHintByChange(按 label 索引): 多条变更各自成组挂后果 — 小欧-2026-10-11
 import React from 'react';
 // 2026-10-11 00:05 小欧 - 危险确认迁至 SettingsModal.dangerConfirm 后，
 //   本文件不再直接用 antd Modal，也不再自己算 480 宽度 —— 一并清掉这两个失效 import。

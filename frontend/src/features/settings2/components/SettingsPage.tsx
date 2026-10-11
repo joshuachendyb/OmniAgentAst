@@ -97,6 +97,9 @@
 // 编辑历史: 2026-10-10 小欧 - 弹窗归一：切 Tab 未保存拦截 Modal → SettingsModal 标准壳（confirm=480
 //   宽度档、双键「放弃切换/保存并切换」、discard 关闭语义）；业务逻辑与文案一字未改，只换壳。
 //   实测：宽 480 / ESC 可关 / 双键文案正确，符合设计。
+// 编辑历史: 2026-10-11 00:55:20 小欧 - 危险确认弹框展示「具体改了什么」+「改完意味着什么」: 新增 DANGER_LABELS/DANGER_EFFECTS(取值口径与 SettingsGroup 一致: values[key] 脏键缓冲值, 不回落已落盘值) — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 01:24:25 小欧 - dangerHints 扁平数组改 dangerHintByChange(按 label 索引): 多条变更各自成组挂后果(汇总成块分不清对应关系); 本文件侧调用改造(旧文件头历史块随重构迁移, 详见 git) — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 06:31:51 小欧 - 后果说明两个方向都给: DANGER_EFFECTS 值改 {on, off}(原只挂"关闭"方向, 开启方向说明区空白致弹框塌陷); 另 import confirmDanger(新增二次确认入口) — 小欧-2026-10-11
 import React, { useState } from 'react';
 import {
   Button,

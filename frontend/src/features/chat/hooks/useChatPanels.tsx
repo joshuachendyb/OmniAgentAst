@@ -39,6 +39,7 @@
 //   瞬态 UI 态(事件/上下文浮层 open、秒表 startRef)必须随任务切换归零, 原无 key 不重挂载致旧浮层挂在新任务上
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5: 从 chatState 解构 sessionWorkspaces/setSessionWorkspaces 透传 ChatInput
 //   (徽标数随目录列表变, 故 useMemo 依赖数组同步纳入, 漏=徽标不刷新) — 小欧-2026-10-10
+// 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskInfoBar 透传 taskId=activeTaskId ?? serverTaskId(与组件 key 同源, 不新造标识); 历史态误回填由 TaskInfoBar 内 if (detail) return 承担 — 小欧-2026-10-11
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';

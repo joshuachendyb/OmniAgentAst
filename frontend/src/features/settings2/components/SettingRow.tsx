@@ -13,6 +13,7 @@
 // 2026-09-28 小欧 - 值域提示（hint）单点成文并移入 notice 行尾：原挂行尾最右端，被长 notice
 //   连同「即时生效」一起挤出可视区，用户看不到范围。配套后端 registry 键 range_→range 统一
 //   （此前 DTO range 恒 null，提示压根不渲染）。type=range 走滑块不重复文字。— 小欧-2026-09-28
+// 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: TextArea rows 3→2(72px→50px; 全项目仅授权目录/IP白名单两项用此控件且内容不长, resize 保留用户可自行拉大) — 小欧-2026-10-11
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
