@@ -52,6 +52,9 @@
 // 编辑历史: 2026-10-06 小欧 - 取消终态帧兜底: 点中断后 UI 无反应(北京老陈实测, 4ad89f7ed 回归),
 //   武装取消等帧看门狗(幂等不叠定时器), 终态由 final 步 outcome 决定不再恒写 completed,
 //   看门狗超时兜底时 DB 已终态则以 DB 为准落状态并释放资源。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-11 小欧 - onRejected 关窗条件收紧(北京老陈令): 去掉 `!data.confirm_id` 降级分支,
+//   改为必须 id 相等才关窗。原降级分支会把"无 id 的 rejected"(safety 拦截/user 拒绝记忆, 二者本就
+//   无确认流程) 到达时, 此刻开着的无关 HITL 弹窗一并关掉。确认终态现由后端必带 confirm_id — 小欧-2026-10-11
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -948,11 +951,9 @@ function hitlHandlers(s: ChatStreamSession) {
       confirm_id?: string;
     }) => {
       commit(s, (d) => {
-        // HITL 被拒同样清 pendingAuthorization（与 5.15 acknowledge、onResumed 三路幂等）
-        if (
-          !data.confirm_id ||
-          d.pendingAuthorization?.confirm_id === data.confirm_id
-        ) {
+        // 2026-10-11 小欧 - 必须 id 相等才关窗(北京老陈令): 原 `!id ||` 降级分支会让无 id 的
+        //   rejected(safety 拦截/拒绝记忆, 二者本无确认流程) 误关此刻开着的无关弹窗 — 小欧-2026-10-11
+        if (d.pendingAuthorization && d.pendingAuthorization.confirm_id === data.confirm_id) {
           d.pendingAuthorization = null;
         }
       });

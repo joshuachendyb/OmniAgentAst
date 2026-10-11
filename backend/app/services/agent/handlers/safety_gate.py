@@ -63,8 +63,10 @@
 #   未收到人工授权, 与执行耗时无关。现措辞直指"未获授权+路径受保护+换策略"; _denied 原因同步改"未获授权"。
 #   reject_type 仍为 "timeout"(前端 deniedStepSet 停齿轮控制信号, 不变) - 小欧-2026-10-11
 # 2026-10-11 小欧 - 未获授权报错补路径(北京老陈令): content 与 _denied 原因均带上具体路径
-#   (call 参数 path 优先, 回落 auth_path/trust_path), 原只说"该路径受保护"无从定位该授权何处 —
+#   (call 参数 path 优先, 回落 auth_path/trust_path), 原只说"该路径受保护"无从定位该授权何处—
 #   实测 2026-10-11 三条同文案无法区分 backend/tests/test_adapters.py 与其他受保护路径 - 小欧-2026-10-11
+# 2026-10-11 小欧 - rejected 补 confirm_id(北京老陈令): 原不带该字段, 前端靠它精确匹配才关窗;
+#   缺字段则确认作废后弹窗永留屏幕、点击落到 entry=None 被丢弃(实测 e95d2ceb 挂 3 分钟) - 小欧-2026-10-11
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -276,7 +278,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             content=(f"工具 {_cn} 未获授权: 路径 {_tp} 属受保护区域, 需人工在确认窗口内授权; "
                                      f"确认窗口已关闭(未收到授权)。"),
                             reject_type="timeout",
-                            tool_name=_cn
+                            tool_name=_cn,
+                            confirm_id=_verdict.get("confirm_id")  # 2026-10-11 小欧 前端按id精确关窗(详见文件头)
                         )))
                         _denied.append((_cn, f"未获授权({_tp})", call))
                     else:
@@ -288,7 +291,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         #   否则 react_dispatch 回退主工具名 → 多工具并行拒绝死胡同计数记错键 — 小欧-2026-09-06
                         _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="rejected", content=f"用户拒绝执行工具: {_cn}", reject_type="user",
-                            tool_name=_cn
+                            tool_name=_cn,
+                            confirm_id=_verdict.get("confirm_id")  # 2026-10-11 小欧 同 timeout 分支
                         )))
                         _denied.append((_cn, "被用户拒绝执行", call))
                         # 毛病4(2026-09-18 小欧): 记用户拒绝记忆(键与组键同口径), 同 (tool, path) 本任务内再派发不再弹

@@ -110,6 +110,8 @@
 //   把唯一携带 summary 的帧挡在 steps 外 → 致压缩事件永不产出」
 // 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(禁在本文件重判形状)
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: case 'rejected' 在 onRejected 回调外补 pushAndFlush 入 executionSteps(透传 reject_type/tool_name), 使 useTaskInfo 能从 steps 派生 rejected 过程事件; 改前只调回调不入流, 事件列表永无 rejected — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 小欧 - rejected 帧补传 confirm_id(北京老陈令): 原不传致 onRejected 拿不到 id,
+//   关窗分支不成立, 确认作废后弹窗永留屏幕(实测 e95d2ceb) — 小欧-2026-10-11
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -201,6 +203,8 @@ const processSSEData = (
       message: string;
       tool_name?: string;
       reject_type: string;
+      /** 2026-10-11 小欧: HITL 确认终态携带, 消费侧按 id 精确关窗(无 id 者本无确认流程) */
+      confirm_id?: string;
     }) => void;
     // 小欧 2026-09-10 S15: onPaused/onResumed 加 confirmId 参数（并发 HITL 区分）
     onPaused?: (confirmId?: string) => void;
@@ -824,6 +828,7 @@ const processSSEData = (
           message: rejectMsg,
           tool_name: rawData.tool_name,
           reject_type: rejectType,
+          confirm_id: rawData.confirm_id as string | undefined, // 2026-10-11 小欧: 关窗需按 id 精确匹配
         });
         break;
       }
