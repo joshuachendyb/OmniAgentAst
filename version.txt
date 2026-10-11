@@ -1,3 +1,46 @@
+v1.2.5
+更新时间: 2026-10-11 11:54:18 - 小欧
+## v1.2.5 事件列表快照+HTL弹框统一+设置页归一(33 个 commit)
+[范围=v1.2.4 之后到 HEAD; 本次为 PATCH(功能落地+视觉统一+修缺, 无 MAJOR/MINOR 变更)]
+
+### 1.2.5 新增 · 事件列表快照持久化与历史回放(小欧, 北京老陈令)
+[内容] 任务收到 final 帧时前端把事件列表(processEvents, 排除 heartbeat)POST 回填
+chat_tasks.process_events 新列; 历史回放经 detail 通道读回直接渲染, 不重跑派生。
+后端零类型判断/零条数限制(送什么存什么); 前端取消 20 条上限(多了浮层滚动)。
+[提交] 606df71cc(后端列+端点) 3b11b1a81(前端回填+回放) 868dd19d1(rejected 入流)
+047730d5a([10]事件报文协议) 5bcbfdc9e([10]事件表设计)
+
+### 1.2.5 优化 · HTL 授权弹框视觉统一(小欧, 北京老陈令)
+[内容] 标题短化(安全确认请求→需要你确认, bypass 17字→5字+Tag 承载原因);
+标题行单一轴线(图标内联+标题左+Tag+环右); 倒计时文案并入底轴消除断裂;
+按钮不等宽(拒绝窄/允许宽); 计时钟 60→44, 秒数去重, confirmTimeout=0 不渲染环;
+危险确认列具体变更+后果(分组+定宽标签+双向说明)。
+[提交] 09549f1d8 916c95da6 c32bda115
+
+### 1.2.5 优化 · 设置页视觉密度统一与弹窗归一(小欧, 北京老陈令)
+[内容] 控件 28px/圆角 4px/开关 40x18; SettingsModal 标准壳 + 8 弹窗迁移
+(ModalSection 分区/CodeChip 键名/壳级高度上限); 标签左对齐三竖线;
+清空 api_key 二次确认; Provider 输入框加长 + 地址 hover 看全长;
+ModelModals 名称并排 + 底部加模型 + 留白收紧。
+[提交] 1a0d4a680 be54e2125 290a1a49e fca6b3592 d28ba9009 a717cf4dd 07183537a ab77e98b4
+
+### 1.2.5 新增 · 会话目录面板与会话卡片目录行(小欧)
+[内容] SessionWorkspacePanel 落地(只读授权目录 + 422 移除被拒条目);
+sessions.py GET 顺带 project_root + allowed_dirs 只读;
+历史会话卡片加会话事务目录独立行(只取 workspaces, 0 个不显, 多个截断+Tooltip)。
+[提交] cc5ed8fa6 c3e668707 d9e009312 205f47433
+
+### 1.2.5 修复 · 模型中央别名表与 publish_time 对齐(小欧)
+[内容] 中央别名表收敛厂商键名漂移(_KEY_ALIASES/_canon_item, _first_alias 退役);
+RemoteModelItem + 前端对齐 publish_time(真发布时间, created 全假不可用)。
+[提交] 83110d3f2 c9b66124f
+
+### 1.2.5 文档 · 编辑历史归位与设计实施(小欧)
+[内容] sseParser/SettingsGroup 等 19 文件编辑历史归位; [16]升v3.7/v3.10;
+本次 24 文件头条目补齐; 安全策略说明弹框文档卡片化 + .doc-body 排版 + 表线加深。
+[提交] 8834c8e3d 8e9172a46 6111dd667 202e31ce3 bd8b172e4 2fa382341 d509a05ab
+fd05cc0ee 2cbb8371e d7c40a346 86c371209 e233ba07f
+
 v1.2.4
 更新时间: 2026-10-10 13:25:50 - 小欧
 ## v1.2.4 会话使用目录落地+shell猎杀+history双分组(55 个 commit)
