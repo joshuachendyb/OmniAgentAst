@@ -82,7 +82,9 @@ import {
 } from '@ant-design/icons'; // G4/G8 全 antd SVG
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames, LiveError } from '@/types/sse';
-import type { TaskDetail } from '../../../../services/api/task.api';
+// 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回传用(仅取 executionApi.saveTaskProcessEvents)
+//   与上方 import type 合并成单条 import(同模块, 避免重复 import 声明)
+import { executionApi, type TaskDetail } from '../../../../services/api/task.api';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles'; // 硬码数字全令牌化
 import { formatTimeHMS, formatDurationHMS } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
@@ -127,6 +129,10 @@ interface TaskInfoBarProps {
   liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
   // 2026-10-06 22:52 小欧 - storeStatus：chatStreamStore 会话状态，取消终态帧未送达时的 badge 兜底
   storeStatus?: string;
+  // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填端点需要 task_id。
+  //   历史态为 null(快照已在库中, 无需回填); 实时态由 useChatPanels 传 activeTaskId ?? serverTaskId,
+  //   与本组件 key 同源(useChatPanels:300), 不新造任务标识状态。
+  taskId?: string | null;
 }
 
 const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
@@ -136,6 +142,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   sessionId,
   liveError,
   storeStatus,
+  taskId,
 }) => {
   // v4.1: 取消整行折叠, collapsed 状态机/localStorage 键已删除
   // 新增: eventsOpen useState(false)(见 6.5.3.4 / 6.5.3.8), 随组件轻量瞬态, 不持久化
@@ -145,6 +152,44 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   //   (秒表 interval 启停仍以 receiving 为准, D3 契约); 仅不再透传给徽标派生 — 小欧-2026-09-14
   const info = useTaskInfo(steps, frames, detail, liveError, storeStatus);
   const b = BADGE_MAP[info.badge];
+
+  // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」—— 收到 final 帧即回传事件列表快照。
+  //   判据复用 steps 里既有的 type==='final'(不新造终态判据, 与 useTaskInfo 同源)。
+  //   快照取 info.processEventsSnapshot(已排除 heartbeat, 全链路唯一过滤在 useTaskInfo 内)。
+  //   失败只记 console 不回滚 —— 北京老陈定案「回填失败就失败, 不紧要」,
+  //   且绝不让快照写入失败打断任务收尾(此处不 throw, 不影响渲染)。
+  //
+  //   幂等 + 依赖极小化(Rules of Hooks / 性能): effect 依赖**只挂标量 taskId**, 不挂
+  //   processEventsSnapshot 数组 —— 后者每次 useMemo 重算都是新引用, 挂上去会让 effect
+  //   每次渲染都重跑, 靠 _sentRef 拦 POST 是治标(重渲染开销仍在)。改成标量闸:
+  //   _sentRef 命中即直接 return, 该 effect 实际只在 taskId 变化时执行一次。
+  //
+  //   ⚠️ detail 非空 = 当前在看**历史任务**(useTaskInfo 历史分支)。此时必须 return:
+//   ①历史快照已在库中, 回填=用空数组覆盖真实数据(数据丢失);
+  //     ②steps 传的是实时 executionSteps, 若残留上一实时任务(含final)的 steps,
+  //       会把**别的任务的事件写进本任务**(跨任务污染)。
+  //     两条都由这一行 `if (detail) return` 一次性挡住。
+  //
+//   依赖**刻意不含 info.processEventsSnapshot**: 它每次 useMemo 重算都是新引用, 挂上依赖
+  //   会让 effect 每次渲染都重跑(靠 _sentRef 拦 POST 是治标, 重渲染开销仍在)。
+  //   改用 _latestRef 承载最新快照: effect 内读 ref 拿到的即本次渲染的最新值,
+  //   既不需要把它挂进依赖(exhaustive-deps 自然干净, 无需 eslint-disable), 也确实拿到新值。
+  //   (React 官方 ref-latest 模式; 依赖 _hasFinal 时该值已收齐 —— final 是终态事件。)
+  const _sentRef = useRef<string | null>(null);
+  const _latestRef = useRef(info.processEventsSnapshot);
+  _latestRef.current = info.processEventsSnapshot;
+  const _hasFinal = steps.some((s) => s.type === 'final');
+  useEffect(() => {
+    if (detail) return;
+    if (!taskId || !_hasFinal) return;
+    if (_sentRef.current === taskId) return;
+    _sentRef.current = taskId;
+    executionApi
+      .saveTaskProcessEvents(taskId, _latestRef.current)
+      .catch((e) => {
+        console.warn('[TaskInfoBar] 事件列表快照回填失败(不阻断):', e);
+      });
+  }, [taskId, _hasFinal, detail]);
   // 2026-10-04 小欧: 占窗率=本轮 P / 运行时窗口(usage 帧的 context_window); 窗口缺失(历史任务/未收到帧)→ null 不显
   const windowUsePct =
     info.contextWindow && info.roundUsage

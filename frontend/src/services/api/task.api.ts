@@ -143,6 +143,10 @@ export interface TaskDetail {
   // 2026-10-10 小欧: 首帧 history_context(历史任务回显历史上下文用, 后端详情接口直给)
   //   类型复用 ContextOverviewFrame(单一真源), 禁在本文件手写窄类型副本(禁 backward)
   history_context_first?: import('@/types/sse').ContextOverviewFrame | null;
+  // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 事件列表快照条目本体
+  //   {kind, text, time}。类型复用 useTaskInfo 的 ProcessEvent(单一真源, 禁手写副本);
+  //   用内联 import() 避免 api→hooks 反向依赖(同 history_context_first 写法)。
+  process_events?: import('@/features/chat/hooks/useTaskInfo').ProcessEvent[] | null;
 }
 
 export function adaptTaskDetail(raw: {
@@ -205,6 +209,11 @@ export function adaptTaskDetail(raw: {
     // 2026-10-10 小欧: 后端直给, 无则 null(无首帧走空, 卡片如实显示空)
     history_context_first:
       (t.history_context_first as TaskDetail['history_context_first']) ?? null,
+    // 2026-10-11 小欧 北京老陈令: 事件列表快照(final 时前端回填, 存条目本体{kind,text,time})。
+    //   存量行为 null, 前端兜底空数组后与改动前一致 — 小欧-2026-10-11
+    process_events: Array.isArray(t.process_events)
+      ? (t.process_events as TaskDetail['process_events'])
+      : null,
   };
 }
 
@@ -222,6 +231,16 @@ export const executionApi = {
     taskId: string
   ): Promise<{ task_id: string; steps: unknown[]; count: number }> =>
     api.get(`/chat/execution/task/${taskId}/steps`).then((r) => r.data),
+  // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填事件列表快照。
+  //   数据源是 useTaskInfo 产出的 processEvents(浮层显示的那份), 排除 heartbeat 已在调用方 filter 完成,
+  //   本方法**不做条数限制**(后端仅留 10000 兜底防灌爆)。失败只 reject 不抛给调用方业务链路。
+  saveTaskProcessEvents: (
+    taskId: string,
+    events: import('@/features/chat/hooks/useTaskInfo').ProcessEvent[]
+  ): Promise<{ success: boolean; count: number }> =>
+    api
+      .post(`/chat/execution/task/${taskId}/process-events`, { events })
+      .then((r) => r.data),
 };
 
 export interface TrustedTool {

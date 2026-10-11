@@ -310,6 +310,11 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
                 ? chatStreamStore.getSnapshot(sessionId).status
                 : undefined
             }
+            // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填端点需 task_id,
+            //   取值与上方 key 同源(activeTaskId ?? serverTaskId), 不新造任务标识状态。
+            //   历史态误回填的防护在 TaskInfoBar 内(effect 首行 `if (detail) return`):
+            //   看历史任务时 detail 非空, steps 又是实时数组(可能残留别的任务), 两害皆由此挡。
+            taskId={activeTaskId ?? serverTaskId ?? null}
           />
         ),
         defaultVisible: true,

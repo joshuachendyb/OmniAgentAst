@@ -197,8 +197,21 @@ export const useTaskInfo = (
         overview: detail.history_context_first ?? null,
         isLiveContext: false, // 2026-10-04 小欧: 本分支=历史任务, 供卡片决定是否挂弹框
         truncatedTip: null,
-        processEvents: [],
-        processEventCount: 0,
+        // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」— 历史回放事件源。
+        //   历史任务的多数事件类型不落 chat_task_steps, 故本分支的 processEvents 恒空;
+        //   改读 detail.process_events(前端收到 final 帧时回填的快照条目本体{kind,text,time})。
+        //
+        //   快照回填时已按时间递增(processEvents 本就有序), 历史态仅此一个来源,
+        //   不存在实时/历史两源交错, 故**无需排序**; 也**不设条数限制**(北京老陈令)。
+        //
+        //   ⚠️ badge 在上方已由 final step 权威判定(173-177行), 此处**不得**再走
+        //   实时分支那套 switch —— 那个 switch 每个 case 都写 badge, 历史快照若进
+        //   去会把已完成任务覆写成「已暂停」(R7)。这里只铺列表, 不碰徽标。
+        //   存量任务 process_events 为 null/[] → 空列表, 行为与改动前一致。
+        processEvents: detail.process_events ?? [],
+        processEventCount: (detail.process_events ?? []).length,
+        // 2026-10-11: 历史态不回传(快照已在库中), 置空数组保持返回结构同构, 供调用方无脑取用
+        processEventsSnapshot: [],
         stuckWarning: false,
         liveMeta: null, // 小欧 2026-09-02: 历史回放位4置空不占位(无实时源)
       };
@@ -429,12 +442,11 @@ export const useTaskInfo = (
       stepCount > 0 &&
       llmCallCount >= stepCount * STUCK_RATIO;
 
-    // 2026-08-28 小强 修复#16 + 小欧 修正: 先slice(-20)保证上限, 再检查started是否被裁掉并补回
-    let recentEvents = processEvents.slice(-20);
-    if (hasStartInfo && !recentEvents.some((e) => e.kind === 'started')) {
-      const startedEvt = processEvents.find((e) => e.kind === 'started');
-      if (startedEvt) recentEvents = [startedEvt, ...recentEvents].slice(0, 20);
-    }
+    // 2026-10-11 北京老陈令「不能限制, 多了就滚动」: 原 slice(-20) 上限已删, 事件全量呈现。
+    //   承载容器 TaskInfoBar.tsx:201-209 已是 maxHeight:40vh + overflowY:auto 的可滚动区,
+    //   条目再多也只在浮层内滚动, 不撑高 TaskInfoBar 高度(该约束自 v4.1 起未变)。
+    //   processEventCount 取 processEvents.length 全量真值(本就未截断), 徽标与列表恒一致。
+    const recentEvents = processEvents;
 
     // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
     // 2026-09-08 小欧 6.3.4: detail 分支直接入 candidates(旧文本丢入 meta, 语义]]), wait 2026年:
@@ -493,9 +505,16 @@ export const useTaskInfo = (
       overview: frames.contextOverview,
       isLiveContext: true, // 2026-10-04 小欧: 实时流分支, 与上面 detail 分支对称
       truncatedTip: frames.truncated?.content ?? null,
-      processEvents: recentEvents, // 最早事件在上，保留最近20条
-      // 2026-10-04 小欧: 事件总数(未截断; processEvents 已 slice(-20), 直接取其 length 会卡在 20)供"事件"标签计数
+      processEvents: recentEvents, // 最早在上; 2026-10-11 起不再截断(北京老陈令「不能限制」), 条目多时浮层内滚动
+      // 2026-10-11 北京老陈令「不能限制」: recentEvents 即 processEvents 全量(原 slice(-20) 已删),
+      //   徽标计数与列表恒等, 不再出现"列表 20 条 / 徽标 47"的错位
       processEventCount: processEvents.length,
+      // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 供 TaskInfoBar 在收到 final 帧时回传。
+      //   排除 heartbeat(北京老陈定案「heart 可以不需要」)——**全链路唯一一处过滤**;
+      //   其余事件类型一律保留, **不做条数限制**, 也不做任何类型判断(送什么存什么)。
+      processEventsSnapshot: processEvents.filter(
+        (e) => e.kind !== 'heartbeat'
+      ),
       stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
