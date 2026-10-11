@@ -2,13 +2,8 @@
 
 > 基于 ReAct 架构的 AI 桌面智能体全栈 Web 应用（React + FastAPI），提供 Windows 桌面自动化能力（非独立桌面客户端）
 
-**版本**: v1.0.6 | **更新时间**: 2026-10-05 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-10-05
+**系统版本**: v1.2.5 | **更新时间**: 2026-10-11 | **作者**: 北京老陈团队 | **更新人**: 小欧-2026-10-11
 
-> 更新记录（小欧-2026-10-05）：新增 §8.4.1「铁律：清场只按端口杀，严禁按进程名批量杀」——起因是实测事故：清场误用 `Stop-Process -Name "node"`，连带杀死前端 vite `:5173`、E2E 代理 `:9000` 及 **OpenCode 自身 Web UI `:3080`**（AI 会话界面弹「网络链接失效」），且 vite 日志零报错、进程数秒后凭空消失，极易误判为服务自崩。内容含禁止/正确写法对照、本项目端口对照表（含「3080 严禁杀」）、`--reload` 双进程提醒、代码侧 `killPort()` 已合规的结论，以及「后台启动长驻服务被工具链误杀」的规避（独立窗口或计划任务）。
-
-> 更新记录（小欧-2026-09-23）：三堂会审一致性修正——①§7.2 配置节总览补 `llm`/`network` 节、`agent` 去掉已迁走的 `max_rounds`；②§7.4 agent 表对齐现键（仅 `max_steps`，历史保留轮数迁 `tuning.trim.max_rounds`）；③§7.7 调优表按 REGISTRY 实测重写为 33 键 9 子组（补 trim/compaction，llm 5 键/agent 1 键，删 network 行与已迁通用的 temperature/max_tokens）；④`CORS_ORIGINS` 覆盖项改 `network.cors_origins`。
-
-> 更新记录（小欧-2026-09-27）：部署安全与鉴权文档补全——①§7.6 补齐 `security.access_token` / `security.access_token_allowlist` 两项准入控制键（此前 7.6 只列了操作安全，漏了实际存在且最关键的两项）；②新增 §7.6.1「反向代理与 X-Forwarded-For」，说明 `--forwarded-allow-ips=*` 的伪造风险与三道防线；③§7.9 补 `OMNIAGENT_ACCESS_TOKEN` / `OMNIAGENT_ACCESS_TOKEN_ALLOWLIST` / `OMNIAGENT_REQUIRE_AUTH` / `OMNIAGENT_ENABLE_API_DOCS` / `FORWARDED_ALLOW_IPS` 五个环境变量。
 
 ---
 
@@ -18,7 +13,7 @@
 
 | 能力 | 说明 |
 |------|------|
-| 工具函数 | 63 个，覆盖 file / shell / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer 共 10 类 |
+| 工具函数 | 63 个，覆盖 file / network / system / desktop / document / dataanalysis / fundamental / win_registry / timer 共 9 类 |
 | 推理引擎 | thought → action → observation 循环推理 |
 | Agent | 单一 UniversalAgent（BaseAgent 子类，配置驱动） |
 | AI Provider | 多模型适配：OpenCode、智谱AI、DeepSeek、Kimi 等 OpenAI 兼容 API |
@@ -52,7 +47,7 @@
 编排层（services/chat/stream_orchestrator → agent_runner → run_react_cycle）
         │
         ├── Agent：agent_runner → UniversalAgent + tool_loader
-        ├── Tool：tool_executor（统一执行入口），ToolRegistry 10 类 63 工具
+        ├── Tool：tool_executor（统一执行入口），ToolRegistry 9 类 63 工具
         └── LLM 客户端（app/llm，httpx 多 Provider）
         ▼
 安全层（app/safety）L0-L3：全局开关 → 安全级别 → 已知风险 → DB 事务编排
@@ -130,18 +125,17 @@ api/v1 ──> services ──> tools ──> utils / db / logger / config / con
 
 ## 三、工具体系（63个）
 
-### 3.1 工具分类（10 类 63 工具）
+### 3.1 工具分类（9 类 63 工具）
 
 | 分类 | 数量 | 说明 |
 |------|------|------|
-| FILE | 14 | 文件读写、搜索、编辑、归档、树、校验 |
-| SHELL | 1 | 命令查找（which） |
-| NETWORK | 5 | HTTP 请求、下载、网页抓取、网络诊断、搜索 |
-| SYSTEM | 4 | 系统计划任务、事件日志 |
+| FILE | 11 | 文件读写、搜索、编辑、复制移动、目录树 |
+| NETWORK | 3 | HTTP 请求、下载、端口探测 |
+| SYSTEM | 6 | 任务管理、事件日志、系统信息、命令查找 |
 | DESKTOP | 11 | 窗口管理、截屏、剪贴板、键鼠（通知在 FUNDAMENTAL） |
-| DOCUMENT | 8 | PDF/Word/Excel/PPT 读写 |
+| DOCUMENT | 11 | PDF/Word/Excel/PPT 读写、压缩解压、媒体读取 |
 | DATAANALYSIS | 6 | SQL 查询/执行、图表生成、数据筛选/分析 |
-| FUNDAMENTAL | 5 | Shell 命令执行、系统信息、时间日期、通知、工具搜索 |
+| FUNDAMENTAL | 6 | Shell 执行、网页抓取、搜索、通知、时间日期 |
 | WIN_REGISTRY | 3 | 注册表读/写/删 |
 | TIMER | 6 | 定时器设置/列出/清除、时间计算 |
 | 合计 | 63 | |
@@ -158,8 +152,8 @@ backend/app/tools/
 ├── validate/                # 校验层（路径/URL/超时/注册表，非对外工具）
 ├── security/                # 安全守卫（path_safe_check / safety_result / temp_auth，非对外工具）
 ├── trust.py trust_db.py     # 工具信任管理（会话级信任 / 路径级精确撤销）
-├── file/ shell/ network/ system/ desktop/ document/
-├── dataanalysis/ fundamental/ win_registry/ timer/   # 10 个工具分类目录
+├── file/ network/ system/ desktop/ document/
+├── dataanalysis/ fundamental/ win_registry/ timer/   # 9 个工具分类目录
 └── {category}_schema.py     # Pydantic 参数模型（每个分类）
    {category}_register.py    # 注册入口（tool_methods 字典显式注册）
    └── {原子实现文件}.py     # 具体实现按原子文件散落（如 file/ 下 read_text_file.py 等，无 {category}_tools.py 大文件）
@@ -209,7 +203,7 @@ OmniAgentAs-desk/
 │   │   ├── db/                 # 数据库（SQLAlchemy + aiosqlite：database.py / db_initializer.py / operation_queries.py / models/ / migrations/）
 │   │   ├── logger/             # 日志配置
 │   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/tool_safety_checker/default_hooks/models
-│   │   ├── tools/              # 工具函数（10分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
+│   │   ├── tools/              # 工具函数（9分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
 │   │   ├── llm/                # LLM 客户端（httpx 多Provider，顶层能力层）
 │   │   ├── monitoring/         # 监控（collector / middleware，顶层能力层）
 │   │   ├── services/
@@ -650,7 +644,7 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 | 资产 | 位置 |
 |------|------|
-| 后端执行手册（用例/铁律/数据结构，v2.15） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
+| 后端执行手册（用例/铁律/数据结构，v2.16） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
@@ -677,7 +671,7 @@ backend/e2etests/
 │   ├── e2e_helpers.py                     #  全部通用逻辑（计时/SSE解析/DB校验/日志检查/测试记录）
 │   ├── conftest.py                        #  pytest fixtures
 │   └── model-test_e2e_0*.py              #  四类 case 模板（A无工具/B单工具/C多步/D数据持久化）
-├── test_e2e_*.py                          # 实际 case（P0-P5/PAR/重连，62 个）+ com-* 复合 14 个 = 76 个
+├── test_e2e_*.py                          # 实际 case（P0-P5/PAR/重连 ）+ com-* 
 └── reports/                               # 报告输出（按需生成）
 ```
 
@@ -699,7 +693,7 @@ frontend/
 │   ├── stream-diag.ts                    #  attachStreamDiag/printDiag/日志基线/run-on 检测
 │   ├── chat-page.ts                      #  ChatPage POM（六方法）
 │   └── normal-chat.ts                    #  普通会话封装（日常/天气/股票/目录分析等）
-└── e2e_case/                             # 前端 E2E 用例（fre2e_0*.spec.ts）
+└── e2e_case/                             # 前端 E2E 用例（fre2e_01~21*.spec.ts）
     ├── api-proxy.ts                      #  页面 API 代理 B（:9000→:8000，SSE 直连）
     ├── e2e.config.ts / vite.e2e.config.ts#  Playwright / vite 测试配置
     └── fre2e_0*.spec.ts                  #  实际用例（断线重连/天气/股票/目录/历史切换/时钟/量化/模型参数模板）
@@ -1112,11 +1106,15 @@ pip install mss imageio numpy
 | `npm run test:e2e` | Playwright E2E 测试（先跑 lint + format 检查） |
 | `npm run test:e2e:ui` | Playwright E2E 测试（UI 模式） |
 | `npm run test:e2e:debug` | Playwright E2E 测试（调试模式） |
-| `npm run lint` | ESLint 检查 |
+| `npm run lint` | ESLint 检查（src） |
+| `npm run lint:e2e` | ESLint 检查（e2e_case / e2e_front_lib） |
 | `npm run lint:fix` | 自动修复 ESLint 问题 |
+| `npm run typecheck` | 类型检查（src） |
+| `npm run typecheck:e2e` | 类型检查（e2e_case / e2e_front_lib） |
 | `npm run format` | Prettier 格式化全部 |
 | `npm run format:check` | Prettier 格式检查 |
-| `npm run check` | 提交前检查（lint + format:check） |
+| `npm run check` | 快速检查（lint + format:check） |
+| `npm run check:full` | 提交前检查（typecheck + typecheck:e2e + lint + lint:e2e + format:check） |
 
 ---
 
@@ -1163,5 +1161,5 @@ pip install mss imageio numpy
 
 ---
 
-**许可**: 内部项目 | **最后更新**: 2026-09-22 20:28:53 | **版本**: v1.0.4
+**许可**: 内部项目 | **最后更新**: 2026-10-11 11:58:05 | **版本**: v1.2.5
 
