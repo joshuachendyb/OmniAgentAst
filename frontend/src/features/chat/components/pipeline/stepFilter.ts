@@ -29,6 +29,11 @@ export const META_STEP_TYPES = [
   'final_stats',
   'history_context', // 2026-10-04 小欧: 原 context_overview, 改名(与后端帧类型同步)
   'truncated',
+  // 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): rejected 入 meta 类。
+  //   改前不在此列 → isBusinessStep 返回 true, rejected 帧会被 pipeline 当业务步渲染,
+  //   与既有 onRejected→deniedTools 点名条链路**同帧双绘**。归 meta 后业务流分流掉,
+  //   只由 useTaskInfo 派生进事件列表, pipeline 侧点名条显示不变(仍走 deniedTools)。
+  'rejected',
 ] as const;
 
 export const isBusinessStep = (s: ExecutionStep): boolean =>

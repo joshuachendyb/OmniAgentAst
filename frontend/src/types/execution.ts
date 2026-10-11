@@ -55,6 +55,10 @@ export interface ExecutionStep {
     | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
     | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 驱动
   // 且 sseParser 拒绝分支不入 executionSteps, 该成员为类型契约防御(SSE 协议真实存在), 非数据源 — 小欧-2026-09-17
+  // 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): rejected 改为**真实数据源**——
+  //   sseParser 已把该帧 push 进 executionSteps, 故上方"不入步骤流"注释自本次起失效。
+  //   reject_type 承载拒绝归因(safety/user/timeout/sandbox), 供 useTaskInfo 生成事件文案前缀。
+  reject_type?: string;
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
 
   // 【6-03-09】添加task_id字段，用于分页请求

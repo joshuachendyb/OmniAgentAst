@@ -807,6 +807,16 @@ const processSSEData = (
           rawData.content || rawData.error_message || '执行被拒绝';
         const rejectType = rawData.reject_type || 'unknown';
 
+        // 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): rejected 帧**入步骤流**。
+        // 改前只调 onRejected 回调, 步骤流永无 rejected, useTaskInfo 遍历 steps 拿不到 →
+        //   拒绝事件只能经 onRejected→deniedEntries 进 pipeline 工具行, taskInfo 事件列表无感知。
+        // 现随其他帧 pushAndFlush 入流, 由 useTaskInfo 派生 ProcessEvent(事件列表消费)。
+        // reject_type 随 step 透传(不给下游再查 rawData), 与 tool_name 同为文案前缀所需。
+        step.reject_type = rejectType;
+        step.tool_name = rawData.tool_name;
+        pushAndFlush(handlers, step);
+        onStep?.(step);
+
         // 统一回调, 传递 reject_type 供下游区分具体拒绝原因
         onRejected?.({
           step: rejectedStep,
