@@ -35,6 +35,7 @@
 //   zenVerify 耗时长（免费模型 20+ × 双路并发 5），故显式放宽超时到 600s；后两条为普通读接口，
 //   不加超时。本板块行内注释已按规矩上提归并 — 小欧-2026-10-10
 // 编辑历史: 2026-10-11 07:33:53 小欧 - 对齐后端 DTO publish_time: 增 publish_time?: string | null(真发布时间, created 全假不可用; 不下发则 undefined) — 小欧-2026-10-11
+// 编辑历史: 2026-10-11 小欧 - 对齐后端 DTO effort_levels/effort_default: 增 effort_levels?: string[](推理强度档位)/effort_default?: string | null(默认值); 非 DeepSeek 不返回 → 空数组/undefined; 北京老陈令两个都加 — 小欧-2026-10-11
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -123,6 +124,12 @@ export interface RemoteModelItem {
   /** 真发布时间（如 2026-09-03，zenmux 下发）。created 全假不可用；非 zenmux 不返回 → undefined。
    *  — 小欧 2026-10-10（对齐后端 DTO publish_time） */
   publish_time?: string | null;
+  /** 推理强度档位（如 low/high/max，DeepSeek 下发）。非 DeepSeek 不返回 → 空数组。
+   *  — 小欧 2026-10-11（对齐后端 DTO effort_levels，北京老陈令两个都加） */
+  effort_levels?: string[];
+  /** 推理强度默认值（如 high，DeepSeek 下发）。非 DeepSeek 不返回 → undefined。
+   *  — 小欧 2026-10-11（对齐后端 DTO effort_default） */
+  effort_default?: string | null;
 }
 
 export interface RemoteModelsResponse {

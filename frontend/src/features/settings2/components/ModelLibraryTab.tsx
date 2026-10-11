@@ -30,7 +30,7 @@
 //   不折，nowrap 为不折行硬保证（容器挤压致列宽收窄时也不折）；「已配置」「未配置·待挑选」两表共用本列
 //   定义，一次改动两处同时生效 — 小欧-2026-10-10
 // 2026-10-10 小欧 - 「ZenithFree验证」按钮（北京老陈 2026-10-10）：紧邻「添加 Provider」，
-//   仅 opencodeZen 显隐（只有它有 zen 适配器与免费层语义）。点击调后端双路验证(外部 zen_gate 库 vs
+//   仅 ZenFree 显隐（只有它有 zen 适配器与免费层语义）。点击调后端双路验证(外部 zen_gate 库 vs
 //   系统 opencodeZenAdapter)，结果写 ZenVerifyModal 弹框；耗时按后端 5 并发估 2-3 分钟，按钮
 //   loading 期间不给假进度文案(无真实进度可报)，只锁重复点击。错误提示走 showMessage(ErrorType.WARNING)
 //   而非 antd message —— 后者被项目 lint 规则 no-restricted-syntax 禁用 — 小欧-2026-10-10
@@ -698,8 +698,8 @@ export const ModelLibraryTab: React.FC<Props> = ({
             </Button>
             {/* 2026-10-10 小欧 - 「ZenithFree验证」紧邻添加 Provider：北京老陈要求用两套验证方法
                 （外部 zen_gate 库 vs 系统 opencodeZenAdapter）对比远端最新免费模型，结果弹框显示。
-                仅 opencodeZen 语义可用（其他 provider 无此适配器），故按 provider 名显隐。 */}
-            {selectedProvider === 'opencodeZen' && (
+                仅 ZenFree 语义可用（其他 provider 无此适配器），故按 provider 名显隐。 */}
+            {selectedProvider === 'ZenFree' && (
               <Button
                 icon={<ExperimentOutlined />}
                 loading={zenVerifying}
