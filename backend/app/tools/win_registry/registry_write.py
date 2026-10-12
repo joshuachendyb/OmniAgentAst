@@ -91,14 +91,14 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, path: str, 
         return {
             "summary": f"写入注册表{path}，失败",
             "action": {"tool": "registry_write", "tool_zh": "写注册表", "params": {"path": path, "value_name": value_name}},
-            "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入注册表{path}，成功: {value_name}={value}（{value_type}）",
         "action": {"tool": "registry_write", "tool_zh": "写注册表", "params": {"path": path, "value_name": value_name}},
-        "status": {"exec_code": "success", "message": "写入注册表成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{value_name}={value}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

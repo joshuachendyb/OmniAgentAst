@@ -31,14 +31,14 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, path: str,
         return {
             "summary": f"删除注册表{path}，失败",
             "action": {"tool": "registry_delete", "tool_zh": "删注册表", "params": {"path": path}},
-            "status": {"exec_code": "error", "message": "删除注册表失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"删除注册表{path}，成功: {action}",
         "action": {"tool": "registry_delete", "tool_zh": "删注册表", "params": {"path": path}},
-        "status": {"exec_code": "success", "message": "删除注册表成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{action}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

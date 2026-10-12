@@ -148,14 +148,14 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, v
         return {
             "summary": f"读取注册表{path}，失败",
             "action": {"tool": "registry_read", "tool_zh": "读注册表", "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"读取注册表{path}，成功: {value_name}={value}（{value_type}）",
         "action": {"tool": "registry_read", "tool_zh": "读注册表", "params": _act_params},
-        "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{value_name}={value}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
