@@ -9,6 +9,7 @@ mouse_move — 移动鼠标到指定位置
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 # 2026-07-30 - 小欧 - 运行时异常hint去掉"或pyautogui库是否可用"(pyautogui已通过检查)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 鼠标移动→移动鼠标
 
 import time as _time_mod
 from typing import Dict, Any
@@ -25,13 +26,13 @@ def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
     if exec_code == "error":
         return {
             "summary": f"鼠标移动到({x},{y})，失败",
-            "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "params": {"x": x, "y": y}},
+            "action": {"tool": "mouse_move", "tool_zh": "移动鼠标", "params": {"x": x, "y": y}},
             "status": {"exec_code": "error", "message": "鼠标移动失败", "code": err_code or ERR_DESKTOP_MOUSE_MOVE, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"鼠标移动到({x},{y})，成功",
-        "action": {"tool": "mouse_move", "tool_zh": "鼠标移动", "params": {"x": x, "y": y}},
+        "action": {"tool": "mouse_move", "tool_zh": "移动鼠标", "params": {"x": x, "y": y}},
         "status": {"exec_code": "success", "message": "鼠标移动完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

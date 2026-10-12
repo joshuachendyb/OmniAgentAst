@@ -8,6 +8,7 @@ get_db_schema — 获取数据库结构元数据
 # 2026-07-26 - 小欧 - 迁移: sql_error_hint导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-07-31 - 小欧 - Bug⑨⑩⑰修复: postgres默认schema test→public(新增_resolve_schema); mysql/pg列/索引查询按schema过滤防跨库同名表错列; sqlite表名正则改Unicode单词字符支持中文表名 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: sql_error_hint 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取结构→取表结构
 """
 # 【铁规】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -132,14 +133,14 @@ def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_
     if exec_code == "error":
         return {
             "summary": f"获取数据库结构{_target}，失败" + (f": {detail}" if detail else ""),
-            "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "params": _act_params},
+            "action": {"tool": "get_db_schema", "tool_zh": "取表结构", "params": _act_params},
             "status": {"exec_code": "error", "message": "获取失败", "code": err_code or ERR_DB_CONNECTION, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取数据库结构{_target}，成功: {total_tables}个表",
-        "action": {"tool": "get_db_schema", "tool_zh": "获取结构", "params": _act_params},
+        "action": {"tool": "get_db_schema", "tool_zh": "取表结构", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_tables, "text": f"{total_tables}个表"}, "tables": {"value": table_names, "text": f"表: {', '.join(table_names[:GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES])}"}},

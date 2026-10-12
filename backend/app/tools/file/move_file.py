@@ -23,6 +23,7 @@
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-05 - 小欧 - 单通道补 metrics(北京老陈裁定): success 补 moved_bytes(目标侧 stat, 目录不递归)
 #   /moved_count, 结构化承接结果量; summary 仍 `移动成功: {source} -> {destination}` 不动
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 移动文件→移文件
 """
 F10: move_file — 移动文件
 
@@ -66,7 +67,7 @@ def _build_move_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"移动文件{source}，失败",
-            "action": {"tool": "move", "tool_zh": "移动文件", "params": _act_params},
+            "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "移动失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -79,7 +80,7 @@ def _build_move_file_llm_data(
         _metrics["moved_count"] = {"value": moved_count, "text": f"{moved_count}项"}
     return {
         "summary": f"移动成功: {source} -> {destination}",
-        "action": {"tool": "move", "tool_zh": "移动文件", "params": _act_params},
+        "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": _metrics,

@@ -14,6 +14,8 @@
 #   【病根】L119-128大小超限抛ValueError, 外层仅except Exception归ERR_NET_UNKNOWN("未知网络错误"), 分类与成因不符, 重试引擎可能无谓重试
 #   【改法】外层新增`except ValueError`分支, 归ERR_INVALID_PARAMS(输入/参数错误), hint给出"换用更小资源或分片"; 置于httpx异常分支后、Exception兜底前
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(下载文件)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 文件下载→下载
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 文件下载→下载
 """
 N2: download — 下载文件到本地
 
@@ -77,7 +79,7 @@ def _build_download_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"下载文件{url}，失败",
-            "action": {"tool": "download", "tool_zh": "文件下载", "params": _act_params},
+            "action": {"tool": "download", "tool_zh": "下载", "params": _act_params},
             "status": {"exec_code": "error", "message": "文件下载失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -87,7 +89,7 @@ def _build_download_file_llm_data(
     summary = f"下载并成功保存文件{dest_path},文件信息:" + (f":大小: {size_str}类型:{type_str}" if size_str or type_str else "")
     return {
         "summary": summary,
-        "action": {"tool": "download", "tool_zh": "文件下载", "params": _act_params},
+        "action": {"tool": "download", "tool_zh": "下载", "params": _act_params},
         "status": {"exec_code": "success", "message": "文件下载成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"file_size": {"value": file_size, "text": size_str}, "content_type": {"value": content_type, "text": content_type}},

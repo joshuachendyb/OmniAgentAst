@@ -15,7 +15,8 @@
 # 2026-08-07 - 小欧 - searchtool结果选取增加"分类级名额保底"(_apply_category_floor):
 #   修复多类型混合搜索时高分类霸占top10名额, 低分分类被挤出导致一次搜索注不全分类(实测7类型混合仅命中4类)
 # 2026-10-02 - 小欧 - BM25 索引文本追加分类名: 工具改名与挪分类后按分类名搜必然零结果(category 原不进索引),
-#   使检索有"能力词"与"分类名"双路召回; category 重复率高, IDF 自动压权故不加权(不写×3); 实测能力词类查询首位无倒置
+#   使检索有"能力词"与"分类名"双路召回; category 重复率高, IDF 自动压权故不加权(不写×3);
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索工具→搜TOOL 实测能力词类查询首位无倒置
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -145,7 +146,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     if exec_code == "error":
         return {
             "summary": f"搜索工具失败:关键词为空",
-            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "params": {"query": query}},
+            "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -154,7 +155,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
         # 无命中/纯符号: 正确告知LLM + hint, 避免误导LLM与错误注入 — 小欧 2026-08-05
         return {
             "summary": f"搜索 '{query}'未匹配到工具（共 {total_tools} 个工具）",
-            "action": {"tool": "searchtool", "tool_zh": "搜索工具", "params": {"query": query}},
+            "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
             "status": {"exec_code": "warning", "message": "搜索完成-未找到匹配工具", "code": "",
                        "detail": "未找到与关键词匹配的工具", "hint": "建议更换关键词后重试，或直接描述你要完成的任务"},
             "duration_ms": duration_ms,
@@ -162,7 +163,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
         }
     return {
         "summary": f"搜索 '{query}'成功:匹配 {total_matched} 个（共 {total_tools} 个工具）",
-        "action": {"tool": "searchtool", "tool_zh": "搜索工具", "params": {"query": query}},
+        "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"matched": {"value": total_matched, "text": f"{total_matched}个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},

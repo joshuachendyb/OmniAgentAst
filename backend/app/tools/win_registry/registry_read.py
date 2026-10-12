@@ -14,6 +14,7 @@
 # 2026-09-20 - 小欧 - E-2修复(写失败回滚安全网): 新增 _restore_registry_from_backup(reg import 恢复), 供
 #   registry_write 在写失败(PermissionError/ValueError/Exception)分支回滚; _backup_registry 返回值缓存到
 #   _backup_file 供恢复定位。compliance: SRP(恢复职责归属读取侧备份)+禁止backward
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取注册表→读注册表
 """
 registry_read — 读取Windows注册表键值
 【2026-06-22 小健】从 win_registry_tools.py 拆分为独立文件
@@ -146,14 +147,14 @@ def _build_registry_read_llm_data(exec_code: str, duration_ms: int, path: str, v
     if exec_code == "error":
         return {
             "summary": f"读取注册表{path}，失败",
-            "action": {"tool": "registry_read", "tool_zh": "读取注册表", "params": _act_params},
+            "action": {"tool": "registry_read", "tool_zh": "读注册表", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取注册表失败", "code": err_code or ERR_REG_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"读取注册表{path}，成功: {value_name}={value}（{value_type}）",
-        "action": {"tool": "registry_read", "tool_zh": "读取注册表", "params": _act_params},
+        "action": {"tool": "registry_read", "tool_zh": "读注册表", "params": _act_params},
         "status": {"exec_code": "success", "message": "读取注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

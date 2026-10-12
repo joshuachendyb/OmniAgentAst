@@ -24,6 +24,7 @@
 # 2026-08-21 - 小欧 - 北京老陈驱动: 删除根目录级搜索拒绝护栏。根目录(含文件系统根/或受控根)递归搜索技术上无禁止理由;
 #    真实工具(grep -r /、rg /、findstr /s C:\)均允许从根搜索。grep内部已有 deadline 截断(TOOL_TIMEOUTS["grep"]=120s,
 #    见_grep_files_sync)与 Tool 层输出截断(_apply_grep_outlim)兜底, 不会无限卡死, 故移除先前"想当然"的拒绝政策。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 内容搜索→搜内容
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -96,7 +97,7 @@ def _build_grep_file_content_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索内容'{pattern}'，失败",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "params": _act_params},
+            "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -116,7 +117,7 @@ def _build_grep_file_content_llm_data(
                 warning_hint = ""
         return {
             "summary": f"搜索内容'{pattern}'，成功,提示说明: {total_files}个文件{total_matches}行匹配{summary_suffix}",
-            "action": {"tool": "grep", "tool_zh": "内容搜索", "params": _act_params},
+            "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
             "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": {
@@ -126,7 +127,7 @@ def _build_grep_file_content_llm_data(
         }
     return {
         "summary": f"搜索内容'{pattern}'，成功: {total_files}个文件{total_matches}行匹配",
-        "action": {"tool": "grep", "tool_zh": "内容搜索", "params": _act_params},
+        "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

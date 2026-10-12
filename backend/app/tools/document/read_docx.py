@@ -15,6 +15,7 @@
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取Word→读WORD
 """
 D2: read_docx — 读取Word文档
 
@@ -54,7 +55,7 @@ def _build_read_docx_llm_data(
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_docx", "tool_zh": "读取Word", "params": _act_params},
+            "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -71,7 +72,7 @@ def _build_read_docx_llm_data(
     summary_str = f"读取Word{file_path}，成功: " + "，".join(parts)
     return {
         "summary": summary_str,
-        "action": {"tool": "read_docx", "tool_zh": "读取Word", "params": _act_params},
+        "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
         "status": {"exec_code": exec_code, "message": "读取Word成功" if exec_code == "success" else "读取Word有警告", "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {

@@ -6,6 +6,7 @@ time_diff — 时间差值计算
 【2026-06-22 小健】从 time_tools.py 拆分为独立文件
 编辑历史:
 # 2026-08-05 - 小欧 - 修复: is_future方向判断改为基于start→end(delta>=0),修正start/end同在过去或未来时"前/后"错判; 联动修正"刚刚/即将"
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 时间差值→算时间差
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -29,14 +30,14 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
     if exec_code == "error":
         return {
             "summary": "计算时间差，失败",
-            "action": {"tool": "timediff", "tool_zh": "时间差值", "params": _act_params},
+            "action": {"tool": "timediff", "tool_zh": "算时间差", "params": _act_params},
             "status": {"exec_code": "error", "message": "计算时间差失败", "code": ERR_TIME_DIFF, "detail": detail, "hint": hint if hint else "请检查时间格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"计算时间差，{humanized}（{round(days, 2)}天），成功",
-        "action": {"tool": "timediff", "tool_zh": "时间差值", "params": _act_params},
+        "action": {"tool": "timediff", "tool_zh": "算时间差", "params": _act_params},
         "status": {"exec_code": "success", "message": "计算时间差成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"seconds": {"value": seconds, "text": f"{seconds}秒"}, "days": {"value": round(days, 2), "text": f"{round(days, 2)}天"}},

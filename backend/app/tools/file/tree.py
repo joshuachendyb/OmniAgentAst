@@ -6,6 +6,7 @@
 #   2. formatter 层级感知截断用
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
 #   移除 statistics(data/llm_data 重复)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出目录树→列目录
 """
 tree — 列出目录树 (从list_directory拆分，仅列目录)
 
@@ -136,14 +137,14 @@ def _build_tree_llm_data(
     if exec_code == "error":
         return {
             "summary": f"列出目录树{dir_path}，失败",
-            "action": {"tool": "tree", "tool_zh": "列出目录树", "params": _act_params},
+            "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录树失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"列出目录树{dir_path}，成功: {file_count}个文件，{dir_count}个目录",
-        "action": {"tool": "tree", "tool_zh": "列出目录树", "params": _act_params},
+        "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录树成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},

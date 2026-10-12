@@ -8,6 +8,7 @@
 #   两处 except 静默 pass→logger.error 提级留痕(带 timer_id+失败后果说明), 内存定时器行为零改动, 仅补可追溯性
 # 2026-08-21 - 小欧 - 任务计数单口径(按文档 diff设计落地): 两处 db.get_conn("operations")→db.get_conn("timers"),
 #   定时器写入切换到 timers.db 独立库(SRP); 文档漏 timer_list.py 同款修改(读者一致性) — 小欧 2026-08-21
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 设置定时器→设定时器
 """
 timer_set — 设置定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -78,14 +79,14 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
     if exec_code == "error":
         return {
             "summary": f"设置定时器{_delay_sec}秒，失败: {detail}",
-            "action": {"tool": "timer_set", "tool_zh": "设置定时器", "params": _act_params},
+            "action": {"tool": "timer_set", "tool_zh": "设定时器", "params": _act_params},
             "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"设置定时器{_delay_sec}秒，成功: {timer_id}，{_delay_sec // 60}分钟后触发",
-        "action": {"tool": "timer_set", "tool_zh": "设置定时器", "params": _act_params},
+        "action": {"tool": "timer_set", "tool_zh": "设定时器", "params": _act_params},
         "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"delay": {"value": delay, "text": f"{_delay_sec // 60}分钟"}},

@@ -11,6 +11,7 @@
 #      给 LLM 可执行的纠正指令(原先只报类型名, 无从修正) — 小欧 2026-10-11
 # 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入PPT→写PPT
 """
 D8: write_pptx — 写入PPT文档
 
@@ -67,14 +68,14 @@ def _build_write_pptx_llm_data(
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
             "summary": f"写入PPT{file_path}，失败: {_detail}",
-            "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "params": {"path": file_path}},
+            "action": {"tool": "write_pptx", "tool_zh": "写PPT", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "写入PPT失败", "code": ERR_DOC_WRITE_PPTX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入PPT{file_path}，成功: {slide_count}页",
-        "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "params": {"path": file_path}},
+        "action": {"tool": "write_pptx", "tool_zh": "写PPT", "params": {"path": file_path}},
         "status": {"exec_code": "success", "message": "写入PPT成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

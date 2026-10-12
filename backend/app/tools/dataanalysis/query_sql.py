@@ -14,6 +14,7 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): error summary 去 `{detail}`, success summary
 #   去行数/列预览, 统一 `查询{_target}，成功/失败`; 行数/列预览在 metrics 统计段呈现(通用渲染)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 查询→查询SQL
 """
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -77,7 +78,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     if exec_code == "error":
         return {
             "summary": f"查询{_target}，失败",
-            "action": {"tool": "query_sql", "tool_zh": "查询", "params": _act_params},
+            "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "查询失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -88,7 +89,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
         col_text += "..."
     return {
         "summary": f"查询{_target}，成功: {row_count}行, 列: {col_text}",
-        "action": {"tool": "query_sql", "tool_zh": "查询", "params": _act_params},
+        "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
         "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "columns": {"value": _preview_cols, "text": f"列: {col_text}"}},

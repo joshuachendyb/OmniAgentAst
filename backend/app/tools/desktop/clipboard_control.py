@@ -20,6 +20,7 @@ clipboard_control — 剪贴板操作(read/write)
 # 2026-07-31 - 小欧 - 三堂会审修复B4:SetClipboardData成功后剪贴板接管内存,owned=False防CloseClipboard异常时double-free
 # 2026-07-31 - 小欧 - 三堂会审修复B10:截断后char_count原为截断长度+标记,改报原始长度original_len
 # 2026-07-31 - 小欧 - 三堂会审修复B26:read路径pyperclip.paste失败补warning日志与write路径对齐
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 剪贴板→剪贴读写
 import ctypes
 import time as _time_mod
 from typing import Dict, Any, Literal, Optional
@@ -39,13 +40,13 @@ def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: 
     if exec_code == "error":
         return {
             "summary": f"剪贴板{action}失败",
-            "action": {"tool": "clipboard_control", "tool_zh": "剪贴板", "params": _act_params},
+            "action": {"tool": "clipboard_control", "tool_zh": "剪贴读写", "params": _act_params},
             "status": {"exec_code": "error", "message": f"剪贴板{action}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": hint if hint else "请检查剪贴板访问权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"剪贴板{action}成功: {char_count}个字符",
-        "action": {"tool": "clipboard_control", "tool_zh": "剪贴板", "params": _act_params},
+        "action": {"tool": "clipboard_control", "tool_zh": "剪贴读写", "params": _act_params},
         "status": {"exec_code": "success", "message": f"剪贴板{action}成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {"chars": {"value": char_count, "text": f"{char_count}个"}},
     }

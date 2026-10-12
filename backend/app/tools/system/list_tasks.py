@@ -9,6 +9,7 @@ list_tasks — 列出Windows计划任务
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出任务→列任务
 import platform
 import subprocess
 import time as _time_mod
@@ -86,14 +87,14 @@ def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dic
     if exec_code == "error":
         return {
             "summary": f"获取计划任务列表失败: {detail}",
-            "action": {"tool": "list_tasks", "tool_zh": "列出任务", "params": _params},
+            "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
             "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": err_code or ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取计划任务成功: 共{total_raw}个，匹配{total_matched}个",
-        "action": {"tool": "list_tasks", "tool_zh": "列出任务", "params": _params},
+        "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
         "status": {"exec_code": "success", "message": "获取计划任务列表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_raw, "text": f"{total_raw}个"}, "matched": {"value": total_matched, "text": f"{total_matched}个"}},

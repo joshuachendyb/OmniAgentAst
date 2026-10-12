@@ -21,7 +21,8 @@
 #   【改法】改`cf_resp.content[:FETCHPAGE_OUTLIMIT_BODY_BYTES]`字节切片后再decode("utf-8", errors="replace"), 与流式分支同一口径
 # 2026-08-13 - 小欧 - 三堂会审修复#32: js_render成功后L728仍重判_needs_browser可能二次Playwright渲染
 #   【病根】SPA空壳自检(原L726-728)对静态GET产物设计, 但js_render成功时html_content已是渲染产物, 无条件重判会对已渲染产物再渲染一次(浪费+可能发散)
-#   【改法】新增js_render_ok标志(js_render且playwright无error), 静态GET门控与SPA回退均以`not js_render_ok`为前提; js_render失败回落静态的路径仍保留自动回退, 无退化
+#   【改法】新增js_render_ok标志(js_render且playwright无error), 静态GET门
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取网页→读网页控与SPA回退均以`not js_render_ok`为前提; js_render失败回落静态的路径仍保留自动回退, 无退化
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -440,7 +441,7 @@ def _build_fetch_webpage_llm_data(
     if exec_code == "error":
         return {
             "summary": f"获取{url}网页，失败",
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "params": _act_params},
+            "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
             "status": {"exec_code": "error", "message": "获取网页失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -451,7 +452,7 @@ def _build_fetch_webpage_llm_data(
             base_msg = f"获取{url}资源，成功但有警告: {mime_type}，HTTP {status_code}"
         return {
             "summary": base_msg,
-            "action": {"tool": "fetchpage", "tool_zh": "获取网页", "params": _act_params},
+            "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
             "status": {"exec_code": "warning", "message": "获取网页完成但有警告", "code": "", "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}} if status_code else {},
@@ -464,7 +465,7 @@ def _build_fetch_webpage_llm_data(
         summary += "（内容有部分截断）"
     return {
         "summary": summary,
-        "action": {"tool": "fetchpage", "tool_zh": "获取网页", "params": _act_params},
+        "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取网页内容成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},

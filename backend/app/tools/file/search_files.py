@@ -6,6 +6,7 @@
 # 2026-07-20 - 小欧 - 门限复查: 删 _is_already_seen_or_skipped 去重/跳过死逻辑(seen_files/start_offset 恒0, os.walk 不重复致 dup/skip 永False)及未用 Tuple import; 直接 _collect_entry_result, 行为不变
 # 2026-08-06 - 小欧 - 核查未实现项修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索文件→搜文件
 
 import asyncio
 import fnmatch
@@ -76,7 +77,7 @@ def _build_search_files_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索文件{search_dir}，失败",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "params": _act_params},
+            "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -90,7 +91,7 @@ def _build_search_files_llm_data(
         _default_hint = "可缩小搜索范围或使用更精确的匹配模式以减少匹配数量; 或使用 offset 跳过前 N 项分批查看"
         return {
             "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断{_timeout_str}",
-            "action": {"tool": "find", "tool_zh": "搜索文件", "params": _act_params},
+            "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
             "duration_ms": duration_ms,
             "metrics": {
@@ -102,7 +103,7 @@ def _build_search_files_llm_data(
         summary += f"，第{user_offset+1}-{total}项"
     return {
         "summary": summary,
-        "action": {"tool": "find", "tool_zh": "搜索文件", "params": _act_params},
+        "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

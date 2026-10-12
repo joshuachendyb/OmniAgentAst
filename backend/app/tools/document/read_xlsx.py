@@ -28,6 +28,7 @@
 # 2026-07-26 - 小沈 - 修复: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); path参数不覆盖
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取Excel→读EXCEL
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -67,7 +68,7 @@ def _build_read_xlsx_llm_data(
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取Excel{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "params": _act_params},
+            "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -77,7 +78,7 @@ def _build_read_xlsx_llm_data(
         _act_params["sheet_name"] = user_sheet_name
     return {
         "summary": f"读取Excel{file_path}，成功: {row_count}行，{sheet_count}个工作表",
-        "action": {"tool": "read_xlsx", "tool_zh": "读取Excel", "params": _act_params},
+        "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
         "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

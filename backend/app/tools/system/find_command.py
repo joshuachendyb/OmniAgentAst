@@ -9,6 +9,7 @@ S2: find_command — 查找系统命令路径
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 查找命令→找命令
 
 import os
 import shutil
@@ -36,7 +37,7 @@ def _build_find_command_llm_data(
     if exec_code == "error":
         return {
             "summary": f"查找命令{command}，失败",
-            "action": {"tool": "which", "tool_zh": "查找命令", "params": _act_params},
+            "action": {"tool": "which", "tool_zh": "找命令", "params": _act_params},
             "status": {"exec_code": "error", "message": "查找命令失败", "code": err_code or ERR_SHELL_FIND_COMMAND, "detail": detail, "hint": hint if hint else "请检查命令名称是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -45,7 +46,7 @@ def _build_find_command_llm_data(
         hint = "" if available else "找其他类似可用命令工具"
         return {
             "summary": f"查找命令[{command}]成功,但是: 命令不可用",
-            "action": {"tool": "which", "tool_zh": "查找命令", "params": _act_params},
+            "action": {"tool": "which", "tool_zh": "找命令", "params": _act_params},
             "status": {"exec_code": "warning", "message": "命令不可用", "code": "", "detail": "", "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"available": {"value": available, "text": "可用" if available else "不可用"}},
@@ -53,7 +54,7 @@ def _build_find_command_llm_data(
     if paths is not None:
         return {
             "summary": f"查找命令[{command}]成功: 找到{count}个路径",
-            "action": {"tool": "which", "tool_zh": "查找命令", "params": _act_params},
+            "action": {"tool": "which", "tool_zh": "找命令", "params": _act_params},
             "status": {"exec_code": "success", "message": f"找到 {count} 个路径", "code": "", "detail": "", "hint": ""},
             "duration_ms": duration_ms,
             "metrics": {"count": {"value": count, "text": f"{count}个"}},
@@ -62,7 +63,7 @@ def _build_find_command_llm_data(
     hint = "" if available else "找其他类似可用命令工具"
     return {
         "summary": f"查找命令{command}，成功: {status}",
-        "action": {"tool": "which", "tool_zh": "查找命令", "params": _act_params},
+        "action": {"tool": "which", "tool_zh": "找命令", "params": _act_params},
         "status": {"exec_code": "success", "message": f"命令{status}", "code": "", "detail": "", "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {"available": {"value": available, "text": status}},

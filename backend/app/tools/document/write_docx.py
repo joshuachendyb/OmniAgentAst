@@ -11,6 +11,7 @@
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 # 2026-10-12 - 小欧 - 失败反馈补"文件未写入"(北京老陈令): builder 增 not_written, 仅写前检查点置位;
 #   summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入Word→写WORD
 """
 D5: write_docx — 写入Word文档
 
@@ -121,14 +122,14 @@ def _build_write_docx_llm_data(
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
             "summary": f"写入Word {file_path}，失败: {_detail}",
-            "action": {"tool": "write_docx", "tool_zh": "写入Word", "params": _act_params},
+            "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
             "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
-        "action": {"tool": "write_docx", "tool_zh": "写入Word", "params": _act_params},
+        "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
         "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

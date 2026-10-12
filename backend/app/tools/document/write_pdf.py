@@ -10,6 +10,7 @@
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 # 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入PDF→写PDF
 """
 D7: write_pdf — 写入PDF文档
 
@@ -92,14 +93,14 @@ def _build_write_pdf_llm_data(
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
             "summary": f"写入PDF {file_path}，失败: {_detail}",
-            "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "params": _act_params},
+            "action": {"tool": "write_pdf", "tool_zh": "写PDF", "params": _act_params},
             "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入PDF {file_path}，成功: {char_count}字符",
-        "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "params": _act_params},
+        "action": {"tool": "write_pdf", "tool_zh": "写PDF", "params": _act_params},
         "status": {"exec_code": "success", "message": "写入PDF成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {

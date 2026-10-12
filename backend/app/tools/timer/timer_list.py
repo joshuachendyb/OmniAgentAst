@@ -9,6 +9,7 @@ timer_list — 列出所有定时器
 # 2026-08-05 - 小欧 - 修复: DB数据并入后统一按trigger_at排序(此前混排); data层保持完整列表(预览限制仅限metrics,见常量注释"预览数量")
 # 2026-08-21 - 小欧 - 任务计数单口径(按文档设计落地, 文档漏此文件): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP), 与 writer(timer_set/timer_clear)保持读写同库一致性 — 小欧 2026-08-21
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出定时器→列定时器
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
@@ -28,14 +29,14 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
     if exec_code == "error":
         return {
             "summary": "获取定时器列表失败",
-            "action": {"tool": "timer_list", "tool_zh": "列出定时器", "params": {}},
+            "action": {"tool": "timer_list", "tool_zh": "列定时器", "params": {}},
             "status": {"exec_code": "error", "message": "获取定时器列表失败", "code": ERR_TIMER_LIST, "detail": detail, "hint": hint if hint else "请检查定时器状态"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取定时器列表成功: 共{count}个",
-        "action": {"tool": "timer_list", "tool_zh": "列出定时器", "params": {}},
+        "action": {"tool": "timer_list", "tool_zh": "列定时器", "params": {}},
         "status": {"exec_code": "success", "message": "获取定时器列表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"count": {"value": count, "text": f"{count}个"}},

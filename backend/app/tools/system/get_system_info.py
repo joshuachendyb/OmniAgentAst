@@ -8,6 +8,7 @@ get_system_info — 获取系统信息
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 系统信息→查系统
 import platform
 import socket
 import time as _time_mod
@@ -27,7 +28,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     if exec_code == "error":
         return {
             "summary": f"获取系统信息，{info_type}，失败",
-            "action": {"tool": "sysinfo", "tool_zh": "系统信息", "params": {"info_type": info_type}},
+            "action": {"tool": "sysinfo", "tool_zh": "查系统", "params": {"info_type": info_type}},
             "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -35,7 +36,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     _summary = custom_summary if custom_summary else f"获取系统信息，{info_type}，成功"
     return {
         "summary": _summary,
-        "action": {"tool": "sysinfo", "tool_zh": "系统信息", "params": {"info_type": info_type}},
+        "action": {"tool": "sysinfo", "tool_zh": "查系统", "params": {"info_type": info_type}},
         "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

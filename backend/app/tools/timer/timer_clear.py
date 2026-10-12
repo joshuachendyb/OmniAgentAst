@@ -5,6 +5,7 @@
 #   logger.error 提级留痕(带 timer_id+失败后果说明), 内存取消行为零改动, 仅补可追溯性
 # 2026-08-21 - 小欧 - 任务计数单口径(按文档 diff设计落地): db.get_conn("operations")→db.get_conn("timers"),
 #   定时器查询切换到 timers.db 独立库(SRP) — 小欧 2026-08-21
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 清除定时器→清定时器
 """
 timer_clear — 清除定时器
 【2026-06-22 小健】从 timer_tools.py 拆分为独立文件
@@ -28,7 +29,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     if exec_code == "error":
         return {
             "summary": f"清除定时器{timer_id}，失败",
-            "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "params": {"timer_id": timer_id}},
+            "action": {"tool": "timer_clear", "tool_zh": "清定时器", "params": {"timer_id": timer_id}},
             "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -36,7 +37,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     status_text = "已取消" if cancelled else "不存在或已触发"
     return {
         "summary": f"清除定时器{timer_id}，成功: {status_text}",
-        "action": {"tool": "timer_clear", "tool_zh": "清除定时器", "params": {"timer_id": timer_id}},
+        "action": {"tool": "timer_clear", "tool_zh": "清定时器", "params": {"timer_id": timer_id}},
         "status": {"exec_code": "success", "message": f"定时器{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

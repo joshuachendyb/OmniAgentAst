@@ -26,6 +26,7 @@
 # 2026-09-20 - 小欧 - 写仲裁落地: 拷贝目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 复制文件→复制
 """
 F7: copy_file — 复制文件
 
@@ -76,14 +77,14 @@ def _build_copy_file_llm_data(
         detail = (extra_metrics or {}).get("detail", "复制失败")
         return {
             "summary": f"复制文件{source}，失败",
-            "action": {"tool": "copy", "tool_zh": "复制文件", "params": _act_params},
+            "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
             "status": {"exec_code": "error", "message": "复制失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
             "summary": f"复制成功: {source} -> {destination}",
-        "action": {"tool": "copy", "tool_zh": "复制文件", "params": _act_params},
+        "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
         "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},

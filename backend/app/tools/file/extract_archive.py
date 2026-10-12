@@ -11,6 +11,7 @@
 #   无效格式(如 .rar)直接返回"不支持的压缩格式", 不再对未知扩展名推断出与源文件同名的 out_dir,
 #   消除 os.makedirs 在已存在文件上建目录抛 FileExistsError(WinError 183) 的误导性错误
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(解压输出目录)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 解压文件→解压
 """
 F9: extract_archive — 解压文件
 
@@ -54,7 +55,7 @@ def _build_extract_archive_llm_data(
     if exec_code == "error":
         return {
             "summary": f"解压文件{source}，失败",
-            "action": {"tool": "extract", "tool_zh": "解压文件", "params": _act_params},
+            "action": {"tool": "extract", "tool_zh": "解压", "params": _act_params},
             "status": {"exec_code": "error", "message": "解压失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -71,7 +72,7 @@ def _build_extract_archive_llm_data(
         parts.append(f"跳过{skipped_files}个文件")
     return {
         "summary": f"解压文件{source}，成功: {'，'.join(parts)}",
-        "action": {"tool": "extract", "tool_zh": "解压文件", "params": _act_params},
+        "action": {"tool": "extract", "tool_zh": "解压", "params": _act_params},
         "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": _m,

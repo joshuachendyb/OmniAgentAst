@@ -44,6 +44,7 @@ F1: read — 读取文本文件
 # 2026-10-05 - 小欧 - 单通道去 `/{total_lines}`(北京老陈裁定): summary 两分支 `{n}/{total}行` 改 `{n}行`,
 #   message `,共{total_lines}行` 同去, total_lines 改走 metrics 统计段(observation_formatter 跳集合同步移出
 #   total_lines, 三处同批防 total_lines 从 LLM text 消失)
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取→读文件
 
 import time as _time_mod
 from pathlib import Path
@@ -98,7 +99,7 @@ def _build_read_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"读取文件{file_path}，失败",
-            "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
+            "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "读取失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和参数是否正确"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -106,7 +107,7 @@ def _build_read_text_file_llm_data(
     if exec_code == "warning":
         return {
             "summary": f"读取文件{file_path}，成功,提示说明: {_ps}{line_count}行",
-            "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
+            "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"读取成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
             "metrics": {
@@ -130,7 +131,7 @@ def _build_read_text_file_llm_data(
         hint_text = ""
     return {
         "summary": f"读取文件{file_path}，成功: {_ps}{line_count}行，{file_size}字节",
-        "action": {"tool": "read", "tool_zh": "读取", "params": _act_params},
+        "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,
         "metrics": {

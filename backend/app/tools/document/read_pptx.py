@@ -16,6 +16,7 @@
 # 2026-07-31 - 小欧 - Bug㉑修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取PPT→读PPT
 """
 D3: read_pptx — 读取PPT文档
 
@@ -49,7 +50,7 @@ def _build_read_pptx_llm_data(
         _err_summary = truncate_summary(detail)
         return {
             "summary": f"读取PPT{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
-            "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "params": {"path": file_path}},
+            "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "读取PPT失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -63,7 +64,7 @@ def _build_read_pptx_llm_data(
         summary_str = f"读取PPT{file_path}，成功: {slide_count}页，{text_len}字符"
     return {
         "summary": summary_str,
-        "action": {"tool": "read_pptx", "tool_zh": "读取PPT", "params": {"path": file_path}},
+        "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
         "status": {"exec_code": exec_code, "message": "读取PPT成功", "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {

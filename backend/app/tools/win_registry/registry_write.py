@@ -19,6 +19,7 @@ registry_write — 写入Windows注册表键值
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入注册表→写注册表
 
 import time as _time_mod
 import winreg
@@ -89,14 +90,14 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, path: str, 
     if exec_code == "error":
         return {
             "summary": f"写入注册表{path}，失败",
-            "action": {"tool": "registry_write", "tool_zh": "写入注册表", "params": {"path": path, "value_name": value_name}},
+            "action": {"tool": "registry_write", "tool_zh": "写注册表", "params": {"path": path, "value_name": value_name}},
             "status": {"exec_code": "error", "message": "写入注册表失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入注册表{path}，成功: {value_name}={value}（{value_type}）",
-        "action": {"tool": "registry_write", "tool_zh": "写入注册表", "params": {"path": path, "value_name": value_name}},
+        "action": {"tool": "registry_write", "tool_zh": "写注册表", "params": {"path": path, "value_name": value_name}},
         "status": {"exec_code": "success", "message": "写入注册表成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},

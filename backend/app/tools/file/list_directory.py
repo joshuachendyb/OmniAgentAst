@@ -5,6 +5,7 @@
 # 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS key对齐: "list_directory"→"listdir"(真实注册名), 值30→60
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出目录→列文件
 """
 F5: list_directory — 列出目录内容
 
@@ -160,7 +161,7 @@ def _build_list_directory_llm_data(
     if exec_code == "error":
         return {
             "summary": f"列出目录{dir_path}，失败",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "params": _act_params},
+            "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -178,7 +179,7 @@ def _build_list_directory_llm_data(
         _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
             "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",
-            "action": {"tool": "listdir", "tool_zh": "列出目录", "params": _act_params},
+            "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
@@ -189,7 +190,7 @@ def _build_list_directory_llm_data(
         summary += f"，第{user_offset+1}-{end_offset}项"
     return {
         "summary": summary,
-        "action": {"tool": "listdir", "tool_zh": "列出目录", "params": _act_params},
+        "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,

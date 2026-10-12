@@ -11,6 +11,7 @@ mouse_position — 获取鼠标当前位置
 # 2026-07-30 - 小欧 - #5:if x or y改为if x is not None or y is not None,修复(0,0)被跳过
 # 2026-07-30 - 小欧 - error_detail/hint修正:不提win32api/pywin32(实际用ctypes标准库)
 # 2026-07-31 - 小欧 - 三堂会审修复B19:补import ctypes.wintypes,原ctypes主路径因未导入该子模块抛AttributeError成为死代码,始终走pyautogui fallback
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取鼠标位置→鼠标位置
 import ctypes
 import ctypes.wintypes
 import time as _time_mod
@@ -30,13 +31,13 @@ def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, d
     if exec_code == "error":
         return {
             "summary": f"获取鼠标位置失败: {detail}",
-            "action": {"tool": "mouse_position", "tool_zh": "获取鼠标位置", "params": _act_params},
+            "action": {"tool": "mouse_position", "tool_zh": "鼠标位置", "params": _act_params},
             "status": {"exec_code": "error", "message": "获取鼠标位置失败", "code": ERR_DESKTOP_GET_MOUSE_POSITION, "detail": detail, "hint": hint if hint else "请检查鼠标设备"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"获取鼠标位置成功: 当前({x},{y})",
-        "action": {"tool": "mouse_position", "tool_zh": "获取鼠标位置", "params": _act_params},
+        "action": {"tool": "mouse_position", "tool_zh": "鼠标位置", "params": _act_params},
         "status": {"exec_code": "success", "message": "获取鼠标位置成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }

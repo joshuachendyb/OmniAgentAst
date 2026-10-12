@@ -8,6 +8,7 @@
 # 2026-07-22 - 小欧 - query 校验从 None 显式报错扩展为 not query or not query.strip()，空字符串/纯空白也报错而非透传搜索
 # 2026-07-24 - 小欧 - raw_text[:200]/str(e)[:200] → SEARCH_WEB_OUTPARM_LIMIT_RAW(魔数→命名常量)
 # 2026-07-25 - 小欧 - 截断治理: block[:3000](5处) → SEARCH_WEB_INER_HTML_PARSE 命名常量
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索→搜网络
 """
 N4: searchweb — 搜索网络获取最新信息
 
@@ -100,14 +101,14 @@ def _build_search_web_llm_data(
     if exec_code == "error":
         return {
             "summary": f"搜索{query}，失败",
-            "action": {"tool": "searchweb", "tool_zh": "搜索", "params": _act_params},
+            "action": {"tool": "searchweb", "tool_zh": "搜网络", "params": _act_params},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": hint if hint else "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"搜索{query}，成功: {result_count}条结果",
-        "action": {"tool": "searchweb", "tool_zh": "搜索", "params": _act_params},
+        "action": {"tool": "searchweb", "tool_zh": "搜网络", "params": _act_params},
         "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},

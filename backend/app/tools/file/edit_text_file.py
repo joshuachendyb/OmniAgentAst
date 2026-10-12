@@ -46,6 +46,7 @@
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "edit"→"edit"(2处), 与新注册名同源
 # 2026-10-05 - 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): summary 改 `新增{added}行，删除{removed}行`,
 #   增减从 unified_diff 现算(`+` 去 `+++` 头 / `-` 去 `---` 头, 零新依赖); added/removed 同步入 metrics
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 编辑文件→编辑
 """
 F4: edit — 编辑文本文件
 
@@ -294,7 +295,7 @@ def _build_edit_text_file_llm_data(
     if exec_code == "error":
         return {
             "summary": f"编辑文件{file_path}，失败",
-            "action": {"tool": "edit", "tool_zh": "编辑文件", "params": _act_params},
+            "action": {"tool": "edit", "tool_zh": "编辑", "params": _act_params},
             "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和编辑参数"},
             "duration_ms": duration_ms,
             "metrics": {},
@@ -329,7 +330,7 @@ def _build_edit_text_file_llm_data(
         _summary = f"编辑文件{file_path}，成功: 替换 {applied}/{total_matches} 处;新增{_added}行，删除{_removed}行"
     return {
         "summary": _summary,
-        "action": {"tool": "edit", "tool_zh": "编辑文件", "params": _act_params},
+        "action": {"tool": "edit", "tool_zh": "编辑", "params": _act_params},
         "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg or syntax_warning, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {
