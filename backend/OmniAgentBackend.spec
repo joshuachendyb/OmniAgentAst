@@ -23,7 +23,10 @@ REPO = BACKEND.parent
 _datas, _binaries, _hiddenimports = [], [], []
 for _pkg in ("html2text", "reportlab", "openpyxl", "docx", "fitz", "pdfplumber", "pandas", "psutil",
              "pywin32", "win32gui", "pythoncom", "pywintypes", "pyautogui", "mss",
-             "pyperclip", "pptx", "win10toast"):
+             "pyperclip", "pptx", "win10toast",
+             # JS/TS 语法校验 — 小欧 2026-10-12: 含 native .pyd, 不显式收集则打包版 ImportError
+             #   (syntax_validator 已做软降级, 但主路径 tree-sitter 会整体失效只剩 node 兜底)
+             "tree_sitter", "tree_sitter_javascript", "tree_sitter_typescript"):
     try:
         _d, _b, _h = collect_all(_pkg)
         _datas += _d
