@@ -134,14 +134,14 @@ def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_
         return {
             "summary": f"获取数据库结构{_target}，失败" + (f": {detail}" if detail else ""),
             "action": {"tool": "get_db_schema", "tool_zh": "取表结构", "params": _act_params},
-            "status": {"exec_code": "error", "message": "获取失败", "code": err_code or ERR_DB_CONNECTION, "detail": detail, "hint": hint},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_DB_CONNECTION, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"获取数据库结构{_target}，成功: {total_tables}个表",
         "action": {"tool": "get_db_schema", "tool_zh": "取表结构", "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{total_tables}个表", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_tables, "text": f"{total_tables}个表"}, "tables": {"value": table_names, "text": f"表: {', '.join(table_names[:GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES])}"}},
     }

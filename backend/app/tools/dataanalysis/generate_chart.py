@@ -79,7 +79,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     return {
         "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{dest}",
         "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
-        "status": {"exec_code": "success", "message": "图表生成成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{chart_type}已保存", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": metrics,
     }

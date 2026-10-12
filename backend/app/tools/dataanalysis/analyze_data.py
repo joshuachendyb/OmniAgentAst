@@ -86,14 +86,14 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
         return {
             "summary": f"分析数据{_target}，失败: {detail}",
             "action": {"tool": "analyze_data", "tool_zh": "分析数据", "params": _act_params},
-            "status": {"exec_code": "error", "message": "分析失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": hint if hint else "请检查数据格式"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": hint if hint else "请检查数据格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"分析数据{_target}，成功: {row_count}行, {numeric_col_count}个数值列",
         "action": {"tool": "analyze_data", "tool_zh": "分析数据", "params": _act_params},
-        "status": {"exec_code": "success", "message": "分析成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{row_count}行, {numeric_col_count}个数值列", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "numeric_cols": {"value": numeric_col_count, "text": f"{numeric_col_count}列"}},
     }

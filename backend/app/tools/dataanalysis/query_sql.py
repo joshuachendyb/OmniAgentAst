@@ -90,7 +90,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     return {
         "summary": f"查询{_target}，成功: {row_count}行, 列: {col_text}",
         "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
-        "status": {"exec_code": "success", "message": "查询成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{row_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"row_count": {"value": row_count, "text": f"{row_count}行"}, "columns": {"value": _preview_cols, "text": f"列: {col_text}"}},
         "truncated": truncated,

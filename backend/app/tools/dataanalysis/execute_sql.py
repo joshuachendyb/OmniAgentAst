@@ -127,7 +127,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
     return {
         "summary": f"执行{_target}，成功",
         "action": {"tool": "execute_sql", "tool_zh": "执行SQL", "params": _act_params},
-        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:影响{affected_rows}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"affected_rows": {"value": affected_rows, "text": f"影响{affected_rows}行"}},
     }

@@ -53,14 +53,14 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
         return {
             "summary": f"筛选数据{_target}，失败",
             "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
-            "status": {"exec_code": "error", "message": "筛选失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILTER_INVALID, "detail": detail, "hint": hint if hint else "请检查条件和数据"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"筛选数据{_target}，成功",
         "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
-        "status": {"exec_code": "success", "message": "筛选成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{original_count}行筛出{filtered_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"original_count": {"value": original_count, "text": f"{original_count}行"}, "filtered_count": {"value": filtered_count, "text": f"{filtered_count}行"}},
     }
