@@ -32,7 +32,7 @@
 | R6 | 已知单工具与多工具两种形态 | 方案须同时覆盖 |
 | R7 | 先落后端，前端后跟 | 2026-10-12 确认实施顺序 |
 
-前端渲染需求（期望效果）：
+前端渲染需求（待专门讨论前端时由北京老陈定，本方案不预设；以下仅为占位示例）：
 
 ```
 ┌ 执行动作 ──────────────────────────────────┐
@@ -43,7 +43,7 @@
 └────────────────────────────────────────────┘
 ```
 
-即：每个工具一行，行为"图标/名称/状态徽标/耗时"，参数区只留核心参数；失败行追加 `detail`（失败详情）。
+即：每个工具一行，行为"图标/名称/状态徽标/耗时"，参数区只留核心参数；失败行追加 `detail`（失败详情）。**以上为占位示例，最终以专门讨论前端时的裁定为准。**
 
 ### 1.2 本方案要回答的问题
 
@@ -1113,19 +1113,16 @@ def build_content_items(tool_result: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 | # | 文件 | 改动 |
 |---|---|---|
-| F1 | `frontend/src/features/chat/services/sseParser.ts:901-912` | observation 分支在 `step.tool_result = tr` 之后，直接取 `rawData.content_items` 存入 `step.contentItems`（可选字段，取不到则留空数组，不做 JSON.parse）；类型 `ExecutionStep` 增 `contentItems?: ObservationContentItem[]` |
-| F2 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 新增 contentItems 驱动的「工具执行明细」渲染块：逐元素渲染一行一个工具 |
+| F1 | `frontend/src/features/chat/services/sseParser.ts:901-912` | observation 分支取出 `rawData.content`（字符串）与 `rawData.content_items`（数组）存入 step；取不到则给空值，不抛错；类型 `ExecutionStep` 增 `contentItems?: ObservationContentItem[]` |
+| F2 | 待前端渲染讨论时定 | 是否新增渲染块、如何渲染、什么顺序、用什么样式，全部在专门讨论前端时由北京老陈定，本方案不预设 |
 
-F2 渲染契约（只定粒度和数据源，不定呈现细节）：
+F2 边界（只划边界，不定实现）：
 
 | 项 | 规则 |
 |---|---|
-| 行数 | 一个 tool 一行，行数 == `contentItems.length`（单工具 1 行、多工具 N 行，同构无分支） |
-| 数据源 | `contentItems` 对象数组，逐字段取用 |
-| 无 contentItems 时 | 数组为空 → 该渲染块不渲染 |
-| 与现有渲染的关系 | 新增块，不改动现有子行的渲染逻辑；两者数据源与职责独立，互不依赖 |
-
-呈现细节（行内字段顺序、是否用 exec_code 徽标、message/detail 如何展示）由北京老陈在前端设计阶段定，本方案只约定一行一工具的粒度和 contentItems 数据源。
+| 数据 | 后端保证 `content` 与 `contentItems` 同源一致、一起落库、一起下发，前端可直接取用 |
+| 前端职责 | 一切渲染规则在专门讨论前端时定 |
+| 唯一约束 | 数据天然一行一工具（`content` 一句一行，`contentItems` 一元素一工具），供前端取用时参考 |
 
 ### 3.9 风险与防御
 
@@ -1149,7 +1146,7 @@ F2 渲染契约（只定粒度和数据源，不定呈现细节）：
 | A3 | 数组长度 == `tool_result` 长度（单工具=1，多工具=N） | ✅ |
 | A4 | 每个元素含 tool / exec_code / params / message 四要素 | ✅ |
 | A5 | 失败工具的 `detail` 正确带出 | ✅ |
-| A6 | `contentItems` 为空时该渲染块不渲染 | ✅ |
+| A6 | `content` 为空串且 `contentItems` 为空数组时，后端不报错，落库正常 | ✅ |
 | A7 | LLM 回复质量无变化（content 不进上下文） | ✅ |
 | A8 | 前端 `npm run check:full` 通过 | ✅ |
 | A9 | 构造 `llm_data` 缺 `status`/`action` 的假工具 → content 仍产出且不抛异常 | ✅ |
