@@ -11,8 +11,8 @@ from app.logger import logger
 
 # 参数丢弃名单: 与设计文档 3.5.6 表的丢列逐键一致, 改表即改本常量 — 小欧 2026-10-12
 DROP_KEYS = frozenset({
-    # 框架默认开关与基础设施
-    "shell_type", "success_codes", "ignore_case", "overwrite",
+    # 框架默认开关与基础设施（shell_type 已移出：北京老陈 2026-10-12 令加回句子显示）
+    "success_codes", "ignore_case", "overwrite",
     "preserve_metadata", "extract_format", "js_render", "append_mode",
     "proxy", "headers", "conditions",
     # 长内容载荷（含 edit 的 old/new，转 lines 前先丢原文）
@@ -23,6 +23,67 @@ DROP_KEYS = frozenset({
     "hive", "output_format", "value_type", "value", "time_range", "exclude_patterns",
 })
 
+# FUNDAMENTAL 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
+# | tool       | params(进句子)                              | message(成功分支)          | 重复? |
+# |------------|---------------------------------------------|----------------------------|-------|
+# | bash       | command/timeout/cwd/shell_type              | 成功(纯状态词)             | 无    |
+# | fetchpage  | prompt/timeout/url                          | 成功:mime,HTTP码(结果量)   | 无    |
+# | notify     | title/message(正文)/duration                | 成功(纯状态词)             | 无    |
+# | searchtool | query                                       | 完成:匹配N个(结果数)       | 无    |
+# | searchweb  | query/num_results/allowed/blocked_domains  | 完成:N条结果(结果数)       | 无    |
+# | timenow    | {}无参                                      | 成功:datetime,星期(结果值)  | 无    |
+# FILE 组成功分支三项对照(2026-10-12 小欧逐个核查) —
+# | tool    | params(进句子; dest有path时跳过)          | message(成功分支)          | 重复?    |
+# |---------|--------------------------------------------|----------------------------|----------|
+# | copy    | path+recursive(dest句子跳过)               | 成功(纯状态词)             | 无       |
+# | delete  | path+force+recursive                       | 成功(纯状态词)             | 无       |
+# | edit    | path+mode+encoding+行数派生                | 完成(纯状态词)             | 无       |
+# | find    | path+pattern+type(offset句子跳过)          | 完成:共N个/第M-N项         | 已消     |
+# | grep    | path+pattern+glob                          | 完成:N文件M行(结果量)      | 无       |
+# | listdir | path+sort_by等                             | 成功:N项(结果量)           | 无       |
+# | move    | path(dest句子跳过)                         | 成功(纯状态词)             | 无       |
+# | read    | path(句子;limit等仅items)                  | 成功:从第X-Y行(范围)       | 已消     |
+# | rename  | path(dest句子跳过)                         | 成功(纯状态词)             | 无       |
+# | tree    | path+max_depth等                           | 成功:N文件(结果量)         | 无       |
+# | write   | path+append+encoding                       | 成功(纯状态词)             | 无       |
+# NETWORK 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
+# | tool     | params(进句子)                             | message(成功分支)          | 重复? |
+# |----------|--------------------------------------------|----------------------------|-------|
+# | download | url+timeout(+dest无path时)                 | 成功/成功:大小类型(结果量) | 无    |
+# | httpget  | url+method+timeout                         | 成功:HTTP码+类型(结果量)   | 无    |
+# | ping_port| host+port/mode+count+timeout               | 可达/开放等(结果态)        | 无    |
+# DOCUMENT 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
+# | tool      | params(进句子)                            | message(成功分支)            | 重复? |
+# |-----------|-------------------------------------------|------------------------------|-------|
+# | compress  | path+dest(有path时dest跳)+format等        | 成功:N文件,压缩率(结果量)   | 无    |
+# | extract   | path(+dest无path时)                       | 成功(纯状态词)               | 无    |
+# | read_docx | path+limit等                              | 成功:N段,N字符(结果量)      | 无    |
+# | read_pdf  | path(仅path进action)                      | 成功:已读X/共Y页(结果量)    | 无    |
+# | read_pptx | path(仅path进action)                      | 成功:第X页(结果量)          | 无    |
+# | read_xlsx | path+sheet_name                           | 成功:N行,M表(结果量)        | 无    |
+# | readmedia | path                                      | 成功(纯状态词)               | 无    |
+# | write_docx| path+title                                | 成功:N段,N字符(结果量)      | 无    |
+# | write_pdf | path+title                                | 成功:N字符(结果量)          | 无    |
+# | write_pptx| path                                      | 成功:N页(结果量)            | 无    |
+# | write_xlsx| path+sheet_name                           | 成功:N行(结果量)            | 无    |
+# DATAANALYSIS 组成功分支三项对照(2026-10-12 小欧逐个核查, generate_chart 1处重复待定) —
+# | tool        | params(进句子)                           | message(成功分支)            | 重复? |
+# |-------------|------------------------------------------|------------------------------|-------|
+# | analyze_data| operations/group_by/path等               | 成功:N行,M数值列(结果量)    | 无    |
+# | execute_sql | sql/path/连接串/timeout等                | 成功:影响N行(结果量)        | 无    |
+# | filter_data | path/select/sort/top_n                   | 成功:原N筛出M行(结果量)     | 无    |
+# | generate_chart| chart_type/dest/title/轴               | 成功:bar已保存(含chart值)   | 有    |
+# | get_db_schema| 连接串/path/table                       | 成功:N个表(结果量)          | 无    |
+# | query_sql   | sql/limit/path/连接串                    | 成功:N行(结果量)            | 无    |
+# SYSTEM 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
+# | tool       | params(进句子)                            | message(成功分支)            | 重复? |
+# |------------|-------------------------------------------|------------------------------|-------|
+# | create_task| command/interval/schedule/task_name       | 成功(纯状态词)               | 无    |
+# | delete_task| task_name                                 | 成功(纯状态词)               | 无    |
+# | event_log  | level/log_name/max_events                 | 成功:N条事件(结果数)         | 无    |
+# | list_tasks | state/task_name                           | 成功:共N个匹配M个(结果数)   | 无    |
+# | sysinfo    | info_type                                 | 成功(纯状态词)               | 无    |
+# | which      | command                                   | 找到N个/命令可用(结果态)     | 无    |
 # 命令正文类: 取首行（3.5.4 长度分级）— 小欧 2026-10-12
 BODY_KEYS = frozenset({"command", "sql", "query", "prompt"})
 
@@ -135,6 +196,14 @@ def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
 PATH_LIKE = frozenset({"path", "dest"})  # 句子内 path 类参数（D9: 只取第一个）
 COMMAND_MAX_CHARS = 35   # 句子内 command 超长截断并加 …（D9）
 
+# message 已含参数键的工具: 句子内跳过这些键, content_items 照旧全留 — 小欧 2026-10-12
+# read 的 message 自带范围(实际起止行), 句子再渲 limit/offset/tail/encoding 即重复
+# find 带 offset 时 message 自带"第M-N项"(由 offset 算出), 句子再渲 offset 即重复
+MSG_DUP_KEYS = {
+    "read": frozenset({"limit", "offset", "tail", "encoding"}),
+    "find": frozenset({"offset"}),
+}
+
 
 def _basename(value: Any) -> str:
     """路径含分隔符时只取文件名（Windows/Unix 均处理）— 小欧 2026-10-12"""
@@ -221,6 +290,7 @@ PARAM_ZH = {
     "schedule": "计划{v}",
     "select_columns": "取列{v}",
     "sheet_name": "表{v}",
+    "shell_type": "Shell{v}",
     "start": "开始{v}",
     "state": "状态{v}",
     "table_name": "表名{v}",
@@ -281,7 +351,13 @@ def render_line(item: Dict[str, Any]) -> str:
     params = item.get("params") or {}
     shown = []
     seen_path = False
+    dup_skip = MSG_DUP_KEYS.get(tool, frozenset())
+    has_path = "path" in params and params.get("path") not in (None, "")
     for key, val in params.items():
+        if key in dup_skip:
+            continue  # message 已含该参数, 句子跳过, content_items 保留 — 小欧 2026-10-12
+        if key == "dest" and has_path:
+            continue  # 有 path 时 dest 不进句子, 只留一个路径信息; content_items 照旧全留 — 小欧 2026-10-12
         text = "" if val is None else _one_line(str(val))
         if key in PATH_LIKE:
             if seen_path:

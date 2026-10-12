@@ -124,10 +124,10 @@ def _build_read_text_file_llm_data(
         msg = "已无更多内容，当前读取结果为空"
         hint_text = "请调整offset/limit参数"
     elif line_count < total_lines:
-        msg = f"成功:{_ps}第{start_line}-{end_line}行"
+        msg = f"成功:从第{start_line}-{end_line}行"
         hint_text = "可使用offset+limit继续读取后续内容"
     else:
-        msg = f"成功:{_ps}第{start_line}-{end_line}行"
+        msg = f"成功:从第{start_line}-{end_line}行"
         hint_text = ""
     return {
         "summary": f"读取文件{file_path}，成功: {_ps}{line_count}行，{file_size}字节",

@@ -32,7 +32,7 @@
 | R2 | 一个工具一行 | 单工具 observation 产出 1 行；多工具 observation 产出 N 行，每行一个工具 |
 | R3 | 两种载体两种形态 | `content` 是人类可读文本，一句一工具（格式见 3.4）；`content_items` 是结构化字段数组，一个工具一条，前端逐字段取用 |
 | R4 | 参数按 3.5.6 明细表逐工具规整（63 个工具，每个一行），不做全量保留，不做统一截断 | 见 3.5 |
-| R5 | 长参数按长度与性质判定（3.5.4）：命令正文类取首行；标识类超 50 字符整项丢弃；不截断、不加省略号 |
+| R5 | 长参数按长度与性质判定（3.5.4）：命令正文类取首行；超 35 字符截断加 `…` 保留，不丢弃 |
 | R6 | 已知单工具与多工具两种形态 | 方案须同时覆盖 |
 | R7 | 先落后端，前端后跟 | 2026-10-12 确认实施顺序 |
 
@@ -178,9 +178,9 @@
 | D4 | `message` 是否保留 | 保留。取自 `status.message`，成功时虽短但零成本，失败时是有效信息 | 2026-10-12 |
 | D5 | content 体积上限 | 2KB（CONTENT_MAX_CHARS）。超限时从后往前逐个置空 params（绝不删行）；状态/耗时/detail 永不受影响 | 2026-10-12 |
 | D6 | 路径参数键名处理 | 不改名不改写：当前 schema 的路径键只有 `path` 与 `dest` 两种，各按原样保留；content 不得出现注册表中不存在的键名 | 2026-10-12 |
-| D7 | 超长主体参数如何处理 | 按性质分级（3.5.4）：命令正文类取首行；标识类（path/dest/url/pattern）超 50 整个丢弃。不用统一截断，也不一律丢 | 2026-10-12 |
+| D7 | 超长主体参数如何处理 | 按性质分级（3.5.4）：命令正文类取首行；超 35 字符截断加 `…` 保留。布尔/空/数字原样保留 | 2026-10-12 |
 | D8 | 结构化结果的存放 | 新增字段 `content_items` 存对象数组（前端直接消费）；`content` 存同一批数据渲染出的**一行一句人话**；两者由同一份 `content_items` 生成，严禁分别构造 | 2026-10-12 |
-| D9 | content 句子内参数规整 | ① 只取**第一个** path 类参数（`path`/`dest`），其余 path 类参数不进句子；② 该 path 含分隔符时只取**文件名**；③ 参数有值才合成，无值（空串/None）跳过；④ `command` 超 35 字符截断并加 `…`；⑤ 参数之间用 ` | ` 分隔；⑥ 参数按主次排序（主体>路径>其余字母序，见 3.4.1）；⑦ path 类参数**只显示值、不加键名前缀**（路径一眼可认）；⑧ 自由文本参数（command/sql/prompt/query/pattern/message/title/url/text_or_keys/callback）**裸值显示**，不加标签；⑨ 布尔参数显示中文肯定/否定词（见 3.4.2.6），句子里不出现 True/False | 2026-10-12 |
+| D9 | content 句子内参数规整 | ① 路径只留一个：有非空 `path` 时 `dest` 不进句子，否则取第一个 path 类参数；其余 path 类参数不进句子；② 该 path 含分隔符时只取**文件名**；③ 参数有值才合成，无值（空串/None）跳过；④ `command` 超 35 字符截断并加 `…`；⑤ 参数之间用 ` | ` 分隔；⑥ 参数按主次排序（主体>路径>其余字母序，见 3.4.1）；⑦ path 类参数**只显示值、不加键名前缀**（路径一眼可认）；⑧ 自由文本参数（command/sql/prompt/query/pattern/message/title/url/text_or_keys/callback）**裸值显示**，不加标签；⑨ 布尔参数显示中文肯定/否定词（见 3.4.2.6），句子里不出现 True/False；⑩ message 已含参数键的工具按 `MSG_DUP_KEYS` 跳过（句子去重，content_items 全留） | 2026-10-12 |
 
 ### 3.3 数据来源与实测基线
 
@@ -484,16 +484,16 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 
 | 工具/参数 | 特例规则 | 理由 |
 |---|---|---|
-| edit | old_string / new_string 转行数：两者原文不进 content，行数增减直接取 edit 工具已算好的 metrics（added/removed，必要时回退 data.diff 统计）；path 与 mode 照常保留 | 两者原文实测 93% 超长，按长度规则会被整项丢弃等于白丢；行数增减恒定不超长，且保住"改了多少"这一核心信息；行数口径与 edit 工具 summary/metrics 同源，不另算 |
+| edit | old_string / new_string 转行数：两者原文不进 content，行数增减直接取 edit 工具已算好的 metrics（added/removed，必要时回退 data.diff 统计）；path 与 mode 照常保留 | 两者原文实测 93% 超长，转行数后恒定简短，且保住"改了多少"这一核心信息；行数口径与 edit 工具 summary/metrics 同源，不另算 |
 | write | content 不进 content；append、encoding、path 照常保留 | content 是超长正文，最长实测 37177 字符 |
 | 路径参数 | 不做任何改名，`path` 与 `dest` 各按真实键名原样保留 | 北京老陈 2026-10-12 裁定：content 只用系统真实存在的键名，不发明新词 |
 | 无参工具（timenow、timer_list、mouse_position 等） | params 输出 {} | 当前 schema 确实无参数 |
 
 #### 3.5.4 长度分级规则（D7）
 
-实测数据证明"统一阈值"不可行：若参数值超 50 字符一律丢弃，绝大多数工具参数全空：
+实测数据证明"统一丢弃"不可行：若参数值超长一律丢弃，绝大多数工具参数全空（北京老陈令：改超 35 截断保留）：
 
-| 工具 | 值超 50 字符占比 | 最长实测 |
+| 工具 | 值超长占比（旧 50 字符口径实测，新 35 截断只会更多） | 最长实测 |
 |---|---|---|
 | `bash` | 1380/1531 = 90% | `command` 16157 |
 | `edit` | 317/342 = 93% | `old_string` 80+ |
@@ -506,11 +506,12 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 
 | 参数性质 | 判定 | 处置 |
 |---|---|---|
-| 命令正文类（`command` `sql` `query` `prompt`） | 多行长文本，首行几乎总能说明在干什么 | 取首行；首行仍超 50 则整项丢弃 |
-| 标识类（`path` `dest` `url` `pattern` `host` `method`） | 单行短标识，超长即无意义 | 超 50 即整项丢弃（键值对消失，不写 null、不写 `…`） |
+| 命令正文类（`command` `sql` `query` `prompt`） | 多行长文本，首行几乎总能说明在干什么 | 取首行；首行仍超 35 则截断加 `…` 保留 |
+| 其余保留参数 | 单行短标识或取值 | 超 35 截断加 `…` 保留 |
+| 布尔/空/数字 | 开关与数值 | 原样保留，不做长度判定 |
 | 已列入 3.5.2 丢列的参数 | 框架默认开关与正文长文本 | 直接丢弃，不做长度判定 |
 
-> 禁止统一截断：不使用 `…`、不切尾巴。超限即整个参数值不要（`R5` + D7）。
+> 统一截断保留：超限即截断加 `…`（`R5` + D7，北京老陈新令，替代旧 50 丢弃）。
 
 #### 3.5.5 未登记工具的兜底
 
@@ -643,7 +644,7 @@ hive, output_format, value_type, value, time_range, exclude_patterns
       判据: 3.5.6 表丢列的全部 30 个参数（框架默认开关 + 长内容载荷 + 呈现开关 + 平台细节）
   BODY_KEYS  = {command, sql, query, prompt}
       判据: 命令正文类多行长文本, 取首行
-  KEEP_MAX   = 50      # 取值长度上限, 超限整项丢弃, 不截断(D7)
+  KEEP_MAX   = 35      # 取值长度上限, 超限截断加 … 保留（D7，北京老陈新令）
   CONTENT_MAX_CHARS = 2048  # content 序列化后的字符数上限（D5）
   edit 特例: 旧 params 不再另行计算行数, 直接取 llm_data.metrics.added/removed
              （值为 {"value": N} 形态）, 缺 diff 文本时才用 _diff_line_counts 兜底（3.5.3）
@@ -659,12 +660,12 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 
         若 k2 在 BODY_KEYS:                        # 命令正文类
             s = 转字符串(v).取首行(遇换行即止)
-            若 长度(s) > KEEP_MAX: 跳过             # 整项丢弃，不截断（D7）
+            若 长度(s) > KEEP_MAX: 截断加 … 保留    # （D7，北京老陈新令）
             否则: out[k2] = s
             继续
 
         # 其余保留类统一按长度判定
-        若 长度(转字符串(v)) > KEEP_MAX: 跳过       # 超限整项丢弃（D7）
+        若 长度(转字符串(v)) > KEEP_MAX: 截断加 … 保留   # （D7，北京老陈新令）
         否则: out[k2] = v
 
     若 tool == "edit":                               # 3.5.3 特例
@@ -687,7 +688,7 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 |---|---|
 | `DROP_KEYS` 跳过 | 3.5.2 通用规则（丢列全部参数） |
 | 不改名，保留真实键名 | D6 路径键名分叉 |
-| `BODY_KEYS` 取首行 / 超限丢弃 | D7 长度分级 |
+| `BODY_KEYS` 取首行 / 超限截断保留 | D7 长度分级 |
 | 其余保留类按长度判定 | D7 长度分级 |
 | 非标量跳过 | 3.5.1 参数三分类 |
 | edit 转 lines_added / lines_removed | 3.5.3 特殊规则（取 metrics.added/removed，缺时用 _diff_line_counts 兜底） |
@@ -721,6 +722,7 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 # 2026-10-12 小欧 - 新建（observation.content 启用方案 B1）。由 tool_result[] 投影出
 #   content_items 对象数组; content 句子由 ObservationStep 逐条 render_line 生成,
 #   本文件提供数组构造与句子渲染 — 小欧 2026-10-12
+# 2026-10-12 小欧 - 北京老陈令: 参数超35截断保留(替代旧50丢弃); 正文类取首行后同样截断 — 小欧 2026-10-12
 import json
 from typing import Any, Dict, List
 
@@ -743,7 +745,7 @@ DROP_KEYS = frozenset({
 # 命令正文类: 取首行（3.5.4 长度分级）— 小欧 2026-10-12
 BODY_KEYS = frozenset({"command", "sql", "query", "prompt"})
 
-PARAM_VALUE_MAX_CHARS = 50   # 单个参数值的字符数上限, 超限整项丢弃, 不截断（D7）
+PARAM_VALUE_MAX_CHARS = 35   # 单个参数值的字符数上限, 超限截断加…保留（北京老陈 2026-10-12 新令, 替代旧50丢弃）
 CONTENT_MAX_CHARS = 2048   # content 序列化后的字符数上限（D5）
 
 
@@ -783,7 +785,7 @@ def _order_params(out: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
-    """按 3.5.6 表逐键取 params: 丢列跳过 / 正文类取首行 / 其余按长度判定 — 小欧 2026-10-12"""
+    """按 3.5.6 表逐键取 params: 丢列跳过 / 正文类取首行后截断 / 其余超35截断保留 — 小欧 2026-10-12"""
     params = action.get("params")
     if not isinstance(params, dict):
         return {}
@@ -793,15 +795,19 @@ def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
             continue
         if isinstance(val, (list, dict)):
             continue
+        if isinstance(val, bool) or val is None or isinstance(val, (int, float)):
+            out[key] = val
+            continue
         if key in BODY_KEYS:
-            text = _first_line(val)
+            text = _one_line(_first_line(val))
             if len(text) > PARAM_VALUE_MAX_CHARS:
-                continue
+                text = text[:PARAM_VALUE_MAX_CHARS] + "…"
             out[key] = text
             continue
-        if len(str(val)) > PARAM_VALUE_MAX_CHARS:
-            continue
-        out[key] = val
+        text = _one_line(str(val))
+        if len(text) > PARAM_VALUE_MAX_CHARS:
+            text = text[:PARAM_VALUE_MAX_CHARS] + "…"
+        out[key] = text
     return _order_params(out)
 
 
@@ -847,6 +853,14 @@ def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
 
 PATH_LIKE = frozenset({"path", "dest"})  # 句子内 path 类参数（D9: 只取第一个）
 COMMAND_MAX_CHARS = 35   # 句子内 command 超长截断并加 …（D9）
+
+# message 已含参数键的工具: 句子内跳过这些键, content_items 照旧全留 — 小欧 2026-10-12
+# read 的 message 自带范围(实际起止行), 句子再渲 limit/offset/tail/encoding 即重复
+# find 带 offset 时 message 自带"第M-N项"(由 offset 算出), 句子再渲 offset 即重复
+MSG_DUP_KEYS = {
+    "read": frozenset({"limit", "offset", "tail", "encoding"}),
+    "find": frozenset({"offset"}),
+}
 
 
 def _basename(value: Any) -> str:
@@ -994,7 +1008,13 @@ def render_line(item: Dict[str, Any]) -> str:
     params = item.get("params") or {}
     shown = []
     seen_path = False
+    dup_skip = MSG_DUP_KEYS.get(tool, frozenset())
+    has_path = "path" in params and params.get("path") not in (None, "")
     for key, val in params.items():
+        if key in dup_skip:
+            continue  # message 已含该参数, 句子跳过, content_items 保留 — 小欧 2026-10-12
+        if key == "dest" and has_path:
+            continue  # 有 path 时 dest 不进句子, 只留一个路径信息; content_items 照旧全留 — 小欧 2026-10-12
         text = "" if val is None else _one_line(str(val))
         if key in PATH_LIKE:
             if seen_path:
@@ -1108,8 +1128,8 @@ def build_content_items(tool_result: List[Dict[str, Any]]) -> List[Dict[str, Any
 | T2 | 元素缺 llm_data / action / status | 不抛异常，各字段取默认值 |
 | T3 | edit 元素带 metrics.added/removed | params 输出 lines_added / lines_removed，且不含 old_string / new_string；数值与工具 summary 口径一致 |
 | T4 | 含丢列参数（如 shell_type） | 不出现在 params |
-| T5 | 值超 50 的非正文参数 | 该键消失，不截断、不带省略号 |
-| T6 | command 含多行 | 只保留首行 |
+| T5 | 值超 35 的参数 | 截断加 `…` 保留，该键不消失 |
+| T6 | command 含多行 | 只保留首行，首行超 35 截断加 `…` |
 | T7 | 构造超大 items | 循环后 dumps 长度 <= CONTENT_MAX_CHARS，行数不变 |
 | T8 | splitlines(content) | 行数 == len(content_items)，且每行以该 item 的 tool 开头（防两处漂移） |
 | T9 | 元素为非 dict | 跳过且不抛异常 |
@@ -1194,7 +1214,7 @@ F2 边界（只划边界，不定实现）：
 | # | 事项 | 说明 |
 |---|---|---|
 | L1 | 参数归一口径复核 | B1 落地时核对 DROP_KEYS 与 3.5.6 表丢列一一对应，改表即改常量 |
-| L2 | 长度阈值最终值 | 正文类首行阈值与标识类阈值（现取 50）落地时按真实观感微调 |
+| L2 | 长度阈值最终值 | 取值上限现取 35（截断保留），落地时按真实观感微调 |
 | L3 | 通用 content 渲染器核查 | 确认 `kind:'obs'` 分支是否会把 JSON 原文显示出来（3.9 风险 1） |
 | L4 | 新增渲染块与现有子行的观感取舍 | 落地后由北京老陈实看界面，再定是否保留/精简现有子行 |
 
