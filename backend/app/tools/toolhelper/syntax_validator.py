@@ -9,6 +9,7 @@
     # 2026-07-24 - 小欧 - 修复: 去掉 str(e)[:120]截断(helper层不截断,调用方自行决定) — 北京老陈驱动
     # 2026-10-12 - 小欧 - 增 toml(tomllib,标准库)/xml(xml.etree,标准库): 零外部依赖、解析严格零方言,
     #   误判率极低且写坏后果严重(pyproject/CI 配置失效整个工具链起不来); 沿用 OCP 各注册一行, 调用方零改动
+    #   同批: 新增 _syntax_enabled, 按设置「沙箱›工具›语法检测」的总开关+每语言开关判定(默认全开)
     """
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -20,13 +21,12 @@
 #   校验器复用标准库: python→compile()(CPython官方解析器)
 #                   json→json.loads()   yaml→yaml.safe_load()(懒加载避免硬依赖)
 #
-# 【阻断 vs 警告】
-#   edit 任意模式         → 阻断(每次结果都是完整文件, 语法错即损坏)
-#   write append=False    → 阻断(整文件覆盖, 语法错=文件损坏)
-#   write append=True     → 仅警告(片段无法整体校验, 且为增量)
+# 【现行策略: 全部仅告警, 照常落盘】(2026-10-12 北京老陈定案, 原为"edit/write 整文件写=阻断")
+#   理由: 本检查是启发式, 存在误判; 误判即拦死合法写入, 代价高于提示价值。
+#   edit/write(整文件与追加) → 均仅 warning, 文件照落盘, detail 载错因+hint 给修正出路。
 #   未知扩展名(.md/.csv/.txt) → 放行(无语法可言, 防误杀)
 #
-# 【误杀防护】仅对可解析语言校验; 追加模式不阻断; 不引入风格类lint
+# 【误杀防护】仅对可解析语言校验; 不引入风格类lint
 #
 # 【涉及的其他语法检测代码/工具 — 哪些加 / 哪些不加】
 #   本仓库现有(逐个点名):
@@ -278,19 +278,39 @@ VALIDATORS = {
 }
 
 
+def _syntax_enabled(language: str) -> bool:
+    """查设置: sandbox.tool.syntax_check 总开关 + 每语言开关(默认全开) — 小欧 2026-10-12
+
+    tsx 归typescript 开关(同一校验器族)。取配置失败一律 fail-open(放行), 绝不因读不到配置而阻断。
+    """
+    # 2026-10-12 小欧: language→配置键后缀映射; 新增语言时在此补一行
+    _key = {"tsx": "typescript"}.get(language, language)
+    try:
+        from app.config import get_config as _cfg
+        _base = "sandbox.tool.syntax_check"
+        if not bool(_cfg().get(f"{_base}.enabled", True)):
+            return False
+        return bool(_cfg().get(f"{_base}.{_key}", True))
+    except Exception as _e:
+        return True  # 配置不可用 → fail-open
+
+
 def validate_syntax(content: str, language: str, file_path: Optional[str] = None) -> SyntaxCheckResult:
     """统一语法校验入口 — 小欧 2026-07-21
-    language: 'python' | 'json' | 'yaml' | 'toml' | 'xml' | 'unknown'(放行)
-    未支持语言一律 valid(不拦截), 避免误杀 .md/.csv/.txt 等文本文件
-    扩展新语言: 在 _CODE_EXT 加扩展名映射 + 在 VALIDATORS 注册校验函数, 调用方无感知
+    language: 'python' | 'json' | 'yaml' | 'toml' | 'xml' | 'javascript' | 'typescript' | 'tsx' | 'unknown'(放行)
+    未支持语言一律 valid(放行), 避免误杀 .md/.csv/.txt 等文本文件
+    开关(设置页「沙箱 › 工具 › 语法检测」): 本函数为唯一判定点, 调用方无感知
+    扩展新语言: 在 _CODE_EXT 加扩展名映射 + 在 VALIDATORS 注册校验函数 + 在 _syntax_enabled 补映射
     """
     if language == "unknown" or language not in VALIDATORS:
         return SyntaxCheckResult(valid=True, language=language)
+    if not _syntax_enabled(language):
+        return SyntaxCheckResult(valid=True, language=language)  # 该语言已关闭 → 放行
     try:
         return VALIDATORS[language](content, file_path)
     except Exception as e:
         # 校验器意外崩溃(如 RecursionError / RuntimeError)不应让工具 500,
-        # 优雅降级为 invalid(阻断而非写坏), 避免文件损坏 — 小欧 2026-07-21
+        # 优雅降级为 invalid 并仅作 warning 上报(2026-10-12 起不再阻断落盘) — 小欧 2026-07-21 / 2026-10-12
         return SyntaxCheckResult(
             valid=False, language=language,
             error=f"校验器异常: {type(e).__name__}: {str(e)}",

@@ -39,6 +39,12 @@ key 全局唯一，加载自检重复直接拒启。
     llm.sampling.enable_thinking(bool,默认 True) 与 llm.sampling.reasoning_effort(select,默认 medium,
     四档 minimal/low/medium/high)，单模型没单独配置时用这两个，已在模型 Tab 配了的不受影响。
     group 项数 10 → 12。前端 SettingRow 按 type 渲染(bool→Switch / select→下拉)，零改动 — 小欧-2026-10-10
+  2026-10-12 小欧 - sandbox 组新增「工具 › 语法检测」8 项(北京老陈令: 沙箱页原仅 8 项偏空, 工具类设置挂此处):
+    1 个总开关 sandbox.tool.syntax_check.enabled + 7 个语言独立开关(python/json/yaml/toml/xml/
+    javascript/typescript), 全部 bool、默认 True、restart=False。
+    判定单点落在 syntax_validator.validate_syntax(新 _syntax_enabled), write/edit 调用方零改动;
+    前端 SettingsGroup.sectionOf 加 sandbox 分支拆「运行控制/工具/语法检测」三节。
+    刻意不加 env_inject(会触发 _build_index 双向一致性自检, 不同步即拒启动) — 小欧-2026-10-12
 """
 from typing import Any, Dict, List, Optional
 
@@ -135,6 +141,25 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="命令未指定超时时的默认超时（秒）"),
         _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300, range_=[1, 3600],
               notice="单次执行最大超时（秒），超出截断转裁决"),
+        # 工具 › 语法检测(2026-10-12 北京老陈令: 沙箱页偏空, 工具类设置挂此处; 总开关 + 每语言独立开关)
+        #   判定单点落在 syntax_validator.validate_syntax, write/edit 调用方零改动;
+        #   勿加 env_inject(会触发 _build_index 双向一致性校验, 不同步直接拒启动)
+        _item("sandbox.tool.syntax_check.enabled", "bool", "语法检测总开关", True,
+              notice="写代码文件时做语法检测.开-检出问题只告警不阻断写入；关-不检测任何语言,目前支持的tool是 Write和Edit"),
+        _item("sandbox.tool.syntax_check.python", "bool", "Python", True,
+              notice="检测 .py / .pyw / .pyi代码文件开关.开-支持检测,关-不检查"),
+        _item("sandbox.tool.syntax_check.json", "bool", "JSON", True,
+              notice="检测 .json代码文件开关.开-支持检测,关-不检查"),
+        _item("sandbox.tool.syntax_check.yaml", "bool", "YAML", True,
+              notice="检测 .yaml / .yml文件开关.开-支持检测,关-不检查"),
+        _item("sandbox.tool.syntax_check.toml", "bool", "TOML", True,
+              notice="检测 .toml（如 pyproject.toml）代码文件开关.开-支持检测,关-不检查"),
+        _item("sandbox.tool.syntax_check.xml", "bool", "XML", True,
+              notice="检测 .xml代码文件开关.开-支持检测,关-不检查"),
+        _item("sandbox.tool.syntax_check.javascript", "bool", "JavaScript(JSX)", True,
+              notice="检测 .js / .mjs / .cjs / .jsx代码文件开关.开-支持检测,关-不检查"),
+        _item("sandbox.tool.syntax_check.typescript", "bool", "TypeScript(TSX)", True,
+              notice="检测 .ts / .tsx代码文开关.开-支持检测,关-不检查"),
     ]},
     # 4.5 系统（system，13 项：3 运维日志配置 + 1 日志目录只读 + 6 工程目录只读 + 1 网络 CORS + 2 关于只读）
     #   注意：本小节新增 / 删除 paths.* 条目务必同步 settings_service._item_data 的 paths 派生字典，

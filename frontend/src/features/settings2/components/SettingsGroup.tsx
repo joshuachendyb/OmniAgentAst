@@ -87,7 +87,14 @@ function sectionOf(group: string, key: string): string | null {
   // 2026-10-06 小欧: security 组现有 4 项(HTL人工开关/危险操作确认/两个延迟秒数)全归「人工确认」一块,
   //   块 2「安全策略说明」不是配置项, 由 items.map 循环后追加 DirectoryAccessNote(见文件末)
   if (group === 'security') return '人工确认';
-  if (group === 'tuning') {
+  // 2026-10-12 小欧: sandbox 组拆 3 块 — 运行控制(原有8项) / 工具(工具类扩展位) / 语法检测
+//   (sandbox.tool.syntax_check.*, 后端 2026-10-12 增; 沙箱页原为平铺8项, 偏空)
+if (group === 'sandbox') {
+  if (key.startsWith('sandbox.tool.syntax_check.')) return '语法检测';
+  if (key.startsWith('sandbox.tool.')) return '工具';
+  return '运行控制';
+}
+if (group === 'tuning') {
     if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
     if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
     if (key.startsWith('tuning.concurrency.')) return '并发配额';
