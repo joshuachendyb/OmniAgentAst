@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
@@ -8,6 +8,8 @@
 # 2026-08-08 - 小欧 - 修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
+#   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -93,17 +95,20 @@ def _adjust_xlsx_column_width(ws):
 def _build_write_xlsx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", row_count: int = 0, detail: str = "",
-    user_sheet_name: str = "", hint: str = "",
+    user_sheet_name: str = "", hint: str = "", not_written: bool = False,
 ) -> Dict[str, Any]:
     """write_xlsx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"path": file_path}
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     if exec_code == "error":
+        # 2026-10-12 小欧(北京老陈令) - not_written 补"文件未写入"事实(同 write_docx/write_pdf 口径,
+        #   仅写前检查点置位, 写期异常不置避免误报)
+        _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入Excel {file_path}，失败: {detail}",
+            "summary": f"写入Excel {file_path}，失败: {_detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写入Excel", "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
+            "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -140,30 +145,30 @@ def write_xlsx(
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=sheet_name, hint=hint)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=sheet_name, hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
     # 2026-07-31 小欧: Bug⑳修复 — 明确data结构约束(list[dict]), 防list[list]触发row.keys() AttributeError(晦涩错误)
     if not isinstance(data, list):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data参数必须是JSON数组, 收到类型: {type(data).__name__}", user_sheet_name=sheet_name, hint="data应为对象数组,如[{\"col1\":1,\"col2\":2}]")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data参数必须是JSON数组, 收到类型: {type(data).__name__}", user_sheet_name=sheet_name, hint="data应为对象数组,如[{\"col1\":1,\"col2\":2}]", not_written=True)
         return build_error(data={}, llm_data=llm_data)
     for _i, _row in enumerate(data):
         if not isinstance(_row, dict):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data的第{_i + 1}项必须是JSON对象, 收到类型: {type(_row).__name__}", user_sheet_name=sheet_name, hint="data的每个元素应为对象,如{\"col1\":1,\"col2\":2}")
+            llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data的第{_i + 1}项必须是JSON对象, 收到类型: {type(_row).__name__}", user_sheet_name=sheet_name, hint="data的每个元素应为对象,如{\"col1\":1,\"col2\":2}", not_written=True)
             return build_error(data={}, llm_data=llm_data)
     cs_error, safe_data = check_content_safety(data, "xlsx", param_name="data")
     if cs_error:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=cs_error, user_sheet_name=sheet_name, hint=f"请检查data参数(当前类型: {type(data).__name__})", not_written=True)
         return build_error(data={}, llm_data=llm_data)
     data = safe_data
 
     if not _check_module("openpyxl"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库")
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail="openpyxl库未安装", user_sheet_name=sheet_name, hint="请安装openpyxl库", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:

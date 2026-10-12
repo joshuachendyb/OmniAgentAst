@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
@@ -9,6 +9,8 @@
 #      是 LLM 格式错误的直接信号;
 #   ③cs_error 的 hint 补"必须是JSON数组如[{'title':..,'content':..}], 禁止整个数组序列化后传入",
 #      给 LLM 可执行的纠正指令(原先只报类型名, 无从修正) — 小欧 2026-10-11
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
+#   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 """
 D8: write_pptx — 写入PPT文档
 
@@ -56,13 +58,17 @@ def _set_pptx_paragraph_text(paragraph, text):
 def _build_write_pptx_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", slide_count: int = 0, detail: str = "", hint: str = "",
+    not_written: bool = False,
 ) -> Dict[str, Any]:
     """write_pptx的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 新增hint参数"""
     if exec_code == "error":
+        # 2026-10-12 小欧(北京老陈令) - not_written 补"文件未写入"事实(同 write_docx/write_pdf/
+        #   write_xlsx 口径, 仅写前检查点置位, 写期异常不置避免误报)
+        _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入PPT{file_path}，失败: {detail}",
+            "summary": f"写入PPT{file_path}，失败: {_detail}",
             "action": {"tool": "write_pptx", "tool_zh": "写入PPT", "params": {"path": file_path}},
-            "status": {"exec_code": "error", "message": "写入PPT失败", "code": ERR_DOC_WRITE_PPTX, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
+            "status": {"exec_code": "error", "message": "写入PPT失败", "code": ERR_DOC_WRITE_PPTX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -366,7 +372,7 @@ def write_pptx(
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=error_detail, hint=hint)
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=error_detail, hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     slides = coerce_json(slides)
@@ -381,13 +387,13 @@ def write_pptx(
             "slides必须是JSON数组格式如[{'title':'标题','content':'正文'}],"
             "禁止将整个数组序列化为字符串后传入"
         )
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=cs_error, hint=hint)
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail=cs_error, hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
     slides = safe_slides
 
     if not _check_module("pptx"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail="python-pptx库未安装", hint="请安装python-pptx库")
+        llm_data = _build_write_pptx_llm_data("error", duration_ms, path, detail="python-pptx库未安装", hint="请安装python-pptx库", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:

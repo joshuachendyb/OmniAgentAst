@@ -32,7 +32,7 @@
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "write"→"write"(3处), 与新注册名同源
 # 2026-10-05 - 小欧 - 单通道去数字化(北京老陈裁定): success/warning summary 去 `{bytes_written}字节`
 #   与「提示说明」段, 统一为 `写入文件{file_path}，成功`; bytes 在 metrics 统计段呈现(通用渲染)
-# 2026-10-12 - 小欧 - 语法阻断反馈补"文件未写入"(北京老陈令): summary/detail 补未落盘事实,
+# 2026-10-12 - 小欧 - 语法阻断反馈补"文件未写入磁盘"(北京老陈令): summary/detail 补未落盘事实,
 #   hint 改为可执行出路(重新 write 而非 edit); 原反馈未言明文件是否存在, LLM 误判旧文件仍在而改用
 #   edit, 随即报"路径不存在"(实测 2026-10-12 lunar_calc.py 第85行括号未闭合)
 """
@@ -274,12 +274,12 @@ async def write(
         if not append:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=_syn.error_text(), hint=_hint, user_encoding=encoding, user_append=append)
-            # 2026-10-11 小欧(北京老陈令) - 补"文件未写入"事实 + 可执行出路: 原反馈只说"失败"与错因,
+            # 2026-10-11 小欧(北京老陈令) - 补"文件未写入磁盘"事实 + 可执行出路: 原反馈只说"失败"与错因,
             #   未言明文件是否落盘, LLM 会误以为旧文件仍在而改用 edit, edit 随即报"路径不存在"
             #   (实测 2026-10-12 write lunar_calc.py 第85行括号未闭合 → 下一手 edit 该文件失败)。
             #   三处补齐: summary(最先看到)/detail(原因)/hint(下一步动作, 原hint与错因重复零指导性)。
-            llm_data["summary"] += "(文件未写入)"
-            llm_data["status"]["detail"] += "；文件未写入(语法检查未通过, 内容未落盘)"
+            llm_data["summary"] += "(文件未写入磁盘)"
+            llm_data["status"]["detail"] += "；文件未写入磁盘(语法检查未通过)"
             llm_data["status"]["hint"] = (f"修复该行语法后, 请重新用 write 写入完整内容"
                                           f"(文件当前不存在, 不要改用 edit)")
             if _syn.line:

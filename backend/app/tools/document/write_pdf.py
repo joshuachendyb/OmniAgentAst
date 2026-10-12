@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
@@ -8,6 +8,8 @@
 # 2026-07-31 - 小欧 - Bug⑧修复: CJK字体渐进回退(依次尝试simsun/msyh/simhei/Deng/simkai, 全部缺失才退默认并告警), 防simsun缺失时中文渲染方框; Bug⑯同型修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"被误当编号列表 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
+#   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 """
 D7: write_pdf — 写入PDF文档
 
@@ -78,17 +80,20 @@ def _create_pdf_table(table_data, chinese_style):
 def _build_write_pdf_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", detail: str = "", user_title: str = "",
-    hint: str = "", char_count: int = 0,
+    hint: str = "", char_count: int = 0, not_written: bool = False,
 ) -> Dict[str, Any]:
     """write_pdf的llm_data构建函数 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"path": file_path}
     if user_title:
         _act_params["title"] = user_title
     if exec_code == "error":
+        # 2026-10-12 小欧(北京老陈令) - not_written 补"文件未写入"事实(同 write_docx/write_text_file 口径,
+        #   仅写前检查点置位, 写期异常不置避免误报)
+        _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入PDF {file_path}，失败: {detail}",
+            "summary": f"写入PDF {file_path}，失败: {_detail}",
             "action": {"tool": "write_pdf", "tool_zh": "写入PDF", "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": detail, "hint": hint if hint else "请检查路径和权限"},
+            "status": {"exec_code": "error", "message": "写入PDF失败", "code": ERR_WRITE_PDF, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -117,19 +122,19 @@ def write_pdf(
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint)
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=error_detail, user_title=title or "", hint=hint, not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     if content is not None:
         cs_error, _ = check_content_safety(content, "pdf")
         if cs_error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数")
+            llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=cs_error, user_title=title or "", hint="请检查content参数", not_written=True)
             return build_error(data={}, llm_data=llm_data)
 
     if not _check_module("reportlab"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库未安装", user_title=title or "", hint="请安装reportlab库", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:
@@ -140,7 +145,7 @@ def write_pdf(
         from reportlab.pdfbase.ttfonts import TTFont
     except ImportError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性")
+        llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail="reportlab库导入失败", user_title=title or "", hint="请检查reportlab库安装完整性", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
     try:
