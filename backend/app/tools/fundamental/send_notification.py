@@ -47,14 +47,14 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
         return {
             "summary": f"发送系统通知，\"{title}\"，失败",
             "action": {"tool": "notify", "tool_zh": "发通知", "params": act_params},
-            "status": {"exec_code": "error", "message": "通知发送失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"发送系统通知，\"{title}\"，{notif_duration}秒，成功",
         "action": {"tool": "notify", "tool_zh": "发通知", "params": act_params},
-        "status": {"exec_code": "success", "message": "通知发送成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

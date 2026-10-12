@@ -118,14 +118,14 @@ def _build_write_xlsx_llm_data(
         return {
             "summary": f"写入Excel {file_path}，警告: {detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
-            "status": {"exec_code": "warning", "message": "警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
+            "status": {"exec_code": "warning", "message": f"警告:{detail}" if detail else "警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Excel {file_path}，成功: {row_count}行",
         "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
-        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{row_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "row_count": {"value": row_count, "text": f"{row_count}行"},

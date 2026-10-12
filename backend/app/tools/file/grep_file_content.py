@@ -128,7 +128,7 @@ def _build_grep_file_content_llm_data(
     return {
         "summary": f"搜索内容'{pattern}'，成功: {total_files}个文件{total_matches}行匹配",
         "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
-        "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"完成:{total_files}个文件{total_matches}行匹配", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "total_files": {"value": total_files, "text": f"{total_files}个文件"},

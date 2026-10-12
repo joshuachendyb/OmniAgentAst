@@ -73,7 +73,7 @@ def _build_read_docx_llm_data(
     return {
         "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
-        "status": {"exec_code": exec_code, "message": "成功" if exec_code == "success" else "有警告", "code": "", "detail": detail, "hint": hint},
+        "status": {"exec_code": exec_code, "message": ("成功:" if exec_code == "success" else "有警告:") + "，".join(parts), "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},

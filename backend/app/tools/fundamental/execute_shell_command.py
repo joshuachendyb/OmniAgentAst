@@ -577,7 +577,7 @@ def _build_execute_shell_command_llm_data(
         return {
             "summary": f"执行Shell命令{cmd_short}，失败",
             "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
-            "status": {"exec_code": "error", "message": "执行失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_SHELL_EXEC, "detail": _detail, "hint": hint if hint else "请检查命令语法和参数"},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}},
         }
@@ -588,7 +588,7 @@ def _build_execute_shell_command_llm_data(
         return {
             "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
             "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
-            "status": {"exec_code": "warning", "message": "执行成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
+            "status": {"exec_code": "warning", "message": "成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "stderr_len": {"value": stderr_len, "text": f"stderr {stderr_len}字符"}},
         }
@@ -597,7 +597,7 @@ def _build_execute_shell_command_llm_data(
     return {
         "summary": f"执行Shell命令{cmd_short}，成功",
         "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
-        "status": {"exec_code": "success", "message": "执行成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"exit_code": {"value": returncode, "text": f"退出码{returncode}"}, "output_len": {"value": output_len, "text": f"输出{output_len}字符"}},
     }

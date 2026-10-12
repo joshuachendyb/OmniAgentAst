@@ -101,7 +101,7 @@ def _build_write_pdf_llm_data(
     return {
         "summary": f"写入PDF {file_path}，成功: {char_count}字符",
         "action": {"tool": "write_pdf", "tool_zh": "写PDF", "params": _act_params},
-        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{char_count}字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "char_count": {"value": char_count, "text": f"{char_count}字符"},

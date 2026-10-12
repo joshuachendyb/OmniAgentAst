@@ -58,14 +58,17 @@ def _build_read_pptx_llm_data(
     # success / warning (自然单位治理 2026-07-20 小欧: 按页翻页)
     if exec_code == "warning":
         summary_str = f"读取PPT{file_path}，警告"
+        message_str = f"警告:{detail}" if detail else "警告"
     elif current_slide is not None:
         summary_str = f"读取PPT{file_path}，成功: 第{current_slide}页(共{slide_count}页)，{text_len}字符"
+        message_str = f"成功:第{current_slide}页(共{slide_count}页)，{text_len}字符"
     else:
         summary_str = f"读取PPT{file_path}，成功: {slide_count}页，{text_len}字符"
+        message_str = f"成功:{slide_count}页，{text_len}字符"
     return {
         "summary": summary_str,
         "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
-        "status": {"exec_code": exec_code, "message": "成功", "code": "", "detail": detail, "hint": hint},
+        "status": {"exec_code": exec_code, "message": message_str, "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
             "slide_count": {"value": slide_count, "text": f"{slide_count}页"},

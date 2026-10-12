@@ -109,7 +109,7 @@ def _build_search_web_llm_data(
     return {
         "summary": f"搜索{query}，成功: {result_count}条结果",
         "action": {"tool": "searchweb", "tool_zh": "搜网络", "params": _act_params},
-        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"完成:{result_count}条结果", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},
     }

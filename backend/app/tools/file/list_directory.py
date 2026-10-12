@@ -191,7 +191,7 @@ def _build_list_directory_llm_data(
     return {
         "summary": summary,
         "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
-        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{total}项，{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
     }

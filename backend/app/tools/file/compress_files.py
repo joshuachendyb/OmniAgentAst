@@ -106,7 +106,7 @@ def _build_compress_files_llm_data(
     return {
         "summary": f"压缩{source}，成功: {file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",
         "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
-        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{file_count}个文件，压缩率{ratio:.1%}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "file_count": {"value": file_count, "text": f"{file_count}个文件"},

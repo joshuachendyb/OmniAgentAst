@@ -130,7 +130,7 @@ def _build_write_docx_llm_data(
     return {
         "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
         "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
-        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{para_count}段, {char_count}字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},

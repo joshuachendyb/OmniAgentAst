@@ -145,7 +145,7 @@ def _build_tree_llm_data(
     return {
         "summary": f"列出目录树{dir_path}，成功: {file_count}个文件，{dir_count}个目录",
         "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
-        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},
     }
