@@ -45,7 +45,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
         return {
             "summary": f"日历查询:\"{user_name}\"，失败" if user_name else "日历查询失败",
             "action": {"tool": "calendar", "tool_zh": "查日历", "params": act_params},
-            "status": {"exec_code": "error", "message": "日期检查失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -54,7 +54,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     return {
         "summary": f"日历查询成功:{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
         "action": {"tool": "calendar", "tool_zh": "查日历", "params": act_params},
-        "status": {"exec_code": "success", "message": "日期检查完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"完成:{date_str} {weekday_cn}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

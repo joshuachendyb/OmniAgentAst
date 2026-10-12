@@ -30,14 +30,14 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
         return {
             "summary": f"时间加减，{delta:+g} {unit}，失败",
             "action": {"tool": "timeadd", "tool_zh": "加减时间", "params": _act_params},
-            "status": {"exec_code": "error", "message": "时间加减失败", "code": ERR_TIME_ADD, "detail": detail, "hint": hint if hint else "请检查参数"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_ADD, "detail": detail, "hint": hint if hint else "请检查参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"时间加减，{delta:+g} {unit}后为 {result_time}，成功",
         "action": {"tool": "timeadd", "tool_zh": "加减时间", "params": _act_params},
-        "status": {"exec_code": "success", "message": "时间加减成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{result_time}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

@@ -80,14 +80,14 @@ def _build_timer_set_llm_data(exec_code: str, duration_ms: int, timer_id: str, t
         return {
             "summary": f"设置定时器{_delay_sec}秒，失败: {detail}",
             "action": {"tool": "timer_set", "tool_zh": "设定时器", "params": _act_params},
-            "status": {"exec_code": "error", "message": "定时器设置失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIMER_SET, "detail": detail, "hint": hint if hint else "请检查延迟时间"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"设置定时器{_delay_sec}秒，成功: {timer_id}，{_delay_sec // 60}分钟后触发",
         "action": {"tool": "timer_set", "tool_zh": "设定时器", "params": _act_params},
-        "status": {"exec_code": "success", "message": "定时器设置成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{_delay_sec // 60}分钟后触发" if _delay_sec >= 60 else f"成功:{_delay_sec}秒后触发", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"delay": {"value": delay, "text": f"{_delay_sec // 60}分钟"}},
     }

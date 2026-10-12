@@ -30,7 +30,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
         return {
             "summary": f"清除定时器{timer_id}，失败",
             "action": {"tool": "timer_clear", "tool_zh": "清定时器", "params": {"timer_id": timer_id}},
-            "status": {"exec_code": "error", "message": "清除定时器失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_TIMER_CLEAR, "detail": detail, "hint": hint if hint else "请检查定时器ID"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -38,7 +38,7 @@ def _build_timer_clear_llm_data(exec_code: str, duration_ms: int, timer_id: str,
     return {
         "summary": f"清除定时器{timer_id}，成功: {status_text}",
         "action": {"tool": "timer_clear", "tool_zh": "清定时器", "params": {"timer_id": timer_id}},
-        "status": {"exec_code": "success", "message": f"定时器{status_text}", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
