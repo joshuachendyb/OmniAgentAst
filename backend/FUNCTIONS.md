@@ -313,8 +313,6 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 |--------|------|------|--------|
 | `safe_read_file` | 安全读取文件内容(utf-8, errors=replace), OSError 返回空串 | path: str | str |
 
-> 定义于 `app/tools/fundamental/shell_engine.py`；被 `execute_shell_command.py` 跨模块复用读 stdout/stderr 结果，且被 PersistentShell 会话池复用读 stderr 残留
-
 ---
 
 ### 4.4 信任机制辅助（app/tools/trust_db.py + app/tools/trust.py）
@@ -324,7 +322,9 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `norm_trust_path` | 信任路径规范化: 文件域 Path.resolve() 绝对化; 非文件信任域(registry/sql)原样 strip(信任落库/查询/撤销双侧一致的单一来源) | path: Optional[str], tool_name: Optional[str]=None | Optional[str] |
 | `extract_trust_path` | 从工具调用提取信任落库/查询的目标路径(文件域经 _parse_paths, 非文件信任域定向别名仅认规范 path) | name: str, params: Dict | Optional[str] |
 
-> `norm_trust_path` 定义于 `app/tools/trust_db.py`：trust_db.insert_session_trust/check_session_trust 内部复用，storage.delete_session_trust 撤销侧经此函数消费（2026-09-16 函数化，消除 storage 层双份副本；非文件信任域集合见 tool_constants.NON_FILE_TRUST_TOOLS）。`extract_trust_path` 定义于 `app/tools/trust.py`：hitl_gateway.hitl_confirm 直接调用（KISS 无透传层），resolve_skip 信任跳过查询同用。
+
+### 4.5 Agent步骤辅助（observation_content.py）
+| `build_content_items`+`render_line` | tool_result[]→7字段数组→一句人话（详见设计文档3.7.3） | tool_result/item | List[Dict]/str |
 
 ---
 
