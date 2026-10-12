@@ -2,6 +2,10 @@
 // 编辑历史: 2026-10-04 小欧 - 文档[8]第六章第1/2/4条: 删形状分派(树渲染器要的data永远拿不到+metrics是对象按number用失效+分派依据只取tr[0])
 // 编辑历史: 2026-10-04 小欧 - 文档[8]§5.3 方法二(北京老陈裁定B案): 展开区只展示"结论"——头部状态点+完整摘要, 尾部metrics小标签;
 //   data_text/tool_name/action/status.code·detail·hint/duration_ms/other_data 全部不显示(结果正文由 assistant 回答承载) — 小欧 2026-10-04
+// 编辑历史: 2026-10-11 小欧 - 失败原因可视化(北京老陈令): ①头部下补[详情]/[提示]两行, 取
+//   status.detail/hint(原 2026-10-04 定案排除, 致失败只显"失败"二字, 无从判断原因;
+//   实测 write 失败 detail 为"Python语法错误(第85行…)"被丢弃), 成功态二者空串故零变化;
+//   ②metrics 标签行前置[时间]/[耗时](step.timestamp + llm_data.duration_ms) — 小欧-2026-10-11
 /**
  * ToolResultRenderer - 工具结果"结论区"渲染器
  *
@@ -24,6 +28,15 @@ import {
   Radius,
 } from '@/utils/stepStyles';
 import type { ExecutionStep } from '../../../../types/execution';
+import { formatTimeHMS } from '@/utils/time';
+
+/** 2026-10-11 小欧 - 失败/警告补充说明行的标签前缀(北京老陈令) */
+const tagLabel = (tag: string, text: string, color: string) => (
+  <div style={{ fontSize: FontSize.SECONDARY, color, wordBreak: 'break-all' }}>
+    <span style={{ color: Colors.TEXT.SECONDARY }}>[{tag}]: </span>
+    {text}
+  </div>
+);
 
 interface ToolResultRendererProps {
   step: ExecutionStep;
@@ -35,11 +48,25 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ step }) => {
   const el = (tr[0] || {}) as Record<string, unknown>;
   const llmData = (el.llm_data || {}) as Record<string, unknown>;
   const summary = (llmData.summary as string) || '';
+  const status = (llmData.status || {}) as Record<string, unknown>;
+  // 2026-10-11 小欧(北京老陈令) - 展示 detail/hint: 原 2026-10-04 定案把 status.code·detail·hint
+  //   全部排除, 失败时只剩"失败"二字, 无从判断原因(实测 write 失败 detail 载"Python语法错误(第85行…)"
+  //   被丢弃)。成功态二者为空串, 故仅非空时渲染, 成功显示零变化。
+  const detail = (status.detail as string) || '';
+  const hint = (status.hint as string) || '';
   const metrics = (llmData.metrics || {}) as Record<string, unknown>;
   const labels = Object.entries(metrics).map(([k, v]) => {
     const m = (v || {}) as { text?: unknown; value?: unknown };
     return `${k}: ${(m.text as string) ?? String(m.value ?? '')}`;
   });
+  // 2026-10-11 小欧(北京老陈令) - 时间/耗时置于既有 metrics 标签之前, 便于一眼定位这次调用何时发生、多久
+  const timeLabel = step.timestamp
+    ? `时间: ${formatTimeHMS(step.timestamp)}`
+    : '';
+  const duration = llmData.duration_ms;
+  const durLabel =
+    typeof duration === 'number' ? `耗时: ${duration}ms` : '';
+  const headLabels = [timeLabel, durLabel].filter(Boolean);
 
   return (
     <div style={{ marginTop: Spacing.XS }}>
@@ -64,7 +91,9 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ step }) => {
           </span>
         </div>
       )}
-      {labels.length > 0 && (
+      {detail && tagLabel('详情', detail, Colors.ERROR)}
+      {hint && tagLabel('提示', hint, Colors.TEXT.SECONDARY)}
+      {(headLabels.length > 0 || labels.length > 0) && (
         <div
           style={{
             display: 'flex',
@@ -73,7 +102,7 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({ step }) => {
             marginTop: Spacing.XS,
           }}
         >
-          {labels.map((t) => (
+          {[...headLabels, ...labels].map((t) => (
             <span
               key={t}
               style={{
