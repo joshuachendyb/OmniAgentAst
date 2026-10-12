@@ -45,6 +45,8 @@ F1: read — 读取文本文件
 #   message `,共{total_lines}行` 同去, total_lines 改走 metrics 统计段(observation_formatter 跳集合同步移出
 #   total_lines, 三处同批防 total_lines 从 LLM text 消失)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取→读文件
+# 2026-10-12 小欧 - 成功message去_ps参数段（北京老陈令）: 成功:{_ps}第X-Y行 → 成功:从第X-Y行,
+#   参数交content句子(message与params去重); summary仍带_ps供LLM — 小欧 2026-10-12
 
 import time as _time_mod
 from pathlib import Path

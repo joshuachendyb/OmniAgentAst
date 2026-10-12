@@ -4,6 +4,11 @@
 #   content_items 对象数组; content 句子由 ObservationStep 逐条 render_line 生成,
 #   本文件提供数组构造与句子渲染 — 小欧 2026-10-12
 # 2026-10-12 小欧 - 北京老陈令: 参数超35截断保留(替代旧50丢弃); 正文类取首行后同样截断 — 小欧 2026-10-12
+# 2026-10-12 小欧 - 北京老陈令: shell_type 移出DROP_KEYS加回显示(PARAM_ZH增Shell模板); path/dest永不截断(句子层取文件名);
+#   有path时dest整项丢弃; MSG_DUP_KEYS句子去重(read/find); 六组tool/params/message注释对照表 — 小欧 2026-10-12
+# 2026-10-13 小欧 - 三堂会审5修复: duration加not-bool守卫(_build_item/render_line各一, 防True产出0.0s);
+#   PARAM_ZH补text裸值(防text=英文泄漏); 删render_line内dest死分支(_pick_params已删, 永不到达);
+#   注释计数84→86(FILE/DOCUMENT dest表述改整项丢弃) — 小欧 2026-10-13
 import json
 from typing import Any, Dict, List
 
@@ -33,17 +38,17 @@ DROP_KEYS = frozenset({
 # | searchweb  | query/num_results/allowed/blocked_domains  | 完成:N条结果(结果数)       | 无    |
 # | timenow    | {}无参                                      | 成功:datetime,星期(结果值)  | 无    |
 # FILE 组成功分支三项对照(2026-10-12 小欧逐个核查) —
-# | tool    | params(进句子; dest有path时跳过)          | message(成功分支)          | 重复?    |
+# | tool    | params(进句子; 有path时dest整项丢弃)       | message(成功分支)          | 重复?    |
 # |---------|--------------------------------------------|----------------------------|----------|
-# | copy    | path+recursive(dest句子跳过)               | 成功(纯状态词)             | 无       |
+# | copy    | path+recursive(dest整项丢弃)               | 成功(纯状态词)             | 无       |
 # | delete  | path+force+recursive                       | 成功(纯状态词)             | 无       |
 # | edit    | path+mode+encoding+行数派生                | 完成(纯状态词)             | 无       |
 # | find    | path+pattern+type(offset句子跳过)          | 完成:共N个/第M-N项         | 已消     |
 # | grep    | path+pattern+glob                          | 完成:N文件M行(结果量)      | 无       |
 # | listdir | path+sort_by等                             | 成功:N项(结果量)           | 无       |
-# | move    | path(dest句子跳过)                         | 成功(纯状态词)             | 无       |
-# | read    | path(句子;limit等仅items)                  | 成功:从第X-Y行(范围)       | 已消     |
-# | rename  | path(dest句子跳过)                         | 成功(纯状态词)             | 无       |
+# | move    | path(dest整项丢弃)                         | 成功(纯状态词)             | 无       |
+# | read    | path+encoding(句子;limit等仅items)          | 成功:从第X-Y行(范围)       | 已消     |
+# | rename  | path(dest整项丢弃)                         | 成功(纯状态词)             | 无       |
 # | tree    | path+max_depth等                           | 成功:N文件(结果量)         | 无       |
 # | write   | path+append+encoding                       | 成功(纯状态词)             | 无       |
 # NETWORK 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
@@ -55,7 +60,7 @@ DROP_KEYS = frozenset({
 # DOCUMENT 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
 # | tool      | params(进句子)                            | message(成功分支)            | 重复? |
 # |-----------|-------------------------------------------|------------------------------|-------|
-# | compress  | path+dest(有path时dest跳)+format等        | 成功:N文件,压缩率(结果量)   | 无    |
+# | compress  | path+format等(dest有path时整项丢弃)       | 成功:N文件,压缩率(结果量)   | 无    |
 # | extract   | path(+dest无path时)                       | 成功(纯状态词)               | 无    |
 # | read_docx | path+limit等                              | 成功:N段,N字符(结果量)      | 无    |
 # | read_pdf  | path(仅path进action)                      | 成功:已读X/共Y页(结果量)    | 无    |
@@ -146,10 +151,15 @@ def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
                 text = text[:PARAM_VALUE_MAX_CHARS] + "…"
             out[key] = text
             continue
+        if key in ("path", "dest"):
+            out[key] = _one_line(str(val))  # 路径类永不截断, 留完整值, 句子层再取文件名 — 小欧 2026-10-12
+            continue
         text = _one_line(str(val))
         if len(text) > PARAM_VALUE_MAX_CHARS:
             text = text[:PARAM_VALUE_MAX_CHARS] + "…"
         out[key] = text
+    if out.get("path") not in (None, "") and "dest" in out:
+        del out["dest"]  # 有 path 时 dest 整项丢弃(content_items/句子都不留), 只留一个路径 — 小欧 2026-10-12
     return _order_params(out)
 
 
@@ -164,7 +174,7 @@ def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
 
     tool = action.get("tool") or element.get("tool_name") or ""
     duration = llm.get("duration_ms")
-    duration = duration if isinstance(duration, (int, float)) else 0
+    duration = duration if isinstance(duration, (int, float)) and not isinstance(duration, bool) else 0
 
     item: Dict[str, Any] = {
         "tool": str(tool),
@@ -197,10 +207,10 @@ PATH_LIKE = frozenset({"path", "dest"})  # 句子内 path 类参数（D9: 只取
 COMMAND_MAX_CHARS = 35   # 句子内 command 超长截断并加 …（D9）
 
 # message 已含参数键的工具: 句子内跳过这些键, content_items 照旧全留 — 小欧 2026-10-12
-# read 的 message 自带范围(实际起止行), 句子再渲 limit/offset/tail/encoding 即重复
+# read 的 message 是实际起止范围, limit/offset/tail 由范围覆盖故跳过; encoding 范围未覆盖, 留句子显示
 # find 带 offset 时 message 自带"第M-N项"(由 offset 算出), 句子再渲 offset 即重复
 MSG_DUP_KEYS = {
-    "read": frozenset({"limit", "offset", "tail", "encoding"}),
+    "read": frozenset({"limit", "offset", "tail"}),
     "find": frozenset({"offset"}),
 }
 
@@ -214,7 +224,7 @@ def _basename(value: Any) -> str:
 
 
 # 参数中文显示映射: 只作用于 content 句子渲染（3.4.2）, content_items 存原始键值 — 小欧 2026-10-12
-# 共 84 条 = 保留列 82 键 + edit 派生 2 键, 与 3.4.2 表逐条对应, 句子里不出现任何英文键名
+# 共 86 条 = 保留列 82 键 + edit 派生 2 键 + shell_type/text, 与 3.4.2 表逐条对应, 句子里不出现任何英文键名
 PARAM_ZH = {
     # 路径裸值（3.4.2.1, PATH_LIKE 分支先取文件名再套用本模板）
     "path": "{v}",
@@ -240,6 +250,7 @@ PARAM_ZH = {
     "query": "{v}",
     "pattern": "{v}",
     "message": "{v}",
+    "text": "{v}",
     "title": "{v}",
     "url": "{v}",
     "text_or_keys": "{v}",
@@ -352,12 +363,9 @@ def render_line(item: Dict[str, Any]) -> str:
     shown = []
     seen_path = False
     dup_skip = MSG_DUP_KEYS.get(tool, frozenset())
-    has_path = "path" in params and params.get("path") not in (None, "")
     for key, val in params.items():
         if key in dup_skip:
             continue  # message 已含该参数, 句子跳过, content_items 保留 — 小欧 2026-10-12
-        if key == "dest" and has_path:
-            continue  # 有 path 时 dest 不进句子, 只留一个路径信息; content_items 照旧全留 — 小欧 2026-10-12
         text = "" if val is None else _one_line(str(val))
         if key in PATH_LIKE:
             if seen_path:
@@ -378,7 +386,7 @@ def render_line(item: Dict[str, Any]) -> str:
     if message:
         parts.append(message)
     duration = item.get("duration_ms")
-    if isinstance(duration, (int, float)) and duration > 0:
+    if isinstance(duration, (int, float)) and not isinstance(duration, bool) and duration > 0:
         parts.append(f"({duration / 1000:.1f}s)")
     return " ".join(p for p in parts if p)
 
