@@ -187,6 +187,7 @@
 #   agent.llm_call_count(原取 ed["step"], 致「轮次」恒等于步骤, 实测 100%)
 # 2026-10-07 北京老陈 thought-start 第1发前移至历史加载判断前(覆盖 DB还原+压缩等待);
 #   react_loop 原第1发同步移除。
+# 2026-10-12 小欧 - 首帧 thought-start 带 task_id（北京老陈令）: 前端凭 task_id 开门显示, 后续帧不带 — 小欧-2026-10-12
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -602,7 +603,8 @@ async def run_agent_in_background(
             llm_service.set_stop_check(_stop_check)
 
         from app.services.agent.steps import ThoughtStartStep  # 2026-10-07 北京老陈 第1发前移至此
-        await _publish(agent._step_emitter.emit(ThoughtStartStep(step=1)).to_dict())
+        # 2026-10-12 小欧 - 首帧带 task_id（北京老陈令）: 前端凭 task_id 开门显示, 后续帧不带 — 小欧-2026-10-12
+        await _publish(agent._step_emitter.emit(ThoughtStartStep(step=1, task_id=task_id)).to_dict())
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
         ctx = {}

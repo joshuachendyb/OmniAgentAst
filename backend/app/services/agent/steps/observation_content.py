@@ -3,6 +3,7 @@
 # 2026-10-12 小欧 - 新建（observation.content 启用方案 B1）。由 tool_result[] 投影出
 #   content_items 对象数组; content 句子由 ObservationStep 逐条 render_line 生成,
 #   本文件提供数组构造与句子渲染 — 小欧 2026-10-12
+# 2026-10-12 小欧 - 北京老陈令: 参数超35截断保留(替代旧50丢弃); 正文类取首行后同样截断 — 小欧 2026-10-12
 import json
 from typing import Any, Dict, List
 
@@ -25,7 +26,7 @@ DROP_KEYS = frozenset({
 # 命令正文类: 取首行（3.5.4 长度分级）— 小欧 2026-10-12
 BODY_KEYS = frozenset({"command", "sql", "query", "prompt"})
 
-PARAM_VALUE_MAX_CHARS = 50   # 单个参数值的字符数上限, 超限整项丢弃, 不截断（D7）
+PARAM_VALUE_MAX_CHARS = 35   # 单个参数值的字符数上限, 超限截断加…保留（北京老陈 2026-10-12 新令, 替代旧50丢弃）
 CONTENT_MAX_CHARS = 2048   # content 序列化后的字符数上限（D5）
 
 
@@ -65,7 +66,7 @@ def _order_params(out: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
-    """按 3.5.6 表逐键取 params: 丢列跳过 / 正文类取首行 / 其余按长度判定 — 小欧 2026-10-12"""
+    """按 3.5.6 表逐键取 params: 丢列跳过 / 正文类取首行后截断 / 其余超35截断保留 — 小欧 2026-10-12"""
     params = action.get("params")
     if not isinstance(params, dict):
         return {}
@@ -75,15 +76,19 @@ def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
             continue
         if isinstance(val, (list, dict)):
             continue
+        if isinstance(val, bool) or val is None or isinstance(val, (int, float)):
+            out[key] = val
+            continue
         if key in BODY_KEYS:
-            text = _first_line(val)
+            text = _one_line(_first_line(val))
             if len(text) > PARAM_VALUE_MAX_CHARS:
-                continue
+                text = text[:PARAM_VALUE_MAX_CHARS] + "…"
             out[key] = text
             continue
-        if len(str(val)) > PARAM_VALUE_MAX_CHARS:
-            continue
-        out[key] = val
+        text = _one_line(str(val))
+        if len(text) > PARAM_VALUE_MAX_CHARS:
+            text = text[:PARAM_VALUE_MAX_CHARS] + "…"
+        out[key] = text
     return _order_params(out)
 
 
