@@ -26,9 +26,9 @@
 |---|---|---|
 | R1 | 不改 summary 字段 | `llm_data.summary` 维持现状，不动它 |
 | R2 | 一个工具一行 | 单工具 observation 产出 1 行；多工具 observation 产出 N 行，每行一个工具 |
-| R3 | 两种载体两种形态 | `content` 是人类可读文本，一句一工具（见 3.4）；`content_items` 是结构化字段数组，一个工具一条，前端逐字段取用 |
-| R4 | 参数按工具分类规整，不是全量也不是统一截断 | ⚠️ 2026-10-12 修正（小欧曾设计为"统一截断加省略号"，用户明确否定）。见 3.5 |
-| R5 | 长参数按长度判断 | ⚠️ 2026-10-12 修正。小欧曾设计为"截断成 `…`"，用户明确要求不做截断。最终规则见 3.5.4（按参数性质分级，而非一刀切） |
+| R3 | 两种载体两种形态 | `content` 是人类可读文本，一句一工具（格式见 3.4）；`content_items` 是结构化字段数组，一个工具一条，前端逐字段取用 |
+| R4 | 参数按 3.5.6 明细表逐工具规整（63 个工具，每个一行），不做全量保留，不做统一截断 | 见 3.5 |
+| R5 | 长参数按长度与性质判定（3.5.4）：命令正文类取首行；标识类超 50 字符整项丢弃；不截断、不加省略号 |
 | R6 | 已知单工具与多工具两种形态 | 方案须同时覆盖 |
 | R7 | 先落后端，前端后跟 | 2026-10-12 确认实施顺序 |
 
@@ -173,9 +173,10 @@
 | D3 | 实施顺序 | 先落后端，前端渲染后跟；前端「有 content 渲染、无则不渲染」 | 2026-10-12 |
 | D4 | `message` 是否保留 | 保留。取自 `status.message`，成功时虽短但零成本，失败时是有效信息 | 2026-10-12 |
 | D5 | content 体积上限 | 2KB（CONTENT_MAX_CHARS）。超限时从后往前逐个置空 params（绝不删行）；状态/耗时/detail 永不受影响 | 2026-10-12 |
-| D6 | 路径参数键名分叉 | 不改名不改写：当前 schema 只有 path 与 dest 两种真实路径键，各按原样保留（曾拟统一归一为单一键名并自造新词，均已废：北京老陈裁定 content 不得出现系统不存在的键名） | 2026-10-12 |
+| D6 | 路径参数键名处理 | 不改名不改写：当前 schema 的路径键只有 `path` 与 `dest` 两种，各按原样保留；content 不得出现注册表中不存在的键名 | 2026-10-12 |
 | D7 | 超长主体参数如何处理 | 按性质分级（3.5.4）：命令正文类取首行；标识类（path/dest/url/pattern）超 50 整个丢弃。不用统一截断，也不一律丢 | 2026-10-12 |
 | D8 | 结构化结果的存放 | 新增字段 `content_items` 存对象数组（前端直接消费）；`content` 存同一批数据渲染出的**一行一句人话**；两者由同一份 `content_items` 生成，严禁分别构造 | 2026-10-12 |
+| D9 | content 句子内参数规整 | ① 只取**第一个** path 类参数（`path`/`dest`），其余 path 类参数不进句子；② 该 path 含分隔符时只取**文件名**；③ 参数有值才合成，无值（空串/None）跳过；④ `command` 超 35 字符截断并加 `…`；⑤ 参数之间用 ` | ` 分隔；⑥ 参数按主次排序（主体>路径>其余字母序，见 3.4.1）；⑦ path 类参数**只显示值、不加键名前缀**（路径一眼可认）；⑧ 自由文本参数（command/sql/prompt/query/pattern/message/title/url/text_or_keys/callback）**裸值显示**，不加标签；⑨ 布尔参数显示中文肯定/否定词（见 3.4.2.6），句子里不出现 True/False | 2026-10-12 |
 
 ### 3.3 数据来源与实测基线
 
@@ -212,9 +213,9 @@
 
 | # | 事实 | 证据 |
 |---|---|---|
-| F1 | LLM 几乎总是把 schema 默认值一并填满 | `bash` 1531/1531 次都带 `shell_type`+`timeout`；`edit` 342/342 次都带 `ignore_case`；`delete` 37/37 次都带 `recursive`+`force` |
-| F2 | 每个工具只有 1~2 个真正的主体参数 | `command` / `query` / `pattern` / `url` / `content` / `old_string`+`new_string` |
-| F3 | 路径参数只有两种真实键名 | 当前注册表只有 `path` 与 `dest`，按真实键名原样保留 |
+| 事实一 | LLM 几乎总是把 schema 默认值一并填满 | `bash` 1531/1531 次都带 `shell_type`+`timeout`；`edit` 342/342 次都带 `ignore_case`；`delete` 37/37 次都带 `recursive`+`force` |
+| 事实二 | 每个工具只有 1~2 个真正的主体参数 | `command` / `query` / `pattern` / `url` / `content` / `old_string`+`new_string` |
+| 事实三 | 路径参数只有两种真实键名 | 当前注册表只有 `path` 与 `dest`，按真实键名原样保留 |
 
 ### 3.4 content 结构定义（7 字段 + 同源数组字段）
 
@@ -227,25 +228,166 @@
 
 两者同源：`content_items` 是唯一真身，`content` 由它逐条渲染成一句话，**严禁分别构造**。
 
-`content` 每句的格式（一个工具一句，行内顺序固定）：
+`content` 每句的格式（一个工具一句，行内顺序固定为「工具名 中文名 参数 结果短句 耗时」）：
 
 ```
-工具名 状态(耗时) 参数键=值 参数键=值
+tool tool_zh 片段 | 片段 message (耗时)
 ```
 
 实例（两个工具 = 两句）：
 
 ```text
-bash 执行成功(2.8s) command=Invoke-RestMethod -Uri 'https://wttr.in/?format=j1'
-timenow 执行成功
+bash 执行 Invoke-RestMethod -Uri 'https://wttr.wtt… | test_report.pdf 执行成功 (2.8s)
+timenow 获取时间 获取当前时间成功
+read 读取文件 b.txt | 前50条 | 从第10条起 读取成功 (0.1s)
 ```
 
-| 组成 | 取值 | 缺省处理 |
+| 组成（行内顺序固定，不可调换） | 取值 | 缺省处理 |
 |---|---|---|
-| 工具名 | `tool_zh`（回落 `tool`） | 必显 |
-| 状态 | `exec_code`：`success`→执行成功／`warning`→完成（有告警）／`error`→执行失败 | 必显 |
+| 工具名 | `tool`（机器英文名） | 必显 |
+| 中文名 | `tool_zh`（缺失回落 `tool`） | 若与工具名相同则省略，避免重复 |
+| 参数 | `params` 按 D9 规整：① 只取第一个 path 类参数（`path`/`dest`），其余 path 类不进句子；② 该 path 含 `/` 或 `\` 时只取文件名，**且只显示值、不加 `path=` 前缀**（路径一眼可认，见 D9⑦）；③ 有值才合成（空串/None 跳过）；④ `command` 超 35 字符截断并加 `…`；⑤ 参数之间用 ` | ` 分隔；⑥ 自由文本裸值、⑦ 中文模板见 3.4.2 | 空则整段省略 |
+| 结果短句 | `message` | 为空则省略 |
 | 耗时 | `duration_ms` > 0 才拼 `(2.8s)` | 为 0 则省略 |
-| 参数 | `params` 逐键 `键=值`，空格分隔；为空则整段省略 | 空则省略 |
+
+组句规则：按上方顺序拼接非空段，段之间单个空格分隔；`exec_code` 与 `detail` 不进句子（状态语义由 `message` 承载，结构化信息在 `content_items` 里）。
+
+#### 3.4.1 参数主次排序（主要在前、次要在后）
+
+`params` 生成与渲染统一按此顺序，三个优先级：
+
+| 优先级 | 成员 | 说明 |
+|---|---|---|
+| P0 主体 | `command` `sql` `query` `prompt` `pattern` `operations` `method` | 本次执行的核心动作，一律放最前 |
+| P1 路径 | `path` `dest` | 执行目标，次之 |
+| P2 其余 | 保留列其余参数 | 按键名字母序排列，输出稳定可预期 |
+
+该排序在 `_pick_params` 构造时一次排好，`content_items` 与句子共用同一顺序。
+
+#### 3.4.2 参数中文显示映射（句子内人话，不进 content_items）
+
+只作用于 `content` 句子渲染；`content_items` 里仍存原始键值对，前端结构化渲染不受影响。
+本表覆盖保留列全部 82 个参数 + 2 个 edit 派生量，无遗漏、无"兜底"。
+
+##### 3.4.2.1 路径裸值（2 个）
+
+| 参数 | 句子显示 | 例 |
+|---|---|---|
+| `path` | 裸值，含分隔符时只取文件名 | test_report.pdf |
+| `dest` | 裸值，含分隔符时只取文件名 | backup.zip |
+
+##### 3.4.2.2 中文模板（10 个）
+
+| 参数 | 句子显示 | 例 |
+|---|---|---|
+| `timeout` | 超时{v}秒 | 超时300秒 |
+| `limit` | 前{v}条 | 前50条 |
+| `offset` | 从第{v}条起 | 从第10条起 |
+| `tail` | 末{v}行 | 末20行 |
+| `sort_by` | 按{v}排序 | 按name排序 |
+| `top_n` | 前{v}条 | 前100条 |
+| `num_results` | 取{v}条 | 取10条 |
+| `max_depth` | 最深{v}层 | 最深3层 |
+| `page` | 第{v}页 | 第2页 |
+| `slide` | 第{v}页 | 第5页 |
+
+##### 3.4.2.3 自由文本裸值（10 个，值自解释，不加标签）
+
+| 参数 | 句子显示 | 例 |
+|---|---|---|
+| `command` | 裸值（先取首行，超 35 截断并加 `…`） | python a.py |
+| `sql` | 裸值（先取首行） | SELECT * FROM users |
+| `prompt` | 裸值（先取首行） | 提取标题 |
+| `query` | 裸值（先取首行） | 报错日志 |
+| `pattern` | 裸值 | def read |
+| `message` | 裸值 | 构建完成 |
+| `title` | 裸值 | 日报 |
+| `url` | 裸值 | https://wttr.in |
+| `text_or_keys` | 裸值 | hello |
+| `callback` | 裸值 | 提醒开会 |
+
+##### 3.4.2.4 edit 派生量（2 个）
+
+| 参数 | 句子显示 | 例 |
+|---|---|---|
+| `lines_added` | 新增{v}行 | 新增3行 |
+| `lines_removed` | 删除{v}行 | 删除1行 |
+
+##### 3.4.2.5 中文显示（60 个，句子里不出现英文键名）
+
+| 参数 | 句子显示 | 例 |
+|---|---|---|
+| `action` | 操作{v} | 操作copy |
+| `allowed_domains` | 允许域名{v} | 允许域名example.com |
+| `amount` | 数量{v} | 数量3 |
+| `append` | True→追加 / False→覆盖 | 追加 |
+| `blocked_domains` | 屏蔽域名{v} | 屏蔽域名spam.com |
+| `button` | 按键{v} | 按键left |
+| `chart_type` | 图表{v} | 图表bar |
+| `clicks` | 点击{v}次 | 点击2次 |
+| `confirm_ddl` | True→已确认 / False→未确认 | 已确认 |
+| `connection_string` | 连接串{v} | 连接串Server=db |
+| `connection_type` | 连接类型{v} | 连接类型sqlite |
+| `count` | 次数{v} | 次数4 |
+| `cwd` | 目录{v} | 目录E:\work |
+| `delay` | 延迟{v}秒 | 延迟60秒 |
+| `delta` | 增量{v} | 增量7 |
+| `direction` | 方向{v} | 方向down |
+| `dry_run` | True→试运行 / False→正式执行 | 试运行 |
+| `duration` | 持续{v}秒 | 持续10秒 |
+| `encoding` | 编码{v} | 编码utf-8 |
+| `end` | 结束{v} | 结束2026-10-12 |
+| `filter_title` | 过滤标题{v} | 过滤标题记事本 |
+| `force` | True→强制 / False→不强制 | 强制 |
+| `format` | 格式{v} | 格式zip |
+| `glob` | 通配{v} | 通配*.py |
+| `group_by` | 按{v}分组 | 按city分组 |
+| `height` | 高度{v} | 高度800 |
+| `host` | 主机{v} | 主机127.0.0.1 |
+| `include_hidden` | True→含隐藏 / False→不含隐藏 | 含隐藏 |
+| `info_type` | 信息{v} | 信息cpu |
+| `interval` | 间隔{v}秒 | 间隔3600秒 |
+| `level` | 级别{v} | 级别error |
+| `log_name` | 日志{v} | 日志Application |
+| `max_events` | 最多{v}条 | 最多100条 |
+| `method` | 方法{v} | 方法GET |
+| `mode` | 模式{v} | 模式once |
+| `name` | 名称{v} | 名称春节 |
+| `operations` | 操作{v}（标量时） | 操作mean |
+| `pages` | 页数{v} | 页数5 |
+| `password` | 密码{v} | 密码****** |
+| `port` | 端口{v} | 端口8000 |
+| `recursive` | True→递归 / False→不递归 | 递归 |
+| `region` | 区域{v} | 区域全屏 |
+| `schedule` | 计划{v} | 计划每天8点 |
+| `select_columns` | 取列{v} | 取列name |
+| `sheet_name` | 表{v} | 表Sheet1 |
+| `start` | 开始{v} | 开始2026-10-01 |
+| `state` | 状态{v} | 状态active |
+| `table_name` | 表名{v} | 表名users |
+| `task_name` | 任务{v} | 任务备份 |
+| `timer_id` | 定时器{v} | 定时器t1 |
+| `type` | 类型{v} | 类型file |
+| `unit` | 单位{v} | 单位day |
+| `value_name` | 值名{v} | 值名Version |
+| `width` | 宽度{v} | 宽度1024 |
+| `window_title` | 窗口{v} | 窗口计算器 |
+| `x` | 横坐标{v} | 横坐标100 |
+| `x_label` | 横轴{v} | 横轴月份 |
+| `y` | 纵坐标{v} | 纵坐标200 |
+| `y_label` | 纵轴{v} | 纵轴销量 |
+| `year` | 年份{v} | 年份2026 |
+
+##### 3.4.2.6 布尔肯定/否定词（6 个，句子里不出现 True/False）
+
+| 参数 | True 显示 | False 显示 |
+|---|---|---|
+| `append` | 追加 | 覆盖 |
+| `confirm_ddl` | 已确认 | 未确认 |
+| `dry_run` | 试运行 | 正式执行 |
+| `force` | 强制 | 不强制 |
+| `include_hidden` | 含隐藏 | 不含隐藏 |
+| `recursive` | 递归 | 不递归 |
 
 对应的 `content_items`（同一批数据的结构化形态）：
 
@@ -302,7 +444,7 @@ timenow 执行成功
 | 短内容参数 | `message` `callback` `text_or_keys` `text` `query` `pattern` `title` `select_columns` `value_name` `sheet_name` `table_name` | 进 content，再走 50 字长度判定 |
 | 用户主动选择 | `timeout` `limit` `offset` `tail` `mode` `sort_by` `include_hidden` `recursive` `force` `num_results` `page` `pages` `slide` `max_depth` `dry_run` `password` `connection_string` `allowed_domains` `blocked_domains` `top_n` | 进 content |
 
-同名参数统一待遇（北京老陈 2026-10-12 裁定）：同一参数名在所有工具中取舍一致，不因工具而异；改表即改本节，二者不得脱节。
+同一参数名在所有工具中取舍一致（同名同待遇，理由：前端按参数名渲染，不分子工具，新工具零配置即可正确显示；改表即改本节，二者不得脱节）。
 
 #### 3.5.2 通用规则（以 3.5.6 表为准，无需逐工具登记）
 
@@ -321,7 +463,7 @@ timenow 执行成功
 | 收益 | 说明 |
 |---|---|
 | 新工具免登记 | 63 个注册工具全部符合该规律，新工具不登记也基本正确 |
-| 消除默认值噪声 | 对应实测事实 F1（LLM 总把默认值填满） |
+| 消除默认值噪声 | 对应实测事实一（LLM 总把默认值填满） |
 
 丢弃名单（3.5.6 表丢列的全部 30 个，代码常量 DROP_KEYS 与此逐字一致）：
 ```
@@ -345,7 +487,7 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 
 #### 3.5.4 长度分级规则（D7）
 
-实测打脸了"统一 50 阈值"：若一律丢弃，绝大多数工具参数全空：
+实测数据证明"统一阈值"不可行：若参数值超 50 字符一律丢弃，绝大多数工具参数全空：
 
 | 工具 | 值超 50 字符占比 | 最长实测 |
 |---|---|---|
@@ -618,6 +760,18 @@ def _diff_line_counts(diff_text: str) -> Dict[str, int]:
     return {"lines_added": added, "lines_removed": removed}
 
 
+# 参数主次排序: 主体 > 路径 > 其余字母序（3.4.1）— 小欧 2026-10-12
+PARAM_ORDER = ["command", "sql", "query", "prompt", "pattern", "operations",
+               "method", "path", "dest"]
+
+
+def _order_params(out: Dict[str, Any]) -> Dict[str, Any]:
+    """按主次排序 params: P0 主体 > P1 路径 > P2 其余字母序 — 小欧 2026-10-12"""
+    first = [k for k in PARAM_ORDER if k in out]
+    rest = sorted(k for k in out if k not in PARAM_ORDER)
+    return {k: out[k] for k in first + rest}
+
+
 def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
     """按 3.5.6 表逐键取 params: 丢列跳过 / 正文类取首行 / 其余按长度判定 — 小欧 2026-10-12"""
     params = action.get("params")
@@ -638,7 +792,7 @@ def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
         if len(str(val)) > PARAM_VALUE_MAX_CHARS:
             continue
         out[key] = val
-    return out
+    return _order_params(out)
 
 
 def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
@@ -681,18 +835,179 @@ def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
     return item
 
 
+PATH_LIKE = frozenset({"path", "dest"})  # 句子内 path 类参数（D9: 只取第一个）
+COMMAND_MAX_CHARS = 35   # 句子内 command 超长截断并加 …（D9）
+
+
+def _basename(value: Any) -> str:
+    """路径含分隔符时只取文件名（Windows/Unix 均处理）— 小欧 2026-10-12"""
+    import ntpath
+    import posixpath
+    text = str(value)
+    return ntpath.basename(text) or posixpath.basename(text) or text
+
+
+# 参数中文显示映射: 只作用于 content 句子渲染（3.4.2）, content_items 存原始键值 — 小欧 2026-10-12
+# 共 84 条 = 保留列 82 键 + edit 派生 2 键, 与 3.4.2 表逐条对应, 句子里不出现任何英文键名
+PARAM_ZH = {
+    # 路径裸值（3.4.2.1, PATH_LIKE 分支先取文件名再套用本模板）
+    "path": "{v}",
+    "dest": "{v}",
+    # 中文模板（3.4.2.2）
+    "timeout": "超时{v}秒",
+    "limit": "前{v}条",
+    "offset": "从第{v}条起",
+    "tail": "末{v}行",
+    "sort_by": "按{v}排序",
+    "top_n": "前{v}条",
+    "num_results": "取{v}条",
+    "max_depth": "最深{v}层",
+    "page": "第{v}页",
+    "slide": "第{v}页",
+    # edit 派生量（3.4.2.4，与文档用字一致：新增/删除）
+    "lines_added": "新增{v}行",
+    "lines_removed": "删除{v}行",
+    # 自由文本裸值（3.4.2.3, 值自解释，不加标签；command 仍受 35 截断约束）
+    "command": "{v}",
+    "sql": "{v}",
+    "prompt": "{v}",
+    "query": "{v}",
+    "pattern": "{v}",
+    "message": "{v}",
+    "title": "{v}",
+    "url": "{v}",
+    "text_or_keys": "{v}",
+    "callback": "{v}",
+    # 中文显示（3.4.2.5）
+    "action": "操作{v}",
+    "allowed_domains": "允许域名{v}",
+    "amount": "数量{v}",
+    "append": "追加{v}",
+    "blocked_domains": "屏蔽域名{v}",
+    "button": "按键{v}",
+    "chart_type": "图表{v}",
+    "clicks": "点击{v}次",
+    "confirm_ddl": "确认{v}",
+    "connection_string": "连接串{v}",
+    "connection_type": "连接类型{v}",
+    "count": "次数{v}",
+    "cwd": "目录{v}",
+    "delay": "延迟{v}秒",
+    "delta": "增量{v}",
+    "direction": "方向{v}",
+    "dry_run": "试运行{v}",
+    "duration": "持续{v}秒",
+    "encoding": "编码{v}",
+    "end": "结束{v}",
+    "filter_title": "过滤标题{v}",
+    "force": "强制{v}",
+    "format": "格式{v}",
+    "glob": "通配{v}",
+    "group_by": "按{v}分组",
+    "height": "高度{v}",
+    "host": "主机{v}",
+    "include_hidden": "含隐藏{v}",
+    "info_type": "信息{v}",
+    "interval": "间隔{v}秒",
+    "level": "级别{v}",
+    "log_name": "日志{v}",
+    "max_events": "最多{v}条",
+    "method": "方法{v}",
+    "mode": "模式{v}",
+    "name": "名称{v}",
+    "operations": "操作{v}",
+    "pages": "页数{v}",
+    "password": "密码{v}",
+    "port": "端口{v}",
+    "recursive": "递归{v}",
+    "region": "区域{v}",
+    "schedule": "计划{v}",
+    "select_columns": "取列{v}",
+    "sheet_name": "表{v}",
+    "start": "开始{v}",
+    "state": "状态{v}",
+    "table_name": "表名{v}",
+    "task_name": "任务{v}",
+    "timer_id": "定时器{v}",
+    "type": "类型{v}",
+    "unit": "单位{v}",
+    "value_name": "值名{v}",
+    "width": "宽度{v}",
+    "window_title": "窗口{v}",
+    "x": "横坐标{v}",
+    "x_label": "横轴{v}",
+    "y": "纵坐标{v}",
+    "y_label": "纵轴{v}",
+    "year": "年份{v}",
+}
+
+
+def _zh_param(key: str, text: str) -> str:
+    """单个参数 → 句子片段: 中文模板优先, 不在表内走 键=值 兜底 — 小欧 2026-10-12"""
+    template = PARAM_ZH.get(key)
+    if template:
+        return template.format(v=text)
+    return f"{key}={text}"
+
+
+# 布尔参数肯定/否定词（3.4.2.6, 句子里不出现 True/False）— 小欧 2026-10-12
+BOOL_ZH = {
+    "append": ("追加", "覆盖"),
+    "confirm_ddl": ("已确认", "未确认"),
+    "dry_run": ("试运行", "正式执行"),
+    "force": ("强制", "不强制"),
+    "include_hidden": ("含隐藏", "不含隐藏"),
+    "recursive": ("递归", "不递归"),
+}
+
+
+def _zh_value(key: str, val: Any) -> str:
+    """单个参数值 → 句子片段: 布尔查 BOOL_ZH, 其余走 _zh_param — 小欧 2026-10-12"""
+    if isinstance(val, bool) and key in BOOL_ZH:
+        pos, neg = BOOL_ZH[key]
+        return pos if val else neg
+    text = "" if val is None else str(val)
+    if key == "command" and len(text) > COMMAND_MAX_CHARS:
+        text = text[:COMMAND_MAX_CHARS] + "…"
+    if not text:
+        return ""
+    return _zh_param(key, text)
+
+
 def render_line(item: Dict[str, Any]) -> str:
-    """单个 item → 一句人话（content 每行一句, 一个工具一句）— 小欧 2026-10-12"""
-    code_text = {"success": "执行成功", "warning": "完成(有告警)",
-                 "error": "执行失败"}.get(item.get("exec_code"), "未知状态")
-    parts = [f"{item.get('tool_zh') or item.get('tool') or ''} {code_text}"]
+    """单个 item → 一句人话（顺序固定：工具名 中文名 参数 结果短句 耗时；参数遵 D9）— 小欧 2026-10-12"""
+    tool = str(item.get("tool") or "")
+    tool_zh = str(item.get("tool_zh") or "")
+    parts = [tool]
+    if tool_zh and tool_zh != tool:
+        parts.append(tool_zh)
+    params = item.get("params") or {}
+    shown = []
+    seen_path = False
+    for key, val in params.items():
+        text = "" if val is None else str(val)
+        if key in PATH_LIKE:
+            if seen_path:
+                continue
+            seen_path = True
+            if "/" in text or "\\" in text:
+                text = _basename(text)
+            if not text:
+                continue
+            shown.append(text)  # path 类只显示值, 不加键名前缀（D9⑦）
+            continue
+        frag = _zh_value(key, val)
+        if frag:
+            shown.append(frag)
+    if shown:
+        parts.append(" | ".join(shown))
+    message = str(item.get("message") or "")
+    if message:
+        parts.append(message)
     duration = item.get("duration_ms")
     if isinstance(duration, (int, float)) and duration > 0:
-        parts[-1] += f"({duration / 1000:.1f}s)"
-    params = item.get("params") or {}
-    if params:
-        parts.append(" ".join(f"{k}={v}" for k, v in params.items()))
-    return " ".join(parts)
+        parts.append(f"({duration / 1000:.1f}s)")
+    return " ".join(p for p in parts if p)
 
 
 def build_content_items(tool_result: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -786,10 +1101,12 @@ def build_content_items(tool_result: List[Dict[str, Any]]) -> List[Dict[str, Any
 | T5 | 值超 50 的非正文参数 | 该键消失，不截断、不带省略号 |
 | T6 | command 含多行 | 只保留首行 |
 | T7 | 构造超大 items | 循环后 dumps 长度 <= CONTENT_MAX_CHARS，行数不变 |
-| T8 | splitlines(content) | 行数 == len(content_items)，且每行开头是该 item 的 tool_zh（防两处漂移） |
+| T8 | splitlines(content) | 行数 == len(content_items)，且每行以该 item 的 tool 开头（防两处漂移） |
 | T9 | 元素为非 dict | 跳过且不抛异常 |
-| T10 | 单 item 含 params 且 duration>0 | content 行为 `工具名 执行成功(2.8s) k=v`，参数为空时省略该段 |
-| T11 | 单 item duration_ms=0 | 耗时段省略，不出现空耗时括号 |
+| T10 | 单 item 含 params、message 且 duration>0 | content 行为 `tool tool_zh k=v message (2.8s)`，顺序固定，空段省略；path 类参数显示裸值（`test_report.pdf` 而非 `path=test_report.pdf`） |
+| T11 | 单 item duration_ms=0 或 message 为空 | 对应段省略，不出现空括号或多余空格 |
+| T12 | 单 item 同时含 `path` + `dest` | 句子只出现第一个 path 类参数的值，不出现第二个 |
+| T13 | path 值为 `F:\dir\test_report.pdf` | 句子只出现 `test_report.pdf`，不出现完整路径 |
 
 
 ### 3.8 前端改动（2 处）
@@ -799,15 +1116,16 @@ def build_content_items(tool_result: List[Dict[str, Any]]) -> List[Dict[str, Any
 | F1 | `frontend/src/features/chat/services/sseParser.ts:901-912` | observation 分支在 `step.tool_result = tr` 之后，直接取 `rawData.content_items` 存入 `step.contentItems`（可选字段，取不到则留空数组，不做 JSON.parse）；类型 `ExecutionStep` 增 `contentItems?: ObservationContentItem[]` |
 | F2 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 新增 contentItems 驱动的「工具执行明细」渲染块：逐元素渲染一行一个工具 |
 
-F2 渲染契约：
+F2 渲染契约（只定粒度和数据源，不定呈现细节）：
 
 | 项 | 规则 |
 |---|---|
 | 行数 | 一个 tool 一行，行数 == `contentItems.length`（单工具 1 行、多工具 N 行，同构无分支） |
-| 行内字段 | 各自独立摆位：`tool_zh`/`tool`（名称）+ `exec_code`（三态徽标）+ `duration_ms`（>0 才显示）+ `params`（逐键 `键: 值`）；不是一句话拼接 |
-| 失败行 | 追加 `detail`（失败详情），同在 contentItems 内，无需回查 tool_result |
+| 数据源 | `contentItems` 对象数组，逐字段取用 |
 | 无 contentItems 时 | 数组为空 → 该渲染块不渲染 |
 | 与现有渲染的关系 | 新增块，不改动现有子行的渲染逻辑；两者数据源与职责独立，互不依赖 |
+
+呈现细节（行内字段顺序、是否用 exec_code 徽标、message/detail 如何展示）由北京老陈在前端设计阶段定，本方案只约定一行一工具的粒度和 contentItems 数据源。
 
 ### 3.9 风险与防御
 
