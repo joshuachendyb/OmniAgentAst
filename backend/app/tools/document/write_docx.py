@@ -123,14 +123,14 @@ def _build_write_docx_llm_data(
         return {
             "summary": f"写入Word {file_path}，失败: {_detail}",
             "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入Word失败", "code": ERR_WRITE_DOCX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_DOCX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
         "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
-        "status": {"exec_code": "success", "message": "写入Word成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},

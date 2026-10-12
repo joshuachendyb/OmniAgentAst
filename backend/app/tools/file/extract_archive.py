@@ -56,7 +56,7 @@ def _build_extract_archive_llm_data(
         return {
             "summary": f"解压文件{source}，失败",
             "action": {"tool": "extract", "tool_zh": "解压", "params": _act_params},
-            "status": {"exec_code": "error", "message": "解压失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_EXTRACT, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -73,7 +73,7 @@ def _build_extract_archive_llm_data(
     return {
         "summary": f"解压文件{source}，成功: {'，'.join(parts)}",
         "action": {"tool": "extract", "tool_zh": "解压", "params": _act_params},
-        "status": {"exec_code": "success", "message": "解压成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": _m,
     }

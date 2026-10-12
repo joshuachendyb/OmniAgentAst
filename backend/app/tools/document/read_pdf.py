@@ -137,7 +137,7 @@ def _build_read_pdf_llm_data(
         return {
             "summary": f"读取PDF{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},
-            "status": {"exec_code": "error", "message": "读取PDF失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -151,7 +151,7 @@ def _build_read_pdf_llm_data(
     return {
         "summary": summary_str,
         "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},
-        "status": {"exec_code": "success", "message": "读取PDF成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "page_count": {"value": page_count, "text": f"{page_count}页"},

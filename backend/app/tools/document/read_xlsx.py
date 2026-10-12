@@ -69,7 +69,7 @@ def _build_read_xlsx_llm_data(
         return {
             "summary": f"读取Excel{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取Excel失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -79,7 +79,7 @@ def _build_read_xlsx_llm_data(
     return {
         "summary": f"读取Excel{file_path}，成功: {row_count}行，{sheet_count}个工作表",
         "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
-        "status": {"exec_code": "success", "message": "读取Excel成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "row_count": {"value": row_count, "text": f"{row_count}行"},

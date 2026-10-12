@@ -109,7 +109,7 @@ def _build_write_xlsx_llm_data(
         return {
             "summary": f"写入Excel {file_path}，失败: {_detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
-            "status": {"exec_code": "error", "message": "写入Excel失败", "code": ERR_WRITE_XLSX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_XLSX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -118,14 +118,14 @@ def _build_write_xlsx_llm_data(
         return {
             "summary": f"写入Excel {file_path}，警告: {detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
-            "status": {"exec_code": "warning", "message": "写入Excel警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
+            "status": {"exec_code": "warning", "message": "警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"写入Excel {file_path}，成功: {row_count}行",
         "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
-        "status": {"exec_code": "success", "message": "写入Excel成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "row_count": {"value": row_count, "text": f"{row_count}行"},

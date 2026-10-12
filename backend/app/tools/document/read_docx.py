@@ -56,7 +56,7 @@ def _build_read_docx_llm_data(
         return {
             "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
-            "status": {"exec_code": "error", "message": "读取Word失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -73,7 +73,7 @@ def _build_read_docx_llm_data(
     return {
         "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
-        "status": {"exec_code": exec_code, "message": "读取Word成功" if exec_code == "success" else "读取Word有警告", "code": "", "detail": detail, "hint": hint},
+        "status": {"exec_code": exec_code, "message": "成功" if exec_code == "success" else "有警告", "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},
