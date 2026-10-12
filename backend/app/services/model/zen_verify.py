@@ -20,6 +20,9 @@
     ④报告文件名时间戳用文件系统安全格式(Windows 禁 ':'), 与 file_persist 同款替换 — 小欧-2026-10-10
   2026-10-10 小欧 - 归并行内注释到本板块: zen_gate 外部库路径(项目外独立迭代, 不可复制进项目,
     否则失去"先在外部更新配方"的意义) 与 Authorization 空 key 时去掉畸形 Bearer 头 — 小欧-2026-10-10
+
+  2026-10-11 小欧 - _verify_by_adapter 删硬编码 opencodeZen 键名, 由传入 name 解析; 加 ProviderAdapter 基类守卫(无适配器 provider 返回明确错误而非假绿) — 小欧-2026-10-11
+
 """
 import asyncio
 import importlib.util
@@ -32,6 +35,9 @@ import httpx
 
 from app.file_persist import _files_root
 from app.llm.adapters import get_provider_adapter
+
+from app.llm.adapters.base import ProviderAdapter
+
 from app.logger import logger
 from app.services.model import model_service as svc
 
@@ -95,10 +101,17 @@ def _tool_stub(name: str, desc: str, prop: str) -> Dict[str, Any]:
                        "required": [prop]}}}
 
 
-async def _verify_by_adapter(model: str, api_base: str, api_key: str,
+async def _verify_by_adapter(model: str, name: str, api_base: str, api_key: str,
                              sem: asyncio.Semaphore) -> Dict[str, Any]:
-    """adapter 路: 走 opencodeZenAdapter 的四条件(UA/session/stream/tools)"""
-    adapter = get_provider_adapter("opencodeZen")
+    """adapter 路: 走该 provider 定制适配器的四条件(UA/session/stream/tools)
+
+    编辑历史: 2026-10-11 小欧 删硬编码 opencodeZen 键名, name 由调用方透传;
+      加 ProviderAdapter 基类守卫 — 无适配器的 provider 返回明确错误而非假绿。
+    """
+    adapter = get_provider_adapter(name)
+    if type(adapter) is ProviderAdapter:
+        return {"ok": False, "endpoint": "", "status": -1,
+                "error": f"provider '{name}' 无 zen 适配器, 无法验证(请检查配置键名)"}
     endpoint_rel = adapter.endpoint_for(model)        # /chat/completions 或 /responses
     out: Dict[str, Any] = {"ok": False, "endpoint": endpoint_rel, "status": -1, "error": ""}
     tools = [_tool_stub("bash", "Executes a given command.", "command"),
@@ -199,7 +212,7 @@ async def verify_provider_zen(name: str) -> Dict[str, Any]:
     sem = asyncio.Semaphore(_CONCURRENCY)
     flat = await asyncio.gather(*[
         t for m in models
-        for t in (_verify_by_zen_gate(m, sem, zg), _verify_by_adapter(m, api_base, api_key, sem))
+        for t in (_verify_by_zen_gate(m, sem, zg), _verify_by_adapter(m, name, api_base, api_key, sem))
     ])
 
     results = [{
