@@ -61,6 +61,9 @@ export interface ExecutionStep {
   //   reject_type 承载拒绝归因(safety/user/timeout/sandbox), 供 useTaskInfo 生成事件文案前缀。
   reject_type?: string;
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
+  // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：
+  //   后端 content_items 对象数组，与 content 同源同序；前端现阶段只透传保存 — 小欧-2026-10-12
+  contentItems?: Array<Record<string, unknown>>;
 
   // 【6-03-09】添加task_id字段，用于分页请求
   task_id?: string; // 任务ID，用于分页请求

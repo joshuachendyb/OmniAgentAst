@@ -908,6 +908,11 @@ const processSSEData = (
           step.tool_name = (el.tool_name as string) || '';
           step.summary = (llmData.summary as string) || '';
           step.error_message = (status.message as string) || undefined;
+          // 2026-10-12 小欧 - observation content 落盘：后端 ObservationStep 下发 content（一句一工具）
+          //   与 content_items（对象数组），前端按行显示；与 tool_result 下标对齐 — 小欧-2026-10-12
+          step.content = typeof rawData.content === 'string' ? rawData.content : '';
+          const rawItems = (rawData.content_items ?? rawData.contentItems) as unknown;
+          step.contentItems = Array.isArray(rawItems) ? rawItems : [];
           // 2026-10-04 小欧 文档[8]§4.1.4: 删 step.content = step.summary(名不副实——顶着"正文"名字装的是摘要副本,
           //   后端真正正文是 tool_result[i].data_text, 从未进过 content); 孤儿 obs 段只读 summary, 兜底链同步收敛 — 小欧-2026-10-04
         } else {

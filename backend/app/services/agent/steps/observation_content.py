@@ -29,6 +29,11 @@ PARAM_VALUE_MAX_CHARS = 50   # 单个参数值的字符数上限, 超限整项�
 CONTENT_MAX_CHARS = 2048   # content 序列化后的字符数上限（D5）
 
 
+def _one_line(text: str) -> str:
+    """压成单行：值内换行符转空格，保"一句一行"不变式 — 小欧 2026-10-12"""
+    return " ".join(str(text).split())
+
+
 def _first_line(value: Any) -> str:
     """取字符串首行 — 小欧 2026-10-12"""
     lines = str(value).splitlines()
@@ -253,7 +258,7 @@ def _zh_value(key: str, val: Any) -> str:
     if isinstance(val, bool) and key in BOOL_ZH:
         pos, neg = BOOL_ZH[key]
         return pos if val else neg
-    text = "" if val is None else str(val)
+    text = "" if val is None else _one_line(str(val))
     if key == "command" and len(text) > COMMAND_MAX_CHARS:
         text = text[:COMMAND_MAX_CHARS] + "…"
     if not text:
@@ -272,7 +277,7 @@ def render_line(item: Dict[str, Any]) -> str:
     shown = []
     seen_path = False
     for key, val in params.items():
-        text = "" if val is None else str(val)
+        text = "" if val is None else _one_line(str(val))
         if key in PATH_LIKE:
             if seen_path:
                 continue
@@ -288,7 +293,7 @@ def render_line(item: Dict[str, Any]) -> str:
             shown.append(frag)
     if shown:
         parts.append(" | ".join(shown))
-    message = str(item.get("message") or "")
+    message = _one_line(item.get("message") or "")
     if message:
         parts.append(message)
     duration = item.get("duration_ms")

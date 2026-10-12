@@ -160,17 +160,14 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
   const getResultForIndex = (
     idx: number
   ): Record<string, unknown> | undefined => results[idx];
-  // 每工具结果摘要（按数组下标配对, 2026-10-04）
-  // 文档[8]§5.4.2 第2条: 摘要只取 llm_data.summary, 不再兜底 data_text/r.summary
-  // (data_text 是长观察文本, 截前 60 字即"乱码片段"; 无 summary 时不渲染摘要块) — 小欧 2026-10-04
-  const getResultSummary = (i: number): string => {
-    const r = getResultForIndex(i);
-    if (!r) return '';
-    const llm = (r.llm_data || r.llmData) as
-      | Record<string, unknown>
-      | undefined;
-    return (llm?.summary as string) || '';
-  };
+  // 每工具结果行文本（按数组下标配对, 2026-10-04）
+  // 2026-10-12 小欧 - content 一句一行替代 summary：后端保证 content 行数 == tool_result 元素数
+  //   且同序；空 content 即无文本（不回落 summary，禁 backward）— 小欧-2026-10-12
+  const contentLines = observations.flatMap((obs) => {
+    const c = (obs as ExecutionStep | undefined)?.content;
+    return typeof c === 'string' && c ? c.split('\n') : [];
+  });
+  const getResultLine = (i: number): string => contentLines[i] ?? '';
   const getResultStatus = (
     i: number
   ): 'success' | 'error' | 'warning' | undefined => {
@@ -286,7 +283,7 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
               }));
               const paramsFoldable = paramRows.length > PARAMS_FOLD_THRESHOLD;
               const paramsShown = !paramsFoldable || !!paramsOpen[i];
-              const sum = getResultSummary(i);
+              const sum = getResultLine(i);
               const st = getResultStatus(i);
               const isOpen = !!expanded[i];
               const _resForTool = getResultForIndex(i);
