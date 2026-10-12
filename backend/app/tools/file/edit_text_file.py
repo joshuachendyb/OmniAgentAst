@@ -493,11 +493,15 @@ async def _precise_replace_in_file(
             except UnicodeEncodeError as e:
                 replace_result['validation_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
                 return False
-            # 语法校验 — 检出问题仅告警, 照常落盘(北京老陈 2026-10-12): 原为硬阻断(任意模式语法错即拒绝写入),
+            # 语法校验 — 检出问题仅告警, 照常落盘(北京老陈 2026-10-12): 原为硬阻断(语法错即拒绝写入),
             #   但本检查是启发式(会误判), 且 edit 是局部修改——因全文某处历史语法错拒改一行伤害更大。
-            #   现与 write 统一为 warning: 改照样生效, 由上层按 warning 呈现, 与 write_text_file 同口径。
+            #   现与 write 统一为 warning: 改照样生效, 由上层按 warning 呈现。
+            #   校验对象=合并完成即将落盘的 write_content(见下方), 非 new_content 片段。
             if not replace_result.get('validation_error'):
-                _syn = validate_syntax(new_content, detect_language(str(path), new_content), str(path))
+                # 2026-10-12 小欧(北京老陈令) - 校验对象改 write_content(合并完成、即将落盘的那一份):
+                #   原校验 new_content, 与实际 f.write(write_content) 之间隔着 CRLF 转换,
+                #   校验对象≠落盘对象。原则: 检测必须针对合并编辑完成后的整体文件。
+                _syn = validate_syntax(write_content, detect_language(str(path), write_content), str(path))
                 if not _syn.valid:
                     # 2026-10-12 小欧(北京老陈令) - 直接取校验器结论: _syn.error 已含语言名与行号,
                     #   不再额外 insert 行号(改前致 "行2；Python语法错误(行2…)" 行号重复)

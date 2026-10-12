@@ -266,6 +266,7 @@ async def write(
             logger.warning(f"[write] 自动移除Python文件末尾的heredoc标记PYEOF: {file_path}")
 
     # 语法检测 — 检出问题仅告警, 照常写入(北京老陈 2026-10-12): 检查为启发式存在误判, 阻断会拦死合法写入
+    #   校验对象=即将落盘的 checked_content(全量内容, 非片段), 与 write 写入内容一致
     _syn = validate_syntax(checked_content, _lang, file_path)
     if not _syn.valid:
         # 2026-10-12 小欧(北京老陈令) - 文案直接取校验器结论(error_text 已含语言名/行号/建议),
