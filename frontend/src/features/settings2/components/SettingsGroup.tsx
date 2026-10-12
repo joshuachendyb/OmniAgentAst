@@ -25,6 +25,7 @@
 // 2026-10-05 小欧 - appearance 组加前缀支, 新分节「step渲染控制」(文档[9] §5.11): 不加会被 return '外观' 吞掉 — 小欧-2026-10-05
 // 编辑历史: 2026-10-06 小欧 - security 组加块2「安全策略说明」: sectionOf 归块 + items.map 后追加
 //   DirectoryAccessNote(纯说明无配置项故不进 registry, 与 appearancePreview 同款做法)。 — 小欧-2026-10-06
+// 2026-10-13 小欧 - 缩进修复: sandbox/tuning 两分支归位 sectionOf 内(此前顶格, 与块结构错位)。纯排版, 零行为。 — 小欧-2026-10-13
 import React from 'react';
 import { Card } from 'antd';
 import { FontSize, Colors, Radius, Spacing } from '@/utils/stepStyles';
@@ -88,13 +89,13 @@ function sectionOf(group: string, key: string): string | null {
   //   块 2「安全策略说明」不是配置项, 由 items.map 循环后追加 DirectoryAccessNote(见文件末)
   if (group === 'security') return '人工确认';
   // 2026-10-12 小欧: sandbox 组拆 3 块 — 运行控制(原有8项) / 工具(工具类扩展位) / 语法检测
-//   (sandbox.tool.syntax_check.*, 后端 2026-10-12 增; 沙箱页原为平铺8项, 偏空)
-if (group === 'sandbox') {
-  if (key.startsWith('sandbox.tool.syntax_check.')) return '语法检测';
-  if (key.startsWith('sandbox.tool.')) return '工具';
-  return '运行控制';
-}
-if (group === 'tuning') {
+  //   (sandbox.tool.syntax_check.*, 后端 2026-10-12 增; 沙箱页原为平铺8项, 偏空)
+  if (group === 'sandbox') {
+    if (key.startsWith('sandbox.tool.syntax_check.')) return '语法检测';
+    if (key.startsWith('sandbox.tool.')) return '工具';
+    return '运行控制';
+  }
+  if (group === 'tuning') {
     if (key.startsWith('tuning.llm.')) return 'LLM 语义参数';
     if (key.startsWith('tuning.llm_net.')) return 'LLM 网络/超时/连接池';
     if (key.startsWith('tuning.concurrency.')) return '并发配额';

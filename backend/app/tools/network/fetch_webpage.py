@@ -21,8 +21,8 @@
 #   【改法】改`cf_resp.content[:FETCHPAGE_OUTLIMIT_BODY_BYTES]`字节切片后再decode("utf-8", errors="replace"), 与流式分支同一口径
 # 2026-08-13 - 小欧 - 三堂会审修复#32: js_render成功后L728仍重判_needs_browser可能二次Playwright渲染
 #   【病根】SPA空壳自检(原L726-728)对静态GET产物设计, 但js_render成功时html_content已是渲染产物, 无条件重判会对已渲染产物再渲染一次(浪费+可能发散)
-#   【改法】新增js_render_ok标志(js_render且playwright无error), 静态GET门
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取网页→读网页控与SPA回退均以`not js_render_ok`为前提; js_render失败回落静态的路径仍保留自动回退, 无退化
+#   【改法】新增js_render_ok标志(js_render且playwright无error), 静态GET门控与SPA回退均以`not js_render_ok`为前提; js_render失败回落静态的路径仍保留自动回退, 无退化
+# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 获取网页→读网页
 """
 N3: fetchpage — 获取和处理网页内容
 
