@@ -53,7 +53,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
     return {
         "summary": summary_text,
         "action": {"tool": "event_log", "tool_zh": "读日志", "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{event_count}条事件", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"events": {"value": event_count, "text": f"{event_count}条"}},
     }

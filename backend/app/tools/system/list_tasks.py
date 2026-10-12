@@ -95,7 +95,7 @@ def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dic
     return {
         "summary": f"获取计划任务成功: 共{total_raw}个，匹配{total_matched}个",
         "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
-        "status": {"exec_code": "success", "message": "获取计划任务列表成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:共{total_raw}个，匹配{total_matched}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total_raw, "text": f"{total_raw}个"}, "matched": {"value": total_matched, "text": f"{total_matched}个"}},
     }

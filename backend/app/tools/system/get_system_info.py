@@ -29,7 +29,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
         return {
             "summary": f"获取系统信息，{info_type}，失败",
             "action": {"tool": "sysinfo", "tool_zh": "查系统", "params": {"info_type": info_type}},
-            "status": {"exec_code": "error", "message": "获取系统信息失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -37,7 +37,7 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     return {
         "summary": _summary,
         "action": {"tool": "sysinfo", "tool_zh": "查系统", "params": {"info_type": info_type}},
-        "status": {"exec_code": "success", "message": "获取系统信息成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }

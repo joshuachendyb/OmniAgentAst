@@ -101,10 +101,15 @@ def _build_search_files_llm_data(
     summary = f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项"
     if user_offset:
         summary += f"，第{user_offset+1}-{total}项"
+        message = f"完成:共{total}个匹配项，第{user_offset+1}-{total}项"
+    elif total == 0:
+        message = "完成:未找到匹配"
+    else:
+        message = f"完成:共{total}个匹配项"
     return {
         "summary": summary,
         "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"完成:共{total}个匹配项", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": message, "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "total": {"value": total, "text": f"{total}个匹配"},
