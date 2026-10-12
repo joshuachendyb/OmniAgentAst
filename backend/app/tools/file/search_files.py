@@ -78,7 +78,7 @@ def _build_search_files_llm_data(
         return {
             "summary": f"搜索文件{search_dir}，失败",
             "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
-            "status": {"exec_code": "error", "message": "搜索失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -92,7 +92,7 @@ def _build_search_files_llm_data(
         return {
             "summary": f"在 {search_dir} 中搜索 '{user_pattern}' 完成，共 {total} 个匹配项，结果已截断{_timeout_str}",
             "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
-            "status": {"exec_code": "warning", "message": "搜索结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
+            "status": {"exec_code": "warning", "message": "结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
             "duration_ms": duration_ms,
             "metrics": {
                 "total": {"value": total, "text": f"{total}个匹配"},
@@ -104,7 +104,7 @@ def _build_search_files_llm_data(
     return {
         "summary": summary,
         "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
-        "status": {"exec_code": "success", "message": "搜索完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "total": {"value": total, "text": f"{total}个匹配"},

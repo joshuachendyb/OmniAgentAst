@@ -27,6 +27,7 @@
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 复制文件→复制
+# 2026-10-12 小欧 - message去tool_zh前缀（北京老陈令，第五章A方式）: 复制成功/失败→成功/失败
 """
 F7: copy_file — 复制文件
 
@@ -78,14 +79,14 @@ def _build_copy_file_llm_data(
         return {
             "summary": f"复制文件{source}，失败",
             "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
-            "status": {"exec_code": "error", "message": "复制失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_COPY_FAILED, "detail": detail, "hint": hint if hint else "请检查源文件路径和目标路径及权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
             "summary": f"复制成功: {source} -> {destination}",
         "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
-        "status": {"exec_code": "success", "message": "复制成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": extra_metrics or {},
     }

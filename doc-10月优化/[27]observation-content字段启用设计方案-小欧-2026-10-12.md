@@ -719,13 +719,14 @@ hive, output_format, value_type, value, time_range, exclude_patterns
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-12 小欧 - 新建（observation.content 启用方案 B1）。由 tool_result[] 投影出
-#   content_items 对象数组; content 字符串由 ObservationStep 对该数组 dumps 生成, 本文件不产字符串 — 小欧 2026-10-12
+#   content_items 对象数组; content 句子由 ObservationStep 逐条 render_line 生成,
+#   本文件提供数组构造与句子渲染 — 小欧 2026-10-12
 import json
 from typing import Any, Dict, List
 
 from app.logger import logger
 
-# 参数丢弃名单: 与本文 3.5.6 表的丢列逐键一致, 改表即改本常量 — 小欧 2026-10-12
+# 参数丢弃名单: 与设计文档 3.5.6 表的丢列逐键一致, 改表即改本常量 — 小欧 2026-10-12
 DROP_KEYS = frozenset({
     # 框架默认开关与基础设施
     "shell_type", "success_codes", "ignore_case", "overwrite",
@@ -799,6 +800,104 @@ def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
     return _order_params(out)
 
 
+# message 去 tool_zh 前缀：tool_zh + message 合读通顺（设计文档第五章）
+# 按工具逐个登记剥离前缀，无匹配则原文保留（验证失败类/DB原生错误直出）
+# 只改 content 呈现层，63 个工具源码不动 — 小欧 2026-10-12
+MSG_STRIP = {
+    "copy": ("复制",),
+    "delete": ("删除",),
+    "edit": ("编辑",),
+    "find": ("搜索",),
+    "grep": ("搜索",),
+    "listdir": ("列出目录",),
+    "move": ("移动",),
+    "read": ("读取",),
+    "rename": ("重命名",),
+    "tree": ("列出目录树",),
+    "write": ("写入",),
+    "compress": ("压缩",),
+    "extract": ("解压",),
+    "read_docx": ("读取Word",),
+    "read_pdf": ("读取PDF",),
+    "read_pptx": ("读取PPT",),
+    "read_xlsx": ("读取Excel",),
+    "readmedia": ("读取媒体文件", "读取媒体"),
+    "write_docx": ("写入Word",),
+    "write_pdf": ("写入PDF",),
+    "write_pptx": ("写入PPT",),
+    "write_xlsx": ("写入Excel",),
+    "bash": ("执行",),
+    "fetchpage": ("获取网页内容", "获取网页"),
+    "notify": ("通知发送", "通知"),
+    "searchtool": ("搜索",),
+    "searchweb": ("搜索",),
+    "timenow": ("获取当前时间",),
+    "download": ("文件下载",),
+    "httpget": ("HTTP请求",),
+    "ping_port": ("Ping", "端口"),
+    "analyze_data": ("分析",),
+    "execute_sql": ("执行",),
+    "filter_data": ("筛选",),
+    "generate_chart": ("图表生成",),
+    "get_db_schema": ("获取",),
+    "query_sql": ("查询",),
+    "clipboard_control": ("剪贴板",),
+    "keyboard_control": ("键盘操作",),
+    "mouse_click": ("单击",),
+    "mouse_move": ("鼠标移动",),
+    "mouse_position": ("获取鼠标位置",),
+    "mouse_scroll": ("滚动",),
+    "screen_capture": ("截图",),
+    "set_window_state": ("窗口操作",),
+    "window_focus": ("窗口聚焦", "聚焦窗口"),
+    "window_info": ("获取",),
+    "window_resize": ("调整窗口大小",),
+    "create_task": ("创建计划任务",),
+    "delete_task": ("删除计划任务",),
+    "event_log": ("获取",),
+    "list_tasks": ("获取计划任务列表",),
+    "sysinfo": ("获取系统信息",),
+    "which": ("命令",),
+    "calendar": ("日期检查",),
+    "timeadd": ("时间加减",),
+    "timediff": ("计算时间差",),
+    "timer_clear": ("定时器",),
+    "timer_list": ("获取定时器列表",),
+    "timer_set": ("定时器设置", "定时器"),
+    "registry_delete": ("删除注册表",),
+    "registry_read": ("读取注册表",),
+    "registry_write": ("写入注册表",),
+}
+
+# clipboard 英中动作词互转（剪贴板read成功→读成功）— 小欧 2026-10-12
+CLIPBOARD_ACTION_ZH = (("read", "读"), ("write", "写"))
+
+
+def _clean_message(tool: str, tool_zh: str, message: str) -> str:
+    """message 去 tool_zh 前缀：tool_zh + message 合读通顺（设计文档第五章）
+    只改 content 呈现层，工具源码/LLM 上下文/前端 detail 原样不动 — 小欧 2026-10-12"""
+    text = message or ""
+    if not text:
+        return ""
+    for prefix in MSG_STRIP.get(tool, ()):
+        if text.startswith(prefix):
+            stripped = text[len(prefix):]
+            if stripped:
+                text = stripped
+            break
+    else:
+        if tool_zh and text.startswith(tool_zh):
+            stripped = text[len(tool_zh):]
+            if stripped:
+                text = stripped
+    if tool == "clipboard_control":
+        for en, zh in CLIPBOARD_ACTION_ZH:
+            if text.startswith(en):
+                text = zh + text[len(en):]
+                break
+    return text
+
+
 def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
     """单个 tool_result 元素 → 一条 content 记录（7 字段；全 .get 兜底, 绝不抛异常）— 小欧 2026-10-12"""
     llm = element.get("llm_data")
@@ -809,14 +908,15 @@ def _build_item(element: Dict[str, Any]) -> Dict[str, Any]:
     status = status if isinstance(status, dict) else {}
 
     tool = action.get("tool") or element.get("tool_name") or ""
+    tool_zh = str(action.get("tool_zh") or tool)
     duration = llm.get("duration_ms")
     duration = duration if isinstance(duration, (int, float)) else 0
 
     item: Dict[str, Any] = {
         "tool": str(tool),
-        "tool_zh": str(action.get("tool_zh") or tool),
+        "tool_zh": tool_zh,
         "exec_code": str(status.get("exec_code") or "unknown"),
-        "message": str(status.get("message") or ""),
+        "message": _clean_message(str(tool), tool_zh, str(status.get("message") or "")),
         "params": _pick_params(action),
         "duration_ms": duration,
         "detail": str(status.get("detail") or ""),
@@ -1460,12 +1560,14 @@ F2 边界（只划边界，不定实现）：
 | registry_read | 读注册表 | 读取注册表成功/失败 | 成功/失败 | 读注册表 成功 |
 | registry_write | 写注册表 | 写入注册表成功 | 成功 | 写注册表 成功 |
 
-### 5.3 落地方式（待定）
+### 5.3 落地方式（已定案：B方式集中处理）
 
-| 方式 | 做法 | 代价 |
-|---|---|---|
-| A：改 63 个工具源码 | 每个 message 删前缀 | 63 文件，一劳永逸，LLM/前端同步受益 |
-| B：只在 render_line 里去重 | 句子渲染时剥掉 tool_zh 前缀 | 0 文件改动，但 LLM 上下文不变 |
+| 方式 | 做法 | 代价 | 结论 |
+|---|---|---|---|
+| A：改 63 个工具源码 | 每个 message 删前缀 | 63 文件，LLM/前端同步受益 | 不采用：风险大，63 个文件逐个改易出错 |
+| B：content 呈现层集中去前缀 | `observation_content.py` 新增 `MSG_STRIP` 按工具剥离前缀 + `_clean_message`，只改 `content_items.message` 与句子 | 1 个文件；工具源码/LLM 上下文/前端 detail 原样不动，零风险 | **采用**：5.2 表的改后值在 content 层精确生效 |
+
+B方式语义：`tool_zh(新短名词) + 去前缀后message` 合读通顺；剥离只认 5.2 表列出的前缀，无匹配则原文保留（参数验证失败类、DB 原生错误直出）。
 
 ---
 

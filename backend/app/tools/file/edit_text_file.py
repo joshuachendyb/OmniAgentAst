@@ -296,7 +296,7 @@ def _build_edit_text_file_llm_data(
         return {
             "summary": f"编辑文件{file_path}，失败",
             "action": {"tool": "edit", "tool_zh": "编辑", "params": _act_params},
-            "status": {"exec_code": "error", "message": "编辑失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和编辑参数"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_EDIT_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和编辑参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -331,7 +331,7 @@ def _build_edit_text_file_llm_data(
     return {
         "summary": _summary,
         "action": {"tool": "edit", "tool_zh": "编辑", "params": _act_params},
-        "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg or syntax_warning, "hint": _hint},
+        "status": {"exec_code": _exec_code, "message": "完成", "code": "", "detail": _warning_msg or syntax_warning, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {
             "applied": {"value": applied, "text": f"{applied}/{total}处"},

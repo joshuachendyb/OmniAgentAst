@@ -162,7 +162,7 @@ def _build_list_directory_llm_data(
         return {
             "summary": f"列出目录{dir_path}，失败",
             "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
-            "status": {"exec_code": "error", "message": "列出目录失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -191,7 +191,7 @@ def _build_list_directory_llm_data(
     return {
         "summary": summary,
         "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
-        "status": {"exec_code": "success", "message": "列出目录成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
     }

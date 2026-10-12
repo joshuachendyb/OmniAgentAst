@@ -68,7 +68,7 @@ def _build_move_file_llm_data(
         return {
             "summary": f"移动文件{source}，失败",
             "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
-            "status": {"exec_code": "error", "message": "移动失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -81,7 +81,7 @@ def _build_move_file_llm_data(
     return {
         "summary": f"移动成功: {source} -> {destination}",
         "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
-        "status": {"exec_code": "success", "message": "移动成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": _metrics,
     }
