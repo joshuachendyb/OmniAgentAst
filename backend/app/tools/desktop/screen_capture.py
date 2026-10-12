@@ -60,7 +60,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: Optio
     return {
         "summary": summary,
         "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "params": _act_params},
-        "status": {"exec_code": "success", "message": "截图完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
 

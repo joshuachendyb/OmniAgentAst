@@ -38,13 +38,13 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
         return {
             "summary": f"{click_type_text}({x_str},{y_str})，失败: {detail}",
             "action": {"tool": "mouse_click", "tool_zh": "点击鼠标", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
-            "status": {"exec_code": "error", "message": f"点击失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
+            "status": {"exec_code": "error", "message": f"失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"{click_type_text}({x_str},{y_str})，成功",
         "action": {"tool": "mouse_click", "tool_zh": "点击鼠标", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
-        "status": {"exec_code": "success", "message": f"{click_type_text}成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:({x_str},{y_str})", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"x": {"value": x, "text": f"X={x_str}"}, "y": {"value": y, "text": f"Y={y_str}"}, "button": {"value": button, "text": button_cn}, "click_type": {"value": click_type, "text": click_type_text}},
     }

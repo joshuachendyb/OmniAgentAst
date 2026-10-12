@@ -32,13 +32,13 @@ def _build_mouse_position_llm_data(exec_code: str, duration_ms: int, x=0, y=0, d
         return {
             "summary": f"获取鼠标位置失败: {detail}",
             "action": {"tool": "mouse_position", "tool_zh": "鼠标位置", "params": _act_params},
-            "status": {"exec_code": "error", "message": "获取鼠标位置失败", "code": ERR_DESKTOP_GET_MOUSE_POSITION, "detail": detail, "hint": hint if hint else "请检查鼠标设备"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_DESKTOP_GET_MOUSE_POSITION, "detail": detail, "hint": hint if hint else "请检查鼠标设备"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"获取鼠标位置成功: 当前({x},{y})",
         "action": {"tool": "mouse_position", "tool_zh": "鼠标位置", "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取鼠标位置成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:({x},{y})", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
 

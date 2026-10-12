@@ -46,13 +46,13 @@ def _build_window_focus_llm_data(exec_code: str, duration_ms: int, window_title:
         return {
             "summary": f"聚焦窗口失败,其窗口标题为 {window_title}",
             "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "params": {"window_title": window_title}},
-            "status": {"exec_code": "error", "message": "聚焦窗口失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": hint if hint else "请检查窗口标题是否正确"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": hint if hint else "请检查窗口标题是否正确"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"窗口已聚焦: 其窗口标题为 {window_title}",
         "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "params": {"window_title": window_title}},
-        "status": {"exec_code": "success", "message": "窗口聚焦完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
 

@@ -137,7 +137,7 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
     return {
         "summary": f"获取窗口{_target}信息成功: 共{window_count}个窗口",
         "action": {"tool": "window_info", "tool_zh": "取窗口信息", "params": _act_params},
-        "status": {"exec_code": "success", "message": "获取成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:{window_count}个窗口", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"windows": {"value": window_count, "text": f"{window_count}个"}},
     }

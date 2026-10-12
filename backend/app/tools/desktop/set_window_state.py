@@ -73,7 +73,7 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
         return {
             "summary": f"窗口操作{action}失败:窗口标题为 {window_title}",
             "action": {"tool": "set_window_state", "tool_zh": "设窗口状态", "params": _act_params},
-            "status": {"exec_code": "error", "message": f"窗口操作{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": hint if hint else "请检查窗口标题和操作类型"},
+            "status": {"exec_code": "error", "message": f"{action}失败", "code": err_code or ERR_WINDOW_SET_STATE, "detail": detail, "hint": hint if hint else "请检查窗口标题和操作类型"},
             "duration_ms": duration_ms, "metrics": {},
         }
     summary = f"窗口操作{action}完成: 窗口标题为{window_title}"
@@ -84,7 +84,7 @@ def _build_set_window_state_llm_data(exec_code: str, duration_ms: int, action: s
     return {
         "summary": summary,
         "action": {"tool": "set_window_state", "tool_zh": "设窗口状态", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"窗口操作{action}成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"{action}成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
 

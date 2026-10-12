@@ -57,13 +57,13 @@ def _build_window_resize_llm_data(exec_code: str, duration_ms: int, window_title
         return {
             "summary": f"调整窗口大小失败,其窗口标题为 {window_title}",
             "action": {"tool": "window_resize", "tool_zh": "窗口缩放", "params": _act_params},
-            "status": {"exec_code": "error", "message": "调整窗口大小失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": hint if hint else "请检查窗口标题和尺寸"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": hint if hint else "请检查窗口标题和尺寸"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"调整标题为{window_title}的窗口成功,分辨率为 {width}x{height}",
         "action": {"tool": "window_resize", "tool_zh": "窗口缩放", "params": _act_params},
-        "status": {"exec_code": "success", "message": "窗口大小调整完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
 

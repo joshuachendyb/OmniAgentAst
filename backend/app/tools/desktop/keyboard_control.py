@@ -37,7 +37,7 @@ def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: s
     return {
         "summary": f"键盘{action}，成功",
         "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "params": _act_params},
-        "status": {"exec_code": "success", "message": "键盘操作完成", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
 

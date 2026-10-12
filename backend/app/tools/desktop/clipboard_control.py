@@ -35,19 +35,20 @@ def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: 
                                        err_code: str = "", detail: str = "", hint: str = "") -> dict:
     """clipboard_control的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     _act_params = {"action": action}
+    _action_zh = {"read": "读", "write": "写"}.get(action, action)  # message中文动作词（北京老陈令）— 小欧 2026-10-12
     if content:
         _act_params["content"] = content
     if exec_code == "error":
         return {
             "summary": f"剪贴板{action}失败",
             "action": {"tool": "clipboard_control", "tool_zh": "剪贴读写", "params": _act_params},
-            "status": {"exec_code": "error", "message": f"剪贴板{action}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": hint if hint else "请检查剪贴板访问权限"},
+            "status": {"exec_code": "error", "message": f"{_action_zh}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": hint if hint else "请检查剪贴板访问权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
         "summary": f"剪贴板{action}成功: {char_count}个字符",
         "action": {"tool": "clipboard_control", "tool_zh": "剪贴读写", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"剪贴板{action}成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"{_action_zh}成功:{char_count}个字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {"chars": {"value": char_count, "text": f"{char_count}个"}},
     }
 
