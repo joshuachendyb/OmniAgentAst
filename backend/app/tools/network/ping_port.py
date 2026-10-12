@@ -68,14 +68,14 @@ def _build_ping_port_llm_data(
         return {
             "summary": f"网络诊断{host}，失败",
             "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
-            "status": {"exec_code": "error", "message": "网络诊断失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
         "summary": f"网络诊断{host}，成功",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
-        "status": {"exec_code": "success", "message": "网络诊断成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {},
     }
@@ -92,7 +92,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
         return {
             "summary": f"Ping{host}，失败",
             "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
-            "status": {"exec_code": "error", "message": "Ping测试失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms, "metrics": {},
         }
     status_text = "可达" if is_reachable else "不可达"
@@ -106,7 +106,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
     return {
         "summary": f"Ping{host}，{'成功' if is_reachable else '失败'}: {status_text} {latency_str}",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
-        "status": {"exec_code": "success" if is_reachable else "error", "message": f"Ping {status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
+        "status": {"exec_code": "success" if is_reachable else "error", "message": f"{status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
     }
 
@@ -121,14 +121,14 @@ def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "",
         return {
             "summary": f"端口{host}:{port}检查失败",
             "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
-            "status": {"exec_code": "error", "message": "端口检查失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms, "metrics": {},
         }
     status_text = "开放" if is_open else "关闭"
     return {
         "summary": f"端口{host}:{port}检查成功: {port}（{service}）{status_text}",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"端口{status_text}", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
     }
 

@@ -80,7 +80,7 @@ def _build_download_file_llm_data(
         return {
             "summary": f"下载文件{url}，失败",
             "action": {"tool": "download", "tool_zh": "下载", "params": _act_params},
-            "status": {"exec_code": "error", "message": "文件下载失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -90,7 +90,7 @@ def _build_download_file_llm_data(
     return {
         "summary": summary,
         "action": {"tool": "download", "tool_zh": "下载", "params": _act_params},
-        "status": {"exec_code": "success", "message": "文件下载成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功" + (f":{size_str}{type_str}" if size_str or type_str else ""), "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"file_size": {"value": file_size, "text": size_str}, "content_type": {"value": content_type, "text": content_type}},
     }

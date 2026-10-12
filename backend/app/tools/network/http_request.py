@@ -82,7 +82,7 @@ def _build_http_request_llm_data(
         return {
             "summary": f"HTTP请求:{url}，方法: {method} 失败",
             "action": {"tool": "httpget", "tool_zh": "HTTP请求", "params": _act_params},
-            "status": {"exec_code": "error", "message": "HTTP请求失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
+            "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -90,7 +90,7 @@ def _build_http_request_llm_data(
     return {
         "summary": f"HTTP请求:{url}成功: (HTTP {status_code}) ({ctype_label})",
         "action": {"tool": "httpget", "tool_zh": "HTTP请求", "params": _act_params},
-        "status": {"exec_code": "success", "message": "HTTP请求成功", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功:HTTP {status_code}{ctype_label}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}},
     }
