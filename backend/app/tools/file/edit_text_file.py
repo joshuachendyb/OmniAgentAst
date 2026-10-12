@@ -63,7 +63,7 @@ import time as _time_mod
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_response import build_success, build_error, with_artifact_file
+from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file
 from app.tools.tool_constants import EDIT_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_EDIT_FAILED, ERR_FILE_REPLACE_FAILED
 from app.tools.tool_constants import EDIT_OUTPARM_LIMIT_OLD, EDIT_OUTPARM_LIMIT_NEW, EDIT_OUTPARM_LIMIT_SAFETY
@@ -274,7 +274,7 @@ def _build_edit_text_file_llm_data(
     exec_code: str, duration_ms: int,
     file_path: str = "", applied: int = 0, total: int = 0, detail: str = "",
     diff: str = "", total_matches: int = 0, mtime_warning: str = "",
-    hint: str = "", safety_hint: str = "",
+    hint: str = "", safety_hint: str = "", syntax_warning: str = "",
     user_old_string: str = "", user_new_string: str = "",
     user_mode: str = "", user_ignore_case: Optional[bool] = None,
     user_encoding: Optional[str] = None,
@@ -300,6 +300,10 @@ def _build_edit_text_file_llm_data(
             "metrics": {},
         }
     _hint_parts = []
+    # 2026-10-12 小欧(北京老陈令) - detail/hint 分工: detail 载语法错因(供定位), hint 给出路
+    #   (文件已落盘, 用 edit 局部修正), 避免两处逐字重复
+    if syntax_warning:
+        _hint_parts.append("文件已写入；如需修正语法, 请用 edit 局部修改该处")
     if mtime_warning:
         _hint_parts.append(mtime_warning)
     if safety_hint:
@@ -310,7 +314,7 @@ def _build_edit_text_file_llm_data(
         _warning_msg = f"剩余{_remaining}处未修改"
         _hint_parts.append("建议使用 mode='all' 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
-    _exec_code = "warning" if (_warning_msg or mtime_warning or safety_hint) else "success"
+    _exec_code = "warning" if (_warning_msg or mtime_warning or safety_hint or syntax_warning) else "success"
     # 2026-10-05 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): 增减行数从 diff 现算
     #   (`+` 去 `+++` 头, `-` 去 `---` 头), summary 带 `新增N行，删除M行`; applied/total_matches 仍由 metrics 呈现
     _added = sum(1 for _ln in (diff or "").splitlines() if _ln.startswith("+") and not _ln.startswith("+++"))
@@ -319,12 +323,14 @@ def _build_edit_text_file_llm_data(
         _summary = f"编辑文件{file_path}，成功:替换 {applied}/{total_matches} 处;新增{_added}行，删除{_removed}行"
         if _warning_msg:
             _summary += f"，注意: {_warning_msg}"
+        if syntax_warning:
+            _summary += "，注意: 存在语法错误(已写入)"
     else:
         _summary = f"编辑文件{file_path}，成功: 替换 {applied}/{total_matches} 处;新增{_added}行，删除{_removed}行"
     return {
         "summary": _summary,
         "action": {"tool": "edit", "tool_zh": "编辑文件", "params": _act_params},
-        "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg, "hint": _hint},
+        "status": {"exec_code": _exec_code, "message": "编辑完成", "code": "", "detail": _warning_msg or syntax_warning, "hint": _hint},
         "duration_ms": duration_ms,
         "metrics": {
             "applied": {"value": applied, "text": f"{applied}/{total}处"},
@@ -487,19 +493,21 @@ async def _precise_replace_in_file(
             except UnicodeEncodeError as e:
                 replace_result['validation_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
                 return False
-            # 语法校验 — 统一模块; 任意模式完整文件语法错→拒绝写入(防写坏) — 小欧 2026-07-21 — 小欧 2026-07-29 优化error_text带行号+建议
+            # 语法校验 — 检出问题仅告警, 照常落盘(北京老陈 2026-10-12): 原为硬阻断(任意模式语法错即拒绝写入),
+            #   但本检查是启发式(会误判), 且 edit 是局部修改——因全文某处历史语法错拒改一行伤害更大。
+            #   现与 write 统一为 warning: 改照样生效, 由上层按 warning 呈现, 与 write_text_file 同口径。
             if not replace_result.get('validation_error'):
                 _syn = validate_syntax(new_content, detect_language(str(path), new_content), str(path))
                 if not _syn.valid:
+                    # 2026-10-12 小欧(北京老陈令) - 直接取校验器结论: _syn.error 已含语言名与行号,
+                    #   不再额外 insert 行号(改前致 "行2；Python语法错误(行2…)" 行号重复)
                     _parts = [_syn.error or "语法错误"]
-                    if _syn.line:
-                        _parts.insert(0, f"行{_syn.line}")
                     if _syn.suggestion:
                         _parts.append(f"建议:{_syn.suggestion}")
-                    replace_result['validation_error'] = "；".join(_parts)
+                    logger.warning(f"[edit] 语法警告(照常落盘): {'；'.join(_parts)}")
+                    replace_result['syntax_warning'] = "；".join(_parts)
                     replace_result['_syn_line'] = _syn.line
                     replace_result['_syn_suggestion'] = _syn.suggestion
-                    return False
             with open(_long, 'w', encoding=used_enc, newline='') as f:  # #5长路径 — 小欧 2026-08-13
                 f.write(write_content)
             record_write(file_path)
@@ -547,6 +555,7 @@ async def _precise_replace_in_file(
             "total_matches": replace_result.get("total_matches", count),
             "diff": replace_result.get("diff", ""),
             "safety_hint": replace_result.get("safety_hint", ""),
+            "syntax_warning": replace_result.get("syntax_warning", ""),  # 语法告警(已照常落盘) — 小欧 2026-10-12
             "encoding_fallback": _encoding_fallback,  # 编码回退提示 — 小欧 2026-08-09
         }
 
@@ -646,6 +655,7 @@ async def edit(
         total_matches=result.get("total_matches", 0),
         mtime_warning=result.get("mtime_warning", "") or "",
         safety_hint=_merged_hint[:EDIT_OUTPARM_LIMIT_SAFETY],  # 编码回退并入safety_hint(LLM可见) — 小欧 2026-08-09
+        syntax_warning=result.get("syntax_warning", "") or "",  # 语法告警(已落盘, 同 write) — 小欧 2026-10-12
         user_old_string=_old_preview, user_new_string=_new_preview,
         user_mode=mode, user_ignore_case=ignore_case,
         user_encoding=encoding,
@@ -672,6 +682,10 @@ async def edit(
     else:
         # diff 统一经 data["diff"] → #24(已行×列收口+两态); 不在 llm_data 顶层重复渲染(严禁重复)
         data = {"diff": result.get("diff", "")}
+    # 2026-10-12 小欧(北京老陈令) - 有语法告警时返回 warning(与 write 一致): 编辑确已落盘,
+    #   语法问题仅提示; exec_code 已由 builder 按 hint/syntax_warning 自动判定
+    if llm_data["status"]["exec_code"] == "warning":
+        return build_warning(data=data, llm_data=llm_data)
     return build_success(data=data, llm_data=llm_data)
 
 

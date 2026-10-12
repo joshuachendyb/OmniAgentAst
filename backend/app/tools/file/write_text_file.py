@@ -32,9 +32,9 @@
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "write"→"write"(3处), 与新注册名同源
 # 2026-10-05 - 小欧 - 单通道去数字化(北京老陈裁定): success/warning summary 去 `{bytes_written}字节`
 #   与「提示说明」段, 统一为 `写入文件{file_path}，成功`; bytes 在 metrics 统计段呈现(通用渲染)
-# 2026-10-12 - 小欧 - 语法阻断反馈补"文件未写入磁盘"(北京老陈令): summary/detail 补未落盘事实,
-#   hint 改为可执行出路(重新 write 而非 edit); 原反馈未言明文件是否存在, LLM 误判旧文件仍在而改用
-#   edit, 随即报"路径不存在"(实测 2026-10-12 lunar_calc.py 第85行括号未闭合)
+# 2026-10-12 - 小欧 - 语法检查由"整文件写阻断(error)"改为"照常写入+warning"(北京老陈令):
+#   本检查为启发式存在误判, 误判即拦死合法写入; 现与追加模式统一为告警, 文件确已落盘;
+#   detail 载语法错因与行号, hint 指引用 edit 修正该处(整文件重写会破坏已写入内容)
 """
 F2: write — 写文本文件
 
@@ -220,7 +220,8 @@ async def write(
     """写入文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path"""
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
-    syntax_warn = None  # 追加模式语法警告(写入后仍提示, 不阻断) — 小欧 2026-07-21
+    syntax_warn = None  # 语法问题(写入照常执行, 仅告警) — 小欧 2026-07-21 / 2026-10-12 扩至整文件写
+    syntax_hint = ""
     t0 = _time_mod.perf_counter()
     # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
     # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
@@ -264,31 +265,14 @@ async def write(
             auto_removed_pyeof = True
             logger.warning(f"[write] 自动移除Python文件末尾的heredoc标记PYEOF: {file_path}")
 
-    # 语法检测 — 整文件代码写阻断; 追加仅警告(片段无法整体校验) — 小欧 2026-07-21 — 小欧 2026-07-29 优化hint带行号+建议
+    # 语法检测 — 检出问题仅告警, 照常写入(北京老陈 2026-10-12): 检查为启发式存在误判, 阻断会拦死合法写入
     _syn = validate_syntax(checked_content, _lang, file_path)
     if not _syn.valid:
-        _lang_name = {"python": "Python", "json": "JSON", "yaml": "YAML"}.get(_syn.language, _syn.language)
-        _line_info = f"(行{_syn.line})" if _syn.line else ""
-        _sugg = f"，{_syn.suggestion}" if _syn.suggestion else ""
-        _hint = f"{_lang_name}语法错误{_line_info}{_sugg}"
-        if not append:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=_syn.error_text(), hint=_hint, user_encoding=encoding, user_append=append)
-            # 2026-10-11 小欧(北京老陈令) - 补"文件未写入磁盘"事实 + 可执行出路: 原反馈只说"失败"与错因,
-            #   未言明文件是否落盘, LLM 会误以为旧文件仍在而改用 edit, edit 随即报"路径不存在"
-            #   (实测 2026-10-12 write lunar_calc.py 第85行括号未闭合 → 下一手 edit 该文件失败)。
-            #   三处补齐: summary(最先看到)/detail(原因)/hint(下一步动作, 原hint与错因重复零指导性)。
-            llm_data["summary"] += "(文件未写入磁盘)"
-            llm_data["status"]["detail"] += "；文件未写入磁盘(语法检查未通过)"
-            llm_data["status"]["hint"] = (f"修复该行语法后, 请重新用 write 写入完整内容"
-                                          f"(文件当前不存在, 不要改用 edit)")
-            if _syn.line:
-                llm_data["metrics"]["error_line"] = {"value": _syn.line, "text": f"第{_syn.line}行"}
-            if _syn.suggestion:
-                llm_data["metrics"]["suggestion"] = {"value": _syn.suggestion, "text": _syn.suggestion}
-            return build_error(data={}, llm_data=llm_data)
-        logger.warning(f"[write] 追加模式语法警告: {_syn.error_text()}")
+        # 2026-10-12 小欧(北京老陈令) - 文案直接取校验器结论(error_text 已含语言名/行号/建议),
+        #   不在此处二次拼装(曾硬编码语言映射+行号, 致 "Python语法错误(行N)" 与 _syn.error 重复)
+        logger.warning(f"[write] 语法警告(照常写入): {_syn.error_text()}")
         syntax_warn = _syn.error_text()
+        syntax_hint = "文件已成功写入；请按上述提示用 edit 局部修正该处语法"
 
     encoding = encoding or _detect_file_encoding_for_write(file_path, append)
 
@@ -411,10 +395,11 @@ async def write(
                 except (UnicodeEncodeError, LookupError):
                     bytes_written = len(checked_content.encode("utf-8"))
                 if syntax_warn:
-                    # 追加模式: 文件已写入, 但语法有问题需提示 LLM/用户 — 小欧 2026-07-21
+                    # 文件已写入但语法有问题需提示 — 小欧 2026-07-21(追加模式) / 2026-10-12 扩至整文件写
                     llm_data = _build_write_text_file_llm_data(
                         "warning", duration_ms, file_path=str(path),
                         bytes_written=bytes_written, detail=syntax_warn,
+                        hint=syntax_hint,
                         mtime_warning=conflict_warning or "", user_encoding=encoding, user_append=append,
                     )
                     if diff_text:
