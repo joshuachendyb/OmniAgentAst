@@ -1,6 +1,8 @@
 // 编辑历史: 2026-08-26 小欧 - 8.12 实施: 输入框本体多行, 高度3-5行, 超5行内部滚动(4.3.6)
 // 编辑历史: 2026-08-28 小欧 - ①D/d1: 边框收敛至 Colors.BORDER.LIGHT #f0f0f0, 令牌化
 // 编辑历史: 2026-09-09 小欧 - 定案 B: 顶部分隔线归属 input 区上沿(紧贴 TaskInfoBar 下沿) — 小欧-2026-09-09
+// 编辑历史: 2026-10-13 13:45 小欧 - 新增可选 onKeyDown 上抛, 供 ChatInput 做历史翻动判定
+//   (IME 组字期不劫持 + 光标在首/末行才劫持 ↑↓); 可选 prop, 既有调用方零影响 — 小欧-2026-10-13
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -22,6 +24,8 @@ interface InputCoreProps {
   value: string;
   onChange: (v: string) => void;
   onPressEnter: () => void;
+  /** 上抛键盘事件给 ChatInput(IME 组字期放行 + 仅首/末行才劫持 ↑↓ 翻历史); 可选, 既有调用方零影响 */
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   disabled?: boolean;
 }
 
@@ -29,11 +33,13 @@ const InputCore: React.FC<InputCoreProps> = ({
   value,
   onChange,
   onPressEnter,
+  onKeyDown,
   disabled,
 }) => (
   <TextArea
     value={value}
     onChange={(e) => onChange(e.target.value)}
+    onKeyDown={onKeyDown}
     onPressEnter={(e) => {
       if (!e.shiftKey) {
         e.preventDefault();
