@@ -2,7 +2,7 @@
 
 创建时间：2026-10-13 08:26:25
 更新时间：2026-10-13 09:36:18
-版本：v2.0
+版本：v2.1
 编写人：小欧
 
 **版本历史**
@@ -20,6 +20,7 @@
 | v1.8 | 2026-10-13 09:36:18 | 小欧 | 三轮 10 遍全节通读核查，查出 **6 组 13 处**全部订正（致命 2 组）：①**`ParamsPanel` 传了已删除的 `open` prop**（§3.5 已删而 §3.6 还传，编译不过）→ §3.6 改写开合归属说明，新增 T33 编译零错验收；②「JSON 语法着色」残留 2 处（§2.2 顺带解决 + §2.5 V1）→ 改双色阶；③自造 `⧉` 残留 6 处（S5/I4b/DC-17/T14/T23/U3/示意）→ 全部改为复用 `CopyButton`；④DC-12「底色」vs §3.6/T20「文字色」→ 统一文字色；⑤`role="dialog"` 归属未同步（§2.3.1/I6 自建）→ 改 `FloatingEntry` 提供；⑥**`CopyButton` 是 `position:absolute`**（放面板头会压住标题）→ 加 `inline?: boolean` 可选 prop（默认 false 既有调用零变化，面板头传 `inline`）。验收新增 T33/T34 |
 | v1.9 | 2026-10-13 09:36:18 | 小欧 | 四轮逐节 10 遍核查，**6 处**（实质 2 处）：①**树头 `CopyButton` 未写明用默认形态还是 inline**（默认 `position:absolute` 放错地方会压住树头）→ §3.4 明确"树头用默认形态，面板头才传 `inline`"；②**DC-10/DC-12 仍含裸字符与病句**（`▸折叠箭头` 与 T29「无裸字符」自相矛盾、"不带自带箭头"病句）→ 改写为文字描述；③DC-17"新增"二字易误读为新建组件 → 改"增设（复用）"；④**约定 4「不再二次折叠」与 §2.3.3「巨型值折叠」字面打架** → 改写为「不按项数二次折叠，巨型单值的体量处理不属此列」，DC-06/S6 同步；⑤**T25 与 §3.4.3 窄屏口径两处都写算式/策略** → §3.4.3 加"具体落法见 T25"；⑥§2.8 与 §2.2.2 否决清单重复且 §2.8 未收录视觉 6 项 → §2.8 加注声明 + 补收录一行 |
 | v2.0 | 2026-10-13 09:36:18 | 小欧 | 五轮逐节 10 遍核查，查出 **4 处**，**其中 1 处是 v1.9 自己改坏的（已还原）**：①**§2.8 引用的「§2.2.2 视觉一致性 6 项」在 v1.9 被误删**（当时以为去重，实为误删，导致行数 840→835、§2.8 指向空）→ **全部还原**，并补 2 条此前从未入册的（凭空定面板宽、自造浮层热区），§2.2.2 现共 19 项，§2.8 改为引用式；②T18 用裸字符 `▸折叠箭头`，与 T29「全文无裸字符」自相矛盾 → 改文字描述；③T24「点 `▸`」同上 → 改「点折叠箭头」；④§3.6/§3.10/T20 三处「无**自带**箭头」病句（v1.9 只改了 DC-12 一处）→ 全部改「无箭头」。**行数回 844，§2.2.2 否决项由 6 增至 19** |
+| v2.1 | 2026-10-13 09:36:18 | 小欧 | 北京老陈令「基于前三章编写第4章详细设计实施代码」。**新增 §4 实施代码章**（§4.0 差异登记 / §4.1 代码列表 / §4.2~§4.7 逐文件全量代码 / §五 验证清单），§4.0 声明「冲突以本章为准」。落地时按 KISS/DRY 收敛 **6 处与前三章的差异**：D-1 **参数区移出 `role="button"`**（结构性根治 B1，替代 I1 的 stopPropagation 补丁——补丁方案下用户无法在展开态选中文字）；D-2 删 `ParamsTreeProps.onNodeClick` 死接口；D-3 `ParamsPanelProps` 由 `{toolName,params,children}` 改 `{toolName,params,onClose}`（T15 要求 ✕ 可关；`children` 无消费方 YAGNI）；D-4 增尺寸令牌 `PARAMS_PANEL_BODY_MAX_H`；D-5 断点矩阵改**纯 CSS 响应式三件套**（免 resize 监听与重渲染）；D-6 确认 `FloatingEntry` 自带 `stopPropagation` 故可安全置于工具行 flex 内。`ToolCallLine.tsx` 净 **−55 行**、净减 1 个 state、渲染期 `JSON.stringify` 归零 |
 
 ---
 
@@ -838,6 +839,1104 @@ content = 共 312 行
 | U1 | JSON 树嵌套深度是否限制 | **北京老陈裁定「不限制」** | DC-15；深度失控由每层展开体限高 240px 控制 |
 | U2 | 浮层打开时收起工具行，是否连带关浮层 | **北京老陈裁定「各自独立 不互相牵连」** | DC-18；§3.2 两态独立性对照表 |
 | U3 | 两处复制的内容格式 | **浮层 = `key=value` 逐行；展开区 JSON 树 = 格式化 JSON** | DC-16/DC-17；并**在树头增设复制按钮**（原设计展开区无复制入口；按钮复用 `CopyButton`，见 DC-20） |
+
+## 第4章   详细设计实施代码
+
+### 4.0 本章与前三章的差异登记（**最终口径，冲突以此为准**）
+
+> 实施前先读本表。前三章为设计推演，本章为落地时按 KISS/DRY 收敛后的**最终可实施口径**。
+
+| # | 前三章写法 | 本章落地写法 | 变更理由 |
+|---|---|---|---|
+| D-1 | §2.7 I1「浮层按钮与树节点区加 `stopPropagation`」 | **结构性修复**：`ParamsTree` 移出 `role="button"` 容器外层 | 加 `stopPropagation` 只是补丁：用户在展开态点选/复制长文本时，`stopPropagation` 拦住了父级，但**节点自身**的 `onClick` 仍会切换折叠态 → 选不中文字。移出按钮容器后两者都不需要，是 KISS 根治 |
+| D-2 | §3.4 `ParamsTreeProps` 含 `onNodeClick?`（外层接 stopPropagation） | **删除该 prop** | D-1 的结构性修复后无处可接，属死接口（YAGNI） |
+| D-3 | §3.5 `ParamsPanelProps = { toolName, params, children }` | **`{ toolName, params, onClose }`** | T15 要求 `✕` 可关闭，而 `✕` 在面板内 → 必须有 `onClose`；`children` 无消费方（内容就是分组/规格表两视图），YAGNI 删除 |
+| D-4 | §3.4.3 尺寸令牌 3 个 | **4 个**，增 `PARAMS_PANEL_BODY_MAX_H: 480` | 面板整体需有高度上限，否则 23 项参数的面板会超出视口；`PARAMS_PANEL_MAX_H` 只管**单个值**展开体 |
+| D-5 | §3.5 「面板宽度接系统断点矩阵」 | **纯 CSS 响应式**：`width:640 + minWidth:320 + maxWidth:calc(100vw - 32px)` | 断点矩阵需 JS 监听 resize（重渲染+状态），纯 CSS 三行解决且零重渲染。T25 的落法因此得以自然满足 |
+| D-6 | §3.6 「浮层按钮 = FloatingEntry 的 children，插在 CircleArrow 之后」 | **确认可行**：`FloatingEntry` 触发器自带 `e.stopPropagation()`（`FloatingEntry.tsx:98`），置于工具行 flex 内安全 | 原设计担心冒泡，实读源码已解决，无需额外包装 |
+
+### 4.1 代码列表
+
+| # | 文件 | 类型 | 行数变化 | 对应设计 |
+|---|---|---|---|---|
+| 1 | `frontend/src/utils/stepStyles.ts` | 改 | +8 | §3.4.3 |
+| 2 | `frontend/src/components/markdown/CopyButton.tsx` | 改 | +6 −0 | §3.5.1 |
+| 3 | `frontend/src/features/chat/components/pipeline/ParamsTree.tsx` | **新建** | +约 150 | §3.4 |
+| 4 | `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx` | **新建** | +约 200 | §3.5 |
+| 5 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 改 | +约 40 −约 95 | §3.2 §3.6 |
+| 6 | `frontend/src/features/chat/components/pipeline/ParamsTree.test.tsx` | 新建 | +约 90 | §3.1 第 5 项 |
+
+**实施顺序**：1 → 2 → 3 → 4 → 5（`3/4` 依赖 `1/2` 的令牌与组件）。**第 6 项按 AGENTS 铁规不提交**，本地保留。
+
+**全局高度链路复核**（改前 → 改后，见 §3.7）：
+
+| 层 | 改前 | 改后 | 代码位置 |
+|---|---|---|---|
+| ⑧ 工具行 | `minHeight:32`，不变 | 不变 | `ToolCallLine.tsx:190-209` 未动 |
+| ⑩ 展开区 | 无上限，参数行数 × 18px | **恒 (键数+1) 行 × 16px**，节点展开体各自限高 240px 内部滚动 | `ParamsTree` 顶层键默认折叠 + `maxBodyHeight` |
+| ⑪ 结果区 | `marginTop:2` | 不变 | `ToolCallLine.tsx:440-459` 未动 |
+| 浮层 | — | **移出流内**，高度增长 0 | `FloatingEntry` + antd `Popover`（portal） |
+
+---
+
+### 4.2 `frontend/src/utils/stepStyles.ts` —— 新增 `Size` 令牌
+
+**改动位置**：文件末尾 `Colors` 常量之后、`getStepLabel` 等函数之前。
+
+```ts
+// 2026-10-13 小欧 - 文档[29]§3.4.3/DC-19: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
+export const Size = {
+  PARAMS_PANEL_MAX_H: 240, // 巨型值 / JSON 树节点展开体限高（每层各自承担，DC-15）
+  PARAMS_PANEL_MAX_W: 640, // 浮层面板最大宽（甲规格表两列对照需宽）
+  PARAMS_PANEL_MIN_W: 320, // 浮层面板最小宽（窄屏下限，见 §4.5 响应式三件套）
+  PARAMS_PANEL_BODY_MAX_H: 480, // 2026-10-13 小欧 - 面板内容区总限高(D-4): 防止 23 项参数的面板超出视口
+} as const;
+```
+
+**规范判定**：SRP（只管尺寸不管颜色）✅ ｜ KISS-DIRECT（4 个常量，无逻辑）✅ ｜ 无魔法数字 ✅ ｜ 命名沿用既有「名 + 量纲」风格（`BorderWidth`/`FontSize`）✅
+
+---
+
+### 4.3 `frontend/src/components/markdown/CopyButton.tsx` —— 新增 `inline` 变体
+
+**改动 1**：接口加可选 prop
+
+```diff
+ interface CopyButtonProps {
+   /** 点击复制的原文(必须由调用方保证不含按钮自身的文本) */
+   text: string;
++  /**
++   * 2026-10-13 小欧 - 文档[29]§3.5.1: 行内模式(浮层面板头)。默认 false 保持绝对定位
++   * (代码块右上角用法); true 时取消绝对定位, 用于面板头等常规流内位置。
++   * 既有 5 处调用零变化(禁 backward)。
++   */
++  inline?: boolean;
+ }
+```
+
+**改动 2**：组件签名 + 样式分支
+
+```diff
+-const CopyButton: React.FC<CopyButtonProps> = ({ text }) => {
++const CopyButton: React.FC<CopyButtonProps> = ({ text, inline = false }) => {
+   const [copied, setCopied] = useState(false);
+   ...
+   return (
+     <button
+       type="button"
+       onClick={onCopy}
+       aria-label={copied ? '已复制' : '复制代码'}
+       style={{
+-        position: 'absolute',
+-        top: Spacing.XS - 2,
+-        right: Spacing.XS,
++        // 2026-10-13 小欧 - 文档[29]§3.5.1: 定位按 inline 分支, 避免面板头内脱离文档流压住标题
++        ...(inline
++          ? {}
++          : {
++              position: 'absolute' as const,
++              top: Spacing.XS - 2,
++              right: Spacing.XS,
++            }),
+         fontSize: 11,
+         lineHeight: '14px',
+         padding: '2px 6px',
+```
+
+**规范判定**：OCP（加可选 prop 扩展，既有调用零变化）✅ ｜ DRY（不新建按钮组件）✅ ｜ 默认值兜底 fail-safe ✅
+
+---
+
+### 4.4 `frontend/src/features/chat/components/pipeline/ParamsTree.tsx` —— 新建
+
+**全文**（展开区 JSON 树，戊方案）：
+
+```tsx
+// 编辑历史: 2026-10-13 小欧 - 新建: Step 页参数区 JSON 树(文档[29] §3.4/DC-04/DC-15/DC-17/DC-19/DC-20)
+//   顶层键默认折叠 · 每层展开体限高滚动 · 嵌套不限深度 · 树头复制(格式化 JSON) — 小欧 2026-10-13
+import React, { useCallback, useMemo, useState } from 'react';
+import { CircleArrow } from '@/components/CircleArrow';
+import { CopyButton } from '@/components/markdown/CopyButton';
+import {
+  BorderWidth,
+  Colors,
+  FontFamily,
+  FontSize,
+  Icon,
+  Radius,
+  Size,
+  Spacing,
+} from '@/utils/stepStyles';
+
+/** 节点三态: 标量(恒单行无箭头) / 长文本(折叠为"共N行") / 分支(list|dict) */
+type NodeKind = 'scalar' | 'body' | 'branch';
+
+/**
+ * 2026-10-13 小欧 - 树内口径(§3.4.1「长值在树内的截断口径」):
+ *   只看是否含换行, **不设字符阈值**——与浮层的 200 字阈值是两套口径, 刻意区分。
+ *   树内已天然限高(每层 240px), 无需再按字符折叠。
+ */
+const classify = (v: unknown): NodeKind => {
+  if (typeof v === 'string') return v.includes('\n') ? 'body' : 'scalar';
+  if (typeof v === 'object' && v !== null) return 'branch';
+  return 'scalar';
+};
+
+const displayScalar = (v: unknown): string =>
+  v === undefined || v === null ? '(空)' : String(v);
+
+const branchEntries = (v: unknown): Array<[string, unknown]> =>
+  typeof v === 'object' && v !== null
+    ? Object.entries(v as Record<string, unknown>)
+    : [];
+
+const branchSummary = (v: unknown): string =>
+  `{…} ${branchEntries(v).length} 项`;
+
+// ==================== 单节点 ====================
+
+interface ParamNodeProps {
+  nodeKey: string;
+  label: string;
+  value: unknown;
+  depth: number;
+  isExpanded: (key: string) => boolean;
+  onToggle: (key: string) => void;
+  maxBodyHeight: number;
+}
+
+/** 2026-10-13 小欧 - 递归自渲染(DC-15 不限嵌套深度): 深度由数据自身决定 */
+const ParamNode: React.FC<ParamNodeProps> = ({
+  nodeKey,
+  label,
+  value,
+  depth,
+  isExpanded,
+  onToggle,
+  maxBodyHeight,
+}) => {
+  const kind = classify(value);
+  const foldable = kind !== 'scalar';
+  const open = foldable && isExpanded(nodeKey);
+  const summary =
+    kind === 'body'
+      ? `共 ${String(value).split('\n').length} 行`
+      : kind === 'branch'
+        ? branchSummary(value)
+        : displayScalar(value);
+
+  const toggle = () => onToggle(nodeKey);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle();
+    }
+  };
+
+  return (
+    <div style={{ marginLeft: depth * Icon.BOX }}>
+      <div
+        role={foldable ? 'button' : undefined}
+        tabIndex={foldable ? 0 : undefined}
+        aria-expanded={foldable ? open : undefined}
+        onClick={foldable ? toggle : undefined}
+        onKeyDown={foldable ? onKeyDown : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: Spacing.SM,
+          fontFamily: FontFamily.MONO,
+          fontSize: FontSize.CODE,
+          lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+          color: Colors.TEXT.SECONDARY,
+          cursor: foldable ? 'pointer' : 'default',
+        }}
+      >
+        {foldable && (
+          <CircleArrow
+            size={14}
+            color={Colors.PRIMARY}
+            expanded={open}
+            animated={false}
+          />
+        )}
+        <span style={{ color: Colors.TEXT.SECONDARY }}>{label}</span>
+        <span style={{ color: Colors.TEXT.STRONG }}>: {summary}</span>
+      </div>
+      {/* 分支子树: 深度 +1, 由每个展开体各自限高(DC-15) */}
+      {open && kind === 'branch' && (
+        <div style={{ marginTop: Spacing.XS - 2 }}>
+          {branchEntries(value).map(([k, v], idx) => {
+            const childKey = `${nodeKey}/${k}/${idx}`;
+            return (
+              <ParamNode
+                key={childKey}
+                nodeKey={childKey}
+                label={k}
+                value={v}
+                depth={depth + 1}
+                isExpanded={isExpanded}
+                onToggle={onToggle}
+                maxBodyHeight={maxBodyHeight}
+              />
+            );
+          })}
+        </div>
+      )}
+      {/* 长文本: <pre> 限高内部滚动, 不做字符级截断(内容完整可复制) */}
+      {open && kind === 'body' && (
+        <div
+          style={{
+            marginLeft: Icon.BOX,
+            marginTop: Spacing.XS - 2,
+            maxHeight: maxBodyHeight,
+            overflowY: 'auto',
+          }}
+        >
+          <pre
+            style={{
+              margin: 0,
+              padding: Spacing.SM,
+              background: Colors.BG.SECONDARY,
+              border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
+              borderRadius: Radius.SM,
+              fontFamily: FontFamily.MONO,
+              fontSize: FontSize.CODE,
+              lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+              color: Colors.TEXT.STRONG,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {String(value)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ==================== 树根 ====================
+
+interface ParamsTreeProps {
+  entries: Array<[string, unknown]>;
+  /** 每层展开体限高, 默认 Size.PARAMS_PANEL_MAX_H(240) */
+  maxNodeBodyHeight?: number;
+}
+
+/**
+ * ParamsTree - 展开区 JSON 树(戊方案)
+ *
+ * 2026-10-13 小欧: 顶层键**默认折叠**(全折叠), 故展开区高度 = (键数+1) 行 × 16px,
+ * 与参数值体量无关 —— 这是 §1.4 C1/C2 的根治点。
+ *
+ * @author 小欧
+ * @since 2026-10-13
+ */
+const ParamsTree: React.FC<ParamsTreeProps> = ({
+  entries,
+  maxNodeBodyHeight = Size.PARAMS_PANEL_MAX_H,
+}) => {
+  const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
+  // 2026-10-13 小欧 - 用 Set 承载展开态而非布尔数组: key 是路径字符串, 新增/删除无需考虑下标对齐,
+  // 且嵌套深度不定(DC-15)时布尔数组不可用
+  const isExpanded = useCallback(
+    (key: string) => expandedKeys.has(key),
+    [expandedKeys]
+  );
+  const onToggle = useCallback((key: string) => {
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const copyText = useMemo(
+    () => JSON.stringify(Object.fromEntries(entries), null, 2),
+    [entries]
+  );
+
+  return (
+    // position:relative 是 CopyButton 绝对定位的包含块(DC-17 树头复制)
+    <div
+      style={{
+        position: 'relative',
+        marginTop: Spacing.XS,
+        padding: Spacing.XS,
+        background: Colors.BG.SECONDARY,
+        border: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+        borderRadius: Radius.SM,
+        fontFamily: FontFamily.MONO,
+        fontSize: FontSize.CODE,
+        lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: Spacing.SM,
+          color: Colors.TEXT.STRONG,
+        }}
+      >
+        <CircleArrow
+          size={14}
+          color={Colors.PRIMARY}
+          expanded
+          animated={false}
+        />
+        <span>{'{ 树根(恒展开)'}</span>
+        <CopyButton text={copyText} />
+      </div>
+      {entries.map(([k, v], idx) => {
+        const nodeKey = `${k}/${idx}`;
+        return (
+          <ParamNode
+            key={nodeKey}
+            nodeKey={nodeKey}
+            label={k}
+            value={v}
+            depth={0}
+            isExpanded={isExpanded}
+            onToggle={onToggle}
+            maxBodyHeight={maxNodeBodyHeight}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+export { ParamsTree };
+export default ParamsTree;
+```
+
+**规范判定**：
+
+| 规范 | 判定 |
+|---|---|
+| SRP | `ParamsTree` 只管"树的展开态与渲染"；`ParamNode` 只管"单节点"；值格式化是 3 个纯函数 ✅ |
+| KISS-DIRECT | 展开态用 `Set<string>` + 两个 `useCallback`，无 useMemo/useRef/forwardRef 冗余 ✅ |
+| DRY | `key: value` 渲染只有一处（`ParamNode`），子树与长文本分支不重复 ✅ |
+| OCP | 新增组件不改动任何既有组件签名 ✅ |
+| 禁 backward | 全新文件，无旧逻辑兼容 ✅ |
+| 无魔法数字 | 行高/字号全走 `FontSize.CODE + Spacing.XS`，缩进走 `Icon.BOX` ✅ |
+
+---
+
+### 4.5 `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx` —— 新建
+
+**全文**（浮层面板，乙默认 / 甲可切）：
+
+```tsx
+// 编辑历史: 2026-10-13 小欧 - 新建: 工具参数浮层面板(文档[29] §3.5/DC-05/DC-06/DC-16/DC-19/DC-21/DC-22)
+//   乙·分组卡片(默认) / 甲·规格表 可切 · 五类语义分组 · 巨型值折叠限高 · 复制为 key=value 逐行 — 小欧 2026-10-13
+import React, { useMemo, useState } from 'react';
+import { Segmented } from 'antd';
+import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
+import { CircleArrow } from '@/components/CircleArrow';
+import { CopyButton } from '@/components/markdown/CopyButton';
+import {
+  BorderWidth,
+  Colors,
+  FontFamily,
+  FontSize,
+  Radius,
+  Size,
+  Spacing,
+} from '@/utils/stepStyles';
+
+// ==================== 模块级常量(防每次渲染重建, 同 REJECT_LABEL_MAP 范式) ====================
+
+/** 巨型值字符阈值(判定阈值非视觉令牌, 故不入 stepStyles — §3.4.3) */
+const HUGE_VALUE_CHARS = 200;
+
+const PATH_KEYS: ReadonlySet<string> = new Set([
+  'path',
+  'dir_path',
+  'file_path',
+  'source_path',
+  'dest',
+  'output_path',
+]);
+const ENCODING_KEYS: ReadonlySet<string> = new Set(['encoding', 'charset']);
+
+export const PARAMS_VIEW_MAP = { group: '分组', spec: '规格表' } as const;
+export type ParamsView = keyof typeof PARAMS_VIEW_MAP;
+const VIEW_OPTIONS = [
+  { label: PARAMS_VIEW_MAP.group, value: 'group' },
+  { label: PARAMS_VIEW_MAP.spec, value: 'spec' },
+] as const;
+const VIEW_LS_KEY = 'step.params.view';
+
+/** 2026-10-13 小欧 - DC-21: 分类色只用 BORDER 中性灰阶, 语义色(警告/错误/成功)保留给状态 */
+type Category = 'payload' | 'switch' | 'path' | 'encoding' | 'other';
+const CATEGORY_META: ReadonlyArray<{
+  id: Category;
+  label: string;
+  color: string;
+}> = [
+  { id: 'payload', label: '正文载荷', color: Colors.BORDER.VERTICAL },
+  { id: 'switch', label: '开关', color: Colors.BORDER.DEFAULT },
+  { id: 'path', label: '路径', color: Colors.BORDER.STRONG },
+  { id: 'encoding', label: '编码', color: Colors.BORDER.DEFAULT },
+  { id: 'other', label: '其他', color: Colors.BORDER.LIGHT },
+];
+
+// ==================== 值格式化(纯函数, 可单测) ====================
+
+/** 「路径特征」: 同时含分隔符 **且** 末段有扩展名(§2.3.2 细则, 防误伤 SQL/代码片段) */
+const isPathLike = (v: string): boolean => {
+  if (!/[\\/]/.test(v)) return false;
+  const last = v.split(/[\\/]/).pop() ?? '';
+  return /\.[A-Za-z0-9]{1,8}$/.test(last);
+};
+
+/** §2.3.2 判定优先级链: 严格自上而下, 命中即止, 防一个参数落进两组 */
+const categorize = (k: string, v: unknown): Category => {
+  if (typeof v === 'object' && v !== null) return 'payload';
+  if (typeof v === 'string' && (v.includes('\n') || v.length > HUGE_VALUE_CHARS))
+    return 'payload';
+  if (typeof v === 'boolean') return 'switch';
+  if (PATH_KEYS.has(k) || (typeof v === 'string' && isPathLike(v)))
+    return 'path';
+  if (ENCODING_KEYS.has(k)) return 'encoding';
+  return 'other';
+};
+
+const needFold = (v: unknown): boolean => {
+  if (typeof v === 'object' && v !== null) return true;
+  if (typeof v === 'string')
+    return v.includes('\n') || v.length > HUGE_VALUE_CHARS;
+  return false;
+};
+
+const summaryOf = (v: unknown): string => {
+  if (v === undefined || v === null) return '(空)';
+  if (typeof v === 'object')
+    return `{…} ${Object.keys(v as object).length} 项`;
+  if (typeof v === 'string' && needFold(v))
+    return `共 ${v.split('\n').length} 行`;
+  return String(v);
+};
+
+const fullTextOf = (v: unknown): string => {
+  if (v === undefined || v === null) return '(空)';
+  if (typeof v === 'object') return JSON.stringify(v, null, 2);
+  return String(v);
+};
+
+/** DC-16: 浮层复制为 key=value 逐行(非 JSON), 面向人工核对/贴工单 */
+const toKeyValueText = (params: Record<string, unknown>): string =>
+  Object.entries(params)
+    .map(([k, v]) => `${k} = ${summaryOf(v)}`)
+    .join('\n');
+
+const readView = (): ParamsView => {
+  try {
+    return window.localStorage.getItem(VIEW_LS_KEY) === 'spec'
+      ? 'spec'
+      : 'group';
+  } catch {
+    return 'group';
+  }
+};
+
+// ==================== 巨型值(两视图共用) ====================
+
+/** 折叠切换规格: CircleArrow(14,PRIMARY) + 「展开/收起」, 不用裸 ▸/▾(T29) */
+const ParamValue: React.FC<{ value: unknown }> = ({ value }) => {
+  const [open, setOpen] = useState(false);
+  const foldable = needFold(value);
+  const toggle = () => setOpen((p) => !p);
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggle();
+    }
+  };
+
+  if (!foldable) {
+    return <span style={{ color: Colors.TEXT.PRIMARY }}>{summaryOf(value)}</span>;
+  }
+  return (
+    <div>
+      <span
+        role="button"
+        tabIndex={0}
+        aria-expanded={open}
+        onClick={toggle}
+        onKeyDown={onKeyDown}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: Spacing.SM,
+          cursor: 'pointer',
+          color: Colors.PRIMARY,
+          fontSize: FontSize.CODE,
+          fontFamily: FontFamily.MONO,
+        }}
+      >
+        <CircleArrow
+          size={14}
+          color={Colors.PRIMARY}
+          expanded={open}
+          animated={false}
+        />
+        {open ? '收起' : `${summaryOf(value)} · 展开`}
+      </span>
+      {open && (
+        <pre
+          style={{
+            margin: `${Spacing.XS}px 0 0`,
+            padding: Spacing.SM,
+            maxHeight: Size.PARAMS_PANEL_MAX_H,
+            overflowY: 'auto',
+            background: Colors.BG.SECONDARY,
+            border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
+            borderRadius: Radius.SM,
+            fontFamily: FontFamily.MONO,
+            fontSize: FontSize.CODE,
+            lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+            color: Colors.TEXT.STRONG,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+          }}
+        >
+          {fullTextOf(value)}
+        </pre>
+      )}
+    </div>
+  );
+};
+
+// ==================== 乙 · 分组卡片(默认) ====================
+
+const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
+  params,
+}) => {
+  const buckets = useMemo(() => {
+    const map = new Map<Category, Array<[string, unknown]>>();
+    CATEGORY_META.forEach((c) => map.set(c.id, []));
+    Object.entries(params).forEach(([k, v]) => {
+      const bucket = map.get(categorize(k, v));
+      if (bucket) bucket.push([k, v]);
+    });
+    return map;
+  }, [params]);
+
+  return (
+    <div>
+      {CATEGORY_META.map((c) => {
+        const rows = buckets.get(c.id) ?? [];
+        if (rows.length === 0) return null; // 空类不渲染(§3.5.2)
+        return (
+          <div key={c.id} style={{ marginTop: Spacing.SM }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: Spacing.SM,
+              }}
+            >
+              <span
+                style={{
+                  width: 2,
+                  height: 10,
+                  borderRadius: 1,
+                  background: c.color,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: FontSize.CODE,
+                  color: Colors.TEXT.SECONDARY,
+                }}
+              >
+                {c.label}
+              </span>
+            </div>
+            <div style={{ marginLeft: Spacing.SM, marginTop: Spacing.XS }}>
+              {rows.map(([k, v]) => (
+                <div
+                  key={k}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: Spacing.SM,
+                    marginTop: Spacing.XS - 2,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 96,
+                      flexShrink: 0,
+                      fontFamily: FontFamily.MONO,
+                      fontSize: FontSize.CODE,
+                      color: Colors.TEXT.SECONDARY,
+                      wordBreak: 'break-all',
+                    }}
+                  >
+                    {k}
+                  </span>
+                  <span
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      fontFamily: FontFamily.MONO,
+                      fontSize: FontSize.CODE,
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    <ParamValue value={v} />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ==================== 甲 · 规格表 ====================
+
+const SpecView: React.FC<{ params: Record<string, unknown> }> = ({
+  params,
+}) => (
+  <div>
+    {Object.entries(params).map(([k, v]) => (
+      <div
+        key={k}
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: Spacing.SM,
+          paddingTop: Spacing.XS,
+          paddingBottom: Spacing.XS,
+          borderBottom: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+        }}
+      >
+        <span
+          style={{
+            width: 140,
+            flexShrink: 0,
+            textAlign: 'right',
+            fontFamily: FontFamily.MONO,
+            fontSize: FontSize.CODE,
+            color: Colors.TEXT.SECONDARY,
+            wordBreak: 'break-all',
+          }}
+        >
+          {k}
+        </span>
+        <span
+          style={{
+            flex: 1,
+            minWidth: 0,
+            fontFamily: FontFamily.MONO,
+            fontSize: FontSize.CODE,
+            wordBreak: 'break-word',
+          }}
+        >
+          <ParamValue value={v} />
+        </span>
+      </div>
+    ))}
+  </div>
+);
+
+// ==================== 面板 ====================
+
+interface ParamsPanelProps {
+  toolName: string;
+  params: Record<string, unknown>;
+  /** T15: ✕ / Esc / 点外面关闭; 关闭动作回交 FloatingEntry 的 onOpenChange */
+  onClose: () => void;
+}
+
+/**
+ * ParamsPanel - 工具参数浮层面板(浮层开合/锚点/a11y/焦点管理全部由 FloatingEntry 承担,
+ * 本组件只负责"渲染什么内容"与面板内样式 — SRP, 见 §3.5)
+ *
+ * @author 小欧
+ * @since 2026-10-13
+ */
+const ParamsPanel: React.FC<ParamsPanelProps> = ({
+  toolName,
+  params,
+  onClose,
+}) => {
+  const [view, setView] = useState<ParamsView>(readView);
+  const entries = useMemo(() => Object.entries(params), [params]);
+  const onViewChange = (next: ParamsView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_LS_KEY, next);
+    } catch {
+      /* 隐私模式/存储禁用: 仅本次会话生效, 不阻断 */
+    }
+  };
+  const copyText = useMemo(() => toKeyValueText(params), [params]);
+  const onCloseKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClose();
+    }
+  };
+
+  return (
+    <div
+      style={{
+        background: Colors.BG.SECONDARY,
+        border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
+        borderRadius: Radius.SM,
+        fontFamily: FontFamily.MONO,
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: Spacing.SM,
+          padding: Spacing.SM,
+          borderBottom: `${BorderWidth.THIN}px solid ${Colors.BORDER.DEFAULT}`,
+        }}
+      >
+        <CodeOutlined
+          style={{ color: Colors.PRIMARY, fontSize: FontSize.CODE }}
+        />
+        <span
+          style={{
+            fontSize: FontSize.CODE,
+            color: Colors.TEXT.STRONG,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {toolName} · 参数 {entries.length} 项
+        </span>
+        <span style={{ flex: 1 }} />
+        <Segmented
+          size="small"
+          options={VIEW_OPTIONS}
+          value={view}
+          onChange={(v) => onViewChange(v as ParamsView)}
+        />
+        {/* DC-20: 面板头用 inline 变体, 否则绝对定位会压住标题 */}
+        <CopyButton text={copyText} inline />
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label="关闭参数面板"
+          onClick={onClose}
+          onKeyDown={onCloseKeyDown}
+          style={{
+            display: 'inline-flex',
+            cursor: 'pointer',
+            color: Colors.TEXT.SECONDARY,
+            fontSize: FontSize.CODE,
+            lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+          }}
+        >
+          <CloseOutlined />
+        </span>
+      </div>
+      <div
+        style={{
+          padding: Spacing.SM,
+          maxHeight: Size.PARAMS_PANEL_BODY_MAX_H,
+          overflowY: 'auto',
+        }}
+      >
+        {view === 'group' ? (
+          <GroupView params={params} />
+        ) : (
+          <SpecView params={params} />
+        )}
+      </div>
+    </div>
+  );
+};
+
+export { ParamsPanel };
+export default ParamsPanel;
+```
+
+**响应式（替代 D-5 的断点矩阵）**：宽窄自适应由 §4.6 的 `paramsCardStyle` 纯 CSS 三件套承担，本组件无需 `window.innerWidth` 逻辑。
+
+**规范判定**：
+
+| 规范 | 判定 |
+|---|---|
+| SRP | `ParamsPanel` 管壳与切换、`GroupView`/`SpecView` 管各自视图、`ParamValue` 管单值；格式化全在 6 个纯函数 ✅ |
+| KISS-DIRECT | 无 `useRef`/`forwardRef`/`useReducer`；`readView` 单表达式 + try/catch 兜底，无中间层 ✅ |
+| DRY | `ParamValue` 被两个视图共用，折叠逻辑只写一次 ✅ |
+| LSP/ISP | `ParamValue` 单 prop `value`，无接口膨胀 ✅ |
+| 禁魔法数字 | 限高走 `Size.*`，行高走 `FontSize.CODE + Spacing.XS`，key 列宽 96/140 为**布局常量**已就地标注用途 ✅ |
+| 无障碍 | 折叠/关闭均可 Tab 聚焦 + Enter/Space，`aria-expanded`/`aria-label` 齐 ✅ |
+
+---
+
+### 4.6 `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` —— 改动
+
+#### 4.6.1 改动 1：import 补齐
+
+```diff
+ import { CollapsibleText } from './CollapsibleText';
+ import ToolResultRenderer from '../ToolResultRenderer';
++// 2026-10-13 小欧 - 文档[29]§4.6: 新增两组件与浮层壳/尺寸令牌 — 小欧 2026-10-13
++import { ParamsTree } from './ParamsTree';
++import { ParamsPanel } from './ParamsPanel';
++import { FloatingEntry } from '../taskinfo/FloatingEntry';
+ import { CircleArrow } from '@/components/CircleArrow';
+ import { GearIcon } from '@/components/GearIcon';
+ import { DropletIcon } from '@/components/DropletIcon';
+ import {
+   LockOutlined,
+   ClockCircleOutlined,
+   StopOutlined,
+   SafetyCertificateOutlined,
++  CodeOutlined,
+ } from '@ant-design/icons';
+ import {
+   Colors,
+   BorderWidth,
+   FontSize,
+   FontWeight,
+   Spacing,
+   stepMargin,
++  Radius,
++  Size,
+ } from '@/utils/stepStyles';
+```
+
+#### 4.6.2 改动 2：模块级常量（浮层卡片响应式三件套，D-5）
+
+```diff
+ export const REJECT_DEFAULT_ICON = <StopOutlined />;
++
++// 2026-10-13 小欧 - 文档[29]§4.6/§4.5: 浮层卡片纯 CSS 响应式三件套(替代断点矩阵 JS 方案 D-5)
++//   width 撑满上限 + maxWidth 随视口收 + minWidth 保底; 无 resize 监听、无重渲染 — 小欧 2026-10-13
++const PARAMS_CARD_STYLE: React.CSSProperties = {
++  width: Size.PARAMS_PANEL_MAX_W,
++  minWidth: Size.PARAMS_PANEL_MIN_W,
++  maxWidth: 'calc(100vw - 32px)',
++};
+```
+
+#### 4.6.3 改动 3：状态（删 `paramsOpen`，增 `openPanelIndex`）
+
+```diff
+   const [expanded, setExpanded] = useState<boolean[]>([]);
+-  // 2026-10-04 小欧 文档[8]§5.4(丙案): 参数块独立折叠状态(每工具一份), 仅参数项数 >5 时才出现"展开" — 小欧 2026-10-04
+-  const [paramsOpen, setParamsOpen] = useState<boolean[]>([]);
+-  const PARAMS_FOLD_THRESHOLD = 5;
++  // 2026-10-13 小欧 - 文档[29]§3.2: 顶层"参数(N项)"折叠已被 ParamsTree 的"顶层键默认折叠"
++  //   取代(DC-04), paramsOpen/PARAMS_FOLD_THRESHOLD 一并删除(死状态 YAGNI);
++  //   新增 openPanelIndex 作浮层单例互斥(DC-07), 与 expanded 互不牵连(DC-18) — 小欧 2026-10-13
++  const [openPanelIndex, setOpenPanelIndex] = useState<number | null>(null);
+   useEffect(() => {
+     setExpanded([]);
+-    setParamsOpen([]);
++    setOpenPanelIndex(null); // 切任务时二者同清(唯一同时清理的场景, §3.2)
+   }, [action]);
+```
+
+#### 4.6.4 改动 4：`tools.map` 内删除 `paramRows` 派生
+
+```diff
+             tools.map((t, i) => {
+-              // 2026-10-04 小欧 文档[8]§5.4 乙案: 参数改"每键一行"可读格式(不再一行压缩JSON,
+-              //   值直接取原值不二次序列化 → 路径里的 \\ 不再双重转义); 丙案: 项数 >5 才折叠 — 小欧 2026-10-04
++              // 2026-10-13 小欧 - 文档[29]§3.3: 只传原始入参, 序列化/格式化下沉到子组件(SLAP) — 小欧 2026-10-13
+               const paramEntries = Object.entries(
+                 (t.params ?? {}) as Record<string, unknown>
+               );
+-              const paramRows = paramEntries.map(([k, v]) => ({
+-                k,
+-                v:
+-                  typeof v === 'string'
+-                    ? v
+-                    : (() => {
+-                        try {
+-                          return JSON.stringify(v);
+-                        } catch {
+-                          return String(v);
+-                        }
+-                      })(),
+-              }));
+-              const paramsFoldable = paramRows.length > PARAMS_FOLD_THRESHOLD;
+-              const paramsShown = !paramsFoldable || !!paramsOpen[i];
+               const sum = getResultLine(i);
+```
+
+#### 4.6.5 改动 5：`toggleTool` 后补浮层开关（模块内纯函数化）
+
+```diff
+               const toggleTool = () => {
+                 setExpanded((prev) => {
+                   const next = [...prev];
+                   next[i] = !prev[i];
+                   return next;
+                 });
+               };
++              // 2026-10-13 小欧 - 浮层开合(DC-07 单例互斥 + DC-18 不牵连 expanded) — 小欧 2026-10-13
++              const onPanelOpenChange = (o: boolean) =>
++                setOpenPanelIndex(o ? i : null);
++              const closePanel = () => setOpenPanelIndex(null);
+```
+
+#### 4.6.6 改动 6：工具行内追加浮层按钮（D2 顺序：行尾），并删除内联参数区
+
+**删除**（原 `:361-437`，整段位于 `role="button"` 内，是缺陷 B1 的病灶）：
+
+```diff
+-                    {/* 参数：子行展开后显示(乙案每键一行); 丙案项数>5 时先只显一行"参数(N项)"并可点开
+-                        2026-10-04 小欧 文档[8]§5.4 乙/丙 — 小欧 2026-10-04 */}
+-                    {isOpen && (
+-                      <div
+-                        style={{
+-                          marginTop: Spacing.XS,
+-                          paddingLeft: Spacing.LG,
+-                          fontSize: FontSize.SECONDARY,
+-                          color: Colors.TEXT.SECONDARY,
+-                        }}
+-                      >
+-                        ... paramsFoldable 分支 + paramRows.map ...
+-                      </div>
+-                    )}
+                   </div>
+```
+
+**在工具行 flex 内、`<CircleArrow>` 之后追加**（D2 定案：内容 │ 折叠箭头 │ 浮层参数）：
+
+```diff
+                       {/* 展开箭头 */}
+                       <CircleArrow
+                         size={16}
+                         color={Colors.TEXT.PRIMARY}
+                         expanded={isOpen}
+                         animated={false}
+                       />
++                      {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6: 浮层参数按钮固定在工具行行尾(D2 乙),
++                          外壳 FloatingEntry 自带 stopPropagation(FloatingEntry.tsx:98) 故置于此安全;
++                          文案「浮层参数」避开与展开区撞名(D3), 图标用 CodeOutlined 不用 GearIcon(语义=等待中 DC-22) */}
++                      <FloatingEntry
++                        open={openPanelIndex === i}
++                        onOpenChange={onPanelOpenChange}
++                        placement="bottomRight"
++                        cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
++                        ariaLabel={`${t.tool} 参数`}
++                        cardStyle={PARAMS_CARD_STYLE}
++                        content={
++                          <ParamsPanel
++                            toolName={t.tool ?? 'tool'}
++                            params={(t.params ?? {}) as Record<string, unknown>}
++                            onClose={closePanel}
++                          />
++                        }
++                      >
++                        <span
++                          style={{
++                            display: 'inline-flex',
++                            alignItems: 'center',
++                            gap: Spacing.XS,
++                            fontSize: FontSize.SECONDARY,
++                          }}
++                        >
++                          <CodeOutlined />
++                          浮层参数
++                        </span>
++                      </FloatingEntry>
+                     </div>
+```
+
+#### 4.6.7 改动 7：展开区改挂 `ParamsTree`（B1 结构性根治，D-1）
+
+**位置**：`role="button"` 容器**闭合之后**、原结果区 `<div>` 之前。
+
+```diff
+                   </div>
++                  {/* 2026-10-13 小欧 - 文档[29]§4.6.7/§2.7 I1 + D-1: 参数区**移出** role="button",
++                      点节点不再误折叠整行(B1 结构性根治), 故无需 stopPropagation 补丁;
++                      顶层键默认折叠 → 高度恒 (键数+1)×16px(C1/C2 根治) — 小欧 2026-10-13 */}
++                  {isOpen && <ParamsTree entries={paramEntries} />}
+                   {/* 展开区：该工具完整 observation */}
+                   {isOpen && (
+```
+
+#### 4.6.8 改动后净效果
+
+| 项 | 前 | 后 |
+|---|---|---|
+| 文件行数 | 535 | **约 480**（删 95 / 增 40） |
+| `ToolCallLine` 持有的参数相关状态 | `expanded` + `paramsOpen` + `PARAMS_FOLD_THRESHOLD` | 仅 `expanded` + `openPanelIndex` |
+| 渲染期 `JSON.stringify` | 有（`paramRows` 每次渲染跑） | **零** |
+| 参数区所在容器 | `role="button"` 内 | **容器外** |
+| 点参数区 | 误折叠整行 | 仅切换节点 |
+
+**规范判定**：KISS-DIRECT（净减 55 行、净减 1 个状态）✅ ｜ DRY（`stopPropagation` 补丁换结构修复，零重复逻辑）✅ ｜ SRP（`ToolCallLine` 只管编排，参数渲染全在 `ParamsTree`）✅ ｜ SLAP（`ParamsPanel` 不自管浮层开合）✅
+
+---
+
+### 4.7 回归测试文件（**按 AGENTS 铁规不提交**）
+
+```tsx
+// 2026-10-13 小欧 - 文档[29]§3.1 第 5 项: 展开区行为回归测试
+//   ⚠️ AGENTS 铁规「严禁提交任何测试 case 代码」—— 本文件仅本地保留, git add 时勿纳入
+import { describe, expect, it } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import React from 'react';
+import { ParamsTree } from './ParamsTree';
+
+const entries: Array<[string, unknown]> = [
+  ['file_path', 'F:\\a\\main.py'],
+  ['encoding', 'utf-8'],
+  ['append', false],
+  ['content', 'line1\nline2\nline3'],
+];
+
+describe('ParamsTree(展开区 JSON 树)', () => {
+  it('顶层键默认折叠: 长值只显行数摘要, 不铺内容', () => {
+    render(<ParamsTree entries={entries} />);
+    expect(screen.getByText(/共 3 行/)).toBeTruthy();
+    expect(screen.queryByText('line1')).toBeNull();
+  });
+
+  it('标量键无折叠箭头, 恒单行', () => {
+    render(<ParamsTree entries={entries} />);
+    expect(screen.getByText('utf-8')).toBeTruthy();
+  });
+
+  it('点节点可展开长文本, 展开体限高由 maxNodeBodyHeight 控制', () => {
+    render(<ParamsTree entries={entries} maxNodeBodyHeight={240} />);
+    screen.getByText(/共 3 行/).click();
+    expect(screen.getByText(/line1/)).toBeTruthy();
+  });
+
+  it('空值渲染 (空) 而非空白', () => {
+    render(<ParamsTree entries={[[ 'x', undefined ]]} />);
+    expect(screen.getByText(/\(空\)/)).toBeTruthy();
+  });
+});
+```
+
+---
+
+## 五、实施完成后的验证清单（与 §3.8 验收合并执行）
+
+| 顺序 | 步骤 | 命令 |
+|---|---|---|
+| 1 | 类型检查 | `npm run typecheck` |
+| 2 | e2e 类型检查 | `npm run typecheck:e2e` |
+| 3 | Lint | `npm run lint` |
+| 4 | 格式检查 | `npm run format:check` |
+| 5 | 关联回归 | `npm run test -- --run ParamsTree` |
+| 6 | 手工核对 | 按 §3.8 的 T1~T34 逐条走查（重点 T1 高度、T3 误折叠、T26/T28/T30 视觉一致性） |
 
 ---
 
