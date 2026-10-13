@@ -1,9 +1,12 @@
-// 编辑历史: 2026-10-13 13:45 小欧 - 新建: 最近提交输入的本机历史(跨会话)
-// 存储 localStorage 而非 sessionStorage: 后者按标签页隔离, 做不到"换会话也能翻历史"
-//   ⚠️ 权宜方案: 后端 chat_user_message.content 已存全部用户提问(且 GET /sessions/{id}/user_messages 端点已存在),
-//      本模块是影子副本, 存在"本机清了服务端还在"的漂移。二期应迁后端(需新增全局最近提问端点)。
-//   2026-10-13 13:45 小欧 - 语义订正: 面板文案用「最近提交」而非「发送成功」—— onSend 是乐观提交,
-//      await resolve 后流式中途报错不会 reject, 写进历史的可能实际失败, 不能承诺"成功"
+// 编辑历史: 2026-10-13 13:45 小欧 - 新建: 最近提交输入的本机历史(跨会话), 用 localStorage 而非 sessionStorage
+//   (后者按标签页隔离, 换会话翻不到); 文案「最近提交」而非「发送成功」, onSend 乐观提交不代表任务成功;
+//   ⚠️ 权宜: 后端 chat_user_message 已存全部提问, 本模块是影子副本, 二期应迁后端
+/**
+ * recentInputs - 本机最近提交历史读写
+ *
+ * @author 小欧
+ * @date 2026-10-13
+ */
 export interface RecentInput {
   text: string;
   ts: number;

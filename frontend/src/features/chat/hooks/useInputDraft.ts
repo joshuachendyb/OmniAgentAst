@@ -1,8 +1,20 @@
 // 编辑历史: 2026-10-13 13:45 小欧 - 新建: 输入草稿单一真源(内存 state + sessionStorage 持久化)
-//   存在理由(非过度抽象): ChatInput 的 draft 有 4 个写入点(onChange / 指令追加 / 发送清空 / 失败回填),
-//   手工在各处补一句 saveDraft 必漏一处, 产生"内存与存储不一致"。
-//   本仓已因此出过事故(linkEnabled、sessionModel 漏字段), 故抽 hook 收口。
 //   复用 chatStreamPersistence 的 saveDraft/loadDraft(自 2026-09-29 起已写好但长期零调用方)
+// 编辑历史: 2026-10-13 13:55 小欧 - 载入判据二轮修正+新增两个提交标记接口: 首版"上次非空才载入"有草稿泄漏与
+//   无法区分回填两洞; 改为"变了就载入", 仅「标记在+上次无会话+提交后又打字」三条件才跳过(不吞连打的字)。
+//   markSubmitted 在 setDraft('') 后 await onSend 前调, cancelSubmitted 在 catch 调(否则残留标记致下次漏载入)
+// 编辑历史: 2026-10-13 14:50 小欧 - 撤回落盘防抖(自纠): 300ms 防抖致刷新丢字(刷新不执行 React 卸载清理),
+//   4 条用例当场变红; 草稿体量小, 拿正确性换性能属退化, 退回同步落盘
+/**
+ * useInputDraft - 输入草稿单一真源
+ *
+ * 存在理由(非过度抽象): ChatInput 的 draft 有 4 个写入点(onChange / 指令追加 / 发送清空 / 失败回填),
+ * 手工在各处补一句 saveDraft 必漏一处, 产生"内存与存储不一致"。本仓已因此出过事故
+ * (linkEnabled、sessionModel 漏字段), 故抽 hook 收口。
+ *
+ * @author 小欧
+ * @date 2026-10-13
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { loadDraft, saveDraft } from '../streams/chatStreamPersistence';
 
@@ -76,6 +88,10 @@ export const useInputDraft = (sessionId?: string | null): InputDraftApi => {
       if (submittedRef.current) typedAfterSubmitRef.current = true;
       const next = typeof v === 'function' ? v(draftRef.current) : v;
       applyDraft(next);
+      // 2026-10-13 14:50 小欧 - 同步落盘, 不做防抖。
+      //   曾改 300ms 防抖以减少同步 IO, 实测引入数据丢失回归: 刷新页面不会执行 React 卸载清理,
+      //   防抖窗口内的输入全丢(C1/C5/C6/E13 四条用例当场变红)。草稿体量小(输入框可见 5 行),
+      //   同步写的开销可接受 —— 拿正确性换微小性能属功能退化, 撤回。
       saveDraft(draftKeyOf(sidRef.current), next);
     },
     [applyDraft]

@@ -9,15 +9,17 @@
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5/§3.6.6: Props 补 sessionWorkspaces/setSessionWorkspaces;
 //   挂载 SessionWorkspacePanel(wsPanelOpen 受控); 传 SubmitBar 的 workspaceCount(现算)与 onOpenWorkspaces
 //   (无会话时不传 → SubmitBar 不渲染入口, GET 空 id 必 422 干脆不显示); 关闭面板时重拉一次同步徽标(失败静默) — 小欧-2026-10-10
-// 编辑历史: 2026-10-13 13:45 小欧 - 草稿持久化 + 最近提交历史(输入历史):
-//   ①草稿改由 useInputDraft 单一真源托管(内存 + sessionStorage 持久化, 复用既有 saveDraft/loadDraft);
-//     删掉原先"会话一改就无条件清空草稿"的副作用式清空 —— 现由 hook 内部按
-//     「首次挂载 + 上次非空且真切换」载入目标会话草稿, 既防跨会话串草稿, 又防建会话回填窗口吞掉用户连打的字
-//   ②提交成功后 addRecentInput(content) 记入本机历史(localStorage, 跨会话); /clear /help /history /settings2 不入历史;
-//     提交失败(throw)不记; 重复文本只更新 ts 不新增条目
-//   ③提交栏新增「历史输入」面板(草稿区可丢弃 + 最近提交区可清空二次确认)
-//   ④InputCore 上抛 onKeyDown: 光标在首行行首按 ↑ / 末行行尾按 ↓ 翻历史(中间位置不劫持, 保护多行光标编辑);
-//     IME 组字期间(e.nativeEvent.isComposing)一律不劫持 —— 拼音输入法下 ↑↓ 是切换候选词, 全仓无先例故必须自己判
+// 编辑历史: 2026-10-13 13:45 小欧 - 草稿持久化+最近提交历史: draft 交 useInputDraft 单一真源(sessionStorage);
+//   删"会话一改就无条件清空草稿"; 提交成功后记本机历史(指令不入库); 新增「历史输入」面板; IME 组字期不劫持 ↑↓
+// 编辑历史: 2026-10-13 13:55 小欧 - 载入判据二轮修正(真浏览器实锤): 首版"上次非空才载入"致草稿跨会话泄漏;
+//   改为"sessionId 变了就载入", 仅「提交标记+上次无会话+提交后又打字」三条件成立才判为建会话回填而跳过
+// 编辑历史: 2026-10-13 14:20 小欧 - 焦点归还: 复现出点「发送」后焦点停在按钮、↑↓ 到不了 textarea(历史已入库);
+//   InputCore 加 focusKey, 提交成功与"输入框由禁用转可用"两处自增(禁用期 focus() 为空操作, 解锁必须补)
+// 编辑历史: 2026-10-13 14:35 小欧 - 三堂会审整改: ①切会话复位 histIdx(否则按↑跳错条目) ②删 ↓ 的死逻辑 atLastLine
+//   (恒为 true, 条件归一为 histIdx>=0) ③焦点归还加 rootRef.contains 前置条件, 不夺走用户放到别处的焦点
+//   ④面板圆角改走 Radius.SM 令牌
+// 编辑历史: 2026-10-13 14:50 小欧 - 撤回落盘防抖(自纠): 防抖化致刷新丢字(刷新不执行 React 卸载清理, 4 条用例变红);
+//   草稿体量小, 同步写开销可接受, 拿正确性换性能属退化, 退回同步落盘
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -30,7 +32,7 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Space } from 'antd';
 import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
@@ -109,11 +111,42 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门与输入框禁用共用此一处
   const sendBlocked = isSendBlocked(loading, isReceiving, allowInterject);
 
-  /** 退出历史翻动态(手动打字 / 面板选中后都要复位, 否则 ↑↓ 基准错乱) */
+  // 2026-10-13 14:20 小欧 - 焦点归还: 实测"点发送 → 按↑ 翻不出历史"病根是焦点停在按钮上,
+  //   ↑↓ 事件到不了 textarea。两处触发: ①提交成功立即自增(未禁用时); ②输入框由禁用转可用
+  //   (模型跑完那一刻)再自增一次 —— disabled 期间 focus() 是空操作, 必须在解锁后补。
+  // 2026-10-13 14:35 小欧 - 反骚扰: ②不能无条件抢焦点, 否则用户已点到别处(侧栏/设置弹窗/别的输入框)
+  //   会被突然夺走, 后续打字落错控件。加前置条件: 仅当焦点已丢失(停在 body)或仍停在本组件内才归还。
+  //   发送中 SubmitBar 会把「发送」换成「停止」导致原按钮卸载 → activeElement 自动回落 body → 正常归还。
+  const [focusKey, setFocusKey] = useState(0);
+  const wasBlockedRef = useRef(sendBlocked);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const was = wasBlockedRef.current;
+    wasBlockedRef.current = sendBlocked;
+    if (!was || sendBlocked) return;
+    const active = document.activeElement;
+    if (
+      active !== null &&
+      active !== document.body &&
+      !rootRef.current?.contains(active)
+    ) {
+      return; // 用户已把焦点放到本组件之外, 不抢
+    }
+    setFocusKey((k) => k + 1);
+  }, [sendBlocked]);
+
+  /** 退出历史翻动态(手动打字 / 面板选中 / 切会话 后都要复位, 否则 ↑↓ 基准错乱) */
   const exitHistory = useCallback(() => {
     setHistIdx(-1);
     setHistBackup(null);
   }, []);
+
+  // 2026-10-13 14:35 小欧 - 切会话必须复位翻动游标。
+  //   实测缺陷: A 会话里 ↑ 翻到 idx=2, 切到 B 会话后按一次 ↑ 给出 recents[3] 而非 recents[0]
+  //   —— histIdx 是组件级 state, 不随会话走, 游标基准串到了别的会话。
+  useEffect(() => {
+    exitHistory();
+  }, [sessionId, exitHistory]);
 
   // 2026-09-03 小欧 修复: 乐观清空改可回补 — 备份draft, onSend失败时回填防输入永久丢失 - 小欧-2026-09-03
   // linked 不再复位(违背用户粘性意图), 开关真源在 useChatState.linkEnabled
@@ -131,6 +164,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       //   故面板文案用「最近提交」而非「发送成功」)
       addRecentInput(content);
       setRecents(loadRecentInputs());
+      setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
     } catch {
       setDraft(backup);
       cancelSubmitted();
@@ -148,9 +182,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (e.nativeEvent.isComposing) return;
       const el = e.currentTarget;
+      // 2026-10-13 14:35 小欧 - 收敛为"是否已在翻动"单一判据。
+      //   旧写法在 ↑ 用 atFirstLine、在 ↓ 用 (atLastLine || histIdx>0), 两者自相矛盾:
+      //   histIdx===0 认光标位置、histIdx>0 又无条件劫持; 且翻动后 caret 已由 rAF 置于末尾,
+      //   atLastLine 恒为 true —— 整个表达式恒等于 histIdx>=0, 是纯死逻辑。
+      //   归一后: 未翻动时严格要求首行行首才启动(保护多行光标编辑); 一旦进入翻动, ↑↓ 一律续翻。
+      const browsing = histIdx >= 0;
       const atFirstLine = el.selectionStart === 0;
-      // 翻动态下 caret 由下方 rAF 统一置于末尾, 故 ↓ 无需再判末行; 未翻动时 ↓ 不参与
-      const atLastLine = el.selectionEnd === el.value.length;
 
       // 2026-10-13 13:55 小欧 - 修正: 条件放宽为 histIdx>=0 || 光标在首行行首。
       //   原写法只看 atFirstLine, 但翻出一条后光标已被置于末尾, 第二次 ↑ 因 selectionStart!==0
@@ -159,7 +197,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (
         e.key === 'ArrowUp' &&
         recents.length > 0 &&
-        (histIdx >= 0 || atFirstLine)
+        (browsing || atFirstLine)
       ) {
         const next = histIdx + 1;
         if (next >= recents.length) return;
@@ -173,11 +211,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         return;
       }
 
-      if (
-        e.key === 'ArrowDown' &&
-        histIdx >= 0 &&
-        (atLastLine || histIdx > 0)
-      ) {
+      if (e.key === 'ArrowDown' && browsing) {
         e.preventDefault();
         const next = histIdx - 1;
         if (next < 0) {
@@ -214,12 +248,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    <div
+      ref={rootRef}
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+    >
       <InputCore
         value={draft}
         onChange={handleInputChange}
         onPressEnter={handleSendInternal}
         onKeyDown={handleInputKeyDown}
+        focusKey={focusKey}
         disabled={sendBlocked}
       />
       <SubmitBar
@@ -243,6 +281,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               onPick={(t) => {
                 exitHistory();
                 setDraft(t);
+                setFocusKey((k) => k + 1); // 选完历史直接接着打字
               }}
               onClear={() => {
                 clearRecentInputs();
