@@ -63,7 +63,7 @@
 //      原注释"下限仍 320"已过期(令牌同日由 320 抬至 460), 本次审计一并更正 — 小欧-2026-10-13
 // 编辑历史: 2026-10-14 小欧 - 浮层改纵向居中(北京老陈裁定): FloatingEntry 传 centered, 横向仍贴按钮;
 //   另订正 D-11 注释的事实错误 —— 卡片 padding:0 **去不掉** .ant-popover-inner 的 12px(外层元素),
-//   残留 24px 外壳开销改由 ParamsPanel 的 maxHeight 扣除。小欧
+//   残留 24px 外壳开销改由 ParamsPanel 的 maxHeight 扣除 — 小欧-2026-10-14
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -139,9 +139,9 @@ export const REJECT_DEFAULT_ICON = <StopOutlined />;
 // 2026-10-13 小欧 - 文档[29]§4.6/§4.5: 浮层卡片纯 CSS 响应式三件套(替代断点矩阵 JS 方案 D-5)
 //   width 撑满上限 + maxWidth 随视口收 + minWidth 保底; 无 resize 监听、无重渲染 — 小欧 2026-10-13
 const PARAMS_CARD_STYLE: React.CSSProperties = {
-  // 2026-10-13 小欧 - 北京老陈裁定: 面板宽改为**按内容收缩**, 上限 640。
+  // 2026-10-13 小欧 - 北京老陈裁定: 面板宽改为**按内容收缩**, 上限 720(同日 23:20 由 640 加宽)。
   //   原固定 640 时, 短参数(如 6 个短键)只用到 ~450px, 右侧空 30% 视觉重心偏左。
-  //   fit-content = min(内容宽, 可用宽); 上限取 min(640, 视口-32) 一次表达两个约束;
+  //   fit-content = min(内容宽, 可用宽); 上限取 min(720, 视口-32) 一次表达两个约束;
   //   下限走 Size.PARAMS_PANEL_MIN_W(2026-10-13 23:20 由 320 抬至 460, 标题 nowrap + 三标签所需),
   //   且用 min(令牌, 100vw-32) 收敛 —— CSS 中 min-width 优先于 max-width, 固定值会在窄视口撑破。
   width: 'fit-content',

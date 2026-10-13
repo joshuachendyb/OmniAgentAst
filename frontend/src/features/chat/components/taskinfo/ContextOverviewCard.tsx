@@ -28,7 +28,7 @@
  * 编辑历史: 2026-10-14 小欧 - 浮层长内容被屏幕切(北京老陈反馈): ①加 centered 纵向居中, 横向仍贴按钮
  *   (只封顶 maxHeight 不够, 位置仍贴触发器生长, 近满屏高时会被 rc-trigger 上推过头切掉顶部);
  *   ②cardStyle 补 maxHeight:'calc(100vh - 58px)' + overflowY:'auto', 高度由内容定但封顶不超屏;
- *   58 = 留白32 + antd inner padding 24 + 边框2(卡片设 padding:0 去不掉 inner 的 padding)。
+ *   58 = 留白32 + antd inner padding 24 + 边框2(卡片设 padding:0 去不掉 inner 的 padding) — 小欧-2026-10-14
  */
 import React, { useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';

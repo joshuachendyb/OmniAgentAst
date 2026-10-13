@@ -10,6 +10,7 @@
 
 | 版本 | 时间 | 编写人 | 修改说明 |
 |---|---|---|---|
+| v2.13 | 2026-10-14 05:10:00 | 小欧 | **§6.2 结构性订正：删掉逐工具字段清单，改「引用源码 + 形态分类」**（北京老陈令「三思三省·全系统分析最佳/最差处理方法」后定案）。①**§6.2.3 整节重写**：字段名是**派生数据**，手抄进文档必然漂移，已实证错 4 处（`timer_list` 裸list / `analyze_data` 顶层键 / `tree` 的 `entries`→`tree`+`children`+`total_size` / `search_web` 的 `matches`→`items`），错因相同故不逐条修补，改存**来源指针**而非**生成结果**；保留已核实的典型结构示例表，并**诚实声明其余约 60 个工具未逐个核对**②§6.2.1「顶层 dict 67/67」的推导链被 `observation_formatter.py:194` 的非 dict 分支证伪，改以 AST(453 点) + 运行时样本(759 条) 双证据复核，并说明 26 处增量构造静态追源不了、故保留前端非 dict 防御③§6.2.2「私有键 2 个 / 需过滤」订正为 3 个键名且**不再过滤**（§6.2.4.1）。**全程零代码改动** |
 | v2.12 | 2026-10-14 00:20:00 | 小欧 | **撤销「下划线私有键过滤」+ 4 处后端实证订正**（第三轮代码审计，北京老陈挑出错误清单后逐条核实）：①新增 **§6.2.4.1**「下划线私有键已取消过滤」并同步改写 §6.2.4 表与 §6.3 正文 —— 病根: `http_request.py:111` 的 `{_truncated, _reason, _preview}` 是**一组**信号，只放行 `_truncated` 会让用户既不知原因也看不到内容，比全过滤更糟；`execute_shell_command`/`grep_file_content` 的 `_truncated` 无 `truncated_reason` 替代，过滤即丢事实。代价(`_error_code`/`_score` 露出)可接受②§6.2.3 `analyze_data` 订正：顶层键**固定**为 `grouped_statistics`，动态分组键在内层（原记「顶层为运行时分组值」有误）③§6.2.3 `execute_sql` 补第三分支 `{"action": "rollback"}`(`:270`)，原表把 `detected/suggestion/action` 混作一支④§6.2.3 补 `http_request` 响应体超限三键、`read_text_file` 截断分支的 `encoding`/`truncated`/`truncated_reason` 及 pop 分支 |
 | v2.11 | 2026-10-13 23:45:00 | 小欧 | **实施后十遍三堂会审的三处规则表脱节订正**（合规章 / 关联章）：①§3.4.3 令牌表 `PARAMS_PANEL_MAX_W/MIN_W` 由 640/320 同步为 **720/460**（北京老陈裁定「加宽浮层 + 标题不许换行不许折行」，文档原值未跟进=脱节）②`T33` props 白名单由 `{toolName,params,onClose}` 同步为 `{toolName,params,result?,onClose}`（第六章新增可选 prop）③§6.6 diff 着色补登 **DC-21 语义色借用登记**（`+`→`SUCCESS` / `-`→`ERROR`，禁用 `ORANGE_RED`）。另在 §2.5 反面清单新增两条实bug 记录：`-` 行误用橙 `ORANGE_RED`（违背规格「`-` 红」）、**所有含换行字符串被误当 diff 着色**（`stdout`/`content` 行首 `+`/`-` 误染）。旧版本历史一律保留 |
 | v1.0 | 2026-10-13 08:26:25 | 小欧 | 新建（北京老陈令：分析 Step 页面 observation 工具结果展开区参数区UI渲染缺点，出布局视觉优化方案）。三章结构：问题分析 / 优化问题解决方案 / 实施代码详细设计说明 |
@@ -2357,6 +2358,9 @@ tool_result.append({
 - 编码处理：`utf-8-sig`（`document/write_*.py` 带 BOM，首轮 `utf-8` 解析失败 4 个，补 `sig` 后全量解析通过）
 - **命中工具：67 个**（调用 `build_success` / `build_error` / `build_warning`）
 - **顶层 `data` 为 dict 者：67/67（100%）** —— 无 list / str / number 顶层，故 `Object.entries` 不会崩
+  - **⚠️ 2026-10-14 小欧 复核：该结论的推导链不成立**（`observation_formatter.py:194` 有 `if not isinstance(data, dict): return str(data)` 的非 dict 分支，与「无 list 顶层」矛盾；且 `timer_list` 曾被本节下游误记为裸 list）。
+  - **改以两条独立证据复核**：① AST 重扫 **453 个 `build_*(data=)` 传入点**，非 dict 字面量 **0 个**；② 真实运行样本 **759 条 `原始内容.data`**，**759/759 全为 dict**。
+  - 仍有 **26 处**变量为增量构造（`data["k"]=v`），静态追源不了 —— 故渲染侧**保留非 dict 防御**（`ParamsPanel.visibleResultEntries`：非 dict 返回空条目，而非渲染成字符表/下标表）。
 
 #### 6.2.2 字段形态总览（8 类）
 
@@ -2368,119 +2372,63 @@ tool_result.append({
 | 对象数组 | 14 个 | 需 `'result'` 模式折叠 |
 | 嵌套对象 | 4 个 | 需 `'result'` 模式折叠 |
 | **动态顶层键** | 2 个 | 平铺天然适配 |
-| **私有键（下划线前缀）** | 2 个 | 需过滤 |
-| **超长二进制** | 1 个 | **不渲染** |
+| **私有键（下划线前缀）** | 3 个键名（`_truncated` / `_error_code` 8 处 / `_score` 1 处） | **不再过滤**，全部照常渲染（§6.2.4.1） |
+| **超长二进制** | 1 个 | **不渲染**（§6.3） |
 
-#### 6.2.3 逐工具明细表（67 个）
+> 本表是**设计依据**（形态 → 前端怎么渲染），稳定。**字段名不在此表**，见 §6.2.3。
 
-> 「字面量键」= AST 直接抽到的 `data` 字典键；「追源」= 该工具的 `data` 由变量/函数构造，键在别处定义。
+#### 6.2.3 字段名：**不再逐条列举**（2026-10-14 小欧 结构性订正，v2.13）
 
-**dataanalysis（6 个）**
+> **⚠️ 本节已删除逐工具字段清单。** 原因见下方「为什么删」。
 
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `analyze_data` | `columns`, `statistics`；**分组时顶层键固定为 `grouped_statistics`**（内层才是运行时分组值 `result[group_key][op]`）—— 2026-10-13 小欧 订正，原记「顶层键为运行时分组值」有误 | 嵌套对象 / **动态内层键** |
-| `execute_sql` | 成功 `{}`；校验失败 `build_warning`：`{detected, suggestion}`（`execute_sql.py:177`）；成功 `{syntax_valid}`（`:244`）；**回滚 `{"action": "rollback"}`**（`:270`）—— 2026-10-13 小欧 补第三分支 | 空 / 嵌套 |
-| `filter_data` | `columns`, `rows[]`, `truncated`, `truncated_reason`, `warnings[]`（追源 `result_data`） | 对象数组 |
-| `generate_chart` | `{}` | 空 |
-| `get_db_schema` | `tables[]` = `{name, columns[], indexes[]}` —— **三层嵌套** | 对象数组 |
-| `query_sql` | `columns`, `rows[]`, `truncated`, `truncated_reason` | 对象数组 |
+##### 为什么删（系统根因）
 
-**desktop（8 个）**
+字段名是**派生数据** —— 从后端代码推导出的结果，不是原始事实。手抄进文档必然漂移，且**已实证错 4 处**：
 
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `clipboard_control` | 读：`{text, original_len, truncated}`（追源 `_read_clipboard`）；写：`{}` | 长文本 / 空 |
-| `keyboard_control` | `{success}`（追源 `_type_text` / `_shortcut`）；错误 `{}` | 标量 / 空 |
-| `mouse_click` | `{}` | 空 |
-| `mouse_move` | `{}` | 空 |
-| `mouse_position` | `x`, `y` | 标量 |
-| `mouse_scroll` | `{}` | 空 |
-| `screen_capture` | `image_path`, `display` | 标量 |
-| `set_window_state` / `window_focus` | `{}` | 空 |
-| `window_info` | `windows[]` | 对象数组 |
-| `window_resize` | `width`, `height` | 标量 |
+| # | 工具 | 本文档原写 | 源码实测 | 来源 |
+|---|---|---|---|---|
+| 1 | `timer_list` | 裸 list | `data={"timers": [...]}`（dict） | `file/timer_list.py:87` |
+| 2 | `analyze_data` | 分组时**顶层键**为运行时分组值 | 顶层固定 `grouped_statistics`，动态键在**内层** | `dataanalysis/analyze_data.py:55` |
+| 3 | `tree` | `entries[]` | 顶层 `tree`，内部键是 `children[]`；`statistics` 另有 `total_size` | `file/tree.py:115-122` |
+| 4 | `search_web` | `matches[]` | `items[]`，元素 `{title,url,snippet}` | `network/search_web.py:423` |
 
-**document（8 个）**
+四处**错因相同**（手抄而非引用），故不逐条修补 —— 修补后下次重构仍会错。**存生成器，不存生成结果。**
 
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `read_docx` | `text`, `tables[]`（追源 `result_data`，`tables` 条件存在） | 长文本 + 对象数组 |
-| `read_pdf` | `text`, `tables[]`, `images[]`（`images[]` 元素 = `{page, width, height, note}`，**note 是"图片已跳过"说明文本，非二进制**） | 长文本 + 对象数组 |
-| `read_pptx` | `slides[]`, `notes[]`（`notes` 条件存在） | 对象数组 |
-| `read_xlsx` | 多表 `{sheets[], sheet_names[], row_count}`；单表/CSV `{rows[], sheet_names[], row_count}`；另加 `truncated`, `truncated_reason` | 对象数组 |
-| `write_docx` / `write_pdf` / `write_pptx` / `write_xlsx` | `{}` | 空 |
+##### 取字段名的唯一正确方式
 
-**file（12 个）**
+1. **形态分类看 §6.2.2**（稳定，决定前端怎么渲染）；
+2. **字段名去源码读**：`backend/app/tools/<类>/<工具>.py` 里的 `build_success(data=…)`；
+3. `data` 由变量构造时（如 `data = parsed["body"]`）**继续往上游追**，别停在 `build_success` 那一行。
 
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `compress_files` | 压缩结果字典**剔除** `source_path`/`destination_path`/`format`/`file_count`/`compressed_files`/`compression_ratio` 后的余量（追源 `safe_data`）；保留 `original_size`、`compressed_size` 等 | 嵌套对象 |
-| `copy_file` / `delete_file` / `move_file` / `rename_file` | `{}` | 空 |
-| `edit_text_file` | 成功 `{diff}`；失败 `{error_detail, params{path}}` | **diff（需着色）** / 嵌套 |
-| `extract_archive` | `output_dir`, `file_list[]` | 标量 + 对象数组 |
-| `grep_file_content` | `matches[]`, `total_files`, `total_matches`, **`_truncated`**, `truncated_reason` | 对象数组 + **私有键** |
-| `list_directory` | `entries[]`, `truncated`（追源 `_build_list_success`，元素 `{name, path, type, size, mtime}`） | 对象数组 |
-| `read_media_file` | `file_name`, `mime_type`, **`base64_data`** | **超长二进制 → 不渲染** |
-| `read_text_file` | `content`, `total_lines`, `line_count`, `start_line`, `end_line`（追源 `select_lines`）；**截断分支另加** `encoding`(L274)、`truncated`、`truncated_reason`（L26 注释实证），且 `line_count`/`total_lines`/`start_line`/`end_line`/`encoding` 在部分分支被 `pop` 移除（L280-304）—— 2026-10-13 小欧 补 | 长文本 |
-| `search_files` | `matches[]`（元素 `{name, path, type, size}`） | 对象数组 |
-| `tree` | `entries[]`, `statistics{file_count, dir_count}`（追源 `_get_directory_tree`） | 对象数组 + 嵌套 |
-| `write_text_file` | `content_preview` | 短文本 |
+> 教训：`http_request` 写成「成功 `data`」不算错键，但**描述过简** —— 真实是 `data = parsed["body"]` 三层 `{status_code, headers, body}`（`network/http_request.py:282`）。停在一行就下结论，正是 `tree`/`search_web` 判错的同一原因。
 
-**fundamental（6 个）**
+##### 已核实的几个典型结构（示例，非清单）
 
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `execute_shell_command` | `stdout`, `stderr`, **`_truncated`** | 长文本 + **私有键** |
-| `shell_engine` | 内部引擎，不直接作为工具出口 | — |
-| `send_notification` | `{}` | 空 |
-| `time_now` | `{}` | 空 |
-| `tool_search` | `matches[]`（元素 `{name, category}`）；无匹配时 `{"matches": []}` | 对象数组 |
-| `find_command` | `paths[]`（追源 `data`）；未找到时 `{}` | 对象数组 / 空 |
+| 工具 | raw_data 真实结构（源码实证） |
+|---|---|
+| `tree` | `{tree:{name,path,type,children[]}, statistics:{file_count,dir_count,total_size}}` |
+| `search_web` | `{items:[{title,url,snippet}]}` |
+| `read_xlsx` | 单表/CSV `{sheet_name, headers[], rows[], row_count, sheet_names[]}`；多表 `{sheets:[{sheet_name,headers,rows,row_count}], sheet_names[], row_count}` |
+| `read_xlsx` 失败 | `{error_detail, hint, params:{path, encodings_tried}}` |
+| `http_request` 成功 | `{status_code, headers{}, body}`（`data = parsed["body"]`） |
+| `http_request` 超限 | `{_truncated, _reason, _preview}`（`network/http_request.py:111`） |
+| `execute_sql` | 三支：`{}` / `{detected,suggestion}` / `{syntax_valid}` / `{action:"rollback"}` |
 
-**network（4 个）**
+##### 未排查范围（诚实声明）
 
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `download_file` | `{}` | 空 |
-| `fetch_webpage` | `{content}`（Markdown 全文）；媒体类走 `media_result["data"]`；内容过短时 `result_data` 为 `{}` | 长文本 / 空 |
-| `http_request` | 成功 `data`；**响应体超限时** `{"_truncated": True, "_reason": "响应体超限…已预览截断", "_preview": preview}`（`http_request.py:111`）—— 2026-10-13 小欧 补，原表漏此三键；失败 `{error_detail, params{url[, status_code]}}` | 嵌套对象 |
-| `ping_port` | ping 模式 `ping_data`；port 模式 `{is_open, service}` | 嵌套 / 标量 |
+本节**只核实了上表列出的工具**。其余约 60 个工具的字段名**未逐个核对**，同类风险存在。需要确切清单时，按上面的「唯一正确方式」去源码读，或做一次全量 AST + 运行时取证（尚未建脚本）。
 
-**system（5 个）**
-
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `create_task` / `delete_task` / `list_tasks` | `tasks[]`（`list_tasks`）；`create_task`/`delete_task` 为 `{}` | 对象数组 / 空 |
-| `event_log` | `events[]` | 对象数组 |
-| `get_system_info` | 按 `info_type` 动态组装 `basic{platform, platform_release, platform_version, architecture, processor, hostname, python_version}` / `cpu{physical_cores, logical_cores, ...}` / `memory` / `disk` / `network`；非法类型时 `{error_detail, valid_types}` | **动态键** + 嵌套 |
-| `find_command` | 见 fundamental | — |
-
-**timer（6 个）**
-
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `timer_list` | `timers[]` | 对象数组 |
-| `timer_set` | `trigger_at` | 标量 |
-| `timer_clear` / `query_calendar` / `time_add` / `time_diff` | `{}` | 空 |
-
-**validate / win_registry（5 个）**
-
-| 工具 | 字段 | 形态 |
-|---|---|---|
-| `file_type_checker` | 内部校验器，不直接作为工具出口 | — |
-| `registry_read` / `registry_delete` | `{}` | 空 |
-| `registry_write` | dry_run 时 `{dry_run}`；实际写入 `{}` | 标量 / 空 |
+> 保留 §6.2.1（普查方法）、§6.2.2（形态分类）、§6.2.4（不渲染字段）—— 这三节讲的是**设计与规则**，稳定且仍是实现依据。
 
 #### 6.2.4 三个特殊字段
 
 | 字段 | 出处 | 说明 |
 |---|---|---|
 | **`base64_data`** | `read_media_file` | 图片/音视频 base64，**几百 KB ~ 几 MB 的单行字符串**。**不渲染**，见 §6.3 |
-| ~~**`_truncated`**~~ | ~~`bash` / `grep_file_content`~~ | **2026-10-13 小欧 撤销过滤（v2.12）** —— 下划线前缀不再一刀切过滤，全部照常渲染，理由见 §6.2.4.1 |
+| ~~**`_truncated`**~~ | ~~`bash` / `grep_file_content`~~ | **2026-10-14 小欧 撤销过滤（v2.12）** —— 下划线前缀不再一刀切过滤，全部照常渲染，理由见 §6.2.4.1 |
 | **`diff`** | `edit_text_file` | 结构化 diff（`@@` hunk 头 + `+`/`-`/空格行首标记），后端已规范化，**需着色**，见 §6.6 |
 
-#### 6.2.4.1 下划线私有键：**已取消过滤**（2026-10-13 小欧，v2.12）
+#### 6.2.4.1 下划线私有键：**已取消过滤**（2026-10-14 小欧，v2.12）
 
 初稿规定「下划线开头的键一律过滤」。实施中连踩两次才查透，**该规定已撤销**：
 
@@ -2504,9 +2452,9 @@ tool_result.append({
 
 **该字段的呈现方式**：整行不出现（不是显示为空、不是显示占位），即从 `Object.entries` 结果中过滤掉。
 
-**下划线键的处理**：~~`bash._truncated` / `grep_file_content._truncated` 按「私有键过滤」规则统一过滤~~ → **2026-10-13 小欧 撤销（v2.12）**：下划线键**不再过滤**，`_truncated` / `_reason` / `_preview` 均照常渲染。理由见 §6.2.4.1。
+**下划线键的处理**：~~`bash._truncated` / `grep_file_content._truncated` 按「私有键过滤」规则统一过滤~~ → **2026-10-14 小欧 撤销（v2.12）**：下划线键**不再过滤**，`_truncated` / `_reason` / `_preview` 均照常渲染。理由见 §6.2.4.1。
 
-**其余字段一律渲染**，包括体积大的：`bash.stdout/stderr`、`read_text_file.content`、`fetch_webpage.content`、`read_pdf.text`、`read_docx.text`、`edit_text_file.diff`、`rows` / `entries` / `matches` / `tasks` / `events` / `timers` / `windows` / `items` / `slides` / `tables` / `sheets` —— 它们靠浮层既有的滚动容器承载（面板外壳 `maxHeight:calc(100vh - 32px)` + 内容区 `overflowY:auto`），行数不裁剪。
+**其余字段一律渲染**，包括体积大的：`bash.stdout/stderr`、`read_text_file.content`、`fetch_webpage.content`、`read_pdf.text`、`read_docx.text`、`edit_text_file.diff`、`rows` / `entries` / `matches` / `tasks` / `events` / `timers` / `windows` / `items` / `slides` / `tables` / `sheets` —— 它们靠浮层既有的滚动容器承载（面板外壳 `maxHeight:calc(100vh - 58px)` + 内容区 `overflowY:auto`），行数不裁剪。
 
 ### 6.4 视图选型
 
@@ -2674,7 +2622,7 @@ ToolCallLine ──result={results[i]}──> ParamsPanel ──> SpecView(value
 │                        （内容区，唯一可滚动部分）                       │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
-  ↑ 外壳 maxHeight:calc(100vh - 32px) + overflow:hidden
+  ↑ 外壳 maxHeight:calc(100vh - 58px) + overflow:hidden
   ↑ 内容区 flex:1 + overflowY:auto  —— 行数不裁剪，一行不截断
 ```
 

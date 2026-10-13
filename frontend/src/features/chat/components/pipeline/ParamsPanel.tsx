@@ -12,7 +12,10 @@
 //   ⑦规格表巨型值**整宽跨行**: 行容器加 flexWrap + ValuePre 的 flexBasis:100%, 展开态由 SpecView 自管 openKeys(Set);
 //     折叠行/代码块/普通值拆成 ValueToggle/ValuePre/PlainValue 三件供两视图复用, 不写两套折叠逻辑(DRY);
 //   ⑧面板外壳: 自带 BG.SECONDARY+BORDER.DEFAULT+Radius.SM 卡片规格(DC-19), 根不挂等宽字体(免污染标题/分类标签),
-//     外壳 maxHeight:calc(100vh-32px) + 内容区滚动 —— 行数一个不裁剪, 但浮层 portal 脱离右栏滚动容器, 完全不限会超出视口不可达;
+//     外壳 maxHeight:calc(100vh-58px) + 内容区滚动 —— 行数一个不裁剪, 但浮层 portal 脱离右栏滚动容器,
+//     完全不限会超出视口不可达;
+//     2026-10-14 小欧 订正: 原写 calc(100vh-32px), 实值已改 58 —— 58 = 留白32 + antd inner padding 24 + 边框2,
+//     详见下方 2026-10-14 编辑历史
 //   ⑨面板头: 分组/规格表(Segmented 24px)、复制(≈20px)、✕(≈16px) 统一包进 24px 居中盒(HEADER_CTRL_BOX)对齐基线;
 //     装饰图标 </> 由 PRIMARY 蓝改 TEXT.SECONDARY 中性灰(蓝在本系统=可点, 装饰用蓝会误导), 工具名去 nowrap 改折行(注: 2026-10-13 23:20 依北京老陈"不许折行"裁定**改回 nowrap**, 见下方编辑历史) — 小欧-2026-10-13
 // 编辑历史: 2026-10-13 小欧 - 文档[29]§6.10 新增第三个视图「结果」(工具原始结果 raw_data):
@@ -27,11 +30,13 @@
 //   ⑥ 复制按视图分支: 结果视图复制 raw_data 缩进 JSON(**不是**过滤后的视图 —— 复制的是原始数据);
 //   ⑦ 标题改 whiteSpace:nowrap + flexShrink:0(北京老陈"不许换行不许折行"), maxW 640→720 配合;
 //   ⑧ 空串在结果模式下也给 `(空)` 占位(否则用户分不清"本来就没有"还是"渲染漏了"; 命中常态空 stderr);
-//   ⑨ 数组摘要用 `[]` 不用 `{}`(23 处 rows[]/matches[] 类字段); 空容器不配折叠箭头(fold 开一个空数组无意���).
+//   ⑨ 数组摘要用 `[]` 不用 `{}`(23 处 rows[]/matches[] 类字段); 空容器不配折叠箭头(fold 开一个空数组无意义).
 //   审计修正: 文件头概述与下方 ⑦ 的结论相反(头写"工具名改折行"), 已加注说明结论已反转 — 小欧-2026-10-13
 // 编辑历史: 2026-10-14 小欧 - 浮层纵向居中后修正外壳封顶: calc(100vh-32px) → calc(100vh-58px)。
-//   原值漏算 antd 外壳开销(inner padding 24 + 本外壳边框 2), 包裹层总高实为"视口-6";
-//   而纵向居中按包裹层总高算, 差 6px 即上下同时被切。另撤销下划线私有键过滤、补非 dict 防御。
+//   封顶值须扣 58 = 留白32 + antd inner padding 24 + 本外壳边框2(padding:0 只归零卡片自身, 去不掉 inner 的)。
+//   另撤销下划线私有键过滤、补非 dict 防御。
+//   2026-10-14 小欧 订正: 原写「包裹层总高实为视口-6, 差 6px 即上下同时被切」—— 差值应为 26(58-32),
+//   且总高 100vh-6 < 视口, 居中后本不会被切; 真实后果是上下留白由 32px 缩到 3px(视觉贴顶贴底) — 小欧-2026-10-14
 import React, { useMemo, useState } from 'react';
 import { Segmented } from 'antd';
 import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
@@ -769,9 +774,13 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
       /* 隐私模式/存储禁用: 仅本次会话生效, 不阻断 */
     }
   };
-  // 2026-10-13 23:00 小欧 - 文档[29]§6.3: 结果视图过滤 base64_data 与下划线私有键后取其余条目。
-  //   ⚠️ 不兜底(铁律): result 为空/未传时 entries 为空数组 → 内容区空白,
-  //   **绝不**回退 params / llm_data / data_text(文档[29]§6.1.3、§6.8)
+  // 2026-10-13 23:00 小欧 - 文档[29]§6.3: 结果视图过滤不渲染字段后取其余条目。
+  //   ⚠️ 不兜底(铁律): result 为空/未传时 entries 为空数组,
+  //   **绝不**拿 params 冒充原始数据(文档[29]§6.1.3、§6.8)
+  // 2026-10-14 小欧 订正: 原注三处过期 —— ①原写「过滤 base64_data 与下划线私有键」, 下划线过滤已于 v2.12 撤销,
+  //   现仅过滤 base64_data(见 RESULT_HIDDEN_KEYS); ②原写「内容区空白」, 现空态改显「本次工具执行：<summary>」
+  //   (见下方空态分支); ③原写「绝不回退 params / llm_data / data_text」, 空态确取 llm_data.summary, 但那**不是**
+  //   兜底(兜底=拿 params 冒充原始数据; 本条=承认无原始数据、改显如实说明, 见 resultSummary prop 注释) — 小欧-2026-10-14
   const resultEntries = useMemo(
     () => (result ? visibleResultEntries(result) : []),
     [result]

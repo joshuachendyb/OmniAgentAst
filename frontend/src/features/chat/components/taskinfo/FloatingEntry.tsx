@@ -26,10 +26,13 @@ export interface FloatingEntryProps {
   cardId: string; // 卡片 id（= 入口 aria-controls，关系内聚于组件内）
   ariaLabel: string; // 入口 + 卡片共用 aria-label
   /**
-   * 2026-10-13 小欧 - 北京老陈裁定: 视口居中(不贴按钮)。
+   * 2026-10-13 小欧 - 北京老陈裁定: 纵向居中(横向仍按 placement 贴按钮)。
    *   病根: 贴按钮长内容时底部顶出视口 → rc-trigger 被迫上移补偿且越移越多 = 严重漂移;
    *   居中后 top=(100vh-h)/2, h≤100vh 时**永不截断**, 位移变为绕中心对称扩张。
-   *   OCP: 可选 prop, 「上下文概览 / 事件」既有调用零影响(默认仍贴按钮)。
+   *   OCP: 可选 prop, 默认 false —— 「事件」浮层不传, 零影响。
+   * 2026-10-14 小欧 订正: 原写「视口居中(不贴按钮)」+ OCP 称「上下文概览 / 事件」零影响 —— 两处均已失效:
+   *   ①语义收敛为**纵向**居中(横向交回 rc-trigger 按 placement 贴按钮, 见 index.css
+   *   .popover-viewport-centered 注释); ②「上下文概览」已传 centered, 不再零影响 — 小欧-2026-10-14
    */
   centered?: boolean;
   cardStyle?: React.CSSProperties; // 卡片容器样式（宽/布局，调用方注入）
@@ -37,7 +40,11 @@ export interface FloatingEntryProps {
   children: React.ReactNode; // 入口热区内容（上下文概览: MetricItem / 事件: DownOutlined + "事件"）
 }
 
-/** 2026-10-13 小欧 - 视口居中挂载类(定位规则在 index.css, 因需 !important 覆盖 rc-trigger 的内联 left/top) */
+/**
+ * 2026-10-13 小欧 - 纵向居中挂载类(定位规则在 index.css, 因需 !important 覆盖 rc-trigger 的内联坐标)。
+ * 2026-10-14 小欧 订正: 原写「视口居中…覆盖 left/top」—— 现仅接管纵向(top), 横向不写 left/translateX,
+ *   交回 rc-trigger 按 placement 横向锚定(见 index.css 该规则注释) — 小欧-2026-10-14
+ */
 const CENTERED_CLASS = 'popover-viewport-centered';
 
 export const FloatingEntry: React.FC<FloatingEntryProps> = ({
@@ -96,9 +103,12 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
         placement={placement}
         mouseEnterDelay={0.15}
         mouseLeaveDelay={0.3}
-        // 2026-10-13 小欧 - 视口居中三件套: 关箭头(居中后箭头会指在屏幕中间无对象) +
-        //   关 zoom 动效(动效给 .ant-popover 加 transform, 会与居中的 translate 打架, 且
-        //   transform 的祖先会成为 fixed 的包含块) + 挂定位类(!important 覆盖 rc-trigger 内联坐标)。
+        // 2026-10-13 小欧 - 居中三件套: 关箭头 + 关 zoom 动效(动效给 .ant-popover 加 transform,
+        //   会与居中的 translate 打架, 且 transform 的祖先会成为 fixed 的包含块)
+        //   + 挂定位类(!important 覆盖 rc-trigger 内联坐标)。
+        // 2026-10-14 小欧 订正: 原关箭头理由「居中后箭头会指在屏幕中间无对象」已失效 —— 现横向仍贴按钮,
+        //   箭头指向按钮正是正确的视觉指引。此处保留关箭头系沿袭 17a057b3c 完全居中设计的顺带残留;
+        //   应否解耦为独立 prop 需另行裁定, 本次仅订正注释口径不改代码 — 小欧-2026-10-14
         arrow={centered ? false : { pointAtCenter: true }}
         transitionName={centered ? '' : undefined}
         rootClassName={centered ? CENTERED_CLASS : undefined}
