@@ -2,7 +2,7 @@
 
 创建时间：2026-10-13 08:26:25
 更新时间：2026-10-13 09:36:18
-版本：v2.1
+版本：v2.2
 编写人：小欧
 
 **版本历史**
@@ -21,6 +21,7 @@
 | v1.9 | 2026-10-13 09:36:18 | 小欧 | 四轮逐节 10 遍核查，**6 处**（实质 2 处）：①**树头 `CopyButton` 未写明用默认形态还是 inline**（默认 `position:absolute` 放错地方会压住树头）→ §3.4 明确"树头用默认形态，面板头才传 `inline`"；②**DC-10/DC-12 仍含裸字符与病句**（`▸折叠箭头` 与 T29「无裸字符」自相矛盾、"不带自带箭头"病句）→ 改写为文字描述；③DC-17"新增"二字易误读为新建组件 → 改"增设（复用）"；④**约定 4「不再二次折叠」与 §2.3.3「巨型值折叠」字面打架** → 改写为「不按项数二次折叠，巨型单值的体量处理不属此列」，DC-06/S6 同步；⑤**T25 与 §3.4.3 窄屏口径两处都写算式/策略** → §3.4.3 加"具体落法见 T25"；⑥§2.8 与 §2.2.2 否决清单重复且 §2.8 未收录视觉 6 项 → §2.8 加注声明 + 补收录一行 |
 | v2.0 | 2026-10-13 09:36:18 | 小欧 | 五轮逐节 10 遍核查，查出 **4 处**，**其中 1 处是 v1.9 自己改坏的（已还原）**：①**§2.8 引用的「§2.2.2 视觉一致性 6 项」在 v1.9 被误删**（当时以为去重，实为误删，导致行数 840→835、§2.8 指向空）→ **全部还原**，并补 2 条此前从未入册的（凭空定面板宽、自造浮层热区），§2.2.2 现共 19 项，§2.8 改为引用式；②T18 用裸字符 `▸折叠箭头`，与 T29「全文无裸字符」自相矛盾 → 改文字描述；③T24「点 `▸`」同上 → 改「点折叠箭头」；④§3.6/§3.10/T20 三处「无**自带**箭头」病句（v1.9 只改了 DC-12 一处）→ 全部改「无箭头」。**行数回 844，§2.2.2 否决项由 6 增至 19** |
 | v2.1 | 2026-10-13 09:36:18 | 小欧 | 北京老陈令「基于前三章编写第4章详细设计实施代码」。**新增 §4 实施代码章**（§4.0 差异登记 / §4.1 代码列表 / §4.2~§4.7 逐文件全量代码 / §五 验证清单），§4.0 声明「冲突以本章为准」。落地时按 KISS/DRY 收敛 **6 处与前三章的差异**：D-1 **参数区移出 `role="button"`**（结构性根治 B1，替代 I1 的 stopPropagation 补丁——补丁方案下用户无法在展开态选中文字）；D-2 删 `ParamsTreeProps.onNodeClick` 死接口；D-3 `ParamsPanelProps` 由 `{toolName,params,children}` 改 `{toolName,params,onClose}`（T15 要求 ✕ 可关；`children` 无消费方 YAGNI）；D-4 增尺寸令牌 `PARAMS_PANEL_BODY_MAX_H`；D-5 断点矩阵改**纯 CSS 响应式三件套**（免 resize 监听与重渲染）；D-6 确认 `FloatingEntry` 自带 `stopPropagation` 故可安全置于工具行 flex 内。`ToolCallLine.tsx` 净 **−55 行**、净减 1 个 state、渲染期 `JSON.stringify` 归零 |
+| v2.2 | 2026-10-13 09:36:18 | 小欧 | 六轮逐节 10 遍核查第 4 章代码，查出 **5 处**（其中 **3 处直接导致编译/校验失败**）：①**§4.6.1 多导入未使用的 `Radius`**（§4.6 全文未用）→ ESLint `no-unused-vars` error，**已删**；②**§4.5 `VIEW_OPTIONS` 加了 `as const`** → 产出 readonly tuple，而 antd `Segmented.options` 类型是可变数组 `(string｜number｜SegmentedOption)[]`，**tsc 报 TS2322**，**已去掉 `as const`** 并注明理由；③**§4.4 树根标签写成「树根(恒展开)」** → 把实现注释泄漏到 UI，且与 §3.4.1 结构图 `▾ {` 不一致，**改为只写 `{`**；④§3.8 **T33 的 props 清单与 §4.0 D-3 不符**（仍写 `children`）→ **同步为 `{toolName, params, onClose}`**；⑤**§4.6.6 删除块用 `... paramsFoldable 分支 + paramRows.map ...` 占位**，不可直接实施 → **已展开为原文件 `:361-437` 逐行完整原文** |
 
 ---
 
@@ -770,7 +771,7 @@ content = 共 312 行
 | T30 | 分类色条全部取自 `Colors.BORDER.*` 中性灰阶，无 `WARNING`/`ACCENT_ORANGE`/`SUCCESS`/`ERROR` 等语义色（VC4） |
 | T31 | 浮层参数按钮图标为 antd `CodeOutlined`（非 `GearIcon`，后者语义为"工具执行等待"）；热区继承 `.taskinfo-entry` 规格（VC8/VC9） |
 | T32 | 参数区与页面既有代码块并排时观感一致：同 `BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`（VC2/VC10/VC11） |
-| T33 | `ParamsPanel` 的 props **只有** `toolName`/`params`/`children`；开合由 `FloatingEntry` 承担，编译通过（`npm run typecheck` 零错误） |
+| T33 | `ParamsPanel` 的 props **只有** `toolName`/`params`/`onClose`（见 §4.0 D-3）；开合由 `FloatingEntry` 承担，编译通过（`npm run typecheck` 零错误） |
 | T34 | 全文无「JSON 语法着色」残留、无自造复制按钮残留（DC-19/DC-20 已落地，代码与文档同步） |
 
 ### 3.9 改造前后对比示意
@@ -1188,7 +1189,9 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({
           expanded
           animated={false}
         />
-        <span>{'{ 树根(恒展开)'}</span>
+        {/* 2026-10-13 小欧 - 核查订正: 树根标签只写 `{`, 与 §3.4.1 结构图一致。
+            初稿写「树根(恒展开)」是把注释写进了 UI, 属实现细节泄漏到用户界面 */}
+        <span>{'{'}</span>
         <CopyButton text={copyText} />
       </div>
       {entries.map(([k, v], idx) => {
@@ -1266,10 +1269,16 @@ const ENCODING_KEYS: ReadonlySet<string> = new Set(['encoding', 'charset']);
 
 export const PARAMS_VIEW_MAP = { group: '分组', spec: '规格表' } as const;
 export type ParamsView = keyof typeof PARAMS_VIEW_MAP;
+/**
+ * 2026-10-13 小欧 - 核查订正: 此数组**不可加 `as const`**。
+ *   `as const` 会产出 readonly tuple, 而 antd `Segmented.options` 的类型是
+ *   `(string | number | SegmentedOption)[]`(可变数组) → readonly 不可赋值, tsc 报 TS2322。
+ *   故去掉 `as const`, 让元素结构按推断走(仍能提供 label/value 字面量类型)。
+ */
 const VIEW_OPTIONS = [
   { label: PARAMS_VIEW_MAP.group, value: 'group' },
   { label: PARAMS_VIEW_MAP.spec, value: 'spec' },
-] as const;
+];
 const VIEW_LS_KEY = 'step.params.view';
 
 /** 2026-10-13 小欧 - DC-21: 分类色只用 BORDER 中性灰阶, 语义色(警告/错误/成功)保留给状态 */
@@ -1701,18 +1710,19 @@ export default ParamsPanel;
    StopOutlined,
    SafetyCertificateOutlined,
 +  CodeOutlined,
- } from '@ant-design/icons';
- import {
-   Colors,
-   BorderWidth,
-   FontSize,
-   FontWeight,
-   Spacing,
-   stepMargin,
-+  Radius,
+} from '@ant-design/icons';
+  import {
+    Colors,
+    BorderWidth,
+    FontSize,
+    FontWeight,
+    Spacing,
+    stepMargin,
 +  Size,
- } from '@/utils/stepStyles';
+  } from '@/utils/stepStyles';
 ```
+
+> **2026-10-13 核查订正**：初稿在 stepStyles 导入里加了 `Radius`，但 §4.6 全文**未使用**（浮层卡片的圆角/边框/底色全部在 `ParamsPanel` 内部承担）→ 保留会触发 ESLint `no-unused-vars` error，故删除。
 
 #### 4.6.2 改动 2：模块级常量（浮层卡片响应式三件套，D-5）
 
@@ -1806,11 +1816,76 @@ export default ParamsPanel;
 -                          color: Colors.TEXT.SECONDARY,
 -                        }}
 -                      >
--                        ... paramsFoldable 分支 + paramRows.map ...
+-                        {paramsFoldable ? (
+-                          <>
+-                            <span
+-                              role="button"
+-                              tabIndex={0}
+-                              onClick={(e) => {
+-                                e.stopPropagation();
+-                                setParamsOpen((prev) => {
+-                                  const next = [...prev];
+-                                  next[i] = !prev[i];
+-                                  return next;
+-                                });
+-                              }}
+-                              onKeyDown={(e) => {
+-                                if (e.key === 'Enter' || e.key === ' ') {
+-                                  e.preventDefault();
+-                                  e.stopPropagation();
+-                                  setParamsOpen((prev) => {
+-                                    const next = [...prev];
+-                                    next[i] = !prev[i];
+-                                    return next;
+-                                  });
+-                                }
+-                              }}
+-                              style={{
+-                                cursor: 'pointer',
+-                                display: 'inline-block',
+-                              }}
+-                            >
+-                              {paramsShown
+-                                ? `▾ 参数（${paramRows.length} 项）`
+-                                : `▸ 参数（${paramRows.length} 项）`}
+-                            </span>
+-                            {paramsShown && (
+-                              <div style={{ marginTop: Spacing.XS }}>
+-                                {paramRows.map((r) => (
+-                                  <div
+-                                    key={r.k}
+-                                    style={{
+-                                      fontFamily:
+-                                        'Consolas, Monaco, "Courier New", monospace',
+-                                      wordBreak: 'break-all',
+-                                    }}
+-                                  >
+-                                    {r.k}: {r.v}
+-                                  </div>
+-                                ))}
+-                              </div>
+-                            )}
+-                          </>
+-                        ) : (
+-                          paramRows.map((r) => (
+-                            <div
+-                              key={r.k}
+-                              style={{
+-                                fontFamily:
+-                                  'Consolas, Monaco, "Courier New", monospace',
+-                                wordBreak: 'break-all',
+-                              }}
+-                            >
+-                              {r.k}: {r.v}
+-                            </div>
+-                          ))
+-                        )}
 -                      </div>
 -                    )}
                    </div>
 ```
+
+> **2026-10-13 核查订正**：初稿此处用 `... paramsFoldable 分支 + paramRows.map ...` 占位，不可直接实施。现已展开为**原文件 `:361-437` 的逐行完整原文**，可照单删除。
 
 **在工具行 flex 内、`<CircleArrow>` 之后追加**（D2 定案：内容 │ 折叠箭头 │ 浮层参数）：
 
