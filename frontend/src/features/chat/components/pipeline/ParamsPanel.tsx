@@ -682,6 +682,9 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           role="button"
           tabIndex={0}
           aria-label="关闭参数面板"
+          // 2026-10-13 18:20 小欧 - 关闭动作本组件自持, 无需止冒泡:
+          //   浮层门户内容的点击外泄由 FloatingEntry 在**卡片根**统一拦截(该处是唯一真源),
+          //   此处再拦一次属重复打点(DRY)。本组件只负责"点了要关"。
           onClick={onClose}
           onKeyDown={onCloseKeyDown}
           style={{

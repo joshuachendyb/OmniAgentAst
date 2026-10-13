@@ -1,4 +1,4 @@
-// 编辑历史: 2026-09-09 小欧 - v4.2: 抽 G6/G8 双浮层入口公共壳(DRY, 17 行×2 处重复收敛)
+﻿// 编辑历史: 2026-09-09 小欧 - v4.2: 抽 G6/G8 双浮层入口公共壳(DRY, 17 行×2 处重复收敛)
 //   Popover 配置 + taskinfo-entry 热区 a11y + Enter/Space/Esc 键盘 + 单真源开合 + 焦点管理(3.8/7.3); 卡片内容/样式调用方注入 — 小欧-2026-09-09
 // 编辑历史: 2026-10-10 小欧[20] 三堂会审 10 规范审计 B5 - hover 打开的浮层点击不得反向关闭: trigger
 //   ['hover','click'] 共享受控 open, 鼠标未移出时无 mouseenter 纠正 → 卡在关闭态"点一下反而关掉"。记来源后
@@ -8,6 +8,9 @@
 //   (hoverTriggered = trigger.includes('hover')): onMouseEnter 仅 hover 模式置位、onClick 仅 hover 模式消费。
 //   原因: onMouseEnter 原是无条件置位, 若只把 trigger 透传而不门控, 纯点击模式下会出现
 //   「鼠标移入→点开→再点一次关不掉」(open && hoverOpenedRef 吃掉关闭意图), T36 必挂 — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 18:20 小欧 - 修实测缺陷「点浮层 ✕ 连带展开工具行 JSON 树」: 门户内容的 React 冒泡
+//   不经过 trigger 上的 stopPropagation, 直达宿主行 onClick; 改在**卡片根**统一拦截一处, 全调用方受益(DRY 单一真源),
+//   不再由各调用方逐个按钮打补丁(G6/G8 及后续注入可交互 content 的调用方同样受益)
 import React, { useEffect, useRef } from 'react';
 import { Popover } from 'antd';
 
@@ -91,6 +94,18 @@ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
             role="dialog"
             aria-label={ariaLabel}
             style={cardStyle}
+            // 2026-10-13 18:20 小欧 - 修实测缺陷「点浮层 ✕ 却把工具行的 JSON 树展开了」。
+            //   病根: antd Popover 的 content 是 **portal 到 body** 的, 而 React 事件冒泡走
+            //   **React 组件树**、非 DOM 树 —— portal 内容在 React 树里的位置是 trigger div 的
+            //   **兄弟节点**, 故其冒泡路径**根本不经过**下面 trigger 上的那个 stopPropagation,
+            //   直达宿主行(ToolCallLine:332 工具行 onClick={toggleTool}) → 连带展开 JSON 树
+            //   (ToolCallLine:449 isOpen 才渲染 ParamsTree)。
+            //   修法取「门户自守」而非各调用方逐个打补丁: 在**卡片根**统一拦截一处, 全调用方受益
+            //   (DRY 单一真源, 下一个注入可交互 content 的调用方不会再踩同一个坑);
+            //   若只在某个按钮上补, 同类缺陷会在 G6/G8 及后续调用方重复发生。
+            //   不影响卡内组件自身: React 事件在 target 阶段先执行, 卡内 Segmented/CopyButton/
+            //   折叠箭头照常响应, 只是不再外泄到宿主行。Esc 走 keydown, 不受此处拦截影响。
+            onClick={(e) => e.stopPropagation()}
           >
             {content}
           </div>

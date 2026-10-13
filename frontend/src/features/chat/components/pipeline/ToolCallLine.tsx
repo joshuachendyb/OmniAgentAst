@@ -386,13 +386,16 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                         animated={false}
                       />
                       {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6/D-7 + R2 订正(第八轮核查):
-                          浮层参数按钮固定在工具行行尾(D2 乙), 外壳 FloatingEntry 自带 stopPropagation
-                          (FloatingEntry.tsx:98) 故置于此安全; trigger 传 ['click'] 去掉悬停弹出与 B5 首击被吃(D-7);
+                          浮层参数按钮固定在工具行行尾(D2 乙); trigger 传 ['click'] 去掉悬停弹出与 B5 首击被吃(D-7);
                           R2 根因订正: .taskinfo-entry 自身 display:inline-flex + min-width:32px(index.css:253-259)
                           自带下限, 按钮不会被挤没; 真正被压缩的是 FloatingEntry 最外层**无类名 block div**
                           (:55-62), 压缩后按钮盒外溢、热区与视觉错位, 故外裹一层 flexShrink:0 保住外层盒子
                           (超出视口部分由右栏 overflowX:hidden 裁剪 SessionLayout.tsx:99,126);
-                          文案「浮层参数」避开与展开区撞名(D3), 图标用 CodeOutlined 不用 GearIcon(语义=等待中 DC-22) */}
+                          文案「浮层参数」避开与展开区撞名(D3), 图标用 CodeOutlined 不用 GearIcon(语义=等待中 DC-22);
+                          2026-10-13 小欧 - **订正本段早期结论**: 曾写"FloatingEntry 自带 stopPropagation 故置于此安全",
+                          该假设不成立 —— Popover content 是 portal 的, React 事件按组件树冒泡, 路径不经过 trigger,
+                          点浮层内 ✕ 会直达下面工具行 onClick={toggleTool} 连带展开 JSON 树(已实测复现)。
+                          现由 FloatingEntry 在卡片根统一拦截(FloatingEntry.tsx:95), 宿主行无需再各自设防 */}
                       <span style={{ flexShrink: 0, display: 'inline-flex' }}>
                         <FloatingEntry
                           open={openPanelIndex === i}
