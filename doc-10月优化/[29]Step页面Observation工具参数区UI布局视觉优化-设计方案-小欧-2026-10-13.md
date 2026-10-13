@@ -1,8 +1,8 @@
 # [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
 
 创建时间：2026-10-13 08:26:25
-更新时间：2026-10-13 09:36:18
-版本：v2.2
+更新时间：2026-10-13 09:58:45
+版本：v2.3
 编写人：小欧
 
 **版本历史**
@@ -22,6 +22,7 @@
 | v2.0 | 2026-10-13 09:36:18 | 小欧 | 五轮逐节 10 遍核查，查出 **4 处**，**其中 1 处是 v1.9 自己改坏的（已还原）**：①**§2.8 引用的「§2.2.2 视觉一致性 6 项」在 v1.9 被误删**（当时以为去重，实为误删，导致行数 840→835、§2.8 指向空）→ **全部还原**，并补 2 条此前从未入册的（凭空定面板宽、自造浮层热区），§2.2.2 现共 19 项，§2.8 改为引用式；②T18 用裸字符 `▸折叠箭头`，与 T29「全文无裸字符」自相矛盾 → 改文字描述；③T24「点 `▸`」同上 → 改「点折叠箭头」；④§3.6/§3.10/T20 三处「无**自带**箭头」病句（v1.9 只改了 DC-12 一处）→ 全部改「无箭头」。**行数回 844，§2.2.2 否决项由 6 增至 19** |
 | v2.1 | 2026-10-13 09:36:18 | 小欧 | 北京老陈令「基于前三章编写第4章详细设计实施代码」。**新增 §4 实施代码章**（§4.0 差异登记 / §4.1 代码列表 / §4.2~§4.7 逐文件全量代码 / §五 验证清单），§4.0 声明「冲突以本章为准」。落地时按 KISS/DRY 收敛 **6 处与前三章的差异**：D-1 **参数区移出 `role="button"`**（结构性根治 B1，替代 I1 的 stopPropagation 补丁——补丁方案下用户无法在展开态选中文字）；D-2 删 `ParamsTreeProps.onNodeClick` 死接口；D-3 `ParamsPanelProps` 由 `{toolName,params,children}` 改 `{toolName,params,onClose}`（T15 要求 ✕ 可关；`children` 无消费方 YAGNI）；D-4 增尺寸令牌 `PARAMS_PANEL_BODY_MAX_H`；D-5 断点矩阵改**纯 CSS 响应式三件套**（免 resize 监听与重渲染）；D-6 确认 `FloatingEntry` 自带 `stopPropagation` 故可安全置于工具行 flex 内。`ToolCallLine.tsx` 净 **−55 行**、净减 1 个 state、渲染期 `JSON.stringify` 归零 |
 | v2.2 | 2026-10-13 09:36:18 | 小欧 | 六轮逐节 10 遍核查第 4 章代码，查出 **5 处**（其中 **3 处直接导致编译/校验失败**）：①**§4.6.1 多导入未使用的 `Radius`**（§4.6 全文未用）→ ESLint `no-unused-vars` error，**已删**；②**§4.5 `VIEW_OPTIONS` 加了 `as const`** → 产出 readonly tuple，而 antd `Segmented.options` 类型是可变数组 `(string｜number｜SegmentedOption)[]`，**tsc 报 TS2322**，**已去掉 `as const`** 并注明理由；③**§4.4 树根标签写成「树根(恒展开)」** → 把实现注释泄漏到 UI，且与 §3.4.1 结构图 `▾ {` 不一致，**改为只写 `{`**；④§3.8 **T33 的 props 清单与 §4.0 D-3 不符**（仍写 `children`）→ **同步为 `{toolName, params, onClose}`**；⑤**§4.6.6 删除块用 `... paramsFoldable 分支 + paramRows.map ...` 占位**，不可直接实施 → **已展开为原文件 `:361-437` 逐行完整原文** |
+| v2.3 | 2026-10-13 09:58:45 | 小欧 | 七轮倒推核查（从 §4 实施代码反推 §1/§2/§3 依据），查出 **4 处**：①**§4.5 引用的 `paramsCardStyle` 小写与 §4.6.2 定义的 `PARAMS_CARD_STYLE` 大写不一致** → 统一大写；②**`<FloatingEntry>` 置于工具行 flex 内会被压缩**（其根是无类名 block div，Props 无 trigger 样式入口，窄屏时按钮被挤没）→ **外裹一层 `flexShrink: 0` 的 span**（注释写明根因）；③**§4.4 树根容器用 `BORDER.LIGHT(#f0f0f0)`，与 §3.4.3 复用表规定的 `BORDER.DEFAULT(#d9d9d9)` 冲突**（同为"代码容器"边框一深一浅）→ 改 `DEFAULT`；④**§五第 5 步命令在无测试文件的机器上跑不动**（§4.7 按铁规不提交）→ 加注"仅本地有测试文件时执行，否则跳过" |
 
 ---
 
@@ -1168,7 +1169,10 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({
         marginTop: Spacing.XS,
         padding: Spacing.XS,
         background: Colors.BG.SECONDARY,
-        border: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+        // 2026-10-13 小欧 - R3 根治(第七轮倒推核查): 与 §3.4.3 复用表对齐, 用 BORDER.DEFAULT。
+        //   初稿用的 BORDER.LIGHT(#f0f0f0) 与同为"代码容器"的巨型值 <pre> 块(BORDER.DEFAULT #d9d9d9)
+        //   不一致, 两块并排时边框一深一浅
+        border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
         borderRadius: Radius.SM,
         fontFamily: FontFamily.MONO,
         fontSize: FontSize.CODE,
@@ -1675,7 +1679,7 @@ export { ParamsPanel };
 export default ParamsPanel;
 ```
 
-**响应式（替代 D-5 的断点矩阵）**：宽窄自适应由 §4.6 的 `paramsCardStyle` 纯 CSS 三件套承担，本组件无需 `window.innerWidth` 逻辑。
+**响应式（替代 D-5 的断点矩阵）**：宽窄自适应由 §4.6 的 `PARAMS_CARD_STYLE` 纯 CSS 三件套承担，本组件无需 `window.innerWidth` 逻辑。
 
 **规范判定**：
 
@@ -1897,9 +1901,13 @@ export default ParamsPanel;
                          expanded={isOpen}
                          animated={false}
                        />
-+                      {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6: 浮层参数按钮固定在工具行行尾(D2 乙),
-+                          外壳 FloatingEntry 自带 stopPropagation(FloatingEntry.tsx:98) 故置于此安全;
++                      {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6 + R2 根治(第七轮倒推核查):
++                          浮层参数按钮固定在工具行行尾(D2 乙), 外壳 FloatingEntry 自带 stopPropagation
++                          (FloatingEntry.tsx:98) 故置于此安全; FloatingEntry 根是无类名 block div,
++                          在工具行 flex 内会被压缩到 0 致按钮被挤没(其 Props 无 trigger 样式入口),
++                          故外裹一层 flexShrink:0(窄屏时按钮不被挤, 溢出由右栏 overflowX:hidden 兜);
 +                          文案「浮层参数」避开与展开区撞名(D3), 图标用 CodeOutlined 不用 GearIcon(语义=等待中 DC-22) */}
++                      <span style={{ flexShrink: 0, display: 'inline-flex' }}>
 +                      <FloatingEntry
 +                        open={openPanelIndex === i}
 +                        onOpenChange={onPanelOpenChange}
@@ -1927,7 +1935,8 @@ export default ParamsPanel;
 +                          浮层参数
 +                        </span>
 +                      </FloatingEntry>
-                     </div>
++                      </span>
+                      </div>
 ```
 
 #### 4.6.7 改动 7：展开区改挂 `ParamsTree`（B1 结构性根治，D-1）
@@ -2010,10 +2019,10 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 | 2 | e2e 类型检查 | `npm run typecheck:e2e` |
 | 3 | Lint | `npm run lint` |
 | 4 | 格式检查 | `npm run format:check` |
-| 5 | 关联回归 | `npm run test -- --run ParamsTree` |
+| 5 | 关联回归 | `npm run test -- --run ParamsTree`（**仅本地有测试文件时执行**；§4.7 按 AGENTS 铁规不提交，CI/他机无此文件即跳过） |
 | 6 | 手工核对 | 按 §3.8 的 T1~T34 逐条走查（重点 T1 高度、T3 误折叠、T26/T28/T30 视觉一致性） |
 
 ---
 
 编写人：小欧
-编写时间：2026-10-13 09:36:18
+编写时间：2026-10-13 09:58:45
