@@ -1,8 +1,8 @@
 # [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
 
 创建时间：2026-10-13 08:26:25
-更新时间：2026-10-13 09:58:45
-版本：v2.3
+更新时间：2026-10-13 10:08:09
+版本：v2.4
 编写人：小欧
 
 **版本历史**
@@ -23,6 +23,7 @@
 | v2.1 | 2026-10-13 09:36:18 | 小欧 | 北京老陈令「基于前三章编写第4章详细设计实施代码」。**新增 §4 实施代码章**（§4.0 差异登记 / §4.1 代码列表 / §4.2~§4.7 逐文件全量代码 / §五 验证清单），§4.0 声明「冲突以本章为准」。落地时按 KISS/DRY 收敛 **6 处与前三章的差异**：D-1 **参数区移出 `role="button"`**（结构性根治 B1，替代 I1 的 stopPropagation 补丁——补丁方案下用户无法在展开态选中文字）；D-2 删 `ParamsTreeProps.onNodeClick` 死接口；D-3 `ParamsPanelProps` 由 `{toolName,params,children}` 改 `{toolName,params,onClose}`（T15 要求 ✕ 可关；`children` 无消费方 YAGNI）；D-4 增尺寸令牌 `PARAMS_PANEL_BODY_MAX_H`；D-5 断点矩阵改**纯 CSS 响应式三件套**（免 resize 监听与重渲染）；D-6 确认 `FloatingEntry` 自带 `stopPropagation` 故可安全置于工具行 flex 内。`ToolCallLine.tsx` 净 **−55 行**、净减 1 个 state、渲染期 `JSON.stringify` 归零 |
 | v2.2 | 2026-10-13 09:36:18 | 小欧 | 六轮逐节 10 遍核查第 4 章代码，查出 **5 处**（其中 **3 处直接导致编译/校验失败**）：①**§4.6.1 多导入未使用的 `Radius`**（§4.6 全文未用）→ ESLint `no-unused-vars` error，**已删**；②**§4.5 `VIEW_OPTIONS` 加了 `as const`** → 产出 readonly tuple，而 antd `Segmented.options` 类型是可变数组 `(string｜number｜SegmentedOption)[]`，**tsc 报 TS2322**，**已去掉 `as const`** 并注明理由；③**§4.4 树根标签写成「树根(恒展开)」** → 把实现注释泄漏到 UI，且与 §3.4.1 结构图 `▾ {` 不一致，**改为只写 `{`**；④§3.8 **T33 的 props 清单与 §4.0 D-3 不符**（仍写 `children`）→ **同步为 `{toolName, params, onClose}`**；⑤**§4.6.6 删除块用 `... paramsFoldable 分支 + paramRows.map ...` 占位**，不可直接实施 → **已展开为原文件 `:361-437` 逐行完整原文** |
 | v2.3 | 2026-10-13 09:58:45 | 小欧 | 七轮倒推核查（从 §4 实施代码反推 §1/§2/§3 依据），查出 **4 处**：①**§4.5 引用的 `paramsCardStyle` 小写与 §4.6.2 定义的 `PARAMS_CARD_STYLE` 大写不一致** → 统一大写；②**`<FloatingEntry>` 置于工具行 flex 内会被压缩**（其根是无类名 block div，Props 无 trigger 样式入口，窄屏时按钮被挤没）→ **外裹一层 `flexShrink: 0` 的 span**（注释写明根因）；③**§4.4 树根容器用 `BORDER.LIGHT(#f0f0f0)`，与 §3.4.3 复用表规定的 `BORDER.DEFAULT(#d9d9d9)` 冲突**（同为"代码容器"边框一深一浅）→ 改 `DEFAULT`；④**§五第 5 步命令在无测试文件的机器上跑不动**（§4.7 按铁规不提交）→ 加注"仅本地有测试文件时执行，否则跳过" |
+| v2.4 | 2026-10-13 10:08:09 | 小欧 | 八轮 10 遍核查（逐节 2028 行 + 5 个源码文件逐行对照），查出 **14 处**，其中 **3 处实施即失败**：①**§4.5 GroupView/SpecView 的 key 列仍写 `break-all`**（`:1493`/`:1545`），与 §2.5 V3「break-all → break-word」及 T13「非 break-all」冲突（值列已改、key 列漏改）→ 两处改 `break-word`；②**`.taskinfo-entry` 的 `color` 由 CSS 定死**（`index.css:261` `#999`/`:269` hover `#1677ff`），而 §4.6.6 按钮 span 未设 color ⇒ **T20「关 SECONDARY/开 PRIMARY」必然失败** → span 加 `color: openPanelIndex === i ? PRIMARY : SECONDARY`；③**`.taskinfo-entry[data-open='true'] svg{transform:rotate(180deg)}`**（`index.css:272-274`）会把打开态 `CodeOutlined` **翻转 180°**，与 §3.6「按钮无箭头、开合以文字色标识」及 T20 冲突 → 图标加 `style={{transform:'none'}}` 内联压制（不动共享 CSS，免影响 G6/G8）并补 T35；④**FloatingEntry `trigger=['hover','click']` + B5「hover 态首击被吃掉」**（`FloatingEntry.tsx:66,97-105`）全文未登记：悬停即弹浮层、hover 打开后第一次点击不关闭，与「点按钮开合、点新的关旧的」（DC-09/T6/T15）契约冲突 → **新增 D-7**：给 `FloatingEntry` 加 `trigger?` 可选 prop（默认保持 `['hover','click']`，既有 G6/G8 零变化），本功能传 `['click']`，并补 §4.8 与 T36；⑤**§4.6.1 import diff 上下文与源码不符**（实际 `CircleArrow(60)→DropletIcon(61)→GearIcon(62)`，文档写成 `CircleArrow→GearIcon→DropletIcon`，照单应用会定位失败）→ 按源码订正；⑥**§4.1 `CopyButton` 行数「+6 −0」错**，实为 **+15 −4** → 订正；⑦**`CopyButton` 既有调用点文档三处说「5 处」，实为 2 处**（`MarkdownText.tsx:384`、`MarkdownBody.tsx:144`）→ §3.1/§4.3/T28 同步订正；⑧**§2.8「共 20 条」+「其余 16 项」与 §2.2.2 实有 19 行不符** → 改 19 / 其余 15；⑨**DC-01 写「三章」而文档实有五章** → 改五章并列明各章职责；⑩**T25 公式 `min(视口-32px,640)` 与「不低于 320」自相矛盾**（视口<352px 时该值<320；且 CSS 中 `min-width` 优先于更小的 `max-width`，反而溢出视口）→ 改为 CSS 真实语义三档阈值（≥672→640；352~672→视口-32；<352→320 生效、超出部分由右栏 `overflowX:hidden` 裁剪）；⑪**T29「折叠切换一律 `CircleArrow(14,PRIMARY)`」与现状冲突**（工具行折叠箭头实为 size=16/TEXT.PRIMARY `:354-359` 且不在本次改动范围）→ 限定为「本次新增的树节点/巨型值两处」；⑫**v2.3 R2 注释根因写错**（`.taskinfo-entry` 实为 `display:inline-flex`+`min-width:32px`，自带下限不会被挤没；真正被压缩的是 FloatingEntry 最外层无类名 block div）→ 订正根因（顺带核实「右栏 `overflowX:hidden` 兜」属实：`SessionLayout.tsx:99,126`）；⑬**§1.4 高度表 write 行算术不自洽**（「参数行数 6」×18=108px 却写 5400px+，后者按 content 300 行摊开算）→ 拆清两列口径；⑭**引用错位**：「行高=字号+4」定案在 `stepStyles.ts:108-110`（文档写 `:13`）、`BG.SECONDARY` 出处 `:154`（实为 `:153`）→ 订正。同轮核实**无误**：15+ 处代码落点行号（`:363-437`/`:367`/`:369`/`:378`/`:391`/`:411`/`:413`/`:416`/`:428`/`:443`/`:444`/`:268-283`/`:288`/`:122-124`/`:190-209`/`:303-307`/`:440-459`/`:248`/`:96-109`/`:330-352`）、`FloatingEntry:39-48/50-53/73-77/88-92/98`、`MarkdownText:90/91/93`、全部 hex 值、`ParamsPanel` 去 `as const` 的 TS2322 结论、`ParamsTree` 的 `Set<string>`/`Icon.BOX=16`、`§4.7` 测试 4 个 case、535−95+40=480 行数算式，**均精确命中** |
 
 ---
 
@@ -157,12 +158,14 @@ const tParamText = JSON.stringify(t.params ?? {});
 
 高度量化表（按每行 18px）：
 
-| 场景 | 参数行数 | 叠加高度 |
+| 场景 | 参数行数（键数） | 叠加高度 |
 |---|---|---|
 | `read`（file_path/offset/limit/encoding） | 4 | 72px |
-| `write`（含 content，content 为 300 行代码） | 6 | **5400px+** |
+| `write`（6 键，其中 `content` 为 300 行代码，展开后按行摊开） | 6 键 | **6 键折叠态 108px；若 `content` 单值展开则 300 行 × 18 = 5400px+** |
 | `find`（pattern/replace/glob… 23 项） | 23 | 414px |
 | 并行 5 工具全展开 | — | **N 倍线性叠加** |
+
+> **2026-10-13 核查订正**：初稿 write 行把「键数 6」与「高度 5400px+」并列成同口径算式（6×18=108≠5400），实为两件事——6 是键数、5400px 是 `content` 单值展开后按 18px 逐行摊开的结果（300 行）。现已拆清：折叠态恒 108px，展开态才是 5400px+，这正是 §2.2 要根治的对象。
 
 ---
 
@@ -204,7 +207,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 
 **高度收益（本方案核心）**：顶层键**默认折叠**，每个参数恒占 1 行。
 
-**行高口径**：新组件行高取 `FontSize.SECONDARY(12) + Spacing.XS(4) = 16px`，符合项目既定规则「行高 = 字号 + 4」（`stepStyles.ts:13`）。现状的 18px 是**继承**自 14px 根容器、并非按 12px 字号算出（属缺陷 A9），故下表"改造后"一律按 16px 计。
+**行高口径**：新组件行高取 `FontSize.SECONDARY(12) + Spacing.XS(4) = 16px`，符合项目既定规则「行高 = 字号 + 4」（`stepStyles.ts:108-110` 北京老陈 2026-08-30 定案注释；`:13` 是无关条目，初稿引用错位已订正）。现状的 18px 是**继承**自 14px 根容器、并非按 12px 字号算出（属缺陷 A9），故下表"改造后"一律按 16px 计。
 
 | 场景 | 改造前（行高 18px） | 改造后（行高 16px） |
 |---|---|---|
@@ -224,7 +227,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 
 | 编号 | 决策项 | 裁定结果 | 性质 | 正文落点 |
 |---|---|---|---|---|
-| DC-01 | 文档章节结构 | 三章：问题分析 / 优化问题解决方案 / 实施代码详细设计说明 | 北京老陈裁定 | 全文 |
+| DC-01 | 文档章节结构 | **五章**：①问题分析 / ②优化问题解决方案 / ③实施代码详细设计说明（设计推演） / ④详细设计实施代码（可实施口径，冲突以本章为准） / ⑤实施完成后的验证清单。**2026-10-13 核查订正**：初稿写「三章」是 v1.0 立项时的结构，v2.1 增第 4 章、v2.1 增第 5 章后未同步本表 | 北京老陈裁定 | 全文 |
 | DC-02 | 总体路线 | 采用**浮层承载**（在方案一/二对比中选定方案一） | 北京老陈裁定 | §2.1 |
 | DC-03 | 展开区存废 | **保留**现有展开区，浮层为**新增**载体，二者并存 | 北京老陈裁定 | §2.1 §2.6 |
 | DC-04 | 展开区渲染形态 | **戊 · JSON 树**（顶层键默认折叠） | 北京老陈裁定 | §2.2 §3.4 |
@@ -398,7 +401,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 
 ### 2.8 被否决的备选（留档，防重复讨论）
 
-> 完整否决清单见 §2.2.2（含视觉一致性否决项，共 20 条）。本节仅列与"渲染形态"直接相关者。
+> 完整否决清单见 §2.2.2（含视觉一致性否决项，共 **19** 条；本节列其中 4 条，**其余 15 条**见 §2.2.2）。**2026-10-13 核查订正**：初稿写「共 20 条 / 其余 16 项」，而 §2.2.2 实有 19 行（4+15），计数与引用脱节。
 
 | 备选 | 否决理由 |
 |---|---|
@@ -406,7 +409,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 | 浮层内二次折叠 | 浮层已是"点开才看"，再套折叠是多一次点击 |
 | 恢复旧代"60 字符截断" | 2026-10-04 已下线，截断丢失排查信息，JSON 树已解决高度问题 |
 | 浮层复用后端 `DROP_KEYS`/`PARAM_ORDER` 分组 | 二者作用于摘要句，与参数区无耦合（§1.2 已订正） |
-| 其余 16 项（含视觉一致性否决项、按钮位置甲/丙案、各视觉方案） | 完整条目见 §2.2.2 |
+| 其余 15 项（含视觉一致性否决项、按钮位置甲/丙案、各视觉方案） | 完整条目见 §2.2.2 |
 
 ---
 
@@ -426,7 +429,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 
 | 复用 | 路径 | 替代了什么 |
 |---|---|---|
-| `CopyButton` | `frontend/src/components/markdown/CopyButton.tsx` | 自造的复制按钮（含 1.5s「已复制」回退、a11y、令牌化样式）。**须加一个可选 prop `inline?: boolean`（默认 `false` 保持既有 5 处调用零变化），面板头传 `inline` 取消绝对定位**——理由见下 |
+| `CopyButton` | `frontend/src/components/markdown/CopyButton.tsx` | 自造的复制按钮（含 1.5s「已复制」回退、a11y、令牌化样式）。**须加一个可选 prop `inline?: boolean`（默认 `false` 保持既有 2 处调用零变化），面板头传 `inline` 取消绝对定位**——理由见下 |
 | `FloatingEntry` | `frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx` | 自建浮层壳与 a11y（含焦点入卡、Esc 后焦点回入口） |
 | `CircleArrow` | `frontend/src/components/CircleArrow.tsx` | 自造折叠箭头（14px/PRIMARY 规格） |
 | `EllipsisTip` | `frontend/src/features/chat/components/taskinfo/EllipsisTip.tsx` | 自造「省略+悬停全文」 |
@@ -544,7 +547,7 @@ Size.PARAMS_PANEL_MIN_W    = 320         // 浮层最小宽（窄屏下限，见
 | JSON 键名 | `Colors.TEXT.SECONDARY` `#8c8c8c` | `stepStyles.ts:145` |
 | JSON 值（字符串/数字/布尔**统一**） | `Colors.TEXT.STRONG` `#333333` | `stepStyles.ts:148` |
 | 参数值（浮层内普通值） | `Colors.TEXT.PRIMARY` `#595959` | `stepStyles.ts:144` |
-| 面板/代码块底 | `Colors.BG.SECONDARY` `#fafafa` | `stepStyles.ts:154` |
+| 面板/代码块底 | `Colors.BG.SECONDARY` `#fafafa` | `stepStyles.ts:153` |
 | 面板/代码块边框 | `Colors.BORDER.DEFAULT` `#d9d9d9` + `BorderWidth.DEFAULT` | `MarkdownText.tsx:90` |
 | 圆角 | `Radius.SM` 4 | `MarkdownText.tsx:91` |
 | 等宽字体 | `FontFamily.MONO` | `stepStyles.ts:88` |
@@ -566,7 +569,15 @@ Size.PARAMS_PANEL_MIN_W    = 320         // 浮层最小宽（窄屏下限，见
 
 **`Size` 命名说明**：既有组为 `BorderWidth`/`FontSize`/`Radius`/`Spacing`（"名 + 量纲"风格），故新组用 `Size.*` 承接面板尺寸，不新建 `PanelSize` 之类第四种风格。
 
-**窄屏口径**：面板宽接系统断点矩阵（`TaskInfoBar.tsx:26` 记载的 wide/mid/narrow/xsmall）——宽档用 `Size.PARAMS_PANEL_MAX_W`(640)，窄档降到 `Size.PARAMS_PANEL_MIN_W`(320)；最低不小于 320，窄于 320 的视口按 320 铺满并允许面板内滚动，**不产生横向滚动条**（与 `EllipsisTip`「超宽不横滚、靠折叠/Tooltip 降级」原则一致）。**具体落法见 T25**（`min(视口-32px, 640)`）。
+**窄屏口径**：面板宽接系统断点矩阵（`TaskInfoBar.tsx:26` 记载的 wide/mid/narrow/xsmall）的**意图**，但落地由 §4.6 的纯 CSS 三件套承担（D-5）。**先厘清 CSS 真实语义再定阈值**：CSS 中 `min-width` **优先于**更小的 `max-width`，故 `width:640 + minWidth:320 + maxWidth:calc(100vw - 32px)` 的实际生效值为——
+
+| 视口宽度 | 实际面板宽 | 说明 |
+|---|---|---|
+| ≥ 672px | **640** | `width` 生效，`maxWidth` 不构成约束 |
+| 352px ~ 672px | **视口 − 32** | `maxWidth` 收紧，两侧各留 16 |
+| < 352px | **320** | `minWidth` 优先于更小的 `maxWidth`；超出视口的部分由右栏 `overflowX:'hidden'` 裁剪（`SessionLayout.tsx:99,126`），**面板内滚动，不产生横向滚动条**（与 `EllipsisTip`「超宽不横滚、靠折叠/Tooltip 降级」原则一致） |
+
+> **2026-10-13 核查订正**：初稿只写「最低不小于 320，窄于 320 的视口按 320 铺满」，而 T25 又写「面板宽 = `min(视口-32px, 640)`」——两处自相矛盾（视口 <352px 时 `min(视口-32,640)` < 320，与"不低于 320"打架；且真按该算式实现会得到 <320 的宽，违反下限）。现已统一为本表三档，与 §4.6 的三件套、T25 完全对齐。
 
 ### 3.5 `ParamsPanel.tsx` 设计（浮层 · 乙/甲双视图）
 
@@ -587,6 +598,7 @@ interface ParamsPanelProps {
 | 复用壳而非裸 Popover | `FloatingEntry` 已封装 `role="dialog"` + `aria-haspopup/expanded/controls/label`（`:73-77, 88-92`），且处理了两个自建必漏的坑：**打开后焦点入卡**（`:39-48`）、**Esc 关闭后焦点回入口**（`:50-53`）。漏焦点管理 = 键盘用户 Tab 进不去面板内容、关闭后焦点丢失（无障碍缺陷） |
 | 入口热区 | `FloatingEntry` 的 `.taskinfo-entry` 已定义 hover 底 `#f0f0f0` + focus 2px 蓝 outline（`index.css:253-274`），本功能触发按钮复用同一规格，不另造热区 |
 | 定位 | 由 `FloatingEntry` 的 `placement` 参数控制（`bottomLeft`/`bottomRight`），本功能取 **`bottomRight`**（贴工具行右缘向左展开，与摘要右侧的按钮位置呼应） |
+| 触发方式（**2026-10-13 新增，见 D-7**） | `FloatingEntry` 现将 `trigger` 硬编码为 `['hover','click']`（`FloatingEntry.tsx:66`）。若直接复用本功能按钮：**①鼠标悬停即弹浮层**（与 DC-09/DC-12「点按钮开合」口径不符，密集工具行易误开）；②其 B5 审计逻辑（`:97-105`）会**吃掉 hover 打开后的第一次点击**（只"确保打开"不关闭），用户点按钮**关不掉**浮层。故本功能必须传 `trigger={['click']}` → 为此给 `FloatingEntry` 加 `trigger?` 可选 prop（**默认 `['hover','click']`**，既有 G6/G8 两处调用零变化，OCP 扩展），见 §4.8 |
 | 卡片样式 | 经 `cardStyle` 注入宽/限高；内容经 `content` 注入 GroupView / SpecView（内容自持 a11y 如 `role="log"`） |
 | 与 HITL 模态框 | `AuthorizationModal` 为模态（`z-index` 更高 + 遮罩），**命中安全确认期间浮层不自动关闭**（Popover 不响应遮罩点击），确认后恢复；两者不同时操作，无冲突 |
 | 单例互斥 | 仍由 `openPanelIndex` 单一真源控制（DC-07），壳只负责呈现 |
@@ -608,7 +620,7 @@ interface ParamsPanelProps {
 
 > 面板头复制按钮与树头复制按钮**均为 `CopyButton`**（DC-20），差别仅定位方式：树头沿用默认绝对定位，面板头传 `inline` 取消绝对定位（`CopyButton` 现为 `position:absolute` 直接放进面板头会脱离文档流、压住标题）。
 >
-> **`CopyButton` 唯一改动**：新增可选 prop `inline?: boolean`（默认 `false`）。既有 5 处调用（markdown 代码块）行为**零变化**，不违反"禁 backward"。两处复制内容格式不同（见 §3.5.5），实施时勿混用。
+> **`CopyButton` 唯一改动**：新增可选 prop `inline?: boolean`（默认 `false`）。既有 **2** 处调用（`MarkdownText.tsx:384`、`MarkdownBody.tsx:144`，均为 markdown 代码块）行为**零变化**，不违反"禁 backward"。两处复制内容格式不同（见 §3.5.5），实施时勿混用。**2026-10-13 核查订正**：初稿写「5 处」，实读全仓 `CopyButton` 消费点只有上述 2 处（`MarkdownText.tsx` 384 行、`MarkdownBody.tsx` 144 行），计数虚高。
 
 #### 3.5.2 GroupView（乙 · 分组卡片 · 默认）
 
@@ -719,6 +731,11 @@ content = 共 312 行
 
 **按钮无箭头**：面板开合以按钮**文字色**标识（关=`Colors.TEXT.SECONDARY`，开=`Colors.PRIMARY`），避免与 ② 的折叠箭头混淆成"两级折叠"。
 
+> **2026-10-13 核查补记（两条 CSS 副作用，实施必须正面处理）**：
+> ①**文字色**：`.taskinfo-entry` 在 `index.css:261,269` 硬写 `color:#999`（TERTIARY）/ hover `#1677ff`，若按钮 span 不显式设色，`color` 会被父级 CSS 接管 → **T20 必然失败**。故 §4.6.6 的按钮 span 必须内联 `color: openPanelIndex === i ? Colors.PRIMARY : Colors.TEXT.SECONDARY`（内联色优先于父级继承，DC-12 落地）。
+> ②**图标翻转**：`.taskinfo-entry[data-open='true'] svg { transform: rotate(180deg) }`（`index.css:272-274`）是为 G6/G8 的单图标入口设计的翻转效果；本功能按钮内含 `CodeOutlined`（svg），**浮层打开时会被翻转 180°**（`</>` 上下颠倒），与"按钮无箭头、开合以文字色标识"冲突。故 §4.6.6 对该图标内联 `style={{ transform: 'none' }}` 压制（内联样式优先级高于该 class 规则，**不改共享 CSS**，免影响 G6/G8）——新增 **T35** 验收。
+> ③**触发方式**：按钮必须走 `trigger={['click']}`（见 §3.5 容器选型表与 D-7），否则悬停即弹、且 B5 逻辑吃掉首击——新增 **T36** 验收。
+
 **按钮热区复用 `.taskinfo-entry`**：③ 用 `FloatingEntry` 作外壳后，热区自动继承 `index.css:253-274` 的既有规格（`min-width:32` / `min-height:20` / `border-radius:8` / hover 底 `#f0f0f0` / focus-visible 2px 蓝 outline），**不另造热区样式**。
 
 ### 3.7 高度链路验证（全局）
@@ -764,16 +781,18 @@ content = 共 312 行
 | T22 | JSON 树嵌套对象**不限层数**，逐层可独立折叠；每层展开体各自限高 240px 不破版（DC-15） |
 | T23 | 面板头复制产出 `key=value` 逐行文本；树头复制产出格式化 JSON，两者不同（DC-16/DC-17） |
 | T24 | 点折叠箭头收起工具行时**浮层仍打开**；点 `✕` 关浮层时**工具行仍保持展开**；切任务时二者同时清理（DC-18） |
-| T25 | 窄屏（视口 < 640px）面板宽 = `min(视口-32px, 640)`，不低于 320，无横向滚动条；与 HITL 模态框同屏时浮层不误关 |
+| T25 | 窄屏面板宽按 §3.4.3 三档阈值：视口 ≥672px → **640**；352~672px → **视口−32**；<352px → **320**（超出部分由右栏 `overflowX:hidden` 裁剪，面板内滚动、**无横向滚动条**）；与 HITL 模态框同屏时浮层不误关 |
 | T26 | **视觉一致性**：面板与 JSON 树**不引入任何新颜色**，全部取自既有 `Colors.*`；无 `Colors.JSON.*` 语法色（VC7） |
 | T27 | 浮层外壳为 `FloatingEntry`，打开后焦点入卡、Esc 关闭后焦点回入口——与系统其它浮层行为完全一致（VC3） |
-| T28 | 两处复制按钮均为 `CopyButton` 组件（1.5s「已复制」回退 + `aria-label`）；面板头传 `inline` 取消绝对定位；markdown 代码块既有 5 处调用行为零变化（DC-20） |
-| T29 | 折叠切换一律 `CircleArrow(14, PRIMARY)` + 「展开/收起」，全文无 `▸`/`▾` 裸字符切换（VC5） |
+| T28 | 两处复制按钮均为 `CopyButton` 组件（1.5s「已复制」回退 + `aria-label`）；面板头传 `inline` 取消绝对定位；markdown 代码块既有 2 处调用（`MarkdownText.tsx:384`、`MarkdownBody.tsx:144`）行为零变化（DC-20） |
+| T29 | **本次新增的两处**折叠切换（JSON 树节点、浮层巨型值）一律 `CircleArrow(14, PRIMARY)` + 「展开/收起」，全文无 `▸`/`▾` 裸字符切换（VC5）。**2026-10-13 核查订正**：初稿写「一律」会把**工具行既有折叠箭头**（`ToolCallLine.tsx:354-359`，实为 size=16 / `Colors.TEXT.PRIMARY`，现状视觉已定案且**不在本次改动范围**）误判为不合格，故限定作用域 |
 | T30 | 分类色条全部取自 `Colors.BORDER.*` 中性灰阶，无 `WARNING`/`ACCENT_ORANGE`/`SUCCESS`/`ERROR` 等语义色（VC4） |
 | T31 | 浮层参数按钮图标为 antd `CodeOutlined`（非 `GearIcon`，后者语义为"工具执行等待"）；热区继承 `.taskinfo-entry` 规格（VC8/VC9） |
 | T32 | 参数区与页面既有代码块并排时观感一致：同 `BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`（VC2/VC10/VC11） |
 | T33 | `ParamsPanel` 的 props **只有** `toolName`/`params`/`onClose`（见 §4.0 D-3）；开合由 `FloatingEntry` 承担，编译通过（`npm run typecheck` 零错误） |
 | T34 | 全文无「JSON 语法着色」残留、无自造复制按钮残留（DC-19/DC-20 已落地，代码与文档同步） |
+| T35 | **图标不翻转**：浮层打开/关闭时，`浮层参数` 按钮内的 `CodeOutlined` **不发生 180° 旋转**（`.taskinfo-entry[data-open='true'] svg` 的翻转已被内联 `transform:'none'` 压制），且未改动共享 `index.css`（G6/G8 入口行为不变） |
+| T36 | **纯点击触发**：鼠标**悬停**工具行不弹浮层；点按钮即开、再点即关（`trigger=['click']`，D-7）；且不得出现「点一下反而关不掉」的 B5 首击被吃现象 |
 
 ### 3.9 改造前后对比示意
 
@@ -856,19 +875,23 @@ content = 共 312 行
 | D-4 | §3.4.3 尺寸令牌 3 个 | **4 个**，增 `PARAMS_PANEL_BODY_MAX_H: 480` | 面板整体需有高度上限，否则 23 项参数的面板会超出视口；`PARAMS_PANEL_MAX_H` 只管**单个值**展开体 |
 | D-5 | §3.5 「面板宽度接系统断点矩阵」 | **纯 CSS 响应式**：`width:640 + minWidth:320 + maxWidth:calc(100vw - 32px)` | 断点矩阵需 JS 监听 resize（重渲染+状态），纯 CSS 三行解决且零重渲染。T25 的落法因此得以自然满足 |
 | D-6 | §3.6 「浮层按钮 = FloatingEntry 的 children，插在 CircleArrow 之后」 | **确认可行**：`FloatingEntry` 触发器自带 `e.stopPropagation()`（`FloatingEntry.tsx:98`），置于工具行 flex 内安全 | 原设计担心冒泡，实读源码已解决，无需额外包装 |
+| D-7 | §3.5 直接复用 `FloatingEntry`（其 `trigger` 硬编码 `['hover','click']`，`:66`） | **加可选 prop `trigger?`**：默认 `['hover','click']` 保持 G6/G8 两处既有调用**零变化**，本功能传 `['click']` | 直接复用会踩两个坑：①悬停即弹浮层，与 DC-09/DC-12「点按钮开合」口径不符、密集工具行易误开；②B5 审计逻辑（`:97-105`）会**吃掉 hover 打开后的第一次点击**（只"确保打开"不关闭），用户**点按钮关不掉**浮层。属 OCP 扩展（加可选能力不改既有签名），见 §4.8、T36 |
 
 ### 4.1 代码列表
 
 | # | 文件 | 类型 | 行数变化 | 对应设计 |
 |---|---|---|---|---|
 | 1 | `frontend/src/utils/stepStyles.ts` | 改 | +8 | §3.4.3 |
-| 2 | `frontend/src/components/markdown/CopyButton.tsx` | 改 | +6 −0 | §3.5.1 |
+| 2 | `frontend/src/components/markdown/CopyButton.tsx` | 改 | **+15 −4** | §3.5.1 |
 | 3 | `frontend/src/features/chat/components/pipeline/ParamsTree.tsx` | **新建** | +约 150 | §3.4 |
 | 4 | `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx` | **新建** | +约 200 | §3.5 |
 | 5 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 改 | +约 40 −约 95 | §3.2 §3.6 |
 | 6 | `frontend/src/features/chat/components/pipeline/ParamsTree.test.tsx` | 新建 | +约 90 | §3.1 第 5 项 |
+| 7 | `frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx` | 改 | **+8 −1** | §3.5 触发方式（D-7） |
 
-**实施顺序**：1 → 2 → 3 → 4 → 5（`3/4` 依赖 `1/2` 的令牌与组件）。**第 6 项按 AGENTS 铁规不提交**，本地保留。
+**实施顺序**：1 → 2 → 3 → 4 → **7 → 5**（第 7 项必须在第 5 项之前：`ToolCallLine` 要向 `FloatingEntry` 传 `trigger`，未加该 prop 则传不进去、tsc 报错）。**第 6 项按 AGENTS 铁规不提交**，本地保留、最后写。
+
+> **2026-10-13 核查订正**：第 2 行行数变化初稿写「+6 −0」，与 §4.3 的两处 diff 对不上——实测改动 1 加 6 行（5 行注释 + `inline?: boolean`），改动 2 删 4 行（组件签名 1 + `position`/`top`/`right` 3）加 9 行（新签名 1 + 内联注释 1 + 展开三元 7），合计 **+15 −4**。
 
 **全局高度链路复核**（改前 → 改后，见 §3.7）：
 
@@ -910,7 +933,7 @@ export const Size = {
 +  /**
 +   * 2026-10-13 小欧 - 文档[29]§3.5.1: 行内模式(浮层面板头)。默认 false 保持绝对定位
 +   * (代码块右上角用法); true 时取消绝对定位, 用于面板头等常规流内位置。
-+   * 既有 5 处调用零变化(禁 backward)。
++   * 既有 2 处调用零变化(禁 backward: MarkdownText.tsx:384 / MarkdownBody.tsx:144)。
 +   */
 +  inline?: boolean;
  }
@@ -1485,12 +1508,14 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                 >
                   <span
                     style={{
-                      width: 96,
-                      flexShrink: 0,
-                      fontFamily: FontFamily.MONO,
-                      fontSize: FontSize.CODE,
-                      color: Colors.TEXT.SECONDARY,
-                      wordBreak: 'break-all',
+width: 96,
+                          flexShrink: 0,
+                          fontFamily: FontFamily.MONO,
+                          fontSize: FontSize.CODE,
+                          color: Colors.TEXT.SECONDARY,
+                          // 2026-10-13 小欧 - 八轮核查: key 列原为 break-all, 与 §2.5 V3「break-all → break-word」
+                          //   及 T13「非 break-all」冲突(值列已改、key 列漏改), 此处统一 break-word
+                          wordBreak: 'break-word',
                     }}
                   >
                     {k}
@@ -1536,13 +1561,14 @@ const SpecView: React.FC<{ params: Record<string, unknown> }> = ({
       >
         <span
           style={{
-            width: 140,
-            flexShrink: 0,
-            textAlign: 'right',
-            fontFamily: FontFamily.MONO,
-            fontSize: FontSize.CODE,
-            color: Colors.TEXT.SECONDARY,
-            wordBreak: 'break-all',
+width: 140,
+                            flexShrink: 0,
+                            textAlign: 'right',
+                            fontFamily: FontFamily.MONO,
+                            fontSize: FontSize.CODE,
+                            color: Colors.TEXT.SECONDARY,
+                            // 2026-10-13 小欧 - 八轮核查: 同 GroupView key 列, 统一 break-word(V3/T13)
+                            wordBreak: 'break-word',
           }}
         >
           {k}
@@ -1705,9 +1731,9 @@ export default ParamsPanel;
 +import { ParamsTree } from './ParamsTree';
 +import { ParamsPanel } from './ParamsPanel';
 +import { FloatingEntry } from '../taskinfo/FloatingEntry';
- import { CircleArrow } from '@/components/CircleArrow';
- import { GearIcon } from '@/components/GearIcon';
- import { DropletIcon } from '@/components/DropletIcon';
+ import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧: 复用折叠箭头组件 — 小欧-2026-09-15
+ import { DropletIcon } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
+ import { GearIcon } from '@/components/GearIcon'; // 2026-09-15 老杨: 齿轮图标替代🔧emoji — 老杨-2026-09-15
  import {
    LockOutlined,
    ClockCircleOutlined,
@@ -1727,6 +1753,8 @@ export default ParamsPanel;
 ```
 
 > **2026-10-13 核查订正**：初稿在 stepStyles 导入里加了 `Radius`，但 §4.6 全文**未使用**（浮层卡片的圆角/边框/底色全部在 `ParamsPanel` 内部承担）→ 保留会触发 ESLint `no-unused-vars` error，故删除。
+>
+> **2026-10-13 核查订正 2（上下文对齐）**：初稿 diff 的上下文行写成 `CircleArrow → GearIcon → DropletIcon`，而源码实际顺序为 `CircleArrow(60) → DropletIcon(61) → GearIcon(62)`（`ToolCallLine.tsx:60-62`）——上下文与源码不符会导致按 diff 定位失败。现已按源码逐行对齐（含各行原有的 `// 2026-09-15 …` 尾注释），可直接照单应用。
 
 #### 4.6.2 改动 2：模块级常量（浮层卡片响应式三件套，D-5）
 
@@ -1901,17 +1929,20 @@ export default ParamsPanel;
                          expanded={isOpen}
                          animated={false}
                        />
-+                      {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6 + R2 根治(第七轮倒推核查):
++                      {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6/D-7 + R2 订正(第八轮核查):
 +                          浮层参数按钮固定在工具行行尾(D2 乙), 外壳 FloatingEntry 自带 stopPropagation
-+                          (FloatingEntry.tsx:98) 故置于此安全; FloatingEntry 根是无类名 block div,
-+                          在工具行 flex 内会被压缩到 0 致按钮被挤没(其 Props 无 trigger 样式入口),
-+                          故外裹一层 flexShrink:0(窄屏时按钮不被挤, 溢出由右栏 overflowX:hidden 兜);
++                          (FloatingEntry.tsx:98) 故置于此安全; trigger 传 ['click'] 去掉悬停弹出与 B5 首击被吃(D-7);
++                          R2 根因订正: .taskinfo-entry 自身 display:inline-flex + min-width:32px(index.css:253-259)
++                          自带下限, 按钮不会被挤没; 真正被压缩的是 FloatingEntry 最外层**无类名 block div**
++                          (:55-62), 压缩后按钮盒外溢、热区与视觉错位, 故外裹一层 flexShrink:0 保住外层盒子
++                          (超出视口部分由右栏 overflowX:hidden 裁剪 SessionLayout.tsx:99,126);
 +                          文案「浮层参数」避开与展开区撞名(D3), 图标用 CodeOutlined 不用 GearIcon(语义=等待中 DC-22) */}
 +                      <span style={{ flexShrink: 0, display: 'inline-flex' }}>
 +                      <FloatingEntry
 +                        open={openPanelIndex === i}
 +                        onOpenChange={onPanelOpenChange}
 +                        placement="bottomRight"
++                        trigger={['click']}
 +                        cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
 +                        ariaLabel={`${t.tool} 参数`}
 +                        cardStyle={PARAMS_CARD_STYLE}
@@ -1929,9 +1960,19 @@ export default ParamsPanel;
 +                            alignItems: 'center',
 +                            gap: Spacing.XS,
 +                            fontSize: FontSize.SECONDARY,
++                            // 2026-10-13 小欧 - 八轮核查: .taskinfo-entry 硬写 color:#999 / hover #1677ff
++                            //   (index.css:261,269), 不显式设色则 T20「关 SECONDARY/开 PRIMARY」必然失败;
++                            //   内联色优先于父级继承, 故在此按开合态显式给色(DC-12)
++                            color:
++                              openPanelIndex === i
++                                ? Colors.PRIMARY
++                                : Colors.TEXT.SECONDARY,
 +                          }}
 +                        >
-+                          <CodeOutlined />
++                          {/* 2026-10-13 小欧 - 八轮核查: .taskinfo-entry[data-open='true'] svg 会 rotate(180deg)
++                              (index.css:272-274, 为 G6/G8 单图标入口设计), 本按钮 svg 会被翻转 → 内联压制,
++                              不改共享 CSS 以免影响 G6/G8(T35) */}
++                          <CodeOutlined style={{ transform: 'none' }} />
 +                          浮层参数
 +                        </span>
 +                      </FloatingEntry>
@@ -2011,6 +2052,60 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 
 ---
 
+### 4.8 `frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx` —— 新增 `trigger` 可选 prop（D-7）
+
+**改动 1**：接口加可选 prop（默认行为不变，G6/G8 两处调用零变化）
+
+```diff
+ export interface FloatingEntryProps {
+   open: boolean;
+   onOpenChange: (open: boolean) => void;
+   placement: 'bottomLeft' | 'bottomRight'; // antd 真值: bottomLeft=G6 左缘对齐向右展开 / bottomRight=G8 右缘对齐向左展开(3.9)
++  /**
++   * 2026-10-13 小欧 - 文档[29]§3.5/D-7: 触发方式。默认 ['hover','click'] 保持 G6/G8 既有行为**零变化**;
++   *   参数区浮层传 ['click'] 去掉悬停弹出与 B5「首击被吃掉」(本文件 :97-105)。
++   */
++  trigger?: Array<'hover' | 'click'>;
+   cardId: string; // 卡片 id（= 入口 aria-controls，关系内聚于组件内）
+   ariaLabel: string; // 入口 + 卡片共用 aria-label
+   cardStyle?: React.CSSProperties; // 卡片容器样式（宽/布局，调用方注入）
+   content: React.ReactNode; // 卡片内容（调用方注入，内部 a11y 如 role="log" 自带）
+   children: React.ReactNode; // 入口热区内容（G6: MetricItem / G8: DownOutlined + "事件"）
+ }
+```
+
+**改动 2**：组件签名取默认值 + `Popover` 由硬编码改读 prop
+
+```diff
+ export const FloatingEntry: React.FC<FloatingEntryProps> = ({
+   open,
+   onOpenChange,
+   placement,
++  trigger = ['hover', 'click'],
+   cardId,
+   ariaLabel,
+   cardStyle,
+   content,
+   children,
+ }) => {
+   // ↑↓ 以下为未改动的既有行(useEffect 焦点管理 / hoverOpenedRef / closeToEntry / return 的 Popover 前后文), 原样保留:
+   //   entryRef、cardRef、wasOpen、hoverOpenedRef、onKeyDown(Escape) 等一行不动, 此处按 §1.4/§3.6 原有逻辑延续
+       <Popover
+         open={open}
+         onOpenChange={onOpenChange}
+-        trigger={['hover', 'click']}
++        trigger={trigger}
+         placement={placement}
+```
+
+> **为什么必须改（不靠 stopPropagation 就能解决的问题不止冒泡）**：本组件 `trigger` 原为硬编码 `['hover','click']`，直接复用会让参数浮层①**悬停即弹**（与 DC-09/DC-12「点按钮开合」口径不符，密集工具行易误开）；②触发 B5 审计逻辑（`:97-105`）——鼠标已悬停打开时点击会被"吃掉"只确保打开，用户**点按钮关不掉**，与 T6「点另一工具的浮层参数按钮，旧浮层自动关闭」、T36 冲突。加可选 prop 是 OCP（对扩展开放、对修改封闭），默认保持原值故既有 G6/G8 行为零变化。
+
+**规范判定**：OCP（加可选能力，既有签名与行为不变）✅ ｜ KISS-DIRECT（一个默认值 + 一处透传，无新状态/无新分支）✅ ｜ 禁 backward（默认值即旧行为）✅ ｜ SRP（触发方式归浮层壳，参数面板不感知）✅
+
+**行数变化**：**+8 −1**（接口注释 5 行 + prop 1 行 + 解构默认值 1 行 + `Popover` 改动 1 换 1）
+
+---
+
 ## 五、实施完成后的验证清单（与 §3.8 验收合并执行）
 
 | 顺序 | 步骤 | 命令 |
@@ -2020,9 +2115,9 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 | 3 | Lint | `npm run lint` |
 | 4 | 格式检查 | `npm run format:check` |
 | 5 | 关联回归 | `npm run test -- --run ParamsTree`（**仅本地有测试文件时执行**；§4.7 按 AGENTS 铁规不提交，CI/他机无此文件即跳过） |
-| 6 | 手工核对 | 按 §3.8 的 T1~T34 逐条走查（重点 T1 高度、T3 误折叠、T26/T28/T30 视觉一致性） |
+| 6 | 手工核对 | 按 §3.8 的 T1~T36 逐条走查（重点 T1 高度、T3 误折叠、T26/T28/T30 视觉一致性、**T35 图标不翻转、T36 纯点击触发**） |
 
 ---
 
 编写人：小欧
-编写时间：2026-10-13 09:58:45
+编写时间：2026-10-13 10:08:09
