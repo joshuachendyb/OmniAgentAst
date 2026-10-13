@@ -1,8 +1,8 @@
 # [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
 
 创建时间：2026-10-13 08:26:25
-更新时间：2026-10-13 10:08:09
-版本：v2.4
+更新时间：2026-10-13 10:19:12
+版本：v2.5
 编写人：小欧
 
 **版本历史**
@@ -23,7 +23,8 @@
 | v2.1 | 2026-10-13 09:36:18 | 小欧 | 北京老陈令「基于前三章编写第4章详细设计实施代码」。**新增 §4 实施代码章**（§4.0 差异登记 / §4.1 代码列表 / §4.2~§4.7 逐文件全量代码 / §五 验证清单），§4.0 声明「冲突以本章为准」。落地时按 KISS/DRY 收敛 **6 处与前三章的差异**：D-1 **参数区移出 `role="button"`**（结构性根治 B1，替代 I1 的 stopPropagation 补丁——补丁方案下用户无法在展开态选中文字）；D-2 删 `ParamsTreeProps.onNodeClick` 死接口；D-3 `ParamsPanelProps` 由 `{toolName,params,children}` 改 `{toolName,params,onClose}`（T15 要求 ✕ 可关；`children` 无消费方 YAGNI）；D-4 增尺寸令牌 `PARAMS_PANEL_BODY_MAX_H`；D-5 断点矩阵改**纯 CSS 响应式三件套**（免 resize 监听与重渲染）；D-6 确认 `FloatingEntry` 自带 `stopPropagation` 故可安全置于工具行 flex 内。`ToolCallLine.tsx` 净 **−55 行**、净减 1 个 state、渲染期 `JSON.stringify` 归零 |
 | v2.2 | 2026-10-13 09:36:18 | 小欧 | 六轮逐节 10 遍核查第 4 章代码，查出 **5 处**（其中 **3 处直接导致编译/校验失败**）：①**§4.6.1 多导入未使用的 `Radius`**（§4.6 全文未用）→ ESLint `no-unused-vars` error，**已删**；②**§4.5 `VIEW_OPTIONS` 加了 `as const`** → 产出 readonly tuple，而 antd `Segmented.options` 类型是可变数组 `(string｜number｜SegmentedOption)[]`，**tsc 报 TS2322**，**已去掉 `as const`** 并注明理由；③**§4.4 树根标签写成「树根(恒展开)」** → 把实现注释泄漏到 UI，且与 §3.4.1 结构图 `▾ {` 不一致，**改为只写 `{`**；④§3.8 **T33 的 props 清单与 §4.0 D-3 不符**（仍写 `children`）→ **同步为 `{toolName, params, onClose}`**；⑤**§4.6.6 删除块用 `... paramsFoldable 分支 + paramRows.map ...` 占位**，不可直接实施 → **已展开为原文件 `:361-437` 逐行完整原文** |
 | v2.3 | 2026-10-13 09:58:45 | 小欧 | 七轮倒推核查（从 §4 实施代码反推 §1/§2/§3 依据），查出 **4 处**：①**§4.5 引用的 `paramsCardStyle` 小写与 §4.6.2 定义的 `PARAMS_CARD_STYLE` 大写不一致** → 统一大写；②**`<FloatingEntry>` 置于工具行 flex 内会被压缩**（其根是无类名 block div，Props 无 trigger 样式入口，窄屏时按钮被挤没）→ **外裹一层 `flexShrink: 0` 的 span**（注释写明根因）；③**§4.4 树根容器用 `BORDER.LIGHT(#f0f0f0)`，与 §3.4.3 复用表规定的 `BORDER.DEFAULT(#d9d9d9)` 冲突**（同为"代码容器"边框一深一浅）→ 改 `DEFAULT`；④**§五第 5 步命令在无测试文件的机器上跑不动**（§4.7 按铁规不提交）→ 加注"仅本地有测试文件时执行，否则跳过" |
-| v2.4 | 2026-10-13 10:08:09 | 小欧 | 八轮 10 遍核查（逐节 2028 行 + 5 个源码文件逐行对照），查出 **14 处**，其中 **3 处实施即失败**：①**§4.5 GroupView/SpecView 的 key 列仍写 `break-all`**（`:1493`/`:1545`），与 §2.5 V3「break-all → break-word」及 T13「非 break-all」冲突（值列已改、key 列漏改）→ 两处改 `break-word`；②**`.taskinfo-entry` 的 `color` 由 CSS 定死**（`index.css:261` `#999`/`:269` hover `#1677ff`），而 §4.6.6 按钮 span 未设 color ⇒ **T20「关 SECONDARY/开 PRIMARY」必然失败** → span 加 `color: openPanelIndex === i ? PRIMARY : SECONDARY`；③**`.taskinfo-entry[data-open='true'] svg{transform:rotate(180deg)}`**（`index.css:272-274`）会把打开态 `CodeOutlined` **翻转 180°**，与 §3.6「按钮无箭头、开合以文字色标识」及 T20 冲突 → 图标加 `style={{transform:'none'}}` 内联压制（不动共享 CSS，免影响 G6/G8）并补 T35；④**FloatingEntry `trigger=['hover','click']` + B5「hover 态首击被吃掉」**（`FloatingEntry.tsx:66,97-105`）全文未登记：悬停即弹浮层、hover 打开后第一次点击不关闭，与「点按钮开合、点新的关旧的」（DC-09/T6/T15）契约冲突 → **新增 D-7**：给 `FloatingEntry` 加 `trigger?` 可选 prop（默认保持 `['hover','click']`，既有 G6/G8 零变化），本功能传 `['click']`，并补 §4.8 与 T36；⑤**§4.6.1 import diff 上下文与源码不符**（实际 `CircleArrow(60)→DropletIcon(61)→GearIcon(62)`，文档写成 `CircleArrow→GearIcon→DropletIcon`，照单应用会定位失败）→ 按源码订正；⑥**§4.1 `CopyButton` 行数「+6 −0」错**，实为 **+15 −4** → 订正；⑦**`CopyButton` 既有调用点文档三处说「5 处」，实为 2 处**（`MarkdownText.tsx:384`、`MarkdownBody.tsx:144`）→ §3.1/§4.3/T28 同步订正；⑧**§2.8「共 20 条」+「其余 16 项」与 §2.2.2 实有 19 行不符** → 改 19 / 其余 15；⑨**DC-01 写「三章」而文档实有五章** → 改五章并列明各章职责；⑩**T25 公式 `min(视口-32px,640)` 与「不低于 320」自相矛盾**（视口<352px 时该值<320；且 CSS 中 `min-width` 优先于更小的 `max-width`，反而溢出视口）→ 改为 CSS 真实语义三档阈值（≥672→640；352~672→视口-32；<352→320 生效、超出部分由右栏 `overflowX:hidden` 裁剪）；⑪**T29「折叠切换一律 `CircleArrow(14,PRIMARY)`」与现状冲突**（工具行折叠箭头实为 size=16/TEXT.PRIMARY `:354-359` 且不在本次改动范围）→ 限定为「本次新增的树节点/巨型值两处」；⑫**v2.3 R2 注释根因写错**（`.taskinfo-entry` 实为 `display:inline-flex`+`min-width:32px`，自带下限不会被挤没；真正被压缩的是 FloatingEntry 最外层无类名 block div）→ 订正根因（顺带核实「右栏 `overflowX:hidden` 兜」属实：`SessionLayout.tsx:99,126`）；⑬**§1.4 高度表 write 行算术不自洽**（「参数行数 6」×18=108px 却写 5400px+，后者按 content 300 行摊开算）→ 拆清两列口径；⑭**引用错位**：「行高=字号+4」定案在 `stepStyles.ts:108-110`（文档写 `:13`）、`BG.SECONDARY` 出处 `:154`（实为 `:153`）→ 订正。同轮核实**无误**：15+ 处代码落点行号（`:363-437`/`:367`/`:369`/`:378`/`:391`/`:411`/`:413`/`:416`/`:428`/`:443`/`:444`/`:268-283`/`:288`/`:122-124`/`:190-209`/`:303-307`/`:440-459`/`:248`/`:96-109`/`:330-352`）、`FloatingEntry:39-48/50-53/73-77/88-92/98`、`MarkdownText:90/91/93`、全部 hex 值、`ParamsPanel` 去 `as const` 的 TS2322 结论、`ParamsTree` 的 `Set<string>`/`Icon.BOX=16`、`§4.7` 测试 4 个 case、535−95+40=480 行数算式，**均精确命中** |
+| v2.4 | 2026-10-13 10:08:09 | 小欧 | 八轮 10 遍核查（逐节 2028 行 + 5 个源码文件逐行对照），查出 **14 处**，其中 **3 处实施即失败**：①**§4.5 GroupView/SpecView 的 key 列仍写 `break-all`**（`:1493`/`:1545`），与 §2.5 V3「break-all → break-word」及 T13「非 break-all」冲突（值列已改、key 列漏改）→ 两处改 `break-word`；②**`.taskinfo-entry` 的 `color` 由 CSS 定死**（`index.css:261` `#999`/`:269` hover `#1677ff`），而 §4.6.6 按钮 span 未设 color ⇒ **T20「关 SECONDARY/开 PRIMARY」必然失败** → span 加 `color: openPanelIndex === i ? PRIMARY : SECONDARY`；③**`.taskinfo-entry[data-open='true'] svg{transform:rotate(180deg)}`**（`index.css:272-274`）会把打开态 `CodeOutlined` **翻转 180°**，与 §3.6「按钮无箭头、开合以文字色标识」及 T20 冲突 → 图标加 `style={{transform:'none'}}` 内联压制（不动共享 CSS，免影响 G6/G8）并补 T35；④**FloatingEntry `trigger=['hover','click']` + B5「hover 态首击被吃掉」**（`FloatingEntry.tsx:66,97-105`）全文未登记：悬停即弹浮层、hover 打开后第一次点击不关闭，与「点按钮开合、点新的关旧的」（DC-09/T6/T15）契约冲突 → **新增 D-7**：给 `FloatingEntry` 加 `trigger?` 可选 prop（默认保持 `['hover','click']`，既有 G6/G8 零变化），本功能传 `['click']`，并补 §4.8 与 T36；⑤**§4.6.1 import diff 上下文与源码不符**（实际 `CircleArrow(60)→DropletIcon(61)→GearIcon(62)`，文档写成 `CircleArrow→GearIcon→DropletIcon`，照单应用会定位失败）→ 按源码订正；⑥**§4.1 `CopyButton` 行数「+6 −0」错**，实为 **+15 −4** → 订正；⑦**`CopyButton` 既有调用点文档三处说「5 处」，实为 2 处**（`MarkdownText.tsx:384`、`MarkdownBody.tsx:144`）→ §3.1/§4.3/T28 同步订正；⑧**§2.8「共 20 条」+「其余 16 项」与 §2.2.2 实有 19 行不符** → 改 19 / 其余 15；⑨**DC-01 写「三章」而文档实有五章** → 改五章并列明各章职责；⑩**T25 公式 `min(视口-32px,640)` 与「不低于 320」自相矛盾**（视口<352px 时该值<320；且 CSS 中 `min-width` 优先于更小的 `max-width`，反而溢出视口）→ 改为 CSS 真实语义三档阈值（≥672→640；352~672→视口-32；<352→320 生效、超出部分由右栏 `overflowX:hidden` 裁剪）；⑪**T29「折叠切换一律 `CircleArrow(14,PRIMARY)`」与现状冲突**（工具行折叠箭头实为 size=16/TEXT.PRIMARY `:354-359` 且不在本次改动范围）→ 限定为「本次新增的树节点/巨型值两处」；⑫**v2.3 R2 注释根因写错**（`.taskinfo-entry` 实为 `display:inline-flex`+`min-width:32px`，自带下限不会被挤没；真正被压缩的是 FloatingEntry 最外层无类名 block div）→ 订正根因（顺带核实「右栏 `overflowX:hidden` 兜」属实：`SessionLayout.tsx:99,126`）；⑬**§1.4 高度表 write 行算术不自洽**（「参数行数 6」×18=108px 却写 5400px+，后者按 content 300 行摊开算）→ 拆清两列口径；⑭**引用错位**：「行高=字号+4」定案在 `stepStyles.ts:108-110`（文档写 `:13`）、`BG.SECONDARY` 出处 `:154`（实为 `:153`）→ 订正。同轮核实**无误**：15+ 处代码落点行号（`:363-437`/`:367`/`:369`/`:378`/`:391`/`:411`/`:413`/`:416`/`:428`/`:443`/`:444`/`:268-283`/`:288`/`:122-124`/`:190-209`/`:303-307`/`:440-459`/`:248`/`:96-109`/`:330-352`）、`FloatingEntry:39-48/50-53/73-77/88-92/98`、`MarkdownText:90/91/93`、`CollapsibleText:109-115`（`CircleArrow size=14/PRIMARY/animated=false` + ` 收起/ 展开`）、全部 hex 值、`ParamsPanel` 去 `as const` 的 TS2322 结论、`ParamsTree` 的 `Set<string>`/`Icon.BOX=16`、`§4.7` 测试、535−95+40=480 行数算式，**均精确命中** |
+| v2.5 | 2026-10-13 10:19:12 | 小欧 | 九轮 10 遍全文核查（2123 行逐节读完）查出 **10 处**，其中 **2 处会直接导致实施/测试失败**：①**§4.5 两处 key 列 `width: 96/140` 缩进被顶格**（v2.4 订正 `break-word` 时丢了缩进，照抄代码块会让 `format:check` 失败）→ 缩进归位；②**§4.7 测试第 2 个 case `getByText('utf-8')` 必然失败**——节点值渲染为 `<span>: {summary}</span>`，文本实为 `": utf-8"`，字符串匹配器要求全文相等 → 改正则 `/utf-8/`；③**§3.4.2「点击节点 `onClick` 内 `e.stopPropagation()`」与 §4.4 代码冲突**（D-1 已把树移出 `role="button"`，父级不再是按钮；加回 stopPropagation 反而使节点文字选不中）→ 订正为「本章落地无 `stopPropagation`」；④**§4.1 高度链路复核写 `maxBodyHeight`**（那是 `ParamNode` 内部 prop，对外 prop 实为 `maxNodeBodyHeight`）→ 订正并说明逐层转授关系；⑤**§4.4 规范判定「无 useMemo 冗余」与代码里的 `copyText` useMemo 自相矛盾** → 改为说明 `useMemo` 的必要性（entries 新引用避免重复 stringify）；⑥**§4.4「值格式化 3 个纯函数」漏计**（实为 `classify`/`displayScalar`/`branchEntries`/`branchSummary` **4 个**）→ 订正；⑦**§3.5「`cardStyle` 注入宽/限高」与实现不符**（`PARAMS_CARD_STYLE` 只有响应式宽三件套，限高在 `ParamsPanel` body 480）→ 订正；⑧**§3.6「其 `onClick` 内 `e.stopPropagation()`」措辞误导**（实为 `FloatingEntry` 内部自带 `:98`，本功能不另写 onClick）→ 订正；⑨**§4.5「格式化全在 6 个纯函数」漏计**（实为 **7 个**，含 `readView`）→ 订正；⑩**§3.6 `.taskinfo-entry` 引用区间 `253-274` 不含 focus-visible**（实为 `:276-279`）→ 补全为 `:253-279` 并逐段注明归属。**实施后追加 3 处落盘事实**：⑪**§4.7 测试落位与仓内 `vitest.config` 冲突**——`include` 只扫 `src/tests/**`，放组件同目录实测报 `No test files found`（写了永远跑不起来的死代码）→ 改落 `src/tests/unit/params-tree.test.tsx` + import 换 `@/` 别名（否则 `Failed to resolve import`），§3.1/§4.1/§五第 5 步命令同步；⑫**§4.7 测试用原生 `el.click()` 必失败**（不被 `act()` 包裹，React 18 的 `setState` 未刷新即断言，实测 `1 failed | 3 passed`）→ 改 RTL `fireEvent.click`，实测 **4 passed**；⑬**§4.1/§4.6.8 的行数估值全部按 `git diff --numstat` 实测回填**（`ToolCallLine` 实为 **+78 −98 → 515 行、净 −20**，非估的「+40 −95 → 480、净 −55」；`ParamsTree` **+260**、`ParamsPanel` **+439**，均远超原估；`CopyButton` +15 −4 与 `stepStyles` +8 命中；`FloatingEntry` 实为 +7 −1） |
 
 ---
 
@@ -369,12 +370,12 @@ const tParamText = JSON.stringify(t.params ?? {});
 |---|---|---|
 | V1 | key / value **分色**：key 用 `TEXT.SECONDARY`，value 用 `TEXT.PRIMARY`（对比度 7:1 达标）；JSON 树内值用 `TEXT.STRONG`。**不做语法着色**（无 `Colors.JSON.*`，见 DC-19） | A1 A2 |
 | V2 | 字体改用 `FontFamily.MONO` 令牌，删两处硬编码 | A8 |
-| V3 | `break-all` → `break-word`；长值截断 + `title` 全文（复用 `EllipsisTip`） | A5 |
+| V3 | ~~`break-all` → `break-word`；长值截断 + `title` 全文（复用 `EllipsisTip`）~~ → **实施落 D-10**：值列 `ellipsis` + 行级原生 `title`（`key: 值`）+ key 列 `maxWidth:96`；**不套 `EllipsisTip`**（`inline-block`+必填 `maxWidth` 会打乱 flex 对齐，属倒退） | A5 |
 | V4 | 对象值多行缩进 JSON（树节点内天然支持） | A6 |
 | V5 | 空值渲染 `(空)` 占位 | A7 |
 | V6 | 层级重定义：靠**浅底/边框/缩进结构**表达输入输出之分，**不用缩进表达重要次要** | A3 A4 |
 | V7 | 参数区显式 `lineHeight = FontSize.CODE(12) + Spacing.XS(4) = 16px`，与字号匹配 | A9 |
-| V8 | 节点/按钮加 hover / focus-visible 反馈；按钮热区复用 `.taskinfo-entry` | B3 |
+| V8 | 节点/按钮加 hover / focus-visible 反馈；按钮热区复用 `.taskinfo-entry`。**实施落地**：新增 `index.css` 的 `.params-clickable`（`#f0f0f0` 底 + `2px #1677ff` outline，规格与 `.taskinfo-entry` 字面对齐），**树节点行 / 浮层巨型值折叠行 / 面板 ✕ 三处共用一条规则**；走 CSS 而非 React `onMouseEnter` state → hover 零重渲染 | B3 |
 
 ### 2.6 保留不动项（防功能退化）
 
@@ -494,7 +495,7 @@ interface ParamsTreeProps {
   }
 ```
 
-复制内容为 `JSON.stringify(Object.fromEntries(entries), null, 2)`（格式化 JSON）。按钮**直接复用 `frontend/src/components/markdown/CopyButton.tsx`**（`fontSize:11` + `BORDER.DEFAULT` 细框 + `Radius.SM` + 白底灰字 + 点击 1.5s 回「已复制」），**不自造图标按钮**——自造会与系统代码块右上角的复制按钮观感割裂（无「已复制」反馈、无 `aria-label`）。**树头用 `CopyButton` 默认形态（`position:absolute`）**——树头容器是相对定位块，默认绝对定位正落在树头右上角，与代码块内的用法完全一致；面板头才传 `inline`。
+复制内容为 `JSON.stringify(Object.fromEntries(entries), null, 2)`（格式化 JSON）。按钮**直接复用 `frontend/src/components/markdown/CopyButton.tsx`**（`fontSize:11` + `BORDER.DEFAULT` 细框 + `Radius.SM` + 白底灰字 + 点击 1.5s 回「已复制」），**不自造图标按钮**——自造会与系统代码块右上角的复制按钮观感割裂（无「已复制」反馈、无 `aria-label`）。**2026-10-13 实施订正（D-9）**：初稿写「树头用 `CopyButton` 默认形态（`position:absolute`），正落在树头右上角」——实为**误判**，absolute 的包含块是树根容器而非树头，会**遮挡第一条节点行的值列**；现改**树头用 `inline`**（进 flex 流 + 中间 `flex:1` 空 span 顶到行尾），面板头也用 `inline`，两处一致。
 
 #### 3.4.1 结构与默认态
 
@@ -525,7 +526,7 @@ interface ParamsTreeProps {
 | 项 | 规格 |
 |---|---|
 | 折叠箭头 | 复用既有 `CircleArrow`（同 `CollapsibleText`/`ThinkingStream`，保证图标列对齐，见 `stepStyles.ts:128-138` `Icon.BOX`） |
-| 点击节点 | 切换该节点展开态，`onClick` 内 `e.stopPropagation()`（解决 I1/B1） |
+| 点击节点 | 切换该节点展开态。**2026-10-13 核查订正**：初稿写「`onClick` 内 `e.stopPropagation()`（解决 I1/B1）」，但 D-1 已把 `ParamsTree` **移出 `role="button"` 容器**（父级不再是按钮，无冒泡可阻），§4.4 的 `ParamNode` 因此**没有也不能加 `stopPropagation`**——加了反而使点选/复制节点文字失效，正是 D-1 要根治的病。**本章落地口径：无 `stopPropagation`** |
 | 键盘 | `Enter` / `Space` 切换，`tabIndex=0`，`aria-expanded` |
 | 折叠动画 | 无（避免流式下抖动，与 `ThinkingStream` 折叠策略一致） |
 
@@ -599,7 +600,7 @@ interface ParamsPanelProps {
 | 入口热区 | `FloatingEntry` 的 `.taskinfo-entry` 已定义 hover 底 `#f0f0f0` + focus 2px 蓝 outline（`index.css:253-274`），本功能触发按钮复用同一规格，不另造热区 |
 | 定位 | 由 `FloatingEntry` 的 `placement` 参数控制（`bottomLeft`/`bottomRight`），本功能取 **`bottomRight`**（贴工具行右缘向左展开，与摘要右侧的按钮位置呼应） |
 | 触发方式（**2026-10-13 新增，见 D-7**） | `FloatingEntry` 现将 `trigger` 硬编码为 `['hover','click']`（`FloatingEntry.tsx:66`）。若直接复用本功能按钮：**①鼠标悬停即弹浮层**（与 DC-09/DC-12「点按钮开合」口径不符，密集工具行易误开）；②其 B5 审计逻辑（`:97-105`）会**吃掉 hover 打开后的第一次点击**（只"确保打开"不关闭），用户点按钮**关不掉**浮层。故本功能必须传 `trigger={['click']}` → 为此给 `FloatingEntry` 加 `trigger?` 可选 prop（**默认 `['hover','click']`**，既有 G6/G8 两处调用零变化，OCP 扩展），见 §4.8 |
-| 卡片样式 | 经 `cardStyle` 注入宽/限高；内容经 `content` 注入 GroupView / SpecView（内容自持 a11y 如 `role="log"`） |
+| 卡片样式 | 经 `cardStyle` 注入**响应式宽**三件套（`PARAMS_CARD_STYLE`，见 §4.6.2）；**限高不在此**——面板内容区限高由 `ParamsPanel` 内部的 `Size.PARAMS_PANEL_BODY_MAX_H`(480) 承担（D-4），卡片外壳不限高。内容经 `content` 注入 `ParamsPanel` |
 | 与 HITL 模态框 | `AuthorizationModal` 为模态（`z-index` 更高 + 遮罩），**命中安全确认期间浮层不自动关闭**（Popover 不响应遮罩点击），确认后恢复；两者不同时操作，无冲突 |
 | 单例互斥 | 仍由 `openPanelIndex` 单一真源控制（DC-07），壳只负责呈现 |
 
@@ -640,7 +641,7 @@ interface ParamsPanelProps {
 
 #### 3.5.3 SpecView（甲 · 规格表）
 
-固定两列：key 列宽 140px 右对齐灰字（`TEXT.SECONDARY`），value 列左对齐深字（`TEXT.PRIMARY`）；行间 1px `Colors.BORDER.LIGHT` 分割线；巨型值整宽跨行成代码块（`BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`，与 `MarkdownText` 代码块同款）。
+固定两列：key 列宽 140px **左对齐**灰字（`TEXT.SECONDARY`），value 列左对齐深字（`TEXT.PRIMARY`）；行间 1px `Colors.BORDER.LIGHT` 分割线；巨型值整宽跨行成代码块（`BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`，与 `MarkdownText` 代码块同款）。**2026-10-13 十二轮订正**：初稿此处写「key 列 140px **右对齐**」，与 §2.3 规格表示意图（`:298-303`，`file_path`/`encoding` 从同一左缘起）**自相矛盾**，也与分组视图 key 列（96px，未设对齐即左对齐）口径不一；现统一**左对齐**（key-value 表右对齐只适用于数字列，等宽字体下长短 key 右对齐会让扫读起点参差）。
 
 **巨型值折叠切换规格（复用系统惯例）**：一律用 **`CircleArrow`(size=14, color=`Colors.PRIMARY`) + 文案「展开」/「收起」**（同 `CollapsibleText.tsx:109-115`），**不用 `▸`/`▾` 裸字符**——裸字符是本方案 v1.0 的旧写法，与系统既有折叠观感不一致。
 
@@ -725,7 +726,7 @@ content = 共 312 行
 
 **门控口径**：③ 按钮在工具行内，与 `isOpen` **无关**——折开收起恒在原位，故展开区与结果区的出现/消失不影响按钮位置（D1 裁定乙的核心目的）。
 
-**按钮交互**：③ 虽在 `role="button"` 容器内，但 `onClick` 内 `e.stopPropagation()`，故点浮层参数按钮**不会**触发工具行折叠（解决 I1/B1）；反之点 ② 之外的其他区域仍照常折叠整行。
+**按钮交互**：③ 虽在 `role="button"` 容器内，但 `e.stopPropagation()` **由 `FloatingEntry` 内部自带**（`FloatingEntry.tsx:98`），**本功能不另写 `onClick`**，故点浮层参数按钮**不会**触发工具行折叠（解决 I1/B1，见 D-6）；反之点 ② 之外的其他区域仍照常折叠整行。
 
 **图标规格**：③ 用 **antd `CodeOutlined` + 文字 `浮层参数`**（D3 定稿），**不用 `GearIcon`**——`GearIcon` 在系统里的语义是「工具执行等待」转圈齿轮（`ToolCallLine.tsx:248` `ToolWaitingIcon`），复用会让用户误以为参数区正在加载。antd SVG 图标是项目既定规范（见 `ToolCallLine.tsx:96-109` `REJECT_ICON_MAP` 全量用 antd 禁 emoji）。
 
@@ -736,7 +737,7 @@ content = 共 312 行
 > ②**图标翻转**：`.taskinfo-entry[data-open='true'] svg { transform: rotate(180deg) }`（`index.css:272-274`）是为 G6/G8 的单图标入口设计的翻转效果；本功能按钮内含 `CodeOutlined`（svg），**浮层打开时会被翻转 180°**（`</>` 上下颠倒），与"按钮无箭头、开合以文字色标识"冲突。故 §4.6.6 对该图标内联 `style={{ transform: 'none' }}` 压制（内联样式优先级高于该 class 规则，**不改共享 CSS**，免影响 G6/G8）——新增 **T35** 验收。
 > ③**触发方式**：按钮必须走 `trigger={['click']}`（见 §3.5 容器选型表与 D-7），否则悬停即弹、且 B5 逻辑吃掉首击——新增 **T36** 验收。
 
-**按钮热区复用 `.taskinfo-entry`**：③ 用 `FloatingEntry` 作外壳后，热区自动继承 `index.css:253-274` 的既有规格（`min-width:32` / `min-height:20` / `border-radius:8` / hover 底 `#f0f0f0` / focus-visible 2px 蓝 outline），**不另造热区样式**。
+**按钮热区复用 `.taskinfo-entry`**：③ 用 `FloatingEntry` 作外壳后，热区自动继承 `index.css:253-279` 的既有规格（`:253-266` 盒模型 `min-width:32`/`min-height:20`/`border-radius:8`/`display:inline-flex`、`:267-271` hover 底 `#f0f0f0` + 文字 `#1677ff`、`:272-274` 打开态 svg 翻转、`:276-279` focus-visible 2px 蓝 outline），**不另造热区样式**。
 
 ### 3.7 高度链路验证（全局）
 
@@ -876,29 +877,37 @@ content = 共 312 行
 | D-5 | §3.5 「面板宽度接系统断点矩阵」 | **纯 CSS 响应式**：`width:640 + minWidth:320 + maxWidth:calc(100vw - 32px)` | 断点矩阵需 JS 监听 resize（重渲染+状态），纯 CSS 三行解决且零重渲染。T25 的落法因此得以自然满足 |
 | D-6 | §3.6 「浮层按钮 = FloatingEntry 的 children，插在 CircleArrow 之后」 | **确认可行**：`FloatingEntry` 触发器自带 `e.stopPropagation()`（`FloatingEntry.tsx:98`），置于工具行 flex 内安全 | 原设计担心冒泡，实读源码已解决，无需额外包装 |
 | D-7 | §3.5 直接复用 `FloatingEntry`（其 `trigger` 硬编码 `['hover','click']`，`:66`） | **加可选 prop `trigger?`**：默认 `['hover','click']` 保持 G6/G8 两处既有调用**零变化**，本功能传 `['click']` | 直接复用会踩两个坑：①悬停即弹浮层，与 DC-09/DC-12「点按钮开合」口径不符、密集工具行易误开；②B5 审计逻辑（`:97-105`）会**吃掉 hover 打开后的第一次点击**（只"确保打开"不关闭），用户**点按钮关不掉**浮层。属 OCP 扩展（加可选能力不改既有签名），见 §4.8、T36 |
+| D-8 | ~~初稿把面板外壳当"不该画框"~~ | **【已撤回】** 初稿曾误判为"面板外壳不画框、底/边框/圆角全交 Popover"，理由是 G6/G8 的 content 不自绘外框 | **误判已撤销**：①依据套错——G6/G8 的 content 是纯文本/事件时间轴，而本方案的浮层内容**本身就是一张卡片**（设计三处明写）；②且 Popover 自带 `padding:12px`，不画框的结果是"白底弹层 + 无框灰字内容"，同样不是设计。**最终口径 = 面板外壳恢复自带 `BG.SECONDARY + BORDER.DEFAULT + Radius.SM`（DC-19/T32/§3.5.1 三处一致）** |
+| D-11 | §3.5.1 结构图未提 Popover 外壳内距 | **`PARAMS_CARD_STYLE` 增 `padding: 0`** | antd 5.29.3 的 `.ant-popover-inner` 自带 `padding: 12px`（`node_modules/antd/es/popover/style/index.js:59`，`innerPadding: wireframe ? 0 : 12`）。面板自带卡片规格与自身内距，若不归零就会出现「白边 + 灰卡片」的**框中框**，与结构图不符 → 外壳内距归零，内距统一由面板自身 padding 承担 |
+| D-9 | §3.4「**树头用 `CopyButton` 默认形态（`position:absolute`）**，正落在树头右上角」 | **树头改 `inline`**：按钮进 flex 流，中间加一个 `flex:1` 空 span 顶到行尾；树根**删** `position:relative` | absolute 的包含块是**树根容器**而非树头（初稿误以为在树头），而树根 `padding` 仅 4px、按钮高约 20px → 按钮**压在第一条节点行的值列上**遮挡长值（实测口径）。inline 不遮挡、无需预留宽度，行尾位置与 §3.4 结构图「▾ {　[复制]」一致；`position:relative` 的存在前提随之消失 |
+| D-10 | §2.5 V3「长值截断 + `title` 全文（复用 `EllipsisTip`）」 | **行级原生 `title`（`key: 值`）+ 值列 `ellipsis`；key 列 `maxWidth:96`+`ellipsis`（与浮层 GroupView 同宽）**，**不套 `EllipsisTip`** | ①`EllipsisTip` 是 `display:inline-block` + **必填 `maxWidth`**，塞进树的 flex 行会打乱 key/value 对齐，属倒退；②被省略的 key 由行级 title 兜底，无需第二个 title（DRY）；③key 限宽与浮层 96 对齐，消除「同一 key 在两载体宽窄不一」的割裂 |
 
 ### 4.1 代码列表
 
 | # | 文件 | 类型 | 行数变化 | 对应设计 |
 |---|---|---|---|---|
-| 1 | `frontend/src/utils/stepStyles.ts` | 改 | +8 | §3.4.3 |
-| 2 | `frontend/src/components/markdown/CopyButton.tsx` | 改 | **+15 −4** | §3.5.1 |
-| 3 | `frontend/src/features/chat/components/pipeline/ParamsTree.tsx` | **新建** | +约 150 | §3.4 |
-| 4 | `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx` | **新建** | +约 200 | §3.5 |
-| 5 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 改 | +约 40 −约 95 | §3.2 §3.6 |
-| 6 | `frontend/src/features/chat/components/pipeline/ParamsTree.test.tsx` | 新建 | +约 90 | §3.1 第 5 项 |
-| 7 | `frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx` | 改 | **+8 −1** | §3.5 触发方式（D-7） |
+| 1 | `frontend/src/utils/stepStyles.ts` | 改 | +8 −0（实测） | §3.4.3 |
+| 2 | `frontend/src/components/markdown/CopyButton.tsx` | 改 | **+15 −4**（实测） | §3.5.1 |
+| 3 | `frontend/src/features/chat/components/pipeline/ParamsTree.tsx` | **新建** | **+260**（实测，原估「约 150」偏小） | §3.4 |
+| 4 | `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx` | **新建** | **+439**（实测，原估「约 200」偏小） | §3.5 |
+| 5 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 改 | **+78 −98 = 净 −20**（实测，原估「+40 −95 = −55」偏差大：浮层按钮块含 10 行根因注释，比预估大） | §3.2 §3.6 |
+| 6 | `frontend/src/tests/unit/params-tree.test.tsx` | 新建（**不提交**） | +约 45 | §3.1 第 5 项 |
+| 7 | `frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx` | 改 | **+7 −1**（实测，原估 +8 −1） | §3.5 触发方式（D-7） |
 
 **实施顺序**：1 → 2 → 3 → 4 → **7 → 5**（第 7 项必须在第 5 项之前：`ToolCallLine` 要向 `FloatingEntry` 传 `trigger`，未加该 prop 则传不进去、tsc 报错）。**第 6 项按 AGENTS 铁规不提交**，本地保留、最后写。
 
-> **2026-10-13 核查订正**：第 2 行行数变化初稿写「+6 −0」，与 §4.3 的两处 diff 对不上——实测改动 1 加 6 行（5 行注释 + `inline?: boolean`），改动 2 删 4 行（组件签名 1 + `position`/`top`/`right` 3）加 9 行（新签名 1 + 内联注释 1 + 展开三元 7），合计 **+15 −4**。
+> **2026-10-13 实施落位订正（第 6 项路径）**：初稿把测试放在组件同目录 `pipeline/ParamsTree.test.tsx`，但仓内 `vitest.config` 的 `include` 是 `src/tests/**/*.{test,spec}.{ts,tsx}`（实测 `npm run test -- --run ParamsTree` 报 `No test files found, exiting with code 1`）——**该位置永远不会被执行**，属写了也跑不起来的死代码。故改落 `src/tests/unit/params-tree.test.tsx`，并把 import 换成 `@/` 别名（跨目录不能用相对路径，否则 `Failed to resolve import "./ParamsTree"`）。
+
+> **2026-10-13 实施后回填（`git diff --numstat` 实测，非估算）**：上表 1/2/3/4/5/7 行数均为落盘后实测值。**初稿的「约」估值全部偏低或偏差大**，其中 §4.6.8 净效果表的「535 → 约 480（净减 55）」与实测「535 → **515（净减 20）**」不符——根因是浮层按钮块的 10 行根因注释（v2.4 起新增）未计入估算。**净减行的结论方向不变**（删 98 行旧参数区逻辑、增 78 行新挂载与按钮），但"净减 55 行"已按实测订正。
+
+> **2026-10-13 核查订正（第 2 行行数）**：初稿写「+6 −0」，与 §4.3 的两处 diff 对不上——实测 **+15 −4**（改动 1 加 6 行；改动 2 删 4 行、加 9 行）。
 
 **全局高度链路复核**（改前 → 改后，见 §3.7）：
 
 | 层 | 改前 | 改后 | 代码位置 |
 |---|---|---|---|
 | ⑧ 工具行 | `minHeight:32`，不变 | 不变 | `ToolCallLine.tsx:190-209` 未动 |
-| ⑩ 展开区 | 无上限，参数行数 × 18px | **恒 (键数+1) 行 × 16px**，节点展开体各自限高 240px 内部滚动 | `ParamsTree` 顶层键默认折叠 + `maxBodyHeight` |
+| ⑩ 展开区 | 无上限，参数行数 × 18px | **恒 (键数+1) 行 × 16px**，节点展开体各自限高 240px 内部滚动 | `ParamsTree` 顶层键默认折叠 + 对外 prop `maxNodeBodyHeight`（默认 `Size.PARAMS_PANEL_MAX_H`；内部逐层转授 `ParamNode` 的 `maxBodyHeight`） |
 | ⑪ 结果区 | `marginTop:2` | 不变 | `ToolCallLine.tsx:440-459` 未动 |
 | 浮层 | — | **移出流内**，高度增长 0 | `FloatingEntry` + antd `Popover`（portal） |
 
@@ -1061,9 +1070,14 @@ const ParamNode: React.FC<ParamNodeProps> = ({
   return (
     <div style={{ marginLeft: depth * Icon.BOX }}>
       <div
+        className="params-clickable"
         role={foldable ? 'button' : undefined}
         tabIndex={foldable ? 0 : undefined}
         aria-expanded={foldable ? open : undefined}
+        // 2026-10-13 小欧 - V3/D-10: 折叠态单行省略, title 给完整 key: 值 供悬停看全文
+        title={
+          typeof value === 'string' ? `${label}: ${value}` : undefined
+        }
         onClick={foldable ? toggle : undefined}
         onKeyDown={foldable ? onKeyDown : undefined}
         style={{
@@ -1085,14 +1099,26 @@ const ParamNode: React.FC<ParamNodeProps> = ({
             animated={false}
           />
         )}
-        <span style={{ color: Colors.TEXT.SECONDARY }}>{label}</span>
+        <span
+          style={{
+            color: Colors.TEXT.SECONDARY,
+            // 2026-10-13 小欧 - B2/D-10: key 列限宽 96 与浮层 GroupView 同宽(两载体口径一致)
+            maxWidth: 96,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {label}
+        </span>
         <span style={{ color: Colors.TEXT.STRONG }}>: {summary}</span>
       </div>
       {/* 分支子树: 深度 +1, 由每个展开体各自限高(DC-15) */}
       {open && kind === 'branch' && (
         <div style={{ marginTop: Spacing.XS - 2 }}>
           {branchEntries(value).map(([k, v], idx) => {
-            const childKey = `${nodeKey}/${k}/${idx}`;
+            // 2026-10-13 小欧 - E8: nodeKey 只由 idx 路径拼成(不掺 key), key 内含 '/' 也不撞键
+            const childKey = `${nodeKey}/${idx}`;
             return (
               <ParamNode
                 key={childKey}
@@ -1185,10 +1211,8 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({
   );
 
   return (
-    // position:relative 是 CopyButton 绝对定位的包含块(DC-17 树头复制)
     <div
       style={{
-        position: 'relative',
         marginTop: Spacing.XS,
         padding: Spacing.XS,
         background: Colors.BG.SECONDARY,
@@ -1219,10 +1243,14 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({
         {/* 2026-10-13 小欧 - 核查订正: 树根标签只写 `{`, 与 §3.4.1 结构图一致。
             初稿写「树根(恒展开)」是把注释写进了 UI, 属实现细节泄漏到用户界面 */}
         <span>{'{'}</span>
-        <CopyButton text={copyText} />
+        {/* 2026-10-13 小欧 - B1/D-9 决策: 复制按钮改 inline + 中间 flex:1 占位顶到行尾。
+            原默认形态(absolute)的包含块是树根而非树头, 会压住第一条节点行的值列 */}
+        <span style={{ flex: 1 }} />
+        <CopyButton text={copyText} inline />
       </div>
       {entries.map(([k, v], idx) => {
-        const nodeKey = `${k}/${idx}`;
+        // 2026-10-13 小欧 - E8: 只用 idx 作 nodeKey, 参数 key 仅作显示 label
+        const nodeKey = String(idx);
         return (
           <ParamNode
             key={nodeKey}
@@ -1248,8 +1276,8 @@ export default ParamsTree;
 
 | 规范 | 判定 |
 |---|---|
-| SRP | `ParamsTree` 只管"树的展开态与渲染"；`ParamNode` 只管"单节点"；值格式化是 3 个纯函数 ✅ |
-| KISS-DIRECT | 展开态用 `Set<string>` + 两个 `useCallback`，无 useMemo/useRef/forwardRef 冗余 ✅ |
+| SRP | `ParamsTree` 只管"树的展开态与渲染"；`ParamNode` 只管"单节点"；值格式化是 4 个纯函数（`classify`/`displayScalar`/`branchEntries`/`branchSummary`）✅ |
+| KISS-DIRECT | 展开态用 `Set<string>` + 两个 `useCallback`，`copyText` 一处 `useMemo`（entries 为新引用时避免每次渲染重算 stringify）；无 `useRef`/`forwardRef`/注册表冗余 ✅ |
 | DRY | `key: value` 渲染只有一处（`ParamNode`），子树与长文本分支不重复 ✅ |
 | OCP | 新增组件不改动任何既有组件签名 ✅ |
 | 禁 backward | 全新文件，无旧逻辑兼容 ✅ |
@@ -1331,11 +1359,21 @@ const isPathLike = (v: string): boolean => {
   return /\.[A-Za-z0-9]{1,8}$/.test(last);
 };
 
+/**
+ * 2026-10-13 小欧 - 巨型值唯一判定(§2.3.3 + §3.5.5)。三堂会审 A7: 原 needFold 与 categorize
+ *   第一条各写一遍同条件, 阈值一改要改两处(DRY 风险) → 收敛为此单一判定, 三处共用
+ */
+const isHugeValue = (v: unknown): boolean => {
+  if (typeof v === 'object' && v !== null) return true;
+  return (
+    typeof v === 'string' &&
+    (v.includes('\n') || v.length > HUGE_VALUE_CHARS)
+  );
+};
+
 /** §2.3.2 判定优先级链: 严格自上而下, 命中即止, 防一个参数落进两组 */
 const categorize = (k: string, v: unknown): Category => {
-  if (typeof v === 'object' && v !== null) return 'payload';
-  if (typeof v === 'string' && (v.includes('\n') || v.length > HUGE_VALUE_CHARS))
-    return 'payload';
+  if (isHugeValue(v)) return 'payload';
   if (typeof v === 'boolean') return 'switch';
   if (PATH_KEYS.has(k) || (typeof v === 'string' && isPathLike(v)))
     return 'path';
@@ -1343,18 +1381,11 @@ const categorize = (k: string, v: unknown): Category => {
   return 'other';
 };
 
-const needFold = (v: unknown): boolean => {
-  if (typeof v === 'object' && v !== null) return true;
-  if (typeof v === 'string')
-    return v.includes('\n') || v.length > HUGE_VALUE_CHARS;
-  return false;
-};
-
 const summaryOf = (v: unknown): string => {
   if (v === undefined || v === null) return '(空)';
   if (typeof v === 'object')
     return `{…} ${Object.keys(v as object).length} 项`;
-  if (typeof v === 'string' && needFold(v))
+  if (typeof v === 'string' && isHugeValue(v))
     return `共 ${v.split('\n').length} 行`;
   return String(v);
 };
@@ -1386,7 +1417,7 @@ const readView = (): ParamsView => {
 /** 折叠切换规格: CircleArrow(14,PRIMARY) + 「展开/收起」, 不用裸 ▸/▾(T29) */
 const ParamValue: React.FC<{ value: unknown }> = ({ value }) => {
   const [open, setOpen] = useState(false);
-  const foldable = needFold(value);
+  const foldable = isHugeValue(value);
   const toggle = () => setOpen((p) => !p);
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -1396,11 +1427,25 @@ const ParamValue: React.FC<{ value: unknown }> = ({ value }) => {
   };
 
   if (!foldable) {
-    return <span style={{ color: Colors.TEXT.PRIMARY }}>{summaryOf(value)}</span>;
+    // 2026-10-13 三堂会审 A1: 显式给等宽/字号不靠根继承(根已去 fontFamily, 见 D-8),
+    //   否则浮层普通值退回系统默认字体、与折叠值/pre 的等宽观感割裂
+    return (
+      <span
+        style={{
+          color: Colors.TEXT.PRIMARY,
+          fontFamily: FontFamily.MONO,
+          fontSize: FontSize.CODE,
+        }}
+      >
+        {summaryOf(value)}
+      </span>
+    );
   }
   return (
     <div>
       <span
+        // 2026-10-13 三堂会审 A2: 与树节点、✕ 共用 .params-clickable, 补齐 V8「按钮也要 hover/focus 反馈」
+        className="params-clickable"
         role="button"
         tabIndex={0}
         aria-expanded={open}
@@ -1508,7 +1553,7 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                 >
                   <span
                     style={{
-width: 96,
+                          width: 96,
                           flexShrink: 0,
                           fontFamily: FontFamily.MONO,
                           fontSize: FontSize.CODE,
@@ -1561,7 +1606,7 @@ const SpecView: React.FC<{ params: Record<string, unknown> }> = ({
       >
         <span
           style={{
-width: 140,
+            width: 140,
                             flexShrink: 0,
                             textAlign: 'right',
                             fontFamily: FontFamily.MONO,
@@ -1631,10 +1676,9 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
   return (
     <div
       style={{
-        background: Colors.BG.SECONDARY,
-        border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
-        borderRadius: Radius.SM,
-        fontFamily: FontFamily.MONO,
+        // 2026-10-13 小欧 - D-8: **不自绘卡片底/边框/圆角**, 交 antd Popover 的 .ant-popover-inner,
+        //   与 G6(ContextOverviewCard.tsx:217-230)/G8(TaskInfoBar.tsx:504-505)的 content 一致;
+        //   自绘会套出双层框/双层圆角。根也不挂等宽字体(污染标题与分类标签)、不挂无收益的 flex(两子元素本就是 block)
       }}
     >
       <div
@@ -1668,6 +1712,8 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
         {/* DC-20: 面板头用 inline 变体, 否则绝对定位会压住标题 */}
         <CopyButton text={copyText} inline />
         <span
+          // 2026-10-13 三堂会审 A2: 共用 .params-clickable, 补齐 V8「按钮也要 hover/focus 反馈」
+          className="params-clickable"
           role="button"
           tabIndex={0}
           aria-label="关闭参数面板"
@@ -1711,7 +1757,7 @@ export default ParamsPanel;
 
 | 规范 | 判定 |
 |---|---|
-| SRP | `ParamsPanel` 管壳与切换、`GroupView`/`SpecView` 管各自视图、`ParamValue` 管单值；格式化全在 6 个纯函数 ✅ |
+| SRP | `ParamsPanel` 管壳与切换、`GroupView`/`SpecView` 管各自视图、`ParamValue` 管单值；格式化/读取/判定全在 7 个纯函数（`isPathLike`/`categorize`/`needFold`/`summaryOf`/`fullTextOf`/`toKeyValueText`/`readView`）✅ |
 | KISS-DIRECT | 无 `useRef`/`forwardRef`/`useReducer`；`readView` 单表达式 + try/catch 兜底，无中间层 ✅ |
 | DRY | `ParamValue` 被两个视图共用，折叠逻辑只写一次 ✅ |
 | LSP/ISP | `ParamValue` 单 prop `value`，无接口膨胀 ✅ |
@@ -1959,14 +2005,19 @@ export default ParamsPanel;
 +                            display: 'inline-flex',
 +                            alignItems: 'center',
 +                            gap: Spacing.XS,
++                            // 2026-10-13 小欧 - B4 决策: 字号锁定 SECONDARY(12), 与**同行**摘要 12px 同层
++                            //   (就近基准)。系统另两档: G6 MetricItem label=11/数值=12、G8=10;
++                            //   若改 10/11 会比旁边摘要小一号、视觉失衡, 故取 12
 +                            fontSize: FontSize.SECONDARY,
-+                            // 2026-10-13 小欧 - 八轮核查: .taskinfo-entry 硬写 color:#999 / hover #1677ff
-+                            //   (index.css:261,269), 不显式设色则 T20「关 SECONDARY/开 PRIMARY」必然失败;
-+                            //   内联色优先于父级继承, 故在此按开合态显式给色(DC-12)
-+                            color:
++                            // 2026-10-13 小欧 - 九轮复核: .taskinfo-entry 硬写 color:#999 / hover #1677ff
++                            //   (index.css:261,269), 直接内联硬色会**压掉 hover 反馈**(内联优先级高于 class)
++                            //   → 照搬系统既有机制(MetricItem.tsx:56-58 同款): color 走 CSS 变量,
++                            //   .taskinfo-entry:hover 注入 --taskinfo-entry-active 即覆盖, 无 !important
++                            color: `var(--taskinfo-entry-active, ${
 +                              openPanelIndex === i
 +                                ? Colors.PRIMARY
-+                                : Colors.TEXT.SECONDARY,
++                                : Colors.TEXT.SECONDARY
++                            })`,
 +                          }}
 +                        >
 +                          {/* 2026-10-13 小欧 - 八轮核查: .taskinfo-entry[data-open='true'] svg 会 rotate(180deg)
@@ -1998,25 +2049,28 @@ export default ParamsPanel;
 
 | 项 | 前 | 后 |
 |---|---|---|
-| 文件行数 | 535 | **约 480**（删 95 / 增 40） |
+| 文件行数 | 535 | **515**（实测：删 98 / 增 78，净 −20。**2026-10-13 订正**：初稿估「约 480 / 净减 55」，未计入浮层按钮块的 10 行根因注释，实测偏低） |
 | `ToolCallLine` 持有的参数相关状态 | `expanded` + `paramsOpen` + `PARAMS_FOLD_THRESHOLD` | 仅 `expanded` + `openPanelIndex` |
 | 渲染期 `JSON.stringify` | 有（`paramRows` 每次渲染跑） | **零** |
 | 参数区所在容器 | `role="button"` 内 | **容器外** |
 | 点参数区 | 误折叠整行 | 仅切换节点 |
 
-**规范判定**：KISS-DIRECT（净减 55 行、净减 1 个状态）✅ ｜ DRY（`stopPropagation` 补丁换结构修复，零重复逻辑）✅ ｜ SRP（`ToolCallLine` 只管编排，参数渲染全在 `ParamsTree`）✅ ｜ SLAP（`ParamsPanel` 不自管浮层开合）✅
+**规范判定**：KISS-DIRECT（净减 20 行、净减 1 个状态）✅ ｜ DRY（`stopPropagation` 补丁换结构修复，零重复逻辑）✅ ｜ SRP（`ToolCallLine` 只管编排，参数渲染全在 `ParamsTree`）✅ ｜ SLAP（`ParamsPanel` 不自管浮层开合）✅
 
 ---
 
 ### 4.7 回归测试文件（**按 AGENTS 铁规不提交**）
 
+> **落位（实施后回填）**：`frontend/src/tests/unit/params-tree.test.tsx`——**不在组件同目录**，因仓内 `vitest.config` 的 `include` 只扫 `src/tests/**`（详见 §4.1 落位订正）。因此 import 走 `@/` 别名。
+
 ```tsx
 // 2026-10-13 小欧 - 文档[29]§3.1 第 5 项: 展开区行为回归测试
 //   ⚠️ AGENTS 铁规「严禁提交任何测试 case 代码」—— 本文件仅本地保留, git add 时勿纳入
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import React from 'react';
-import { ParamsTree } from './ParamsTree';
+// 2026-10-13 小欧 - 落位在 src/tests/unit(跨目录), 故用 @/ 别名而非相对路径
+import { ParamsTree } from '@/features/chat/components/pipeline/ParamsTree';
 
 const entries: Array<[string, unknown]> = [
   ['file_path', 'F:\\a\\main.py'],
@@ -2034,17 +2088,21 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 
   it('标量键无折叠箭头, 恒单行', () => {
     render(<ParamsTree entries={entries} />);
-    expect(screen.getByText('utf-8')).toBeTruthy();
+    // 2026-10-13 小欧 - 九轮核查订正: 节点值渲染为 `<span>: {summary}</span>`, 文本实为 ": utf-8";
+    //   字符串匹配器(exact)要求全文相等, 用 'utf-8' 必然匹配失败 → 改正则部分匹配
+    expect(screen.getByText(/utf-8/)).toBeTruthy();
   });
 
-  it('点节点可展开长文本, 展开体限高由 maxNodeBodyHeight 控制', () => {
+  it('点节点可展开长文本(限高由 maxNodeBodyHeight 承担, 此处断言可展开)', () => {
     render(<ParamsTree entries={entries} maxNodeBodyHeight={240} />);
-    screen.getByText(/共 3 行/).click();
+    // 2026-10-13 小欧 - 实测订正: 原生 el.click() 不被 act() 包裹, React 18 的 setState 未刷新就断言 → 必失败
+    //   (实测 1 failed | 3 passed)。改用 RTL 的 fireEvent.click(内部 act 包裹) → 4 passed
+    fireEvent.click(screen.getByText(/共 3 行/));
     expect(screen.getByText(/line1/)).toBeTruthy();
   });
 
   it('空值渲染 (空) 而非空白', () => {
-    render(<ParamsTree entries={[[ 'x', undefined ]]} />);
+    render(<ParamsTree entries={[['x', undefined]]} />);
     expect(screen.getByText(/\(空\)/)).toBeTruthy();
   });
 });
@@ -2088,9 +2146,14 @@ describe('ParamsTree(展开区 JSON 树)', () => {
    content,
    children,
  }) => {
-   // ↑↓ 以下为未改动的既有行(useEffect 焦点管理 / hoverOpenedRef / closeToEntry / return 的 Popover 前后文), 原样保留:
-   //   entryRef、cardRef、wasOpen、hoverOpenedRef、onKeyDown(Escape) 等一行不动, 此处按 §1.4/§3.6 原有逻辑延续
-       <Popover
+// ↑↓ 以下既有行除 B5 两处外一行不动(useEffect 焦点管理 / closeToEntry / return 的 Popover 前后文):
+    //   entryRef、cardRef、wasOpen、onKeyDown(Escape) 原样保留, 按 §1.4/§3.6 原有逻辑延续;
+    //   **B5 两处需同步改**(E1 硬伤, 见下 diff ②): onMouseEnter 置位与 onClick 消费两处都加 hoverTriggered 门控
++  // 2026-10-13 小欧 - D-7 闭环(E1 硬伤): B5 补偿**只服务于 hover 触发**。
++  //   无 hover 触发时若仍置位/消费 hoverOpenedRef, 会出现纯点击下"点开后再点关不掉"
++  //   (mouseenter 无条件置 true → onClick 见 open=true 便吃掉关闭意图) → 故整条 B5 逻辑按 trigger 门控
++  const hoverTriggered = trigger.includes('hover');
+        <Popover
          open={open}
          onOpenChange={onOpenChange}
 -        trigger={['hover', 'click']}
@@ -2102,7 +2165,26 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 
 **规范判定**：OCP（加可选能力，既有签名与行为不变）✅ ｜ KISS-DIRECT（一个默认值 + 一处透传，无新状态/无新分支）✅ ｜ 禁 backward（默认值即旧行为）✅ ｜ SRP（触发方式归浮层壳，参数面板不感知）✅
 
-**行数变化**：**+8 −1**（接口注释 5 行 + prop 1 行 + 解构默认值 1 行 + `Popover` 改动 1 换 1）
+**行数变化**：**+12 −1**（接口注释 5 行 + prop 1 行 + 解构默认值 1 行 + `hoverTriggered` 声明 1 行 + B5 两处门控 2 行 + `Popover` 改动 1 换 1；实测 `git diff --numstat` = **+12 −1**）
+
+**改动 3**：B5 两处按 `hoverTriggered` 门控（E1 硬伤，见上）
+
+```diff
+        onMouseEnter={() => {
+-          hoverOpenedRef.current = true;
++          if (hoverTriggered) hoverOpenedRef.current = true;
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+-          if (open && hoverOpenedRef.current) {
++          // 纯 click 触发时无 hover 打开态, 不得吃点击(T36)
++          if (open && hoverTriggered && hoverOpenedRef.current) {
+            hoverOpenedRef.current = false;
+            return;
+          }
+```
+
+> **为什么必须改**：只把 `trigger` 透传给 `Popover` **不够**。`onMouseEnter` 是无条件置位，与 `trigger` 无关——纯点击模式下「鼠标移入→点开→再点一次」仍会命中 `open && hoverOpenedRef` 而被吃掉关闭意图，**用户点按钮关不掉**（T36 必挂、D-7 目的落空）。门控放在 `hoverTriggered` 单点，G6/G8 默认值下 `hoverTriggered=true`，其 B5 行为**一行未变**。
 
 ---
 
@@ -2114,10 +2196,10 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 | 2 | e2e 类型检查 | `npm run typecheck:e2e` |
 | 3 | Lint | `npm run lint` |
 | 4 | 格式检查 | `npm run format:check` |
-| 5 | 关联回归 | `npm run test -- --run ParamsTree`（**仅本地有测试文件时执行**；§4.7 按 AGENTS 铁规不提交，CI/他机无此文件即跳过） |
+| 5 | 关联回归 | `npm run test -- --run params-tree`（**仅本地有测试文件时执行**；§4.7 按 AGENTS 铁规不提交，CI/他机无此文件即跳过） |
 | 6 | 手工核对 | 按 §3.8 的 T1~T36 逐条走查（重点 T1 高度、T3 误折叠、T26/T28/T30 视觉一致性、**T35 图标不翻转、T36 纯点击触发**） |
 
 ---
 
 编写人：小欧
-编写时间：2026-10-13 10:08:09
+编写时间：2026-10-13 10:19:12
