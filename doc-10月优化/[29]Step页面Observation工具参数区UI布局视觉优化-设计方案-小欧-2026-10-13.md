@@ -1,8 +1,8 @@
-# [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
+﻿# [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
 
 创建时间：2026-10-13 08:26:25
-更新时间：2026-10-13 20:18:47
-版本：v2.7
+更新时间：2026-10-13 23:00:37
+版本：v2.10
 编写人：小欧
 更新人：小欧
 
@@ -10,6 +10,7 @@
 
 | 版本 | 时间 | 编写人 | 修改说明 |
 |---|---|---|---|
+| v2.11 | 2026-10-13 23:45:00 | 小欧 | **实施后十遍三堂会审的三处规则表脱节订正**（合规章 / 关联章）：①§3.4.3 令牌表 `PARAMS_PANEL_MAX_W/MIN_W` 由 640/320 同步为 **720/460**（北京老陈裁定「加宽浮层 + 标题不许换行不许折行」，文档原值未跟进=脱节）②`T33` props 白名单由 `{toolName,params,onClose}` 同步为 `{toolName,params,result?,onClose}`（第六章新增可选 prop）③§6.6 diff 着色补登 **DC-21 语义色借用登记**（`+`→`SUCCESS` / `-`→`ERROR`，禁用 `ORANGE_RED`）。另在 §2.5 反面清单新增两条实bug 记录：`-` 行误用橙 `ORANGE_RED`（违背规格「`-` 红」）、**所有含换行字符串被误当 diff 着色**（`stdout`/`content` 行首 `+`/`-` 误染）。旧版本历史一律保留 |
 | v1.0 | 2026-10-13 08:26:25 | 小欧 | 新建（北京老陈令：分析 Step 页面 observation 工具结果展开区参数区UI渲染缺点，出布局视觉优化方案）。三章结构：问题分析 / 优化问题解决方案 / 实施代码详细设计说明 |
 | v1.1 | 2026-10-13 08:50:40 | 小欧 | 三项裁定落地并重写第二三章：①**浮层定位由"取代展开区"改为"与展开区并存"**——展开区保留并改 **戊·JSON树** 渲染，浮层另挂在结果区之后由按钮触发；②浮层双视图定案 **乙·分组卡片（默认）+ 甲·规格表（可切换）**，面板头 Segmented 切换、localStorage 记忆；③浮层内不再二次折叠，打开即全量、超长内部滚动。补充 v1.0 未覆盖的历史沿革（参数区显示数量的两代决策）与内联区高度量化 |
 | v1.2 | 2026-10-13 08:57:21 | 小欧 | 全文 10 遍一致性核查，订正 13 处不一致 + 落 D1 裁定。①**行高口径统一为 16px**（项目规则「字号+4」），量化全改：`write` 5400px→**112px**（降 97.9%）、`find` 414→384px；②**删 3 个与既有令牌同值的新增令牌**（`PARAM_VALUE`/`BG.PARAM_PANEL`/`BORDER.PARAM_PANEL`），改直接复用，§3.4.3 留核查结论表；③删 `LineHeight` 新组，按既有内联模式；④**D1 裁定为乙**：浮层触发按钮**固定在工具行内**，不随展开态移动；⑤验收标准编号改前缀 `T1-T17`（避与 §2.5 视觉清单 `V1-V8` 同号）；⑥删 §3.5.1 残留面板底栏；⑦修 §3.4.1 标量键折叠表述矛盾、§3.8 指代错误、"顺带解决"漏列、展开区/浮层口径差异未说明、60 字符估算偏差、并行量化误用 write 专属值 |
@@ -28,6 +29,9 @@
 | v2.5 | 2026-10-13 10:19:12 | 小欧 | 九轮 10 遍全文核查（2123 行逐节读完）查出 **10 处**，其中 **2 处会直接导致实施/测试失败**：①**§4.5 两处 key 列 `width: 96/140` 缩进被顶格**（v2.4 订正 `break-word` 时丢了缩进，照抄代码块会让 `format:check` 失败）→ 缩进归位；②**§4.7 测试第 2 个 case `getByText('utf-8')` 必然失败**——节点值渲染为 `<span>: {summary}</span>`，文本实为 `": utf-8"`，字符串匹配器要求全文相等 → 改正则 `/utf-8/`；③**§3.4.2「点击节点 `onClick` 内 `e.stopPropagation()`」与 §4.4 代码冲突**（D-1 已把树移出 `role="button"`，父级不再是按钮；加回 stopPropagation 反而使节点文字选不中）→ 订正为「本章落地无 `stopPropagation`」；④**§4.1 高度链路复核写 `maxBodyHeight`**（那是 `ParamNode` 内部 prop，对外 prop 实为 `maxNodeBodyHeight`）→ 订正并说明逐层转授关系；⑤**§4.4 规范判定「无 useMemo 冗余」与代码里的 `copyText` useMemo 自相矛盾** → 改为说明 `useMemo` 的必要性（entries 新引用避免重复 stringify）；⑥**§4.4「值格式化 3 个纯函数」漏计**（实为 `classify`/`displayScalar`/`branchEntries`/`branchSummary` **4 个**）→ 订正；⑦**§3.5「`cardStyle` 注入宽/限高」与实现不符**（`PARAMS_CARD_STYLE` 只有响应式宽三件套，限高在 `ParamsPanel` body 480）→ 订正；⑧**§3.6「其 `onClick` 内 `e.stopPropagation()`」措辞误导**（实为 `FloatingEntry` 内部自带 `:98`，本功能不另写 onClick）→ 订正；**⚠️ v2.6 追认：此处的「订正」本身是错的**——它把「trigger 上有 `stopPropagation`」当成了「浮层内容不会外泄」，而 portal 的 React 冒泡路径不经过 trigger，导致 §4.0 D-6 错误存活至 v2.5，直至北京老陈实测报缺陷才在 v2.6 证伪并根治（见 §4.9、§4.0 D-6 改写）；⑨**§4.5「格式化全在 6 个纯函数」漏计**（实为 **7 个**，含 `readView`）→ 订正；⑩**§3.6 `.taskinfo-entry` 引用区间 `253-274` 不含 focus-visible**（实为 `:276-279`）→ 补全为 `:253-279` 并逐段注明归属。**实施后追加 3 处落盘事实**：⑪**§4.7 测试落位与仓内 `vitest.config` 冲突**——`include` 只扫 `src/tests/**`，放组件同目录实测报 `No test files found`（写了永远跑不起来的死代码）→ 改落 `src/tests/unit/params-tree.test.tsx` + import 换 `@/` 别名（否则 `Failed to resolve import`），§3.1/§4.1/§五第 5 步命令同步；⑫**§4.7 测试用原生 `el.click()` 必失败**（不被 `act()` 包裹，React 18 的 `setState` 未刷新即断言，实测 `1 failed | 3 passed`）→ 改 RTL `fireEvent.click`，实测 **4 passed**；⑬**§4.1/§4.6.8 的行数估值全部按 `git diff --numstat` 实测回填**（`ToolCallLine` 实为 **+78 −98 → 515 行、净 −20**，非估的「+40 −95 → 480、净 −55」；`ParamsTree` **+260**、`ParamsPanel` **+439**，均远超原估；`CopyButton` +15 −4 与 `stepStyles` +8 命中；`FloatingEntry` 实为 +7 −1） |
 | v2.6 | 2026-10-13 20:01:55 | 小欧 | 北京老陈报「点浮层 ✕ 竟让 JSON 折叠窗口展开」。**D-6 的核心假设被实测证伪**（详见 §4.0 D-6 改写与新增 §4.9）。antd Popover 的 content 是 **portal 到 body** 的，React 事件冒泡走 **React 组件树**而非 DOM 树，portal 内容在 React 树里的位置是 trigger div 的**兄弟节点**，故浮层内点击**不经过** trigger 上的 `stopPropagation`，直达工具行 `toggleTool` 连带展开 JSON 树。①**D-6 由「确认可行」改判为错误并给出根治修法**（`FloatingEntry` 卡片根统一拦截，撤掉调用方逐点补丁）；②v2.5 第⑧项「措辞误导→已订正」的结论**本身也是错的**，一并订正；③**新增 §4.9「三浮层入口触发方式不一致」现状分析**——北京老陈报「实时页浮层参数有时悬停自动展开、有时需点击」，实测参数浮层本身行为正确（`trigger=['click']`），真因是同页另两个入口（事件时间轴 G8 / 上下文概览 G6）未传 `trigger`、走默认 hover+click，三者外观同为 `.taskinfo-entry` 故难以分辨。**北京老陈裁定「问题2 不修改，就这样」**，故只登记现状与候选方案、不改代码 |
 | v2.7 | 2026-10-13 20:18:47 | 小欧 | 北京老陈问「工具执行的 result，没有经过 format 格式化的 result-data 有没有发送到前端」。核查结论（记入 **§4.9.7**）：顶层原始 `result` **不发前端**（只进后端 prompt 日志 `raw_data=`）；`llm_data`/`other_data` **原样下发**。核查中注意到「所有 `OBS_*` 限长常量都在 `observation_formatter.py`、它只产出 `data_text`，`llm_data` 入站无任何截断，SSE 层亦无帧上限」这一现象。**北京老陈裁定：这是有意设计，不改**——限长的目的是控制喂给 LLM 的 token，而非控制下行浏览器的字节。本版仅登记该裁定与依据，**零代码改动**，防日后被当缺陷重复排查 |
+| v2.8 | 2026-10-13 22:37:17 | 小欧 | 北京老陈令：浮层增设**第三个「结果」标签**渲染工具结果（`raw_data`）。**新增第六章**（§6.1~§6.12），第一~五章口径零改动。定案要点：①**后端已就绪**（`observation_builder.py:140` 已把 `raw_data` 列入 `tool_result`，`sseParser.ts:904` 整数组原样透传）→ **纯前端工作**；②**排除分组视图**（北京老陈质疑后核实：`categorize()` 分类键集为**入参**调校，`stdout`/`exit_code`/`entries`/`rows` 全落兜底组，分类纯噪音）；③排除 `ParamsTree`（多一层 `{}` 壳）；④**规格表为基底 + `valueMode` 依赖注入**，默认 `'param'` 渲染路径与样式逐像素不变；⑤北京老陈选**方案 B**（不改共享 `fullTextOf`）、明令**规格表样式不许改变**；⑥**结果视图不显示任何额外标签**；⑦**不兜底铁律**（`raw_data` 空即空白，禁止回退 `llm_data`/`data_text`/`other_data`）；⑧北京老陈裁定**不限制 `raw_data` 体积**；⑨**diff 着色**（Q2=A，`+`绿/`-`红/`@@`蓝，仅结果模式生效）；⑩**G1/G3 裁定**：超长单行字符串不折叠但正常换行、顶层折叠内部不折叠 |
+| v2.9 | 2026-10-13 22:37:17 | 小欧 | 第六章**全量重写**（北京老陈令「67 个工具每一个都写上、内容逻辑通顺」）。新增 **§6.2 全量普查**：改用 **Python AST 递归解析**（非正则）扫描 `backend/app/tools/**` 13 个子目录，提取 `data={...}` / `build_*(data=)` / `data["k"]=v` 三类写法，对字面量缺失者逐个追变量到构造处；编码用 `utf-8-sig`（`document/write_*.py` 带 BOM，首轮解析失败 4 个，补 `sig` 后全量通过）。**命中 67 个工具**（原估 64），逐工具明细表按 7 个子目录分组列出，字段形态归为 8 类。另新增 §6.3 不渲染字段清单（**只排 `read_media_file.base64_data` 一个**，另将 `bash._truncated`/`grep._truncated` 归为「私有键过滤」而非不渲染）、§6.2.4 三个特殊字段、§6.6 diff 着色、§6.8 五种状态分支全部「空白不兜底」 |
+| v2.10 | 2026-10-13 23:00:37 | 小欧 | 北京老陈令「补 6.13 渲染示意图，要包括所有 tool raw 的各种标签类型」。**新增 §6.13**，按 §6.2.2 的 8 种形态逐一给示意图（6.13.1 空 dict / 6.13.2 纯标量 / 6.13.3 长文本 / 6.13.4 对象数组 / 6.13.5 嵌套对象·演示顶层折叠内层不折叠 / 6.13.6 动态顶层键 / 6.13.7 私有键被过滤 / 6.13.8 base64 不渲染 / 6.13.9 diff 着色 / 6.13.10 折叠摘要三形态），字段名与取值**全部取自 §6.2.3 真实普查结果**，非虚构。另复述 §6.7 标签问题的最终裁定（北京老陈「三思三省」追问后）：判定准则为「标签价值 = 提供数据本身无法表达的信息」，故分类标签/类型标签/状态条全不加，保留折叠摘要（`共 N 行`/`{…} N 项`，提供长度维度）与 diff 行内着色 |
 
 ---
 
@@ -235,7 +239,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 | DC-02 | 总体路线 | 采用**浮层承载**（在方案一/二对比中选定方案一） | 北京老陈裁定 | §2.1 |
 | DC-03 | 展开区存废 | **保留**现有展开区，浮层为**新增**载体，二者并存 | 北京老陈裁定 | §2.1 §2.6 |
 | DC-04 | 展开区渲染形态 | **戊 · JSON 树**（顶层键默认折叠） | 北京老陈裁定 | §2.2 §3.4 |
-| DC-05 | 浮层视图 | **乙 · 分组卡片（默认）** + **甲 · 规格表（可切换）**，antd `Segmented` + localStorage 记忆 | 北京老陈裁定 | §2.3.1 §3.5.4 |
+| DC-05 | 浮层视图 | **乙 · 分组卡片（默认）+ 甲 · 规格表（可切换）+ 丙 · 结果（第六章新增，`raw_data` 非空才有内容）**，antd `Segmented` + localStorage 记忆（**`结果` 段不记忆**，见 §3.5.4 记忆行） | 北京老陈裁定 | §2.3.1 §3.5.4 |
 | DC-06 | 浮层内是否按项数折叠 | **不折叠**：打开即展示全部参数键；巨型单值的「共 N 行 · 展开」不属此列（见 §2.3.3） | 北京老陈裁定 | §2.1 §2.4 S6 |
 | DC-07 | 并行工具的浮层行为 | 并行 N 工具仍是 **N 条独立子行**（现状不变）；浮层**单例互斥**，任意时刻最多一个面板亮着 | 北京老陈确认 | §2.1 §3.2 |
 | DC-08 | 参数显示范围 | **全量展示**，不做"只显几个关键参数"的取舍 | 北京老陈确认（现状即全量） | §1.2 §3.3 |
@@ -276,6 +280,8 @@ const tParamText = JSON.stringify(t.params ?? {});
 | **浮层按钮用 `GearIcon`** | 该图标系统语义为「工具执行等待」转圈齿轮，复用会误导为"加载中"（DC-22） | 2026-10-13 |
 | **裸 `▸`/`▾` 字符做折叠切换** | 系统折叠一律 `CircleArrow(14, PRIMARY)` + 「展开/收起」（`CollapsibleText.tsx:109-115`）（DC-20） | 2026-10-13 |
 | **浮层宽度凭空定值**（无断点依据） | 须接系统断点矩阵（`TaskInfoBar.tsx:26`）与 `EllipsisTip` 降级原则（DC-19） | 2026-10-13 |
+| **用 `ORANGE_RED` 表示 diff 的 `-` 删除行** | `ORANGE_RED(#fa541c)` 的令牌语义是「未执行/安全拦截/超时警示」且色相为**橙**，表示"删除行"既色相错配又语义错配。北京老陈规格明文「`-` 红」，故改用 `Colors.ERROR(#ff4d4f)` | 2026-10-13 23:40 |
+| **把所有含换行的字符串当 diff 着色** | 结果模式下 `bash.stdout`/`read_file.content` 等**普通多行文本**的行首 `+`/`-` 会被误染成绿/红。着色判据必须是**字段名是 diff**，与是否含换行无关（§6.6） | 2026-10-13 23:40 |
 | **浮层入口自造热区** | 系统 `.taskinfo-entry` 已定义 hover/focus 规格（`index.css:253-274`）（DC-20） | 2026-10-13 |
 
 ### 2.3 浮层改造：乙（默认）+ 甲（切换）
@@ -314,9 +320,9 @@ const tParamText = JSON.stringify(t.params ?? {});
 | 项 | 定案 |
 |---|---|
 | 位置 | 面板头右侧，复制按钮 与 `✕` 左边 |
-| 控件 | antd `Segmented`，两段：`分组` / `规格表` |
+| 控件 | antd `Segmented`，三段：`分组` / `规格表` / `结果`（`结果` 为第六章新增，仅 `raw_data` 非空时有内容） |
 | 默认 | **分组**（层次清楚，为主视图） |
-| 记忆 | 写入 `localStorage`，下次打开沿用上次选择 |
+| 记忆 | 写入 `localStorage`，下次打开沿用上次选择。**⚠️ `结果` 段不记忆（2026-10-13 23:20 北京老陈裁定）**：67 个工具里有 20 个的 `raw_data` 是 `{}`，若记忆「结果」，用户下次打开**任意**工具浮层都会直接落在「结果」——对这 20 个就是一片空白（§6.1.3 不兜底，空白即正确表现），体感很差。故 `readView` 永不返回 `'result'`，「结果」仅本次面板会话内有效；`分组`/`规格表` 两态记忆行为**与改动前完全一致** |
 | 数据源 | 两视图共用同一份 `t.params`，零重复取数，切换零延迟 |
 | 无障碍 | 由 `FloatingEntry` 提供 `role="dialog"` + `aria-haspopup/expanded/controls/label`（`FloatingEntry.tsx:73-92`），**不自建**；`Segmented` 自带键盘可达 |
 
@@ -540,8 +546,13 @@ interface ParamsTreeProps {
 ```ts
 // 唯一新增项——尺寸令牌（既有结构无对应者）
 Size.PARAMS_PANEL_MAX_H    = 240         // 巨型值/节点展开限高
-Size.PARAMS_PANEL_MAX_W    = 640         // 浮层最大宽（甲规格表需宽）
-Size.PARAMS_PANEL_MIN_W    = 320         // 浮层最小宽（窄屏下限，见下方窄屏口径）
+Size.PARAMS_PANEL_MAX_W    = 720         // 2026-10-13 23:40 小欧 - 640→720: Segmented 由 2 项增至 3 项(加「结果」)后,
+                                          //   头部固定元素(图标+标题+Segmented+复制+✕)变宽, 标题已改 nowrap,
+                                          //   不加宽则被迫折行(北京老陈: 标题行不许换行不许折行)
+  Size.PARAMS_PANEL_MIN_W    = 460         // 2026-10-13 23:40 小欧 - 320→460: 标题 nowrap 所需下限(实测 ~141 标题
+                                          //   + ~130 Segmented + ~80 其余)。⚠️ 代码中必须写成
+                                          //   min(460px, calc(100vw-32px)) 而非固定 460 —— CSS 里 min-width
+                                          //   优先于 max-width, 固定值会在 <492px 视口下撑破视口(见 §2.4 第⑩项)
 ```
 
 **视觉一致性：直接复用既有令牌，禁新增颜色**
@@ -661,7 +672,7 @@ const VIEW_LS_KEY = 'step.params.view';
 |---|---|
 | 控件 | antd `Segmented` |
 | 默认 | `group`（分组） |
-| 持久化 | `localStorage[VIEW_LS_KEY]`，读取失败回落 `group`（fail-safe） |
+| 持久化 | `localStorage[VIEW_LS_KEY]`，读取失败回落 `group`（fail-safe）。**⚠️ 2026-10-13 23:20 北京老陈裁定：`结果` 段不持久化** —— `readView` 只认 `'spec'`，其余（含 `'result'` 与历史脏值）一律回落 `group`；`onViewChange` 收到 `'result'` 直接 return 不写盘。故「结果」仅本次面板会话有效，避免 20 个 `raw_data={}` 的工具默认落在空白页 |
 | 切换行为 | 仅换视图，数据与滚动位置**不重置** |
 
 #### 3.5.5 巨型值与复制（两视图共用）
@@ -771,7 +782,7 @@ content = 共 312 行
 | T8 | 展开区 JSON 树顶层键默认折叠；`content` 显示 `共 N 行` |
 | T9 | 树节点展开体限高 240px，超出内部滚动，不撑破展开区 |
 | T10 | 浮层默认「分组」视图，五类（路径/开关/编码/正文载荷/其他）按 §2.3.2 优先级链判定且不重复落组、空类不渲染、色条正确；切「规格表」后视图正确、滚动位置不重置 |
-| T11 | 视图选择写入 localStorage，刷新页面后沿用 |
+| T11 | 视图选择写入 localStorage，刷新页面后沿用。**⚠️ 2026-10-13 23:20 修订**：`分组`/`规格表` 两态写入并在刷新后沿用；**`结果` 段按北京老陈裁定不写入、不沿用**（旧脏值 `'result'` 读取时回落 `group`） |
 | T12 | 对象参数以多行缩进 JSON 显示；空值显示 `(空)` |
 | T13 | 长路径在展开区与浮层均不断词中间（`break-word`，非 `break-all`）；字体为 `FontFamily.MONO` |
 | T14 | 面板头复制与树头复制均能复制，产出格式符合 T23 |
@@ -793,7 +804,7 @@ content = 共 312 行
 | T30 | 分类色条全部取自 `Colors.BORDER.*` 中性灰阶，无 `WARNING`/`ACCENT_ORANGE`/`SUCCESS`/`ERROR` 等语义色（VC4） |
 | T31 | 浮层参数按钮图标为 antd `CodeOutlined`（非 `GearIcon`，后者语义为"工具执行等待"）；热区继承 `.taskinfo-entry` 规格（VC8/VC9） |
 | T32 | 参数区与页面既有代码块并排时观感一致：同 `BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`（VC2/VC10/VC11） |
-| T33 | `ParamsPanel` 的 props **只有** `toolName`/`params`/`onClose`（见 §4.0 D-3）；开合由 `FloatingEntry` 承担，编译通过（`npm run typecheck` 零错误） |
+| T33 | `ParamsPanel` 的 props **只有** `toolName`/`params`/`result?`/`onClose`（见 §4.0 D-3）；开合由 `FloatingEntry` 承担，编译通过（`npm run typecheck` 零错误）｜**2026-10-13 23:40 小欧 修订**：`result?` 为第六章「结果」标签新增的可选 prop（`Record<string, unknown> \| undefined`），参数视图不受影响，不破坏 D-3 的耦合约束（仍是 4 个 prop、无 state 提升、无事件回调） |
 | T34 | 全文无「JSON 语法着色」残留、无自造复制按钮残留（DC-19/DC-20 已落地，代码与文档同步） |
 | T35 | **图标不翻转**：浮层打开/关闭时，`浮层参数` 按钮内的 `CodeOutlined` **不发生 180° 旋转**（`.taskinfo-entry[data-open='true'] svg` 的翻转已被内联 `transform:'none'` 压制），且未改动共享 `index.css`（G6/G8 入口行为不变） |
 | T36 | **纯点击触发**：鼠标**悬停**工具行不弹浮层；点按钮即开、再点即关（`trigger=['click']`，D-7）；且不得出现「点一下反而关不掉」的 B5 首击被吃现象 |
@@ -2282,3 +2293,594 @@ D-7 为避免影响既有调用方（G6/G8），刻意规定「默认保持 `['h
 编写人：小欧
 编写时间：2026-10-13 10:19:12
 更新时间：2026-10-13 20:18:47
+
+---
+
+
+## 六、工具结果（`raw_data`）浮层渲染设计
+
+> 北京老陈 2026-10-13 令：浮层现有「分组 / 规格表」两个标签，**增设第三个「结果」标签**渲染工具结果；并提示仓内已有专用 toolresult 渲染方法可复用。
+> 状态：**设计定稿，待实施**。本章为新增内容，不修改第一~五章既有口径（§6.12 列明边界）。
+
+### 6.1 定位与数据源
+
+#### 6.1.1 `raw_data` 是什么
+
+`raw_data` 是工具返回的**结构化原始数据**，即 `tool_response.build_success(data=...)` 的 `data` 形参。它与 `data_text` 是两份不同的东西：
+
+| | `data_text` | `raw_data` |
+|---|---|---|
+| 产生方式 | 后端 `build_observation_text()` **格式化**产物 | 工具原始返回，**零加工** |
+| 限长 | 受 `tool_constants.py` 的 `OBS_*_MAX_*` 约束 | **无任何限长** |
+| 喂给谁 | LLM（作 tool message content） | 前端渲染用 |
+| 前端现状 | **零渲染**（`ToolResultRenderer` 不消费它） | **零渲染**（本章要补的就是它） |
+
+`raw_data` 里保留着 `data_text` 已截断掉的完整数据，例如 `truncated` 标志、未截断的完整 rows。
+
+#### 6.1.2 链路：后端已就绪，本次纯前端
+
+后端 `observation_builder.py:140` 已把 `raw_data` 列入 `tool_result[i]`：
+
+```python
+tool_result.append({
+    "tool_name": _tool, "llm_data": _llm,
+    "data_text": obs_text, "raw_data": _raw, "other_data": _other,
+})
+```
+
+前端 `sseParser.ts:904` 是 `step.tool_result = tr`——**整数组原样透传、零字段裁剪**，故 `raw_data` 已抵达组件层；`ExecutionStep.tool_result?: unknown`（`types/execution.ts:89`）类型宽松，无需改类型。
+
+**结论：后端与 SSE 层零改动，本功能 100% 前端工作。**
+
+补充事实：`app/tools/` 下 60+ 个工具文件的「约定②」都写着「出参返回原始 data，**禁止走 `truncate_data_for_frontend` 截断**——只对前端 yield 兜底」。但该函数已在 `094701c78`（2026-07-10 删死代码）被删除，**当前后端对 `raw_data` 完全不截断**，与本章设计一致。
+
+#### 6.1.3 不兜底铁律（本章最高优先级约束）
+
+> **`raw_data` 是什么就渲染什么。不得兜底、不得回退、不得与其他字段关联。**
+
+| 禁止 | 说明 |
+|---|---|
+| 禁止回退到 `llm_data` | `raw_data` 为空就是空，**不拿摘要/耗时/指标顶替** |
+| 禁止回退到 `data_text` | 两者是不同数据，不可互替 |
+| 禁止跨字段拼接 | 不做「`raw_data` 没有就去 `other_data` 找」这类联动 |
+| 禁止"贴心"占位 | `data={}` 就显示空白，不写「该工具未返回原始数据」之类的解释 |
+
+**理由**：兜底会让用户以为看到的是原始数据，实际是加工过的二手信息 —— 排查问题时这是致命的误导。
+
+### 6.2 全量普查：67 个工具的 `raw_data` 字段清单
+
+#### 6.2.1 普查方法与顶层结论
+
+- 扫描范围 `backend/app/tools/**`（含 13 个子目录：`dataanalysis` / `desktop` / `document` / `file` / `fundamental` / `network` / `system` / `timer` / `toolhelper` / `validate` / `win_registry` 等）
+- 方法：**Python AST 递归解析**（非正则），提取 `data = {...}` / `build_*(data={...})` / `data["k"] = v` 三类写法；对字面量缺失者再逐个追变量到构造处（`list_data` → `_build_list_success`、`_data` → `select_lines`、`tree_result` → `_get_directory_tree` 等）
+- 编码处理：`utf-8-sig`（`document/write_*.py` 带 BOM，首轮 `utf-8` 解析失败 4 个，补 `sig` 后全量解析通过）
+- **命中工具：67 个**（调用 `build_success` / `build_error` / `build_warning`）
+- **顶层 `data` 为 dict 者：67/67（100%）** —— 无 list / str / number 顶层，故 `Object.entries` 不会崩
+
+#### 6.2.2 字段形态总览（8 类）
+
+| 形态 | 数量级 | 折叠表现 |
+|---|---|---|
+| 空 dict `{}` | 20 个 | 空白 |
+| 纯标量（数字/布尔/短串） | 8 个 | `PlainValue` 直出 |
+| 长文本（含换行） | 9 个 | 原生折叠生效 |
+| 对象数组 | 14 个 | 需 `'result'` 模式折叠 |
+| 嵌套对象 | 4 个 | 需 `'result'` 模式折叠 |
+| **动态顶层键** | 2 个 | 平铺天然适配 |
+| **私有键（下划线前缀）** | 2 个 | 需过滤 |
+| **超长二进制** | 1 个 | **不渲染** |
+
+#### 6.2.3 逐工具明细表（67 个）
+
+> 「字面量键」= AST 直接抽到的 `data` 字典键；「追源」= 该工具的 `data` 由变量/函数构造，键在别处定义。
+
+**dataanalysis（6 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `analyze_data` | `columns`, `statistics`；**分组模式下顶层键为运行时分组值** `result[group_key][op]` | 嵌套对象 / **动态键** |
+| `execute_sql` | 成功 `{}`；校验失败 `{detected, suggestion, action}`；成功 `{syntax_valid}` | 空 / 嵌套 |
+| `filter_data` | `columns`, `rows[]`, `truncated`, `truncated_reason`, `warnings[]`（追源 `result_data`） | 对象数组 |
+| `generate_chart` | `{}` | 空 |
+| `get_db_schema` | `tables[]` = `{name, columns[], indexes[]}` —— **三层嵌套** | 对象数组 |
+| `query_sql` | `columns`, `rows[]`, `truncated`, `truncated_reason` | 对象数组 |
+
+**desktop（8 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `clipboard_control` | 读：`{text, original_len, truncated}`（追源 `_read_clipboard`）；写：`{}` | 长文本 / 空 |
+| `keyboard_control` | `{success}`（追源 `_type_text` / `_shortcut`）；错误 `{}` | 标量 / 空 |
+| `mouse_click` | `{}` | 空 |
+| `mouse_move` | `{}` | 空 |
+| `mouse_position` | `x`, `y` | 标量 |
+| `mouse_scroll` | `{}` | 空 |
+| `screen_capture` | `image_path`, `display` | 标量 |
+| `set_window_state` / `window_focus` | `{}` | 空 |
+| `window_info` | `windows[]` | 对象数组 |
+| `window_resize` | `width`, `height` | 标量 |
+
+**document（8 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `read_docx` | `text`, `tables[]`（追源 `result_data`，`tables` 条件存在） | 长文本 + 对象数组 |
+| `read_pdf` | `text`, `tables[]`, `images[]`（`images[]` 元素 = `{page, width, height, note}`，**note 是"图片已跳过"说明文本，非二进制**） | 长文本 + 对象数组 |
+| `read_pptx` | `slides[]`, `notes[]`（`notes` 条件存在） | 对象数组 |
+| `read_xlsx` | 多表 `{sheets[], sheet_names[], row_count}`；单表/CSV `{rows[], sheet_names[], row_count}`；另加 `truncated`, `truncated_reason` | 对象数组 |
+| `write_docx` / `write_pdf` / `write_pptx` / `write_xlsx` | `{}` | 空 |
+
+**file（12 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `compress_files` | 压缩结果字典**剔除** `source_path`/`destination_path`/`format`/`file_count`/`compressed_files`/`compression_ratio` 后的余量（追源 `safe_data`）；保留 `original_size`、`compressed_size` 等 | 嵌套对象 |
+| `copy_file` / `delete_file` / `move_file` / `rename_file` | `{}` | 空 |
+| `edit_text_file` | 成功 `{diff}`；失败 `{error_detail, params{path}}` | **diff（需着色）** / 嵌套 |
+| `extract_archive` | `output_dir`, `file_list[]` | 标量 + 对象数组 |
+| `grep_file_content` | `matches[]`, `total_files`, `total_matches`, **`_truncated`**, `truncated_reason` | 对象数组 + **私有键** |
+| `list_directory` | `entries[]`, `truncated`（追源 `_build_list_success`，元素 `{name, path, type, size, mtime}`） | 对象数组 |
+| `read_media_file` | `file_name`, `mime_type`, **`base64_data`** | **超长二进制 → 不渲染** |
+| `read_text_file` | `content`, `total_lines`, `line_count`, `start_line`, `end_line`（追源 `select_lines`） | 长文本 |
+| `search_files` | `matches[]`（元素 `{name, path, type, size}`） | 对象数组 |
+| `tree` | `entries[]`, `statistics{file_count, dir_count}`（追源 `_get_directory_tree`） | 对象数组 + 嵌套 |
+| `write_text_file` | `content_preview` | 短文本 |
+
+**fundamental（6 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `execute_shell_command` | `stdout`, `stderr`, **`_truncated`** | 长文本 + **私有键** |
+| `shell_engine` | 内部引擎，不直接作为工具出口 | — |
+| `send_notification` | `{}` | 空 |
+| `time_now` | `{}` | 空 |
+| `tool_search` | `matches[]`（元素 `{name, category}`）；无匹配时 `{"matches": []}` | 对象数组 |
+| `find_command` | `paths[]`（追源 `data`）；未找到时 `{}` | 对象数组 / 空 |
+
+**network（4 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `download_file` | `{}` | 空 |
+| `fetch_webpage` | `{content}`（Markdown 全文）；媒体类走 `media_result["data"]`；内容过短时 `result_data` 为 `{}` | 长文本 / 空 |
+| `http_request` | 成功 `data`；失败 `{error_detail, params{url[, status_code]}}` | 嵌套对象 |
+| `ping_port` | ping 模式 `ping_data`；port 模式 `{is_open, service}` | 嵌套 / 标量 |
+
+**system（5 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `create_task` / `delete_task` / `list_tasks` | `tasks[]`（`list_tasks`）；`create_task`/`delete_task` 为 `{}` | 对象数组 / 空 |
+| `event_log` | `events[]` | 对象数组 |
+| `get_system_info` | 按 `info_type` 动态组装 `basic{platform, platform_release, platform_version, architecture, processor, hostname, python_version}` / `cpu{physical_cores, logical_cores, ...}` / `memory` / `disk` / `network`；非法类型时 `{error_detail, valid_types}` | **动态键** + 嵌套 |
+| `find_command` | 见 fundamental | — |
+
+**timer（6 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `timer_list` | `timers[]` | 对象数组 |
+| `timer_set` | `trigger_at` | 标量 |
+| `timer_clear` / `query_calendar` / `time_add` / `time_diff` | `{}` | 空 |
+
+**validate / win_registry（5 个）**
+
+| 工具 | 字段 | 形态 |
+|---|---|---|
+| `file_type_checker` | 内部校验器，不直接作为工具出口 | — |
+| `registry_read` / `registry_delete` | `{}` | 空 |
+| `registry_write` | dry_run 时 `{dry_run}`；实际写入 `{}` | 标量 / 空 |
+
+#### 6.2.4 三个特殊字段
+
+| 字段 | 出处 | 说明 |
+|---|---|---|
+| **`base64_data`** | `read_media_file` | 图片/音视频 base64，**几百 KB ~ 几 MB 的单行字符串**。**不渲染**，见 §6.3 |
+| **`_truncated`** | `bash` / `grep_file_content` | 下划线前缀是后端「私有字段」命名约定。**过滤掉**，不作为表格行展示 |
+| **`diff`** | `edit_text_file` | 结构化 diff（`@@` hunk 头 + `+`/`-`/空格行首标记），后端已规范化，**需着色**，见 §6.6 |
+
+### 6.3 不渲染字段清单
+
+> 北京老陈裁定：**只排除一个字段**，其余一律渲染。结果标签的全部价值就是「看到原始数据」，把排查依据藏起来等于白做。
+
+| # | 工具 | 字段 | 不渲染理由 |
+|---|---|---|---|
+| 1 | `read_media_file` | `base64_data` | 单行 base64 可达几 MB，**渲染后完全不可读**（全是乱码字符），且该工具的真实信息是 `file_name` + `mime_type`，二者已单独展示 |
+
+**该字段的呈现方式**：整行不出现（不是显示为空、不是显示占位），即从 `Object.entries` 结果中过滤掉。
+
+**私有键的处理**：`bash._truncated` / `grep_file_content._truncated` 不属于「不渲染字段」，而是**私有键过滤**（§6.10 步骤 3），规则是：结果视图统一过滤所有下划线开头的键。
+
+**其余字段一律渲染**，包括体积大的：`bash.stdout/stderr`、`read_text_file.content`、`fetch_webpage.content`、`read_pdf.text`、`read_docx.text`、`edit_text_file.diff`、`rows` / `entries` / `matches` / `tasks` / `events` / `timers` / `windows` / `items` / `slides` / `tables` / `sheets` —— 它们靠浮层既有的滚动容器承载（面板外壳 `maxHeight:calc(100vh - 32px)` + 内容区 `overflowY:auto`），行数不裁剪。
+
+### 6.4 视图选型
+
+#### 6.4.1 排除「分组视图」（北京老陈质疑后核实确认）
+
+`categorize()` 的分类键集（`PATH_KEYS` / `SWITCH_KEYS` / `PAYLOAD_KEYS` / `SEARCH_KEYS` / `EXEC_KEYS` / `FORMAT_KEYS`）是**为工具入参调校**的：
+
+| | 键集举例 | `raw_data` 实际键 |
+|---|---|---|
+| 入参 | `path` `url` `cwd` `content` `command` | — |
+| 出参 | — | `stdout` `stderr` `exit_code` `entries` `rows` `columns` `line_count` `truncated` |
+
+`stdout` / `exit_code` / `entries` / `rows` **均不在任何分类键集内**，将全部落入兜底类「其他参数」——**整个结果挤在一个组里，分类成为纯噪音**。
+
+#### 6.4.2 排除 `ParamsTree`
+
+`ParamsTree` 带 `{}` 包裹壳与逐节点折叠，是为「展开区一棵紧凑 JSON 树」设计的范式。套在整个结果外会多一层无意义外壳，且与「规格表同构」的预期不符。
+
+#### 6.4.3 定案：规格表为基底 + 仅结果模式开启对象折叠
+
+**原样规格表有一处缺口**（初稿遗漏，实测代码后才发现）：
+
+```
+isHugeValue = typeof v === 'string' && v.includes('\n')   // 只认「含换行的字符串」
+fullTextOf  : object → JSON.stringify(v)                  // 紧凑单行，无缩进
+```
+
+对象 / 数组序列化后**单行、不含 `\n`** → `isHugeValue` 为假 → 不折叠、走 `PlainValue` 单行折行输出。`read` 一个 300 行文件时 `raw_data.content` 会变成一行超长文本，不可读。
+
+**解法（依赖注入，参数视图零变化）**：`SpecView` 增一个**可选** prop `valueMode?: 'param' | 'result'`，默认 `'param'` 即现有行为。
+
+| 判定 | `'param'`（默认，现状不变） | `'result'` |
+|---|---|---|
+| 值文本 | `fullTextOf(v)`（对象=紧凑单行 JSON） | 对象 / 数组 → `JSON.stringify(v, null, 2)` |
+| 可折叠 | `isHugeValue(v)`（仅含换行字符串） | `isHugeValue(v)` **∪** 对象 / 数组 |
+
+字符串的折叠规则两模式**完全一致**（沿用已定案口径「长单行字符串折行显示全部字符」）。
+
+### 6.5 折叠与换行规则（北京老陈裁定）
+
+| 裁定 | 落地 |
+|---|---|
+| **超长单行字符串不折叠，但可以换行** | 不改折叠规则。现有 `PlainValue` 已是 `whiteSpace:'pre-wrap'` + `wordBreak:'break-word'`，单行长串天然折行完整显示 |
+| **顶层折叠，内部不折叠** | `'result'` 模式下仅顶层值可折叠；嵌套对象的内层 JSON 一次性展开，不再逐层可折叠 |
+
+**两条裁定的共同效果**：`base64_data` 被排除（§6.3）后，剩下的单行长串（minified JSON、URL 串等）虽不折叠，但会正常折行 —— 不会被截断、不会被隐藏。
+
+### 6.6 diff 着色（Q2 = A）
+
+`edit_text_file` 的 `diff` 是结构化 diff（`@@ -a,b +c,d @@` hunk 头、`+` / `-` / 空格行首标记），后端 `observation_formatter.py:15` 已注明「格式已在工具内规范化」。纯黑文本渲染会丢失 diff 的视觉语义，故**在结果视图内为 diff 单独着色**：
+
+| 行首 | 颜色令牌 | 语义 |
+|---|---|---|
+| `+` | `Colors.SUCCESS` `#52c41a` | 新增行 |
+| `-` | `Colors.ERROR` `#ff4d4f` | 删除行 |
+| `@@` | `Colors.PRIMARY` `#1677ff` | hunk 头 |
+| 其他 | 常规前景色 | 上下文行 |
+
+**实现约束**：
+
+- 着色仅在 `'result'` 模式生效，**参数视图的 `diff` 参数不做着色**（规格表样式零改动）
+- 着色判据是**字段名是 diff**（`keyName` 为 `diff` / `*_diff` / `*Diff`），**不是**「值含换行」—— 否则 `bash.stdout`、`read_file.content` 等普通多行文本的行首 `+`/`-` 会被误染成绿/红（2026-10-13 23:40 小欧 修正的实bug）
+- 走 `ValuePre` 的 `<pre>` 容器，在渲染前把文本按行切分、对每行套 `<span style={{color}}>`；**不使用任何 HTML 注入**（React 文本节点天然转义，无 XSS 风险）
+- 折叠行为与普通长文本一致（diff 必含换行 → 原生折叠生效），折叠摘要复用 `summaryOf` 的「共 N 行」
+- diff 内部**不折叠**（§6.5 顶层折叠规则的延伸：巨型值展开后一次性全显）
+- **⚠️ DC-21 语义色借用登记（2026-10-13 23:40 小欧）**：DC-21 规定「语义色只给状态语义用」，而 diff 的 `+`/`-` 是**内容语义**（增/删），非状态语义，严格讲属DC-21 例外。经北京老陈规格「`+` 绿、`-` 红」裁定，**diff 行级增删特批借用 `SUCCESS`/`ERROR` 两枚**。三条约束：(1) 只借用这两枚，**禁用 `ORANGE_RED`/`WARNING`/`WAIT_ACTION`**（色相或语义不符，见 §2.5 反面清单）；(2) 作用域严格限定为 `valueMode='result'` 且字段名是 diff 的行级 span，**不扩散到任何标签色、分类色、状态色**；(3) 不新增令牌，全部复用 `stepStyles.ts` 既有值
+
+### 6.7 标签问题：北京老陈问「结果渲染里需要显示标签吗」
+
+**结论：不显示任何额外标签。** 逐项裁定：
+
+| 候选 | 决定 | 理由 |
+|---|---|---|
+| 分类标签（分组视图的色条 + 组名） | ❌ 不加 | 见 §6.4.1，对出参零信息量 |
+| 类型标签（`str` / `list[100]`） | ❌ 不加 | 展开后 JSON 一眼可见，冗余（YAGNI） |
+| 状态条（成功 / 失败 / 耗时） | ❌ 不加 | **展开区 `ToolResultRenderer` 已渲染**，浮层再放一份即重复展示 |
+| 字段名（key） | ✅ 保留 | 这不是标签，是数据本身，且 `stdout` / `exit_code` 等字段名自解释 |
+
+**职责切分由此确立**：展开区 `ToolResultRenderer` 管**元信息**（结果说成功了没、耗时多少），浮层「结果」标签管**结果正文与原始数据**，两者不重叠。
+
+**唯一的例外是 diff 的着色（§6.6）**，那不是标签，是行内语义着色。
+
+### 6.8 状态分支（**全部不兜底**）
+
+| 情况 | 渲染 | 是否回退 |
+|---|---|---|
+| `raw_data` 有内容 | 规格表（`valueMode='result'`） | — |
+| `raw_data === {}`（20 个工具的常态，§6.2.2） | **空白** | ❌ 不回退 `llm_data` |
+| `raw_data === null` / `undefined` | **空白** | ❌ 不回退 |
+| `tool_result` 缺失（结果未到达） | **空白** | ❌ 不回退 |
+| `other_data.synthetic === true`（被安全拦截） | **空白** | ❌ 不读 `other_data`、不回退 |
+
+> 依 §6.1.3，以上五种情况**一律渲染空白**，不显示任何解释性文案。空白本身就是准确的信息：该工具没有返回原始数据。
+
+### 6.9 可复用资产盘点
+
+| 资产 | 复用判断 |
+|---|---|
+| **`SpecView`**（同文件） | ✅ **基底**，加可选 `valueMode` 即可 |
+| `ValueToggle` / `ValuePre` / `PlainValue` | ✅ 直接复用（`ValuePre` 的 `flexBasis:100%` 整宽代码块正是对象展开所需形态） |
+| `summaryOf` | ✅ 已支持对象摘要 `{…} N 项` 与字符串「共 N 行」，折叠行文案无需新写 |
+| `CopyButton` | ✅ 面板头已在用 |
+| `ToolResultRenderer` | ⛔ **不复用**：只渲染 `llm_data` 小字段且**已在展开区渲染**，搬进浮层即重复（见 §6.7） |
+| `stepStyles` 令牌 | ✅ 全套复用，不新造任何样式 |
+
+### 6.10 数据通路与实施清单
+
+**数据通路（唯一改动点）**：
+
+```
+ToolCallLine ──result={results[i]}──> ParamsPanel ──> SpecView(valueMode='result')
+```
+
+`ParamsPanel` 新增**可选** prop `result?: Record<string, unknown>`（OCP，既有调用零影响）。
+
+**配对说明**：`t.params` 来自 `action.tools[i]`（入参），`result` 来自 `observations[].tool_result[i]`（出参），两者是不同数组、靠下标 `i` 隐式配对。浮层本就挂在 `i` 上，直接沿用同一下标即可，**不新增错位面**（既有 `tool-call-line-bugs` BUG-7 报的配对错位问题不由本功能引入）。
+
+| # | 步骤 | 文件 |
+|---|---|---|
+| 1 | `PARAMS_VIEW_MAP` / `VIEW_OPTIONS` / `readView()` 增 `result` | `ParamsPanel.tsx` |
+| 2 | `SpecView` 增可选 `valueMode`，`'result'` 分支启用对象折叠 | `ParamsPanel.tsx` |
+| 3 | 结果视图过滤：`base64_data`（§6.3）+ 下划线私有键（§6.2.4） | `ParamsPanel.tsx` |
+| 4 | diff 着色渲染器（§6.6），仅 `'result'` 模式生效 | `ParamsPanel.tsx` |
+| 5 | 面板头标题 / 复制内容按视图分支 | `ParamsPanel.tsx` |
+| 6 | `ToolCallLine` 传入 `result` | `ToolCallLine.tsx` |
+| 7 | 回归用例（AGENTS 铁规不提交） | `src/tests/` |
+
+**视图分支对照**：
+
+| 视图 | 面板头标题 | 复制内容 | 视图内容 |
+|---|---|---|---|
+| 分组 | `{tool} · 参数 N 项` | `key = value` 逐行（DC-16） | `GroupView` |
+| 规格表 | `{tool} · 参数 N 项` | `key = value` 逐行（DC-16） | `SpecView(valueMode='param')` |
+| **结果** | `{tool} · 结果` | `JSON.stringify(raw_data, null, 2)` | `SpecView(valueMode='result')` |
+
+标签名定案：**`结果`**（与「分组」「规格表」同为 2 字，语义准确）。
+
+### 6.11 可复用资产与不可复用项
+
+见 §6.9（资产盘点）与 §6.4（视图选型的排除过程）。
+
+### 6.12 边界（明确不做）
+
+| 边界 | 说明 |
+|---|---|
+| **不兜底（铁律）** | 见 §6.1.3 与 §6.8。`raw_data` 空即空白，**禁止**回退 `llm_data` / `data_text` / `other_data` |
+| **不截断 `raw_data`** | 北京老陈裁定。靠浮层既有滚动容器承载，行数不裁剪 |
+| **不改共享 `fullTextOf`** | 北京老陈选方案 B，走 `valueMode` 依赖注入 |
+| **不改规格表现有样式** | 北京老陈明令。`valueMode` 默认 `'param'`，参数视图渲染路径与样式**逐像素不变** |
+| **不推翻 v1.2 第②项裁定** | 「对象不再折叠, 直接 JSON 展示」在**参数视图**继续成立；仅结果视图按 §6.4.3 单独开启 |
+| **不改后端 / SSE** | 见 §6.1.2，已就绪 |
+
+### 6.13 渲染示意图（按 `raw_data` 的 8 种形态全覆盖）
+
+> 下列示意图的字段名与取值**全部取自 §6.2.3 的真实普查结果**，非虚构。
+> 图例：`▸` 折叠箭头 · `⧉` 复制 · `✕` 关闭 · `│ │ │` 代码块边框
+
+#### 6.13.0 面板骨架（三标签后）
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ◇ write_file · 结果        [分组 │ 规格表 │ 结果]        ⧉   ✕        │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│                        （内容区，唯一可滚动部分）                       │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+  ↑ 外壳 maxHeight:calc(100vh - 32px) + overflow:hidden
+  ↑ 内容区 flex:1 + overflowY:auto  —— 行数不裁剪，一行不截断
+```
+
+面板头随视图切换标题（§6.10）：
+
+| 当前视图 | 标题文案 |
+|---|---|
+| 分组 / 规格表 | `write_file · 参数 3 项` |
+| **结果** | `write_file · 结果` |
+
+#### 6.13.1 形态一：`data={}` 空 —— 20 个工具的常态
+
+以 `copy_file` 为例。**空白，不兜底、不解释**（§6.1.3 / §6.8）：
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ◇ copy_file · 结果          [分组 │ 规格表 │ 结果]        ⧉   ✕        │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│                                                                      │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+同一形态的工具：`copy_file` `delete_file` `rename_file` `move_file` `download_file`
+`generate_chart` `query_calendar` `time_now` `time_add` `time_diff` `timer_clear`
+`registry_read` `registry_write` `registry_delete` `write_docx` `write_pdf` `write_pptx`
+`write_xlsx` `mouse_click` `mouse_move` `mouse_scroll` `set_window_state` `window_focus`
+`send_notification` `create_task` `delete_task`
+
+#### 6.13.2 形态二：纯标量
+
+以 `window_resize` 的 `{width, height}` 为例：
+
+```
+│ width      1280                                                        │
+│ height     720                                                         │
+```
+
+其余标量型：`mouse_position` `{x, y}` · `ping_port` `{is_open, service}` ·
+`registry_write` `{dry_run}` · `execute_sql` `{syntax_valid}` · `timer_set` `{trigger_at}` ·
+`screen_capture` `{image_path, display}` · `write_text_file` `{content_preview}`
+
+#### 6.13.3 形态三：长文本（含换行 → 原生折叠生效）
+
+以 `read_text_file` 的 `{content, total_lines, line_count, start_line, end_line}` 为例：
+
+```
+│ content          ▸ 共 500 行                                          │
+│ total_lines      1200                                                 │
+│ line_count       500                                                  │
+│ start_line       1                                                    │
+│ end_line         500                                                  │
+│                                                                          │
+│   ┌────────────────────────────────────────────────────────────┐    │
+│   │  1  import React                                          │    │
+│   │  2  import { useState } from 'react'                      │    │
+│   │  3                                                          │    │
+│   │  4  export default function App() {                        │    │
+│   │  5    return <div>hello</div>                              │    │
+│   │  ...                                                      │    │
+│   └────────────────────────────────────────────────────────────┘    │
+     ↑ 等宽字体 / pre-wrap / break-word / 不限高不截断
+```
+
+同形态长文本：`bash.stdout` / `bash.stderr` / `fetch_webpage.content` /
+`read_pdf.text` / `read_docx.text` / `clipboard_control.text` / `edit_text_file.diff`
+
+#### 6.13.4 形态四：对象数组（表格类）
+
+以 `query_sql` 的 `{columns, rows, truncated, truncated_reason}` 为例：
+
+```
+│ columns          ▸ {…} 5 项                                           │
+│ rows             ▸ {…} 200 项                                         │
+│ truncated        false                                                 │
+│ truncated_reason  (空)                                                 │
+│                                                                            │
+│   ┌────────────────────────────────────────────────────────────────┐    │
+│   │ [                                                              │    │
+│   │   {                                                            │    │
+│   │     "0": [                                                     │    │
+│   │       1,                                                       │    │
+│   │       "alice"                                                  │    │
+│   │     ],                                                         │    │
+│   │     "1": [                                                     │    │
+│   │       2,                                                       │    │
+│   │       "bob"                                                    │    │
+│   │     ]                                                          │    │
+│   │   }                                                            │    │
+│   │ ]                                                              │    │
+│   └────────────────────────────────────────────────────────────────┘    │
+     ↑ 'result' 模式下对象/数组用 JSON.stringify(v, null, 2) 缩进输出，故可读
+```
+
+同形态：`list_directory.entries[]` · `search_files.matches[]` · `grep_file_content.matches[]` ·
+`event_log.events[]` · `list_tasks.tasks[]` · `timer_list.timers[]` · `window_info.windows[]` ·
+`search_web.items[]` · `tool_search.matches[]` · `extract_archive.file_list[]` ·
+`find_command.paths[]` · `filter_data.rows[]`
+
+#### 6.13.5 形态五：嵌套对象（**顶层折叠、内层不折叠**）
+
+以 `get_db_schema` 的 `tables[]` = `{name, columns[], indexes[]}` 为例，
+演示 §6.5「顶层折叠」的边界 —— 点开 `tables` 后，内层 `columns` 是一次性全展的，**不再逐层折叠**：
+
+```
+│ tables            ▸ {…} 12 项            ← 顶层，可折叠
+│                                                                          │
+│   ┌──────────────────────────────────────────────────────────────────┐  │
+│   │ [                                                                │  │
+│   │   {                                                              │  │
+│   │     "0": {                                                       │  │
+│   │       "name": "users",                                           │  │
+│   │       "columns": [                                               │  │
+│   │         { "name": "id", "type": "INTEGER" },                     │  │
+│   │         { "name": "email", "type": "TEXT" }                      │  │
+│   │       ],                        ← 内层：无折叠箭头，一键全展       │  │
+│   │       "indexes": [                                               │  │
+│   │         { "name": "idx_users_email", "columns": ["email"] }      │  │
+│   │       ]                                                          │  │
+│   │     }                                                            │  │
+│   │   }                                                              │  │
+│   │ ]                                                                │  │
+│   └──────────────────────────────────────────────────────────────────┘  │
+```
+
+#### 6.13.6 形态六：**动态顶层键**（无需特例）
+
+以 `get_system_info` 为例 —— 顶层键由 `info_type` 运行时决定，规格表平铺天然适配：
+
+```
+│ basic             ▸ {…} 7 项                                          │
+│   ┌──────────────────────────────────────────────────────────────┐   │
+│   │ {                                                              │   │
+│   │   "platform": "Windows",                                      │   │
+│   │   "platform_release": "10",                                   │   │
+│   │   "architecture": "AMD64",                                    │   │
+│   │   "processor": "Intel64 Family 6 Model 142",                  │   │
+│   │   "hostname": "DESKTOP-X",                                   │   │
+│   │   "python_version": "3.13.1"                                  │   │
+│   │ }                                                              │   │
+│   └──────────────────────────────────────────────────────────────┘   │
+│ cpu               ▸ {…} 4 项                                          │
+│   ┌──────────────────────────────────────────────────────────────┐   │
+│   │ {                                                              │   │
+│   │   "physical_cores": 8,                                         │   │
+│   │   "logical_cores": 16,                                        │   │
+│   │   ...                                                          │   │
+│   │ }                                                              │   │
+│   └──────────────────────────────────────────────────────────────┘   │
+│ memory            ▸ {…} 3 项                                          │
+│ disk              ▸ {…} N 项                                          │
+│ network           ▸ {…} N 项                                          │
+     ↑ 哪些键出现取决于本次 info_type，UI 不做任何预判
+```
+
+同形态：`analyze_data`（分组模式下顶层键 = 运行时分组值，如 `{华东: {mean: 1.2}, 华南: {mean: 0.8}}`）
+
+#### 6.13.7 形态七：**私有键被过滤**
+
+以 `bash` 的 `{stdout, stderr, _truncated}` 为例：
+
+```
+│ stdout             ▸ 共 42 行                                         │
+│ stderr             (空)                                              │
+│                                                                           │
+│   ┌─────────────────────────────────────────────────────────────┐    │
+│   │ PS F:\proj> pytest -q                                      │    │
+│   │ ......                                                      │    │
+│   │ 42 passed in 3.21s                                          │    │
+│   └─────────────────────────────────────────────────────────────┘    │
+                                                                           │
+│  ✗ _truncated 不出现在列表里  ← 下划线=后端私有字段约定，§6.2.4 过滤
+```
+
+同类：`grep_file_content._truncated`（其 `matches`/`total_files`/`total_matches`/`truncated_reason` 正常显示）
+
+#### 6.13.8 形态八：**`base64_data` 不渲染**
+
+以 `read_media_file` 为例（§6.3 唯一的不渲染字段）：
+
+```
+│ file_name         screenshot.png                                     │
+│ mime_type         image/png                                          │
+│                                                                           │
+│  ✗ base64_data 整行不出现 —— 不显示、不置空、不占位                   │
+│                                                                           │
+│  理由: 该字段是几百 KB~几 MB 的单行 base64, 渲染后全是乱码字符,          │
+│        且该工具的真实信息(file_name + mime_type)已在上方两行给出         │
+```
+
+同类：`fetch_webpage` 遇媒体类型时走 `media_result["data"]`，其中同样含 base64 → **同一过滤规则覆盖**
+
+#### 6.13.9 diff 着色（§6.6，Q2 = A）
+
+以 `edit_text_file` 的 `{diff}` 为例：
+
+```
+│ diff               ▸ 共 18 行                                        │
+│                                                                           │
+│   ┌───────────────────────────────────────────────────────────────┐    │
+│   │  @@ -12,7 +12,9 @@                                             │    │  ← 蓝（hunk 头）
+│   │   function old() {                                            │    │  ← 常规前景（上下文）
+│   │  -  return 1                                                  │    │  ← 红（删除）
+│   │  +  return 2                                                  │    │  ← 绿（新增）
+│   │  +                                                          │    │  ← 绿（新增空行）
+│   │   }                                                          │    │  ← 常规前景
+│   │  @@ -30,6 +32,7 @@                                             │    │  ← 蓝（hunk 头）
+│   │  -x = 1                                                       │    │  ← 红
+│   │  +y = 2                                                       │    │  ← 绿
+│   └───────────────────────────────────────────────────────────────┘    │
+                                                                           │
+│  着色仅在「结果」模式生效；参数视图的 diff 参数不着色（规格表零改动）      │
+```
+
+#### 6.13.10 折叠摘要的三种形态（`summaryOf` 现有实现，非新增标签）
+
+| 值形态 | 折叠行文案 | 示例工具 |
+|---|---|---|
+| 含换行字符串 | `共 N 行` | `bash.stdout`、`read_text_file.content`、`edit.diff` |
+| 对象 / 数组 | `{…} N 项` | `query_sql.rows`、`get_db_schema.tables` |
+| 标量 / 短串 | 不折叠，直接 `PlainValue` 直出 | `window_resize.width`、`execute_sql.syntax_valid` |
+
+> §6.7 裁定：这三类是**折叠控件自带的文案**与数据本身，不是额外标签系统；保留它们是因为它们提供的是「长度」这一数据里没有的维度。

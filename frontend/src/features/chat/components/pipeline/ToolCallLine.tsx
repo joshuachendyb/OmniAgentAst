@@ -139,8 +139,8 @@ const PARAMS_CARD_STYLE: React.CSSProperties = {
   // 2026-10-13 小欧 - 北京老陈裁定: 面板宽改为**按内容收缩**, 上限 640。
   //   原固定 640 时, 短参数(如 6 个短键)只用到 ~450px, 右侧空 30% 视觉重心偏左。
   //   fit-content = min(内容宽, 可用宽); 上限取 min(640, 视口-32) 一次表达两个约束;
-//   下限走 Size.PARAMS_PANEL_MIN_W(2026-10-13 23:20 由 320 抬至 460, 标题 nowrap + 三标签所需),
-//   且用 min(令牌, 100vw-32) 收敛 —— CSS 中 min-width 优先于 max-width, 固定值会在窄视口撑破。
+  //   下限走 Size.PARAMS_PANEL_MIN_W(2026-10-13 23:20 由 320 抬至 460, 标题 nowrap + 三标签所需),
+  //   且用 min(令牌, 100vw-32) 收敛 —— CSS 中 min-width 优先于 max-width, 固定值会在窄视口撑破。
   width: 'fit-content',
   minWidth: `min(${Size.PARAMS_PANEL_MIN_W}px, calc(100vw - 32px))`,
   maxWidth: `min(${Size.PARAMS_PANEL_MAX_W}px, calc(100vw - 32px))`,
@@ -410,6 +410,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                           onOpenChange={onPanelOpenChange}
                           placement="bottomRight"
                           trigger={['click']}
+                          // 2026-10-13 小欧 - 北京老陈裁定: 仅工具行参数浮层改视口居中(见 index.css
+                          //   .popover-viewport-centered 注释)。「上下文概览」「事件」两个浮层不传 centered, 行为零变化。
+                          centered
                           cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
                           ariaLabel={`${t.tool} 参数`}
                           cardStyle={PARAMS_CARD_STYLE}
@@ -438,14 +441,14 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                               alignItems: 'center',
                               gap: Spacing.XS,
                               // 2026-10-13 小欧 - B4 决策: 字号锁定 SECONDARY(12), 与**同行**摘要 12px 同层
-                              //   (就近基准)。系统另两档: G6 MetricItem label=11/数值=12、G8=10;
+                              //   (就近基准)。系统另两档: 上下文概览 MetricItem label=11/数值=12、事件=10;
                               //   若改 10/11 会比旁边摘要小一号、视觉失衡, 故取 12
                               fontSize: FontSize.SECONDARY,
                               // 2026-10-13 小欧 - 八轮核查 + 九轮复核: .taskinfo-entry 硬写 color:#999 / hover #1677ff
                               //   (index.css:261,269), 直接内联硬色会**压掉 hover 反馈**(内联优先级高于 class)
                               //   → 照搬系统既有机制(MetricItem.tsx:56-58 同款): color 走 CSS 变量,
                               //   .taskinfo-entry:hover 注入 --taskinfo-entry-active 即覆盖, 无 !important。
-                              //   关闭回落 SECONDARY、打开回落 PRIMARY(DC-12/T20), hover 仍变蓝与 G6/G8 一致
+                              //   关闭回落 SECONDARY、打开回落 PRIMARY(DC-12/T20), hover 仍变蓝与另两个入口一致
                               color: `var(--taskinfo-entry-active, ${
                                 openPanelIndex === i
                                   ? Colors.PRIMARY
@@ -454,8 +457,8 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                             }}
                           >
                             {/* 2026-10-13 小欧 - 八轮核查: .taskinfo-entry[data-open='true'] svg 会 rotate(180deg)
-                                  (index.css:272-274, 为 G6/G8 单图标入口设计), 本按钮 svg 会被翻转 → 内联压制,
-                                  不改共享 CSS 以免影响 G6/G8(T35) */}
+                                  (index.css:272-274, 为「上下文概览 / 事件」单图标入口设计), 本按钮 svg 会被翻转 → 内联压制,
+                                  不改共享 CSS 以免影响那两个入口(T35) */}
                             <CodeOutlined style={{ transform: 'none' }} />
                             浮层参数
                           </span>

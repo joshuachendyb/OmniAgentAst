@@ -33,9 +33,9 @@
 //   不误伤"新建会话默认折叠"定案(切会话serverTaskId清空为null不进守卫) — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 三堂会审(北京老陈质疑"什么鬼控件/有无不当重复/10大规范")方案A退回改方案B:
 //   方案A用 prevServerTaskIdRef+useEffect 绕到"serverTaskId变化"才展开, 违KISS-DIRECT(发送入口唯一却绕远路)/
-//   SRP(污染G2刷新列表effect)/YAGNI(为不存在的"重试"产任务路径通用化)+冗余依赖setRightOpen; 已撤销effect内改动;
+//   SRP(污染「任务列表刷新」effect)/YAGNI(为不存在的"重试"产任务路径通用化)+冗余依赖setRightOpen; 已撤销effect内改动;
 //   改为在唯一发送入口 handleSendWithMode 直线 setRightOpen(true)(发送即展开右侧step面板, 请求级失败右栏展开亦无副作用);
-//   "点击任务展开"与"发送任务展开"两触发源调同一setter非重复实现(DRY合规), G2 effect恢复单一职责 — 小欧-2026-09-15
+//   "点击任务展开"与"发送任务展开"两触发源调同一setter非重复实现(DRY合规),「任务列表刷新」effect恢复单一职责 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧(北京老陈定案): 左侧回复区只用 final.step.response 渲染——
 //   useChatPanels 调用新增 updateTaskResponse 透传(供 RightViewer 历史任务加载 steps 后写 final.response 到左侧) — 小欧-2026-09-15
 // 编辑历史: 2026-09-19 小欧: useChatFacade加onSuccess: () => setLiveError(null), 任务成功完成时清LiveMeta — 北京老陈驱动
