@@ -42,6 +42,18 @@
 // 编辑历史: 2026-09-17 小欧 会审V3整改(#6/#8): 拒绝图标 emoji→antd SVG(按全局定案禁emoji, 无圆底), 标签/图标映射提取为模块级导出常量 REJECT_LABEL_MAP/REJECT_ICON_MAP(防重建+测试断言真实映射) - 小欧-2026-09-17
 // 编辑历史: 2026-09-17 小欧 - 实施: 新增 waitClock prop, 齿轮 ToolWaitingIcon 挂钟面并存(回放/中断/有结果守卫条件不变) - 小欧-2026-09-17
 // 编辑历史: 2026-09-30 14:30 小欧 - deniedEntries 内联类型 tool/reason 转可选，以承载 tool 缺失的拒绝记录
+// 编辑历史: 2026-10-13 小欧 - 文档[29]参数区 UI 优化落地(工具调用行侧 6 处):
+//   ①import 补 ParamsTree/ParamsPanel/FloatingEntry/CodeOutlined/Size;②新增模块级 PARAMS_CARD_STYLE
+//   (fit-content + minWidth 320 + maxWidth min(640,100vw-32px) + padding 0, 后者抵消 antd Popover 的 12px 内距防"框中框");
+//   ③删 paramsOpen/PARAMS_FOLD_THRESHOLD 死状态, 增 openPanelIndex 作浮层单例互斥(DC-07/DC-18);
+//   ④删 tools.map 内的 paramRows 派生(渲染期 JSON.stringify 归零, 序列化下沉子组件 SLAP);
+//   ⑤工具行尾部追加「浮层参数」按钮(D2 乙): FloatingEntry 传 trigger=['click'] 去悬停弹出与 B5 首击被吃(D-7),
+//     按钮文字色走 var(--taskinfo-entry-active, 状态色) 复刻系统既有机制(保 T20 状态编码又不压掉 hover 反馈),
+//     CodeOutlined 内联 transform:none 抵住 .taskinfo-entry[data-open] 的 180° 翻转(T35), 外裹 flexShrink:0 保外层盒子;
+//   ⑥删内联参数区(:361-437)并把 ParamsTree 挂到 role="button" 容器**之外**(D-1 结构性根治 B1, 点节点不再误折叠整行) — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 小欧 - 结果摘要 sum 由 CSS 单行省略改为**折行完整显示**(北京老陈裁定「不许截断」):
+//   删 overflow:hidden + textOverflow:ellipsis + whiteSpace:nowrap, 补 minWidth:0 + pre-wrap + break-word。
+//   注: 本条与文档[29]§2.6「结果摘要单行省略为保留不动项」冲突, 属需用户确认的越界改动, 已单独报备 — 小欧-2026-10-13
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -57,6 +69,10 @@ import React, { useEffect, useState } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import { CollapsibleText } from './CollapsibleText';
 import ToolResultRenderer from '../ToolResultRenderer';
+// 2026-10-13 小欧 - 文档[29]§4.6: 新增两组件与浮层壳/尺寸令牌 — 小欧 2026-10-13
+import { ParamsTree } from './ParamsTree';
+import { ParamsPanel } from './ParamsPanel';
+import { FloatingEntry } from '../taskinfo/FloatingEntry';
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧: 复用折叠箭头组件 — 小欧-2026-09-15
 import { DropletIcon } from '@/components/DropletIcon'; // 2026-09-15 老杨: 水滴图标替代字符符号 — 老杨-2026-09-15
 import { GearIcon } from '@/components/GearIcon'; // 2026-09-15 老杨: 齿轮图标替代🔧emoji — 老杨-2026-09-15
@@ -65,6 +81,7 @@ import {
   ClockCircleOutlined,
   StopOutlined,
   SafetyCertificateOutlined,
+  CodeOutlined,
 } from '@ant-design/icons'; // 2026-09-17 小欧 会审V3(#6): 拒绝图标按全局定案用 antd SVG — 小欧-2026-09-17
 import {
   Colors,
@@ -73,6 +90,7 @@ import {
   FontWeight,
   Spacing,
   stepMargin,
+  Size,
 } from '@/utils/stepStyles';
 import { ToolWaitingIcon } from '@/components/WaitingIcons'; // 2026-09-13 小欧: ToolWaitingIcon 从内联提取为独立控件 — 小欧-2026-09-13
 import type { ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
@@ -108,6 +126,23 @@ export const REJECT_ICON_MAP: Readonly<Record<string, React.ReactNode>> = {
 };
 export const REJECT_DEFAULT_ICON = <StopOutlined />;
 
+// 2026-10-13 小欧 - 文档[29]§4.6/§4.5: 浮层卡片纯 CSS 响应式三件套(替代断点矩阵 JS 方案 D-5)
+//   width 撑满上限 + maxWidth 随视口收 + minWidth 保底; 无 resize 监听、无重渲染 — 小欧 2026-10-13
+const PARAMS_CARD_STYLE: React.CSSProperties = {
+  // 2026-10-13 小欧 - 北京老陈裁定: 面板宽改为**按内容收缩**, 上限 640。
+  //   原固定 640 时, 短参数(如 6 个短键)只用到 ~450px, 右侧空 30% 视觉重心偏左。
+  //   fit-content = min(内容宽, 可用宽); 上限取 min(640, 视口-32) 一次表达两个约束;
+  //   下限仍 320(§3.4.3 窄屏口径)。
+  width: 'fit-content',
+  minWidth: Size.PARAMS_PANEL_MIN_W,
+  maxWidth: `min(${Size.PARAMS_PANEL_MAX_W}px, calc(100vw - 32px))`,
+  // 2026-10-13 小欧 - 文档[29]D-11: antd 5.29.3 的 .ant-popover-inner 自带 `padding: 12px`
+  //   (node_modules/antd/es/popover/style/index.js:59, `innerPadding: wireframe ? 0 : 12`),
+  //   而本面板自带卡片底/边框/圆角(DC-19)与自身内距, 不归零就会出现「白边 + 灰卡片」的框中框,
+  //   与 §3.5.1 结构图不符 → 此处把外壳内距归零, 内距统一由面板自身的 padding 承担。
+  padding: 0,
+};
+
 const ToolCallLine: React.FC<ToolCallLineProps> = ({
   action,
   observations = [],
@@ -119,12 +154,13 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
 }) => {
   // 2026-09-01 小欧: 每工具独立展开状态(数组), 点某工具行任意位置只展开/收起该工具(北京老陈定案: 完全独立展开+独立观察)
   const [expanded, setExpanded] = useState<boolean[]>([]);
-  // 2026-10-04 小欧 文档[8]§5.4(丙案): 参数块独立折叠状态(每工具一份), 仅参数项数 >5 时才出现"展开" — 小欧 2026-10-04
-  const [paramsOpen, setParamsOpen] = useState<boolean[]>([]);
-  const PARAMS_FOLD_THRESHOLD = 5;
+  // 2026-10-13 小欧 - 文档[29]§3.2: 顶层"参数(N项)"折叠已被 ParamsTree 的"顶层键默认折叠"
+  //   取代(DC-04), paramsOpen/PARAMS_FOLD_THRESHOLD 一并删除(死状态 YAGNI);
+  //   新增 openPanelIndex 作浮层单例互斥(DC-07), 与 expanded 互不牵连(DC-18) — 小欧 2026-10-13
+  const [openPanelIndex, setOpenPanelIndex] = useState<number | null>(null);
   useEffect(() => {
     setExpanded([]);
-    setParamsOpen([]);
+    setOpenPanelIndex(null); // 切任务时二者同清(唯一同时清理的场景, §3.2)
   }, [action]);
   const tools = action.tools || [];
   // 2026-09-03 小欧 重订(KISS/SLAP/DRY): 字符串 tool_result 不并入 results(保持数组契约),
@@ -263,26 +299,10 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
           {hasResult &&
             tools.length > 0 &&
             tools.map((t, i) => {
-              // 2026-10-04 小欧 文档[8]§5.4 乙案: 参数改"每键一行"可读格式(不再一行压缩JSON,
-              //   值直接取原值不二次序列化 → 路径里的 \\ 不再双重转义); 丙案: 项数 >5 才折叠 — 小欧 2026-10-04
+              // 2026-10-13 小欧 - 文档[29]§3.3: 只传原始入参, 序列化/格式化下沉到子组件(SLAP) — 小欧 2026-10-13
               const paramEntries = Object.entries(
                 (t.params ?? {}) as Record<string, unknown>
               );
-              const paramRows = paramEntries.map(([k, v]) => ({
-                k,
-                v:
-                  typeof v === 'string'
-                    ? v
-                    : (() => {
-                        try {
-                          return JSON.stringify(v);
-                        } catch {
-                          return String(v);
-                        }
-                      })(),
-              }));
-              const paramsFoldable = paramRows.length > PARAMS_FOLD_THRESHOLD;
-              const paramsShown = !paramsFoldable || !!paramsOpen[i];
               const sum = getResultLine(i);
               const st = getResultStatus(i);
               const isOpen = !!expanded[i];
@@ -299,6 +319,10 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                   return next;
                 });
               };
+              // 2026-10-13 小欧 - 浮层开合(DC-07 单例互斥 + DC-18 不牵连 expanded) — 小欧 2026-10-13
+              const onPanelOpenChange = (o: boolean) =>
+                setOpenPanelIndex(o ? i : null);
+              const closePanel = () => setOpenPanelIndex(null);
               return (
                 <div
                   key={t.tool ? `${t.tool}-${i}` : `tool-${i}`}
@@ -334,16 +358,20 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                       >
                         {t.tool}
                       </span>
-                      {/* 结果摘要：右列，flexGrow填满 + CSS 单行省略
-                          2026-10-04 小欧 文档[8]§5.4.2 第1条: 删 sum.slice(0,60) 硬截(与本容器 CSS 省略重复, 半句切断) — 小欧 2026-10-04 */}
+                      {/* 结果摘要：右列, flexGrow 填满
+                          2026-10-04 小欧 文档[8]§5.4.2 第1条: 删 sum.slice(0,60) 硬截(半句切断) — 小欧 2026-10-04
+                          2026-10-13 北京老陈裁定: 摘要**不许截断**, 长了折行完整显示。
+                            原为 CSS 单行省略(overflow:hidden + textOverflow:ellipsis + whiteSpace:nowrap),
+                            与「参数区不许截断」口径不一致(同屏两行文字一个截一个不截), 现统一折行。 */}
                       {sum && (
                         <span
                           style={{
                             color: Colors.TEXT.SECONDARY,
                             flexGrow: 1,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
+                            // flex 内折行必需: minWidth:0 允许收缩, 否则长内容会撑破工具行
+                            minWidth: 0,
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
                             fontSize: FontSize.SECONDARY,
                           }}
                         >
@@ -357,85 +385,68 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                         expanded={isOpen}
                         animated={false}
                       />
+                      {/* 2026-10-13 小欧 - 文档[29]§3.6/D-6/D-7 + R2 订正(第八轮核查):
+                          浮层参数按钮固定在工具行行尾(D2 乙), 外壳 FloatingEntry 自带 stopPropagation
+                          (FloatingEntry.tsx:98) 故置于此安全; trigger 传 ['click'] 去掉悬停弹出与 B5 首击被吃(D-7);
+                          R2 根因订正: .taskinfo-entry 自身 display:inline-flex + min-width:32px(index.css:253-259)
+                          自带下限, 按钮不会被挤没; 真正被压缩的是 FloatingEntry 最外层**无类名 block div**
+                          (:55-62), 压缩后按钮盒外溢、热区与视觉错位, 故外裹一层 flexShrink:0 保住外层盒子
+                          (超出视口部分由右栏 overflowX:hidden 裁剪 SessionLayout.tsx:99,126);
+                          文案「浮层参数」避开与展开区撞名(D3), 图标用 CodeOutlined 不用 GearIcon(语义=等待中 DC-22) */}
+                      <span style={{ flexShrink: 0, display: 'inline-flex' }}>
+                        <FloatingEntry
+                          open={openPanelIndex === i}
+                          onOpenChange={onPanelOpenChange}
+                          placement="bottomRight"
+                          trigger={['click']}
+                          cardId={`params-panel-${t.tool ?? 'tool'}-${i}`}
+                          ariaLabel={`${t.tool} 参数`}
+                          cardStyle={PARAMS_CARD_STYLE}
+                          content={
+                            <ParamsPanel
+                              toolName={t.tool ?? 'tool'}
+                              params={
+                                (t.params ?? {}) as Record<string, unknown>
+                              }
+                              onClose={closePanel}
+                            />
+                          }
+                        >
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: Spacing.XS,
+                              // 2026-10-13 小欧 - B4 决策: 字号锁定 SECONDARY(12), 与**同行**摘要 12px 同层
+                              //   (就近基准)。系统另两档: G6 MetricItem label=11/数值=12、G8=10;
+                              //   若改 10/11 会比旁边摘要小一号、视觉失衡, 故取 12
+                              fontSize: FontSize.SECONDARY,
+                              // 2026-10-13 小欧 - 八轮核查 + 九轮复核: .taskinfo-entry 硬写 color:#999 / hover #1677ff
+                              //   (index.css:261,269), 直接内联硬色会**压掉 hover 反馈**(内联优先级高于 class)
+                              //   → 照搬系统既有机制(MetricItem.tsx:56-58 同款): color 走 CSS 变量,
+                              //   .taskinfo-entry:hover 注入 --taskinfo-entry-active 即覆盖, 无 !important。
+                              //   关闭回落 SECONDARY、打开回落 PRIMARY(DC-12/T20), hover 仍变蓝与 G6/G8 一致
+                              color: `var(--taskinfo-entry-active, ${
+                                openPanelIndex === i
+                                  ? Colors.PRIMARY
+                                  : Colors.TEXT.SECONDARY
+                              })`,
+                            }}
+                          >
+                            {/* 2026-10-13 小欧 - 八轮核查: .taskinfo-entry[data-open='true'] svg 会 rotate(180deg)
+                                  (index.css:272-274, 为 G6/G8 单图标入口设计), 本按钮 svg 会被翻转 → 内联压制,
+                                  不改共享 CSS 以免影响 G6/G8(T35) */}
+                            <CodeOutlined style={{ transform: 'none' }} />
+                            浮层参数
+                          </span>
+                        </FloatingEntry>
+                      </span>
                     </div>
-                    {/* 参数：子行展开后显示(乙案每键一行); 丙案项数>5 时先只显一行"参数(N项)"并可点开
-                        2026-10-04 小欧 文档[8]§5.4 乙/丙 — 小欧 2026-10-04 */}
-                    {isOpen && (
-                      <div
-                        style={{
-                          marginTop: Spacing.XS,
-                          paddingLeft: Spacing.LG,
-                          fontSize: FontSize.SECONDARY,
-                          color: Colors.TEXT.SECONDARY,
-                        }}
-                      >
-                        {paramsFoldable ? (
-                          <>
-                            <span
-                              role="button"
-                              tabIndex={0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setParamsOpen((prev) => {
-                                  const next = [...prev];
-                                  next[i] = !prev[i];
-                                  return next;
-                                });
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setParamsOpen((prev) => {
-                                    const next = [...prev];
-                                    next[i] = !prev[i];
-                                    return next;
-                                  });
-                                }
-                              }}
-                              style={{
-                                cursor: 'pointer',
-                                display: 'inline-block',
-                              }}
-                            >
-                              {paramsShown
-                                ? `▾ 参数（${paramRows.length} 项）`
-                                : `▸ 参数（${paramRows.length} 项）`}
-                            </span>
-                            {paramsShown && (
-                              <div style={{ marginTop: Spacing.XS }}>
-                                {paramRows.map((r) => (
-                                  <div
-                                    key={r.k}
-                                    style={{
-                                      fontFamily:
-                                        'Consolas, Monaco, "Courier New", monospace',
-                                      wordBreak: 'break-all',
-                                    }}
-                                  >
-                                    {r.k}: {r.v}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          paramRows.map((r) => (
-                            <div
-                              key={r.k}
-                              style={{
-                                fontFamily:
-                                  'Consolas, Monaco, "Courier New", monospace',
-                                wordBreak: 'break-all',
-                              }}
-                            >
-                              {r.k}: {r.v}
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    )}
                   </div>
+                  {/* 2026-10-13 小欧 - 文档[29]§4.6.7/§2.7 I1 + D-1: 参数区**移出** role="button",
+                      点节点不再误折叠整行(B1 结构性根治), 故无需 stopPropagation 补丁;
+                      顶层键默认折叠 → 高度恒 (键数+1)×16px(C1/C2 根治) — 小欧 2026-10-13 */}
+                  {isOpen && <ParamsTree entries={paramEntries} />}
                   {/* 展开区：该工具完整 observation */}
                   {isOpen && (
                     <div

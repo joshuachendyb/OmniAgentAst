@@ -15,6 +15,10 @@
    三堂会审: dim 类原无组件挂载(死规则)致裁定两态零落地, 现由 ReasoningIcon 按 dim 挂载; 订正"CSS变量"误导注释 — 小欧-2026-10-05 */
 /* 编辑历史: 2026-10-11 10:37:22 小欧 - 北京老陈令「按人类设计师设计优化」: 新增 .doc-body 作用域样式(只作用安全Tab说明弹框的 markdown 渲染: h2 章节分隔/ol 条目间距/code 浅蓝底+品牌色左线/strong 深色; 只依赖结构标签 h2/ol/ul/code/p/strong, 零文本假设, 后端文案改动不失效) - 小欧-2026-10-11 */
 /* 编辑历史: 2026-10-11 11:03:03 小欧 - 北京老陈令「表线要看得见」: .doc-body th/td 边框 #f0f0f0→#d9d9d9(!important 覆盖 MarkdownText 内联样式, 仅安全Tab作用域, 不影响全局 markdown 表格) - 小欧-2026-10-11 */
+/* 编辑历史: 2026-10-13 小欧 - 文档[29]§2.5 V8(解决 B3「参数区无任何交互反馈」): 新增 .params-clickable,
+   供参数区三处可点元素共用(树节点行 / 浮层巨型值折叠行 / 面板 ✕ 关闭) —— 一处规则不写三遍(DRY);
+   反馈规格与 .taskinfo-entry 字面对齐(#f0f0f0 底 + 2px #1677ff outline), 沿用既有色值不新增颜色令牌(DC-19);
+   走 CSS 而非 React onMouseEnter state, hover 零重渲染(KISS-DIRECT) - 小欧-2026-10-13 */
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -276,6 +280,21 @@
 .taskinfo-entry:focus-visible {
   outline: 2px solid #1677ff;
   outline-offset: 2px;
+}
+
+/* 2026-10-13 小欧 - 文档[29]§2.5 V8(解决 B3「参数区无任何交互反馈」): 本功能内**可点元素**的
+   hover / 键盘焦点反馈, 三处共用(树节点行 / 浮层巨型值折叠行 / 面板 ✕ 关闭), 一处规则不重复三遍(DRY)。
+   反馈规格与 .taskinfo-entry 字面对齐(#f0f0f0 底 + 2px #1677ff outline), 沿用既有色值不新增颜色令牌(DC-19);
+   走 CSS 而非 React 事件 state, hover 零重渲染(KISS-DIRECT)。 */
+.params-clickable {
+  border-radius: 4px; /* = Radius.SM */
+}
+.params-clickable:hover {
+  background: #f0f0f0;
+}
+.params-clickable:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: -1px; /* 行内元素贴紧缩进, 内缩避免视觉外扩 */
 }
 
 /* 2026-09-17 小欧 - 心跳等待感知微型钟面([46]第四章定案):

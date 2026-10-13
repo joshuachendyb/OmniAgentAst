@@ -22,6 +22,9 @@
 //   两种字形并存违 DRY。**本次仅新增令牌并改 MarkdownText 一处**, 存量 5 处尚未收敛(改动面超出本次
 //   范围, 需单独一轮统一), 故此处不作"已统一"表述, 避免注释失真 — 小欧-2026-10-05
 //   v3.7 小欧 订正: 原注释写的 MarkdownBody 已随"按文档第4章实施"删除, 消费端改为 MarkdownText.tsx — 小欧-2026-10-05
+// 编辑历史: 2026-10-13 小欧 - 文档[29]§3.4.3/D-4: 新增**尺寸**令牌组 Size(只管尺寸不管颜色, 严禁新增颜色令牌, 全部复用既有 Colors.*):
+//   PARAMS_PANEL_MAX_H=240(巨型值/树节点展开体限高) / PARAMS_PANEL_MAX_W=640(面板上限) / PARAMS_PANEL_MIN_W=320(窄屏下限)
+//   / PARAMS_PANEL_BODY_MAX_H=480(面板内容区限高)。命名沿用既有「名+量纲」风格(BorderWidth/FontSize/Radius) — 小欧-2026-10-13
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -182,6 +185,14 @@ export const Colors = {
   ACCENT_ORANGE: '#d4380d',
   WAIT_ACTION: '#fa8c16', // 工具执行等待齿轮橘(ToolWaitingIcon loader, 北京老陈钦定名 WAIT_ACTION, 与 ORANGE_RED/WARNING 同色带不冲突) — 小欧-2026-09-14
   WARNING_BG: '#fffbe6', // 警告背景（高亮浅底）
+} as const;
+
+// 2026-10-13 小欧 - 文档[29]§3.4.3/DC-19: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
+export const Size = {
+  PARAMS_PANEL_MAX_H: 240, // 巨型值 / JSON 树节点展开体限高（每层各自承担，DC-15）
+  PARAMS_PANEL_MAX_W: 640, // 浮层面板最大宽（甲规格表两列对照需宽）
+  PARAMS_PANEL_MIN_W: 320, // 浮层面板最小宽（窄屏下限，见 §4.5 响应式三件套）
+  PARAMS_PANEL_BODY_MAX_H: 480, // 2026-10-13 小欧 - 面板内容区总限高(D-4): 防止 23 项参数的面板超出视口
 } as const;
 
 // ==================== 步骤配置 ====================
