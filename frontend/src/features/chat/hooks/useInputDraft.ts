@@ -16,6 +16,13 @@ export interface InputDraftApi {
   draft: string;
   /** 与原生 useState 的 setState 同签名, 既有调用点(含函数式更新)零改动 */
   setDraft: React.Dispatch<React.SetStateAction<string>>;
+  /**
+   * 标记"正在提交"。必须在 setDraft('') 之后、await onSend 之前调用。
+   * 用途: 让本 hook 能把「发送建会话后的 sessionId 回填」与「用户真的切了会话」区分开。
+   */
+  markSubmitted: () => void;
+  /** 提交失败时撤销标记(否则残留标记会让下次切会话漏载入) */
+  cancelSubmitted: () => void;
 }
 
 /**
@@ -27,6 +34,10 @@ export const useInputDraft = (sessionId?: string | null): InputDraftApi => {
   const draftRef = useRef('');
   const sidRef = useRef<string | null>(sessionId ?? null);
   const initedRef = useRef(false);
+  /** 提交标记: 有提交正在飞 */
+  const submittedRef = useRef(false);
+  /** 提交之后用户是否又打过字(飞回填窗口内) */
+  const typedAfterSubmitRef = useRef(false);
 
   const applyDraft = useCallback((text: string) => {
     draftRef.current = text;
@@ -34,11 +45,15 @@ export const useInputDraft = (sessionId?: string | null): InputDraftApi => {
   }, []);
 
   /**
-   * 载入时机(关键, 错则会吞掉用户刚打的字):
+   * 载入时机(关键, 两处都错则会出事):
    *   ①首次挂载 → 载入, 用于刷新页面后恢复草稿;
-   *   ②之后仅当「上一次是非 null 的会话」且变成了别的会话 → 载入目标会话草稿(即真正的会话切换)。
-   *   刻意不在 null → 具体 id 时载入: 那是 useChatSend.ts:176 建会话后的回填(同一发送流程内),
-   *   用户很可能已接着打下一条, 此时载入新会话的空草稿会把刚打的字覆盖掉。
+   *   ②之后 sessionId 真的变了 → 载入目标会话草稿。这是**防草稿泄漏**的关键:
+   *      用户在「新会话」打了草稿后点别的会话, 必须载入目标会话草稿, 不能留着旧草稿。
+   *   ③唯一例外 —— 「发送建会话后的 null→sid 回填」: 同一发送流程内用户很可能已接着打下一条,
+   *      此时载入新会话的空草稿会把刚打的字覆盖掉。
+   *      判据 = 「提交标记在」且「上一次是无会话(null)」+「提交后又打过字」三条件同时成立。
+   *      该判据无歧义: 无会话时提交必然创建会话(useChatSend 建会话分支), 故 null→sid 只可能是回填;
+   *      而从会话列表点进已有会话时, 若 prev 已是具体 id, prev!==null 直接走正常载入。
    */
   useEffect(() => {
     const next = sessionId ?? null;
@@ -49,11 +64,16 @@ export const useInputDraft = (sessionId?: string | null): InputDraftApi => {
       applyDraft(loadDraft(draftKeyOf(next)));
       return;
     }
-    if (prev && prev !== next) applyDraft(loadDraft(draftKeyOf(next)));
+    if (prev === next) return;
+    const isSendBackfill =
+      submittedRef.current && prev === null && typedAfterSubmitRef.current;
+    submittedRef.current = false;
+    if (!isSendBackfill) applyDraft(loadDraft(draftKeyOf(next)));
   }, [sessionId, applyDraft]);
 
   const setDraft = useCallback<InputDraftApi['setDraft']>(
     (v) => {
+      if (submittedRef.current) typedAfterSubmitRef.current = true;
       const next = typeof v === 'function' ? v(draftRef.current) : v;
       applyDraft(next);
       saveDraft(draftKeyOf(sidRef.current), next);
@@ -61,5 +81,15 @@ export const useInputDraft = (sessionId?: string | null): InputDraftApi => {
     [applyDraft]
   );
 
-  return { draft, setDraft };
+  const markSubmitted = useCallback(() => {
+    submittedRef.current = true;
+    typedAfterSubmitRef.current = false;
+  }, []);
+
+  const cancelSubmitted = useCallback(() => {
+    submittedRef.current = false;
+    typedAfterSubmitRef.current = false;
+  }, []);
+
+  return { draft, setDraft, markSubmitted, cancelSubmitted };
 };

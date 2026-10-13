@@ -1,4 +1,4 @@
-// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 输入框组合根, 六组件组合, Props兼容父级+modelPickerSlot/onSend二参(8.14 E1)
+﻿// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 输入框组合根, 六组件组合, Props兼容父级+modelPickerSlot/onSend二参(8.14 E1)
 // 编辑历史: 2026-08-28 小欧 - ①A/a1: 去孤行+gap8, 指令+续聊并入SubmitBar leftExtra, 外层flex column gap8, 总高≤5行
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CI-01乐观清空(先save后清, onSend失败由父级回补)②CI-02增sessionId入参+useEffect重置draft防跨会话泄漏 — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 修复: handleSendInternal改async可回补, onSend抛错时还原draft/linked, 杜绝网络/500致输入丢失
@@ -84,7 +84,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
   setSessionWorkspaces,
 }) => {
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
-  const { draft, setDraft } = useInputDraft(sessionId);
+  const { draft, setDraft, markSubmitted, cancelSubmitted } =
+    useInputDraft(sessionId);
   // 2026-10-13 13:45 小欧: 本机最近提交历史(懒初始化一次; 写入只发生在本标签页, 无需跨标签页同步)
   const [recents, setRecents] = useState<RecentInput[]>(loadRecentInputs);
   // 2026-10-13 13:45 小欧: 历史翻动游标(-1 = 未在翻历史); histBackup = 上翻前正在输入的内容, ↓ 翻到底时回填
@@ -122,6 +123,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const backup = draft;
     exitHistory();
     setDraft('');
+    // 2026-10-13 小欧: 标记提交中, 使 hook 能区分「建会话回填」与「用户真切会话」
+    markSubmitted();
     try {
       await onSend(content, { linkEnabled, allowInterject }); // 对象参数, 见 3.5.4
       // 2026-10-13 13:45 小欧: **提交成功后**才记历史(onSend 抛错 = 提交失败, 不能记; 流式中途报错不 reject,
@@ -130,6 +133,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setRecents(loadRecentInputs());
     } catch {
       setDraft(backup);
+      cancelSubmitted();
     }
   };
 
@@ -145,9 +149,18 @@ const ChatInput: React.FC<ChatInputProps> = ({
       if (e.nativeEvent.isComposing) return;
       const el = e.currentTarget;
       const atFirstLine = el.selectionStart === 0;
+      // 翻动态下 caret 由下方 rAF 统一置于末尾, 故 ↓ 无需再判末行; 未翻动时 ↓ 不参与
       const atLastLine = el.selectionEnd === el.value.length;
 
-      if (e.key === 'ArrowUp' && recents.length > 0 && atFirstLine) {
+      // 2026-10-13 13:55 小欧 - 修正: 条件放宽为 histIdx>=0 || 光标在首行行首。
+      //   原写法只看 atFirstLine, 但翻出一条后光标已被置于末尾, 第二次 ↑ 因 selectionStart!==0
+      //   而不劫持 → 无法连续往更旧翻(与 bash 习惯不符)。已在翻动态时无条件续翻;
+      //   未进入翻动态时仍严格要求首行行首, 绝不影响多行光标移动。
+      if (
+        e.key === 'ArrowUp' &&
+        recents.length > 0 &&
+        (histIdx >= 0 || atFirstLine)
+      ) {
         const next = histIdx + 1;
         if (next >= recents.length) return;
         e.preventDefault();
@@ -160,7 +173,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
         return;
       }
 
-      if (e.key === 'ArrowDown' && histIdx >= 0 && atLastLine) {
+      if (
+        e.key === 'ArrowDown' &&
+        histIdx >= 0 &&
+        (atLastLine || histIdx > 0)
+      ) {
         e.preventDefault();
         const next = histIdx - 1;
         if (next < 0) {
