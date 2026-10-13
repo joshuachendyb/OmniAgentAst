@@ -29,6 +29,9 @@
 //   ⑧ 空串在结果模式下也给 `(空)` 占位(否则用户分不清"本来就没有"还是"渲染漏了"; 命中常态空 stderr);
 //   ⑨ 数组摘要用 `[]` 不用 `{}`(23 处 rows[]/matches[] 类字段); 空容器不配折叠箭头(fold 开一个空数组无意���).
 //   审计修正: 文件头概述与下方 ⑦ 的结论相反(头写"工具名改折行"), 已加注说明结论已反转 — 小欧-2026-10-13
+// 编辑历史: 2026-10-14 小欧 - 浮层纵向居中后修正外壳封顶: calc(100vh-32px) → calc(100vh-58px)。
+//   原值漏算 antd 外壳开销(inner padding 24 + 本外壳边框 2), 包裹层总高实为"视口-6";
+//   而纵向居中按包裹层总高算, 差 6px 即上下同时被切。另撤销下划线私有键过滤、补非 dict 防御。
 import React, { useMemo, useState } from 'react';
 import { Segmented } from 'antd';
 import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
@@ -813,12 +816,11 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
         border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
         borderRadius: Radius.SM,
         // 2026-10-13 小欧 - 北京老陈裁定「严禁限制行数」的正确落法:
-        //   行数**一个不裁剪**(各值不再有 maxHeight), 但浮层是 portal 到 body、脱离右栏滚动容器,
-        //   若完全不设限, 超视口的内容既无内部滚动也无外部滚动可到达 = 永远看不到(比限高更糟)。
-        //   故: 外壳限在视口内 + 头部固定 + 仅内容区滚动 —— 行数完整, 且能滚到全部。
+        // 行数不裁剪, 但浮层 portal 到 body 脱离右栏滚动容器, 完全不限高则超视口内容永远够不着。
+        //   故限高 + 头部固定 + 仅内容区滚动。58 = 留白32 + antd inner padding 24 + 边框2。
         display: 'flex',
         flexDirection: 'column',
-        maxHeight: 'calc(100vh - 32px)',
+        maxHeight: 'calc(100vh - 58px)',
         overflow: 'hidden',
       }}
     >

@@ -61,6 +61,9 @@
 //   ③ PARAMS_CARD_STYLE.minWidth 由固定 320 改为 min(Size.PARAMS_PANEL_MIN_W, 100vw-32):
 //      CSS 中 min-width 优先于 max-width, 固定值会在 <492px 视口撑破视口(此坑见 [29] v2.4 第⑩项);
 //      原注释"下限仍 320"已过期(令牌同日由 320 抬至 460), 本次审计一并更正 — 小欧-2026-10-13
+// 编辑历史: 2026-10-14 小欧 - 浮层改纵向居中(北京老陈裁定): FloatingEntry 传 centered, 横向仍贴按钮;
+//   另订正 D-11 注释的事实错误 —— 卡片 padding:0 **去不掉** .ant-popover-inner 的 12px(外层元素),
+//   残留 24px 外壳开销改由 ParamsPanel 的 maxHeight 扣除。小欧
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -144,10 +147,9 @@ const PARAMS_CARD_STYLE: React.CSSProperties = {
   width: 'fit-content',
   minWidth: `min(${Size.PARAMS_PANEL_MIN_W}px, calc(100vw - 32px))`,
   maxWidth: `min(${Size.PARAMS_PANEL_MAX_W}px, calc(100vw - 32px))`,
-  // 2026-10-13 小欧 - 文档[29]D-11: antd 5.29.3 的 .ant-popover-inner 自带 `padding: 12px`
-  //   (node_modules/antd/es/popover/style/index.js:59, `innerPadding: wireframe ? 0 : 12`),
-  //   而本面板自带卡片底/边框/圆角(DC-19)与自身内距, 不归零就会出现「白边 + 灰卡片」的框中框,
-  //   与 §3.5.1 结构图不符 → 此处把外壳内距归零, 内距统一由面板自身的 padding 承担。
+  // 2026-10-13 小欧 - 文档[29]D-11: 归零卡片自身内距, 避免与卡片底/边框/圆角嵌套成"框中框"(DC-19)。
+  // ⚠️ 2026-10-14 小欧 订正: 此处**去不掉** .ant-popover-inner 的 12px(外层元素), 残留 24px
+  //   外壳开销由 ParamsPanel 的 maxHeight 扣除(calc(100vh - 58px))。
   padding: 0,
 };
 

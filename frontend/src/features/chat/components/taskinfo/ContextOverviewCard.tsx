@@ -25,6 +25,10 @@
  * HEAD_LABEL_WIDTH='9em', 数据行缩进与其同起点, 而分割线/摘要框/截断警示框左侧顶卡片边通栏(框内文字
  * paddingLeft:0), 标题右侧禁折行; ④截断警示框挪进「对话上下文」段内(truncated 属 conv_context)。
  * 排版经四轮反复(框缩进/文字缩进/通栏), 上列③为最终形态, 冲突的中间态注释已清理。
+ * 编辑历史: 2026-10-14 小欧 - 浮层长内容被屏幕切(北京老陈反馈): ①加 centered 纵向居中, 横向仍贴按钮
+ *   (只封顶 maxHeight 不够, 位置仍贴触发器生长, 近满屏高时会被 rc-trigger 上推过头切掉顶部);
+ *   ②cardStyle 补 maxHeight:'calc(100vh - 58px)' + overflowY:'auto', 高度由内容定但封顶不超屏;
+ *   58 = 留白32 + antd inner padding 24 + 边框2(卡片设 padding:0 去不掉 inner 的 padding)。
  */
 import React, { useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -212,13 +216,20 @@ export const ContextOverviewCard: React.FC<Props> = ({
       open={open}
       onOpenChange={setOpen}
       placement="bottomLeft"
+      // 2026-10-14 小欧 - 纵向居中(不贴按钮)。只封顶 maxHeight 不够: 位置仍贴触发器生长,
+      //   触发器在顶部时近满屏高的浮层会被 rc-trigger 上推过头 → 顶部被切(实测)。
+      centered
       cardId="taskinfo-context-card"
       ariaLabel="历史上下文"
       cardStyle={{
         // 2026-10-08 小欧 320→560: 摘要全文可达 2048 字符(六段 Markdown), 320px 窄栏会挤成细长条。
-        // 纵向不设上限(全展开不折叠), 只放宽宽让每行可读。
+        // 横向只放宽宽让每行可读, 不随内容变宽(width 定值 + maxWidth 兜视口)。
         width: 560,
         maxWidth: '90vw',
+        // 2026-10-14 小欧 - 高度由内容定但封顶不超屏; 超出走内部滚动(本卡片无固定头部,
+        //   故滚动容器是卡片自身)。58 = 留白32 + antd inner padding 24 + 边框2; 少了 26 会被上下切。
+        maxHeight: 'calc(100vh - 58px)',
+        overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         gap: Spacing.SM,
