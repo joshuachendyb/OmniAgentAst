@@ -1,8 +1,8 @@
 # [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
 
 创建时间：2026-10-13 08:26:25
-更新时间：2026-10-13 09:11:58
-版本：v1.6
+更新时间：2026-10-13 09:28:03
+版本：v1.7
 编写人：小欧
 
 **版本历史**
@@ -183,7 +183,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 ### 2.2 现有展开区改造：戊 · JSON 树
 
 ```
-● write成功:从第1-200行  ▾   ⚙ 浮层参数   ← 按钮固定在工具行行尾（D1 裁定乙 + D2 裁定顺序）
+● write成功:从第1-200行  ▾   </> 浮层参数   ← 按钮固定在工具行行尾（D1 裁定乙 + D2 裁定顺序）
   ▾ {
       ▸ "file_path"    : "F:\...\backend\app\main.py"
       ▸ "encoding"     : "utf-8"
@@ -226,7 +226,7 @@ const tParamText = JSON.stringify(t.params ?? {});
 | DC-07 | 并行工具的浮层行为 | 并行 N 工具仍是 **N 条独立子行**（现状不变）；浮层**单例互斥**，任意时刻最多一个面板亮着 | 北京老陈确认 | §2.1 §3.2 |
 | DC-08 | 参数显示范围 | **全量展示**，不做"只显几个关键参数"的取舍 | 北京老陈确认（现状即全量） | §1.2 §3.3 |
 | DC-09 | 浮层按钮纵向位置 | **固定在工具行内**（位置不随展开态移动） | 北京老陈裁定 **D1 乙** | §2.1 §3.6 |
-| DC-10 | 行内排列顺序 | `内容信息 │ ▸折叠箭头 │ ⚙浮层参数`（按钮在行尾） | 北京老陈裁定 **D2 乙** | §3.6 |
+| DC-10 | 行内排列顺序 | `内容信息 │ ▸折叠箭头 │ 浮层参数按钮`（按钮在行尾） | 北京老陈裁定 **D2 乙** | §3.6 |
 | DC-11 | 浮层按钮文案 | **`浮层参数`**（不是 `参数`，避免与展开区撞名） | 北京老陈裁定 **D3** | §3.6 §3.9 |
 | DC-12 | 浮层按钮是否带箭头 | **不带自带箭头**，开合以底色标识（关 `TEXT.SECONDARY` / 开 `PRIMARY`） | 小欧补充设计（避免与折叠箭头混淆成两级折叠） | §3.6 |
 | DC-13 | 行高口径 | **16px**（`FontSize.SECONDARY(12) + Spacing.XS(4)`，项目既定规则「字号+4」） | 小欧依既有规则推导 | §2.2 §3.4.3 |
@@ -235,6 +235,10 @@ const tParamText = JSON.stringify(t.params ?? {});
 | DC-16 | 浮层复制内容 | **`key=value` 逐行**（非 JSON），面向人工核对/贴工单 | 北京老陈裁定 **U3** | §3.5.5 |
 | DC-17 | 展开区 JSON 树复制 | **`JSON.stringify(params, null, 2)` 格式化 JSON**（新增树头 `⧉` 按钮），面向粘代码/交 LLM | 北京老陈裁定 **U3** | §3.4.1 |
 | DC-18 | 工具行展开态与浮层开合 | **各自独立，互不牵连**（折叠不关浮层，关浮层不折叠）；仅切任务时同时清理 | 北京老陈裁定 **U2** | §3.2 |
+| DC-19 | **视觉一致性铁律** | **禁新增颜色令牌**：键 `TEXT.SECONDARY`、值 `TEXT.STRONG`、面板 `BG.SECONDARY`+`BORDER.DEFAULT`+`Radius.SM`、等宽 `FontFamily.MONO`+`FontSize.CODE`，全部取自既有令牌；JSON 树**不做语法着色** | 北京老陈指令「UI视觉一致性检查与系统整体风格一致」 | §3.4.3 §3.5.1 |
+| DC-20 | **复用既有资产，不造轮** | 复制按钮复用 `CopyButton.tsx`；浮层壳复用 `FloatingEntry.tsx`（含焦点管理与 a11y）；折叠箭头复用 `CircleArrow`；省略+全文复用 `EllipsisTip`；热区复用 `.taskinfo-entry` | 北京老陈指令「与系统整体风格一致」 | §3.1 §3.4 §3.5 |
+| DC-21 | **分类色不得占用语义色** | 参数分类色条只用 `Colors.BORDER.*` 中性灰阶；`WARNING`/`ACCENT_ORANGE`/`SUCCESS`/`ERROR` 保留给状态语义 | 北京老陈指令「与系统整体风格一致」 | §3.5.2 |
+| DC-22 | 浮层触发按钮图标 | 用 **antd `CodeOutlined`**，不用 `GearIcon`（后者语义为"工具执行等待"） | 北京老陈指令「与系统整体风格一致」 | §3.6 |
 
 #### 2.2.2 被否决方案（留档，防重复讨论）
 
@@ -251,12 +255,18 @@ const tParamText = JSON.stringify(t.params ?? {});
 | 浮层视觉：**丙 紧凑清单 / 丁 双栏宽表 / 己 主从双栏** | 用户选乙（分组）+ 甲（规格表）双视图 | 2026-10-13 |
 | 浮层视觉：**戊 JSON 树** | 用户将该形态指派给**展开区**，浮层改用乙/甲 | 2026-10-13 |
 | JSON 树**嵌套深度限 2 层** | 北京老陈：「为什么要限制 不需要限制」 | 2026-10-13 |
+| **JSON 语法高亮配色**（绿/蓝/橘三色） | 系统无代码语法色系，`MarkdownText` 代码块是纯 `TEXT.STRONG` 单色；引入会与页面其它代码块观感割裂 | 2026-10-13 |
+| **自造浮层壳 + 自建 a11y** | 系统已有 `FloatingEntry` 封装（含焦点入卡、Esc 焦点回入口），自建必漏无障碍细节 | 2026-10-13 |
+| **自造 `⧉` 复制按钮** | 系统已有 `CopyButton.tsx`（1.5s「已复制」回退 + `aria-label` + 令牌化样式） | 2026-10-13 |
+| **分类色条用 `WARNING`/`ACCENT_ORANGE` 等语义色** | 分类是结构、状态是语义，混用会让用户误读为"有警告/异常" | 2026-10-13 |
+| **浮层按钮用 `GearIcon`** | 该图标系统语义为「工具执行等待」转圈齿轮，复用会误导为"加载中" | 2026-10-13 |
+| **裸 `▸`/`▾` 字符做折叠切换** | 系统折叠一律 `CircleArrow(14, PRIMARY)` + 「展开/收起」（`CollapsibleText.tsx:109-115`） | 2026-10-13 |
 
 ### 2.3 浮层改造：乙（默认）+ 甲（切换）
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ ⚙ write · 参数 6 项     [分组│规格表]              ⧉   ✕ │
+│ </> write · 参数 6 项     [分组│规格表]              ⧉   ✕ │
 ├────────────────────────────────────────────────────────────┤
 │ 【默认·分组视图】                                           │
 │ ▌ 路径                                                     │
@@ -396,11 +406,21 @@ const tParamText = JSON.stringify(t.params ?? {});
 
 | # | 文件 | 改动 |
 |---|---|---|
-| 1 | `frontend/src/features/chat/components/pipeline/ParamsTree.tsx`（新建） | 展开区 JSON 树组件（可折叠节点、限高滚动、语法着色、树头复制按钮） |
-| 2 | `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx`（新建） | 浮层面板（乙分组视图 + 甲规格表视图 + Segmented 切换 + 复制） |
+| 1 | `frontend/src/features/chat/components/pipeline/ParamsTree.tsx`（新建） | 展开区 JSON 树组件（可折叠节点、限高滚动、键值分色、树头复用 `CopyButton`） |
+| 2 | `frontend/src/features/chat/components/pipeline/ParamsPanel.tsx`（新建） | 浮层面板（乙分组视图 + 甲规格表视图 + `Segmented` 切换 + 复制） |
 | 3 | `frontend/src/features/chat/components/pipeline/ToolCallLine.tsx` | 展开区改挂 `ParamsTree`；工具行内加浮层触发按钮与 `ParamsPanel`（D1 裁定乙，位置固定） |
-| 4 | `frontend/src/utils/stepStyles.ts` | 新增参数区专用令牌（JSON 语法色、值色、面板尺寸、限高） |
+| 4 | `frontend/src/utils/stepStyles.ts` | 新增**面板尺寸**令牌（`Size.*`）；**不新增颜色令牌**，全部复用既有 `Colors.*` |
 | 5 | `frontend/src/features/chat/components/pipeline/ParamsTree.test.tsx`（新建） | 展开区行为回归测试 |
+
+**复用优先（不新建已有资产）**
+
+| 复用 | 路径 | 替代了什么 |
+|---|---|---|
+| `CopyButton` | `frontend/src/components/markdown/CopyButton.tsx` | 自造的 `⧉` 复制按钮（含 1.5s「已复制」回退、a11y、令牌化样式） |
+| `FloatingEntry` | `frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx` | 自建浮层壳与 a11y（含焦点入卡、Esc 后焦点回入口） |
+| `CircleArrow` | `frontend/src/components/CircleArrow.tsx` | 自造折叠箭头（14px/PRIMARY 规格） |
+| `EllipsisTip` | `frontend/src/features/chat/components/taskinfo/EllipsisTip.tsx` | 自造「省略+悬停全文」 |
+| `.taskinfo-entry` | `frontend/src/index.css:253-274` | 自造浮层入口热区 |
 
 ### 3.2 状态设计（ToolCallLine.tsx 组件体）
 
@@ -425,7 +445,7 @@ const togglePanel = (i: number) =>
 | 操作 | 影响 `expanded[]`（工具行） | 影响 `openPanelIndex`（浮层） |
 |---|---|---|
 | 点 `▸` 折叠箭头 | ✅ 变 | ❌ 不变（浮层保持打开） |
-| 点 `⚙ 浮层参数` | ❌ 不变（工具行保持原状） | ✅ 变 |
+| 点 `浮层参数` 按钮 | ❌ 不变（工具行保持原状） | ✅ 变 |
 | 点 `✕` / 点外面 / `Escape` | ❌ 不变 | ✅ 关 |
 
 唯一同时清空二者的是**切任务**（`useEffect(..., [action])`，`:125-128`）——旧任务的面板与展开态都不该泄漏到新任务，属清理而非联动。
@@ -455,13 +475,13 @@ interface ParamsTreeProps {
 **树头（§3.4.1 结构图首行 `▾ {` 右侧）**
 
 ```
-▾ {                                    ⧉     ← 树头：折叠箭头 + 「复制」按钮（DC-17）
+▾ {                          [复制]    ← 树头：折叠箭头 + CopyButton（复用，非自造）
     ▸ "file_path"  : "F:\...\main.py"
     ▸ "content"    : "共 312 行"
   }
 ```
 
-复制内容为 `JSON.stringify(Object.fromEntries(entries), null, 2)`（格式化 JSON）。
+复制内容为 `JSON.stringify(Object.fromEntries(entries), null, 2)`（格式化 JSON）。按钮**直接复用 `frontend/src/components/markdown/CopyButton.tsx`**（`fontSize:11` + `BORDER.DEFAULT` 细框 + `Radius.SM` + 白底灰字 + 点击 1.5s 回「已复制」），**不自造图标按钮**——自造会与系统代码块右上角的复制按钮观感割裂（无「已复制」反馈、无 `aria-label`）。
 
 #### 3.4.1 结构与默认态
 
@@ -498,34 +518,45 @@ interface ParamsTreeProps {
 
 #### 3.4.3 样式令牌（stepStyles.ts 新增）
 
+**本功能不新增任何颜色令牌，全部复用既有 `Colors.*`。** 仅新增面板尺寸令牌：
+
 ```ts
-// 新增（均为既有结构中无对应项者，避免与既有令牌同值重复——见下方核查结论）
-Colors.JSON.KEY            = '#8c8c8c'   // JSON 键名
-Colors.JSON.STRING         = '#389e0d'   // JSON 字符串值
-Colors.JSON.NUMBER         = '#1677ff'   // JSON 数值
-Colors.JSON.BOOLEAN        = '#d46b08'   // JSON 布尔
+// 唯一新增项——尺寸令牌（既有结构无对应者）
 Size.PARAMS_PANEL_MAX_H    = 240         // 巨型值/节点展开限高
 Size.PARAMS_PANEL_MAX_W    = 640         // 浮层最大宽（甲规格表需宽）
 Size.PARAMS_PANEL_MIN_W    = 320         // 浮层最小宽（窄屏下限，见下方窄屏口径）
 ```
 
-**核查结论：以下三项不新增，直接复用既有令牌（同值，禁造别名）**
+**视觉一致性：直接复用既有令牌，禁新增颜色**
 
-| 拟新增 | 值 | 等值既有令牌 | 处置 |
-|---|---|---|---|
-| `Colors.TEXT.PARAM_VALUE` | `#595959` | `Colors.TEXT.PRIMARY` | **删，直接用 `TEXT.PRIMARY`** |
-| `Colors.BG.PARAM_PANEL` | `#fafafa` | `Colors.BG.SECONDARY` | **删，直接用 `BG.SECONDARY`** |
-| `Colors.BORDER.PARAM_PANEL` | `#f0f0f0` | `Colors.BORDER.LIGHT` | **删，直接用 `BORDER.LIGHT`** |
+| 用途 | 复用既有令牌 | 出处 |
+|---|---|---|
+| JSON 键名 | `Colors.TEXT.SECONDARY` `#8c8c8c` | `stepStyles.ts:145` |
+| JSON 值（字符串/数字/布尔**统一**） | `Colors.TEXT.STRONG` `#333333` | `stepStyles.ts:148` |
+| 参数值（浮层内普通值） | `Colors.TEXT.PRIMARY` `#595959` | `stepStyles.ts:144` |
+| 面板/代码块底 | `Colors.BG.SECONDARY` `#fafafa` | `stepStyles.ts:154` |
+| 面板/代码块边框 | `Colors.BORDER.DEFAULT` `#d9d9d9` + `BorderWidth.DEFAULT` | `MarkdownText.tsx:90` |
+| 圆角 | `Radius.SM` 4 | `MarkdownText.tsx:91` |
+| 等宽字体 | `FontFamily.MONO` | `stepStyles.ts:88` |
+| 代码块字号 | `FontSize.CODE` 12 | `MarkdownText.tsx:93` |
 
-**行高不新增令牌**：按项目既定规则内联 `${FontSize.SECONDARY + Spacing.XS}px`（同 `ToolCallLine.tsx:195`、`ToolResultRenderer` 等 6+ 处既有写法），新增 `LineHeight` 顶层组会与既有全部内联写法不一致。
+**已删除的拟新增项（三处，视觉不一致根因）**
+
+| 拟新增 | 值 | 删除理由 |
+|---|---|---|
+| `Colors.JSON.STRING` | `#389e0d` 绿 | 系统**无代码语法高亮色系**，代码块（`MarkdownText`）是纯 `TEXT.STRONG` 单色。引入五色语法会让 JSON 树在页面里与其它代码块**观感割裂**，破坏"全链仅 14/12 二档灰阶"的既定原则 |
+| `Colors.JSON.NUMBER` | `#1677ff` 蓝 | 同上 |
+| `Colors.JSON.BOOLEAN` | `#d46b08` 橘 | 同上 |
+
+> JSON 树的类型区分**靠等宽字体 + 缩进结构 + `▸` 箭头**，不靠颜色——与系统 `MarkdownText` 代码块观感对齐。
+
+**行高写法统一**：新组件内按既有模式内联 `${FontSize.CODE + Spacing.XS}px`（同 `ToolResultRenderer.tsx:109` 的 `FontSize.SMALL + Spacing.XS` 写法），**不新增 `LineHeight` 令牌组**，避免与仓内 6+ 处既有内联写法不一致。
 
 **`HUGE_VALUE_CHARS`(200) 不进 stepStyles**：它是**判定阈值**而非视觉令牌，落 `ParamsPanel.tsx` 模块级 `const HUGE_VALUE_CHARS = 200`（与 `PARAMS_FOLD_THRESHOLD` 现状同范式），避免为单一消费方开设计令牌（YAGNI）。
 
 **`Size` 命名说明**：既有组为 `BorderWidth`/`FontSize`/`Radius`/`Spacing`（"名 + 量纲"风格），故新组用 `Size.*` 承接面板尺寸，不新建 `PanelSize` 之类第四种风格。
 
-**窄屏口径**：浮层宽 `min(视口 - 32px, Size.PARAMS_PANEL_MAX_W)`，最小不低于 `Size.PARAMS_PANEL_MIN_W`(320)；窄于 320px 的视口下按 320 铺满并允许面板内滚动，不产生横向滚动条。
-
-字体一律引用既有 `FontFamily.MONO`（`:88`），不新增字体栈（解决 A8）。
+**窄屏口径**：面板宽接系统断点矩阵（`TaskInfoBar.tsx:26` 记载的 wide/mid/narrow/xsmall）——宽档用 `Size.PARAMS_PANEL_MAX_W`(640)，窄档降到 `Size.PARAMS_PANEL_MIN_W`(320)；最低不小于 320，窄于 320 的视口按 320 铺满并允许面板内滚动，**不产生横向滚动条**（与 `EllipsisTip`「超宽不横滚、靠折叠/Tooltip 降级」原则一致）。
 
 ### 3.5 `ParamsPanel.tsx` 设计（浮层 · 乙/甲双视图）
 
@@ -533,52 +564,61 @@ Size.PARAMS_PANEL_MIN_W    = 320         // 浮层最小宽（窄屏下限，见
 interface ParamsPanelProps {
   toolName: string;
   params: Record<string, unknown>;
-  open: boolean;
-  onClose: () => void;
-  /** 锚点触发按钮 —— 面板由 antd Popover 挂载，本 prop 即锚点来源 */
-  anchorEl?: HTMLElement;
+  children: React.ReactNode;   // FloatingEntry 的 content（GroupView / SpecView）
 }
 ```
 
-**容器选型定案**：用 **antd `Popover`**（`trigger="click"` + `open` 受控），不自绘浮层。理由：
+> 浮层开合、锚点、a11y、焦点管理**全部由 `FloatingEntry` 承担**，本组件只负责"渲染什么内容"与"面板内样式"（SRP）。
+
+**容器选型定案**：用**系统既有浮层统一壳 `FloatingEntry`**（`frontend/src/features/chat/components/taskinfo/FloatingEntry.tsx`）包裹 antd `Popover`，不自建浮层与 a11y。理由：
 
 | 项 | 说明 |
 |---|---|
-| 定位 | Popover 自带锚点跟随、视口边界翻转、点击外部关闭、`Escape` 关闭，四项需求零自研 |
-| 层级 | antd 默认 `z-index` 已高于流水线容器（`PipelineRenderer` 无 z-index），与现有浮层（`TaskInfoBar` 入口）同层，无冲突 |
-| 样式 | `overlayInnerStyle` 控宽/限高，`content` 内塞本文的 GroupView / SpecView 组件 |
+| 复用壳而非裸 Popover | `FloatingEntry` 已封装 `role="dialog"` + `aria-haspopup/expanded/controls/label`（`:73-77, 88-92`），且处理了两个自建必漏的坑：**打开后焦点入卡**（`:39-48`）、**Esc 关闭后焦点回入口**（`:50-53`）。漏焦点管理 = 键盘用户 Tab 进不去面板内容、关闭后焦点丢失（无障碍缺陷） |
+| 入口热区 | `FloatingEntry` 的 `.taskinfo-entry` 已定义 hover 底 `#f0f0f0` + focus 2px 蓝 outline（`index.css:253-274`），本功能触发按钮复用同一规格，不另造热区 |
+| 定位 | 由 `FloatingEntry` 的 `placement` 参数控制（`bottomLeft`/`bottomRight`），本功能取 **`bottomRight`**（贴工具行右缘向左展开，与摘要右侧的按钮位置呼应） |
+| 卡片样式 | 经 `cardStyle` 注入宽/限高；内容经 `content` 注入 GroupView / SpecView（内容自持 a11y 如 `role="log"`） |
 | 与 HITL 模态框 | `AuthorizationModal` 为模态（`z-index` 更高 + 遮罩），**命中安全确认期间浮层不自动关闭**（Popover 不响应遮罩点击），确认后恢复；两者不同时操作，无冲突 |
+| 单例互斥 | 仍由 `openPanelIndex` 单一真源控制（DC-07），壳只负责呈现 |
 
 #### 3.5.1 面板结构
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│ ⚙ write · 参数 6 项    [分组│规格表]        ⧉      ✕    │  ← 面板头
-├────────────────────────────────────────────────────────┤
+│ </> write · 参数 6 项    [分组│规格表]        ⧉      ✕    │  ← 面板头
+├────────────────────────────────────────────────────────┤ ← 1px BORDER.DEFAULT
 │                                                        │
 │              {view === 'group' ? <GroupView/>         │
 │                                 : <SpecView/>}         │
 │                                                        │
 └────────────────────────────────────────────────────────┘
+   外壳 = FloatingEntry（内含 antd Popover + role="dialog"）
+   卡片底 = BG.SECONDARY + BORDER.DEFAULT 1px + Radius.SM 4
 ```
 
-> 复制按钮唯一位于面板头（`⧉`），面板不设底栏。
+> 面板头复制按钮（`⧉`）**唯一位于面板头**，面板不设底栏。它与 `CopyButton`（代码块内绝对定位右上角）是**两种东西**：本按钮是**面板级**复制（一次带走全部参数），`CopyButton` 是**块级**复制（只复制单块代码）。二者内容格式不同（见 §3.5.5），实施时勿混用。
 
 #### 3.5.2 GroupView（乙 · 分组卡片 · 默认）
 
 按 §2.3.2 判定优先级链分**五类**，每类：左侧 2px 色条 + 类名小字标题，类内键值行。**空类不渲染**（如无 boolean 参数则不显「开关」条）。
 
-| 类 | 色条色 |
-|---|---|
-| 路径 | `Colors.PRIMARY` 蓝 |
-| 开关 | `Colors.WARNING` 琥珀 |
-| 编码 | `Colors.BORDER.ACCENT` 淡蓝 |
-| 正文载荷 | `Colors.ACCENT_ORANGE` 橘 |
-| 其他 | `Colors.BORDER.STRONG` 灰 |
+**色条用中性阶，不占用语义色**
+
+| 类 | 色条色 | 说明 |
+|---|---|---|
+| 路径 | `Colors.BORDER.STRONG` `#bfbfbf` | 中性灰最深 |
+| 开关 | `Colors.BORDER.DEFAULT` `#d9d9d9` | 中性灰中 |
+| 编码 | `Colors.BORDER.DEFAULT` `#d9d9d9` | 中性灰中 |
+| 正文载荷 | `Colors.BORDER.VERTICAL` `#e8e8e8` | 中性灰最浅 |
+| 其他 | `Colors.BORDER.LIGHT` `#f0f0f0` | 中性灰最浅 |
+
+> **为何不用语义色**：系统的 `Colors.WARNING(#AD6800)` / `ACCENT_ORANGE(#d4380d)` / `SUCCESS` / `ERROR` 承载**状态语义**（警告、事件计数、成功、失败）。拿它们当"参数分类色标"，用户会误读为"这个参数有警告/异常"。分类是**结构**，状态是**语义**，两者必须用不同视觉通道。故分类只用中性灰阶，类名靠**文字**区分。
 
 #### 3.5.3 SpecView（甲 · 规格表）
 
-固定两列：key 列宽 140px 右对齐灰字，value 列左对齐深字；行间 1px `BORDER.LIGHT` 分割线；巨型值整宽跨行成代码块，带行号。
+固定两列：key 列宽 140px 右对齐灰字（`TEXT.SECONDARY`），value 列左对齐深字（`TEXT.PRIMARY`）；行间 1px `Colors.BORDER.LIGHT` 分割线；巨型值整宽跨行成代码块（`BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`，与 `MarkdownText` 代码块同款）。
+
+**巨型值折叠切换规格（复用系统惯例）**：一律用 **`CircleArrow`(size=14, color=`Colors.PRIMARY`) + 文案「展开」/「收起」**（同 `CollapsibleText.tsx:109-115`），**不用 `▸`/`▾` 裸字符**——裸字符是本方案 v1.0 的旧写法，与系统既有折叠观感不一致。
 
 #### 3.5.4 视图切换
 
@@ -627,8 +667,8 @@ content = 共 312 行
 
 ```tsx
 <div key={...} style={{ marginTop: Spacing.XS }}>
-  {/* ① 工具行（flex 容器, gap: Spacing.SM），D2 裁定顺序：droplet + 工具名 + 结果摘要 + 折叠箭头 + ⚙浮层参数按钮 */}
-  {/*    ⚙浮层参数按钮插在 <CircleArrow/> 之后（行尾），其 onClick 内 e.stopPropagation() */}
+  {/* ① 工具行（flex 容器, gap: Spacing.SM），D2 裁定顺序：droplet + 工具名 + 结果摘要 + 折叠箭头 + </>浮层参数按钮 */}
+  {/*    </>浮层参数按钮 = FloatingEntry 的 children，插在 <CircleArrow/> 之后（行尾）；其 onClick 内 e.stopPropagation() */}
   <div role="button" onClick={toggleTool}>...</div>
 
   {/* ② 展开区：改 JSON 树（原位保留，仅随 isOpen 出现/消失） */}
@@ -645,12 +685,12 @@ content = 共 312 行
 **收起态一行的三部分与顺序（D2 裁定）**
 
 ```
-💧 read成功:从第1-50行   ▸   ⚙ 浮层参数
+💧 read成功:从第1-50行   ▸   </> 浮层参数
  └ ① 内容信息            └②      └ ③
    水滴(状态)+工具名
    +结果摘要(单行省略)
                           ② 折叠箭头：切换本行展开/收起（展开区+结果区）
-                          ③ ⚙浮层参数按钮：开关浮层面板，与 ② 互不相干
+                          ③ </>浮层参数按钮：开关浮层面板，与 ② 互不相干
 ```
 
 **③ 按钮文案定稿（D3 裁定）**：标签文字为 **`浮层参数`**，不是 `参数`——"参数"二字在流水线语境里已被"展开区（JSON 树）"占用，同名会让用户误以为两者是同一个东西。`浮层参数` 一眼区分「就地展开的那块」与「弹出来的面板」。
@@ -659,7 +699,11 @@ content = 共 312 行
 
 **按钮交互**：③ 虽在 `role="button"` 容器内，但 `onClick` 内 `e.stopPropagation()`，故点浮层参数按钮**不会**触发工具行折叠（解决 I1/B1）；反之点 ② 之外的其他区域仍照常折叠整行。
 
-**图标规格**：③ 用 `GearIcon`（同等待齿轮，`ToolCallLine.tsx:220` 已在用）+ 文字 `浮层参数`（D3 定稿），**无自带箭头**——面板开合以按钮底色变化标识（关=`Colors.TEXT.SECONDARY`，开=`Colors.PRIMARY`），避免与 ② 的折叠箭头混淆成"两级折叠"。
+**图标规格**：③ 用 **antd `CodeOutlined` + 文字 `浮层参数`**（D3 定稿），**不用 `GearIcon`**——`GearIcon` 在系统里的语义是「工具执行等待」转圈齿轮（`ToolCallLine.tsx:248` `ToolWaitingIcon`），复用会让用户误以为参数区正在加载。antd SVG 图标是项目既定规范（见 `ToolCallLine.tsx:96-109` `REJECT_ICON_MAP` 全量用 antd 禁 emoji）。
+
+**按钮无自带箭头**：面板开合以按钮**文字色**标识（关=`Colors.TEXT.SECONDARY`，开=`Colors.PRIMARY`），避免与 ② 的折叠箭头混淆成"两级折叠"。
+
+**按钮热区复用 `.taskinfo-entry`**：③ 用 `FloatingEntry` 作外壳后，热区自动继承 `index.css:253-274` 的既有规格（`min-width:32` / `min-height:20` / `border-radius:8` / hover 底 `#f0f0f0` / focus-visible 2px 蓝 outline），**不另造热区样式**。
 
 ### 3.7 高度链路验证（全局）
 
@@ -697,14 +741,21 @@ content = 共 312 行
 | T15 | `Escape` / 点外面 / `✕` 三种方式均可关闭浮层 |
 | T16 | 现有功能无退化：每工具独立展开、结果区渲染、并行同名工具不串味、展开区仍在原位 |
 | T17 | `npm run check:full` 通过（typecheck + typecheck:e2e + lint + lint:e2e + format:check） |
-| T18 | 收起态一行渲染顺序为 `水滴+工具名+摘要 │ ▸折叠箭头 │ ⚙浮层参数`；展开态顺序不变（D2） |
-| T19 | 点 `⚙ 浮层参数` 不触发工具行折叠；点该行其他区域仍照常折叠（T3 的补充分支） |
-| T20 | 浮层参数按钮无自带箭头；面板打开时按钮底色为 `PRIMARY`，关闭时为 `TEXT.SECONDARY` |
+| T18 | 收起态一行渲染顺序为 `水滴+工具名+摘要 │ ▸折叠箭头 │ </>浮层参数`；展开态顺序不变（D2） |
+| T19 | 点 `浮层参数` 不触发工具行折叠；点该行其他区域仍照常折叠（T3 的补充分支） |
+| T20 | 浮层参数按钮无自带箭头；面板打开时按钮文字色为 `PRIMARY`，关闭时为 `TEXT.SECONDARY` |
 | T21 | 按钮文案为 `浮层参数`，全仓不出现裸标签 `参数` 作该按钮文案（D3，避免与展开区混淆） |
 | T22 | JSON 树嵌套对象**不限层数**，逐层可独立折叠；每层展开体各自限高 240px 不破版（DC-15） |
 | T23 | 浮层 `⧉` 复制产出 `key=value` 逐行文本；展开区树头 `⧉` 复制产出格式化 JSON，两者不同（DC-16/DC-17） |
 | T24 | 点 `▸` 收起工具行时**浮层仍打开**；点 `✕` 关浮层时**工具行仍保持展开**；切任务时二者同时清理（DC-18） |
-| T25 | 窄屏（视口 < 640px）浮层宽 = `min(视口-32px, 640)`，不低于 320，无横向滚动条；与 HITL 模态框同屏时浮层不误关 |
+| T25 | 窄屏（视口 < 640px）面板宽 = `min(视口-32px, 640)`，不低于 320，无横向滚动条；与 HITL 模态框同屏时浮层不误关 |
+| T26 | **视觉一致性**：面板与 JSON 树**不引入任何新颜色**，全部取自既有 `Colors.*`；无 `Colors.JSON.*` 语法色（VC7） |
+| T27 | 浮层外壳为 `FloatingEntry`，打开后焦点入卡、Esc 关闭后焦点回入口——与系统其它浮层行为完全一致（VC3） |
+| T28 | 两处复制按钮均为 `CopyButton` 组件（1.5s「已复制」回退 + `aria-label`），无自造图标按钮（VC1） |
+| T29 | 折叠切换一律 `CircleArrow(14, PRIMARY)` + 「展开/收起」，全文无 `▸`/`▾` 裸字符切换（VC5） |
+| T30 | 分类色条全部取自 `Colors.BORDER.*` 中性灰阶，无 `WARNING`/`ACCENT_ORANGE`/`SUCCESS`/`ERROR` 等语义色（VC4） |
+| T31 | 浮层参数按钮图标为 antd `CodeOutlined`（非 `GearIcon`，后者语义为"工具执行等待"）；热区继承 `.taskinfo-entry` 规格（VC8/VC9） |
+| T32 | 参数区与页面既有代码块并排时观感一致：同 `BG.SECONDARY` + `BORDER.DEFAULT` + `Radius.SM` + `FontFamily.MONO` + `FontSize.CODE`（VC2/VC10/VC11） |
 
 ### 3.9 改造前后对比示意
 
@@ -729,8 +780,8 @@ content = 共 312 行
 
 ```
 ● 并行 2 个工具 [write, read]
-  💧 write成功:从第1-200行  ▾   ⚙ 浮层参数   ← 按钮固定在工具行行尾
-      ▾ {                                      ⧉   ← 树头复制（格式化 JSON）
+  💧 write成功:从第1-200行  ▾   </> 浮层参数   ← 按钮固定在工具行行尾
+      ▾ {                          [复制]        ← 树头复制（复用 CopyButton，格式化 JSON）
           ▸ "file_path"    : "F:\...\backend\app\main.py"
           ▸ "encoding"     : "utf-8"
           ▸ "shell_type"   : "powershell"
@@ -739,11 +790,11 @@ content = 共 312 行
           ▸ "content"      : "共 312 行"
         }                              （7 行 × 16 = 112px 恒定）
       成功:从第1-200行
-  💧 read成功:从第1-50行  ▸   ⚙ 浮层参数   ← 收起态按钮位置不变
+  💧 read成功:从第1-50行  ▸   </> 浮层参数   ← 收起态按钮位置不变
 
-点 write 的「⚙ 浮层参数」→ write 行附近浮出：
+点 write 的「浮层参数」→ write 行附近浮出（外壳 FloatingEntry + antd Popover）：
 ┌────────────────────────────────────────────────────────┐
-│ ⚙ write · 参数 6 项    [分组│规格表]        ⧉      ✕    │
+│ </> write · 参数 6 项    [分组│规格表]        ⧉      ✕    │
 ├────────────────────────────────────────────────────────┤
 │ ▌ 路径                                                     │
 │    file_path      F:\...\backend\app\main.py               │
@@ -776,4 +827,4 @@ content = 共 312 行
 ---
 
 编写人：小欧
-编写时间：2026-10-13 09:11:58
+编写时间：2026-10-13 09:28:03
