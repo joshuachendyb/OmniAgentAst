@@ -19,16 +19,14 @@
 //   ⑨面板头: 分组/规格表(Segmented 24px)、复制(≈20px)、✕(≈16px) 统一包进 24px 居中盒(HEADER_CTRL_BOX)对齐基线;
 //     装饰图标 </> 由 PRIMARY 蓝改 TEXT.SECONDARY 中性灰(蓝在本系统=可点, 装饰用蓝会误导), 工具名去 nowrap 改折行(注: 2026-10-13 23:20 依北京老陈"不许折行"裁定**改回 nowrap**, 见下方编辑历史) — 小欧-2026-10-13
 // 编辑历史: 2026-10-13 小欧 - 文档[29]§6.10 新增第三个视图「结果」(工具原始结果 raw_data):
-//   ① PARAMS_VIEW_MAP/VIEW_OPTIONS 增第三个标签 result; readView **不记忆** result(20/7 工具的 raw_data 是 {},
-//      记忆则下次打开任意浮层都落空白页) —— 北京老陈裁定, 仅本次会话有效, 分组/规格表两态记忆行为零变化;
+//   ① PARAMS_VIEW_MAP/VIEW_OPTIONS 增第三个标签 result;
 //   ② 值渲染模式抽 ValueMode('param'|'result') 依赖注入(OCP), 默认 'param' 时文本取 fullTextOf、容器样式逐像素不变,
-//      规格表样式不被结果视图污染; 结果模式取 resultTextOf(缩进 JSON, 含换行才可折叠)+ diff 行级增删着色;
+//      规格表样式不被结果视图污染; 结果模式对象/数组走 NestedRows 递归折叠 + diff 行级增删着色;
 //   ③ 折叠判定抽 isFoldable(v, mode): 参数模式零变化(isHugeValue), 结果模式额外让非空对象/数组可折;
-//   ④ 仅隐藏 base64_data(MB 级)+ 下划线私有键, **但放行 _truncated**(execute_shell_command.py:1302 写该标记,
-//      过滤掉用户就无从得知 stdout 被截断); 仍过滤 _error_code/_score(纯内部簿记);
-//   ⑤ 结果视图**绝不兜底**: result 空/未传 → entries 空数组 → 内容区空白, 不回退 params/llm_data/data_text;
+//   ④ 仅隐藏 base64_data(MB 级, 纯体积原因); 下划线键**全部放行**(撤销前缀过滤, 见下方 2026-10-14 两条);
+//   ⑤ 结果视图**绝不兜底**: result 空/未传 → entries 空数组 → 显示「本次工具执行：<summary>」(非空白);
 //   ⑥ 复制按视图分支: 结果视图复制 raw_data 缩进 JSON(**不是**过滤后的视图 —— 复制的是原始数据);
-//   ⑦ 标题改 whiteSpace:nowrap + flexShrink:0(北京老陈"不许换行不许折行"), maxW 640→720 配合;
+//   ⑦ 标题改 whiteSpace:nowrap + flexShrink:0(北京老陈"不许折行不许折行"), maxW 640→720 配合;
 //   ⑧ 空串在结果模式下也给 `(空)` 占位(否则用户分不清"本来就没有"还是"渲染漏了"; 命中常态空 stderr);
 //   ⑨ 数组摘要用 `[]` 不用 `{}`(23 处 rows[]/matches[] 类字段); 空容器不配折叠箭头(fold 开一个空数组无意义).
 //   审计修正: 文件头概述与下方 ⑦ 的结论相反(头写"工具名改折行"), 已加注说明结论已反转 — 小欧-2026-10-13
@@ -37,6 +35,14 @@
 //   另撤销下划线私有键过滤、补非 dict 防御。
 //   2026-10-14 小欧 订正: 原写「包裹层总高实为视口-6, 差 6px 即上下同时被切」—— 差值应为 26(58-32),
 //   且总高 100vh-6 < 视口, 居中后本不会被切; 真实后果是上下留白由 32px 缩到 3px(视觉贴顶贴底) — 小欧-2026-10-14
+// 编辑历史: 2026-10-14 小欧 - 结果视图**递归折叠渲染**(北京老陈裁定, 独立组件 NestedRows/NestedRow/SpecView 之外):
+//   病根 tree.children / get_db_schema.tables[].columns[] / read_xlsx.sheets[] 等递归结构原用
+//   JSON.stringify 整块展开, 缩进随深度累积成"斜坡"且行数暴涨。故容器逐层独立折叠、默认全折叠;
+//   数组元素全为对象时下标降为不可点分组标题(纯结构判断, 不猜哪列是标题), 否则要点击才看到一个目录名。
+//   仅 valueMode='result' 生效, 参数视图零影响。
+// 编辑历史: 2026-10-14 小欧 - 默认标签由「分组参数」改为「**TOOL结果**」(北京老陈裁定)。记忆规则不变:
+//   result 仍不落盘, 切到分组/规格表才记住。原「不记忆 result」的理由(20 个工具 raw_data 为 {} 会落空白页)
+//   **已不成立** —— 空态现显示「本次工具执行：<summary>」。小欧
 import React, { useMemo, useState } from 'react';
 import { Segmented } from 'antd';
 import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
@@ -186,7 +192,6 @@ const VIEW_OPTIONS = [
   { label: PARAMS_VIEW_MAP.spec, value: 'spec' },
   { label: PARAMS_VIEW_MAP.result, value: 'result' },
 ];
-const VIEW_LS_KEY = 'step.params.view';
 
 /**
  * 面板头控件统一盒: 与 antd `Segmented size="small"` 同高(controlHeightSM=24)。
@@ -319,6 +324,132 @@ const toKeyValueText = (params: Record<string, unknown>): string =>
 
 /** 2026-10-13 23:00 小欧 - 值渲染模式(依赖注入, OCP): 'param'(默认)= 现有参数视图, 渲染路径与
  *  样式逐像素不变(规格表样式不许改变); 'result' = 结果视图(对象/数组可折叠 + 缩进 JSON + diff 着色)。 */
+/**
+ * 结果视图的**递归嵌套渲染**(§6.3, 2026-10-14 小欧 - 北京老陈裁定; 独立组件 SRP)。
+ *
+ * 病根: 递归结构(`tree.children` / `get_db_schema.tables[].columns[]` / `read_xlsx.sheets[]`)
+ *   原用 `JSON.stringify(v, null, 2)` **整块展开** —— 缩进随深度累积, 3 层目录即缩进 8~12 格,
+ *   在 720px 面板内触发折行变成"斜坡", 层级不可辨, 且行数暴涨要滚很久。
+ *
+ * 修法: 容器**逐层独立折叠**, 默认全折叠, 按需展开; 标量叶子直显。
+ *
+ * 规则(KISS, **无任何启发式**):
+ *   - 对象按 key 出行; 数组按**下标**出行(北京老陈选 A 方案)
+ *   - 每个非空容器一个折叠行, 摘要复用 `summaryOf`(`[…]` / `{…}` / `共 N 行`)
+ *   - 多行字符串沿用既有「共 N 行 + ValuePre 全显」
+ *   - **不做**「数组元素全是对象就跳过下标层」这类特判 —— 那要猜哪列是标题, 会引入错误
+ *
+ * 仅 `valueMode='result'` 使用; **参数视图零影响**(规格表一行代码未动)。
+ */
+const NESTED_INDENT_PX = 12;
+
+const NestedRow: React.FC<{ label: string; value: unknown; depth: number }> = ({
+  label,
+  value,
+  depth,
+}) => {
+  const [open, setOpen] = useState(false);
+  const toggle = () => setOpen((p) => !p);
+  const isContainer = hasEntries(value);
+  const isMultiline = isHugeValue(value);
+  const rowStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: Spacing.SM,
+    lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+    paddingLeft: depth * NESTED_INDENT_PX,
+  };
+  const keyStyle: React.CSSProperties = {
+    width: 140,
+    flexShrink: 0,
+    fontFamily: FontFamily.MONO,
+    fontSize: FontSize.CODE,
+    color: Colors.TEXT.SECONDARY,
+    wordBreak: 'break-word',
+  };
+  // 叶子(标量 / 空容器): 直显, 无箭头
+  if (!isContainer && !isMultiline) {
+    return (
+      <div style={rowStyle}>
+        <span style={keyStyle}>{label}</span>
+        <PlainValue value={value} valueMode="result" />
+      </div>
+    );
+  }
+  return (
+    <>
+      {/* 只复用 ValueToggle 的交互, **不在行级再加 onClick/role/tabIndex** ——
+          ValueToggle 已自带 onClick + role=button + tabIndex(L492-499), 行级再套一套会
+          ①双触发(开→立刻关) ②产生嵌套 button(a11y 违规)。故可点区仅箭头+摘要, 与规格表一致。 */}
+      <div style={rowStyle}>
+        <ValueToggle value={value} open={open} onToggle={toggle} />
+        <span style={keyStyle}>{label}</span>
+      </div>
+      {open &&
+        (isContainer ? (
+          <NestedRows value={value} depth={depth + 1} />
+        ) : (
+          <ValuePre value={value} valueMode="result" />
+        ))}
+    </>
+  );
+};
+
+/** 2026-10-14 小欧 - 嵌套行集合: 对象按 key / 数组按下标(A 方案)。
+ *  特判: 数组元素**全是对象**时**不套一层可折叠**, 下标降为不可点的分组标题, 直接列出该元素的 key。
+ *  动机: `tree.children` / `read_xlsx.sheets[]` / `get_db_schema.tables[]` 全是这个形态 ——
+ *  若给每个元素再加一层折叠, 用户要展开"父容器→下标→字段"三次点击才看到一个目录名, 反而更难读。
+ *  该判断是**纯结构判断**(不猜哪列是标题), 故不会引入错误。 */
+const isAllObjectArray = (v: unknown[]): boolean =>
+  v.length > 0 &&
+  v.every((x) => typeof x === 'object' && x !== null && !Array.isArray(x));
+
+const NestedRows: React.FC<{ value: unknown; depth: number }> = ({
+  value,
+  depth,
+}) => {
+  const indexHeaderStyle: React.CSSProperties = {
+    paddingLeft: depth * NESTED_INDENT_PX,
+    lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+    fontFamily: FontFamily.MONO,
+    fontSize: FontSize.CODE,
+    color: Colors.TEXT.TERTIARY,
+  };
+  if (Array.isArray(value)) {
+    const arr = value as unknown[];
+    if (isAllObjectArray(arr)) {
+      return (
+        <div>
+          {arr.map((el, i) => (
+            <div key={i}>
+              <div style={indexHeaderStyle}>{i}</div>
+              <NestedRows
+                value={el as Record<string, unknown>}
+                depth={depth + 1}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return (
+      <div>
+        {arr.map((v, i) => (
+          <NestedRow key={i} label={String(i)} value={v} depth={depth} />
+        ))}
+      </div>
+    );
+  }
+  const rows = Object.entries(value as Record<string, unknown>);
+  return (
+    <div>
+      {rows.map(([label, v]) => (
+        <NestedRow key={label} label={label} value={v} depth={depth} />
+      ))}
+    </div>
+  );
+};
+
 export type ValueMode = 'param' | 'result';
 
 /** 折叠判定: 参数模式 = 原 isHugeValue(零变化); 结果模式额外让非空对象/数组可折叠(§6.4.3)。 */
@@ -364,15 +495,37 @@ const resultTextOf = (v: unknown): string => {
   return String(v);
 };
 
-/** 2026-10-13 23:20 小欧 - 北京老陈裁定: `result` 不记忆。67 个工具里 20 个 raw_data 是 `{}`,
- *  若记忆则下次打开任意浮层都落在空白的结果页。故 `readView` 只认 'spec', 'result' 仅本次会话有效。 */
+/**
+ * 2026-10-14 小欧 - 北京老陈裁定: **默认 = `TOOL结果`, 但三个标签都记忆**。
+ *
+ * 语义(前几轮反复读错, 此处定死):
+ *   - 无有效记忆时(首次 / 脏值) → 落在 `result`(`TOOL结果` 即**默认标签**);
+ *   - 用户切到 `分组参数`/`规格表参数`/`TOOL结果` **任一个都写入**并沿用 —— 即"切到 TOOL结果 也记住";
+ *   - 故刷新后仍是用户最后选择的那个, 不会莫名跳回默认。
+ *
+ * 先前「不记忆 result」的理由(20 个工具 raw_data 为 {} 会落空白页)**已不成立**:
+ * 空态现显示「本次工具执行：<summary>」(见 render 分支), 是如实说明而非空白。
+ */
+const VIEW_LS_KEY = 'step.params.view';
+/**
+ * 2026-10-14 小欧 - 一次性迁移标记。
+ * 起因: 默认标签由「分组参数」改为「TOOL结果」后, **旧方案遗留的 localStorage 值会污染新默认** ——
+ * 用户此前点过「规格表参数」, 存下 `'spec'`, 升级后打开仍落在规格表, 看起来像"默认没生效"。
+ * 故首次加载清一次旧值并打版本标记, 之后按新语义(默认 result + 三者都记忆)正常工作。
+ * 只清一次: 标记存在后不再清, 用户的正常选择不会被抹掉。
+ */
+const VIEW_LS_VER_KEY = 'step.params.view.ver2';
+
 const readView = (): ParamsView => {
   try {
-    return window.localStorage.getItem(VIEW_LS_KEY) === 'spec'
-      ? 'spec'
-      : 'group';
+    if (!window.localStorage.getItem(VIEW_LS_VER_KEY)) {
+      window.localStorage.removeItem(VIEW_LS_KEY);
+      window.localStorage.setItem(VIEW_LS_VER_KEY, '2');
+    }
+    const v = window.localStorage.getItem(VIEW_LS_KEY);
+    return v === 'spec' || v === 'group' || v === 'result' ? v : 'result';
   } catch {
-    return 'group';
+    return 'result';
   }
 };
 
@@ -476,6 +629,17 @@ const ValuePre: React.FC<{
     typeof value === 'string' &&
     keyName !== undefined &&
     isDiffKey(keyName);
+  /**
+   * 2026-10-14 小欧 - 结果模式: **容器**走 `NestedRows` 递归折叠(不塌成整块缩进 JSON),
+   * 标量/字符串仍走原 `<pre>`。判据 = 该值是否为非空容器(`hasEntries`), 无字段名特判。
+   */
+  if (isResult && hasEntries(value)) {
+    return (
+      <div style={{ flexBasis: '100%', width: '100%' }}>
+        <NestedRows value={value} depth={0} />
+      </div>
+    );
+  }
   return (
     <pre
       style={{
@@ -761,13 +925,12 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
 }) => {
   const [view, setView] = useState<ParamsView>(readView);
   /**
-   * 2026-10-13 23:20 小欧 - 北京老陈裁定: `result` 不落盘(见 readView 注释)。
-   *   仅分组/规格表两态记忆, 与改动前的行为完全一致; 切到「结果」只改组件内 state, 不写 localStorage,
-   *   故下次打开浮层回到上次持久化的视图, 不会默认落在空白的结果页。
+   * 2026-10-14 小欧 - 三个标签**都记忆**(含 `TOOL结果`): 写入即下次沿用。
+   *   默认值由 `readView` 兜底(无有效值时 `result`), 二者配合:
+   *   首次打开 = TOOL结果; 之后打开 = 用户最后选择。
    */
   const onViewChange = (next: ParamsView) => {
     setView(next);
-    if (next === 'result') return;
     try {
       window.localStorage.setItem(VIEW_LS_KEY, next);
     } catch {
@@ -906,7 +1069,7 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           overflowY: 'auto',
         }}
       >
-        {/* 2026-10-13 23:00 小欧 - 文档[29]§6.10 三视图派发; 结果视图空即空白, 不兜底(§6.8)
+        {/* 2026-10-13 23:00 小欧 - 文档[29]§6.10 三视图派发; 结果视图不兜底(§6.8)
             2026-10-14 小欧 - 北京老陈裁定改: 空态不显示空白, 显「本次工具执行：<summary>」 */}
         {view === 'result' && resultEntries.length === 0 ? (
           <div
