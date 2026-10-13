@@ -23,8 +23,13 @@
 //   范围, 需单独一轮统一), 故此处不作"已统一"表述, 避免注释失真 — 小欧-2026-10-05
 //   v3.7 小欧 订正: 原注释写的 MarkdownBody 已随"按文档第4章实施"删除, 消费端改为 MarkdownText.tsx — 小欧-2026-10-05
 // 编辑历史: 2026-10-13 小欧 - 文档[29]§3.4.3/D-4: 新增**尺寸**令牌组 Size(只管尺寸不管颜色, 严禁新增颜色令牌, 全部复用既有 Colors.*):
-//   PARAMS_PANEL_MAX_H=240(巨型值/树节点展开体限高) / PARAMS_PANEL_MAX_W=640(面板上限) / PARAMS_PANEL_MIN_W=320(窄屏下限)
+//   PARAMS_PANEL_MAX_H=240(巨型值/树节点展开体限高) / PARAMS_PANEL_MAX_W=720(面板上限, 2026-10-13 23:20 由 640 加宽)
+//   / PARAMS_PANEL_MIN_W=460(窄屏下限, 同日由 320 抬高; 头部标题 nowrap + 三标签所需)
 //   / PARAMS_PANEL_BODY_MAX_H=480(面板内容区限高)。命名沿用既有「名+量纲」风格(BorderWidth/FontSize/Radius) — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 23:20 小欧 - 浮层面板尺寸令牌随标题 nowrap + Segmented 增至 3 项而调整:
+//   PARAMS_PANEL_MAX_W 640→720(三标签头部留白)、PARAMS_PANEL_MIN_W 320→460(标题 nowrap 所需下限);
+//   min-width 须由调用侧写成 min(460, 100vw-32) 而非固定 460(CSS min-width 优先于 max-width, 见 ToolCallLine);
+//   文件头概述行仍写旧的 640/320, 本次审计更正 — 小欧-2026-10-13
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -190,8 +195,15 @@ export const Colors = {
 // 2026-10-13 小欧 - 文档[29]§3.4.3/DC-19: 新增**尺寸**令牌组; 严禁新增颜色令牌(全部复用既有 Colors.*)
 export const Size = {
   PARAMS_PANEL_MAX_H: 240, // 巨型值 / JSON 树节点展开体限高（每层各自承担，DC-15）
-  PARAMS_PANEL_MAX_W: 640, // 浮层面板最大宽（甲规格表两列对照需宽）
-  PARAMS_PANEL_MIN_W: 320, // 浮层面板最小宽（窄屏下限，见 §4.5 响应式三件套）
+  // 2026-10-13 23:20 小欧 - 640 → 720: 浮层 Segmented 由 2 项(分组|规格表)增至 3 项(+结果)后,
+  //   头部固定元素(图标 + 标题 + Segmented + 复制 + ✕)总需求变宽; 标题已改 whiteSpace:nowrap
+  //   (北京老陈: 不许换行不许折行), 宽度不足只会被迫折行 —— 故在此加宽, 而非让标题让步。
+  PARAMS_PANEL_MAX_W: 720, // 浮层面板最大宽(甲规格表两列对照需宽; 720 为三标签头部留白)
+  // 2026-10-13 23:20 小欧 - 320 → 460: 头部标题改 whiteSpace:nowrap 后(图标+标题+3项Segmented+复制+✕),
+  //   320px 装不下会被迫折行或溢出卡片。460 是实测所需宽度(标题 ~141 + Segmented ~130 + 其余 ~80)。
+  //   ⚠️ 必须写成 min(460, 100vw-32) 而非固定 460: CSS 中 min-width **优先于** max-width,
+  //   固定 460 会在 <492px 视口下撑破视口(此坑见 [29] v2.4 第⑩项)。
+  PARAMS_PANEL_MIN_W: 460, // 浮层面板最小宽(标题 nowrap 所需下限; 窄屏由 min() 收敛到视口内)
   PARAMS_PANEL_BODY_MAX_H: 480, // 2026-10-13 小欧 - 面板内容区总限高(D-4): 防止 23 项参数的面板超出视口
 } as const;
 

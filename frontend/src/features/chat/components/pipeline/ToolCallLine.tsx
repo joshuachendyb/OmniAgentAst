@@ -54,6 +54,13 @@
 // 编辑历史: 2026-10-13 小欧 - 结果摘要 sum 由 CSS 单行省略改为**折行完整显示**(北京老陈裁定「不许截断」):
 //   删 overflow:hidden + textOverflow:ellipsis + whiteSpace:nowrap, 补 minWidth:0 + pre-wrap + break-word。
 //   注: 本条与文档[29]§2.6「结果摘要单行省略为保留不动项」冲突, 属需用户确认的越界改动, 已单独报备 — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 小欧 - 文档[29]§6.10 浮层透传 result(= observation.tool_result[i].raw_data):
+//   ① 配对沿用**同一下标 i**(params 来自 action.tools[i], result 来自 tool_result[i], 浮层本就挂在 i 上),
+//      不新增错位面; result 可选 prop, 既有调用方只传 params 时零影响;
+//   ② 缺结果传 undefined → ParamsPanel 结果视图空白, **不兜底**(文档[29]§6.1.3/§6.8);
+//   ③ PARAMS_CARD_STYLE.minWidth 由固定 320 改为 min(Size.PARAMS_PANEL_MIN_W, 100vw-32):
+//      CSS 中 min-width 优先于 max-width, 固定值会在 <492px 视口撑破视口(此坑见 [29] v2.4 第⑩项);
+//      原注释"下限仍 320"已过期(令牌同日由 320 抬至 460), 本次审计一并更正 — 小欧-2026-10-13
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -132,9 +139,10 @@ const PARAMS_CARD_STYLE: React.CSSProperties = {
   // 2026-10-13 小欧 - 北京老陈裁定: 面板宽改为**按内容收缩**, 上限 640。
   //   原固定 640 时, 短参数(如 6 个短键)只用到 ~450px, 右侧空 30% 视觉重心偏左。
   //   fit-content = min(内容宽, 可用宽); 上限取 min(640, 视口-32) 一次表达两个约束;
-  //   下限仍 320(§3.4.3 窄屏口径)。
+//   下限走 Size.PARAMS_PANEL_MIN_W(2026-10-13 23:20 由 320 抬至 460, 标题 nowrap + 三标签所需),
+//   且用 min(令牌, 100vw-32) 收敛 —— CSS 中 min-width 优先于 max-width, 固定值会在窄视口撑破。
   width: 'fit-content',
-  minWidth: Size.PARAMS_PANEL_MIN_W,
+  minWidth: `min(${Size.PARAMS_PANEL_MIN_W}px, calc(100vw - 32px))`,
   maxWidth: `min(${Size.PARAMS_PANEL_MAX_W}px, calc(100vw - 32px))`,
   // 2026-10-13 小欧 - 文档[29]D-11: antd 5.29.3 的 .ant-popover-inner 自带 `padding: 12px`
   //   (node_modules/antd/es/popover/style/index.js:59, `innerPadding: wireframe ? 0 : 12`),
@@ -410,6 +418,15 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                               toolName={t.tool ?? 'tool'}
                               params={
                                 (t.params ?? {}) as Record<string, unknown>
+                              }
+                              // 2026-10-13 23:00 小欧 - 文档[29]§6.10: 传 raw_data 供「结果」标签渲染。
+                              //   配对沿用同一下标 i —— 与 §6.10 约定一致(params 来自 action.tools[i],
+                              //   result 来自 observations[].tool_result[i], 浮层本就挂在 i 上, 不新增错位面)。
+                              //   ⚠️ 缺结果时传 undefined → ParamsPanel 显示空白, **不兜底**(§6.1.3/§6.8)
+                              result={
+                                (_resForTool?.raw_data ?? undefined) as
+                                  | Record<string, unknown>
+                                  | undefined
                               }
                               onClose={closePanel}
                             />
