@@ -162,9 +162,9 @@ const FORMAT_KEYS: ReadonlySet<string> = new Set([
 
 // 2026-10-13 23:00 小欧 - 文档[29]§6.10: 第三个标签「结果」渲染工具原始结果(raw_data)
 export const PARAMS_VIEW_MAP = {
-  group: '分组',
-  spec: '规格表',
-  result: '结果',
+  group: '分组参数',
+  spec: '规格表参数',
+  result: 'TOOL结果',
 } as const;
 export type ParamsView = keyof typeof PARAMS_VIEW_MAP;
 /**
@@ -317,24 +317,27 @@ export type ValueMode = 'param' | 'result';
 const isFoldable = (v: unknown, mode: ValueMode): boolean =>
   isHugeValue(v) || (mode === 'result' && hasEntries(v));
 
-/** 2026-10-13 23:00 小欧 - 唯一不渲染的字段: `read_media_file.base64_data`(MB 级 base64)。
+/** 2026-10-13 23:00 小欧 - 唯一不渲染的字段: `read_media_file.base64_data`(MB 级 base64, 纯体积原因)。
  *  该工具的有效信息(file_name + mime_type)已在同表另两行给出。 */
 const RESULT_HIDDEN_KEYS: ReadonlySet<string> = new Set(['base64_data']);
-
-/** 2026-10-13 23:00 小欧 - 私有键(下划线前缀)不展示(§6.2.4)。
- *  2026-10-13 23:55 小欧 - 放行 `_truncated`: execute_shell_command.py:1302 是
- *  `data["_truncated"] = True` 且该工具无 `truncated_reason`, 过滤掉用户就无从得知
- *  stdout 被截断。仍过滤 `_error_code`(8 处)/`_score`(1 处) —— 纯内部簿记。 */
-const isPrivateKey = (k: string): boolean =>
-  k.startsWith('_') && k !== '_truncated';
-
-/** 结果视图可见条目: 过滤不渲染字段 + 私有键 */
-const visibleResultEntries = (
-  result: Record<string, unknown>
-): Array<[string, unknown]> =>
-  Object.entries(result).filter(
-    ([k]) => !RESULT_HIDDEN_KEYS.has(k) && !isPrivateKey(k)
-  );
+/**
+ * 2026-10-14 小欧 - 可见条目 + **非 dict 防御**。
+ *
+ * ①防御的必要性(类型防御, 不是"兜底"): 结果视图按「顶层是对象」设计, 但 67 个工具的 data 形态
+ *   由后端决定, 不能只凭文档断言。实测两条独立证据均未发现非 dict —— AST 扫 453 个
+ *   `build_*(data=)` 传入点, 非 dict 字面量 0 个; 真实运行数据 759 条 `原始内容.data` 全为 dict。
+ *   仍保留防御: 万一出现 str, `Object.entries("abc")` 会渲染成「0→a / 1→b / 2→c」的字符表;
+ *   出现 list 会渲染成「下标→值」—— 两者都是**误导**, 降级为无条目走空态提示。
+ *   注: §6.1.3「不兜底」指的是**不回退到 params/data_text**, 与本处的类型防御不冲突。
+ *
+ * ②只过滤 `base64_data`(体积原因)。下划线键**全放行** —— 见 §6.2.4.1 撤销说明。
+ */
+const visibleResultEntries = (result: unknown): Array<[string, unknown]> =>
+  result !== null && typeof result === 'object' && !Array.isArray(result)
+    ? Object.entries(result as Record<string, unknown>).filter(
+        ([k]) => !RESULT_HIDDEN_KEYS.has(k)
+      )
+    : [];
 
 /** 2026-10-13 23:00 小欧 - 结果视图取值: 对象/数组用缩进 JSON(含换行才可折叠, 紧凑单行不可折叠)。
  *  不改共享 `fullTextOf`(北京老陈方案 B), 故参数视图零影响。 */
@@ -724,7 +727,14 @@ interface ParamsPanelProps {
    * 2026-10-13 23:00 小欧 - 文档[29]§6.10: 工具原始结果, 供「结果」标签渲染。
    *   OCP: 可选 prop, 既有调用方(只传 params)零影响。
    */
-  result?: Record<string, unknown>;
+  result?: unknown;
+  /**
+   * 2026-10-14 小欧 - 北京老陈裁定: `raw_data` 为空时**不显示空白**, 改显「本次工具执行：<summary>」。
+   *   取值 `llm_data.summary`(后端每条 tool_result 都带, 如"已读取 3 个文件, 2 个跳过")。
+   *   ⚠️ 这**不是** §6.1.3 的「兜底」: 兜底=拿 params/data_text 冒充原始数据; 本条=承认没有原始数据,
+   *   改显一句**如实**的说明, 与空白相比是信息增量而非伪装。
+   */
+  resultSummary?: string;
 }
 
 /**
@@ -739,6 +749,7 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
   params,
   onClose,
   result,
+  resultSummary,
 }) => {
   const [view, setView] = useState<ParamsView>(readView);
   /**
@@ -884,8 +895,23 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           overflowY: 'auto',
         }}
       >
-        {/* 2026-10-13 23:00 小欧 - 文档[29]§6.10 三视图派发; 结果视图空即空白, 不兜底(§6.8) */}
-        {view === 'group' ? (
+        {/* 2026-10-13 23:00 小欧 - 文档[29]§6.10 三视图派发; 结果视图空即空白, 不兜底(§6.8)
+            2026-10-14 小欧 - 北京老陈裁定改: 空态不显示空白, 显「本次工具执行：<summary>」 */}
+        {view === 'result' && resultEntries.length === 0 ? (
+          <div
+            style={{
+              padding: `${Spacing.XS}px 0`,
+              fontFamily: FontFamily.MONO,
+              fontSize: FontSize.CODE,
+              lineHeight: `${FontSize.CODE + Spacing.XS}px`,
+              color: Colors.TEXT.TERTIARY,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            本次工具执行：{resultSummary || '无结果数据'}
+          </div>
+        ) : view === 'group' ? (
           <GroupView params={params} />
         ) : view === 'spec' ? (
           <SpecView params={params} valueMode="param" />

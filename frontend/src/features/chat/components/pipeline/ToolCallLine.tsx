@@ -425,11 +425,17 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                               // 2026-10-13 23:00 小欧 - 文档[29]§6.10: 传 raw_data 供「结果」标签渲染。
                               //   配对沿用同一下标 i —— 与 §6.10 约定一致(params 来自 action.tools[i],
                               //   result 来自 observations[].tool_result[i], 浮层本就挂在 i 上, 不新增错位面)。
-                              //   ⚠️ 缺结果时传 undefined → ParamsPanel 显示空白, **不兜底**(§6.1.3/§6.8)
-                              result={
-                                (_resForTool?.raw_data ?? undefined) as
-                                  | Record<string, unknown>
-                                  | undefined
+                              //   类型收 unknown: 面板侧做非 dict 防御(见 ParamsPanel.visibleResultEntries 注释)
+                              result={_resForTool?.raw_data ?? undefined}
+                              // 2026-10-14 小欧 - 北京老陈裁定: raw_data 为空时显「本次工具执行：<summary>」,
+                              //   而非空白。summary 取 llm_data.summary(每条 tool_result 都带)。
+                              resultSummary={
+                                (
+                                  (_resForTool?.llm_data ??
+                                    _resForTool?.llmData) as
+                                    | Record<string, unknown>
+                                    | undefined
+                                )?.summary as string | undefined
                               }
                               onClose={closePanel}
                             />

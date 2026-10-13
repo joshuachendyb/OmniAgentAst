@@ -10,6 +10,7 @@
 
 | 版本 | 时间 | 编写人 | 修改说明 |
 |---|---|---|---|
+| v2.12 | 2026-10-14 00:20:00 | 小欧 | **撤销「下划线私有键过滤」+ 4 处后端实证订正**（第三轮代码审计，北京老陈挑出错误清单后逐条核实）：①新增 **§6.2.4.1**「下划线私有键已取消过滤」并同步改写 §6.2.4 表与 §6.3 正文 —— 病根: `http_request.py:111` 的 `{_truncated, _reason, _preview}` 是**一组**信号，只放行 `_truncated` 会让用户既不知原因也看不到内容，比全过滤更糟；`execute_shell_command`/`grep_file_content` 的 `_truncated` 无 `truncated_reason` 替代，过滤即丢事实。代价(`_error_code`/`_score` 露出)可接受②§6.2.3 `analyze_data` 订正：顶层键**固定**为 `grouped_statistics`，动态分组键在内层（原记「顶层为运行时分组值」有误）③§6.2.3 `execute_sql` 补第三分支 `{"action": "rollback"}`(`:270`)，原表把 `detected/suggestion/action` 混作一支④§6.2.3 补 `http_request` 响应体超限三键、`read_text_file` 截断分支的 `encoding`/`truncated`/`truncated_reason` 及 pop 分支 |
 | v2.11 | 2026-10-13 23:45:00 | 小欧 | **实施后十遍三堂会审的三处规则表脱节订正**（合规章 / 关联章）：①§3.4.3 令牌表 `PARAMS_PANEL_MAX_W/MIN_W` 由 640/320 同步为 **720/460**（北京老陈裁定「加宽浮层 + 标题不许换行不许折行」，文档原值未跟进=脱节）②`T33` props 白名单由 `{toolName,params,onClose}` 同步为 `{toolName,params,result?,onClose}`（第六章新增可选 prop）③§6.6 diff 着色补登 **DC-21 语义色借用登记**（`+`→`SUCCESS` / `-`→`ERROR`，禁用 `ORANGE_RED`）。另在 §2.5 反面清单新增两条实bug 记录：`-` 行误用橙 `ORANGE_RED`（违背规格「`-` 红」）、**所有含换行字符串被误当 diff 着色**（`stdout`/`content` 行首 `+`/`-` 误染）。旧版本历史一律保留 |
 | v1.0 | 2026-10-13 08:26:25 | 小欧 | 新建（北京老陈令：分析 Step 页面 observation 工具结果展开区参数区UI渲染缺点，出布局视觉优化方案）。三章结构：问题分析 / 优化问题解决方案 / 实施代码详细设计说明 |
 | v1.1 | 2026-10-13 08:50:40 | 小欧 | 三项裁定落地并重写第二三章：①**浮层定位由"取代展开区"改为"与展开区并存"**——展开区保留并改 **戊·JSON树** 渲染，浮层另挂在结果区之后由按钮触发；②浮层双视图定案 **乙·分组卡片（默认）+ 甲·规格表（可切换）**，面板头 Segmented 切换、localStorage 记忆；③浮层内不再二次折叠，打开即全量、超长内部滚动。补充 v1.0 未覆盖的历史沿革（参数区显示数量的两代决策）与内联区高度量化 |
@@ -2378,8 +2379,8 @@ tool_result.append({
 
 | 工具 | 字段 | 形态 |
 |---|---|---|
-| `analyze_data` | `columns`, `statistics`；**分组模式下顶层键为运行时分组值** `result[group_key][op]` | 嵌套对象 / **动态键** |
-| `execute_sql` | 成功 `{}`；校验失败 `{detected, suggestion, action}`；成功 `{syntax_valid}` | 空 / 嵌套 |
+| `analyze_data` | `columns`, `statistics`；**分组时顶层键固定为 `grouped_statistics`**（内层才是运行时分组值 `result[group_key][op]`）—— 2026-10-13 小欧 订正，原记「顶层键为运行时分组值」有误 | 嵌套对象 / **动态内层键** |
+| `execute_sql` | 成功 `{}`；校验失败 `build_warning`：`{detected, suggestion}`（`execute_sql.py:177`）；成功 `{syntax_valid}`（`:244`）；**回滚 `{"action": "rollback"}`**（`:270`）—— 2026-10-13 小欧 补第三分支 | 空 / 嵌套 |
 | `filter_data` | `columns`, `rows[]`, `truncated`, `truncated_reason`, `warnings[]`（追源 `result_data`） | 对象数组 |
 | `generate_chart` | `{}` | 空 |
 | `get_db_schema` | `tables[]` = `{name, columns[], indexes[]}` —— **三层嵌套** | 对象数组 |
@@ -2421,7 +2422,7 @@ tool_result.append({
 | `grep_file_content` | `matches[]`, `total_files`, `total_matches`, **`_truncated`**, `truncated_reason` | 对象数组 + **私有键** |
 | `list_directory` | `entries[]`, `truncated`（追源 `_build_list_success`，元素 `{name, path, type, size, mtime}`） | 对象数组 |
 | `read_media_file` | `file_name`, `mime_type`, **`base64_data`** | **超长二进制 → 不渲染** |
-| `read_text_file` | `content`, `total_lines`, `line_count`, `start_line`, `end_line`（追源 `select_lines`） | 长文本 |
+| `read_text_file` | `content`, `total_lines`, `line_count`, `start_line`, `end_line`（追源 `select_lines`）；**截断分支另加** `encoding`(L274)、`truncated`、`truncated_reason`（L26 注释实证），且 `line_count`/`total_lines`/`start_line`/`end_line`/`encoding` 在部分分支被 `pop` 移除（L280-304）—— 2026-10-13 小欧 补 | 长文本 |
 | `search_files` | `matches[]`（元素 `{name, path, type, size}`） | 对象数组 |
 | `tree` | `entries[]`, `statistics{file_count, dir_count}`（追源 `_get_directory_tree`） | 对象数组 + 嵌套 |
 | `write_text_file` | `content_preview` | 短文本 |
@@ -2443,7 +2444,7 @@ tool_result.append({
 |---|---|---|
 | `download_file` | `{}` | 空 |
 | `fetch_webpage` | `{content}`（Markdown 全文）；媒体类走 `media_result["data"]`；内容过短时 `result_data` 为 `{}` | 长文本 / 空 |
-| `http_request` | 成功 `data`；失败 `{error_detail, params{url[, status_code]}}` | 嵌套对象 |
+| `http_request` | 成功 `data`；**响应体超限时** `{"_truncated": True, "_reason": "响应体超限…已预览截断", "_preview": preview}`（`http_request.py:111`）—— 2026-10-13 小欧 补，原表漏此三键；失败 `{error_detail, params{url[, status_code]}}` | 嵌套对象 |
 | `ping_port` | ping 模式 `ping_data`；port 模式 `{is_open, service}` | 嵌套 / 标量 |
 
 **system（5 个）**
@@ -2476,8 +2477,22 @@ tool_result.append({
 | 字段 | 出处 | 说明 |
 |---|---|---|
 | **`base64_data`** | `read_media_file` | 图片/音视频 base64，**几百 KB ~ 几 MB 的单行字符串**。**不渲染**，见 §6.3 |
-| **`_truncated`** | `bash` / `grep_file_content` | 下划线前缀是后端「私有字段」命名约定。**过滤掉**，不作为表格行展示 |
+| ~~**`_truncated`**~~ | ~~`bash` / `grep_file_content`~~ | **2026-10-13 小欧 撤销过滤（v2.12）** —— 下划线前缀不再一刀切过滤，全部照常渲染，理由见 §6.2.4.1 |
 | **`diff`** | `edit_text_file` | 结构化 diff（`@@` hunk 头 + `+`/`-`/空格行首标记），后端已规范化，**需着色**，见 §6.6 |
+
+#### 6.2.4.1 下划线私有键：**已取消过滤**（2026-10-13 小欧，v2.12）
+
+初稿规定「下划线开头的键一律过滤」。实施中连踩两次才查透，**该规定已撤销**：
+
+| 后端事实（已逐个核实） | 一刀切过滤的后果 |
+|---|---|
+| `http_request.py:111` 返回 `{"_truncated": True, "_reason": "响应体超限…已预览截断", "_preview": preview}` | 只放行 `_truncated` 而过滤 `_reason`/`_preview` = 用户**既看不到截断原因、也看不到响应内容**，比全过滤更糟 |
+| `execute_shell_command.py:1302` / `grep_file_content.py:385` 的 `data["_truncated"] = True` | 该工具**无** `truncated_reason` 替代字段，过滤即彻底丢失「输出被截断」这一事实 |
+| `_error_code`（8 处 `event_log`）、`_score`（1 处 `tool_search`） | 确属内部簿记，但露出对用户无害 |
+
+**结论**：后端下划线字段**不是同一类东西**，按前缀一刀切必然误伤。故结果视图**不再过滤下划线键**，全部放行；唯一不渲染的是 `base64_data`（纯体积原因，非语义原因）。
+
+> 撤销代价：`_error_code` 等内部错误码会出现在结果页。可接受（对用户无意义、不敏感），换来的是「不因前缀误伤真实数据」。
 
 ### 6.3 不渲染字段清单
 
@@ -2489,7 +2504,7 @@ tool_result.append({
 
 **该字段的呈现方式**：整行不出现（不是显示为空、不是显示占位），即从 `Object.entries` 结果中过滤掉。
 
-**私有键的处理**：`bash._truncated` / `grep_file_content._truncated` 不属于「不渲染字段」，而是**私有键过滤**（§6.10 步骤 3），规则是：结果视图统一过滤所有下划线开头的键。
+**下划线键的处理**：~~`bash._truncated` / `grep_file_content._truncated` 按「私有键过滤」规则统一过滤~~ → **2026-10-13 小欧 撤销（v2.12）**：下划线键**不再过滤**，`_truncated` / `_reason` / `_preview` 均照常渲染。理由见 §6.2.4.1。
 
 **其余字段一律渲染**，包括体积大的：`bash.stdout/stderr`、`read_text_file.content`、`fetch_webpage.content`、`read_pdf.text`、`read_docx.text`、`edit_text_file.diff`、`rows` / `entries` / `matches` / `tasks` / `events` / `timers` / `windows` / `items` / `slides` / `tables` / `sheets` —— 它们靠浮层既有的滚动容器承载（面板外壳 `maxHeight:calc(100vh - 32px)` + 内容区 `overflowY:auto`），行数不裁剪。
 
