@@ -1,10 +1,12 @@
-// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 底部功能行 模型按钮+附件+发送/停止+暂停继续(4.3.6)
+﻿// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 底部功能行 模型按钮+附件+发送/停止+暂停继续(4.3.6)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: modelPickerSlot改为可选属性(调用方可不传)
 // 编辑历史: 2026-08-28 小欧 - ①A/a2: 新增leftExtra插槽(指令+续聊), 左侧序leftExtra/modelPicker/附件, 去marginTop4, gap8节奏
 // 编辑历史: 2026-10-06 小欧 - 北京老陈指令: 附件区调用点补 visible(不再隐藏) + disabled(置灰占位)，
 //   上传功能仍暂缓（AttachmentArea 内 beforeUpload 照旧拦），此处仅改渲染参数不改左插槽顺序 — 小欧-2026-10-06
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5: Props 补 workspaceCount/onOpenWorkspaces;
 //   插话开关之后、发送按钮之前(决策70)加「会话事务空间」入口, antd Badge count 现算(0 自动隐藏) — 小欧-2026-10-10
+// 编辑历史: 2026-10-13 18:05 小欧 - 文档[30] §2.5 B: 执行中也保留发送按钮(原为消失), 置灰 + Tooltip 说明不可发送;
+//   置灰判据 sendBlocked 由 ChatInput 传入并与提交门同源, 避免按钮态与实际可发能力矛盾
 /**
  * SubmitBar - 底部功能行：模型按钮(ModelPicker) + 附件 + 发送/停止 + 暂停·继续
  *
@@ -16,7 +18,7 @@
  */
 
 import React from 'react';
-import { Button, Space, Checkbox, Badge } from 'antd'; // 2026-10-07 小欧 三堂会审补 - 文档[11] 3.5.3(插话开关 Checkbox, 合并为同行 import); 2026-10-10 小欧 - 文档[16] §3.6.5(加 Badge 徽标)
+import { Button, Space, Checkbox, Badge, Tooltip } from 'antd'; // 2026-10-07 小欧 三堂会审补 - 文档[11] 3.5.3(插话开关 Checkbox, 合并为同行 import); 2026-10-10 小欧 - 文档[16] §3.6.5(加 Badge 徽标)
 import {
   PauseOutlined,
   PlayCircleOutlined,
@@ -36,6 +38,8 @@ interface SubmitBarProps {
   // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话事务空间入口(决策70: 插话开关之后、发送按钮之前)
   workspaceCount?: number;
   onOpenWorkspaces?: () => void;
+  // 2026-10-13 18:05 小欧 - 文档[30] §2.5 B: 发送按钮置灰判据, 由 ChatInput 用 isSendBlocked 算好后传入(与提交门同源)
+  sendBlocked?: boolean;
   onSend: () => void;
   onCancel: () => void;
   onTogglePause: () => void;
@@ -51,6 +55,7 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   onToggleInterject,
   workspaceCount, // 2026-10-10 小欧 - 文档[16] §3.6.5
   onOpenWorkspaces,
+  sendBlocked,
   onSend,
   onCancel,
   onTogglePause,
@@ -98,6 +103,26 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
             {isPaused ? '继续' : '暂停'}
           </Button>
         </>
+      ) : null}
+      {/*
+        2026-10-13 18:05 小欧 - 文档[30] §2.5 B: 执行中也保留发送按钮, 但置灰。
+        原为二选一(执行中按钮消失), 用户只知道"发不了"不知"为什么"; 现改为置灰 + Tooltip。
+        ⚠️ disabled 判据必须与 ChatInput 的提交门同源 isSendBlocked —— 否则会出现
+          「按钮亮着但发不了」或「按钮灰着而回车能发」的新矛盾; 故由 ChatInput 算好后传入 sendBlocked。
+      */}
+      {sendBlocked ? (
+        <Tooltip title="任务执行中，暂不可发送">
+          <span>
+            <Button
+              size="small"
+              type="primary"
+              icon={<SendOutlined />}
+              disabled
+            >
+              发送
+            </Button>
+          </span>
+        </Tooltip>
       ) : (
         <Button
           size="small"

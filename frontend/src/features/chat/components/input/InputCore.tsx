@@ -4,7 +4,9 @@
 // 编辑历史: 2026-10-13 13:45 小欧 - 新增可选 onKeyDown 上抛, 供 ChatInput 做历史翻动判定
 //   (IME 组字期不劫持 + 光标在首/末行才劫持 ↑↓); 可选 prop, 既有调用方零影响 — 小欧-2026-10-13
 // 编辑历史: 2026-10-13 14:20 小欧 - 新增可选 focusKey: 自增即把焦点拉回输入框。全仓原本无"发送后归还焦点"的
-//   逻辑, 点「发送」后焦点停在按钮、↑↓ 到不了 textarea; focusKey 是不穿透组件边界的触发口, 且不改 disabled 语义
+//   逻辑, 点「发送」后焦点停在按钮、↑↓ 到不了 textarea; focusKey 是不穿透组件边界的触发口
+// 编辑历史: 2026-10-13 18:40 小欧 - 文档[30] §2.5: 删 disabled prop(已成死参, 输入框恒可编辑);
+//   onPressEnter 改收事件, 由调用方按"能否发送"决定发 or 换行(原先无条件 preventDefault 致执行中打不了多行)
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -25,12 +27,17 @@ const { TextArea } = Input;
 interface InputCoreProps {
   value: string;
   onChange: (v: string) => void;
-  onPressEnter: () => void;
+  /**
+   * 上抛回车事件, 由调用方决定是否发送。
+   * 2026-10-13 18:40 小欧 - 文档[30] §2.5: 原先本组件无条件 `if(!shiftKey) preventDefault()` 后发送,
+   *   导致「执行中不可发送」时按回车既不换行也不发送 —— 用户打不了多行消息(功能退化)。
+   *   改为把事件交回调用方: 不可发送时不 preventDefault, 回车自然换行。
+   */
+  onPressEnter: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   /** 上抛键盘事件给 ChatInput(IME 组字期放行 + 仅首/末行才劫持 ↑↓ 翻历史); 可选, 既有调用方零影响 */
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   /** 自增即把焦点拉回输入框; 不传则不做任何聚焦(既有调用方行为不变) */
   focusKey?: number;
-  disabled?: boolean;
 }
 
 const InputCore: React.FC<InputCoreProps> = ({
@@ -39,11 +46,9 @@ const InputCore: React.FC<InputCoreProps> = ({
   onPressEnter,
   onKeyDown,
   focusKey,
-  disabled,
 }) => {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
-  // 2026-10-13 14:20 小欧: focusKey 自增 → 聚焦。disabled 期间 focus() 是空操作,
-  //   故 ChatInput 需在输入框解除禁用后再自增一次(见其 sendBlocked 迁移 effect)
+  // 2026-10-13 14:20 小欧: focusKey 自增 → 聚焦
   useEffect(() => {
     if (focusKey === undefined) return;
     taRef.current?.focus();
@@ -55,15 +60,9 @@ const InputCore: React.FC<InputCoreProps> = ({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       onKeyDown={onKeyDown}
-      onPressEnter={(e) => {
-        if (!e.shiftKey) {
-          e.preventDefault();
-          onPressEnter();
-        }
-      }}
+      onPressEnter={onPressEnter}
       placeholder="输入消息，Shift+Enter 换行"
       autoSize={{ minRows: 3, maxRows: 4 }}
-      disabled={disabled}
       style={{
         borderColor: Colors.BORDER.LIGHT,
         borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿

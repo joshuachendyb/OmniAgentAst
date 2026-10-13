@@ -9,7 +9,7 @@
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5/§3.6.6: Props 补 sessionWorkspaces/setSessionWorkspaces;
 //   挂载 SessionWorkspacePanel(wsPanelOpen 受控); 传 SubmitBar 的 workspaceCount(现算)与 onOpenWorkspaces
 //   (无会话时不传 → SubmitBar 不渲染入口, GET 空 id 必 422 干脆不显示); 关闭面板时重拉一次同步徽标(失败静默) — 小欧-2026-10-10
-// 编辑历史: 2026-10-13 13:45 小欧 - 草稿持久化+最近提交历史: draft 交 useInputDraft 单一真源(sessionStorage);
+// 编辑历史: 2026-10-13 13:45 小欧 - 草稿持久化+最近提交历史: draft 交 useInputDraft 单一真源(localStorage);
 //   删"会话一改就无条件清空草稿"; 提交成功后记本机历史(指令不入库); 新增「历史输入」面板; IME 组字期不劫持 ↑↓
 // 编辑历史: 2026-10-13 13:55 小欧 - 载入判据二轮修正(真浏览器实锤): 首版"上次非空才载入"致草稿跨会话泄漏;
 //   改为"sessionId 变了就载入", 仅「提交标记+上次无会话+提交后又打字」三条件成立才判为建会话回填而跳过
@@ -20,6 +20,9 @@
 //   ④面板圆角改走 Radius.SM 令牌
 // 编辑历史: 2026-10-13 14:50 小欧 - 撤回落盘防抖(自纠): 防抖化致刷新丢字(刷新不执行 React 卸载清理, 4 条用例变红);
 //   草稿体量小, 同步写开销可接受, 拿正确性换性能属退化, 退回同步落盘
+// 编辑历史: 2026-10-13 18:15 小欧 - 文档[30] §2.5 B+C: ①输入框不再 disabled(把提交权限误当编辑权限, 执行中打不了字翻不了历史)
+//   ②C 常驻灰字显隐改用 sendBlocked(与按钮置灰同源, 原用 isReceiving&&!allowInterject 会漏 loading 窗口)
+//   ③提交门被拦不再静默; 实测"弹 toast"反而致执行中无法换行, 改为不可发送时回车照常换行(见 18:40)
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -50,6 +53,7 @@ import {
 import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 文档[16]: 关闭面板时重拉徽标数
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
+import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface ChatInputProps {
   loading: boolean;
@@ -108,15 +112,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门与输入框禁用共用此一处
+  // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源(2026-10-13 18:15 起只管"提交", 不再兼管输入框禁用)
   const sendBlocked = isSendBlocked(loading, isReceiving, allowInterject);
 
   // 2026-10-13 14:20 小欧 - 焦点归还: 实测"点发送 → 按↑ 翻不出历史"病根是焦点停在按钮上,
-  //   ↑↓ 事件到不了 textarea。两处触发: ①提交成功立即自增(未禁用时); ②输入框由禁用转可用
-  //   (模型跑完那一刻)再自增一次 —— disabled 期间 focus() 是空操作, 必须在解锁后补。
+  //   ↑↓ 事件到不了 textarea。两处触发: ①提交成功立即自增; ②输入框由"发送受阻"转"可发送"
+  //   (模型跑完那一刻)再自增一次 —— 用户点完发送到可发之间有窗口, 补这一次才能接上焦点。
   // 2026-10-13 14:35 小欧 - 反骚扰: ②不能无条件抢焦点, 否则用户已点到别处(侧栏/设置弹窗/别的输入框)
   //   会被突然夺走, 后续打字落错控件。加前置条件: 仅当焦点已丢失(停在 body)或仍停在本组件内才归还。
-  //   发送中 SubmitBar 会把「发送」换成「停止」导致原按钮卸载 → activeElement 自动回落 body → 正常归还。
+  //   发送中「发送」按钮被 disabled 不卸载, 故 activeElement 仍在组件内 → 正常归还, 两者不冲突。
   const [focusKey, setFocusKey] = useState(0);
   const wasBlockedRef = useRef(sendBlocked);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -135,6 +139,20 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setFocusKey((k) => k + 1);
   }, [sendBlocked]);
 
+  /**
+   * 2026-10-13 18:40 小欧 - 文档[30] §2.5: 回车语义按「能否发送」分流。
+   *   能发送 → preventDefault 并提交; 不能发送(执行中且未开插话) → 不拦截, 回车照常换行,
+   *   否则用户打不了多行消息。
+   *   刻意不用 useCallback: handleSendInternal 每次渲染重建, 收进依赖数组等于白包一层;
+   *   InputCore 也未 memo, 包装无收益(以 lint 零告警的直线写法替代)。
+   */
+  const handlePressEnter = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.shiftKey || e.nativeEvent.isComposing) return;
+    if (sendBlocked) return; // 放行 → textarea 默认行为即换行
+    e.preventDefault();
+    void handleSendInternal();
+  };
+
   /** 退出历史翻动态(手动打字 / 面板选中 / 切会话 后都要复位, 否则 ↑↓ 基准错乱) */
   const exitHistory = useCallback(() => {
     setHistIdx(-1);
@@ -147,6 +165,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
   useEffect(() => {
     exitHistory();
   }, [sessionId, exitHistory]);
+
+  // 2026-10-13 18:15 小欧 - 文档[30] §2.5: 提交门被拦时**不做静默**。
+  //   注: 最初做成「弹 toast 提示」, 真浏览器实测发现副作用更大 —— 执行中按回车被 preventDefault
+  //   拦住, 既不换行也不发送, 用户打不了多行消息(功能退化)。现改为**不可发送时回车照常换行**,
+  //   「为什么不能发」由 B(按钮置灰+Tooltip) 与 C(常驻灰字) 表达, 无需回车再弹一次。
+  //   发送按钮 disabled 时浏览器本就不派发 click, 故不存在「点了没反应」的死角。
 
   // 2026-09-03 小欧 修复: 乐观清空改可回补 — 备份draft, onSend失败时回填防输入永久丢失 - 小欧-2026-09-03
   // linked 不再复位(违背用户粘性意图), 开关真源在 useChatState.linkEnabled
@@ -255,11 +279,36 @@ const ChatInput: React.FC<ChatInputProps> = ({
       <InputCore
         value={draft}
         onChange={handleInputChange}
-        onPressEnter={handleSendInternal}
+        onPressEnter={handlePressEnter}
         onKeyDown={handleInputKeyDown}
         focusKey={focusKey}
-        disabled={sendBlocked}
+        /*
+         * 2026-10-13 18:15 小欧 - 文档[30] §2.5: 不再 disabled。
+         *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中
+         *   连打字/翻历史/存草稿都做不到。执行中不可发是**提交**问题, 由发送按钮置灰(B)与
+         *   常驻提示(C)表达, 不该由禁用来表达。
+         */
       />
+      {/*
+        2026-10-13 18:40 小欧 - 文档[30] §2.5 C: 「不可发送」的常驻说明。
+          ⚠️ 显隐判据必须用 sendBlocked(与发送按钮置灰同源), 早前写成 `isReceiving && !allowInterject`
+          导致 loading=true 而 isReceiving=false 的窗口里按钮灰着却无任何说明, 判据两套互相打架。
+          文案按 isReceiving 区分「执行中」与「发送中」两种受阻原因。
+      */}
+      {sendBlocked && (
+        <div
+          data-testid="receiving-hint"
+          style={{
+            fontSize: FontSize.CAPTION,
+            color: Colors.TEXT.SECONDARY,
+            marginTop: -2,
+          }}
+        >
+          {isReceiving
+            ? '任务执行中，可开启「插话开关」后追加输入，或等待完成后发送'
+            : '正在提交，请稍候'}
+        </div>
+      )}
       <SubmitBar
         loading={loading}
         isReceiving={isReceiving}
@@ -300,6 +349,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // 无会话时不传 onOpenWorkspaces → SubmitBar 不渲染入口（GET 空 id 必 422，不如不显示）
         workspaceCount={sessionWorkspaces.length}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
+        sendBlocked={sendBlocked} // 2026-10-13 18:15 小欧 - 文档[30] §2.5 B: 与提交门同源, 保证按钮态与实际可发能力一致
         onSend={handleSendInternal}
         onCancel={onCancel}
         onTogglePause={onTogglePause}

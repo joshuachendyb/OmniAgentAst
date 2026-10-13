@@ -1,4 +1,4 @@
-// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: [63] 5.2 持久化锚点组(L2)三窄接口 load/save/remove + isAnchorGroupIntact 同源校验 + 草稿 saveDraft/loadDraft；双 key 读取(v2 + legacy 归一) — 小欧-2026-09-29 21:37:55
+﻿// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: [63] 5.2 持久化锚点组(L2)三窄接口 load/save/remove + isAnchorGroupIntact 同源校验 + 草稿 saveDraft/loadDraft；双 key 读取(v2 + legacy 归一) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-29 21:37:55 小欧 - 两处按本章纪律"写入失败必须可诊断且不得伪装成功"补 try/catch:
 //   ① saveDraft/loadDraft 文档原稿裸调 sessionStorage，容量满/隐私模式会把异常抛进草稿保存调用方;
 //   ② load 原稿 getItem 在 try 外，同类环境下读快照直接抛给页面。逻辑与接口签名零变化 — 小欧-2026-09-29 21:37:55
@@ -8,6 +8,9 @@
 //   + persistNow，而 start 帧尚未到达、taskId 仍是上一任务旧值或 null）会整份判废 → 待发草稿与已发意图全丢 — 小欧-2026-10-01
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.16: legacyToBackup lastContextLinkMode 改名 linkEnabled
 //   (与 backupTypes 同步) — 小欧-2026-10-03
+// 编辑历史: 2026-10-13 18:10 小欧 - 文档[30] §3: 草稿存储 sessionStorage → localStorage(前者关浏览器即销毁);
+//   保留期=跟随会话生命周期+7天孤儿兜底+50条上限(会话删则草稿删经 destroySession→saveDraft(sid,') 自动成立);
+//   值改 {t,ts} 并兼容旧纯字符串; 清理曾挂在每次按键上(全量扫描 localStorage), 已加 5 秒节流
 // [63] 5.2：三窄接口 + 同文件辅助（isAnchorGroupIntact、saveDraft/loadDraft），
 //        不碰 Store 内部字段、不触发 SSE、不改 React 状态
 import type { StreamBackup } from './backupTypes';
@@ -119,13 +122,88 @@ export function remove(sessionId: string): void {
   }
 }
 
-// 输入草稿 per-session 持久化：视图卸载不丢草稿，与流快照 key 分离
+/**
+ * 输入草稿 per-session 持久化：视图卸载不丢草稿，与流快照 key 分离
+ *
+ * 2026-10-13 18:10 小欧 - 文档[30] §3: sessionStorage → localStorage。
+ *   病根: sessionStorage 按浏览器会话隔离, 关掉标签页/浏览器即整体销毁 —— 草稿全丢。
+ *   改 localStorage 后, 关浏览器/崩溃/换标签页都能恢复。
+ *   保留期策略(北京老陈定案「C」): 跟随会话生命周期 + 7 天孤儿兜底
+ *     - 会话删除时草稿跟着删: History 页三处删除均已调 chatStreamStore.destroySession(sid),
+ *       其内部就是 saveDraft(sid, '') 删同一套键, 故此语义**自动成立**, 无需另拉清理线。
+ *     - 7 天 TTL 只兜底"孤儿键"(会话记录已没了、草稿键还留着)。
+ *     - 50 条上限防会话越开越多把 localStorage 撑满。
+ */
 const DRAFT_KEY = (sessionId: string) => `sse_draft_v1_${sessionId}`;
+const DRAFT_PREFIX = 'sse_draft_v1_';
+/** 孤儿键保留期: 7 天 */
+const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** 同时保留的会话草稿上限, 超出按最旧淘汰 */
+const DRAFT_MAX = 50;
+
+interface DraftRecord {
+  t: string;
+  ts: number;
+}
+
+/** 解析草稿值: 兼容旧格式(纯字符串, 无 ts) —— 无 ts 的按"内容有效但不计龄"处理, 不丢内容 */
+function parseDraft(raw: string): DraftRecord | null {
+  if (!raw.trimStart().startsWith('{')) return { t: raw, ts: Date.now() };
+  try {
+    const o: unknown = JSON.parse(raw);
+    if (typeof o !== 'object' || o === null) return null;
+    const r = o as Partial<DraftRecord>;
+    if (typeof r.t !== 'string') return null;
+    return { t: r.t, ts: typeof r.ts === 'number' ? r.ts : Date.now() };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 2026-10-13 18:45 小欧 - 清理节流。
+ *   病根: evictStaleDrafts 要遍历整个 localStorage(不止草稿键, 还有 chat_session_state /
+ *   execution_steps_backup 等), 而它原先在**每次按键**时被调用 —— O(总键数) 的同步扫描挂在
+ *   打字路径上, 会话开多了键数上百时即成真实卡顿。改为距上次清理不足 EVICT_THROTTLE_MS
+ *   直接跳过; 清理本身是"过期/超额才删"的兜底, 晚几秒执行无任何副作用。
+ */
+const EVICT_THROTTLE_MS = 5000;
+let lastEvictAt = 0;
+
+/** 清理过期键 + 超出上限时淘汰最旧; 供写入时调用, 内部按 EVICT_THROTTLE_MS 节流 */
+function evictStaleDrafts(): void {
+  const now = Date.now();
+  if (now - lastEvictAt < EVICT_THROTTLE_MS) return;
+  lastEvictAt = now;
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(DRAFT_PREFIX)) keys.push(k);
+  }
+  const alive: Array<{ key: string; ts: number }> = [];
+  for (const k of keys) {
+    const rec = parseDraft(localStorage.getItem(k) ?? '');
+    if (rec === null || now - rec.ts > DRAFT_TTL_MS) {
+      localStorage.removeItem(k); // 过期或损坏 → 删
+      continue;
+    }
+    alive.push({ key: k, ts: rec.ts });
+  }
+  if (alive.length <= DRAFT_MAX) return;
+  alive.sort((a, b) => a.ts - b.ts);
+  for (const r of alive.slice(0, alive.length - DRAFT_MAX))
+    localStorage.removeItem(r.key);
+}
 
 export function saveDraft(sessionId: string, text: string): void {
   try {
-    if (text) sessionStorage.setItem(DRAFT_KEY(sessionId), text);
-    else sessionStorage.removeItem(DRAFT_KEY(sessionId));
+    const key = DRAFT_KEY(sessionId);
+    if (text) {
+      localStorage.setItem(key, JSON.stringify({ t: text, ts: Date.now() }));
+      evictStaleDrafts();
+    } else {
+      localStorage.removeItem(key);
+    }
   } catch (e) {
     console.warn('[Persistence] 草稿保存失败，刷新后草稿不恢复:', e);
   }
@@ -133,7 +211,16 @@ export function saveDraft(sessionId: string, text: string): void {
 
 export function loadDraft(sessionId: string): string {
   try {
-    return sessionStorage.getItem(DRAFT_KEY(sessionId)) ?? '';
+    const key = DRAFT_KEY(sessionId);
+    const raw = localStorage.getItem(key);
+    if (raw === null) return '';
+    const rec = parseDraft(raw);
+    if (rec === null) return '';
+    if (Date.now() - rec.ts > DRAFT_TTL_MS) {
+      localStorage.removeItem(key); // 孤儿键过期, 就地清理
+      return '';
+    }
+    return rec.t;
   } catch (e) {
     console.warn('[Persistence] 草稿读取失败:', e);
     return '';
