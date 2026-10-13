@@ -219,6 +219,7 @@ from dataclasses import dataclass
 from typing import Optional, AsyncGenerator, Dict, List
 
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
+from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
 from app.services.model.resolver import (
     ProviderKeyMissingError,
     get_ai_config_resolver,
@@ -415,6 +416,7 @@ async def chat_stream_orchestrator(
     session_id: Optional[str] = None,
     link_enabled: Optional[bool] = None,   # 会话 link 开关值(随消息携带, None=沿用会话当前值)
     allow_interject: Optional[bool] = None,   # 2026-10-06 小欧 - 文档[11]: 插话开关值(随消息携带, None=沿用会话当前值)
+    refs: Optional[list] = None,   # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用条目(当轮消费, 不入库)
 ) -> AsyncGenerator[str, None]:
     """聊天流编排入口：负责任务生命周期、Agent 启动、SSE 消费。
 
@@ -423,6 +425,8 @@ async def chat_stream_orchestrator(
       白名单校验: 非法值/缺失一律按 independent, 防误灌历史(防退化)
     2026-10-02 小欧 - 文档[4] 5.7 项8: context_link_mode 形参与白名单校验已废止（真源上移至会话 link 开关），
       历史条目按"编辑历史禁删"保留不改。
+    2026-10-13 小欧 - 文档[28]: refs 随消息上行，仅透传到 agent._start_meta 供
+      message_builder 组装 LLM 消息时拼入；**不参与 user_input**（故入库/历史保持干净）。
     """
     # ── 编排①输入校验(消息非空) ———————————————————————————————————————— 小健 2026-08-17
     if not messages:
@@ -430,6 +434,12 @@ async def chat_stream_orchestrator(
         logger.warning("[chat] 输入校验失败: 消息列表为空")
         yield create_error_response(error_type="invalid_request", error_message="消息列表不能为空")
         return
+
+    # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 在**编排入口**一次性过滤越界 path，
+    #   判定复用 file_browse 的唯一入口（_resolve_within_root，含代码库根禁区）。
+    #   放这里而非 message_builder：① 层次正确（本层 → app.file_browse 是同层横向依赖，
+    #   反向会让 agent 层依赖更外层）；② 渲染期零 IO（原先每条 ref 都要 resolve 一次）。
+    refs = browse.sanitize_refs(refs)
     user_input = messages[-1].content or ""
     if not user_input.strip():
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
@@ -722,6 +732,9 @@ async def chat_stream_orchestrator(
             # 2026-10-09 小欧: link 序号 N(第几个 link 任务), telemetry 直接读不算(单一写点)
             "context_link_index": _chain_sibling_count + 1,
             "warning": _model_warning,
+            # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用透传, 供 message_builder.init_history 拼入
+            #   LLM 消息。纯数据携带, 不参与 user_input(入库/历史不受影响)。
+            "refs": refs or [],
         }
         # ── 编排⑨落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) ——— 小健 2026-08-17
         # ②-1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) — 小欧 2026-08-16

@@ -63,6 +63,7 @@ from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.config_routes import router as config_router
 from app.api.v1.settings_routes import router as settings_router
 from app.api.v1.model_routes import router as model_router
+from app.api.v1.file_routes import router as file_router  # 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览(J1~J5 底座) — 小欧-2026-10-13
 from app.api.v1.tool_routes import router as tool_routes_router  # A4: 工具测试路由迁出 health.py — 小欧 2026-08-12
 from app.api.v1.token_usage import router as token_usage_router  # S2(10.1.7②-6): token 四维度查询 API — 小欧 2026-08-16
 from app.api.v1.chat import router as chat_router, task_router, execution_stream as chat_execution_router
@@ -211,6 +212,8 @@ def _mount(router, tags: str, *, exempt: bool = False) -> None:
 # 纯回显无副作用（已读 health.py:68-76 核实：不落库、不调 LLM），故同享豁免无实际风险。
 _mount(health.router, "health", exempt=True)
 _mount(tool_routes_router, "tools")  # A4: 工具测试路由 — 小欧 2026-08-12
+# 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览路由走 _mount()（自动获得 token 鉴权，勿手写 include_router）
+_mount(file_router, "files")
 _mount(chat_router, "chat")
 _mount(task_router, "chat")
 _mount(config_router, "config")

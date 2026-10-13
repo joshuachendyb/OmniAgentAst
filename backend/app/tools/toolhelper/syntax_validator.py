@@ -10,7 +10,7 @@
     # 2026-10-12 - 小欧 - 增 toml(tomllib,标准库)/xml(xml.etree,标准库): 零外部依赖、解析严格零方言,
     #   误判率极低且写坏后果严重(pyproject/CI 配置失效整个工具链起不来); 沿用 OCP 各注册一行, 调用方零改动
     #   同批: 新增 _syntax_enabled, 按设置「沙箱›工具›语法检测」的总开关+每语言开关判定(默认全开)
-    # 2026-10-13 - 小欧 - 修_node_check_js finally引用前未定义: _tmp防御式初始化None+if守卫再unlink, 防校验异常路径NameError掩盖原错 — 小欧 2026-10-13
+    # 2026-10-13 - 小欧 - 修_node_check_js finally引用前未定义: _tmp防御式初始化None+if守卫再unlink, 防校验异常路径NameError掩盖原错
     """
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -220,7 +220,7 @@ def _node_check_js(content: str, file_path: Optional[str] = None):
     _node = shutil.which("node")
     if not _node:
         return None  # 无 Node → 跳过(等价放行)
-    _tmp = None  # 防御式初始化: finally块引用前确保已定义 — 小欧 2026-10-12
+    _tmp = None  # 防御式初始化: finally块引用前确保已定义 — 小欧 2026-10-13
     try:
         with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False, encoding="utf-8") as _f:
             _f.write(content)

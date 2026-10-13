@@ -155,7 +155,13 @@ async def run_react_cycle(
     _start_step = await _assemble_start_step(agent, context)  # 构建→判定→摘要→契约
 
     # 装配 conv → 发 history_context 首帧 → 再发 start(压缩与未压缩都发首帧)
-    agent.message_builder.init_history(getattr(agent, "_sys_prompt", "") or "", task or "")
+    # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 取自 agent._start_meta(orchestrator 透传),
+    #   在 message_builder 内拼为 user 消息前置区块 → 首发与插话同一路径, 覆盖两处。
+    agent.message_builder.init_history(
+        getattr(agent, "_sys_prompt", "") or "",
+        task or "",
+        refs=(getattr(agent, "_start_meta", None) or {}).get("refs"),
+    )
     _summary = getattr(agent, "_start_summary", "") or ""
     if _summary:
         agent.message_builder.inject_history([{"role": "assistant", "content": _summary}])
