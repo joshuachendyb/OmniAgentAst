@@ -15,6 +15,8 @@
 #   收尾构成半截对话 → 模型按对话补全续写而非汇总(实测六段命中率 16%); 末条补 user 请求后 6/6=100%。
 #   两摘要函数均适用(generate_chunked_summary 同理)。
 # 2026-10-10 小欧 摘要只取 type=="answer": error 的 content 是错误文案, 收下会让上层拿它顶替历史注入、历史全丢。
+# 2026-10-12 小欧 新增 _valid_summary_or_empty 单函数校验(北京老陈令): 长度下限+六段齐全+拒绝开头+压缩比,
+#   任一不过返空串走零退化; 两摘要函数共用, 不改流程 — 小欧-2026-10-12
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -24,6 +26,7 @@
 from typing import List, Dict, Optional
 
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.summary_feed_max_chars
+from app.logger import logger, log_and_print  # 2026-10-12 小欧 - 校验拒绝改 log-print（北京老陈令）: 只写日志文件则控制台无据可查；logger 保留供 L56 老分支 — 小欧-2026-10-12
 from app.services.agent.compaction_constants import SUMMARY_FEED_MAX_CHARS
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 
@@ -65,6 +68,39 @@ async def _extract_response_content(llm_agent, feed: List[Dict]) -> str:
     return content
 
 
+# 六段标记（与 SUMMARY_TEMPLATE 同源，改模板即改此处）— 小欧 2026-10-12
+_SUMMARY_SECTIONS = ("Goal:", "Key Decisions:", "Critical Context:",
+                     "Relevant Files:", "Progress:", "Next Steps:")
+_SUMMARY_MIN_CHARS = 200  # 缺省; 优先读 tuning.compaction.summary_min_chars（与本文件配置化口径一致）
+_REFUSAL_PREFIXES = ("抱歉", "对不起", "很抱歉")
+
+
+def _valid_summary_or_empty(text: str, src_len: int = 0) -> str:
+    """摘要结构校验（单函数，两摘要函数共用）— 小欧 2026-10-12
+
+    任一不过返空串，调用方走现有零退化路径（装配原历史），不改流程：
+    ①长度下限（太短必是垃圾）；②六段标记齐全（子串匹配，容忍 - /## 前缀变体）；
+    ③拒绝话术开头（只认开头，避正文误伤）；④不比原文长（没压反而胀）。
+    """
+    t = (text or "").strip()
+    reason = ""
+    _min = int(get_config().get('tuning.compaction.summary_min_chars', _SUMMARY_MIN_CHARS))
+    if not t:
+        reason = "空响应"
+    elif len(t) < _min:
+        reason = f"过短({len(t)}字<{_min}字)"
+    elif any(s not in t for s in _SUMMARY_SECTIONS):
+        reason = "缺段标记"
+    elif t.startswith(_REFUSAL_PREFIXES):
+        reason = "拒绝话术开头"
+    elif src_len > 0 and len(t) >= src_len:
+        reason = f"未压缩({len(t)}字>=原文{src_len}字)"
+    if reason:
+        log_and_print(f"[compaction.summary] 摘要结构校验未过({reason})，丢弃用原历史")
+        return ""
+    return t
+
+
 async def generate_anchored_summary(llm_agent, messages: List[Dict],
                                     previous_summary: Optional[str] = None) -> str:
     """一次 LLM 调用产出锚定摘要 — 小欧 2026-08-16
@@ -87,7 +123,8 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict],
             feed.append(msg)
     prompt = SUMMARY_TEMPLATE + (f"\npreviousSummary:\n{previous_summary}" if previous_summary else "")
     feed = [{"role": "system", "content": prompt}, *feed, {"role": "user", "content": _SUMMARY_TAIL_USER}]
-    return await _extract_response_content(llm_agent, feed)
+    _src_len = sum(len(str(m.get("content") or "")) for m in messages)
+    return _valid_summary_or_empty(await _extract_response_content(llm_agent, feed), _src_len)
 
 
 async def generate_chunked_summary(llm_agent, new_block: List[Dict],
@@ -110,4 +147,7 @@ async def generate_chunked_summary(llm_agent, new_block: List[Dict],
         c = str(msg.get("content", ""))[:_feed_max2] if msg.get("role") == "tool" else str(msg.get("content", ""))
         feed.append({**msg, "content": c})
     feed.append({"role": "user", "content": _SUMMARY_TAIL_USER})
-    return await _extract_response_content(llm_agent, feed)
+    _src_len = sum(len(str(m.get("content") or "")) for m in new_block)
+    if previous_summary:
+        _src_len += len(previous_summary)
+    return _valid_summary_or_empty(await _extract_response_content(llm_agent, feed), _src_len)

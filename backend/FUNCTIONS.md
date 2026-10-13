@@ -232,6 +232,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `prune_tool_output_keeping_tail` | 摘要降本策略（已接入 `start_step._compact_injected_history`）：保尾区 tool 结果原样保留，只清零更早的。边界由调用方给（`split_turn.find_tail_start` 按保尾预算算），故本模块不 import split_turn（零新依赖、职责不混）；不改入参，越界下标由切片语义兜住 | messages: List[Dict], tail_start: int | (新列表, 释放 token 估算) |
 | `_fc_atomic_units` | 把 assistant(tool_calls) 与其 tool 结果编成 FC 原子单元（整组取舍，永不拆散），修"决策留下/结果被删"导致 provider 400；单元权重取成员最高、成本取成员之和 | messages: List[Dict] | List[List[int]] |
 | `_msg_cost` | 单条消息的预算占用 token，复用 `MessageBuilder._estimate_tokens` 同一真源（原 `len(content)/CHARS_PER_TOKEN` 自算漏算 tool_calls 结构开销，实测决策消息 0 vs 41，致 budget 约束不准） | msg: Dict | int |
+| `_valid_summary_or_empty` | C4 摘要结构校验（单函数，两摘要函数共用）：空响应/长度下限/六段齐全/拒绝开头/压缩比，任一不过返空串走零退化；阈值优先读 `tuning.compaction.summary_min_chars`（缺省 200） | text: str, src_len: int = 0 | str（有效原文/空串） |
 
 > 落点说明(2026-10-08 小欧): 真实 205 条实测，未降本 feed 135362 tok；本策略降至 86472 tok（省 36%）且摘要保住可核对的具体数字/签名/时间戳（纯全清零版 83673 tok 但摘要仅 1521 字符且失掉证据）。开关见 `compaction_constants.SUMMARY_PRUNE_TOOL_OUTPUT`，置 False 即刻回退全量喂。
 

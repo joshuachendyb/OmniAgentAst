@@ -52,6 +52,7 @@
 # 2026-10-08 小欧 北京老陈裁定"不能误导用户" — set_injected_context 增传 last_user_text: 遥测原从 conversation_history
 #   末条取 summary, 首帧时那正是用户刚发的本轮提问, 标签"最近"等于把自己的提问回显一遍(实测四条帧全是用户原话);
 #   改由注入源取最近一条历史提问, 语义才成立。 — 小欧-2026-10-08
+# 2026-10-12 小欧 - 摘要调 LLM 前补 log-print（北京老陈令）: 入口无日志则长等待无据可查 — 小欧-2026-10-12
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -66,7 +67,7 @@ start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
-from app.logger import logger
+from app.logger import logger, log_and_print
 
 
 def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
@@ -224,6 +225,8 @@ async def _compact_injected_history(agent) -> str:
                 logger.info("[start_step] 摘要前检测到任务取消, 跳过摘要(调用方零退化装配原历史)")
                 agent._needs_compact = False
                 return ""
+        # 2026-10-12 小欧 - 摘要调 LLM 前打 log-print（北京老陈令）: 无入口日志则长等待期无据可查 — 小欧-2026-10-12
+        log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条")
         summary_text = await generate_anchored_summary(agent, _hist_for_summary)
         if _task_id and await check_cancelled(_task_id):
             logger.info("[start_step] 摘要后检测到任务取消, 丢弃摘要结果(调用方零退化装配原历史)")
