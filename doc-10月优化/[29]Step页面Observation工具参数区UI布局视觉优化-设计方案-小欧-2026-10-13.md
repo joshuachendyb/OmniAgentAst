@@ -1,9 +1,10 @@
 # [29] Step页面Observation工具参数区UI布局视觉优化-设计方案-小欧-2026-10-13
 
 创建时间：2026-10-13 08:26:25
-更新时间：2026-10-13 10:19:12
-版本：v2.5
+更新时间：2026-10-13 20:18:47
+版本：v2.7
 编写人：小欧
+更新人：小欧
 
 **版本历史**
 
@@ -24,7 +25,9 @@
 | v2.2 | 2026-10-13 09:36:18 | 小欧 | 六轮逐节 10 遍核查第 4 章代码，查出 **5 处**（其中 **3 处直接导致编译/校验失败**）：①**§4.6.1 多导入未使用的 `Radius`**（§4.6 全文未用）→ ESLint `no-unused-vars` error，**已删**；②**§4.5 `VIEW_OPTIONS` 加了 `as const`** → 产出 readonly tuple，而 antd `Segmented.options` 类型是可变数组 `(string｜number｜SegmentedOption)[]`，**tsc 报 TS2322**，**已去掉 `as const`** 并注明理由；③**§4.4 树根标签写成「树根(恒展开)」** → 把实现注释泄漏到 UI，且与 §3.4.1 结构图 `▾ {` 不一致，**改为只写 `{`**；④§3.8 **T33 的 props 清单与 §4.0 D-3 不符**（仍写 `children`）→ **同步为 `{toolName, params, onClose}`**；⑤**§4.6.6 删除块用 `... paramsFoldable 分支 + paramRows.map ...` 占位**，不可直接实施 → **已展开为原文件 `:361-437` 逐行完整原文** |
 | v2.3 | 2026-10-13 09:58:45 | 小欧 | 七轮倒推核查（从 §4 实施代码反推 §1/§2/§3 依据），查出 **4 处**：①**§4.5 引用的 `paramsCardStyle` 小写与 §4.6.2 定义的 `PARAMS_CARD_STYLE` 大写不一致** → 统一大写；②**`<FloatingEntry>` 置于工具行 flex 内会被压缩**（其根是无类名 block div，Props 无 trigger 样式入口，窄屏时按钮被挤没）→ **外裹一层 `flexShrink: 0` 的 span**（注释写明根因）；③**§4.4 树根容器用 `BORDER.LIGHT(#f0f0f0)`，与 §3.4.3 复用表规定的 `BORDER.DEFAULT(#d9d9d9)` 冲突**（同为"代码容器"边框一深一浅）→ 改 `DEFAULT`；④**§五第 5 步命令在无测试文件的机器上跑不动**（§4.7 按铁规不提交）→ 加注"仅本地有测试文件时执行，否则跳过" |
 | v2.4 | 2026-10-13 10:08:09 | 小欧 | 八轮 10 遍核查（逐节 2028 行 + 5 个源码文件逐行对照），查出 **14 处**，其中 **3 处实施即失败**：①**§4.5 GroupView/SpecView 的 key 列仍写 `break-all`**（`:1493`/`:1545`），与 §2.5 V3「break-all → break-word」及 T13「非 break-all」冲突（值列已改、key 列漏改）→ 两处改 `break-word`；②**`.taskinfo-entry` 的 `color` 由 CSS 定死**（`index.css:261` `#999`/`:269` hover `#1677ff`），而 §4.6.6 按钮 span 未设 color ⇒ **T20「关 SECONDARY/开 PRIMARY」必然失败** → span 加 `color: openPanelIndex === i ? PRIMARY : SECONDARY`；③**`.taskinfo-entry[data-open='true'] svg{transform:rotate(180deg)}`**（`index.css:272-274`）会把打开态 `CodeOutlined` **翻转 180°**，与 §3.6「按钮无箭头、开合以文字色标识」及 T20 冲突 → 图标加 `style={{transform:'none'}}` 内联压制（不动共享 CSS，免影响 G6/G8）并补 T35；④**FloatingEntry `trigger=['hover','click']` + B5「hover 态首击被吃掉」**（`FloatingEntry.tsx:66,97-105`）全文未登记：悬停即弹浮层、hover 打开后第一次点击不关闭，与「点按钮开合、点新的关旧的」（DC-09/T6/T15）契约冲突 → **新增 D-7**：给 `FloatingEntry` 加 `trigger?` 可选 prop（默认保持 `['hover','click']`，既有 G6/G8 零变化），本功能传 `['click']`，并补 §4.8 与 T36；⑤**§4.6.1 import diff 上下文与源码不符**（实际 `CircleArrow(60)→DropletIcon(61)→GearIcon(62)`，文档写成 `CircleArrow→GearIcon→DropletIcon`，照单应用会定位失败）→ 按源码订正；⑥**§4.1 `CopyButton` 行数「+6 −0」错**，实为 **+15 −4** → 订正；⑦**`CopyButton` 既有调用点文档三处说「5 处」，实为 2 处**（`MarkdownText.tsx:384`、`MarkdownBody.tsx:144`）→ §3.1/§4.3/T28 同步订正；⑧**§2.8「共 20 条」+「其余 16 项」与 §2.2.2 实有 19 行不符** → 改 19 / 其余 15；⑨**DC-01 写「三章」而文档实有五章** → 改五章并列明各章职责；⑩**T25 公式 `min(视口-32px,640)` 与「不低于 320」自相矛盾**（视口<352px 时该值<320；且 CSS 中 `min-width` 优先于更小的 `max-width`，反而溢出视口）→ 改为 CSS 真实语义三档阈值（≥672→640；352~672→视口-32；<352→320 生效、超出部分由右栏 `overflowX:hidden` 裁剪）；⑪**T29「折叠切换一律 `CircleArrow(14,PRIMARY)`」与现状冲突**（工具行折叠箭头实为 size=16/TEXT.PRIMARY `:354-359` 且不在本次改动范围）→ 限定为「本次新增的树节点/巨型值两处」；⑫**v2.3 R2 注释根因写错**（`.taskinfo-entry` 实为 `display:inline-flex`+`min-width:32px`，自带下限不会被挤没；真正被压缩的是 FloatingEntry 最外层无类名 block div）→ 订正根因（顺带核实「右栏 `overflowX:hidden` 兜」属实：`SessionLayout.tsx:99,126`）；⑬**§1.4 高度表 write 行算术不自洽**（「参数行数 6」×18=108px 却写 5400px+，后者按 content 300 行摊开算）→ 拆清两列口径；⑭**引用错位**：「行高=字号+4」定案在 `stepStyles.ts:108-110`（文档写 `:13`）、`BG.SECONDARY` 出处 `:154`（实为 `:153`）→ 订正。同轮核实**无误**：15+ 处代码落点行号（`:363-437`/`:367`/`:369`/`:378`/`:391`/`:411`/`:413`/`:416`/`:428`/`:443`/`:444`/`:268-283`/`:288`/`:122-124`/`:190-209`/`:303-307`/`:440-459`/`:248`/`:96-109`/`:330-352`）、`FloatingEntry:39-48/50-53/73-77/88-92/98`、`MarkdownText:90/91/93`、`CollapsibleText:109-115`（`CircleArrow size=14/PRIMARY/animated=false` + ` 收起/ 展开`）、全部 hex 值、`ParamsPanel` 去 `as const` 的 TS2322 结论、`ParamsTree` 的 `Set<string>`/`Icon.BOX=16`、`§4.7` 测试、535−95+40=480 行数算式，**均精确命中** |
-| v2.5 | 2026-10-13 10:19:12 | 小欧 | 九轮 10 遍全文核查（2123 行逐节读完）查出 **10 处**，其中 **2 处会直接导致实施/测试失败**：①**§4.5 两处 key 列 `width: 96/140` 缩进被顶格**（v2.4 订正 `break-word` 时丢了缩进，照抄代码块会让 `format:check` 失败）→ 缩进归位；②**§4.7 测试第 2 个 case `getByText('utf-8')` 必然失败**——节点值渲染为 `<span>: {summary}</span>`，文本实为 `": utf-8"`，字符串匹配器要求全文相等 → 改正则 `/utf-8/`；③**§3.4.2「点击节点 `onClick` 内 `e.stopPropagation()`」与 §4.4 代码冲突**（D-1 已把树移出 `role="button"`，父级不再是按钮；加回 stopPropagation 反而使节点文字选不中）→ 订正为「本章落地无 `stopPropagation`」；④**§4.1 高度链路复核写 `maxBodyHeight`**（那是 `ParamNode` 内部 prop，对外 prop 实为 `maxNodeBodyHeight`）→ 订正并说明逐层转授关系；⑤**§4.4 规范判定「无 useMemo 冗余」与代码里的 `copyText` useMemo 自相矛盾** → 改为说明 `useMemo` 的必要性（entries 新引用避免重复 stringify）；⑥**§4.4「值格式化 3 个纯函数」漏计**（实为 `classify`/`displayScalar`/`branchEntries`/`branchSummary` **4 个**）→ 订正；⑦**§3.5「`cardStyle` 注入宽/限高」与实现不符**（`PARAMS_CARD_STYLE` 只有响应式宽三件套，限高在 `ParamsPanel` body 480）→ 订正；⑧**§3.6「其 `onClick` 内 `e.stopPropagation()`」措辞误导**（实为 `FloatingEntry` 内部自带 `:98`，本功能不另写 onClick）→ 订正；⑨**§4.5「格式化全在 6 个纯函数」漏计**（实为 **7 个**，含 `readView`）→ 订正；⑩**§3.6 `.taskinfo-entry` 引用区间 `253-274` 不含 focus-visible**（实为 `:276-279`）→ 补全为 `:253-279` 并逐段注明归属。**实施后追加 3 处落盘事实**：⑪**§4.7 测试落位与仓内 `vitest.config` 冲突**——`include` 只扫 `src/tests/**`，放组件同目录实测报 `No test files found`（写了永远跑不起来的死代码）→ 改落 `src/tests/unit/params-tree.test.tsx` + import 换 `@/` 别名（否则 `Failed to resolve import`），§3.1/§4.1/§五第 5 步命令同步；⑫**§4.7 测试用原生 `el.click()` 必失败**（不被 `act()` 包裹，React 18 的 `setState` 未刷新即断言，实测 `1 failed | 3 passed`）→ 改 RTL `fireEvent.click`，实测 **4 passed**；⑬**§4.1/§4.6.8 的行数估值全部按 `git diff --numstat` 实测回填**（`ToolCallLine` 实为 **+78 −98 → 515 行、净 −20**，非估的「+40 −95 → 480、净 −55」；`ParamsTree` **+260**、`ParamsPanel` **+439**，均远超原估；`CopyButton` +15 −4 与 `stepStyles` +8 命中；`FloatingEntry` 实为 +7 −1） |
+| v2.5 | 2026-10-13 10:19:12 | 小欧 | 九轮 10 遍全文核查（2123 行逐节读完）查出 **10 处**，其中 **2 处会直接导致实施/测试失败**：①**§4.5 两处 key 列 `width: 96/140` 缩进被顶格**（v2.4 订正 `break-word` 时丢了缩进，照抄代码块会让 `format:check` 失败）→ 缩进归位；②**§4.7 测试第 2 个 case `getByText('utf-8')` 必然失败**——节点值渲染为 `<span>: {summary}</span>`，文本实为 `": utf-8"`，字符串匹配器要求全文相等 → 改正则 `/utf-8/`；③**§3.4.2「点击节点 `onClick` 内 `e.stopPropagation()`」与 §4.4 代码冲突**（D-1 已把树移出 `role="button"`，父级不再是按钮；加回 stopPropagation 反而使节点文字选不中）→ 订正为「本章落地无 `stopPropagation`」；④**§4.1 高度链路复核写 `maxBodyHeight`**（那是 `ParamNode` 内部 prop，对外 prop 实为 `maxNodeBodyHeight`）→ 订正并说明逐层转授关系；⑤**§4.4 规范判定「无 useMemo 冗余」与代码里的 `copyText` useMemo 自相矛盾** → 改为说明 `useMemo` 的必要性（entries 新引用避免重复 stringify）；⑥**§4.4「值格式化 3 个纯函数」漏计**（实为 `classify`/`displayScalar`/`branchEntries`/`branchSummary` **4 个**）→ 订正；⑦**§3.5「`cardStyle` 注入宽/限高」与实现不符**（`PARAMS_CARD_STYLE` 只有响应式宽三件套，限高在 `ParamsPanel` body 480）→ 订正；⑧**§3.6「其 `onClick` 内 `e.stopPropagation()`」措辞误导**（实为 `FloatingEntry` 内部自带 `:98`，本功能不另写 onClick）→ 订正；**⚠️ v2.6 追认：此处的「订正」本身是错的**——它把「trigger 上有 `stopPropagation`」当成了「浮层内容不会外泄」，而 portal 的 React 冒泡路径不经过 trigger，导致 §4.0 D-6 错误存活至 v2.5，直至北京老陈实测报缺陷才在 v2.6 证伪并根治（见 §4.9、§4.0 D-6 改写）；⑨**§4.5「格式化全在 6 个纯函数」漏计**（实为 **7 个**，含 `readView`）→ 订正；⑩**§3.6 `.taskinfo-entry` 引用区间 `253-274` 不含 focus-visible**（实为 `:276-279`）→ 补全为 `:253-279` 并逐段注明归属。**实施后追加 3 处落盘事实**：⑪**§4.7 测试落位与仓内 `vitest.config` 冲突**——`include` 只扫 `src/tests/**`，放组件同目录实测报 `No test files found`（写了永远跑不起来的死代码）→ 改落 `src/tests/unit/params-tree.test.tsx` + import 换 `@/` 别名（否则 `Failed to resolve import`），§3.1/§4.1/§五第 5 步命令同步；⑫**§4.7 测试用原生 `el.click()` 必失败**（不被 `act()` 包裹，React 18 的 `setState` 未刷新即断言，实测 `1 failed | 3 passed`）→ 改 RTL `fireEvent.click`，实测 **4 passed**；⑬**§4.1/§4.6.8 的行数估值全部按 `git diff --numstat` 实测回填**（`ToolCallLine` 实为 **+78 −98 → 515 行、净 −20**，非估的「+40 −95 → 480、净 −55」；`ParamsTree` **+260**、`ParamsPanel` **+439**，均远超原估；`CopyButton` +15 −4 与 `stepStyles` +8 命中；`FloatingEntry` 实为 +7 −1） |
+| v2.6 | 2026-10-13 20:01:55 | 小欧 | 北京老陈报「点浮层 ✕ 竟让 JSON 折叠窗口展开」。**D-6 的核心假设被实测证伪**（详见 §4.0 D-6 改写与新增 §4.9）。antd Popover 的 content 是 **portal 到 body** 的，React 事件冒泡走 **React 组件树**而非 DOM 树，portal 内容在 React 树里的位置是 trigger div 的**兄弟节点**，故浮层内点击**不经过** trigger 上的 `stopPropagation`，直达工具行 `toggleTool` 连带展开 JSON 树。①**D-6 由「确认可行」改判为错误并给出根治修法**（`FloatingEntry` 卡片根统一拦截，撤掉调用方逐点补丁）；②v2.5 第⑧项「措辞误导→已订正」的结论**本身也是错的**，一并订正；③**新增 §4.9「三浮层入口触发方式不一致」现状分析**——北京老陈报「实时页浮层参数有时悬停自动展开、有时需点击」，实测参数浮层本身行为正确（`trigger=['click']`），真因是同页另两个入口（事件时间轴 G8 / 上下文概览 G6）未传 `trigger`、走默认 hover+click，三者外观同为 `.taskinfo-entry` 故难以分辨。**北京老陈裁定「问题2 不修改，就这样」**，故只登记现状与候选方案、不改代码 |
+| v2.7 | 2026-10-13 20:18:47 | 小欧 | 北京老陈问「工具执行的 result，没有经过 format 格式化的 result-data 有没有发送到前端」。核查结论（记入 **§4.9.7**）：顶层原始 `result` **不发前端**（只进后端 prompt 日志 `raw_data=`）；`llm_data`/`other_data` **原样下发**。核查中注意到「所有 `OBS_*` 限长常量都在 `observation_formatter.py`、它只产出 `data_text`，`llm_data` 入站无任何截断，SSE 层亦无帧上限」这一现象。**北京老陈裁定：这是有意设计，不改**——限长的目的是控制喂给 LLM 的 token，而非控制下行浏览器的字节。本版仅登记该裁定与依据，**零代码改动**，防日后被当缺陷重复排查 |
 
 ---
 
@@ -875,8 +878,8 @@ content = 共 312 行
 | D-3 | §3.5 `ParamsPanelProps = { toolName, params, children }` | **`{ toolName, params, onClose }`** | T15 要求 `✕` 可关闭，而 `✕` 在面板内 → 必须有 `onClose`；`children` 无消费方（内容就是分组/规格表两视图），YAGNI 删除 |
 | D-4 | §3.4.3 尺寸令牌 3 个 | **4 个**，增 `PARAMS_PANEL_BODY_MAX_H: 480` | 面板整体需有高度上限，否则 23 项参数的面板会超出视口；`PARAMS_PANEL_MAX_H` 只管**单个值**展开体 |
 | D-5 | §3.5 「面板宽度接系统断点矩阵」 | **纯 CSS 响应式**：`width:640 + minWidth:320 + maxWidth:calc(100vw - 32px)` | 断点矩阵需 JS 监听 resize（重渲染+状态），纯 CSS 三行解决且零重渲染。T25 的落法因此得以自然满足 |
-| D-6 | §3.6 「浮层按钮 = FloatingEntry 的 children，插在 CircleArrow 之后」 | **确认可行**：`FloatingEntry` 触发器自带 `e.stopPropagation()`（`FloatingEntry.tsx:98`），置于工具行 flex 内安全 | 原设计担心冒泡，实读源码已解决，无需额外包装 |
-| D-7 | §3.5 直接复用 `FloatingEntry`（其 `trigger` 硬编码 `['hover','click']`，`:66`） | **加可选 prop `trigger?`**：默认 `['hover','click']` 保持 G6/G8 两处既有调用**零变化**，本功能传 `['click']` | 直接复用会踩两个坑：①悬停即弹浮层，与 DC-09/DC-12「点按钮开合」口径不符、密集工具行易误开；②B5 审计逻辑（`:97-105`）会**吃掉 hover 打开后的第一次点击**（只"确保打开"不关闭），用户**点按钮关不掉**浮层。属 OCP 扩展（加可选能力不改既有签名），见 §4.8、T36 |
+| D-6 | §3.6 「浮层按钮 = FloatingEntry 的 children，插在 CircleArrow 之后」 | **【v2.6 已证伪并改判】** 原写「确认可行：`FloatingEntry` 触发器自带 `e.stopPropagation()`（`:98`），置于工具行 flex 内安全」——**该假设不成立**。真因：antd Popover 的 content 是 **portal 到 body** 的，而 React 事件冒泡走 **React 组件树**不是 DOM 树，portal 内容在 React 树里的位置是 trigger div 的**兄弟节点**，冒泡路径**不经过** trigger → 浮层内 ✕ 的点击直达工具行 `onClick={toggleTool}`，连带展开 JSON 树。**根治修法**：`FloatingEntry` **卡片根**统一 `onClick={e => e.stopPropagation()}`（门户自守、一处真源、全调用方受益），而非各调用方逐个按钮打补丁 | 北京老陈实测报「点 ✕ 竟展开 JSON 树」，真 Chromium 复现确认（点 ✕ 后工具行 `aria-expanded=true`、行内出现 JSON 节点）。原假设基于「读到 trigger 上有 `stopPropagation` 就以为安全」，未验证 **portal 的冒泡路径与 DOM 树不同**——这正是该缺陷长期未被发现的根因；v2.5 第⑧项曾把此处的「措辞误导」当成已订正，**该结论本身也是错的** |
+| D-7 | §3.5 直接复用 `FloatingEntry`（其 `trigger` 硬编码 `['hover','click']`，`:66`） | **加可选 prop `trigger?`**：默认 hover+click 保持 G6/G8 两处既有调用**零变化**，本功能传 `['click']` | 直接复用会踩两个坑：①悬停即弹浮层，与 DC-09/DC-12「点按钮开合」口径不符、密集工具行易误开；②B5 审计逻辑（`:97-105`）会**吃掉 hover 打开后的第一次点击**（只"确保打开"不关闭），用户**点按钮关不掉**浮层。属 OCP 扩展（加可选能力不改既有签名），见 §4.8、T36。**v2.6 补记**：D-7 只统一了**本功能**的触发方式，G6/G8 因「保持零变化」而未统一 → 产生同页三入口触发方式不一致的现状，见 **§4.9**（北京老陈裁定不改，仅登记） |
 | D-8 | ~~初稿把面板外壳当"不该画框"~~ | **【已撤回】** 初稿曾误判为"面板外壳不画框、底/边框/圆角全交 Popover"，理由是 G6/G8 的 content 不自绘外框 | **误判已撤销**：①依据套错——G6/G8 的 content 是纯文本/事件时间轴，而本方案的浮层内容**本身就是一张卡片**（设计三处明写）；②且 Popover 自带 `padding:12px`，不画框的结果是"白底弹层 + 无框灰字内容"，同样不是设计。**最终口径 = 面板外壳恢复自带 `BG.SECONDARY + BORDER.DEFAULT + Radius.SM`（DC-19/T32/§3.5.1 三处一致）** |
 | D-11 | §3.5.1 结构图未提 Popover 外壳内距 | **`PARAMS_CARD_STYLE` 增 `padding: 0`** | antd 5.29.3 的 `.ant-popover-inner` 自带 `padding: 12px`（`node_modules/antd/es/popover/style/index.js:59`，`innerPadding: wireframe ? 0 : 12`）。面板自带卡片规格与自身内距，若不归零就会出现「白边 + 灰卡片」的**框中框**，与结构图不符 → 外壳内距归零，内距统一由面板自身 padding 承担 |
 | D-9 | §3.4「**树头用 `CopyButton` 默认形态（`position:absolute`）**，正落在树头右上角」 | **树头改 `inline`**：按钮进 flex 流，中间加一个 `flex:1` 空 span 顶到行尾；树根**删** `position:relative` | absolute 的包含块是**树根容器**而非树头（初稿误以为在树头），而树根 `padding` 仅 4px、按钮高约 20px → 按钮**压在第一条节点行的值列上**遮挡长值（实测口径）。inline 不遮挡、无需预留宽度，行尾位置与 §3.4 结构图「▾ {　[复制]」一致；`position:relative` 的存在前提随之消失 |
@@ -2201,5 +2204,81 @@ describe('ParamsTree(展开区 JSON 树)', () => {
 
 ---
 
+## 4.9 三浮层入口触发方式不一致（现状分析，**未修改**）
+
+> 北京老陈 2026-10-13 报：「实时页面的这个浮层参数页面，怎么有时候是鼠标移动上去自动展开、有时候不自动展开，需要点击一下呢？」
+> **裁定：不修改，就这样。** 本节只登记现状、成因、已排除的假设与候选方案，供日后需要时决策。
+
+### 4.9.1 实测结论：本功能（浮层参数）行为正确
+
+真 Chromium 复现台四场景实测：
+
+| 场景 | 实测结果 | 是否符合预期 |
+|---|---|---|
+| 纯悬停「浮层参数」，不点击 | 浮层**不打开** | ✅ 符合（`trigger=['click']`） |
+| 悬停后移开鼠标 | 浮层不打开 | ✅ |
+| 先悬停再点击 | 浮层打开 | ✅（未被 B5 吃掉） |
+| 再点一次 | 浮层关闭 | ✅ |
+| 工具行已展开后再悬停 | 浮层不打开 | ✅ |
+
+**结论：参数浮层本身不存在「时灵时不灵」，其行为完全符合 D-7 的设计口径。**
+
+### 4.9.2 真因：同页有三个入口，触发方式不同且外观难以分辨
+
+全仓 `FloatingEntry` 共 3 处调用方：
+
+| # | 入口 | 位置 | 是否传 `trigger` | 实际触发方式 | 悬停是否自动展开 |
+|---|---|---|---|---|---|
+| 1 | **浮层参数** | 工具行行尾（本功能，`ToolCallLine.tsx:397`） | 传 `['click']` | 点击 | ❌ 需点击 |
+| 2 | **事件**（事件时间轴 G8） | `TaskInfoBar.tsx:498` | **未传** | 走默认 | ✅ 自动展开 |
+| 3 | **上下文概览** | `ContextOverviewCard.tsx:211` | **未传** | 走默认 | ✅ 自动展开 |
+
+`FloatingEntry` 的 `trigger` 默认值是 `['hover','click']`（`FloatingEntry.tsx:34`），故 #2 #3 未传即 hover 自动展开。
+
+三者外观同为 `.taskinfo-entry` 小方框（`index.css:253-279`），**观感几乎一致，用户难以分辨当前悬停的是哪一个**，于是主观上呈现「有时候自动展开、有时候不」的随机感。
+
+### 4.9.3 成因追溯：D-7 的「零变化」取舍留下了不一致
+
+D-7 为避免影响既有调用方（G6/G8），刻意规定「默认保持 `['hover','click']`，既有调用零变化」，只让**本功能**传 `['click']`。该取舍在当时是正确的（避免连带回归），但客观上造成了 §4.9.2 的不一致。**这不是实现缺陷，是设计取舍的已知残留。**
+
+### 4.9.4 已排除的假设（避免后人重复排查）
+
+| 假设 | 排除依据 |
+|---|---|
+| 「`mouseEnterDelay/mouseLeaveDelay` 配错导致时灵时不灵」 | 错：该两属性仅在 hover 触发下生效，本功能传的是 `['click']`，不参与 |
+| 「B5 补偿逻辑（`hoverOpenedRef`）误吃掉首次点击」 | 错：该逻辑已按 `trigger.includes('hover')` 门控（`FloatingEntry.tsx:52`），纯 click 模式不触发 |
+| 「参数浮层的 `trigger` 没传进去」 | 错：源码 `ToolCallLine.tsx:401` 确为 `trigger={['click']}`，且 §4.9.1 实测行为正确 |
+| 「CSS `.taskinfo-entry:hover` 影响了开合」 | 错：CSS 只改颜色（`--taskinfo-entry-active`），不改开合状态 |
+
+### 4.9.5 候选方案（**均未实施**，供日后决策）
+
+| 方案 | 做法 | 代价 / 风险 |
+|---|---|---|
+| **A（当时推荐）** | 给 #2 #3 也传 `['click']`，全站统一为点击 | 改变 G6/G8 既有交互，属行为变更，需回归其原有验收项 |
+| **B** | 三个统一为 hover 自动展开 | 浮层内含 ✕、Segmented、折叠箭头等可交互元素，hover 触发易误开误关（§4.9.6） |
+| **C（**当前状态**）** | 保持现状 | 用户需分辨三个外观相近的入口，易误判 |
+
+### 4.9.6 一个值得记录的观察
+
+§4.9.2 的三个入口里，本功能浮层内含 `✕`、视图切换 `Segmented`、`CopyButton`、折叠箭头等多个可交互元素。**这类内容在 hover 触发下天然易误触**（鼠标划过即弹、随即移开又关，用户根本没看清内容）。D-7 当时选择「本功能用 click」在这一点上是正确的，问题只在于 G6/G8 未同步统一。
+
+### 4.9.7 附记：`tool_result.llm_data` 原样下发是**有意设计**（勿当缺陷）
+
+核查「工具结果未经 format 的 result-data 是否发到前端」时顺带查出的两点，**北京老陈 2026-10-13 裁定：有意设计，不改**。此处登记以免日后重复排查、误当 bug 修掉：
+
+| 数据 | 是否下发前端 | 定性 |
+|---|---|---|
+| 顶层原始 `result` | **否** | 只进后端 prompt 日志（`observation_builder.py:98` 的 `raw_data=`），前端零可见 |
+| `llm_data` | **是，原样未截断** | **有意设计**，前端消费 `status.exec_code` / `summary` / `duration_ms` / `metrics` / `action.artifacts` |
+| `other_data` | 是，原样 | 附件 / 警告 / 直返 |
+| `data_text` | 是，**已格式化且有限长** | `tool_constants.py` 的 `OBS_*_MAX_*` 只作用于这一条 |
+
+**易被误判为缺陷的现象**：所有限长常量都在 `observation_formatter.py`，而它只产出 `data_text`；`observation_builder.py:125` 取 `llm_data` 后直接入 `tool_result`，SSE 层亦无帧体积上限。故「`llm_data` 未受任何限长保护」是**事实**，但**不是遗漏而是取舍**——限长的目的是控制**喂给 LLM 的 token**，而非控制下行给浏览器的字节。
+
+> 注：`observation_formatter.py:169-173` 记录了出站（喂 LLM）方向已对 `action.params` 做脱敏（删 `action.target`）。入站方向的 `llm_data.action.params` 为原始值，属上述取舍的一部分。
+
+---
+
 编写人：小欧
 编写时间：2026-10-13 10:19:12
+更新时间：2026-10-13 20:18:47
