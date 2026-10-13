@@ -3,7 +3,10 @@
 //   其余实现要点: ①nodeKey 只由 entries 下标 idx 构成(不掺参数 key), 参数 key 内含 '/' 也不撞键;
 //   ②key 列限宽 96 与浮层 GroupView 同宽(两载体口径一致);③树头复制按钮用 inline + 中间 flex:1 顶到行尾
 //   (原默认形态 position:absolute 的包含块是树根而非树头, 会压住第一条节点行的值列);
-//   ④行容器 className="params-clickable" 走 CSS hover/focus 反馈(§2.5 V8, 零重渲染);⑤底/框/圆角与 MarkdownText 代码块同款(T32) — 小欧 2026-10-13
+//   ④行容器 className="params-clickable" 走 CSS hover/focus 反馈(§2.5 V8, 零重渲染);⑤底/框/圆角与 MarkdownText 代码块同款(T32);
+//   ⑥**补底部闭合 `}`**(设计 §2.2/§3.4.1 结构图均有, 初稿代码漏渲染);⑦树根 CircleArrow 显式给 expandedColor=PRIMARY,
+//     否则恒展开态会用默认 FOLD_EXPANDED 粉(#ff4d94)—— 粉色在本系统是"可折叠且当前展开"的语义色,
+//     树根不可折叠(no onClick), 用该色属误导, 与「装饰图标不用蓝」同一逻辑 — 小欧 2026-10-13
 // 2026-10-13 小欧 - 十三轮**规则重写**(北京老陈裁定, 违反即打回):
 //   【铁律】只有 content 这类**含换行的巨型值**才允许折叠/展开; 其余所有参数一律不许折叠,
 //   长行**折行完整显示**, 不截断、不隐藏、不给 title 悬停替代。
@@ -19,7 +22,6 @@ import {
   FontSize,
   Icon,
   Radius,
-  Size,
   Spacing,
 } from '@/utils/stepStyles';
 
@@ -235,6 +237,10 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({ entries }) => {
         <CircleArrow
           size={14}
           color={Colors.PRIMARY}
+          // 2026-10-13 小欧 - 补 expandedColor: 树根**恒展开且不可折叠**(无 onClick), 若用默认的
+          //   FOLD_EXPANDED(#ff4d94 粉)会永远显示粉色 —— 而粉色在本系统是"可折叠且当前展开"的语义色,
+          //   用在不可交互元素上属误导(同「装饰图标不用蓝」一条逻辑)。显式给 PRIMARY 保持恒蓝。
+          expandedColor={Colors.PRIMARY}
           expanded
           animated={false}
         />
@@ -258,6 +264,17 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({ entries }) => {
           />
         );
       })}
+      {/* 2026-10-13 小欧 - 补底部闭合括号: 设计 §2.2/§3.4.1 结构图都有 `}`, 而初稿代码只渲染了
+          开头 `{` 属漏实现(与「示意图左对齐 vs 文字右对齐」同类的示意图-代码脱节)。
+          marginLeft = 箭头宽 14 + gap 6 = Icon.BOX + Spacing.XS, 使 `}` 与 `{` 同一 x 起手 */}
+      <div
+        style={{
+          marginLeft: Icon.BOX + Spacing.XS,
+          color: Colors.TEXT.STRONG,
+        }}
+      >
+        {'}'}
+      </div>
     </div>
   );
 };

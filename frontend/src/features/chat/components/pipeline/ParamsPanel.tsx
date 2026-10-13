@@ -26,7 +26,6 @@ import {
   FontFamily,
   FontSize,
   Radius,
-  Size,
   Spacing,
 } from '@/utils/stepStyles';
 
@@ -35,6 +34,12 @@ import {
 /** 巨型值字符阈值(判定阈值非视觉令牌, 故不入 stepStyles — §3.4.3) */
 const HUGE_VALUE_CHARS = 200;
 
+/**
+ * 2026-10-13 小欧 - 六分类(北京老陈裁定 B 案 + 「重要参数不许进其他」铁律)。
+ *   旧版 4 具名 + 「其他」: 用全仓 80+ 工具真实参数实测, 「其他」是最大的桶
+ *   (bash 5 个参数 4 个进其他 / http_get 6 个进 4 个 / query_sql 6 个进 4 个), 分组失去意义。
+ *   本版据实测把高频参数**显式列入 key 集合**, 使「其他参数」只接真正零散项。
+ */
 const PATH_KEYS: ReadonlySet<string> = new Set([
   'path',
   'dir_path',
@@ -42,8 +47,104 @@ const PATH_KEYS: ReadonlySet<string> = new Set([
   'source_path',
   'dest',
   'output_path',
+  // 2026-10-13 新增: 旧版漏判导致 cwd/url/source/target 掉进「其他」(实测 bash.cwd、http_get.url)
+  'cwd',
+  'url',
+  'source',
+  'target',
+  'directory',
+  'dir',
+  'sql_file',
 ]);
-const ENCODING_KEYS: ReadonlySet<string> = new Set(['encoding', 'charset']);
+
+/** 正文载荷: 主内容字段。**显式列 key** —— 否则短命令(ls / git status)抓不到 payload 判定, 会掉进「其他」 */
+const PAYLOAD_KEYS: ReadonlySet<string> = new Set([
+  'content',
+  'body',
+  'command',
+  'sql',
+  'data',
+  'prompt',
+  'message',
+  'text',
+  'script',
+  'code',
+  'value',
+  'old_string',
+  'new_string',
+  'table_data',
+  'slides',
+  'operations',
+  'conditions',
+  'select_columns',
+  'region',
+  'action',
+]);
+
+/** 检索条件: 找什么 / 怎么匹配 / 怎么排 */
+const SEARCH_KEYS: ReadonlySet<string> = new Set([
+  'pattern',
+  'glob',
+  'regex',
+  'query',
+  'ignore_case',
+  'case_sensitive',
+  'sort_by',
+  'group_by',
+  'allowed_domains',
+  'blocked_domains',
+  'extract_format',
+  'info_type',
+  'level',
+  'source',
+]);
+
+/** 执行控制: 跑多少 / 跑多久 / 怎么跑 */
+const EXEC_KEYS: ReadonlySet<string> = new Set([
+  'timeout',
+  'offset',
+  'limit',
+  'tail',
+  'delay',
+  'interval',
+  'count',
+  'depth',
+  'max_depth',
+  'retries',
+  'num_results',
+  'dry_run',
+  'page',
+  'pages',
+  'slide',
+  'sheet',
+  'sheet_name',
+  'shell_type',
+  'method',
+  'proxy',
+  'success_codes',
+  'mode',
+  'unit',
+  'start',
+  'end',
+  'year',
+  'name',
+  'width',
+  'height',
+  'x',
+  'y',
+  'amount',
+  'direction',
+]);
+
+/** 格式与编码: 怎么解释这份数据。**不砍成「其他」** —— 2026-10-13: 全仓 6 个工具有 encoding,
+ *  砍掉就会让 encoding/charset 掉进兜底桶, 违反「重要参数不许进其他」 */
+const FORMAT_KEYS: ReadonlySet<string> = new Set([
+  'encoding',
+  'charset',
+  'format',
+  'output_format',
+  'date_format',
+]);
 
 export const PARAMS_VIEW_MAP = { group: '分组', spec: '规格表' } as const;
 export type ParamsView = keyof typeof PARAMS_VIEW_MAP;
@@ -71,24 +172,35 @@ const HEADER_CTRL_BOX: React.CSSProperties = {
 };
 
 /** 2026-10-13 小欧 - DC-21: 分类色只用 BORDER 中性灰阶, 语义色(警告/错误/成功)保留给状态 */
-type Category = 'payload' | 'switch' | 'path' | 'encoding' | 'other';
+type Category =
+  | 'path'
+  | 'switch'
+  | 'payload'
+  | 'search'
+  | 'exec'
+  | 'format'
+  | 'other';
 const CATEGORY_META: ReadonlyArray<{
   id: Category;
   label: string;
   color: string;
 }> = [
-  // 2026-10-13 小欧 - 十二轮自查订正:
-  //   ①渲染顺序改为设计 §2.3 示意图/§3.5.2 表的 路径→开关→编码→正文载荷→其他。
-  //     原顺序照搬 categorize 的**判定优先级**, 把"优先级"误当"渲染顺序", 正文载荷跑到了最前。
-  //     categorize 按 id 查表, 调数组顺序**不影响分类判定**(改动零风险)。
-  //   ②色条统一 BORDER.STRONG: 原 5 档中性灰在 #fafafa 面板底上, #e8e8e8/#f0f0f0 对比度仅
-  //     1.1/1.05:1 等于看不见, 且开关与编码本就同档无区分。设计 §3.5.2 原文本即写"类名靠文字区分",
+  // 2026-10-13 小欧 - 十四轮(北京老陈「重要的在上面」+ 「其他」改「补充参数」):
+  //   ①显示顺序按**重要性**重排(下方数组即渲染顺序; categorize 按 id 显式 return, 与本顺序无关,
+  //     调序零风险)。排序依据 = 排查时的关注度 × 实测占比(216 个真实参数):
+  //       路径 18.5% / 正文载荷 24.1% / 执行控制 21.8% / 开关 7.4% / 检索条件 6.0% / 格式 2.3%。
+  //     路径置于正文载荷之上: 文件类工具里「改的是哪个文件」是理解一切的锚点, 先看路径再看内容。
+  //   ②「其他」→「补充参数」: 原名零信息量; 「补充」表明它是补充项而非主参数, 不误导。
+  //   ③色条统一 BORDER.STRONG: 原 5 档中性灰在 #fafafa 底上 #e8e8e8/#f0f0f0 对比度仅 1.1/1.05:1
+  //     等于看不见, 且开关与编码本就同档无区分; 设计 §3.5.2 原文本即写"类名靠文字区分",
   //     故色条只当分组锚点、不承担分类编码。仍取自 Colors.BORDER.*(DC-21/T30 不违), 不新增颜色
   { id: 'path', label: '路径', color: Colors.BORDER.STRONG },
-  { id: 'switch', label: '开关', color: Colors.BORDER.STRONG },
-  { id: 'encoding', label: '编码', color: Colors.BORDER.STRONG },
   { id: 'payload', label: '正文载荷', color: Colors.BORDER.STRONG },
-  { id: 'other', label: '其他', color: Colors.BORDER.STRONG },
+  { id: 'exec', label: '执行控制', color: Colors.BORDER.STRONG },
+  { id: 'switch', label: '开关', color: Colors.BORDER.STRONG },
+  { id: 'search', label: '检索条件', color: Colors.BORDER.STRONG },
+  { id: 'format', label: '格式', color: Colors.BORDER.STRONG },
+  { id: 'other', label: '补充参数', color: Colors.BORDER.STRONG },
 ];
 
 // ==================== 值格式化(纯函数, 可单测) ====================
@@ -118,13 +230,28 @@ const isPayload = (v: unknown): boolean =>
   (typeof v === 'object' && v !== null) ||
   (typeof v === 'string' && (v.includes('\n') || v.length > HUGE_VALUE_CHARS));
 
-/** §2.3.2 判定优先级链: 严格自上而下, 命中即止, 防一个参数落进两组 */
+/**
+ * 判定优先级链(十三轮重排): 严格自上而下, 命中即止, 防一个参数落进两组。
+ *
+ * 排期理由(每一步都在防一个实测到的误判):
+ *   1. **开关** 提到最前 —— 值是 boolean 是最硬的特征, 且 append/recursive/overwrite/dry_run 这类
+ *      既在 EXEC_KEYS 又天然是开关, 按 key 判会错列;
+ *   2. **正文载荷**第二 —— 必须早于路径: command/old_string 这类长文本里常含 `F:\x\a.py`,
+ *      若先判 isPathLike 会把整条命令误归「路径」(实测 `git show fa644f85 -- backend/…/x.py`);
+ *   3. **路径**第三(主参数靠 key 命中, 值的形态判定只作补充);
+ *   4~5. 检索条件 / 执行控制 纯 key 判定;
+ *   6. **格式**(encoding/charset/format);
+ *   7. **补充参数**(兜底) —— 只接真正零散项(实测剩 button/hive/timer_id 等场景参数, 无一主参数),
+ *      主参数已全部显式列入上面 6 组 key 集合。
+ */
 const categorize = (k: string, v: unknown): Category => {
-  if (isPayload(v)) return 'payload';
   if (typeof v === 'boolean') return 'switch';
+  if (isPayload(v) || PAYLOAD_KEYS.has(k)) return 'payload';
   if (PATH_KEYS.has(k) || (typeof v === 'string' && isPathLike(v)))
     return 'path';
-  if (ENCODING_KEYS.has(k)) return 'encoding';
+  if (SEARCH_KEYS.has(k)) return 'search';
+  if (EXEC_KEYS.has(k)) return 'exec';
+  if (FORMAT_KEYS.has(k)) return 'format';
   return 'other';
 };
 
