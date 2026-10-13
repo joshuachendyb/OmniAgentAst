@@ -5,6 +5,9 @@
 #   [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; 函数名后续阶段再改名
 #   [效果] action_handler 920→~596行纯编排调度层; 本文件与 observation_formatter 同层(LLM交互反馈层)
 #   [YAGNI] _add_denial_feedback(19行)与 build_observation 同层配套, 并入本文件(不单拆 feedback_writer.py)
+# 2026-10-13 小欧 tool_result 增 raw_data(原始data)供前端raw展示: 原改动把 data_text 改名为 raw_data 属语义替换
+#   (data_text 是格式化可读文本且为 LLM tool message 与 history_loader 回放的唯一来源, raw_data 是原始dict),
+#   改名致回放空白+LLM content 类型错+丢 warning; 改为纯增量: data_text 保留, 另加 raw_data — 小欧-2026-10-13
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -118,18 +121,23 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
                 logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
 
         # ── 构建 tool_result[i]（每元素自包含, other_data 1:1 不合并）── 2026-08-18 小欧
-        # 2026-08-18 小健 三堂会审 修复: 删除死变量 _data(只赋值未使用, 原始 data 已由 data_text/dl 承载)
+        # 2026-08-18 小健 三堂会审 修复: 删除死变量 _data(只赋值未使用, 原始 data 由 data_text/dl 承载)
         # 2026-10-04 小欧 字段精简(第六章第0步): 删 llm_data_text——前端零引用, 回放兜底实测 0/2306 触发,
         #   且本体是 llm_data 的 indent=2 冗余副本(体积反超本体 28%), 删零行为变化 — 小欧-2026-10-04
+        # 2026-10-13 小欧: 新增 raw_data(原始data), 供前端 raw 展示。**不可用它替换 data_text** ——
+        #   两者语义不同: data_text=obs_text 是格式化可读str(含 repair_warning), 为 LLM 与回放的唯一文本源;
+        #   raw_data=result["data"] 是原始dict, 直接填 tool message 会触发 LLM content 类型错误。
         if isinstance(result, dict):
             _llm = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
             _other = result.get("other_data") if isinstance(result.get("other_data"), dict) else {}
+            _raw = result.get("data")
         else:
-            _llm, _other = {}, {}
+            _llm, _other, _raw = {}, {}, None
         tool_result.append({
             "tool_name": _tool,
             "llm_data": _llm,
             "data_text": obs_text,
+            "raw_data": _raw,
             "other_data": _other,
         })
         # ── 编排层收集（取代旧 _merge_other_data 盲目合并）── 2026-08-18 小欧

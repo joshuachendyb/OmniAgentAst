@@ -174,6 +174,8 @@
 # 2026-10-07 北京老陈 history_context 首帧前移: 第1轮那次移除(改由 react_loop 在 emit start 之前发,
 #   压缩决策后即知真实水位); 帧构造收归 telemetry.build_history_context_step(与 react_loop 共用, DRY);
 #   裁剪轮/每5轮的水位更新条件不变。
+# 2026-10-13 小欧 截断分支 tool_result 补 raw_data:None, 与 observation_builder 的 tool_result 契约保持同构(每元素自包含),
+#   前端按 raw_data 渲染时不会读到 undefined; data_text 不变(LLM 与 history_loader 回放的唯一文本源) — 小欧-2026-10-13
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -569,9 +571,11 @@ async def _process_single_step(agent, chunk_buffer) -> List:
             severity="warn",
         )).to_dict())
         # 2026-10-04 小欧 字段精简(第六章第0步): 删 llm_data_text(硬编码空串, 零消费) — 小欧-2026-10-04
+        # 2026-10-13 小欧: 补 raw_data 字段, 与 observation_builder 的 tool_result 契约保持同构。
+        #   此处截断分支无原始 result 可给, 故为 None(前端按 raw_data 渲染时不会读到 undefined)。
         await _emit_publish(agent._step_emitter.emit(ObservationStep(
             step=step,
-            tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {"tool": "truncated_output", "tool_zh": "输出截断", "params": {}}, "status": {"exec_code": "error", "message": obs_text}}, "data_text": obs_text, "other_data": {}}],
+            tool_result=[{"tool_name": "truncated_output", "llm_data": {"summary": "LLM工具调用输出截断", "action": {"tool": "truncated_output", "tool_zh": "输出截断", "params": {}}, "status": {"exec_code": "error", "message": obs_text}}, "data_text": obs_text, "raw_data": None, "other_data": {}}],
         )).to_dict())
         return []  # 4C(5.8.2): 普通 async 返 List — 小欧-2026-09-06
 
