@@ -21,14 +21,14 @@ def _build_time_now_llm_data(exec_code: str, duration_ms: int, iso: str, formatt
     """time_now的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-07-05 加detail/hint参数"""
     if exec_code == "error":
         return {
-            "summary": "获取当前时间失败",
+            "summary": "取时间，失败",
             "action": {"tool": "timenow", "tool_zh": "取时间", "params": {}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_NOW, "detail": detail if detail else "", "hint": hint if hint else "请重试"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取当前时间成功:{formatted}，{weekday}",
+        "summary": f"取时间，成功：{formatted}，{weekday}",  # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh(取时间) — 小欧-2026-10-14
         "action": {"tool": "timenow", "tool_zh": "取时间", "params": {}},
         "status": {"exec_code": "success", "message": f"成功:{formatted}，{weekday}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

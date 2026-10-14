@@ -586,7 +586,7 @@ def _build_execute_shell_command_llm_data(
         # 2026-10-05 小欧 - 单通道去冗余(北京老陈裁定): summary 不再嵌 _warn_msg, 统一 `执行Shell命令{cmd_short}，成功`;
         #   stderr 长度入 metrics 结构化承接, _warn_msg 仍由 detail 承载(⚠ 警告行)
         return {
-            "summary": f"执行Shell命令{cmd_short}，部分成功,提示说明: {_warn_msg}",
+            "summary": f"执行Shell命令{cmd_short}，部分成功：{_warn_msg}",  # 2026-10-14 小欧 - summary 统一口径: 去",提示说明", 警告信息保留 — 小欧-2026-10-14
             "action": {"tool": "bash", "tool_zh": "执行", "params": _act_params},
             "status": {"exec_code": "warning", "message": "成功（有警告）", "code": err_code or "", "detail": detail or f"退出码{returncode}，标准错误{stderr_len}字符", "hint": hint},
             "duration_ms": duration_ms,

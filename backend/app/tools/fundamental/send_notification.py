@@ -45,14 +45,14 @@ def _build_send_notification_llm_data(exec_code: str, duration_ms: int, title: s
         act_params["duration"] = notif_duration
     if exec_code == "error":
         return {
-            "summary": f"发送系统通知，\"{title}\"，失败",
+            "summary": f"发通知\"{title}\"，失败",
             "action": {"tool": "notify", "tool_zh": "发通知", "params": act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_DESKTOP_NOTIFICATION, "detail": detail, "hint": hint if hint else "请检查通知参数和系统通知设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"发送系统通知，\"{title}\"，{notif_duration}秒，成功",
+        "summary": f"发通知\"{title}\"，成功：{notif_duration}秒",  # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh(发通知), 成功后置, 时长保留 — 小欧-2026-10-14
         "action": {"tool": "notify", "tool_zh": "发通知", "params": act_params},
         "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

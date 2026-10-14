@@ -160,7 +160,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     """tool_search的llm_data构建函数 — 小健 2026-06-21"""
     if exec_code == "error":
         return {
-            "summary": f"搜索工具失败:关键词为空",
+            "summary": f"搜TOOL，失败：关键词为空",
             "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_QUERY_EMPTY, "detail": "搜索关键词不能为空", "hint": "请输入有效的搜索关键词"},
             "duration_ms": duration_ms,
@@ -169,7 +169,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
     if exec_code == "warning":
         # 无命中/纯符号: 正确告知LLM + hint, 避免误导LLM与错误注入 — 小欧 2026-08-05
         return {
-            "summary": f"搜索 '{query}'未匹配到工具（共 {total_tools} 个工具）",
+            "summary": f"搜TOOL'{query}'，成功：未匹配到工具（共 {total_tools} 个工具）",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜TOOL), 补"成功"(零匹配是成功执行) — 小欧-2026-10-14
             "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
             "status": {"exec_code": "warning", "message": "完成-未找到匹配工具", "code": "",
                        "detail": "未找到与关键词匹配的工具", "hint": "建议更换关键词后重试，或直接描述你要完成的任务"},
@@ -177,7 +177,7 @@ def _build_tool_search_llm_data(exec_code: str, duration_ms: int, query: str,
             "metrics": {"matched": {"value": 0, "text": "0个"}, "total": {"value": total_tools, "text": f"{total_tools}个"}},
         }
     return {
-        "summary": f"搜索 '{query}'成功:匹配 {total_matched} 个（共 {total_tools} 个工具）",
+        "summary": f"搜TOOL'{query}'，成功：匹配 {total_matched} 个（共 {total_tools} 个工具）",
         "action": {"tool": "searchtool", "tool_zh": "搜TOOL", "params": {"query": query}},
         "status": {"exec_code": "success", "message": f"完成:匹配{total_matched}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
