@@ -57,6 +57,7 @@
 #   使 history_context 首帧能读到压缩后的真实水位(压缩与未压缩两种路径都发)。
 # 2026-10-07 北京老陈 history_context 首帧提前: 新增 emit history_context(step=0) 于 emit start 之前;
 #   原第1轮 LLM 响应后那次由 react_step 移除(裁剪轮/每5轮的水位更新不变)。
+# 2026-10-14 小欧 - linked 增量摘要: 有摘要时补注入 delta 原文 + 摘要落库到覆盖上界任务行(下次锚点), 写回失败仅告警 — 小欧-2026-10-14
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -162,9 +163,14 @@ async def run_react_cycle(
         task or "",
         refs=(getattr(agent, "_start_meta", None) or {}).get("refs"),
     )
+    # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"), 后跟 delta 原文; 无摘要则注全量历史。— 小欧 2026-10-14
     _summary = getattr(agent, "_start_summary", "") or ""
     if _summary:
         agent.message_builder.inject_history([{"role": "assistant", "content": _summary}])
+        _delta = getattr(agent, "_injected_delta_msgs", None) or []
+        if _delta:
+            agent.message_builder.inject_history(_delta)
+            log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {len(_delta)}条")
     else:
         agent.message_builder.inject_history(getattr(agent, "_injected_history_msgs", None) or [])
     _tele_hc = getattr(agent, "telemetry", None)
@@ -172,6 +178,20 @@ async def run_react_cycle(
         _hc_first = _tele_hc.build_history_context_step(step=0)
         if _hc_first is not None:
             await _publish(_hc_first.to_dict())
+
+    # 摘要落库到"上一个任务行"(=下次锚点); 失败仅告警, 下次走老路。— 小欧 2026-10-14
+    if getattr(agent, "_pending_chain_summary_cover", False) and _summary:
+        _cover_root = (getattr(agent, "_start_meta", None) or {}).get("context_root_task_id") or ""
+        if _cover_root:
+            try:
+                _cover_id = await db.atxn("chat", lambda c: storage.save_chain_cover_summary(
+                    c, context_root_task_id=_cover_root, current_task_id=agent.task_id, summary=_summary))
+                if _cover_id:
+                    log_and_print(f"[start_summary] 摘要已落库(锚点任务={_cover_id}, len={len(_summary)})")
+                else:
+                    logger.warning("[start_summary] 摘要未落库(链内无覆盖上界任务行或写入失败), 下次走老路")
+            except Exception as _e:
+                logger.warning(f"[start_summary] 摘要写回失败(不影响本次运行): {type(_e).__name__}: {_e!r}")
 
     if _start_step is not None:
         # 4.4.3(2026-09-07 小欧): start 携带 ai_message_id 发布, startinfo 合并入 start;

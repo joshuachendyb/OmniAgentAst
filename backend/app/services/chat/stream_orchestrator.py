@@ -206,6 +206,7 @@
 # 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: 插话开关取/落值收敛为 storage.resolve_session_interject(与 save_message 共用单一真源)
 # 2026-10-10 - 小欧 - [20]  取链内序号注入 _start_meta.context_link_index
 #   (第几个 link 任务, telemetry 只读不算); 查询失败降级为 0 不拖死任务(序号仅供前缀文案)。
+# 2026-10-14 小欧 - linked 增量摘要: db_ops 增 load_chain_summary 闭包 + load_previous 透传下界(缺省 None=老行为) — 小欧-2026-10-14
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -255,6 +256,7 @@ from app.services.chat.storage import update_task_accumulation, update_session_a
 from app.services.chat.storage import count_chain_siblings  # 2026-10-09 小欧 - [20] link 序号 N 取数(第几个 link 任务)
 from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一导入 db, 消除 line245 裸引用 db 的 NameError(chat_tasks 永不建行)
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
+from app.services.chat.storage import get_chain_summary_anchor  # 2026-10-14 小欧 - linked 增量摘要: 锚点取数(只读, 经闭包注入 agent) — 小欧-2026-10-14
 from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
 from app.tools.context import (  # 会话 Workspace 任务级快照(工具层 ContextVar) — 小欧 2026-10-10
     WorkspaceEntry,
@@ -681,12 +683,22 @@ async def chat_stream_orchestrator(
         # ── 编排⑦组装 db_ops 持久化回调命名空间(经闭包注入后台, 依赖 ⑥ agent) ——— 小健 2026-08-17
         # 构造 db_ops 命名空间注入 agent_runner, 消除 agent→chat 反向依赖 — 小沈 2026-08-13
         #   9属性(任务级读写扩展) — 小欧 2026-08-16
+        # 锚点查询经闭包注入 agent(不 import chat 层, 依赖 chat→agent 单向); 写回走 react_loop 单一出口。— 小欧 2026-10-14
+        async def _load_chain_summary():
+            """同链最近非空摘要锚点; 链根为空(link 关)或无摘要时返 None(调用方走老路)"""
+            if not _context_root_task_id:
+                return None
+            return await db.atxn("chat", lambda c: get_chain_summary_anchor(
+                c, context_root_task_id=_context_root_task_id, current_task_id=task_id))
+
         import types as _types
         _db_ops = _types.SimpleNamespace(
             append_step=lambda c, mid, sid, idx, d, usage=None: append_execution_step(c, mid, sid, idx, d, task_id, usage=usage, user_message_id=_user_msg_id),  # _user_msg_id即chat_user_message.id（原生自增权威锚, 北京老陈 2026-08-23 锚迁移）— 小健 2026-08-19
-            load_previous=lambda sid: _load_previous_messages(  # 任务上下文过滤，经闭包注入装历史用根+上界(_user_msg_id)
+            load_previous=lambda sid, lower_message_id=None: _load_previous_messages(  # 任务上下文过滤，经闭包注入装历史用根+上界(_user_msg_id)
+                # 2026-10-14 小欧 - linked 增量摘要: 增可选 lower_message_id 透传(锚点后下界), 缺省 None=老行为 — 小欧-2026-10-14
                 sid, context_root_task_id=_history_root,
-                upper_message_id=_user_msg_id),
+                upper_message_id=_user_msg_id, lower_message_id=lower_message_id),
+            load_chain_summary=_load_chain_summary,  # 取同链最近非空摘要锚点(增量摘要起点), 无锚点返 None — 小欧-2026-10-14
             log_task_end=_log_task_end,
             insert_task=lambda c: insert_task(  # ②-1 chat_tasks 创建 — 归一: task_model 传 ModelRef, display_name 不再拼装落库(设计要求2) — 小欧 2026-08-22
                 c, task_id=task_id, session_id=session_id, user_message_id=_user_msg_id,

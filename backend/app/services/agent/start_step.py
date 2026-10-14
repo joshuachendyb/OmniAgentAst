@@ -53,6 +53,7 @@
 #   末条取 summary, 首帧时那正是用户刚发的本轮提问, 标签"最近"等于把自己的提问回显一遍(实测四条帧全是用户原话);
 #   改由注入源取最近一条历史提问, 语义才成立。 — 小欧-2026-10-08
 # 2026-10-12 小欧 - 摘要调 LLM 前补 log-print（北京老陈令）: 入口无日志则长等待无据可查 — 小欧-2026-10-12
+# 2026-10-14 小欧 - linked 增量摘要: 抽 _strip_history_msgs(全量/delta 共用, delta 保留末条 user 防断链) + _assemble_anchor_delta(锚点命中只压新增段: 小则复用零 LLM, 超限调 generate_chunked_summary 增量压缩, 失败回退旧摘要+delta) — 小欧-2026-10-14
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -62,6 +63,10 @@ start_step — start 任务输入装配完整过程(单一模块, 一个入口)
   - _compact_injected_history: C4 锚定摘要生成(超窗时产出摘要文本, 不装配 conv)
   - _build_start_contract: 契约构造(context_summary 快照 + StartStep, 自 sse_events 迁入)
   - assemble_start_step: 唯一对外入口(async; 构建注入历史 → 判定 → 摘要 → 契约)
+linked 增量摘要总览(2026-10-14, 北京老陈定案): link 链不再每次全量重压历史, 只压"上次摘要之后新增的 delta",
+  常态零 LLM 调用。链路: orchestrator 注入锚点查询 → agent_runner._build_history_context 定加载范围(有锚点只取
+  delta) → 本模块 _assemble_anchor_delta 判定复用/增量压缩 → react_loop 注入(摘要+delta)并落库。
+  契约: 摘要存"覆盖上界任务行"的 chat_tasks.task_summary 列(该行即下次锚点); 无锚点/失败一律走老路, 零退化。
 依据: [1] 10.1.1(功能逻辑) / 10.1.2(字段清单) / 10.1.6(C4 清洗) / 10.1.7④⑤(装配落点) / 10.1.8 S3/S4/S5。
 """
 from typing import Any, Dict, List, Optional
@@ -70,32 +75,31 @@ from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tu
 from app.logger import logger, log_and_print
 
 
-def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
-    """构建注入历史并存到 agent._injected_history_msgs(不写 conversation_history) — 北京老陈 2026-10-07
+def _strip_history_msgs(prev: List[Dict[str, Any]], drop_last_user: bool = True) -> List[Dict[str, Any]]:
+    """把持久化原始消息剥成可喂 LLM 的规范消息(校验+剔除畸形, 不改业务语义) — 小欧 2026-10-14
 
-    适用场景: start 装配第一步——从 context.previous_messages 构建 history_msgs。
-    使用方法: 直接调用, 传 agent + context; context 无 previous_messages 则空转安全。
-    输入: agent; context 含 previous_messages 历史消息列表。
-    输出: 无(内部置 agent._injected_history_msgs)。
-    前置条件: 无。
-    关联逻辑: 跳过 previous_messages 末条 user(防与本轮 task 重复); tool_calls 逐元素 isinstance 校验
-      (非 dict 元素剥离, 防 provider 400); 合法输入输出与原实现 100% 一致。
+    适用场景: ① 全量注入历史构建(drop_last_user=True, 原行为); ② 增量摘要的 delta 段
+      (锚点之后新增那部分, drop_last_user=False) —— 剥离规则必须同源, 故抽本函数共用(DRY)。
+    使用方法: 传 previous_messages 原始列表(+是否丢末条 user), 返回规范消息列表。
+    规则: tool_calls 逐元素 isinstance 校验(非 dict 剥离, 防 provider 400)。
+
+    drop_last_user 语义(2026-10-14 三堂会审 P0 修复, 否则增量链断链):
+      - True(全量路径): 丢末条 user。原设计意图=防与本轮 task 重复, 全量加载上界已排除本轮
+        提问, 故末条 user 实为"上一轮提问", 沿用丢弃以保持与改造前 100% 一致。
+      - False(delta 路径): **必须保留**。delta 段同样不含本轮提问(同一下一上界), 其末条 user
+        是链内真实发生的提问; 若照丢, delta 被整段掏空 → 上一轮对话凭空消失(实测 T6/T7 复现)。 — 小欧-2026-10-14
     """
-    if not context or not isinstance(context, dict):
-        agent._injected_history_msgs = []
-        return
-    prev = context.get("previous_messages")
     if not prev or not isinstance(prev, list):
-        agent._injected_history_msgs = []
-        return
-    last_user_idx = -1
-    for i in range(len(prev) - 1, -1, -1):
-        if prev[i].get("role") == "user":
-            last_user_idx = i
-            break
+        return []
+    skip_idx = -1
+    if drop_last_user:
+        for i in range(len(prev) - 1, -1, -1):
+            if prev[i].get("role") == "user":
+                skip_idx = i
+                break
     history_msgs = []
     for i, msg in enumerate(prev):
-        if i == last_user_idx:
+        if i == skip_idx:
             continue
         role = msg.get("role")
         if role == "tool":
@@ -129,7 +133,22 @@ def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
             history_msgs.append({"role": "user", "content": msg["content"]})
         elif role == "system" and msg.get("content"):
             history_msgs.append({"role": "system", "content": msg["content"]})
-    agent._injected_history_msgs = history_msgs
+    return history_msgs
+
+
+def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
+    """构建注入历史并存到 agent._injected_history_msgs(不写 conversation_history) — 北京老陈 2026-10-07
+
+    适用场景: start 装配第一步——从 context.previous_messages 构建 history_msgs。
+    使用方法: 直接调用, 传 agent + context; context 无 previous_messages 则空转安全。
+    输入: agent; context 含 previous_messages 历史消息列表。
+    输出: 无(内部置 agent._injected_history_msgs)。
+    前置条件: 无。
+    关联逻辑: 剥离规则抽到 _strip_history_msgs(增量摘要 delta 段共用同一份, 2026-10-14);
+      合法输入输出与原实现 100% 一致。
+    """
+    prev = context.get("previous_messages") if isinstance(context, dict) else None
+    agent._injected_history_msgs = _strip_history_msgs(prev)
 
 
 def _maybe_compact_injected_history(agent) -> None:
@@ -240,6 +259,84 @@ async def _compact_injected_history(agent) -> str:
     return summary_text
 
 
+async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bool:
+    """linked 增量摘要装配(有锚点路径) —— 小欧 2026-10-14
+
+    适用场景: 同链上次已压过摘要(chat_tasks.task_summary 非空), 本次只把"锚点之后新增的 delta"
+      再压一次, 而非全量重压。零 LLM 常态: delta 未超阈值时直接复用旧摘要。
+    使用方法: 由 assemble_start_step 调用(命中锚点才调); 处理完置 agent._start_summary /
+      agent._injected_delta_msgs / agent._pending_chain_summary_cover。
+    输入: agent + context(含 chain_summary_anchor 锚点、chain_delta_messages 原始增量段)。
+    输出: bool —— True=锚点路径已处理完; False=装配失败(调用方按无锚点老路全量处理, 零退化)。
+    语义契约: 注入内容 = [摘要 assistant 消息] + delta 段(react_loop 装配);
+      即"摘要顶掉已压缩的老历史, 原文只保留新增部分", 每段原文至多被压一次, 保真度不低于全量重压。
+    关联逻辑: 阈值与老路同尺(START_TRIGGER_RATIO × ctx, 北京老陈 2026-10-14 纠正: 不用
+      COMPACTION_BUFFER —— 它是"输出预留缓冲", 语义不符); 增量压缩复用 generate_chunked_summary;
+      失败(取消/异常/校验拒收)回退"旧锚点摘要 + 全量 delta", 比老路的全量历史更省, 链不断。 — 小欧-2026-10-14
+    """
+    anchor = (context.get("chain_summary_anchor") if isinstance(context, dict) else None) or {}
+    anchor_summary = anchor.get("summary") or ""
+    delta_raw = (context.get("chain_delta_messages") if isinstance(context, dict) else None) or []
+    if not anchor_summary:
+        return False   # 锚点无摘要(异常数据) → 老路
+    delta_msgs = _strip_history_msgs(delta_raw, drop_last_user=False)
+    agent._injected_delta_msgs = delta_msgs
+    agent._pending_chain_summary_cover = None   # 默认无处可落; 真产生新摘要时才填(react_loop 消费)
+    # 补偿: 无 delta 且锚点摘要可用 → 零 LLM 直接复用
+    if not delta_msgs:
+        agent._start_summary = anchor_summary
+        logger.info(f"[start_step] 增量路径: delta 为空, 直接复用锚点摘要(anchor={anchor.get('task_id')})")
+        return True
+    try:
+        from app.services.agent.compaction_constants import START_TRIGGER_RATIO
+        from app.services.agent.message_builder import MessageBuilder
+        from app.services.task.task_runtime import check_cancelled
+        _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
+        _threshold = int(_ctx * float(get_config().get('tuning.compaction.start_trigger_ratio', START_TRIGGER_RATIO)))
+        _delta_tokens = MessageBuilder._estimate_tokens(delta_msgs)
+    except Exception as e:
+        logger.warning(f"[start_step] 增量路径阈值估算失败, 按超窗处理: {type(e).__name__}: {e!r}")
+        _delta_tokens, _threshold = 1, 0
+    if _delta_tokens < _threshold:
+        # B门(与老路同尺): delta 未超阈值 → 不调 LLM, 摘要直接复用(常态, 启动零等待)
+        agent._start_summary = anchor_summary
+        logger.info(
+            f"[start_step] 增量路径: delta {_delta_tokens}tok < 阈值 {_threshold}, 复用锚点摘要(零 LLM 调用)")
+        return True
+    # 超阈值 → 只对 delta 做增量压缩(旧摘要作底), 生成后落"覆盖上界任务行"
+    logger.info(
+        f"[start_step] 增量路径: delta {_delta_tokens}tok ≥ 阈值 {_threshold}, 调 LLM 增量压缩"
+        f"(anchor={anchor.get('task_id')}, delta {len(delta_msgs)}条)")
+    agent._compact_attempted = True
+    new_summary = ""
+    try:
+        from app.services.agent.compaction.summary import generate_chunked_summary
+        _task_id = getattr(agent, "task_id", None)
+        _cancelled = bool(_task_id) and await check_cancelled(_task_id)
+        if _cancelled:
+            logger.info("[start_step] 增量摘要前检测到取消, 跳过摘要(回退复用锚点摘要)")
+        else:
+            # 2026-10-12 小欧 摘要调 LLM 前 log-print(同老路): 长等待期无据可查 — 同源做法
+            log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条")
+            new_summary = await generate_chunked_summary(agent, delta_msgs, anchor_summary)
+            if _task_id and await check_cancelled(_task_id):
+                logger.info("[start_step] 增量摘要后检测到取消, 丢弃结果(回退复用锚点摘要)")
+                new_summary = ""
+    except Exception as e:
+        logger.warning(
+            f"[start_step] 增量摘要失败, 回退复用锚点摘要: {type(e).__name__}: {e!r}")
+        new_summary = ""
+    if new_summary:
+        agent._start_summary = new_summary
+        agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
+        logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
+    else:
+        # 失败回退: 旧锚点摘要 + 全量 delta(比老路的全量历史更省, 语义等价: 老历史已被摘要代表)
+        agent._start_summary = anchor_summary
+        logger.info("[start_step] 增量摘要未产出, 回退「锚点摘要 + 全量 delta」")
+    return True
+
+
 def _build_start_contract(agent, previous_messages: Optional[List]) -> Optional["StartStep"]:
     """构造 start 任务输入契约 StartStep(单一归属) — 小健 2026-08-17; 小欧 2026-08-18 改产 StartStep
 
@@ -298,14 +395,20 @@ async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["Start
     """
     # ① 构建注入历史(只留存 agent._injected_history_msgs, 不写 conversation_history)
     _build_injected_history(agent, context)
-    # ② 超窗判定(C4, 读 _injected_history_msgs)
-    _maybe_compact_injected_history(agent)
-    # ③ 锚定摘要生成(超窗时; 结果挂 agent._start_summary 供调用方装配)
-    if getattr(agent, "_needs_compact", False):
-        # 2026-10-09  语义=确实调用了摘要生成(非"判定超窗"), 故置执行分支内,
-        #   供 telemetry 区分"未触发压缩"与"压缩失败"; 每轮清零已移至 initialize_run_state
-        agent._compact_attempted = True
-        agent._start_summary = await _compact_injected_history(agent)
+    # ①' 有锚点走增量(只压 delta), 否则走老路②③。— 小欧 2026-10-14
+    _anchor_done = await _assemble_anchor_delta(agent, context)
+    if not _anchor_done:
+        # ② 超窗判定(C4, 读 _injected_history_msgs)
+        _maybe_compact_injected_history(agent)
+        # ③ 锚定摘要生成(超窗时; 结果挂 agent._start_summary 供调用方装配)
+        if getattr(agent, "_needs_compact", False):
+            # 2026-10-09  语义=确实调用了摘要生成(非"判定超窗"), 故置执行分支内,
+            #   供 telemetry 区分"未触发压缩"与"压缩失败"; 每轮清零已移至 initialize_run_state
+            agent._compact_attempted = True
+            agent._start_summary = await _compact_injected_history(agent)
+            # 老路摘要同样落"上一个任务行"(下次锚点), 否则增量永无锚点。— 小欧 2026-10-14
+            if getattr(agent, "_start_summary", ""):
+                agent._pending_chain_summary_cover = True
     # 11.3-A 跨任务注入基线快照（独立模块 TaskTelemetry 存储，固定不漂移）— 小欧 2026-08-20
     _tele = getattr(agent, "telemetry", None)
     if _tele is not None:

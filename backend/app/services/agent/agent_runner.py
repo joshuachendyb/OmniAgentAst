@@ -188,6 +188,7 @@
 # 2026-10-07 北京老陈 thought-start 第1发前移至历史加载判断前(覆盖 DB还原+压缩等待);
 #   react_loop 原第1发同步移除。
 # 2026-10-12 小欧 - 首帧 thought-start 带 task_id（北京老陈令）: 前端凭 task_id 开门显示, 后续帧不带 — 小欧-2026-10-12
+# 2026-10-14 小欧 - linked 增量摘要: 抽 _build_history_context(先查锚点再定加载范围: 有锚点只取 delta, 否则全量老路, 异常一律降级全量) — 小欧-2026-10-14
 """
 agent_runner — agent 后台运行器（与 SSE 传输解耦）
 
@@ -242,6 +243,40 @@ _background_tasks: set = set()
 #   单帧落库实测 0.6~1.1s(stream_event_journal 注释), 百步任务约 1~2 分钟, 留足余量;
 #   仅为"消费者不可用"时的挂死兜底, 正常路径远达不到。
 _STEP_FLUSH_TIMEOUT_SEC = 120.0
+
+
+async def _build_history_context(db_ops, session_id) -> dict:
+    """构建传给 start 装配层的历史上下文(锚点增量 / 全量老路 二选一) — 小欧 2026-10-14
+
+    适用场景: run_agent_in_background 装配 run_context 前唯一的历史取数入口(单一职责, SRP/SLAP:
+      编排层只调本函数, 不再内联"查锚点+选范围+降级守卫"细节)。
+    行为:
+      - 命中同链摘要锚点 → 返回 {chain_summary_anchor, chain_delta_messages}(只含"锚点之后新增"那段,
+        老历史不再拉, 也不再全量重压; 由 start_step 在 delta 超阈值时才调 LLM 增量压缩, 平时零调用);
+      - 无锚点 → 返回 {previous_messages: 全量}(改造前老路, 行为一字不变);
+      - 锚点查询/增量加载抛异常 → 告警后一律退回全量老路(零退化, 不让锚点机制反噬主链)。
+    输入: db_ops(持久化回调命名空间, load_chain_summary/load_previous)、session_id。
+    输出: dict —— 供 run_context 使用的上下文片段(可能为空 dict)。
+    关联逻辑: 依赖注入 db_ops, 不 import chat 层(依赖方向 chat→agent 单向); 降级分支收敛于本函数一处(DRY)。
+    """
+    if not (session_id and db_ops and getattr(db_ops, "load_previous", None)):
+        return {}
+    _anchor = None
+    try:
+        if getattr(db_ops, "load_chain_summary", None) is not None:
+            _anchor = await db_ops.load_chain_summary()
+        if _anchor:
+            _delta = db_ops.load_previous(session_id, lower_message_id=_anchor["delta_lower_message_id"])
+            log_and_print(
+                f"[Runner] 增量摘要锚点命中(锚点task={_anchor.get('task_id')}, "
+                f"delta原始{len(_delta or [])}条) — 只压新增段"
+            )
+            return {"chain_summary_anchor": _anchor, "chain_delta_messages": _delta or []}
+    except Exception as _e:
+        logger.warning(f"[Runner] 摘要锚点/增量加载失败(降级为全量老路): {type(_e).__name__}: {_e!r}")
+        _anchor = None   # 明确置空 → 下方走全量老路
+    _prev = db_ops.load_previous(session_id)
+    return {"previous_messages": _prev} if _prev else {}
 
 
 async def _persist_final(coro):
@@ -607,11 +642,7 @@ async def run_agent_in_background(
         await _publish(agent._step_emitter.emit(ThoughtStartStep(step=1, task_id=task_id)).to_dict())
 
         # 加载会话历史，支持多轮对话 — 北京老陈 2026-06-13
-        ctx = {}
-        if session_id and db_ops and db_ops.load_previous:
-            prev = db_ops.load_previous(session_id)
-            if prev:
-                ctx["previous_messages"] = prev
+        ctx = await _build_history_context(db_ops, session_id)
         run_context = context or ctx or None
 
         # 4C(5.8.5): run_react_cycle 收敛普通 async(5.8.3)——事件已在内部经 publish 直写 event_log,

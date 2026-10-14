@@ -18,6 +18,7 @@
 #   同时合并原_parse_tool_calls/_parse_observations为_collect_turns: 原来两者各自json.loads +
 #   各自预扫描同一份steps(孤儿tool_call的_obs_ids与孤儿truncated_output的_action_ids互为逆条件),
 #   拆两处遍历必然漂移, 合并后配对一致性由构造保证。原两函数无外部调用方, 不保留兼容垫片。
+# 2026-10-14 小欧 - linked 增量摘要: _load_previous_messages 增 lower_message_id 可选下界(缺省 None=老行为, 增量传锚点 uid+1) — 小欧-2026-10-14
 """
 history_loader — 会话历史加载(多轮上下文DB读取)
 
@@ -196,7 +197,8 @@ def _collect_turns(msg_id: int, exec_steps_json: str) -> Dict[int, Dict[str, Lis
 
 
 def _load_previous_messages(session_id: str, context_root_task_id: Optional[str] = None,
-                             upper_message_id: Optional[int] = None) -> List[Dict[str, Any]]:
+                             upper_message_id: Optional[int] = None,
+                             lower_message_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """从DB加载会话历史消息 — 小健 2026-06-17 委托db层，消除SQLite越界
     小欧 2026-06-25: 抽取 FC 对解析消除嵌套try/except
     小欧 2026-07-14: 从chat_message_steps组装
@@ -206,18 +208,23 @@ def _load_previous_messages(session_id: str, context_root_task_id: Optional[str]
       2026-10-02 小欧 - 文档[4] 5.7 项9: 链模式形参废止，开关改由 context_root_task_id 承载——
         None(link 关): 直接返回[](从零,不带历史,防误灌,等价原 independent);
         非空(link 开): 沿"链根任务首条user消息id → 本任务用户消息id前"范围加载(BETWEEN 下界 AND 上界),链外消息不进LLM;
-      upper_message_id=本任务user消息id(上界,由 orchestrator _user_msg_id 闭包注入;设计1643 SQL语义要求,签名补充该参)"""
+      upper_message_id=本任务user消息id(上界,由 orchestrator _user_msg_id 闭包注入;设计1643 SQL语义要求,签名补充该参)
+      2026-10-14 小欧: 增 lower_message_id 可选下界(缺省 None=老行为; 增量传锚点 uid+1, 下界语义 cum.id>=该值)。 — 小欧-2026-10-14"""
     # link 关闭(链根为空)即无链可沿: 不装任何历史 — 小欧 2026-10-02
     if not context_root_task_id:
         return []
     try:
         with db.get_conn("chat") as conn:
             # 链根首条user消息id = chat_tasks(chain_root).user_message_id 起
-            _r = conn.execute(
-                "SELECT user_message_id FROM chat_tasks WHERE task_id=?",
-                (context_root_task_id,),
-            ).fetchone()
-            _lower_id = _r["user_message_id"] if (_r and _r["user_message_id"]) else None
+            # 有下界传值(增量)则用之, 否则沿链根起算(老行为)。— 小欧 2026-10-14
+            if lower_message_id is not None:
+                _lower_id = lower_message_id
+            else:
+                _r = conn.execute(
+                    "SELECT user_message_id FROM chat_tasks WHERE task_id=?",
+                    (context_root_task_id,),
+                ).fetchone()
+                _lower_id = _r["user_message_id"] if (_r and _r["user_message_id"]) else None
             # 2026-10-03 小欧 三堂会审 S1/S2: 链范围须双边界齐全才装历史, 否则 fail-closed。
             #   原两种兜底都不安全(仅下界=自我回灌; 仅上界=越链灌入), 故全部删除。
             if _lower_id is None or upper_message_id is None:

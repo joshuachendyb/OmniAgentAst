@@ -80,6 +80,7 @@
 # 2026-10-05 - 小欧 - 12.2-C4(③b): 新建 id_sequence 表作 user/assistant 消息 id 单一序列, 替掉 app 侧线性探测
 #   (探测上限10次+耗尽退化全局MAX+1+threading.Lock 仅单进程有效); 空表时幂等播种到存量 id 上界之上
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: chat_tasks 加 process_events TEXT DEFAULT '[]'(事件列表快照列, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 与 artifacts 同款形态) — 小欧-2026-10-11
+# 2026-10-14 小欧 - linked 增量摘要: chat_tasks 加 task_summary 列(摘要落覆盖上界任务行, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 空=无锚点走老路) — 小欧-2026-10-14
 """
 db_initializer — 数据库初始化
 
@@ -142,6 +143,8 @@ def init_chat_db(get_conn):
                 status TEXT DEFAULT 'executing',
                 start_time TEXT, end_time TEXT, duration REAL,          -- 开始/结束/耗时（文档2 3.1.2 时间三字段）
                 context_link_mode TEXT, context_root_task_id TEXT,   -- 上下文链：续聊/新任务 + 链根任务id
+                -- 摘要存"它覆盖到的最后一个任务"这一行, 该行即下次锚点; 空=无锚点走老路。— 小欧 2026-10-14
+                task_summary TEXT,
                 sessionModel TEXT NOT NULL,                          -- 归一 JSON(ModelRef) 单列; display_name 列废弃(设计要求2); 三堂会审: 任务行创建必有模型, 与 token_usage.task_model 约束对称 — 小欧 2026-08-22
                 accumulated_usage TEXT DEFAULT '{}',
                 llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
@@ -288,6 +291,8 @@ def init_chat_db(get_conn):
         # 2026-10-11 小欧 - 事件列表快照(北京老陈令「final 的时候回填事件列表」): 存量库幂等补列,
         #   DEFAULT '[]' 使改动前的历史任务读出为空列表, 前端兜底后行为与今天一致。 — 小欧-2026-10-11
         _ensure_column(conn, "chat_tasks", "process_events", "TEXT DEFAULT '[]'")
+        # 存量库幂等补列, 无 DEFAULT(历史行读出 None=无锚点走老路)。— 小欧 2026-10-14
+        _ensure_column(conn, "chat_tasks", "task_summary", "TEXT")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 

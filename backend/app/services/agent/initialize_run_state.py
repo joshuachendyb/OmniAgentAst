@@ -32,6 +32,7 @@
 #   推迟到压缩决策后由 react_loop 装配段建[system, 摘要或原历史, task]; 本函数退化为纯状态重置。
 # 2026-10-10 - 小欧 -  新增 _start_summary / _compact_attempted
 #   每轮初始化(替代 start_step 内重复清零), 二者被 telemetry 读以区分"未超窗"与"压缩失败"。
+# 2026-10-14 小欧 - linked 增量摘要标记每轮清零(_injected_delta_msgs/_pending_chain_summary_cover, 防跨任务串味) — 小欧-2026-10-14
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -69,6 +70,10 @@ def initialize_run_state(
     # 摘要与压缩标记每轮初始化(替代 start_step 内重复清零)
     agent._start_summary = ""
     agent._compact_attempted = False
+    # 2026-10-14 小欧 - linked 增量摘要标记: 同上必须每轮清零。agent 实例跨任务复用时,
+    #   上一任务残留的 delta/待写回标记会让本次老路(无锚点)误注入上一轮的 delta 原文 → 上下文串味。 — 小欧-2026-10-14
+    agent._injected_delta_msgs = None
+    agent._pending_chain_summary_cover = False
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

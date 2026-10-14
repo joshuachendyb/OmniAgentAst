@@ -123,6 +123,7 @@
 #   (root=自身/independent)致每个 link 任务序号全体 +1, 已按真库 16 任务逐一验证修正; 首帧查询过滤
 #   下推 SQL(原 Python 侧过滤全量拉 step_json), 缺表降级返 None 不拖垮详情接口。
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 save_process_events(仅 UPDATE 不 INSERT, 幂等覆盖; 不校验 kind/不设条数上限, 与 append_execution_step 同族写法); get_task_detail 补 process_events 解析(与 artifacts 同款, SELECT * 自动含列, 存量空列表前端兜底) — 小欧-2026-10-11
+# 2026-10-14 小欧 - linked 增量摘要: 新增 get_chain_summary_anchor(链内最近非空摘要锚点) + save_chain_cover_summary(摘要写覆盖上界任务行, 单一出口) — 小欧-2026-10-14
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -553,6 +554,64 @@ def count_chain_siblings(conn: Connection, *, context_root_task_id: str, current
         "WHERE context_root_task_id = ? AND task_id != ? AND context_link_mode = 'linked'",
         (context_root_task_id, current_task_id),
     ).fetchone()[0]
+
+
+def get_chain_summary_anchor(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> Optional[dict]:
+    """取同链内最近的**非空摘要锚点**(摘要实际覆盖上界所在的任务行) — 小欧 2026-10-14
+
+    linked 增量摘要(锚点复用): 每次 link 启动不再全量重压, 而是找到上次压出来的那份摘要,
+    只把"锚点之后新长出来的对话"再压一次。故锚点 = 链内 task_summary 非空且 user_message_id
+    有效、且比当前任务早的最后一条任务行(user_message_id 即该任务在链里的位置序)。
+
+    返回 None 表示无锚点(首次 link / 旧库无摘要 / 锚点行已被删) —— 调用方按"无锚点老路"处理,
+    即全量判定压缩, 行为与改造前完全一致(零退化, 不新增任何失败分支)。
+
+    返回 delta_lower_message_id = 锚点 uid+1 = 增量段的加载下界(cum.id 开区间下端), 调用方直传
+    history_loader 即可, 无需自己算偏移(下界开闭语义权威归本函数, 不外泄)。 — 小欧 2026-10-14
+    """
+    row = conn.execute(
+        "SELECT task_id, task_summary, user_message_id FROM chat_tasks "
+        "WHERE context_root_task_id = ? AND task_id != ? "
+        "  AND task_summary IS NOT NULL AND task_summary != '' AND user_message_id IS NOT NULL "
+        "  AND user_message_id < (SELECT user_message_id FROM chat_tasks WHERE task_id = ?) "
+        "ORDER BY user_message_id DESC LIMIT 1",
+        (context_root_task_id, current_task_id, current_task_id),
+    ).fetchone()
+    if not row:
+        return None
+    return {
+        "task_id": row["task_id"],
+        "summary": row["task_summary"],
+        "user_message_id": row["user_message_id"],
+        "delta_lower_message_id": row["user_message_id"] + 1,
+    }
+
+
+def save_chain_cover_summary(conn: Connection, *, context_root_task_id: str,
+                             current_task_id: str, summary: str) -> Optional[str]:
+    """把本次摘要写到"链内紧邻本任务之前的任务行"(=下次 link 的锚点) —— 小欧 2026-10-14
+
+    写回链单一出口: 定位覆盖上界 + 写入一气完成, 调用方只调本函数。 — 小欧 2026-10-14
+    返回落库的 task_id; 返回 None = 未落库(空摘要 / 链内无覆盖上界任务行 / 写入影响行数≠1),
+      调用方仅告警 —— 摘要本次已注入上下文, 写回失败只损失下次增量收益, 下次无锚点走老路, 不退化。
+    幂等: 同一覆盖行重复写覆盖为最新摘要(再压场景天然如此)。
+    """
+    if not summary:
+        return None   # 空摘要不写, 防把有效锚点洗成无效锚点
+    row = conn.execute(
+        "SELECT task_id FROM chat_tasks "
+        "WHERE context_root_task_id = ? AND task_id != ? AND user_message_id IS NOT NULL "
+        "  AND user_message_id < (SELECT user_message_id FROM chat_tasks WHERE task_id = ?) "
+        "ORDER BY user_message_id DESC LIMIT 1",
+        (context_root_task_id, current_task_id, current_task_id),
+    ).fetchone()
+    if not row:
+        return None
+    _n = conn.execute(
+        "UPDATE chat_tasks SET task_summary=? WHERE task_id=?",
+        (summary, row["task_id"]),
+    ).rowcount
+    return row["task_id"] if _n == 1 else None
 
 
 def query_chain_accumulation(conn: Connection, *, context_root_task_id: str, current_task_id: str) -> dict:
