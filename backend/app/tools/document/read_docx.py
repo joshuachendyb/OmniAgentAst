@@ -73,7 +73,7 @@ def _build_read_docx_llm_data(
     return {
         "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
-        "status": {"exec_code": exec_code, "message": ("成功:" if exec_code == "success" else "有警告:") + "，".join(parts), "code": "", "detail": detail, "hint": hint},
+        "status": {"exec_code": exec_code, "message": ("成功：" if exec_code == "success" else "有警告：") + "，".join(parts), "code": "", "detail": detail, "hint": hint},
         "duration_ms": duration_ms,
         "metrics": {
             "para_count": {"value": para_count, "text": f"{para_count}段"},
@@ -114,11 +114,11 @@ def read_docx(
     # 行翻页参数校验(自然单位治理 2026-07-20 小欧, 复用 read 的 offset/limit/tail 语义)
     if limit is not None and (limit < 1 or limit > 1000):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间,传入值: {limit}", hint="limit参数必须设置在1-1000之间")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"limit参数必须在1-1000之间，传入值：{limit}", hint="limit参数必须设置在1-1000之间")
         return build_error(data={}, llm_data=llm_data)
     if tail is not None and tail < 1:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1,传入值: {tail}", hint="tail参数不能小于1")
+        llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"tail参数不能小于1，传入值：{tail}", hint="tail参数不能小于1")
         return build_error(data={}, llm_data=llm_data)
     if tail is not None and (offset is not None or limit is not None):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -127,11 +127,11 @@ def read_docx(
     if offset is not None:
         if offset < 1:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1,当前值: {offset}", hint="offset行号从1开始")
+            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须>=1，当前值：{offset}", hint="offset行号从1开始")
             return build_error(data={}, llm_data=llm_data)
         if limit is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数,当前offset={offset}", hint="请提供limit参数配合offset")
+            llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=f"offset参数必须同时提供limit参数，当前offset={offset}", hint="请提供limit参数配合offset")
             return build_error(data={}, llm_data=llm_data)
 
     try:

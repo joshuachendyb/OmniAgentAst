@@ -58,13 +58,13 @@ def _build_read_pptx_llm_data(
     # success / warning (自然单位治理 2026-07-20 小欧: 按页翻页)
     if exec_code == "warning":
         summary_str = f"读PPT{file_path}，警告"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读PPT) — 小欧-2026-10-14
-        message_str = f"警告:{detail}" if detail else "警告"
+        message_str = f"警告：{detail}" if detail else "警告"
     elif current_slide is not None:
         summary_str = f"读PPT{file_path}，成功：第{current_slide}页(共{slide_count}页)，{text_len}字符"
-        message_str = f"成功:第{current_slide}页(共{slide_count}页)，{text_len}字符"
+        message_str = f"成功：第{current_slide}页(共{slide_count}页)，{text_len}字符"
     else:
         summary_str = f"读PPT{file_path}，成功：{slide_count}页，{text_len}字符"
-        message_str = f"成功:{slide_count}页，{text_len}字符"
+        message_str = f"成功：{slide_count}页，{text_len}字符"
     return {
         "summary": summary_str,
         "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
@@ -170,11 +170,11 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         if slide is not None:
             if slide < 1:
                 llm_data = _build_read_pptx_llm_data(
-                    "error", duration_ms, file_path, total_slides, detail=f"slide参数必须>=1,当前值: {slide}", hint="slide参数从1开始,表示第几页")
+                    "error", duration_ms, file_path, total_slides, detail=f"slide参数必须>=1，当前值：{slide}", hint="slide参数从1开始,表示第几页")
                 return build_error(data={}, llm_data=llm_data)
             if slide > total_slides:
                 llm_data = _build_read_pptx_llm_data(
-                    "warning", duration_ms, file_path, total_slides, detail=f"slide={slide}超出范围(共{total_slides}页),返回空内容", hint=f"PPT共{total_slides}页,slide取值1..{total_slides}")
+                    "warning", duration_ms, file_path, total_slides, detail=f"slide={slide}超出范围(共{total_slides}页)，返回空内容", hint=f"PPT共{total_slides}页,slide取值1..{total_slides}")
                 result_data = {"slides": []}
                 if notes_data:
                     result_data["notes"] = notes_data

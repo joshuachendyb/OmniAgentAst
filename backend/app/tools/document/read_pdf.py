@@ -151,7 +151,7 @@ def _build_read_pdf_llm_data(
     return {
         "summary": summary_str,
         "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},
-        "status": {"exec_code": "success", "message": "成功:" + "，".join(parts), "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": "成功：" + "，".join(parts), "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "page_count": {"value": page_count, "text": f"{page_count}页"},

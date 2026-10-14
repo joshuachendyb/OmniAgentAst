@@ -106,7 +106,7 @@ def _read_xlsx_inner(file_path: str, max_rows: int = 1000000, sheet_name: Option
     try:
         sheet_names = wb.sheetnames
         if sheet_name and sheet_name not in sheet_names:
-            return {"error_detail": f"工作表不存在: {sheet_name}", "hint": f"工作表 {sheet_name} 不存在,请确认工作表名称是否正确", "params": {"path": str(file_path), "sheet_name": sheet_name}}
+            return {"error_detail": f"工作表不存在：{sheet_name}", "hint": f"工作表 {sheet_name} 不存在，请确认工作表名称是否正确", "params": {"path": str(file_path), "sheet_name": sheet_name}}
         target_sheets = [sheet_name] if sheet_name else sheet_names
 
         all_sheets_data = []
@@ -172,7 +172,7 @@ def _read_csv_stdlib_inner(
         except UnicodeDecodeError:
             continue
     if not read_ok:
-        return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取,请确认文件编码格式", "params": {"path": str(file_path), "encodings_tried": encodings_to_try}}
+        return {"error_detail": "编码不匹配", "hint": "无法以常见编码读取，请确认文件编码格式", "params": {"path": str(file_path), "encodings_tried": encodings_to_try}}
 
     return {"headers": headers, "rows": rows, "row_count": len(rows)}
 
