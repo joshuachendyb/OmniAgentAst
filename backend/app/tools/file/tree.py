@@ -136,14 +136,14 @@ def _build_tree_llm_data(
         _act_params["sort_by"] = user_sort_by
     if exec_code == "error":
         return {
-            "summary": f"列出目录树{dir_path}，失败",
+            "summary": f"列目录{dir_path}，失败",
             "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"列出目录树{dir_path}，成功: {file_count}个文件，{dir_count}个目录",
+        "summary": f"列目录{dir_path}，成功：{file_count}个文件，{dir_count}个目录",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列目录) — 小欧-2026-10-14
         "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

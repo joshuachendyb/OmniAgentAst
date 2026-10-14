@@ -84,7 +84,7 @@ def _build_copy_file_llm_data(
             "metrics": {},
         }
     return {
-            "summary": f"复制成功: {source} -> {destination}",
+            "summary": f"复制文件{source} -> {destination}，成功",
         "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
         "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

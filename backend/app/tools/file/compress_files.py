@@ -96,7 +96,7 @@ def _build_compress_files_llm_data(
     _code = err_code or ERR_FILE_COMPRESS_FAILED
     if exec_code == "error":
         return {
-            "summary": f"压缩{source}，失败",
+            "summary": f"压缩文件{source}，失败",
             "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": _code, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},
             "duration_ms": duration_ms,
@@ -104,7 +104,7 @@ def _build_compress_files_llm_data(
         }
     ratio = 1 - (compressed_size / original_size) if original_size > 0 else 0
     return {
-        "summary": f"压缩{source}，成功: {file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",
+        "summary": f"压缩文件{source}，成功：{file_count}个文件，{original_size}→{compressed_size}字节，压缩率{ratio:.1%}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh, 成功后置 — 小欧-2026-10-14
         "action": {"tool": "compress", "tool_zh": "压缩", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{file_count}个文件，压缩率{ratio:.1%}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -407,7 +407,7 @@ async def compress(
                     user_destination=dest, user_format=format, user_overwrite=overwrite,
                     user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "",
                 )
-                llm_data["summary"] = f"压缩{path}，失败: 压缩超时({timeout}秒)，不完整文件已删除"
+                llm_data["summary"] = f"压缩文件{path}，失败：压缩超时({timeout}秒)，不完整文件已删除"
                 llm_data["status"]["hint"] = _hint
                 llm_data["metrics"] = {
                     "file_count": {"value": _done_files, "text": f"{_done_files}个文件"},

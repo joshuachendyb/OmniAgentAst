@@ -53,14 +53,14 @@ def _build_read_media_file_llm_data(
     """read_media_file的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小沈 2026-07-05 新增hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"读取媒体文件{file_path}，失败",
+            "summary": f"读媒体{file_path}，失败",
             "action": {"tool": "readmedia", "tool_zh": "读媒体", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-            "summary": f"读取媒体文件{file_path}，成功:媒体类型: {mime_type}，内容大小:{file_size}字节",
+            "summary": f"读媒体{file_path}，成功：{mime_type}，{file_size}字节",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读媒体), 值保留(去标签), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "readmedia", "tool_zh": "读媒体", "params": {"path": file_path}},
         "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -115,7 +115,7 @@ async def readmedia(
         # ------------------------------------------------------------------------------
         # =============================================================================
         # 数据设计：file_size 从 data 移除，通过 llm_data.metrics 传入 summary
-        # summary 示例: "读取媒体文件成功: image.png (image/png)"
+        # summary 示例: "读媒体image.png，成功：image/png，800字节"
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         return build_success(

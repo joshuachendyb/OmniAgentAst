@@ -160,7 +160,7 @@ def _build_list_directory_llm_data(
         _act_params["offset"] = user_offset
     if exec_code == "error":
         return {
-            "summary": f"列出目录{dir_path}，失败",
+            "summary": f"列文件{dir_path}，失败",
             "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_LIST_DIR_FAILED, "detail": detail, "hint": hint if hint else "请检查目录路径和权限"},
             "duration_ms": duration_ms,
@@ -178,13 +178,13 @@ def _build_list_directory_llm_data(
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
-            "summary": f"列出目录{dir_path}，成功,提示说明: {total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",
+            "summary": f"列文件{dir_path}，成功：{total}项，{file_count}个文件，{dir_count}个目录{_summary_suffix}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列文件), 去",提示说明" — 小欧-2026-10-14
             "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": "目录内容不完整", "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
             "metrics": m,
         }
-    summary = f"列出目录{dir_path}，成功: {total}项，{file_count}个文件，{dir_count}个目录"
+    summary = f"列文件{dir_path}，成功：{total}项，{file_count}个文件，{dir_count}个目录"
     if user_offset:
         end_offset = min(user_offset + OBS_LISTDIR_MAX_ROWS, total)
         summary += f"，第{user_offset+1}-{end_offset}项"
@@ -269,7 +269,7 @@ async def listdir(
         # =============================================================================
         # 数据设计：total/statistics 从 data 移除，
         # dir_count/file_count/total_size/file_types/size_distribution 移入 llm_data.metrics
-        # summary 示例: "列出目录成功: /path (47项, 42个文件, 5个目录)"
+        # summary 示例: "列文件/path，成功：47项，42个文件，5个目录"
         # — 小欧 2026-07-06
         # =============================================================================
         if exec_code == "warning":

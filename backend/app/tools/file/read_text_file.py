@@ -100,7 +100,7 @@ def _build_read_text_file_llm_data(
     _ps = f"{_pi} " if _pi else ""
     if exec_code == "error":
         return {
-            "summary": f"读取文件{file_path}，失败",
+            "summary": f"读文件{file_path}，失败",
             "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和参数是否正确"},
             "duration_ms": duration_ms,
@@ -108,7 +108,7 @@ def _build_read_text_file_llm_data(
         }
     if exec_code == "warning":
         return {
-            "summary": f"读取文件{file_path}，成功,提示说明: {_ps}{line_count}行",
+            "summary": f"读文件{file_path}，成功：{_ps}{line_count}行，{file_size}字节",  # 2026-10-14 小欧 - warning 分支补字节(与成功分支同口径, file_size 入参直取) — 小欧-2026-10-14
             "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
@@ -132,7 +132,7 @@ def _build_read_text_file_llm_data(
         msg = f"成功:从第{start_line}-{end_line}行"
         hint_text = ""
     return {
-        "summary": f"读取文件{file_path}，成功: {_ps}{line_count}行，{file_size}字节",
+        "summary": f"读文件{file_path}，成功：{_ps}{line_count}行，{file_size}字节",
         "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
         "status": {"exec_code": "success", "message": msg, "code": "", "detail": "", "hint": hint_text},
         "duration_ms": duration_ms,
@@ -274,7 +274,7 @@ async def read(
         _data["encoding"] = used_encoding
         # =============================================================================
         # 数据设计：line_count/total_lines 从 data pop 出，通过 llm_data.metrics 传给 summary
-        # summary 示例: "读取 /path，20/200行，1024字节"
+        # summary 示例: "读文件/path，成功：20行，1024字节"
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         _line_count = _data.pop("line_count", 0)

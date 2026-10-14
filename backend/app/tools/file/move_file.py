@@ -22,8 +22,9 @@
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-05 - 小欧 - 单通道补 metrics(北京老陈裁定): success 补 moved_bytes(目标侧 stat, 目录不递归)
-#   /moved_count, 结构化承接结果量; summary 仍 `移动成功: {source} -> {destination}` 不动
+#   /moved_count, 结构化承接结果量; summary `{source} -> {destination}` 双路径不断
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 移动文件→移文件
+# 2026-10-14 小欧 - summary 统一口径: `移文件{source} -> {destination}，成功`(动词用 tool_zh, 成功后置) — 小欧-2026-10-14
 """
 F10: move_file — 移动文件
 
@@ -66,20 +67,21 @@ def _build_move_file_llm_data(
         _act_params["overwrite"] = user_overwrite
     if exec_code == "error":
         return {
-            "summary": f"移动文件{source}，失败",
+            "summary": f"移文件{source}，失败",
             "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     # 2026-10-05 小欧 - 单通道补 metrics(北京老陈裁定): moved_bytes/moved_count 结构化承接结果量,
-    #   summary 仍 `移动成功: {source} -> {destination}` 不动; 目录不递归累计字节(moved_count=1)
+    #   summary 仍 `{source} -> {destination}` 双路径不断; 目录不递归累计字节(moved_count=1)
+    # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh(移文件), 成功后置 — 小欧-2026-10-14
     _metrics: Dict[str, Any] = dict(extra_metrics) if extra_metrics else {}
     if moved_bytes or moved_count:
         _metrics["moved_bytes"] = {"value": moved_bytes, "text": f"{moved_bytes}字节"}
         _metrics["moved_count"] = {"value": moved_count, "text": f"{moved_count}项"}
     return {
-        "summary": f"移动成功: {source} -> {destination}",
+        "summary": f"移文件{source} -> {destination}，成功",
         "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
         "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

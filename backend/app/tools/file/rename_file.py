@@ -44,14 +44,15 @@ def _build_rename_file_llm_data(
         _act_params["overwrite"] = user_overwrite
     if exec_code == "error":
         return {
-            "summary": f"重命名{source}，失败",
+            "summary": f"重命名文件{source}，失败",
             "action": {"tool": "rename", "tool_zh": "重命名", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_RENAME_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和新名称"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _summary = f"重命名 {source} → {new_name} 成功" if new_name else f"重命名 {source}"
-    # 2026-10-05 小欧 - 单通道补 metrics(北京老陈裁定): size 结构化承接文件大小; summary 不动
+    _summary = f"重命名文件{source} → {new_name}，成功" if new_name else f"重命名文件{source}"
+    # 2026-10-05 小欧 - 单通道补 metrics(北京老陈裁定): size 结构化承接文件大小
+    # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh, 成功后置, 去"重命名 "多余空格 — 小欧-2026-10-14
     _metrics: Dict[str, Any] = {}
     if file_size:
         _metrics["size"] = {"value": file_size, "text": f"{file_size}字节"}
@@ -111,7 +112,7 @@ async def rename(
         except OSError:
             _same_size = 0
         llm_data = _build_rename_file_llm_data("success", duration_ms, source, new_name=new_name, user_destination=destination, user_overwrite=overwrite, file_size=_same_size, changed=0)
-        llm_data["summary"] = f"重命名{source}，成功: {new_name}（名称相同，无操作）"
+        llm_data["summary"] = f"重命名文件{source}，成功: {new_name}（名称相同，无操作）"
         llm_data["status"]["message"] = "名称相同，无需重命名"
         with_artifact_file(llm_data, str(dst))   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
