@@ -102,7 +102,7 @@ def read_docx(
         elif suggested_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "文件类型不匹配,请使用正确的文档格式"
+            _hint = "请检查文件路径是否存在及是否为Word格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"(谈类型是错的) — 小欧-2026-10-14
         llm_data = _build_read_docx_llm_data("error", duration_ms, path, detail=error_detail, hint=_hint)
         return build_error(data={}, llm_data=llm_data)
 

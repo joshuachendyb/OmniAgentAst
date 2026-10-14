@@ -204,7 +204,7 @@ def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None)
         elif suggested_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "文件类型不匹配,请使用正确的文档格式"
+            _hint = "请检查文件路径是否存在及是否为PDF格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"(谈类型是错的) — 小欧-2026-10-14
         llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=error_detail, hint=_hint)
         return build_error(data={}, llm_data=llm_data)
 
@@ -294,7 +294,7 @@ def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None)
         if fitz_used:
             hint = "pdfplumber提取中文乱码,已使用PyMuPDF后备提取"
         elif _is_garbled_text(full_text):
-            hint = "该PDF文档的中文文本在创建时已丢失编码信息,无法通过文本提取恢复,建议使用OCR工具"
+            hint = "该PDF文档的中文文本在创建时已丢失编码信息，文本提取无法恢复"  # 2026-10-14 小欧 - 修谎报: OCR 工具不存在, 点名即误导; 无动作可给, 只陈述事实 — 小欧-2026-10-14
         if truncated_hint:
             hint = (hint + "; " if hint else "") + truncated_hint
         llm_data = _build_read_pdf_llm_data(

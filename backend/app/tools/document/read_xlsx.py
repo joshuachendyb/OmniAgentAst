@@ -200,7 +200,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
             elif suggested_tool == "":
                 _hint = "请检查文件路径和文件名是否正确"
             else:
-                _hint = "文件类型不匹配,请使用.xlsx或.csv格式"
+                _hint = "请检查文件路径是否存在，表格请使用.xlsx或.csv格式"  # 2026-10-14 小欧 - 修错向: None 分支含"文件不存在"; csv 支持属实, 换策略保留 — 小欧-2026-10-14
             llm_data = _build_read_xlsx_llm_data("error", duration_ms, path, detail=error_detail, user_sheet_name=_sn, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 
