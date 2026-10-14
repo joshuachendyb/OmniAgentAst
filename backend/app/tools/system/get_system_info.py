@@ -27,13 +27,13 @@ def _build_get_system_info_llm_data(exec_code: str, duration_ms: int, info_type:
     """get_system_info的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加detail — 小欧 2026-07-05 加hint参数 — 小欧 2026-07-06 加custom_summary"""
     if exec_code == "error":
         return {
-            "summary": f"获取系统信息，{info_type}，失败",
+            "summary": f"查系统{info_type}，失败",
             "action": {"tool": "sysinfo", "tool_zh": "查系统", "params": {"info_type": info_type}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_SYSTEM_INFO, "detail": detail, "hint": hint if hint else "请检查info_type参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    _summary = custom_summary if custom_summary else f"获取系统信息，{info_type}，成功"
+    _summary = custom_summary if custom_summary else f"查系统{info_type}，成功"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(查系统); custom 透传不动 — 小欧-2026-10-14
     return {
         "summary": _summary,
         "action": {"tool": "sysinfo", "tool_zh": "查系统", "params": {"info_type": info_type}},

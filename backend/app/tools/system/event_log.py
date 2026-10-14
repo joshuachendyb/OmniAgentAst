@@ -41,7 +41,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
     if user_max_events is not None:
         _act_params["max_events"] = user_max_events
     if exec_code == "error":
-        err_summary = f"获取事件{log_name}日志，失败,说明信息:" + (f": {detail}" if detail else "")
+        err_summary = f"读日志{log_name}，失败" + (f"：{detail}" if detail else "")
         return {
             "summary": err_summary,
             "action": {"tool": "event_log", "tool_zh": "读日志", "params": _act_params},
@@ -49,7 +49,7 @@ def _build_event_log_llm_data(exec_code: str, duration_ms: int, log_name: str, e
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    summary_text = f"获取事件{log_name}日志，成功,说明信息: {event_count}条事件" if event_count > 0 else f"获取事件日志{log_name}，成功,提示说明: 指定时间范围内无匹配事件"
+    summary_text = f"读日志{log_name}，成功：{event_count}条事件" if event_count > 0 else f"读日志{log_name}，成功：指定时间范围内无匹配事件"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读日志), 去"说明信息/提示说明" — 小欧-2026-10-14
     return {
         "summary": summary_text,
         "action": {"tool": "event_log", "tool_zh": "读日志", "params": _act_params},
@@ -183,7 +183,7 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
             if error_code == ERR_SYSTEM_TIMEOUT:
                 timeout_sec = TOOL_TIMEOUTS.get("event_log", TOOL_TIMEOUTS["default"])
                 llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail="", err_code=error_code, hint="查询超时，请检查事件日志查询条件或增大时间范围", user_max_events=max_events)
-                llm_data["summary"] = f"获取事件{log_name}日志，失败: 超时({timeout_sec}秒)"
+                llm_data["summary"] = f"读日志{log_name}，失败：超时({timeout_sec}秒)"
             else:
                 llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=error_detail, err_code=error_code, hint="请检查日志名称和级别", user_max_events=max_events)
             return build_error(data={}, llm_data=llm_data)

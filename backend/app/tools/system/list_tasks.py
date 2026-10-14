@@ -86,14 +86,14 @@ def _build_list_tasks_llm_data(exec_code: str, duration_ms: int, tasks: List[Dic
         _params["task_name"] = task_name
     if exec_code == "error":
         return {
-            "summary": f"获取计划任务列表失败: {detail}",
+            "summary": f"列任务，失败：{detail}",
             "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
             "status": {"exec_code": "error", "message": detail if detail else "获取计划任务列表失败", "code": err_code or ERR_TASK_LIST, "detail": detail, "hint": hint if hint else "请检查任务名称和系统设置"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取计划任务成功: 共{total_raw}个，匹配{total_matched}个",
+        "summary": f"列任务，成功：共{total_raw}个，匹配{total_matched}个",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列任务) — 小欧-2026-10-14
         "action": {"tool": "list_tasks", "tool_zh": "列任务", "params": _params},
         "status": {"exec_code": "success", "message": f"成功:共{total_raw}个，匹配{total_matched}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -135,7 +135,7 @@ def list_tasks(task_name: Optional[str] = None, state: str = "all") -> dict:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
         llm_data = _build_list_tasks_llm_data("error", duration_ms, [], 0, 0, detail="", hint="", task_name=task_name or "", state=state, err_code=ERR_SHELL_TIMEOUT)
-        llm_data["summary"] = f"获取计划任务列表失败: 超时({timeout_sec}秒)"
+        llm_data["summary"] = f"列任务，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except ValueError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

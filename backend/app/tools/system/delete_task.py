@@ -32,14 +32,14 @@ def _build_delete_task_llm_data(exec_code: str, duration_ms: int, task_name: str
     """delete_task的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"删除计划任务{task_name}，失败",
+            "summary": f"删任务{task_name}，失败",
             "action": {"tool": "delete_task", "tool_zh": "删任务", "params": {"task_name": task_name}},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_TASK_DELETE, "detail": detail, "hint": hint if hint else "请检查任务名称和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"删除计划任务{task_name}，成功",
+        "summary": f"删任务{task_name}，成功",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(删任务) — 小欧-2026-10-14
         "action": {"tool": "delete_task", "tool_zh": "删任务", "params": {"task_name": task_name}},
         "status": {"exec_code": "success", "message": "成功", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -88,7 +88,7 @@ def delete_task(task_name: str) -> dict:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
         llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_TIMEOUT, detail="", hint="")
-        llm_data["summary"] = f"删除计划任务{task_name}，失败: 超时({timeout_sec}秒)"
+        llm_data["summary"] = f"删任务{task_name}，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
