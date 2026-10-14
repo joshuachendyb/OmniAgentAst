@@ -15,6 +15,7 @@
 #   ②_retry_engine 模块级单例(ToolRetryEngine 无状态, 复用同一实例, KISS-DIRECT); ③result 非 dict 时判失败(原 ok=True 误报成功)
 # 2026-08-18 - 小健 - 三堂会审 修复(同源): result.llm_data.status 可能为 str, 新增 _safe_status_message 防御 AttributeError
 # 2026-10-14 - 小欧 - SA1标注: 本文件=权限信任框架SA1(API直调入口,与safety_gate的Agent入口并列双入口,执行顺序第1步→SA3总闸) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 文档[33] 4.13(P3步14): 补 SA7 沙箱预检 + SA6 带守卫授权; 病根: 本链只做SA3, destructive 可绕过影子副本预检, 且白名单外授权无人grant致工具体内二次拦截
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -139,7 +140,23 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
                 "error": f"需要用户确认工具执行({tool_name}), 测试接口不支持交互确认",
                 "safety": safety}
 
-    # 2. 设置任务上下文(try/finally reset, 防 ContextVar 泄漏污染并发) — 小欧 2026-08-12
+    # 2. 沙箱预检 + 临时授权(SA7/SA6) — 2026-10-14 小欧, 文档[33] 4.13 P3步14
+    #    病根: 本链此前只做 SA3, 不做 SA7/SA6 —— destructive 操作经 API 直调可绕过影子副本预检;
+    #    白名单外授权请求无人 grant, 工具体内 validate_path 二次拦截, 表现为「弹了窗但仍被拦」。
+    from app.safety.sandbox.executor import get_sandbox_executor
+    pre = await get_sandbox_executor().pre_execute(tool_name, params or {})
+    if not pre.passed:
+        # API 链无前端可裁决, needs_ruling 亦直接拒绝(不弹窗), 与上方"需确认即拒"同一降级语义
+        return {"tool_name": tool_name, "success": False,
+                "error": f"沙箱预检未通过: {pre.blocked_reason}", "safety": safety}
+    # 授权: 白名单外写预检已放行, 但工具体内 validate_path 仍查 temp_auth → 不 grant 会二次拦截。
+    #   必须带 auth_path 守卫: shell 类确认(返回的 SafetyResult 不带 auth_path)裸调会传 None。
+    #   单次调用作用域: 请求结束随 ContextVar 消亡, 不跨调用(API 链自建 task_id, 无"同 task"概念)。
+    if getattr(safety, "auth_path", None):
+        from app.safety.temp_auth import grant_temp_auth
+        grant_temp_auth(safety.auth_path, recursive=True)
+
+    # 3. 设置任务上下文(try/finally reset, 防 ContextVar 泄漏污染并发) — 小欧 2026-08-12
     task_id = str(uuid.uuid4())
     token = _current_task_id.set(task_id)
     try:
