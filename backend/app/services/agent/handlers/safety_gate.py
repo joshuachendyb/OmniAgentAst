@@ -69,6 +69,7 @@
 #   缺字段则确认作废后弹窗永留屏幕、点击落到 entry=None 被丢弃(实测 e95d2ceb 挂 3 分钟) - 小欧-2026-10-11
 # 2026-10-14 - 小欧 - SA1/SA6标注: 本文件=权限信任框架SA1(Agent入口check_safety_and_confirm,执行第1步)+SA6(HITL确认hitl_confirm+确认后grant_temp_auth写入,执行第6步); SA2信任预查resolve_skip→SA3总闸check_before_execute→SA7沙箱run_sandbox_gate
 # 2026-10-14 - 小欧 - 文档[33] 4.6/4.1连带表: :89/:126/:127 trust 改 app.safety.trust, :80 temp_auth 改 app.safety.temp_auth
+# 2026-10-14 - 小欧 - 文档[33] 4.6-4(P3步15): bypass 分支补 _bypass_confirmed 守卫(在 grant 之前); 病根: 网关拒了仍授权且下方 continue 吞掉 rejected
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -245,6 +246,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                     _verdict = _confirm_cache[_group_key]   # 组内复用首call裁决, 不发第二次弹窗 — 小欧-2026-09-18
                 if _bypass:
                     _bypass_confirmed = _verdict["confirmed"] or _verdict["expired"]  # S1超时bypass兜底放行(原119-120语义) — 小欧 2026-09-06
+                    # 2026-10-14 小欧 - 文档[33] 4.6-4(P3步15): 守卫补在授权之前。病根: 网关拒了
+                    #   (_bypass_confirmed False)仍往下走 grant + run_sandbox_gate, 而下方 continue 会把
+                    #   rejected 吞掉 —— 用户已拒, 流程却照走。防御性: bypass 下 auto_confirm=True 使网关
+                    #   自动确认, 本守卫几乎恒不触发, 仅网关异常时可拦(与 sandbox_gate 检查点 B 同构)。
+                    if not _bypass_confirmed:
+                        _events.append({"step": step, "tool_name": _cn,
+                                        "rejected": "user", "reason": "bypass未确认即终止"})
+                        continue
                     if _group_lead and getattr(safety_result, "auth_path", None):    # 原126语义: 仅凭auth_path, 不设trust_session门; 3.4组内仅首call授齐 — 小欧-2026-09-06/2026-09-18
                         try:
                             grant_temp_auth(safety_result.auth_path, recursive=True)
