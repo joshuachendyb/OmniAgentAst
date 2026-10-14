@@ -90,6 +90,7 @@
 #   "tools 禁 import safety"经 test_architecture_boundaries 实证不成立, safety→tools 合法) — 小欧-2026-10-10
 # 2026-10-14 - 小欧 - SA3标注: 本文件=权限信任框架SA3(安全总闸check_before_execute,执行第3步,上游SA1/SA2,内调SA4 delete_safety+SA5 path_safe_check,下游SA6 HITL) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D: SafetyResult import 改 app.tools.tool_types(契约归工具层单源)
+# 2026-10-15 - 小欧 - 文档[33] 4.9(P4步18): known_risk 之后加豁免早返(不拦且不需确认即原样返回); 原代码会把「无动作」结果强标 severity=dangerous, 与事实相反
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -231,6 +232,12 @@ class ToolSafetyChecker:
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk,
                                              skip_confirmation=skip_confirmation)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
         if known_risk is not None:
+            # 2026-10-14 小欧 - 文档[33] 4.9(P4步18) 豁免早返: 既不拦也不需确认 → 原样返回, 不得往下走。
+            #   病根: 原代码对「不拦且不需确认」的 known_risk 也会强制 severity="dangerous"(见下方),
+            #   而 _check_known_risks 命中豁免(如只读命中白名单豁免)时返回的正是这种「无动作」结果 ——
+            #   被改标 dangerous 后, 上层按严重级渲染并留痕, 语义变成「有危险」, 与事实相反。
+            if not known_risk.blocked and not known_risk.requires_confirmation:
+                return known_risk
             # ⑮ 白名单外临时授权请求(blocked=False, requires_confirmation=True, auth_path): 放行到确认流程 —
             #    action_handler 识别 requires_confirmation 走 HITL, 用户确认后 grant_temp_auth; 不在此拦截 — 小欧 2026-08-10
             if known_risk.requires_confirmation and not known_risk.blocked:
