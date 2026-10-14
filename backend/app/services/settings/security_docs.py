@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
+r"""  # 2026-10-14 小欧 - docstring 改 raw(消启动期 SyntaxWarning: invalid escape sequence '\P'): 内容含 \ProgramData 等 Windows 路径 — 小欧-2026-10-14
 security_docs — 安全 Tab 说明文案源: 读 app/datafile/*.md(两个弹框各一个 + 分类表页面直出一个),
 把 {{占位符}} 替换成真实路径值。
 
