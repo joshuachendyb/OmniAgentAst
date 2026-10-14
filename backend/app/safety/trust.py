@@ -6,7 +6,7 @@
 #   (保护 conflict_detector 并查集分组); 与 FILE 流程共用 PARAM_ALIASES 只取规范 path — 小欧-2026-09-16
 # 2026-10-06 - 小欧 - save_session_trust 落库日志补 raw_path 与「登记范围」两字段: 原先只打 tool_name,
 #   实际登记的是文件还是目录从日志无从判断, 「信任4次仍反复弹窗」正是因此长期查不出根因。
-#   落库侧粒度修复见 app/tools/trust_db.py trust_scope_path。 — 小欧-2026-10-06
+#   落库侧粒度修复见 app/safety/trust_db.py trust_scope_path。 — 小欧-2026-10-06
 # 2026-10-14 - 小欧 - SA2标注: 本文件=权限信任框架SA2(会话信任预查resolve_skip/check_session_trust,执行第2步,上游SA1下游SA3) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 迁 tool_constants, _parse_paths 迁 conflict_detector; 本模块旧定义删改由 import 解析(不留双份)
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
@@ -16,6 +16,7 @@
 #   (AST 实证代码与注解皆未引用)。其中 Set 设计 5.12 明文要求删, 而
 #   WINDOW_TARGET_TOOLS 系实施时多补的 import(设计只要求删本地定义, 未要求新增 import)。
 #   剩余 Dict/Optional/PARAM_ALIASES/normalize_tool_name/NON_FILE_TRUST_TOOLS/_parse_paths 均有真实引用。— 小欧-2026-10-15
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 

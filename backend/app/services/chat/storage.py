@@ -72,7 +72,7 @@
 #   delete_session_trust(conn, session_id, tool_name, path=None): (tool,path)精确撤销, path=None仅删工具级通配行(D3);
 #   新增 _norm_trust_path 路径规范化(resolve绝对化, 落库/查询双侧一致); 文件首增 from pathlib import Path
 # 2026-09-05 - 小欧 - 架构边界修正(三堂会审): insert_session_trust/check_session_trust/get_session_id_by_task
-#   三函数迁往 app/tools/trust_db.py(逐字复制不改逻辑)——修复 trust.py(app/tools) 越层 import app.services.chat.storage
+#   三函数迁往 app/safety/trust_db.py(逐字复制不改逻辑)——修复 trust.py(app/tools) 越层 import app.services.chat.storage
 #   违反"app/tools 禁 app.services"依赖方向守护(test_architecture_boundaries.py)。唯一调用方 trust.py 已改引 trust_db;
 #   _norm_trust_path 本层保留(delete/list 仍用)。该项与本仓库既有 2-5 层存储分离无关, 是 09-04 resolve_skip 重构残址。
 # 2026-09-16 - 小欧 - 问题修复: _norm_trust_path 增 tool_name 参数, 与 trust_db.py:17 同位同步

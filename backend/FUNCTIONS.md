@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-14 10:47:03
-**最近更新**: 2026-10-14 10:47:03 小欧 linked 增量摘要两函数登记（get_chain_summary_anchor/save_chain_cover_summary）。详见版本历史 v5.7
+**最后更新时间**: 2026-10-15 06:07:40
+**最近更新**: 2026-10-15 06:07:40 小欧 路径订正(§4.4/§八 去已删旧址) + §4.4 补登记五个信任函数与会话信任 TTL。详见版本历史 v5.8
 
 ---
 
@@ -317,12 +317,22 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 
 ---
 
-### 4.4 信任机制辅助（app/tools/trust_db.py + app/tools/trust.py）
+### 4.4 信任机制辅助（app/safety/trust_db.py + app/safety/trust.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `norm_trust_path` | 信任路径规范化: 文件域 Path.resolve() 绝对化; 非文件信任域(registry/sql)原样 strip(信任落库/查询/撤销双侧一致的单一来源) | path: Optional[str], tool_name: Optional[str]=None | Optional[str] |
+| `trust_scope_path` | 信任登记范围归一(文件类收敛到【所在目录】, 目录/非文件信任域原样) —— 写入端产出读取端能匹配的东西, 否则「信任此操作」退化为只信任单个文件名 | path: Optional[str], tool_name: Optional[str]=None | Optional[str] |
+| `insert_session_trust` | HITL「信任本次会话」落库(UNIQUE(session_id,tool_name,path) 幂等), 同步写 expires_at=now+TTL | conn, session_id, tool_name, path=None | None |
+| `check_session_trust` | 信任豁免判定(SA2 实体): path=None 命中本工具通配行; path 给定则命中「本工具通配行」或「任意工具登记路径为该目标祖先/等于」(目录信任跨工具前缀豁免); **过期行不豁免** | conn, session_id, tool_name, path=None | bool |
+| `cleanup_expired_trust` | 回收已过期信任行(删 expires_at<=now, 判据与 check 同源单源) —— 由 main.py 周期调用, 独立 try | conn | int(删除条数) |
+| `get_session_id_by_task` | 按 task_id 反查 session_id(HITL trust 落库/豁免用, 禁止伪 agent.session_id) | conn, task_id | Optional[str] |
 | `extract_trust_path` | 从工具调用提取信任落库/查询的目标路径(文件域经 _parse_paths, 非文件信任域定向别名仅认规范 path) | name: str, params: Dict | Optional[str] |
+
+> **会话信任 TTL**（文档[33] 5.17，2026-10-15 小欧）：`insert` 写 `expires_at = now + security.trust_ttl_days`（默认 90 天）；
+> `check` 只查未过期行（`expires_at IS NULL` 视为**不过期**，存量行不被误杀）；`cleanup` 删过期行回收存储。
+> **即使 cleanup 没跑，check 的过滤已使过期行不豁免** —— 清理只负责回收存储，不承担正确性。
+> 边界：UNIQUE + `INSERT OR IGNORE` 下**重复信任不续期**（续期等于「点一次就永久有效」，与 TTL 初衷相悖）。
 
 
 ### 4.5 Agent步骤辅助（observation_content.py）
@@ -389,9 +399,9 @@ def my_parse_json(json_str):
 
 ---
 
-## 八、Safety层（app/safety/ + app/tools/security/）
+## 八、Safety层（app/safety/）
 
-### 8.1 路径安全（path_safe_check.py，位于 app/tools/security/）
+### 8.1 路径安全（path_safe_check.py，位于 app/safety/）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -413,7 +423,7 @@ def my_parse_json(json_str):
 
 > 消费链：tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，危险项入 _check_known_risks 无条件拦截，其余入 _get_needs_confirmation 确认分流
 
-### 8.3 白名单外临时授权（temp_auth.py，位于 app/tools/security/）
+### 8.3 白名单外临时授权（temp_auth.py，位于 app/safety/）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
@@ -495,6 +505,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.8 | 2026-10-15 | **路径订正 + TTL 登记**(小欧, 文档[33] 5.23 / P5步21-22): ①§4.4 与§八 标题/小节路径按终态订正 —— `app/tools/trust_db.py`+`app/tools/trust.py` → `app/safety/trust_db.py`+`app/safety/trust.py`; 第八章标题去掉已删的 `app/tools/security/`; §8.1/§8.3 标注位置由 `app/tools/security/` 改 `app/safety/`(该包 5.15 已整包删除) ②§4.4 补登记 `trust_scope_path`/`insert_session_trust`/`check_session_trust`/`cleanup_expired_trust`/`get_session_id_by_task` 五个原漏登函数, 并加**会话信任 TTL** 说明(写 expires_at / 查未过期 / 周期回收, NULL=不过期兼容存量, 重复信任不续期)。注: 本文件未记录 `SafetyResult` 的模块路径(仅作形参名出现), 故设计 5.23「SafetyResult 改 app/tools/tool_types.py」一节无对应条目可改 | 小欧 |
 | v5.7 | 2026-10-14 10:47:03 | **linked 增量摘要**(小欧): §3.2 登记 `get_chain_summary_anchor`(取链内最近非空摘要锚点) + `save_chain_cover_summary`(摘要写覆盖上界任务行, 单一出口); 模块内私有装配辅助(`_build_history_context`/`_strip_history_msgs`/`_assemble_anchor_delta`, 单消费者)按惯例不入清单 | 小欧 |
 | v5.6 | 2026-10-11 07:30:12 | **中央别名表收敛厂商键名漂移**(小欧): `_KEY_ALIASES` + `_canon_item` 入口归一（name/display_name/title、pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、supported_parameters/supported_sampling_parameters），`_first_alias` 退役删除（唯一调用点改直读）；longcat 两变体首批入表；zenmux 映射（_flatten_pricings/_merge_capabilities/publish_time）保持。回归 94 passed + 真实 zenmux 201 条/DTO 零失败 + 老厂商口径零变化 | 小欧 |
 | v5.5 | 2026-10-10 12:50 | **10轮会审21bug修复(小欧)**: §3.6 函数清单同步新契约 —— 新增 `reconcile_session_workspaces`(进入会话唯一真源)/`_build_default_workspace_dir`(下沉)/`_drop_nested`(context 快照去嵌套); 删 `load_effective_workspaces` 死函数; `MAX_PATH_CHARS` 240→200 | 小欧 |

@@ -91,6 +91,9 @@
 # 2026-10-14 - 小欧 - SA3标注: 本文件=权限信任框架SA3(安全总闸check_before_execute,执行第3步,上游SA1/SA2,内调SA4 delete_safety+SA5 path_safe_check,下游SA6 HITL) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D: SafetyResult import 改 app.tools.tool_types(契约归工具层单源)
 # 2026-10-15 - 小欧 - 文档[33] 4.9(P4步18): known_risk 之后加豁免早返(不拦且不需确认即原样返回); 原代码会把「无动作」结果强标 severity=dangerous, 与事实相反
+# 2026-10-15 - 小欧 - 文档[33] 5.20 核查订正: T1 注释订正为「mode 由 validate_tool_path 内部按 tool_name 自动推断(调用方不传)」。
+#   病根: 原注释写「传递 mode 给 validate_tool_path」, 与实际行为相反 —— 实调 L375 只传 (tool_name, params) 两个参数,
+#   mode 形参默认 None 由被调方内部推断。误导性注释, 按设计 5.20 订正。— 小欧-2026-10-15
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -364,7 +367,8 @@ class ToolSafetyChecker:
         小欧 2026-06-25: 返回SafetyResult替代raw dict
         小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)
         小欧 2026-06-28: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
-        # T1 (v1.43): 传递 mode 给 validate_tool_path(自动推断), 接收 4元组 (is_valid, msg, failed_path, category)
+        # T1 (v1.43): mode 由 validate_tool_path 内部按 tool_name 自动推断(调用方不传), 本层接收其
+        #   4 元组 (is_valid, msg, failed_path, category) —— 注释订正 2026-10-14(与实际行为一致)
         # T2 (v1.43): 按 category+mode 显式分流, 替代 msg 字符串特征匹配(L170):
         #   - category=="system" 且写/删 → blocked 硬拦(永不授权)
         #   - category=="non_system" 且删 → blocked 硬拦(永不授权)

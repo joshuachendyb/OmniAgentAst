@@ -24,7 +24,7 @@
 #   "工具执行慢", 改写为"确认窗口已关闭(未获人工授权)"。expired 返回值/键名/超时时长来源均不变,
 #   仅日志措辞; 该措辞经 safety_gate 转译为 rejected.content 反馈给 LLM(同批 safety_gate 改动) — 小欧 2026-10-11
 # 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
-#   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
+#   [改法] resolve_confirmation内联落库逻辑替换为 from app.safety.trust import save_session_trust(路径已按文档[33] 5.23 订正为终态; 日期/署名/描述原样)
 #   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
 # 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 # 2026-10-14 小欧 - 文档[33] 4.8: :197 save_session_trust 改从 app.safety.trust 导入

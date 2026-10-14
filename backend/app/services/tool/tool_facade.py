@@ -16,6 +16,9 @@
 # 2026-08-18 - 小健 - 三堂会审 修复(同源): result.llm_data.status 可能为 str, 新增 _safe_status_message 防御 AttributeError
 # 2026-10-14 - 小欧 - SA1标注: 本文件=权限信任框架SA1(API直调入口,与safety_gate的Agent入口并列双入口,执行顺序第1步→SA3总闸) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.13(P3步14): 补 SA7 沙箱预检 + SA6 带守卫授权; 病根: 本链只做SA3, destructive 可绕过影子副本预检, 且白名单外授权无人grant致工具体内二次拦截
+# 2026-10-15 - 小欧 - 文档[33] 5.21(P3收尾①②④): ①requires_confirmation 分支补设计注释(该分支恒拒绝是接口形态决定,
+#   非漏实现 —— API 链无 session_id 故 skip_confirmation 恒 False 无法走会话豁免, 且无前端可裁决 HITL, 等待只会挂死调用方);
+#   ④补文件末尾行尾换行(原缺, P3 实施时的漏项, 纯注释/字节零逻辑改动)。— 小欧-2026-10-15
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -136,6 +139,10 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     if safety.requires_confirmation and not safety.auto_confirm:
         # 测试接口无前端 HITL: 仅 auto_confirm(安全开关关闭)直放, 其余返回待确认
         # 2026-10-14 北京老陈裁定: 一并回传 SafetyResult, 调用方据字段区分拦截/待确认, 不靠中文串
+        # 2026-10-15 小欧 - 文档[33] 5.21-①: 本分支恒拒绝而非弹窗, 是**接口形态决定**而非漏实现 ——
+        #   check_before_execute 未传 skip_confirmation, API 链无 session_id(文档[33] 4.13-2 P2-2),
+        #   故 skip_confirmation 恒 False, 无法走「会话信任豁免」; 且本链无前端可裁决 HITL,
+        #   等待确认只会挂死调用方, 故直接拒绝(与上方 blocked 同级降级)。
         return {"tool_name": tool_name, "success": False,
                 "error": f"需要用户确认工具执行({tool_name}), 测试接口不支持交互确认",
                 "safety": safety}
