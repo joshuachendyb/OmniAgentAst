@@ -125,7 +125,7 @@ from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
-from app.tools.security.path_safe_check import validate_tool_path as _validate_tool_path
+from app.safety.path_safe_check import validate_tool_path as _validate_tool_path
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
 _WRITE_RISK_TOOL = "write"

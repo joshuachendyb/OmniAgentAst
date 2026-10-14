@@ -10,6 +10,7 @@
 # 2026-09-18 - 小欧 - 落地: R6硬拦截文案"禁止删除项目根/授权目录外目录(递归)"→"禁止删除工作区外目录"(人话化, 逻辑不变) — 小欧-2026-09-18
 # 2026-10-14 - 小欧 - SA4标注: 本文件=权限信任框架SA4(delete专属分支check_delete_risk R3-R6,执行第4步,由SA3总闸内调,R1/R2回SA5路径层覆盖) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D: SafetyResult import 由 app.tools.security.safety_result 改 app.tools.tool_types(契约归工具层单源)
+# 2026-10-14 - 小欧 - 文档[33] 4.1连带表: :30 _get_project_root_safety 改同包 app.safety.path_safe_check 导入
 """
 delete_safety — delete 工具专属安全检查(差异层)
 
@@ -27,7 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
-from app.tools.security.path_safe_check import _get_project_root_safety  # A1盲点二 — 小欧 2026-08-12
+from app.safety.path_safe_check import _get_project_root_safety  # A1盲点二 — 小欧 2026-08-12
 from app.logger import logger  # #25: 授权目录丢失留痕 — 小欧 2026-08-13
 
 

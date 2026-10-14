@@ -9,6 +9,8 @@
 #   落库侧粒度修复见 app/tools/trust_db.py trust_scope_path。 — 小欧-2026-10-06
 # 2026-10-14 - 小欧 - SA2标注: 本文件=权限信任框架SA2(会话信任预查resolve_skip/check_session_trust,执行第2步,上游SA1下游SA3) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 迁 tool_constants, _parse_paths 迁 conflict_detector; 本模块旧定义删改由 import 解析(不留双份)
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
+# 2026-10-14 - 小欧 - 文档[33] 4.2/步9: 本文件由 app/tools/trust.py 迁入 app/safety/; 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db; 旧文件已删(不留双份)。
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -75,7 +77,7 @@ async def resolve_skip(agent_task_id: str, tool_name: str, params: dict) -> bool
     [SA2] 权限信任框架第2步: 上游SA1 safety_gate预查, 下游SA3总闸skip_confirmation — 小欧-2026-10-14
     """
     from app.db import db
-    from app.tools.trust_db import get_session_id_by_task, check_session_trust
+    from app.safety.trust_db import get_session_id_by_task, check_session_trust
     try:
         _sid = await db.atxn("chat", lambda conn: get_session_id_by_task(conn, agent_task_id))
     except Exception:
@@ -101,7 +103,7 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
     [SA6] 权限信任框架第6步: HITL确认后落库, 供SA2下次预查豁免 — 小欧-2026-10-14
     """
     from app.db import db
-    from app.tools.trust_db import get_session_id_by_task, insert_session_trust
+    from app.safety.trust_db import get_session_id_by_task, insert_session_trust
     from app.logger import logger
 
     def _do(conn):
@@ -114,7 +116,7 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
     # 2026-10-06 小欧 - 日志补登记范围: 原先只打 tool_name, 落库的是文件还是目录根本看不出来,
     #   "信任4次仍反复弹窗"正是因此查不出根因(表里4行全是叶子文件)。改为打印 trust_scope_path 归一后的值。
     #   弹了弹窗但登记范围不符预期时, 这一行即第一现场证据。
-    from app.tools.trust_db import trust_scope_path as _scope
+    from app.safety.trust_db import trust_scope_path as _scope
     logger.info(
         f"[HITL] 会话信任落库: task_id={task_id}, tool_name={normalize_tool_name(tool_name)}, "
         f"raw_path={path!r}, 登记范围={_scope(path, normalize_tool_name(tool_name))!r}"

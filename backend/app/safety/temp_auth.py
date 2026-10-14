@@ -1,17 +1,5 @@
-# -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-10 - 小欧 - 新建: 白名单外路径临时授权(⑮) — 一次一申请+支持递归+per-request隔离(补A)
-# 2026-08-10 - 小欧 - 新建: 白名单外路径临时授权(⑮) — 一次一申请+支持递归+task绑定(task结束clear_temp_auth)
-# 2026-08-10 - 小欧 - M1-M3 实施(第二次代码更新): M1 边界注释更新(Code library root not in temp auth/ permanent block → non_system forbidden zone only write can task-level authorize, delete hard block; system forbidden zone never authorize);
-#   M2 is_temp_authorized 前置禁区分类(深度防御, 无mode参数): system forbidden zone → 即使入单也返回False(永不授权);
-#   M3 生命周期注释更新: task 级(with task 绑定, task 结束 run_react_cycle finally clear_temp_auth 清零)
-# 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件 import 路径同步更新(配合 tools 禁 app.services 守护规则)
-# 2026-08-12 - 小欧 - 迁移(盲点定案): 本文件由 app/safety/temp_auth.py 整体复制迁入 app/tools/security/(移动,
-#   业务逻辑一字不改); 原 app.safety.path_safe_check 惰性导入改 app.tools.security.path_safe_check(同包内互引); 原编辑历史按规范保留。
-# 2026-09-03 小欧 修复: 文件路径强制recursive False（仅目录保持True），防task级目录越权子树全放
-# 2026-09-03 小欧 修复: 空/根路径前置拒绝（"" / "." / "/" 拒绝授权），防Path("").resolve得cwd扩域
-# 2026-09-03 小欧/北京老陈: temp_auth补日志: grant/clear/is_temp_authorized三处关键操作, 改前无log无法追踪授权生命周期
-# 2026-10-14 - 小欧 - SA6标注: 本文件=权限信任框架SA6(信任状态存储grant/is_temp_authorized/clear,执行第6步,写入在SA1/HITL确认后,读取在SA5路径校验内,task结束清零) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 文档[33] 4.1: 本文件由 app/tools/security/ 整文件复制升回 app/safety/(业务逻辑一字不改); 包内互引 1 处(:96)由 app.tools.security.path_safe_check 改同包 app.safety.path_safe_check。
 """
 temp_auth — 白名单外路径临时授权(决策记录, 补项)
 
@@ -93,7 +81,7 @@ def is_temp_authorized(file_path: str) -> bool:
     """
     # M2: depth defense — 系统禁区永不授权(即使入单也False)
     try:
-        from app.tools.security.path_safe_check import _is_forbidden_path  # 惰性导入避免循环依赖
+        from app.safety.path_safe_check import _is_forbidden_path  # 惰性导入避免循环依赖
         category, _ = _is_forbidden_path(file_path)
         if category == "system":
             return False

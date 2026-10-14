@@ -20,6 +20,8 @@
 #   早已支持目录前缀继承, 但写入端恒登记叶子文件, 生产者从不产出目录 —— 「信任此操作」退化为「只信任这一个
 #   文件名」, 换个文件名即重新弹窗(DB 实测同 session 4 行全为 analysis\*.py 单文件, 无一行目录)。
 #   读取端零改动(本就不需要改), 仅让生产者产出它能匹配的东西。 — 小欧-2026-10-06
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改); 旧文件已删。
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from pathlib import Path
 from typing import Optional

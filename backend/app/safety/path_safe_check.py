@@ -65,6 +65,8 @@
 #   授权守卫调 _is_forbidden_path, 两处口径不同致 C:\system32 等被 grant_temp_auth 记入授权库。
 # 2026-10-14 - 小欧 - SA5标注: 本文件=权限信任框架SA5(路径权限validate_tool_path→validate_path→_is_forbidden_path系统区/非系统区/白名单,执行第5步,由SA3经_check_known_risks内调,读SA6授权is_temp_authorized) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-A/4.11-B/4.12-B: 4 张分类表迁 tool_constants; _QUOTED_SPAN_RE/_strip_quoted/_ABS_WIN_PATH_RES/_extract_abs_win_paths 迁 shell_static_guard(还 _QUOTED_SPAN_RE 双源债, 并消除对 executor 的越层延迟导入即架构守护红项1); is_system_protected_path 与 SYSTEM_PROTECTED_DIR_NAMES 迁 app/utils/path_utils.py
+# 2026-10-14 - 小欧 - 文档[33] 4.1: 本文件由 app/tools/security/ 整文件复制升回 app/safety/(业务逻辑一字不改); 包内互引 2 处(:322/:379)由 app.tools.security.temp_auth 改同包 app.safety.temp_auth。
+# 2026-10-14 小欧 - 文档[33] 4.10-1/步12: _validate_shell_write_targets 按 _DELETE_CMD_RE 命中取 mode=delete(删系统禁区由「可授权的写」降为永不授权); 补 _DELETE_CMD_RE import。
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -109,6 +111,7 @@ from app.tools.tool_constants import (
 #   (原 _QUOTED_SPAN_RE 与 guard 双源; 同时消除对 executor 的越层延迟导入即架构守护红项1)。
 from app.tools.fundamental.shell_static_guard import (
     _ABS_WIN_PATH_RES,
+    _DELETE_CMD_RE,
     _QUOTED_SPAN_RE,
     _WRITE_CMD_RE,
     _extract_abs_win_paths,
@@ -319,7 +322,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
             if mode == "delete":
                 return False, forbidden_msg, "non_system"
             # 非系统禁区写 → 查 is_temp_authorized(任务级授权)
-            from app.tools.security.temp_auth import is_temp_authorized
+            from app.safety.temp_auth import is_temp_authorized
             if is_temp_authorized(file_path):
                 return True, None, "non_system"
             return False, forbidden_msg, "non_system"
@@ -376,7 +379,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         # 白名单外判定 — temp_auth 仅在非禁区生效(禁区已在_is_forbidden_path拦截)
         # 读 — 白名单外非禁区/禁区全部放行(contentFilter 兜底); 所以这里不用判mode, 直接放行
         # 写/删 — 白名单外(非禁区)走临时授权判定
-        from app.tools.security.temp_auth import is_temp_authorized
+        from app.safety.temp_auth import is_temp_authorized
         if mode == "read":
             # 读放行 — 白名单外非禁区读✅直接放行(只读工具)
             # (系统/代码库禁区已拦截, 此处剩白名单外·非禁区)
@@ -460,9 +463,12 @@ def _validate_shell_write_targets(command: str) -> Tuple[bool, Optional[str], Op
     intent_src = mask_quoted_spans(normalized)
     if not _WRITE_CMD_RE.search(intent_src) and ">" not in intent_src:
         return True, None, None, None
+    # 2026-10-14 小欧 - 文档[33] 4.10-1: 命令含删动词时 mode 取 delete 而非 write。
+    #   病根: _WRITE_CMD_RE 把删与写混一张表, 删系统禁区只被判「可授权的写」, 授权后等于放行删系统目录。
+    mode = "delete" if _DELETE_CMD_RE.search(intent_src) else "write"
     # $env:VAR 展开后再抽, 否则 $env:TEMP\a.txt 形态抽不到(executor 已提供该展开)
     for raw_path in _extract_abs_win_paths(_resolve_env_fragment(normalized)):
-        valid, err, category = validate_path(raw_path, mode="write")
+        valid, err, category = validate_path(raw_path, mode=mode)
         if not valid:
             # 违规必须留痕: 下游 tool_safety_checker 只记 tool=bash, 没有命令原文,
             # 安全事件排查时"是哪个命令想写这个路径"查不到 —— 此处补全(小欧 2026-10-14)
