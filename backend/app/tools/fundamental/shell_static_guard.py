@@ -45,9 +45,16 @@ shell_engine.py 同目录（shell 代码同置，不散落 utils）。依赖方�
   ④兜底 _unscoped_process_kill: 有杀意无目标(PID/名皆空)直接 blocked —— 管线裸杀、无参 taskkill、
     wmic 质量动作、无名方法杀/CIM、`kill %1`/`kill -9 $(…)` 之类; 有名/有 PID 走原口径,
     停服务动词(/ ?, --help, -WhatIf 让路; wmic 裸查询让路)不在此列; 只认引号之外的动词
-    (`echo "kill"` 纯提及留 HITL, 不升 blocked)。— 小欧-2026-10-10"""
+    (`echo "kill"` 纯提及留 HITL, 不升 blocked)。— 小欧-2026-10-10
+2026-10-14 小欧 - 文档[33] 4.11-A: 收编 executor 的 _is_shell_tool/_WRITE_CMD_RE 等 9 符号与 path_safe_check 的
+  _extract_abs_win_paths/_ABS_WIN_PATH_RES, 新增删除动词正则 _DELETE_CMD_RE(供 4.10-1 判 mode=delete);
+  _strip_quoted 改名 mask_quoted_spans 并还 _QUOTED_SPAN_RE 双源债"""
 import fnmatch
+import os
 import re
+from typing import List
+
+from app.tools.tools_alias_mapper import normalize_tool_name
 
 # ══════════════════════════════════════════════════════════════════════
 # 一、只读白名单: 可否免预检直放
@@ -294,6 +301,16 @@ _HELPISH_RE = re.compile(r"/\?|--help|(?<![a-z0-9_-])-h\b|-whatif\b", re.IGNOREC
 _QUOTED_SPAN_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
 
 
+def mask_quoted_spans(text: str) -> str:
+    """把引号片段替换为**等长空格**(保偏移, 便于同段文本做两种判断) —— 小欧 2026-10-14
+
+    迁自 path_safe_check._strip_quoted（文档[33] 4.11-A）。**改名消歧**：本文件既有
+    _strip_quotes(:175) 是「去首尾引号」, 与本函数「引号段整体遮蔽」语义不同, 近似名并存必误用。
+    顺带还 _QUOTED_SPAN_RE 双源债(原两处各编译一份, 字面顺序相反语义等价), 现单一真源在本文件。
+    """
+    return _QUOTED_SPAN_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
 def _wmic_mass_action(text: str) -> bool:
     """wmic process 配 delete / call terminate 即质量动作(裸 `wmic process [get …]` 查询不在此列)。"""
     return (bool(re.search(r"(?<![a-z0-9_-])wmic\s+process\b", text, re.IGNORECASE))
@@ -344,3 +361,115 @@ def is_readonly_whitelisted(command: str) -> bool:
     if not lowered.startswith(READONLY_PREFIXES):                    # 3.2.1 与常量单源(消除双源双维护) — 小欧-2026-09-18
         return False
     return not any(op in command for op in FAST_CHANNEL_FORBIDDEN)
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 五、shell/Windows 命令文本处理与工具分类（文档[33] 4.11-A 收编）
+# ══════════════════════════════════════════════════════════════════════
+# 落点判据(文档[33] 4.19): 本节符号属「工具分类知识 / 命令文本解析」, 与本文件既有
+# is_readonly_whitelisted / has_uncontainable_intent 同域, 故收编于此而非新建文件(YAGNI)。
+# 逐字复制自原属地, 只改归属不改逻辑(AGENTS 1.4)。
+
+# —— 工具分类判定 ——
+def _is_shell_tool(tool_name: str) -> bool:
+    """shell 类判定以注册表真实工具名为准(v1.25 F4 回归修正): execute_shell_command 注册名'bash'且
+    category=FUNDAMENTAL, 不能仅凭ToolCategory.SHELL判定(该枚举已于2026-10-02删除, 仅剩which也归SYSTEM);
+    显式列 shell 执行类归一名, 新增须同步加入本集合
+
+    迁自 executor.py:70（文档[33] 4.11-A）。调用期依赖 normalize_tool_name 已在文件头显式导入,
+    杜绝「import 通过但调用 NameError」。
+    """
+    _shell = frozenset({"bash"})  # 2026-10-02 小欧 - 随注册名改名; 原 executeshellcommand/executeshellcommandsafety 为从未注册的死项, 一并清
+    return normalize_tool_name(tool_name) in _shell
+
+
+# —— F-B 写意图扫描器(真实实现, 补重定向与词表): 只判越界写意图, 不判危险等级 ——
+_WRITE_CMD_RE = re.compile(
+    r"\b(?:Remove-Item|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
+    r"|New-Item|ni|Set-Content|Add-Content|ac|Out-File|Expand-Archive"
+    r"|reg(?:\.exe)?(?=\s|$)|setx|regedit(?:\.exe)?(?=\s|$))\b",
+    re.IGNORECASE)
+# v1.23 V-A: reg/regedit 的边界由 (?=\s|$) 前瞻断言(不消耗字符)——原 (?:\s|$) 会把尾随空格
+# 吃进 group(0)("reg " ∉ _REGISTRY_SYSTEM_VERBS), 致 v1.22 W1 注册表特判永不命中、红洞未堵。
+# 前瞻后 group(0)="reg" 干净可查集合; 双空格场景亦因 lookahead 不消费而照常命中。
+_REDIRECT_RE = re.compile(r">>?\s*\"?([^\"\r\n<>|;]+)")   # v1.21 Z1: 重定向目标提取(> 与 >> 同权)
+_OUTSIDE_TARGET_RE = re.compile(
+    r"(?:"
+    r"\b[a-z]:[\\/]"                 # 绝对盘符 C:\ D:\ / C:/ D:/ (正斜杠亦属越界写, 防逃逸)
+    r"|\\\\[\w.\-]+\\"               # UNC \\host\share\
+    r"|\bhk(?:lm|cu|cr|u|cc):[\\/]"  # 注册表驱动器 HKLM:/HKCU: 等
+    r"|\$env:[\w]+[\\/]"             # $env:XXX\ 展开(解析前形态)
+    r"|[\"']?~[\\/]"                 # ~ 家目录展开
+    r")", re.IGNORECASE)
+_SANDBOX_SELF_RE = re.compile(r"omniagent_sandbox", re.IGNORECASE)   # N7 carve-out 标识
+_REGISTRY_SYSTEM_VERBS = frozenset({"reg", "reg.exe", "regedit", "regedit.exe", "setx"})
+# v1.22 W1: 注册表/系统配置写动词命中即拦——命令行写法目标多为无冒号 `HKLM\...`,
+# 不匹配带冒号的 _OUTSIDE_TARGET_RE; 且 Job Object 完全不隔离注册表/环境变量,
+# 沙箱内真实执行=真写系统。与 G1/2.4「registry 类只静态分析不动态执行」同哲学, 无需看目标形态。
+
+# —— 删除动词正则(文档[33] 4.11-A-3 新增, 供 4.10-1 判 mode="delete")——
+# 病根(文档[33] 错点4): _WRITE_CMD_RE 把删与写混在一张表, 命令含删动词时 mode 仍为 "write",
+# 于是删系统禁区只被判「可授权的写」而非「不可授权的删」——授权后等于放行删系统目录。
+# 与 _WRITE_CMD_RE 并列而非替换(后者仍需覆盖写/搬/注册表)。
+_DELETE_CMD_RE = re.compile(
+    r"(?<![a-z0-9_-])(?:Remove-Item|Remove-ItemProperty|del|erase|rd|rmdir|ri|rm)(?![a-z0-9_-])",
+    re.IGNORECASE)
+
+
+def _resolve_env_fragment(fragment: str) -> str:
+    """目标窗口内 $env:XXX → 实际值(FP3 豁免判定前先展开, 防 $env:TEMP 逃过盘符正则)"""
+    return re.sub(r"\$env:(\w+)", lambda m: os.environ.get(m.group(1), m.group(0)), fragment,
+                  flags=re.IGNORECASE)
+
+
+def _ps_literal_path(p) -> str:
+    """PowerShell -LiteralPath 字面量引号: 单引号包裹, 内部单引号转义为 '' (防路径含 ' 时命令行断裂)"""
+    return "'" + str(p).replace("'", "''") + "'"
+
+
+# —— bash 命令里的绝对路径抽取(迁自 path_safe_check:436-459, 见 4.11-A-2)——
+# 引号包裹的取完整(含空格路径), 裸路径取到空白/引号/重定向/管道/连接符为止
+_ABS_WIN_PATH_RES = (
+    re.compile(r'"([a-zA-Z]:[\\/][^"]+)"'),      # 双引号
+    re.compile(r"'([a-zA-Z]:[\\/][^']+)'"),      # 单引号
+    re.compile(r'([a-zA-Z]:[\\/][^\s"\'<>|;&)]*)'),  # 裸路径
+)
+
+
+def _extract_abs_win_paths(text: str) -> List[str]:
+    """抽取命令中的全部绝对路径 — 小欧 2026-10-14
+
+    引号区先完整取出, 裸路径**只在引号区之外**扫描: 否则同一段引号路径会被裸正则再截断成
+    `E:\\my`(实测误拦已授权目录 `E:\\my proj`, 且 failed_path 报错路径)。
+    去重保序。
+
+    迁自 path_safe_check.py:444（文档[33] 4.11-A-2）。调用 mask_quoted_spans 不复制正则。
+    """
+    quoted: List[str] = [m for rx in _ABS_WIN_PATH_RES[:2] for m in rx.findall(text)]
+    bare = _ABS_WIN_PATH_RES[2].findall(mask_quoted_spans(text))
+    found: List[str] = []
+    for p in quoted + bare:
+        p = p.strip().rstrip("\\")
+        if p and p.lower() not in [x.lower() for x in found]:
+            found.append(p)
+    return found
+
+
+def _registry_key_exists(reg_path: str) -> bool:
+    """registry 静态分析(2.4 局限明示): winreg 标准库只读探测键存在性, 不做任何写/删。
+    v1.22 W6: 根键名归一去冒号——兼容 `HKLM:\\Software`(PowerShell 冒号形态)与 `HKLM\\Software`(reg.exe 形态)。
+
+    迁自 executor.py:417（文档[33] 4.11-A-2），与 _is_shell_tool 同域故同归本文件。
+    """
+    import winreg
+    root_map = {"HKEY_LOCAL_MACHINE": winreg.HKEY_LOCAL_MACHINE, "HKLM": winreg.HKEY_LOCAL_MACHINE,
+                "HKEY_CURRENT_USER": winreg.HKEY_CURRENT_USER, "HKCU": winreg.HKEY_CURRENT_USER}
+    parts = reg_path.replace("/", "\\").split("\\", 1)
+    root = root_map.get(parts[0].upper().rstrip(":"))
+    if root is None or len(parts) < 2:
+        return False
+    try:
+        with winreg.OpenKey(root, parts[1].lstrip("\\")):
+            return True
+    except OSError:
+        return False

@@ -8,6 +8,7 @@
 #   实际登记的是文件还是目录从日志无从判断, 「信任4次仍反复弹窗」正是因此长期查不出根因。
 #   落库侧粒度修复见 app/tools/trust_db.py trust_scope_path。 — 小欧-2026-10-06
 # 2026-10-14 - 小欧 - SA2标注: 本文件=权限信任框架SA2(会话信任预查resolve_skip/check_session_trust,执行第2步,上游SA1下游SA3) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 迁 tool_constants, _parse_paths 迁 conflict_detector; 本模块旧定义删改由 import 解析(不留双份)
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -24,46 +25,16 @@ trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过�
 from typing import Dict, Optional, Set
 from app.tools.tools_alias_mapper import PARAM_ALIASES, normalize_tool_name
 from app.tools.tool_constants import FILE_OPERATION_TOOLS, NON_FILE_TRUST_TOOLS
-
-# 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
-# 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
-# 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
-WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
+# 2026-10-14 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 归 tool_constants,
+#   _parse_paths 归 conflict_detector。本模块旧定义已删, 改由 import 解析(不留双份)。
+from app.tools.tool_constants import WINDOW_TARGET_TOOLS
+from app.tools.conflict_detector import _parse_paths
 
 
 # ════════════════════════════════════════════════════════════
-# 纯函数：路径解析（复制自 action_handler.py:551-578）
+# 纯函数：路径解析（迁至 app/tools/conflict_detector.py — 文档[33] 4.11-C）
 # ════════════════════════════════════════════════════════════
-
-def _parse_paths(name: str, params: Dict) -> Set[str]:
-    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
-    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
-    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
-              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
-    完整复制自 action_handler.py:551-578，保留别名映射逻辑，禁止简化退化
-    """
-    if name in WINDOW_TARGET_TOOLS:
-        title = params.get("window_title", "")
-        if title and isinstance(title, str):
-            return {f"window:{title}"}
-        return set()
-    if name not in FILE_OPERATION_TOOLS:
-        return set()
-    aliases = PARAM_ALIASES.get(name, {})
-    if not aliases:
-        p = params.get("path", "")
-        return {p} if p and isinstance(p, str) else set()
-    resolved = {}
-    for key, value in params.items():
-        canon = aliases.get(key, key)
-        if canon not in resolved:
-            resolved[canon] = value
-    out = set()
-    for pname in set(aliases.values()):
-        pval = resolved.get(pname)
-        if pval and isinstance(pval, str):
-            out.add(pval)
-    return out
+# 2026-10-14 小欧 - 原 _parse_paths 定义已迁至 conflict_detector; 本模块仍需它故 import 之(同一对象)。
 
 
 # ════════════════════════════════════════════════════════════

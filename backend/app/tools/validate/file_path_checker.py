@@ -22,6 +22,7 @@
 # 2026-10-14 - 小欧 - SA8标注: 本文件=权限信任框架SA8(工具体内业务校验validate_path_for_write/delete/overwrite,执行第8步最后防线之一,与delete_file._guard_forbidden_delete并列) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 系统目录名单归一: WINDOWS_SYSTEM_DIRS 改由 tool_constants.SYSTEM_PROTECTED_DIR_NAMES
 #   派生(删本模块字面量), extract 侧第三份内联名单亦删除, 消除三层口径不一致。
+# 2026-10-14 - 小欧 - 文档[33] 4.12-B: 判定与名单改从 app/utils/path_utils.py 导入(老陈裁定「纯路径工具函数, 独立到 utils」), 解除工具层对安全层依赖; 工具层与安全层同一对象非各自复制
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
@@ -38,7 +39,7 @@ import string
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.tools.tool_constants import SYSTEM_PROTECTED_DIR_NAMES
+from app.utils.path_utils import SYSTEM_PROTECTED_DIR_NAMES, is_system_protected_path  # 2026-10-14 小欧 - 文档[33] 4.12-B: 名单+判定下沉 utils
 
 logger = logging.getLogger(__name__)
 
@@ -163,8 +164,9 @@ WINDOWS_SYSTEM_DIRS = [f"/{name}/" for name in sorted(SYSTEM_PROTECTED_DIR_NAMES
 def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     检查路径是否涉及Windows系统关键目录(工具层最后防线)
-    2026-10-14 北京老陈裁定: 系统目录判定调 Safety 的 is_system_protected_path(判定单源), 本层不持名单;
+    2026-10-14 北京老陈裁定: 系统目录判定调 is_system_protected_path(判定单源), 本层不持名单;
       保留此函数是为兜住绕过 Safety 直接调工具的场景(内部调用/测试/未来新入口), 非重复判定。
+    2026-10-14 文档[33] 4.12-B: 判定与名单一并下沉 utils, 本层只调用不自持。
 
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -179,9 +181,7 @@ def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optio
             return False, f"不允许操作系统根目录: {file_path}", None
     except Exception:
         pass
-    # 2026-10-14 北京老陈裁定「必须是同一个逻辑」: 调 Safety 的 is_system_protected_path, 不再本层自持匹配;
-    #   本函数保留为最后防线, 兜住绕过 Safety 直接调工具的场景(原 L185 循环与 Safety 判定口径不同)。
-    from app.tools.security.path_safe_check import is_system_protected_path
+    # 2026-10-14 北京老陈裁定「必须是同一个逻辑」: 调 utils 的 is_system_protected_path(判定单源), 不再本层自持匹配。
     if is_system_protected_path(file_path):
         return False, f"不允许操作系统目录下的文件: {file_path}", None
     return True, None, None

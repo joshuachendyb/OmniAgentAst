@@ -2,6 +2,7 @@
 # 编辑历史:
 # 2026-09-04 小健 - 新建: 冲突检测下沉, 解耦 action_handler - 小健-2026-09-04
 # 2026-10-02 - 小欧 - 注册名归位: _READ_TOOLS 文本项 read→read, 与 FUNDAMENTAL 侧 read 别名删除同步
+# 2026-10-14 - 小欧 - 文档[33] 4.11-B/4.11-C: 接收 trust 迁入的 _parse_paths(冲突键解析唯一消费方在此, 原挂 trust 属 SRP 债); WINDOW_TARGET_TOOLS 改从 tool_constants 导入
 """
 conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并查集分组
 
@@ -11,9 +12,11 @@ conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并�
 
 原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
 """
-from typing import Dict, List, Any
-from app.tools.trust import _parse_paths, WINDOW_TARGET_TOOLS
-from app.tools.tool_constants import FILE_OPERATION_TOOLS
+from typing import Dict, List, Any, Set
+# 2026-10-14 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 归 tool_constants,
+#   _parse_paths 由 trust 迁入本文件(唯一消费方在此, 原挂 trust 属 SRP 债)。
+from app.tools.tool_constants import FILE_OPERATION_TOOLS, WINDOW_TARGET_TOOLS
+from app.tools.tools_alias_mapper import PARAM_ALIASES
 from app.logger import logger
 
 # 工具文件读操作集合（冲突检测用）— 小欧 2026-08-13
@@ -22,6 +25,44 @@ from app.logger import logger
 _READ_TOOLS = {"read", "read_xlsx", "read_docx", "read_pdf", "read_pptx"}
 # 工具文件写操作集合（冲突检测用）— 北京老陈 2026-07-04
 _WRITE_OPS = FILE_OPERATION_TOOLS - _READ_TOOLS
+
+
+# ════════════════════════════════════════════════════════════
+# 冲突键解析（迁自 app/tools/trust.py:38 — 文档[33] 4.11-C）
+# ════════════════════════════════════════════════════════════
+
+def _parse_paths(name: str, params: Dict) -> Set[str]:
+    """解析一个调用的路径/窗口冲突键集合(复用 PARAM_ALIASES 别名→规范名) — 小欧 2026-08-09 — 小欧 2026-08-11 窗口分支
+    文件工具: 解析 path 集合(与 _has_conflict/_partition_calls 共用, DRY)。
+    窗口工具: 以 "window:{window_title}" 为冲突键, 同标题窗口工具并入同组串行(状态变更非幂等);
+              缺 window_title 返回空集——窗口工具参数校验必失败, 不会操作任何窗口, 无竞态风险, 不参与分组。
+    完整复制自 action_handler.py:551-578，保留别名映射逻辑，禁止简化退化
+
+    迁自 `app/tools/trust.py:38`（文档[33] 4.11-C）—— 落点判据: 唯一消费方是本模块的
+    _has_conflict / _partition_calls, 挂 trust 属 SRP 债, 且致 conflict_detector 反向 import trust。
+    """
+    if name in WINDOW_TARGET_TOOLS:
+        title = params.get("window_title", "")
+        if title and isinstance(title, str):
+            return {f"window:{title}"}
+        return set()
+    if name not in FILE_OPERATION_TOOLS:
+        return set()
+    aliases = PARAM_ALIASES.get(name, {})
+    if not aliases:
+        p = params.get("path", "")
+        return {p} if p and isinstance(p, str) else set()
+    resolved = {}
+    for key, value in params.items():
+        canon = aliases.get(key, key)
+        if canon not in resolved:
+            resolved[canon] = value
+    out = set()
+    for pname in set(aliases.values()):
+        pval = resolved.get(pname)
+        if pval and isinstance(pval, str):
+            out.add(pval)
+    return out
 
 
 # ════════════════════════════════════════════════════════════

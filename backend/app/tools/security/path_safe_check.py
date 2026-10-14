@@ -64,6 +64,7 @@
 # 2026-10-14 - 小欧 - 系统保护目录判定收归 _is_forbidden_path: 原在 validate_path 内, 而 temp_auth
 #   授权守卫调 _is_forbidden_path, 两处口径不同致 C:\system32 等被 grant_temp_auth 记入授权库。
 # 2026-10-14 - 小欧 - SA5标注: 本文件=权限信任框架SA5(路径权限validate_tool_path→validate_path→_is_forbidden_path系统区/非系统区/白名单,执行第5步,由SA3经_check_known_risks内调,读SA6授权is_temp_authorized) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 文档[33] 4.11-A/4.11-B/4.12-B: 4 张分类表迁 tool_constants; _QUOTED_SPAN_RE/_strip_quoted/_ABS_WIN_PATH_RES/_extract_abs_win_paths 迁 shell_static_guard(还 _QUOTED_SPAN_RE 双源债, 并消除对 executor 的越层延迟导入即架构守护红项1); is_system_protected_path 与 SYSTEM_PROTECTED_DIR_NAMES 迁 app/utils/path_utils.py
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -96,9 +97,28 @@ from app.tools.tool_constants import (
     FORBIDDEN_PATHS_PREFIX,
     FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
     FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
-    SYSTEM_PROTECTED_DIR_NAMES,
+)
+# 2026-10-14 小欧 - SYSTEM_PROTECTED_DIR_NAMES 已随 is_system_protected_path 一并下沉 utils(见下方 import)
+# 2026-10-14 小欧 - 文档[33] 4.11-B: 4 张工具分类表归口 tool_constants
+from app.tools.tool_constants import (
+    _PATH_CATEGORIES,
+    _PATH_PARAM_KEYS,
+    _READ_ONLY_TOOLS,
+)
+# 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理符号归口 shell_static_guard, 删本地定义改 import
+#   (原 _QUOTED_SPAN_RE 与 guard 双源; 同时消除对 executor 的越层延迟导入即架构守护红项1)。
+from app.tools.fundamental.shell_static_guard import (
+    _ABS_WIN_PATH_RES,
+    _QUOTED_SPAN_RE,
+    _WRITE_CMD_RE,
+    _extract_abs_win_paths,
+    _resolve_env_fragment,
+    mask_quoted_spans,
 )
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params  # 三堂会审: 工具名+参数名别名归一防漏检 — 小欧 2026-08-10
+# 2026-10-14 小欧 - 文档[33] 4.12-B: 系统目录判定单一真源下沉 app/utils/path_utils.py,
+#   安全层与工具层最后防线共用它(单源不被工具层反向依赖, tools→safety 保持归零)。
+from app.utils.path_utils import SYSTEM_PROTECTED_DIR_NAMES, is_system_protected_path
 from app.logger import logger
 
 # 2026-10-06 小欧 - 系统盘符三级探测全部失败时的最后兜底(归位本模块: 唯一消费方就是 get_system_drive)
@@ -181,23 +201,9 @@ def _get_project_root_safety() -> Path:
     return Path.home()
 
 
-def is_system_protected_path(file_path: str) -> bool:
-    r"""路径是否落在 Windows 系统保护目录下(判定单源, 两层共用) — 小欧 2026-10-14
-
-    2026-10-14 北京老陈裁定「必须是同一个逻辑」: 此前 Safety 层与工具层各判各的、各持一份名单,
-    各有对方缺的项, 结论相反(C:\system32 Safety 放行/工具层拒绝; C:\ProgramData 反之)。
-    现抽出本函数为唯一判定逻辑, path_safe_check._is_forbidden_path 与
-    file_path_checker.validate_not_system_path 均调用它 —— 名单仍只有 tool_constants 一份,
-    判定点保留两处(Safety 判权限 / 工具层兜住"绕过 Safety 直接调工具"的最后防线)。
-    """
-    try:
-        parts = Path(os.path.realpath(os.path.expanduser(file_path))).parts
-        return len(parts) > 1 and parts[1].lower() in SYSTEM_PROTECTED_DIR_NAMES
-    except Exception:
-        # 异常不静默放行: 判定为受保护(调用方据此硬拦), 与 _is_forbidden_path 异常口径一致
-        return True
-
-
+# 2026-10-14 小欧 - 文档[33] 4.12-B: is_system_protected_path 已迁 app/tools/validate/file_path_checker.py
+#   (工具层落单一真源, 安全层反向 import —— 「最后防线不能依赖前面的防线」, 且 tools→safety 归零)。
+#   本文件 _is_forbidden_path 改由文件头 import 解析到同一函数对象, 不留双份判定逻辑。
 def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
     """检查路径是否在系统敏感路径黑名单中 — 小健 2026-06-23
     扩展 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
@@ -386,23 +392,10 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-# 路径相关的工具分类 — 5类工具涉及文件路径操作
-_PATH_CATEGORIES = {
-    ToolCategory.FILE, ToolCategory.DOCUMENT,
-    ToolCategory.DATAANALYSIS, ToolCategory.NETWORK,
-    ToolCategory.DESKTOP,
-}
+# 2026-10-14 小欧 - 文档[33] 4.11-B: 三张分类表已迁 tool_constants, 本地定义删。
 
-# 工具参数中可能的路径参数名(⑧2026-08-10补dest: compress/extract/move/copy/rename/generate_chart/download/screen_capture 的目标/输出路径)
-_PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
-                    "directory", "file_name", "destination_path", "output_path",
-                    "dest")
 
-# 只读工具集合(以真实注册名为准, stat 无对应注册工具已剔除) — 小欧 2026-08-10 v1.43
-_READ_ONLY_TOOLS = frozenset({
-    "listdir", "tree", "find", "grep", "read", "readmedia",
-    "read_pdf", "read_docx", "read_pptx", "read_xlsx",
-})
+
 
 
 def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, Any]) -> str:
@@ -424,38 +417,8 @@ def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, 
     return value
 
 
-# 引号包裹片段(判写意图时需整体排除: 搜索词/Select-String 模式里的动词字面量不算写意图)
-_QUOTED_SPAN_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
-
-
-def _strip_quoted(text: str) -> str:
-    """把引号片段替换为等长空格(保偏移, 便于同段文本做两种判断)"""
-    return _QUOTED_SPAN_RE.sub(lambda m: " " * len(m.group(0)), text)
-
-
-# bash 命令里的绝对路径: 引号包裹的取完整(含空格路径), 裸路径取到空白/引号/重定向/管道/连接符为止
-_ABS_WIN_PATH_RES = (
-    re.compile(r'"([a-zA-Z]:[\\/][^"]+)"'),      # 双引号
-    re.compile(r"'([a-zA-Z]:[\\/][^']+)'"),      # 单引号
-    re.compile(r'([a-zA-Z]:[\\/][^\s"\'<>|;&)]*)'),  # 裸路径
-)
-
-
-def _extract_abs_win_paths(text: str) -> List[str]:
-    """抽取命令中的全部绝对路径 — 小欧 2026-10-14
-
-    引号区先完整取出, 裸路径**只在引号区之外**扫描: 否则同一段引号路径会被裸正则再截断成
-    `E:\\my`(实测误拦已授权目录 `E:\\my proj`, 且 failed_path 报错路径)。
-    去重保序。
-    """
-    quoted: List[str] = [m for rx in _ABS_WIN_PATH_RES[:2] for m in rx.findall(text)]
-    bare = _ABS_WIN_PATH_RES[2].findall(_strip_quoted(text))
-    found: List[str] = []
-    for p in quoted + bare:
-        p = p.strip().rstrip("\\")
-        if p and p.lower() not in [x.lower() for x in found]:
-            found.append(p)
-    return found
+# 2026-10-14 小欧 - 文档[33] 4.11-A: 四个命令文本符号已迁 shell_static_guard, 本地定义删
+#   (_resolve_env_fragment 亦迁入, 原 :497 越层延迟导入已消除)。
 
 
 def _validate_shell_write_targets(command: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
@@ -493,10 +456,8 @@ def _validate_shell_write_targets(command: str) -> Tuple[bool, Optional[str], Op
     """
     if not command or not command.strip():
         return True, None, None, None
-    # 延迟导入防循环(executor 反向依赖 tools.*, 本模块是 tools.security)
-    from app.safety.sandbox.executor import _WRITE_CMD_RE, _resolve_env_fragment
     normalized = command.replace("\r\n", " ").replace("\n", " ")
-    intent_src = _strip_quoted(normalized)
+    intent_src = mask_quoted_spans(normalized)
     if not _WRITE_CMD_RE.search(intent_src) and ">" not in intent_src:
         return True, None, None, None
     # $env:VAR 展开后再抽, 否则 $env:TEMP\a.txt 形态抽不到(executor 已提供该展开)

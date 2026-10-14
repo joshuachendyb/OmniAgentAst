@@ -89,6 +89,7 @@
 #   app.tools.fundamental.shell_static_guard(shell 代码归 shell 代码同目录; 原落 utils 的理由
 #   "tools 禁 import safety"经 test_architecture_boundaries 实证不成立, safety→tools 合法) — 小欧-2026-10-10
 # 2026-10-14 - 小欧 - SA3标注: 本文件=权限信任框架SA3(安全总闸check_before_execute,执行第3步,上游SA1/SA2,内调SA4 delete_safety+SA5 path_safe_check,下游SA6 HITL) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 文档[33] 4.11-D: SafetyResult import 改 app.tools.tool_types(契约归工具层单源)
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -125,7 +126,7 @@ from app.config import get_config
 from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.tools.security.path_safe_check import validate_tool_path as _validate_tool_path
-from app.tools.security.safety_result import SafetyResult  # A1盲点四: SafetyResult 迁 tools/security — 小欧 2026-08-12
+from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
 _WRITE_RISK_TOOL = "write"
 

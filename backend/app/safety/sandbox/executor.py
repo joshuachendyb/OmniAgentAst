@@ -32,9 +32,9 @@
 #   safety→tools 合法(先例: tool_safety_checker 一直 import execute_shell_command_safety), 无需中转 utils。
 #   本文件属 app/safety, safety→tools 方向合法; 业务逻辑零变化, 仅改导入路径。 — 小欧-2026-10-10
 # 2026-10-14 - 小欧 - SA7标注: 本文件=权限信任框架SA7(沙箱预检pre_execute影子副本执行,执行第7步,上游SA1/sandbox_gate.run_sandbox_gate,总闸见safety_checker的sandbox_required置位) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁出本模块(shell_static_guard 单一真源), 删本地定义改 import; 同批删已无引用的 re
 import asyncio
 import os
-import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -48,6 +48,19 @@ from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
 from app.tools.fundamental.shell_static_guard import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
 from app.tools.fundamental.shell_static_guard import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源, 别名存引用 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
+# 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁 shell_static_guard(工具层单一真源),
+#   本模块删本地定义改 import。_registry_key_exists 保持原名(纯只读探测, 调用点遍布本文件)。
+from app.tools.fundamental.shell_static_guard import (
+    _OUTSIDE_TARGET_RE,
+    _REDIRECT_RE,
+    _REGISTRY_SYSTEM_VERBS,
+    _SANDBOX_SELF_RE,
+    _WRITE_CMD_RE,
+    _is_shell_tool,
+    _ps_literal_path,
+    _registry_key_exists,
+    _resolve_env_fragment,
+)
 
 _semaphore = asyncio.Semaphore(get_config().get("sandbox.max_concurrent_sandboxes", 3))   # 并发限流(3.1.3)
 
@@ -67,12 +80,7 @@ class PreCheckResult:
 # —— 只读白名单常量与判定已迁 app/utils/shell_readonly.py(2026-10-04 小欧, 单源见该模块) ———
 _ENV_STDERR_PATTERNS = ("cannot find path", "does not exist",
                         "being used by another process", "找不到路径")  # 4.2 规则6 环境性失败识别(FP2)
-def _is_shell_tool(tool_name: str) -> bool:
-    """shell 类判定以注册表真实工具名为准(v1.25 F4 回归修正): execute_shell_command 注册名'bash'且
-    category=FUNDAMENTAL, 不能仅凭ToolCategory.SHELL判定(该枚举已于2026-10-02删除, 仅剩which也归SYSTEM);
-    显式列 shell 执行类归一名, 新增须同步加入本集合"""
-    _shell = frozenset({"bash"})  # 2026-10-02 小欧 - 随注册名改名; 原 executeshellcommand/executeshellcommandsafety 为从未注册的死项, 一并清
-    return normalize_tool_name(tool_name) in _shell
+# 2026-10-14 小欧 - 文档[33] 4.11-A: _is_shell_tool 已迁 shell_static_guard, 原定义删(改由文件头 import)。
 
 
 def _attach_stderr_tail(reason: str, stderr_tail: str) -> str:
@@ -83,41 +91,7 @@ def _attach_stderr_tail(reason: str, stderr_tail: str) -> str:
         return reason
     return f"{reason} | {tail[:200]}"
 
-# —— F-B 写意图扫描器(真实实现, 补重定向与词表): 只判越界写意图, 不判危险等级 ——
-_WRITE_CMD_RE = re.compile(
-    r"\b(?:Remove-Item|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
-    r"|New-Item|ni|Set-Content|Add-Content|ac|Out-File|Expand-Archive"
-    r"|reg(?:\.exe)?(?=\s|$)|setx|regedit(?:\.exe)?(?=\s|$))\b",
-    re.IGNORECASE)
-# v1.23 V-A: reg/regedit 的边界由 (?=\s|$) 前瞻断言(不消耗字符)——原 (?:\s|$) 会把尾随空格
-# 吃进 group(0)("reg " ∉ _REGISTRY_SYSTEM_VERBS), 致 v1.22 W1 注册表特判永不命中、红洞未堵。
-# 前瞻后 group(0)="reg" 干净可查集合; 双空格场景亦因 lookahead 不消费而照常命中。
-_REDIRECT_RE = re.compile(r">>?\s*\"?([^\"\r\n<>|;]+)")   # v1.21 Z1: 重定向目标提取(> 与 >> 同权)
-_OUTSIDE_TARGET_RE = re.compile(
-    r"(?:"
-    r"\b[a-z]:[\\/]"                 # 绝对盘符 C:\ D:\ / C:/ D:/ (正斜杠亦属越界写, 防逃逸)
-    r"|\\\\[\w.\-]+\\"               # UNC \\host\share\
-    r"|\bhk(?:lm|cu|cr|u|cc):[\\/]"  # 注册表驱动器 HKLM:/HKCU: 等
-    r"|\$env:[\w]+[\\/]"             # $env:XXX\ 展开(解析前形态)
-    r"|[\"']?~[\\/]"                 # ~ 家目录展开
-    r")", re.IGNORECASE)
-_SANDBOX_SELF_RE = re.compile(r"omniagent_sandbox", re.IGNORECASE)   # N7 carve-out 标识
-_REGISTRY_SYSTEM_VERBS = frozenset({"reg", "reg.exe", "regedit", "regedit.exe", "setx"})
-# v1.22 W1: 注册表/系统配置写动词命中即拦——命令行写法目标多为无冒号 `HKLM\...`,
-# 不匹配带冒号的 _OUTSIDE_TARGET_RE; 且 Job Object 完全不隔离注册表/环境变量,
-# 沙箱内真实执行=真写系统。与 G1/2.4「registry 类只静态分析不动态执行」同哲学, 无需看目标形态。
-
-
-def _resolve_env_fragment(fragment: str) -> str:
-    """目标窗口内 $env:XXX → 实际值(FP3 豁免判定前先展开, 防 $env:TEMP 逃过盘符正则)"""
-    return re.sub(r"\$env:(\w+)", lambda m: os.environ.get(m.group(1), m.group(0)), fragment,
-                  flags=re.IGNORECASE)
-
-
-def _ps_literal_path(p) -> str:
-    """PowerShell -LiteralPath 字面量引号: 单引号包裹, 内部单引号转义为 '' (防路径含 ' 时命令行断裂)"""
-    return "'" + str(p).replace("'", "''") + "'"
-
+# 2026-10-14 小欧 - 文档[33] 4.11-A: F-B 扫描器全套正则与 _resolve_env_fragment/_ps_literal_path 已迁 shell_static_guard, 原定义删。
 
 def _is_outside_write_target(tail: str) -> Optional[bool]:
     """越界写意图三态判定(v1.21 Z1 抽出共用): True=越界 / False=%TEMP%豁免 / None=非越界(相对路径)"""
@@ -412,20 +386,4 @@ def get_sandbox_executor() -> "SandboxExecutor":
     return _executor
 
 
-# —— Phase 2 辅助(v1.21 Z3: 消除幽灵引用, 原调用无定义) ——
-
-def _registry_key_exists(reg_path: str) -> bool:
-    """registry 静态分析(2.4 局限明示): winreg 标准库只读探测键存在性, 不做任何写/删。
-    v1.22 W6: 根键名归一去冒号——兼容 `HKLM:\\Software`(PowerShell 冒号形态)与 `HKLM\\Software`(reg.exe 形态)。"""
-    import winreg
-    root_map = {"HKEY_LOCAL_MACHINE": winreg.HKEY_LOCAL_MACHINE, "HKLM": winreg.HKEY_LOCAL_MACHINE,
-                "HKEY_CURRENT_USER": winreg.HKEY_CURRENT_USER, "HKCU": winreg.HKEY_CURRENT_USER}
-    parts = reg_path.replace("/", "\\").split("\\", 1)
-    root = root_map.get(parts[0].upper().rstrip(":"))
-    if root is None or len(parts) < 2:
-        return False
-    try:
-        with winreg.OpenKey(root, parts[1].lstrip("\\")):
-            return True
-    except OSError:
-        return False
+# 2026-10-14 小欧 - 文档[33] 4.11-A: _registry_key_exists 已迁 shell_static_guard, 原定义删。

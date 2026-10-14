@@ -32,6 +32,7 @@ datafile 目录定位为什么不用 get_frozen_dir():
     与本模块"不抛异常"的承诺矛盾); ③降级文案不再回显异常细节(会泄露服务器路径);
     ④新增 {{system_protected}} 占位符, 分类表不再硬编码 \ProgramData 等 3 个名字。
   2026-10-06 小欧 - 禁区路径去掉反引号: 内联 code 的背景+圆角把分类表路径列撑成灰底碎块(实测 13 个)。
+  2026-10-14 - 小欧 - 文档[33] 4.12-B: SYSTEM_PROTECTED_DIR_NAMES 改从 app/utils/path_utils.py 导入(随判定函数一并下沉)。
 """
 from pathlib import Path
 from typing import Dict
@@ -41,8 +42,9 @@ from app.logger import logger
 from app.tools.tool_constants import (
     FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
     FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
-    SYSTEM_PROTECTED_DIR_NAMES,
 )
+# 2026-10-14 小欧 - 文档[33] 4.12-B: 名单随判定函数一并下沉 utils
+from app.utils.path_utils import SYSTEM_PROTECTED_DIR_NAMES
 
 # 2026-10-06 小欧 - datafile 定位: app/services/settings/ 上溯两级 = app/, 同级 datafile/
 DATAFILE_DIR = Path(__file__).resolve().parents[2] / "datafile"
