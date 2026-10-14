@@ -72,6 +72,9 @@
 #   ② __all__ 删死条目 "_READ_ONLY_TOOLS": 该表已迁 tool_constants, 全仓 4 个消费方
 #      (delete_safety/temp_auth/tool_safety_checker/workspace_service) 无一从本模块导入, 属 backward 再导出, 违 AGENTS 1.2 禁 backward。
 #   判定逻辑零改动。— 小欧-2026-10-15
+# 2026-10-15 - 小欧 - 文档[33] 5.6 核查订正: shell_static_guard 导入删死符号 _ABS_WIN_PATH_RES/_QUOTED_SPAN_RE。
+#   两者迁入后在本模块无任何代码引用(AST 实证: 仅存于历史/说明注释), 纯 YAGNI 冗余导入;
+#   设计 5.6 的 import 清单本就只列 5 个符号, 此处系实施多导。— 小欧-2026-10-15
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -115,9 +118,7 @@ from app.tools.tool_constants import (
 # 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理符号归口 shell_static_guard, 删本地定义改 import
 #   (原 _QUOTED_SPAN_RE 与 guard 双源; 同时消除对 executor 的越层延迟导入即架构守护红项1)。
 from app.tools.fundamental.shell_static_guard import (
-    _ABS_WIN_PATH_RES,
     _DELETE_CMD_RE,
-    _QUOTED_SPAN_RE,
     _WRITE_CMD_RE,
     _extract_abs_win_paths,
     _resolve_env_fragment,
