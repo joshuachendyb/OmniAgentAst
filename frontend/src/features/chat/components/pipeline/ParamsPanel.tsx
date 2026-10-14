@@ -44,6 +44,7 @@
 //   result 仍不落盘, 切到分组/规格表才记住。原「不记忆 result」的理由(20 个工具 raw_data 为 {} 会落空白页)
 //   **已不成立** —— 空态现显示「本次工具执行：<summary>」。小欧
 import React, { useMemo, useState } from 'react';
+import { pickResultView } from './ResultSpecialViews';
 import { Segmented } from 'antd';
 import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
 import { CircleArrow } from '@/components/CircleArrow';
@@ -949,6 +950,20 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
     [result]
   );
   /**
+   * 2026-10-14 小欧 - `tree`/`listdir` 的专用渲染节点(目录树 / 文件列表)。
+   *   仅结果视图; 由 `pickResultView` 按工具名+结构双判据派发, 不匹配返回 null。
+   */
+  const specialResultView = useMemo(
+    () =>
+      view === 'result' &&
+      result &&
+      typeof result === 'object' &&
+      !Array.isArray(result)
+        ? pickResultView(toolName, result as Record<string, unknown>)
+        : null,
+    [view, result, toolName]
+  );
+  /**
    * 复制内容按视图分支(§6.10): 参数视图复制 key=value 逐行(DC-16);
    * 结果视图复制 raw_data 的缩进 JSON(不是过滤后的视图, 复制的是原始数据)。
    */
@@ -1090,10 +1105,17 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
         ) : view === 'spec' ? (
           <SpecView params={params} valueMode="param" />
         ) : (
-          <SpecView
-            params={Object.fromEntries(resultEntries)}
-            valueMode="result"
-          />
+          /**
+           * 2026-10-14 北京老陈裁定: `tree` / `listdir` 用**专用渲染**(目录树 / 文件列表),
+           * 不走通用 SpecView —— 这两个是有业务语义的结构, 通用 JSON 折叠表达不了层级与列对齐。
+           * 派发返回 null(其余工具)时落回通用路径。
+           */
+          (specialResultView ?? (
+            <SpecView
+              params={Object.fromEntries(resultEntries)}
+              valueMode="result"
+            />
+          ))
         )}
       </div>
     </div>

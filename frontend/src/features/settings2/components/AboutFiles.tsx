@@ -26,21 +26,19 @@
 //   手动打开、非 URL 可直达、无后台定时推送/分享链路，与「列表里给旁人看的字段」是两类不同场景。
 //   （此前小欧按"通用安全直觉"把它列为 P0 提报，属误判，已撤回。）
 //   ⚠ 后续任何人再以此理由建议加掩码，先读这条，按"已裁定"处理，不要重开讨论 — 小欧-2026-10-10
+// 编辑历史: 2026-10-14 小欧 - 删本地 formatSize 改用公用 @/utils/format 的 formatBytes（DRY）。
+//   可见变化: ≥10MB 的文件由 "1024.0 MB" 改显 "1.0 GB"（原单位封顶 MB，GB 级会显示成没法读的数字）；<10MB 不变。
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Spin } from 'antd';
 import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
 import { configApi } from '@/services/api/config.api';
 import { SettingsModal } from '@/theme/SettingsModal';
-import {
-  Colors,
-  FontSize,
-  FontWeight,
-  Spacing,
-} from '@/utils/stepStyles';
+import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 // 2026-10-10 22:15 小欧 - 随「只读」badge 删除，同步清 Radius_SM / settingsModalWidth 两个失效 import
 import { settingsRadius } from '@/theme/settingsTokens';
 import { showSuccess } from '@/services/error/handler';
 import { CopyIcon } from './icons';
+import { formatBytes } from '@/utils/format';
 
 type FileKind = 'config' | 'version';
 
@@ -88,12 +86,6 @@ interface FileMeta {
   lines: number;
   mtime: number;
 }
-
-const formatSize = (bytes: number): string => {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-};
 
 const formatTime = (ts: number): string => {
   try {
@@ -244,7 +236,7 @@ export const AboutFiles: React.FC<AboutFilesProps> = ({ kind }) => {
           >
             <span>{meta.lines} 行</span>
             <span>·</span>
-            <span>{formatSize(meta.size)}</span>
+            <span>{formatBytes(meta.size)}</span>
             <span>·</span>
             <span>更新 {formatTime(meta.mtime)}</span>
             {/* 2026-10-10 22:15 小欧 - 视觉优化（问题#14/#16）：删「只读」badge（整窗就是只读的，
