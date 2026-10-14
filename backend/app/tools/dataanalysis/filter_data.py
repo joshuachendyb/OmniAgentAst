@@ -58,7 +58,7 @@ def _build_filter_data_llm_data(exec_code, duration_ms, original_count=0, filter
             "metrics": {},
         }
     return {
-        "summary": f"筛选数据{_target}，成功",
+        "summary": f"筛选数据{_target}，成功：{original_count}行筛出{filtered_count}行",  # 2026-10-14 小欧 - summary 统一口径: 成功补结果量(与 message 同源, 原 summary 裸"成功"无数字) — 小欧-2026-10-14
         "action": {"tool": "filter_data", "tool_zh": "筛选数据", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{original_count}行筛出{filtered_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

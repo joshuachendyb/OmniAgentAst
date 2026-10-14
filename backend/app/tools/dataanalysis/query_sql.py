@@ -77,7 +77,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
-            "summary": f"查询{_target}，失败",
+            "summary": f"查询SQL{_target}，失败",
             "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "查询失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
@@ -88,7 +88,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
     if len(columns) > OBS_QUERY_SQL_PREVIEW_COLUMNS:
         col_text += "..."
     return {
-        "summary": f"查询{_target}，成功: {row_count}行, 列: {col_text}",
+        "summary": f"查询SQL{_target}，成功：{row_count}行，列：{col_text}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(查询SQL), 半角标点改全角 — 小欧-2026-10-14
         "action": {"tool": "query_sql", "tool_zh": "查询SQL", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{row_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

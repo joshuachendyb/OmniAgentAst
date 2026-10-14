@@ -102,7 +102,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
     _target = path or connection_type or "database"
     if exec_code == "error":
         return {
-            "summary": f"执行{_target}，失败",
+            "summary": f"执行SQL{_target}，失败：{detail}" if detail else f"执行SQL{_target}，失败",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(执行SQL), 失败补原因(与 message 同源) — 小欧-2026-10-14
             "action": {"tool": "execute_sql", "tool_zh": "执行SQL", "params": _act_params},
             "status": {"exec_code": "error", "message": detail if detail else "执行失败", "code": ERR_SQL_EXEC, "detail": detail, "hint": hint if hint else "请检查SQL语法"},
             "duration_ms": duration_ms,
@@ -118,14 +118,14 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
             detail_msg = f"检测到危险SQL操作（{sql}），已回滚"
             hint_msg = "建议使用 dry_run=true 先验证"
         return {
-            "summary": f"执行{_target}，成功",
+"summary": f"执行SQL{_target}，警告：{msg}",  # 2026-10-14 小欧 - 实话实说(北京老陈令"不能误导"): 危险SQL已回滚仍写"成功"属谎报, 改警告并带原因 — 小欧-2026-10-14
             "action": {"tool": "execute_sql", "tool_zh": "执行SQL", "params": _act_params},
             "status": {"exec_code": "warning", "message": msg, "code": "WARNING_DB_SAFETY", "detail": detail_msg, "hint": hint_msg},
             "duration_ms": duration_ms,
             "metrics": {"affected_rows": {"value": affected_rows, "text": f"{affected_rows}行"}},
         }
     return {
-        "summary": f"执行{_target}，成功",
+        "summary": f"执行SQL{_target}，成功：影响{affected_rows}行",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh, 成功补影响行数(与 message 同源) — 小欧-2026-10-14
         "action": {"tool": "execute_sql", "tool_zh": "执行SQL", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:影响{affected_rows}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

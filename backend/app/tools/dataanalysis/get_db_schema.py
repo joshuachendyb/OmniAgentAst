@@ -132,14 +132,14 @@ def _build_get_db_schema_llm_data(exec_code, duration_ms, total_tables=0, table_
     _target = path or db_name or "database"
     if exec_code == "error":
         return {
-            "summary": f"获取数据库结构{_target}，失败" + (f": {detail}" if detail else ""),
+            "summary": f"取结构{_target}，失败" + (f"：{detail}" if detail else ""),
             "action": {"tool": "get_db_schema", "tool_zh": "取表结构", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_DB_CONNECTION, "detail": detail, "hint": hint},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取数据库结构{_target}，成功: {total_tables}个表",
+        "summary": f"取结构{_target}，成功：{total_tables}个表",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(取结构) — 小欧-2026-10-14
         "action": {"tool": "get_db_schema", "tool_zh": "取表结构", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{total_tables}个表", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

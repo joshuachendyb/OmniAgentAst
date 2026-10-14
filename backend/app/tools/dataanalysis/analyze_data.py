@@ -84,14 +84,14 @@ def _build_analyze_data_llm_data(exec_code, duration_ms, row_count=0, numeric_co
     _target = path or "数据集"
     if exec_code == "error":
         return {
-            "summary": f"分析数据{_target}，失败: {detail}",
+            "summary": f"分析数据{_target}，失败：{detail}",
             "action": {"tool": "analyze_data", "tool_zh": "分析数据", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_ANALYZE_DATA, "detail": detail, "hint": hint if hint else "请检查数据格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"分析数据{_target}，成功: {row_count}行, {numeric_col_count}个数值列",
+        "summary": f"分析数据{_target}，成功：{row_count}行，{numeric_col_count}个数值列",  # 2026-10-14 小欧 - summary 统一口径: 半角标点改全角 — 小欧-2026-10-14
         "action": {"tool": "analyze_data", "tool_zh": "分析数据", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{row_count}行, {numeric_col_count}个数值列", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

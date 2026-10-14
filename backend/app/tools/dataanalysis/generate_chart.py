@@ -67,7 +67,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     _target = dest or chart_type
     if exec_code == "error":
         return {
-            "summary": f"生成图表{_target}，失败: {detail}",
+            "summary": f"生成图表{_target}，失败：{detail}",
             "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
             "status": {"exec_code": "error", "message": "生成图表失败", "code": ERR_DOC_CHART_GENERATE, "detail": detail, "hint": hint if hint else "请检查数据和参数"},
             "duration_ms": duration_ms,
@@ -77,7 +77,7 @@ def _build_generate_chart_llm_data(exec_code, duration_ms, chart_type="", dest="
     if file_size:
         metrics["file_size"] = {"value": file_size, "text": f"{file_size} bytes"}
     return {
-        "summary": f"生成图表{_target}，成功: {chart_type}，已保存为{dest}",
+        "summary": f"生成图表{_target}，成功：{chart_type}，已保存为{dest}",  # 2026-10-14 小欧 - summary 统一口径: 半角冒号改全角 — 小欧-2026-10-14
         "action": {"tool": "generate_chart", "tool_zh": "生成图表", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{chart_type}已保存", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
