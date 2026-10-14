@@ -36,7 +36,7 @@ def _build_mouse_click_llm_data(exec_code: str, duration_ms: int, x, y, button: 
     button_cn = {"left": "左键", "right": "右键", "middle": "中键"}.get(button, button)
     if exec_code == "error":
         return {
-            "summary": f"{click_type_text}({x_str},{y_str})，失败: {detail}",
+            "summary": f"{click_type_text}({x_str},{y_str})，失败：{detail}",
             "action": {"tool": "mouse_click", "tool_zh": "点击鼠标", "params": {"x": x, "y": y, "button": button, "clicks": clicks}},
             "status": {"exec_code": "error", "message": f"失败: {detail}", "code": err_code or ERR_DESKTOP_MOUSE_CLICK, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},

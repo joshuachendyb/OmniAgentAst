@@ -44,13 +44,13 @@ def _build_window_focus_llm_data(exec_code: str, duration_ms: int, window_title:
     """window_focus的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"聚焦窗口失败,其窗口标题为 {window_title}",
+            "summary": f"窗口聚焦，失败：窗口标题为{window_title}",
             "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "params": {"window_title": window_title}},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_FOCUS_WINDOW, "detail": detail, "hint": hint if hint else "请检查窗口标题是否正确"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"窗口已聚焦: 其窗口标题为 {window_title}",
+        "summary": f"窗口聚焦，成功：窗口标题为{window_title}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(窗口聚焦), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "window_focus", "tool_zh": "窗口聚焦", "params": {"window_title": window_title}},
         "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

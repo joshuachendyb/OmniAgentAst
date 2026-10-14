@@ -29,7 +29,7 @@ def _build_keyboard_control_llm_data(exec_code: str, duration_ms: int, action: s
         _act_params["text_or_keys"] = text_or_keys
     if exec_code == "error":
         return {
-            "summary": f"键盘{action}，失败: {detail}",
+            "summary": f"键盘{action}，失败：{detail}",
             "action": {"tool": "keyboard_control", "tool_zh": "键盘控制", "params": _act_params},
             "status": {"exec_code": "error", "message": f"键盘操作{action}失败", "code": err_code or ERR_INVALID_ACTION, "detail": detail, "hint": hint if hint else "请使用支持的操作类型"},
             "duration_ms": duration_ms, "metrics": {},

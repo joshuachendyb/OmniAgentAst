@@ -40,13 +40,13 @@ def _build_clipboard_control_llm_data(exec_code: str, duration_ms: int, action: 
         _act_params["content"] = content
     if exec_code == "error":
         return {
-            "summary": f"剪贴板{action}失败",
+            "summary": f"剪贴板{_action_zh}，失败",
             "action": {"tool": "clipboard_control", "tool_zh": "剪贴读写", "params": _act_params},
             "status": {"exec_code": "error", "message": f"{_action_zh}失败", "code": err_code or ERR_DESKTOP_CLIPBOARD, "detail": detail, "hint": hint if hint else "请检查剪贴板访问权限"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"剪贴板{action}成功: {char_count}个字符",
+        "summary": f"剪贴板{_action_zh}，成功：{char_count}个字符",  # 2026-10-14 小欧 - summary 统一口径: 英文 action 改中文(_action_zh), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "clipboard_control", "tool_zh": "剪贴读写", "params": _act_params},
         "status": {"exec_code": "success", "message": f"{_action_zh}成功:{char_count}个字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {"chars": {"value": char_count, "text": f"{char_count}个"}},

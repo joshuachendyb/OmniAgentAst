@@ -44,7 +44,7 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: Optio
     if exec_code == "error":
         is_snapshot = (err_code == ERR_SCREEN_SNAPSHOT)
         mode = "多显示器" if is_snapshot else ""
-        summary = f"{mode}截图失败" if mode else "截图失败"
+        summary = f"{mode}屏幕截图，失败" if mode else "屏幕截图，失败"
         return {
             "summary": summary,
             "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "params": _act_params},
@@ -54,9 +54,9 @@ def _build_screen_capture_llm_data(exec_code: str, duration_ms: int, dest: Optio
     metrics = {}
     if monitor_count > 0:
         metrics["monitors"] = {"value": monitor_count, "text": f"{monitor_count}个"}
-        summary = f"截图成功: 已保存到{dest}（{monitor_count}个显示器）"
+        summary = f"屏幕截图，成功：已保存到{dest}（{monitor_count}个显示器）"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(屏幕截图) — 小欧-2026-10-14
     else:
-        summary = f"截图成功: 已保存到{dest}"
+        summary = f"屏幕截图，成功：已保存到{dest}"
     return {
         "summary": summary,
         "action": {"tool": "screen_capture", "tool_zh": "屏幕截图", "params": _act_params},

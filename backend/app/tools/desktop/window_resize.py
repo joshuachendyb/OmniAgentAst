@@ -55,13 +55,13 @@ def _build_window_resize_llm_data(exec_code: str, duration_ms: int, window_title
         _act_params["window_title"] = window_title
     if exec_code == "error":
         return {
-            "summary": f"调整窗口大小失败,其窗口标题为 {window_title}",
+            "summary": f"窗口缩放，失败：窗口标题为{window_title}",
             "action": {"tool": "window_resize", "tool_zh": "窗口缩放", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_WINDOW_RESIZE, "detail": detail, "hint": hint if hint else "请检查窗口标题和尺寸"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"调整标题为{window_title}的窗口成功,分辨率为 {width}x{height}",
+        "summary": f"窗口缩放，成功：{window_title}，{width}x{height}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(窗口缩放), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "window_resize", "tool_zh": "窗口缩放", "params": _act_params},
         "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

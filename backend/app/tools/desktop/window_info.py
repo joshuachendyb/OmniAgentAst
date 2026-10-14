@@ -129,13 +129,13 @@ def _build_window_info_llm_data(exec_code: str, duration_ms: int, window_count: 
     _target = filter_title or "全部"
     if exec_code == "error":
         return {
-            "summary": f"获取窗口{_target}信息失败" + (f": {detail}" if detail else ""),
+            "summary": f"取窗口信息{_target}，失败" + (f"：{detail}" if detail else ""),
             "action": {"tool": "window_info", "tool_zh": "取窗口信息", "params": _act_params},
             "status": {"exec_code": "error", "message": f"获取窗口列表失败: {detail}" if detail else "获取窗口列表失败", "code": ERR_WINDOW_LIST, "detail": detail, "hint": hint if hint else "请检查窗口筛选条件"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"获取窗口{_target}信息成功: 共{window_count}个窗口",
+        "summary": f"取窗口信息{_target}，成功：共{window_count}个窗口",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(取窗口信息) — 小欧-2026-10-14
         "action": {"tool": "window_info", "tool_zh": "取窗口信息", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{window_count}个窗口", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

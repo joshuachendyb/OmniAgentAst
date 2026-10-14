@@ -29,14 +29,14 @@ def _build_mouse_scroll_llm_data(exec_code: str, duration_ms: int, direction: st
     """mouse_scroll的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
-            "summary": "鼠标滚动失败",
+            "summary": "鼠标滚动，失败",
             "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "params": {"direction": direction, "amount": amount}},
             "status": {"exec_code": "error", "message": "滚动失败", "code": err_code or ERR_DESKTOP_MOUSE_SCROLL, "detail": detail, "hint": hint if hint else "请检查滚动参数"},
             "duration_ms": duration_ms, "metrics": {},
         }
     direction_cn = {"up": "向上", "down": "向下"}.get(direction, direction)
     return {
-        "summary": f"滚动完成: {direction_cn},滚动{amount}次",
+        "summary": f"鼠标滚动，成功：{direction_cn}，滚动{amount}次",  # 2026-10-14 小欧 - summary 统一口径: 完成改成功, 半角逗号改全角 — 小欧-2026-10-14
         "action": {"tool": "mouse_scroll", "tool_zh": "鼠标滚动", "params": {"direction": direction, "amount": amount}},
         "status": {"exec_code": "success", "message": "完成", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},

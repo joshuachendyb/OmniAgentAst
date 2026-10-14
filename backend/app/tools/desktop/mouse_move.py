@@ -25,13 +25,13 @@ def _build_mouse_move_llm_data(exec_code: str, duration_ms: int, x: int, y: int,
     """mouse_move的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 加hint参数"""
     if exec_code == "error":
         return {
-            "summary": f"鼠标移动到({x},{y})，失败",
+            "summary": f"移动鼠标到({x},{y})，失败",
             "action": {"tool": "mouse_move", "tool_zh": "移动鼠标", "params": {"x": x, "y": y}},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_DESKTOP_MOUSE_MOVE, "detail": detail, "hint": hint if hint else "请检查坐标是否在屏幕范围内"},
             "duration_ms": duration_ms, "metrics": {},
         }
     return {
-        "summary": f"鼠标移动到({x},{y})，成功",
+        "summary": f"移动鼠标到({x},{y})，成功",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(移动鼠标) — 小欧-2026-10-14
         "action": {"tool": "mouse_move", "tool_zh": "移动鼠标", "params": {"x": x, "y": y}},
         "status": {"exec_code": "success", "message": f"完成:({x},{y})", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
