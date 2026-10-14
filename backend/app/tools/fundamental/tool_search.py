@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-20 - 小欧 - 去噪 refactor:
 #   1. 移除非BM25路径 data 中
@@ -16,7 +15,11 @@
 #   修复多类型混合搜索时高分类霸占top10名额, 低分分类被挤出导致一次搜索注不全分类(实测7类型混合仅命中4类)
 # 2026-10-02 - 小欧 - BM25 索引文本追加分类名: 工具改名与挪分类后按分类名搜必然零结果(category 原不进索引),
 #   使检索有"能力词"与"分类名"双路召回; category 重复率高, IDF 自动压权故不加权(不写×3);
+# 2026-10-04 - 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索工具→搜TOOL 实测能力词类查询首位无倒置
+# 2026-10-14 小欧 - BM25索引补中文分类名(name_cn): 2026-10-02只加了category.value(英文),
+#   中文分类名从未进索引。实测搜"桌面"对DESKTOP类11工具零召回(且最高分是已加载的notify,
+#   搜完等于没搜、LLM却以为搜到了); 补name_cn后9个分类中文名全部可召回, 既有关键词无退化。
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -83,11 +86,23 @@ def _build_bm25() -> Tuple[List[List[str]], List[str], float, Counter]:
     """从工具注册表构建 BM25 语料库 — 小沈 2026-06-14
 
     2026-10-02 小欧: 索引文本追加分类名, 使按分类搜也能召回(category 重复率高, IDF 自动压权, 不加权)
+    2026-10-14 小欧: 追加 category.name_cn(中文分类名)。2026-10-02 那次加的是 category.value(英文),
+      中文分类名从未进索引 —— 实测搜"桌面"零召回 DESKTOP 类全部 11 个工具, 搜"desktop"却全部命中。
     """
     docs: List[List[str]] = []
     tool_names: List[str] = []
     for name, metadata in tool_registry._tools.items():
-        text = " ".join([name] * 3) + " " + metadata.description + " " + metadata.category.value
+        # searchtool 自身不入索引: 它是首轮已注入的检索器, 搜任何词命中自己纯属噪声
+        # (实测"进程"等禁用词因出现在本工具描述里而命中自己, 反而把"零命中"变成"匹配1个但注入0类",
+        #  正是本机制要根治的误导)。searchtool 首轮恒在, 无需搜自己 - 小欧 2026-10-14
+        if name == "searchtool":
+            continue
+        text = (
+            " ".join([name] * 3)
+            + " " + metadata.description
+            + " " + metadata.category.value
+            + " " + metadata.category.name_cn
+        )
         docs.append(_tokenize(text))
         tool_names.append(name)
 
@@ -264,10 +279,17 @@ def searchtool(query: str) -> Dict[str, Any]:
     # data.matches已精简为仅name+category，LLM仅需知道"搜到了/没搜到"，
     # 工具详情感知由auto_inject_from_search自动注入整个分类 — 北京老陈 2026-06-26
     data = {
-        "matches": [{"name": r["name"], "category": r["category"]} for r in top_results],
+        "matches": [
+            {
+                "name": r["name"],
+                "category": r["category"],
+                "description": all_tools[r["name"]].description,
+            }
+            for r in top_results
+        ],
     }
     llm_data = _build_tool_search_llm_data("success", duration_ms, query, len(meaningful), len(all_tools),
-                                             [{"name": r["name"], "category": r["category"]} for r in top_results])
+                                            [{"name": r["name"], "category": r["category"]} for r in top_results])
     # ---- observation_formatter route -------------------------------------------
     # branch: #9 matches (searchtool subtype)
     # trigger: "matches" in data → ms[0] 含 "category" 键

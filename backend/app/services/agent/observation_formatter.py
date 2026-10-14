@@ -29,6 +29,8 @@
 # 2026-10-05 - 小欧 - 报告 P6: 新增 _TARGET_KEYS_BY_TOOL 按工具名覆盖 target 取键优先级(未列走 FALLBACK), 修多参工具固定序显示不准; 新工具只加一行。
 # 2026-10-05 - 小欧 - 文档[10]5.1.1: _METRICS_RENDERED_BY_HANDLER 移出 total_lines(改走统计段通用渲染);
 #   read_docx 的 hint 去「共 N 行」防统计段双出(单通道)
+# 2026-10-14 - 小欧 - _format_searchtool_results: 每项渲染为"工具名: 能力描述", 不带分类(分类对LLM无意义);
+#   搜到几个组织几个(≤TOOL_SEARCH_INER_RESULTS_TOP)。data.matches 仍保留 category, 注入链路依赖它。
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -1247,7 +1249,11 @@ def _format_find_results(matches: list) -> str:
 #   输入: [{"name":"http_request","category":"network"}, {"name":"read_file","category":"file"}]
 #   输出:   http_request [network]\n  read_file [file]
 def _format_searchtool_results(matches: list) -> str:
-    """格式化 searchtool 工具搜索结果 — 小欧 2026-07-05"""
+    """格式化 searchtool 工具搜索结果 — 小欧 2026-07-05
+    2026-10-14 小欧(北京老陈裁定): 每项 = 工具名 + 能力描述, 不带分类 ——
+      LLM 只关心"搜到的这些能干什么、要不要换词重搜"; 分类对其无意义(注入后 tools schema
+      里本就带分类), 反而挤占描述的显示宽度。data.matches 仍保留 category(注入链路依赖它)。
+    """
     if not matches:
         return ""
     lines = []
@@ -1256,8 +1262,8 @@ def _format_searchtool_results(matches: list) -> str:
             lines.append(f"  ... 还有 {len(matches) - OBS_MAX_DISPLAY_ITEMS} 个匹配项")
             break
         name = m.get("name", "")
-        cat = m.get("category", "")
-        lines.append(f"  {name} [{cat}]")
+        desc = str(m.get("description") or "").strip()
+        lines.append(f"  {name}: {desc}" if desc else f"  {name}")
     return "\n".join(lines)
 
 

@@ -7,6 +7,9 @@
 # 2026-08-05 - 小欧 - <searchtool-搜备用工具>: 逐类示例改为精简"备用工具类型"一行枚举(文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时), 与tool_retry_engine备用工具命名/register描述对齐
 # 2026-08-07 - 小欧 - <searchtool-搜备用工具>: 强化"一次搜多类型"引导,禁止分多次调用searchtool搜不同类型(实测LLM发7个并行searchtool,应合并为1个)
 # 2026-08-10 - 小欧 - _get_project_root_info() 扩展: 项目根之外一并注入授权目录(allowed_dirs), 让LLM知晓可合法操作目录(与Safety白名单一致); 未配置allowed_dirs时保持原样只给项目根, 功能零退化 — 北京老陈驱动
+# 2026-10-14 - 小欧 - 删死词"进程": 实测该词在BM25语料零命中(全库无"进程"字样), 属误导性关键词;
+#   且系统确无进程管理工具(SYSTEM仅event_log/create_task/delete_task/list_tasks/which/sysinfo),
+#   进程类需求用首轮已注入的bash(tasklist/taskkill)。删后7个非首轮分类仍全覆盖。
 """
 PromptBuilder — 唯一的 Prompt 构建类
 
@@ -71,7 +74,7 @@ class PromptBuilder:
 
 <searchtool-搜备用工具>
 增加可用精准工具范围
-输入工具关键词: 文档\数据分析\数据库\网络\系统\进程\注册表\桌面\时间定时\找命令
+(可用关键词与禁用词清单见 searchtool 的 query 参数 schema 说明, 此处不重复)
 
 
 """
