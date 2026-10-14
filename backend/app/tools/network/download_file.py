@@ -15,7 +15,6 @@
 #   【改法】外层新增`except ValueError`分支, 归ERR_INVALID_PARAMS(输入/参数错误), hint给出"换用更小资源或分片"; 置于httpx异常分支后、Exception兜底前
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(下载文件)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 文件下载→下载
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 文件下载→下载
 """
 N2: download — 下载文件到本地
 
