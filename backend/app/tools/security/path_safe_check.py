@@ -61,6 +61,7 @@
 #      重定向判据改为剥引号后是否含 ">", 不用 _REDIRECT_RE(其职责是提取目标, 需保留引号)
 #   ③ `$env:VAR\path` 抽不到路径 → 复用 executor 的 _resolve_env_fragment 先展开
 #   ④ 违规补 warning log: 下游只记 tool=bash 缺命令原文, 安全事件查不到是哪个命令
+# 2026-10-14 - 小欧 - SA5标注: 本文件=权限信任框架SA5(路径权限validate_tool_path→validate_path→_is_forbidden_path系统区/非系统区/白名单,执行第5步,由SA3经_check_known_risks内调,读SA6授权is_temp_authorized) — 小欧-2026-10-14
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -502,6 +503,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
                        mode: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
     """
     工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
+    [SA5] 权限信任框架第5步: 由SA3经_check_known_risks内调, 读SA6授权is_temp_authorized — 小欧-2026-10-14
     mode 参数 (v1.43): 增加 mode 参数, 返回值扩展为四元组 (is_valid, error_message, failed_path, category)
     
     Args:

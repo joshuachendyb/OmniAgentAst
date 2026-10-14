@@ -14,6 +14,7 @@
 # 2026-08-13 - 小沈 - 修复(三堂会审): ①_FacadeAgent 移至模块级(原函数内定义, 每次请求重建类对象);
 #   ②_retry_engine 模块级单例(ToolRetryEngine 无状态, 复用同一实例, KISS-DIRECT); ③result 非 dict 时判失败(原 ok=True 误报成功)
 # 2026-08-18 - 小健 - 三堂会审 修复(同源): result.llm_data.status 可能为 str, 新增 _safe_status_message 防御 AttributeError
+# 2026-10-14 - 小欧 - SA1标注: 本文件=权限信任框架SA1(API直调入口,与safety_gate的Agent入口并列双入口,执行顺序第1步→SA3总闸) — 小欧-2026-10-14
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -121,6 +122,7 @@ def list_tools() -> dict:
 
 async def execute_tool(tool_name: str, params: dict) -> dict:
     """供 API 调用的安全工具执行入口 — 复用 tool_executor 统一执行路径 — 小欧 2026-08-12
+    [SA1] 权限信任框架第1步API入口(与safety_gate的Agent入口并列): 安全预检同源SA3 check_before_execute — 小欧-2026-10-14
 
     返回结构对齐 health.py 原 /tool/execute 的 ToolExecuteResponse 语义:
     {success, result | error, tool_name}

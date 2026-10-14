@@ -31,6 +31,7 @@
 #   tests/test_architecture_boundaries.py 实证不成立 —— 该守卫只禁 "tools"→services/safety 单向,
 #   safety→tools 合法(先例: tool_safety_checker 一直 import execute_shell_command_safety), 无需中转 utils。
 #   本文件属 app/safety, safety→tools 方向合法; 业务逻辑零变化, 仅改导入路径。 — 小欧-2026-10-10
+# 2026-10-14 - 小欧 - SA7标注: 本文件=权限信任框架SA7(沙箱预检pre_execute影子副本执行,执行第7步,上游SA1/sandbox_gate.run_sandbox_gate,总闸见safety_checker的sandbox_required置位) — 小欧-2026-10-14
 import asyncio
 import os
 import re
@@ -171,6 +172,7 @@ class SandboxExecutor:
         return JobObjectBackend(process_memory_limit_mb=get_config().get("sandbox.process_memory_limit_mb", 2048))
 
     async def pre_execute(self, tool_name: str, params: Dict) -> PreCheckResult:
+        # [SA7] 权限信任框架第7步: 沙箱预检唯一触发依据=safety_result.sandbox_required, 上游SA1 run_sandbox_gate — 小欧-2026-10-14
         # 4.1#5 总开关唯一判定点(v1.10): 入口单点短路——checker 四条置位路径不读配置,
         # 开关在唯一入口生效不存在遗漏分支; False 时返回 passed=True, 行为与实施前完全一致
         if not get_config().get("sandbox.enabled", True):

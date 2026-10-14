@@ -67,6 +67,7 @@
 #   实测 2026-10-11 三条同文案无法区分 backend/tests/test_adapters.py 与其他受保护路径 - 小欧-2026-10-11
 # 2026-10-11 小欧 - rejected 补 confirm_id(北京老陈令): 原不带该字段, 前端靠它精确匹配才关窗;
 #   缺字段则确认作废后弹窗永留屏幕、点击落到 entry=None 被丢弃(实测 e95d2ceb 挂 3 分钟) - 小欧-2026-10-11
+# 2026-10-14 - 小欧 - SA1/SA6标注: 本文件=权限信任框架SA1(Agent入口check_safety_and_confirm,执行第1步)+SA6(HITL确认hitl_confirm+确认后grant_temp_auth写入,执行第6步); SA2信任预查resolve_skip→SA3总闸check_before_execute→SA7沙箱run_sandbox_gate
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -106,6 +107,7 @@ def _rejection_cache_of(agent) -> dict:
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None) -> list:
         """安全检查+HITL确认 — 纯函数返回事件列表(MetaStep dict/replay), 3B终态(5.4.2收list) — 小欧 2026-09-06
+        [SA1/SA6] 权限信任框架第1步入口+第6步HITL确认: SA2信任预查→SA3总闸→SA7沙箱run_sandbox_gate — 小欧-2026-10-14
 
         拒绝/拦截是可恢复的(符合人类认知: 拒绝≠失败), 不置终态FAILED:
         - 把"工具被拒绝/拦截"作为 observation 写进LLM历史(_add_denial_feedback), 让LLM换方案;

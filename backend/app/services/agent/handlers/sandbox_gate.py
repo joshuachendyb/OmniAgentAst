@@ -175,6 +175,7 @@ async def run_sandbox_gate(agent, step, call, tool_name, params,
     DRY: 三处20行重复代码→一处调用。 — 小健 2026-09-04
     3A: main_confirmed 透传(单paused, 4.4) — 小欧 2026-09-06
     3.3: trusted 透传(会话信任豁免, 能力缺口直放) — 小欧 2026-09-18
+    [SA7] 权限信任框架第7步: 沙箱预检统一入口(上游SA1三处汇合点, 下游executor.pre_execute) — 小欧-2026-10-14
     """
     pre = await sandbox_precheck(safety_result, tool_name, params)
     if pre is None:

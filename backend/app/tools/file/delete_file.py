@@ -29,6 +29,7 @@
 # 2026-09-20 - 小欧 - 写仲裁落地: 删除执行前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行读改写覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
+# 2026-10-14 - 小欧 - SA8标注: 本文件_guard_forbidden_delete=权限信任框架SA8(delete最后防线,执行第8步,与file_path_checker并列,不依赖security.enabled与config) — 小欧-2026-10-14
 """
 F12: delete_file — 删除文件
 
@@ -60,6 +61,7 @@ from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧
 
 def _guard_forbidden_delete(file_path: str) -> Optional[str]:
     """删除最后防线: 无条件禁止删除盘根/项目根+授权目录/系统保护目录 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
+    [SA8] 权限信任框架第8步最后防线: 不依赖security.enabled与config — 小欧-2026-10-14
     不依赖security.enabled, 在delete()最前方硬阻断。
     项目根统一走 config.get_project_root(), 代码库根删除保护由 Safety 层 _is_forbidden_path(⑦) 承接。
     返回blocked原因, 通过返回None表示允许删除。
@@ -313,7 +315,8 @@ async def delete(
     recursive: bool = False,
     force: bool = False,
 ) -> Dict[str, Any]:
-    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path"""
+    """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path
+    [SA8] 首行即调_guard_forbidden_delete最后防线, 次行validate_path业务校验 — 小欧-2026-10-14"""
     t0 = _time_mod.perf_counter()
     # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
     source = path

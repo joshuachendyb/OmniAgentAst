@@ -8,6 +8,7 @@
 #   (授权目录读取失败致删除判定根集缺失无任何日志, 排查无迹)
 # 2026-09-18 小欧 - safety_level→severity: SafetyResult字段重命名同步更新 — 小欧-2026-09-18
 # 2026-09-18 - 小欧 - 落地: R6硬拦截文案"禁止删除项目根/授权目录外目录(递归)"→"禁止删除工作区外目录"(人话化, 逻辑不变) — 小欧-2026-09-18
+# 2026-10-14 - 小欧 - SA4标注: 本文件=权限信任框架SA4(delete专属分支check_delete_risk R3-R6,执行第4步,由SA3总闸内调,R1/R2回SA5路径层覆盖) — 小欧-2026-10-14
 """
 delete_safety — delete 工具专属安全检查(差异层)
 
@@ -76,6 +77,7 @@ def check_delete_risk(params: dict) -> SafetyResult:
     导致 _get_needs_confirmation 落入原逻辑 needs_confirmation=True 的缺陷。
     R1/R2 由 _check_known_risks(validate_tool_path) 覆盖, 此处不重复。
     补D: 递归删除走 os.walk 时各子路径逐项判定, 任一越权即 R6。
+    [SA4] 权限信任框架第4步: 由SA3总闸内调, R1/R2回SA5路径层覆盖 — 小欧-2026-10-14
     """
     path = str(params.get("path") or "").strip()
     recursive = _as_bool(params.get("recursive", False))       # 递归默认 False, 防字符串陷阱

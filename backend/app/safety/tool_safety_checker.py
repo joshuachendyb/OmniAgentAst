@@ -88,6 +88,7 @@
 #   白名单误伤0/30、日常命令误伤0/24、降级回归0。同日 is_process_kill_protected 导入点更正为
 #   app.tools.fundamental.shell_static_guard(shell 代码归 shell 代码同目录; 原落 utils 的理由
 #   "tools 禁 import safety"经 test_architecture_boundaries 实证不成立, safety→tools 合法) — 小欧-2026-10-10
+# 2026-10-14 - 小欧 - SA3标注: 本文件=权限信任框架SA3(安全总闸check_before_execute,执行第3步,上游SA1/SA2,内调SA4 delete_safety+SA5 path_safe_check,下游SA6 HITL) — 小欧-2026-10-14
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -206,6 +207,7 @@ class ToolSafetyChecker:
         2026-08-17 小健 三堂会审-架构修复: 会话信任预查从本层移至调用方(action_handler, services层),
             本层不再依赖 app.services.chat.storage(消除 safety→services 违规);
             调用方查 trust 后传 skip_confirmation=True 豁免确认询问(危险防护仍生效) — 小健 2026-08-17
+        [SA3] 权限信任框架第3步安全总闸: 上游SA1/SA2, 内调SA4/SA5, 下游SA6 HITL — 小欧-2026-10-14
         """
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:

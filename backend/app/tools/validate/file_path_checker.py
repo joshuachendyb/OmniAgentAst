@@ -19,10 +19,12 @@
 #   hint_for_read_error/sql_error_hint/hint_for_data_error)整段复制迁入 app/tools/toolhelper/error_hints.py，
 #   本文件仅保留路径/参数校验。同步删除 sqlite3/_pd(pandas) 死依赖与 __all__ 中 hint 项。
 #   所有调用方导入路径已改 app.tools.toolhelper.error_hints。
+# 2026-10-14 - 小欧 - SA8标注: 本文件=权限信任框架SA8(工具体内业务校验validate_path_for_write/delete/overwrite,执行第8步最后防线之一,与delete_file._guard_forbidden_delete并列) — 小欧-2026-10-14
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
 工具层（本文件）：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
+[SA8] 权限信任框架第8步(工具体内业务校验, 与delete_file._guard_forbidden_delete并列最后防线) — 小欧-2026-10-14
 Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）：
   路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
 """
