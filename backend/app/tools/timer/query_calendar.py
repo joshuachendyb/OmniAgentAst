@@ -43,7 +43,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
         act_params["year"] = user_year
     if exec_code == "error":
         return {
-            "summary": f"日历查询:\"{user_name}\"，失败" if user_name else "日历查询失败",
+            "summary": f"查日历\"{user_name}\"，失败" if user_name else "查日历，失败",
             "action": {"tool": "calendar", "tool_zh": "查日历", "params": act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_DATE, "detail": detail, "hint": hint if hint else "请检查日期格式"},
             "duration_ms": duration_ms,
@@ -52,7 +52,7 @@ def _build_query_calendar_llm_data(exec_code: str, duration_ms: int, date_str: s
     hol_str = f"，{holiday_name}" if holiday_name else ""
     type_str = f"（{holiday_type_cn}）" if holiday_type_cn else ""
     return {
-        "summary": f"日历查询成功:{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",
+        "summary": f"查日历，成功：{date_str} {weekday_cn}，{'周末' if is_weekend else '工作日' if is_workday else '节假日'}{hol_str}{type_str}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(查日历), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "calendar", "tool_zh": "查日历", "params": act_params},
         "status": {"exec_code": "success", "message": f"完成:{date_str} {weekday_cn}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

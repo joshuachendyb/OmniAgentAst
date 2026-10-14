@@ -29,14 +29,14 @@ def _build_time_diff_llm_data(exec_code: str, duration_ms: int, humanized: str, 
         _act_params["end"] = user_end
     if exec_code == "error":
         return {
-            "summary": "计算时间差，失败",
+            "summary": "算时间差，失败",
             "action": {"tool": "timediff", "tool_zh": "算时间差", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_DIFF, "detail": detail, "hint": hint if hint else "请检查时间格式"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"计算时间差，{humanized}（{round(days, 2)}天），成功",
+        "summary": f"算时间差，成功：{humanized}（{round(days, 2)}天）",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(算时间差), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "timediff", "tool_zh": "算时间差", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{humanized}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

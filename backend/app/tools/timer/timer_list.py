@@ -28,14 +28,14 @@ def _build_timer_list_llm_data(exec_code: str, duration_ms: int, count: int, ids
     """timer_list的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": "获取定时器列表失败",
+            "summary": "列定时器，失败",
             "action": {"tool": "timer_list", "tool_zh": "列定时器", "params": {}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_TIMER_LIST, "detail": detail, "hint": hint if hint else "请检查定时器状态"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"获取定时器列表成功: 共{count}个",
+        "summary": f"列定时器，成功：共{count}个",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列定时器) — 小欧-2026-10-14
         "action": {"tool": "timer_list", "tool_zh": "列定时器", "params": {}},
         "status": {"exec_code": "success", "message": f"成功:共{count}个", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

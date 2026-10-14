@@ -28,14 +28,14 @@ def _build_time_add_llm_data(exec_code: str, duration_ms: int, result_time: str,
         _act_params["start"] = user_start
     if exec_code == "error":
         return {
-            "summary": f"时间加减，{delta:+g} {unit}，失败",
+            "summary": f"加减时间{delta:+g} {unit}，失败",
             "action": {"tool": "timeadd", "tool_zh": "加减时间", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_TIME_ADD, "detail": detail, "hint": hint if hint else "请检查参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"时间加减，{delta:+g} {unit}后为 {result_time}，成功",
+        "summary": f"加减时间{delta:+g} {unit}，成功：{result_time}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(加减时间), 成功后置 — 小欧-2026-10-14
         "action": {"tool": "timeadd", "tool_zh": "加减时间", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{result_time}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
