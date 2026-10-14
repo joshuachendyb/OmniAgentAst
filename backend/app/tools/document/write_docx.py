@@ -121,14 +121,14 @@ def _build_write_docx_llm_data(
         #   (写期异常可能部分落盘, 不置, 避免误报)。与 write_text_file 语法阻断同口径。
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入Word {file_path}，失败: {_detail}",
+            "summary": f"写WORD{file_path}，失败：{_detail}",
             "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_DOCX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入Word {file_path}，成功: {para_count}段, {char_count}字符",
+        "summary": f"写WORD{file_path}，成功：{para_count}段，{char_count}字符",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写WORD), 半角逗号改全角 — 小欧-2026-10-14
         "action": {"tool": "write_docx", "tool_zh": "写WORD", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{para_count}段, {char_count}字符", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

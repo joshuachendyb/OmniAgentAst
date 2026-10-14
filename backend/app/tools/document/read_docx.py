@@ -54,7 +54,7 @@ def _build_read_docx_llm_data(
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取Word{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
+            "summary": f"读WORD{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_DOCX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
@@ -69,7 +69,7 @@ def _build_read_docx_llm_data(
     parts.append(f"{text_len}字符")
     if table_count:
         parts.append(f"{table_count}项表格")
-    summary_str = f"读取Word{file_path}，成功: " + "，".join(parts)
+    summary_str = f"读WORD{file_path}，成功：" + "，".join(parts)  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读WORD) — 小欧-2026-10-14
     return {
         "summary": summary_str,
         "action": {"tool": "read_docx", "tool_zh": "读WORD", "params": _act_params},

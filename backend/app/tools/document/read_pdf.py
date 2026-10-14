@@ -135,7 +135,7 @@ def _build_read_pdf_llm_data(
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取PDF{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
+            "summary": f"读PDF{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_PDF, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
@@ -147,7 +147,7 @@ def _build_read_pdf_llm_data(
         parts.append(f"{table_count}项表格")
     if image_count:
         parts.append(f"{image_count}张图片")
-    summary_str = f"读取PDF{file_path}，成功: " + "，".join(parts)
+    summary_str = f"读PDF{file_path}，成功：" + "，".join(parts)  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读PDF) — 小欧-2026-10-14
     return {
         "summary": summary_str,
         "action": {"tool": "read_pdf", "tool_zh": "读PDF", "params": {"path": file_path}},

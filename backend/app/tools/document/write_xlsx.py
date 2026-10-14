@@ -107,7 +107,7 @@ def _build_write_xlsx_llm_data(
         #   仅写前检查点置位, 写期异常不置避免误报)
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入Excel {file_path}，失败: {_detail}",
+            "summary": f"写EXCEL{file_path}，失败：{_detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_WRITE_XLSX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
@@ -116,14 +116,14 @@ def _build_write_xlsx_llm_data(
     if exec_code == "warning":
         # 追加模式无数据可写等非致命异常: 走warning, 让LLM感知追加无效(非静默success) — 小欧 2026-08-08
         return {
-            "summary": f"写入Excel {file_path}，警告: {detail}",
+            "summary": f"写EXCEL{file_path}，警告：{detail}",
             "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
             "status": {"exec_code": "warning", "message": f"警告:{detail}" if detail else "警告", "code": "", "detail": detail, "hint": hint if hint else "请检查传入的data参数"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入Excel {file_path}，成功: {row_count}行",
+        "summary": f"写EXCEL{file_path}，成功：{row_count}行",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写EXCEL) — 小欧-2026-10-14
         "action": {"tool": "write_xlsx", "tool_zh": "写EXCEL", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{row_count}行", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

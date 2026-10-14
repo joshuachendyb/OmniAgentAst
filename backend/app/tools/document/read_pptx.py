@@ -49,7 +49,7 @@ def _build_read_pptx_llm_data(
     if exec_code == "error":
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取PPT{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
+            "summary": f"读PPT{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_pptx", "tool_zh": "读PPT", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_PPTX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
@@ -57,13 +57,13 @@ def _build_read_pptx_llm_data(
         }
     # success / warning (自然单位治理 2026-07-20 小欧: 按页翻页)
     if exec_code == "warning":
-        summary_str = f"读取PPT{file_path}，警告"
+        summary_str = f"读PPT{file_path}，警告"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读PPT) — 小欧-2026-10-14
         message_str = f"警告:{detail}" if detail else "警告"
     elif current_slide is not None:
-        summary_str = f"读取PPT{file_path}，成功: 第{current_slide}页(共{slide_count}页)，{text_len}字符"
+        summary_str = f"读PPT{file_path}，成功：第{current_slide}页(共{slide_count}页)，{text_len}字符"
         message_str = f"成功:第{current_slide}页(共{slide_count}页)，{text_len}字符"
     else:
-        summary_str = f"读取PPT{file_path}，成功: {slide_count}页，{text_len}字符"
+        summary_str = f"读PPT{file_path}，成功：{slide_count}页，{text_len}字符"
         message_str = f"成功:{slide_count}页，{text_len}字符"
     return {
         "summary": summary_str,

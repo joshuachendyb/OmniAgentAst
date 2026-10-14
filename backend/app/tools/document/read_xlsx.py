@@ -67,7 +67,7 @@ def _build_read_xlsx_llm_data(
             _act_params["sheet_name"] = user_sheet_name
         _err_summary = truncate_summary(detail)
         return {
-            "summary": f"读取Excel{file_path}，失败" + (f": {_err_summary}" if _err_summary else ""),
+            "summary": f"读EXCEL{file_path}，失败" + (f"：{_err_summary}" if _err_summary else ""),
             "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_READ_XLSX, "detail": detail, "hint": hint if hint else "读取失败,请修改文件路径与格式后重试"},
             "duration_ms": duration_ms,
@@ -77,7 +77,7 @@ def _build_read_xlsx_llm_data(
     if user_sheet_name:
         _act_params["sheet_name"] = user_sheet_name
     return {
-        "summary": f"读取Excel{file_path}，成功: {row_count}行，{sheet_count}个工作表",
+        "summary": f"读EXCEL{file_path}，成功：{row_count}行，{sheet_count}个工作表",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读EXCEL) — 小欧-2026-10-14
         "action": {"tool": "read_xlsx", "tool_zh": "读EXCEL", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:{row_count}行，{sheet_count}个工作表", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

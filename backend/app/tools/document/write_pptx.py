@@ -67,14 +67,14 @@ def _build_write_pptx_llm_data(
         #   write_xlsx 口径, 仅写前检查点置位, 写期异常不置避免误报)
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
-            "summary": f"写入PPT{file_path}，失败: {_detail}",
+            "summary": f"写PPT{file_path}，失败：{_detail}",
             "action": {"tool": "write_pptx", "tool_zh": "写PPT", "params": {"path": file_path}},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_DOC_WRITE_PPTX, "detail": _detail, "hint": hint if hint else "请检查路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入PPT{file_path}，成功: {slide_count}页",
+        "summary": f"写PPT{file_path}，成功：{slide_count}页",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写PPT) — 小欧-2026-10-14
         "action": {"tool": "write_pptx", "tool_zh": "写PPT", "params": {"path": file_path}},
         "status": {"exec_code": "success", "message": f"成功:{slide_count}页", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
