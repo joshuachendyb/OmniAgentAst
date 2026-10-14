@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 执行→执行SQL
+# 2026-10-14 小欧 - schema timeout 改秒(北京老陈定案): 默认 30 秒; _get_connection 毫秒边界处换算 — 小欧-2026-10-14
 """
 execute_sql — 执行写操作SQL
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -135,7 +136,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
 
 def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
                 connection_string: Optional[str] = None, path: Optional[str] = None,
-                dry_run: bool = False, timeout: int = 30000,
+                dry_run: bool = False, timeout: int = 30,  # 2026-10-14 小欧 - schema 单位秒(北京老陈定案): 默认 30 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
                 confirm_ddl: bool = False) -> Dict[str, Any]:
     """执行写操作SQL — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -154,10 +155,10 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
 
     # 2026-07-31 小欧: Bug⑲ timeout防御 — None回默认, <=0拒绝(避免连接超时0/异常) — 与query_sql对齐
     if timeout is None:
-        timeout = 30000
+        timeout = 30
     if timeout <= 0:
         duration_ms = 0
-        llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail="timeout必须大于0(单位毫秒)", hint="请设置正数timeout,建议30000",
+        llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail="timeout必须大于0(单位秒)", hint="请设置正数timeout,建议30",
                                                   connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
@@ -177,7 +178,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
             return build_warning(data={"detected": dangerous_list, "suggestion": "检测到危险操作,建议使用 dry_run=true 先验证"}, llm_data=llm_data)
 
         if dry_run:
-            conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout)
+            conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout * 1000)  # 2026-10-14 小欧 - 毫秒边界换算 — 小欧-2026-10-14
             if conn is None:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail=conn_error, hint="请检查数据库连接参数",
@@ -250,7 +251,7 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
                                                           connection_type=connection_type, path=path, dry_run=dry_run, timeout=timeout)
                 return build_error(data={}, llm_data=llm_data)
 
-        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout)
+        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout * 1000)  # 2026-10-14 小欧 - 毫秒边界换算 — 小欧-2026-10-14
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("error", duration_ms, _sql_preview, 0, detail=conn_error, hint="请检查数据库连接参数",

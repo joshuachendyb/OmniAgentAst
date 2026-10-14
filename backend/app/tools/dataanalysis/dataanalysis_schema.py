@@ -10,7 +10,8 @@
 # 2026-07-25 - 小欧 - 编辑历史归并+去冗余示例: AnalyzeDataInput/FilterDataInput.path移除示例
 # 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制, 统计在head之前计算
 # 2026-08-07 - 小欧 - ExecuteSqlInput 新增 confirm_ddl 字段(危险DDL放行开关): True=显式确认后放行裸CREATE/DROP等DDL, False=默认拦截; 与 execute_sql 实现层白名单联动 — 小欧 2026-08-07
-# 2026-08-29 - 小沈 - 修复: GenerateChartInput 补 x_label/y_label 字段, 对齐 generate_chart 实现已支持的轴标签参数(实现层231-234行已 apply), 暴露给 LLM 使其可传入坐标轴标签, 消除 schema/impl 漂移。
+# 2026-08-29 - 小沈 - 修复: GenerateChartInput 补 x_label/y_label 字段, 对齐 generate_chart 实现已支持的轴
+# 2026-10-14 小欧 - timeout description 单位毫秒改秒(QuerySql/ExecuteSqlInput, 北京老陈定案) — 小欧-2026-10-14标签参数(实现层231-234行已 apply), 暴露给 LLM 使其可传入坐标轴标签, 消除 schema/impl 漂移。
 """
 DataAnalysis Schema - 数据分析工具参数模型
 
@@ -234,7 +235,7 @@ class QuerySqlInput(_DbConnectionMixin):
     )
     timeout: Optional[int] = Field(
         default=None,
-        description="查询超时时间(单位毫秒)。不传则使用实现默认值; 透传到数据库连接, 控制查询最长执行时间"
+        description="查询超时时间(单位秒)。不传则使用实现默认值; 透传到数据库连接, 控制查询最长执行时间"
     )
 
 
@@ -291,7 +292,7 @@ class ExecuteSqlInput(_DbConnectionMixin):
     )
     timeout: Optional[int] = Field(
         default=None,
-        description="执行超时时间(单位毫秒)。不传则使用实现默认值; 透传到数据库连接, 控制执行最长耗时"
+        description="执行超时时间(单位秒)。不传则使用实现默认值; 透传到数据库连接, 控制执行最长耗时"
     )
 
 

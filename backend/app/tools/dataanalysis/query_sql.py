@@ -15,6 +15,7 @@
 # 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): error summary 去 `{detail}`, success summary
 #   去行数/列预览, 统一 `查询{_target}，成功/失败`; 行数/列预览在 metrics 统计段呈现(通用渲染)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 查询→查询SQL
+# 2026-10-14 小欧 - schema timeout 改秒(北京老陈定案): 默认 15 秒; _get_connection/Timer 毫秒边界处换算 — 小欧-2026-10-14
 """
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -100,7 +101,7 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
 
 def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
               connection_string: Optional[str] = None, path: Optional[str] = None,
-              limit: int = 50, timeout: int = 15000) -> Dict[str, Any]:
+              limit: int = 50, timeout: int = 15) -> Dict[str, Any]:  # 2026-10-14 小欧 - schema 单位秒(北京老陈定案): 默认 15 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
     """执行只读SQL查询 — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
     """
@@ -127,12 +128,12 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
 
     # 2026-07-31 小欧: Bug⑲ timeout防御 — None回默认, <=0拒绝(防 threading.Timer(0) 立即触发 conn.interrupt)
     if timeout is None:
-        timeout = 15000
+        timeout = 15
     if timeout <= 0:
         duration_ms = 0
         llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [],
-                                               detail=f"timeout必须大于0(单位毫秒)",
-                                               hint=f"请设置正数timeout,建议15000",
+                                               detail=f"timeout必须大于0(单位秒)",
+                                               hint=f"请设置正数timeout,建议15",
                                                connection_type=connection_type, path=path, limit=limit, timeout=timeout)
         return build_error(data={}, llm_data=llm_data)
 
@@ -212,7 +213,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
                                                    connection_type=connection_type, path=path, limit=limit, timeout=timeout)
             return build_error(data={}, llm_data=llm_data)
 
-        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout)
+        conn, engine, conn_error = _get_connection(connection_type, connection_string, path, timeout * 1000)  # 2026-10-14 小欧 - 毫秒边界换算:_get_connection 内部毫秒口径不变, 入口秒→毫秒 — 小欧-2026-10-14
         if conn is None:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             logger.warning("query_sql连接失败: error=%s, connection_type=%s", conn_error, connection_type)
@@ -240,7 +241,7 @@ def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"
         else:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
-            _timer = threading.Timer(timeout / 1000, conn.interrupt)
+            _timer = threading.Timer(timeout, conn.interrupt)  # 2026-10-14 小欧 - timeout 已是秒(原 timeout/1000 是毫秒口径残留) — 小欧-2026-10-14
             _timer.start()
             try:
                 cursor.execute(sql)
