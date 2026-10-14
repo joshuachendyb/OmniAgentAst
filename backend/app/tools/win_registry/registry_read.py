@@ -237,7 +237,7 @@ def registry_read(path: str, value_name: Optional[str] = None, hive: str = "HKCU
                 hint = "请检查值名称是否正确"
             else:
                 detail = f"注册表键 {path} 没有值"
-                hint = "该键下没有可读取的值"
+                hint = "该键下没有值，请检查键路径是否正确"  # 2026-10-14 小欧 - hint 修复述: 原样复读 detail; 空键要么路径错要么真空, 点名查路径 — 小欧-2026-10-14
         else:
             detail = f"注册表键不存在: {path}"
             hint = "请检查键路径是否正确"
@@ -249,7 +249,7 @@ def registry_read(path: str, value_name: Optional[str] = None, hive: str = "HKCU
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=str(e), hint="读取注册表异常,请检查系统状态")
+        llm_data = _build_registry_read_llm_data("error", duration_ms, path, value_name or "", detail=str(e), hint="读取注册表异常，请检查键路径及权限")  # 2026-10-14 小欧 - hint 修空话 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

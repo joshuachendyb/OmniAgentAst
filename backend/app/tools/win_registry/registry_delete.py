@@ -112,7 +112,7 @@ def registry_delete(path: str, value_name: Optional[str] = None, backup_before_d
 
             if not parent_key:
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail="不能直接删除根键下的子键", hint="不能直接删除根键下的子键")
+                llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail="不能直接删除根键下的子键", hint="根键下的子键不允许删除，请更换目标")  # 2026-10-14 小欧 - hint 修复述: 原样复读 detail; 硬规则无他法, 给换目标 — 小欧-2026-10-14
                 return build_error(data={}, llm_data=llm_data)
 
             if recursive:
@@ -162,7 +162,7 @@ def registry_delete(path: str, value_name: Optional[str] = None, backup_before_d
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=str(e), hint="删除注册表异常,请检查系统状态")
+        llm_data = _build_registry_delete_llm_data("error", duration_ms, path, "", detail=str(e), hint="删除注册表异常，请检查键路径及权限")  # 2026-10-14 小欧 - hint 修空话: "系统状态"不知查什么 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

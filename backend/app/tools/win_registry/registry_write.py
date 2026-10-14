@@ -202,7 +202,7 @@ def registry_write(path: str, value_name: str, value: str, value_type: str = "au
     except Exception as e:
         _rollback_registry(_backup_file)  # E-2(2026-09-20 小欧): 通用异常(可能半写), 回滚备份
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=str(e), hint="写入注册表异常,请检查系统状态")
+        llm_data = _build_registry_write_llm_data("error", duration_ms, path, value_name, value, value_type, detail=str(e), hint="写入注册表异常，请检查键路径及权限")  # 2026-10-14 小欧 - hint 修空话 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 
