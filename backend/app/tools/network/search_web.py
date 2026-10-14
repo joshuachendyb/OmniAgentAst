@@ -375,7 +375,7 @@ async def searchweb(
 
     # 2026-07-22 - 小欧 - None 显式报错(防None透传Bing引发NoneType异常被except吞为success空结果, 属正确性回归防护; 非长度/格式限制, 与3.6删除len(query)<2无关)
     if not query or not query.strip():
-        detail = "query 不能为空, 请提供搜索关键词" if not query else "query 不能为纯空白, 请提供搜索关键词"
+        detail = "query 不能为空" if not query else "query 不能为纯空白"  # 2026-10-14 小欧 - detail 去行动: "请提供搜索关键词"归 hint(已有), detail 只讲事实 — 小欧-2026-10-14
         llm_data = _build_search_web_llm_data("error", 0, query, err_code=ERR_PARAM_INVALID, detail=detail, hint="请提供搜索关键词", proxy=proxy, num_results=num_results)
         return build_error(data={}, llm_data=llm_data)
 

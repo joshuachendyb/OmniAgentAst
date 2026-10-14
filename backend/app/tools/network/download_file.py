@@ -113,9 +113,9 @@ def _map_network_error(url: str, timeout: int, e: Exception, dest_path: str = ""
     """将httpx异常映射为错误信息字典 — 小欧 2026-06-22"""
     for exc_type, code, prefix in _NET_ERROR_MAP:
         if isinstance(e, exc_type):
-            detail = f"{prefix}({timeout}秒):{url}"
+            detail = f"{prefix}({timeout}秒)：{url}"
             if isinstance(e, httpx.HTTPStatusError):
-                detail = f"{prefix} (HTTP {e.response.status_code}):{url}"
+                detail = f"{prefix} (HTTP {e.response.status_code})：{url}"
             return {"error_detail": detail, "params": {"url": url, "dest": dest_path, "timeout": timeout}, "err_code": code, "detail": detail}
     logger.error(f"[download] 未知错误: {e}")
     return {"error_detail": str(e), "params": {"url": url, "dest": dest_path, "timeout": timeout}, "err_code": ERR_NET_UNKNOWN, "detail": str(e)}
