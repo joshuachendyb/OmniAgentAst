@@ -70,6 +70,7 @@
 # 2026-10-14 - 小欧 - SA1/SA6标注: 本文件=权限信任框架SA1(Agent入口check_safety_and_confirm,执行第1步)+SA6(HITL确认hitl_confirm+确认后grant_temp_auth写入,执行第6步); SA2信任预查resolve_skip→SA3总闸check_before_execute→SA7沙箱run_sandbox_gate
 # 2026-10-14 - 小欧 - 文档[33] 4.6/4.1连带表: :89/:126/:127 trust 改 app.safety.trust, :80 temp_auth 改 app.safety.temp_auth
 # 2026-10-14 - 小欧 - 文档[33] 4.6-4(P3步15): bypass 分支补 _bypass_confirmed 守卫(在 grant 之前); 病根: 网关拒了仍授权且下方 continue 吞掉 rejected
+# 2026-10-15 - 小欧 - 文档[33] 4.6-2/4.6-3/4.6-5/4.6-6(P4步16-17/19-20): 抽 _group_ref 与组大小同源; ConfirmSpec 透传 auth_path; 拒绝记忆加 bypass 守卫; shell 判定补 execute_command
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -84,16 +85,33 @@ from app.safety.temp_auth import grant_temp_auth  # POT-002: 3处重复import合
 __all__ = ["check_safety_and_confirm"]
 
 
+def _group_ref(tool_name: str, params: dict, safety_result=None):
+    """组内引用键的唯一表达式: auth_path or trust_path — 小欧 2026-10-14(文档[33] 4.6-2)
+
+    抽出独立纯函数的理由: refusal_key 与 _group_size 两处都要这个表达式, 此前各写一遍,
+    一处漏改即出现「弹窗按 auth 分组、组大小按 trust 数」的口径分裂(DRY)。
+    """
+    from app.safety.trust import extract_trust_path  # 延迟导入(与本模块既有模式一致)
+    return (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
+        or extract_trust_path(tool_name, params or {})
+
+
 def refusal_key(tool_name: str, params: dict, safety_result=None):
     """用户拒绝记忆键 (tool, auth/trust_path/shell-command) — 与 3.4 组键同口径(毛病3/毛病4, 小欧-2026-09-18)。
     shell 无 path 主键(trust 两集合皆无)时按 command 全文分组, 同命令合并、不同命令各弹。
-    sandbox_gate 函数内延迟导入复用(防 handlers→safety_gate→sandbox_gate 环)。"""
-    from app.safety.trust import extract_trust_path  # 延迟导入(与本函数内既有模式一致) — 小欧-2026-09-18
-    _ref = (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
-        or extract_trust_path(tool_name, params or {})
-    if _ref is None and tool_name == "bash":
+    sandbox_gate 函数内延迟导入复用(防 handlers→safety_gate→sandbox_gate 环)。
+
+    2026-10-14 小欧(文档[33] 4.6-2/4.6-6): 引用表达式改调 _group_ref 与组大小同源;
+      shell 判定改 `normalize_tool_name(tool_name) in ("bash","execute_command")` —— 与
+      tool_safety_checker:319 同源; 原单写 == "bash" 漏 execute_command(它非别名而是独立注册名,
+      normalize_tool_name 不归一到 bash), 致同一命令经两入口调用被拆成两组各弹一次(毛病3复发)。
+      组键 tool_name 侧存归一名(防跨别名对不上)。"""
+    from app.tools.tools_alias_mapper import normalize_tool_name
+    _canon = normalize_tool_name(tool_name)
+    _ref = _group_ref(_canon, params or {}, safety_result)
+    if _ref is None and _canon in ("bash", "execute_command"):
         _ref = "cmd:" + str((params or {}).get("command") or "")
-    return (tool_name, _ref)
+    return (_canon, _ref)
 
 
 def _rejection_cache_of(agent) -> dict:
@@ -179,7 +197,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 _rej_cache = _rejection_cache_of(agent)
                 if _skip:
                     _rej_cache.pop(_group_key, None)
-                if _group_key in _rej_cache:
+                if _group_key in _rej_cache and not _bypass:
                     _rej_content = _rej_cache[_group_key]
                     logger.warning(f"[action] step={step} rejected-cached: tool={_cn} (本任务内已有拒绝记录, 不再重复确认)")
                     _events.append(agent._step_emitter.emit(MetaStep(
@@ -239,7 +257,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                         auto_confirm=_bypass, tool_name=_cn, params=_cp,
                         content=_content,
                         severity=getattr(safety_result, "severity", ""),
-                        safety_level=_sl),
+                        safety_level=_sl,
+                        # 2026-10-14 小欧 - 文档[33] 4.6-3(P4步16): 透传 auth_path。
+                        #   auth 轨(白名单外临时授权)此前在 HITL 链丢失 —— 下游 hitl_gateway:103
+                        #   已按 spec.path 优先消费, 但此处不传则它恒 None, 授权路径无处可查。
+                        path=getattr(safety_result, "auth_path", None)),
                         _buf.publish)
                     _confirm_cache[_group_key] = _verdict
                 else:
