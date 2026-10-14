@@ -87,7 +87,7 @@ async def readmedia(
             elif suggested_tool == "":
                 _hint = "请检查文件路径和文件名是否正确"
             else:
-                _hint = "请检查文件类型，或使用 read/read_document 工具"
+                _hint = "请检查文件路径是否存在及是否为媒体格式"  # 2026-10-14 小欧 - 修谎报: None 分支含"文件不存在/路径无效"(谈类型是错的); 且 read_document 工具不存在, 点名即误导 — 小欧-2026-10-14
             llm_data = _build_read_media_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint)
             return build_error(data={}, llm_data=llm_data)
 

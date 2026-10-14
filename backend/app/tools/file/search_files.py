@@ -78,7 +78,7 @@ def _build_search_files_llm_data(
         return {
             "summary": f"搜文件{search_dir}，失败",
             "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
-            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索目录和匹配模式"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和匹配模式，可更换关键词"},  # 2026-10-14 小欧 - hint 归一: 与 grep 对齐"搜索路径"; 加换策略(永真) — 小欧-2026-10-14
             "duration_ms": duration_ms,
             "metrics": {},
         }

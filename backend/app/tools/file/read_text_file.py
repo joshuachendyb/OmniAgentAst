@@ -102,7 +102,7 @@ def _build_read_text_file_llm_data(
         return {
             "summary": f"读文件{file_path}，失败",
             "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
-            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和参数是否正确"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_READ_FAILED, "detail": detail, "hint": hint if hint else "请检查文件路径和参数"},  # 2026-10-14 小欧 - hint 去赘:"是否正确"三字多余 — 小欧-2026-10-14
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -176,7 +176,7 @@ async def read(
             elif suggested_tool == "":
                 _hint = "请检查文件路径和文件名是否正确"
             else:
-                _hint = "文件类型不匹配,请使用其他工具"
+                _hint = "请检查文件路径是否存在及是否为文本格式"  # 2026-10-14 小欧 - 修谎报: None 分支含"文件不存在"(谈类型是错的);"其他工具"空话, 点名查什么 — 小欧-2026-10-14
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error_detail, hint=_hint, user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
             return build_error(data={}, llm_data=llm_data)
 

@@ -620,7 +620,7 @@ async def edit(
         elif ft_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "请选择正确的工具类型"
+            _hint = "请检查文件路径是否存在及是否为文本格式"  # 2026-10-14 小欧 - 修空话: "请选择正确的工具类型"不知查什么; None 分支含"文件不存在" — 小欧-2026-10-14
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(
             data={"error_detail": ft_detail, "params": {"path": file_path}},

@@ -245,7 +245,7 @@ async def write(
         elif ft_tool == "":
             _hint = "请检查文件路径和文件名是否正确"
         else:
-            _hint = "请选择正确的工具类型"
+            _hint = "请检查文件路径是否有效及是否为文本格式"  # 2026-10-14 小欧 - 修空话: 同 edit; 写允许新建故用"是否有效"(空路径/是目录皆无效) — 小欧-2026-10-14
         llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=ft_detail, hint=_hint, user_encoding=encoding, user_append=append)
         return build_error(data={}, llm_data=llm_data)
 

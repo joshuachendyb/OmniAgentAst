@@ -69,7 +69,7 @@ def _build_move_file_llm_data(
         return {
             "summary": f"移文件{source}，失败",
             "action": {"tool": "move", "tool_zh": "移文件", "params": _act_params},
-            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径"},
+            "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_MOVE_FAILED, "detail": detail, "hint": hint if hint else "请检查源路径和目标路径及权限"},  # 2026-10-14 小欧 - hint 归一: 与 copy/compress 对齐补"及权限" — 小欧-2026-10-14
             "duration_ms": duration_ms,
             "metrics": {},
         }
@@ -239,6 +239,6 @@ async def move(
         )
     else:
         error_detail = result.get("error_detail", "移动文件失败")
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail, hint=result.get("hint", "请检查移动操作的参数和文件状态"), user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=error_detail, hint=result.get("hint", "请检查源路径、目标路径及写入权限"), user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12  # 2026-10-14 小欧 - 修空话: "移动操作的参数和文件状态"不知查什么, 点名三件套 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 

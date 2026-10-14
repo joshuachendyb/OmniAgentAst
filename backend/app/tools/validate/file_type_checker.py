@@ -241,7 +241,7 @@ def _check_text_file(path: Path, suffix: str, check_content: bool, allow_create:
             hint = UNSUPPORTED_FORMAT_HINTS.get(suffix, "不支持的格式")
             return False, f"工具选择错误：'{suffix}'是不支持的格式。{hint}", None
         elif suffix in ARCHIVE_EXTENSIONS:
-            return False, f"工具选择错误：'{suffix}'是压缩文件，不能用文本工具操作。请先用解压工具解压后再读取", "extract_archive"
+            return False, f"工具选择错误：'{suffix}'是压缩文件，不能用文本工具操作。请先用解压工具解压后再读取", "extract"  # 2026-10-14 小欧 - 修谎报: 工具真名是 extract(extract_archive 只是文件名), hint 点名不存在的工具名属误导 LLM — 小欧-2026-10-14
         else:
             return False, f"工具选择错误：'{suffix}'是二进制文件，不能用文本工具操作。请确认文件类型后选择合适的工具", None
     

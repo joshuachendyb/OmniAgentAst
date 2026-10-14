@@ -147,5 +147,5 @@ async def rename(
         )
     else:
         error_detail = result.get("error_detail", "重命名失败")
-        llm_data = _build_rename_file_llm_data("error", duration_ms, source, new_name=new_name, detail=error_detail, hint=result.get("hint", "重命名失败，请检查文件状态"), user_destination=destination, user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, new_name=new_name, detail=error_detail, hint=result.get("hint", "请检查源路径和新名称是否有效"), user_destination=destination, user_overwrite=overwrite)  # 统一错误提示 - 小欧 2026-07-12  # 2026-10-14 小欧 - 修空话+复述: "重命名失败"message 已说,"文件状态"不知查什么 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
