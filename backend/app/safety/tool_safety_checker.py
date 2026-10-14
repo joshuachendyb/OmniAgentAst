@@ -407,30 +407,10 @@ class ToolSafetyChecker:
             return SafetyResult(requires_confirmation=True, blocked=False,
                                 message=f"该路径超出允许范围，需临时授权: {failed_path or msg}",
                                 severity="destructive",
-                                auth_path=failed_path or (params.get("path") or params.get("dest")))
+                                        auth_path=failed_path or (params.get("path") or params.get("dest")))
 
-        # 修复 (三堂会审复核发现, v1.45): 写保护判定用归一化名 —
-        #   原代码 `tool_name == _WRITE_RISK_TOOL("write")` 用 LLM 原始名, 别名(write_text/writefile等)
-        #   normalize 前不等于 write → 写入大小保护被绕过; 统一走 normalize_tool_name 再判(补齐)
-        from app.tools.tools_alias_mapper import normalize_tool_name as _norm_tool
-        if _norm_tool(tool_name) == _WRITE_RISK_TOOL:
-            try:
-                # 【#29修复】写入大小保护应优先用path参数（与路径检查一致），file_path兜底 — chendyg 2026-06-26
-                # 2026-08-04 小欧 fix: content 可能为 dict/list(LLM结构化传参), 用isinstance(str)判typeskip写保护, 不崩不误拦 — 北京老陈审出多余转换(YAGNI), 写保护只需量字节数无需转JSON
-                file_path = params.get("path") or params.get("file_path", "")
-                content = params.get("content", "")
-                p = Path(file_path)
-                old_size = p.stat().st_size if p.exists() and p.is_file() else 0
-                new_size = len(content.encode("utf-8")) if isinstance(content, str) and content else 0
-                if old_size > 1024 and new_size > 0 and new_size < old_size * 0.20:
-                    log_and_print(f"[ToolSafetyChecker] 数据保护硬拦(新内容远小于原内容): tool={tool_name}, path={file_path}, new={new_size}, old={old_size}")
-                    return SafetyResult(blocked=True,
-                            message="数据保护: 写入内容远小于原内容，已阻止")
-            except Exception as e:
-                logger.error(f"[ToolSafetyChecker] 写入检查异常,阻止执行: {e}")
-                return SafetyResult(blocked=True, message=f"安全检查异常，已阻止执行: {e}")
-
-
+        # 2026-10-14 北京老陈裁定 - 删写入大小保护硬拦(原 >1024 且 new<20% 即 blocked): 文件大小属业务规则,
+        #   必须在 tool 层判定, 严禁在 tool 层外拦截。归口: file_path_checker.validate_path_for_overwrite。
         return None
 
 
