@@ -81,6 +81,10 @@
 #   (探测上限10次+耗尽退化全局MAX+1+threading.Lock 仅单进程有效); 空表时幂等播种到存量 id 上界之上
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: chat_tasks 加 process_events TEXT DEFAULT '[]'(事件列表快照列, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 与 artifacts 同款形态) — 小欧-2026-10-11
 # 2026-10-14 小欧 - linked 增量摘要: chat_tasks 加 task_summary 列(摘要落覆盖上界任务行, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 空=无锚点走老路) — 小欧-2026-10-14
+# 2026-10-15 小欧 - 文档[33] 5.16(P5步21): 会话信任 TTL 落列 —— chat_session_trust 加 expires_at 列
+#   (CREATE TABLE 新建 + v1.5 重建分支 + _ensure_column 幂等补存量库, 三处同源不漏), 并加 idx_trust_expires
+#   索引(与 idx_trust_session 并列, 供 cleanup_expired_trust 扫描)。无 DEFAULT: 历史行读出 NULL
+#   = 不过期, 存量信任行为与改动前一致不被误杀。— 小欧-2026-10-15
 """
 db_initializer — 数据库初始化
 
@@ -175,6 +179,7 @@ def init_chat_db(get_conn):
                 tool_name TEXT NOT NULL,
                 path TEXT,
                 created_at TEXT,
+                expires_at TEXT,
                 UNIQUE(session_id, tool_name, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
@@ -293,6 +298,11 @@ def init_chat_db(get_conn):
         _ensure_column(conn, "chat_tasks", "process_events", "TEXT DEFAULT '[]'")
         # 存量库幂等补列, 无 DEFAULT(历史行读出 None=无锚点走老路)。— 小欧 2026-10-14
         _ensure_column(conn, "chat_tasks", "task_summary", "TEXT")
+        # 2026-10-15 小欧 - 文档[33] 5.16: 会话信任 TTL 落列(存量库幂等补)。无 DEFAULT,
+        #   历史行读出 NULL = 不过期, 语义与改动前一致(存量信任不被误杀)。— 小欧-2026-10-15
+        _ensure_column(conn, "chat_session_trust", "expires_at", "TEXT")
+        # 2026-10-15 小欧 - 文档[33] 5.16: TTL 过期清理扫描索引, 存量库亦须补建(IF NOT EXISTS 幂等)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
 
@@ -392,9 +402,12 @@ def init_chat_db(get_conn):
                 tool_name TEXT NOT NULL,
                 path TEXT,
                 created_at TEXT,
+                expires_at TEXT,
                 UNIQUE(session_id, tool_name, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE)""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
+        # 2026-10-15 小欧 - 文档[33] 5.16: TTL 过期清理按 expires_at 扫描, 补索引(与 idx_trust_session 并列)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
 
         # ===== 12.2-C1: 步骤唯一性下沉DB — 同一AI行×同一任务×同一序号恰一行 =====
         # 老库先去重(保首行)再建唯一索引(均幂等); append_execution_step 保持裸INSERT不改,

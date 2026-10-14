@@ -34,6 +34,9 @@
 # 2026-10-03 小欧 - startup_event 增 journal_steps_reconcile 一次性对账 Journal(③) vs chat_task_steps(②);
 #   只告警不自动补, 失败仅 warning 不阻断启动 — 文档[5] 5.3 D2 — 小欧 2026-10-03
 # 2026-10-03 - 小欧 - 笔误修正: _t4con 改回 _t_recon(与 _recon_n 配对的 reconcile 计时变量; 同批新增 _t4 串扰致误改, 读写一致故功能未坏)。
+# 2026-10-15 - 小欧 - 文档[33] 5.18(P5步21): _periodic_cleanup_loop 内加 cleanup_expired_trust(会话信任 TTL 过期回收)。
+#   独立 try: 与 cleanup_expired_tasks 无依赖, 信任表清理挂掉(如锁库)不得连带影响任务清理。
+#   用 db.atxn 回调式(非 async with): 整段 with get_conn 跑在 to_thread 子线, 不占事件循环。— 小欧-2026-10-15
 import sys
 import asyncio
 from typing import Optional
@@ -77,6 +80,7 @@ from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.config import get_config
 from app.services.task.task_registry import cleanup_expired_tasks
+from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧 - 文档[33] 5.18: 过期会话信任回收(TTL)
 from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
 from app.db import db
 
@@ -244,6 +248,15 @@ async def _periodic_cleanup_loop() -> None:
             await cleanup_expired_tasks()
         except Exception as e:
             logger.error(f"清理过期任务失败: {e}")
+        # 2026-10-15 小欧 - 文档[33] 5.18: 会话信任 TTL 过期回收。
+        #   独立 try: 信任表清理挂掉(如锁库)不得连带影响上方任务清理(两者无依赖)。
+        #   atxn 是回调式(非 async with): 整段 with get_conn 跑在 to_thread 子线, 不占事件循环。
+        try:
+            _n = await db.atxn("chat", lambda conn: cleanup_expired_trust(conn))
+            if _n:
+                logger.info(f"清理过期会话信任 {_n} 条")
+        except Exception as e:
+            logger.error(f"清理过期会话信任失败: {e}")
         await asyncio.sleep(3600)
 
 

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-09-05 - 小欧 - 架构边界修正(三堂会审): 会话信任读写三函数从 app/services/chat/storage.py
-#   迁入本层 app/tools/trust_db.py —— 修复 app/tools 禁 app.services 依赖方向守护违规
+#   迁入本层 app/safety/trust_db.py —— 修复 app/tools 禁 app.services 依赖方向守护违规
 #   (test_architecture_boundaries.py test_layer_boundaries 报 trust.py imports app.services.chat.storage)。
 #   原逻辑逐字复制不改业务(能复制不重写): get_session_id_by_task/check_session_trust/insert_session_trust
 #   + _norm_trust_path(储storage侧 delete/list 仍使用, 双侧各持一份保持落库/查询一致)。
-#   迁移后 trust.py 由 import app.services.chat.storage 改为 import app.tools.trust_db(同层, 零越层)。
+#   迁移后 trust.py 由 import app.services.chat.storage 改为 import app.safety.trust_db(同层, 零越层)。
 # 2026-09-16 小欧 - 问题B修复: _norm_trust_path 增加 tool_name 参数, 非文件信任域跳过 Path.resolve() — 小欧-2026-09-16
 # 2026-09-16 小欧 - 函数化(DRY/KISS核查, 文档三堂会审): _norm_trust_path 公开化改名 norm_trust_path 单一来源,
 #   storage.delete_session_trust 撤销侧改 import 消费本函数 —— 消除 split 双份 13 行逐字重复(5.4 曾因双份漏同步引入退化),
@@ -22,6 +22,16 @@
 #   读取端零改动(本就不需要改), 仅让生产者产出它能匹配的东西。 — 小欧-2026-10-06
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改); 旧文件已删。
+# 2026-10-15 - 小欧 - 文档[33] 5.17(P5步21): 会话信任 TTL 落地。
+#   新增 _ttl_expiry()(now+security.trust_ttl_days, 默认90天) / _not_expired_clause()(未过期判据单源) /
+#   cleanup_expired_trust()(删 expires_at<=now, 返回条数); insert 同步写 expires_at;
+#   check 查询加未过期过滤(过期行不再豁免)。NULL=不过期, 存量行行为不变。
+#   边界: UNIQUE(session_id,tool_name,path) + INSERT OR IGNORE 下重复信任**不续期** ——
+#   续期等于「点一次就永久有效」, 与 TTL 初衷相悖。— 小欧-2026-10-15
+# 2026-10-15 - 小欧 - 文档[33] 5.23: 本文件历史条目内的旧路径按终态订正(第4/8行 app/tools/trust_db.py → app/safety/trust_db.py)。
+#   北京老陈裁定「改」: 编辑历史内的**路径**具误导性(读者会以为该路径仍可用), 故订正; 仅动路径字面,
+#   事件的日期/署名/描述一字不改(保留「2026-09-05 迁入」这一事实本身)。— 小欧-2026-10-15
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from pathlib import Path
 from typing import Optional
@@ -29,6 +39,40 @@ from sqlite3 import Connection
 
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 非文件信任域(与 storage:561 撤销侧同位)
+from app.config import get_config  # 2026-10-15 小欧 - 文档[33] 5.17: TTL 天数读 security.trust_ttl_days
+
+
+# 2026-10-15 小欧 - 文档[33] 5.17: 会话信任 TTL(落库写过期时刻 → 查询按未过期过滤 → 周期清理)
+#   病根: 信任一旦落库即永久有效, 用户点过一次「信任本次会话」后该路径永远不再弹窗,
+#   撤权无路径、时间无上限。TTL 是唯一的自然撤销手段。
+#   NULL 语义: expires_at IS NULL = 不过期 —— 存量行(未写该列)保持原有行为不被误杀。
+DEFAULT_TRUST_TTL_DAYS = 90
+
+
+def _ttl_expiry() -> str:
+    """信任过期时刻 = now + security.trust_ttl_days(默认 90 天) — 小欧 2026-10-15
+
+    与 created_at 同为本地 naive ISO, 同格式可字典序比较, 故 SQL 侧直接字符串比较即可。
+    配置值 <= 0 视为「不设过期」(写 NULL), 供运维关闭 TTL。
+    """
+    try:
+        days = get_config().get("security.trust_ttl_days", DEFAULT_TRUST_TTL_DAYS)
+    except Exception:
+        days = DEFAULT_TRUST_TTL_DAYS
+    if not days or days <= 0:
+        return None
+    from datetime import datetime, timedelta
+    return (datetime.now() + timedelta(days=days)).isoformat()
+
+
+def _not_expired_clause() -> str:
+    """未过期判定 SQL 片段(单源) — 小欧 2026-10-15
+
+    查询侧(check_session_trust)与清理侧(cleanup_expired_trust)共用同一判据,
+    免得两处各写一份日后漂移 —— 「什么算过期」只能有一个答案。
+    NULL = 不过期, 兼容存量行。
+    """
+    return "(expires_at IS NULL OR expires_at > ?)"
 
 
 def norm_trust_path(path: Optional[str], tool_name: Optional[str] = None) -> Optional[str]:
@@ -80,10 +124,15 @@ def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path
     """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name, path) 幂等）— 小欧 2026-08-16; v1.5 增 path 参数
     path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免
     2026-10-06 小欧 - 落库前经 trust_scope_path 归一：文件类工具登记【所在目录】而非叶子文件，
-      否则"信任此操作"只对那一个文件名生效(实测连续信任 4 个文件仍 4 次弹窗) — 小欧-2026-10-06"""
+      否则"信任此操作"只对那一个文件名生效(实测连续信任 4 个文件仍 4 次弹窗) — 小欧-2026-10-06
+    2026-10-15 小欧 - 文档[33] 5.17: 同步写 expires_at(now+TTL), 信任不再是永久有效。
+      注意 UNIQUE(session_id,tool_name,path) 下 INSERT OR IGNORE 命中已存在行时**不会更新** expires_at,
+      即重复信任不续期 —— 续期会变成「点一次就一直有效」, 与 TTL 初衷相悖, 故维持不续期。— 小欧-2026-10-15"""
     conn.execute(
-        "INSERT OR IGNORE INTO chat_session_trust(session_id, tool_name, path, created_at) VALUES (?,?,?,?)",
-        (session_id, tool_name, trust_scope_path(path, tool_name), get_local_iso_timestamp()),
+        "INSERT OR IGNORE INTO chat_session_trust"
+        "(session_id, tool_name, path, created_at, expires_at) VALUES (?,?,?,?,?)",
+        (session_id, tool_name, trust_scope_path(path, tool_name),
+         get_local_iso_timestamp(), _ttl_expiry()),
     )
 
 
@@ -95,11 +144,14 @@ def check_session_trust(conn: Connection, session_id: str, tool_name: str, path:
       path 给定: 命中的是【本工具的path IS NULL通配行】, 或【任意工具登记的具体信任路径为该目标前缀祖先/等于】——
         即目录信任按 session_id 跨工具前缀豁免。path是None的无路径工具(execute_shell等)不受指定路径的其他工具信任影响。
     """
-    # 2026-10-05 小欧 北京老陈裁定B: 目录信任跨工具生效, 具体规则见上方 docstring;
-    #   撤销粒度仍是(session_id,tool_name,path) —— 删掉单行只撤销该工具的登记, 若需完全撤销某目录信任需删掉其下全部工具行 — 小欧-2026-10-05
+# 2026-10-05 小欧 北京老陈裁定B: 目录信任跨工具生效, 具体规则见上方 docstring;
+    #   撤销粒度仍是(session_id,tool_name,path) —— 删掉单行只撤销该工具的登记, 若需完全撤销某目录信任需删掉其下全部工具行 — 小欧 2026-10-05
+    # 2026-10-15 小欧 - 文档[33] 5.17: 加未过期过滤, 过期行不再豁免(TTL 生效点)。
+    #   判据复用 _not_expired_clause() 单源, 与清理侧同口径。
     rows = conn.execute(
-        "SELECT path FROM chat_session_trust WHERE session_id=? AND (tool_name=? OR path IS NOT NULL)",
-        (session_id, tool_name),
+        f"SELECT path FROM chat_session_trust WHERE session_id=? AND (tool_name=? OR path IS NOT NULL)"
+        f" AND {_not_expired_clause()}",
+        (session_id, tool_name, get_local_iso_timestamp()),
     ).fetchall()
     if path is None:
         return any(r["path"] is None for r in rows)
@@ -124,3 +176,21 @@ def get_session_id_by_task(conn: Connection, task_id: str) -> Optional[str]:
         (task_id,),
     ).fetchone()
     return row["session_id"] if row else None
+
+
+def cleanup_expired_trust(conn: Connection) -> int:
+    """清理已过期的会话信任行, 返回删除条数 — 小欧 2026-10-15
+
+    文档[33] 4.16/5.17。落点判据: 与 insert/check/delete 同域故落本文件(信任读写一体);
+    不落 task_registry(内存任务注册表, 无 DB 清理职责)、不落 storage(会话业务读写层, 异域)、
+    不设调度中间层(main.py 是唯一调用方, 为单调用方造归口违 KISS-DIRECT)。
+
+    判据与 check_session_trust 共用 _not_expired_clause(): NULL=不过期 保留,
+    只删 expires_at <= now 的行 —— 即使本函数没跑, 查询侧过滤已使过期行不豁免,
+    本函数只负责回收存储, 不承担正确性。
+    """
+    cur = conn.execute(
+        f"DELETE FROM chat_session_trust WHERE NOT ({_not_expired_clause()})",
+        (get_local_iso_timestamp(),),
+    )
+    return cur.rowcount or 0
