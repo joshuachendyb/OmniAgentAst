@@ -224,7 +224,7 @@ async def download(
             os.makedirs(dest_dir, exist_ok=True)
         except (PermissionError, OSError) as e:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest_path, err_code=ERR_NETWORK_CREATE_DIR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint="检查目标目录权限", timeout=timeout, proxy=proxy, headers=headers)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest_path, err_code=ERR_NETWORK_CREATE_DIR, detail=f"{type(e).__name__}: {str(e) or repr(e)}", hint=hint_for_write_error(e, dest_path), timeout=timeout, proxy=proxy, headers=headers)  # 2026-10-14 小欧 - 修片面: 建目录失败不止权限(父目录缺失/盘满皆可能), 按 errno 精确映射(复用 helper, 不编造) — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm_data)
 
         req_headers = headers or {}
