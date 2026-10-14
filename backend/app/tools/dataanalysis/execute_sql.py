@@ -119,7 +119,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
             detail_msg = f"检测到危险SQL操作（{sql}），已回滚"
             hint_msg = "建议使用 dry_run=true 先验证"
         return {
-"summary": f"执行SQL{_target}，警告：{msg}",  # 2026-10-14 小欧 - 实话实说(北京老陈令"不能误导"): 危险SQL已回滚仍写"成功"属谎报, 改警告并带原因 — 小欧-2026-10-14
+            "summary": f"执行SQL{_target}，警告：{msg}",  # 2026-10-14 小欧 - 实话实说(北京老陈令"不能误导"): 危险SQL已回滚仍写"成功"属谎报, 改警告并带原因 — 小欧-2026-10-14
             "action": {"tool": "execute_sql", "tool_zh": "执行SQL", "params": _act_params},
             "status": {"exec_code": "warning", "message": msg, "code": "WARNING_DB_SAFETY", "detail": detail_msg, "hint": hint_msg},
             "duration_ms": duration_ms,

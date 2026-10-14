@@ -38,17 +38,17 @@ DROP_KEYS = frozenset({
 # | searchweb  | query/num_results/allowed/blocked_domains  | 完成:N条结果(结果数)       | 无    |
 # | timenow    | {}无参                                      | 成功:datetime,星期(结果值)  | 无    |
 # FILE 组成功分支三项对照(2026-10-12 小欧逐个核查) —
-# | tool    | params(进句子; 有path时dest整项丢弃)       | message(成功分支)          | 重复?    |
+# | tool    | params(进句子; 有path时dest句子跳过)       | message(成功分支)          | 重复?    |
 # |---------|--------------------------------------------|----------------------------|----------|
-# | copy    | path+recursive(dest整项丢弃)               | 成功(纯状态词)             | 无       |
+# | copy    | path+recursive(dest句子跳过)               | 成功(纯状态词)             | 无       |
 # | delete  | path+force+recursive                       | 成功(纯状态词)             | 无       |
 # | edit    | path+mode+encoding+行数派生                | 完成(纯状态词)             | 无       |
 # | find    | path+pattern+type(offset句子跳过)          | 完成:共N个/第M-N项         | 已消     |
 # | grep    | path+pattern+glob                          | 完成:N文件M行(结果量)      | 无       |
 # | listdir | path+sort_by等                             | 成功:N项(结果量)           | 无       |
-# | move    | path(dest整项丢弃)                         | 成功(纯状态词)             | 无       |
+# | move    | path(dest句子跳过)                         | 成功(纯状态词)             | 无       |
 # | read    | path+encoding(句子;limit等仅items)          | 成功:从第X-Y行(范围)       | 已消     |
-# | rename  | path(dest整项丢弃)                         | 成功(纯状态词)             | 无       |
+# | rename  | path(dest句子跳过)                         | 成功(纯状态词)             | 无       |
 # | tree    | path+max_depth等                           | 成功:N文件(结果量)         | 无       |
 # | write   | path+append+encoding                       | 成功(纯状态词)             | 无       |
 # NETWORK 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
@@ -60,7 +60,7 @@ DROP_KEYS = frozenset({
 # DOCUMENT 组成功分支三项对照(2026-10-12 小欧逐个核查, 零重复) —
 # | tool      | params(进句子)                            | message(成功分支)            | 重复? |
 # |-----------|-------------------------------------------|------------------------------|-------|
-# | compress  | path+format等(dest有path时整项丢弃)       | 成功:N文件,压缩率(结果量)   | 无    |
+# | compress  | path+format等(dest有path时跳)       | 成功:N文件,压缩率(结果量)   | 无    |
 # | extract   | path(+dest无path时)                       | 成功(纯状态词)               | 无    |
 # | read_docx | path+limit等                              | 成功:N段,N字符(结果量)      | 无    |
 # | read_pdf  | path(仅path进action)                      | 成功:已读X/共Y页(结果量)    | 无    |
@@ -158,8 +158,8 @@ def _pick_params(action: Dict[str, Any]) -> Dict[str, Any]:
         if len(text) > PARAM_VALUE_MAX_CHARS:
             text = text[:PARAM_VALUE_MAX_CHARS] + "…"
         out[key] = text
-    if out.get("path") not in (None, "") and "dest" in out:
-        del out["dest"]  # 有 path 时 dest 整项丢弃(content_items/句子都不留), 只留一个路径 — 小欧 2026-10-12
+
+
     return _order_params(out)
 
 

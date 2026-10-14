@@ -193,10 +193,9 @@ shell 命令执行前的**静态风险判定**单一权威。三类同域关注�
 | `update_session_accumulation` | 会话级 token 实时累计(Db读-加-写, 影响0行显式告警) | conn, session_id, llm_call_count_token | None |
 | `query_chain_accumulation` | 上下文链 token 累计(按context_root聚合, 排除当前任务, 计算派生不落库) | conn, context_root_task_id, current_task_id | dict |
 | `fetch_session_user_message_pairs` | 重建"用户消息+其配对AI回答"有序列表(北京老陈 2026-08-22 铁律: chat_messages 只写严禁读; 从 chat_user_message LEFT JOIN chat_tasks 读取; 每项为一条用户消息及可选配对的AI回答, ai_message_id=None表示AI未生成; 供 get_session_messages/_load_previous_messages/execution_stream 复用, DRY/复用优先; 不含 execution steps, 步骤经 load_execution_steps 另行读取; 2026-09-28 [76] 精确归属: JOIN 改 COALESCE(子查询 task_id=cum.task_id, 子查询 user_message_id=cum.id) 取 MAX(id), 注入行凭 cum.task_id 归任务、登记首条凭 cum.id 归任务, 删会话级模糊兜底防跨任务错配; 增返回 pair_task_id 供渲染层同任务判据) | conn, session_id, lower_id, upper_id | list |
-| `bind_message_to_task` | 把注入消息绑定到目标任务(执行期归属, 2026-09-28 [76] 6.5① 新增, 零 DDL 复用已有 task_id 列; WHERE id=? AND task_id IS NULL 保证不覆盖既有归属; 返回 bool=是否影响行, False 有两成因: 行不存在/task_id 已非 NULL, 调用方记 warning) | conn, user_message_id, task_id | bool |
-| `reconcile_orphaned_tasks` | 启动期僵尸任务收尾(2026-09-29 L0 新增, 零 DDL 零新状态值; 启动时把崩溃遗留的 status='executing' 残行改 faile
+| `reconcile_orphaned_tasks` | 启动期僵尸任务收尾(2026-09-29 L0 新增, 零 DDL 零新状态值; 启动时把崩溃遗留的 status='executing' 残行改 failed + error_type=task_interrupted; 按 start_time<boot_iso 判归属以降低多 worker 误伤; 幂等, duration 不补算) | conn, boot_iso | int(受影响行数) |
 | `get_chain_summary_anchor` | linked 增量摘要锚点(2026-10-14 小欧新增): 取同链最近一条 task_summary 非空任务行(task_id/summary/uid+增量下界), 无则 None 走老路 | conn, context_root_task_id, current_task_id | dict 或 None |
-| `save_chain_cover_summary` | linked 增量摘要写回单一出口(2026-10-14 小欧新增): 摘要写链内上一个任务行(下次锚点); 空摘要/无覆盖行/影响行≠1 返 None 仅告警 | conn, context_root_task_id, current_task_id, summary | task_id 或 None |d + error_type=task_interrupted; 按 start_time<boot_iso 判归属以降低多 worker 误伤; 幂等, duration 不补算) | conn, boot_iso | int(受影响行数) |
+| `save_chain_cover_summary` | linked 增量摘要写回单一出口(2026-10-14 小欧新增): 摘要写链内上一个任务行(下次锚点); 空摘要/无覆盖行/影响行≠1 返 None 仅告警 | conn, context_root_task_id, current_task_id, summary | task_id 或 None |
 
 ### 3.2.1 事件 Journal（stream_event_journal.py，P3 新增 — [63] 3.6.3）
 
