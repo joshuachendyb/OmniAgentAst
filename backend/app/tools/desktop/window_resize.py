@@ -145,7 +145,7 @@ def window_resize(window_title: str, width: int = 800, height: int = 600) -> Dic
         except Exception:
             resize_ok = False
         if not resize_ok:
-            llm_data = _build_window_resize_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_RESIZE, hint="窗口大小调整失败,可能窗口已关闭或处于最小化状态,请重试")
+            llm_data = _build_window_resize_llm_data("error", duration_ms, window_title=window_title, err_code=ERR_WINDOW_RESIZE, hint="窗口大小调整失败，可能窗口已关闭或处于最小化状态；若最小化可先调用 set_window_state(action='restore') 还原后重试")  # 2026-10-14 小欧 - hint 修无效重试: 同类已验证restore指引有效, 照搬(真名已核实) — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm_data)
         data = {"width": new_width, "height": new_height}
         llm_data = _build_window_resize_llm_data("success", duration_ms, window_title=window_title, width=new_width, height=new_height)

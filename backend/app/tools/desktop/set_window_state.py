@@ -134,7 +134,7 @@ def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
             ok = _window_state_reached(hwnd, action)
         if not ok:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_SET_STATE, hint=f"窗口操作{action}未生效,可能窗口已关闭或状态未变化,请重试")
+            llm_data = _build_set_window_state_llm_data("error", duration_ms, action, window_title, err_code=ERR_WINDOW_SET_STATE, hint=f"窗口操作{action}未生效，可能窗口已关闭或状态未变化，可先调用 window_info 确认窗口状态")  # 2026-10-14 小欧 - hint 修无效重试: 同样操作再试大概率同样无果; window_info 真名已核实 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm_data)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
