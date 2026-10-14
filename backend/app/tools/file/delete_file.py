@@ -181,7 +181,7 @@ def _force_delete_sync(path: Path, recursive: bool = False,
             if attempt < max_retries - 1:
                 logger.warning(f"[_force_delete_sync] 删除失败(第{attempt+1}次),等待{retry_delay}秒重试: {path}")
                 _time_mod.sleep(retry_delay)
-    err_msg = str(last_err) or f"永久删除失败: {path}"
+    err_msg = str(last_err) or f"永久删除失败：{path}"
     logger.error(f"[_force_delete_sync] 删除失败(重试{max_retries}次后放弃): {path}, 错误: {last_err}")
     return False, err_msg, deleted_files
 

@@ -87,7 +87,7 @@ def _build_search_files_llm_data(
         _timeout_str = ""
         if truncated_by_deadline:
             _timeout_str = f"，超时({_timeout_sec}秒)"
-        warning_detail = "; ".join(detail_parts)
+        warning_detail = "；".join(detail_parts)
         _default_hint = "可缩小搜索范围或使用更精确的匹配模式以减少匹配数量; 或使用 offset 跳过前 N 项分批查看"
         return {
             "summary": f"搜文件{search_dir} {{{user_pattern}}}，成功：共 {total} 个匹配项，结果已截断{_timeout_str}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜文件), 成功替代完成 — 小欧-2026-10-14
@@ -130,7 +130,7 @@ async def find(
     t0 = _time_mod.perf_counter()
     if type is not None and type not in ("file", "directory"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory',当前值: '{type}'", hint="请使用file或directory作为type参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory'，当前值：'{type}'", hint="请使用file或directory作为type参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
     if not pattern or not pattern.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -175,7 +175,7 @@ async def find(
         await asyncio.to_thread(_search_sync)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"搜索失败: {e}", hint=hint_for_read_error(e, Path(search_dir).name), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)  # 统一错误提示 - 小欧 2026-07-12
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"{e}", hint=hint_for_read_error(e, Path(search_dir).name), user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)  # 统一错误提示 - 小欧 2026-07-12  # 2026-10-14 小欧 - detail 去复述("搜索失败"与 message 重复) — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
     all_matches.sort(key=lambda x: x.get("name", ""))

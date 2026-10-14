@@ -224,7 +224,7 @@ async def extract(
         # 推断出与源文件同名的 out_dir, 触发 os.makedirs(FileExistsError/WinError 183) — 小欧 2026-08-13
         if not any(lower_path.endswith(ext) for ext in ('.zip', '.tar.gz', '.tgz', '.tar.bz2', '.tbz2', '.tar')):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式: {source}", user_destination=destination, user_overwrite=overwrite)
+            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式：{source}", user_destination=destination, user_overwrite=overwrite)
             return build_error(data={}, llm_data=llm_data)
 
         out_dir = _resolve_output_dir(source, destination)
@@ -256,7 +256,7 @@ async def extract(
         return build_error(data={}, llm_data=llm_data)
     except tarfile.TarError as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"TAR文件错误: {str(e)}", user_destination=destination, user_overwrite=overwrite)
+        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"TAR文件错误：{str(e)}", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

@@ -422,7 +422,7 @@ async def _precise_replace_in_file(
             else:
                 total_matches = content.count(old_string)
             if total_matches == 0:
-                return {"error_detail": f"未找到匹配内容: '{old_string}'（mode={mode}）"}
+                return {"error_detail": f"未找到匹配内容：'{old_string}'（mode={mode}）"}
             if total_matches > 1:
                 return {"error_detail": f"before/after模式要求唯一匹配，old_string在文件中出现{total_matches}次，请提供更多上下文以精确定位"}
             # before/after 锚点重叠检查 — 小欧 2026-07-17
@@ -546,7 +546,7 @@ async def _precise_replace_in_file(
             preview = replace_result.get('content_preview', '')
             total_lines = replace_result.get('total_lines', 0)
             if total_lines == 1 and not content.strip():
-                return {"error_detail": f"未找到匹配内容: 文件为空"}
+                return {"error_detail": f"未找到匹配内容：文件为空"}
             _ed = f"未找到匹配内容: '{old_string}'。文件共{total_lines}行，前15行:\n{preview}"
             if mode == "once" and count == 0 and new_string and new_string in content:
                 _ed += "。提示: new_string 在文件中但 old_string 未找到，可能参数填反"
@@ -603,7 +603,7 @@ async def edit(
     # mode 有效性检查 — 小欧 2026-07-11
     if mode not in ("once", "all", "before", "after"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效mode: '{mode}'，可选值: once, all, before, after", user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效mode：'{mode}'，可选值：once, all, before, after", user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
 
     if '\x00' in file_path:

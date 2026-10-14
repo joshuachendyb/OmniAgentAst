@@ -99,7 +99,7 @@ async def rename(
     new_name = Path(destination).name
     if any(c in new_name for c in WINDOWS_RESERVED_CHARS):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=f"包含Windows保留字符: {destination}", hint="文件名包含Windows保留字符，请修改", user_destination=destination, user_overwrite=overwrite)
+        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=f"包含Windows保留字符：{destination}", hint="文件名包含Windows保留字符，请修改", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
 
     src = Path(source)

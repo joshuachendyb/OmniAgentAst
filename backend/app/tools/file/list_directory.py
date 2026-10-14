@@ -174,7 +174,7 @@ def _build_list_directory_llm_data(
     }
     if exec_code == "warning":
         m["truncated"] = {"value": True, "text": "已截断"}
-        warning_detail = detail if detail else f"目录扫描超时({_listdir_timeout_sec}秒), 仅返回部分结果(共{total}条)"
+        warning_detail = detail if detail else f"目录扫描超时（{_listdir_timeout_sec}秒），仅返回部分结果（共{total}条）"
         warning_hint = hint if hint else "请使用更精确的路径或筛选条件"
         _summary_suffix = f"，超时({_listdir_timeout_sec}秒)" if timed_out else "，已截断"
         return {
@@ -191,7 +191,7 @@ def _build_list_directory_llm_data(
     return {
         "summary": summary,
         "action": {"tool": "listdir", "tool_zh": "列文件", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"成功:{total}项，{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功：{total}项，{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": m,
     }
@@ -215,12 +215,12 @@ async def listdir(
 
     if sort_by not in ("name", "size", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path,         detail=f"sort_by只支持'name'/'size'/'mtime',当前值: '{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path,         detail=f"sort_by只支持'name'/'size'/'mtime'，当前值：'{sort_by}'", hint="sort_by参数只能为name/size/mtime", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
 
     if offset < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0,当前值: {offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
+        llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=f"offset必须>=0，当前值：{offset}", hint="offset从0开始,负值无效", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
 
     path = Path(dir_path)

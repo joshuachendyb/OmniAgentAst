@@ -145,7 +145,7 @@ def _build_tree_llm_data(
     return {
         "summary": f"列目录{dir_path}，成功：{file_count}个文件，{dir_count}个目录",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列目录) — 小欧-2026-10-14
         "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"成功:{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功：{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},
     }
@@ -171,7 +171,7 @@ async def tree(
 
     if sort_by not in ("name", "mtime"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime',当前值: '{sort_by}'", hint="sort_by只能为name或mtime", user_include_hidden=include_hidden, user_sort_by=sort_by)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path=dir_path, detail=f"sort_by只支持'name'/'mtime'，当前值：'{sort_by}'", hint="sort_by只能为name或mtime", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={}, llm_data=llm_data)
 
     tree_result = await _get_directory_tree(dir_path=dir_path, max_depth=max_depth, include_hidden=include_hidden, sort_by=sort_by)

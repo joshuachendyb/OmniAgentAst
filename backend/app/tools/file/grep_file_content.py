@@ -128,7 +128,7 @@ def _build_grep_file_content_llm_data(
     return {
         "summary": f"搜内容{{{pattern}}}，成功：{total_files}个文件{total_matches}行匹配",
         "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"完成:{total_files}个文件{total_matches}行匹配", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"完成：{total_files}个文件{total_matches}行匹配", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {
             "total_files": {"value": total_files, "text": f"{total_files}个文件"},
@@ -258,7 +258,7 @@ async def grep(
     # context 仅校验非负(输入大小/长度限制已去除) — 小欧 2026-07-11 — 小欧 2026-07-20 去掉0-10上限
     if context < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"context不能为负数: {context}", hint="context 参数不能为负数", user_glob=glob, user_ignore_case=ignore_case)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"context不能为负数：{context}", hint="context 参数不能为负数", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
     if not path or not path.strip():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -273,7 +273,7 @@ async def grep(
     for redos_p in _REDOS_PATTERNS:
         if re_mod.search(redos_p, pattern):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式包含嵌套量词,可能触发ReDoS: {pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case)
+            llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式包含嵌套量词，可能触发ReDoS：{pattern}", hint="正则表达式包含危险嵌套量词，请简化", user_glob=glob, user_ignore_case=ignore_case)
             return build_error(data={}, llm_data=llm_data)
 
 
@@ -283,7 +283,7 @@ async def grep(
         regex = re_mod.compile(effective_pattern, re_mod.IGNORECASE if ignore_case else 0)
     except re_mod.error as e:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效: {e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效：{e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+类型 — 小欧 2026-07-04
@@ -296,7 +296,7 @@ async def grep(
         is_valid, err, _ = validate_path(OpCategory.LIST_DIR, str(search_path))
     else:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"路径不存在或不是文件/目录: {path}", hint="请提供有效的文件或目录路径", user_glob=glob, user_ignore_case=ignore_case)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"路径不存在或不是文件/目录：{path}", hint="请提供有效的文件或目录路径", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

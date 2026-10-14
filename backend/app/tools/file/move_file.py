@@ -98,11 +98,11 @@ async def _move_file_impl(
     dst = Path(destination_path)
 
     if src.resolve() == dst.resolve():
-        return {"success": False, "error_detail": f"源路径和目标路径相同: {source_path}", "params": {"source": source_path, "destination": destination_path}}
+        return {"success": False, "error_detail": f"源路径和目标路径相同：{source_path}", "params": {"source": source_path, "destination": destination_path}}
 
     # 2026-08-13 - 小欧 - 三堂会审修复#4: 自嵌套防护(主函数 move() 同款, impl 层兜底防直调函数绕过)
     if src.is_dir() and dst.resolve() != src.resolve() and src.resolve() in dst.resolve().parents:
-        return {"success": False, "error_detail": f"目标路径位于源目录内部,禁止移动造成递归: {source_path}", "params": {"source": source_path, "destination": destination_path}}
+        return {"success": False, "error_detail": f"目标路径位于源目录内部，禁止移动造成递归：{source_path}", "params": {"source": source_path, "destination": destination_path}}
 
     if src.is_dir() and dst.is_file():
         return {"success": False, "error_detail": "不能移动目录到文件路径", "params": {"source": source_path, "destination": destination_path}}
@@ -209,11 +209,11 @@ async def move(
     _dst_p = Path(destination)
     if _src_p.resolve() == _dst_p.resolve():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同: {source}", hint="源路径和目标路径不能相同", user_overwrite=overwrite)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"源路径和目标路径相同：{source}", hint="源路径和目标路径不能相同", user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
     if _src_p.is_dir() and _dst_p.resolve() != _src_p.resolve() and _src_p.resolve() in _dst_p.resolve().parents:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"目标路径位于源目录内部,禁止移动造成递归: {source}", hint="目标路径不能是源目录的子目录", user_overwrite=overwrite)
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=f"目标路径位于源目录内部，禁止移动造成递归：{source}", hint="目标路径不能是源目录的子目录", user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
 
     result = await _move_file_impl(source_path=source, destination_path=destination, overwrite=overwrite)

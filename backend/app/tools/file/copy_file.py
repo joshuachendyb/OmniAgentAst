@@ -75,7 +75,7 @@ def _build_copy_file_llm_data(
     if user_preserve_metadata is not None:
         _act_params["preserve_metadata"] = user_preserve_metadata
     if exec_code == "error":
-        detail = (extra_metrics or {}).get("detail", "复制失败")
+        detail = (extra_metrics or {}).get("detail", "")  # 2026-10-14 小欧 - detail 兜底去复述: "复制失败"与 message 重复, 别处兜底皆 "" — 小欧-2026-10-14
         return {
             "summary": f"复制文件{source}，失败",
             "action": {"tool": "copy", "tool_zh": "复制", "params": _act_params},
@@ -145,7 +145,7 @@ async def copy(
         try:
             if dst.resolve().is_relative_to(src.resolve()):
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标路径位于源目录内部,禁止递归复制: {destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+                llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": f"目标路径位于源目录内部，禁止递归复制：{destination}"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
                 return build_error(data={}, llm_data=llm_data)
         except ValueError:
             pass

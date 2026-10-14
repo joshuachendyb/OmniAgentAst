@@ -110,7 +110,7 @@ def _build_read_text_file_llm_data(
         return {
             "summary": f"读文件{file_path}，成功：{_ps}{line_count}行，{file_size}字节",  # 2026-10-14 小欧 - warning 分支补字节(与成功分支同口径, file_size 入参直取) — 小欧-2026-10-14
             "action": {"tool": "read", "tool_zh": "读文件", "params": _act_params},
-            "status": {"exec_code": "warning", "message": f"成功但有警告: {detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
+            "status": {"exec_code": "warning", "message": f"成功但有警告：{detail}", "code": "", "detail": detail, "hint": hint if hint else "请检查offset参数是否超出文件范围"},
             "duration_ms": duration_ms,
             "metrics": {
                 "lines": {"value": line_count, "text": f"{line_count}行"},
@@ -120,16 +120,16 @@ def _build_read_text_file_llm_data(
         }
     end_line = start_line + line_count - 1
     if total_lines == 0:
-        msg = f"文件为空" if not encoding_name else f"文件为空,编码:{encoding_name}"
+        msg = f"文件为空" if not encoding_name else f"文件为空，编码：{encoding_name}"
         hint_text = ""
     elif line_count == 0:
         msg = "已无更多内容，当前读取结果为空"
         hint_text = "请调整offset/limit参数"
     elif line_count < total_lines:
-        msg = f"成功:从第{start_line}-{end_line}行"
+        msg = f"成功：从第{start_line}-{end_line}行"
         hint_text = "可使用offset+limit继续读取后续内容"
     else:
-        msg = f"成功:从第{start_line}-{end_line}行"
+        msg = f"成功：从第{start_line}-{end_line}行"
         hint_text = ""
     return {
         "summary": f"读文件{file_path}，成功：{_ps}{line_count}行，{file_size}字节",
@@ -184,7 +184,7 @@ async def read(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"limit参数必须在1-1000之间,传入值: {limit}",
+                detail=f"limit参数必须在1-1000之间，传入值：{limit}",
                 hint="limit参数必须设置在1-1000之间",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
@@ -194,7 +194,7 @@ async def read(
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data(
                 "error", duration_ms, file_path=file_path,
-                detail=f"tail参数不能小于1,传入值: {tail}",
+                detail=f"tail参数不能小于1，传入值：{tail}",
                 hint="tail参数不能小于1",
                 user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
             )
@@ -207,7 +207,7 @@ async def read(
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_read_text_file_llm_data(
                     "error", duration_ms, file_path=file_path,
-                    detail=f"不支持的编码: {encoding}",
+                    detail=f"不支持的编码：{encoding}",
                     hint="请使用正确的编码名称,如utf-8/gbk",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
@@ -229,7 +229,7 @@ async def read(
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_read_text_file_llm_data(
                     "error", duration_ms, file_path=file_path,
-                    detail=f"offset参数不能小于1,传入值: {offset},行号从1开始",
+                    detail=f"offset参数不能小于1，传入值：{offset}，行号从1开始",
                     hint="offset行号从1开始",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
@@ -239,7 +239,7 @@ async def read(
                 duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
                 llm_data = _build_read_text_file_llm_data(
                     "error", duration_ms, file_path=file_path,
-                    detail=f"offset参数必须同时提供limit参数,当前offset={offset},示例: offset=10,limit=20读取第10-29行",
+                    detail=f"offset参数必须同时提供limit参数，当前offset={offset}，示例：offset=10,limit=20读取第10-29行",
                     hint="请提供limit参数配合offset",
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )

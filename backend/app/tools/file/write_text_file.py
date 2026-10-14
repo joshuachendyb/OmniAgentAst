@@ -132,26 +132,26 @@ def _write_file_atomic(content: str, path: Path, encoding: str,
                 logger.warning(f"[_write_file_atomic] 编码{encoding}无法编码,已降级为utf-8写入: {path}")
                 return True, ""
             except (UnicodeEncodeError, UnicodeDecodeError) as e2:
-                error_msg = f"编码错误(utf-8降级也失败): {e2}"
+                error_msg = f"编码错误(utf-8降级也失败)：{e2}"
                 logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
                 return False, error_msg
-        error_msg = f"编码错误: {e}"
+        error_msg = f"编码错误：{e}"
         logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
         return False, error_msg
     except LookupError as e:
-        error_msg = f"未知编码: {e}"
+        error_msg = f"未知编码：{e}"
         logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
         return False, error_msg
     except TypeError as e:
-        error_msg = f"内容类型错误: {e}"
+        error_msg = f"内容类型错误：{e}"
         logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
         return False, error_msg
     except OSError as e:
-        error_msg = f"文件系统错误: {e}"
+        error_msg = f"文件系统错误：{e}"
         logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
         return False, error_msg
     except Exception as e:
-        error_msg = f"写入异常: {e}"
+        error_msg = f"写入异常：{e}"
         logger.error(f"[_write_file_atomic] 写入失败: {path}, {error_msg}")
         return False, error_msg
 
@@ -194,7 +194,7 @@ def _build_write_text_file_llm_data(
         return {
             "summary": f"写文件{file_path}，成功",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写文件) — 小欧-2026-10-14
             "action": {"tool": "write", "tool_zh": "写文件", "params": _act_params},
-            "status": {"exec_code": "warning", "message": f"写入成功但有警告: {detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
+            "status": {"exec_code": "warning", "message": f"写入成功但有警告：{detail or mtime_warning}", "code": "", "detail": detail or mtime_warning, "hint": hint or "请确认编码是否正确"},
             "duration_ms": duration_ms,
             "metrics": {
                 "bytes_written": {"value": bytes_written, "text": f"{bytes_written}字节"},
@@ -282,7 +282,7 @@ async def write(
         codecs.lookup(encoding)
     except LookupError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效编码: {encoding}", hint="请使用正确的编码名称", user_encoding=encoding, user_append=append)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=f"无效编码：{encoding}", hint="请使用正确的编码名称", user_encoding=encoding, user_append=append)
         return build_error(data={}, llm_data=llm_data)
 
     task_id = _current_task_id.get()
