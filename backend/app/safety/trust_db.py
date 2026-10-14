@@ -40,6 +40,7 @@
 #   **已知既有边界(非本次引入, UPSERT 也不修)**: SQLite 的 UNIQUE 列含 NULL 时 NULL 互不相等,
 #   故 path IS NULL 的行(无路径工具 shell/execute_sql/registry_*)去重失效, 每次点信任都新增一行;
 #   此场景下无冲突可捕获, INSERT OR IGNORE 与 ON CONFLICT **同样不生效**。待后续设计决策。— 小欧-2026-10-15
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from pathlib import Path
 from typing import Optional
@@ -57,7 +58,7 @@ from app.config import get_config  # 2026-10-15 小欧 - 文档[33] 5.17: TTL �
 DEFAULT_TRUST_TTL_DAYS = 90
 
 
-def _ttl_expiry() -> str:
+def _ttl_expiry() -> Optional[str]:
     """信任过期时刻 = now + security.trust_ttl_days(默认 90 天) — 小欧 2026-10-15
 
     与 created_at 同为本地 naive ISO, 同格式可字典序比较, 故 SQL 侧直接字符串比较即可。
@@ -157,9 +158,18 @@ def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path
     conn.execute(
         "INSERT INTO chat_session_trust"
         "(session_id, tool_name, path, created_at, expires_at, task_id) VALUES (?,?,?,?,?,?)"
-        " ON CONFLICT(session_id, tool_name, path) DO UPDATE SET task_id=excluded.task_id",
+        " ON CONFLICT(session_id, tool_name, path) DO UPDATE SET"
+        "   task_id=excluded.task_id,"
+        # 仅当存量行已过期才刷新到期时间: 让「重新授权」能复活一条已失效的信任(否则用户再点多少次都没用,
+        # TTL 变成单向不可逆)。未过期时不刷新 —— 否则续期等于「点一次就一直有效」, TTL 形同虚设。
+        # created_at 是「信任建立时间」, 属历史事实, 任何情况下都不改写。
+        #   expires_at IS NULL(存量/TTL关闭) 的行不算过期, 故条件里带 expires_at IS NOT NULL。
+        "   expires_at=CASE WHEN chat_session_trust.expires_at IS NOT NULL"
+        "                    AND chat_session_trust.expires_at <= ?"
+        "                   THEN excluded.expires_at ELSE chat_session_trust.expires_at END",
         (session_id, tool_name, trust_scope_path(path, tool_name),
-         get_local_iso_timestamp(), _ttl_expiry(), task_id),
+         get_local_iso_timestamp(), _ttl_expiry(), task_id,
+         get_local_iso_timestamp()),
     )
 
 
@@ -212,12 +222,15 @@ def cleanup_expired_trust(conn: Connection) -> int:
     不落 task_registry(内存任务注册表, 无 DB 清理职责)、不落 storage(会话业务读写层, 异域)、
     不设调度中间层(main.py 是唯一调用方, 为单调用方造归口违 KISS-DIRECT)。
 
-    判据与 check_session_trust 共用 _not_expired_clause(): NULL=不过期 保留,
-    只删 expires_at <= now 的行 —— 即使本函数没跑, 查询侧过滤已使过期行不豁免,
-    本函数只负责回收存储, 不承担正确性。
+    判据与 check_session_trust 的 _not_expired_clause() 等价, 但**不直接复用** ——
+    该片段是 `(expires_at IS NULL OR expires_at > ?)` 的「保留」侧, 套上 NOT 后实测
+    EXPLAIN QUERY PLAN 退化为 `SCAN chat_session_trust`(全表扫), idx_trust_expires 白建。
+    改写为等价的删除侧 `expires_at <= ?`: SQL 三值逻辑下 NULL 与任何值比较均为 UNKNOWN,
+    故 NULL 行天然不被 `<=` 命中, 语义与「NULL=不过期保留」完全一致, 且索引可用。
+    即: 本函数负责回收存储, 不承担正确性 —— 即使它没跑, 查询侧过滤已使过期行不豁免。
     """
     cur = conn.execute(
-        f"DELETE FROM chat_session_trust WHERE NOT ({_not_expired_clause()})",
+        "DELETE FROM chat_session_trust WHERE expires_at <= ?",
         (get_local_iso_timestamp(),),
     )
     return cur.rowcount or 0

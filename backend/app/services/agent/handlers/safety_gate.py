@@ -75,7 +75,8 @@
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
 """
-from typing import List, Dict
+from typing import List, Dict, Optional
+from app.tools.tool_types import SafetyResult
 
 from app.logger import logger
 from app.services.agent.steps import MetaStep
@@ -85,7 +86,7 @@ from app.safety.temp_auth import grant_temp_auth  # POT-002: 3处重复import合
 __all__ = ["check_safety_and_confirm"]
 
 
-def _group_ref(tool_name: str, params: dict, safety_result=None):
+def _group_ref(tool_name: str, params: dict, safety_result: Optional[SafetyResult] = None) -> Optional[str]:
     """组内引用键的唯一表达式: auth_path or trust_path — 小欧 2026-10-14(文档[33] 4.6-2)
 
     抽出独立纯函数的理由: refusal_key 与 _group_size 两处都要这个表达式, 此前各写一遍,
@@ -124,6 +125,46 @@ def _rejection_cache_of(agent) -> dict:
         except Exception:
             pass
     return _c if isinstance(_c, dict) else {}
+
+
+def _classify_safety_level(msg: str, tool_name: str) -> str:
+    """safety_level 分类: 按 content 关键词匹配问题来源 — 小欧 2026-09-18
+
+    2026-10-15 小欧 - SLAP 合规拆分(自 check_safety_and_confirm 原样搬出, 逻辑一字未改):
+      该 if/elif 关键词链属「底层判定细节」, 原混在编排主函数里, 改一句提示文案就得翻 250 行找,
+      且无法单独测。本函数为纯函数(无副作用、无状态), 可独立测试, 编排层只管调。
+
+    顺序即优先级: if/elif 链首个命中即定, 不被后续分支覆盖。
+    无 message 时按工具名精确归属(见下方 not msg 分支)。
+    """
+    _sl = "tool_execute"  # 兜底
+    if "未注册" in msg:
+        _sl = "unregistered"
+    elif "系统禁区" in msg:
+        _sl = "forbidden_zone"
+    elif "受保护区域" in msg or "超出允许范围" in msg:
+        _sl = "path_auth"
+    elif "高风险Shell" in msg or "系统保护进程" in msg:
+        _sl = "command_block"
+    elif "中风险Shell" in msg:
+        _sl = "shellparam"
+    elif "删除需确认" in msg or "禁止删除" in msg:
+        _sl = "tool_delete"
+    elif "数据保护" in msg:
+        _sl = "data_guard"
+    elif "安全检查异常" in msg or "安全检查未通过" in msg:
+        _sl = "command_block"
+    elif not msg:
+        # 三思三省(2026-09-18 小欧): 无message确认类(keyword无内容)按工具名精确归属 —
+        #   归属: shell确认→shellparam(命令确认主场景, 中风险弹窗即needs_confirmation驱动),
+        #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute兜底 ✓
+        if tool_name == "bash":
+            _sl = "shellparam"
+        elif tool_name in ("create_task", "write", "edit", "writetool"):
+            _sl = "tool_write"
+        elif tool_name == "delete_task":
+            _sl = "tool_delete"
+    return _sl
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_context: Dict = None, _out: list = None, _denied_out: list = None) -> list:
         """安全检查+HITL确认 — 纯函数返回事件列表(MetaStep dict/replay), 3B终态(5.4.2收list) — 小欧 2026-09-06
@@ -219,34 +260,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                             and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
                     # 7.2.1 safety_level 分类: 按 content 关键词匹配问题来源 — 小欧-2026-09-18
+                    # 2026-10-15 小欧 - SLAP 合规拆分: 分类链已搬至 _classify_safety_level(纯函数, 可独立测)
                     _msg = getattr(safety_result, "message", "")
-                    _sl = "tool_execute"  # 兜底
-                    if "未注册" in _msg:
-                        _sl = "unregistered"
-                    elif "系统禁区" in _msg:
-                        _sl = "forbidden_zone"
-                    elif "受保护区域" in _msg or "超出允许范围" in _msg:
-                        _sl = "path_auth"
-                    elif "高风险Shell" in _msg or "系统保护进程" in _msg:
-                        _sl = "command_block"
-                    elif "中风险Shell" in _msg:
-                        _sl = "shellparam"
-                    elif "删除需确认" in _msg or "禁止删除" in _msg:
-                        _sl = "tool_delete"
-                    elif "数据保护" in _msg:
-                        _sl = "data_guard"
-                    elif "安全检查异常" in _msg or "安全检查未通过" in _msg:
-                        _sl = "command_block"
-                    elif not _msg:
-                        # 三思三省(2026-09-18 小欧): 无message确认类(keyword无内容)按工具名精确归属 —
-                        #   归属: shell确认→shellparam(命令确认主场景, 中风险弹窗即needs_confirmation驱动),
-                        #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute兜底 ✓
-                        if _cn == "bash":
-                            _sl = "shellparam"
-                        elif _cn in ("create_task", "write", "edit", "writetool"):
-                            _sl = "tool_write"
-                        elif _cn == "delete_task":
-                            _sl = "tool_delete"
+                    _sl = _classify_safety_level(_msg, _cn)
 
                     # 2026-09-18 小欧 - 去bypass写死content(北京老陈令): content恒载真实_message,
                     #   bypass仅由auto_confirm=True区分 — 小欧-2026-09-18
