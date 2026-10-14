@@ -90,7 +90,7 @@ def _build_search_files_llm_data(
         warning_detail = "; ".join(detail_parts)
         _default_hint = "可缩小搜索范围或使用更精确的匹配模式以减少匹配数量; 或使用 offset 跳过前 N 项分批查看"
         return {
-            "summary": f"搜文件{search_dir} '{user_pattern}'，成功：共 {total} 个匹配项，结果已截断{_timeout_str}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜文件), 成功替代完成 — 小欧-2026-10-14
+            "summary": f"搜文件{search_dir} {{{user_pattern}}}，成功：共 {total} 个匹配项，结果已截断{_timeout_str}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜文件), 成功替代完成 — 小欧-2026-10-14
             "action": {"tool": "find", "tool_zh": "搜文件", "params": _act_params},
             "status": {"exec_code": "warning", "message": "结果不完整", "code": "", "detail": warning_detail, "hint": hint if hint else _default_hint},
             "duration_ms": duration_ms,
@@ -98,7 +98,7 @@ def _build_search_files_llm_data(
                 "total": {"value": total, "text": f"{total}个匹配"},
             },
         }
-    summary = f"搜文件{search_dir} '{user_pattern}'，成功：共 {total} 个匹配项"
+    summary = f"搜文件{search_dir} {{{user_pattern}}}，成功：共 {total} 个匹配项"
     if user_offset:
         summary += f"，第{user_offset+1}-{total}项"
         message = f"完成:共{total}个匹配项，第{user_offset+1}-{total}项"
@@ -202,7 +202,7 @@ async def find(
         # =============================================================================
         # 数据设计：total/search_dir/pattern/offset 从 data 移除，
         # 通过 llm_data.metrics/summary 传入 LLM observation。
-        # summary 示例: "搜文件/path '*.py'，成功：共15个匹配"
+        # summary 示例: "搜文件/path {*.py}，成功：共15个匹配"
         # — 小欧 2026-07-06
         # =============================================================================
         return build_warning(
@@ -218,7 +218,7 @@ async def find(
     # =============================================================================
     # 数据设计：total/search_dir/pattern/offset 从 data 移除，
     # 通过 llm_data.metrics/summary 传入 LLM observation。
-    # summary 示例: "搜文件/path '*.py'，成功：共15个匹配, 第1-200项"
+    # summary 示例: "搜文件/path {*.py}，成功：共15个匹配, 第1-200项"
     # — 小欧 2026-07-06
     # =============================================================================
     return build_success(

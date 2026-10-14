@@ -91,6 +91,9 @@ def _build_search_web_llm_data(
     blocked_domains: Optional[List[str]] = None, num_results: int = 10,
 ) -> Dict[str, Any]:
     """search_web的llm_data构建函数 — 小健 2026-06-21 — 小欧 2026-06-22 — 小欧 2026-07-05 加hint参数"""
+    # 2026-10-14 小欧 - 引擎名缀 tool_zh(北京老陈令): Parallel/Exa/Bing 三引擎降级链, content/summary 带引擎名用户才知道实际用的谁;
+    #   无引擎(失败/未知)回落裸"搜网络"。tool_zh 无逻辑判等(前后端只展示), 安全。 — 小欧-2026-10-14
+    _zh = "搜网络" if not engine_used else f"搜网络·{engine_used}"
     _act_params = {"query": query, "num_results": num_results}
     if proxy is not None:
         _act_params["proxy"] = proxy
@@ -100,15 +103,15 @@ def _build_search_web_llm_data(
         _act_params["blocked_domains"] = blocked_domains
     if exec_code == "error":
         return {
-            "summary": f"搜索{query}，失败",
-            "action": {"tool": "searchweb", "tool_zh": "搜网络", "params": _act_params},
+            "summary": f"{_zh}{{{query}}}，失败",
+            "action": {"tool": "searchweb", "tool_zh": _zh, "params": _act_params},
             "status": {"exec_code": "error", "message": f"搜索失败: {detail}", "code": err_code, "detail": detail, "hint": hint if hint else "请检查搜索词和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"搜索{query}，成功: {result_count}条结果",
-        "action": {"tool": "searchweb", "tool_zh": "搜网络", "params": _act_params},
+"summary": f"{_zh}{{{query}}}，成功：{result_count}条结果",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜网络) — 小欧-2026-10-14
+            "action": {"tool": "searchweb", "tool_zh": _zh, "params": _act_params},
         "status": {"exec_code": "success", "message": f"完成:{result_count}条结果", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"results": {"value": result_count, "text": f"{result_count}条"}, "engine": {"value": engine_used, "text": f"{engine_used}引擎"}},

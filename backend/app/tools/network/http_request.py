@@ -80,15 +80,15 @@ def _build_http_request_llm_data(
         _act_params["proxy"] = proxy
     if exec_code == "error":
         return {
-            "summary": f"HTTP请求:{url}，方法: {method} 失败",
+            "summary": f"HTTP请求{url} {method}，失败",
             "action": {"tool": "httpget", "tool_zh": "HTTP请求", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    ctype_label = f" [{content_type}]" if content_type else ""
+    ctype_label = f"，{content_type}" if content_type else ""
     return {
-        "summary": f"HTTP请求:{url}成功: (HTTP {status_code}) ({ctype_label})",
+        "summary": f"HTTP请求{url} {method}，成功：HTTP {status_code}{ctype_label}",  # 2026-10-14 小欧 - summary 统一口径: 成功后置全角冒号, 成功分支补方法(失败分支本就有) — 小欧-2026-10-14
         "action": {"tool": "httpget", "tool_zh": "HTTP请求", "params": _act_params},
         "status": {"exec_code": "success", "message": f"成功:HTTP {status_code}{ctype_label}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

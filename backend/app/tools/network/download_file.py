@@ -86,7 +86,13 @@ def _build_download_file_llm_data(
         }
     size_str = f"{file_size}字节" if file_size else ""
     type_str = f", {content_type}" if content_type else ""
-    summary = f"下载并成功保存文件{dest_path},文件信息:" + (f":大小: {size_str}类型:{type_str}" if size_str or type_str else "")
+    # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 对象用 url(与失败分支一致), 结论=落盘路径+大小+类型(值全留, 去标签); status 原样不动 — 小欧-2026-10-14
+    _result_parts = [dest_path]
+    if size_str:
+        _result_parts.append(size_str)
+    if content_type:
+        _result_parts.append(content_type)
+    summary = f"下载文件{url}，成功：" + "，".join(_result_parts)
     return {
         "summary": summary,
         "action": {"tool": "download", "tool_zh": "下载", "params": _act_params},
@@ -234,7 +240,7 @@ async def download(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         # =============================================================================
         # 数据设计：file_path/total_size/content_type 全部通过 llm_data.summary 传入
-        # summary 示例: "文件下载成功: /path/file.zip (1024000字节, application/zip)"
+        # summary 示例: "下载文件http://x/file.zip，成功：/path/file.zip，1024000字节，application/zip"
         # data = {}，无需额外字段 — 小欧 2026-07-06
         # =============================================================================
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)

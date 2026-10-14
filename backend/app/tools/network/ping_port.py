@@ -104,7 +104,7 @@ def _build_ping_llm_data(exec_code: str, duration_ms: int, host: str = "", is_re
             metrics["avg_latency"] = {"value": avg_latency, "text": f"{avg_latency}ms"}
             latency_str = f"，延迟{avg_latency}ms"
     return {
-        "summary": f"Ping{host}，{'成功' if is_reachable else '失败'}: {status_text} {latency_str}",
+        "summary": f"Ping{host}，{'成功' if is_reachable else '失败'}：{status_text}{latency_str}",  # 2026-10-14 小欧 - 半角冒号改全角; Ping/端口是子模式动词(比 tool_zh 更准, 信息不减故保留) — 小欧-2026-10-14
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
         "status": {"exec_code": "success" if is_reachable else "error", "message": f"{status_text}", "code": "" if is_reachable else ERR_NETWORK_TIMEOUT, "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": metrics,
@@ -119,14 +119,14 @@ def _build_port_check_llm_data(exec_code: str, duration_ms: int, host: str = "",
     _act_params = {"mode": "port", "host": host, "port": port, "timeout": timeout}
     if exec_code == "error":
         return {
-            "summary": f"端口{host}:{port}检查失败",
+            "summary": f"端口{host}:{port}，失败",
             "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查主机地址和网络连接"},
             "duration_ms": duration_ms, "metrics": {},
         }
     status_text = "开放" if is_open else "关闭"
     return {
-        "summary": f"端口{host}:{port}检查成功: {port}（{service}）{status_text}",
+        "summary": f"端口{host}:{port}，成功：{port}（{service}）{status_text}",
         "action": {"tool": "ping_port", "tool_zh": "网络诊断", "params": _act_params},
         "status": {"exec_code": "success", "message": f"{status_text}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms, "metrics": {},
@@ -284,7 +284,7 @@ async def ping_port(
                                             count=count, timeout=timeout)
             # =============================================================================
             # 数据设计：loss_rate/avg_latency 从 data 移除，通过 llm_data.metrics 传入 summary
-            # summary 示例: "Ping测试成功: example.com 可达"
+            # summary 示例: "Pingexample.com，成功：可达，延迟10ms"
             # — 小欧 2026-07-06 18:46:13
             # =============================================================================
             # ---- observation_formatter route -------------------------------------------

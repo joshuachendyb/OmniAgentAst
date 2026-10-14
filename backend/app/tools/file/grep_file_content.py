@@ -96,7 +96,7 @@ def _build_grep_file_content_llm_data(
 
     if exec_code == "error":
         return {
-            "summary": f"搜内容'{pattern}'，失败",
+            "summary": f"搜内容{{{pattern}}}，失败",
             "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": ERR_FILE_CONTENT_SEARCH_FAILED, "detail": detail, "hint": hint if hint else "请检查搜索路径和搜索模式"},
             "duration_ms": duration_ms,
@@ -116,7 +116,7 @@ def _build_grep_file_content_llm_data(
             else:
                 warning_hint = ""
         return {
-            "summary": f"搜内容'{pattern}'，成功：{total_files}个文件{total_matches}行匹配{summary_suffix}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜内容), 去",提示说明" — 小欧-2026-10-14
+            "summary": f"搜内容{{{pattern}}}，成功：{total_files}个文件{total_matches}行匹配{summary_suffix}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(搜内容), 去",提示说明" — 小欧-2026-10-14
             "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
             "status": {"exec_code": "warning", "message": warning_message, "code": "", "detail": warning_detail, "hint": warning_hint},
             "duration_ms": duration_ms,
@@ -126,7 +126,7 @@ def _build_grep_file_content_llm_data(
             },
         }
     return {
-        "summary": f"搜内容'{pattern}'，成功：{total_files}个文件{total_matches}行匹配",
+        "summary": f"搜内容{{{pattern}}}，成功：{total_files}个文件{total_matches}行匹配",
         "action": {"tool": "grep", "tool_zh": "搜内容", "params": _act_params},
         "status": {"exec_code": "success", "message": f"完成:{total_files}个文件{total_matches}行匹配", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
@@ -377,7 +377,7 @@ async def grep(
     # =============================================================================
     # 数据设计：total_matches/total_files 既留在 data 中（供前端/断言读取），
     # 也通过 llm_data.metrics 传入 summary
-    # summary 示例: "搜内容'pat'，成功：3个文件5行匹配"
+    # summary 示例: "搜内容{pat}，成功：3个文件5行匹配"
     # — 小欧 2026-07-06 18:46:13 原始设计移除data；小欧 2026-07-12 修正: 重新加回data(count模式此前返回空数据)
     # =============================================================================
     data: Dict[str, Any] = {"matches": gr.results, "total_matches": gr.total_matches, "total_files": gr.total_files}

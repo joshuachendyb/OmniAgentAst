@@ -440,16 +440,16 @@ def _build_fetch_webpage_llm_data(
         _act_params["proxy"] = proxy
     if exec_code == "error":
         return {
-            "summary": f"获取{url}网页，失败",
+            "summary": f"读网页{url}，失败",
             "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
             "status": {"exec_code": "error", "message": "失败", "code": err_code, "detail": detail, "hint": hint if hint else "请检查URL和网络连接"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     if exec_code == "warning":
-        base_msg = f"获取网页{url}内容，成功但有警告"
+        base_msg = f"读网页{url}，成功但有警告"
         if mime_type:
-            base_msg = f"获取{url}资源，成功但有警告: {mime_type}，HTTP {status_code}"
+            base_msg = f"读网页{url}，成功但有警告：{mime_type}，HTTP {status_code}"
         return {
             "summary": base_msg,
             "action": {"tool": "fetchpage", "tool_zh": "读网页", "params": _act_params},
@@ -458,10 +458,10 @@ def _build_fetch_webpage_llm_data(
             "metrics": {"status_code": {"value": status_code, "text": f"HTTP {status_code}"}} if status_code else {},
         }
     if mime_type:
-        summary = f"获取{url}资源，成功: {mime_type}，HTTP {status_code}"
+        summary = f"读网页{url}，成功：{mime_type}，HTTP {status_code}"
         message = f"成功:{mime_type}，HTTP {status_code}"
     else:
-        summary = f"获取网页{url}内容成功: {extract_format}格式，HTTP {status_code}"
+        summary = f"读网页{url}，成功：{extract_format}格式，HTTP {status_code}"  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(读网页) — 小欧-2026-10-14
         message = f"成功:{extract_format}格式，HTTP {status_code}"
     if truncated:
         summary += "（内容有部分截断）"
@@ -765,7 +765,7 @@ async def fetchpage(
 
         # =============================================================================
         # 数据设计：data仅保留content纯数据，format/content_type/truncated通过summary传递
-        # summary 示例: "成功获取网页内容(markdown格式, HTTP 200，已截断)"
+        # summary 示例: "读网页http://x，成功：markdown格式，HTTP 200（内容有部分截断）"
         # — 小欧 2026-07-06
         # =============================================================================
         result_data = {
