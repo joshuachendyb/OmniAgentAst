@@ -100,12 +100,12 @@ async def timer_set(delay: float, callback: str) -> Dict[str, Any]:
     try:
         if delay <= 0:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0", hint="延迟时间必须大于0")
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间必须大于0", hint="请设置大于0的延迟时间")
             return build_error(data={}, llm_data=llm_data)
 
         if delay > 86400:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="延迟时间不能超过24小时")
+            llm_data = _build_timer_set_llm_data("error", duration_ms, "", "", delay, callback=callback, detail="延迟时间不能超过24小时", hint="请设置24小时内的延迟时间")  # 2026-10-14 小欧 - hint 修复述: 原样复读 detail, 改给行动 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm_data)
 
         if len(callback) > CALLBACK_MAX_LENGTH:
