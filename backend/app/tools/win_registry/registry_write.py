@@ -89,14 +89,14 @@ def _build_registry_write_llm_data(exec_code: str, duration_ms: int, path: str, 
     """registry_write的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"写入注册表{path}，失败",
+            "summary": f"写注册表{path}，失败",
             "action": {"tool": "registry_write", "tool_zh": "写注册表", "params": {"path": path, "value_name": value_name}},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_WRITE_FAILED, "detail": detail, "hint": hint if hint else "请检查权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"写入注册表{path}，成功: {value_name}={value}（{value_type}）",
+        "summary": f"写注册表{path}，成功：{value_name}={value}（{value_type}）",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(写注册表) — 小欧-2026-10-14
         "action": {"tool": "registry_write", "tool_zh": "写注册表", "params": {"path": path, "value_name": value_name}},
         "status": {"exec_code": "success", "message": f"成功:{value_name}={value}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,

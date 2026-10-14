@@ -29,14 +29,14 @@ def _build_registry_delete_llm_data(exec_code: str, duration_ms: int, path: str,
     """registry_delete的llm_data构建函数 — 小健 2026-06-22 — 小欧 2026-07-05 新增hint"""
     if exec_code == "error":
         return {
-            "summary": f"删除注册表{path}，失败",
+            "summary": f"删注册表{path}，失败",
             "action": {"tool": "registry_delete", "tool_zh": "删注册表", "params": {"path": path}},
             "status": {"exec_code": "error", "message": "失败", "code": err_code or ERR_REG_DELETE_FAILED, "detail": detail, "hint": hint if hint else "请检查键路径和权限"},
             "duration_ms": duration_ms,
             "metrics": {},
         }
     return {
-        "summary": f"删除注册表{path}，成功: {action}",
+        "summary": f"删注册表{path}，成功：{action}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(删注册表) — 小欧-2026-10-14
         "action": {"tool": "registry_delete", "tool_zh": "删注册表", "params": {"path": path}},
         "status": {"exec_code": "success", "message": f"成功:{action}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
