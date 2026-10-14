@@ -146,7 +146,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, "", hint="")
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_SHELL_TIMEOUT, "", hint="命令执行超时，可重试")  # 2026-10-14 小欧 - hint 补空: 超时是内部超时(用户无参可调),"增大timeout"是馊主意; detail 为空, hint 兼报事实 — 小欧-2026-10-14
         llm_data["summary"] = f"建任务{task_name}，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
@@ -156,7 +156,7 @@ def create_task(task_name: str, command: str, schedule: str, interval: Optional[
     except Exception as e:
         logger.error(f"[create_task] 创建计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint=f"创建任务异常,任务名: {task_name}")
+        llm_data = _build_create_task_llm_data("error", duration_ms, task_name, schedule, ERR_TASK_CREATE, str(e), hint=f"创建任务异常，请检查任务名称和命令参数")  # 2026-10-14 小欧 - hint 修复述: 原只复述"异常+任务名"(detail 已有), 改点名两个输入 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

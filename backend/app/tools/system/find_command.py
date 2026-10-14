@@ -124,5 +124,5 @@ def which(command: str, all_paths: bool = False) -> Dict[str, Any]:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_find_command_llm_data("error", duration_ms, command,
             err_code=ERR_SHELL_EXCEPTION, detail=str(e),
-            all_paths=all_paths, hint="查找命令异常,请检查系统环境")
+            all_paths=all_paths, hint="查找命令异常，请检查PATH环境变量")  # 2026-10-14 小欧 - hint 修空话: "系统环境"不知查什么; 命令查找背后就是 PATH — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)

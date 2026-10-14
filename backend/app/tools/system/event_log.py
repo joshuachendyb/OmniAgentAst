@@ -201,7 +201,7 @@ def event_log(log_name: str = "System", max_events: int = 50, level: str = "erro
     except Exception as e:
         logger.error(f"[event_log] 获取事件日志失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e), hint="获取事件日志异常,请检查系统状态")
+        llm_data = _build_event_log_llm_data("error", duration_ms, log_name, 0, level, detail=str(e), hint="获取事件日志异常，请检查日志名称及事件日志服务状态")  # 2026-10-14 小欧 - hint 修空话: "系统状态"不知查什么, 点名输入+服务 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 

@@ -87,17 +87,17 @@ def delete_task(task_name: str) -> dict:
     except subprocess.TimeoutExpired:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         timeout_sec = TOOL_TIMEOUTS.get("task_control", TOOL_TIMEOUTS["default"])
-        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_TIMEOUT, detail="", hint="")
+        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_TIMEOUT, detail="", hint="命令执行超时，可重试")  # 2026-10-14 小欧 - hint 补空(内部超时, 用户无参可调) — 小欧-2026-10-14
         llm_data["summary"] = f"删任务{task_name}，失败：超时({timeout_sec}秒)"
         return build_error(data={}, llm_data=llm_data)
     except FileNotFoundError:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND, detail="schtasks命令不存在", hint="schtasks命令不存在")
+        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_SHELL_COMMAND_NOT_FOUND, detail="schtasks命令不存在", hint="请确认系统支持schtasks命令")  # 2026-10-14 小欧 - hint 修复述(detail 原样复读), 与 list_tasks 同说法 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
     except Exception as e:
         logger.error(f"[delete_task] 删除计划任务失败: {e}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_DELETE, str(e), hint="删除任务异常,请检查系统状态")
+        llm_data = _build_delete_task_llm_data("error", duration_ms, task_name, ERR_TASK_DELETE, str(e), hint="删除任务异常，请检查任务是否存在及计划服务状态")  # 2026-10-14 小欧 - hint 修空话: "系统状态"不知查什么, 点名存在性+服务 — 小欧-2026-10-14
         return build_error(data={}, llm_data=llm_data)
 
 
