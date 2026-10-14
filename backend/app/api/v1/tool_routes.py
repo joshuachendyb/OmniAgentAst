@@ -12,6 +12,9 @@ tool_routes — 工具测试路由(独立模块)
 安全栏(步骤4, D2): /tool/execute 仅测试用 — 需 X-Test-Mode 头 + 生产开关 tools.execute_tool_enabled 默认 False。
 """
 from fastapi import APIRouter, Request
+from dataclasses import asdict
+from typing import Optional
+
 from pydantic import BaseModel
 
 from app.config import get_config
@@ -30,6 +33,9 @@ class ToolExecuteResponse(BaseModel):
     success: bool
     result: dict = {}
     error: str = ""
+    # 2026-10-14 北京老陈裁定 - 跟随系统结构不自创: 安全预检 SafetyResult 原样回传, 调用方据
+    #   blocked/requires_confirmation/auth_path 区分"拦截"与"待确认", 不再靠中文错误串猜。
+    safety: Optional[dict] = None
 
 
 # ===== 测试接口开关 =====
@@ -67,9 +73,11 @@ async def execute_tool_endpoint(request: ToolExecuteRequest, http_request: Reque
                                    error="缺少 X-Test-Mode 请求头(工具测试接口仅用于测试)")
 
     result = await execute_tool(tool_name, params)
+    _sf = result.get("safety")
     return ToolExecuteResponse(
         tool_name=result.get("tool_name", tool_name),
         success=result.get("success", False),
         result=result.get("result", {}),
         error=result.get("error", ""),
+        safety=asdict(_sf) if _sf is not None else None,
     )

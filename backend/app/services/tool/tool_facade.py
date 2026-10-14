@@ -130,11 +130,14 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     # 1. 安全预检(与 action_handler.check_safety_and_confirm 同源) — 小欧 2026-08-12
     safety = get_tool_safety_checker().check_before_execute(tool_name, params or {})
     if safety.blocked:
-        return {"tool_name": tool_name, "success": False, "error": f"安全拦截: {safety.message}"}
+        return {"tool_name": tool_name, "success": False,
+                "error": f"安全拦截: {safety.message}", "safety": safety}
     if safety.requires_confirmation and not safety.auto_confirm:
         # 测试接口无前端 HITL: 仅 auto_confirm(安全开关关闭)直放, 其余返回待确认
+        # 2026-10-14 北京老陈裁定: 一并回传 SafetyResult, 调用方据字段区分拦截/待确认, 不靠中文串
         return {"tool_name": tool_name, "success": False,
-                "error": f"需要用户确认工具执行({tool_name}), 测试接口不支持交互确认"}
+                "error": f"需要用户确认工具执行({tool_name}), 测试接口不支持交互确认",
+                "safety": safety}
 
     # 2. 设置任务上下文(try/finally reset, 防 ContextVar 泄漏污染并发) — 小欧 2026-08-12
     task_id = str(uuid.uuid4())
