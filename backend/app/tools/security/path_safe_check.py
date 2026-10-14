@@ -61,6 +61,8 @@
 #      重定向判据改为剥引号后是否含 ">", 不用 _REDIRECT_RE(其职责是提取目标, 需保留引号)
 #   ③ `$env:VAR\path` 抽不到路径 → 复用 executor 的 _resolve_env_fragment 先展开
 #   ④ 违规补 warning log: 下游只记 tool=bash 缺命令原文, 安全事件查不到是哪个命令
+# 2026-10-14 - 小欧 - 系统保护目录判定收归 _is_forbidden_path: 原在 validate_path 内, 而 temp_auth
+#   授权守卫调 _is_forbidden_path, 两处口径不同致 C:\system32 等被 grant_temp_auth 记入授权库。
 # 2026-10-14 - 小欧 - SA5标注: 本文件=权限信任框架SA5(路径权限validate_tool_path→validate_path→_is_forbidden_path系统区/非系统区/白名单,执行第5步,由SA3经_check_known_risks内调,读SA6授权is_temp_authorized) — 小欧-2026-10-14
 """
 path_safe_check — 文件路径越权校验（Safety层）
@@ -179,6 +181,23 @@ def _get_project_root_safety() -> Path:
     return Path.home()
 
 
+def is_system_protected_path(file_path: str) -> bool:
+    r"""路径是否落在 Windows 系统保护目录下(判定单源, 两层共用) — 小欧 2026-10-14
+
+    2026-10-14 北京老陈裁定「必须是同一个逻辑」: 此前 Safety 层与工具层各判各的、各持一份名单,
+    各有对方缺的项, 结论相反(C:\system32 Safety 放行/工具层拒绝; C:\ProgramData 反之)。
+    现抽出本函数为唯一判定逻辑, path_safe_check._is_forbidden_path 与
+    file_path_checker.validate_not_system_path 均调用它 —— 名单仍只有 tool_constants 一份,
+    判定点保留两处(Safety 判权限 / 工具层兜住"绕过 Safety 直接调工具"的最后防线)。
+    """
+    try:
+        parts = Path(os.path.realpath(os.path.expanduser(file_path))).parts
+        return len(parts) > 1 and parts[1].lower() in SYSTEM_PROTECTED_DIR_NAMES
+    except Exception:
+        # 异常不静默放行: 判定为受保护(调用方据此硬拦), 与 _is_forbidden_path 异常口径一致
+        return True
+
+
 def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
     """检查路径是否在系统敏感路径黑名单中 — 小健 2026-06-23
     扩展 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
@@ -217,6 +236,10 @@ def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
                 _f = sys_drive + forbidden_prefix
                 if real_path_lower.startswith(_f.lower()):
                     return "system", f"路径位于系统禁区(敏感目录): {file_path}"
+            # 2026-10-14 小欧: 系统保护目录判定走单源函数 is_system_protected_path(工具层同调) —
+            #   原在此内联判, 与 temp_auth 授权守卫/工具层各自一份, 致两层结论相反。
+            if is_system_protected_path(file_path):
+                return "system", f"路径位于系统保护目录,禁止操作: {file_path}"
 
         # ⑦ 代码库根禁区(tool禁区, 开关无关硬拦截): 代码库根及其子/父级全部禁止 — 小欧 2026-08-10
         # 代码库根属非系统禁区(non_system)
@@ -279,10 +302,10 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
 
     is_forbidden, forbidden_msg = _is_forbidden_path(file_path)
     if is_forbidden:
-        # 读放行 — 禁区读✅放行(内容敏感性 contentFilter 兜底)
+        # 2026-10-14 北京老陈裁定: 判定权收归本层(单一真源), 工具层不再重复判系统目录。
+        #   读放行沿用本层原决策(P3设计); 写/删: 系统禁区硬拦, 非系统禁区写可授权、删硬拦。
         if mode == "read":
             return True, None, is_forbidden
-        # 写/删 — 系统禁区硬拦, 非系统禁区写查is_temp_authorized, 删硬拦
         if is_forbidden == "system":
             return False, forbidden_msg, "system"
         if is_forbidden == "non_system":
@@ -321,17 +344,8 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
     try:
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
 
-        # 白名单盘符下仍拒绝系统保护目录（收紧范围）— 小欧 2026-07-18 修复
-        # 2026-10-06 小欧 - 名单提到 tool_constants.SYSTEM_PROTECTED_DIR_NAMES(原先在此函数内
-        #   每调用重建一遍 frozenset, 且展示层拿不到导致分类表只能硬编码这 3 个名字)
-        _real_parts = real_path.parts
-        if len(_real_parts) > 1 and _real_parts[1].lower() in SYSTEM_PROTECTED_DIR_NAMES:
-            # 读放行(v1.43): 读放行(内容敏感性 contentFilter 兜底, 与禁区读一致);
-            #   写/删 → 系统禁区(category="system") — _is_forbidden_path 仅精确锁 WIN_EXACT 本身,
-            #   其子路径(如 C:\Windows\a.txt) 靠本处兜底, 归类 system 使 T2 硬拦永不授权(表五/3.2.9)
-            if mode == "read":
-                return True, None, "system"
-            return False, f"路径位于系统保护目录,禁止操作: {file_path}", "system"
+        # 2026-10-14 小欧: 系统保护目录判定已下沉到 _is_forbidden_path(单一真源), 此处重复判定删除 —
+        #   读放行/写删硬拦的语义由 L281 起的统一分流承担, 行为不变, 且与 temp_auth 授权守卫同源。
 
         for allowed in paths:
             allowed_real = Path(os.path.realpath(allowed))

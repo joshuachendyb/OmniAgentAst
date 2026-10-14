@@ -576,8 +576,11 @@ SYSTEM_PROTECTED_DIR_NAMES: frozenset[str] = frozenset({
     #   原先定义在函数里, 每次调用都重建一遍 frozenset; 且只有 path_safe_check 用得到,
     #   展示层(security_docs)拿不到 → 安全Tab 分类表只能硬编码 \ProgramData 等 3 条,
     #   改这里不同步展示。现两处共用同一份定义。
+    # 2026-10-14 小欧 - 补 winnt/system32/system(原仅工具层有): 两层对"什么算系统目录"判定相反 —
+    #   C:\system32 Safety 判非禁区→弹窗确认→被 grant_temp_auth 记入授权库, 绕过"永不授权"不变量。取并集为单源。
     "windows", "program files", "program files (x86)",
     "programdata", "boot", "recovery",
+    "winnt", "system32", "system",
 })
 
 # ============================================================

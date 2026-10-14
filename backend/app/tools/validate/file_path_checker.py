@@ -20,6 +20,8 @@
 #   本文件仅保留路径/参数校验。同步删除 sqlite3/_pd(pandas) 死依赖与 __all__ 中 hint 项。
 #   所有调用方导入路径已改 app.tools.toolhelper.error_hints。
 # 2026-10-14 - 小欧 - SA8标注: 本文件=权限信任框架SA8(工具体内业务校验validate_path_for_write/delete/overwrite,执行第8步最后防线之一,与delete_file._guard_forbidden_delete并列) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 系统目录名单归一: WINDOWS_SYSTEM_DIRS 改由 tool_constants.SYSTEM_PROTECTED_DIR_NAMES
+#   派生(删本模块字面量), extract 侧第三份内联名单亦删除, 消除三层口径不一致。
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
@@ -35,6 +37,8 @@ import re
 import string
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
+
+from app.tools.tool_constants import SYSTEM_PROTECTED_DIR_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -143,24 +147,24 @@ def validate_path_for_extract(output_dir: str) -> Tuple[bool, Optional[str], Opt
     """
     if not output_dir:
         return True, None, None
-    system_dirs = ["windows", "program files", "program files (x86)"]
-    output_lower = output_dir.lower()
-    for sd in system_dirs:
-        if sd in output_lower:
+    # 2026-10-14 小欧 - 原内联第三份字面量且子串匹配(会误命中 C:\my windows\), 改复用单源
+    output_lower = output_dir.lower().replace("\\", "/")
+    for sd in WINDOWS_SYSTEM_DIRS:
+        if sd.strip("/") in output_lower:
             return True, None, f"解压到系统目录，请确认"
     return True, None, None
 
 
-WINDOWS_SYSTEM_DIRS = [
-    "/windows/", "/winnt/", "/program files/",
-    "/program files (x86)/", "/system32/", "/system/",
-]
+# 2026-10-14 小欧 - 由单源 SYSTEM_PROTECTED_DIR_NAMES 派生(DRY): 原为独立字面量, 与 Safety 层
+#   各有对方缺的项(C:\system32 两层判定相反)。匹配方式不变(剥盘符后子串匹配), 只增不减无收窄。
+WINDOWS_SYSTEM_DIRS = [f"/{name}/" for name in sorted(SYSTEM_PROTECTED_DIR_NAMES)]
 
 
 def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    检查路径是否涉及Windows系统关键目录（工具层硬阻断）
-    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
+    检查路径是否涉及Windows系统关键目录(工具层最后防线)
+    2026-10-14 北京老陈裁定: 系统目录判定调 Safety 的 is_system_protected_path(判定单源), 本层不持名单;
+      保留此函数是为兜住绕过 Safety 直接调工具的场景(内部调用/测试/未来新入口), 非重复判定。
 
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -175,13 +179,11 @@ def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optio
             return False, f"不允许操作系统根目录: {file_path}", None
     except Exception:
         pass
-    path_lower = file_path.lower().replace("\\", "/")
-    # 规范化: 去掉盘符前缀, 确保以/开头, 使 /windows/ 等规则可匹配 — 小欧 2026-08-02
-    path_after_drive = path_lower.split(":")[-1] if ":" in path_lower else path_lower
-    path_after_drive = "/" + path_after_drive.lstrip("/")
-    for sd in WINDOWS_SYSTEM_DIRS:
-        if path_after_drive == sd.rstrip("/") or path_after_drive.startswith(sd):
-            return False, f"不允许操作系统目录下的文件: {file_path}", None
+    # 2026-10-14 北京老陈裁定「必须是同一个逻辑」: 调 Safety 的 is_system_protected_path, 不再本层自持匹配;
+    #   本函数保留为最后防线, 兜住绕过 Safety 直接调工具的场景(原 L185 循环与 Safety 判定口径不同)。
+    from app.tools.security.path_safe_check import is_system_protected_path
+    if is_system_protected_path(file_path):
+        return False, f"不允许操作系统目录下的文件: {file_path}", None
     return True, None, None
 
 
@@ -218,7 +220,7 @@ def validate_path(
     小欧 2026-07-04
 
     第1层 基础校验（ALL）：非空 + 保留字符 + 保留名 + 盘符存在性
-    第2层 系统目录拒绝（ALL）：validate_not_system_path（硬阻断）
+    #   第2层: 系统目录/磁盘根(ALL操作调用validate_not_system_path, 判定单源在 Safety)
     第3层 存在性+类型（WRITE跳过）：exists / is_file / is_dir
     第4层 业务警告：content/append → write；recursive/force → delete；overwrite+source → overwrite；extract_dir → extract
 
@@ -245,7 +247,8 @@ def validate_path(
     if reserved:
         return False, f"文件: {reserved}名包含Windows保留名", None
 
-    # 第2层
+    # 第2层 — 系统目录/磁盘根(判定单源 Safety.is_system_protected_path, 见 validate_not_system_path)。
+    #   本层为最后防线: 兜住绕过 Safety 直接调工具的场景(内部调用/测试/未来新入口)。
     is_valid, sys_err, _ = validate_not_system_path(path)
     if not is_valid:
         return False, sys_err, None
