@@ -1125,7 +1125,7 @@ def shell(
         if safety.blocked:
             llm = _build_execute_shell_command_llm_data("error", d, processed_command, -1,
                 shell_type, ERR_SHELL_INJECTION, safety.message,
-                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截", cmd_short=cmd_short)
+                timeout=timeout, cwd=cwd or "", hint="命令被安全规则拦截，可缩小操作范围后重试", cmd_short=cmd_short)  # 2026-10-14 小欧 - hint 修事实复述: 原只说"被拦截"(detail 已讲规则), 补换策略 — 小欧-2026-10-14
             return build_error(data={}, llm_data=llm)
         if safety.requires_confirmation:
             logger.warning(f"[Shell] 中风险命令本级放行(确认由上游安全门禁承担, 无弹窗非缺陷): {safety.message}")
