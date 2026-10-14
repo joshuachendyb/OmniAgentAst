@@ -49,6 +49,18 @@
 #   (旧写法一旦某条漏写盘符前缀, startswith("C:") 守卫会静默不替换→真漏拦); ②get_system_drive 的兜底值
 #   收口为模块内常量 FALLBACK_SYSTEM_DRIVE(原先 3 处散落); ③_SYSTEM_PROTECTED 改用 tool_constants 的
 #   SYSTEM_PROTECTED_DIR_NAMES(原先定义在 validate_path 函数体内, 每次调用重建 frozenset, 且展示层拿不到)。
+# 2026-10-14 - 小欧 - bash 写目标纳入路径权限: validate_tool_path 早退前加 bash 分支, 抽命令内绝对路径
+#   (_extract_abs_win_paths, 引号优先保空格)交既有 validate_path, 复用下游 system/non_system 分流。
+#   病根: bash 属 FUNDAMENTAL 不在 _PATH_CATEGORIES, 实测 del/Remove-Item/echo> C:\Windows\a.txt
+#   在路径层与 shell 危险模式层双双放行, 与"禁止绕路用shell逃避安全检查"相悖。不解析 shell 语法。
+# 2026-10-14 - 小欧 - 同日三堂会审: 修2个误报+补1个缺口+补log
+#   ① 引号路径被裸正则再截断成 `E:\my` → 已授权含空格目录 `E:\my proj` 被误拦且 failed_path 报错路径;
+#      改 _extract_abs_win_paths: 引号区先完整取出, 裸路径只在引号区之外扫描
+#   ② 只读命令因模式里含动词字面量被误判写意图(`Select-String -Pattern "del" <路径>`);
+#      判写意图改用剥引号后文本(_strip_quoted), 抽路径仍用原文(需保住含空格完整路径);
+#      重定向判据改为剥引号后是否含 ">", 不用 _REDIRECT_RE(其职责是提取目标, 需保留引号)
+#   ③ `$env:VAR\path` 抽不到路径 → 复用 executor 的 _resolve_env_fragment 先展开
+#   ④ 违规补 warning log: 下游只记 tool=bash 缺命令原文, 安全事件查不到是哪个命令
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -70,6 +82,7 @@ Safety层职责（本文件）：
 """
 
 import os
+import re  # 2026-10-14 小欧: bash 写目标绝对路径提取(_ABS_WIN_PATH_RE)
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -396,6 +409,95 @@ def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, 
     return value
 
 
+# 引号包裹片段(判写意图时需整体排除: 搜索词/Select-String 模式里的动词字面量不算写意图)
+_QUOTED_SPAN_RE = re.compile(r'"[^"]*"|\'[^\']*\'')
+
+
+def _strip_quoted(text: str) -> str:
+    """把引号片段替换为等长空格(保偏移, 便于同段文本做两种判断)"""
+    return _QUOTED_SPAN_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
+# bash 命令里的绝对路径: 引号包裹的取完整(含空格路径), 裸路径取到空白/引号/重定向/管道/连接符为止
+_ABS_WIN_PATH_RES = (
+    re.compile(r'"([a-zA-Z]:[\\/][^"]+)"'),      # 双引号
+    re.compile(r"'([a-zA-Z]:[\\/][^']+)'"),      # 单引号
+    re.compile(r'([a-zA-Z]:[\\/][^\s"\'<>|;&)]*)'),  # 裸路径
+)
+
+
+def _extract_abs_win_paths(text: str) -> List[str]:
+    """抽取命令中的全部绝对路径 — 小欧 2026-10-14
+
+    引号区先完整取出, 裸路径**只在引号区之外**扫描: 否则同一段引号路径会被裸正则再截断成
+    `E:\\my`(实测误拦已授权目录 `E:\\my proj`, 且 failed_path 报错路径)。
+    去重保序。
+    """
+    quoted: List[str] = [m for rx in _ABS_WIN_PATH_RES[:2] for m in rx.findall(text)]
+    bare = _ABS_WIN_PATH_RES[2].findall(_strip_quoted(text))
+    found: List[str] = []
+    for p in quoted + bare:
+        p = p.strip().rstrip("\\")
+        if p and p.lower() not in [x.lower() for x in found]:
+            found.append(p)
+    return found
+
+
+def _validate_shell_write_targets(command: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
+    """bash 命令里的绝对路径写目标, 纳入既有路径权限判定 — 小欧 2026-10-14
+
+    病根: bash 属 FUNDAMENTAL, 不在 _PATH_CATEGORIES 内, 此前整类**不做任何路径校验**;
+      实测 `del C:\\Windows\\a.txt` / `Remove-Item C:\\Windows\\a.txt` / `echo x > C:\\Windows\\a.txt`
+      在"路径权限层"与"shell 危险模式层"**双双放行**, 与 system_prompts 的
+      "禁止绕路用 shell 逃避安全检查"纪律相悖(prompt 仅软约束, 代码层零强制)。
+
+    做法(KISS): **不解析 shell 语法**, 只在命中写意图时, 把命令里的绝对路径逐个交给既有的
+    validate_path; 返回值直接汇入 validate_tool_path 的下游分流, 故 bash 复用与 write/delete
+    完全一致的 system(硬拦) / non_system(写可授权、删硬拦) 语义, 不新增第二套判定(DRY)。
+
+    检测流程:
+        bash 命令
+        ├─① 有写意图吗?  剥引号后匹配 _WRITE_CMD_RE(动词) 或含 ">"
+        │      无 → 放行(只读命令不打扰)
+        ├─② 抽绝对路径    $env:VAR 展开 → 引号区取完整 → 引号区外扫裸路径
+        └─③ 逐个交既有 validate_path(mode="write")   ← 不是新判定, 是复用
+               ├─ 系统区    → blocked 硬拦, 永不授权
+               ├─ 非系统区  → 需确认(可任务级授权)
+               └─ 白名单外  → 需确认
+
+    两段文本分开用(2026-10-14 三堂会审修正两个误报):
+      - 判写意图用 **剥引号后** 的文本: 否则 `Select-String -Pattern "del" <路径>` 这类只读
+        查询会因模式里的动词字面量被误判为写意图 → 误要求授权。
+      - 抽绝对路径用 **原文**(引号区保留): 抽路径要保住含空格的完整路径。
+      - 重定向判据用剥引号后是否含 `>`, 不用 _REDIRECT_RE(它的职责是"提取目标", 需保留引号;
+        用它判"是否存在重定向"会漏判 `> "带空格路径"`)。
+
+    边界: 相对路径不抽(交沙箱预检 _is_outside_write_target);
+      UNC(`\\\\host\\share`, 网络共享)不在 _ABS_WIN_PATH_RES 覆盖内 —— 北京老陈 2026-10-14 裁定
+      网络类不纳入本机制, 不加该正则(避免为不做的场景引入正则与误判面); 根治仍靠沙箱 Job Object 隔离。
+    """
+    if not command or not command.strip():
+        return True, None, None, None
+    # 延迟导入防循环(executor 反向依赖 tools.*, 本模块是 tools.security)
+    from app.safety.sandbox.executor import _WRITE_CMD_RE, _resolve_env_fragment
+    normalized = command.replace("\r\n", " ").replace("\n", " ")
+    intent_src = _strip_quoted(normalized)
+    if not _WRITE_CMD_RE.search(intent_src) and ">" not in intent_src:
+        return True, None, None, None
+    # $env:VAR 展开后再抽, 否则 $env:TEMP\a.txt 形态抽不到(executor 已提供该展开)
+    for raw_path in _extract_abs_win_paths(_resolve_env_fragment(normalized)):
+        valid, err, category = validate_path(raw_path, mode="write")
+        if not valid:
+            # 违规必须留痕: 下游 tool_safety_checker 只记 tool=bash, 没有命令原文,
+            # 安全事件排查时"是哪个命令想写这个路径"查不到 —— 此处补全(小欧 2026-10-14)
+            logger.warning(
+                f"[path_safe_check] bash写目标越权: category={category}, "
+                f"path={raw_path}, command={command.strip()[:200]}"
+            )
+            return False, err, raw_path, category
+    return True, None, None, None
+
+
 def validate_tool_path(tool_name: str, params: Dict[str, Any],
                        mode: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
     """
@@ -448,6 +550,11 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
         #   不在 path_tools(注册名集合) → 直接 return True 放行, 绕过全部路径校验;
         #   统一走 normalize_tool_name 归一化后再判, 与 mode 推断同源(防别名漏检补齐)。
         if normal_name not in path_tools:
+            # bash 写目标纳入路径权限(2026-10-14): bash 属 FUNDAMENTAL 不在 _PATH_CATEGORIES,
+            #   原本整类在此早退放行。抽绝对路径交 _validate_shell_write_targets, 与下游
+            #   system/non_system 分流同源, 不新增判定分支。
+            if normal_name == "bash":
+                return _validate_shell_write_targets(normalized_params.get("command") or "")
             return True, None, None, None
 
         # ⑨ 遍历所有命中路径参数逐一校验, 任一越权即拒绝(原只取第一个命中参数的漏洞B修复)

@@ -31,6 +31,11 @@
 #   【为什么不用探测复用】_looks_like_* 探测本身有洞(sc delete 被判 ps7), 并集不依赖探测准确性。
 #   【顺带修正】docstring 旧称"None不过滤"与实现相反: None 会把 ps/cmd/bash 三种标签全跳过,
 #          仅剩9条双兼容规则(实测), 属假契约, 已改为描述真实行为 — 小欧 2026-10-10
+# 2026-10-14 - 小欧 - HIGH 规则仅命中引号内字面量时降为需确认(北京老陈裁定):
+#   修只读查询被误硬拦(`Select-String -Pattern "rm -rf" <路径>` 实测 blocked=True)。不剥引号忽略——
+#   `powershell -Command "Remove-Item X"` 的危险体就在引号内, 忽略即开洞; 故只降级不豁免, 引号外命中
+#   维持原硬拦。降级属安全等级下调, 补 warning log 留痕。
+#   遗留(既有缺口, git stash 对比确认非本次引入): cmd `del <file>` 不带 /s 不在 HIGH 词表, 前后均不拦。
 """
 execute_shell_command 分级安全检查 — 独立safety模块
 
@@ -192,6 +197,21 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
                             severity="dangerous",
                         )
                     medium_hits.append(desc)
+                    continue
+                # 2026-10-14 小欧(北京老陈裁定): HIGH 规则**仅**命中引号内字面量时降为中风险(需确认),
+#   修只读查询被误硬拦: `Select-String -Pattern "rm -rf" <path>` 实测 blocked=True。
+#   绝不剥引号直接忽略 —— `powershell -Command "Remove-Item X"` 的危险体就在引号内,
+#   忽略即开洞。故只"降级不豁免": 引号外也命中则维持原硬拦, 仅引号内命中降为需确认,
+#   无人值守场景照样拦得住(实测 powershell -Command "Remove-Item -Recurse -Force X" → conf=True)。
+#   遗留(既有缺口, 非本次引入, git stash 对比确认): cmd 的 `del <file>` 不带 /s 时不在 HIGH 词表,
+#   改动前后均不拦; 递归 `del /s /q` 一直是被拦的。
+                from app.tools.security.path_safe_check import _strip_quoted
+                if not re.search(pattern_str, _strip_quoted(normalized), re.IGNORECASE):
+                    # 放宽动作必须留痕: 高危降为需确认属安全等级下调, 事后要能回溯哪些命令走过这条路
+                    logger.warning(
+                        f"[Shell安全] HIGH降级为需确认(规则仅命中引号内): 规则={desc}, 命令={normalized[:200]}"
+                    )
+                    medium_hits.append(f"{desc}(仅出现在引号参数内, 降为需确认)")
                     continue
                 return SafetyResult(
                     blocked=True,
