@@ -17,6 +17,7 @@
 #   WINDOW_TARGET_TOOLS 系实施时多补的 import(设计只要求删本地定义, 未要求新增 import)。
 #   剩余 Dict/Optional/PARAM_ALIASES/normalize_tool_name/NON_FILE_TRUST_TOOLS/_parse_paths 均有真实引用。— 小欧-2026-10-15
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -114,8 +115,10 @@ async def save_session_trust(task_id: str, tool_name: str, path) -> None:
     def _do(conn):
         _sid = get_session_id_by_task(conn, task_id)
         if not _sid:
-            raise ValueError(f"[HITL] task_id={task_id} 无 session_id 可反查,信任禁止落库")
-        insert_session_trust(conn, _sid, normalize_tool_name(tool_name), path)
+            raise ValueError(f"[HITL] task_id={task_id} 无 session_id 可反查, 信任禁止落库")
+        # 2026-10-15 北京老陈裁定 - 信任记录加 task_id(可追溯): 本函数形参本就持有 task_id, 顺手落库,
+        #   供事后审计「这条会话信任是哪个任务产生的」。只读旁挂, 不改会话级豁免语义。
+        insert_session_trust(conn, _sid, normalize_tool_name(tool_name), path, task_id=task_id)
 
     await db.atxn("chat", _do)
     # 2026-10-06 小欧 - 日志补登记范围: 原先只打 tool_name, 落库的是文件还是目录根本看不出来,

@@ -31,6 +31,16 @@
 # 2026-10-15 - 小欧 - 文档[33] 5.23: 本文件历史条目内的旧路径按终态订正(第4/8行 app/tools/trust_db.py → app/safety/trust_db.py)。
 #   北京老陈裁定「改」: 编辑历史内的**路径**具误导性(读者会以为该路径仍可用), 故订正; 仅动路径字面,
 #   事件的日期/署名/描述一字不改(保留「2026-09-05 迁入」这一事实本身)。— 小欧-2026-10-15
+# 2026-10-15 - 北京老陈裁定 - insert_session_trust 增 task_id 形参并落库(可追溯/审计)。
+#   边界三条: ①**不进 UNIQUE 键**(否则同一路径跨任务重复建行, 功能退化);
+#   ②**check_session_trust 不按它过滤**(否则跨任务信任失效); ③存量行 task_id=NULL 表"来源未知",
+#   豁免行为与加列前完全一致(零退化)。调用方 trust.save_session_trust 形参本就持有 task_id, 顺手透传。
+#   随后北京老陈裁定「改成记最后一次」: INSERT OR IGNORE → UPSERT(ON CONFLICT DO UPDATE SET task_id),
+#   只 set task_id 一个字段 —— created_at/expires_at 保持首次值, 故 TTL 不因重复点击而续期。— 小欧-2026-10-15
+#   **已知既有边界(非本次引入, UPSERT 也不修)**: SQLite 的 UNIQUE 列含 NULL 时 NULL 互不相等,
+#   故 path IS NULL 的行(无路径工具 shell/execute_sql/registry_*)去重失效, 每次点信任都新增一行;
+#   此场景下无冲突可捕获, INSERT OR IGNORE 与 ON CONFLICT **同样不生效**。待后续设计决策。— 小欧-2026-10-15
+# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from pathlib import Path
@@ -120,19 +130,38 @@ def trust_scope_path(path: Optional[str], tool_name: Optional[str] = None) -> Op
     return str(p.parent) if p.suffix else str(p)
 
 
-def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> None:
+def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None,
+                         task_id: Optional[str] = None) -> None:
     """HITL"信任本次会话"落库（UNIQUE(session_id, tool_name, path) 幂等）— 小欧 2026-08-16; v1.5 增 path 参数
     path=None=无路径工具的工具级通配; 非空=该路径及子目录树递归豁免
     2026-10-06 小欧 - 落库前经 trust_scope_path 归一：文件类工具登记【所在目录】而非叶子文件，
       否则"信任此操作"只对那一个文件名生效(实测连续信任 4 个文件仍 4 次弹窗) — 小欧-2026-10-06
-    2026-10-15 小欧 - 文档[33] 5.17: 同步写 expires_at(now+TTL), 信任不再是永久有效。
-      注意 UNIQUE(session_id,tool_name,path) 下 INSERT OR IGNORE 命中已存在行时**不会更新** expires_at,
-      即重复信任不续期 —— 续期会变成「点一次就一直有效」, 与 TTL 初衷相悖, 故维持不续期。— 小欧-2026-10-15"""
+    2026-10-15 小欧 - 文档[33] 5.17: 落库写 expires_at(now+TTL), 信任不再是永久有效。— 小欧-2026-10-15
+    2026-10-15 北京老陈裁定 - 增 task_id(可追溯): 记录该条信任由哪个任务产生, 供事后审计。
+      **不进 UNIQUE 键、也不参与豁免判定** —— 信任仍是会话级, task_id 纯只读旁挂。
+      落库改 UPSERT: 重复信任时 task_id 记【最后一次】(审计要看最近一次是谁点的)。
+      UPSERT 只 set task_id —— created_at/expires_at 保持首次值, 故 TTL 不因重复点击而续期。— 小欧-2026-10-15
+
+    TODO(临时决策, 待后续完善 -- 北京老陈 2026-10-15 裁定登记): path IS NULL 的行去重失效。
+      现象: 无路径工具(bash / execute_sql / registry_*)每点一次「信任本次会话」就新增一行。
+      根因: SQLite 的 UNIQUE 约束中 NULL 与 NULL 互不相等, (S, bash, NULL) 与 (S, bash, NULL)
+            被判为两行 => 无冲突可捕获, 故 INSERT OR IGNORE 与 ON CONFLICT **同样不生效**。
+      为何是临时决策: 这类工具恰恰是信任风险最高的一类(一条 bash 信任覆盖整条命令),
+            重复建行属真实缺陷, 但修它必须动唯一键, 属设计决策, 本次不擅自改。
+      三个候选(均需清洗存量行 + 改查询语义, 后续设计时择一):
+        A 哨兵值     —— path 为 NULL 时改存 '' (需同步改 check_session_trust 的 None 判定)
+        B 表达式索引 —— UNIQUE(session_id, tool_name, COALESCE(path,''))
+                        (SQLite 支持, 但 ON CONFLICT 目标写法随之变复杂)
+        C 先查后写   —— SELECT 有则 UPDATE 无则 INSERT (有竞态窗口, 多任务并发可能双写)
+      现状已由 tests/test_p5_trust_task_id.py::test_null_path_dedup_is_a_preexisting_limit
+      锁定(断言 2 行), 防止后人误以为已修; 修好后该测试应同步改为断言 1 行。— 小欧-2026-10-15
+    """
     conn.execute(
-        "INSERT OR IGNORE INTO chat_session_trust"
-        "(session_id, tool_name, path, created_at, expires_at) VALUES (?,?,?,?,?)",
+        "INSERT INTO chat_session_trust"
+        "(session_id, tool_name, path, created_at, expires_at, task_id) VALUES (?,?,?,?,?,?)"
+        " ON CONFLICT(session_id, tool_name, path) DO UPDATE SET task_id=excluded.task_id",
         (session_id, tool_name, trust_scope_path(path, tool_name),
-         get_local_iso_timestamp(), _ttl_expiry()),
+         get_local_iso_timestamp(), _ttl_expiry(), task_id),
     )
 
 

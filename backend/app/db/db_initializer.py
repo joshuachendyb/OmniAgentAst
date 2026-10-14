@@ -180,6 +180,7 @@ def init_chat_db(get_conn):
                 path TEXT,
                 created_at TEXT,
                 expires_at TEXT,
+                task_id TEXT,
                 UNIQUE(session_id, tool_name, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
@@ -301,6 +302,11 @@ def init_chat_db(get_conn):
         # 2026-10-15 小欧 - 文档[33] 5.16: 会话信任 TTL 落列(存量库幂等补)。无 DEFAULT,
         #   历史行读出 NULL = 不过期, 语义与改动前一致(存量信任不被误杀)。— 小欧-2026-10-15
         _ensure_column(conn, "chat_session_trust", "expires_at", "TEXT")
+        # 2026-10-15 - 北京老陈裁定 - 信任记录加 task_id(可追溯): 记录该条信任由哪个任务产生, 供事后审计。
+        #   **不进 UNIQUE 键**: 信任仍是 (session_id, tool_name, path) 会话级, 加进唯一键会让同一路径
+        #   在不同任务下重复建行, 属功能退化。**check_session_trust 也不按它过滤**, 跨任务信任照常生效。
+        #   存量行回填 NULL = 未知来源, 老行为完全不变(零退化)。— 小欧-2026-10-15
+        _ensure_column(conn, "chat_session_trust", "task_id", "TEXT")
         # 2026-10-15 小欧 - 文档[33] 5.16: TTL 过期清理扫描索引, 存量库亦须补建(IF NOT EXISTS 幂等)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
@@ -403,6 +409,7 @@ def init_chat_db(get_conn):
                 path TEXT,
                 created_at TEXT,
                 expires_at TEXT,
+                task_id TEXT,
                 UNIQUE(session_id, tool_name, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE)""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
