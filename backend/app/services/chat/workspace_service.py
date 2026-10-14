@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# 编辑历史:
+# 2026-10-14 小欧 - 文档[33] 4.1连带表: :86 改从 app.safety.path_safe_check 导入(路径校验已升系统层)
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -83,7 +85,7 @@ def _ws_deny_reason(p: str) -> Optional[str]:
          (windows/program files/programdata)、路径穿越、异常 fail-closed
          这三条**只走 validate_path 才拦得住**，仅调 ① 会漏。
     另加宽根规则(本模块判据)：授权/使用宽根等于放大删除范围。"""
-    from app.tools.security.path_safe_check import _is_forbidden_path, validate_path
+    from app.safety.path_safe_check import _is_forbidden_path, validate_path
     category, msg = _is_forbidden_path(p)
     if category:
         return msg or "路径在全局禁区内"

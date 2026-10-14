@@ -68,6 +68,7 @@
 # 2026-10-11 小欧 - rejected 补 confirm_id(北京老陈令): 原不带该字段, 前端靠它精确匹配才关窗;
 #   缺字段则确认作废后弹窗永留屏幕、点击落到 entry=None 被丢弃(实测 e95d2ceb 挂 3 分钟) - 小欧-2026-10-11
 # 2026-10-14 - 小欧 - SA1/SA6标注: 本文件=权限信任框架SA1(Agent入口check_safety_and_confirm,执行第1步)+SA6(HITL确认hitl_confirm+确认后grant_temp_auth写入,执行第6步); SA2信任预查resolve_skip→SA3总闸check_before_execute→SA7沙箱run_sandbox_gate
+# 2026-10-14 - 小欧 - 文档[33] 4.6/4.1连带表: :89/:126/:127 trust 改 app.safety.trust, :80 temp_auth 改 app.safety.temp_auth
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -77,7 +78,7 @@ from typing import List, Dict
 from app.logger import logger
 from app.services.agent.steps import MetaStep
 from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
-from app.tools.security.temp_auth import grant_temp_auth  # POT-002: 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
+from app.safety.temp_auth import grant_temp_auth  # POT-002: 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
 
 __all__ = ["check_safety_and_confirm"]
 
@@ -86,7 +87,7 @@ def refusal_key(tool_name: str, params: dict, safety_result=None):
     """用户拒绝记忆键 (tool, auth/trust_path/shell-command) — 与 3.4 组键同口径(毛病3/毛病4, 小欧-2026-09-18)。
     shell 无 path 主键(trust 两集合皆无)时按 command 全文分组, 同命令合并、不同命令各弹。
     sandbox_gate 函数内延迟导入复用(防 handlers→safety_gate→sandbox_gate 环)。"""
-    from app.tools.trust import extract_trust_path  # 延迟导入(与本函数内既有模式一致) — 小欧-2026-09-18
+    from app.safety.trust import extract_trust_path  # 延迟导入(与本函数内既有模式一致) — 小欧-2026-09-18
     _ref = (getattr(safety_result, "auth_path", None) if safety_result is not None else None) \
         or extract_trust_path(tool_name, params or {})
     if _ref is None and tool_name == "bash":
@@ -123,8 +124,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         #   删sandbox resumed旁路判定与事件透传plumbing; blocked/超时/拒绝错误并入列表, 签名落->list
         """
         from app.safety.tool_safety_checker import get_tool_safety_checker
-        from app.tools.trust import resolve_skip
-        from app.tools.trust import extract_trust_path        # 3.4 同组路径归一(trust.py:69主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
+        from app.safety.trust import resolve_skip
+        from app.safety.trust import extract_trust_path        # 3.4 同组路径归一(trust.py:69主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
         from app.safety.sandbox.executor import _is_readonly_whitelisted, _is_shell_tool  # 3.2 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18
         safety_checker = get_tool_safety_checker()
 

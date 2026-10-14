@@ -7,7 +7,7 @@ security_docs — 安全 Tab 说明文案源: 读 app/datafile/*.md(两个弹框
   占位符的值只有后端拿得到, 后端一次替换完 → 前端只把 md 交给 MarkdownSlot 渲染, 零字符串逻辑。
 
 分层: 本模块只 import 三个轻量模块 app.config / app.logger / app.tools.tool_constants,
-  且**绝不 import app.tools.security.path_safe_check** —— 后者 :71 顶层拉入整个 tool_registry。
+  且**绝不 import app.safety.path_safe_check** —— 后者 :71 顶层拉入整个 tool_registry。
   tool_constants 全部 import 只有 tool_types + app.constants, 不拉注册表, 直接用零代价。
 
 为什么不需要处理盘符:
@@ -32,7 +32,7 @@ datafile 目录定位为什么不用 get_frozen_dir():
     与本模块"不抛异常"的承诺矛盾); ③降级文案不再回显异常细节(会泄露服务器路径);
     ④新增 {{system_protected}} 占位符, 分类表不再硬编码 \ProgramData 等 3 个名字。
   2026-10-06 小欧 - 禁区路径去掉反引号: 内联 code 的背景+圆角把分类表路径列撑成灰底碎块(实测 13 个)。
-  2026-10-14 - 小欧 - 文档[33] 4.12-B: SYSTEM_PROTECTED_DIR_NAMES 改从 app/utils/path_utils.py 导入(随判定函数一并下沉)。
+  2026-10-14 小欧 - 文档[33] 4.12-B: SYSTEM_PROTECTED_DIR_NAMES 改从 app/utils/path_utils.py 导入; docstring 内「绝不 import」注释路径同步改址
 """
 from pathlib import Path
 from typing import Dict

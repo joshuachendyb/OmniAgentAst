@@ -20,6 +20,7 @@
 #   调用方safety_gate传auto_confirm=_bypass/sandbox_gate传auto_confirm=False, 语义零变化 置顶safety_gate/sandbox_gate同步 - 小欧-2026-09-18
 # 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 # 2026-09-23 小欧 - wiring假保存修复: _resolve_timeouts 的 MIN/LEAD/BYPASS 改读 tuning.hitl.* 配置兜底常量（此前设置页可改实际不生效）
+# 2026-10-14 小欧 - 文档[33] 4.7: :59/:102 trust 改从 app.safety.trust 导入, :103 逻辑不动
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -56,7 +57,7 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
        (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"定案契约);
     脱敏仍由组装行 _desensitize 统一收口(本函数不重复脱敏)。"""
     from app.utils.text_utils import truncate_text          # 延迟import防环(与_desensitize同款; FUNCTIONS.md:83已登记) — 小欧-2026-09-16
-    from app.tools.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
+    from app.safety.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
     _all: dict = {k: v for k, v in (params or {}).items()}
     _path = extract_trust_path(tool_name, params)          # 复用trust.py:69主键权威, 不重写
     _out: dict = {}
@@ -99,7 +100,7 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     """spec属性访问（与4.2同形）→verdict。网关内统一：超时计算/trust_path/脱敏/SUSPENDED→wait→EXECUTING。"""
     from app.services.task.hitl_confirmation import (            # 延迟import防环
         create_confirmation, wait_for_confirmation_result, resolve_confirmation)
-    from app.tools.trust import extract_trust_path    # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
+    from app.safety.trust import extract_trust_path    # 延迟import防环（原 _resolve_trust_path 内联, KISS 无透传函数 — 小欧-2026-09-16）
     _path = spec.path or extract_trust_path(spec.tool_name, spec.params)
     confirm_id = await create_confirmation(agent.task_id, spec.tool_name, _path)
     _bt, _ct = await _resolve_timeouts(spec.auto_confirm)

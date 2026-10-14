@@ -58,6 +58,7 @@
 # 2026-10-07 北京老陈 history_context 首帧提前: 新增 emit history_context(step=0) 于 emit start 之前;
 #   原第1轮 LLM 响应后那次由 react_step 移除(裁剪轮/每5轮的水位更新不变)。
 # 2026-10-14 小欧 - linked 增量摘要: 有摘要时补注入 delta 原文 + 摘要落库到覆盖上界任务行(下次锚点), 写回失败仅告警 — 小欧-2026-10-14
+# 2026-10-14 小欧 - 文档[33] 4.1连带表: :363 clear_temp_auth 改从 app.safety.temp_auth 导入
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -360,7 +361,7 @@ async def run_react_cycle(
         # R1 (v1.43): task 级清零点 — clear_temp_auth 在 finally 收口, 使授权后所有提前 break/异常/循环自然退出
         #   均走 finally; 注意 max_steps<=0 提前 return 在 try 之前(修正: 该分支 I2 尚未运行,
         #   无任何授权产生, 故不经过 finally 也无泄漏; 注释已修正不再声称其走 finally)
-        from app.tools.security.temp_auth import clear_temp_auth
+        from app.safety.temp_auth import clear_temp_auth
         clear_temp_auth()
         # 2026-08-13 小欧 三堂会审修复#29: task结束对称清task_id(set在action_handler.py:882),
         #   防长连接/复用context时跨请求泄漏(当前独立asyncio.Task场景无泄漏, 属潜伏修复)

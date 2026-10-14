@@ -246,6 +246,7 @@
 #         return_direct 终态轮豁免不发(4.4.2 元规则) — 小欧-2026-09-07
 # 2026-09-22 小欧 - constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 _D_LOG_MAX_CHARS
 # 2026-10-01 小欧 - 注释订正(零代码改动): 头部与文件内 2 处"'DB 落库不经 _events(原由 agent_runner 末尾扫描 buffer.event_log 已 publish 的 thought 落库)'"改为"直连 _buf.publish 即经 StreamBuffer.persist_sink 实时落库"——原机制已于 2026-10-01 随 [1] A 组运行期逐步落库退役, 旧表述会误导以为落库仍靠末尾扫描
+# 2026-10-14 小欧 - 文档[33] 4.5/4.11-C: :309 一行 import 拆两行(_parse_paths→conflict_detector, WINDOW_TARGET_TOOLS→tool_constants)。
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -305,8 +306,9 @@ from app.tools.file_tool_utils import _auto_correct_file_tool, _EXT_TO_READ_TOOL
 # 以下常量/函数已拆分至 app/tools/conflict_detector.py — 小健 2026-09-04
 from app.tools.conflict_detector import _has_conflict, _partition_calls, _WRITE_OPS, _READ_TOOLS
 
-# 以下常量/函数已拆分至 app/tools/trust.py — 小健 2026-09-04
-from app.tools.trust import _parse_paths, WINDOW_TARGET_TOOLS
+# 以下常量/函数已拆分 — 小健 2026-09-04 / 2026-10-14 小欧(文档[33] 4.11-C)
+from app.tools.conflict_detector import _parse_paths
+from app.tools.tool_constants import WINDOW_TARGET_TOOLS
 
 
 async def handle_action(agent, parsed: Dict) -> dict:

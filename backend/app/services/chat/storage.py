@@ -124,6 +124,7 @@
 #   下推 SQL(原 Python 侧过滤全量拉 step_json), 缺表降级返 None 不拖垮详情接口。
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 save_process_events(仅 UPDATE 不 INSERT, 幂等覆盖; 不校验 kind/不设条数上限, 与 append_execution_step 同族写法); get_task_detail 补 process_events 解析(与 artifacts 同款, SELECT * 自动含列, 存量空列表前端兜底) — 小欧-2026-10-11
 # 2026-10-14 小欧 - linked 增量摘要: 新增 get_chain_summary_anchor(链内最近非空摘要锚点) + save_chain_cover_summary(摘要写覆盖上界任务行, 单一出口) — 小欧-2026-10-14
+# 2026-10-14 小欧 - 文档[33] 4.3: :149/:150 trust_db 改从 app.safety.trust_db 导入
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -146,8 +147,8 @@ from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一:
 from app.utils.json_utils import safe_json_dumps, parse_json
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 撤销侧规范化同位(与 trust_db:15 同步)
-from app.tools.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧 2026-09-16
-from app.tools.trust_db import trust_scope_path             # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
+from app.safety.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧 2026-09-16
+from app.safety.trust_db import trust_scope_path             # 小欧 2026-10-06 撤销侧与落库侧同走登记范围归一(同一口径, DRY) — 小欧 2026-10-06
 
 # 存储每个session的消息ID
 # key: session_id, value: user_message_id 或 assistant_message_id

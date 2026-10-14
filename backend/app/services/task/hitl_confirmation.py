@@ -27,6 +27,7 @@
 #   [改法] resolve_confirmation内联落库逻辑替换为 from app.tools.trust import save_session_trust
 #   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
 # 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
+# 2026-10-14 小欧 - 文档[33] 4.8: :197 save_session_trust 改从 app.safety.trust 导入
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -194,7 +195,7 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
 
     if confirmed and trust_session and entry.tool_name and _task_id:
         try:
-            from app.tools.trust import save_session_trust
+            from app.safety.trust import save_session_trust
             await save_session_trust(_task_id, entry.tool_name, getattr(entry, "path", None))
         except Exception as _te:
             logger.warning(f"[HITL] 会话信任落库失败: task_id={_task_id}, tool_name={entry.tool_name}, err={_te}")
