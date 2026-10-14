@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分

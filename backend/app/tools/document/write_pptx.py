@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
