@@ -17,7 +17,7 @@
 #   归属判定缺陷: validate_tool_path 原 `tool_name not in path_tools` 用 LLM 原始名判归属, 别名工具(list_directory/read_text_file等)
 #     不在注册名集合 → 直接 return True 放行, 绕过全部路径校验; 改归一化名 normal_name 判(与 mode 推断同源, 防别名漏检补齐)
 #   参数别名缺陷: 原 hit_params 直接查原始 params, PARAM_ALIASES 参数别名(rename.new_name→dest/copy.src→path/dst→dest等)
-#     命中不了 _PATH_PARAM_KEYS → 该参数路径越权漏检; 校验前先 normalize_params 归一化(校验对象与工具实际落盘路径一致)
+#     命中不了 PATH_PARAM_KEYS → 该参数路径越权漏检; 校验前先 normalize_params 归一化(校验对象与工具实际落盘路径一致)
 #   _resolve_path_param 同步改用归一化名+归一化 params(download/rename 相对语义解析不受别名影响) — 小欧 2026-08-10
 # 2026-08-10 - 小欧 - T2 回归修复(三堂会审+回归测试复核发现, v1.45): 空路径/路径穿越返回 category 由 None → "system" —
 #   validate_path 对空路径/穿越返回 (False, msg, None), T2 将 category=None 一律当"白名单外非禁区→可授权请求",
@@ -51,7 +51,7 @@
 #   SYSTEM_PROTECTED_DIR_NAMES(原先定义在 validate_path 函数体内, 每次调用重建 frozenset, 且展示层拿不到)。
 # 2026-10-14 - 小欧 - bash 写目标纳入路径权限: validate_tool_path 早退前加 bash 分支, 抽命令内绝对路径
 #   (_extract_abs_win_paths, 引号优先保空格)交既有 validate_path, 复用下游 system/non_system 分流。
-#   病根: bash 属 FUNDAMENTAL 不在 _PATH_CATEGORIES, 实测 del/Remove-Item/echo> C:\Windows\a.txt
+#   病根: bash 属 FUNDAMENTAL 不在 PATH_CATEGORIES, 实测 del/Remove-Item/echo> C:\Windows\a.txt
 #   在路径层与 shell 危险模式层双双放行, 与"禁止绕路用shell逃避安全检查"相悖。不解析 shell 语法。
 # 2026-10-14 - 小欧 - 同日三堂会审: 修2个误报+补1个缺口+补log
 #   ① 引号路径被裸正则再截断成 `E:\my` → 已授权含空格目录 `E:\my proj` 被误拦且 failed_path 报错路径;
@@ -67,6 +67,11 @@
 # 2026-10-14 - 小欧 - 文档[33] 4.11-A/4.11-B/4.12-B: 4 张分类表迁 tool_constants; _QUOTED_SPAN_RE/_strip_quoted/_ABS_WIN_PATH_RES/_extract_abs_win_paths 迁 shell_static_guard(还 _QUOTED_SPAN_RE 双源债, 并消除对 executor 的越层延迟导入即架构守护红项1); is_system_protected_path 与 SYSTEM_PROTECTED_DIR_NAMES 迁 app/utils/path_utils.py
 # 2026-10-14 - 小欧 - 文档[33] 4.1: 本文件由 app/tools/security/ 整文件复制升回 app/safety/(业务逻辑一字不改); 包内互引 2 处(:322/:379)由 app.tools.security.temp_auth 改同包 app.safety.temp_auth。
 # 2026-10-14 小欧 - 文档[33] 4.10-1/步12: _validate_shell_write_targets 按 _DELETE_CMD_RE 命中取 mode=delete(删系统禁区由「可授权的写」降为永不授权); 补 _DELETE_CMD_RE import。
+# 2026-10-15 - 小欧 - 文档[33] 5.3 核查订正两项:
+#   ① 4 张分类表导入改用去私前缀名 PATH_CATEGORIES/PATH_PARAM_KEYS/READ_ONLY_TOOLS(5.3 L809 明文要求, 4.11-B 实施漏改); 调用点 3 处同步。
+#   ② __all__ 删死条目 "_READ_ONLY_TOOLS": 该表已迁 tool_constants, 全仓 4 个消费方
+#      (delete_safety/temp_auth/tool_safety_checker/workspace_service) 无一从本模块导入, 属 backward 再导出, 违 AGENTS 1.2 禁 backward。
+#   判定逻辑零改动。— 小欧-2026-10-15
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -103,9 +108,9 @@ from app.tools.tool_constants import (
 # 2026-10-14 小欧 - SYSTEM_PROTECTED_DIR_NAMES 已随 is_system_protected_path 一并下沉 utils(见下方 import)
 # 2026-10-14 小欧 - 文档[33] 4.11-B: 4 张工具分类表归口 tool_constants
 from app.tools.tool_constants import (
-    _PATH_CATEGORIES,
-    _PATH_PARAM_KEYS,
-    _READ_ONLY_TOOLS,
+    PATH_CATEGORIES,
+    PATH_PARAM_KEYS,
+    READ_ONLY_TOOLS,
 )
 # 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理符号归口 shell_static_guard, 删本地定义改 import
 #   (原 _QUOTED_SPAN_RE 与 guard 双源; 同时消除对 executor 的越层延迟导入即架构守护红项1)。
@@ -427,7 +432,7 @@ def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, 
 def _validate_shell_write_targets(command: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
     """bash 命令里的绝对路径写目标, 纳入既有路径权限判定 — 小欧 2026-10-14
 
-    病根: bash 属 FUNDAMENTAL, 不在 _PATH_CATEGORIES 内, 此前整类**不做任何路径校验**;
+    病根: bash 属 FUNDAMENTAL, 不在 PATH_CATEGORIES 内, 此前整类**不做任何路径校验**;
       实测 `del C:\\Windows\\a.txt` / `Remove-Item C:\\Windows\\a.txt` / `echo x > C:\\Windows\\a.txt`
       在"路径权限层"与"shell 危险模式层"**双双放行**, 与 system_prompts 的
       "禁止绕路用 shell 逃避安全检查"纪律相悖(prompt 仅软约束, 代码层零强制)。
@@ -491,7 +496,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
         tool_name: 工具名
         params: 工具参数
         mode: 操作模式(读/写/删), 若为None则按 tool_name 推断(3.2.15):
-            - tool_name ∈ _READ_ONLY_TOOLS → 'read'
+            - tool_name ∈ READ_ONLY_TOOLS → 'read'
             - tool_name == 'delete' → 'delete'
             - 其余路径工具 → 'write'
 
@@ -510,7 +515,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
         # mode 推断 — 按 tool_name 分组: 只读集合/read, delete/delete, 其余写工具/write
         normal_name = normalize_tool_name(tool_name)  # 防别名漏判
         if mode is None:
-            if normal_name in _READ_ONLY_TOOLS:
+            if normal_name in READ_ONLY_TOOLS:
                 mode = "read"
             elif normal_name == "delete":
                 mode = "delete"
@@ -519,13 +524,13 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
         
         # 修复 (三堂会审复核发现, v1.45): 参数别名先归一化再取路径参数 —
         #   LLM 常传 PARAM_ALIASES 里的别名(如 rename.new_name→dest/copy.src→path/dst→dest),
-        #   原代码 hit_params 直接查原始 params, 别名参数命中不了 _PATH_PARAM_KEYS → 路径越权漏检。
+        #   原代码 hit_params 直接查原始 params, 别名参数命中不了 PATH_PARAM_KEYS → 路径越权漏检。
         #   此处用 normalize_params 归一化后找路径参数, 校验对象与工具实际落盘路径一致(增强不退化)。
         normalized_params, _ = normalize_params(normal_name, params)
         
         all_categories = tool_registry.get_categories()
         path_tools = set()
-        for cat in _PATH_CATEGORIES:
+        for cat in PATH_CATEGORIES:
             path_tools.update(all_categories.get(cat, []))
 
         # 修复 (三堂会审复核发现, v1.45): path_tools 归属判断用归一化名 —
@@ -533,7 +538,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
         #   不在 path_tools(注册名集合) → 直接 return True 放行, 绕过全部路径校验;
         #   统一走 normalize_tool_name 归一化后再判, 与 mode 推断同源(防别名漏检补齐)。
         if normal_name not in path_tools:
-            # bash 写目标纳入路径权限(2026-10-14): bash 属 FUNDAMENTAL 不在 _PATH_CATEGORIES,
+            # bash 写目标纳入路径权限(2026-10-14): bash 属 FUNDAMENTAL 不在 PATH_CATEGORIES,
             #   原本整类在此早退放行。抽绝对路径交 _validate_shell_write_targets, 与下游
             #   system/non_system 分流同源, 不新增判定分支。
             if normal_name == "bash":
@@ -541,7 +546,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
             return True, None, None, None
 
         # ⑨ 遍历所有命中路径参数逐一校验, 任一越权即拒绝(原只取第一个命中参数的漏洞B修复)
-        hit_params = [key for key in _PATH_PARAM_KEYS if normalized_params.get(key) is not None]
+        hit_params = [key for key in PATH_PARAM_KEYS if normalized_params.get(key) is not None]
         if not hit_params:
             return True, None, None, None
 
@@ -567,5 +572,5 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any],
 
 __all__ = ["get_default_allowed_paths", "get_existing_drives",
            "get_system_drive", "_get_project_root_safety", "validate_path",
-           "validate_tool_path", "_is_forbidden_path", "_READ_ONLY_TOOLS"]
+           "validate_tool_path", "_is_forbidden_path"]
 
