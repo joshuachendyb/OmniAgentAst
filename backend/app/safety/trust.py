@@ -11,6 +11,11 @@
 # 2026-10-14 - 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 迁 tool_constants, _parse_paths 迁 conflict_detector; 本模块旧定义删改由 import 解析(不留双份)
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
 # 2026-10-14 - 小欧 - 文档[33] 4.2/步9: 本文件由 app/tools/trust.py 迁入 app/safety/; 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db; 旧文件已删(不留双份)。
+# 2026-10-15 - 小欧 - 文档[33] 5.12 核查订正: 删 3 个死导入 Set/FILE_OPERATION_TOOLS/WINDOW_TARGET_TOOLS。
+#   病根: 5.5 把 _parse_paths 迁往 conflict_detector 后, 这三者在本模块均无消费方
+#   (AST 实证代码与注解皆未引用)。其中 Set 设计 5.12 明文要求删, 而
+#   WINDOW_TARGET_TOOLS 系实施时多补的 import(设计只要求删本地定义, 未要求新增 import)。
+#   剩余 Dict/Optional/PARAM_ALIASES/normalize_tool_name/NON_FILE_TRUST_TOOLS/_parse_paths 均有真实引用。— 小欧-2026-10-15
 """
 trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过判定 + 信任落库
 
@@ -24,12 +29,11 @@ trust — 信任域三合一: 路径解析 + 信任路径提取 + 信任跳过�
 
 原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
 """
-from typing import Dict, Optional, Set
+from typing import Dict, Optional
 from app.tools.tools_alias_mapper import PARAM_ALIASES, normalize_tool_name
-from app.tools.tool_constants import FILE_OPERATION_TOOLS, NON_FILE_TRUST_TOOLS
+from app.tools.tool_constants import NON_FILE_TRUST_TOOLS
 # 2026-10-14 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 归 tool_constants,
 #   _parse_paths 归 conflict_detector。本模块旧定义已删, 改由 import 解析(不留双份)。
-from app.tools.tool_constants import WINDOW_TARGET_TOOLS
 from app.tools.conflict_detector import _parse_paths
 
 
