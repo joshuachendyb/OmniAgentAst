@@ -40,7 +40,6 @@
 #   故 path IS NULL 的行(无路径工具 shell/execute_sql/registry_*)去重失效, 每次点信任都新增一行;
 #   此场景下无冲突可捕获, INSERT OR IGNORE 与 ON CONFLICT **同样不生效**。待后续设计决策。— 小欧-2026-10-15
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
-# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
 from datetime import datetime, timedelta
 from pathlib import Path
