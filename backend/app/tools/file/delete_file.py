@@ -59,12 +59,12 @@ from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
-from app.utils.path_utils import (
+from app.safety.path_guard import (
     is_disk_root,
     is_protected_root_itself,
     is_system_protected_path,
-    to_win_long_path,
-)  # #5长路径包裹 — 小欧 2026-08-13
+)
+from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 

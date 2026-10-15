@@ -725,13 +725,8 @@ TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 # 否决放 shell 词表: 命令词表归 shell_static_guard, 混住会让两种判据互相污染。
 # 迁移说明: 原散在 path_safe_check(3 表) 与 trust(1 表), 名单与判定解耦, 判定方只 import 名单。
 
-# 路径相关的工具分类 — 5类工具涉及文件路径操作
-# 迁自 path_safe_check.py:390 — 小欧 2026-10-14
-PATH_CATEGORIES = {
-    ToolCategory.FILE, ToolCategory.DOCUMENT,
-    ToolCategory.DATAANALYSIS, ToolCategory.NETWORK,
-    ToolCategory.DESKTOP,
-}
+# 2026-10-15 小欧 - 文档[35] P2-19: PATH_CATEGORIES 已删除。
+#   原因: 通道分发改用 ToolMetadata.action_kind 单判据后全仓零消费(实测), 属 YAGNI。
 
 # 工具参数中可能的路径参数名(⑧2026-08-10补dest: compress/extract/move/copy/rename/generate_chart/download/screen_capture 的目标/输出路径)
 # 迁自 path_safe_check.py:397 — 小欧 2026-10-14
@@ -739,12 +734,83 @@ PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "directory", "file_name", "destination_path", "output_path",
                     "dest")
 
-# 只读工具集合(以真实注册名为准, stat 无对应注册工具已剔除) — 小欧 2026-08-10 v1.43
-# 迁自 path_safe_check.py:402 — 小欧 2026-10-14
-READ_ONLY_TOOLS = frozenset({
-    "listdir", "tree", "find", "grep", "read", "readmedia",
-    "read_pdf", "read_docx", "read_pptx", "read_xlsx",
-})
+# 只读工具集合 已于 2026-10-15 删除 — 小欧(文档[35] P2-21)
+#   原因: 与 TOOL_ACTION_KINDS 的 "read" 项**完全相同**(实测差集为空), 且生产零消费
+#        (通道分发改用 action_kind 单判据后无任何引用方)。两表并存 = 改一处漏一处(DRY)。
+
+
+# ====================================================================
+# 工具动作类型声明 —— 读 / 写 / 删 / 多动作 / 不涉及路径
+# ====================================================================
+# 2026-10-15 小欧 - 文档[35] 阶段三: 读写删三线静态化。
+#
+# 病根: path_check_entry 原先在运行时用 if 链猜动作类型
+#   (READ_ONLY_TOOLS → read, name=="delete" → delete, 其余 → write),
+#   猜测失败即退化成 write, 而 write 是最严档 —— 新工具漏声明会被按写处理(方向对,
+#   但纯属侥幸); 更糟的是猜出来的值无法静态审计, 看代码看不出某个工具走哪条线。
+#
+# 改法: 动作类型改为**声明式单源**, 注册时由 registry 按工具名赋值到
+#   ToolMetadata.action_kind, path_check_entry 直接读该字段, 不再推断。
+#
+# 取值:
+#   "read"    只读          → read_path_check(禁区放行, 不弹授权)
+#   "write"   写入或改写    → write_path_check
+#   "delete"  删除          → delete_path_check(禁区硬拦, 永不授权)
+#   "multi"   一调用含多动作 → multi_path_check 按参数分别归线
+#   "none"    定义里无任何路径参数, 与路径安全无关 → 直接放行
+#
+# 未在此表出现的工具取 ToolMetadata 默认值 "write"(fail-closed, 最严档)。
+# 名单依据: 按各工具 input_schema.properties 是否含 PATH_PARAM_KEYS 实测得出
+#   (文档[35] §1.2.2), 非按名称猜。
+TOOL_ACTION_KINDS = {
+    # ── 只读(10 个, 定义里只有 path) ──
+    "find": "read", "grep": "read", "listdir": "read", "read": "read",
+    "read_docx": "read", "read_pdf": "read", "read_pptx": "read",
+    "read_xlsx": "read", "readmedia": "read", "tree": "read",
+
+    # ── 删除(1 个) ──
+    "delete": "delete",
+
+    # ── 一调用内含多个动作(6 个) ──
+    #   path 是源、dest 是目标, 但两者档位**同为 write** —— 源虽只读, 意图却是把数据
+    #   搬离原地; 若按读线判, 系统目录会被放行(可被压缩/复制 = 数据外泄)。详见 multi_path_check。
+    "copy": "multi", "move": "multi", "compress": "multi",
+    "extract": "multi", "rename": "multi", "edit": "multi",
+
+    # ── 与文件系统路径无关, 不进路径检查(16 个) ──
+    #   实测 input_schema 无任何 PATH_PARAM_KEYS 参数。
+    #   其中 registry_* 虽有 path 参数, 但那是**注册表键路径**(如 SOFTWARE\Microsoft\Windows),
+    #   不是文件系统路径 —— 若按 write 走文件系统判定, realpath 会把它解析成相对当前目录的
+    #   文件路径并误判为代码库禁区, 实测三个 registry_* 工具因此每次调用都被硬拦。
+    #   bash 虽有 cwd/command, 走 bash 专用通道(命令内绝对路径另行抽取), 不在此列。
+    "calendar": "none", "create_task": "none", "delete_task": "none",
+    "event_log": "none", "list_tasks": "none", "notify": "none",
+    "registry_delete": "none", "registry_read": "none", "registry_write": "none",
+    "searchtool": "none", "sysinfo": "none",
+    "timeadd": "none", "timediff": "none", "timenow": "none",
+    "timer_clear": "none", "timer_list": "none", "timer_set": "none",
+    "which": "none",
+
+    # ── DESKTOP 交互, 无文件系统路径(10 个) ──
+    #   实测参数为 x / y / button / amount / direction / action / window_title 等。
+    "clipboard_control": "none", "keyboard_control": "none",
+    "mouse_click": "none", "mouse_move": "none", "mouse_position": "none",
+    "mouse_scroll": "none", "set_window_state": "none",
+    "window_focus": "none", "window_info": "none", "window_resize": "none",
+
+    # ── 网络类 ──
+    #   httpget/fetchpage/searchweb 无文件系统路径; ping_port 也不涉及本地路径。
+    "httpget": "none", "fetchpage": "none", "searchweb": "none", "ping_port": "none",
+    #   download 有 dest(下载落盘路径), 属写入目标 —— 必须走写线, 不能声明 none。
+    "download": "write",
+
+    # ── 写入类(12 个)在此显式列出, 便于审计; 取值与默认值一致 ──
+    "write": "write", "write_docx": "write", "write_pdf": "write",
+    "write_pptx": "write", "write_xlsx": "write",
+    "analyze_data": "write", "filter_data": "write",
+    "execute_sql": "write", "query_sql": "write", "get_db_schema": "write",
+    "generate_chart": "write", "screen_capture": "write",
+}
 
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态

@@ -23,7 +23,15 @@ from app.tools.tool_description import to_openai_tools, generate_param_reminder
 from app.tools.tools_alias_mapper import normalize_tool_name
 from app.logger import setup_logger
 from app.utils.dependency import ensure_dependency
-from app.tools.tool_constants import CATEGORY_MODULES
+from app.tools.tool_constants import CATEGORY_MODULES, TOOL_ACTION_KINDS  # 2026-10-15 小欧 - 文档[35] 阶段三: 动作类型声明表
+
+
+def _resolve_action_kind(name: str, fallback: str) -> str:
+    """工具动作类型: 声明表优先, 未声明取 fallback — 小欧 2026-10-15
+    2026-10-15 小欧 - P2-23: 原在注册/重注册两处各写一遍 TOOL_ACTION_KINDS.get(...), 缺省不同,
+      易改一处漏一处(DRY)。现收于本函数, 两处共用。
+    """
+    return TOOL_ACTION_KINDS.get(name, fallback)
 
 logger = setup_logger(__name__)
 
@@ -202,6 +210,8 @@ class ToolRegistry:
             action_confirmation=action_confirmation,
             check_fn=check_fn,
             target_param=target_param,
+            # 2026-10-15 小欧 - P1-14: 原缺省直取 .action_kind, 旧实例无该字段会 AttributeError。
+            action_kind=_resolve_action_kind(name, getattr(self._tools[name], "action_kind", "write")),
         )
         self._implementations[name] = implementation
         # 【修复】更新分类索引(类别可能变更) — chendyg 2026-06-26
@@ -240,6 +250,8 @@ class ToolRegistry:
             check_fn=check_fn,
             dependencies=dependencies or [],
             target_param=target_param,
+            # 2026-10-15 小欧 - 文档[35] 阶段三: 动作类型按声明表赋值, 未列者取 fallback(fail-closed 最严档)
+            action_kind=_resolve_action_kind(name, "write"),
         )
         self._tools[name] = metadata
         self._implementations[name] = implementation

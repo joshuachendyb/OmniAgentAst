@@ -99,6 +99,17 @@ class ToolMetadata:
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
     target_param: Optional[str] = None
 
+    # 【2026-10-15 小欧 — 文档[35] 阶段三】动作类型(读/写/删), 由 tool_constants.TOOL_ACTION_KINDS
+    # 在注册时按工具名赋值。取代 path_check_entry 原先的运行时 if 链推断。
+    #   "read"    只读, 路径检查走 read_path_check(禁区放行, 不弹授权)
+    #   "write"   写入或改写, 走 write_path_check
+    #   "delete"  删除, 走 delete_path_check(禁区硬拦, 永不授权)
+    #   "multi"   一调用内含多个动作(copy/move/rename/edit/compress/extract),
+    #             走 multi_path_check 按参数分别归线
+    #   "none"    定义里没有任何路径参数, 与路径安全无关, 直接放行
+    # 默认 "write" 是 fail-closed 方向: 未声明的新工具按最严档处理, 与改造前 else 分支行为一致。
+    action_kind: str = "write"
+
 
     def get_failure_hint(self, tool_params: Optional[dict] = None) -> str:
         """获取工具失败时的替代建议 — 小健 2026-05-24"""

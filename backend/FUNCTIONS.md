@@ -401,18 +401,79 @@ def my_parse_json(json_str):
 
 ## 八、Safety层（app/safety/）
 
-### 8.1 路径安全（path_safe_check.py，位于 app/safety/）
+### 8.1 路径属性判定（path_guard.py）— 是什么路径
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `get_existing_drives` | 动态获取当前存在的磁盘符号列表（不写死，遍历A-Z探测，应对U盘插拔/盘符重映射；磁盘根递归删除判定时刻使用） | 无 | List[Path] |
-| `get_system_drive` | 动态获取真实系统盘符（SystemRoot/WINDIR环境变量→SystemDrive→探测存在\\Windows的盘符→兜底C:；系统目录判定C:模板动态替换） | 无 | str |
-| `_get_project_root_safety` | 获取项目根供Safety层判定（统一走 config.get_project_root() 配置优先、未配置→用户主目录；不再以代码位置推算） | 无 | Path |
-| `_is_forbidden_path` | 系统敏感路径黑名单（盘根splitdrive全盘符判定 + 系统目录FORBIDDEN_PATHS_WINDOWS_* C:模板动态盘符替换 + **代码库根禁区**：代码库根及其子路径一律forbidden，tool禁区开关无关硬拦截） | file_path: str | Tuple[Optional[str], Optional[str]] |
-| `validate_tool_path` | 工具路径校验统一入口（分类→找路径参数→调validate_path；补dest参数 + 遍历所有命中路径参数逐一校验，任一越权即拒；**逻辑路径参数解析**：download.dest相对下载目录/rename.dest纯文件名先解析为真实路径再校验） | tool_name, params | Tuple[bool, Optional[str], Optional[str]]（is_valid, msg, failed_path；failed_path=首个校验失败的真实路径，供临时授权auth_path用，成功时None） |
-| `get_default_allowed_paths` | 默认白名单（主目录+`/tmp`+`/var/tmp`+项目根+授权目录；废除「所有现存盘符」全盘放开，lazy动态计算） | 无 | List[Path] |
+| `is_system_protected_path` | 系统保护目录判定（检测+策略单源：展开后取盘符后第一段比对 SYSTEM_PROTECTED_DIR_NAMES；mode 决定禁否，`read` 放行 / `write`·`delete` 拦；异常不静默放行） | file_path: str, mode: str | bool |
+| `is_disk_root` | 是否磁盘根（`C:\` / `D:\`），三处判定收敛到此 | file_path: str | bool |
+| `is_code_root_path` | 是否落在代码库根及其子/父级（tool 禁区，开关无关硬拦截） | file_path: str | bool |
+| `is_protected_root_itself` | 是否受保护根自身或其上级祖先（B 族，可授权）；fail-closed：根集读取失败按禁处理 | file_path: str, extra_roots: Optional[Iterable[str]] | Optional[str] |
+| `SYSTEM_PROTECTED_DIR_NAMES` | 系统保护目录名单（windows / program files / programdata / winnt / system32 / system 等，大小写不敏感） | — | frozenset[str] |
 
-### 8.2 delete 专属差异判定（delete_safety.py）
+> 2026-10-15 小欧 文档[35] 阶段五：由 `app/utils/path_utils.py` 迁回安全域（原为绕 tools→safety 越层而寄居 utils，属职责错位）。本模块零配置零 I/O、不读 `security.enabled`，是全套路径安全中**唯一允许工具层直接依赖**的部分（守护白名单 `TOOLS_SAFETY_ALLOWED`）。
+
+### 8.2 路径可用范围（path_scope.py）— 哪里能用
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `get_existing_drives` | 动态获取当前存在的磁盘符号列表（不写死，遍历A-Z探测，应对U盘插拔/盘符重映射） | 无 | List[Path] |
+| `get_system_drive` | 动态获取真实系统盘符（SystemRoot/WINDIR环境变量→SystemDrive→探测存在\Windows的盘符→兜底C:） | 无 | str |
+| `get_default_allowed_paths` | 默认白名单（主目录+`/tmp`+`/var/tmp`+项目根+授权目录+会话工作区；废除「所有现存盘符」全盘放开，lazy动态计算） | 无 | List[Path] |
+| `_get_project_root_safety` | 获取项目根供Safety层判定（统一走 config.get_project_root()，未配置→用户主目录） | 无 | Path |
+
+> 2026-10-15 小欧 文档[35] 阶段四：自 `path_safe_check.py` 拆出（环境事实查询，与"路径是否属禁区"是两种关注点）。本模块不含安全判定。
+
+### 8.3 三线共用判定步骤（path_check_common.py）— 怎么查
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `check_preconditions` | 三线硬拦前置：空路径 / 路径穿越（`..` + realpath 比对）；命中返回三元组，未命中返回 None | file_path: str | Optional[Tuple[bool, Optional[str], Optional[str]]] |
+| `check_whitelist` | 白名单前缀匹配（含盘根特例） | file_path: str, allowed_paths: List[Path] | bool |
+| `resolve_allowed_paths` | 白名单取值：显式传入优先，否则取 `path_scope.get_default_allowed_paths()` | allowed_paths: Optional[List[Path]] | List[Path] |
+
+> 2026-10-15 小欧 文档[35] 阶段一新建。**禁区分类不在本模块**：`_is_forbidden_path` 按 mode 决定读放行/写删拦，三线传入的 mode 不同，故由三线各自直调。
+
+### 8.4 读/写/删三线（read/write/delete_path_check.py）— 各线策略
+
+三线签名相同：`validate(file_path: str, allowed_paths: Optional[List] = None) -> Tuple[bool, Optional[str], Optional[str]]`
+
+| 模块 | 常量 | 独有策略 | 禁区判定档位 |
+|---|---|---|---|
+| `read_path_check` | `READ_MODE="read"` | 禁区放行 + 白名单外放行（读不写盘，内容敏感性交 contentFilter） | 传 `READ_MODE` |
+| `write_path_check` | `WRITE_MODE="write"` | system 硬拦；non_system 与白名单外可申请任务级授权 | 传 `WRITE_MODE` |
+| `delete_path_check` | `DELETE_MODE="delete"` | **所有禁区一律硬拦、无授权分支**（删不可逆）；白名单外可申请授权 | 传 `DELETE_MODE` |
+
+> 2026-10-15 小欧 文档[35] 阶段一新建。**九格契约表（读/写/删 × 各类区域）单一真源在 `path_safe_check.py` 模块头**，三线只负责本线实现，不重复维护表格。
+
+### 8.5 路径检查总入口（path_check_entry.py）— 三通道分发
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `validate_tool_path` | SA5 唯一入口：按 `ToolMetadata.action_kind` 分派（`none` 直接放行 / `multi` 走多动作通道 / 其余走对应线）；**返回值四元组**，`failed_path` 由本层填真实解析后路径（BUG-D 修复要点） | tool_name: str, params: Dict | Tuple[bool, Optional[str], Optional[str], Optional[str]] |
+
+> 2026-10-15 小欧 文档[35] 阶段一新建。已删除原 `validate_path` 及其 `mode` 参数（用参数模拟分支者当消灭），**不设转发壳、不留兼容入口**。
+
+### 8.6 多动作通道（multi_path_check.py）— 一次调用多个动作
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `MULTI_ACTION_PARAMS` | 6 个复合工具的参数档位声明（copy/move/compress/extract/rename/edit 的 path 与 dest **一律 write** —— 源虽只读但意图是把数据搬离原地，判读线会导致系统文件可被压缩复制 = 数据外泄） | — | Dict[str, Dict[str, str]] |
+| `resolve_path_param` | 工具逻辑路径参数→真实文件系统路径（download.dest 相对下载目录 / rename.dest 仅文件名需解析） | tool_name, key, value, params | str |
+| `validate_multi_path` | 复合工具按声明表逐参数选线校验 | tool_name, params | 四元组 |
+| `validate_bash_targets` | bash 命令内写/删目标抽取（不解析 shell 语法；命删动词走删线，命写动词/重定向走写线） | command: str | 四元组 |
+
+> 2026-10-15 小欧 文档[35] 阶段一新建。删除动词正则 `_DELETE_CMD_RE` 仍留在 `app/tools/fundamental/shell_command_guard.py`（属工具层 shell 静态检查职责，迁移会新增 tools→safety 依赖）。
+
+### 8.7 禁区分类内核（path_safe_check.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `_is_forbidden_path` | 判断路径属哪类禁区（磁盘根/系统敏感文件目录/系统保护目录→`"system"`；代码库根与受保护根→`"non_system"`；非禁区→`None`）；异常一律判 `"system"`（fail-closed） | file_path: str, mode: str | Tuple[Optional[str], Optional[str]] |
+
+> 2026-10-15 小欧 文档[35]：由 577 行瘦身至 215 行，只保留禁区分类内核（读/写/删三线共同调用并传本线 mode）与九格契约表。原 `validate_path` / `validate_tool_path` / `_resolve_path_param` / `_validate_shell_write_targets` 及磁盘枚举、白名单构建均已迁出。
+
+### 8.8 delete 专属差异判定（delete_safety.py）
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
