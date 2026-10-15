@@ -37,10 +37,16 @@ path_guard — 路径属性判定: 这条路径是什么性质
 | category                      | 读         | 写                  | 删               |
 |-------------------------------|------------|---------------------|------------------|
 | `system`(系统禁区)            | 放行       | blocked 永不授权    | blocked 永不授权 |
-| `non_system`(受保护区域)      | 放行       | 确认 + auth_path    | blocked 永不授权 |
-| `None`(白名单外)              | 放行       | 确认 + auth_path    | blocked 永不授权 |
-| 磁盘根 `C:\`                  | blocked    | blocked             | blocked          |
-| 代码库根                      | 放行       | 确认 + auth_path    | blocked          |
+| `non_system`(代码库根/受保护根)| 放行       | 确认 + auth_path    | blocked 永不授权 |
+| `None` + 白名单外             | 放行       | 确认 + auth_path    | 确认 + auth_path |
+| `None` + 白名单内             | 放行       | 放行                | 放行             |
+| 磁盘根 `C:\`                  | 放行       | blocked 永不授权    | blocked 永不授权 |
+| 空路径/`..`穿越               | blocked    | blocked             | blocked          |
+| 异常 fail-closed              | blocked    | blocked             | blocked          |
+
+白名单 = 主目录 + 系统临时目录 + 项目根 + 授权目录 + 会话工作区。
+受保护根 = 项目根(config workspace.project_root)的根 + 授权目录(workspace.allowed_dirs) 的根+ 会话工作区(会话绑定目录, 任务级快照)的根。
+异常 fail-closed = 判定中途抛异常一律按 system 硬拦（永不授权），不静默放行。
 
 单一真源: 文档[35] 3.3.7。2026-10-15 北京老陈裁定 — 原拟归位 path_safe_check 模块头,
 但该文件消号时表未随之迁入(指针自建立起即为空), 现落 path_guard —— 本模块是 category 的唯一产出者。
