@@ -4,7 +4,7 @@
 # 2026-07-10 - 小欧 - 从 ai_config/ 复制, 仅改 import 路径
 # 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, clear_backup_paths 的 import 由 app.services.safety.operation_backup 改 app.safety.operation_backup(配合 api 禁 tools 守护规则)
 # 2026-08-13 - 小欧 - A7(方案4.7.3步骤3): update_config 业务编排迁入 services/model/config_service.py; 删除
-#   from app.safety.operation_backup import clear_backup_paths 越层 import(随 update_config 迁出, API→safety 越层消除,
+#   from app.safety.operation_backup_rollback import clear_backup_paths 越层 import(随 update_config 迁出, API→safety 越层消除,
 #   守护测试 api 规则可启用)。本文件保留其余 config 路由与 DTO。
 # 2026-08-13 - 小欧 - 三堂会审修复#6/#7/#8: #6 validate_config 谎报"配置已保存"改"配置校验通过(未保存)"
 #   (该端点仅校验不落盘, 原文案误导); #7 GET /config/full 返回明文 api_key 改 _mask_api_key 掩码

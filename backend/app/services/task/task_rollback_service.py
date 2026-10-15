@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-12 - 小欧 - A2-越层(方案4.2.4): 回滚统计逻辑从 operation_rollback 下沉到 task 域,
+# 2026-08-12 - 小欧 - A2-越层(方案4.2.4): 回滚统计逻辑从 operation_backup_rollback 下沉到 task 域,
 #   消除 services/safety→services/task 越层依赖; rollback_session 只做文件回滚, 统计由本服务编排
 # 2026-08-13 - 小沈 - 修复(三堂会审): 统计更新失败时在 result 中附加 stats_updated=False 标记,
 #   让调用方知晓统计状态(不静默吞没), 但不抛异常(回滚已成功, 不应致 API 报错); 调用方可按需告警
@@ -14,7 +14,7 @@ task_rollback_service — 任务回滚编排服务(task 域)
 from typing import Dict, Any
 
 from app.logger import logger
-from app.safety.operation_rollback import rollback_session
+from app.safety.operation_backup_rollback import rollback_session
 from app.services.task.task_db import get_tracker
 
 

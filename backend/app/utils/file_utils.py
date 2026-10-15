@@ -4,7 +4,7 @@
 
 编辑历史:
   2026-08-13 小沈: 从 tools/file/delete_file.py 复制迁入 remove_readonly,
-    消除 safety→tools 实现依赖(safety/operation_maintenance.py 和 operation_rollback.py
+    消除 safety→tools 实现依赖(safety/operation_maintenance.py 和 operation_backup_rollback.py
     改从本文件导入, tools/file/delete_file.py 同步改从本文件导入)
   2026-08-13 小沈 P5b: 从 tools/tool_fc_helper.py 复制迁入 backup_file,
     消除 services/model/persistence.py→tools 实现依赖
