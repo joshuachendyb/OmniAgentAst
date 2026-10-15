@@ -72,10 +72,12 @@ def clear_temp_auth() -> None:
 
 def is_temp_authorized(file_path: str) -> bool:
     """检查路径是否在当前作用域临时授权范围内 — 小欧 2026-08-10
-    M2 (v1.43): 前置禁区分类(深度防御, 无 mode 参数):
-        - 系统禁区 → 即使入单也返回 False(永不授权);
+    M2 (v1.43): 前置禁区分类(深度防御):
+        - 系统禁区 → 即使入单也返回 False(**永不授权**);
         - 非系统禁区写放行判定在 validate_path 写 mode 分支内完成,
           is_temp_authorized 仅做 auth-list 匹配, 不再硬拦(删已在 validate_path 删除规则硬拦)
+        - 禁区判定异常 → **同样返回 False**(2026-10-15 起由"异常不阻断"改 fail-closed;
+          原实现在判定异常时继续走 auth-list 匹配, 与上面"永不授权"的承诺矛盾, 且实测可让系统目录被授权)。
     支持递归: 授权目录后其子目录树一并放行。
     [SA6] 权限信任框架第6步读取点: SA5路径校验内调用 — 小欧-2026-10-14
     """
@@ -86,7 +88,13 @@ def is_temp_authorized(file_path: str) -> bool:
         if category == "system":
             return False
     except Exception:
-        pass  # 异常不阻断, 继续走下文 auth-list 匹配(深度防御不影响主流程)
+        # 2026-10-15 北京老陈裁定(三堂会审·修 fail-open): 原为 `pass` 继续走下文 auth-list 匹配,
+        #   与本函数 docstring「系统禁区永不授权」的硬承诺矛盾 —— 故障注入实测: 判定异常时
+        #   C:\Windows\secret.dll 会被判为【已授权】(崩不掉就当没禁区, 等于门失效)。
+        #   现改 fail-closed: 判不出是否禁区 → 不授权。宁可少授权, 不可漏禁区。
+        from app.logger import logger as _lg
+        _lg.warning(f"[temp_auth] 禁区判定异常, 本次按未授权处理: {file_path}")
+        return False
 
     auth = get_authorized()
     if not auth:

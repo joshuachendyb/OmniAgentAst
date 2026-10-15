@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-07-18 - 小欧 - 修复: 白名单盘符下增加系统保护目录拒绝(windows/program files/programdata等),
@@ -13,7 +12,7 @@
 # 2026-08-10 - 小欧 - 缺陷修复(三堂会审复核发现, 第二次代码更新): _SYSTEM_PROTECTED 系统保护目录(windows/program files等)
 #   写/删 返回 category 由 None → "system" — _is_forbidden_path 仅精确锁 WIN_EXACT 本身(C:\Windows), 其子路径漏过禁区判定,
 #   旧返回 None 使 T2 当"白名单外可临时授权"处理(系统目录可被授权写入, 违表五「系统禁区写❌硬拦永不授权」); 读 mode 放行(与禁区读一致, 3.2.9)
-# 2026-08-10 - 小欧 - 三堂会审修复(v1.45): 
+# 2026-08-10 - 小欧 - 三堂会审修复(v1.45):
 #   归属判定缺陷: validate_tool_path 原 `tool_name not in path_tools` 用 LLM 原始名判归属, 别名工具(list_directory/read_text_file等)
 #     不在注册名集合 → 直接 return True 放行, 绕过全部路径校验; 改归一化名 normal_name 判(与 mode 推断同源, 防别名漏检补齐)
 #   参数别名缺陷: 原 hit_params 直接查原始 params, PARAM_ALIASES 参数别名(rename.new_name→dest/copy.src→path/dst→dest等)
@@ -83,151 +82,105 @@
 #   快照原由 utils 直接 import app.tools.context 取, 构成「utils 反向依赖上层」(守护测试红)。
 #   取数收归 app/tools/context.py 的 session_workspace_paths(), 由 safety/tools 各自传入 —— 二者均可 import tools(铁律只禁 tools→services/safety),
 #   故 B 族保护范围【零损失】, 仅解开 utils 的分层依赖。
+#
+# 2026-10-15 北京老陈裁定 - 文档[35] 三线物理分离(阶段一) 本文件瘦身, 只保留两类职责:
+#   ① 禁区分类内核 _is_forbidden_path —— 读/写/删三线共同调用, 按各自 mode 判定
+#   ② 磁盘枚举与白名单构建 get_existing_drives/get_system_drive/get_default_allowed_paths/_get_project_root_safety
+#      (阶段四迁往 path_scope.py, 本阶段暂留)
+#   迁出四块(逐字搬迁, 业务逻辑一字不改, 仅改 import 路径):
+#     validate_path(含 mode 参数) → **彻底删除**, 三线各自独立(删/写/读_path_check.py), 不留转发壳(总则四 禁止 backward)
+#     公共步骤(空路径/穿越/白名单匹配) → path_check_common.py
+#     _resolve_path_param + validate_tool_path + bash 通道 → path_check_entry.py
+#     _validate_shell_write_targets + 6 复合工具声明表 → multi_path_check.py
+#   禁区分类未迁入 path_check_common: 它按 mode 决定读放行/写删拦, 三线传入的 mode 不同, 故三线各自直调本模块。
 """
-path_safe_check — 文件路径越权校验（Safety层）
+path_safe_check — 路径禁区分类内核 + 磁盘与白名单枚举
 
-Safety层职责（本文件）：
-  - 路径黑名单：禁止访问系统敏感路径（_is_forbidden_path）
-  - 路径白名单：只允许在 ALLOWED_PATHS 内操作路径
-  - 路径穿越(..)拒绝
-  - 调用入口 validate_tool_path() 自动判断工具分类 + 找路径参数
+本文件瘦身后的职责(文档[35] 阶段一):
 
-工具层（validate/file_path_checker.py + validate/content_safety.py）独立运行、互不调用：
-  - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
-  - 内容安全检查 / 模块安装检查
+  一、禁区分类内核
+     _is_forbidden_path(file_path, mode) — 判断路径属于哪一类禁区
+       category ∈ {"system", "non_system", None}
+         "system"    系统敏感文件/目录 + 磁盘根 + 系统保护目录
+                     → 写/删永不授权; 读放行(内容敏感性交内容过滤兜底)
+         "non_system" 代码库根及父子级 + 受保护根及上级
+                     → 写可任务级授权, 删硬拦
+         None        非禁区(白名单外 · 非禁区)
 
-从 file_tools.py 提取,供 safety 和 tools 共用,打破循环依赖
+     读、写、删三条线各自直接调用本函数并传自己的固定 mode:
+       read_path_check  → mode="read"
+       write_path_check → mode="write"
+       delete_path_check→ mode="delete"
 
-小沈 2026-06-17
-小健 2026-06-23 增加系统敏感路径黑名单校验
-小欧 2026-07-04 补充两层架构说明注释
+  二、磁盘枚举与白名单构建(阶段四迁往 path_scope.py)
+     get_existing_drives / get_system_drive / get_default_allowed_paths / _get_project_root_safety
+
+已迁出的部分见文件头最后一条编辑历史。本模块不再被工具层直接 import —
+工具层硬底线走 app.safety.path_guard(纯路径属性判定, 不依赖任何开关)。
+
+九格契约表 —— 读/写/删 三条线 × 各类区域(**全链单一真源, 改一格三线皆知**)
+
+  区域                 读(read)       写(write)          删(delete)
+  ─────────────────────────────────────────────────────────────────────
+  系统禁区 system       放行           硬拦 永不授权      硬拦 永不授权
+  受保护区 non_system   放行           查任务级授权       硬拦 永不授权
+  白名单外 None         放行           查任务级授权       查任务级授权
+  ─────────────────────────────────────────────────────────────────────
+  磁盘根 C:/             放行           硬拦 永不授权      硬拦 永不授权
+  代码库根及父子级      放行           查任务级授权       硬拦 永不授权
+  受保护根及上级        放行           查任务级授权       硬拦 永不授权
+  ─────────────────────────────────────────────────────────────────────
+  空路径 / 含 ..        硬拦           硬拦 永不授权      硬拦 永不授权
+  任何异常              硬拦           硬拦 永不授权      硬拦 永不授权
+
+  规则:
+  ① 硬拦项 category 恒为 "system", T2 永不授权。
+  ② 读线对系统目录与白名单外一律放行 —— 读不写盘无副作用, 内容敏感性由 contentFilter 兜底。
+  ③ 写线只有"系统禁区"与磁盘根无授权分支, 其余越权可申请任务级授权。
+  ④ 删线在**所有禁区**无授权分支(删不可逆), 仅白名单外可申请授权。
+  ⑤ 另有一层更深防线在工作区边界(R6 禁删工作区外递归), 不在本表范围, 由 delete_safety 承担。
+
+  各线的独有策略实现见: read_path_check / write_path_check / delete_path_check
+  公共判定步骤见: path_check_common   路径属性判定见: path_guard   可用范围见: path_scope
+
+小沈 2026-06-17 / 小健 2026-06-23 / 小欧 2026-07-04 起
+小欧 2026-10-15 三线分离后定稿
 """
 
 import os
-import re  # 2026-10-14 小欧: bash 写目标绝对路径提取(_ABS_WIN_PATH_RE)
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
-from app.tools.registry import tool_registry
-from app.tools.tool_types import ToolCategory
+# 2026-10-15 小欧 - 文档[35] 阶段四: 磁盘枚举与白名单构建迁 path_scope, 本模块只留禁区分类内核
+from app.safety.path_scope import get_system_drive
 from app.tools.tool_constants import (
     FORBIDDEN_PATHS_EXACT,
     FORBIDDEN_PATHS_PREFIX,
     FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
     FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
 )
-# 2026-10-14 小欧 - SYSTEM_PROTECTED_DIR_NAMES 已随 is_system_protected_path 一并下沉 utils(见下方 import)
-# 2026-10-14 小欧 - 文档[33] 4.11-B: 4 张工具分类表归口 tool_constants
-from app.tools.tool_constants import (
-    PATH_CATEGORIES,
-    PATH_PARAM_KEYS,
-    READ_ONLY_TOOLS,
-)
-# 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理符号归口 shell_static_guard, 删本地定义改 import
-#   (原 _QUOTED_SPAN_RE 与 guard 双源; 同时消除对 executor 的越层延迟导入即架构守护红项1)。
-from app.tools.fundamental.shell_command_guard import (
-    _DELETE_CMD_RE,
-    _WRITE_CMD_RE,
-    _extract_abs_win_paths,
-    _resolve_env_fragment,
-    mask_quoted_spans,
-)
-from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params  # 三堂会审: 工具名+参数名别名归一防漏检 — 小欧 2026-08-10
-# 2026-10-14 小欧 - 文档[33] 4.12-B: 系统目录判定单一真源下沉 app/utils/path_utils.py,
-#   安全层与工具层最后防线共用它(单源不被工具层反向依赖, tools→safety 保持归零)。
-from app.utils.path_utils import (
+# 2026-10-14 北京老陈裁定(分层去反向依赖): 会话工作区取数收归 app/tools/context.py, 由本层传入 utils 单源。
+#   必须【模块级】导入 —— _is_forbidden_path 与 get_default_allowed_paths 两处都要用,
+#   只写在后者函数内会导致前者 NameError, 而 fail-closed 会把它伪装成"system 已拒绝"(实测全盘误拒, 极隐蔽)。
+from app.tools.context import session_workspace_paths
+# 2026-10-14 小欧 - 文档[33] 4.12-B: 系统目录判定单一真源, 阶段五随 is_system_protected_path 迁往 app.safety.path_guard
+from app.safety.path_guard import (
     SYSTEM_PROTECTED_DIR_NAMES,
     is_code_root_path,
     is_disk_root,
     is_protected_root_itself,
     is_system_protected_path,
 )
-# 2026-10-15 北京老陈裁定(分层去反向依赖): 会话工作区取数收归 app/tools/context.py, 由本层传入 utils 单源。
-#   必须【模块级】导入 —— _is_forbidden_path 与 get_default_allowed_paths 两处都要用,
-#   只写在后者函数内会导致前者 NameError, 而 fail-closed 会把它伪装成"system 已拒绝"(实测全盘误拒, 极隐蔽)。
-from app.tools.context import session_workspace_paths
-from app.logger import logger
 
-# 2026-10-06 小欧 - 系统盘符三级探测全部失败时的最后兜底(归位本模块: 唯一消费方就是 get_system_drive)
-FALLBACK_SYSTEM_DRIVE = "C:"
-
-
-def get_existing_drives() -> List[Path]:
-    """动态获取当前存在的磁盘符号列表 — 小欧 2026-08-04 (北京老陈驱动, 设计文档 v1.14/v1.15)
-    R2(磁盘根递归删除→拒绝) 判定时刻使用, 不写死盘符(遍历A-Z探测存在盘, 应对U盘插拔/盘符重映射)"""
-    drives: List[Path] = []
-    if os.name == "nt":
-        for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-            drive = Path(f"{c}:/")
-            if drive.exists():
-                drives.append(drive)
-    return drives
-
-
-def get_system_drive() -> str:
-    """动态获取真实系统盘符(安全检查时刻) — 小欧 2026-08-04 (北京老陈驱动, 设计文档 v1.13)
-    写死C:作默认模板不足, 运行时动态替换为真实系统盘符(支持系统盘非C:/盘符重映射, 不漏判不误伤)。
-    优先级: SystemRoot/WINDIR 环境变量 → SystemDrive → 探测存在\\Windows的盘符 → 兜底 C:
-    返回带冒号的盘符如 "C:" 或 "D:"(无反斜杠)"""
-    for var in ("SystemRoot", "WINDIR"):
-        root = os.environ.get(var)
-        if root:
-            drive, _ = os.path.splitdrive(root)
-            if drive:
-                return drive
-    sdrive = os.environ.get("SystemDrive", "")
-    if sdrive:
-        return sdrive.rstrip("\\/")
-    if os.name == "nt":
-        for c in "CDEFGHIJKLMNOPQRSTUVWXYZ":
-            if os.path.isdir(f"{c}:\\Windows"):
-                return f"{c}:"
-    return FALLBACK_SYSTEM_DRIVE
-
-
-def get_default_allowed_paths() -> List[Path]:
-    """获取默认允许的路径列表 — 小沈 2026-06-17 从file_tools提取
-    小欧 2026-08-04: 盘符枚举A-J硬编码上限改动态(get_existing_drives) — 北京老陈驱动
-    小欧 2026-08-10 ⑪: 废除「所有现存盘符」全盘放开, 白名单=主目录+tmp+项目根+授权目录(3.3决策②);
-    get_existing_drives 不再拼入(各盘只有落在主目录/项目根/授权目录内的路径才允许)。
-    """
-    from app.utils.path_utils import get_allowed_roots  # 2026-10-15 北京老陈裁定(DRY): 根集合单源, 不再自持一份
-    paths = [
-        Path.home(),
-        Path("/tmp"),
-        Path("/var/tmp"),
-    ]
-    # 2026-10-15 北京老陈裁定(DRY): 项目根+授权目录+会话工作区 由 path_utils.get_allowed_roots 单源提供,
-    #   原为在此内联三段拼装(与 delete_safety/_get_protected_roots 三处重复, .resolve() 用法还各不相同)。
-    paths.extend(get_allowed_roots(session_workspace_paths()))
-    return paths
-
-
-def _get_project_root_safety() -> Path:
-    """获取项目根(tool工作区)供 Safety 层判定 — 小欧 2026-08-10 ⑤收敛走config
-    统一走 config.get_project_root(): 配置 app.project_root 优先, 未配置→用户主目录;
-    不再以代码位置推算(那是代码库根, 属tool禁区, 不得充当项目根)。
-    """
-    from app.config import get_config
-    try:
-        cfg_root = get_config().get_project_root()
-        if cfg_root:
-            return Path(cfg_root).resolve()
-    except Exception:
-        pass
-    return Path.home()
-
-
-# 2026-10-14 小欧 - 文档[33] 4.12-B: is_system_protected_path 已迁 app/tools/validate/file_path_checker.py
-#   (工具层落单一真源, 安全层反向 import —— 「最后防线不能依赖前面的防线」, 且 tools→safety 归零)。
-#   本文件 _is_forbidden_path 改由文件头 import 解析到同一函数对象, 不留双份判定逻辑。
 def _is_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[str], Optional[str]]:
     """检查路径是否在系统敏感路径黑名单中 — 小健 2026-06-23
     扩展 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
-    
+
     Args:
         file_path: 待检查路径
-        
+        mode: 操作类型('read'/'write'/'delete') — 由调用方(读线/写线/删线)传入固定值,
+              本函数不自行解释: 系统保护目录的放行与否已在 is_system_protected_path 内收口
+
     Returns:
         (category, error_message) — category ∈ {"system", "non_system", None}:
             "system" = 系统敏感目录+磁盘根(3.2.8 第1-5类, 写/删永不授权)
@@ -238,12 +191,12 @@ def _is_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[st
         real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
         real_path_str = str(real_path)
         real_path_lower = real_path_str.lower()
-        
+
         # 磁盘根目录(C:\)黑名单 — 白名单盘符机制允许盘根操作, 此处硬阻断 — 小欧 2026-08-02
         # 判定单源 utils.is_disk_root, 各层只调用(小欧 2026-10-14 归一)
         if is_disk_root(file_path):
             return "system", f"禁止访问磁盘根目录: {file_path}"
-        
+
         if os.name == 'nt':
             sys_drive = get_system_drive()  # 真实系统盘符 — 小欧 2026-08-04
             # 2026-10-06 小欧 - 常量改相对段, 盘符前置拼接, 去字符串替换
@@ -276,7 +229,7 @@ def _is_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[st
         for forbidden_prefix in FORBIDDEN_PATHS_PREFIX:
             if real_path_str.startswith(forbidden_prefix):
                 return "system", f"路径位于系统禁区(敏感目录): {file_path}"
-        
+
         return None, None
     except Exception as e:
         # 【修复】异常时拒绝访问而非放行 — chendyg 2026-06-26
@@ -284,293 +237,4 @@ def _is_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[st
         return "system", f"路径安全检查异常,已拒绝访问: {file_path} ({e})"
 
 
-def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
-                  mode: str = "write") -> Tuple[bool, Optional[str], Optional[str]]:
-    """验证文件路径是否在白名单内(安全层)
-    mode 分级 (v1.43 修正): 增加 mode 分级判定, 返回值扩展为 (is_valid, msg, category)
-
-    Args:
-        file_path: 待验证路径
-        allowed_paths: 白名单(默认使用 ALLOWED_PATHS)
-        mode: 操作类型('read'/'write'/'delete'), 默认 'write'
-
-    Returns:
-        (is_valid, error_message, category) — category ∈ {"system", "non_system", None}
-            用于显式分流(返回类别替代 msg 字符串特征)
-
-    判定规则(3.2.14/表五):
-        - 读: 白名单外非禁区/禁区全部放行(内容敏感性 contentFilter 兜底)
-        - 写: 系统禁区硬拦/非系统禁区写→查 is_temp_authorized(已任务级授权则放行)/白名单外写临时授权
-        - 删: 系统+非系统禁区一律硬拦/白名单外删临时授权
-
-    小沈 2026-06-17 从 FileTools._validate_path 提取为纯函数
-    小健 2026-06-23 增加黑名单优先检查
-    小欧 2026-06-25 增加路径穿越(..)拒绝
-    小欧 2026-06-26 拒绝空路径
-    """
-    if not file_path or not file_path.strip():
-        # T2 回归修复 (三堂会审复核发现, v1.45): 空路径是无效参数, 归入 category="system"(永不授权),
-        #   原返回 category=None → T2 当"白名单外非禁区→可授权请求", 空路径从 blocked 退化为可授权(退化);
-        #   与 test_bug_empty_path_not_validated 断言(空路径应 blocked)对齐 — 小欧 2026-08-10
-        return False, "路径为空", "system"
-
-    is_forbidden, forbidden_msg = _is_forbidden_path(file_path, mode)
-    if is_forbidden:
-        # 2026-10-14 北京老陈裁定: 判定权收归本层(单一真源), 工具层不再重复判系统目录。
-        #   读放行沿用本层原决策(P3设计); 写/删: 系统禁区硬拦, 非系统禁区写可授权、删硬拦。
-        if mode == "read":
-            return True, None, is_forbidden
-        if is_forbidden == "system":
-            return False, forbidden_msg, "system"
-        if is_forbidden == "non_system":
-            # 非系统禁区删硬拦(删无授权分支)
-            if mode == "delete":
-                return False, forbidden_msg, "non_system"
-            # 非系统禁区写 → 查 is_temp_authorized(任务级授权)
-            from app.safety.temp_auth import is_temp_authorized
-            if is_temp_authorized(file_path):
-                return True, None, "non_system"
-            return False, forbidden_msg, "non_system"
-        # 兜底: 异常判定为 system 硬拦
-        return False, forbidden_msg, is_forbidden
-
-    # 路径穿越拒绝: 包含..的路径直接拒绝 — 小欧 2026-06-25
-    # T2 回归修复 (v1.45): 穿越路径归入 category="system"(永不授权) — 原返回 None → T2 当白名单外可授权,
-    #   与 test_f5_03_path_traversal_blocked 断言(穿越应 blocked)对齐 — 小欧 2026-08-10
-    try:
-        # 检查原始路径的每个部分是否包含..
-        path_parts = Path(file_path).parts
-        if ".." in path_parts:
-            return False, f"路径包含..,禁止路径穿越: {file_path}", "system"
-        # 也检查规范化解析后的路径（处理绝对路径中的..）
-        resolved = os.path.realpath(file_path)
-        original_resolved = os.path.realpath(os.path.dirname(file_path))
-        if not resolved.startswith(original_resolved) and file_path != resolved:
-            return False, f"路径穿越检测: {file_path} 解析为 {resolved}", "system"
-    except Exception as e:
-        logger.warning(f"[path_safe_check] 路径校验异常: {file_path}: {e}")
-        return False, f"路径校验异常: {file_path}", "system"
-
-    # 白名单判定 — 白名单内读/写/删都放行(删受删除规则)
-    # 补B(2026-08-10): 白名单懒加载——每次调用动态计算(主目录+tmp+项目根+授权目录),
-    # 避免模块导入时 config 未就绪取错值; allowed_paths 显式传入时优先使用
-    paths = allowed_paths if allowed_paths is not None else get_default_allowed_paths()
-    try:
-        real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
-
-        # 2026-10-14 小欧: 系统保护目录判定已下沉到 _is_forbidden_path(单一真源), 此处重复判定删除 —
-        #   读放行/写删硬拦的语义由 L281 起的统一分流承担, 行为不变, 且与 temp_auth 授权守卫同源。
-
-        for allowed in paths:
-            allowed_real = Path(os.path.realpath(allowed))
-            try:
-                real_parts = Path(real_path).parts
-                allowed_parts = Path(allowed_real).parts
-
-                if len(real_parts) >= len(allowed_parts):
-                    prefix_match = all(real_parts[i] == allowed_parts[i] for i in range(len(allowed_parts)))
-                    if not prefix_match:
-                        continue
-
-                    if len(allowed_parts) == 1 and (allowed_parts[0].endswith(':') or allowed_parts[0].endswith(':\\') or allowed_parts[0].endswith(':/')):
-                        if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
-                            return True, None, None
-                    else:
-                        if len(real_parts) >= len(allowed_parts):
-                            return True, None, None
-            except (ValueError, OSError):
-                pass
-
-        # 白名单外判定 — temp_auth 仅在非禁区生效(禁区已在_is_forbidden_path拦截)
-        # 读 — 白名单外非禁区/禁区全部放行(contentFilter 兜底); 所以这里不用判mode, 直接放行
-        # 写/删 — 白名单外(非禁区)走临时授权判定
-        from app.safety.temp_auth import is_temp_authorized
-        if mode == "read":
-            # 读放行 — 白名单外非禁区读✅直接放行(只读工具)
-            # (系统/代码库禁区已拦截, 此处剩白名单外·非禁区)
-            return True, None, None
-        # 写/删 — 白名单外非禁区走临时授权
-        if is_temp_authorized(file_path):
-            return True, None, None
-        return False, f"路径 '{file_path}' 不在允许的操作范围内(仅允许:{', '.join(str(p) for p in paths[:5])}...)", None
-
-    except Exception as e:
-        # 2026-08-11 小欧 fix D1: 异常路径归类为system(永不授权硬拦), 与_is_forbidden_path异常处理(L197-199)一致;
-        #   原category=None→T2当"白名单外非禁区→可授权请求"→异常/恶意路径可被grant_temp_auth放行(安全漏洞)
-        return False, f"路径验证失败: {str(e)}", "system"
-
-
-# 2026-10-14 小欧 - 文档[33] 4.11-B: 三张分类表已迁 tool_constants, 本地定义删。
-
-
-
-
-
-def _resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, Any]) -> str:
-    """工具逻辑路径参数→真实文件系统路径(白名单校验前) — 小欧 2026-08-10
-    仅相对/文件名语义参数需要解析(BUG-B/C修复), 其余工具路径参数均为绝对路径原样返回:
-      - download.dest: 相对下载目录(project_root/download), 真实路径 = 下载目录/dest (network_schema.py:57);
-      - rename.dest:   仅文件名不含目录(file_schema.py:358), 工具内 dst = src.parent/新名 (rename_file.py:89), 真实路径 = 源文件同目录;
-    解析逻辑与工具内部真实落盘逻辑一一对应(对齐白名单校验对象与实际写入对象)。
-    """
-    if tool_name == "download" and key == "dest":
-        from app.config import get_config  # 局部导入避免模块级耦合
-        base = os.path.join(get_config().get_project_root(), "download")
-        return os.path.abspath(os.path.join(base, value.lstrip("/\\")))
-    if tool_name == "rename" and key == "dest":
-        src = params.get("path") or ""
-        if src:
-            return str(Path(src).parent / Path(value).name)
-        return value
-    return value
-
-
-# 2026-10-14 小欧 - 文档[33] 4.11-A: 四个命令文本符号已迁 shell_static_guard, 本地定义删
-#   (_resolve_env_fragment 亦迁入, 原 :497 越层延迟导入已消除)。
-
-
-def _validate_shell_write_targets(command: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
-    """bash 命令里的绝对路径写目标, 纳入既有路径权限判定 — 小欧 2026-10-14
-
-    病根: bash 属 FUNDAMENTAL, 不在 PATH_CATEGORIES 内, 此前整类**不做任何路径校验**;
-      实测 `del C:\\Windows\\a.txt` / `Remove-Item C:\\Windows\\a.txt` / `echo x > C:\\Windows\\a.txt`
-      在"路径权限层"与"shell 危险模式层"**双双放行**, 与 system_prompts 的
-      "禁止绕路用 shell 逃避安全检查"纪律相悖(prompt 仅软约束, 代码层零强制)。
-
-    做法(KISS): **不解析 shell 语法**, 只在命中写意图时, 把命令里的绝对路径逐个交给既有的
-    validate_path; 返回值直接汇入 validate_tool_path 的下游分流, 故 bash 复用与 write/delete
-    完全一致的 system(硬拦) / non_system(写可授权、删硬拦) 语义, 不新增第二套判定(DRY)。
-
-    检测流程:
-        bash 命令
-        ├─① 有写意图吗?  剥引号后匹配 _WRITE_CMD_RE(动词) 或含 ">"
-        │      无 → 放行(只读命令不打扰)
-        ├─② 抽绝对路径    $env:VAR 展开 → 引号区取完整 → 引号区外扫裸路径
-        └─③ 逐个交既有 validate_path(mode="write")   ← 不是新判定, 是复用
-               ├─ 系统区    → blocked 硬拦, 永不授权
-               ├─ 非系统区  → 需确认(可任务级授权)
-               └─ 白名单外  → 需确认
-
-    两段文本分开用(2026-10-14 三堂会审修正两个误报):
-      - 判写意图用 **剥引号后** 的文本: 否则 `Select-String -Pattern "del" <路径>` 这类只读
-        查询会因模式里的动词字面量被误判为写意图 → 误要求授权。
-      - 抽绝对路径用 **原文**(引号区保留): 抽路径要保住含空格的完整路径。
-      - 重定向判据用剥引号后是否含 `>`, 不用 _REDIRECT_RE(它的职责是"提取目标", 需保留引号;
-        用它判"是否存在重定向"会漏判 `> "带空格路径"`)。
-
-    边界: 相对路径不抽(交沙箱预检 _is_outside_write_target);
-      UNC(`\\\\host\\share`, 网络共享)不在 _ABS_WIN_PATH_RES 覆盖内 —— 北京老陈 2026-10-14 裁定
-      网络类不纳入本机制, 不加该正则(避免为不做的场景引入正则与误判面); 根治仍靠沙箱 Job Object 隔离。
-    """
-    if not command or not command.strip():
-        return True, None, None, None
-    normalized = command.replace("\r\n", " ").replace("\n", " ")
-    intent_src = mask_quoted_spans(normalized)
-    if not _WRITE_CMD_RE.search(intent_src) and ">" not in intent_src:
-        return True, None, None, None
-    # 2026-10-14 小欧 - 文档[33] 4.10-1: 命令含删动词时 mode 取 delete 而非 write。
-    #   病根: _WRITE_CMD_RE 把删与写混一张表, 删系统禁区只被判「可授权的写」, 授权后等于放行删系统目录。
-    mode = "delete" if _DELETE_CMD_RE.search(intent_src) else "write"
-    # $env:VAR 展开后再抽, 否则 $env:TEMP\a.txt 形态抽不到(executor 已提供该展开)
-    for raw_path in _extract_abs_win_paths(_resolve_env_fragment(normalized)):
-        valid, err, category = validate_path(raw_path, mode=mode)
-        if not valid:
-            # 违规必须留痕: 下游 tool_safety_checker 只记 tool=bash, 没有命令原文,
-            # 安全事件排查时"是哪个命令想写这个路径"查不到 —— 此处补全(小欧 2026-10-14)
-            logger.warning(
-                f"[path_safe_check] bash写目标越权: category={category}, "
-                f"path={raw_path}, command={command.strip()[:200]}"
-            )
-            return False, err, raw_path, category
-    return True, None, None, None
-
-
-def validate_tool_path(tool_name: str, params: Dict[str, Any],
-                       mode: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
-    """
-    工具路径检查：自动判断分类 + 找路径参数 + 调validate_path
-    [SA5] 权限信任框架第5步: 由SA3经_check_known_risks内调, 读SA6授权is_temp_authorized — 小欧-2026-10-14
-    mode 参数 (v1.43): 增加 mode 参数, 返回值扩展为四元组 (is_valid, error_message, failed_path, category)
-    
-    Args:
-        tool_name: 工具名
-        params: 工具参数
-        mode: 操作模式(读/写/删), 若为None则按 tool_name 推断(3.2.15):
-            - tool_name ∈ READ_ONLY_TOOLS → 'read'
-            - tool_name == 'delete' → 'delete'
-            - 其余路径工具 → 'write'
-
-    Returns:
-        (is_valid, error_message, failed_path, category) —
-            failed_path = 首个校验失败的真实路径(临时授权 auth_path 用, 成功时为 None)
-            category ∈ {"system", "non_system", None} — 供显式分流(返回类别替代 msg 字符串特征)
-    
-    将调度逻辑从 tool_safety_checker._check_known_risks 迁移至此，
-    path相关的事情全部在 path_safe_check 中处理。
-    小欧 2026-06-27, 2026-08-10 ⑨改为遍历所有命中路径参数逐一校验(漏洞B修复)
-    ⑯2026-08-10: 逻辑路径参数先经 _resolve_path_param 解析为真实路径再校验(BUG-B/C);
-                 返回 failed_path 供临时授权定位真正越权参数, 而非固定 path-or-dest(BUG-D)
-    """
-    try:
-        # mode 推断 — 按 tool_name 分组: 只读集合/read, delete/delete, 其余写工具/write
-        normal_name = normalize_tool_name(tool_name)  # 防别名漏判
-        if mode is None:
-            if normal_name in READ_ONLY_TOOLS:
-                mode = "read"
-            elif normal_name == "delete":
-                mode = "delete"
-            else:
-                mode = "write"
-        
-        # 修复 (三堂会审复核发现, v1.45): 参数别名先归一化再取路径参数 —
-        #   LLM 常传 PARAM_ALIASES 里的别名(如 rename.new_name→dest/copy.src→path/dst→dest),
-        #   原代码 hit_params 直接查原始 params, 别名参数命中不了 PATH_PARAM_KEYS → 路径越权漏检。
-        #   此处用 normalize_params 归一化后找路径参数, 校验对象与工具实际落盘路径一致(增强不退化)。
-        normalized_params, _ = normalize_params(normal_name, params)
-        
-        all_categories = tool_registry.get_categories()
-        path_tools = set()
-        for cat in PATH_CATEGORIES:
-            path_tools.update(all_categories.get(cat, []))
-
-        # 修复 (三堂会审复核发现, v1.45): path_tools 归属判断用归一化名 —
-        #   原代码 `tool_name not in path_tools` 用 LLM 原始名, 别名工具(如 list_directory/read_text_file)
-        #   不在 path_tools(注册名集合) → 直接 return True 放行, 绕过全部路径校验;
-        #   统一走 normalize_tool_name 归一化后再判, 与 mode 推断同源(防别名漏检补齐)。
-        if normal_name not in path_tools:
-            # bash 写目标纳入路径权限(2026-10-14): bash 属 FUNDAMENTAL 不在 PATH_CATEGORIES,
-            #   原本整类在此早退放行。抽绝对路径交 _validate_shell_write_targets, 与下游
-            #   system/non_system 分流同源, 不新增判定分支。
-            if normal_name == "bash":
-                return _validate_shell_write_targets(normalized_params.get("command") or "")
-            return True, None, None, None
-
-        # ⑨ 遍历所有命中路径参数逐一校验, 任一越权即拒绝(原只取第一个命中参数的漏洞B修复)
-        hit_params = [key for key in PATH_PARAM_KEYS if normalized_params.get(key) is not None]
-        if not hit_params:
-            return True, None, None, None
-
-        for key in hit_params:
-            real_path = _resolve_path_param(normal_name, key, normalized_params[key], normalized_params)
-            # 修复(三堂会审 小沈 2026-08-13): compress/extract/copy/move 的 src 参数语义是读,
-            #   原统一用工具级 mode=write 对 src 做写校验, 白名单外 src 会被要求临时授权(误拦合法读源);
-            #   按参数名分别推断 mode: src/source_path→read, 其余沿用工具级 mode, 增强不退化。
-            _param_mode = mode
-            if key in ("src", "source_path") and normal_name in ("compress", "extract", "copy", "move"):
-                _param_mode = "read"
-            valid, err, category = validate_path(real_path, mode=_param_mode)
-            if not valid:
-                return False, err, real_path, category
-
-        return True, None, None, None
-    except Exception as e:
-        # 2026-08-11 小欧 fix D1残留: 兜底异常归 category="system"(永不授权硬拦) —
-        #   原返回 None → T2 当"白名单外非禁区→可授权请求", 异常/恶意路径可被临时授权放行(与D1同源隐患);
-        #   与 validate_path 各异常分支"system"口径全链一致(T2 硬拦永不授权)
-        return False, f"路径安全检查异常: {e}", None, "system"
-
-
-__all__ = ["get_default_allowed_paths", "get_existing_drives",
-           "get_system_drive", "_get_project_root_safety", "validate_path",
-           "validate_tool_path", "_is_forbidden_path"]
-
+__all__ = ["_is_forbidden_path"]

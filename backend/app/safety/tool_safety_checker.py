@@ -124,14 +124,12 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 """
 
 
-from pathlib import Path
 from typing import Dict, Optional
 
 from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
-from app.tools.tool_types import ToolCategory
-from app.safety.path_safe_check import validate_tool_path as _validate_tool_path
+from app.safety.path_check_entry import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_check_entry
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
 _WRITE_RISK_TOOL = "write"

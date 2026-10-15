@@ -81,15 +81,19 @@ def _ws_deny_reason(p: str) -> Optional[str]:
 
     两道都是全局单一真源，缺一不可：
       ① `_is_forbidden_path` —— 系统敏感目录 / 磁盘根 / 代码库根
-      ② `validate_path(mode="write")` 返回 category=="system" —— 系统保护目录
+      ② 写线 `validate()` 返回 category=="system" —— 系统保护目录
          (windows/program files/programdata)、路径穿越、异常 fail-closed
-         这三条**只走 validate_path 才拦得住**，仅调 ① 会漏。
+         这三条**只走写线才拦得住**，仅调 ① 会漏。
     另加宽根规则(本模块判据)：授权/使用宽根等于放大删除范围。"""
-    from app.safety.path_safe_check import _is_forbidden_path, validate_path
+    # 2026-10-15 小欧 - 文档[35] 阶段一连带: path_safe_check.validate_path 已随三线分离删除,
+    #   等价能力迁至 app.safety.write_path_check.validate(返回三元组, system 口径一致)。
+    #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
+    from app.safety.path_safe_check import _is_forbidden_path
+    from app.safety.write_path_check import validate as _validate_write_path
     category, msg = _is_forbidden_path(p)
     if category:
         return msg or "路径在全局禁区内"
-    _ok, _msg, cat2 = validate_path(p, mode="write")
+    _ok, _msg, cat2 = _validate_write_path(p)
     if cat2 == "system":
         return _msg or "系统保护目录, 不可使用"
     if _is_broad_root(p):

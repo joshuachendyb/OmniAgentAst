@@ -43,8 +43,8 @@ from app.tools.tool_constants import (
     FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
     FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
 )
-# 2026-10-14 小欧 - 文档[33] 4.12-B: 名单随判定函数一并下沉 utils
-from app.utils.path_utils import SYSTEM_PROTECTED_DIR_NAMES
+# 2026-10-15 小欧 - 文档[35] 阶段五: SYSTEM_PROTECTED_DIR_NAMES 随判定函数迁至 app/safety/path_guard.py
+from app.safety.path_guard import SYSTEM_PROTECTED_DIR_NAMES
 
 # 2026-10-06 小欧 - datafile 定位: app/services/settings/ 上溯两级 = app/, 同级 datafile/
 DATAFILE_DIR = Path(__file__).resolve().parents[2] / "datafile"
