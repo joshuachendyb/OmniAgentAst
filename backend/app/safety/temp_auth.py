@@ -83,8 +83,8 @@ def is_temp_authorized(file_path: str) -> bool:
     """
     # M2: depth defense — 系统禁区永不授权(即使入单也False)
     try:
-        from app.safety.path_safe_check import _is_forbidden_path  # 惰性导入避免循环依赖
-        category, _ = _is_forbidden_path(file_path)
+        from app.safety.path_guard import classify_forbidden_path  # 惰性导入避免循环依赖
+        category, _ = classify_forbidden_path(file_path)
         if category == "system":
             return False
     except Exception:

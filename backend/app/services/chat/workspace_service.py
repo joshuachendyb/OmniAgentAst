@@ -80,7 +80,7 @@ def _ws_deny_reason(p: str) -> Optional[str]:
     """会话目录合法性判据：返回拒绝原因(None=可用)。**全部复用全局判据，不自造黑名单**。
 
     两道都是全局单一真源，缺一不可：
-      ① `_is_forbidden_path` —— 系统敏感目录 / 磁盘根 / 代码库根
+      ① `classify_forbidden_path` —— 系统敏感目录 / 磁盘根 / 代码库根
       ② 写线 `validate()` 返回 category=="system" —— 系统保护目录
          (windows/program files/programdata)、路径穿越、异常 fail-closed
          这三条**只走写线才拦得住**，仅调 ① 会漏。
@@ -88,9 +88,9 @@ def _ws_deny_reason(p: str) -> Optional[str]:
     # 2026-10-15 小欧 - 文档[35] 阶段一连带: path_safe_check.validate_path 已随三线分离删除,
     #   等价能力迁至 app.safety.write_path_check.validate(返回三元组, system 口径一致)。
     #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
-    from app.safety.path_safe_check import _is_forbidden_path
+    from app.safety.path_guard import classify_forbidden_path
     from app.safety.write_path_check import validate_write as _validate_write_path
-    category, msg = _is_forbidden_path(p)
+    category, msg = classify_forbidden_path(p)
     if category:
         return msg or "路径在全局禁区内"
     _ok, _msg, cat2 = _validate_write_path(p)
@@ -166,7 +166,7 @@ def classify_workspace_rows(rows) -> tuple[list, list]:
       ③ 非目录（不存在，或是个文件）→ 不可用
       ④ 通过 → 有效
 
-    BUG-1/4/5 根因订正：此前运行时过滤只调半套 `_is_forbidden_path`，
+    BUG-1/4/5 根因订正：此前运行时过滤只调半套 `classify_forbidden_path`，
     与写入判据两套标准、且 exists 跑在禁区之前。此处改调全套 `_ws_deny_reason`，
     与 PATCH 预检同一把尺子；脏行一律归入 unusable，调用方永不被抛异常掀翻。
     BUG-2/3 订正：`exists()` 改为 `is_dir()`。文件不是目录，不能进白名单。

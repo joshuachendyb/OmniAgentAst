@@ -9,6 +9,8 @@
 #   本模块为纯判定: 零配置读取、零 I/O、**不读 security.enabled** —— 保证工具层依赖它
 #   ≠ 依赖可被关闭的前线防线(硬底线独立性)。
 #   迁移手法: 四个函数自 path_utils.py **逐字搬迁**, 实现与异常口径一字不改。
+# 2026-10-15 北京老陈裁定(消号) - _is_forbidden_path 自 path_safe_check.py 迁入并正名 classify_forbidden_path(本模块四个路径属性判定的聚合者, 同族同层), 实现逐字搬迁; path_safe_check.py 随之消号。
+# 2026-10-15 北京老陈裁定(单一真源) - 九格契约表复制入本模块 docstring: 原拟归位 path_safe_check 模块头, 该文件消号时表未迁入(指针自建立起即为空), 三线模块指针落空; 本模块是 category 唯一产出者。
 # 2026-10-15 北京老陈裁定(DRY) - is_protected_root_itself 的 extra_roots 省略时自取会话快照: 原由 path_safe_check 与 delete_file 各取一次, 改一处漏一处即致授权判定分叉。
 """
 path_guard — 路径属性判定: 这条路径是什么性质
@@ -21,20 +23,42 @@ path_guard — 路径属性判定: 这条路径是什么性质
   受保护根       项目根 / 授权目录及其上级
 
 回答的是"是什么", 不回答"能不能操作" —— 能不能操作由读/写/删三条线各自决定
+
+并提供聚合入口 classify_forbidden_path: 把上述属性综合为禁区类别(system / non_system / None)
 (read_path_check / write_path_check / delete_path_check)。
 
 **允许谁 import**: 工具层硬底线(app.tools.*)与安全层(app.safety.*)均可。
 本模块不读 security.enabled, 是全套路径安全中唯一可被工具层直接依赖的部分。
 
-小欧 2026-10-14 建 / 2026-10-15 小欧 迁回安全域
+小欧 2026-10-14 建 / 2026-10-15 小欧 迁回安全域 / 2026-10-15 北京老陈裁定消号迁移(classify_forbidden_path 迁入)
+**九格契约表(读/写/删 × 各类区域, 单一真源)** —— 由 classify_forbidden_path 产出 category,
+下游按 category 决定放行/授权/硬拦。改一格三线皆知:
+
+| category                      | 读         | 写                  | 删               |
+|-------------------------------|------------|---------------------|------------------|
+| `system`(系统禁区)            | 放行       | blocked 永不授权    | blocked 永不授权 |
+| `non_system`(受保护区域)      | 放行       | 确认 + auth_path    | blocked 永不授权 |
+| `None`(白名单外)              | 放行       | 确认 + auth_path    | blocked 永不授权 |
+| 磁盘根 `C:\`                  | blocked    | blocked             | blocked          |
+| 代码库根                      | 放行       | 确认 + auth_path    | blocked          |
+
+单一真源: 文档[35] 3.3.7。2026-10-15 北京老陈裁定 — 原拟归位 path_safe_check 模块头,
+但该文件消号时表未随之迁入(指针自建立起即为空), 现落 path_guard —— 本模块是 category 的唯一产出者。
 """
 
 import os
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Tuple
 
 from app.logger import logger
 from app.utils.path_utils import get_allowed_roots
+from app.safety.path_env import get_system_drive  # 2026-10-15 北京老陈: 随 classify_forbidden_path 迁入
+from app.tools.tool_constants import (  # 2026-10-15 北京老陈: 随 classify_forbidden_path 迁入
+    FORBIDDEN_PATHS_EXACT,
+    FORBIDDEN_PATHS_PREFIX,
+    FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
+    FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
+)
 
 # 2026-10-14 小欧 - 补 winnt/system32/system(原仅工具层有): 两层对"什么算系统目录"判定相反, 取并集为单源。
 # 2026-10-14 小欧 - 迁自 app/tools/tool_constants.py:574（文档[33] 4.12-B）
@@ -58,7 +82,7 @@ def is_system_protected_path(file_path: str, mode: str = "write") -> bool:
     2026-10-14 北京老陈裁定「必须是同一个逻辑」: 此前检测与策略各处分一层,
     实测同一 True 被不同调用点解释成相反结论(安全层放行读/工具层拒绝读)。
     现检测与策略同在本函数, 调用方只透传 mode、不得二次判断。消费方两处:
-      ① 安全层 `path_safe_check._is_forbidden_path`(SA5 判权限, 唯一决策者)
+      ① 安全层 `classify_forbidden_path`(SA5 判权限, 唯一决策者)
       ② `delete_file._guard_forbidden_delete`(SA8 硬底线镜像 A 族, 不读安全总开关)
     """
     try:
@@ -120,7 +144,7 @@ def is_protected_root_itself(file_path: str, extra_roots: Optional[Iterable[str]
         if extra_roots is None:
             # 2026-10-15 北京老陈裁定(DRY): 取数收归本函数, 调用方不再各自取。
             # 延迟导入保本模块零顶层依赖(路径属性判定不该拖上层)。
-            from app.tools.context import session_workspace_paths
+            from app.session_workspace import session_workspace_paths
             extra_roots = session_workspace_paths()
         roots = get_allowed_roots(extra_roots)
     except Exception as e:
@@ -140,5 +164,70 @@ def is_protected_root_itself(file_path: str, extra_roots: Optional[Iterable[str]
     return None
 
 
+def classify_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[str], Optional[str]]:
+    """禁区分类 — 小健 2026-06-23 建, 2026-10-15 北京老陈裁定正名(classify 而非 is: 返回类别非 bool)
+    扩展 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
+
+    Args:
+        file_path: 待检查路径
+        mode: 操作类型('read'/'write'/'delete') — 由调用方(读线/写线/删线)传入固定值,
+              本函数不自行解释: 系统保护目录的放行与否已在 is_system_protected_path 内收口
+
+    Returns:
+        (category, error_message) — category ∈ {"system", "non_system", None}:
+            "system" = 系统敏感目录+磁盘根(3.2.8 第1-5类, 写/删永不授权)
+            "non_system" = 代码库根及父子级(3.2.8 第6类, 写可任务级授权, 删硬拦)
+            None = 非禁区(白名单外·非禁区)
+    """
+    try:
+        real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
+        real_path_str = str(real_path)
+        real_path_lower = real_path_str.lower()
+
+        # 磁盘根目录(C:\)黑名单 — 白名单盘符机制允许盘根操作, 此处硬阻断 — 小欧 2026-08-02
+        # 判定单源 utils.is_disk_root, 各层只调用(小欧 2026-10-14 归一)
+        if is_disk_root(file_path):
+            return "system", f"禁止访问磁盘根目录: {file_path}"
+
+        if os.name == 'nt':
+            sys_drive = get_system_drive()  # 真实系统盘符 — 小欧 2026-08-04
+            # 2026-10-06 小欧 - 常量改相对段, 盘符前置拼接, 去字符串替换
+            for forbidden in FORBIDDEN_PATHS_WINDOWS_REL_EXACT:
+                _f = sys_drive + forbidden
+                if real_path_lower == _f.lower():
+                    return "system", f"路径位于系统禁区(敏感文件): {file_path}"
+            for forbidden_prefix in FORBIDDEN_PATHS_WINDOWS_REL_PREFIX:
+                _f = sys_drive + forbidden_prefix
+                if real_path_lower.startswith(_f.lower()):
+                    return "system", f"路径位于系统禁区(敏感目录): {file_path}"
+            # 2026-10-14 小欧: 系统目录判定走单源 is_system_protected_path(检测+策略同在函数内), 本层只透传 mode
+            #   不再自行解释其返回值, 否则与硬底线会给出相反结论(实测读: 安全层放行/工具层拒绝)
+            if is_system_protected_path(file_path, mode):
+                return "system", f"路径位于系统保护目录,禁止操作: {file_path}"
+
+        # ⑦ 代码库根禁区(tool禁区, 开关无关硬拦截): 代码库根及其子/父级全部禁止 — 小欧 2026-08-10
+        # 代码库根属非系统禁区(non_system) — 判定单源 utils.is_code_root_path
+        if is_code_root_path(file_path):
+            return "non_system", f"路径位于受保护区域(项目代码库): {file_path}"
+
+        # 2026-10-14 北京老陈裁定: 受保护根(项目根/授权目录)及其上级归本层判(B族可授权),
+        #   此前只有删除防线拦它、写入不拦 —— 同一类别待遇随层而变, 现统一由权限层决策
+        if is_protected_root_itself(file_path):
+            return "non_system", f"路径位于受保护区域(受保护根): {file_path}"
+
+        for forbidden in FORBIDDEN_PATHS_EXACT:
+            if real_path_str == forbidden:
+                return "system", f"路径位于系统禁区(敏感文件): {file_path}"
+        for forbidden_prefix in FORBIDDEN_PATHS_PREFIX:
+            if real_path_str.startswith(forbidden_prefix):
+                return "system", f"路径位于系统禁区(敏感目录): {file_path}"
+
+        return None, None
+    except Exception as e:
+        # 【修复】异常时拒绝访问而非放行 — chendyg 2026-06-26
+        # 异常判定为system禁区(硬拦永不授权)
+        return "system", f"路径安全检查异常,已拒绝访问: {file_path} ({e})"
+
 __all__ = ["SYSTEM_PROTECTED_DIR_NAMES", "is_system_protected_path",
-           "is_disk_root", "is_code_root_path", "is_protected_root_itself"]
+           "is_disk_root", "is_code_root_path", "is_protected_root_itself",
+           "classify_forbidden_path"]
