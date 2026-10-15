@@ -53,7 +53,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop, session_workspace_paths  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
@@ -92,7 +92,7 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
     # 删除专属: 受保护根(B 族)自身及其上级 —— 删根等于毁掉工作区, 不可用授权放行
     # 会话工作区快照由本层取(app.tools.context 与本文件同层, 合法), 传入单源 ——
     #   使 path_utils 无需反向依赖 tools(分层守护), 且 B 族保护范围零损失。
-    _hit = is_protected_root_itself(file_path, session_workspace_paths())
+    _hit = is_protected_root_itself(file_path)
     if _hit == "protected_root_itself":
         return f"禁止删除项目根/授权根目录: {file_path}"
     if _hit == "protected_root_ancestor":

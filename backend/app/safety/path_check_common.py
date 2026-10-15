@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from app.logger import logger
-from app.safety.path_scope import get_default_allowed_paths
+from app.safety.path_env import get_default_allowed_paths
 
 
 def check_preconditions(file_path: str) -> Optional[Tuple[bool, Optional[str], Optional[str]]]:
@@ -124,7 +124,7 @@ def resolve_allowed_paths(allowed_paths: Optional[List[Path]]) -> List[Path]:
 
     收敛自 path_safe_check.validate_path(:357) 的内联单行, 三线共用。
     默认白名单 = 主目录 + tmp + /var/tmp + 项目根 + 授权目录 + 会话工作区
-    (由 path_scope.get_default_allowed_paths 提供)。
+    (由 path_env.get_default_allowed_paths 提供)。
     """
     return allowed_paths if allowed_paths is not None else get_default_allowed_paths()
 

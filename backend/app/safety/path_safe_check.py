@@ -86,7 +86,7 @@
 # 2026-10-15 北京老陈裁定 - 文档[35] 三线物理分离(阶段一) 本文件瘦身, 只保留两类职责:
 #   ① 禁区分类内核 _is_forbidden_path —— 读/写/删三线共同调用, 按各自 mode 判定
 #   ② 磁盘枚举与白名单构建 get_existing_drives/get_system_drive/get_default_allowed_paths/_get_project_root_safety
-#      (阶段四迁往 path_scope.py, 本阶段暂留)
+#      (阶段四迁往 path_env.py, 本阶段暂留)
 #   迁出四块(逐字搬迁, 业务逻辑一字不改, 仅改 import 路径):
 #     validate_path(含 mode 参数) → **彻底删除**, 三线各自独立(删/写/读_path_check.py), 不留转发壳(总则四 禁止 backward)
 #     公共步骤(空路径/穿越/白名单匹配) → path_check_common.py
@@ -112,7 +112,7 @@ path_safe_check — 路径禁区分类内核 + 磁盘与白名单枚举
        write_path_check → mode="write"
        delete_path_check→ mode="delete"
 
-  二、磁盘枚举与白名单构建(阶段四迁往 path_scope.py)
+  二、磁盘枚举与白名单构建(阶段四迁往 path_env.py)
      get_existing_drives / get_system_drive / get_default_allowed_paths / _get_project_root_safety
 
 已迁出的部分见文件头最后一条编辑历史。本模块不再被工具层直接 import —
@@ -141,7 +141,7 @@ path_safe_check — 路径禁区分类内核 + 磁盘与白名单枚举
   ⑤ 另有一层更深防线在工作区边界(R6 禁删工作区外递归), 不在本表范围, 由 delete_safety 承担。
 
   各线的独有策略实现见: read_path_check / write_path_check / delete_path_check
-  公共判定步骤见: path_check_common   路径属性判定见: path_guard   可用范围见: path_scope
+  公共判定步骤见: path_check_common   路径属性判定见: path_guard   可用范围见: path_env
 
 小沈 2026-06-17 / 小健 2026-06-23 / 小欧 2026-07-04 起
 小欧 2026-10-15 三线分离后定稿
@@ -151,8 +151,8 @@ import os
 from pathlib import Path
 from typing import Optional, Tuple
 
-# 2026-10-15 小欧 - 文档[35] 阶段四: 磁盘枚举与白名单构建迁 path_scope, 本模块只留禁区分类内核
-from app.safety.path_scope import get_system_drive
+# 2026-10-15 小欧 - 文档[35] 阶段四: 磁盘枚举与白名单构建迁 path_env, 本模块只留禁区分类内核
+from app.safety.path_env import get_system_drive
 from app.tools.tool_constants import (
     FORBIDDEN_PATHS_EXACT,
     FORBIDDEN_PATHS_PREFIX,
@@ -162,7 +162,6 @@ from app.tools.tool_constants import (
 # 2026-10-14 北京老陈裁定(分层去反向依赖): 会话工作区取数收归 app/tools/context.py, 由本层传入 utils 单源。
 #   必须【模块级】导入 —— _is_forbidden_path 与 get_default_allowed_paths 两处都要用,
 #   只写在后者函数内会导致前者 NameError, 而 fail-closed 会把它伪装成"system 已拒绝"(实测全盘误拒, 极隐蔽)。
-from app.tools.context import session_workspace_paths
 # 2026-10-14 小欧 - 文档[33] 4.12-B: 系统目录判定单一真源, 阶段五随 is_system_protected_path 迁往 app.safety.path_guard
 from app.safety.path_guard import (
     SYSTEM_PROTECTED_DIR_NAMES,
@@ -220,7 +219,7 @@ def _is_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[st
 
         # 2026-10-14 北京老陈裁定: 受保护根(项目根/授权目录)及其上级归本层判(B族可授权),
         #   此前只有删除防线拦它、写入不拦 —— 同一类别待遇随层而变, 现统一由权限层决策
-        if is_protected_root_itself(file_path, session_workspace_paths()):
+        if is_protected_root_itself(file_path):
             return "non_system", f"路径位于受保护区域(受保护根): {file_path}"
 
         for forbidden in FORBIDDEN_PATHS_EXACT:

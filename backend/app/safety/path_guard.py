@@ -9,6 +9,7 @@
 #   本模块为纯判定: 零配置读取、零 I/O、**不读 security.enabled** —— 保证工具层依赖它
 #   ≠ 依赖可被关闭的前线防线(硬底线独立性)。
 #   迁移手法: 四个函数自 path_utils.py **逐字搬迁**, 实现与异常口径一字不改。
+# 2026-10-15 北京老陈裁定(DRY) - is_protected_root_itself 的 extra_roots 省略时自取会话快照: 原由 path_safe_check 与 delete_file 各取一次, 改一处漏一处即致授权判定分叉。
 """
 path_guard — 路径属性判定: 这条路径是什么性质
 
@@ -105,7 +106,8 @@ def is_protected_root_itself(file_path: str, extra_roots: Optional[Iterable[str]
     r"""是否受保护根**自身**或其上级祖先 —— 判定单源, 各层只调用
 
     返回禁止原因; 不属于受保护根返回 None。根**内部**的具体文件不拦, 只禁根自己与更上层。
-    extra_roots 语义同 get_allowed_roots(会话工作区快照由调用方传入, 见该函数说明)。
+    extra_roots 语义同 get_allowed_roots; 【省略时本函数自取会话工作区快照】——
+    取数职责收在此处一处, 调用方不再各自去 context 取, 防两处取法分叉致判定不一致。
 
     fail-closed: 根集读取异常(get_allowed_roots 抛错)时返回 "protected_root_itself" ——
     读不出根集就无法证明"不是受保护根", 按禁处理, 不得让异常冒泡到消费方(SA8 硬底线会崩而非拦)。
@@ -115,6 +117,11 @@ def is_protected_root_itself(file_path: str, extra_roots: Optional[Iterable[str]
     except Exception:
         return "protected_root_itself"          # fail-closed: 归一化失败亦按禁处理
     try:
+        if extra_roots is None:
+            # 2026-10-15 北京老陈裁定(DRY): 取数收归本函数, 调用方不再各自取。
+            # 延迟导入保本模块零顶层依赖(路径属性判定不该拖上层)。
+            from app.tools.context import session_workspace_paths
+            extra_roots = session_workspace_paths()
         roots = get_allowed_roots(extra_roots)
     except Exception as e:
         logger.warning(f"[path_guard] 读取允许根失败, 按受保护根拒绝: {e}")
