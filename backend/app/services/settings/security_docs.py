@@ -7,7 +7,7 @@ security_docs — 安全 Tab 说明文案源: 读 app/datafile/*.md(两个弹框
   占位符的值只有后端拿得到, 后端一次替换完 → 前端只把 md 交给 MarkdownSlot 渲染, 零字符串逻辑。
 
 分层: 本模块只 import 三个轻量模块 app.config / app.logger / app.tools.tool_constants,
-  且**绝不 import app.safety.path_safe_check** —— 后者 :71 顶层拉入整个 tool_registry。
+  且**绝不 import app.safety.path_guard** —— 后者顶层拉入 app.tools.tool_constants 名单表。
   tool_constants 全部 import 只有 tool_types + app.constants, 不拉注册表, 直接用零代价。
 
 为什么不需要处理盘符:

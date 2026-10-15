@@ -545,7 +545,7 @@ ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
 ERR_UNKNOWN = "ERR_UNKNOWN"
 
 # ============================================================
-# 🕐 12. 系统敏感路径黑名单常量 — Safety层(path_safe_check)消费
+# 🕐 12. 系统敏感路径黑名单常量 — Safety层(path_guard.classify_forbidden_path)消费
 # ============================================================
 
 FORBIDDEN_PATHS_EXACT: set[str] = {  # 【tool 级】使用对象: 文件安全禁用路径(精确匹配)

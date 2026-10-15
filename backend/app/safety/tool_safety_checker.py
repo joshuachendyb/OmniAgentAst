@@ -44,7 +44,7 @@
 # 2026-09-02 - 小欧 - 提示文案"准确+可读"优化(北京老陈驱动「提示文字看不懂」): _check_known_risks 用户可见 message 与日志串
 #   由专业黑话改为"术语保留(禁区分级/授权策略)+人话解释"并存——非系统禁区删:「该路径在受保护区域(非系统禁区),禁止删除」;
 #   非系统禁区写:「该路径在受保护区域(非系统禁区),写入需申请授权」; 系统禁区:「该路径在系统禁区,禁止访问」;
-#   白名单外:「该路径超出允许范围(白名单外),需临时授权」; msg 定位拼接自 path_safe_check(路径位于...);
+#   白名单外:「该路径超出允许范围(白名单外),需临时授权」; msg 定位拼接自 path_guard(路径位于...);
 #   仅改文案不改逻辑(安全分级/blocked/requires_confirmation/auth_path/auto_confirm 一律不变), 测试不断言文案, 逻辑零退化
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): _check_known_risks 增 skip_confirmation:
 #   trust 豁免传参下沉函数内部(替代调用方 action_handler 在函数外预判), 命中已信任(tool+path)则本轮函数内不再产出确认请求; 豁免只跳确认不跳危险防护,
@@ -99,8 +99,8 @@
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
-Safety层（本文件 + path_safe_check.py）：
-  - 路径黑名单/白名单校验（_is_forbidden_path → validate_path）
+Safety层（本文件 + path_guard/path_env/path_check_entry）：
+  - 路径黑名单/白名单校验（classify_forbidden_path → 三线 validate）
   - 路径穿越(..)拒绝
   - 写入大小保护
   - 二元安全确认(needs_confirmation)
@@ -118,7 +118,7 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 
 2026-06-16 小沈 删除5级枚举，改用二元安全+check_fn
 2026-06-17 小沈 删除record_operation/execute_with_safety委托(打破tools→safety循环依赖)，
-             路径校验改用path_safe_check(打破safety→tools循环依赖)
+             路径校验改用同包 safety 模块(打破safety→tools循环依赖)
 2026-07-04 小欧 补充两层架构说明注释
 2026-07-09 北京老陈 补充validate层完整函数清单
 """
@@ -365,7 +365,7 @@ class ToolSafetyChecker:
                            skip_confirmation: bool = False) -> Optional["SafetyResult"]:
         """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
-        小欧 2026-06-27: 路径检查委托validate_tool_path(path_safe_check统一处理)
+        小欧 2026-06-27: 路径检查委托validate_tool_path(现 path_check_entry 统一处理)
         小欧 2026-06-28: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
         # T1 (v1.43): mode 由 validate_tool_path 内部按 tool_name 自动推断(调用方不传), 本层接收其
         #   4 元组 (is_valid, msg, failed_path, category) —— 注释订正 2026-10-14(与实际行为一致)

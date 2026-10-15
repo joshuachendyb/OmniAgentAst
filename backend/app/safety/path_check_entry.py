@@ -19,7 +19,7 @@ path_check_entry — 路径检查总入口
 
 调用链: SA3 tool_safety_checker._check_known_risks
         → 本模块 validate_tool_path
-        → 三线 validate → path_check_common + path_safe_check._is_forbidden_path
+        → 三线 validate → path_check_common + path_guard.classify_forbidden_path
         → 读 SA6 temp_auth.is_temp_authorized
 
 小欧 2026-10-15

@@ -7,7 +7,7 @@
 #     ③ 白名单前缀匹配(:357-382, 26行)→ check_whitelist
 #   新增 resolve_allowed_paths: 收敛 "allowed_paths 显式传入优先, 否则取默认白名单" 这一句,
 #     原为 validate_path(:357) 内联单行, 三线各写一遍违反 DRY。
-#   禁区分类(_is_forbidden_path)不在本模块: 它按 mode 决定读放行/写删拦, 三线传入的 mode 不同,
+#   禁区分类(classify_forbidden_path)不在本模块: 它按 mode 决定读放行/写删拦, 三线传入的 mode 不同,
 #     故由三线各自直接调用并传本线固定 mode(文档[35] v1.8 修订#1)。
 # 2026-10-15 - 小欧 - 文档[35] P0-7/P0-8 修复(三堂会审, 均先实测复现再改):
 #   P0-7 白名单单条坏值致整体崩: allowed_real 归一化原在 try 外, 实测传 [None] 抛 TypeError
@@ -28,7 +28,7 @@ path_check_common — 读/写/删三条线共用的检查步骤
   读线: 禁区放行 + 白名单外放行
   写线: system 硬拦 / non_system 查任务级授权
   删线: 禁区全硬拦、无授权分支
-  三线共同调用 _is_forbidden_path(禁区分类), 但传入各自的 mode
+  三线共同调用 path_guard.classify_forbidden_path(禁区分类), 但传入各自的 mode
 
 小欧 2026-10-15
 """

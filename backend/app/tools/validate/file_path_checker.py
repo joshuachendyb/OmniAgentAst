@@ -33,7 +33,7 @@ validate/file_path_checker.py — tool内部路径业务级检查（集中管理
 
 工具层（本文件）：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
 [SA8] 权限信任框架第8步(工具体内业务校验, 与delete_file._guard_forbidden_delete并列最后防线) — 小欧-2026-10-14
-Safety层（services/safety/tool_safety_checker.py + path_safe_check.py）：
+Safety层（app/safety/tool_safety_checker.py + app/safety/path_guard.py）：
   路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
 """
 
@@ -75,7 +75,7 @@ def validate_path_for_write(file_path: str, content: str = "", append: bool = Fa
     """
     写入操作的路径业务级检查（适用于write_text_file、edit_text_file及所有写入类工具）
     工具层校验：非空/保留字符/保留名（仅警告，不阻断）
-    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（app/safety/path_guard.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -105,7 +105,7 @@ def validate_path_for_delete(file_path: str, recursive: bool = False, force: boo
     """
     删除操作的路径业务级检查（适用于delete_file）
     工具层校验：非空/保留字符/保留名（仅递归/强制警告）
-    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（app/safety/path_guard.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -126,7 +126,7 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
     """
     覆盖操作的路径业务级检查（适用于move_file、copy_file）
     工具层校验：非空（仅覆盖警告）
-    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（app/safety/path_guard.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     注意：文件存在检查与实际操作之间存在时间窗口（TOCTOU），
@@ -181,7 +181,7 @@ def validate_path(
     工具层校验：非空/保留字符/保留名/盘符存在性/存在性+类型/业务警告
     2026-10-14 北京老陈裁定: 目录权限(系统目录/磁盘根/代码库根/受保护根)已移出本层 ——
       权限由 Safety 层单一决策, 硬底线由 delete_file._guard_forbidden_delete 镜像 A 族。
-    Safety层（path_safe_check.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
+    Safety层（app/safety/path_guard.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
     小欧 2026-07-04
 
     第1层 基础校验（ALL）：非空 + 保留字符 + 保留名 + 盘符存在性
