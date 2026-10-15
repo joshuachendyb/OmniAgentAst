@@ -1,24 +1,44 @@
 v1.3.0
-更新时间: 2026-10-16 06:57:21 - 小欧
-## v1.3.0 安全架构重构+信任TTL+[28]文件工作台+口径归一(193 commit)
-[范围=v1.2.5 之后→HEAD; 本次=MINOR(北京老陈拍板：横跨安全架构重构+[33]/[35]/[28]文件工作台，够MINOR，非PATCH)]
+更新时间: 2026-10-16 06:57:21 - 小欧-2026-10-16
+## v1.2.5以来 变更汇总(193个commit: docs77/feat52/refactor19/fix43/style1/未分类1) - 小欧-2026-10-16
+[2026-10-16 06:57:21 小欧] 范围=v1.2.5以来全部commit(共193个); 主线: 安全信任体系重构([33]信任授权设计更新+三线validate改名+信任TTL落库+SA门禁补齐，safety骨架正名，工具层收编解除对系统层依赖) + 读写删三线路径分离([35]576行拆三线+validate_path彻底删除+系统目录单源判定消除跨层结论相反) + [28]文件管理Agent融合工作台(J1~J5后端+会话refs透传+新4.4前端详细设计+TDD顺序+前端验收+三遍核查) + observation与summary/message全类口径归一(hint修谎+tool_zh短名词+message去前缀) + [29]参数区UI优化(v1.6-v2.13全轮核查+双视图+浮层居中) + 前端交互(ChatInput输入历史/结果视图递归折叠/linked增量摘要); 注: 本批含52条feat按铁规应属MINOR，北京老陈2026-10-16裁定按MINOR记v1.3.0; MINOR bump v1.2.5→v1.3.0(北京老陈2026-10-16令打tag)
 
-### 1.3.0 安全三线分离与信任体系([33]×20/[35]×12，约60 commit)
-[内容] 路径检查三线分离(读/写/删独立文件+公共骨架+双通道，429bd5ef3)；safety骨架正名+guard改名+新增门禁(8cc60a990/a911fa87d)；会话信任TTL落列/写入/校验/清理/周期调度+task_id可追溯(039787fbd/b47683cf0/9e505266b)；系统保护目录单源判定(context补workspace，c308ace3c)；SA1门前初查(7a4a88a80)；[33]信任授权设计更新+P2-P4 TDD批次(4b0186310/0a9020f84/4eb63a0f7/82356e7e7)
-[提交] 429bd5ef3 a911fa87d 039787fbd 7a4a88a80 68f936ffe bf12d9196
+### 1.3.1 [33]信任授权与安全重构(设计更新+TDD实施)
+[信任设计] [33]信任授权设计五章+新旧逻辑图+实施步骤全量更新，[32]降级为取证底稿；第四章重写为一文件一节并逐行号实测校准，十遍审查修7处违规；第五章改真实diff(临时目录实改导出56个hunk，5.22标注已实施)；P2/P3/P4三批次按TDD实施完成(步7-12/14-15/16-20)，6.4进度同步更新 — 小欧 2026-10-14
+[骨架正名] safety骨架正名+guard改名+新增门禁与模块检查；三线validate改validate_read/write/delete，path_scope改path_env；app/safety四件(path_safe_check+temp_auth+trust+trust_db)升回系统层；app工具层收编解除对系统层依赖(P1六步)，架构守护红5项全清 — 小欧 2026-10-14
+[信任TTL] 会话信任TTL落列/写入/校验/清理/周期调度，会话信任加task_id字段可追溯(UPSERT记最后一次)；trust_db过期信任可复活修复+清理索引可用+safety_gate SLAP拆分；第九章归属重划收窄为写删安全策略级 — 小欧 2026-10-15
+[门禁补齐] safety_gate SA1门前初查路径合法性(省信任预查与SA3弹窗)；SA1-SA7执行流程图补工具层合法性校验位置；safety_gate未获授权报错补具体路径；组键同源+ConfirmSpec透传auth_path+拒绝记忆bypass守卫+别名归一；bypass未确认即终止补_bypass_confirmed守卫；tool_safety_checker补豁免早返不把无动作结果强标dangerous — 小欧 2026-10-16
+[目录归属] 会话快照迁中立层解safety→tools越层；path_guard classify_forbidden_path迁入正名+path_safe_check消号；is_protected_root_itself收口会话快照取数；tool_routes跟随系统结构回传SafetyResult；tool_facade补SA7沙箱预检+SA6带守卫授权 — 小欧 2026-10-15
 
-### 1.3.0 [28]文件管理Agent融合工作台(20 commit)
-[内容] J1~J5后端+会话refs透传(0b076a74c)；方案v3.3-v4.9(布局定稿/引用结构化/J5卡片/去卡片区/去模板/编号速查/22处核查)；新4.4前端详细设计+TDD顺序+前端验收(9c50efc29/5998ab09d)；4.3三遍核查+4.5删后端重编号(188a2d6c4)；十遍互查修正(6ad2bdf0c)
-[提交] 0b076a74c 9c50efc29 5998ab09d 188a2d6c4 6ad2bdf0c
+### 1.3.2 [35]读写删三线分离与路径单源
+[三线分离] path_safe_check.py 576行拆三线，迁出validate_path与禁区判定并修连带断链；path_check_entry阶段一路经检查三线分离新增8个模块；multi_path_check真分开源目标各归其线+PATH_ACTION_KINDS改名；shell_path_check自multi_path_check拆出shell通道validate_shell独立；清除向后兼容套壳validate_path彻底删除、调用点全量迁移 — 小欧 2026-10-15
+[单源判定] 系统目录判定单源归一(消除跨层结论相反)；文档/文件工具消费系统保护目录单源判定；path_utils单源判定context补workspace；tool_constants文档[35]阶段三新增TOOL_ACTION_KINDS动作档位声明表消除运行时if链；operation_backup_rollback备份与回滚合并到一文件 — 小欧 2026-10-15
+[设计同步] [35]设计方案v1.3-v1.9(去向对照表/待决议删除/模块正名/一致性修订/实码同步三线入口定名)；三线注释指针同步classify_forbidden_path正名；path_env清改名残留；第5章核查订正+行尾损坏修复 — 小欧 2026-10-15
 
-### 1.3.0 observation与summary/message口径归一(约40 commit)
-[内容] observation_content启用(35截断+去重+shell回显，35dc97ad1/330bbe911)；tool_zh短名词+content中文名(d882cef14)；各工具类summary统一口径(动词tool_zh成功后置：8477e8553/3a66b3cce/6ecc4222f/652f96130/588950e90/523b5cd0c/17cfa9fc8/5f9e7cccc)；hint修谎报/空话/复述(610dc0f85/c317f7e1d/6cd313ded/e8348943d等)；[29]参数区UI优化v1.6-v2.7全轮核查
-[提交] 35dc97ad1 d882cef14 8477e8553 4049a515d 17a057b3c
+### 1.3.3 [28]文件管理Agent融合工作台(设计v1.0-v4.9)
+[后端落地] 文件浏览J1~J5后端+会话refs透传+语法校验修正；browse_service 601行(边界唯一入口+_scan_dir唯一扫描+ETag304+recent-files聚合)；ChatRef模型+model_dump透传+sanitize_refs越界过滤+条件注入；单文件123通过/10跳过 — 小欧 2026-10-13
+[设计演进] v3.3升格J1~J5闭环；v3.4删跳过目录/黑名单/上限/闸门改独立顶层包；v3.5-v3.8五次通读+对齐后端实现；v4.0前端设计对齐实际代码修6处不符；v4.1批判审查删S8/I10/E2补I3/T1/I9/K1/J3细则；v4.2-v4.7(refs时机/删卡片区/删模板/去裸编号/编号速查表)；v4.8全文十遍核查修22处矛盾 — 小欧 2026-10-13
+[实施手册化] 删版本历史表+5.7测试节(北京老陈裁定测试细节不进设计)；新4.4前端详细设计(4.4.0-16按文件给代码，含composerRefStore订阅契约/useInputDraft托管/FileRefChip预处理)；4.5改TDD顺序(先红后绿P0-P4)+4.6改前端验收(A门禁/B1-B9/C回归/D演练)；4.3三遍核查(M2论据更正/4.3.5旧口径/补search)+13行号漂移+4.5删后端重编号；十遍互查修正(4.4.0错位/B9补项/根目录打架/裸message/vi.fn) — 小欧 2026-10-14
 
-### 1.3.0 前端修复与杂项
-[内容] ChatInput输入历史/焦点/翻动游标/草稿泄漏(146d8ac91/0a8df01db/3e01a4cdb/c254871ae)；文件浏览J1~J5后端；结果视图tree/listdir专用渲染+递归折叠(f2a9a2ba3/483a7a8ca)；linked增量摘要(67c1acd2c)；C4摘要校验(e3636f336)；tool_search桌面召回(23a28eb4c)；打包404修复(bc3f8c7eb)；BOM/换行符治理(7f2a6b6be/891585150/f598fec96)
-[提交] 146d8ac91 f2a9a2ba3 67c1acd2c 23a28eb4c bc3f8c7eb
+### 1.3.4 [29]参数区UI优化(v1.6-v2.13)
+[双视图] ParamsTree+ParamsPanel展开区JSON树+浮层双视图+浮层参数按钮+摘要折行；ParamsPanel参数分类重排6具名类+补树闭合括号与根箭头配色；结果视图透传raw_data+标题nowrap+尺寸令牌加宽；tool_result增raw_data纯增量字段(替换致回放空白的教训) — 小欧 2026-10-13
+[浮层居中] 工具行参数浮层改视口居中，FloatingEntry新增centered可选prop+index.css定位类(关箭头/关zoom/覆盖内联坐标)；浮层纵向居中补antd外壳26px；修点浮层连带展开工具行JSON树；撤销下划线私有键过滤+补非dict防御+空态显summary — 小欧 2026-10-14
+[文档核查] v1.6-v2.7全轮核查(D-8撤回/D-9/D-10/D-11/八轮14处/九轮10处)；v2.12-v2.13注释订正+编码损坏清零+结尾签名补齐 — 小欧 2026-10-14
 
+### 1.3.5 observation与summary/message口径归一
+[observation] observation_content.py内容投影与句子渲染；句子中文全量映射+布尔肯定否定；63工具取参明细表(v2.0)；tool_zh 50工具改短名词+content句子中文名；observation子行改读content行tool_zh+message合读；35截断+去重+shell_type回显；去重收尾+三堂会审5修复 — 小欧 2026-10-12
+[message去前缀] FILE/DOCUMENT/FUNDAMENTAL/NETWORK/DATAANALYSIS/DESKTOP/SYSTEM/TIMER/WIN_REGISTRY各组message去tool_zh前缀、成功分支带结果值、content合读通顺 — 小欧 2026-10-12
+[summary归一] 九类summary统一口径(动词用tool_zh成功后置，信息不减；DATAANALYSIS危险SQL回滚谎报成功改警告) — 小欧 2026-10-14
+[hint修谎] 九类hint修谎报/空话/复述(不存在工具名/错方向/OCR不存在/延迟限制改给行动/未生效改查状态)；DOCUMENT detail/message半角标点改全角；下载建目录失败hint按errno精确映射；shell拦截hint补换策略 — 小欧 2026-10-14
+
+### 1.3.6 前端交互与结果视图
+[输入] ChatInput输入历史(草稿持久化+最近提交)；草稿换localStorage+执行中可编辑不可发送(B+C)；焦点归还+翻动游标复位；useInputDraft修草稿跨会话泄漏+连续翻动失效 — 小欧 2026-10-13
+[结果视图] tree/listdir专用渲染+文件区文案；递归折叠NestedRows(三标签记忆+一次性迁移清旧残留)；tool_search搜桌面零召回修复+schema补关键词清单；linked增量摘要(锚点复用零LLM常态)；C4摘要结构校验防坏结构注入；首帧thought-start带task_id提前开门 — 小欧 2026-10-14
+
+### 1.3.7 工程配套
+[打包] 后端打包手册v2.0全文通读版；打包双开三件套(端口常量+依赖冻结提示+示例providers)；打包版补动态依赖+frozen跳过版本核对；client统一/api/v1前缀修复打包版全站404；config示例CORS端口改2000；OmniAgent.md入库 — 小欧 2026-10-11
+[语法校验] 沙箱组语法检测总开关+7语言独立开关(判定单点在校验器)；增TOML/XML/JS/TS tree-sitter主路径+node--check兜底；阻断改告警照常落盘；edit校验对象改write_content；五个写入类失败反馈补文件未写入磁盘 — 小欧-2026-10-12
+[模型与杂项] ModelLibraryTab ZenFree改名+effort类型；model_service effort透传Moonshot归并；provider键名改ZenFree+回落告警去歧义；HITL弹窗确认作废不关窗(rejected补confirm_id)；确认超时文案改未获授权；DB工具timeout改秒；security_docs docstring改raw消SyntaxWarning；BOM/换行符治理(write_*去BOM/read-write回LF/FUNCTIONS断行重建)；system_prompts搜备用工具提示词文案(北京老陈) — 小欧 2026-10-14
 v1.2.5
 更新时间: 2026-10-11 11:54:18 - 小欧
 ## v1.2.5 事件列表快照+HTL弹框统一+设置页归一(33 个 commit)
