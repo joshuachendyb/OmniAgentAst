@@ -32,7 +32,9 @@
 # 2026-09-20 - 小欧 - 写仲裁落地: 删除执行前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行读改写覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
-# 2026-10-14 - 小欧 - SA8标注: 本文件_guard_forbidden_delete=权限信任框架SA8(delete最后防线,执行第8步,与file_path_checker并列,不依赖security.enabled与config) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - SA8标注: 本文件_guard_forbidden_delete=权限信任框架SA8(delete硬底线,执行第8步,只镜像A族+删根专属,不依赖security.enabled) — 小欧-2026-10-14
+# 2026-10-14 北京老陈裁定(全局收敛) - _guard_forbidden_delete 定位为**硬底线**: 只镜像 A 族(系统目录/磁盘根)
+#   + 删除专属的受保护根本身; 受保护根本身已同步升到 Safety 层判(B族可授权), 消除"写入不拦/只有删除拦"。
 """
 F12: delete_file — 删除文件
 
@@ -51,77 +53,50 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
-from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
+from app.tools.context import _current_task_id, get_current_hooks_or_noop, session_workspace_paths  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
-from app.utils.path_utils import to_win_long_path, is_system_protected_path  # #5长路径包裹 — 小欧 2026-08-13
+from app.utils.path_utils import (
+    is_disk_root,
+    is_protected_root_itself,
+    is_system_protected_path,
+    to_win_long_path,
+)  # #5长路径包裹 — 小欧 2026-08-13
 from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 
 
 def _guard_forbidden_delete(file_path: str) -> Optional[str]:
-    """删除最后防线: 无条件禁止删除盘根/项目根+授权目录/系统保护目录 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
-    [SA8] 权限信任框架第8步最后防线: 不依赖security.enabled与config — 小欧-2026-10-14
-    不依赖security.enabled, 在delete()最前方硬阻断。
-    项目根统一走 config.get_project_root(), 代码库根删除保护由 Safety 层 _is_forbidden_path(⑦) 承接。
-    返回blocked原因, 通过返回None表示允许删除。
+    """删除硬底线 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
+
+    [SA8] 2026-10-14 北京老陈裁定(全局收敛): 权限判定收归 Safety 层单一决策, 本函数只作**硬底线**——
+      它没有授权通道, 只能说"不", 故只镜像 A 族(永不授权: 系统目录/磁盘根) + 删除专属的受保护根本身。
+      判定依据全部走 utils.path_utils 单源, 本层不持任何名单或匹配逻辑。
+      特点: 不读安全总开关 —— 总开关关了也照拦(实测 config security.enabled=false 场景)。
+      返回禁止原因; 允许删除返回 None。
     """
     try:
-        raw = Path(file_path)
-        p = raw.expanduser().resolve()
+        p = Path(file_path).expanduser().resolve()
     except Exception as e:
         return f"安全校验: 路径解析失败({e})"
-    # 1) 系统保护目录 — 2026-10-14 改调 utils.path_utils.is_system_protected_path(判定单源)
-    #    原此处自持一份 for sd in WINDOWS_SYSTEM_DIRS 循环(2026-08-03 引入), 与单源口径不同。
-    #    放在"路径不存在即放行"之前: 否则不存在的系统路径(如 C:\system32\a, 该盘无此目录)会被早退跳过,
-    #    实测单源拦而此处放行 —— 系统目录保护依赖"目录恰好存在"是缺陷。
-    if os.name == "nt" and is_system_protected_path(file_path):
+    # A 族(永不授权) — 判定单源 utils
+    #   放在"路径不存在即放行"之前: 否则不存在的系统路径(如 C:\system32\a, 该盘无此目录)会被早退跳过,
+    #   实测单源拦而此处放行 —— 系统目录保护依赖"目录恰好存在"是缺陷。
+    if os.name == "nt" and is_system_protected_path(file_path, "delete"):
         return f"禁止删除系统目录: {file_path}"
-
-    try:
-        if not p.exists() and not p.parent.exists():
-            return None
-    except Exception:
-        pass
-
-    # 2) 盘根(如 G:\ / C:\) — Windows: splitdrive后剩余部分为空或纯斜杠
-    try:
-        drive, rest = os.path.splitdrive(str(p))
-        if drive and not rest.strip("\\/"):
-            return f"禁止删除磁盘根目录: {file_path}"
-    except Exception:
-        pass
-
-    # 3) 项目根本身及项目根的父级祖先(含盘根) + 授权目录 — 保护根不被删除
-    #    根内的具体用户文件/目录仍允许删除, 只禁各根自身及更上层。
-    try:
-        from app.config import get_config
-        protected_roots_ = [Path(get_config().get_project_root()).resolve()]
-        try:
-            allowed_dirs = get_config().get_allowed_dirs()
-            protected_roots_ += [Path(d).resolve() for d in allowed_dirs]
-        except Exception:
-            pass
-        # 2026-10-10 小欧 — 并入会话使用的目录: 这些目录的**根本身**与其上级不可删;
-        #   快照是 frozenset[str], **必须转 Path**: 下面要遍历 root_.parents, 混入 str 会
-        #   AttributeError, 而整个块被本函数的 except 吞掉 → 保护整体失效。
-        from app.tools.context import get_ws_snapshot
-        _snap = get_ws_snapshot()
-        if _snap:
-            protected_roots_ += [Path(p).resolve() for p in _snap.all_paths]
-        for root_ in protected_roots_:
-            if p == root_:
-                return f"禁止删除项目根/授权根目录: {file_path}"
-            for ancestor in root_.parents:
-                if p == ancestor:
-                    return f"禁止删除项目根/授权根上级目录: {file_path}"
-    except Exception as e:
-        # 静默吞异常会让"删除保护判定失败"完全无痕(实测: 混入 str 即 AttributeError → 全块失效),
-        # 故必须留日志, 否则连本用例都发现不了 — 小欧 2026-10-10
-        logger.warning(f"[delete_file] 删除保护根判定异常, 本次降级放行(判定未生效): {e}")
+    if is_disk_root(file_path):
+        return f"禁止删除磁盘根目录: {file_path}"
+    # 删除专属: 受保护根(B 族)自身及其上级 —— 删根等于毁掉工作区, 不可用授权放行
+    # 会话工作区快照由本层取(app.tools.context 与本文件同层, 合法), 传入单源 ——
+    #   使 path_utils 无需反向依赖 tools(分层守护), 且 B 族保护范围零损失。
+    _hit = is_protected_root_itself(file_path, session_workspace_paths())
+    if _hit == "protected_root_itself":
+        return f"禁止删除项目根/授权根目录: {file_path}"
+    if _hit == "protected_root_ancestor":
+        return f"禁止删除项目根/授权根上级目录: {file_path}"
     return None
 
 

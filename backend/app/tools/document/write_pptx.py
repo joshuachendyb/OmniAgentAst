@@ -34,7 +34,7 @@ from app.logger import logger
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.file_safety_checker import check_content_safety
+from app.tools.validate.content_safety import check_content_safety
 from app.tools.tool_constants import ERR_DOC_WRITE_PPTX  # 2026-07-31 小欧: 移除未使用 ERR_DOC_NO_PPTX
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from app.utils.json_utils import coerce_json  # 2026-07-31 小欧: 移除未使用 logger

@@ -70,7 +70,7 @@ from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.validate.file_safety_checker import check_content_safety
+from app.tools.validate.content_safety import check_content_safety
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_encoding import get_file_encoding

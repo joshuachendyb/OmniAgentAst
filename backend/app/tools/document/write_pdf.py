@@ -35,7 +35,7 @@ from app.tools.tool_constants import ERR_WRITE_PDF
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
 from reportlab.lib.units import mm
 from app.tools.validate.file_type_checker import check_office_file
-from app.tools.validate.file_safety_checker import check_content_safety
+from app.tools.validate.content_safety import check_content_safety
 from app.utils.table_helper import parse_markdown_table, get_table_header_style_config, normalize_table_data  # 2026-07-31 小欧: 移除未使用 logger
 from app.tools.document.md_inline_utils import _md_to_pdf_xml
 
