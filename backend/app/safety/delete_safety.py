@@ -22,7 +22,7 @@
 delete_safety — delete 工具专属安全检查(差异层)
 
 职责: check_delete_risk 只判 R3-R6(项目根边界+递归差异), 恒返回 SafetyResult(R3→_PASS, 不用 None 表示放行)。
-R1(系统盘/系统目录) 与 R2(磁盘根递归) 由 _check_known_risks → validate_tool_path → _is_forbidden_path 无条件覆盖,
+R1(系统盘/系统目录) 与 R2(磁盘根递归) 由 _check_known_risks → 三线 validate → classify_forbidden_path 无条件覆盖,
 此处不重复实现(DRY/SRP, 三堂会审)。
 
 调用方: tool_safety_checker.check_before_execute 对 delete 工具一次性计算 delete_risk, 双轨消费:
@@ -34,7 +34,7 @@ import os
 from pathlib import Path
 
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 类型迁 tool_types
-from app.tools.context import session_workspace_paths  # 2026-10-15 北京老陈裁定: 会话工作区取数交调用方传入, 解开 utils→tools 反向依赖
+from app.session_workspace import session_workspace_paths  # 2026-10-15 北京老陈裁定(分层): 快照组迁中立层, 解 safety→tools 越层
 from app.utils.path_utils import get_allowed_roots  # 2026-10-15 北京老陈裁定: 允许根单源(DRY), 本文件不再自持一份
 from app.logger import logger  # #25: 授权目录失败需 warning
 
@@ -91,5 +91,5 @@ def check_delete_risk(params: dict) -> SafetyResult:
 
 # 2026-10-15 北京老陈裁定(YAGNI): __all__ 原导出 5 个符号, 其中 _as_bool/_PASS/
 #   原 _get_allowed_roots/_is_inside_any 共 4 个【零外部调用】且均为 _ 私有命名 ——
-#   属 backward 再导出(与 AGENTS 已批的 path_safe_check.__all__ 死条目同型)。现只导出唯一消费方。
+#   属 backward 再导出(与 AGENTS 已批的 __all__ 死条目同型)。现只导出唯一消费方。
 __all__ = ["check_delete_risk"]

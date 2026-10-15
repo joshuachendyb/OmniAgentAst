@@ -6,7 +6,7 @@
 #     get_default_allowed_paths (:188-203) 默认白名单 = 主目录+tmp+项目根+授权目录+会话工作区
 #     FALLBACK_SYSTEM_DRIVE     模块级常量, 仅 get_system_drive 消费
 #   拆分理由: 这两件事是"环境事实查询"(磁盘/配置/工作区), 与"路径是否属禁区"是两种
-#   关注点; _is_forbidden_path 只因要拿系统盘符才与本模块相邻, 属依赖而非同职。
+#   关注点; classify_forbidden_path 只因要拿系统盘符才与本模块相邻, 属依赖而非同职。
 #   本模块不含任何安全判定, 不读 security.enabled。
 # 2026-10-15 - 小欧 - 文档[35] P2-16/17/20 三堂会审(实测生产引用为 0 后删):
 #   get_existing_drives / _get_project_root_safety 生产零消费, 按 YAGNI 删除;
@@ -23,7 +23,7 @@ path_env — 路径可用范围: 系统盘符 + 白名单构建
   path_check_common 怎么查(三线共用的判定步骤)
 
 消费方: path_check_common.resolve_allowed_paths → 白名单比对;
-        path_safe_check._is_forbidden_path → 取系统盘符。
+        path_guard.classify_forbidden_path → 取系统盘符。
 
 小欧 2026-10-15
 """
@@ -38,7 +38,7 @@ from typing import List
 #   "system 已拒绝"(实测全盘误拒, 极隐蔽)。
 from app.config import get_config
 from app.logger import logger
-from app.tools.context import session_workspace_paths
+from app.session_workspace import session_workspace_paths  # 2026-10-15 北京老陈裁定(分层): 快照组迁中立层, 解 safety→tools 越层
 from app.utils.path_utils import get_allowed_roots
 
 # 2026-10-06 小欧 - 系统盘符三级探测全部失败时的最后兜底(唯一消费方就是 get_system_drive)

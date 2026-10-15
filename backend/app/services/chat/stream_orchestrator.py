@@ -258,7 +258,7 @@ from app.db import db  # 小健 2026-08-17 三堂会审修复: 模块级统一�
 from app.services.chat.history_loader import _load_previous_messages  # 历史加载下沉 storage旁(与 fetch_session_user_message_pairs 邻居) — 小健 2026-09-05
 from app.services.chat.storage import get_chain_summary_anchor  # 2026-10-14 小欧 - linked 增量摘要: 锚点取数(只读, 经闭包注入 agent) — 小欧-2026-10-14
 from app.services.chat.session_service import create_session  # 未带 session_id 时建会话(外键 chat_sessions 唯一出口) — 小欧 2026-10-02
-from app.tools.context import (  # 会话 Workspace 任务级快照(工具层 ContextVar) — 小欧 2026-10-10
+from app.session_workspace import (  # 会话 Workspace 任务级快照(中立层 ContextVar) — 小欧 2026-10-10
     WorkspaceEntry,
     WorkspaceSnapshot,
     get_ws_snapshot,
