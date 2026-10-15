@@ -416,10 +416,10 @@ def my_parse_json(json_str):
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `_as_bool` | 布尔强转（防LLM原始参数 'false'/'true' 字符串陷阱: bool('false')==True） | v: Any | bool |
-| `check_delete_risk` | delete 差异判定，恒返回 SafetyResult（PASS 免确认，不用None表示放行）；已知风险由 _check_known_risks 覆盖不重复；**多授权域**（项目根+授权目录），授权目录内递归不再误拦 | params: dict | SafetyResult |
-| `_get_allowed_roots` | 删除判定允许根列表 = [项目根] + 授权目录 | 无 | list |
-| `_is_inside_any` | 目标是否位于任一允许根内（含根自身与子级） | p: Path, roots: list | bool |
+| `_as_bool` | ~~布尔强转（防LLM原始参数 'false'/'true' 字符串陷阱: bool('false')==True）~~ **已于 2026-10-15 删除**（内联进 check_delete_risk，isinstance 前置为冗余分支；全仓唯一布尔解析实现见 app/config.py `env_flag`） | ~~v: Any~~ | ~~bool~~ |
+| `check_delete_risk` | delete 差异判定，恒返回 SafetyResult（R3 为内联构造的放行产物，不用None表示放行）；已知风险由 _check_known_risks 覆盖不重复；**多授权域**（项目根+授权目录+会话工作区，根集取自 path_utils.get_allowed_roots 单源）；fail-closed：路径归一化异常或根集读取失败一律 blocked | params: dict | SafetyResult |
+| `_get_allowed_roots` | ~~删除判定允许根列表~~ **已于 2026-10-15 删除**（根集合收为 `app/utils/path_utils.py` 的 `get_allowed_roots()` 公开单源） | — | — |
+| `_is_inside_any` | ~~目标是否位于任一允许根内~~ **已于 2026-10-15 删除**（零外部调用，内联为 `any(p == root or root in p.parents for root in roots)`） | — | — |
 
 > 消费链：tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，危险项入 _check_known_risks 无条件拦截，其余入 _get_needs_confirmation 确认分流
 

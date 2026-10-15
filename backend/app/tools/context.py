@@ -129,6 +129,21 @@ def get_ws_snapshot() -> Optional[WorkspaceSnapshot]:
     return _current_ws.get()
 
 
+def session_workspace_paths() -> list:
+    """本会话工作区目录列表(安全判定的受保护根来源之一) — 小欧 2026-10-15
+
+    2026-10-15 北京老陈裁定(分层去反向依赖): 该数据原先由 app/utils/path_utils 直接
+    import app.tools.context 取, 构成「utils 反向依赖上层」(守护测试红)。现把取数职责
+    收归快照归属地(本模块), 由调用方作为 extra_roots 传入 path_utils.get_allowed_roots,
+    utils 遂不依赖任何上层。
+
+    本函数放在本模块的原因: safety 层与 tools 层**均可** import app.tools.context
+    (铁律只禁 tools→services/safety), 故这是唯一能让三层共用又解开分层的位置。
+    """
+    snap = get_ws_snapshot()
+    return list(snap.all_paths) if snap else []
+
+
 def reset_current_session_workspaces(token) -> None:
     """恢复上一个快照 — 必须传 set 返回的 token, 错 token 会直接抛错不静默"""
     _current_ws.reset(token)
