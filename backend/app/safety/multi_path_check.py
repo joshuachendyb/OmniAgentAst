@@ -11,14 +11,15 @@
 #     G2 原参数键只认 src/source_path, **不认 path/dest**, 且 edit 完全未考虑,
 #        导致 copy 的 path 参数实际按 write 判定。现声明表直接给出每个参数的动作类型。
 #   手法: _validate_shell_write_targets 逐字搬迁只改 import 路径, 命令解析逻辑一字不改。
+# 2026-10-15 - 北京老陈裁定(真分开): 声明表全 write 是摆设, 改为源=读线+系统源外泄拦截、
+#   目标=写线、move 源=删线; 单路径 edit 移出本表(改走写线); 并修复
+#   LINE_BY_ACTION[action].validate 旧名残留(三线已改名, 旧调用致 6 工具全瘫)。
+# 2026-10-15 - 小欧 - 三堂会审: validate_multi_path 的 param_map is None 原静默放行, 改 fail-closed(命中路径参数逐个走写线, 零命中返 False/system) + warning 留痕。
 """
-multi_path_check — 多动作通道(6 个复合工具 + bash)
+multi_path_check — 多动作通道(5 个复合工具: copy/move/compress/extract/rename)
 
-本模块判定"一次调用里的多个动作":
-  - 复合工具: 源是读、目标是写, 各自归线
-  - bash: 一条命令里可能同时有写和删, 按命令内容定动作
-
-设计要点: 复合工具的参数动作类型由 MULTI_ACTION_PARAMS 声明式单源给出,
+本模块判定"一次调用里多个路径动作": 源与目标各归其线。
+设计要点: 参数动作类型由 MULTI_ACTION_PARAMS 声明式单源给出,
 新增复合工具只改这张表, 不改判定代码(OCP)。
 原 path_safe_check.py:558-560 的 if 链(白名单四个工具 + 参数键只认 src/source_path)已废弃。
 
@@ -29,6 +30,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from app.safety import read_path_check, write_path_check, delete_path_check
+from app.safety.path_guard import classify_forbidden_path  # 2026-10-15 系统源外泄拦截用
 
 
 # ── 复合工具参数动作声明(单源) ──────────────────────────────────────────
@@ -43,14 +45,21 @@ from app.safety import read_path_check, write_path_check, delete_path_check
 #   故此处声明为 write 是**零退化**, 不是回退。
 #   保留本通道而非并入写线: 让"这批工具按写线判"成为一处显式声明,
 #   而非依赖"键名恰好没命中"的隐式结果。
+# 2026-10-15 - 北京老陈裁定(真分开): 上述"源一律走写线"已由本次裁定取代, 原文存档不删。
+# 2026-10-15 - 北京老陈裁定(真分开): 源与目标各归其线, 不得全写 write 糊弄。
+#   读线放行系统目录文件(读本身无害), 故纯数据源(path)按读线判时,
+#   必须另加一条显式「系统源外泄拦截」—— 否则 compress/copy 可把 C:\Windows
+#   的东西搬运出去(实测 validate_read(C:\Windows\a.txt)=True)。
+#   各工具语义:
+#     copy/compress/extract: 源只读 → 读线 + 系统源外泄拦截; 目标落地 → 写线
+#     move: 源搬走=删 → 删线(系统目录/受保护根的删本就被拦); 目标落地 → 写线
+#     rename/edit: 同一对象改名改写 → 写线(与之前一致, 零退化)
 MULTI_ACTION_PARAMS: Dict[str, Dict[str, str]] = {
-    "copy":     {"path": "write", "dest": "write"},
-    "move":     {"path": "write", "dest": "write"},
-    "compress": {"path": "write", "dest": "write"},
-    "extract":  {"path": "write", "dest": "write"},
+    "copy":     {"path": "read", "dest": "write"},
+    "move":     {"path": "delete", "dest": "write"},
+    "compress": {"path": "read", "dest": "write"},
+    "extract":  {"path": "read", "dest": "write"},
     "rename":   {"path": "write", "dest": "write"},
-    # edit: 单参数读写一体, 同一文件先读原内容再写回, 按写线判一次即可
-    "edit":     {"path": "write"},
 }
 
 # 动作档位 → 线模块。单一真源, path_check_entry 亦引用本表(2026-10-15 小欧 - P2-22 消除双份)。
@@ -81,9 +90,10 @@ def resolve_path_param(tool_name: str, key: str, value: str, params: Dict[str, A
 
 def validate_multi_path(tool_name: str, params: Dict[str, Any]
                          ) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
-    """复合工具路径检查: 源与目标均按声明表逐个判定 — 小欧 2026-10-15
+    """复合工具路径检查: 源与目标各归其线逐个判定 — 小欧 2026-10-15
 
-    6 个复合工具的 path 与 dest 一律按写线判(理由见 MULTI_ACTION_PARAMS 上方注释)。
+    2026-10-15 北京老陈裁定(真分开): 读源走读线 + 系统源外泄拦截,
+    搬走源走删线, 落地目标走写线。未知档位 fail-closed 按写线。
 
     Args:
         tool_name: 归一化后的工具名
@@ -94,14 +104,42 @@ def validate_multi_path(tool_name: str, params: Dict[str, Any]
     """
     param_map = MULTI_ACTION_PARAMS.get(tool_name)
     if param_map is None:
-        return True, None, None, None
-
+        # 2026-10-15 小欧 - 三堂会审: 声明为 multi 却无参数声明=配置错误, 不得静默放行。
+        #   fail-closed 按写线最严处理(与 entry 未知档位同口径), 并打 warning 留痕。
+        from app.logger import logger
+        logger.warning(
+            f"[multi_path_check] 工具 {tool_name} 声明为 multi 但 MULTI_ACTION_PARAMS 无声明, "
+            f"按写线(fail-closed 最严档)处理; 请补声明表")
+        from app.tools.tool_constants import PATH_PARAM_KEYS
+        hit = False
+        for key in PATH_PARAM_KEYS:
+            value = params.get(key)
+            if value is None:
+                continue
+            hit = True
+            real_path = resolve_path_param(tool_name, key, value, params)
+            ok, err, category = write_path_check.validate_write(real_path)
+            if not ok:
+                return False, err, real_path, category
+        if not hit:
+            return False, f"工具 {tool_name} 声明为 multi 但调用不带任何路径参数", None, "system"
+        return True, None, None, None    
     for key, action in param_map.items():
         value = params.get(key)
         if value is None:
             continue
         real_path = resolve_path_param(tool_name, key, value, params)
-        ok, err, category = LINE_BY_ACTION[action].validate(real_path)
+        if action == "read":
+            ok, err, category = read_path_check.validate_read(real_path)
+            if ok:
+                # 系统源外泄拦截: 读线放行系统目录, 但搬运类工具不得以系统目录为数据源
+                cat, msg = classify_forbidden_path(real_path, "write")
+                if cat == "system":
+                    return False, msg, real_path, cat
+        elif action == "delete":
+            ok, err, category = delete_path_check.validate_delete(real_path)
+        else:  # write, 未知档位 fail-closed 按写线(最严)
+            ok, err, category = write_path_check.validate_write(real_path)
         if not ok:
             return False, err, real_path, category
 

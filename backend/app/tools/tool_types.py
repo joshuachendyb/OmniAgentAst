@@ -4,6 +4,7 @@
 # 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM);
 #   order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D: 承接 SafetyResult dataclass(迁自 app/tools/security/safety_result.py, 该模块随整包删除); 禁 backward 双份契约
+# 2026-10-15 - 小欧 - 文档[35] 跟随: action_kind 注释"multi"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -99,14 +100,13 @@ class ToolMetadata:
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
     target_param: Optional[str] = None
 
-    # 【2026-10-15 小欧 — 文档[35] 阶段三】动作类型(读/写/删), 由 tool_constants.TOOL_ACTION_KINDS
+    # 【2026-10-15 小欧 — 文档[35] 阶段三】动作类型(读/写/删), 由 tool_constants.PATH_ACTION_KINDS
     # 在注册时按工具名赋值。取代 path_check_entry 原先的运行时 if 链推断。
     #   "read"    只读, 路径检查走 read_path_check(禁区放行, 不弹授权)
     #   "write"   写入或改写, 走 write_path_check
     #   "delete"  删除, 走 delete_path_check(禁区硬拦, 永不授权)
-    #   "multi"   一调用内含多个动作(copy/move/rename/edit/compress/extract),
-    #             走 multi_path_check 按参数分别归线
-    #   "none"    定义里没有任何路径参数, 与路径安全无关, 直接放行
+    #   "multi"   一调用内含多个路径动作(copy/move/compress/extract/rename),
+    #             走 multi_path_check 按参数分别归线; 单路径的 edit 不得进此档
     # 默认 "write" 是 fail-closed 方向: 未声明的新工具按最严档处理, 与改造前 else 分支行为一致。
     action_kind: str = "write"
 

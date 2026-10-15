@@ -5,6 +5,7 @@
 # 2026-07-25 - 小欧 - 错误日志加filename:lineno上下文(欧阳建议)
 # 2026-08-07 - 小欧 - get_tool工具名别名归一化: LLM常生成变体名(write_text等), 经tools_alias_mapper.normalize_tool_name映射到注册名(write), 防"工具未注册"误拦截(com-test 03暴露)
 # 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), register/register_tool 贯通透传; 供 action_handler._resolve_target_field 优先采用, 留空则按schema属性自动推导(DRY/OCP)
+# 2026-10-15 - 小欧 - 文档[35] 跟随改名: TOOL_ACTION_KINDS→PATH_ACTION_KINDS(旧名不留壳); _resolve_action_kind 收口注册/重注册两处缺省(DRY, P2-23)。
 """
 工具注册表模块 - 统一入口
 
@@ -23,15 +24,15 @@ from app.tools.tool_description import to_openai_tools, generate_param_reminder
 from app.tools.tools_alias_mapper import normalize_tool_name
 from app.logger import setup_logger
 from app.utils.dependency import ensure_dependency
-from app.tools.tool_constants import CATEGORY_MODULES, TOOL_ACTION_KINDS  # 2026-10-15 小欧 - 文档[35] 阶段三: 动作类型声明表
+from app.tools.tool_constants import CATEGORY_MODULES, PATH_ACTION_KINDS  # 2026-10-15 小欧 - 文档[35] 阶段三: 动作类型声明表
 
 
 def _resolve_action_kind(name: str, fallback: str) -> str:
     """工具动作类型: 声明表优先, 未声明取 fallback — 小欧 2026-10-15
-    2026-10-15 小欧 - P2-23: 原在注册/重注册两处各写一遍 TOOL_ACTION_KINDS.get(...), 缺省不同,
+    2026-10-15 小欧 - P2-23: 原在注册/重注册两处各写一遍 PATH_ACTION_KINDS.get(...), 缺省不同,
       易改一处漏一处(DRY)。现收于本函数, 两处共用。
     """
-    return TOOL_ACTION_KINDS.get(name, fallback)
+    return PATH_ACTION_KINDS.get(name, fallback)
 
 logger = setup_logger(__name__)
 

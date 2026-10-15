@@ -735,7 +735,7 @@ PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "dest")
 
 # 只读工具集合 已于 2026-10-15 删除 — 小欧(文档[35] P2-21)
-#   原因: 与 TOOL_ACTION_KINDS 的 "read" 项**完全相同**(实测差集为空), 且生产零消费
+#   原因: 与 PATH_ACTION_KINDS 的 "read" 项**完全相同**(实测差集为空), 且生产零消费
 #        (通道分发改用 action_kind 单判据后无任何引用方)。两表并存 = 改一处漏一处(DRY)。
 
 
@@ -757,59 +757,37 @@ PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
 #   "write"   写入或改写    → write_path_check
 #   "delete"  删除          → delete_path_check(禁区硬拦, 永不授权)
 #   "multi"   一调用含多动作 → multi_path_check 按参数分别归线
-#   "none"    定义里无任何路径参数, 与路径安全无关 → 直接放行
 #
 # 未在此表出现的工具取 ToolMetadata 默认值 "write"(fail-closed, 最严档)。
 # 名单依据: 按各工具 input_schema.properties 是否含 PATH_PARAM_KEYS 实测得出
 #   (文档[35] §1.2.2), 非按名称猜。
-TOOL_ACTION_KINDS = {
-    # ── 只读(10 个, 定义里只有 path) ──
+# 2026-10-15 北京老陈裁定改名: 原名 TOOL_ACTION_KINDS 谎称"所有工具分类",
+#   实为路径检查分发档位(读/写/删/多路), 正名为 PATH_ACTION_KINDS(旧名不留壳)。
+#   表中只收文件操作工具: 无路径参数的(如 calendar/timenow)不需声明(通道 A 零命中即放行);
+#   registry_* 的 path 是注册表键, 豁免放 path_check_entry(与 bash 特判并列)。
+# 2026-10-15 - 小欧 - 同批: query_sql/get_db_schema/analyze_data/filter_data 由 write 改 read(四者均无输出路径参数); edit 移出 multi 改走写线。
+PATH_ACTION_KINDS = {
+    # ── 只读(14 个): 只读文件/库, 走读线(读线契约=读无害处处放行, 敏感内容交 contentFilter) ──
     "find": "read", "grep": "read", "listdir": "read", "read": "read",
     "read_docx": "read", "read_pdf": "read", "read_pptx": "read",
     "read_xlsx": "read", "readmedia": "read", "tree": "read",
-
+    "query_sql": "read", "get_db_schema": "read",
+    "analyze_data": "read", "filter_data": "read",
+    # ── 写入类(10 个)在此显式列出, 便于审计; 取值与默认值一致 ──
+    "write": "write", "edit": "write", "write_docx": "write", "write_pdf": "write",
+    "write_pptx": "write", "write_xlsx": "write",
+    "execute_sql": "write",
+    "generate_chart": "write", "screen_capture": "write",
+    #   download 有 dest(下载落盘路径), 属写入目标 —— 必须走写线。
+    "download": "write",
     # ── 删除(1 个) ──
     "delete": "delete",
 
-    # ── 一调用内含多个动作(6 个) ──
-    #   path 是源、dest 是目标, 但两者档位**同为 write** —— 源虽只读, 意图却是把数据
-    #   搬离原地; 若按读线判, 系统目录会被放行(可被压缩/复制 = 数据外泄)。详见 multi_path_check。
+    # ── 一调用内含多个路径动作(5 个, 源与目标各归其线) ──
+    #   copy/compress/extract: 源=读线+系统源外泄拦截, 目标=写线;
+    #   move: 源=删线, 目标=写线; rename: 源与目标=写线。详见 multi_path_check。
     "copy": "multi", "move": "multi", "compress": "multi",
-    "extract": "multi", "rename": "multi", "edit": "multi",
-
-    # ── 与文件系统路径无关, 不进路径检查(16 个) ──
-    #   实测 input_schema 无任何 PATH_PARAM_KEYS 参数。
-    #   其中 registry_* 虽有 path 参数, 但那是**注册表键路径**(如 SOFTWARE\Microsoft\Windows),
-    #   不是文件系统路径 —— 若按 write 走文件系统判定, realpath 会把它解析成相对当前目录的
-    #   文件路径并误判为代码库禁区, 实测三个 registry_* 工具因此每次调用都被硬拦。
-    #   bash 虽有 cwd/command, 走 bash 专用通道(命令内绝对路径另行抽取), 不在此列。
-    "calendar": "none", "create_task": "none", "delete_task": "none",
-    "event_log": "none", "list_tasks": "none", "notify": "none",
-    "registry_delete": "none", "registry_read": "none", "registry_write": "none",
-    "searchtool": "none", "sysinfo": "none",
-    "timeadd": "none", "timediff": "none", "timenow": "none",
-    "timer_clear": "none", "timer_list": "none", "timer_set": "none",
-    "which": "none",
-
-    # ── DESKTOP 交互, 无文件系统路径(10 个) ──
-    #   实测参数为 x / y / button / amount / direction / action / window_title 等。
-    "clipboard_control": "none", "keyboard_control": "none",
-    "mouse_click": "none", "mouse_move": "none", "mouse_position": "none",
-    "mouse_scroll": "none", "set_window_state": "none",
-    "window_focus": "none", "window_info": "none", "window_resize": "none",
-
-    # ── 网络类 ──
-    #   httpget/fetchpage/searchweb 无文件系统路径; ping_port 也不涉及本地路径。
-    "httpget": "none", "fetchpage": "none", "searchweb": "none", "ping_port": "none",
-    #   download 有 dest(下载落盘路径), 属写入目标 —— 必须走写线, 不能声明 none。
-    "download": "write",
-
-    # ── 写入类(12 个)在此显式列出, 便于审计; 取值与默认值一致 ──
-    "write": "write", "write_docx": "write", "write_pdf": "write",
-    "write_pptx": "write", "write_xlsx": "write",
-    "analyze_data": "write", "filter_data": "write",
-    "execute_sql": "write", "query_sql": "write", "get_db_schema": "write",
-    "generate_chart": "write", "screen_capture": "write",
+    "extract": "multi", "rename": "multi",
 }
 
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A

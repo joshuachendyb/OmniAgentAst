@@ -8,14 +8,15 @@
 #        返回值由三元组升为四元组 —— failed_path 由本层填真实解析后路径(BUG-D 修复要点)。
 #     ③ 复合工具(含 rename/edit)特判从主干移出, 交 multi_path_check 声明式派发。
 #   原 validate_path 及其 mode 参数已删除(文档[35] 总则四 禁止 backward), 无转发壳、无兼容入口。
+# 2026-10-15 - 北京老陈裁定: 删"none"通道(通道 A 零路径命中即放行已等价覆盖) + registry_* 豁免(entry 与 bash 特判并列, 注册表键非文件路径)。
+# 2026-10-15 - 小欧 - 三堂会审: registry_* 豁免须已注册才生效(防伪造前缀绕过), 移至 get_tool 之后。
 """
 path_check_entry — 路径检查总入口
 
 本模块是 SA5 对外的**唯一入口**, 负责把一次工具调用分派到正确的检查:
 
-  通道 C  action_kind == "none"  无 path 参数的工具 → 直接放行, 不进三线
-  通道 B  bash / action_kind == "multi"  多动作 → multi_path_check
-  通道 A  action_kind == "read"/"write"/"delete"  单一动作 → 对应线
+   通道 B  bash / registry_* / action_kind == "multi"  → shell_path_check / 豁免 / multi_path_check
+   通道 A  action_kind == "read"/"write"/"delete"  单一动作 → 对应线(零路径命中即放行)
 
 调用链: SA3 tool_safety_checker._check_known_risks
         → 本模块 validate_tool_path
@@ -83,11 +84,14 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         meta = tool_registry.get_tool(normal_name)
         if meta is None:
             return False, f"工具{normal_name}未注册", None, "system"
-        kind = meta.action_kind
 
-        # 通道 C: action_kind=="none" —— 工具定义里无任何路径参数, 与路径安全无关, 直接放行。
-        if kind == "none":
+        # registry_* 的 path 是注册表键而非文件路径, 不进文件判定(2026-10-15 北京老陈裁定:
+        # 非文件工具不得进 PATH_ACTION_KINDS 凑数, 豁免放 entry 与 bash 特判并列)。
+        # 2026-10-15 小欧 - 三堂会审: 豁免须已注册才生效, 未注册的 registry_* 仍走上方的
+        #   system 硬拦, 防伪造工具名前缀绕过。
+        if normal_name.startswith("registry_"):
             return True, None, None, None
+        kind = meta.action_kind
 
         # 通道 B: 复合工具, 源与目标档位在 MULTI_ACTION_PARAMS 显式声明。
         if kind == "multi":
@@ -101,7 +105,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
             from app.logger import logger
             logger.warning(
                 f"[path_check_entry] 工具 {normal_name} 的 action_kind={kind!r} 不在三线中, "
-                f"按写线(fail-closed 最严档)处理; 请在 tool_constants.TOOL_ACTION_KINDS 声明")
+                f"按写线(fail-closed 最严档)处理; 请在 tool_constants.PATH_ACTION_KINDS 声明")
             line = write_path_check
 
         # 遍历所有命中路径参数逐一校验, 任一越权即拒绝(漏洞B修复: 原只取第一个命中参数)
