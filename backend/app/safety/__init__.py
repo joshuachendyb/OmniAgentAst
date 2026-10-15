@@ -20,10 +20,10 @@ from app.db.operation_queries import (
     get_operation_task_id, query_file_operations, query_tree_operations,
     query_sankey_operations, query_animation_operations, query_mermaid_operations,
 )
-from app.safety.operation_backup import (
+from app.safety.operation_backup_rollback import (
     backup_to_recycle_bin,
 )
-from app.safety.operation_rollback import (
+from app.safety.operation_backup_rollback import (
     rollback_operation, rollback_session,
 )
 from app.safety.operation_maintenance import (
@@ -40,7 +40,7 @@ from app.safety.path_guard import (
     is_protected_root_itself,
     is_system_protected_path,
 )
-from app.safety.path_scope import (
+from app.safety.path_env import (
     get_default_allowed_paths,
     get_system_drive,
 )
@@ -49,14 +49,15 @@ from app.safety.path_check_common import (
     check_whitelist,
     resolve_allowed_paths,
 )
-from app.safety.read_path_check import validate as validate_path_for_read
-from app.safety.write_path_check import validate as validate_path_for_write
-from app.safety.delete_path_check import validate as validate_path_for_delete
+from app.safety.read_path_check import validate_read as validate_path_for_read
+from app.safety.write_path_check import validate_write as validate_path_for_write
+from app.safety.delete_path_check import validate_delete as validate_path_for_delete
 from app.safety.multi_path_check import (
     MULTI_ACTION_PARAMS,
-    validate_bash_targets,
+    resolve_path_param,
     validate_multi_path,
 )
+from app.safety.shell_path_check import validate_shell
 from app.db.models.operation_models import OperationType, OperationStatus
 
 __all__ = [
@@ -76,5 +77,5 @@ __all__ = [
     "is_protected_root_itself", "SYSTEM_PROTECTED_DIR_NAMES",
     "get_default_allowed_paths", "get_system_drive",
     "check_preconditions", "check_whitelist", "resolve_allowed_paths",
-    "MULTI_ACTION_PARAMS", "validate_multi_path", "validate_bash_targets",
+    "MULTI_ACTION_PARAMS", "validate_multi_path", "validate_shell",
 ]

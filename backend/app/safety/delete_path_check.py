@@ -8,6 +8,7 @@
 #   原 validate_path 及其 mode 参数已删除(文档[35] 总则四 禁止 backward), 无转发壳。
 # 2026-10-15 - 小欧 - 文档[35] 阶段二: 模块 docstring 补九格契约表。
 # 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
+# 2026-10-15 北京老陈裁定 - validate 改名 validate_delete: 三线同名, 经模块引用无法辨识线的语义。
 """
 delete_path_check — 删操作路径检查(删线)
 
@@ -41,8 +42,8 @@ from app.safety.temp_auth import is_temp_authorized
 DELETE_MODE = "delete"
 
 
-def validate(file_path: str, allowed_paths: Optional[List] = None) -> Tuple[bool, Optional[str], Optional[str]]:
-    """删线路径检查 — 小欧 2026-10-15
+def validate_delete(file_path: str, allowed_paths: Optional[List] = None) -> Tuple[bool, Optional[str], Optional[str]]:
+    """删线validate_delete — 小欧 2026-10-15
 
     Returns:
         (is_valid, error_message, category), category ∈ {"system", "non_system", None}
@@ -69,4 +70,4 @@ def validate(file_path: str, allowed_paths: Optional[List] = None) -> Tuple[bool
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-__all__ = ["validate"]
+__all__ = ["validate_delete"]

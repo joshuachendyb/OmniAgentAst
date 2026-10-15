@@ -27,13 +27,22 @@ path_check_entry — 路径检查总入口
 
 from typing import Any, Dict, Optional, Tuple
 
-from app.safety import multi_path_check, read_path_check, write_path_check, delete_path_check
+from app.safety import shell_path_check, multi_path_check
+from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.registry import tool_registry
 from app.tools.tool_constants import PATH_PARAM_KEYS
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
 
 # 动作档位 → 线模块: 单一真源在 multi_path_check.LINE_BY_ACTION(2026-10-15 小欧 - P2-22 消除双份)
 LINE_BY_ACTION = multi_path_check.LINE_BY_ACTION
+
+# 2026-10-15 北京老陈裁定 - 三线 validate 改 validate_read/write/delete 后, 此表给出
+#   「线模块 -> 本线校验函数」, 调用点一次查表即知走哪条线(同名 validate 无法辨识)。
+LINE_VALIDATE = {
+    read_path_check: read_path_check.validate_read,
+    write_path_check: write_path_check.validate_write,
+    delete_path_check: delete_path_check.validate_delete,
+}
 
 # 写入类路径参数 —— 一律指向"数据落到哪里", 恒按写线判。2026-10-15 小欧 - P1-11
 _WRITE_TARGET_KEYS = {"dest", "target_path", "output_path", "destination_path"}
@@ -68,7 +77,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
 
         # bash 走命令专用通道(entry 在此特判, 不经 action_kind 分派); 声明 multi 仅为语义准确。
         if normal_name == "bash":
-            return multi_path_check.validate_bash_targets(
+            return shell_path_check.validate_shell(
                 normalized_params.get("command") or "", normalized_params.get("cwd"))
 
         meta = tool_registry.get_tool(normal_name)
@@ -104,7 +113,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
             # 2026-10-15 小欧 - P1-11: dest/target_path 等是写入目标, 与工具动作无关。实测 read 工具携带
             #   dest=C:\Windows\evil.txt 时跟读线判会放行, 故这批参数恒走写线。
             param_line = write_path_check if key in _WRITE_TARGET_KEYS else line
-            valid, err, category = param_line.validate(real_path)
+            valid, err, category = LINE_VALIDATE[param_line](real_path)
             if not valid:
                 # failed_path 取真正越权参数的真实路径(BUG-D), 不再固定 path-or-dest
                 return False, err, real_path, category

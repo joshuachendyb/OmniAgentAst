@@ -89,7 +89,7 @@ def _ws_deny_reason(p: str) -> Optional[str]:
     #   等价能力迁至 app.safety.write_path_check.validate(返回三元组, system 口径一致)。
     #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
     from app.safety.path_safe_check import _is_forbidden_path
-    from app.safety.write_path_check import validate as _validate_write_path
+    from app.safety.write_path_check import validate_write as _validate_write_path
     category, msg = _is_forbidden_path(p)
     if category:
         return msg or "路径在全局禁区内"
