@@ -11,13 +11,14 @@
 # 2026-10-15 - 小欧 - 文档[35] P2-16/17/20 三堂会审(实测生产引用为 0 后删):
 #   get_existing_drives / _get_project_root_safety 生产零消费, 按 YAGNI 删除;
 #   FALLBACK_SYSTEM_DRIVE 保留定义(仅 get_system_drive 内部消费), 仅移出 __all__。
+# 2026-10-15 北京老陈裁定 - 改名 path_scope.py -> path_env.py: 内容是环境事实查询(盘符/临时目录/白名单), 与 scope 无关。
 """
-path_scope — 路径可用范围: 系统盘符 + 白名单构建
+path_env — 路径可用范围: 系统盘符 + 白名单构建
 
 回答一个问题: **哪些路径允许操作?**
 
 与相邻两个模块的分工:
-  path_scope      本模块 —— 哪里能用(读磁盘/配置/会话工作区)
+  path_env      本模块 —— 哪里能用(读磁盘/配置/会话工作区)
   path_guard      是什么路径(纯判定, 不读开关)         [文档[35] 阶段五迁入]
   path_check_common 怎么查(三线共用的判定步骤)
 
@@ -89,7 +90,7 @@ def get_default_allowed_paths() -> List[Path]:
     try:
         paths.extend(get_allowed_roots(session_workspace_paths()))
     except Exception as e:
-        logger.warning(f"[path_scope] 读取允许根失败, 白名单降级为主目录+tmp: {e}")
+        logger.warning(f"[path_env] 读取允许根失败, 白名单降级为主目录+tmp: {e}")
     return paths
 
 
