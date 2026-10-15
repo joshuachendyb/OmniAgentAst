@@ -45,6 +45,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 # 2026-10-15 北京老陈裁定: 本层不判权限, path_utils 导入整体删除(权限单源在 Safety 层)。
+# 2026-10-15 - 小欧 - 三堂会审(第1、2层抽出): validate_path_layers12 新增, 本文件第1层(格式)第2层(存在/类型)
+#   自 validate_path **逐字复制**移入(能复制不重写, 逻辑零改动), validate_path 改为调本函数 + 保留第3层警告。
+#   动因: SA1 门前初查只需前两层, 原先整调 validate_path 会连带跑第3层 —— 产出的 warning 全被丢弃,
+#   却付出 exists()+stat()/is_dir() 的无谓文件系统 IO。抽出后前门零 IO, 两处共用一份实现(改一处两处齐知)。
+#   返回二元组(无 warning 通道): 门前初查只取 (is_valid, err), 第3层语义仍只归 validate_path。
 
 logger = logging.getLogger(__name__)
 
@@ -171,13 +176,69 @@ _OP_RULES: Dict[OpCategory, Dict[str, Any]] = {
 _WINDOWS_RESERVED_CHARS = '<>:"/\\|?*'
 
 
+def validate_path_layers12(
+    op: OpCategory,
+    path: str,
+    **options: Any,
+) -> Tuple[bool, Optional[str]]:
+    """第1层格式 + 第2层存在性/类型 — 小欧 2026-10-15
+
+    自 validate_path 第1、2层**逐字抽出**(能复制不重写), 供两处共用:
+      validate_path —— 本入口只在正常跑检查(编排层)
+      path_check_entry.precheck_path_legality —— SA1 门前初查(第3层警告不要它)
+
+    第3层(业务警告 content/append/recursive/force/overwrite)只产 warning 不产 error,
+    且依赖执行期才拿得全的参数, 故不在本入口内。
+    幂等删除(force=True)照搬第2层语义: 不存在即视为已删。
+    """
+    # 第1层
+    if not isinstance(path, str) or not path.strip():
+        return False, "路径不能为空"
+    # 盘符存在性检查（最先做，最外层的快速否决） — 小欧 2026-07-04
+    drive = os.path.splitdrive(path)[0]
+    if drive:
+        if not os.path.exists(drive + "\\"):
+            avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
+            return False, f"驱动器: {drive}不存在。可用驱动器: {', '.join(avail)}"
+        # 检测路径中间是否出现多余盘符（如 E:\dir\E:\file）— 小沈 2026-07-08
+        _tail = path[len(drive):]
+        if re.search(r'[A-Za-z]:', _tail.lstrip("\\/")):
+            return False, f"路径: {path}中包含多余的盘符"
+    # 只检查文件名部分（Path(...).name），排除路径分隔符和盘符:号 — 小欧 2026-07-04
+    _fname = Path(path).name
+    if any(c in _fname for c in _WINDOWS_RESERVED_CHARS):
+        return False, f"文件: {_fname}名包含Windows保留字符"
+    reserved = _has_windows_reserved_name(path)
+    if reserved:
+        return False, f"文件: {reserved}名包含Windows保留名"
+
+    # 第2层
+    rule = _OP_RULES[op]
+    if rule["check_exist"]:
+        p = Path(path)
+        if not p.exists():
+            # 幂等删除: force=True 时不存在即视为已删除,不报错(delete 专用) — 北京老陈 2026-07-12
+            if op == OpCategory.EXISTS and options.get("force"):
+                return True, None
+            logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
+                           path, op.value,
+                           os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
+                           p.parent.exists(), str(p.parent))
+            return False, "路径不存在: " + path
+        if rule["must_be"] == "file" and not p.is_file():
+            return False, path +"不是文件"
+        if rule["must_be"] == "dir" and not p.is_dir():
+            return False,  path +"不是目录"
+    return True, None
+
+
 def validate_path(
     op: OpCategory,
     path: str,
     **options: Any,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """
-    统一路径前置校验（编排层，同文件调所有 validate_path_for_*）
+    统一路径前置校验（编排层，本文件调所有 validate_path_for_*）
     工具层校验：非空/保留字符/保留名/盘符存在性/存在性+类型/业务警告
     2026-10-14 北京老陈裁定: 目录权限(系统目录/磁盘根/代码库根/受保护根)已移出本层 ——
       权限由 Safety 层单一决策, 硬底线由 delete_file._guard_forbidden_delete 镜像 A 族。
@@ -188,50 +249,19 @@ def validate_path(
     第2层 存在性+类型（WRITE跳过）：exists / is_file / is_dir
     第3层 业务警告：content/append → write；recursive/force → delete；overwrite+source → overwrite（extract→系统目录警告已删, Safety 硬拦）
 
+    第1、2层本体在 validate_path_layers12(2026-10-15 抽出: 门前初查只需前两层, 逐字复制未改逻辑),
+    本函数 = 前两层(单源) + 第3层警告。
+
     Returns: (is_valid, error_msg, warning_msg)
     """
-    # 第1层
-    if not isinstance(path, str) or not path.strip():
-        return False, "路径不能为空", None
-    # 盘符存在性检查（最先做，最外层的快速否决） — 小欧 2026-07-04
-    drive = os.path.splitdrive(path)[0]
-    if drive:
-        if not os.path.exists(drive + "\\"):
-            avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
-            return False, f"驱动器: {drive}不存在。可用驱动器: {', '.join(avail)}", None
-        # 检测路径中间是否出现多余盘符（如 E:\dir\E:\file）— 小沈 2026-07-08
-        _tail = path[len(drive):]
-        if re.search(r'[A-Za-z]:', _tail.lstrip("\\/")):
-            return False, f"路径: {path}中包含多余的盘符", None
-    # 只检查文件名部分（Path(...).name），排除路径分隔符和盘符:号 — 小欧 2026-07-04
-    _fname = Path(path).name
-    if any(c in _fname for c in _WINDOWS_RESERVED_CHARS):
-        return False, f"文件: {_fname}名包含Windows保留字符", None
-    reserved = _has_windows_reserved_name(path)
-    if reserved:
-        return False, f"文件: {reserved}名包含Windows保留名", None
+    # 第1、2层（单一真源: validate_path_layers12）
+    ok, err = validate_path_layers12(op, path, **options)
+    if not ok:
+        return False, err, None
 
     # 2026-10-14 北京老陈裁定: 本层只判参数合法性(格式/存在性/类型/大小/递归), 不判权限。
     #   目录权限(系统目录/磁盘根/代码库根/受保护根)统一由 Safety 层决策, 硬底线由
     #   delete_file._guard_forbidden_delete 镜像 A 族 —— 权限判定权收敛到唯一一处。
-
-    # 第2层
-    rule = _OP_RULES[op]
-    if rule["check_exist"]:
-        p = Path(path)
-        if not p.exists():
-            # 幂等删除: force=True 时不存在即视为已删除,不报错(delete 专用) — 北京老陈 2026-07-12
-            if op == OpCategory.EXISTS and options.get("force"):
-                return True, None, None
-            logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
-                           path, op.value,
-                           os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
-                           p.parent.exists(), str(p.parent))
-            return False, "路径不存在: " + path, None
-        if rule["must_be"] == "file" and not p.is_file():
-            return False, path +"不是文件" , None
-        if rule["must_be"] == "dir" and not p.is_dir():
-            return False,  path +"不是目录", None
 
     # 第3层
     warnings = []
