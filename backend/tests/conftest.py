@@ -4,7 +4,8 @@ tests/conftest.py — 全局测试夹具
 
 编辑历史:
   2026-09-26 - 小欧 - [72]第九章(9.6-3) 新建。**统一为 TestClient 请求注入访问口令**。
-  2026-10-03 - 小欧 - 文档[4] 5.11.1 P0: 新增共享内存库夹具 conn+chat_db(建表脚本逐字搬运自 test_s2_s4_review_bugs 并补 link_enabled 列), 供第5章新增 case 复用; 存量 7 份副本刻意不动(YAGNI)。
+  2026-10-03 - 小欧 - 文档[4] 5.11.1 P0: 新增共享内存库夹具 conn+chat_db(建表脚本逐字搬运自 test_s2_s4_review_bugs 并补
+  2026-10-15 - 小欧 - [33] 4.2 落地(测试侧对齐 TTL 新列): chat_session_trust 建表补 expires_at TEXT; UNIQUE 由 (session_id,tool_name) 改 (session_id,tool_name,path)——原唯一键会让"同工具同路径两条不同 session 行"互相冲突, 且与生产 trust_db.insert_session_trust 语义对齐 — 小欧-2026-10-15 link_enabled 列), 供第5章新增 case 复用; 存量 7 份副本刻意不动(YAGNI)。
 
 背景：第九章给 12 个 router 挂了统一 token 鉴权（`app/api/v1/deps.verify_token`），
   凡未带口令的请求一律 401。项目内用 `fastapi.testclient.TestClient` 的测试
@@ -92,8 +93,11 @@ def _build_schema(conn) -> None:
         CREATE TABLE chat_session_trust (
             id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
             tool_name TEXT NOT NULL,
+            path TEXT,
             created_at TEXT,
-            UNIQUE(session_id, tool_name)
+            expires_at TEXT,
+            task_id TEXT,
+            UNIQUE(session_id, tool_name, path)
         );
     """)
 

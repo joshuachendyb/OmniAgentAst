@@ -20,8 +20,7 @@
 #   早已支持目录前缀继承, 但写入端恒登记叶子文件, 生产者从不产出目录 —— 「信任此操作」退化为「只信任这一个
 #   文件名」, 换个文件名即重新弹窗(DB 实测同 session 4 行全为 analysis\*.py 单文件, 无一行目录)。
 #   读取端零改动(本就不需要改), 仅让生产者产出它能匹配的东西。 — 小欧-2026-10-06
-# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
-# 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改); 旧文件已删。
+# 2026-10-14 - 小欧 - 文档[33] 4.2 落地: TTL+撤销对齐: ①datetime import 提到顶层(原函数内); ②_ttl_expiry() 读 get_config("trust.ttl_days",90) 返 now+90d; ③insert_session_trust 写 expires_at; ④check_session_trust 加 expires_at>now(过期不豁免); ⑤新增 clear_trust_scope(session,path) 显式跨工具清 — 小欧-2026-10-15
 # 2026-10-15 - 小欧 - 文档[33] 5.17(P5步21): 会话信任 TTL 落地。
 #   新增 _ttl_expiry()(now+security.trust_ttl_days, 默认90天) / _not_expired_clause()(未过期判据单源) /
 #   cleanup_expired_trust()(删 expires_at<=now, 返回条数); insert 同步写 expires_at;
@@ -42,6 +41,7 @@
 #   此场景下无冲突可捕获, INSERT OR IGNORE 与 ON CONFLICT **同样不生效**。待后续设计决策。— 小欧-2026-10-15
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust_db.py 迁入 app/safety/(业务逻辑一字不改)。
 """tools 层会话信任读写(纯 SQL 查询, 不依赖 services 层) — 小欧 2026-09-05"""
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from sqlite3 import Connection
@@ -70,7 +70,6 @@ def _ttl_expiry() -> Optional[str]:
         days = DEFAULT_TRUST_TTL_DAYS
     if not days or days <= 0:
         return None
-    from datetime import datetime, timedelta
     return (datetime.now() + timedelta(days=days)).isoformat()
 
 

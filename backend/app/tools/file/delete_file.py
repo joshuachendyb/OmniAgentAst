@@ -22,6 +22,9 @@
 #   长路径化(仅NT生效), 深嵌套目录不再 WinError 206; impl 层 is_dir/exists 探测同步长路径化
 #   (超长路径不误判"已不存在"→already_deleted); 报告仍用原始路径不暴露 \\?\ 前缀;
 #   send2trash 仍传原始路径(失败自动回退到已长路径化的永久删除)
+# 2026-10-15 - 小欧 - [33] P2-0: 系统保护目录判定单源化: _guard_forbidden_delete 内联 WINDOWS_SYSTEM_DIRS
+#   遍历(2026-08-03 起)删除, 改调用 app.utils.path_utils.is_system_protected_path(); 删本文件
+#   WINDOWS_SYSTEM_DIRS import(该模块反而未消费它)。旧版判据只比 startswith(sd) 前缀, 缺"扁平化跳过"逻辑, 与 path_safe_check 不一致属退化。 — 小欧-2026-10-15
 # 2026-08-13 - 小欧 - 三堂会审修复#22: _guard_forbidden_delete 删除死分支 `if p is None: return None`
 #   【病根】p = raw.expanduser().resolve() 恒返回Path(异常已被前try捕获返回), resolve()绝不返回None, L58-59分支永不可达(死代码, 违KISS)
 #   【改法】删除该分支; 无任何行为变化(resolve成功则p恒为Path)
@@ -51,10 +54,10 @@ from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory, WINDOWS_SYSTEM_DIRS  # 统一错误提示 - 小欧 2026-07-12
+from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
+from app.utils.path_utils import to_win_long_path, is_system_protected_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 
@@ -71,28 +74,26 @@ def _guard_forbidden_delete(file_path: str) -> Optional[str]:
         p = raw.expanduser().resolve()
     except Exception as e:
         return f"安全校验: 路径解析失败({e})"
+    # 1) 系统保护目录 — 2026-10-14 改调 utils.path_utils.is_system_protected_path(判定单源)
+    #    原此处自持一份 for sd in WINDOWS_SYSTEM_DIRS 循环(2026-08-03 引入), 与单源口径不同。
+    #    放在"路径不存在即放行"之前: 否则不存在的系统路径(如 C:\system32\a, 该盘无此目录)会被早退跳过,
+    #    实测单源拦而此处放行 —— 系统目录保护依赖"目录恰好存在"是缺陷。
+    if os.name == "nt" and is_system_protected_path(file_path):
+        return f"禁止删除系统目录: {file_path}"
+
     try:
         if not p.exists() and not p.parent.exists():
             return None
     except Exception:
         pass
 
-    # 1) 盘根(如 G:\ / C:\) — Windows: splitdrive后剩余部分为空或纯斜杠
+    # 2) 盘根(如 G:\ / C:\) — Windows: splitdrive后剩余部分为空或纯斜杠
     try:
         drive, rest = os.path.splitdrive(str(p))
         if drive and not rest.strip("\\/"):
             return f"禁止删除磁盘根目录: {file_path}"
     except Exception:
         pass
-
-    # 2) 系统保护目录(复用file_path_checker规则) — Windows
-    if os.name == "nt":
-        path_lower = str(p).lower().replace("\\", "/")
-        path_after_drive = path_lower.split(":")[-1] if ":" in path_lower else path_lower
-        for sd in WINDOWS_SYSTEM_DIRS:
-            sd_norm = sd.rstrip("/")
-            if path_after_drive == sd_norm or path_after_drive.startswith(sd):
-                return f"禁止删除系统目录: {file_path}"
 
     # 3) 项目根本身及项目根的父级祖先(含盘根) + 授权目录 — 保护根不被删除
     #    根内的具体用户文件/目录仍允许删除, 只禁各根自身及更上层。
