@@ -36,7 +36,7 @@ from typing import Tuple, Optional, Literal
 
 from app.tools.tool_constants import BINARY_EXTENSIONS
 from app.tools.validate.file_path_checker import validate_path, OpCategory
-from app.tools.validate.file_safety_checker import check_tool_module
+from app.tools.validate.tool_module_checker import check_tool_module
 
 
 # ============================================================

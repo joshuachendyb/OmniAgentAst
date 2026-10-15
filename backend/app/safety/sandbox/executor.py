@@ -46,11 +46,11 @@ from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
 
 from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
-from app.tools.fundamental.shell_static_guard import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
-from app.tools.fundamental.shell_static_guard import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源, 别名存引用 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
-# 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁 shell_static_guard(工具层单一真源),
+from app.tools.fundamental.shell_command_guard import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
+from app.tools.fundamental.shell_command_guard import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源, 别名存引用 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
+# 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁 shell_command_guard(工具层单一真源),
 #   本模块删本地定义改 import。_registry_key_exists 保持原名(纯只读探测, 调用点遍布本文件)。
-from app.tools.fundamental.shell_static_guard import (
+from app.tools.fundamental.shell_command_guard import (
     _OUTSIDE_TARGET_RE,
     _REDIRECT_RE,
     _REGISTRY_SYSTEM_VERBS,

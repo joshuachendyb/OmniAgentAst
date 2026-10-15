@@ -9,12 +9,12 @@
 小欧 2026-07-10 拍平 file_safety/ 目录到 safety/
 """
 
-from app.safety.models import FileSafetyConfig
+from app.safety.file_safety_config import FileSafetyConfig
 from app.safety.operation_record import (
     collect_file_info, update_op_failed, record_operation,
     execute_with_safety,
 )
-from app.safety.hash_helper import compute_file_hash
+from app.safety.file_hasher import compute_file_hash
 from app.db.operation_queries import (
     row_to_operation_record, get_operation, get_session_operations,
     get_operation_task_id, query_file_operations, query_tree_operations,

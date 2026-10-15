@@ -45,7 +45,7 @@ def _get_folder_size(path: Path) -> int:
 
 def _cleanup_by_size() -> int:
     """总大小超过上限时，从最旧的备份开始删"""
-    from app.safety.models import FileSafetyConfig
+    from app.safety.file_safety_config import FileSafetyConfig
     config = FileSafetyConfig()
     max_bytes = config.RECYCLE_BIN_MAX_SIZE_GB * 1024 ** 3
     recycle_path = config.RECYCLE_BIN_PATH

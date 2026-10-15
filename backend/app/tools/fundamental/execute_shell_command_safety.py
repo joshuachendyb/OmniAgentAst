@@ -206,7 +206,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
 #   无人值守场景照样拦得住(实测 powershell -Command "Remove-Item -Recurse -Force X" → conf=True)。
 #   遗留(既有缺口, 非本次引入, git stash 对比确认): cmd 的 `del <file>` 不带 /s 时不在 HIGH 词表,
 #   改动前后均不拦; 递归 `del /s /q` 一直是被拦的。
-                from app.tools.fundamental.shell_static_guard import mask_quoted_spans
+                from app.tools.fundamental.shell_command_guard import mask_quoted_spans
                 if not re.search(pattern_str, mask_quoted_spans(normalized), re.IGNORECASE):
                     # 放宽动作必须留痕: 高危降为需确认属安全等级下调, 事后要能回溯哪些命令走过这条路
                     logger.warning(

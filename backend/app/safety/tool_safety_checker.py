@@ -106,7 +106,7 @@ Safety层（本文件 + path_safe_check.py）：
   - 二元安全确认(needs_confirmation)
   - 已知风险检测(路径越权/写入污染)
 
-工具层（validate/file_safety_checker.py + validate/file_path_checker.py + validate/file_type_checker.py）独立运行、互不调用：
+工具层（validate/content_safety.py + validate/tool_module_checker.py + validate/file_path_checker.py + validate/file_type_checker.py）独立运行、互不调用：
   - check_content_safety: 内容安全检查（None/空/null字节/类型/append冲突）
   - validate_path: 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
   - check_file_type: 文件类型检查（文本/媒体/文档/压缩）
@@ -341,7 +341,7 @@ class ToolSafetyChecker:
             #   chown/reg add 等预检一律 None, 仅执行层才拦(两层判定口径不一致)。
             #   并集实测: 召回15条 / 白名单误伤0/30 / 日常命令误伤0/24 / 降级回归0。
             from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk_all_shells
-            from app.tools.fundamental.shell_static_guard import is_process_kill_protected  # 2026-10-10 小欧 位置更正: shell 代码归 shell 代码同目录 — 小欧 2026-10-10
+            from app.tools.fundamental.shell_command_guard import is_process_kill_protected  # 2026-10-10 小欧 位置更正: shell 代码归 shell 代码同目录 — 小欧 2026-10-10
             if is_process_kill_protected(_cmd, _protected_pids(), _protected_process_names()):
                 return True, "系统保护进程，禁止终止", True
             _risk = check_shell_command_risk_all_shells(_cmd)

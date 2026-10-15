@@ -37,8 +37,8 @@ from app.logger import logger
 from app.utils.id_utils import generate_operation_id
 from app.utils.path_utils import to_win_long_path
 from app.utils.time_utils import get_local_iso_timestamp, to_local_iso  # 小欧 2026-08-08 全程统一本地时区
-from app.safety.hash_helper import compute_file_hash
-from app.safety.models import FileSafetyConfig  # 小欧 2026-08-12 A2-内部环: 配置数据类独立
+from app.safety.file_hasher import compute_file_hash
+from app.safety.file_safety_config import FileSafetyConfig  # 小欧 2026-08-12 A2-内部环: 配置数据类独立
 from app.safety.operation_backup import backup_to_recycle_bin
 
 

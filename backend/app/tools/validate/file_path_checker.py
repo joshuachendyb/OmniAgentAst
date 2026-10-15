@@ -19,10 +19,15 @@
 #   hint_for_read_error/sql_error_hint/hint_for_data_error)整段复制迁入 app/tools/toolhelper/error_hints.py，
 #   本文件仅保留路径/参数校验。同步删除 sqlite3/_pd(pandas) 死依赖与 __all__ 中 hint 项。
 #   所有调用方导入路径已改 app.tools.toolhelper.error_hints。
-# 2026-10-14 - 小欧 - SA8标注: 本文件=权限信任框架SA8(工具体内业务校验validate_path_for_write/delete/overwrite,执行第8步最后防线之一,与delete_file._guard_forbidden_delete并列) — 小欧-2026-10-14
-# 2026-10-14 - 小欧 - 系统目录名单归一: WINDOWS_SYSTEM_DIRS 改由 tool_constants.SYSTEM_PROTECTED_DIR_NAMES
-#   派生(删本模块字面量), extract 侧第三份内联名单亦删除, 消除三层口径不一致。
+# 2026-10-14 - 小欧 - SA8标注: 本文件=权限信任框架SA8(工具体内业务校验validate_path_for_write/delete/overwrite,执行第8步,只判参数合法性不判权限; 硬底线为delete_file._guard_forbidden_delete 镜像A族) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 系统目录名单归一: WINDOWS_SYSTEM_DIRS 已删除(权限判定移出本层后成死常量), 判定单源见 app/utils/path_utils.py
 # 2026-10-14 - 小欧 - 文档[33] 4.12-B: 判定与名单改从 app/utils/path_utils.py 导入(老陈裁定「纯路径工具函数, 独立到 utils」), 解除工具层对安全层依赖; 工具层与安全层同一对象非各自复制
+# 2026-10-14 北京老陈裁定(全局收敛) - 本层移除目录权限判定(validate_not_system_path 与 WINDOWS_SYSTEM_DIRS 一并删除):
+#   4 类目录权限(系统目录/磁盘根/代码库根/受保护根)统一由 Safety 层单一决策, 硬底线由 delete_file 镜像 A 族。
+#   本层只判参数合法性, 原第2层删除后层号顺延为 1/2/3(不留跳号)。
+# 2026-10-15 北京老陈裁定(全局收敛·清尾) - validate_path_for_extract 整函数删除, 本层 path_utils 导入整体删除:
+#   实测 Safety 对 dest=C:\Windows / C:\ProgramData 均 blocked 硬拦, 该 warning 既不阻断也执行不到, 属纯冗余判权限。
+#   本层至此零权限判定, 4 类目录权限 100% 由 Safety 单一决策 + delete 镜像 A 族。
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
@@ -39,13 +44,12 @@ import string
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from app.utils.path_utils import SYSTEM_PROTECTED_DIR_NAMES, is_system_protected_path  # 2026-10-14 小欧 - 文档[33] 4.12-B: 名单+判定下沉 utils
+# 2026-10-15 北京老陈裁定: 本层不判权限, path_utils 导入整体删除(权限单源在 Safety 层)。
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "validate_path_for_write", "validate_path_for_delete", "validate_path_for_overwrite",
-    "validate_path_for_extract", "WINDOWS_SYSTEM_DIRS", "validate_not_system_path",
     "OpCategory", "validate_path", "validate_str_param",
 ]
 
@@ -138,53 +142,12 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
     return True, None, None
 
 
-def validate_path_for_extract(output_dir: str) -> Tuple[bool, Optional[str], Optional[str]]:
-    """
-    解压操作的路径业务级检查（适用于extract_archive）
-    工具层校验：非空（仅系统目录警告）
-    Safety层（path_safe_check.py）独立运行：黑名单/白名单/路径穿越/权限
-    
-    Returns: (is_valid, error_msg, warning_msg)
-    """
-    if not output_dir:
-        return True, None, None
-    # 2026-10-14 小欧 - 原内联第三份字面量且子串匹配(会误命中 C:\my windows\), 改复用单源
-    output_lower = output_dir.lower().replace("\\", "/")
-    for sd in WINDOWS_SYSTEM_DIRS:
-        if sd.strip("/") in output_lower:
-            return True, None, f"解压到系统目录，请确认"
-    return True, None, None
 
 
-# 2026-10-14 小欧 - 由单源 SYSTEM_PROTECTED_DIR_NAMES 派生(DRY): 原为独立字面量, 与 Safety 层
-#   各有对方缺的项(C:\system32 两层判定相反)。匹配方式不变(剥盘符后子串匹配), 只增不减无收窄。
-WINDOWS_SYSTEM_DIRS = [f"/{name}/" for name in sorted(SYSTEM_PROTECTED_DIR_NAMES)]
 
-
-def validate_not_system_path(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
-    """
-    检查路径是否涉及Windows系统关键目录(工具层最后防线)
-    2026-10-14 北京老陈裁定: 系统目录判定调 is_system_protected_path(判定单源), 本层不持名单;
-      保留此函数是为兜住绕过 Safety 直接调工具的场景(内部调用/测试/未来新入口), 非重复判定。
-    2026-10-14 文档[33] 4.12-B: 判定与名单一并下沉 utils, 本层只调用不自持。
-
-    Returns: (is_valid, error_msg, warning_msg)
-    小欧 2026-07-04 修复: 增加None/空字符串校验
-    小欧 2026-08-02 加固: 磁盘根目录硬阻断 + 系统目录规范化判断(修复C:\\Windows漏网)
-    """
-    if not isinstance(file_path, str) or not file_path.strip():
-        return False, "文件路径不能为空", None
-    # 磁盘根目录(C:\)硬阻断 — 小欧 2026-08-02
-    try:
-        drive, rest = os.path.splitdrive(file_path)
-        if drive and not rest.strip("\\/"):
-            return False, f"不允许操作系统根目录: {file_path}", None
-    except Exception:
-        pass
-    # 2026-10-14 北京老陈裁定「必须是同一个逻辑」: 调 utils 的 is_system_protected_path(判定单源), 不再本层自持匹配。
-    if is_system_protected_path(file_path):
-        return False, f"不允许操作系统目录下的文件: {file_path}", None
-    return True, None, None
+# 2026-10-14 北京老陈裁定: validate_not_system_path / WINDOWS_SYSTEM_DIRS 已删除 ——
+#   权限判定收归 Safety 层单一决策, 硬底线由 delete_file._guard_forbidden_delete 镜像 A 族;
+#   本层只管参数合法性(格式/存在性/类型/大小/递归)。名单与判定留在本层即是无调用者的死代码(YAGNI)。
 
 
 from enum import Enum
@@ -215,14 +178,15 @@ def validate_path(
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     统一路径前置校验（编排层，同文件调所有 validate_path_for_*）
-    工具层校验：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
+    工具层校验：非空/保留字符/保留名/盘符存在性/存在性+类型/业务警告
+    2026-10-14 北京老陈裁定: 目录权限(系统目录/磁盘根/代码库根/受保护根)已移出本层 ——
+      权限由 Safety 层单一决策, 硬底线由 delete_file._guard_forbidden_delete 镜像 A 族。
     Safety层（path_safe_check.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
     小欧 2026-07-04
 
     第1层 基础校验（ALL）：非空 + 保留字符 + 保留名 + 盘符存在性
-    #   第2层: 系统目录/磁盘根(ALL操作调用validate_not_system_path, 判定单源在 Safety)
-    第3层 存在性+类型（WRITE跳过）：exists / is_file / is_dir
-    第4层 业务警告：content/append → write；recursive/force → delete；overwrite+source → overwrite；extract_dir → extract
+    第2层 存在性+类型（WRITE跳过）：exists / is_file / is_dir
+    第3层 业务警告：content/append → write；recursive/force → delete；overwrite+source → overwrite（extract→系统目录警告已删, Safety 硬拦）
 
     Returns: (is_valid, error_msg, warning_msg)
     """
@@ -247,13 +211,11 @@ def validate_path(
     if reserved:
         return False, f"文件: {reserved}名包含Windows保留名", None
 
-    # 第2层 — 系统目录/磁盘根(判定单源 Safety.is_system_protected_path, 见 validate_not_system_path)。
-    #   本层为最后防线: 兜住绕过 Safety 直接调工具的场景(内部调用/测试/未来新入口)。
-    is_valid, sys_err, _ = validate_not_system_path(path)
-    if not is_valid:
-        return False, sys_err, None
+    # 2026-10-14 北京老陈裁定: 本层只判参数合法性(格式/存在性/类型/大小/递归), 不判权限。
+    #   目录权限(系统目录/磁盘根/代码库根/受保护根)统一由 Safety 层决策, 硬底线由
+    #   delete_file._guard_forbidden_delete 镜像 A 族 —— 权限判定权收敛到唯一一处。
 
-    # 第3层
+    # 第2层
     rule = _OP_RULES[op]
     if rule["check_exist"]:
         p = Path(path)
@@ -271,7 +233,7 @@ def validate_path(
         if rule["must_be"] == "dir" and not p.is_dir():
             return False,  path +"不是目录", None
 
-    # 第4层
+    # 第3层
     warnings = []
     if op == OpCategory.WRITE or "content" in options:
         _, _, w = validate_path_for_write(path, options.get("content", ""), options.get("append", False))
@@ -281,9 +243,6 @@ def validate_path(
         if w: warnings.append(w)
     if options.get("overwrite") and "source" in options:
         _, _, w = validate_path_for_overwrite(options["source"], path, True)
-        if w: warnings.append(w)
-    if "extract_dir" in options:
-        _, _, w = validate_path_for_extract(options["extract_dir"])
         if w: warnings.append(w)
 
     return True, None, "; ".join(warnings) if warnings else None

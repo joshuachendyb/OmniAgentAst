@@ -75,6 +75,14 @@
 # 2026-10-15 - 小欧 - 文档[33] 5.6 核查订正: shell_static_guard 导入删死符号 _ABS_WIN_PATH_RES/_QUOTED_SPAN_RE。
 #   两者迁入后在本模块无任何代码引用(AST 实证: 仅存于历史/说明注释), 纯 YAGNI 冗余导入;
 #   设计 5.6 的 import 清单本就只列 5 个符号, 此处系实施多导。— 小欧-2026-10-15
+# 2026-10-14 北京老陈裁定(全局收敛) - 本层为目录权限**唯一决策者**: 磁盘根/系统目录判定改调 utils 单源;
+#   新增受保护根(B族)判定 → 此前只有 delete 拦它、写入不拦, 同一类别待遇随层而变。mode 透传单源, 本层不自行解释。
+# 2026-10-15 北京老陈裁定(DRY) - get_default_allowed_paths 内的根集合拼装改为单源 path_utils.get_allowed_roots:
+#   原内联三段(config 项目根+授权目录+会话快照)与 delete_safety/_get_protected_roots 三处重复, .resolve() 用法还各不相同。
+# 2026-10-15 北京老陈裁定(分层去反向依赖) - 会话工作区快照改由本层传入 path_utils.get_allowed_roots(extra_roots):
+#   快照原由 utils 直接 import app.tools.context 取, 构成「utils 反向依赖上层」(守护测试红)。
+#   取数收归 app/tools/context.py 的 session_workspace_paths(), 由 safety/tools 各自传入 —— 二者均可 import tools(铁律只禁 tools→services/safety),
+#   故 B 族保护范围【零损失】, 仅解开 utils 的分层依赖。
 """
 path_safe_check — 文件路径越权校验（Safety层）
 
@@ -84,7 +92,7 @@ Safety层职责（本文件）：
   - 路径穿越(..)拒绝
   - 调用入口 validate_tool_path() 自动判断工具分类 + 找路径参数
 
-工具层（validate/file_path_checker.py + validate/file_safety_checker.py）独立运行、互不调用：
+工具层（validate/file_path_checker.py + validate/content_safety.py）独立运行、互不调用：
   - 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
   - 内容安全检查 / 模块安装检查
 
@@ -117,7 +125,7 @@ from app.tools.tool_constants import (
 )
 # 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理符号归口 shell_static_guard, 删本地定义改 import
 #   (原 _QUOTED_SPAN_RE 与 guard 双源; 同时消除对 executor 的越层延迟导入即架构守护红项1)。
-from app.tools.fundamental.shell_static_guard import (
+from app.tools.fundamental.shell_command_guard import (
     _DELETE_CMD_RE,
     _WRITE_CMD_RE,
     _extract_abs_win_paths,
@@ -127,7 +135,17 @@ from app.tools.fundamental.shell_static_guard import (
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params  # 三堂会审: 工具名+参数名别名归一防漏检 — 小欧 2026-08-10
 # 2026-10-14 小欧 - 文档[33] 4.12-B: 系统目录判定单一真源下沉 app/utils/path_utils.py,
 #   安全层与工具层最后防线共用它(单源不被工具层反向依赖, tools→safety 保持归零)。
-from app.utils.path_utils import SYSTEM_PROTECTED_DIR_NAMES, is_system_protected_path
+from app.utils.path_utils import (
+    SYSTEM_PROTECTED_DIR_NAMES,
+    is_code_root_path,
+    is_disk_root,
+    is_protected_root_itself,
+    is_system_protected_path,
+)
+# 2026-10-15 北京老陈裁定(分层去反向依赖): 会话工作区取数收归 app/tools/context.py, 由本层传入 utils 单源。
+#   必须【模块级】导入 —— _is_forbidden_path 与 get_default_allowed_paths 两处都要用,
+#   只写在后者函数内会导致前者 NameError, 而 fail-closed 会把它伪装成"system 已拒绝"(实测全盘误拒, 极隐蔽)。
+from app.tools.context import session_workspace_paths
 from app.logger import logger
 
 # 2026-10-06 小欧 - 系统盘符三级探测全部失败时的最后兜底(归位本模块: 唯一消费方就是 get_system_drive)
@@ -173,25 +191,15 @@ def get_default_allowed_paths() -> List[Path]:
     小欧 2026-08-10 ⑪: 废除「所有现存盘符」全盘放开, 白名单=主目录+tmp+项目根+授权目录(3.3决策②);
     get_existing_drives 不再拼入(各盘只有落在主目录/项目根/授权目录内的路径才允许)。
     """
-    from app.config import get_config  # 局部导入避免模块级对 config 的耦合(补B lazy)
+    from app.utils.path_utils import get_allowed_roots  # 2026-10-15 北京老陈裁定(DRY): 根集合单源, 不再自持一份
     paths = [
         Path.home(),
         Path("/tmp"),
         Path("/var/tmp"),
     ]
-    try:
-        cfg = get_config()
-        paths.append(Path(cfg.get_project_root()).resolve())
-        for d in cfg.get_allowed_dirs():
-            paths.append(Path(d))
-    except Exception:
-        pass
-    # 2026-10-10 小欧 — 并入会话使用的目录(快照是 frozenset[str], 此处收成 Path 与宿主一致;
-    #   validate_path 内层还会 realpath 一次, str/Path 都吃得下, 统一转 Path 免得下游再踩类型坑)
-    from app.tools.context import get_ws_snapshot
-    _snap = get_ws_snapshot()
-    if _snap:
-        paths.extend(Path(p) for p in _snap.all_paths)
+    # 2026-10-15 北京老陈裁定(DRY): 项目根+授权目录+会话工作区 由 path_utils.get_allowed_roots 单源提供,
+    #   原为在此内联三段拼装(与 delete_safety/_get_protected_roots 三处重复, .resolve() 用法还各不相同)。
+    paths.extend(get_allowed_roots(session_workspace_paths()))
     return paths
 
 
@@ -213,7 +221,7 @@ def _get_project_root_safety() -> Path:
 # 2026-10-14 小欧 - 文档[33] 4.12-B: is_system_protected_path 已迁 app/tools/validate/file_path_checker.py
 #   (工具层落单一真源, 安全层反向 import —— 「最后防线不能依赖前面的防线」, 且 tools→safety 归零)。
 #   本文件 _is_forbidden_path 改由文件头 import 解析到同一函数对象, 不留双份判定逻辑。
-def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
+def _is_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[str], Optional[str]]:
     """检查路径是否在系统敏感路径黑名单中 — 小健 2026-06-23
     扩展 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
     
@@ -232,13 +240,9 @@ def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
         real_path_lower = real_path_str.lower()
         
         # 磁盘根目录(C:\)黑名单 — 白名单盘符机制允许盘根操作, 此处硬阻断 — 小欧 2026-08-02
-        # 磁盘根属于系统禁区(system)
-        try:
-            drive, rest = os.path.splitdrive(real_path_str)
-            if drive and not rest.strip("\\/"):
-                return "system", f"禁止访问磁盘根目录: {file_path}"
-        except Exception:
-            pass
+        # 判定单源 utils.is_disk_root, 各层只调用(小欧 2026-10-14 归一)
+        if is_disk_root(file_path):
+            return "system", f"禁止访问磁盘根目录: {file_path}"
         
         if os.name == 'nt':
             sys_drive = get_system_drive()  # 真实系统盘符 — 小欧 2026-08-04
@@ -251,25 +255,20 @@ def _is_forbidden_path(file_path: str) -> Tuple[Optional[str], Optional[str]]:
                 _f = sys_drive + forbidden_prefix
                 if real_path_lower.startswith(_f.lower()):
                     return "system", f"路径位于系统禁区(敏感目录): {file_path}"
-            # 2026-10-14 小欧: 系统保护目录判定走单源函数 is_system_protected_path(工具层同调) —
-            #   原在此内联判, 与 temp_auth 授权守卫/工具层各自一份, 致两层结论相反。
-            if is_system_protected_path(file_path):
+            # 2026-10-14 小欧: 系统目录判定走单源 is_system_protected_path(检测+策略同在函数内), 本层只透传 mode
+            #   不再自行解释其返回值, 否则与硬底线会给出相反结论(实测读: 安全层放行/工具层拒绝)
+            if is_system_protected_path(file_path, mode):
                 return "system", f"路径位于系统保护目录,禁止操作: {file_path}"
 
         # ⑦ 代码库根禁区(tool禁区, 开关无关硬拦截): 代码库根及其子/父级全部禁止 — 小欧 2026-08-10
-        # 代码库根属非系统禁区(non_system)
-        try:
-            from app.config import get_code_root
-            code_root = get_code_root()
-            if code_root:
-                _cr = Path(os.path.realpath(code_root))
-                cr_lower = str(_cr).lower()
-                if (real_path_lower == cr_lower
-                        or real_path_lower.startswith(cr_lower + os.sep)
-                        or real_path_lower.startswith(cr_lower + "/")):
-                    return "non_system", f"路径位于受保护区域(项目代码库): {file_path}"
-        except Exception:
-            pass
+        # 代码库根属非系统禁区(non_system) — 判定单源 utils.is_code_root_path
+        if is_code_root_path(file_path):
+            return "non_system", f"路径位于受保护区域(项目代码库): {file_path}"
+
+        # 2026-10-14 北京老陈裁定: 受保护根(项目根/授权目录)及其上级归本层判(B族可授权),
+        #   此前只有删除防线拦它、写入不拦 —— 同一类别待遇随层而变, 现统一由权限层决策
+        if is_protected_root_itself(file_path, session_workspace_paths()):
+            return "non_system", f"路径位于受保护区域(受保护根): {file_path}"
 
         for forbidden in FORBIDDEN_PATHS_EXACT:
             if real_path_str == forbidden:
@@ -315,7 +314,7 @@ def validate_path(file_path: str, allowed_paths: Optional[List[Path]] = None,
         #   与 test_bug_empty_path_not_validated 断言(空路径应 blocked)对齐 — 小欧 2026-08-10
         return False, "路径为空", "system"
 
-    is_forbidden, forbidden_msg = _is_forbidden_path(file_path)
+    is_forbidden, forbidden_msg = _is_forbidden_path(file_path, mode)
     if is_forbidden:
         # 2026-10-14 北京老陈裁定: 判定权收归本层(单一真源), 工具层不再重复判系统目录。
         #   读放行沿用本层原决策(P3设计); 写/删: 系统禁区硬拦, 非系统禁区写可授权、删硬拦。

@@ -15,6 +15,8 @@
 # 2026-08-24 - 小欧 - 后端卡死修复: /health 的 SELECT 1 经 db.atxn 进子线程 offload 出事件循环; 被动 health 不再因 loop 被 agent 落库同步写独占而超时(零改动连接管理, 复用 atxn 薄壳)
 # 2026-09-21 - 小欧 - 修复: health.version 由 request.app.version(import 时快照, 永不跟随 version.txt 更新)改调
 #   settings_service.app_version()(每次实时读文件); 消除与 /settings.version、GET /config/version-file 长期不一致
+# 2026-10-15 北京老陈裁定(开关外扩) - /echo(调试通信探针, 非产品功能) 纳入 require_debug_mode 约束:
+#   守卫提为共用模块 api/v1/_gates.py, 与 /tool/list、/tool/execute 同一道门; 不在 health.py 复写一遍(违 DRY)。/health 不受影响。
 """
 health — merged from health/ 3 files
 COPY from individual files, only changed import paths — 小欧 2026-07-10
@@ -23,6 +25,7 @@ COPY from individual files, only changed import paths — 小欧 2026-07-10
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from app.api.v1._gates import require_debug_mode  # 2026-10-15 北京老陈裁定: /echo 受调试开关约束
 from app.db import db
 from app.logger import logger
 from app.services.settings.settings_service import app_version as get_app_version
@@ -69,7 +72,9 @@ async def health_check(request: Request):
 async def echo(data: EchoRequest):
     """
     测试通信接口 - 回显收到的消息
+    2026-10-15 北京老陈裁定: 调试探针非产品功能, 纳入 require_debug_mode 约束(与 /tool/* 同一道门)。
     """
+    require_debug_mode()
     return EchoResponse(
         received=data.message,
         timestamp=get_local_iso_timestamp()
