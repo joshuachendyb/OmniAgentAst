@@ -29,6 +29,7 @@
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 复制文件→复制
 # 2026-10-12 小欧 - message去tool_zh前缀（北京老陈令，第五章A方式）: 复制成功/失败→成功/失败
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_overwrite 覆盖警告。
+# 2026-10-17 - 小欧 - 执行诚实性P0: 源不存在时 _copy_sync 建空目标报 success, 改抛 FileNotFoundError(此前被合法性检查遮蔽)。
 """
 F7: copy_file — 复制文件
 
@@ -176,6 +177,10 @@ async def copy(
                         shutil.copytree(_src_lp, _dst_lp, copy_function=shutil.copy)
                 else:
                     Path(_dst_lp).mkdir(exist_ok=True)
+            else:
+                # 2026-10-17 小欧 - 执行诚实性: 源既非文件又非目录(不存在), 操作不可能完成必须失败,
+                #   禁止建空目标目录报 success(LLM 会误信已复制)。此为执行期事实判定, 非前置合法性检查。
+                raise FileNotFoundError(f"源不存在: {source}")
             return True
 
         # 根据operation_id是否存在选择执行方式 — 小健 2026-06-24
