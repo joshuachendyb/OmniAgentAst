@@ -28,7 +28,7 @@ path_check_common — 读/写/删三条线共用的检查步骤
   读线: 禁区放行 + 白名单外放行
   写线: system 硬拦 / non_system 查任务级授权
   删线: 禁区全硬拦、无授权分支
-  三线共同调用 path_guard.classify_forbidden_path(禁区分类), 但传入各自的 mode
+  三线共同调用 path_classify_category.classify_forbidden_path(禁区分类), 但传入各自的 mode
 
 小欧 2026-10-15
 """

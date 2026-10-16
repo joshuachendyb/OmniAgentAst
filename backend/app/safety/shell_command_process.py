@@ -177,9 +177,11 @@ SHELL_DELETE_RE = re.compile(
 
 # 2026-10-16 老陈裁定(第④层收编): 原在 shell_command_risk.py 的 10 条"删除类"规则移到这里 ——
 #   理由: rm/del/Remove-Item/rd/rmdir 是**文件删除命令**, 属路径判定, 危险层与中风险层不许含路径规则。
-#   这些是"删除动词 + 特定开关组合"(递归/强制/s 开关), 比普通删除更危险, 命中即按高危处理:
-#     · 递归删除 / 强制删除 → 即便目标是安全临时目录也不静默放行, 交由下方 _is_temp_cleanup 判降级
-#     · 需用户确认而非直接拒(与 MEDIUM 层同档), 由 shell_path_check 编排时使用
+#   这些是"删除动词 + 特定开关组合"(递归/强制/s 开关), 比普通删除更危险:
+#     · 唯一消费方 shell_path_check 用它做 fail-closed 兜底(见 shell_has_destructive_delete docstring)
+#   ★2026-10-16 三堂会审: 删死代码 _TEMP_SAFE_PATTERNS + shell_is_temp_cleanup(原随规则一并移来,
+#     但全仓零调用 —— 即"建了不接", 与老陈反对的画蛇添足同型)。高危删除解析不出目标即硬拦,
+#     不再做"临时目录降级"那套豁免。
 SHELL_DESTRUCTIVE_DELETE_RES = (
     # PS: Remove-Item/rm/del + Recurse + Force
     re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bRecurse\b.*\bForce\b", re.IGNORECASE),
@@ -207,36 +209,17 @@ SHELL_DESTRUCTIVE_DELETE_RES = (
 def shell_has_destructive_delete(command: str) -> bool:
     r"""这条命令是不是高危删除(递归/强制/带开关) — 小欧 2026-10-16（[36] 第七章）
 
-    干什么用: 通道 B 编排层区分"普通删除"与"高危删除"—— 后者需用户确认而非直接判定权限后放行,
-              且**不得**因目标是安全临时目录而静默降级(降级由 shell_is_temp_cleanup 显式判定)。
+    干什么用: 供 shell_path_check.validate_shell 做 **fail-closed 兜底** ——
+              高危删除若**解析不出任何删路径**(如 `rm -rf /`, 路径提取只认 Windows 绝对路径),
+              说明无从判权限, 一律硬拦 system。**判据成立才拒, 不是"高危即拒"**。
+              ★2026-10-16 三堂会审订正: 原 docstring 写"高危删除需用户确认而非直接拒"与实际用法不符
+                (实际只用于"解析不出目标→硬拦"这一条; 解析得出时走 delete_path_check 正常判权限)。
     口径    : 只认"删除动词 + 递归/强制/s 开关"组合; 普通 `rm C:\x` 不算(走普通删线)。
     """
     return any(rx.search(command or "") for rx in SHELL_DESTRUCTIVE_DELETE_RES)
 
 
-# 已知安全临时目录路径模式（用于高危删除的降级判定）— 2026-10-16 老陈裁定由 shell_command_risk.py 移来
-#   理由: 临时目录是**路径**概念, 属第④层路径判定, 不该留在危险/中风险层。
-_TEMP_SAFE_PATTERNS = re.compile(
-    r'(?i)'
-    r'(?:\$env:(?:TEMP|TMP)'                                          # PS: $env:TEMP / $env:TMP
-    r'|\$env:LOCALAPPDATA(?:\\Temp|\\Microsoft\\Windows\\INetCache)'  # PS: $env:LOCALAPPDATA\Temp / INetCache
-    r'|\\AppData\\Local\\Temp'                                        # 字面路径 \AppData\Local\Temp
-    r'|%TEMP%|%TMP%'                                                  # CMD: %TEMP% / %TMP%
-    r'|\$TMPDIR|\$TEMP|\$TMP|\$\{TMP\}'                             # bash: $TMPDIR / $TEMP / $TMP / ${TMP}
-    r'|/tmp\b'                                                        # bash: unix /tmp
-    r')'
-)
-
-
-def shell_is_temp_cleanup(command: str) -> bool:
-    """命令目标是否为已知安全临时目录 —— 小欧 2026-10-16（原 _is_temp_cleanup，随第④层收编改名）
-
-    用途: 高危删除(递归/强制)命中后，若目标确属安全临时目录，降为"需确认"而非直接拒；
-          含 `..` 路径穿越标记时不降级（实际目标可能已逃出临时根，见调用方）。
-    """
-    return bool(_TEMP_SAFE_PATTERNS.search(command))
-SHELL_MOVE_RE = re.compile(r"(?<![a-z0-9_-])(?:Move-Item|Rename-Item|move|ren|mi|mv)(?![a-z0-9_-])",
-                          re.IGNORECASE)
+SHELL_MOVE_RE = re.compile(r"(?<![a-z0-9_-])(?:Move-Item|Rename-Item|move|ren|mi|mv)(?![a-z0-9_-])", re.IGNORECASE)
 # 细表三 纯写动词: 有意裁剪——move 族归 SHELL_MOVE_RE(源删/目标写); del 族 8 个归 SHELL_DELETE_RE
 # (在宽表里保留, 见上)。重定向 > 与 >> 不在本表: 目标恒为文件, 由 shell_write_and_delete_paths 单列覆盖。
 _SHELL_WRITE_VERBS = (r"(?:Copy-Item|cp|cpi|New-Item|ni|Set-Content|Add-Content|ac|Out-File"
@@ -486,6 +469,6 @@ def shell_write_and_delete_paths(text: ShellText) -> Tuple[List[str], List[str]]
       而调用方**两个清单都要** → 同一套判定白跑两遍(实测计数确认 = 2 次)。
 
     契约: 返回去重保序的盘符绝对路径; 相对路径 / UNC / ~ / 未展开的 $env: 形态一律不抽
-          (交沙箱预检 SHELL_OUTSIDE_TARGET_RE 覆盖)。结论由下游 path_guard.classify_forbidden_path 出。
+          (交沙箱预检 SHELL_OUTSIDE_TARGET_RE 覆盖)。结论由下游 path_classify_category.classify_forbidden_path 出。
     """
     return _shell_path_lines(text)

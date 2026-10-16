@@ -44,7 +44,7 @@
 # 2026-09-02 - 小欧 - 提示文案"准确+可读"优化(北京老陈驱动「提示文字看不懂」): _check_known_risks 用户可见 message 与日志串
 #   由专业黑话改为"术语保留(禁区分级/授权策略)+人话解释"并存——非系统禁区删:「该路径在受保护区域(非系统禁区),禁止删除」;
 #   非系统禁区写:「该路径在受保护区域(非系统禁区),写入需申请授权」; 系统禁区:「该路径在系统禁区,禁止访问」;
-#   白名单外:「该路径超出允许范围(白名单外),需临时授权」; msg 定位拼接自 path_guard(路径位于...);
+#   白名单外:「该路径超出允许范围(白名单外),需临时授权」; msg 定位拼接自 path_classify_category(路径位于...);
 #   仅改文案不改逻辑(安全分级/blocked/requires_confirmation/auth_path/auto_confirm 一律不变), 测试不断言文案, 逻辑零退化
 # 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): _check_known_risks 增 skip_confirmation:
 #   trust 豁免传参下沉函数内部(替代调用方 action_handler 在函数外预判), 命中已信任(tool+path)则本轮函数内不再产出确认请求; 豁免只跳确认不跳危险防护,
@@ -103,7 +103,7 @@
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
-Safety层（本文件 + path_guard/path_env/path_check_entry）：
+Safety层（本文件 + path_classify_category/path_env/path_1st_legality_check）：
   - 路径黑名单/白名单校验（classify_forbidden_path → 三线 validate）
   - 路径穿越(..)拒绝
   - 写入大小保护
@@ -133,11 +133,12 @@ from typing import Dict, Optional
 from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
-from app.safety.path_check_entry import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_check_entry
+from app.safety.path_1st_legality_check import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_1st_legality_check
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 第七章: 自杀检查唯一入口(判定全在 guard 层) 小欧 - [36]4.4: 快照组装下沉同层，本文件不再碰 shell_engine
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
-_WRITE_RISK_TOOL = "write"
+# 2026-10-16 小欧 - 三堂会审删死常量(YAGNI): _WRITE_RISK_TOOL 写入大小保护已于 2026-10-14 归口
+#   tool 层 file_path_checker.validate_path_for_overwrite, 本层无任何引用点, 故删。
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 
@@ -216,9 +217,11 @@ class ToolSafetyChecker:
         if (params or {}).get("command"):
             _cmd = (params or {}).get("command", "")
             # ③-1 危险命令: 命中即拒绝执行
+            #   2026-10-16 三堂会审: 删冗余的 `and _danger.blocked` —— 降级机制移除后
+            #   check_shell_danger_command 只会返回 blocked=True 或 None, 该条件恒等价于判非空。
             from app.safety.shell_danger_command import check_shell_danger_command_all_shells
             _danger = check_shell_danger_command_all_shells(_cmd)
-            if _danger is not None and _danger.blocked:
+            if _danger is not None:
                 log_and_print(f"[ToolSafetyChecker] 危险命令拦截: tool={tool_name}, {_danger.message}")
                 return _danger
             # ③-2 中风险命令: 命中进 HITL 确认
@@ -235,8 +238,9 @@ class ToolSafetyChecker:
             log_and_print(f"[ToolSafetyChecker] delete R6硬拦截(项目根外递归删除): {delete_risk.message}")
             return delete_risk
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk,
-                                             skip_confirmation=skip_confirmation,
-                                             pool_pids=pool_pids)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
+                                             skip_confirmation=skip_confirmation)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
+        # 2026-10-16 小欧 - 三堂会审: 删 pool_pids 实参(该形参在 _check_known_risks 内零消费,
+        #   自杀检查早已前移到主链 ② 直接用本层的 pool_pids, 此处纯属透传噪声)。
         if known_risk is not None:
             # 2026-10-14 小欧 - 文档[33] 4.9(P4步18) 豁免早返: 既不拦也不需确认 → 原样返回, 不得往下走。
             #   病根: 原代码对「不拦且不需确认」的 known_risk 也会强制 severity="dangerous"(见下方),
@@ -347,11 +351,10 @@ class ToolSafetyChecker:
 
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict, delete_risk: Optional["SafetyResult"] = None,
-                           skip_confirmation: bool = False,
-                           pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:
+                           skip_confirmation: bool = False) -> Optional["SafetyResult"]:
         """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
-        小欧 2026-06-27: 路径检查委托validate_tool_path(现 path_check_entry 统一处理)
+        小欧 2026-06-27: 路径检查委托validate_tool_path(现 path_1st_legality_check 统一处理)
         小欧 2026-06-28: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
         # T1 (v1.43): mode 由 validate_tool_path 内部按 tool_name 自动推断(调用方不传), 本层接收其
         #   4 元组 (is_valid, msg, failed_path, category) —— 注释订正 2026-10-14(与实际行为一致)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-15 - 小欧 - 文档[35] 阶段六 新建: 自 multi_path_check 拆出 bash 通道。
-#   bash 参数是单个 command 串, 与 multi(多路径参数)无关, 同处一文件名不副实。
+# 2026-10-15 - 小欧 - 文档[35] 阶段六 新建: 自 dual_path_check 拆出 bash 通道。
+#   bash 参数是单个 command 串, 与 dual(源+目标双路径)无关, 同处一文件名不副实。
 #   逻辑逐字搬迁不改: 命令内绝对路径写/删目标抽取 → 交三线判定。
 # 2026-10-15 北京老陈裁定 - 改名 shell_path_check -> shell_path_check: 判的是 shell 命令(ps/cmd/bash 三壳), 不只 bash。
 # 2026-10-16 - 小欧 - [36] 洞2 修复: mv/Move-Item 源被删/目标被写分线判定(源走删线不可授权, 目标走写线可授权);
@@ -12,7 +12,7 @@
 #   ①_MOVE_TOKEN_RE 裸 token 在语句分隔符处断开(与 _ABS_WIN_PATH_RES 同口径);
 #   ②_MOVE_CMD_RE 补 move/ren/Rename-Item(均删源+写目标, 原连第一道门都进不去), 入口门并列判定;
 #   ③_judge_paths 对含 ><|/换行的畸形路径硬拦 system(切词粘连兜底, 通道 B fail-closed);
-#   ④_judge_paths 补类型注解; 日志按删线/写线分"删源/写目标"; 删 87 行死 __all__(所列三名已迁 multi_path_check)。
+#   ④_judge_paths 补类型注解; 日志按删线/写线分"删源/写目标"; 删 87 行死 __all__(所列三名已迁 dual_path_check)。
 # 2026-10-16 - 小欧 - 文档[36] 第五章接线(A5): import 切到 app.safety.shell_command_process 并跟改正名;
 #   validate_shell 改为「一次预处理(shell_command_process.prepare_shell_text) + 两个出入口」
 #   (shell_delete_paths / shell_write_paths), 不再在本模块内部分析动词、决定走哪条线。
@@ -28,8 +28,6 @@ shell_path_check — shell 命令路径检查(通道 B)
 
 bash 属 FUNDAMENTAL, 不经 action_kind 分派, 单独立此通道:
 从命令串里摘出绝对路径写/删目标, 逐个交读/写/删三线判定。
-
-调用方: path_check_entry.validate_tool_path 特判 normal_name=="bash" 时调本模块。
 """
 
 from typing import List, Optional, Tuple
@@ -100,7 +98,11 @@ def validate_shell(command: str, cwd: Optional[str] = None
     delete_paths, write_paths = shell_write_and_delete_paths(text)
     # 2026-10-16 小欧 三堂会审(老陈裁定接进本层): 高危删除若解析不出目标路径 → 硬拦 system。
     #   病根: 提取只认 Windows 绝对路径, `rm -rf /` 删路径为空 → _judge_paths 遍历空清单回 True(fail-open)。
-    if shell_has_destructive_delete(command) and not delete_paths:
+    # 2026-10-16 小欧 三堂会审订正: 原传原文 command, 但它未经换行归一 —— 正则不跨行,
+    #   `rm -rf /\r\n<下一条>` 这类多行命令会漏判高危删除。改用 normalized(已换行转空格)。
+    #   ★刻意**不用** text.intent_src(引号涂空版): 涂空会把引号内的 "rm -rf" 也抹掉致漏判。
+    #   判危险删除须看原始字面, 只有取路径/判意图两条链才用 mask 后的文本(KISS-DIRECT 单一真源)。
+    if shell_has_destructive_delete(normalized) and not delete_paths:
         logger.warning(
             f"[shell_path_check] 高危删除命令无法解析目标路径(硬拦): command={command.strip()[:200]}"
         )

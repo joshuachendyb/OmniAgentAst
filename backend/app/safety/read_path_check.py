@@ -10,8 +10,8 @@
 # 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
 # 2026-10-15 北京老陈裁定 - 删白名单死分支: if 两支返回值一字不差, 判定零影响。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_read: 三线同名, 经模块引用无法辨识线的语义。
-"""
-read_path_check — 读操作路径检查(读线)
+r"""read_path_check — 读操作路径检查(读线)
+★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
 读线策略(两条独有规则):
   一、命中禁区也放行 —— 系统目录/代码库根可读, 内容敏感性交 contentFilter 兜底
@@ -21,18 +21,42 @@ read_path_check — 读操作路径检查(读线)
 公共步骤(空路径/路径穿越)在 path_check_common, 禁区分类仍调
 classify_forbidden_path 并传 READ_MODE, 本文件只放读线独有的策略分支。
 
-调用方: path_check_entry.validate_tool_path 按 action_kind=="read" 调本模块。
+权限总表(区域 × 动作 → 拒绝/确认/放行):
 
-九格契约表(读/写/删 × 各类区域)见同包 path_guard 模块头 ——
-本模块只负责本线实现, 契约表单一真源, 不在此重复维护(改一处三线皆知)。
+★★本表是**端到端视角**(用户最终看到的), **不是本模块返回值** ★★
+  本模块 validate_read 只返回「放行/拒绝」两态; 表里的"确认"(弹窗授权)发生在**调用方**
+  tool_safety_checker, 删列的"确认"还叠加 delete_safety 的 R6 工作区边界层。
+  → 按本表核对本文件代码时, "确认"格对不上是**正常的**, 那是上层行为。
 
-小欧 2026-10-15
+| 区域                                       | category   | 读   | 写            | 删           |
+|--------------------------------------------|------------|------|---------------|--------------|
+| 空路径 / 含 `..` 路径穿越(非法输入)         | —          | 拒绝 | 拒绝          | 拒绝         |
+| 磁盘根(任意盘符)                           | system     | 放行 | 拒绝          | 拒绝         |
+| 系统敏感文件(config\SAM/SECURITY/SOFTWARE 等)| system    | 放行 | 拒绝          | 拒绝         |
+| 系统目录(Windows/ProgramFiles/ProgramData/Boot/WinSxS) | system | 放行 | 拒绝 | 拒绝         |
+| 代码目录 —— 自身及内部所有子级             | non_system | 放行 | 确认(任务级)  | 拒绝         |
+| 授权目录 —— 自身及其上级祖先               | non_system | 放行 | 确认(任务级)  | 拒绝         |
+| 白名单内(path_env.get_default_allowed_paths 动态取值) | None | 放行 | 放行 | 确认(根外递归, 来自 R6 层) |
+| 白名单外普通路径                           | None       | 放行 | 确认(临时授权)| 确认         |
+| 异常/恶意路径                              | system     | 拒绝 | 拒绝          | 拒绝         |
+
+两个 non_system 类别的正式定义(勿凭字面猜):
+  · 代码目录 = get_code_root()       判**自身 + 内部所有子级**; **父级不拦**(实测 F:\ 不命中)
+  · 授权目录 = get_allowed_roots()   判**自身 + 上级祖先**; **内部不拦**(实测 授权目录\sub 不命中)
+               = 用户项目根 + **授权目录** + 会话工作区(session_workspace_paths) 三个来源
+
+★读列**除非法输入外全放行**: 本模块两条独有规则(禁区放行 + 白名单外放行), 系统凭据文件亦然 ——
+  靠内容过滤兜底, 不靠路径层。但**空路径 / `..`穿越 / 异常**三类仍拒绝(实测 validate_read 返回 False)。
+★白名单**写与删不同命**: 白名单内写直接放行, 删仍要确认(根外递归删除)。
+★本表是禁区分类的结果说明, 规则改动须同步本表, 勿只改表。
+
+小欧 2026-10-15 建 / 2026-10-16 老陈裁定补表+订正术语+三堂会审订正视角
 """
 
 from typing import List, Optional, Tuple
 
 from app.safety import path_check_common as common
-from app.safety.path_guard import classify_forbidden_path
+from app.safety.path_classify_category import classify_forbidden_path
 
 READ_MODE = "read"
 
