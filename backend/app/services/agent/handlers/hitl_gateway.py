@@ -38,7 +38,7 @@ class ConfirmSpec:
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
-    severity: str = ""           # 安全分级: safe / destructive / dangerous
+    severity: str = ""           # 安全分级: safe / risk / dangerous
     safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
     auto_confirm: bool = False   # 2026-09-18 小欧 去mode改布尔单源(changed from None) — 小欧-2026-09-18
 

@@ -60,6 +60,7 @@
 #   改显式传auto_confirm=False(默认即False, 显式表意自明: 沙箱裁决恒真HITL人工) — 小欧-2026-09-18
 # 2026-09-19 小欧 - 修复: sandbox HITL auto_confirm从safety_result读取(不硬编码False),
 #   bypass超时→放行(与safety_gate层语义一致: 到期=放行); verdict.get("expired")防御缺失键 — 北京老陈驱动(三堂会审)
+# 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 与 tool_safety_checker 沙箱判定(=="risk")对齐, 漏改则沙箱帧带非法值。
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -146,7 +147,7 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
     spec = ConfirmSpec(
         auto_confirm=_sb, tool_name=tool_name, params=params,  # 2026-09-18 小欧 去mode改布尔单源(与safety_gate同批, 老陈令) / 2026-09-19 小欧 读safety_result.auto_confirm
         content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",  # 7.3.0-A3精化: 去stderr英文尾部(stderr仅随denied_list喂LLM)+问句尾不再接工具名(工具名在弹窗头部) — 小欧-2026-09-18
-        severity="destructive", safety_level="path_auth")  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
+        severity="risk", safety_level="path_auth")  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"] or (verdict.get("expired") and _sb):
         # 2026-09-19 小欧 修复: bypass超时→放行(与safety_gate层bypass超时语义一致: 到期=放行)

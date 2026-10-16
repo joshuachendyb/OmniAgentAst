@@ -22,6 +22,7 @@
 #   shell_write_paths 合并为 shell_write_and_delete_paths(一次调用返回两列清单)。
 #   原因: 两个门各自内部都要把整套判定跑一遍, 而本层两个清单都要 → 白跑两遍(实测计数 = 2)。
 #   ★「取路径」与「判权限」仍是分开的两层: 本模块只编排, 判定在 delete/write_path_check。
+# 2026-10-16 小欧 三堂会审(老陈裁定接进本层): 高危删除解析不出目标即硬拦 system(`rm -rf /` 曾 fail-open)。
 """
 shell_path_check — shell 命令路径检查(通道 B)
 
@@ -38,6 +39,7 @@ from app.safety.shell_command_process import (
     prepare_shell_text,
     shell_has_write_intent,
     shell_write_and_delete_paths,
+    shell_has_destructive_delete,
 )
 from app.logger import logger
 
@@ -96,6 +98,13 @@ def validate_shell(command: str, cwd: Optional[str] = None
     # 删线优先: 抹除后果不可授权, 优先判; 过了再判写线(可授权)。
     # 2026-10-16 老陈裁定: 取路径合并成一次调用(只取路径, 不判权限; 判定仍由下游两条线各判)
     delete_paths, write_paths = shell_write_and_delete_paths(text)
+    # 2026-10-16 小欧 三堂会审(老陈裁定接进本层): 高危删除若解析不出目标路径 → 硬拦 system。
+    #   病根: 提取只认 Windows 绝对路径, `rm -rf /` 删路径为空 → _judge_paths 遍历空清单回 True(fail-open)。
+    if shell_has_destructive_delete(command) and not delete_paths:
+        logger.warning(
+            f"[shell_path_check] 高危删除命令无法解析目标路径(硬拦): command={command.strip()[:200]}"
+        )
+        return False, "高危删除命令无法解析目标路径，拒绝执行: " + command.strip()[:120], None, "system"
     deleted = _judge_paths(delete_paths, delete_path_check, command)
     return deleted if not deleted[0] else _judge_paths(write_paths, write_path_check, command)
 

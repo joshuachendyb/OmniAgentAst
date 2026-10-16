@@ -56,6 +56,8 @@
   app/safety/(文件级复制零漂移, AGENTS 1.4 能复制不重写), 按 3.5.5 正名 24 项符号;
   新增写删目标识别 8 个单一职责函数(ShellText / prepare_shell_text / shell_write_and_delete_paths 等);
   自杀检查按老陈裁定全部归并到 app/safety/shell_process_guard.py, 本模块不再持有杀进程词表与判定函数。
+2026-10-16 小欧 - 三堂会审: 删 shell_blank_out_quotes 重复定义(两处一字不差, 后者覆盖前者致前者成死代码);
+  删 danger/risk 两层随之失效的死 import(两层的"降级/引号判别式"已按老陈裁定删除)。
 
 """
 import fnmatch
@@ -134,11 +136,6 @@ def shell_normalize_command(command: str) -> str:
     return text.replace("'", "").replace('"', "")
 
 
-def shell_blank_out_quotes(text: str) -> str:
-    """引号内容涂成等长空格(保偏移)。判动词时把 'Select-String -Pattern "del"' 里的 del 排除。"""
-    return _QUOTED_SPAN_RE.sub(lambda m: " " * len(m.group(0)), text)
-
-
 def is_shell_readonly_whitelisted(command: str) -> bool:
     """只读白名单判定 — 小欧 2026-10-04
 
@@ -177,6 +174,67 @@ SHELL_REGISTRY_SYSTEM_VERBS = frozenset({"reg", "reg.exe", "regedit", "regedit.e
 SHELL_DELETE_RE = re.compile(
     r"(?<![a-z0-9_-])(?:Remove-Item|Remove-ItemProperty|del|erase|rd|rmdir|ri|rm)(?![a-z0-9_-])",
     re.IGNORECASE)
+
+# 2026-10-16 老陈裁定(第④层收编): 原在 shell_command_risk.py 的 10 条"删除类"规则移到这里 ——
+#   理由: rm/del/Remove-Item/rd/rmdir 是**文件删除命令**, 属路径判定, 危险层与中风险层不许含路径规则。
+#   这些是"删除动词 + 特定开关组合"(递归/强制/s 开关), 比普通删除更危险, 命中即按高危处理:
+#     · 递归删除 / 强制删除 → 即便目标是安全临时目录也不静默放行, 交由下方 _is_temp_cleanup 判降级
+#     · 需用户确认而非直接拒(与 MEDIUM 层同档), 由 shell_path_check 编排时使用
+SHELL_DESTRUCTIVE_DELETE_RES = (
+    # PS: Remove-Item/rm/del + Recurse + Force
+    re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bRecurse\b.*\bForce\b", re.IGNORECASE),
+    # PS: Remove-Item/rm + Recurse(排除显式 -Recurse:$false)
+    re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+(?:.*\bRecurse\b(?!:\$false\b))", re.IGNORECASE),
+    # PS 字母flag: rm -rf(等价于 -Recurse -Force)
+    re.compile(r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR][fF]\b", re.IGNORECASE),
+    # PS 字母flag 分离形态: rm -r -f
+    re.compile(r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR]\b.*?-[fF]\b", re.IGNORECASE),
+    # CMD: del /s(递归删文件)
+    re.compile(r"\bdel\b.*?/s\b", re.IGNORECASE),
+    # CMD: rd /s(递归删目录)
+    re.compile(r"\brd\b.*?/s\b", re.IGNORECASE),
+    # CMD: rmdir /s(递归删目录)
+    re.compile(r"\brmdir\b.*?/s\b", re.IGNORECASE),
+    # bash: rm -rf /(递归删根路径)
+    re.compile(r"\brm\b.*?-rf\s+/", re.IGNORECASE),
+    # PS: Remove-Item/rm + Force(强制删除文件, 原 MEDIUM)
+    re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bForce\b", re.IGNORECASE),
+    # CMD: del /f(强制删除文件, 原 MEDIUM)
+    re.compile(r"\bdel\b.*?/f\b", re.IGNORECASE),
+)
+
+
+def shell_has_destructive_delete(command: str) -> bool:
+    r"""这条命令是不是高危删除(递归/强制/带开关) — 小欧 2026-10-16（[36] 第七章）
+
+    干什么用: 通道 B 编排层区分"普通删除"与"高危删除"—— 后者需用户确认而非直接判定权限后放行,
+              且**不得**因目标是安全临时目录而静默降级(降级由 shell_is_temp_cleanup 显式判定)。
+    口径    : 只认"删除动词 + 递归/强制/s 开关"组合; 普通 `rm C:\x` 不算(走普通删线)。
+    """
+    return any(rx.search(command or "") for rx in SHELL_DESTRUCTIVE_DELETE_RES)
+
+
+# 已知安全临时目录路径模式（用于高危删除的降级判定）— 2026-10-16 老陈裁定由 shell_command_risk.py 移来
+#   理由: 临时目录是**路径**概念, 属第④层路径判定, 不该留在危险/中风险层。
+_TEMP_SAFE_PATTERNS = re.compile(
+    r'(?i)'
+    r'(?:\$env:(?:TEMP|TMP)'                                          # PS: $env:TEMP / $env:TMP
+    r'|\$env:LOCALAPPDATA(?:\\Temp|\\Microsoft\\Windows\\INetCache)'  # PS: $env:LOCALAPPDATA\Temp / INetCache
+    r'|\\AppData\\Local\\Temp'                                        # 字面路径 \AppData\Local\Temp
+    r'|%TEMP%|%TMP%'                                                  # CMD: %TEMP% / %TMP%
+    r'|\$TMPDIR|\$TEMP|\$TMP|\$\{TMP\}'                             # bash: $TMPDIR / $TEMP / $TMP / ${TMP}
+    r'|/tmp\b'                                                        # bash: unix /tmp
+    r')'
+)
+
+
+def shell_is_temp_cleanup(command: str) -> bool:
+    """命令目标是否为已知安全临时目录 —— 小欧 2026-10-16（原 _is_temp_cleanup，随第④层收编改名）
+
+    用途: 高危删除(递归/强制)命中后，若目标确属安全临时目录，降为"需确认"而非直接拒；
+          含 `..` 路径穿越标记时不降级（实际目标可能已逃出临时根，见调用方）。
+    """
+    return bool(_TEMP_SAFE_PATTERNS.search(command))
 SHELL_MOVE_RE = re.compile(r"(?<![a-z0-9_-])(?:Move-Item|Rename-Item|move|ren|mi|mv)(?![a-z0-9_-])",
                           re.IGNORECASE)
 # 细表三 纯写动词: 有意裁剪——move 族归 SHELL_MOVE_RE(源删/目标写); del 族 8 个归 SHELL_DELETE_RE

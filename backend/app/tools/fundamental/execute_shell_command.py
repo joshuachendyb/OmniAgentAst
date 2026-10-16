@@ -237,7 +237,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
 from app.tools.file.file_encoding import get_file_encoding
-from app.safety.shell_command_risk import check_shell_command_risk  # 2026-10-16 小欧 [36] A8: 随整文件下沉到 app.safety(裁决层下沉, 消除 safety→tools.fundamental 越层)
+from app.safety.shell_danger_command import check_shell_danger_command  # 2026-10-16 老陈裁定: 危险层独立
+from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16 老陈裁定: 中风险层独立
 from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
 from app.safety.shell_command_process import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-16 [36] 随只读白名单一并下沉
@@ -1119,7 +1120,11 @@ def shell(
             processed_command = _fixed
 
     # ── 阶段 2【通用】: 安全检查 ──
-    safety = check_shell_command_risk(processed_command, shell_type, protected_pids=shell_pool.get_all_pids())
+    # 2026-10-16 老陈裁定: 危险层与中风险层已独立, 两层都查取最严(危险层优先)。
+    #   protected_pids 形参已删 —— 自杀检查归 app/safety/shell_process_guard.py.check_shell_self_kill,
+    #   在 tool_safety_checker.check_before_execute 里先于本层执行, 故此处不再重复判定。
+    safety = check_shell_danger_command(processed_command, shell_type) or \
+        check_shell_risk_command(processed_command, shell_type)
     if safety:
         d = int((_time_mod.perf_counter() - t0) * 1000)
         if safety.blocked:

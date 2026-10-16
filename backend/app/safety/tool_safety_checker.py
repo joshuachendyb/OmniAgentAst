@@ -98,6 +98,8 @@
 #   ③注册表类不动态执行; ④由executor内部兜底)。真实口径=destructive 即置位, safe/dangerous 不触发。— 小欧-2026-10-15
 # 2026-10-16 - 小欧 - 工具未注册单列 tool_unavailable: 告知"工具不可用", 不再报成路径越权。
 #   ★须显式命中, 漏掉会掉进"白名单外路径"兜底变成可授权 = 安全放宽。— 小欧-2026-10-16
+# 2026-10-16 - 小欧 - [36]第七章(老陈裁定) 主链重排三级串联: 自杀→danger拒→risk确认→路径权限; 删两处重复判定
+# 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 名不副实且被删除类与中风险类共用; 沙箱判定同步, 行为不变
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -205,7 +207,29 @@ class ToolSafetyChecker:
                 log_and_print(f"[ToolSafetyChecker] 自杀检查拦截(硬拦): {self_kill.message}")
                 return self_kill
 
-        # ③ 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
+        # ③ shell 命令三级判定(2026-10-16 老陈裁定的顺序, 任一命中即返回, 互不穿透):
+        #   自杀检查 → danger(危险, 拒绝) → risk(中风险, 进 HITL 确认) → 路径权限
+        #   ★为何 risk 必须排在路径权限之前: 命令既是中风险又路径越权时, 先问"危不危险"再问"能不能动" ——
+        #     如 `Start-Process C:\Windows\x`: 按本顺序 → risk 命中, 进 HITL 用户确认即可;
+        #     若路径权限在前 → 直接拒绝, 用户连确认机会都没有(语义过重)。
+        #   两个风险层都只答"危不危险/要不要确认", 不含任何路径判定(见各自模块头边界铁律)。
+        if (params or {}).get("command"):
+            _cmd = (params or {}).get("command", "")
+            # ③-1 危险命令: 命中即拒绝执行
+            from app.safety.shell_danger_command import check_shell_danger_command_all_shells
+            _danger = check_shell_danger_command_all_shells(_cmd)
+            if _danger is not None and _danger.blocked:
+                log_and_print(f"[ToolSafetyChecker] 危险命令拦截: tool={tool_name}, {_danger.message}")
+                return _danger
+            # ③-2 中风险命令: 命中进 HITL 确认
+            from app.safety.shell_command_risk import check_shell_risk_command_all_shells
+            _medium = check_shell_risk_command_all_shells(_cmd)
+            if _medium is not None and _medium.requires_confirmation:
+                log_and_print(f"[ToolSafetyChecker] 中风险命令转确认: tool={tool_name}, {_medium.message}")
+                _medium.sandbox_required = True   # 确认前仍走沙箱预检
+                return _medium
+
+        # ④ 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
         # 先校验delete专属R6（项目根外递归删除），再校验白名单（临时授权）
         if delete_risk is not None and delete_risk.blocked:
             log_and_print(f"[ToolSafetyChecker] delete R6硬拦截(项目根外递归删除): {delete_risk.message}")
@@ -230,8 +254,8 @@ class ToolSafetyChecker:
                     log_and_print(f"[ToolSafetyChecker] bypass自动放行(白名单外临时授权请求): tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
                 else:
                     log_and_print(f"[ToolSafetyChecker] 白名单外临时授权请求,转HITL确认: tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
-                # v1.25 M2-D: 白名单外 destructive 授权请求→沙箱预检; safe 级不触发(与 G1 唯一触发依据一致)
-                known_risk.sandbox_required = (known_risk.severity == "destructive")
+                # v1.25 M2-D: 白名单外 risk 授权请求→沙箱预检; safe 级不触发(与 G1 唯一触发依据一致)
+                known_risk.sandbox_required = (known_risk.severity == "risk")
                 return known_risk
             # 修复: 已知风险只拦截, 不触发确认(确认由 needs_confirm 路径驱动) — 小欧 2026-07-18
             known_risk.severity = "dangerous"
@@ -247,7 +271,7 @@ class ToolSafetyChecker:
                     #   bypass仅由auto_confirm=True区分(与hitl_gateway去mode同批), 内容/分级由safety_gate按真实来源组装 — 小欧-2026-09-18
                     return SafetyResult(requires_confirmation=True, auto_confirm=True,
                             blocked=False, message="",
-                            severity="destructive", sandbox_required=True)   # v1.25 M2-A: bypass destructive 确认→沙箱预检
+                            severity="risk", sandbox_required=True)   # v1.25 M2-A: bypass risk 确认→沙箱预检
                 logger.info(f"[ToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
                 return SafetyResult(requires_confirmation=False,
                         blocked=False, message="安全开关已绕过",
@@ -278,14 +302,14 @@ class ToolSafetyChecker:
             logger.info(f"[ToolSafetyChecker] 会话信任豁免确认(跳HITL): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="会话已信任该工具",
-                    severity="safe", sandbox_required=_needs)   # v1.25 M2-B: destructive级仍进沙箱, safe级不触发(G1)
+                    severity="safe", sandbox_required=_needs)   # v1.25 M2-B: risk级仍进沙箱, safe级不触发(G1)
 
         needs_confirm, _shell_msg = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
-        severity = "destructive" if needs_confirm else "safe"
-        # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
+        severity = "risk" if needs_confirm else "safe"
+        # v1.25 M2-C: 仅 risk 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
         return SafetyResult(requires_confirmation=needs_confirm,
                 blocked=False, message=_shell_msg or "", severity=severity,
-                sandbox_required=(severity == "destructive"))
+                sandbox_required=(severity == "risk"))
 
     @staticmethod
     def _check_shell_kill(cmd: str, pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:
@@ -310,23 +334,10 @@ class ToolSafetyChecker:
                 and _is_readonly_sql((params or {}).get("sql", "")):
             return False, ""  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
-            _cmd = (params or {}).get("command", "")
-            # 2026-10-16 小欧 [36]4.4: 杀防护已归位 _check_known_risks（无条件防线），本分支只剩危险度分级
-            # 2026-10-10 小欧 修预检21/43条规则死代码缺口: 改用三壳并集(见 shell_command_risk:187)。
-            #   病根: 原调用 check_shell_command_risk(_cmd) 只传 command, shell_type 吃默认 "ps7",
-            #   使 cmd/bash 标签规则在预检全被跳过 — diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/
-            #   chown/reg add 等预检一律 None, 仅执行层才拦(两层判定口径不一致)。
-            #   并集实测: 召回15条 / 白名单误伤0/30 / 日常命令误伤0/24 / 降级回归0。
-            from app.safety.shell_command_risk import check_shell_command_risk_all_shells  # 2026-10-16 小欧 [36] A7: 随整文件下沉到 app.safety
-            _risk = check_shell_command_risk_all_shells(_cmd)
-            if _risk:
-                if _risk.message:
-                    return True, _risk.message  # MEDIUM: desc 进弹窗 content
-                return tool_meta.needs_confirmation, ""
-            else:
-                # 2026-09-19 小欧 修复: 无风险shell不弹HITL(原本设计: 只有MEDIUM才弹窗, HIGH拦截, 无风险直接放行)
-                #   _risk=None时不再穿透到return tool_meta.needs_confirmation, 否则无风险shell弹空content窗
-                return False, ""
+            # 2026-10-16 老陈裁定: danger/risk 已提到 check_before_execute 主链(自杀 → danger → risk → 路径权限),
+            #   此处不再重复判定。落到这里说明 danger/risk 都没命中 → 无风险 shell 不弹 HITL
+            #   (2026-09-19 小欧 修复: 否则无风险 shell 会弹空 content 窗)
+            return False, ""
         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
             return delete_risk.requires_confirmation, ""      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):
@@ -351,17 +362,9 @@ class ToolSafetyChecker:
         #   - category==None 且白名单外msg → requires_confirmation+auth_path(现状已有)
         #   - category=="system"/"non_system" 且读 → 放行(validate_path 读 mode 已处理)
         """
-        # 2026-10-16 第七章: 自杀检查已提到 check_before_execute 的 _check_known_risks 之前,
-        #   此处只留 shell 危险模式 HIGH 判定(与自杀无关)。
+        # 2026-10-16 老陈裁定: danger/risk 已提到 check_before_execute 主链, 排在路径权限**之前**
+        #   (自杀 → danger 拒 → risk 确认 → 路径权限)。本函数只管路径权限, 不再判危险等级。
         from app.tools.tools_alias_mapper import normalize_tool_name  # 防别名漏判（函数内懒导入，本函数两处共用）
-        if normalize_tool_name(tool_name) in ("bash", "execute_command"):
-            # 2026-10-16 小欧 [36]4.4: shell 危险模式 HIGH 归位无条件防线。
-            #   MEDIUM 不在此处理（需弹窗文案，归确认函数）；确认函数内 HIGH 分支同步删除。
-            from app.safety.shell_command_risk import check_shell_command_risk_all_shells  # 2026-10-16 小欧 [36] A7: 随整文件下沉到 app.safety
-            _shell_risk = check_shell_command_risk_all_shells((params or {}).get("command", ""))
-            if _shell_risk is not None and _shell_risk.blocked:
-                log_and_print(f"[ToolSafetyChecker] 高风险Shell操作拦截: tool={tool_name}, {_shell_risk.message}")
-                return SafetyResult(blocked=True, message=_shell_risk.message or "高风险Shell命令拦截", severity="dangerous")
         is_valid, msg, failed_path, category = _validate_tool_path(tool_name, params)
         if not is_valid:
             # T2: 显式 category+mode 分流(替代 msg 字符串特征)
@@ -378,13 +381,13 @@ class ToolSafetyChecker:
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(requires_confirmation=False, blocked=False,
                                         message=f"该路径在受保护区域，会话已信任，允许写入: {failed_path or msg}",
-                                        severity="destructive",
+                                        severity="risk",
                                         auth_path=failed_path, sandbox_required=True)
                 # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
                 log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)写入需任务级授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
                 return SafetyResult(requires_confirmation=True, blocked=False,
                                     message=f"该路径在受保护区域，写入需申请授权: {failed_path or msg}",
-                                    severity="destructive",
+                                    severity="risk",
                                     auth_path=failed_path or (params.get("path") or params.get("dest")))
             if category == "system":
                 # 系统禁区写/删 → 硬拦永不授权
@@ -402,13 +405,13 @@ class ToolSafetyChecker:
                 log_and_print(f"[ToolSafetyChecker] 白名单外路径-会话信任豁免(携带auth_path): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(requires_confirmation=False, blocked=False,
                                     message=f"该路径超出允许范围，会话已信任，允许操作: {failed_path or msg}",
-                                    severity="destructive",
+                                    severity="risk",
                                     auth_path=failed_path, sandbox_required=True)
             # BUG-D: auth_path 取真正越权参数的真实路径(failed_path), 不再固定 path-or-dest
             log_and_print(f"[ToolSafetyChecker] 白名单外路径需临时授权: tool={tool_name}, auth_path={failed_path or (params.get('path') or params.get('dest'))}, {msg}")
             return SafetyResult(requires_confirmation=True, blocked=False,
                                 message=f"该路径超出允许范围，需临时授权: {failed_path or msg}",
-                                severity="destructive",
+                                severity="risk",
                                         auth_path=failed_path or (params.get("path") or params.get("dest")))
 
         # 2026-10-14 北京老陈裁定 - 删写入大小保护硬拦(原 >1024 且 new<20% 即 blocked): 文件大小属业务规则,

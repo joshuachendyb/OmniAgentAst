@@ -18,6 +18,7 @@
 #      根集读取异常新增兜底 blocked(否则 inside 恒 False → 全路径误判区外, R5/R6 语义翻转);
 #   ④ 越层: 删函数内 from app.config / get_ws_snapshot 延迟导入(safety→config / safety→tools.context), 收敛到单源一处且有注释说明。
 #   ⑤ 内联(YAGNI): _as_bool / _PASS 再内联进 check_delete_risk, 删死 import typing.Any; 全文件现零模块级私有符号, __all__ 与实际导出完全一致。
+# 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 沙箱判定已同步, 行为不变。
 """
 delete_safety — delete 工具专属安全检查(差异层)
 
@@ -81,7 +82,7 @@ def check_delete_risk(params: dict) -> SafetyResult:
     # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 ---
     if (inside_proj and recursive) or (not inside_proj):
         return SafetyResult(requires_confirmation=True, blocked=False,
-                            message=f"删除需确认: {path}", severity="destructive")
+                            message=f"删除需确认: {path}", severity="risk")
 
     # --- R3 允许根内普通 → 放行(免确认), 恒非None ---
     # 2026-10-15 北京老陈裁定(内联): 原模块级常量 _PASS 已内联, 全文件零模块级可变单例, 免多对象共享之嫌。

@@ -38,269 +38,109 @@
 #   遗留(既有缺口, git stash 对比确认非本次引入): cmd `del <file>` 不带 /s 不在 HIGH 词表, 前后均不拦。
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D/4.12-A: SafetyResult 改从 app.tools.tool_types 导入; _strip_quoted 改名 mask_quoted_spans(随 4.11-A 迁 shell_static_guard)并同步调用点
 """
-execute_shell_command 分级安全检查 — 独立safety模块
+shell 中风险命令判定 — 需用户确认，与文件系统路径无关
 
-对齐 execute_code_safety.py 设计原则：规则数量>5、规则复杂、规则特殊 → 单独文件
+★ 本文件**只管一件事**: 这条命令属不属于中风险（需确认），且**与文件路径无关**。
+  · 危险命令（直接拒绝）→ app/safety/shell_danger_command.py
+  · 路径的写/读/删除/改权限 → app/safety/shell_command_process.py + delete/write/read_path_check
+  · 自杀检查（杀自己人）→ app/safety/shell_process_guard.py
 
-HIGH: blocked=True, 拒绝执行
-MEDIUM: requires_confirmation=True —— 本函数只置位; 真确认在 handlers/safety_gate.py:149(只读白名单短路不弹窗)。
+边界铁律（北京老陈 2026-10-16 裁定）:
+  本文件与 shell_danger_command.py **零调用关系**，两者都不含任何文件路径判定。
 
 — 北京老陈 2026-06-27
 — 小健 2026-06-27 迁出到独立safety文件
-— 小欧 2026-10-05 更正 MEDIUM 说明(本函数只置位, 真确认在上游 safety_gate, 删失效的 action_handler 引用)
-2026-10-16 小欧 - 文档[36] 第五章: 自 app/tools/fundamental/execute_shell_command_safety.py
-  **整文件下沉**至 app/safety/, 文件级复制 295 行零漂移(AGENTS 1.4 能复制不重写, 严禁重写业务逻辑)。
-  仅两处改动:
-  ① 唯一一处越层 import: `app.tools.fundamental.shell_command_guard.mask_quoted_spans`
-     → `app.safety.shell_command_process.shell_blank_out_quotes`(随 3.5.5 正名), 并从
-     **规则循环体内提到文件头**(原在 for 循环里每条规则都执行一次 import, 违反 KISS-DIRECT);
-  ② 模块头补位置/依赖方向说明。
-  ★本模块**不自行读取 shell_pool**: 受保护进程 PID 由调用方以 protected_pids 形参传入
-    (裁决层不得反向依赖运行时状态, 这是 [36] 3.10.3-D6 依赖方向的硬约束)。
-  依赖方向: 仅 import re / typing / app.tools.tool_types(契约) / app.safety.shell_command_process /
-    app.logger。**不再 import 任何 app.tools.fundamental**。
+2026-10-16 小欧 - 文档[36] 第七章(北京老陈裁定) 本文件由"分级检查"收敛为**只管中风险**:
+  ① HIGH 规则全部移出 → app/safety/shell_danger_command.py(与路径无关的 14 条);
+     文件删除类 10 条(Remove-Item/rm/del + Force、del /f)移至 shell_command_process 路径层。
+  ② 彻底删除(老陈裁定"没有风险直接通过")6 条: takeown /f、icacls /grant、cacls /grant、
+     chmod -R 777、reg add、reg import、reg delete。
+  ③ 删本文件内的第二套自杀防护(_extract_* 三函数 + protected_pids 拦截分支) ——
+     自杀检查已全部归并 shell_process_guard.check_shell_self_kill, 两处各判一套口径不一致
+     (E2E P9-03 的教训: 按名杀事故主实现拦得住、这套只有 PID 口径拦不住)。
+  ④ 随之删 protected_pids 形参; _TEMP_SAFE_PATTERNS/_is_temp_cleanup 移至 shell_command_process。
+2026-10-16 小欧 - 老陈裁定 severity destructive→risk(纯改名): 沙箱判定已同步; 并删"仅引号内则跳过"判别式, 命中即确认。
 """
 import re
 from typing import Optional
 
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
-from app.safety.shell_command_process import shell_blank_out_quotes
 from app.logger import logger
 
 
-SHELL_DANGEROUS_PATTERNS = [
+SHELL_MEDIUM_PATTERNS = [
     # ═══════════════════════════════════════════════════════════════════
-    # HIGH风险 - 拒绝执行(blocked=True)
-    # 格式: (pattern, desc, level, shell_type) — shell_type: "ps"/"cmd"/None(双兼容)
+    # 中风险命令(MEDIUM) - 需用户确认(requires_confirmation=True)
+    # 格式: (pattern, desc, level, st_tag) — st_tag: "ps"/"cmd"/None(双兼容)
+    # ★全部为与文件系统路径无关的操作；路径的写/读/删不在本表(见文件头边界铁律)
     # ═══════════════════════════════════════════════════════════════════
-    # ---- PS: PowerShell专属高风险 ----
-    (r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bRecurse\b.*\bForce\b", "递归+强制删除", "HIGH", "ps"),
-    (r"(?:Remove-Item|rm|del|ri|erase)\s+(?:.*\bRecurse\b(?!:\$false\b))", "递归删除目录", "HIGH", "ps"),
-    # 2026-08-13 小欧 #21: PS字母flag(rm -rf等价-Recurse -Force)补规则, 覆盖ps7别名解析前原始串无Recurse/Force词的情况
-    #   与bash规则L57口径对齐; 临时目录清理降级依赖desc含"递归", 本规则描述含"递归"故降级逻辑同样生效
-    (r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR][fF]\b", "递归+强制删除(PS字母flag -rf)", "HIGH", "ps"),
-    (r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR]\b.*?-[fF]\b", "递归+强制删除(PS字母flag -r -f)", "HIGH", "ps"),
-    (r"Invoke-Command", "远程/本地执行命令", "HIGH", "ps"),
-    (r"Format-Volume", "格式化卷", "HIGH", "ps"),
-    (r"Stop-Computer", "关机", "HIGH", "ps"),
-    (r"Invoke-Expression", "动态执行命令", "HIGH", "ps"),
-    # ---- CMD: cmd.exe专属高风险 ----
-    (r"\bdiskpart\b", "磁盘分区操作(diskpart)", "HIGH", "cmd"),
-    (r"\bbcdedit\b", "引导配置操作(bcdedit)", "HIGH", "cmd"),
-    (r"vssadmin\s+delete\s+shadows", "删除卷影副本(vssadmin)", "HIGH", "cmd"),
-    (r"\bsc\s+delete\b", "删除服务(sc delete)", "HIGH", "cmd"),
-    # ---- PS+CMD: 递归删除/格式化/关机/删除用户/数据销毁 ----
-    (r"\bdel\b.*?/s\b", "递归删除文件", "HIGH", None),
-    (r"\brd\b.*?/s\b", "递归删除目录(rd)", "HIGH", None),
-    (r"\brmdir\b.*?/s\b", "递归删除目录(rmdir)", "HIGH", None),
-    (r"(?<!\w)format\b\s+[A-Za-z]:\s*(?:[/\\]|$)", "格式化磁盘", "HIGH", None),
-    (r"\bshutdown\b(?!\s+[/-]a\b)", "关机/重启", "HIGH", None),
-    (r"net\s+user\s+\S+.*\/delete", "删除用户", "HIGH", None),
-    (r"\bcipher\b\s+/w:", "永久数据销毁(cipher /w)", "HIGH", None),
-    # ---- bash: bash专属高风险 ----
-    (r"\brm\b.*?-rf\s+/", "递归删除(rm -rf /路径)", "HIGH", "bash"),
-    (r"\bdd\s+if=.*\sof=/(?:dev/sd|dev/nvme|dev/mmc)", "直接写磁盘(dd)", "HIGH", "bash"),
-    (r"\bmkfs\.\w+\s+/dev/", "格式化(ntfs/ext4/xfs)", "HIGH", "bash"),
-    (r"\bchmod\s+777\s+/", "修改根目录权限(chmod 777 /)", "HIGH", "bash"),
-    (r"\bchown\s+\w+:\w+\s+/", "修改根目录归属(chown : /)", "HIGH", "bash"),
-
-    # ═══════════════════════════════════════════════════════════════════
-    # MEDIUM风险 - 需用户确认(requires_confirmation=True)
-    # ═══════════════════════════════════════════════════════════════════
-    # ---- PS: PowerShell专属中风险 ----
-    (r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bForce\b", "强制删除文件", "MEDIUM", "ps"),
+    # ---- PS ----
     (r"Restart-Computer", "重启", "MEDIUM", "ps"),
     (r"Set-ExecutionPolicy", "修改执行策略", "MEDIUM", "ps"),
     (r"Stop-Process\s+.*\bForce\b", "强制停止进程", "MEDIUM", "ps"),
     (r"Start-Process", "启动任意进程", "MEDIUM", "ps"),
-    # ---- CMD: cmd.exe专属中风险 ----
-    (r"\bdel\b.*?/f\b", "强制删除文件(del /f)", "MEDIUM", "cmd"),
-    (r"\btakeown\b.*?/f\b", "强制获取所有权(takeown /f)", "MEDIUM", "cmd"),
-    (r"\bicacls\b.*?/grant\b", "修改文件权限(icacls)", "MEDIUM", "cmd"),
-    (r"\bcacls\b.*?/grant\b", "修改文件权限(cacls)", "MEDIUM", "cmd"),
-    (r"reg\s+add", "注册表新增/修改(reg add)", "MEDIUM", "cmd"),
-    (r"reg\s+import", "导入注册表文件(reg import)", "MEDIUM", "cmd"),
+    # ---- CMD ----
     (r"wmic\s+process\b", "WMIC进程操作(wmic process)", "MEDIUM", "cmd"),
     (r"net\s+(stop|start)\b", "停止/启动服务(net stop/start)", "MEDIUM", "cmd"),
     (r"\bsc\s+(stop|start)\b", "停止/启动服务(sc stop/start)", "MEDIUM", "cmd"),
     (r"\bsc\s+config\b", "修改服务配置(sc config)", "MEDIUM", "cmd"),
-    # ---- PS+CMD: 两者共用中风险 ----
-    (r"reg\s+delete", "删除注册表项", "MEDIUM", None),
+    # ---- PS+CMD ----
     (r"taskkill\s+/f", "强制杀进程", "MEDIUM", None),
-    # ---- bash: bash专属中风险 ----
-    (r"\bchmod\s+-R\s+777\b", "递归修改权限(chmod -R 777)", "MEDIUM", "bash"),
+    # ---- bash ----
     (r"\bkill\b\s", "kill进程(bash)", "MEDIUM", "bash"),
 ]
 
+def check_shell_risk_command(command: str, shell_type: str = "ps7") -> Optional[SafetyResult]:
+    """中风险命令判定 —— 命中即需用户确认(MEDIUM)
 
-# 已知安全临时目录路径模式（用于递归删除误伤降级）
-_TEMP_SAFE_PATTERNS = re.compile(
-    r'(?i)'
-    r'(?:\$env:(?:TEMP|TMP)'                                          # PS: $env:TEMP / $env:TMP
-    r'|\$env:LOCALAPPDATA(?:\\Temp|\\Microsoft\\Windows\\INetCache)'  # PS: $env:LOCALAPPDATA\Temp / INetCache
-    r'|\\AppData\\Local\\Temp'                                        # 字面路径 \AppData\Local\Temp
-    r'|%TEMP%|%TMP%'                                                  # CMD: %TEMP% / %TMP%
-    r'|\$TMPDIR|\$TEMP|\$TMP|\$\{TMP\}'                             # bash: $TMPDIR / $TEMP / $TMP / ${TMP}
-    r'|/tmp\b'                                                        # bash: unix /tmp
-    r')'
-)
+    shell_type: "ps7"/"ps5"/"cmd"/"bash" — 仅匹配该 shell 标签的规则 + 双兼容规则(st_tag=None)。
+                要查全 shell 请用 check_shell_risk_command_all_shells(), 不要传 None
+                (传 None 会把 ps/cmd/bash 三种标签全跳过, 仅剩双兼容规则生效)。
 
-
-def _is_temp_cleanup(command: str) -> bool:
-    """检查命令是否目标为已知安全临时目录"""
-    return bool(_TEMP_SAFE_PATTERNS.search(command))
-
-
-def _extract_stop_process_pids(command: str) -> set:
-    """从 Stop-Process -Id 5092,19128 提取目标PID集合 — 小欧 2026-07-31"""
-    m = re.search(r'Stop-Process\s+(?:.*?\s)?-Id\s+([\d,\s]+)', command, re.IGNORECASE)
-    if not m:
-        return set()
-    pids = {int(x) for x in re.split(r'[\s,]+', m.group(1)) if x.isdigit()}
-    logger.debug(f"[Shell安全] _extract_stop_process_pids: command={command[:80]}, 提取PID={pids}")
-    return pids
-
-
-def _extract_taskkill_pids(command: str) -> set:
-    """从 taskkill /F /PID 5092 提取目标PID集合 — 小欧 2026-07-31"""
-    pids = {int(x) for x in re.findall(r'/PID\s+(\d+)', command, re.IGNORECASE)}
-    logger.debug(f"[Shell安全] _extract_taskkill_pids: command={command[:80]}, 提取PID={pids}")
-    return pids
-
-
-def _extract_bash_kill_pids(command: str) -> set:
-    """从 bash kill 1234 / kill -9 1234 提取目标PID集合 — 小欧 2026-07-31"""
-    m = re.search(r'\bkill\b\s+(?:-\d+\s+)*(\d+(?:\s+\d+)*)', command)
-    if not m:
-        return set()
-    pids = {int(x) for x in m.group(1).split()}
-    logger.debug(f"[Shell安全] _extract_bash_kill_pids: command={command[:80]}, 提取PID={pids}")
-    return pids
-
-
-def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pids: Optional[set] = None) -> Optional[SafetyResult]:
-    """Shell命令风险分级检查 - HIGH立即拦截, MEDIUM收集合并
-
-    shell_type: "ps7"/"ps5"/"cmd"/"bash" — 仅匹配该 shell 标签的规则 + 9条双兼容规则(st_tag=None);
-                ps7/ps5 生效22条, cmd 生效23条, bash 生效16条。
-                传 None 会把 ps/cmd/bash 三种标签全部跳过, 仅剩9条双兼容规则生效 —
-                旧注释「None不过滤」与实现相反(2026-10-10 小欧 修正)。
-                要查全 shell 请用 check_shell_command_risk_all_shells(), 不要传 None。
+    2026-10-16 老陈裁定: 本函数只管 MEDIUM；HIGH 已全部移至 shell_danger_command.check_shell_danger_command；
+    路径的写/读/删除/改权限不在本表(见 shell_command_process)；自杀检查见 shell_process_guard。
     """
     medium_hits = []
     normalized = command.replace('\r\n', ' ').replace('\n', ' ')
-    for pattern_str, desc, level, st_tag in SHELL_DANGEROUS_PATTERNS:
+    for pattern_str, desc, level, st_tag in SHELL_MEDIUM_PATTERNS:
         if st_tag == "ps" and shell_type not in ("ps7", "ps5"):
             continue
         if st_tag == "cmd" and shell_type != "cmd":
             continue
         if st_tag == "bash" and shell_type != "bash":
             continue
-        if re.search(pattern_str, normalized, re.IGNORECASE):
-            if level == "HIGH":
-                # 临时目录清理降级: 递归删除命令(PS Remove-Item / CMD del/rd/rmdir)目标为已知安全临时目录时降为MEDIUM
-                # 其他HIGH操作(Format-Volume等)即使命令中包含临时路径也依然拦截 — 小欧 2026-07-28
-                if _is_temp_cleanup(normalized) and ('递归' in desc or 'rm -rf' in desc):
-                    # 2026-08-13 小欧 三堂会审修复#20: 命令含`..`路径穿越标记时实际解析目标可能逃出临时根
-                    #   (如 ...\Temp\..\important 匹配_TEMP_SAFE_PATTERNS被降级, 实际删除临时根外文件), 不予降危维持HIGH拦截
-                    if '..' in normalized:
-                        return SafetyResult(
-                            blocked=True,
-                            message=f"高风险Shell操作: {desc}，路径含穿越符号，已阻止",  # 7.3.4-C18精化: "不允许降级"术语→"路径含穿越符号，已阻止" — 小欧-2026-09-18
-                            severity="dangerous",
-                        )
-                    medium_hits.append(desc)
-                    continue
-                # 2026-10-14 小欧(北京老陈裁定): HIGH 规则**仅**命中引号内字面量时降为中风险(需确认),
-#   修只读查询被误硬拦: `Select-String -Pattern "rm -rf" <path>` 实测 blocked=True。
-#   绝不剥引号直接忽略 —— `powershell -Command "Remove-Item X"` 的危险体就在引号内,
-#   忽略即开洞。故只"降级不豁免": 引号外也命中则维持原硬拦, 仅引号内命中降为需确认,
-#   无人值守场景照样拦得住(实测 powershell -Command "Remove-Item -Recurse -Force X" → conf=True)。
-#   遗留(既有缺口, 非本次引入, git stash 对比确认): cmd 的 `del <file>` 不带 /s 时不在 HIGH 词表,
-#   改动前后均不拦; 递归 `del /s /q` 一直是被拦的。
-                if not re.search(pattern_str, shell_blank_out_quotes(normalized), re.IGNORECASE):
-                    # 放宽动作必须留痕: 高危降为需确认属安全等级下调, 事后要能回溯哪些命令走过这条路
-                    logger.warning(
-                        f"[Shell安全] HIGH降级为需确认(规则仅命中引号内): 规则={desc}, 命令={normalized[:200]}"
-                    )
-                    medium_hits.append(f"{desc}(仅出现在引号参数内, 降为需确认)")
-                    continue
-                return SafetyResult(
-                    blocked=True,
-                    message=f"高风险Shell操作: {desc}，已阻止执行",  # 7.3.4-C19: 补充"已阻止执行" — 小欧-2026-09-18
-                    severity="dangerous",
-                )
-            elif level == "MEDIUM" and desc not in medium_hits:
-                # Shell池进程保护: Stop-Process/taskkill命中受保护PID时BLOCKED — 小欧 2026-07-31
-                if protected_pids:
-                    if "强制停止进程" in desc:
-                        target_pids = _extract_stop_process_pids(normalized)
-                        if target_pids & protected_pids:
-                            blocked_pids = target_pids & protected_pids
-                            logger.warning(f"[Shell安全] 安全拦截: Stop-Process 目标PID {blocked_pids} 为系统保护进程, 禁止杀死")
-                            return SafetyResult(
-                                blocked=True,
-                                message=f"系统保护进程，禁止终止: PID {blocked_pids}",
-                                severity="dangerous",
-                            )
-                    if "强制杀进程" in desc:
-                        target_pids = _extract_taskkill_pids(normalized)
-                        if target_pids & protected_pids:
-                            blocked_pids = target_pids & protected_pids
-                            logger.warning(f"[Shell安全] 安全拦截: taskkill 目标PID {blocked_pids} 为系统保护进程, 禁止杀死")
-                            return SafetyResult(
-                                blocked=True,
-                                message=f"系统保护进程，禁止终止: PID {blocked_pids}",
-                                severity="dangerous",
-                            )
-                    if "kill进程" in desc:
-                        target_pids = _extract_bash_kill_pids(normalized)
-                        if target_pids & protected_pids:
-                            blocked_pids = target_pids & protected_pids
-                            logger.warning(f"[Shell安全] 安全拦截: kill 目标PID {blocked_pids} 为系统保护进程, 禁止杀死")
-                            return SafetyResult(
-                                blocked=True,
-                                message=f"系统保护进程，禁止终止: PID {blocked_pids}",
-                                severity="dangerous",
-                            )
-                medium_hits.append(desc)
+        if not re.search(pattern_str, normalized, re.IGNORECASE):
+            continue
+        if desc in medium_hits:
+            continue
+        medium_hits.append(desc)
     if medium_hits:
         combined = "、".join(medium_hits)
-        logger.warning(f"[Shell安全] 中风险操作: {combined}")
+        logger.warning(f"[Shell中风险] 中风险操作: {combined}")
         return SafetyResult(
             blocked=False,
             requires_confirmation=True,
             message=f"中风险Shell操作: {combined}，需确认后执行",
-            severity="destructive",
+            severity="risk",
         )
     return None
 
 
-# 严重度排序: 取最高者为并集结果。dangerous(blocked) > destructive(需确认) > 无风险
-_SEVERITY_RANK = {"dangerous": 2, "destructive": 1, None: 0, "": 0}
-
-
-def check_shell_command_risk_all_shells(command: str,
-                                        protected_pids: Optional[set] = None) -> Optional[SafetyResult]:
-    """Shell命令风险检查(三壳并集) - ps7/cmd/bash 各查一遍, 取最高严重度。
+def check_shell_risk_command_all_shells(command: str) -> Optional[SafetyResult]:
+    """中风险命令检查(三壳并集) - ps7/cmd/bash 各查一遍。 — 小欧 2026-10-10
 
     供不掌握真实 shell_type 的调用方(如 safety 预检门)使用: 单查某一个 shell 会漏掉
-    该 shell 之外标签的规则(实测默认ps7下43条规则仅22条生效)。
-    会写死 shell 的调用方(如 execute_shell_command 执行层)应继续传真实 shell_type,
-    不要改用本函数, 否则可能把非当前 shell 的规则误命中。
+    该 shell 之外标签的规则。
+    会写死 shell 的调用方(如 execute_shell_command 执行层)应继续传真实 shell_type。
 
+    2026-10-16 老陈裁定(去掉 _SEVERITY_RANK 排序): 中风险层只有一种结果 ——
+      命中即 requires_confirmation(risk), 不命中就是 None。
+      既然只有"命中/不命中", 直接返回第一个即可, 不必建严重度排序表(多余的间接层)。
     无任何 shell 命中时返回 None(无风险)。 — 小欧 2026-10-10
     """
-    best = None
-    best_rank = 0
     for _st in ("ps7", "cmd", "bash"):
-        r = check_shell_command_risk(command, _st, protected_pids=protected_pids)
-        if r is None:
-            continue
-        rank = _SEVERITY_RANK.get(r.severity, 0)
-        if rank > best_rank:
-            best, best_rank = r, rank
-        if best_rank >= _SEVERITY_RANK["dangerous"]:
-            break   # 已是最高级, 无需再查 — 小欧 2026-10-10
-    return best
+        r = check_shell_risk_command(command, _st)
+        if r is not None:
+            return r                     # 命中即返回: 同一 shell 的多个命中已在函数内合并为一条
+    return None
 
