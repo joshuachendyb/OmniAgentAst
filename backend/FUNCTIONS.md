@@ -107,6 +107,10 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `to_win_long_path` | Windows长路径 `\\?\` 前缀绕过MAX_PATH(260)限制；仅NT生效，已带前缀或非绝对路径保持原样 | path: Path | str |
+| `path_has_reserved_char` | 文件名(basename)含 Windows 保留字符则返回该字符，否则 None；纯拼写零IO | basename: str | Optional[str] |
+| `path_has_reserved_name` | 路径任一分段是 Windows 保留名则返回该分段，否则 None；纯拼写零IO | file_path: str | Optional[str] |
+| `path_has_extra_drive` | 路径尾部含多余盘符则返回原因，否则 None；纯拼写零IO | file_path: str | Optional[str] |
+| `validate_str_param` | 字符串参数基础校验（非路径通用参数用；路径非空由 SA1 覆盖）；None/非str/空串返回错误信息 | value: Any, param_name: str | Optional[str] |
 
 > 注：备份(operation_backup)与回收站维护(operation_maintenance)链路统一使用本函数，保证深嵌套备份能写入亦能清理。
 
@@ -566,6 +570,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.9 | 2026-10-16 23:57:15 | **tool去检查化(北京老陈裁定: 系统层检查的事tool层不重复, tool只执行+业务警告)**: §1.10 补登记 `path_has_reserved_char`/`path_has_reserved_name`/`path_has_extra_drive`/`validate_str_param`(自 file_path_checker 迁入 utils); file_path_checker 终点为三纯警告函数(`for_write/delete/overwrite`); 合法性规则(`OpCategory`/`validate_path_layers12`)迁 safety `path_1st_legality_check`(SA1 唯一检查点) | 小欧 |
 | v5.8 | 2026-10-15 | **路径订正 + TTL 登记**(小欧, 文档[33] 5.23 / P5步21-22): ①§4.4 与§八 标题/小节路径按终态订正 —— `app/tools/trust_db.py`+`app/tools/trust.py` → `app/safety/trust_db.py`+`app/safety/trust.py`; 第八章标题去掉已删的 `app/tools/security/`; §8.1/§8.3 标注位置由 `app/tools/security/` 改 `app/safety/`(该包 5.15 已整包删除) ②§4.4 补登记 `trust_scope_path`/`insert_session_trust`/`check_session_trust`/`cleanup_expired_trust`/`get_session_id_by_task` 五个原漏登函数, 并加**会话信任 TTL** 说明(写 expires_at / 查未过期 / 周期回收, NULL=不过期兼容存量, 重复信任不续期)。注: 本文件未记录 `SafetyResult` 的模块路径(仅作形参名出现), 故设计 5.23「SafetyResult 改 app/tools/tool_types.py」一节无对应条目可改 | 小欧 |
 | v5.7 | 2026-10-14 10:47:03 | **linked 增量摘要**(小欧): §3.2 登记 `get_chain_summary_anchor`(取链内最近非空摘要锚点) + `save_chain_cover_summary`(摘要写覆盖上界任务行, 单一出口); 模块内私有装配辅助(`_build_history_context`/`_strip_history_msgs`/`_assemble_anchor_delta`, 单消费者)按惯例不入清单 | 小欧 |
 | v5.6 | 2026-10-11 07:30:12 | **中央别名表收敛厂商键名漂移**(小欧): `_KEY_ALIASES` + `_canon_item` 入口归一（name/display_name/title、pricing/pricings、context_length/context_window、max_output_length/max_output_tokens、supported_parameters/supported_sampling_parameters），`_first_alias` 退役删除（唯一调用点改直读）；longcat 两变体首批入表；zenmux 映射（_flatten_pricings/_merge_capabilities/publish_time）保持。回归 94 passed + 真实 zenmux 201 条/DTO 零失败 + 老厂商口径零变化 | 小欧 |
