@@ -49,7 +49,6 @@ from app.safety.path_check_common import (
     check_whitelist,
     resolve_allowed_paths,
 )
-from app.safety.read_path_check import validate_read as validate_path_for_read
 from app.safety.write_path_check import validate_write as validate_path_for_write
 from app.safety.delete_path_check import validate_delete as validate_path_for_delete
 from app.safety.dual_path_check import (
@@ -74,7 +73,7 @@ __all__ = [
     "OperationType", "OperationStatus",
     # 路径检查三线分离(文档[35])
     "validate_tool_path",
-    "validate_path_for_read", "validate_path_for_write", "validate_path_for_delete",
+    "validate_path_for_write", "validate_path_for_delete",
     "is_system_protected_path", "is_disk_root", "is_code_root_path",
     "is_allowed_root_itself", "SYSTEM_PROTECTED_DIR_NAMES",
     "get_default_allowed_paths", "get_system_drive",
