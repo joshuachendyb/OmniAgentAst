@@ -20,6 +20,11 @@
 #      这两个"write 档但源必须存在"的参数, 命中即按 EXISTS 查。改此表 = 改前移范围。
 #   ③ 【BUG 修复·取错源】force 原取原始 params(漏归一化后的别名), 现先取 normalized_params 再回落原值。
 #   另: params 入口 `or {}` 归一(None 时原先 params.get 抛异常被 except 吞成静默 fail-open)。
+# 2026-10-16 - 小欧 - tool去检查化: 合法性规则段(OpCategory/_OP_RULES/validate_path_layers12)
+#   自 file_path_checker 逐字迁入本文件底部(迁移后唯一调用方即本文件 precheck, 单源单文件合 YAGNI);
+#   纯拼写原子(保留字符/保留名/多余盘符)改调 app.utils.path_utils(tools→utils/safety→utils 方向合法)。
+#   附带: precheck 初查异常补日志(P1, fail-open 必须留痕); UNC 跳过盘符可达性探测(免网络往返);
+#   非 str 参数跳过(防 data 内联 dict 被误杀); PATH_PARAM_KEYS 补 search_dir/data(覆盖审计实测原全漏)。
 """
 path_1st_legality_check — 路径检查总入口
 
@@ -36,6 +41,11 @@ path_1st_legality_check — 路径检查总入口
 小欧 2026-10-15
 """
 
+import logging
+import os
+import string
+from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.safety import shell_path_check, dual_path_check
@@ -43,6 +53,13 @@ from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.registry import tool_registry
 from app.tools.tool_constants import PATH_PARAM_KEYS
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
+from app.utils.path_utils import (
+    path_has_reserved_char,
+    path_has_reserved_name,
+    path_has_extra_drive,
+)
+
+logger = logging.getLogger(__name__)
 
 # 动作档位 → 线模块: 单一真源在 dual_path_check.LINE_BY_ACTION(2026-10-15 小欧 - P2-22 消除双份)
 LINE_BY_ACTION = dual_path_check.LINE_BY_ACTION
@@ -59,9 +76,10 @@ LINE_VALIDATE = {
 _WRITE_TARGET_KEYS = {"dest", "target_path", "output_path", "destination_path"}
 
 # 2026-10-15 小欧 - 门前初查单源: 这些参数**虽然工具是 write 档**, 但执行期必须存在。
-#   rename 的 path(源)/edit 的 path(被改文件)由工具内 validate_path(EXISTS/READ_FILE) 查存在,
-#   若按 write 档跳过, "前移省弹窗"对这两个工具即完全失效(实测: 源不存在照样走全套安检+弹窗)。
-#   改此表 = 改前移范围, 与 entry 的权威同源(op 表不在编排层重写)。
+#   rename 的 path(源)/edit 的 path(被改文件)执行期必须存在, 若按 write 档跳过,
+#   "前移省弹窗"对这两个工具即完全失效(实测: 源不存在照样走全套安检+弹窗)。
+#   改此表 = 改前移范围。新增"write 档但源必须存在"工具必须登记此表, 否则前移 silently 失效。
+#   2026-10-16 小欧 - tool去检查化后 SA1 是唯一合法性检查点, 此表权威性不变。
 _EXISTENCE_PARAMS: Dict[str, set] = {
     "rename": {"path"},
     "edit": {"path"},
@@ -77,12 +95,11 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
 
     op 知识与本文件同源: 单动作读/删 → EXISTS; write → WRITE(跳过存在) + _EXISTENCE_PARAMS
     补"write 档但源必须存在"的两个工具; dual 按 DUAL_ACTION_PARAMS 逐参数分 op。
+    读档用 EXISTS 而非 READ_FILE/LIST_DIR: 单动作 read 兼文件与目录, EXISTS 是唯一公分母
+    (SA1 是唯一合法性检查点, 宁可口径宽一格由执行期自然失败, 不可误杀合法目录/文件)。
 
     返回 None = 通过(或不归本层管, 由 validate_tool_path 裁决); 返回 str = 失败原因。
     """
-    from app.tools.validate.file_path_checker import validate_path_layers12, OpCategory
-    from app.tools.tools_alias_mapper import normalize_params
-
     params = params or {}
     try:
         normal_name = normalize_tool_name(tool_name)
@@ -105,6 +122,8 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
                 value = normalized_params.get(key)
                 if value is None:
                     continue
+                if not isinstance(value, str):
+                    continue                               # 非 str(如 data 内联 dict)非路径, 交执行期自然处理
                 real_path = dual_path_check.resolve_path_param(
                     normal_name, key, value, normalized_params)
                 if action == "read":
@@ -132,6 +151,8 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             value = normalized_params.get(key)
             if value is None:
                 continue
+            if not isinstance(value, str):
+                continue                               # 非 str(如 data 内联 dict)非路径, 交执行期自然处理
             real_path = dual_path_check.resolve_path_param(
                 normal_name, key, value, normalized_params)
             this_op = OpCategory.EXISTS if key in must_exist_keys else op
@@ -139,7 +160,8 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             if not ok:
                 return err
         return None
-    except Exception:
+    except Exception as e:
+        logger.warning("[SA1] 门前初查自身异常, 已放行交 SA3 兜底: %s", e)
         return None                                                    # 初查自身异常不拦路: SA3+执行期两道还在
 
 
@@ -200,7 +222,6 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         #   安全档位仍取写线(fail-closed), 只补可观测性。
         line = LINE_BY_ACTION.get(kind)
         if line is None:
-            from app.logger import logger
             logger.warning(
                 f"[path_1st_legality_check] 工具 {normal_name} 的 action_kind={kind!r} 不在三线中, "
                 f"按写线(fail-closed 最严档)处理; 请在 tool_constants 四档声明表之一声明")
@@ -209,6 +230,8 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         # 遍历所有命中路径参数逐一校验, 任一越权即拒绝(漏洞B修复: 原只取第一个命中参数)
         hit_params = [key for key in PATH_PARAM_KEYS if normalized_params.get(key) is not None]
         for key in hit_params:
+            if not isinstance(normalized_params.get(key), str):
+                continue                               # 非 str(如 data 内联 dict)非路径, 交执行期自然处理
             real_path = dual_path_check.resolve_path_param(
                 normal_name, key, normalized_params[key], normalized_params)
             current_path = real_path
@@ -228,4 +251,80 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         return False, f"路径安全检查异常: {e}", current_path, "system"
 
 
-__all__ = ["validate_tool_path", "precheck_path_legality"]
+__all__ = ["validate_tool_path", "precheck_path_legality", "OpCategory", "validate_path_layers12"]
+
+
+# ══════════════════════════════════════════════════════════════════════
+# 下部规则段: 合法性规则(自 file_path_checker 逐字迁入, 2026-10-16 小欧)
+# 唯一调用方即本文件 precheck(工具侧 validate_path 已删除), 单源单文件合 YAGNI。
+# 纯拼写原子改调 app.utils.path_utils(与 tool 内派生检查同源)。
+# ══════════════════════════════════════════════════════════════════════
+
+class OpCategory(Enum):
+    WRITE     = "write"
+    READ_FILE = "read_file"
+    LIST_DIR  = "list_dir"
+    EXISTS    = "exists"
+
+
+_OP_RULES: Dict[OpCategory, Dict[str, Any]] = {
+    OpCategory.WRITE:     {"check_exist": False, "must_be": None},
+    OpCategory.READ_FILE: {"check_exist": True,  "must_be": "file"},
+    OpCategory.LIST_DIR:  {"check_exist": True,  "must_be": "dir"},
+    OpCategory.EXISTS:    {"check_exist": True,  "must_be": None},
+}
+
+
+def validate_path_layers12(
+    op: OpCategory,
+    path: str,
+    **options: Any,
+) -> Tuple[bool, Optional[str]]:
+    """第1层格式 + 第2层存在性/类型 — 小欧 2026-10-15(2026-10-16 迁入本文件, 逻辑零改动, 唯三处收敛)
+
+    收敛: ①保留字符/保留名/多余盘符改调 utils 原子(单源); ②UNC 跳过盘符可达性探测
+    (拼写合法即过, 可达性交 p.exists() 一次判定, 免门前网络往返); ③第1层注释同步"零IO"失实口径。
+    第1层仍含盘符 exists() 与第2层 exists() 两次 IO —— 门前必要开销, 与执行期不再重复(工具侧已删除)。
+    """
+    # 第1层
+    if not isinstance(path, str) or not path.strip():
+        return False, "路径不能为空"
+    # 盘符存在性检查（最先做，最外层的快速否决） — 小欧 2026-07-04
+    drive = os.path.splitdrive(path)[0]
+    if drive and not drive.startswith("\\\\"):
+        # 2026-10-16 小欧 - UNC(\\host\\share)跳过可达性探测: 拼写合法即过,
+        #   可达性交第2层 p.exists() 一次判定。原先每次 SA1 对 UNC 做网络往返, 不可达主机直接卡门。
+        if not os.path.exists(drive + "\\"):
+            avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
+            return False, f"驱动器: {drive}不存在。可用驱动器: {', '.join(avail)}"
+    if drive:
+        extra = path_has_extra_drive(path)   # 纯内存拼写检查, UNC 同样适用
+        if extra:
+            return False, extra
+    # 只检查文件名部分（Path(...).name），排除路径分隔符和盘符:号 — 小欧 2026-07-04
+    _fname = Path(path).name
+    bad = path_has_reserved_char(_fname)
+    if bad:
+        return False, f"文件: {_fname}名包含Windows保留字符"
+    reserved = path_has_reserved_name(path)
+    if reserved:
+        return False, f"文件: {reserved}名包含Windows保留名"
+
+    # 第2层
+    rule = _OP_RULES[op]
+    if rule["check_exist"]:
+        p = Path(path)
+        if not p.exists():
+            # 幂等删除: force=True 时不存在即视为已删除,不报错(delete 专用) — 北京老陈 2026-07-12
+            if op == OpCategory.EXISTS and options.get("force"):
+                return True, None
+            logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
+                           path, op.value,
+                           os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
+                           p.parent.exists(), str(p.parent))
+            return False, "路径不存在: " + path
+        if rule["must_be"] == "file" and not p.is_file():
+            return False, path + "不是文件"
+        if rule["must_be"] == "dir" and not p.is_dir():
+            return False, path + "不是目录"
+    return True, None

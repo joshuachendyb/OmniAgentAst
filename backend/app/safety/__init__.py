@@ -32,6 +32,8 @@ from app.safety.operation_maintenance import (
 # 2026-10-15 小欧 - 文档[35] 3.1.1 第五节: 补新模块导出。
 #   路径检查九个模块此前一律走显式模块路径(from app.safety.path_1st_legality_check import ...)未在包级导出;
 #   现按文档要求补齐, 便于外部统一从 app.safety 取用。
+# 2026-10-16 小欧 - tool去检查化: 删 validate_path_for_write/delete 别名导出(与工具层 for_* 同名不同义,
+#   实测全仓零外部使用); 改直挂 validate_read/write/delete 真名。
 from app.safety.path_1st_legality_check import validate_tool_path
 from app.safety.path_classify_category import (
     SYSTEM_PROTECTED_DIR_NAMES,
@@ -49,8 +51,9 @@ from app.safety.path_check_common import (
     check_whitelist,
     resolve_allowed_paths,
 )
-from app.safety.write_path_check import validate_write as validate_path_for_write
-from app.safety.delete_path_check import validate_delete as validate_path_for_delete
+from app.safety.read_path_check import validate_read
+from app.safety.write_path_check import validate_write
+from app.safety.delete_path_check import validate_delete
 from app.safety.dual_path_check import (
     DUAL_ACTION_PARAMS,
     validate_dual_path,
@@ -73,7 +76,7 @@ __all__ = [
     "OperationType", "OperationStatus",
     # 路径检查三线分离(文档[35])
     "validate_tool_path",
-    "validate_path_for_write", "validate_path_for_delete",
+    "validate_read", "validate_write", "validate_delete",  # 2026-10-16 小欧 - 删名实不符别名(与工具层 for_* 同名不同义)
     "is_system_protected_path", "is_disk_root", "is_code_root_path",
     "is_allowed_root_itself", "SYSTEM_PROTECTED_DIR_NAMES",
     "get_default_allowed_paths", "get_system_drive",

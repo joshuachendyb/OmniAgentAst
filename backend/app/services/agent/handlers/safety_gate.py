@@ -72,6 +72,7 @@
 # 2026-10-14 - 小欧 - 文档[33] 4.6-4(P3步15): bypass 分支补 _bypass_confirmed 守卫(在 grant 之前); 病根: 网关拒了仍授权且下方 continue 吞掉 rejected
 # 2026-10-15 - 小欧 - 文档[33] 4.6-2/4.6-3/4.6-5/4.6-6(P4步16-17/19-20): 抽 _group_ref 与组大小同源; ConfirmSpec 透传 auth_path; 拒绝记忆加 bypass 守卫; shell 判定补 execute_command
 # 2026-10-15 - 小欧 - 门前初查: check_safety_and_confirm 循环入口加初查(第1层格式+第2层存在性, 进门即拦省信任预查/SA3/弹窗); 实现下沉 path_check_entry.precheck_path_legality(op 表单源); 失败按既有 denied 口径发 rejected 事件 + _denied + continue(不弹窗, 直接进 LLM 重试)。执行期工具内 validate_path 全保留(第2层复查防 TOCTOU + 第3层警告)。
+# 2026-10-16 - 小欧 - tool去检查化: SA1 为唯一合法性检查点, 执行期工具不再复查(只执行+业务警告); 上条"全保留"作废。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -198,9 +199,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             _cp = call.get("tool_params", {})
 
             # 2026-10-15 小欧 - 门前初查: 第1层格式+第2层存在性, 进门即拦, 省信任预查/SA3/弹窗。
-            #   实现下沉 app.safety.path_1st_legality_check.precheck_path_legality(★2026-10-16 该模块由
-            #   path_check_entry 更名而来; op表与本模块同源, 双份即分叉);
-            #   第3层警告门前不跑(参数不全且要贴执行), 执行期工具内 validate_path 原样全跑。
+            #   实现下沉 app.safety.path_1st_legality_check.precheck_path_legality(op表与本模块同源, 双份即分叉);
+            #   第3层警告门前不跑(参数不全且要贴执行), 由工具内 for_* 警告函数产出。
+            #   2026-10-16 小欧 - tool去检查化: SA1 是唯一合法性检查点, 执行期工具不再复查合法性(只执行+业务警告)。
             from app.safety.path_1st_legality_check import precheck_path_legality
             _pre_err = precheck_path_legality(_cn, _cp)
             if _pre_err is not None:

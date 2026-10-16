@@ -100,6 +100,7 @@
 #   ★须显式命中, 漏掉会掉进"白名单外路径"兜底变成可授权 = 安全放宽。— 小欧-2026-10-16
 # 2026-10-16 - 小欧 - [36]第七章(老陈裁定) 主链重排三级串联: 自杀→danger拒→risk确认→路径权限; 删两处重复判定
 # 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 名不副实且被删除类与中风险类共用; 沙箱判定同步, 行为不变
+# 2026-10-16 - 小欧 - tool去检查化: 工具层注释"validate先于本函数执行"订正(SA1 唯一合法性检查点, 工具只执行+业务警告)。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -112,10 +113,10 @@ Safety层（本文件 + path_classify_category/path_env/path_1st_legality_check�
 
 工具层（validate/content_safety.py + validate/tool_module_checker.py + validate/file_path_checker.py + validate/file_type_checker.py）独立运行、互不调用：
   - check_content_safety: 内容安全检查（None/空/null字节/类型/append冲突）
-  - validate_path: 非空/保留字符/保留名/系统目录硬阻断/存在性+类型/业务警告
+  - for_write/delete/overwrite: 纯业务警告（大文件/追加超大/递归/强制/覆盖提示；合法性与权限 100% 归 Safety，见 2026-10-16 tool去检查化）
   - check_file_type: 文件类型检查（文本/媒体/文档/压缩）
   - check_tool_module: 依赖库安装检查
-  - check_office_file: 路径+类型+模块安全三位一体
+  - check_office_file: 类型+模块安全二位一体（路径合法性归 SA1）
 
 Layer 2: 二元安全确认(needs_confirmation)
 Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
@@ -170,7 +171,7 @@ class ToolSafetyChecker:
                              pool_pids: Optional[set] = None) -> SafetyResult:
         """
         执行前安全检查入口（Safety层）
-        工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
+        上游 SA1 precheck 已做合法性检查（非空/保留字符/保留名/存在性与类型），工具层不再复查（2026-10-16 tool去检查化）
         本函数负责：路径黑名单/白名单/路径穿越/写入大小保护/二元确认
 
         安全开关: config.yaml security.enabled=false 时跳过所有检查
