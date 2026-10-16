@@ -132,7 +132,9 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     {success, result | error, tool_name}
     """
     # 1. 安全预检(与 action_handler.check_safety_and_confirm 同源) — 小欧 2026-08-12
-    safety = get_tool_safety_checker().check_before_execute(tool_name, params or {})
+    # 4.4: 池快照现取现递，与 safety_gate 同口径 — 小欧 2026-10-16
+    from app.tools.fundamental.shell_engine import get_pool_pids_snapshot
+    safety = get_tool_safety_checker().check_before_execute(tool_name, params or {}, pool_pids=get_pool_pids_snapshot())
     if safety.blocked:
         return {"tool_name": tool_name, "success": False,
                 "error": f"安全拦截: {safety.message}", "safety": safety}

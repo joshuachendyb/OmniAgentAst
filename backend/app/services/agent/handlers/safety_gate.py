@@ -213,7 +213,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             # 会话信任预查 — 调用 trust.resolve_skip 独立函数 — 小健 2026-09-04
             _skip = await resolve_skip(agent.task_id, _cn, _cp)
 
-            safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip)
+            # 4.4: 池快照现取现递（PID 可被 OS 重用，不得缓存跨命令复用）— 小欧 2026-10-16
+            from app.tools.fundamental.shell_engine import get_pool_pids_snapshot
+            safety_result = safety_checker.check_before_execute(_cn, _cp, skip_confirmation=_skip, pool_pids=get_pool_pids_snapshot())
 
             # v1.25 M3(设计文档 3.2.3): 沙箱预检闸门 — 逻辑已拆分至 sandbox_gate.sandbox_precheck/sandbox_resolve
             # (2026-08-25 合规重构: 去嵌套闭包隐式耦合, Agent编排层落点, 三处汇合点共用, 每 call 恰好预检一次不重复)

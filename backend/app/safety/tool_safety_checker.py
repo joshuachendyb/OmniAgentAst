@@ -130,6 +130,7 @@ from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.safety.path_check_entry import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_check_entry
+from app.safety.shell_process_guard import build_protected_pids, build_protected_names  # 2026-10-16 小欧 - [36]4.4: 快照组装下沉同层，本文件不再碰 shell_engine
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
 _WRITE_RISK_TOOL = "write"
@@ -159,48 +160,12 @@ def _is_skip_safety() -> bool:
         return False
 
 
-def _protected_process_names() -> set:
-    """受保护进程名集合(由 _protected_pids 的 PID 反查名) — 小欧 2026-10-10
-
-    2026-10-10 小欧 审计 P1-3 新增: 原保护盾只认显式 -Id, 而 P9-03 事故命令
-    `Get-Process python | Stop-Process -Force` 是按名杀, 抽出 PID 恒空 → 盾对事故形态贡献为 0。
-    补本函数提供名维度, 按名杀才拦得住。进程名解析放 safety 侧(本模块不 import tools, 组装归此)。
-    psutil 不可用/进程已退出时降级为空集(退化为仅 PID 口径), 不拖垮安全判定。
-    """
-    names = set()
-    try:
-        import psutil
-    except ImportError:
-        return names
-    for pid in _protected_pids():
-        try:
-            names.add(psutil.Process(pid).name())
-        except Exception:
-            continue
-    return names
-
-
-def _protected_pids() -> set:
-    """宿主关键进程 PID 集合(后端自身+父进程+shell 池) — 小欧 2026-10-08
-
-    2026-10-08 小欧 新增: 原 protected_pids 全项目从未接线, 保护盾恒不生效。
-    getppid() 必带: uvicorn --reload 是父子双进程, 只护自己漏一半。
-    已知不完美: 覆盖不到 --reload 派生的 worker 子进程, 待办(不假装解决)。"""
-    import os
-    pids = {os.getpid(), os.getppid()}
-    try:
-        from app.tools.fundamental.shell_engine import shell_pool
-        pids |= set(shell_pool.get_all_pids() or ())
-    except Exception:                        # 池未初始化不应拖垮安全判定(降级为只护自身)
-        pass
-    return pids
-
-
 class ToolSafetyChecker:
     """工具执行前安全检查 — 确认判定 + 已知风险检测"""
 
     def check_before_execute(self, tool_name: str, params: Optional[Dict] = None,
-                             skip_confirmation: bool = False) -> SafetyResult:
+                             skip_confirmation: bool = False,
+                             pool_pids: Optional[set] = None) -> SafetyResult:
         """
         执行前安全检查入口（Safety层）
         工具层的 validate_path() 先于本函数执行，已拦截空/保留字符/保留名/系统目录/不存在/类型不匹配
@@ -233,7 +198,8 @@ class ToolSafetyChecker:
             log_and_print(f"[ToolSafetyChecker] delete R6硬拦截(项目根外递归删除): {delete_risk.message}")
             return delete_risk
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk,
-                                             skip_confirmation=skip_confirmation)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
+                                             skip_confirmation=skip_confirmation,
+                                             pool_pids=pool_pids)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
         if known_risk is not None:
             # 2026-10-14 小欧 - 文档[33] 4.9(P4步18) 豁免早返: 既不拦也不需确认 → 原样返回, 不得往下走。
             #   病根: 原代码对「不拦且不需确认」的 known_risk 也会强制 severity="dangerous"(见下方),
@@ -261,11 +227,7 @@ class ToolSafetyChecker:
 
         # ③ 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
         if _is_skip_safety():
-                _needs, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
-                if _shell_blocked:
-                    log_and_print(f"[ToolSafetyChecker] bypass下HIGH级Shell拦截: tool={tool_name}, {_shell_msg}")
-                    return SafetyResult(blocked=True, message=_shell_msg or "高风险Shell命令拦截",
-                                        severity="dangerous")
+                _needs, _shell_msg = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
                 if _needs:
                     logger.info(f"[ToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                     # 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): message保持空串不动,
@@ -299,70 +261,70 @@ class ToolSafetyChecker:
         #   本层不再 import app.services.chat.storage(消除 safety→services 反向依赖违规, test_layer_boundaries 护栏)
         if skip_confirmation:
             # v1.6 会审F1修复: 信任豁免只跳确认不跳沙箱; sandbox_required 按真实危险度(needs_confirmation)置位, 非恒True
-            _needs, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
-            # 修复: HIGH级shell(blocked) 不受会话信任豁免仍拦截("豁免只跳确认不跳危险防护"), 改前丢弃_blocked致HIGH shell被放行 — 小欧-2026-09-19
-            if _shell_blocked:
-                log_and_print(f"[ToolSafetyChecker] 会话信任下HIGH级Shell仍拦截: tool={tool_name}, {_shell_msg}")
-                return SafetyResult(blocked=True, message=_shell_msg or "高风险Shell命令拦截",
-                                    severity="dangerous")
+            _needs, _shell_msg = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
             logger.info(f"[ToolSafetyChecker] 会话信任豁免确认(跳HITL): tool={tool_name}")
             return SafetyResult(requires_confirmation=False,
                     blocked=False, message="会话已信任该工具",
                     severity="safe", sandbox_required=_needs)   # v1.25 M2-B: destructive级仍进沙箱, safe级不触发(G1)
 
-        needs_confirm, _shell_msg, _shell_blocked = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
+        needs_confirm, _shell_msg = self._get_needs_confirmation(tool_meta, params or {}, delete_risk=delete_risk)
         severity = "destructive" if needs_confirm else "safe"
         # v1.25 M2-C: 仅 destructive 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
-        # 2026-09-19 小欧: HIGH级shell _shell_blocked=True → blocked=True 走拦截(reject消息用message), 不弹窗
-        # 修复: shell风险经三元组直线传递(不经tool_meta), 无风险shell不再读残留blocked误拦 — 小欧-2026-09-19
         return SafetyResult(requires_confirmation=needs_confirm,
-                blocked=_shell_blocked, message=_shell_msg or "", severity=severity,
+                blocked=False, message=_shell_msg or "", severity=severity,
                 sandbox_required=(severity == "destructive"))
+
+    @staticmethod
+    def _check_shell_kill(cmd: str, pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:
+        """shell 杀防护单步 — 小欧 2026-10-16（[36]4.4 步骤2c）
+
+        命中受保护 PID/进程名即回 SafetyResult(blocked)，否则 None；
+        由 _check_known_risks 门首直返（无条件防线），不经确认分流。
+        """
+        from app.tools.fundamental.shell_command_guard import is_process_kill_protected  # 2026-10-10 小欧 位置更正: shell 代码归 shell 代码同目录
+        _pids = build_protected_pids(pool_pids)  # 现拼现用，不缓存不存量
+        if is_process_kill_protected(cmd, _pids, build_protected_names(_pids)):
+            return SafetyResult(blocked=True, message="系统保护进程，禁止终止", severity="dangerous")
+        return None
 
     @staticmethod
     def _get_needs_confirmation(tool_meta, params: Dict, delete_risk: Optional["SafetyResult"] = None) -> tuple:
         """获取生效的确认策略：delete动态判定 > action级 > 工具级 — 小欧 2026-08-04
-        修复(2026-09-19 小欧): 返回三元组 (needs_confirm, shell_msg, shell_blocked),
-        shell 风险本函数内计算直线返回, 不再经 tool_meta 动态属性传递(全局单例残留误拦)"""
+        2026-10-16 小欧 [36]4.4: 本函数只答“要不要确认”，不再答“拦不拦”——回二元组。
+        shell 危险拦截（杀/HIGH）已归位 _check_known_risks（无条件防线）；此处 MEDIUM 只产弹窗文案。"""
         from app.tools.tools_alias_mapper import normalize_tool_name  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
                 and _is_readonly_sql((params or {}).get("sql", "")):
-            return False, "", False  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
+            return False, ""  # 毛病1(2026-09-18 小欧): 纯读 SELECT 免确认; 写/DDL/多语句/注释头照旧弹
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
             _cmd = (params or {}).get("command", "")
-            # 2026-10-08 小欧 补上从未接线的保护盾(2026-10-10 审计P1-3 增名维度):
-            #   目标命中受保护PID(后端自身/父进程/shell池)或受保护进程名即拦截;
-            #   名维度补的是按名杀形态(P9-03 事故原形 Get-Process python | Stop-Process)。
+            # 2026-10-16 小欧 [36]4.4: 杀防护已归位 _check_known_risks（无条件防线），本分支只剩危险度分级
             # 2026-10-10 小欧 修预检21/43条规则死代码缺口: 改用三壳并集(见 execute_shell_command_safety:187)。
             #   病根: 原调用 check_shell_command_risk(_cmd) 只传 command, shell_type 吃默认 "ps7",
             #   使 cmd/bash 标签规则在预检全被跳过 — diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/
             #   chown/reg add 等预检一律 None, 仅执行层才拦(两层判定口径不一致)。
             #   并集实测: 召回15条 / 白名单误伤0/30 / 日常命令误伤0/24 / 降级回归0。
             from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk_all_shells
-            from app.tools.fundamental.shell_command_guard import is_process_kill_protected  # 2026-10-10 小欧 位置更正: shell 代码归 shell 代码同目录 — 小欧 2026-10-10
-            if is_process_kill_protected(_cmd, _protected_pids(), _protected_process_names()):
-                return True, "系统保护进程，禁止终止", True
             _risk = check_shell_command_risk_all_shells(_cmd)
             if _risk:
-                if _risk.blocked:
-                    return True, (_risk.message or "高风险Shell命令拦截"), True   # HIGH: 拦截, 不弹窗
                 if _risk.message:
-                    return True, _risk.message, False  # MEDIUM: desc 进弹窗 content
-                return tool_meta.needs_confirmation, "", False
+                    return True, _risk.message  # MEDIUM: desc 进弹窗 content
+                return tool_meta.needs_confirmation, ""
             else:
                 # 2026-09-19 小欧 修复: 无风险shell不弹HITL(原本设计: 只有MEDIUM才弹窗, HIGH拦截, 无风险直接放行)
                 #   _risk=None时不再穿透到return tool_meta.needs_confirmation, 否则无风险shell弹空content窗
-                return False, "", False
+                return False, ""
         if delete_risk is not None:                       # delete: 动态判定(R3免/R4/R5确认)
-            return delete_risk.requires_confirmation, "", False      # R3→_PASS→False(免确认); R4/R5→True
+            return delete_risk.requires_confirmation, ""      # R3→_PASS→False(免确认); R4/R5→True
         if tool_meta.action_confirmation and params.get("action"):
             return tool_meta.action_confirmation.get(
-                params["action"], tool_meta.needs_confirmation), "", False
-        return tool_meta.needs_confirmation, "", False
+                params["action"], tool_meta.needs_confirmation), ""
+        return tool_meta.needs_confirmation, ""
 
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict, delete_risk: Optional["SafetyResult"] = None,
-                           skip_confirmation: bool = False) -> Optional["SafetyResult"]:
+                           skip_confirmation: bool = False,
+                           pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:
         """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
         小欧 2026-06-27: 路径检查委托validate_tool_path(现 path_check_entry 统一处理)
@@ -376,13 +338,27 @@ class ToolSafetyChecker:
         #   - category==None 且白名单外msg → requires_confirmation+auth_path(现状已有)
         #   - category=="system"/"non_system" 且读 → 放行(validate_path 读 mode 已处理)
         """
+        # 2026-10-16 小欧 [36]4.4: shell 杀防护归位无条件防线（原 _get_needs_confirmation bash 分支前半）。
+        #   按名/按 PID 杀受保护进程与路径无关，必须先于路径判定；blocked 直返，不经确认分流、不转三元组。
+        from app.tools.tools_alias_mapper import normalize_tool_name  # 防别名漏判（函数内懒导入，本函数两处共用）
+        if normalize_tool_name(tool_name) in ("bash", "execute_command"):
+            _kill = ToolSafetyChecker._check_shell_kill((params or {}).get("command", ""), pool_pids)
+            if _kill is not None:
+                log_and_print(f"[ToolSafetyChecker] 系统保护进程杀防护拦截: tool={tool_name}, {_kill.message}")
+                return _kill
+            # 2026-10-16 小欧 [36]4.4: shell 危险模式 HIGH 归位无条件防线（与杀防护同列）。
+            #   MEDIUM 不在此处理（需弹窗文案，归确认函数）；确认函数内 HIGH 分支同步删除。
+            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk_all_shells
+            _shell_risk = check_shell_command_risk_all_shells((params or {}).get("command", ""))
+            if _shell_risk is not None and _shell_risk.blocked:
+                log_and_print(f"[ToolSafetyChecker] 高风险Shell操作拦截: tool={tool_name}, {_shell_risk.message}")
+                return SafetyResult(blocked=True, message=_shell_risk.message or "高风险Shell命令拦截", severity="dangerous")
         is_valid, msg, failed_path, category = _validate_tool_path(tool_name, params)
         if not is_valid:
             # T2: 显式 category+mode 分流(替代 msg 字符串特征)
             if category == "non_system":
                 # 非系统禁区: 删→硬拦永不授权(3.2.10/表五), 写→任务级临时授权请求
                 # (validate_tool_path 已按 tool_name 推断 mode, 此处按注册名归一判断删除操作)
-                from app.tools.tools_alias_mapper import normalize_tool_name  # 防别名漏判 — 小欧 2026-08-10
                 if normalize_tool_name(tool_name) == "delete":
                     log_and_print(f"[ToolSafetyChecker] 受保护区域(非系统禁区)禁止删除(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
                     return SafetyResult(blocked=True, message=f"该路径在受保护区域，禁止删除: {failed_path or msg}",

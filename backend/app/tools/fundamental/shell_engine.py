@@ -1128,6 +1128,14 @@ class ShellPoolManager:
         return pids
 
 
+def get_pool_pids_snapshot() -> Optional[set]:
+    """池 PID 快照（现取现用，调用方不得缓存跨命令复用）— 小欧 2026-10-16（[36]4.4 步骤3前置）"""
+    try:
+        return set(shell_pool.get_all_pids() or ())
+    except Exception:
+        return None  # 池未初始化退化为仅自身+父进程，不拖垮预检
+
+
 # 2026-08-07 小欧 三堂会审定稿(R3): 3→8 — 当日日志实测同key并发达5(ps7池默认3放不下),
 # acquire排队超2s→ShellPoolBusyError; 8覆盖实测并发5并留余量(每实例约40MB内存, 8≈320MB可接受)
 # 2026-09-22 小欧 - v2.0：shell_pool 槽位改读 tuning 配置
