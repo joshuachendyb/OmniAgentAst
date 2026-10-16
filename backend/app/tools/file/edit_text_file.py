@@ -47,6 +47,7 @@
 # 2026-10-05 - 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): summary 改 `新增{added}行，删除{removed}行`,
 #   增减从 unified_diff 现算(`+` 去 `+++` 头 / `-` 去 `---` 头, 零新依赖); added/removed 同步入 metrics
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 编辑文件→编辑
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
 """
 F4: edit — 编辑文本文件
 
@@ -71,7 +72,7 @@ from app.tools.tool_constants import EDIT_OUTPARM_LIMIT_OLD, EDIT_OUTPARM_LIMIT_
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12; 2026-08-13 #23: 移除validate_str_param(全文件零调用)
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
@@ -357,11 +358,8 @@ async def _precise_replace_in_file(
 
     try:
         _anchor_hint = ""  # before/after 签名行锚点提示, 统一初始化防 NameError — 小欧 2026-08-08
-        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, warn = validate_path(OpCategory.READ_FILE, file_path, content=new_string)
-        if not is_valid:
-            return {"error_detail": err}
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+        _, _, warn = validate_path_for_write(file_path, content=new_string)
         if warn:
             logger.warning(f"[edit] {warn}")
 

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 window_resize — 调整窗口大小
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -42,9 +43,10 @@ from typing import Dict, Any
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_WINDOW_NOT_FOUND, ERR_WINDOW_RESIZE, ERR_NO_WIN32GUI, ERR_INVALID_PARAMS  # 2026-08-05 小欧 #9: 补ERR_NO_WIN32GUI导入, 原用字符串字面量; 2026-08-13 #33: 补ERR_INVALID_PARAMS(空标题参数非法)
-from app.tools.validate.file_path_checker import validate_str_param
+
 from app.tools.desktop.window_info import check_win32_platform, find_windows_by_title, _win32gui, _win32con  # 2026-08-11 小欧: 复用共享实现(DRY), 替代自写EnumWindows/局部import
 from app.logger import logger
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 
 
 def _build_window_resize_llm_data(exec_code: str, duration_ms: int, window_title: str = "", width: int = 0, height: int = 0,

@@ -28,6 +28,7 @@
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 复制文件→复制
 # 2026-10-12 小欧 - message去tool_zh前缀（北京老陈令，第五章A方式）: 复制成功/失败→成功/失败
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_overwrite 覆盖警告。
 """
 F7: copy_file — 复制文件
 
@@ -50,7 +51,7 @@ from app.tools.tool_response import build_success, build_error, with_artifact_fi
 from app.tools.tool_constants import ERR_FILE_COPY_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import validate_path_for_overwrite  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
@@ -104,30 +105,8 @@ async def copy(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-    if not source or not source.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "source不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={}, llm_data=llm_data)
-    if not destination or not destination.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": "destination不能为空"}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={}, llm_data=llm_data)
-    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={}, llm_data=llm_data)
-    if warn:
-        logger.warning(warn)
-    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.WRITE, destination, overwrite=overwrite, source=source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
-        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 工具只执行+业务警告
+    _, _, warn = validate_path_for_overwrite(source, destination, overwrite)
     if warn:
         logger.warning(warn)
 

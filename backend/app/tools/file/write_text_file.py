@@ -35,6 +35,7 @@
 # 2026-10-12 - 小欧 - 语法检查由"整文件写阻断(error)"改为"照常写入+warning"(北京老陈令):
 #   本检查为启发式存在误判, 误判即拦死合法写入; 现与追加模式统一为告警, 文件确已落盘;
 #   detail 载语法错因与行号, hint 指引用 edit 修正该处(整文件重写会破坏已写入内容)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
 """
 F2: write — 写文本文件
 
@@ -67,7 +68,7 @@ from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复: 改用 _or_noop 兜底 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.content_safety import check_content_safety
@@ -224,20 +225,15 @@ async def write(
     syntax_hint = ""
     t0 = _time_mod.perf_counter()
     # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
-    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.WRITE, file_path, content=content, append=append)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=err, hint="请检查文件路径是否正确", user_encoding=encoding, user_append=append)
-        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+    _, _, warn = validate_path_for_write(file_path, content=content, append=append)
     if warn:
         logger.warning(warn)
 
     create_parents = True
 
     # 文件类型检查 — 北京老陈 2026-07-09
-    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=False, allow_create=True, op_category=OpCategory.WRITE)
+    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)  # 2026-10-16 小欧 - 去 op_category(路径合法性归 SA1)
     if not ft_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if ft_tool:

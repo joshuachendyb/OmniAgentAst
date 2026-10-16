@@ -8,6 +8,7 @@
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-05 - 小欧 - 单通道补 metrics(北京老陈裁定): success 补 size(重命名后目标 stat)/同名分支 size 取原文件
 #   + changed=0, 结构化承接结果量; summary 不动
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与源合法性检查(归 SA1); new_name 保留字符改调 utils 原子。
 """
 F13: rename_file — 重命名文件
 
@@ -25,7 +26,7 @@ from typing import Any, Dict, Optional
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.utils.path_utils import path_has_reserved_char  # 2026-10-16 小欧 - 派生名格式检查用 utils 纯函数
 from app.tools.context import _current_task_id  # A-2: 写仲裁登记使用任务ID — 小欧 2026-09-20
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 重命名登记占用
 
@@ -77,27 +78,11 @@ async def rename(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-
-    if not source or not source.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail="source不能为空", hint="请提供源文件路径", user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-    if not destination or not destination.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail="destination不能为空", hint="请提供目标文件路径", user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.EXISTS, source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径是否正确", user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-
-    WINDOWS_RESERVED_CHARS = '<>:"/\\|?*'
+    # 2026-10-16 小欧 - tool去检查化: 空参/源合法性由 SA1 唯一检查, 工具只执行
+    # 派生名 new_name 是运行时派生, safety 不可见, 由执行方在派生点做格式检查(调 utils 纯函数)
     new_name = Path(destination).name
-    if any(c in new_name for c in WINDOWS_RESERVED_CHARS):
+    _bad = path_has_reserved_char(new_name)
+    if _bad:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=f"包含Windows保留字符：{destination}", hint="文件名包含Windows保留字符，请修改", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)

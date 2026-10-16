@@ -25,6 +25,7 @@
 #   /moved_count, 结构化承接结果量; summary `{source} -> {destination}` 双路径不断
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 移动文件→移文件
 # 2026-10-14 小欧 - summary 统一口径: `移文件{source} -> {destination}，成功`(动词用 tool_zh, 成功后置) — 小欧-2026-10-14
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_overwrite 覆盖警告。
 """
 F10: move_file — 移动文件
 
@@ -45,7 +46,7 @@ from app.tools.tool_response import build_success, build_error, with_artifact_fi
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import validate_path_for_overwrite  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
@@ -176,30 +177,8 @@ async def move(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-    if not source or not source.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="source不能为空", hint="请提供有效的源文件路径", user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-    if not destination or not destination.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail="destination不能为空", hint="请提供有效的目标路径", user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源存在 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.EXISTS, source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, hint="请检查源文件路径是否正确", user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-    if warn:
-        logger.warning(warn)
-    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.WRITE, destination, overwrite=overwrite, source=source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, hint="请检查目标路径是否正确", user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 工具只执行+业务警告
+    _, _, warn = validate_path_for_overwrite(source, destination, overwrite)
     if warn:
         logger.warning(warn)
     # 2026-08-13 - 小欧 - 三堂会审修复#34/#4: 同路径判定统一用 resolve()(原 abspath 不解析盘符

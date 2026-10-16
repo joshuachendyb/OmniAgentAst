@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 create_task — 创建Windows计划任务
 【2026-06-22 小健】从 system_tools.py 拆分为独立文件
@@ -15,9 +16,10 @@ import time as _time_mod
 from typing import Dict, Any, Optional
 
 from app.logger import logger
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import TOOL_TIMEOUTS
-from app.tools.validate.file_path_checker import validate_str_param
+
 from app.tools.tool_constants import (
     ERR_DESKTOP_PLATFORM_NOT_SUPPORTED,
     ERR_SHELL_COMMAND_NOT_FOUND,

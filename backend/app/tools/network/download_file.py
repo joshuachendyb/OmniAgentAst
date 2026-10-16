@@ -15,6 +15,7 @@
 #   【改法】外层新增`except ValueError`分支, 归ERR_INVALID_PARAMS(输入/参数错误), hint给出"换用更小资源或分片"; 置于httpx异常分支后、Exception兜底前
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(下载文件)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 文件下载→下载
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(dest 经 resolve 由 SA1/SA3 覆盖), 仅留 for_write 警告。
 """
 N2: download — 下载文件到本地
 
@@ -37,7 +38,7 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 
 from app.logger import logger
@@ -182,12 +183,8 @@ async def download(
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
         dest_path = os.path.abspath(os.path.join(_get_download_dir(), filename))
-    # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid_path, path_err, path_warn = validate_path(OpCategory.WRITE, dest_path)
-    if not is_valid_path:
-        llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest_path, err_code=ERR_NETWORK_INVALID_PATH, detail=path_err, hint="请检查目标路径", timeout=timeout, proxy=proxy, headers=headers)
-        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查(dest 经 resolve 得绝对路径), 此处仅业务警告
+    _, _, path_warn = validate_path_for_write(dest_path)
     if path_warn:
         logger.warning(f"[download] {path_warn}")
 

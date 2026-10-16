@@ -4,6 +4,7 @@
 # 2026-07-26 - 小欧 - Bug#A: .xlsx大小写不敏感修复(data.lower().endswith); Bug#B: convert_pd_value加DataFrame防御
 # 2026-07-26 - 小沈 - load_data_to_df入口调normalize_list_dict展平[[{...}]]→[{...}](覆盖generate_chart直入路径)
 # 2026-07-31 - 小欧 - Bug⑬修复: .xls旧格式需xlrd(防落入pd.read_csv报ParserError), .xlsm纳入openpyxl; 大小写不敏感延续 | py_compile ✓
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(analyze/filter 的 file_path 归 SA1), 只做加载。
 """
 data_loader  dataanalysis模块的数据加载公用函数
 【2026-07-26 小欧】从 analyze_data.py / filter_data.py 抽取OOD公共函数
@@ -15,7 +16,7 @@ from typing import Dict, Any, List, Optional, Union
 
 import pandas as pd
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import normalize_list_dict
 
@@ -26,11 +27,7 @@ def load_data_to_df(data: Union[str, List[Dict[str, Any]]]) -> dict:
              非预期异常(OOM/文件损坏/格式错误)不catch，自然抛出给调用方的try/except Exception捕获后报error给LLM"""
     data = normalize_list_dict(data)
     if isinstance(data, str):
-        # 工具层校验：非空/保留字符/保留名/系统目录/文件存在+是文件 - 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 - 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, data)
-        if not is_valid:
-            return {"error_detail": err, "params": {"path": data}}
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查(analyze/filter 的 file_path 参数), 工具只执行
         # 大小写不敏感检查，防 .XLSX / .Xlsx 走pd.read_csv报解析错误 - 小欧 2026-07-26(Bug#A)
         # 2026-07-31 小欧: Bug⑬修复 — .xlsm纳入openpyxl; .xls旧格式需xlrd, 防落入pd.read_csv报ParserError
         if data.lower().endswith(('.xlsx', '.xlsm')):

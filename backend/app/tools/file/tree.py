@@ -7,6 +7,7 @@
 # 2026-07-20 - 小欧 - 去噪去重 refactor:
 #   移除 statistics(data/llm_data 重复)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出目录树→列目录
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 工具只执行。
 """
 tree — 列出目录树 (从list_directory拆分，仅列目录)
 
@@ -24,7 +25,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+
 from app.logger import logger
 
 
@@ -34,12 +35,7 @@ async def _get_directory_tree(
     sort_by: str = "name",
 ) -> Dict[str, Any]:
     """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden — 小欧 2026-07-06 去mtime排序"""
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
-    if not is_valid:
-        return {"error_detail": err, "params": {"path": dir_path}}
-
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 工具只执行
     path = Path(dir_path)
 
     def _count_tree_fs(root: Path, depth: int = 0) -> Tuple[int, int, int]:

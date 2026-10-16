@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-02 - 小欧 - 注册名归位: 4处 LLM 引导语 read→read(含建议工具名返回值), 与新注册名同源
+# 2026-10-16 - 小欧 - tool去检查化: 删 4 处内部 validate_path 合法性检查(归 SA1)与 op_category 形参, 只做类型检查。
 """
 文件类型检查器 - 共享函数 - 小健 2026-06-24
 
@@ -10,9 +11,9 @@
 3. 提供清晰的LLM引导信息
 
 本文件（validate层）依赖关系：
-  - 调用 validate/file_path_checker.py（路径检查）
+  - 路径合法性由 safety SA1 唯一检查，本文件只做类型检查(2026-10-16 小欧 tool去检查化)
   - 调用 validate/file_safety_checker.py -> check_tool_module（模块安装检查）
-  - check_office_file 编排：路径检查→类型检查→模块安全检查三位一体
+  - check_office_file 编排：类型检查→模块安全检查二位一体
 
 Safety层（app/safety/tool_safety_checker.py + app/safety/path_classify_category.py）独立运行、互不调用：
   - 路径黑名单/白名单/穿越拒绝/写入大小保护/二元确认/已知风险检测
@@ -35,7 +36,7 @@ from pathlib import Path
 from typing import Tuple, Optional, Literal
 
 from app.tools.tool_constants import BINARY_EXTENSIONS
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+
 from app.tools.validate.tool_module_checker import check_tool_module
 
 
@@ -201,12 +202,8 @@ def check_office_file(
     专供 write_docx/write_pptx/write_xlsx/write_pdf 使用
     tool_name: 传 "write_docx"/"write_pptx"/"write_xlsx"/"write_pdf"
     北京老陈 2026-07-09"""
-    # 1. 路径检查(file_path_checker)
-    is_valid, err, _ = validate_path(OpCategory.WRITE, file_name)
-    if not is_valid:
-        return False, err, None
-
-    # 2. 类型检查(本文件，直接调check_file_type跳开check_for_document_tool防重复validate)
+    # 2026-10-16 小欧 - tool去检查化: 路径合法性由 SA1 唯一检查, 此处只做类型检查
+    # 1. 类型检查(本文件，直接调check_file_type跳开check_for_document_tool防重复validate)
     is_valid, error_detail, _ = check_file_type(
         file_name, "document", check_content=False, allow_create=allow_create
     )
@@ -361,25 +358,17 @@ def check_for_text_tool(
     file_path: str,
     check_content: bool = True,
     allow_create: bool = False,
-    op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供read/write/edit调用 — 路径检查+类型检查
+    """供read/write/edit调用 — 类型检查(路径合法性由 SA1 唯一检查) — 小欧 2026-10-16
     北京老陈 2026-07-09"""
-    is_valid, err, _ = validate_path(op_category, file_path)
-    if not is_valid:
-        return False, err, ""
     return check_file_type(file_path, "text", check_content, allow_create)
 
 
 def check_for_media_tool(
     file_path: str,
-    op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供readmedia调用 — 路径检查+类型检查
+    """供readmedia调用 — 类型检查(路径合法性由 SA1 唯一检查) — 小欧 2026-10-16
     北京老陈 2026-07-09"""
-    is_valid, err, _ = validate_path(op_category, file_path)
-    if not is_valid:
-        return False, err, ""
     return check_file_type(file_path, "media", check_content=False)
 
 
@@ -393,13 +382,9 @@ def check_for_archive_tool(file_path: str) -> Tuple[bool, str, Optional[str]]:
 def check_for_document_tool(
     file_path: str,
     allow_create: bool = False,
-    op_category: OpCategory = OpCategory.READ_FILE,
 ) -> Tuple[bool, str, Optional[str]]:
-    """供read_docx/read_pptx/read_xlsx/read_pdf调用 — 路径检查+类型检查
+    """供read_docx/read_pptx/read_xlsx/read_pdf调用 — 类型检查(路径合法性由 SA1 唯一检查) — 小欧 2026-10-16
     北京老陈 2026-07-09"""
-    is_valid, err, _ = validate_path(op_category, file_path)
-    if not is_valid:
-        return False, err, ""
     return check_file_type(file_path, "document", check_content=False, allow_create=allow_create)
 
 
@@ -464,5 +449,4 @@ __all__ = [
     "ARCHIVE_EXTENSIONS",
     "UNSUPPORTED_EXTENSIONS",
     "UNSUPPORTED_FORMAT_HINTS",
-    "OpCategory",
 ]

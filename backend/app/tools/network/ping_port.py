@@ -5,6 +5,7 @@
 #   1. ping 路径移除 _note 噪声字段
 #   2. port 路径移除 _note 噪声字段
 # 2026-08-14 - 小欧 - 改名名实相符: network_diagnose.py → ping_port.py(主函数与注册名已为 ping_port); 内部 _build_network_diagnose_llm_data 同步改名 _build_ping_port_llm_data
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 N5: ping_port — 网络连通性诊断(ping+端口检测)
 
@@ -29,9 +30,10 @@ from typing import Any, Dict, List, Literal, Optional
 from app.tools.tool_response import build_success, build_error
 from app.tools.validate.url_validator import _is_private_or_loopback_ip
 from app.tools.validate.timeout_validator import validate_timeout
-from app.tools.validate.file_path_checker import validate_str_param
+
 
 from app.logger import logger
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
 from app.tools.tool_constants import ERR_MISSING_PARAM
 from app.tools.tool_constants import (
     ERR_INVALID_MODE,

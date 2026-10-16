@@ -40,6 +40,7 @@
 #   【病根】原base_dir=Path(matched_paths[0]).parent(仅取首匹配父目录), 第二个及以上匹配目录的项 relative_to(base_dir) 不在其下抛ValueError, 多目录通配静默失败
 #   【改法】删base_dir, 目录匹配项以 matched_path 自身为arcname根(relative_to(matched_path)), 文件匹配项仍用自身name; 单目录/多目录/仅驱动器场景均不再跨树
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(压缩包路径)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 调用; 通配 _m 派生检查改调 utils 纯函数(权限继承 pattern 的 SA3 结论)。
 """
 F8: compress_files — 压缩文件
 
@@ -68,7 +69,7 @@ from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INV
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.utils.json_utils import coerce_json
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import path_has_extra_drive, path_has_reserved_name  # 2026-10-16 小欧 - 通配派生格式检查用 utils 纯函数
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
 from app.logger import logger
@@ -282,14 +283,7 @@ async def compress(
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
 
-    # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.WRITE, dest)
-    if not is_valid:
-        duration_ms = int((time.perf_counter() - t0) * 1000)
-        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
-        return build_error(data={}, llm_data=llm_data)
-
+    # 2026-10-16 小欧 - tool去检查化: 目标合法性由 SA1 唯一检查, 工具只执行
     if not overwrite and os.path.exists(to_win_long_path(Path(dest))):  # #5长路径 — 小欧 2026-08-13
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"目标文件已存在：{dest}", hint="可设置overwrite=true覆盖", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
@@ -316,21 +310,15 @@ async def compress(
                 duration_ms = int((time.perf_counter() - t0) * 1000)
                 llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配符无匹配：{path}", hint="请检查通配符是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
-            # 通配命中后逐条校验系统目录(validate_path含validate_not_system_path硬拦), 与非通配分支口径一致 — 小欧 2026-08-13 #17
+            # 2026-10-16 小欧 - tool去检查化·派生归tool: 通配展开是运行时派生, safety 不可见,
+            #   由执行方在派生点做格式检查(utils 纯函数); 权限继承 pattern 参数的 SA3 结论
             for _m in _matched:
-                is_valid, err, _ = validate_path(OpCategory.EXISTS, _m)
-                if not is_valid:
+                _mr = path_has_extra_drive(_m) or path_has_reserved_name(_m)
+                if _mr:
                     duration_ms = int((time.perf_counter() - t0) * 1000)
-                    llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配命中路径被拦截：{_m}：{err}", hint="通配命中路径被系统目录拦截", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
+                    llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配命中路径非法：{_m}：{_mr}", hint="通配命中路径格式非法", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                     return build_error(data={}, llm_data=llm_data)
-        else:
-            # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/路径存在 — 小欧 2026-07-04
-            # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-            is_valid, err, _ = validate_path(OpCategory.EXISTS, path)
-            if not is_valid:
-                duration_ms = int((time.perf_counter() - t0) * 1000)
-                llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径是否存在", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
-                return build_error(data={}, llm_data=llm_data)
+            # 2026-10-16 小欧 - tool去检查化: 非通配源合法性由 SA1 唯一检查, 工具只执行
 
         os.makedirs(to_win_long_path(dst.parent), exist_ok=True)  # #5长路径 — 小欧 2026-08-13
 

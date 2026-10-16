@@ -2,6 +2,7 @@
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 """find 文件搜索工具 — 文件名匹配搜索(支持正则/通配符/类型过滤)"""
 # 编辑历史:
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 工具只执行。
 # 2026-07-20 - 小欧 - find 门限治理(章7.4): 移除 MAX_SEARCH_RESULTS 收集上限与 max_depth=50 递归限制; 移除 FIND_PAGE_SIZE 分页, 返回全部匹配(offset 仅作跳过); 截断唯一收口于 observation_formatter OBS_FIND_MAX_ROWS/CHARS(两态说明); deadline 超时保留为保护
 # 2026-07-20 - 小欧 - 门限复查: 删 _is_already_seen_or_skipped 去重/跳过死逻辑(seen_files/start_offset 恒0, os.walk 不重复致 dup/skip 永False)及未用 Tuple import; 直接 _collect_entry_result, 行为不变
 # 2026-08-06 - 小欧 - 核查未实现项修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
@@ -18,7 +19,7 @@ from typing import Any, Dict, List, Literal, Optional
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.logger import logger
 
@@ -136,14 +137,7 @@ async def find(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail="文件名匹配模式不能为空", hint="请输入文件名匹配模式", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
         return build_error(data={}, llm_data=llm_data)
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.LIST_DIR, search_dir)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索目录路径", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
-        return build_error(data={}, llm_data=llm_data)
-
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查(search_dir 已入 PATH_PARAM_KEYS), 工具只执行
     path = Path(os.path.expanduser(search_dir))
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("find", TOOL_TIMEOUTS["default"]) - 2

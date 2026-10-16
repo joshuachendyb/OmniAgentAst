@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
+# 2026-10-16 - 小欧 - tool去检查化注释同步: check_for_text_tool 内合法性检查已删(归 SA1), 只做类型检查。
 """
 F1: read — 读取文本文件
 
@@ -167,7 +168,7 @@ async def read(
         tail = int(tail)
     t0 = _time_mod.perf_counter()
     try:
-        # 文件类型前置检查 — 小健 2026-06-24 — check_for_text_tool 内含 validate_path 存在性校验 — 小欧 2026-07-29
+        # 文件类型前置检查 — 小健 2026-06-24(2026-10-16 小欧: 其内含 validate_path 存在性校验已随 tool去检查化删除, 现只做类型检查)
         is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

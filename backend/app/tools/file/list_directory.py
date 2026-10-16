@@ -6,6 +6,7 @@
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS key对齐: "list_directory"→"listdir"(真实注册名), 值30→60
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出目录→列文件
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 工具只执行。
 """
 F5: list_directory — 列出目录内容
 
@@ -25,7 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
 from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_LISTDIR_MAX_ROWS, OBS_LISTDIR_MAX_ROW_CHARS
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.logger import logger
 
@@ -227,14 +228,7 @@ async def listdir(
     start_offset = offset
 
     try:
-        # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+是目录 — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.LIST_DIR, dir_path)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path=dir_path, detail=err, hint="请检查目录路径是否正确", user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
-            return build_error(data={}, llm_data=llm_data)
-
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 工具只执行
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution, _scan_timed_out = await asyncio.to_thread(
             _scan_directory_sync, path, False, 0, include_hidden, deadline,

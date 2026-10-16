@@ -25,6 +25,7 @@
 #    真实工具(grep -r /、rg /、findstr /s C:\)均允许从根搜索。grep内部已有 deadline 截断(TOOL_TIMEOUTS["grep"]=120s,
 #    见_grep_files_sync)与 Tool 层输出截断(_apply_grep_outlim)兜底, 不会无限卡死, 故移除先前"想当然"的拒绝政策。
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 内容搜索→搜内容
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1); 文件/目录分支是执行路由, 保留。
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -49,7 +50,7 @@ from app.tools.tool_constants import (
     GREP_OUTLIMIT_MATCHES_MAX, GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
 )
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
@@ -286,21 +287,11 @@ async def grep(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效：{e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在+类型 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    # path 支持文件与目录：文件用 READ_FILE 校验,目录用 LIST_DIR 校验 — 小欧 2026-07-20
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查; 文件/目录分支是执行路由(决定怎么搜), 非校验, 保留
     search_path = Path(os.path.expanduser(path))
-    if search_path.is_file():
-        is_valid, err, _ = validate_path(OpCategory.READ_FILE, str(search_path))
-    elif search_path.is_dir():
-        is_valid, err, _ = validate_path(OpCategory.LIST_DIR, str(search_path))
-    else:
+    if not search_path.is_file() and not search_path.is_dir():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"路径不存在或不是文件/目录：{path}", hint="请提供有效的文件或目录路径", user_glob=glob, user_ignore_case=ignore_case)
-        return build_error(data={}, llm_data=llm_data)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
     deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("grep", TOOL_TIMEOUTS["default"]) - 2

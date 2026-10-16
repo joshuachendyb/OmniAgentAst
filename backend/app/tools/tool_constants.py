@@ -122,6 +122,7 @@
 #   理由: 4.11-B 实施漏了 5.3 L809「全部去下划线前缀」明文; 本模块是分类表对外提供方,
 #   消费方 app/safety/path_safe_check 属系统层(跨层 import), 私前缀与实际契约身份不符。
 #   同步改 path_safe_check 导入与调用点; 表内容零改动。— 小欧-2026-10-15
+# 2026-10-16 - 小欧 - tool去检查化覆盖审计: PATH_PARAM_KEYS 补 search_dir/data(实测原 SA1/SA3 全漏)。
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -729,10 +730,12 @@ TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 #   原因: 通道分发改用 ToolMetadata.action_kind 单判据后全仓零消费(实测), 属 YAGNI。
 
 # 工具参数中可能的路径参数名(⑧2026-08-10补dest: compress/extract/move/copy/rename/generate_chart/download/screen_capture 的目标/输出路径)
-# 迁自 path_safe_check.py:397 — 小欧 2026-10-14
+# 迁自 path_safe_check.py:397 — 小欧 2026-07-11
+# 2026-10-16 小欧 - tool去检查化覆盖审计: 补 search_dir(search_files 工具, 别名表无条目, SA1/SA3 原全漏)与
+#   data(generate_chart/analyze_data/filter_data 的文件路径形态; 内联 dict/JSON 由 SA1 非 str 跳过)。
 PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "directory", "file_name", "destination_path", "output_path",
-                    "dest")
+                    "dest", "search_dir", "data")
 
 # 只读工具集合 已于 2026-10-15 删除 — 小欧(文档[35] P2-21)
 #   原因: 与 PATH_ACTION_KINDS 的 "read" 项**完全相同**(实测差集为空), 且生产零消费

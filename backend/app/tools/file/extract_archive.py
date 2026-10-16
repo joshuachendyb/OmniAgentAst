@@ -12,6 +12,7 @@
 #   消除 os.makedirs 在已存在文件上建目录抛 FileExistsError(WinError 183) 的误导性错误
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(解压输出目录)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 解压文件→解压
+# 2026-10-16 - 小欧 - tool去检查化: 删源/目标合法性检查(归 SA1), 工具只执行。
 """
 F9: extract_archive — 解压文件
 
@@ -34,7 +35,7 @@ from app.tools.tool_response import build_success, build_error, with_artifact_fi
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_EXTRACT
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 
@@ -198,23 +199,7 @@ async def extract(
     source = path
     destination = dest
 
-    # 工具层校验（源路径）：非空/保留字符/保留名/系统目录/源文件存在+是文件 — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, _ = validate_path(OpCategory.READ_FILE, source)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_overwrite=overwrite)
-        return build_error(data={}, llm_data=llm_data)
-
-    if destination:
-        # 工具层校验（目标路径）：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, _ = validate_path(OpCategory.WRITE, destination)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, user_destination=destination, user_overwrite=overwrite)
-            return build_error(data={}, llm_data=llm_data)
-
+    # 2026-10-16 小欧 - tool去检查化: 源与目标合法性由 SA1 唯一检查, 工具只执行
     try:
 
         lower_path = source.lower()

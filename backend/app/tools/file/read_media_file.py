@@ -7,6 +7,7 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-02 - 小欧 - 注册名归位: 提示语 read→read
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取媒体→读媒体
+# 2026-10-16 - 小欧 - tool去检查化注释同步: check_for_media_tool 内合法性检查已删(归 SA1), 只做类型检查。
 """
 F3: readmedia — 读媒体文件
 
@@ -78,7 +79,7 @@ async def readmedia(
     file_path = path
     t0 = _time_mod.perf_counter()
     try:
-        # 文件类型前置检查 — 小健 2026-06-24 — check_for_media_tool 内含 validate_path 存在性校验 — 小欧 2026-07-29
+        # 文件类型前置检查 — 小健 2026-06-24(2026-10-16 小欧: 其内含 validate_path 存在性校验已随 tool去检查化删除, 现只做类型检查)
         is_valid, error_detail, suggested_tool = check_for_media_tool(file_path)
         if not is_valid:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

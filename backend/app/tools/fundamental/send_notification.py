@@ -8,6 +8,7 @@
 #         ① _msg_preview = message[:50]无None守卫导致message=None时crash→改(message or "")[:50]
 #         ② build函数docstring仍写"message截断200→50 统一"→更新为"main函数入口统一截断"
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 系统通知→发通知
+# 2026-10-16 - 小欧 - validate_str_param 导入源改 app.utils.path_utils(自 file_path_checker 迁入, 逻辑未变)。
 """
 send_notification — 发送Windows系统通知
 【2026-06-22 小健】从 desktop/desktop_gui_tools.py 迁入 fundamental 为独立文件
@@ -24,7 +25,8 @@ from typing import Dict, Any
 from app.tools.tool_fc_helper import _check_module_available
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_DESKTOP_NOTIFICATION, ERR_NO_WIN10TOAST, SEND_NOTIFICATION_OUTPARM_LIMIT_MSG
-from app.tools.validate.file_path_checker import validate_str_param
+from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 file_path_checker 迁入
+
 
 
 def _check_module(module_name: str) -> bool:

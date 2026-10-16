@@ -2,6 +2,7 @@
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(截图文件)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
 """
 screen_capture — 屏幕截图
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -25,7 +26,7 @@ from typing import Dict, Any, Optional
 
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
 from app.logger import logger
 from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
@@ -142,13 +143,8 @@ def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] 
     """统一屏幕截图入口 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
     if dest:
-        # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, warn = validate_path(OpCategory.WRITE, dest)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_screen_capture_llm_data("error", duration_ms, dest=dest, region=region, display=display, err_code=ERR_SCREENSHOT, detail=err, hint="请检查输出路径是否合法")
-            return build_error(data={}, llm_data=llm_data)
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+        _, _, warn = validate_path_for_write(dest)
         if warn:
             logger.warning(f"[screen_capture] {warn}")
 

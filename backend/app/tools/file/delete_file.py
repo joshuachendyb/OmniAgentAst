@@ -41,6 +41,7 @@
 #   【已知开洞·老陈知情接受】本函数原是"security.enabled=false 时唯一仍拦删系统目录/磁盘根/授权根的防线",
 #     撤除后开关关闭场景下删除操作无路径层兜底, 直至下一行 validate_path 业务校验生效。
 #     ★此为老陈权衡"分层纯粹性 > 开关关闭时兜底"后的明示取舍, 非遗漏, 勿当 bug 静默加回。 — 小欧-2026-10-16
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_delete 递归/强制警告。
 """
 F12: delete_file — 删除文件
 
@@ -62,7 +63,7 @@ from app.tools.tool_constants import ERR_FILE_DELETE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
-from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
+from app.utils.path_utils import validate_path_for_delete  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
@@ -260,21 +261,12 @@ async def delete(
     force: bool = False,
 ) -> Dict[str, Any]:
     """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path
-    [SA8] 原首行的硬底线已按老陈 2026-10-16 裁定删除, 现首行即 validate_path 业务校验 — 小欧-2026-10-14/16"""
+    [SA8] 原首行的硬底线已按老陈 2026-10-16 裁定删除, 现首行即 for_delete 递归/强制业务警告(合法性归 SA1) — 小欧-2026-10-14/16"""
     t0 = _time_mod.perf_counter()
     # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
     source = path
-    if not source or not source.strip():
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)
-        return build_error(data={}, llm_data=llm_data)
-     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
-    # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-    is_valid, err, warn = validate_path(OpCategory.EXISTS, source, recursive=recursive, force=force)
-    if not is_valid:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
-        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 此处仅业务警告(递归/强制)
+    _, _, warn = validate_path_for_delete(source, recursive=recursive, force=force)
     if warn:
         logger.info(warn)
 

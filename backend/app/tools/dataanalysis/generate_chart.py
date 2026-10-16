@@ -8,6 +8,7 @@
 # 2026-07-31 - 小欧 - Bug⑪修复: _registered字体快照addfont后实时更新, 防同名字体(msyh.ttc/msyh.ttf)重复addfont | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(图表文件)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
 """
 generate_chart — 使用matplotlib生成数据可视化图表
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -26,7 +27,7 @@ from typing import Dict, Any, Optional, Union, Literal
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
-from app.tools.validate.file_path_checker import validate_path, OpCategory
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_data_error
 from app.logger import logger
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
@@ -118,13 +119,8 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
     """使用matplotlib生成数据可视化图表 — 小健 2026-06-22 拆分独立文件 — 小欧 2026-07-07 支持内联JSON数据"""
     t0 = _time_mod.perf_counter()
     if dest:
-        # 工具层校验：非空/保留字符/保留名/系统目录（跳过存在性，允许新建） — 小欧 2026-07-04
-        # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
-        is_valid, err, warn = validate_path(OpCategory.WRITE, dest)
-        if not is_valid:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            llm_data = _build_generate_chart_llm_data("error", duration_ms, chart_type, detail=err, hint="请检查输出路径", data=data, title=title, x_label=x_label, y_label=y_label, dest=dest)
-            return build_error(data={}, llm_data=llm_data)
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+        _, _, warn = validate_path_for_write(dest)
         if warn:
             logger.warning(f"[generate_chart] {warn}")
 
