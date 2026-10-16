@@ -48,11 +48,26 @@ shell_engine.py 同目录（shell 代码同置，不散落 utils）。依赖方�
     (`echo "kill"` 纯提及留 HITL, 不升 blocked)。— 小欧-2026-10-10
 2026-10-14 小欧 - 文档[33] 4.11-A: 收编 executor 的 _is_shell_tool/_WRITE_CMD_RE 等 9 符号与 path_safe_check 的
   _extract_abs_win_paths/_ABS_WIN_PATH_RES, 新增删除动词正则 _DELETE_CMD_RE(供 4.10-1 判 mode=delete);
-  _strip_quoted 改名 mask_quoted_spans 并还 _QUOTED_SPAN_RE 双源债"""
+  _strip_quoted 改名 mask_quoted_spans 并还 _QUOTED_SPAN_RE 双源债
+2026-10-16 小欧 - [36] 洞1+洞2 修复(文档[36]第三章审计结论, 就地最小增量, 未新建模块):
+  ①洞1 写意图表补 Remove-ItemProperty —— 原表用 \b(?:Remove-Item|...)\b, 该动词因尾 \b 不成立
+    而不在表内, 导致 `Remove-ItemProperty <受保护区>` 连 shell_path_check 第一道门都进不去
+    = 该命令全程零路径检查(非"判错档", 是不检查)。补入后由 _DELETE_CMD_RE 送删线。
+  ②洞2 移动类分线 —— 新增 _MOVE_CMD_RE / _MOVE_DEST_SWITCHES / _MOVE_TOKEN_RE /
+    _ABS_PATH_HEAD_RE 与 _extract_move_paths(command) -> (源, 目标)。
+    病根: mv/Move-Item 只在写表(_DELETE_CMD_RE 不含) → 源与目标同走写线 → 源在 non_system 区
+    命中写线的临时授权分支(is_temp_authorized 放行) → 授权即把受保护根搬走。
+    不用 _extract_abs_win_paths 取源: 它按"引号组 + 裸路径组"拼接返回, 位置序被打乱
+    (实测 `mv C:\src.txt "E:\dst dir"` 返回 [目标, 源]), 按下标取源会判反;
+    本函数按文本顺序切 token, 故位置可靠。
+    -Destination/-dest 之后的路径判为目标, 其余为源; 无开关时首路径为源、其余为目标
+    (PS 位置写法与 bash/cmd `mv src dst` 同形)。只认盘符绝对路径, 相对路径不抽(交沙箱预检)。
+  实测效果(授权后同路径): 删线 validate_delete=False(仍拦) vs 写线 validate_write=True(放行) ——
+    即授权不再使删除语义失效; 未授权时两线同为"需确认", 与改动前一致(无退化)。"""
 import fnmatch
 import os
 import re
-from typing import List
+from typing import List, Tuple
 
 from app.tools.tools_alias_mapper import normalize_tool_name
 
@@ -385,7 +400,7 @@ def _is_shell_tool(tool_name: str) -> bool:
 
 # —— F-B 写意图扫描器(真实实现, 补重定向与词表): 只判越界写意图, 不判危险等级 ——
 _WRITE_CMD_RE = re.compile(
-    r"\b(?:Remove-Item|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
+    r"\b(?:Remove-Item|Remove-ItemProperty|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
     r"|New-Item|ni|Set-Content|Add-Content|ac|Out-File|Expand-Archive"
     r"|reg(?:\.exe)?(?=\s|$)|setx|regedit(?:\.exe)?(?=\s|$))\b",
     re.IGNORECASE)
@@ -414,6 +429,48 @@ _REGISTRY_SYSTEM_VERBS = frozenset({"reg", "reg.exe", "regedit", "regedit.exe", 
 _DELETE_CMD_RE = re.compile(
     r"(?<![a-z0-9_-])(?:Remove-Item|Remove-ItemProperty|del|erase|rd|rmdir|ri|rm)(?![a-z0-9_-])",
     re.IGNORECASE)
+
+# —— 移动类动词(2026-10-16 小欧 [36] 洞2) ——
+# 病根: mv/Move-Item 只在写表(L388), _DELETE_CMD_RE 不含它 → 整条命令走写线 →
+#   源路径若在 non_system 区, _check_known_risks 走 grant_temp_auth 可授权 → 授权即把受保护根搬走。
+# 处置: 移动类命令按参数位置拆「源(被删)/目标(被写)」, 源走删线、目标走写线。
+#   尾 (?![a-z0-9_-]) 与 _DELETE_CMD_RE 同款, 故 Move-ItemProperty 不会被 Move-Item 误命中。
+# 2026-10-16 小欧 三堂会审补: cmd 内建 move / ren(+别名 Rename-Item) 与 mv 同语义(删源+写目标),
+#   且三者皆不在 _WRITE_CMD_RE, 连第一道门都进不去(=零路径检查)。只进本移动表, 不进 _WRITE_CMD_RE
+#   (move 是英文常用词, 进写表会在 F-B 目标窗口扫描与 echo 类命令中误伤; 本表仅在通道 B 入口门处并列判定)。
+_MOVE_CMD_RE = re.compile(r"(?<![a-z0-9_-])(?:Move-Item|Rename-Item|move|ren|mi|mv)(?![a-z0-9_-])",
+                          re.IGNORECASE)
+_MOVE_DEST_SWITCHES = frozenset({"-destination", "-dest", "-newname"})   # 其后路径=目标
+# 2026-10-16 小欧 三堂会审修(P0 退化): 裸 token 必须在语句分隔符处断开, 与 _ABS_WIN_PATH_RES 同口径
+#   (原 \S+ 把 `a.txt>C:\Windows\evil.log` 粘成一个 token, 当源走删线后畸形串被直接放行=写目标逃逸);
+#   引号段仍整体保留(含空格/&/; 的合法路径名不受损)。
+_MOVE_TOKEN_RE = re.compile(r'"[^"]*"|\'[^\']*\'|[^\s"\'<>|;&]+')
+_ABS_PATH_HEAD_RE = re.compile(r'^[a-zA-Z]:[\\/]')          # 只认盘符绝对路径(与 _ABS_WIN_PATH_RES 同口径)
+
+
+def _extract_move_paths(command: str) -> Tuple[List[str], List[str]]:
+    """移动类命令按参数位置拆「源(被删)」与「目标(被写)」 — 小欧 2026-10-16（[36] 洞2）
+
+    为什么不复用 _extract_abs_win_paths: 它按「引号组 + 裸路径组」拼接返回, 位置序被打乱
+    (实测 `mv C:\\src.txt "E:\\dst dir"` 返回 [目标, 源]), 按下标取源会判反。
+    本函数按文本顺序切 token, 故位置可靠。
+    分派: 有 -Destination/-dest → 其后路径=目标、其余=源；无 → 首个路径=源、其余=目标
+    (PS 位置写法与 bash/cmd `mv src dst` 同形)。只认盘符绝对路径, 相对路径不抽(交沙箱预检)。
+    """
+    tokens = [t.strip("\"'") for t in _MOVE_TOKEN_RE.findall(command)]
+    paths: List[Tuple[int, str]] = []
+    dest_idx: List[int] = []
+    for i, t in enumerate(tokens):
+        if _ABS_PATH_HEAD_RE.match(t):
+            paths.append((i, t))
+        elif t.lower() in _MOVE_DEST_SWITCHES:
+            dest_idx.append(i)
+    if dest_idx:
+        cut = min(dest_idx)
+        return ([p for i, p in paths if i < cut], [p for i, p in paths if i > cut])
+    if paths:
+        return [paths[0][1]], [p for _, p in paths[1:]]
+    return [], []
 
 
 def _resolve_env_fragment(fragment: str) -> str:
