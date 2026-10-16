@@ -96,6 +96,8 @@
 #   mode 形参默认 None 由被调方内部推断。误导性注释, 按设计 5.20 订正。— 小欧-2026-10-15
 # 2026-10-15 - 小欧 - 文档[33] 3.2错12: L41-42 所称「四条置位路径」已全部不成立(②命中即return不构造结果;
 #   ③注册表类不动态执行; ④由executor内部兜底)。真实口径=destructive 即置位, safe/dangerous 不触发。— 小欧-2026-10-15
+# 2026-10-16 - 小欧 - 工具未注册单列 tool_unavailable: 告知"工具不可用", 不再报成路径越权。
+#   ★须显式命中, 漏掉会掉进"白名单外路径"兜底变成可授权 = 安全放宽。— 小欧-2026-10-16
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -130,7 +132,7 @@ from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
 from app.safety.path_check_entry import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_check_entry
-from app.safety.shell_process_guard import build_protected_pids, build_protected_names  # 2026-10-16 小欧 - [36]4.4: 快照组装下沉同层，本文件不再碰 shell_engine
+from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 第七章: 自杀检查唯一入口(判定全在 guard 层) 小欧 - [36]4.4: 快照组装下沉同层，本文件不再碰 shell_engine
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
 _WRITE_RISK_TOOL = "write"
@@ -192,7 +194,18 @@ class ToolSafetyChecker:
             from app.safety.delete_safety import check_delete_risk  # 惰性导入避免与delete_safety循环依赖 — 小欧 2026-08-04
             delete_risk = check_delete_risk(params or {})
 
-        # ② 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
+        # ② 自杀检查(2026-10-16 第七章 · 北京老陈裁定): 提到 _check_known_risks **之前**
+        #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(E2E P9-03 后端自杀实录);
+        #   放在门首 = 排在危险命令与路径权限之前, 不给任何绕过空间。
+        #   判定全在 shell_process_guard.check_shell_self_kill(只答通过/不通过), 本层只出结果与文案。
+        if (params or {}).get("command"):
+            self_kill = ToolSafetyChecker._check_shell_kill(
+                (params or {}).get("command", ""), pool_pids)
+            if self_kill is not None:
+                log_and_print(f"[ToolSafetyChecker] 自杀检查拦截(硬拦): {self_kill.message}")
+                return self_kill
+
+        # ③ 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
         # 先校验delete专属R6（项目根外递归删除），再校验白名单（临时授权）
         if delete_risk is not None and delete_risk.blocked:
             log_and_print(f"[ToolSafetyChecker] delete R6硬拦截(项目根外递归删除): {delete_risk.message}")
@@ -276,14 +289,14 @@ class ToolSafetyChecker:
 
     @staticmethod
     def _check_shell_kill(cmd: str, pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:
-        """shell 杀防护单步 — 小欧 2026-10-16（[36]4.4 步骤2c）
+        """shell 自杀检查单步 — 小欧 2026-10-16（[36] 第七章）
 
-        命中受保护 PID/进程名即回 SafetyResult(blocked)，否则 None；
-        由 _check_known_risks 门首直返（无条件防线），不经确认分流。
+        2026-10-16 第七章: 自杀检查全部归并到 app/safety/shell_process_guard.py,
+          本方法只调其唯一入口 check_shell_self_kill(只答通过/不通过), 不通过时由本层出
+          SafetyResult 与文案 —— 判定在 guard 层, 返回与话术在本层(SRP 分离)。
+        命中受保护 PID/进程名/无目标兜底即 blocked，直返不经确认分流。
         """
-        from app.tools.fundamental.shell_command_guard import is_process_kill_protected  # 2026-10-10 小欧 位置更正: shell 代码归 shell 代码同目录
-        _pids = build_protected_pids(pool_pids)  # 现拼现用，不缓存不存量
-        if is_process_kill_protected(cmd, _pids, build_protected_names(_pids)):
+        if check_shell_self_kill(cmd, pool_pids):
             return SafetyResult(blocked=True, message="系统保护进程，禁止终止", severity="dangerous")
         return None
 
@@ -299,12 +312,12 @@ class ToolSafetyChecker:
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
             _cmd = (params or {}).get("command", "")
             # 2026-10-16 小欧 [36]4.4: 杀防护已归位 _check_known_risks（无条件防线），本分支只剩危险度分级
-            # 2026-10-10 小欧 修预检21/43条规则死代码缺口: 改用三壳并集(见 execute_shell_command_safety:187)。
+            # 2026-10-10 小欧 修预检21/43条规则死代码缺口: 改用三壳并集(见 shell_command_risk:187)。
             #   病根: 原调用 check_shell_command_risk(_cmd) 只传 command, shell_type 吃默认 "ps7",
             #   使 cmd/bash 标签规则在预检全被跳过 — diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/
             #   chown/reg add 等预检一律 None, 仅执行层才拦(两层判定口径不一致)。
             #   并集实测: 召回15条 / 白名单误伤0/30 / 日常命令误伤0/24 / 降级回归0。
-            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk_all_shells
+            from app.safety.shell_command_risk import check_shell_command_risk_all_shells  # 2026-10-16 小欧 [36] A7: 随整文件下沉到 app.safety
             _risk = check_shell_command_risk_all_shells(_cmd)
             if _risk:
                 if _risk.message:
@@ -338,17 +351,13 @@ class ToolSafetyChecker:
         #   - category==None 且白名单外msg → requires_confirmation+auth_path(现状已有)
         #   - category=="system"/"non_system" 且读 → 放行(validate_path 读 mode 已处理)
         """
-        # 2026-10-16 小欧 [36]4.4: shell 杀防护归位无条件防线（原 _get_needs_confirmation bash 分支前半）。
-        #   按名/按 PID 杀受保护进程与路径无关，必须先于路径判定；blocked 直返，不经确认分流、不转三元组。
+        # 2026-10-16 第七章: 自杀检查已提到 check_before_execute 的 _check_known_risks 之前,
+        #   此处只留 shell 危险模式 HIGH 判定(与自杀无关)。
         from app.tools.tools_alias_mapper import normalize_tool_name  # 防别名漏判（函数内懒导入，本函数两处共用）
         if normalize_tool_name(tool_name) in ("bash", "execute_command"):
-            _kill = ToolSafetyChecker._check_shell_kill((params or {}).get("command", ""), pool_pids)
-            if _kill is not None:
-                log_and_print(f"[ToolSafetyChecker] 系统保护进程杀防护拦截: tool={tool_name}, {_kill.message}")
-                return _kill
-            # 2026-10-16 小欧 [36]4.4: shell 危险模式 HIGH 归位无条件防线（与杀防护同列）。
+            # 2026-10-16 小欧 [36]4.4: shell 危险模式 HIGH 归位无条件防线。
             #   MEDIUM 不在此处理（需弹窗文案，归确认函数）；确认函数内 HIGH 分支同步删除。
-            from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk_all_shells
+            from app.safety.shell_command_risk import check_shell_command_risk_all_shells  # 2026-10-16 小欧 [36] A7: 随整文件下沉到 app.safety
             _shell_risk = check_shell_command_risk_all_shells((params or {}).get("command", ""))
             if _shell_risk is not None and _shell_risk.blocked:
                 log_and_print(f"[ToolSafetyChecker] 高风险Shell操作拦截: tool={tool_name}, {_shell_risk.message}")
@@ -382,6 +391,11 @@ class ToolSafetyChecker:
                 log_and_print(f"[ToolSafetyChecker] 系统禁区拦截(硬拦): tool={tool_name}, auth_path={failed_path}, {msg}")
                 return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {failed_path or msg}",
                                     severity="dangerous", auth_path=failed_path)
+            # 2026-10-16 - 小欧 - 工具不可用: 单列, 不报成路径越权(详见文件头)
+            if category == "tool_unavailable":
+                log_and_print(f"[ToolSafetyChecker] 工具不可用(硬拦): tool={tool_name}, {msg}")
+                return SafetyResult(blocked=True, message=msg or f"工具 {tool_name} 不可用",
+                                    severity="dangerous", auth_path=None)
             # category == None: 白名单外非禁区 → 临时授权请求
             # 5.3(2026-09-02 小欧, 病根3.4/3.5): 白名单外写——会话信任豁免不弹确认但保留 auth_path(语义同③)
             if skip_confirmation:

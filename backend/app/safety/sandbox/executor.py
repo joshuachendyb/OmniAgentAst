@@ -22,14 +22,14 @@
 # 2026-10-02 - 小欧 - 注册名归位: _shell 集合 "shell"→"bash", 并清 2 个从未注册的死项(executeshellcommand/executeshellcommandsafety)
 # 2026-10-04 - 小欧 - 只读白名单三元迁 app/utils/shell_readonly.py(tools需共用、边界禁直连), 本文件同名转发零变化
 # 2026-10-08 - 小欧 - 杀进程防护(事故驱动, E2E P9-03 后端被 agent 的 `Get-Process python | Stop-Process -Force` 杀掉):
-#   ①_scan_command_write_intent 改名 _scan_command_danger_intent 并扩职责, 前置调 has_uncontainable_intent, 命中即转
+#   ①_scan_command_write_intent 改名 _scan_command_danger_intent 并扩职责, 前置调 shell_has_hidden_kill, 命中即转
 #   HITL 不 run(根因: 预检在宿主真跑, Job Object 非硬墙, 词表漏则预检即真跑); ②守卫②注释/日志同步"危险意图";
-#   ③新增 has_uncontainable_intent import。旧名零残留不留别名(禁止 backward)。 — 小欧-2026-10-08
-# 2026-10-10 - 小欧 - 导入点位置更正: has_uncontainable_intent / is_readonly_whitelisted 由 app/utils/shell_readonly.py
+#   ③新增 shell_has_hidden_kill import。旧名零残留不留别名(禁止 backward)。 — 小欧-2026-10-08
+# 2026-10-10 - 小欧 - 导入点位置更正: shell_has_hidden_kill / is_shell_readonly_whitelisted 由 app/utils/shell_readonly.py
 #   改为 app.tools.fundamental.shell_static_guard(三类同域关注点已并回一处, 与 execute_shell_command.py /
 #   shell_engine.py 同目录)。理由: 原落 utils 的依据"架构边界要求 tools 禁 import safety"经
 #   tests/test_architecture_boundaries.py 实证不成立 —— 该守卫只禁 "tools"→services/safety 单向,
-#   safety→tools 合法(先例: tool_safety_checker 一直 import execute_shell_command_safety), 无需中转 utils。
+#   safety→tools 合法(先例: tool_safety_checker 一直 import shell_command_risk), 无需中转 utils。
 #   本文件属 app/safety, safety→tools 方向合法; 业务逻辑零变化, 仅改导入路径。 — 小欧-2026-10-10
 # 2026-10-14 - 小欧 - SA7标注: 本文件=权限信任框架SA7(沙箱预检pre_execute影子副本执行,执行第7步,上游SA1/sandbox_gate.run_sandbox_gate,总闸见safety_checker的sandbox_required置位) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁出本模块(shell_static_guard 单一真源), 删本地定义改 import; 同批删已无引用的 re
@@ -46,20 +46,22 @@ from app.tools.tools_alias_mapper import normalize_params, normalize_tool_name
 
 from app.safety.sandbox.backend import BackendResult, JobObjectBackend
 from app.safety.sandbox.workspace import FileImpact, SandboxWorkspace
-from app.tools.fundamental.shell_command_guard import has_uncontainable_intent  # 2026-10-08 小欧 - 不可隔离动词(杀进程/停服务), 预检不得真跑 — 小欧-2026-10-08; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
-from app.tools.fundamental.shell_command_guard import is_readonly_whitelisted as _is_readonly_whitelisted  # 单源, 别名存引用 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools — 小欧 2026-10-10
-# 2026-10-14 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁 shell_command_guard(工具层单一真源),
-#   本模块删本地定义改 import。_registry_key_exists 保持原名(纯只读探测, 调用点遍布本文件)。
-from app.tools.fundamental.shell_command_guard import (
-    _OUTSIDE_TARGET_RE,
-    _REDIRECT_RE,
-    _REGISTRY_SYSTEM_VERBS,
-    _SANDBOX_SELF_RE,
-    _WRITE_CMD_RE,
-    _is_shell_tool,
-    _ps_literal_path,
-    _registry_key_exists,
-    _resolve_env_fragment,
+# 2026-10-16 小欧 - 文档[36] 第五章接线(A6): shell 静态判定符号随整文件下沉到 app.safety.shell_command_process,
+#   并跟 3.5.5 正名。★全部正名直用, **不留 as 旧名别名**(禁止 backward, 旧名零残留不留别名 — 同本文件 L27 既有纪律),
+#   故下方调用点同步正名。
+#   ★本模块是「越界写扫描 + 只读直通」两个消费方之一, 故随只读白名单一并下沉(不留越层 import)。
+from app.safety.shell_process_guard import shell_has_hidden_kill  # 2026-10-16 第七章: 自杀检查已归并 guard(不可隔离动词同源)
+from app.safety.shell_command_process import (
+    SHELL_OUTSIDE_TARGET_RE,
+    SHELL_REDIRECT_RE,
+    SHELL_REGISTRY_SYSTEM_VERBS,
+    SHELL_SANDBOX_SELF_RE,
+    SHELL_WRITE_INTENT_RE,
+    is_shell_readonly_whitelisted,
+    is_shell_tool,
+    shell_ps_literal_path,
+    shell_registry_key_exists,
+    shell_resolve_env_fragment,
 )
 
 _semaphore = asyncio.Semaphore(get_config().get("sandbox.max_concurrent_sandboxes", 3))   # 并发限流(3.1.3)
@@ -95,12 +97,12 @@ def _attach_stderr_tail(reason: str, stderr_tail: str) -> str:
 
 def _is_outside_write_target(tail: str) -> Optional[bool]:
     """越界写意图三态判定(v1.21 Z1 抽出共用): True=越界 / False=%TEMP%豁免 / None=非越界(相对路径)"""
-    tail = _resolve_env_fragment(tail).lstrip("\"' ").lower()
-    if not _OUTSIDE_TARGET_RE.search(tail):
+    tail = shell_resolve_env_fragment(tail).lstrip("\"' ").lower()
+    if not SHELL_OUTSIDE_TARGET_RE.search(tail):
         return None                      # 相对路径写: 正常进沙箱预检
     temp_root = tempfile.gettempdir().lower().rstrip("\\/")
     if tail.startswith(temp_root):
-        if _SANDBOX_SELF_RE.search(tail):
+        if SHELL_SANDBOX_SELF_RE.search(tail):
             return True                  # N7: 删沙箱自身必须命中
         return False                     # FP3: %TEMP% 其余写豁免(pip/npm 合法行为)
     return True                          # 命中越界写意图: 转 HITL 裁决
@@ -113,15 +115,15 @@ def _scan_command_danger_intent(command: str) -> bool:
     词表一漏即防线自破(E2E P9-03 后端自杀实录)。两类一律只转 HITL 不判等级, 词表为持续维护项(见 R7)。
     v1.21 Z1: 重定向 `>`/`>>` 目标与写动词参数走同一套越界判定——堵死
     `Get-Date > D:\\evil.ps1` 无写动词穿透全链路的逃逸(N5 白名单侧已堵, 此为扫描器侧)。"""
-    if has_uncontainable_intent(command):
+    if shell_has_hidden_kill(command):
         return True                         # 2026-10-08 小欧: 杀进程/停服务绝不进 run(预检真跑=防线自破)
-    for match in _WRITE_CMD_RE.finditer(command):
-        if match.group(0).rstrip().lower() in _REGISTRY_SYSTEM_VERBS:   # v1.23 V-A: rstrip 双保险
+    for match in SHELL_WRITE_INTENT_RE.finditer(command):
+        if match.group(0).rstrip().lower() in SHELL_REGISTRY_SYSTEM_VERBS:   # v1.23 V-A: rstrip 双保险
             return True                     # v1.22 W1: 注册表/系统配置写无法被沙箱隔离, 命中即转裁决
         verdict = _is_outside_write_target(command[match.end(): match.end() + 200])   # 写动词后目标窗口
         if verdict is True:
             return True
-    for match in _REDIRECT_RE.finditer(command):
+    for match in SHELL_REDIRECT_RE.finditer(command):
         # 重定向 RHS 即写目标(Z1): 越界(D:\ 等)或篡改沙箱自身(N7 carve-out 已并入判定)均命中;
         # %TEMP% 其余(False)与相对路径(None)放行进沙箱
         if _is_outside_write_target(match.group(1)) is True:
@@ -152,9 +154,9 @@ class SandboxExecutor:
         if not get_config().get("sandbox.enabled", True):
             logger.info(f"[sandbox][exec] 总开关关闭, 直通免预检: tool={tool_name}")
             return PreCheckResult(passed=True)
-        logger.info(f"[sandbox][exec] 预检开始: tool={tool_name}, 类型={'shell' if _is_shell_tool(tool_name) else 'file_op'}")
+        logger.info(f"[sandbox][exec] 预检开始: tool={tool_name}, 类型={'shell' if is_shell_tool(tool_name) else 'file_op'}")
         async with _semaphore:   # 并发限流(3.1.3, 默认3 可配置)
-            if _is_shell_tool(tool_name):   # BUG修复: 原为 self._is_shell_tool(实例无此法, 致每次预检抛 AttributeError 被 M4 兜底静默绕过)
+            if is_shell_tool(tool_name):   # BUG修复: 原为 self.is_shell_tool(实例无此法, 致每次预检抛 AttributeError 被 M4 兜底静默绕过)
                 # 统一入口(action_handler 唯一调用点): shell 类→_pre_execute_shell
                 timeout_sec = params.get("timeout") or get_config().get("sandbox.default_timeout_sec", 60)
                 return await self._pre_execute_shell(params.get("command", ""), params, timeout_sec)
@@ -228,7 +230,7 @@ class SandboxExecutor:
                 blocked_reason="命令包含危险操作，需要用户确认",
             )
         # 白名单快速通道(v1.17 N3/N5 定序: 必须在 F-B 扫描之后判定, 防重定向逃逸绕过扫描)
-        if _is_readonly_whitelisted(command):
+        if is_shell_readonly_whitelisted(command):
             logger.info(f"[sandbox][exec] 只读白名单直通放行真机: command_head={command[:120]!r}")
             return PreCheckResult(passed=True)   # 只读直通: 免预检放行真机(4.1#4)
         backend = self._dispatch_backend()
@@ -291,7 +293,7 @@ class SandboxExecutor:
         if normalized in ("registrywrite", "registrydelete"):
             # 注册表无法影子副本(2.4 局限明示): 仅静态检查——键存在性/值类型/递归范围统计, 不做动态试删
             reg_path = params.get("path") or params.get("key", "")
-            exists = _registry_key_exists(reg_path)            # winreg 标准库只读探测(实施时落地)
+            exists = shell_registry_key_exists(reg_path)            # winreg 标准库只读探测(实施时落地)
             return PreCheckResult(
                 passed=True,
                 blocked_reason=f"registry 静态分析(仅报告不试删): key={reg_path}, 存在={exists}",
@@ -353,13 +355,13 @@ class SandboxExecutor:
         delete→删除副本树; copy/move→在副本内重演目标变换。"""
         logger.info(f"[sandbox][exec] 重演文件操作: op={normalized}, replica={replica}")
         if normalized == "delete":
-            replay_cmd = f"Remove-Item -LiteralPath {_ps_literal_path(replica)} -Recurse -Force"
+            replay_cmd = f"Remove-Item -LiteralPath {shell_ps_literal_path(replica)} -Recurse -Force"
         elif normalized == "copy":
             dest = replica.parent / Path(params.get("dest", params.get("path", "copied"))).name
-            replay_cmd = f"Copy-Item -LiteralPath {_ps_literal_path(replica)} -Destination {_ps_literal_path(dest)} -Force"
+            replay_cmd = f"Copy-Item -LiteralPath {shell_ps_literal_path(replica)} -Destination {shell_ps_literal_path(dest)} -Force"
         else:   # move: 副本内自移即验证可行性
             moved = replica.parent / "moved"
-            replay_cmd = f"Move-Item -LiteralPath {_ps_literal_path(replica)} -Destination {_ps_literal_path(moved)} -Force"
+            replay_cmd = f"Move-Item -LiteralPath {shell_ps_literal_path(replica)} -Destination {shell_ps_literal_path(moved)} -Force"
         return await asyncio.to_thread(backend.run, replay_cmd, workspace, 60)
 
     def _disk_usage(self, ws_path) -> int:

@@ -187,7 +187,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         from app.safety.tool_safety_checker import get_tool_safety_checker
         from app.safety.trust import resolve_skip
         from app.safety.trust import extract_trust_path        # 3.4 同组路径归一(trust.py:69主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
-        from app.safety.sandbox.executor import _is_readonly_whitelisted, _is_shell_tool  # 3.2 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18
+        from app.safety.shell_command_process import is_shell_readonly_whitelisted, is_shell_tool  # 3.2 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18; 2026-10-16 [36] 改为直接 import 单一真源(原借 executor 转引, 随正名已失效)
         safety_checker = get_tool_safety_checker()
 
         _denied = []
@@ -233,8 +233,8 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             # 3.2/3.2.1 只读短路: shell 只读白名单(含新增五项)的 requires_confirmation 不进网关,
             #   恒与真机放行并行(仍落 site③ 走沙箱只读直通), 仅收敛"只读也弹窗"的过宽 — 小欧-2026-09-18
             _readonly = (safety_result.requires_confirmation
-                         and _is_shell_tool(_cn)
-                         and _is_readonly_whitelisted(str(_cp.get("command") or "")))
+                         and is_shell_tool(_cn)
+                         and is_shell_readonly_whitelisted(str(_cp.get("command") or "")))
             if safety_result.requires_confirmation and not _readonly:
                 # 3A: 等待源头全收 hitl_gateway——create/wait/S1窗口/三处独立计时/trust_path/引用信组装 全部删,
                 #   paused/resumed 由网关 publish(事件唯一入口); 3B: 本函数纯函数化收list — 小欧 2026-09-06

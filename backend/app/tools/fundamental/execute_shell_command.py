@@ -237,10 +237,10 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
 from app.tools.file.file_encoding import get_file_encoding
-from app.tools.fundamental.execute_shell_command_safety import check_shell_command_risk
+from app.safety.shell_command_risk import check_shell_command_risk  # 2026-10-16 小欧 [36] A8: 随整文件下沉到 app.safety(裁决层下沉, 消除 safety→tools.fundamental 越层)
 from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
-from app.tools.fundamental.shell_command_guard import is_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-10 小欧 位置更正迁 tools 同目录 — 小欧 2026-10-10
+from app.safety.shell_command_process import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-16 [36] 随只读白名单一并下沉
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
@@ -1137,7 +1137,7 @@ def shell(
         _one_shot = (
             shell_type in ("ps7", "ps5")
             and not shell_pool.has_session(task_id, shell_type)
-            and is_readonly_whitelisted(processed_command)
+            and is_shell_readonly_whitelisted(processed_command)
         )
         pwsh_exe = shutil.which("pwsh.exe" if shell_type == "ps7" else "powershell.exe") if _one_shot else None
         if pwsh_exe:

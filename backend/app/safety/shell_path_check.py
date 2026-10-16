@@ -13,6 +13,15 @@
 #   ②_MOVE_CMD_RE 补 move/ren/Rename-Item(均删源+写目标, 原连第一道门都进不去), 入口门并列判定;
 #   ③_judge_paths 对含 ><|/换行的畸形路径硬拦 system(切词粘连兜底, 通道 B fail-closed);
 #   ④_judge_paths 补类型注解; 日志按删线/写线分"删源/写目标"; 删 87 行死 __all__(所列三名已迁 multi_path_check)。
+# 2026-10-16 - 小欧 - 文档[36] 第五章接线(A5): import 切到 app.safety.shell_command_process 并跟改正名;
+#   validate_shell 改为「一次预处理(shell_command_process.prepare_shell_text) + 两个出入口」
+#   (shell_delete_paths / shell_write_paths), 不再在本模块内部分析动词、决定走哪条线。
+#   判定顺序保持**删线优先**(与原实码一致 = 更严): 删线不过即回, 过了再判写线。
+#   动词/归属规则的唯一裁决点已下沉到 shell_command_process._shell_path_lines(见 [36] 5.3.3.4)。
+# 2026-10-16 - 小欧 - 取路径两门合一(老陈裁定「可以合并在一起」): shell_delete_paths +
+#   shell_write_paths 合并为 shell_write_and_delete_paths(一次调用返回两列清单)。
+#   原因: 两个门各自内部都要把整套判定跑一遍, 而本层两个清单都要 → 白跑两遍(实测计数 = 2)。
+#   ★「取路径」与「判权限」仍是分开的两层: 本模块只编排, 判定在 delete/write_path_check。
 """
 shell_path_check — shell 命令路径检查(通道 B)
 
@@ -25,16 +34,12 @@ bash 属 FUNDAMENTAL, 不经 action_kind 分派, 单独立此通道:
 from typing import List, Optional, Tuple
 
 from app.safety import delete_path_check, write_path_check
-from app.logger import logger
-from app.tools.fundamental.shell_command_guard import (
-    _WRITE_CMD_RE,
-    _DELETE_CMD_RE,
-    _MOVE_CMD_RE,
-    mask_quoted_spans,
-    _resolve_env_fragment,
-    _extract_abs_win_paths,
-    _extract_move_paths,
+from app.safety.shell_command_process import (
+    prepare_shell_text,
+    shell_has_write_intent,
+    shell_write_and_delete_paths,
 )
+from app.logger import logger
 
 
 def _judge_paths(paths: List[str], line, command: str) -> Tuple[bool, Optional[str], Optional[str], Optional[str]]:
@@ -83,23 +88,16 @@ def validate_shell(command: str, cwd: Optional[str] = None
             logger.warning(f"[shell_path_check] bash 工作目录越权: category={cat}, cwd={cwd}")
             return False, err, cwd, cat
     normalized = command.replace("\r\n", " ").replace("\n", " ")
-    intent_src = mask_quoted_spans(normalized)
-    # 2026-10-16 小欧 三堂会审补: move/ren/Rename-Item 不在 _WRITE_CMD_RE, 须并列进门
-    #   (不进写表的原因见 guard 侧 _MOVE_CMD_RE 注释: move 是英文常用词, 防 F-B 误伤)。
-    if (not _WRITE_CMD_RE.search(intent_src) and ">" not in intent_src
-            and not _MOVE_CMD_RE.search(intent_src)):
+    # 2026-10-16 小欧 [36] A5: 预处理只跑这一次, 三个判据共用同一份文本
+    #   (旧实码在本模块内跑 mask/resolve, 再各自匹配动词决定走哪条线 —— 裁决点已下沉到 guard 侧)。
+    text = prepare_shell_text(normalized)
+    if not shell_has_write_intent(text):
         return True, None, None, None
-    resolved = _resolve_env_fragment(normalized)
-    # 2026-10-16 小欧 [36] 洞2: mv/Move-Item 源被删、目标被写, 后果不同必须分线。
-    #   仅当「含移动动词且不含其他删动词」时拆分; 含 rm/del 时仍全走删线(更严, 不退化)。
-    if _MOVE_CMD_RE.search(intent_src) and not _DELETE_CMD_RE.search(intent_src):
-        _src, _dst = _extract_move_paths(resolved)
-        _r = _judge_paths(_src, delete_path_check, command)
-        return _r if not _r[0] else _judge_paths(_dst, write_path_check, command)
-    # 2026-10-14 小欧 - 文档[33] 4.10-1: 命令含删动词时走删线而非写线。
-    #   病根: _WRITE_CMD_RE 把删与写混一张表, 删系统禁区只被判「可授权的写」, 授权后等于放行删系统目录。
-    line = delete_path_check if _DELETE_CMD_RE.search(intent_src) else write_path_check
-    return _judge_paths(_extract_abs_win_paths(resolved), line, command)
+    # 删线优先: 抹除后果不可授权, 优先判; 过了再判写线(可授权)。
+    # 2026-10-16 老陈裁定: 取路径合并成一次调用(只取路径, 不判权限; 判定仍由下游两条线各判)
+    delete_paths, write_paths = shell_write_and_delete_paths(text)
+    deleted = _judge_paths(delete_paths, delete_path_check, command)
+    return deleted if not deleted[0] else _judge_paths(write_paths, write_path_check, command)
 
 
 __all__ = ["validate_shell"]

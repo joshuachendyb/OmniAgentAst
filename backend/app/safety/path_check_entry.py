@@ -177,7 +177,9 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
 
         meta = tool_registry.get_tool(normal_name)
         if meta is None:
-            return False, f"工具{normal_name}未注册", None, "system"
+            # 2026-10-16 - 小欧 - 未注册工具单列 tool_unavailable: 原报成"系统禁区路径越权",
+            #   误导 LLM/用户去改路径。仍 fail-closed(未注册工具本就无法执行)。
+            return False, f"工具 {normal_name} 不可用(未注册)", None, "tool_unavailable"
 
         # registry_* 的 path 是注册表键而非文件路径, 不进文件判定(2026-10-15 北京老陈裁定:
         # 非文件工具不得进 PATH_ACTION_KINDS 凑数, 豁免放 entry 与 bash 特判并列)。

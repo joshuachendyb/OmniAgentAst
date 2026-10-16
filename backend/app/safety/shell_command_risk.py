@@ -48,11 +48,23 @@ MEDIUM: requires_confirmation=True —— 本函数只置位; 真确认在 handl
 — 北京老陈 2026-06-27
 — 小健 2026-06-27 迁出到独立safety文件
 — 小欧 2026-10-05 更正 MEDIUM 说明(本函数只置位, 真确认在上游 safety_gate, 删失效的 action_handler 引用)
+2026-10-16 小欧 - 文档[36] 第五章: 自 app/tools/fundamental/execute_shell_command_safety.py
+  **整文件下沉**至 app/safety/, 文件级复制 295 行零漂移(AGENTS 1.4 能复制不重写, 严禁重写业务逻辑)。
+  仅两处改动:
+  ① 唯一一处越层 import: `app.tools.fundamental.shell_command_guard.mask_quoted_spans`
+     → `app.safety.shell_command_process.shell_blank_out_quotes`(随 3.5.5 正名), 并从
+     **规则循环体内提到文件头**(原在 for 循环里每条规则都执行一次 import, 违反 KISS-DIRECT);
+  ② 模块头补位置/依赖方向说明。
+  ★本模块**不自行读取 shell_pool**: 受保护进程 PID 由调用方以 protected_pids 形参传入
+    (裁决层不得反向依赖运行时状态, 这是 [36] 3.10.3-D6 依赖方向的硬约束)。
+  依赖方向: 仅 import re / typing / app.tools.tool_types(契约) / app.safety.shell_command_process /
+    app.logger。**不再 import 任何 app.tools.fundamental**。
 """
 import re
 from typing import Optional
 
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
+from app.safety.shell_command_process import shell_blank_out_quotes
 from app.logger import logger
 
 
@@ -206,8 +218,7 @@ def check_shell_command_risk(command: str, shell_type: str = "ps7", protected_pi
 #   无人值守场景照样拦得住(实测 powershell -Command "Remove-Item -Recurse -Force X" → conf=True)。
 #   遗留(既有缺口, 非本次引入, git stash 对比确认): cmd 的 `del <file>` 不带 /s 时不在 HIGH 词表,
 #   改动前后均不拦; 递归 `del /s /q` 一直是被拦的。
-                from app.tools.fundamental.shell_command_guard import mask_quoted_spans
-                if not re.search(pattern_str, mask_quoted_spans(normalized), re.IGNORECASE):
+                if not re.search(pattern_str, shell_blank_out_quotes(normalized), re.IGNORECASE):
                     # 放宽动作必须留痕: 高危降为需确认属安全等级下调, 事后要能回溯哪些命令走过这条路
                     logger.warning(
                         f"[Shell安全] HIGH降级为需确认(规则仅命中引号内): 规则={desc}, 命令={normalized[:200]}"
