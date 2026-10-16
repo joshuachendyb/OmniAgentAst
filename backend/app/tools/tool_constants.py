@@ -545,7 +545,7 @@ ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
 ERR_UNKNOWN = "ERR_UNKNOWN"
 
 # ============================================================
-# 🕐 12. 系统敏感路径黑名单常量 — Safety层(path_guard.classify_forbidden_path)消费
+# 🕐 12. 系统敏感路径黑名单常量 — Safety层(path_classify_category.classify_forbidden_path)消费
 # ============================================================
 
 FORBIDDEN_PATHS_EXACT: set[str] = {  # 【tool 级】使用对象: 文件安全禁用路径(精确匹配)
@@ -756,7 +756,7 @@ PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
 #   "read"    只读          → read_path_check(禁区放行, 不弹授权)
 #   "write"   写入或改写    → write_path_check
 #   "delete"  删除          → delete_path_check(禁区硬拦, 永不授权)
-#   "multi"   一调用含多动作 → multi_path_check 按参数分别归线
+#   "dual"   一调用含多动作 → dual_path_check 按参数分别归线
 #
 # 未在此表出现的工具取 ToolMetadata 默认值 "write"(fail-closed, 最严档)。
 # 名单依据: 按各工具 input_schema.properties 是否含 PATH_PARAM_KEYS 实测得出
@@ -765,30 +765,42 @@ PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
 #   实为路径检查分发档位(读/写/删/多路), 正名为 PATH_ACTION_KINDS(旧名不留壳)。
 #   表中只收文件操作工具: 无路径参数的(如 calendar/timenow)不需声明(通道 A 零命中即放行);
 #   registry_* 的 path 是注册表键, 豁免放 path_check_entry(与 bash 特判并列)。
-# 2026-10-15 - 小欧 - 同批: query_sql/get_db_schema/analyze_data/filter_data 由 write 改 read(四者均无输出路径参数); edit 移出 multi 改走写线。
-PATH_ACTION_KINDS = {
-    # ── 只读(14 个): 只读文件/库, 走读线(读线契约=读无害处处放行, 敏感内容交 contentFilter) ──
-    "find": "read", "grep": "read", "listdir": "read", "read": "read",
-    "read_docx": "read", "read_pdf": "read", "read_pptx": "read",
-    "read_xlsx": "read", "readmedia": "read", "tree": "read",
-    "query_sql": "read", "get_db_schema": "read",
-    "analyze_data": "read", "filter_data": "read",
-    # ── 写入类(10 个)在此显式列出, 便于审计; 取值与默认值一致 ──
-    "write": "write", "edit": "write", "write_docx": "write", "write_pdf": "write",
-    "write_pptx": "write", "write_xlsx": "write",
-    "execute_sql": "write",
-    "generate_chart": "write", "screen_capture": "write",
-    #   download 有 dest(下载落盘路径), 属写入目标 —— 必须走写线。
-    "download": "write",
-    # ── 删除(1 个) ──
-    "delete": "delete",
+# 2026-10-15 - 小欧 - 同批: query_sql/get_db_schema/analyze_data/filter_data 由 write 改 read(四者均无输出路径参数); edit 移出 dual 改走写线。
+# 2026-10-16 - 小欧 - 老陈裁定四表分立: 原单张 PATH_ACTION_KINDS 把读/写/删/双路径混在一个 dict,
+#   审计时混作一坨且改一档易漏看另一档。现四档各自独立成表, 一档一表, 不混放。
 
-    # ── 一调用内含多个路径动作(5 个, 源与目标各归其线) ──
-    #   copy/compress/extract: 源=读线+系统源外泄拦截, 目标=写线;
-    #   move: 源=删线, 目标=写线; rename: 源与目标=写线。详见 multi_path_check。
-    "copy": "multi", "move": "multi", "compress": "multi",
-    "extract": "multi", "rename": "multi",
-}
+# ── 只读(14 个): 只读文件/库, 走读线(读线契约=读无害处处放行, 敏感内容交 contentFilter) ──
+READ_PATH_TOOLS = frozenset({
+    "find", "grep", "listdir", "read",
+    "read_docx", "read_pdf", "read_pptx",
+    "read_xlsx", "readmedia", "tree",
+    "query_sql", "get_db_schema",
+    "analyze_data", "filter_data",
+})
+
+# ── 写入(10 个, 2026-10-16 三堂会审订正计数): download 有 dest(下载落盘路径)属写入目标必须走写线 ──
+WRITE_PATH_TOOLS = frozenset({
+    "write", "edit", "write_docx", "write_pdf",
+    "write_pptx", "write_xlsx",
+    "execute_sql", "generate_chart", "screen_capture",
+    "download",
+})
+
+# ── 删除(1 个) ──
+DELETE_PATH_TOOLS = frozenset({
+    "delete",
+})
+
+# ── 双路径(5 个, 一调用内含多个路径动作, 源与目标各归其线) ──
+#   copy/compress/extract: 源=读线+系统源外泄拦截, 目标=写线;
+#   move: 源=删线, 目标=写线; rename: 源与目标=写线。详见 dual_path_check。
+DUAL_PATH_TOOLS = frozenset({
+    "copy", "move", "compress", "extract", "rename",
+})
+
+# 2026-10-16 小欧 - 三堂会审删死常量: 原 _PATH_TOOLS_ALL(四表并集) 注释吹"交集必报错",
+#   但并集天然丢失交集信息、且全仓无任何校验点, 属 YAGNI + 假承诺, 故删。
+#   四表互斥改由 tests/test_p1_layer_ownership.py::test_read_tools_declared_in_action_kinds 实测守护。
 
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态

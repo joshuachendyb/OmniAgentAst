@@ -24,15 +24,27 @@ from app.tools.tool_description import to_openai_tools, generate_param_reminder
 from app.tools.tools_alias_mapper import normalize_tool_name
 from app.logger import setup_logger
 from app.utils.dependency import ensure_dependency
-from app.tools.tool_constants import CATEGORY_MODULES, PATH_ACTION_KINDS  # 2026-10-15 小欧 - 文档[35] 阶段三: 动作类型声明表
+from app.tools.tool_constants import (  # 2026-10-16 小欧 - 老陈裁定四表分立: 原 PATH_ACTION_KINDS 混放四档
+    CATEGORY_MODULES, READ_PATH_TOOLS, WRITE_PATH_TOOLS,
+    DELETE_PATH_TOOLS, DUAL_PATH_TOOLS,
+)
 
 
 def _resolve_action_kind(name: str, fallback: str) -> str:
-    """工具动作类型: 声明表优先, 未声明取 fallback — 小欧 2026-10-15
-    2026-10-15 小欧 - P2-23: 原在注册/重注册两处各写一遍 PATH_ACTION_KINDS.get(...), 缺省不同,
-      易改一处漏一处(DRY)。现收于本函数, 两处共用。
+    """工具动作类型: 四档声明表依次命中, 全未声明取 fallback — 小欧 2026-10-15 / 2026-10-16 四表分立
+    2026-10-15 小欧 - P2-23: 原在注册/重注册两处各写一遍查表, 缺省不同, 易改一处漏一处(DRY)。现收于本函数, 两处共用。
+    2026-10-16 小欧 - 老陈裁定四表分立: 原单张 PATH_ACTION_KINDS 混放四档, 现读/写/删/双路径各自独立成表,
+      本函数按档依次查(直线 if, 不建派发表), 未声明即 fallback。
     """
-    return PATH_ACTION_KINDS.get(name, fallback)
+    if name in READ_PATH_TOOLS:
+        return "read"
+    if name in WRITE_PATH_TOOLS:
+        return "write"
+    if name in DELETE_PATH_TOOLS:
+        return "delete"
+    if name in DUAL_PATH_TOOLS:
+        return "dual"
+    return fallback
 
 logger = setup_logger(__name__)
 
