@@ -33,8 +33,6 @@ from pathlib import Path
 from typing import List
 
 # 2026-10-15 北京老陈裁定(分层去反向依赖): 会话工作区取数收归 app/tools/context.py, 由本层传入 utils 单源。
-# 2026-10-16 小欧 - 三堂会审删死导入: 原 from app.config import get_config 在 config 读取下沉到
-#   utils.get_allowed_roots 后已零调用点(YAGNI), 且上面那段"必须模块级否则 NameError"的理由已失效于现码。
 from app.logger import logger
 from app.session_workspace import session_workspace_paths  # 2026-10-15 北京老陈裁定(分层): 快照组迁中立层, 解 safety→tools 越层
 from app.utils.path_utils import get_allowed_roots

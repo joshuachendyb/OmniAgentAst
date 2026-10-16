@@ -211,9 +211,8 @@ def shell_has_destructive_delete(command: str) -> bool:
 
     干什么用: 供 shell_path_check.validate_shell 做 **fail-closed 兜底** ——
               高危删除若**解析不出任何删路径**(如 `rm -rf /`, 路径提取只认 Windows 绝对路径),
-              说明无从判权限, 一律硬拦 system。**判据成立才拒, 不是"高危即拒"**。
-              ★2026-10-16 三堂会审订正: 原 docstring 写"高危删除需用户确认而非直接拒"与实际用法不符
-                (实际只用于"解析不出目标→硬拦"这一条; 解析得出时走 delete_path_check 正常判权限)。
+              说明无从判权限, 一律硬拦 system。**判据成立才拒, 不是"高危即拒"**;
+              解析得出目标时走 delete_path_check 正常判权限。
     口径    : 只认"删除动词 + 递归/强制/s 开关"组合; 普通 `rm C:\x` 不算(走普通删线)。
     """
     return any(rx.search(command or "") for rx in SHELL_DESTRUCTIVE_DELETE_RES)

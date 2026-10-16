@@ -798,10 +798,6 @@ DUAL_PATH_TOOLS = frozenset({
     "copy", "move", "compress", "extract", "rename",
 })
 
-# 2026-10-16 小欧 - 三堂会审删死常量: 原 _PATH_TOOLS_ALL(四表并集) 注释吹"交集必报错",
-#   但并集天然丢失交集信息、且全仓无任何校验点, 属 YAGNI + 假承诺, 故删。
-#   四表互斥改由 tests/test_p1_layer_ownership.py::test_read_tools_declared_in_action_kinds 实测守护。
-
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
 # 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。

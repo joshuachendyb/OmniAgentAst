@@ -137,9 +137,6 @@ from app.safety.path_1st_legality_check import validate_tool_path as _validate_t
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 第七章: 自杀检查唯一入口(判定全在 guard 层) 小欧 - [36]4.4: 快照组装下沉同层，本文件不再碰 shell_engine
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
-# 2026-10-16 小欧 - 三堂会审删死常量(YAGNI): _WRITE_RISK_TOOL 写入大小保护已于 2026-10-14 归口
-#   tool 层 file_path_checker.validate_path_for_overwrite, 本层无任何引用点, 故删。
-
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 
 
@@ -239,8 +236,6 @@ class ToolSafetyChecker:
             return delete_risk
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk,
                                              skip_confirmation=skip_confirmation)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
-        # 2026-10-16 小欧 - 三堂会审: 删 pool_pids 实参(该形参在 _check_known_risks 内零消费,
-        #   自杀检查早已前移到主链 ② 直接用本层的 pool_pids, 此处纯属透传噪声)。
         if known_risk is not None:
             # 2026-10-14 小欧 - 文档[33] 4.9(P4步18) 豁免早返: 既不拦也不需确认 → 原样返回, 不得往下走。
             #   病根: 原代码对「不拦且不需确认」的 known_risk 也会强制 severity="dangerous"(见下方),

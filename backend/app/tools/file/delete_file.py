@@ -66,9 +66,6 @@ from app.tools.validate.file_path_checker import validate_path, OpCategory  # �
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-# 2026-10-16 小欧 - 三堂会审删死导入(YAGNI): 原 from app.utils.file_utils import remove_readonly
-#   在本文件零调用点(删除走 _force_delete_sync 内联 chmod, 未用 onerror 回调);
-#   utils.remove_readonly 仍被 safety/operation_backup_rollback 与 operation_maintenance 消费, 函数本身保留。
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 
 
