@@ -6,9 +6,11 @@ security_docs — 安全 Tab 说明文案源: 读 app/datafile/*.md(两个弹框
 为什么插值放后端而非前端:
   占位符的值只有后端拿得到, 后端一次替换完 → 前端只把 md 交给 MarkdownSlot 渲染, 零字符串逻辑。
 
-分层: 本模块只 import 三个轻量模块 app.config / app.logger / app.tools.tool_constants,
-  且**绝不 import app.safety.path_guard** —— 后者顶层拉入 app.tools.tool_constants 名单表。
-  tool_constants 全部 import 只有 tool_types + app.constants, 不拉注册表, 直接用零代价。
+分层: 本模块只 import 四个轻量模块 app.config / app.logger / app.tools.tool_constants /
+  app.safety.path_classify_category(★2026-10-16 三堂会审订正: 原文此处写"绝不 import"是**假声明** ——
+  同文件下方实际 import 了它的 SYSTEM_PROTECTED_DIR_NAMES 常量。之所以可接受: 只取常量、
+  不调其任何判定函数, 故不触发 config 读取与路径判定; path_classify_category 本身也 import
+  了同一个 tool_constants, 并未额外拉入注册表。零启动代价成立)。
 
 为什么不需要处理盘符:
   FORBIDDEN_PATHS_WINDOWS_REL_* 常量已是与盘符无关的相对段, 既无硬编码盘符,
@@ -43,8 +45,8 @@ from app.tools.tool_constants import (
     FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
     FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
 )
-# 2026-10-15 小欧 - 文档[35] 阶段五: SYSTEM_PROTECTED_DIR_NAMES 随判定函数迁至 app/safety/path_guard.py
-from app.safety.path_guard import SYSTEM_PROTECTED_DIR_NAMES
+# 2026-10-15 小欧 - 文档[35] 阶段五: SYSTEM_PROTECTED_DIR_NAMES 随判定函数迁至 app/safety/path_classify_category.py
+from app.safety.path_classify_category import SYSTEM_PROTECTED_DIR_NAMES
 
 # 2026-10-06 小欧 - datafile 定位: app/services/settings/ 上溯两级 = app/, 同级 datafile/
 DATAFILE_DIR = Path(__file__).resolve().parents[2] / "datafile"

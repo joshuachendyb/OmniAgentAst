@@ -35,6 +35,12 @@
 # 2026-10-14 - 小欧 - SA8标注: 本文件_guard_forbidden_delete=权限信任框架SA8(delete硬底线,执行第8步,只镜像A族+删根专属,不依赖security.enabled) — 小欧-2026-10-14
 # 2026-10-14 北京老陈裁定(全局收敛) - _guard_forbidden_delete 定位为**硬底线**: 只镜像 A 族(系统目录/磁盘根)
 #   + 删除专属的受保护根本身; 受保护根本身已同步升到 Safety 层判(B族可授权), 消除"写入不拦/只有删除拦"。
+# 2026-10-16 北京老陈裁定(分层原则) - **删除 _guard_forbidden_delete 整条硬底线**, 连带删
+#   from app.safety.path_classify_category import (is_disk_root / is_allowed_root_itself / is_system_protected_path)。
+#   【病根】tools 层做权限判定 = 越层 + 画蛇添足; 权限判定只能在 safety 层(4条线), 工具层只判参数合法性。
+#   【已知开洞·老陈知情接受】本函数原是"security.enabled=false 时唯一仍拦删系统目录/磁盘根/授权根的防线",
+#     撤除后开关关闭场景下删除操作无路径层兜底, 直至下一行 validate_path 业务校验生效。
+#     ★此为老陈权衡"分层纯粹性 > 开关关闭时兜底"后的明示取舍, 非遗漏, 勿当 bug 静默加回。 — 小欧-2026-10-16
 """
 F12: delete_file — 删除文件
 
@@ -59,46 +65,11 @@ from app.db.models.operation_models import OperationType
 from app.tools.validate.file_path_checker import validate_path, OpCategory  # 统一错误提示 - 小欧 2026-07-12
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
-from app.safety.path_guard import (
-    is_disk_root,
-    is_protected_root_itself,
-    is_system_protected_path,
-)
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
-from app.utils.file_utils import remove_readonly  # 从 utils 导入 — 小沈 2026-08-13
+# 2026-10-16 小欧 - 三堂会审删死导入(YAGNI): 原 from app.utils.file_utils import remove_readonly
+#   在本文件零调用点(删除走 _force_delete_sync 内联 chmod, 未用 onerror 回调);
+#   utils.remove_readonly 仍被 safety/operation_backup_rollback 与 operation_maintenance 消费, 函数本身保留。
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
-
-
-def _guard_forbidden_delete(file_path: str) -> Optional[str]:
-    """删除硬底线 — 小欧 2026-08-02, 2026-08-10 ⑥收敛走config
-
-    [SA8] 2026-10-14 北京老陈裁定(全局收敛): 权限判定收归 Safety 层单一决策, 本函数只作**硬底线**——
-      它没有授权通道, 只能说"不", 故只镜像 A 族(永不授权: 系统目录/磁盘根) + 删除专属的受保护根本身。
-      判定依据全部走 utils.path_utils 单源, 本层不持任何名单或匹配逻辑。
-      特点: 不读安全总开关 —— 总开关关了也照拦(实测 config security.enabled=false 场景)。
-      返回禁止原因; 允许删除返回 None。
-    """
-    try:
-        p = Path(file_path).expanduser().resolve()
-    except Exception as e:
-        return f"安全校验: 路径解析失败({e})"
-    # A 族(永不授权) — 判定单源 utils
-    #   放在"路径不存在即放行"之前: 否则不存在的系统路径(如 C:\system32\a, 该盘无此目录)会被早退跳过,
-    #   实测单源拦而此处放行 —— 系统目录保护依赖"目录恰好存在"是缺陷。
-    if os.name == "nt" and is_system_protected_path(file_path, "delete"):
-        return f"禁止删除系统目录: {file_path}"
-    if is_disk_root(file_path):
-        return f"禁止删除磁盘根目录: {file_path}"
-    # 删除专属: 受保护根(B 族)自身及其上级 —— 删根等于毁掉工作区, 不可用授权放行
-    # 会话工作区快照由本层取(app.tools.context 与本文件同层, 合法), 传入单源 ——
-    #   使 path_utils 无需反向依赖 tools(分层守护), 且 B 族保护范围零损失。
-    _hit = is_protected_root_itself(file_path)
-    if _hit == "protected_root_itself":
-        return f"禁止删除项目根/授权根目录: {file_path}"
-    if _hit == "protected_root_ancestor":
-        return f"禁止删除项目根/授权根上级目录: {file_path}"
-    return None
-
 
 
 def _force_delete_sync(path: Path, recursive: bool = False,
@@ -292,7 +263,7 @@ async def delete(
     force: bool = False,
 ) -> Dict[str, Any]:
     """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path
-    [SA8] 首行即调_guard_forbidden_delete最后防线, 次行validate_path业务校验 — 小欧-2026-10-14"""
+    [SA8] 原首行的硬底线已按老陈 2026-10-16 裁定删除, 现首行即 validate_path 业务校验 — 小欧-2026-10-14/16"""
     t0 = _time_mod.perf_counter()
     # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
     source = path
@@ -300,14 +271,7 @@ async def delete(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail="source不能为空", user_recursive=recursive, user_force=force)
         return build_error(data={}, llm_data=llm_data)
-    # 最后防线: 无条件硬阻断删除盘根/项目根/系统保护目录(不依赖security.enabled与config) — 小欧 2026-08-02
-    block_reason = _guard_forbidden_delete(source)
-    if block_reason:
-        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-        logger.warning(f"[delete_file] 安全拦截: {block_reason} path={source}")
-        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=block_reason, user_recursive=recursive, user_force=force)
-        return build_error(data={}, llm_data=llm_data)
-    # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
+     # 工具层校验：非空/保留字符/保留名/系统目录/路径存在（含递归/强制警告） — 小欧 2026-07-04
     # Safety层后续校验：路径黑名单/白名单/路径穿越/权限检查 — 小欧 2026-07-04
     is_valid, err, warn = validate_path(OpCategory.EXISTS, source, recursive=recursive, force=force)
     if not is_valid:

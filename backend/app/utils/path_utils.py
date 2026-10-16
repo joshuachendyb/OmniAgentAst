@@ -10,13 +10,13 @@
 #   原根集合在 delete_safety._get_allowed_roots / path_safe_check 白名单构建 / 本文件三处各写一份同义逻辑,
 #   且 .resolve() 用法不一致(str/Path 混流, 靠下游 realpath 兜底)。现三处统一调用本函数; 失败语义改 fail-closed。
 # 2026-10-15 小欧 - 文档[35] 阶段五: SYSTEM_PROTECTED_DIR_NAMES / is_system_protected_path / is_disk_root /
-#   is_code_root_path / is_protected_root_itself 五符号迁往 app.safety/path_guard.py(职责回归安全域)。
+#   is_code_root_path / is_allowed_root_itself 五符号迁往 app.safety/path_classify_category.py(职责回归安全域)。
 #   本文件不再持有任何安全判定, 只剩长路径与允许根两项通用工具; 旧名不保留转发(禁止 backward)。
 """
 path_utils — 路径处理通用工具
 
 职责: Windows 长路径支持、允许根集合构建。
-不含任何安全判定 —— 目录属性判定见 app/safety/path_guard.py(2026-10-15 迁出)。
+不含任何安全判定 —— 目录属性判定见 app/safety/path_classify_category.py(2026-10-15 迁出)。
 
 小欧 2026-08-11 建 / 2026-10-15 小欧 收敛
 """

@@ -79,23 +79,29 @@ def _is_broad_root(p: str) -> bool:
 def _ws_deny_reason(p: str) -> Optional[str]:
     """会话目录合法性判据：返回拒绝原因(None=可用)。**全部复用全局判据，不自造黑名单**。
 
-    两道都是全局单一真源，缺一不可：
-      ① `classify_forbidden_path` —— 系统敏感目录 / 磁盘根 / 代码库根
-      ② 写线 `validate()` 返回 category=="system" —— 系统保护目录
-         (windows/program files/programdata)、路径穿越、异常 fail-closed
-         这三条**只走写线才拦得住**，仅调 ① 会漏。
+    ★2026-10-16 三堂会审订正: 原文写"两道判据缺一不可(①classify_forbidden_path + ②写线)"是**过时**的 ——
+      ① 已删(纯冗余, 见下方注释), 现**只走写线一道**。
+    写线 validate_write 单道即可覆盖全部拒绝场景, 等价性已逐条核实:
+      · check_preconditions(空路径/`..`穿越/异常) 四条出口恒带 category="system"
+      · system 禁区(磁盘根/系统敏感/系统目录) → category="system"
+      · non_system(代码目录/授权目录)未授权 → "non_system"、已授权 → "non_system"(放行但仍非空)
+      · classify_forbidden_path 自身异常兜底 → "system"
+      反向闭合: cat2 非空只可能来自上列情形, 无第五种出口, 故不存在"原来拒、现在放行"的路径。
     另加宽根规则(本模块判据)：授权/使用宽根等于放大删除范围。"""
     # 2026-10-15 小欧 - 文档[35] 阶段一连带: path_safe_check.validate_path 已随三线分离删除,
-    #   等价能力迁至 app.safety.write_path_check.validate(返回三元组, system 口径一致)。
+    #   等价能力迁至 app.safety.write_path_check.validate_write(返回三元组, system 口径一致)。
     #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
-    from app.safety.path_guard import classify_forbidden_path
+    # 2026-10-16 小欧 - 老陈裁定去越层: 原在此直接引 path_classify_category 摸底层分类,
+    #   但下一行 validate_write 内部本就调它, 判据完全重复(纯冗余)。
+    #   现只走写线公开接口, services 层不再越过 4 条线直接依赖底层分类模块。
     from app.safety.write_path_check import validate_write as _validate_write_path
-    category, msg = classify_forbidden_path(p)
-    if category:
-        return msg or "路径在全局禁区内"
     _ok, _msg, cat2 = _validate_write_path(p)
-    if cat2 == "system":
-        return _msg or "系统保护目录, 不可使用"
+    if cat2:
+        # _ok=True 而 cat2 非空 = non_system 已获任务级授权(写线放行), 此时 _msg 为 None,
+        #   需自己拼文案, 否则用户只看到无信息量的"路径在全局禁区内"。
+        if _ok:
+            return f"路径位于代码目录/授权目录自身或其上级({p}), 不可直接作为会话目录"
+        return _msg or "路径在全局禁区内"
     if _is_broad_root(p):
         return "宽根目录(家目录/用户目录/盘根)不可作为会话目录: 会放大删除允许范围"
     return None

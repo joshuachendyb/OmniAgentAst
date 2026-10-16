@@ -27,13 +27,17 @@
 #   本层只判参数合法性, 原第2层删除后层号顺延为 1/2/3(不留跳号)。
 # 2026-10-15 北京老陈裁定(全局收敛·清尾) - validate_path_for_extract 整函数删除, 本层 path_utils 导入整体删除:
 #   实测 Safety 对 dest=C:\Windows / C:\ProgramData 均 blocked 硬拦, 该 warning 既不阻断也执行不到, 属纯冗余判权限。
-#   本层至此零权限判定, 4 类目录权限 100% 由 Safety 单一决策 + delete 镜像 A 族。
+#   本层至此零权限判定, 4 类目录权限 100% 由 Safety 层单一决策。
+# 2026-10-16 北京老陈裁定(分层原则·删硬底线) - delete_file._guard_forbidden_delete 已删除:
+#   它是 tools 层的权限判定(镜像 A 族), 与"权限判定只在 safety 层"冲突, 故整条防线撤除。
+#   本层上述所有"硬底线/delete_file 镜像 A 族"的表述均为历史, 现行口径: 目录权限 100% 由 Safety 决策,
+#   工具层零权限判定(本文件只判参数合法性: 非空/保留字符/保留名/存在性与类型/业务警告)。
 """
 validate/file_path_checker.py — tool内部路径业务级检查（集中管理）
 
-工具层（本文件）：非空/保留字符/保留名/系统目录/存在性+类型/业务警告
-[SA8] 权限信任框架第8步(工具体内业务校验, 与delete_file._guard_forbidden_delete并列最后防线) — 小欧-2026-10-14
-Safety层（app/safety/tool_safety_checker.py + app/safety/path_guard.py）：
+工具层（本文件）：非空/保留字符/保留名/存在性+类型/业务警告
+★目录权限(系统目录/磁盘根/代码目录/授权目录)本层**不判** —— 100% 由 Safety 层单一决策
+Safety层（app/safety/tool_safety_checker.py + app/safety/path_classify_category.py）：
   路径黑名单/白名单/路径穿越/权限校验 — 两层独立运行、互不调用
 """
 
@@ -80,7 +84,7 @@ def validate_path_for_write(file_path: str, content: str = "", append: bool = Fa
     """
     写入操作的路径业务级检查（适用于write_text_file、edit_text_file及所有写入类工具）
     工具层校验：非空/保留字符/保留名（仅警告，不阻断）
-    Safety层（app/safety/path_guard.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（app/safety/path_classify_category.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -110,7 +114,7 @@ def validate_path_for_delete(file_path: str, recursive: bool = False, force: boo
     """
     删除操作的路径业务级检查（适用于delete_file）
     工具层校验：非空/保留字符/保留名（仅递归/强制警告）
-    Safety层（app/safety/path_guard.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（app/safety/path_classify_category.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -131,7 +135,7 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
     """
     覆盖操作的路径业务级检查（适用于move_file、copy_file）
     工具层校验：非空（仅覆盖警告）
-    Safety层（app/safety/path_guard.py）独立运行：黑名单/白名单/路径穿越/权限
+    Safety层（app/safety/path_classify_category.py）独立运行：黑名单/白名单/路径穿越/权限
     
     Returns: (is_valid, error_msg, warning_msg)
     注意：文件存在检查与实际操作之间存在时间窗口（TOCTOU），
@@ -151,7 +155,8 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
 
 
 # 2026-10-14 北京老陈裁定: validate_not_system_path / WINDOWS_SYSTEM_DIRS 已删除 ——
-#   权限判定收归 Safety 层单一决策, 硬底线由 delete_file._guard_forbidden_delete 镜像 A 族;
+#   权限判定收归 Safety 层单一决策; ★2026-10-16 该层 tools 侧硬底线(delete_file._guard_forbidden_delete)
+#   也已撤除, 故目录权限现由 Safety 层**独家**决策, 本层零权限判定。
 #   本层只管参数合法性(格式/存在性/类型/大小/递归)。名单与判定留在本层即是无调用者的死代码(YAGNI)。
 
 
@@ -240,9 +245,9 @@ def validate_path(
     """
     统一路径前置校验（编排层，本文件调所有 validate_path_for_*）
     工具层校验：非空/保留字符/保留名/盘符存在性/存在性+类型/业务警告
-    2026-10-14 北京老陈裁定: 目录权限(系统目录/磁盘根/代码库根/受保护根)已移出本层 ——
-      权限由 Safety 层单一决策, 硬底线由 delete_file._guard_forbidden_delete 镜像 A 族。
-    Safety层（app/safety/path_guard.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
+    2026-10-14 北京老陈裁定: 目录权限(系统目录/磁盘根/代码目录/授权目录)已移出本层 ——
+      权限由 Safety 层单一决策; ★2026-10-16 tools 侧硬底线亦已撤除(见文件头), 本层零权限判定。
+    Safety层（app/safety/path_classify_category.py）后续独立运行：黑名单/白名单/路径穿越/权限校验
     小欧 2026-07-04
 
     第1层 基础校验（ALL）：非空 + 保留字符 + 保留名 + 盘符存在性
@@ -260,8 +265,8 @@ def validate_path(
         return False, err, None
 
     # 2026-10-14 北京老陈裁定: 本层只判参数合法性(格式/存在性/类型/大小/递归), 不判权限。
-    #   目录权限(系统目录/磁盘根/代码库根/受保护根)统一由 Safety 层决策, 硬底线由
-    #   delete_file._guard_forbidden_delete 镜像 A 族 —— 权限判定权收敛到唯一一处。
+    #   目录权限(系统目录/磁盘根/代码目录/授权目录)统一由 Safety 层决策, 权限判定权收敛到唯一一处。
+    #   ★2026-10-16: tools 侧硬底线已撤除, Safety 层成独家决策者。
 
     # 第3层
     warnings = []
