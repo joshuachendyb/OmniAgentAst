@@ -1,18 +1,13 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-15 - 小欧 - 文档[35] 阶段一 新建: 写线独立文件。
-#   自 path_safe_check.validate_path(:287-400) 拆出写线独有策略, 逐字搬迁不改逻辑:
-#     写线特征一 (:323-324): 命中 system 禁区 → 硬拦, 永不授权
-#     写线特征二 (:325-333): 命中 non_system 禁区(代码库根/受保护根) → 查任务级授权, 无授权则拦
-#     写线特征三 (:392-395): 白名单外 → 查任务级授权, 无授权则拦
-#   公共步骤(空路径/穿越/白名单匹配)交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 WRITE_MODE。
-#   原 validate_path 及其 mode 参数已删除(文档[35] 总则四 禁止 backward), 无转发壳。
-# 2026-10-15 - 小欧 - 文档[35] 阶段二: 模块 docstring 补九格契约表。
-# 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
+# 2026-10-15 - 小欧 - 阶段一 新建: 写线独立文件。自 path_safe_check.validate_path(:287-400) 拆出写线独有策略, 逐字搬迁不改逻辑(特征一 :323-324 命中 system 禁区→硬拦永不授权; 特征二 :325-333 命中 non_system 禁区→查任务级授权, 无授权则拦; 特征三 :392-395 白名单外→查任务级授权, 无授权则拦); 公共步骤交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 WRITE_MODE。原 validate_path 及 mode 参数已删除(禁止 backward), 无转发壳。
+# 2026-10-15 - 小欧 - 阶段二: 模块 docstring 补九格契约表。
+# 2026-10-15 - 小欧 - 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_write: 三线同名, 经模块引用无法辨识线的语义。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
-# 2026-10-17 - 小欧 - 文档[38] 基础归一化: 新增 check_write_permission(path, params) 封装口,
-#   与 check_read_permission / check_delete_permission 对称(同签名同返回 SafetyResult), 供确认段统一消费。
+# 2026-10-17 - 小欧 - 基础归一化: 新增 check_write_permission(path) 封装口, 三线统一返回 SafetyResult(签名按各线所需: 仅删线需 params.recursive), 供确认段统一消费。
+# 2026-10-17 - 小欧 - 死参清理(方案A): 删 check_write_permission 的 params 死参(写线不用 params)。
+# 2026-10-17 - 小欧 - 口径对齐: blocked(系统禁区)分支删去 auth_path=path(硬拦结果无可授权语义, auth_path 定义=白名单外临时授权路径); 与 read/router/delete 的 blocked 口径一致。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -100,7 +95,7 @@ def validate_write(file_path: str, allowed_paths: Optional[List] = None) -> Tupl
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-def check_write_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
+def check_write_permission(path: str) -> SafetyResult:
     """写线权限封装口 — 与 check_read_permission / check_delete_permission 对称 — 小欧 2026-10-17
 
     照搬 _check_known_risks 对写线的 category 分流(单路径):
@@ -114,7 +109,7 @@ def check_write_permission(path: str, params: Optional[dict] = None) -> SafetyRe
         return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
     if _category == "system":
         return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
-                            severity="dangerous", auth_path=path)
+                            severity="dangerous")
     if _category == "non_system":
         return SafetyResult(requires_confirmation=True, blocked=False,
                             message=f"该路径在受保护区域，写入需申请授权: {path}",

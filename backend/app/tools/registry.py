@@ -6,7 +6,7 @@
 # 2026-08-07 - 小欧 - get_tool工具名别名归一化: LLM常生成变体名(write_text等), 经tools_alias_mapper.normalize_tool_name映射到注册名(write), 防"工具未注册"误拦截(com-test 03暴露)
 # 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), register/register_tool 贯通透传; 供 action_handler._resolve_target_field 优先采用, 留空则按schema属性自动推导(DRY/OCP)
 # 2026-10-15 - 小欧 - 文档[35] 跟随改名: TOOL_ACTION_KINDS→PATH_ACTION_KINDS(旧名不留壳); _resolve_action_kind 收口注册/重注册两处缺省(DRY, P2-23)。
-# 2026-10-17 - 小欧 - 新增 resolve_registered_tool: 未注册判定唯一真源(SA1 第一步调用, 替代三处复判)。
+# 2026-10-17 - 小欧 - 新增 resolve_registered_tool: 未注册判定唯一真源(解析层第一步调用, 替代三处复判)。
 """
 工具注册表模块 - 统一入口
 
@@ -367,7 +367,7 @@ tool_registry = ToolRegistry()
 
 def resolve_registered_tool(tool_name: str) -> Tuple[Optional[str], Optional[ToolMetadata]]:
     """归一化工具名 + 查注册表, 未注册判定唯一真源 — 小欧 2026-10-17
-    返回 (normal_name, meta); meta is None 即未注册, 由 SA1 第一步拦截(下游不复判)。
+    返回 (normal_name, meta); meta is None 即未注册, 由解析层第一步拦截(下游不复判)。
     """
     normal_name = normalize_tool_name(tool_name)
     return normal_name, tool_registry.get_tool(normal_name)

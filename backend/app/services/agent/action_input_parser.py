@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 _build_call_list + BuildCallListResult
-#   [背景] handle_action 内 _build_call_list/build_observation 等4个"名不副实"函数混装, 非action编排本身
-#   [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; 函数名后续阶段再改名
-#   [效果] action_handler 920→~596行纯编排调度层; 本文件为 LLM action 输入解析层, 零 agent 依赖
+# 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 _build_call_list + BuildCallListResult; [背景] handle_action 内 _build_call_list/build_observation 等4个"名不副实"函数混装, 非action编排本身; [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; [效果] action_handler 920→~596行纯编排调度层, 本文件为 LLM action 输入解析层, 零 agent 依赖
+# 2026-10-17 小欧 - 认领(未注册识别)上移解析层: 新增 _claim(resolve_registered_tool 逐call标记 _normal_name/_registered); _build_call_list 末尾逐 call 认领; 下游不再复判未注册(批二 safety_gate 删该段)。
 from dataclasses import dataclass
 from typing import Dict, List
 
 from app.logger import logger
+from app.tools.registry import resolve_registered_tool  # 2026-10-17 小欧 - 认领(未注册识别)上移解析层
 
 
 @dataclass
@@ -19,6 +18,19 @@ class BuildCallListResult:
     pending_calls: List
     all_calls: List[Dict]
     is_parallel: bool
+
+
+def _claim(call: Dict) -> Dict:
+    """[1] 认领: 归一化工具名 + 查注册表标记未注册 — 小欧 2026-10-17
+
+    未注册判定上移解析层(认领=解析职责), 下游 safety_gate 不再复判, 复判点归零。
+    _normal_name 供下游按归一名取路径参数; _registered=False 即未注册(handle_action 直接拒绝)。
+    下游: [2] 处理范围门 → [3] 合法性初查 → [4] 危险+权限总闸 → [5] 确认 → [6] 沙箱执行。
+    """
+    _normal, _meta = resolve_registered_tool(call.get("tool_name", ""))
+    call["_normal_name"] = _normal
+    call["_registered"] = _meta is not None
+    return call
 
 
 def _build_call_list(parsed: Dict) -> BuildCallListResult:
@@ -50,6 +62,9 @@ def _build_call_list(parsed: Dict) -> BuildCallListResult:
             "_repair_warning": pc.get("_repair_warning", ""),
             "params_raw_str": pc.get("params_raw_str", ""),   # #3 并行调用各自原始串 — 小欧 2026-08-23
         })
+
+    # 2026-10-17 小欧 - 逐 call 认领(未注册识别唯一真源, 主 call 与 pending 一并)
+    all_calls = [_claim(c) for c in all_calls]
 
     return BuildCallListResult(
         tool_name=tool_name, tool_params=tool_params, fc_context=fc_context,

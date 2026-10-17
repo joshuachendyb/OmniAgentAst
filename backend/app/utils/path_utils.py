@@ -182,7 +182,7 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
 
 def validate_str_param(value, param_name: str) -> Optional[str]:
     """字符串参数基础校验 — 小欧 2026-07-05(2026-10-17 北京老陈裁定: 恢复三档专属文案, 不调 reject_reason_empty_path)
-    非路径通用参数用(窗口标题/通知/host/任务名等); 路径参数非空由 safety SA1 覆盖。
+    非路径通用参数用(窗口标题/通知/host/任务名等); 路径参数非空由 safety 门前初查覆盖。
     None/非str类型/空串(含全空白) → 返回对应错误文案; None=通过。
     """
     if value is None:

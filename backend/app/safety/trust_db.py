@@ -174,7 +174,7 @@ def insert_session_trust(conn: Connection, session_id: str, tool_name: str, path
 
 def check_session_trust(conn: Connection, session_id: str, tool_name: str, path: Optional[str] = None) -> bool:
     """工具安全检查豁免查询：会话已信任该 tool+path 则免二次 HITL 确认 — 小欧 2026-08-16; v1.5 增 path 前缀递归匹配
-    [SA2] 权限信任框架第2步信任判定实体, 上游trust.resolve_skip — 小欧-2026-10-14
+    信任预查第2步信任判定实体, 上游 trust.resolve_skip — 小欧-2026-10-14
     匹配规则(北京老陈 2026-09-02 定案, 2026-10-05 修订为B):
       path=None: 仅命中本工具的通配行(path IS NULL);
       path 给定: 命中的是【本工具的path IS NULL通配行】, 或【任意工具登记的具体信任路径为该目标前缀祖先/等于】——

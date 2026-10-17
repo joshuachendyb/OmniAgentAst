@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), 供 action_handler._resolve_target_field 优先采用; 留空则按schema属性自动推导(DRY/OCP)
-# 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM);
-#   order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
-# 2026-10-14 - 小欧 - 文档[33] 4.11-D: 承接 SafetyResult dataclass(迁自 app/tools/security/safety_result.py, 该模块随整包删除); 禁 backward 双份契约
-# 2026-10-15 - 小欧 - 文档[35] 跟随: action_kind 注释"dual"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
+# 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM); order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
+# 2026-10-14 - 小欧 - SafetyResult 承接: 承接 SafetyResult dataclass(迁自 app/tools/security/safety_result.py, 该模块随整包删除); 禁 backward 双份契约
+# 2026-10-15 - 小欧 - 跟随订正: action_kind 注释"dual"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -100,7 +99,7 @@ class ToolMetadata:
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
     target_param: Optional[str] = None
 
-    # 【2026-10-15 小欧 — 文档[35] 阶段三 / 2026-10-16 老陈裁定四表分立】动作类型(读/写/删/双路径),
+    # 【2026-10-15 小欧 — 阶段三 / 2026-10-16 老陈裁定四表分立】动作类型(读/写/删/双路径),
     # 由 tool_constants 的 READ_PATH_TOOLS / WRITE_PATH_TOOLS / DELETE_PATH_TOOLS / DUAL_PATH_TOOLS
     # 四表在注册时按工具名赋值(registry._resolve_action_kind 依次查表)。取代原单张 PATH_ACTION_KINDS。
     #   "read"    只读, 路径检查走 read_path_check(禁区放行, 不弹授权)
@@ -134,7 +133,7 @@ __all__ = [
 # ====================================================================
 # 三、安全检查结果契约（迁自 app/tools/security/safety_result.py）
 # ====================================================================
-# 2026-10-14 小欧 - 文档[33] 4.11-D: SafetyResult 由 app/tools/security/safety_result.py 迁入。
+# 2026-10-14 小欧 - SafetyResult 由 app/tools/security/safety_result.py 迁入。
 #   与 ToolCategory/ToolMetadata 同族(工具层数据契约单源); 原模块随 app/tools/security/ 整包删除。
 #   禁 backward 双份: 双份 dataclass 会让 isinstance 判定恒 False 且不报错。
 
@@ -144,7 +143,7 @@ class SafetyResult:
     # 修复: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
     # ⑮2026-08-10: 新增 auth_path(白名单外临时授权路径, None=普通确认/无)
 
-    逐字复制自 app/tools/security/safety_result.py:20（文档[33] 4.11-D），字段/默认值零改动 ——
+    逐字复制自 app/tools/security/safety_result.py:20, 字段/默认值零改动 ——
     下游均按 kwarg 构造, 丢一个字段即 TypeError。
     """
     blocked: bool = False
@@ -157,3 +156,11 @@ class SafetyResult:
     #   action_handler(M3) 仅对 sandbox_required=True 的工具调用 SandboxExecutor.pre_execute;
     #   缺省 False 不改变既有安全流(非破坏性工具不进沙箱预检, 保性能)
     sandbox_required: bool = False
+
+    @staticmethod
+    def pass_result() -> "SafetyResult":
+        """放行结果工厂(每次新建实例, 防共享单例被下游改写) — 小欧 2026-10-17(三线/通道统一放行)
+
+        供 path_legality_router / dual_path_check / shell_path_check 复用, 免三份拷贝与循环导入。
+        """
+        return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")

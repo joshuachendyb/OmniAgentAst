@@ -1,13 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 build_observation + ObservationContext + _add_denial_feedback
-#   [背景] build_observation 职责远超"构建观察", 实为观察反馈构建层(写LLM历史+record_operation+编排决策收集)
-#   [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; 函数名后续阶段再改名
-#   [效果] action_handler 920→~596行纯编排调度层; 本文件与 observation_formatter 同层(LLM交互反馈层)
-#   [YAGNI] _add_denial_feedback(19行)与 build_observation 同层配套, 并入本文件(不单拆 feedback_writer.py)
-# 2026-10-13 小欧 tool_result 增 raw_data(原始data)供前端raw展示: 原改动把 data_text 改名为 raw_data 属语义替换
-#   (data_text 是格式化可读文本且为 LLM tool message 与 history_loader 回放的唯一来源, raw_data 是原始dict),
-#   改名致回放空白+LLM content 类型错+丢 warning; 改为纯增量: data_text 保留, 另加 raw_data — 小欧-2026-10-13
+# 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 build_observation + ObservationContext + _add_denial_feedback; [背景] build_observation 职责远超"构建观察", 实为观察反馈构建层(写LLM历史+record_operation+编排决策收集); [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; [效果] action_handler 920→~596行纯编排调度层, 本文件与 observation_formatter 同层(LLM交互反馈层); [YAGNI] _add_denial_feedback(19行)与 build_observation 同层配套, 并入本文件(不单拆 feedback_writer.py)
+# 2026-10-13 小欧 tool_result 增 raw_data(原始data)供前端raw展示: 原改动把 data_text 改名为 raw_data 属语义替换(data_text 是格式化可读文本且为 LLM tool message 与 history_loader 回放的唯一来源, raw_data 是原始dict), 改名致回放空白+LLM content 类型错+丢 warning; 改为纯增量: data_text 保留, 另加 raw_data — 小欧-2026-10-13
+# 2026-10-17 小欧 - _add_denial_feedback 删死参 fc_context(函数体零使用, YAGNI)。
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -33,7 +28,7 @@ class ObservationContext:
     fc_context: Dict = None
 
 
-def _add_denial_feedback(agent, denied_items, fc_context=None):
+def _add_denial_feedback(agent, denied_items):
     """HITL拒绝/拦截→把反馈写入LLM历史, 让LLM换方案(符合人类认知: 拒绝≠失败) — 小欧 2026-07-13
 
     2026-08-11 小欧 fix D2: 精确到call对象, 只对被拒call写observation:

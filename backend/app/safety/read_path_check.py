@@ -1,19 +1,14 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-15 - 小欧 - 文档[35] 阶段一 新建: 读线独立文件。
-#   自 path_safe_check.validate_path(:287-400) 拆出读线独有策略, 逐字搬迁不改逻辑:
-#     读线特征一 (:321-322): 命中禁区 → 放行, category 原样带回给调用方做分流
-#     读线特征二 (:387-391): 白名单外 → 放行
-#   公共步骤(空路径/穿越/白名单匹配)交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 READ_MODE。
-#   原 validate_path 及其 mode 参数已删除(文档[35] 总则四 禁止 backward), 无转发壳。
-# 2026-10-15 - 小欧 - 文档[35] 阶段二: 模块 docstring 补九格契约表。
-# 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
+# 2026-10-15 - 小欧 - 阶段一 新建: 读线独立文件。自 path_safe_check.validate_path(:287-400) 拆出读线独有策略, 逐字搬迁不改逻辑(读线特征一 :321-322 命中禁区→放行 category 原样带回; 读线特征二 :387-391 白名单外→放行); 公共步骤交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 READ_MODE。原 validate_path 及 mode 参数已删除(禁止 backward), 无转发壳。
+# 2026-10-15 - 小欧 - 阶段二: 模块 docstring 补九格契约表。
+# 2026-10-15 - 小欧 - 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
 # 2026-10-15 北京老陈裁定 - 删白名单死分支: if 两支返回值一字不差, 判定零影响。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_read: 三线同名, 经模块引用无法辨识线的语义。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
-# 2026-10-17 - 小欧 - 文档[38] 基础归一化: 新增 check_read_permission(path, params) 封装口,
-#   与 check_write_permission / check_delete_permission 对称(同签名同返回 SafetyResult), 供确认段统一消费。
+# 2026-10-17 - 小欧 - 基础归一化: 新增 check_read_permission(path) 封装口, 三线统一返回 SafetyResult(签名按各线所需: 仅删线需 params.recursive), 供确认段统一消费。
+# 2026-10-17 - 小欧 - 死参清理: 删死参 allowed_paths(validate_read) 与 params(check_read_permission, 方案A); 删死 import path_check_common(读线公共步骤已迁 app.utils.path_utils)。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -29,7 +24,7 @@ classify_forbidden_path 并传 READ_MODE, 本文件只放读线独有的策略�
 
 ★★本表是**端到端视角**(用户最终看到的), **不是本模块返回值** ★★
   本模块 validate_read 只返回「放行/拒绝」两态; 表里的"确认"(弹窗授权)发生在**调用方**
-  path_tool_safety_checker, 删列的"确认"还叠加 delete_safety 的 R6 工作区边界层。
+  path_tool_safety_checker, 删列的"确认"还叠加 delete_path_check.check_delete_risk 的 R6 工作区边界层。
   → 按本表核对本文件代码时, "确认"格对不上是**正常的**, 那是上层行为。
 
 | 区域                                       | category   | 读   | 写            | 删           |
@@ -57,9 +52,8 @@ classify_forbidden_path 并传 READ_MODE, 本文件只放读线独有的策略�
 小欧 2026-10-15 建 / 2026-10-16 老陈裁定补表+订正术语+三堂会审订正视角
 """
 
-from typing import List, Optional, Tuple
+from typing import Optional, Tuple
 
-from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_read_permission 封装口返回类型
@@ -67,13 +61,12 @@ from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_read
 READ_MODE = "read"
 
 
-def validate_read(file_path: str, allowed_paths: Optional[List] = None) -> Tuple[bool, Optional[str], Optional[str]]:
+def validate_read(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
     """读线validate_read — 小欧 2026-10-15
 
     Returns:
         (is_valid, error_message, category), category ∈ {"system", "non_system", None}
         读线只在"空路径/路径穿越"两种非法输入上返回 False, 其余一律 True。
-        allowed_paths 形参保留但不使用: 读线处处放行, 白名单判定无影响(见头部裁定)。
     """
     try:
         _empty = reject_reason_empty_path(file_path)   # 空值真源在原子, 本线不重复实现
@@ -95,7 +88,7 @@ def validate_read(file_path: str, allowed_paths: Optional[List] = None) -> Tuple
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-def check_read_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
+def check_read_permission(path: str) -> SafetyResult:
     """读线权限封装口 — 与 check_write_permission / check_delete_permission 对称 — 小欧 2026-10-17
 
     读线处处放行(禁区放行 + 白名单外放行), 仅"空路径 / 路径穿越 / 异常"三类非法输入硬拦。

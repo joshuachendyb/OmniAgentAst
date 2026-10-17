@@ -1,22 +1,12 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-15 - 小欧 - 文档[35] 阶段一 新建: 删线独立文件。
-#   自 path_safe_check.validate_path(:287-400) 拆出删线独有策略, 逐字搬迁不改逻辑:
-#     删线特征 (:325-328): 命中禁区(system 与 non_system 一律) → 硬拦, **无授权分支**
-#     删线白名单外 (:392-395): 与写线同, 查任务级授权
-#   公共步骤(空路径/穿越/白名单匹配)交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 DELETE_MODE。
-#   原 validate_path 及其 mode 参数已删除(文档[35] 总则四 禁止 backward), 无转发壳。
-# 2026-10-15 - 小欧 - 文档[35] 阶段二: 模块 docstring 补九格契约表。
-# 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
+# 2026-10-15 - 小欧 - 阶段一 新建: 删线独立文件。自 path_safe_check.validate_path(:287-400) 拆出删线独有策略, 逐字搬迁不改逻辑(删线特征 :325-328 命中禁区 system 与 non_system 一律硬拦, **无授权分支**; 白名单外 :392-395 与写线同, 查任务级授权); 公共步骤交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 DELETE_MODE。原 validate_path 及 mode 参数已删除(禁止 backward), 无转发壳。
+# 2026-10-15 - 小欧 - 阶段二: 模块 docstring 补九格契约表。
+# 2026-10-15 - 小欧 - 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_delete: 三线同名, 经模块引用无法辨识线的语义。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
-# 2026-10-17 北京老陈裁定(文档[37] 第十章 裁定三) - 删线判定集中化: 自 delete_safety.py 逐字迁入 check_delete_risk(R3-R6),
-#   并收归 guard_forbidden_delete(A族系统目录/磁盘根 + 代码目录 + 删根硬底线); 判据只调 path_classify_category 单源, 本层不持名单。
-#   tool 层 path_utils.check_path_five_level 第⑤级另持一份(同口径), 不动。delete_safety.py 随之删除。 — 小欧 2026-10-17
-# 2026-10-17 - 小欧 - 文档[37] 第十章 新增唯一封装口 check_delete_permission(path, params):
-#   ①guard_forbidden_delete → ②validate_delete(R1/R2) → ③check_delete_risk(R3-R6) 串链, 统一返 SafetyResult。
-#   三函数原功能全保留; validate_delete 亦供 path_legality_router(SA5 路径路由)按线分派时调用。消费方: path_tool_safety_checker /
-#   shell_path_check / dual_path_check(三者纯调用, 判定全在本口); path_utils 第⑤级改调 guard_forbidden_delete。
+# 2026-10-17 北京老陈裁定(裁定三) - 删线判定集中化: 自 delete_safety.py 逐字迁入 check_delete_risk(R3-R6), 并收归 guard_forbidden_delete(A族系统目录/磁盘根 + 代码目录 + 删根硬底线); 判据只调 path_classify_category 单源, 本层不持名单。tool 层 path_utils.check_path_five_level 第⑤级另持一份(同口径)不动, delete_safety.py 随之删除。 — 小欧 2026-10-17
+# 2026-10-17 - 小欧 - 新增唯一封装口 check_delete_permission(path, params): ①guard_forbidden_delete → ②validate_delete(R1/R2) → ③check_delete_risk(R3-R6) 串链, 统一返 SafetyResult。三函数原功能全保留; validate_delete 亦供 path_legality_router 按线分派时调用。消费方: path_tool_safety_checker / shell_path_check / dual_path_check(三者纯调用, 判定全在本口); path_utils 第⑤级改调 guard_forbidden_delete。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -127,9 +117,9 @@ def check_delete_risk(params: dict) -> SafetyResult:
 
     恒返回 SafetyResult(从不用 None), 使调用侧可用 `delete_risk is not None`
     区分"是delete工具", R3 直接内联构造放行产物。
-    R1/R2 由 _check_known_risks(validate_tool_path) 覆盖, 此处不重复。
+    R1/R2 由 _check_known_risks(check_tool_path_permission) 覆盖, 此处不重复。
     补D: 递归删除走 os.walk 时各子路径逐项判定, 任一越权即 R6。
-    [SA4] 权限信任框架第4步: 由SA3总闸内调, R1/R2回SA5路径层覆盖 — 小欧-2026-10-14
+    由总闸内调, R1/R2 回路径层覆盖 — 小欧-2026-10-14
     函数体逐字复制 delete_safety.check_delete_risk, 逻辑一字不改, 仅改日志前缀。
     """
     path = str(params.get("path") or "").strip()

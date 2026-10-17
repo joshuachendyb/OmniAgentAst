@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-18 - 小欧 - 修复: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest,
-#    与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
+# 2026-07-18 - 小欧 - 修复: compress/extract/copy/move/rename 的 examples 参数名 source→path、destination→dest, 与 CompressInput/ExtractInput/MoveInput/CopyInput/RenameInput schema 对齐, 消除 example/schema 不一致
 # 2026-07-20 - 小欧 - 加【描述规范】注释:工具描述保持简洁不冗余,能力详情与默认支持能力只写在 schema 类 docstring,禁止在 register 工具描述里重复
-# 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源),
-#    默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源;
-#    与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
+# 2026-08-18 - 小健 - 三堂会审: find 显式声明 target_param="path"(操作对象=搜索目录, 与自报 action.target=search_dir 同源), 默认按 _TARGET_PARAM_PRIORITY 推导会先命中 pattern(搜索词)致 ActionStep 与 observation 两处 target 不同源; 与 grep(取 pattern)语义区分; 详见本文件 find 注册处行内注释(OCP 扩展点, DRY)
 # 2026-10-02 - 小欧 - 归组调整: category 改读 TOOL_CATEGORY_OVERRIDE(extract/compress/readmedia 归 DOCUMENT) — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名收敛: write→write, edit→edit, read→read(仅对外注册名, 函数名/Schema类名不动)
 """
@@ -242,9 +239,9 @@ def _register_file_tools():
         "rename": rename,
     }
     
-    CONFIRMATION_MAP = {
-        "delete": True,
-    }
+    # 2026-10-17 小欧 - delete 确认唯一由删线封装口 check_delete_permission(R3-R6)产出,
+    #   故不再用工具级 needs_confirmation 兜底 —— 否则 R3(允许根内普通删除, 免确认)会被误加确认(退化)。
+    CONFIRMATION_MAP = {}
 
     for name, method in tool_methods.items():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")

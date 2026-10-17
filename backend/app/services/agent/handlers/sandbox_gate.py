@@ -171,7 +171,8 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
 
 async def run_sandbox_gate(agent, step, call, tool_name, params,
                            safety_result, denied, main_confirmed=False, trusted=False) -> tuple:
-    """统一沙箱闸门: 预检+resolve, 返回 (ok, steps)
+    """[6] 统一沙箱闸门: 预检+resolve, 返回 (ok, steps)
+    上游: [4] 危险+权限总闸 → [5] 确认层(信任豁免/用户裁决) 后汇合到此, 预检通过才真执行。
     消除 check_safety_and_confirm 中 ①auto_confirm ②用户确认 ③循环体兜底 三处重复调用。
     DRY: 三处20行重复代码→一处调用。 — 小健 2026-09-04
     3A: main_confirmed 透传(单paused, 4.4) — 小欧 2026-09-06

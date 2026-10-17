@@ -7,7 +7,7 @@
 # 2026-10-06 - 小欧 - save_session_trust 落库日志补 raw_path 与「登记范围」两字段: 原先只打 tool_name,
 #   实际登记的是文件还是目录从日志无从判断, 「信任4次仍反复弹窗」正是因此长期查不出根因。
 #   落库侧粒度修复见 app/safety/trust_db.py trust_scope_path。 — 小欧-2026-10-06
-# 2026-10-14 - 小欧 - SA2标注: 本文件=权限信任框架SA2(会话信任预查resolve_skip/check_session_trust,执行第2步,上游SA1下游SA3) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - 标注: 本文件=会话信任预查(resolve_skip/check_session_trust, 执行第2步, 上游合法性初查下游总闸) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-B/4.11-C: WINDOW_TARGET_TOOLS 迁 tool_constants, _parse_paths 迁 conflict_detector; 本模块旧定义删改由 import 解析(不留双份)
 # 2026-10-14 - 小欧 - 文档[33] 4.2: 本文件由 app/tools/trust.py 迁入 app/safety/(业务逻辑一字不改); 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db。
 # 2026-10-14 - 小欧 - 文档[33] 4.2/步9: 本文件由 app/tools/trust.py 迁入 app/safety/; 模块内 3 处 app.tools.trust_db 延迟导入改同包 app.safety.trust_db; 旧文件已删(不留双份)。
@@ -78,7 +78,7 @@ def extract_trust_path(name: str, params: Dict) -> Optional[str]:
 async def resolve_skip(agent_task_id: str, tool_name: str, params: dict) -> bool:
     """信任跳过判定: 查询会话级信任记录,决定是否跳过HITL确认
     完整复制自 action_handler.py:297-327（check_safety_and_confirm内联逻辑提取）
-    [SA2] 权限信任框架第2步: 上游SA1 safety_gate预查, 下游SA3总闸skip_confirmation — 小欧-2026-10-14
+    信任预查第2步: 上游 safety_gate 预查, 下游总闸 skip_confirmation — 小欧-2026-10-14
     """
     from app.db import db
     from app.safety.trust_db import get_session_id_by_task, check_session_trust
@@ -104,7 +104,7 @@ async def resolve_skip(agent_task_id: str, tool_name: str, params: dict) -> bool
 async def save_session_trust(task_id: str, tool_name: str, path) -> None:
     """会话信任落库: 用户确认后将工具+路径写入会话信任记录
     完整复制自 hitl_confirmation.py:184-200（resolve_confirmation内联逻辑提取）
-    [SA6] 权限信任框架第6步: HITL确认后落库, 供SA2下次预查豁免 — 小欧-2026-10-14
+    HITL确认后落库, 供下次信任预查豁免 — 小欧-2026-10-14
     """
     from app.db import db
     from app.safety.trust_db import get_session_id_by_task, insert_session_trust

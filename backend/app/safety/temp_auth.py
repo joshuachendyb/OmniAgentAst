@@ -39,7 +39,7 @@ def _ensure_auth() -> Dict[Path, bool]:
 
 def grant_temp_auth(root: str, recursive: bool = True) -> None:
     """临时授权某路径(本 task 内有效, task 结束清零) — 小欧 2026-08-10, M3 更新
-    [SA6] 权限信任框架第6步写入点: SA1/HITL确认后grant, SA5校验内is_temp_authorized读取 — 小欧-2026-10-14
+    HITL确认后 grant 写入点: 路径层校验内 is_temp_authorized 读取 — 小欧-2026-10-14
     Args:
         root: 授权根路径
         recursive: True=授权根及其子目录树; False=仅精确路径
@@ -61,7 +61,7 @@ def grant_temp_auth(root: str, recursive: bool = True) -> None:
 
 def clear_temp_auth() -> None:
     """清空当前作用域临时授权(task 结束调用) — 小欧 2026-08-10, M3 更新
-    [SA6] task结束清零点(run_react_cycle finally) — 小欧-2026-10-14"""
+    task结束清零点(run_react_cycle finally) — 小欧-2026-10-14"""
     # 2026-09-03 小欧/北京老陈: 清空授权补日志
     from app.logger import logger as _lg
     auth = _authorized_paths.get()
@@ -79,7 +79,7 @@ def is_temp_authorized(file_path: str) -> bool:
         - 禁区判定异常 → **同样返回 False**(2026-10-15 起由"异常不阻断"改 fail-closed;
           原实现在判定异常时继续走 auth-list 匹配, 与上面"永不授权"的承诺矛盾, 且实测可让系统目录被授权)。
     支持递归: 授权目录后其子目录树一并放行。
-    [SA6] 权限信任框架第6步读取点: SA5路径校验内调用 — 小欧-2026-10-14
+    路径校验内读取点 — 小欧-2026-10-14
     """
     # M2: depth defense — 系统禁区永不授权(即使入单也False)
     try:

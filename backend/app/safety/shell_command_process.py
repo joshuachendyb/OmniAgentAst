@@ -2,7 +2,7 @@
 """shell 命令静态处理单一真源 —— 权限入口侧的文本解析与目标抽取（零状态·零 I/O）
 
 职责: 从一条 shell 命令里 **取路径清单与识别动作**，交给下游判权限。本模块**不判权限、不判危险等级**。
-分层: 取路径(本模块) 与 判权限(delete_path_check / write_path_check) 严格分开，详见文档[36] 第七章。
+分层: 取路径(本模块) 与 判权限(delete_path_check / write_path_check) 严格分开(老陈 2026-10-16 裁定)。
 
 关注点(按用途归类, 老陈 2026-10-16 裁定):
   一、只读白名单    —— SHELL_READONLY_PREFIXES / FAST_CHANNEL_FORBIDDEN / is_shell_readonly_whitelisted
@@ -18,46 +18,17 @@
   **不再 import 任何 app.tools.fundamental / app.tools.validate**。
 
 编辑历史:
-2026-10-04 小欧 - 自 executor.py 迁入(原名 shell_readonly.py, 落 app/utils/), 内容未改, 行内署名保留。
-2026-10-05 小欧 - 安全修复: FAST_CHANNEL_FORBIDDEN 补 $ ( ) 反引号 < 四类子表达式/命令替换/输入重定向载体
-  (北京老陈裁定; 原缺口致 `echo $(Start-Process calc)` 等既过白名单又过 F-B 扫描, 直通真机执行任意命令)。
+2026-10-04 小欧 - 自 executor.py 迁入(原名 shell_readonly.py, 落 app/utils/), 内容未改。
+2026-10-05 小欧 - 安全修复: FAST_CHANNEL_FORBIDDEN 补 $ ( ) 反引号 < 四类子表达式/命令替换/输入重定向载体(北京老陈裁定; 原缺口致 echo $(Start-Process calc) 直通真机执行任意命令)。
 2026-10-05 小欧 - 补 \n \r: 换行符同为语句分隔符, 此前未禁致白名单可被绕过。
-2026-10-08 小欧 - 新增不可隔离动词判定(事故驱动): UNCONTAINABLE_VERBS 词表 + has_uncontainable_intent /
-  extract_kill_target_pids / is_process_kill_protected。根因: 沙箱预检是在宿主真跑一遍命令, 而 Job Object
-  非硬墙拦不住子进程杀别的进程 → 词表漏 Stop-Process 时预检即真跑, 当场杀掉后端自身(E2E P9-03 实录)。
-  收录标准= 现有 SHELL_DANGEROUS_PATTERNS 只到 MEDIUM(弹窗后仍进预检)拦不住者; HIGH 级不重复收录(DRY)。
-2026-10-10 小欧 - 审计 P1-1 新增 normalize_for_intent: 词表命中前先折叠字符串拼接再去引号, 使
-  & ('Stop'+'-Process') -Id 5 / $v='Stop'+'-Process'; & $v -Id 5 这类"字面量被 + 拆开"的形态可被查杀。
-  归一只用于检测不用于执行, 只增不减(取严)。本项只覆盖拼接类, WMI/别名/CIM/Base64 仍需另行收词(未做)。
-2026-10-10 小欧 - 审计 P1-3 新增按名杀目标提取(extract_kill_target_names 等): 补保护盾对
-  `Get-Process python | Stop-Process -Force` 这类按名杀形态的盲区(原只抽显式 PID, 事故形态恒返空集)。
-2026-10-10 小欧 09:55:09 - 位置与命名修正(北京老陈指出"代码名称确实要名副其实"):
-  原 shell_readonly.py 名不副实(仅约 1/3 内容与 readonly 有关), 且落 utils 是为绕开一条并不存在的障碍
-  ——"tools 禁 import safety"只单向禁止, safety→tools 合法, 故无需中转 utils。
-  按 AGENTS.md 1.4「能复制就复制, 不重写」逐行合并未改业务逻辑, 仅调整文件位置与导入路径:
-  ①位置 app/utils/ → app/tools/fundamental/(与其余 shell 代码同目录, 不散落)
-  ②更名 shell_readonly.py → shell_static_guard.py(名副其实: 对 shell 命令做静态守卫判定)
-  ③曾短暂拆为 shell_readonly/shell_danger/shell_normalize 三文件, 复核后判定属过度拆分
-    (normalize_for_intent 只服务杀进程判定, 非独立可复用能力, 单独成文件违反 YAGNI), 故并回一处。
-2026-10-10 小欧 10:30 猎杀 10 bug 全修(本地探针实证, 门级 verdict 逐条验证):
-  ①归一 v2: [char]N 解码(_decode_char_codes, 至不动点) + 剥 ()[]{} 噪音 → 修 [char]拼接预检真跑;
-    顺序解码→剥噪音→折叠→去引号; 逗号/分号不动(PID/多值分隔与语句分隔, 动不得)。
-  ②动词层: .Terminate()/.Kill() 方法调用(_METHOD_KILL_RE, 只认调用点 `.X(`, 不认裸词 terminate) +
-    Invoke-CimMethod(_CIM_KILL_RE) → 修 WMI/CIM 全链漏网; -EncodedCommand/-enc(_ENCODED_RE,
-    不认单字母 -e)转 HITL(Base64 内容静态不可见, 用户同样无法有效确认, 属残留风险)。
-  ③名提取: /FI IMAGENAME eq X、WMI where/Name=(前后向断言挡 hostname/filename)、pkill 实参(含 -f 模式,
-    交 fnmatch, `.*` 天然全中) → 修 /FI、wmic、pkill -f; 名提取同步扫归一文(复用 P1-1 并集模式,
-    不放宽 token 类) → 修引号名(`-Name "python"`/`/IM "x.exe"`/多值引号)。
-  ④兜底 _unscoped_process_kill: 有杀意无目标(PID/名皆空)直接 blocked —— 管线裸杀、无参 taskkill、
-    wmic 质量动作、无名方法杀/CIM、`kill %1`/`kill -9 $(…)` 之类; 有名/有 PID 走原口径,
-    停服务动词(/ ?, --help, -WhatIf 让路; wmic 裸查询让路)不在此列; 只认引号之外的动词
-    (`echo "kill"` 纯提及留 HITL, 不升 blocked)。— 小欧-2026-10-10
-2026-10-16 - 小欧 - 文档[36] 第五章: 自 app/tools/fundamental/shell_command_guard.py 整文件下沉到
-  app/safety/(文件级复制零漂移, AGENTS 1.4 能复制不重写), 按 3.5.5 正名 24 项符号;
-  新增写删目标识别 8 个单一职责函数(ShellText / prepare_shell_text / shell_write_and_delete_paths 等);
-  自杀检查按老陈裁定全部归并到 app/safety/shell_process_guard.py, 本模块不再持有杀进程词表与判定函数。
-2026-10-16 小欧 - 三堂会审: 删 shell_blank_out_quotes 重复定义(两处一字不差, 后者覆盖前者致前者成死代码);
-  删 danger/risk 两层随之失效的死 import(两层的"降级/引号判别式"已按老陈裁定删除)。
+2026-10-08 小欧 - 新增不可隔离动词判定(事故驱动): UNCONTAINABLE_VERBS + has_uncontainable_intent/extract_kill_target_pids/is_process_kill_protected(Job Object 非硬墙, 词表漏 Stop-Process 致预检真跑杀掉后端自身, E2E P9-03; 只收 HIGH 拦不住者不与 SHELL_DANGEROUS_PATTERNS 重复)。
+2026-10-10 小欧 - 审计 P1-1: 新增 normalize_for_intent(命中前先折叠拼接再去引号, 查杀 'Stop'+'-Process' 被 + 拆开的形态; 只增不减取严)。
+2026-10-10 小欧 - 审计 P1-3: 新增按名杀目标提取 extract_kill_target_names(补 Get-Process python|Stop-Process 按名杀盲区)。
+2026-10-10 小欧 09:55:09 - 位置与命名修正: 位置 app/utils→app/tools/fundamental, 更名 shell_static_guard.py(名副其实); 曾短暂拆三文件复核判过度拆分(YAGNI)并回一处。
+2026-10-10 小欧 10:30 - 猎杀 10 bug 全修(探针实证, 门级 verdict 逐条验证): ①归一 v2([char]N 解码至不动点+剥噪音, 顺序解码→剥→折叠→去引号, 逗号/分号不动) ②动词层(.Terminate/.Kill 方法调用+Invoke-CimMethod+ -EncodedCommand 转 HITL) ③名提取(/FI、wmic、pkill -f、引号名) ④兜底 _unscoped_process_kill(有杀意无目标直接 blocked, 停服务动词让路)。
+2026-10-16 小欧 - 整文件下沉: 自 shell_command_guard.py 整文件下沉 app/safety/(文件级复制零漂移), 正名 24 项符号, 新增写删目标识别 8 单一职责函数; 自杀检查全部归并 shell_process_guard.py。
+2026-10-16 小欧 - 三堂会审: 删 shell_blank_out_quotes 重复定义(后者覆盖前者成死代码)与 danger/risk 随之失效的死 import。
+2026-10-17 小欧 - 拆 SHELL_DESTRUCTIVE_DELETE_RES 为递归类+强制类, 新增 shell_has_recursive_delete(只认递归开关, 不含 Force 单开关), 供 shell_path_check 喂 recursive 使 R6(工作区外递归硬拦)生效。
 
 """
 import fnmatch
@@ -150,9 +121,9 @@ def is_shell_readonly_whitelisted(command: str) -> bool:
 # ══════════════════════════════════════════════════════════════════════
 # 三、越界目标与写意图（供沙箱 F-B 预检 + 通道 B 入口门）
 # ══════════════════════════════════════════════════════════════════════
-# 病根(文档[33] 错点4): 宽表把删与写混一张表, 命令含删动词时判"写", 于是删系统禁区只被判
+# 病根: 宽表把删与写混一张表, 命令含删动词时判"写", 于是删系统禁区只被判
 # 「可授权的写」而非「不可授权的删」——授权后等于放行删系统目录。故拆细表三张。
-# ★宽表必须保留删动词(文档[36] 3.10.3-D1): 沙箱 F-B 越界写扫描正是靠它才看得到
+# ★宽表必须保留删动词: 沙箱 F-B 越界写扫描正是靠它才看得到
 #   Remove-Item/del/rm 的目标, 移出即漏扫 = 安全退化。
 SHELL_WRITE_INTENT_RE = re.compile(
     r"\b(?:Remove-Item|Remove-ItemProperty|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
@@ -182,7 +153,8 @@ SHELL_DELETE_RE = re.compile(
 #   ★2026-10-16 三堂会审: 删死代码 _TEMP_SAFE_PATTERNS + shell_is_temp_cleanup(原随规则一并移来,
 #     但全仓零调用 —— 即"建了不接", 与老陈反对的画蛇添足同型)。高危删除解析不出目标即硬拦,
 #     不再做"临时目录降级"那套豁免。
-SHELL_DESTRUCTIVE_DELETE_RES = (
+# 递归删除类(删目录树, 抹除不可逆) —— R6(工作区外递归硬拦)的判据单一真源 — 小欧 2026-10-17
+SHELL_RECURSIVE_DELETE_RES = (
     # PS: Remove-Item/rm/del + Recurse + Force
     re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bRecurse\b.*\bForce\b", re.IGNORECASE),
     # PS: Remove-Item/rm + Recurse(排除显式 -Recurse:$false)
@@ -199,17 +171,35 @@ SHELL_DESTRUCTIVE_DELETE_RES = (
     re.compile(r"\brmdir\b.*?/s\b", re.IGNORECASE),
     # bash: rm -rf /(递归删根路径)
     re.compile(r"\brm\b.*?-rf\s+/", re.IGNORECASE),
+)
+
+# 强制删除类(仅 Force, 非递归) —— 只供 shell_has_destructive_delete 兜底, **不作 R6 递归判据**(否则 Force 单开关会误升硬拦)
+SHELL_FORCE_DELETE_RES = (
     # PS: Remove-Item/rm + Force(强制删除文件, 原 MEDIUM)
     re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bForce\b", re.IGNORECASE),
     # CMD: del /f(强制删除文件, 原 MEDIUM)
     re.compile(r"\bdel\b.*?/f\b", re.IGNORECASE),
 )
 
+# 高危删除全集(递归 + 强制) —— shell_has_destructive_delete 的判据(原表内容不变, 仅拆为两段组合)
+SHELL_DESTRUCTIVE_DELETE_RES = SHELL_RECURSIVE_DELETE_RES + SHELL_FORCE_DELETE_RES
+
+
+def shell_has_recursive_delete(command: str) -> bool:
+    r"""这条命令是否含"递归删除"(删目录树) — 小欧 2026-10-17
+
+    用途: shell_path_check.check_shell_permission 把 recursive 显式喂入
+          delete_path_check.check_delete_permission, 使 R6(工作区外递归=硬拦)在 shell 通道生效。
+    口径: 只认递归开关(Recurse / -rf / -r -f / del|rd|rmdir /s / rm -rf /);
+          不含 Force 单开关(-Force/del /f 非递归, 应落 R5 确认, 不得误升 R6 硬拦)。
+    """
+    return any(rx.search(command or "") for rx in SHELL_RECURSIVE_DELETE_RES)
+
 
 def shell_has_destructive_delete(command: str) -> bool:
-    r"""这条命令是不是高危删除(递归/强制/带开关) — 小欧 2026-10-16（[36] 第七章）
+    r"""这条命令是不是高危删除(递归/强制/带开关) — 小欧 2026-10-16
 
-    干什么用: 供 shell_path_check.validate_shell 做 **fail-closed 兜底** ——
+    干什么用: 供 shell_path_check.check_shell_permission 做 **fail-closed 兜底** ——
               高危删除若**解析不出任何删路径**(如 `rm -rf /`, 路径提取只认 Windows 绝对路径),
               说明无从判权限, 一律硬拦 system。**判据成立才拒, 不是"高危即拒"**;
               解析得出目标时走 delete_path_check 正常判权限。
@@ -252,7 +242,7 @@ def shell_blank_out_quotes(text: str) -> str:
 def is_shell_tool(tool_name: str) -> bool:
     """是否 shell 命令类工具(executor 预检按此分流 file_op / shell) — 小欧 2026-10-10
 
-    迁自 executor.py:70（文档[33] 4.11-A）。调用期依赖 normalize_tool_name 已在文件头显式导入,
+    迁自 executor.py:70。调用期依赖 normalize_tool_name 已在文件头显式导入,
     杜绝「import 通过但调用 NameError」。
     """
     _shell = frozenset({"bash"})  # 2026-10-02 小欧 - 随注册名改名
@@ -260,7 +250,7 @@ def is_shell_tool(tool_name: str) -> bool:
 
 
 def _extract_shell_move_paths(command: str) -> Tuple[List[str], List[str]]:
-    """移动类命令按参数位置拆「源(被删)」与「目标(被写)」 — 小欧 2026-10-16（[36] 洞2）
+    """移动类命令按参数位置拆「源(被删)」与「目标(被写)」 — 小欧 2026-10-16（洞2）
 
     为什么不用 shell_extract_abs_win_paths 取源: 它按"引号组 + 裸路径组"拼接返回, 位置序被打乱
     (实测 `mv C:\src.txt "E:\dst dir"` 返回 [目标, 源]), 按下标取源会判反;
@@ -337,7 +327,7 @@ def shell_registry_key_exists(reg_path: str) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 五、写删目标识别（2026-10-16 小欧 文档[36] 第五章新增）
+# 五、写删目标识别（2026-10-16 小欧 新增）
 # ══════════════════════════════════════════════════════════════════════
 # 动词表分两层: 宽表答「改不改动东西」(通道 B 入口门 + 沙箱 F-B 两个消费方),
 #               细表三张答「改动是什么后果」, 供归属分类分线: 删(move 源)/写(move 目标·重定向)。
@@ -352,7 +342,7 @@ def shell_registry_key_exists(reg_path: str) -> bool:
 
 
 class ShellText(NamedTuple):
-    """一条命令的两种用途文本 — 小欧 2026-10-16（[36] 5.3.3）
+    """一条命令的两种用途文本 — 小欧 2026-10-16
 
     用不可变产物而非让各出入口各跑一遍预处理: 编排层跑一次, 三个判据共用同一份文本(KISS-DIRECT)。
     """
@@ -361,7 +351,7 @@ class ShellText(NamedTuple):
 
 
 def prepare_shell_text(command: str) -> ShellText:
-    """预处理只跑这一次 — 小欧 2026-10-16（[36] 5.3.3）
+    """预处理只跑这一次 — 小欧 2026-10-16
 
     抽取用文本先展开 $env: —— 否则 `$env:TEMP\\a.txt` 形态抽不到盘符路径(现网既有语义, 不改);
     判意图用文本把引号涂成等长空格 —— 保偏移, 防 `Select-String -Pattern "del"` 误判。
@@ -383,7 +373,7 @@ def _dedup_keep_order(paths: List[str]) -> List[str]:
 
 
 def shell_has_write_intent(text: ShellText) -> bool:
-    """这条 shell 命令会不会改动东西 — 小欧 2026-10-16（[36] 5.3.3）
+    """这条 shell 命令会不会改动东西 — 小欧 2026-10-16
 
     通道 B 入口门判据 —— 只读命令整条放行, 不打扰用户(HITL 零打扰)。
     不判权限、不判危险等级、不抽路径 —— 它只答有/无。
@@ -392,7 +382,7 @@ def shell_has_write_intent(text: ShellText) -> bool:
 
 
 def _verb_flags(intent_src: str) -> Tuple[bool, bool, bool]:
-    """判三类动作在这条命令里有没有 —— 只出开关, 不抽路径 — 小欧 2026-10-16（[36] 5.3.3）
+    """判三类动作在这条命令里有没有 —— 只出开关, 不抽路径 — 小欧 2026-10-16
 
     决策层: 把"要不要走哪条线"从"抽什么路径"里拆开, 谁也不该在别处重新匹配一遍动词(DRY)。
     返回    : (del_hit, write_hit, move_hit)
@@ -403,7 +393,7 @@ def _verb_flags(intent_src: str) -> Tuple[bool, bool, bool]:
 
 
 def _collect_targets(extract_src: str, move_hit: bool) -> Tuple[List[str], List[str]]:
-    """把移动类的源/目标抽出来 —— 只做抽取工序, 不做归属决策 — 小欧 2026-10-16（[36] 5.3.3）
+    """把移动类的源/目标抽出来 —— 只做抽取工序, 不做归属决策 — 小欧 2026-10-16
 
     工序层: 必须走有序切词(保位置序), 与无序的 shell_extract_abs_win_paths 不能混用。
     """
@@ -411,7 +401,7 @@ def _collect_targets(extract_src: str, move_hit: bool) -> Tuple[List[str], List[
 
 
 def _assign_to_lines(delete_line: List[str], write_line: List[str]) -> Tuple[List[str], List[str]]:
-    """交集取严: 同一条路径既被删线提又被写线提, 只归删线 — 小欧 2026-10-16（[36] 5.3.3）
+    """交集取严: 同一条路径既被删线提又被写线提, 只归删线 — 小欧 2026-10-16
 
     策略层(规则⑤)。缺这一步会让同一路径在两线各判一次, 失败路径取决于代码顺序 = 行为不确定。
     保序: 一律用列表推导过滤, 不用 sorted(会打乱命令里出现的先后, 而失败路径要报给用户)。
@@ -425,7 +415,7 @@ def _assign_to_lines(delete_line: List[str], write_line: List[str]) -> Tuple[Lis
 
 
 def _shell_path_lines(text: ShellText) -> Tuple[List[str], List[str]]:
-    """写删目标归属分类 —— 编排层, 返回 (删线路径, 写线路径) — 小欧 2026-10-16（[36] 5.3.3）
+    """写删目标归属分类 —— 编排层, 返回 (删线路径, 写线路径) — 小欧 2026-10-16
 
     归属规则五条, 顺序即优先级:
       ① 移动动词的【源参数】→ 删线(从原位抹掉, 与 del 同级)
@@ -458,7 +448,7 @@ def _shell_path_lines(text: ShellText) -> Tuple[List[str], List[str]]:
 
 
 def shell_write_and_delete_paths(text: ShellText) -> Tuple[List[str], List[str]]:
-    """取一条 shell 命令的 (删线路径清单, 写线路径清单) — 小欧 2026-10-16（[36] 5.3.3）
+    """取一条 shell 命令的 (删线路径清单, 写线路径清单) — 小欧 2026-10-16
 
     干什么用: shell 路径检查(通道 B)的唯一取路径入口 —— 本函数**只取路径, 不判权限**。
               两个清单分别交 delete_path_check.validate_delete / write_path_check.validate_write 判权限。

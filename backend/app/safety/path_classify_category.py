@@ -106,7 +106,7 @@ def is_system_protected_path(file_path: str, mode: str = "write") -> bool:
     2026-10-14 北京老陈裁定「必须是同一个逻辑」: 此前检测与策略各处分一层,
     实测同一 True 被不同调用点解释成相反结论(安全层放行读/工具层拒绝读)。
     现检测与策略同在本函数, 调用方只透传 mode、不得二次判断。
-      消费方: `classify_forbidden_path`(SA5 判权限, 唯一决策者) 与 4 条线的 validate_*。
+      消费方: `classify_forbidden_path`(路径层判权限, 唯一决策者) 与 4 条线的 validate_*。
       ★2026-10-16 老陈裁定(分层原则): 权限判定只在 safety 层, 原 tools 层的
       delete_file._guard_forbidden_delete 硬底线已删除, 本函数不再有 tools 层消费方。
     """
