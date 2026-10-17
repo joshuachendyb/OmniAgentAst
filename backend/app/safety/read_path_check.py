@@ -10,6 +10,8 @@
 # 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
 # 2026-10-15 北京老陈裁定 - 删白名单死分支: if 两支返回值一字不差, 判定零影响。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_read: 三线同名, 经模块引用无法辨识线的语义。
+# 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path。
+# 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -56,6 +58,7 @@ classify_forbidden_path 并传 READ_MODE, 本文件只放读线独有的策略�
 from typing import List, Optional, Tuple
 
 from app.safety import path_check_common as common
+from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 
 READ_MODE = "read"
@@ -70,7 +73,10 @@ def validate_read(file_path: str, allowed_paths: Optional[List] = None) -> Tuple
         allowed_paths 形参保留但不使用: 读线处处放行, 白名单判定无影响(见头部裁定)。
     """
     try:
-        pre = common.check_preconditions(file_path)
+        _empty = reject_reason_empty_path(file_path)   # 空值真源在原子, 本线不重复实现
+        if _empty:
+            return False, _empty, "system"
+        pre = check_preconditions(file_path)
         if pre:
             return pre
 

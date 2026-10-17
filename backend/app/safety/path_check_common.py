@@ -14,6 +14,8 @@
 #        冒泡至三线后全盘判 system。移入 try 并补 TypeError; 坏条目跳过=该条目不提供权限。
 #   P0-8 白名单比对大小写敏感: 实测 E:\MyProject\... vs 白名单 E:\myproject 未命中,
 #        用户在项目目录内却被要求授权。比对统一走小写(Windows-only 语义)。
+# 2026-10-17 北京老陈裁定 - check_preconditions 迁至 app.utils.path_utils(空值与穿越判定归 tool 侧公用层), 本模块只余白名单判定; __all__ 与 safety/__init__ 同步取消该符号转出(禁 backward 再导出)。
+# 2026-10-17 北京老陈裁定 - check_preconditions 迁至 app.utils.path_utils, 本模块只余白名单判定; __all__ 取消该符号转出
 """
 path_check_common — 读/写/删三条线共用的检查步骤
 
@@ -39,44 +41,6 @@ from typing import List, Optional, Tuple
 
 from app.logger import logger
 from app.safety.path_env import get_default_allowed_paths
-
-
-def check_preconditions(file_path: str) -> Optional[Tuple[bool, Optional[str], Optional[str]]]:
-    """空路径 / 路径穿越判定 — 小欧 2026-10-15
-
-    自 path_safe_check.validate_path(:311-315 + :337-352) 逐字迁出。
-
-    Args:
-        file_path: 待检查路径
-
-    Returns:
-        命中即返回 (False, msg, "system")；未命中返回 None，交各线继续。
-        category 恒为 "system"(永不授权), 与 T2 硬拦口径一致。
-    """
-    # T2 回归修复(三堂会审复核发现, v1.45): 空路径是无效参数, 归入 category="system"(永不授权),
-    #   原返回 category=None → T2 当"白名单外非禁区→可授权请求", 空路径从 blocked 退化为可授权(退化);
-    #   与 test_bug_empty_path_not_validated 断言(空路径应 blocked)对齐 — 小欧 2026-08-10
-    if not file_path or not file_path.strip():
-        return False, "路径为空", "system"
-
-    # 路径穿越拒绝: 包含..的路径直接拒绝 — 小欧 2026-06-25
-    # T2 回归修复 (v1.45): 穿越路径归入 category="system"(永不授权) — 原返回 None → T2 当白名单外可授权,
-    #   与 test_f5_03_path_traversal_blocked 断言(穿越应 blocked)对齐 — 小欧 2026-08-10
-    try:
-        # 检查原始路径的每个部分是否包含..
-        path_parts = Path(file_path).parts
-        if ".." in path_parts:
-            return False, f"路径包含..,禁止路径穿越: {file_path}", "system"
-        # 也检查规范化解析后的路径（处理绝对路径中的..）
-        resolved = os.path.realpath(file_path)
-        original_resolved = os.path.realpath(os.path.dirname(file_path))
-        if not resolved.startswith(original_resolved) and file_path != resolved:
-            return False, f"路径穿越检测: {file_path} 解析为 {resolved}", "system"
-    except Exception as e:
-        logger.warning(f"[path_check_common] 路径校验异常: {file_path}: {e}")
-        return False, f"路径校验异常: {file_path}", "system"
-
-    return None
 
 
 def check_whitelist(file_path: str, allowed_paths: List[Path]) -> bool:
@@ -129,4 +93,4 @@ def resolve_allowed_paths(allowed_paths: Optional[List[Path]]) -> List[Path]:
     return allowed_paths if allowed_paths is not None else get_default_allowed_paths()
 
 
-__all__ = ["check_preconditions", "check_whitelist", "resolve_allowed_paths"]
+__all__ = ["check_whitelist", "resolve_allowed_paths"]

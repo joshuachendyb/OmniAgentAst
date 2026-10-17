@@ -4,6 +4,8 @@
 # 2026-07-26 - 小沈 - import 路径对应 operation_record/operation_backup 改名+职责理顺
 # 2026-08-12 - 小欧 - A2-内部环(方案4.2.3): FileSafetyConfig 导入改 models, cleanup_expired_backups 导入改 operation_maintenance
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件全部 import 由 app.services.safety.xxx 改 app.safety.xxx(配合 tools 禁 app.services 守护规则)
+# 2026-10-17 北京老陈裁定 - check_preconditions 迁至 app.utils.path_utils, 本文件取消该符号的 import 与 __all__ 转出(禁 backward 再导出)
+# 2026-10-17 北京老陈裁定 - check_preconditions 迁至 app.utils.path_utils, 本文件取消其 import 与 __all__ 转出
 """Safety 模块 — 安全检查 + 文件操作安全
 
 小欧 2026-07-10 拍平 file_safety/ 目录到 safety/
@@ -47,10 +49,10 @@ from app.safety.path_env import (
     get_system_drive,
 )
 from app.safety.path_check_common import (
-    check_preconditions,
     check_whitelist,
     resolve_allowed_paths,
 )
+# 2026-10-17 北京老陈裁定: check_preconditions 已迁 app.utils.path_utils, 此处不再转出(禁 backward 再导出)
 from app.safety.read_path_check import validate_read
 from app.safety.write_path_check import validate_write
 from app.safety.delete_path_check import validate_delete
@@ -80,6 +82,6 @@ __all__ = [
     "is_system_protected_path", "is_disk_root", "is_code_root_path",
     "is_allowed_root_itself", "SYSTEM_PROTECTED_DIR_NAMES",
     "get_default_allowed_paths", "get_system_drive",
-    "check_preconditions", "check_whitelist", "resolve_allowed_paths",
+    "check_whitelist", "resolve_allowed_paths",
     "DUAL_ACTION_PARAMS", "validate_dual_path", "validate_shell",
 ]

@@ -15,6 +15,10 @@
 # 2026-10-16 - 小欧 - tool去检查化: 纯内存路径格式原子(保留字符/保留名/多余盘符)下沉至此。
 #   口径: 纯拼写判定, 无IO、无白名单、无授权语义, 故不是"安全判定", tools/safety 均可导入;
 #   tools 禁 import safety, 故 tool 内派生路径检查只能调本层。
+# 2026-10-17 北京老陈裁定 - 迁入 check_path_syntax_and_exists(自 path_1st_legality_check)与 check_preconditions(自 path_check_common);
+#   新增 reject_reason_empty_path(空值唯一真源)与 check_path_five_level(tool 专用五级总入口, delete/move/copy 共用; ⑤禁区判定受 logging.debug 门控)。
+#   ★更正上方 10-16 记载: 按 B 方案本模块已可引用 app.safety.path_classify_category(仅转发禁区判据, 不持名单)。
+# 2026-10-17 北京老陈裁定 - 迁入 check_path_syntax_and_exists 与 check_preconditions, 新增空值原子 reject_reason_empty_path 与 tool 专用五级总入口 check_path_five_level
 """
 path_utils — 路径处理通用工具
 
@@ -26,8 +30,12 @@ path_utils — 路径处理通用工具
 """
 import os
 import re
+import string
+from enum import Enum
 from pathlib import Path
-from typing import Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
+
+from app.logger import logger  # check_path_syntax_and_exists 的 TOCTOU 留痕 / check_preconditions 异常留痕
 
 # 2026-10-06 小欧 - 从 path_safe_check.validate_path 函数体内提到模块级(常量归位): 原先定义在函数里,
 #   每次调用重建一遍 frozenset; 展示层(security_docs)拿不到, 只能硬编码 \ProgramData 等 3 条。
@@ -171,10 +179,9 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
 
 
 def validate_str_param(value, param_name: str) -> Optional[str]:
-    """字符串参数基础校验 — 小欧 2026-07-05(2026-10-16 自 file_path_checker 逐字迁入，未改逻辑)
-
-    非路径通用参数用(窗口标题/通知/host/任务名等); 路径参数非空由 safety SA1 layers12 覆盖。
-    None/非str类型/空串(含全空白) → 返回错误信息; None=通过。
+    """字符串参数基础校验 — 小欧 2026-07-05(2026-10-17 北京老陈裁定: 恢复三档专属文案, 不调 reject_reason_empty_path)
+    非路径通用参数用(窗口标题/通知/host/任务名等); 路径参数非空由 safety SA1 覆盖。
+    None/非str类型/空串(含全空白) → 返回对应错误文案; None=通过。
     """
     if value is None:
         return f"参数 {param_name} 不能为 None"
@@ -185,6 +192,155 @@ def validate_str_param(value, param_name: str) -> Optional[str]:
     return None
 
 
+def reject_reason_empty_path(path) -> Optional[str]:
+    """路径空值/类型判定【底层原子】 — 小欧 2026-10-17(空路径必须硬拒: Path("")=="cwd", 2026-10-17 事故即由此搬走整个 backend)"""
+    if not isinstance(path, str) or not path.strip():
+        return f"路径不能为空(实收 {type(path).__name__}: {path!r})"
+    return None
+
+
+class OpCategory(Enum):
+    """操作类别 → 存在性/类型要求(check_path_syntax_and_exists 的规则来源) — 小欧 2026-10-15"""
+    WRITE     = "write"
+    READ_FILE = "read_file"
+    LIST_DIR  = "list_dir"
+    EXISTS    = "exists"
+
+
+_OP_RULES: Dict[OpCategory, Dict[str, Any]] = {
+    OpCategory.WRITE:     {"check_exist": False, "must_be": None},
+    OpCategory.READ_FILE: {"check_exist": True,  "must_be": "file"},
+    OpCategory.LIST_DIR:  {"check_exist": True,  "must_be": "dir"},
+    OpCategory.EXISTS:    {"check_exist": True,  "must_be": None},
+}
+
+
+def check_path_syntax_and_exists(
+    op: OpCategory,
+    path: str,
+    **options: Any,
+) -> Tuple[bool, Optional[str]]:
+    """拼写 + 存在性/类型 判定 — 小欧 2026-07-05 建, 2026-10-17 自 path_1st_legality_check 迁入本模块
+    (空值真源是 reject_reason_empty_path, 调用方须先过原子; 本函数包 try 兜底, 非法类型 fail-closed 不崩栈)"""
+    try:
+        return _syntax_exists_check(op, path, **options)
+    except Exception as e:                      # fail-closed: 非法输入返回错误, 不冒泡崩栈
+        logger.warning("[syntax_exists] 路径校验异常: %r (%s)", path, e)
+        return False, f"路径校验异常: {path}"
+
+
+def _syntax_exists_check(op: OpCategory, path: str, **options: Any) -> Tuple[bool, Optional[str]]:
+    """拼写 + 存在性/类型 判定实体 — 2026-10-17 小欧(供上层 try 包裹)"""
+    # 第1层: 格式与拼写
+    drive = os.path.splitdrive(path)[0]
+    if drive and not drive.startswith("\\\\"):
+        if not os.path.exists(drive + "\\"):
+            avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
+            return False, f"驱动器: {drive}不存在。可用驱动器: {', '.join(avail)}"
+    if drive:
+        extra = path_has_extra_drive(path)   # 纯内存拼写检查, UNC 同样适用
+        if extra:
+            return False, extra
+    # 只检查文件名部分(Path(...).name), 排除路径分隔符与盘符冒号
+    _fname = Path(path).name
+    bad = path_has_reserved_char(_fname)
+    if bad:
+        return False, f"文件: {_fname}名包含Windows保留字符"
+    reserved = path_has_reserved_name(path)
+    if reserved:
+        return False, f"文件: {reserved}名包含Windows保留名"
+
+    # 第2层: 存在性与类型
+    rule = _OP_RULES[op]
+    if rule["check_exist"]:
+        p = Path(path)
+        if not p.exists():
+            # 允许不存在时直接过(删除幂等) —— 北京老陈 2026-07-12; allow_missing 专表此意, force 保留旧义不破坏既有调用方
+            if op == OpCategory.EXISTS and (options.get("allow_missing") or options.get("force")):
+                return True, None
+            logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
+                           path, op.value,
+                           os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
+                           p.parent.exists(), str(p.parent))
+            return False, "路径不存在: " + path
+        if rule["must_be"] == "file" and not p.is_file():
+            return False, path + "不是文件"
+        if rule["must_be"] == "dir" and not p.is_dir():
+            return False, path + "不是目录"
+    return True, None
+
+
+def check_preconditions(file_path: str) -> Optional[Tuple[bool, Optional[str], Optional[str]]]:
+    """空路径 / 路径穿越判定 — 小欧 2026-10-15 建, 2026-10-17 自 path_check_common 迁入本模块。
+    空值判定不在本函数(唯一真源 = reject_reason_empty_path), 调用方须先过原子再调本函数。命中返回 (False, msg, "system")。
+    """
+    try:
+        if ".." in Path(file_path).parts:          # 原始串含 .. 直接拒 — 小欧 2026-06-25
+            return False, f"路径包含..,禁止路径穿越: {file_path}", "system"
+        resolved = os.path.realpath(file_path)     # 再查绝对路径里的 ..(realpath 后与原串不符)
+        original_resolved = os.path.realpath(os.path.dirname(file_path))
+        if not resolved.startswith(original_resolved) and file_path != resolved:
+            return False, f"路径穿越检测: {file_path} 解析为 {resolved}", "system"
+    except Exception as e:
+        logger.warning(f"[path_utils] 路径校验异常: {file_path}: {e}")
+        return False, f"路径校验异常: {file_path}", "system"
+    return None
+
+
+def check_path_five_level(
+    path: str,
+    op: OpCategory = OpCategory.EXISTS,
+    *,
+    allow_missing: bool = False,
+    enforce_zone: Optional[bool] = None,
+) -> Tuple[bool, Optional[str]]:
+    """【tool 专用】路径五级检查总入口 — 小欧 2026-10-17(仅供 delete/move/copy; 只编排不重判)
+    ①空值 ②拼写 ③存在性/类型 ④穿越 四级恒生效; ⑤禁区身份本函数内联, 受 logging.debug 门控(enforce_zone 可覆盖)。
+    allow_missing=True 时"不存在即已删"(删除幂等, 与工具 force 语义无关); op 定存在性口径(源 EXISTS/目标 WRITE)。
+    """
+    # 第1级: 空值 —— 交底层原子
+    _empty = reject_reason_empty_path(path)
+    if _empty:
+        return False, _empty
+    # 第2-3级: 拼写 + 存在性/类型 —— 恒生效
+    ok, err = check_path_syntax_and_exists(op, path, allow_missing=allow_missing)
+    if not ok:
+        return False, err
+    # 第4级: 路径穿越 —— 恒生效
+    pre = check_preconditions(path)
+    if pre is not None:
+        return False, pre[1]
+    # 第5级: 禁区身份 —— 判据委托 path_classify_category 单一真源, 本处不持名单
+    if enforce_zone is None:
+        from app.config import get_config
+        enforce_zone = bool(get_config().get("logging.debug", False))
+    if enforce_zone:
+        from app.safety.path_classify_category import (
+            is_allowed_root_itself,
+            is_code_root_path,
+            is_disk_root,
+            is_system_protected_path,
+        )
+        try:
+            Path(path).expanduser().resolve()      # 归一化探针: 解析失败即 fail-closed
+        except Exception as e:
+            return False, f"安全校验: 路径解析失败({e})"
+        if os.name == "nt" and is_system_protected_path(path, "delete"):
+            return False, f"禁止操作系统目录: {path}"
+        if is_disk_root(path):
+            return False, f"禁止操作磁盘根目录: {path}"
+        if is_code_root_path(path):
+            return False, f"禁止操作代码目录(含其内部子级): {path}"
+        hit = is_allowed_root_itself(path)
+        if hit == "allowed_root_itself":
+            return False, f"禁止操作项目根/授权根目录: {path}"
+        if hit == "allowed_root_ancestor":
+            return False, f"禁止操作项目根/授权根上级目录: {path}"
+    return True, None
+
+
 __all__ = ["to_win_long_path", "get_allowed_roots",
            "path_has_reserved_char", "path_has_reserved_name", "path_has_extra_drive",
-           "validate_str_param"]
+           "validate_str_param",
+           "OpCategory", "check_path_syntax_and_exists", "check_preconditions",
+           "reject_reason_empty_path", "check_path_five_level"]

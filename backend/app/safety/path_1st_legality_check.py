@@ -20,11 +20,13 @@
 #      这两个"write 档但源必须存在"的参数, 命中即按 EXISTS 查。改此表 = 改前移范围。
 #   ③ 【BUG 修复·取错源】force 原取原始 params(漏归一化后的别名), 现先取 normalized_params 再回落原值。
 #   另: params 入口 `or {}` 归一(None 时原先 params.get 抛异常被 except 吞成静默 fail-open)。
-# 2026-10-16 - 小欧 - tool去检查化: 合法性规则段(OpCategory/_OP_RULES/validate_path_layers12)
+# 2026-10-16 - 小欧 - tool去检查化: 合法性规则段(OpCategory/_OP_RULES/check_path_syntax_and_exists)
 #   自 file_path_checker 逐字迁入本文件底部(迁移后唯一调用方即本文件 precheck, 单源单文件合 YAGNI);
 #   纯拼写原子(保留字符/保留名/多余盘符)改调 app.utils.path_utils(tools→utils/safety→utils 方向合法)。
 #   附带: precheck 初查异常补日志(P1, fail-open 必须留痕); UNC 跳过盘符可达性探测(免网络往返);
 #   非 str 参数跳过(防 data 内联 dict 被误杀); PATH_PARAM_KEYS 补 search_dir/data(覆盖审计实测原全漏)。
+# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁往 app.utils.path_utils; SA1 三处调用点改为三态区分并先过空值原子, 修显式传 None 崩栈
+# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁往 app.utils.path_utils; SA1 三处调用点改三态区分并先过空值原子, 修显式传 None 崩栈
 """
 path_1st_legality_check — 路径检查总入口
 
@@ -53,10 +55,10 @@ from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.registry import tool_registry
 from app.tools.tool_constants import PATH_PARAM_KEYS
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
-from app.utils.path_utils import (
-    path_has_reserved_char,
-    path_has_reserved_name,
-    path_has_extra_drive,
+from app.utils.path_utils import (  # 2026-10-17 北京老陈裁定: 判定函数随迁入入 path_utils
+    OpCategory,
+    reject_reason_empty_path,
+    check_path_syntax_and_exists,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,10 +124,8 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             if param_map is None:
                 return None                                            # 表外交 SA3 fail-closed
             for key, action in param_map.items():
-                # 2026-10-17 北京老陈裁定(补到 SA1): 三态区分 —— 没传跳过 / 传了非法值交判 / 合法 str 正常判。
-                #   病根: 原 `if value is None: continue` 把"没传"与"显式传 None"混同, 放行到执行期
-                #   后 Path(None) 抛 TypeError 崩栈(实测 write(file_path=None))。类型判定不在此重复实现,
-                #   直送 validate_path_layers12 第1层(单一真源, 已含 isinstance 检查)。
+                # 2026-10-17 北京老陈裁定(补到 SA1): 三态区分(没传/非法值/合法 str); 空值交底层原子 reject_reason_empty_path 判,
+                #   原 `if value is None: continue` 把"没传"与"显式传 None"混同, 会放行到执行期崩栈。
                 if key not in normalized_params:
                     continue                                # 真没传
                 value = normalized_params[key]
@@ -143,7 +143,11 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
                     op = OpCategory.WRITE                              # 写目标只查格式
                     if key in must_exist_keys:
                         op = OpCategory.EXISTS
-                ok, err = validate_path_layers12(op, real_path, force=force)
+                # 空值交底层原子(唯一真源), 不在本层重复实现
+                _empty = reject_reason_empty_path(real_path)
+                if _empty:
+                    return _empty
+                ok, err = check_path_syntax_and_exists(op, real_path, force=force)
                 if not ok:
                     return err
             return None
@@ -162,13 +166,15 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             value = normalized_params[key]
             if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
                 continue                                # data 内容型参数: 内联结构非路径
-            # 2026-10-17 北京老陈裁定(补到 SA1): 显式传入的 None/非 str 一律交 validate_path_layers12
-            #   第1层判定(类型/空值单一真源), 不在此重复实现 isinstance 语义。
+            # 空值交底层原子(唯一真源)
+            _empty = reject_reason_empty_path(value)
+            if _empty:
+                return _empty
             if isinstance(value, str):
                 value = dual_path_check.resolve_path_param(
                     normal_name, key, value, normalized_params)
             this_op = OpCategory.EXISTS if key in must_exist_keys else op
-            ok, err = validate_path_layers12(this_op, value, force=force)
+            ok, err = check_path_syntax_and_exists(this_op, value, force=force)
             if not ok:
                 return err
         return None
@@ -246,12 +252,11 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
             value = normalized_params[key]
             if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
                 continue                                # data 内容型参数: 内联结构非路径
-            # 2026-10-17 北京老陈裁定(补到 SA1): 显式传入的 None/非 str 交 validate_path_layers12
-            #   第1层判定(类型/空值单一真源)。本函数只判权限, 故此处不重复实现类型语义。
+            # 空值交底层原子(唯一真源)
+            _empty = reject_reason_empty_path(value)
+            if _empty:
+                return False, _empty, None, "system"       # fail-closed: 非法类型不可被临时授权放行
             if not isinstance(value, str):
-                ok, err = validate_path_layers12(OpCategory.WRITE, value)
-                if not ok:
-                    return False, err, None, "system"     # fail-closed: 非法类型不可被临时授权放行
                 continue
             real_path = dual_path_check.resolve_path_param(
                 normal_name, key, value, normalized_params)
@@ -272,80 +277,6 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         return False, f"路径安全检查异常: {e}", current_path, "system"
 
 
-__all__ = ["validate_tool_path", "precheck_path_legality", "OpCategory", "validate_path_layers12"]
+# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁至 app.utils.path_utils(判定函数归 tool 侧公用层), 此处旧定义删除且不再转出(禁 backward 再导出)。
 
-
-# ══════════════════════════════════════════════════════════════════════
-# 下部规则段: 合法性规则(自 file_path_checker 逐字迁入, 2026-10-16 小欧)
-# 唯一调用方即本文件 precheck(工具侧 validate_path 已删除), 单源单文件合 YAGNI。
-# 纯拼写原子改调 app.utils.path_utils(与 tool 内派生检查同源)。
-# ══════════════════════════════════════════════════════════════════════
-
-class OpCategory(Enum):
-    WRITE     = "write"
-    READ_FILE = "read_file"
-    LIST_DIR  = "list_dir"
-    EXISTS    = "exists"
-
-
-_OP_RULES: Dict[OpCategory, Dict[str, Any]] = {
-    OpCategory.WRITE:     {"check_exist": False, "must_be": None},
-    OpCategory.READ_FILE: {"check_exist": True,  "must_be": "file"},
-    OpCategory.LIST_DIR:  {"check_exist": True,  "must_be": "dir"},
-    OpCategory.EXISTS:    {"check_exist": True,  "must_be": None},
-}
-
-
-def validate_path_layers12(
-    op: OpCategory,
-    path: str,
-    **options: Any,
-) -> Tuple[bool, Optional[str]]:
-    """第1层格式 + 第2层存在性/类型 — 小欧 2026-10-15(2026-10-16 迁入本文件, 逻辑零改动, 唯三处收敛)
-
-    收敛: ①保留字符/保留名/多余盘符改调 utils 原子(单源); ②UNC 跳过盘符可达性探测
-    (拼写合法即过, 可达性交 p.exists() 一次判定, 免门前网络往返); ③第1层注释同步"零IO"失实口径。
-    第1层仍含盘符 exists() 与第2层 exists() 两次 IO —— 门前必要开销, 与执行期不再重复(工具侧已删除)。
-    """
-    # 第1层
-    if not isinstance(path, str) or not path.strip():
-        return False, "路径不能为空"
-    # 盘符存在性检查（最先做，最外层的快速否决） — 小欧 2026-07-04
-    drive = os.path.splitdrive(path)[0]
-    if drive and not drive.startswith("\\\\"):
-        # 2026-10-16 小欧 - UNC(\\host\\share)跳过可达性探测: 拼写合法即过,
-        #   可达性交第2层 p.exists() 一次判定。原先每次 SA1 对 UNC 做网络往返, 不可达主机直接卡门。
-        if not os.path.exists(drive + "\\"):
-            avail = [f"{l}:" for l in string.ascii_uppercase if os.path.exists(f"{l}:\\")]
-            return False, f"驱动器: {drive}不存在。可用驱动器: {', '.join(avail)}"
-    if drive:
-        extra = path_has_extra_drive(path)   # 纯内存拼写检查, UNC 同样适用
-        if extra:
-            return False, extra
-    # 只检查文件名部分（Path(...).name），排除路径分隔符和盘符:号 — 小欧 2026-07-04
-    _fname = Path(path).name
-    bad = path_has_reserved_char(_fname)
-    if bad:
-        return False, f"文件: {_fname}名包含Windows保留字符"
-    reserved = path_has_reserved_name(path)
-    if reserved:
-        return False, f"文件: {reserved}名包含Windows保留名"
-
-    # 第2层
-    rule = _OP_RULES[op]
-    if rule["check_exist"]:
-        p = Path(path)
-        if not p.exists():
-            # 幂等删除: force=True 时不存在即视为已删除,不报错(delete 专用) — 北京老陈 2026-07-12
-            if op == OpCategory.EXISTS and options.get("force"):
-                return True, None
-            logger.warning("[TOCTOU] path=%s op=%s drive_exists=%s parent_exists=%s parent_dir=%s",
-                           path, op.value,
-                           os.path.exists(os.path.splitdrive(path)[0] + "\\") if os.path.splitdrive(path)[0] else "N/A",
-                           p.parent.exists(), str(p.parent))
-            return False, "路径不存在: " + path
-        if rule["must_be"] == "file" and not p.is_file():
-            return False, path + "不是文件"
-        if rule["must_be"] == "dir" and not p.is_dir():
-            return False, path + "不是目录"
-    return True, None
+__all__ = ["validate_tool_path", "precheck_path_legality"]
