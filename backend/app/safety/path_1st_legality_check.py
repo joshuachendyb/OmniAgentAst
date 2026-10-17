@@ -75,6 +75,9 @@ LINE_VALIDATE = {
 # 写入类路径参数 —— 一律指向"数据落到哪里", 恒按写线判。2026-10-15 小欧 - P1-11
 _WRITE_TARGET_KEYS = {"dest", "target_path", "output_path", "destination_path"}
 
+# 内容型参数 —— 值可为内联结构(dict/list), 不是路径, 不参与路径判定
+_CONTENT_PARAM_KEYS = {"data"}
+
 # 2026-10-15 小欧 - 门前初查单源: 这些参数**虽然工具是 write 档**, 但执行期必须存在。
 #   rename 的 path(源)/edit 的 path(被改文件)执行期必须存在, 若按 write 档跳过,
 #   "前移省弹窗"对这两个工具即完全失效(实测: 源不存在照样走全套安检+弹窗)。
@@ -119,13 +122,19 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             if param_map is None:
                 return None                                            # 表外交 SA3 fail-closed
             for key, action in param_map.items():
-                value = normalized_params.get(key)
-                if value is None:
-                    continue
-                if not isinstance(value, str):
-                    continue                               # 非 str(如 data 内联 dict)非路径, 交执行期自然处理
-                real_path = dual_path_check.resolve_path_param(
-                    normal_name, key, value, normalized_params)
+                # 2026-10-17 北京老陈裁定(补到 SA1): 三态区分 —— 没传跳过 / 传了非法值交判 / 合法 str 正常判。
+                #   病根: 原 `if value is None: continue` 把"没传"与"显式传 None"混同, 放行到执行期
+                #   后 Path(None) 抛 TypeError 崩栈(实测 write(file_path=None))。类型判定不在此重复实现,
+                #   直送 validate_path_layers12 第1层(单一真源, 已含 isinstance 检查)。
+                if key not in normalized_params:
+                    continue                                # 真没传
+                value = normalized_params[key]
+                if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
+                    continue                            # data 内容型参数: 内联结构非路径
+                if isinstance(value, str):
+                    value = dual_path_check.resolve_path_param(
+                        normal_name, key, value, normalized_params)
+                real_path = value
                 if action == "read":
                     op = OpCategory.EXISTS
                 elif action == "delete":
@@ -148,15 +157,18 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
         else:
             return None                                                # 未知档位交 SA3 fail-closed
         for key in PATH_PARAM_KEYS:
-            value = normalized_params.get(key)
-            if value is None:
-                continue
-            if not isinstance(value, str):
-                continue                               # 非 str(如 data 内联 dict)非路径, 交执行期自然处理
-            real_path = dual_path_check.resolve_path_param(
-                normal_name, key, value, normalized_params)
+            if key not in normalized_params:
+                continue                                    # 真没传(不得用 get(key) is None 判, 见 dual 分支裁定)
+            value = normalized_params[key]
+            if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
+                continue                                # data 内容型参数: 内联结构非路径
+            # 2026-10-17 北京老陈裁定(补到 SA1): 显式传入的 None/非 str 一律交 validate_path_layers12
+            #   第1层判定(类型/空值单一真源), 不在此重复实现 isinstance 语义。
+            if isinstance(value, str):
+                value = dual_path_check.resolve_path_param(
+                    normal_name, key, value, normalized_params)
             this_op = OpCategory.EXISTS if key in must_exist_keys else op
-            ok, err = validate_path_layers12(this_op, real_path, force=force)
+            ok, err = validate_path_layers12(this_op, value, force=force)
             if not ok:
                 return err
         return None
@@ -228,12 +240,21 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
             line = write_path_check
 
         # 遍历所有命中路径参数逐一校验, 任一越权即拒绝(漏洞B修复: 原只取第一个命中参数)
-        hit_params = [key for key in PATH_PARAM_KEYS if normalized_params.get(key) is not None]
-        for key in hit_params:
-            if not isinstance(normalized_params.get(key), str):
-                continue                               # 非 str(如 data 内联 dict)非路径, 交执行期自然处理
+        for key in PATH_PARAM_KEYS:
+            if key not in normalized_params:
+                continue                                # 真没传(见 precheck 同处裁定)
+            value = normalized_params[key]
+            if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
+                continue                                # data 内容型参数: 内联结构非路径
+            # 2026-10-17 北京老陈裁定(补到 SA1): 显式传入的 None/非 str 交 validate_path_layers12
+            #   第1层判定(类型/空值单一真源)。本函数只判权限, 故此处不重复实现类型语义。
+            if not isinstance(value, str):
+                ok, err = validate_path_layers12(OpCategory.WRITE, value)
+                if not ok:
+                    return False, err, None, "system"     # fail-closed: 非法类型不可被临时授权放行
+                continue
             real_path = dual_path_check.resolve_path_param(
-                normal_name, key, normalized_params[key], normalized_params)
+                normal_name, key, value, normalized_params)
             current_path = real_path
             # 2026-10-15 小欧 - P1-11: dest/target_path 等是写入目标, 与工具动作无关。实测 read 工具携带
             #   dest=C:\Windows\evil.txt 时跟读线判会放行, 故这批参数恒走写线。
