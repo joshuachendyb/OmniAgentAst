@@ -101,10 +101,12 @@
 # 2026-10-16 - 小欧 - [36]第七章(老陈裁定) 主链重排三级串联: 自杀→danger拒→risk确认→路径权限; 删两处重复判定
 # 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 名不副实且被删除类与中风险类共用; 沙箱判定同步, 行为不变
 # 2026-10-16 - 小欧 - tool去检查化: 工具层注释"validate先于本函数执行"订正(SA1 唯一合法性检查点, 工具只执行+业务警告)。
+# 2026-10-17 - 小欧 - 文档[37] 第十章: delete 专属判定调用点 check_delete_risk → check_delete_permission(封装口, 内部
+#   含 guard+validate_delete+check_delete_risk); 本层仍只消费结果(blocked 硬拦 / requires_confirmation 进确认), 调用关系不变。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
-Safety层（本文件 + path_classify_category/path_env/path_1st_legality_check）：
+Safety层（本文件 + path_classify_category/path_env/path_legality_router）：
   - 路径黑名单/白名单校验（classify_forbidden_path → 三线 validate）
   - 路径穿越(..)拒绝
   - 写入大小保护
@@ -134,7 +136,7 @@ from typing import Dict, Optional
 from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
-from app.safety.path_1st_legality_check import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_1st_legality_check
+from app.safety.path_legality_router import validate_tool_path as _validate_tool_path  # 2026-10-15 小欧 - 文档[35] 三线分离: 入口迁 path_1st_legality_check; 2026-10-17 更名 path_legality_router(SA5)
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 第七章: 自杀检查唯一入口(判定全在 guard 层) 小欧 - [36]4.4: 快照组装下沉同层，本文件不再碰 shell_engine
 from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
 
@@ -190,10 +192,12 @@ class ToolSafetyChecker:
                     severity="dangerous")
 
         # ① delete 专属判定一次性计算, 供②③两处消费(DRY) — 小欧 2026-08-04
+        #   2026-10-17 小欧 - 删线权限判定收口到 delete_path_check.check_delete_permission
+        #     (内部 = guard + validate_delete + check_delete_risk), 本层只消费其结果, 调用关系不变。
         delete_risk = None
         if tool_name == "delete":
-            from app.safety.delete_safety import check_delete_risk  # 惰性导入避免与delete_safety循环依赖 — 小欧 2026-08-04
-            delete_risk = check_delete_risk(params or {})
+            from app.safety.delete_path_check import check_delete_permission
+            delete_risk = check_delete_permission((params or {}).get("path") or "", params or {})
 
         # ② 自杀检查(2026-10-16 第七章 · 北京老陈裁定): 提到 _check_known_risks **之前**
         #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(E2E P9-03 后端自杀实录);
@@ -233,7 +237,9 @@ class ToolSafetyChecker:
         # ④ 已知风险检测: 无条件防线(开关无关) — 路径越权(R1/R2)/delete R6/写入大小保护/代码注入即使开关false也拒绝 — 小欧 2026-08-04
         # 先校验delete专属R6（项目根外递归删除），再校验白名单（临时授权）
         if delete_risk is not None and delete_risk.blocked:
-            log_and_print(f"[ToolSafetyChecker] delete R6硬拦截(项目根外递归删除): {delete_risk.message}")
+            # 2026-10-17 小欧 - 文案订正: delete_risk 现由 check_delete_permission 产出, blocked 可能来自
+            #   guard(A族/删根) 或 validate_delete(R1/R2) 或 check_delete_risk(R6 区外递归), 不再专属 R6。
+            log_and_print(f"[ToolSafetyChecker] delete 权限硬拦截(约定区/工作区边界): {delete_risk.message}")
             return delete_risk
         known_risk = self._check_known_risks(tool_name, params or {}, delete_risk=delete_risk,
                                              skip_confirmation=skip_confirmation)  # 5.3(2026-09-02 小欧, 病根3.4): skip 传入, 白名单外豁免在 _check_known_risks 内识别
@@ -350,7 +356,7 @@ class ToolSafetyChecker:
                            skip_confirmation: bool = False) -> Optional["SafetyResult"]:
         """已知风险检测：路径越权(R1/R2) / delete R6 / 写入大小保护 / 代码注入 — 小沈 2026-06-17
         小欧 2026-06-25: 返回SafetyResult替代raw dict
-        小欧 2026-06-27: 路径检查委托validate_tool_path(现 path_1st_legality_check 统一处理)
+        小欧 2026-06-27: 路径检查委托validate_tool_path(现 path_legality_router 统一处理)
         小欧 2026-06-28: 增 delete_risk 入参, R6(项目根外递归) 在此无条件拦截
         # T1 (v1.43): mode 由 validate_tool_path 内部按 tool_name 自动推断(调用方不传), 本层接收其
         #   4 元组 (is_valid, msg, failed_path, category) —— 注释订正 2026-10-14(与实际行为一致)

@@ -199,10 +199,10 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
             _cp = call.get("tool_params", {})
 
             # 2026-10-15 小欧 - 门前初查: 第1层格式+第2层存在性, 进门即拦, 省信任预查/SA3/弹窗。
-            #   实现下沉 app.safety.path_1st_legality_check.precheck_path_legality(op表与本模块同源, 双份即分叉);
+            #   实现下沉 app.safety.path_precheck.precheck_path_legality(op表与本模块同源, 双份即分叉);
             #   第3层警告门前不跑(参数不全且要贴执行), 由工具内 for_* 警告函数产出。
             #   2026-10-16 小欧 - tool去检查化: SA1 是唯一合法性检查点, 执行期工具不再复查合法性(只执行+业务警告)。
-            from app.safety.path_1st_legality_check import precheck_path_legality
+            from app.safety.path_precheck import precheck_path_legality
             _pre_err = precheck_path_legality(_cn, _cp)
             if _pre_err is not None:
                 _events.append(agent._step_emitter.emit(MetaStep(

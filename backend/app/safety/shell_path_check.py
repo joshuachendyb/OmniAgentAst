@@ -23,6 +23,8 @@
 #   原因: 两个门各自内部都要把整套判定跑一遍, 而本层两个清单都要 → 白跑两遍(实测计数 = 2)。
 #   ★「取路径」与「判权限」仍是分开的两层: 本模块只编排, 判定在 delete/write_path_check。
 # 2026-10-16 小欧 三堂会审(老陈裁定接进本层): 高危删除解析不出目标即硬拦 system(`rm -rf /` 曾 fail-open)。
+# 2026-10-17 - 小欧 - 文档[37] 第十章: 删源线改纯调 delete_path_check.check_delete_permission(判定全下沉, 本层不重判);
+#   blocked→拒(category=system), requires_confirmation→当通过(通道 B 无弹窗, 老陈裁定)。写目标线不变。
 """
 shell_path_check — shell 命令路径检查(通道 B)
 
@@ -57,15 +59,24 @@ def _judge_paths(paths: List[str], line, command: str) -> Tuple[bool, Optional[s
                 f"path={raw_path}, command={command.strip()[:200]}"
             )
             return False, f"路径含非法 shell 元字符, 拒绝执行: {raw_path}", raw_path, "system"
-        valid, err, category = (line.validate_delete(raw_path) if line is delete_path_check
-                                else line.validate_write(raw_path))
+        if line is delete_path_check:
+            # 2026-10-17 小欧 - 删除权限判定全部下沉到 check_delete_permission(本层纯调用, 不重判);
+            #   blocked→拒, requires_confirmation→当通过(通道 B 无弹窗, 老陈裁定)。
+            _perm = delete_path_check.check_delete_permission(raw_path)
+            if _perm.blocked:
+                logger.warning(
+                    f"[shell_path_check] bash删源越权: category=system, "
+                    f"path={raw_path}, command={command.strip()[:200]}"
+                )
+                return False, _perm.message, raw_path, "system"
+            continue
+        valid, err, category = line.validate_write(raw_path)
         if valid:
             continue
         # 违规必须留痕: 下游 tool_safety_checker 只记 tool=bash, 没有命令原文,
         # 安全事件排查时"是哪个命令想写这个路径"查不到 —— 此处补全(小欧 2026-10-14)
-        _kind = "删源" if line is delete_path_check else "写目标"
         logger.warning(
-            f"[shell_path_check] bash{_kind}越权: category={category}, "
+            f"[shell_path_check] bash写目标越权: category={category}, "
             f"path={raw_path}, command={command.strip()[:200]}"
         )
         return False, err, raw_path, category

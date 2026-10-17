@@ -19,6 +19,8 @@
 #   新增 reject_reason_empty_path(空值唯一真源)与 check_path_five_level(tool 专用五级总入口, delete/move/copy 共用; ⑤禁区判定受 logging.debug 门控)。
 #   ★更正上方 10-16 记载: 按 B 方案本模块已可引用 app.safety.path_classify_category(仅转发禁区判据, 不持名单)。
 # 2026-10-17 北京老陈裁定 - 迁入 check_path_syntax_and_exists 与 check_preconditions, 新增空值原子 reject_reason_empty_path 与 tool 专用五级总入口 check_path_five_level
+# 2026-10-17 - 小欧 - check_path_five_level 第⑤级内联禁区判据改调 delete_path_check.guard_forbidden_delete(硬底线单源,
+#   惰性导入避免顶层循环); 本层不再自持禁区判据代码, 只编排。
 """
 path_utils — 路径处理通用工具
 
@@ -126,7 +128,7 @@ def path_has_extra_drive(file_path: str) -> Optional[str]:
 
 # ── 业务提示语(迁自 app/tools/validate/file_path_checker.py, 2026-10-16 老陈裁定) ──
 #   三者皆为**纯警告**函数: 恒返 (True, None, warn|None), 只产一句提示语,
-#   不判参数合法性、不判权限(合法性归 safety/path_1st_legality_check, 权限归 safety 三线)。
+#   不判参数合法性、不判权限(合法性归 safety/path_precheck + path_legality_router, 权限归 safety 三线)。
 def validate_path_for_write(file_path: str, content: str = "", append: bool = False) -> Tuple[bool, Optional[str], Optional[str]]:
     """
     写入业务警告（适用于write_text_file、edit_text_file、generate_chart、screen_capture、download_file）
@@ -311,31 +313,16 @@ def check_path_five_level(
     if pre is not None:
         return False, pre[1]
     # 第5级: 禁区身份 —— 判据委托 path_classify_category 单一真源, 本处不持名单
+    #   2026-10-17 小欧 - 内联判据改调 delete_path_check.guard_forbidden_delete(硬底线单源),
+    #     本处只编排; 惰性导入避免 path_utils ↔ delete_path_check 顶层循环导入。
     if enforce_zone is None:
         from app.config import get_config
         enforce_zone = bool(get_config().get("logging.debug", False))
     if enforce_zone:
-        from app.safety.path_classify_category import (
-            is_allowed_root_itself,
-            is_code_root_path,
-            is_disk_root,
-            is_system_protected_path,
-        )
-        try:
-            Path(path).expanduser().resolve()      # 归一化探针: 解析失败即 fail-closed
-        except Exception as e:
-            return False, f"安全校验: 路径解析失败({e})"
-        if os.name == "nt" and is_system_protected_path(path, "delete"):
-            return False, f"禁止操作系统目录: {path}"
-        if is_disk_root(path):
-            return False, f"禁止操作磁盘根目录: {path}"
-        if is_code_root_path(path):
-            return False, f"禁止操作代码目录(含其内部子级): {path}"
-        hit = is_allowed_root_itself(path)
-        if hit == "allowed_root_itself":
-            return False, f"禁止操作项目根/授权根目录: {path}"
-        if hit == "allowed_root_ancestor":
-            return False, f"禁止操作项目根/授权根上级目录: {path}"
+        from app.safety.delete_path_check import guard_forbidden_delete
+        _reason = guard_forbidden_delete(path)
+        if _reason:
+            return False, _reason
     return True, None
 
 

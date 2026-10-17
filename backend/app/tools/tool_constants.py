@@ -737,6 +737,10 @@ PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
                     "directory", "file_name", "destination_path", "output_path",
                     "dest", "search_dir", "data")
 
+# 内容型路径参数 —— 值可为内联结构(dict/list), 不是文件路径, 不参与路径判定(SA1/SA5 两处共用单源)
+#   2026-10-17 - 小欧 - 自 path_1st_legality_check 上移(path_precheck 与 path_legality_router 拆分后两文件共用)
+CONTENT_PARAM_KEYS = frozenset({"data"})
+
 # 只读工具集合 已于 2026-10-15 删除 — 小欧(文档[35] P2-21)
 #   原因: 与 PATH_ACTION_KINDS 的 "read" 项**完全相同**(实测差集为空), 且生产零消费
 #        (通道分发改用 action_kind 单判据后无任何引用方)。两表并存 = 改一处漏一处(DRY)。

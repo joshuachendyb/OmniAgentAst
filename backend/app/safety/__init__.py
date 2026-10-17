@@ -32,11 +32,11 @@ from app.safety.operation_maintenance import (
     cleanup_expired_backups,
 )
 # 2026-10-15 小欧 - 文档[35] 3.1.1 第五节: 补新模块导出。
-#   路径检查九个模块此前一律走显式模块路径(from app.safety.path_1st_legality_check import ...)未在包级导出;
+#   路径检查九个模块此前一律走显式模块路径(from app.safety.path_legality_router import ...)未在包级导出;
 #   现按文档要求补齐, 便于外部统一从 app.safety 取用。
 # 2026-10-16 小欧 - tool去检查化: 删 validate_path_for_write/delete 别名导出(与工具层 for_* 同名不同义,
 #   实测全仓零外部使用); 改直挂 validate_read/write/delete 真名。
-from app.safety.path_1st_legality_check import validate_tool_path
+from app.safety.path_legality_router import validate_tool_path
 from app.safety.path_classify_category import (
     SYSTEM_PROTECTED_DIR_NAMES,
     is_code_root_path,

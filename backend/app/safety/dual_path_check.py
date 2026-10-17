@@ -15,6 +15,8 @@
 #   目标=写线、move 源=删线; 单路径 edit 移出本表(改走写线); 并修复
 #   LINE_BY_ACTION[action].validate 旧名残留(三线已改名, 旧调用致 6 工具全瘫)。
 # 2026-10-15 - 小欧 - 三堂会审: validate_dual_path 的 param_map is None 原静默放行, 改 fail-closed(命中路径参数逐个走写线, 零命中返 False/system) + warning 留痕。
+# 2026-10-17 - 小欧 - 文档[37] 第十章: delete 动作(仅 move 源)改纯调 delete_path_check.check_delete_permission
+#   (判定全下沉, 本层不重判); blocked→拒(category=system), requires_confirmation→当通过(本通道无弹窗, 老陈裁定)。读/写线不变。
 r"""dual_path_check — 双路径通道(5 个复合工具: copy/move/compress/extract/rename)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -90,7 +92,7 @@ DUAL_ACTION_PARAMS: Dict[str, Dict[str, str]] = {
     "rename":   {"path": "write", "dest": "write"},
 }
 
-# 动作档位 → 线模块。单一真源, path_1st_legality_check 亦引用本表(2026-10-15 小欧 - P2-22 消除双份)。
+# 动作档位 → 线模块。单一真源, path_legality_router 亦引用本表(2026-10-15 小欧 - P2-22 消除双份)。
 LINE_BY_ACTION = {
     "read": read_path_check,
     "write": write_path_check,
@@ -165,10 +167,14 @@ def validate_dual_path(tool_name: str, params: Dict[str, Any]
                 if cat == "system":
                     return False, msg, real_path, cat
         elif action == "delete":
-            ok, err, category = delete_path_check.validate_delete(real_path)
+            # 2026-10-17 小欧 - 删除权限判定全部下沉到 check_delete_permission(本层纯调用, 不重判);
+            #   blocked→拒, requires_confirmation→当通过(本通道无弹窗, 老陈裁定)。
+            _perm = delete_path_check.check_delete_permission(real_path)
+            if _perm.blocked:
+                return False, _perm.message, real_path, "system"
         else:  # write, 未知档位 fail-closed 按写线(最严)
             ok, err, category = write_path_check.validate_write(real_path)
-        if not ok:
-            return False, err, real_path, category
+            if not ok:
+                return False, err, real_path, category
 
     return True, None, None, None

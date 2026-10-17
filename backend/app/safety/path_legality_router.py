@@ -11,55 +11,42 @@
 # 2026-10-15 - 北京老陈裁定: 删"none"通道(通道 A 零路径命中即放行已等价覆盖) + registry_* 豁免(entry 与 bash 特判并列, 注册表键非文件路径)。
 # 2026-10-15 - 小欧 - 三堂会审: registry_* 豁免须已注册才生效(防伪造前缀绕过), 移至 get_tool 之后。
 # 2026-10-15 - 小欧 - 门前初查: 新增 precheck_path_legality(SA1 进门即拦, 失败交调用方 denied 处理) +
-#   _EXISTENCE_PARAMS 单源声明。动因三处:
-#   ① 【DRY 下沉】初查原先落在 safety_gate 编排层, op 映射/action→op/PATH_PARAM_KEYS 遍历/
-#      DUAL_ACTION_PARAMS 遍历与本文件三份重复, 改表忘同步即分叉; 现收归本模块(路径总入口本就持有
-#      "哪个参数该用什么 op"的知识), 编排层只调一行。
-#   ② 【BUG 修复·存在性零覆盖】rename 的 path(源)/edit 的 path(被改文件)是 write 档, 按 WRITE 判会跳过
-#      存在检查, 实测二者源不存在照样走全套安检+弹窗 —— "前移省弹窗"完全失效。_EXISTENCE_PARAMS 单源声明
-#      这两个"write 档但源必须存在"的参数, 命中即按 EXISTS 查。改此表 = 改前移范围。
-#   ③ 【BUG 修复·取错源】force 原取原始 params(漏归一化后的别名), 现先取 normalized_params 再回落原值。
-#   另: params 入口 `or {}` 归一(None 时原先 params.get 抛异常被 except 吞成静默 fail-open)。
+#   _EXISTENCE_PARAMS 单源声明。(2026-10-17 已拆出至 path_precheck.py, 本条留档)
 # 2026-10-16 - 小欧 - tool去检查化: 合法性规则段(OpCategory/_OP_RULES/check_path_syntax_and_exists)
 #   自 file_path_checker 逐字迁入本文件底部(迁移后唯一调用方即本文件 precheck, 单源单文件合 YAGNI);
 #   纯拼写原子(保留字符/保留名/多余盘符)改调 app.utils.path_utils(tools→utils/safety→utils 方向合法)。
-#   附带: precheck 初查异常补日志(P1, fail-open 必须留痕); UNC 跳过盘符可达性探测(免网络往返);
-#   非 str 参数跳过(防 data 内联 dict 被误杀); PATH_PARAM_KEYS 补 search_dir/data(覆盖审计实测原全漏)。
-# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁往 app.utils.path_utils; SA1 三处调用点改为三态区分并先过空值原子, 修显式传 None 崩栈
-# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁往 app.utils.path_utils; SA1 三处调用点改三态区分并先过空值原子, 修显式传 None 崩栈
+# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁往 app.utils.path_utils; SA1 三处调用点改为三态区分并先过空值原子, 修显式传 None 崩栈。
+# 2026-10-17 - 小欧 - 文档[37] 拆分(更名 path_1st_legality_check → path_legality_router, SA5 路径层):
+#   同文件拆出 SA1 门前初查(precheck_path_legality + _EXISTENCE_PARAMS)至 path_precheck.py;
+#   本文件只留 SA5 validate_tool_path(读/写/删/dual 分派, 产出 category)。
+#   名称正名: 原名易被读作 SA1 入口, 实为 SA5 路径路由。_CONTENT_PARAM_KEYS 上移 tool_constants.CONTENT_PARAM_KEYS(两文件共用单源)。
 """
-path_1st_legality_check — 路径检查总入口
+path_legality_router — SA5 路径层(读/写/删/dual 分派, 产出 category)
 
 本模块是 SA5 对外的**唯一入口**, 负责把一次工具调用分派到正确的检查:
 
-   通道 B  bash / registry_* / action_kind == "dual"  → shell_path_check / 豁免 / dual_path_check
-   通道 A  action_kind == "read"/"write"/"delete"  单一动作 → 对应线(零路径命中即放行)
+    通道 B  bash / registry_* / action_kind == "dual"  → shell_path_check / 豁免 / dual_path_check
+    通道 A  action_kind == "read"/"write"/"delete"  单一动作 → 对应线(零路径命中即放行)
 
 调用链: SA3 tool_safety_checker._check_known_risks
         → 本模块 validate_tool_path
         → 三线 validate → path_check_common + path_classify_category.classify_forbidden_path
         → 读 SA6 temp_auth.is_temp_authorized
 
-小欧 2026-10-15
+★SA1 门前初查(precheck_path_legality)已拆出至同包 path_precheck.py —— 本模块只做 SA5 路径路由。
+
+小欧 2026-10-15 建 / 2026-10-17 更名自 path_1st_legality_check
 """
 
 import logging
-import os
-import string
-from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 from app.safety import shell_path_check, dual_path_check
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.registry import tool_registry
-from app.tools.tool_constants import PATH_PARAM_KEYS
+from app.tools.tool_constants import PATH_PARAM_KEYS, CONTENT_PARAM_KEYS
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
-from app.utils.path_utils import (  # 2026-10-17 北京老陈裁定: 判定函数随迁入入 path_utils
-    OpCategory,
-    reject_reason_empty_path,
-    check_path_syntax_and_exists,
-)
+from app.utils.path_utils import reject_reason_empty_path
 
 logger = logging.getLogger(__name__)
 
@@ -76,111 +63,6 @@ LINE_VALIDATE = {
 
 # 写入类路径参数 —— 一律指向"数据落到哪里", 恒按写线判。2026-10-15 小欧 - P1-11
 _WRITE_TARGET_KEYS = {"dest", "target_path", "output_path", "destination_path"}
-
-# 内容型参数 —— 值可为内联结构(dict/list), 不是路径, 不参与路径判定
-_CONTENT_PARAM_KEYS = {"data"}
-
-# 2026-10-15 小欧 - 门前初查单源: 这些参数**虽然工具是 write 档**, 但执行期必须存在。
-#   rename 的 path(源)/edit 的 path(被改文件)执行期必须存在, 若按 write 档跳过,
-#   "前移省弹窗"对这两个工具即完全失效(实测: 源不存在照样走全套安检+弹窗)。
-#   改此表 = 改前移范围。新增"write 档但源必须存在"工具必须登记此表, 否则前移 silently 失效。
-#   2026-10-16 小欧 - tool去检查化后 SA1 是唯一合法性检查点, 此表权威性不变。
-_EXISTENCE_PARAMS: Dict[str, set] = {
-    "rename": {"path"},
-    "edit": {"path"},
-}
-
-
-def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[str]:
-    """门前初查: 第1层格式 + 第2层存在性 — 小欧 2026-10-15
-
-    SA1 进门即拦(省信任预查/SA3/HITL三步), 失败原因交调用方按 denied 处理。
-    只取"是否存在", 警告层(第3层)完全不跑 —— 门前参数不全(content/recursive/overwrite 等),
-    且警告要贴近执行才有意义。执行期工具内 validate_path 原样全跑(第2层复查防 TOCTOU + 第3层警告)。
-
-    op 知识与本文件同源: 单动作读/删 → EXISTS; write → WRITE(跳过存在) + _EXISTENCE_PARAMS
-    补"write 档但源必须存在"的两个工具; dual 按 DUAL_ACTION_PARAMS 逐参数分 op。
-    读档用 EXISTS 而非 READ_FILE/LIST_DIR: 单动作 read 兼文件与目录, EXISTS 是唯一公分母
-    (SA1 是唯一合法性检查点, 宁可口径宽一格由执行期自然失败, 不可误杀合法目录/文件)。
-
-    返回 None = 通过(或不归本层管, 由 validate_tool_path 裁决); 返回 str = 失败原因。
-    """
-    params = params or {}
-    try:
-        normal_name = normalize_tool_name(tool_name)
-        # bash(命令通道)/registry_*(注册表键非文件路径)与未注册工具: 均交 validate_tool_path 裁决
-        if normal_name == "bash" or normal_name.startswith("registry_"):
-            return None
-        meta = tool_registry.get_tool(normal_name)
-        if meta is None:
-            return None
-        normalized_params, _ = normalize_params(normal_name, params)
-        must_exist_keys = _EXISTENCE_PARAMS.get(normal_name, set())
-        force = bool(normalized_params.get("force", params.get("force", False)))
-
-        if meta.action_kind == "dual":
-            from app.safety.dual_path_check import DUAL_ACTION_PARAMS
-            param_map = DUAL_ACTION_PARAMS.get(normal_name)
-            if param_map is None:
-                return None                                            # 表外交 SA3 fail-closed
-            for key, action in param_map.items():
-                # 2026-10-17 北京老陈裁定(补到 SA1): 三态区分(没传/非法值/合法 str); 空值交底层原子 reject_reason_empty_path 判,
-                #   原 `if value is None: continue` 把"没传"与"显式传 None"混同, 会放行到执行期崩栈。
-                if key not in normalized_params:
-                    continue                                # 真没传
-                value = normalized_params[key]
-                if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
-                    continue                            # data 内容型参数: 内联结构非路径
-                if isinstance(value, str):
-                    value = dual_path_check.resolve_path_param(
-                        normal_name, key, value, normalized_params)
-                real_path = value
-                if action == "read":
-                    op = OpCategory.EXISTS
-                elif action == "delete":
-                    op = OpCategory.EXISTS
-                else:
-                    op = OpCategory.WRITE                              # 写目标只查格式
-                    if key in must_exist_keys:
-                        op = OpCategory.EXISTS
-                # 空值交底层原子(唯一真源), 不在本层重复实现
-                _empty = reject_reason_empty_path(real_path)
-                if _empty:
-                    return _empty
-                ok, err = check_path_syntax_and_exists(op, real_path, force=force)
-                if not ok:
-                    return err
-            return None
-
-        if meta.action_kind == "read":
-            op = OpCategory.EXISTS
-        elif meta.action_kind == "delete":
-            op = OpCategory.EXISTS
-        elif meta.action_kind == "write":
-            op = OpCategory.WRITE
-        else:
-            return None                                                # 未知档位交 SA3 fail-closed
-        for key in PATH_PARAM_KEYS:
-            if key not in normalized_params:
-                continue                                    # 真没传(不得用 get(key) is None 判, 见 dual 分支裁定)
-            value = normalized_params[key]
-            if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
-                continue                                # data 内容型参数: 内联结构非路径
-            # 空值交底层原子(唯一真源)
-            _empty = reject_reason_empty_path(value)
-            if _empty:
-                return _empty
-            if isinstance(value, str):
-                value = dual_path_check.resolve_path_param(
-                    normal_name, key, value, normalized_params)
-            this_op = OpCategory.EXISTS if key in must_exist_keys else op
-            ok, err = check_path_syntax_and_exists(this_op, value, force=force)
-            if not ok:
-                return err
-        return None
-    except Exception as e:
-        logger.warning("[SA1] 门前初查自身异常, 已放行交 SA3 兜底: %s", e)
-        return None                                                    # 初查自身异常不拦路: SA3+执行期两道还在
 
 
 def validate_tool_path(tool_name: str, params: Dict[str, Any]
@@ -241,7 +123,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         line = LINE_BY_ACTION.get(kind)
         if line is None:
             logger.warning(
-                f"[path_1st_legality_check] 工具 {normal_name} 的 action_kind={kind!r} 不在三线中, "
+                f"[path_legality_router] 工具 {normal_name} 的 action_kind={kind!r} 不在三线中, "
                 f"按写线(fail-closed 最严档)处理; 请在 tool_constants 四档声明表之一声明")
             line = write_path_check
 
@@ -250,7 +132,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
             if key not in normalized_params:
                 continue                                # 真没传(见 precheck 同处裁定)
             value = normalized_params[key]
-            if key in _CONTENT_PARAM_KEYS and not isinstance(value, str):
+            if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
                 continue                                # data 内容型参数: 内联结构非路径
             # 空值交底层原子(唯一真源)
             _empty = reject_reason_empty_path(value)
@@ -277,6 +159,4 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
         return False, f"路径安全检查异常: {e}", current_path, "system"
 
 
-# 2026-10-17 北京老陈裁定 - OpCategory 与 check_path_syntax_and_exists 迁至 app.utils.path_utils(判定函数归 tool 侧公用层), 此处旧定义删除且不再转出(禁 backward 再导出)。
-
-__all__ = ["validate_tool_path", "precheck_path_legality"]
+__all__ = ["validate_tool_path"]
