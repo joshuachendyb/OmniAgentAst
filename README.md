@@ -202,7 +202,7 @@ OmniAgentAs-desk/
 │   │   ├── api/v1/             # API 薄壳路由（config/settings/models/chat/task/execution/health/messages/sessions/tool/task-queries/metrics/token-usage）
 │   │   ├── db/                 # 数据库（SQLAlchemy + aiosqlite：database.py / db_initializer.py / operation_queries.py / models/ / migrations/）
 │   │   ├── logger/             # 日志配置
-│   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/tool_safety_checker/default_hooks/models
+│   │   ├── safety/             # 安全体系（顶层）：operation_record/operation_backup/operation_rollback/operation_maintenance/delete_safety/hash_helper/path_tool_safety_checker/default_hooks/models
 │   │   ├── tools/              # 工具函数（9分类63工具，含 security 安全守卫 + validate 校验层 + toolhelper）
 │   │   ├── llm/                # LLM 客户端（httpx 多Provider，顶层能力层）
 │   │   ├── monitoring/         # 监控（collector / middleware，顶层能力层）
@@ -350,7 +350,7 @@ OmniAgentAs-desk/
 
 | 环节 | 实现 |
 |------|------|
-| 后端判定 | `tool_safety_checker` 按 severity 分级（safe/destructive/dangerous），severity 9-10 分 blocked 直接拒绝执行（已知风险：路径越权/写入保护/注入） |
+| 后端判定 | `path_tool_safety_checker` 按 severity 分级（safe/destructive/dangerous），severity 9-10 分 blocked 直接拒绝执行（已知风险：路径越权/写入保护/注入） |
 | 危险可见化 | 危险操作 → `hitl_gateway`/`safety_gate` 发 paused 帧 → 前端 `AuthorizationModal` 授权弹窗 + `ToolCallLine` 高亮边框（hitl-border） |
 | 安全配置 UI | `Settings2` 安全 Tab（enabled/confirmDangerousOps/auto_confirm_delay/hitl_timeout）——仅透传保存至 config.yaml；**执行判定真正消费的 security 键仅 enabled / hitl_timeout / auto_confirm_delay** |
 | 信任会话 | TrustedTool 带 path 字段，路径级精确撤销 |

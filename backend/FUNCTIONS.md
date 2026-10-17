@@ -486,7 +486,7 @@ def my_parse_json(json_str):
 | `_get_allowed_roots` | ~~删除判定允许根列表~~ **已于 2026-10-15 删除**（根集合收为 `app/utils/path_utils.py` 的 `get_allowed_roots()` 公开单源） | — | — |
 | `_is_inside_any` | ~~目标是否位于任一允许根内~~ **已于 2026-10-15 删除**（零外部调用，内联为 `any(p == root or root in p.parents for root in roots)`） | — | — |
 
-> 消费链：tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，危险项入 _check_known_risks 无条件拦截，其余入 _get_needs_confirmation 确认分流
+> 消费链：path_tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，危险项入 _check_known_risks 无条件拦截，其余入 _get_needs_confirmation 确认分流
 
 ### 8.3 白名单外临时授权（temp_auth.py，位于 app/safety/）
 
@@ -497,9 +497,9 @@ def my_parse_json(json_str):
 | `is_temp_authorized` | 检查路径是否在临时授权范围内（含子目录树） | file_path: str | bool |
 | `get_authorized` | 获取当前作用域授权映射 | 无 | Dict[Path, bool] |
 
-> 消费链：tool_safety_checker._check_known_risks 检测到白名单外路径(非禁区) → SafetyResult(requires_confirmation+auth_path，auth_path=failed_path 真正越权参数, 非固定path-or-dest) → action_handler 确认后 grant_temp_auth → validate_path 放行本次；**react_cycle.run_react_cycle task结束 finally 调 clear_temp_auth() 清除(task级清零点)**；禁区(代码库根/系统目录)不受临时授权影响永久封锁
+> 消费链：path_tool_safety_checker._check_known_risks 检测到白名单外路径(非禁区) → SafetyResult(requires_confirmation+auth_path，auth_path=failed_path 真正越权参数, 非固定path-or-dest) → action_handler 确认后 grant_temp_auth → validate_path 放行本次；**react_cycle.run_react_cycle task结束 finally 调 clear_temp_auth() 清除(task级清零点)**；禁区(代码库根/系统目录)不受临时授权影响永久封锁
 
-### 8.4 受保护进程集合（tool_safety_checker.py，位于 app/safety/）
+### 8.4 受保护进程集合（path_tool_safety_checker.py，位于 app/safety/）
 
 宿主关键进程 PID 的唯一组装点（2026-10-08 事故驱动新增）。供给 1.15 的 `is_process_kill_protected` 判定"命令是否要杀宿主自己"。此前 `check_shell_command_risk` 的 `protected_pids` 参数全项目无第二处传值，保护盾恒不生效。
 
