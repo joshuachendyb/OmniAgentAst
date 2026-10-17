@@ -15,7 +15,7 @@
   - 调用 validate/file_safety_checker.py -> check_tool_module（模块安装检查）
   - check_office_file 编排：类型检查→模块安全检查二位一体
 
-Safety层（app/safety/tool_safety_checker.py + app/safety/path_classify_category.py）独立运行、互不调用：
+Safety层（app/safety/path_tool_safety_checker.py + app/safety/path_classify_category.py）独立运行、互不调用：
   - 路径黑名单/白名单/穿越拒绝/写入大小保护/二元确认/已知风险检测
 
 使用规范：

@@ -73,7 +73,7 @@ def _judge_paths(paths: List[str], line, command: str) -> Tuple[bool, Optional[s
         valid, err, category = line.validate_write(raw_path)
         if valid:
             continue
-        # 违规必须留痕: 下游 tool_safety_checker 只记 tool=bash, 没有命令原文,
+        # 违规必须留痕: 下游 path_tool_safety_checker 只记 tool=bash, 没有命令原文,
         # 安全事件排查时"是哪个命令想写这个路径"查不到 —— 此处补全(小欧 2026-10-14)
         logger.warning(
             f"[shell_path_check] bash写目标越权: category={category}, "

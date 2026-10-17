@@ -15,7 +15,7 @@
 2026-07-28 - 小欧 - 修复: 新增shell_type参数; 规则加第4元素st_tag("ps"/"cmd"/None); 按shell_type过滤不匹配规则
 2026-07-28 - 小欧 - 临时目录清理误伤修复: 新增_TEMP_SAFE_PATTERNS+_is_temp_cleanup（本次已移至 shell_command_process）
 2026-07-31 - 小欧 - Shell池进程保护: 新增受保护PID拦截（本次已移至 shell_process_guard）
-2026-08-12 - 小欧 - A1越层前置: SafetyResult import 由 app.services.safety.tool_safety_checker 改为 app.safety.tool_safety_checker
+2026-08-12 - 小欧 - A1越层前置: SafetyResult import 由 app.services.safety.path_tool_safety_checker 改为 app.safety.path_tool_safety_checker
 2026-08-12 - 小欧 - A1盲点四: SafetyResult 定义迁入 app/tools/security/safety_result, import 同步更新 — 小欧 2026-08-12
 2026-09-18 小欧 - safety_level→severity: ConfirmSpec字段+构造调用+比较全量重命名, 历史注释原文还原(勿改) — 小欧-2026-09-18
 2026-09-18 - 小欧 - 实施: 用户可见message改写(逻辑/分级不变) — 小欧-2026-09-18

@@ -1122,7 +1122,7 @@ def shell(
     # ── 阶段 2【通用】: 安全检查 ──
     # 2026-10-16 老陈裁定: 危险层与中风险层已独立, 两层都查取最严(危险层优先)。
     #   protected_pids 形参已删 —— 自杀检查归 app/safety/shell_process_guard.py.check_shell_self_kill,
-    #   在 tool_safety_checker.check_before_execute 里先于本层执行, 故此处不再重复判定。
+    #   在 path_tool_safety_checker.check_before_execute 里先于本层执行, 故此处不再重复判定。
     safety = check_shell_danger_command(processed_command, shell_type) or \
         check_shell_risk_command(processed_command, shell_type)
     if safety:

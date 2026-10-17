@@ -29,7 +29,7 @@
 #   改为 app.tools.fundamental.shell_static_guard(三类同域关注点已并回一处, 与 execute_shell_command.py /
 #   shell_engine.py 同目录)。理由: 原落 utils 的依据"架构边界要求 tools 禁 import safety"经
 #   tests/test_architecture_boundaries.py 实证不成立 —— 该守卫只禁 "tools"→services/safety 单向,
-#   safety→tools 合法(先例: tool_safety_checker 一直 import shell_command_risk), 无需中转 utils。
+#   safety→tools 合法(先例: path_tool_safety_checker 一直 import shell_command_risk), 无需中转 utils。
 #   本文件属 app/safety, safety→tools 方向合法; 业务逻辑零变化, 仅改导入路径。 — 小欧-2026-10-10
 # 2026-10-14 - 小欧 - SA7标注: 本文件=权限信任框架SA7(沙箱预检pre_execute影子副本执行,执行第7步,上游SA1/sandbox_gate.run_sandbox_gate,总闸见safety_checker的sandbox_required置位) — 小欧-2026-10-14
 # 2026-10-14 - 小欧 - 文档[33] 4.11-A: 命令文本处理与工具分类符号迁出本模块(shell_static_guard 单一真源), 删本地定义改 import; 同批删已无引用的 re

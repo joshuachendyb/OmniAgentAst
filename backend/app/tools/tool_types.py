@@ -153,7 +153,7 @@ class SafetyResult:
     severity: str = "safe"
     auto_confirm: bool = False
     auth_path: Optional[str] = None
-    # v1.25 M1: 沙箱预检触发标记 — 由 tool_safety_checker 四条置位路径点亮,
+    # v1.25 M1: 沙箱预检触发标记 — 由 path_tool_safety_checker 四条置位路径点亮,
     #   action_handler(M3) 仅对 sandbox_required=True 的工具调用 SandboxExecutor.pre_execute;
     #   缺省 False 不改变既有安全流(非破坏性工具不进沙箱预检, 保性能)
     sandbox_required: bool = False

@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-16 - 小欧 - 新建: shell 进程防护快照组装(无状态纯函数)。
-#   本体自 app/safety/tool_safety_checker.py:162-196 逐字搬迁，只改两处:
+#   本体自 app/safety/path_tool_safety_checker.py:162-196 逐字搬迁，只改两处:
 #   收 pool_pids 参数、_protected_pids 内部自拼改由上游调用方递入。
 #   零 import 工具层；不建注册表、不存量（见 [36] 第四章）。
 # 2026-10-16 - 小欧 - 文档[36] 第七章: 自杀检查全部归并到本模块(北京老陈裁定)。
 #   病根: 自杀检查此前散在三个模块 —— 组装在本文件、判定在 shell_command_process.py、
-#   编排又在 tool_safety_checker.py，而第二套(仅 PID 口径)还留在 shell_command_risk.py 的
+#   编排又在 path_tool_safety_checker.py，而第二套(仅 PID 口径)还留在 shell_command_risk.py 的
 #   43 条危险模式里。同一条防护链被切成四块，既难审计也易漏(两套口径还不一致)。
 #   处置: 判定逻辑 + 全部相关正则 + 第二套 PID 提取一并搬入, 对外只留一个入口
 #   check_shell_self_kill(command, pool_pids) -> bool，只答"通过/不通过"；
-#   返回值与用户可见文案由调用方(tool_safety_checker)构造 —— 本模块不产 SafetyResult。
+#   返回值与用户可见文案由调用方(path_tool_safety_checker)构造 —— 本模块不产 SafetyResult。
 #   搬运纪律: AGENTS 1.4 能复制不重写, 全部代码逐字搬迁, 只改 import 与函数名。
 """shell 自杀检查 — 安全层无状态纯函数（零 import 工具层）
 
 用途  : 判断命令要杀的进程是不是自己人（自己 / 父进程 / Shell 池）
-调用  : app/safety/tool_safety_checker.py 的 check_before_execute，在 _check_known_risks 之前
+调用  : app/safety/path_tool_safety_checker.py 的 check_before_execute，在 _check_known_risks 之前
 对外  : check_shell_self_kill(command, pool_pids) -> bool   ← 唯一入口，只答通过/不通过
 """
 import fnmatch
@@ -88,7 +88,7 @@ _CIM_KILL_RE = re.compile(r"(?<![a-z0-9_-])invoke-cimmethod(?![a-z0-9_-])", re.I
 # —— 按名杀目标提取(2026-10-10 小欧 新增, 审计 P1-3): 补保护盾对真实事故形态的盲区 ————————
 # E2E P9-03 事故命令 `Get-Process python | Stop-Process -Force` 是按名杀, _PID_TARGET_RES 只认 -Id,
 # 抽出恒为空集 → 原保护盾对事故形态贡献为 0。四个形态: -Name / Get-Process 管道 / taskkill /IM / killall。
-# 组装(受保护进程名从哪来)仍归 safety 侧 tool_safety_checker._protected_process_names, 本模块只出纯函数。
+# 组装(受保护进程名从哪来)仍归 safety 侧 path_tool_safety_checker._protected_process_names, 本模块只出纯函数。
 _NAME_TOKEN = r"[\w.*?+-]+(?:\.exe)?"
 
 # —— 不可隔离动词与目标提取正则（逐字搬运）—————————————————————
@@ -222,7 +222,7 @@ def is_shell_process_kill_protected(command: str, protected_pids: set, protected
     """命令目标是否命中受保护进程 — 小欧 2026-10-08
 
     适用: 阻止杀宿主关键进程(后端自身/父进程/shell 池), 命中即 blocked。
-    取值: protected_pids/protected_names 均由调用方注入(组装归 safety 侧 tool_safety_checker, 见 8.4)。
+    取值: protected_pids/protected_names 均由调用方注入(组装归 safety 侧 path_tool_safety_checker, 见 8.4)。
     2026-10-10 小欧 增按名匹配(审计 P1-3): 事故命令 `Get-Process python | Stop-Process -Force`
       属按名杀, 原实现只抽显式 PID 恒返空集, 保护盾对真实事故形态贡献为 0;
       补 protected_names 后该形态才拦得住。签名新增第三参(可选, 不传则退化为仅 PID 口径)。
@@ -342,7 +342,7 @@ def _extract_bash_kill_pids(command: str) -> set:
 def check_shell_self_kill(command: str, pool_pids: Optional[set] = None) -> bool:
     """这条命令会不会杀掉自己人 — 小欧 2026-10-16（[36] 第七章 · 北京老陈裁定归并）
 
-    干什么用: 自杀检查唯一入口。由 tool_safety_checker.check_before_execute 在
+    干什么用: 自杀检查唯一入口。由 path_tool_safety_checker.check_before_execute 在
               **_check_known_risks 之前**调用 —— 自杀与路径无关且一旦执行后续检查皆无意义
               (E2E P9-03 录到过后端自杀事故), 故须排在所有路径/危险判定之前。
 

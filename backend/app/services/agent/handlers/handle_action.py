@@ -46,7 +46,7 @@
 # 2026-07-30 - 小欧 - auto_confirm校验: SafetyResult.auto_confirm=True时不等确认直接通过, 提示照出但SUSPENDED不挂起 — 北京老陈驱动三堂会审
 # 2026-07-31 - 小欧 - 撤销auto_confirm: action_handler删auto_confirm判断块, 恢复wait_for_confirmation_result等待逻辑
 # 2026-08-03 - 小沈 - E2E修复: 重加auto_confirm消费块(07-30加→07-31撤→重加缺失一半, 仅残留checker返回+字段)
-#           与tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
+#           与path_tool_safety_checker.py:84返回的auto_confirm=True配对, 实现DB场景表#1(安全绕过时MetaStep照出但立即resolve不过SUSPENDED)
 # 2026-08-07 - 小欧 - import同步: param_alias_mapper.py→tools_alias_mapper.py 重命名(名实相符), PARAM_ALIASES引用处同步更新
 # 2026-08-07 - 小欧 - P07修复(北京老陈驱动 task001): _EXT_TO_READ_TOOL 从TEXT_EXTENSIONS排除.csv(双域: 文本+表格), 使 read_xlsx(csv)/read(csv) 均不被_auto_correct_file_tool自动改写 — 小欧 2026-08-07
 # 2026-08-09 - 小欧 - edit并发竞态修复(北京老陈驱动, 方案二分组调度版):
@@ -84,7 +84,7 @@
 #   ①会执行的同名工具被误标"被安全策略拦截"(与真实执行矛盾) ②自行add_assistant_tool_call与build_observation重复写assistant;
 #   现改: check_safety_and_confirm经_denied_out回传被拒call(tool_name,reason,call), handle_action在build_observation之后
 #   由_add_denial_feedback精确到call对象补写tool result(assistant统一由build_observation写), 消除矛盾与重复 — 小欧 2026-08-11
-# 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, get_tool_safety_checker/grant_temp_auth 的 import 由 app.services.safety 改 app.safety(配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1越层前置: safety 提升为顶层 app.safety, get_path_tool_safety_checker/grant_temp_auth 的 import 由 app.services.safety 改 app.safety(配合 tools 禁 app.services 守护规则)
 # 2026-08-13 小欧 A4收尾解耦: execute_tools 内 5 处 execute_tool 调用显式传入 agent._retry_engine(对齐 tool_executor.execute_tool 新增 retry_engine 显式依赖, 去除对 agent 私有字段强耦合, 行为不变, 无退化)
 # 2026-08-13 - 小沈 - 修复(三堂会审): bypass 模式(auto_confirm)下白名单外路径(auth_path 存在)仍需 grant_temp_auth,
 #   否则工具内 validate_path 会拦截(write 模式白名单外未授权返回 False), 工具返回错误, 违背 bypass"直放"语义;

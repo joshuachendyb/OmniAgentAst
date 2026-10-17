@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-08-30 - 小欧 - 新增 console_writer: 控制台镜像输出离线化(根治 App_2026-08-30.log:20790~20801 case09 挂起)
-#   病根: log_and_print(约20处: react_cycle/action_handler/tool_safety_checker等) 与裸print(action_handler.py:919)
+#   病根: log_and_print(约20处: react_cycle/action_handler/path_tool_safety_checker等) 与裸print(action_handler.py:919)
 #         在 asyncio 事件循环线程同步写 stdout, 遇阻塞型 stdout(满管道64KB缓冲/Windows控制台选中)永久阻塞,
 #         事件循环冻结44min, 全服务停摆.
 #   方案: 全局单例 queue.Queue(maxsize=512) + daemon 写线程, console_put(msg) 非阻塞入队;
@@ -23,7 +23,7 @@
 #     方案 改写 _console_worker 用 sys.stdout.buffer.write(msg.encode('utf-8')) 字节镜像, 编码确定性对齐文件日志。
 #   【三堂会审 2026-09-25】合规: SRP/DRY/KISS/SLAP/YAGNI/禁backward 全过(职责未变/无复制/直接buffer写/
 #     单层/不过度/无垫片); 合理: 换行补位从 console_put 移至 worker 语义零变, 无buffer兜底 replace 防极端环境;
-#     关联: 15+消费方(log_and_print链/agent_runner/tool_safety_checker/tool_runner/react_*/handle_answer/
+#     关联: 15+消费方(log_and_print链/agent_runner/path_tool_safety_checker/tool_runner/react_*/handle_answer/
 #     stream_orchestrator)调用路径不变, 仅 worker 输出编码改 UTF-8, 阻塞保护(满队丢弃)保留, 真机验证
 #     test_safety_regression_step2 35 passed 输出纯UTF-8 且全量单测 9267 errors→0, 编码与文件日志统一。
 # 2026-09-25 - 小健 - 复审: 推翻上条「三项全部通过」结论(合理项不过, 已修 1 处退化):

@@ -8,7 +8,7 @@
 # 2026-07-28 - 小欧 - 临时目录清理误伤修复: 新增_TEMP_SAFE_PATTERNS+_is_temp_cleanup, Remove-Item类HIGH命中时检查目标路径, 若为已知安全临时目录则降级MEDIUM(日志放行), 非临时路径仍HIGH拦截
 # 2026-07-28 - 小欧 - shell_type名称改为ps7/ps5/cmd/bash; 新增6条bash安全规则; 过滤逻辑扩展支持ps7/ps5/bash/cmd; _TEMP_SAFE_PATTERNS扩展bash路径
 # 2026-07-31 - 小欧 - Shell池进程保护: 新增_extract_stop_process_pids/_extract_taskkill_pids/_extract_bash_kill_pids; check_shell_command_risk加protected_pids参数; Stop-Process/taskkill/kill命中受保护PID时BLOCKED; 三提取函数+拦截点加日志; message优化为"系统保护进程"避免泄露架构细节
-# 2026-08-12 - 小欧 - A1越层前置: SafetyResult import 由 app.services.safety.tool_safety_checker 改为 app.safety.tool_safety_checker(safety 提升为顶层目录, 配合 tools 禁 app.services 守护规则)
+# 2026-08-12 - 小欧 - A1越层前置: SafetyResult import 由 app.services.safety.path_tool_safety_checker 改为 app.safety.path_tool_safety_checker(safety 提升为顶层目录, 配合 tools 禁 app.services 守护规则)
 # 2026-08-12 - 小欧 - A1盲点四: SafetyResult 定义迁入 app/tools/security/safety_result, flow自包含相关工具层, import 同步更新 — 小欧 2026-08-12
 # 2026-08-13 - 小欧 - 三堂会审修复#20: 临时目录清理降级被`..`穿越逃逸, Temp\..\important 可降危为MEDIUM确认
 #   【病根】_is_temp_cleanup仅对命令串做_TEMP_SAFE_PATTERNS子串匹配, 含 ...\Temp\..\important 仍命中→HIGH递归删除降MEDIUM, 实际目标已逃出临时根
@@ -23,7 +23,7 @@
 # 2026-09-18 小欧 - 7.3.4-C18精化(重查挖掘): "不允许降级"为安全内部术语(降危/临时目录豁免机制), 普通用户看不懂;
 #   改"路径含穿越符号，已阻止"(说明=命令危险+穿越符号导致不放行+已阻止), 分级blocked不变, 所注参数#20语义保持 — 小欧-2026-09-18
 # 2026-10-10 小欧 - 新增 check_shell_command_risk_all_shells(三壳并集): 修预检层21/43条规则死代码缺口。
-#   【病根】本函数按第4元素 st_tag 过滤规则, 但调用方 tool_safety_checker:319 只传 command,
+#   【病根】本函数按第4元素 st_tag 过滤规则, 但调用方 path_tool_safety_checker:319 只传 command,
 #          shell_type 吃默认 "ps7" → cmd(14条)/bash(7条)标签规则在预检全被跳过(实测生效22/43),
 #          diskpart/sc delete/vssadmin/dd/mkfs/chmod 777/chown/reg add 等预检一律返回 None, 仅执行层才拦。
 #   【改法】新增并集函数: ps7/cmd/bash 各跑一遍, 取最高严重度(dangerous>destructive>None);

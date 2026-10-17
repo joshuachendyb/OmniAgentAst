@@ -29,7 +29,7 @@ r"""dual_path_check — 双路径通道(5 个复合工具: copy/move/compress/ex
 
 ★★本表是**端到端视角**(用户最终看到的), **不是本模块返回值** ★★
   本模块把每个参数派给 read/write/delete 三线, 三线各自只返回「放行/拒绝」两态;
-  表里的"确认"(弹窗授权)发生在**调用方** tool_safety_checker, "确认(根外递归, 来自 R6 层)"来自
+  表里的"确认"(弹窗授权)发生在**调用方** path_tool_safety_checker, "确认(根外递归, 来自 R6 层)"来自
   delete_safety 的 R6 工作区边界层。→ "确认"格与本文件代码对不上是**正常的**, 那是上层行为。
 
 | 区域                                       | category   | 读   | 写            | 删           |

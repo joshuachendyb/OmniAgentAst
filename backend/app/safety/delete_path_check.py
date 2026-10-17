@@ -15,7 +15,7 @@
 #   tool 层 path_utils.check_path_five_level 第⑤级另持一份(同口径), 不动。delete_safety.py 随之删除。 — 小欧 2026-10-17
 # 2026-10-17 - 小欧 - 文档[37] 第十章 新增唯一封装口 check_delete_permission(path, params):
 #   ①guard_forbidden_delete → ②validate_delete(R1/R2) → ③check_delete_risk(R3-R6) 串链, 统一返 SafetyResult。
-#   三函数原功能全保留; validate_delete 亦供 path_legality_router(SA5 路径路由)按线分派时调用。消费方: tool_safety_checker /
+#   三函数原功能全保留; validate_delete 亦供 path_legality_router(SA5 路径路由)按线分派时调用。消费方: path_tool_safety_checker /
 #   shell_path_check / dual_path_check(三者纯调用, 判定全在本口); path_utils 第⑤级改调 guard_forbidden_delete。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
@@ -28,7 +28,7 @@ r"""delete_path_check — 删操作路径检查(删线)
 
 ★★本表是**端到端视角**(用户最终看到的), **不是本模块返回值** ★★
   本模块 validate_delete 只返回「放行/拒绝」两态(实测 白名单内直接放行, 无确认分支);
-  表里的"确认"(弹窗授权)发生在**调用方** tool_safety_checker, 白名单内的"确认(根外递归, 来自 R6 层)"
+  表里的"确认"(弹窗授权)发生在**调用方** path_tool_safety_checker, 白名单内的"确认(根外递归, 来自 R6 层)"
   更来自本文件 **check_delete_risk 的 R6 工作区边界层**(2026-10-17 自 delete_safety 迁入)。
   → 按本表核对本文件代码时, "确认"格对不上是**正常的**, 那是上层行为。
 
@@ -201,7 +201,7 @@ def check_delete_permission(path: str, params: Optional[dict] = None) -> SafetyR
       ③ check_delete_risk    — R3-R6(区外递归→拒 / 根内递归→确认 / 区外→确认 / 根内普通→放行)
     三函数原功能全部保留, 命中哪条即出对应的 拒绝/要确认/放行。
     白名单外(② 返 category=None)不在此硬拦, 交 ③ 定 拒绝/确认。
-    消费方: tool_safety_checker(删工具) / shell_path_check(删源) / dual_path_check(删除动作)。
+    消费方: path_tool_safety_checker(删工具) / shell_path_check(删源) / dual_path_check(删除动作)。
     """
     # ① A族/删根硬底线
     _guard = guard_forbidden_delete(path)

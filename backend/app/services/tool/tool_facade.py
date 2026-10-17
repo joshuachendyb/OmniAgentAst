@@ -2,7 +2,7 @@
 # 编辑历史:
 # 2026-08-12 - 小欧 - 新建: A4 工具门面(方案4.4.3步骤1) — list_tools 只读组装; execute_tool 复用 tool_executor
 #   统一执行入口(tool_executor 内部已 ContextVar 注入 hooks), facade 只做安全预检 + task 上下文管理(try/finally reset)。
-#   按真实代码实现: 安全预检用 get_tool_safety_checker().check_before_execute(设计4.4.3示例 check_tool_safety 不存在, 已按实测落地);
+#   按真实代码实现: 安全预检用 get_path_tool_safety_checker().check_before_execute(设计4.4.3示例 check_tool_safety 不存在, 已按实测落地);
 #   agent 构造带 _security_hooks(与 action_handler 对齐), 供 tool_executor getattr 通道识别。
 # 2026-08-13 - 小欧 - 三堂会审修复: ①_FacadeAgent 补 _tool_loader/_loaded_categories/_tool_cache(searchtool 注入路径
 #   需这些属性, 缺则 AttributeError)且复用以真实 ToolLoader(不假造); ②执行判定改 is_success(参数失败/工具未找到
@@ -35,7 +35,7 @@ from app.tools.registry import tool_registry
 from app.tools.tool_types import ToolCategory
 from app.tools.tool_retry_engine import ToolRetryEngine
 from app.tools.tool_response import is_success
-from app.safety.tool_safety_checker import get_tool_safety_checker
+from app.safety.path_tool_safety_checker import get_path_tool_safety_checker
 from app.safety.default_hooks import DefaultToolSecurityHooks
 from app.services.task.task_context import _current_task_id
 
@@ -134,7 +134,7 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     # 1. 安全预检(与 action_handler.check_safety_and_confirm 同源) — 小欧 2026-08-12
     # 4.4: 池快照现取现递，与 safety_gate 同口径 — 小欧 2026-10-16
     from app.tools.fundamental.shell_engine import get_pool_pids_snapshot
-    safety = get_tool_safety_checker().check_before_execute(tool_name, params or {}, pool_pids=get_pool_pids_snapshot())
+    safety = get_path_tool_safety_checker().check_before_execute(tool_name, params or {}, pool_pids=get_pool_pids_snapshot())
     if safety.blocked:
         return {"tool_name": tool_name, "success": False,
                 "error": f"安全拦截: {safety.message}", "safety": safety}

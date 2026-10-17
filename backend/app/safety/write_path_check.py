@@ -23,7 +23,7 @@ r"""write_path_check — 写操作路径检查(写线)
 
 ★★本表是**端到端视角**(用户最终看到的), **不是本模块返回值** ★★
   本模块 validate_write 只返回「放行/拒绝」两态; 表里的"确认"(弹窗授权)发生在**调用方**
-  tool_safety_checker(未授权则被拒, 授权后放行), 删列还叠加 delete_safety 的 R6 层。
+  path_tool_safety_checker(未授权则被拒, 授权后放行), 删列还叠加 delete_safety 的 R6 层。
   → 按本表核对本文件代码时, "确认"格对不上是**正常的**, 那是上层行为。
 
 | 区域                                       | category   | 读   | 写            | 删           |

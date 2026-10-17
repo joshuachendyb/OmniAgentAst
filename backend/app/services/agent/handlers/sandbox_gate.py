@@ -60,7 +60,7 @@
 #   改显式传auto_confirm=False(默认即False, 显式表意自明: 沙箱裁决恒真HITL人工) — 小欧-2026-09-18
 # 2026-09-19 小欧 - 修复: sandbox HITL auto_confirm从safety_result读取(不硬编码False),
 #   bypass超时→放行(与safety_gate层语义一致: 到期=放行); verdict.get("expired")防御缺失键 — 北京老陈驱动(三堂会审)
-# 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 与 tool_safety_checker 沙箱判定(=="risk")对齐, 漏改则沙箱帧带非法值。
+# 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 与 path_tool_safety_checker 沙箱判定(=="risk")对齐, 漏改则沙箱帧带非法值。
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
