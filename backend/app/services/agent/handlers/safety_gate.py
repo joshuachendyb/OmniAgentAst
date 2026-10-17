@@ -106,7 +106,7 @@ def refusal_key(tool_name: str, params: dict, safety_result=None):
 
     2026-10-14 小欧(文档[33] 4.6-2/4.6-6): 引用表达式改调 _group_ref 与组大小同源;
       shell 判定改 `normalize_tool_name(tool_name) in ("bash","execute_command")` —— 与
-      tool_safety_checker:319 同源; 原单写 == "bash" 漏 execute_command(它非别名而是独立注册名,
+      path_tool_safety_checker:319 同源; 原单写 == "bash" 漏 execute_command(它非别名而是独立注册名,
       normalize_tool_name 不归一到 bash), 致同一命令经两入口调用被拆成两组各弹一次(毛病3复发)。
       组键 tool_name 侧存归一名(防跨别名对不上)。"""
     from app.tools.tools_alias_mapper import normalize_tool_name
@@ -185,11 +185,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         # 2026-09-06 小欧 3B终态(文档落码): 事件只经 _events 单一列表路径返回(纯函数零并发副作用),
         #   删sandbox resumed旁路判定与事件透传plumbing; blocked/超时/拒绝错误并入列表, 签名落->list
         """
-        from app.safety.tool_safety_checker import get_tool_safety_checker
+        from app.safety.path_tool_safety_checker import get_path_tool_safety_checker
         from app.safety.trust import resolve_skip
         from app.safety.trust import extract_trust_path        # 3.4 同组路径归一(trust.py:69主链权威复用, 防环延迟import同resolve_skip) — 小欧-2026-09-18
         from app.safety.shell_command_process import is_shell_readonly_whitelisted, is_shell_tool  # 3.2 只读短路判定(延迟导入防环, 与sandbox_gate同款写法) — 小欧-2026-09-18; 2026-10-16 [36] 改为直接 import 单一真源(原借 executor 转引, 随正名已失效)
-        safety_checker = get_tool_safety_checker()
+        safety_checker = get_path_tool_safety_checker()
 
         _denied = []
         _events = []
@@ -197,6 +197,20 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
         for call in all_calls:
             _cn = call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
+
+            # 2026-10-17 小欧 - SA1: 未注册判定收口(唯一真源) + 只处理 PATH_TOOLS 工具, 其余放行。
+            from app.tools.registry import resolve_registered_tool
+            from app.tools.tool_constants import PATH_TOOLS
+            _normal, _meta = resolve_registered_tool(_cn)
+            if _meta is None:
+                _events.append(agent._step_emitter.emit(MetaStep(
+                    step=step, type="rejected", content=f"工具 {_cn} 未注册",
+                    reject_type="safety", tool_name=_cn
+                )))
+                _denied.append((_cn, f"工具 {_cn} 未注册", call))
+                continue
+            if _normal not in PATH_TOOLS:
+                continue                                        # 非路径工具: 本次不处理, 直接放行(以后再说)
 
             # 2026-10-15 小欧 - 门前初查: 第1层格式+第2层存在性, 进门即拦, 省信任预查/SA3/弹窗。
             #   实现下沉 app.safety.path_precheck.precheck_path_legality(op表与本模块同源, 双份即分叉);
@@ -383,7 +397,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, fc_c
                 continue
 
             # 5.3(2026-09-02 小欧, 病根3.5): 信任豁免/safe 直通汇合点统一授权收口——
-            #   tool_safety_checker 豁免返回 requires_confirmation=False 但保留 auth_path,
+            #   path_tool_safety_checker 豁免返回 requires_confirmation=False 但保留 auth_path,
             #   此处补 grant_temp_auth 闭环, 防"豁免跳窗不放行"(工具内部 validate_path 拦截执行失败)
             try:
                 # 2026-09-03 小欧 修复: 白名单外豁免直通亦包 try/except, grant_temp_auth 异常不阻断 sandbox 汇合

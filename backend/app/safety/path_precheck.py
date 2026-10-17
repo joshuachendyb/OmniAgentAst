@@ -69,12 +69,11 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
     params = params or {}
     try:
         normal_name = normalize_tool_name(tool_name)
-        # bash(命令通道)/registry_*(注册表键非文件路径)与未注册工具: 均交 SA5 路由裁决
-        if normal_name == "bash" or normal_name.startswith("registry_"):
+        # bash 是命令通道(走 SA5 shell_path_check.validate_shell), 本层不查文件路径
+        if normal_name == "bash":
             return None
+        # 2026-10-17 小欧 - 未注册/范围已由 SA1 判, 本层恒拿到已注册路径工具 meta, 不再复判。
         meta = tool_registry.get_tool(normal_name)
-        if meta is None:
-            return None
         normalized_params, _ = normalize_params(normal_name, params)
         must_exist_keys = _EXISTENCE_PARAMS.get(normal_name, set())
         force = bool(normalized_params.get("force", params.get("force", False)))

@@ -20,15 +20,17 @@
 #   同文件拆出 SA1 门前初查(precheck_path_legality + _EXISTENCE_PARAMS)至 path_precheck.py;
 #   本文件只留 SA5 validate_tool_path(读/写/删/dual 分派, 产出 category)。
 #   名称正名: 原名易被读作 SA1 入口, 实为 SA5 路径路由。_CONTENT_PARAM_KEYS 上移 tool_constants.CONTENT_PARAM_KEYS(两文件共用单源)。
+# 2026-10-17 - 小欧 - 文档[37]: 删 meta None(原 tool_unavailable) 与 startswith("registry_"), 改 PATH_TOOLS 白名单门。
 """
 path_legality_router — SA5 路径层(读/写/删/dual 分派, 产出 category)
 
 本模块是 SA5 对外的**唯一入口**, 负责把一次工具调用分派到正确的检查:
 
-    通道 B  bash / registry_* / action_kind == "dual"  → shell_path_check / 豁免 / dual_path_check
+    通道 B  bash / action_kind == "dual"  → shell_path_check / dual_path_check
     通道 A  action_kind == "read"/"write"/"delete"  单一动作 → 对应线(零路径命中即放行)
+    门  非 PATH_TOOLS 成员 → 放行(白名单, 取代原 registry_* 前缀豁免; 未注册判定已收口 SA1)
 
-调用链: SA3 tool_safety_checker._check_known_risks
+调用链: SA3 path_tool_safety_checker._check_known_risks
         → 本模块 validate_tool_path
         → 三线 validate → path_check_common + path_classify_category.classify_forbidden_path
         → 读 SA6 temp_auth.is_temp_authorized
@@ -44,7 +46,7 @@ from typing import Any, Dict, Optional, Tuple
 from app.safety import shell_path_check, dual_path_check
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.registry import tool_registry
-from app.tools.tool_constants import PATH_PARAM_KEYS, CONTENT_PARAM_KEYS
+from app.tools.tool_constants import PATH_PARAM_KEYS, CONTENT_PARAM_KEYS, PATH_TOOLS
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
 from app.utils.path_utils import reject_reason_empty_path
 
@@ -78,9 +80,7 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
     Returns:
         (is_valid, error_message, failed_path, category)
           failed_path = 首个校验失败的真实路径(临时授权 auth_path 用, 成功时为 None)
-          category ∈ {"system", "non_system", "tool_unavailable", None} — 供 SA3 显式分流
-          ★2026-10-16 补: 原 docstring 只写三项, 漏 "tool_unavailable"(未注册工具硬拦)。
-            本函数是 category 的唯一产出者, **新增取值必须同步 SA3 的分流分支**, 否则漏判。
+          category ∈ {"system", "non_system", None} — 供 SA3 显式分流(2026-10-17 "tool_unavailable" 随收口 SA1 废弃)。
     """
     # 2026-10-15 小欧 - P1-9: 异常分支原恒返 failed_path=None, 但 real_path 已知(异常多发生在
     #   resolve_path_param / line.validate 中途), 丢失会让 SA3 的 auth_path 定位错位。现带回。
@@ -99,18 +99,10 @@ def validate_tool_path(tool_name: str, params: Dict[str, Any]
             return shell_path_check.validate_shell(
                 normalized_params.get("command") or "", normalized_params.get("cwd"))
 
-        meta = tool_registry.get_tool(normal_name)
-        if meta is None:
-            # 2026-10-16 - 小欧 - 未注册工具单列 tool_unavailable: 原报成"系统禁区路径越权",
-            #   误导 LLM/用户去改路径。仍 fail-closed(未注册工具本就无法执行)。
-            return False, f"工具 {normal_name} 不可用(未注册)", None, "tool_unavailable"
-
-        # registry_* 的 path 是注册表键而非文件路径, 不进文件判定(2026-10-15 北京老陈裁定:
-        # 非文件工具不得进四档声明表凑数, 豁免放 entry 与 bash 特判并列)。
-        # 2026-10-15 小欧 - 三堂会审: 豁免须已注册才生效, 未注册的 registry_* 仍走上方的
-        #   system 硬拦, 防伪造工具名前缀绕过。
-        if normal_name.startswith("registry_"):
+        # 2026-10-17 小欧 - 未注册已收口 SA1; 非 PATH_TOOLS 成员直接放行(取代原 registry_* 前缀豁免)。
+        if normal_name not in PATH_TOOLS:
             return True, None, None, None
+        meta = tool_registry.get_tool(normal_name)
         kind = meta.action_kind
 
         # 通道 B: 复合工具, 源与目标档位在 DUAL_ACTION_PARAMS 显式声明。

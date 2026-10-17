@@ -805,6 +805,10 @@ DUAL_PATH_TOOLS = frozenset({
     "copy", "move", "compress", "extract", "rename",
 })
 
+# 路径工具白名单(单一真源): 仅此范围内工具进路径判定链 — 小欧 2026-10-17
+# = 读/写/删/双路径四档并集 + bash; 非路径工具(registry_* 等)不在此, 天然不判路径。
+PATH_TOOLS = READ_PATH_TOOLS | WRITE_PATH_TOOLS | DELETE_PATH_TOOLS | DUAL_PATH_TOOLS | {"bash"}
+
 # 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
 # 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
