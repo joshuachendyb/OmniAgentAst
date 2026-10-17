@@ -48,6 +48,7 @@
 #   增减从 unified_diff 现算(`+` 去 `+++` 头 / `-` 去 `---` 头, 零新依赖); added/removed 同步入 metrics
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 编辑文件→编辑
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(被改文件须存在, 用 EXISTS)
 """
 F4: edit — 编辑文本文件
 
@@ -72,7 +73,7 @@ from app.tools.tool_constants import EDIT_OUTPARM_LIMIT_OLD, EDIT_OUTPARM_LIMIT_
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
+from app.utils.path_utils import OpCategory, check_path_five_level, validate_path_for_write  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口; 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
@@ -579,6 +580,12 @@ async def edit(
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(被改文件须存在, 用 EXISTS)
+    ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
+        return build_error(data={}, llm_data=llm_data)
 
     # None/空校验必须先于截断 — 小欧 2026-07-25 修复截断先于None检查的预存bug
     if old_string is None:

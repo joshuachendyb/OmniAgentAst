@@ -26,6 +26,7 @@
 #    见_grep_files_sync)与 Tool 层输出截断(_apply_grep_outlim)兜底, 不会无限卡死, 故移除先前"想当然"的拒绝政策。
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 内容搜索→搜内容
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1); 文件/目录分支是执行路由, 保留。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -55,6 +56,7 @@ from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 
 
 
@@ -256,6 +258,12 @@ async def grep(
         context: 返回匹配行前后各N行上下文,默认0(仅校验非负)
     """
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
+    ok, err = check_path_five_level(path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case)
+        return build_error(data={}, llm_data=llm_data)
     # context 仅校验非负(输入大小/长度限制已去除) — 小欧 2026-07-11 — 小欧 2026-07-20 去掉0-10上限
     if context < 0:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

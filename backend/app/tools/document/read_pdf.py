@@ -24,6 +24,7 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取PDF→读PDF
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
 """
 D1: read_pdf — 读取PDF文档
 
@@ -42,6 +43,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 from app.tools.tool_constants import ERR_DOC_READ_PDF, READ_PDF_OUTLIMIT_DEFAULT_PAGES
 from app.utils.text_utils import truncate_summary
 
@@ -194,6 +196,12 @@ def read_pdf(path: str, page: Optional[int] = None, pages: Optional[Any] = None)
     2026-07-21 默认值+字节安全双治理(小欧): READ_PDF_OUTLIMIT_DEFAULT_PAGES=200 作为未传参时的默认读取页数, READ_PDF_INPUT_MAX_BYTES=50MB 作为硬安全字节上限"""
     t0 = _time_mod.perf_counter()
     file_path = path
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
+    ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_pdf_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查 — 小欧 2026-06-24
     is_valid, error_detail, suggested_tool = check_for_document_tool(path)

@@ -41,6 +41,7 @@
 #   【改法】删base_dir, 目录匹配项以 matched_path 自身为arcname根(relative_to(matched_path)), 文件匹配项仍用自身name; 单目录/多目录/仅驱动器场景均不再跨树
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(压缩包路径)
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 调用; 通配 _m 派生检查改调 utils 纯函数(权限继承 pattern 的 SA3 结论)。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE)
 """
 F8: compress_files — 压缩文件
 
@@ -68,7 +69,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.utils.json_utils import coerce_json
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
+from app.utils.path_utils import OpCategory, check_path_five_level, to_win_long_path  # 2026-10-17 北京老陈裁定: 路径五级检查总入口 + 长路径化 — 小欧 2026-08-13
 from app.utils.path_utils import path_has_extra_drive, path_has_reserved_name  # 2026-10-16 小欧 - 通配派生格式检查用 utils 纯函数
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
@@ -273,6 +274,17 @@ async def compress(
 ) -> Dict[str, Any]:
     """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest — 小欧 2026-07-29 新增timeout参数"""
     t0 = time.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE)
+    ok, err = check_path_five_level(path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=exclude_patterns)
+        return build_error(data={}, llm_data=llm_data)
+    ok, err = check_path_five_level(dest, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查压缩输出路径", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=exclude_patterns)
+        return build_error(data={}, llm_data=llm_data)
     # timeout校验 — 小欧 2026-07-29
     to_valid, to_err, _ = validate_timeout(timeout, "compress")
     if not to_valid:

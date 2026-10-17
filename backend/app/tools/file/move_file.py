@@ -26,6 +26,7 @@
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 移动文件→移文件
 # 2026-10-14 小欧 - summary 统一口径: `移文件{source} -> {destination}，成功`(动词用 tool_zh, 成功后置) — 小欧-2026-10-14
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_overwrite 覆盖警告。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE), 根治空路径落成 cwd 搬走工作目录的事故
 """
 F10: move_file — 移动文件
 
@@ -51,6 +52,7 @@ from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 移动目标落盘前登记占用
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 
 
 
@@ -177,6 +179,19 @@ async def move(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
+    # 2026-10-17 北京老陈裁定 - 路径检查统一走五级总入口; 源=EXISTS(须存在), 目标=WRITE(只查拼写, 不要求已存在)
+    ok, err = check_path_five_level(source, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[move_file] 路径检查未通过: {err} src={source}")
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, hint="请检查源路径是否有效且不在禁区", user_overwrite=overwrite)
+        return build_error(data={}, llm_data=llm_data)
+    ok, err = check_path_five_level(destination, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[move_file] 路径检查未通过: {err} dst={destination}")
+        llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, hint="请检查目标路径是否有效且不在禁区", user_overwrite=overwrite)
+        return build_error(data={}, llm_data=llm_data)
     # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 工具只执行+业务警告
     _, _, warn = validate_path_for_overwrite(source, destination, overwrite)
     if warn:

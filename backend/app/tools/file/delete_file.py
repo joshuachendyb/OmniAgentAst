@@ -42,10 +42,7 @@
 #     撤除后开关关闭场景下删除操作无路径层兜底, 直至下一行 validate_path 业务校验生效。
 #     ★此为老陈权衡"分层纯粹性 > 开关关闭时兜底"后的明示取舍, 非遗漏, 勿当 bug 静默加回。 — 小欧-2026-10-16
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_delete 递归/强制警告。
-# 2026-10-17 北京老陈裁定 - **恢复 _guard_forbidden_delete**(撤销 10-16 分层删除), 加 debug 门:
-#   门 = 实时读 config logging.debug, true 才判; 判据 = A族(磁盘根/系统目录) + 代码目录及内部子级 + 允许根自身及祖先。
-#   debug 门内并调 delete_safety.check_delete_risk(R3-R6 根边界+递归差异), blocked 拦、需确认仅留痕。
-#   已知取舍(老陈知情): debug=false 时本层不生效, 删除仅靠 Safety 层兜底。
+# 2026-10-17 北京老陈裁定 - 恢复删除硬底线(撤销 10-16 分层删除), 并入 path_utils.check_path_five_level 五级总入口; 恒传 allow_missing 保删除幂等, 禁区判定受 logging.debug 门控
 """
 F12: delete_file — 删除文件
 
@@ -72,42 +69,7 @@ from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
-from app.config import get_config  # 2026-10-17 北京老陈裁定 - debug 门实时读 logging.debug(不缓存, 免改配置须重启)
-from app.safety.path_classify_category import (  # 2026-10-17 北京老陈裁定 - 恢复删除硬底线判据(纯静态零 I/O 真源, 架构白名单放行)
-    is_allowed_root_itself,
-    is_code_root_path,
-    is_disk_root,
-    is_system_protected_path,
-)
-
-
-def _guard_forbidden_delete(file_path: str) -> Optional[str]:
-    """删除硬底线 — 小欧 2026-08-02 建, 2026-10-16 随分层原则删除, 2026-10-17 北京老陈裁定恢复(置于 debug 门内)
-
-    判据口径: A族(永不授权: 磁盘根/系统保护目录) + 删除专属(代码目录及其内部子级 / 允许根自身及上级祖先)。
-    判定全部走 path_classify_category 单源, 本层不持任何名单或匹配逻辑。
-    已知取舍(老陈知情): 门为 debug=true, 故 debug=false 时本层不生效, 仅靠 Safety 层兜底。
-    返回禁止原因; 允许删除返回 None。
-    """
-    try:
-        Path(file_path).expanduser().resolve()  # 归一化探针: 解析失败即 fail-closed 拒删
-    except Exception as e:
-        return f"安全校验: 路径解析失败({e})"
-    # A族(永不授权) — 放在"不存在即放行"之前, 否则不存在的系统路径会被早退跳过
-    if os.name == "nt" and is_system_protected_path(file_path, "delete"):
-        return f"禁止删除系统目录: {file_path}"
-    if is_disk_root(file_path):
-        return f"禁止删除磁盘根目录: {file_path}"
-    # 删除专属: 代码目录自身及内部子级(删根等于毁掉代码库)
-    if is_code_root_path(file_path):
-        return f"禁止删除代码目录(含其内部子级): {file_path}"
-    # 删除专属: 允许根(项目根/授权目录/会话工作区)自身及其上级 —— 删根等于毁掉工作区
-    _hit = is_allowed_root_itself(file_path)
-    if _hit == "allowed_root_itself":
-        return f"禁止删除项目根/授权根目录: {file_path}"
-    if _hit == "allowed_root_ancestor":
-        return f"禁止删除项目根/授权根上级目录: {file_path}"
-    return None
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口(与 move/copy 同单源)
 
 
 def _force_delete_sync(path: Path, recursive: bool = False,
@@ -305,25 +267,13 @@ async def delete(
     t0 = _time_mod.perf_counter()
     # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
     source = path
-    # 2026-10-17 北京老陈裁定 - 实时读 logging.debug, 判定为 true 时删除硬底线生效
-    if get_config().get("logging.debug", False):
-        block_reason = _guard_forbidden_delete(source)
-        if block_reason:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            logger.warning(f"[delete_file] 安全拦截: {block_reason} path={source}")
-            llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=block_reason, user_recursive=recursive, user_force=force)
-            return build_error(data={}, llm_data=llm_data)
-        # 2026-10-17 北京老陈裁定 - debug 门下并调 delete 专属差异判定 R3-R6(delete_safety.check_delete_risk)
-        from app.safety.delete_safety import check_delete_risk  # 行内导入: 避免 safety→tools 循环依赖(同 tool_safety_checker 惰性导入约定)
-        delete_risk = check_delete_risk({"path": source, "recursive": recursive})
-        if delete_risk.blocked:
-            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            logger.warning(f"[delete_file] 安全拦截: {delete_risk.message} path={source}")
-            llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=delete_risk.message, user_recursive=recursive, user_force=force)
-            return build_error(data={}, llm_data=llm_data)
-        if delete_risk.requires_confirmation:
-            # 需确认不拦: HITL 确认归 SA6(SA3 已正常分流), 此处仅留痕
-            logger.info(f"[delete_file] delete 专属判定需确认(不在 tool 层拦截): {delete_risk.message} path={source}")
+    # 2026-10-17 北京老陈裁定 - 路径检查统一走五级总入口; 恒传 allow_missing=True(删除语义=不存在即已删, 与 force 参数无关)
+    ok, err = check_path_five_level(source, OpCategory.EXISTS, allow_missing=True)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[delete_file] 路径检查未通过: {err} path={source}")
+        llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=err, user_recursive=recursive, user_force=force)
+        return build_error(data={}, llm_data=llm_data)
     # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 此处仅业务警告(递归/强制)
     _, _, warn = validate_path_for_delete(source, recursive=recursive, force=force)
     if warn:

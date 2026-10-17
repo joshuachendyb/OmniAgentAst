@@ -48,6 +48,7 @@ F1: read — 读取文本文件
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取→读文件
 # 2026-10-12 小欧 - 成功message去_ps参数段（北京老陈令）: 成功:{_ps}第X-Y行 → 成功:从第X-Y行,
 #   参数交content句子(message与params去重); summary仍带_ps供LLM — 小欧 2026-10-12
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
 
 import time as _time_mod
 from pathlib import Path
@@ -62,6 +63,7 @@ from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误
 from app.utils.text_utils import add_line_numbers
 from app.tools.toolhelper.line_pager import select_lines
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
 from app.tools.file.file_state import record_read
 
@@ -167,6 +169,12 @@ async def read(
     if tail is not None:
         tail = int(tail)
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
+    ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
+        return build_error(data={}, llm_data=llm_data)
     try:
         # 文件类型前置检查 — 小健 2026-06-24(2026-10-16 小欧: 其内含 validate_path 存在性校验已随 tool去检查化删除, 现只做类型检查)
         is_valid, error_detail, suggested_tool = check_for_text_tool(file_path, check_content=True)

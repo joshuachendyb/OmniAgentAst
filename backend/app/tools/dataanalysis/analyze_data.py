@@ -11,6 +11,7 @@
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
 # 2026-07-31 - 小欧 - Bug⑫修复: group_by/sort_by列不存在时抛明确错误(原静默退回非分组统计/静默跳过排序, 误导LLM) | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(数据文件与 data 互斥, 传 path 才查 EXISTS)
 """
 analyze_data  对数据集进行统计分析
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -23,6 +24,7 @@ import time as _time_mod
 from typing import Dict, Any, List, Optional
 
 from app.tools.tool_response import build_success, build_error
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 from app.tools.tool_fc_helper import _check_module
 from app.utils.json_utils import coerce_json
 from app.tools.tool_constants import ERR_DOC_ANALYZE_DATA
@@ -124,6 +126,13 @@ def analyze_data(path: Optional[str] = None, data: Optional[str] = None,
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(数据文件, 与 data 互斥故此处才查)
+    if file_path:
+        ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+        if not ok:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_analyze_data_llm_data("error", duration_ms, detail=err, hint="请检查数据文件路径", path=file_path)
+            return build_error(data={}, llm_data=llm_data)
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", path=file_path, data=data)

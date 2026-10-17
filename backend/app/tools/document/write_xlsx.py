@@ -11,6 +11,7 @@
 # 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入Excel→写EXCEL
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(写入目标用 WRITE)
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional  # 2026-07-31 小欧: 移除未使用 Union
 
 from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口, build_warning, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.content_safety import check_content_safety
@@ -141,6 +143,12 @@ def write_xlsx(
 ) -> Dict[str, Any]:
     """写入Excel文件 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化 — 小欧 2026-06-24 增加文件类型前置检查 — 小欧 2026-08-07 新增append_mode追加模式"""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(写入目标用 WRITE)
+    ok, err = check_path_five_level(path, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=err, hint="请检查输出路径", not_written=True)
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)

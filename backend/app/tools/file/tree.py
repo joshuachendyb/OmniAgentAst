@@ -8,6 +8,7 @@
 #   移除 statistics(data/llm_data 重复)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出目录树→列目录
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 工具只执行。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
 """
 tree — 列出目录树 (从list_directory拆分，仅列目录)
 
@@ -27,6 +28,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 
 
 async def _get_directory_tree(
@@ -157,6 +159,12 @@ async def tree(
     # 路径参数统一为path,桥接到内部变量dir_path — 小欧 2026-07-11
     dir_path = path
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
+    ok, err = check_path_five_level(dir_path, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path, detail=err, hint="请检查目录路径", user_include_hidden=include_hidden, user_sort_by=sort_by)
+        return build_error(data={}, llm_data=llm_data)
     if max_depth < 1:
         max_depth = 1
 

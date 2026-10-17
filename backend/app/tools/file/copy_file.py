@@ -30,6 +30,7 @@
 # 2026-10-12 小欧 - message去tool_zh前缀（北京老陈令，第五章A方式）: 复制成功/失败→成功/失败
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_overwrite 覆盖警告。
 # 2026-10-17 - 小欧 - 执行诚实性P0: 源不存在时 _copy_sync 建空目标报 success, 改抛 FileNotFoundError(此前被合法性检查遮蔽)。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(与 move 同口径: 源 EXISTS / 目标 WRITE)
 """
 F7: copy_file — 复制文件
 
@@ -58,6 +59,7 @@ from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小�
 from app.logger import logger
 from app.db.models.operation_models import OperationType
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 拷贝目标落盘前登记占用
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 
 
 
@@ -106,6 +108,19 @@ async def copy(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
+    # 2026-10-17 北京老陈裁定 - 路径检查统一走五级总入口(与 move 同口径); 源=EXISTS(须存在), 目标=WRITE(只查拼写)
+    ok, err = check_path_five_level(source, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[copy_file] 路径检查未通过: {err} src={source}")
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+        return build_error(data={}, llm_data=llm_data)
+    ok, err = check_path_five_level(destination, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        logger.warning(f"[copy_file] 路径检查未通过: {err} dst={destination}")
+        llm_data = _build_copy_file_llm_data("error", duration_ms, source, destination=destination, extra_metrics={"detail": err}, user_recursive=recursive, user_overwrite=overwrite, user_preserve_metadata=preserve_metadata)
+        return build_error(data={}, llm_data=llm_data)
     # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 工具只执行+业务警告
     _, _, warn = validate_path_for_overwrite(source, destination, overwrite)
     if warn:

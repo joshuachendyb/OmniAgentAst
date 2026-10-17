@@ -14,6 +14,7 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): error summary 去 `{detail}`, success summary
 #   去筛选行数, 统一 `筛选数据{_target}，成功/失败`; 两数在 metrics 统计段呈现(通用渲染)
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(数据文件与 data 互斥, 传 path 才查 EXISTS)
 """
 filter_data  按条件筛选/过滤数据
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -28,6 +29,7 @@ from typing import Dict, Any, List, Optional
 import pandas as pd
 
 from app.tools.tool_response import build_success, build_error
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 from app.tools.tool_fc_helper import _check_module, _serialize_rows
 from app.tools.dataanalysis.data_loader import load_data_to_df, validate_top_n
 from app.utils.json_utils import coerce_json
@@ -136,6 +138,13 @@ def filter_data(path: Optional[str] = None, data: Optional[str] = None,
         return build_error(data={}, llm_data=llm_data)
 
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(数据文件, 与 data 互斥故此处才查)
+    if file_path:
+        ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+        if not ok:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_filter_data_llm_data("error", duration_ms, detail=err, hint="请检查数据文件路径", path=file_path)
+            return build_error(data={}, llm_data=llm_data)
     if not _check_module("pandas"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_filter_data_llm_data("error", duration_ms, detail="pandas库未安装", hint="请安装pandas库", path=file_path, data=data)

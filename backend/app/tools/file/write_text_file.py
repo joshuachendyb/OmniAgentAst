@@ -36,6 +36,7 @@
 #   本检查为启发式存在误判, 误判即拦死合法写入; 现与追加模式统一为告警, 文件确已落盘;
 #   detail 载语法错因与行号, hint 指引用 edit 修正该处(整文件重写会破坏已写入内容)
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(写入目标用 WRITE)
 """
 F2: write — 写文本文件
 
@@ -73,6 +74,7 @@ from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.content_safety import check_content_safety
 from app.logger import logger
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
@@ -224,6 +226,12 @@ async def write(
     syntax_warn = None  # 语法问题(写入照常执行, 仅告警) — 小欧 2026-07-21 / 2026-10-12 扩至整文件写
     syntax_hint = ""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(写入目标用 WRITE: 不要求已存在)
+    ok, err = check_path_five_level(file_path, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查写入路径", user_append=append, user_encoding=encoding)
+        return build_error(data={}, llm_data=llm_data)
     # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
     # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
     _, _, warn = validate_path_for_write(file_path, content=content, append=append)

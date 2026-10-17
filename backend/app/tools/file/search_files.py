@@ -8,6 +8,7 @@
 # 2026-08-06 - 小欧 - 核查未实现项修复: 新增_SKIP_DIRS常量(os.walk剪枝跳过大目录), 避免node_modules/.git等大目录拖慢find超时
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 搜索文件→搜文件
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
 
 import asyncio
 import fnmatch
@@ -21,6 +22,7 @@ from app.tools.tool_constants import TOOL_TIMEOUTS
 from app.tools.tool_constants import ERR_FILE_SEARCH_FAILED
 
 from app.tools.toolhelper.error_hints import hint_for_read_error
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
 from app.logger import logger
 
 _SKIP_DIRS = frozenset({
@@ -129,6 +131,12 @@ async def find(
     # 路径参数统一为path,桥接到内部变量search_dir — 小欧 2026-07-11
     search_dir = path
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS: 须存在)
+    ok, err = check_path_five_level(search_dir, OpCategory.EXISTS)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索路径", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
+        return build_error(data={}, llm_data=llm_data)
     if type is not None and type not in ("file", "directory"):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=f"type参数只能为'file'或'directory'，当前值：'{type}'", hint="请使用file或directory作为type参数", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)

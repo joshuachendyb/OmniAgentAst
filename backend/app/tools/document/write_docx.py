@@ -12,6 +12,7 @@
 # 2026-10-12 - 小欧 - 失败反馈补"文件未写入"(北京老陈令): builder 增 not_written, 仅写前检查点置位;
 #   summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入Word→写WORD
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(写入目标用 WRITE)
 """
 D5: write_docx — 写入Word文档
 
@@ -29,6 +30,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
+from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_office_file
 from app.tools.validate.content_safety import check_content_safety
@@ -150,6 +152,12 @@ def write_docx(
 ) -> Dict[str, Any]:
     """写入Word文档 — 小健 2026-06-24 支持Markdown表格+table_data互斥 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(写入目标用 WRITE)
+    ok, err = check_path_five_level(path, OpCategory.WRITE)
+    if not ok:
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_write_docx_llm_data("error", duration_ms, path, detail=err, user_title=title or "", hint="请检查输出路径", not_written=True)
+        return build_error(data={}, llm_data=llm_data)
 
     # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)

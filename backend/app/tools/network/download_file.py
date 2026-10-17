@@ -16,6 +16,7 @@
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(下载文件)
 # 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 文件下载→下载
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(dest 经 resolve 由 SA1/SA3 覆盖), 仅留 for_write 警告。
+# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(下载目标用 WRITE; 未指定 dest 走默认目录)
 """
 N2: download — 下载文件到本地
 
@@ -38,7 +39,7 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
+from app.utils.path_utils import OpCategory, check_path_five_level, validate_path_for_write  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口; 仅业务警告, 合法性归 SA1
 from app.tools.toolhelper.error_hints import hint_for_write_error
 
 from app.logger import logger
@@ -189,6 +190,13 @@ async def download(
         logger.warning(f"[download] {path_warn}")
 
     t0 = _time_mod.perf_counter()
+    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(下载目标用 WRITE; 未指定 dest 交给默认目录)
+    if dest:
+        ok, err = check_path_five_level(dest, OpCategory.WRITE)
+        if not ok:
+            duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest, detail=err, hint="请检查下载目标路径")
+            return build_error(data={}, llm_data=llm_data)
     try:
         # 非ASCII URL转码(IDNA+percent-encoding) — 小欧 2026-07-25
         try:
