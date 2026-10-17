@@ -12,6 +12,8 @@
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_read: 三线同名, 经模块引用无法辨识线的语义。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
+# 2026-10-17 - 小欧 - 文档[38] 基础归一化: 新增 check_read_permission(path, params) 封装口,
+#   与 check_write_permission / check_delete_permission 对称(同签名同返回 SafetyResult), 供确认段统一消费。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -60,6 +62,7 @@ from typing import List, Optional, Tuple
 from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
+from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_read_permission 封装口返回类型
 
 READ_MODE = "read"
 
@@ -92,4 +95,16 @@ def validate_read(file_path: str, allowed_paths: Optional[List] = None) -> Tuple
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-__all__ = ["validate_read"]
+def check_read_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
+    """读线权限封装口 — 与 check_write_permission / check_delete_permission 对称 — 小欧 2026-10-17
+
+    读线处处放行(禁区放行 + 白名单外放行), 仅"空路径 / 路径穿越 / 异常"三类非法输入硬拦。
+    照搬 _check_known_risks 单路径口径, 只出 SafetyResult 一种结果, 供确认段统一消费。
+    """
+    _ok, _msg, _category = validate_read(path)
+    if not _ok:
+        return SafetyResult(blocked=True, message=_msg, severity="dangerous")
+    return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
+
+
+__all__ = ["validate_read", "check_read_permission"]

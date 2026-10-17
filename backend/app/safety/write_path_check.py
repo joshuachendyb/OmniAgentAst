@@ -11,6 +11,8 @@
 # 2026-10-15 - 小欧 - 文档[35] 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_write: 三线同名, 经模块引用无法辨识线的语义。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
+# 2026-10-17 - 小欧 - 文档[38] 基础归一化: 新增 check_write_permission(path, params) 封装口,
+#   与 check_read_permission / check_delete_permission 对称(同签名同返回 SafetyResult), 供确认段统一消费。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -58,6 +60,7 @@ from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.safety.temp_auth import is_temp_authorized
+from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_write_permission 封装口返回类型
 
 WRITE_MODE = "write"
 
@@ -97,4 +100,28 @@ def validate_write(file_path: str, allowed_paths: Optional[List] = None) -> Tupl
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-__all__ = ["validate_write"]
+def check_write_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
+    """写线权限封装口 — 与 check_read_permission / check_delete_permission 对称 — 小欧 2026-10-17
+
+    照搬 _check_known_risks 对写线的 category 分流(单路径):
+      system      → blocked 硬拦(永不授权)
+      non_system  → requires_confirmation 任务级授权(auth_path=path)
+      None(白名单外) → requires_confirmation 临时授权(auth_path=path)
+      合法        → 放行
+    """
+    _ok, _msg, _category = validate_write(path)
+    if _ok:
+        return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
+    if _category == "system":
+        return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
+                            severity="dangerous", auth_path=path)
+    if _category == "non_system":
+        return SafetyResult(requires_confirmation=True, blocked=False,
+                            message=f"该路径在受保护区域，写入需申请授权: {path}",
+                            severity="risk", auth_path=path)
+    return SafetyResult(requires_confirmation=True, blocked=False,
+                        message=f"该路径超出允许范围，需临时授权: {path}",
+                        severity="risk", auth_path=path)
+
+
+__all__ = ["validate_write", "check_write_permission"]

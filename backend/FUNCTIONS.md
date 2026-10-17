@@ -448,6 +448,16 @@ def my_parse_json(json_str):
 | `write_path_check` | `WRITE_MODE="write"` | system 硬拦；non_system 与白名单外可申请任务级授权 | 传 `WRITE_MODE` |
 | `delete_path_check` | `DELETE_MODE="delete"` | **所有禁区一律硬拦、无授权分支**（删不可逆）；白名单外可申请授权 | 传 `DELETE_MODE` |
 
+**三线权限封装口（返回 `SafetyResult`，供确认段统一消费）— 2026-10-17 小欧 文档[38] 基础归一化：**
+
+| 封装口 | 返回 | 语义 |
+|---|---|---|
+| `read_path_check.check_read_permission(path, params=None)` | `SafetyResult` | 读线放行；仅空/穿越/异常 `blocked` |
+| `write_path_check.check_write_permission(path, params=None)` | `SafetyResult` | system→`blocked`；non_system/白名单外→`requires_confirmation`+`auth_path`；合法→放行 |
+| `delete_path_check.check_delete_permission(path, params=None)` | `SafetyResult` | `guard`(删根底线)→`validate_delete`(禁区)→`check_delete_risk`(工作区边界 R3-R6) |
+
+> 2026-10-17 小欧 文档[38] 基础归一化：read/write 新增 `check_*_permission`，与既有 `check_delete_permission` 同签名同返回；read/write 两封装口照搬 `path_tool_safety_checker._check_known_risks` 单路径分流口径。
+
 > 2026-10-15 小欧 文档[35] 阶段一新建。**九格契约表（读/写/删 × 各类区域）单一真源在 `path_safe_check.py` 模块头**，三线只负责本线实现，不重复维护表格。
 
 ### 8.5 路径检查总入口（path_check_entry.py）— 三通道分发
