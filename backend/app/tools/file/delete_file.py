@@ -43,6 +43,7 @@
 #     ★此为老陈权衡"分层纯粹性 > 开关关闭时兜底"后的明示取舍, 非遗漏, 勿当 bug 静默加回。 — 小欧-2026-10-16
 # 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_delete 递归/强制警告。
 # 2026-10-17 北京老陈裁定 - 恢复删除硬底线(撤销 10-16 分层删除), 并入 path_utils.check_path_five_level 五级总入口; 恒传 allow_missing 保删除幂等, 禁区判定受 logging.debug 门控
+# 2026-10-17 - 小欧 - SA8标注订正(模块更名跟改): 删除硬底线已不在本文件(_guard_forbidden_delete 于 2026-10-16 删除); 现落 app/safety/delete_path_check.guard_forbidden_delete(经 check_delete_permission 封装口) 与 app/utils/path_utils.check_path_five_level 第⑤级。
 """
 F12: delete_file — 删除文件
 

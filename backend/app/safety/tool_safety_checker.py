@@ -88,7 +88,9 @@
 #   白名单误伤0/30、日常命令误伤0/24、降级回归0。同日 is_process_kill_protected 导入点更正为
 #   app.tools.fundamental.shell_static_guard(shell 代码归 shell 代码同目录; 原落 utils 的理由
 #   "tools 禁 import safety"经 test_architecture_boundaries 实证不成立, safety→tools 合法) — 小欧-2026-10-10
-# 2026-10-14 - 小欧 - SA3标注: 本文件=权限信任框架SA3(安全总闸check_before_execute,执行第3步,上游SA1/SA2,内调SA4 delete_safety+SA5 path_safe_check,下游SA6 HITL) — 小欧-2026-10-14
+# 2026-10-14 - 小欧 - SA3标注: 本文件=权限信任框架SA3(安全总闸check_before_execute,执行第3步,上游SA1/SA2,内调SA4 delete_path_check+SA5 path_legality_router,下游SA6 HITL) — 小欧-2026-10-14
+# 2026-10-17 - 小欧 - SA3标注订正(模块更名跟改): 内调原名 delete_safety→delete_path_check(SA4 删线专属判定 check_delete_permission),
+#   path_safe_check(已拆)→path_legality_router(SA5 路径路由)+path_classify_category(判定单源)。
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D: SafetyResult import 改 app.tools.tool_types(契约归工具层单源)
 # 2026-10-15 - 小欧 - 文档[33] 4.9(P4步18): known_risk 之后加豁免早返(不拦且不需确认即原样返回); 原代码会把「无动作」结果强标 severity=dangerous, 与事实相反
 # 2026-10-15 - 小欧 - 文档[33] 5.20 核查订正: T1 注释订正为「mode 由 validate_tool_path 内部按 tool_name 自动推断(调用方不传)」。
