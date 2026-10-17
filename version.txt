@@ -1,3 +1,41 @@
+v1.3.1
+更新时间: 2026-10-18 06:03:54 - 小欧-2026-10-18
+## v1.3.0以来 变更汇总(40个commit: docs20/refactor13/feat5/fix2) - 小欧-2026-10-18
+[2026-10-18 06:03:54 小欧] 范围=v1.3.0以来全部commit(共40个); 主线: 路径安全分层与删线判定集中化([37]设计方案第九~十一章 + [38]L2/L3安全检查链重构方案) + 路径判定单一真源收口(path_utils.check_path_five_level五级总入口) + 27个带path工具全量接入五级检查 + 删线判定集中化与三线封装口对称化 + 模块正名与死代码清理 + [36]shell目录操作权限; 注: 本批为已有体系内的判定收口与调用方全量接入(对外契约零新增、无MAJOR级架构变更)，北京老陈2026-10-18裁定按PATCH记v1.3.1并令直接打tag不提交
+
+### 1.3.8 [37]路径安全分层·路径判定单一真源收口
+[真源收口] path_utils.py 收口为路径判定唯一真源: check_path_syntax_and_exists(拼写+存在性/文件目录类型)与check_preconditions(路径穿越)自safety/path_check_common.py迁入，OpCategory同步迁入；safety/__init__.py与path_check_common.__all__取消check_preconditions转出，杜绝跨层重导出 — 小欧 2026-10-18
+[五级总入口] 新增check_path_five_level为tool层专用编排: ①空值②拼写③存在性/类型④穿越⑤禁区，前四级恒生效、第⑤级禁区判定受实时logging.debug门控(与delete同口径)，禁区名单仍只存safety真源；准入按北京老陈B方案裁定接受app.utils→app.safety.path_classify_category依赖 — 小欧 2026-10-18
+[空值原子] 新增reject_reason_empty_path为唯一空值真源: 原validate_path_layers12/_layers12_check三层判空收敛为一处，三线(read/write/delete_path_check)与SA1一律先过空值原子再进判定，根治Path("")归一化为cwd；validate_str_param保留原三档专属文案不归并(职责不同) — 小欧 2026-10-18
+[fail-closed] check_path_syntax_and_exists内置try，非法类型(None/int/dict)判失败给出原因而非崩栈(R1闭环)；_syntax_exists_check为该函数私有实现体，旧名零残留(禁backward) — 小欧 2026-10-18
+[SA1白名单] path_1st_legality_check.py SA1未注册判定收口(resolve_registered_tool唯一真源)+PATH_TOOLS白名单门取代registry_*前缀豁免，删SA3/SA5重复判定与tool_unavailable死分支；SA1补路径参数三态校验(显式传None/非str不再静默跳过，类型判定单一真源归validate_path_layers12) — 小欧 2026-10-17
+
+### 1.3.9 27个带path工具全量接入五级检查总入口
+[文件工具] find/listdir/grep/tree/read/readmedia接EXISTS；write目标接WRITE；edit被改源文件接EXISTS；delete接EXISTS且传allow_missing=True(删除幂等语义归位，不再借用force兼容旧调用方) — 小欧 2026-10-18
+[双路径工具] move/copy源EXISTS目标WRITE；extract/compress源EXISTS目标WRITE(经核实两者dest为os.path.abspath真实路径，判定正确)；rename只判源EXISTS —— dest语义是"新文件名"非路径(只取Path(dest).name后落src.parent)，判之会把相对名realpath成cwd误命中代码目录，三堂会审抓出该退化后改为只判源 — 小欧 2026-10-18
+[文档工具] read_docx/read_pdf/read_pptx/read_xlsx源接EXISTS；write_docx/write_pdf/write_pptx/write_xlsx输出接WRITE；四个写工具原有with_artifact_file/build_warning导入经核对与HEAD一致未被覆盖 — 小欧 2026-10-18
+[数据工具] query_sql/execute_sql/get_db_schema的可选sqlite路径接EXISTS(未传路径则跳过，与各自参数语义一致)；analyze_data/filter_data的path与data互斥，传path时接EXISTS；generate_chart输出dest接WRITE(空值即默认目录，属Optional设计非缺陷) — 小欧 2026-10-18
+[其他工具] download指定dest时接WRITE；screen_capture指定dest时接WRITE；registry_read/write/delete的path实为HKEY_*注册表键，按SA1显式豁免不套文件路径检查 — 小欧 2026-10-18
+[builder修正] 三堂会审抓出builder必填参数漏传并修复: query_sql补row_count/columns，execute_sql补affected_rows(否则运行期TypeError) — 小欧 2026-10-18
+[回归] 30个带path工具×正常/空值/禁区三场景实调验证: 正常路径无退化、空值全拦、代码目录及其子级对EXISTS/WRITE全拦；目标回归293 passed零失败 — 小欧 2026-10-18
+
+### 1.3.10 删线判定集中化与三线封装口对称化
+[delete硬底线] 2026-10-16按分层原则删除的tools层权限硬底线，2026-10-17经北京老陈裁定恢复_guard_forbidden_delete并接入logging.debug门，恢复"删除不可绕过硬底线"底线；同时并调delete_safety.check_delete_risk(R6/HITL仍归SA3/SA6) — 小欧 2026-10-17
+[删线集中化] delete_path_check新增check_delete_permission封装口，SA1/SA5拆分(path_precheck/path_legality_router)，path_utils第5级改调_guard_forbidden_delete；按裁定三复核订正[37]十/十一章(系统层收guard，tool层不动)+订正_level_by_tool归属与trust_impact置位口径 — 小欧 2026-10-18
+[三线对称] read/write/delete三线权限封装口归一化: check_read_permission/check_write_permission与check_delete_permission对称，均出SafetyResult；端到端视角总表订正+三堂会审死代码清理 — 小欧 2026-10-18
+[语义正名] [37]severity语义用错正名为trust_impact(授权影响面)+新增9.7危险等级，与blocked/requires_confirmation重复不再单列；HITL临时授权提示语义缺失补齐(第九章全局落点分析)；reason_code废两步落地改一步到位复用safety_level分类字段；澄清零新增边界(对外契约零新增/后端SafetyResult内部补safety_level成员)；新增第十章(§1-8删线集中化)与第十一章(§9 trust_impact正名)实施清单与逐文件diff — 小欧 2026-10-17
+
+### 1.3.11 模块正名与死代码清理
+[模块正名] path_tool_safety_checker改名与符号正名(ToolSafetyChecker→PathToolSafetyChecker、get_tool_safety_checker→get_path_tool_safety_checker)全量引用同步；path_classify_category模块正名+PATH_ACTION_KINDS四表分立；app/safety/__init__.py删零消费方死re-export(validate_path_for_read)；path_env.py删"操作记录型"冗余注释；copy_file.py执行诚实性P0 — 小欧 2026-10-16~18
+[守护] 新增tests/test_path_five_level_guard.py守护测试12用例: 四函数互不调用(老陈10-17裁定)+空值文案单源+30工具接入防漏+代码区禁旧名残留+空路径与禁区必拦+删除幂等语义；经两次反向注入验证有效(漏接与自带判空均被抓出并指明违规函数)。按铁规"严令禁止commit任何测试case代码"不提交，tests/亦被.gitignore:17忽略 — 小欧 2026-10-18
+[事故修复] test_move_deep_v2::test_move_empty_source传path=""致Path("")归一化为cwd(=backend)，move把整个backend搬进临时目录，致app(432文件)+e2etests(90文件)全灭；空值原子落地后该根因消除，已git archive HEAD完整恢复 — 小欧 2026-10-17
+
+### 1.3.12 [36]shell目录操作权限与shell链路重构
+[danger/risk拆分] shell_danger_command.py第七章danger/risk物理拆分+主链三级串联+删降级+severity改risk+堵删根开洞；shell_command_guard.py整文件下沉+自杀检查归并shell_process_guard.py；shell_process_guard+tool_safety_checker杀+HIGH归位无条件防线/确认回二元组；补Remove-ItemProperty写意图/mv源走删线(洞1洞2) — 小欧 2026-10-16
+[文档] [36]shell-目录操作权限-控制 6.4安全检查流程图订正(模块改名path_precheck/path_legality_router/dual_path_check+SA1~SA8落点标注+代码标识统一"文件名.py:符号"并去行号)；第五章三堂会审自查+函数化拆分+定名shell_command_process+10处缺陷修订+实码核查九条；[37]§10.4权威图更新为最新流程、[36]§6.4冻结并指向，README/FUNCTIONS/path_decision同步订正 — 小欧 2026-10-16~17
+[新增文档] 新增[31]插件一体包与MCP支持设计方案+notes/E2E测试记录；[38]L2/L3安全检查链重构方案补命名对齐/多余代码标志/第九章实施步骤与顺序(v1.7~v1.8) — 小欧 2026-10-17
+[铁规] AGENTS.md与测试用例铁规表述精简并在测试文件头部加标注 — 小欧 2026-10-16
+
 v1.3.0
 更新时间: 2026-10-16 06:57:21 - 小欧-2026-10-16
 ## v1.2.5以来 变更汇总(193个commit: docs77/feat52/refactor19/fix43/style1/未分类1) - 小欧-2026-10-16
