@@ -3,6 +3,7 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 执行→执行SQL
 # 2026-10-14 小欧 - schema timeout 改秒: 默认 30 秒; _get_connection 毫秒边界处换算 — 小欧-2026-10-14
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(sqlite 文件路径用 EXISTS, 未传 path 则跳过)
+# 2026-10-19 小欧 - 支持新建库: sqlite 路径存在性 EXISTS→WRITE(库不存在由驱动新建), 与 action_kind=write 档口径归一 — 小欧-2026-10-19
 """
 execute_sql — 执行写操作SQL
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -143,13 +144,14 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
     """执行写操作SQL — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
     小欧 2026-08-07 新增confirm_ddl参数: 显式确认后放行裸DDL(白名单)
+    小欧 2026-10-19 支持新建库: path 指向不存在的 sqlite 文件时由驱动新建, 配合 CREATE 语句建表(裸DDL需 confirm_ddl=true)
     """
     conn = None
     engine = None
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(sqlite 文件路径, 仅传了才查)
+    # 2026-10-19 小欧 - 路径检查: sqlite 用 WRITE(库不存在由驱动新建, 支持建库); 仅传了 path 才查 — 小欧-2026-10-19
     if path:
-        ok, err = check_path_four_level(path, OpCategory.EXISTS)
+        ok, err = check_path_four_level(path, OpCategory.WRITE)
         if not ok:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=err, hint="请检查数据库文件路径", connection_type=connection_type, path=path, dry_run=dry_run)

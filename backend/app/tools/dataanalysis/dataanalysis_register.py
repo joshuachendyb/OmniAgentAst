@@ -60,7 +60,7 @@ DESCRIPTIONS = {
 
     "query_sql": """执行只读SQL查询,支持SQLite/MySQL/PostgreSQL。适用场景:需要查询数据库数据、分析数据时使用。""",
 
-    "execute_sql": """执行写操作SQL,高风险操作自动拦截,支持预演模式。适用场景:需要修改数据库数据、创建或修改表结构时使用。需谨慎操作。""",
+    "execute_sql": """执行写操作SQL,支持预演模式。适用场景:需要修改数据库数据、创建或修改表结构时使用。路径受限时需授权;删表/清表等结构破坏操作需人工确认。""",
 
     "get_db_schema": """获取数据库表结构,包括字段名、类型、约束和索引。适用场景:需要了解数据库结构、查看字段定义时使用。""",
 }
@@ -132,7 +132,7 @@ def _register_dataanalysis_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=(name == "execute_sql"),
+            needs_confirmation=False,  # 2026-10-18 小欧: 关一刀切, 确认策略改由安全层按 SQL 判定(见 path_tool_safety_checker._is_destructive_ddl)
             dependencies=TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(

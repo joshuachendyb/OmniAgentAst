@@ -10,8 +10,9 @@
 # 2026-07-25 - 小欧 - 编辑历史归并+去冗余示例: AnalyzeDataInput/FilterDataInput.path移除示例
 # 2026-07-25 - 小欧 - 删除max_rows: top_n唯一行数控制, 统计在head之前计算
 # 2026-08-29 - 小沈 - 修复: GenerateChartInput 补 x_label/y_label 字段, 对齐 generate_chart 实现已支持的坐标轴标签参数(实现层231-234行已 apply), 暴露给 LLM 使其可传入坐标轴标签, 消除 schema/impl 漂移。
-# 2026-10-14 小欧 - timeout description 单位毫秒改秒(QuerySql/ExecuteSqlInput, 北京老陈定案) — 小欧-2026-10-14
-# 2026-10-14 小欧 - timeout description 单位毫秒改秒(QuerySql/ExecuteSqlInput, 北京老陈定案) — 小欧-2026-10-14标签参数(实现层231-234行已 apply), 暴露给 LLM 使其可传入坐标轴标签, 消除 schema/impl 漂移。
+# 2026-10-14 小欧 - timeout description 单位毫秒改秒(QuerySql/ExecuteSqlInput) — 小欧-2026-10-14
+# 2026-10-14 小欧 - timeout description 单位毫秒改秒(QuerySql/ExecuteSqlInput) — 小欧-2026-10-14标签参数(实现层231-234行已 apply), 暴露给 LLM 使其可传入坐标轴标签, 消除 schema/impl 漂移。
+# 2026-10-19 小欧 - ExecuteSqlInput 覆盖 path 描述并补"新建库"说明(库不存在则驱动新建, 用 CREATE TABLE 建表) — 小欧-2026-10-19
 """
 DataAnalysis Schema - 数据分析工具参数模型
 
@@ -252,6 +253,7 @@ class ExecuteSqlInput(_DbConnectionMixin):
 - UPDATE: 更新数据
 - DELETE: 删除数据
 - DDL: CREATE/ALTER/DROP（危险操作会拦截）
+- 新建库: path 指向不存在的 .db 文件时自动创建该库(用 CREATE TABLE 建表; 裸DDL需 confirm_ddl=true)
 
 【常见错误避免】
 1. UNIQUE约束失败: 插入前先用query_sql检查是否存在
@@ -259,6 +261,10 @@ class ExecuteSqlInput(_DbConnectionMixin):
 3. 语法错误: 检查SQL语法
 
 """
+    path: Optional[str] = Field(
+        default=None,
+        description="SQLite数据库文件路径(connection_type=sqlite时必填)。文件不存在时本工具会新建该库; 建表用 CREATE TABLE(裸DDL需 confirm_ddl=true)。示例:D:/data/app.db"
+    )
     sql: str = Field(
         ...,
         description="""SQL写入语句（单条）严禁多条语句。
