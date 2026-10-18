@@ -3,6 +3,8 @@
 # 2026-10-02 - 小欧 - 归组调整: sysinfo 整体迁出本模块(实现/schema/依赖/描述/示例/注册项均已移至 system_register), 回归 SYSTEM — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名归位: read 别名工具删除(与 FILE 侧 read 改名后的 read 重复), 6处注册项+2处 import 同步清理
 # 2026-10-02 - 小欧 - 注册名归位: shell 改名 bash 并删 bash 别名(8处注册项+docstring+__all__), needs_confirmation 收敛为 == "bash"; 实现函数名 shell 不动
+# 2026-10-18 - 小欧 - bash 挂 confirm_fn/op_param: 确认文案改由工具产(命令语义只有 shell 知道),
+#   原先 shell_command_confirm / shell_read_confirm 两类弹窗正文为空, 用户不知在确认什么。
 """
 FUNDAMENTAL Register — 基础工具注册点
 
@@ -83,6 +85,18 @@ FUNDAMENTAL_TOOL_EXAMPLES = {
 }
 
 
+def _shell_confirm_text(params: dict) -> tuple:
+    """bash 弹窗文案 — 小欧 2026-10-18
+
+    返回 (None, 文案)。None = 判定沿用 needs_confirmation(本工具恒 True),
+    本函数只负责说明这条命令会做什么 —— 命令语义只有 shell 工具知道。
+    """
+    cmd = (params.get("command") or "").strip()
+    return None, ("待执行 Shell 命令。\n"
+                  f"命令: {cmd[:200]}\n"
+                  f"说明: 该命令含需人工确认的操作(执行后可能影响系统状态或目标文件)。")
+
+
 def _register_fundamental_tools():
     """注册5个基础工具到FUNDAMENTAL分类 — 小健 2026-06-18"""
     CONFIRMATION_MAP = {
@@ -117,6 +131,8 @@ def _register_fundamental_tools():
             input_model=input_model,
             examples=examples,
             needs_confirmation=(name == "bash"),
+            confirm_fn=_shell_confirm_text if name == "bash" else None,
+            op_param="command" if name == "bash" else None,
             action_confirmation=CONFIRMATION_MAP.get(name),
             dependencies=FUNDAMENTAL_TOOL_DEPENDENCIES.get(name, []),
         )

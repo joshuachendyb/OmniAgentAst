@@ -197,26 +197,6 @@ def _is_readonly_sql(sql: str) -> bool:
     return parts[0].lstrip("(") in _READONLY_SQL_FIRST
 
 
-#: 结构破坏型 DDL 首词 —— 命中即需人工确认, 不因路径已授权而放行。
-#: 建表/插数/改数(CREATE/INSERT/UPDATE)属常规写操作, 路径授权即可, 不重复询问;
-#: 删表/清表/改结构一次执行即可造成不可撤销的数据丢失, 故保留这一道。
-_DDL_DESTRUCTIVE_FIRST = frozenset({"drop", "truncate", "alter", "rename"})
-
-
-def _is_destructive_ddl(sql: str) -> bool:
-    """execute_sql 结构破坏型 DDL 判定 — 小欧 2026-10-18
-
-    保守策略(宁弹不错): 注释头/空串/多语句一律按破坏型弹窗, 与 _is_readonly_sql 同款保守口径。
-    """
-    s = (sql or "").strip().lower()
-    if not s or s.startswith(("--", "/*", "#")):
-        return True
-    parts = s.split(None, 1)
-    if not parts:
-        return True
-    return parts[0].lstrip("(") in _DDL_DESTRUCTIVE_FIRST
-
-
 def _is_hitl_bypass() -> bool:
     """人工确认旁路开关 — 只读 config.yaml security.hitl.enabled
 
@@ -361,15 +341,22 @@ class PathToolSafetyChecker:
         shell 危险拦截（杀/HIGH）已归位 _check_known_risks（无条件防线）；此处 MEDIUM 只产弹窗文案。
         2026-10-17 小欧 - 删 delete_risk（delete 确认由权限三线删线封装口 check_delete_permission 产出）。"""
         from app.tools.tools_alias_mapper import normalize_tool_name  # 延迟导入(同240行模式, 防别名漏判) — 小欧-2026-09-18
-        if normalize_tool_name(tool_meta.name or "") == "execute_sql":
-            # 2026-10-18 小欧 - 确认策略由「一刀切」改「只拦结构破坏型」:
-            #   原注册 needs_confirmation=True 致任何 SQL(哪怕 CREATE TABLE 建空表)都弹,
-            #   而路径授权已经管住"能不能碰这个库", 两者叠加 = 路径已授权仍重复弹窗,
-            #   且 auth_path=None(与路径无关)却被文案说成"路径属受保护区域", 属谎报。
-            #   现口径: 纯读与常规写(CREATE/INSERT/UPDATE)不弹, 仅删表/清表/改结构弹。
-            if _is_destructive_ddl((params or {}).get("sql", "")):
+        if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
+                and _is_readonly_sql((params or {}).get("sql", "")):
+            return False, ""  # 2026-10-18 小欧: 纯读免确认; 非只读交工具层 confirm_fn 逐条判定
+        if getattr(tool_meta, "confirm_fn", None):
+            # 2026-10-18 小欧 - 工具级确认回调: 只调不判, 异常按需确认收(fail-closed)
+            # 契约: 返回 (bool|None, str) = 要否确认 + 弹窗文案
+            #   bool = 回调自行判定(execute_sql 按 SQL 逐条判)
+            #   None = 判定沿用 needs_confirmation, 回调只供文案(bash 即此档)
+            try:
+                _ok, _why = tool_meta.confirm_fn(params or {})
+            except Exception as exc:
+                logger.warning(f"[PathToolSafetyChecker] confirm_fn 异常, 按需确认收: "
+                               f"tool={tool_meta.name}, {exc!r}")
                 return True, ""
-            return False, ""
+            _decided = tool_meta.needs_confirmation if _ok is None else bool(_ok)
+            return _decided, (str(_why or ""))
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
             # 2026-10-18 小欧 - 解除硬返回 False: 危险/中风险/路径权限已在 check_before_execute
             #   主链先行判定(自杀 → 危险命令 → 中风险 → 路径三线), 走到这里说明都放行。

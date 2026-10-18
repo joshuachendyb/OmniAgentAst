@@ -33,6 +33,9 @@ class ToolCategory(Enum):
     FILE = ("file", 0, "文件操作工具")
     FUNDAMENTAL = ("fundamental", 1, "基础工具")
     # 2026-10-02 小欧 - SHELL 分类已删, order 留空位号2不动(避免 searchtool 排序变化)
+# 2026-10-18 小欧 - 新增 confirm_fn / op_param 两个字段:
+#   confirm_fn  工具级确认回调(要否确认 + 弹窗文案), SQL/命令语义只有工具知道, 不放安全层;
+#   op_param    操作标识参数名, 拒绝文案取该参数说清"拒的是哪个操作", 免得安全层硬编码工具名。
     NETWORK = ("network", 3, "网络请求工具")
     DESKTOP = ("desktop", 4, "桌面交互工具")
     DOCUMENT = ("document", 5, "文档操作工具")
@@ -83,12 +86,25 @@ class ToolMetadata:
     needs_confirmation: bool = False
     action_confirmation: Optional[Dict[str, bool]] = None
 
+#: 逐调用确认策略: (params) -> (bool, str) —— 要否确认 + 弹窗原因文案。
+    #: 与 needs_confirmation 互斥, 设了本项即由回调全权决定。
+    #: 放工具侧而非安全层 —— 业务语义(如"哪条 SQL 算破坏")与用户可读文案只有工具知道。
+    #: 文案要求: 说明「做什么 / 对什么 / 后果」, 不得只说"需确认"。
+    #: 回调抛异常时安全层按需确认收(fail-closed)。
+    confirm_fn: Optional[Callable] = None
+
     # 【2026-06-18 小健】工具依赖管理
     dependencies: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
 
     # 【2026-08-18 小健】主参数(操作对象字段名): target展示自动推导的显式声明扩展点;
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
     target_param: Optional[str] = None
+
+    #: 操作标识参数名: 拒绝/确认文案里"被拒的是哪个操作"取该参数的值。
+    #: 与 target_param 的分工: target_param 标识**操作对象**(路径类工具),
+    #: 本字段标识**操作本身**(execute_sql 取 sql、bash 取 command), 留空则回落 path/dest。
+    #: 声明在工具侧而非散在文案函数里, 免得加工具要改安全层(OCP)。
+    op_param: Optional[str] = None
 
     # 【2026-10-15 小欧 — 阶段三 / 2026-10-16 四表分立】动作类型(读/写/删/双路径),
     # 由 tool_constants 的 READ_PATH_TOOLS / WRITE_PATH_TOOLS / DELETE_PATH_TOOLS / DUAL_PATH_TOOLS

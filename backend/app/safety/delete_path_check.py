@@ -22,6 +22,7 @@
 #   delete 工具内 validate_delete 仍按白名单拒绝, 操作照样失败(承诺与结果不符)。与写线同文案同给 auth_path。
 # 2026-10-18 - 小欧 - 文案术语对齐(get_allowed_roots / is_system_protected_path 原文): 统一"允许根集(项目根/授权目录/会话工作区)"
 #   与"系统保护目录", 删自造的"工作区""允许的操作范围""受保护区域""允许根目录"四种命名。纯文案, 判定零变更。
+# 2026-10-18 小欧 - R4/R5 文案改分行(做什么/对什么/原因/范围/时效), 原为一句话堆砌, 弹窗难读。判定零变更。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -174,7 +175,9 @@ def check_delete_risk(params: dict) -> SafetyResult:
     #   注意 R4 必须带 recursive 条件: 根内单文件删属 R3 免确认, 不可一并拦下。
     if inside_proj and recursive:
         return SafetyResult(needs_confirm=True, blocked=False,
-                            message=f"递归删除目录，删除范围不可撤销，需确认: {path}",
+                            message=f"待执行操作: 递归删除目录(含目录内全部子项)\n"
+                                    f"目标路径: {path}\n"
+                                    f"拦截原因: 递归删除会一并移除目录下全部文件, 范围不可撤销",
                             safety_level=SafetyLevel.DELETE_RECURSIVE)
     if not inside_proj:
         # auth_path 必须随 needs_confirm 一并给出: safety_gate 确认后凭 auth_path 调
@@ -182,8 +185,11 @@ def check_delete_risk(params: dict) -> SafetyResult:
         #   用户确认后无授权落地, delete 工具内 validate_delete 仍按白名单拒绝, 操作照样失败。
         #   与 write 线同文案同给 auth_path。
         return SafetyResult(needs_confirm=True, blocked=False, auth_path=path,
-                            message=f"该路径不在允许根集内(允许根集=项目根/授权目录/会话工作区)，"
-                                    f"删除需申请临时授权(仅本任务有效): {path}",
+                            message=f"待执行操作: 删除文件或目录\n"
+                                    f"目标路径: {path}\n"
+                                    f"拦截原因: 该路径不在允许删除的根集内\n"
+                                    f"允许范围: 项目根 / 授权目录 / 会话工作区\n"
+                                    f"授权时效: 仅本次任务有效, 任务结束自动失效",
                             safety_level=SafetyLevel.DELETE_OUT_OF_SCOPE)
 
     # --- R3 允许根内普通 → 放行(免确认), 恒非None ---

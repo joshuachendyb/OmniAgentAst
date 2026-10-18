@@ -44,6 +44,10 @@
 #   只读白名单=根本不需要问故不进网关; security.hitl.enabled=false 的旁路=要问但自动答
 #   (auto_confirm=True), 仍进网关走一遍再转沙箱。两者最终都到沙箱, 区别只在是否经过网关;
 #   原注释只写只读一条, 看代码无法推断旁路走哪条, 易误判为二者同路径。
+# 2026-10-18 小欧 - 五处文案统一(路径不合法/blocked/拒绝记忆/用户拒绝/超时), 消三处不一致:
+#   超时文案按 auth_path 分流 —— 为空时原文案仍称"路径属受保护区域", 与路径层放行结果矛盾, LLM 会换路径重试。
+#   用户拒绝附被拒操作摘要(取自 tool_meta.op_param), 原只说拒了哪个工具, LLM 改参数重试仍被拒。
+# 2026-10-18 小欧 - 新增 _summarize_reject_target: 标识参数由工具自声明(op_param), 安全层不再硬编码工具名。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -143,6 +147,25 @@ def _confirm_payload(safety_result, group_size: int):
                              if group_size > 1 else "")
     return msg, level, _resolve_trust_impact(safety_result), content
 
+def _summarize_reject_target(tool_name: str, params: dict) -> str:
+    """被拒操作的一句话摘要 — 小欧 2026-10-18
+
+    取值顺序: 工具自声明的 op_param(标识操作本身) → path/dest(标识操作对象)。
+    取不到如实说"未提供可标识参数", 不编造。
+    """
+    p = params or {}
+    from app.tools.registry import tool_registry
+    meta = tool_registry.get_tool(tool_name)
+    val = ""
+    if meta is not None and getattr(meta, "op_param", None):
+        val = str(p.get(meta.op_param) or "").strip()
+    if not val:
+        val = str(p.get("path") or p.get("dest") or "").strip()
+    if not val:
+        return "未提供可标识参数"
+    return val if len(val) <= 80 else val[:80] + "…"
+
+
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out: list = None, _denied_out: list = None) -> list:
         """安全检查+HITL确认 — 纯函数返回事件列表(MetaStep dict/replay) — 小欧 2026-09-06
         编排段序: 处理范围门 → 合法性初查 → 危险+权限总闸 → 确认(信任豁免/HITL弹窗);
@@ -189,10 +212,11 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
             _pre_err = precheck_path_legality(_cn, _cp)
             if _pre_err is not None:
                 _events.append(agent._step_emitter.emit(MetaStep(
-                    step=step, type="rejected", content=f"路径不合法: {_pre_err}",
+                    step=step, type="rejected",
+                    content=f"工具 {_cn} 路径不合法: {_pre_err}",
                     reject_type="safety", tool_name=_cn
                 )))
-                _denied.append((_cn, f"路径不合法: {_pre_err}", call))
+                _denied.append((_cn, f"工具 {_cn} 路径不合法: {_pre_err}", call))
                 continue
 
             # 危险+权限 总闸: 池快照现取现递（PID 可被 OS 重用，不得缓存复用）— 小欧 2026-10-16
@@ -206,17 +230,17 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                 # 2026-08-28 小欧 决策日志审计: 拦截决策日志(SRP); blocked错误并入列表 — 小欧 2026-09-06
                 logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
                 _events.append(agent._step_emitter.emit(MetaStep(
-                    step=step, type="rejected", content=safety_result.message, reject_type="safety",
+                    step=step, type="rejected",
+                    content=f"工具 {_cn} 被安全策略拦截: {safety_result.message}",
+                    reject_type="safety",
                     tool_name=_cn
                 )))
                 _denied.append((_cn, f"被安全策略拦截: {safety_result.message}", call))
                 continue  # was: return  — 小欧 2026-07-18 修复
 
-            # 只读短路: shell 只读白名单(含新增五项)的 needs_confirm 不进网关,
-            #   恒与真机放行并行(仍落 site3 走沙箱只读直通), 仅收敛"只读也弹窗"的过宽 — 小欧-2026-09-18
-            #   与 security.hitl.enabled=false 的旁路语义不同, 别混: 本条是"根本不需要问"故不进网关;
-            #   旁路是"要问但自动答"(auto_confirm=True), 仍进网关走一遍, 网关内自动放行后转沙箱。
-            #   两者最终都到沙箱, 区别只在是否经过网关。
+            # 只读短路: shell 只读白名单的 needs_confirm 不进网关, 仍落沙箱只读直通 — 小欧-2026-09-18
+            #   读线处处放行(shell_path_check 只拦畸形路径与系统源外泄), 不产 auth_path, 无需按路径分流。
+            #   与旁路(hitl.enabled=false)不同: 本条根本不问, 旁路是问了但自动答。
             _readonly = (safety_result.needs_confirm
                          and is_shell_tool(_cn)
                          and is_shell_readonly_whitelisted(str(_cp.get("command") or "")))
@@ -258,7 +282,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         step=step, type="rejected", content=_rej_content, reject_type="user",
                         tool_name=_cn
                     )))
-                    _denied.append((_cn, f"被用户拒绝执行(本任务内已有拒绝记录，不再重复确认): {_rej_content}", call))
+                    _denied.append((_cn, _rej_content, call))
                     continue
                 if _group_lead:
                     if _cn == "bash":
@@ -325,22 +349,21 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         # 2026-10-11 小欧 - 报错补路径: 原文案只说"该路径受保护"却不说哪个路径,
                         #   人工排查时无从判断该去授权哪一处。现取 call 参数 path 优先、
                         #   回落 auth_path/trust_path, 让报错自带定位信息。
-                        # 2026-10-18 小欧 - 文案按 auth_path 分流(原写法无条件套"路径属受保护区域"):
-                        #   auth_path 非空 = 路径授权请求, 说路径成立;
-                        #   auth_path 为空 = 工具级确认(如 execute_sql 的删表/清表确认), 与路径无关。
-                        #   原写法对后者也说"路径属受保护区域" 属谎报: 该路径可能完全合法
-                        #   (实测 auth_path=None 时安全层对路径返回放行), LLM 读到会去换路径/申请授权,
-                        #   而正确动作是改 SQL —— 同一路径反复撞确认窗口直至超时。
-                        _tp = str(_cp.get("path") or getattr(safety_result, "auth_path", None)
-                                   or getattr(safety_result, "trust_path", None) or "未指定路径")
-                        _has_auth_path = bool(getattr(safety_result, "auth_path", None))
-                        _reason = (f"路径 {_tp} 需人工授权后才能操作"
-                                   if _has_auth_path else
-                                   "本次执行需人工确认(与路径无关)")
+                        # 2026-10-18 小欧 - 超时文案按确认来源分流: auth_path 非空=路径授权未批, 说路径;
+                        #   为空=工具级确认未批, 路径本身合法, 说路径即失实(LLM 会换路径重试而非改内容)。
+                        _auth_path = getattr(safety_result, "auth_path", None)
+                        if _auth_path:
+                            _reason = (f"路径 {_auth_path} 未获授权; "
+                                       f"该路径不在允许操作范围内, 需人工授权后方可访问")
+                        else:
+                            _detail = str(_cp.get("sql") or "").strip()
+                            _shown = (repr(_detail[:60]) + "…") if len(_detail) > 60 else repr(_detail)
+                            _reason = ("工具级安全确认未获批准(路径校验已通过, 拦截原因在操作内容本身); "
+                                       f"待确认内容 sql={_shown}")
                         _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="rejected",
-                            content=(f"工具 {_cn} 未获授权: {_reason}; "
-                                     f"确认窗口已关闭(未收到授权)。"),
+                            content=(f"工具 {_cn} 执行被拒: {_reason}; "
+                                     f"确认窗口已关闭(未收到人工授权)。"),
                             reject_type="timeout",
                             tool_name=_cn,
                             confirm_id=_verdict.get("confirm_id")  # 2026-10-11 小欧 前端按id精确关窗(详见文件头)
@@ -353,14 +376,17 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         #   前端按独立事件聚合 deniedStepSet 停齿轮, error 通道不再承载 user_rejected
                         # 2026-09-06 小欧 根因修复: user_rejected 必须带被拒工具名 tool_name,
                         #   否则 react_dispatch 回退主工具名 → 多工具并行拒绝死胡同计数记错键 — 小欧-2026-09-06
+                        # 2026-10-18 小欧 - 三处措辞归一 + 附被拒操作摘要(原三处各说一套, 且不说拒的是哪个操作)
+                        _rej_text = (f"用户拒绝执行工具 {_cn}。"
+                                     f"被拒操作: {_summarize_reject_target(_cn, _cp)}")
                         _events.append(agent._step_emitter.emit(MetaStep(
-                            step=step, type="rejected", content=f"用户拒绝执行工具: {_cn}", reject_type="user",
+                            step=step, type="rejected", content=_rej_text, reject_type="user",
                             tool_name=_cn,
                             confirm_id=_verdict.get("confirm_id")  # 2026-10-11 小欧 同 timeout 分支
                         )))
-                        _denied.append((_cn, "被用户拒绝执行", call))
+                        _denied.append((_cn, _rej_text, call))
                         # 记用户拒绝记忆(键与组键同口径), 同 (tool, path) 本任务内再派发不再弹
-                        _rejection_cache_of(agent)[_group_key] = f"用户拒绝执行工具: {_cn}"
+                        _rejection_cache_of(agent)[_group_key] = _rej_text
                     continue  # was: return  — 小欧 2026-07-18 修复
 
                 # 用户已确认: 仅凭auth_path授权(不设trust_session门), 组内去重仅首call授齐, grant异常不阻断后续沙箱汇合 — 小欧 2026-09-06/2026-09-18

@@ -14,6 +14,9 @@ DATAANALYSIS Register — 数据分析工具注册点
 - query_sql       — SQL只读查询 (依赖: pandas)
 - execute_sql     — SQL写操作 (无第三方依赖)
 - get_db_schema   — 数据库结构查询 (无第三方依赖)
+
+2026-10-18 小欧 - execute_sql 确认粒度细化: needs_confirmation 一刀切 → confirm_fn 逐条判定。
+#   原一刀切致建空表也弹窗, 且弹窗与路径无关却被文案说成"路径属受保护区域"。SQL 语义只有工具知道。
 """
 
 from app.tools.registry import tool_registry
@@ -117,6 +120,47 @@ DATAANALYSIS_TOOLS = [
 ]
 
 
+# 一次执行即可造成不可撤销数据丢失的 SQL 首词 —— 本工具自己的业务知识, 只有工具该知道。
+_SQL_IRREVERSIBLE_FIRST = frozenset({"drop", "truncate", "alter", "rename"})
+
+
+#: 破坏型操作 → 后果说明。键取首词, 供弹窗说明"执行后会发生什么"。
+_SQL_RISK_TEXT = {
+    "drop": "将删除表结构及其全部数据, 执行后不可撤销",
+    "truncate": "将清空表内全部数据, 执行后不可撤销",
+    "alter": "将修改表结构, 可能导致既有查询失效",
+    "rename": "将重命名表, 依赖该表名的程序可能失效",
+    "delete": "将删除数据, 执行后不可撤销",
+    "update": "将改写数据, 条件缺失时会覆盖全表",
+}
+
+
+def _sql_needs_confirm(params: dict) -> tuple:
+    """execute_sql 逐条确认判定 + 弹窗文案 — 小欧 2026-10-18
+
+    返回 (要否确认, 弹窗原因文案)。
+    要问  DROP / TRUNCATE / ALTER / RENAME / DELETE|UPDATE 无 WHERE(全表)
+    不问  SELECT / CREATE / INSERT / UPDATE...WHERE
+    保守  多语句 / 注释头 / 空串 一律要问(前置 SELECT 再跟 DROP 是常见绕过形态)
+    ⚠ 字符串级启发式, 非 SQL 语法解析: WHERE 靠子串匹配, `--where` 注释伪装可绕过;
+      不解析 CTE/子查询内 DDL。严格判定须换 sqlparse 或 sqlite3 authorizer, 别继续加字符串规则。
+    """
+    sql = (params.get("sql") or "").strip()
+    head = sql.split(None, 1)[0].lstrip("(").lower() if sql else ""
+    whole_table = head in ("delete", "update") and " where " not in (" " + sql.lower()) + " "
+
+    # 形态不可靠的先判(空串/注释头/多语句): 它们的 head 不可信, 不能据此判 risky
+    if not sql or sql.startswith(("--", "/*", "#")) or ";" in sql:
+        return True, ("待执行 SQL 含多语句或注释, 无法逐条判定风险, 故需人工确认。\n"
+                      f"原始语句: {sql[:200]}")
+    if head not in _SQL_IRREVERSIBLE_FIRST and not whole_table:
+        return False, ""
+    return True, ("待执行 SQL 属破坏性操作。\n"
+                  f"目标库: {params.get('path') or '未指定'}\n"
+                  f"语句: {sql[:200]}\n"
+                  f"后果: {_SQL_RISK_TEXT.get(head, '将修改数据库内容')}")
+
+
 def _register_dataanalysis_tools():
     """注册6个数据处理工具到DATAANALYSIS分类 — 小欧 2026-06-18"""
     for name, func in TOOL_IMPLEMENTATIONS.items():
@@ -132,7 +176,8 @@ def _register_dataanalysis_tools():
             version="1.0.0",
             input_model=input_model,
             examples=examples,
-            needs_confirmation=False,  # 2026-10-18 小欧: 关一刀切, 确认策略改由安全层按 SQL 判定(见 path_tool_safety_checker._is_destructive_ddl)
+            confirm_fn=_sql_needs_confirm if name == "execute_sql" else None,
+            op_param="sql" if name == "execute_sql" else None,
             dependencies=TOOL_DEPENDENCIES.get(name, []),
         )
         logger.debug(

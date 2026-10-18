@@ -3,12 +3,12 @@
 # 2026-10-15 - 小欧 - 阶段一 新建: 写线独立文件。自 path_safe_check.validate_path(:287-400) 拆出写线独有策略, 逐字搬迁不改逻辑(特征一 :323-324 命中 system 禁区→硬拦永不授权; 特征二 :325-333 命中 non_system 禁区→查任务级授权, 无授权则拦; 特征三 :392-395 白名单外→查任务级授权, 无授权则拦); 公共步骤交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 WRITE_MODE。原 validate_path 及 mode 参数已删除(禁止 backward), 无转发壳。
 # 2026-10-15 - 小欧 - 阶段二: 模块 docstring 补九格契约表。
 # 2026-10-15 - 小欧 - 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
-# 2026-10-15 北京老陈裁定 - validate 改名 validate_write: 三线同名, 经模块引用无法辨识线的语义。
-# 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
+# 2026-10-15 小欧 - validate 改名 validate_write: 三线同名, 经模块引用无法辨识线的语义。
+# 2026-10-17 小欧 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
 # 2026-10-17 - 小欧 - 基础归一化: 新增 check_write_permission(path) 封装口, 三线统一返回 SafetyResult(签名按各线所需: 仅删线需 params.recursive), 供确认段统一消费。
 # 2026-10-17 - 小欧 - 死参清理(方案A): 删 check_write_permission 的 params 死参(写线不用 params)。
 # 2026-10-17 - 小欧 - 口径对齐: blocked(系统禁区)分支删去 auth_path=path(硬拦结果无可授权语义, auth_path 定义=白名单外临时授权路径); 与 read/router/delete 的 blocked 口径一致。
-# 2026-10-18 - 小欧 - [38]§12.4 落地(字面9步): 原单路径口 check_write_permission(path) 更名 write_permission(path)(供 dual/shell 复用);
+# 2026-10-18 - 小欧 - 落地(字面9步): 原单路径口 check_write_permission(path) 更名 write_permission(path)(供 dual/shell 复用);
 #   新增工具级 check_write_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 write_permission, 供 router [5] 直调。
 # 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线写工具路径键为 path(download/screen_capture 为 dest), 工具级口直接取该键,
 #   仅对 str 值做 resolve_path_param(下载落盘相对路径解析), 再走 write_permission; 空值/穿越由 validate_write 自身判。
@@ -22,6 +22,7 @@
 # 2026-10-18 - 小欧 - 文案术语对齐(get_default_allowed_paths / classify_forbidden_path 原文): non_system 判据写
 #   "代码目录(含其内部子级)+ 允许根集内的根目录自身及其上级", 白名单外判据写"白名单(系统临时目录/项目根/授权目录/会话工作区)"
 #   —— 两者差一个"系统临时目录", 不是同一集合, 不可混用"允许根集"。纯文案, 判定零变更。
+# 2026-10-18 小欧 - 两条授权文案改分行(做什么/对什么/原因/范围/时效), 原为一句话堆砌, 弹窗难读。判定零变更。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -60,13 +61,13 @@ r"""write_path_check — 写操作路径检查(写线)
 公共步骤(空路径/穿越/白名单匹配)在 path_check_common, 禁区分类仍调
 classify_forbidden_path 并传 WRITE_MODE, 本文件只放写线独有的策略分支。
 
-小欧 2026-10-15 建 / 2026-10-16 老陈裁定补权限总表
+小欧 2026-10-15 建 / 2026-10-16 补权限总表
 """
 
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.safety import path_check_common as common
-from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
+from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 小欧: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.safety.temp_auth import is_temp_authorized
 from app.safety.safety_result import SafetyLevel, SafetyResult   # 契约: 安全层单源
@@ -130,15 +131,20 @@ def write_permission(path: str) -> SafetyResult:
         #   + 允许根集(项目根/授权目录/会话工作区)自身及其上级祖先。两种成因措辞必须都点到,
         #   否则用户看不出到底撞的是哪一类。"受保护区域""允许根目录"系统均无此命名, 禁用。
         return SafetyResult(needs_confirm=True, blocked=False,
-                            message=f"该路径位于代码目录(含其内部子级)或允许根集内的根目录自身及其上级，"
-                                    f"写入需申请临时授权(仅本任务有效): {path}",
+                            message=f"待执行操作: 写入文件\n"
+                                    f"目标路径: {path}\n"
+                                    f"拦截原因: 该路径位于代码目录内部, 或为允许根集自身及其上级目录\n"
+                                    f"授权时效: 仅本次任务有效, 任务结束自动失效",
                             safety_level=SafetyLevel.WRITE_PROTECTED, auth_path=path)
     # 术语对齐 get_default_allowed_paths docstring 原文: 此处判据集 = 白名单
     #   (系统临时目录 + 项目根 + 授权目录 + 会话工作区), 与上面 non_system 的"允许根集"不是同一集合,
     #   差一个"系统临时目录" —— 故措辞必须写"白名单", 不可混用"允许根集"。
     return SafetyResult(needs_confirm=True, blocked=False,
-                        message=f"该路径不在白名单内(白名单=系统临时目录/项目根/授权目录/会话工作区)，"
-                                f"写入需申请临时授权(仅本任务有效，任务结束自动失效): {path}",
+                        message=f"待执行操作: 写入文件\n"
+                                f"目标路径: {path}\n"
+                                f"拦截原因: 该路径不在允许写入范围内\n"
+                                f"允许范围: 系统临时目录 / 项目根 / 授权目录 / 会话工作区\n"
+                                f"授权时效: 仅本次任务有效, 任务结束自动失效",
                         safety_level=SafetyLevel.WRITE_OUT_OF_SCOPE, auth_path=path)
 
 

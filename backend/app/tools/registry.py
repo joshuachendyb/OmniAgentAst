@@ -7,6 +7,7 @@
 # 2026-08-18 - 小健 - ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), register/register_tool 贯通透传; 供 action_handler._resolve_target_field 优先采用, 留空则按schema属性自动推导(DRY/OCP)
 # 2026-10-15 - 小欧 - 跟随改名: TOOL_ACTION_KINDS→PATH_ACTION_KINDS(旧名不留壳); _resolve_action_kind 收口注册/重注册两处缺省(DRY)。
 # 2026-10-17 - 小欧 - 新增 resolve_registered_tool: 未注册判定唯一真源(解析层第一步调用, 替代三处复判)。
+# 2026-10-18 - 小欧 - 新增 confirm_fn/op_param 两字段, register/_update/_register/装饰器 四处贯通(各2行)。
 """
 工具注册表模块 - 统一入口
 
@@ -156,6 +157,8 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable] = None,
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
+        confirm_fn: Optional[Callable] = None,
+        op_param: Optional[str] = None,
         dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -178,7 +181,7 @@ class ToolRegistry:
                 name, description, category, implementation, 
                 input_schema, examples, version, deps,
                 expose_to_llm, failure_hint_fn,
-                needs_confirmation, action_confirmation,
+                needs_confirmation, action_confirmation, confirm_fn, op_param,
                 target_param,
             )
         
@@ -187,7 +190,7 @@ class ToolRegistry:
             name, description, category, implementation, 
             input_schema, examples, version, 
             expose_to_llm, failure_hint_fn,
-            needs_confirmation, action_confirmation, deps,
+            needs_confirmation, action_confirmation, confirm_fn, op_param, deps,
             target_param,
         )
     
@@ -205,6 +208,8 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable] = None,
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
+        confirm_fn: Optional[Callable] = None,
+        op_param: Optional[str] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
         """更新已注册工具 — chendyg 2026-06-26 修复: 补全所有字段更新和分类索引"""
@@ -220,6 +225,8 @@ class ToolRegistry:
             failure_hint_fn=failure_hint_fn,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
+            confirm_fn=confirm_fn,
+            op_param=op_param,
             target_param=target_param,
             # 2026-10-15 小欧 - 原缺省直取 .action_kind, 旧实例无该字段会 AttributeError。
             action_kind=_resolve_action_kind(name, getattr(self._tools[name], "action_kind", "write")),
@@ -242,6 +249,8 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable],
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
+        confirm_fn: Optional[Callable] = None,
+        op_param: Optional[str] = None,
         dependencies: List[Union[str, Dict[str, Any]]] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -257,6 +266,8 @@ class ToolRegistry:
             failure_hint_fn=failure_hint_fn,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
+            confirm_fn=confirm_fn,
+            op_param=op_param,
             dependencies=dependencies or [],
             target_param=target_param,
             # 2026-10-15 小欧 - 动作类型按声明表赋值, 未列者取 fallback(fail-closed 最严档)
@@ -380,6 +391,8 @@ def register_tool(
     expose_to_llm: bool = True,
     needs_confirmation: bool = False,
     action_confirmation: Optional[Dict[str, bool]] = None,
+    confirm_fn: Optional[Callable] = None,
+    op_param: Optional[str] = None,
     dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
     target_param: Optional[str] = None,
 ):
@@ -410,6 +423,8 @@ def register_tool(
             expose_to_llm=expose_to_llm,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
+            confirm_fn=confirm_fn,
+            op_param=op_param,
             dependencies=dependencies,
             target_param=target_param,
         )
