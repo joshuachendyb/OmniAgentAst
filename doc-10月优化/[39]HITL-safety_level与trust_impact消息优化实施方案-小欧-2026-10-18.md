@@ -15,11 +15,12 @@
 | v1.8 | 2026-10-18 13:40:12 | 小欧 | **逐 diff 三堂会审（老陈令：对照本地代码核查每一代码 diff）**，22 节逐节审查，**18 节一次通过 / 3 节修正后通过**，新增 §12 会审结论。**①★发现1（关联·高）**：`tool_routes.py:23/:64` 用 `asdict(_sf)` 把 `SafetyResult` 整体转 dict 作为 `/tool/execute` 响应 `safety` 字段返回 → 改名 `requires_confirmation`→`needs_confirm` **属对外 API 契约变更**，**v1.7「纯后端内部·对外契约零影响」结论作废**（已同步修正 §一.1 第5条、§七 G 类；前端实测零消费，第三方受影响；按禁止 backward 不做兼容但须记入发布说明）。**②★发现2（正确性·高）**：**PowerShell 行号统计在本项目不可信**——`path_tool_safety_checker.py` PowerShell 报 247 行而 Python 权威 294 行；`shell_path_check.py` 构造点应为 `64/85/101/129/139/154`、读取点 `74/88/142`，**v1.7 基于 PowerShell 的"校正"反而把对的改成错的，已全部按 Python 权威重校**，并立铁律「本项目行号统计禁用 PowerShell，一律用 Python」。**③★发现3（合规·中）**：`temp_auth` 的空/根路径判定（防 `Path("")` 扩域成整盘授权，安全关键）在 `grant_temp_auth:48` 与新函数间 **DRY 违反** → 上提私有原子 `_is_rejectable_root(root)` 两端共用，已证纯等价重构。**④★发现4（正确性·中）**：`requires_confirmation=` 构造 kwarg 实为 **13 处**（非 15）；`dual_path_check`/`shell_path_check` 的 SafetyResult 构造**不含该 kwarg**（只含 `severity=`），故只需删 severity + 加 safety_level、**无需 kwarg 改名**（现有 diff 本就正确，已加注）。另复核确认 §6.6~6.9、§6.11~6.14、§6.19~6.20 共 40 余处行号与 diff 内容**均与本地代码一致**。 |
 | v1.9 | 2026-10-18 13:45:00 | 小欧 | **按老陈令删除第十二章「三堂会审结论」**（v1.8 新增的会审章节，含逐 diff 通过/修正表与四项实质发现的完整论证）。**删除前已确认无信息丢失**：v1.8 四项发现的**修正成果均已落在他章**，随章保留 —— ①API 契约变更 → §一.1 第 5 条 + §七 G 类；②禁用 PowerShell 统计行号（改用 Python）→ §6.10 前置说明；③temp_auth DRY 违反的修复（`_is_rejectable_root` 上提 + 等价性证明）→ §6.2 diff 与节末说明；④构造 kwarg 实为 13 处、dual/shell_path 构造不含该 kwarg → §6.9/§6.10 注。本版本历史条目保留 v1.8 记录（编辑型文档禁删历史版本信息），仅正文删除该章。 |
 | v1.10 | 2026-10-18 14:12:30 | 小欧 | **按 AGENTS.md 新增铁规「注释+编辑历史只能有技术术语和逻辑信息，严禁插入文档号章节号 bug号 评审\会审信息」清理全文 diff 注释**：扫描代码块内 `#` 注释与 docstring，**改写 17 处**（§6.1 类注释 3 / §6.2 docstring 与注释 4 / §6.3 docstring 与注释 2 / §6.5 注释 1 / §6.6 注释 2 / §6.14 注释 4 / §6.14 末注 1）。**清理内容**：删除 `文档[39]`、`文档本文`、`§一.1-7`、`§五.3`、`§五.4`、`§四.1`、`[39]原案§1.7`、`[39]原案§1.6第3步` 等文档号与章节号，以及引用裁定来源的措辞。**保留内容**：日期 + 署名 + 技术术语 + 逻辑因果（如"原 (severity == 'risk') 在 severity 删除后必崩, 且本就是 needs_confirm 的自证循环""恒等, 行为不变"），**信息零损失**。复扫结果：代码块内注释/docstring 违规残留 **0**。文档正文中的章节号引用与版本历史**不在本次清理范围**（属文档结构，非代码注释） |
+| v1.11 | 2026-10-18 16:59:55 | 小欧 | **全量对齐本地已落码（老陈令：文档与代码不一致的修正文档，欠账的做完）**。三堂会审逐 diff 核查后确认 13 处文档与实际代码矛盾 + 4 项代码已改而文档无记载，逐项订正：①**字段层路径**：v1.0~v1.10 全篇按 `app/tools/tool_types.py` 描述，实际契约已回迁 `app/safety/safety_result.py`（§四.1/§6.1/§七 A 类/§八 批一 同步）；②**`trust_impact` 值域**：v1.5 定的 `high`/`low`（真值源 `temp_auth.resolve_grant_recursive`，即目录树 vs 单文件）已被老陈裁定推翻为 **`high`/`medium`/`low`**（真值源 `safety_level`，即删除类/写入类/其余）——原设计下"删一个文件"与"写一个文件"同为 `low`，删的不可撤销性完全没体现（§四.3/§五.3/§一.1-3/验收 #10/#11/§十 同步）；③**`safety_level` 取值**：v1.0 的 9 值表全部作废，实际为 `SafetyLevel` 枚举 **确认 13 + 硬拦 4**，无一与旧表重合（§四.4/§6.18/验收 #13 同步）；④**`_classify_safety_level`**：v1.5~v1.10 反复论证"必须保留作兜底"，实际**已整体删除**——各判定点直给后无任何调用点，且其扫描的关键词（"受保护区域"/"超出允许范围"）已随文案术语统一全部改写，函数自身亦成死代码（§一.1-6/§六.3/§6.9~6.14/验收 #8/§十一 同步）；⑤**§6.8 delete R4/R5**：v1.0 方案写 `if (inside_proj and recursive) or (not inside_proj)` 合并分支，实际已拆为 R4（根集内递归）/R5（根集外）两条 —— 合并写法会把允许根内**单文件**删除误判为需确认（该缺陷已实测复现并修复），且 R5 **必须补 `auth_path`**：缺它则 `safety_gate` 的 `grant_temp_auth` 被跳过，弹窗承诺"申请临时授权"而授权从未落地（实测确认后 `validate_delete` 仍拒绝，删线是死路）；⑥**放行不带标签**：v1.0 方案给放行结果也挂 `safety_level="path_auth"`，实际**一律留空** —— 无确认无拦截就无"分类"可言，且读线从不确认，原标签把放行与硬拦都叫成"需授权"；⑦**`sandbox_gate`**：`path_auth` 已不在枚举内，改 `SafetyLevel.BLOCK_COMMAND`（沙箱裁决属命令级预检，与路径授权无关）；⑧**§6.2 `resolve_grant_recursive`**：v1.8 立"两端共用"单一真源，实际随 `trust_impact` 改判已**仅 `grant_temp_auth` 自身调用**，共用前提不成立；⑨~⑬ 各产码点标签逐个订正为枚举成员。**新增四章记录文档无载的已落码事项**：`SafetyLevel` 枚举单源、`rename` 源判为写（含 `parse_move` 动词表拆分与沙箱宽表并入）、目录术语统一（允许根集 vs 白名单是两个不同集合）、三堂会审发现的既有安全缺口。**§八 实施顺序与 §九 验收标准按落码现状重排** |
 
 ---
 
 **创建时间**：2026-10-18 12:12:51
-**更新时间**：2026-10-18 14:12:30（小欧）
+**更新时间**：2026-10-18 16:59:55（小欧）
 **编写人**：小欧
 
 ---
@@ -37,12 +38,16 @@
 
 1. **`SafetyResult.severity` 整体删除**，不改名为 `trust_impact`。
 2. **危险等级等价关系**（[39]原案 §1.7）为唯一表达：`blocked`（拦截）／`needs_confirm`（需确认）／两者皆 False（放行）。
-3. **`trust_impact` 承载真授权影响面**，值域**英文标识** `high`/`low`，真值源 = `temp_auth` 实际生效的 `recursive`；**与 `needs_confirm` 正交**，不互推。
+3. **`trust_impact` 承载真授权影响面**，值域**英文标识** `high`/`medium`/`low`，真值源 = `safety_level`（删除类→`high`／写入类→`medium`／其余→`low`）；**与 `needs_confirm` 正交**，不互推。
+   - ★ **v1.11 订正**：v1.0~v1.10 定为 `high`/`low`、真值源 `temp_auth.resolve_grant_recursive`（目录树 vs 单文件）。实测该口径下「删一个文件」与「写一个文件」同为 `low`，**删除的不可撤销性完全没体现**，用户无法据此判断该不该勾信任。老陈裁定改为**按操作性质分三档**。
 4. **沙箱判定改读 `needs_confirm`**（[39]原案 §1.6 第3步）——**必采纳**，是删 `severity` 的硬依赖。
 5. **字段缩短命名**：`requires_confirmation` → `needs_confirm`（14 文件，增量成本≈0）。★**该字段经 `tool_routes.asdict` 出到 `/tool/execute` API 响应，属对外契约变更**（v1.8 关联审查推翻 v1.7 的「纯后端内部」结论，详见 §四.1 与 §十三）。
-6. **`safety_level` 产地归位**：决策点直给，`_classify_safety_level` 降级为**兜底**（保留无 message 场景分类能力）。
+6. **`safety_level` 产地归位**：决策点直给，**`_classify_safety_level` 整体删除**。
+   - ★ **v1.11 订正**：v1.5~v1.10 反复论证「兜底不可删，理由：无 message 场景会失分类」。实际**已删**，理由三条：①各判定点直给后**无任何调用点**（`execute_sql`/`create_task` 等经 `_TOOL_CONFIRM_LEVEL` 已在产码点直给，不再留空）；②该函数扫描的关键词（`受保护区域`/`超出允许范围`）已随目录术语统一**全部改写**，命中集为空；③它正是「标签取决于文案怎么写」这个病根本身——文案一改分类就悄悄变。
 7. **措辞补齐**：白名单外补时效、`non_system` 补"临时"二字。
-8. **前端补齐 4 个缺失分类 + 三条独立说明行**（信任影响／临时授权时效／系统禁区不可授权）。
+   - ★ **v1.11 扩充**：目录术语全量统一为系统既有命名——**允许根集**（`get_allowed_roots`＝项目根+授权目录+会话工作区）与**白名单**（`get_default_allowed_paths`＝系统临时目录+项目根+授权目录+会话工作区）是**两个不同集合**，差一个「系统临时目录」，删线按前者、写线按后者，措辞不得混用（详见新增 §四.5）。
+8. **前端补齐 13 个确认标签 + 三条独立说明行**（信任影响／临时授权时效／系统禁区不可授权）。
+   - ★ **v1.11 订正**：v1.0 写「补齐 4 个缺失分类」（基于旧 9 值表）。实际改为 `SafetyLevel` 枚举后，确认命名空间 **13 个**、硬拦命名空间 **4 个**，前端 `SAFETY_LEVEL_CONFIG` 键集须与确认命名空间**完全相等**。
 
 ### 一.2 方案的意义
 
@@ -158,7 +163,9 @@ auto_confirm / confirm_timeout / backend_timeout / confirm_id	倒计时与自动
 
 ## 四、字段契约
 
-### 四.1 `SafetyResult`（`app/tools/tool_types.py`）
+### 四.1 `SafetyResult`（**`app/safety/safety_result.py`**）
+
+> ★ **v1.11 订正**：v1.0~v1.10 全篇写 `app/tools/tool_types.py`。实际契约已**回迁安全层** `app/safety/safety_result.py` —— 生产者（三线判定、shell 通道、总闸）全在 `app/safety/` 内，契约随生产者走，落在安全层即免去用工具层模块迁就安全语义。`tool_types.py` 现仅保留 `ToolMetadata` 等工具层类型。
 
 | 字段 | 类型 | 含义 | 本次 |
 |------|------|------|------|
@@ -201,24 +208,75 @@ auto_confirm / confirm_timeout / backend_timeout / confirm_id	倒计时与自动
 
 ### 四.3 `trust_impact` 值域（英文标识，前端映射中文）
 
-| 值 | 中文显示 | 含义 | 判定 |
+> ★ **v1.11 订正**：v1.5 定为 `high`/`low`，真值源 `temp_auth.resolve_grant_recursive`（目录树 vs 单文件）。老陈裁定改为**按操作性质分三档**，真值源改为 `safety_level`。原口径的缺陷：删一个文件与写一个文件同为 `low`，**删除的不可撤销性未被体现**。
+
+| 值 | 中文显示 | 含义 | 判定（真值源 = `safety_level`） |
 |----|---------|------|------|
-| `high` | 信任影响：**大** | 授予**整棵子目录树**的操作权 | `resolve_grant_recursive(auth_path) == True`（目录根） |
-| `low` | 信任影响：**小** | 仅授予**该精确路径** | `resolve_grant_recursive(auth_path) == False`（单文件／无 auth_path） |
+| `high` | 授权影响：**大** | **删除类**：抹除不可撤销 | `delete_recursive` / `delete_out_of_scope` |
+| `medium` | 授权影响：**中** | **写入类**：可覆写原内容 | `write_protected` / `write_out_of_scope` |
+| `low` | 授权影响：**小** | 其余：命令级/任务级/注册表级/SQL 级确认 | 其余全部确认标签 |
 
-### 四.4 `safety_level` 取值 ↔ 前端展示
+**与「授权范围大小」正交**：目录树 vs 单文件由 `trust_path` 单独展示，不在本字段编码——两个维度各自独立回答两个问题（后果多大 / 范围多大），合并即重复编码。
 
-| `safety_level` | 前端标签 | 颜色 | 附加说明行 |
-|---------------|---------|------|-----------|
-| `path_auth` | 需授权 | orange | 「临时授权仅本任务有效，任务结束自动失效」 |
-| `shellparam` | 命令确认 | orange | — |
-| `tool_write` | 写确认 | geekblue | — |
-| `tool_delete` | 删除确认 | red | — |
-| `tool_execute` | 执行确认 | volcano | — |
-| `forbidden_zone` | 系统禁区 | red | 「系统禁区不可授权」 |
-| `command_block` | 危险命令 | red | — |
-| `data_guard` | 数据保护 | orange | （当前无产地，见 §六.14 注） |
-| `unregistered` | 未注册 | volcano | — |
+`blocked` 项永不进 HITL（实测 `blocked` 与 `needs_confirm` 无并存），故只有三值，无需第四档。
+
+### 四.4 `safety_level` 取值（`SafetyLevel` 枚举，`app/safety/safety_result.py`）
+
+> ★ **v1.11 全表替换**：v1.0 的 9 值表（`path_auth`/`shellparam`/`tool_write`/`tool_delete`/`tool_execute`/`forbidden_zone`/`command_block`/`data_guard`/`unregistered`）**全部作废**，实际无一重合。原表把「硬拦原因」与「确认原因」混在同一标签空间，而二者在 `safety_gate` 里是**互斥的两条分支**（`if safety_result.blocked:` 直接 rejected 并 `continue`，永不进 HITL；`if safety_result.needs_confirm:` 才进弹窗）。
+
+**标签只回答「为什么」，不回答「怎么办」**——怎么办由 `blocked`/`needs_confirm` 两个布尔精确表达。故拆成两个互斥命名空间，前缀即区分：
+
+**① 确认命名空间（`needs_confirm=True`，唯一有消费者的地方 —— 前端按标签渲染）**
+
+| `safety_level` | 前端标签 | 产地 |
+|---------------|---------|------|
+| `delete_recursive` | 递归删除确认 | `delete_path_check` R4 |
+| `delete_out_of_scope` | 范围外删除授权 | `delete_path_check` R5 |
+| `write_protected` | 受保护路径写入授权 | `write_path_check` `non_system` |
+| `write_out_of_scope` | 范围外写入授权 | `write_path_check` 白名单外 |
+| `shell_medium_risk` | 命令确认（中风险） | `shell_command_risk` |
+| `shell_delete_confirm` | 命令含删除动作 | `path_tool_safety_checker` 按命令动作取档 |
+| `shell_write_confirm` | 命令含写入动作 | 同上 |
+| `shell_read_confirm` | 命令含读取动作 | 同上 |
+| `shell_command_confirm` | 命令无路径动作 | 同上 |
+| `sql_execute_confirm` | SQL 执行确认 | 工具元数据确认策略 |
+| `task_deal_confirm` | 任务处理确认 | 同上 |
+| `registry_deal_confirm` | 注册表处置确认 | 同上 |
+| `tool_confirm` | 工具级确认（兜底） | 同上 |
+
+**② 硬拦命名空间（`blocked=True`，不进弹窗，标签仅作诊断留痕，前端不消费）**
+
+| `safety_level` | 语义 | 产地 |
+|---------------|------|------|
+| `path_forbidden` | 路径硬拦：磁盘根／系统保护目录／系统禁区／代码目录／允许根集自身及上级（**R6 根集外递归删除亦归此**，同属路径策略硬拦） | `delete_path_check` / `write_path_check` / `dual_path_check` |
+| `block_command` | 危险命令／命令层输入非法／非法 shell 元字符 | `shell_danger_command` / `shell_path_check` / `path_legality_router` / 总闸 check_fn |
+| `block_path_invalid` | 路径非法：空值／`..`穿越／归一化失败／安全判定不可用（fail-closed） | `read_path_check` / `delete_path_check` / `dual_path_check` |
+| `block_unregistered` | 工具未注册 | 总闸 |
+
+**③ 放行结果一律不带标签（空串）**：无确认无拦截，无「分类」可言。
+> v1.0 方案给放行结果也挂 `safety_level="path_auth"`，实际已去掉 —— 读线处处放行却标成「需授权」，是语义倒挂。
+
+**枚举成员清单（`SafetyLevel`）与两个派生集合**：`CONFIRM_LEVELS`（13，前端 `SAFETY_LEVEL_CONFIG` 键集须与其**完全相等**）、`BLOCK_LEVELS`（4）。
+
+### 四.5 目录术语统一（v1.11 新增）
+
+**系统里有两个不同的允许范围集合，措辞不得混用**：
+
+| 集合 | 定义（源码 docstring 原文） | 谁用它 |
+|------|--------------------------|--------|
+| **允许根集** | `get_allowed_roots` = 项目根 + 授权目录 + 会话工作区 | **删线** `check_delete_risk`（R3~R6） |
+| **白名单** | `get_default_allowed_paths` = 系统临时目录 + 项目根 + 授权目录 + 会话工作区 | **写线** `validate_write` |
+
+差一个「系统临时目录」——故同一路径 `Temp\a.txt` **写=放行、删=需确认**，这是设计使然而非缺陷，但**文案必须如实反映各自依据的那个集合**。
+
+**禁用词**（系统无此分类，自造）：
+- ~~工作区~~ —— 系统无「工作区」这一级分类（唯一合法用法是「会话工作区」这一具体来源名）
+- ~~允许的操作范围~~ —— 无此命名，正确为「允许根集」或「白名单」
+- ~~受保护区域~~ —— 无此分类，`non_system` 的真实口径是「代码目录自身及内部子级 + 允许根集自身及上级祖先」
+- ~~授权根目录~~ —— 正确为「授权目录」
+- ~~系统目录~~（用于 umbrella）—— 正确为「系统保护目录」／「系统禁区」
+
+**系统既有术语表**（取自源码 docstring，非臆造）：磁盘根目录、系统禁区（敏感文件/敏感目录）、系统保护目录、代码目录、项目根、授权目录、会话工作区、允许根集、白名单。
 
 ---
 
@@ -228,32 +286,30 @@ auto_confirm / confirm_timeout / backend_timeout / confirm_id	倒计时与自动
 
 见 §四.2。落地时只需遵守一条：**blocked 分支不塞任何"等级"字段**，`needs_confirm` 分支不塞 `severity`（已删）。
 
-### 五.3 `trust_impact` 判定（**单一真源，两端共用**）
+### 五.3 `trust_impact` 判定（**真值源 = `safety_level`，按操作性质分三档**）
 
-**真值源 = `temp_auth` 实际生效的 `recursive`**。实测依据 `temp_auth.py:52-56`：
+> ★ **v1.11 全面订正**：v1.5 原方案为「真值源 = `temp_auth` 实际生效的 `recursive`」，值域 `high`/`low`。老陈裁定改为按操作性质分档。真值源随之从 `auth_path` 解耦到 `safety_level`。
 
 ```python
-# 2026-09-03 小欧 修复: 文件路径(有后缀)强制 recursive False，仅目录保持 True，防 task 级目录越权
-_recursive = recursive
-if recursive and isinstance(root, str) and Path(root).suffix:
-    _recursive = False
+def _resolve_trust_impact(safety_result) -> str:
+    level = getattr(safety_result, "safety_level", "")
+    if level in (SafetyLevel.DELETE_RECURSIVE, SafetyLevel.DELETE_OUT_OF_SCOPE):
+        return "high"      # 删除类: 抹除不可撤销
+    if level in (SafetyLevel.WRITE_PROTECTED, SafetyLevel.WRITE_OUT_OF_SCOPE):
+        return "medium"    # 写入类: 可覆写原内容
+    return "low"           # 其余: 命令级/任务级/注册表级/SQL 级
 ```
 
-| 授权目标 | 实际 `recursive` | 授予的自由度 | `trust_impact` |
-|---------|------------------|-------------|----------------|
-| 目录 `D:\data` | `True` | 整棵子目录树 | `high` |
-| 单文件 `D:\data\x.txt` | `False` | 仅该文件 | `low` |
+| 授权请求 | `safety_level` | 授予的自由度 | `trust_impact` |
+|---------|---------------|-------------|----------------|
+| 递归删除目录 / 删允许根集外路径 | `delete_recursive` / `delete_out_of_scope` | 整棵子树 / 该路径被抹除 | `high` |
+| 写代码目录或允许根集自身 / 写白名单外 | `write_protected` / `write_out_of_scope` | 原内容可被覆写 | `medium` |
+| 命令 / 任务 / 注册表 / SQL 级确认 | 其余确认标签 | 不直接改文件内容 | `low` |
 
-**关键设计（老陈裁定：复用 temp_auth 规则，杜绝两套口径）**：把上述 suffix 规则从 `grant_temp_auth` 内联逻辑**上提为独立函数** `temp_auth.resolve_grant_recursive(root, requested)`，两端共用：
+**为什么不用 `resolve_grant_recursive`**：该口径只答「范围多大」（目录树 vs 单文件），答不了「后果多重」。实测原口径下 `delete_out_of_scope` 授权一个文件与 `write_out_of_scope` 授权一个文件**同为 `low`**，用户无从判断该不该勾信任。两个维度各自回答两个问题，**范围由 `trust_path` 单独展示**，影响面由 `trust_impact` 单独承载，合并即重复编码。
 
-- `grant_temp_auth` 内部改调本函数（授权**写入**口径）
-- `safety_gate._resolve_trust_impact` 调本函数（影响面**展示**口径）
-
-若两处各自判 suffix，必然漂移：授权按目录给了整子树，影响面却按单文件显示「小」。
-
-**与 `needs_confirm` 正交性**：不管弹不弹窗、是否需确认，只要存在 `auth_path` 即可定影响面；两者无推导关系。
-
-**`sandbox_gate.py` 的特例**：该处是系统禁区裁决（`forbidden_zone`），**永不授权** → 无授权会被授予 → 无"授权影响面"可言 → **不传 `trust_impact`**（留空，前端 `request?.trustImpact &&` 判空不渲染），只显示「系统禁区不可授权」。
+**`sandbox_gate.py` 的特例**：该处是**沙箱裁决**（预检未通过，是否强执行），并未授予任何路径访问权 → 无「授权影响面」可言 → **不传 `trust_impact`**（前端判空不渲染）。
+> ★ **v1.11 订正**：v1.0 方案该处传 `safety_level="path_auth"` 且描述为「系统禁区裁决」。两处均已更正——①它是沙箱预检裁决**不是**禁区分类；②`path_auth` 已不在枚举内，现为 `SafetyLevel.BLOCK_COMMAND`。
 
 ### 五.4 沙箱判定改读 `needs_confirm`（[39]原案 §1.6 第3步，**必做**）
 
@@ -324,83 +380,89 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 
 **★ 附带查明的历史事实**：这两层白名单里**从来就没有 `severity`** —— 后端 paused 帧一直白发 `severity`，前端压根没接。精确印证 [39]原案 §1.4「`severity` 前端不读」，根因更具体：**不是没人读，是转换层从未映射过**；且其值域 `safe/risk/dangerous` 与 `types/execution.ts:162` 声明的 `'info'｜'warn'｜'error'` **根本不匹配**，属跨层类型不一致缺陷。
 
-### 6.1 `app/tools/tool_types.py` — 删 `severity`、增 `safety_level`、改名 `needs_confirm`
+### 6.1 `app/safety/safety_result.py` — 删 `severity`、增 `SafetyLevel` 枚举、改名 `needs_confirm`
+
+> ★ **v1.11 订正**：文件路径由 `app/tools/tool_types.py` 改为 `app/safety/safety_result.py`（契约回迁安全层）。
+> ★ **v1.11 新增**：`SafetyLevel(StrEnum)` 枚举 —— `safety_level` 由「9 个裸字符串」升级为**类型化闭合枚举**，杜绝再出现枚举外值。
 
 ```diff
-@@ -140,30 +140,31 @@
++from enum import StrEnum
++
++class SafetyLevel(StrEnum):
++    """safety_level 取值单源
++
++    标签只回答"为什么", 不回答"怎么办" —— 怎么办由 blocked / needs_confirm 两个布尔精确表达。
++    据此拆成两个互斥命名空间, 前缀即区分, 两空间永不重叠。
++    """
++    # ── 确认命名空间(进 HITL 弹窗) ──
++    DELETE_RECURSIVE = "delete_recursive"
++    DELETE_OUT_OF_SCOPE = "delete_out_of_scope"
++    WRITE_PROTECTED = "write_protected"
++    WRITE_OUT_OF_SCOPE = "write_out_of_scope"
++    SHELL_MEDIUM_RISK = "shell_medium_risk"
++    SHELL_DELETE_CONFIRM = "shell_delete_confirm"
++    SHELL_WRITE_CONFIRM = "shell_write_confirm"
++    SHELL_READ_CONFIRM = "shell_read_confirm"
++    SHELL_COMMAND_CONFIRM = "shell_command_confirm"
++    SQL_EXECUTE_CONFIRM = "sql_execute_confirm"
++    TASK_DEAL_CONFIRM = "task_deal_confirm"
++    REGISTRY_DEAL_CONFIRM = "registry_deal_confirm"
++    TOOL_CONFIRM = "tool_confirm"       # 未细分域的工具级确认(诚实兜底: 不谎称是命令/写/删)
++    # ── 硬拦命名空间(不进弹窗) ──
++    PATH_FORBIDDEN = "path_forbidden"
++    BLOCK_COMMAND = "block_command"
++    BLOCK_PATH_INVALID = "block_path_invalid"
++    BLOCK_UNREGISTERED = "block_unregistered"
++
++
++CONFIRM_LEVELS = frozenset({...13 个...})   # 前端 SAFETY_LEVEL_CONFIG 键集须与其完全相等
++BLOCK_LEVELS = frozenset({...4 个...})
++
  @dataclass
  class SafetyResult:
-     """安全检查结果 — 替代raw dict — 小欧 2026-06-25
-     # 修复: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
-     # ⑮2026-08-10: 新增 auth_path(白名单外临时授权路径, None=普通确认/无)
-+    # 2026-10-18 小欧(文档本文):
-+    #   ①删 severity —— 危险等级与 blocked/needs_confirm 重复编码, 且沙箱判定是自证循环。
-+    #     ★严禁改成空值保留: 授权请求分支会恒 False 且不报错 → sandbox_required 永不置位 → 沙箱预检静默失效。
-+    #   ②增 safety_level —— 问题来源分类, 产地由"扫 message 文本"归位到"决策点直给"。
-+    #   ③requires_confirmation 缩短命名 needs_confirm(纯内部字段, 不进 paused 帧/DB/前端, 对外契约零影响)。
-+    #     ★严禁留旧名别名(property/兼容), 违反"禁止 backward"且会留两份真源。
-+    #   ★勿与 MetaStep.severity(info/warn/error, 另一个类的 SSE 分级) 混同 —— 见本文§二。
-     逐字复制自 app/tools/security/safety_result.py:20, 字段/默认值零改动 ——
-     下游均按 kwarg 构造, 丢一个字段即 TypeError。
-     """
+     """安全检查结果 — 替代raw dict — 小欧 2026-06-25"""
      blocked: bool = False
 -    requires_confirmation: bool = False
-+    needs_confirm: bool = False        # 原 requires_confirmation(2026-10-18 小欧 缩短命名)
++    needs_confirm: bool = False        # 原 requires_confirmation 缩短命名
      message: str = ""
 -    severity: str = "safe"
-+    safety_level: str = ""             # 问题来源分类: path_auth/shellparam/command_block/tool_delete/
-+                                       #   tool_write/data_guard/unregistered/forbidden_zone/tool_execute
++    safety_level: str = ""             # 取值必须取自 SafetyLevel; 空串=放行(无确认无拦截, 无分类可言)
      auto_confirm: bool = False
      auth_path: Optional[str] = None
-     # v1.25 M1: 沙箱预检触发标记 — 由 path_tool_safety_checker 四条置位路径点亮,
-     #   action_handler(M3) 仅对 sandbox_required=True 的工具调用 SandboxExecutor.pre_execute;
-     #   缺省 False 不改变既有安全流(非破坏性工具不进沙箱预检, 保性能)
      sandbox_required: bool = False
- 
+
      @staticmethod
      def pass_result() -> "SafetyResult":
-         """放行结果工厂(每次新建实例, 防共享单例被下游改写) — 小欧 2026-10-17(三线/通道统一放行)
- 
-         供 path_legality_router / dual_path_check / shell_path_check 复用, 免三份拷贝与循环导入。
-         """
+         """放行结果工厂(每次新建实例, 防共享单例被下游改写)"""
 -        return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
 +        return SafetyResult(blocked=False, needs_confirm=False, message="")
 ```
 
-### 6.2 `app/safety/temp_auth.py` — **新增单一真源函数**（v1.8 按 DRY 修正）
+> ★ **`safety_level` 类型收紧**：字段声明仍为 `str`（`StrEnum` 是 `str` 子类，JSON 序列化与 `asdict` 输出不变，对外契约零影响），但**所有产码点必须传枚举成员**，禁止裸字符串——枚举外的值等于分类失效。
+> ★ 枚举外的值可通过一条断言锁死：`safety_level == "" or safety_level in CONFIRM_LEVELS | BLOCK_LEVELS`。
 
-> ★ **v1.8 DRY 合规修正**：v1.7 的 `resolve_grant_recursive` 内部重复了 `grant_temp_auth:48` 的
-> 「空/根路径」判定。**该判定是安全关键分支**（防 `Path("")` resolve 成 cwd 而扩域成整盘授权），
-> 两处并存必然产生"改一处漏一处"的分歧风险。故按铁规 **DRY + 复用优先**，上提为私有原子 `_is_rejectable_root`。
+### 6.2 `app/safety/temp_auth.py` — `_is_rejectable_root` 上提（**共用前提已消失**）
+
+> ★ **v1.11 订正**：v1.5~v1.10 立此节的前提是「`resolve_grant_recursive` 由 `grant_temp_auth` 与 `_resolve_trust_impact` **两端共用**」。`trust_impact` 改判后（§五.3），**`_resolve_trust_impact` 已不再调用它** —— 该函数现**仅被 `grant_temp_auth` 自身调用**，属授权写入侧的私有判定。
+> `_is_rejectable_root` 的上提**仍然保留**：空/根路径判定是安全关键（防 `Path("")` resolve 成 cwd 而扩域成整盘授权），上提使「拒绝授权」与「判定 recursive」在同一文件内共用同一判据，是纯等价重构、零逻辑变更。
 
 ```diff
-@@ -38,6 +38,33 @@
-
 +def _is_rejectable_root(root) -> bool:
-+    """空/根路径判定(授权拒绝线) — 单一真源 — 小欧 2026-10-18
++    """空/根路径判定(授权拒绝线) — 单一判据 — 小欧 2026-10-18
 +
 +    判定为真表示**不可授权**: 空串 / None / Path("").resolve() 会落 cwd 扩域 /
 +    "." / "/" 等根路径。上提原因: grant_temp_auth(拒绝+告警) 与 resolve_grant_recursive
-+    (影响面判定) 共用同一口径, 防两处分歧。
++    (recursive 判定) 共用同一口径, 防两处分歧。
 +    """
 +    return (not root) or (isinstance(root, str) and root.strip() in ("", ".", "/"))
 +
 +
 +def resolve_grant_recursive(root: str, requested: bool = True) -> bool:
-+    """给定授权根, 判定**实际生效**的 recursive —— 授予自由度真值源(单一真源) — 小欧 2026-10-18
++    """给定授权根, 判定**实际生效**的 recursive — 小欧 2026-10-18
 +
 +    规则(自 grant_temp_auth 内联逻辑上提, 与 2026-09-03 小欧修复同源):
 +      文件路径(Path(root).suffix 非空) → False(仅精确路径)
 +      目录路径(suffix 为空)           → True(整棵子目录树)
-+
-+    ★为何必须上提: 本函数是"授权写入"与"授权影响面判定(trust_impact)"的**唯一共用口径**。
-+      两处若各自判 suffix 必然漂移 —— 授权按目录给了整子树, 影响面却按单文件显示"小", 误导用户。
-+
-+    Args:
-+        root: 授权根路径
-+        requested: 调用方请求的 recursive(grant_temp_auth 入口参数); False 时不授权递归
-+    Returns:
-+        bool: 实际生效的 recursive
 +    """
 +    if not requested or _is_rejectable_root(root):
 +        return False
@@ -408,84 +470,67 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +
 +
  def grant_temp_auth(root: str, recursive: bool = True) -> None:
-@@ -46,12 +73,12 @@
--    # 2026-09-03 小欧 修复: 空/根路径前置拒绝（Path("").resolve()得cwd扩域根治）
 -    if not root or (isinstance(root, str) and root.strip() in ("", ".", "/")):
-+    # 2026-09-03 小欧 修复: 空/根路径前置拒绝（Path("").resolve()得cwd扩域根治）
-+    # 2026-10-18 小欧: 判定上提 _is_rejectable_root, 与 resolve_grant_recursive 共用同一口径(DRY)
-+    if _is_rejectable_root(root):
++    if _is_rejectable_root(root):          # 判定上提, 与 resolve_grant_recursive 共用口径
          from app.logger import logger as _lg
          _lg.warning(f"[temp_auth] 空/根路径拒绝授权: {root!r}")
          return
--    # 2026-09-03 小欧 修复: 文件路径(有后缀)强制recursive False，仅目录保持True，防task级目录越权
 -    _recursive = recursive
 -    if recursive and isinstance(root, str) and Path(root).suffix:
 -        _recursive = False
-+    # 2026-10-18 小欧: suffix 规则上提 resolve_grant_recursive, 与 trust_impact 判定共用口径
 +    _recursive = resolve_grant_recursive(root, recursive)
      _ensure_auth()[Path(root).resolve()] = _recursive
-@@ -119,5 +146,5 @@
- __all__ = ["grant_temp_auth", "clear_temp_auth", "is_temp_authorized",
--           "get_authorized"]
-+           "get_authorized", "resolve_grant_recursive"]
 ```
 
-> ✅ **等价性保证**：`_is_rejectable_root` 是 `grant_temp_auth:48` 原条件的**逐字提取**（`not root or (isinstance(root,str) and root.strip() in ("", ".", "/"))`），
-> 零逻辑变更；`resolve_grant_recursive` 在 `requested=False` 时返回 `False`（等同原 `_recursive = recursive = False`），
-> 在 `requested=True` 且路径有后缀时返回 `False`（等同原 `_recursive = False`），
-> 在 `requested=True` 且目录时返回 `True`（等同原 `_recursive = True`）。**行为完全不变，纯等价重构**。
+> ✅ **等价性保证**：`_is_rejectable_root` 是原条件的**逐字提取**，零逻辑变更；`resolve_grant_recursive` 在 `requested=False` / 路径有后缀 / 目录三种情形分别等价于原 `_recursive` 的 `False` / `False` / `True`。**行为完全不变，纯等价重构**。
 
-### 6.3 `app/services/agent/handlers/safety_gate.py` — 字段优先 + 文本兜底 + trust_impact 真派生
+### 6.3 `app/services/agent/handlers/safety_gate.py` — 直读 `safety_level` + **删除**关键词兜底 + `trust_impact` 按标签归类
+
+> ★ **v1.11 全面订正**：v1.3~v1.10 反复论证「`_classify_safety_level` **保留**作兜底，理由：无 message 场景会失分类」。实际**整体删除**，理由三条：
+> ①**无调用点** —— `execute_sql`/`create_task`/`registry_*` 等无 message 的确认场景，已在 `path_tool_safety_checker.confirm_level_for()` 按工具名直给标签，不再留空等上层回填；
+> ②**关键词已全部失效** —— 该函数扫 `受保护区域`/`超出允许范围`/`删除需确认` 等中文串，而这几处文案已随目录术语统一与 R4/R5 拆分**全部改写**，命中集为空；
+> ③**它就是病根本身** —— 「标签取决于文案怎么写」，改一个字悄悄换一个分类。本次重构的全部目的就是消灭这条链。
 
 ```diff
-@@ -88,6 +88,20 @@
- 
-+def _resolve_trust_impact(auth_path: Optional[str]) -> str:
-+    """授权/信任影响面(英文标识 high/low; 前端映射中文显示) — 小欧 2026-10-18 文档本文
++def _resolve_trust_impact(safety_result) -> str:
++    """授权/信任影响面(high/medium/low; 前端映射中文显示) — 小欧 2026-10-18
 +
-+    真值源 = temp_auth **实际生效** 的 recursive(本次授权到底给了 Agent 多大自由度):
-+      high = 目录根授权 → 整个子目录树均可操作(影响面大)
-+      low  = 单文件授权 → 仅该精确路径(影响面小)
-+
-+    ★与 needs_confirm 正交: 是否弹窗问用户, 与授权后有多大自由度, 是两回事, 互不推导。
-+      (曾误写成 needs_confirm 的 relabel, 零信息量 = 重复编码, 已修正)
-+    ★复用 temp_auth.resolve_grant_recursive 而非自判有无后缀 —— 保证与实际授权写入同一口径。
++    取档真值源是 safety_level: 删除类=high / 写入类=medium / 其余=low。
++    与 needs_confirm 正交: 弹不弹窗与同意后后果多大是两回事, 互不推导。
++    与授权范围大小(目录树/单文件)也正交: 范围由 trust_path 单独展示。
++    blocked 项永不进 HITL, 故只有三值。
 +    """
-+    if not auth_path:
-+        return "low"
-+    from app.safety.temp_auth import resolve_grant_recursive   # 延迟import防环
-+    return "high" if resolve_grant_recursive(auth_path) else "low"
++    level = getattr(safety_result, "safety_level", "")
++    if level in (SafetyLevel.DELETE_RECURSIVE, SafetyLevel.DELETE_OUT_OF_SCOPE):
++        return "high"
++    if level in (SafetyLevel.WRITE_PROTECTED, SafetyLevel.WRITE_OUT_OF_SCOPE):
++        return "medium"
++    return "low"
 +
 +
- def _classify_safety_level(msg: str, tool_name: str) -> str:
-@@ -195,8 +209,8 @@
-             # 3.2/3.2.1 只读短路: shell 只读白名单(含新增五项)的 requires_confirmation 不进网关,
-             #   恒与真机放行并行(仍落 site③ 走沙箱只读直通), 仅收敛"只读也弹窗"的过宽 — 小欧-2026-09-18
--            _readonly = (safety_result.requires_confirmation
-+            _readonly = (safety_result.needs_confirm
-                          and is_shell_tool(_cn)
-                          and is_shell_readonly_whitelisted(str(_cp.get("command") or "")))
--            if safety_result.requires_confirmation and not _readonly:
-+            if safety_result.needs_confirm and not _readonly:
-                 # [5] 确认 — 信任预查移入本层(与"是否免确认"同层, SRP)。
-+            if safety_result.needs_confirm and not _readonly:
-@@ -251,7 +265,11 @@
-                     _msg = getattr(safety_result, "message", "")
--                    _sl = _classify_safety_level(_msg, _cn)
-+                    # 2026-10-18 小欧(文档本文): 产地归位但**不删本函数** ——
-+                    #   有 safety_level 直读(治文本承重); 空则扫文本兜底。
-+                    #   兜底不可删: execute_sql/create_task 等由 tool_meta.needs_confirmation 触发的确认,
-+                    #   不经路径安全检查、无 SafetyResult.message 可扫, 删之则 safety_level 恒空。
-+                    _sl = getattr(safety_result, "safety_level", "") or _classify_safety_level(_msg, _cn)
-@@ -261,7 +279,9 @@
-                     _verdict = await hitl_confirm(agent, ConfirmSpec(
-                         auto_confirm=_bypass, tool_name=_cn, params=_cp,
-                         content=_content,
--                        severity=getattr(safety_result, "severity", ""),
-+                        # 2026-10-18 小欧: 授权影响面按 auth_path 实际 recursive 判定, 非 needs_confirm 派生
-+                        trust_impact=_resolve_trust_impact(getattr(safety_result, "auth_path", None)),
-                         safety_level=_sl,
+-def _classify_safety_level(msg: str, tool_name: str) -> str:
+-    _sl = "tool_execute"                       # 默认
+-    if "系统禁区" in msg:            _sl = "forbidden_zone"
+-    elif "受保护区域" in msg or "超出允许范围" in msg: _sl = "path_auth"
+-    elif "高风险Shell" in msg or "系统保护进程" in msg: _sl = "command_block"
+-    elif "中风险Shell" in msg:       _sl = "shellparam"
+-    elif "删除需确认" in msg or "禁止删除" in msg: _sl = "tool_delete"
+-    elif "数据保护" in msg:          _sl = "data_guard"
+-    elif "安全检查异常" in msg or "安全检查未通过" in msg: _sl = "command_block"
+-    elif not msg: ...                            # 按工具名二次归属
+-    return _sl
+
+ def _confirm_payload(safety_result, group_size: int):
+     """组装确认弹窗所需的原因句 / 分类 / 授权影响面"""
+     msg = getattr(safety_result, "message", "")
+-    _sl = getattr(safety_result, "safety_level", "") or _classify_safety_level(msg, tool_name)
++    level = getattr(safety_result, "safety_level", "")   # 直读, 不再兜底反查
+     content = ...
+-    return msg, _sl, _resolve_trust_impact(getattr(safety_result, "auth_path", None)), content
++    return msg, level, _resolve_trust_impact(safety_result), content
 ```
+
+> ★ **`_confirm_payload` 的 `tool_name` 形参同步删除**（删除兜底后已无人使用，YAGNI），调用点由 `_confirm_payload(safety_result, _cn, _group_size)` 改为 `_confirm_payload(safety_result, _group_size)`。
 
 ### 6.4 `app/services/agent/handlers/hitl_gateway.py` — ConfirmSpec 正名（**不动 MetaStep.severity**）
 
