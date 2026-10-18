@@ -218,10 +218,14 @@ logging:
 # 2026-10-18 小欧 - 键名 enabled → hitl_enabled: 该项只决定是否弹窗请用户确认(人工确认链路);
 #   危险防护(磁盘根/项目根/系统目录删除硬底线、系统保护进程、危险命令)无条件生效, 不受本项影响。
 security:
-  hitl_enabled: false         # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)
+  hitl_enabled: true          # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)。默认 true: 缺键/缺配置一律按"开"处理
   confirmDangerousOps: true   # 仅 UX 层: 保存设置时再多问一次(防误触), 与后端拦截无关
   auto_confirm_delay: 10
   hitl_timeout: 120
+  trust_ttl_days: 90          # 会话信任("信任此操作")的有效天数, 到期自动失效
+  # shell_readonly_prefixes 刻意**不写进模板**: 键一旦存在(哪怕值为空), 设置页就会显示该原始值
+  # 而非内置默认 → 用户看到空框, 反而"看不见"这份免确认清单。要改请在设置页「安全」组改,
+  # 或手写该键(逗号/换行分隔一个前缀); 留空/缺键一律回退内置 30 条默认清单。
 
 # 沙箱预检配置节（2026-08-25 小欧；total开关逃生门）
 sandbox:

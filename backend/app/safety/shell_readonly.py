@@ -34,19 +34,59 @@ SHELL_READONLY_FORBIDDEN = ("|", ";", "&", ">", ">>", "$", "(", ")", "`", "<", "
 # 误拒含括号的合法只读命令可接受(转沙箱预检仍能执行), 漏放是真机执行。 — 小欧 2026-10-05
 
 
+def get_readonly_prefixes() -> tuple:
+    """生效的只读白名单前缀 — 小欧 2026-10-18
+
+    真值源 = 配置 `security.shell_readonly_prefixes`; **缺键或留空 → 用内置 SHELL_READONLY_PREFIXES**,
+    即默认行为与接入配置面之前完全一致(纯可观测性/可收紧, 不改默认语义)。
+
+    值形状兼容三种(settings 的 textarea 落盘会把文本按行拆成 YAML list, 而手写 yaml 常是字符串):
+      str   → 再按 , ; 换行 拆
+      list  → 逐元素取串, 每个元素内部再按 , ; 拆(元素本身可能是"a, b, c"一整行)
+    形状不认识 → 用内置默认(fail-safe: 保持既有放行面不突变, 且不因解析失败而误放行未知前缀)
+
+    2026-10-18 起因: 该白名单是**免确认 + 免沙箱预检**的双重放行口(三个消费点:
+      safety_gate 跳过 HITL / sandbox.executor 跳过预检 / execute_shell_command 执行层放行),
+      却完全硬编码、设置页不可见 —— 用户不知道它的存在, 想收紧只能改代码发版。
+      接入配置面后"收紧"不必发版, 且在设置页可见可审计。
+
+    读取用 get_config()(内部 mtime 缓存), 与 _is_hitl_bypass 同一模式, 不引入额外 IO。
+    """
+    try:
+        from app.config import get_config  # 延迟导入: 本模块是最底层静态判据, 不给上层加导入依赖
+        raw = get_config().get("security.shell_readonly_prefixes", "")
+    except Exception:                      # 配置不可读 → 用内置默认, fail-safe 保持既有放行面不突变
+        return SHELL_READONLY_PREFIXES
+    if isinstance(raw, (list, tuple)):
+        chunks = [str(x) for x in raw]
+    elif isinstance(raw, str):
+        chunks = [raw]
+    else:                                   # 数字/布尔等异常形状 → 不猜, 用内置
+        return SHELL_READONLY_PREFIXES
+    parts: list = []
+    for c in chunks:
+        for p in c.replace(";", ",").replace("\n", ",").split(","):
+            p = p.strip().lower()
+            if p:
+                parts.append(p)
+    return tuple(parts) or SHELL_READONLY_PREFIXES
+
+
 def is_shell_readonly_whitelisted(command: str) -> bool:
     """只读白名单判定 — 小欧 2026-10-04
 
     安全放行须先跑 executor._scan_command_danger_intent, 纯路由调用点不适用。
     2026-10-18 小欧: 非字符串入参原抛 AttributeError, 改为 False(不放行);
       前缀与禁用符判定基准统一用 lowered(禁用符集无字母, 行为等价)。
+    2026-10-18 小欧: 前缀集改取 get_readonly_prefixes()(可配置), 默认值与原来一致。
     """
     if not isinstance(command, str):
         return False
     lowered = command.strip().lower()
-    if not lowered.startswith(SHELL_READONLY_PREFIXES):
+    if not lowered.startswith(get_readonly_prefixes()):
         return False
     return not any(op in lowered for op in SHELL_READONLY_FORBIDDEN)
 
 
-__all__ = ["SHELL_READONLY_PREFIXES", "SHELL_READONLY_FORBIDDEN", "is_shell_readonly_whitelisted"]
+__all__ = ["SHELL_READONLY_PREFIXES", "SHELL_READONLY_FORBIDDEN",
+           "get_readonly_prefixes", "is_shell_readonly_whitelisted"]

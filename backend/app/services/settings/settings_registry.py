@@ -55,6 +55,11 @@ from typing import Any, Dict, List, Optional
 # 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
 from app.config import ENV_INJECTED_KEYS
 
+# 只读免确认白名单的**默认展示值**取自安全层内置清单(services→safety 依赖方向合法, 与本包
+# security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
+# 设页若显示空白则等于"用户看不见它存在" —— 正是本项要消除的问题, 故直接把生效清单亮出来。
+from app.safety.shell_readonly import SHELL_READONLY_PREFIXES as _READONLY_PREFIXES
+
 
 def _item(key: str, type_: str, label: str, default: Any = None,
           options: Optional[List[Any]] = None, range_: Optional[List[float]] = None,
@@ -120,14 +125,24 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # 2026-10-18 - 小欧 - 键名 security.enabled → security.hitl_enabled: 该项只决定是否走人工确认链路,
         #   危险防护(删根/系统目录/自杀/危险命令)不受其影响。改名后与同段 hitl_timeout /
         #   auto_confirm_delay 的 hitl_* 前缀一致。不保留旧键别名。
-        _item("security.hitl_enabled", "bool", "HTL人工开关", False,
-              notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）"),
+        _item("security.hitl_enabled", "bool", "HTL人工开关", True,
+              notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）。默认开启：缺键时按『开』处理，缺配置不会悄悄放松安全等级"),
         _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
               notice="保存时再弹一次确认框（防误触）；后端的安全拦截不依赖这个开关"),
         _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10, range_=[0, 3600],
               notice="自动确认弹窗倒计时（秒），到时没人点就自动放行"),
         _item("security.hitl_timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],
               notice="人工确认弹窗最长等你多久（秒），超时按弹窗设定的处理方式收尾"),
+        # 2026-10-18 小欧 - 本项原先是隐藏配置: trust_db._ttl_expiry 读 security.trust_ttl_days(默认90),
+        #   但本表未注册 → 设置页看不见、改不了, 用户不知道会话信任会到期。此处补齐, 使其可见可改。
+        _item("security.trust_ttl_days", "int", "会话信任有效期(天)", 90, range_=[1, 3650],
+              notice="弹窗里勾了『信任此操作』后, 该信任在多少天后自动失效(同一会话内免弹窗)。到期后同类操作会重新弹窗询问。调小=更频繁询问, 调大=更少打扰但风险窗口更长"),
+        # 2026-10-18 小欧 - 本项原先是无配置面的硬编码白名单: 命中即**同时**跳过 HITL 确认与沙箱预检
+        #   (safety_gate / sandbox.executor / execute_shell_command 三个消费点), 设置页完全不可见。
+        #   内置默认 30 条(含 tasklist/systeminfo/netstat/ipconfig /all 等信息展示类, 以及 get- 这类宽前缀)。
+        _item("security.shell_readonly_prefixes", "textarea", "只读命令免确认白名单",
+              ", ".join(_READONLY_PREFIXES),
+              notice="当前生效的完整清单(共 %d 条, 逗号分隔), 命中的命令**免弹窗且免沙箱预检**, 直接执行。删掉某项=该前缀不再豁免(收紧); 整框清空=回退内置默认清单。新增前缀请自行确保是纯只读命令 —— 写操作前缀等于开后门" % len(_READONLY_PREFIXES)),
     ]},
     # 4.4 沙箱（sandbox，8 项，运行时参数）
     "sandbox": {"label": "沙箱", "items": [
