@@ -12,6 +12,11 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
 2026-10-18 - 小欧 - DRY: 新增 pathish / split_source_target(源/目标按文本顺序切分),
   供搬移套与复制套共用, 消除 parse_move 私有重复实现; 新增 redirect_targets(重定向目标剔除);
   _split_respect_quotes 非字符串入参安全返回 []。
+2026-10-18 - 小欧 - 源/目标切分修正: 新增 refpath_like 识别"形似相对路径却未解析出"的词条。
+  缺陷: pathish 要求 cwd 已知, 故 cwd 缺失时 `Copy-Item a.txt C:\Windows\b.txt` 的源 `a.txt`
+  被整条跳过, 其后唯一解析出的绝对路径被当成源 —— 写系统目录的目标被降级成读, 漏拦。
+  改法: split_source_target 在无 dest 开关时, 若未解析出的相对路径词条排在已解析路径之前,
+  则判定源落空, 已解析的那些全属目标(返回 ([], paths)); 有 dest 开关的分支不受影响。
 2026-10-18 - 小欧 - 词法增强: 换行作语句分隔(prepare 保 \n + _STMT_SEPS 补 \n); 盘符相对 `C:xxx`
   按盘根解析不再并入 cwd; 裸路径支持 `\\?\` 前缀、反斜杠/正斜杠 UNC、裸根 `C:\`、含逗号文件名;
   版本号/纯数字点串不再当相对路径。
@@ -255,12 +260,33 @@ def pathish(token: str, cwd: Optional[str]) -> bool:
     return bool(cwd) and ("\\" in token or "/" in token or "." in token)
 
 
+_REFPATH_RE = re.compile(r'^[\w.\-]+(?:[\\/][\w.\-]+)*$')
+
+
+def refpath_like(token: str) -> bool:
+    """词条是否形似**相对路径/文件名**(无盘符, 但有扩展名或分隔符) — 小欧 2026-10-18
+
+    pathish 对"相对路径"要求 cwd 已知, 故 cwd 缺失时 `a.txt` 这类源被整条跳过,
+    导致其后唯一解析出的绝对路径被当成**源**(`Copy-Item a.txt C:\\Windows\\b.txt`
+    → 目标被判成读 → 写系统目录漏拦)。本函数专用于识别"本应解析出源却因缺 cwd 落空"的词条。
+    """
+    if not token or token[0] in "-/":
+        return False
+    if _DRIVE_ABS_RE.match(token):
+        return False
+    return bool(_REFPATH_RE.match(token)) and ("." in token or "\\" in token or "/" in token)
+
+
 def split_source_target(statement: str, cwd: Optional[str],
                         dest_switches) -> "tuple[List[str], List[str]]":
     """搬移/复制类: 按文本顺序切出 (源清单, 目标清单) — 小欧 2026-10-18
 
     开关 dest_switches(如 -Destination/-NewName/-Dest)之后为全部目标; 否则首个路径为源、
     余为目标。复用本层 tokenize/to_absolute/pathish 单一真源(搬移与复制两套共用, 消重复)。
+
+    2026-10-18 修复: 源为相对路径且 cwd 缺失时, 源解析不出被跳过, 原本会把其后唯一
+    解析出的绝对路径当作**源**(目标被降级成读, 写系统目录漏拦)。故此处识别"形似相对路径
+    却未解析出"的词条 —— 若它排在已解析路径之前, 则已解析的那些全是**目标**, 源置空。
     """
     tokens = tokenize(statement)
     paths = []
@@ -275,6 +301,9 @@ def split_source_target(statement: str, cwd: Optional[str],
     dest_idx = next((i for i, t in enumerate(tokens)
                      if t.lower() in dest_switches), None)
     if dest_idx is None:
+        ref_idx = next((i for i, t in enumerate(tokens) if refpath_like(t)), None)
+        if ref_idx is not None and ref_idx < paths[0][0]:
+            return [], [p for _, p in paths]      # 源落空(相对且无 cwd) → 已解析的全属目标
         return [paths[0][1]], [p for _, p in paths[1:]]
     sources = [p for i, p in paths if i < dest_idx] or [p for _, p in paths]
     targets = [p for i, p in paths if i > dest_idx]
@@ -307,5 +336,5 @@ __all__ = [
     "detect_shell", "prepare", "blank_quotes",
     "split_statements", "split_pipeline", "tokenize",
     "to_absolute", "extract_paths", "shell_extract_abs_win_paths",
-    "pathish", "split_source_target", "redirect_targets",
+    "pathish", "refpath_like", "split_source_target", "redirect_targets",
 ]

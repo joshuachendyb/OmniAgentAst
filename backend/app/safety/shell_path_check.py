@@ -23,6 +23,11 @@
 #   cwd 非法或含元字符、高危删除解析不出目标)统一 SafetyLevel.BLOCK_COMMAND —— 同一句文案不得配三种分类,
 #   否则前端标签自相矛盾; 确认命名空间的标签不得用于硬拦(会挂"临时授权仅本任务有效"说明, 而硬拦无授权可给)。
 #   动作清单解析与三线判定逻辑零变更。
+# 2026-10-18 - 小欧 - 补读动作的系统源外泄拦截: 读线处处放行(含系统目录), 但 shell 内读取系统路径
+#   即内容外带通道(cat/less/copy C:\Windows\x 都能把系统文件内容带出), 而复合工具侧
+#   dual_path_check 早有同口径拦截 —— 两通道判定必须一致, 否则同一动作"工具拦、shell 不拦"。
+#   实现: 读动作经 classify_forbidden_path(path, "write") 判, category=="system" 即硬拦,
+#   归 SafetyLevel.PATH_FORBIDDEN。判定单源仍在本线三线, 本层只补这一处跨线检查。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
@@ -35,6 +40,7 @@ bash 属 FUNDAMENTAL, 不经 action_kind 分派, 单独立此通道:
 from typing import Any, Dict, List, Optional
 
 from app.safety import delete_path_check, read_path_check, write_path_check
+from app.safety.path_classify_category import classify_forbidden_path  # 系统源外泄拦截用(与 dual_path_check 同判据)
 from app.safety.shell_parse import parse_shell_action
 from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.parse_delete import shell_has_destructive_delete
@@ -112,6 +118,14 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
             logger.warning(f"[shell_path_check] bash读路径非法: path={action.path}, "
                            f"command={command.strip()[:200]}")
             return result
+        # 系统源外泄拦截: 读线处处放行(含系统目录), 但命令内**读取系统路径**即内容外带通道
+        #   (cat/less/copy C:\Windows\x . 都能把系统文件内容带出), 与 dual_path_check 的
+        #   「系统源外泄拦截」同口径 —— 两通道判定必须一致, 否则同一动作工具拦、shell 不拦。
+        cat, msg = classify_forbidden_path(action.path, "write")
+        if cat == "system":
+            logger.warning(f"[shell_path_check] bash读系统源外泄(硬拦): path={action.path}, "
+                           f"command={command.strip()[:200]}")
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN, message=msg)
     return None
 
 
