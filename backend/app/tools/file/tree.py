@@ -9,6 +9,9 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 列出目录树→列目录
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层), 工具只执行。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-19 小欧 - 入参须为目录: 原实现对文件路径静默产出伪目录节点(iterdir 的
+#   NotADirectoryError 被 _build_tree 当 OSError 吞掉且 node 无条件标 type=directory);
+#   入口补 is_dir 校验, 非目录如实返回错误。
 """
 tree — 列出目录树 (从list_directory拆分，仅列目录)
 
@@ -164,6 +167,11 @@ async def tree(
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_tree_llm_data("error", duration_ms, dir_path, detail=err, hint="请检查目录路径", user_include_hidden=include_hidden, user_sort_by=sort_by)
+        return build_error(data={}, llm_data=llm_data)
+    # 2026-10-19 小欧 - 入参须为目录(见文件头编辑历史): 文件路径不再静默产出伪目录
+    if not Path(dir_path).is_dir():
+        duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+        llm_data = _build_tree_llm_data("error", duration_ms, dir_path, detail=f"路径不是目录: {dir_path}", hint="请提供目录路径", user_include_hidden=include_hidden, user_sort_by=sort_by)
         return build_error(data={}, llm_data=llm_data)
     if max_depth < 1:
         max_depth = 1
