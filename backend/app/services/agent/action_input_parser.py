@@ -2,11 +2,14 @@
 # 编辑历史:
 # 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 _build_call_list + BuildCallListResult; [背景] handle_action 内 _build_call_list/build_observation 等4个"名不副实"函数混装, 非action编排本身; [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; [效果] action_handler 920→~596行纯编排调度层, 本文件为 LLM action 输入解析层, 零 agent 依赖
 # 2026-10-17 小欧 - 认领(未注册识别)上移解析层: 新增 _claim(resolve_registered_tool 逐call标记 _normal_name/_registered); _build_call_list 末尾逐 call 认领; 下游不再复判未注册(批二 safety_gate 删该段)。
+# 2026-10-18 - 小欧 - 归一化前置(L2 唯一职责): _claim 在工具名归一后, 用 normalize_params 把参数名归一为 schema 规范名并原地写回;
+#   下游安全层/执行层统一拿规范 tool+params, 安全层不再重复 normalize_params。未注册工具(_meta is None)不归一, 保持原样交上游拒绝。
 from dataclasses import dataclass
 from typing import Dict, List
 
 from app.logger import logger
 from app.tools.registry import resolve_registered_tool  # 2026-10-17 小欧 - 认领(未注册识别)上移解析层
+from app.tools.tools_alias_mapper import normalize_params  # 2026-10-18 小欧 - 参数名归一前置
 
 
 @dataclass
@@ -30,6 +33,14 @@ def _claim(call: Dict) -> Dict:
     _normal, _meta = resolve_registered_tool(call.get("tool_name", ""))
     call["_normal_name"] = _normal
     call["_registered"] = _meta is not None
+    # 2026-10-18 小欧 - 参数名归一前置: 原地写回, 保住 tool_params 引用(BIR 与 all_calls[0] 同对象)
+    if _meta is not None:
+        _params = call.get("tool_params")
+        if isinstance(_params, dict):
+            _normalized, _ = normalize_params(_normal, _params)
+            if _normalized is not _params:
+                _params.clear()
+                _params.update(_normalized)
     return call
 
 
