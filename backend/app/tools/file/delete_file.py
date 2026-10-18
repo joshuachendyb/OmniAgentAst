@@ -46,6 +46,8 @@
 # 2026-10-17 - 小欧 - SA8标注订正(模块更名跟改): 删除硬底线已不在本文件(_guard_forbidden_delete 于 2026-10-16 删除); 现落 app/safety/delete_path_check.guard_forbidden_delete(经 check_delete_permission 封装口) 与 app/utils/path_utils.check_path_five_level 第⑤级。
 # 2026-10-18 小欧 - 删除硬底线回本文件自持: 通用入口降为 check_path_four_level(仅合法性),
 #   本文件 delete() 首行按 logging.debug 门控调用 guard_forbidden_delete(单一真源, 不本地复刻名单)。 — 小欧-2026-10-18
+# 2026-10-19 小欧 - 删除硬底线兜底判据整改: logging.debug 门控语义错误(调试开关≠安全层是否执行过),
+#   改判 _current_task_id 是否为空 —— 有任务上下文=走应用管线(安全层必先判), 无=单独直调本工具, 二者其一不重复。 — 小欧-2026-10-19
 """
 F12: delete_file — 删除文件
 
@@ -73,7 +75,6 @@ from app.logger import logger
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 删除执行前登记占用
 from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-18 小欧 - 路径四级合法性总入口(权限归 safety, 删除硬底线本文件自持)
-from app.config import get_config  # 2026-10-18 小欧 - 删除硬底线 debug 门控读 logging.debug
 
 
 def _force_delete_sync(path: Path, recursive: bool = False,
@@ -267,18 +268,19 @@ async def delete(
     force: bool = False,
 ) -> Dict[str, Any]:
     """删除文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小健 2026-06-22 重构：主函数负责计时+builder+build3 — 小欧 2026-07-11 路径参数统一为path
-    删除硬底线归属几经反复: 2026-10-16 删(分层) → 2026-10-17 并入 path_utils 五级入口 → 2026-10-18 回本文件自持(logging.debug 门控)。 — 小欧-2026-10-18"""
+    删除硬底线归属几经反复: 2026-10-16 删(分层) → 2026-10-17 并入 path_utils 五级入口 → 2026-10-18 回本文件自持 → 2026-10-19 兜底判据改 _current_task_id 有无(有=走应用管线安全层已判, 无=单独直调才兜底)。 — 小欧-2026-10-19"""
     t0 = _time_mod.perf_counter()
     # 路径参数统一为path,桥接到内部变量source — 小欧 2026-07-11
     source = path
-    # 2026-10-18 小欧 - 删除硬底线回本文件自持(受 logging.debug 门控); 通用四级入口已不含禁区判定
-    enforce_zone = bool(get_config().get("logging.debug", False))
-    if enforce_zone:
+    # 2026-10-19 小欧 - 删除硬底线兜底判据(与安全层二者其一, 不再重复): 走应用管线(Agent/API 直连)时安全层
+    #   (delete_path_check.check_delete_permission ① guard_forbidden_delete)必先执行, 故仅"单独直调本工具"
+    #   (无任务上下文)时才在此兜底。旧 logging.debug 门控语义错误(调试开关≠安全层是否执行过), 已废止。
+    if _current_task_id.get() is None:
         from app.safety.delete_path_check import guard_forbidden_delete
         _reason = guard_forbidden_delete(source)
         if _reason:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-            logger.warning(f"[delete_file] 禁区硬底线拦截: {_reason} path={source}")
+            logger.warning(f"[delete_file] 禁区硬底线拦截(单独调用兜底): {_reason} path={source}")
             llm_data = _build_delete_file_llm_data("error", duration_ms, source, detail=_reason, user_recursive=recursive, user_force=force)
             return build_error(data={}, llm_data=llm_data)
     # 2026-10-17 小欧 - 路径检查统一走四级合法性总入口; 恒传 allow_missing=True(删除语义=不存在即已删, 与 force 参数无关)
