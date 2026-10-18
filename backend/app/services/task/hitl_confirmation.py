@@ -2,32 +2,36 @@
 # 编辑历史:
 # 2026-07-18 - 小欧 - 修复: wait_for_confirmation_result 超时返回加 expired=True 标记, 供 action_handler 分流超时/拒绝
 # 2026-07-18 - 小欧 - 修复: _pending_confirmations 加 threading.Lock 防并发读写
-# 2026-08-16 - 小欧 - S2(10.1.7②-5/10.1.8 S2, 北京老陈驱动): "信任本次会话"落库闭环——
+# 2026-08-16 - 小欧 - S2: "信任本次会话"落库闭环——
 #   _PendingConfirmation 加 tool_name 字段; create_confirmation 增 tool_name 透传参数;
 #   resolve_confirmation confirm 成功+trust_session=True 时, 经 confirm_id 拆 task_id 反查 session_id(禁伪 agent.session_id)
 #   落 insert_session_trust(chat_session_trust), 落库失败只留日志不影响确认结果
-# 2026-08-17 - 小健 - 三堂会审-T1修复(北京老陈驱动): 落库用 normalize_tool_name(entry.tool_name) 规范名,
+# 2026-08-17 - 小健 - T1修复: 落库用 normalize_tool_name(entry.tool_name) 规范名,
 #   与豁免查询侧(action_handler 端 normalize)一致, 防止 LLM 以别名(write_text/writefile)提名时信任落库别名、
 #   而查询用规范名导致漏配失效仍触发二次 HITL(与写保护修复同模式)。
 # 2026-08-24 - 小欧 - 后端卡死修复收尾(offload): resolve_confirmation 为同步函数(API层直调),
 #   "信任本次会话"旁路落库块改 daemon 线程投递(本块原为 fire-and-forget: 失败只留日志不影响确认结果),
 #   调用线程零 sqlite3 I/O+锁重试 sleep, 落库语义不变
-# 2026-09-02 - 小欧 - 会话信任功能修复(v1.5, 北京老陈定案, 详见doc-9月优化/会话信任功能修复方案):
+# 2026-09-02 - 小欧 - 会话信任功能修复(v1.5, 详见doc-9月优化/会话信任功能修复方案):
 #   5.1: resolve_confirmation 由同步函数改 async def, 信任落库由 daemon Thread 异步投递改 await db.atxn 同步提交(删Thread, API返回前信任行已落库零竞态);
 #      反查 session_id 失败由静默跳过改 raise→atxn 回滚并告警(3.2 根因修复, 杜绝"勾信任却不落库"静默丢失);
 #   5.5③: _PendingConfirmation 增 path 字段; create_confirmation 增 path 透传参数(tool+path 精确信任落库, 北京老陈"只有tool+path才是准确对象"定案)
-# 2026-09-03 - 小欧 - 清理过期确认超时可配置化(北京老陈驱动): _cleanup_stale_confirmations 改读
+# 2026-09-03 - 小欧 - 清理过期确认超时可配置化: _cleanup_stale_confirmations 改读
 #   security.hitl_timeout(config.yaml优先, HITL_TIMEOUT 默认120兜底), 与真HITL确认超时同源。
 # 2026-09-03 - 小欧/北京老陈 - HITL全链路补日志: create_confirmation/wait_for_confirmation/resolve_confirmation
 #   _cleanup_stale_confirmations 四处关键路径补info/warning日志, 改前静默返回False无法排查confirm_id去向
-# 2026-10-11 - 小欧 - 等待超时日志措辞去歧义(北京老陈令): 等待结束处日志原写"[HITL] 确认超时", 易被读成
+# 2026-10-11 - 小欧 - 等待超时日志措辞去歧义: 等待结束处日志原写"[HITL] 确认超时", 易被读成
 #   "工具执行慢", 改写为"确认窗口已关闭(未获人工授权)"。expired 返回值/键名/超时时长来源均不变,
 #   仅日志措辞; 该措辞经 safety_gate 转译为 rejected.content 反馈给 LLM(同批 safety_gate 改动) — 小欧 2026-10-11
 # 2026-09-04 小健 第1阶段拆分: 内联落库逻辑→import trust.save_session_trust
-#   [改法] resolve_confirmation内联落库逻辑替换为 from app.safety.trust import save_session_trust(路径已按文档[33] 5.23 订正为终态; 日期/署名/描述原样)
+#   [改法] resolve_confirmation内联落库逻辑替换为 from app.safety.trust import save_session_trust(路径已订正为终态; 日期/署名/描述原样)
 #   [效果] DRY(落库逻辑集中在trust.py), hitl_confirmation.py职责更单一
 # 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
-# 2026-10-14 小欧 - 文档[33] 4.8: :197 save_session_trust 改从 app.safety.trust 导入
+# 2026-10-14 小欧 - save_session_trust 改从 app.safety.trust 导入
+# 2026-10-18 小欧 - 旧键残留修复: _cleanup_stale_confirmations 读口未随 security 分组迁移改名 ——
+#   security.hitl_timeout → security.hitl.timeout; 改前 registry 只出后者, 本处恒读不到(恒走常量),
+#   过期清理判据与真 HITL 确认超时不再同源。
+# 2026-10-18 小欧 - 注释精简冗余标注(S2/T1/超时配置化/路径订正 四处, 技术说明与日期署名原样保留)。
 """
 hitl_confirmation — HITL人工确认机制(业务逻辑层)
 
@@ -78,8 +82,8 @@ def _cleanup_stale_confirmations():
         return
 
     _last_cleanup_time = now
-    from app.config import get_config as _get_cfg_cln  # 对应 config.yaml security.hitl_timeout(过期清理判据与确认等待同源,默认120); 兜底常量 HITL_TIMEOUT — 小欧 2026-09-03
-    _hitl_timeout = int(float(_get_cfg_cln().get("security.hitl_timeout", _D_HITL_TIMEOUT)))
+    from app.config import get_config as _get_cfg_cln  # 对应 config.yaml security.hitl.timeout(过期清理判据与确认等待同源,默认120); 兜底常量 HITL_TIMEOUT — 小欧 2026-09-03
+    _hitl_timeout = int(float(_get_cfg_cln().get("security.hitl.timeout", _D_HITL_TIMEOUT)))
     with _pending_lock:
         stale = [k for k, v in _pending_confirmations.items()
                  if v.future.done() or now - v.created_at > _hitl_timeout]
@@ -99,7 +103,7 @@ async def create_confirmation(task_id: str, tool_name: str = "", path: Optional[
     小沈 2026-06-17 从confirm_operation.py下沉
     2026-08-16 小欧 S2(10.1.7②-5): 增 tool_name 透传参数, 存入 _PendingConfirmation
     供 trust 落库(confirm 成功回调经 task_id 反查 session_id 后写 chat_session_trust)
-    2026-09-02 小欧 v1.5(北京老陈定案): 增 path 透传参数, 存入 _PendingConfirmation,
+       2026-09-02 小欧 v1.5: 增 path 透传参数, 存入 _PendingConfirmation,
     供 tool+path 精确信任落库(check_session_trust 前缀递归匹配豁免)
     """
     _cleanup_stale_confirmations()
@@ -155,7 +159,7 @@ async def wait_for_confirmation_result(confirm_id: str, timeout: int = 120) -> D
                 if task_id and await check_cancelled(task_id):
                     logger.info(f"[HITL] 任务已取消,终止确认等待: confirm_id={confirm_id}")
                     return {"confirmed": False, "trust_session": False}
-        # 2026-10-11 小欧 - 日志措辞对齐(北京老陈令): expired 的语义是"确认窗口关闭、未收到人工授权",
+           # 2026-10-11 小欧 - 日志措辞对齐: expired 的语义是"确认窗口关闭、未收到人工授权",
         #   与工具执行耗时无关; 原写"确认超时"易被误读为工具慢。键名/返回值不变。
         logger.warning(f"[HITL] 确认窗口已关闭(未获人工授权): confirm_id={confirm_id}, timeout={timeout}s")
         return {"confirmed": False, "trust_session": False, "expired": True}
@@ -172,10 +176,10 @@ async def resolve_confirmation(confirm_id: str, confirmed: bool, trust_session: 
         True=成功解除, False=confirm_id不存在或已处理
 
     小沈 2026-06-17 从confirm_operation.py下沉
-    2026-09-02 小欧 5.1/3.2修复(三堂会审): 同步函数改 async; 信任落库由 daemon Thread 异步投递
+    2026-09-02 小欧 5.1/3.2修复: 同步函数改 async; 信任落库由 daemon Thread 异步投递
     改 await db.atxn 同步提交, API 返回前信任行已落库(零竞态强一致, 删 Thread);
     反查 session_id 失败由静默跳过改 raise→atxn 回滚并告警, 杜绝"勾信任却不落库"静默丢失;
-    5.5(v1.5 北京老陈定案): 落库增 entry.path 透传, tool+path 精确信任
+     5.5(v1.5): 落库增 entry.path 透传, tool+path 精确信任
     """
     with _pending_lock:
         entry = _pending_confirmations.get(confirm_id)

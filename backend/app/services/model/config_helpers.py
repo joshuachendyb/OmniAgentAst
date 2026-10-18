@@ -47,6 +47,7 @@ F10合并: 小欧 - 2026-06-08
 # 2026-09-27 小欧 - 修 B4: _validate_config_integrity 缺 isinstance 守卫，provider 值为 None
 #   （yaml `myprov:` 空值）时下方 `'api_base' not in provider_config` 抛 TypeError。本函数被
 #   _merge_region_core 每次写调用 → 改任何设置全 500。
+# 2026-10-18 小欧 - 注释精简冗余标注(mask_secret_value 契约说明处, 三键改两键的取值依据原样保留)。
 
 import os
 import shutil
@@ -493,7 +494,7 @@ def _iter_nested_ops(tree: Any, prefix: Tuple[str, ...] = ()) -> Iterator[Tuple[
 
 
 def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
-    """通用 region 合并写（registry 已知的固定点号键：security.hitl_enabled 等）：
+    """通用 region 合并写（registry 已知的固定点号键：security.hitl.enabled 等）：
     registry 键不含叶段点号，安全按点号分裂。模型/Provider 名域请用 merge_nested_patch。"""
     ops = [(tuple(key.split(".")), value) for key, value in region_updates.items()]
     return _merge_region_core(ops, scope)
@@ -579,7 +580,7 @@ def get_config_snapshot() -> Dict[str, Any]:
 def mask_secret_value(value: Any) -> Dict[str, Any]:
     """secret 掩码公共函数（**唯一权威**）：永不返明文，只返 {configured, masked 可直接显示的串}。
 
-    2026-09-27 北京老陈裁定 - 契约由 {configured, prefix, suffix} 三键改为两键：
+    2026-09-27 小欧 - 契约由 {configured, prefix, suffix} 三键改为两键：
       原三键把"怎么拼"交给前端（前端要自己判档位、点数星号），掩码规则在前后端各实现一遍（违反 DRY），
       且已漂移出真实 bug —— 真实 key 前 4 位恰为 `****` 时前端无法区分"真前缀是星号"与"短 key 档"。
       现后端一次生成最终可显示串，前端零掩码逻辑。三档规则见文件头编辑历史。

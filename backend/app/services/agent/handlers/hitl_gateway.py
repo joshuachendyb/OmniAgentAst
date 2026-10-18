@@ -10,22 +10,26 @@
 #   内部纯同步无await, async 声明致 MetaStep(params=coroutine)入队前失真; 与 HEAD def 原语义一致) — 小欧-2026-09-16
 # 2026-09-16 老陈 - 后端参数摘要: 新增_summarize_params(主键path+长值截断80) + 组装行包裹_desensitize收口 - 老陈-2026-09-16
 # 2026-09-16 小欧 - 参数摘要单行化: smart_truncate_text截断文本含\n(head/tail原值换行+省略标记三行), 前端pre-wrap逐参数分行致"参数占多行+中间空一行"(仅见shell多行命令), 违反"每参数一行"定案契约; 截断结果re.sub换行压空格单行化(命中源, 治本) - 小欧-2026-09-16
-# 2026-09-16 小欧 - 截断方式改尾部截断(老陈定案): smart_truncate_text"省略中间留头尾"诡异且head/tail双截断点增换行风险, 换公用truncate_text直接切尾巴(text[:140]+...[截断N字符], FUNCTIONS.md:83), re.sub单行化保留 - 小欧-2026-09-16
-# 2026-09-16 小欧 - 截断阈值80→140(老陈定案): 80字符对长命令过短, 140"差不多" - 小欧-2026-09-16
+# 2026-09-16 小欧 - 截断方式改尾部截断: smart_truncate_text"省略中间留头尾"诡异且head/tail双截断点增换行风险, 换公用truncate_text直接切尾巴(text[:140]+...[截断N字符], FUNCTIONS.md:83), re.sub单行化保留 - 小欧-2026-09-16
+# 2026-09-16 小欧 - 截断阈值80→140: 80字符对长命令过短, 140"差不多" - 小欧-2026-09-16
 # 2026-09-18 小欧 - severity/safety_level字段对调: paused帧severity改载安全分级(safe/destructive/dangerous), safety_level改载固定常量"attention"; ConfirmSpec.safety_level同步重命名为severity - 小欧-2026-09-18
 # 2026-09-18 小欧 - 归属分类实施: ConfirmSpec新增safety_level字段(问题来源分类: path_auth/shellparam/command_block/tool_delete/tool_execute/data_guard/unregistered/forbidden_zone);
 #   paused帧safety_level由固定"attention"改透传spec.safety_level, 支撑前端按问题类型差异化展示 - 小欧-2026-09-18
-# 2026-09-18 小欧 - 去mode字段(北京老陈三堂会审定案, KISS-DIRECT): 删ConfirmSpec.mode字符串(布尔→"bypass/hitl"→==bypass还原的无意义往返),
+# 2026-09-18 小欧 - 去mode字段(KISS-DIRECT): 删ConfirmSpec.mode字符串(布尔→"bypass/hitl"→==bypass还原的无意义往返),
 #   bypass/真HITL身份全线只用布尔auto_confirm单字段(唯一真相源); _resolve_timeouts/resumed条件/mode推导随迁改读auto_confirm,
 #   调用方safety_gate传auto_confirm=_bypass/sandbox_gate传auto_confirm=False, 语义零变化 置顶safety_gate/sandbox_gate同步 - 小欧-2026-09-18
 # 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 # 2026-09-23 小欧 - wiring假保存修复: _resolve_timeouts 的 MIN/LEAD/BYPASS 改读 tuning.hitl.* 配置兜底常量（此前设置页可改实际不生效）
-# 2026-10-14 小欧 - 文档[33] 4.7: :59/:102 trust 改从 app.safety.trust 导入, :103 逻辑不动
+# 2026-10-14 小欧 - trust 改从 app.safety.trust 导入, 逻辑不动
 # 2026-10-18 小欧 - ConfirmSpec 字段正名: severity → trust_impact。原 severity 语义是"安全分级", 但它与 blocked/needs_confirm 重复编码、且前端从不读; 真正需要告诉用户的是"这次授权给你多大自由度"(目录根=整棵子树, 单文件=仅此路径), 语义正名为 trust_impact 并由授权范围真值源给出。paused 帧同步改键。注意本文件 resumed 帧用的 severity="info" 属事件分级(SSE 语义), 与之无关、保持不动。
 # 2026-10-18 - 小欧 - trust_impact 取值口径由两档改三档: 上一条按"授权范围大小"取(目录根=high/单文件=low), 但用户判断要不要勾"信任"
 #   真正关心的是"同意之后后果多大", 不是范围多大 —— 旧口径下"删一个文件"与"写一个文件"同为 low, 删的不可撤销性完全没体现。
 #   改按 safety_level 归类: DELETE_* → high(抹除不可撤销) / WRITE_* → medium(可覆写) / 命令级等其余 → low。
 #   与"是否需确认""授权范围大小"三者正交。ConfirmSpec 字段名、paused/resumed 帧键与传参链一律不动。
+# 2026-10-18 - 小欧 - 旧键残留修复: 本函数两处配置读口未随 security 分组迁移改名 ——
+#   security.hitl_timeout → security.hitl.timeout, security.auto_confirm_delay → security.hitl.auto_confirm_delay。
+#   改前 registry 只出后二键, 读方持前二键 → 恒读不到(恒走常量), HITL 确认超时与自动确认延迟两项设置实际失效。
+# 2026-10-18 小欧 - 注释精简冗余标注(去mode/截断方式/截断阈值三处, 技术说明与日期署名原样保留)。
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -57,7 +61,7 @@ def _desensitize(params) -> dict:
 def _summarize_params(tool_name: str, params: dict) -> dict:
     """HITL弹窗参数摘要: 主键(path类extract_trust_path权威)优先展示 + 长值truncate_text尾部截断(阈值140) + 截断结果单行化 — 小欧-2026-09-16
     参数摘要设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
-    尾部截断(老陈定案): 直接切尾巴 text[:140] + 默认后缀\\n...[截断N字符], 不再"省略中间留头尾"(头尾双截断点增换行风险);
+       尾部截断: 直接切尾巴 text[:140] + 默认后缀\\n...[截断N字符], 不再"省略中间留头尾"(头尾双截断点增换行风险);
     单行化: 截断结果内换行(含四周空白)压成空格, 保证每个参数值恒为一行
        (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"定案契约);
     脱敏仍由组装行 _desensitize 统一收口(本函数不重复脱敏)。"""
@@ -71,7 +75,7 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
     for _k, _v in _all.items():
         if _k in ("path",) or _k in _out:
             continue                                        # path已由主键摘出, 防重复展示
-        if isinstance(_v, str) and len(_v) > 140:           # 长值→尾部截断防弹窗超高(复用公用函数, 老陈定案阈值140)
+        if isinstance(_v, str) and len(_v) > 140:           # 长值→尾部截断防弹窗超高(复用公用函数, 阈值140)
             _truncated, _f = truncate_text(_v, 140)         # text[:140]+\\n...[截断N字符] — 小欧-2026-09-16
             _out[_k] = re.sub(r"\s*\n\s*", " ", _truncated)  # 换行(含四周空白)压空格单行化 — 小欧-2026-09-16
         else:
@@ -82,22 +86,22 @@ def _summarize_params(tool_name: str, params: dict) -> dict:
 async def _resolve_timeouts(auto_confirm):
     """返回 (backend_timeout, confirm_timeout) 二元组（调用处双解包 — 小健-2026-09-05）。
     点分扁平键（与三处同源，禁嵌套get("security")取法）+ 分auto_confirm公式：
-    auto_confirm=False(真HITL)→security.hitl_timeout兜底HITL_TIMEOUT，confirm=max(MIN, backend-HITL_CONFIRM_LEAD)；
-    auto_confirm=True(bypass)→security.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
+    auto_confirm=False(真HITL)→security.hitl.timeout兜底HITL_TIMEOUT，confirm=max(MIN, backend-HITL_CONFIRM_LEAD)；
+    auto_confirm=True(bypass)→security.hitl.auto_confirm_delay兜底10.0，backend=max(MIN+LEAD, delay)，confirm=backend-BYPASS_AUTO_LEAD。
      （见safety_gate行79/85/87/112、sandbox_gate行90-92；四常量均在app.constants）。
      2026-09-18 小欧: 参数mode字符串→auto_confirm布尔(去mode字段同批, 唯一真相源)。"""
     from app.config import get_config                            # 延迟import防环
     from app.constants import HITL_TIMEOUT as _D_HITL_TIMEOUT, HITL_CONFIRM_LEAD as _D_CONFIRM_LEAD, HITL_MIN_CONFIRM_TIMEOUT as _D_MIN_TIMEOUT, BYPASS_AUTO_LEAD as _D_BYPASS_LEAD
     cfg = get_config()
     if not auto_confirm:
-        _bt = int(float(cfg.get("security.hitl_timeout", _D_HITL_TIMEOUT)))
+        _bt = int(float(cfg.get("security.hitl.timeout", _D_HITL_TIMEOUT)))
         _min = int(float(cfg.get("tuning.hitl.hitl_min_confirm_timeout", _D_MIN_TIMEOUT)))  # 小欧 2026-09-23 wiring假保存修复
         _lead = int(float(cfg.get("tuning.hitl.hitl_confirm_lead", _D_CONFIRM_LEAD)))  # 小欧 2026-09-23 wiring假保存修复
         return _bt, max(_min, _bt - _lead)
     _min2 = int(float(cfg.get("tuning.hitl.hitl_min_confirm_timeout", _D_MIN_TIMEOUT)))  # 小欧 2026-09-23 wiring假保存修复
     _bypass = int(float(cfg.get("tuning.hitl.bypass_auto_lead", _D_BYPASS_LEAD)))  # 小欧 2026-09-23 wiring假保存修复
     _bt = max(_min2 + _bypass,
-              int(float(cfg.get("security.auto_confirm_delay", 10.0))))
+              int(float(cfg.get("security.hitl.auto_confirm_delay", 10.0))))
     return _bt, _bt - _bypass
 
 
