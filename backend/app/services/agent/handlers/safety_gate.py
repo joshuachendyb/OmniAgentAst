@@ -28,7 +28,7 @@
 # 2026-10-15 - 小欧 - 组键同源: 抽 _group_ref 与组大小同源; ConfirmSpec 透传 auth_path; 拒绝记忆加 bypass 守卫; shell 判定补 execute_command
 # 2026-10-15 - 小欧 - 门前初查: check_safety_and_confirm 循环入口加初查(第1层格式+第2层存在性, 进门即拦省信任预查/总闸/弹窗); 实现下沉 path_check_entry.precheck_path_legality; 失败按既有 denied 口径发 rejected 事件 + _denied + continue(不弹窗, 直接进 LLM 重试)。执行期工具内 validate_path 全保留(第2层复查防 TOCTOU + 第3层警告)。
 # 2026-10-16 - 小欧 - tool去检查化: 唯一合法性检查点, 执行期工具不再复查(只执行+业务警告); 上条"全保留"作废。
-# 2026-10-17 - 小欧 - 裁定点整改: (1)删本层未注册复判段(认领已上提 L2, 只按 _normal_name 查 PATH_TOOLS) (2)信任预查 resolve_skip 移入确认层(requires_confirmation 块内), 删 skip_confirmation 传递与 _rej_cache 死 pop, 恒取 trusted=False (3)删 check_safety_and_confirm 的 fc_context 死参 (4)删 _classify_safety_level "未注册"不可达分支。
+# 2026-10-17 - 小欧 - 整改: (1)删本层未注册复判段(认领已上提 L2, 只按 _normal_name 查 PATH_TOOLS) (2)信任预查 resolve_skip 移入确认层(requires_confirmation 块内), 删 skip_confirmation 传递与 _rej_cache 死 pop, 恒取 trusted=False (3)删 check_safety_and_confirm 的 fc_context 死参 (4)删 _classify_safety_level "未注册"不可达分支。
 # 2026-10-17 - 小欧 - 拒绝回传修复: _denied_out 回传由「切片替换」改「extend 追加」, 否则调用方 pre-seed 的认领拒绝项(_denied_pre)被抹掉, 未注册 call 无 tool 反馈 → LLM 历史孤儿 tool_call。
 # 2026-10-18 - 小欧 - 归一化前置: 循环内 _cn 改取 call["_normal_name"](解析层已归一), 参数亦为已归一; 本层不再重复 normalize_params。
 # 2026-10-18 - 小欧 - 随契约调整同步(三处): ①只读短路与确认入口两处判读改 needs_confirm ②safety_level 改为"字段优先、文本兜底" —— 各判定分支已直给分类, 本层优先直读, 仅在为空时退回关键词分类; 关键词分类函数保留不删, 因工具元数据确认策略触发的确认(execute_sql/create_task 等)不经路径安全检查、本就没有文案可依据 ③新增 _resolve_trust_impact: 按 temp_auth 实际生效的 recursive 给出授权影响面 high/low, 取代原透传的严重度; 与"是否需确认"正交、互不推导。确认分支顺序与放行条件零变更。
@@ -182,8 +182,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
             if _cn not in PATH_TOOLS:
                 continue
 
-            # 合法性初查: 第1层格式+第2层存在性, 进门即拦, 省信任预查/总闸/弹窗(工具层不再复查合法性)。
-            #   实现下沉 path_precheck.precheck_path_legality(op表同源, 禁双份); 第3层警告门前不跑(参数不全且要贴执行)。
+            # 门前合法性初查: 仅第1层格式(空值/盘符/保留字符/保留名), 进门即拦, 省信任预查/总闸/弹窗。
+            #   存在性不在此判(本层处于全部执行之前, 同批兄弟产出尚未落地, 早判必误拦), 交各工具执行时刻自检。
+            #   实现下沉 path_precheck.precheck_path_legality; 第3层警告门前不跑(参数不全且要贴执行)。
             from app.safety.path_precheck import precheck_path_legality
             _pre_err = precheck_path_legality(_cn, _cp)
             if _pre_err is not None:
@@ -324,11 +325,21 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                         # 2026-10-11 小欧 - 报错补路径: 原文案只说"该路径受保护"却不说哪个路径,
                         #   人工排查时无从判断该去授权哪一处。现取 call 参数 path 优先、
                         #   回落 auth_path/trust_path, 让报错自带定位信息。
+                        # 2026-10-18 小欧 - 文案按 auth_path 分流(原写法无条件套"路径属受保护区域"):
+                        #   auth_path 非空 = 路径授权请求, 说路径成立;
+                        #   auth_path 为空 = 工具级确认(如 execute_sql 的删表/清表确认), 与路径无关。
+                        #   原写法对后者也说"路径属受保护区域" 属谎报: 该路径可能完全合法
+                        #   (实测 auth_path=None 时安全层对路径返回放行), LLM 读到会去换路径/申请授权,
+                        #   而正确动作是改 SQL —— 同一路径反复撞确认窗口直至超时。
                         _tp = str(_cp.get("path") or getattr(safety_result, "auth_path", None)
-                                   or getattr(safety_result, "trust_path", None) or "未知路径")
+                                   or getattr(safety_result, "trust_path", None) or "未指定路径")
+                        _has_auth_path = bool(getattr(safety_result, "auth_path", None))
+                        _reason = (f"路径 {_tp} 需人工授权后才能操作"
+                                   if _has_auth_path else
+                                   "本次执行需人工确认(与路径无关)")
                         _events.append(agent._step_emitter.emit(MetaStep(
                             step=step, type="rejected",
-                            content=(f"工具 {_cn} 未获授权: 路径 {_tp} 属受保护区域, 需人工在确认窗口内授权; "
+                            content=(f"工具 {_cn} 未获授权: {_reason}; "
                                      f"确认窗口已关闭(未收到授权)。"),
                             reject_type="timeout",
                             tool_name=_cn,

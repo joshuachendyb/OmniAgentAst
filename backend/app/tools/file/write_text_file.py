@@ -2,7 +2,7 @@
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-17 - 小欧 - 早期encoding校验: write()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
-# 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户裁定 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
+# 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户要求 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
 # 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter #544 行×列收口+两态呈现; data 仅留 content_preview(#23), 严禁与 llm_data 段重复显示
 # 2026-07-25 - 小欧 - 截断治理: content[:50]/[-50:] → WRITE_INER_PREVIEW_CHARS 命名常量
 # 2026-07-29 - 小欧 - hint优化: 语法错误hint从死的"请修复语法错误后重试"改为动态"Python语法错误(行N)，建议:xxxx"; metrics新增error_line+suggestion
@@ -60,7 +60,7 @@ from app.tools.tool_constants import WRITE_INER_PREVIEW_CHARS
 
 
 def _build_content_preview(content: str) -> str:
-    """文首+文末预览 — 小沈 2026-07-08；2026-07-20 用户裁定恢复此 Tool 层预览(write 工具不需回显全文)"""
+    """文首+文末预览 — 小沈 2026-07-08；2026-07-20 用户要求恢复此 Tool 层预览(write 工具不需回显全文)"""
     _pc = WRITE_INER_PREVIEW_CHARS
     if len(content) <= _pc * 2:
         return content
@@ -335,7 +335,7 @@ async def write(
                     )
                     llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
                     # ---- observation_formatter route -------------------------------------------
-                    # branch: #23 write (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                    # branch: #23 write (content_preview) — 2026-07-20 用户要求恢复 Tool 层预览
                     # trigger: "content_preview" in data
                     # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                     # file:    observation_formatter.py
@@ -429,7 +429,7 @@ async def write(
                 if diff_text:
                     llm_data["diff"] = diff_text
                 # ---- observation_formatter route -------------------------------------------
-                # branch: #23 write (content_preview) — 2026-07-20 用户裁定恢复 Tool 层预览
+                # branch: #23 write (content_preview) — 2026-07-20 用户要求恢复 Tool 层预览
                 # trigger: "content_preview" in data
                 # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                 # file:    observation_formatter.py
