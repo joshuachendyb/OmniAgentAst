@@ -19,6 +19,10 @@
 # 2026-10-18 - 小欧 - 归一保留换行(换行即语句边界), 不再压成空格致两命令合并漏判。
 # 2026-10-18 - 小欧 - 随契约调整同步: 三处三线结果的"是否需确认"判读改 needs_confirm; 六处自建结果补 safety_level —— 删源路径非法归 tool_delete, 读/写路径非法与命令类型非法、工作目录非法、高危删除解析不出目标归 command_block。分类按动作语义直给, 原 severity="dangerous" 六处均被 blocked=True 完全覆盖、属纯冗余编码。判定逻辑与返回结构零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 六处命令层硬拦(非法 shell 元字符 ×3、command 类型非法、
+#   cwd 非法或含元字符、高危删除解析不出目标)统一 SafetyLevel.BLOCK_COMMAND —— 同一句文案不得配三种分类,
+#   否则前端标签自相矛盾; 确认命名空间的标签不得用于硬拦(会挂"临时授权仅本任务有效"说明, 而硬拦无授权可给)。
+#   动作清单解析与三线判定逻辑零变更。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 

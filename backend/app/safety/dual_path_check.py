@@ -14,6 +14,8 @@
 #   fail-closed 分支不再扫 PATH_PARAM_KEYS(11 键), 只认 path/dest(dual 工具的两个路径键)。参数名已在 L2 归一。
 # 2026-10-18 - 小欧 - 随契约调整同步: 四处三线结果的"是否需确认"判读改 needs_confirm; 两处自建结果补 safety_level —— 未带任何路径参数属调用形状问题、归 tool_delete, 系统源外泄拦截归 forbidden_zone, 分类由本层直给而非上层反查文案。判定逻辑与返回结构零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 无路径参数的调用形状问题硬拦归 BLOCK_PATH_INVALID(上一条标 tool_delete,
+#   把"参数形状不对"说成"删除"); 系统源外泄拦截归 PATH_FORBIDDEN。判定逻辑与返回结构零变更。
 r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/extract/rename/generate_chart)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 

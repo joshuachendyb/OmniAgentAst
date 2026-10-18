@@ -20,6 +20,8 @@
 #   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
 # 2026-10-18 - 小欧 - 随契约调整同步: 分派段 fail-closed 兜底结果补 safety_level="command_block"(检查过程异常归阻断, 与具体路径禁区区分), 分类由判定点直给; 原 severity="dangerous" 与 blocked=True 等价、属重复编码, 一并删; 返回契约 docstring 随字段改名同步。七步路由顺序与各线直调关系零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 分派段 fail-closed 兜底由 "command_block" 改 SafetyLevel.BLOCK_COMMAND,
+#   同一语义入枚举(检查过程异常属命令层硬拦, 与具体路径禁区区分)。七步路由顺序与各线直调关系零变更。
 """
 path_legality_router — [4-2] 路径层(读/写/删/dual 分派, 产出 SafetyResult)
 

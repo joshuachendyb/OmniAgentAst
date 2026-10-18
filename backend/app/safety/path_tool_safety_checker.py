@@ -54,6 +54,17 @@
 # 2026-10-18 - 小欧 - 总闸随契约调整同步: ①沙箱标记改读 needs_confirm, 删 severity 中间变量 —— 原式由 needs_confirm 推导 severity 再反推 sandbox_required 是纯冗余回环, 且 severity 字段已废; 到达此处者已排除 blocked(恒为需确认的授权请求), 两式恒等行为不变 ②五处构造点补 safety_level 问题来源分类(未注册/工具级确认/自杀拦截), 使分类由决策点直给而非上层反查文本 ③check_fn 返回的 severity 属外部 dict 契约、不再灌入本层结果(blocked=True 已表达最高拦截级别), 该 dict 键保持不动 ④两处属性读取随字段改名同步。
 # 2026-10-18 - 小欧 - 补 check_fn 两处分类(会审补漏): check_fn 拦截与 check_fn 异常属工具自定义安全检查不通过, 与"高风险命令拦截"同类, 补 safety_level="command_block"(原依赖调用方按文案关键词兜底, 现由决策点直给)。另: 工具元数据确认策略通用出口(主 return)刻意不置分类 —— 该出口同时服务 shell/create_task/delete_task/execute_sql 等语义各异的工具, 笼统置 tool_execute 会盖掉调用方按工具名的细分(bash→shellparam、create_task 等写类→tool_write、delete_task→tool_delete)造成退化, 故留空交调用方回填。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+# 2026-10-18 - 小欧 - 确认标签改为按工具名/命令实际动作直给(SafetyLevel), 废"留空交上层按文案反查":
+#   新增 _TOOL_CONFIRM_LEVEL(execute_sql→SQL_EXECUTE_CONFIRM; create_task/delete_task→TASK_DEAL_CONFIRM;
+#   registry_write/delete→REGISTRY_DEAL_CONFIRM; 未列出→TOOL_CONFIRM 诚实兜底 —— 严禁兜底成 SHELL_COMMAND_CONFIRM,
+#   否则一个写类工具会弹窗显示"命令确认", 标签与事实不符, 正是本次要消灭的病);
+#   新增 shell_confirm_level(按 parse_shell_action 解析出的实际读/写/删动作取档, 多动作并存取最严一档,
+#   无路径动作归 SHELL_COMMAND_CONFIRM; 解析异常亦归整条命令级并 warning 留痕, 不退化成猜值);
+#   新增 confirm_level_for(工具级标签唯一出口, bypass 分支与主 return 共用, 防同表达式写两遍漂移)。
+#   硬拦标签同步入枚举: 未注册→BLOCK_UNREGISTERED; 自杀拦截/check_fn 拦截/check_fn 异常→BLOCK_COMMAND。
+#   沙箱预检触发口径、判定顺序与放行条件零变更。
+# 2026-10-18 - 小欧 - 本层不再消费 auth_path 定分类: 上一条把标签留空交调用方按文案关键词回填, 那条兜底链会让
+#   "标签"取决于"文案怎么写"(改一个字换一个分类), 是标签与分支对不上的病根; 产地已归位到本层与各判定分支。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 

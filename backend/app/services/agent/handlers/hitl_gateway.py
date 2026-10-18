@@ -22,6 +22,10 @@
 # 2026-09-23 小欧 - wiring假保存修复: _resolve_timeouts 的 MIN/LEAD/BYPASS 改读 tuning.hitl.* 配置兜底常量（此前设置页可改实际不生效）
 # 2026-10-14 小欧 - 文档[33] 4.7: :59/:102 trust 改从 app.safety.trust 导入, :103 逻辑不动
 # 2026-10-18 小欧 - ConfirmSpec 字段正名: severity → trust_impact。原 severity 语义是"安全分级", 但它与 blocked/needs_confirm 重复编码、且前端从不读; 真正需要告诉用户的是"这次授权给你多大自由度"(目录根=整棵子树, 单文件=仅此路径), 语义正名为 trust_impact 并由授权范围真值源给出。paused 帧同步改键。注意本文件 resumed 帧用的 severity="info" 属事件分级(SSE 语义), 与之无关、保持不动。
+# 2026-10-18 - 小欧 - trust_impact 取值口径由两档改三档: 上一条按"授权范围大小"取(目录根=high/单文件=low), 但用户判断要不要勾"信任"
+#   真正关心的是"同意之后后果多大", 不是范围多大 —— 旧口径下"删一个文件"与"写一个文件"同为 low, 删的不可撤销性完全没体现。
+#   改按 safety_level 归类: DELETE_* → high(抹除不可撤销) / WRITE_* → medium(可覆写) / 命令级等其余 → low。
+#   与"是否需确认""授权范围大小"三者正交。ConfirmSpec 字段名、paused/resumed 帧键与传参链一律不动。
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass

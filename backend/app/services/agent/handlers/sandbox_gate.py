@@ -61,6 +61,11 @@
 # 2026-09-19 小欧 - 修复: sandbox HITL auto_confirm从safety_result读取(不硬编码False),
 #   bypass超时→放行(与safety_gate层语义一致: 到期=放行); verdict.get("expired")防御缺失键 — 北京老陈驱动(三堂会审)
 # 2026-10-16 - 小欧 - 老陈裁定 severity destructive→risk(纯改名): 与 path_tool_safety_checker 沙箱判定(=="risk")对齐, 漏改则沙箱帧带非法值。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 沙箱裁决由 "path_auth" 改 SafetyLevel.BLOCK_COMMAND。
+#   订正理由: 此处问的是"预检未通过, 是否强执行", 属命令级预检未通过(硬拦命名空间), 与路径授权(确认命名空间)无关;
+#   原 path_auth 把沙箱裁决错标成路径授权, 会让前端挂上"临时授权仅本任务有效"的说明 —— 而此处并未授予任何路径权限
+#   (本就不传 auth_path/trust_impact)。新增 SafetyLevel 顶层 import: 属 app.safety 单向依赖, 不构成 safety→services 反向越层。
+#   弹窗文案与"不传 trust_impact"的口径一律不变。
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。

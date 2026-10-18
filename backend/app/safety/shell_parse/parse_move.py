@@ -9,6 +9,11 @@
   展开为「源 → delete / 目标 → write」两条动作。
 2026-10-18 - 小欧 - DRY: 源/目标切分逻辑抽到 lexer.split_source_target(与复制套共用),
   本文件删私有 _pathish/_ABS_HEAD_RE, 行为逐字等价。
+2026-10-18 - 小欧 - 改名动词自搬移表拆出(北京老陈裁定), 新增 RENAME_VERBS_PS/CMD/BASH 与 SHELL_RENAME_RE:
+  病根: 改名前与搬移同表, 但二者**源动作档位不同** —— 搬移源被搬走、原路径消失且数据易位 → 源=delete;
+  改名只换名不搬数据、原路径消失但数据完好可回退 → 源=write。合并即致 shell 侧把 rename 当搬移硬判删线,
+  与工具侧 rename 走写线不一致。改法: 动词表拆两张互不合并, parse_move_action 按 is_rename 分派源 kind 与
+  origin(rename-src / move-src), 目标一律 write。拆分纯字面归类, 切词与归一化逻辑零变更。
 
 分层: 本文件只出动作, 不判权限。
 """

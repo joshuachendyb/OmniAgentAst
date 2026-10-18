@@ -8,6 +8,13 @@
   app/safety/ 内; 消费者在 app/services/(safety_gate/hitl_gateway/tool_facade)与工具层
   只读字段(execute_shell_command 只读 blocked/needs_confirm, 不 import 本类)。
   契约随生产者走, 落在安全层即免去用工具层模块迁就安全语义。禁 backward 双份契约。
+2026-10-18 - 小欧 - 新增 SafetyLevel StrEnum + CONFIRM_LEVELS / BLOCK_LEVELS, safety_level 取值单源化。
+  病根: 原 safety_level 自由字符串, 且 path_auth 一个标签同时覆盖放行/硬拦/任务级授权/临时授权/沙箱裁决
+  五种语义 —— 标签只回答"为什么", 标签与分支必然对不上, 同一句文案还会配出不同分类。
+  改法: 据"标签只回答为什么、怎么办由 blocked/needs_confirm 精确表达"拆成两个**互斥命名空间**,
+  前缀即区分: 确认命名空间 13 项(needs_confirm=True, 唯一有消费者的地方, 进 HITL 弹窗、前端按标签渲染)、
+  硬拦命名空间 4 项(blocked=True, 不进弹窗, 仅诊断留痕)。两空间永不重叠。
+  放行结果一律不带标签(空串): 无确认无拦截, 无"分类"可言。字段注释同步收窄为"取值必须取自 SafetyLevel"。
 
 分层: 本文件只持契约(纯 dataclass, 无任何逻辑), 不做任何判定。
 """

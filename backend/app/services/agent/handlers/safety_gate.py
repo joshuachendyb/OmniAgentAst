@@ -33,6 +33,13 @@
 # 2026-10-18 - 小欧 - 归一化前置: 循环内 _cn 改取 call["_normal_name"](解析层已归一), 参数亦为已归一; 本层不再重复 normalize_params。
 # 2026-10-18 - 小欧 - 随契约调整同步(三处): ①只读短路与确认入口两处判读改 needs_confirm ②safety_level 改为"字段优先、文本兜底" —— 各判定分支已直给分类, 本层优先直读, 仅在为空时退回关键词分类; 关键词分类函数保留不删, 因工具元数据确认策略触发的确认(execute_sql/create_task 等)不经路径安全检查、本就没有文案可依据 ③新增 _resolve_trust_impact: 按 temp_auth 实际生效的 recursive 给出授权影响面 high/low, 取代原透传的严重度; 与"是否需确认"正交、互不推导。确认分支顺序与放行条件零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(安全层单源), 消费逻辑零改动。
+# 2026-10-18 - 小欧 - 删关键词反查 _classify_safety_level(约 20 行 if/elif 链一并退场): 病根是"标签取决于文案怎么写" ——
+#   改一个提示字就换一个分类, 标签与分支永远对不上, 且该链无法独立验证。产地已归位到各判定分支直给, 本层只读 safety_level。
+#   _confirm_payload 签名随之去 tool_name(不再需要按工具名回填)。
+# 2026-10-18 - 小欧 - _resolve_trust_impact 入参由 auth_path 改 safety_result, 取档由两档改三档:
+#   删 DELETE_RECURSIVE/DELETE_OUT_OF_SCOPE → high; 写 WRITE_PROTECTED/WRITE_OUT_OF_SCOPE → medium; 其余 → low。
+#   旧口径只看 auth_path 是否目录, "删一个文件"与"写一个文件"同为 low, 删的高危性没体现。SafetyLevel 是 StrEnum 与裸 str
+#   直接可比, 故删掉 str() 归一(多一层无意义转换)。确认分支顺序与放行条件零变更。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。

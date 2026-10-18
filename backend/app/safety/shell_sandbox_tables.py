@@ -8,6 +8,9 @@
 2026-10-18 - 小欧 - 新建(SRP): 自 shell_command_process.py 拆出"沙箱越界表"单一关注点。
   其中 SHELL_WRITE_INTENT_RE 原为手抄固定串(与 parse_write 的表重复维护), 现改由删/搬移/写
   三套动词表派生(单一真源): 词面随四套表自动同步, 新增动词只改一处即生效, 并显式含删动词。
+2026-10-18 - 小欧 - 改名动词并入宽表: RENAME_VERBS_BY_SHELL 自 parse_move 的搬移表拆出后**必须**并入本并集 ——
+  宽表是沙箱侧独立的判定依据, 不经 parse_shell_action 的早退门; 漏并即等于改名命令不进沙箱写意图判定
+  (实测宽表命中 Rename-Item=False 即此退化)。词面派生逻辑不变, 仅并入一张表。
 
 分层: 依赖 shell_parse 四套动词表(单向); 不被 shell_parse 依赖(lexer 对其依赖已改惰性, 无环)。
 """

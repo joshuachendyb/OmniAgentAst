@@ -16,6 +16,12 @@
 #   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
 # 2026-10-18 - 小欧 - 随契约调整同步 + 措辞补齐: ①四个结果补 safety_level 问题来源分类(合法/受保护区/白名单外三条授权线归 path_auth、系统禁区归 forbidden_zone), 分类由本线直给而非上层反查文案; 原 severity 四处取值(safe/dangerous/risk/risk)分别与 blocked/needs_confirm 等价、属重复编码, 一并删 ②requires_confirmation 随字段改名, docstring 分流说明同步 ③受保护区写入补"临时"二字、白名单外补时效说明 —— 临时授权是任务级、任务结束自动失效, 用户须在弹窗里看到才能与会话级"信任此操作"区分。判定分支与放行条件零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 放行不再带标签(无确认无拦截, 无分类可言);
+#   系统禁区硬拦归 PATH_FORBIDDEN; non_system 任务级授权归 WRITE_PROTECTED、白名单外临时授权归 WRITE_OUT_OF_SCOPE
+#   —— 上一条标 path_auth 时两条授权线同标签, 前端无法区分。判定分支与放行条件零变更。
+# 2026-10-18 - 小欧 - 文案术语对齐(get_default_allowed_paths / classify_forbidden_path 原文): non_system 判据写
+#   "代码目录(含其内部子级)+ 允许根集内的根目录自身及其上级", 白名单外判据写"白名单(系统临时目录/项目根/授权目录/会话工作区)"
+#   —— 两者差一个"系统临时目录", 不是同一集合, 不可混用"允许根集"。纯文案, 判定零变更。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 

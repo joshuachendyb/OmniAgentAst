@@ -15,8 +15,11 @@
   使重定向目标 `> log.txt` 归写线而非落入删线(原 `Remove-Item a -Force > log.txt` 误判 log.txt 为删目标)。
 2026-10-18 - 小欧 - _normalize 同路径合并加强: 同(kind,路径)重复合并 flags(append 任一真则真);
   同路径既删又读亦归删(原只消 write)。
-2026-10-18 - 小欧 - 管道继承出的 delete 按下游段绑定 recursive/force;
+2026-10-18 - 小欧 - 随契约调整同步: 管道继承出的 delete 按下游段绑定 recursive/force;
   全局早退门显式加 SHELL_DELETE_RE, 不再依赖宽表顺带包含。
+2026-10-18 - 小欧 - 全局早退门补 SHELL_RENAME_RE: 改名动词自 parse_move 的搬移表拆出后, 仅靠宽表与 SHELL_MOVE_RE
+  会使 Rename-Item / CMD ren / rename 三类命令早退为空清单, 绕过全部路径检查(与此前 SHELL_MOVE_RE 同款缺口)。
+  门条件补判 SHELL_RENAME_RE 后, 与搬移解析器的识别口径完全一致; 分派优先级与管道继承逻辑零变更。
 """
 from typing import List, Optional
 

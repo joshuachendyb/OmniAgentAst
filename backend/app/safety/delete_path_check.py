@@ -13,6 +13,15 @@
 #   调 delete_permission; 未传 key → 放行, 空值/穿越/禁区由 delete_permission 自身判定。
 # 2026-10-18 - 小欧 - 随契约调整同步: 七处结果补 safety_level 问题来源分类 —— 工作区边界判定与 R3~R6 四档归 tool_delete, 删除硬底线(系统目录/磁盘根/代码目录/允许根本身与上级)与 validate_delete 禁区归 forbidden_zone, 分类由本线直给而非上层反查文案; 原 severity 七处取值分别与 blocked/needs_confirm 等价、属重复编码, 一并删; requires_confirmation 随字段改名四处。R1~R6 判定分支与放行口径零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+# 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): R6 根集外递归硬拦归 PATH_FORBIDDEN(同属路径策略硬拦, 非命令层问题);
+#   R4 根内递归确认归 DELETE_RECURSIVE、R5 根集外确认归 DELETE_OUT_OF_SCOPE —— 上一条标 tool_delete 时 R4/R5 同标签, 前端无法区分;
+#   归一化失败/根集读取失败两处 fail-closed 归 BLOCK_PATH_INVALID; A族硬底线与 validate_delete 禁区硬拦归 PATH_FORBIDDEN;
+#   R3 放行不再带标签(无确认无拦截, 无分类可言)。R3-R6 判定分支与放行口径零变更。
+# 2026-10-18 - 小欧 - R5 补 auth_path=path(缺陷修复): 原 R5 只给 needs_confirm 不给 auth_path, 而 safety_gate 确认后凭 auth_path
+#   调 grant_temp_auth 落地临时授权 —— 缺它则本分支是死路: 弹窗承诺"申请临时授权", 用户确认后无授权落地,
+#   delete 工具内 validate_delete 仍按白名单拒绝, 操作照样失败(承诺与结果不符)。与写线同文案同给 auth_path。
+# 2026-10-18 - 小欧 - 文案术语对齐(get_allowed_roots / is_system_protected_path 原文): 统一"允许根集(项目根/授权目录/会话工作区)"
+#   与"系统保护目录", 删自造的"工作区""允许的操作范围""受保护区域""允许根目录"四种命名。纯文案, 判定零变更。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 

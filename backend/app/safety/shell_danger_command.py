@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 """shell 危险命令判定 — 与文件系统路径无关的高危操作，命中即拒绝
 
 ★ 本文件**只管一件事**: 这条命令危不危险（与文件路径的读/写/删无关）。
@@ -32,6 +31,9 @@
   ③ 删 protected_pids 形参(随 ② 失效)。④_TEMP_SAFE_PATTERNS/_is_temp_cleanup 移至 shell_command_process。
   ⑤ 彻底删除(老陈裁定"没有风险直接通过"): chmod 777 /、chown : /。
 2026-10-18 - 小欧 - 随契约调整同步: HIGH 命中结果补 safety_level="command_block"(高危命令直接拦截, 与中风险需确认区分), 分类由判定点直给而非上层反查文案; 原 severity="dangerous" 与 blocked=True 等价、属重复编码, 一并删。14 条规则表与命中即拒的语义零变更。
+2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
+2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 上一条的 "command_block" 改 SafetyLevel.BLOCK_COMMAND —— 危险命令
+  命中即拒属硬拦命名空间, 不进 HITL 弹窗, 标签仅作诊断留痕。14 条规则表与命中即拒的语义零变更。
 """
 import re
 from typing import Optional
