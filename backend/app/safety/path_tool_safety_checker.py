@@ -261,6 +261,13 @@ class PathToolSafetyChecker:
             if _medium is not None:
                 log_and_print(f"[PathToolSafetyChecker] 中风险命令转确认: tool={tool_name}, {_medium.message}")
                 _medium.sandbox_required = True   # 确认前仍走沙箱预检
+                # 2026-10-18 小欧 - 补旁路判定: 本分支 return 于确认分流之前, 原不查开关,
+                #   致 security.hitl.enabled=false 时中风险命令仍走真 HITL 弹窗(与路径线/工具级
+                #   确认的旁路口径不一致)。开关只免"要不要问", 危险层不受影响, 故此处只置
+                #   auto_confirm 而不改 blocked/safety_level, 沙箱预检照旧。
+                if _is_hitl_bypass():
+                    _medium.auto_confirm = True
+                    log_and_print(f"[PathToolSafetyChecker] bypass自动放行(中风险命令): tool={tool_name}")
                 return _medium
 
         # [4-2] 权限三线(按动作分派读/写/删; 唯一入口, delete 亦走此单点) — 小欧 2026-10-17
