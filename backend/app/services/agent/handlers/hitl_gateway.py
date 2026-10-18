@@ -21,6 +21,7 @@
 # 2026-09-22 小欧 - constants.py 配置化迁移：import HITL 常量改别名 + 使用点改读 tuning 配置
 # 2026-09-23 小欧 - wiring假保存修复: _resolve_timeouts 的 MIN/LEAD/BYPASS 改读 tuning.hitl.* 配置兜底常量（此前设置页可改实际不生效）
 # 2026-10-14 小欧 - 文档[33] 4.7: :59/:102 trust 改从 app.safety.trust 导入, :103 逻辑不动
+# 2026-10-18 小欧 - ConfirmSpec 字段正名: severity → trust_impact。原 severity 语义是"安全分级", 但它与 blocked/needs_confirm 重复编码、且前端从不读; 真正需要告诉用户的是"这次授权给你多大自由度"(目录根=整棵子树, 单文件=仅此路径), 语义正名为 trust_impact 并由授权范围真值源给出。paused 帧同步改键。注意本文件 resumed 帧用的 severity="info" 属事件分级(SSE 语义), 与之无关、保持不动。
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -38,7 +39,7 @@ class ConfirmSpec:
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
-    severity: str = ""           # 安全分级: safe / risk / dangerous
+    trust_impact: str = ""       # 授权/信任影响面: high=目录根授权(整棵子树) / low=单文件授权(仅精确路径)
     safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
     auto_confirm: bool = False   # 2026-09-18 小欧 去mode改布尔单源(changed from None) — 小欧-2026-09-18
 
@@ -108,7 +109,7 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
         params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
-        severity=spec.severity,
+        trust_impact=spec.trust_impact,
         safety_level=spec.safety_level, trust_path=_path, auto_confirm=_auto,
         confirm_timeout=_ct, backend_timeout=_bt))
     set_status(agent, AgentStatus.SUSPENDED, f"等待用户确认: {spec.tool_name}")

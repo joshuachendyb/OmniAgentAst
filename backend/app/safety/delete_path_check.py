@@ -11,6 +11,7 @@
 #   新增工具级 check_delete_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 delete_permission, 供 router [6] 直调。
 # 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线删工具路径键恒为 path(L2 已归一), 工具级口直接取 params["path"]
 #   调 delete_permission; 未传 key → 放行, 空值/穿越/禁区由 delete_permission 自身判定。
+# 2026-10-18 - 小欧 - 随契约调整同步: 七处结果补 safety_level 问题来源分类 —— 工作区边界判定与 R3~R6 四档归 tool_delete, 删除硬底线(系统目录/磁盘根/代码目录/允许根本身与上级)与 validate_delete 禁区归 forbidden_zone, 分类由本线直给而非上层反查文案; 原 severity 七处取值分别与 blocked/needs_confirm 等价、属重复编码, 一并删; requires_confirmation 随字段改名四处。R1~R6 判定分支与放行口径零变更。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -135,31 +136,31 @@ def check_delete_risk(params: dict) -> SafetyResult:
     except Exception as e:
         # fail-closed: 归一化失败即判 blocked, 宁可拒不可放(不依赖下一道防线)。
         logger.warning(f"[delete_path_check] 路径归一化失败, 按拒绝处理: {path!r} ({e})")
-        return SafetyResult(blocked=True, requires_confirmation=False,
-                            message=f"删除路径非法: {path}", severity="dangerous")
+        return SafetyResult(blocked=True, needs_confirm=False,
+                            message=f"删除路径非法: {path}", safety_level="tool_delete")
 
     try:
         allowed_roots = get_allowed_roots(session_workspace_paths())  # 单源: 项目根+授权目录+会话目录(⑫)
     except Exception as e:
         # fail-closed: 根集读不出时若继续判, inside 恒 False → 全部路径误判区外(R5/R6), 语义翻转
         logger.warning(f"[delete_path_check] 允许根读取失败, 按拒绝处理: {e}")
-        return SafetyResult(blocked=True, requires_confirmation=False,
-                            message=f"删除安全判定不可用(根集读取失败): {e}", severity="dangerous")
+        return SafetyResult(blocked=True, needs_confirm=False,
+                            message=f"删除安全判定不可用(根集读取失败): {e}", safety_level="tool_delete")
 
     inside_proj = any(p == root or root in p.parents for root in allowed_roots)
 
     # --- R6 全部允许根外递归 → 拒 ---
     if (not inside_proj) and recursive:
-        return SafetyResult(blocked=True, message=f"禁止删除工作区外目录: {path}", severity="dangerous")
+        return SafetyResult(blocked=True, message=f"禁止删除工作区外目录: {path}", safety_level="tool_delete")
 
     # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 ---
     if (inside_proj and recursive) or (not inside_proj):
-        return SafetyResult(requires_confirmation=True, blocked=False,
-                            message=f"删除需确认: {path}", severity="risk")
+        return SafetyResult(needs_confirm=True, blocked=False,
+                            message=f"删除需确认: {path}", safety_level="tool_delete")
 
     # --- R3 允许根内普通 → 放行(免确认), 恒非None ---
-    return SafetyResult(blocked=False, requires_confirmation=False,
-                        message="", severity="safe")
+    return SafetyResult(blocked=False, needs_confirm=False,
+                        message="", safety_level="tool_delete")
 
 
 def guard_forbidden_delete(file_path: str) -> Optional[str]:
@@ -200,11 +201,11 @@ def delete_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
     # ① A族/删根硬底线
     _guard = guard_forbidden_delete(path)
     if _guard:
-        return SafetyResult(blocked=True, message=_guard, severity="dangerous")
+        return SafetyResult(blocked=True, message=_guard, safety_level="forbidden_zone")
     # ② R1/R2 路径禁区(系统/代码目录/允许根本身 → 硬拦; 白名单外 → 交 ③)
     _ok, _msg, _category = validate_delete(path)
     if not _ok and _category:
-        return SafetyResult(blocked=True, message=_msg, severity="dangerous")
+        return SafetyResult(blocked=True, message=_msg, safety_level="forbidden_zone")
     # ③ R3-R6 工作区边界
     _params = dict(params or {})
     _params.setdefault("path", path)

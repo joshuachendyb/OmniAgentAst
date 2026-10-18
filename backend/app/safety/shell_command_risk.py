@@ -37,6 +37,7 @@
 #   维持原硬拦。降级属安全等级下调, 补 warning log 留痕。
 #   遗留(既有缺口, git stash 对比确认非本次引入): cmd `del <file>` 不带 /s 不在 HIGH 词表, 前后均不拦。
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D/4.12-A: SafetyResult 改从 app.tools.tool_types 导入; _strip_quoted 改名 mask_quoted_spans(随 4.11-A 迁 shell_static_guard)并同步调用点
+# 2026-10-18 - 小欧 - 随契约调整同步: 中风险命中结果补 safety_level="shellparam"(本模块唯一来源, 语义即"中风险命令需人工确认"), 分类由判定点直给而非上层反查文案; 原 severity="risk" 与 needs_confirm=True 等价、属重复编码, 一并删; requires_confirmation 随字段改名, 词表上方功能注释同步。命中条数合并与文案零变更。
 """
 shell 中风险命令判定 — 需用户确认，与文件系统路径无关
 
@@ -70,7 +71,7 @@ from app.logger import logger
 
 SHELL_MEDIUM_PATTERNS = [
     # ═══════════════════════════════════════════════════════════════════
-    # 中风险命令(MEDIUM) - 需用户确认(requires_confirmation=True)
+    # 中风险命令(MEDIUM) - 需用户确认(needs_confirm=True)
     # 格式: (pattern, desc, level, st_tag) — st_tag: "ps"/"cmd"/None(双兼容)
     # ★全部为与文件系统路径无关的操作；路径的写/读/删不在本表(见文件头边界铁律)
     # ═══════════════════════════════════════════════════════════════════
@@ -119,9 +120,9 @@ def check_shell_risk_command(command: str, shell_type: str = "ps7") -> Optional[
         logger.warning(f"[Shell中风险] 中风险操作: {combined}")
         return SafetyResult(
             blocked=False,
-            requires_confirmation=True,
+            needs_confirm=True,
             message=f"中风险Shell操作: {combined}，需确认后执行",
-            severity="risk",
+            safety_level="shellparam",
         )
     return None
 
@@ -134,7 +135,7 @@ def check_shell_risk_command_all_shells(command: str) -> Optional[SafetyResult]:
     会写死 shell 的调用方(如 execute_shell_command 执行层)应继续传真实 shell_type。
 
     2026-10-16 老陈裁定(去掉 _SEVERITY_RANK 排序): 中风险层只有一种结果 ——
-      命中即 requires_confirmation(risk), 不命中就是 None。
+      命中即 needs_confirm, 不命中就是 None。
       既然只有"命中/不命中", 直接返回第一个即可, 不必建严重度排序表(多余的间接层)。
     无任何 shell 命中时返回 None(无风险)。 — 小欧 2026-10-10
     """

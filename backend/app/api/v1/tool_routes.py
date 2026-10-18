@@ -42,7 +42,7 @@ class ToolExecuteResponse(BaseModel):
     result: dict = {}
     error: str = ""
     # 2026-10-14 北京老陈裁定 - 跟随系统结构不自创: 安全预检 SafetyResult 原样回传, 调用方据
-    #   blocked/requires_confirmation/auth_path 区分"拦截"与"待确认", 不再靠中文错误串猜。
+    #   blocked/needs_confirm/auth_path 区分"拦截"与"待确认", 不再靠中文错误串猜。
     safety: Optional[dict] = None
 
 

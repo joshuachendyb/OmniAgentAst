@@ -18,6 +18,7 @@
 #   均已归一到规范名, 本层属第三次冗余); 步骤 8→7, 分派直接用 tool_name; 删随之无用的 import normalize_tool_name。
 # 2026-10-18 - 小欧 - 补【路径名契约 ★】注释: 本安全模式只识别 path/dest 两个路径名; 要求 schema 路径参数名只能是
 #   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
+# 2026-10-18 - 小欧 - 随契约调整同步: 分派段 fail-closed 兜底结果补 safety_level="command_block"(检查过程异常归阻断, 与具体路径禁区区分), 分类由判定点直给; 原 severity="dangerous" 与 blocked=True 等价、属重复编码, 一并删; 返回契约 docstring 随字段改名同步。七步路由顺序与各线直调关系零变更。
 """
 path_legality_router — [4-2] 路径层(读/写/删/dual 分派, 产出 SafetyResult)
 
@@ -85,8 +86,8 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
         params: 工具参数(解析层 L2 已按 schema 归一, 本层不再归一)
 
     Returns:
-        SafetyResult: 放行(blocked=False, requires_confirmation=False) / 拒绝(blocked=True) /
-          待确认(requires_confirmation=True, auth_path=越权真实路径)。
+    SafetyResult: 放行(blocked=False, needs_confirm=False) / 拒绝(blocked=True) /
+    待确认(needs_confirm=True, auth_path=越权真实路径)。
     """
     # [1] 范围门: 非路径工具直接放行(工具名已前置归一到规范名)
     if tool_name not in PATH_TOOLS:
@@ -114,7 +115,7 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
             return shell_path_check.check_shell_permission(tool_name, params)
     except Exception as e:
         # fail-closed 单点兜底(接替已删除的 check_tool_paths 内 try/except): 异常归 blocked 永不授权
-        return SafetyResult(blocked=True, severity="dangerous", message=f"路径安全检查异常: {e}")
+        return SafetyResult(blocked=True, safety_level="command_block", message=f"路径安全检查异常: {e}")
 
     # [7] 返回
     return SafetyResult.pass_result()

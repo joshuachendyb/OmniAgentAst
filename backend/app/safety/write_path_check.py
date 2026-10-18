@@ -14,6 +14,7 @@
 #   仅对 str 值做 resolve_path_param(下载落盘相对路径解析), 再走 write_permission; 空值/穿越由 validate_write 自身判。
 # 2026-10-18 - 小欧 - 补【路径名契约】注释: 本安全模块只识别 path/dest 两个路径名; 要求 schema 路径参数名只能是
 #   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
+# 2026-10-18 - 小欧 - 随契约调整同步 + 措辞补齐: ①四个结果补 safety_level 问题来源分类(合法/受保护区/白名单外三条授权线归 path_auth、系统禁区归 forbidden_zone), 分类由本线直给而非上层反查文案; 原 severity 四处取值(safe/dangerous/risk/risk)分别与 blocked/needs_confirm 等价、属重复编码, 一并删 ②requires_confirmation 随字段改名, docstring 分流说明同步 ③受保护区写入补"临时"二字、白名单外补时效说明 —— 临时授权是任务级、任务结束自动失效, 用户须在弹窗里看到才能与会话级"信任此操作"区分。判定分支与放行条件零变更。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -106,23 +107,25 @@ def write_permission(path: str) -> SafetyResult:
 
     写线 category 分流(单路径):
       system      → blocked 硬拦(永不授权)
-      non_system  → requires_confirmation 任务级授权(auth_path=path)
-      None(白名单外) → requires_confirmation 临时授权(auth_path=path)
+      non_system  → needs_confirm 任务级授权(auth_path=path)
+      None(白名单外) → needs_confirm 临时授权(auth_path=path)
       合法        → 放行
     """
     _ok, _msg, _category = validate_write(path)
     if _ok:
-        return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
+        return SafetyResult(blocked=False, needs_confirm=False, message="", safety_level="path_auth")
     if _category == "system":
         return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
-                            severity="dangerous")
+                            safety_level="forbidden_zone")
     if _category == "non_system":
-        return SafetyResult(requires_confirmation=True, blocked=False,
-                            message=f"该路径在受保护区域，写入需申请授权: {path}",
-                            severity="risk", auth_path=path)
-    return SafetyResult(requires_confirmation=True, blocked=False,
-                        message=f"该路径超出允许范围，需临时授权: {path}",
-                        severity="risk", auth_path=path)
+        # 2026-10-18 小欧 - 措辞补齐: 补"临时"二字(原句只说"需申请授权", 用户看不出这是任务级临时授权、与会话级信任是两套机制)
+        return SafetyResult(needs_confirm=True, blocked=False,
+                            message=f"该路径在受保护区域，写入需申请临时授权: {path}",
+                            safety_level="path_auth", auth_path=path)
+    # 2026-10-18 小欧 - 措辞补齐: 补时效(临时授权为任务级, 任务结束自动失效, 用户需在弹窗里看到)
+    return SafetyResult(needs_confirm=True, blocked=False,
+                        message=f"该路径超出允许范围，需临时授权（仅本任务有效，任务结束自动失效）: {path}",
+                        safety_level="path_auth", auth_path=path)
 
 
 def check_write_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:

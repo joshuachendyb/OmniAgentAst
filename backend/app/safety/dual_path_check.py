@@ -12,6 +12,7 @@
 # 2026-10-18 - 小欧 - 北京老陈裁定(归类错误修复): generate_chart 移入双路径(data=read/dest=write), 本模块补 CONTENT_PARAM_KEYS 跳过(与 path_precheck:79 同口径), 防 data 内联 dict 被当路径送 read_permission 崩栈误拦。
 # 2026-10-18 - 小欧 - 参数归一前置 + 常量清理: 删 CONTENT_PARAM_KEYS 依赖, 内容守卫改类型判断(非 str 非 None 跳过);
 #   fail-closed 分支不再扫 PATH_PARAM_KEYS(11 键), 只认 path/dest(dual 工具的两个路径键)。参数名已在 L2 归一。
+# 2026-10-18 - 小欧 - 随契约调整同步: 四处三线结果的"是否需确认"判读改 needs_confirm; 两处自建结果补 safety_level —— 未带任何路径参数属调用形状问题、归 tool_delete, 系统源外泄拦截归 forbidden_zone, 分类由本层直给而非上层反查文案。判定逻辑与返回结构零变更。
 r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/extract/rename/generate_chart)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -98,7 +99,7 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         params: 归一化后的工具参数
 
     Returns:
-        SafetyResult: 首个命中即返回该参数的结果(blocked / requires_confirmation);
+        SafetyResult: 首个命中即返回该参数的结果(blocked / needs_confirm);
                       全通过返 SafetyResult.pass_result()。原四元组返回已归一为单一契约。
     """
     param_map = DUAL_ACTION_PARAMS.get(tool_name)
@@ -119,10 +120,10 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             hit = True
             real_path = resolve_path_param(tool_name, key, value, params)
             result = write_path_check.write_permission(real_path)
-            if result.blocked or result.requires_confirmation:
+            if result.blocked or result.needs_confirm:
                 return result
         if not hit:
-            return SafetyResult(blocked=True, severity="dangerous",
+            return SafetyResult(blocked=True, safety_level="tool_delete",
                                 message=f"工具 {tool_name} 声明为 dual 但调用不带任何路径参数")
         return SafetyResult.pass_result()
     for key, action in param_map.items():
@@ -134,23 +135,23 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         real_path = resolve_path_param(tool_name, key, value, params)
         if action == "read":
             result = read_path_check.read_permission(real_path)
-            if result.blocked or result.requires_confirmation:
+            if result.blocked or result.needs_confirm:
                 return result
             # 系统源外泄拦截: 读线放行系统目录, 但搬运类工具不得以系统目录为数据源
             cat, msg = classify_forbidden_path(real_path, "write")
             if cat == "system":
-                return SafetyResult(blocked=True, severity="dangerous", message=msg)
+                return SafetyResult(blocked=True, safety_level="forbidden_zone", message=msg)
         elif action == "delete":
             # 2026-10-17 小欧 - 删除权限判定全部下沉到 delete_permission(本层纯调用, 不重判)。
             #   裁定: 补 recursive(目录=递归→R6/R4, 文件=非递归→R5/R3); move 删源 confirm **返回弹窗**
             #   (move=删源→写目标, 删源不可逆, 与单 delete 工具对齐; copy 源走读线故不涉及本分支)。
             _perm = delete_path_check.delete_permission(
                 real_path, {"recursive": os.path.isdir(real_path)})
-            if _perm.blocked or _perm.requires_confirmation:
+            if _perm.blocked or _perm.needs_confirm:
                 return _perm
         else:  # write, 未知档位 fail-closed 按写线(最严)
             result = write_path_check.write_permission(real_path)
-            if result.blocked or result.requires_confirmation:
+            if result.blocked or result.needs_confirm:
                 return result
 
     return SafetyResult.pass_result()

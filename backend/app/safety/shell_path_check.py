@@ -17,6 +17,7 @@
 # 2026-10-18 - 小欧 - 判定层 bug 修复(探针实证): 非字符串 command 原 pass_result()=fail-open, 改 fail-closed 硬拦; cwd 原仅过写线未判畸形, 补非字符串/含元字符 fail-closed 硬拦。判定逻辑其余零改动。
 # 2026-10-18 - 小欧 - 删线 requires_confirmation 原按 10-17 裁定「当通过」会静默放行需授权删除, 改为与写线一致即拒。
 # 2026-10-18 - 小欧 - 归一保留换行(换行即语句边界), 不再压成空格致两命令合并漏判。
+# 2026-10-18 - 小欧 - 随契约调整同步: 三处三线结果的"是否需确认"判读改 needs_confirm; 六处自建结果补 safety_level —— 删源路径非法归 tool_delete, 读/写路径非法与命令类型非法、工作目录非法、高危删除解析不出目标归 command_block。分类按动作语义直给, 原 severity="dangerous" 六处均被 blocked=True 完全覆盖、属纯冗余编码。判定逻辑与返回结构零变更。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
@@ -49,8 +50,8 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
     """按动作清单逐条判定, 首个违规即回 SafetyResult; 全过返回 None — 小欧 2026-10-18
 
     顺序即优先级: 删线优先(抹除不可授权 → 更严) → 写线 → 读线。
-    通道 B 语义(无弹窗): delete 的 blocked 即拒; write 的 blocked/requires_confirmation 即拒;
-      read 仅非法输入 blocked。requires_confirmation(删线)当通过。
+通道 B 语义(无弹窗): delete 的 blocked 即拒; write 的 blocked/needs_confirm 即拒;
+read 仅非法输入 blocked。needs_confirm(删线)当通过。
     """
     # 删线优先: 抹除后果不可授权
     for action in actions:
@@ -59,7 +60,7 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, severity="dangerous",
+            return SafetyResult(blocked=True, safety_level="tool_delete",
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         recursive = bool(action.flags.get("recursive"))
         perm = delete_path_check.delete_permission(action.path, {"recursive": recursive})
@@ -67,23 +68,23 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
             logger.warning(f"[shell_path_check] bash删源越权: path={action.path}, "
                            f"command={command.strip()[:200]}")
             return perm
-        # 2026-10-18 小欧: 原「requires_confirmation → 当通过(无弹窗)」
+        # 2026-10-18 小欧: 原「需确认 → 当通过(无弹窗)」
         #   会静默放行「需授权才能删」的路径; 改为与写线一致, 即拒。
-        if perm.requires_confirmation:
+        if perm.needs_confirm:
             logger.warning(f"[shell_path_check] bash删源需授权(拒): path={action.path}, "
                            f"command={command.strip()[:200]}")
             return perm
-    # 写线: 越权写(blocked)或需授权(requires_confirmation)即拒
+        # 写线: 越权写(blocked)或需授权(needs_confirm)即拒
     for action in actions:
         if action.kind != WRITE_KIND:
             continue
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, severity="dangerous",
+            return SafetyResult(blocked=True, safety_level="command_block",
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         result = write_path_check.write_permission(action.path)
-        if not (result.blocked or result.requires_confirmation):
+        if not (result.blocked or result.needs_confirm):
             continue
         # 违规必须记日志: 下游 path_tool_safety_checker 只记 tool=bash, 没有命令原文
         logger.warning(f"[shell_path_check] bash写目标越权: blocked={result.blocked}, "
@@ -96,7 +97,7 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, severity="dangerous",
+            return SafetyResult(blocked=True, safety_level="path_auth",
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         result = read_path_check.read_permission(action.path)
         if result.blocked:
@@ -124,7 +125,7 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
         # 2026-10-18 小欧: 原直接 pass_result()=fail-open(畸形输入静默放行);
         #   非字符串 command 属异常输入, 依 fail-closed 原则改硬拦。
         logger.warning(f"[shell_path_check] command 类型非法(硬拦): type={type(command).__name__}")
-        return SafetyResult(blocked=True, severity="dangerous",
+        return SafetyResult(blocked=True, safety_level="command_block",
                             message=f"shell 命令参数类型非法，拒绝执行: {type(command).__name__}")
     if not command or not command.strip():
         return SafetyResult.pass_result()
@@ -134,10 +135,10 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
         #   会进入路径解析基准。补 fail-closed: 非字符串或含元字符即硬拦。
         if not isinstance(cwd, str) or _malformed(cwd):
             logger.warning(f"[shell_path_check] cwd 非法或含元字符(硬拦): cwd={cwd!r}")
-            return SafetyResult(blocked=True, severity="dangerous",
+            return SafetyResult(blocked=True, safety_level="command_block",
                                 message=f"工作目录非法或含非法 shell 元字符，拒绝执行: {cwd!r}")
         result = write_path_check.write_permission(cwd)
-        if result.blocked or result.requires_confirmation:
+        if result.blocked or result.needs_confirm:
             logger.warning(f"[shell_path_check] bash 工作目录越权: blocked={result.blocked}, cwd={cwd}")
             return result
     # 2026-10-18 小欧: 换行即语句边界, 不再压成空格(否则 `a\nb` 合并成一条漏判 b)。
@@ -149,7 +150,7 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
     if shell_has_destructive_delete(normalized) and not any(a.kind == DELETE_KIND for a in actions):
         logger.warning(
             f"[shell_path_check] 高危删除命令无法解析目标路径(硬拦): command={command.strip()[:200]}")
-        return SafetyResult(blocked=True, severity="dangerous",
+        return SafetyResult(blocked=True, safety_level="command_block",
                             message="高危删除命令无法解析目标路径，拒绝执行: " + command.strip()[:120])
     # 【判定】逐动作判权限(删线优先)
     judged = _judge_actions(actions, command)

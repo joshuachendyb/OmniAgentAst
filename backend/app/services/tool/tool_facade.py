@@ -29,6 +29,7 @@
 # 2026-10-18 - 小欧 - 三堂会审H2(等价收敛, 非缺陷修复): 名归一提前并与未注册判定合并, 用 resolve_registered_tool
 #   返回的 meta 判未知(去 get_tool 重复查)。注: get_tool 内部本已调 normalize_tool_name(registry.py:283-294),
 #   故原码对别名工具名不误判; 本次仅为单次归一/少一次查表的收敛, 行为等价。
+# 2026-10-18 - 小欧 - 随契约调整同步: 直调 API 的"待确认"判读改 needs_confirm。判定分支(自动确认直通 vs 回给调用方自行裁决)零变更。
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -168,7 +169,7 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     if safety.blocked:
         return {"tool_name": tool_name, "success": False,
                 "error": f"安全拦截: {safety.message}", "safety": safety}
-    if safety.requires_confirmation and not safety.auto_confirm:
+    if safety.needs_confirm and not safety.auto_confirm:
         # 测试接口无前端 HITL: 仅 auto_confirm(安全开关关闭)直放, 其余返回待确认
         # 2026-10-14 北京老陈裁定: 一并回传 SafetyResult, 调用方据字段区分拦截/待确认, 不靠中文串
         # 2026-10-15 小欧 - 文档[33] 5.21-①: 本分支恒拒绝而非弹窗, 是**接口形态决定**而非漏实现 ——

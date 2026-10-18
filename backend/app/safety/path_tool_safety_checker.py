@@ -51,6 +51,8 @@
 # 2026-10-17 - 小欧 - 未注册判定收口上游: 未注册判定收口到解析层(删本层未注册分支); 删 category="tool_unavailable" 死分支(路径层已不产出)。
 # 2026-10-17 - 小欧 - 总闸固化(核心): 总闸固化顺序 + 去双跑 + 去 skip — ①删 delete 顶部预计算(C4: 唯一一处=路径层删线) ②权限段统一走 _check_known_risks 单点(delete 亦走此单点) ③确认段删 skip_confirmation 分支(信任预查移入调用方确认层) ④_get_needs_confirmation 去 delete_risk ⑤_check_known_risks 直返 SafetyResult(调 check_tool_path_permission); 块0 import 别名正名; 块 G 内部注释去自造子号(全文统一 六阶段编号); 精简 _medium 冗余条件。SafetyResult 保持原 import。
 # 2026-10-17 - 小欧 - _medium 冗余条件: `and _medium.requires_confirmation` 删(契约: check_shell_risk_command_all_shells 只返 requires_confirmation=True 或 None)。
+# 2026-10-18 - 小欧 - 总闸随契约调整同步: ①沙箱标记改读 needs_confirm, 删 severity 中间变量 —— 原式由 needs_confirm 推导 severity 再反推 sandbox_required 是纯冗余回环, 且 severity 字段已废; 到达此处者已排除 blocked(恒为需确认的授权请求), 两式恒等行为不变 ②五处构造点补 safety_level 问题来源分类(未注册/工具级确认/自杀拦截), 使分类由决策点直给而非上层反查文本 ③check_fn 返回的 severity 属外部 dict 契约、不再灌入本层结果(blocked=True 已表达最高拦截级别), 该 dict 键保持不动 ④两处属性读取随字段改名同步。
+# 2026-10-18 - 小欧 - 补 check_fn 两处分类(会审补漏): check_fn 拦截与 check_fn 异常属工具自定义安全检查不通过, 与"高风险命令拦截"同类, 补 safety_level="command_block"(原依赖调用方按文案关键词兜底, 现由决策点直给)。另: 工具元数据确认策略通用出口(主 return)刻意不置分类 —— 该出口同时服务 shell/create_task/delete_task/execute_sql 等语义各异的工具, 笼统置 tool_execute 会盖掉调用方按工具名的细分(bash→shellparam、create_task 等写类→tool_write、delete_task→tool_delete)造成退化, 故留空交调用方回填。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -122,7 +124,7 @@ class PathToolSafetyChecker:
         [4] 执行前安全检查总闸入口（Safety层）—— 危险+权限段, 固定顺序不分叉
         上游: [2] 处理范围门(仅 PATH_TOOLS 到此) → [3] 合法性初查(格式+存在性, 工具层不再复查)
         本层: [4-0] 自杀检查 → [4-1] 危险命令组 → [4-2] 权限三线(读/写/删唯一入口)
-        下游: blocked→拒; requires_confirmation→交 [5] 确认层(信任豁免/HITL) → [6] 沙箱预检执行
+        下游: blocked→拒; needs_confirm→交 [5] 确认层(信任豁免/HITL) → [6] 沙箱预检执行
         路径黑名单/白名单/路径穿越/写入大小保护/二元确认均在本段内
 
         安全开关: config.yaml security.enabled=false 时跳过所有检查
@@ -142,7 +144,7 @@ class PathToolSafetyChecker:
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
             log_and_print(f"[PathToolSafetyChecker] 工具未注册(硬拦): tool={tool_name}")
-            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", severity="dangerous")
+            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", safety_level="unregistered")
 
         # [4-0] 自杀检查(2026-10-16 第七章 · 北京老陈裁定): 提到 _check_known_risks **之前**
         #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(E2E P9-03 后端自杀实录);
@@ -186,13 +188,16 @@ class PathToolSafetyChecker:
             if known_risk.blocked:
                 log_and_print(f"[PathToolSafetyChecker] 权限硬拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
                 return known_risk
-            # requires_confirmation=True: 授权请求, 交确认层⑤(信任/HITL); bypass 直放
+            # needs_confirm=True: 授权请求, 交确认层⑤(信任/HITL); bypass 直放
             if _is_skip_safety():
                 known_risk.auto_confirm = True
                 log_and_print(f"[PathToolSafetyChecker] bypass自动放行(授权请求): tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
             else:
                 log_and_print(f"[PathToolSafetyChecker] 授权请求转HITL确认: tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
-            known_risk.sandbox_required = (known_risk.severity == "risk")   # risk 级授权请求→沙箱预检
+            # 2026-10-18 小欧: 沙箱标记改读 needs_confirm, 不再经已废的 severity 中转 ——
+            #   原式 (severity == "risk") 由 needs_confirm 推导出的 severity 再反推回自己, 是纯冗余回环;
+            #   此处 known_risk 已排除 blocked 分支(上方已直返), 恒为需确认的授权请求, 两式恒等, 行为不变。
+            known_risk.sandbox_required = known_risk.needs_confirm
             return known_risk
 
         # 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
@@ -202,13 +207,12 @@ class PathToolSafetyChecker:
                     logger.info(f"[PathToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
                     # 2026-09-18 小欧 - 去bypass写死文案(北京老陈令): message保持空串不动,
                     #   bypass仅由auto_confirm=True区分(与hitl_gateway去mode同批), 内容/分级由safety_gate按真实来源组装 — 小欧-2026-09-18
-                    return SafetyResult(requires_confirmation=True, auto_confirm=True,
+                    return SafetyResult(needs_confirm=True, auto_confirm=True,
                             blocked=False, message="",
-                            severity="risk", sandbox_required=True)   # v1.25 M2-A: bypass risk 确认→沙箱预检
+                            safety_level="tool_execute", sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
                 logger.info(f"[PathToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
-                return SafetyResult(requires_confirmation=False,
-                        blocked=False, message="安全开关已绕过",
-                        severity="safe")   # v1.25 M2-A: safe 级 bypass 不触发沙箱(与 G1 一致)
+                return SafetyResult(needs_confirm=False,
+                        blocked=False, message="安全开关已绕过")   # v1.25 M2-A: 无需确认的 bypass 不触发沙箱(与 G1 一致)
 
         if tool_meta.check_fn:
             try:
@@ -218,21 +222,25 @@ class PathToolSafetyChecker:
                     return SafetyResult(
                         blocked=True,
                         message=custom_result.get("message", "安全检查未通过"),
-                        severity=custom_result.get("severity", "dangerous"),
+                        safety_level="command_block",
                     )
             except Exception as e:
                 logger.error(f"[PathToolSafetyChecker] check_fn异常,阻止执行: {e}")
                 return SafetyResult(blocked=True,
                         message=f"安全检查异常，已阻止执行: {e}",
-                        severity="dangerous")
+                        safety_level="command_block")
 
         # 2026-10-17 小欧 - 会话信任豁免分支已删(信任预查移入调用方确认层⑤), 本层不再收 skip_confirmation。
         needs_confirm, _shell_msg = self._get_needs_confirmation(tool_meta, params or {})
-        severity = "risk" if needs_confirm else "safe"
-        # v1.25 M2-C: 仅 risk 级触发沙箱(与 G1 唯一触发依据一致); safe 级不进预检
-        return SafetyResult(requires_confirmation=needs_confirm,
-                blocked=False, message=_shell_msg or "", severity=severity,
-                sandbox_required=(severity == "risk"))
+        # v1.25 M2-C: 仅需确认级触发沙箱(与 G1 唯一触发依据一致); 免确认不进预检
+        # 2026-10-18 小欧: 删 severity 中间变量(纯冗余回环), 沙箱标记直读 needs_confirm
+        # 2026-10-18 小欧: safety_level 交调用方按工具名回填 —— 此处是"工具元数据确认策略"通用出口,
+        #   同一条出口服务 shell/create_task/delete_task/execute_sql 等语义各异的工具。若在此笼统置
+        #   tool_execute, 会盖掉调用方 _classify_safety_level 的按工具名细分(bash→shellparam、
+        #   create_task 等写类→tool_write、delete_task→tool_delete), 属分类退化, 故此处留空由调用方回填。
+        return SafetyResult(needs_confirm=needs_confirm,
+                blocked=False, message=_shell_msg or "",
+                sandbox_required=needs_confirm)
 
     @staticmethod
     def _check_shell_kill(cmd: str, pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:
@@ -244,7 +252,7 @@ class PathToolSafetyChecker:
         命中受保护 PID/进程名/无目标兜底即 blocked，直返不经确认分流。
         """
         if check_shell_self_kill(cmd, pool_pids):
-            return SafetyResult(blocked=True, message="系统保护进程，禁止终止", severity="dangerous")
+            return SafetyResult(blocked=True, message="系统保护进程，禁止终止", safety_level="command_block")
         return None
 
     @staticmethod
@@ -272,11 +280,11 @@ class PathToolSafetyChecker:
         """路径权限检测: 按路径层路由分派到读/写/删三线封装口 — 小欧 2026-10-17(归一化)
 
         2026-10-17 小欧 - category 分流(system/non_system/None)已下沉三线封装口;
-          本层只调路径层拿最终 SafetyResult, 命中 blocked/requires_confirmation 即返回, 否则 None。
+        2026-10-18 小欧 - 字段随契约改名同步: 命中 blocked/needs_confirm 即返回, 否则 None。
         写入大小保护归工具层(file_path_checker.validate_path_for_overwrite), 本层不判。
         """
         risk = _check_tool_path_permission(tool_name, params)   # 路径层 → SafetyResult(三线封装口)
-        if risk.blocked or risk.requires_confirmation:
+        if risk.blocked or risk.needs_confirm:
             return risk
         return None
 

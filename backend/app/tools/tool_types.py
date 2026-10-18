@@ -4,6 +4,7 @@
 # 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM); order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
 # 2026-10-14 - 小欧 - SafetyResult 承接: 承接 SafetyResult dataclass(迁自 app/tools/security/safety_result.py, 该模块随整包删除); 禁 backward 双份契约
 # 2026-10-15 - 小欧 - 跟随订正: action_kind 注释"dual"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
+# 2026-10-18 - 小欧 - SafetyResult 契约调整三件事: ①删 severity —— 危险等级与 blocked/needs_confirm 完全重复编码, 且唯一实用消费者(沙箱标记)是由 needs_confirm 推导 severity 再反推的回环, 中间那层冗余; 严禁改成空值保留, 那样赋值点不报错而恒假会静默跳过沙箱预检(宁可崩溃暴露) ②requires_confirmation 缩短命名 needs_confirm(纯内部字段, 承接既有局部变量同名, 语义与可读性更贴) ③增 safety_level(问题来源分类, 默认空串=放行无需分类), 使分类由各判定分支直接置位, 不再由上层反查 message 文本反推(文本承重, 改措辞会改坏分类)。字段顺序保持 message 后紧邻分类信息。
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -147,9 +148,11 @@ class SafetyResult:
     下游均按 kwarg 构造, 丢一个字段即 TypeError。
     """
     blocked: bool = False
-    requires_confirmation: bool = False
+    needs_confirm: bool = False
     message: str = ""
-    severity: str = "safe"
+    safety_level: str = ""          # 问题来源分类: path_auth / shellparam / command_block /
+                                     #   tool_delete / tool_write / data_guard / unregistered /
+                                     #   forbidden_zone / tool_execute
     auto_confirm: bool = False
     auth_path: Optional[str] = None
     # v1.25 M1: 沙箱预检触发标记 — 由 path_tool_safety_checker 四条置位路径点亮,
@@ -163,4 +166,4 @@ class SafetyResult:
 
         供 path_legality_router / dual_path_check / shell_path_check 复用, 免三份拷贝与循环导入。
         """
-        return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
+        return SafetyResult(blocked=False, needs_confirm=False, message="")
