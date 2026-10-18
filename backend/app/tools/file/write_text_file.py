@@ -18,9 +18,9 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#5: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
+# 2026-08-13 - 小欧 - 修复#5: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码降级回退分支同步;
 #   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
 # 2026-08-21 - 小欧 - 11.6.1 exemplar: success分支调 with_artifact_file 声明产出物
@@ -30,13 +30,13 @@
 #     现消费并入 conflict_warning/llm_data arb_warning 段, X2 冲突提示真实落地(占用者非本人时为并行写警告)。
 #   compliance: SRP(仲裁职责归 arbiter)/KISS-DIRECT/禁止backward
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "write"→"write"(3处), 与新注册名同源
-# 2026-10-05 - 小欧 - 单通道去数字化(北京老陈裁定): success/warning summary 去 `{bytes_written}字节`
+# 2026-10-05 - 小欧 - 单通道去数字化(小欧): success/warning summary 去 `{bytes_written}字节`
 #   与「提示说明」段, 统一为 `写入文件{file_path}，成功`; bytes 在 metrics 统计段呈现(通用渲染)
-# 2026-10-12 - 小欧 - 语法检查由"整文件写阻断(error)"改为"照常写入+warning"(北京老陈令):
+# 2026-10-12 小欧 - 语法检查由"整文件写阻断(error)"改为"照常写入+warning":
 #   本检查为启发式存在误判, 误判即拦死合法写入; 现与追加模式统一为告警, 文件确已落盘;
 #   detail 载语法错因与行号, hint 指引用 edit 修正该处(整文件重写会破坏已写入内容)
-# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(写入目标用 WRITE)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层), 仅留 for_write 大文件警告。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
 """
 F2: write — 写文本文件
 
@@ -69,12 +69,12 @@ from app.tools.tool_constants import ERR_FILE_WRITE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复: 改用 _or_noop 兜底 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 路径安全层
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.content_safety import check_content_safety
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
@@ -166,7 +166,7 @@ def _check_write_safety(file_path: str, content: str,
     append时指定encoding会导致编码混乱：
     - 原文件GBK + 追加UTF-8 = 混合编码文件（损坏）
     - 正确做法：append时不指定encoding，自动检测原文件编码
-    北京老陈 2026-07-09
+    小欧 2026-07-09
     """
     return check_content_safety(content, "text", encoding=encoding, append=append)
 
@@ -226,22 +226,22 @@ async def write(
     syntax_warn = None  # 语法问题(写入照常执行, 仅告警) — 小欧 2026-07-21 / 2026-10-12 扩至整文件写
     syntax_hint = ""
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(写入目标用 WRITE: 不要求已存在)
-    ok, err = check_path_five_level(file_path, OpCategory.WRITE)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(写入目标用 WRITE: 不要求已存在)
+    ok, err = check_path_four_level(file_path, OpCategory.WRITE)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查写入路径", user_append=append, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
     # content验证+类型转换(dict/list→json)统一在_check_write_safety处理 — 小欧 2026-07-08
-    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查, 此处仅业务警告(大文件覆盖)
     _, _, warn = validate_path_for_write(file_path, content=content, append=append)
     if warn:
         logger.warning(warn)
 
     create_parents = True
 
-    # 文件类型检查 — 北京老陈 2026-07-09
-    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)  # 2026-10-16 小欧 - 去 op_category(路径合法性归 SA1)
+    # 文件类型检查 — 小欧 2026-07-09
+    ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=False, allow_create=True)  # 2026-10-16 小欧 - 去 op_category(路径合法性归 路径安全层)
     if not ft_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         if ft_tool:
@@ -269,11 +269,11 @@ async def write(
             auto_removed_pyeof = True
             logger.warning(f"[write] 自动移除Python文件末尾的heredoc标记PYEOF: {file_path}")
 
-    # 语法检测 — 检出问题仅告警, 照常写入(北京老陈 2026-10-12): 检查为启发式存在误判, 阻断会拦死合法写入
+    # 语法检测 — 检出问题仅告警, 照常写入(2026-10-12): 检查为启发式存在误判, 阻断会拦死合法写入
     #   校验对象=即将落盘的 checked_content(全量内容, 非片段), 与 write 写入内容一致
     _syn = validate_syntax(checked_content, _lang, file_path)
     if not _syn.valid:
-        # 2026-10-12 小欧(北京老陈令) - 文案直接取校验器结论(error_text 已含语言名/行号/建议),
+        # 2026-10-12 小欧 - 文案直接取校验器结论(error_text 已含语言名/行号/建议),
         #   不在此处二次拼装(曾硬编码语言映射+行号, 致 "Python语法错误(行N)" 与 _syn.error 重复)
         logger.warning(f"[write] 语法警告(照常写入): {_syn.error_text()}")
         syntax_warn = _syn.error_text()

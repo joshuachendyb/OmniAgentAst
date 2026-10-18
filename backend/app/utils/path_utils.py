@@ -4,23 +4,26 @@
 # 2026-08-11 - 小欧 - 创建文件: 长路径工具 to_win_long_path, 从 operation_backup._win_long_path 提为全局公用,
 #   解决深嵌套目录(递归自复制套娃)备份/清理时 WinError 206 路径超长整体失败的历史事故闭环
 #   (备份长路径已支持, 清理链路 operation_cleanup 同样需长路径, 否则超长备份永远清不掉→回收站永久膨胀)
-# 2026-08-11 - 小欧 - 三堂会审复核落地: 补 is_absolute() 前置守卫, 相对路径不加 \\?\ 前缀,
+# 2026-08-11 - 小欧 - 复核落地: 补 is_absolute() 前置守卫, 相对路径不加 \\?\ 前缀,
 #   与docstring"非绝对路径保持原样"承诺对齐(原代码相对路径会生成非法 \\?\relative 路径)
-# 2026-10-15 北京老陈裁定(DRY) - 4 类目录判定收敛为 utils 唯一实现; _get_protected_roots 提为公开单源:
+# 2026-10-15 小欧(DRY) - 4 类目录判定收敛为 utils 唯一实现; _get_protected_roots 提为公开单源:
 #   原根集合在 delete_safety._get_allowed_roots / path_safe_check 白名单构建 / 本文件三处各写一份同义逻辑,
 #   且 .resolve() 用法不一致(str/Path 混流, 靠下游 realpath 兜底)。现三处统一调用本函数; 失败语义改 fail-closed。
-# 2026-10-15 小欧 - 文档[35] 阶段五: SYSTEM_PROTECTED_DIR_NAMES / is_system_protected_path / is_disk_root /
+# 2026-10-15 小欧 - 阶段五: SYSTEM_PROTECTED_DIR_NAMES / is_system_protected_path / is_disk_root /
 #   is_code_root_path / is_allowed_root_itself 五符号迁往 app/safety/path_classify_category.py(职责回归安全域)。
 #   本文件不再持有任何安全判定, 只剩长路径与允许根两项通用工具; 旧名不保留转发(禁止 backward).
 # 2026-10-16 - 小欧 - tool去检查化: 纯内存路径格式原子(保留字符/保留名/多余盘符)下沉至此。
 #   口径: 纯拼写判定, 无IO、无白名单、无授权语义, 故不是"安全判定", tools/safety 均可导入;
 #   tools 禁 import safety, 故 tool 内派生路径检查只能调本层。
-# 2026-10-17 北京老陈裁定 - 迁入 check_path_syntax_and_exists(自 path_1st_legality_check)与 check_preconditions(自 path_check_common);
+# 2026-10-17 小欧 - 迁入 check_path_syntax_and_exists(自 path_1st_legality_check)与 check_preconditions(自 path_check_common);
 #   新增 reject_reason_empty_path(空值唯一真源)与 check_path_five_level(tool 专用五级总入口, delete/move/copy 共用; ⑤禁区判定受 logging.debug 门控)。
 #   ★更正上方 10-16 记载: 按 B 方案本模块已可引用 app.safety.path_classify_category(仅转发禁区判据, 不持名单)。
-# 2026-10-17 北京老陈裁定 - 迁入 check_path_syntax_and_exists 与 check_preconditions, 新增空值原子 reject_reason_empty_path 与 tool 专用五级总入口 check_path_five_level
+# 2026-10-17 小欧 - 迁入 check_path_syntax_and_exists 与 check_preconditions, 新增空值原子 reject_reason_empty_path 与 tool 专用五级总入口 check_path_five_level
 # 2026-10-17 - 小欧 - check_path_five_level 第⑤级内联禁区判据改调 delete_path_check.guard_forbidden_delete(硬底线单源,
 #   惰性导入避免顶层循环); 本层不再自持禁区判据代码, 只编排。
+# 2026-10-18 小欧 - 撤销第⑤级: check_path_five_level 更名 check_path_four_level, 删 enforce_zone 形参与
+#   logging.debug 门控; 本模块回归纯合法性(空/拼写/存在/穿越), 不再持任何安全判定(符本文件章程)。
+#   删除硬底线 guard_forbidden_delete 移回 delete_file 工具自持(仍受 logging.debug 门控)。 — 小欧-2026-10-18
 """
 path_utils — 路径处理通用工具
 
@@ -56,7 +59,7 @@ def to_win_long_path(path: Path) -> str:
 def get_allowed_roots(extra_roots: Optional[Iterable[str]] = None) -> list:
     r"""允许根集合 = 项目根 + 授权目录 [+ 调用方传入的会话工作区] — **判定单源, 各层只调用**
 
-    2026-10-15 北京老陈裁定(DRY 收敛): 此前 delete_safety._get_allowed_roots /
+    2026-10-15 小欧(DRY 收敛): 此前 delete_safety._get_allowed_roots /
     path_safe_check 的白名单构建 / 本文件 _get_protected_roots 三处各写一份同义逻辑,
     且 .resolve() 用法不一致(str/Path 混流, 靠下游 realpath 兜底)。现收于本函数, 三处统一调用。
 
@@ -126,7 +129,7 @@ def path_has_extra_drive(file_path: str) -> Optional[str]:
     return None
 
 
-# ── 业务提示语(迁自 app/tools/validate/file_path_checker.py, 2026-10-16 老陈裁定) ──
+# ── 业务提示语(迁自 app/tools/validate/file_path_checker.py, 2026-10-16) ──
 #   三者皆为**纯警告**函数: 恒返 (True, None, warn|None), 只产一句提示语,
 #   不判参数合法性、不判权限(合法性归 safety/path_precheck + path_legality_router, 权限归 safety 三线)。
 def validate_path_for_write(file_path: str, content: str = "", append: bool = False) -> Tuple[bool, Optional[str], Optional[str]]:
@@ -181,7 +184,7 @@ def validate_path_for_overwrite(source: str, destination: str, overwrite: bool =
 
 
 def validate_str_param(value, param_name: str) -> Optional[str]:
-    """字符串参数基础校验 — 小欧 2026-07-05(2026-10-17 北京老陈裁定: 恢复三档专属文案, 不调 reject_reason_empty_path)
+    """字符串参数基础校验 — 小欧 2026-07-05(2026-10-17 小欧: 恢复三档专属文案, 不调 reject_reason_empty_path)
     非路径通用参数用(窗口标题/通知/host/任务名等); 路径参数非空由 safety 门前初查覆盖。
     None/非str类型/空串(含全空白) → 返回对应错误文案; None=通过。
     """
@@ -289,15 +292,15 @@ def check_preconditions(file_path: str) -> Optional[Tuple[bool, Optional[str], O
     return None
 
 
-def check_path_five_level(
+def check_path_four_level(
     path: str,
     op: OpCategory = OpCategory.EXISTS,
     *,
     allow_missing: bool = False,
-    enforce_zone: Optional[bool] = None,
 ) -> Tuple[bool, Optional[str]]:
-    """【tool 专用】路径五级检查总入口 — 小欧 2026-10-17(仅供 delete/move/copy; 只编排不重判)
-    ①空值 ②拼写 ③存在性/类型 ④穿越 四级恒生效; ⑤禁区身份本函数内联, 受 logging.debug 门控(enforce_zone 可覆盖)。
+    """【tool 专用】路径四级合法性检查总入口 — 小欧 2026-10-17 建(五级) / 2026-10-18 降为四级
+    ①空值 ②拼写 ③存在性/类型 ④穿越 —— 四级恒生效, 仅判合法性, 不判任何权限/禁区。
+    禁区与权限判定唯一归 safety 层(action_kind 四线); 删除硬底线 guard_forbidden_delete 由 delete 工具自持。
     allow_missing=True 时"不存在即已删"(删除幂等, 与工具 force 语义无关); op 定存在性口径(源 EXISTS/目标 WRITE)。
     """
     # 第1级: 空值 —— 交底层原子
@@ -312,17 +315,6 @@ def check_path_five_level(
     pre = check_preconditions(path)
     if pre is not None:
         return False, pre[1]
-    # 第5级: 禁区身份 —— 判据委托 path_classify_category 单一真源, 本处不持名单
-    #   2026-10-17 小欧 - 内联判据改调 delete_path_check.guard_forbidden_delete(硬底线单源),
-    #     本处只编排; 惰性导入避免 path_utils ↔ delete_path_check 顶层循环导入。
-    if enforce_zone is None:
-        from app.config import get_config
-        enforce_zone = bool(get_config().get("logging.debug", False))
-    if enforce_zone:
-        from app.safety.delete_path_check import guard_forbidden_delete
-        _reason = guard_forbidden_delete(path)
-        if _reason:
-            return False, _reason
     return True, None
 
 
@@ -330,4 +322,4 @@ __all__ = ["to_win_long_path", "get_allowed_roots",
            "path_has_reserved_char", "path_has_reserved_name", "path_has_extra_drive",
            "validate_str_param",
            "OpCategory", "check_path_syntax_and_exists", "check_preconditions",
-           "reject_reason_empty_path", "check_path_five_level"]
+           "reject_reason_empty_path", "check_path_four_level"]

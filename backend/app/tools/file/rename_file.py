@@ -6,10 +6,10 @@
 # 2026-09-20 - 小欧 - 写仲裁落地: 重命名目标 with claim_write 登记文件写仲裁(外层包裹显式声明重命名写意图,
 #   impl 内层同任务登记幂等), 防跨任务并行覆盖; 仅仲裁不强制, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
-# 2026-10-05 - 小欧 - 单通道补 metrics(北京老陈裁定): success 补 size(重命名后目标 stat)/同名分支 size 取原文件
+# 2026-10-05 - 小欧 - 单通道补 metrics(小欧): success 补 size(重命名后目标 stat)/同名分支 size 取原文件
 #   + changed=0, 结构化承接结果量; summary 不动
-# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与源合法性检查(归 SA1); new_name 保留字符改调 utils 原子。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(仅判源 EXISTS; dest 语义是"新文件名"非路径, 判之会误拦)
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与源合法性检查(归 路径安全层); new_name 保留字符改调 utils 原子。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(仅判源 EXISTS; dest 语义是"新文件名"非路径, 判之会误拦)
 """
 F13: rename_file — 重命名文件
 
@@ -27,9 +27,9 @@ from typing import Any, Dict, Optional
 from app.tools.file.move_file import _move_file_impl
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_constants import ERR_FILE_RENAME_FAILED
-from app.utils.path_utils import (  # 2026-10-17 北京老陈裁定: 路径五级检查总入口 + 保留字符原子(派生名格式检查用)
+from app.utils.path_utils import (  # 2026-10-17 小欧: 路径四级合法性总入口 + 保留字符原子(派生名格式检查用)
     OpCategory,
-    check_path_five_level,
+    check_path_four_level,
     path_has_reserved_char,
 )
 from app.tools.context import _current_task_id  # A-2: 写仲裁登记使用任务ID — 小欧 2026-09-20
@@ -57,8 +57,8 @@ def _build_rename_file_llm_data(
             "metrics": {},
         }
     _summary = f"重命名文件{source} → {new_name}，成功" if new_name else f"重命名文件{source}"
-    # 2026-10-05 小欧 - 单通道补 metrics(北京老陈裁定): size 结构化承接文件大小
-    # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh, 成功后置, 去"重命名 "多余空格 — 小欧-2026-10-14
+    # 2026-10-05 小欧 - 单通道补 metrics(小欧): size 结构化承接文件大小
+    # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh, 成功后置, 去"重命名 "多余空格 — 小欧-2026-10-14
     _metrics: Dict[str, Any] = {}
     if file_size:
         _metrics["size"] = {"value": file_size, "text": f"{file_size}字节"}
@@ -83,15 +83,15 @@ async def rename(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(仅源: dest 语义是"新文件名"非路径)
-    #   三堂会审发现: 本工具 dest 只取 Path(dest).name 后落 src.parent(L99/L107), 并非目标路径;
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(仅源: dest 语义是"新文件名"非路径)
+    #   发现: 本工具 dest 只取 Path(dest).name 后落 src.parent(L99/L107), 并非目标路径;
     #   对它判路径会把相对名 realpath 成 cwd(=backend) 而误命中代码目录, 故只判源。
-    ok, err = check_path_five_level(source, OpCategory.EXISTS)
+    ok, err = check_path_four_level(source, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_rename_file_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
-    # 2026-10-16 小欧 - tool去检查化: 空参/源合法性由 SA1 唯一检查, 工具只执行
+    # 2026-10-16 小欧 - tool去检查化: 空参/源合法性由 路径安全层 唯一检查, 工具只执行
     # 派生名 new_name 是运行时派生, safety 不可见, 由执行方在派生点做格式检查(调 utils 纯函数)
     new_name = Path(destination).name
     _bad = path_has_reserved_char(new_name)

@@ -27,21 +27,21 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#5: zip/tar/目标探测/stat/清理 全链 to_win_long_path 长路径化(仅NT):
+# 2026-08-13 - 小欧 - 修复#5: zip/tar/目标探测/stat/清理 全链 to_win_long_path 长路径化(仅NT):
 #   ZipFile/AESZipFile/tarfile.open 目标长路径; zf.write/tf.add 源文件长路径; _get_total_size_sync 各 stat 长路径;
 #   主函数 os.path.exists(dest)/dst.parent.mkdir/dst.stat/dst.exists/dst.unlink 长路径;
 #   深嵌套源目录不再 WinError 206; arcname 归档名保持相对不变
-# 2026-08-13 - 小欧 - 三堂会审修复#17: 通配分支仅glob判空, 不走validate_path系统目录校验, C:\Windows\*.txt可在工具层绕过拦截
+# 2026-08-13 - 小欧 - 修复#17: 通配分支仅glob判空, 不走validate_path系统目录校验, C:\Windows\*.txt可在工具层绕过拦截
 #   【病根】L305-309通配分支只查匹配非空, 未做validate_not_system_path(非通配分支L313有完整校验), 工具层/Safety层双重拒约定在通配源处纵深减弱
 #   【改法】通配命中后逐条validate_path(OpCategory.EXISTS, m), 任一命中系统目录即返回拦截错误, hint"通配命中路径被系统目录拦截"; 与非通配分支口径一致
-# 2026-08-13 - 小欧 - 三堂会审修复#18: 通配跨多顶层目录时arcname计算抛ValueError
+# 2026-08-13 - 小欧 - 修复#18: 通配跨多顶层目录时arcname计算抛ValueError
 #   【病根】原base_dir=Path(matched_paths[0]).parent(仅取首匹配父目录), 第二个及以上匹配目录的项 relative_to(base_dir) 不在其下抛ValueError, 多目录通配静默失败
 #   【改法】删base_dir, 目录匹配项以 matched_path 自身为arcname根(relative_to(matched_path)), 文件匹配项仍用自身name; 单目录/多目录/仅驱动器场景均不再跨树
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(压缩包路径)
-# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 调用; 通配 _m 派生检查改调 utils 纯函数(权限继承 pattern 的 SA3 结论)。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 调用; 通配 _m 派生检查改调 utils 纯函数(权限继承 pattern 的既有结论)。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
 """
 F8: compress_files — 压缩文件
 
@@ -69,7 +69,7 @@ from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_FILE_COMPRESS_FAILED, ERR_PARAMETER_INVALID
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.utils.json_utils import coerce_json
-from app.utils.path_utils import OpCategory, check_path_five_level, to_win_long_path  # 2026-10-17 北京老陈裁定: 路径五级检查总入口 + 长路径化 — 小欧 2026-08-13
+from app.utils.path_utils import OpCategory, check_path_four_level, to_win_long_path  # 2026-10-17 小欧: 路径四级合法性总入口 + 长路径化 — 小欧 2026-08-13
 from app.utils.path_utils import path_has_extra_drive, path_has_reserved_name  # 2026-10-16 小欧 - 通配派生格式检查用 utils 纯函数
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.tools.validate.timeout_validator import validate_timeout  # 小欧 2026-07-29
@@ -274,13 +274,13 @@ async def compress(
 ) -> Dict[str, Any]:
     """压缩文件/目录 — 小沈 2026-06-16 — 小欧 2026-06-22 独立文件 — 小欧 2026-07-11 路径参数统一为path/dest — 小欧 2026-07-29 新增timeout参数"""
     t0 = time.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE)
-    ok, err = check_path_five_level(path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+    ok, err = check_path_four_level(path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查源路径", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=exclude_patterns)
         return build_error(data={}, llm_data=llm_data)
-    ok, err = check_path_five_level(dest, OpCategory.WRITE)
+    ok, err = check_path_four_level(dest, OpCategory.WRITE)
     if not ok:
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=err, hint="请检查压缩输出路径", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=exclude_patterns)
@@ -295,7 +295,7 @@ async def compress(
     exclude_patterns = coerce_json(exclude_patterns)
     compression_level = 6
 
-    # 2026-10-16 小欧 - tool去检查化: 目标合法性由 SA1 唯一检查, 工具只执行
+    # 2026-10-16 小欧 - tool去检查化: 目标合法性由路径安全层唯一检查, 工具只执行
     if not overwrite and os.path.exists(to_win_long_path(Path(dest))):  # #5长路径 — 小欧 2026-08-13
         duration_ms = int((time.perf_counter() - t0) * 1000)
         llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"目标文件已存在：{dest}", hint="可设置overwrite=true覆盖", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
@@ -323,14 +323,14 @@ async def compress(
                 llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配符无匹配：{path}", hint="请检查通配符是否正确", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                 return build_error(data={}, llm_data=llm_data)
             # 2026-10-16 小欧 - tool去检查化·派生归tool: 通配展开是运行时派生, safety 不可见,
-            #   由执行方在派生点做格式检查(utils 纯函数); 权限继承 pattern 参数的 SA3 结论
+            #   由执行方在派生点做格式检查(utils 纯函数); 权限继承 pattern 参数的既有结论
             for _m in _matched:
                 _mr = path_has_extra_drive(_m) or path_has_reserved_name(_m)
                 if _mr:
                     duration_ms = int((time.perf_counter() - t0) * 1000)
                     llm_data = _build_compress_files_llm_data("error", duration_ms, path, detail=f"通配命中路径非法：{_m}：{_mr}", hint="通配命中路径格式非法", user_destination=dest, user_format=format, user_overwrite=overwrite, user_exclude_patterns=str(exclude_patterns) if exclude_patterns else "")
                     return build_error(data={}, llm_data=llm_data)
-            # 2026-10-16 小欧 - tool去检查化: 非通配源合法性由 SA1 唯一检查, 工具只执行
+            # 2026-10-16 小欧 - tool去检查化: 非通配源合法性由路径安全层唯一检查, 工具只执行
 
         os.makedirs(to_win_long_path(dst.parent), exist_ok=True)  # #5长路径 — 小欧 2026-08-13
 

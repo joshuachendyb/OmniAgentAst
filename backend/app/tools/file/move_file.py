@@ -11,9 +11,9 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#34/#4/#5: #34 同路径判定 abspath 统一 resolve()(解析盘符大小写/符号链接,
+# 2026-08-13 - 小欧 - 修复#34/#4/#5: #34 同路径判定 abspath 统一 resolve()(解析盘符大小写/符号链接,
 #   与 impl 口径一致); #4 自嵌套防护(目标在源目录子树内拒绝, 主函数+impl 双层, 防 shutil.move 递归复制进自身子树,
 #   对齐 copy_file 防护); #5 目标存在探测/删除/移动/os 调用全链 to_win_long_path 长路径化(仅NT生效),
 #   深嵌套路径不再触发 WinError 206
@@ -21,12 +21,12 @@
 # 2026-09-20 - 小欧 - 写仲裁落地: 移动目标落盘前 with claim_write 登记文件写仲裁(acquire_write/release_write
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
-# 2026-10-05 - 小欧 - 单通道补 metrics(北京老陈裁定): success 补 moved_bytes(目标侧 stat, 目录不递归)
+# 2026-10-05 - 小欧 - 单通道补 metrics(小欧): success 补 moved_bytes(目标侧 stat, 目录不递归)
 #   /moved_count, 结构化承接结果量; summary `{source} -> {destination}` 双路径不断
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 移动文件→移文件
+# 2026-10-12 小欧 - tool_zh改短名词: 移动文件→移文件
 # 2026-10-14 小欧 - summary 统一口径: `移文件{source} -> {destination}，成功`(动词用 tool_zh, 成功后置) — 小欧-2026-10-14
-# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 SA1), 仅留 for_overwrite 覆盖警告。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE), 根治空路径落成 cwd 搬走工作目录的事故
+# 2026-10-16 - 小欧 - tool去检查化: 删空参守卫与合法性检查(归 路径安全层), 仅留 for_overwrite 覆盖警告。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE), 根治空路径落成 cwd 搬走工作目录的事故
 """
 F10: move_file — 移动文件
 
@@ -47,12 +47,12 @@ from app.tools.tool_response import build_success, build_error, with_artifact_fi
 from app.tools.tool_constants import ERR_FILE_MOVE_FAILED
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
-from app.utils.path_utils import validate_path_for_overwrite  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归 SA1
+from app.utils.path_utils import validate_path_for_overwrite  # 2026-10-16 小欧 - 仅业务警告(覆盖), 合法性归 路径安全层
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.tools.file.file_write_arbiter import claim_write  # 2026-09-20 - 小欧 - A-2: 跨任务文件写仲裁(acquire_write/release_write 上下文)接入(X2) — 移动目标落盘前登记占用
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
 
 
@@ -76,9 +76,9 @@ def _build_move_file_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
-    # 2026-10-05 小欧 - 单通道补 metrics(北京老陈裁定): moved_bytes/moved_count 结构化承接结果量,
+    # 2026-10-05 小欧 - 单通道补 metrics(小欧): moved_bytes/moved_count 结构化承接结果量,
     #   summary 仍 `{source} -> {destination}` 双路径不断; 目录不递归累计字节(moved_count=1)
-    # 2026-10-14 小欧 - summary 统一口径(北京老陈定案): 动词用 tool_zh(移文件), 成功后置 — 小欧-2026-10-14
+    # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(移文件), 成功后置 — 小欧-2026-10-14
     _metrics: Dict[str, Any] = dict(extra_metrics) if extra_metrics else {}
     if moved_bytes or moved_count:
         _metrics["moved_bytes"] = {"value": moved_bytes, "text": f"{moved_bytes}字节"}
@@ -103,7 +103,7 @@ async def _move_file_impl(
     if src.resolve() == dst.resolve():
         return {"success": False, "error_detail": f"源路径和目标路径相同：{source_path}", "params": {"source": source_path, "destination": destination_path}}
 
-    # 2026-08-13 - 小欧 - 三堂会审修复#4: 自嵌套防护(主函数 move() 同款, impl 层兜底防直调函数绕过)
+    # 2026-08-13 - 小欧 - 修复#4: 自嵌套防护(主函数 move() 同款, impl 层兜底防直调函数绕过)
     if src.is_dir() and dst.resolve() != src.resolve() and src.resolve() in dst.resolve().parents:
         return {"success": False, "error_detail": f"目标路径位于源目录内部，禁止移动造成递归：{source_path}", "params": {"source": source_path, "destination": destination_path}}
 
@@ -179,24 +179,24 @@ async def move(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-    # 2026-10-17 北京老陈裁定 - 路径检查统一走五级总入口; 源=EXISTS(须存在), 目标=WRITE(只查拼写, 不要求已存在)
-    ok, err = check_path_five_level(source, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查统一走四级合法性总入口; 源=EXISTS(须存在), 目标=WRITE(只查拼写, 不要求已存在)
+    ok, err = check_path_four_level(source, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         logger.warning(f"[move_file] 路径检查未通过: {err} src={source}")
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, hint="请检查源路径是否有效且不在禁区", user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
-    ok, err = check_path_five_level(destination, OpCategory.WRITE)
+    ok, err = check_path_four_level(destination, OpCategory.WRITE)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         logger.warning(f"[move_file] 路径检查未通过: {err} dst={destination}")
         llm_data = _build_move_file_llm_data("error", duration_ms, source, destination=destination, detail=err, hint="请检查目标路径是否有效且不在禁区", user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
-    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 SA1 唯一检查, 工具只执行+业务警告
+    # 2026-10-16 小欧 - tool去检查化: 空参/合法性由 路径安全层 唯一检查, 工具只执行+业务警告
     _, _, warn = validate_path_for_overwrite(source, destination, overwrite)
     if warn:
         logger.warning(warn)
-    # 2026-08-13 - 小欧 - 三堂会审修复#34/#4: 同路径判定统一用 resolve()(原 abspath 不解析盘符
+    # 2026-08-13 - 小欧 - 修复#34/#4: 同路径判定统一用 resolve()(原 abspath 不解析盘符
     #   大小写/符号链接, 与 _move_file_impl 口径不一); 并补自嵌套防护(目标在源子树内时
     #   shutil.move 会 copytree 进自身子树→递归/WinError206/数据丢失, 与 copy_file 防护对齐)
     _src_p = Path(source)

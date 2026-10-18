@@ -11,22 +11,22 @@
 #   4. context 仅校验非负
 #   5. 跳过目录名单改用公用 SKIP_DIRS
 #   6. 文件读取走默认不限制大小
-# 2026-07-23 - 小欧 - 北京老陈驱动: 新增 Tool 层输出截断
+# 2026-07-23 - 小欧 - 新增 Tool 层输出截断
 #    matches 超 GREP_OUTLIMIT_MATCHES_MAX=2000 截断 + data._truncated=True
 #    单条 content/before/after 字符串超 GREP_OUTLIMIT_MATCH_CONTENT_CHARS=2000 尾部截断
 #    total_matches 同步更新, 使 llm_data.summary 与实际 data 一致
 #    formatter #9 传递 data 参数以读取 _truncated 标记
-# 2026-07-23 - 小欧 - 北京老陈驱动第二轮增强: total_files 从截断结果重算
+# 2026-07-23 - 小欧 - 输出截断第二轮增强: total_files 从截断结果重算
 #    _apply_grep_outlim 返回 _real_files, GrepSyncResult 用真实值重建
 #    summary.total_files 与实际匹配文件数一致, 避免误导 LLM 搜索范围判断
-# 2026-08-07 - 小欧 - P06优化(北京老陈驱动 task001): 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
+# 2026-08-07 - 小欧 - P06优化: 返回前过滤已被删除/重命名的文件(_apply_grep_outlim后最终结果上做, 条件重建GrepSyncResult重算files/matches, 避免双重重建) | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-21 - 小欧 - 北京老陈驱动: 删除根目录级搜索拒绝护栏。根目录(含文件系统根/或受控根)递归搜索技术上无禁止理由;
+# 2026-08-21 - 小欧 - 删除根目录级搜索拒绝护栏。根目录(含文件系统根/或受控根)递归搜索技术上无禁止理由;
 #    真实工具(grep -r /、rg /、findstr /s C:\)均允许从根搜索。grep内部已有 deadline 截断(TOOL_TIMEOUTS["grep"]=120s,
 #    见_grep_files_sync)与 Tool 层输出截断(_apply_grep_outlim)兜底, 不会无限卡死, 故移除先前"想当然"的拒绝政策。
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 内容搜索→搜内容
-# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1); 文件/目录分支是执行路由, 保留。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
+# 2026-10-12 小欧 - tool_zh改短名词: 内容搜索→搜内容
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层); 文件/目录分支是执行路由, 保留。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -56,7 +56,7 @@ from app.tools.toolhelper.error_hints import hint_for_read_error
 from app.tools.validate.file_type_checker import TEXT_EXTENSIONS, is_binary_file, _detect_binary_content
 from app.tools.file.file_encoding import safe_read_lines
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
 
 
@@ -258,8 +258,8 @@ async def grep(
         context: 返回匹配行前后各N行上下文,默认0(仅校验非负)
     """
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
-    ok, err = check_path_five_level(path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=err, hint="请检查搜索路径", user_glob=glob, user_ignore_case=ignore_case)
@@ -295,7 +295,7 @@ async def grep(
         llm_data = _build_grep_file_content_llm_data("error", duration_ms, pattern=pattern, path=path, detail=f"正则表达式无效：{e}", hint="正则表达式语法错误，请检查并修正", user_glob=glob, user_ignore_case=ignore_case)
         return build_error(data={}, llm_data=llm_data)
 
-    # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查; 文件/目录分支是执行路由(决定怎么搜), 非校验, 保留
+    # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查; 文件/目录分支是执行路由(决定怎么搜), 非校验, 保留
     search_path = Path(os.path.expanduser(path))
     if not search_path.is_file() and not search_path.is_dir():
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

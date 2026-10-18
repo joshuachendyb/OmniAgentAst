@@ -3,11 +3,11 @@
 # 2026-10-15 - 小欧 - 阶段一 新建: 删线独立文件。自 path_safe_check.validate_path(:287-400) 拆出删线独有策略, 逐字搬迁不改逻辑(删线特征 :325-328 命中禁区 system 与 non_system 一律硬拦, **无授权分支**; 白名单外 :392-395 与写线同, 查任务级授权); 公共步骤交 path_check_common, 禁区分类仍调 classify_forbidden_path 并传 DELETE_MODE。原 validate_path 及 mode 参数已删除(禁止 backward), 无转发壳。
 # 2026-10-15 - 小欧 - 阶段二: 模块 docstring 补九格契约表。
 # 2026-10-15 - 小欧 - 收尾: 九格契约表归位 path_safe_check(单一真源), 本模块只留指向说明。
-# 2026-10-15 北京老陈裁定 - validate 改名 validate_delete: 三线同名, 经模块引用无法辨识线的语义。
-# 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
-# 2026-10-17 北京老陈裁定(裁定三) - 删线判定集中化: 自 delete_safety.py 逐字迁入 check_delete_risk(R3-R6), 并收归 guard_forbidden_delete(A族系统目录/磁盘根 + 代码目录 + 删根硬底线); 判据只调 path_classify_category 单源, 本层不持名单。tool 层 path_utils.check_path_five_level 第⑤级另持一份(同口径)不动, delete_safety.py 随之删除。 — 小欧 2026-10-17
+# 2026-10-15 小欧 - validate 改名 validate_delete: 三线同名, 经模块引用无法辨识线的语义。
+# 2026-10-17 小欧 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
+# 2026-10-17 小欧(裁定三) - 删线判定集中化: 自 delete_safety.py 逐字迁入 check_delete_risk(R3-R6), 并收归 guard_forbidden_delete(A族系统目录/磁盘根 + 代码目录 + 删根硬底线); 判据只调 path_classify_category 单源, 本层不持名单。tool 层 path_utils.check_path_five_level 第⑤级另持一份(同口径)不动, delete_safety.py 随之删除。 — 小欧 2026-10-17
 # 2026-10-17 - 小欧 - 新增唯一封装口 check_delete_permission(path, params): ①guard_forbidden_delete → ②validate_delete(R1/R2) → ③check_delete_risk(R3-R6) 串链, 统一返 SafetyResult。三函数原功能全保留; validate_delete 亦供 path_legality_router 按线分派时调用。消费方: path_tool_safety_checker / shell_path_check / dual_path_check(三者纯调用, 判定全在本口); path_utils 第⑤级改调 guard_forbidden_delete。
-# 2026-10-18 - 小欧 - [38]§12.5 落地(字面9步): 原单路径口 check_delete_permission(path, params) 更名 delete_permission(path, params)(供 dual/shell 复用);
+# 2026-10-18 - 小欧 - 落地(字面9步): 原单路径口 check_delete_permission(path, params) 更名 delete_permission(path, params)(供 dual/shell 复用);
 #   新增工具级 check_delete_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 delete_permission, 供 router [6] 直调。
 # 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线删工具路径键恒为 path(L2 已归一), 工具级口直接取 params["path"]
 #   调 delete_permission; 未传 key → 放行, 空值/穿越/禁区由 delete_permission 自身判定。
@@ -79,7 +79,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.safety import path_check_common as common
-from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
+from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 小欧: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import (
     classify_forbidden_path,
     is_allowed_root_itself,
@@ -194,8 +194,8 @@ def check_delete_risk(params: dict) -> SafetyResult:
 def guard_forbidden_delete(file_path: str) -> Optional[str]:
     """删除硬底线: 命中禁区返回禁止原因, 允许删除返回 None — 系统层持一份 — 小欧 2026-10-17
 
-    判据全部走 path_classify_category 单源, 本层不持名单; 与 tool 层
-    path_utils.check_path_five_level 第⑤级同口径(各持一份调用壳, 判据同源)。
+    判据全部走 path_classify_category 单源, 本层不持名单; 2026-10-18 起
+    path_utils 第⑤级撤销, 由 delete 工具入口(delete_file, logging.debug 门控)直调本函数。 — 小欧 2026-10-18
     """
     try:
         Path(file_path).expanduser().resolve()      # 归一化探针: 解析失败即 fail-closed

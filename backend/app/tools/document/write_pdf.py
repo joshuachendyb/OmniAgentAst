@@ -8,10 +8,10 @@
 # 2026-07-31 - 小欧 - Bug⑧修复: CJK字体渐进回退(依次尝试simsun/msyh/simhei/Deng/simkai, 全部缺失才退默认并告警), 防simsun缺失时中文渲染方框; Bug⑯同型修复: 有序列表正则 ^\d+\.\s → ^\d{1,3}\.\s, 防"2026. 销售报告"被误当编号列表 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
-# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘"(北京老陈令): builder 增 not_written, 仅写前检查点
+# 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘": builder 增 not_written, 仅写前检查点
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 写入PDF→写PDF
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(写入目标用 WRITE)
+# 2026-10-12 小欧 - tool_zh改短名词: 写入PDF→写PDF
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
 """
 D7: write_pdf — 写入PDF文档
 
@@ -31,7 +31,7 @@ from typing import Any, Dict, Optional, List
 
 from app.logger import logger
 from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口, with_artifact_file
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
 from app.tools.tool_constants import ERR_WRITE_PDF
 from app.tools.toolhelper.error_hints import permission_error_hint, hint_for_write_error
@@ -90,7 +90,7 @@ def _build_write_pdf_llm_data(
     if user_title:
         _act_params["title"] = user_title
     if exec_code == "error":
-        # 2026-10-12 小欧(北京老陈令) - not_written 补"文件未写入"事实(同 write_docx/write_text_file 口径,
+        # 2026-10-12 小欧 - not_written 补"文件未写入"事实(同 write_docx/write_text_file 口径,
         #   仅写前检查点置位, 写期异常不置避免误报)
         _detail = detail + ("；文件未写入磁盘(未创建新文件, 也未覆盖已有文件)" if not_written else "")
         return {
@@ -120,8 +120,8 @@ def write_pdf(
 ) -> Dict[str, Any]:
     """写入PDF文件 — 小欧 2026-06-19 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 参数简化（Markdown格式）+ table_data支持"""
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(写入目标用 WRITE)
-    ok, err = check_path_five_level(path, OpCategory.WRITE)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+    ok, err = check_path_four_level(path, OpCategory.WRITE)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_pdf_llm_data("error", duration_ms, path, detail=err, hint="请检查输出路径", not_written=True)

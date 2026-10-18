@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 执行→执行SQL
-# 2026-10-14 小欧 - schema timeout 改秒(北京老陈定案): 默认 30 秒; _get_connection 毫秒边界处换算 — 小欧-2026-10-14
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(sqlite 文件路径用 EXISTS, 未传 path 则跳过)
+# 2026-10-12 小欧 - tool_zh改短名词: 执行→执行SQL
+# 2026-10-14 小欧 - schema timeout 改秒: 默认 30 秒; _get_connection 毫秒边界处换算 — 小欧-2026-10-14
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(sqlite 文件路径用 EXISTS, 未传 path 则跳过)
 """
 execute_sql — 执行写操作SQL
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -15,13 +15,13 @@ execute_sql — 执行写操作SQL
    【合规】DRY(常量消重)+KISS-DIRECT(if/elif直线扩展,不引入分级抽象)+YAGNI(模块常量不跨文件)
 【2026-07-24 小欧】修复: _sql_preview前置防空SQL漏截断 + timeout判断用is not None防0跳过
 【2026-07-26 小欧】迁移: sql_error_hint/hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
-【2026-08-07 小欧】两项优化(北京老陈驱动 task001): ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
+# 【2026-08-07 小欧】两项优化: ①新增confirm_ddl参数 — 显式确认后放行裸DDL(白名单_DDL_ONLY_TYPES: CREATE/DROP/ALTER/TRUNCATE/GRANT/REVOKE, 防未来新增安全类型误放行); ②_build_execute_sql_llm_data补confirm_ddl传参(observation可见); ③危险提示文案优化 — 无WHERE时引导补WHERE/dry_run, 条件拼接消除warnings为空时的冗余逗号
 【2026-08-09 小欧】task006落地: dry_run分支保留sqlite3异常(dry_run_error), 校验失败detail带异常原文+hint走sql_error_hint精准分支(多语句识别), 替代笼统"SQL语法校验失败/请检查SQL语法"
 【2026-08-09 小欧】task005核查落地: dry_run外层except加`if dry_run_error is None`保护 — 仅内层无异常时才用外层异常, 保留内层原始SQL语法错误(信息不丢失, 符合异常可追溯规范); 病根: SAVEPOINT/ROLLBACK失败(连接损坏)无条件覆盖内层已捕获异常
-【2026-08-11 小欧】三堂会审复核落地: 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
+# 【2026-08-11 小欧】复核落地: 删除外层except无条件syntax_valid=False覆写 — 内层语法校验已通过(syntax_valid=True)时,
    外层SAVEPOINT/ROLLBACK/RELEASE失败(连接异常)不再误报"SQL语法校验失败"; syntax_valid仅反映内层真实校验结果, 增强不退化
 【2026-08-13 小欧】职责拆分: sql_error_hint/hint_for_data_error 导入源从 app.tools.validate.file_path_checker 改为 app.tools.toolhelper.error_hints
-【2026-10-05 小欧】单通道去数字化/去冗余(北京老陈裁定): error/warning summary 去 `{detail}`系, success
+【2026-10-05 小欧】单通道去数字化/去冗余(小欧): error/warning summary 去 `{detail}`系, success
    去 `影响{affected_rows}行`, 统一 `执行{_target}，成功/失败`; affected_rows 在 metrics 统计段呈现
 """
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
@@ -34,7 +34,7 @@ import time as _time_mod
 from typing import Any, Dict, List, Optional, Literal, Tuple  # 2026-07-31 小欧: 移除未使用 Union
 
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import ERR_SQL_EXEC, EXECUTE_SQL_OUTPARM_LIMIT_SQL
 from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
@@ -121,7 +121,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
             detail_msg = f"检测到危险SQL操作（{sql}），已回滚"
             hint_msg = "建议使用 dry_run=true 先验证"
         return {
-            "summary": f"执行SQL{_target}，警告：{msg}",  # 2026-10-14 小欧 - 实话实说(北京老陈令"不能误导"): 危险SQL已回滚仍写"成功"属谎报, 改警告并带原因 — 小欧-2026-10-14
+            "summary": f"执行SQL{_target}，警告：{msg}",  # 2026-10-14 小欧 - 实话实说(不能误导): 危险SQL已回滚仍写"成功"属谎报, 改警告并带原因 — 小欧-2026-10-14
             "action": {"tool": "execute_sql", "tool_zh": "执行SQL", "params": _act_params},
             "status": {"exec_code": "warning", "message": msg, "code": "WARNING_DB_SAFETY", "detail": detail_msg, "hint": hint_msg},
             "duration_ms": duration_ms,
@@ -138,7 +138,7 @@ def _build_execute_sql_llm_data(exec_code, duration_ms, sql, affected_rows, deta
 
 def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
                 connection_string: Optional[str] = None, path: Optional[str] = None,
-                dry_run: bool = False, timeout: int = 30,  # 2026-10-14 小欧 - schema 单位秒(北京老陈定案): 默认 30 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
+                dry_run: bool = False, timeout: int = 30,  # 2026-10-14 小欧 - schema 单位秒: 默认 30 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
                 confirm_ddl: bool = False) -> Dict[str, Any]:
     """执行写操作SQL — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
@@ -147,9 +147,9 @@ def execute_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresq
     conn = None
     engine = None
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(sqlite 文件路径, 仅传了才查)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(sqlite 文件路径, 仅传了才查)
     if path:
-        ok, err = check_path_five_level(path, OpCategory.EXISTS)
+        ok, err = check_path_four_level(path, OpCategory.EXISTS)
         if not ok:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_execute_sql_llm_data("error", duration_ms, sql, 0, detail=err, hint="请检查数据库文件路径", connection_type=connection_type, path=path, dry_run=dry_run)

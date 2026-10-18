@@ -11,9 +11,9 @@
 #   无效格式(如 .rar)直接返回"不支持的压缩格式", 不再对未知扩展名推断出与源文件同名的 out_dir,
 #   消除 os.makedirs 在已存在文件上建目录抛 FileExistsError(WinError 183) 的误导性错误
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(解压输出目录)
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 解压文件→解压
-# 2026-10-16 - 小欧 - tool去检查化: 删源/目标合法性检查(归 SA1), 工具只执行。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE)
+# 2026-10-12 小欧 - tool_zh改短名词: 解压文件→解压
+# 2026-10-16 - 小欧 - tool去检查化: 删源/目标合法性检查(归 路径安全层), 工具只执行。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
 """
 F9: extract_archive — 解压文件
 
@@ -39,7 +39,7 @@ from app.tools.tool_constants import ERR_FILE_EXTRACT
 
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
 
 
@@ -200,19 +200,19 @@ async def extract(
     # 路径参数统一为path/dest,桥接到内部变量source/destination — 小欧 2026-07-11
     source = path
     destination = dest
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(源 EXISTS / 目标 WRITE)
-    ok, err = check_path_five_level(source, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+    ok, err = check_path_four_level(source, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
-    ok, err = check_path_five_level(destination, OpCategory.WRITE)
+    ok, err = check_path_four_level(destination, OpCategory.WRITE)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, hint="请检查解压目标路径", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
 
-    # 2026-10-16 小欧 - tool去检查化: 源与目标合法性由 SA1 唯一检查, 工具只执行
+    # 2026-10-16 小欧 - tool去检查化: 源与目标合法性由 路径安全层 唯一检查, 工具只执行
     try:
 
         lower_path = source.lower()

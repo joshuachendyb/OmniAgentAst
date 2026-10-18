@@ -12,11 +12,11 @@
 # 2026-07-31 - 小欧 - CRITICAL: WITH CTE体绕过只读检测修复。原代码跳过CTE括号体仅检查外层SELECT, 导致 `WITH malicious AS (DELETE FROM users) SELECT * FROM malicious` 通过检测。补充CTE体内容的DML/DDL关键字扫描 | py_compile ✓
 # 2026-07-31 - 小欧 - 只读安全增强(Bug②/⑤/⑲): PRAGMA写操作检测(赋值=或非只读白名单拒绝); 检测前剥离注释与字符串字面量(修复"-- SELECT"前导注释误拒、'a;b'字符串分号误判、SET note='WHERE'漏判); timeout None/<=0 防御
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(北京老陈裁定): error summary 去 `{detail}`, success summary
+# 2026-10-05 - 小欧 - 单通道去数字化/去冗余(小欧): error summary 去 `{detail}`, success summary
 #   去行数/列预览, 统一 `查询{_target}，成功/失败`; 行数/列预览在 metrics 统计段呈现(通用渲染)
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 查询→查询SQL
-# 2026-10-14 小欧 - schema timeout 改秒(北京老陈定案): 默认 15 秒; _get_connection/Timer 毫秒边界处换算 — 小欧-2026-10-14
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(sqlite 文件路径用 EXISTS, 未传 path 则跳过)
+# 2026-10-12 小欧 - tool_zh改短名词: 查询→查询SQL
+# 2026-10-14 小欧 - schema timeout 改秒: 默认 15 秒; _get_connection/Timer 毫秒边界处换算 — 小欧-2026-10-14
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(sqlite 文件路径用 EXISTS, 未传 path 则跳过)
 """
 query_sql — 执行只读SQL查询
 【2026-06-22 小健】从 database_tools.py 拆分为独立文件
@@ -32,7 +32,7 @@ import time as _time_mod
 from typing import Any, Dict, Optional, Literal  # 2026-07-31 小欧: 移除未使用 Union, List
 
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_SQL_EXEC, QUERY_SQL_OUTPARM_LIMIT_SQL, OBS_QUERY_SQL_PREVIEW_COLUMNS, QUERY_SQL_INER_LOG_SQL  # 2026-07-31 小欧: 移除未使用 OBS_MAX_DISPLAY_ITEMS
 from app.tools.toolhelper.error_hints import sql_error_hint, hint_for_data_error
@@ -103,16 +103,16 @@ def _build_query_sql_llm_data(exec_code, duration_ms, sql, row_count, columns, d
 
 def query_sql(sql: str, connection_type: Literal["sqlite", "mysql", "postgresql"] = "sqlite",
               connection_string: Optional[str] = None, path: Optional[str] = None,
-              limit: int = 50, timeout: int = 15) -> Dict[str, Any]:  # 2026-10-14 小欧 - schema 单位秒(北京老陈定案): 默认 15 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
+              limit: int = 50, timeout: int = 15) -> Dict[str, Any]:  # 2026-10-14 小欧 - schema 单位秒: 默认 15 秒; 内部毫秒边界处换算 — 小欧-2026-10-14
     """执行只读SQL查询 — 小健 2026-06-22 拆分独立文件
     小欧 2026-07-04 修复: 增加None/空字符串校验
     """
     conn = None
     engine = None
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(sqlite 文件路径, 仅传了才查)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(sqlite 文件路径, 仅传了才查)
     if path:
-        ok, err = check_path_five_level(path, OpCategory.EXISTS)
+        ok, err = check_path_four_level(path, OpCategory.EXISTS)
         if not ok:
             duration_ms = 0
             llm_data = _build_query_sql_llm_data("error", duration_ms, sql, 0, [], detail=err, hint="请检查数据库文件路径", connection_type=connection_type, path=path)

@@ -6,6 +6,7 @@
 # 2026-07-25 - 小欧 - description去冗余: 10处默认/范围/必填重复移除
 # 2026-07-25 - 小欧 - description去冗余: url/body/method/headers/extract_format 参数名自明前缀精简, body去内部细节
 # 2026-07-25 - 小欧 - DownloadFileInput.dest 补充路径限制说明(不支持绝对路径/../)
+# 2026-10-18 - 小欧 - DownloadFileInput.dest 描述订正: 支持绝对路径(原样使用), 相对路径相对下载目录, 两者均禁止 ../
 """
 Network Schema - 网络工具参数模型
 
@@ -54,7 +55,7 @@ class DownloadFileInput(BaseModel):
         ..., min_length=1, description="要下载文件的URL"
     )
     dest: Optional[str] = Field(
-        default=None, description="文件保存的相对路径(相对于下载目录),仅文件名或子路径(如 file.zip 或 subdir/file.zip),不支持绝对路径或../; 不填则自动从URL提取文件名"
+        default=None, description="文件保存路径: 可为相对路径(如 file.zip 或 subdir/file.zip), 或绝对路径(原样使用); 两者均禁止带 ../; 不填则自动从URL提取文件名"
     )
     headers: Optional[Dict[str, str]] = Field(
         default=None, description="请求头,名称仅ASCII,如 {\"Authorization\": \"Bearer token\"}"

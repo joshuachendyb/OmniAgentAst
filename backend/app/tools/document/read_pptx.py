@@ -8,16 +8,16 @@
 #   3. 新增 slide 参数校验与单页选取逻辑
 #   4. 迭代变量 sld 改名防冲突(param slide)
 # 2026-07-21 - 小欧 - 文件大小安全检测: 入口加 READ_PPTX_INPUT_MAX_BYTES 字节检查，超限拒读防OOM
-# 2026-07-23 - 小欧 - 三堂会审5bug修复: total_slides未反映outlimit截断+notes_data未同步截断+删死import os as _os_mod
+# 2026-07-23 - 小欧 - 5bug修复: total_slides未反映outlimit截断+notes_data未同步截断+删死import os as _os_mod
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行; warning summary去掉三重重复detail
 # 2026-07-26 - 小欧 - OOD: 确认READ_PPTX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-07-26 - 小沈 - 修复: 截断前存_actual_slide_count,产_trunc_hint提示用slide=N读剩余页; 参数path不覆盖
 # 2026-07-31 - 小欧 - Bug㉑修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取PPT→读PPT
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
+# 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词: 读取PPT→读PPT
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 D3: read_pptx — 读取PPT文档
 
@@ -36,7 +36,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_READ_PPTX, READ_PPTX_OUTLIMIT_CHARS
 from app.utils.text_utils import truncate_summary
 
@@ -83,8 +83,8 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
     """读取PPT文件 — 小沈 2026-06-19 — 小欧 2026-06-22 独立文件 — 小欧 2026-06-24 增加文件类型前置检查"""
     t0 = _time_mod.perf_counter()
     file_path = path
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
-    ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_pptx_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")

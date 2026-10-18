@@ -15,21 +15,21 @@
 # 2026-07-21 - 小欧 - 字节安全治理: 移除行数限制(INER_READ_XLSX_MAX_ROWS), 
 #    改为入口字节大小检查(READ_XLSX_INPUT_MAX_BYTES=20MB)防OOM; 
 #    内部函数默认max_rows=1000000(安全兜底不再触发truncated)
-# 2026-07-23 - 小欧 - 北京老陈驱动: 新增 Tool 层输出截断
+# 2026-07-23 - 小欧 - 新增 Tool 层输出截断
 #    rows 超 XLSX_OUTLIMIT_ROWS_MAX=1000 截断 + data.truncated=True
 #    单格str超 XLSX_OUTLIMIT_CELL_CHARS=500 尾部截断
 #    截断后缀包含原文长度: f"...(截断:原文N字符)"
 #    row_count 同步更新, 使 llm_data.summary 与实际 data 一致
 #     formatter #25 已读 truncated 字段, 自动显示 "⚠ 已截断"
-# 2026-07-23 - 小欧 - 北京老陈驱动修复: 多 sheet 也 apply 行+格截断; 新增 truncated_reason 具体原因
+# 2026-07-23 - 小欧 - 输出截断第二轮增强: 多 sheet 也 apply 行+格截断; 新增 truncated_reason 具体原因
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - OOD: 删 READ_XLSX_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-07-26 - 小沈 - 修复: 更新stale docstring(删READ_XLSX_INPUT_MAX_BYTES引用); path参数不覆盖
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-10-05 - 小欧 - 文档[8]P4降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取Excel→读EXCEL
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
+# 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
+# 2026-10-12 小欧 - tool_zh改短名词: 读取Excel→读EXCEL
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -49,7 +49,7 @@ from app.tools.tool_response import build_success, build_error
 from app.tools.tool_fc_helper import _check_module
 from app.tools.validate.file_type_checker import check_for_document_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import (
     ERR_DOC_READ_XLSX,
     XLSX_OUTLIMIT_ROWS_MAX, XLSX_OUTLIMIT_CELL_CHARS,
@@ -190,8 +190,8 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
     _p = Path(path)
     suffix = _p.suffix.lower()
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
-    ok, err = check_path_five_level(path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_xlsx_llm_data("error", duration_ms, str(path), detail=err, hint="请检查文件路径", user_sheet_name=sheet_name)

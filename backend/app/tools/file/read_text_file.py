@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
-# 2026-10-16 - 小欧 - tool去检查化注释同步: check_for_text_tool 内合法性检查已删(归 SA1), 只做类型检查。
+# 2026-10-16 - 小欧 - tool去检查化注释同步: check_for_text_tool 内合法性检查已删(归 路径安全层), 只做类型检查。
 """
 F1: read — 读取文本文件
 
@@ -19,7 +19,7 @@ F1: read — 读取文本文件
 #   1. 删未接入 _find_similar_files 死代码
 #   2. 删未用 import difflib
 # 2026-07-21 - 小欧 - 入参即信任: limit 校验加 ≤1000 上限(原仅<1)
-# 2026-07-23 - 小欧 - 三堂会审5bug修复: outlimit 截断信息中原文长度错误(先存_orig_len再截断)
+# 2026-07-23 - 小欧 - 5bug修复: outlimit 截断信息中原文长度错误(先存_orig_len再截断)
 # 2026-07-24 - 小欧 - 修复: warning summary嵌入full detail(三重重复) → 去掉detail
 # 2026-07-25 - 小欧 - 截断治理: content[:100] → READ_INER_CJK_SAMPLE 命名常量
 # 2026-07-26 - 小欧 - OOD: 确认READ_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
@@ -38,17 +38,17 @@ F1: read — 读取文本文件
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-02 - 小欧 - 注册名归位: action.tool "read"→"read"(3处), 与新注册名同源
-# 2026-10-05 - 小欧 - 信息顺序整改(北京老陈裁定): summary/message 信息次序统一为
+# 2026-10-05 - 小欧 - 信息顺序整改(小欧): summary/message 信息次序统一为
 #   「路径 → 成功 → 用户参数(第N行起/取M行/尾部K行/编码) → 读取量(N/M行) → 字节」, 原次序把用户参数排到末尾;
 #   _pi 逐条累加前导逗号改分段列表 join 且不再自带前导逗号(靠 _ps 补分隔空格), _ps 空段省略防双空格;
 #   status.message 同步改「第start-end行,共total行」前置于参数段, warning 与 success 两分支同改保持一致
-# 2026-10-05 - 小欧 - 单通道去 `/{total_lines}`(北京老陈裁定): summary 两分支 `{n}/{total}行` 改 `{n}行`,
+# 2026-10-05 - 小欧 - 单通道去 `/{total_lines}`(小欧): summary 两分支 `{n}/{total}行` 改 `{n}行`,
 #   message `,共{total_lines}行` 同去, total_lines 改走 metrics 统计段(observation_formatter 跳集合同步移出
 #   total_lines, 三处同批防 total_lines 从 LLM text 消失)
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 读取→读文件
-# 2026-10-12 小欧 - 成功message去_ps参数段（北京老陈令）: 成功:{_ps}第X-Y行 → 成功:从第X-Y行,
+# 2026-10-12 小欧 - tool_zh改短名词: 读取→读文件
+# 2026-10-12 小欧 - 成功message去_ps参数段: 成功:{_ps}第X-Y行 → 成功:从第X-Y行,
 #   参数交content句子(message与params去重); summary仍带_ps供LLM — 小欧 2026-10-12
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 
 import time as _time_mod
 from pathlib import Path
@@ -63,7 +63,7 @@ from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误
 from app.utils.text_utils import add_line_numbers
 from app.tools.toolhelper.line_pager import select_lines
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
 from app.tools.file.file_state import record_read
 
@@ -86,7 +86,7 @@ def _build_read_text_file_llm_data(
         _act_params["tail"] = user_tail
     if user_encoding:
         _act_params["encoding"] = user_encoding
-    # 2026-10-05 小欧 - 信息顺序整改(北京老陈裁定): _pi 由"拼在结果量尾部"改为"分段列表 join 后前置",
+    # 2026-10-05 小欧 - 信息顺序整改(小欧): _pi 由"拼在结果量尾部"改为"分段列表 join 后前置",
     #   呈现次序统一为「路径 → 成功 → 用户参数(行起/取N行/尾部N行/编码) → 读取量(行/总行) → 字节」;
     #   先说读哪一段(定位信息), 再说读回多少(结果量)。原实现逐条 if 累加前导逗号, 改 join 后无多余分隔符。
     _seg: list = []
@@ -169,8 +169,8 @@ async def read(
     if tail is not None:
         tail = int(tail)
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
-    ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
@@ -259,7 +259,7 @@ async def read(
         file_size = _p.stat().st_size
 
         content, used_encoding, error = await _try_read_file_with_encodings(_p, encoding)
-        # 修复: 保存原始content用于record_read — 小欧 2026-08-05 三堂会审4bug修复
+        # 修复: 保存原始content用于record_read — 小欧 2026-08-05 4bug修复
         _original_content = content
         # 修复: 截断前计算真实总行数(必须在if外初始化, 否则翻页/空文件场景NameError) — 小欧 2026-08-05
         _real_total_lines = len(content.splitlines()) if content else 0

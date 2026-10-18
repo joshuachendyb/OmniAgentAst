@@ -9,14 +9,14 @@
 # 2026-07-20 - 小欧 - 门限复查: _build_edit_text_file_llm_data 移除顶层 "diff"(及 diff[:500] 截断, 违3.7); diff 统一经 data["diff"] → #24(已行×列收口+两态), 消除与 llm_data 段顶层 diff(:544)的重复渲染; 全/部分应用均置 data={"diff":...}
 # 2026-07-21 - 小欧 - 修字段语义错位(SLAP/KISS-DIRECT): 阻断写入的校验错误字段 encode_error→validation_error(原误将语法错误存入编码错误字段), 全文件6处同步
 # 2026-07-21 - 小欧 - #9 文件外部修改错误增强: check_conflict_strict 失败时附文件当前内容前2000字符到错误消息
-# 2026-07-24 - 小欧 - 重构: 11处散落截断→main函数入口统一截断(3常量); helper/build函数去截断(北京老陈驱动)
+# 2026-07-24 - 小欧 - 重构: 11处散落截断→main函数入口统一截断(3常量); helper/build函数去截断
 # 2026-07-25 - 小欧 - 修复: execute_with_safety返回值类型不匹配——病根: 2026-07-15 execute_with_safety改为返回(bool,str), edit是唯一未解包的调用方, tuple永为true致not success永假, 保险失效
 # 2026-07-25 - 小欧 - 修复: edit读文件后未调record_read——病根: conflict check无准确mtime基准, 使用前次操作(如write)的record_write mtime, Windows mtime波动致~50%误判
 # 2026-07-25 - 小欧 - 修复: None/空校验在截断之后——病根: 2026-07-24截断重构移到main入口, old_string/new_string在None检查前被截断(TypeError), 应先将None/空校验提前
 # 2026-07-25 - 小欧 - 清理: mtime_warning死变量——病根: 声明后从未赋值(YAGNI), 删除line 361声明、line 379/497返回值
 # 2026-07-29 - 小欧 - validation_error加强: 格式"行N；语法错误；建议:xxxx"替代纯error_text; 透传_syn_line/_syn_suggestion到main; metrics新增error_line+suggestion; _check_anchor_overlap报错简化: 去除冗余行引用, 统一"只包含新内容"表述
 # 2026-08-08 - 小欧 - task002问题1增强: 新增_anchor_signature_hint — before/after锚点为单行def/class签名行时给safety_hint提示(引导用方法体末行锚点), 不改插入逻辑(KISS), 与sl_warn/so_warn合并不覆盖 | py_compile ✓
-# 2026-08-08 - 小欧 - _anchor_signature_hint 三堂会审精简: 空串/多行两项卫兵合并为 first=old_string.strip() 单卫(not first or '\n' in first), 消除重复rstrip/strip, 职责唯一零回归 | 回归 pytest: before_after+internal+retest 169✓ v2+deep+twelfth 112✓ guardrail+perf 64✓
+# 2026-08-08 - 小欧 - _anchor_signature_hint 精简: 空串/多行两项卫兵合并为 first=old_string.strip() 单卫(not first or '\n' in first), 消除重复rstrip/strip, 职责唯一零回归 | 回归 pytest: before_after+internal+retest 169✓ v2+deep+twelfth 112✓ guardrail+perf 64✓
 # 2026-08-09 - 小欧 - task006: 编码回退反馈 — 用户指定编码无效时原仅logger.warning, LLM感知不到
 #   病根: _try_read_file_with_encodings 第三参数err_msg非None即被调用方raise, 报告"子函数返回hint"方案会破坏
 #   该契约导致回退成功变失败(退化) → 改为调用方合成: encoding与used_enc不一致时生成encoding_fallback并入safety_hint, 增强不退化
@@ -31,12 +31,12 @@
 # 2026-08-12 - 小欧 - A1后半面(4.1.7定案): 删除 from app.safety import record_operation/execute_with_safety,
 #   改为 get_current_hooks() 取安全 hooks, 消除 tools→safety 越层; task_id 仍 _current_task_id.get()
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小沈 - 修复(三堂会审): get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
+# 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 三堂会审修复#5: _precise_replace_in_file 的 stat/read_bytes/read_text/open('w')
+# 2026-08-13 - 小欧 - 修复#5: _precise_replace_in_file 的 stat/read_bytes/read_text/open('w')
 #   全链 to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码回退读取传 \\?\ 前缀 Path;
 #   报告/diff/语法检测仍用原路径(不暴露 \\?\ 前缀, detect_language 只按扩展名判断不受影响)
-# 2026-08-13 - 小欧 - 三堂会审修复#23: 移除死导入 validate_str_param(合规/DRY)
+# 2026-08-13 - 小欧 - 修复#23: 移除死导入 validate_str_param(合规/DRY)
 #   【病根】from app.tools.validate.file_path_checker import validate_str_param 全文件零调用(grep仅导入处1处), 冗余导入
 #   【改法】从导入行移除, 保留validate_path/OpCategory
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
@@ -44,11 +44,11 @@
 #   上下文管理器), 防跨任务并行覆盖; 仅仲裁不强制, 冲突由调用方按策略处理, 行为零退化。
 #   compliance: DRY(复用 arbiter claim_write)/KISS-DIRECT
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "edit"→"edit"(2处), 与新注册名同源
-# 2026-10-05 - 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): summary 改 `新增{added}行，删除{removed}行`,
+# 2026-10-05 - 小欧 - 结论性数字进 summary(小欧方案 A): summary 改 `新增{added}行，删除{removed}行`,
 #   增减从 unified_diff 现算(`+` 去 `+++` 头 / `-` 去 `---` 头, 零新依赖); added/removed 同步入 metrics
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 编辑文件→编辑
-# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(被改文件须存在, 用 EXISTS)
+# 2026-10-12 小欧 - tool_zh改短名词: 编辑文件→编辑
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归路径安全层), 仅留 for_write 大文件警告。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(被改文件须存在, 用 EXISTS)
 """
 F4: edit — 编辑文本文件
 
@@ -73,7 +73,7 @@ from app.tools.tool_constants import EDIT_OUTPARM_LIMIT_OLD, EDIT_OUTPARM_LIMIT_
 from app.tools.context import _current_task_id, get_current_hooks_or_noop  # ContextVar hooks — 小欧 2026-08-12; 修复 — 小沈 2026-08-13
 from app.db.models.operation_models import OperationType
 from app.tools.validate.file_type_checker import check_for_text_tool
-from app.utils.path_utils import OpCategory, check_path_five_level, validate_path_for_write  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口; 仅业务警告, 合法性归 SA1
+from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归 路径安全层
 from app.tools.toolhelper.error_hints import hint_for_write_error
 from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
@@ -303,7 +303,7 @@ def _build_edit_text_file_llm_data(
             "metrics": {},
         }
     _hint_parts = []
-    # 2026-10-12 小欧(北京老陈令) - detail/hint 分工: detail 载语法错因(供定位), hint 给出路
+    # 2026-10-12 小欧 - detail/hint 分工: detail 载语法错因(供定位), hint 给出路
     #   (文件已落盘, 用 edit 局部修正), 避免两处逐字重复
     if syntax_warning:
         _hint_parts.append("文件已写入；如需修正语法, 请用 edit 局部修改该处")
@@ -318,7 +318,7 @@ def _build_edit_text_file_llm_data(
         _hint_parts.append("建议使用 mode='all' 一次替换所有匹配")
     _hint = "；".join(_hint_parts) if _hint_parts else ""
     _exec_code = "warning" if (_warning_msg or mtime_warning or safety_hint or syntax_warning) else "success"
-    # 2026-10-05 小欧 - 结论性数字进 summary(北京老陈裁定方案 A): 增减行数从 diff 现算
+    # 2026-10-05 小欧 - 结论性数字进 summary(小欧方案 A): 增减行数从 diff 现算
     #   (`+` 去 `+++` 头, `-` 去 `---` 头), summary 带 `新增N行，删除M行`; applied/total_matches 仍由 metrics 呈现
     _added = sum(1 for _ln in (diff or "").splitlines() if _ln.startswith("+") and not _ln.startswith("+++"))
     _removed = sum(1 for _ln in (diff or "").splitlines() if _ln.startswith("-") and not _ln.startswith("---"))
@@ -359,7 +359,7 @@ async def _precise_replace_in_file(
 
     try:
         _anchor_hint = ""  # before/after 签名行锚点提示, 统一初始化防 NameError — 小欧 2026-08-08
-        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+        # 2026-10-16 小欧 - tool去检查化: 合法性由路径安全层唯一检查, 此处仅业务警告(大文件覆盖)
         _, _, warn = validate_path_for_write(file_path, content=new_string)
         if warn:
             logger.warning(f"[edit] {warn}")
@@ -498,12 +498,12 @@ async def _precise_replace_in_file(
             #   现与 write 统一为 warning: 改照样生效, 由上层按 warning 呈现。
             #   校验对象=合并完成即将落盘的 write_content(见下方), 非 new_content 片段。
             if not replace_result.get('validation_error'):
-                # 2026-10-12 小欧(北京老陈令) - 校验对象改 write_content(合并完成、即将落盘的那一份):
+                # 2026-10-12 小欧 - 校验对象改 write_content(合并完成、即将落盘的那一份):
                 #   原校验 new_content, 与实际 f.write(write_content) 之间隔着 CRLF 转换,
                 #   校验对象≠落盘对象。原则: 检测必须针对合并编辑完成后的整体文件。
                 _syn = validate_syntax(write_content, detect_language(str(path), write_content), str(path))
                 if not _syn.valid:
-                    # 2026-10-12 小欧(北京老陈令) - 直接取校验器结论: _syn.error 已含语言名与行号,
+                    # 2026-10-12 小欧 - 直接取校验器结论: _syn.error 已含语言名与行号,
                     #   不再额外 insert 行号(改前致 "行2；Python语法错误(行2…)" 行号重复)
                     _parts = [_syn.error or "语法错误"]
                     if _syn.suggestion:
@@ -580,8 +580,8 @@ async def edit(
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(被改文件须存在, 用 EXISTS)
-    ok, err = check_path_five_level(file_path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(被改文件须存在, 用 EXISTS)
+    ok, err = check_path_four_level(file_path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path, detail=err, hint="请检查文件路径")
@@ -692,7 +692,7 @@ async def edit(
     else:
         # diff 统一经 data["diff"] → #24(已行×列收口+两态); 不在 llm_data 顶层重复渲染(严禁重复)
         data = {"diff": result.get("diff", "")}
-    # 2026-10-12 小欧(北京老陈令) - 有语法告警时返回 warning(与 write 一致): 编辑确已落盘,
+    # 2026-10-12 小欧 - 有语法告警时返回 warning(与 write 一致): 编辑确已落盘,
     #   语法问题仅提示; exec_code 已由 builder 按 hint/syntax_warning 自动判定
     if llm_data["status"]["exec_code"] == "warning":
         return build_warning(data=data, llm_data=llm_data)

@@ -5,9 +5,9 @@
 # 2026-07-20 - 小欧 - 章18门限治理: 依3.7删除Tool层LISTDIR_PAGE_SIZE条数截断(返回全部条目, 由Format层OBS_LISTDIR_MAX_ROWS/CHARS行×列收口); 删除max_depth=10递归深度限制(3.6, TOOL_TIMEOUTS已兜底); data.truncated仅反映deadline截断; 新增OBS_LISTDIR_*专属观察常量(显示域两态)
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS key对齐: "list_directory"→"listdir"(真实注册名), 值30→60
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 列出目录→列文件
-# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 工具只执行。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(读类用 EXISTS)
+# 2026-10-12 小欧 - tool_zh改短名词: 列出目录→列文件
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层), 工具只执行。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
 """
 F5: list_directory — 列出目录内容
 
@@ -29,7 +29,7 @@ from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED, SKIP_DIRS
 from app.tools.tool_constants import TOOL_TIMEOUTS, OBS_LISTDIR_MAX_ROWS, OBS_LISTDIR_MAX_ROW_CHARS
 
 from app.tools.toolhelper.error_hints import hint_for_read_error
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.logger import logger
 
 
@@ -210,8 +210,8 @@ async def listdir(
     # 路径参数统一为path,桥接到内部变量dir_path — 小欧 2026-07-11
     dir_path = path
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(读类用 EXISTS)
-    ok, err = check_path_five_level(dir_path, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS)
+    ok, err = check_path_four_level(dir_path, OpCategory.EXISTS)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_list_directory_llm_data("error", duration_ms, dir_path, detail=err, user_sort_by=sort_by, user_include_hidden=include_hidden, user_offset=offset)
@@ -236,7 +236,7 @@ async def listdir(
     start_offset = offset
 
     try:
-        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 工具只执行
+        # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查, 工具只执行
         deadline = _time_mod.monotonic() + TOOL_TIMEOUTS.get("listdir", TOOL_TIMEOUTS["default"]) - 2
         all_entries, stats, file_types, size_distribution, _scan_timed_out = await asyncio.to_thread(
             _scan_directory_sync, path, False, 0, include_hidden, deadline,

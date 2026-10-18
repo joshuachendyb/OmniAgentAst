@@ -2,8 +2,8 @@
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(截图文件)
-# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 SA1), 仅留 for_write 大文件警告。
-# 2026-10-17 北京老陈裁定 - 接入 path_utils.check_path_five_level 五级总入口(输出目标用 WRITE)
+# 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归路径安全层), 仅留 for_write 大文件警告。
+# 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(输出目标用 WRITE)
 """
 screen_capture — 屏幕截图
 【2026-06-22 小健】从 desktop_tools.py/desktop_gui_tools.py 拆分为独立文件
@@ -12,9 +12,9 @@ screen_capture — 屏幕截图
 # 2026-07-30 - 小欧 - #14/#20:dest类型str→Optional[str]; #15:error区分模式; #16/#19:去除_act_params中None值; #17:snapshot except补dest; #18:display=0报错不静默fallback
 # 2026-07-30 - 小欧 - #2:hint区分依赖错误vs运行时错误,非依赖错误不再提示安装库
 # 2026-07-30 - 小欧 - #7:region/dest类型hint统一Optional; #8:PIL import加ImportError处理
-# 2026-07-31 - 小欧 - 三堂会审修复B3:Pillow缺失时hint误导为装mss/pyautogui,改单独提示安装Pillow
-# 2026-07-31 - 小欧 - 三堂会审修复B23:data去掉"display": None冗余键(截图模式display_val为空)
-# 2026-08-05 - 小欧 - 三堂会审修复#5: dest=""空串绕过主函数校验后 Path("").mkdir() 报含糊错误, _screenshot/_snapshot 的 if dest is None 统一改 if not dest(空串也走临时路径)
+# 2026-07-31 - 小欧 - 修复B3:Pillow缺失时hint误导为装mss/pyautogui,改单独提示安装Pillow
+# 2026-07-31 - 小欧 - 修复B23:data去掉"display": None冗余键(截图模式display_val为空)
+# 2026-08-05 - 小欧 - 修复#5: dest=""空串绕过主函数校验后 Path("").mkdir() 报含糊错误, _screenshot/_snapshot 的 if dest is None 统一改 if not dest(空串也走临时路径)
 # 【铁规1】helper/被调函数(以下划线_开头的函数)只返回raw dict，严禁调用build_success/build_error/build_warning和构建llm_data。
 # build3+llm_data只能在tool的main函数(对外公开的函数)中包装。违反此规则的代码视为不合规。
 # 【铁规2】工具返回原始data，禁止调用truncate_data_for_frontend。截断只能在前端yield层。
@@ -27,9 +27,9 @@ from typing import Dict, Any, Optional
 
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归 SA1
+from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
 from app.logger import logger
-from app.utils.path_utils import OpCategory, check_path_five_level  # 2026-10-17 北京老陈裁定 - 路径五级检查总入口
+from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_SCREENSHOT, ERR_SCREEN_SNAPSHOT
 
 
@@ -144,15 +144,15 @@ def _snapshot(display: int = 1, dest: Optional[str] = None) -> Dict[str, Any]:
 def screen_capture(dest: Optional[str] = None, region: Optional[Dict[str, int]] = None, display: Optional[int] = None) -> Dict[str, Any]:
     """统一屏幕截图入口 — 小健 2026-06-22 拆分独立文件"""
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 北京老陈裁定 - 路径检查走 check_path_five_level 五级总入口(输出目标用 WRITE)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(输出目标用 WRITE)
     if dest:
-        ok, err = check_path_five_level(dest, OpCategory.WRITE)
+        ok, err = check_path_four_level(dest, OpCategory.WRITE)
         if not ok:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_screen_capture_llm_data("error", duration_ms, dest, detail=err, hint="请检查输出路径")
             return build_error(data={}, llm_data=llm_data)
     if dest:
-        # 2026-10-16 小欧 - tool去检查化: 合法性由 SA1 唯一检查, 此处仅业务警告(大文件覆盖)
+        # 2026-10-16 小欧 - tool去检查化: 合法性由路径安全层唯一检查, 此处仅业务警告(大文件覆盖)
         _, _, warn = validate_path_for_write(dest)
         if warn:
             logger.warning(f"[screen_capture] {warn}")
