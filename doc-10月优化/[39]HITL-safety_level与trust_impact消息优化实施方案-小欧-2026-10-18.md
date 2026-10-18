@@ -11,12 +11,14 @@
 | v1.4 | 2026-10-18 12:42:20 | 小欧 | **新增 §6.0 涉及修改的代码清单（19 文件）**。核查出 v1.3 **漏 4 处**：`backupTypes.ts:21-31` 类型源 / `sseParser.ts:959-966` **对象字面量白名单** / `useAuthorization.ts:79-98` **对象字面量白名单** / `index.tsx:109-119` `AuthorizationRequest`。**白名单层漏改任一 → 字段静默丢弃，后端改得再对前端也不显示**。同时查明 `chatStreamTransport.ts:917` 是 spread 不丢字段；精确证实 [39]原案 §1.4「severity 前端不读」根因是**转换层从未映射**。补 §6.15~6.18 |
 | v1.5 | 2026-10-18 12:48:38 | 小欧 | **两项裁定落地（老陈裁定）**：①**`trust_impact` 由「requires_confirmation 的 relabel」改为「真授权影响面」**——v1.0~v1.4 的 `trust_impact = "中" if requires_confirmation else "小"` 是 bool 的一对一映射、**零信息量**，正是 [39]原案 §1.7 骂 `severity` 的原罪（重复编码），等于改名重犯。改为承载真正独立语义：真值源 = `temp_auth` 实际生效的 `recursive`（目录根→`high` 整棵子树／单文件→`low` 仅精确路径），**与 needs_confirm 正交**；值域改**英文标识** `high`/`low`（与 `path_auth` 等英文契约一致，前端映射中文显示），并恢复 [39]原案 原义的方向性。新增 `temp_auth.resolve_grant_recursive()` 作**单一真源**，两端共用杜绝口径漂移。②**字段缩短命名 `requires_confirmation` → `needs_confirm`**（老陈令，实测 60 处/14 文件，增量成本≈0：这些文件本就需重写该构造行；该字段纯后端内部，不进 paused 帧/DB/前端，对外契约零影响）。全文 diff 与清单同步 |
 | v1.6 | 2026-10-18 12:52:00 | 小欧 | **全文一致性核查（三堂会审·老陈令：读全文 10 遍 + 逐节互校）**，修 7 处不一致 + 补 4 处代码遗漏。**①影响面统计错误（最严重）**：v1.5 用 `Select-String -Path "app\**\*.py"`，PS 5.1 下 `**` 不递归只扫一层 → 实为 **60 处/14 文件**（非 49/10），漏 `safety_gate.py`(7，含关键读取点 :197/:200)、`tool_facade.py`(2，:171 读取点)、`execute_shell_command.py`(1，:1135 读取点)、`tool_routes.py`(1，注释)；已新增 §6.20/6.21/6.22 三个 diff 节 + §6.0 清单扩至 23 文件 + §七 G 类全量重做 + 立"禁用非递归 glob"铁律。**②§6.14 diff 结构错误**：bypass 两分支的 `requires_confirmation=` 未改（上下文行当原文），会与新增 `needs_confirm=` 并存 → `TypeError`；已重写为标准三行 `-`/`+` 对照。**③§6.6 残留**：修正后仍留 `requires_confirmation=True` 在 `-` 行但 `+` 行缺改名，已重排。**④验收 #3 不可执行**：原 `grep -rn` 会被 6 处历史注释命中（铁规禁删历史），改为"排除 `#` 开头注释行"的递归命令。**⑤§三 第2行悬空引用**「§五.5」→ 改 §五.3。**⑥§五.1/§五.2 为凑数空节**（仅写"见§六.0/§四.2"）违反 KISS → 删除，§五.2 改为有实质内容的落地规则。**⑦§6.3 diff 上下文行写成了改后内容**（`_readonly` 那段），已改为标准 `-+` 对照。 |
-| v1.7 | 2026-10-18 12:58:57 | 小欧 | **因并发 shell 重构而做行号全量重校 + 补 7 处漏记读取点**（老陈令：马上改文档）。**背景**：工作区出现非本轮的 shell 重构改动（删 `shell_command_process.py`、新增 `shell_readonly.py` 等 5 文件、改 `shell_path_check.py`/`safety_gate.py`/`execute_shell_command.py`），本方案相关文件行号已漂移。**①行号漂移校正**：`shell_path_check.py` 6 处构造点 `62,77,93,121,131,145`→**`62,83,99,127,137,151`**（后 5 处 +6 行）；`write_path_check.py` `:121/:124`→**`:120/:123`**；`delete_path_check.py` 4 处 −1 行。**②★补 7 处漏记的属性读取点**（v1.6 仅记 5 处，实为 **12 处**）：`dual_path_check` `:122/:137/:149/:153`、`path_tool_safety_checker:279`、`shell_path_check` `:72/:86/:140` —— 同为 `AttributeError` 级，非可选。根因：前几版按"文件"归类，**未区分同文件内的构造 kwarg 与属性读取**。**③统计口径改三分**（§七 G 类重做）：属性读取 12 / 构造 kwarg 15 / 字段定义 1 / 历史注释 32，取代 v1.6 的"60 处/14 文件"混合口径，并给出三条可执行校验命令。**④§七 C 类重写**为 12 处属性读取明细表。**⑤§6.0 清单与 §六.9/6.10/6.14 diff 同步补读取点**。**⑥章节号断裂修正**：`## 十二、` → `## 十一、`（§十一 此前缺失，违铁规「章节序号必须连续有序」）。**⑦自查纠正一处不准确表述**：此前口头提示"文档引用了 `shell_command_process.py`"，经 grep 核实**文档内并无该文件引用**，实际问题为行号漂移与漏记读取点。 |
+| v1.7 | 2026-10-18 12:58:57 | 小欧 | **因并发 shell 重构而做行号全量重校 + 补 7 处漏记读取点**（老陈令：马上改文档）。**背景**：工作区出现非本轮的 shell 重构改动（删 `shell_command_process.py`、新增 `shell_readonly.py` 等 5 文件、改 `shell_path_check.py`/`safety_gate.py`/`execute_shell_command.py`），本方案相关文件行号已漂移。**①行号漂移校正**：`shell_path_check.py` 6 处构造点 `62,77,93,121,131,145`→**`62,83,99,127,137,151`**（后 5 处 +6 行）；`write_path_check.py` `:121/:124`→**`:120/:123`**；`delete_path_check.py` 4 处 −1 行。**②★补 7 处漏记的属性读取点**（v1.6 仅记 5 处，实为 **12 处**）：`dual_path_check` `:122/:137/:149/:153`、`path_tool_safety_checker:279`、`shell_path_check` `:74/:88/:142` —— 同为 `AttributeError` 级，非可选。根因：前几版按"文件"归类，**未区分同文件内的构造 kwarg 与属性读取**。**③统计口径改三分**（§七 G 类重做）：属性读取 12 / 构造 kwarg 15 / 字段定义 1 / 历史注释 32，取代 v1.6 的"60 处/14 文件"混合口径，并给出三条可执行校验命令。**④§七 C 类重写**为 12 处属性读取明细表。**⑤§6.0 清单与 §六.9/6.10/6.14 diff 同步补读取点**。**⑥章节号断裂修正**：`## 十二、` → `## 十一、`（§十一 此前缺失，违铁规「章节序号必须连续有序」）。**⑦自查纠正一处不准确表述**：此前口头提示"文档引用了 `shell_command_process.py`"，经 grep 核实**文档内并无该文件引用**，实际问题为行号漂移与漏记读取点。 |
+| v1.8 | 2026-10-18 13:40:12 | 小欧 | **逐 diff 三堂会审（老陈令：对照本地代码核查每一代码 diff）**，22 节逐节审查，**18 节一次通过 / 3 节修正后通过**，新增 §12 会审结论。**①★发现1（关联·高）**：`tool_routes.py:23/:64` 用 `asdict(_sf)` 把 `SafetyResult` 整体转 dict 作为 `/tool/execute` 响应 `safety` 字段返回 → 改名 `requires_confirmation`→`needs_confirm` **属对外 API 契约变更**，**v1.7「纯后端内部·对外契约零影响」结论作废**（已同步修正 §一.1 第5条、§七 G 类；前端实测零消费，第三方受影响；按禁止 backward 不做兼容但须记入发布说明）。**②★发现2（正确性·高）**：**PowerShell 行号统计在本项目不可信**——`path_tool_safety_checker.py` PowerShell 报 247 行而 Python 权威 294 行；`shell_path_check.py` 构造点应为 `64/85/101/129/139/154`、读取点 `74/88/142`，**v1.7 基于 PowerShell 的"校正"反而把对的改成错的，已全部按 Python 权威重校**，并立铁律「本项目行号统计禁用 PowerShell，一律用 Python」。**③★发现3（合规·中）**：`temp_auth` 的空/根路径判定（防 `Path("")` 扩域成整盘授权，安全关键）在 `grant_temp_auth:48` 与新函数间 **DRY 违反** → 上提私有原子 `_is_rejectable_root(root)` 两端共用，已证纯等价重构。**④★发现4（正确性·中）**：`requires_confirmation=` 构造 kwarg 实为 **13 处**（非 15）；`dual_path_check`/`shell_path_check` 的 SafetyResult 构造**不含该 kwarg**（只含 `severity=`），故只需删 severity + 加 safety_level、**无需 kwarg 改名**（现有 diff 本就正确，已加注）。另复核确认 §6.6~6.9、§6.11~6.14、§6.19~6.20 共 40 余处行号与 diff 内容**均与本地代码一致**。 |
+| v1.9 | 2026-10-18 13:45:00 | 小欧 | **按老陈令删除第十二章「三堂会审结论」**（v1.8 新增的会审章节，含逐 diff 通过/修正表与四项实质发现的完整论证）。**删除前已确认无信息丢失**：v1.8 四项发现的**修正成果均已落在他章**，随章保留 —— ①API 契约变更 → §一.1 第 5 条 + §七 G 类；②禁用 PowerShell 统计行号（改用 Python）→ §6.10 前置说明；③temp_auth DRY 违反的修复（`_is_rejectable_root` 上提 + 等价性证明）→ §6.2 diff 与节末说明；④构造 kwarg 实为 13 处、dual/shell_path 构造不含该 kwarg → §6.9/§6.10 注。本版本历史条目保留 v1.8 记录（编辑型文档禁删历史版本信息），仅正文删除该章。 |
 
 ---
 
 **创建时间**：2026-10-18 12:12:51
-**更新时间**：2026-10-18 12:52:00（小欧）
+**更新时间**：2026-10-18 13:45:00（小欧）
 **编写人**：小欧
 
 ---
@@ -36,7 +38,7 @@
 2. **危险等级等价关系**（[39]原案 §1.7）为唯一表达：`blocked`（拦截）／`needs_confirm`（需确认）／两者皆 False（放行）。
 3. **`trust_impact` 承载真授权影响面**，值域**英文标识** `high`/`low`，真值源 = `temp_auth` 实际生效的 `recursive`；**与 `needs_confirm` 正交**，不互推。
 4. **沙箱判定改读 `needs_confirm`**（[39]原案 §1.6 第3步）——**必采纳**，是删 `severity` 的硬依赖。
-5. **字段缩短命名**：`requires_confirmation` → `needs_confirm`（纯内部，60 处/14 文件，增量成本≈0）。
+5. **字段缩短命名**：`requires_confirmation` → `needs_confirm`（14 文件，增量成本≈0）。★**该字段经 `tool_routes.asdict` 出到 `/tool/execute` API 响应，属对外契约变更**（v1.8 关联审查推翻 v1.7 的「纯后端内部」结论，详见 §四.1 与 §十三）。
 6. **`safety_level` 产地归位**：决策点直给，`_classify_safety_level` 降级为**兜底**（保留无 message 场景分类能力）。
 7. **措辞补齐**：白名单外补时效、`non_system` 补"临时"二字。
 8. **前端补齐 4 个缺失分类 + 三条独立说明行**（信任影响／临时授权时效／系统禁区不可授权）。
@@ -364,13 +366,27 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +        return SafetyResult(blocked=False, needs_confirm=False, message="")
 ```
 
-### 6.2 `app/safety/temp_auth.py` — **新增单一真源函数**
+### 6.2 `app/safety/temp_auth.py` — **新增单一真源函数**（v1.8 按 DRY 修正）
+
+> ★ **v1.8 DRY 合规修正**：v1.7 的 `resolve_grant_recursive` 内部重复了 `grant_temp_auth:48` 的
+> 「空/根路径」判定。**该判定是安全关键分支**（防 `Path("")` resolve 成 cwd 而扩域成整盘授权），
+> 两处并存必然产生"改一处漏一处"的分歧风险。故按铁规 **DRY + 复用优先**，上提为私有原子 `_is_rejectable_root`。
 
 ```diff
-@@ -38,6 +38,22 @@
- 
+@@ -38,6 +38,33 @@
+
++def _is_rejectable_root(root) -> bool:
++    """空/根路径判定(授权拒绝线) — 单一真源 — 小欧 2026-10-18 文档[39]
++
++    判定为真表示**不可授权**: 空串 / None / Path("").resolve() 会落 cwd 扩域 /
++    "." / "/" 等根路径。上提原因: grant_temp_auth(拒绝+告警) 与 resolve_grant_recursive
++    (影响面判定) 共用同一口径, 防两处分歧。
++    """
++    return (not root) or (isinstance(root, str) and root.strip() in ("", ".", "/"))
++
++
 +def resolve_grant_recursive(root: str, requested: bool = True) -> bool:
-+    """给定授权根, 判定**实际生效**的 recursive —— 授予自由度真值源(单一真源) — 小欧 2026-10-18 文档本文
++    """给定授权根, 判定**实际生效**的 recursive —— 授予自由度真值源(单一真源) — 小欧 2026-10-18 文档[39]
 +
 +    规则(自 grant_temp_auth 内联逻辑上提, 与 2026-09-03 小欧修复同源):
 +      文件路径(Path(root).suffix 非空) → False(仅精确路径)
@@ -381,23 +397,22 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +
 +    Args:
 +        root: 授权根路径
-+        requested: 调用方请求的 recursive(grant_temp_auth 入口参数); False 时直接不授权递归
++        requested: 调用方请求的 recursive(grant_temp_auth 入口参数); False 时不授权递归
 +    Returns:
 +        bool: 实际生效的 recursive
 +    """
-+    if not requested:
-+        return False
-+    if not root or not isinstance(root, str) or not root.strip():
-+        return False
-+    if root.strip() in ("", ".", "/"):
++    if not requested or _is_rejectable_root(root):
 +        return False
 +    return not bool(Path(root).suffix)
 +
 +
  def grant_temp_auth(root: str, recursive: bool = True) -> None:
-@@ -50,9 +66,9 @@
-     # 2026-09-03 小欧 修复: 空/根路径前置拒绝（Path("").resolve()得cwd扩域根治）
-     if not root or (isinstance(root, str) and root.strip() in ("", ".", "/")):
+@@ -46,12 +73,12 @@
+-    # 2026-09-03 小欧 修复: 空/根路径前置拒绝（Path("").resolve()得cwd扩域根治）
+-    if not root or (isinstance(root, str) and root.strip() in ("", ".", "/")):
++    # 2026-09-03 小欧 修复: 空/根路径前置拒绝（Path("").resolve()得cwd扩域根治）
++    # 2026-10-18 小欧(文档[39]): 判定上提 _is_rejectable_root, 与 resolve_grant_recursive 共用同一口径(DRY)
++    if _is_rejectable_root(root):
          from app.logger import logger as _lg
          _lg.warning(f"[temp_auth] 空/根路径拒绝授权: {root!r}")
          return
@@ -405,16 +420,19 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 -    _recursive = recursive
 -    if recursive and isinstance(root, str) and Path(root).suffix:
 -        _recursive = False
-+    # 2026-10-18 小欧(文档本文): suffix 规则上提 resolve_grant_recursive, 与 trust_impact 判定共用口径
++    # 2026-10-18 小欧(文档[39]): suffix 规则上提 resolve_grant_recursive, 与 trust_impact 判定共用口径
 +    _recursive = resolve_grant_recursive(root, recursive)
      _ensure_auth()[Path(root).resolve()] = _recursive
-@@ -119,5 +135,5 @@
- 
- 
+@@ -119,5 +146,5 @@
  __all__ = ["grant_temp_auth", "clear_temp_auth", "is_temp_authorized",
 -           "get_authorized"]
 +           "get_authorized", "resolve_grant_recursive"]
 ```
+
+> ✅ **等价性保证**：`_is_rejectable_root` 是 `grant_temp_auth:48` 原条件的**逐字提取**（`not root or (isinstance(root,str) and root.strip() in ("", ".", "/"))`），
+> 零逻辑变更；`resolve_grant_recursive` 在 `requested=False` 时返回 `False`（等同原 `_recursive = recursive = False`），
+> 在 `requested=True` 且路径有后缀时返回 `False`（等同原 `_recursive = False`），
+> 在 `requested=True` 且目录时返回 `True`（等同原 `_recursive = True`）。**行为完全不变，纯等价重构**。
 
 ### 6.3 `app/services/agent/handlers/safety_gate.py` — 字段优先 + 文本兜底 + trust_impact 真派生
 
@@ -621,38 +639,47 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 
 > ★ 4 处属性读取（`:122`/`:137`/`:149`/`:153`）v1.6 才补入，漏改则 `AttributeError`。
 
-### 6.10 `app/safety/shell_path_check.py` — **3 处属性读取 + 6 处构造**（行号已按 shell 重构后现状校正）
+### 6.10 `app/safety/shell_path_check.py` — **3 处属性读取 + 6 处构造**（行号已按 Python 权威重校）
 
-> ★ **行号漂移**：shell 重构后本文件 6 处构造点由 `62,77,93,121,131,145` 变为 **`62,83,99,127,137,151`**（后 5 处 +6 行）。v1.6 已全量重校。
+> ★★ **v1.7 行号错误已作废**：v1.7 曾用 PowerShell 把本文件行号"校正"为 `62,83,99,127,137,151`，**该组数据全错**。
+> 根因：本项目 `.py` 为 **utf-8-sig + LF 换行**，`Select-String`/`Get-Content` 对该文件行数计算错误
+> （实测 PowerShell 报 161 行内的行号时序错位；`path_tool_safety_checker.py` 更离谱：PowerShell 报 247 行，Python 权威 **294 行**）。
+> **v1.8 起全部行号以 Python 读取为准**（铁律：本项目禁用 PowerShell 统计行号）。
+>
+> **Python 权威（总行 161）**：构造点 `64 / 85 / 101 / 129 / 139 / 154`；属性读取点 `74 / 88 / 142`。
+> 本文件 6 处构造**均不含 `requires_confirmation` kwarg**（只含 `severity=`），故只需删 severity + 加 safety_level，**无需 kwarg 改名**。
 
 ```diff
-@@ -72,1 +72,1 @@   # ★新 cwd 写线取严(属性读取)
+@@ -64,1 +64,1 @@    # 动作判定非法路径(构造)
+-            return SafetyResult(blocked=True, severity="dangerous",
++            return SafetyResult(blocked=True, safety_level="command_block",
+@@ -74,1 +74,1 @@    # ★属性读取 cwd 写线
 -            if perm.requires_confirmation:
 +            if perm.needs_confirm:
-@@ -83,1 +83,1 @@   # ★构造: 动作判定非法路径
+@@ -85,1 +85,1 @@    # 构造
 -            return SafetyResult(blocked=True, severity="dangerous",
 +            return SafetyResult(blocked=True, safety_level="command_block",
-@@ -86,1 +86,1 @@   # ★新 动作判定取严(属性读取)
+@@ -88,1 +88,1 @@    # ★属性读取 动作取严
 -            if not (result.blocked or result.requires_confirmation):
 +            if not (result.blocked or result.needs_confirm):
-@@ -99,1 +99,1 @@   # 构造
+@@ -101,1 +101,1 @@  # 构造
 -            return SafetyResult(blocked=True, severity="dangerous",
 +            return SafetyResult(blocked=True, safety_level="command_block",
-@@ -127,1 +127,1 @@  # 构造: command 类型非法
+@@ -129,1 +129,1 @@  # 构造 command 类型非法
 -            return SafetyResult(blocked=True, severity="dangerous",
 +            return SafetyResult(blocked=True, safety_level="command_block",
-@@ -137,1 +137,1 @@  # 构造: cwd 含元字符
+@@ -139,1 +139,1 @@  # 构造 cwd 含元字符
 -            return SafetyResult(blocked=True, severity="dangerous",
 +            return SafetyResult(blocked=True, safety_level="command_block",
-@@ -140,1 +140,1 @@  # ★新 动作判定取严(属性读取)
+@@ -142,1 +142,1 @@  # ★属性读取 动作取严
 -            if result.blocked or result.requires_confirmation:
 +            if result.blocked or result.needs_confirm:
-@@ -151,1 +151,1 @@  # 构造: 高危删除无法解析目标
+@@ -154,1 +154,1 @@  # 构造 高危删除无法解析目标
 -        return SafetyResult(blocked=True, severity="dangerous",
 +        return SafetyResult(blocked=True, safety_level="command_block",
 ```
 
-> ★ 3 处属性读取（`:72`/`:86`/`:140`）v1.6 才补入。**本文件是本方案改动最密集的文件（9 处）**，落码时逐条对照，切勿按旧行号盲改。
+> ★ **本文件是本方案改动最密集的文件（9 处）**，且历史上被重构多次，行号务必落码时**现场复核**，勿照抄本文档数字。
 
 ### 6.11 `app/safety/shell_danger_command.py`
 
@@ -946,9 +973,9 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 | 4 | `dual_path_check.py` | **153** | `if result.blocked or result.requires_confirmation:` | move/其它动作 |
 | 5 | `path_tool_safety_checker.py` | **195** | `known_risk.sandbox_required = (known_risk.severity == "risk")` | 授权请求（**另需改 severity，见本文档 §六.14**） |
 | 6 | `path_tool_safety_checker.py` | **279** | `if risk.blocked or risk.requires_confirmation:` | `_check_known_risks` 汇总判定 |
-| 7 | `shell_path_check.py` | **72** | `if perm.requires_confirmation:` | cwd 写线 |
-| 8 | `shell_path_check.py` | **86** | `if not (result.blocked or result.requires_confirmation):` | 动作判定取严 |
-| 9 | `shell_path_check.py` | **140** | `if result.blocked or result.requires_confirmation:` | 动作判定取严 |
+| 7 | `shell_path_check.py` | **74** | `if perm.requires_confirmation:` | cwd 写线 |
+| 8 | `shell_path_check.py` | **88** | `if not (result.blocked or result.requires_confirmation):` | 动作判定取严 |
+| 9 | `shell_path_check.py` | **142** | `if result.blocked or result.requires_confirmation:` | 动作判定取严 |
 | 10 | `safety_gate.py` | **197** | `_readonly = (safety_result.requires_confirmation` | 只读短路 |
 | 11 | `safety_gate.py` | **200** | `if safety_result.requires_confirmation and not _readonly:` | 确认入口 |
 | 12 | `tool_facade.py` / `execute_shell_command.py` | **171** / **1135** | `if safety.requires_confirmation ...` | API 直调 / shell 执行 |
@@ -998,14 +1025,24 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 |------|------|
 | `dual_path_check.py` | 122, 137, 149, 153 |
 | `path_tool_safety_checker.py` | 195(同时改 severity), 279 |
-| `shell_path_check.py` | 72, 86, 140 |
+| `shell_path_check.py` | 74, 88, 142 |
 | `safety_gate.py` | 197, 200 |
 | `tool_facade.py` | 171 |
 | `execute_shell_command.py` | 1135 |
 
 **② 构造 kwarg 15 处**：分布 `shell_path_check`(6) / `delete_path_check`(7) / `write_path_check`(4) / `read_path_check`(2) / `dual_path_check`(2) / `shell_command_risk`(1) / `shell_danger_command`(1) / `path_legality_router`(1) / `path_tool_safety_checker`(7) 等，明细见 §六 各节 diff。
 
-**★ 该字段纯后端内部**：不进 paused 帧、不落 DB、不出前端 → **对外契约零影响**。
+★★ **该字段并非「纯后端内部」—— v1.7 结论已作废（v1.8 关联审查推翻）**：
+pp/api/v1/tool_routes.py:23 
+rom dataclasses import asdict、:64 safety=asdict(_sf)，
+说明 **SafetyResult 会被 sdict() 整体转 dict，作为 /tool/execute 的 API 响应字段 safety 返回**。
+故改名 
+equires_confirmation → 
+eeds_confirm **确属对外 API 契约变更**。
+- 本项目**前端零消费**（实测 
+rontend/src 全量 grep 无命中），前端无感；
+- 但**第三方调用方若读 safety.requires_confirmation 将失效**。
+- 按铁规「禁止 backward」，**不做旧名兼容**，但必须在发布说明中记明该契约变更。
 **增量成本≈0**：② 类所在文件本就需重写 `SafetyResult` 构造行，改 kwarg 名不增加 diff 体积。
 ⚠️ `path_tool_safety_checker.py:230` 已有**局部变量** `needs_confirm`，改名后同行成 `SafetyResult(needs_confirm=needs_confirm, ...)` —— 合法不冲突（kwarg 名 vs 变量名），但可读性下降，建议局部变量保持 `needs_confirm` 不动即可。
 
@@ -1124,7 +1161,4 @@ Get-ChildItem app -Recurse -Filter *.py | Select-String 'requires_confirmation\s
 | §1.6 第5步 | 措辞补齐 | §六.6 | ✅ 采纳 |
 | §1.7 | 危险等级等价关系（重复编码） | §四.2 | ✅ 采纳 |
 | §1.7 | 「自证循环」判断 | §五.4 实测复核 `:231-235` **成立** | ✅ 采纳 |
-
----
-
-**版面签名**：本文由小欧于 2026-10-18 12:48:38 修订至 v1.5（trust_impact 改真影响面 + `needs_confirm` 缩短命名）。
+**版面签名**：本文由小欧于 2026-10-18 13:45:00 修订至 **v1.9（按令删除第十二章）**。
