@@ -20,6 +20,10 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
 2026-10-18 - 小欧 - 词法增强: 换行作语句分隔(prepare 保 \n + _STMT_SEPS 补 \n); 盘符相对 `C:xxx`
   按盘根解析不再并入 cwd; 裸路径支持 `\\?\` 前缀、反斜杠/正斜杠 UNC、裸根 `C:\`、含逗号文件名;
   版本号/纯数字点串不再当相对路径。
+2026-10-19 - 小欧 - 撤销 UNC 抽取(老陈裁定: 网络类不纳入覆盖, 维持 2026-10-14 口径):
+  _SHELL_ABS_WIN_PATH_RES 删去反斜杠/正斜杠 UNC 两条正则, 裸路径只保留盘符路径(含 \\?\ 前缀);
+  \\server\share 不再被抽为受控路径。注: shell_sandbox_tables.SHELL_OUTSIDE_TARGET_RE 的 UNC 分支
+  属沙箱"越界写扫描"口径(判路径是否落在沙箱外), 与"权限覆盖"关注点不同, 未随本改。
 """
 import os
 import re
@@ -200,10 +204,8 @@ _SHELL_ABS_WIN_PATH_RES = [
     # 裸盘符路径(引号外) — 2026-10-18 小欧: 允许空尾(裸根 `C:\`); 允许 `\\?\` 扩展长度前缀;
     #   逗号是 Windows 合法文件名字符, 不再排除。
     re.compile(r"(?:[\\][\\]\?[\\])?[a-zA-Z]:[\\/][^\s\"'<>|;)&]*"),
-    # 反斜杠 UNC: \\srv\share\...
-    re.compile(r"\\\\[^\\\s\"'<>|;,)&]+\\[^\s\"'<>|;,)&]*"),
-    # 正斜杠 UNC/绝对: //srv/share/...
-    re.compile(r"//[^/\s\"'<>|;,)&]+/[^\s\"'<>|;,)&]*"),
+    # 2026-10-19 小欧 - 撤销 UNC 抽取(网络类不纳入覆盖, 维持 2026-10-14 口径): 反斜杠/正斜杠
+    #   UNC 两条正则退场, \\server\share 不再被抽为受控路径; 裸路径只留盘符路径(含 \\?\ 前缀)。
 ]
 
 
@@ -214,6 +216,7 @@ def shell_extract_abs_win_paths(text: str) -> List[str]:
     否则同一段引号路径会被裸正则再截断成 `E:\my`(实测误拦已授权目录 `E:\my proj`,
     且 failed_path 报错路径)。裸路径不得跨空白, 否则 `C:\a C:\b` 会被吞成一个路径。
     去重保序。2026-10-18 小欧: 裸路径支持多模式(盘符含 `\\?\` 前缀 / 反斜杠 UNC / 正斜杠 UNC)。
+    2026-10-19 小欧: 撤销 UNC 抽取(网络类不纳入覆盖), 裸路径只留盘符路径。
     """
     quoted: List[str] = [m.strip("\"'")
                         for rx in _SHELL_ABS_WIN_PATH_RES[:3] for m in rx.findall(text)]
