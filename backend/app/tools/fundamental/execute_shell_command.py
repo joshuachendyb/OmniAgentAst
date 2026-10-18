@@ -241,7 +241,7 @@ from app.safety.shell_danger_command import check_shell_danger_command  # 2026-1
 from app.safety.shell_command_risk import check_shell_risk_command    # 2026-10-16 老陈裁定: 中风险层独立
 from app.tools.context import get_current_task_id  # A1下沉: ContextVar 迁至 tools/context, 消除对 app.services 越层 — 小欧 2026-08-12
 from app.tools.fundamental.shell_engine import PersistentShell, shell_pool, _replace_python3_safe
-from app.safety.shell_command_process import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-16 [36] 随只读白名单一并下沉
+from app.safety.shell_readonly import is_shell_readonly_whitelisted  # 只读判定单源 — 小欧 2026-10-04; 2026-10-18 SRP 拆分后改指 shell_readonly
 from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_fc_helper import _decode_bytes_safe
 from app.tools.validate.timeout_validator import validate_timeout
