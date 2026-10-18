@@ -16,6 +16,9 @@
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 # 2026-10-18 - 小欧 - safety_level 取值单源化(SafetyLevel): 无路径参数的调用形状问题硬拦归 BLOCK_PATH_INVALID(上一条标 tool_delete,
 #   把"参数形状不对"说成"删除"); 系统源外泄拦截归 PATH_FORBIDDEN。判定逻辑与返回结构零变更。
+# 2026-10-19 - 小欧 - 全参数取最严(修复 under-block, 与 shell_path_check._judge_actions 同款):
+#   原循环首个 needs_confirm 即返回, 会挡住其后系统目标写的 blocked(move 源越界 + 目标系统 → 硬拦降级为可授权)。
+#   改为 blocked 即返、needs_confirm 暂存(取先到者)判完参数, 无 blocked 时才回 needs_confirm。各线判定逻辑零改动。
 r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/extract/rename/generate_chart)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -57,7 +60,7 @@ r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/ex
 
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.safety.path_classify_category import classify_forbidden_path  # 2026-10-15 系统源外泄拦截用
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
@@ -102,7 +105,7 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         params: 归一化后的工具参数
 
     Returns:
-        SafetyResult: 首个命中即返回该参数的结果(blocked / needs_confirm);
+        SafetyResult: 全参数取最严 —— blocked 命中即返; 否则返回已暂存的 needs_confirm(取先到者);
                       全通过返 SafetyResult.pass_result()。原四元组返回已归一为单一契约。
     """
     param_map = DUAL_ACTION_PARAMS.get(tool_name)
@@ -114,6 +117,7 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             f"[dual_path_check] 工具 {tool_name} 声明为 dual 但 DUAL_ACTION_PARAMS 无声明, "
             f"按写线(fail-closed 最严档)处理; 请补声明表")
         hit = False
+        pending_confirm: Optional[SafetyResult] = None
         for key in ("path", "dest"):
             value = params.get(key)
             if value is None:
@@ -123,12 +127,15 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             hit = True
             real_path = resolve_path_param(tool_name, key, value, params)
             result = write_path_check.write_permission(real_path)
-            if result.blocked or result.needs_confirm:
+            if result.blocked:
                 return result
+            if result.needs_confirm and pending_confirm is None:
+                pending_confirm = result
         if not hit:
             return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_PATH_INVALID,
                                 message=f"工具 {tool_name} 声明为 dual 但调用不带任何路径参数")
-        return SafetyResult.pass_result()
+        return pending_confirm if pending_confirm is not None else SafetyResult.pass_result()
+    pending_confirm: Optional[SafetyResult] = None
     for key, action in param_map.items():
         value = params.get(key)
         if value is None:
@@ -138,8 +145,10 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         real_path = resolve_path_param(tool_name, key, value, params)
         if action == "read":
             result = read_path_check.read_permission(real_path)
-            if result.blocked or result.needs_confirm:
+            if result.blocked:
                 return result
+            if result.needs_confirm and pending_confirm is None:
+                pending_confirm = result
             # 系统源外泄拦截: 读线放行系统目录, 但搬运类工具不得以系统目录为数据源
             cat, msg = classify_forbidden_path(real_path, "write")
             if cat == "system":
@@ -148,13 +157,19 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             # 2026-10-17 小欧 - 删除权限判定全部下沉到 delete_permission(本层纯调用, 不重判)。
             #   裁定: 补 recursive(目录=递归→R6/R4, 文件=非递归→R5/R3); move 删源 confirm **返回弹窗**
             #   (move=删源→写目标, 删源不可逆, 与单 delete 工具对齐; copy 源走读线故不涉及本分支)。
+            # 2026-10-19 小欧 - needs_confirm 暂存待终判(不再即时返回): 否则"删源越界需授权"会挡住
+            #   其后系统目标写的 blocked, 硬拦被降级为可授权(under-block)。全参数取最严: blocked > needs_confirm。
             _perm = delete_path_check.delete_permission(
                 real_path, {"recursive": os.path.isdir(real_path)})
-            if _perm.blocked or _perm.needs_confirm:
+            if _perm.blocked:
                 return _perm
+            if _perm.needs_confirm and pending_confirm is None:
+                pending_confirm = _perm
         else:  # write, 未知档位 fail-closed 按写线(最严)
             result = write_path_check.write_permission(real_path)
-            if result.blocked or result.needs_confirm:
+            if result.blocked:
                 return result
+            if result.needs_confirm and pending_confirm is None:
+                pending_confirm = result
 
-    return SafetyResult.pass_result()
+    return pending_confirm if pending_confirm is not None else SafetyResult.pass_result()

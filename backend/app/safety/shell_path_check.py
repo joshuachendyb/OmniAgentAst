@@ -28,6 +28,10 @@
 #   dual_path_check 早有同口径拦截 —— 两通道判定必须一致, 否则同一动作"工具拦、shell 不拦"。
 #   实现: 读动作经 classify_forbidden_path(path, "write") 判, category=="system" 即硬拦,
 #   归 SafetyLevel.PATH_FORBIDDEN。判定单源仍在本线三线, 本层只补这一处跨线检查。
+# 2026-10-19 - 小欧 - 全动作取最严(修复 under-block): 原 _judge_actions 删线首命中 needs_confirm 即返回,
+#   会挡住其后"系统目标写"的 blocked —— mv/ren 源越界 + 目标系统 时从硬拦降级为可授权弹窗。
+#   改为 blocked(含 malformed)即时返回、needs_confirm 暂存(删线优先)判完全部动作, 无 blocked 时才回 needs_confirm。
+#   删/写/读三段的判定条件与分类零改动, 仅改"何时返回"。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
@@ -58,12 +62,16 @@ def _malformed(path: str) -> bool:
 
 
 def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyResult]:
-    """按动作清单逐条判定, 首个违规即回 SafetyResult; 全过返回 None — 小欧 2026-10-18
+    """按动作清单逐条判定, 全动作取最严后回 SafetyResult; 全过返回 None — 小欧 2026-10-18
+       (2026-10-19 全动作取最严整改)
 
-    顺序即优先级: 删线优先(抹除不可授权 → 更严) → 写线 → 读线。
-通道 B 语义(无弹窗): delete 的 blocked 即拒; write 的 blocked/needs_confirm 即拒;
-read 仅非法输入 blocked。needs_confirm(删线)当通过。
+    最严档序: blocked > needs_confirm > pass。
+    blocked 与 malformed(BLOCK_COMMAND) 属最高档, 命中即返;
+    needs_confirm 只暂存(取先到者, 删线优先), 继续判完其余动作 ——
+    否则"删源越界需授权"会挡住其后"系统目标写"的 blocked, 硬拦被降级为可授权(under-block)。
+    通道 B 语义(无弹窗): blocked 即拒; needs_confirm 交上层确认层。
     """
+    pending_confirm: Optional[SafetyResult] = None
     # 删线优先: 抹除后果不可授权
     for action in actions:
         if action.kind != DELETE_KIND:
@@ -82,13 +90,15 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
             logger.warning(f"[shell_path_check] bash删源越权: path={action.path}, "
                            f"command={command.strip()[:200]}")
             return perm
-        # 2026-10-18 小欧: 原「需确认 → 当通过(无弹窗)」
-        #   会静默放行「需授权才能删」的路径; 改为与写线一致, 即拒。
+        # 2026-10-18 小欧: 原「需确认 → 当通过(无弹窗)」会静默放行「需授权才能删」的路径。
+        # 2026-10-19 小欧: needs_confirm 不再即时返回(否则挡住其后系统目标写的 blocked);
+        #   暂存待终判, 无任何 blocked 时才回它。
         if perm.needs_confirm:
-            logger.warning(f"[shell_path_check] bash删源需授权(拒): path={action.path}, "
+            logger.warning(f"[shell_path_check] bash删源需授权: path={action.path}, "
                            f"command={command.strip()[:200]}")
-            return perm
-        # 写线: 越权写(blocked)或需授权(needs_confirm)即拒
+            if pending_confirm is None:
+                pending_confirm = perm
+        # 写线: 越权写(blocked)即拒; 需授权(needs_confirm)暂存待终判
     for action in actions:
         if action.kind != WRITE_KIND:
             continue
@@ -98,12 +108,16 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
             return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         result = write_path_check.write_permission(action.path)
-        if not (result.blocked or result.needs_confirm):
-            continue
-        # 违规必须记日志: 下游 path_tool_safety_checker 只记 tool=bash, 没有命令原文
-        logger.warning(f"[shell_path_check] bash写目标越权: blocked={result.blocked}, "
-                       f"path={action.path}, command={command.strip()[:200]}")
-        return result
+        if result.blocked:
+            # 违规必须记日志: 下游 path_tool_safety_checker 只记 tool=bash, 没有命令原文
+            logger.warning(f"[shell_path_check] bash写目标越权: blocked=True, "
+                           f"path={action.path}, command={command.strip()[:200]}")
+            return result
+        if result.needs_confirm:
+            logger.warning(f"[shell_path_check] bash写目标需授权: path={action.path}, "
+                           f"command={command.strip()[:200]}")
+            if pending_confirm is None:
+                pending_confirm = result
     # 读线: 处处放行, 仅"空路径/穿越/异常"非法输入硬拦
     for action in actions:
         if action.kind != READ_KIND:
@@ -126,7 +140,7 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
             logger.warning(f"[shell_path_check] bash读系统源外泄(硬拦): path={action.path}, "
                            f"command={command.strip()[:200]}")
             return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN, message=msg)
-    return None
+    return pending_confirm
 
 
 def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
