@@ -40,6 +40,10 @@
 #   删 DELETE_RECURSIVE/DELETE_OUT_OF_SCOPE → high; 写 WRITE_PROTECTED/WRITE_OUT_OF_SCOPE → medium; 其余 → low。
 #   旧口径只看 auth_path 是否目录, "删一个文件"与"写一个文件"同为 low, 删的高危性没体现。SafetyLevel 是 StrEnum 与裸 str
 #   直接可比, 故删掉 str() 归一(多一层无意义转换)。确认分支顺序与放行条件零变更。
+# 2026-10-18 小欧 - 注释订正: 只读短路处补旁路对照, 说明两条"免确认"路径的差别。
+#   只读白名单=根本不需要问故不进网关; security.hitl.enabled=false 的旁路=要问但自动答
+#   (auto_confirm=True), 仍进网关走一遍再转沙箱。两者最终都到沙箱, 区别只在是否经过网关;
+#   原注释只写只读一条, 看代码无法推断旁路走哪条, 易误判为二者同路径。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -209,6 +213,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
 
             # 只读短路: shell 只读白名单(含新增五项)的 needs_confirm 不进网关,
             #   恒与真机放行并行(仍落 site3 走沙箱只读直通), 仅收敛"只读也弹窗"的过宽 — 小欧-2026-09-18
+            #   与 security.hitl.enabled=false 的旁路语义不同, 别混: 本条是"根本不需要问"故不进网关;
+            #   旁路是"要问但自动答"(auto_confirm=True), 仍进网关走一遍, 网关内自动放行后转沙箱。
+            #   两者最终都到沙箱, 区别只在是否经过网关。
             _readonly = (safety_result.needs_confirm
                          and is_shell_tool(_cn)
                          and is_shell_readonly_whitelisted(str(_cp.get("command") or "")))

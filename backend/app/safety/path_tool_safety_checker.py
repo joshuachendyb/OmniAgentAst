@@ -68,6 +68,20 @@
 #   返回 None 时 return False, 白名单外的一律只读命令被误判"无风险"而绕过确认; 改为 return tool_meta.needs_confirmation,
 #   由注册表的 needs_confirmation 表达"要不要问", 风险判定只管拦不拦(另走 blocked), 二者不再互相吞掉。
 #   同批: _is_hitl_bypass 的开关键名跟定为 security.hitl.enabled; 注释精简冗余标注, 技术说明原样保留。
+# 2026-10-18 - 小欧 - hitl.enabled 使用点收敛为单点: 原三处确认产地各调一次 _is_hitl_bypass()
+#   (中风险命令/路径授权请求/工具级确认), 同一策略三处各判一遍(DRY 违规, 将来新增确认产地必漏)。
+#   改函数入口读一次 _bypass, 三处确认产地直线赋值 auto_confirm=_bypass(中风险/路径为原地赋值,
+#   工具级并入统一 return), 删除 bypass 独立分支与其重复日志。硬拦(未注册/自杀/危险命令/blocked)
+#   一律在前段 return 不受影响。语义零变化: auto_confirm 仅在 needs_confirm 时置位, 只免"要不要问",
+#   不改 blocked/safety_level。
+# 2026-10-18 小欧 - 确认产地收尾单源化: 新增 _settle_confirm(), 三处确认产地(中风险命令/路径越权
+#   授权请求/工具级确认)统一调它定 auto_confirm 与 sandbox_required。此前三处各写一遍, 语义等价
+#   但形态三种(硬编码 True / 读 needs_confirm / 短路表达式), 后人新增加确认产地无参照可抄,
+#   易抄错"该走沙箱却没走"这一格。现一处定口径, 新增加产地只需调它。
+# 2026-10-18 小欧 - 确认路径日志不再上控制台: 两处"转确认"日志的 bypass 值由 log_and_print 改
+#   logger.info(硬拦仍留 log_and_print —— 那是用户该看见的终端事件; 确认路径属高频, 控制台刷屏)。
+# 2026-10-18 小欧 - 注释订正: check_before_execute 头注的开关表述改为覆盖三处确认产地
+#   (原文只说"普通 needs_confirmation", 会让人以为中风险命令不归开关管, 与实际不符)。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -208,14 +222,18 @@ class PathToolSafetyChecker:
         下游: blocked→拒; needs_confirm→交 [5] 确认层(信任豁免/HITL) → [6] 沙箱预检执行
         路径黑名单/白名单/路径穿越/写入大小保护/二元确认均在本段内
 
-        人工确认旁路开关: config.yaml security.hitl.enabled=false 时只免确认询问, 硬拦照旧
+        人工确认旁路开关: config.yaml security.hitl.enabled=false 时免全部确认询问
+        (三处确认产地: 中风险命令 / 路径越权授权请求 / 工具级确认), 硬拦照旧
         2026-08-04 小欧: 已知风险(路径越权/写入保护/代码注入)无条件检测不管开关, 危险即拒绝执行(blocked);
-            开关false仅bypass各"确认询问"(普通needs_confirmation), 开关true则正常询问
+            开关false仅免确认询问, 开关true则正常询问
         2026-08-17 小健 分层修正: 会话信任预查从本层移至调用方(action_handler, services层),
             本层不再依赖 app.services.chat.storage(消除 safety→services 违规);
             调用方查 trust 后传 skip_confirmation=True 豁免确认询问(危险防护仍生效) — 小健 2026-08-17
         安全总闸: 上游合法性初查/信任预查, 内调删线/路径层, 下游 HITL 确认 — 小欧-2026-10-14
         """
+        # 2026-10-18 小欧 - security.hitl.enabled 唯一使用点: 入口读一次, 三处确认产地直用 _bypass。
+        #   开关只免"要不要问", 硬拦(未注册/自杀/危险命令/blocked)一律在本函数前段 return, 不受影响。
+        _bypass = _is_hitl_bypass()
         # 2026-10-17 小欧 - 未注册判定已收口解析层, 本层不再复判(只放 PATH_TOOLS 工具到此)。
         # 2026-10-18 小欧 - 复判补回(fail-closed, 真回归修复): 上条"不再复判"判断有误 —— 解析层只管
         #   Agent 管线进来的 call, tool_facade/测试等直调方仍会带未注册工具名进来, tool_meta=None 一路
@@ -259,16 +277,8 @@ class PathToolSafetyChecker:
             from app.safety.shell_command_risk import check_shell_risk_command_all_shells
             _medium = check_shell_risk_command_all_shells(_cmd)
             if _medium is not None:
-                log_and_print(f"[PathToolSafetyChecker] 中风险命令转确认: tool={tool_name}, {_medium.message}")
-                _medium.sandbox_required = True   # 确认前仍走沙箱预检
-                # 2026-10-18 小欧 - 补旁路判定: 本分支 return 于确认分流之前, 原不查开关,
-                #   致 security.hitl.enabled=false 时中风险命令仍走真 HITL 弹窗(与路径线/工具级
-                #   确认的旁路口径不一致)。开关只免"要不要问", 危险层不受影响, 故此处只置
-                #   auto_confirm 而不改 blocked/safety_level, 沙箱预检照旧。
-                if _is_hitl_bypass():
-                    _medium.auto_confirm = True
-                    log_and_print(f"[PathToolSafetyChecker] bypass自动放行(中风险命令): tool={tool_name}")
-                return _medium
+                logger.info(f"[PathToolSafetyChecker] 中风险命令转确认: tool={tool_name}, bypass={_bypass}, {_medium.message}")
+                return self._settle_confirm(_medium, _bypass)
 
         # [4-2] 权限三线(按动作分派读/写/删; 唯一入口, delete 亦走此单点) — 小欧 2026-10-17
         #   无条件防线(开关无关): 越权/禁区/delete 判定即便开关 false 也拒绝。
@@ -277,34 +287,14 @@ class PathToolSafetyChecker:
             if known_risk.blocked:
                 log_and_print(f"[PathToolSafetyChecker] 权限硬拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
                 return known_risk
-            # needs_confirm=True: 授权请求, 交确认层(信任/HITL); bypass 直放
-            if _is_hitl_bypass():
-                known_risk.auto_confirm = True
-                log_and_print(f"[PathToolSafetyChecker] bypass自动放行(授权请求): tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
-            else:
-                log_and_print(f"[PathToolSafetyChecker] 授权请求转HITL确认: tool={tool_name}, auth_path={known_risk.auth_path}, {known_risk.message}")
-            # 2026-10-18 小欧: 沙箱标记改读 needs_confirm, 不再经已废的 severity 中转 ——
-            #   原式 (severity == "risk") 由 needs_confirm 推导出的 severity 再反推回自己, 是纯冗余回环;
-            #   此处 known_risk 已排除 blocked 分支(上方已直返), 恒为需确认的授权请求, 两式恒等, 行为不变。
-            known_risk.sandbox_required = known_risk.needs_confirm
-            return known_risk
+            # needs_confirm=True: 授权请求, 交确认层(信任/HITL)
+            logger.info(f"[PathToolSafetyChecker] 授权请求转确认: tool={tool_name}, auth_path={known_risk.auth_path}, bypass={_bypass}, {known_risk.message}")
+            return self._settle_confirm(known_risk, _bypass)
 
-        # 确认策略分流: 开关只影响"是否询问确认", 不影响危险防护
-        if _is_hitl_bypass():
-                _needs, _shell_msg = self._get_needs_confirmation(tool_meta, params or {})
-                if _needs:
-                    logger.info(f"[PathToolSafetyChecker] bypass自动放行(需确认工具,提示照出): tool={tool_name}")
-                    # 2026-09-18 小欧 - 去bypass写死文案: message保持空串不动,
-                    #   bypass仅由auto_confirm=True区分(与hitl_gateway去mode同批), 内容/分级由safety_gate按真实来源组装 — 小欧-2026-09-18
-                    return SafetyResult(needs_confirm=True, auto_confirm=True,
-                            blocked=False, message="",
-                            safety_level=confirm_level_for(tool_name, params),
-                            sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
-                logger.info(f"[PathToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
-                return SafetyResult(needs_confirm=False,
-                        blocked=False, message="安全开关已绕过")   # v1.25 M2-A: 无需确认的 bypass 不触发沙箱(与 G1 一致)
-
-        # 2026-10-17 小欧 - 会话信任豁免分支已删(信任预查移入调用方确认层), 本层不再收 skip_confirmation。
+        # 确认策略分流: hitl.enabled 只影响"是否询问确认", 不影响危险防护
+        # 2026-10-18 小欧: 去 bypass 独立分支 —— 原 bypass 分支(需确认→auto_confirm=True /
+        #   无需确认→message="安全开关已绕过")与常规分支各写一遍, 现统一为一遍, auto_confirm
+        #   由入口读到的 _bypass 直线给出(仅 needs_confirm 时置位)。
         needs_confirm, _shell_msg = self._get_needs_confirmation(tool_meta, params or {})
         # 仅需确认级触发沙箱; 免确认不进预检
         # 2026-10-18 小欧: 删 severity 中间变量(纯冗余回环), 沙箱标记直读 needs_confirm
@@ -312,10 +302,24 @@ class PathToolSafetyChecker:
         #   按文案关键词反查 —— 那条链会让"标签"取决于"文案怎么写", 改一个字就换一个分类。
         #   本出口是"整条调用级"确认(无路径动作); 命令内路径的读/写/删已由 shell_path_check
         #   派三线标签(WRITE_PROTECTED / DELETE_* 等), 二者不重复编码。
-        return SafetyResult(needs_confirm=needs_confirm,
-                blocked=False, message=_shell_msg or "",
-                safety_level=confirm_level_for(tool_name, params) if needs_confirm else "",
-                sandbox_required=needs_confirm)
+        return self._settle_confirm(
+                SafetyResult(needs_confirm=needs_confirm,
+                        blocked=False, message=_shell_msg or "",
+                        safety_level=confirm_level_for(tool_name, params) if needs_confirm else ""),
+                _bypass)
+
+    @staticmethod
+    def _settle_confirm(result: SafetyResult, bypass: bool) -> SafetyResult:
+        """确认产地统一收尾 —— 中风险命令 / 路径授权请求 / 工具级确认 三处共用同一口径
+
+        auto_confirm 只免"要不要问", 一律不改 blocked/safety_level/message;
+        沙箱预检口径单源: 需确认即需预检。
+        口径分三处各写一遍时后人新增加确认产地无参照可抄, 必然抄错 auto_confirm/sandbox_required
+        的组合(该走沙箱却没走 / 不该走却走了), 故收口于此。
+        """
+        result.auto_confirm = result.needs_confirm and bypass
+        result.sandbox_required = result.needs_confirm
+        return result
 
     @staticmethod
     def _check_shell_kill(cmd: str, pool_pids: Optional[set] = None) -> Optional["SafetyResult"]:

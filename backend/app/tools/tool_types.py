@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), 供 action_handler._resolve_target_field 优先采用; 留空则按schema属性自动推导(DRY/OCP)
+# 2026-08-18 - 小健 - ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), 供 action_handler._resolve_target_field 优先采用; 留空则按schema属性自动推导(DRY/OCP)
 # 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM); order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
 # 2026-10-15 - 小欧 - 跟随订正: action_kind 注释"dual"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
 # 2026-10-18 - 小欧 - SafetyResult 契约迁出: 生产者已全部落 app/safety/, 契约随生产者回迁系统层 app/safety/safety_result.py(本模块不再定义/转出); 禁 backward 双份契约。
@@ -86,11 +86,11 @@ class ToolMetadata:
     # 【2026-06-18 小健】工具依赖管理
     dependencies: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
 
-    # 【2026-08-18 小健 三堂会审】主参数(操作对象字段名): target展示自动推导的显式声明扩展点;
+    # 【2026-08-18 小健】主参数(操作对象字段名): target展示自动推导的显式声明扩展点;
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
     target_param: Optional[str] = None
 
-    # 【2026-10-15 小欧 — 阶段三 / 2026-10-16 老陈裁定四表分立】动作类型(读/写/删/双路径),
+    # 【2026-10-15 小欧 — 阶段三 / 2026-10-16 四表分立】动作类型(读/写/删/双路径),
     # 由 tool_constants 的 READ_PATH_TOOLS / WRITE_PATH_TOOLS / DELETE_PATH_TOOLS / DUAL_PATH_TOOLS
     # 四表在注册时按工具名赋值(registry._resolve_action_kind 依次查表)。取代原单张 PATH_ACTION_KINDS。
     #   "read"    只读, 路径检查走 read_path_check(禁区放行, 不弹授权)
