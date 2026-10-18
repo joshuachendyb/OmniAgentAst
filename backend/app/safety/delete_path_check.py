@@ -12,6 +12,7 @@
 # 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线删工具路径键恒为 path(L2 已归一), 工具级口直接取 params["path"]
 #   调 delete_permission; 未传 key → 放行, 空值/穿越/禁区由 delete_permission 自身判定。
 # 2026-10-18 - 小欧 - 随契约调整同步: 七处结果补 safety_level 问题来源分类 —— 工作区边界判定与 R3~R6 四档归 tool_delete, 删除硬底线(系统目录/磁盘根/代码目录/允许根本身与上级)与 validate_delete 禁区归 forbidden_zone, 分类由本线直给而非上层反查文案; 原 severity 七处取值分别与 blocked/needs_confirm 等价、属重复编码, 一并删; requires_confirmation 随字段改名四处。R1~R6 判定分支与放行口径零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -79,7 +80,7 @@ from app.safety.path_classify_category import (
 )
 from app.safety.temp_auth import is_temp_authorized
 from app.session_workspace import session_workspace_paths
-from app.tools.tool_types import SafetyResult
+from app.safety.safety_result import SafetyResult
 from app.utils.path_utils import get_allowed_roots
 from app.logger import logger
 
@@ -150,13 +151,25 @@ def check_delete_risk(params: dict) -> SafetyResult:
     inside_proj = any(p == root or root in p.parents for root in allowed_roots)
 
     # --- R6 全部允许根外递归 → 拒 ---
+    # 2026-10-18 小欧 文案订正: ①原文案只说"工作区外"——系统无"工作区"这一级分类,
+    #   真实口径是允许根集(项目根 + 授权目录 + 会话工作区), 沿用本模块既有措辞"允许的操作范围";
+    #   ②R6 只拦【递归】删, 必须点明"递归", 否则会被读成任何范围外删除都禁(而 R5 是放行去确认)。
     if (not inside_proj) and recursive:
-        return SafetyResult(blocked=True, message=f"禁止删除工作区外目录: {path}", safety_level="tool_delete")
+        return SafetyResult(blocked=True,
+                            message=f"禁止递归删除允许的操作范围之外的目录: {path}",
+                            safety_level="tool_delete")
 
-    # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 ---
-    if (inside_proj and recursive) or (not inside_proj):
+    # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 / R3 允许根内普通 → 放行 ---
+    # 2026-10-18 小欧 文案分档: R4/R5 原合并为"删除需确认", 未说明原因与授权代价, 用户无从判断;
+    #   二者成因不同(根内递归=范围不可撤销 / 根外=越界), 措辞必须分开。
+    #   注意 R4 必须带 recursive 条件: 根内单文件删属 R3 免确认, 不可一并拦下。
+    if inside_proj and recursive:
         return SafetyResult(needs_confirm=True, blocked=False,
-                            message=f"删除需确认: {path}", safety_level="tool_delete")
+                            message=f"递归删除目录，删除范围不可撤销，需确认: {path}", safety_level="tool_delete")
+    if not inside_proj:
+        return SafetyResult(needs_confirm=True, blocked=False,
+                            message=f"该路径不在允许的操作范围内，删除需申请临时授权（仅本任务有效）: {path}",
+                            safety_level="tool_delete")
 
     # --- R3 允许根内普通 → 放行(免确认), 恒非None ---
     return SafetyResult(blocked=False, needs_confirm=False,

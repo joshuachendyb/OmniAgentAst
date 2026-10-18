@@ -18,6 +18,7 @@
 # 2026-10-18 - 小欧 - 删线 requires_confirmation 原按 10-17 裁定「当通过」会静默放行需授权删除, 改为与写线一致即拒。
 # 2026-10-18 - 小欧 - 归一保留换行(换行即语句边界), 不再压成空格致两命令合并漏判。
 # 2026-10-18 - 小欧 - 随契约调整同步: 三处三线结果的"是否需确认"判读改 needs_confirm; 六处自建结果补 safety_level —— 删源路径非法归 tool_delete, 读/写路径非法与命令类型非法、工作目录非法、高危删除解析不出目标归 command_block。分类按动作语义直给, 原 severity="dangerous" 六处均被 blocked=True 完全覆盖、属纯冗余编码。判定逻辑与返回结构零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
@@ -34,7 +35,7 @@ from app.safety.shell_parse import parse_shell_action
 from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.parse_delete import shell_has_destructive_delete
 from app.logger import logger
-from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 本通道返回类型
+from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
 
 # shell 元字符: 出现即视为畸形路径, 通道 B fail-closed 硬拦(> < | 与换行 \r \n)
 #   2026-10-18 小欧 订正: 注释原误列 "/"(正斜杠是合法路径分隔, 拦它会误伤全部正斜杠路径), 改注释不改代码。
@@ -60,7 +61,10 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, safety_level="tool_delete",
+            # 2026-10-18 小欧 分类归一: 路径含 shell 元字符属【命令层输入非法】, 与动作线无关,
+            #   故删/写/读三线一律 command_block —— 同一句文案不得配三种分类, 否则前端标签自相矛盾。
+            #   特别注: 不可标 path_auth(会挂"临时授权仅本任务有效"说明), 此处是硬拦、无授权可给。
+            return SafetyResult(blocked=True, safety_level="command_block",
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         recursive = bool(action.flags.get("recursive"))
         perm = delete_path_check.delete_permission(action.path, {"recursive": recursive})
@@ -97,7 +101,7 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, safety_level="path_auth",
+            return SafetyResult(blocked=True, safety_level="command_block",
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         result = read_path_check.read_permission(action.path)
         if result.blocked:

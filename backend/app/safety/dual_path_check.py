@@ -13,6 +13,7 @@
 # 2026-10-18 - 小欧 - 参数归一前置 + 常量清理: 删 CONTENT_PARAM_KEYS 依赖, 内容守卫改类型判断(非 str 非 None 跳过);
 #   fail-closed 分支不再扫 PATH_PARAM_KEYS(11 键), 只认 path/dest(dual 工具的两个路径键)。参数名已在 L2 归一。
 # 2026-10-18 - 小欧 - 随契约调整同步: 四处三线结果的"是否需确认"判读改 needs_confirm; 两处自建结果补 safety_level —— 未带任何路径参数属调用形状问题、归 tool_delete, 系统源外泄拦截归 forbidden_zone, 分类由本层直给而非上层反查文案。判定逻辑与返回结构零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/extract/rename/generate_chart)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -57,7 +58,7 @@ from pathlib import Path
 from typing import Any, Dict
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.safety.path_classify_category import classify_forbidden_path  # 2026-10-15 系统源外泄拦截用
-from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 本通道返回类型
+from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
 from app.tools.tool_constants import DUAL_ACTION_PARAMS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 删 CONTENT_PARAM_KEYS(改类型判断)
 
 

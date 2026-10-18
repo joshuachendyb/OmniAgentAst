@@ -8,6 +8,7 @@
 # 2026-10-17 - 小欧 - 路径检查口正名(S8): validate_tool_path→check_tool_path_permission、validate_dual_path→check_dual_permission、validate_shell→check_shell_permission; import 与 __all__ 同步, 旧名退场(禁留转发层)。
 # 2026-10-17 - 小欧 - 补导出三线封装口 check_read/write/delete_permission(此前仅导出三线原始 validate_*, 与 check_dual/shell_permission 契约不对称)。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 表体上移 tool_constants, 此处删其 import 与 __all__(无外部消费方)。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: 本包新增 safety_result 模块并转出, 供各线/上层统一从 app.safety 取用。
 """Safety 模块 — 安全检查 + 文件操作安全
 
 小欧 2026-07-10 拍平 file_safety/ 目录到 safety/
@@ -67,6 +68,7 @@ from app.safety.dual_path_check import (
 #   故 `from app.safety import *` 从来拿不到它; 实测全仓 3 处消费方一律走
 #   `dual_path_check.resolve_path_param` 模块限定调用, 无一处用顶层路径 —— 纯死导入, 删。
 from app.safety.shell_path_check import check_shell_permission
+from app.safety.safety_result import SafetyResult
 from app.db.models.operation_models import OperationType, OperationStatus
 
 __all__ = [
@@ -88,4 +90,5 @@ __all__ = [
     "get_default_allowed_paths", "get_system_drive",
     "check_whitelist", "resolve_allowed_paths",
     "check_dual_permission", "check_shell_permission",
+    "SafetyResult",  # 2026-10-18 小欧 - 安全检查结果契约(安全层单源)
 ]

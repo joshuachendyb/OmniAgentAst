@@ -53,6 +53,7 @@
 # 2026-10-17 - 小欧 - _medium 冗余条件: `and _medium.requires_confirmation` 删(契约: check_shell_risk_command_all_shells 只返 requires_confirmation=True 或 None)。
 # 2026-10-18 - 小欧 - 总闸随契约调整同步: ①沙箱标记改读 needs_confirm, 删 severity 中间变量 —— 原式由 needs_confirm 推导 severity 再反推 sandbox_required 是纯冗余回环, 且 severity 字段已废; 到达此处者已排除 blocked(恒为需确认的授权请求), 两式恒等行为不变 ②五处构造点补 safety_level 问题来源分类(未注册/工具级确认/自杀拦截), 使分类由决策点直给而非上层反查文本 ③check_fn 返回的 severity 属外部 dict 契约、不再灌入本层结果(blocked=True 已表达最高拦截级别), 该 dict 键保持不动 ④两处属性读取随字段改名同步。
 # 2026-10-18 - 小欧 - 补 check_fn 两处分类(会审补漏): check_fn 拦截与 check_fn 异常属工具自定义安全检查不通过, 与"高风险命令拦截"同类, 补 safety_level="command_block"(原依赖调用方按文案关键词兜底, 现由决策点直给)。另: 工具元数据确认策略通用出口(主 return)刻意不置分类 —— 该出口同时服务 shell/create_task/delete_task/execute_sql 等语义各异的工具, 笼统置 tool_execute 会盖掉调用方按工具名的细分(bash→shellparam、create_task 等写类→tool_write、delete_task→tool_delete)造成退化, 故留空交调用方回填。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -88,7 +89,7 @@ from app.config import get_config
 from app.tools.registry import tool_registry
 from app.safety.path_legality_router import check_tool_path_permission as _check_tool_path_permission  # 2026-10-17 小欧 - C5 正名(原 validate_tool_path as _validate_tool_path)
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 老陈裁定: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
-from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 契约迁 tool_types
+from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 

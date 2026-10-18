@@ -32,12 +32,13 @@
 # 2026-10-17 - 小欧 - 拒绝回传修复: _denied_out 回传由「切片替换」改「extend 追加」, 否则调用方 pre-seed 的认领拒绝项(_denied_pre)被抹掉, 未注册 call 无 tool 反馈 → LLM 历史孤儿 tool_call。
 # 2026-10-18 - 小欧 - 归一化前置: 循环内 _cn 改取 call["_normal_name"](解析层已归一), 参数亦为已归一; 本层不再重复 normalize_params。
 # 2026-10-18 - 小欧 - 随契约调整同步(三处): ①只读短路与确认入口两处判读改 needs_confirm ②safety_level 改为"字段优先、文本兜底" —— 各判定分支已直给分类, 本层优先直读, 仅在为空时退回关键词分类; 关键词分类函数保留不删, 因工具元数据确认策略触发的确认(execute_sql/create_task 等)不经路径安全检查、本就没有文案可依据 ③新增 _resolve_trust_impact: 按 temp_auth 实际生效的 recursive 给出授权影响面 high/low, 取代原透传的严重度; 与"是否需确认"正交、互不推导。确认分支顺序与放行条件零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(安全层单源), 消费逻辑零改动。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
 """
 from typing import List, Dict, Optional
-from app.tools.tool_types import SafetyResult
+from app.safety.safety_result import SafetyResult
 
 from app.logger import logger
 from app.services.agent.steps import MetaStep
@@ -100,11 +101,33 @@ def _resolve_trust_impact(auth_path) -> str:
     真值源取 temp_auth 实际生效的 recursive(该模块已把"有后缀即文件、只授权精确路径"
     的规则上提为共用函数), 此处只消费不再自判有无后缀 —— 两处各判必然漂移:
     授权按目录给了整棵子树、界面却按单文件显示"low", 会误导用户。
+
+    2026-10-18 小欧 复核: 本函数只服务于"已放行到 HITL 的授权请求", blocked 项永不进 HITL
+    (实测 blocked 与 needs_confirm 无并存), 故只有 high/low 两值, 不引入第三值。
     """
     if not auth_path:
         return "low"
     from app.safety.temp_auth import resolve_grant_recursive   # 延迟导入防环
     return "high" if resolve_grant_recursive(auth_path) else "low"
+
+
+def _confirm_payload(safety_result, tool_name: str, group_size: int):
+    """组装确认弹窗所需的原因句 / 分类 / 授权影响面 — 小欧 2026-10-18
+
+    三者同源于同一个 SafetyResult, 放一起取避免编排层重复拆解。
+
+    safety_level: 产地已归位到各判定分支(直给), 但关键词兜底**保留不删** ——
+      execute_sql / create_task 等由工具元数据确认策略触发的确认不经路径安全检查、
+      本就没有文案可依据, 删兜底则这些场景分类恒空。
+    content: 恒载真实 message, bypass 亦然(2026-09-18 起 bypass 只由 auto_confirm 区分);
+      同批多调用时追加"另有 N 个同类调用"提示。
+    trust_impact: 授权影响面, 由 auth_path 实际生效的 recursive 判定。
+    """
+    msg = getattr(safety_result, "message", "")
+    level = getattr(safety_result, "safety_level", "") or _classify_safety_level(msg, tool_name)
+    content = (msg or "") + (f"（另有 {group_size - 1} 个同类调用同批一并裁决）"
+                             if group_size > 1 else "")
+    return msg, level, _resolve_trust_impact(getattr(safety_result, "auth_path", None)), content
 
 
 def _classify_safety_level(msg: str, tool_name: str) -> str:
@@ -269,23 +292,12 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                             if c.get("tool_name") == _cn
                             and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
-                    # safety_level 分类: 按 content 关键词匹配问题来源 — 小欧-2026-09-18
-                    # 2026-10-15 小欧 - SLAP 拆分: 分类链已搬至 _classify_safety_level(纯函数, 可独立测)
-                    _msg = getattr(safety_result, "message", "")
-                    # 2026-10-18 小欧 - 产地归位但**不删本函数**: 有 safety_level 直读(各判定分支已直给),
-                    #   空才按文本兜底。兜底不可删: execute_sql/create_task 等由工具元数据确认策略触发的确认
-                    #   不经路径安全检查、本就没有 message 可依据, 删之则这些场景分类恒空。
-                    _sl = getattr(safety_result, "safety_level", "") or _classify_safety_level(_msg, _cn)
-
-                    # 2026-09-18 小欧 - 去bypass写死content: content恒载真实_message,
-                    #   bypass仅由auto_confirm=True区分 — 小欧-2026-09-18
-                    _content = (_msg or "") + (f"（另有 {_group_size - 1} 个同类调用同批一并裁决）"
-                                               if _group_size > 1 else "")
+                    _msg, _sl, _trust_impact, _content = _confirm_payload(safety_result, _cn, _group_size)
 
                     _verdict = await hitl_confirm(agent, ConfirmSpec(
                         auto_confirm=_bypass, tool_name=_cn, params=_cp,
                         content=_content,
-                        trust_impact=_resolve_trust_impact(getattr(safety_result, "auth_path", None)),
+                        trust_impact=_trust_impact,
                         safety_level=_sl,
                         # 2026-10-14 小欧 - 透传 auth_path。
                         #   auth 轨(白名单外临时授权)此前在 HITL 链丢失 — 下游 hitl_gateway

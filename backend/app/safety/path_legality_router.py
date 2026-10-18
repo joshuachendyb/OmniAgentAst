@@ -19,6 +19,7 @@
 # 2026-10-18 - 小欧 - 补【路径名契约 ★】注释: 本安全模式只识别 path/dest 两个路径名; 要求 schema 路径参数名只能是
 #   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
 # 2026-10-18 - 小欧 - 随契约调整同步: 分派段 fail-closed 兜底结果补 safety_level="command_block"(检查过程异常归阻断, 与具体路径禁区区分), 分类由判定点直给; 原 severity="dangerous" 与 blocked=True 等价、属重复编码, 一并删; 返回契约 docstring 随字段改名同步。七步路由顺序与各线直调关系零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 """
 path_legality_router — [4-2] 路径层(读/写/删/dual 分派, 产出 SafetyResult)
 
@@ -57,7 +58,7 @@ from app.tools.tool_constants import (
     DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS,
 )
-from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 路径层返回 SafetyResult
+from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 """shell 危险命令判定 — 与文件系统路径无关的高危操作，命中即拒绝
 
 ★ 本文件**只管一件事**: 这条命令危不危险（与文件路径的读/写/删无关）。
@@ -35,7 +36,7 @@
 import re
 from typing import Optional
 
-from app.tools.tool_types import SafetyResult  # 2026-10-14 小欧 - 文档[33] 4.11-D: 契约迁 tool_types
+from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
 from app.logger import logger
 
 

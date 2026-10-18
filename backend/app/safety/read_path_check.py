@@ -13,6 +13,7 @@
 # 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线工具路径键恒为 path(L2 已归一), 工具级口改为直接取 params["path"] 调 read_permission;
 #   空值/穿越由 validate_read 自身拦截; 未传 key → 放行(与旧循环"真没传"口径一致)。
 # 2026-10-18 - 小欧 - 随契约调整同步: 两个结果补 safety_level="path_auth"(读线唯一来源分类, 非法路径输入亦属路径授权范畴), 分类由本线直给而非上层反查文案; 原 severity 两处(dangerous/safe)分别与 blocked/needs_confirm 等价、属重复编码, 一并删; requires_confirmation 随字段改名。读线"处处放行、仅空值/穿越/异常硬拦"的核心策略零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -60,7 +61,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
-from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_read_permission 封装口返回类型
+from app.safety.safety_result import SafetyResult   # 契约: 安全层单源
 
 READ_MODE = "read"
 

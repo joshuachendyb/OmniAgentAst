@@ -15,6 +15,7 @@
 # 2026-10-18 - 小欧 - 补【路径名契约】注释: 本安全模块只识别 path/dest 两个路径名; 要求 schema 路径参数名只能是
 #   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
 # 2026-10-18 - 小欧 - 随契约调整同步 + 措辞补齐: ①四个结果补 safety_level 问题来源分类(合法/受保护区/白名单外三条授权线归 path_auth、系统禁区归 forbidden_zone), 分类由本线直给而非上层反查文案; 原 severity 四处取值(safe/dangerous/risk/risk)分别与 blocked/needs_confirm 等价、属重复编码, 一并删 ②requires_confirmation 随字段改名, docstring 分流说明同步 ③受保护区写入补"临时"二字、白名单外补时效说明 —— 临时授权是任务级、任务结束自动失效, 用户须在弹窗里看到才能与会话级"信任此操作"区分。判定分支与放行条件零变更。
+# 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -62,7 +63,7 @@ from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.safety.temp_auth import is_temp_authorized
-from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_write_permission 封装口返回类型
+from app.safety.safety_result import SafetyResult   # 契约: 安全层单源
 
 WRITE_MODE = "write"
 
@@ -118,13 +119,16 @@ def write_permission(path: str) -> SafetyResult:
         return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
                             safety_level="forbidden_zone")
     if _category == "non_system":
-        # 2026-10-18 小欧 - 措辞补齐: 补"临时"二字(原句只说"需申请授权", 用户看不出这是任务级临时授权、与会话级信任是两套机制)
+        # 2026-10-18 小欧 措辞订正: ①原文"受保护区域"是系统没有的分类名, non_system 的真实口径是
+        #   **代码目录自身及其内部子级** + **允许根(项目根/授权目录/会话工作区)自身及其上级祖先**;
+        #   ②补"临时"二字(原句只说"需申请授权", 用户看不出这是任务级临时授权、与会话级信任是两套机制)。
         return SafetyResult(needs_confirm=True, blocked=False,
-                            message=f"该路径在受保护区域，写入需申请临时授权: {path}",
+                            message=f"该路径位于代码目录或允许根目录自身，写入需申请临时授权（仅本任务有效）: {path}",
                             safety_level="path_auth", auth_path=path)
-    # 2026-10-18 小欧 - 措辞补齐: 补时效(临时授权为任务级, 任务结束自动失效, 用户需在弹窗里看到)
+    # 2026-10-18 小欧 措辞订正: "超出允许范围"改为本模块既有口径"不在允许的操作范围内";
+    #   并补时效(临时授权为任务级, 任务结束自动失效, 用户需在弹窗里看到)。
     return SafetyResult(needs_confirm=True, blocked=False,
-                        message=f"该路径超出允许范围，需临时授权（仅本任务有效，任务结束自动失效）: {path}",
+                        message=f"该路径不在允许的操作范围内，写入需申请临时授权（仅本任务有效，任务结束自动失效）: {path}",
                         safety_level="path_auth", auth_path=path)
 
 

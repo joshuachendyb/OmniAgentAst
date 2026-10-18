@@ -2,9 +2,8 @@
 # 编辑历史:
 # 2026-08-18 - 小健 - 三堂会审: ToolMetadata 新增 target_param 字段(操作对象/主参数显式声明扩展点), 供 action_handler._resolve_target_field 优先采用; 留空则按schema属性自动推导(DRY/OCP)
 # 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM); order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
-# 2026-10-14 - 小欧 - SafetyResult 承接: 承接 SafetyResult dataclass(迁自 app/tools/security/safety_result.py, 该模块随整包删除); 禁 backward 双份契约
 # 2026-10-15 - 小欧 - 跟随订正: action_kind 注释"dual"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
-# 2026-10-18 - 小欧 - SafetyResult 契约调整三件事: ①删 severity —— 危险等级与 blocked/needs_confirm 完全重复编码, 且唯一实用消费者(沙箱标记)是由 needs_confirm 推导 severity 再反推的回环, 中间那层冗余; 严禁改成空值保留, 那样赋值点不报错而恒假会静默跳过沙箱预检(宁可崩溃暴露) ②requires_confirmation 缩短命名 needs_confirm(纯内部字段, 承接既有局部变量同名, 语义与可读性更贴) ③增 safety_level(问题来源分类, 默认空串=放行无需分类), 使分类由各判定分支直接置位, 不再由上层反查 message 文本反推(文本承重, 改措辞会改坏分类)。字段顺序保持 message 后紧邻分类信息。
+# 2026-10-18 - 小欧 - SafetyResult 契约迁出: 生产者已全部落 app/safety/, 契约随生产者回迁系统层 app/safety/safety_result.py(本模块不再定义/转出); 禁 backward 双份契约。
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -127,43 +126,4 @@ __all__ = [
     "CATEGORY_ORDER",
     "CATEGORY_NAMES",
     "ToolMetadata",
-    "SafetyResult",
 ]
-
-
-# ====================================================================
-# 三、安全检查结果契约（迁自 app/tools/security/safety_result.py）
-# ====================================================================
-# 2026-10-14 小欧 - SafetyResult 由 app/tools/security/safety_result.py 迁入。
-#   与 ToolCategory/ToolMetadata 同族(工具层数据契约单源); 原模块随 app/tools/security/ 整包删除。
-#   禁 backward 双份: 双份 dataclass 会让 isinstance 判定恒 False 且不报错。
-
-@dataclass
-class SafetyResult:
-    """安全检查结果 — 替代raw dict — 小欧 2026-06-25
-    # 修复: 删 is_safe 死字段(无人消费) — 小欧 2026-07-18
-    # ⑮2026-08-10: 新增 auth_path(白名单外临时授权路径, None=普通确认/无)
-
-    逐字复制自 app/tools/security/safety_result.py:20, 字段/默认值零改动 ——
-    下游均按 kwarg 构造, 丢一个字段即 TypeError。
-    """
-    blocked: bool = False
-    needs_confirm: bool = False
-    message: str = ""
-    safety_level: str = ""          # 问题来源分类: path_auth / shellparam / command_block /
-                                     #   tool_delete / tool_write / data_guard / unregistered /
-                                     #   forbidden_zone / tool_execute
-    auto_confirm: bool = False
-    auth_path: Optional[str] = None
-    # v1.25 M1: 沙箱预检触发标记 — 由 path_tool_safety_checker 四条置位路径点亮,
-    #   action_handler(M3) 仅对 sandbox_required=True 的工具调用 SandboxExecutor.pre_execute;
-    #   缺省 False 不改变既有安全流(非破坏性工具不进沙箱预检, 保性能)
-    sandbox_required: bool = False
-
-    @staticmethod
-    def pass_result() -> "SafetyResult":
-        """放行结果工厂(每次新建实例, 防共享单例被下游改写) — 小欧 2026-10-17(三线/通道统一放行)
-
-        供 path_legality_router / dual_path_check / shell_path_check 复用, 免三份拷贝与循环导入。
-        """
-        return SafetyResult(blocked=False, needs_confirm=False, message="")
