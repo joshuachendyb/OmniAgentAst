@@ -7,11 +7,13 @@
 #     FALLBACK_SYSTEM_DRIVE     模块级常量, 仅 get_system_drive 消费
 #   拆分理由: 这两件事是"环境事实查询"(磁盘/配置/工作区), 与"路径是否属禁区"是两种
 #   关注点; classify_forbidden_path 只因要拿系统盘符才与本模块相邻, 属依赖而非同职。
-#   本模块不含任何安全判定, 不读 security.hitl_enabled。
+#   本模块不含任何安全判定, 不读 security.hitl.enabled。
 # 2026-10-15 - 小欧 - 死代码删除(实测生产引用为 0):
 #   get_existing_drives / _get_project_root_safety 生产零消费, 按 YAGNI 删除;
 #   FALLBACK_SYSTEM_DRIVE 保留定义(仅 get_system_drive 内部消费), 仅移出 __all__。
 # 2026-10-15 - 小欧 - 改名 path_scope.py -> path_env.py: 内容是环境事实查询(盘符/临时目录/白名单), 与 scope 无关。
+# 2026-10-18 小欧 - 开关键名随设置项分组前缀跟定为 security.hitl.enabled(模块头"不读该开关"的表述同步),
+#   本模块不含安全判定, 取数逻辑零变更。同批清理注释中的 P0-x / P3-x 编号, 技术说明原样保留。
 """
 path_env — 路径可用范围: 系统盘符 + 白名单构建
 
@@ -63,7 +65,7 @@ def get_system_drive() -> str:
 
 
 def _system_temp_dir() -> Path:
-    """系统临时目录 — 小欧 2026-10-15 (P3-38)
+    """系统临时目录 — 小欧 2026-10-15
 
     原代码硬编码 /tmp 与 /var/tmp。实测 Windows 上 Path("/tmp") 解析为**当前盘符根**下的
     \\tmp(即 F:\\tmp), 有两个问题: 随启动盘符漂移; 该路径可预测, 任何人创建即自动
@@ -81,7 +83,7 @@ def get_default_allowed_paths() -> List[Path]:
     白名单=主目录+系统临时目录+项目根+授权目录+会话工作区。
     """
     paths = [Path.home(), _system_temp_dir()]
-    # 2026-10-15 小欧 - P0-6: 原裸调 get_allowed_roots(config 故障会抛), 异常冒泡致全盘判 system 硬拦。
+    # 2026-10-15 小欧 - 原裸调 get_allowed_roots(config 故障会抛), 异常冒泡致全盘判 system 硬拦。
     #   改为降级最小白名单: 收窄=更多路径需授权=更严, 既不放权也不瘫。
     try:
         paths.extend(get_allowed_roots(session_workspace_paths()))

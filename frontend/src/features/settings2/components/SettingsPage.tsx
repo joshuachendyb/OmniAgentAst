@@ -101,6 +101,11 @@
 // 编辑历史: 2026-10-11 00:55:20 小欧 - 危险确认弹框展示「具体改了什么」+「改完意味着什么」: 新增 DANGER_LABELS/DANGER_EFFECTS(取值口径与 SettingsGroup 一致: values[key] 脏键缓冲值, 不回落已落盘值) — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 01:24:25 小欧 - dangerHints 扁平数组改 dangerHintByChange(按 label 索引): 多条变更各自成组挂后果(汇总成块分不清对应关系); 本文件侧调用改造(旧文件头历史块随重构迁移, 详见 git) — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 06:31:51 小欧 - 后果说明两个方向都给: DANGER_EFFECTS 值改 {on, off}(原只挂"关闭"方向, 开启方向说明区空白致弹框塌陷); 另 import confirmDanger(新增二次确认入口) — 小欧-2026-10-11
+// 2026-10-18 小欧 - 危险键三表随 security 子命名空间跟改: security.hitl_enabled → security.hitl.enabled、
+//   security.confirmDangerousOps → security.system.confirm_dangerous_ops, DANGEROUS_KEYS/DANGER_LABELS/
+//   DANGER_EFFECTS 三处同步(只改键名字面, 判定与文案结构零变更)。
+//   触发原因: 键名与后端 registry 不一致时 dangerousDirty 恒 false = 改了高危开关不进二次确认, 属静默失效。
+// 2026-10-18 小欧 - 注释精简冗余标注, 技术说明原样保留。
 import React, { useState } from 'react';
 import {
   Button,
@@ -216,11 +221,12 @@ const SettingsPage: React.FC = () => {
   };
 
   // 修正(2026-09-21 小强)：危险判定拆分「保存本组/保存全部」——原全局判定致保存其它组误弹；
-  // 危险键=HTL人工开关/危险操作确认的变更（含 security.hitl_enabled 关闭场景，原仅认 confirmDangerousOps）
+  // 危险键=人工确认总开关/保存二次确认的变更（含关闭场景，原仅认 confirmDangerousOps）
   // （[设置页UI审计] 问题7/8）
-  // 2026-10-18 小欧 - 键名 security.enabled → security.hitl_enabled: 只决定是否弹窗请用户确认,
-  //   危险防护不受其影响。DANGEROUS_KEYS / DANGER_LABELS / DANGER_EFFECTS 三表同步跟改。
-  const DANGEROUS_KEYS = ['security.hitl_enabled', 'security.confirmDangerousOps'];
+  // 2026-10-18 小欧 - 键名按后端分组前缀跟改: security.hitl_enabled → security.hitl.enabled、
+  //   security.confirmDangerousOps → security.system.confirm_dangerous_ops。
+  //   三张表(DANGEROUS_KEYS/DANGER_LABELS/DANGER_EFFECTS)同步跟改。
+  const DANGEROUS_KEYS = ['security.hitl.enabled', 'security.system.confirm_dangerous_ops'];
   const dangerousGroup =
     state.activeTab === 'security' &&
     DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
@@ -231,14 +237,14 @@ const SettingsPage: React.FC = () => {
   // 也不知道关闭 HTL 的后果——确认弹框的全部意义就是让人看清即将生效的变更。
   // 取值口径与 SettingsGroup 一致：values[key] 为准（脏键的缓冲值，不回落到已落盘值）。
   const DANGER_LABELS: Record<string, string> = {
-    'security.hitl_enabled': 'HTL人工开关',
-    'security.confirmDangerousOps': '危险操作确认',
+    'security.hitl.enabled': '人工确认总开关',
+    'security.system.confirm_dangerous_ops': '保存设置时二次确认',
   };
 // 2026-10-11 01:20 小欧 - 后果说明两个方向都给（开与关各挂对应后果）。
 //   原实现只在"关闭"方向挂说明、"开启"方向留空 → 只改一项且是开启方向时，说明区整片空白，
 //   弹框下半部塌陷、左右失衡。改为按 `${key}:${方向}` 取，开与关各有对应后果。
 const DANGER_EFFECTS: Record<string, { on: string[]; off: string[] }> = {
-  'security.hitl_enabled': {
+  'security.hitl.enabled': {
     on: [
       '开启后：每次高危操作都会弹窗请你人工确认，不会自动放行',
       '（更安全，代价是每次操作都要点一次）',
@@ -403,7 +409,7 @@ const dangerHintByChange = Object.fromEntries(
       >
         <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
         {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（消 width:120×3）
-            + gap SM 紧挨，整组居中（北京老陈指示）；
+            + gap SM 紧挨，整组居中；
             添加参数 = 管 model_params，管理选项 = 管 param_options，重置 = 回默认值 */}
         <div style={{ display: 'flex', gap: Spacing.SM }}>
           <Button
@@ -415,7 +421,7 @@ const dangerHintByChange = Object.fromEntries(
           >
             添加模型参数
           </Button>
-          {/* 管理推理深度：仅当前模型有 param_options 时显示（2026-09-25 06:20:25 北京老陈指示
+          {/* 管理推理深度：仅当前模型有 param_options 时显示（2026-09-25 06:20:25 小欧
           「管理选项」→「管理推理深度」，语义直指 reasoning_effort 档位表，宽度沿用 120 三按钮等宽）*/}
           {Object.keys(state.model.paramOptions).length > 0 && (
             <Button
@@ -528,7 +534,7 @@ const dangerHintByChange = Object.fromEntries(
         ) && <DirtyDot />}
       </div>
       <div data-section="provider-config">
-        {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中，北京老陈指示） */}
+        {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中） */}
         <ProviderConfig
           key={state.model.selectedProvider}
           name={state.model.selectedProvider}

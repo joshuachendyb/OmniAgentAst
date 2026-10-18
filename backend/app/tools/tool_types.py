@@ -62,14 +62,6 @@ CATEGORY_ORDER: List[ToolCategory] = sorted(ToolCategory, key=lambda c: c.order)
 CATEGORY_NAMES: Dict[ToolCategory, str] = {cat: cat.name_cn for cat in ToolCategory}
 
 
-# ====================================================================
-# （删除Layer 2安全级别枚举 — 2026-06-16 小沈 5级冗余，改用二元安全+check_fn）
-# 参见设计文档: doc-6月发展/5级安全系统清理设计方案-20260616.md
-# ====================================================================
-
-
-
-
 
 # ====================================================================
 # 二、工具元数据
@@ -90,8 +82,7 @@ class ToolMetadata:
     # 【2026-06-16 小沈】Layer 2安全字段（替代5级枚举）
     needs_confirmation: bool = False
     action_confirmation: Optional[Dict[str, bool]] = None
-    check_fn: Optional[Callable] = None
-    
+
     # 【2026-06-18 小健】工具依赖管理
     dependencies: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
 

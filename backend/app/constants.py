@@ -26,7 +26,7 @@
   2026-07-14 小欧 加回HTTP_RATE_LIMIT=429并供error_classifier引用,消除裸魔法数429(代码变迁遗留,非功能退化)
   2026-07-14 小欧 集中LLM_*/FC_*/TOOL_CACHE_TTL(base_service.py)与MAX_PENDING_CONFIRMATIONS(hitl_confirmation.py)至constants.py(代码变迁遗留,非功能退化,同步改llm_stream/universal_agent/相关测试导入)
   2026-07-15 小欧 常量归一化治理: 删除11个零引用死常量(DEFAULT_*等), 新增系统级 PROJECT_CONTEXT_MAX_CHARS=10000; 现存数值型长度/上限/超时/阈值常量统一标注【使用对象】便于识别废弃
-  2026-07-15 老陈裁定+小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
+  2026-07-15 小欧: 删除 HTTP_RATE_LIMIT 常量(429 是 HTTP 状态码, 在 error_classifier 映射中以裸数字与其他状态码并列, 单独常量多余且 HTTP_ 前缀不准), error_classifier 改回裸 429, 功能零退化
   2026-07-16 小欧 新增 LLM_MAX_TOKENS=16384(系统级max_tokens默认值,防LLM无限长输出致长时间静默)+STREAM_TOTAL_TIMEOUT=500(base_service总时长硬超时,弥补httpx idle timeout在连续流式时不触发的缺陷)
   2026-07-17 小沈 FC重命名: LLM_RESPONSE_FALLBACK(原FC_FALLBACK_ENABLED)+LLM_RESPONSE_RETRIES(原FC_MAX_RETRIES)
   2026-07-22 小欧 MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 命名统一（值200000不变），注释同步更新
@@ -34,16 +34,19 @@
         日志result截断长度,防MemoryError); action_handler导入改为
         from app.constants 引用
    2026-08-14 小欧 改名名实相符: model_schemas.py → config_schemas.py(注释同步)
-    2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
+    2026-08-17 小健 常量归属迁移: 压缩/裁剪相关常量(MAX_CONTEXT_TOKENS/MAX_CONTEXT_RATIO/COMPACTION_BUFFER/CHARS_PER_TOKEN/TEMP_HISTORY_CHAR_LIMIT) 迁至 app/services/agent/compaction_constants.py(随用方集中到 agent 域), 本源删除, 引用方(start_step/message_builder/compaction 各模块)导入路径同步改
     2026-09-02 小欧 v1.5.13 新增 HITL_CONFIRM_LEAD=10 / BYPASS_AUTO_LEAD=2 两个计时提前量常量(会话信任修复方案5.7.3/5.7.4: 后端唯一计时权威, 前端倒计时=后端窗口−提前量, 消除前后端计时竞态)
     2026-09-03 小欧/北京老陈 新增 HITL_MIN_CONFIRM_TIMEOUT=3 前端倒计时最小值常量(改前三处max(5,bt-LEAD)硬编码5→常量3)
-    2026-09-08 北京老陈裁定+小欧 新增 HEARTBEAT_INTERVAL=25.0 SSE keep-alive 心跳周期常量(stream_orchestrator 心跳
+    2026-09-08 小欧 新增 HEARTBEAT_INTERVAL=25.0 SSE keep-alive 心跳周期常量(stream_orchestrator 心跳
         原硬编码 timeout=25.0 → 常量引用; 常量注释含与前端 IDLE_TIMEOUT=60000ms 的错开关系设计依据, 常量与前端改动联动)
 # 注: 本文件数值型长度/上限/超时/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
     2026-09-22 小欧 DEFAULT_CORS_ORIGINS 删除死配置 localhost:3000(全仓零引用, 早期 CRA 遗留) + 补注释说明端口关系(前端:5173 直连后端:8000 走 CORS, proxy 同源不走)
     2026-09-23 小欧 删除 LLM_STREAM_OPTIONS 死常量(消费方 base_service 改读 tuning.llm.stream_options.include_usage 开关组 dict, 全仓零引用, 功能零退化)
     2026-09-23 小欧 删除 MAX_CONSECUTIVE_CHUNKS 死常量(should_promote 死链清理：历史接口全仓零调用，chunk_buffer/initialize_run_state 引用同步删除)
-    2026-09-28 小欧 新增 INBOX_MAX=20 活跃任务注入 inbox 队列上限(设计文档[76] 6.8: 满则注入失败降级新建任务, 消息不丢) — 小欧-2026-09-28
+    2026-09-28 小欧 新增 INBOX_MAX=20 活跃任务注入 inbox 队列上限(满则注入失败降级新建任务, 消息不丢) — 小欧-2026-09-28
+    2026-10-18 小欧 - 开关键名随设置项分组前缀跟改: security.hitl_timeout → security.hitl.timeout、
+      security.hitl_enabled → security.hitl.enabled(与 config.yaml/registry/path_tool_safety_checker 同键);
+      HITL_TIMEOUT 取值与兜底逻辑零变更。同批精简注释冗余标注, 技术说明原样保留。
 """
 
 import re
@@ -131,12 +134,12 @@ MAX_CACHE_SIZE = 1000  # 【系统级】使用对象: 会话/上下文缓存最�
 
 TASK_TIMEOUT = timedelta(hours=1)  # 【系统级】使用对象: task_registry.cleanup_expired_tasks 过期任务(创建>1h)兜底清理, 防 running_tasks 内存注册表泄漏
 
-# 2026-09-28 小欧: 活跃任务注入 inbox 队列上限(设计文档[76] 6.8) — 防无界堆积致合并超 context 上限;
+# 2026-09-28 小欧: 活跃任务注入 inbox 队列上限 — 防无界堆积致合并超 context 上限;
 # 满则 inject_message_to_task 返回 False, 编排降级走正常新建任务(消息不丢)。
-# 【取值依据】20: 单任务一轮 ReAct 内用户连发超 20 条属异常刷屏, 降级新建比继续堆积更合理(5.6 决策 6)。
+# 【取值依据】20: 单任务一轮 ReAct 内用户连发超 20 条属异常刷屏, 降级新建比继续堆积更合理。
 INBOX_MAX = 20  # 【系统级】使用对象: task_registry 注入队列 maxsize
 
-# 2026-09-08 北京老陈裁定+小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
+# 2026-09-08 小欧: SSE keep-alive 心跳周期常量(stream_orchestrator 原硬编码 timeout=25.0 → 本常量引用)
 HEARTBEAT_INTERVAL = 25.0  # 【系统级】使用对象: stream_orchestrator.stream_reader 心跳周期(秒)
 #   【与前端数字的关系 — 设计依据】:
 #   ① 前端空闲判死: IDLE_TIMEOUT=60000ms(frontend/src/hooks/useSSE.ts), 即 60s 内未收到任何数据字节即判定连接死亡。
@@ -147,8 +150,8 @@ HEARTBEAT_INTERVAL = 25.0  # 【系统级】使用对象: stream_orchestrator.st
 #      保持"心跳周期 < 前端判死窗口"; 原 60s 心跳与 60s 判死同时到期零余量, 已废弃(见 stream_orchestrator 编辑历史 2026-09-08)。
 
 # HITL超时(秒) — H-1修复 2026-06-25 小欧
-# 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl_timeout, config.yaml优先): 此常量作兜底默认
-HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可被 config security.hitl_timeout 覆盖
+# 2026-09-03 小欧 - 真HITL确认超时已可配置化(security.hitl.timeout, config.yaml优先): 此常量作兜底默认
+HITL_TIMEOUT = 120  # 【系统级】使用对象: HITL 确认超时(秒), 可被 config security.hitl.timeout 覆盖
 HITL_CONFIRM_LEAD = 10  # v1.5.13(2026-09-02 小欧): 真HITL 前端倒计时比后端 HITL_TIMEOUT 提前的秒数(后端120→前端110)
 BYPASS_AUTO_LEAD = 2  # v1.5.13(2026-09-02 小欧): bypass 前端倒计时比后端 S1 提前的秒数(后端5→前端3)
 HITL_MIN_CONFIRM_TIMEOUT = 3  # 2026-09-03 小欧/北京老陈: 前端倒计时最小值(后端窗口-LEAD钳制下限, 改前硬编码5→现常量3)

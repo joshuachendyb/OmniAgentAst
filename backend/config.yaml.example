@@ -19,6 +19,14 @@
 #   2026-09-23 - 小欧 - 调优组剩余注释全量重写: llm 2键/trim 3键/compaction 4键/stream_task 3键/hitl 4键/content 3键 全部对齐 settings_registry notice 同口径「管什么+触发时机+后果+分工」 - 小欧-2026-09-23
 #   2026-09-23 - 小欧 - 调优组注释去开发术语: 删 SSE/HITL/bypass/CORS/Origin/chunk/FC/C4/TTL/信号量/request body/ConnectTimeout 等代码黑话，全部改纯用户语言，与 registry notice 同步 - 小欧-2026-09-23
 #   2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(新名更准确，原名与 tuning.llm.stream_* 易混且非 LLM body 流式)；块下 4 键路径/值/注释措辞不变，仅块名改 — 小欧-2026-09-24
+#   2026-10-18 小欧 - security 段按子命名空间重组:
+#     system.confirm_dangerous_ops            保存设置的二次确认(仅 UX, 与后端拦截无关)
+#     hitl.enabled                            是否走人工确认链路(危险防护不受其影响)
+#     hitl.auto_confirm_delay / .timeout      自动确认倒计时秒数 / 人工确认最长等待秒数
+#     hitl.shell_readonly_prefixes            只读免确认白名单(留空=用内置名单)
+#     trust.ttl_days                          会话信任天数
+#     原先 hitl_enabled / confirmDangerousOps / hitl_timeout 平铺写法作废, 读取端已全部改嵌套取值, 不保留旧键。
+#   2026-10-18 小欧 - 补 hitl.shell_readonly_prefixes: 原为代码内硬编码, 收紧须发版; 留空即回退内置名单。
 #
 # 严禁事项 — 小欧 2026-09-21
 #   禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -215,14 +223,19 @@ logging:
 
 # 安全配置
 # 2026-10-03 小欧: auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120)
-# 2026-10-18 小欧 - 键名 enabled → hitl_enabled: 该项只决定是否弹窗请用户确认(人工确认链路);
+# 2026-10-18 小欧 - 开关键名随子命名空间跟定: security.enabled → security.hitl.enabled。
+#   该项只决定是否弹窗请用户确认(人工确认链路);
 #   危险防护(磁盘根/项目根/系统目录删除硬底线、系统保护进程、危险命令)无条件生效, 不受本项影响。
 security:
-  hitl_enabled: true          # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)。默认 true: 缺键/缺配置一律按"开"处理
-  confirmDangerousOps: true   # 仅 UX 层: 保存设置时再多问一次(防误触), 与后端拦截无关
-  auto_confirm_delay: 10
-  hitl_timeout: 120
-  trust_ttl_days: 90          # 会话信任("信任此操作")的有效天数, 到期自动失效
+  system:
+    confirm_dangerous_ops: true      # 仅 UX 层: 保存设置时再多问一次(防误触), 与后端拦截无关
+  hitl:
+    enabled: true                     # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)
+    auto_confirm_delay: 10            # 自动确认弹窗倒计时(秒), 到时没人点就自动放行
+    timeout: 120                      # 人工确认弹窗最长等待(秒), 超时按弹窗设定处理方式收尾
+    shell_readonly_prefixes: ""    # 留空=用内置只读免确认名单; 填则覆盖(每行或逗号分隔)
+  trust:
+    ttl_days: 90          # 会话信任("信任此操作")的有效天数, 到期自动失效
   # shell_readonly_prefixes 刻意**不写进模板**: 键一旦存在(哪怕值为空), 设置页就会显示该原始值
   # 而非内置默认 → 用户看到空框, 反而"看不见"这份免确认清单。要改请在设置页「安全」组改,
   # 或手写该键(逗号/换行分隔一个前缀); 留空/缺键一律回退内置 30 条默认清单。

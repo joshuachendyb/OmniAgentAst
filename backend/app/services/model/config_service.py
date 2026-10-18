@@ -24,6 +24,13 @@
 #      NameError→500(已实跑复现)。核实引用前先看本文件。
 #   2. `FIELD_HANDLERS` 收敛后已无消费方，但章节设计要求保留该结构，故未删。
 #      是否进一步删除待定, 勿自行处置。
+# 2026-10-18 小欧 - DEFAULT_SECURITY 去第二真源: 原为模块级硬编码字面量, 与 settings_registry 的安全组 schema
+#   各自维护一份默认值, 任一侧漏改即出现"页面显示的默认值"与"落盘补出的默认值"不一致。
+#   改由 _default_security() 自 settings_registry.GROUPS["security"]["items"] 派生, 默认值随 schema 单一走。
+#   派生结果走 copy.deepcopy(): registry 是模块级可变单源, 直接返回同一 dict 会让调用方改默认值时反写 schema。
+#   security 读取端全部改嵌套取值(system.confirm_dangerous_ops / trust.ttl_days / hitl.enabled 等);
+#   confirmDangerousOps 旧扁平键此前已成死字段(读不到任何已写入的值), 本次随命名空间迁移一并取回。
+#   同批精简注释冗余标注, "别再删"的两个坑与技术说明原样保留。
 """
 config_service — 配置业务服务(services/model)
 
@@ -128,21 +135,29 @@ def update_config(config_update):
             raise HTTPException(status_code=500, detail="配置更新失败，请稍后重试")
 
 
-DEFAULT_SECURITY = {
-    # 2026-10-18 小欧 - 对齐现行嵌套结构: config.yaml / settings_registry / path_tool_safety_checker
-    #   三处均已迁到 security.hitl.* 与 security.system.* 命名空间, 本块此前仍留扁平旧键
-    #   (hitl_enabled / hitl_timeout / auto_confirm_delay / confirmDangerousOps), 是全仓最后一处未迁移点。
-    #   2026-10-18 北京老陈裁定: enabled 默认 **True** —— 缺键时按"开"处理, 缺配置不放松安全等级;
-    #   与 path_tool_safety_checker._is_hitl_bypass 的 fallback True、settings_registry 的默认值一致。
-    "system": {
-        "confirm_dangerous_ops": True,
-    },
-    "hitl": {
-        "enabled": True,
-        "auto_confirm_delay": 10,
-        "timeout": 120,
-    },
-}
+def _default_security() -> dict:
+    """安全段默认值 —— **单一真源取自 settings_registry**, 禁在此手写第二份 — 小欧 2026-10-18
+
+    本文件原有扁平 `DEFAULT_SECURITY`(`hitl_enabled`/`hitl_timeout`/…)，而 config.yaml /
+    settings_registry / path_tool_safety_checker 三处均为**嵌套**键(`security.hitl.*` /
+    `security.system.*`)，键名与默认值两处不一致。现按注册表派生: 注册表增删一项, 此处自动跟随。
+    键 `security.hitl.enabled` 拆两级写入, 得到与 config.yaml 同构的嵌套 dict。
+    """
+    from app.services.settings.settings_registry import GROUPS  # 延迟导入: 避免模块级环
+    out: dict = {}
+    for item in GROUPS["security"]["items"]:
+        parts = item["key"].split(".")          # security.hitl.enabled → ['security','hitl','enabled']
+        node = out
+        for seg in parts[1:-1]:                 # 中间层(hitl/system/trust)按需建
+            node = node.setdefault(seg, {})
+        node[parts[-1]] = item["default"]       # 叶子写默认值
+    return out
+
+
+# 缺键时"安全"段的兜底值(与 settings_registry 同源, 不再手工维护)。
+#   hitl.enabled 默认 True: 缺键/缺配置一律按"开"处理, 不因缺配置放松安全等级;
+#   与 path_tool_safety_checker._is_hitl_bypass 的 fallback 及注册表默认值一致。
+DEFAULT_SECURITY = _default_security()
 
 
 def _provider_conf(ai_config: dict, provider: str) -> dict:
@@ -185,7 +200,9 @@ def get_system_config_data() -> dict:
     language = config.get('app.language') or 'zh-CN'
     security_config = config.get('security', {})
     if not isinstance(security_config, dict) or not security_config:
-        security_config = dict(DEFAULT_SECURITY)
+        # deepcopy 而非 dict(): DEFAULT_SECURITY 现为嵌套结构, 浅拷贝会让 security_config['hitl']
+        # 与模块级默认值**共享同一 dict**, 下游任一处改写即污染全局默认(跨请求串味)。
+        security_config = copy.deepcopy(DEFAULT_SECURITY)
     # security 段按白名单挑选（不整体透传）：env 注入的明文 api_token 在此挡掉。
     # 靠 SecurityConfig 少声明字段被动丢弃是巧合不是契约。
     logger.info(f"获取配置成功: provider={resolved_model.provider}, model={resolved_model.model}")
@@ -195,7 +212,12 @@ def get_system_config_data() -> dict:
         "theme": theme,
         "language": language,
         "security": {
-            "confirmDangerousOps": bool(security_config.get("confirmDangerousOps", True)),
+            # 2026-10-18 小欧 - 键随嵌套结构同步: 原读扁平 `confirmDangerousOps`, 而 config.yaml 早已
+            #   迁到 `security.system.confirm_dangerous_ops` → 该键恒缺, 本字段**恒返回 True**,
+            #   用户在设置页关掉它也不生效(死字段)。现按嵌套路径取, 缺失才回落默认。
+            "confirmDangerousOps": bool(
+                (security_config.get("system") or {}).get("confirm_dangerous_ops", True)
+            ),
         },
         # 归一已下沉到 config.get_max_steps（源头一处处理），此处不再重复归一
         "max_steps": config.get_max_steps(),
@@ -318,7 +340,11 @@ def fix_config() -> dict:
     }
 
 
-_MAX_READ_FILE_BYTES = 512 * 1024
+# 2026-10-18 小欧 - 上限 512KB → 5MB: version.txt 是 append-only 的变更流水(每提交头部插一段),
+#   实测已涨到 521KB / 6329 行, 超过原 512KB 上限 → 「关于页·查看版本文件全文」端点持续返 400,
+#   由 frontend/src/tests/integration/settings2-live-about.test.ts A2 实测抓到。
+#   5MB 约可再撑数千次提交; 若再次触顶, 应改为端点分页/只返回头尾, 或把变更流水拆出 version.txt。
+_MAX_READ_FILE_BYTES = 5 * 1024 * 1024
 
 
 def read_config_file() -> dict:

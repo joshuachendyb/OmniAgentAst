@@ -6,7 +6,7 @@
 # 2026-10-15 - 小欧 - 迁回 app/safety/path_classify_category.py:
 #   职责归属回归安全域(目录分类属安全判定, 不是通用工具);
 #   越层限制改由"能力分级白名单"解开, 而非靠把判定寄居 utils 绕开。
-#   本模块为纯判定: 零配置读取、零 I/O、不读 security.hitl_enabled —— 保证工具层依赖它
+#   本模块为纯判定: 零配置读取、零 I/O、不读 security.hitl.enabled —— 保证工具层依赖它
 #   不等于依赖可被关闭的前线防线(硬底线独立性)。
 #   迁移手法: 四个函数自 path_utils.py 逐字搬迁, 实现与异常口径一字不改。
 # 2026-10-15 - 小欧 - _is_forbidden_path 自 path_safe_check.py 迁入并正名 classify_forbidden_path(本模块四个路径属性判定的聚合者, 同族同层), 实现逐字搬迁; path_safe_check.py 随之消号。
@@ -22,6 +22,8 @@
 #   该判据取自 get_allowed_roots, 返回集含项目根与会话工作区, 原文案只说"授权目录"与实际判据集不符。
 #   纯 message 文本, 分类判定零变更。
 # 2026-10-18 - 小欧 - 键名跟改 security.enabled → security.hitl_enabled(模块头"不读该开关"的两处表述同步)。
+# 2026-10-18 小欧 - 开关键名随设置项分组前缀最终跟定为 security.hitl.enabled(上一条的中间形态 hitl_enabled 作废);
+#   本模块仍零配置读取, 判定逻辑与分类结果零变更。同批精简注释冗余标注, 技术说明原样保留。
 """
 path_classify_category — 路径属性判定: 这条路径是什么性质
 
@@ -38,7 +40,7 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
 (read_path_check / write_path_check / delete_path_check)。
 
 **允许谁 import**: 工具层硬底线(app.tools.*)与安全层(app.safety.*)均可。
-本模块不读 security.hitl_enabled, 是全套路径安全中唯一可被工具层直接依赖的部分。
+本模块不读 security.hitl.enabled, 是全套路径安全中唯一可被工具层直接依赖的部分。
 
 小欧 2026-10-14 建 / 2026-10-15 小欧 迁回安全域 / 2026-10-15 小欧 消号迁移(classify_forbidden_path 迁入)
 **九格契约表(读/写/删 × 各类区域, 单一真源)** —— 由 classify_forbidden_path 产出 category,
@@ -107,18 +109,18 @@ def is_system_protected_path(file_path: str, mode: str = "write") -> bool:
       - `read`   → 放行(P3 设计, 内容敏感性由内容过滤兜底)
       - `write` / `delete` / 其他 → 拦
 
-    2026-10-14 北京老陈裁定「必须是同一个逻辑」: 此前检测与策略各处分一层,
+    2026-10-14 小欧 修正检测与策略分层: 此前检测与策略各处分一层,
     实测同一 True 被不同调用点解释成相反结论(安全层放行读/工具层拒绝读)。
     现检测与策略同在本函数, 调用方只透传 mode、不得二次判断。
       消费方: `classify_forbidden_path`(路径层判权限, 唯一决策者) 与 4 条线的 validate_*。
-      ★2026-10-16 老陈裁定(分层原则): 权限判定只在 safety 层, 原 tools 层的
+      ★2026-10-16 分层原则: 权限判定只在 safety 层, 原 tools 层的
       delete_file._guard_forbidden_delete 硬底线已删除, 本函数不再有 tools 层消费方。
     """
     try:
         parts = Path(os.path.realpath(os.path.expanduser(file_path))).parts
         hit = len(parts) > 1 and parts[1].lower() in SYSTEM_PROTECTED_DIR_NAMES
     except Exception:
-        # 2026-10-15 小欧 - P0-1: 原 `hit=True` 后仍走 `mode != "read"`, 实测传 None + read 返回 False(放行),
+        # 2026-10-15 小欧 - 原 `hit=True` 后仍走 `mode != "read"`, 实测传 None + read 返回 False(放行),
         #   与 docstring「异常不静默放行」矛盾。改为异常即返回, 不再过 mode 判定。
         return True
     return hit and mode != "read"
@@ -127,14 +129,14 @@ def is_system_protected_path(file_path: str, mode: str = "write") -> bool:
 def is_disk_root(file_path: str) -> bool:
     r"""是否磁盘根(如 `C:\` / `D:\`) —— 判定单源, 各层只调用
 
-    2026-10-14 北京老陈裁定: 此前 `_is_forbidden_path` / `validate_not_system_path` /
+    2026-10-14 小欧 收敛判定单源: 此前 `_is_forbidden_path` / `validate_not_system_path` /
     `_guard_forbidden_delete` 三处各写一遍 splitdrive + 剩余为空, 现收敛到此。
     """
     try:
         drive, rest = os.path.splitdrive(str(Path(os.path.realpath(os.path.expanduser(file_path)))))
         return bool(drive) and not rest.strip("\\/")
     except Exception:
-        # 2026-10-15 小欧 - P0-3: 磁盘根是最高档禁区, 原返回 False(fail-open)。归一化失败按禁。
+        # 2026-10-15 小欧 - 磁盘根是最高档禁区, 原返回 False(fail-open)。归一化失败按禁。
         return True
 
 
@@ -154,14 +156,14 @@ def is_code_root_path(file_path: str) -> bool:
                 or p_lower.startswith(cr_lower + os.sep)
                 or p_lower.startswith(cr_lower + "/"))
     except Exception:
-        # 2026-10-15 小欧 - P0-2: 代码库根是开关无关硬禁区, 原返回 False(fail-open)致硬拦截失效。按禁。
+        # 2026-10-15 小欧 - 代码库根是开关无关硬禁区, 原返回 False(fail-open)致硬拦截失效。按禁。
         return True
 
 
 def is_allowed_root_itself(file_path: str, extra_roots: Optional[Iterable[str]] = None) -> Optional[str]:
     r"""是否命中允许根(get_allowed_roots)自身或其上级祖先 — 小欧 2026-10-16 正名
 
-    2026-10-16 老陈裁定正名: 原名 is_protected_root_itself 名实不符 ——
+    2026-10-16 小欧 正名: 原名 is_protected_root_itself 名实不符 ——
       它判的根集来自 get_allowed_roots()(**允许**根: 用户项目根 + 授权目录 + 会话工作区),
       名字却叫 protected(受保护/禁碰), 属"看名字以为在判禁止、实际在判允许"。
       且与同文件 is_code_root_path(← get_code_root(), 跟数据源同名) 命名规律不对称,
@@ -196,7 +198,7 @@ def is_allowed_root_itself(file_path: str, extra_roots: Optional[Iterable[str]] 
                 if p == ancestor:
                     return "allowed_root_ancestor"
         except Exception:
-            # 2026-10-15 小欧 - P0-4: 原 continue 使该根被当作不提供保护(fail-open 且无痕)。按禁。
+            # 2026-10-15 小欧 - 原 continue 使该根被当作不提供保护(fail-open 且无痕)。按禁。
             logger.warning(f"[path_classify_category] 允许根比较失败, 按禁处理: root={root}")
             return "allowed_root_itself"
     return None

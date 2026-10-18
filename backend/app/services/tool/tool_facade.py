@@ -21,7 +21,7 @@
 #   ④补文件末尾行尾换行(原缺, P3 实施时的漏项, 纯注释/字节零逻辑改动)。— 小欧-2026-10-15
 # 2026-10-18 - 小欧 - 未知工具崩溃修复(实测 POST /api/v1/tool/execute {"tool_name":"nonexistent"} → 500):
 #   execute_tool 直调安全层 check_before_execute, 而未注册工具使 get_tool 返回 None,
-#   path_tool_safety_checker 解引用 tool_meta.check_fn 抛 AttributeError。门面层补注册校验早返
+#   path_tool_safety_checker 解引用 tool_meta 抛 AttributeError。门面层补注册校验早返
 #   (success=False, fail-closed), 不改安全层契约(解析层仍是 Agent 链路唯一未注册拦截点)。
 # 2026-10-18 - 小欧 - 归一化前置: /tool/execute 直调不经 L2 解析层, execute_tool 补
 #   resolve_registered_tool(名归一) + normalize_params(参数名归一), 后续 safety/sandbox/执行统一用规范名与参数
@@ -152,7 +152,7 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     # 0. 未注册工具早返(2026-10-18 小欧 - API 直调崩溃修复): 安全层契约假设"只放已注册工具"
     #    (未注册判定收口解析层, 见 path_tool_safety_checker 头注 —— 解析层在 Agent 链路第一步拦截),
     #    但 /tool/execute 直调不经解析层, get_tool 返回 None → check_before_execute 解引用 None
-    #    (tool_meta.check_fn) 抛 AttributeError → 500(实测 POST /api/v1/tool/execute {"nonexistent"}
+    #    (tool_meta) 抛 AttributeError → 500(实测 POST /api/v1/tool/execute {"nonexistent"}
     #    报 Unhandled Exception)。门面层是其入口适配, 补注册校验: 未知工具返 success=False(fail-closed,
     #    与 is_success 的"工具未找到"语义一致), 缺参/未实现不进入安全层。
     if _tool_meta is None:

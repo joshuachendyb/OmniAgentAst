@@ -156,7 +156,6 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable] = None,
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
-        check_fn: Optional[Callable] = None,
         dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -179,7 +178,7 @@ class ToolRegistry:
                 name, description, category, implementation, 
                 input_schema, examples, version, deps,
                 expose_to_llm, failure_hint_fn,
-                needs_confirmation, action_confirmation, check_fn,
+                needs_confirmation, action_confirmation,
                 target_param,
             )
         
@@ -188,7 +187,7 @@ class ToolRegistry:
             name, description, category, implementation, 
             input_schema, examples, version, 
             expose_to_llm, failure_hint_fn,
-            needs_confirmation, action_confirmation, check_fn, deps,
+            needs_confirmation, action_confirmation, deps,
             target_param,
         )
     
@@ -206,7 +205,6 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable] = None,
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
-        check_fn: Optional[Callable] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
         """更新已注册工具 — chendyg 2026-06-26 修复: 补全所有字段更新和分类索引"""
@@ -222,7 +220,6 @@ class ToolRegistry:
             failure_hint_fn=failure_hint_fn,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
-            check_fn=check_fn,
             target_param=target_param,
             # 2026-10-15 小欧 - P1-14: 原缺省直取 .action_kind, 旧实例无该字段会 AttributeError。
             action_kind=_resolve_action_kind(name, getattr(self._tools[name], "action_kind", "write")),
@@ -245,7 +242,6 @@ class ToolRegistry:
         failure_hint_fn: Optional[Callable],
         needs_confirmation: bool = False,
         action_confirmation: Optional[Dict[str, bool]] = None,
-        check_fn: Optional[Callable] = None,
         dependencies: List[Union[str, Dict[str, Any]]] = None,
         target_param: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -261,7 +257,6 @@ class ToolRegistry:
             failure_hint_fn=failure_hint_fn,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
-            check_fn=check_fn,
             dependencies=dependencies or [],
             target_param=target_param,
             # 2026-10-15 小欧 - 文档[35] 阶段三: 动作类型按声明表赋值, 未列者取 fallback(fail-closed 最严档)
@@ -385,7 +380,6 @@ def register_tool(
     expose_to_llm: bool = True,
     needs_confirmation: bool = False,
     action_confirmation: Optional[Dict[str, bool]] = None,
-    check_fn: Optional[Callable] = None,
     dependencies: Optional[List[Union[str, Dict[str, Any]]]] = None,
     target_param: Optional[str] = None,
 ):
@@ -416,7 +410,6 @@ def register_tool(
             expose_to_llm=expose_to_llm,
             needs_confirmation=needs_confirmation,
             action_confirmation=action_confirmation,
-            check_fn=check_fn,
             dependencies=dependencies,
             target_param=target_param,
         )

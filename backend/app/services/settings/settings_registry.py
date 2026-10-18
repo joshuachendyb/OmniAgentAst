@@ -49,6 +49,16 @@ key 全局唯一，加载自检重复直接拒启。
     (删根/系统目录/自杀/危险命令)无条件生效。改名后与同段 hitl_timeout/auto_confirm_delay 前缀一致。
     同步点: config_service.DEFAULT_SECURITY、config.yaml、config.yaml.example、前端 SettingsPage 硬编码键、
     path_tool_safety_checker 读点。不保留旧键别名 — 小欧-2026-10-18
+  2026-10-18 小欧 - security 组按子命名空间重组(上一条的 hitl_enabled 形态随之作废):
+    security.system.confirm_dangerous_ops  系统级要不要拦
+    security.hitl.enabled / .auto_confirm_delay / .timeout / .shell_readonly_prefixes  人工确认链路
+    security.trust.ttl_days  会话信任时长
+    键名不再是"security.XXX"平铺, 而是按前缀定归属; 前端 sectionOf 同步按前缀拆
+    「系统 / HTL人工确认 / 信任」三节, 展示名不写业务细节, 由 DANGER_LABELS 供二次确认文案。
+    前缀即可识别归属, 故未引入新的分组注册机制(两三个前缀, if 直判即可)。
+  2026-10-18 小欧 - 新增 shell_readonly_prefixes(list_of, 默认展示值取安全层内置清单) 接入设置页:
+    原为纯硬编码, 收紧须改代码发版; 接入后仅需改配置, 且清单在设置页可见可审计。
+    注释精简冗余标注, 技术说明原样保留。
 """
 from typing import Any, Dict, List, Optional
 
@@ -119,30 +129,39 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     # 4.3 安全（security，YAML，即时；命令安全由 path_safe_check/tools/security 代码内实现）
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，
     #   两者语义分开，避免误以为"关掉安全开关就不用输口令"。
+    #   2026-10-18 小欧 - 按使用者视角分三段，**组名进键名前缀**（分节由前端 sectionOf 按前缀切，
+    #   与 sandbox.tool.* 同一机制，零新增渲染逻辑）:
+    #     security.system.* 系统   —— 硬拦类：要不要拦
+    #     security.hitl.*   人工确认 —— 确认类：要不要问
+    #     security.trust.*  信任   —— 会话信任
+    #   现有 6 项按此重排并改键名，禁 backward 不留旧键别名。
     "security": {"label": "安全", "items": [
+        # ── 系统段 ──
         # 2026-10-05 22:16:38 小欧 - 标签「安全开关」改「HTL人工开关」；notice 文案更新。
         #   注意语义：confirmDangerousOps 仍负责操作前的人工确认弹窗，本项管「要不要走人工确认链路」。
-        # 2026-10-18 - 小欧 - 键名 security.enabled → security.hitl_enabled: 该项只决定是否走人工确认链路,
-        #   危险防护(删根/系统目录/自杀/危险命令)不受其影响。改名后与同段 hitl_timeout /
-        #   auto_confirm_delay 的 hitl_* 前缀一致。不保留旧键别名。
-        _item("security.hitl_enabled", "bool", "HTL人工开关", True,
-              notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）。默认开启：缺键时按『开』处理，缺配置不会悄悄放松安全等级"),
-        _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
+        _item("security.system.confirm_dangerous_ops", "bool", "保存设置时二次确认", True,
               notice="保存时再弹一次确认框（防误触）；后端的安全拦截不依赖这个开关"),
-        _item("security.auto_confirm_delay", "int", "自动确认延迟(秒)", 10, range_=[0, 3600],
+        # ── HTL人工确认段 ──
+        # 2026-10-18 - 小欧 - 键名 security.enabled → security.hitl_enabled → security.hitl.enabled:
+        #   该项只决定是否走人工确认链路, 危险防护(删根/系统目录/自杀/危险命令)不受其影响。
+        #   两次改名后与同段 hitl.timeout / hitl.auto_confirm_delay 同前缀。禁 backward。
+        _item("security.hitl.enabled", "bool", "人工确认总开关", True,
+              notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）。默认开启：缺键时按『开』处理，缺配置不会悄悄放松安全等级"),
+        _item("security.hitl.auto_confirm_delay", "int", "自动确认倒计时(秒)", 10, range_=[0, 3600],
               notice="自动确认弹窗倒计时（秒），到时没人点就自动放行"),
-        _item("security.hitl_timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],
+        _item("security.hitl.timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],
               notice="人工确认弹窗最长等你多久（秒），超时按弹窗设定的处理方式收尾"),
-        # 2026-10-18 小欧 - 本项原先是隐藏配置: trust_db._ttl_expiry 读 security.trust_ttl_days(默认90),
-        #   但本表未注册 → 设置页看不见、改不了, 用户不知道会话信任会到期。此处补齐, 使其可见可改。
-        _item("security.trust_ttl_days", "int", "会话信任有效期(天)", 90, range_=[1, 3650],
-              notice="弹窗里勾了『信任此操作』后, 该信任在多少天后自动失效(同一会话内免弹窗)。到期后同类操作会重新弹窗询问。调小=更频繁询问, 调大=更少打扰但风险窗口更长"),
         # 2026-10-18 小欧 - 本项原先是无配置面的硬编码白名单: 命中即**同时**跳过 HITL 确认与沙箱预检
         #   (safety_gate / sandbox.executor / execute_shell_command 三个消费点), 设置页完全不可见。
         #   内置默认 30 条(含 tasklist/systeminfo/netstat/ipconfig /all 等信息展示类, 以及 get- 这类宽前缀)。
-        _item("security.shell_readonly_prefixes", "textarea", "只读命令免确认白名单",
+        _item("security.hitl.shell_readonly_prefixes", "textarea", "只读命令免确认白名单",
               ", ".join(_READONLY_PREFIXES),
               notice="当前生效的完整清单(共 %d 条, 逗号分隔), 命中的命令**免弹窗且免沙箱预检**, 直接执行。删掉某项=该前缀不再豁免(收紧); 整框清空=回退内置默认清单。新增前缀请自行确保是纯只读命令 —— 写操作前缀等于开后门" % len(_READONLY_PREFIXES)),
+        # ── 信任段 ──
+        # 2026-10-18 小欧 - 本项此前只有代码侧读取(trust_db._ttl_expiry 读 security.trust.ttl_days,
+        #   默认 90), 本表未注册, 设置页无从展示/修改。补注册后该项可见可改。
+        _item("security.trust.ttl_days", "int", "会话信任有效期(天)", 90, range_=[1, 3650],
+              notice="弹窗里勾了『信任此操作』后, 该信任在多少天后自动失效(同一会话内免弹窗)。到期后同类操作会重新弹窗询问。调小=更频繁询问, 调大=更少打扰但风险窗口更长"),
     ]},
     # 4.4 沙箱（sandbox，8 项，运行时参数）
     "sandbox": {"label": "沙箱", "items": [

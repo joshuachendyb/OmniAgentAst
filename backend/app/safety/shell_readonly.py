@@ -8,6 +8,10 @@
 2026-10-18 - 小欧 - 新建(SRP): 自 shell_command_process.py 拆出"只读白名单"单一关注点。
   常量更名 SHELL_FAST_CHANNEL_FORBIDDEN → SHELL_READONLY_FORBIDDEN: 它是只读放行的禁用符集。
 2026-10-18 - 小欧 - 健壮性: 非字符串入参改 False(不放行); 前缀与禁用符判定统一用 lowered。
+2026-10-18 小欧 - 前缀集接入配置面: 新增 get_readonly_prefixes() 读 security.hitl.shell_readonly_prefixes,
+  缺键或留空回退内置 SHELL_READONLY_PREFIXES; 原为纯硬编码且设置页无展示, 收紧须改代码发版。
+  解析兼容 str / YAML list / 逗号分号换行混合分隔, 空白项丢弃, 读取路径零异常(配置坏值回退默认不致误拦)。
+  内置常量保留为唯一兜底真源, 判定逻辑与禁用符集零变更; 注释精简冗余标注, 技术说明原样保留。
 
 分层: 最底层静态判据, 不 import 上层(被 executor / tools / services 复用)。
 """
@@ -22,7 +26,7 @@ SHELL_READONLY_PREFIXES = ("get-", "ls", "cat", "type", "git status",
                      "docker ps", "docker images",
                      "tasklist", "ipconfig /all", "systeminfo", "netstat", "ver",
                      "test-path", "kubectl get")     # 只读白名单前缀(五项 + 精化二十一项) — 小欧-2026-09-18
-    # 评审纪要(2026-09-18 小欧, 逐条过安全评审, 任意无拼接符后缀仍只读才准入):
+    # 准入判据(2026-09-18 小欧, 逐条核对安全性, 任意无拼接符后缀仍只读才准入):
     #   准入: git log/diff/show(纯展示); python/node --version(打印即退); npm --version/ls, pip list/show/--version(只读查询);
     #   docker ps/images(只读列表); tasklist/systeminfo/netstat/ver(系统只读展示); ipconfig /all(精确子命令, /flushdns等不匹配);
     #   test-path(纯测试); kubectl get(只读API, 与 read 读敏感文件同政策).
@@ -37,7 +41,7 @@ SHELL_READONLY_FORBIDDEN = ("|", ";", "&", ">", ">>", "$", "(", ")", "`", "<", "
 def get_readonly_prefixes() -> tuple:
     """生效的只读白名单前缀 — 小欧 2026-10-18
 
-    真值源 = 配置 `security.shell_readonly_prefixes`; **缺键或留空 → 用内置 SHELL_READONLY_PREFIXES**,
+    真值源 = 配置 `security.hitl.shell_readonly_prefixes`; **缺键或留空 → 用内置 SHELL_READONLY_PREFIXES**,
     即默认行为与接入配置面之前完全一致(纯可观测性/可收紧, 不改默认语义)。
 
     值形状兼容三种(settings 的 textarea 落盘会把文本按行拆成 YAML list, 而手写 yaml 常是字符串):
@@ -45,16 +49,15 @@ def get_readonly_prefixes() -> tuple:
       list  → 逐元素取串, 每个元素内部再按 , ; 拆(元素本身可能是"a, b, c"一整行)
     形状不认识 → 用内置默认(fail-safe: 保持既有放行面不突变, 且不因解析失败而误放行未知前缀)
 
-    2026-10-18 起因: 该白名单是**免确认 + 免沙箱预检**的双重放行口(三个消费点:
-      safety_gate 跳过 HITL / sandbox.executor 跳过预检 / execute_shell_command 执行层放行),
-      却完全硬编码、设置页不可见 —— 用户不知道它的存在, 想收紧只能改代码发版。
-      接入配置面后"收紧"不必发版, 且在设置页可见可审计。
+    该前缀集是**免确认 + 免沙箱预检**的双重放行口(三个消费点: safety_gate 跳过 HITL /
+    sandbox.executor 跳过预检 / execute_shell_command 执行层放行), 原为纯硬编码且设置页无展示,
+    收紧须改代码。接入配置面后收紧仅需改配置, 且清单在设置页可见可审计。
 
     读取用 get_config()(内部 mtime 缓存), 与 _is_hitl_bypass 同一模式, 不引入额外 IO。
     """
     try:
         from app.config import get_config  # 延迟导入: 本模块是最底层静态判据, 不给上层加导入依赖
-        raw = get_config().get("security.shell_readonly_prefixes", "")
+        raw = get_config().get("security.hitl.shell_readonly_prefixes", "")
     except Exception:                      # 配置不可读 → 用内置默认, fail-safe 保持既有放行面不突变
         return SHELL_READONLY_PREFIXES
     if isinstance(raw, (list, tuple)):
