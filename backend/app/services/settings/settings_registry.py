@@ -35,16 +35,20 @@ key 全局唯一，加载自检重复直接拒启。
     security.enabled「安全开关」→「HTL人工开关」，notice 同步为"关闭后，无需人工确认，
     无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）"。
     仅改展示文案与说明，不改 key、默认值与域，旧配置文件不受影响。
-  2026-10-10 小欧 - general 组新增两项全局 thinking 兜底（北京老陈：通用兜底模型参数区缺思考项）：
+  2026-10-10 小欧 - general 组新增两项全局 thinking 缺省值（通用模型参数区缺思考项）:
     llm.sampling.enable_thinking(bool,默认 True) 与 llm.sampling.reasoning_effort(select,默认 medium,
     四档 minimal/low/medium/high)，单模型没单独配置时用这两个，已在模型 Tab 配了的不受影响。
     group 项数 10 → 12。前端 SettingRow 按 type 渲染(bool→Switch / select→下拉)，零改动 — 小欧-2026-10-10
-  2026-10-12 小欧 - sandbox 组新增「工具 › 语法检测」8 项(北京老陈令: 沙箱页原仅 8 项偏空, 工具类设置挂此处):
+  2026-10-12 小欧 - sandbox 组新增「工具 › 语法检测」8 项(沙箱页原仅 8 项偏空, 工具类设置挂此处):
     1 个总开关 sandbox.tool.syntax_check.enabled + 7 个语言独立开关(python/json/yaml/toml/xml/
     javascript/typescript), 全部 bool、默认 True、restart=False。
     判定单点落在 syntax_validator.validate_syntax(新 _syntax_enabled), write/edit 调用方零改动;
     前端 SettingsGroup.sectionOf 加 sandbox 分支拆「运行控制/工具/语法检测」三节。
     刻意不加 env_inject(会触发 _build_index 双向一致性自检, 不同步即拒启动) — 小欧-2026-10-12
+  2026-10-18 小欧 - 键名 security.enabled → security.hitl_enabled: 该项只决定是否走人工确认链路, 危险防护
+    (删根/系统目录/自杀/危险命令)无条件生效。改名后与同段 hitl_timeout/auto_confirm_delay 前缀一致。
+    同步点: config_service.DEFAULT_SECURITY、config.yaml、config.yaml.example、前端 SettingsPage 硬编码键、
+    path_tool_safety_checker 读点。不保留旧键别名 — 小欧-2026-10-18
 """
 from typing import Any, Dict, List, Optional
 
@@ -111,9 +115,12 @@ GROUPS: Dict[str, Dict[str, Any]] = {
     #   本组是**操作安全**（要不要拦用户的危险动作）。准入控制（谁能进得来）在 appearance 组首，
     #   两者语义分开，避免误以为"关掉安全开关就不用输口令"。
     "security": {"label": "安全", "items": [
-        # 2026-10-05 22:16:38 小欧 - 北京老陈指令：标签「安全开关」改「HTL人工开关」；notice 文案更新。
+        # 2026-10-05 22:16:38 小欧 - 标签「安全开关」改「HTL人工开关」；notice 文案更新。
         #   注意语义：confirmDangerousOps 仍负责操作前的人工确认弹窗，本项管「要不要走人工确认链路」。
-        _item("security.enabled", "bool", "HTL人工开关", False,
+        # 2026-10-18 - 小欧 - 键名 security.enabled → security.hitl_enabled: 该项只决定是否走人工确认链路,
+        #   危险防护(删根/系统目录/自杀/危险命令)不受其影响。改名后与同段 hitl_timeout /
+        #   auto_confirm_delay 的 hitl_* 前缀一致。不保留旧键别名。
+        _item("security.hitl_enabled", "bool", "HTL人工开关", False,
               notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）"),
         _item("security.confirmDangerousOps", "bool", "危险操作确认", True,
               notice="保存时再弹一次确认框（防误触）；后端的安全拦截不依赖这个开关"),
@@ -141,7 +148,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="命令未指定超时时的默认超时（秒）"),
         _item("sandbox.max_timeout_sec", "int", "最大超时(秒)", 300, range_=[1, 3600],
               notice="单次执行最大超时（秒），超出截断转裁决"),
-        # 工具 › 语法检测(2026-10-12 北京老陈令: 沙箱页偏空, 工具类设置挂此处; 总开关 + 每语言独立开关)
+        # 工具 › 语法检测(2026-10-12: 沙箱页偏空, 工具类设置挂此处; 总开关 + 每语言独立开关)
         #   判定单点落在 syntax_validator.validate_syntax, write/edit 调用方零改动;
         #   勿加 env_inject(会触发 _build_index 双向一致性校验, 不同步直接拒启动)
         _item("sandbox.tool.syntax_check.enabled", "bool", "语法检测总开关", True,
@@ -212,11 +219,11 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("app.theme", "readonly", "主题", "light", readonly=True,
               notice="当前固定浅色；深色二期（需全站 token 化重做硬编码色值）"),
         _item("appearance.fontSize", "range", "字号(px)", 14, range_=[12, 18], step=1),
-        # 2026-10-05 小欧 - step 渲染显示选项(文档[9] 方案设计 §5.1, 北京老陈裁定两个独立开关):
-        #   走前缀 appearance.step_render.*, 不加会被 SettingsGroup.tsx 的"外观"兜底吞掉;
-        #   置于 appearance.fontSize 之后, 令 sectionOf 只多一节(§5.11 对齐)
-        #   ①思考排版=thought 段(text)是否按 Markdown 语法渲染 ②推理内容=reasoning 段折叠初值, 两者互不干涉
-        #   顺序=北京老陈定的「推理内容 在前、思考排版 在后」, 不按文档表格重排 — 小欧-2026-10-05
+        # 2026-10-05 小欧 - step 渲染显示选项(两个独立开关):
+        #   走前缀 appearance.step_render.*, 不加会被 SettingsGroup.tsx 的"外观"归组吞掉;
+        #   置于 appearance.fontSize 之后, 令 sectionOf 只多一节
+        #   思考排版=thought 段(text)是否按 Markdown 语法渲染; 推理内容=reasoning 段折叠初值, 两者互不干涉
+        #   顺序=推理内容 在前、思考排版 在后 — 小欧-2026-10-05
         _item("appearance.step_render.reasoningVisible", "bool", "推理内容", True,
               notice="推理内容折叠开关：开=每段思考进来就展开；关=新出现的推理段默认只显示标题行，点标题行的箭头可单独展开/收起"),
         _item("appearance.step_render.thoughtMarkdown", "bool", "思考排版", True,
@@ -230,7 +237,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               options=["auto", "none"], notice="控制模型能不能用工具：auto=正常模式，模型自己决定要不要调用工具；none=禁止用工具，只回纯文字（怀疑工具出问题时用它对照）"),
         _item("tuning.llm.stream_max_retries", "int", "传输失败重试", 3, range_=[0, 10],
               notice="请求中途断线或超时时自动重新发起，最多再试 N 次（每次比上次多等一会）；0=不重试直接失败。与下面「内容错误重试」分工：本项管根本没收到回复，下面管收到了但内容不对"),
-        # 2026-10-05 22:16:38 小欧 - 北京老陈指令：设置页「调优」四个标签重命名，更准确反映实际语义。
+        # 2026-10-05 22:16:38 小欧 - 设置页「调优」四个标签重命名，更准确反映实际语义。
         _item("tuning.llm.response_fallback", "bool", "响应无工具转文本", True,
               notice="让模型用工具干活时如果一直失败，重试用完后自动改成「不用工具、直接写文字回答」再试一次；关掉则失败就直接报错"),
         _item("tuning.llm.response_retries", "int", "响应内容错重试限额", 2, range_=[0, 5],
@@ -328,8 +335,8 @@ def _build_index() -> Dict[str, Dict[str, Any]]:
     # secret 项自检（2026-09-26 小欧）。
     # secret=True 的项其写路径必须已接好（provider 通道或专用 auth 端点），否则 settings 通用通道
     #   又显式拒绝写它，该项就变成"写不进也读不出掩码"的半吊子。此处开发期即拒启。
-    # 边界（勿夸大其词）：本检查只能拦住"**忘记登记**"，拦不住"登记了但写通道其实没实现"——
-    #   静态自检无法验证运行时代码路径，那需要集成测试兜底。真正保证写通道可用的是 auth_routes
+    # 边界（勿夸大其词）：本检查只能拦住"忘记登记"，拦不住"登记了但写通道其实没实现"——
+    #   静态自检无法验证运行时代码路径，那需要集成测试覆盖。真正保证写通道可用的是 auth_routes
     #   与 model_service 各自的 TDD 用例。
     for key, item in index.items():
         if item.get("secret") and key not in _SECRET_WRITTEN_BY_PROVIDER_CHANNEL:

@@ -7,15 +7,15 @@ _validate_config_integrity.py, _decorators.py
 F10合并: 小欧 - 2026-06-08
 """
 # 编辑历史:
-# 2026-08-14 - 小欧 - 改名名实相符: persistence.py → config_helpers.py("persistence"只盖住持久化一面, 实为配置域公用杂集: I/O+修复+验证+备份+装饰器)
-# 2026-08-22 - 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B: ①_update_provider/_update_model 两 handler 合一为
+# 2026-08-14 - 小欧 - 改名: persistence.py → config_helpers.py("persistence"只盖住持久化一面, 实为配置域公用杂集: I/O+修复+验证+备份+装饰器)
+# 2026-08-22 - 小欧 - model结构化归一方案B: _update_provider/_update_model 两 handler 合一为
 #   _update_model_ref(provider+model+api_base 成对原子写入, 消除对 FIELD_HANDLERS 迭代顺序的耦合);
-#   FIELD_HANDLERS 键 "ai_provider"/"ai_model" → "ai_model_ref"; ②_auto_fix_and_validate 的 fail_result
+#   FIELD_HANDLERS 键 "ai_provider"/"ai_model" → "ai_model_ref"; _auto_fix_and_validate 的 fail_result
 #   current_provider/current_model → current_model_ref 结构
-# 2026-09-20 - 小沈 - v4.19 Phase 1/2: 新增公共工具函数 _get_dotted/_config_mtime/mask_secret_value/merge_region_patch/_set_nested;
+# 2026-09-20 - 小沈 - 新增公共工具函数 _get_dotted/_config_mtime/mask_secret_value/merge_region_patch/_set_nested;
 #   write_yaml_config 改调 atomic_write 原子落盘; _write_system_yaml 改为返回 ordered data（不再直写文件）
-# 2026-09-20 - 小沈 - v4.19 Phase 2: 新增 _validate_config_integrity 校验（merge_region_patch 安全网）
-# 2026-09-21 小欧 - 依据设计文档 9.3.3 重写 merge_region_patch: 补 filelock 并发锁/备份/完整性校验/
+# 2026-09-20 - 小沈 - 新增 _validate_config_integrity 校验（merge_region_patch 安全网）
+# 2026-09-21 小欧 - 重写 merge_region_patch: 补 filelock 并发锁/备份/完整性校验/
 #   写后逐键验证/失败回滚/reload 全链路；_set_dotted 替代 _set_nested；_validate_config_integrity
 #   恢复读扁平键。
 # 2026-09-21 小欧 - 新增 merge_nested_patch/_merge_region_core/_iter_nested_ops/_set_nested_path/
@@ -24,7 +24,7 @@ F10合并: 小欧 - 2026-06-08
 #   env 接管 provider 放行 api_base/api_key 缺失约束；短 secret 不再整体暴露。
 # 2026-09-21 小欧 - _iter_nested_ops 对空 dict 叶值显式 yield 空块（原当内部节点无限展开导致零 ops，
 #   "清空模型参数"永远写不落盘）；.get() 的 None 陷阱统一 `or ''/[]`；删无调用方的 _write_system_yaml。
-# 2026-09-21 小欧 - v4.20 键名按域收敛与单源收敛: app.max_steps → agent.max_steps；ai.model_ref 统一
+# 2026-09-21 小欧 - 键名按域收敛与单源收敛: app.max_steps → agent.max_steps；ai.model_ref 统一
 #   （provider/model → model_ref 读写校验全部对齐），防写出死键"保存成功永不生效"。
 # 2026-09-21 小欧 - 修复: read_yaml_config 坏 YAML 显式抛 500（不静默）、顶层非 dict 归一空 dict；
 #   新增 get_config_snapshot 原子快照（同把 .lock），消除"先读数据再 stat"导致前端误判外部更新。
@@ -32,7 +32,7 @@ F10合并: 小欧 - 2026-06-08
 #   _update_project_root 改写 workspace.project_root（原写 app.project_root 死键）。
 # 2026-09-25 小欧 - 删 _update_model_ref 写盘前错位 reset()（换代正确位置在 reload_ai_config，
 #   错位会致"保存模型换两次代"）；reload_ai_config 记 INFO 日志，补齐换代链入口可观测性。
-# 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（北京老陈裁定，后端一次生成最终串）:
+# 2026-09-27 小欧 - 掩码契约收敛为 {configured, masked}（后端一次生成最终串）:
 #   mask_secret_value 是全项目 secret 掩码唯一权威（/settings、/models、/config 共用），三档规则:
 #     len > 8     → s[:4] + "****" + s[-4:]
 #     4 < len <= 8 → "****" + s[-4:]
@@ -41,7 +41,7 @@ F10合并: 小欧 - 2026-06-08
 #   收敛动机：旧三键 {configured,prefix,suffix} 让"档位判定+星号拼接"在前后端各实现一遍（违反 DRY），
 #   且已漂移出真实 bug —— 前端靠 `prefix === '****'` 猜档位，遇到真实 key 前 4 位恰为 `****` 时拼错；
 #   旧两档还有 len<=4 全量回显、len==8 拼回全量明文两处泄漏，本三档一并消除。
-#   另: key 一律先去掉全部空白再判空与分档；非字符串按 str() 兜底。
+#   另: key 一律先去掉全部空白再判空与分档；非字符串按 str() 取缺省值。
 # 2026-09-27 小欧 - 精简冗长注释（09-21~09-25 流水账压缩为按主题归并，只留决策不留过程）；
 #   删掉"注释位置错了"这类关于注释的元讨论。
 # 2026-09-27 小欧 - 修 B4: _validate_config_integrity 缺 isinstance 守卫，provider 值为 None
@@ -86,7 +86,7 @@ yaml.SafeDumper.add_representer(OrderedDict, _repr_ordered_dict)
 
 
 def _order_for_dump(d: Any) -> Any:
-    """系统配置专用 YAML 有序化 — 小欧 2026-06-23; 小沈 2026-09-20 v4.19 由 _write_system_yaml 内嵌 _order 上提
+    """系统配置专用 YAML 有序化 — 小欧 2026-06-23; 小沈 2026-09-20 由 _write_system_yaml 内嵌 _order 上提
     - model/provider 排 ai 块最前面
     - provider 名字保留原始顺序（不字母序重排）
     """
@@ -144,7 +144,7 @@ def reload_ai_config() -> None:
     try:
         config_obj._load_config()
     except Exception:
-        # 2026-09-25 小欧 - 补失败留痕: 坏配置若只靠异常上抛, 从换代链看就是"改了配置没生效",
+        # 2026-09-25 小欧 - 补失败记录: 坏配置若只靠异常上抛, 从换代链看就是"改了配置没生效",
         #   无从区分是"写盘失败"还是"重载失败"。此处明确记"未换代, 旧配置继续生效"。
         logger.error("[config] 配置热重载失败(未换代, 旧配置继续生效)", exc_info=True)
         raise
@@ -217,7 +217,7 @@ def _restore_backup_if_needed(
 def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
     """自动修复常见的配置问题(删除provider下废弃的model字段)"""
     ai_config = config_data.get('ai', {})
-    # 2026-09-21 小欧 v4.20 单源收敛: 删除 ai 顶层遗留扁平键 provider/model（唯一源=ai.model_ref）
+    # 2026-09-21 小欧 - 单源收敛: 删除 ai 顶层遗留扁平键 provider/model（唯一源=ai.model_ref）
     for _legacy in ('provider', 'model'):
         if _legacy in ai_config:
             del ai_config[_legacy]
@@ -412,7 +412,7 @@ def _update_model_ref(config_data: dict, update) -> None:
 # PUT /config，但**只写模型**，不再是第二条通用写路径。
 #
 # ⚠️ 本表当前无消费方（update_config 已直调 _update_model_ref），按原设计保留该结构。
-#   是否进一步删除待北京老陈裁定，勿自行处置。
+#   是否进一步删除待定，勿自行处置。
 FIELD_HANDLERS: Dict[str, Any] = {
     "ai_model_ref": _update_model_ref,
 }
@@ -493,7 +493,7 @@ def _iter_nested_ops(tree: Any, prefix: Tuple[str, ...] = ()) -> Iterator[Tuple[
 
 
 def merge_region_patch(region_updates: Dict[str, Any], scope: str) -> str:
-    """通用 region 合并写（registry 已知的固定点号键：security.enabled 等）：
+    """通用 region 合并写（registry 已知的固定点号键：security.hitl_enabled 等）：
     registry 键不含叶段点号，安全按点号分裂。模型/Provider 名域请用 merge_nested_patch。"""
     ops = [(tuple(key.split(".")), value) for key, value in region_updates.items()]
     return _merge_region_core(ops, scope)
@@ -545,7 +545,7 @@ def _merge_region_core(ops: List[Tuple[Tuple[str, ...], Any]], scope: str) -> st
             return str(backup_path)
         except Exception:
             _restore_backup_if_needed(backup_path, config_path, restored)
-            # 设计文档 9.3.3 字面的 logger.error+裸 raise 在 except 块外会报
+            # logger.error+裸 raise 写在 except 块外会报
             # "No active exception to reraise"（Python 语义实测）；移入 except 块内
             # 保证「记日志 + 原样重抛」语义正确 — 小欧 2026-09-21
             logger.error(f"[{scope}] region 合并写入失败已回滚", exc_info=True)
@@ -553,7 +553,7 @@ def _merge_region_core(ops: List[Tuple[Tuple[str, ...], Any]], scope: str) -> st
 
 
 def _config_mtime() -> float:
-    """config.yaml mtime（公共函数，settings_service/model_service 共用，v4.18 DRY 修正）。"""
+    """config.yaml mtime（公共函数，settings_service/model_service 共用，DRY 修正）。"""
     try:
         return os.path.getmtime(get_config_path())
     except OSError:
@@ -585,16 +585,16 @@ def mask_secret_value(value: Any) -> Dict[str, Any]:
       现后端一次生成最终可显示串，前端零掩码逻辑。三档规则见文件头编辑历史。
     """
     # 【编辑历史 — 最新在下】
-    # 2026-09-26 - 小欧 - 落实北京老陈裁定，**收敛为两档**（原为 4 档: <4 / 4~7 / 8~11 / >=12）:
-    #   裁定原话:「只是分大于=8还是小于8」+「>=8 按规矩来处理(前4+后4)」+「小于8的 显示后4位, 前面加4个*」。
-    # 2026-09-27 - 北京老陈裁定改为**三档**，并定契约由后端一次生成最终串（星号一律 4 个）:
-    #   ① len >  8      -> s[:4] + 4星 + s[-4:]      「按规矩: 前4 + 后4」
-    #   ② 4 < len <= 8  -> **** + s[-4:]               「后面4个 + 前面4个*」
-    #   ③ len <= 4      -> ****                       「只是显示 4 个*」= **不露真实内容**
-    #   ④ 空(未配置)    -> configured=False, masked=""
-    #   规则同时消除原两档的残留风险: len<=4 曾全量回显、len==8 曾拼回全量明文，③档后均不再发生。
-    #   另: key 只做去空白(不校验内容), 非字符串按 str() 兜底走同一分档。
-    s = "".join(str(value or "").split())   # 去全部空白(北京老陈: "只做 trim 前后中间空白")
+    # 2026-09-26 - 小欧 - 收敛为两档（原为 4 档: <4 / 4~7 / 8~11 / >=12）:
+    #   分档口径: 大于等于 8 按前4+后4 处理, 小于 8 显示后4位且前面加4个星号。
+    # 2026-09-27 - 小欧 - 改为三档, 并定契约由后端一次生成最终串（星号一律 4 个）:
+    #   len >  8      -> s[:4] + 4星 + s[-4:]      前4 + 后4
+    #   4 < len <= 8  -> **** + s[-4:]             后4位 + 前4个星号
+    #   len <= 4      -> ****                     不露真实内容
+    #   空(未配置)    -> configured=False, masked=""
+    #   规则同时消除原两档的残留风险: len<=4 曾全量回显、len==8 曾拼回全量明文, 三档后均不再发生。
+    #   另: key 只做去空白(不校验内容), 非字符串按 str() 取缺省值走同一分档。
+    s = "".join(str(value or "").split())   # 去全部空白
     if not s:
         return {"configured": False, "masked": ""}
     if len(s) <= 4:

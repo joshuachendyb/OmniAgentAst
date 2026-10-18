@@ -92,7 +92,10 @@ import {
   StopOutlined,
   ThunderboltOutlined,
   FolderOutlined, // 7.4.3: trust_path 操作范围图标 — 小欧-2026-09-18
-  EditOutlined, // 2026-09-18: tool_write 写确认图标 — 小欧-2026-09-18
+  EditOutlined, // 2026-10-18: 写入类确认标签图标(shell_write_confirm/task_deal_confirm) — 小欧-2026-10-18
+  FileSearchOutlined, // 2026-10-18: shell_read_confirm 命令含读取动作图标 — 小欧-2026-10-18
+  ClockCircleOutlined, // 2026-10-18: 临时授权时效说明行图标(任务级, 结束自动失效) — 小欧-2026-10-18
+  InfoCircleOutlined, // 2026-10-18: 递归删除不授予路径授权说明行图标 — 小欧-2026-10-18
 } from '@ant-design/icons';
 // 2026-09-15 小欧 - 动画keyframes统一承载(AnimatedIcons), 单例注入防重复style — 小欧-2026-09-15
 import { injectKeyframes } from '../AnimatedIcons/animations';
@@ -112,6 +115,8 @@ export interface AuthorizationRequest {
   params: Record<string, unknown>;
   content?: string; // 7.4.3: 弹窗原因(后端 ConfirmSpec.content) — 小欧-2026-09-18
   safetyLevel: string;
+  /** 授权影响面(后端 SafetyLevel 分档): high=删除类 / medium=写入类 / low=其余 */
+  trustImpact?: 'high' | 'medium' | 'low';
   trustPath?: string | null;
   autoConfirm?: boolean;
   confirmTimeout?: number;
@@ -132,21 +137,103 @@ const SAFETY_LEVEL_CONFIG: Record<
   string,
   { color: string; label: string; icon: React.ReactNode }
 > = {
-  path_auth: { color: 'orange', label: '需授权', icon: <WarningOutlined /> },
-  shellparam: {
+  // ★ 2026-10-18 小欧: 键集换为后端 SafetyLevel 确认命名空间(13 个), 与 SafetyLevel.CONFIRM_LEVELS 必须完全相等。
+  //   硬拦命名空间(path_forbidden/block_command/block_path_invalid/block_unregistered)不进弹窗, 故不配。
+  //   旧 5 键(path_auth/shellparam/tool_write/tool_delete/tool_execute)与新枚举无一重合, 全部作废。
+  delete_recursive: {
+    color: 'red',
+    label: '递归删除确认',
+    icon: <StopOutlined />,
+  },
+  delete_out_of_scope: {
+    color: 'red',
+    label: '范围外删除授权',
+    icon: <WarningOutlined />,
+  },
+  write_protected: {
+    color: 'orange',
+    label: '受保护路径写入授权',
+    icon: <WarningOutlined />,
+  },
+  write_out_of_scope: {
+    color: 'orange',
+    label: '范围外写入授权',
+    icon: <WarningOutlined />,
+  },
+  shell_medium_risk: {
     color: 'orange',
     label: '命令确认',
     icon: <ExclamationCircleOutlined />,
   },
-  // 2026-09-18 小欧 三思三省: tool_write 由预留转激活(create_task CONFIRM_TOOLS 确认现归 tool_write, 后端已补) — 小欧-2026-09-18
-  tool_write: { color: 'geekblue', label: '写确认', icon: <EditOutlined /> },
-  tool_delete: { color: 'red', label: '删除确认', icon: <StopOutlined /> },
-  tool_execute: {
-    color: 'volcano',
-    label: '执行确认',
+  shell_delete_confirm: {
+    color: 'red',
+    label: '命令含删除动作',
+    icon: <StopOutlined />,
+  },
+  shell_write_confirm: {
+    color: 'orange',
+    label: '命令含写入动作',
+    icon: <EditOutlined />,
+  },
+  shell_read_confirm: {
+    color: 'blue',
+    label: '命令含读取动作',
+    icon: <FileSearchOutlined />,
+  },
+  shell_command_confirm: {
+    color: 'orange',
+    label: '命令确认',
     icon: <ExclamationCircleOutlined />,
   },
+  sql_execute_confirm: {
+    color: 'volcano',
+    label: 'SQL 执行确认',
+    icon: <ExclamationCircleOutlined />,
+  },
+  task_deal_confirm: {
+    color: 'geekblue',
+    label: '任务处理确认',
+    icon: <EditOutlined />,
+  },
+  registry_deal_confirm: {
+    color: 'volcano',
+    label: '注册表处置确认',
+    icon: <ExclamationCircleOutlined />,
+  },
+  tool_confirm: {
+    color: 'volcano',
+    label: '工具级确认',
+    icon: <WarningOutlined />,
+  },
 };
+
+/**
+ * 元信息行统一样式 — 2026-10-18 小欧
+ *
+ * 操作范围 / 授权影响 / 授权机制说明 共用同一份样式, 保证:
+ *   ① 文字左边界一致(都有图标 + 同宽 gap), 不会出现"有的行缩进有的不缩进"的犬牙交错;
+ *   ② 行距一致(6px), 弹窗纵向节奏不跳;
+ *   ③ 文字色统一 #262626 —— 本文件已定案「目标信息禁灰字」(原 #595959/#8c8c8c 均已订正)。
+ *
+ * 老陈裁定 2026-10-18: 文案完整展示即可, 不做行数截断(允许弹窗随内容撑高),
+ * 故不再设 WebkitLineClamp; 但仍保留 title 挂全文, 便于 hover 查完整表述。
+ */
+const META_ROW: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  marginBottom: 6,
+  fontSize: 12,
+  color: '#262626',
+  textAlign: 'left',
+};
+
+/** 授权机制说明的触发标签集合 — 2026-10-18 小欧（这三个标签确认后真的会授予临时授权） */
+const TEMP_AUTH_LEVELS = new Set([
+  'write_protected',
+  'write_out_of_scope',
+  'delete_out_of_scope',
+]);
 
 const truncatePath = (p: string): string => {
   if (!p) return p;
@@ -268,11 +355,19 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
         >
           {isBypass ? (
             <ThunderboltOutlined
-              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#1677ff', flexShrink: 0 }}
+              style={{
+                fontSize: HITL_TOKENS.ICON_SIZE,
+                color: '#1677ff',
+                flexShrink: 0,
+              }}
             />
           ) : (
             <WarningOutlined
-              style={{ fontSize: HITL_TOKENS.ICON_SIZE, color: '#faad14', flexShrink: 0 }}
+              style={{
+                fontSize: HITL_TOKENS.ICON_SIZE,
+                color: '#faad14',
+                flexShrink: 0,
+              }}
             />
           )}
           <span
@@ -345,17 +440,7 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
 
         {/* trust_path 操作范围展示: 操作目标路径(仅目录, 去文件名) — 小欧-2026-09-18 */}
         {request.trustPath && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 4,
-              marginBottom: 6,
-              fontSize: 12,
-              color: '#262626',
-              textAlign: 'left',
-            }}
-          >
+          <div style={META_ROW}>
             <FolderOutlined style={{ color: '#faad14', flexShrink: 0 }} />
             <span
               title={`操作范围: ${request.toolName} › ${request.trustPath}${
@@ -363,18 +448,69 @@ const AuthorizationModal: React.FC<AuthorizationModalProps> = ({
                   ? '，含子键'
                   : '，含子目录'
               }`}
-              style={{
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                wordBreak: 'break-all',
-              }}
+              style={{ wordBreak: 'break-all' }}
             >
               操作范围: {truncateDir(request.trustPath)}
               {request.toolName.startsWith('registry')
                 ? '，含子键'
                 : '，含子目录'}
+            </span>
+          </div>
+        )}
+
+        {/* 2026-10-18 小欧 - 说明行①: 授权影响面(后端 SafetyLevel 分档给出, 前端只呈现不做权限判断)
+            紧跟"操作范围"之后 —— 两者同属"这次操作会碰什么"的一组, 顺序不可颠倒。
+            独立成行而非追加进 content, 规避 WebkitLineClamp:2 截断。 */}
+        {request.trustImpact && (
+          <div style={META_ROW}>
+            <WarningOutlined
+              style={{
+                color:
+                  request.trustImpact === 'high'
+                    ? '#cf1322'
+                    : request.trustImpact === 'medium'
+                      ? '#fa8c16'
+                      : '#1677ff',
+                flexShrink: 0,
+              }}
+            />
+            <span
+              title={`授权影响: ${request.trustImpact === 'high' ? '大(删除类, 抹除不可撤销)' : request.trustImpact === 'medium' ? '中(写入类, 可覆写原内容)' : '小(命令级确认, 不直接改文件内容)'}`}
+              style={{ wordBreak: 'break-all' }}
+            >
+              授权影响：
+              {request.trustImpact === 'high'
+                ? '大（删除类，抹除不可撤销）'
+                : request.trustImpact === 'medium'
+                  ? '中（写入类，可覆写原内容）'
+                  : '小（命令级确认，不直接改文件内容）'}
+            </span>
+          </div>
+        )}
+
+        {/* 2026-10-18 小欧 - 说明行②: 临时授权时效(temp_auth 任务级, 结束自动失效; 与"信任此操作"会话级是两套机制) */}
+        {TEMP_AUTH_LEVELS.has(request.safetyLevel) && (
+          <div style={META_ROW}>
+            <ClockCircleOutlined style={{ color: '#8c8c8c', flexShrink: 0 }} />
+            <span
+              title="临时授权仅本任务有效，任务结束自动失效；与下方“信任此操作”（会话级）是两套机制"
+              style={{ wordBreak: 'break-all' }}
+            >
+              临时授权仅本任务有效，任务结束自动失效
+            </span>
+          </div>
+        )}
+
+        {/* 2026-10-18 小欧 - 说明行③: 递归删除不授予任何路径授权(与②"会授予"相反, 必须说清)
+            不重复①已说的"不可撤销", 只讲授权性质差异。 */}
+        {request.safetyLevel === 'delete_recursive' && (
+          <div style={META_ROW}>
+            <InfoCircleOutlined style={{ color: '#8c8c8c', flexShrink: 0 }} />
+            <span
+              title="本项仅确认这一次递归删除，不授予路径访问权；如需再次递归删除需重新确认"
+              style={{ wordBreak: 'break-all' }}
+            >
+              本项仅确认这一次操作，不授予路径访问权
             </span>
           </div>
         )}

@@ -24,6 +24,8 @@ export interface PendingAuthorizationPayload {
   params?: Record<string, unknown>;
   content?: string;
   safety_level?: string;
+  /** 授权影响面(后端 SafetyLevel 分档给出): high=删除类(抹除不可撤销) / medium=写入类(可覆写) / low=命令级等其余 */
+  trust_impact?: 'high' | 'medium' | 'low';
   trust_path?: string | null;
   auto_confirm?: boolean | string | number;
   confirm_timeout?: number | string;

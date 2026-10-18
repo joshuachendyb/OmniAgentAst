@@ -218,6 +218,7 @@ const processSSEData = (
       params: Record<string, unknown>;
       content?: string;
       safety_level: string;
+      trust_impact?: 'high' | 'medium' | 'low'; // 授权影响面 — 2026-10-18 小欧
       trust_path?: string | null;
       auto_confirm?: boolean;
       confirm_timeout?: number;
@@ -910,8 +911,10 @@ const processSSEData = (
           step.error_message = (status.message as string) || undefined;
           // 2026-10-12 小欧 - observation content 落盘：后端 ObservationStep 下发 content（一句一工具）
           //   与 content_items（对象数组），前端按行显示；与 tool_result 下标对齐 — 小欧-2026-10-12
-          step.content = typeof rawData.content === 'string' ? rawData.content : '';
-          const rawItems = (rawData.content_items ?? rawData.contentItems) as unknown;
+          step.content =
+            typeof rawData.content === 'string' ? rawData.content : '';
+          const rawItems = (rawData.content_items ??
+            rawData.contentItems) as unknown;
           step.contentItems = Array.isArray(rawItems) ? rawItems : [];
           // 2026-10-04 小欧 文档[8]§4.1.4: 删 step.content = step.summary(名不副实——顶着"正文"名字装的是摘要副本,
           //   后端真正正文是 tool_result[i].data_text, 从未进过 content); 孤儿 obs 段只读 summary, 兜底链同步收敛 — 小欧-2026-10-04
@@ -962,6 +965,7 @@ const processSSEData = (
                 params: rawData.params,
                 content: rawData.content ?? '', // 7.4.1: 后端 ConfirmSpec.content 弹窗原因 — 小欧-2026-09-18
                 safety_level: rawData.safety_level,
+                trust_impact: rawData.trust_impact, // 授权影响面(高/中/低) — 2026-10-18 小欧
                 trust_path: rawData.trust_path ?? null,
                 // 2026-09-03 小欧 落码: 改用normalizeAutoConfirm四态归一; 2026-09-12 修复: 函数更名normalizeBoolean — 小欧-2026-09-12
                 auto_confirm: normalizeBoolean(rawData.auto_confirm),

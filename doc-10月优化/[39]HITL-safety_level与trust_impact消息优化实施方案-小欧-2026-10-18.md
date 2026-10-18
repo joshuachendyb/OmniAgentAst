@@ -32,7 +32,7 @@
 | [39]原案 | **原始方案**：问题诊断 + 候选落点评估 + 一步到位结论 |
 | 本文（本文） | **实施方案**：完整采纳 [39]原案 全部核心设计 + 按代码现态修正 3 处缺陷 + 逐文件 diff |
 
-[39]原案 的历史结论**不删除**。§四 逐条列出 [39]原案 核心设计及落位，§十二 给出 [39]原案 每一条到本文的完整对照。
+[39]原案 的历史结论**不删除**。§四 逐条列出 [39]原案 核心设计及落位，§十一 给出 [39]原案 每一条到本文的完整对照。
 
 ### 一.1 核心结论（定案）
 
@@ -118,7 +118,7 @@ auto_confirm / confirm_timeout / backend_timeout / confirm_id	倒计时与自动
 
 | # | 字段 | 所属类 | 取值 | 本次 |
 |---|------|--------|------|------|
-| 1 | `SafetyResult.severity` | `app/tools/tool_types.py` | `safe`/`risk`/`dangerous` | **删除** |
+| 1 | `SafetyResult.severity` | `app/safety/safety_result.py`（★v1.11 订正，原写 `app/tools/tool_types.py`） | `safe`/`risk`/`dangerous` | **删除** |
 | 2 | `MetaStep.severity` | `app/services/agent/steps/base.py` | `info`/`warn`/`error` | **严禁改动** |
 
 **风险**：全局替换会把 `MetaStep` 的 SSE 分级一起改掉，破坏前端错误通道与提示样式。
@@ -339,37 +339,40 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 
 ## 六、逐文件 diff（行号按 2026-10-18 实测）
 
-### 6.0 涉及修改的代码清单（共 23 个文件）
+### 6.0 涉及修改的代码清单（**v1.11 重做：26 个文件**）
 
-> 分类：**后端字段层 1** / **后端产码点 10** / **后端编排层 3** / **后端下游消费 2** / **前端映射链 4** / **前端视图 1** / **核对不动 3**
->
-> ★ 本表于 v1.6 经**全量递归 grep**（`Get-ChildItem -Recurse -Filter *.py`）校正：v1.5 曾用 `app\**\*.py`（PS5.1 下 `**` 不递归，只扫一层），导致 `safety_gate.py` / `tool_facade.py` / `execute_shell_command.py` / `tool_routes.py` 四个文件被漏统计。**教训：影响面统计禁用非递归 glob。**
+> ★ **v1.11 变更**：①字段层文件由 `app/tools/tool_types.py` 改为 `app/safety/safety_result.py`；②新增 4 个文件（`shell_parse/parse_move.py`、`shell_parse/parse_shell_action.py`、`shell_sandbox_tables.py`、`path_classify_category.py`）；③新增 `SafetyLevel` 枚举与 `confirm_level_for` 出口。
 
 | # | 文件 | 层 | 修改要点 | 漏改后果 |
 |---|------|----|---------|---------|
-| 1 | `app/tools/tool_types.py` | 字段层 | **删** `severity`；**新增** `safety_level: str = ""`；**改名** `requires_confirmation` → `needs_confirm`；`pass_result()` 同步 | 全部产码点 `severity=` 变 `TypeError`；旧名残留致新旧两套真源 |
-| 2 | `app/safety/temp_auth.py` | 产码 | **新增** `resolve_grant_recursive(root, requested)`（suffix 规则上提为单一真源）；`grant_temp_auth` 内部改调它；`__all__` 补 | 影响面口径与授权口径漂移 |
-| 3 | `app/safety/path_tool_safety_checker.py` | 总闸 | 7 处构造点补 `safety_level` + kwarg 改名；**`:195` 沙箱改读 `needs_confirm`**；`:231` 删 `severity` 中间变量；`:221` 不再把 check_fn 的 severity 灌入 | ★`:195` `AttributeError`；沙箱预检静默失效 |
-| 4 | `app/services/agent/handlers/safety_gate.py` | 编排层 | `:197`/`:200` **读取点**改 `needs_confirm`；`:254` **字段优先+文本兜底**；新增 `_resolve_trust_impact()`；`:265` 改 `trust_impact=` | 读取点 `AttributeError`；分类退回扫文本 |
-| 5 | `app/services/agent/handlers/hitl_gateway.py` | 编排层 | `ConfirmSpec.severity` → `trust_impact`；`:111` paused 帧改键。**`:129` `MetaStep.severity="info"` 严禁动** | paused 帧仍带旧键 |
-| 6 | `app/services/agent/handlers/sandbox_gate.py` | 编排层 | `:150` 删 `severity="risk"`，`trust_impact` **不传**（禁区永不授权，见 §五.3） | 误导用户以为禁区可授权 |
-| 7 | `app/safety/write_path_check.py` | 产码 | 4 处补 `safety_level` + kwarg 改名；**措辞补齐**（`:120` 加"临时"、`:123` 加时效） | 弹窗看不出是临时授权 |
-| 8 | `app/safety/read_path_check.py` | 产码 | 2 处补 `safety_level="path_auth"` + kwarg 改名 | 弹窗无分类标签 |
-| 9 | `app/safety/delete_path_check.py` | 产码 | 7 处补 `safety_level`（5×`tool_delete`+2×`forbidden_zone`）+ kwarg 改名 | 同上 |
-| 10 | `app/safety/dual_path_check.py` | 产码 | 2 处补 `safety_level` + kwarg 改名 | 同上 |
-| 11 | `app/safety/shell_path_check.py` | 产码 | 6 处补 `safety_level` + kwarg 改名 | 同上 |
-| 12 | `app/safety/shell_danger_command.py` | 产码 | `:93` 补 `safety_level="command_block"` | 同上 |
-| 13 | `app/safety/shell_command_risk.py` | 产码 | `:124` 补 `safety_level="shellparam"` | 同上 |
-| 14 | `app/safety/path_legality_router.py` | 产码 | `:117` fail-closed 补 `safety_level="command_block"` | 同上 |
-| 15 | **`app/services/tool/tool_facade.py`** | **下游消费** | **`:171` `if safety.requires_confirmation and not safety.auto_confirm:` → `needs_confirm`**（v1.5 **完全漏掉**） | ★`AttributeError`，直调 API 确认路径崩 |
-| 16 | **`app/tools/fundamental/execute_shell_command.py`** | **下游消费** | **`:1135` `if safety.requires_confirmation:` → `needs_confirm`**（v1.5 **完全漏掉**） | ★shell 确认路径崩 |
-| 17 | `frontend/src/features/chat/streams/backupTypes.ts` | 前端类型源 | `PendingAuthorizationPayload` 增 `trust_impact?: 'high' \| 'low'` | ★白名单类型缺字段 → TS 报错 |
-| 18 | `frontend/src/features/chat/services/sseParser.ts` | 前端解析 | `onAuthorizationRequired({...})` 白名单补 `trust_impact: rawData.trust_impact` | ★**第 1 层丢字段 → 永不入 Store** |
-| 19 | `frontend/src/features/chat/hooks/useAuthorization.ts` | 前端映射 | `newRequest` 补 `trustImpact: pendingAuthorization.trust_impact ?? 'low'` | ★**第 2 层丢 → 拿不到** |
-| 20 | `frontend/src/components/AuthorizationModal/index.tsx` | 前端视图 | `SAFETY_LEVEL_CONFIG` 补 4 分类；`AuthorizationRequest` 增 `trustImpact?`；**渲染信任影响行 + 临时授权说明 + 系统禁区说明** | ★**无 UI + TS 报错** |
-| 21 | `app/api/v1/tool_routes.py` | 注释订正 | `:45` 注释提及 `requires_confirmation` → 同步改名（**仅注释，无代码**） | 注释与代码不一致，误导后人 |
-| 22 | `app/services/agent/steps/base.py` | 核对不动 | `:134`/`:148` **kwargs 透传** → `trust_impact` 自动进 `to_dict()`，无需加字段 | （防误改） |
-| 23 | `frontend/src/features/chat/streams/chatStreamTransport.ts` | 核对不动 | `:917` `d.pendingAuthorization = { ...data }` spread 不丢字段 | （防误改，见反例警示） |
+| 1 | **`app/safety/safety_result.py`** | 字段层 | **删** `severity`；**新增** `safety_level`；**改名** `needs_confirm`；**新增 `SafetyLevel(StrEnum)` + `CONFIRM_LEVELS` + `BLOCK_LEVELS`**；`pass_result()` 同步 | 全部产码点 `severity=` 变 `TypeError`；无枚举则无任何约束 |
+| 2 | `app/safety/temp_auth.py` | 产码 | `_is_rejectable_root` 上提；`grant_temp_auth` 改调；`__all__` 补 | 授权拒绝线两处分歧 |
+| 3 | `app/safety/path_tool_safety_checker.py` | 总闸 | 构造点补枚举 + kwarg 改名；**沙箱改读 `needs_confirm`**；**新增 `confirm_level_for` / `shell_confirm_level` / `_TOOL_CONFIRM_LEVEL`** | 沙箱预检静默失效；标签全落兜底 |
+| 4 | `app/services/agent/handlers/safety_gate.py` | 编排层 | 读取点改 `needs_confirm`；**直读 `safety_level`**；**删除 `_classify_safety_level`**；`_resolve_trust_impact` 改三档按标签取档；`_confirm_payload` 去掉 `tool_name` 形参 | 读取点 `AttributeError`；分类退回扫文本 |
+| 5 | `app/services/agent/handlers/hitl_gateway.py` | 编排层 | `ConfirmSpec.trust_impact`（三档）+ paused 帧改键。**`MetaStep.severity="info"` 严禁动** | paused 帧仍带旧键 |
+| 6 | `app/services/agent/handlers/sandbox_gate.py` | 编排层 | `trust_impact` **不传**；`safety_level` 改 `BLOCK_COMMAND`；**新增 `SafetyLevel` 导入** | 枚举外值泄漏 + 误导用户 |
+| 7 | `app/safety/write_path_check.py` | 产码 | 4 处补枚举；**放行不带标签**；措辞按术语统一 | 弹窗看不出是临时授权 |
+| 8 | `app/safety/read_path_check.py` | 产码 | 2 处：**硬拦 `BLOCK_PATH_INVALID` + 放行不带标签** | 读线标签说谎 |
+| 9 | `app/safety/delete_path_check.py` | 产码 | **9 处**补枚举；**R4/R5 拆分**；**R5 补 `auth_path`**；文案术语统一 | 根内单文件删被误判确认；授权链断裂 |
+| 10 | `app/safety/dual_path_check.py` | 产码 | 2 处补枚举 + 4 处读取改名 | 分类错误 |
+| 11 | `app/safety/shell_path_check.py` | 产码 | 6 处补 `BLOCK_COMMAND` | 分类错误 |
+| 12 | `app/safety/shell_danger_command.py` | 产码 | 补 `BLOCK_COMMAND` | 分类错误 |
+| 13 | `app/safety/shell_command_risk.py` | 产码 | 补 `SHELL_MEDIUM_RISK` | 分类错误 |
+| 14 | `app/safety/path_legality_router.py` | 产码 | fail-closed 补 `BLOCK_COMMAND` | 分类错误 |
+| 15 | **`app/safety/path_classify_category.py`** | 产码 | 文案术语统一（「会话目录」→「会话工作区」、「允许根目录」→「允许根集」） | 文案与系统分类不符 |
+| 16 | **`app/safety/shell_parse/parse_move.py`** | 解析层 | **动词表拆分 `MOVE_VERBS_*` / `RENAME_VERBS_*`**；源档位按动词二分 | shell 侧与工具侧语义不一致 |
+| 17 | **`app/safety/shell_parse/parse_shell_action.py`** | 解析层 | 全局早退门补 `SHELL_RENAME_RE` + import | 改名命令绕过全部路径检查 |
+| 18 | **`app/safety/shell_sandbox_tables.py`** | 解析层 | `_intent_verb_union()` **并入 `RENAME_VERBS_BY_SHELL`** | ★沙箱宽表丢改名动词 |
+| 19 | `app/services/tool/tool_facade.py` | **下游消费** | `:171` 改 `needs_confirm` | ★`AttributeError`，直调 API 确认路径崩 |
+| 20 | `app/tools/fundamental/execute_shell_command.py` | **下游消费** | `:1135` 改 `needs_confirm` | ★shell 确认路径崩 |
+| 21 | `frontend/src/features/chat/streams/backupTypes.ts` | 前端类型源 | `PendingAuthorizationPayload` 增 `trust_impact?: 'high'\|'medium'\|'low'` | ★白名单类型缺字段 → TS 报错 |
+| 22 | `frontend/src/features/chat/services/sseParser.ts` | 前端解析 | `onAuthorizationRequired({...})` 白名单补 `trust_impact` | ★**第 1 层丢字段 → 永不入 Store** |
+| 23 | `frontend/src/features/chat/hooks/useAuthorization.ts` | 前端映射 | `newRequest` 补 `trustImpact` | ★**第 2 层丢 → 拿不到** |
+| 24 | `frontend/src/components/AuthorizationModal/index.tsx` | 前端视图 | `SAFETY_LEVEL_CONFIG` **换为 13 键**；`AuthorizationRequest` 增 `trustImpact?`；**渲染三行说明** | ★**无 UI + TS 报错 + 走兜底显示英文串** |
+| 25 | `app/api/v1/tool_routes.py` | 注释订正 | 注释提及 `requires_confirmation` → 同步改名（**仅注释，无代码**） | 注释与代码不一致 |
+| 26 | `app/services/agent/steps/base.py` | 核对不动 | **kwargs 透传** → `trust_impact` 自动进 `to_dict()` | （防误改） |
+| — | `frontend/src/features/chat/streams/chatStreamTransport.ts` | 核对不动 | `:917` spread 不丢字段 | （防误改） |
+| — | `app/tools/tool_types.py` | 核对不动 | `SafetyResult` 已迁出，此处仅留 `ToolMetadata` 等 | （防误改） |
 
 > `frontend/src/types/execution.ts:162` 的 `severity?: 'info'｜'warn'｜'error'` 属 `MetaStep` SSE 分级（见 §二 E 类），同样核对不动，未计入本表。
 
@@ -559,122 +562,129 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +            content=f"已确认执行: {spec.tool_name}", severity="info", confirm_id=confirm_id))  # ★MetaStep.severity(info) 属 SSE 分级, 不动
 ```
 
-### 6.5 `app/services/agent/handlers/sandbox_gate.py` — ConfirmSpec 正名（禁区不传影响面）
+### 6.5 `app/services/agent/handlers/sandbox_gate.py` — 沙箱裁决标签改 `block_command`
+
+> ★ **v1.11 订正**：v1.0 方案此处传 `safety_level="path_auth"`，并把它描述成「系统禁区裁决」。两处均错——①它是**沙箱预检裁决**（问「预检未通过，是否强执行」），与禁区分类无关；②`path_auth` 已不在 `SafetyLevel` 枚举内，留着就是**枚举外值泄漏**。
 
 ```diff
-@@ -147,7 +147,7 @@
-         return ConfirmSpec(
-             auto_confirm=False, tool_name=tool_name, params=params,
-             content=f"该路径在系统禁区，禁止访问: {path}",
--            severity="risk", safety_level="path_auth")
-+            # 2026-10-18 小欧: 系统禁区**永不授权** → 无授权被授予 → 无"授权影响面"可言
-+            #   → 不传 trust_impact, 前端判空不渲染该行; 只显示"系统禁区不可授权", 免误导用户以为可授权。
-+            safety_level="path_auth")
+     return ConfirmSpec(
+         auto_confirm=_sb, tool_name=tool_name, params=params,
+         content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",
+         # 沙箱裁决弹窗不传 trust_impact —— 此处问的是"预检未通过, 是否强执行",
+         #   并未授予路径访问权(无授权路径可判影响面), 传值会误导用户以为确认即获得该路径权限。
+-        safety_level="path_auth")
++        safety_level=SafetyLevel.BLOCK_COMMAND)   # 沙箱裁决属命令级预检未通过, 非路径授权
 ```
 
-### 6.6 `app/safety/write_path_check.py` — **措辞补齐** + 置 `safety_level` + 改名
+### 6.6 `app/safety/write_path_check.py` — 标签拆分 + **放行不带标签** + 术语统一
+
+> ★ **v1.11 三处订正**：①放行结果**不带标签**（v1.0 挂 `path_auth`）；②`non_system`（代码目录/允许根集自身及上级）与白名单外是**两种不同成因**，标签必须拆开（v1.0 两者同为 `path_auth`）；③文案按 §四.5 术语统一。
 
 ```diff
-@@ -112,15 +112,18 @@
      _ok, _msg, _category = validate_write(path)
      if _ok:
 -        return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
-+        return SafetyResult(blocked=False, needs_confirm=False, message="", safety_level="path_auth")
++        return SafetyResult(blocked=False, needs_confirm=False, message="")   # 放行: 无确认无拦截, 无分类可言
      if _category == "system":
 -        return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
 -                            severity="dangerous")
-+        # blocked 分支不塞 trust_impact(等价关系: dangerous→blocked=True 已表达大影响)
 +        return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
-+                            safety_level="forbidden_zone")
++                            safety_level=SafetyLevel.PATH_FORBIDDEN)
      if _category == "non_system":
-+        # 2026-10-18 小欧: 措辞补齐 —— 原句缺"临时"二字, 用户看不出这是任务级临时授权
 -        return SafetyResult(requires_confirmation=True, blocked=False,
 -                            message=f"该路径在受保护区域，写入需申请授权: {path}",
 -                            severity="risk", auth_path=path)
-+        return SafetyResult(needs_confirm=True, blocked=False,
-+                            message=f"该路径在受保护区域，写入需申请临时授权: {path}",
-+                            auth_path=path, safety_level="path_auth")
-+    # 2026-10-18 小欧(文档本文): 措辞补齐 —— 补时效, 让用户知道仅本任务有效、任务结束自动失效
++        # non_system 真实口径 = 代码目录自身及内部子级 + 允许根集自身及上级祖先
++        return SafetyResult(needs_confirm=True, blocked=False, auth_path=path,
++                            message=f"该路径位于代码目录(含其内部子级)或允许根集内的根目录自身及其上级，"
++                                    f"写入需申请临时授权(仅本任务有效): {path}",
++                            safety_level=SafetyLevel.WRITE_PROTECTED)
 -    return SafetyResult(requires_confirmation=True, blocked=False,
 -                        message=f"该路径超出允许范围，需临时授权: {path}",
 -                        severity="risk", auth_path=path)
-+    return SafetyResult(needs_confirm=True, blocked=False,
-+                        message=f"该路径超出允许范围，需临时授权（仅本任务有效，任务结束自动失效）: {path}",
-+                        auth_path=path, safety_level="path_auth")
++    # 此处判据集 = 白名单(系统临时目录 + 项目根 + 授权目录 + 会话工作区),
++    #   与上面 non_system 的"允许根集"不是同一集合, 差一个"系统临时目录" → 措辞必须写"白名单"
++    return SafetyResult(needs_confirm=True, blocked=False, auth_path=path,
++                        message=f"该路径不在白名单内(白名单=系统临时目录/项目根/授权目录/会话工作区)，"
++                                f"写入需申请临时授权(仅本任务有效，任务结束自动失效): {path}",
++                        safety_level=SafetyLevel.WRITE_OUT_OF_SCOPE)
 ```
 
-### 6.7 `app/safety/read_path_check.py`
+### 6.7 `app/safety/read_path_check.py` — 读线从不确认，`path_auth` 是误标
+
+> ★ **v1.11 订正**：v1.0 给读线两处都挂 `path_auth`。读线策略是「处处放行，仅空值/穿越/异常硬拦」，**从不产生确认**（无授权可给），`path_auth`（需授权）是纯误标 —— 把「放行」与「硬拦」都叫成「需授权」。
 
 ```diff
-@@ -98,6 +98,6 @@
      _ok, _msg, _category = validate_read(path)
      if not _ok:
 -        return SafetyResult(blocked=True, message=_msg, severity="dangerous")
 -    return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
-+        return SafetyResult(blocked=True, message=_msg, safety_level="path_auth")
-+    return SafetyResult(blocked=False, needs_confirm=False, message="", safety_level="path_auth")
++        return SafetyResult(blocked=True, message=_msg, safety_level=SafetyLevel.BLOCK_PATH_INVALID)
++    return SafetyResult(blocked=False, needs_confirm=False, message="")   # 放行: 不带标签
 ```
 
-### 6.8 `app/safety/delete_path_check.py` — 7 处
+### 6.8 `app/safety/delete_path_check.py` — **R4/R5 拆分 + 补 `auth_path` + 标签细分**
+
+> ★★ **v1.11 三处订正，其中①②是缺陷修复**：
+> ① **R4/R5 必须拆开**。v1.0 方案写 `if (inside_proj and recursive) or (not inside_proj):` 合并分支 —— 该写法会把**允许根内的单文件删除**（R3，免确认）一并判成需确认。实测已复现并修复。
+> ② **R5 必须补 `auth_path`**。缺它则 `safety_gate` 确认后 `if _group_lead and getattr(safety_result, "auth_path", None):` 判假 → **`grant_temp_auth` 被整个跳过** → 弹窗承诺「申请临时授权」而授权从未落地 → `delete` 工具内 `validate_delete` 仍按白名单拒绝 → **删线是死路**。实测同一路径 `write` 线给了 `auth_path` 而 `delete` 线给 `None`，两条线文案却都写着「需申请临时授权」。
+> ③ 标签按成因细分，`tool_delete` 一个标签不再覆盖 5 种语义。
 
 ```diff
-@@ -136,14 +136,14 @@
-         logger.warning(f"[delete_path_check] 路径归一化失败, 按拒绝处理: {path!r} ({e})")
--        return SafetyResult(blocked=True, requires_confirmation=False,
--                            message=f"删除路径非法: {path}", severity="dangerous")
-+        return SafetyResult(blocked=True, needs_confirm=False,
-+                            message=f"删除路径非法: {path}", safety_level="tool_delete")
-@@ -143,7 +143,7 @@
-         logger.warning(f"[delete_path_check] 允许根读取失败, 按拒绝处理: {e}")
--        return SafetyResult(blocked=True, requires_confirmation=False,
--                            message=f"删除安全判定不可用(根集读取失败): {e}", severity="dangerous")
-+        return SafetyResult(blocked=True, needs_confirm=False,
-+                            message=f"删除安全判定不可用(根集读取失败): {e}", safety_level="tool_delete")
-@@ -150,12 +150,12 @@
+     # --- R6 全部允许根外递归 → 拒 ---
      if (not inside_proj) and recursive:
 -        return SafetyResult(blocked=True, message=f"禁止删除工作区外目录: {path}", severity="dangerous")
-+        return SafetyResult(blocked=True, message=f"禁止删除工作区外目录: {path}", safety_level="tool_delete")
-     if (inside_proj and recursive) or (not inside_proj):
++        return SafetyResult(blocked=True, needs_confirm=False,
++            message=f"禁止递归删除允许根集之外的目录(允许根集=项目根/授权目录/会话工作区): {path}",
++            safety_level=SafetyLevel.PATH_FORBIDDEN)
+-    if (inside_proj and recursive) or (not inside_proj):
 -        return SafetyResult(requires_confirmation=True, blocked=False,
 -                            message=f"删除需确认: {path}", severity="risk")
++    # --- R4 允许根内递归 → 确认 / R5 允许根外普通 → 确认 / R3 允许根内普通 → 放行 ---
++    #   R4 必须带 recursive 条件: 根内单文件删属 R3 免确认, 不可一并拦下。
++    if inside_proj and recursive:
 +        return SafetyResult(needs_confirm=True, blocked=False,
-+                            message=f"删除需确认: {path}", safety_level="tool_delete")
--    return SafetyResult(blocked=False, requires_confirmation=False,
--                        message="", severity="safe")
-+    return SafetyResult(blocked=False, needs_confirm=False,
-+                        message="", safety_level="tool_delete")
-@@ -200,11 +200,11 @@
-     _guard = guard_forbidden_delete(path)
-     if _guard:
--        return SafetyResult(blocked=True, message=_guard, severity="dangerous")
-+        return SafetyResult(blocked=True, message=_guard, safety_level="forbidden_zone")
-@@ -206,3 +206,3 @@
-     if not _ok and _category:
--        return SafetyResult(blocked=True, message=_msg, severity="dangerous")
-+        return SafetyResult(blocked=True, message=_msg, safety_level="forbidden_zone")
++            message=f"递归删除目录，删除范围不可撤销，需确认: {path}",
++            safety_level=SafetyLevel.DELETE_RECURSIVE)
++    if not inside_proj:
++        # auth_path 必须随 needs_confirm 一并给出: 缺它则本分支是死路(见上文②)
++        return SafetyResult(needs_confirm=True, blocked=False, auth_path=path,
++            message=f"该路径不在允许根集内(允许根集=项目根/授权目录/会话工作区)，"
++                    f"删除需申请临时授权(仅本任务有效): {path}",
++            safety_level=SafetyLevel.DELETE_OUT_OF_SCOPE)
++    # --- R3 允许根内普通 → 放行(免确认), 恒非None ---
++    return SafetyResult(blocked=False, needs_confirm=False, message="")   # 放行: 不带标签
 ```
+
+其余 4 处构造点：
+
+| 位置 | 分支 | `safety_level` |
+|------|------|---------------|
+| 路径归一化失败 | fail-closed | `SafetyLevel.BLOCK_PATH_INVALID` |
+| 允许根读取失败 | fail-closed | `SafetyLevel.BLOCK_PATH_INVALID` |
+| `guard_forbidden_delete` 命中 | 禁区硬底线 | `SafetyLevel.PATH_FORBIDDEN` |
+| `validate_delete` 返 category | 禁区硬底线 | `SafetyLevel.PATH_FORBIDDEN` |
+
+> ★ `guard_forbidden_delete` 的 5 条文案同步按 §四.5 术语统一：「禁止删除系统目录」→「禁止删除**系统保护目录**」、「禁止删除项目根/授权根目录」→「禁止删除**允许根集内的根目录自身(项目根/授权目录/会话工作区)**」、「项目根/授权根上级目录」→「**允许根集的上级目录**」。
 
 ### 6.9 `app/safety/dual_path_check.py` — **4 处属性读取 + 2 处构造**
 
+> ★ **v1.11 标签订正**：`tool_delete` → `SafetyLevel.BLOCK_PATH_INVALID`（不带任何路径参数属**调用形状**问题，不是删除问题）；`forbidden_zone` → `SafetyLevel.PATH_FORBIDDEN`（系统源外泄拦截确属禁区）。
+
 ```diff
-@@ -120,7 +120,7 @@   # write 动作取严
-             if result.blocked or result.blocked:
-                 return result
-@@ -122,1 +122,1 @@
+@@ -122,1 +122,1 @@   # write 动作取严
 -            if result.blocked or result.requires_confirmation:
 +            if result.blocked or result.needs_confirm:
-                 return result
 @@ -125,3 +125,3 @@   # dual 未带路径参数 → 硬拦
 -            return SafetyResult(blocked=True, severity="dangerous",
-+            return SafetyResult(blocked=True, safety_level="tool_delete",
++            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_PATH_INVALID,
                                  message=f"工具 {tool_name} 声明为 dual 但调用不带任何路径参数")
 @@ -137,1 +137,1 @@   # read 动作取严
 -            if result.blocked or result.requires_confirmation:
 +            if result.blocked or result.needs_confirm:
-                 return result
 @@ -142,1 +142,1 @@   # 系统源外泄拦截
 -                return SafetyResult(blocked=True, severity="dangerous", message=msg)
-+                return SafetyResult(blocked=True, safety_level="forbidden_zone", message=msg)
++                return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN, message=msg)
 @@ -149,1 +149,1 @@   # delete 动作取严
 -            if _perm.blocked or _perm.requires_confirmation:
 +            if _perm.blocked or _perm.needs_confirm:
@@ -698,31 +708,31 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 ```diff
 @@ -64,1 +64,1 @@    # 动作判定非法路径(构造)
 -            return SafetyResult(blocked=True, severity="dangerous",
-+            return SafetyResult(blocked=True, safety_level="command_block",
++            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
 @@ -74,1 +74,1 @@    # ★属性读取 cwd 写线
 -            if perm.requires_confirmation:
 +            if perm.needs_confirm:
 @@ -85,1 +85,1 @@    # 构造
 -            return SafetyResult(blocked=True, severity="dangerous",
-+            return SafetyResult(blocked=True, safety_level="command_block",
++            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
 @@ -88,1 +88,1 @@    # ★属性读取 动作取严
 -            if not (result.blocked or result.requires_confirmation):
 +            if not (result.blocked or result.needs_confirm):
 @@ -101,1 +101,1 @@  # 构造
 -            return SafetyResult(blocked=True, severity="dangerous",
-+            return SafetyResult(blocked=True, safety_level="command_block",
++            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
 @@ -129,1 +129,1 @@  # 构造 command 类型非法
 -            return SafetyResult(blocked=True, severity="dangerous",
-+            return SafetyResult(blocked=True, safety_level="command_block",
++            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
 @@ -139,1 +139,1 @@  # 构造 cwd 含元字符
 -            return SafetyResult(blocked=True, severity="dangerous",
-+            return SafetyResult(blocked=True, safety_level="command_block",
++            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
 @@ -142,1 +142,1 @@  # ★属性读取 动作取严
 -            if result.blocked or result.requires_confirmation:
 +            if result.blocked or result.needs_confirm:
 @@ -154,1 +154,1 @@  # 构造 高危删除无法解析目标
 -        return SafetyResult(blocked=True, severity="dangerous",
-+        return SafetyResult(blocked=True, safety_level="command_block",
++        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
 ```
 
 > ★ **本文件是本方案改动最密集的文件（9 处）**，且历史上被重构多次，行号务必落码时**现场复核**，勿照抄本文档数字。
@@ -735,7 +745,7 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
              blocked=True,
              message=f"高风险Shell操作: {desc}，已阻止执行",
 -            severity="dangerous",
-+            safety_level="command_block",
++            safety_level=SafetyLevel.BLOCK_COMMAND,
          )
 ```
 
@@ -749,7 +759,7 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +            needs_confirm=True,
              message=f"中风险Shell操作: {combined}，需确认后执行",
 -            severity="risk",
-+            safety_level="shellparam",
++            safety_level=SafetyLevel.SHELL_MEDIUM_RISK,
          )
 ```
 
@@ -758,7 +768,7 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 ```diff
 @@ -115,5 +115,5 @@
 -        return SafetyResult(blocked=True, severity="dangerous", message=f"路径安全检查异常: {e}")
-+        return SafetyResult(blocked=True, safety_level="command_block", message=f"路径安全检查异常: {e}")
++        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND, message=f"路径安全检查异常: {e}")
 ```
 
 ### 6.14 `app/safety/path_tool_safety_checker.py` — **沙箱判定改读 `needs_confirm`**（核心）
@@ -767,7 +777,7 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 @@ -143,7 +143,7 @@
          if tool_meta is None:
 -            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", severity="dangerous")
-+            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", safety_level="unregistered")
++            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", safety_level=SafetyLevel.BLOCK_UNREGISTERED)
 @@ -193,7 +193,9 @@
 -            known_risk.sandbox_required = (known_risk.severity == "risk")   # risk 级授权请求→沙箱预检
 +            # 2026-10-18 小欧: 沙箱判定改读 needs_confirm ——
@@ -778,31 +788,30 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +            known_risk.sandbox_required = known_risk.needs_confirm
              return known_risk
 @@ -205,7 +207,7 @@
-                     -                    return SafetyResult(requires_confirmation=True, auto_confirm=True,
--                            blocked=False, message="",
--                            severity="risk", sandbox_required=True)   # v1.25 M2-A: bypass risk 确认→沙箱预检
-+                    return SafetyResult(needs_confirm=True, auto_confirm=True,
-+                            blocked=False, message="",
-+                            safety_level="tool_execute", sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
+                     return SafetyResult(needs_confirm=True, auto_confirm=True,
+                             blocked=False, message="",
+-                            safety_level="tool_execute", sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
++                            safety_level=confirm_level_for(tool_name, params),
++                            sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
 @@ -209,5 +211,4 @@
-             -            return SafetyResult(requires_confirmation=False,
--                    blocked=False, message="安全开关已绕过",
--                    severity="safe")   # v1.25 M2-A: safe 级 bypass 不触发沙箱(与 G1 一致)
+-            return SafetyResult(needs_confirm=False,
+-                    blocked=False, message="安全开关已绕过")   # v1.25 M2-A: 无需确认的 bypass 不触发沙箱(与 G1 一致)
 +            return SafetyResult(needs_confirm=False,
 +                    blocked=False, message="安全开关已绕过")   # v1.25 M2-A: 无需确认的 bypass 不触发沙箱(与 G1 一致)
-+                    blocked=False, message="安全开关已绕过")
 @@ -216,13 +217,12 @@
                  if not custom_result.get("is_safe", True):
                      return SafetyResult(
                          blocked=True,
                          message=custom_result.get("message", "安全检查未通过"),
 -                        severity=custom_result.get("severity", "dangerous"),
-                     )
++                        safety_level=SafetyLevel.BLOCK_COMMAND,
+                    )
 @@ -225,4 +225,3 @@
                  return SafetyResult(blocked=True,
 -                        message=f"安全检查异常，已阻止执行: {e}",
 -                        severity="dangerous")
-+                        message=f"安全检查异常，已阻止执行: {e}")
++                        message=f"安全检查异常，已阻止执行: {e}",
++                        safety_level=SafetyLevel.BLOCK_COMMAND)
 @@ -229,10 +228,9 @@
          needs_confirm, _shell_msg = self._get_needs_confirmation(tool_meta, params or {})
 -        severity = "risk" if needs_confirm else "safe"
@@ -810,22 +819,53 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 -        return SafetyResult(requires_confirmation=needs_confirm,
 -                blocked=False, message=_shell_msg or "", severity=severity,
 -                sandbox_required=(severity == "risk"))
-+        # v1.25 M2-C: 仅需确认级触发沙箱(与 G1 唯一触发依据一致); 免确认不进预检
-+        # 2026-10-18 小欧: 删 severity 中间变量(自证循环), 沙箱直读 needs_confirm
++        # 确认标签按工具名在本层直给(confirm_level_for), 不再留空等调用方按文案关键词反查 ——
++        #   那条兜底链会让"标签"取决于"文案怎么写", 改一个字就换一个分类, 正是标签与分支对不上的病根。
 +        return SafetyResult(needs_confirm=needs_confirm,
 +                blocked=False, message=_shell_msg or "",
++                safety_level=confirm_level_for(tool_name, params) if needs_confirm else "",
 +                sandbox_required=needs_confirm)
 @@ -243,5 +242,9 @@
          if self_kill is not None:
 -            return self_kill
-+            return SafetyResult(blocked=True, message=self_kill.message, safety_level="command_block")
++            return SafetyResult(blocked=True, message=self_kill.message, safety_level=SafetyLevel.BLOCK_COMMAND)
 +@@ -279,1 +282,1 @@   # ★v1.6 补: _check_known_risks 汇总判定(属性读取)
 +-        if risk.blocked or risk.requires_confirmation:
 ++        if risk.blocked or risk.needs_confirm:
  ```
 
-> ⚠️ `:221` 的 `custom_result.get("severity", "dangerous")` 是**外部 `tool_meta.check_fn` 返回 dict 的键**，属第三方契约，**不动**；只是不再把它灌进 `SafetyResult`（`blocked=True` 已表达大影响）。
-> **注**：`data_guard` 在当前生产代码已无产地（旧「写入大小保护」逻辑已随重构删除），前端配置保留仅为契约完整。4。
+> ⚠️ **v1.11 订正**：`:221` 原 `custom_result.get("severity", ...)` 是**外部 `tool_meta.check_fn` 返回 dict 的键**，属第三方契约，**读取端不动**；只是不再把它灌进 `SafetyResult`。现直接给 `SafetyLevel.BLOCK_COMMAND` —— check_fn 不通过与危险命令拦截同类，且已硬拦无授权可给。
+> **注**：`data_guard` 在旧 9 值表中已随枚举化**整体消失**（无产地 + 与 `block_command` 语义重叠）。
+
+**★ `confirm_level_for()` —— 工具级确认标签的唯一出口（v1.11 新增）**
+
+v1.0 方案在此处留空、由上层按文案关键词回填，导致 `execute_sql`/`create_task`/`bash` 全落 `tool_execute` 一个标签。现改为**按工具名/命令动作直给**：
+
+```python
+_TOOL_CONFIRM_LEVEL = {
+    "execute_sql":    SafetyLevel.SQL_EXECUTE_CONFIRM,
+    "create_task":    SafetyLevel.TASK_DEAL_CONFIRM,
+    "delete_task":    SafetyLevel.TASK_DEAL_CONFIRM,
+    "registry_write": SafetyLevel.REGISTRY_DEAL_CONFIRM,
+    "registry_delete":SafetyLevel.REGISTRY_DEAL_CONFIRM,
+}
+TOOL_CONFIRM_DEFAULT = SafetyLevel.TOOL_CONFIRM      # ★ 不可兜底成 shell_command_confirm
+_SHELL_TOOLS = frozenset({"bash", "execute_shell_command", "execute_command"})
+# 命令动作 → 标签, 取 shell_parse.action.ACTION_KINDS 的全部 3 种(闭合枚举)
+_SHELL_KIND_LEVEL = {"delete": SHELL_DELETE_CONFIRM, "write": SHELL_WRITE_CONFIRM, "read": SHELL_READ_CONFIRM}
+
+
+def confirm_level_for(tool_name: str, params: Optional[dict]) -> str:
+    """bypass 分支与主 return 两处共用, 避免同一表达式写两遍(DRY)导致两处漂移"""
+    _p = params or {}
+    if tool_name in _SHELL_TOOLS:
+        return shell_confirm_level(_p.get("command"), _p.get("shell_type"), _p.get("cwd"))
+    return _TOOL_CONFIRM_LEVEL.get(tool_name, TOOL_CONFIRM_DEFAULT)
+```
+
+> ★ **`TOOL_CONFIRM_DEFAULT` 必须是 `TOOL_CONFIRM`（诚实的「工具级确认」兜底），不可兜底成 `SHELL_COMMAND_CONFIRM`** —— 否则一个写类工具弹窗会显示「命令确认」，标签与事实不符，正是本次重构要消灭的病。
+> ★ **多动作并存取最严档**（删 > 写 > 读），与 `shell_path_check._judge_actions` 的判定优先级同序。
+> ★ **⚠️ 已知现状（三堂会审发现）**：`shell_delete_confirm` / `shell_write_confirm` / `shell_read_confirm` / `shell_command_confirm` 四值当前**无产地**——`_get_needs_confirmation` 对 `bash`/`execute_command` **硬返回 `False`**（无 MEDIUM 命中即不确认），故 bash 的确认只有两个来源：中风险命令（`SHELL_MEDIUM_RISK`）与路径越权（三线标签）。四值待「bash 是否应对路径合规的命令也确认」这一**行为决策**落地后才有消费者，在此之前属预留枚举，非死代码亦非已生效。
 
 ### 6.15 `frontend/src/features/chat/streams/backupTypes.ts` — 前端类型源
 
@@ -837,7 +877,7 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
    params?: Record<string, unknown>;
    content?: string;
    safety_level?: string;
-+  trust_impact?: 'high' | 'low';   // 授权/信任影响面(2026-10-18 小欧 文档本文); high=目录根授权整子树 / low=单文件授权
++  trust_impact?: 'high' | 'medium' | 'low';   // 授权影响面: high=删除类 / medium=写入类 / low=其余
    trust_path?: string | null;
    auto_confirm?: boolean | string | number;
    confirm_timeout?: number | string;
@@ -874,7 +914,7 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 +        // 2026-10-18 小欧(文档本文§6.0★白名单三连坑): raw→camel 映射补 trustImpact ——
 +        //   此处同样是**对象字面量白名单**; 漏本行则 AuthorizationRequest 拿不到, 弹窗无"信任影响"行。
 +        //   缺省 'low': 系统禁区场景后端不传(见 §五.3), 判空不渲染该行。
-+        trustImpact: pendingAuthorization.trust_impact ?? 'low',
++                  trustImpact: pendingAuthorization.trust_impact ?? 'low',
          // 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')
          autoConfirm:
 ```
@@ -889,38 +929,55 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
    params: Record<string, unknown>;
    content?: string;
    safetyLevel: string;
-+  trustImpact?: 'high' | 'low';   // 授权/信任影响面(2026-10-18 小欧 文档本文)
+ +  trustImpact?: 'high' | 'medium' | 'low';   // 授权影响面
    trustPath?: string | null;
-@@ -131,6 +132,12 @@
+@@ -131,6 +132,21 @@
  const SAFETY_LEVEL_CONFIG: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
-   path_auth: { color: 'orange', label: '需授权', icon: <WarningOutlined /> },
-   shellparam: { color: 'orange', label: '命令确认', icon: <ExclamationCircleOutlined /> },
-   tool_write: { color: 'geekblue', label: '写确认', icon: <EditOutlined /> },
-   tool_delete: { color: 'red', label: '删除确认', icon: <StopOutlined /> },
-   tool_execute: { color: 'volcano', label: '执行确认', icon: <ExclamationCircleOutlined /> },
-+  // 2026-10-18 小欧(文档本文): 补齐 4 个此前缺失的分类 ——
-+  //   决策点直给 safety_level 后这 4 值必然出现, 原表查不到 → 弹窗无标签/样式退化
-+  forbidden_zone: { color: 'red', label: '系统禁区', icon: <StopOutlined /> },
-+  command_block: { color: 'red', label: '危险命令', icon: <StopOutlined /> },
-+  data_guard: { color: 'orange', label: '数据保护', icon: <WarningOutlined /> },
-+  unregistered: { color: 'volcano', label: '未注册', icon: <WarningOutlined /> },
+-  path_auth: { color: 'orange', label: '需授权', icon: <WarningOutlined /> },
+-  shellparam: { color: 'orange', label: '命令确认', icon: <ExclamationCircleOutlined /> },
+-  tool_write: { color: 'geekblue', label: '写确认', icon: <EditOutlined /> },
+-  tool_delete: { color: 'red', label: '删除确认', icon: <StopOutlined /> },
+-  tool_execute: { color: 'volcano', label: '执行确认', icon: <ExclamationCircleOutlined /> },
++  // ★ 键集必须与后端 SafetyLevel.CONFIRM_LEVELS 完全相等(硬拦命名空间不进弹窗, 不配)
++  delete_recursive:     { color: 'red',     label: '递归删除确认', icon: <StopOutlined /> },
++  delete_out_of_scope:  { color: 'red',     label: '范围外删除授权', icon: <WarningOutlined /> },
++  write_protected:      { color: 'orange',  label: '受保护路径写入授权', icon: <WarningOutlined /> },
++  write_out_of_scope:   { color: 'orange',  label: '范围外写入授权', icon: <WarningOutlined /> },
++  shell_medium_risk:    { color: 'orange',  label: '命令确认', icon: <ExclamationCircleOutlined /> },
++  shell_delete_confirm: { color: 'red',     label: '命令含删除动作', icon: <StopOutlined /> },
++  shell_write_confirm:  { color: 'orange',  label: '命令含写入动作', icon: <EditOutlined /> },
++  shell_read_confirm:   { color: 'blue',    label: '命令含读取动作', icon: <FileSearchOutlined /> },
++  shell_command_confirm:{ color: 'orange',  label: '命令确认', icon: <ExclamationCircleOutlined /> },
++  sql_execute_confirm:  { color: 'volcano', label: 'SQL 执行确认', icon: <ExclamationCircleOutlined /> },
++  task_deal_confirm:    { color: 'geekblue',label: '任务处理确认', icon: <EditOutlined /> },
++  registry_deal_confirm:{ color: 'volcano', label: '注册表处置确认', icon: <ExclamationCircleOutlined /> },
++  tool_confirm:         { color: 'volcano', label: '工具级确认', icon: <WarningOutlined /> },
  };
 ```
+
+> ★ **v1.11 全表替换**：旧 5 键（`path_auth`/`shellparam`/`tool_write`/`tool_delete`/`tool_execute`）与新枚举**无一重合**，全部作废。`tool_write` 是死条目（后端 0 产地）。
+> ★ **兜底仍必须保留**（`SAFETY_LEVEL_CONFIG[request.safetyLevel] || {label: request.safetyLevel}`）作为防御，但**不应被命中** —— 应由一条前后端一致性测试锁死（见 §九）。
 
 **三条独立说明行（挂在 `content` 之外，规避 `WebkitLineClamp:2` 截断）**：
 
 ```tsx
-{/* ① 授权影响面: 英文标识映射中文显示(后端为主, 前端只呈现不做权限判断) */}
+{/* ① 授权影响面: 英文标识映射中文显示(后端为准, 前端只呈现不做权限判断) */}
 {request?.trustImpact && (
   <div style={{ marginTop: 4 }}>
     <Text type="secondary">
-      信任影响：{request.trustImpact === 'high' ? '大（整个目录及其子目录）' : '小（仅此路径）'}
+      授权影响：
+      {request.trustImpact === 'high'
+        ? '大（删除类，抹除不可撤销）'
+        : request.trustImpact === 'medium'
+          ? '中（写入类，可覆写原内容）'
+          : '小（命令级确认，不直接改文件内容）'}
     </Text>
   </div>
 )}
 
 {/* ② 临时授权时效: temp_auth 是任务级 ContextVar, 任务结束自动失效 */}
-{safetyLevel === 'path_auth' && (
+{(safetyLevel === 'write_protected' || safetyLevel === 'write_out_of_scope' ||
+  safetyLevel === 'delete_out_of_scope') && (
   <div style={{ marginTop: 8, marginBottom: 4 }}>
     <Text type="secondary" style={{ fontSize: 12 }}>
       临时授权仅本任务有效，任务结束自动失效；与下方"信任此操作"（会话级）是两套机制
@@ -928,15 +985,17 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
   </div>
 )}
 
-{/* ③ 系统禁区永不授权 —— [39]原案§1.6第4步 */}
-{safetyLevel === 'forbidden_zone' && (
+{/* ③ 系统禁区不可授权 */}
+{safetyLevel === 'delete_recursive' && (
   <div style={{ marginTop: 8, marginBottom: 4 }}>
     <Text type="secondary" style={{ fontSize: 12 }}>
-      系统禁区不可授权
+      该路径在允许根集内，但递归删除不可撤销，仅可确认单文件删除
     </Text>
   </div>
 )}
 ```
+
+> ★ **v1.11 三处订正**：①`trustImpact` 映射由二档改**三档**；②触发条件由 `path_auth` 改为**实际带临时授权的三个标签**（`path_auth` 已不存在）；③第三条由「`forbidden_zone` 系统禁区不可授权」改为 `delete_recursive` —— `forbidden_zone` 是**硬拦命名空间**、永不进弹窗，该说明行永不可能触发。`delete_recursive` 是**弹窗内**唯一需要额外解释的删除类（它不授予路径授权，只确认这一次不可撤销的操作）。
 
 ### 6.19 `app/services/tool/tool_facade.py` — 下游消费点（v1.5 漏，v1.6 补）
 
@@ -977,35 +1036,34 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 
 ## 七、影响面清单（实测全量，2026-10-18）
 
-### A 类：`SafetyResult` 字段与工厂
+### A 类：`SafetyResult` 字段与工厂（**v1.11 订正路径**）
 
-| 文件 | 行 | 动作 |
-|------|----|------|
-| `app/tools/tool_types.py` | 152 | 删 `severity` 定义；`requires_confirmation` → `needs_confirm`；增 `safety_level` |
-| `app/tools/tool_types.py` | 166 | `pass_result()` 同步三处 |
+| 文件 | 动作 |
+|------|------|
+| `app/safety/safety_result.py` | 删 `severity` 定义；`requires_confirmation` → `needs_confirm`；增 `safety_level`；**新增 `SafetyLevel(StrEnum)` + `CONFIRM_LEVELS` + `BLOCK_LEVELS`** |
+| `app/safety/safety_result.py` | `pass_result()` 同步 |
 
-### B 类：`SafetyResult(...)` **构造点（24 处）** + 属性读取（12 处，见 C 类）
+### B 类：`SafetyResult(...)` **构造点（31 处）** + 属性读取（12 处，见 C 类）
 
-> v1.6 起本表**明确区分「构造 kwarg」与「属性读取」** —— 前者加 `safety_level`/改 kwarg 名，后者只改属性名，两类漏改后果同为 `AttributeError` 但改法不同。
-> 构造点实测 **24** 处（此前误记 26，因 `dual_path_check` 的 4 处 `result.requires_confirmation` 是**读取**而非构造）。
+> v1.6 起本表**明确区分「构造 kwarg」与「属性读取」** —— 前者加 `safety_level`/改 kwarg 名，后者只改属性名。
+> ★ **v1.11 重做**：枚举化后新增 `SafetyLevel` 成员引用（而非裸串），且 `delete_path_check` 因 R4/R5 拆分增至 9 处、`path_tool_safety_checker` 因 `confirm_level_for` 收敛为 2 个出口。
 
-| 文件 | 构造 | 读取 | 置 `safety_level` |
+| 文件 | 构造 | 读取 | `safety_level`（v1.11 实际值） |
 |------|------|------|----------------|
-| `read_path_check.py` | 2 | 0 | `path_auth` |
-| `write_path_check.py` | 4 | 0 | `path_auth`×3 / `forbidden_zone` |
-| `delete_path_check.py` | 7 | 0 | `tool_delete`×5 / `forbidden_zone`×2 |
-| `dual_path_check.py` | 2 | **4** | `tool_delete` / `forbidden_zone` |
-| `shell_path_check.py` | 6 | **3** | `command_block` |
-| `shell_danger_command.py` | 1 | 0 | `command_block` |
-| `shell_command_risk.py` | 1 | 0 | `shellparam` |
-| `path_legality_router.py` | 1 | 0 | `command_block` |
-| `path_tool_safety_checker.py` | 7 | **2** | `unregistered` / `tool_execute`×2 / —×3 / `command_block` |
+| `read_path_check.py` | 2 | 0 | `BLOCK_PATH_INVALID` ×1 / 放行**不带标签** |
+| `write_path_check.py` | 4 | 0 | `WRITE_PROTECTED` / `WRITE_OUT_OF_SCOPE` / `PATH_FORBIDDEN` / 放行不带标签 |
+| `delete_path_check.py` | **9** | 0 | `DELETE_RECURSIVE` / `DELETE_OUT_OF_SCOPE` / `PATH_FORBIDDEN` ×3 / `BLOCK_PATH_INVALID` ×2 / 放行不带标签 |
+| `dual_path_check.py` | 2 | **4** | `BLOCK_PATH_INVALID` / `PATH_FORBIDDEN` |
+| `shell_path_check.py` | 6 | **3** | `BLOCK_COMMAND` ×6 |
+| `shell_danger_command.py` | 1 | 0 | `BLOCK_COMMAND` |
+| `shell_command_risk.py` | 1 | 0 | `SHELL_MEDIUM_RISK` |
+| `path_legality_router.py` | 1 | 0 | `BLOCK_COMMAND` |
+| `path_tool_safety_checker.py` | 3 | **2** | `BLOCK_UNREGISTERED` / `BLOCK_COMMAND` ×2 |
 | `safety_gate.py` | 0 | **2** | （编排层，不产 SafetyResult） |
+| `sandbox_gate.py` | 0 | 0 | （产 `ConfirmSpec`，`BLOCK_COMMAND`） |
 | `tool_facade.py` | 0 | **1** | （下游消费） |
 | `execute_shell_command.py` | 0 | **1** | （下游消费） |
-| **合计** | **24** | **12** | — |
-| `path_legality_router.py` | 1 | `command_block` |
-| `path_tool_safety_checker.py` | 7 | `unregistered` / `tool_execute`×2 / —×3 / `command_block` |
+| **合计** | **29** | **13** | — |
 
 ### C 类：`requires_confirmation` **属性读取点（12 处）** —— 改名后 `AttributeError`，★最高优先
 
@@ -1031,13 +1089,12 @@ return SafetyResult(needs_confirm=needs_confirm, blocked=False,
 > **漏改后果**：这 7 处同样 `AttributeError`，与 #5/#10~#12 同等级，非可选项。
 > **对应 diff**：#1~#4 见 §六.9；#6 见 §六.14；#7~#9 见 §六.10。
 
-### D 类：`ConfirmSpec.severity`
+### D 类：`ConfirmSpec.trust_impact`
 
-| 文件 | 行 | 动作 |
-|------|----|------|
-| `hitl_gateway.py` | 41 | 字段改名 `trust_impact` |
-| `hitl_gateway.py` | 111 | paused 帧改键 |
-| `sandbox_gate.py` | 150 | 删 `severity="risk"`，不传 `trust_impact` |
+| 文件 | 动作 |
+|------|------|
+| `hitl_gateway.py` | 字段改名 `trust_impact`（取值 `high`/`medium`/`low`）；paused 帧改键 |
+| `sandbox_gate.py` | 不传 `trust_impact`（沙箱裁决未授予路径访问权）；`safety_level` 改 `BLOCK_COMMAND` |
 
 ### E 类：`MetaStep.severity`（**严禁改动**，见 §二）
 
@@ -1121,69 +1178,100 @@ Get-ChildItem app -Recurse -Filter *.py | Select-String 'requires_confirmation\s
 
 ---
 
-## 八、实施顺序
+## 八、实施顺序（**v1.11 按落码现状重排**）
 
-| 批次 | 内容 | 文件 | 依赖 |
-|------|------|------|------|
-| 批一 | `SafetyResult` 删 `severity` + 改名 `needs_confirm` + 增 `safety_level` | `tool_types.py` | 无 |
-| 批二 | **C 类读取点 + 全部代码点 kwarg 改名**（含沙箱判定改读 `needs_confirm`） | `path_tool_safety_checker.py`, `safety_gate.py`, `tool_facade.py`, `execute_shell_command.py` | 批一（**必须同批，否则中间态崩**） |
-| 批三 | B 类构造点补 `safety_level` + kwarg 改名 + 措辞补齐 | 8 个 safety 文件 | 批一 |
-| 批四 | `temp_auth.resolve_grant_recursive` 上提 + `safety_gate._resolve_trust_impact` 新增 | `temp_auth.py`, `safety_gate.py` | 批二 |
-| 批五 | D 类 `ConfirmSpec` 正名 | `hitl_gateway.py`, `sandbox_gate.py` | 批二 |
-| 批六 | 注释订正（功能注释改名，历史注释保留） | `tool_routes.py` | 批二 |
-| 批七 | **前端 F 类白名单链（F1→F2→F3，缺一即静默丢字段）** | `backupTypes.ts`, `sseParser.ts`, `useAuthorization.ts` | 批五 |
-| 批八 | 前端视图：`SAFETY_LEVEL_CONFIG` 补 4 分类 + `AuthorizationRequest` 补 `trustImpact` + 渲染三行说明 | `index.tsx` | 批七 |
-| 批九 | 端到端验证 + 全量 pytest + `npm run check:full` | — | 全部 |
+> ★ 批一~批六**已落码**（2026-10-18）。批七/批八（前端 F 类链）**本次补做**。下表标注各批状态。
+
+| 批次 | 内容 | 文件 | 依赖 | 状态 |
+|------|------|------|------|------|
+| 批一 | 字段层：删 `severity` + 改名 `needs_confirm` + 增 `safety_level` + **`SafetyLevel` 枚举** | `app/safety/safety_result.py` | 无 | ✅ |
+| 批二 | C 类读取点 + 全部代码点 kwarg 改名（**含沙箱判定改读 `needs_confirm`**） | `path_tool_safety_checker` / `safety_gate` / `tool_facade` / `execute_shell_command` | 批一（**必须同批，否则中间态崩**） | ✅ |
+| 批三 | B 类构造点补 `safety_level` + 措辞补齐 + **R4/R5 拆分 + R5 补 `auth_path`** | 8 个 safety 文件 | 批一 | ✅ |
+| 批四 | `temp_auth._is_rejectable_root` 上提 | `temp_auth.py` | 批二 | ✅ |
+| 批五 | D 类 `ConfirmSpec` 正名 + **`trust_impact` 改三档按 `safety_level` 取档** | `hitl_gateway.py`, `safety_gate.py`, `sandbox_gate.py` | 批二 | ✅ |
+| 批六 | 注释订正（功能注释改名，历史注释保留） | `tool_routes.py` | 批二 | ⬜ 本次补做 |
+| 批七 | **前端 F 类白名单链（F1→F2→F3，缺一即静默丢字段）** | `backupTypes.ts`, `sseParser.ts`, `useAuthorization.ts` | 批五 | ⬜ 本次补做 |
+| 批八 | 前端视图：`SAFETY_LEVEL_CONFIG` **13 键** + `AuthorizationRequest.trustImpact` + 渲染三行说明 | `index.tsx` | 批七 | ⬜ 本次补做 |
+| 批九 | 端到端验证 + 全量 pytest + `npm run check:full` | — | 全部 | ⬜ |
+
+**v1.11 新增批次（已落码，记录备查）**：
+
+| 批次 | 内容 | 文件 |
+|------|------|------|
+| 批十 | **`rename` 源判为「写」**，shell 侧同步（动词表拆分 + 沙箱宽表并入） | `tool_constants.DUAL_ACTION_PARAMS`（核对不动）/ `shell_parse/parse_move.py` / `shell_parse/parse_shell_action.py` / `shell_sandbox_tables.py` |
+| 批十一 | **删除 `_classify_safety_level`**（关键词反查链，各判定点直给后成死代码） | `safety_gate.py` |
+| 批十二 | 目录术语统一（允许根集／白名单／代码目录／会话工作区） | `path_classify_category.py` / `delete_path_check.py` / `write_path_check.py` |
 
 ---
 
-## 九、验收标准
+## 九、验收标准（**v1.11 按落码现状重写**）
+
+### 已落码部分的验收（应全过）
 
 1. `SafetyResult` 类体内无 `severity` 字段行
 2. `grep -rn "SafetyResult(.*severity=" backend/app` 零匹配
-3. **`requires_confirmation` 在代码中零残留** —— 校验命令（**排除编辑历史注释**，注释按铁规保留原字样）：
+3. **`requires_confirmation` 在代码中零残留**（排除编辑历史注释）：
    ```powershell
    Get-ChildItem -Path app -Recurse -Filter *.py | Select-String -Pattern "requires_confirmation" | Where-Object { $_.Line -notmatch '^\s*#' }
    ```
-   期望：**零输出**。若输出非空，说明仍有代码点未改名（会 `AttributeError`）。
+   期望：**零输出**。
 4. `grep -rn "\.severity == \"risk\"" backend/app` 零匹配
-5. `grep -rn 'severity = "risk" if' backend/app` 零匹配
-6. 沙箱判定改读 `needs_confirm`（`:195` 与 `:233-235`），行为等价不变
-7. `blocked=True` 构造点均不带 `trust_impact`
-8. `_classify_safety_level` **保留**且仅作兜底
-9. `MetaStep.severity` 站点（E 类）**零改动**
-10. `resolve_grant_recursive` 被 `grant_temp_auth` 与 `_resolve_trust_impact` **两处共用**（单一真源）
-11. `trust_impact` 值域仅 `high`/`low`（英文标识），中文仅出现在前端显示层
-12. `sandbox_gate.py:150` 不传 `trust_impact`
-13. `SAFETY_LEVEL_CONFIG` 覆盖 9 个 `safety_level` 值
-14. 弹窗显示「信任影响：大（整个目录及其子目录）」／「小（仅此路径）」
-15. `path_auth` 显示「临时授权仅本任务有效…与信任此操作是两套机制」
-16. `forbidden_zone` 显示「系统禁区不可授权」
-17. 写线 `non_system` 文案含「临时」二字
-18. 写线白名单外文案含「仅本任务有效」
-19. 三条说明均为独立 DOM 行，未追加进 `content`
-20. `pytest` 全量通过（含 HITL / safety / p1 / p2 / 路径守卫）
-21. `npm run check:full` 通过（**含 `typecheck` 与 `typecheck:e2e`**——本方案改 TS 契约）
+5. **★ 枚举外值零泄漏**（v1.11 新增，最强约束）：
+   ```python
+   from app.safety.safety_result import SafetyLevel, CONFIRM_LEVELS, BLOCK_LEVELS
+   VALID = {str(v) for v in SafetyLevel}
+   # 静态: 扫 safety_level="..." 字面量, 必须全在 VALID 内
+   # 运行时: 遍历各工具各分支, 产出的 safety_level 必须是 VALID 成员或空串
+   ```
+6. **`_classify_safety_level` 已删除**（v1.11 订正原验收 #8「保留」）
+7. `MetaStep.severity` 站点（E 类）**零改动**
+8. **★ 前后端标签集一致**（v1.11 新增，替代原验收 #13）：
+   `set(SAFETY_LEVEL_CONFIG.keys()) == set(str(v) for v in CONFIRM_LEVELS)`
+9. `sandbox_gate.py` 不传 `trust_impact`；其 `safety_level` 为 `BLOCK_COMMAND`
+10. `trust_impact` 值域仅 `high`/`medium`/`low`，且**按 `safety_level` 取档**（非 `auth_path`、非 `recursive`）
+11. **放行结果一律不带 `safety_level`**（空串）
+12. **`needs_confirm=True` 且文案承诺授权的分支，必须带 `auth_path`**（R5 已补）
+13. `blocked=True` 与 `needs_confirm=True` 互斥（实测全分支零同现）
+14. **★ `rename` 工具与 bash `Rename-Item` 判定一致**（v1.11 新增）：四组语义（改名/搬移/复制/删除）逐组比对，工具与 shell 必须同结论
+15. **★ 沙箱宽表含改名动词**（v1.11 新增）：`SHELL_WRITE_INTENT_RE.search("Rename-Item")` 必须为 True
+16. 沙箱判定改读 `needs_confirm`（`known_risk.sandbox_required` 与主 return 两处），行为等价不变
+
+### 前端部分（本次补做后验收）
+
+17. `SAFETY_LEVEL_CONFIG` 覆盖 `CONFIRM_LEVELS` 全部 13 个值
+18. 弹窗显示「授权影响：大（删除类，抹除不可撤销）」／「中（写入类，可覆写原内容）」／「小（命令级确认…）」
+19. 三个带临时授权的标签（`write_protected`/`write_out_of_scope`/`delete_out_of_scope`）显示「临时授权仅本任务有效…与信任此操作是两套机制」
+20. `delete_recursive` 显示「递归删除不可撤销，仅可确认单文件删除」
+21. `grep -n "trust_impact\|trustImpact" frontend/src` 应命中 4 个文件，少一处即断链
 22. **端到端验证**：`trust_impact` 经 F1→F2→F3→F4 四层后，`request.trustImpact` 非空（白名单静默丢弃唯一定位手段，静态检查抓不到）
-23. `grep -n "trust_impact\|trustImpact" frontend/src` 应命中 4 个文件，少一处即断链
+23. `npm run check:full` 通过（**含 `typecheck` 与 `typecheck:e2e`**）
+24. 全量 `pytest` 通过（不含需真实后端服务的 `test_api_comprehensive.py`）
+
+### 措辞验收
+
+25. 文案不含禁用词（工作区／允许的操作范围／受保护区域／授权根目录）——「会话工作区」是合法来源名，不算
+26. 文案提到的目录集合名，必须与该分支**实际使用的那个集合**一致（删线→允许根集；写线→白名单）
+27. 文案承诺的行为必须在分支里真实发生（如「需申请临时授权」必须有 `auth_path`）
 
 ---
 
-## 十、风险与回滚
+## 十、风险与回滚（**v1.11 增补**）
 
 | 风险 | 影响 | 缓解 |
 |------|------|------|
 | 批一/批二不同批落地 | C 类读取点 `AttributeError`/`TypeError`，服务不可用 | 强制同批原子提交 |
 | 全局替换误改 `MetaStep.severity` | SSE 分级丢失，前端错误通道与样式退化 | 按 §二/§七 E 类逐点排除，禁全局替换 |
 | `needs_confirm` 改名留了兼容别名 | 新旧两套真源，违反禁止 backward | 验收 #3（排除注释后零输出） |
-| **影响面统计用非递归 glob 漏文件** | **v1.5 实际发生**：漏 4 文件 / 11 处，含 3 个关键读取点 | 全量统计一律用 `Get-ChildItem -Recurse`；验收 #3 用递归命令 |
-| `tool_facade`/`execute_shell_command` 读取点漏改 | 直调 API 与 shell 确认路径 `AttributeError` | 已补入批二 + §6.0 清单 #15/#16 |
-| diff 内残留 `requires_confirmation=` kwarg | `TypeError: unexpected keyword argument` | 验收 #3；落码时逐 diff 对照 |
-| 局部变量 `needs_confirm` 与 kwarg 同名致误读 | 可读性下降 | 局部变量保持不动；`path_tool_safety_checker:230` 同名合法 |
-| `trust_impact` 判定口径漂移 | 授权给了整子树却显示"小" | `resolve_grant_recursive` 单一真源 + 验收 #10 |
-| 前端白名单层漏改 | 后端正确但前端无显示 | 验收 #22 端到端 + #23 grep 计数 |
+| 影响面统计用非递归 glob 漏文件 | v1.5 实际发生：漏 4 文件 / 11 处 | 全量统计用 `Get-ChildItem -Recurse`；**行号统计禁用 PowerShell，一律用 Python** |
+| `tool_facade`/`execute_shell_command` 读取点漏改 | 直调 API 与 shell 确认路径 `AttributeError` | 批二 + §6.0 清单 #15/#16 |
+| **★ 枚举外值泄漏**（v1.11 新增） | 前端查不到配置 → 走兜底**直接显示原始英文串**；且分类信息全丢 | 验收 #5（静态 + 运行时双查）+ #8（前后端集一致） |
+| **★ 删兜底函数前未确认无调用点**（v1.11 实际险招） | 若仍有路径 level 为空 → 分类恒空 | 删前先确认所有产码点直给；验收 #6 |
+| **★ R5 缺 `auth_path`**（v1.11 实际缺陷） | 弹窗承诺授权而授权未落地 → 确认后仍被拒，删线死路 | 验收 #12 |
+| **★ 动词表拆分漏并宽表**（v1.11 实际退化） | 改名命令不进沙箱写意图判定 | 验收 #15 |
+| **★ `TOOL_CONFIRM_DEFAULT` 兜底成命令标签**（v1.11 已避免） | 写类工具弹窗显示「命令确认」，标签说谎 | 兜底必须是 `TOOL_CONFIRM` |
+| 前端白名单层漏改 | 后端正确但前端无显示 | 验收 #22 端到端 + #21 grep 计数 |
 | 措辞改动打破既有断言 | 测试失败 | 措辞仅改 message，grep 受影响测试后同步 |
-| `sandbox_gate` 误传 `trust_impact` | 禁区场景误导用户以为可授权 | 验收 #12 |
+| `sandbox_gate` 误传 `trust_impact` | 沙箱裁决场景误导用户以为获得路径权限 | 验收 #9 |
 
 ---
 
@@ -1196,15 +1284,64 @@ Get-ChildItem app -Recurse -Filter *.py | Select-String 'requires_confirmation\s
 | §1.3 事实3 | `temp_auth` 是后端任务级不变式 | §六.6/§六.18 只描述不改语义 | ✅ 采纳 |
 | §1.3 事实4 | `sandbox_gate` 已直接置位（范式） | §六.5 | ✅ 采纳（订正：置的是 `ConfirmSpec` 非 `SafetyResult`） |
 | §1.4 结论1 | `safety_level` 字段没问题，只是产地错 | §四.1 + §六.3 | ✅ 采纳 |
-| §1.4 结论2 | `severity` 正名 `trust_impact` | §五.3 真影响面（非改名 relabel） | 🔄 **深化**（[39]原案 只说正名，未给判定真源；本文补 `recursive` 真值源） |
+| §1.4 结论2 | `severity` 正名 `trust_impact` | §五.3（**v1.11 改判**：`high`/`medium`/`low`，真值源 `safety_level`） | 🔄 **两次深化**（原案只说正名；v1.5 补 `recursive` 真值源；v1.11 按老陈裁定改为按操作性质三档） |
 | §1.4 注 | 不新增 `reason_code` | 全文 | ✅ 采纳 |
 | §1.5 E | 复用现有字段 + 前端合成 | 全文 | ✅ 采纳 |
-| §1.6 第1步 | `SafetyResult` 增 `safety_level`；**删** `_classify_safety_level` | 增字段 ✅；删函数 ❌→**改兜底**（§六.3，理由：无 message 场景会失分类） | 🔄 修正 |
+| §1.6 第1步 | `SafetyResult` 增 `safety_level`；**删** `_classify_safety_level` | 增字段 ✅ + **`SafetyLevel` 枚举**（v1.11 扩充）；**删函数 ✅（v1.11 已删）** | ✅ **完全采纳**（v1.5 曾改为"保留兜底"，v1.11 回归原案并说明理由：保留兜底的反面理由——"无 message 场景会失分类"已不成立，因该场景已在产码点直给） |
 | §1.6 第2步 | `severity` → `trust_impact`，前端改读 | §五.3 + §六.3/6.4/6.5 + §6.15~6.18 | ✅ 采纳 |
 | §1.6 第3步 | 沙箱判定改读 `requires_confirmation` | §五.4 + §六.14 | ✅ 采纳 |
 | §1.6 第3步 | blocked 分支不再塞 severity | §七 B 类 + §六各处 | ✅ 采纳 |
-| §1.6 第4步 | 前端显示信任影响 + 临时授权说明 + 系统禁区说明，独立一行 | §六.18 | ✅ 采纳 |
-| §1.6 第5步 | 措辞补齐 | §六.6 | ✅ 采纳 |
+| §1.6 第4步 | 前端显示信任影响 + 临时授权说明 + 系统禁区说明，独立一行 | §六.18 | 🔄 **订正触发条件**（`path_auth` 已不存在；「系统禁区不可授权」原挂在 `forbidden_zone`，而该值属硬拦命名空间永不进弹窗，该行永不可能触发 → 改挂 `delete_recursive`） |
+| §1.6 第5步 | 措辞补齐 | §六.6 + **§四.5 术语统一** | 🔄 **深化**（补的不只是"临时"二字，还有目录术语全量统一：允许根集 vs 白名单是两个不同集合） |
 | §1.7 | 危险等级等价关系（重复编码） | §四.2 | ✅ 采纳 |
 | §1.7 | 「自证循环」判断 | §五.4 实测复核 `:231-235` **成立** | ✅ 采纳 |
-**版面签名**：本文由小欧于 2026-10-18 14:12:30 修订至 **v1.10（按新铁规清理全文 diff 注释中的文档号/章节号/来源字样）**。
+
+---
+
+## 十二、`rename` 源判为「写」（v1.11 新增）
+
+**问题**：改名前原路径消失，形式上像删除。但**改名不销毁数据、可回退**，与删除的「抹除不可撤销」性质不同。若按删线处理，则代码目录内的改名被硬拦，而同名文件的新建/改写只弹确认——对同一目录的两种操作给出宽严不一的判定。
+
+**裁定（老陈 2026-10-18）**：`rename` 工具的源判为**写**。
+
+**同步要求（必须与工具侧一致）**：shell 通道的改名动词原与搬移动词合表（`Rename-Item`/`ren`/`rnm`/`rename` 均在 `MOVE_VERBS_*`），改后须拆出独立动词表并按动词二分源档位：
+
+```python
+MOVE_VERBS_PS   = ("Move-Item", "mi", "mv")            # 搬移: 源被搬走 → 源=delete
+RENAME_VERBS_PS = ("Rename-Item", "ren", "rnm")        # 改名: 只换名   → 源=write
+```
+
+三处连带改动（缺一即退化）：
+
+| # | 位置 | 改动 | 漏改后果 |
+|---|------|------|---------|
+| 1 | `shell_parse/parse_move.py` | 动词表拆分 + `parse_move_action` 按动词二分源档位 | 语义与工具不一致 |
+| 2 | `shell_parse/parse_shell_action.py` | 全局早退门补 `SHELL_RENAME_RE` | 改名命令被早退门跳过全部路径检查 |
+| 3 | **`shell_sandbox_tables.py`** | `_intent_verb_union()` 并入 `RENAME_VERBS_BY_SHELL` | ★**沙箱宽表丢改名动词** —— 宽表是沙箱侧独立依据、不经早退门，漏并等于改名命令不进沙箱写意图判定（实测 `SHELL_WRITE_INTENT_RE.search("Rename-Item")` 为 `False` 即此退化） |
+
+**验证**：四组语义（改名／搬移／复制／删除）逐组比对工具与 shell(PS) 判定，必须同结论。
+
+---
+
+## 十三、`safety_level` 枚举化（v1.11 新增）
+
+**问题**：9 个裸字符串在 13 个文件里手写，同一成因多处各写一遍、新成因随手加字符串，无任何约束；且「硬拦原因」与「确认原因」混在同一空间，导致 `path_auth` 一个标签同时表示放行／硬拦／任务级授权／临时授权／沙箱裁决五种语义。
+
+**治法**：
+1. `SafetyLevel(StrEnum)` **单源定义**，两空间前缀隔离；
+2. 派生 `CONFIRM_LEVELS`（13）与 `BLOCK_LEVELS`（4），前者是前端配置的**唯一对齐基准**；
+3. 确认标签在**产码点直给**（`path_tool_safety_checker.confirm_level_for` 统一出口），彻底删除按文案关键词反查的 `_classify_safety_level`；
+4. 放行结果不带标签。
+
+**附带的既有安全缺口（三堂会审发现，非本次引入，尚未修）**：
+
+| # | 现象 | 实测 | 性质 |
+|---|------|------|------|
+| 1 | 相对源 + 绝对目标的复制命令，**目标被判成源** | `Copy-Item a.txt C:\Windows\b.txt` → 解析为 `[('read','C:\\Windows\\b.txt','copy-src')]` → 读线放行系统目录 → **往系统目录写文件不拦** | 安全漏洞 |
+| 2 | shell 通道**缺「系统源外泄拦截」** | `copy C:\Windows\a.txt out.txt` → `blocked=False`；而 `dual_path_check.py:141-144` 有该拦截，`shell_path_check` 读循环没有 → **系统文件可搬出** | 安全漏洞（两通道不一致） |
+
+两者均在 `lexer.split_source_target` 与 `shell_path_check` 读循环，修复会改判定行为，需单独立项。
+
+---
+
+**版面签名**：本文由小欧于 2026-10-18 16:59:55 修订至 **v1.11（全量对齐本地已落码 + 补记 v1.0~v1.10 无载的已落码事项）**。

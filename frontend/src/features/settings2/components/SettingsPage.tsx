@@ -25,7 +25,7 @@
 // 2026-09-21 小强 - 切 provider 表单值跟随真修复：key 加在 ProviderConfig 组件层（整体重挂→useForm 全新实例→空仓库→新 initialValues 落盘；内层 key 经 rc-field-form 源码证伪无效已删，北京老陈定）
 // 2026-09-21 小强 - 设置页17问题复核修复（[设置页UI审计] 问题1/4/7/8/9/11/12/13/17）：
 //   ①搜索跳转滚动到命中行(data-settings-key 锚点，双 rAF)；②切Tab确认文案与"保存并切换"行为对齐；
-//   ③危险确认拆分本组/全部(dangerousGroup/All)，危险键含 security.enabled；④模型组脏计数按实际参数数；
+//   ③危险确认拆分本组/全部(dangerousGroup/All)，危险键含 security.hitl_enabled；④模型组脏计数按实际参数数；
 //   ⑤添加/删除/Provider 保存失败不关窗并 rethrow（弹窗保留输入）；⑥添加 Provider toast 引导切换；
 //   ⑦jumpToProviderConfig 走脏确认闸口+保存后滚动锚点；⑧删模型Tab①"当前系统全局使用模型"冗余行
 // 2026-09-22 小强 - A3：ModelActions 传 envManaged（provider env 接管时隐藏「清空 api_key」，后端拒 clear）
@@ -215,9 +215,11 @@ const SettingsPage: React.FC = () => {
   };
 
   // 修正(2026-09-21 小强)：危险判定拆分「保存本组/保存全部」——原全局判定致保存其它组误弹；
-  // 危险键=HTL人工开关/危险操作确认的变更（含 security.enabled 关闭场景，原仅认 confirmDangerousOps）
+  // 危险键=HTL人工开关/危险操作确认的变更（含 security.hitl_enabled 关闭场景，原仅认 confirmDangerousOps）
   // （[设置页UI审计] 问题7/8）
-  const DANGEROUS_KEYS = ['security.enabled', 'security.confirmDangerousOps'];
+  // 2026-10-18 小欧 - 键名 security.enabled → security.hitl_enabled: 只决定是否弹窗请用户确认,
+  //   危险防护不受其影响。DANGEROUS_KEYS / DANGER_LABELS / DANGER_EFFECTS 三表同步跟改。
+  const DANGEROUS_KEYS = ['security.hitl_enabled', 'security.confirmDangerousOps'];
   const dangerousGroup =
     state.activeTab === 'security' &&
     DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
@@ -228,14 +230,14 @@ const SettingsPage: React.FC = () => {
   // 也不知道关闭 HTL 的后果——确认弹框的全部意义就是让人看清即将生效的变更。
   // 取值口径与 SettingsGroup 一致：values[key] 为准（脏键的缓冲值，不回落到已落盘值）。
   const DANGER_LABELS: Record<string, string> = {
-    'security.enabled': 'HTL人工开关',
+    'security.hitl_enabled': 'HTL人工开关',
     'security.confirmDangerousOps': '危险操作确认',
   };
 // 2026-10-11 01:20 小欧 - 后果说明**两个方向都给**（北京老陈："你自己不是说俩个方向都有说明信息吗"）。
 //   原实现只在"关闭"方向挂说明、"开启"方向留空 → 只改一项且是开启方向时，说明区整片空白，
 //   弹框下半部塌陷、左右失衡。改为按 `${key}:${方向}` 取，开与关各有对应后果。
 const DANGER_EFFECTS: Record<string, { on: string[]; off: string[] }> = {
-  'security.enabled': {
+  'security.hitl_enabled': {
     on: [
       '开启后：每次高危操作都会弹窗请你人工确认，不会自动放行',
       '（更安全，代价是每次操作都要点一次）',

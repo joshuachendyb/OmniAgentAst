@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-14 小欧 - 文档[33] 4.12-B 自 app/utils/path_utils.py 迁入(当时的归属: 通用层, 因 tools 禁 import app.safety)。
+# 2026-10-14 小欧 - 自 app/utils/path_utils.py 迁入(当时的归属: 通用层, 因 tools 禁 import app.safety)。
 #   迁入理由: 工具层硬底线 delete_file._guard_forbidden_delete 需在 app.safety 开关被关闭时仍能拦系统目录,
 #     故判定必须放在工具层够得到、且不依赖任何开关的地方。
-# 2026-10-15 北京老陈裁定(文档[35] 阶段五) - **迁回 app/safety/path_classify_category.py**:
+# 2026-10-15 - 小欧 - 迁回 app/safety/path_classify_category.py:
 #   职责归属回归安全域(目录分类属安全判定, 不是通用工具);
-#   越层限制改由"能力分级白名单"解开, 而非靠把判定寄居 utils 绕开(见 3.6.2)。
-#   本模块为纯判定: 零配置读取、零 I/O、**不读 security.enabled** —— 保证工具层依赖它
-#   ≠ 依赖可被关闭的前线防线(硬底线独立性)。
-#   迁移手法: 四个函数自 path_utils.py **逐字搬迁**, 实现与异常口径一字不改。
-# 2026-10-15 北京老陈裁定(消号) - _is_forbidden_path 自 path_safe_check.py 迁入并正名 classify_forbidden_path(本模块四个路径属性判定的聚合者, 同族同层), 实现逐字搬迁; path_safe_check.py 随之消号。
-# 2026-10-15 北京老陈裁定(单一真源) - 九格契约表复制入本模块 docstring: 原拟归位 path_safe_check 模块头, 该文件消号时表未迁入(指针自建立起即为空), 三线模块指针落空; 本模块是 category 唯一产出者。
-# 2026-10-15 北京老陈裁定(DRY) - is_protected_root_itself 的 extra_roots 省略时自取会话快照: 原由 path_safe_check 与 delete_file 各取一次, 改一处漏一处即致授权判定分叉。
-# 2026-10-16 北京老陈裁定(正名+订正) - ①is_protected_root_itself → is_allowed_root_itself: 它判的根集来自
-#   get_allowed_roots()(**允许**根), 名字却叫 protected(禁碰), 名实不符; 统一"函数名跟数据源走"(与 is_code_root_path 同规律)。
-#   ②九宫格「白名单内 × 删」订正: 原写"放行"是错的, 实测放行只限"允许根内普通删"; 根内递归删与根外删均需确认(R4/R5),
+#   越层限制改由"能力分级白名单"解开, 而非靠把判定寄居 utils 绕开。
+#   本模块为纯判定: 零配置读取、零 I/O、不读 security.hitl_enabled —— 保证工具层依赖它
+#   不等于依赖可被关闭的前线防线(硬底线独立性)。
+#   迁移手法: 四个函数自 path_utils.py 逐字搬迁, 实现与异常口径一字不改。
+# 2026-10-15 - 小欧 - _is_forbidden_path 自 path_safe_check.py 迁入并正名 classify_forbidden_path(本模块四个路径属性判定的聚合者, 同族同层), 实现逐字搬迁; path_safe_check.py 随之消号。
+# 2026-10-15 - 小欧 - 单一真源: 九格契约表复制入本模块 docstring: 原拟归位 path_safe_check 模块头, 该文件消号时表未迁入(指针自建立起即为空), 三线模块指针落空; 本模块是 category 唯一产出者。
+# 2026-10-15 - 小欧 - DRY: is_protected_root_itself 的 extra_roots 省略时自取会话快照: 原由 path_safe_check 与 delete_file 各取一次, 改一处漏一处即致授权判定分叉。
+# 2026-10-16 - 小欧 - 正名与订正: is_protected_root_itself → is_allowed_root_itself: 它判的根集来自
+#   get_allowed_roots()(允许根), 名字却叫 protected(禁碰); 统一"函数名跟数据源走"(与 is_code_root_path 同规律)。
+#   九宫格「白名单内 × 删」订正: 原写"放行"与实测不符, 实测放行只限"允许根内普通删"; 根内递归删与根外删均需确认(R4/R5),
 #     根外递归更拒(R6) —— 删线叠加 delete_path_check.check_delete_risk 的 R3-R6 边界差异, 白名单不免递归、不免根外。
-#   ③头部"代码库根…父子级"订正为"代码目录…内部所有子级"(实测父级 F:\ 不命中), 并补磁盘根/系统禁区/代码目录/授权目录
-#     四类属性的正式定义, 免后人凭字面猜。
+#   头部"代码库根…父子级"订正为"代码目录…内部所有子级"(实测父级 F:\ 不命中), 并补磁盘根/系统禁区/代码目录/授权目录
+#     四类属性的正式定义, 免后人凭字面推断。
 # 2026-10-18 - 小欧 - 文案术语对齐: is_allowed_root_itself 命中文案由"授权目录"改"允许根目录(项目根/授权目录/会话工作区)" ——
 #   该判据取自 get_allowed_roots, 返回集含项目根与会话工作区, 原文案只说"授权目录"与实际判据集不符。
 #   纯 message 文本, 分类判定零变更。
+# 2026-10-18 - 小欧 - 键名跟改 security.enabled → security.hitl_enabled(模块头"不读该开关"的两处表述同步)。
 """
 path_classify_category — 路径属性判定: 这条路径是什么性质
 
@@ -37,9 +38,9 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
 (read_path_check / write_path_check / delete_path_check)。
 
 **允许谁 import**: 工具层硬底线(app.tools.*)与安全层(app.safety.*)均可。
-本模块不读 security.enabled, 是全套路径安全中唯一可被工具层直接依赖的部分。
+本模块不读 security.hitl_enabled, 是全套路径安全中唯一可被工具层直接依赖的部分。
 
-小欧 2026-10-14 建 / 2026-10-15 小欧 迁回安全域 / 2026-10-15 北京老陈裁定消号迁移(classify_forbidden_path 迁入)
+小欧 2026-10-14 建 / 2026-10-15 小欧 迁回安全域 / 2026-10-15 小欧 消号迁移(classify_forbidden_path 迁入)
 **九格契约表(读/写/删 × 各类区域, 单一真源)** —— 由 classify_forbidden_path 产出 category,
 下游按 category 决定放行/授权/硬拦。改一格三线皆知:
 
@@ -48,12 +49,12 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
 | `system`(系统禁区)            | 放行       | blocked 永不授权    | blocked 永不授权 |
 | `non_system`(代码目录/授权目录)| 放行       | 确认 + auth_path    | blocked 永不授权 |
 | `None` + 白名单外             | 放行       | 确认 + auth_path    | 确认 + auth_path |
-| `None` + 白名单内             | 放行       | 放行                | 见下注★         |
+| `None` + 白名单内             | 放行       | 放行                | 见下注          |
 | 磁盘根 `C:\\`                  | 放行       | blocked 永不授权    | blocked 永不授权 |
 | 空路径/`..`穿越               | blocked    | blocked             | blocked          |
 | 异常 fail-closed              | blocked    | blocked             | blocked          |
 
-★「白名单内 × 删」**不是一律放行**(2026-10-16 老陈核查订正, 实测钉死): 删线还叠加
+「白名单内 × 删」不是一律放行(2026-10-16 实测钉死): 删线还叠加
   delete_path_check.check_delete_risk 的 R3-R6 边界差异, 与递归标志有关 ——
     允许根内**普通**删 → 放行(R3) / 允许根内**递归**删 → 确认(R4) / 允许根**外**删 → 确认(R5) / 根外递归 → 拒绝(R6)。
   故白名单只免"写"与"根内普通删", 不免递归、不免根外。
@@ -69,7 +70,7 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
 
 异常 fail-closed = 判定中途抛异常一律按 system 硬拦（永不授权），不静默放行。
 
-单一真源: 文档[35] 3.3.7。2026-10-15 北京老陈裁定 — 原拟归位 path_safe_check 模块头,
+单一真源在本模块 docstring。原拟归位 path_safe_check 模块头,
 但该文件消号时表未随之迁入(指针自建立起即为空), 现落 path_classify_category —— 本模块是 category 的唯一产出者。
 """
 
@@ -79,8 +80,8 @@ from typing import Iterable, Optional, Tuple
 
 from app.logger import logger
 from app.utils.path_utils import get_allowed_roots
-from app.safety.path_env import get_system_drive  # 2026-10-15 北京老陈: 随 classify_forbidden_path 迁入
-from app.tools.tool_constants import (  # 2026-10-15 北京老陈: 随 classify_forbidden_path 迁入
+from app.safety.path_env import get_system_drive  # 2026-10-15 - 小欧: 随 classify_forbidden_path 迁入
+from app.tools.tool_constants import (  # 2026-10-15 - 小欧: 随 classify_forbidden_path 迁入
     FORBIDDEN_PATHS_EXACT,
     FORBIDDEN_PATHS_PREFIX,
     FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
@@ -88,7 +89,7 @@ from app.tools.tool_constants import (  # 2026-10-15 北京老陈: 随 classify_
 )
 
 # 2026-10-14 小欧 - 补 winnt/system32/system(原仅工具层有): 两层对"什么算系统目录"判定相反, 取并集为单源。
-# 2026-10-14 小欧 - 迁自 app/tools/tool_constants.py:574（文档[33] 4.12-B）
+# 2026-10-14 小欧 - 迁自 app/tools/tool_constants.py
 SYSTEM_PROTECTED_DIR_NAMES: frozenset[str] = frozenset({
     "windows", "program files", "program files (x86)",
     "programdata", "boot", "recovery",
@@ -158,7 +159,7 @@ def is_code_root_path(file_path: str) -> bool:
 
 
 def is_allowed_root_itself(file_path: str, extra_roots: Optional[Iterable[str]] = None) -> Optional[str]:
-    r"""是否命中**允许根**(get_allowed_roots)自身或其上级祖先 — 小欧 2026-10-16 老陈裁定正名
+    r"""是否命中允许根(get_allowed_roots)自身或其上级祖先 — 小欧 2026-10-16 正名
 
     2026-10-16 老陈裁定正名: 原名 is_protected_root_itself 名实不符 ——
       它判的根集来自 get_allowed_roots()(**允许**根: 用户项目根 + 授权目录 + 会话工作区),
@@ -179,7 +180,7 @@ def is_allowed_root_itself(file_path: str, extra_roots: Optional[Iterable[str]] 
         return "allowed_root_itself"          # fail-closed: 归一化失败亦按禁处理
     try:
         if extra_roots is None:
-            # 2026-10-15 北京老陈裁定(DRY): 取数收归本函数, 调用方不再各自取。
+            # 2026-10-15 - 小欧 - DRY: 取数收归本函数, 调用方不再各自取。
             # 延迟导入保本模块零顶层依赖(路径属性判定不该拖上层)。
             from app.session_workspace import session_workspace_paths
             extra_roots = session_workspace_paths()
@@ -202,7 +203,7 @@ def is_allowed_root_itself(file_path: str, extra_roots: Optional[Iterable[str]] 
 
 
 def classify_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Optional[str], Optional[str]]:
-    """禁区分类 — 小健 2026-06-23 建, 2026-10-15 北京老陈裁定正名(classify 而非 is: 返回类别非 bool)
+    """禁区分类 — 小健 2026-06-23 建, 2026-10-15 正名(classify 而非 is: 返回类别非 bool)
     扩展 (v1.43 修正): 返回值扩展为禁区类别(category, msg)
 
     Args:
@@ -244,14 +245,14 @@ def classify_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Option
             if is_system_protected_path(file_path, mode):
                 return "system", f"路径位于系统保护目录,禁止操作: {file_path}"
 
-        # ⑦ 代码目录禁区(开关无关): **代码目录自身及其内部所有子级**(父级不拦) — 小欧 2026-08-10 建, 2026-10-16 订正
+        # 代码目录禁区(开关无关): 代码目录自身及其内部所有子级(父级不拦) — 小欧 2026-08-10 建, 2026-10-16 订正
         # 代码目录属非系统禁区(non_system) — 判定单源 path_classify_category.is_code_root_path
         if is_code_root_path(file_path):
             return "non_system", f"路径位于代码目录(含其内部子级): {file_path}"
 
-        # 2026-10-14 北京老陈裁定: 允许根(项目根/授权目录/会话工作区)自身及其上级归本层判(B族可授权),
+        # 2026-10-14 - 小欧: 允许根(项目根/授权目录/会话工作区)自身及其上级归本层判(B族可授权),
         #   此前只有删除防线拦它、写入不拦 —— 同一类别待遇随层而变, 现统一由权限层决策
-        # 2026-10-16 老陈裁定正名: 受保护根 → 允许根(跟数据源 get_allowed_roots 同名)
+        # 2026-10-16 - 小欧 - 正名: 受保护根 → 允许根(跟数据源 get_allowed_roots 同名)
         if is_allowed_root_itself(file_path):
             return "non_system", f"路径位于允许根集内的根目录自身或其上级(允许根集=项目根/授权目录/会话工作区): {file_path}"
 

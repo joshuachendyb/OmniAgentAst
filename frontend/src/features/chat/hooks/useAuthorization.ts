@@ -82,6 +82,8 @@ export function useAuthorization(sessionId: string | null) {
         params: (pendingAuthorization.params ?? {}) as Record<string, unknown>,
         content: pendingAuthorization.content ?? '', // 7.4.3: 弹窗原因(后端 ConfirmSpec.content) — 小欧-2026-09-18
         safetyLevel: pendingAuthorization.safety_level ?? 'unknown',
+        // 2026-10-18 小欧: 授权影响面透传 — 缺省 low(命令级等其余确认); 沙箱裁决场景后端不传, 判空不渲染该行
+        trustImpact: pendingAuthorization.trust_impact ?? 'low',
         // 2026-09-03 小欧 D2-10: normalizeAutoConfirm四态归一(true/'true'/1/'1')
         autoConfirm:
           pendingAuthorization.auto_confirm === true ||

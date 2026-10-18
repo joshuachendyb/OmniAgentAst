@@ -5,14 +5,14 @@
 # 2026-08-14 小欧 - 改名名实相符: model_routes→config_routes，persistence→config_helpers。
 # 2026-08-22 小欧 - 模型结构归一: 拆包 resolve_provider_model → resolve_model_ref，响应统一 current_model_ref。
 # 2026-09-21 小欧 - 修 None 陷阱: .get('k','') 在键存在值为 None 时返回 None → Pydantic 校验 500。
-#   全文件 .get() 统一加 or 兜底。另: 新增 _provider_conf(非 dict provider 归空守卫)、
+#   全文件 .get() 统一加 or 缺省值。另: 新增 _provider_conf(非 dict provider 归空守卫)、
 #   DEFAULT_SECURITY(默认块提模块级)、BOM 剥离、超 512KB 拒读、models dict 老格式归一。
 # 2026-09-22 小欧 - update_config 加 filelock(与 merge 写链路同锁)，根治并发丢更新与文件占用 500。
 # 2026-09-24 小欧 - 删 6 个死函数(delete_provider 等，前端零调用)。
 # 2026-09-26 小欧 - 删死契约 _mask_api_key，/config/full 的 api_key 改用唯一权威 mask_secret_value
 #   (形状为对象)；update_config 收敛为只切模型，FIELD_HANDLERS/备份恢复逻辑仍被它使用。
 # 2026-09-27 小欧 - 修 B1/B2/B4: models 多形态归一抽成 _model_names() 供两处共用；
-#   theme/language/security 出口加兜底；provider 值为 None 的守卫补齐。
+#   theme/language/security 出口加缺省值；provider 值为 None 的守卫补齐。
 # 2026-09-27 小欧 - security 出口改按白名单挑选(见 get_system_config_data 内注释)；max_steps 归一
 #   下沉到 config.get_max_steps。
 # 2026-09-27 小欧 - 修本轮引入的退化：timeout/max_retries 曾被改成 `or 60/3`，把 0 吞成默认值
@@ -23,7 +23,7 @@
 #   1. `api_success` import 必须保留 —— open_config_folder 在用。曾因"全仓零引用"删掉导致该端点
 #      NameError→500(已实跑复现)。核实引用前先看本文件。
 #   2. `FIELD_HANDLERS` 收敛后已无消费方，但章节设计要求保留该结构，故未删。
-#      是否进一步删除待北京老陈裁定，勿自行处置。
+#      是否进一步删除待定, 勿自行处置。
 """
 config_service — 配置业务服务(services/model)
 
@@ -93,7 +93,7 @@ def update_config(config_update):
                     backup_path.unlink()
                     logger.info(f"[update_config] 验证成功, 已删除备份文件: {backup_path}")
                 except Exception as e:
-                    # 不静默 pass：残留副本内含明文 api_key，堆积要留痕
+                    # 不静默忽略: 残留副本内含明文 api_key，堆积要记日志
                     logger.warning(f"[update_config] 删除备份文件失败（可能残留含明文密钥的副本）: {e}")
             return {
                 "success": True,                 "message": "配置更新成功，已校验并生效",
@@ -129,7 +129,9 @@ def update_config(config_update):
 
 
 DEFAULT_SECURITY = {
-    "enabled": False,
+    # 2026-10-18 - 小欧 - 键名与 settings registry / path_tool_safety_checker 同步改为 hitl_enabled:
+    #   该项只决定是否走人工确认链路, 不管危险防护。本键不被 get_system_config_data 的出口白名单挑选, 无消费方。
+    "hitl_enabled": False,
     "confirmDangerousOps": True,
     "auto_confirm_delay": 10,
     "hitl_timeout": 120,
@@ -170,7 +172,7 @@ def get_system_config_data() -> dict:
     provider_config = _provider_conf(ai_config, resolved_model.provider)
     api_key = str(provider_config.get('api_key') or '')
     api_key_configured = bool(api_key.strip() != '')
-    # or 兜底：config.get 只在键不存在时给 default，键存在但为空（yaml `app.theme:`）会返回 None，
+    # or 缺省值：config.get 只在键不存在时给 default，键存在但为空（yaml `app.theme:`）会返回 None，
     # 而 ConfigResponse 三项是必填 str/int → 500。出口归一，不放宽 DTO。
     theme = config.get('app.theme') or 'light'
     language = config.get('app.language') or 'zh-CN'
@@ -188,14 +190,14 @@ def get_system_config_data() -> dict:
         "security": {
             "confirmDangerousOps": bool(security_config.get("confirmDangerousOps", True)),
         },
-        # 归一已下沉到 config.get_max_steps（源头一处处理），此处不再重复兜底
+        # 归一已下沉到 config.get_max_steps（源头一处处理），此处不再重复归一
         "max_steps": config.get_max_steps(),
         "project_root": config.get_project_root()
     }
 
 
 def validate_config(provider: str) -> dict:
-    """配置校验 — 自 model_routes.py 迁入; 三堂会审修复: 只收provider(get_service_config的model参数未使用) — 小沈 2026-08-13
+    """配置校验 — 自 model_routes.py 迁入; 只收provider(get_service_config的model参数未使用) — 小沈 2026-08-13
     2026-08-22 小欧 归一: resolve_provider_model 拆包 → resolve_model_ref"""
     try:
         resolver = get_ai_config_resolver()

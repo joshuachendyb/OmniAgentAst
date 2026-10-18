@@ -5,34 +5,34 @@
 # 3. config.yaml 已被Git忽略，不会提交到仓库
 #
 # 编辑历史:
-#   2026-09-21 - 小欧 - v4.20 键名按域收敛重排：app.debug/max_rounds/max_steps/project_root/allowed_dirs
+#   2026-09-21 - 小欧 - 键名按域收敛重排：app.debug/max_rounds/max_steps/project_root/allowed_dirs
 #                       分域归 workspace/agent/logging；删白/黑名单4键与死配置（contentFilter/strict_mode/maxFileSize）；
-#                       补行安全漏斗铁律注释
-#   2026-09-21 - 小欧 - v4.20 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
-#   2026-09-22 - 小欧 - [61] 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
-#   2026-09-22 - 小欧 - [62]v1.4 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
-#   2026-09-23 - 小欧 - [64] LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_limit_default）
+#                       补行安全漏斗说明注释
+#   2026-09-21 - 小欧 - 单源收敛对齐：ai 顶层去扁平 provider/model，改结构化 ai.model_ref（唯一源，与真实 config.yaml 同构）
+#   2026-09-22 - 小欧 - 调优配置：新增 tuning 组 31 键（LLM/网络/并发/Agent/流任务/HITL/内容/网络）
+#   2026-09-22 - 小欧 - 模型枚举示例：zhipuai 下补 model_params/model_meta.param_options 完整写法（三层解析，按模型3/4/5个各配各的）
+#   2026-09-23 - 小欧 - LLM补充采样参数：新增顶层 llm 域（llm.sampling 5键 + llm.context_limit_default）
 #   2026-09-23 - 小欧 - trim/compaction配置化：tuning组 Agent 循环参数后加 trim 3键/compaction 4键两独立分块；删 tuning.agent.default_max_steps 死键
 #   2026-09-23 - 小欧 - 禁止backward还旧账：删 tuning.llm.temperature/max_tokens（已迁顶层 llm.sampling）+ 顶层 agent.max_rounds（已迁 tuning.trim.max_rounds）旧键残留
-#   2026-09-23 - 小欧 - [65] 设置页「+添加参数」写入样子打样：zhipuai 段 model_params 补预设新键缀尾（temperature/top_p）+ 自定义键注释样例 + model_meta.range 捎带完整写法
-#   2026-09-23 - 小欧 - 连接相关注释重写(北京老陈指令"一起补充"): provider timeout/max_retries 补优先级注释(高于tuning.llm_net/stream_max_retries) + tuning llm 3键/concurrency 2键/heartbeat/cors 全部改为「阶段+后果+分工」语义对齐 settings_registry notice - 小欧-2026-09-23
-#   2026-09-23 - 小欧 - 调优组剩余注释全量重写(北京老陈指令"都是看的稀里糊涂 都优化一下"): llm 2键/trim 3键/compaction 4键/stream_task 3键/hitl 4键/content 3键 全部对齐 settings_registry notice 同口径「管什么+触发时机+后果+分工」 - 小欧-2026-09-23
-#   2026-09-23 - 小欧 - 调优组注释去开发术语(北京老陈指令"怎么还有开发的代码信息"): 删 SSE/HITL/bypass/CORS/Origin/chunk/FC/C4/TTL/信号量/request body/ConnectTimeout 等代码黑话，全部改纯用户语言，与 registry notice 同步 - 小欧-2026-09-23
-#   2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(北京老陈裁定"live_front 更准确"，原名与 tuning.llm.stream_* 易混且非 LLM body 流式)；块下 4 键路径/值/注释措辞不变，仅块名改 — 小欧-2026-09-24
+#   2026-09-23 - 小欧 - 设置页「+添加参数」写入样子打样：zhipuai 段 model_params 补预设新键缀尾（temperature/top_p）+ 自定义键注释样例 + model_meta.range 捎带完整写法
+#   2026-09-23 - 小欧 - 连接相关注释重写: provider timeout/max_retries 补优先级注释(高于tuning.llm_net/stream_max_retries) + tuning llm 3键/concurrency 2键/heartbeat/cors 全部改为「阶段+后果+分工」语义对齐 settings_registry notice - 小欧-2026-09-23
+#   2026-09-23 - 小欧 - 调优组剩余注释全量重写: llm 2键/trim 3键/compaction 4键/stream_task 3键/hitl 4键/content 3键 全部对齐 settings_registry notice 同口径「管什么+触发时机+后果+分工」 - 小欧-2026-09-23
+#   2026-09-23 - 小欧 - 调优组注释去开发术语: 删 SSE/HITL/bypass/CORS/Origin/chunk/FC/C4/TTL/信号量/request body/ConnectTimeout 等代码黑话，全部改纯用户语言，与 registry notice 同步 - 小欧-2026-09-23
+#   2026-09-24 21:36:38 - 小欧 - 组名改 tuning.stream_task→tuning.live_front(新名更准确，原名与 tuning.llm.stream_* 易混且非 LLM body 流式)；块下 4 键路径/值/注释措辞不变，仅块名改 — 小欧-2026-09-24
 #
-# ⚠️ 严禁事项（铁律）— 小欧 2026-09-21
-#   ❌ 禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
-#   ❌ 禁止复制网上模板带入 openai/gpt 垃圾配置（占位 api_key=sk-new-key 之类一律不准出现）
+# 严禁事项 — 小欧 2026-09-21
+#   禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
+#   禁止复制网上模板带入 openai/gpt 垃圾配置（占位 api_key=sk-new-key 之类一律不准出现）
 #     命令安全由 path_safe_check/tools/security 代码内实现（路径校验才是关键）
 
 ai:
-  # ✅ 顶层配置（全局）— 唯一源 ai.model_ref（v4.20 单源收敛，删扁平 provider/model）
+  # 顶层配置（全局）— 唯一源 ai.model_ref（单源收敛，删扁平 provider/model）
   # 2026-10-11 小欧 - provider 块与 models 列表按运行配置 1:1 镜像（键名大小写原样：
   #   ZenFree/DeepSeek/Z_AI/Discoversh；api_key 一律占位符，真 key 只进 config/config.yaml；
   #   timeout/max_retries 取运行值原样；空 models 表示尚未拉取，配好 key 后到模型库拉取）。
   model_ref: {provider: agnes, model: agnes-3.0-flash}
 
-  # ✅ Provider配置（多个）
+  # Provider配置（多个）
   # timeout/max_retries 优先级高于全局 tuning.llm_net.read_timeout / tuning.llm.stream_max_retries — 小欧-2026-09-23
   agnes:
     api_base: https://api.agnes-ai.cn/v1
@@ -180,7 +180,7 @@ app:
   language: zh-CN
   theme: light
 
-# 前端(step)渲染显示配置 — 北京老陈 2026-10-05 定两个独立开关，默认皆开
+# 前端(step)渲染显示配置 — 小欧 2026-10-05 定两个独立开关，默认皆开
 #   step_render.thoughtMarkdown = 「思考排版」: thought 块正文是否按 Markdown 语法渲染
 #       (标题/粗体/列表/代码; 关掉则按纯文本实时显示)
 #   step_render.reasoningVisible = 「推理内容」: reasoning 块每段的折叠初值
@@ -191,7 +191,7 @@ appearance:
     thoughtMarkdown: true
     reasoningVisible: true
 
-# 工作区配置（项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①）
+# 工作区配置（项目根=tool工作区; 未配置(空)时缺省=用户主目录 — 小欧 2026-08-10）
 workspace:
   project_root: ""  # 项目根=tool工作区; 未配置(空)时兜底=用户主目录 — 小欧 2026-08-10 ①
   # 授权目录列表(可多个): tool 在项目根之外额外授权访问的工作目录。
@@ -199,7 +199,7 @@ workspace:
   #   allowed_dirs:
   #     - D:\工作目录A
   #     - D:\工作目录B
-  # 注意: 项目根天然在授权内, 无需重复列入; 指向代码库根或其父/子级 → 加载即拒(与⑦tool禁区冲突) — 小欧 2026-08-10 ⑩
+  # 注意: 项目根天然在授权内, 无需重复列入; 指向代码库根或其父/子级 → 加载即拒(与 tool 禁区冲突) — 小欧 2026-08-10
   allowed_dirs: []
 
 # Agent 循环配置
@@ -214,10 +214,12 @@ logging:
   backup_count: 5            # 轮转保留文件数
 
 # 安全配置
-# 2026-09-03 小欧: auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120)
+# 2026-10-03 小欧: auto_confirm_delay(bypass自动确认S1窗口,默认10) 与 hitl_timeout(真HITL确认超时,默认120)
+# 2026-10-18 小欧 - 键名 enabled → hitl_enabled: 该项只决定是否弹窗请用户确认(人工确认链路);
+#   危险防护(磁盘根/项目根/系统目录删除硬底线、系统保护进程、危险命令)无条件生效, 不受本项影响。
 security:
-  enabled: false
-  confirmDangerousOps: true
+  hitl_enabled: false         # true=高危操作弹窗请用户确认; false=免确认自动放行(危险防护仍生效)
+  confirmDangerousOps: true   # 仅 UX 层: 保存设置时再多问一次(防误触), 与后端拦截无关
   auto_confirm_delay: 10
   hitl_timeout: 120
 
