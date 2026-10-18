@@ -134,7 +134,15 @@ class PathToolSafetyChecker:
         安全总闸: 上游合法性初查/信任预查, 内调删线/路径层, 下游 HITL 确认 — 小欧-2026-10-14
         """
         # 2026-10-17 小欧 - 未注册判定已收口解析层, 本层不再复判(只放 PATH_TOOLS 工具到此)。
+        # 2026-10-18 小欧 - 复判补回(fail-closed, 真回归修复): 上条"不再复判"判断有误 —— 解析层只管
+        #   Agent 管线进来的 call, tool_facade/测试等直调方仍会带未注册工具名进来, tool_meta=None 一路
+        #   传到 _get_needs_confirmation / tool_meta.check_fn 解引用即崩(2026-10-18 全量 pytest 实锤:
+        #   test_deep_flow_bugs f5_01/f5_02 AttributeError: 'NoneType' object has no attribute 'name')。
+        #   未注册 = 无元数据 = 无法定确认策略与权限线, 只能拒(fail-closed), 不做"猜一条线"放行。
         tool_meta = tool_registry.get_tool(tool_name)
+        if tool_meta is None:
+            log_and_print(f"[PathToolSafetyChecker] 工具未注册(硬拦): tool={tool_name}")
+            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", severity="dangerous")
 
         # [4-0] 自杀检查(2026-10-16 第七章 · 北京老陈裁定): 提到 _check_known_risks **之前**
         #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(E2E P9-03 后端自杀实录);

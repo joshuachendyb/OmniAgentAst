@@ -11,7 +11,7 @@ session_workspace — 会话工作区任务级快照
 
 四方共用, 故置于中立层 app 根:
   services/chat/stream_orchestrator  构造并注入
-  safety/path_env、path_classify_category、delete_safety  读作受保护根来源
+  safety/path_env、path_classify_category、delete_path_check  读作受保护根来源
   ★2026-10-16: 原第2行 tools/file/delete_file(读作删除硬底线范围) 已随该硬底线删除而失效 ——
     delete_file 不再 import 本模块, 现为三方共用。
 
@@ -33,7 +33,7 @@ class WorkspaceEntry:
 class WorkspaceSnapshot:
     """任务级快照。两种形态在构造时一次算完, 读路径零遍历零过滤
 
-    all_paths — 整个会话目录列表, 并入写/删白名单(path_env / delete_safety)
+    all_paths — 整个会话目录列表, 并入写/删白名单(path_env / delete_path_check)
                 ★2026-10-16: 原"并作为删除根硬拦(delete_file)"已随该硬底线删除而失效
 
     BUG-18 说明(潜伏,非缺陷): 载体是 ContextVar, 靠 asyncio.create_task /
@@ -51,7 +51,7 @@ class WorkspaceSnapshot:
 
 
 def _drop_nested(paths) -> list:
-    """去掉被同组其它路径包含的子路径（BUG-16）
+    r"""去掉被同组其它路径包含的子路径（BUG-16）
 
     前缀匹配下子项恒冗余: `C:\a` 在白名单里时 `C:\a\b` 不改变任何裁决,
     只会让白名单越堆越长。只留顶层, 裁决结果不变。

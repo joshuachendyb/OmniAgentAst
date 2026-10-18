@@ -8,6 +8,8 @@
 # 2026-10-17 - 小欧 - 基础归一化: 新增 check_write_permission(path) 封装口, 三线统一返回 SafetyResult(签名按各线所需: 仅删线需 params.recursive), 供确认段统一消费。
 # 2026-10-17 - 小欧 - 死参清理(方案A): 删 check_write_permission 的 params 死参(写线不用 params)。
 # 2026-10-17 - 小欧 - 口径对齐: blocked(系统禁区)分支删去 auth_path=path(硬拦结果无可授权语义, auth_path 定义=白名单外临时授权路径); 与 read/router/delete 的 blocked 口径一致。
+# 2026-10-18 - 小欧 - [38]§12.4 落地(字面9步): 原单路径口 check_write_permission(path) 更名 write_permission(path)(供 dual/shell 复用);
+#   新增工具级 check_write_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 write_permission, 供 router [5] 直调。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -20,7 +22,7 @@ r"""write_path_check — 写操作路径检查(写线)
 
 ★★本表是**端到端视角**(用户最终看到的), **不是本模块返回值** ★★
   本模块 validate_write 只返回「放行/拒绝」两态; 表里的"确认"(弹窗授权)发生在**调用方**
-  path_tool_safety_checker(未授权则被拒, 授权后放行), 删列还叠加 delete_safety 的 R6 层。
+  path_tool_safety_checker(未授权则被拒, 授权后放行), 删列还叠加 delete_path_check.check_delete_risk 的 R6 层。
   → 按本表核对本文件代码时, "确认"格对不上是**正常的**, 那是上层行为。
 
 | 区域                                       | category   | 读   | 写            | 删           |
@@ -49,7 +51,7 @@ classify_forbidden_path 并传 WRITE_MODE, 本文件只放写线独有的策略�
 小欧 2026-10-15 建 / 2026-10-16 老陈裁定补权限总表
 """
 
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
@@ -95,10 +97,10 @@ def validate_write(file_path: str, allowed_paths: Optional[List] = None) -> Tupl
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-def check_write_permission(path: str) -> SafetyResult:
-    """写线权限封装口 — 与 check_read_permission / check_delete_permission 对称 — 小欧 2026-10-17
+def write_permission(path: str) -> SafetyResult:
+    """写线单路径权限口 — 供 dual_path_check / shell_path_check 复用 — 小欧 2026-10-18
 
-    照搬 _check_known_risks 对写线的 category 分流(单路径):
+    写线 category 分流(单路径):
       system      → blocked 硬拦(永不授权)
       non_system  → requires_confirmation 任务级授权(auth_path=path)
       None(白名单外) → requires_confirmation 临时授权(auth_path=path)
@@ -119,4 +121,12 @@ def check_write_permission(path: str) -> SafetyResult:
                         severity="risk", auth_path=path)
 
 
-__all__ = ["validate_write", "check_write_permission"]
+def check_write_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
+    """写线工具级权限口 — 供 path_legality_router [5] 直调 — 小欧 2026-10-18
+
+    遍历路径参数, 逐条走 write_permission。
+    """
+    return common.check_tool_paths(tool_name, params, write_permission)
+
+
+__all__ = ["validate_write", "write_permission", "check_write_permission"]

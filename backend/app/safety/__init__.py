@@ -5,7 +5,6 @@
 # 2026-08-12 - 小欧 - A2-内部环(方案4.2.3): FileSafetyConfig 导入改 models, cleanup_expired_backups 导入改 operation_maintenance
 # 2026-08-12 - 小欧 - A1越层前置: safety 整目录由 app.services.safety 提升为顶层 app.safety, 本文件全部 import 由 app.services.safety.xxx 改 app.safety.xxx(配合 tools 禁 app.services 守护规则)
 # 2026-10-17 北京老陈裁定 - check_preconditions 迁至 app.utils.path_utils, 本文件取消该符号的 import 与 __all__ 转出(禁 backward 再导出)
-# 2026-10-17 北京老陈裁定 - check_preconditions 迁至 app.utils.path_utils, 本文件取消其 import 与 __all__ 转出
 # 2026-10-17 - 小欧 - 路径检查口正名(S8): validate_tool_path→check_tool_path_permission、validate_dual_path→check_dual_permission、validate_shell→check_shell_permission; import 与 __all__ 同步, 旧名退场(禁留转发层)。
 # 2026-10-17 - 小欧 - 补导出三线封装口 check_read/write/delete_permission(此前仅导出三线原始 validate_*, 与 check_dual/shell_permission 契约不对称)。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 表体上移 tool_constants, 此处删其 import 与 __all__(无外部消费方)。

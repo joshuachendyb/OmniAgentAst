@@ -10,6 +10,8 @@
 # 2026-10-17 - 小欧 - 删 meta None(原 tool_unavailable) 与 startswith("registry_"), 改 PATH_TOOLS 白名单门。
 # 2026-10-17 - 小欧 - 返回契约归一: validate_tool_path → check_tool_path_permission, 四元组归一为 SafetyResult; LINE_VALIDATE(旧名函数表) → CHECK_BY_LINE(封装口表); 删线单点传 params(方案A), read/write 无 params; 放行统一 SafetyResult.pass_result()。
 # 2026-10-17 - 小欧 - 判定顺序重排(北京老陈裁定): 严格固定为 [1]名归一 → [2]范围门 → [3]参数归一 → [4]read表 → [5]write表 → [6]delete表 → [7]dual表 → [8]bash → [9]返回, 一步不许变; 分派改按四表成员判定(与 registry._resolve_action_kind 同序, 等值), 直调各线封装口; 删 tool_registry/LINE_BY_ACTION/CHECK_BY_LINE 消费(动作类型不再经 action_kind 中转)。
+# 2026-10-18 - 小欧 - [38]§12.8 落地(字面9步): 函数体严格 9 步, 每步直调各线工具级封装口; 删逐路径循环(下沉 path_check_common.check_tool_paths)、
+#   删"理论不可达"else 兜底分支、删顶层 try/except(fail-closed 兜底随循环下沉)、删死 _WRITE_TARGET_KEYS 与随之无用的 import(PATH_PARAM_KEYS/CONTENT_PARAM_KEYS/reject_reason_empty_path)。
 """
 path_legality_router — [4-2] 路径层(读/写/删/dual 分派, 产出 SafetyResult)
 
@@ -40,8 +42,6 @@ from typing import Any, Dict
 from app.safety import shell_path_check, dual_path_check
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.tool_constants import (
-    PATH_PARAM_KEYS,
-    CONTENT_PARAM_KEYS,
     PATH_TOOLS,
     READ_PATH_TOOLS,
     WRITE_PATH_TOOLS,
@@ -49,13 +49,9 @@ from app.tools.tool_constants import (
     DUAL_PATH_TOOLS,
 )
 from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
-from app.utils.path_utils import reject_reason_empty_path
 from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 路径层返回 SafetyResult
 
 logger = logging.getLogger(__name__)
-
-# 写入类路径参数 —— 一律指向"数据落到哪里", 恒按写线判。2026-10-15 小欧 - P1-11
-_WRITE_TARGET_KEYS = {"dest", "target_path", "output_path", "destination_path"}
 
 
 def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
@@ -78,72 +74,38 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
         SafetyResult: 放行(blocked=False, requires_confirmation=False) / 拒绝(blocked=True) /
           待确认(requires_confirmation=True, auth_path=越权真实路径)。
     """
-    try:
-        # [1] 名归一(防别名漏判)
-        normal_name = normalize_tool_name(tool_name)
+    # [1] 名归一(防别名漏判)
+    normal_name = normalize_tool_name(tool_name)
 
-        # [2] 范围门: 非路径工具直接放行
-        if normal_name not in PATH_TOOLS:
-            return SafetyResult.pass_result()
-
-        # [3] 参数归一: 别名 → 规范名(LLM 常传 PARAM_ALIASES 里的别名, 归一后取路径参数才不漏检)
-        normalized_params, _ = normalize_params(normal_name, params)
-
-        # [4] 单 read 表 → 读线
-        if normal_name in READ_PATH_TOOLS:
-            line = read_path_check
-        # [5] 单 write 表 → 写线
-        elif normal_name in WRITE_PATH_TOOLS:
-            line = write_path_check
-        # [6] 单 delete 表 → 删线
-        elif normal_name in DELETE_PATH_TOOLS:
-            line = delete_path_check
-        # [7] 单 dual 表 → dual 线(一调用含多动作, 按参数分别归线)
-        elif normal_name in DUAL_PATH_TOOLS:
-            return dual_path_check.check_dual_permission(normal_name, normalized_params)
-        # [8] bash → 命令通道(命令串解析出路径后，内部再分删源/写目标等子类)
-        elif normal_name == "bash":
-            return shell_path_check.check_shell_permission(
-                normalized_params.get("command") or "", normalized_params.get("cwd"))
-        # 理论不可达(能过 [2] 门者必属上述五类) → fail-closed 按写线
-        else:
-            logger.warning(
-                f"[path_legality_router] 工具 {normal_name} 不在任何路径档表, 按写线(fail-closed 最严档)处理")
-            line = write_path_check
-
-        # 逐路径参数判定(单动作三线共用): 遍历所有命中路径参数, 任一越权即返回
-        for key in PATH_PARAM_KEYS:
-            if key not in normalized_params:
-                continue                                # 真没传(见 precheck 同处裁定)
-            value = normalized_params[key]
-            if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
-                continue                                # data 内容型参数: 内联结构非路径
-            # 空值交底层原子(唯一真源)
-            _empty = reject_reason_empty_path(value)
-            if _empty:
-                return SafetyResult(blocked=True, severity="dangerous", message=_empty)
-            if not isinstance(value, str):
-                continue
-            real_path = dual_path_check.resolve_path_param(
-                normal_name, key, value, normalized_params)
-            # 2026-10-15 小欧 - P1-11: dest/target_path 等是写入目标, 与工具动作无关, 恒走写线。
-            param_line = write_path_check if key in _WRITE_TARGET_KEYS else line
-            # 方案A: 仅删线需 params(recursive); read/write 线无 params 死参
-            if param_line is delete_path_check:
-                result = delete_path_check.check_delete_permission(real_path, normalized_params)
-            elif param_line is write_path_check:
-                result = write_path_check.check_write_permission(real_path)
-            else:
-                result = read_path_check.check_read_permission(real_path)
-            if result.blocked or result.requires_confirmation:
-                return result
-
-        # [9] 返回
+    # [2] 范围门: 非路径工具直接放行
+    if normal_name not in PATH_TOOLS:
         return SafetyResult.pass_result()
-    except Exception as e:
-        # 2026-08-11 小欧 fix D1残留: 兜底异常归 blocked(永不授权硬拦) —
-        #   与三线各 except 分支"blocked"口径全链一致(T2 硬拦永不授权)
-        return SafetyResult(blocked=True, severity="dangerous", message=f"路径安全检查异常: {e}")
+
+    # [3] 参数归一: 别名 → 规范名(LLM 常传 PARAM_ALIASES 里的别名, 归一后取路径参数才不漏检)
+    normalized_params, _ = normalize_params(normal_name, params)
+
+    # [4] 单 read 表 → 读线
+    if normal_name in READ_PATH_TOOLS:
+        return read_path_check.check_read_permission(normal_name, normalized_params)
+
+    # [5] 单 write 表 → 写线
+    if normal_name in WRITE_PATH_TOOLS:
+        return write_path_check.check_write_permission(normal_name, normalized_params)
+
+    # [6] 单 delete 表 → 删线
+    if normal_name in DELETE_PATH_TOOLS:
+        return delete_path_check.check_delete_permission(normal_name, normalized_params)
+
+    # [7] 单 dual 表 → dual 线(一调用含多动作, 按参数分别归线)
+    if normal_name in DUAL_PATH_TOOLS:
+        return dual_path_check.check_dual_permission(normal_name, normalized_params)
+
+    # [8] bash → 命令通道(命令串解析出路径后, 内部再分删源/写目标等子类)
+    if normal_name == "bash":
+        return shell_path_check.check_shell_permission(normal_name, normalized_params)
+
+    # [9] 返回
+    return SafetyResult.pass_result()
 
 
 __all__ = ["check_tool_path_permission"]

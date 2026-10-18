@@ -15,7 +15,7 @@
 # 2026-10-16 北京老陈裁定(正名+订正) - ①is_protected_root_itself → is_allowed_root_itself: 它判的根集来自
 #   get_allowed_roots()(**允许**根), 名字却叫 protected(禁碰), 名实不符; 统一"函数名跟数据源走"(与 is_code_root_path 同规律)。
 #   ②九宫格「白名单内 × 删」订正: 原写"放行"是错的, 实测放行只限"允许根内普通删"; 根内递归删与根外删均需确认(R4/R5),
-#     根外递归更拒(R6) —— 删线叠加 delete_safety 的 R3-R6 边界差异, 白名单不免递归、不免根外。
+#     根外递归更拒(R6) —— 删线叠加 delete_path_check.check_delete_risk 的 R3-R6 边界差异, 白名单不免递归、不免根外。
 #   ③头部"代码库根…父子级"订正为"代码目录…内部所有子级"(实测父级 F:\ 不命中), 并补磁盘根/系统禁区/代码目录/授权目录
 #     四类属性的正式定义, 免后人凭字面猜。
 """
@@ -24,7 +24,7 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
 回答一个问题: **给一条路径, 它属于哪一类?**
 
   系统禁区     C:\\Windows / C:\\Program Files / C:\\ProgramData / 系统敏感文件 ...
-  磁盘根       C:\
+  磁盘根       C:\\
   代码目录     代码目录及其内部所有子级(父级不拦)
   授权目录     项目根 / 授权目录 / 会话工作区 —— 及其上级祖先(内部不拦)
 
@@ -46,12 +46,12 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
 | `non_system`(代码目录/授权目录)| 放行       | 确认 + auth_path    | blocked 永不授权 |
 | `None` + 白名单外             | 放行       | 确认 + auth_path    | 确认 + auth_path |
 | `None` + 白名单内             | 放行       | 放行                | 见下注★         |
-| 磁盘根 `C:\`                  | 放行       | blocked 永不授权    | blocked 永不授权 |
+| 磁盘根 `C:\\`                  | 放行       | blocked 永不授权    | blocked 永不授权 |
 | 空路径/`..`穿越               | blocked    | blocked             | blocked          |
 | 异常 fail-closed              | blocked    | blocked             | blocked          |
 
 ★「白名单内 × 删」**不是一律放行**(2026-10-16 老陈核查订正, 实测钉死): 删线还叠加
-  delete_safety 的 R3-R6 边界差异, 与递归标志有关 ——
+  delete_path_check.check_delete_risk 的 R3-R6 边界差异, 与递归标志有关 ——
     允许根内**普通**删 → 放行(R3) / 允许根内**递归**删 → 确认(R4) / 允许根**外**删 → 确认(R5) / 根外递归 → 拒绝(R6)。
   故白名单只免"写"与"根内普通删", 不免递归、不免根外。
 
@@ -60,7 +60,7 @@ path_classify_category — 路径属性判定: 这条路径是什么性质
   · 系统禁区   = 磁盘根 + FORBIDDEN_PATHS_WINDOWS_REL_EXACT/PREFIX
                  + 系统目录名(windows/program files/programdata/boot/recovery/winnt/system32/system)
                  + 跨平台项(/etc/shadow、/etc/sudoers、/sys、/proc)
-  · 代码目录   = get_code_root()      判**自身 + 内部所有子级**; **父级不拦**(实测 F:\ 不命中)
+  · 代码目录   = get_code_root()      判**自身 + 内部所有子级**; **父级不拦**(实测 F:\\ 不命中)
   · 授权目录   = get_allowed_roots()  判**自身 + 上级祖先**; **内部不拦**
                = 用户项目根(workspace.project_root) + 授权目录(workspace.allowed_dirs) + 会话工作区(任务级快照)
 

@@ -7,6 +7,8 @@
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
 # 2026-10-17 北京老陈裁定(裁定三) - 删线判定集中化: 自 delete_safety.py 逐字迁入 check_delete_risk(R3-R6), 并收归 guard_forbidden_delete(A族系统目录/磁盘根 + 代码目录 + 删根硬底线); 判据只调 path_classify_category 单源, 本层不持名单。tool 层 path_utils.check_path_five_level 第⑤级另持一份(同口径)不动, delete_safety.py 随之删除。 — 小欧 2026-10-17
 # 2026-10-17 - 小欧 - 新增唯一封装口 check_delete_permission(path, params): ①guard_forbidden_delete → ②validate_delete(R1/R2) → ③check_delete_risk(R3-R6) 串链, 统一返 SafetyResult。三函数原功能全保留; validate_delete 亦供 path_legality_router 按线分派时调用。消费方: path_tool_safety_checker / shell_path_check / dual_path_check(三者纯调用, 判定全在本口); path_utils 第⑤级改调 guard_forbidden_delete。
+# 2026-10-18 - 小欧 - [38]§12.5 落地(字面9步): 原单路径口 check_delete_permission(path, params) 更名 delete_permission(path, params)(供 dual/shell 复用);
+#   新增工具级 check_delete_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 delete_permission, 供 router [6] 直调。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -61,7 +63,7 @@ classify_forbidden_path 并传 DELETE_MODE, 本文件只放删线独有的策略
 
 import os
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
@@ -182,8 +184,8 @@ def guard_forbidden_delete(file_path: str) -> Optional[str]:
     return None
 
 
-def check_delete_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
-    """delete 权限识别(唯一封装口) — 小欧 2026-10-17
+def delete_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
+    """delete 单路径权限口(唯一封装口) — 供 dual_path_check / shell_path_check 复用 — 小欧 2026-10-18
 
     把三件事有机串成一条链, 统一返回 SafetyResult:
       ① guard_forbidden_delete — A族(系统目录/磁盘根/代码目录/允许根本身+上级) → 命中即拒绝
@@ -207,4 +209,14 @@ def check_delete_permission(path: str, params: Optional[dict] = None) -> SafetyR
     return check_delete_risk(_params)
 
 
-__all__ = ["validate_delete", "check_delete_risk", "guard_forbidden_delete", "check_delete_permission"]
+def check_delete_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
+    """删线工具级权限口 — 供 path_legality_router [6] 直调 — 小欧 2026-10-18
+
+    遍历路径参数, 逐条走 delete_permission(带本次调用 params, 供 recursive 生效)。
+    """
+    return common.check_tool_paths(
+        tool_name, params, lambda p: delete_permission(p, params))
+
+
+__all__ = ["validate_delete", "check_delete_risk", "guard_forbidden_delete",
+           "delete_permission", "check_delete_permission"]

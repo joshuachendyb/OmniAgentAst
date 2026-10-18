@@ -8,7 +8,9 @@
 # 2026-10-17 - 小欧 - 裁定: move 源=删源→写目标(删源须弹窗), copy 源=读源→写目标(读源放行), 两者逻辑不同; delete 动作补 recursive=os.path.isdir(real_path), 且 requires_confirmation 由"当通过"改为**返回弹窗**(与单 delete 工具对齐); R6(工作区外递归)仍硬拦。copy 读源分支不变。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 表体上移 tool_constants(与 DUAL_PATH_TOOLS 同层), 本层改 import 消费。
 # 2026-10-17 - 小欧 - 删 LINE_BY_ACTION(死表): 唯一消费方 path_legality_router 已改按四表成员分派, 本表零消费, 按 YAGNI 删除。
-r"""dual_path_check — 双路径通道(5 个复合工具: copy/move/compress/extract/rename)
+# 2026-10-18 - 小欧 - [38]§12.6 落地(单路径口正名跟改): 三线单路径封装口更名 read/write/delete_permission, 本模块 4 处调用点同步跟改, 判定逻辑零改动。
+# 2026-10-18 - 小欧 - 北京老陈裁定(归类错误修复): generate_chart 移入双路径(data=read/dest=write), 本模块补 CONTENT_PARAM_KEYS 跳过(与 path_precheck:79 同口径), 防 data 内联 dict 被当路径送 read_permission 崩栈误拦。
+r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/extract/rename/generate_chart)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
 本模块判定"一次调用里多个路径动作": 源与目标各归其线。
@@ -53,7 +55,7 @@ from typing import Any, Dict
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.safety.path_classify_category import classify_forbidden_path  # 2026-10-15 系统源外泄拦截用
 from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 本通道返回类型
-from app.tools.tool_constants import DUAL_ACTION_PARAMS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层)
+from app.tools.tool_constants import DUAL_ACTION_PARAMS, CONTENT_PARAM_KEYS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 补 CONTENT_PARAM_KEYS(data 内容型跳过)
 
 
 # ── 复合工具参数动作声明(表体在 tool_constants.DUAL_ACTION_PARAMS, 与 DUAL_PATH_TOOLS 同层) ──
@@ -111,9 +113,11 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             value = params.get(key)
             if value is None:
                 continue
+            if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
+                continue                                # data 内容型参数: 内联结构非路径(与 path_precheck/check_tool_paths 同口径)
             hit = True
             real_path = resolve_path_param(tool_name, key, value, params)
-            result = write_path_check.check_write_permission(real_path)
+            result = write_path_check.write_permission(real_path)
             if result.blocked or result.requires_confirmation:
                 return result
         if not hit:
@@ -124,9 +128,11 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         value = params.get(key)
         if value is None:
             continue
+        if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
+            continue                                    # data 内容型参数: 内联结构非路径(与 path_precheck/check_tool_paths 同口径)
         real_path = resolve_path_param(tool_name, key, value, params)
         if action == "read":
-            result = read_path_check.check_read_permission(real_path)
+            result = read_path_check.read_permission(real_path)
             if result.blocked or result.requires_confirmation:
                 return result
             # 系统源外泄拦截: 读线放行系统目录, 但搬运类工具不得以系统目录为数据源
@@ -134,15 +140,15 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             if cat == "system":
                 return SafetyResult(blocked=True, severity="dangerous", message=msg)
         elif action == "delete":
-            # 2026-10-17 小欧 - 删除权限判定全部下沉到 check_delete_permission(本层纯调用, 不重判)。
+            # 2026-10-17 小欧 - 删除权限判定全部下沉到 delete_permission(本层纯调用, 不重判)。
             #   裁定: 补 recursive(目录=递归→R6/R4, 文件=非递归→R5/R3); move 删源 confirm **返回弹窗**
             #   (move=删源→写目标, 删源不可逆, 与单 delete 工具对齐; copy 源走读线故不涉及本分支)。
-            _perm = delete_path_check.check_delete_permission(
+            _perm = delete_path_check.delete_permission(
                 real_path, {"recursive": os.path.isdir(real_path)})
             if _perm.blocked or _perm.requires_confirmation:
                 return _perm
         else:  # write, 未知档位 fail-closed 按写线(最严)
-            result = write_path_check.check_write_permission(real_path)
+            result = write_path_check.write_permission(real_path)
             if result.blocked or result.requires_confirmation:
                 return result
 

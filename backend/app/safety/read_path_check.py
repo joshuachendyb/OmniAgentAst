@@ -6,9 +6,10 @@
 # 2026-10-15 北京老陈裁定 - 删白名单死分支: if 两支返回值一字不差, 判定零影响。
 # 2026-10-15 北京老陈裁定 - validate 改名 validate_read: 三线同名, 经模块引用无法辨识线的语义。
 # 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path。
-# 2026-10-17 北京老陈裁定 - check_preconditions 改取自 app.utils.path_utils(迁出 path_check_common), 调用前先过空值原子 reject_reason_empty_path
 # 2026-10-17 - 小欧 - 基础归一化: 新增 check_read_permission(path) 封装口, 三线统一返回 SafetyResult(签名按各线所需: 仅删线需 params.recursive), 供确认段统一消费。
 # 2026-10-17 - 小欧 - 死参清理: 删死参 allowed_paths(validate_read) 与 params(check_read_permission, 方案A); 删死 import path_check_common(读线公共步骤已迁 app.utils.path_utils)。
+# 2026-10-18 - 小欧 - [38]§12.3 落地(字面9步): 原单路径口 check_read_permission(path) 更名 read_permission(path)(供 dual/shell 复用);
+#   新增工具级 check_read_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 read_permission, 供 router [4] 直调。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -52,11 +53,12 @@ classify_forbidden_path 并传 READ_MODE, 本文件只放读线独有的策略�
 小欧 2026-10-15 建 / 2026-10-16 老陈裁定补表+订正术语+三堂会审订正视角
 """
 
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_read_permission 封装口返回类型
+from app.safety import path_check_common as common
 
 READ_MODE = "read"
 
@@ -88,11 +90,10 @@ def validate_read(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
         return False, f"路径验证失败: {str(e)}", "system"
 
 
-def check_read_permission(path: str) -> SafetyResult:
-    """读线权限封装口 — 与 check_write_permission / check_delete_permission 对称 — 小欧 2026-10-17
+def read_permission(path: str) -> SafetyResult:
+    """读线单路径权限口 — 供 dual_path_check / shell_path_check 复用 — 小欧 2026-10-18
 
     读线处处放行(禁区放行 + 白名单外放行), 仅"空路径 / 路径穿越 / 异常"三类非法输入硬拦。
-    照搬 _check_known_risks 单路径口径, 只出 SafetyResult 一种结果, 供确认段统一消费。
     """
     _ok, _msg, _category = validate_read(path)
     if not _ok:
@@ -100,4 +101,12 @@ def check_read_permission(path: str) -> SafetyResult:
     return SafetyResult(blocked=False, requires_confirmation=False, message="", severity="safe")
 
 
-__all__ = ["validate_read", "check_read_permission"]
+def check_read_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
+    """读线工具级权限口 — 供 path_legality_router [4] 直调 — 小欧 2026-10-18
+
+    遍历路径参数, 逐条走 read_permission(读线处处放行, 仅非法输入硬拦)。
+    """
+    return common.check_tool_paths(tool_name, params, read_permission)
+
+
+__all__ = ["validate_read", "read_permission", "check_read_permission"]

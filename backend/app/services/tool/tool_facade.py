@@ -19,6 +19,10 @@
 # 2026-10-15 - 小欧 - 文档[33] 5.21(P3收尾①②④): ①requires_confirmation 分支补设计注释(该分支恒拒绝是接口形态决定,
 #   非漏实现 —— API 链无 session_id 故 skip_confirmation 恒 False 无法走会话豁免, 且无前端可裁决 HITL, 等待只会挂死调用方);
 #   ④补文件末尾行尾换行(原缺, P3 实施时的漏项, 纯注释/字节零逻辑改动)。— 小欧-2026-10-15
+# 2026-10-18 - 小欧 - 未知工具崩溃修复(实测 POST /api/v1/tool/execute {"tool_name":"nonexistent"} → 500):
+#   execute_tool 直调安全层 check_before_execute, 而未注册工具使 get_tool 返回 None,
+#   path_tool_safety_checker 解引用 tool_meta.check_fn 抛 AttributeError。门面层补注册校验早返
+#   (success=False, fail-closed), 不改安全层契约(解析层仍是 Agent 链路唯一未注册拦截点)。
 """
 tool_facade — 工具门面(API 适配层)
 
@@ -131,6 +135,17 @@ async def execute_tool(tool_name: str, params: dict) -> dict:
     返回结构对齐 health.py 原 /tool/execute 的 ToolExecuteResponse 语义:
     {success, result | error, tool_name}
     """
+    # 0. 未注册工具早返(2026-10-18 小欧 - API 直调崩溃修复): 安全层契约假设"只放已注册工具"
+    #    (未注册判定收口解析层, 见 path_tool_safety_checker 头注 —— 解析层在 Agent 链路第一步拦截),
+    #    但 /tool/execute 直调不经解析层, get_tool 返回 None → check_before_execute 解引用 None
+    #    (tool_meta.check_fn) 抛 AttributeError → 500(实测 POST /api/v1/tool/execute {"nonexistent"}
+    #    报 Unhandled Exception)。门面层是其入口适配, 补注册校验: 未知工具返 success=False(fail-closed,
+    #    与 is_success 的"工具未找到"语义一致), 缺参/未实现不进入安全层。
+    if tool_registry.get_tool(tool_name) is None:
+        logger.warning(f"[tool_facade] 未知工具, 拒绝执行: {tool_name!r}")
+        return {"tool_name": tool_name, "success": False,
+                "result": {}, "error": f"未知工具: {tool_name}"}
+
     # 1. 安全预检(与 action_handler.check_safety_and_confirm 同源) — 小欧 2026-08-12
     # 4.4: 池快照现取现递，与 safety_gate 同口径 — 小欧 2026-10-16
     from app.tools.fundamental.shell_engine import get_pool_pids_snapshot

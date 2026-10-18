@@ -1,21 +1,23 @@
 # -*- coding: utf-8 -*-
-"""shell 命令静态处理单一真源 —— 权限入口侧的文本解析与目标抽取（零状态·零 I/O）
+"""shell 命令静态处理单一真源 —— 文本规范化 / 只读白名单 / 沙箱宽表（零状态·零 I/O）
 
-职责: 从一条 shell 命令里 **取路径清单与识别动作**，交给下游判权限。本模块**不判权限、不判危险等级**。
-分层: 取路径(本模块) 与 判权限(delete_path_check / write_path_check) 严格分开(老陈 2026-10-16 裁定)。
+职责: 提供 shell 命令的**只读白名单、命令规范化、沙箱越界宽表**三类静态判据; **不判权限、不判危险等级、不做动作分线解析**。
+分层: 文本原子/宽表(本模块) 与 动作解析(shell_parse) 与 判权限(read/write/delete_path_check) 三层严格分开(老陈 2026-10-16 裁定)。
 
-关注点(按用途归类, 老陈 2026-10-16 裁定):
-  一、只读白名单    —— SHELL_READONLY_PREFIXES / FAST_CHANNEL_FORBIDDEN / is_shell_readonly_whitelisted
+关注点(按用途归类, 老陈 2026-10-16 裁定; 2026-10-18 收敛):
+  一、只读白名单    —— SHELL_READONLY_PREFIXES / SHELL_FAST_CHANNEL_FORBIDDEN / is_shell_readonly_whitelisted
   二、文本规范化    —— shell_normalize_command(拼接折叠/[char]解码) / shell_blank_out_quotes(引号涂空)
-  三、越界与写意图  —— SHELL_OUTSIDE_TARGET_RE / SHELL_WRITE_INTENT_RE 等(供沙箱 F-B 预检与通道 B 入口门)
-  四、路径与动作    —— shell_write_and_delete_paths(取删线/写线清单)
-  五、工具分类      —— is_shell_tool
+  三、沙箱宽表/越界  —— SHELL_WRITE_INTENT_RE / SHELL_REDIRECT_RE / SHELL_OUTSIDE_TARGET_RE 等(供沙箱 F-B 预检)
+  四、工具分类与文本 —— is_shell_tool / shell_registry_key_exists / shell_ps_literal_path / shell_resolve_env_fragment
+★"动作分线"(动词表 SHELL_DELETE_RE/SHELL_WRITE_RE/SHELL_MOVE_RE + 递归/强制删除判据 + 路径抽取
+  shell_extract_abs_win_paths)已于 2026-10-18 全部迁往 app/safety/shell_parse/ 包
+  (文档[38] §13.1.2/§13.2.3.5/§13.2.3.8); 本模块收敛为**沙箱宽表 + 只读白名单 + 规范化函数**, 词表/原子零复制(DRY)。
 ★自杀检查(杀进程防护)已于 2026-10-16 全部归并到 app/safety/shell_process_guard.py(老陈裁定),
   本模块不再持有任何杀进程相关的词表与判定函数。
 
 位置: app/safety/。原居 app/tools/fundamental/shell_command_guard.py，2026-10-16 整文件下沉。
-依赖方向: 仅 import fnmatch/re/typing + app.tools.tools_alias_mapper(契约与元数据, 合法)，
-  **不再 import 任何 app.tools.fundamental / app.tools.validate**。
+依赖方向: 仅 import os/re + app.tools.tools_alias_mapper(契约与元数据, 合法)，
+  **不再 import 任何 app.tools.fundamental / app.tools.validate**, 也不 import shell_parse(单向)。
 
 编辑历史:
 2026-10-04 小欧 - 自 executor.py 迁入(原名 shell_readonly.py, 落 app/utils/), 内容未改。
@@ -29,12 +31,18 @@
 2026-10-16 小欧 - 整文件下沉: 自 shell_command_guard.py 整文件下沉 app/safety/(文件级复制零漂移), 正名 24 项符号, 新增写删目标识别 8 单一职责函数; 自杀检查全部归并 shell_process_guard.py。
 2026-10-16 小欧 - 三堂会审: 删 shell_blank_out_quotes 重复定义(后者覆盖前者成死代码)与 danger/risk 随之失效的死 import。
 2026-10-17 小欧 - 拆 SHELL_DESTRUCTIVE_DELETE_RES 为递归类+强制类, 新增 shell_has_recursive_delete(只认递归开关, 不含 Force 单开关), 供 shell_path_check 喂 recursive 使 R6(工作区外递归硬拦)生效。
+2026-10-18 小欧 - [38] 13.2 重构: 迁出"动作分线"段(ShellText/prepare_shell_text/shell_has_write_intent/_verb_flags/_collect_targets/_assign_to_lines/_shell_path_lines/shell_write_and_delete_paths/_extract_shell_move_paths 及其私有 regex)至 app/safety/shell_parse/ 包; 本模块收敛为**词表与文本原子单一真源**(SHELL_DELETE_RE/SHELL_WRITE_RE/SHELL_MOVE_RE/SHELL_WRITE_INTENT_RE 等 + shell_blank_out_quotes/shell_resolve_env_fragment/shell_extract_abs_win_paths 等), 供解析包复用。词表/原子零复制(DRY, 受 test_shell_regex_baseline 词面基线锁死)。
+2026-10-18 小欧 - [38] 13.2 二次迁移(老陈裁定, 按 §13.1.2 全部移入 shell_parse/): 上一版留在本模块的**动作分线残件**再整体移出 ——
+  SHELL_DELETE_RE/SHELL_RECURSIVE_DELETE_RES/SHELL_FORCE_DELETE_RES/SHELL_DESTRUCTIVE_DELETE_RES/shell_has_recursive_delete/shell_has_destructive_delete → shell_parse/parse_delete.py;
+  SHELL_WRITE_RE(含 _SHELL_WRITE_VERBS) → shell_parse/parse_write.py; SHELL_MOVE_RE → shell_parse/parse_move.py;
+  shell_extract_abs_win_paths(含 _SHELL_ABS_WIN_PATH_RES) → shell_parse/lexer.py。
+  本模块只剩**沙箱宽表 + 只读白名单 + 规范化**: 删死 import(fnmatch/List), 不留任何转发壳(禁 backward)。
+2026-10-18 小欧 - 三堂会审整改: SHELL_WRITE_INTENT_RE 沙箱宽表补 CMD 搬移/复制动词(Rename-Item/move/ren/
+  copy/xcopy/robocopy)。原表仅收 PS 别名, 致 CMD `move`/`ren`/`copy` 的目标在 F-B 越界写扫描中被漏扫。
 
 """
-import fnmatch
 import os
 import re
-from typing import List, NamedTuple, Tuple
 
 from app.tools.tools_alias_mapper import normalize_tool_name
 
@@ -125,9 +133,12 @@ def is_shell_readonly_whitelisted(command: str) -> bool:
 # 「可授权的写」而非「不可授权的删」——授权后等于放行删系统目录。故拆细表三张。
 # ★宽表必须保留删动词: 沙箱 F-B 越界写扫描正是靠它才看得到
 #   Remove-Item/del/rm 的目标, 移出即漏扫 = 安全退化。
+# 2026-10-18 小欧 - 三堂会审补全(原表漏 CMD 搬移/复制动词): 补 Rename-Item/move/ren 与 copy/xcopy/robocopy。
+#   原表只收 PS 别名(Move-Item/mi/mv、Copy-Item/cpi/cp), 致 CMD `move`/`ren`/`copy` 三类:
+#   ① 沙箱 F-B 越界写扫描漏扫其目标(覆盖面静默缩水) ② 通道 B 早退门漏判。取严补全。
 SHELL_WRITE_INTENT_RE = re.compile(
-    r"\b(?:Remove-Item|Remove-ItemProperty|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Copy-Item|cpi|cp|mv"
-    r"|New-Item|ni|Set-Content|Add-Content|ac|Out-File|Expand-Archive"
+    r"\b(?:Remove-Item|Remove-ItemProperty|rm|ri|del|erase|rd|rmdir|Move-Item|mi|Rename-Item|move|ren|mv"
+    r"|Copy-Item|cpi|cp|copy|xcopy|robocopy|New-Item|ni|Set-Content|Add-Content|ac|Out-File|Expand-Archive"
     r"|reg(?:\.exe)?(?=\s|$)|setx|regedit(?:\.exe)?(?=\s|$))\b",
     re.IGNORECASE)
 SHELL_REDIRECT_RE = re.compile(r">>?\s*\"?([^\"\r\n<>|;]+)")   # v1.21 Z1: 重定向目标提取(> 与 >> 同权)
@@ -142,93 +153,12 @@ SHELL_OUTSIDE_TARGET_RE = re.compile(
 SHELL_SANDBOX_SELF_RE = re.compile(r"omniagent_sandbox", re.IGNORECASE)   # N7 carve-out 标识
 SHELL_REGISTRY_SYSTEM_VERBS = frozenset({"reg", "reg.exe", "regedit", "regedit.exe", "setx"})
 
-SHELL_DELETE_RE = re.compile(
-    r"(?<![a-z0-9_-])(?:Remove-Item|Remove-ItemProperty|del|erase|rd|rmdir|ri|rm)(?![a-z0-9_-])",
-    re.IGNORECASE)
-
-# 2026-10-16 老陈裁定(第④层收编): 原在 shell_command_risk.py 的 10 条"删除类"规则移到这里 ——
-#   理由: rm/del/Remove-Item/rd/rmdir 是**文件删除命令**, 属路径判定, 危险层与中风险层不许含路径规则。
-#   这些是"删除动词 + 特定开关组合"(递归/强制/s 开关), 比普通删除更危险:
-#     · 唯一消费方 shell_path_check 用它做 fail-closed 兜底(见 shell_has_destructive_delete docstring)
-#   ★2026-10-16 三堂会审: 删死代码 _TEMP_SAFE_PATTERNS + shell_is_temp_cleanup(原随规则一并移来,
-#     但全仓零调用 —— 即"建了不接", 与老陈反对的画蛇添足同型)。高危删除解析不出目标即硬拦,
-#     不再做"临时目录降级"那套豁免。
-# 递归删除类(删目录树, 抹除不可逆) —— R6(工作区外递归硬拦)的判据单一真源 — 小欧 2026-10-17
-SHELL_RECURSIVE_DELETE_RES = (
-    # PS: Remove-Item/rm/del + Recurse + Force
-    re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bRecurse\b.*\bForce\b", re.IGNORECASE),
-    # PS: Remove-Item/rm + Recurse(排除显式 -Recurse:$false)
-    re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+(?:.*\bRecurse\b(?!:\$false\b))", re.IGNORECASE),
-    # PS 字母flag: rm -rf(等价于 -Recurse -Force)
-    re.compile(r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR][fF]\b", re.IGNORECASE),
-    # PS 字母flag 分离形态: rm -r -f
-    re.compile(r"(?:Remove-Item|rm|ri|erase|del)\s+.*?-[rR]\b.*?-[fF]\b", re.IGNORECASE),
-    # CMD: del /s(递归删文件)
-    re.compile(r"\bdel\b.*?/s\b", re.IGNORECASE),
-    # CMD: rd /s(递归删目录)
-    re.compile(r"\brd\b.*?/s\b", re.IGNORECASE),
-    # CMD: rmdir /s(递归删目录)
-    re.compile(r"\brmdir\b.*?/s\b", re.IGNORECASE),
-    # bash: rm -rf /(递归删根路径)
-    re.compile(r"\brm\b.*?-rf\s+/", re.IGNORECASE),
-)
-
-# 强制删除类(仅 Force, 非递归) —— 只供 shell_has_destructive_delete 兜底, **不作 R6 递归判据**(否则 Force 单开关会误升硬拦)
-SHELL_FORCE_DELETE_RES = (
-    # PS: Remove-Item/rm + Force(强制删除文件, 原 MEDIUM)
-    re.compile(r"(?:Remove-Item|rm|del|ri|erase)\s+.*\bForce\b", re.IGNORECASE),
-    # CMD: del /f(强制删除文件, 原 MEDIUM)
-    re.compile(r"\bdel\b.*?/f\b", re.IGNORECASE),
-)
-
-# 高危删除全集(递归 + 强制) —— shell_has_destructive_delete 的判据(原表内容不变, 仅拆为两段组合)
-SHELL_DESTRUCTIVE_DELETE_RES = SHELL_RECURSIVE_DELETE_RES + SHELL_FORCE_DELETE_RES
-
-
-def shell_has_recursive_delete(command: str) -> bool:
-    r"""这条命令是否含"递归删除"(删目录树) — 小欧 2026-10-17
-
-    用途: shell_path_check.check_shell_permission 把 recursive 显式喂入
-          delete_path_check.check_delete_permission, 使 R6(工作区外递归=硬拦)在 shell 通道生效。
-    口径: 只认递归开关(Recurse / -rf / -r -f / del|rd|rmdir /s / rm -rf /);
-          不含 Force 单开关(-Force/del /f 非递归, 应落 R5 确认, 不得误升 R6 硬拦)。
-    """
-    return any(rx.search(command or "") for rx in SHELL_RECURSIVE_DELETE_RES)
-
-
-def shell_has_destructive_delete(command: str) -> bool:
-    r"""这条命令是不是高危删除(递归/强制/带开关) — 小欧 2026-10-16
-
-    干什么用: 供 shell_path_check.check_shell_permission 做 **fail-closed 兜底** ——
-              高危删除若**解析不出任何删路径**(如 `rm -rf /`, 路径提取只认 Windows 绝对路径),
-              说明无从判权限, 一律硬拦 system。**判据成立才拒, 不是"高危即拒"**;
-              解析得出目标时走 delete_path_check 正常判权限。
-    口径    : 只认"删除动词 + 递归/强制/s 开关"组合; 普通 `rm C:\x` 不算(走普通删线)。
-    """
-    return any(rx.search(command or "") for rx in SHELL_DESTRUCTIVE_DELETE_RES)
-
-
-SHELL_MOVE_RE = re.compile(r"(?<![a-z0-9_-])(?:Move-Item|Rename-Item|move|ren|mi|mv)(?![a-z0-9_-])", re.IGNORECASE)
-# 细表三 纯写动词: 有意裁剪——move 族归 SHELL_MOVE_RE(源删/目标写); del 族 8 个归 SHELL_DELETE_RE
-# (在宽表里保留, 见上)。重定向 > 与 >> 不在本表: 目标恒为文件, 由 shell_write_and_delete_paths 单列覆盖。
-_SHELL_WRITE_VERBS = (r"(?:Copy-Item|cp|cpi|New-Item|ni|Set-Content|Add-Content|ac|Out-File"
-                      r"|Expand-Archive|reg(?:\.exe)?(?=\s|$)|setx|regedit(?:\.exe)?(?=\s|$))")
-SHELL_WRITE_RE = re.compile(r"\b" + _SHELL_WRITE_VERBS + r"\b", re.IGNORECASE)
-
-_MOVE_DEST_SWITCHES = frozenset({"-destination", "-dest", "-newname"})   # 其后路径=目标
-# 2026-10-16 小欧 三堂会审修(P0 退化): 裸 token 必须在语句分隔符处断开, 与 _SHELL_ABS_WIN_PATH_RES 同口径
-_MOVE_TOKEN_RE = re.compile(r'"[^"]*"|\'[^\']*\'|[^\s"\'<>|;&]+')
-_ABS_PATH_HEAD_RE = re.compile(r'^[a-zA-Z]:[\\/]')          # 只认盘符绝对路径
-_SHELL_ABS_WIN_PATH_RES = [
-    # 引号区先完整取出(两条): 只在**确实位于引号内**时才允许空格, 故用
-    #   「非引号字符 + 引号内任意字符」的组合匹配, 避免把裸路径间的空格也当成路径的一部分
-    #   (实测 `C:\a C:\b` 曾被吞成 'C:\a C:\b' 一个路径)。
-    re.compile(r'"[a-zA-Z]:\\[^"]*"'),          # 双引号内反斜杠盘符路径
-    re.compile(r'"[a-zA-Z]:/[^"]*"'),           # 双引号内正斜杠盘符路径(C:/ 同属越界写, 防逃逸)
-    re.compile(r"'[a-zA-Z]:\\[^']*'"),          # 单引号内盘符路径
-    # 裸路径(引号外): 遇空白或分隔符即止; 反斜杠与正斜杠盘符同认
-    re.compile(r"[a-zA-Z]:[\\/][^\s\"'<>|;,)&]+"),
-]
+# ★ 2026-10-18 小欧 [38] 13.2 二次迁移(老陈裁定, 按 §13.1.2 全部移入 shell_parse/):
+#   删/写/搬移动词表(SHELL_DELETE_RE/SHELL_WRITE_RE/SHELL_MOVE_RE)、递归/强制删除判据
+#   (SHELL_RECURSIVE_DELETE_RES/SHELL_FORCE_DELETE_RES/SHELL_DESTRUCTIVE_DELETE_RES/
+#    shell_has_recursive_delete/shell_has_destructive_delete)、路径抽取
+#   (shell_extract_abs_win_paths/_SHELL_ABS_WIN_PATH_RES) 整体移出本模块, 归 shell_parse 包
+#   (parse_delete / parse_write / parse_move / lexer)。本模块只留沙箱宽表/只读白名单/规范化, 不留转发壳。
 
 
 def shell_blank_out_quotes(text: str) -> str:
@@ -237,7 +167,7 @@ def shell_blank_out_quotes(text: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════
-# 四、路径抽取与工具分类
+# 四、工具分类
 # ══════════════════════════════════════════════════════════════════════
 def is_shell_tool(tool_name: str) -> bool:
     """是否 shell 命令类工具(executor 预检按此分流 file_op / shell) — 小欧 2026-10-10
@@ -247,28 +177,6 @@ def is_shell_tool(tool_name: str) -> bool:
     """
     _shell = frozenset({"bash"})  # 2026-10-02 小欧 - 随注册名改名
     return normalize_tool_name(tool_name) in _shell
-
-
-def _extract_shell_move_paths(command: str) -> Tuple[List[str], List[str]]:
-    """移动类命令按参数位置拆「源(被删)」与「目标(被写)」 — 小欧 2026-10-16（洞2）
-
-    为什么不用 shell_extract_abs_win_paths 取源: 它按"引号组 + 裸路径组"拼接返回, 位置序被打乱
-    (实测 `mv C:\src.txt "E:\dst dir"` 返回 [目标, 源]), 按下标取源会判反;
-    本函数按文本顺序切 token, 故位置可靠。
-    -Destination/-dest 之后的路径判为目标, 其余为源; 无开关时首路径为源、其余为目标
-    (PS 位置写法与 bash/cmd `mv src dst` 同形)。只认盘符绝对路径, 相对路径不抽(交沙箱预检)。
-    """
-    tokens = [t.strip("\"'") for t in _MOVE_TOKEN_RE.findall(command or "")]
-    paths = [(i, t) for i, t in enumerate(tokens) if _ABS_PATH_HEAD_RE.match(t)]
-    if not paths:
-        return [], []
-    dest_idx = next((i for i, t in enumerate(tokens)
-                     if t.lower() in _MOVE_DEST_SWITCHES), None)
-    if dest_idx is None:
-        return [paths[0][1]], [p for _, p in paths[1:]]
-    src = [p for i, p in paths if i < dest_idx]
-    dst = [p for i, p in paths if i > dest_idx]
-    return (src or [p for _, p in paths]), dst
 
 
 def shell_resolve_env_fragment(fragment: str) -> str:
@@ -282,25 +190,6 @@ def shell_resolve_env_fragment(fragment: str) -> str:
 def shell_ps_literal_path(p) -> str:
     """给 PowerShell -LiteralPath 用单引号包裹并转义内嵌单引号(`'` → `''`)。"""
     return "'" + str(p).replace("'", "''") + "'"
-
-
-def shell_extract_abs_win_paths(text: str) -> List[str]:
-    """抽取命令中的全部绝对路径 — 小欧 2026-10-14
-
-    引号区先完整取出(含首尾引号, 取出后剥掉), 裸路径**只在引号区之外**扫描:
-    否则同一段引号路径会被裸正则再截断成 `E:\\my`(实测误拦已授权目录 `E:\\my proj`,
-    且 failed_path 报错路径)。裸路径不得跨空白, 否则 `C:\\a C:\\b` 会被吞成一个路径。
-    去重保序。
-    """
-    quoted: List[str] = [m.strip("\"'")
-                        for rx in _SHELL_ABS_WIN_PATH_RES[:3] for m in rx.findall(text)]
-    bare = _SHELL_ABS_WIN_PATH_RES[3].findall(shell_blank_out_quotes(text))
-    found: List[str] = []
-    for p in quoted + bare:
-        p = p.strip().rstrip("\\")
-        if p and p.lower() not in [x.lower() for x in found]:
-            found.append(p)
-    return found
 
 
 def shell_registry_key_exists(reg_path: str) -> bool:
@@ -324,140 +213,3 @@ def shell_registry_key_exists(reg_path: str) -> bool:
             return True
     except OSError:
         return False
-
-
-# ══════════════════════════════════════════════════════════════════════
-# 五、写删目标识别（2026-10-16 小欧 新增）
-# ══════════════════════════════════════════════════════════════════════
-# 动词表分两层: 宽表答「改不改动东西」(通道 B 入口门 + 沙箱 F-B 两个消费方),
-#               细表三张答「改动是什么后果」, 供归属分类分线: 删(move 源)/写(move 目标·重定向)。
-# 公共工序只到文本预处理一级(换行归一 → 引号涂空 → $env: 展开), prepare_shell_text 一次产出、三判据共用。
-# 路径抽取不复用: move 源/目标需位置序走 _extract_shell_move_paths 有序切词;
-#               其余走 shell_extract_abs_win_paths(它按引号组+裸路径组拼接, 位置序被打乱)。
-# 函数化(老陈裁定「不拆模块, 但必须函数化」): 本节 8 个单一职责函数
-#     决策层  _verb_flags / shell_has_write_intent
-#     工序层  prepare_shell_text / _collect_targets
-#     策略层  _assign_to_lines / _shell_path_lines / _dedup_keep_order
-#     出入口  shell_write_and_delete_paths(一次返回两列清单)
-
-
-class ShellText(NamedTuple):
-    """一条命令的两种用途文本 — 小欧 2026-10-16
-
-    用不可变产物而非让各出入口各跑一遍预处理: 编排层跑一次, 三个判据共用同一份文本(KISS-DIRECT)。
-    """
-    extract_src: str   # 抽取用: 换行归一 + $env: 展开的原文 —— 抽路径要保住含空格完整路径
-    intent_src: str    # 判意图用: 换行归一 + 引号内容涂成等长空格
-
-
-def prepare_shell_text(command: str) -> ShellText:
-    """预处理只跑这一次 — 小欧 2026-10-16
-
-    抽取用文本先展开 $env: —— 否则 `$env:TEMP\\a.txt` 形态抽不到盘符路径(现网既有语义, 不改);
-    判意图用文本把引号涂成等长空格 —— 保偏移, 防 `Select-String -Pattern "del"` 误判。
-    """
-    normalized = (command or "").replace("\r\n", " ").replace("\n", " ")
-    return ShellText(shell_resolve_env_fragment(normalized), shell_blank_out_quotes(normalized))
-
-
-def _dedup_keep_order(paths: List[str]) -> List[str]:
-    """去重且保序(同一路径在 move 源与删动词目标中各出现一次, 只判一次) — 小欧 2026-10-16"""
-    seen = set()
-    out = []
-    for p in paths:
-        key = (p or "").lower()
-        if p and key not in seen:
-            seen.add(key)
-            out.append(p)
-    return out
-
-
-def shell_has_write_intent(text: ShellText) -> bool:
-    """这条 shell 命令会不会改动东西 — 小欧 2026-10-16
-
-    通道 B 入口门判据 —— 只读命令整条放行, 不打扰用户(HITL 零打扰)。
-    不判权限、不判危险等级、不抽路径 —— 它只答有/无。
-    """
-    return bool(SHELL_WRITE_INTENT_RE.search(text.intent_src)) or ">" in text.intent_src
-
-
-def _verb_flags(intent_src: str) -> Tuple[bool, bool, bool]:
-    """判三类动作在这条命令里有没有 —— 只出开关, 不抽路径 — 小欧 2026-10-16
-
-    决策层: 把"要不要走哪条线"从"抽什么路径"里拆开, 谁也不该在别处重新匹配一遍动词(DRY)。
-    返回    : (del_hit, write_hit, move_hit)
-    """
-    return (bool(SHELL_DELETE_RE.search(intent_src)),
-            bool(SHELL_WRITE_RE.search(intent_src)) or ">" in intent_src,
-            bool(SHELL_MOVE_RE.search(intent_src)))
-
-
-def _collect_targets(extract_src: str, move_hit: bool) -> Tuple[List[str], List[str]]:
-    """把移动类的源/目标抽出来 —— 只做抽取工序, 不做归属决策 — 小欧 2026-10-16
-
-    工序层: 必须走有序切词(保位置序), 与无序的 shell_extract_abs_win_paths 不能混用。
-    """
-    return _extract_shell_move_paths(extract_src) if move_hit else ([], [])
-
-
-def _assign_to_lines(delete_line: List[str], write_line: List[str]) -> Tuple[List[str], List[str]]:
-    """交集取严: 同一条路径既被删线提又被写线提, 只归删线 — 小欧 2026-10-16
-
-    策略层(规则⑤)。缺这一步会让同一路径在两线各判一次, 失败路径取决于代码顺序 = 行为不确定。
-    保序: 一律用列表推导过滤, 不用 sorted(会打乱命令里出现的先后, 而失败路径要报给用户)。
-    """
-    both = {p.lower() for p in delete_line} & {p.lower() for p in write_line}
-    if not both:
-        return delete_line, write_line
-    return ([p for p in delete_line if p.lower() in both]
-            + [p for p in delete_line if p.lower() not in both],
-            [p for p in write_line if p.lower() not in both])
-
-
-def _shell_path_lines(text: ShellText) -> Tuple[List[str], List[str]]:
-    """写删目标归属分类 —— 编排层, 返回 (删线路径, 写线路径) — 小欧 2026-10-16
-
-    归属规则五条, 顺序即优先级:
-      ① 移动动词的【源参数】→ 删线(从原位抹掉, 与 del 同级)
-      ② 移动动词的【目标参数】→ 写线(可任务级授权)
-      ③ 删除动词命令里的绝对路径 → 删线
-      ④ 纯写动词命令里、或重定向 > / >> 的绝对路径 → 写线
-      ⑤ **交集取严**: 同一条路径既被删线提又被写线提 → 只归删线, 从写线剔除。
-
-    ★落码时发现的第 7 处设计缺陷: abs_paths 不带"属于哪个动词"的信息, 混合命令无法按动词分线。
-    处置(取严, 不引新抽象): 删写动词**同时命中**时 abs_paths 一律归删线, 写线只收 move 目标。
-    理由: 误把写路径归删线 = 更严(安全), 反向则是放宽(危险); 且与搬迁前实码行为一致 = 零退化。
-
-    只编排, 不含逻辑(SLAP/KISS-DIRECT):
-      决策 → _verb_flags  工序 → _collect_targets + 一次 shell_extract_abs_win_paths  策略 → _assign_to_lines
-    """
-    del_hit, write_hit, move_hit = _verb_flags(text.intent_src)
-    if not (del_hit or write_hit or move_hit):
-        return [], []                                   # 纯读命令: 两口皆空, 不做无用抽取
-    abs_paths: List[str] = (shell_extract_abs_win_paths(text.extract_src)
-                            if (del_hit or write_hit) else [])
-    move_src, move_dst = _collect_targets(text.extract_src, move_hit)
-    if del_hit and not write_hit:
-        delete_line, write_line = move_src + abs_paths, move_dst      # 规则①③
-    elif write_hit and not del_hit:
-        delete_line, write_line = move_src, move_dst + abs_paths      # 规则②④
-    else:
-        delete_line, write_line = move_src + abs_paths, move_dst      # 删写同现: 取严归删线
-    return _assign_to_lines(_dedup_keep_order(delete_line),
-                            _dedup_keep_order(write_line))
-
-
-def shell_write_and_delete_paths(text: ShellText) -> Tuple[List[str], List[str]]:
-    """取一条 shell 命令的 (删线路径清单, 写线路径清单) — 小欧 2026-10-16
-
-    干什么用: shell 路径检查(通道 B)的唯一取路径入口 —— 本函数**只取路径, 不判权限**。
-              两个清单分别交 delete_path_check.validate_delete / write_path_check.validate_write 判权限。
-
-    为什么是一个函数返回两列, 而不是"删线一个门、写线一个门"(北京老陈 2026-10-16 裁定):
-      拆分版下两个门各自内部都要把整套判定跑一遍(扫动词 → 抽路径 → 切 move 参数 → 分线 → 去重),
-      而调用方**两个清单都要** → 同一套判定白跑两遍(实测计数确认 = 2 次)。
-
-    契约: 返回去重保序的盘符绝对路径; 相对路径 / UNC / ~ / 未展开的 $env: 形态一律不抽
-          (交沙箱预检 SHELL_OUTSIDE_TARGET_RE 覆盖)。结论由下游 path_classify_category.classify_forbidden_path 出。
-    """
-    return _shell_path_lines(text)

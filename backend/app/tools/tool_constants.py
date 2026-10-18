@@ -59,6 +59,7 @@
 # 2026-10-15 - 小欧 - 核查订正: 三张表去私前缀改名 PATH_CATEGORIES/PATH_PARAM_KEYS/READ_ONLY_TOOLS。理由: 前次收编漏了「全部去下划线前缀」明文; 本模块是分类表对外提供方, 消费方 app/safety/path_safe_check 属系统层(跨层 import), 私前缀与实际契约身份不符。同步改 path_safe_check 导入与调用点; 表内容零改动。— 小欧-2026-10-15
 # 2026-10-16 - 小欧 - tool去检查化覆盖审计: PATH_PARAM_KEYS 补 search_dir/data(实测原合法性初查/安全总闸 全漏)。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 自 safety/dual_path_check 上移, 与 DUAL_PATH_TOOLS 同层(同属"工具×参数×动作"声明, 消除跨层分居与 tool_constants 注释里的散文重复); dual_path_check/path_precheck 改从此导入。
+# 2026-10-18 - 小欧 - 北京老陈裁定(归类错误修复): generate_chart 自 WRITE_PATH_TOOLS 移入 DUAL_PATH_TOOLS, DUAL_ACTION_PARAMS 补 {"data":"read","dest":"write"}。理由: generate_chart 一调用带 data(数据源)+dest(出图)两路径, 属双动作, 误归 write 致 data(内联JSON串)被写线当路径送审误弹授权; 单线只应承载单路径。WRITE_PATH_TOOLS 10→9, DUAL_PATH_TOOLS 5→6。
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -722,11 +723,11 @@ READ_PATH_TOOLS = frozenset({
     "analyze_data", "filter_data",
 })
 
-# ── 写入(10 个, 2026-10-16 三堂会审订正计数): download 有 dest(下载落盘路径)属写入目标必须走写线 ──
+# ── 写入(9 个, 2026-10-18 小欧订正: generate_chart 移入双路径): download 有 dest(下载落盘路径)属写入目标必须走写线 ──
 WRITE_PATH_TOOLS = frozenset({
     "write", "edit", "write_docx", "write_pdf",
     "write_pptx", "write_xlsx",
-    "execute_sql", "generate_chart", "screen_capture",
+    "execute_sql", "screen_capture",
     "download",
 })
 
@@ -735,12 +736,15 @@ DELETE_PATH_TOOLS = frozenset({
     "delete",
 })
 
-# ── 双路径(5 个, 一调用内含多个路径动作, 源与目标各归其线) ──
+# ── 双路径(6 个, 一调用内含多个路径动作, 源与目标各归其线) ──
 #   copy/compress/extract: 源=读线+系统源外泄拦截, 目标=写线;
 #   move: 源=删线, 目标=写线; rename: 源与目标=写线 — 2026-10-15 北京老陈裁定(真分开)。
+#   generate_chart: data(数据源, 可为文件路径)=读线, dest(出图路径)=写线 — 2026-10-18 北京老陈裁定:
+#     单线只承载单路径, 一调用含"数据源+出图"两路径者属双动作, 原误归 write 是归类错误。
 #   (读线放行系统目录, 故纯数据源按读线判须另加系统源外泄拦截; 详见 DUAL_ACTION_PARAMS。)
 DUAL_PATH_TOOLS = frozenset({
     "copy", "move", "compress", "extract", "rename",
+    "generate_chart",
 })
 
 # 复合工具【参数 → 动作档位】声明(单一真源, 与 DUAL_PATH_TOOLS 同层):
@@ -752,6 +756,7 @@ DUAL_ACTION_PARAMS: Dict[str, Dict[str, str]] = {
     "compress": {"path": "read", "dest": "write"},
     "extract":  {"path": "read", "dest": "write"},
     "rename":   {"path": "write", "dest": "write"},
+    "generate_chart": {"data": "read", "dest": "write"},
 }
 
 # 路径工具白名单(单一真源): 仅此范围内工具进路径判定链 — 小欧 2026-10-17
