@@ -129,12 +129,19 @@ def update_config(config_update):
 
 
 DEFAULT_SECURITY = {
-    # 2026-10-18 - 小欧 - 键名与 settings registry / path_tool_safety_checker 同步改为 hitl_enabled:
-    #   该项只决定是否走人工确认链路, 不管危险防护。本键不被 get_system_config_data 的出口白名单挑选, 无消费方。
-    "hitl_enabled": False,
-    "confirmDangerousOps": True,
-    "auto_confirm_delay": 10,
-    "hitl_timeout": 120,
+    # 2026-10-18 小欧 - 对齐现行嵌套结构: config.yaml / settings_registry / path_tool_safety_checker
+    #   三处均已迁到 security.hitl.* 与 security.system.* 命名空间, 本块此前仍留扁平旧键
+    #   (hitl_enabled / hitl_timeout / auto_confirm_delay / confirmDangerousOps), 是全仓最后一处未迁移点。
+    #   2026-10-18 北京老陈裁定: enabled 默认 **True** —— 缺键时按"开"处理, 缺配置不放松安全等级;
+    #   与 path_tool_safety_checker._is_hitl_bypass 的 fallback True、settings_registry 的默认值一致。
+    "system": {
+        "confirm_dangerous_ops": True,
+    },
+    "hitl": {
+        "enabled": True,
+        "auto_confirm_delay": 10,
+        "timeout": 120,
+    },
 }
 
 
