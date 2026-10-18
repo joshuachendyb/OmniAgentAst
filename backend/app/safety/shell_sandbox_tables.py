@@ -15,14 +15,20 @@ import re
 
 from app.safety.shell_parse.verb_table import SHELL_KEYS, flatten_verbs
 from app.safety.shell_parse.parse_delete import DELETE_VERBS_BY_SHELL
-from app.safety.shell_parse.parse_move import MOVE_VERBS_BY_SHELL
+from app.safety.shell_parse.parse_move import MOVE_VERBS_BY_SHELL, RENAME_VERBS_BY_SHELL
 from app.safety.shell_parse.parse_write import WRITE_VERBS_BY_SHELL
 
 
 def _intent_verb_union():
-    """删/搬移/写 三套 × 三型 动词并集(去重保序) — 沙箱宽表词面单一真源 — 小欧 2026-10-18"""
+    """删/搬移/改名/写 四套 × 三型 动词并集(去重保序) — 沙箱宽表词面单一真源 — 小欧 2026-10-18
+
+    改名动词(Rename-Item/ren/rnm/rename)自搬移表拆出后**必须**并入本并集:
+    宽表是沙箱侧独立的判定依据, 不经 parse_shell_action 的早退门; 漏并即等于
+    改名命令不进沙箱写意图判定(实测宽表命中 Rename-Item=False 即此退化)。
+    """
     merged = {}
-    for tables in (DELETE_VERBS_BY_SHELL, MOVE_VERBS_BY_SHELL, WRITE_VERBS_BY_SHELL):
+    for tables in (DELETE_VERBS_BY_SHELL, MOVE_VERBS_BY_SHELL,
+                   RENAME_VERBS_BY_SHELL, WRITE_VERBS_BY_SHELL):
         for shell in SHELL_KEYS:
             merged.setdefault(shell, [])
             merged[shell].extend(tables.get(shell, ()))

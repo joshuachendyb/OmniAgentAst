@@ -39,7 +39,7 @@ class ConfirmSpec:
     params: Optional[dict] = None
     path: Optional[str] = None
     content: str = ""
-    trust_impact: str = ""       # 授权/信任影响面: high=目录根授权(整棵子树) / low=单文件授权(仅精确路径)
+    trust_impact: str = ""       # 授权/信任影响面: high=删除类(抹除不可撤销) / medium=写入类(可覆写) / low=命令级等其余确认
     safety_level: str = ""       # 问题来源分类: path_auth / shellparam / command_block / tool_delete / tool_execute / data_guard / unregistered / forbidden_zone
     auto_confirm: bool = False   # 2026-09-18 小欧 去mode改布尔单源(changed from None) — 小欧-2026-09-18
 

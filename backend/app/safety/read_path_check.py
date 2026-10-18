@@ -12,7 +12,7 @@
 #   新增工具级 check_read_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 read_permission, 供 router [4] 直调。
 # 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线工具路径键恒为 path(L2 已归一), 工具级口改为直接取 params["path"] 调 read_permission;
 #   空值/穿越由 validate_read 自身拦截; 未传 key → 放行(与旧循环"真没传"口径一致)。
-# 2026-10-18 - 小欧 - 随契约调整同步: 两个结果补 safety_level="path_auth"(读线唯一来源分类, 非法路径输入亦属路径授权范畴), 分类由本线直给而非上层反查文案; 原 severity 两处(dangerous/safe)分别与 blocked/needs_confirm 等价、属重复编码, 一并删; requires_confirmation 随字段改名。读线"处处放行、仅空值/穿越/异常硬拦"的核心策略零变更。
+# 2026-10-18 - 小欧 - 随契约调整同步: 非法路径输入的硬拦结果补 safety_level=SafetyLevel.BLOCK_PATH_INVALID(读线从不确认, 不涉确认命名空间); 放行结果不带标签。原 severity 两处(dangerous/safe)分别与 blocked/needs_confirm 等价、属重复编码, 一并删; requires_confirmation 随字段改名。读线"处处放行、仅空值/穿越/异常硬拦"的核心策略零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
@@ -61,7 +61,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
-from app.safety.safety_result import SafetyResult   # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult   # 契约: 安全层单源
 
 READ_MODE = "read"
 
@@ -97,11 +97,13 @@ def read_permission(path: str) -> SafetyResult:
     """读线单路径权限口 — 供 dual_path_check / shell_path_check 复用 — 小欧 2026-10-18
 
     读线处处放行(禁区放行 + 白名单外放行), 仅"空路径 / 路径穿越 / 异常"三类非法输入硬拦。
+    读线**从不产生确认**(无授权可给), 故不属确认命名空间; 硬拦归 block_path_invalid,
+    放行不带标签。原 safety_level="path_auth" 是误标 —— 把"放行"与"硬拦"都叫成"需授权"。
     """
     _ok, _msg, _category = validate_read(path)
     if not _ok:
-        return SafetyResult(blocked=True, message=_msg, safety_level="path_auth")
-    return SafetyResult(blocked=False, needs_confirm=False, message="", safety_level="path_auth")
+        return SafetyResult(blocked=True, message=_msg, safety_level=SafetyLevel.BLOCK_PATH_INVALID)
+    return SafetyResult(blocked=False, needs_confirm=False, message="")
 
 
 def check_read_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:

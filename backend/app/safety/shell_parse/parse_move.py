@@ -19,30 +19,51 @@ from app.safety.shell_parse import lexer
 from app.safety.shell_parse.verb_table import BASH, CMD, PS, build_verb_re
 
 # ── 搬移套 · 三型动词表(单一真源) ───────────────────────────────────────
-MOVE_VERBS_PS = ("Move-Item", "mi", "mv", "Rename-Item", "ren", "rnm")
-MOVE_VERBS_CMD = ("move", "ren", "rename")
-MOVE_VERBS_BASH = ("mv", "rename")
+# 搬移与改名**源动作档位不同**, 故动词表拆两张, 不可合并:
+#   搬移(move): 源被搬走, 原路径消失, 数据易位 → 源 = delete(与 move 工具一致)
+#   改名(rename): 只换名不搬数据, 原路径消失但数据完好、可回退 → 源 = write(与 rename 工具一致)
+# 北京老陈裁定 2026-10-18: 二者语义不同, shell 侧判定必须与工具侧一致。
+MOVE_VERBS_PS = ("Move-Item", "mi", "mv")
+MOVE_VERBS_CMD = ("move",)
+MOVE_VERBS_BASH = ("mv",)
+RENAME_VERBS_PS = ("Rename-Item", "ren", "rnm")
+RENAME_VERBS_CMD = ("ren", "rename")
+RENAME_VERBS_BASH = ("rename",)
 
 MOVE_VERBS_BY_SHELL: Dict[str, tuple] = {PS: MOVE_VERBS_PS, CMD: MOVE_VERBS_CMD, BASH: MOVE_VERBS_BASH}
+RENAME_VERBS_BY_SHELL: Dict[str, tuple] = {PS: RENAME_VERBS_PS, CMD: RENAME_VERBS_CMD, BASH: RENAME_VERBS_BASH}
 SHELL_MOVE_RE = build_verb_re(MOVE_VERBS_BY_SHELL)
+SHELL_RENAME_RE = build_verb_re(RENAME_VERBS_BY_SHELL)
 
 _MOVE_DEST_SWITCHES = frozenset({"-destination", "-dest", "-newname"})
 
 
 def parse_move_action(statement: str, shell: str, cwd) -> List[PathAction]:
-    """解析一条语句中的搬移动作, 返回 [源 delete, 目标 write] 动作清单 — 小欧 2026-10-18
+    """解析一条语句中的搬移/改名动作, 返回 [源, 目标 write] 动作清单 — 小欧 2026-10-18
 
-    无搬移动词 → 空清单。源/目标切分复用 lexer.split_source_target(单一真源, 与复制套共用)。
+    源动作档位按动词二分(北京老陈裁定 2026-10-18, 须与工具侧一致):
+      搬移动词 → 源 delete(源被搬走);  改名动词 → 源 write(只换名, 数据可回退)。
+    目标一律 write(新位置落盘)。
+    无搬移/改名动词 → 空清单。源/目标切分复用 lexer.split_source_target(单一真源, 与复制套共用)。
     """
-    if not SHELL_MOVE_RE.search(lexer.blank_quotes(statement)):
+    intent = lexer.blank_quotes(statement)
+    is_rename = bool(SHELL_RENAME_RE.search(intent))
+    is_move = bool(SHELL_MOVE_RE.search(intent))
+    if not (is_rename or is_move):
         return []
     sources, targets = lexer.split_source_target(statement, cwd, _MOVE_DEST_SWITCHES)
     if not sources and not targets:
         return []
-    actions: List[PathAction] = [PathAction(DELETE_KIND, p, {}, origin="move-src") for p in sources]
+    if is_rename:
+        src_kind, src_origin = WRITE_KIND, "rename-src"
+    else:
+        src_kind, src_origin = DELETE_KIND, "move-src"
+    actions: List[PathAction] = [PathAction(src_kind, p, {}, origin=src_origin) for p in sources]
     actions += [PathAction(WRITE_KIND, p, {}, origin="move-dst") for p in targets]
     return actions
 
 
-__all__ = ["parse_move_action", "SHELL_MOVE_RE", "MOVE_VERBS_PS", "MOVE_VERBS_CMD",
-           "MOVE_VERBS_BASH", "MOVE_VERBS_BY_SHELL"]
+__all__ = ["parse_move_action", "SHELL_MOVE_RE", "SHELL_RENAME_RE",
+           "MOVE_VERBS_PS", "MOVE_VERBS_CMD", "MOVE_VERBS_BASH",
+           "RENAME_VERBS_PS", "RENAME_VERBS_CMD", "RENAME_VERBS_BASH",
+           "MOVE_VERBS_BY_SHELL", "RENAME_VERBS_BY_SHELL"]

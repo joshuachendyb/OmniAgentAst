@@ -58,7 +58,7 @@ from pathlib import Path
 from typing import Any, Dict
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.safety.path_classify_category import classify_forbidden_path  # 2026-10-15 系统源外泄拦截用
-from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 from app.tools.tool_constants import DUAL_ACTION_PARAMS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 删 CONTENT_PARAM_KEYS(改类型判断)
 
 
@@ -124,7 +124,7 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             if result.blocked or result.needs_confirm:
                 return result
         if not hit:
-            return SafetyResult(blocked=True, safety_level="tool_delete",
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_PATH_INVALID,
                                 message=f"工具 {tool_name} 声明为 dual 但调用不带任何路径参数")
         return SafetyResult.pass_result()
     for key, action in param_map.items():
@@ -141,7 +141,7 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
             # 系统源外泄拦截: 读线放行系统目录, 但搬运类工具不得以系统目录为数据源
             cat, msg = classify_forbidden_path(real_path, "write")
             if cat == "system":
-                return SafetyResult(blocked=True, safety_level="forbidden_zone", message=msg)
+                return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN, message=msg)
         elif action == "delete":
             # 2026-10-17 小欧 - 删除权限判定全部下沉到 delete_permission(本层纯调用, 不重判)。
             #   裁定: 补 recursive(目录=递归→R6/R4, 文件=非递归→R5/R3); move 删源 confirm **返回弹窗**

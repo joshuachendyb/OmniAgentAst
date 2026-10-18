@@ -38,7 +38,7 @@
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
 """
 from typing import List, Dict, Optional
-from app.safety.safety_result import SafetyResult
+from app.safety.safety_result import SafetyLevel, SafetyResult
 
 from app.logger import logger
 from app.services.agent.steps import MetaStep
@@ -89,83 +89,48 @@ def _rejection_cache_of(agent) -> dict:
     return _c if isinstance(_c, dict) else {}
 
 
-def _resolve_trust_impact(auth_path) -> str:
+def _resolve_trust_impact(safety_result) -> str:
     """授权/信任影响面 — 小欧 2026-10-18
 
-    取值 high / low, 表示**这次授权实际授予 Agent 多大操作自由度**(用户据此判断勾不勾"信任此操作"):
-      high = 目录根授权 → 整个子目录树内的读写删都放行
-      low  = 单文件授权 → 仅该精确路径
+    取值 high / medium / low, 表示**这次授权一旦同意, 后果有多大**(用户据此判断勾不勾"信任"):
+      high   = 删除类: 抹除不可撤销(递归删根集内目录 / 删允许根集外路径)
+      medium = 写入类: 可覆写原内容, 后果居中(写代码目录或允许根集自身 / 写白名单外路径)
+      low    = 其余: 命令级/任务级/注册表级/SQL 级确认, 不直接改文件内容
 
-    与"是否需要确认"正交: 弹不弹窗和授权后有多自由是两回事, 互不推导。
+    取档真值源是 safety_level —— 12 个确认标签已一一对应"为什么需要确认",
+    直接按标签归类是单一口径; 早期实现只看 auth_path 是否目录, 结果"删一个文件"与
+    "写一个文件"影响面同为 low, 删的高危性完全没体现出来。
 
-    真值源取 temp_auth 实际生效的 recursive(该模块已把"有后缀即文件、只授权精确路径"
-    的规则上提为共用函数), 此处只消费不再自判有无后缀 —— 两处各判必然漂移:
-    授权按目录给了整棵子树、界面却按单文件显示"low", 会误导用户。
+    与"是否需要确认"正交: 弹不弹窗与同意后后果多大是两回事, 互不推导。
+    与"授权范围大小"(目录树/单文件)也正交: 范围由 trust_path 单独展示, 不在本字段编码。
 
-    2026-10-18 小欧 复核: 本函数只服务于"已放行到 HITL 的授权请求", blocked 项永不进 HITL
-    (实测 blocked 与 needs_confirm 无并存), 故只有 high/low 两值, 不引入第三值。
+    blocked 项永不进 HITL(实测 blocked 与 needs_confirm 无并存), 故只有三值, 无需第四档。
+
+    SafetyLevel 是 StrEnum, 与裸 str 直接可比, 故此处无需再做 str() 归一(多一层无意义转换)。
     """
-    if not auth_path:
-        return "low"
-    from app.safety.temp_auth import resolve_grant_recursive   # 延迟导入防环
-    return "high" if resolve_grant_recursive(auth_path) else "low"
+    level = getattr(safety_result, "safety_level", "")
+    if level in (SafetyLevel.DELETE_RECURSIVE, SafetyLevel.DELETE_OUT_OF_SCOPE):
+        return "high"
+    if level in (SafetyLevel.WRITE_PROTECTED, SafetyLevel.WRITE_OUT_OF_SCOPE):
+        return "medium"
+    return "low"
 
 
-def _confirm_payload(safety_result, tool_name: str, group_size: int):
+def _confirm_payload(safety_result, group_size: int):
     """组装确认弹窗所需的原因句 / 分类 / 授权影响面 — 小欧 2026-10-18
 
     三者同源于同一个 SafetyResult, 放一起取避免编排层重复拆解。
 
-    safety_level: 产地已归位到各判定分支(直给), 但关键词兜底**保留不删** ——
-      execute_sql / create_task 等由工具元数据确认策略触发的确认不经路径安全检查、
-      本就没有文案可依据, 删兜底则这些场景分类恒空。
+    safety_level: 产地已归位到各判定分支直给(SafetyLevel 枚举), 本层只读不再反查。
     content: 恒载真实 message, bypass 亦然(2026-09-18 起 bypass 只由 auto_confirm 区分);
       同批多调用时追加"另有 N 个同类调用"提示。
-    trust_impact: 授权影响面, 由 auth_path 实际生效的 recursive 判定。
+    trust_impact: 授权影响面, 按 safety_level 归类(删=high / 写=medium / 其余=low)。
     """
     msg = getattr(safety_result, "message", "")
-    level = getattr(safety_result, "safety_level", "") or _classify_safety_level(msg, tool_name)
+    level = getattr(safety_result, "safety_level", "")
     content = (msg or "") + (f"（另有 {group_size - 1} 个同类调用同批一并裁决）"
                              if group_size > 1 else "")
-    return msg, level, _resolve_trust_impact(getattr(safety_result, "auth_path", None)), content
-
-
-def _classify_safety_level(msg: str, tool_name: str) -> str:
-    """safety_level 分类: 按 content 关键词匹配问题来源 — 小欧 2026-09-18
-
-    2026-10-15 小欧 - SLAP 合规拆分(自 check_safety_and_confirm 原样搬出, 逻辑一字未改):
-      该 if/elif 关键词链属「底层判定细节」, 原混在编排主函数里, 改一句提示文案就得翻 250 行找,
-      且无法单独测。本函数为纯函数(无副作用、无状态), 可独立测试, 编排层只管调。
-
-    顺序即优先级: if/elif 链首个命中即定, 不被后续分支覆盖。
-    无 message 时按工具名精确归属(见下方 not msg 分支)。
-    """
-    _sl = "tool_execute"  # 默认
-    if "系统禁区" in msg:
-        _sl = "forbidden_zone"
-    elif "受保护区域" in msg or "超出允许范围" in msg:
-        _sl = "path_auth"
-    elif "高风险Shell" in msg or "系统保护进程" in msg:
-        _sl = "command_block"
-    elif "中风险Shell" in msg:
-        _sl = "shellparam"
-    elif "删除需确认" in msg or "禁止删除" in msg:
-        _sl = "tool_delete"
-    elif "数据保护" in msg:
-        _sl = "data_guard"
-    elif "安全检查异常" in msg or "安全检查未通过" in msg:
-        _sl = "command_block"
-    elif not msg:
-        # 2026-09-18 小欧: 无message确认类(keyword无内容)按工具名精确归属 —
-        #   归属: shell确认→shellparam(命令确认主场景, 中风险弹窗即needs_confirmation驱动),
-        #   create_task等写类→tool_write(实际触发源), delete_task→tool_delete; execute_sql/registry写删保持tool_execute
-        if tool_name == "bash":
-            _sl = "shellparam"
-        elif tool_name in ("create_task", "write", "edit", "writetool"):
-            _sl = "tool_write"
-        elif tool_name == "delete_task":
-            _sl = "tool_delete"
-    return _sl
+    return msg, level, _resolve_trust_impact(safety_result), content
 
 async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out: list = None, _denied_out: list = None) -> list:
         """安全检查+HITL确认 — 纯函数返回事件列表(MetaStep dict/replay) — 小欧 2026-09-06
@@ -292,7 +257,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                             if c.get("tool_name") == _cn
                             and extract_trust_path(c.get("tool_name", ""), c.get("tool_params", {})) == _group_ref)
                     # 网关内统一: SUSPENDED→wait→EXECUTING / 脱敏 / trust_path / confirm_id回传 / 单点resolve收口
-                    _msg, _sl, _trust_impact, _content = _confirm_payload(safety_result, _cn, _group_size)
+                    _msg, _sl, _trust_impact, _content = _confirm_payload(safety_result, _group_size)
 
                     _verdict = await hitl_confirm(agent, ConfirmSpec(
                         auto_confirm=_bypass, tool_name=_cn, params=_cp,

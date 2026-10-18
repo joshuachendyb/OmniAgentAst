@@ -63,7 +63,7 @@ from app.safety import path_check_common as common
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.safety.temp_auth import is_temp_authorized
-from app.safety.safety_result import SafetyResult   # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult   # 契约: 安全层单源
 
 WRITE_MODE = "write"
 
@@ -114,22 +114,26 @@ def write_permission(path: str) -> SafetyResult:
     """
     _ok, _msg, _category = validate_write(path)
     if _ok:
-        return SafetyResult(blocked=False, needs_confirm=False, message="", safety_level="path_auth")
+        # 放行: 无确认无拦截, 无"分类"可言, 故不带 safety_level
+        return SafetyResult(blocked=False, needs_confirm=False, message="")
     if _category == "system":
         return SafetyResult(blocked=True, message=f"该路径在系统禁区，禁止访问: {path}",
-                            safety_level="forbidden_zone")
+                            safety_level=SafetyLevel.PATH_FORBIDDEN)
     if _category == "non_system":
-        # 2026-10-18 小欧 措辞订正: ①原文"受保护区域"是系统没有的分类名, non_system 的真实口径是
-        #   **代码目录自身及其内部子级** + **允许根(项目根/授权目录/会话工作区)自身及其上级祖先**;
-        #   ②补"临时"二字(原句只说"需申请授权", 用户看不出这是任务级临时授权、与会话级信任是两套机制)。
+        # 术语对齐 classify_forbidden_path docstring 原文: non_system = 代码目录自身及内部子级
+        #   + 允许根集(项目根/授权目录/会话工作区)自身及其上级祖先。两种成因措辞必须都点到,
+        #   否则用户看不出到底撞的是哪一类。"受保护区域""允许根目录"系统均无此命名, 禁用。
         return SafetyResult(needs_confirm=True, blocked=False,
-                            message=f"该路径位于代码目录或允许根目录自身，写入需申请临时授权（仅本任务有效）: {path}",
-                            safety_level="path_auth", auth_path=path)
-    # 2026-10-18 小欧 措辞订正: "超出允许范围"改为本模块既有口径"不在允许的操作范围内";
-    #   并补时效(临时授权为任务级, 任务结束自动失效, 用户需在弹窗里看到)。
+                            message=f"该路径位于代码目录(含其内部子级)或允许根集内的根目录自身及其上级，"
+                                    f"写入需申请临时授权(仅本任务有效): {path}",
+                            safety_level=SafetyLevel.WRITE_PROTECTED, auth_path=path)
+    # 术语对齐 get_default_allowed_paths docstring 原文: 此处判据集 = 白名单
+    #   (系统临时目录 + 项目根 + 授权目录 + 会话工作区), 与上面 non_system 的"允许根集"不是同一集合,
+    #   差一个"系统临时目录" —— 故措辞必须写"白名单", 不可混用"允许根集"。
     return SafetyResult(needs_confirm=True, blocked=False,
-                        message=f"该路径不在允许的操作范围内，写入需申请临时授权（仅本任务有效，任务结束自动失效）: {path}",
-                        safety_level="path_auth", auth_path=path)
+                        message=f"该路径不在白名单内(白名单=系统临时目录/项目根/授权目录/会话工作区)，"
+                                f"写入需申请临时授权(仅本任务有效，任务结束自动失效): {path}",
+                        safety_level=SafetyLevel.WRITE_OUT_OF_SCOPE, auth_path=path)
 
 
 def check_write_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:

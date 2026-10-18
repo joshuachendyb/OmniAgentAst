@@ -89,9 +89,70 @@ from app.config import get_config
 from app.tools.registry import tool_registry
 from app.safety.path_legality_router import check_tool_path_permission as _check_tool_path_permission  # 2026-10-17 小欧 - C5 正名(原 validate_tool_path as _validate_tool_path)
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 老陈裁定: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
-from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.shell_parse import parse_shell_action  # 命令动作解析单一真源: 确认标签按命令内实际读/写/删动作取档
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
+
+
+#: 工具名 → 确认标签(工具元数据确认策略的分类单源) — 小欧 2026-10-18
+#: 语义: 这些工具的"需确认"是**整条调用级**的(无具体路径动作), 故不进路径三线标签,
+#: 按工具域各给一个标签; 域内同义工具共用一个标签。
+#:   execute_sql    → SQL 执行确认
+#:   task 类        → 任务处理确认
+#:   registry 类    → 注册表处置确认
+#: 未列出的工具 → TOOL_CONFIRM(诚实的"工具级确认"兜底)。**不可兜底成 shell_command_confirm** ——
+#:   那样一个写类工具会弹窗显示"命令确认", 标签与事实不符, 正是本次重构要消灭的病。
+_TOOL_CONFIRM_LEVEL: Dict[str, str] = {
+    "execute_sql": SafetyLevel.SQL_EXECUTE_CONFIRM,
+    "create_task": SafetyLevel.TASK_DEAL_CONFIRM,
+    "delete_task": SafetyLevel.TASK_DEAL_CONFIRM,
+    "registry_write": SafetyLevel.REGISTRY_DEAL_CONFIRM,
+    "registry_delete": SafetyLevel.REGISTRY_DEAL_CONFIRM,
+}
+TOOL_CONFIRM_DEFAULT = SafetyLevel.TOOL_CONFIRM
+
+_SHELL_TOOLS = frozenset({"bash", "execute_shell_command", "execute_command"})
+
+#: 命令动作 → 确认标签。取值为 shell_parse.action.ACTION_KINDS 的**全部 3 种**(read/write/delete,
+#:   闭合枚举, PathAction.__post_init__ 对枚举外值 raise, 故不存在第 4 种动作)。
+#:   多动作并存时取最严一档(删 > 写 > 读), 与 shell_path_check._judge_actions 的判定优先级同序。
+_SHELL_KIND_LEVEL: Dict[str, str] = {
+    "delete": SafetyLevel.SHELL_DELETE_CONFIRM,
+    "write": SafetyLevel.SHELL_WRITE_CONFIRM,
+    "read": SafetyLevel.SHELL_READ_CONFIRM,
+}
+
+
+def shell_confirm_level(command: Optional[str], shell_type: Optional[str], cwd: Optional[str]) -> str:
+    """命令类工具的确认标签 — 按命令内**实际的路径动作**(读/写/删)取档 — 小欧 2026-10-18
+
+    命令内无任何路径动作(如 `npm install`)时, 无动作可依, 归 shell_command_confirm(整条命令级)。
+    动作解析复用 shell_parse 单一真源, 本函数只做"动作集合 → 标签"映射, 不判权限。
+    """
+    if not isinstance(command, str) or not command.strip():
+        return SafetyLevel.SHELL_COMMAND_CONFIRM
+    try:
+        actions = parse_shell_action(command.replace("\r\n", "\n"),
+                                     shell_type or "ps7", cwd)
+    except Exception:                      # 解析异常不得让标签退化成猜值: 归整条命令级, 判定仍在别处
+        logger.warning("[PathToolSafetyChecker] 命令动作解析失败, 确认标签归整条命令级")
+        return SafetyLevel.SHELL_COMMAND_CONFIRM
+    for kind in ("delete", "write", "read"):     # 顺序即严格度, 不复用 ACTION_KINDS 以固定优先级
+        if any(a.kind == kind for a in actions):
+            return _SHELL_KIND_LEVEL[kind]
+    return SafetyLevel.SHELL_COMMAND_CONFIRM
+
+
+def confirm_level_for(tool_name: str, params: Optional[dict]) -> str:
+    """工具级确认标签的唯一出口 — 命令类按动作取档, 其余按工具名映射 — 小欧 2026-10-18
+
+    bypass 分支与主 return 两处共用本函数, 避免同一表达式写两遍(DRY)导致两处漂移。
+    """
+    _p = params or {}
+    if tool_name in _SHELL_TOOLS:
+        return shell_confirm_level(_p.get("command"), _p.get("shell_type"), _p.get("cwd"))
+    return _TOOL_CONFIRM_LEVEL.get(tool_name, TOOL_CONFIRM_DEFAULT)
 
 
 def _is_readonly_sql(sql: str) -> bool:
@@ -145,7 +206,8 @@ class PathToolSafetyChecker:
         tool_meta = tool_registry.get_tool(tool_name)
         if tool_meta is None:
             log_and_print(f"[PathToolSafetyChecker] 工具未注册(硬拦): tool={tool_name}")
-            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}", safety_level="unregistered")
+            return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}",
+                            safety_level=SafetyLevel.BLOCK_UNREGISTERED)
 
         # [4-0] 自杀检查(2026-10-16 第七章 · 北京老陈裁定): 提到 _check_known_risks **之前**
         #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(E2E P9-03 后端自杀实录);
@@ -210,7 +272,8 @@ class PathToolSafetyChecker:
                     #   bypass仅由auto_confirm=True区分(与hitl_gateway去mode同批), 内容/分级由safety_gate按真实来源组装 — 小欧-2026-09-18
                     return SafetyResult(needs_confirm=True, auto_confirm=True,
                             blocked=False, message="",
-                            safety_level="tool_execute", sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
+                            safety_level=confirm_level_for(tool_name, params),
+                            sandbox_required=True)   # v1.25 M2-A: bypass 需确认→沙箱预检
                 logger.info(f"[PathToolSafetyChecker] bypass自动放行(无需确认): tool={tool_name}")
                 return SafetyResult(needs_confirm=False,
                         blocked=False, message="安全开关已绕过")   # v1.25 M2-A: 无需确认的 bypass 不触发沙箱(与 G1 一致)
@@ -223,24 +286,26 @@ class PathToolSafetyChecker:
                     return SafetyResult(
                         blocked=True,
                         message=custom_result.get("message", "安全检查未通过"),
-                        safety_level="command_block",
+                        safety_level=SafetyLevel.BLOCK_COMMAND,
                     )
             except Exception as e:
                 logger.error(f"[PathToolSafetyChecker] check_fn异常,阻止执行: {e}")
                 return SafetyResult(blocked=True,
                         message=f"安全检查异常，已阻止执行: {e}",
-                        safety_level="command_block")
+                        safety_level=SafetyLevel.BLOCK_COMMAND)
 
         # 2026-10-17 小欧 - 会话信任豁免分支已删(信任预查移入调用方确认层⑤), 本层不再收 skip_confirmation。
         needs_confirm, _shell_msg = self._get_needs_confirmation(tool_meta, params or {})
         # v1.25 M2-C: 仅需确认级触发沙箱(与 G1 唯一触发依据一致); 免确认不进预检
         # 2026-10-18 小欧: 删 severity 中间变量(纯冗余回环), 沙箱标记直读 needs_confirm
-        # 2026-10-18 小欧: safety_level 交调用方按工具名回填 —— 此处是"工具元数据确认策略"通用出口,
-        #   同一条出口服务 shell/create_task/delete_task/execute_sql 等语义各异的工具。若在此笼统置
-        #   tool_execute, 会盖掉调用方 _classify_safety_level 的按工具名细分(bash→shellparam、
-        #   create_task 等写类→tool_write、delete_task→tool_delete), 属分类退化, 故此处留空由调用方回填。
+        # 2026-10-18 小欧: 确认标签按工具名在本层直给(_TOOL_CONFIRM_LEVEL), 不再留空等调用方
+        #   _classify_safety_level 按文案关键词反查 —— 那条兜底链会让"标签"取决于"文案怎么写",
+        #   改一个字就换一个分类, 正是标签与分支对不上的病根。
+        #   本出口是"整条调用级"确认(无路径动作); 命令内路径的读/写/删已由 shell_path_check
+        #   派三线标签(WRITE_PROTECTED / DELETE_* 等), 二者不重复编码。
         return SafetyResult(needs_confirm=needs_confirm,
                 blocked=False, message=_shell_msg or "",
+                safety_level=confirm_level_for(tool_name, params) if needs_confirm else "",
                 sandbox_required=needs_confirm)
 
     @staticmethod
@@ -253,7 +318,7 @@ class PathToolSafetyChecker:
         命中受保护 PID/进程名/无目标兜底即 blocked，直返不经确认分流。
         """
         if check_shell_self_kill(cmd, pool_pids):
-            return SafetyResult(blocked=True, message="系统保护进程，禁止终止", safety_level="command_block")
+            return SafetyResult(blocked=True, message="系统保护进程，禁止终止", safety_level=SafetyLevel.BLOCK_COMMAND)
         return None
 
     @staticmethod

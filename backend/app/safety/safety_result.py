@@ -12,7 +12,83 @@
 分层: 本文件只持契约(纯 dataclass, 无任何逻辑), 不做任何判定。
 """
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Optional
+
+
+class SafetyLevel(StrEnum):
+    """safety_level 取值单源 — 小欧 2026-10-18
+
+    标签只回答"**为什么**", 不回答"怎么办" —— 怎么办由 blocked / needs_confirm 两个布尔精确表达。
+    据此拆成两个**互斥**命名空间, 前缀即区分, 两空间永不重叠(此前 path_auth 一个标签同时
+    覆盖放行/硬拦/任务级授权/临时授权/沙箱裁决五种语义, 标签与分支必然对不上):
+
+    ┌ 确认命名空间(needs_confirm=True, 唯一有消费者的地方) ── 进 HITL 弹窗, 前端按标签渲染 ┐
+      delete_recursive      递归删除, 删除范围不可撤销            delete_path_check R4
+      delete_out_of_scope   不在允许根集内, 删除需临时授权        delete_path_check R5
+      write_protected       代码目录/允许根集自身及上级, 任务级授权 write_path_check non_system
+      write_out_of_scope    不在白名单内, 写入需临时授权          write_path_check None
+      shell_medium_risk     中风险命令(重启/改执行策略/杀进程…); 命令层, 与路径无关, 作用域=整条命令
+      shell_delete_confirm  命令含删除动作, 需确认               命令内路径动作=删
+      shell_write_confirm   命令含写入动作, 需确认               命令内路径动作=写
+      shell_read_confirm    命令含读取动作, 需确认               命令内路径动作=读
+      shell_command_confirm 命令无路径动作(整条命令级), 需确认
+      sql_execute_confirm   execute_sql 整条确认          (execute = 执行, 自带动词)
+      task_deal_confirm      create_task / delete_task 整条确认 (deal = 处理/处置)
+      registry_deal_confirm  registry_write / registry_delete 整条确认 (deal = 处理/处置)
+      tool_confirm           未细分域的工具级确认(兜底; 不谎称命令/写/删)
+    └──────────────────────────────────────────────────────────────────────────────────────┘
+    ★ 命令内【路径的读/写/删】各有归属, 二者不重复编码:
+      · 动作**越权**时(路径不在允许范围/命中禁区) → 三线标签:
+        写 WRITE_PROTECTED / WRITE_OUT_OF_SCOPE; 删 DELETE_RECURSIVE / DELETE_OUT_OF_SCOPE; 读线从不确认
+      · 动作**合规但命令仍需确认**时(工具元数据策略) → 本表的 shell_*_confirm 四类, 按命令实际动作取档。
+    ┌ 硬拦命名空间(blocked=True) ── 不进弹窗, 标签只作诊断留痕, 前端不消费 ────────────────┐
+      path_forbidden        路径硬拦: 磁盘根/系统保护目录/系统禁区/代码目录/允许根集自身及上级
+                            (R6 根集外递归删除亦归此 —— 同属路径策略硬拦, 非命令层问题)
+      block_command         危险命令/命令层输入非法/非法 shell 元字符
+      block_path_invalid    路径非法: 空值/`..`穿越/归一化失败/安全判定不可用(fail-closed)
+      block_unregistered    工具未注册
+    └──────────────────────────────────────────────────────────────────────────────────────┘
+
+    放行结果一律不带标签(空串): 无确认无拦截, 无"分类"可言。
+    """
+    # ── 确认命名空间(进 HITL 弹窗) ──
+    DELETE_RECURSIVE = "delete_recursive"
+    DELETE_OUT_OF_SCOPE = "delete_out_of_scope"
+    WRITE_PROTECTED = "write_protected"
+    WRITE_OUT_OF_SCOPE = "write_out_of_scope"
+    SHELL_MEDIUM_RISK = "shell_medium_risk"
+    SHELL_DELETE_CONFIRM = "shell_delete_confirm"
+    SHELL_WRITE_CONFIRM = "shell_write_confirm"
+    SHELL_READ_CONFIRM = "shell_read_confirm"
+    SHELL_COMMAND_CONFIRM = "shell_command_confirm"
+    SQL_EXECUTE_CONFIRM = "sql_execute_confirm"
+    TASK_DEAL_CONFIRM = "task_deal_confirm"
+    REGISTRY_DEAL_CONFIRM = "registry_deal_confirm"
+    TOOL_CONFIRM = "tool_confirm"       # 未细分域的工具级确认(诚实兜底: 不谎称是命令/写/删)
+    # ── 硬拦命名空间(不进弹窗) ──
+    PATH_FORBIDDEN = "path_forbidden"
+    BLOCK_COMMAND = "block_command"
+    BLOCK_PATH_INVALID = "block_path_invalid"
+    BLOCK_UNREGISTERED = "block_unregistered"
+
+
+#: 确认命名空间取值集合 —— 前端 SAFETY_LEVEL_CONFIG 的键集必须与此完全相等(一致性测试锁定)
+CONFIRM_LEVELS = frozenset({
+    SafetyLevel.DELETE_RECURSIVE, SafetyLevel.DELETE_OUT_OF_SCOPE,
+    SafetyLevel.WRITE_PROTECTED, SafetyLevel.WRITE_OUT_OF_SCOPE,
+    SafetyLevel.SHELL_MEDIUM_RISK, SafetyLevel.SHELL_DELETE_CONFIRM,
+    SafetyLevel.SHELL_WRITE_CONFIRM, SafetyLevel.SHELL_READ_CONFIRM,
+    SafetyLevel.SHELL_COMMAND_CONFIRM, SafetyLevel.SQL_EXECUTE_CONFIRM,
+    SafetyLevel.TASK_DEAL_CONFIRM, SafetyLevel.REGISTRY_DEAL_CONFIRM,
+    SafetyLevel.TOOL_CONFIRM,
+})
+
+#: 硬拦命名空间取值集合 —— 仅诊断留痕, 前端不消费
+BLOCK_LEVELS = frozenset({
+    SafetyLevel.PATH_FORBIDDEN, SafetyLevel.BLOCK_COMMAND,
+    SafetyLevel.BLOCK_PATH_INVALID, SafetyLevel.BLOCK_UNREGISTERED,
+})
 
 
 @dataclass
@@ -24,9 +100,7 @@ class SafetyResult:
     blocked: bool = False
     needs_confirm: bool = False
     message: str = ""
-    safety_level: str = ""          # 问题来源分类: path_auth / shellparam / command_block /
-                                     #   tool_delete / tool_write / data_guard / unregistered /
-                                     #   forbidden_zone / tool_execute
+    safety_level: str = ""          # 取值必须取自 SafetyLevel; 空串=放行(无确认无拦截, 无分类可言)
     auto_confirm: bool = False
     auth_path: Optional[str] = None
     sandbox_required: bool = False  # 沙箱预检触发标记: 由 path_tool_safety_checker 四条置位路径点亮,
@@ -42,4 +116,4 @@ class SafetyResult:
         return SafetyResult(blocked=False, needs_confirm=False, message="")
 
 
-__all__ = ["SafetyResult"]
+__all__ = ["SafetyResult", "SafetyLevel", "CONFIRM_LEVELS", "BLOCK_LEVELS"]

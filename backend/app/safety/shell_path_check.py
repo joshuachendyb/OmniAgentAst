@@ -35,7 +35,7 @@ from app.safety.shell_parse import parse_shell_action
 from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.parse_delete import shell_has_destructive_delete
 from app.logger import logger
-from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 # shell 元字符: 出现即视为畸形路径, 通道 B fail-closed 硬拦(> < | 与换行 \r \n)
 #   2026-10-18 小欧 订正: 注释原误列 "/"(正斜杠是合法路径分隔, 拦它会误伤全部正斜杠路径), 改注释不改代码。
@@ -62,9 +62,9 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
             # 2026-10-18 小欧 分类归一: 路径含 shell 元字符属【命令层输入非法】, 与动作线无关,
-            #   故删/写/读三线一律 command_block —— 同一句文案不得配三种分类, 否则前端标签自相矛盾。
-            #   特别注: 不可标 path_auth(会挂"临时授权仅本任务有效"说明), 此处是硬拦、无授权可给。
-            return SafetyResult(blocked=True, safety_level="command_block",
+            #   故删/写/读三线一律 BLOCK_COMMAND —— 同一句文案不得配三种分类, 否则前端标签自相矛盾。
+            #   特别注: 不可标确认命名空间的标签(会挂"临时授权仅本任务有效"说明), 此处是硬拦、无授权可给。
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         recursive = bool(action.flags.get("recursive"))
         perm = delete_path_check.delete_permission(action.path, {"recursive": recursive})
@@ -85,7 +85,7 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, safety_level="command_block",
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         result = write_path_check.write_permission(action.path)
         if not (result.blocked or result.needs_confirm):
@@ -101,7 +101,7 @@ read 仅非法输入 blocked。needs_confirm(删线)当通过。
         if _malformed(action.path):
             logger.warning(f"[shell_path_check] bash路径含非法元字符(硬拦): "
                            f"path={action.path}, command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, safety_level="command_block",
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
         result = read_path_check.read_permission(action.path)
         if result.blocked:
@@ -129,7 +129,7 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
         # 2026-10-18 小欧: 原直接 pass_result()=fail-open(畸形输入静默放行);
         #   非字符串 command 属异常输入, 依 fail-closed 原则改硬拦。
         logger.warning(f"[shell_path_check] command 类型非法(硬拦): type={type(command).__name__}")
-        return SafetyResult(blocked=True, safety_level="command_block",
+        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                             message=f"shell 命令参数类型非法，拒绝执行: {type(command).__name__}")
     if not command or not command.strip():
         return SafetyResult.pass_result()
@@ -139,7 +139,7 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
         #   会进入路径解析基准。补 fail-closed: 非字符串或含元字符即硬拦。
         if not isinstance(cwd, str) or _malformed(cwd):
             logger.warning(f"[shell_path_check] cwd 非法或含元字符(硬拦): cwd={cwd!r}")
-            return SafetyResult(blocked=True, safety_level="command_block",
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"工作目录非法或含非法 shell 元字符，拒绝执行: {cwd!r}")
         result = write_path_check.write_permission(cwd)
         if result.blocked or result.needs_confirm:
@@ -154,7 +154,7 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
     if shell_has_destructive_delete(normalized) and not any(a.kind == DELETE_KIND for a in actions):
         logger.warning(
             f"[shell_path_check] 高危删除命令无法解析目标路径(硬拦): command={command.strip()[:200]}")
-        return SafetyResult(blocked=True, safety_level="command_block",
+        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                             message="高危删除命令无法解析目标路径，拒绝执行: " + command.strip()[:120])
     # 【判定】逐动作判权限(删线优先)
     judged = _judge_actions(actions, command)

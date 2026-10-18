@@ -67,6 +67,7 @@
 依赖方向: handlers → sandbox(单向), 故本模块可安全 import sandbox, 反之不可。
 """
 from app.logger import logger
+from app.safety.safety_result import SafetyLevel  # 分类单源(safety 层, 无环: safety 不依赖 services)
 # 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT/SENSITIVE_FIELDS
 #   均延迟到函数内导入(小欧 2026-08-25 修复循环import回归): 本模块被 action_handler 顶层 import,
 #   若在模块顶层 import agent.steps / task.hitl_confirmation 会构成
@@ -149,7 +150,9 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         content=f"预检未通过：{pre.blocked_reason.split(' | ', 1)[0] or '无法通过有效预检'}，是否允许直接执行{tool_name}？",  # 7.3.0-A3精化: 去stderr英文尾部(stderr仅随denied_list喂LLM)+问句尾不再接工具名(工具名在弹窗头部) — 小欧-2026-09-18
         # 2026-10-18 小欧: 沙箱裁决弹窗不传 trust_impact —— 此处问的是"预检未通过, 是否强执行",
         #   并未授予路径访问权(无授权路径可判影响面), 传值会误导用户以为确认即获得该路径权限。
-        safety_level="path_auth")  # 7.2.2: 沙箱裁决归属path_auth — 小欧-2026-09-18
+        #   safety_level 改 block_command: 沙箱裁决属"命令级预检未通过", 与路径授权(确认命名空间)
+        #   无关; 原 path_auth 是把沙箱裁决错标成路径授权, 且该值已不在 SafetyLevel 枚举内。
+        safety_level=SafetyLevel.BLOCK_COMMAND)
     verdict = await hitl_confirm(agent, spec, _buf.publish)
     if verdict["confirmed"] or (verdict.get("expired") and _sb):
         # 2026-09-19 小欧 修复: bypass超时→放行(与safety_gate层bypass超时语义一致: 到期=放行)

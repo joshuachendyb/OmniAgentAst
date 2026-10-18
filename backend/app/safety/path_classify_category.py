@@ -250,7 +250,7 @@ def classify_forbidden_path(file_path: str, mode: str = "write") -> Tuple[Option
         #   此前只有删除防线拦它、写入不拦 —— 同一类别待遇随层而变, 现统一由权限层决策
         # 2026-10-16 老陈裁定正名: 受保护根 → 允许根(跟数据源 get_allowed_roots 同名)
         if is_allowed_root_itself(file_path):
-            return "non_system", f"路径位于允许根目录(项目根/授权目录/会话目录)自身或其上级: {file_path}"
+            return "non_system", f"路径位于允许根集内的根目录自身或其上级(允许根集=项目根/授权目录/会话工作区): {file_path}"
 
         for forbidden in FORBIDDEN_PATHS_EXACT:
             if real_path_str == forbidden:

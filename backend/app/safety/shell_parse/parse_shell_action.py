@@ -24,7 +24,7 @@ from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, Pa
 from app.safety.shell_parse import lexer
 from app.safety.shell_parse.parse_delete import (
     SHELL_DELETE_RE, parse_delete_action, shell_has_force_delete, shell_has_recursive_delete)
-from app.safety.shell_parse.parse_move import SHELL_MOVE_RE, parse_move_action
+from app.safety.shell_parse.parse_move import SHELL_MOVE_RE, SHELL_RENAME_RE, parse_move_action
 from app.safety.shell_parse.parse_read import READ_RE, parse_read_action
 from app.safety.shell_parse.parse_write import parse_write_action
 from app.safety.shell_sandbox_tables import SHELL_WRITE_INTENT_RE  # 沙箱宽表(派生自四套动词表)
@@ -89,11 +89,13 @@ def parse_shell_action(command: str, shell_type: Optional[str] = None,
     shell = shell_type if shell_type in lexer.SHELLS else lexer.detect_shell(command)
     text = lexer.prepare(command)
     intent = lexer.blank_quotes(text)
-    # 全局早退: 无写/删/搬移动词、无重定向、无读动词 → 无任何动作(引号内字面量不算)
-    # 搬移须单独判 SHELL_MOVE_RE: 沙箱宽表(SHELL_WRITE_INTENT_RE)只收 Move-Item/mi/mv, 不含
+    # 全局早退: 无写/删/搬移/改名动词、无重定向、无读动词 → 无任何动作(引号内字面量不算)
+    # 搬移与改名须单独判: 沙箱宽表(SHELL_WRITE_INTENT_RE)只收 Move-Item/mi/mv, 不含
     #   CMD `move`/`ren` 与 PS `Rename-Item`, 仅靠宽表会漏判而绕过全部路径检查(2026-10-18 小欧)。
+    #   改名动词已自 SHELL_MOVE_RE 拆出(源动作档位与搬移不同), 故本门须同判 SHELL_RENAME_RE。
     # 删动词显式判 SHELL_DELETE_RE: 不依赖宽表"顺带包含", 删动词表变更时门不失效。
     if not (SHELL_WRITE_INTENT_RE.search(intent) or SHELL_MOVE_RE.search(intent)
+            or SHELL_RENAME_RE.search(intent)
             or SHELL_DELETE_RE.search(intent) or ">" in intent or READ_RE.search(intent)):
         return []
 

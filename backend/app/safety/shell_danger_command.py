@@ -36,7 +36,7 @@
 import re
 from typing import Optional
 
-from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 from app.logger import logger
 
 
@@ -92,7 +92,7 @@ def check_shell_danger_command(command: str, shell_type: str = "ps7") -> Optiona
         return SafetyResult(
             blocked=True,
             message=f"高风险Shell操作: {desc}，已阻止执行",
-            safety_level="command_block",
+            safety_level=SafetyLevel.BLOCK_COMMAND,
         )
     return None
 

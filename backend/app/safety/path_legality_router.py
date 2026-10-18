@@ -58,7 +58,7 @@ from app.tools.tool_constants import (
     DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS,
 )
-from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 logger = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
             return shell_path_check.check_shell_permission(tool_name, params)
     except Exception as e:
         # fail-closed 单点兜底(接替已删除的 check_tool_paths 内 try/except): 异常归 blocked 永不授权
-        return SafetyResult(blocked=True, safety_level="command_block", message=f"路径安全检查异常: {e}")
+        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND, message=f"路径安全检查异常: {e}")
 
     # [7] 返回
     return SafetyResult.pass_result()

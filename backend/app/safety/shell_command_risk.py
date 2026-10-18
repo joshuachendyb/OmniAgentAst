@@ -37,7 +37,7 @@
 #   维持原硬拦。降级属安全等级下调, 补 warning log 留痕。
 #   遗留(既有缺口, git stash 对比确认非本次引入): cmd `del <file>` 不带 /s 不在 HIGH 词表, 前后均不拦。
 # 2026-10-14 - 小欧 - 文档[33] 4.11-D/4.12-A: SafetyResult 改从 app.tools.tool_types 导入; _strip_quoted 改名 mask_quoted_spans(随 4.11-A 迁 shell_static_guard)并同步调用点
-# 2026-10-18 - 小欧 - 随契约调整同步: 中风险命中结果补 safety_level="shellparam"(本模块唯一来源, 语义即"中风险命令需人工确认"), 分类由判定点直给而非上层反查文案; 原 severity="risk" 与 needs_confirm=True 等价、属重复编码, 一并删; requires_confirmation 随字段改名, 词表上方功能注释同步。命中条数合并与文案零变更。
+# 2026-10-18 - 小欧 - 随契约调整同步: 中风险命中结果补 safety_level=SafetyLevel.SHELL_MEDIUM_RISK(本模块唯一来源; 与文件路径无关的命令级确认, 作用域=整条命令, 命中项已列于 message; 命令内路径的读/写/删权限由 shell_path_check 派三线标签承载, 不在本标签职责内); 原 severity="risk" 与 needs_confirm=True 等价、属重复编码, 一并删; requires_confirmation 随字段改名。命中条数合并与文案零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
 """
 shell 中风险命令判定 — 需用户确认，与文件系统路径无关
@@ -66,7 +66,7 @@ shell 中风险命令判定 — 需用户确认，与文件系统路径无关
 import re
 from typing import Optional
 
-from app.safety.safety_result import SafetyResult  # 契约: 安全层单源
+from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 from app.logger import logger
 
 
@@ -123,7 +123,7 @@ def check_shell_risk_command(command: str, shell_type: str = "ps7") -> Optional[
             blocked=False,
             needs_confirm=True,
             message=f"中风险Shell操作: {combined}，需确认后执行",
-            safety_level="shellparam",
+            safety_level=SafetyLevel.SHELL_MEDIUM_RISK,
         )
     return None
 
