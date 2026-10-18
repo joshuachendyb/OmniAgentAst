@@ -4,6 +4,7 @@
 # 2026-10-17 小欧 - 认领(未注册识别)上移解析层: 新增 _claim(resolve_registered_tool 逐call标记 _normal_name/_registered); _build_call_list 末尾逐 call 认领; 下游不再复判未注册(批二 safety_gate 删该段)。
 # 2026-10-18 - 小欧 - 归一化前置(L2 唯一职责): _claim 在工具名归一后, 用 normalize_params 把参数名归一为 schema 规范名并原地写回;
 #   下游安全层/执行层统一拿规范 tool+params, 安全层不再重复 normalize_params。未注册工具(_meta is None)不归一, 保持原样交上游拒绝。
+# 2026-10-18 - 小欧 - 补【路径名契约】注释: 安全模块只识别 path/dest 两个路径名, 要求 schema 路径参数名只能是 path/dest, 其余历史名仅作别名归一到二者。
 from dataclasses import dataclass
 from typing import Dict, List
 
@@ -34,6 +35,12 @@ def _claim(call: Dict) -> Dict:
     call["_normal_name"] = _normal
     call["_registered"] = _meta is not None
     # 2026-10-18 小欧 - 参数名归一前置: 原地写回, 保住 tool_params 引用(BIR 与 all_calls[0] 同对象)
+    # 【路径名契约 ★】本系统的路径安全模块只识别两个路径参数名: path 与 dest。
+    #   因此约定: 各工具 schema 的路径参数名只能是 path 或 dest(download/screen_capture 用 dest);
+    #   历史名(source_path/destination_path/file_path/directory/file_name/output_path/search_dir/
+    #   src/dst/to/target/output 等)一律只作 LLM 别名, 由本步 normalize_params 归一到 path/dest。
+    #   schema 若新增第三种路径名 = 破坏契约(安全层会静默漏检), 守护见 test_p1_layer_ownership.py
+    #   ::test_single_line_tool_path_keys_converge_to_path_or_dest。
     if _meta is not None:
         _params = call.get("tool_params")
         if isinstance(_params, dict):

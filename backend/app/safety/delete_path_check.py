@@ -9,6 +9,8 @@
 # 2026-10-17 - 小欧 - 新增唯一封装口 check_delete_permission(path, params): ①guard_forbidden_delete → ②validate_delete(R1/R2) → ③check_delete_risk(R3-R6) 串链, 统一返 SafetyResult。三函数原功能全保留; validate_delete 亦供 path_legality_router 按线分派时调用。消费方: path_tool_safety_checker / shell_path_check / dual_path_check(三者纯调用, 判定全在本口); path_utils 第⑤级改调 guard_forbidden_delete。
 # 2026-10-18 - 小欧 - [38]§12.5 落地(字面9步): 原单路径口 check_delete_permission(path, params) 更名 delete_permission(path, params)(供 dual/shell 复用);
 #   新增工具级 check_delete_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 delete_permission, 供 router [6] 直调。
+# 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线删工具路径键恒为 path(L2 已归一), 工具级口直接取 params["path"]
+#   调 delete_permission; 未传 key → 放行, 空值/穿越/禁区由 delete_permission 自身判定。
 r"""delete_path_check — 删操作路径检查(删线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -210,12 +212,14 @@ def delete_permission(path: str, params: Optional[dict] = None) -> SafetyResult:
 
 
 def check_delete_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
-    """删线工具级权限口 — 供 path_legality_router [6] 直调 — 小欧 2026-10-18
+    """删线工具级权限口 — 供 path_legality_router [5] 直调 — 小欧 2026-10-18
 
-    遍历路径参数, 逐条走 delete_permission(带本次调用 params, 供 recursive 生效)。
+    单线删工具路径键恒为 path(L2 已归一); 直接走 delete_permission
+    (带本次调用 params, 供 recursive 生效)。未传键 → 放行。
     """
-    return common.check_tool_paths(
-        tool_name, params, lambda p: delete_permission(p, params))
+    if "path" not in params:
+        return SafetyResult.pass_result()
+    return delete_permission(params["path"], params)
 
 
 __all__ = ["validate_delete", "check_delete_risk", "guard_forbidden_delete",

@@ -10,6 +10,8 @@
 # 2026-10-17 - 小欧 - 死参清理: 删死参 allowed_paths(validate_read) 与 params(check_read_permission, 方案A); 删死 import path_check_common(读线公共步骤已迁 app.utils.path_utils)。
 # 2026-10-18 - 小欧 - [38]§12.3 落地(字面9步): 原单路径口 check_read_permission(path) 更名 read_permission(path)(供 dual/shell 复用);
 #   新增工具级 check_read_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 read_permission, 供 router [4] 直调。
+# 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线工具路径键恒为 path(L2 已归一), 工具级口改为直接取 params["path"] 调 read_permission;
+#   空值/穿越由 validate_read 自身拦截; 未传 key → 放行(与旧循环"真没传"口径一致)。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -58,7 +60,6 @@ from typing import Any, Dict, Optional, Tuple
 from app.utils.path_utils import check_preconditions, reject_reason_empty_path  # 2026-10-17 北京老陈裁定: 本函数自 path_check_common 迁 path_utils
 from app.safety.path_classify_category import classify_forbidden_path
 from app.tools.tool_types import SafetyResult   # 2026-10-17 小欧 - check_read_permission 封装口返回类型
-from app.safety import path_check_common as common
 
 READ_MODE = "read"
 
@@ -102,11 +103,14 @@ def read_permission(path: str) -> SafetyResult:
 
 
 def check_read_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
-    """读线工具级权限口 — 供 path_legality_router [4] 直调 — 小欧 2026-10-18
+    """读线工具级权限口 — 供 path_legality_router [3] 直调 — 小欧 2026-10-18
 
-    遍历路径参数, 逐条走 read_permission(读线处处放行, 仅非法输入硬拦)。
+    单线工具一调用只有一条路径, 键恒为 path(L2 已归一), 直接走 read_permission
+    (读线处处放行, 仅空值/穿越/异常硬拦 —— 由 validate_read 自身判定)。
     """
-    return common.check_tool_paths(tool_name, params, read_permission)
+    if "path" not in params:
+        return SafetyResult.pass_result()
+    return read_permission(params["path"])
 
 
 __all__ = ["validate_read", "read_permission", "check_read_permission"]

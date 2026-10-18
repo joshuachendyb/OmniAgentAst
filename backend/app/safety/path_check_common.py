@@ -18,6 +18,9 @@
 # 2026-10-18 - 小欧 - [38]§12.2 落地: 新增工具级逐路径循环 check_tool_paths(下沉自 path_legality_router 内联循环),
 #   三线工具级封装口(read/write/delete_permission 工具级口)共用此循环(DRY); 单路径判定以 judge 回调注入;
 #   空值硬拦/内容型跳过/路径解析/异常 fail-closed 四件事集中于此。resolve_path_param 惰性导入(避免本模块↔dual 顶层环)。
+# 2026-10-18 - 小欧 - 北京老陈裁定: 整体删除 check_tool_paths(不许保留/改造/复用)。单线工具一调用只有一条路径,
+#   且参数名已在 L2 归一, 三个工具级封装口各自直接取 path(写线缺则 dest)调权限函数; 空值/穿越由 validate_* 自身判。
+#   本模块只余白名单两个函数; fail-closed 兜底上移 path_legality_router 分派段。
 """
 path_check_common — 读/写/删三条线共用的检查步骤
 
@@ -26,7 +29,6 @@ path_check_common — 读/写/删三条线共用的检查步骤
 
   check_whitelist        白名单前缀匹配   —— 三线同一套匹配规则(含盘根特例)
   resolve_allowed_paths  白名单取值       —— 三线同一句取值优先级
-  check_tool_paths       工具级逐路径循环 —— 三线工具级封装口共用(judge 回调注入)
 
 三线各自独有、由各自文件决定的部分(不在本模块):
   读线: 禁区放行 + 白名单外放行
@@ -39,13 +41,10 @@ path_check_common — 读/写/删三条线共用的检查步骤
 
 import os
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import List, Optional
 
 from app.logger import logger
 from app.safety.path_env import get_default_allowed_paths
-from app.tools.tool_constants import PATH_PARAM_KEYS, CONTENT_PARAM_KEYS
-from app.tools.tool_types import SafetyResult
-from app.utils.path_utils import reject_reason_empty_path
 
 
 def check_whitelist(file_path: str, allowed_paths: List[Path]) -> bool:
@@ -98,36 +97,4 @@ def resolve_allowed_paths(allowed_paths: Optional[List[Path]]) -> List[Path]:
     return allowed_paths if allowed_paths is not None else get_default_allowed_paths()
 
 
-def check_tool_paths(tool_name: str, params: Dict[str, Any],
-                     judge: Callable[[str], SafetyResult]) -> SafetyResult:
-    """三线共用: 遍历路径参数逐个判定, 首个越权即返回 — 小欧 2026-10-18
-
-    read/write/delete 三条线的**工具级**封装口共用此循环(DRY), 只把"单路径判定"作为
-    judge 回调注入; 空值硬拦 / 内容型跳过 / 路径解析 / 异常 fail-closed 四件事集中于此,
-    各线不再重写(原 path_legality_router 内联循环, 2026-10-18 下沉到本模块)。
-    """
-    # 惰性导入: resolve_path_param 在 dual_path_check, 本模块被三线导入, 顶层导入会成环
-    from app.safety.dual_path_check import resolve_path_param
-    try:
-        for key in PATH_PARAM_KEYS:
-            if key not in params:
-                continue                                # 真没传(见 precheck 同处裁定)
-            value = params[key]
-            if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
-                continue                                # data 内容型参数: 内联结构非路径
-            _empty = reject_reason_empty_path(value)    # 空值真源在原子
-            if _empty:
-                return SafetyResult(blocked=True, severity="dangerous", message=_empty)
-            if not isinstance(value, str):
-                continue
-            real_path = resolve_path_param(tool_name, key, value, params)
-            result = judge(real_path)
-            if result.blocked or result.requires_confirmation:
-                return result
-        return SafetyResult.pass_result()
-    except Exception as e:
-        # fail-closed: 兜底异常归 blocked(永不授权硬拦), 与三线各 except 口径全链一致
-        return SafetyResult(blocked=True, severity="dangerous", message=f"路径安全检查异常: {e}")
-
-
-__all__ = ["check_whitelist", "resolve_allowed_paths", "check_tool_paths"]
+__all__ = ["check_whitelist", "resolve_allowed_paths"]

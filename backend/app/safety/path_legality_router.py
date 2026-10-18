@@ -12,21 +12,29 @@
 # 2026-10-17 - 小欧 - 判定顺序重排(北京老陈裁定): 严格固定为 [1]名归一 → [2]范围门 → [3]参数归一 → [4]read表 → [5]write表 → [6]delete表 → [7]dual表 → [8]bash → [9]返回, 一步不许变; 分派改按四表成员判定(与 registry._resolve_action_kind 同序, 等值), 直调各线封装口; 删 tool_registry/LINE_BY_ACTION/CHECK_BY_LINE 消费(动作类型不再经 action_kind 中转)。
 # 2026-10-18 - 小欧 - [38]§12.8 落地(字面9步): 函数体严格 9 步, 每步直调各线工具级封装口; 删逐路径循环(下沉 path_check_common.check_tool_paths)、
 #   删"理论不可达"else 兜底分支、删顶层 try/except(fail-closed 兜底随循环下沉)、删死 _WRITE_TARGET_KEYS 与随之无用的 import(PATH_PARAM_KEYS/CONTENT_PARAM_KEYS/reject_reason_empty_path)。
+# 2026-10-18 - 小欧 - 参数归一前置(L2 职责): 删 [3] normalize_params(参数名已在 action_input_parser._claim 归一); 步骤 9→8;
+#   check_tool_paths 已整体删除, 其 fail-closed 兜底上移到本函数分派段 try/except(单点, 非共享函数); 分派改传原始 params。
+# 2026-10-18 - 小欧 - 名归一亦前置: 删 [1] normalize_tool_name(两入口 safety_gate=_normal_name / tool_facade=resolve_registered_tool
+#   均已归一到规范名, 本层属第三次冗余); 步骤 8→7, 分派直接用 tool_name; 删随之无用的 import normalize_tool_name。
+# 2026-10-18 - 小欧 - 补【路径名契约 ★】注释: 本安全模式只识别 path/dest 两个路径名; 要求 schema 路径参数名只能是
+#   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
 """
 path_legality_router — [4-2] 路径层(读/写/删/dual 分派, 产出 SafetyResult)
 
 本模块是路径层对外的**唯一入口**, 负责把一次工具调用分派到正确的检查。
+参数名归一属前置环节(L2 解析段), 本层不做。
 
 判定顺序(北京老陈裁定, 严格固定, 一步不许变):
-  [1] 名归一          normalize_tool_name
-  [2] 范围门          非 PATH_TOOLS → 放行
-  [3] 参数归一        normalize_params
-  [4] 在 单read 表?   → read_path_check.check_read_permission
-  [5] 在 单write 表?  → write_path_check.check_write_permission
-  [6] 在 单delete 表? → delete_path_check.check_delete_permission
-  [7] 在 单dual 表?   → dual_path_check.check_dual_permission
-  [8] 是 bash?        → shell_path_check.check_shell_permission
-  [9] 返回
+  [1] 范围门          非 PATH_TOOLS → 放行
+  [2] 在 单read 表?   → read_path_check.check_read_permission
+  [3] 在 单write 表?  → write_path_check.check_write_permission
+  [4] 在 单delete 表? → delete_path_check.check_delete_permission
+  [5] 在 单dual 表?   → dual_path_check.check_dual_permission
+  [6] 是 bash?        → shell_path_check.check_shell_permission
+  [7] 返回
+
+工具名归一属前置环节(safety_gate 用 _normal_name / tool_facade 用 resolve_registered_tool),
+本层不做(避免第三次冗余归一)。
 
 四张表(READ/WRITE/DELETE/DUAL_PATH_TOOLS)由 tool_constants 单源提供, 与
 registry._resolve_action_kind 同序查表 → 本模块的"按表分派"与该字段等值。
@@ -48,7 +56,6 @@ from app.tools.tool_constants import (
     DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS,
 )
-from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
 from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 路径层返回 SafetyResult
 
 logger = logging.getLogger(__name__)
@@ -58,53 +65,58 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
     """工具路径检查总入口 — 小欧 2026-10-15 / 2026-10-17 返回 SafetyResult
 
     判定顺序(北京老陈裁定, 严格固定, 一步不许变):
-      [1] 名归一 → [2] 范围门(非 PATH_TOOLS 放行) → [3] 参数归一
-      [4] 单 read 表  → check_read_permission
-      [5] 单 write 表 → check_write_permission
-      [6] 单 delete 表→ check_delete_permission
-      [7] 单 dual 表  → check_dual_permission
-      [8] bash        → check_shell_permission
-      [9] 返回
+      [1] 范围门(非 PATH_TOOLS 放行)
+      [2] 单 read 表  → check_read_permission
+      [3] 单 write 表 → check_write_permission
+      [4] 单 delete 表→ check_delete_permission
+      [5] 单 dual 表  → check_dual_permission
+      [6] bash        → check_shell_permission
+      [7] 返回
+
+    【路径名契约 ★】本安全模式只识别两个路径参数名: path 与 dest。
+    要求各工具 schema 的路径参数名只能是 path 或 dest(download/screen_capture 用 dest);
+    其余历史名(source_path/directory/file_name/output_path/destination_path 等)仅作 LLM 别名,
+    已由 L2 解析段(action_input_parser._claim 的 normalize_params)归一到 path/dest。
+    schema 若出现第三种路径名 = 破坏契约(安全层会静默漏检), 守护见 test_p1_layer_ownership.py
+    ::test_single_line_tool_path_keys_converge_to_path_or_dest。
 
     Args:
-        tool_name: 工具名(LLM 传入的原始名)
-        params: 工具参数
+        tool_name: 工具名(调用方已归一到规范名: safety_gate 用 _normal_name / tool_facade 用 resolve_registered_tool)
+        params: 工具参数(解析层 L2 已按 schema 归一, 本层不再归一)
 
     Returns:
         SafetyResult: 放行(blocked=False, requires_confirmation=False) / 拒绝(blocked=True) /
           待确认(requires_confirmation=True, auth_path=越权真实路径)。
     """
-    # [1] 名归一(防别名漏判)
-    normal_name = normalize_tool_name(tool_name)
-
-    # [2] 范围门: 非路径工具直接放行
-    if normal_name not in PATH_TOOLS:
+    # [1] 范围门: 非路径工具直接放行(工具名已前置归一到规范名)
+    if tool_name not in PATH_TOOLS:
         return SafetyResult.pass_result()
 
-    # [3] 参数归一: 别名 → 规范名(LLM 常传 PARAM_ALIASES 里的别名, 归一后取路径参数才不漏检)
-    normalized_params, _ = normalize_params(normal_name, params)
+    try:
+        # [2] 单 read 表 → 读线
+        if tool_name in READ_PATH_TOOLS:
+            return read_path_check.check_read_permission(tool_name, params)
 
-    # [4] 单 read 表 → 读线
-    if normal_name in READ_PATH_TOOLS:
-        return read_path_check.check_read_permission(normal_name, normalized_params)
+        # [3] 单 write 表 → 写线
+        if tool_name in WRITE_PATH_TOOLS:
+            return write_path_check.check_write_permission(tool_name, params)
 
-    # [5] 单 write 表 → 写线
-    if normal_name in WRITE_PATH_TOOLS:
-        return write_path_check.check_write_permission(normal_name, normalized_params)
+        # [4] 单 delete 表 → 删线
+        if tool_name in DELETE_PATH_TOOLS:
+            return delete_path_check.check_delete_permission(tool_name, params)
 
-    # [6] 单 delete 表 → 删线
-    if normal_name in DELETE_PATH_TOOLS:
-        return delete_path_check.check_delete_permission(normal_name, normalized_params)
+        # [5] 单 dual 表 → dual 线(一调用含多动作, 按参数分别归线)
+        if tool_name in DUAL_PATH_TOOLS:
+            return dual_path_check.check_dual_permission(tool_name, params)
 
-    # [7] 单 dual 表 → dual 线(一调用含多动作, 按参数分别归线)
-    if normal_name in DUAL_PATH_TOOLS:
-        return dual_path_check.check_dual_permission(normal_name, normalized_params)
+        # [6] bash → 命令通道(命令串解析出路径后, 内部再分删源/写目标等子类)
+        if tool_name == "bash":
+            return shell_path_check.check_shell_permission(tool_name, params)
+    except Exception as e:
+        # fail-closed 单点兜底(接替已删除的 check_tool_paths 内 try/except): 异常归 blocked 永不授权
+        return SafetyResult(blocked=True, severity="dangerous", message=f"路径安全检查异常: {e}")
 
-    # [8] bash → 命令通道(命令串解析出路径后, 内部再分删源/写目标等子类)
-    if normal_name == "bash":
-        return shell_path_check.check_shell_permission(normal_name, normalized_params)
-
-    # [9] 返回
+    # [7] 返回
     return SafetyResult.pass_result()
 
 

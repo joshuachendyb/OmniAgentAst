@@ -10,6 +10,8 @@
 # 2026-10-17 - 小欧 - 删 LINE_BY_ACTION(死表): 唯一消费方 path_legality_router 已改按四表成员分派, 本表零消费, 按 YAGNI 删除。
 # 2026-10-18 - 小欧 - [38]§12.6 落地(单路径口正名跟改): 三线单路径封装口更名 read/write/delete_permission, 本模块 4 处调用点同步跟改, 判定逻辑零改动。
 # 2026-10-18 - 小欧 - 北京老陈裁定(归类错误修复): generate_chart 移入双路径(data=read/dest=write), 本模块补 CONTENT_PARAM_KEYS 跳过(与 path_precheck:79 同口径), 防 data 内联 dict 被当路径送 read_permission 崩栈误拦。
+# 2026-10-18 - 小欧 - 参数归一前置 + 常量清理: 删 CONTENT_PARAM_KEYS 依赖, 内容守卫改类型判断(非 str 非 None 跳过);
+#   fail-closed 分支不再扫 PATH_PARAM_KEYS(11 键), 只认 path/dest(dual 工具的两个路径键)。参数名已在 L2 归一。
 r"""dual_path_check — 双路径通道(6 个复合工具: copy/move/compress/extract/rename/generate_chart)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -55,7 +57,7 @@ from typing import Any, Dict
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.safety.path_classify_category import classify_forbidden_path  # 2026-10-15 系统源外泄拦截用
 from app.tools.tool_types import SafetyResult  # 2026-10-17 小欧 - 本通道返回类型
-from app.tools.tool_constants import DUAL_ACTION_PARAMS, CONTENT_PARAM_KEYS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 补 CONTENT_PARAM_KEYS(data 内容型跳过)
+from app.tools.tool_constants import DUAL_ACTION_PARAMS  # 2026-10-17 小欧 - 表体上移工具层(与 DUAL_PATH_TOOLS 同层); 2026-10-18 删 CONTENT_PARAM_KEYS(改类型判断)
 
 
 # ── 复合工具参数动作声明(表体在 tool_constants.DUAL_ACTION_PARAMS, 与 DUAL_PATH_TOOLS 同层) ──
@@ -107,14 +109,13 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         logger.warning(
             f"[dual_path_check] 工具 {tool_name} 声明为 dual 但 DUAL_ACTION_PARAMS 无声明, "
             f"按写线(fail-closed 最严档)处理; 请补声明表")
-        from app.tools.tool_constants import PATH_PARAM_KEYS
         hit = False
-        for key in PATH_PARAM_KEYS:
+        for key in ("path", "dest"):
             value = params.get(key)
             if value is None:
                 continue
-            if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
-                continue                                # data 内容型参数: 内联结构非路径(与 path_precheck/check_tool_paths 同口径)
+            if not isinstance(value, str):
+                continue                                # 内容型参数(非路径): 跳过
             hit = True
             real_path = resolve_path_param(tool_name, key, value, params)
             result = write_path_check.write_permission(real_path)
@@ -128,8 +129,8 @@ def check_dual_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResul
         value = params.get(key)
         if value is None:
             continue
-        if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
-            continue                                    # data 内容型参数: 内联结构非路径(与 path_precheck/check_tool_paths 同口径)
+        if not isinstance(value, str):
+            continue                                    # 内容型参数(如 generate_chart.data 内联 dict/list): 非路径
         real_path = resolve_path_param(tool_name, key, value, params)
         if action == "read":
             result = read_path_check.read_permission(real_path)

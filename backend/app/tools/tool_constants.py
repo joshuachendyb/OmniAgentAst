@@ -667,17 +667,6 @@ TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 # 2026-10-15 小欧 - PATH_CATEGORIES 已删除。
 #   原因: 通道分发改用 ToolMetadata.action_kind 单判据后全仓零消费(实测), 属 YAGNI。
 
-# 工具参数中可能的路径参数名(⑧2026-08-10补dest: compress/extract/move/copy/rename/generate_chart/download/screen_capture 的目标/输出路径)
-# 迁自 path_safe_check.py:397 — 小欧 2026-07-11
-# 2026-10-16 小欧 - tool去检查化覆盖审计: 补 search_dir(search_files 工具, 别名表无条目, 门前初查/安全总闸 原全漏)与
-#   data(generate_chart/analyze_data/filter_data 的文件路径形态; 内联 dict/JSON 由合法性初查 非 str 跳过)。
-PATH_PARAM_KEYS = ("path", "source_path", "target_path", "file_path",
-                    "directory", "file_name", "destination_path", "output_path",
-                    "dest", "search_dir", "data")
-
-# 内容型路径参数 —— 值可为内联结构(dict/list), 不是文件路径, 不参与路径判定(合法性初查/路径层 两处共用单源)
-#   2026-10-17 - 小欧 - 自 path_1st_legality_check 上移(path_precheck 与 path_legality_router 拆分后两文件共用)
-CONTENT_PARAM_KEYS = frozenset({"data"})
 
 # 只读工具集合 已于 2026-10-15 删除 — 小欧
 #   原因: 与 PATH_ACTION_KINDS 的 "read" 项**完全相同**(实测差集为空), 且生产零消费
@@ -704,8 +693,8 @@ CONTENT_PARAM_KEYS = frozenset({"data"})
 #   "dual"   一调用含多动作 → dual_path_check 按参数分别归线
 #
 # 未在此表出现的工具取 ToolMetadata 默认值 "write"(fail-closed, 最严档)。
-# 名单依据: 按各工具 input_schema.properties 是否含 PATH_PARAM_KEYS 实测得出
-#   (名单依据条款), 非按名称猜。
+# 名单依据: 按各工具 input_schema.properties 是否含路径参数(path/dest 等)实测得出
+#   (名单依据条款), 非按名称猜。2026-10-18 小欧 - PATH_PARAM_KEYS 常量已删除, 分类表本身不变。
 # 2026-10-15 北京老陈裁定改名: 原名 TOOL_ACTION_KINDS 谎称"所有工具分类",
 #   实为路径检查分发档位(读/写/删/多路), 正名为 PATH_ACTION_KINDS(旧名不留壳)。
 #   表中只收文件操作工具: 无路径参数的(如 calendar/timenow)不需声明(通道 A 零命中即放行);

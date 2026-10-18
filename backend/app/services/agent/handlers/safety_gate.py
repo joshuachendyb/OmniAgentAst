@@ -30,6 +30,7 @@
 # 2026-10-16 - 小欧 - tool去检查化: SA1 为唯一合法性检查点, 执行期工具不再复查(只执行+业务警告); 上条"全保留"作废。
 # 2026-10-17 - 小欧 - 裁定点整改: ①删本层未注册复判段(认领已上提 L2, 只按 _normal_name 查 PATH_TOOLS) ②信任预查 resolve_skip 移入确认层⑤(requires_confirmation 块内), 删 skip_confirmation 传递与 _rej_cache 死 pop, 兜底 trusted=False ③删 check_safety_and_confirm 的 fc_context 死参 ④删 _classify_safety_level "未注册"不可达分支。
 # 2026-10-17 - 小欧 - 拒绝回传修复: _denied_out 回传由「切片替换」改「extend 追加」——否则调用方 pre-seed 的认领拒绝项(_denied_pre)被抹掉, 未注册 call 无 tool 反馈 → LLM 历史孤儿 tool_call。
+# 2026-10-18 - 小欧 - 归一化前置: 循环内 _cn 改取 call["_normal_name"](解析层 L2 已归一), 参数亦为 L2 已归一; 本层不再重复 normalize_params。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出(八章9.3): check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -151,13 +152,14 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
         _events = []
         _confirm_cache = {}      # 3.4 同批合并: 组键(tool, auth_path或trust_path)→首call裁决, 组内其余复用 — 小欧-2026-09-18
         for call in all_calls:
-            _cn = call.get("tool_name", "?")
+            # 2026-10-18 小欧 - 归一化前置后, 直接用解析层写好的规范名 + 已归一参数(安全层不再重复归一)
+            _cn = call.get("_normal_name") or call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
 
             # [2] 处理范围门 — 未注册已在解析层认领(_registered), 本层不再复判;
             #   只处理 PATH_TOOLS 工具, 非路径工具直接放行。
             from app.tools.tool_constants import PATH_TOOLS
-            if (call.get("_normal_name") or _cn) not in PATH_TOOLS:
+            if _cn not in PATH_TOOLS:
                 continue
 
             # [3] 合法性初查: 第1层格式+第2层存在性, 进门即拦, 省信任预查/总闸/弹窗(工具层不再复查合法性)。

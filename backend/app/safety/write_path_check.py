@@ -10,6 +10,10 @@
 # 2026-10-17 - 小欧 - 口径对齐: blocked(系统禁区)分支删去 auth_path=path(硬拦结果无可授权语义, auth_path 定义=白名单外临时授权路径); 与 read/router/delete 的 blocked 口径一致。
 # 2026-10-18 - 小欧 - [38]§12.4 落地(字面9步): 原单路径口 check_write_permission(path) 更名 write_permission(path)(供 dual/shell 复用);
 #   新增工具级 check_write_permission(tool_name, params), 遍历参数经 common.check_tool_paths 逐条走 write_permission, 供 router [5] 直调。
+# 2026-10-18 - 小欧 - check_tool_paths 已删除: 单线写工具路径键为 path(download/screen_capture 为 dest), 工具级口直接取该键,
+#   仅对 str 值做 resolve_path_param(下载落盘相对路径解析), 再走 write_permission; 空值/穿越由 validate_write 自身判。
+# 2026-10-18 - 小欧 - 补【路径名契约】注释: 本安全模块只识别 path/dest 两个路径名; 要求 schema 路径参数名只能是
+#   path/dest, 其余历史名仅作别名(L2 已归一到二者); 第三路径名 = 破坏契约(静默漏检)。
 r"""write_path_check — 写操作路径检查(写线)
 ★r 前缀必需: 下方权限总表含 Windows 路径反斜杠, 无 r 会被当 \U \W 转义序列报错。
 
@@ -122,11 +126,27 @@ def write_permission(path: str) -> SafetyResult:
 
 
 def check_write_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
-    """写线工具级权限口 — 供 path_legality_router [5] 直调 — 小欧 2026-10-18
+    """写线工具级权限口 — 供 path_legality_router [4] 直调 — 小欧 2026-10-18
 
-    遍历路径参数, 逐条走 write_permission。
+    单线写工具路径键为 path, download/screen_capture 为 dest; 直接取该键,
+    仅对 str 值做 resolve_path_param(相对路径语义解析)后走 write_permission。
+    未传键 → 放行; 空值/穿越由 validate_write 自身拦截。
+
+    【路径名契约 ★】本安全模块只识别两个路径参数名: path 与 dest。
+    要求各工具 schema 的路径参数名只能是 path 或 dest(download/screen_capture 用 dest);
+    其余历史名(source_path/directory/file_name/output_path/destination_path 等)仅作 LLM 别名,
+    已由 L2 解析段(action_input_parser._claim 的 normalize_params)归一到 path/dest, 到此已是规范名。
+    故此处只做 path/dest 二选一; schema 若出现第三种路径名 = 破坏契约(会静默漏检)。
     """
-    return common.check_tool_paths(tool_name, params, write_permission)
+    key = "path" if "path" in params else "dest"
+    if key not in params:
+        return SafetyResult.pass_result()
+    value = params[key]
+    if isinstance(value, str):
+        # 惰性导入: resolve_path_param 在 dual_path_check(避免本模块↔dual 顶层环)
+        from app.safety.dual_path_check import resolve_path_param
+        value = resolve_path_param(tool_name, key, value, params)
+    return write_permission(value)
 
 
 __all__ = ["validate_write", "write_permission", "check_write_permission"]

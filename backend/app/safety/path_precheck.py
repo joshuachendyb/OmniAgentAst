@@ -3,6 +3,8 @@
 # 2026-10-17 - 小欧 - 拆分: 自 path_1st_legality_check.py 拆出门前初查(precheck_path_legality + _EXISTENCE_PARAMS), 逻辑逐字搬迁不改; 原文件更名 path_legality_router.py(路径层 validate_tool_path)。动因: 同文件合法性/路径层两职混装易被误读(实测已致将整文件当作路径层总入口), 拆分后职责单一。_CONTENT_PARAM_KEYS 两文件共用, 上移 tool_constants.CONTENT_PARAM_KEYS(单源, 禁重复)。
 # 2026-10-17 - 小欧 - 本文件历史承接原 path_1st_legality_check.py 门前初查全部条目(逐字搬迁): ①【DRY 下沉】初查原落 safety_gate 编排层, 三份重复改表忘同步即分叉, 收归本模块 ②【BUG 修复·存在性零覆盖】rename 源/edit 被改文件按 WRITE 判会跳过存在检查, _EXISTENCE_PARAMS 单源声明按 EXISTS 查 ③【BUG 修复·取错源】force 先取 normalized_params 再回落原值, params 入口 `or {}` 归一 ④【tool去检查化】纯拼写原子下沉 app.utils.path_utils, UNC 跳过盘符可达性探测, PATH_PARAM_KEYS 补 search_dir/data ⑤2026-10-17 北京老陈裁定: OpCategory/check_path_syntax_and_exists 迁往 path_utils, 三态区分并先过空值原子。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 改从 tool_constants 导入(表体上移工具层, 与 DUAL_PATH_TOOLS 同层)。
+# 2026-10-18 - 小欧 - 参数归一前置: 删 normalize_params 与 PATH_PARAM_KEYS/CONTENT_PARAM_KEYS; 单线直接取 path(缺则 dest),
+#   dual 内容守卫改类型判断(data 内联 dict/list 跳过, None 仍交空值原子); force 直接取 params。
 """
 path_precheck — [3] 合法性初查(路径合法性: 第1层格式 + 第2层存在性)
 
@@ -19,8 +21,7 @@ from typing import Any, Dict, Optional
 
 from app.safety import dual_path_check
 from app.tools.registry import tool_registry
-from app.tools.tool_constants import PATH_PARAM_KEYS, CONTENT_PARAM_KEYS
-from app.tools.tools_alias_mapper import normalize_tool_name, normalize_params
+from app.tools.tools_alias_mapper import normalize_tool_name
 from app.utils.path_utils import (
     OpCategory,
     reject_reason_empty_path,
@@ -61,9 +62,9 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             return None
         # 2026-10-17 小欧 - 未注册/范围已在上游判, 本层恒拿到已注册路径工具 meta, 不再复判。
         meta = tool_registry.get_tool(normal_name)
-        normalized_params, _ = normalize_params(normal_name, params)
+        # 2026-10-18 小欧 - 参数名已在 L2 解析段归一, 本层直接用 params(不再 normalize_params)
         must_exist_keys = _EXISTENCE_PARAMS.get(normal_name, set())
-        force = bool(normalized_params.get("force", params.get("force", False)))
+        force = bool(params.get("force", False))
 
         if meta.action_kind == "dual":
             from app.tools.tool_constants import DUAL_ACTION_PARAMS
@@ -73,14 +74,14 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             for key, action in param_map.items():
                 # 2026-10-17 北京老陈裁定(补到本层): 三态区分(没传/非法值/合法 str); 空值交底层原子 reject_reason_empty_path 判,
                 #   原 `if value is None: continue` 把"没传"与"显式传 None"混同, 会放行到执行期崩栈。
-                if key not in normalized_params:
+                if key not in params:
                     continue                                # 真没传
-                value = normalized_params[key]
-                if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
-                    continue                            # data 内容型参数: 内联结构非路径
+                value = params[key]
+                if not isinstance(value, str) and value is not None:
+                    continue                            # 内容型(如 data 内联 dict/list): 非路径
                 if isinstance(value, str):
                     value = dual_path_check.resolve_path_param(
-                        normal_name, key, value, normalized_params)
+                        normal_name, key, value, params)
                 real_path = value
                 if action == "read":
                     op = OpCategory.EXISTS
@@ -107,19 +108,18 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
             op = OpCategory.WRITE
         else:
             return None                                                # 未知档位交总闸 fail-closed
-        for key in PATH_PARAM_KEYS:
-            if key not in normalized_params:
-                continue                                    # 真没传(不得用 get(key) is None 判, 见 dual 分支裁定)
-            value = normalized_params[key]
-            if key in CONTENT_PARAM_KEYS and not isinstance(value, str):
-                continue                                # data 内容型参数: 内联结构非路径
-            # 空值交底层原子(唯一真源)
-            _empty = reject_reason_empty_path(value)
-            if _empty:
-                return _empty
-            if isinstance(value, str):
-                value = dual_path_check.resolve_path_param(
-                    normal_name, key, value, normalized_params)
+        # 2026-10-18 小欧 - 单线工具一调用只有一条路径: path 优先, download/screen_capture 缺则 dest
+        key = "path" if "path" in params else "dest"
+        if key not in params:
+            return None                                                # 真没传(不得用 get(key) is None 判, 见 dual 分支裁定)
+        value = params[key]
+        # 空值交底层原子(唯一真源)
+        _empty = reject_reason_empty_path(value)
+        if _empty:
+            return _empty
+        if isinstance(value, str):
+            value = dual_path_check.resolve_path_param(
+                normal_name, key, value, params)
             this_op = OpCategory.EXISTS if key in must_exist_keys else op
             ok, err = check_path_syntax_and_exists(this_op, value, force=force)
             if not ok:
