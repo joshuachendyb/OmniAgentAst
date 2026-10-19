@@ -13,12 +13,12 @@ set_window_state — 窗口状态操作(maximize/minimize/restore/topmost/unpin)
 # 2026-07-30 - 小欧 - #16:msg_fmt死代码改为_; #18:修正多余冒号"为:{→为{"
 # 2026-07-30 - 小欧 - 删除未使用的Optional import
 # 2026-07-30 - 小欧 - _WINDOW_ACTIONS删除未使用的第三元素(原msg_fmt字符串);解构由func,args,_→func,args
-# 2026-07-31 - 小欧 - 三堂会审修复B8:window_title校验失败分支action传""丢失操作名,改传action
-# 2026-07-31 - 小欧 - 三堂会审修复B32:移除未使用的List import
-# 2026-08-05 - 小欧 - 三堂会审修复#1: ShowWindow/SetWindowPos返回值未检查失败假成功→topmost/unpin检查SetWindowPos返回, maximize/minimize/restore用IsZoomed/IsIconic验证目标状态(ShowWindow返回值不可靠)
-# 2026-08-05 - 小欧 - 三堂会审复核#1: restore验证由并查IsZoomed+IsIconic改只查not IsIconic(最小化前若处于最大化,restore会恢复为最大化,IsZoomed=True是正确结果,原判断产生假失败)
+# 2026-07-31 - 小欧 - 修复B8:window_title校验失败分支action传""丢失操作名,改传action
+# 2026-07-31 - 小欧 - 修复B32:移除未使用的List import
+# 2026-08-05 - 小欧 - 修复#1: ShowWindow/SetWindowPos返回值未检查失败假成功→topmost/unpin检查SetWindowPos返回, maximize/minimize/restore用IsZoomed/IsIconic验证目标状态(ShowWindow返回值不可靠)
+# 2026-08-05 - 小欧 - 复核#1: restore验证由并查IsZoomed+IsIconic改只查not IsIconic(最小化前若处于最大化,restore会恢复为最大化,IsZoomed=True是正确结果,原判断产生假失败)
 # 2026-08-09 - 小欧 - 修复COM05 E2E暴露bug: 当前pywin32 build的win32gui缺失IsZoomed属性, maximize验证改GetWindowPlacement检测SW_SHOWMAXIMIZED(IsIconic仍存在,minimize/restore不受影响)
-# 2026-10-12 小欧 - tool_zh改短名词（北京老陈令）: 窗口状态→设窗口状态
+# 2026-10-12 小欧 - tool_zh改短名词: 窗口状态→设窗口状态
 
 import time as _time_mod
 from typing import Any, Dict
@@ -28,6 +28,7 @@ from app.utils.path_utils import validate_str_param  # 2026-10-16 小欧 - 自 f
 from app.tools.tool_response import build_success, build_error
 from app.tools.tool_constants import ERR_INVALID_ACTION, ERR_WINDOW_NOT_FOUND, ERR_WINDOW_SET_STATE, ERR_DESKTOP_GET_WINDOW_INFO
 
+from app.tools.desktop import window_ops as _ops  # 2026-10-19 小欧: IsZoomed 缺失的公用替代
 from app.tools.desktop.window_info import (
     check_win32_platform, find_windows_by_title, _win32gui, _win32con,
 )
@@ -55,8 +56,7 @@ def _window_state_reached(hwnd: int, action: str) -> bool:
     SetWindowPos 类操作(topmost/unpin)返回 bool 可靠, 由调用方直接检查返回值。
     """
     if action == "maximize":
-        # 2026-08-09 小欧: 当前pywin32 build的win32gui缺失IsZoomed属性(实测hasattr=False), 改用GetWindowPlacement检测SW_SHOWMAXIMIZED
-        return bool(_win32gui.GetWindowPlacement(hwnd)[1] == _win32con.SW_SHOWMAXIMIZED)
+        return _ops.is_zoomed(hwnd)   # 2026-10-19 小欧: 判定收归 window_ops 单一真源
     if action == "minimize":
         return bool(_win32gui.IsIconic(hwnd))
     if action == "restore":
