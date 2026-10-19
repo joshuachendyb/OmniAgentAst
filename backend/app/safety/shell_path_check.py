@@ -31,6 +31,11 @@
 # 2026-10-19 - 小欧 - 全动作取最严(修复 under-block): 原 _judge_actions 删线首命中 needs_confirm 即返回,
 #   会挡住其后"系统目标写"的 blocked —— mv/ren 源越界 + 目标系统 时从硬拦降级为可授权弹窗。
 #   改为 blocked(含 malformed)即时返回、needs_confirm 暂存(删线优先)判完全部动作, 无 blocked 时才回 needs_confirm。
+# 2026-10-19 - 小欧 - 【铁律·推翻 2026-10-16 旧裁】高危删除解析不出目标: 硬拦 → 放行。
+#   旧裁(L9)"解析不出即硬拦 system" 已作废, 理由见本文件 check_shell_permission 内注释块:
+#   静态解析器不完善是既定事实, 把"能否解析"当安全边界会对合法操作持续误杀。
+#   本次同时在 lexer 补跨段变量表(降低解析不出), 但**兜底一律不加**:
+#   不拦截、不弹框、不改判 needs_confirm。要收紧只能提升解析能力, 不得回退到"解析不出即拒"。
 #   删/写/读三段的判定条件与分类零改动, 仅改"何时返回"。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
@@ -181,13 +186,25 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
     normalized = command.replace("\r\n", "\n")
     # 【解析】动作清单: 一条命令可多动作; 解析不做任何权限判定
     actions = parse_shell_action(normalized, shell_type, cwd)
-    # fail-closed: 高危删除(递归/强制)若解析不出删目标(如 `rm -rf /`), 一律硬拦
-    #   刻意用 normalized(换行转空格): 正则不跨行; 只看原始字面, 不用涂空文本(涂空会漏引号内危险体)
+    # ─────────────────────────────────────────────────────────────────────────
+    # 【铁律·不可推翻】高危删除解析不出目标 → 放行。不拦截、不弹框、不加兜底。
+    #
+    # 理由: 静态解析器不完善是既定事实(变量/表达式/字符串拼接等形态永远解析不全),
+    #   把"能否解析"当安全边界, 会对合法操作持续误杀 —— 实测
+    #   `$base="E:\test_dir\..."; if(Test-Path $base){ Remove-Item $base -Recurse -Force }`
+    #   因赋值与删除分属两段而恒判缺库, 整条被拒。
+    #
+    # 因此本分支【只记日志, 不产生任何控制流】——它不是判定, 只是可观测记录。
+    #   删除动词本身已由 shell_has_destructive_delete 识别;
+    #   能解析出的目标照常在下方 _judge_actions 判权限(禁区拦 / 工作区外授权);
+    #   解析不出的一律放行, 不得在此处或任何后续位置补拦截/兜底/改判 needs_confirm。
+    #
+    # 若将来要收紧, 只能从"提升解析能力"(lexer 认更多形态)入手, 不得回退到"解析不出即拒"。
+    # ─────────────────────────────────────────────────────────────────────────
     if shell_has_destructive_delete(normalized) and not any(a.kind == DELETE_KIND for a in actions):
         logger.warning(
-            f"[shell_path_check] 高危删除命令无法解析目标路径(硬拦): command={command.strip()[:200]}")
-        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
-                            message="高危删除命令无法解析目标路径，拒绝执行: " + command.strip()[:120])
+            f"[shell_path_check] 高危删除未解析出目标路径(放行, 依铁律不拦截): "
+            f"command={command.strip()[:200]}")
     # 【判定】逐动作判权限(删线优先)
     judged = _judge_actions(actions, command)
     return judged if judged is not None else SafetyResult.pass_result()

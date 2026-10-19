@@ -103,7 +103,11 @@ def parse_shell_action(command: str, shell_type: Optional[str] = None,
         return []
 
     actions: List[PathAction] = []
+    # 2026-10-19 小欧 - 跨段变量代入: 赋值与使用分属两段时(`$base="E:\x"; if(..){ Remove-Item $base }`),
+    #   使用段看不到赋值 → 抽不出路径 → 整条判不出删动作。整条建表后逐段代入即可还原。
+    _varmap = lexer.build_var_map(text)
     for statement in lexer.split_statements(text):
+        statement = lexer.substitute_vars(statement, _varmap)
         upstream_reads: List[str] = []
         for segment in lexer.split_pipeline(statement):
             segment_actions = _parse_segment(segment, shell, cwd)

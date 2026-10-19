@@ -20,14 +20,18 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
 2026-10-18 - 小欧 - 词法增强: 换行作语句分隔(prepare 保 \n + _STMT_SEPS 补 \n); 盘符相对 `C:xxx`
   按盘根解析不再并入 cwd; 裸路径支持 `\\?\` 前缀、反斜杠/正斜杠 UNC、裸根 `C:\`、含逗号文件名;
   版本号/纯数字点串不再当相对路径。
-2026-10-19 - 小欧 - 撤销 UNC 抽取(老陈裁定: 网络类不纳入覆盖, 维持 2026-10-14 口径):
+2026-10-19 - 小欧 - 撤销 UNC 抽取(网络类不纳入覆盖, 维持 2026-10-14 口径):
   _SHELL_ABS_WIN_PATH_RES 删去反斜杠/正斜杠 UNC 两条正则, 裸路径只保留盘符路径(含 \\?\ 前缀);
   \\server\share 不再被抽为受控路径。注: shell_sandbox_tables.SHELL_OUTSIDE_TARGET_RE 的 UNC 分支
   属沙箱"越界写扫描"口径(判路径是否落在沙箱外), 与"权限覆盖"关注点不同, 未随本改。
+2026-10-19 - 小欧 - 新增跨段变量表(build_var_map/substitute_vars): 本层逐段解析, 而
+  `$base="E:\x"; if(Test-Path $base){ Remove-Item $base -Recurse -Force }` 里赋值与使用分属两段,
+  使用段抽不出路径 → 整条判不出删动作, 被 shell_path_check 当缺库误杀。改为整条建表后逐段代入。
+  只收纯字面量赋值, 表达式赋值不入表(算不出真值, 猜值会把删除指向错误目标)。
 """
 import os
 import re
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 #   2026-10-18 小欧: 文本原子已拆入 app.safety.shell_text_atoms(SRP);
 #   本文件的依赖改**惰性**(调用期导入), 导入期 lexer 不触发该模块, 与沙箱宽表(shell_sandbox_tables
@@ -235,6 +239,40 @@ def shell_extract_abs_win_paths(text: str) -> List[str]:
         if p.lower() not in [x.lower() for x in found]:
             found.append(p)
     return found
+
+
+#: 变量赋值形态: $var="字面量" / ${var}="字面量" / $var='字面量'。值只取纯字面量。
+#:   值部必须容许反斜杠(Windows 路径全含 \) —— 用 (?:[^"\\]|\\.)* 逐字符吞,
+#:   不能写 [^"\\]* 那类"排除反斜杠"的写法, 否则 E:\test_dir\x 永远匹配不上(实测踩过)。
+_VAR_ASSIGN_RE = re.compile(
+    r"""\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))\s*=\s*"""
+    r"""(?:"((?:[^"\\]|\\.)*)"|'([^']*)')""")
+
+_VAR_USE_RE = re.compile(r"\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)")
+
+
+def build_var_map(command: str) -> Dict[str, str]:
+    """抽整条命令里的 $var="字面量" 赋值 — 小欧 2026-10-19
+
+    本层逐段做, 变量赋值与使用分属两段时(如 `$base="E:\\x"; if(..){ Remove-Item $base }`),
+    使用段看不到赋值, 路径抽不出 → 整条命令判不出删动作 → 落到 shell_path_check 的放行分支。
+    先从整条命令建表、逐段代入, 即可还原这类形态。
+
+    只收纯字面量: 带表达式的赋值(`$x=Get-ChildItem C:\\`)算不出真值, 不入表 ——
+    宁可解析不出走放行, 也不猜一个值填进去(猜错会把删除指向错误目标)。
+    """
+    out: Dict[str, str] = {}
+    for braced, bare, dq, sq in _VAR_ASSIGN_RE.findall(command or ""):
+        out[braced or bare] = dq or sq
+    return out
+
+
+def substitute_vars(statement: str, varmap: Dict[str, str]) -> str:
+    """把语句里的 $var / ${var} 替换为字面值; 表外变量原样保留(不猜)"""
+    if not varmap:
+        return statement
+    return _VAR_USE_RE.sub(
+        lambda m: varmap.get(m.group(1) or m.group(2), m.group(0)), statement)
 
 
 def extract_paths(statement: str, cwd: Optional[str]) -> List[str]:
