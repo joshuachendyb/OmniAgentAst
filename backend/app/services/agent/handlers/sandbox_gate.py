@@ -73,7 +73,7 @@
 """
 from app.logger import logger
 from app.safety.safety_result import SafetyLevel  # 分类单源(safety 层, 无环: safety 不依赖 services)
-# 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT/SENSITIVE_FIELDS
+# 延迟导入: MetaStep/AgentStatus/set_status/create_confirmation/wait_for_confirmation_result/HITL_TIMEOUT
 #   均延迟到函数内导入(小欧 2026-08-25 修复循环import回归): 本模块被 action_handler 顶层 import,
 #   若在模块顶层 import agent.steps / task.hitl_confirmation 会构成
 #   action_handler→sandbox_gate→hitl_confirmation→task_runtime→task_registry→...→action_handler 环,

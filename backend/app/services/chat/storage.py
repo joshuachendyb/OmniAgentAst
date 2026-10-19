@@ -125,6 +125,8 @@
 # 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 save_process_events(仅 UPDATE 不 INSERT, 幂等覆盖; 不校验 kind/不设条数上限, 与 append_execution_step 同族写法); get_task_detail 补 process_events 解析(与 artifacts 同款, SELECT * 自动含列, 存量空列表前端兜底) — 小欧-2026-10-11
 # 2026-10-14 小欧 - linked 增量摘要: 新增 get_chain_summary_anchor(链内最近非空摘要锚点) + save_chain_cover_summary(摘要写覆盖上界任务行, 单一出口) — 小欧-2026-10-14
 # 2026-10-14 小欧 - 文档[33] 4.3: :149/:150 trust_db 改从 app.safety.trust_db 导入
+# 2026-10-19 - 小欧 - append_execution_step 落库前经 redact_step_params 脱敏 step 参数敏感键(取副本不改原对象);
+#   落盘出口遮蔽, SSE/HITL 展示仍原文 —— 小欧-2026-10-19
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -145,6 +147,7 @@ from app.logger import logger
 from app.db import db
 from app.db.models.chat_models import SessionModelOverride, ModelRef   # 归一: ModelRef=SessionModelOverride 别名 — 小欧 2026-08-22
 from app.utils.json_utils import safe_json_dumps, parse_json
+from app.utils.secret_utils import redact_step_params  # 落库出口脱敏(step 参数敏感键) — 小欧 2026-10-19
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区: 本地ISO无Z入库
 from app.tools.tool_constants import NON_FILE_TRUST_TOOLS  # 小欧 2026-09-16 撤销侧规范化同位(与 trust_db:15 同步)
 from app.safety.trust_db import norm_trust_path              # 小欧 2026-09-16 函数化: 撤销侧消费 trust_db 单一来源(原本层双份副本已删) — 小欧 2026-09-16
@@ -315,7 +318,7 @@ def append_execution_step(conn: Connection, ai_message_id: int, session_id: str,
         "INSERT INTO chat_task_steps(ai_message_id, task_id, session_id, step_index, step_json, created_at, usage, user_message_id) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
         "ON CONFLICT(ai_message_id, task_id, step_index) DO NOTHING",
-        (ai_message_id, task_id, session_id, step_index, safe_json_dumps(step_dict),
+        (ai_message_id, task_id, session_id, step_index, safe_json_dumps(redact_step_params(step_dict)),
          get_local_iso_timestamp(), usage, user_message_id),
     )
 

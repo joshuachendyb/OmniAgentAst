@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from app.utils.json_utils import safe_json_dumps
+from app.utils.secret_utils import redact_step_params, redact_sensitive_params  # 落盘日志脱敏敏感参数 — 小欧 2026-10-19
 from app.config import get_frozen_dir
 from app.services.chat.storage import get_user_message_id
 from app.db import db
@@ -384,7 +385,7 @@ class PromptLogger:
             "轮次": round_number,
             "步骤": step_dict.get("step", 0),
             "步骤类型": step_dict.get("type", ""),
-            "数据": step_dict,
+            "数据": redact_step_params(step_dict),  # 落盘脱敏(step 参数敏感键) — 小欧 2026-10-19
             "时间戳": now_str(),
         })
 
@@ -424,7 +425,7 @@ class PromptLogger:
             entry["轮次"] = round_number
         
         if tool_params:
-            entry["工具参数"] = tool_params
+            entry["工具参数"] = redact_sensitive_params(tool_params)  # 落盘脱敏 — 小欧 2026-10-19
 
         # 2026-08-13 小欧 三堂会审修复#35: 删除重复字段"格式化内容"(与"内容"逐字节相同, 每个观察步骤存两份全文),
         #   大工具结果(读文件/长SQL输出)日志体积/IO/磁盘翻倍; 保留"原始内容"兼容分析脚本

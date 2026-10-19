@@ -12,16 +12,14 @@ secret_utils — 密钥/敏感值判定的公用函数（全局层）
     该判定跨 lifecycle 与 model 两域，故置全局层 app/utils/（非 agent_utils/ 非 toolhelper/）。
   2026-10-19 - 小欧 - 敏感参数脱敏升格为系统级单一真相源:
     ① 新增 SENSITIVE_PARAM_KEYS(全局层权威集合) 与 redact_sensitive_params();
-    ② 日志/ActionStep(SSE+落库)/HITL 确认参数统一调用同一函数, 杜绝逐处手写遮蔽;
-    ③ tool_constants.SENSITIVE_FIELDS 改为派生自本集合(单向依赖 tools→utils, 不反向)。
+    ② 敏感键集合只此一份, 杜绝逐处手写遮蔽;
+    ③ 分流: 落盘出口(日志/落库)调用 redact_* 遮蔽; SSE/HITL 展示走原文(用户本人数据, 不落盘)。
 """
 from typing import Any
 
 
 # 敏感参数键集合 — 全局唯一权威 — 小欧 2026-10-19
-#   mask = 就地替换为 "***"（适用日志/SSE/落库/HITL 展示, 值不落明文）
-#   HITL 对其中"非目标定位键"(password/token 等)仍按 SENSITIVE_FIELDS 丢弃,
-#   connection_string 因需保留"连的是哪个库"的可见性, 只遮蔽不清除。
+#   命中键的值替换为 "***"。仅"落盘"出口(日志/落库)调用遮蔽; SSE/HITL 展示原文(用户本人数据)。
 SENSITIVE_PARAM_KEYS: frozenset = frozenset({
     "password", "token", "api_key", "secret", "authorization", "credential",
     "connection_string",
@@ -59,7 +57,7 @@ def is_blank_secret(value: Any) -> bool:
 def redact_sensitive_params(params: Any) -> Any:
     """敏感参数脱敏: SENSITIVE_PARAM_KEYS 中的键值统一替换为 "***" — 小欧 2026-10-19
 
-    用于所有"参数离开内存"的出口: 日志、SSE、聊天历史落库、HITL 确认弹窗;
+    用于所有"落盘"出口: prompt 日志、聊天历史落库(chat_task_steps / chat_stream_events);
     非 dict / 无敏感键时原样返回(不复制, 零开销); 有敏感键时返回浅拷贝, 不改原对象。
     """
     if not isinstance(params, dict):
@@ -68,3 +66,24 @@ def redact_sensitive_params(params: Any) -> Any:
     if not _hits:
         return params
     return {k: ("***" if k in SENSITIVE_PARAM_KEYS else v) for k, v in params.items()}
+
+
+def redact_step_params(step: Any) -> Any:
+    """step 落盘脱敏: 顶层 params 与 ActionStep tools[].params 的敏感键→"***", 返回副本不改原对象 — 小欧 2026-10-19
+
+    供落库(chat_task_steps.step_json)与 prompt 日志(整份 step)共用;
+    仅落盘点调用; SSE/HITL 展示走原文(用户本人数据)。"""
+    if not isinstance(step, dict):
+        return step
+    if "params" not in step and "tools" not in step:
+        return step
+    out = dict(step)
+    if isinstance(out.get("params"), dict):
+        out["params"] = redact_sensitive_params(out["params"])
+    _tools = out.get("tools")
+    if isinstance(_tools, list):
+        out["tools"] = [
+            ({**t, "params": redact_sensitive_params(t.get("params"))} if isinstance(t, dict) else t)
+            for t in _tools
+        ]
+    return out

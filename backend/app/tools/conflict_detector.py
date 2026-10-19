@@ -12,8 +12,6 @@
 #   ② 路径键做 abspath+normcase 归一, 相对/绝对、大小写变体视为同一文件;
 #   ③ 远端库键经 make_url 取 backend/host/port/database(去账号口令), 同库不同连接串/不同口令不再漏并组;
 #   _parse_paths 仍返回原值供 trust 使用, 归一化只在 _conflict_keys 内完成(不动信任口径)
-# 2026-10-19 小欧 - _db_key 身份键补归一: backend/host 小写 + 缺端口补默认端口(mysql3306/pg5432/mssql1433);
-#   原 "mysql://h/db" 与 "mysql://h:3306/db"、host 大小写变体被判不同库 → 同库写操作漏并组并行
 """
 conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并查集分组
 
@@ -102,22 +100,14 @@ def _canonical_path(p: str) -> str:
         return p
 
 
-_DB_DEFAULT_PORTS = {"mysql": 3306, "mariadb": 3306, "postgresql": 5432, "mssql": 1433}
-
-
 def _db_key(conn_str: str) -> str:
     """远端库身份键: 经 make_url 取 backend/host/port/database, 忽略账号与口令 — 小欧 2026-10-19
     同库不同口令/不同账号视为同一库(仍须并组串行); 解析失败回落连接串哈希(仍可区分不同库, 且不含明文可安全入日志)。
-    归一: backend/host 小写(二者大小写不敏感), 缺端口补该 backend 默认端口——
-    否则 "mysql://h/db" 与 "mysql://h:3306/db"、host 大小写变体会被判为不同库而漏并组, 同库写操作并行退化。
     """
     try:
         from sqlalchemy.engine.url import make_url
         u = make_url(conn_str)
-        backend = (u.get_backend_name() or "").lower()
-        host = (u.host or "").lower()
-        port = u.port or _DB_DEFAULT_PORTS.get(backend, "")
-        return f"db:{backend}://{host}:{port}/{u.database or ''}"
+        return f"db:{u.get_backend_name()}://{u.host or ''}:{u.port or ''}/{u.database or ''}"
     except Exception:
         return "db:" + hashlib.sha1(conn_str.encode("utf-8")).hexdigest()[:16]
 

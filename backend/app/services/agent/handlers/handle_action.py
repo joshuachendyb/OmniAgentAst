@@ -103,8 +103,8 @@
 # 2026-10-17 小欧 - 认领拒绝上提: 取到 _buf 之后、预览段之前就地拒绝未注册 call(只发 rejected 直 publish, 不进预览齿轮; 被拒项并入 _denied_list 由 _add_denial_feedback 补写 LLM 历史)。
 # 2026-10-17 小欧 - 调用点去死参: check_safety_and_confirm 调用点删 fc_context 死参(与 safety_gate 同步)。
 # 2026-10-17 小欧 - 配套修复: _denied_out 改 append, 认领拒绝反馈得以写回。
-# 2026-10-19 小欧 - 敏感参数出口统一脱敏: 日志/预览 ActionStep(SSE)/canonical ActionStep(落库) 的 params
-#   一律经 redact_sensitive_params 遮蔽(含 connection_string 与其它敏感键), 杜绝明文连接串进日志与聊天历史。
+# 2026-10-19 小欧 - 敏感参数分流: 应用日志(下方 params_str)经 redact_sensitive_params 遮蔽;
+#   预览/canonical ActionStep(SSE) 展示原文(用户本人数据), canonical 落库时由 storage.append_execution_step 遮蔽。
 """
 handle_action — action编排处理(门禁已拆出)
 
@@ -168,6 +168,16 @@ from app.tools.conflict_detector import _has_conflict, _partition_calls, _WRITE_
 # 以下常量/函数已拆分 — 小健 2026-09-04 / 2026-10-14 小欧
 from app.tools.conflict_detector import _parse_paths
 from app.tools.tool_constants import WINDOW_TARGET_TOOLS
+
+
+def _action_tools_view(calls: List[Dict]) -> List[Dict]:
+    """ActionStep 参数视图: 预览(SSE)与 canonical(SSE)共用同一出口, 参数原文(用户本人数据);
+    canonical 落库时由 storage.append_execution_step 遮蔽 — 小欧 2026-10-19"""
+    return [{
+        "tool": c.get("tool_name", ""),
+        "target": _extract_target(c),
+        "params": c.get("tool_params", {}) or {},
+    } for c in calls]
 
 
 async def handle_action(agent, parsed: Dict) -> dict:
@@ -251,11 +261,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
     #   落库只认下方 canonical, 保 09-04"拦截action不落库"不变式); 不拆 safety_gate(源码锚点测试绿基线不破),
     #   check仍只跑一次(无DRY重复) — 2026-09-06 小欧(方案C: 三思三省发现 实时齿轮死代码+DB落库倒退后修订)
     if call_result.all_calls:
-        _action_tools = [{
-            "tool": c.get("tool_name", ""),
-            "target": _extract_target(c),
-            "params": redact_sensitive_params(c.get("tool_params", {}) or {}),  # 2026-10-19 小欧 - 预览走SSE, 敏感键不落明文
-        } for c in call_result.all_calls]
+        _action_tools = _action_tools_view(call_result.all_calls)
         # 修复(2026-09-06 小欧): buffer 已上移至 thought 前统一获取, 此处删除重复获取防冗余 — 小欧-2026-09-06
         _live_action = agent._step_emitter.emit(ActionStep(
             step=step,
@@ -282,11 +288,7 @@ async def handle_action(agent, parsed: Dict) -> dict:
     #   canonical tools=_exec_calls 真实执行集(DB 配对自洽, 09-04 不变式不破); 双事件同 step, 前端 buildSegments
     #   按 step 已去重(取后者=canonical, 渲染唯一), DB 快照路由仅 canonical(无 _live_only)落库, 无冗余 — 小欧-2026-09-06
     if _exec_calls:
-        _canonical_tools = [{
-            "tool": c.get("tool_name", ""),
-            "target": _extract_target(c),
-            "params": redact_sensitive_params(c.get("tool_params", {}) or {}),  # 2026-10-19 小欧 - canonical落库, 敏感键不落明文
-        } for c in _exec_calls]
+        _canonical_tools = _action_tools_view(_exec_calls)
         _events.append(agent._step_emitter.emit(ActionStep(
             step=step,
             exec_type="single" if len(_canonical_tools) == 1 else "multi",

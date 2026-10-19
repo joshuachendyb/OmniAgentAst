@@ -154,14 +154,15 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         logger.info(f"[action_handler] 工具执行完成: tools={tool_names}, 耗时={elapsed:.2f}s")
 
         for i, (call, result) in enumerate(zip(all_calls, results)):
+            _safe_params = redact_sensitive_params(_cp(call))   # 出口统一脱敏一次(两分支共用)
             if isinstance(result, Exception):
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={redact_sensitive_params(_cp(call))}, result=ERROR({result})")
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_safe_params}, result=ERROR({result})")
             else:
                 _r_str = str(result)
                 _log_max = get_config().get("tuning.content.action_log_result_max_chars", _D_LOG_CHARS)
                 if len(_r_str) > _log_max:
                     _r_str = _r_str[:_log_max] + f"...(截断{len(_r_str)}字符)"
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={redact_sensitive_params(_cp(call))}, result={_r_str}")
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_safe_params}, result={_r_str}")
             _orig_tool = _correction_map.get(i)
             if _orig_tool and isinstance(result, dict):
                 _llm = result.get("llm_data")

@@ -1,7 +1,7 @@
 
 # -*- coding: utf-8 -*-
 # 2026-10-19 - 小欧 - 敏感键集合单一真相源移至全局层 secret_utils.SENSITIVE_PARAM_KEYS,
-#   本文件不再另持派生集合; 各出口统一调用 redact_sensitive_params 遮蔽(值→"***")。
+#   本文件不再另持派生集合; 落盘出口(日志/落库)经 redact_* 遮蔽, SSE/HITL 展示原文。
 # 编辑历史:
 # 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
 # 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃

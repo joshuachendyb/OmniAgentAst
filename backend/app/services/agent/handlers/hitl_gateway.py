@@ -30,6 +30,8 @@
 #   security.hitl_timeout → security.hitl.timeout, security.auto_confirm_delay → security.hitl.auto_confirm_delay。
 #   改前 registry 只出后二键, 读方持前二键 → 恒读不到(恒走常量), HITL 确认超时与自动确认延迟两项设置实际失效。
 # 2026-10-18 小欧 - 注释精简冗余标注(去mode/截断方式/截断阈值三处, 技术说明与日期署名原样保留)。
+# 2026-10-19 小欧 - 删 _desensitize: HITL 弹窗参数改回原文。HITL(paused)属 SSE_ONLY 不落库不落盘,
+#   展示给输入该参数的本人, 无外泄面; 落盘出口(日志/落库)另经 redact_* 遮蔽。
 """HITL确认唯一入口。复用hitl_confirmation三原语，不重写等待/超时/取消。"""
 import re
 from dataclasses import dataclass
@@ -52,24 +54,14 @@ class ConfirmSpec:
     auto_confirm: bool = False   # 2026-09-18 小欧 去mode改布尔单源(changed from None) — 小欧-2026-09-18
 
 
-def _desensitize(params) -> dict:
-    """纯同步脱敏(HITL限制: 无await原语; 调用处非同await上下文, 保持def而非async — 小欧-2026-09-16规范还原)
-    2026-10-19 小欧: 先经 redact_sensitive_params 遮蔽 connection_string(需保留"连哪个库"可见性),
-    再按 SENSITIVE_FIELDS 丢弃 password/token 等非定位敏感键(不落明文也不展示掩码占位)。"""
-    from app.tools.tool_constants import SENSITIVE_FIELDS      # 延迟import防环（真实位置，sandbox_gate行66同源 — 小健-2026-09-05）
-    from app.utils.secret_utils import redact_sensitive_params  # 延迟import: 与 SENSITIVE_FIELDS 同源出口收口 — 小欧-2026-10-19
-    _masked = redact_sensitive_params(params)
-    return {k: v for k, v in (_masked or {}).items() if k not in SENSITIVE_FIELDS}
-
-
 def _summarize_params(tool_name: str, params: dict) -> dict:
     """HITL弹窗参数摘要: 主键(path类extract_trust_path权威)优先展示 + 长值truncate_text尾部截断(阈值140) + 截断结果单行化 — 小欧-2026-09-16
     参数摘要设计: 弹窗只显核心参数(主键path), 长值折叠防弹窗超高;
        尾部截断: 直接切尾巴 text[:140] + 默认后缀\\n...[截断N字符], 不再"省略中间留头尾"(头尾双截断点增换行风险);
     单行化: 截断结果内换行(含四周空白)压成空格, 保证每个参数值恒为一行
        (截断点落在命令换行处或值本身多行时, 前端pre-wrap逐参数分行会显"多行+空行", 违反"每参数一行"契约);
-    脱敏仍由组装行 _desensitize 统一收口(本函数不重复脱敏)。"""
-    from app.utils.text_utils import truncate_text          # 延迟import防环(与_desensitize同款; FUNCTIONS.md已登记) — 小欧-2026-09-16
+    弹窗参数原文展示(用户本人数据); 落盘出口(日志/落库)另经 redact_* 遮蔽。"""
+    from app.utils.text_utils import truncate_text          # 延迟import防环(FUNCTIONS.md已登记) — 小欧-2026-09-16
     from app.safety.trust import extract_trust_path        # 延迟import防环(主键权威) — 老陈-2026-09-16
     _all: dict = {k: v for k, v in (params or {}).items()}
     _path = extract_trust_path(tool_name, params)          # 复用trust.py主键权威, 不重写
@@ -120,7 +112,7 @@ async def hitl_confirm(agent, spec: ConfirmSpec, publish):
     _auto = spec.auto_confirm
     paused = agent._step_emitter.emit(MetaStep(step=agent.llm_call_count, type="paused",
         content=spec.content, confirm_id=confirm_id, tool_name=spec.tool_name,
-        params=_desensitize(_summarize_params(spec.tool_name, spec.params)),  # 参数摘要(主键path优先+长值截断)防弹窗超高 — 小健-2026-09-16
+        params=_summarize_params(spec.tool_name, spec.params),  # 参数摘要(主键path优先+长值截断)防弹窗超高, 原文展示 — 小健-2026-09-16
         trust_impact=spec.trust_impact,
         safety_level=spec.safety_level, trust_path=_path, auto_confirm=_auto,
         confirm_timeout=_ct, backend_timeout=_bt))
