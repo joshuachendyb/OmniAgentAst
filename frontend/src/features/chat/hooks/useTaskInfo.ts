@@ -95,6 +95,7 @@ export interface ProcessEvent {
     | 'paused'
     | 'resumed'
     | 'retrying'
+    | 'installing' // 2026-10-19 小欧: 缺库自愈正在装依赖
     | 'error'
     | 'rejected'
     | 'cancelled'
@@ -264,7 +265,7 @@ export const useTaskInfo = (
             text: s.content || '正在重试',
             time: s.timestamp,
           });
-          // 小欧 2026-09-02: 位4 回填(仅 retrying; paused/resumed 不进位4, 状态走徽标 - 北京老陈 2026-09-02 定案)
+          // 小欧 2026-09-02: 位4 回填(仅 retrying; paused/resumed 不进位4, 状态走徽标 - 北京老陈 2026-09-02
           latestProcessEvent = {
             kind: 'retrying',
             text: s.content || '正在重试',
@@ -272,6 +273,16 @@ export const useTaskInfo = (
             requestLevel: false, // 2026-09-08 小欧 6.3.4: 过程事件恒执行级 — 小欧-2026-09-08
           };
           break;
+        case 'installing':
+          // 2026-10-19 小欧: 装依赖中, 只进事件列表不进位4(位4只收 retrying/error/truncated)。
+          // 装完要么工具跑起来(自愈成功, 本条自然被后续步骤盖过), 要么走缺库错误体走 observation。
+          processEvents.push({
+            kind: 'installing',
+            text: s.content || '正在安装依赖',
+            time: s.timestamp,
+          });
+          break;
+
         case 'final':
           if (s.outcome === 'cancelled') {
             badge = 'cancelled';

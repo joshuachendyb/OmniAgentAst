@@ -74,6 +74,20 @@
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `ensure_dependency` | 确保Python依赖可用，缺失自动安装 | import_name, pip_package, pre_install | bool |
+| `dependency_status` | **纯检查**依赖是否可用，零 subprocess（不装任何东西） | import_name, pip_package, version | bool |
+| `install_missing` | **唯一装包入口**：纯检查→一次 pip 装全部缺失→复检，返回仍缺的 | Iterable[(imp,pkg,ver,pre)] | list[tuple] |
+| `resolve_missing` | 从归一依赖元组里筛出不可用的（纯检查） | Iterable[tuple] | list[tuple] |
+| `normalize_dep` | str/dict 两种依赖声明归一为 (import_name, pip_package, version, pre_install) | str \| dict | tuple |
+| `dep_install_spec` | 依赖的可读 pip 规格串（供日志与缺库提示指名该装什么） | imp, pkg, version | str |
+| `install_batch` | 一次 pip 调用装多个包 | Iterable[str] | None |
+| `locked_conflict` | 该安装请求是否会顶掉锁定包 | pkg, version | bool |
+
+**实现要点**
+
+- `dependency_status` 与安装必须分开：`ensure_dependency` 早期把"检查+安装"混在一处，导致批量预装空转（判缺失那一步自己就把包单装掉，N 个依赖仍起 N 次 pip）。要批量化必须先有只看不装的判定源。
+- `normalize_dep` 存在的原因：`import_name` 与 `pip_package` 不可混用 —— pip 名 `python-docx` 不可 `import`，import 名 `docx` 装不上，混用必判缺库。
+- 锁定包（`LOCKED_PACKAGES`：httpx/httpcore）由 `_constraints_file()` 生成 pip 约束文件，随每次装包以 `-c` 带上：装任意新包时其传递依赖若想抬升锁定版本，pip 直接判冲突而非静默换版本。
+- `install_missing` 是启动期预装与运行期自愈的共同入口（DRY）：两处各写一遍判定逻辑正是假修复的温床。
 
 ### 1.6 表格辅助（table_helper.py）
 
@@ -180,6 +194,27 @@ shell 命令执行前的**静态风险判定**单一权威。三类同域关注�
 | `build_success` | 构建成功响应 | data, llm_data, other_data, **extra | dict |
 | `build_error` | 构建错误响应 | data, llm_data, other_data, **extra | dict |
 | `build_warning` | 构建警告响应 | data, llm_data, other_data, **extra | dict |
+| `build_missing_dep_error` | 缺库统一错误体（`ERR_MISSING_DEPENDENCY`）。文案分三级：系统自动装失败 → LLM 用 `bash` 自装 → 转管理员；锁定依赖（httpx/httpcore）不给自装指示，直指按锁定版本由管理员装；收尾统一给"改用其他工具继续任务"的出路，**不终止 ReAct loop**。错误码落 `llm_data.status.code`，随全项目错误体约定 | tool_name: str, missing: list = None, agent_can_install: bool = None | dict |
+
+---
+
+## 二·五、工具注册层（app/tools/registry.py）
+
+### 2.2 工具注册与依赖可见性（app/tools/registry.py）
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `preinstall_tool_dependencies` | 启动期批量装依赖（经 `install_missing` 一次 pip 装齐），返回仍未就位的规格串 | 无 | list[str] |
+| `heal_missing_deps` | 运行期缺库自愈：**只装包、返回仍缺清单，不改元数据**（经 `to_thread` 在工作线程执行，改元数据会读到中间态） | name: str | list[str] |
+| `apply_heal_result` | 把自愈结果写进元数据（须在主线程调用），返回是否恢复可用 | name: str, missing: list | bool |
+| `ToolMetadata.visible_to_llm` | 属性。"该不该给 LLM 看"的**唯一判据** = `expose_to_llm and available`。原先各消费方各写双判断，加维度需同步改多处，漏一处即口径分裂 | — | bool |
+
+**实现要点**
+
+- 依赖检查结论必须落元数据（`available`/`missing_deps`）：原先 `_check_dependencies` 算完即弃，缺库工具照样进 LLM 工具列表，LLM 试调一次才知不可用、白耗一轮。
+- 缺库工具在三个暴露点都要挡住：`to_openai_tools`、`generate_param_reminder`、`tool_search` 的 BM25 索引（后者漏了会出现"搜到 1 个却注入 0 类"的误导）。
+- `heal_missing_deps` 与 `apply_heal_result` 必须拆开：前者经 `to_thread` 跑在工作线程，与事件循环并发读同一份 meta，跨线程写会读到 `available` 已翻而 `missing_deps` 未写的中间态。
+- 运行期自愈需加冷却窗（如 `_HEAL_COOLDOWN_SEC`）：装不上时每次工具调用都重试 = 每次都起一个 pip。
 
 ---
 

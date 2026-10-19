@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-02 - 小欧 - 归组调整: searchweb/fetchpage 改读 TOOL_CATEGORY_OVERRIDE(归类单一真相源), 归 FUNDAMENTAL — 小欧-2026-10-02
+# 2026-10-19 - 小欧 - 按实现文件顶层 import 补齐依赖声明: fetchpage 用 html2text 抽正文, httpget 用 anyio
+#   跑异步(随 httpx 一并装入, 列出是为声明与实现对齐)。此前两者顶层 import 但未声明, 依赖表与实现脱节。
 """
 Network Register - 网络通信工具注册点
 
@@ -37,10 +39,12 @@ from typing import Any, Dict, Optional
 # 网络工具依赖配置 — 小健 2026-06-18
 # 每个工具对应的第三方依赖包列表
 # 注意：httpx必须使用0.26.0版本，httpcore必须使用1.0.1版本（AGENTS.md明确要求）
+# 2026-10-19 小欧 - 按实现文件顶层 import 补齐真实缺口: fetchpage 用 html2text 抽正文,
+#   httpget 用 anyio 跑异步(随 httpx 一并装入, 列出是为声明与实现对齐)。
 NETWORK_TOOL_DEPENDENCIES = {
-    "httpget": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "httpget": ["httpx==0.26.0", "httpcore==1.0.1", "anyio"],
     "download": ["httpx==0.26.0", "httpcore==1.0.1"],
-    "fetchpage": ["httpx==0.26.0", "httpcore==1.0.1"],
+    "fetchpage": ["httpx==0.26.0", "httpcore==1.0.1", "html2text"],
     "searchweb": ["httpx==0.26.0", "httpcore==1.0.1"],
     "ping_port": [],  # 使用内置库
 }

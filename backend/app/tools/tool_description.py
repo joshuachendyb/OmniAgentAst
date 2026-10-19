@@ -13,6 +13,9 @@
 #         且该校验从未生效过(65/65 工具全缺 additionalProperties), 关掉不丢已有保护。
 #   影响: 其余 6 provider 本就收原样 schema, 行为不变; 仅 opencodeZen 由全挂变为可用。
 #   状态: 临时验证用, 结论落地后按结果决定保留或改走 strict 归一化。
+# 2026-10-19 小欧 缺库工具不暴露给 LLM: to_openai_tools 与 generate_param_reminder 两处改读
+#   ToolMetadata.visible_to_llm(= expose_to_llm and 依赖齐备)。原先缺库工具照常进 LLM 工具列表,
+#   LLM 试调一次才知不可用、白耗一轮; 两处必须同判据, 否则清单列了签名而实际调不通。
 """
 
 from typing import Dict, Any
@@ -39,7 +42,9 @@ def to_openai_tools(registry, categories: Optional[Set[ToolCategory]] = None,
     tools = []
     tool_names_set = tool_names or set()
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
-        if not meta.expose_to_llm:
+        # 2026-10-19 小欧 - 可见性单一判据(visible_to_llm = expose_to_llm and 依赖齐备):
+        #   缺库工具不进 LLM 工具列表, 免得 LLM 试调一次才知不可用、白耗一轮。
+        if not meta.visible_to_llm:
             continue
         if categories is not None and meta.category not in categories:
             if name not in tool_names_set:
@@ -95,7 +100,9 @@ def generate_param_reminder(
     header = "Parameter Reminder (auto-generated from Pydantic):" if style == "text" else "Available Functions (auto-generated):"
     lines = [header, ""]
     for name, meta in sorted(registry._tools.items(), key=lambda x: x[0]):
-        if not meta.expose_to_llm:
+        # 2026-10-19 小欧 - 与 to_openai_tools 同读 visible_to_llm: 缺库工具不进函数签名清单,
+        #   免得提示文本列了签名而实际调不通, 两处口径不一致会让 LLM 按清单硬调。
+        if not meta.visible_to_llm:
             continue
         if category and meta.category != category:
             continue

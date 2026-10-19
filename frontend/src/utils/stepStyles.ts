@@ -62,6 +62,7 @@ export type StepType =
   | 'paused'
   | 'resumed'
   | 'retrying'
+  | 'installing' // 2026-10-19 小欧: 缺库自愈装包中, 与 retrying 同归 meta 进行态
   | 'observation'
   | 'action'
   | 'chunk'
@@ -251,6 +252,7 @@ const stepMeta: Record<StepType, StepMeta> = {
   paused: { label: '⏸️ 暂停', priority: 'secondary', layout: 'inline' },
   resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
   retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
+  installing: { label: '📦 安装依赖', priority: 'secondary', layout: 'inline' },
   observation: {
     label: '📋 观察',
     priority: 'secondary',

@@ -52,6 +52,7 @@ export interface ExecutionStep {
     | 'paused'
     | 'resumed'
     | 'retrying'
+    | 'installing' // 2026-10-19 小欧: 缺库自愈正在装依赖(后端 MetaStep type=installing), 与 retrying 同为进行态 meta
     | 'rejected'
     | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
     | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 驱动

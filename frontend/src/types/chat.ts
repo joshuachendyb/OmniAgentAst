@@ -139,7 +139,7 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue = 'paused' | 'resumed' | 'retrying';
+export type StatusValue = 'paused' | 'resumed' | 'retrying' | 'installing';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
@@ -147,7 +147,7 @@ export type StatusValue = 'paused' | 'resumed' | 'retrying';
  * 【北京老陈 2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
 export interface StatusMessage {
-  type: 'paused' | 'retrying' | 'resumed';
+  type: 'paused' | 'retrying' | 'resumed' | 'installing';
   message: string;
   timestamp: string; // 必填，时间戳
   confirm_id?: string; // 仅 paused(HITL) 时可选
@@ -219,7 +219,8 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
   return (
-    msg.type === 'paused' || msg.type === 'retrying' || msg.type === 'resumed'
+    msg.type === 'paused' || msg.type === 'retrying' || msg.type === 'resumed' ||
+    msg.type === 'installing'
   );
 }
 

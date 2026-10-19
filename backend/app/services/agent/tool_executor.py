@@ -13,8 +13,13 @@ tool_executor — 工具执行逻辑
 #   两调用方(action_handler/tool_facade)显式传入同一引擎对象, 行为不变, 无退化; searchtool 自动注入仍走 agent 内部状态(领域正确)
 # 2026-08-23 小欧 落盘文件A/B 实施(文档落码): execute_tool 加 on_attempt_recorded 形参并
 #   双分支透传(parallel→try_once / 顺序→execute_tool_with_retry)——补透传链缺跳, 缺此 kwargs 调用必 TypeError
+# 2026-10-19 小欧 缺库守卫: 注册期不可用的工具不回 retry_engine(免缺库被当瞬态失败反复重试),
+#   改走一次运行期惰性自愈; 自愈的 pip 是同步阻塞 IO, 经 to_thread 卸载, 并加冷却窗防每次调用都起 pip。
+# 2026-10-19 小欧 装包进度播报: pip 动辄数十秒, 期间 SSE 无帧则用户只见转圈、与卡死无异。装包经 to_thread
+#   后事件循环空出, 才能在装前发一条 MetaStep(type=installing) 到前端任务信息条(文案只报在装哪些包)。
+import asyncio
 import time
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from app.tools.tool_types import ToolCategory
 from app.tools.tool_response import is_success
@@ -22,6 +27,12 @@ from app.logger import logger
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
 from app.safety.default_hooks import DefaultToolSecurityHooks  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
 from app.tools.context import set_current_hooks, reset_current_hooks  # A1: ContextVar 注入 — 小欧 2026-08-12
+
+#: 缺库自愈冷却窗(秒): 装不上时窗内不再重复起 pip, 直接回缺库契约。
+#: 取值权衡: pip 冷启动+下载常需数十秒, 窗太小则每次工具调用都拖一次 pip 阻塞。
+_HEAL_COOLDOWN_SEC = 300.0
+#: 各工具上次自愈尝试的时刻(模块级, 进程生命周期内有效)。
+_last_heal_attempt: Dict[str, float] = {}
 
 
 async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
@@ -54,6 +65,13 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     """
     
     start = time.time()
+    # 2026-10-19 小欧 - 缺库守卫: 注册期已知不可用的工具不真调, 直接回统一缺库契约。
+    #   放 retry_engine 之前, 免得缺库错误被重试引擎当成瞬态失败反复重试、白耗时长。
+    _missing = await _missing_dep_guard(agent, tool_name)
+    if _missing is not None:
+        _log_single_tool(tool_name, tool_params, time.time() - start, "fail")
+        return _missing
+
     # A1(4.1.7 定案): 注入安全 hooks 到 ContextVar — 并行/顺序两分支统一覆盖。
     #   getattr 通道: 子类可在 agent 上挂 _security_hooks 自定义实现(OCP), 缺省用 DefaultToolSecurityHooks。
     _hooks = getattr(agent, "_security_hooks", None) or DefaultToolSecurityHooks()
@@ -80,6 +98,81 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     if tool_name == "searchtool":
         auto_inject_from_search(agent, result)
     return result
+
+
+async def _emit_installing(agent, pkgs: List[str]) -> None:
+    """装包前播一条 MetaStep(installing) 给前端 —— 小欧 2026-10-19
+
+    pip 装包常需数十秒, 期间 SSE 无任何帧, 用户只看到转圈, 与"卡死"无法区分。
+    装包已 to_thread 卸载, 事件循环空着, 这条消息才发得出去 —— 二者是同一处改动的两面。
+
+    文案只报"在装哪些包": 装的是什么、为何缺、成功与否都不在此说 ——
+    前者属业务上下文(前端提示条已带工具名), 后者随缺库错误体走 observation。
+    """
+    if not pkgs:
+        return
+    try:
+        from app.services.agent.steps import MetaStep
+        from app.services.task.task_state import get_stream_buffer
+        step = agent._step_emitter.emit(MetaStep(
+            step=len(agent.steps), type="installing",
+            content=f"正在安装依赖 {', '.join(pkgs)}"))
+        await get_stream_buffer(agent.task_id).publish(step.to_dict())
+    except Exception as e:        # 播报失败不得影响工具执行本身
+        logger.warning(f"[tool_executor] installing 事件播报失败: {e}")
+
+
+async def _missing_dep_guard(agent, tool_name: str) -> Optional[Dict[str, Any]]:
+    """缺库守卫: 返回错误体表示拦下了, 返回 None 表示可正常执行 — 小欧 2026-10-19
+
+    先给一次惰性自愈机会(运行期装齐即原地恢复), 覆盖启动期批量装失败(离线/镜像不可达/打包版)。
+
+    两处必须守住, 否则守卫本身变成故障源:
+    1. 装包是同步 subprocess(pip 动辄数秒), 直接调会卡死事件循环, 故 to_thread 卸载;
+       工作线程只装包不碰元数据, 元数据一律在本协程写(见 registry 两方法拆分说明);
+    2. 装不上时每次调用都重试 = 每次都起一个 pip, 故加冷却窗, 窗内直接回契约不再试装。
+    """
+    from app.tools.registry import tool_registry
+    from app.tools.tool_response import build_missing_dep_error
+
+    meta = tool_registry.get_tool(tool_name)
+    if meta is None or meta.available:
+        return None
+
+    now = time.time()
+    if now - _last_heal_attempt.get(tool_name, 0.0) < _HEAL_COOLDOWN_SEC:
+        return build_missing_dep_error(tool_name, meta.missing_deps)
+
+    _last_heal_attempt[tool_name] = now
+    _pending = registry_pending_deps(tool_name)
+    if _pending:
+        await _emit_installing(agent, _pending)
+    # pip 是同步阻塞 IO, 必须离开事件循环线程
+    still = await asyncio.to_thread(tool_registry.heal_missing_deps, tool_name)
+    if tool_registry.apply_heal_result(tool_name, still):
+        return None
+    return build_missing_dep_error(tool_name, still)
+
+
+def registry_pending_deps(tool_name: str) -> List[str]:
+    """该工具当前缺失、且不在锁定包内的依赖名(供 installing 播报用)
+
+    锁定包不进播报文案: 那类不自行安装(见 tool_response.build_missing_dep_error),
+    报了"正在安装"却并没有安装动作, 属不实播报。
+    """
+    from app.tools.registry import tool_registry
+    from app.utils.dependency import LOCKED_PACKAGES, normalize_dep, dependency_status
+    meta = tool_registry.get_tool(tool_name)
+    if meta is None:
+        return []
+    out = []
+    for dep in (meta.dependencies or []):
+        imp, pkg, ver, _pre = normalize_dep(dep)
+        if not imp or pkg in LOCKED_PACKAGES:
+            continue
+        if not dependency_status(imp, pkg, ver):
+            out.append(pkg)
+    return sorted(dict.fromkeys(out))
 
 
 def _log_single_tool(tool_name: str, params: Dict[str, Any], elapsed: float, status: str) -> None:

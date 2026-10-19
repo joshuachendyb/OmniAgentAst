@@ -1,8 +1,7 @@
 
 # -*- coding: utf-8 -*-
-# 2026-10-19 - 小欧 - SENSITIVE_FIELDS 改为派生自全局权威 SENSITIVE_PARAM_KEYS(secret_utils),
-#   消除"敏感键集合"两处维护漂移; HITL 仍需丢弃非定位类敏感键, 故此处排除 connection_string
-#   (connection_string 由 redact_sensitive_params 遮蔽为 ***, 保留"连的是哪个库"的可见性)。
+# 2026-10-19 - 小欧 - 敏感键集合单一真相源移至全局层 secret_utils.SENSITIVE_PARAM_KEYS,
+#   本文件不再另持派生集合; 各出口统一调用 redact_sensitive_params 遮蔽(值→"***")。
 # 编辑历史:
 # 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
 # 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃
@@ -63,6 +62,8 @@
 # 2026-10-16 - 小欧 - tool去检查化覆盖审计: PATH_PARAM_KEYS 补 search_dir/data(实测原合法性初查/安全总闸 全漏)。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 自 safety/dual_path_check 上移, 与 DUAL_PATH_TOOLS 同层(同属"工具×参数×动作"声明, 消除跨层分居与 tool_constants 注释里的散文重复); dual_path_check/path_precheck 改从此导入。
 # 2026-10-18 - 小欧 - 北京老陈(归类错误修复): generate_chart 自 WRITE_PATH_TOOLS 移入 DUAL_PATH_TOOLS, DUAL_ACTION_PARAMS 补 {"data":"read","dest":"write"}。理由: generate_chart 一调用带 data(数据源)+dest(出图)两路径, 属双动作, 误归 write 致 data(内联JSON串)被写线当路径送审误弹授权; 单线只应承载单路径。WRITE_PATH_TOOLS 10→9, DUAL_PATH_TOOLS 5→6。
+# 2026-10-19 - 小欧 - 新增 ERR_MISSING_DEPENDENCY: 与"工具未注册/参数非法"区分, LLM 据此判断该装库还是换工具。
+#   本文件只放常量, 构造函数 build_missing_dep_error 住 tool_response.py 与 build_error/build_warning 同居。
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -89,7 +90,6 @@
 
 from typing import Dict
 from app.tools.tool_types import ToolCategory  # 2026-10-02 小欧 - TOOL_CATEGORY_OVERRIDE 用(无循环)
-from app.utils.secret_utils import SENSITIVE_PARAM_KEYS as _SENSITIVE_PARAM_KEYS  # 单向依赖 tools→utils — 小欧 2026-10-19
 
 # ============================================================
 # 🕐 1. 工具级保险丝超时（TOOL_TIMEOUTS）— 【工具层】
@@ -431,9 +431,6 @@ SELF_REF_THRESHOLD_NORMAL: float = 0.6       # 【tool 级】使用对象: conte
 SELF_REF_THRESHOLD_SHORT: float = 0.4         # 【tool 级】使用对象: content_quality 自检词比例阈值(短文本)
 SHORT_CONTENT_LENGTH: int = 50                 # 【tool 级】使用对象: content_quality 短文本判定长度
 
-# 【tool 级】使用对象: HITL 确认参数摘要的丢弃集合(派生自全局权威, 见文件头 2026-10-19 说明)
-SENSITIVE_FIELDS: set[str] = {k for k in _SENSITIVE_PARAM_KEYS if k != "connection_string"}
-
 # ============================================================
 # 🕐 10. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移) — 【工具层】
 # ============================================================
@@ -486,6 +483,11 @@ ERR_TOOL_NOT_FOUND = "ERR_TOOL_NOT_FOUND"
 ERR_MISSING_PARAM = "ERR_MISSING_PARAM"
 ERR_INVALID_PARAMS = "ERR_INVALID_PARAMS"
 ERR_UNKNOWN = "ERR_UNKNOWN"
+
+# 2026-10-19 - 小欧 - 缺库错误码 ERR_MISSING_DEPENDENCY: 与"工具未注册/参数非法"区分开,
+#   LLM 据此判断该装库还是换工具。只留错误码(常量归本文件), 构造函数 build_missing_dep_error
+#   住 tool_response.py 与 build_error/build_warning 同居 —— 本文件只放常量, 不放逻辑函数。
+ERR_MISSING_DEPENDENCY = "ERR_MISSING_DEPENDENCY"
 
 # ============================================================
 # 🕐 12. 系统敏感路径黑名单常量 — Safety层(path_classify_category.classify_forbidden_path)消费

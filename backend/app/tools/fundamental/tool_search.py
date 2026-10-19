@@ -20,6 +20,9 @@
 # 2026-10-14 小欧 - BM25索引补中文分类名(name_cn): 2026-10-02只加了category.value(英文),
 #   中文分类名从未进索引。实测搜"桌面"对DESKTOP类11工具零召回(且最高分是已加载的notify,
 #   搜完等于没搜、LLM却以为搜到了); 补name_cn后9个分类中文名全部可召回, 既有关键词无退化。
+# 2026-10-19 小欧 缺库工具不入 BM25 索引: 入索引则会被搜中并注入其分类, 而渲染时又被 visible_to_llm
+#   滤掉, 结果是"搜到1个却注入0类"的误导(与上面 searchtool 自身不入索引是同一个坑)。
+#   不可用的工具既不该被搜到, 也不该被承诺。
 """
 searchtool — BM25 全文检索搜索工具
 【2026-06-22 小健】从 fundamental_tools.py 拆分为独立文件
@@ -96,6 +99,11 @@ def _build_bm25() -> Tuple[List[List[str]], List[str], float, Counter]:
         # (实测"进程"等禁用词因出现在本工具描述里而命中自己, 反而把"零命中"变成"匹配1个但注入0类",
         #  正是本机制要根治的误导)。searchtool 首轮恒在, 无需搜自己 - 小欧 2026-10-14
         if name == "searchtool":
+            continue
+        # 2026-10-19 小欧 - 缺库工具不入索引: 入索引则会被搜中并注入其分类, 而渲染时
+        # 又被 visible_to_llm 滤掉, 结果是"搜到1个却注入0类"的误导(与上面 searchtool
+        # 自身那类是同一个坑)。不可用的工具既不该被搜到, 也不该被承诺。
+        if not metadata.visible_to_llm:
             continue
         text = (
             " ".join([name] * 3)

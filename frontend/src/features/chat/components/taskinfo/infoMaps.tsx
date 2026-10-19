@@ -99,6 +99,8 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   paused: <PauseCircleOutlined />, // 现状 ⏸️ → SVG
   resumed: <PlayCircleOutlined />, // 现状 ▶️ → SVG
   retrying: <ReloadOutlined />, // 现状 🔁 → SVG
+  // 2026-10-19 小欧: 装依赖中(缺库自愈), 与 retrying 同为进行态 — 复用旋转图标不新增图形
+  installing: <SyncOutlined spin />,
   error: <WarningOutlined />, // 2026-09-17 小欧: 错误事件 - 小欧-2026-09-17
   rejected: <StopOutlined />, // 2026-09-17 小欧: 拒绝事件 - 小欧-2026-09-17
   cancelled: <CloseCircleOutlined />, // 2026-09-17 小欧: 取消事件 - 小欧-2026-09-17

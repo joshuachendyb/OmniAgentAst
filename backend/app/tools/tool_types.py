@@ -4,6 +4,10 @@
 # 2026-10-02 - 小欧 - 删 SHELL 枚举(which 归 SYSTEM 后该分类归零; 空分类会写入 searchtool 描述误导 LLM); order 留空位号2不动, 避免 patch_search_desc 排序变化 — 小欧-2026-10-02
 # 2026-10-15 - 小欧 - 跟随订正: action_kind 注释"dual"去 edit(单路径改走写线)、删"none"档(通道 A 零命中即放行); 表名 TOOL_ACTION_KINDS→PATH_ACTION_KINDS。
 # 2026-10-18 - 小欧 - SafetyResult 契约迁出: 生产者已全部落 app/safety/, 契约随生产者回迁系统层 app/safety/safety_result.py(本模块不再定义/转出); 禁 backward 双份契约。
+# 2026-10-19 - 小欧 - ToolMetadata 增 available/missing_deps: 注册期依赖检查的结论落元数据(原先只打warning后丢弃,
+#   不可用工具照样进 LLM 工具列表, LLM 试调才知缺库)。缺库工具仍注册但对 LLM 不可见。
+# 2026-10-19 - 小欧 - 新增 visible_to_llm 属性: "该不该给 LLM 看"的唯一判据(= expose_to_llm and available),
+#   原先各消费方各写双判断, 新增维度需同步改多处, 漏一处即口径分裂。
 """
 工具类型定义 — 单一定义源(OCP:新增分类只需在此文件添加)
 - ToolCategory 枚举
@@ -95,6 +99,23 @@ class ToolMetadata:
 
     # 【2026-06-18 小健】工具依赖管理
     dependencies: List[Union[str, Dict[str, Any]]] = field(default_factory=list)
+
+    #: 依赖是否齐备: 注册期 _check_dependencies 的结论(原先算完即丢)。
+    #: False=缺库, 工具仍注册(保留历史/提示能力)但对 LLM 不可见(to_openai_tools 过滤),
+    #: 直调时返回统一缺库契约, 免得 LLM 试调一次才知不可用、白耗一轮。
+    available: bool = True
+    #: 缺失的依赖描述(pip 规格串), 供缺库提示指名该装什么。
+    missing_deps: List[str] = field(default_factory=list)
+
+    @property
+    def visible_to_llm(self) -> bool:
+        """是否给 LLM 看 —— 「该不该暴露」的唯一判定点 — 小欧 2026-10-19
+
+        此前 tool_description 两处各写 `expose_to_llm and available` 双判断, 新增维度就得
+        同步改多处, 漏一处即口径分裂(清单列了签名而实际调不通)。收口为本属性后,
+        各消费方只读这一个判据, 加维度只改这一处。
+        """
+        return self.expose_to_llm and self.available
 
     # 【2026-08-18 小健】主参数(操作对象字段名): target展示自动推导的显式声明扩展点;
     # 留空则由action_handler._TARGET_PARAM_PRIORITY按input_schema.properties自动推导(DRY/OCP)
