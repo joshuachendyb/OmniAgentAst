@@ -49,6 +49,11 @@
 # 2026-10-08 小欧 摘要前降本(开关 tuning.compaction.summary_prune_tool_output): 保尾区 tool 原样、只清零更早的,
 #   编排为 preserve_recent_budget/find_tail_start(split_turn) 算边界 + prune_tool_output_keeping_tail(prune) 执行,
 #   本模块零算法; 逐条浅拷贝隔离防清零原地改污染 _injected_history_msgs(摘要失败时零退化要用)。 — 小欧-2026-10-08
+# 2026-10-19 小欧 摘要进度播报: 摘要 await LLM 动辄数十秒(本文件头注释自记 30~60s), 期间 SSE 无任何帧,
+#   用户只见转圈、与卡死无异; 且发生在 start 阶段(用户刚发出消息, 期待最强), 此处静默比装包更让人不安。
+#   新增 _emit_summarizing, 在两条 LLM 路径(增量 generate_chunked_summary / 全量 generate_anchored_summary)
+#   调 LLM 前各播一条 MetaStep(type=summarizing), 与 tool_executor 的 installing 同构。文案带 scope 与条数,
+#   区分两条路径并让用户判断耗时量级; 只报事实不承诺成败(成败由随后的 history_context 帧交代)。
 # 2026-10-08 小欧 北京老陈裁定"不能误导用户" — set_injected_context 增传 last_user_text: 遥测原从 conversation_history
 #   末条取 summary, 首帧时那正是用户刚发的本轮提问, 标签"最近"等于把自己的提问回显一遍(实测四条帧全是用户原话);
 #   改由注入源取最近一条历史提问, 语义才成立。 — 小欧-2026-10-08

@@ -96,6 +96,7 @@ export interface ProcessEvent {
     | 'resumed'
     | 'retrying'
     | 'installing' // 2026-10-19 小欧: 缺库自愈正在装依赖
+    | 'summarizing' // 2026-10-19 小欧: start 阶段正在生成历史摘要
     | 'error'
     | 'rejected'
     | 'cancelled'
@@ -279,6 +280,15 @@ export const useTaskInfo = (
           processEvents.push({
             kind: 'installing',
             text: s.content || '正在安装依赖',
+            time: s.timestamp,
+          });
+          break;
+        case 'summarizing':
+          // 2026-10-19 小欧: 摘要生成中, 同 installing 只进事件列表。成败由随后的
+          // history_context 帧交代(生成成功才有该帧), 本条不预告结果。
+          processEvents.push({
+            kind: 'summarizing',
+            text: s.content || '正在生成历史摘要',
             time: s.timestamp,
           });
           break;
