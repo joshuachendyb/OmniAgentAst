@@ -127,6 +127,8 @@
 # 2026-10-14 小欧 - 文档[33] 4.3: :149/:150 trust_db 改从 app.safety.trust_db 导入
 # 2026-10-19 - 小欧 - append_execution_step 落库前经 redact_step_params 脱敏 step 参数敏感键(取副本不改原对象);
 #   落盘出口遮蔽, SSE/HITL 展示仍原文 —— 小欧-2026-10-19
+# 2026-10-20 - 小欧 - _warn_oversize_step_dict 列表超大告警 error→warning(与同函数字符串支对称;
+#   listdir 自 2026-07-20 起有意全量返回(Tool层不截断, Format层缩展示), >1000 项必触发 error 污染 E2E 日志判定) —— 小欧-2026-10-20
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -276,13 +278,13 @@ _ALARM_STEP_STR_LEN: int = 100000
 # 2026-10-05 - 小欧 - ③b: 新增 next_message_id(发号自 id_sequence); user/assistant 两侧 id 收口同一序列;
 #   AssistantMessageIdAllocator 整类退役(连同 _assistant_ids 缓存/threading.Lock/10次探测/always_new/_allocator 单例)
 def _warn_oversize_step_dict(step_dict, tag: str = "") -> None:
-    """递归统计超限(列表>1000项/字符串>10万字符)仅 error 告警 — 安全网不砍数据 — 小欧 2026-08-23"""
+    """递归统计超限(列表>1000项/字符串>10万字符)打 warning 告警(列表支原为 error, 与字符串支对称化;条目多属性能告警非错误) — 安全网不砍数据 — 小欧 2026-08-23, 小欧 2026-10-20"""
     if isinstance(step_dict, dict):
         for k, v in step_dict.items():
             _warn_oversize_step_dict(v, f"{tag}{k}.")
     elif isinstance(step_dict, list):
         if len(step_dict) > _ALARM_STEP_ITEMS:
-            logger.error(f"[storage]{tag}列表超大({len(step_dict)}项>告警线{_ALARM_STEP_ITEMS}), 请核查工具层自截断")
+            logger.warning(f"[storage]{tag}列表超大({len(step_dict)}项>告警线{_ALARM_STEP_ITEMS}), 请核查工具层自截断")
         for i, item in enumerate(step_dict):
             _warn_oversize_step_dict(item, f"{tag}[{i}].")
     elif isinstance(step_dict, str):

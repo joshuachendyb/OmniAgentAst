@@ -14,6 +14,8 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 解压文件→解压
 # 2026-10-16 - 小欧 - tool去检查化: 删源/目标合法性检查(归 路径安全层), 工具只执行。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(源 EXISTS / 目标 WRITE)
+# 2026-10-20 小欧 - 目标检查误拦修复: dest 缺省(默认解压到源同名目录)时 10-17 的目标检查收 raw None 必判空;
+#   改先 _resolve_output_dir 解析真实 out_dir 再查(纯推导无 I/O, 格式判断先于 makedirs 的次序不变)。
 """
 F9: extract_archive — 解压文件
 
@@ -206,7 +208,9 @@ async def extract(
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, hint="请检查源路径", user_destination=destination, user_overwrite=overwrite)
         return build_error(data={}, llm_data=llm_data)
-    ok, err = check_path_four_level(destination, OpCategory.WRITE)
+    # 2026-10-20 小欧 - dest 缺省时原样传 None 必判空误拦; 先解析真实 out_dir 再查(纯推导无 I/O, makedirs 次序不变)
+    out_dir = _resolve_output_dir(source, destination)
+    ok, err = check_path_four_level(out_dir, OpCategory.WRITE)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=err, hint="请检查解压目标路径", user_destination=destination, user_overwrite=overwrite)
@@ -225,7 +229,6 @@ async def extract(
             llm_data = _build_extract_archive_llm_data("error", duration_ms, source, detail=f"不支持的压缩格式：{source}", user_destination=destination, user_overwrite=overwrite)
             return build_error(data={}, llm_data=llm_data)
 
-        out_dir = _resolve_output_dir(source, destination)
         os.makedirs(out_dir, exist_ok=True)
 
         if lower_path.endswith('.zip'):

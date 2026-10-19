@@ -82,6 +82,9 @@
 #   logger.info(硬拦仍留 log_and_print —— 那是用户该看见的终端事件; 确认路径属高频, 控制台刷屏)。
 # 2026-10-18 小欧 - 注释订正: check_before_execute 头注的开关表述改为覆盖三处确认产地
 #   (原文只说"普通 needs_confirmation", 会让人以为中风险命令不归开关管, 与实际不符)。
+# 2026-10-19 小欧 - bash 分支回退硬 return False: 10-18 改为 return tool_meta.needs_confirmation
+#   (恒True)致全量 bash 命令 needs_confirm=True; 确认标签产地在 confirm_level_for, 不依赖本分支,
+#   该改动依据不成立, 回退。confirm_fn 返 None 不再短路 needs_confirmation, 留文案后交后续分档分支。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -344,28 +347,24 @@ class PathToolSafetyChecker:
         if normalize_tool_name(tool_meta.name or "") == "execute_sql" \
                 and _is_readonly_sql((params or {}).get("sql", "")):
             return False, ""  # 2026-10-18 小欧: 纯读免确认; 非只读交工具层 confirm_fn 逐条判定
+        _why_text = ""
         if getattr(tool_meta, "confirm_fn", None):
             # 2026-10-18 小欧 - 工具级确认回调: 只调不判, 异常按需确认收(fail-closed)
             # 契约: 返回 (bool|None, str) = 要否确认 + 弹窗文案
             #   bool = 回调自行判定(execute_sql 按 SQL 逐条判)
-            #   None = 判定沿用 needs_confirmation, 回调只供文案(bash 即此档)
+            #   None = 回调不表态, 只供文案, 判定交后续分档分支(bash 即此档) — 2026-10-19 小欧改判据
             try:
                 _ok, _why = tool_meta.confirm_fn(params or {})
             except Exception as exc:
                 logger.warning(f"[PathToolSafetyChecker] confirm_fn 异常, 按需确认收: "
                                f"tool={tool_meta.name}, {exc!r}")
                 return True, ""
-            _decided = tool_meta.needs_confirmation if _ok is None else bool(_ok)
-            return _decided, (str(_why or ""))
+            if _ok is not None:
+                return bool(_ok), (str(_why or ""))
+            _why_text = str(_why or "")
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
-            # 2026-10-18 小欧 - 解除硬返回 False: 危险/中风险/路径权限已在 check_before_execute
-            #   主链先行判定(自杀 → 危险命令 → 中风险 → 路径三线), 走到这里说明都放行。
-            #   原「return False」的理由是"无风险 shell 会弹**空 content 窗**"——当时没有分类标签
-            #   与原因文案, 弹出来确为空框; 现标签(按命令内实际读/写/删动作派生)与文案均已就位,
-            #   该前提消失, 继续硬返回会使 shell_*_confirm 四个标签永无产地(前端已配却永不出现)。
-            #   免确认的唯一出口是只读白名单(safety_gate 的 _readonly 短路, 白名单已接入配置面
-            #   可见可改) —— 嫌弹窗多可在设置页「安全」组删前缀, 不必改代码发版。
-            return tool_meta.needs_confirmation, ""
+            # 2026-10-19 小欧 - 恢复硬 return False: 危险/中风险/路径动作由主链三线判定, 标签由 confirm_level_for 产出
+            return False, _why_text
         if tool_meta.action_confirmation and params.get("action"):
             return tool_meta.action_confirmation.get(
                 params["action"], tool_meta.needs_confirmation), ""

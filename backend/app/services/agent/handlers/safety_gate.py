@@ -51,6 +51,8 @@
 # 2026-10-19 小欧 - 超时拒绝反馈修复: _denied 原记 f"未获授权({_tp})" 引用了作用域内未定义的 _tp(超时分支触发即 NameError),
 #   改记本分支已构造的 _reason, 与 rejected 事件 content 同源(auth_path 非空述路径, 否则述待确认操作摘要),
 #   LLM 历史反馈与实际拒绝原因一致 - 小欧-2026-10-19
+# 2026-10-20 小欧 - 拒绝记忆信任让位恢复: 10-17 删 _rej_cache 死 pop 时把信任分支的清记忆一并删了,
+#   信任后同组拒绝记忆仍存续(信任一旦过期即吃旧拒死弹不出); _skip 分支按 refusal_key 同键 pop 恢复让位语义。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -251,6 +253,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                 # 确认 — 信任预查移入本层(与"是否免确认"同层, SRP)。
                 _skip = await resolve_skip(agent.task_id, _cn, _cp)
                 if _skip:
+                    # 信任让位: 清同组拒绝记忆, 信任后不吃旧拒 — 小欧 2026-10-20
+                    _rej_cache = _rejection_cache_of(agent)
+                    _rej_cache.pop(refusal_key(_cn, _cp, safety_result), None)
                     # 会话信任豁免: 免弹窗, 仍 grant auth_path 收口授权, 直通沙箱(trusted=True)
                     if getattr(safety_result, "auth_path", None):
                         try:

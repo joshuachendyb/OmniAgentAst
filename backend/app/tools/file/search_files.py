@@ -9,6 +9,7 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-12 小欧 - tool_zh改短名词: 搜索文件→搜文件
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-20 小欧 - find 搜索根类型校验: EXISTS→LIST_DIR(must_be=dir), 文件当搜索根原空匹配误报成功, 现报"不是目录"
 
 import asyncio
 import fnmatch
@@ -131,8 +132,9 @@ async def find(
     # 路径参数统一为path,桥接到内部变量search_dir — 小欧 2026-07-11
     search_dir = path
     t0 = _time_mod.perf_counter()
-    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(读类用 EXISTS: 须存在)
-    ok, err = check_path_four_level(search_dir, OpCategory.EXISTS)
+    # 2026-10-17 小欧 - 路径检查走 check_path_four_level 四级合法性总入口(初版读类用 EXISTS)
+    # 2026-10-20 小欧 - 搜索根须为目录: EXISTS 只验存在不验类型, 指向文件时空匹配误报成功; 改 LIST_DIR(must_be=dir)
+    ok, err = check_path_four_level(search_dir, OpCategory.LIST_DIR)
     if not ok:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_search_files_llm_data("error", duration_ms, search_dir=search_dir, detail=err, hint="请检查搜索路径", user_pattern=pattern, user_ignore_case=ignore_case, user_type=type, user_offset=offset)
