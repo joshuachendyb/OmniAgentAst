@@ -9,9 +9,9 @@ import type { Page } from '@playwright/test';
 
 export class ChatPage {
   readonly input = this.page.getByPlaceholder('输入消息，Shift+Enter 换行');
-  readonly sendBtn = this.page.locator(
-    'button.ant-btn-primary:has-text("发送")'
-  );
+  // 编辑历史: 2026-10-20 小欧 - sendBtn 改 role 定位: 发送按钮图标化(去文字)后 :has-text("发送") 恒不匹配,
+  //   改 getByRole + aria-label(与 stopBtn 同款写法); 停止/暂停亦为纯图标按钮, name 均取自 aria-label — 小欧-2026-10-20
+  readonly sendBtn = this.page.getByRole('button', { name: '发送' });
   readonly stopBtn = this.page.getByRole('button', { name: '停止' });
   readonly greenDot = this.page.locator(
     'span.waiting-cursor[aria-label="等待下一个思考内容"]'

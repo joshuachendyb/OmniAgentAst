@@ -23,6 +23,9 @@
 // 编辑历史: 2026-10-13 18:15 小欧 - 文档[30] §2.5 B+C: ①输入框不再 disabled(把提交权限误当编辑权限, 执行中打不了字翻不了历史)
 //   ②C 常驻灰字显隐改用 sendBlocked(与按钮置灰同源, 原用 isReceiving&&!allowInterject 会漏 loading 窗口)
 //   ③提交门被拦不再静默; 实测"弹 toast"反而致执行中无法换行, 改为不可发送时回车照常换行(见 18:40)
+// 编辑历史: 2026-10-20 小欧 - 动作按钮组移入框内右下角(北京老陈指令): 新增 SubmitActions 经 InputCore actions
+//   插槽挂载(发送/停止/暂停三钮方形图标化), SubmitBar 只留左侧控件; 新增 emptyDraft 置灰判据
+//   (与 handleSendInternal 的 !content 同源) 并入发送钮受阻态 — 小欧-2026-10-20
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -41,6 +44,7 @@ import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
+import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 框内右下角动作按钮组(自 SubmitBar 拆出)
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 文档[16] §3.6.6 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
@@ -114,6 +118,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源(2026-10-13 18:15 起只管"提交", 不再兼管输入框禁用)
   const sendBlocked = isSendBlocked(loading, isReceiving, allowInterject);
+  // 2026-10-20 小欧 - 空草稿置灰判据, 与 handleSendInternal 的 !content 同判据(单空格也算空, 两处 trim 同步)
+  const emptyDraft = draft.trim() === '';
 
   // 2026-10-13 14:20 小欧 - 焦点归还: 实测"点发送 → 按↑ 翻不出历史"病根是焦点停在按钮上,
   //   ↑↓ 事件到不了 textarea。两处触发: ①提交成功立即自增; ②输入框由"发送受阻"转"可发送"
@@ -288,6 +294,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
          *   连打字/翻历史/存草稿都做不到。执行中不可发是**提交**问题, 由发送按钮置灰(B)与
          *   常驻提示(C)表达, 不该由禁用来表达。
          */
+        actions={
+          // 2026-10-20 小欧 - 框内右下角动作按钮组: 两受阻判据均与提交门/提交处理同源, 见 SubmitActions 头注
+          <SubmitActions
+            loading={loading}
+            isReceiving={isReceiving}
+            isPaused={isPaused}
+            sendBlocked={sendBlocked}
+            emptyDraft={emptyDraft}
+            onSend={handleSendInternal}
+            onCancel={onCancel}
+            onTogglePause={onTogglePause}
+          />
+        }
       />
       {/*
         2026-10-13 18:40 小欧 - 文档[30] §2.5 C: 「不可发送」的常驻说明。
@@ -310,9 +329,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       )}
       <SubmitBar
-        loading={loading}
-        isReceiving={isReceiving}
-        isPaused={isPaused}
         modelPickerSlot={modelPickerSlot ?? null}
         leftExtra={
           <Space
@@ -349,10 +365,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // 无会话时不传 onOpenWorkspaces → SubmitBar 不渲染入口（GET 空 id 必 422，不如不显示）
         workspaceCount={sessionWorkspaces.length}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
-        sendBlocked={sendBlocked} // 2026-10-13 18:15 小欧 - 文档[30] §2.5 B: 与提交门同源, 保证按钮态与实际可发能力一致
-        onSend={handleSendInternal}
-        onCancel={onCancel}
-        onTogglePause={onTogglePause}
       />
       {/* 2026-10-10 小欧 - 文档[16] §3.6.6: 会话使用目录面板(决策70 入口在此打开) */}
       <SessionWorkspacePanel

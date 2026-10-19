@@ -42,6 +42,7 @@
  * @update 2026-08-22 小欧 - model结构化归一报告v1.25/v1.26 6.6 方案B(前端随后端修改): updateConfig 改传 ai_model_ref 结构; serviceStatus 的 provider/model 读取点(4处)改经 status.model_ref 派生
  */
 // 编辑历史: 2026-08-28 老杨 - 引用比较改为深比较关键字段valid/status，避免每次新对象即true
+// 编辑历史: 2026-10-20 小欧 - Content底部留白10→4px(北京老陈令): 压缩聊天页输入区下方红框留白(上层ChatPage已8→2, 本层为全站通用底距) — 小欧-2026-10-20
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -753,13 +754,13 @@ const AppLayout: React.FC<LayoutProps> = ({
           padding: "上 右 下 左"
           - 上：Card 与顶部标题栏的间距（当前值：6px）
           - 右：Card 与右侧边框的间距（当前值：6px）
-          - 下：Card 与底部边框的间距（当前值：10px）
+          - 下：Card 与底部边框的间距（当前值：4px）
           - 左：Card 与左侧菜单的间距（当前值：6px）
         */}
         <Content
           style={{
             margin: 0,
-            padding: '6px 6px 10px 6px',
+            padding: '6px 6px 4px 6px', // 2026-10-20 小欧 - 底10→4(北京老陈令: 红框留白压缩), 其余三边不变
             background: '#f8fafc',
             borderRadius: 12,
             minHeight: 0,

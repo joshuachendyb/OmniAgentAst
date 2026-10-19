@@ -47,6 +47,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.9 + 5.8.20: handleSendWithMode 改名 handleSend, 第二参由 mode
 //   改 linkEnabled: boolean; 新增 handleToggleLink 为纯本地态(setLinkEnabled, 不发请求) — 小欧 2026-10-03
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: 注入 onTasksChanged(ref 中转 refreshTasks, 插话并入后左栏「追加N条」才刷新)
+// 编辑历史: 2026-10-20 07:42:12 小欧 - 底部留白压缩(北京老陈令): 容器padding底8→2px, 与Layout Content底距(10→4)合计18→6px — 小欧-2026-10-20
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -274,7 +275,7 @@ const ChatPage: React.FC = () => {
         display: 'flex',
         flexDirection: 'column',
         minHeight: 0,
-        padding: '0 8px 8px',
+        padding: '0 8px 2px', // 2026-10-20 小欧 - 底 8→2(北京老陈指令: 控件行下留白压到 2px); 上下左右其余不变
         background: Colors.BG.PRIMARY,
         minWidth: 0,
         overflow: 'hidden',
