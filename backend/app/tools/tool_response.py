@@ -6,6 +6,8 @@
 #   文案不统一且只说没装不说怎么装, LLM 拿不到可执行动作)。文案分三级: 系统自动装失败→LLM 用 bash 自装
 #   →转管理员; 锁定依赖(httpx/httpcore)不给自装指示, 直指按锁定版本由管理员装; 收尾统一给"改用其他
 #   工具继续任务"的出路, ReAct loop 不停。错误码落 llm_data.status.code, 随全项目错误体约定。
+# 2026-10-19 - 小欧 - 修文案重复: 缺依赖信息为空时, 兜底分支与末尾追加各写了一遍
+#   "改用其他工具", 同一句出现两次。现兜底只说明"未取得具体缺失依赖信息", 出路统一由末尾追加一次。
 """
 统一工具返回结构定义 — 小健 2026-05-21
 
@@ -129,11 +131,13 @@ def build_missing_dep_error(tool_name: str, missing: Optional[List[str]] = None,
             hints.append(f"你可以用 bash 工具执行 `{cmd}` 安装后重试本工具")
         else:
             hints.append("当前为打包版, 无法在运行时安装依赖, 请转交管理员处理")
-    if not hints:                      # 无依赖信息(如 missing 传空)
+    if not hints:                      # 无依赖信息(如 missing 传空): 只说明情况, 不重复出路
+        hints.append("未取得具体缺失依赖信息(依赖声明可能为空或已变更)")
+    else:
+        # 收尾统一给"继续走"出路: 三级提示都是"下一步做什么", 不是终止信号, ReAct loop 照常进下一轮。
+        # 只在此处追加一次 —— 早前兜底分支里也写过一句, 导致同一句出现两遍。
         hints.append("请改用功能相近的其他工具继续完成本次任务")
-
-    # 收尾统一给"继续走"出路: 三级提示都是"下一步做什么", 不是终止信号, ReAct loop 照常进下一轮
-    hint = "; ".join(hints) + "。若仍无法使用, 请改用功能相近的其他工具继续完成本次任务。"
+    hint = "; ".join(hints) + "。"
     return build_error(
         data={},
         llm_data={

@@ -17,6 +17,9 @@ tool_executor — 工具执行逻辑
 #   改走一次运行期惰性自愈; 自愈的 pip 是同步阻塞 IO, 经 to_thread 卸载, 并加冷却窗防每次调用都起 pip。
 # 2026-10-19 小欧 装包进度播报: pip 动辄数十秒, 期间 SSE 无帧则用户只见转圈、与卡死无异。装包经 to_thread
 #   后事件循环空出, 才能在装前发一条 MetaStep(type=installing) 到前端任务信息条(文案只报在装哪些包)。
+# 2026-10-19 小欧 播报文案补工具名: 原为"正在安装依赖 html2text", 用户不知是哪个工具触发的。
+#   现为"正在为 <tool> 安装依赖 <pkgs>"(为哪个工具/装哪些包/进行中); 不带安装指令——
+#   该条给用户看, 用户不执行命令; 要执行的 LLM 走缺库错误体 hint, 那里才有完整指令。
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -100,14 +103,15 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     return result
 
 
-async def _emit_installing(agent, pkgs: List[str]) -> None:
+async def _emit_installing(agent, tool_name: str, pkgs: List[str]) -> None:
     """装包前播一条 MetaStep(installing) 给前端 —— 小欧 2026-10-19
 
     pip 装包常需数十秒, 期间 SSE 无任何帧, 用户只看到转圈, 与"卡死"无法区分。
     装包已 to_thread 卸载, 事件循环空着, 这条消息才发得出去 —— 二者是同一处改动的两面。
 
-    文案只报"在装哪些包": 装的是什么、为何缺、成功与否都不在此说 ——
-    前者属业务上下文(前端提示条已带工具名), 后者随缺库错误体走 observation。
+    文案三要素: 为哪个工具 / 装哪些包 / 进行中。只报事实不猜成败 —— 装不上随缺库错误体
+    走 observation, 此处若先说"正在安装"却最终没装上, 由那条负责交代。
+    不带安装指令: 这条是给用户看的, 用户不执行命令; 要执行的 LLM 走错误体 hint, 那里才有完整指令。
     """
     if not pkgs:
         return
@@ -116,7 +120,7 @@ async def _emit_installing(agent, pkgs: List[str]) -> None:
         from app.services.task.task_state import get_stream_buffer
         step = agent._step_emitter.emit(MetaStep(
             step=len(agent.steps), type="installing",
-            content=f"正在安装依赖 {', '.join(pkgs)}"))
+            content=f"正在为 {tool_name} 安装依赖 {', '.join(pkgs)}"))
         await get_stream_buffer(agent.task_id).publish(step.to_dict())
     except Exception as e:        # 播报失败不得影响工具执行本身
         logger.warning(f"[tool_executor] installing 事件播报失败: {e}")
@@ -146,7 +150,7 @@ async def _missing_dep_guard(agent, tool_name: str) -> Optional[Dict[str, Any]]:
     _last_heal_attempt[tool_name] = now
     _pending = registry_pending_deps(tool_name)
     if _pending:
-        await _emit_installing(agent, _pending)
+        await _emit_installing(agent, tool_name, _pending)
     # pip 是同步阻塞 IO, 必须离开事件循环线程
     still = await asyncio.to_thread(tool_registry.heal_missing_deps, tool_name)
     if tool_registry.apply_heal_result(tool_name, still):

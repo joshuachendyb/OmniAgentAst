@@ -18,6 +18,13 @@
   零 subprocess) 与 install_missing(唯一装包入口, 启动期与运行期自愈共用)。
   另新增 normalize_dep: 依赖声明 str/dict 两种写法归一，import 名与 pip 名不得混用
   （pip 名 python-docx 不可 import，import 名 docx 装不上，混用必判缺库）。
+【小欧 2026-10-19】边界修正 5 处（均由用例探测得出，每项三重复核）：
+  ① normalize_dep 回落 pip_package 仅当其可作模块名（isidentifier）——含 '-' 的 pip 名
+     回落必恒判缺库；② install_missing 补装 pre_install，原直接丢弃该字段（ensure_dependency
+     认它而本函数不认，同一份声明两条路两种行为）；③ install_batch 整批失败后逐个降级重试，
+     原先一个非法包名会让同批本来没问题的包一起失去安装机会；④ dependency_status 对非 "=="
+     版本约束显式告警不生效——声明了却从不校验比不声明更危险；⑤ 新增 _PIP_LOCK 全局串行，
+     pip 无跨进程锁，并发装包会同时写同一 site-packages（实测并发峰值曾达 3）。
 
 ===============================================================================
                          依赖管理系统使用指南
@@ -105,6 +112,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from typing import Dict, Iterable, List, Optional
 
 from app.logger import logger  # 小欧 2026-10-11: frozen 短路分支需记可操作提示日志
@@ -117,6 +125,9 @@ LOCKED_PACKAGES: Dict[str, str] = {
 }
 
 _CONSTRAINTS_PATH: Optional[str] = None
+#: pip 全局串行锁: pip 自身无跨进程锁, 并发装包会同时写同一 site-packages。
+#: 2026-10-19 小欧 - 实测3个工具并发缺库可同时起3个pip。所有 pip 调用点共用这一把。
+_PIP_LOCK = threading.Lock()
 
 
 def _constraints_file() -> str:
@@ -175,11 +186,16 @@ def normalize_dep(dep) -> tuple:
             return parts[0].strip(), parts[0].strip(), "==" + parts[1].strip(), None
         return s, s, None, None
     if isinstance(dep, dict):
-        imp = (dep.get("import_name") or dep.get("pip_package") or "").strip()
-        pkg = dep.get("pip_package") or imp
+        pkg = (dep.get("pip_package") or "").strip()
+        imp = (dep.get("import_name") or "").strip() or pkg
+        # 未显式给 import_name 时回落 pip_package, 但仅当它本身可作模块名:
+        # pip 名含 '-'/'.' 时不可 import(如 python-docx 的模块名是 docx), 回落必然恒判缺库。
+        if imp and not imp.isidentifier():
+            logger.error(f"[依赖] 依赖声明缺 import_name 且 pip_package 不可作模块名: {dep}")
+            return None, None, None, None
         if not imp:
             return None, None, None, None
-        return imp, pkg.strip(), dep.get("version"), dep.get("pre_install")
+        return imp, (pkg or imp), dep.get("version"), dep.get("pre_install")
     return None, None, None, None
 
 
@@ -190,7 +206,7 @@ def dep_install_spec(imp: str, pkg: str, version: Optional[str]) -> str:
 
 def _pip_install(pkg: str, version: Optional[str] = None) -> bool:
     """尝试pip安装，先普通模式失败后自动降级为--user
-    
+
     Args:
         pkg: 包名，如 'httpx'
         version: 版本号，如 '==0.26.0'，可选
@@ -212,22 +228,27 @@ def _pip_install(pkg: str, version: Optional[str] = None) -> bool:
         )
         return False
 
-    try:
-        subprocess.check_call(install_cmd + [pkg_with_version])
-        return True
-    except subprocess.CalledProcessError:
+    # 2026-10-19 小欧 - 全局串行: pip 无跨进程锁, 两个装包同时跑会并发写同一 site-packages
+    #   (实测3个工具并发缺库可同时起3个pip)。锁在**所有** pip 调用点(_pip_install 与 install_batch)
+    #   共用一把, 免得只在批量侧加锁而单包侧仍可并发。
+    with _PIP_LOCK:
         try:
-            subprocess.check_call(install_cmd + ["--user", pkg_with_version])
+            subprocess.check_call(install_cmd + [pkg_with_version])
             return True
         except subprocess.CalledProcessError:
-            return False
+            try:
+                subprocess.check_call(install_cmd + ["--user", pkg_with_version])
+                return True
+            except subprocess.CalledProcessError:
+                return False
 
 
 def install_batch(packages: Iterable[str]) -> None:
     """一次 pip 调用装多个包（启动期批量），免 N 个依赖起 N 次 subprocess。
 
-    调用方先用 ensure_dependency 判出缺失再传入；锁定包护栏仍由 _pip_install 逐个把关，
-    此处只负责"一次调用装多个"。装完不回报成败，调用方复检 import 即可（免两套判定源）。
+    调用方先用 dependency_status 判出缺失再传入；锁定包护栏仍由 _pip_install 逐个把关。
+    整批失败时**逐个降级重试**并回报仍失败的包 —— 否则一个非法包名/版本冲突会让整批 pip 拒绝，
+    连同批里本来没问题的包一起失去安装机会(实测如此)。
     """
     pkgs = [p for p in dict.fromkeys(packages) if p]
     if not pkgs:
@@ -236,10 +257,18 @@ def install_batch(packages: Iterable[str]) -> None:
         logger.warning(f"[依赖] 打包版(exe)不支持运行时批量装({len(pkgs)} 个): {', '.join(pkgs[:8])}")
         return
     cmd = [sys.executable, "-m", "pip", "install", "-q", "-c", _constraints_file()] + pkgs
-    try:
-        subprocess.check_call(cmd)
-    except subprocess.CalledProcessError as e:
-        logger.error(f"[依赖] 批量安装失败({len(pkgs)} 个: {', '.join(pkgs[:8])}): {e}")
+    with _PIP_LOCK:
+        try:
+            subprocess.check_call(cmd)
+            return
+        except subprocess.CalledProcessError:
+            pass
+    logger.warning(f"[依赖] 批量安装失败({len(pkgs)} 包), 逐个重试以定位问题包")
+    for pkg in pkgs:
+        base = pkg.split("==")[0]
+        ver = ("==" + pkg.split("==")[1]) if "==" in pkg else None
+        if not _pip_install(base, ver):
+            logger.error(f"[依赖] 单包安装仍失败: {pkg}")
 
 
 def dependency_status(
@@ -264,6 +293,15 @@ def dependency_status(
         __import__(import_name)
     except ImportError:
         return False
+
+    # 2026-10-19 小欧 - 非 "==" 形式的约束(>=3.0 / <2.0 / ~=1.2)本函数不参与判定, 必须显式告警:
+    #   声明了却从不校验, 等于没声明, 且比不声明更危险(以为有版本把关)。此处只告警不实现
+    #   完整约束解析 —— 全仓现无一处使用这类写法(YAGNI), 真正需要时再按 packaging 补。
+    if version and not version.startswith("=="):
+        logger.warning(
+            f"[依赖] 版本约束 '{version}' ({pip_package or import_name}) 不被校验: "
+            f"本模块只支持 '==精确版本', 该约束当前不生效。"
+        )
 
     if version and version.startswith("==") and not getattr(sys, "frozen", False):
         try:
@@ -295,11 +333,16 @@ def install_missing(deps: Iterable[tuple]) -> List[tuple]:
     2026-10-19 小欧 - 先纯检查、再一次 pip 装全部缺失、最后复检。
     启动期预装与运行期自愈都走本函数(DRY), 两处各写一遍判定逻辑正是上次假修复的温床。
     锁定包不进批量装: 由 _pip_install 护栏逐个判, 免得批量把铁律版本顶掉。
+    pre_install(如 setuptools<70)必须先单独装: 它是约束/构建前置, 与主包同批装不保证先后,
+      原实现直接丢弃该字段 —— ensure_dependency 认它而本函数不认, 同一份声明两条路两种行为。
     """
     items = list(deps)
     missing = resolve_missing(items)
     if not missing:
         return []
+    for pre in dict.fromkeys(p for d in missing for p in (d[3] or [])):
+        logger.info(f"[依赖] 安装前置依赖: {pre}")
+        _pip_install(pre)
     specs = [dep_install_spec(*d[:3]) for d in missing]
     logger.info(f"[依赖] 缺失 {len(missing)}/{len(items)} 个: {', '.join(specs)}")
     install_batch([s for s, d in zip(specs, missing) if d[1] not in LOCKED_PACKAGES])
