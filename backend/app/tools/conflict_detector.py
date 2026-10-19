@@ -12,6 +12,8 @@
 #   ② 路径键做 abspath+normcase 归一, 相对/绝对、大小写变体视为同一文件;
 #   ③ 远端库键经 make_url 取 backend/host/port/database(去账号口令), 同库不同连接串/不同口令不再漏并组;
 #   _parse_paths 仍返回原值供 trust 使用, 归一化只在 _conflict_keys 内完成(不动信任口径)
+# 2026-10-19 小欧 - _db_key 身份键补归一: backend/host 小写 + 缺端口补默认端口(mysql3306/pg5432/mssql1433);
+#   原 "mysql://h/db" 与 "mysql://h:3306/db"、host 大小写变体被判不同库 → 同库写操作漏并组并行
 """
 conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并查集分组
 
@@ -23,6 +25,7 @@ conflict_detector — 工具调用冲突检测: 路径/窗口冲突判定 + 并�
 原则: 完整复制, 保留原始功能分支和逻辑, 禁止简化退化
 """
 import os
+import hashlib
 from typing import Dict, List, Any, Set
 # 2026-10-14 小欧 - WINDOW_TARGET_TOOLS 归 tool_constants,
 #   _parse_paths 由 trust 迁入本文件(唯一消费方在此, 原挂 trust 属 SRP 债)。
@@ -99,16 +102,24 @@ def _canonical_path(p: str) -> str:
         return p
 
 
+_DB_DEFAULT_PORTS = {"mysql": 3306, "mariadb": 3306, "postgresql": 5432, "mssql": 1433}
+
+
 def _db_key(conn_str: str) -> str:
     """远端库身份键: 经 make_url 取 backend/host/port/database, 忽略账号与口令 — 小欧 2026-10-19
-    同库不同口令/不同账号视为同一库(仍须并组串行); 解析失败回落原文(日志侧已由 _safe_log_key 遮蔽)。
+    同库不同口令/不同账号视为同一库(仍须并组串行); 解析失败回落连接串哈希(仍可区分不同库, 且不含明文可安全入日志)。
+    归一: backend/host 小写(二者大小写不敏感), 缺端口补该 backend 默认端口——
+    否则 "mysql://h/db" 与 "mysql://h:3306/db"、host 大小写变体会被判为不同库而漏并组, 同库写操作并行退化。
     """
     try:
         from sqlalchemy.engine.url import make_url
         u = make_url(conn_str)
-        return f"db:{u.get_backend_name()}://{u.host or ''}:{u.port or ''}/{u.database or ''}"
+        backend = (u.get_backend_name() or "").lower()
+        host = (u.host or "").lower()
+        port = u.port or _DB_DEFAULT_PORTS.get(backend, "")
+        return f"db:{backend}://{host}:{port}/{u.database or ''}"
     except Exception:
-        return f"db:{conn_str}"
+        return "db:" + hashlib.sha1(conn_str.encode("utf-8")).hexdigest()[:16]
 
 
 def _conflict_keys(name: str, params: Dict) -> Set[str]:
@@ -131,10 +142,6 @@ def _conflict_keys(name: str, params: Dict) -> Set[str]:
             keys.add(_db_key(conn_str))
     return keys
 
-
-def _safe_log_key(key: str) -> str:
-    """冲突日志脱敏: 远端连接串含账号口令, 只露类型不落原文 — 小欧 2026-10-19"""
-    return "db:***" if key.startswith("db:") else key
 
 
 # ════════════════════════════════════════════════════════════
@@ -164,7 +171,7 @@ def _has_conflict(all_calls: List[Dict]) -> bool:
     for path, entry in path_ops.items():
         tools = entry["tools"]
         if entry["count"] >= 2 and (any(t in _WRITE_OPS for t in tools) or any(t in WINDOW_TARGET_TOOLS for t in tools)):
-            logger.info(f"[_has_conflict] 操作冲突(路径/窗口/数据库): {_safe_log_key(path)}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
+            logger.info(f"[_has_conflict] 操作冲突(路径/窗口/数据库): {path}, tools={tools}, 调用数={entry['count']}, 降级顺序执行")
             return True
     return False
 
