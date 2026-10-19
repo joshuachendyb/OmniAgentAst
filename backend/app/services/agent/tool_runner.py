@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 execute_tools
+# 2026-09-04 小健 拆分: 从 action_handler 完整复制 execute_tools
 #   [背景] execute_tools 是工具三分支(单/并行分组串行/顺序)执行调度, 应属工具执行层, 非 action 编排本身
 #   [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置
 #   [效果] action_handler 920→~596行纯编排调度层; 本文件与 tool_executor 同层(工具执行调度), 是 execute_tool 的上一层
 # 2026-09-22 小欧 - constants.py 配置化迁移：import ACTION_LOG_RESULT_MAX_CHARS 改别名 + 使用点改读 tuning 配置
+# 2026-10-19 小欧 - 修复单工具分支执行错对象: 原用入参 tool_name/tool_params(原始主调用), 安全门过滤后
+#   _exec_calls 可能只剩后续调用, 主调用被拒时仍会执行被拒工具; 改取 all_calls[0]。同时日志参数经
+#   redact_sensitive_params 脱敏敏感键。
 import asyncio
 import time
 from typing import Dict, List, Any
@@ -15,10 +18,10 @@ from app.config import get_config
 from app.services.agent.tool_executor import execute_tool
 from app.tools.file_tool_utils import _auto_correct_file_tool
 from app.tools.conflict_detector import _has_conflict, _partition_calls
+from app.utils.secret_utils import redact_sensitive_params
 
 
 async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
-                        tool_name: str, tool_params: Dict,
                         on_retry_started=None, on_attempt_recorded=None) -> List[Any]:
         """工具执行调度 — 三分支策略（遵守SLAP：本层只做决策不分派执行细节）
          
@@ -39,6 +42,8 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
         小欧 2026-07-09: 
           - 并行分支B改用parallel=True（→try_once），删除手动重试循环（解决SRP/DRY违规）
           - 新增on_retry_started参数，透传给单工具/顺序分支（解决重试无前端通知问题）
+        2026-10-19 小欧:
+          - 单工具分支改取 all_calls[0](安全门过滤后的真实执行集), 删除 tool_name/tool_params 入参
         """
         start_time = time.time()
 
@@ -51,11 +56,8 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
                 logger.info(f"[action_handler] 自动纠正: {_raw}→{_corrected}")
                 c["tool_name"] = _corrected
                 _correction_map[i] = _raw
-        _corrected_tn, _raw_tn = _auto_correct_file_tool(tool_name, tool_params)
-        if _raw_tn:
-            tool_name = _corrected_tn
-            if all_calls:
-                _correction_map[0] = _raw_tn
+        # 2026-10-19 小欧 - 删除原始主调用的二次自动纠正: 上方循环已逐 call 纠正并登记 _correction_map,
+        #   单工具分支改取 all_calls[0] 后再按 tool_name/tool_params 补写会把纠正来源错记到实际执行的 call 上。
 
         def _cn(c):
             return c.get("tool_name", "") if isinstance(c, dict) else ""
@@ -63,11 +65,13 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
             return c.get("tool_params", {}) if isinstance(c, dict) else {}
 
         if len(all_calls) == 1:
-            # A: 单工具
-            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={tool_name}")
+            # A: 单工具 — 2026-10-19 小欧: 取 all_calls[0](安全门过滤后的真实执行集);
+            #   原用入参 tool_name/tool_params(原始主调用)会在主调用被拒、后续调用存活时执行被拒工具
+            _only = all_calls[0]
+            log_and_print(f"{time.strftime('%H:%M:%S')} [action_handler] 单工具执行: tool={_cn(_only)}")
             # #18(2026-08-23): 文件A 每次尝试回调按【全局序号】取号 — 小欧 2026-08-23
             _cb = on_attempt_recorded(1) if on_attempt_recorded else None
-            result = await execute_tool(agent, tool_name, tool_params, agent._retry_engine,
+            result = await execute_tool(agent, _cn(_only), _cp(_only), agent._retry_engine,
                                         on_retry_started=on_retry_started, on_attempt_recorded=_cb)
             results = [result]
 
@@ -151,20 +155,20 @@ async def execute_tools(agent, all_calls: List[Dict], is_parallel: bool,
 
         for i, (call, result) in enumerate(zip(all_calls, results)):
             if isinstance(result, Exception):
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result=ERROR({result})")
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={redact_sensitive_params(_cp(call))}, result=ERROR({result})")
             else:
                 _r_str = str(result)
                 _log_max = get_config().get("tuning.content.action_log_result_max_chars", _D_LOG_CHARS)
                 if len(_r_str) > _log_max:
                     _r_str = _r_str[:_log_max] + f"...(截断{len(_r_str)}字符)"
-                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={_cp(call)}, result={_r_str}")
+                logger.info(f"[action_handler] 工具原始结果: tool={_cn(call)}, params={redact_sensitive_params(_cp(call))}, result={_r_str}")
             _orig_tool = _correction_map.get(i)
             if _orig_tool and isinstance(result, dict):
                 _llm = result.get("llm_data")
                 if isinstance(_llm, dict) and isinstance(_llm.get("summary"), str):
                     _llm["summary"] += f"（工具自动纠正自:{_orig_tool}）"
 
-        # 工具遥测回调（修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20; 2026-09-04 小健 第2阶段拆分: 批量聚合下沉 agent_telemetry.collect_and_report
+        # 工具遥测回调（修复：on_tool_call 未调用 → tool_execution_seconds 恒 0）— 小欧 2026-08-20; 2026-09-04 小健 拆分: 批量聚合下沉 agent_telemetry.collect_and_report
         _tele = getattr(agent, "telemetry", None)
         if _tele is not None:
             _tele.collect_and_report(all_calls, results)

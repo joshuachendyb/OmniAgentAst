@@ -1,21 +1,24 @@
 
 # -*- coding: utf-8 -*-
+# 2026-10-19 - 小欧 - SENSITIVE_FIELDS 改为派生自全局权威 SENSITIVE_PARAM_KEYS(secret_utils),
+#   消除"敏感键集合"两处维护漂移; HITL 仍需丢弃非定位类敏感键, 故此处排除 connection_string
+#   (connection_string 由 redact_sensitive_params 遮蔽为 ***, 保留"连的是哪个库"的可见性)。
 # 编辑历史:
 # 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
 # 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃
-# 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 从1.1/10节移至第4节(网络工具HTTP常量), 消除散落
-# 2026-07-15 - 小欧 - TOOL_RETRY_CONFIG 从 tool_retry_engine.py 迁入第4节, 与 TOOL_RETRYABLE_HTTP_CODES 相邻
+# 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 移至网络工具HTTP常量段, 消除散落
+# 2026-07-15 - 小欧 - TOOL_RETRY_CONFIG 从 tool_retry_engine.py 迁入, 与 TOOL_RETRYABLE_HTTP_CODES 相邻
 # 2026-10-06 - 小欧 - FORBIDDEN_PATHS_WINDOWS_EXACT/PREFIX 改名 _REL_ 变体改存**与盘符无关的相对段**(去 .replace("C:", sys_drive) 字符串替换); path_safe_check 函数体内 _SYSTEM_PROTECTED 提为模块级 SYSTEM_PROTECTED_DIR_NAMES(判定与展示共用一份)
 # 注: 本文件数值型长度/上限/阈值常量均标注【使用对象】, 搜全仓无引用的即为候选废弃常量(待清理)
 # 2026-07-18 - 小欧 - TOOL_TIMEOUTS清理死键(合并的window_maximize/minimize/clipboard_read/write等),补真实注册名(set_window_state/clipboard)
 # 2026-07-20 - 小欧 - grep 门限治理: 删 MAX_SEARCH_FILE_SIZE(无引用), 新增 OBS_GREP_MAX_ROWS=200/OBS_GREP_MAX_ROW_CHARS=150
-# 2026-07-20 - 小欧 - shell 门限治理(章6.4): 新增 OBS_SHELL_MAX_ROWS=200/OBS_SHELL_MAX_ROW_CHARS=1000, SHELL_OUTPUT_MAX_CHARS 标记已作废
-# 2026-07-20 - 小欧 - find 门限治理(章7.4): 新增 OBS_FIND_MAX_ROWS=200/OBS_FIND_MAX_ROW_CHARS=300, 删 FIND_PAGE_SIZE/MAX_SEARCH_RESULTS
-# 2026-07-20 - 小欧 - searchweb 门限治理(章8.4): 新增 OBS_SEARCHWEB_MAX_ROWS=100/OBS_SEARCHWEB_MAX_ROW_CHARS=500, 删 SEARCH/OBS_SNIPPET_MAX_CHARS
-# 2026-07-20 - 小欧 - httpget 门限治理(章9.4): 新增 OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=1000, HTTP_JSON_PREVIEW_MAX_BYTES 改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES
-# 2026-07-20 - 小欧 - fetchpage 门限治理(章10.4): 新增 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500, 删 WEB_FETCH_MAX_CHARS, MAX_READ_BYTES/MAX_CONTENT_LENGTH 改名
-# 2026-07-20 - 小欧 - read 门限治理(章11.4): 新增 OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000, 去 _select_lines max_line_length 截断, MAX_READ_SIZE 改名 INER_READ_READ_SIZE
-# 2026-07-20 - 小欧 - 门限复查: 删僵尸常量 FIND_PAGE_SIZE、删无引用 READ_FILE_DEFAULT_LIMIT, 依3.6直接删定义不保留占位
+# 2026-07-20 - 小欧 - shell 门限治理: 新增 OBS_SHELL_MAX_ROWS=200/OBS_SHELL_MAX_ROW_CHARS=1000, SHELL_OUTPUT_MAX_CHARS 标记已作废
+# 2026-07-20 - 小欧 - find 门限治理: 新增 OBS_FIND_MAX_ROWS=200/OBS_FIND_MAX_ROW_CHARS=300, 删 FIND_PAGE_SIZE/MAX_SEARCH_RESULTS
+# 2026-07-20 - 小欧 - searchweb 门限治理: 新增 OBS_SEARCHWEB_MAX_ROWS=100/OBS_SEARCHWEB_MAX_ROW_CHARS=500, 删 SEARCH/OBS_SNIPPET_MAX_CHARS
+# 2026-07-20 - 小欧 - httpget 门限治理: 新增 OBS_HTTPGET_MAX_ROWS=200/OBS_HTTPGET_MAX_ROW_CHARS=1000, HTTP_JSON_PREVIEW_MAX_BYTES 改名 INER_HTTPGET_JSON_PREVIEW_MAX_BYTES
+# 2026-07-20 - 小欧 - fetchpage 门限治理: 新增 OBS_FETCHPAGE_MAX_ROWS=200/OBS_FETCHPAGE_MAX_ROW_CHARS=500, 删 WEB_FETCH_MAX_CHARS, MAX_READ_BYTES/MAX_CONTENT_LENGTH 改名
+# 2026-07-20 - 小欧 - read 门限治理: 新增 OBS_READ_MAX_ROWS=200/OBS_READ_MAX_ROW_CHARS=1000, 去 _select_lines max_line_length 截断, MAX_READ_SIZE 改名 INER_READ_READ_SIZE
+# 2026-07-20 - 小欧 - 门限复查: 删僵尸常量 FIND_PAGE_SIZE、删无引用 READ_FILE_DEFAULT_LIMIT, 直接删定义不保留占位
 # 2026-07-20 - 小欧 - httpget ②修复: 新增 INER_HTTPGET_DATA_PREVIEW_MAX_CHARS=200KB(data内联预览上限), INER_HTTPGET_JSON_PREVIEW_MAX_BYTES 下调5MB
 # 2026-07-20 - 小欧 - 自然单位治理: 新增 OBS_PDF_MAX_ROWS/CHARS、OBS_PPTX_MAX_ROWS/CHARS(单页)、OBS_TREE_MAX_ROWS/CHILDREN、INER_READ_PDF_MAX_PAGES=200
 # 2026-07-21 - 小欧 - 第二阶段门限治理: TOOL_TIMEOUTS default 120→30(未注册tool缺省超时), 新增 OBS_ANALYZE_MAX_ROWS=100/OBS_ANALYZE_MAX_COLS=100(analyze_data行×列收口)
@@ -30,36 +33,36 @@
 # 2026-07-23 - 小欧 - 北京老陈驱动: INER_前缀两分法重构 — 输入闸门 {TOOL}_INPUT_*(READ/EDIT/READMEDIA/READ_PDF/READ_DOCX/READ_PPTX/READ_XLSX/FETCHPAGE_INPUT_MAX_CONTENT_LENGTH/DOWNLOAD/CLIPBOARD), 输出截断 {TOOL}_OUTLIMIT_*(SHELL_OUTLIMIT_RAW_BYTES/FETCHPAGE_OUTLIMIT_BODY_BYTES/HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES/HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS/READ_PDF_OUTLIMIT_DEFAULT_PAGES)
 # 2026-07-23 - 小欧 - 北京老陈驱动: 删 READ/READ_DOCX/READ_PPTX/READ_PDF_INPUT_MAX_BYTES(字节门→全量读+outlimit截断), 新增 READ_OUTLIMIT_CHARS/READ_DOCX_OUTLIMIT_CHARS/READ_PPTX_OUTLIMIT_CHARS=500K
 # 2026-07-23 - 小欧 - 北京老陈驱动: 删 SHELL_OUTLIMIT_RAW_BYTES(10MB 读/解码层硬安全网, 50K/20K 存储截断足够, 去掉叠床架屋)
-# 2026-07-23 - 小欧 - 三堂会审5bug修复: read_text_file/read_docx outlimit len截断后求值 + read_pptx total_slides/notes_data截断同步 + 删_os_mod死import
+# 2026-07-23 - 小欧 - 修复: read_text_file/read_docx outlimit len截断后求值 + read_pptx total_slides/notes_data截断同步 + 删_os_mod死import
 # 2026-07-24 - 小欧 - 新增: EXECUTE_SQL_OUTPARM_LIMIT_SQL / QUERY_SQL_OUTPARM_LIMIT_SQL(SQL预览截断) + OBS_QUERY_SQL_PREVIEW_COLUMNS(列名预览)
 # 2026-07-24 - 小欧 - 新增: SEARCH_WEB_OUTPARM_LIMIT_RAW / FETCH_WEBPAGE_OUTPARM_LIMIT_DESC / GENERATE_CHART_OUTPARM_LIMIT_DATA / FILTER_DATA_OUTPARM_LIMIT_CONDITIONS / GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES / TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS(魔数→命名常量)
 # 2026-07-25 - 小欧 - 新增第2批 outparam/iner 常量: SEND_NOTIFICATION_OUTPARM_LIMIT_MSG / EXECUTE_SHELL_OUTPARM_LIMIT_CMD / WRITE_INER_PREVIEW_CHARS / READ_INER_CJK_SAMPLE / TOOL_SEARCH_INER_RESULTS_TOP / SEARCH_WEB_INER_HTML_PARSE / QUERY_SQL_INER_LOG_SQL
-# 2026-07-25 - 小欧 - 三堂会审修复bug×2: ①EXECUTE_SHELL_OUTPARM_LIMIT_CMD误归#fundamental→改#shell ②TOOL_SEARCH_INER_RESULTS_TOP误归#file/internal→改#fundamental/internal
-# 2026-07-26 - 小欧 - hint_for_data_error: 前移pandas errors(EmptyDataError/ParserError/OutOfBoundsDatetime)至ValueError前修复截胡bug; 新增MemoryError分类提示
+# 2026-07-25 - 小欧 - 修复×2: ①EXECUTE_SHELL_OUTPARM_LIMIT_CMD误归#fundamental→改#shell ②TOOL_SEARCH_INER_RESULTS_TOP误归#file/internal→改#fundamental/internal
+# 2026-07-26 - 小欧 - hint_for_data_error: 前移pandas errors(EmptyDataError/ParserError/OutOfBoundsDatetime)至ValueError前修复截胡缺陷; 新增MemoryError分类提示
 # 2026-07-26 - 小欧 - OOD: 删 READMEDIA_INPUT_MAX_BYTES、READ_XLSX_INPUT_MAX_BYTES 两行
 # 2026-07-26 - 小欧 - 迁移: sql_error_hint/hint_for_data_error迁至file_path_checker(同属检查类), 与常量文件解耦
 # 2026-07-26 - 小欧 - 注: 上数第2条(hint_for_data_error pandas errors前移)对应函数已迁至file_path_checker, 本文件不再持有
 # 2026-07-26 - 小沈 - 超时统一: SUBPROCESS_TIMEOUT_SHORT/DEFAULT 注释修正(涵义准确定位taskkill/命令查找); DEFAULT_TIMEOUT_SEC 注释从"网络工具"扩为"通用工具"
-# 2026-07-26 - 小欧 - 常量区块重组: 全文件13节连续编号1-13, 消除空节(原第8节), 消除跳跃(缺第5节), 消除重复(原第4节与第3节重复HTTP常量), 归并可重试码与per-tool配置至第11节(重试), 移动SENSITIVE_FIELDS至第9节(内容质量), 恢复FILE_OPERATION_TOOLS(此前编辑误删)
+# 2026-07-26 - 小欧 - 常量区块重组: 全文件连续编号, 消除空节, 消除跳跃, 消除重复(HTTP常量), 归并可重试码与per-tool配置至重试段, 移动SENSITIVE_FIELDS至内容质量段, 恢复FILE_OPERATION_TOOLS(此前编辑误删)
 # 2026-07-29 - 小沈 - TOOL_TIMEOUTS["delete"]=120; 新增TOOL_TIMEOUT_HINTS超时hint字典(仅含无timeout参数tool); TOOL_TIMEOUTS去除有timeout参数tool(shell/httpget/fetchpage/download/compress); listdir注册名对齐(list_directory→listdir),值30→60
 # 2026-07-30 - 小沈 - TOOL_TIMEOUT_HINTS加compress: 有timeout参数的tool也可能被保险丝截杀,内部timed_out路径来不及时返回,引擎TIMEOUT路径直接给hint避免LLM收到空串
 # 2026-07-30 - 小沈 - 新增 SHELL_POOL_IDLE_TIMEOUT=300: Shell池空闲超时兜底(防孤魂野鬼), 实例release回池后超过此值无人acquire则close
 # 2026-08-05 - 小欧 - 设计约定补齐: 移除 TOOL_TIMEOUTS 里的 ping_port(60) — 病根=ping_port schema 用 NetworkDiagnoseInput 含 timeout 参数属"有timeout参数"工具, 按约定应移出(与 compress/shell/httpget/fetchpage/download 一致), 漏网遗留在表内; 影响=未传timeout时 base 由显式60变为default 60值不变, 内部默认timeout仅5s保险丝恒远大于内部, 无功能变化, 纯设计一致性清理
 # 2026-08-12 - 小欧 - 僵尸常量清理: 删除137个全仓无引用的ERR_*僵尸常量(原239个顶层常量→剩102个), 逐条按分类小节(文件/Shell/参数/Meta/网络/系统/注册表/桌面/文档/数据/迁移补充)删除, 保留全部活常量; 删除后py_compile通过, 全部工具ensure_tools_registered()注册成功, 活常量均有工具真实引用(REF>=1), 唯一含已删常量名的backend/scripts/fix_error_codes.py为一次性迁移脚本(FIXES字符串对照表,纯文本替换,不依赖本文件常量)
 # 2026-08-13 - 小沈 - 迁移: SUPPORTED_ALGORITHMS 迁入 constants.py(系统级常量), 本文件 re-export 保持下游兼容
-# 2026-09-16 - 小欧 - 问题修复(文档落码): 新增 NON_FILE_TRUST_TOOLS(registry_write/registry_delete/execute_sql) 非文件信任域 — 信任路径不能做文件系统 resolve; 单一来源 trust.extract_trust_path / trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
+# 2026-09-16 - 小欧 - 问题修复: 新增 NON_FILE_TRUST_TOOLS(registry_write/registry_delete/execute_sql) 非文件信任域 — 信任路径不能做文件系统 resolve; 单一来源 trust.extract_trust_path / trust_db.norm_trust_path(落库·查询·撤销单一入口, storage 撤销侧消费) 共用(DRY) — 小欧-2026-09-16
 # 2026-10-02 - 小欧 - 归类调整: 新增 TOOL_CATEGORY_OVERRIDE(归类单一真相源) — 小欧-2026-10-02
 # 2026-10-02 - 小欧 - 注册名收敛: TOOL_TIMEOUT_HINTS/TOOL_TIMEOUTS/FILE_OPERATION_TOOLS 键 write→write, edit→edit
-# 2026-10-05 - 小欧 - 常量门限调整(第八章): ①P8 EXECUTE_SHELL_OUTPARM_LIMIT_CMD 50→150(cmd_short掐中保尾=头130+尾20) ②P1新增OBS_METRICS_MAX_ITEMS=10/OBS_METRICS_VALUE_MAX_CHARS=100 ③P3新增OBS_ERROR_SUPPLEMENT_MAX_CHARS=600
-# 2026-10-05 - 小欧 - 总预算150→130(北京老陈裁定): EXECUTE_SHELL_OUTPARM_LIMIT_CMD 150→130, 头变为110(尾20不变)
-# 2026-10-06 - 小欧 - 新增 RESPONSE_PREVIEW_LIMIT_CHARS=2000(报告 P1-02): llm_response_builder 的 log_llm_response「解析结果」预览截断上限(与既有 *_OUTPARM_LIMIT_* 同族, 复用优先)
-# 2026-10-09 - 小欧 - timeout不再重试(北京老陈裁定): 5工具(httpget/download/fetchpage/searchweb/ping_port)retryable移除"timeout", 理由=超时已耗尽30~600s再重试只是多等一轮同样失败; 保留connect/network/protocol(瞬时故障重试廉价且高收益)。代价(已确认): ping_port/searchweb遇抖动直接失败, 以鲁棒性换响应速度。
-# 2026-10-09 - 小欧 - compress hint改写(同上裁定): 原「①增大timeout」列首位属反向引导(与bash hint同源, 实测LLM因此300→600而真正解决问题的是重写算法), 改为问题侧解法优先(排除大文件/分批)、调大timeout降末位加前置条件, 与本表既有delete/write/edit/readmedia四条已正确写法对齐。防误判: 删本表"timeout"≠删干净, _struct_error_category仍有message关键词兜底。compliance: DRY/禁止backward
+# 2026-10-05 - 小欧 - 常量门限调整: ①EXECUTE_SHELL_OUTPARM_LIMIT_CMD 50→150(cmd_short掐中保尾=头130+尾20) ②新增OBS_METRICS_MAX_ITEMS=10/OBS_METRICS_VALUE_MAX_CHARS=100 ③新增OBS_ERROR_SUPPLEMENT_MAX_CHARS=600
+# 2026-10-05 - 小欧 - 总预算150→130(北京老陈): EXECUTE_SHELL_OUTPARM_LIMIT_CMD 150→130, 头变为110(尾20不变)
+# 2026-10-06 - 小欧 - 新增 RESPONSE_PREVIEW_LIMIT_CHARS=2000: llm_response_builder 的 log_llm_response「解析结果」预览截断上限(与既有 *_OUTPARM_LIMIT_* 同族, 复用优先)
+# 2026-10-09 - 小欧 - timeout不再重试(北京老陈): 5工具(httpget/download/fetchpage/searchweb/ping_port)retryable移除"timeout", 理由=超时已耗尽30~600s再重试只是多等一轮同样失败; 保留connect/network/protocol(瞬时故障重试廉价且高收益)。代价(已确认): ping_port/searchweb遇抖动直接失败, 以鲁棒性换响应速度。
+# 2026-10-09 - 小欧 - compress hint改写(同上): 原「①增大timeout」列首位属反向引导(与bash hint同源, 实测LLM因此300→600而真正解决问题的是重写算法), 改为问题侧解法优先(排除大文件/分批)、调大timeout降末位加前置条件, 与本表既有delete/write/edit/readmedia四条已正确写法对齐。防误判: 删本表"timeout"≠删干净, _struct_error_category仍有message关键词兜底。compliance: DRY/禁止backward
 # 2026-10-14 - 小欧 - 分类表收编: 收编 4 张工具分类表(_PATH_CATEGORIES/_PATH_PARAM_KEYS/_READ_ONLY_TOOLS 自 path_safe_check, WINDOW_TARGET_TOOLS 自 trust), 名单与判定解耦
 # 2026-10-15 - 小欧 - 核查订正: 三张表去私前缀改名 PATH_CATEGORIES/PATH_PARAM_KEYS/READ_ONLY_TOOLS。理由: 前次收编漏了「全部去下划线前缀」明文; 本模块是分类表对外提供方, 消费方 app/safety/path_safe_check 属系统层(跨层 import), 私前缀与实际契约身份不符。同步改 path_safe_check 导入与调用点; 表内容零改动。— 小欧-2026-10-15
 # 2026-10-16 - 小欧 - tool去检查化覆盖审计: PATH_PARAM_KEYS 补 search_dir/data(实测原合法性初查/安全总闸 全漏)。
 # 2026-10-17 - 小欧 - DUAL_ACTION_PARAMS 自 safety/dual_path_check 上移, 与 DUAL_PATH_TOOLS 同层(同属"工具×参数×动作"声明, 消除跨层分居与 tool_constants 注释里的散文重复); dual_path_check/path_precheck 改从此导入。
-# 2026-10-18 - 小欧 - 北京老陈裁定(归类错误修复): generate_chart 自 WRITE_PATH_TOOLS 移入 DUAL_PATH_TOOLS, DUAL_ACTION_PARAMS 补 {"data":"read","dest":"write"}。理由: generate_chart 一调用带 data(数据源)+dest(出图)两路径, 属双动作, 误归 write 致 data(内联JSON串)被写线当路径送审误弹授权; 单线只应承载单路径。WRITE_PATH_TOOLS 10→9, DUAL_PATH_TOOLS 5→6。
+# 2026-10-18 - 小欧 - 北京老陈(归类错误修复): generate_chart 自 WRITE_PATH_TOOLS 移入 DUAL_PATH_TOOLS, DUAL_ACTION_PARAMS 补 {"data":"read","dest":"write"}。理由: generate_chart 一调用带 data(数据源)+dest(出图)两路径, 属双动作, 误归 write 致 data(内联JSON串)被写线当路径送审误弹授权; 单线只应承载单路径。WRITE_PATH_TOOLS 10→9, DUAL_PATH_TOOLS 5→6。
 """
 【工具层常量】— 工具函数运行时常量集中管理 — 北京老陈 2026-05-30
 
@@ -86,6 +89,7 @@
 
 from typing import Dict
 from app.tools.tool_types import ToolCategory  # 2026-10-02 小欧 - TOOL_CATEGORY_OVERRIDE 用(无循环)
+from app.utils.secret_utils import SENSITIVE_PARAM_KEYS as _SENSITIVE_PARAM_KEYS  # 单向依赖 tools→utils — 小欧 2026-10-19
 
 # ============================================================
 # 🕐 1. 工具级保险丝超时（TOOL_TIMEOUTS）— 【工具层】
@@ -181,11 +185,11 @@ NETWORK_MAX_KEEPALIVE: int = 20                # 【tool 级】使用对象: net
 # 🕐 4. 系统级观察截断（OBS_*）— 【系统级】
 #     observation_formatter.py 统一使用的显示域截断常量。
 #     与 tool 层面的输入闸门/输出截断相互独立。
-#     老陈 2026-07-15 裁定: 因与 tool 输出耦合紧历史置于本文件, 标注【系统级】以区分。
+#     老陈 2026-07-15: 因与 tool 输出耦合紧历史置于本文件, 标注【系统级】以区分。
 # ============================================================
 
 OBS_MAX_DISPLAY_ITEMS: int = 200       # 【系统级】使用对象: observation_formatter.py(所有 list 类 handler 最大条目数; grep 搜索总开关) — 小沈 2026-07-14
-# —— listdir 专属观察截断常量（显示域行×列；Tool 层 LISTDIR_PAGE_SIZE 依3.7作废, listdir 有 offset 可翻页, 显示域截断可恢复） ——
+# —— listdir 专属观察截断常量（显示域行×列；Tool 层 LISTDIR_PAGE_SIZE 已作废, listdir 有 offset 可翻页, 显示域截断可恢复） ——
 OBS_LISTDIR_MAX_ROWS: int = 500         # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 条目数上限, 匹配型短状态行)
 OBS_LISTDIR_MAX_ROW_CHARS: int = 300    # 【系统级】使用对象: observation_formatter.py(_format_entries listdir 单行上限, 深路径保文件名)
 OBS_MAX_STRING_LENGTH: int = 1000     # 【系统级】使用对象: observation_formatter.py(单个字符串值最大显示长度)
@@ -247,7 +251,7 @@ OBS_ANALYZE_MAX_COLS: int = 100        # 【系统级】使用对象: observatio
 # —— query_sql 专属列名预览常量（show columns/top N preview）
 OBS_QUERY_SQL_PREVIEW_COLUMNS: int = 5   # 【系统级】使用对象: query_sql.py(列名预览上限, summary + metrics)
 
-# 注: readmedia 的 base64 为二进制编码, 非可读文本, 不按文本行×列处理(章13.4 用户裁定回退为仅元数据+base64字符数摘要),
+# 注: readmedia 的 base64 为二进制编码, 非可读文本, 不按文本行×列处理(回退为仅元数据+base64字符数摘要),
 #     故不新增 OBS_READMEDIA_* 常量(避免死代码); 若后续 readmedia 改返回转写文本, 再补 OBS_READMEDIA_* + 行×列 handler
 
 # ============================================================
@@ -255,7 +259,7 @@ OBS_QUERY_SQL_PREVIEW_COLUMNS: int = 5   # 【系统级】使用对象: query_sq
 #     输入闸门 {TOOL}_INPUT_*     — 进门前拒绝(文件太大不读/请求太大不下)
 #     输出截断 {TOOL}_OUTLIMIT_*  — tool 返回前截断(format前)
 #     内阻常量 {TOOL}_INER_*      — tool 内部使用(预览/采样/日志)
-#     (原 INER_ 前缀废弃, 依 3.4→3.5 改名后, 2026-07-23 再按两分法改名)
+#     (原 INER_ 前缀废弃, 改名后 2026-07-23 再按两分法改名)
 # ============================================================
 # —— 输入闸门 {TOOL}_INPUT_* ——
 EDIT_INPUT_MAX_BYTES: int = 10 * 1024 * 1024     # 使用对象: edit_text_file.py(编辑前文件字节上限, 超则拒绝)
@@ -297,7 +301,7 @@ GET_DB_SCHEMA_OUTPARM_LIMIT_TABLES: int = 5            # 使用对象: get_db_sc
 TIMER_LIST_OUTPARM_LIMIT_TIMER_IDS: int = 5            # 使用对象: timer_list.py(params timer_id 预览数量)
 # fundamental
 SEND_NOTIFICATION_OUTPARM_LIMIT_MSG: int = 50          # 使用对象: send_notification.py(message params预览截断)
-# llm 日志(2026-10-06 小欧 P1-02 新增)
+# llm 日志(2026-10-06 小欧 新增)
 RESPONSE_PREVIEW_LIMIT_CHARS: int = 2000               # 使用对象: llm_response_builder.py(log_llm_response 的 response_content 预览截断; raw_response 全量不截)
 # shell
 EXECUTE_SHELL_OUTPARM_LIMIT_CMD: int = 130             # 使用对象: execute_shell_command.py(cmd_short掐中保尾截断总预算=头110+尾20)
@@ -338,12 +342,12 @@ NON_FILE_TRUST_TOOLS: set[str] = {
     "registry_write", "registry_delete",
     "execute_sql",
 }
-# 2026-08-13 - 小欧 - 扩展纳入8个office读写工具(unit-06 三堂会审, 北京老陈驱动):
+# 2026-08-13 - 小欧 - 扩展纳入8个office读写工具(北京老陈驱动):
 #   原集合仅文本文件工具, 致 action_handler 冲突检测对同路径 write_xlsx+read_xlsx 误判无冲突→并行→read 先跑报"路径不存在"
-#   (实测 prompt_003749 LLM 并行调用=7: write 67ms后 read 2ms失败, 重试成功);
+#   (实测 LLM 并行调用=7: write 67ms后 read 2ms失败, 重试成功);
 #   并入后与文本工具同机制: 同路径写+读/写×2 并组串行, 读×2/不同路径仍并行, 无性能退化
 
-# 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 依3.7作废删除(2026-07-20 章18): Tool 层条数截断违反3.7, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
+# 注: LISTDIR_PAGE_SIZE(原 listdir 分页每页条目数) 已作废删除: Tool 层条数截断违规, 改由 Format 层 OBS_LISTDIR_* 行×列收口; listdir 有 offset 可翻页, 显示域截断可恢复(区别于 read_xlsx 无offset)
 # 注: FIND_PAGE_SIZE/READ_FILE_DEFAULT_LIMIT 依门限复查(2026-07-20)删除: 全代码检索仅定义处存在, 无任何工具引用(僵尸常量);
 #      find 分页已由 OBS_FIND_MAX_ROWS 取代、file 读取默认行数已由 INER_READ_READ_SIZE/INER_EDIT_READ_SIZE 取代, 二者均不再使用
 
@@ -427,8 +431,8 @@ SELF_REF_THRESHOLD_NORMAL: float = 0.6       # 【tool 级】使用对象: conte
 SELF_REF_THRESHOLD_SHORT: float = 0.4         # 【tool 级】使用对象: content_quality 自检词比例阈值(短文本)
 SHORT_CONTENT_LENGTH: int = 50                 # 【tool 级】使用对象: content_quality 短文本判定长度
 
-# 【tool 级】使用对象: 敏感字段脱敏/红框判定集合
-SENSITIVE_FIELDS: set[str] = {"password", "token", "api_key", "secret", "authorization", "credential"}  
+# 【tool 级】使用对象: HITL 确认参数摘要的丢弃集合(派生自全局权威, 见文件头 2026-10-19 说明)
+SENSITIVE_FIELDS: set[str] = {k for k in _SENSITIVE_PARAM_KEYS if k != "connection_string"}
 
 # ============================================================
 # 🕐 10. 工具日期/哈希辅助(从 date_helper/hash_helper 迁移) — 【工具层】
@@ -446,27 +450,27 @@ from app.constants import SUPPORTED_ALGORITHMS  # 迁入 constants.py, 此处 re
 # 🕐 11. 工具重试配置(从 tool_config.py 迁移 + HTTP 可重试状态码归并) — 【工具层】
 #    工具重试引擎（ToolRetryEngine）运行时参数。
 #     与系统层的 LLM 熔断/重试策略完全分开。
-#     含 TOOL_RETRYABLE_HTTP_CODES（旧存第4节·网络常量）和 TOOL_RETRY_CONFIG（旧存第4节·per-tool配置）
+#     含 TOOL_RETRYABLE_HTTP_CODES（原网络常量段）和 TOOL_RETRY_CONFIG（原per-tool配置段）
 # ============================================================
 
 TOOL_RETRY_BACKOFF: dict[str, float] = {  # 【tool 级】使用对象: ToolRetryEngine 重试退避系数(秒)
     "default": 2.0,
 }
 
-# 工具层 HTTP 可重试状态码 — 从旧第4节(网络常量)归并至此
+# 工具层 HTTP 可重试状态码 — 从网络常量段归并至此
 TOOL_RETRYABLE_HTTP_CODES: set[int] = {429, 500, 502, 503, 504}  # 【tool 级】使用对象: httpget 等 network 工具判断是否抛异常给 ToolRetryEngine 重试
 
-# 工具层 per-tool 重试配置 — 从旧第4节(网络常量)+tool_retry_engine.py 迁入
+# 工具层 per-tool 重试配置 — 从网络常量段+tool_retry_engine.py 迁入
 # 不在字典中的 tool → max_retries=0（不重试）
 # 格式: {tool名: {"max_retries": int, "retryable": list[str]}}
 # retryable 列表中的字符串必须与 ToolErrorCategory.value 完全匹配
-# 2026-10-09 - 小欧 - 北京老陈裁定「timeout 不能重试」: 5个工具的 retryable 全部移除 "timeout"。
+# 2026-10-09 - 小欧 - 北京老陈「timeout 不能重试」: 5个工具的 retryable 全部移除 "timeout"。
 #   理由: 超时意味着资源已耗尽 30~600 秒，再重试一次只是让用户多等一轮同样的失败。
 #   保留 connect/network/protocol —— 瞬时网络故障重试廉价且高收益(与超时性质不同)。
 #   接受的代价(北京老陈已确认): ping_port/searchweb 遇瞬时网络抖动将直接失败，以鲁棒性换响应速度。
 #   ★ 注意: 删本表不等于删干净 —— tool_retry_engine._struct_error_category 有 message 关键词兜底，
 #     错误串含 "timeout"/"timed out"/"time out" 即判 ToolErrorCategory.TIMEOUT(不受本表控制)。
-#     该通道保留符合裁定意图(TIMEOUT 即不重试), 但需留痕免得后人误以为删表即全清。
+#     该通道保留符合原意图(TIMEOUT 即不重试), 但需留痕免得后人误以为删表即全清。
 TOOL_RETRY_CONFIG: dict[str, dict] = {
     "httpget": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
     "download": {"max_retries": 2, "retryable": ["connect", "network", "protocol"]},
@@ -516,7 +520,7 @@ FORBIDDEN_PATHS_WINDOWS_REL_PREFIX: set[str] = {  # 【tool 级】使用对象: 
 }
 
 # 2026-10-14 小欧 - SYSTEM_PROTECTED_DIR_NAMES 已迁 app/utils/path_utils.py
-#   (老陈裁定「纯路径工具函数, 独立到 utils」); 本模块不再持有, 消费方一律从 utils import。
+#   (纯路径工具函数, 独立到 utils); 本模块不再持有, 消费方一律从 utils import。
 
 
 # ============================================================
@@ -695,12 +699,12 @@ TOOL_BROWSER_UA: str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/53
 # 未在此表出现的工具取 ToolMetadata 默认值 "write"(fail-closed, 最严档)。
 # 名单依据: 按各工具 input_schema.properties 是否含路径参数(path/dest 等)实测得出
 #   (名单依据条款), 非按名称猜。2026-10-18 小欧 - PATH_PARAM_KEYS 常量已删除, 分类表本身不变。
-# 2026-10-15 北京老陈裁定改名: 原名 TOOL_ACTION_KINDS 谎称"所有工具分类",
+# 2026-10-15 北京老陈改名: 原名 TOOL_ACTION_KINDS 谎称"所有工具分类",
 #   实为路径检查分发档位(读/写/删/多路), 正名为 PATH_ACTION_KINDS(旧名不留壳)。
 #   表中只收文件操作工具: 无路径参数的(如 calendar/timenow)不需声明(通道 A 零命中即放行);
 #   registry_* 的 path 是注册表键, 豁免放 path_check_entry(与 bash 特判并列)。
 # 2026-10-15 - 小欧 - 同批: query_sql/get_db_schema/analyze_data/filter_data 由 write 改 read(四者均无输出路径参数); edit 移出 dual 改走写线。
-# 2026-10-16 - 小欧 - 老陈裁定四表分立: 原单张 PATH_ACTION_KINDS 把读/写/删/双路径混在一个 dict,
+# 2026-10-16 - 小欧 - 老陈四表分立: 原单张 PATH_ACTION_KINDS 把读/写/删/双路径混在一个 dict,
 #   审计时混作一坨且改一档易漏看另一档。现四档各自独立成表, 一档一表, 不混放。
 
 # ── 只读(14 个): 只读文件/库, 走读线(读线契约=读无害处处放行, 敏感内容交 contentFilter) ──
@@ -727,8 +731,8 @@ DELETE_PATH_TOOLS = frozenset({
 
 # ── 双路径(6 个, 一调用内含多个路径动作, 源与目标各归其线) ──
 #   copy/compress/extract: 源=读线+系统源外泄拦截, 目标=写线;
-#   move: 源=删线, 目标=写线; rename: 源与目标=写线 — 2026-10-15 北京老陈裁定(真分开)。
-#   generate_chart: data(数据源, 可为文件路径)=读线, dest(出图路径)=写线 — 2026-10-18 北京老陈裁定:
+#   move: 源=删线, 目标=写线; rename: 源与目标=写线 — 2026-10-15 北京老陈(真分开)。
+#   generate_chart: data(数据源, 可为文件路径)=读线, dest(出图路径)=写线 — 2026-10-18 北京老陈:
 #     单线只承载单路径, 一调用含"数据源+出图"两路径者属双动作, 原误归 write 是归类错误。
 #   (读线放行系统目录, 故纯数据源按读线判须另加系统源外泄拦截; 详见 DUAL_ACTION_PARAMS。)
 DUAL_PATH_TOOLS = frozenset({
@@ -752,10 +756,10 @@ DUAL_ACTION_PARAMS: Dict[str, Dict[str, str]] = {
 # = 读/写/删/双路径四档并集 + bash; 非路径工具(registry_* 等)不在此, 天然不判路径。
 PATH_TOOLS = READ_PATH_TOOLS | WRITE_PATH_TOOLS | DELETE_PATH_TOOLS | DUAL_PATH_TOOLS | {"bash"}
 
-# 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 task002 三堂会审修复A
+# 窗口类目标工具集合（冲突检测用）— 小欧 2026-08-11 修复A
 # 窗口状态变更(restore/resize/focus)作用于同一窗口时非幂等, 同批并行会产生竞态
 # 不含 window_info(只读枚举, 不改变窗口状态, 无竞态)。
-# 迁自 trust.py:31 — 小欧 2026-10-14
+# 迁自 trust.py — 小欧 2026-10-14
 WINDOW_TARGET_TOOLS = {"window_focus", "window_resize", "set_window_state"}
 
 

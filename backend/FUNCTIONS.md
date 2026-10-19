@@ -40,6 +40,15 @@
 | `format_param_value` | 将参数默认值格式化为字符串（供LLM提示文本使用），None→""、bool→"true"/"false" | val | str |
 | `format_llm_data_text` | 将工具结果 llm_data 格式化为前端展示文本（JSON美化，失败回退str）；2026-08-25 小欧 从 action_handler 内嵌闭包拆出至全局层（纯函数，零改动） | llm_data | str |
 | `is_blank_secret` | 判定密钥/敏感值是否"未配置"（None/空串/纯空白/非字符串均算未配置）。[72]第二章「key 空白即失败」一致语义的唯一权威，`lifecycle/validation.py` 与 `model/resolver.py` 两处复用（DRY，避免第三份不一致写法）；2026-09-26 小欧 新建于 secret_utils.py | value: Any | bool |
+| `redact_sensitive_params` | 敏感参数脱敏（系统级唯一出口）：`SENSITIVE_PARAM_KEYS`（password/token/api_key/secret/authorization/credential/connection_string）中的键值统一替换为 `***`，其余原样；非 dict/无敏感键零拷贝原样返回。`handle_action`（日志/预览 SSE/canonical 落库）、`tool_runner`（工具结果日志）、`hitl_gateway._desensitize`（确认弹窗）复用；`tool_constants.SENSITIVE_FIELDS` 派生自同源 `SENSITIVE_PARAM_KEYS`；2026-10-19 小欧 新建于 secret_utils.py（取代 redact_params_for_log） | params: Any | Any |
+| `SENSITIVE_PARAM_KEYS` | 敏感参数键的全局权威集合（含 `connection_string`）；供 `redact_sensitive_params` 与 `tool_constants.SENSITIVE_FIELDS`（派生、排除 connection_string）共用，杜绝敏感键集合多处维护漂移；2026-10-19 小欧 定义于 secret_utils.py | — | frozenset |
+
+### 1.2.1 窗口句柄操作（desktop/window_ops.py）
+
+| 函数 | 说明 | 入参 | 返回 |
+| --- | --- | --- | --- |
+| `is_zoomed` | 窗口是否最大化；**不用 `win32gui.IsZoomed`**（当前 pywin32 build 无该属性，实测 `hasattr=False`，调用即 AttributeError），改判 `GetWindowPlacement` 的 showCmd 是否 `SW_SHOWMAXIMIZED`。`set_window_state` 与 `window_resize` 共用此单源；2026-10-19 小欧 新建于 window_ops.py | hwnd: int | bool |
+| `focus_window` | 窗口切前台；Windows 前台锁下裸调 `SetForegroundWindow` 必被系统拒，故按 Alt 解锁 → `ShowWindow(SW_RESTORE)` → `BringWindowToTop`+`SetActiveWindow` → `SetForegroundWindow` 逐级尝试，并以 `GetForegroundWindow()` 实测是否真切换（**返回值不可靠**，不返 BOOL/返 0）；最多 3 轮 × 0.2s。`AttachThreadInput` 经实测排除（不返 BOOL 无法判成败，且目标与前台常同线程致系统拒 error 5）；2026-10-19 小欧 新建于 window_ops.py | hwnd: int, attempts: int = 3, interval: float = 0.2 | bool |
 
 ### 1.3 JSON解析（json_utils.py）
 
