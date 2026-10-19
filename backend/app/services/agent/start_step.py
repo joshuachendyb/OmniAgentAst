@@ -189,6 +189,28 @@ def _maybe_compact_injected_history(agent) -> None:
         logger.debug(f"[start_step] 历史超窗({rough}>{_threshold}=ctx{_ctx}×{_start_ratio}), 置 _needs_compact")
 
 
+async def _emit_summarizing(agent, scope: str, count: int) -> None:
+    """摘要调 LLM 前播一条 MetaStep(summarizing) 给前端 —— 小欧 2026-10-19
+
+    背景与 tool_executor 的 installing 同源: 长耗时外部调用期间 SSE 无任何帧, 用户只见转圈,
+    与"卡死"无法区分。摘要动辄数十秒, 且发生在 start 阶段(用户刚发出消息, 期待最强)——
+    此处静默比装包更让人不安。
+
+    scope 取 '增量'/'全量', 区分两条路径: 增量=同链只压新增段(旧摘要作底), 全量=首轮压缩整段历史。
+    count 为本次送进 LLM 的条数, 供用户判断耗时量级。文案只报事实, 不承诺成败 ——
+    失败回退路径各有各的日志, 成功与否由随后的 history_context 帧交代。
+    """
+    try:
+        from app.services.agent.steps import MetaStep
+        from app.services.task.task_state import get_stream_buffer
+        step = agent._step_emitter.emit(MetaStep(
+            step=len(agent.steps), type="summarizing",
+            content=f"正在生成历史摘要({scope} {count} 条)"))
+        await get_stream_buffer(agent.task_id).publish(step.to_dict())
+    except Exception as e:        # 播报失败不得影响摘要主链
+        logger.warning(f"[start_step] summarizing 事件播报失败: {e}")
+
+
 async def _compact_injected_history(agent) -> str:
     """C4 锚定摘要生成(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
 
@@ -246,6 +268,7 @@ async def _compact_injected_history(agent) -> str:
                 return ""
         # 2026-10-12 小欧 - 摘要调 LLM 前打 log-print（北京老陈令）: 无入口日志则长等待期无据可查 — 小欧-2026-10-12
         log_and_print(f"[start_step] 开始调 LLM 生成锚定摘要: 历史{len(_hist_for_summary)}条")
+        await _emit_summarizing(agent, "全量", len(_hist_for_summary))
         summary_text = await generate_anchored_summary(agent, _hist_for_summary)
         if _task_id and await check_cancelled(_task_id):
             logger.info("[start_step] 摘要后检测到任务取消, 丢弃摘要结果(调用方零退化装配原历史)")
@@ -318,6 +341,7 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         else:
             # 2026-10-12 小欧 摘要调 LLM 前 log-print(同老路): 长等待期无据可查 — 同源做法
             log_and_print(f"[start_step] 开始调 LLM 生成增量摘要: delta {len(delta_msgs)}条")
+            await _emit_summarizing(agent, "增量", len(delta_msgs))
             new_summary = await generate_chunked_summary(agent, delta_msgs, anchor_summary)
             if _task_id and await check_cancelled(_task_id):
                 logger.info("[start_step] 增量摘要后检测到取消, 丢弃结果(回退复用锚点摘要)")

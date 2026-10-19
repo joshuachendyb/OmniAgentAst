@@ -175,6 +175,7 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'resumed',
   'retrying',
   'installing', // 2026-10-19 小欧: 缺库自愈装包中(后端 MetaStep), 与 retrying 同为进行态帧
+  'summarizing', // 2026-10-19 小欧: start 阶段生成历史摘要中(后端 MetaStep)
   'merged',
 ]);
 

@@ -25,6 +25,7 @@ export const META_STEP_TYPES = [
   'resumed',
   'retrying',
   'installing', // 2026-10-19 小欧: 正在装依赖(缺库自愈), meta 类 — 不进业务流水线, 只上任务信息条
+  'summarizing', // 2026-10-19 小欧: 正在生成历史摘要, 同为进行态 meta
   'merged', // 2026-09-28 小欧: 注入应答, meta 类不进业务流水线
   'usage',
   'stats',
