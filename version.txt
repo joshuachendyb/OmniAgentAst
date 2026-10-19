@@ -1,3 +1,40 @@
+v1.3.3
+更新时间: 2026-10-20 06:21:11 - 小欧-2026-10-20
+## v1.3.2以来 变更汇总(22个commit: fix11/feat4/docs4/refactor3) - 小欧-2026-10-20
+[2026-10-20 06:21:11 小欧] 范围=v1.3.2以来全部commit(共22个); 主线: 安全确认链治理(confirm_fn工具自产确认文案与execute_sql逐条判定 + bash确认分支回退 + 信任让位恢复同组拒绝记忆清位 + 超时拒绝反馈修复) + 路径与shell解析安全收尾(四级入口迁移 + 门前初查去存在性 + 路径动作全动作取最严 + 高危删除解析不出目标改放行 + lexer跨段变量表) + 工具依赖治理(锁定包护栏/pip串行锁/缺库三处暴露点过滤/运行期惰性自愈) + 敏感参数落盘收口与冲突检测路径判据修复 + 摘要播报前端链路补齐 + 全量回归11失败清零(8559passed+0failed, P9-03转PASS) + [40]安全模块配置开关方案v1.0~v2.1; 注: 本批为既有体系内的缺陷修复与治理收口(无MAJOR级架构变更、对外契约零新增)，按PATCH记v1.3.3。
+
+### 1.3.19 安全确认链与弹窗文案治理
+[确认文案产地] tool_types.py 新增confirm_fn/op_param两字段(工具自产确认文案与操作标识参数, 安全层不硬编码工具名) + execute_sql确认粒度由一刀切改逐条判定(DROP/TRUNCATE/ALTER/DELETE无WHERE才确认) + bash与路径授权文案改分行(做什么/对什么/后果/时效) + safety_gate五处文案统一(超时按auth_path分流, 拒绝附被拒操作摘要) — 小欧 2026-10-19
+[超时拒绝反馈] safety_gate.py 超时拒绝反馈改记已构造原因(原引用作用域内未定义的_tp, 超时分支触发即NameError) + 注释规范补充严禁冗长不明晰 — 小欧 2026-10-19
+[新建库DDL] execute_sql.py 支持新建库 + DDL确认按破坏性收窄(仅DROP/TRUNCATE/ALTER/RENAME弹窗) — 小欧 2026-10-19
+
+### 1.3.20 路径与 shell 解析安全收尾
+[四级入口迁移] path_utils.py+32个工具文件 路径检查四级入口迁移(check_path_five_level→check_path_four_level, 删enforce_zone形参) + 删除硬底线归位delete_file自持 + 149处违规注释清理(裁定来源/会审字样/文档章节号/bug编号, SA编号改实际模块名) — 小欧 2026-10-18
+[门前初查] path_precheck.py+safety_gate.py 门前初查去存在性(只判格式, 存在性交各工具执行期自检) + 注释措辞订正 — 小欧 2026-10-19
+[动作取最严] shell_path_check.py+dual_path_check.py 路径动作全动作取最严(under-block: 删源授权不再挡住系统目标写的硬拦) — 小欧 2026-10-19
+[高危删除放行] shell_path_check.py 高危删除解析不出目标由硬拦改放行(静态解析器不完善是既定事实, 把能否解析当安全边界会持续误杀; 本分支只记日志不产生控制流) + lexer补跨段变量表(build_var_map/substitute_vars, 整条建表逐段代入, 只收纯字面量赋值防猜值把删除指向错目标) — 小欧 2026-10-19
+[解析与工具修正] shell_parse/lexer.py 撤销UNC裸路径抽取(网络类不纳入覆盖) + delete_file.py 删除硬底线兜底改按任务上下文判定(无任务上下文才兜底) + tree.py 非目录入参如实报错(修文件路径静默产出伪目录) — 小欧 2026-10-19
+[注释禁令] AGENTS.md 注释禁令补入裁定来源字样(同文档号/章节号/bug序号属过期无意义字符) — 小欧 2026-10-18
+
+### 1.3.21 工具依赖治理
+[依赖治理] dependency.py+registry.py 工具依赖治理(检查结论接入工具列表入口, 缺库工具不再进LLM试调才知不可用) + 锁定包护栏(LOCKED_PACKAGES经pip约束文件防传递依赖顶升httpx) + 纯检查与安装分离 + 缺库工具三处暴露点统一过滤(to_openai_tools/generate_param_reminder/BM25索引) + 运行期惰性自愈(to_thread卸载+冷却) + 装包进度MetaStep播报 — 小欧 2026-10-19
+[边界修正] dependency.py+tool_response.py+tool_executor.py 依赖子系统三处边界修正(每项三重复核) + pip全局串行锁(_PIP_LOCK置于两出入口, 实测6线程并发压降) + 批量失败逐个降级 + install_missing补装pre_install + normalize_dep回落pip_package + 版本约束显式告警 + 播报文案补工具名与空缺 — 小欧 2026-10-19
+
+### 1.3.22 敏感参数与冲突检测
+[落盘收口] secret_utils.py+storage.py+prompt_logger.py 敏感参数落盘收口 — 小欧 2026-10-19
+[身份键] conflict_detector.py _db_key身份键补缺省端口与大小写归一(防同库写操作漏并组并行误判) — 小欧 2026-10-19
+[路径判据] conflict_detector.py+secret_utils.py 冲突检测改按别名规范化路径库身份判定(修并行误判) + 敏感参数脱敏统一为redact_sensitive_params(修连接串明文入日志/SSE/DB) — 小欧 2026-10-19
+
+### 1.3.23 摘要播报前端链路
+[链路补齐] start_step.py+前端5文件 补齐摘要进度播报前端链路(并发提交只带走execution/stepFilter/sseParser三处, 其余5处被还原致summarizing帧虽归meta却无switch分支而静默丢失不进任务信息条) + useTaskInfo补case+infoMaps补图 + chat.ts三处联合类型+stepStyles补StepMeta + start_step编辑历史 — 小欧 2026-10-19
+
+### 1.3.24 全量回归 11 失败清零
+[5文件修复] path_tool_safety_checker.py(safety_gate信任让位按refusal_key恢复同组拒绝记忆pop + bash分支回退硬return False且confirm_fn返None留文案交分档分支) + extract_archive.py(目标检查改解析后out_dir, 除dest缺省raw None必判空误拦) + search_files.py(find根校验EXISTS转LIST_DIR, 除文件当目录空匹配误报成功) + storage.py(列表超大告警error降warning与字符串支对称, 除E2E日志判定误报); 全量8559passed+0failed, P9-03 E2E转PASS — 小欧 2026-10-20
+[窗口修复] window_resize.py 最大化窗口判定改走window_ops(win32gui.IsZoomed在当前pywin32不存在致AttributeError) + window_focus前台切换走四级尝试轮询(AttachThreadInput经实测排除) + 四文档4处违规注释精简 — 小欧 2026-10-19
+
+### 1.3.25 文档同步
+[40]安全模块配置开关与配置项扩展方案: v1.0(删除system.shell_risk_block, 中风险shell归hitl.shell_path_confirm管辖 + 禁区开关语义改写 + 补out_of_scope条目) → v2.0(start_step摘要播报+前端三处同步) → v2.1(使用地点收敛到最早分支点) — 小欧 2026-10-19
+
 v1.3.2
 更新时间: 2026-10-18 22:10:03 - 小欧-2026-10-18
 ## v1.3.1以来 变更汇总(26个commit: docs9/refactor10/fix6/feat1) - 小欧-2026-10-18
