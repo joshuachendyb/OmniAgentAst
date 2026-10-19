@@ -59,6 +59,11 @@ key 全局唯一，加载自检重复直接拒启。
   2026-10-18 小欧 - 新增 shell_readonly_prefixes(list_of, 默认展示值取安全层内置清单) 接入设置页:
     原为纯硬编码, 收紧须改代码发版; 接入后仅需改配置, 且清单在设置页可见可审计。
     注释精简冗余标注, 技术说明原样保留。
+  2026-10-19 小欧 - 文档[40]落地: security 组新增 9 项。
+    security.system 段 5 项(硬拦类): enabled(总闸) / forbidden_system_path_block /
+    forbidden_non_system_path_block / out_of_scope_path_block / shell_danger_block;
+    security.hitl 段 4 项(确认类): write_confirm / delete_confirm / dual_path_confirm / shell_path_confirm。
+    全部 bool 默认 True(缺键按"开", fail-closed 方向); 键名按前缀自动归入「系统 / HTL人工确认」两节, 前端零改动。
 """
 from typing import Any, Dict, List, Optional
 
@@ -141,12 +146,33 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         #   注意语义：confirmDangerousOps 仍负责操作前的人工确认弹窗，本项管「要不要走人工确认链路」。
         _item("security.system.confirm_dangerous_ops", "bool", "保存设置时二次确认", True,
               notice="保存时再弹一次确认框（防误触）；后端的安全拦截不依赖这个开关"),
+        # 2026-10-19 小欧 - 文档[40]落地: 系统段 5 项硬拦类开关(要不要拦)
+        #   security.system.enabled 为总闸, 关闭后整个安全层放行(实现: 折入 app/safety/safety_switch.py)
+        _item("security.system.enabled", "bool", "安全模块启用", True,
+              notice="关闭后整个安全层不再拦截，工具直接执行。仅在完全信任的环境下使用"),
+        _item("security.system.forbidden_system_path_block", "bool", "禁区系统目录拦截", True,
+              notice="关闭后不再拦截磁盘根与系统保护目录。此项不影响禁区非系统目录拦截与 bash 危险命令拦截"),
+        _item("security.system.forbidden_non_system_path_block", "bool", "禁区非系统目录拦截", True,
+              notice="关闭后不再拦截代码目录及其内部子级、允许根集自身及其上级。此项不影响禁区系统目录拦截"),
+        _item("security.system.out_of_scope_path_block", "bool", "白名单外路径拦截", True,
+              notice="关闭后白名单外路径不再逐次确认（递归删除仍直接拒绝）。此项不影响禁区系统/非系统目录拦截"),
+        _item("security.system.shell_danger_block", "bool", "bash 危险命令拦截", True,
+              notice="关闭后不再拦截高危命令（磁盘写入/关机/执行等）。此项不影响中风险命令确认"),
         # ── HTL人工确认段 ──
         # 2026-10-18 - 小欧 - 键名 security.enabled → security.hitl_enabled → security.hitl.enabled:
         #   该项只决定是否走人工确认链路, 危险防护(删根/系统目录/自杀/危险命令)不受其影响。
         #   两次改名后与同段 hitl.timeout / hitl.auto_confirm_delay 同前缀。禁 backward。
         _item("security.hitl.enabled", "bool", "人工确认总开关", True,
               notice="关闭后，无需人工确认，无信任，自动延时确认安全检查，（盘根/项目根等删除硬防线仍生效）。默认开启：缺键时按『开』处理，缺配置不会悄悄放松安全等级"),
+        # 2026-10-19 小欧 - 文档[40]落地: 确认段 4 项(要不要问); 只关"问不问", 硬拦不受影响
+        _item("security.hitl.write_confirm", "bool", "写操作确认", True,
+              notice="关闭后写入需授权的路径不再弹窗，直接放行。危险写入拦截不受本项影响"),
+        _item("security.hitl.delete_confirm", "bool", "删除操作确认", True,
+              notice="关闭后删除需授权的路径不再弹窗，直接放行。递归删除允许根集外目录的硬拦不受本项影响"),
+        _item("security.hitl.dual_path_confirm", "bool", "双路径操作确认", True,
+              notice="关闭后 copy/move 等双路径工具的授权请求不再弹窗，直接放行"),
+        _item("security.hitl.shell_path_confirm", "bool", "shell 命令确认", True,
+              notice="关闭后中风险命令与命令内路径授权不再弹窗。bash 危险命令拦截不受本项影响"),
         _item("security.hitl.auto_confirm_delay", "int", "自动确认倒计时(秒)", 10, range_=[0, 3600],
               notice="自动确认弹窗倒计时（秒），到时没人点就自动放行"),
         _item("security.hitl.timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],
