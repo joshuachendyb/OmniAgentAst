@@ -48,6 +48,9 @@
 #   超时文案按 auth_path 分流 —— 为空时原文案仍称"路径属受保护区域", 与路径层放行结果矛盾, LLM 会换路径重试。
 #   用户拒绝附被拒操作摘要(取自 tool_meta.op_param), 原只说拒了哪个工具, LLM 改参数重试仍被拒。
 # 2026-10-18 小欧 - 新增 _summarize_reject_target: 标识参数由工具自声明(op_param), 安全层不再硬编码工具名。
+# 2026-10-19 小欧 - 超时拒绝反馈修复: _denied 原记 f"未获授权({_tp})" 引用了作用域内未定义的 _tp(超时分支触发即 NameError),
+#   改记本分支已构造的 _reason, 与 rejected 事件 content 同源(auth_path 非空述路径, 否则述待确认操作摘要),
+#   LLM 历史反馈与实际拒绝原因一致 - 小欧-2026-10-19
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -368,7 +371,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                             tool_name=_cn,
                             confirm_id=_verdict.get("confirm_id")  # 2026-10-11 小欧 前端按id精确关窗(详见文件头)
                         )))
-                        _denied.append((_cn, f"未获授权({_tp})", call))
+                        _denied.append((_cn, _reason, call))
                     else:
                         logger.warning(f"[action] step={step} rejected: tool={_cn}")
                         # 2026-09-06 小欧: 拒绝不是error事件, 独立 type="user_rejected" 单独发
