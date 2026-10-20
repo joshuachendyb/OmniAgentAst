@@ -476,7 +476,7 @@ def my_parse_json(json_str):
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `check_preconditions` | 三线硬拦前置：空路径 / 路径穿越（`..` + realpath 比对）；命中返回三元组，未命中返回 None | file_path: str | Optional[Tuple[bool, Optional[str], Optional[str]]] |
+| `check_preconditions` | 路径穿越硬拦前置：路径含 `..` 或 realpath 解析出穿越 → 命中返回原因文案，通过返回 None（空值先由 `reject_reason_empty_path` 判；归属由 safety 层定） | file_path: str | Optional[str] |
 | `check_whitelist` | 白名单前缀匹配（含盘根特例） | file_path: str, allowed_paths: List[Path] | bool |
 | `resolve_allowed_paths` | 白名单取值：显式传入优先，否则取 `path_scope.get_default_allowed_paths()` | allowed_paths: Optional[List[Path]] | List[Path] |
 
@@ -498,7 +498,7 @@ def my_parse_json(json_str):
 |---|---|---|
 | `read_path_check.check_read_permission(path, params=None)` | `SafetyResult` | 读线放行；仅空/穿越/异常 `blocked` |
 | `write_path_check.check_write_permission(path, params=None)` | `SafetyResult` | system→`blocked`；non_system/白名单外→`requires_confirmation`+`auth_path`；合法→放行 |
-| `delete_path_check.check_delete_permission(path, params=None)` | `SafetyResult` | `guard`(删根底线)→`validate_delete`(禁区)→`check_delete_risk`(工作区边界 R3-R6) |
+| `delete_path_check.check_delete_permission(path, params=None)` | `SafetyResult` | `guard`(删根底线)→`check_delete_risk`(非法输入 fail-closed + 权限矩阵出 拒绝/确认/放行) |
 
 > 2026-10-17 小欧 文档[38] 基础归一化：read/write 新增 `check_*_permission`，与既有 `check_delete_permission` 同签名同返回；read/write 两封装口照搬 `path_tool_safety_checker._check_known_risks` 单路径分流口径。
 
@@ -536,11 +536,20 @@ def my_parse_json(json_str):
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `_as_bool` | ~~布尔强转（防LLM原始参数 'false'/'true' 字符串陷阱: bool('false')==True）~~ **已于 2026-10-15 删除**（内联进 check_delete_risk，isinstance 前置为冗余分支；全仓唯一布尔解析实现见 app/config.py `env_flag`） | ~~v: Any~~ | ~~bool~~ |
-| `check_delete_risk` | delete 差异判定，恒返回 SafetyResult（R3 为内联构造的放行产物，不用None表示放行）；已知风险由 _check_known_risks 覆盖不重复；**多授权域**（项目根+授权目录+会话工作区，根集取自 path_utils.get_allowed_roots 单源）；fail-closed：路径归一化异常或根集读取失败一律 blocked | params: dict | SafetyResult |
+| `check_delete_risk` | delete 差异判定，恒返回 SafetyResult；非法输入(空/`..`穿越) fail-closed blocked；归属查 `path_dir_lists` 名单 + `PERMISSION` 矩阵出 拒绝/确认/放行；fail-closed：格式化异常或名单读取失败一律 blocked | params: dict | SafetyResult |
 | `_get_allowed_roots` | ~~删除判定允许根列表~~ **已于 2026-10-15 删除**（根集合收为 `app/utils/path_utils.py` 的 `get_allowed_roots()` 公开单源） | — | — |
 | `_is_inside_any` | ~~目标是否位于任一允许根内~~ **已于 2026-10-15 删除**（零外部调用，内联为 `any(p == root or root in p.parents for root in roots)`） | — | — |
 
 > 消费链：path_tool_safety_checker.check_before_execute 对 delete 一次性计算 delete_risk，危险项入 _check_known_risks 无条件拦截，其余入 _get_needs_confirmation 确认分流
+
+### 8.9 路径格式化与归属判定内核（path_dir_lists.py）— 全系统单一真源
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `format_path` | 路径格式化唯一真源：把同一目标的多种写法(剥 `\\?\`/`\\?\UNC\` 前缀、expanduser、realpath 解 symlink/8.3 短名/正斜杠、折叠重复分隔符、去尾部分隔符保盘根、盘符大写)统一到一种格式；名单构建 `_complete`、查询判定 `classify_path`、安全入口工具参数三处共用 | file_path: str | str |
+| `classify_path` | 路径格式化 + 五档归属判定(禁区系统/禁区非系统/白名单自身/白名单下级/白名单外)唯一入口；读/写/删/dual/shell 各线共用 | file_path: str | Tuple[str, Optional[DirRule]] |
+| `absolutize_path` | 相对路径绝对化唯一真源：绝对原样；相对 = `abspath(join(base, path))`，`base` 由调用方按语义传入(工具工作区/下载目录/源父目录等)，不内置工具专属基准、不用进程 cwd；不做穿越处理。安全入口 `_format_tool_paths` 与 download 工具共用 | path: str, base: str | str |
+| `get_download_dir` | 下载目录唯一真源 = `get_config().get_project_root()/download`(未配回落用户主目录)；download 工具与安全入口 `_format_tool_paths` 共用(在安全层调用不反向依赖工具) | 无 | str |
 
 ### 8.3 白名单外临时授权（temp_auth.py，位于 app/safety/）
 
@@ -624,6 +633,8 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.11 | 2026-10-19 21:02:35 | **路径格式化收口**(小欧): §8.9 新登记 `format_path`(全系统唯一真源: 名单构建/查询判定/安全入口三处共用) 与 `classify_path`; `normalize_path` 删除(同口径重复实现, DRY); 安全入口 `check_before_execute` 在 directory_lists_scope 内对非 shell 工具的 path/dest 值就地格式化(键名不变, 只格式化绝对值, 相对值交各工具 resolve_path_param); 术语由"归一化"改"格式化" | 小欧 |
+| v5.10 | 2026-10-19 19:41:15 | **路径检查回归修复 + 死代码清理**(小欧): §8.3 `check_preconditions` 返回契约归一为 `Optional[str]`(原三元组第三元素恒为旧 category `"system"`, 目录数组化后无对应枚举); §8.4 `check_delete_permission` 链条订正(`guard`→`check_delete_risk`, `validate_delete` 死代码删除); §8.5 `check_delete_risk` 描述订正(非法输入 fail-closed + `path_dir_lists` 名单/矩阵)。修复写/删线 `..`穿越与空路径被降级为"确认"(fail-open)及 `security_docs` 设置页 500 | 小欧 |
 | v5.9 | 2026-10-16 23:57:15 | **tool去检查化(北京老陈裁定: 系统层检查的事tool层不重复, tool只执行+业务警告)**: §1.10 补登记 `path_has_reserved_char`/`path_has_reserved_name`/`path_has_extra_drive`/`validate_str_param`(自 file_path_checker 迁入 utils); file_path_checker 终点为三纯警告函数(`for_write/delete/overwrite`); 合法性规则(`OpCategory`/`validate_path_layers12`)迁 safety `path_1st_legality_check`(SA1 唯一检查点) | 小欧 |
 | v5.8 | 2026-10-15 | **路径订正 + TTL 登记**(小欧, 文档[33] 5.23 / P5步21-22): ①§4.4 与§八 标题/小节路径按终态订正 —— `app/tools/trust_db.py`+`app/tools/trust.py` → `app/safety/trust_db.py`+`app/safety/trust.py`; 第八章标题去掉已删的 `app/tools/security/`; §8.1/§8.3 标注位置由 `app/tools/security/` 改 `app/safety/`(该包 5.15 已整包删除) ②§4.4 补登记 `trust_scope_path`/`insert_session_trust`/`check_session_trust`/`cleanup_expired_trust`/`get_session_id_by_task` 五个原漏登函数, 并加**会话信任 TTL** 说明(写 expires_at / 查未过期 / 周期回收, NULL=不过期兼容存量, 重复信任不续期)。注: 本文件未记录 `SafetyResult` 的模块路径(仅作形参名出现), 故设计 5.23「SafetyResult 改 app/tools/tool_types.py」一节无对应条目可改 | 小欧 |
 | v5.7 | 2026-10-14 10:47:03 | **linked 增量摘要**(小欧): §3.2 登记 `get_chain_summary_anchor`(取链内最近非空摘要锚点) + `save_chain_cover_summary`(摘要写覆盖上界任务行, 单一出口); 模块内私有装配辅助(`_build_history_context`/`_strip_history_msgs`/`_assemble_anchor_delta`, 单消费者)按惯例不入清单 | 小欧 |
