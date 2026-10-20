@@ -1,3 +1,35 @@
+v1.4.0
+更新时间: 2026-10-20 18:13:20 - 小欧-2026-10-20
+## v1.3.3以来 变更汇总(18个commit: fix4/feat3/docs6/refactor5) - 小欧-2026-10-20
+[2026-10-20 18:13:20 小欧] 范围=v1.3.3以来全部commit(共18个); 主线: 历史裁剪按FC原子单元保证assistant恒先于tool(修并行tool_calls乱序致上游400) + 预算跳过回归修复(超预算单元整组跳过不再丢全部历史) + 安全范围门下沉checker注册后自守(safety_gate删名单门/precheck自守, 归线判定收口单一层) + 通用纯文本调用call_llm_text_task宿主自压缩摘要迁至llm_call + tool_executor经_current_text_task注入回调 + fetchpage prompt提取改走注入通道 + 安全模块12项独立开关落地 + path_dir_lists目录名单统一重构 + 安全Tab三类名单改读path_dir_lists + 设置页新增路径工具四类名单只读展示 + 发送停止暂停钮移入输入框右下角方形图标化与底部留白压缩 + SessionLayout折叠钮去独占行 + search_web域名过滤失效修复 + 配置项新增 + [41]信任模式v1.6→v1.11(1.4/二章审查+三章后端审计落地) + [40]v2.2 + notes目录维护/清空 + AuthorizationModal确认等级键对齐; 注: 本批为既有体系内的缺陷修复与治理收口(无MAJOR级架构变更、对外契约零新增), 用户明确指令按MINOR记v1.4.0。
+
+### 1.4.1 历史裁剪400修复与预算回归
+[FC原子单元裁剪] message_builder._trim_to_budget重写: 复用fc_message_types.fc_atomic_units按FC原子单元(assistant(tool_calls)+其tool响应)从新到旧预算收集, 组内升序展开保证assistant恒在tool之前(原反向逐条+扁平reverse在N≥2并行tool_calls时首个tool落到assistant前, 触发上游"tool result's tool id not found"400) + _trim_fc_pairs增顺序合法性判定(assistant声明位置<tool响应位置, 乱序对双侧剔除兜底) + fc_atomic_units由prune私有实现迁至协议层(解prune↔message_builder循环导入) - 小欧 2026-10-20
+[预算跳过回归] _trim_to_budget超预算即break改continue: 原break在最新一轮超大+紧预算时返回空致LLM丢失全部FC历史(fuzz 17%场景, 生产复现12轮+300000字符结果+10万预算→保留0条), 改后超预算单元整组跳过继续试更早单元(单元原子性保证不留半对) - 小欧 2026-10-20
+
+### 1.4.2 安全范围门下沉
+[范围门下沉checker] path_tool_safety_checker._check_before_execute在注册判定之后新增范围门(tool_meta.name∉PATH_TOOLS→pass_result放行, 用注册规范名判收别名) + safety_gate删循环入口名单门(if _cn not in PATH_TOOLS: continue) + path_precheck同步自守(非PATH_TOOLS不判文件路径, 注册表键不当文件路径校验) + safety_gate/path_precheck编辑历史与docstring同步; 行为: registry_write/create_task等非路径工具经检查器后立即放行, 直调入口与Agent入口同口径 - 小欧 2026-10-20
+
+### 1.4.3 通用纯文本调用与工具执行注入
+[纯文本调用归位] llm_call.py新增call_llm_text_task宿主(纯文本请求+自压缩摘要), summary.py私有_extract_response_content升格为公用(仅改名不改逻辑) + tool_executor经_current_text_task注入LLM回调(替代get_service().snapshot()直连, 规避tools→app.services越层) + fetch_webpage prompt提取改走注入通道(降级语义不变) + FUNCTIONS.md新立§3.7登记 - 小欧 2026-10-20
+
+### 1.4.4 安全开关与目录名单
+[12项独立开关] safety_switch.py+path_dir_lists.py+path_legality_router.py+path_tool_safety_checker.py+settings_registry.py 安全模块12项独立开关按第五章落地(危险命令/中风险/路径授权/shell路径确认/目录名单/写删确认等) - 小欧 2026-10-20
+[目录名单统一] path_dir_lists目录名单统一重构(构建点唯一, 作用域ContextVar嵌套复用) + 安全Tab三类名单改读path_dir_lists + settings_registry对接 - 小欧 2026-10-20
+
+### 1.4.5 前端与配置
+[设置页名单展示] settings_registry.py + [41] 设置页新增路径工具四类名单只读展示(read/write/delete/dual, 取值同源tool_constants, 不可写) - 小欧 2026-10-20
+[发送区改造] ChatInput+SubmitBar+SubmitActions+InputCore+ChatPage+Layout 发送停止暂停钮移入输入框右下角方形图标化(aria-label命名, 空输入发送钮置灰与提交门同源emptyDraft) + 底部留白压缩(合计18→6px) + 发送钮e2e改role定位 - 小欧 2026-10-20
+[折叠钮修复] SessionLayout 展开态折叠钮去独占行(改右栏容器relative+钮absolute悬浮右上zIndex10白底防文字穿透) - 小欧 2026-10-20
+[域名过滤修复] search_web.py+fetch_webpage.py 域名过滤str逐字符比对失效改_coerce_domain_list归一+host边界匹配 + fetchpage新增_extract_by_prompt(限时降级不报错) - 小欧 2026-10-20
+[配置项新增] 增加新的配置项目 - 小欧 2026-10-20
+
+### 1.4.6 文档与其他
+[[41]信任模式] v1.6一致性整改10项 → v1.9裁剪400修复与范围门下沉 → v1.10后端代码清单与设计审计 → v1.11 1.4/二章12项审查+三章后端审计9项落地(D-11回落effective_trust_mode/导入并入B清单/3.A diff可直接apply) - 小欧 2026-10-20
+[[40]安全开关方案] v2.2 追加落地后安全处理流程与配置读取使用点位置图 - 小欧 2026-10-19
+[notes维护/清空] E2E测试记录目录维护后整体清空(21件) - 小欧 2026-10-20
+[等级键对齐] AuthorizationModal 确认等级键对齐后端 SafetyLevel - 小欧 2026-10-20
+
 v1.3.3
 更新时间: 2026-10-20 06:21:11 - 小欧-2026-10-20
 ## v1.3.2以来 变更汇总(22个commit: fix11/feat4/docs4/refactor3) - 小欧-2026-10-20
