@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
-# 编辑历史: 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览路由薄壳(5 个 GET，逻辑全在 app/file_browse/browse_service.py) — 小欧-2026-10-13
+# 编辑历史: 2026-10-13 小欧 - 文档[28] v3.7: 文件浏览路由薄壳(6 个 GET，逻辑全在 app/file_browse/browse_service.py) — 小欧-2026-10-13
 #   同批新增 /files/root(项目根信息，前端做路径归一)与 /files/recent-files(T3 的 ● 标记数据源)。
-#   v3.8 修正: ① service 改文件顶部一次性 import（原先 5 处函数内 import 是照搬 sessions.py 风格，
-#     但本模块与 api/v1 无依赖关系，不存在循环，重复 import 违反 DRY/KISS）；
+#   v3.8 修正: ① service 改文件顶部一次性 import（原先 6 处函数内 import 是照搬 sessions.py 风格，
+#     但本模块与 api/v1 无依赖关系，不存在循环，重复 import 违反 DRY）；
 #     ② 补全返回类型注解；③ 模块名 service.py → browse_service.py（与 lifecycle/service.py 撞名）。
+#   2026-10-21 小杨 - 文档[28] v5.11 对账修正: ① 文件头"5 个 GET"→ 6 个（v3.8 追加了 /files/search，漏改）；
+#     ② get_file_content docstring"四道闸门"→ 五道闸门（实码顺序: 存在性→目录→类型→大小→编码）；
 """file_routes — 文件浏览 API 路由薄壳。
 
 按项目分层约定（tool_routes.py:9-10）：API 层只做参数解包与错误转译，
@@ -55,7 +57,7 @@ def search_files(
 def get_file_content(
     path: str = Query(..., description="相对项目根的文件路径（.txt / .md）"),
 ) -> Dict[str, Any]:
-    """读文本文件正文（类型/存在性/大小/编码四道闸门）。"""
+    """读文本文件正文（存在性/是目录/类型/大小/编码 五道闸门）。"""
     return browse.read_text_file(path)
 
 
