@@ -306,6 +306,14 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 
 > 落点说明(2026-10-10 小欧): ①判据接全局 `validate_path` 是会审关键修正。②**10轮会审20bug已修**(v5.5)：过滤收敛到 classify 单一真源（删 `load_effective_workspaces` 死函数、删 `(path,恒0)` 裸 tuple）；`is_dir()` 拒文件；上限前置；NULL 用 COALESCE；宽根 fail-closed；存值保大小写 + 库级 NOCASE；上限 200；快照 build 去嵌套。（BUG-13“目录名前4位重名”系误报已撤回：验证场景系人为构造，真实概率可忽略，恢复 [:4] 原设计。）常量 `MAX_WORKSPACES=64` / `MAX_PATH_CHARS=200` 同文件定义。
 
+### 3.7 LLM 调用层（`services/agent/llm_call.py`）(2026-10-20 新增 §, 小欧)
+
+全系统「发起 LLM 调用」唯一入口层（原 `llm_stream.py`, 8.5 拆分改名）。`call_llm_text_task` 原为压缩摘要私有 `_extract_response_content`, 按 北京老陈令(2026-10-20) 升格公用并**宿主迁至本模块**(SRP 归位: 通用纯文本调用不属压缩摘要引擎; 逻辑逐行复制零变化, `compaction/summary.py` 改薄引用, 两摘要函数调用点零变化)。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `call_llm_text_task` | 通用「纯文本任务」LLM 调用: 先问 provider 适配器 `callTextForTask` 接管(zen 免费层经此补 `GATE_STUBS` 门禁), 未接管回落 `call_llm_with_fallback`(openai_tools 恒 None 纯文本）。摘要主链与工具层共享(fetchpage prompt 提取经 `tool_executor` 注入 `app.tools.context._current_text_task` ContextVar 回调消费——工具层禁 import app.services 的守护合规管道), 任何 provider/model 通用。不抛异常, 失败/错误响应返回空串由调用方自定降级 | llm_agent: Agent 对象(须含 .llm_client / _task_llm_model), feed: List[Dict](任意 role) | str（最终正文/空串） |
+
 ---
 
 ## 四、工具辅助层（app/tools/）
@@ -633,6 +641,8 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.13 | 2026-10-20 16:03:19 | **§3.5→§3.7 登记迁移**(小欧, 三堂会审账实不符修正): `call_llm_text_task` 函数体宿主按北京老陈裁定自 `compaction/summary.py` 原样迁至 `services/agent/llm_call.py`(全系统"发起LLM调用"唯一入口层, SRP 归位; summary 改薄引用, 逻辑零变化), 清单条目新立 **§3.7 LLM 调用层** 承接(§3.5 压缩清单条目移除); v5.12 条目描述的 §3.5 位置按本条目作废以 §3.7 为准 | 小欧 |
+| v5.12 | 2026-10-20 15:45:50 | **§3.5 新登记 `call_llm_text_task`**(北京老陈令, 小欧): 压缩摘要私有 `_extract_response_content` 纯改名升格公用(逻辑零变化), fetchpage prompt 提取复用——工具层守护禁 tools→app.services, 故 tools/context 新增 `_current_text_task` ContextVar, 由 `tool_executor.execute_tool` 注入闭包, `fetch_webpage._extract_by_prompt` 经 `get_current_text_task` 消费(A1 hooks 同款管道); 同批修复 #1 searchweb 域名过滤(见 search_web.py 编辑历史) | 小欧 |
 | v5.11 | 2026-10-19 21:02:35 | **路径格式化收口**(小欧): §8.9 新登记 `format_path`(全系统唯一真源: 名单构建/查询判定/安全入口三处共用) 与 `classify_path`; `normalize_path` 删除(同口径重复实现, DRY); 安全入口 `check_before_execute` 在 directory_lists_scope 内对非 shell 工具的 path/dest 值就地格式化(键名不变, 只格式化绝对值, 相对值交各工具 resolve_path_param); 术语由"归一化"改"格式化" | 小欧 |
 | v5.10 | 2026-10-19 19:41:15 | **路径检查回归修复 + 死代码清理**(小欧): §8.3 `check_preconditions` 返回契约归一为 `Optional[str]`(原三元组第三元素恒为旧 category `"system"`, 目录数组化后无对应枚举); §8.4 `check_delete_permission` 链条订正(`guard`→`check_delete_risk`, `validate_delete` 死代码删除); §8.5 `check_delete_risk` 描述订正(非法输入 fail-closed + `path_dir_lists` 名单/矩阵)。修复写/删线 `..`穿越与空路径被降级为"确认"(fail-open)及 `security_docs` 设置页 500 | 小欧 |
 | v5.9 | 2026-10-16 23:57:15 | **tool去检查化(北京老陈裁定: 系统层检查的事tool层不重复, tool只执行+业务警告)**: §1.10 补登记 `path_has_reserved_char`/`path_has_reserved_name`/`path_has_extra_drive`/`validate_str_param`(自 file_path_checker 迁入 utils); file_path_checker 终点为三纯警告函数(`for_write/delete/overwrite`); 合法性规则(`OpCategory`/`validate_path_layers12`)迁 safety `path_1st_legality_check`(SA1 唯一检查点) | 小欧 |

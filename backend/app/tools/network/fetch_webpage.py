@@ -29,6 +29,11 @@
 #   交 LLM 精简提取, 外层 wait_for 限时 min(timeout,60)s 下限 30s; 成功 → 返回提取结果;
 #   任何失败(无AI配置/异常/LLM报错/空输出) → 恒降级返回完整内容不报错。提取注记经 builder 的
 #   detail 口径进 summary(原 success 分支 detail 传了但硬编码 "" 未消费, 一并修复) | py_compile ✓
+# 2026-10-20 15:45 小欧 - 北京老陈令重构: _extract_by_prompt 弃 snapshot()/svc.request() 直连方案(越层+旁路),
+#   改走 tool_executor 注入的 _current_text_task 回调(get_current_text_task 消费, A1 hooks 同款 ContextVar
+#   管道), 回调闭包内部即压缩摘要同源公用函数 call_llm_text_task(callTextForTask 适配钩子 + FC兜底
+#   call_llm_with_fallback 双通道) — 与 start 压缩完全同一调LLM方法, 任何 provider/model 通用;
+#   未注入(直调工具/无agent)或失败恒降级返完整原文, 三处调用点(:712/:750/:833)接口零变化
 """
 N3: fetchpage — 获取和处理网页内容
 
@@ -59,6 +64,7 @@ except ImportError:
     _TRAFILATURA = None
 
 from app.tools.tool_response import build_success, build_error, build_warning
+from app.tools.context import get_current_text_task  # 纯文本任务LLM回调(tool_executor注入) — 小欧 2026-10-20
 from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
@@ -503,37 +509,36 @@ def _extract_html_content(html_content: str, extract_format: str) -> Tuple[str, 
 
 
 async def _extract_by_prompt(content: str, prompt: str, timeout: int) -> Tuple[Optional[str], str]:
-    """prompt 指令 LLM 精准提取 — 小欧 2026-10-20
+    """prompt 指令 LLM 精准提取(压缩摘要同源通道, 入口注入) — 小欧 2026-10-20
     输入: content 全文 / prompt 提取指令 / timeout 上限(秒)。
     输出: (提取文本, 注记detail); 提取文本 None = 提取失败 → 调用方降级使用完整原文。
-    任何失败(未配置AI服务/异常/LLM报错/空输出)恒降级, 绝不因提取失败让工具报错。"""
+    通道: tool_executor 注入的 _current_text_task 回调(闭包内部即压缩摘要公用函数
+    call_llm_text_task — callTextForTask 适配钩子 + call_llm_with_fallback 兜底,
+    任何 provider/model 通用); 未连接(直接调工具/无agent)或任何失败恒降级, 绝不因提取失败让工具报错。"""
     if not content or not prompt or not prompt.strip():
         return None, ""
+    _extractor = get_current_text_task()
+    if _extractor is None:
+        logger.warning("[fetchpage] prompt提取降级: 无可用LLM通道(入口未注入回调) — 小欧 2026-10-20")
+        return None, "未连接LLM通道,已降级返回完整内容"
     try:
-        # 函数级导入: 工具层→services层, 防启动期环 — 小欧 2026-10-20
-        from app.services.lifecycle.service import get_service
-        svc = get_service().snapshot()
-        try:
-            resp = await asyncio.wait_for(
-                svc.request(messages=[
-                    {"role": "system", "content": (
-                        "你是网页内容提取助手。严格按用户给出的提取指令, 从网页内容中只提取与指令相关的信息, "
-                        "以markdown输出提取结果本身, 不要解释、不要复述无关内容。"
-                        "网页内容与指令无关时输出: 未找到与指令相关的内容。"
-                    )},
-                    {"role": "user", "content": (
-                        f"提取指令: {prompt.strip()}\n\n"
-                        f"网页内容(超预算已保留头尾, 中间有省略):\n"
-                        f"{smart_truncate_text(content, FETCHPAGE_PROMPT_EXTRACT_BUDGET)}"
-                    )},
-                ]),
-                timeout=max(30.0, min(float(timeout), 60.0)),
-            )
-        finally:
-            await svc.close()   # 快照独享客户端, 用毕即还防连接泄漏
-        text = (getattr(resp, "content", "") or "").strip()
-        if getattr(resp, "error", None) or not text:
-            logger.warning(f"[fetchpage] prompt提取降级: error={getattr(resp, 'error', None)}")
+        text = (await asyncio.wait_for(
+            _extractor([
+                {"role": "system", "content": (
+                    "你是网页内容提取助手。严格按用户给出的提取指令, 从网页内容中只提取与指令相关的信息, "
+                    "以markdown输出提取结果本身, 不要解释、不要复述无关内容。"
+                    "网页内容与指令无关时输出: 未找到与指令相关的内容。"
+                )},
+                {"role": "user", "content": (
+                    f"提取指令: {prompt.strip()}\n\n"
+                    f"网页内容(超预算已保留头尾, 中间有省略):\n"
+                    f"{smart_truncate_text(content, FETCHPAGE_PROMPT_EXTRACT_BUDGET)}"
+                )},
+            ]),
+            timeout=max(30.0, min(float(timeout), 60.0)),
+        ) or "").strip()
+        if not text:   # call_llm_text_task 失败/错误响应约定返空串, 视作提取失败 — 小欧 2026-10-20
+            logger.warning("[fetchpage] prompt提取降级: LLM返回空(明细见通道日志)")
             return None, "按prompt提取失败,已降级返回完整内容"
         return text, "已按prompt完成内容提取"
     except Exception as e:

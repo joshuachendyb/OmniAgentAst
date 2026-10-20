@@ -20,6 +20,10 @@ tool_executor — 工具执行逻辑
 # 2026-10-19 小欧 播报文案补工具名: 原为"正在安装依赖 html2text", 用户不知是哪个工具触发的。
 #   现为"正在为 <tool> 安装依赖 <pkgs>"(为哪个工具/装哪些包/进行中); 不带安装指令——
 #   该条给用户看, 用户不执行命令; 要执行的 LLM 走缺库错误体 hint, 那里才有完整指令。
+# 2026-10-20 15:45 小欧 纯文本任务LLM通道注入(北京老陈令, fetchpage prompt提取用): execute_tool 持 agent,
+#   注入压缩摘要同源 call_llm_text_task 闭包到 tools/context 的 _current_text_task ContextVar(hooks 同款
+#   try/finally reset 管道); 工具层守护禁 tools→app.services, 故工具内只经 get_current_text_task 消费回调,
+#   零越层。agent 无 llm_client 不注入(工具自降级); 并行/顺序两分支统一覆盖。
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -29,7 +33,9 @@ from app.tools.tool_response import is_success
 from app.logger import logger
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
 from app.safety.default_hooks import DefaultToolSecurityHooks  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
-from app.tools.context import set_current_hooks, reset_current_hooks  # A1: ContextVar 注入 — 小欧 2026-08-12
+from app.tools.context import set_current_hooks, reset_current_hooks, \
+    set_current_text_task, reset_current_text_task  # A1 安全hooks + 2026-10-20 纯文本LLM回调 — 小欧
+from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 小欧 通用纯文本调用(全系统发起LLM调用唯一入口层, llm_call.py)
 
 #: 缺库自愈冷却窗(秒): 装不上时窗内不再重复起 pip, 直接回缺库契约。
 #: 取值权衡: pip 冷启动+下载常需数十秒, 窗太小则每次工具调用都拖一次 pip 阻塞。
@@ -79,6 +85,14 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
     #   getattr 通道: 子类可在 agent 上挂 _security_hooks 自定义实现(OCP), 缺省用 DefaultToolSecurityHooks。
     _hooks = getattr(agent, "_security_hooks", None) or DefaultToolSecurityHooks()
     _hook_token = set_current_hooks(_hooks)
+    # 2026-10-20 15:45 小欧 注入纯文本任务LLM回调(压缩摘要 call_llm_text_task 同源封装):
+    #   仅 agent 含 llm_client 时注入; 无则不注入, 工具经 get_current_text_task() 得 None 自行降级。
+    _llm_connected = getattr(agent, "llm_client", None) is not None
+
+    async def _invoke_text_task(messages):
+        return await call_llm_text_task(agent, messages)
+
+    _text_token = set_current_text_task(_invoke_text_task) if _llm_connected else None
     try:
         if parallel:
             # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
@@ -92,6 +106,8 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
             )
     finally:
         reset_current_hooks(_hook_token)
+        if _text_token is not None:  # 2026-10-20 小欧 回调 token 采 get 置于 hooks 同一 finally, 零泄漏
+            reset_current_text_task(_text_token)
     elapsed = time.time() - start
     
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")

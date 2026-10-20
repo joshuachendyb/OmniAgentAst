@@ -43,6 +43,11 @@
 #   compliance: KISS-DIRECT/禁止backward
 # 2026-09-20 - 小欧 - 修复: ①删降级前reset_cancel(会清取消标志致已取消任务继续降级); ②hasattr(type(_lc))改getattr实例级检查(_check_stop是实例方法, type()检查永False→短路失效)
 # 2026-09-22 小欧 - constants.py 配置化迁移：import 改别名 + tool_choice/fallback/retries 改读 tuning 配置
+# 2026-10-20 16:2x 小欧 - 承接 call_llm_text_task(北京老陈裁定: 通用纯文本任务调用寄宿压缩摘要引擎不合SRP,
+#   自 compaction/summary.py 原样迁入 — 本模块本就是全系统"发起LLM调用"唯一入口层, 与 call_llm_with_fallback
+#   同类); 逻辑逐行复制未改(仅删同模块内对 call_llm_with_fallback 的冗余 lazy import), get_provider_adapter 升级为
+#   顶部正式 import。fetchpage prompt提取(tool_executor 经 _current_text_task ContextVar 注入回调)与
+#   session 摘要在内的所有调用方语义零变化
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -73,6 +78,7 @@ from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5�
 )
 from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RETRIES as _D_RETRIES, LLM_TOOL_CHOICE as _D_TOOL_CHOICE
 from app.config import get_config
+from app.llm.adapters import get_provider_adapter  # 2026-10-20 小欧 call_llm_text_task 迁入(原 summary.py 内 lazy 导入)
 from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk, create_cancelled_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 小欧 2026-09-20 修复 +create_cancelled_chunk(降级前取消短路收尾)
 from app.utils.text_utils import extract_tool_call_xml
 from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
@@ -320,4 +326,40 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         else:
             error_msg = _format_response_error(last_error)
         yield _yield_error_response(error_msg, agent)
+
+
+async def call_llm_text_task(llm_agent, feed: list) -> str:
+    """通用「纯文本任务」LLM 调用公用函数 — 小欧 2026-10-20 15:45 (2026-10-20 16:2x 自 compaction/summary.py 迁入本模块)
+
+    职责归属: 本模块是全系统「发起LLM调用」唯一入口层, 该函数与其成员 call_llm_stream/call_llm_with_fallback
+    同属一类(北京老陈裁定: 纯文本任务调用不该寄宿在压缩摘要引擎, SRP 归位)。任何 provider/model 通用。
+    取 LLM 最终正文; error/action 返回空串不抛异常, 由调用方自定降级。
+    2026-10-09 小欧: 先问适配器要不要接管本次纯文本调用(裁定"细节对主过程隐藏、
+    调用者透明" —— 故此处不提任何 provider 名, 也不写门禁/端点细节, 那些全在适配器内):
+      - 接管(返回 str)   → 直接用, 由适配器按该 provider 的约定发起(zen 免费层经 callTextForTask 补门禁)
+      - 不接管(返回 None) → 走下方既有 call_llm_with_fallback, 行为与升格前完全一致
+    输入: llm_agent Agent 对象(须含 .llm_client / _task_llm_model); feed 任意 role 消息列表(system/user/tool均可)。
+    输出: str LLM 最终正文; 失败/错误响应返回空串(零退化语义同摘要主链)。
+    前置条件: 仅要求传入含 .llm_client 的 agent 对象, 不绑定会话上下文; openai_tools 恒 None(纯文本, 不触发工具)。
+    """
+    try:
+        _lc = getattr(llm_agent, "llm_client", None)
+        # 任务级模型快照优先(同 react_step.py:341 写法); 摘要用全局当前模型, 不另配
+        _tl = getattr(llm_agent, "_task_llm_model", None) or getattr(_lc, "llm_model", None)
+        _adapter = get_provider_adapter(getattr(_tl, "provider", "") or "")
+        _txt = await _adapter.callTextForTask(_lc, feed)
+        if _txt is not None:
+            return _txt
+    except Exception as e:
+        # 定制路径自身异常不得影响主链, 落回通用路径
+        logger.warning(f"[llm_call] 定制调用钩子异常, 回落通用路径: {type(e).__name__}: {e}")
+
+    content = ""
+    async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None):
+        _p = getattr(item, "payload", None)
+        if _p is not None and isinstance(_p, dict) and _p.get("type") == "answer":
+            c = str(_p.get("content") or "").strip()
+            if c:
+                content = c
+    return content
 

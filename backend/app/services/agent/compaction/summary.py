@@ -17,6 +17,12 @@
 # 2026-10-10 小欧 摘要只取 type=="answer": error 的 content 是错误文案, 收下会让上层拿它顶替历史注入、历史全丢。
 # 2026-10-12 小欧 新增 _valid_summary_or_empty 单函数校验(北京老陈令): 长度下限+六段齐全+拒绝开头+压缩比,
 #   任一不过返空串走零退化; 两摘要函数共用, 不改流程 — 小欧-2026-10-12
+# 2026-10-20 15:45 小欧 北京老陈令: 私有 _extract_response_content 升格为公用函数 call_llm_text_task(纯改名不改逻辑),
+#   供 fetchpage prompt 提取等工具场景复用 — 通道(callTextForTask 适配钩子 + call_llm_with_fallback 兜底)不变,
+#   任何 provider/model 通用; 两摘要函数调用点同步更名, 零行为变化
+# 2026-10-20 16:2x 小欧 北京老陈裁定: 通用纯文本调用寄宿压缩摘要引擎不合SRP, call_llm_text_task 函数体
+#   原样迁至 app/services/agent/llm_call.py(全系统"发起LLM调用"唯一入口层), 本模块改顶部薄引用,
+#   两摘要函数调用点代码零变化(名字同名直用); 文档: FUNCTIONS.md §3.5→§3.7 登记同步迁移
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -29,43 +35,10 @@ from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tu
 from app.logger import logger, log_and_print  # 2026-10-12 小欧 - 校验拒绝改 log-print（北京老陈令）: 只写日志文件则控制台无据可查；logger 保留供 L56 老分支 — 小欧-2026-10-12
 from app.services.agent.compaction_constants import SUMMARY_FEED_MAX_CHARS
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
+from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 16:2x 小欧 通用纯文本调用迁至 llm_call(SRP归位, 北京老陈裁定), 本模块改薄引用
 
 # 摘要收尾指令(防"半截对话→续写", 见文件头编辑历史)
 _SUMMARY_TAIL_USER = "以上是历史对话数据。请按 system 指定格式输出六段摘要。"
-
-
-async def _extract_response_content(llm_agent, feed: List[Dict]) -> str:
-    """取 LLM 最终正文; error/action 返回空串, 交调用方装原历史(零退化) — 小欧 2026-10-10
-
-    2026-10-09 小欧: 先问适配器要不要接管本次纯文本调用(裁定"细节对摘要主过程隐藏、
-    调用者透明" —— 故此处不提任何 provider 名, 也不写门禁/端点细节, 那些全在适配器内):
-      - 接管(返回 str)   → 直接用, 由适配器按该 provider 的约定发起
-      - 不接管(返回 None) → 走下方既有 call_llm_with_fallback, **行为与改动前完全一致**
-    """
-    from app.llm.adapters import get_provider_adapter
-
-    try:
-        _lc = getattr(llm_agent, "llm_client", None)
-        # 任务级模型快照优先(同 react_step.py:341 写法); 摘要用全局当前模型, 不另配
-        _tl = getattr(llm_agent, "_task_llm_model", None) or getattr(_lc, "llm_model", None)
-        _adapter = get_provider_adapter(getattr(_tl, "provider", "") or "")
-        _txt = await _adapter.callTextForTask(_lc, feed)
-        if _txt is not None:
-            return _txt
-    except Exception as e:
-        # 定制路径自身异常不得影响主链, 落回通用路径
-        logger.warning(f"[compaction.summary] 定制调用钩子异常, 回落通用路径: {type(e).__name__}: {e}")
-
-    from app.services.agent.llm_call import call_llm_with_fallback  # 2026-09-05 小健 8.5拆分: llm_stream→llm_call改名
-
-    content = ""
-    async for item in call_llm_with_fallback(agent=llm_agent, messages=feed, openai_tools=None):
-        _p = getattr(item, "payload", None)
-        if _p is not None and isinstance(_p, dict) and _p.get("type") == "answer":
-            c = str(_p.get("content") or "").strip()
-            if c:
-                content = c
-    return content
 
 
 # 六段标记（与 SUMMARY_TEMPLATE 同源，改模板即改此处）— 小欧 2026-10-12
@@ -124,7 +97,7 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict],
     prompt = SUMMARY_TEMPLATE + (f"\npreviousSummary:\n{previous_summary}" if previous_summary else "")
     feed = [{"role": "system", "content": prompt}, *feed, {"role": "user", "content": _SUMMARY_TAIL_USER}]
     _src_len = sum(len(str(m.get("content") or "")) for m in messages)
-    return _valid_summary_or_empty(await _extract_response_content(llm_agent, feed), _src_len)
+    return _valid_summary_or_empty(await call_llm_text_task(llm_agent, feed), _src_len)
 
 
 async def generate_chunked_summary(llm_agent, new_block: List[Dict],
@@ -150,4 +123,4 @@ async def generate_chunked_summary(llm_agent, new_block: List[Dict],
     _src_len = sum(len(str(m.get("content") or "")) for m in new_block)
     if previous_summary:
         _src_len += len(previous_summary)
-    return _valid_summary_or_empty(await _extract_response_content(llm_agent, feed), _src_len)
+    return _valid_summary_or_empty(await call_llm_text_task(llm_agent, feed), _src_len)
