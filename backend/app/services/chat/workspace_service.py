@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-14 小欧 - 文档[33] 4.1连带表: :86 改从 app.safety.path_safe_check 导入(路径校验已升系统层)
+# 2026-10-14 小欧: 路径校验导入改从 app.safety.path_safe_check(路径校验已升系统层)
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -18,7 +18,7 @@ from app.logger import logger
 WORKSPACE_REJECTED_FIELD = "workspace_rejected"
 MAX_WORKSPACES = 64        # 单会话目录数上限(防一条 PATCH 灌爆面板/库)
 MAX_PATH_CHARS = 240       # 显式长度上限(Windows MAX_PATH 260 留余量), 不靠底层 resolve 碰运气
-                           # BUG-15 撤回(2026-10-10)：240→200 系无实证收紧 ——
+                           # 撤回(2026-10-10)：240→200 系无实证收紧 ——
                            #   从未有真实路径因此失败，且会拒绝原本合法的 200~240 字符路径。
                            #   恢复 240 原值；要收紧必须先有真实失败 case。
 
@@ -31,7 +31,7 @@ def _ws_warn(msg: str) -> None:
 def _normalize_ws_path(p: str) -> str:
     """归一化唯一源：空串/非绝对/超长硬拒 → resolve 绝对化 + 去尾分隔符。
 
-    BUG-14 订正：**保大小写入库**。Windows 大小写不敏感是"比较规则"不是"存储规则"，
+    订正：**保大小写入库**。Windows 大小写不敏感是"比较规则"不是"存储规则"，
     casefold 存库会导致面板全小写且无法恢复。去重走 casefold 键 + 库级 COLLATE NOCASE，
     存储本身必须无损。
 
@@ -65,7 +65,7 @@ def _is_broad_root(p: str) -> bool:
     判据取自全局事实(家目录 + 祖先链)，不自造路径黑名单。
     家目录**之内**的路径不拦(那是正常用法)。
 
-    BUG-8 订正：fail-closed。安全判据解析失败时必须按"宽根"处理(拒绝)，
+    订正：fail-closed。安全判据解析失败时必须按"宽根"处理(拒绝)，
     不能按"非宽根"放行，且必须留日志，否则保护静默消失。"""
     try:
         home = Path.home().resolve()
@@ -79,28 +79,23 @@ def _is_broad_root(p: str) -> bool:
 def _ws_deny_reason(p: str) -> Optional[str]:
     """会话目录合法性判据：返回拒绝原因(None=可用)。**全部复用全局判据，不自造黑名单**。
 
-    ★2026-10-16 三堂会审订正: 原文写"两道判据缺一不可(①classify_forbidden_path + ②写线)"是**过时**的 ——
-      ① 已删(纯冗余, 见下方注释), 现**只走写线一道**。
-    写线 validate_write 单道即可覆盖全部拒绝场景, 等价性已逐条核实:
-      · check_preconditions(空路径/`..`穿越/异常) 四条出口恒带 category="system"
-      · system 禁区(磁盘根/系统敏感/系统目录) → category="system"
-      · non_system(代码目录/授权目录)未授权 → "non_system"、已授权 → "non_system"(放行但仍非空)
-      · classify_forbidden_path 自身异常兜底 → "system"
-      反向闭合: cat2 非空只可能来自上列情形, 无第五种出口, 故不存在"原来拒、现在放行"的路径。
+    ★2026-10-19 小欧 - 目录数组归一化: 单一真源已收敛到 write_path_check.validate_write
+      (五档归属 scope + PERMISSION 矩阵), 本函数只调这一个公开接口, 不再自行判禁区。
+      覆盖场景: check_preconditions(空路径/`..`穿越/异常) 与 classify_scope/permission_of
+      自身异常一律兜底为 SCOPE_FORBIDDEN_SYSTEM, 确认档与放行档的区分由写线内部完成。
     另加宽根规则(本模块判据)：授权/使用宽根等于放大删除范围。"""
-    # 2026-10-15 小欧 - 文档[35] 阶段一连带: path_safe_check.validate_path 已随三线分离删除,
+    # 2026-10-15 小欧: path_safe_check.validate_path 已随三线分离删除,
     #   等价能力迁至 app.safety.write_path_check.validate_write(返回三元组, system 口径一致)。
     #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
-    # 2026-10-16 小欧 - 老陈裁定去越层: 原在此直接引 path_classify_category 摸底层分类,
-    #   但下一行 validate_write 内部本就调它, 判据完全重复(纯冗余)。
-    #   现只走写线公开接口, services 层不再越过 4 条线直接依赖底层分类模块。
+    # 2026-10-16 小欧 - 去越层: services 层只走写线公开接口, 不越过它直接摸底层分类模块
     from app.safety.write_path_check import validate_write as _validate_write_path
-    _ok, _msg, cat2 = _validate_write_path(p)
-    if cat2:
-        # _ok=True 而 cat2 非空 = non_system 已获任务级授权(写线放行), 此时 _msg 为 None,
+    from app.safety.path_dir_lists import SCOPE_FORBIDDEN_NON_SYSTEM, SCOPE_FORBIDDEN_SYSTEM
+    _ok, _msg, scope = _validate_write_path(p)
+    if scope:
+        # _ok=True 而 scope 非空 = 该档已获任务级授权(写线放行), 此时 _msg 为 None,
         #   需自己拼文案, 否则用户只看到无信息量的"路径在全局禁区内"。
         if _ok:
-            return f"路径位于代码目录/授权目录自身或其上级({p}), 不可直接作为会话目录"
+            return f"路径位于{scope}类保护区自身或其上级({p}), 不可直接作为会话目录"
         return _msg or "路径在全局禁区内"
     if _is_broad_root(p):
         return "宽根目录(家目录/用户目录/盘根)不可作为会话目录: 会放大删除允许范围"
@@ -134,9 +129,9 @@ def set_session_workspaces(conn, session_id: str, raw_paths: list[str]) -> list[
     归一化单条失败（OSError/ValueError，含空串/相对路径/超长）归入 rejected 一并报出，不 500。
     ⚠ 只改数据库行，**绝不删除磁盘目录** —— 面板移除条目 = 目录留在磁盘由用户自行处置。
 
-    BUG-12 订正：数量检查必须在归一化之前。归一化每条都做磁盘 resolve，
+    订正：数量检查必须在归一化之前。归一化每条都做磁盘 resolve，
     超量请求先归一化后拒绝等于先吃全部 IO 再说不(实测 3000 条 209ms)。
-    BUG-14 订正：去重键用 casefold，存值保大小写(Windows 大小写不敏感，
+    订正：去重键用 casefold，存值保大小写(Windows 大小写不敏感，
     `C:\\A` 与 `c:\\a` 是同一目录，去重后只留一条；库级再有 COLLATE NOCASE 兜底)。"""
     if len(raw_paths) > MAX_WORKSPACES:
         return [{"path": f"({len(raw_paths)} 条)", "reason": f"目录数超上限({MAX_WORKSPACES})"}]
@@ -167,18 +162,18 @@ def classify_workspace_rows(rows) -> tuple[list, list]:
     不在此处打日志：调用方按场景决定要不要告警（运行时必须告警）。
 
     裁决顺序（禁区判定必须先于存在判定）：
-      ① 归一化失败 → 不可用（优雅跳过，绝不抛；调用方整单不崩）
-      ② `_ws_deny_reason` 全套判据 → 不可用（禁区/系统保护/宽根）
-      ③ 非目录（不存在，或是个文件）→ 不可用
-      ④ 通过 → 有效
+       归一化失败 → 不可用（优雅跳过，绝不抛；调用方整单不崩）
+       `_ws_deny_reason` 全套判据 → 不可用（禁区/系统保护/宽根）
+       非目录（不存在，或是个文件）→ 不可用
+       通过 → 有效
 
-    BUG-1/4/5 根因订正：此前运行时过滤只调半套 `classify_forbidden_path`，
+    根因订正：此前运行时过滤只调半套 `classify_forbidden_path`，
     与写入判据两套标准、且 exists 跑在禁区之前。此处改调全套 `_ws_deny_reason`，
     与 PATCH 预检同一把尺子；脏行一律归入 unusable，调用方永不被抛异常掀翻。
-    BUG-2/3 订正：`exists()` 改为 `is_dir()`。文件不是目录，不能进白名单。
-    BUG-11 订正：返回 `list[str]`。`(path, 恒0)` 裸 tuple 是 is_default 死后残留，
+    订正：`exists()` 改为 `is_dir()`。文件不是目录，不能进白名单。
+    订正：返回 `list[str]`。`(path, 恒0)` 裸 tuple 是 is_default 死后残留，
     全链路无人读第二项。
-    BUG-17 说明（非缺陷）：此处对已归一路径再 resolve 一次是**故意的**——
+    说明（非缺陷）：此处对已归一路径再 resolve 一次是**故意的**——
     入库 resolve 防重，运行 resolve 防 TOCTOU（两次调用之间符号链接可被替换）。
     单行约 0.09ms，64 行约 6ms，相对 LLM 秒级延迟可忽略；缓存反而引入失效复杂度(YAGNI)。
 
@@ -219,7 +214,7 @@ def reconcile_session_workspaces(conn, session_id: str) -> list[str]:
     """进入会话·建立一条规则（唯一真源）：空则造默认目录 → 逐条裁决 →
     禁区行清库 / 不存在则建目录 / 可用则留 → 返回有效路径集。
 
-    BUG-1 根因订正：此前编排器自写一套循环，归一化无 try，一条脏行抛异常
+    根因订正：此前编排器自写一套循环，归一化无 try，一条脏行抛异常
     掀翻整个任务。此处复用 `classify_workspace_rows` 做全部裁决（脏行只进
     unusable 不抛），本函数只做 classify 干不了的两件事：造默认目录、建目录/清行。
     ⚠ 只删数据库行，**绝不删除磁盘目录**。"""
@@ -244,7 +239,7 @@ def reconcile_session_workspaces(conn, session_id: str) -> list[str]:
             conn.execute(
                 "DELETE FROM chat_session_workspaces WHERE session_id = ? AND path = ?",
                 (session_id, u["path"]))
-        except Exception as _de:                 # BUG-9 订正：失败就只报失败，
+        except Exception as _de:                 # 订正：失败就只报失败，
             logger.warning(f"[chat] 禁区目录清理失败(本轮仍不放行): {u['path']} - {_de}")
             continue                             #   不再无条件打"已清理"
         logger.warning(f"[chat] 会话目录已落入禁区, 已从列表清理: {u['path']}")
@@ -266,7 +261,7 @@ def _build_default_workspace_dir(session_id: str):
     从 stream_orchestrator 下沉至此(2026-10-10)：它是 workspace 的事不是编排的事，
     reconcile 在本模块，倒挂 import 会破分层。
 
-    BUG-13 撤回(2026-10-10)：此前称"前4位会重名"是误报 —— 验证用的
+    撤回(2026-10-10)：此前称"前4位会重名"是误报 —— 验证用的
     aaaa1111/aaaa2222 是人为构造的同秒同前缀，真实 UUID 前4位随机(65536 种)，
     碰撞需同秒建会话且前缀相同，概率可忽略。恢复 [:4] 原设计，不做过度工程。
     sanitize: Windows 非法字符 \\/:*?"<>| → _；首尾空格与结尾 . 去除；空 → session。
@@ -289,7 +284,7 @@ def session_exists(conn, session_id: str) -> bool:
     必要性：PRAGMA foreign_keys=ON 下，对不存在 session_id 的 INSERT 会抛
     sqlite3.IntegrityError → 500。
 
-    BUG-7 订正：`is_deleted = FALSE` 漏掉 NULL。is_deleted 列是后 ADD 的，
+    订正：`is_deleted = FALSE` 漏掉 NULL。is_deleted 列是后 ADD 的，
     存量行全是 NULL，三值逻辑下 `NULL = FALSE` 恒不成立 → 老会话全 404。
     改 COALESCE，NULL 按未删处理（与 link_enabled 的存量 NULL 惯例一致）。"""
     row = conn.execute(

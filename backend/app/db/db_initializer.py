@@ -7,15 +7,15 @@
 #   [问题] 库处于"旧operations + 已建空task_operations"半残态时, RENAME报"already another table with name task_operations", 后端启动失败
 #   [根因] CREATE TABLE IF NOT EXISTS task_operations 与 RENAME 顺序/幂等不完整: 旧库首次启动先CREATE空task_operations, RENAME失败留残表, 再次启动RENAME撞名
 #   [改法] 先查_has_ops与_has_task_ops; 两者并存则DROP空task_operations再RENAME; 幂等覆盖半残态
-#   [原理] ①半残态task_operations必为空表(IF NOT EXISTS创建后无INSERT), DROP安全不丢数据
-#          ②正常旧库(仅operations)直接RENAME保留历史; 新库/已迁移库CREATE跳过
-#          ③DROP+RENAME使迁移在任何状态都收敛到唯一task_operations, 幂等自愈
+#   [原理] 半残态task_operations必为空表(IF NOT EXISTS创建后无INSERT), DROP安全不丢数据
+#          正常旧库(仅operations)直接RENAME保留历史; 新库/已迁移库CREATE跳过
+#          DROP+RENAME使迁移在任何状态都收敛到唯一task_operations, 幂等自愈
 # 2026-07-18 - 小欧 - 所有时间列 TIMESTAMP→TEXT, 去 DEFAULT CURRENT_TIMESTAMP; _ensure_column title_updated_at TEXT; backup_expires_at TEXT
 # 2026-08-08 - 小欧 - 全程统一本地时区: 时间列注释 `-- UTC ISO 8601` → `-- 本地ISO无Z` (13处)
-# 2026-08-16 - 小欧 - S0 表结构先行(10.1.7①-a, 北京老陈 2026-08-16 定案, 幂等 DDL):
-#   ①chat_tasks 新建(B1, 含 context_link_mode/context_root_task_id 链列) ②chat_messages/chat_task_steps 补 task_id、
-#   chat_messages 补 metadata、chat_sessions 补 metadata/model_override 五列(_ensure_column 只 ADD 缺列) ③token_usage 新建(B2)+五索引
-#   ④chat_session_trust 新建(B3) ⑤索引: idx_tasks_session/idx_steps_task/idx_msg_task/idx_msg_timestamp/idx_trust_session;
+# 2026-08-16 - 小欧 - S0 表结构先行(10.1.7-a,  2026-08-16 定案, 幂等 DDL):
+#   chat_tasks 新建(B1, 含 context_link_mode/context_root_task_id 链列) chat_messages/chat_task_steps 补 task_id、
+#   chat_messages 补 metadata、chat_sessions 补 metadata/model_override 五列(_ensure_column 只 ADD 缺列) token_usage 新建(B2)+五索引
+#   chat_session_trust 新建(B3) 索引: idx_tasks_session/idx_steps_task/idx_msg_task/idx_msg_timestamp/idx_trust_session;
 #   与 10.1.9 迁移章节对齐(现网老库幂等补建不丢数据)
 # 2026-08-19 - 小欧 - v2.0核心数据模型重构(9.1→9.5→9.7): chat_message_steps→chat_task_steps全局改名
 #   (message_id→ai_message_id)、删chat_messages.execution_steps列、删chat_session_title_history DDL、
@@ -28,23 +28,23 @@
 #   因 v2 迁移回灌 SET comprehension SELECT 依赖 _ensure_column 补的 client_os/timestamp 等列; 且
 #   建 chat_task_steps(ai_message_id) 索引需迁移改名后的新列, 故必须晚于补列、早于索引(修正初版时序错误)
 # 2026-08-20 - 小欧 - 11.1 token 四层同构: 新增 task_accumulated_tokens/session_accumulated_tokens 实时累计列(落库口径与 react_cycle 同源); 新增 _verify_acc_columns() 复核落库, 防 _ensure_column 隐性失败致隐性 OperationalError
-# 2026-08-21 - 小欧 - 差异设计落地: ①chat_task_steps去重+唯一索引(idx_steps_unique); ②token_usage去重+唯一索引(idx_token_usage_task_call); ③启动期空白AI行清扫(标败不删行); ④init_operations_db拆分——移除timers DDL+新增init_timers_db独立函数(新库TEXT时间列); ⑤新库timers.db三列TEXT(老列不动, SQLite不支持ALTER COLUMN)
-# 2026-08-22 - 小欧 - 北京老陈 2026-08-22 定: chat_sessions.sessionModel 结构化落地 + 旧 model_override 兼容迁移:
-#   ①_ensure_column 补 sessionModel TEXT(会话级模型覆盖落库点); ②旧列 model_override 兼容: 存在则 RENAME COLUMN 到 sessionModel(现代 SQLite),
+# 2026-08-21 - 小欧 - 差异设计落地: chat_task_steps去重+唯一索引(idx_steps_unique); token_usage去重+唯一索引(idx_token_usage_task_call); 启动期空白AI行清扫(标败不删行); init_operations_db拆分——移除timers DDL+新增init_timers_db独立函数(新库TEXT时间列); 新库timers.db三列TEXT(老列不动, SQLite不支持ALTER COLUMN)
+# 2026-08-22 - 小欧 - 2026-08-22 定: chat_sessions.sessionModel 结构化落地 + 旧 model_override 兼容迁移:
+#   _ensure_column 补 sessionModel TEXT(会话级模型覆盖落库点); 旧列 model_override 兼容: 存在则 RENAME COLUMN 到 sessionModel(现代 SQLite),
 #     回退路径先建 sessionModel 列再尝试 DROP 旧列(失败保留无害); 旧裸字符串数据缺 provider 不复制(免污染 JSON 解析);
-#   ③修正初版回退缺陷(原 UPDATE 引用尚未创建的 sessionModel 列致初始化崩溃)
+#   修正初版回退缺陷(原 UPDATE 引用尚未创建的 sessionModel 列致初始化崩溃)
 # 2026-08-22 - 小欧 - model结构化归一报告v1.25 6.2: 三表归一幂等迁移——chat_tasks(provider/model/display_name→
 #   sessionModel JSON)、token_usage(model/provider→task_model JSON)、chat_user_message(model/provider→chat_model JSON),
 #   老库 PRAGMA 查列后 ALTER 补列+旧行数据回灌(旧列废弃保留不删); idx_token_model 改 json_extract 表达式索引
-# 2026-08-23 - 小欧 - 三轮三堂会审修复: ①新增 _verify_model_ref_columns fail-loud 硬校验(迁移吞异常则三写路径
-#   全线崩, 仿 _verify_acc_columns 先例); ②chat_tasks.sessionModel 新建 DDL 补 NOT NULL(insert_task 必填,
+# 2026-08-23 - 小欧 - 新增 _verify_model_ref_columns fail-loud 硬校验(迁移吞异常则三写路径
+#   全线崩, 仿 _verify_acc_columns 先例); chat_tasks.sessionModel 新建 DDL 补 NOT NULL(insert_task 必填,
 #   与 token_usage.task_model 约束对称)
-# 2026-08-23 - 小欧 - 回归bug#2修复(token_usage.model NOT NULL): 原"旧列废弃保留不删"对 token_usage 不完整——
+# 2026-08-23 - 小欧 - 回归bug修复(token_usage.model NOT NULL): 原"旧列废弃保留不删"对 token_usage 不完整——
 #   旧 model 列带 NOT NULL 约束, token_usage_insert 只写 task_model 不写 model → 新行 model=NULL 触发
 #   NOT NULL constraint failed, 全部任务落库失败; 旧 idx_token_model 为 model 裸列索引(DDL:CREATE INDEX IF NOT EXISTS
 #   因重名跳过未替换为 json_extract), DROP 列前须先删; 故迁移收尾: DROP 旧 idx_token_model → 建 json_extract 表达式索引
 #   (与 DDL:245 对齐) → ALTER DROP COLUMN model/provider(已无代码引用, 干净归一并解除 NOT NULL 约束)
-# 2026-08-23 - 小欧 - 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): chat_task_steps 外键退役——
+# 2026-08-23 - 小欧 - 锚B解除("chat_messages 写保留当空气"): chat_task_steps 外键退役——
 #   新建 DDL 删 FOREIGN KEY(ai_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE 行;
 #   老库经幂等表重建迁移(查 sqlite_master DDL 含旧引用→建新表→复制→DROP子表→RENAME), 位于索引创建之前。
 #   动因: foreign_keys=ON 下该外键是硬依赖(步骤落库要求 chat_messages 行存在/删行级联删步骤),
@@ -52,11 +52,11 @@
 # 2026-08-23 - 小欧 - 落盘文件A/B 实施(文档落码): chat_tasks 加 files_dir 列
 #   (TEXT DEFAULT '', _ensure_column 幂等)——任务级文件A/B 目录引用 $dir=files/{session_id}/{task_id}/,
 #   排查定位锚: 任务→files_dir→文件A 按 step/tool_no/retry_no 三键组定位→顺链文件B; orchestrator 同事务写入
-# 2026-08-24 - 小欧 - 目录前导(北京老陈裁定, 仅注释更正防失真, 本文件零代码改动): files_dir 实际值改为
+# 2026-08-24 - 小欧 - 目录前导(仅注释更正防失真, 本文件零代码改动): files_dir 实际值改为
 #       files/Sion_{session_id}/Task_{task_id}/(前缀常量定义于 file_persist, orchestrator 同源拼装落库)
 # 2026-08-27 - 小欧 - 阶段2(chat_messages表退役): 整体移除W7启动清扫UPDATE chat_messages(崩溃残留空白AI行标败), 系统对该表零写依赖
 # 2026-08-27 - 小欧 - 阶段3(chat_messages表退役): 停建表——移除CREATE TABLE chat_messages及铁律注释、_ensure_column补齐(timestamp/display_name/client_os等/status/thought/task_id列)、idx_messages_session/idx_msg_task/idx_msg_timestamp索引; init_chat_db末尾真实DROP TABLE chat_messages(旧库历史数据已先由migrate_v2_chat_restructure回灌结构化表, 不丢数据); 系统对该表零依赖
-# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(北京老陈定案, 详见doc-9月优化/会话信任功能修复方案): chat_session_trust 表结构+迁移——
+# 2026-09-02 - 小欧 - 会话信任功能修复 v1.5(定案, 详见doc-9月优化/会话信任功能修复方案): chat_session_trust 表结构+迁移——
 #  path 列(TEXT, NULL=无路径工具的工具级通配; 非空=该路径及子目录树前缀递归豁免), UNIQUE 从(session_id,tool_name)扩为(session_id,tool_name,path)支持同工具多路径行;
 #  建表后插入迁移段: PRAGMA table_info 检测旧表无 path 列→DROP 重建(存量工具级信任全部视为无效清空, 定案"存量全部清空不迁移")→新库含path列跳过
 # 2026-09-07 - 小欧 - 4.4.1旧case清零: init_chat_db 接 migrate_cancelled_rows_to_final 调用(位于 migrate_v2_chat_restructure
@@ -71,17 +71,17 @@
 #   走既有幂等迁移器 _ensure_column（复用优先，与 version/title_locked 同款写法），不新建迁移分支、不改解析逻辑；
 #   DEFAULT FALSE 使新行天然为关闭态，读侧再用 COALESCE 兜住存量 NULL 行（ALTER ADD COLUMN 不回填旧行）。
 #   compliance: 复用优先 / DRY（单一迁移出口）/ KISS-DIRECT — 小欧 2026-10-02
-# 2026-10-04 - 小欧 - 帧类型改名的一次性数据迁移(北京老陈令 context_overview→history_context): 新增
+# 2026-10-04 - 小欧 - 帧类型改名的一次性数据迁移(令 context_overview→history_context): 新增
 #   _migrate_step_type_context_rename，改写 chat_task_steps.step_json 内旧 type 行；仿 _migrate_model_ref_columns
 #   幂等写法(查旧名行→json 解析→改 type→回写)，异常降级不阻断启动。接在 _verify_model_ref_columns 之后。
 #   不迁则旧行 type 旧名不在前端 META_STEP_TYPES，isBusinessStep 误判业务步 → 历史回放渲染未知卡片 — 小欧 2026-10-04
-# 2026-10-05 - 小欧 - 12.2-C3(③a): chat_tasks.ai_message_id 加 UNIQUE 索引(先保首行去重再建, 幂等, 同 12.2-C1/C2);
+# 2026-10-05 - 小欧 - 12.2-C3(a): chat_tasks.ai_message_id 加 UNIQUE 索引(先保首行去重再建, 幂等, 同 12.2-C1/C2);
 #   该列此前无唯一约束, 分配器重号即静默重复。实测存量 501 行零重复、去重零删除、重复插被拒新 id 放行
-# 2026-10-05 - 小欧 - 12.2-C4(③b): 新建 id_sequence 表作 user/assistant 消息 id 单一序列, 替掉 app 侧线性探测
+# 2026-10-05 - 小欧 - 12.2-C4(b): 新建 id_sequence 表作 user/assistant 消息 id 单一序列, 替掉 app 侧线性探测
 #   (探测上限10次+耗尽退化全局MAX+1+threading.Lock 仅单进程有效); 空表时幂等播种到存量 id 上界之上
-# 2026-10-11 10:13:16 - 小欧 - 北京老陈令「final 的时候回填事件列表」: chat_tasks 加 process_events TEXT DEFAULT '[]'(事件列表快照列, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 与 artifacts 同款形态) — 小欧-2026-10-11
+# 2026-10-11 10:13:16 - 小欧 - 令「final 的时候回填事件列表」: chat_tasks 加 process_events TEXT DEFAULT '[]'(事件列表快照列, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 与 artifacts 同款形态) 小欧-2026-10-11
 # 2026-10-14 小欧 - linked 增量摘要: chat_tasks 加 task_summary 列(摘要落覆盖上界任务行, CREATE TABLE 内定义 + _ensure_column 幂等补存量库, 空=无锚点走老路) — 小欧-2026-10-14
-# 2026-10-15 小欧 - 文档[33] 5.16(P5步21): 会话信任 TTL 落列 —— chat_session_trust 加 expires_at 列
+# 2026-10-15 小欧 - 会话信任 TTL 落列 —— chat_session_trust 加 expires_at 列
 #   (CREATE TABLE 新建 + v1.5 重建分支 + _ensure_column 幂等补存量库, 三处同源不漏), 并加 idx_trust_expires
 #   索引(与 idx_trust_session 并列, 供 cleanup_expired_trust 扫描)。无 DEFAULT: 历史行读出 NULL
 #   = 不过期, 存量信任行为与改动前一致不被误杀。— 小欧-2026-10-15
@@ -116,7 +116,7 @@ def init_chat_db(get_conn):
 
             
             -- 独立步骤表 — 小欧 2026-07-14; v2.0 改名 chat_task_steps — 小欧 2026-08-19
-            -- 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 外键 REFERENCES chat_messages(id)
+            -- 锚B解除("chat_messages 写保留当空气"): 外键 REFERENCES chat_messages(id)
             --   已退役(旧库经下方幂等表重建迁移); ai_message_id 为纯贯通键, 与 chat_tasks.ai_message_id 同名同值,
             --   不再外键引用任何表 — 小欧 2026-08-23
             CREATE TABLE IF NOT EXISTS chat_task_steps (
@@ -131,15 +131,15 @@ def init_chat_db(get_conn):
                 user_message_id INTEGER  -- v2.0 冗余：免 JOIN 直达 user 消息 — 小欧 2026-08-19
             );
 
-            -- ===== S0 新增 3 表（10.1.7① 表结构先行，北京老陈 2026-08-16 定案，幂等）— 小欧 2026-08-16 =====
-            -- ① chat_tasks 新建（B1：任务级存储 + 上下文链落库列；字段以文档2 3.1.2/3.5.3 权威为准）
+            -- ===== S0 新增 3 表（10.1.7 表结构先行，2026-08-16 定案，幂等）— 小欧 2026-08-16 =====
+            --  chat_tasks 新建（B1：任务级存储 + 上下文链落库列；字段以文档2 3.1.2/3.5.3 权威为准）
             CREATE TABLE IF NOT EXISTS chat_tasks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id TEXT UNIQUE NOT NULL,
                 session_id TEXT NOT NULL,
                 user_message_id INTEGER, user_input TEXT, response TEXT,
                 artifacts TEXT DEFAULT '[]',
-                -- 2026-10-11 小欧 - 事件列表快照(北京老陈令「final 的时候回填事件列表」):
+                -- 2026-10-11 小欧 - 事件列表快照(令「final 的时候回填事件列表」):
                 --   前端收到 final 帧时把 useTaskInfo 产出的 processEvents(排除 heartbeat)POST 回填,
                 --   存条目本体{kind,text,time}而非原始帧 —— 历史回放直接渲染不重跑派生, 实时与历史文案零漂移。
                 --   与 chat_task_steps 是两条独立存储: 前者存业务步, 本列存过程事件快照, 互不覆盖。 — 小欧-2026-10-11
@@ -149,7 +149,8 @@ def init_chat_db(get_conn):
                 context_link_mode TEXT, context_root_task_id TEXT,   -- 上下文链：续聊/新任务 + 链根任务id
                 -- 摘要存"它覆盖到的最后一个任务"这一行, 该行即下次锚点; 空=无锚点走老路。— 小欧 2026-10-14
                 task_summary TEXT,
-                sessionModel TEXT NOT NULL,                          -- 归一 JSON(ModelRef) 单列; display_name 列废弃(设计要求2); 三堂会审: 任务行创建必有模型, 与 token_usage.task_model 约束对称 — 小欧 2026-08-22
+                path_scope_snapshot TEXT,        -- 目录清单快照 JSON(每 loop 构建的目录数组原样全量, 约 2KB) — 小欧 2026-10-19
+                sessionModel TEXT NOT NULL,                          -- 归一 JSON(ModelRef) 单列; display_name 列废弃(设计要求2);  任务行创建必有模型, 与 token_usage.task_model 约束对称 小欧 2026-08-22
                 accumulated_usage TEXT DEFAULT '{}',
                 llm_call_count INTEGER DEFAULT 0, total_steps INTEGER DEFAULT 0,
                 retry_count INTEGER DEFAULT 0, max_steps INTEGER DEFAULT 0,   -- 最大步骤数上限（文档2 3.5.3）
@@ -159,7 +160,7 @@ def init_chat_db(get_conn):
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
 
-            -- ④ token_usage 新建（B2：token 四维度归属落库，权威=9.3）
+            --  token_usage 新建（B2：token 四维度归属落库，权威=9.3）
             CREATE TABLE IF NOT EXISTS token_usage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id TEXT NOT NULL, task_id TEXT NOT NULL,
@@ -169,8 +170,8 @@ def init_chat_db(get_conn):
                 created_at TEXT
             );
 
-            -- ⑤ chat_session_trust 新建（B3：HITL 会话信任清单，权威=文档2 3.1.7）
-            -- v1.5(2026-09-02 小欧, 北京老陈定案): 信任精确到 tool+path——
+            --  chat_session_trust 新建（B3：HITL 会话信任清单，权威=文档2 3.1.7）
+            -- v1.5(2026-09-02 小欧, 定案): 信任精确到 tool+path——
             --   path 列: NULL=无路径工具的工具级通配; 非空=该路径及其子目录树递归(前缀递归);
             --   UNIQUE 从 (session_id, tool_name) 扩为 (session_id, tool_name, path) 支持同工具多路径行
             CREATE TABLE IF NOT EXISTS chat_session_trust (
@@ -266,10 +267,10 @@ def init_chat_db(get_conn):
         # ===== 补列（幂等只 ADD 缺列、老行 NULL 不丢数据）— 小欧 2026-08-16 =====
         # chat_task_steps 补 task_id 列（挂任务用）
         _ensure_column(conn, "chat_task_steps", "task_id", "TEXT")
-        # ③ chat_sessions 补 sessionModel 列(会话级模型覆盖落库点, 结构化 provider+model 的 JSON)
+        #  chat_sessions 补 sessionModel 列(会话级模型覆盖落库点, 结构化 provider+model 的 JSON)
         # 旧列 model_override 兼容迁移: 存在则改名(现代 SQLite); 老 SQLite 不支持 RENAME 时降级为
         # 先建目标列再尝试删旧列(失败则保留, 无害)。旧 model_override 是裸字符串(缺 provider),
-        # 无法映射结构化, 故不复制数据(复制会污染 sessionModel 致解析失败) — 北京老陈 2026-08-22
+        # 无法映射结构化, 故不复制数据(复制会污染 sessionModel 致解析失败) 2026-08-22
         _cur = conn.execute("PRAGMA table_info(chat_sessions)")
         _cols = [r[1] for r in _cur.fetchall()]
         if "model_override" in _cols:
@@ -292,22 +293,24 @@ def init_chat_db(get_conn):
         # 11.1 token 四层同构：任务级/会话级实时累计列 — 小欧 2026-08-20
         _ensure_column(conn, "chat_tasks", "task_accumulated_tokens", "TEXT DEFAULT '{}'")
         _ensure_column(conn, "chat_sessions", "session_accumulated_tokens", "TEXT DEFAULT '{}'")
-        # 文件A/B 排查目录引用(文档落码 $dir) — 物理目录 = files/Sion_{session_id}/Task_{task_id}/(前导 2026-08-24 北京老陈裁定)
+        # 文件A/B 排查目录引用(文档落码 $dir) 物理目录 = files/Sion_{session_id}/Task_{task_id}/(前导 2026-08-24 )
         _ensure_column(conn, "chat_tasks", "files_dir", "TEXT DEFAULT ''")   # 落盘文件A/B — 小欧 2026-08-23
-        # 2026-10-11 小欧 - 事件列表快照(北京老陈令「final 的时候回填事件列表」): 存量库幂等补列,
+        # 2026-10-11 小欧 - 事件列表快照(令「final 的时候回填事件列表」): 存量库幂等补列,
         #   DEFAULT '[]' 使改动前的历史任务读出为空列表, 前端兜底后行为与今天一致。 — 小欧-2026-10-11
         _ensure_column(conn, "chat_tasks", "process_events", "TEXT DEFAULT '[]'")
         # 存量库幂等补列, 无 DEFAULT(历史行读出 None=无锚点走老路)。— 小欧 2026-10-14
         _ensure_column(conn, "chat_tasks", "task_summary", "TEXT")
-        # 2026-10-15 小欧 - 文档[33] 5.16: 会话信任 TTL 落列(存量库幂等补)。无 DEFAULT,
+        # 目录清单快照(每 loop 构建的目录数组原样全量落库, 供事后回溯该任务用的是哪套目录范围)
+        _ensure_column(conn, "chat_tasks", "path_scope_snapshot", "TEXT")  # 小欧 2026-10-19
+        # 2026-10-15 小欧 - 会话信任 TTL 落列(存量库幂等补)。无 DEFAULT,
         #   历史行读出 NULL = 不过期, 语义与改动前一致(存量信任不被误杀)。— 小欧-2026-10-15
         _ensure_column(conn, "chat_session_trust", "expires_at", "TEXT")
-        # 2026-10-15 - 北京老陈裁定 - 信任记录加 task_id(可追溯): 记录该条信任由哪个任务产生, 供事后审计。
+        # 2026-10-15 - - 信任记录加 task_id(可追溯): 记录该条信任由哪个任务产生, 供事后审计。
         #   **不进 UNIQUE 键**: 信任仍是 (session_id, tool_name, path) 会话级, 加进唯一键会让同一路径
         #   在不同任务下重复建行, 属功能退化。**check_session_trust 也不按它过滤**, 跨任务信任照常生效。
         #   存量行回填 NULL = 未知来源, 老行为完全不变(零退化)。— 小欧-2026-10-15
         _ensure_column(conn, "chat_session_trust", "task_id", "TEXT")
-        # 2026-10-15 小欧 - 文档[33] 5.16: TTL 过期清理扫描索引, 存量库亦须补建(IF NOT EXISTS 幂等)
+        # 2026-10-15 小欧 - TTL 过期清理扫描索引, 存量库亦须补建(IF NOT EXISTS 幂等)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
         # 11.1 增强: 复核新增列确已落库, 缺失则显式抛出, 避免后续 SELECT/UPDATE 隐性 OperationalError 致任务链崩溃 — 小欧 2026-08-20
         _verify_acc_columns(conn)
@@ -315,18 +318,18 @@ def init_chat_db(get_conn):
         # ===== 归一迁移(小欧 2026-08-22 报告v1.25 6.2): 三表旧分离列 → JSON 单列, 幂等(查列→补列→回灌) =====
         # 旧 model/provider/display_name 列废弃保留不删(SQLite DROP 兼容性差, 保留无害), 读写一律走新 JSON 列
         _migrate_model_ref_columns(conn)
-        # 三堂会审修复(小欧): 三写路径(insert_task/token_usage_insert/update_user_message_final)每任务强依赖
+        # (小欧): 三写路径(insert_task/token_usage_insert/update_user_message_final)每任务强依赖
         #   新 JSON 列, 补列失败若静默降级则全部任务落库崩溃——仿 _verify_acc_columns 先例 fail-loud 硬校验
         _verify_model_ref_columns(conn)
 
-        # 2026-10-04 小欧: step_json 内帧类型改名迁移(北京老陈令 context_overview→history_context)
+        # 2026-10-04 小欧: step_json 内帧类型改名迁移(令 context_overview→history_context)
         #   不迁则旧行 type 旧名不在前端 META_STEP_TYPES 内, isBusinessStep 会误判为业务步 → 回放渲染未知卡片
         _migrate_step_type_context_rename(conn)
 
         # v2.0 结构迁移 — 小欧 2026-08-19
-        #  ①必须在 _ensure_column 之后(_ensure_column 为回灌 SELECT 补齐 client_os/timestamp 等列)
-        #  ②必须在建 idx_steps_message 索引之前(索引依赖迁移改名后的 ai_message_id 列)
-        #  ③migrate_steps 顶层依赖 storage→db→database→db_initializer 存在循环导入, 采用函数内延迟 import
+        #  必须在 _ensure_column 之后(_ensure_column 为回灌 SELECT 补齐 client_os/timestamp 等列)
+        #  必须在建 idx_steps_message 索引之前(索引依赖迁移改名后的 ai_message_id 列)
+        #  migrate_steps 顶层依赖 storage→db→database→db_initializer 存在循环导入, 采用函数内延迟 import
         from app.services.chat.migrate_steps import migrate_v2_chat_restructure
         migrate_v2_chat_restructure(get_conn)
         # 4.4.1旧case清零(2026-09-07 小欧): 现存 type=cancelled 旧行改写为 final+cancelled,
@@ -338,14 +341,14 @@ def init_chat_db(get_conn):
         from app.services.chat.migrate_steps import migrate_purge_injected_dupes
         migrate_purge_injected_dupes(get_conn)
 
-        # ===== 锚B解除(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): chat_task_steps 外键退役 =====
+        # ===== 锚B解除("chat_messages 写保留当空气"): chat_task_steps 外键退役 =====
         # 旧 DDL: FOREIGN KEY(ai_message_id) REFERENCES chat_messages(id) ON DELETE CASCADE,
         # 在 PRAGMA foreign_keys=ON(database.py:172) 下是硬依赖: 步骤落库要求 chat_messages 行存在,
         # 删 chat_messages 行会 CASCADE 级联删步骤数据。解除后 ai_message_id 为纯贯通键
         # (与 chat_tasks.ai_message_id 同名同值), 不再外键引用任何表。
         # SQLite 不支持 ALTER 外键 → 幂等表重建(建新表→复制→DROP子表→RENAME), 仅当 sqlite_master DDL
         # 仍含旧引用时执行一次; 被重建的是子表, FK=ON 下 DROP 子表不违规, 无需摆弄 foreign_keys pragma。
-        # 时序(三堂会审实证修正 小欧 2026-08-23): 必须位于 migrate_v2_chat_restructure 之后
+        # 时序( 小欧 2026-08-23): 必须位于 migrate_v2_chat_restructure 之后
         #   (message_id→ai_message_id 改名收敛后, 重建 SELECT 才能引用新列名)、
         #   位于本函数索引创建(idx_steps_*)之前——DROP TABLE 会连带删旧索引
         _fk_sql = conn.execute(
@@ -413,7 +416,7 @@ def init_chat_db(get_conn):
                 UNIQUE(session_id, tool_name, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE)""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_session ON chat_session_trust(session_id)")
-        # 2026-10-15 小欧 - 文档[33] 5.16: TTL 过期清理按 expires_at 扫描, 补索引(与 idx_trust_session 并列)
+        # 2026-10-15 小欧 - TTL 过期清理按 expires_at 扫描, 补索引(与 idx_trust_session 并列)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_trust_expires ON chat_session_trust(expires_at)")
 
         # ===== 12.2-C1: 步骤唯一性下沉DB — 同一AI行×同一任务×同一序号恰一行 =====
@@ -440,7 +443,7 @@ def init_chat_db(get_conn):
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_token_usage_task_call "
             "ON token_usage(task_id, llm_call_count)")
 
-# ===== 12.2-C3: chat_tasks.ai_message_id 唯一性下沉DB(③a) — 一任务恰一行 =====
+# ===== 12.2-C3: chat_tasks.ai_message_id 唯一性下沉DB(a) 一任务恰一行 =====
         # 去重保首行再建唯一索引(均幂等, 同 C1/C2): 存量若有重复, 直接建索引会抛错致启动崩溃
         # ai_message_id 可空, SQLite UNIQUE 视 NULL 互异, 多 NULL 行安全 — 小欧 2026-10-05
         conn.execute(
@@ -451,7 +454,7 @@ def init_chat_db(get_conn):
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_ai_message "
             "ON chat_tasks(ai_message_id)")
 
-        # ===== 12.2-C4(③b): 消息 id 单一序列 — user 与 assistant 共用, 跨进程原子 =====
+        # ===== 12.2-C4(b): 消息 id 单一序列 user 与 assistant 共用, 跨进程原子 =====
         # 原由 app 侧线性探测分配 assistant id(上限10次, 耗尽退化全局MAX+1), 而 user id 走
         # chat_user_message AUTOINCREMENT —— 两者各自计数, 只能靠探测防撞, 且探测用的锁是
         # threading.Lock(仅单进程有效, uvicorn --reload 即两进程)。现改由本序列表统一发号:
@@ -621,7 +624,7 @@ def _verify_acc_columns(conn: sqlite3.Connection) -> None:
 def _migrate_step_type_context_rename(conn: sqlite3.Connection) -> None:
     """chat_task_steps.step_json 内 type=context_overview → history_context, 幂等(仿 _migrate_model_ref_columns 写法)
 
-    2026-10-04 小欧 - 帧类型改名(北京老陈令)的一次性数据迁移: 旧行不改则 type 旧名不在前端 META_STEP_TYPES,
+    2026-10-04 小欧 - 帧类型改名(令)的一次性数据迁移: 旧行不改则 type 旧名不在前端 META_STEP_TYPES,
     isBusinessStep 取反即误判业务步, 历史回放会渲染出未知卡片。异常降级不阻断启动(同 _migrate_model_ref_columns)。
     """
     try:
@@ -646,7 +649,7 @@ def _migrate_step_type_context_rename(conn: sqlite3.Connection) -> None:
 
 
 def _verify_model_ref_columns(conn: sqlite3.Connection) -> None:
-    """复核归一 JSON 列确已落库(仿 _verify_acc_columns: 缺失显式抛出, 防写路径隐性 OperationalError 全线崩) — 三堂会审修复 小欧"""
+    """复核归一 JSON 列确已落库(仿 _verify_acc_columns: 缺失显式抛出, 防写路径隐性 OperationalError 全线崩) 小欧"""
     _checks = [("chat_tasks", "sessionModel"), ("token_usage", "task_model"), ("chat_user_message", "chat_model")]
     for _t, _c in _checks:
         _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()

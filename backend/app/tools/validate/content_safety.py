@@ -1,11 +1,13 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-09 - 北京老陈 - 创建文件(validate层 内容安全+模块安装检查; 架构分层说明注释)
-# 2026-08-04 - 小欧 - DRY收敛: _check_text_content 手写json.dumps → 复用公共safe_json_dumps(行为不变, dict/list自动转JSON供写入); 头部补编辑历史区对齐同目录规范 — 北京老陈驱动
-# 2026-10-15 北京老陈裁定(拆分·SRP) - 本文件由 file_safety_checker.py 拆出, 只保留「内容安全」一件事(SRP):
+# 2026-07-09 - - 创建文件(validate层 内容安全+模块安装检查; 架构分层说明注释)
+# 2026-08-04 - 小欧 - DRY收敛: _check_text_content 手写json.dumps → 复用公共safe_json_dumps(行为不变, dict/list自动转JSON供写入); 头部补编辑历史区对齐同目录规范 驱动
+# 2026-10-15 (拆分·SRP) - 本文件由 file_safety_checker.py 拆出, 只保留「内容安全」一件事(SRP):
 #   原文件把 check_content_safety(内容) 与 check_tool_module(依赖库安装) 两件互不相干的事塞在一起,
 #   且文件名 file_safety_checker 与实际职责无任何关系 — 名不副实(命名即契约)。
 #   本文件业务代码逐字复制自原 check_content_safety + _check_text_content, 零改动。
+# 2026-10-20 05:27 小欧 - FIX _check_text_content: dict/list 转 JSON 的日志在 content 重新赋值之后
+#   才取 type, 恒记成 "str" 失去诊断价值; 先留原始类型再转换, 日志记录真实原始类型
 """
 内容安全检查（validate层） — 所有写工具共用的写入内容校验
 
@@ -14,7 +16,7 @@
 
 原 file_safety_checker.py 的 docstring 架构分层说明(validate层 与 Safety层 互不依赖)仍然成立, 见同目录 file_path_checker.py。
 
-北京老陈 2026-07-09
+ 2026-07-09
 """
 from typing import Any, Optional, Tuple
 
@@ -46,7 +48,7 @@ def check_content_safety(
 
     Returns:
         (error, safe_content) — error=None表示通过，safe_content为处理后内容
-    北京老陈 2026-07-09
+     2026-07-09
     """
     # 第1层：None检查（ALL）
     if content is None:
@@ -88,8 +90,11 @@ def _check_text_content(content: Any, options: dict, param_name: str) -> Tuple[O
     2026-08-04 小欧: 手写json.dumps → 复用公共safe_json_dumps(DRY复用先查库)"""
     if isinstance(content, (dict, list)):
         try:
+            # 2026-10-20 小欧 - FIX: 日志在 content 重新赋值之后才取 type, 恒记成 "str",
+            #   失去"原始是什么类型"的诊断价值; 先留原类型再转换 — 小欧-2026-10-20
+            _orig_type = type(content).__name__
             content = safe_json_dumps(content, ensure_ascii=False, indent=2)
-            logger.info(f"[check_content_safety] {param_name}参数为{type(content).__name__}，已自动转为JSON字符串")
+            logger.info(f"[check_content_safety] {param_name}参数为{_orig_type}，已自动转为JSON字符串")
         except Exception as e:
             return f"{param_name}序列化失败: {e}", content
     if not isinstance(content, str):

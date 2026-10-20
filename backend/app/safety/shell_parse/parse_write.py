@@ -7,11 +7,15 @@
   WRITE_VERBS_PS / WRITE_VERBS_CMD / WRITE_VERBS_BASH 三型; 并正则由 verb_table.build_verb_re 承担。
 2026-10-18 - 小欧 - 补写动词缺口: 补 curl/wget/tee/sed -i/dd/tar -x/
   Clear-Content/Invoke-WebRequest -OutFile/Set-ItemProperty 等写动词, 原表漏致这些命令解析为空清单。
-  有意裁剪: move 族归搬移套; del 族归删套; 重定向 > / >> 不在本表面向文本扫(由 _has_redirect 单列覆盖)。
+  有意裁剪: move 族归搬移套; del 族归删套; 重定向 > / >> 不在本表面向文本扫(由 lexer.has_file_redirect 覆盖)。
   `sed` 纯读形态归读套; 仅原地改写 `sed -i` 由此处特例接住(动作优先级: 写 > 读)。
 2026-10-18 - 小欧 - append 标志取涂空引号文本(intent), 与 _has_redirect 同口径。
 2026-10-18 - 小欧 - 复制类(cp/copy/Copy-Item/xcopy/robocopy/rsync)源原被一律当写目标,
   改为「源出 READ、目标出 WRITE」(与搬移同形, 源不被删); 源/目标切分复用 lexer.split_source_target 单一真源。
+2026-10-20 - 小欧 - 重定向判定收口 lexer.has_file_redirect: 原 `_has_redirect` 只判存在 ">",
+  把 `2>&1`(fd 复制)也当写重定向, 且非拷贝分支把 extract_paths 全部 token 当写目标
+  (`python build.py 2>&1` 误判 build.py 为写)。现 fd 复制/空设备不计重定向; 写目标只来自
+  写动词参数与真实重定向目标(lexer.redirect_targets), 扫描器与删线共用。
 
 分层: 本文件只出 write 动作, 不判权限。
 """
@@ -52,11 +56,6 @@ SHELL_COPY_RE = build_verb_re(_COPY_VERBS_BY_SHELL)
 _COPY_DEST_SWITCHES = frozenset({"-destination", "-dest"})
 
 
-def _has_redirect(statement: str) -> bool:
-    """语句是否含重定向写(> 或 >>, 在涂空引号文本上判, 排除引号内字面量)"""
-    return ">" in lexer.blank_quotes(statement)
-
-
 def parse_write_action(statement: str, shell: str, cwd) -> List[PathAction]:
     """解析一条语句中的写动作, 返回 write 动作清单 — 小欧 2026-10-18
 
@@ -64,9 +63,11 @@ def parse_write_action(statement: str, shell: str, cwd) -> List[PathAction]:
     复制类(COPY 套): 源出 READ、目标出 WRITE; 重定向目标亦补为 WRITE。
     """
     intent = lexer.blank_quotes(statement)
-    if not (SHELL_WRITE_RE.search(intent) or _WRITE_SPECIAL_RE.search(intent) or _has_redirect(statement)):
+    has_write_verb = bool(SHELL_WRITE_RE.search(intent) or _WRITE_SPECIAL_RE.search(intent))
+    has_redirect = lexer.has_file_redirect(statement)
+    if not (has_write_verb or has_redirect):
         return []
-    append = ">>" in intent   # 2026-10-18 小欧: 与 _has_redirect 同口径(涂空引号), 防引号内 ">>" 误设
+    append = ">>" in intent   # 与 has_file_redirect 同口径(涂空引号), 防引号内 ">>" 误设
     # 复制类: 源/目标分线(源判读, 目标判写), 不再把源当写目标
     if SHELL_COPY_RE.search(intent):
         sources, targets = lexer.split_source_target(statement, cwd, _COPY_DEST_SWITCHES)
@@ -76,20 +77,31 @@ def parse_write_action(statement: str, shell: str, cwd) -> List[PathAction]:
                                                "wildcard": ("*" in p) or ("?" in p)},
                                origin="copy-dst") for p in targets]
         covered = {p.lower() for p in sources + targets}
-        if _has_redirect(statement):
-            for path in lexer.extract_paths(statement, cwd):
+        if has_redirect:
+            for path in lexer.redirect_targets(statement, cwd):
                 if path.lower() not in covered:
                     actions.append(PathAction(WRITE_KIND, path,
                                               {"append": append,
                                                "wildcard": ("*" in path) or ("?" in path)},
                                               origin="write"))
         return actions
+    # 2026-10-20 小欧: 写目标只有两个来源 —— 写动词的参数、真实重定向的目标。
     actions = []
-    for path in lexer.extract_paths(statement, cwd):
-        wildcard = ("*" in path) or ("?" in path)
-        actions.append(PathAction(WRITE_KIND, path,
-                                  {"append": append, "wildcard": wildcard},
-                                  origin="write"))
+    if has_write_verb:
+        for path in lexer.extract_paths(statement, cwd):
+            wildcard = ("*" in path) or ("?" in path)
+            actions.append(PathAction(WRITE_KIND, path,
+                                      {"append": append, "wildcard": wildcard},
+                                      origin="write"))
+    if has_redirect:
+        covered = {a.path.lower() for a in actions}
+        for path in lexer.redirect_targets(statement, cwd):
+            if path.lower() in covered:
+                continue
+            actions.append(PathAction(WRITE_KIND, path,
+                                      {"append": append,
+                                       "wildcard": ("*" in path) or ("?" in path)},
+                                      origin="write"))
     return actions
 
 

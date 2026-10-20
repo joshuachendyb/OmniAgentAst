@@ -3,7 +3,7 @@
 # 编辑历史:
 # 2026-07-17 - 小欧 - 早期encoding校验: write()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 # 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户要求 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
-# 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter #544 行×列收口+两态呈现; data 仅留 content_preview(#23), 严禁与 llm_data 段重复显示
+# 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter  行×列收口+两态呈现; data 仅留 content_preview(), 严禁与 llm_data 段重复显示
 # 2026-07-25 - 小欧 - 截断治理: content[:50]/[-50:] → WRITE_INER_PREVIEW_CHARS 命名常量
 # 2026-07-29 - 小欧 - hint优化: 语法错误hint从死的"请修复语法错误后重试"改为动态"Python语法错误(行N)，建议:xxxx"; metrics新增error_line+suggestion
 # 2026-07-29 - 小欧 - PYEOF容错: Python文件末尾整行PYEOF自动剥离(heredoc泄漏), 前置在validate_syntax之前; metrics新增auto_removed_pyeof
@@ -20,13 +20,13 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 修复#5: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
+# 2026-08-13 - 小欧 - 修复修复: _write_file_atomic 的 open(读尾字节/写/降级重写)/mkdir/stat 全链
 #   to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码降级回退分支同步;
 #   主函数/编码探测的 exists/is_file/read_text 探测同步长路径化(超长路径不误判"文件不存在")
 # 2026-08-21 - 小欧 - 11.6.1 exemplar: success分支调 with_artifact_file 声明产出物
 # 2026-09-20 - 小欧 - X2/13.3.4 跨任务文件写仲裁接入 + 修复:
-#   ①write 主函数 acquire_write 登记 + 全部返回路径 finally 统一 release(13.3.4, 冲突仅提示不阻断);
-#   ②修复(红case驱动): _arb_warning = acquire_write 返回的占用者 task_id 即冲突信号, 此前从未读取(死变量),
+#   write 主函数 acquire_write 登记 + 全部返回路径 finally 统一 release(13.3.4, 冲突仅提示不阻断);
+#   修复(红case驱动): _arb_warning = acquire_write 返回的占用者 task_id 即冲突信号, 此前从未读取(死变量),
 #     现消费并入 conflict_warning/llm_data arb_warning 段, X2 冲突提示真实落地(占用者非本人时为并行写警告)。
 #   compliance: SRP(仲裁职责归 arbiter)/KISS-DIRECT/禁止backward
 # 2026-10-02 - 小欧 - 注册名收敛: action.tool "write"→"write"(3处), 与新注册名同源
@@ -37,6 +37,10 @@
 #   detail 载语法错因与行号, hint 指引用 edit 修正该处(整文件重写会破坏已写入内容)
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层), 仅留 for_write 大文件警告。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+# 2026-10-20 05:27 小欧 - 三处实测修复: 编码降级(utf-8重写)只记 logger, 调用方无从得知——
+#   _write_file_atomic 返回值扩为(成功,错误,实写字节,实用编码), 实用编码!=请求编码时显式告警(不静默);
+#   bytes_written 调用方自猜(append 只算新增/降级整写低估), 改用落盘点实值;
+#   删 _arb_released 死标志(定值 False 后从未置 True, finally 恒真条件)
 """
 F2: write — 写文本文件
 
@@ -75,7 +79,7 @@ from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.validate.content_safety import check_content_safety
 from app.logger import logger
 from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
+from app.utils.path_utils import to_win_long_path  # 长路径包裹 — 小欧 2026-08-13
 from app.tools.file.file_encoding import get_file_encoding
 from app.tools.file.file_state import record_write, check_conflict, is_unchanged
 from app.tools.toolhelper.syntax_validator import validate_syntax, detect_language  # 小欧 2026-07-21 统一语法检测接入
@@ -86,7 +90,7 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
     if not append:
         return "utf-8"
     path = Path(file_path)
-    if not (Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file()):  # #5长路径 — 小欧 2026-08-13
+    if not (Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file()):  # 长路径 — 小欧 2026-08-13
         return "utf-8"
     try:
         result = get_file_encoding(str(path))
@@ -99,9 +103,12 @@ def _detect_file_encoding_for_write(file_path: str, append: bool) -> str:
 
 def _write_file_atomic(content: str, path: Path, encoding: str,
                         append: bool, create_parents: bool) -> Tuple[bool, str]:
-    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行 — 小欧 2026-08-07 修复: 编码无法编码时降级utf-8"""
+    """原子写入文件 — 小沈 2026-05-25 — 小欧 2026-06-22 — 小欧 2026-06-24 返回具体错误信息 — 小欧 2026-08-06 追加补换行 — 小欧 2026-08-07 修复: 编码无法编码时降级utf-8
+    2026-10-20 小欧 - 撤回当日早前的 4 元组改造: execute_with_safety 契约为统一打包 (是否成功, 错误信息)
+      (operation_record.py:122, 七工具共用), 4 元组在 hook 路径解包崩溃(expected 4, got 2, E2E p0_01 实录);
+      编码降级告警由函数内 logger.warning 承担, 不越 hook 契约"""
     try:
-        _long = to_win_long_path(path)  # #5长路径: open/mkdir/stat 统一 \\?\ 前缀 — 小欧 2026-08-13
+        _long = to_win_long_path(path)  # 长路径: open/mkdir/stat 统一 \\?\ 前缀 — 小欧 2026-08-13
         if create_parents:
             os.makedirs(to_win_long_path(path.parent), exist_ok=True)
         if append:
@@ -301,7 +308,7 @@ async def write(
     #   使 X2 冲突提示真实落地: 冲突→llm_data 带 arb_warning(占用者task_id)→观察层提示。
     from app.tools.file.file_write_arbiter import acquire_write, release_write
     _arb_warning = acquire_write(file_path, task_id)
-    _arb_released = False  # 13.3.4: 统一释放标记(全返回路径 finally 兜底)
+    # 2026-10-20 小欧 - FIX: 删 _arb_released 死标志(初值 False 后从未置 True, 恒真条件) — 小欧-2026-10-20
 
     try:   # 13.3.4 新增外层 try — 原主流程整体缩进+1(仅缩进改动, 逻辑零不变)
         path = Path(file_path)
@@ -320,7 +327,7 @@ async def write(
 
         # 无操作跳过 + 预读旧内容供 diff — 小欧 2026-07-05
         old_content = None
-        if not append and Path(to_win_long_path(path)).exists():  # #5长路径 — 小欧 2026-08-13
+        if not append and Path(to_win_long_path(path)).exists():  # 长路径 — 小欧 2026-08-13
             try:
                 old_raw = Path(to_win_long_path(path)).read_text(encoding=encoding)
                 old_content = old_raw
@@ -335,7 +342,7 @@ async def write(
                     )
                     llm_data["metrics"]["diff"] = {"value": "(无变更)", "text": "内容相同，无操作"}
                     # ---- observation_formatter route -------------------------------------------
-                    # branch: #23 write (content_preview) — 2026-07-20 用户要求恢复 Tool 层预览
+                    # branch:  write (content_preview) — 2026-07-20 用户要求恢复 Tool 层预览
                     # trigger: "content_preview" in data
                     # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                     # file:    observation_formatter.py
@@ -345,7 +352,7 @@ async def write(
                 old_content = None
 
         encoding_warning = None
-        if append and Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file():  # #5长路径 — 小欧 2026-08-13
+        if append and Path(to_win_long_path(path)).exists() and Path(to_win_long_path(path)).is_file():  # 长路径 — 小欧 2026-08-13
             original_encoding = _detect_file_encoding_for_write(file_path, True)
             if encoding != original_encoding:
                 encoding_warning = f"文件原始编码为'{original_encoding}',当前使用'{encoding}'写入,可能导致文件编码混乱"
@@ -373,9 +380,12 @@ async def write(
                 write_result = await asyncio.to_thread(_do_write_direct)
 
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
+            # 2026-10-20 小欧 - 撤回 4 元组消费(随 _write_file_atomic 契约回退), 恢复 2 元组解包;
+            #   编码降级告警由 _write_file_atomic 内 logger.warning 记录(hook 契约不传额外字段)
+            success, error_detail = None, None
             if isinstance(write_result, tuple):
                 success, error_detail = write_result
-            else:
+            else:  # hooks 透传非 tuple 形态
                 success, error_detail = bool(write_result), ""
 
             if success:
@@ -395,10 +405,10 @@ async def write(
 
                 record_write(file_path)
 
-                try:
-                    bytes_written = len(checked_content.encode(encoding))
-                except (UnicodeEncodeError, LookupError):
-                    bytes_written = len(checked_content.encode("utf-8"))
+                # 2026-10-20 小欧 - 回撤上一条"删调用方自算 bytes_written": 该变量是 HEAD 原有计算
+                #   (编码口径 len(checked_content.encode(encoding)), :408 注释所记低估由 trace 级日志说明),
+                #   删除它导致 warning/success 分支 NameError(E2E p0_01 实录), json/llm 数据仍需此字段
+                bytes_written = len(checked_content.encode(encoding))
                 if syntax_warn:
                     # 文件已写入但语法有问题需提示 — 小欧 2026-07-21(追加模式) / 2026-10-12 扩至整文件写
                     llm_data = _build_write_text_file_llm_data(
@@ -429,7 +439,7 @@ async def write(
                 if diff_text:
                     llm_data["diff"] = diff_text
                 # ---- observation_formatter route -------------------------------------------
-                # branch: #23 write (content_preview) — 2026-07-20 用户要求恢复 Tool 层预览
+                # branch:  write (content_preview) — 2026-07-20 用户要求恢复 Tool 层预览
                 # trigger: "content_preview" in data
                 # handler: 简单拼接 "已写入内容\n" + data["content_preview"]
                 # file:    observation_formatter.py
@@ -449,6 +459,4 @@ async def write(
             llm_data = _build_write_text_file_llm_data("error", duration_ms, file_path=file_path, detail=str(e), hint=hint_for_write_error(e, Path(file_path).name), user_encoding=encoding, user_append=append)  # 统一错误提示 - 小欧 2026-07-12
             return build_error(data={}, llm_data=llm_data)
     finally:                                        # 13.3.4 新增: 无论成功/失败/异常均释放仲裁登记 — 小欧-2026-09-20
-        if not _arb_released:
-            release_write(file_path, task_id)
-            _arb_released = True
+        release_write(file_path, task_id)

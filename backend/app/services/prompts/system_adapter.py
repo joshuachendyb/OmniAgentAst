@@ -6,9 +6,9 @@
 【重构】2026-06-14 小沈 — COMMANDS移至shell_register.execute_shell_command描述
 【2026-07-28 小欧】压缩系统提示文字: 删路径格式(LLM已知)、合并环境信息、压缩路径规则
 【2026-07-28 小欧】新增 get_default_shell_code(): 返回内部 shell 编码(ps7/ps5/bash),供 system_prompts 动态切换
-【2026-08-10 小欧】_get_environment_info 扩展: 环境行追加授权目录(allowed_dirs, 分号分隔), 与项目根一并告知LLM; 未配置时保持原样 — 北京老陈驱动
-【2026-08-10 小欧】git 状态判定固化: 只基于项目根(get_project_root), 严禁从代码库根推算 — 北京老陈裁定
-【2026-08-11 小欧】三堂会审复核落地: 删除env行授权目录段(DRY) — 授权目录结构化块已由system_prompts._get_project_root_info()注入,
+【2026-08-10 小欧】_get_environment_info 扩展: 环境行追加授权目录(allowed_dirs, 分号分隔), 与项目根一并告知LLM; 未配置时保持原样 驱动
+【2026-08-10 小欧】git 状态判定固化: 只基于项目根(get_project_root), 严禁从代码库根推算 
+【2026-08-11 小欧】 删除env行授权目录段(DRY) 授权目录结构化块已由system_prompts._get_project_root_info()注入,
     env行分号格式重复注入属DRY违反; 同步删allowed无消费变量
 
 Author: 小沈 - 2026-06-14
@@ -42,20 +42,23 @@ def _check_is_git_repo(path: str) -> bool:
 
 
 def _get_environment_info() -> str:
-    """获取环境信息（项目根目录/授权目录/Git 状态/日期时间）— 小沈 2026-06-11
-    【2026-06-23 北京老陈】工作目录改为项目根目录,避免显示backend子目录
+    """获取环境信息(Depends Git 状态/时间; 项目根目录由 _get_project_root_info 专行承载) — 小沈 2026-06-11
+    【2026-06-23 】工作目录改为项目根目录,避免显示backend子目录
     【2026-08-10 小欧】追加授权目录, 与项目根一并告知LLM
     """
 
     config = get_config_instance()
-    # git 状态只基于项目根(tool工作区), 严禁从代码库根推算 — 北京老陈 2026-08-10 裁定
+    # git 状态只基于项目根(tool工作区), 严禁从代码库根推算 
     root = config.get_project_root()
     now = now_str()
     is_git = _check_is_git_repo(root)
     git_status = "是" if is_git else "否"
     # 2026-08-11 小欧: 授权目录不再注入env行(DRY) — 结构化块已由 system_prompts._get_project_root_info() 注入,
     #   多行列表对LLM更友好且 build_full_system_prompt 总是append, env行分号格式重复注入属冗余
-    env = f"【环境】任务根目录={root}, Git={git_status}, 时间={now}"
+    # 2026-10-20 小欧 术语统一(): 目录术语全系统只留两个 — 项目根目录(整体工作根,由
+    #   【项目根目录】专行单源承载)与会话工作目录(stream_orchestrator <会话工作目录>); env行原用
+    #   "任务根目录"是第三名且与专行重复同一物, 删除, env 只留 Git/时间
+    env = f"【环境】Git={git_status}, 时间={now}"
     return env
 
 
@@ -106,7 +109,7 @@ def get_pwsh_version() -> str:
 
 
 def get_default_shell_name() -> str:
-    """返回实际默认 Shell 名称（匹配 shell_engine.py 的启动优先级）— 北京老陈 2026-07-09"""
+    """返回实际默认 Shell 名称（匹配 shell_engine.py 的启动优先级）—  2026-07-09"""
     pwsh_ver = get_pwsh_version()
     if pwsh_ver:
         return f"PowerShell {pwsh_ver}"

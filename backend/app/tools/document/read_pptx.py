@@ -13,11 +13,13 @@
 # 2026-07-26 - 小欧 - OOD: 确认READ_PPTX_INPUT_MAX_BYTES未落地,OOM自然抛出被except捕获(同dataanalysis模式)
 # 2026-07-26 - 小欧 - 清理: 删logger死import(全文件无logger调用)
 # 2026-07-26 - 小沈 - 修复: 截断前存_actual_slide_count,产_trunc_hint提示用slide=N读剩余页; 参数path不覆盖
-# 2026-07-31 - 小欧 - Bug㉑修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
+# 2026-07-31 - 小欧 - Bug修复: 全量读取成功summary的slide_count改传total_slides(实际返回页数), 截断后"提示页数"与返回数据口径一致; 完整页数由_trunc_hint告知 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
 # 2026-10-12 小欧 - tool_zh改短名词: 读取PPT→读PPT
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: 单页读取(slide=N)的 notes 范围与 slides 统一 — 原样回传全量 notes_data
+#   按选中页过滤=False数据越界(页不在请求内); slide 超限分支亦不再携带全量 notes
 """
 D3: read_pptx — 读取PPT文档
 
@@ -183,15 +185,17 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
             if slide > total_slides:
                 llm_data = _build_read_pptx_llm_data(
                     "warning", duration_ms, file_path, total_slides, detail=f"slide={slide}超出范围(共{total_slides}页)，返回空内容", hint=f"PPT共{total_slides}页,slide取值1..{total_slides}")
+                # 2026-10-20 小欧 - FIX: 单页读取(slide=N)下 notes 范围必须与 slides 同步 — 小欧-2026-10-20
                 result_data = {"slides": []}
-                if notes_data:
-                    result_data["notes"] = notes_data
                 return build_warning(data=result_data, llm_data=llm_data)
             slides_data = [slides_data[slide - 1]]
             sel_text = len(slides_data[0].get("text", ""))
+            # 2026-10-20 小欧 - FIX: 单页读取原回传全量 notes_data(所有页), 数据范围越界;
+            #   notes 与 slides 统一按选中页过滤 — 小欧-2026-10-20
             result_data = {"slides": slides_data}
-            if notes_data:
-                result_data["notes"] = notes_data
+            _sel_notes = [n for n in notes_data if n["slide_num"] == slide]
+            if _sel_notes:
+                result_data["notes"] = _sel_notes
             llm_data = _build_read_pptx_llm_data(
                 "success", duration_ms, file_path, total_slides, text_len=sel_text, current_slide=slide)
             return build_success(data=result_data, llm_data=llm_data)
@@ -202,7 +206,7 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         if notes_data:
             result_data["notes"] = notes_data
 
-        # 2026-07-31 小欧: Bug㉑修复 — slide_count传total_slides(实际返回页数), 与text_len/返回数据口径一致; 完整页数由_trunc_hint告知
+        # 2026-07-31 小欧: Bug修复 — slide_count传total_slides(实际返回页数), 与text_len/返回数据口径一致; 完整页数由_trunc_hint告知
         llm_data = _build_read_pptx_llm_data("success", duration_ms, file_path, total_slides, text_len=total_text, hint=_trunc_hint)
         # =============================================================================
         # 数据设计：slide_count 从 data 移除，通过 llm_data.metrics 传入 summary
@@ -210,7 +214,7 @@ def read_pptx(path: str, slide: Optional[int] = None) -> Dict[str, Any]:
         # — 小欧 2026-07-06 18:46:13; 2026-07-20 加 slide 参数(按页翻页)
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #16 slides items
+        # branch:  slides items
         # trigger: "slides" in data — slides 是 List[dict], 每项含 slide_num/text/tables
         # handler: _format_slides(data)
         # file:    observation_formatter.py:_format_slides

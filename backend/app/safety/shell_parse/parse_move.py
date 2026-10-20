@@ -9,11 +9,11 @@
   展开为「源 → delete / 目标 → write」两条动作。
 2026-10-18 - 小欧 - DRY: 源/目标切分逻辑抽到 lexer.split_source_target(与复制套共用),
   本文件删私有 _pathish/_ABS_HEAD_RE, 行为逐字等价。
-2026-10-18 - 小欧 - 改名动词自搬移表拆出(北京老陈裁定), 新增 RENAME_VERBS_PS/CMD/BASH 与 SHELL_RENAME_RE:
+2026-10-18 - 小欧 - 改名动词自搬移表拆出(), 新增 RENAME_VERBS_PS/CMD/BASH 与 SHELL_RENAME_RE:
   病根: 改名前与搬移同表, 但二者**源动作档位不同** —— 搬移源被搬走、原路径消失且数据易位 → 源=delete;
   改名只换名不搬数据、原路径消失但数据完好可回退 → 源=write。合并即致 shell 侧把 rename 当搬移硬判删线,
   与工具侧 rename 走写线不一致。改法: 动词表拆两张互不合并, parse_move_action 按 is_rename 分派源 kind 与
-  origin(rename-src / move-src), 目标一律 write。拆分纯字面归类, 切词与归一化逻辑零变更。
+  origin(rename-src / move-src), 目标一律 write。拆分纯字面归类, 切词与格式化逻辑零变更。
 
 分层: 本文件只出动作, 不判权限。
 """
@@ -27,7 +27,7 @@ from app.safety.shell_parse.verb_table import BASH, CMD, PS, build_verb_re
 # 搬移与改名**源动作档位不同**, 故动词表拆两张, 不可合并:
 #   搬移(move): 源被搬走, 原路径消失, 数据易位 → 源 = delete(与 move 工具一致)
 #   改名(rename): 只换名不搬数据, 原路径消失但数据完好、可回退 → 源 = write(与 rename 工具一致)
-# 北京老陈裁定 2026-10-18: 二者语义不同, shell 侧判定必须与工具侧一致。
+#  2026-10-18: 二者语义不同, shell 侧判定必须与工具侧一致。
 MOVE_VERBS_PS = ("Move-Item", "mi", "mv")
 MOVE_VERBS_CMD = ("move",)
 MOVE_VERBS_BASH = ("mv",)
@@ -46,7 +46,7 @@ _MOVE_DEST_SWITCHES = frozenset({"-destination", "-dest", "-newname"})
 def parse_move_action(statement: str, shell: str, cwd) -> List[PathAction]:
     """解析一条语句中的搬移/改名动作, 返回 [源, 目标 write] 动作清单 — 小欧 2026-10-18
 
-    源动作档位按动词二分(北京老陈裁定 2026-10-18, 须与工具侧一致):
+    源动作档位按动词二分( 2026-10-18, 须与工具侧一致):
       搬移动词 → 源 delete(源被搬走);  改名动词 → 源 write(只换名, 数据可回退)。
     目标一律 write(新位置落盘)。
     无搬移/改名动词 → 空清单。源/目标切分复用 lexer.split_source_target(单一真源, 与复制套共用)。

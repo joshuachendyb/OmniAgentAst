@@ -15,6 +15,9 @@
   前缀即区分: 确认命名空间 13 项(needs_confirm=True, 唯一有消费者的地方, 进 HITL 弹窗、前端按标签渲染)、
   硬拦命名空间 4 项(blocked=True, 不进弹窗, 仅诊断留痕)。两空间永不重叠。
   放行结果一律不带标签(空串): 无确认无拦截, 无"分类"可言。字段注释同步收窄为"取值必须取自 SafetyLevel"。
+2026-10-19 - 小欧 - 删孤儿枚举 DELETE_SAFE: 全库无生产者(删线确认档恒为 DELETE_OUTSIDE_WHITELIST,
+  见 delete_path_check), 仅 safety_gate._resolve_trust_impact 与前端 SAFETY_LEVEL_CONFIG 防御性列出 ——
+  按 YAGNI 从枚举/CONFIRM_LEVELS 移除, 两处消费点同步清理(前端键集须与 CONFIRM_LEVELS 恒等)。
 
 分层: 本文件只持契约(纯 dataclass, 无任何逻辑), 不做任何判定。
 """
@@ -31,10 +34,9 @@ class SafetyLevel(StrEnum):
     覆盖放行/硬拦/任务级授权/临时授权/沙箱裁决五种语义, 标签与分支必然对不上):
 
     ┌ 确认命名空间(needs_confirm=True, 唯一有消费者的地方) ── 进 HITL 弹窗, 前端按标签渲染 ┐
-      delete_recursive      递归删除, 删除范围不可撤销            delete_path_check R4
-      delete_out_of_scope   不在允许根集内, 删除需临时授权        delete_path_check R5
-      write_protected       代码目录/允许根集自身及上级, 任务级授权 write_path_check non_system
-      write_out_of_scope    不在白名单内, 写入需临时授权          write_path_check None
+      delete_outside_whitelist  白名单外删除/递归删, 需临时授权     delete_path_check
+      write_forbidden       非系统禁区写入, 任务级授权            write_path_check
+      write_outside_whitelist 白名单外写入, 需临时授权           write_path_check
       shell_medium_risk     中风险命令(重启/改执行策略/杀进程…); 命令层, 与路径无关, 作用域=整条命令
       shell_delete_confirm  命令含删除动作, 需确认               命令内路径动作=删
       shell_write_confirm   命令含写入动作, 需确认               命令内路径动作=写
@@ -47,23 +49,22 @@ class SafetyLevel(StrEnum):
     └──────────────────────────────────────────────────────────────────────────────────────┘
     ★ 命令内【路径的读/写/删】各有归属, 二者不重复编码:
       · 动作**越权**时(路径不在允许范围/命中禁区) → 三线标签:
-        写 WRITE_PROTECTED / WRITE_OUT_OF_SCOPE; 删 DELETE_RECURSIVE / DELETE_OUT_OF_SCOPE; 读线从不确认
+        写 WRITE_FORBIDDEN / WRITE_OUTSIDE_WHITELIST; 删 DELETE_OUTSIDE_WHITELIST; 读线从不确认
       · 动作**合规但命令仍需确认**时(工具元数据策略) → 本表的 shell_*_confirm 四类, 按命令实际动作取档。
     ┌ 硬拦命名空间(blocked=True) ── 不进弹窗, 标签只作诊断留痕, 前端不消费 ────────────────┐
       path_forbidden        路径硬拦: 磁盘根/系统保护目录/系统禁区/代码目录/允许根集自身及上级
                             (R6 根集外递归删除亦归此 —— 同属路径策略硬拦, 非命令层问题)
       block_command         危险命令/命令层输入非法/非法 shell 元字符
-      block_path_invalid    路径非法: 空值/`..`穿越/归一化失败/安全判定不可用(fail-closed)
+      block_path_invalid    路径非法: 空值/`..`穿越/格式化失败/安全判定不可用(fail-closed)
       block_unregistered    工具未注册
     └──────────────────────────────────────────────────────────────────────────────────────┘
 
     放行结果一律不带标签(空串): 无确认无拦截, 无"分类"可言。
     """
     # ── 确认命名空间(进 HITL 弹窗) ──
-    DELETE_RECURSIVE = "delete_recursive"
-    DELETE_OUT_OF_SCOPE = "delete_out_of_scope"
-    WRITE_PROTECTED = "write_protected"
-    WRITE_OUT_OF_SCOPE = "write_out_of_scope"
+    DELETE_OUTSIDE_WHITELIST = "delete_outside_whitelist"
+    WRITE_FORBIDDEN = "write_forbidden"
+    WRITE_OUTSIDE_WHITELIST = "write_outside_whitelist"
     SHELL_MEDIUM_RISK = "shell_medium_risk"
     SHELL_DELETE_CONFIRM = "shell_delete_confirm"
     SHELL_WRITE_CONFIRM = "shell_write_confirm"
@@ -82,8 +83,8 @@ class SafetyLevel(StrEnum):
 
 #: 确认命名空间取值集合 —— 前端 SAFETY_LEVEL_CONFIG 的键集必须与此完全相等(一致性测试锁定)
 CONFIRM_LEVELS = frozenset({
-    SafetyLevel.DELETE_RECURSIVE, SafetyLevel.DELETE_OUT_OF_SCOPE,
-    SafetyLevel.WRITE_PROTECTED, SafetyLevel.WRITE_OUT_OF_SCOPE,
+    SafetyLevel.DELETE_OUTSIDE_WHITELIST,
+    SafetyLevel.WRITE_FORBIDDEN, SafetyLevel.WRITE_OUTSIDE_WHITELIST,
     SafetyLevel.SHELL_MEDIUM_RISK, SafetyLevel.SHELL_DELETE_CONFIRM,
     SafetyLevel.SHELL_WRITE_CONFIRM, SafetyLevel.SHELL_READ_CONFIRM,
     SafetyLevel.SHELL_COMMAND_CONFIRM, SafetyLevel.SQL_EXECUTE_CONFIRM,
