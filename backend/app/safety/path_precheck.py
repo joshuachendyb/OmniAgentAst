@@ -10,6 +10,8 @@
 #   存在性改由各工具执行时刻自检(check_path_four_level(EXISTS) / src.exists())。删 _EXISTENCE_PARAMS 与按动作分档的 op, op 恒 WRITE。
 # 2026-10-19 小欧 - 随路径处理收口: 去 resolve_path_param 依赖(解析/绝对化在安全入口单点完成),
 #   本层只对原值做第1层语法检查(WRITE 不查存在, 相对裸值可直接过); 删 dual_path_check 导入。
+# 2026-10-20 小欧 - 范围门自守: 上游名单门(safety_gate)已删, 非 PATH_TOOLS 工具在本层直接返回 None,
+#   注册表键/任务参数不再被当文件路径做语法校验; 判定用 meta.name 收别名。docstring 同步。
 """
 path_precheck — [3] 门前合法性初查(仅第1层格式: 空值/盘符/保留字符/保留名)
 
@@ -27,6 +29,7 @@ from typing import Any, Dict, Optional
 
 from app.tools.registry import tool_registry
 from app.tools.tools_alias_mapper import normalize_tool_name
+from app.tools.tool_constants import PATH_TOOLS  # 2026-10-20 小欧 - 范围门自守(上游名单门已删)
 from app.utils.path_utils import (
     OpCategory,
     reject_reason_empty_path,
@@ -38,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[str]:
     """[3] 门前合法性初查: 仅第1层格式(空值/盘符/保留字符/保留名) — 小欧 2026-10-15 建 / 2026-10-18 去存在性
-    上游 [2] 处理范围门(仅 PATH_TOOLS 到此); 命中即拦, 省 [4] 总闸/[5] 弹窗; 失败原因交调用方按 denied 处理。
+     上游 [2] 范围门已自守(非 PATH_TOOLS 直接返回 None); 命中即拦, 省 [4] 总闸/[5] 弹窗; 失败原因交调用方按 denied 处理。
 
     只判格式, **不判存在性/类型**: 存在性是运行时前置条件, 而本层处于所有工具执行**之前**,
     同批兄弟调用的产出(如 rename 改名后的新路径)此刻尚未落地, 在此早判必误拦合法调用;
@@ -53,8 +56,11 @@ def precheck_path_legality(tool_name: str, params: Dict[str, Any]) -> Optional[s
         # bash 是命令通道(走 shell_path_check.check_shell_permission), 本层不查文件路径
         if normal_name == "bash":
             return None
-        # 2026-10-17 小欧 - 未注册/范围已在上游判, 本层恒拿到已注册路径工具 meta, 不再复判。
+        # 2026-10-20 小欧 - 范围门自守: 上游名单门已删, 非 PATH_TOOLS 工具不判文件路径,
+        #   注册表键/任务参数等不会被误当文件路径做语法校验(与 checker 同一归线口径)
         meta = tool_registry.get_tool(normal_name)
+        if meta is None or meta.name not in PATH_TOOLS:
+            return None
 
         # 待查路径参数: dual 按声明表取全部路径键; 单线一调用只有一条路径(path 优先, download/screen_capture 缺则 dest)
         if meta.action_kind == "dual":

@@ -18,6 +18,9 @@
 #     ②keep_valuable_messages 两处修: FC 对原子化(新增 _fc_atomic_units, 修"决策留下/结果被删"→provider 400)
 #       + 无条件保留收窄到 system(原 weight>=70 使 FC 单元永不丢, 实测 budget=2000 输出 83164 tok 超 41 倍);
 #     ③新增 _msg_cost 统一 token 口径(复用 MessageBuilder._estimate_tokens, 原 len/c 自算漏 tool_calls 开销)。 — 小欧-2026-10-08
+#   2026-10-20 小欧 FC 单元划分迁协议层: 删除本地 _fc_atomic_units, 复用 fc_message_types.fc_atomic_units
+#     (message_builder 裁剪也需同一划分, 而 prune 顶层 import message_builder, 反向导入必成环;
+#      迁至零依赖协议模块即解环, 两边共用一份真源)。行为不变。 — 小欧-2026-10-20
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -42,6 +45,7 @@ from app.services.agent.compaction_constants import (
     PRUNE_PROTECT_TOKENS,
 )
 from app.services.agent.message_builder import MessageBuilder  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
+from app.services.agent.fc_message_types import fc_atomic_units  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
 
 logger = logging.getLogger(__name__)
 
@@ -177,32 +181,6 @@ def _value_weight(msg: Dict) -> int:
     return 50
 
 
-def _fc_atomic_units(messages: List[Dict]) -> List[List[int]]:
-    """把 assistant(tool_calls) 与其 tool 结果编成原子单元(FC 对不可拆) — 小欧 2026-10-08
-
-    bug 根因: 决策(80 分, ≥70 无条件留)与结果(10 分, 预算内先删)分条取舍 → 决策留下结果没了 → 回传 400。
-    单元权重取成员最高、成本取成员之和; 与 split_turn 保尾"保留 assistant 必带其 tool"同源同义。
-    """
-    tool_idx_by_id: Dict[str, List[int]] = {}
-    for i, m in enumerate(messages):
-        if m.get("role") == "tool" and m.get("tool_call_id"):
-            tool_idx_by_id.setdefault(m["tool_call_id"], []).append(i)
-    taken = set()
-    units: List[List[int]] = []
-    for i, m in enumerate(messages):
-        if i in taken:
-            continue
-        grp = [i]
-        if m.get("role") == "assistant" and m.get("tool_calls"):
-            for tc in m["tool_calls"]:
-                if isinstance(tc, dict):
-                    grp += tool_idx_by_id.get(tc.get("id"), [])
-        grp = [j for j in dict.fromkeys(grp) if j not in taken]
-        taken.update(grp)
-        units.append(grp)
-    return units
-
-
 def _msg_cost(msg: Dict) -> int:
     """单条消息的预算占用 token — 小欧 2026-10-08
 
@@ -223,7 +201,7 @@ def keep_valuable_messages(messages: List[Dict], budget_tokens: int) -> List[Dic
     2026-10-08 小欧 两处修正(单测实测暴露): ①FC 对原子化(修"决策留下/结果被删"→ provider 400);
       ②无条件保留收窄到 system(原 ≥70 使 FC 单元永不丢, 实测 budget=2000 输出 83164 tok 超 41 倍)。 — 小欧-2026-10-08
     """
-    units = _fc_atomic_units(messages)
+    units = fc_atomic_units(messages)
     kept_idx: List[int] = []
     used = 0
     for grp in sorted(units,

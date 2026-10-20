@@ -408,7 +408,12 @@ async def write(
                 # 2026-10-20 小欧 - 回撤上一条"删调用方自算 bytes_written": 该变量是 HEAD 原有计算
                 #   (编码口径 len(checked_content.encode(encoding)), :408 注释所记低估由 trace 级日志说明),
                 #   删除它导致 warning/success 分支 NameError(E2E p0_01 实录), json/llm 数据仍需此字段
-                bytes_written = len(checked_content.encode(encoding))
+                # 2026-10-20 小欧 - FIX: 落盘已降级 utf-8 时, 按请求编码算字节数会再抛 UnicodeEncodeError,
+                #   使成功的写入被外层 except 误报为失败; 恢复按实际编码口径兜底
+                try:
+                    bytes_written = len(checked_content.encode(encoding))
+                except (UnicodeEncodeError, LookupError):
+                    bytes_written = len(checked_content.encode("utf-8"))
                 if syntax_warn:
                     # 文件已写入但语法有问题需提示 — 小欧 2026-07-21(追加模式) / 2026-10-12 扩至整文件写
                     llm_data = _build_write_text_file_llm_data(

@@ -5,11 +5,14 @@
 # 2026-07-19 小欧 AssistantMessage加reasoning字段; message_to_dict做reasoning→reasoning_content提升
 # 2026-07-19 小欧 message_to_dict提升后del推理内部字段(不泄露非标准字段); dict_to_message反向映射reasoning_content→reasoning(回环不丢)
 # 2026-07-19 小欧 改善: message_to_dict用pop单次重命名; dict_to_message去掉backward条件直接映射(禁backward)
+# 2026-10-20 小欧 新增 fc_atomic_units(): FC 原子单元(assistant(tool_calls)+其tool响应)唯一划分源,
+#   由 compaction/prune.py 私有实现提升至本协议模块(中立无依赖, 供 prune 与 message_builder 裁剪共用, DRY)
 """
 FC 消息类型安全 — Pydantic 模型
 
 定义 OpenAI-兼容的 Function Calling 消息的 Pydantic 模型。
 所有 FC 协议中的消息都使用这些类型，替代原始的 dict。
+另提供 FC 原子单元划分原语 fc_atomic_units（compaction/prune 与 message_builder 裁剪共用，零依赖）。
 
 【创建时间】2026-06-11 小沈
 【签名】小沈
@@ -204,6 +207,35 @@ def dict_to_message(d: dict) -> FcMessage:
     raise ValueError(f"Unknown role: {role}")
 
 
+def fc_atomic_units(messages: List[dict]) -> List[List[int]]:
+    """把 assistant(tool_calls) 与其 tool 响应编成 FC 原子单元(整组取舍, 永不拆散) — 小欧 2026-10-20
+
+    返回按原始顺序的索引组: 每条 assistant(tool_calls) 与其全部 tool_call_id 响应同组;
+    其余消息(纯文本 assistant / system / user / 孤儿 tool)各自成组。
+    FC 协议要求 assistant 恒在其 tool 响应之前, 调用方按组整体保留/丢弃并按组内升序展开,
+    可杜绝"决策留下/结果被删"或组内乱序导致的 provider 400。
+    唯一划分源: compaction.prune 与 message_builder 裁剪共用(DRY; 本模块零依赖, 两边均可安全导入)。
+    """
+    tool_idx_by_id: dict = {}
+    for i, msg in enumerate(messages):
+        if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            tool_idx_by_id.setdefault(msg["tool_call_id"], []).append(i)
+    taken = set()
+    units: List[List[int]] = []
+    for i, msg in enumerate(messages):
+        if i in taken:
+            continue
+        grp = [i]
+        if msg.get("role") == "assistant" and msg.get("tool_calls"):
+            for tc in msg["tool_calls"]:
+                if isinstance(tc, dict):
+                    grp += tool_idx_by_id.get(tc.get("id"), [])
+        grp = [j for j in dict.fromkeys(grp) if j not in taken]
+        taken.update(grp)
+        units.append(grp)
+    return units
+
+
 __all__ = [
     "ToolFunction",
     "ToolCall",
@@ -214,5 +246,6 @@ __all__ = [
     "FcMessage",
     "message_to_dict",
     "dict_to_message",
+    "fc_atomic_units",
 ]
 

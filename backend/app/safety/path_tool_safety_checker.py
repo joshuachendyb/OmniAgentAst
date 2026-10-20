@@ -93,6 +93,9 @@
 #   改写 path/dest; 经 tool_facade.execute_tool(/tool/execute)直调时, registry_read/write/delete
 #   (WIN_REGISTRY 工具)的 path 是注册表键, 被改写成 project_root 下的文件路径(实测 'HKLM\\SOFTWARE\\Microsoft'
 #   → 'E:\\test_dir\\HKLM\\SOFTWARE\\Microsoft')。现仅在 tool_name ∈ PATH_TOOLS 时格式化。
+# 2026-10-20 小欧 - 范围门下沉到本层(自守): 本模块只承担路径安全权限判定, 非 PATH_TOOLS 工具在
+#   **注册判定之后**直接返回放行(pass_result)。直调入口(tool_facade/测试)不必依赖上游名单门,
+#   也保证未注册工具仍先被硬拦(注册判定在前)。范围门唯一落点=本层, safety_gate 的入口名单门同日删除。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -331,6 +334,13 @@ class PathToolSafetyChecker:
             log_and_print(f"[PathToolSafetyChecker] 工具未注册(硬拦): tool={tool_name}")
             return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}",
                             safety_level=SafetyLevel.BLOCK_UNREGISTERED)
+
+        # [4-范围门] 本模块只做路径安全权限判定: 非路径工具放行 — 小欧 2026-10-20
+        #   位置固定在注册判定之后: 未注册仍先硬拦(fail-closed); 已注册的非路径工具不进入路径三线,
+        #   其工具级 needs_confirmation 也不在本层分流(本层确认只服务路径授权与 shell 三线)。
+        #   用 tool_meta.name(注册规范名)判: 直调方传别名时 get_tool 已归一等价, 不得用原始入参判。
+        if tool_meta.name not in PATH_TOOLS:
+            return SafetyResult.pass_result()
 
         # [4-0] 自杀检查(2026-10-16): 提到 _check_known_risks 之前
         #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(实测曾致后端自杀);

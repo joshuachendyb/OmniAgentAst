@@ -6,15 +6,14 @@ security_docs — 安全 Tab 说明文案源: 读 app/datafile/*.md(两个弹框
 为什么插值放后端而非前端:
   占位符的值只有后端拿得到, 后端一次替换完 → 前端只把 md 交给 MarkdownSlot 渲染, 零字符串逻辑。
 
-分层: 本模块只 import 四个轻量模块 app.config / app.logger / app.tools.tool_constants /
-  app.safety.path_classify_category(★2026-10-16  原文此处写"绝不 import"是**假声明**
-  同文件下方实际 import 了它的 SYSTEM_PROTECTED_DIR_NAMES 常量。之所以可接受: 只取常量、
-  不调其任何判定函数, 故不触发 config 读取与路径判定; path_classify_category 本身也 import
-  了同一个 tool_constants, 并未额外拉入注册表。零启动代价成立)。
+分层: 本模块只 import 三个轻量模块 app.config / app.logger /
+  app.safety.path_dir_lists(★2026-10-20 原文此处写"四个"含 app.tools.tool_constants 已随禁区清单
+  数据源收口删除; path_dir_lists 只取禁区·系统类别构建函数与平台根, 不调其判定函数)。
 
 为什么不需要处理盘符:
-  FORBIDDEN_PATHS_WINDOWS_REL_* 常量已是与盘符无关的相对段, 既无硬编码盘符,
-  也无 .replace("C:", ...) 字符串替换。分类表直接展示相对段, 语义等价。
+  禁区清单改读系统目录名单 path_dir_lists(禁区·系统, 全系统唯一类别组织口), 展示时剥平台根
+  前缀成相对段(Windows: C:\Windows → \Windows), 既无硬编码盘符, 也无 .replace("C:", ...)
+  字符串替换。分类表直接展示相对段, 语义等价。
 
 datafile 目录定位为什么不用 get_frozen_dir():
   get_frozen_dir()(config.py:296)服务 logs/files 等**可写**目录; datafile 是**只读**资源,
@@ -36,19 +35,40 @@ datafile 目录定位为什么不用 get_frozen_dir():
   2026-10-06 小欧 - 禁区路径去掉反引号: 内联 code 的背景+圆角把分类表路径列撑成灰底碎块(实测 13 个)。
   2026-10-14 小欧 - SYSTEM_PROTECTED_DIR_NAMES 改从 app/utils/path_utils.py 导入; docstring 内「绝不 import」注释路径同步改址
   2026-10-19 小欧 - 修 _system_protected_text 崩溃: SYSTEM_PROTECTED_DIR_NAMES 已由 frozenset 迁为 tuple(list 语义, 保序),
-     `tuple - set` 抛 TypeError 使安全 Tab 打开即 500; 改 `set(SYSTEM_PROTECTED_DIR_NAMES) - covered`(差集语义不变)。
+      `tuple - set` 抛 TypeError 使安全 Tab 打开即 500; 改 `set(SYSTEM_PROTECTED_DIR_NAMES) - covered`(差集语义不变)。
+  2026-10-20 16:17:50 小欧 - 禁区清单数据源收口(北京老陈令: 参考系统几类路径组织函数更新): 弃读 tool_constants
+      旧常量(FORBIDDEN_PATHS_WINDOWS_REL_*, 与判定名单分叉的手抄份), 改读 path_dir_lists 禁区·系统类别构建函数
+      (_build_forbidden_system_path, 全系统唯一组织口); 磁盘根(self_only)跳过(md 已单列), 剥平台根前缀成相对段;
+      _system_protected_text 删除(数据并入禁区·系统), md 去 {{system_protected}} 占位符。
+  2026-10-20 16:3x 小欧 - 三堂会审纠偏(北京老陈令: 四类行都要参考系统): 禁区·非系统/白名单内两行原仍写死
+      (前者漏允许根自身/用户自启动目录, 后者硬编码 /tmp、/var/tmp 且漏会话工作区), 一并改读系统名单:
+      新增 _forbidden_non_system_text(读 _build_forbidden_non_system_path, 按 label 分组合并) +
+      _whitelist_text(读 _build_whitelist_path, 按来源 label 合并, 友好名映射); md 两行改
+      {{forbidden_non_system}}/{{whitelist}} 整行占位; {{code_root}} 占位符随整行化删除。
 """
+import os
 from pathlib import Path
-from typing import Dict
+from typing import Dict, List
 
-from app.config import get_code_root, get_config
+from app.config import get_config
 from app.logger import logger
-from app.tools.tool_constants import (
-    FORBIDDEN_PATHS_WINDOWS_REL_EXACT,
-    FORBIDDEN_PATHS_WINDOWS_REL_PREFIX,
+# 2026-10-20 小欧 - 禁区清单数据源收口: 改读 path_dir_lists 三类名单组织函数(全系统唯一组织口),
+#   弃 tool_constants 旧常量(与判定名单分叉的手抄份); _platform_root 供剥平台根前缀成相对段
+from app.safety.path_dir_lists import (
+    _build_forbidden_non_system_path,
+    _build_forbidden_system_path,
+    _build_whitelist_path,
+    _platform_root,
 )
-# 2026-10-19 小欧 - 目录名单收口: 名单常量随判定逻辑迁至 app/safety/path_dir_lists.py
-from app.safety.path_dir_lists import SYSTEM_PROTECTED_DIR_NAMES
+
+#: 白名单 label → 文档友好名(与 md 措辞对齐; 未登记的 label 原样输出, 新增来源时兜住)
+_WHITELIST_LABEL_TEXT = {
+    "用户目录": "用户主目录",
+    "系统临时目录": "系统临时目录",
+    "项目根": "项目根目录",
+    "授权目录": "授权目录",
+    "会话工作区": "会话工作区",
+}
 
 # 2026-10-06 小欧 - datafile 定位: app/services/settings/ 上溯两级 = app/, 同级 datafile/
 DATAFILE_DIR = Path(__file__).resolve().parents[2] / "datafile"
@@ -69,36 +89,66 @@ def _placeholder_values() -> Dict[str, str]:
     """
     allowed = get_config().get_allowed_dirs()
     return {
-        "code_root": str(get_code_root()),
         "user_home": str(Path.home()),
         "project_root": str(get_config().get_project_root()),
         "allowed_dirs": "\n".join(str(p) for p in allowed) if allowed else "（未配置）",
     }
 
 
-def _windows_forbidden_text() -> str:
-    """禁区·系统的 Windows 禁用路径清单(直接取工具常量, 不另抄一份)。
+def _forbidden_system_text() -> str:
+    """禁区·系统清单(平台根下相对段, 单行「、」连接) — 小欧 2026-10-20
+
+    数据源: 系统目录名单 path_dir_lists 禁区·系统(全系统唯一类别组织口
+    _build_forbidden_system_path), 不再读 tool_constants 旧常量 —— 那份是 Windows
+    相对段的另一份手抄, 与判定名单已分叉(旧常量含 config\\SAM 等判定名单里没有的细项)。
 
     必须单行输出: 该占位符落在 md 表格单元格里, 换行会把表格行撑破(5 行变 14 行);
     <br/> 也不行 —— 本项目未装 rehype-raw, rehype-sanitize 会把它整段丢掉。
     故用「、」连成一行, 由前端 overflowWrap 负责折行。
 
-    2026-10-06  修复: 路径**不加反引号** — 内联 code 各带背景+圆角, 实测 13 个
-    code 把「目录列表」列撑成一片灰底碎块。路径是正文不是代码, 交由 overflowWrap 折行。
+    口径: 磁盘根(self_only 条目)跳过 —— md 已单列「磁盘根（系统盘根）」; 只取平台根
+    下条目并剥前缀成相对段(Windows: C:\\Windows → \\Windows), 保持不硬编码盘符的展示口径。
+    路径**不加反引号** — 内联 code 各带背景+圆角, 实测 13 个 code 把「目录列表」列撑成
+    一片灰底碎块(2026-10-06 修复)。路径是正文不是代码, 交由 overflowWrap 折行。
     """
-    paths = sorted(FORBIDDEN_PATHS_WINDOWS_REL_EXACT | FORBIDDEN_PATHS_WINDOWS_REL_PREFIX)
-    return "、".join(paths)
+    plat = str(_platform_root())
+    segs = []
+    for rule in _build_forbidden_system_path():
+        if rule.self_only:
+            continue                                   # 磁盘根(仅自身) — md 已单列
+        s = str(rule.path)
+        if not os.path.normcase(s).startswith(os.path.normcase(plat)):
+            continue                                   # 平台外条目(如 Linux 跨平台禁区)不进本机清单
+        rel = s[len(plat):]
+        segs.append((os.sep + rel) if rel and not rel.startswith(os.sep) else rel)
+    return "、".join(sorted(segs))
 
 
-def _system_protected_text() -> str:
-    """系统保护目录名中**未被上一条覆盖**的那几个(如 \\ProgramData、\\Boot、\\Recovery)。
+def _forbidden_non_system_text() -> str:
+    """禁区·非系统清单(全路径, 按 label 分组合并) — 小欧 2026-10-20
 
-    SYSTEM_PROTECTED_DIR_NAMES 里的 windows / program files / program files (x86)
-    已由 _windows_forbidden_text() 以完整相对段呈现, 此处只补差集, 避免同一目录列两遍。
+    数据源: 系统目录名单 path_dir_lists 禁区·非系统(_build_forbidden_non_system_path):
+    代码目录(含下级) + 允许根自身(self_only, 删硬拦) + 用户自启动目录(含下级)。
+    单行「、」连接(表格单元格约束, 见 _forbidden_system_text 同款说明)。
     """
-    covered = {p.lstrip("\\").lower() for p in FORBIDDEN_PATHS_WINDOWS_REL_EXACT}
-    rest = sorted(set(SYSTEM_PROTECTED_DIR_NAMES) - covered)
-    return "、".join(f"\\{n}" for n in rest)
+    groups: Dict[str, List[str]] = {}
+    for rule in _build_forbidden_non_system_path():
+        groups.setdefault(rule.label, []).append(str(rule.path))
+    return "、".join(f"{label}（{'、'.join(paths)}）" for label, paths in groups.items())
+
+
+def _whitelist_text() -> str:
+    """白名单清单(全路径, 按来源 label 分组合并) — 小欧 2026-10-20
+
+    数据源: 系统目录名单 path_dir_lists 白名单(_build_whitelist_path):
+    用户目录 + 系统临时目录 + 允许根(项目根/授权目录/会话工作区)。
+    会话工作区是任务级注入, 设置页(无任务上下文)不出现该组 —— 与判定口径一致。
+    """
+    groups: Dict[str, List[str]] = {}
+    for rule in _build_whitelist_path():
+        groups.setdefault(rule.label, []).append(str(rule.path))
+    return "、".join(f"{_WHITELIST_LABEL_TEXT.get(label, label)}（{'、'.join(paths)}）"
+                     for label, paths in groups.items())
 
 
 def _render(filename: str, values: Dict[str, str]) -> str:
@@ -121,8 +171,9 @@ def load_security_docs() -> Dict[str, str]:
     """
     # 2026-10-06 小欧 - 插值只算一次: 原先 _render 内部各算一遍, 3 个文件 = 3 次 get_config()
     values = _placeholder_values()
-    values["system_forbidden"] = _windows_forbidden_text()
-    values["system_protected"] = _system_protected_text()
+    values["system_forbidden"] = _forbidden_system_text()
+    values["forbidden_non_system"] = _forbidden_non_system_text()
+    values["whitelist"] = _whitelist_text()
 
     out: Dict[str, str] = {}
     for key, filename in _DOC_FILES.items():

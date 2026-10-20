@@ -47,6 +47,13 @@
 # 2026-10-13 小欧 - 文档[28] 4.1.6: init_history 增 refs 形参, 输入框引用正文拼入 user 消息**前置**区块。
 #   入库/历史保持干净(user_input 在 orchestrator:433 已定格为用户原文, 不含 refs),
 #   拼进 content 字符串可规避 prepare_messages_for_llm 的内部键剥离清单(_COMPACTION_TEMP_KEYS)。
+# 2026-10-20 - 小欧 - 裁剪顺序缺陷修复(线上 400 实证, 2026-10-20 15:41 E2E P0-04a):
+#   _trim_to_budget 原「反向遇 tool 先收 tool 再收 assistant + 扁平 reverse」, 单 tool_call 对 reverse 后恰好还原,
+#   但一条 assistant 带 N≥2 并行 tool_calls 时首个 tool 落到 assistant 之前(tool(A)→assistant(A,B)→tool(B)),
+#   上游严格顺序校验报 "tool result's tool id(...) not found (2013)"。
+#   改为复用 fc_message_types.fc_atomic_units 按 FC 单元原子收集: 单元整体保留/丢弃, 组内升序展开保证
+#   assistant→tool(s); _trim_fc_pairs 增顺序合法性判定(assistant 声明位置 < tool 响应位置), 乱序对双侧剔除兜底。
+#   compliance: SRP/DRY(单元划分唯一源)/KISS-DIRECT
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -76,6 +83,7 @@ from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压�
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
+    fc_atomic_units,
 )
 
 # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用渲染为「【引用】」区块。
@@ -496,63 +504,28 @@ class MessageBuilder:
         return system_msgs, user_msgs, obs_list, assistant_msgs
 
     def _trim_to_budget(self, obs_list, assistant_msgs, budget_tokens):
-        """FC-only: 从最新往最旧扫,按配对收集,简洁高效
+        """FC-only: 以 FC 原子单元为单位, 从新到旧按预算保留 — 小欧 2026-10-20 重写
 
-        策略: 从最后一条消息往前遍历,遇到tool就找其配对assistant一起保留,
-        遇到独立消息直接保留,直到budget_tokens用完。剩余的全部丢弃。
-        小欧 2026-06-25: 去掉强制保留机制,纯预算裁剪,简单可靠。
-        2026-07-22 小欧: _total_chars→_estimate_tokens 统一为 token
+        单元划分复用 fc_message_types.fc_atomic_units(唯一真源): assistant(tool_calls) 与其 tool 响应
+        同组, 其余消息各自成组。单元整体保留或整体丢弃, 组内按原始顺序升序展开, 保证 assistant 恒在
+        其全部 tool 之前(FC 协议顺序要求)。原逐条反向收集 + 扁平 reverse 在 N≥2 并行 tool_calls 时
+        会把首个 tool 甩到 assistant 之前, 触发上游 400。
+        预算不足即停: 保留最近一段连续历史, 不在中间留空洞(超预算单元整体丢弃)。
         """
-        tool_to_assistant = {}
-        for msg in assistant_msgs:
-            for tc in (msg.get("tool_calls") or []):
-                if tc.get("id"):
-                    tool_to_assistant[tc["id"]] = msg
-
-        # 按原始顺序排列 obs+assistant
         original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
         all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
 
-        kept = []
+        kept_units: List[List[Dict]] = []
         used_tokens = 0
-        i = len(all_msgs) - 1
-        consumed_ids = set()
-
-        while i >= 0:
-            msg = all_msgs[i]
-            if id(msg) in consumed_ids:
-                i -= 1
-                continue
-            tc_id = msg.get("tool_call_id", "")
-
-            if msg.get("role") == "tool" and tc_id and tc_id in tool_to_assistant:
-                asst = tool_to_assistant[tc_id]
-                asst_already_kept = id(asst) in consumed_ids
-                if asst_already_kept:
-                    need_tokens = self._estimate_tokens([msg])
-                else:
-                    need_tokens = self._estimate_tokens([asst, msg])
-                if used_tokens + need_tokens <= budget_tokens:
-                    kept.append(msg)
-                    if not asst_already_kept:
-                        kept.append(asst)
-                        consumed_ids.add(id(asst))
-                    used_tokens += need_tokens
-                i -= 1
-                continue
-
-            msg_tokens = self._estimate_tokens([msg])
-            if used_tokens + msg_tokens <= budget_tokens:
-                kept.append(msg)
-                if msg.get("role") == "assistant":
-                    consumed_ids.add(id(msg))
-                used_tokens += msg_tokens
-            else:
+        for unit_idx in reversed(fc_atomic_units(all_msgs)):
+            unit = [all_msgs[i] for i in sorted(unit_idx)]
+            need_tokens = self._estimate_tokens(unit)
+            if used_tokens + need_tokens > budget_tokens:
                 break
-            i -= 1
-
-        kept.reverse()
-        return kept
+            kept_units.append(unit)
+            used_tokens += need_tokens
+        kept_units.reverse()
+        return [msg for unit in kept_units for msg in unit]
 
     def _rebuild_and_validate(self, system_msgs, user_msgs, trimmed_msgs):
         """重组消息列表并验证FC配对完整性 — 2026-06-25 小欧 D-1修复: user_msgs在system和trimmed之间"""
@@ -594,19 +567,22 @@ class MessageBuilder:
 
         OpenAI要求:assistant消息中每个tool_call.id都必须有对应role:tool(tool_call_id),
         role:tool的tool_call_id也必须有对应assistant(tool_calls)。
-        任一端缺失则双方都移除。
+        任一端缺失则双方都移除。顺序非法(assistant 声明出现在 tool 响应之后)的对同样双侧移除,
+        防上游 strict 校验报 "tool result's tool id ... not found"(2026-10-20 小欧 增顺序判定)。
         """
-        assistant_ids: set = set()
-        tool_ids: set = set()
-        for msg in messages:
+        assistant_pos: Dict[str, int] = {}
+        tool_pos: Dict[str, int] = {}
+        for i, msg in enumerate(messages):
             if msg.get("role") == "assistant":
                 for tc in msg.get("tool_calls") or []:
                     if tc.get("id"):
-                        assistant_ids.add(tc["id"])
+                        assistant_pos.setdefault(tc["id"], i)
             elif msg.get("role") == "tool":
                 if msg.get("tool_call_id"):
-                    tool_ids.add(msg["tool_call_id"])
-        paired_ids = assistant_ids & tool_ids
+                    tool_pos.setdefault(msg["tool_call_id"], i)
+        # 顺序合法性: assistant 的 tool_call 声明必须位于其 tool 响应之前 — 小欧 2026-10-20
+        paired_ids = {tid for tid in (assistant_pos.keys() & tool_pos.keys())
+                      if assistant_pos[tid] < tool_pos[tid]}
         result = []
         for msg in messages:
             if msg.get("role") == "assistant":

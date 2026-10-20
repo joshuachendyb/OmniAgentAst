@@ -53,6 +53,9 @@
 #   LLM 历史反馈与实际拒绝原因一致 - 小欧-2026-10-19
 # 2026-10-20 小欧 - 拒绝记忆信任让位恢复: 10-17 删 _rej_cache 死 pop 时把信任分支的清记忆一并删了,
 #   信任后同组拒绝记忆仍存续(信任一旦过期即吃旧拒死弹不出); _skip 分支按 refusal_key 同键 pop 恢复让位语义。
+# 2026-10-20 小欧 - 范围门删除: 删循环入口 `if _cn not in PATH_TOOLS: continue` 及其 import。
+#   范围门下沉 PathToolSafetyChecker._check_before_execute(注册判定之后自守), 归线判定收口单一层,
+#   避免 gate 与 checker 两处名单各判一遍而漂移; 非路径工具照常进检查器后立即放行, 不再有双层判断。
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -205,11 +208,9 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
             _cn = call.get("_normal_name") or call.get("tool_name", "?")
             _cp = call.get("tool_params", {})
 
-            # 处理范围门 — 未注册已在解析层认领(_registered), 本层不再复判;
-            #   只处理 PATH_TOOLS 工具, 非路径工具直接放行。
-            from app.tools.tool_constants import PATH_TOOLS
-            if _cn not in PATH_TOOLS:
-                continue
+            # 范围门(2026-10-20 已下沉) — 未注册已在解析层认领(_registered), 本层不再复判 — 小欧 2026-10-20
+            #   名单门统一收口 PathToolSafetyChecker(注册判定之后自守): 本层不再提前 continue,
+            #   直调入口与 Agent 入口共用同一处归线判定, 避免两处名单各判一遍而漂移。
 
             # 门前合法性初查: 仅第1层格式(空值/盘符/保留字符/保留名), 进门即拦, 省信任预查/总闸/弹窗。
             #   存在性不在此判(本层处于全部执行之前, 同批兄弟产出尚未落地, 早判必误拦), 交各工具执行时刻自检。
