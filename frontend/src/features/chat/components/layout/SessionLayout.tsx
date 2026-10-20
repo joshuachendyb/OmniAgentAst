@@ -3,6 +3,7 @@
 // 编辑历史: 2026-08-30 小欧 - v1.100实施: 左列flex:'1 1 0'自适应+min/max守卫(LEFTBAR_MINW=200/MAXW=560), 右栏收起分支flex:'0 0 auto'+marginLeft:auto仅按钮宽条 - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - v1.100三堂会审修复: 左列flex '1 1 0'→'1 1 25%'(实测201px仅14%不达验收"约1/4", 改后25%/74.5%精确吻合设计; 依据真实Chrome测量, 同步设计文档) - 小欧-2026-08-30
 // 编辑历史: 2026-08-30 小欧 - v1.100设计语义澄清修正: 收起态左列填满不设maxWidth(max560仅约束展开态), 展开态左列flex'1 1 25%'+max560; 实测收起态左≈1351px@容器1424 - 小欧-2026-08-30
+// 编辑历史: 2026-10-20 小欧 - 展开态»折叠钮去独占行(北京老陈令): 原钮独占一行致step窗口顶部空出24px空行, 改absolute悬浮右上角(容器position:relative, 钮白底zIndex10防内容文字穿透) — 小欧-2026-10-20
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -109,6 +110,7 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
             minWidth: 0,
             display: 'flex',
             flexDirection: 'column',
+            position: 'relative', // 2026-10-20 小欧: »钮悬浮定位锚点 — 小欧-2026-10-20
           }}
         >
           <Button
@@ -116,7 +118,13 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
             type="text"
             icon={<DoubleRightOutlined />}
             onClick={onToggleRight}
-            style={{ alignSelf: 'flex-end' }}
+            style={{
+              position: 'absolute', // 2026-10-20 小欧: 原常规流独占行致顶部24px空行, 改悬浮右上, 白底防内容文字穿透 — 小欧-2026-10-20
+              top: 0,
+              right: 0,
+              zIndex: 10,
+              background: Colors.BG.PRIMARY,
+            }}
           />
           <div
             style={{
