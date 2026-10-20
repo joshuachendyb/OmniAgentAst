@@ -3,15 +3,16 @@
 # 编辑历史:
 # 2026-06-22 - 小欧 - 创建文件，从document_tools.py拆分
 # 2026-07-26 - 小欧 - summary加路径前空格
-# 2026-07-31 - 小欧 - Bug⑳修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
+# 2026-07-31 - 小欧 - Bug修复: data非数组或元素非dict时返回明确错误(原list[list]触发row.keys() AttributeError, 错误信息晦涩) | py_compile ✓
 # 2026-08-07 - 小欧 - P04优化: 新增append_mode参数 — True=文件已存在时load_workbook末尾追加(表头一致性校验+按已有表头列序映射取值防串列), False=默认覆盖; else分支补mkdir防新建目录缺失崩溃; append分支error返回前补duration_ms计算防NameError | py_compile ✓
-# 2026-08-08 - 小欧 - 修复(task005真实问题分析): append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
+# 2026-08-08 - 小欧 - 修复: append_mode追加模式data全为无字段空dict(如[{}])时, headers为空无法映射任何列, 返回warning"无有效字段可追加"而非静默success"N行", 让LLM感知追加无效; 空追加不save改动文件 | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
 # 2026-10-12 - 小欧 - 失败反馈补"文件未写入磁盘": builder 增 not_written, 仅写前检查点
 #   置位; summary/detail 补未落盘说明, 免 LLM 误判旧文件仍在而改走他路径(同 write_text_file 口径)
 # 2026-10-12 小欧 - tool_zh改短名词: 写入Excel→写EXCEL
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(写入目标用 WRITE)
+# 2026-10-20 05:27 小欧 - FIX: 删 get_column_letter 死导入(_set_xlsx_table_style 按单元格迭代定位表头行, 列字母从未使用)
 """
 D6: write_xlsx — 写入Excel文档
 
@@ -40,7 +41,7 @@ from app.utils.table_helper import get_table_header_style_config  # 2026-07-31 �
 def _set_xlsx_table_style(ws):
     """设置Excel表格样式（表头背景色、数据单元格对齐和边框） — 小健 2026-06-24"""
     from openpyxl.styles import PatternFill, Alignment, Border, Side, Font
-    from openpyxl.utils import get_column_letter
+    # 2026-10-20 小欧 - FIX: 删 get_column_letter 死导入(本函数按单元格迭代定位表头行, 列字母从未使用) — 小欧-2026-10-20
     
     header_config = get_table_header_style_config()
     header_fill = PatternFill(
@@ -150,7 +151,7 @@ def write_xlsx(
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=err, hint="请检查输出路径", not_written=True)
         return build_error(data={}, llm_data=llm_data)
 
-    # 文件类型前置检查（含路径检查+类型检查+模块安全检查）— 北京老陈 2026-07-09
+    # 文件类型前置检查（含路径检查+类型检查+模块安全检查）—  2026-07-09
     is_valid, error_detail, hint = check_office_file(path, allow_create=True)
     if not is_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -158,7 +159,7 @@ def write_xlsx(
         return build_error(data={}, llm_data=llm_data)
 
     data = coerce_json(data)
-    # 2026-07-31 小欧: Bug⑳修复 — 明确data结构约束(list[dict]), 防list[list]触发row.keys() AttributeError(晦涩错误)
+    # 2026-07-31 小欧: Bug修复 — 明确data结构约束(list[dict]), 防list[list]触发row.keys() AttributeError(晦涩错误)
     if not isinstance(data, list):
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_write_xlsx_llm_data("error", duration_ms, path, detail=f"data参数必须是JSON数组, 收到类型: {type(data).__name__}", user_sheet_name=sheet_name, hint="data应为对象数组,如[{\"col1\":1,\"col2\":2}]", not_written=True)

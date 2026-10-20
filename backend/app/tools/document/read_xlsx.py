@@ -20,7 +20,7 @@
 #    单格str超 XLSX_OUTLIMIT_CELL_CHARS=500 尾部截断
 #    截断后缀包含原文长度: f"...(截断:原文N字符)"
 #    row_count 同步更新, 使 llm_data.summary 与实际 data 一致
-#     formatter #25 已读 truncated 字段, 自动显示 "⚠ 已截断"
+#     formatter  已读 truncated 字段, 自动显示 "⚠ 已截断"
 # 2026-07-23 - 小欧 - 输出截断第二轮增强: 多 sheet 也 apply 行+格截断; 新增 truncated_reason 具体原因
 # 2026-07-24 - 小欧 - 修复: error summary嵌入full detail → 改用truncate_summary(detail)首行
 # 2026-07-26 - 小欧 - OOD: 删 READ_XLSX_INPUT_MAX_BYTES 常量+入口检查, OOM自然抛出被except捕获(同dataanalysis模式)
@@ -30,6 +30,9 @@
 # 2026-10-05 - 小欧 - 降噪: hint兜底"读取失败,详见错误明细"改"请修改文件路径与格式后重试"
 # 2026-10-12 小欧 - tool_zh改短名词: 读取Excel→读EXCEL
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: _read_csv_stdlib_inner 的 rows/headers 初化移入编码尝试循环内——
+#   原在循环外, 长文件前次编码读入的部分行在 UnicodeDecodeError 换编码重读时不被清空,
+#   下次尝试叠加造成数据重复(实测3000行文件读出5499行/2498条重复)
 """
 D4: read_xlsx — 读取Excel/CSV/XLS文档
 
@@ -150,11 +153,14 @@ def _read_csv_stdlib_inner(
     OOM自然抛出被except捕获(同dataanalysis OOD模式) — 小沈 2026-07-26"""
     path = Path(file_path)
 
-    rows = []
-    headers = []
     encodings_to_try = [encoding, "gbk", "gb2312", "latin-1"] if encoding == "utf-8" else [encoding, "utf-8", "latin-1"]
     read_ok = False
     for enc in encodings_to_try:
+        # 2026-10-20 小欧 - FIX: rows/headers 初始化原在循环外, 前次编码读入的部分内容
+        #   (长文件途中才解码失败)在 `continue` 换编码重读时不被清空, 下次尝试叠加上去
+        #   造成数据重复(实测 3000 行文件读出 5499 行/2498 条重复); 重试必须整体重置 — 小欧-2026-10-20
+        rows = []
+        headers = []
         try:
             with open(path, "r", encoding=enc, newline="") as f:
                 reader = csv.reader(f, delimiter=delimiter)
@@ -243,7 +249,7 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         # ── Tool 层输出截断 — 小欧 2026-07-23 — 小欧 2026-07-23 BugFix: 多 sheet 截断+truncated_reason
         # 行数截断: 超 XLSX_OUTLIMIT_ROWS_MAX 截断 + data.truncated=True
         # 单格字符串截断: 超 XLSX_OUTLIMIT_CELL_CHARS 尾部加 "...(截断:原文N字符)"
-        # formatter #25 读 data.truncated 自动显示 "⚠ 已截断"
+        # formatter  读 data.truncated 自动显示 "⚠ 已截断"
         # 注意: row_count 同步更新, 使 llm_data.summary 与实际 data 一致
         _tool_trunc = False
         _trunc_rows = False
@@ -295,10 +301,10 @@ def read_xlsx(path: str, sheet_name: Optional[str] = None) -> Dict[str, Any]:
         # — 小欧 2026-07-06 18:46:13
         # =============================================================================
         # ---- observation_formatter route -------------------------------------------
-        # branch: #25 read_xlsx 专属(单sheet/CSV headers+rows) / #21 scalar fallback(多sheet)
+        # branch:  read_xlsx 专属(单sheet/CSV headers+rows) /  scalar fallback(多sheet)
         # trigger: action.tool=="read_xlsx" 且 "headers" in data and "rows" in data
-        # handler: _format_xlsx_result(data, llm_data) — 专属 #25 全量展示(无显示域行/列截断, read_xlsx 无offset分页); 两态说明仅反映 Tool 层 truncated
-        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows, 走 #21 fallback
+        # handler: _format_xlsx_result(data, llm_data) — 专属  全量展示(无显示域行/列截断, read_xlsx 无offset分页); 两态说明仅反映 Tool 层 truncated
+        # note:    多sheet返回 {"sheets": [...], "sheet_names": [...]}, 无headers/rows, 走  fallback
         # file:    observation_formatter.py
         # ------------------------------------------------------------------------------
         return build_success(data=result, llm_data=llm_data)

@@ -2,22 +2,22 @@
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
 # 2026-07-16 - 小欧 - _precise_replace_in_file 返回值移除未消费的 operation_id(YAGNI, 调用方不读取)
-# 2026-07-17 - 小欧 - 新增护栏3项: ①锚点重叠检查(before/after拒绝); ②语法校验(all拒绝+增量warning); ③all宽匹配/边界拦截(拒绝+warning)
+# 2026-07-17 - 小欧 - 新增护栏3项: 锚点重叠检查(before/after拒绝); 语法校验(all拒绝+增量warning); all宽匹配/边界拦截(拒绝+warning)
 # 2026-07-17 - 小欧 - before/after 自动补空行(默认生效,无参数): 新增 _blank_line_sep, before/after 插入时与锚点/后续均隔一个空行(PEP8)
 # 2026-07-17 - 小欧 - DRY重构: 抽出 _is_dangerous_anchor(old_string), _safety_wide_replace 仅保留宽匹配warning, 三引号拒绝统一走 _is_dangerous_anchor+内联
 # 2026-07-20 - 小欧 - MAX_READ_SIZE 依3.5改名 EDIT_INPUT_MAX_BYTES(edit 自有内部常量, 各 tool 独立不公用, INER_ 前缀; 3.4 硬安全网保留, 文件过大拒绝, 不截断)
-# 2026-07-20 - 小欧 - 门限复查: _build_edit_text_file_llm_data 移除顶层 "diff"(及 diff[:500] 截断, 违3.7); diff 统一经 data["diff"] → #24(已行×列收口+两态), 消除与 llm_data 段顶层 diff(:544)的重复渲染; 全/部分应用均置 data={"diff":...}
+# 2026-07-20 - 小欧 - 门限复查: _build_edit_text_file_llm_data 移除顶层 "diff"(及 diff[:500] 截断, 违3.7); diff 统一经 data["diff"] → (已行×列收口+两态), 消除与 llm_data 段顶层 diff(:544)的重复渲染; 全/部分应用均置 data={"diff":...}
 # 2026-07-21 - 小欧 - 修字段语义错位(SLAP/KISS-DIRECT): 阻断写入的校验错误字段 encode_error→validation_error(原误将语法错误存入编码错误字段), 全文件6处同步
-# 2026-07-21 - 小欧 - #9 文件外部修改错误增强: check_conflict_strict 失败时附文件当前内容前2000字符到错误消息
+# 2026-07-21 - 小欧 -  文件外部修改错误增强: check_conflict_strict 失败时附文件当前内容前2000字符到错误消息
 # 2026-07-24 - 小欧 - 重构: 11处散落截断→main函数入口统一截断(3常量); helper/build函数去截断
 # 2026-07-25 - 小欧 - 修复: execute_with_safety返回值类型不匹配——病根: 2026-07-15 execute_with_safety改为返回(bool,str), edit是唯一未解包的调用方, tuple永为true致not success永假, 保险失效
 # 2026-07-25 - 小欧 - 修复: edit读文件后未调record_read——病根: conflict check无准确mtime基准, 使用前次操作(如write)的record_write mtime, Windows mtime波动致~50%误判
 # 2026-07-25 - 小欧 - 修复: None/空校验在截断之后——病根: 2026-07-24截断重构移到main入口, old_string/new_string在None检查前被截断(TypeError), 应先将None/空校验提前
 # 2026-07-25 - 小欧 - 清理: mtime_warning死变量——病根: 声明后从未赋值(YAGNI), 删除line 361声明、line 379/497返回值
 # 2026-07-29 - 小欧 - validation_error加强: 格式"行N；语法错误；建议:xxxx"替代纯error_text; 透传_syn_line/_syn_suggestion到main; metrics新增error_line+suggestion; _check_anchor_overlap报错简化: 去除冗余行引用, 统一"只包含新内容"表述
-# 2026-08-08 - 小欧 - task002问题1增强: 新增_anchor_signature_hint — before/after锚点为单行def/class签名行时给safety_hint提示(引导用方法体末行锚点), 不改插入逻辑(KISS), 与sl_warn/so_warn合并不覆盖 | py_compile ✓
+# 2026-08-08 - 小欧 - 增强: 新增_anchor_signature_hint — before/after锚点为单行def/class签名行时给safety_hint提示(引导用方法体末行锚点), 不改插入逻辑(KISS), 与sl_warn/so_warn合并不覆盖 | py_compile ✓
 # 2026-08-08 - 小欧 - _anchor_signature_hint 精简: 空串/多行两项卫兵合并为 first=old_string.strip() 单卫(not first or '\n' in first), 消除重复rstrip/strip, 职责唯一零回归 | 回归 pytest: before_after+internal+retest 169✓ v2+deep+twelfth 112✓ guardrail+perf 64✓
-# 2026-08-09 - 小欧 - task006: 编码回退反馈 — 用户指定编码无效时原仅logger.warning, LLM感知不到
+# 2026-08-09 - 小欧 - 编码回退反馈: — 用户指定编码无效时原仅logger.warning, LLM感知不到
 #   病根: _try_read_file_with_encodings 第三参数err_msg非None即被调用方raise, 报告"子函数返回hint"方案会破坏
 #   该契约导致回退成功变失败(退化) → 改为调用方合成: encoding与used_enc不一致时生成encoding_fallback并入safety_hint, 增强不退化
 #   验证: 指定无效编码→回退提示; 一致/未指定/失败短路均无提示
@@ -33,10 +33,10 @@
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小沈 - 修复: get_current_hooks() 改 get_current_hooks_or_noop() 兜底返回 NoOpHooks,
 #   消除入口未注入时 _hooks.record_operation() NPE(如测试直接调工具函数), 行为零退化(生产路径已注入不变)
-# 2026-08-13 - 小欧 - 修复#5: _precise_replace_in_file 的 stat/read_bytes/read_text/open('w')
+# 2026-08-13 - 小欧 - 修复修复: _precise_replace_in_file 的 stat/read_bytes/read_text/open('w')
 #   全链 to_win_long_path 长路径化(仅NT生效), 深嵌套目标不再 WinError 206; 编码回退读取传 \\?\ 前缀 Path;
 #   报告/diff/语法检测仍用原路径(不暴露 \\?\ 前缀, detect_language 只按扩展名判断不受影响)
-# 2026-08-13 - 小欧 - 修复#23: 移除死导入 validate_str_param(合规/DRY)
+# 2026-08-13 - 小欧 - 修复修复: 移除死导入 validate_str_param(合规/DRY)
 #   【病根】from app.tools.validate.file_path_checker import validate_str_param 全文件零调用(grep仅导入处1处), 冗余导入
 #   【改法】从导入行移除, 保留validate_path/OpCategory
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物
@@ -49,6 +49,8 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 编辑文件→编辑
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归路径安全层), 仅留 for_write 大文件警告。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(被改文件须存在, 用 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: 删 dry_run 死参数 — 工具入口 2026-06-20 已删该参数, _precise_replace_in_file
+#   唯一调用方恒传 False, 分支不可达(YAGNI); 参数/if dry_run 分支/恒 False 局部变量一并移除
 """
 F4: edit — 编辑文本文件
 
@@ -75,7 +77,7 @@ from app.db.models.operation_models import OperationType
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归 路径安全层
 from app.tools.toolhelper.error_hints import hint_for_write_error
-from app.utils.path_utils import to_win_long_path  # #5长路径包裹 — 小欧 2026-08-13
+from app.utils.path_utils import to_win_long_path  # 长路径包裹 — 小欧 2026-08-13
 from app.logger import logger
 from app.tools.file.file_encoding import read_file_with_encodings as _try_read_file_with_encodings  # 小欧 2026-08-09: 本地重复实现合并入公共file_encoding
 from app.tools.file.file_state import check_conflict_strict, record_write, record_read
@@ -216,7 +218,7 @@ _SIG_ANCHOR_RE = re_mod.compile(r'^(?:async\s+)?(?:def|class)\s+\w+')
 
 
 def _anchor_signature_hint(old_string: str) -> str:
-    """检测 before/after 锚点是否为单行函数/类签名行(def/class), 返回引导提示或空串 — 小欧 2026-08-08 (task002问题1)
+    """检测 before/after 锚点是否为单行函数/类签名行(def/class), 返回引导提示或空串 — 小欧 2026-08-08
 
     场景: LLM 常以 'def sort_data(self):' 单行签名作 after 锚点, 本工具按"所在行"定位,
     插入会落在签名行后(即方法体之前)而非方法末尾, 导致新方法错位/旧方法体移位。
@@ -347,9 +349,11 @@ def _build_edit_text_file_llm_data(
 async def _precise_replace_in_file(
     file_path: str, old_string: str, new_string: str,
     mode: str = "once", ignore_case: bool = False,
-    dry_run: bool = False, encoding: Optional[str] = None,
+    encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
     """精确替换文件中的字符串(返回原始dict,不含build3/llm_data) — 小欧 2026-06-22 — 小欧 2026-07-11 replace_all→mode"""
+    # 2026-10-20 小欧 - FIX: 删 dry_run 死参数 — 唯一调用方恒传 False(工具入口 2026-06-20 已删该参数),
+    #   分支永远不可达, 属 YAGNI 死代码, 参数与分支一并移除 — 小欧-2026-10-20
     if not old_string:
         return {"error_detail": "old_string不能为空"}
 
@@ -365,7 +369,7 @@ async def _precise_replace_in_file(
             logger.warning(f"[edit] {warn}")
 
         path = Path(file_path).resolve()
-        _long = to_win_long_path(path)  # #5长路径: stat/read/open 统一 \\?\ 前缀 — 小欧 2026-08-13
+        _long = to_win_long_path(path)  # 长路径: stat/read/open 统一 \\?\ 前缀 — 小欧 2026-08-13
         if Path(_long).stat().st_size > EDIT_INPUT_MAX_BYTES:
             return {"error_detail": f"文件过大({Path(_long).stat().st_size}字节)", "file_size": Path(_long).stat().st_size}
 
@@ -393,7 +397,7 @@ async def _precise_replace_in_file(
         conflict_err = check_conflict_strict(file_path)
         if conflict_err:
             try:
-                _preview = Path(_long).read_text("utf-8", errors="replace")[:2000]  # #5长路径 — 小欧 2026-08-13
+                _preview = Path(_long).read_text("utf-8", errors="replace")[:2000]  # 长路径 — 小欧 2026-08-13
                 conflict_err += f"\n文件当前内容(前2000字符):\n{_preview}"
             except Exception:
                 pass
@@ -430,7 +434,7 @@ async def _precise_replace_in_file(
                 return {"error_detail": _overlap_err}
 
             # 签名行锚点提示: def/class 单行签名作为 before/after 锚点时,
-            # 插入位置为签名行后/前而非常规方法体之后, 易错位. 引导使用完整方法体末行锚点 — 小欧 2026-08-08 (task002问题1)
+            # 插入位置为签名行后/前而非常规方法体之后, 易错位. 引导使用完整方法体末行锚点 — 小欧 2026-08-08
             _anchor_hint = _anchor_signature_hint(old_string)
 
         _hooks = get_current_hooks_or_noop()  # ContextVar 取安全 hooks(修复: _or_noop 兜底防 NPE) — 小沈 2026-08-13
@@ -454,8 +458,6 @@ async def _precise_replace_in_file(
                     new_content, count, total_matches = fuzzy_content, fuzzy_count, fuzzy_total
             replace_result['count'] = count
             replace_result['total_matches'] = total_matches
-            if dry_run:
-                return True
             if count == 0:
                 lines = content.split('\n')
                 preview = '\n'.join(lines[:15])
@@ -471,7 +473,7 @@ async def _precise_replace_in_file(
             sl_warn = _safety_structure_loss(content, new_content)
             so_warn = _safety_short_old(old_string, mode, total_matches)
             if sl_warn or so_warn:
-                # 与签名行锚点提示合并, 不覆盖 (task002问题1增强) — 小欧 2026-08-08
+                # 与签名行锚点提示合并, 不覆盖 — 小欧 2026-08-08
                 replace_result['safety_hint'] = "；".join(filter(None, [_anchor_hint, sl_warn, so_warn]))
             # all 模式宽匹配/边界检查 — 小欧 2026-07-17
             if mode == "all":
@@ -493,7 +495,7 @@ async def _precise_replace_in_file(
             except UnicodeEncodeError as e:
                 replace_result['validation_error'] = f"替换后内容含编码 {used_enc} 不支持的字符: {e}"
                 return False
-            # 语法校验 — 检出问题仅告警, 照常落盘(北京老陈 2026-10-12): 原为硬阻断(语法错即拒绝写入),
+            # 语法校验 检出问题仅告警, 照常落盘(2026-10-12): 原为硬阻断(语法错即拒绝写入),
             #   但本检查是启发式(会误判), 且 edit 是局部修改——因全文某处历史语法错拒改一行伤害更大。
             #   现与 write 统一为 warning: 改照样生效, 由上层按 warning 呈现。
             #   校验对象=合并完成即将落盘的 write_content(见下方), 非 new_content 片段。
@@ -512,7 +514,7 @@ async def _precise_replace_in_file(
                     replace_result['syntax_warning'] = "；".join(_parts)
                     replace_result['_syn_line'] = _syn.line
                     replace_result['_syn_suggestion'] = _syn.suggestion
-            with open(_long, 'w', encoding=used_enc, newline='') as f:  # #5长路径 — 小欧 2026-08-13
+            with open(_long, 'w', encoding=used_enc, newline='') as f:  # 长路径 — 小欧 2026-08-13
                 f.write(write_content)
             record_write(file_path)
             return True
@@ -616,7 +618,7 @@ async def edit(
         llm_data = _build_edit_text_file_llm_data("error", duration_ms, file_path=file_path, detail="file_path包含空字节", user_old_string=_old_preview, user_new_string=_new_preview, user_mode=mode, user_ignore_case=ignore_case, user_encoding=encoding)
         return build_error(data={}, llm_data=llm_data)
 
-    # 文件类型检查 — 北京老陈 2026-07-09
+    # 文件类型检查 2026-07-09
     ft_valid, ft_detail, ft_tool = check_for_text_tool(file_path, check_content=True)
     if not ft_valid:
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
@@ -632,11 +634,10 @@ async def edit(
             llm_data=llm_data,
         )
 
-    dry_run = False
-    result = await _precise_replace_in_file(
+    result = await _precise_replace_in_file(  # 2026-10-20 小欧 - FIX: 干净移除 dry_run 死参数与恒 False 局部变量
         file_path=file_path, old_string=old_string, new_string=new_string,
         mode=mode, ignore_case=ignore_case,
-        dry_run=dry_run, encoding=encoding,
+        encoding=encoding,
     )
     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
     # 语法错误/其他错误处理 — 小欧 2026-07-29 加metrics error_line+suggestion
@@ -672,7 +673,7 @@ async def edit(
     )
     with_artifact_file(llm_data, file_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
     # ---- observation_formatter route -------------------------------------------
-    # branch: #21 fallback (key:val)
+    # branch:  fallback (key:val)
     # trigger: 无上述20条分支匹配 — result 含 applied_edits/diff，不命中任何专用分支
     # handler: _format_scalar_data(data) — key | value 单行列表
     # file:    observation_formatter.py:214
@@ -690,7 +691,7 @@ async def edit(
     if _skipped or _applied == 0:
         data = {}
     else:
-        # diff 统一经 data["diff"] → #24(已行×列收口+两态); 不在 llm_data 顶层重复渲染(严禁重复)
+        # diff 统一经 data["diff"] → (已行×列收口+两态); 不在 llm_data 顶层重复渲染(严禁重复)
         data = {"diff": result.get("diff", "")}
     # 2026-10-12 小欧 - 有语法告警时返回 warning(与 write 一致): 编辑确已落盘,
     #   语法问题仅提示; exec_code 已由 builder 按 hint/syntax_warning 自动判定

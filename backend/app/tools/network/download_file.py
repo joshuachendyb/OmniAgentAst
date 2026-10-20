@@ -6,11 +6,11 @@
 # 2026-07-20 - 小欧 - 常量依3.5改名: DOWNLOAD_MAX_BYTES→DOWNLOAD_INPUT_MAX_BYTES(私有内部常量前缀); 值依 v3.26 由100MB提升至1GB; 功能零退化
 # 2026-07-25 - 小欧 - 新增非ASCII URL转码: download 支持中文域名/路径, 转码后走validate_url做DNS/SSRF检查
 # 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage/httpget同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
-# 2026-08-10 - 小欧 - ⑭注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施
+# 2026-08-10 - 小欧 - 注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施
 # 2026-08-12 - 小欧 - 补漏: download 与 httpget 同病根(重定向到内网被SSRF防护拦截抛httpx.InvalidURL落入catch-all记ERROR);
 #   用 http_client_sdk.is_ssrf_blocked_error 公用函数统一识别(httpget/fetch_webpage/download三工具一致), 返回ERR_INVALID_URL+warning
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
-# 2026-08-13 - 小欧 - 修复#16: _stream_download抛的ValueError(文件过大/超过大小限制)落入catch-all归ERR_NET_UNKNOWN
+# 2026-08-13 - 小欧 - 修复修复: _stream_download抛的ValueError(文件过大/超过大小限制)落入catch-all归ERR_NET_UNKNOWN
 #   【病根】L119-128大小超限抛ValueError, 外层仅except Exception归ERR_NET_UNKNOWN("未知网络错误"), 分类与成因不符, 重试引擎可能无谓重试
 #   【改法】外层新增`except ValueError`分支, 归ERR_INVALID_PARAMS(输入/参数错误), hint给出"换用更小资源或分片"; 置于httpx异常分支后、Exception兜底前
 # 2026-08-21 - 小欧 - 11.6.1: success分支调 with_artifact_file 声明产出物(下载文件)
@@ -21,6 +21,11 @@
 #   原传 dest(裸名) 致相对路径被按 cwd 误判 —— 小欧-2026-10-18
 # 2026-10-18 - 小欧 - dest 支持绝对路径: 绝对路径原样采用, 相对路径仍以下载目录为基准;
 #   删去"必须落在下载目录内"的工具层硬拦, 落点是否获准交安全层判定(与其它写工具同口径), 仅保留 .. 拼写级防护 — 小欧-2026-10-18
+# 2026-10-19 - 小欧 - dest 绝对化统一走公用 absolutize_path(value, base); get_download_dir 上移 app.utils.path_utils(单源, 安全入口同用)
+# 2026-10-20 05:27 小欧 - 两处实测修复: Content-Length 非数字头(代理/异常服务器)int() 抛 ValueError
+#   被误归类"文件超过下载大小限制", 改安全解析、非数字置0交流式累计口径; symlink 判定 realpath
+#   与 abspath 对大小写还原口径不同(Windows 不区分大小写), 正常文件被判"路径被篡改"误报,
+#   normcase 消除大小写差异后再比, 真 symlink/junction 仍可检出
 """
 N2: download — 下载文件到本地
 
@@ -43,15 +48,11 @@ from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
-from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归路径安全层
+from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write, absolutize_path, get_download_dir  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归路径安全层
+# 2026-10-19 小欧 - dest 绝对化改调公用 absolutize_path(value, base)(基准=get_download_dir, 与安全入口同源); get_download_dir 上移 path_utils(单源)
 from app.tools.toolhelper.error_hints import hint_for_write_error
 
 from app.logger import logger
-
-def _get_download_dir() -> str:
-    """获取下载目录 — 优先从配置读取project_root(未配→用户主目录)，子目录download — 小欧 2026-07-09, 2026-08-10 ⑭注释更正"""
-    from app.config import get_config
-    return os.path.join(get_config().get_project_root(), "download")
 
 from app.tools.tool_constants import (
     ERR_INVALID_URL,
@@ -133,9 +134,15 @@ async def _stream_download(client: HTTPClient, url: str, dest_path: str,
         response.raise_for_status()
         content_type = response.headers.get("content-type", "")
         raw_total = response.headers.get("content-length")
-        total_bytes = int(raw_total) if raw_total else 0
+        # 2026-10-20 小欧 - FIX: int(raw_total) 对非数字头(代理注入/异常服务器)抛 ValueError,
+        #   落入外层 except ValueError 被误归类为"文件超过下载大小限制"; 非数字=无法预判,
+        #   置 0 交流式累计口径(流内超限仍逐块拦截) — 小欧-2026-10-20
+        try:
+            total_bytes = int(raw_total) if raw_total else 0
+        except ValueError:
+            total_bytes = 0
 
-        if raw_total and int(raw_total) > DOWNLOAD_INPUT_MAX_BYTES:
+        if raw_total and total_bytes > DOWNLOAD_INPUT_MAX_BYTES:
             raise ValueError(f"文件过大: {raw_total}字节, 限制: {DOWNLOAD_INPUT_MAX_BYTES}字节")
 
         downloaded = 0
@@ -184,13 +191,10 @@ async def download(
         if any(p == ".." for p in dest.replace("\\", "/").split("/")):
             llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest, err_code=ERR_NETWORK_INVALID_PATH, detail="dest不允许路径遍历", hint="请使用合法文件名", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
-        if os.path.isabs(dest):
-            dest_path = os.path.abspath(dest)
-        else:
-            dest_path = os.path.abspath(os.path.join(_get_download_dir(), dest.lstrip("/\\")))
+        dest_path = absolutize_path(dest, get_download_dir())
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
-        dest_path = os.path.abspath(os.path.join(_get_download_dir(), filename))
+        dest_path = absolutize_path(filename, get_download_dir())
     # 2026-10-16 小欧 - tool去检查化: 合法性由路径安全层唯一检查(dest 经 resolve 得绝对路径), 此处仅业务警告
     _, _, path_warn = validate_path_for_write(dest_path)
     if path_warn:
@@ -235,7 +239,10 @@ async def download(
 
         req_headers = headers or {}
 
-        if os.path.exists(dest_path) and os.path.realpath(dest_path) != os.path.abspath(dest_path):
+        # 2026-10-20 小欧 - FIX: realpath 与 abspath 对大小写还原口径不同(Windows 不区分大小写,
+        #   传入大小写与磁盘真实拼写不一致时, 同一路径被判"路径被篡改(symlink)"误报);
+        #   normcase 消除大小写差异后再比, 真 symlink/junction(指向变了)仍可检出 — 小欧-2026-10-20
+        if os.path.exists(dest_path) and os.path.normcase(os.path.realpath(dest_path)) != os.path.normcase(os.path.abspath(dest_path)):
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path=dest_path, err_code=ERR_NETWORK_INVALID_PATH, detail="路径被篡改(symlink)", hint="请检查目标路径", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
@@ -252,7 +259,7 @@ async def download(
         llm_data = _build_download_file_llm_data("success", duration_ms, url, dest_path, downloaded, total_bytes, content_type, timeout=timeout, proxy=proxy, headers=headers)
         with_artifact_file(llm_data, dest_path)   # 11.6.1 产出物声明 — 小欧 2026-08-21
         # ---- observation_formatter route -------------------------------------------
-        # branch: A-#0 empty data — 无字段，输出"详情:\n" + 空
+        # branch: A- empty data — 无字段，输出"详情:\n" + 空
         # trigger: data == {}
         # handler: _format_scalar_data(data) — 空dict输出空字符串
         # file:    observation_formatter.py:214
@@ -291,7 +298,7 @@ async def download(
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=error_info["err_code"], detail=error_info["detail"], hint=_hint, timeout=timeout, proxy=proxy, headers=headers)
         return build_error(data={}, llm_data=llm_data)
     except ValueError as ve:
-        # 文件超DOWNLOAD_INPUT_MAX_BYTES属输入/参数错误, 归ERR_INVALID_PARAMS而非ERR_NET_UNKNOWN, 避免重试引擎无谓重试/误导LLM — 小欧 2026-08-13 #16
+        # 文件超DOWNLOAD_INPUT_MAX_BYTES属输入/参数错误, 归ERR_INVALID_PARAMS而非ERR_NET_UNKNOWN, 避免重试引擎无谓重试/误导LLM — 小欧 2026-08-13 
         logger.error(f"[download] 下载大小超限: {ve}")
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_download_file_llm_data("error", duration_ms, url, dest_path, err_code=ERR_INVALID_PARAMS, detail=str(ve), hint="文件超过下载大小限制,请换用更小资源或分片", timeout=timeout, proxy=proxy, headers=headers)

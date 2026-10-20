@@ -24,10 +24,13 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
   _SHELL_ABS_WIN_PATH_RES 删去反斜杠/正斜杠 UNC 两条正则, 裸路径只保留盘符路径(含 \\?\ 前缀);
   \\server\share 不再被抽为受控路径。注: shell_sandbox_tables.SHELL_OUTSIDE_TARGET_RE 的 UNC 分支
   属沙箱"越界写扫描"口径(判路径是否落在沙箱外), 与"权限覆盖"关注点不同, 未随本改。
+2026-10-20 - 小欧 - 重定向识别收口 _iter_file_redirects(单一扫描器): 排除 fd 复制
+  (`2>&1`/`>&2`/`>&-`)与空设备(nul //dev/null / $null); 支持 `>&file`(bash 真文件)、
+  `&>file`、`>|file`; has_file_redirect / redirect_targets 同源, 删/写两侧口径一致。
 """
 import os
 import re
-from typing import List, Optional
+from typing import Iterator, List, Optional
 
 #   2026-10-18 小欧: 文本原子已拆入 app.safety.shell_text_atoms(SRP);
 #   本文件的依赖改**惰性**(调用期导入), 导入期 lexer 不触发该模块, 与沙箱宽表(shell_sandbox_tables
@@ -314,21 +317,53 @@ def split_source_target(statement: str, cwd: Optional[str],
 
 
 _REDIRECT_TOKEN_RE = re.compile(r'\s*("[^"]*"|\'[^\']*\'|[^\s"\'<>|;&]+)')
+#: 空设备目标: 不落盘, 不是写目标 — 小欧 2026-10-20
+_NULL_TARGETS = frozenset({"nul", "/dev/null", "$null"})
+
+
+def _iter_file_redirects(statement: str) -> Iterator[str]:
+    """逐条产出真实文件重定向的目标词条 — 小欧 2026-10-20
+
+    引号内的 `>` 先涂空(保偏移)排除。`>` 后分支:
+      - `&` 后整词为纯数字或 `-` → fd 复制(2>&1 / >&2 / >&-), 无文件;
+      - `&` 后其它词 → bash `>&file`, 该词即文件目标(如 `>&1.txt` 是文件, 非 fd 复制);
+      - `|` → bash noclobber `>|file`, 去掉 `|` 取目标;
+      - 空设备(nul / /dev/null / $null) → 不落盘, 跳过。
+    单一扫描器: has_file_redirect 与 redirect_targets 共用, 避免两套正则漂移。
+    """
+    mask = blank_quotes(statement)
+    for m in re.finditer(r">>?", mask):
+        rest = statement[m.end():]
+        fd_copy = rest.startswith("&")
+        if fd_copy:
+            rest = rest[1:].lstrip()
+        elif rest.startswith("|"):
+            rest = rest[1:]
+        m2 = _REDIRECT_TOKEN_RE.match(rest)
+        if not m2:
+            continue
+        token = m2.group(1).strip("\"'")
+        if fd_copy and (token.isdigit() or token == "-"):
+            continue
+        if token.lower() in _NULL_TARGETS:
+            continue
+        yield token
+
+
+def has_file_redirect(statement: str) -> bool:
+    """语句是否存在真实文件重定向(> / >>) — 小欧 2026-10-20"""
+    return next(_iter_file_redirects(statement), None) is not None
 
 
 def redirect_targets(statement: str, cwd: Optional[str]) -> List[str]:
-    """抽重定向目标(`>`/`>>` 之后的首个词条)归一为绝对路径 — 小欧 2026-10-18
+    """抽重定向目标词条并归一为绝对路径 — 小欧 2026-10-18 / 2026-10-20
 
-    用于把重定向目标从删除/搬移抽取里剔除(其性质是写, 不该落删线)。
-    引号内的 `>` 先涂空(保偏移)排除; `>&1` 之类无路径词条自然不匹配。
+    用于把重定向目标从删除/搬移抽取里剔除(其性质是写, 不该落删线), 并供写套取目标。
+    识别口径统一走 _iter_file_redirects(fd 复制/空设备已排除)。
     """
-    mask = blank_quotes(statement)
     out: List[str] = []
-    for m in re.finditer(r">>?", mask):
-        m2 = _REDIRECT_TOKEN_RE.match(statement[m.end():])
-        if not m2:
-            continue
-        absolute = to_absolute(m2.group(1).strip("\"'"), cwd)
+    for token in _iter_file_redirects(statement):
+        absolute = to_absolute(token, cwd)
         if absolute and absolute.lower() not in [x.lower() for x in out]:
             out.append(absolute)
     return out
@@ -340,4 +375,5 @@ __all__ = [
     "split_statements", "split_pipeline", "tokenize",
     "to_absolute", "extract_paths", "shell_extract_abs_win_paths",
     "pathish", "refpath_like", "split_source_target", "redirect_targets",
+    "has_file_redirect",
 ]

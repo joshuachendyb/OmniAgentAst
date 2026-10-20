@@ -31,7 +31,7 @@
 # 2026-10-17 - 小欧 - 整改: (1)删本层未注册复判段(认领已上提 L2, 只按 _normal_name 查 PATH_TOOLS) (2)信任预查 resolve_skip 移入确认层(requires_confirmation 块内), 删 skip_confirmation 传递与 _rej_cache 死 pop, 恒取 trusted=False (3)删 check_safety_and_confirm 的 fc_context 死参 (4)删 _classify_safety_level "未注册"不可达分支。
 # 2026-10-17 - 小欧 - 拒绝回传修复: _denied_out 回传由「切片替换」改「extend 追加」, 否则调用方 pre-seed 的认领拒绝项(_denied_pre)被抹掉, 未注册 call 无 tool 反馈 → LLM 历史孤儿 tool_call。
 # 2026-10-18 - 小欧 - 归一化前置: 循环内 _cn 改取 call["_normal_name"](解析层已归一), 参数亦为已归一; 本层不再重复 normalize_params。
-# 2026-10-18 - 小欧 - 随契约调整同步(三处): ①只读短路与确认入口两处判读改 needs_confirm ②safety_level 改为"字段优先、文本兜底" —— 各判定分支已直给分类, 本层优先直读, 仅在为空时退回关键词分类; 关键词分类函数保留不删, 因工具元数据确认策略触发的确认(execute_sql/create_task 等)不经路径安全检查、本就没有文案可依据 ③新增 _resolve_trust_impact: 按 temp_auth 实际生效的 recursive 给出授权影响面 high/low, 取代原透传的严重度; 与"是否需确认"正交、互不推导。确认分支顺序与放行条件零变更。
+# 2026-10-18 - 小欧 - 随契约调整同步(三处): 只读短路与确认入口两处判读改 needs_confirm safety_level 改为"字段优先、文本兜底" — 各判定分支已直给分类, 本层优先直读, 仅在为空时退回关键词分类; 关键词分类函数保留不删, 因工具元数据确认策略触发的确认(execute_sql/create_task 等)不经路径安全检查、本就没有文案可依据 新增 _resolve_trust_impact: 按 temp_auth 实际生效的 recursive 给出授权影响面 high/low, 取代原透传的严重度; 与"是否需确认"正交、互不推导。确认分支顺序与放行条件零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(安全层单源), 消费逻辑零改动。
 # 2026-10-18 - 小欧 - 删关键词反查 _classify_safety_level(约 20 行 if/elif 链一并退场): 病根是"标签取决于文案怎么写" ——
 #   改一个提示字就换一个分类, 标签与分支永远对不上, 且该链无法独立验证。产地已归位到各判定分支直给, 本层只读 safety_level。
@@ -62,6 +62,7 @@ from app.logger import logger
 from app.services.agent.steps import MetaStep
 from app.services.agent.handlers.sandbox_gate import run_sandbox_gate
 from app.safety.temp_auth import grant_temp_auth  # 3处重复import合并上提(仅标准库依赖无环) — 小欧 2026-09-06
+from app.safety.path_dir_lists import directory_lists_scope  # 2026-10-19 小欧 - 目录名单作用域(生成即落库)
 
 __all__ = ["check_safety_and_confirm"]
 
@@ -127,9 +128,9 @@ def _resolve_trust_impact(safety_result) -> str:
     SafetyLevel 是 StrEnum, 与裸 str 直接可比, 故此处无需再做 str() 归一(多一层无意义转换)。
     """
     level = getattr(safety_result, "safety_level", "")
-    if level in (SafetyLevel.DELETE_RECURSIVE, SafetyLevel.DELETE_OUT_OF_SCOPE):
+    if level == SafetyLevel.DELETE_OUTSIDE_WHITELIST:
         return "high"
-    if level in (SafetyLevel.WRITE_PROTECTED, SafetyLevel.WRITE_OUT_OF_SCOPE):
+    if level in (SafetyLevel.WRITE_FORBIDDEN, SafetyLevel.WRITE_OUTSIDE_WHITELIST):
         return "medium"
     return "low"
 
@@ -224,7 +225,19 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
 
             # 危险+权限 总闸: 池快照现取现递（PID 可被 OS 重用，不得缓存复用）— 小欧 2026-10-16
             from app.tools.fundamental.shell_engine import get_pool_pids_snapshot
-            safety_result = safety_checker.check_before_execute(_cn, _cp, pool_pids=get_pool_pids_snapshot())
+            # 2026-10-19 小欧 - 目录数组归一化: 目录名单作用域由编排层开 —— 作用域在**生成的那一刻**
+            #   就把名单原样落库(审计: 事后核查"这条路径当时按哪份名单判的"), 调用方无须另行落库,
+            #   也不可能漏记。check_before_execute 内部再开一层时因可嵌套而复用, 仍只构建一次。
+            # 2026-10-20 小欧 - fail-closed: 目录名单构建/判定异常就地转 blocked, 不放行也不让异常
+            #   冒泡成任务崩溃。
+            try:
+                with directory_lists_scope(task_id=agent.task_id):
+                    safety_result = safety_checker.check_before_execute(_cn, _cp, pool_pids=get_pool_pids_snapshot())
+            except Exception as e:
+                logger.error(f"[action] step={step} 目录名单构建/判定异常(硬拦 fail-closed): "
+                             f"tool={_cn}, {e!r}")
+                safety_result = SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
+                                             message=f"目录名单构建失败, 拒绝执行: {e}")
 
             # 沙箱预检闸门 — 逻辑已拆分至 sandbox_gate.sandbox_precheck/sandbox_resolve
             # (2026-08-25 重构: 去嵌套闭包隐式耦合, Agent编排层落点, 三处汇合点共用, 每 call 恰好预检一次不重复)

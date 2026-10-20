@@ -6,12 +6,15 @@
 # 2026-07-25 - 小欧 - Bug修: llm_data.row_count 统一为 total_count(全量行数,非head后), L142 加 TODO 大文件安全网注释
 # 2026-07-25 - 小欧 - em dash替换为ascii连字符- (欧阳建议，消除SyntaxError嫌疑)
 # 2026-07-26 - 小欧 - 加nrows=100000硬安全网防OOM(欧阳报告问题2修复)
-# 2026-07-26 - 小欧 - 删除nrows=100000:OOM让异常自然抛出被except捕获报error给LLM,不加硬限制(老陈方向)
+# 2026-07-26 - 小欧 - 删除nrows=100000:OOM让异常自然抛出被except捕获报error给LLM,不加硬限制(方向)
 # 2026-07-26 - 小欧 - OOD重构:数据加载/convert_pd_value抽取至data_loader公用函数(analyze_data/filter_data共享),内联数据加载改用load_data_to_df
 # 2026-07-26 - 小欧 - 迁移: hint_for_data_error导入从tool_constants改为file_path_checker(配合函数迁移)
-# 2026-07-31 - 小欧 - Bug⑫修复: group_by/sort_by列不存在时抛明确错误(原静默退回非分组统计/静默跳过排序, 误导LLM) | py_compile ✓
+# 2026-07-31 - 小欧 - Bug修复: group_by/sort_by列不存在时抛明确错误(原静默退回非分组统计/静默跳过排序, 误导LLM) | py_compile ✓
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(数据文件与 data 互斥, 传 path 才查 EXISTS)
+# 2026-10-20 05:27 小欧 - FIX: top_n/sort_by 两参数原为空操作(统计先于截取, df.head(top_n)为死赋值;
+#   统计与序无关致 sort_by 无效, 实测 top_n=1/2/None 输出全同); 正确语义=统计范围取"按 sort_by
+#   升序后的前 top_n 行", 无 top_n 全量统计, result.row_count 同步反映分析范围
 """
 analyze_data  对数据集进行统计分析
 【2026-06-22 小健】从 dataanalysis_tools.py 拆分为独立文件
@@ -36,7 +39,7 @@ from app.tools.dataanalysis.data_loader import load_data_to_df, convert_pd_value
 def _compute_stats(df: "pd.DataFrame", numeric_cols: List[str], operations: List[str],
                    all_ops: List[str], *, group_by: Optional[str] = None) -> Dict[str, Any]:
     """统一分组/非分组统计计算 - 小沈 2026-05-25
-       2026-07-31 小欧: Bug⑫修复 — group_by列不存在时抛ValueError, 不再静默退回非分组统计
+       2026-07-31 小欧: Bug修复 group_by列不存在时抛ValueError, 不再静默退回非分组统计
     """
     if group_by:
         if group_by not in df.columns:
@@ -166,7 +169,7 @@ def analyze_data(path: Optional[str] = None, data: Optional[str] = None,
             llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, 0, df.columns.tolist(),
                                                        path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0)
             # ---- observation_formatter route -------------------------------------------
-            # branch: #20 analyze_data(transposed) - 无数值列场景
+            # branch:  analyze_data(transposed) - 无数值列场景
             # trigger: "statistics" in data - statistics 为 {} 空 dict
             # handler: _format_analyze_data(data) - 首行 列名 | 总数 转置表
             # file:    observation_formatter.py:201-202
@@ -179,24 +182,25 @@ def analyze_data(path: Optional[str] = None, data: Optional[str] = None,
             return build_success(data={"columns": df.columns.tolist(), "statistics": {}}, llm_data=llm_data)
 
         result = {"columns": numeric_cols, "row_count": total_count}
-        # 2026-07-31 小欧: Bug⑫关联 — sort_by列不存在同样抛明确错误, 防静默跳过排序误导LLM
+        # 2026-10-20 小欧 - FIX: 原实现统计(与序无关)先于截取, `df.head(top_n)` 是死赋值
+        #   (实测 top_n=1/2/None 输出全同, sort_by 亦无效); 正确语义=统计范围取
+        #   "按 sort_by 升序后的前 top_n 行", 无 top_n 则全量统计, 两参数真实生效 — 小欧-2026-10-20
+        # 2026-07-31 小欧: Bug关联 sort_by列不存在同样抛明确错误, 防静默跳过排序误导LLM
         if sort_by:
             if sort_by not in df.columns:
                 raise ValueError(f"sort_by列不存在: {sort_by}")
             df = df.sort_values(by=sort_by, ascending=True)
-
-        # 先统计（在完整数据上）
-        result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
-
-        # 再截断输出
         if top_n and top_n > 0:
             df = df.head(top_n)
+            result["row_count"] = len(df)
+
+        result.update(_compute_stats(df, numeric_cols, operations, all_ops, group_by=group_by))
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         llm_data = _build_analyze_data_llm_data("success", duration_ms, total_count, len(numeric_cols), df.columns.tolist(),
                                                    path=file_path, data=data, operations=operations, group_by=group_by, sort_by=sort_by, top_n=top_n or 0)
         # ---- observation_formatter route -------------------------------------------
-        # branch: #20 analyze_data(transposed) - 有数值列场景
+        # branch:  analyze_data(transposed) - 有数值列场景
         # trigger: "statistics" in data or "grouped_statistics" in data
         # handler: _format_analyze_data(data) - 每列名 均值/求和/计数 转置表
         # file:    observation_formatter.py:201-202

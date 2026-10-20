@@ -82,6 +82,14 @@
 #   logger.info(硬拦仍留 log_and_print —— 那是用户该看见的终端事件; 确认路径属高频, 控制台刷屏)。
 # 2026-10-18 小欧 - 注释订正: check_before_execute 头注的开关表述改为覆盖三处确认产地
 #   (原文只说"普通 needs_confirmation", 会让人以为中风险命令不归开关管, 与实际不符)。
+# 2026-10-19 小欧 - 入口路径格式化+绝对化(唯一路径处理点): 在 directory_lists_scope 内(名单已建)、
+#   _check_before_execute 前, 对非 shell 工具的 path/dest 就地绝对化+format_path; 相对值按工具基准
+#   (rename→源父目录, download→下载目录, 其余→project_root);
+#   键名不变, 下游各线与执行层零改动。删 resolve_path_param(路径解析双源), 收口到本入口单点。
+# 2026-10-19 小欧 - 修复入口格式化误伤非路径工具: _format_tool_paths 原对**所有**到达本入口的工具
+#   改写 path/dest; 经 tool_facade.execute_tool(/tool/execute)直调时, registry_read/write/delete
+#   (WIN_REGISTRY 工具)的 path 是注册表键, 被改写成 project_root 下的文件路径(实测 'HKLM\\SOFTWARE\\Microsoft'
+#   → 'E:\\test_dir\\HKLM\\SOFTWARE\\Microsoft')。现仅在 tool_name ∈ PATH_TOOLS 时格式化。
 """
 工具安全检查器 — 执行前安全检查（Safety层入口）
 
@@ -106,10 +114,11 @@ Layer 3: 已知风险检测(路径越权/写入污染/代码注入)
 2026-06-17 小沈 删除record_operation/execute_with_safety委托(打破tools→safety循环依赖)，
              路径校验改用同包 safety 模块(打破safety→tools循环依赖)
 2026-07-04 小欧 补充两层架构说明注释
-2026-07-09 北京老陈 补充validate层完整函数清单
+2026-07-09  补充validate层完整函数清单
 """
 
 
+import os
 from typing import Dict, Optional
 
 from app.logger import logger, log_and_print
@@ -119,6 +128,10 @@ from app.safety.path_legality_router import check_tool_path_permission as _check
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 小欧: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
 from app.safety.shell_parse import parse_shell_action  # 命令动作解析单一真源: 确认标签按命令内实际读/写/删动作取档
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
+# 2026-10-19 小欧 - 目录名单收口: 每 loop 构建一次目录名单, 作用域内自动还原; 入口对 tool 路径做格式化
+from app.safety.path_dir_lists import directory_lists_scope, format_path
+from app.tools.tool_constants import PATH_TOOLS  # 2026-10-19 小欧 - 入口格式化范围门: 仅路径工具改写 path/dest
+from app.utils.path_utils import absolutize_path, get_download_dir  # 2026-10-19 小欧 - 入口相对值绝对化(基准=project_root)+下载目录基准; 均为工具层公用, 不反向依赖工具
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 
@@ -210,6 +223,33 @@ def _is_hitl_bypass() -> bool:
         return False
 
 
+def _format_tool_paths(tool_name: str, params: Optional[Dict]) -> None:
+    """入口路径格式化+绝对化(唯一路径处理点): 把工具 path/dest 统一到与目录名单同格式(键名不变) — 小欧 2026-10-19
+
+    唯一接入点: 非 shell 路径工具到此已过合法性初查, 在此把参数值就地绝对化 + format_path;
+    下游读/写/删/dual 各线与执行层拿到的已是绝对且统一格式, 不再各自解析(解析双源已删)。
+    · 绝对 → 原样; 相对 → 按基准绝对化(公用 absolutize_path(value, base))。
+    · 基准缺省 = tool 工作区(project_root); 工具专属语义(下载目录 / rename 源父目录)仅在此一声明:
+        download.dest → 下载目录 + 原值; rename.dest → 源父目录 + 新文件名(basename, 与工具 Path(dest).name 一致)。
+    · 最终统一 format_path; 不做路径穿越处理(交安全线/工具自持判定)。
+    · shell 工具无 path/dest 键, 天然不命中。
+    """
+    if not params:
+        return
+    for key in ("path", "dest"):
+        value = params.get(key)
+        if not isinstance(value, str) or not value.strip():
+            continue
+        base = get_config().get_project_root()
+        if tool_name == "download" and key == "dest":
+            base = get_download_dir()
+        elif tool_name == "rename" and key == "dest":
+            src = params.get("path")
+            if isinstance(src, str) and src:
+                base, value = os.path.dirname(src), os.path.basename(value)
+        params[key] = format_path(absolutize_path(value, base))
+
+
 class PathToolSafetyChecker:
     """工具执行前安全检查 — 确认判定 + 已知风险检测"""
 
@@ -234,6 +274,28 @@ class PathToolSafetyChecker:
         # 2026-10-18 小欧 - security.hitl.enabled 唯一使用点: 入口读一次, 三处确认产地直用 _bypass。
         #   开关只免"要不要问", 硬拦(未注册/自杀/危险命令/blocked)一律在本函数前段 return, 不受影响。
         _bypass = _is_hitl_bypass()
+        # 2026-10-19 小欧 - 目录名单收口: 一个安全模块 loop = 一次 check_before_execute,
+        #   故本函数进入目录名单作用域(构建点唯一, 作用域内自动还原)。
+        #   上下文管理器可嵌套: 外层(safety_gate)已开作用域时直接复用现有名单, 不二次构建 ——
+        #   "每 loop 一次"由作用域在结构上保证, 调用方无从违反。
+        # 2026-10-20 小欧 - 名单构建/判定异常 fail-closed: 异常上抛, 由本层单点转 blocked,
+        #   即使调用方绕过 safety_gate 直调, 也不会以残缺名单放行。
+        try:
+            with directory_lists_scope():
+                # 仅路径工具做入口格式化: 非路径工具(如 registry_read/write/delete)的 "path" 是注册表键
+                #   等非文件路径, 改写会把其变成 project_root 下的文件路径(2026-10-19 实测)。
+                if tool_name in PATH_TOOLS:
+                    _format_tool_paths(tool_name, params)
+                return self._check_before_execute(tool_name, params, pool_pids, _bypass)
+        except Exception as e:
+            logger.error(f"[PathToolSafetyChecker] 目录名单构建/判定异常(硬拦 fail-closed): "
+                         f"tool={tool_name}, {e!r}")
+            return SafetyResult(blocked=True, message=f"目录名单构建失败, 拒绝执行: {e}",
+                                safety_level=SafetyLevel.BLOCK_COMMAND)
+
+    def _check_before_execute(self, tool_name: str, params: Optional[Dict],
+                              pool_pids: Optional[set], _bypass: bool) -> SafetyResult:
+        """check_before_execute 的判定主体 — 小欧 2026-10-19 拆出(loop 内名单已由外层建好)"""
         # 2026-10-17 小欧 - 未注册判定已收口解析层, 本层不再复判(只放 PATH_TOOLS 工具到此)。
         # 2026-10-18 小欧 - 复判补回(fail-closed, 真回归修复): 上条"不再复判"判断有误 —— 解析层只管
         #   Agent 管线进来的 call, tool_facade/测试等直调方仍会带未注册工具名进来, tool_meta=None 一路
@@ -358,14 +420,12 @@ class PathToolSafetyChecker:
             _decided = tool_meta.needs_confirmation if _ok is None else bool(_ok)
             return _decided, (str(_why or ""))
         if normalize_tool_name(tool_meta.name or "") in ("bash", "execute_command"):
-            # 2026-10-18 小欧 - 解除硬返回 False: 危险/中风险/路径权限已在 check_before_execute
-            #   主链先行判定(自杀 → 危险命令 → 中风险 → 路径三线), 走到这里说明都放行。
-            #   原「return False」的理由是"无风险 shell 会弹**空 content 窗**"——当时没有分类标签
-            #   与原因文案, 弹出来确为空框; 现标签(按命令内实际读/写/删动作派生)与文案均已就位,
-            #   该前提消失, 继续硬返回会使 shell_*_confirm 四个标签永无产地(前端已配却永不出现)。
-            #   免确认的唯一出口是只读白名单(safety_gate 的 _readonly 短路, 白名单已接入配置面
-            #   可见可改) —— 嫌弹窗多可在设置页「安全」组删前缀, 不必改代码发版。
-            return tool_meta.needs_confirmation, ""
+            # 2026-10-20 小欧 - 撤回 2026-10-18 的兜底确认(回归矩阵裁决权威): 危险/中风险/路径三线
+            #   已在主链先行判定, 走到这里=全链放行; 原改 return tool_meta.needs_confirmation 使
+            #   bash 恒弹确认(包括白名单内写/建目录), E2E 实锤: 无人应答 120s×2 超时, 任务挂死失败
+            #   (agent 被迫往 HITL 无底洞重复试探)。矩阵白名单下级写=PASS 是设计值, 兜底不得加弹。
+            #   危险链产出的确认窗不受影响(那层自带 needs_confirm=True 返回, 到不了这里)。
+            return False, ""
         if tool_meta.action_confirmation and params.get("action"):
             return tool_meta.action_confirmation.get(
                 params["action"], tool_meta.needs_confirmation), ""
@@ -373,7 +433,7 @@ class PathToolSafetyChecker:
 
     @staticmethod
     def _check_known_risks(tool_name: str, params: Dict) -> Optional["SafetyResult"]:
-        """路径权限检测: 按路径层路由分派到读/写/删三线封装口 — 小欧 2026-10-17(归一化)
+        """路径权限检测: 按路径层路由分派到读/写/删三线封装口 — 小欧 2026-10-17(格式化)
 
         2026-10-17 小欧 - category 分流(system/non_system/None)已下沉三线封装口;
         2026-10-18 小欧 - 字段随契约改名同步: 命中 blocked/needs_confirm 即返回, 否则 None。

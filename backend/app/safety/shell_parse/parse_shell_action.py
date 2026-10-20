@@ -20,6 +20,8 @@
 2026-10-18 - 小欧 - 全局早退门补 SHELL_RENAME_RE: 改名动词自 parse_move 的搬移表拆出后, 仅靠宽表与 SHELL_MOVE_RE
   会使 Rename-Item / CMD ren / rename 三类命令早退为空清单, 绕过全部路径检查(与此前 SHELL_MOVE_RE 同款缺口)。
   门条件补判 SHELL_RENAME_RE 后, 与搬移解析器的识别口径完全一致; 分派优先级与管道继承逻辑零变更。
+2026-10-20 - 小欧 - 重定向追加入口同口径: `">" in 涂空文本` 改 lexer.has_file_redirect(statement),
+  `2>&1` 等 fd 复制不再触发写套追加。
 """
 from typing import List, Optional
 
@@ -46,7 +48,7 @@ def _parse_segment(statement: str, shell: str, cwd) -> List[PathAction]:
     for parser in _SEGMENT_PARSERS:
         actions = parser(statement, shell, cwd)
         if actions:
-            if parser is not parse_write_action and ">" in lexer.blank_quotes(statement):
+            if parser is not parse_write_action and lexer.has_file_redirect(statement):
                 actions = actions + parse_write_action(statement, shell, cwd)
             return actions
     return []

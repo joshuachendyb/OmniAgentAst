@@ -15,7 +15,7 @@
 # 2026-10-18 - 小欧 - 工具级口正名: check_shell_permission 签名 (command, cwd, shell_type) → (tool_name, params), 内部取 command/cwd/shell_type; 三线单路径封装口更名 read/write/delete_permission, 本模块 4 处调用点同步跟改(判定逻辑零改动)。
 # 2026-10-18 - 小欧 - 二次迁移: 高危删除判据 shell_has_destructive_delete 随删动词表整体迁入 shell_parse.parse_delete, 本模块 import 点跟改(判定语义零改动)。
 # 2026-10-18 - 小欧 - 判定层 bug 修复(探针实证): 非字符串 command 原 pass_result()=fail-open, 改 fail-closed 硬拦; cwd 原仅过写线未判畸形, 补非字符串/含元字符 fail-closed 硬拦。判定逻辑其余零改动。
-# 2026-10-18 - 小欧 - 删线 requires_confirmation 原按 10-17 裁定「当通过」会静默放行需授权删除, 改为与写线一致即拒。
+# 2026-10-18 - 小欧 - 删线 requires_confirmation 原按 10-17 「当通过」会静默放行需授权删除, 改为与写线一致即拒。
 # 2026-10-18 - 小欧 - 归一保留换行(换行即语句边界), 不再压成空格致两命令合并漏判。
 # 2026-10-18 - 小欧 - 随契约调整同步: 三处三线结果的"是否需确认"判读改 needs_confirm; 六处自建结果补 safety_level —— 删源路径非法归 tool_delete, 读/写路径非法与命令类型非法、工作目录非法、高危删除解析不出目标归 command_block。分类按动作语义直给, 原 severity="dangerous" 六处均被 blocked=True 完全覆盖、属纯冗余编码。判定逻辑与返回结构零变更。
 # 2026-10-18 - 小欧 - SafetyResult 契约回迁系统层: import 改 app.safety.safety_result(生产者全在本层, 契约随生产者), 判定/构造零改动。
@@ -32,19 +32,34 @@
 #   会挡住其后"系统目标写"的 blocked —— mv/ren 源越界 + 目标系统 时从硬拦降级为可授权弹窗。
 #   改为 blocked(含 malformed)即时返回、needs_confirm 暂存(删线优先)判完全部动作, 无 blocked 时才回 needs_confirm。
 #   删/写/读三段的判定条件与分类零改动, 仅改"何时返回"。
+# 2026-10-19 小欧 - 目录名单收口: 系统源外泄判定改查 path_dir_lists 名单(classify_scope 取五档归属,
+#   命中禁区·系统即 blocked(PATH_FORBIDDEN)); 原 classify_forbidden_path 适配壳已随 path_classify_category.py 删除;
+#   异常路径改为 fail-closed 直接拒绝(名单读不出不默认放行), 与读/写/删线口径一致。
+# 2026-10-20 小欧 - cwd 去掉写线判定: cwd 是相对路径解析基准而非被写对象, 原判定致
+#   「在项目根下执行 dir/python -c」误判「写项目根」并弹 HITL(日志 10:56:35 实锤)。
+#   保留两项: 畸形 cwd fail-closed 硬拦; 禁区·系统 cwd 禁止执行(防脚本在其中落盘)。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
 bash 属 FUNDAMENTAL, 不经 action_kind 分派, 单独立此通道:
   【解析】shell_parse.parse_shell_action(command, shell_type, cwd) → List[PathAction]
   【判定】对每个动作按 kind 调 read/write/delete_path_check 的唯一封装口
-本层只编排判定, 不含任何解析逻辑(解析与判定零耦合)。
+  【额外一道】系统源外泄拦截 —— 读线放行系统目录, 但命令不得以系统目录为数据源
+             (如 cat/less/copy 指向系统目录), 故 read 动作额外判一次 scope 是否为
+             禁区·系统, 命中即 blocked(PATH_FORBIDDEN)
+判定与解析零耦合, 本层只编排。
 """
 
+import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from app.safety import delete_path_check, read_path_check, write_path_check
-from app.safety.path_classify_category import classify_forbidden_path  # 系统源外泄拦截用(与 dual_path_check 同判据)
+from app.safety.path_dir_lists import (  # 2026-10-19 小欧 - 目录名单收口: 系统源判定改查名单
+    SCOPE_FORBIDDEN_SYSTEM,
+    SCOPE_TEXT,
+    classify_path,
+)
 from app.safety.shell_parse import parse_shell_action
 from app.safety.shell_parse.action import DELETE_KIND, READ_KIND, WRITE_KIND, PathAction
 from app.safety.shell_parse.parse_delete import shell_has_destructive_delete
@@ -127,19 +142,21 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
                            f"path={action.path}, command={command.strip()[:200]}")
             return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"路径含非法 shell 元字符, 拒绝执行: {action.path}")
-        result = read_path_check.read_permission(action.path)
-        if result.blocked:
-            logger.warning(f"[shell_path_check] bash读路径非法: path={action.path}, "
-                           f"command={command.strip()[:200]}")
-            return result
         # 系统源外泄拦截: 读线处处放行(含系统目录), 但命令内**读取系统路径**即内容外带通道
         #   (cat/less/copy C:\Windows\x . 都能把系统文件内容带出), 与 dual_path_check 的
         #   「系统源外泄拦截」同口径 —— 两通道判定必须一致, 否则同一动作工具拦、shell 不拦。
-        cat, msg = classify_forbidden_path(action.path, "write")
-        if cat == "system":
-            logger.warning(f"[shell_path_check] bash读系统源外泄(硬拦): path={action.path}, "
+        # 2026-10-19 小欧 - 目录名单收口: 改查名单; 2026-10-19 去冗余: 改一次 validate_read 取回 scope,
+        #   免原 read_permission + classify_path 两次 realpath; 归属文案改取 SCOPE_TEXT(与判定同源)。
+        _ok, _msg, _scope = read_path_check.validate_read(action.path)
+        if not _ok:
+            logger.warning(f"[shell_path_check] bash读路径非法: path={action.path}, "
                            f"command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN, message=msg)
+            return SafetyResult(blocked=True, message=_msg, safety_level=SafetyLevel.BLOCK_PATH_INVALID)
+        if _scope == SCOPE_FORBIDDEN_SYSTEM:
+            logger.warning(f"[shell_path_check] bash读系统源(拦截): path={action.path}, "
+                           f"command={command.strip()[:200]}")
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN,
+                                message=f"路径位于{SCOPE_TEXT[_scope]}, 禁止作为源路径: {action.path}")
     return pending_confirm
 
 
@@ -150,7 +167,7 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
         tool_name: 归一化后的工具名(通道 B 恒为 bash)
         params:    归一化后的工具参数(内含 command / cwd / shell_type)
 
-    内部取 command/cwd/shell_type: cwd 决定相对路径解析基准(其本身按写线判);
+    内部取 command/cwd/shell_type: cwd 只是相对路径解析基准(不判写权限, 仅拦畸形/系统目录);
     shell_type(ps7/ps5/cmd/bash)缺省由解析层自动识别。
     """
     command = params.get("command")
@@ -165,18 +182,23 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
                             message=f"shell 命令参数类型非法，拒绝执行: {type(command).__name__}")
     if not command or not command.strip():
         return SafetyResult.pass_result()
-    # cwd 决定相对路径的解析基准, 原完全不检查; 相对写会落在那里, 本身按写线判。
+    # cwd 只是相对路径的解析基准, 不是被写对象: 不按写线判(相对写/删目标已展开为绝对路径逐条判)。
+    # 2026-10-20 小欧: 仅保留两档硬拦 —— 畸形输入; 禁区·系统目录禁止执行(脚本可就地落盘)。
     if cwd:
-        # 2026-10-18 小欧: cwd 原仅过写线, 未做畸形判定 → 含元字符的 cwd
-        #   会进入路径解析基准。补 fail-closed: 非字符串或含元字符即硬拦。
         if not isinstance(cwd, str) or _malformed(cwd):
             logger.warning(f"[shell_path_check] cwd 非法或含元字符(硬拦): cwd={cwd!r}")
             return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
                                 message=f"工作目录非法或含非法 shell 元字符，拒绝执行: {cwd!r}")
-        result = write_path_check.write_permission(cwd)
-        if result.blocked or result.needs_confirm:
-            logger.warning(f"[shell_path_check] bash 工作目录越权: blocked={result.blocked}, cwd={cwd}")
-            return result
+        try:
+            cwd_scope, _ = classify_path(cwd)
+        except Exception as e:
+            logger.warning(f"[shell_path_check] cwd 归属判定失败(硬拦): cwd={cwd!r}, err={e}")
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_PATH_INVALID,
+                                message=f"工作目录归属无法判定，拒绝执行: {cwd!r}")
+        if cwd_scope == SCOPE_FORBIDDEN_SYSTEM:
+            logger.warning(f"[shell_path_check] bash 工作目录命中禁区·系统: cwd={cwd}")
+            return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN,
+                                message=f"工作目录位于{SCOPE_TEXT[cwd_scope]}，禁止执行: {cwd}")
     # 2026-10-18 小欧: 换行即语句边界, 不再压成空格(否则 `a\nb` 合并成一条漏判 b)。
     normalized = command.replace("\r\n", "\n")
     # 【解析】动作清单: 一条命令可多动作; 解析不做任何权限判定
