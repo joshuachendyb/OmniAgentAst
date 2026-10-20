@@ -337,6 +337,12 @@ def update_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
         if item is None:
             errors.append(f"未知 key: {key}")
             continue
+        # 2026-10-20 小欧 - readonly 项结构级守卫(北京老陈令三堂会审): 只读项永不写入 config,
+        #   否则 _item_data readonly 分支返 config 值 → 展示归类与实际放行/拦截两套口径漂移。
+        #   前端已 disabled 双保险, 此处堵服务端直发/前端漏发, 保证"展示=实际分派"不变式。
+        if item.get("readonly"):
+            warnings.append(f"{key} 为只读项，已跳过")
+            continue
         err = _validate_value(item, value)
         if err:
             errors.append(err)

@@ -199,17 +199,20 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # 2026-10-20 小欧 - 路径工具四类归类名单(北京老陈令: 按只读命令白名单的形式在设置页可见)。
         #   只读展示, 不支持设置页修改 —— 真值源是 tool_constants 判定名单, 展示与判定同源;
         #   若放开编辑会让"展示归类"与"实际放行/拦截"两套口径漂移, 故 readonly=True 且取值不做插值。
-        _item("security.hitl.tool_lists.read", "readonly", "只读工具名单",
-              ", ".join(sorted(_READ_PATH_TOOLS)), readonly=True,
+        # 2026-10-20 小欧 - 显示样式统一(北京老陈令): type 由 readonly 改 textarea + 保留 readonly=True,
+        #   前端按"禁用 textarea"渲染(与只读命令白名单同外观不可编辑); 后端 _item_data readonly 分支
+        #   不受 type 影响(仍返 comma-joined 同源值), update_settings 仍因 readonly 不生效。
+        _item("security.hitl.tool_lists.read", "textarea", "只读工具名单",
+              ", ".join(sorted(_READ_PATH_TOOLS)),
               notice="当前代码内置的只读工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 READ_PATH_TOOLS" % len(_READ_PATH_TOOLS)),
-        _item("security.hitl.tool_lists.write", "readonly", "写入工具名单",
-              ", ".join(sorted(_WRITE_PATH_TOOLS)), readonly=True,
+        _item("security.hitl.tool_lists.write", "textarea", "写入工具名单",
+              ", ".join(sorted(_WRITE_PATH_TOOLS)), 
               notice="当前代码内置的写入工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 WRITE_PATH_TOOLS" % len(_WRITE_PATH_TOOLS)),
-        _item("security.hitl.tool_lists.delete", "readonly", "删除工具名单",
-              ", ".join(sorted(_DELETE_PATH_TOOLS)), readonly=True,
+        _item("security.hitl.tool_lists.delete", "textarea", "删除工具名单",
+              ", ".join(sorted(_DELETE_PATH_TOOLS)), 
               notice="当前代码内置的删除工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DELETE_PATH_TOOLS" % len(_DELETE_PATH_TOOLS)),
-        _item("security.hitl.tool_lists.dual", "readonly", "双动作工具名单",
-              ", ".join(sorted(_DUAL_PATH_TOOLS)), readonly=True,
+        _item("security.hitl.tool_lists.dual", "textarea", "双动作工具名单",
+              ", ".join(sorted(_DUAL_PATH_TOOLS)), 
               notice="当前代码内置的双动作工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DUAL_PATH_TOOLS" % len(_DUAL_PATH_TOOLS)),
         # ── 信任段 ──
         # 2026-10-18 小欧 - 本项此前只有代码侧读取(trust_db._ttl_expiry 读 security.trust.ttl_days,
