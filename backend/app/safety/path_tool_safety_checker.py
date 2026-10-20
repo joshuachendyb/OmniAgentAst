@@ -124,13 +124,17 @@ from typing import Dict, Optional
 from app.logger import logger, log_and_print
 from app.config import get_config
 from app.tools.registry import tool_registry
-from app.safety.path_legality_router import check_tool_path_permission as _check_tool_path_permission  # 2026-10-17 小欧 - C5 正名(原 validate_tool_path as _validate_tool_path)
+from app.safety.path_legality_router import (
+    check_tool_path_permission as _check_tool_path_permission,  # 2026-10-17 小欧 - C5 正名(原 validate_tool_path as _validate_tool_path)
+    LINE_DELETE, LINE_DUAL, LINE_WRITE, line_of,  # 2026-10-20 小欧 - 归线/确认开关: 归线口径唯一来源
+)
 from app.safety.shell_process_guard import check_shell_self_kill  # 2026-10-16 小欧: 自杀检查唯一入口(判定全在 guard 层); 快照组装下沉同层, 本文件不再碰 shell_engine
 from app.safety.shell_parse import parse_shell_action  # 命令动作解析单一真源: 确认标签按命令内实际读/写/删动作取档
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 # 2026-10-19 小欧 - 目录名单收口: 每 loop 构建一次目录名单, 作用域内自动还原; 入口对 tool 路径做格式化
 from app.safety.path_dir_lists import directory_lists_scope, format_path
 from app.tools.tool_constants import PATH_TOOLS  # 2026-10-19 小欧 - 入口格式化范围门: 仅路径工具改写 path/dest
+from app.safety.safety_switch import safety_enabled, safety_switch  # 2026-10-20 小欧 - 总闸 + 各独立开关唯一读取口
 from app.utils.path_utils import absolutize_path, get_download_dir  # 2026-10-19 小欧 - 入口相对值绝对化(基准=project_root)+下载目录基准; 均为工具层公用, 不反向依赖工具
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
@@ -152,6 +156,20 @@ _TOOL_CONFIRM_LEVEL: Dict[str, str] = {
     "registry_delete": SafetyLevel.REGISTRY_DEAL_CONFIRM,
 }
 TOOL_CONFIRM_DEFAULT = SafetyLevel.TOOL_CONFIRM
+
+#: 线 -> 确认开关(读线不产生确认; shell 线不进此表: shell_path_confirm 只管路径判定) — 小欧 2026-10-20
+_CONFIRM_SWITCH = {
+    LINE_WRITE:  "security.hitl.write_confirm",
+    LINE_DELETE: "security.hitl.delete_confirm",
+    LINE_DUAL:   "security.hitl.dual_path_confirm",
+}
+
+
+def _confirm_ok(tool_name: str) -> bool:
+    """该线确认开关是否开启; 无线名(读线/shell 线)按开处理"""
+    key = _CONFIRM_SWITCH.get(line_of(tool_name) or "")
+    return True if key is None else safety_switch(key)
+
 
 _SHELL_TOOLS = frozenset({"bash", "execute_shell_command", "execute_command"})
 
@@ -271,6 +289,9 @@ class PathToolSafetyChecker:
             调用方查 trust 后传 skip_confirmation=True 豁免确认询问(危险防护仍生效) — 小健 2026-08-17
         安全总闸: 上游合法性初查/信任预查, 内调删线/路径层, 下游 HITL 确认 — 小欧-2026-10-14
         """
+        # 安全模块总闸: 入口短路, 关闭则不做任何权限判定直接放行 — 小欧 2026-10-20
+        if not safety_enabled():
+            return SafetyResult.pass_result()
         # 2026-10-18 小欧 - security.hitl.enabled 唯一使用点: 入口读一次, 三处确认产地直用 _bypass。
         #   开关只免"要不要问", 硬拦(未注册/自杀/危险命令/blocked)一律在本函数前段 return, 不受影响。
         _bypass = _is_hitl_bypass()
@@ -327,20 +348,23 @@ class PathToolSafetyChecker:
         #   两个风险层都只答"危不危险/要不要确认", 不含任何路径判定(见各自模块头的边界约定)。
         if (params or {}).get("command"):
             _cmd = (params or {}).get("command", "")
+            # 两个开关各自独立: 关则跳过本项检查, 不影响另一项与路径判定 — 小欧 2026-10-20
             # 危险命令: 命中即拒绝执行
             #   2026-10-16: 删冗余的 `and _danger.blocked` —— 降级机制移除后
             #   check_shell_danger_command 只会返回 blocked=True 或 None, 该条件恒等价于判非空。
-            from app.safety.shell_danger_command import check_shell_danger_command_all_shells
-            _danger = check_shell_danger_command_all_shells(_cmd)
-            if _danger is not None:
-                log_and_print(f"[PathToolSafetyChecker] 危险命令拦截: tool={tool_name}, {_danger.message}")
-                return _danger
+            if safety_switch("security.system.shell_danger_block"):
+                from app.safety.shell_danger_command import check_shell_danger_command_all_shells
+                _danger = check_shell_danger_command_all_shells(_cmd)
+                if _danger is not None:
+                    log_and_print(f"[PathToolSafetyChecker] 危险命令拦截: tool={tool_name}, {_danger.message}")
+                    return _danger
             # 中风险命令: 命中进 HITL 确认
-            from app.safety.shell_command_risk import check_shell_risk_command_all_shells
-            _medium = check_shell_risk_command_all_shells(_cmd)
-            if _medium is not None:
-                logger.info(f"[PathToolSafetyChecker] 中风险命令转确认: tool={tool_name}, bypass={_bypass}, {_medium.message}")
-                return self._settle_confirm(_medium, _bypass)
+            if safety_switch("security.system.shell_risk_block"):
+                from app.safety.shell_command_risk import check_shell_risk_command_all_shells
+                _medium = check_shell_risk_command_all_shells(_cmd)
+                if _medium is not None:
+                    logger.info(f"[PathToolSafetyChecker] 中风险命令转确认: tool={tool_name}, bypass={_bypass}, {_medium.message}")
+                    return self._settle_confirm(_medium, _bypass)   # 与 shell_path_confirm 无关
 
         # [4-2] 权限三线(按动作分派读/写/删; 唯一入口, delete 亦走此单点) — 小欧 2026-10-17
         #   无条件防线(开关无关): 越权/禁区/delete 判定即便开关 false 也拒绝。
@@ -351,7 +375,7 @@ class PathToolSafetyChecker:
                 return known_risk
             # needs_confirm=True: 授权请求, 交确认层(信任/HITL)
             logger.info(f"[PathToolSafetyChecker] 授权请求转确认: tool={tool_name}, auth_path={known_risk.auth_path}, bypass={_bypass}, {known_risk.message}")
-            return self._settle_confirm(known_risk, _bypass)
+            return self._settle_confirm(known_risk, _bypass or not _confirm_ok(tool_name))
 
         # 确认策略分流: hitl.enabled 只影响"是否询问确认", 不影响危险防护
         # 2026-10-18 小欧: 去 bypass 独立分支 —— 原 bypass 分支(需确认→auto_confirm=True /
@@ -368,7 +392,7 @@ class PathToolSafetyChecker:
                 SafetyResult(needs_confirm=needs_confirm,
                         blocked=False, message=_shell_msg or "",
                         safety_level=confirm_level_for(tool_name, params) if needs_confirm else ""),
-                _bypass)
+                _bypass or not _confirm_ok(tool_name))
 
     @staticmethod
     def _settle_confirm(result: SafetyResult, bypass: bool) -> SafetyResult:

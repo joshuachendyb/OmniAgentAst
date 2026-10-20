@@ -68,6 +68,7 @@ from typing import List, Optional, Sequence, Tuple
 from app.logger import logger
 from app.config import get_code_root, get_config
 from app.session_workspace import session_workspace_paths
+from app.safety.safety_switch import safety_switch  # 2026-10-20 小欧 - 三个名单开关: 关闭 = 对应名单置空
 
 #: 盘根 label 标识 —— 该条目只判自身(模块内私有, 外部零使用); 行为靠 self_only, label 仅文案
 _DISK_ROOT_LABEL = "磁盘根目录"
@@ -413,10 +414,17 @@ def _build_directory_lists() -> DirectoryLists:
     构建后必须由调用方 _current_directory_lists.set(dl) 挂到本 loop 上下文。
     loop 内严禁二次调用 —— 任何"就近再取一次目录"都应改从名单读。
     """
+    # 三个名单开关只作用于构建: 关 = 该名单置空, 判定侧不读开关 — 小欧 2026-10-20
     return DirectoryLists(
-        forbidden_system_path=tuple(_build_forbidden_system_path()),
-        forbidden_non_system_path=tuple(_build_forbidden_non_system_path()),
-        whitelist_path=tuple(_build_whitelist_path()),
+        forbidden_system_path=(
+            tuple(_build_forbidden_system_path())
+            if safety_switch("security.system.forbidden_system_path_block") else ()),
+        forbidden_non_system_path=(
+            tuple(_build_forbidden_non_system_path())
+            if safety_switch("security.system.forbidden_non_system_path_block") else ()),
+        whitelist_path=(
+            tuple(_build_whitelist_path())
+            if safety_switch("security.system.white_list_block") else ()),
     )
 
 
@@ -546,6 +554,13 @@ def _classify_scope(dl: DirectoryLists, real_path: Path) -> Tuple[str, Optional[
     hit, rule, _is_self = _locate(dl.forbidden_non_system_path, real_path)
     if hit:
         return SCOPE_FORBIDDEN_NON_SYSTEM, rule   # 禁区优先, 到此定案
+
+    # 白名单为空 = 该档不判: 直接给通过档, 不得落"白名单外"反向收紧 — 小欧 2026-10-20
+    #   开关为开却拿到空名单 = 构建异常(正常恒含用户目录/系统临时目录/项目根), 先告警再放行
+    if not dl.whitelist_path:
+        if safety_switch("security.system.white_list_block"):
+            logger.warning("[path_dir_lists] 白名单为空但开关为开(构建异常), 按通过档处理")
+        return SCOPE_WHITELIST_SUB, None
 
     hit, rule, is_self = _locate(dl.whitelist_path, real_path)
     if hit:

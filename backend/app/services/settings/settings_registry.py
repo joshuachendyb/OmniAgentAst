@@ -60,8 +60,8 @@ key 全局唯一，加载自检重复直接拒启。
     原为纯硬编码, 收紧须改代码发版; 接入后仅需改配置, 且清单在设置页可见可审计。
     注释精简冗余标注, 技术说明原样保留。
   2026-10-19 小欧 - 文档[40]落地: security 组新增 9 项。
-    security.system 段 5 项(硬拦类): enabled(总闸) / forbidden_system_path_block /
-    forbidden_non_system_path_block / out_of_scope_path_block / shell_danger_block;
+    security.system 段 6 项(硬拦类): enabled(总闸) / forbidden_system_path_block /
+    forbidden_non_system_path_block / white_list_block / shell_danger_block / shell_risk_block;
     security.hitl 段 4 项(确认类): write_confirm / delete_confirm / dual_path_confirm / shell_path_confirm。
     全部 bool 默认 True(缺键按"开", fail-closed 方向); 键名按前缀自动归入「系统 / HTL人工确认」两节, 前端零改动。
 """
@@ -149,15 +149,17 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # 2026-10-19 小欧 - 文档[40]落地: 系统段 5 项硬拦类开关(要不要拦)
         #   security.system.enabled 为总闸, 关闭后整个安全层放行(实现: 折入 app/safety/safety_switch.py)
         _item("security.system.enabled", "bool", "安全模块启用", True,
-              notice="关闭后整个安全层不再拦截，工具直接执行。仅在完全信任的环境下使用"),
+              notice="关闭后不再做路径与命令的权限判定，工具直接执行；参数合法性初查（空路径/路径穿越等）与工具直调兜底仍生效"),
         _item("security.system.forbidden_system_path_block", "bool", "禁区系统目录拦截", True,
               notice="关闭后不再拦截磁盘根与系统保护目录。此项不影响禁区非系统目录拦截与 bash 危险命令拦截"),
         _item("security.system.forbidden_non_system_path_block", "bool", "禁区非系统目录拦截", True,
               notice="关闭后不再拦截代码目录及其内部子级、允许根集自身及其上级。此项不影响禁区系统目录拦截"),
-        _item("security.system.out_of_scope_path_block", "bool", "白名单外路径拦截", True,
-              notice="关闭后白名单外路径不再逐次确认（递归删除仍直接拒绝）。此项不影响禁区系统/非系统目录拦截"),
+        _item("security.system.white_list_block", "bool", "白名单外路径拦截", True,
+              notice="关闭后白名单档不判：白名单外路径的写/删/递归删均直接放行。禁区系统/非系统目录仍由各自开关控制"),
         _item("security.system.shell_danger_block", "bool", "bash 危险命令拦截", True,
               notice="关闭后不再拦截高危命令（磁盘写入/关机/执行等）。此项不影响中风险命令确认"),
+        _item("security.system.shell_risk_block", "bool", "bash 风险命令拦截", True,
+              notice="关闭后不再对中风险命令发起人工确认。此项不影响高危命令拦截与路径判定"),
         # ── HTL人工确认段 ──
         # 2026-10-18 - 小欧 - 键名 security.enabled → security.hitl_enabled → security.hitl.enabled:
         #   该项只决定是否走人工确认链路, 危险防护(删根/系统目录/自杀/危险命令)不受其影响。
@@ -172,7 +174,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("security.hitl.dual_path_confirm", "bool", "双路径操作确认", True,
               notice="关闭后 copy/move 等双路径工具的授权请求不再弹窗，直接放行"),
         _item("security.hitl.shell_path_confirm", "bool", "shell 命令确认", True,
-              notice="关闭后中风险命令与命令内路径授权不再弹窗。bash 危险命令拦截不受本项影响"),
+              notice="关闭后 bash 命令内的路径授权不再判定、直接放行。中风险命令确认与危险命令拦截均不受本项影响"),
         _item("security.hitl.auto_confirm_delay", "int", "自动确认倒计时(秒)", 10, range_=[0, 3600],
               notice="自动确认弹窗倒计时（秒），到时没人点就自动放行"),
         _item("security.hitl.timeout", "int", "人工确认超时(秒)", 120, range_=[1, 86400],

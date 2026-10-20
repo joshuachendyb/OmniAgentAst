@@ -51,20 +51,39 @@ registry._resolve_action_kind 同序查表 → 本模块的"按表分派"与该�
 """
 
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.safety import shell_path_check, dual_path_check
 from app.safety import read_path_check, write_path_check, delete_path_check
 from app.tools.tool_constants import (
-    PATH_TOOLS,
     READ_PATH_TOOLS,
     WRITE_PATH_TOOLS,
     DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS,
 )
+from app.safety.safety_switch import safety_switch  # 2026-10-20 小欧 - shell 路径判定开关
 from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全层单源
 
 logger = logging.getLogger(__name__)
+
+#: 操作线名(与 PATH_TOOLS 同源) — 小欧 2026-10-20
+LINE_READ, LINE_WRITE, LINE_DELETE, LINE_DUAL, LINE_SHELL = (
+    "read", "write", "delete", "dual", "shell")
+
+
+def line_of(tool_name: str) -> Optional[str]:
+    """工具归线(唯一口径): 名单已含 bash, 调用方传入的名字已归一(别名在入口已解析)"""
+    if tool_name in READ_PATH_TOOLS:
+        return LINE_READ
+    if tool_name in WRITE_PATH_TOOLS:
+        return LINE_WRITE
+    if tool_name in DELETE_PATH_TOOLS:
+        return LINE_DELETE
+    if tool_name in DUAL_PATH_TOOLS:
+        return LINE_DUAL
+    if tool_name == "bash":
+        return LINE_SHELL
+    return None
 
 
 def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResult:
@@ -94,29 +113,35 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
     SafetyResult: 放行(blocked=False, needs_confirm=False) / 拒绝(blocked=True) /
     待确认(needs_confirm=True, auth_path=越权真实路径)。
     """
-    # [1] 范围门: 非路径工具直接放行(工具名已前置归一到规范名)
-    if tool_name not in PATH_TOOLS:
+    # [1] 归线: 非路径工具直接放行(工具名已前置归一到规范名; 归线口径唯一来源 = line_of)
+    _line = line_of(tool_name)
+    if _line is None:
+        return SafetyResult.pass_result()
+
+    # [1.5] shell 路径判定开关: 关 = 该线不判、直接通过 — 小欧 2026-10-20
+    #   已接受风险: 关后 bash 内路径不再判定, 仅剩危险/风险命令两道检查(见 5.3.5)
+    if _line == LINE_SHELL and not safety_switch("security.hitl.shell_path_confirm"):
         return SafetyResult.pass_result()
 
     try:
-        # [2] 单 read 表 → 读线
-        if tool_name in READ_PATH_TOOLS:
+        # [2] 读线
+        if _line == LINE_READ:
             return read_path_check.check_read_permission(params)
 
-        # [3] 单 write 表 → 写线
-        if tool_name in WRITE_PATH_TOOLS:
+        # [3] 写线
+        if _line == LINE_WRITE:
             return write_path_check.check_write_permission(params)
 
-        # [4] 单 delete 表 → 删线
-        if tool_name in DELETE_PATH_TOOLS:
+        # [4] 删线
+        if _line == LINE_DELETE:
             return delete_path_check.check_delete_permission(params)
 
-        # [5] 单 dual 表 → dual 线(一调用含多动作, 按参数分别归线)
-        if tool_name in DUAL_PATH_TOOLS:
+        # [5] dual 线(一调用含多动作, 按参数分别归线)
+        if _line == LINE_DUAL:
             return dual_path_check.check_dual_permission(tool_name, params)
 
-        # [6] bash → 命令通道(命令串解析出路径后, 内部再分删源/写目标等子类)
-        if tool_name == "bash":
+        # [6] shell 线 → 命令通道(命令串解析出路径后, 内部再分删源/写目标等子类)
+        if _line == LINE_SHELL:
             return shell_path_check.check_shell_permission(tool_name, params)
     except Exception as e:
         # fail-closed 单点兜底(接替已删除的 check_tool_paths 内 try/except): 异常归 blocked 永不授权
@@ -126,4 +151,5 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
     return SafetyResult.pass_result()
 
 
-__all__ = ["check_tool_path_permission"]
+__all__ = ["check_tool_path_permission", "line_of",
+           "LINE_READ", "LINE_WRITE", "LINE_DELETE", "LINE_DUAL", "LINE_SHELL"]
