@@ -54,6 +54,9 @@
 #   改为复用 fc_message_types.fc_atomic_units 按 FC 单元原子收集: 单元整体保留/丢弃, 组内升序展开保证
 #   assistant→tool(s); _trim_fc_pairs 增顺序合法性判定(assistant 声明位置 < tool 响应位置), 乱序对双侧剔除兜底。
 #   compliance: SRP/DRY(单元划分唯一源)/KISS-DIRECT
+# 2026-10-20 小欧 - 预算跳过回归修复: _trim_to_budget 原「超预算即 break」在最新一轮超大+紧预算时
+#   返回空 → LLM 丢失全部 FC 历史(fuzz 17% 场景; 旧实现对超预算 tool 对是跳过继续扫更早)。
+#   改 break→continue: 超预算单元整体跳过, 继续尝试更早单元, 单元原子性保证不留半对。
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -510,7 +513,8 @@ class MessageBuilder:
         同组, 其余消息各自成组。单元整体保留或整体丢弃, 组内按原始顺序升序展开, 保证 assistant 恒在
         其全部 tool 之前(FC 协议顺序要求)。原逐条反向收集 + 扁平 reverse 在 N≥2 并行 tool_calls 时
         会把首个 tool 甩到 assistant 之前, 触发上游 400。
-        预算不足即停: 保留最近一段连续历史, 不在中间留空洞(超预算单元整体丢弃)。
+        超预算单元整体跳过并继续尝试更早单元(单元是 FC 原子: 整组留/整组丢, 不留半对) —
+        单轮超大不会吃掉全部预算而丢掉所有历史 — 小欧 2026-10-20 修 break→continue。
         """
         original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
         all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
@@ -521,7 +525,7 @@ class MessageBuilder:
             unit = [all_msgs[i] for i in sorted(unit_idx)]
             need_tokens = self._estimate_tokens(unit)
             if used_tokens + need_tokens > budget_tokens:
-                break
+                continue
             kept_units.append(unit)
             used_tokens += need_tokens
         kept_units.reverse()
