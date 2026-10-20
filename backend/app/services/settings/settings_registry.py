@@ -64,6 +64,9 @@ key 全局唯一，加载自检重复直接拒启。
     forbidden_non_system_path_block / white_list_block / shell_danger_block / shell_risk_block;
     security.hitl 段 4 项(确认类): write_confirm / delete_confirm / dual_path_confirm / shell_path_confirm。
     全部 bool 默认 True(缺键按"开", fail-closed 方向); 键名按前缀自动归入「系统 / HTL人工确认」两节, 前端零改动。
+  2026-10-20 小欧 - 新增路径工具四类归类名单只读展示(security.hitl.tool_lists.read/write/delete/dual):
+    紧随 shell_readonly_prefixes; readonly=True, 取值直接来自 tool_constants 判定名单(展示与实判同源),
+    设置页显示为可复制文本、不可编辑; 改动归类仍须改代码, 避免配置面改写安全判定口径。
 """
 from typing import Any, Dict, List, Optional
 
@@ -74,6 +77,14 @@ from app.config import ENV_INJECTED_KEYS
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
 # 设页若显示空白则等于"用户看不见它存在" —— 正是本项要消除的问题, 故直接把生效清单亮出来。
 from app.safety.shell_readonly import SHELL_READONLY_PREFIXES as _READONLY_PREFIXES
+# 2026-10-20 小欧 - 路径工具四类名单(只读展示, 与判定同源): 直接取 tool_constants 判定名单,
+#   不另抄一份, 避免设置页展示与实判漂移
+from app.tools.tool_constants import (
+    READ_PATH_TOOLS as _READ_PATH_TOOLS,
+    WRITE_PATH_TOOLS as _WRITE_PATH_TOOLS,
+    DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
+    DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
+)
 
 
 def _item(key: str, type_: str, label: str, default: Any = None,
@@ -185,6 +196,21 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("security.hitl.shell_readonly_prefixes", "textarea", "只读命令免确认白名单",
               ", ".join(_READONLY_PREFIXES),
               notice="当前生效的完整清单(共 %d 条, 逗号分隔), 命中的命令**免弹窗且免沙箱预检**, 直接执行。删掉某项=该前缀不再豁免(收紧); 整框清空=回退内置默认清单。新增前缀请自行确保是纯只读命令 —— 写操作前缀等于开后门" % len(_READONLY_PREFIXES)),
+        # 2026-10-20 小欧 - 路径工具四类归类名单(北京老陈令: 按只读命令白名单的形式在设置页可见)。
+        #   只读展示, 不支持设置页修改 —— 真值源是 tool_constants 判定名单, 展示与判定同源;
+        #   若放开编辑会让"展示归类"与"实际放行/拦截"两套口径漂移, 故 readonly=True 且取值不做插值。
+        _item("security.hitl.tool_lists.read", "readonly", "只读工具名单",
+              ", ".join(sorted(_READ_PATH_TOOLS)), readonly=True,
+              notice="当前代码内置的只读工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 READ_PATH_TOOLS" % len(_READ_PATH_TOOLS)),
+        _item("security.hitl.tool_lists.write", "readonly", "写入工具名单",
+              ", ".join(sorted(_WRITE_PATH_TOOLS)), readonly=True,
+              notice="当前代码内置的写入工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 WRITE_PATH_TOOLS" % len(_WRITE_PATH_TOOLS)),
+        _item("security.hitl.tool_lists.delete", "readonly", "删除工具名单",
+              ", ".join(sorted(_DELETE_PATH_TOOLS)), readonly=True,
+              notice="当前代码内置的删除工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DELETE_PATH_TOOLS" % len(_DELETE_PATH_TOOLS)),
+        _item("security.hitl.tool_lists.dual", "readonly", "双动作工具名单",
+              ", ".join(sorted(_DUAL_PATH_TOOLS)), readonly=True,
+              notice="当前代码内置的双动作工具归类(共 %d 条, 逗号分隔), 仅供查看与审计; 修改需改 backend/app/tools/tool_constants.py 的 DUAL_PATH_TOOLS" % len(_DUAL_PATH_TOOLS)),
         # ── 信任段 ──
         # 2026-10-18 小欧 - 本项此前只有代码侧读取(trust_db._ttl_expiry 读 security.trust.ttl_days,
         #   默认 90), 本表未注册, 设置页无从展示/修改。补注册后该项可见可改。
