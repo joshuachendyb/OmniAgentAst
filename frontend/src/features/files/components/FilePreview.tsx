@@ -177,7 +177,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         offset: loadedLines + 1,
         limit: 2000,
       });
-      if (!next.content) return;
+      if (!next.content) {
+        // 2026-10-22 小杨 - 到文件末尾时**如实告知**：此前静默 return，
+        //   用户点了「加载后续内容」却毫无反馈（与"点了没反应"同一种病）— 小杨-2026-10-22
+        showMessage(ErrorType.INFO, '已到文件末尾，没有更多内容');
+        return;
+      }
       setText((prev) => {
         if (!prev) return prev;
         // 追加前保证前段以换行结尾：上段可能被字节上限截在行中间 → 直接粘 '\n' 会把两行连成一行（行号错位）

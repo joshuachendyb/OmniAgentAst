@@ -92,6 +92,9 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
   useEffect(() => {
     if (!ctx) return;
     const onDown = (e: MouseEvent) => {
+      // 2026-10-22 小杨 - **只认左键按下**：浏览器在真实右键后会补发一次 mousedown，
+      //   原实现把它当"点外部"→ 菜单渲染后立刻被关掉（用户右键 = 菜单闪一下就没）— 小杨-2026-10-22
+      if (e.button !== 0) return;
       if (menuRef.current?.contains(e.target as Node)) return;
       setCtx(null);
     };
@@ -101,12 +104,14 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     const onHide = () => setCtx(null);
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onHide, true);
+    // 2026-10-22 小杨 - scroll 监听**去掉 capture**：原先捕获任意容器的滚动，
+    //   而真实右键会连带触发滚动 → 菜单刚渲染就被关（用户右键=菜单闪一下就没）— 小杨-2026-10-22
+    window.addEventListener('scroll', onHide);
     window.addEventListener('resize', onHide);
     return () => {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onHide, true);
+      window.removeEventListener('scroll', onHide);
       window.removeEventListener('resize', onHide);
     };
   }, [ctx]);

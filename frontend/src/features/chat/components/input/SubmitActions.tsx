@@ -1,5 +1,8 @@
 // 编辑历史: 2026-10-20 小欧 - 新建: 发送/停止/暂停按钮组自 SubmitBar 拆出并移入输入框内右下角(北京老陈指令);
 //   三钮统一方形图标样式(↑/⏹/⏸/▶), 配色走主题令牌 Colors/Radius/Spacing(禁魔法数字); 空输入发送钮置灰 — 小欧-2026-10-20
+// 2026-10-22 小杨 - 受阻态的发送钮改「渲染但置灰」：原实现 blocked 时整块不渲染，
+//   与本文件设计口径（发送钮常驻 + 受阻置灰）矛盾，且执行结束草稿清空后按钮消失 →
+//   读屏/键盘用户以为发送功能没了，e2e 等终态判据（等"发送"钮出现）也永远等不到 — 小杨-2026-10-22
 /**
  * SubmitActions - 输入框内右下角动作按钮组: 发送(常驻) + 停止/暂停·继续(执行中渲染)
  *
@@ -93,15 +96,23 @@ const SubmitActions: React.FC<SubmitActionsProps> = ({
           框外常驻提示（同信息一处即可），antd 浮泡层剥掉 —— 外层 span 承接 hover 失效，
           disabled Button 直接渲染（提示文案由 aria-label / 常驻提示承载）。
       */}
-      {blocked ? null : (
-        <Button
-          type="primary"
-          aria-label="发送"
-          icon={<ArrowUpOutlined style={iconSize} />}
-          style={square}
-          onClick={onSend}
-        />
-      )}
+      <Button
+        type="primary"
+        aria-label="发送"
+        icon={<ArrowUpOutlined style={{ ...iconSize }} />}
+        style={
+          blocked
+            ? {
+                ...square,
+                background: Colors.BG.TERTIARY,
+                color: Colors.TEXT.TERTIARY,
+                borderColor: Colors.BORDER.DEFAULT,
+              }
+            : square
+        }
+        disabled={blocked}
+        onClick={onSend}
+      />
     </Space>
   );
 };

@@ -16,8 +16,10 @@
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
  * 只读边界：本页面**不提供任何写操作**，工具条常驻「只读浏览」标签。
- * 2026-10-21 小欧 -「设为会话工作目录」入口下线（工具条与右键菜单都已摘除）：
- *   那是**授权**而非写文件，后端无对应能力，留着就是点了没反应的死入口。
+ * 2026-10-22 小杨 - 订正上一条「设为会话工作目录入口下线」的**错误说明**：
+ *   该入口**保留**（树右键菜单 → 先 GET 后 PATCH 全量覆盖），后端确有会话工作目录能力
+ *   （session_workspace 快照 + 会话 workspaces 接口），并非死入口；
+ *   本页仍不写任何文件 —— 设工作目录只改「Agent 可访问范围」，不落盘。
  */
 import React, {
   useCallback,
@@ -341,7 +343,7 @@ const FilesPage: React.FC = () => {
     try {
       // 2026-10-21 小欧 - 首屏只取**前 3 层**（max_depth=3）：实测 E:\test_dir 全树 8.9 万节点 /
       //   19.9MB，服务端 TTFB 9.8 秒（其中 gzip level9 占 4.7s）→ 首屏白屏 10 秒。
-      //   现改为：首屏取 3 层，点开更深目录时用已有的 loadDir 补拉（max_depth=10）。
+      //   现改为：首屏取 3 层，点开更深目录时用已有的 loadDir 补拉（同样 3 层，深了再点再拉）。
       //   **后端不设任何上限**（见 browse_service 常量区红线注释）。
       const r = await fileApi.fetchTree('', { maxDepth: 3, signal });
       treeRef.current = r.nodes;
@@ -450,10 +452,14 @@ const FilesPage: React.FC = () => {
     if (!rel || !treeReady) return;
     void (async () => {
       const line = params.get('line');
-      const m = line ? /^(\d+)-(\d+)$/.exec(line) : null;
+      // 2026-10-22 小杨 - 行号深链既支持"起-止"也支持单行"10"：
+      //   只认区间时，用户手敲 ?line=10 会被静默忽略（点了没反应）— 小杨-2026-10-22
+      const m = line ? /^(\d+)(?:-(\d+))?$/.exec(line) : null;
       const ok = await openPath(
         rel,
-        m ? { start: Number(m[1]), end: Number(m[2]) } : null
+        m
+          ? { start: Number(m[1]), end: m[2] ? Number(m[2]) : Number(m[1]) }
+          : null
       );
       if (!ok) {
         // 页内留痕（不只弹一下 toast）：否则用户以为"点了没反应"
