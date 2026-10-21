@@ -10,7 +10,15 @@
  *   刷新时比对新旧 mtime 即可判"可能已被修改"，**不再绕道再拉一次 tree**。
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Checkbox, Empty, Skeleton, Spin } from 'antd';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Empty,
+  Segmented,
+  Skeleton,
+  Spin,
+} from 'antd';
 import { CopyOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { FileNode, ReadResponse } from '@/services/api/file.api';
 import { fileApi, ImageUnchanged } from '@/services/api/file.api';
@@ -20,6 +28,10 @@ import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { refCost } from '@/utils/refCost';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
+// 2026-10-21 小杨 - md 双模与代码高亮（北京老陈拍板）：md 复用系统唯一 markdown 渲染入口
+//   （聊天/设置页同源 MarkdownSlot）；代码高亮走同目录 highlight 单点（prismjs）
+import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
+import { highlightLine, langOf } from './highlight';
 
 export interface FilePreviewProps {
   node: FileNode | null;
@@ -58,6 +70,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     setWrap(v);
     localStorage.setItem('file_preview_wrap', v ? '1' : '0');
   };
+  /** 2026-10-21 小杨 - md 双模（北京老陈拍板）：md 默认**美显**，头部右侧可切「文本」看源码 */
+  const [mdBeauty, setMdBeauty] = useState(true);
+  // 切文件复位到美显（用户的源码态应只对当前这份文件生效）
+  useEffect(() => {
+    setMdBeauty(true);
+  }, [node?.key]);
   const preRef = useRef<HTMLPreElement | null>(null);
   /** 上一次高亮的行元素（切换定位/刷新时先清掉，防"旧行永久黄底"） */
   const highlightedRef = useRef<HTMLElement | null>(null);
@@ -299,6 +317,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return <Skeleton active paragraph={{ rows: 10 }} title={false} />;
 
   const cost = refCost(text.content.length);
+  // 2026-10-21 小杨 - md 美显判定 + 代码语言判定（未知后缀 = null 落纯文本）
+  const isMd = /\.(md|markdown)$/i.test(node.name);
+  const lang = langOf(node.name);
+  const lines = text.content.split('\n');
+  const showMd = isMd && mdBeauty;
 
   /** 选区取行号：按 pre 内的 [data-ln] 行元素反查起止行 */
   const takeSelection = () => {
@@ -378,14 +401,29 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           {text.total_lines} 行 · {(text.mtime ?? '').replace('T', ' ')}
         </span>
         <span style={{ flex: 1 }} />
-        {/* 2026-10-21 小杨 - 体验审计：折行开关（默认横向滚动，保住代码 token 结构） */}
-        <Checkbox
-          checked={wrap}
-          onChange={(e) => onWrapChange(e.target.checked)}
-          style={{ fontSize: chatTokens.fontSM }}
-        >
-          折行
-        </Checkbox>
+        {/* 2026-10-21 小杨 - md 双模切换（北京老陈拍板：头部右侧「文本/美显」，md 默认美显）
+            代码/纯文本无此开关 —— 高亮/行号即默认形态 */}
+        {isMd && (
+          <Segmented
+            size="small"
+            value={mdBeauty ? 'beauty' : 'text'}
+            options={[
+              { label: '美显', value: 'beauty' },
+              { label: '文本', value: 'text' },
+            ]}
+            onChange={(v) => setMdBeauty(v === 'beauty')}
+          />
+        )}
+        {/* 折行开关（md 美显模式下隐藏 —— 渲染流自动折行，无横向滚动概念） */}
+        {!(isMd && mdBeauty) && (
+          <Checkbox
+            checked={wrap}
+            onChange={(e) => onWrapChange(e.target.checked)}
+            style={{ fontSize: chatTokens.fontSM }}
+          >
+            折行
+          </Checkbox>
+        )}
         {/* 图标化（原为文本字形「↻刷新」，与全局图标系统不一致） */}
         <Button
           size="small"
@@ -407,56 +445,94 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           }
         />
       )}
-      {/* 2026-10-21 小杨 - 体验审计（正文可读性，本页核心价值）：
-          原 <pre> 无排版规格（浏览器默认字号/行高）+ pre-wrap+break-word 把长路径、
-          URL、代码 token 从中间撕开换行。现在：等宽字体 + 13px + 1.6 行高 + tab=4，
-          默认横向滚动（保结构），折行由用户显式开启。 */}
-      <pre
-        ref={preRef}
-        onMouseUp={takeSelection}
-        style={{
-          margin: 0,
-          fontFamily:
-            'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
-          fontSize: 13,
-          lineHeight: 1.6,
-          tabSize: 4,
-          whiteSpace: wrap ? 'pre-wrap' : 'pre',
-          wordBreak: wrap ? 'break-word' : 'normal',
-          overflowX: 'auto',
-          overflowY: 'auto',
-          // 2026-10-21 小杨 - 底部大空白（北京老陈痛骂）：撤拍脑袋 calc(100vh-320px) 限高，
-          //   pre 改 flex:1 填满右栏剩余高度（右栏已改 flex column），滚动留在 pre 内部
-          flex: 1,
-          minHeight: 0,
-          background: Colors.BG.SECONDARY,
-          border: `1px solid ${Colors.BORDER.LIGHT}`,
-          borderRadius: 4,
-          padding: Spacing.MD,
-        }}
-      >
-        {text.content.split('\n').map((ln, i) => (
-          <span key={i} data-ln={i + 1}>
-            {/* 2026-10-21 小杨 - 行号列（北京老陈拍板）：数字灰弱右对齐 + 禁复制
-                （选区复制只取正文不含号）；列宽按行数位数自适应（ch 单位，
-                等宽字体下数字右对齐），万行/十万行不挤不换行 */}
-            <span
+      {showMd ? (
+        // 2026-10-21 小杨 - md 美显（北京老陈拍板）：复用系统唯一 markdown 渲染入口
+        //   （聊天/设置页同源 MarkdownSlot），J5 文件引用链接 / 表格 / 代码块全吃到；
+        //   容器与文本模式同一"纸面"框（同底/同框/同圆角），高度链 flex:1 内滚不变
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowX: 'auto',
+            overflowY: 'auto',
+            background: Colors.BG.SECONDARY,
+            border: `1px solid ${Colors.BORDER.LIGHT}`,
+            borderRadius: 4,
+            padding: Spacing.MD,
+          }}
+        >
+          <MarkdownSlot text={text.content} markdown />
+        </div>
+      ) : (
+        /* 文本/代码模式：逐行 flex 行（行号列 + 正文），代码走 prism 高亮 */
+        <pre
+          ref={preRef}
+          onMouseUp={takeSelection}
+          style={{
+            margin: 0,
+            fontFamily:
+              'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+            fontSize: 13,
+            lineHeight: 1.6,
+            tabSize: 4,
+            overflowX: 'auto',
+            overflowY: 'auto',
+            // 2026-10-21 小杨 - 底部大空白（北京老陈痛骂）：撤拍脑袋 calc(100vh-320px) 限高，
+            //   pre 改 flex:1 填满右栏剩余高度（右栏已改 flex column），滚动留在 pre 内部
+            flex: 1,
+            minHeight: 0,
+            background: Colors.BG.SECONDARY,
+            border: `1px solid ${Colors.BORDER.LIGHT}`,
+            borderRadius: 4,
+            padding: Spacing.MD,
+          }}
+        >
+          {lines.map((ln, i) => (
+            <div
+              key={i}
+              data-ln={i + 1}
               style={{
-                display: 'inline-block',
-                width: `${String(text.total_lines).length + 1}ch`,
-                textAlign: 'right',
-                paddingRight: `${Math.max(2, String(text.total_lines).length / 2)}ch`,
-                color: Colors.TEXT.TERTIARY,
-                userSelect: 'none',
+                display: 'flex',
+                // 空行也有完整行高（行容器无文字时塌 0；em 与全表 1.6 行高同源）
+                minHeight: '1.6em',
               }}
             >
-              {i + 1}
-            </span>
-            {ln}
-            {'\n'}
-          </span>
-        ))}
-      </pre>
+              {/* 2026-10-21 小杨 - 行号列（北京老陈拍板）：数字灰弱右对齐 + 禁复制
+                  （选区复制只取正文不含号）；列宽按行数位数自适应（ch 单位），
+                  万行/十万行不挤不换行 */}
+              <span
+                style={{
+                  flexShrink: 0,
+                  width: `${String(text.total_lines).length + 1}ch`,
+                  textAlign: 'right',
+                  paddingRight: `${Math.max(2, String(text.total_lines).length / 2)}ch`,
+                  color: Colors.TEXT.TERTIARY,
+                  userSelect: 'none',
+                }}
+              >
+                {i + 1}
+              </span>
+              {/* 正文：代码后缀走 prism 高亮（输出已转义），未知后缀原样 */}
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  // 折行语义从 pre 容器移到行内正文 span（行号列不受折行影响）
+                  whiteSpace: wrap ? 'pre-wrap' : 'pre',
+                  wordBreak: wrap ? 'break-word' : 'normal',
+                }}
+                dangerouslySetInnerHTML={
+                  lang
+                    ? { __html: ln ? highlightLine(ln, lang) : '' }
+                    : undefined
+                }
+              >
+                {lang ? undefined : ln}
+              </span>
+            </div>
+          ))}
+        </pre>
+      )}
       {/*
         2026-10-21 小杨 - 体验审计（主操作可达性）：
           原实现的主 CTA 在**文件正文之后**——长文件要滚到最底才能引用（本页唯一目的却最难达）。
