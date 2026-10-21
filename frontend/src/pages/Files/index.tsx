@@ -5,7 +5,12 @@
 //     分栏宽度内聚（拖拽不重绘树/预览）、主题常量上提、border-box 消 16px 溢出、引用体量统一字节 — 小杨-2026-10-21
 //   2026-10-21 小欧 - ① 消费后端扫描标志（truncated/incomplete_depth/skipped/skipped_cycles）：
 //     原先三标志全丢，目录被截断而用户毫不知情 → 树上方如实提示（每条一行、可折行、保留条数）；
-//     ② 摘掉工具条「设为会话工作目录」死按钮（无 onClick 的骨架，点了没反应）— 小欧-2026-10-21
+//   ② 摘掉工具条「设为会话工作目录」死按钮（无 onClick 的骨架，点了没反应）— 小欧-2026-10-21
+//   2026-10-21 小欧 - 树请求竞态防护（I7）：替换型请求（整树刷新）走 AbortController 取消上一轮，
+//     合并型请求（补拉子树）按键序号丢弃过期响应（不同键并发合法，不能一 abort 了之）— 小欧-2026-10-21
+//   2026-10-21 小欧 - J3「设为会话工作目录」实现：树右键菜单入口 + 先 GET 后 PATCH（全量覆盖语义），
+//     相对→绝对路径走 utils/projectPath.ts，422 的 workspace_rejected 逐条呈现 — 小欧-2026-10-21
+
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
@@ -35,6 +40,8 @@ import {
 import { LockOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fileApi, type FileNode } from '@/services/api/file.api';
+import { sessionApi } from '@/services/api/session.api';
+import { toAbsolutePath, samePath } from '@/utils/projectPath';
 import { FilesTree, findNode } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
 import {
@@ -43,7 +50,12 @@ import {
 } from '@/features/chat/streams/composerRefStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { readStoredSessionId } from '@/utils/sessionStorage';
-import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import {
+  showMessage,
+  showSuccess,
+  ErrorType,
+  isSilentError,
+} from '@/services/error/handler';
 import { Spacing, Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 // 2026-10-21 小杨 - 控件规格统一（北京老陈痛骂"全系统的规范忘记了"）：直接复用
@@ -278,6 +290,28 @@ const FilesPage: React.FC = () => {
   const treeRef = useRef<FileNode[]>([]);
   const refreshPreviewRef = useRef<(() => void) | null>(null);
 
+  /**
+   * 树请求生命周期（I7）：替换型（整树刷新）独占通道，新请求 abort 旧请求；
+   * 合并型（补拉子树）按键序号丢弃过期响应 —— 不同键并发合法，不能一 abort 了之。
+   */
+  const treeAbortRef = useRef<AbortController | null>(null);
+  const dirSeqRef = useRef<Map<string, number>>(new Map());
+
+  /** 开启一轮替换型树请求：取消上一轮，返回本轮 signal */
+  const beginTreeReq = useCallback((): AbortSignal => {
+    treeAbortRef.current?.abort();
+    const ctl = new AbortController();
+    treeAbortRef.current = ctl;
+    return ctl.signal;
+  }, []);
+
+  /** 合并型请求序号闸门：同键后发者作废先发者 */
+  const claimDir = useCallback((key: string): number => {
+    const seq = (dirSeqRef.current.get(key) ?? 0) + 1;
+    dirSeqRef.current.set(key, seq);
+    return seq;
+  }, []);
+
   const sessionId = useMemo(() => readStoredSessionId(), []);
   /** 足迹标记：共享 hook（树 / 足迹面板 / 推荐三处同源同型） */
   const { files: recentFiles, reload: reloadRecent } =
@@ -301,19 +335,22 @@ const FilesPage: React.FC = () => {
   }, []);
 
   const loadTree = useCallback(async () => {
+    const signal = beginTreeReq();
     setTreeStatus({ phase: 'loading' });
     try {
-      const r = await fileApi.fetchTree('');
+      const r = await fileApi.fetchTree('', { signal });
       treeRef.current = r.nodes;
       setTree(r.nodes);
       setLoadedKeys([]);
       // 2026-10-21 小欧 - 如实告知"结果是否完整"（原先三个标志全丢，用户以为看到的是完整目录）
       setScanNotices(buildScanNotices(r));
       setTreeStatus({ phase: 'ready' });
-    } catch {
+    } catch (e) {
+      // 2026-10-21 小欧 - 被新一轮请求取代/组件卸载：静默丢弃，不误报「加载失败」
+      if (isSilentError(e)) return;
       setTreeStatus({ phase: 'error', message: '目录加载失败，请重试' });
     }
-  }, []);
+  }, [beginTreeReq]);
 
   useEffect(() => {
     void loadRoot();
@@ -321,6 +358,9 @@ const FilesPage: React.FC = () => {
   useEffect(() => {
     void loadTree();
   }, [loadTree]);
+
+  // 2026-10-21 小欧 - 组件卸载：取消在途树请求（否则卸载后回调仍在写 state）
+  useEffect(() => () => treeAbortRef.current?.abort(), []);
 
   /** 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
   const expandToPath = useCallback(
@@ -333,7 +373,10 @@ const FilesPage: React.FC = () => {
         let hit = findNode(treeRef.current, cur);
         if (!hit) return null; // 路径不存在 → 调用方给明确提示（失败分支不静默）
         if (hit.type === 'dir' && !hit.children) {
+          // 2026-10-21 小欧 - 合并型请求：同键后发者作废先发者（不 abort，不同键并发合法）
+          const seq = claimDir(cur);
           const r = await fileApi.fetchTree(cur);
+          if (dirSeqRef.current.get(cur) !== seq) return null; // 过期响应丢弃
           const merged = mergeKids(treeRef.current, cur, r.nodes);
           treeRef.current = merged;
           setTree(merged);
@@ -354,7 +397,7 @@ const FilesPage: React.FC = () => {
       });
       return target;
     },
-    []
+    [claimDir]
   );
 
   /**
@@ -408,6 +451,58 @@ const FilesPage: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params, treeReady]);
+
+  /**
+   * J3：把目录设为当前会话的工作目录（Agent 产物落点）。
+   *
+   * 两条后端契约约束：PATCH 是全量覆盖（须先读后写）；路径必须绝对（后端硬拒相对路径）。
+   * 422 的 workspace_rejected 逐条如实呈现。
+   */
+  const setWorkspace = useCallback(
+    async (dir: FileNode) => {
+      if (!sessionId) {
+        showMessage(
+          ErrorType.WARNING,
+          '尚无会话：请先在对话页发起一次对话，再设置会话工作目录。'
+        );
+        return;
+      }
+      const abs = toAbsolutePath(dir.key, projectRoot);
+      if (!abs) {
+        showMessage(ErrorType.WARNING, '该路径无法定位到项目根，未设置。');
+        return;
+      }
+      try {
+        const cur = await sessionApi.getWorkspaces(sessionId);
+        const paths = cur.workspaces.map((w) => w.path);
+        if (paths.some((p) => samePath(p, abs))) {
+          showSuccess(`「${dir.name}」已是会话工作目录`);
+          return;
+        }
+        await sessionApi.patchWorkspaces(sessionId, [...paths, abs]);
+        showSuccess(`已设为会话工作目录：${dir.name}`);
+      } catch (e: unknown) {
+        // 422 信封：{success:false, error:{workspace_rejected:[{path,reason}]}}（全局异常处理器包装）
+        const rejected =
+          (
+            e as {
+              response?: {
+                data?: { error?: { workspace_rejected?: unknown } };
+              };
+            }
+          )?.response?.data?.error?.workspace_rejected ?? [];
+        const items = rejected as { path: string; reason: string }[];
+        if (items.length) {
+          items.forEach((x) =>
+            showMessage(ErrorType.WORKSPACE_REJECTED, `${x.path}：${x.reason}`)
+          );
+        } else {
+          throw e; // 非 422 业务错交全局 handler
+        }
+      }
+    },
+    [projectRoot, sessionId]
+  );
 
   /**
    * 三途径统一 push（引用到对话 / 树右键引用 / 引用选区 —— 产物等价）
@@ -473,15 +568,18 @@ const FilesPage: React.FC = () => {
   /** 补拉一个目录（降级） */
   const loadDir = useCallback(
     async (key: string): Promise<FileNode[] | null> => {
+      // 2026-10-21 小欧 - 合并型请求：同键后发者作废先发者（不同键并发合法，不能一 abort 了之）
+      const seq = claimDir(key);
       try {
         // 2026-10-21 小杨 - 补拉**到 10 层**（首屏 5 秒开；子树量级可控才补得快）
-        const r = await fileApi.fetchTree(key, 10);
+        const r = await fileApi.fetchTree(key, { maxDepth: 10 });
+        if (dirSeqRef.current.get(key) !== seq) return null; // 过期响应丢弃
         return r.nodes;
       } catch {
         return null;
       }
     },
-    []
+    [claimDir]
   );
 
   const patchNodes = useCallback((parentKey: string, kids: FileNode[]) => {
@@ -574,6 +672,9 @@ const FilesPage: React.FC = () => {
                 showMessage(ErrorType.FILE_READ, '无法读取该文件，未能引用');
               }
             })();
+          }}
+          onSetWorkspace={(d) => {
+            void setWorkspace(d);
           }}
           onPatchNodes={patchNodes}
           onLoadDir={loadDir}

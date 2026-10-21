@@ -12,6 +12,8 @@
 # 2026-10-21 小欧 - 跳过数拆两类：skipped（读不了/越界/坏链接）与 skipped_cycles（**环检测**：
 #   junction/链接绕回已展开目录）。原先混在一个计数里，前端只能说"无法读取"——实测 104 条里
 #   绝大多数是环，说成读取失败是误导；两类分开后前端才能分别措辞 — 小欧-2026-10-21
+# 2026-10-21 小欧 - read 的 total_lines 改 _count_lines：末尾换行不产生新行（编辑器口径），
+#   原式 count("\n")+1 让 "a\r\nb\r\n" 算 3 行 → 行号指到不存在的空行，且与前端行号列不一致 — 小欧-2026-10-21
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -582,6 +584,17 @@ def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     return kept
 
 
+def _count_lines(content: str) -> int:
+    """行数：末尾换行不产生新行（编辑器口径，与前端行号列同源）。
+
+    2026-10-21 小欧 - 原式 count("\\n")+1 对 "a\\r\\nb\\r\\n" 得 3（实际 2 行），
+    行号会指到不存在的空行。"""
+    if not content:
+        return 0
+    n = content.count("\n")
+    return n if content.endswith("\n") else n + 1
+
+
 def read_text_file(rel_path: str) -> Dict[str, Any]:
     """读任意文本正文：存在性 → 是目录 → NUL 实探 → 大小 → 编码 五道闸门。
 
@@ -646,7 +659,10 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
         "size": size,
         "content": content,
         "encoding": used_enc,
-        "total_lines": content.count("\n") + 1 if content else 0,
+        # 2026-10-21 小欧 - 行数口径修正: 末尾换行不产生新行（编辑器口径）。
+        #   原式 count("\n")+1 让 "a\r\nb\r\n" 算出 3 行 → 行号指到不存在的空行，
+        #   且与前端行号列（已同步去掉末段空串）不一致。
+        "total_lines": _count_lines(content),
         # 2026-10-21 小杨 - 补 mtime：复用上面那次 stat()，零额外 IO。
         #   口径与 tree 的 mtime 同源（都走 _fmt_time），前端可直接比对判文件是否已变。
         "mtime": _fmt_time(st.st_mtime),

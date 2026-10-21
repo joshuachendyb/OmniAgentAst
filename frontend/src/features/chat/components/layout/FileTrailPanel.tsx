@@ -6,6 +6,7 @@
 //   2026-10-21 小欧 - 足迹自动刷新：订阅会话快照，步骤数变化即重取（去抖 600ms）；
 //     原实现只在挂载时取一次 → Agent 动过新文件后面板仍停在挂载时刻 — 小欧-2026-10-21
 //   2026-10-21 小杨 - 引用按钮仅文本文件显示（图片由查看器处理，文本通道不读取）— 小杨-2026-10-21
+//   2026-10-21 小欧 - 导出 OP_LABEL/OP_COLOR：ops 徽标映射口径易被改坏，导出供测试断言 — 小欧-2026-10-21
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -36,13 +37,15 @@ import { Colors, Spacing } from '@/utils/stepStyles';
 /**
  * ops 徽标配色/文案 —— ops 的取值域是后端工具**注册名**（FILE_OPERATION_TOOLS，16 个），
  *   故这里只给高频三类着色，其余走弱色原名兜底（前端不自造工具分类）。
+ *
+ * 2026-10-21 小欧 - 导出供测试断言（徽标映射口径易被改坏）— 小欧-2026-10-21
  */
-const OP_COLOR: Record<string, string> = {
+export const OP_COLOR: Record<string, string> = {
   read: Colors.PRIMARY,
   write: Colors.SUCCESS,
   edit: Colors.WAIT_ACTION,
 };
-const OP_LABEL: Record<string, string> = {
+export const OP_LABEL: Record<string, string> = {
   read: '读',
   write: '写',
   edit: '改',

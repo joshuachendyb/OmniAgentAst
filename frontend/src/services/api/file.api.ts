@@ -5,6 +5,8 @@
 //     文件系统 mtime，旧名会让前端误当"最近访问时间"）— 小杨-2026-10-21
 //   2026-10-21 小欧 - TreeResponse 增 skipped_cycles：环检测计数与"读不了"分列
 //     （后端原先混在一个 skipped 里，提示说成"无法读取"是误导）— 小欧-2026-10-21
+//   2026-10-21 小欧 - fetchTree 位置参数改选项对象 {maxDepth,maxNodes,signal}：
+//     传 signal 免填空位；signal 交 axios 取消在途请求（I7 竞态防护）— 小欧-2026-10-21
 /**
  * 文件浏览 API（只读浏览项目根目录）
  *
@@ -101,15 +103,21 @@ export const fileApi = {
 
   fetchTree: async (
     path = '',
-    /** 2026-10-21 小杨 - 首屏 5 层（~0.2s 扫盘+gzip 响应 ~0.4MB 秒开）；展开到深层目录由 Files 页按需 fetchTree(key,10) 补拉 */
-    maxDepth = 5,
-    maxNodes = 100000
-  ): Promise<TreeResponse> =>
-    (
+    /**
+     * 2026-10-21 小杨 - 首屏 5 层；深层目录由 Files 页按需 maxDepth:10 补拉
+     * 2026-10-21 小欧 - 位置参数改选项对象（原三位置参数传 signal 只能填空位）；
+     *   signal 交 axios 取消在途请求（I7）
+     */
+    opts?: { maxDepth?: number; maxNodes?: number; signal?: AbortSignal }
+  ): Promise<TreeResponse> => {
+    const { maxDepth = 5, maxNodes = 100000, signal } = opts ?? {};
+    return (
       await api.get<TreeResponse>('/files/tree', {
         params: { path, max_depth: maxDepth, max_nodes: maxNodes },
+        signal,
       })
-    ).data,
+    ).data;
+  },
 
   readFile: async (
     path: string,

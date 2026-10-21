@@ -1,4 +1,6 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：工具参数里的路径可点击直达文件页 — 小杨-2026-10-21
+// 2026-10-21 小欧 - toRelativePath 迁至 utils/projectPath.ts（与新增的 toAbsolutePath 同源，
+//   绝对⇄相对互逆运算只此一处）— 小欧-2026-10-21
 /**
  * PathLink —— 工具参数里的路径 → 可点击直达文件页（深链）
  *
@@ -12,6 +14,7 @@
 import React from 'react';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 import { isValidRelPath } from '@/components/markdown/FileRefChip';
+import { toRelativePath } from '@/utils/projectPath';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { Colors } from '@/utils/stepStyles';
 
@@ -20,24 +23,6 @@ export interface PathLinkProps {
   /** 项目根（来自 GET /files/root）；用于把绝对路径转成相对路径 */
   projectRoot?: string;
 }
-
-/** 绝对路径 → 相对项目根；不在项目根内返回 null */
-export const toRelativePath = (
-  value: string,
-  projectRoot?: string
-): string | null => {
-  if (!projectRoot) return null;
-  const norm = (p: string) => p.replace(/[/\\]+/g, '/').replace(/\/+$/, '');
-  const root = norm(projectRoot);
-  const v = norm(value);
-  if (!root || !v) return null;
-  if (!v.toLowerCase().startsWith(root.toLowerCase())) return null;
-  // 2026-10-21 小杨 - 修复：必须校验**分隔符边界**
-  //   （否则 F:\proj2\a.md 会被当成 F:\proj 内的 "2/a.md" → 链接指向不存在的文件）
-  if (v.length > root.length && v[root.length] !== '/') return null;
-  const rel = v.slice(root.length).replace(/^\/+/, '');
-  return rel || null;
-};
 
 /** 可点击形态（Router 内） */
 const LinkInner: React.FC<PathLinkProps & { rel: string }> = ({

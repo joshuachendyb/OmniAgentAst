@@ -4,6 +4,8 @@
 //     图片补工具栏与本轮字节数、空文件 0 行、行号列横向滚动时粘左、引用体量统一为字节 — 小杨-2026-10-21
 //   2026-10-21 小欧 - 「暂不支持预览」文案去掉"设为会话工作目录"：该入口已下线（工具条与右键
 //     菜单都已摘除），继续引导用户去一个不存在的功能 = 制造死路 — 小欧-2026-10-21
+//   2026-10-21 小欧 - 行号去"幽灵行"：split('\n') 末段空串不算一行（编辑器口径），
+//     否则行号多 1（指到不存在的空行）且与后端 total_lines 不一致 — 小欧-2026-10-21
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -105,7 +107,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   // 2026-10-21 小杨 - 修复：空文件 '' 曾 split 出 [''] → 头部写 0 行却渲染出 1 行行号
   const textContent = text?.content ?? '';
   const lines = useMemo(
-    () => (textContent !== '' ? textContent.split('\n') : []),
+    // 末尾换行不产生新行（编辑器口径）：split 出来的末段空串是"幽灵行"，
+    // 留着会让行号多 1（行号指到不存在的空行），且与后端 total_lines 口径不一致。
+    () => {
+      if (textContent === '') return [];
+      const arr = textContent.split('\n');
+      if (arr.length > 1 && arr[arr.length - 1] === '') arr.pop();
+      return arr;
+    },
     [textContent]
   );
   const htmlLines = useMemo(

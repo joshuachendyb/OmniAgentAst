@@ -9,14 +9,21 @@
 //     （Ctrl 首次点选不再夹带预览文件）、空目录提示、hover 态落 CSS、复制失败不再静默 — 小杨-2026-10-21
 //   2026-10-21 小欧 - 摘掉右键菜单里的「设为会话工作目录」：该项自建树起就是 disabled 骨架
 //     （点了没反应），页面侧也是空实现 —— 不留空入口，改为真能力落地时再加回 — 小欧-2026-10-21
-import React, { useMemo, useState } from 'react';
-import { Dropdown, Empty } from 'antd';
+//   2026-10-21 小欧 - 右键菜单加回「设为会话工作目录」（目录节点，J3）：后端准入口径已修
+//     （只拒禁区·系统档），页面侧已实现 → 空入口变真能力 — 小欧-2026-10-21
+//   2026-10-21 小欧 - 右键菜单改回**自绘 fixed 浮层**：原用 antd Dropdown + 0×0 空 span 当触发器，
+//     rc-trigger 拿零尺寸矩形对齐 → 弹层被定位到 left:-15000px/top:-9500px（视口外，肉眼不可见，
+//     实测 ant-dropdown-menu 在 DOM 里但画面无菜单）— 小欧-2026-10-21
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
 import type { FileNode } from '@/services/api/file.api';
 import { fileIcon } from '@/components/fileIcon';
 import { formatBytes } from '@/utils/format';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
+import { Colors } from '@/utils/stepStyles';
+import { chatTokens } from '@/theme/tokens';
 
 export interface FilesTreeProps {
   nodes: FileNode[];
@@ -34,6 +41,8 @@ export interface FilesTreeProps {
   onSelectFile: (node: FileNode) => void;
   onSelectFiles?: (nodes: FileNode[]) => void;
   onInsertRef: (node: FileNode) => void;
+  /** J3：把该目录设为当前会话的工作目录（文件 → Agent 工作范围） */
+  onSetWorkspace?: (dir: FileNode) => void;
   onPatchNodes: (parentKey: string, kids: FileNode[]) => void;
   onLoadDir: (key: string) => Promise<FileNode[] | null>;
 }
@@ -63,6 +72,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     onSelectFile,
     onSelectFiles,
     onInsertRef,
+    onSetWorkspace,
     onPatchNodes,
     onLoadDir,
   } = props;
@@ -75,6 +85,31 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     x: number;
     y: number;
   } | null>(null);
+  /** 菜单浮层 DOM（点外部收起时判定是否点在菜单内） */
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  /** 菜单打开时：点外部 / ESC / 滚动 → 收起（fixed 定位不随滚动，需手动关） */
+  useEffect(() => {
+    if (!ctx) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current?.contains(e.target as Node)) return;
+      setCtx(null);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtx(null);
+    };
+    const onHide = () => setCtx(null);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onHide, true);
+    window.addEventListener('resize', onHide);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onHide, true);
+      window.removeEventListener('resize', onHide);
+    };
+  }, [ctx]);
 
   /** 树扁平序（Shift 区间选择基于此序计算） */
   const flat = useMemo<FileNode[]>(() => {
@@ -252,6 +287,16 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
               },
             ]
           : []),
+        // J3：目录 → 会话工作目录（Agent 产物落点）；仅目录有，未接入时不出现该项
+        ...(ctx.node.type === 'dir' && onSetWorkspace
+          ? [
+              {
+                key: 'setWorkspace',
+                label: '设为会话工作目录',
+                act: () => onSetWorkspace(ctx.node),
+              },
+            ]
+          : []),
         {
           key: 'copy',
           label: '复制路径',
@@ -276,30 +321,59 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           <div style={{ minWidth: 0 }}>{nodes.map((n) => renderRow(n, 0))}</div>
         )
       )}
-      {/* 右键菜单：自绘浮层（跟踪触发点坐标），离开自动收起 */}
+      {/* 右键菜单：自绘 fixed 浮层（跟踪触发点坐标），点外部/ESC/滚动 自动收起 */}
       {ctx && (
-        <Dropdown
-          open
-          onOpenChange={(o) => {
-            if (!o) setCtx(null);
-          }}
-          trigger={['contextMenu']}
-          menu={{
-            items: menuOpts.map(({ key, label, disabled }) => ({
-              key,
-              label,
-              disabled,
-            })),
-            onClick: ({ key, domEvent }) => {
-              domEvent.stopPropagation();
-              const hit = menuOpts.find((o) => o.key === key);
-              setCtx(null);
-              if (hit && !hit.disabled) hit.act();
-            },
+        <div
+          ref={menuRef}
+          role="menu"
+          className="files-tree-context-menu"
+          onContextMenu={(e) => e.preventDefault()}
+          style={{
+            position: 'fixed',
+            // 贴边保护：菜单宽 ~160 / 高 ~120，贴到视口边缘时向内收，避免整块出屏
+            left: Math.max(4, Math.min(ctx.x, window.innerWidth - 168)),
+            top: Math.max(4, Math.min(ctx.y, window.innerHeight - 124)),
+            zIndex: 1050,
+            minWidth: 152,
+            padding: 4,
+            background: Colors.BG.PRIMARY,
+            border: `1px solid ${Colors.BORDER.LIGHT}`,
+            borderRadius: chatTokens.radius,
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
           }}
         >
-          <span style={{ position: 'fixed', left: ctx.x, top: ctx.y }} />
-        </Dropdown>
+          {menuOpts.map((o) => (
+            <div
+              key={o.key}
+              role="menuitem"
+              tabIndex={0}
+              aria-disabled={o.disabled || undefined}
+              onClick={() => {
+                if (o.disabled) return;
+                o.act();
+                setCtx(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                if (o.disabled) return;
+                o.act();
+                setCtx(null);
+              }}
+              style={{
+                padding: '5px 10px',
+                fontSize: chatTokens.fontSM,
+                color: Colors.TEXT.STRONG,
+                whiteSpace: 'nowrap',
+                cursor: o.disabled ? 'not-allowed' : 'pointer',
+                opacity: o.disabled ? 0.5 : 1,
+                borderRadius: 4,
+              }}
+            >
+              {o.label}
+            </div>
+          ))}
+        </div>
       )}
     </>
   );

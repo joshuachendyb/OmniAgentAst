@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-14 小欧: 路径校验导入改从 app.safety.path_safe_check(路径校验已升系统层)
+# 2026-10-21 小欧 - J3: _ws_deny_reason 准入口径 = 只拒禁区·系统档(forbidden_system),
+#   forbidden_non_system 档(代码目录/允许根)放行, 修常见配置整单 422 — 小欧-2026-10-21
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -77,25 +79,21 @@ def _is_broad_root(p: str) -> bool:
 
 
 def _ws_deny_reason(p: str) -> Optional[str]:
-    """会话目录合法性判据：返回拒绝原因(None=可用)。**全部复用全局判据，不自造黑名单**。
+    """会话目录合法性判据：返回拒绝原因(None=可用)。复用全局判据，不自造黑名单。
 
-    ★2026-10-19 小欧 - 目录数组归一化: 单一真源已收敛到 write_path_check.validate_write
-      (五档归属 scope + PERMISSION 矩阵), 本函数只调这一个公开接口, 不再自行判禁区。
-      覆盖场景: check_preconditions(空路径/`..`穿越/异常) 与 classify_scope/permission_of
-      自身异常一律兜底为 SCOPE_FORBIDDEN_SYSTEM, 确认档与放行档的区分由写线内部完成。
-    另加宽根规则(本模块判据)：授权/使用宽根等于放大删除范围。"""
+    2026-10-21 小欧 - J3 口径(北京老陈裁定): 准入只有一条 —— 不能落在**禁区·系统档**
+      (forbidden_system, 写格=DENY; 非法路径/异常也兜底到该档, fail-closed)。
+      forbidden_non_system 档(代码目录/允许根/启动目录)一律放行: 原实现 `if scope:` 把
+      写线矩阵里的 CONFIRM 档也当 DENY → 常见配置整单 422, 会话目录根本设不上。
+      宽根规则保留: 授权家目录/盘根会放大删除允许范围, 与档位无关。"""
     # 2026-10-15 小欧: path_safe_check.validate_path 已随三线分离删除,
     #   等价能力迁至 app.safety.write_path_check.validate_write(返回三元组, system 口径一致)。
     #   本函数原在函数内延迟导入, 拆分后未同步 -> 一旦调用即 ImportError, 故同步改口。
     # 2026-10-16 小欧 - 去越层: services 层只走写线公开接口, 不越过它直接摸底层分类模块
     from app.safety.write_path_check import validate_write as _validate_write_path
-    from app.safety.path_dir_lists import SCOPE_FORBIDDEN_NON_SYSTEM, SCOPE_FORBIDDEN_SYSTEM
+    from app.safety.path_dir_lists import SCOPE_FORBIDDEN_SYSTEM
     _ok, _msg, scope = _validate_write_path(p)
-    if scope:
-        # _ok=True 而 scope 非空 = 该档已获任务级授权(写线放行), 此时 _msg 为 None,
-        #   需自己拼文案, 否则用户只看到无信息量的"路径在全局禁区内"。
-        if _ok:
-            return f"路径位于{scope}类保护区自身或其上级({p}), 不可直接作为会话目录"
+    if scope == SCOPE_FORBIDDEN_SYSTEM:
         return _msg or "路径在全局禁区内"
     if _is_broad_root(p):
         return "宽根目录(家目录/用户目录/盘根)不可作为会话目录: 会放大删除允许范围"
