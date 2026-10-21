@@ -3,6 +3,8 @@
 //   （照裸数组写会 "items.filter is not a function"）— 小杨-2026-10-21
 //   2026-10-21 小杨 - 修复：RecentFile 的时间字段由 last_seen_at 改名为 mtime（后端值一直是
 //     文件系统 mtime，旧名会让前端误当"最近访问时间"）— 小杨-2026-10-21
+//   2026-10-21 小欧 - TreeResponse 增 skipped_cycles：环检测计数与"读不了"分列
+//     （后端原先混在一个 skipped 里，提示说成"无法读取"是误导）— 小欧-2026-10-21
 /**
  * 文件浏览 API（只读浏览项目根目录）
  *
@@ -29,7 +31,8 @@ export interface TreeResponse {
   nodes: FileNode[];
   truncated: boolean; // 节点数触顶
   incomplete_depth: boolean; // 深度到顶（前端据此补拉）
-  skipped: number; // 本次扫描跳过的坏条目数
+  skipped: number; // 本次扫描跳过的坏条目数（读不了/越界/坏链接）
+  skipped_cycles: number; // 环检测拦下的条目数（链接绕回已展开目录）
 }
 
 export interface ReadResponse {

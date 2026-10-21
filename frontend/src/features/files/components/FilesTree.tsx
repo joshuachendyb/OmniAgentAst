@@ -3,10 +3,12 @@
 //   1) 目录行点击=展开/收起；首屏 5 层全量子级在 nodes.children 本地直接开（零请求）
 //   2) 懒加载只对超深截断目录走 onLoadDir/onPatchNodes/onLoadedKeys
 //   3) Ctrl 逐个 / Shift 区间（扁平序连线段）批量 → onSelectFiles（只收文件，目录不进批量）
-//   4) 右键菜单（插入引用/设为会话工作目录/复制路径）自绘 fixed 浮层
+//   4) 右键菜单（插入引用/复制路径）自绘 fixed 浮层
 //   5) antd Tree 特供补丁（files-tree-noswitcher CSS、expandable、multiple 手势）一并作废
 //   2026-10-21 小杨 - 修复：展开集合改受控（深链定位可见）、多选集与预览集分离
 //     （Ctrl 首次点选不再夹带预览文件）、空目录提示、hover 态落 CSS、复制失败不再静默 — 小杨-2026-10-21
+//   2026-10-21 小欧 - 摘掉右键菜单里的「设为会话工作目录」：该项自建树起就是 disabled 骨架
+//     （点了没反应），页面侧也是空实现 —— 不留空入口，改为真能力落地时再加回 — 小欧-2026-10-21
 import React, { useMemo, useState } from 'react';
 import { Dropdown, Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
@@ -32,7 +34,6 @@ export interface FilesTreeProps {
   onSelectFile: (node: FileNode) => void;
   onSelectFiles?: (nodes: FileNode[]) => void;
   onInsertRef: (node: FileNode) => void;
-  onSetWorkspace: (node: FileNode) => void;
   onPatchNodes: (parentKey: string, kids: FileNode[]) => void;
   onLoadDir: (key: string) => Promise<FileNode[] | null>;
 }
@@ -62,7 +63,6 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     onSelectFile,
     onSelectFiles,
     onInsertRef,
-    onSetWorkspace,
     onPatchNodes,
     onLoadDir,
   } = props;
@@ -252,12 +252,6 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
               },
             ]
           : []),
-        {
-          key: 'ws',
-          label: '设为会话工作目录',
-          disabled: true,
-          act: () => onSetWorkspace(ctx.node),
-        },
         {
           key: 'copy',
           label: '复制路径',

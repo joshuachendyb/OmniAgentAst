@@ -9,6 +9,9 @@
 #   子级节点额度扣除目录自身占用（整树产出不再超 max_nodes）、带 BOM 的 UTF-16/UTF-32 文本按文本判定、
 #   解码后含 NUL 的伪文本按二进制拒绝；另：文件当树改报 INVALID_PATH、不可读目录计入 skipped、
 #   UNSUPPORTED_TYPE 文案与实际口径对齐、recent-files 的时间字段按真实语义命名为 mtime — 小杨-2026-10-21
+# 2026-10-21 小欧 - 跳过数拆两类：skipped（读不了/越界/坏链接）与 skipped_cycles（**环检测**：
+#   junction/链接绕回已展开目录）。原先混在一个计数里，前端只能说"无法读取"——实测 104 条里
+#   绝大多数是环，说成读取失败是误导；两类分开后前端才能分别措辞 — 小欧-2026-10-21
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -357,11 +360,17 @@ class _ScanResult(NamedTuple):
        拆成两个独立标志，语义互不覆盖：
          truncated        节点数触顶（后面还有条目没返回）
          incomplete_depth 深度到顶（这层以下的目录未展开，前端需按需补拉）
+
+    2026-10-21 小欧 - 跳过数拆两类（原先混在一个计数里，前端只能笼统说"无法读取"，
+       实测 104 条里绝大多数是**环检测**（junction/链接绕回已展开目录），说成读取失败是误导）：
+         skipped         读不了/越界/坏链接的条目数（真的没取到）
+         skipped_cycles  环检测拦下的条目数（链接指回已展开目录，防无限递归）
     """
     nodes: List[Dict[str, Any]]
     truncated: bool
     incomplete_depth: bool
     skipped: int
+    skipped_cycles: int
 
 
 def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
@@ -379,14 +388,17 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
 
     2026-10-21 小杨 - 环检测：visited 存已展开目录的
     realpath+normcase，junction/符号链接绕回祖先时整条目跳过并计 skipped。
+
+    2026-10-21 小欧 - 环检测单独计 skipped_cycles（与"读不了"分计，语义不再混）。
     """
     if budget <= 0:
-        return _ScanResult([], True, False, 0)
+        return _ScanResult([], True, False, 0, 0)
     items, skipped = _scan_dir(root, target, rel)
     nodes: List[Dict[str, Any]] = []
     used = 0
     truncated = False
     incomplete_depth = False
+    skipped_cycles = 0            # 2026-10-21 小欧 - 环检测单独计数（与"读不了"分开）
     for e in items:
         if used >= budget:                  # 节点闸门：额度耗尽即停
             truncated = True
@@ -399,7 +411,7 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
             child_dir = target / e["name"]
             cid = _dir_id(child_dir)
             if cid is not None and cid in visited:   # 链回已展开目录：跳过防环
-                skipped += 1
+                skipped_cycles += 1                  # 2026-10-21 小欧 - 与"读不了"分计
                 continue
             if cid is not None:
                 visited.add(cid)
@@ -412,6 +424,7 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
                 truncated = truncated or child.truncated
                 incomplete_depth = incomplete_depth or child.incomplete_depth
                 skipped += child.skipped
+                skipped_cycles += child.skipped_cycles
                 used += len(child.nodes)    # 2026-10-21 小杨 - child 消费量记回本层额度
             else:
                 node["children"] = None          # 深度上限：只出节点不展开
@@ -419,7 +432,7 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
                 incomplete_depth = True          # ← BUG-A 修复点
         used += 1
         nodes.append(node)
-    return _ScanResult(nodes, truncated, incomplete_depth, skipped)
+    return _ScanResult(nodes, truncated, incomplete_depth, skipped, skipped_cycles)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -461,7 +474,9 @@ def build_tree(rel_path: str = "", max_depth: int = MAX_TREE_DEPTH,
         "nodes": result.nodes,
         "truncated": result.truncated,               # 节点数触顶
         "incomplete_depth": result.incomplete_depth,  # 深度到顶（前端据此补拉）
-        "skipped": result.skipped,                   # 本次扫描跳过的坏条目数
+        "skipped": result.skipped,                   # 本次扫描跳过的坏条目数（读不了/越界）
+        # 2026-10-21 小欧 - 环检测单独计数（junction/链接绕回已展开目录），与 skipped 语义分开
+        "skipped_cycles": result.skipped_cycles,
     }
 
 

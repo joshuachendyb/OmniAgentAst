@@ -3,6 +3,8 @@
 //   键盘目标收敛为「文件名=打开」「引用=引用」两个真 button）；引用不再跳页（就地收集）— 小杨-2026-10-21
 //   2026-10-21 小杨 - 修复：时间字段由 last_seen_at 改用 mtime（后端值一直是文件系统 mtime，
 //     旧名会让面板误标"最近访问时间"）— 小杨-2026-10-21
+//   2026-10-21 小欧 - 足迹自动刷新：订阅会话快照，步骤数变化即重取（去抖 600ms）；
+//     原实现只在挂载时取一次 → Agent 动过新文件后面板仍停在挂载时刻 — 小欧-2026-10-21
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -14,7 +16,7 @@
  *
  * 只读边界：面板**不落任何写操作**（与文件页同一常驻表达）。
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Empty, Skeleton, Tooltip } from 'antd';
 import {
   CaretRightOutlined,
@@ -23,6 +25,7 @@ import {
 } from '@ant-design/icons';
 import { fileApi, type RecentFile } from '@/services/api/file.api';
 import { composerRefStore, newRefId } from '../../streams/composerRefStore';
+import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
@@ -55,8 +58,36 @@ export interface FileTrailPanelProps {
 export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
   sessionId,
 }) => {
-  const { files, loading } = useRecentFiles(sessionId);
+  const { files, loading, reload } = useRecentFiles(sessionId);
   const [expanded, setExpanded] = useState(readExpanded);
+
+  /**
+   * 2026-10-21 小欧 - 足迹**自动刷新**：
+   *   原实现只在挂载时取一次 → 会话里 Agent 动过新文件后，本面板仍停在挂载那一刻的内容
+   *   （useRecentFiles 无自动失效，只有文件页工具条显式 reload 才刷新）。
+   *   触发源取会话快照的**步骤数**：步骤推进 = 可能动过文件；心跳等无关变更不触发。
+   *   去抖 600ms（步骤成簇到达，逐条重取会打出一串请求）。
+   */
+  useEffect(() => {
+    if (!sessionId) return;
+    let last =
+      chatStreamStore.getSnapshot(sessionId)?.executionSteps?.length ?? 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = chatStreamStore.subscribe(sessionId, () => {
+      const n =
+        chatStreamStore.getSnapshot(sessionId)?.executionSteps?.length ?? 0;
+      if (n === last) return;
+      last = n;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        void reload();
+      }, 600);
+    });
+    return () => {
+      unsub();
+      if (timer) clearTimeout(timer);
+    };
+  }, [sessionId, reload]);
 
   const toggle = () => {
     setExpanded((v) => {

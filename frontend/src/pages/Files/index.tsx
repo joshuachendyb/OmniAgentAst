@@ -3,11 +3,15 @@
 //   足迹数据改用共享 hook useRecentFiles（树 / 足迹面板 / 推荐三处同源同型）— 小杨-2026-10-21
 //   2026-10-21 小杨 - 修复：树三态合为状态机、展开集合唯一真源、定位输入自持状态、
 //     分栏宽度内聚（拖拽不重绘树/预览）、主题常量上提、border-box 消 16px 溢出、引用体量统一字节 — 小杨-2026-10-21
+//   2026-10-21 小欧 - ① 消费后端扫描标志（truncated/incomplete_depth/skipped/skipped_cycles）：
+//     原先三标志全丢，目录被截断而用户毫不知情 → 树上方如实提示（每条一行、可折行、保留条数）；
+//     ② 摘掉工具条「设为会话工作目录」死按钮（无 onClick 的骨架，点了没反应）— 小欧-2026-10-21
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
  * 只读边界：本页面**不提供任何写操作**，工具条常驻「只读浏览」标签。
- * 唯一例外是「设为会话工作目录」：那是**授权**而非写文件，本期只留骨架。
+ * 2026-10-21 小欧 -「设为会话工作目录」入口下线（工具条与右键菜单都已摘除）：
+ *   那是**授权**而非写文件，后端无对应能力，留着就是点了没反应的死入口。
  */
 import React, {
   useCallback,
@@ -62,6 +66,26 @@ const mergeKids = (
       return { ...n, children: mergeKids(n.children, parentKey, kids) };
     return n;
   });
+
+/**
+ * 2026-10-21 小欧 - 扫描不完整提示（truncated / incomplete_depth / skipped / skipped_cycles 四源）：
+ *   后端一直在算这几个标志，但前端原先只取 r.nodes 全丢 → 用户以为看到的是完整目录
+ *   （大仓下目录被截断而用户毫不知情）。此处如实告知，**几段拼成一行**显示（过长自动折行）。
+ *   措辞按后端口径分列：skipped＝真读不到，skipped_cycles＝链接绕回已展开目录被防环拦下。
+ */
+const buildScanNotices = (r: {
+  truncated: boolean;
+  incomplete_depth: boolean;
+  skipped: number;
+  skipped_cycles: number;
+}): string[] => {
+  const out: string[] = [];
+  if (r.truncated) out.push('未显示目录在「定位路径」输入路径直达）.');
+  if (r.incomplete_depth) out.push('深层点开时会自动加载.');
+  if (r.skipped > 0) out.push(`${r.skipped} 条目读失败跳过.`);
+  if (r.skipped_cycles > 0) out.push(`${r.skipped_cycles} 个符号链接）`);
+  return out;
+};
 
 /** 2026-10-21 小杨 - 修复：树的加载态升级为单一状态机
  *  （原 treeLoading/treeReady/treeErr 三个布尔可组合出"就绪且加载中且报错"的非法态） */
@@ -223,6 +247,8 @@ const FilesPage: React.FC = () => {
 
   const [projectRoot, setProjectRoot] = useState('');
   const [rootErr, setRootErr] = useState<string | null>(null);
+  /** 2026-10-21 小欧 - 扫描不完整提示（truncated/incomplete_depth/skipped/skipped_cycles）；空数组＝结果完整 */
+  const [scanNotices, setScanNotices] = useState<string[]>([]);
   const [tree, setTree] = useState<FileNode[]>([]);
   /** 2026-10-21 小杨 - 深链需等树就绪；加载/就绪/错误三态合一 */
   const [treeStatus, setTreeStatus] = useState<TreeStatus>({
@@ -281,6 +307,8 @@ const FilesPage: React.FC = () => {
       treeRef.current = r.nodes;
       setTree(r.nodes);
       setLoadedKeys([]);
+      // 2026-10-21 小欧 - 如实告知"结果是否完整"（原先三个标志全丢，用户以为看到的是完整目录）
+      setScanNotices(buildScanNotices(r));
       setTreeStatus({ phase: 'ready' });
     } catch {
       setTreeStatus({ phase: 'error', message: '目录加载失败，请重试' });
@@ -503,6 +531,23 @@ const FilesPage: React.FC = () => {
   ) : (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+        {/* 2026-10-21 小欧 - 扫描不完整提示（结果不全必须让用户看见，不能静默给残缺目录）；
+            2026-10-21 小欧 - 按要求**拼接成一行**显示（原先每段各占一行） */}
+        {scanNotices.length > 0 && (
+          <div
+            role="status"
+            style={{
+              fontSize: chatTokens.fontSM,
+              color: Colors.WARNING,
+              lineHeight: 1.5,
+              whiteSpace: 'normal',
+              wordBreak: 'break-word',
+              padding: `0 ${Spacing.SM}px ${Spacing.XS}px`,
+            }}
+          >
+            {scanNotices.join('')}
+          </div>
+        )}
         <FilesTree
           nodes={tree}
           activeKey={selected?.key ?? ''}
@@ -529,9 +574,6 @@ const FilesPage: React.FC = () => {
                 showMessage(ErrorType.FILE_READ, '无法读取该文件，未能引用');
               }
             })();
-          }}
-          onSetWorkspace={() => {
-            /* 设为会话工作目录：本期不接线 */
           }}
           onPatchNodes={patchNodes}
           onLoadDir={loadDir}
@@ -686,17 +728,6 @@ const FilesPage: React.FC = () => {
           <LocateBox onLocate={openPath} />
           <Button onClick={refreshAll} title="重新加载目录与足迹">
             重新加载
-          </Button>
-          {/* 设为会话工作目录：本期只留骨架（按钮 + 常驻说明），接线等后端校验通过后开放 */}
-          <Button
-            disabled={!sessionId}
-            title={
-              sessionId
-                ? '设为会话工作目录（本期仅骨架，后端校验通过后开放）'
-                : '无会话时不可设置'
-            }
-          >
-            设为会话工作目录
           </Button>
         </div>
 

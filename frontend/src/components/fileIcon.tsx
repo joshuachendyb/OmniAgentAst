@@ -1,4 +1,5 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：文件类型图标映射**单一真源** — 小杨-2026-10-21
+//   2026-10-21 小欧 - 不可预览图标的 title 去掉"设为会话工作目录"：该入口已下线 — 小欧-2026-10-21
 /**
  * fileIcon —— 文件类型图标映射（单一真源）
  *
@@ -43,7 +44,7 @@ export const fileIcon = (n: FileIconInput): React.ReactElement => {
   if (n.preview === 'image')
     return <PictureOutlined style={{ color: Colors.PRIMARY }} />;
   return (
-    <span title="该类型不支持预览（可复制路径或设为会话工作目录）">
+    <span title="该类型不支持预览（可复制路径）">
       {/* 不可预览 = 弱灰 + 半透明（暗）；原生 title 不叠 Tooltip（Tooltip 只包文字 span） */}
       <FileOutlined style={{ color: Colors.TEXT.WEAK, opacity: 0.4 }} />
     </span>
