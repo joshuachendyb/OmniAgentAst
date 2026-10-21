@@ -437,6 +437,21 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       >
         {text.content.split('\n').map((ln, i) => (
           <span key={i} data-ln={i + 1}>
+            {/* 2026-10-21 小杨 - 行号列（北京老陈拍板）：数字灰弱右对齐 + 禁复制
+                （选区复制只取正文不含号）；列宽按行数位数自适应（ch 单位，
+                等宽字体下数字右对齐），万行/十万行不挤不换行 */}
+            <span
+              style={{
+                display: 'inline-block',
+                width: `${String(text.total_lines).length + 1}ch`,
+                textAlign: 'right',
+                paddingRight: `${Math.max(2, String(text.total_lines).length / 2)}ch`,
+                color: Colors.TEXT.TERTIARY,
+                userSelect: 'none',
+              }}
+            >
+              {i + 1}
+            </span>
             {ln}
             {'\n'}
           </span>
