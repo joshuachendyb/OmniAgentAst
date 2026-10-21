@@ -45,7 +45,9 @@ _CATALOG: Dict[str, _Err] = {
     SESSION_NOT_FOUND: _Err(404, "会话不存在"),
     FILE_TOO_LARGE: _Err(413, "文件超过 2MB，本期不支持预览"),
     IMAGE_TOO_LARGE: _Err(413, "图片超过 10MB，本期不支持预览"),
-    UNSUPPORTED_TYPE: _Err(415, "仅支持查看 .txt / .md 与图片文件"),
+    # 2026-10-21 小杨 - 三堂会审修复：文案还停留在"后缀白名单"时代（实际已放开为
+    #   "可解码文本 + 图片"），会误导用户以为 .py/.json/无后缀文件不可读。
+    UNSUPPORTED_TYPE: _Err(415, "该文件不是可预览的文本或图片"),
     UNDECODABLE: _Err(415, "文件编码无法识别"),
 }
 

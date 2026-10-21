@@ -226,13 +226,14 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                   </span>
                 )}
                 <span
+                  title="文件最后修改时间"
                   style={{
                     color: Colors.TEXT.SECONDARY,
                     fontSize: chatTokens.fontSM,
                     marginLeft: 'auto',
                   }}
                 >
-                  {f.last_seen_at}
+                  {f.mtime}
                 </span>
                 {/* 键盘目标②：引用（常驻可见，触屏可达） */}
                 <button

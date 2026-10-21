@@ -166,24 +166,66 @@ def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
 # 私有：扫描（唯一实现）
 # ══════════════════════════════════════════════════════════════════════
 
+# 2026-10-21 小杨 - 三堂会审 R4 修复（探测热路径缓存）：
+#   _preview_of / recent_files / read_text_file 对 unknown/无后缀文件各探一次
+#   （.git/objects 等大平目录 = 数万次 open），且 read_text_file 重复扫已在树
+#   扫描探过的文件。收敛为**单点** _probe_text（DRY）+ (路径, mtime) 缓存，
+#   mtime 变即失效，打不开(OSError)不缓存（transient 状态不入账）。
+_PREVIEW_CACHE: Dict[str, Tuple[float, str]] = {}   # path -> (mtime, 't'|'f')
+_PREVIEW_CACHE_MAX = 100000
+
+
+_TEXT_BOMS = (b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00",
+              b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")
+
+
+def _probe_text(path: Path) -> Optional[bool]:
+    """首 8KB 查 NUL 空字节判定文本/二进制 —— 全模块唯一实探点。
+
+    返回 None=打不开（OSError）；True=无 NUL（文本）；False=含 NUL（二进制）。
+    2026-10-21 小杨 - 三堂会审修复：带文本 BOM 的文件（记事本 UTF-16/UTF-32）
+    首字节必含 NUL，若只看 NUL 会把 UTF-16 误判二进制（实测 "hello world"
+    存 UTF-16 被 415）。BOM 是比 NUL 更强的文本证据，先判 BOM 再走 NUL。
+    语义与 git/VSCode 同款廉价判定；解码与 2MB 截断仍由 read_text_file 兜底。
+    """
+    key = str(path)
+    if key in _PREVIEW_CACHE:
+        mtime, verdict = _PREVIEW_CACHE[key]
+        try:
+            st = path.stat()
+        except OSError:
+            return None
+        if st.st_mtime == mtime:
+            return verdict == "t"
+        del _PREVIEW_CACHE[key]
+    try:
+        with open(path, "rb") as f:
+            head = f.read(8192)
+            st = os.fstat(f.fileno())
+    except OSError:
+        return None
+    verdict = "t" if (head.startswith(_TEXT_BOMS) or b"\x00" not in head) else "f"
+    if len(_PREVIEW_CACHE) >= _PREVIEW_CACHE_MAX:
+        _PREVIEW_CACHE.clear()
+    _PREVIEW_CACHE[key] = (st.st_mtime, verdict)
+    return verdict == "t"
+
+
 def _preview_of(path: Path) -> str:
     """返回 text / image / none —— 后缀规则唯一真源（前端不自己判）。
 
     2026-10-21 小杨 - 北京老陈拍板"文本文件是能解码的就是"：已知文本/图片后缀
     直接短路（零 IO，树扫描热路径）；未知后缀（含 Dockerfile、LICENSE 等
-    无后缀文件）**实探**——只读首 8KB 查 NUL 空字节，含 \\x00 即二进制否则文本
-    （git/VSCode 同款廉价判定），解码/2MB 截断仍由 /files/read 的解码链兜底。
+    无后缀文件）实探——走唯一探测点 _probe_text（首 8KB 查 NUL），
+    解码/2MB 截断仍由 /files/read 的解码链兜底。
     """
     suffix = path.suffix.lower()
     if suffix in TEXT_EXTS:
         return "text"
     if suffix in IMAGE_EXTS:
         return "image"
-    try:
-        with open(path, "rb") as f:
-            return "none" if b"\x00" in f.read(8192) else "text"
-    except OSError:
-        return "none"
+    r = _probe_text(path)
+    return "text" if r is True else "none"
 
 
 def _fmt_time(ts: float) -> str:
@@ -245,14 +287,17 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
     ⑥ **解析后越出项目根的条目（符号链接）不返回** —— 设计 4.1.3/4.1.4 硬要求：
        树里出现一个点开必然 403 的死条目，比不列出来更糟（用户会反复点）。
        注意与 v3.4「不跳过任何目录」不冲突：这里跳过的**只有越界链接**，普通目录照列。
+    ⑦ 文本实探只对文件做，且必须传**完整路径**（2026-10-21 小杨 - 三堂会审修复：
+       原实现传 Path(de.name) 相对进程 CWD，Dockerfile/LICENSE 等无后缀文件恒探失败；
+       目录也不该被探测——dir.md 这类带文本后缀的目录曾被误判为可预览文本）。
     """
     entries: List[Dict[str, Any]] = []
     skipped = 0
     try:
         it = os.scandir(target)
-    except OSError as e:      # 目录不可读：返回空并留日志（不静默，否则前端误显"空目录"）
+    except OSError as e:      # 目录不可读：返回空并计数（不静默，否则前端误显"空目录"）
         logger.warning(f"[file_browse] 目录不可读已跳过 rel={rel}: {e}")
-        return entries, 0
+        return entries, 1
     with it:
         for de in it:
             try:
@@ -272,7 +317,8 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
                 "type": "dir" if is_dir else "file",
                 "size": None if is_dir else st.st_size,
                 "mtime": _fmt_time(st.st_mtime),
-                "preview": _preview_of(Path(de.name)),
+                # ⑦ 目录不探测；文件传绝对路径（de.path），不得相对 CWD
+                "preview": "none" if is_dir else _preview_of(Path(de.path)),
             })
     entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
     return entries, skipped
@@ -285,6 +331,19 @@ def _escapes_root(candidate: str, root: Path) -> bool:
     except OSError:
         return True
     return real != root and root not in real.parents
+
+
+def _dir_id(path: Path) -> Optional[str]:
+    """目录身份（realpath + normcase）—— 环检测键。
+
+    2026-10-21 小杨 - 三堂会审修复：junction/符号链接指向祖先时，
+    realpath 会回到已访问目录；不设 visited 会无限递归（实测 loop/loop/loop）。
+    normcase 消除 Windows 大小写/分隔符差异。
+    """
+    try:
+        return os.path.normcase(os.path.realpath(str(path)))
+    except OSError:
+        return None
 
 
 class _ScanResult(NamedTuple):
@@ -303,16 +362,30 @@ class _ScanResult(NamedTuple):
 
 
 def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
-          budget: int) -> _ScanResult:
-    """递归列目录。budget = 剩余节点额度，整棵树共享（M26/C2 节点闸门）。"""
+          budget: int, visited: set) -> _ScanResult:
+    """递归列目录。budget = 剩余节点额度，整棵树共享（M26/C2 节点闸门）。
+
+    2026-10-21 小杨 - 三堂会审 R3 修复（预算穿透）：原先外层闸门只数
+    `len(nodes)`（本层已入库条目），递归 child 内部消费的节点数**不回收**，
+    本层每个目录的 child 都能各自再烧一遍 budget → 总产出上界 K×budget，
+    max_nodes 阈值失真、truncated 标志随之漂移。改为**消费记账**：本层维护
+    used（已入库条目 + 归还的 child 消费量），判闸与递归还额都走 used，
+    全树产出严格 ≤ budget。child 额度须扣掉本目录自身占用的 1 格
+    （budget - used - 1）：原式 budget - used 使 child 可拿满剩余额度，
+    加上本目录本身后整树必然超 1（实测 max_nodes=2 出 3 个节点）。
+
+    2026-10-21 小杨 - 三堂会审修复（环检测）：visited 存已展开目录的
+    realpath+normcase，junction/符号链接绕回祖先时整条目跳过并计 skipped。
+    """
     if budget <= 0:
         return _ScanResult([], True, False, 0)
     items, skipped = _scan_dir(root, target, rel)
     nodes: List[Dict[str, Any]] = []
+    used = 0
     truncated = False
     incomplete_depth = False
     for e in items:
-        if len(nodes) >= budget:            # 节点闸门：超限即停
+        if used >= budget:                  # 节点闸门：额度耗尽即停
             truncated = True
             break
         # 2026-10-13 小欧 - KISS/DRY: key 已由 _scan_dir 依 _join_rel 统一产出，
@@ -320,19 +393,28 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
         #   _scan_dir 每次都新建 dict，可直接挂 children，无需拷贝。
         node = e
         if e["type"] == "dir":
+            child_dir = target / e["name"]
+            cid = _dir_id(child_dir)
+            if cid is not None and cid in visited:   # 链回已展开目录：跳过防环
+                skipped += 1
+                continue
+            if cid is not None:
+                visited.add(cid)
             child_rel = _join_rel(rel, e["name"])
             if depth < max_depth:
-                child = _walk(root, target / e["name"], child_rel, depth + 1,
-                              max_depth, budget - len(nodes))
+                child = _walk(root, child_dir, child_rel, depth + 1,
+                              max_depth, budget - used - 1, visited)
                 node["children"] = child.nodes
                 node["incomplete_child"] = child.truncated or child.incomplete_depth
                 truncated = truncated or child.truncated
                 incomplete_depth = incomplete_depth or child.incomplete_depth
                 skipped += child.skipped
+                used += len(child.nodes)    # 2026-10-21 小杨 - child 消费量记回本层额度
             else:
                 node["children"] = None          # 深度上限：只出节点不展开
                 node["incomplete_child"] = True  # 前端展开时按需补拉（驱动降级）
                 incomplete_depth = True          # ← BUG-A 修复点
+        used += 1
         nodes.append(node)
     return _ScanResult(nodes, truncated, incomplete_depth, skipped)
 
@@ -363,8 +445,13 @@ def build_tree(rel_path: str = "", max_depth: int = MAX_TREE_DEPTH,
     #   原先写作 `root, rel = ...` 再拼 `root / rel` → 路径被拼两次
     #   （proj/many/many 不存在 → 整棵树返回空）。此处按真实语义命名，杜绝再次踩坑。
     start_dir, rel = _resolve_within_root(rel_path)
+    if not _exists(start_dir):
+        fail(NOT_FOUND)
+    if not start_dir.is_dir():                # 2026-10-21 小杨 - 文件当树曾返回 200 空树，误导前端
+        fail(INVALID_PATH, "该路径不是目录，请使用文本/图片接口")
     base_root = Path(get_config().get_project_root()).resolve()
-    result = _walk(base_root, start_dir, rel, 1, max_depth, max_nodes)
+    visited = {_dir_id(start_dir)}
+    result = _walk(base_root, start_dir, rel, 1, max_depth, max_nodes, visited)
     return {
         "path": rel,
         "project_root": str(base_root),
@@ -403,6 +490,7 @@ def search_files(keyword: str, limit: int = 20,
     # 广度优先：每层是 (目录, 相对路径)。深度用不上 —— _join_rel 已让每层自带完整 rel，
     # 故只按层数循环，不再维护 depth 变量（原变量从未被使用）。
     frontier: List[Tuple[Path, str]] = [(start_dir, rel)]
+    visited = {_dir_id(start_dir)}      # 2026-10-21 小杨 - 环检测：junction/符号链接只展开一次
     for _ in range(max_depth):
         next_frontier: List[Tuple[Path, str]] = []
         for dir_path, dir_rel in frontier:
@@ -426,6 +514,11 @@ def search_files(keyword: str, limit: int = 20,
                         hit_limit = True
                         break
                 if e["type"] == "dir":
+                    cid = _dir_id(dir_path / e["name"])
+                    if cid is not None and cid in visited:
+                        continue
+                    if cid is not None:
+                        visited.add(cid)
                     next_frontier.append((dir_path / e["name"], e["key"]))
             if hit_limit or scanned_cap:
                 break
@@ -486,14 +579,14 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
     if target.is_dir():
         fail(INVALID_PATH, "该路径是目录，请使用目录树接口")
     # 2026-10-21 小杨 - 北京老陈拍板（文本文件=能解码的）：撤"后缀白名单"闸门
-    #   （.py/无后缀一律被拒=有后缀表在颠覆语义），改**首 8KB NUL 实探**闸二进制：
-    #   含 \x00 ⇒ 拒（真二进制当文本解码只会吐乱码）；探测用 try/except OSError 兜住 Windows 锁文件。
-    try:
-        with target.open("rb") as fh:
-            if b"\x00" in fh.read(8192):
-                fail(UNSUPPORTED_TYPE)
-    except OSError:
+    #   （.py/无后缀一律被拒=有后缀表在颠覆语义），改**首 8KB NUL 实探**闸二进制；
+    #   2026-10-21 小杨 - 三堂会审 R4/R1：实探收敛到 _probe_text 单点（DRY+缓存），
+    #   关闭方式改 with（原 .open("rb").read(4) 未 close，编码违规）。
+    probe = _probe_text(target)
+    if probe is None:
         fail(NOT_FOUND)
+    if probe is False:
+        fail(UNSUPPORTED_TYPE)
     try:
         st = target.stat()
         size = st.st_size
@@ -505,7 +598,8 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
     content: Optional[str] = None
     used_enc = ""
     try:
-        head = target.open("rb").read(4)
+        with target.open("rb") as fh:
+            head = fh.read(4)
     except OSError:
         fail(NOT_FOUND)
     for enc in _encoding_candidates(head):    # 按 BOM 决定顺序，再逐个试
@@ -521,6 +615,11 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
             continue
     if content is None:
         fail(UNDECODABLE)
+    # 2026-10-21 小杨 - 三堂会审修复：首 8KB 之外才出现 NUL 的"伪文本"
+    #   （前段纯 ASCII、后段二进制）能通过探测，却会在预览里渲染成空白/乱码；
+    #   解码后已持全文，O(n) 扫描零额外 IO，作为最后一道二进制闸门。
+    if "\x00" in content:
+        fail(UNSUPPORTED_TYPE)
 
     logger.info(f"[file_browse] read_text rel={rel} bytes={size} enc={used_enc}")
     return {
@@ -644,7 +743,9 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
                 "path": rel,                       # 复用唯一入口归一出的相对路径（口径与 tree 一致）
                 "name": abs_path.name,
                 "preview": _preview_of(abs_path),
-                "last_seen_at": mtime,
+                # 2026-10-21 小杨 - 三堂会审修复：该值一直是文件系统 mtime，
+                #   旧名 last_seen_at 会让前端误当"最近访问时间"。按真实语义命名。
+                "mtime": mtime,
             }
     # 2026-10-21 小杨 - FT1: ops 统一在循环结束后回填 —— seen[key] 建在"首次出现"处（最新一次动作），
     #   而 ops_by_path 在其后的旧记录里仍在累加；若在构造时快照 sorted(ops_by_path[key])，

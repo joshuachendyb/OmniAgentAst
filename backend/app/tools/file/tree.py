@@ -33,6 +33,11 @@ from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 from app.logger import logger
 from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
+# 2026-10-21 小杨 - 三堂会审修复：max_depth=10 对超大目录不设上限会吃光内存/把
+#   Agent 调用拖到超时；给"目录节点数 + 扫描条目数"双闸门，超限如实置 truncated。
+_MAX_DIRS = 20000
+_MAX_ENTRIES = 200000
+
 
 async def _get_directory_tree(
     dir_path: str, max_depth: int = 5,
@@ -50,10 +55,14 @@ async def _get_directory_tree(
         except OSError:
             return 0.0
 
+    state = {"dirs": 0, "entries": 0, "truncated": False}
+
     def _scan_dir(dir_str: str, depth: int, _visited: set) -> Tuple[Optional[Dict[str, Any]], int, int, int]:
         """单遍扫描：一次 scandir 同时建树+统计(fc/dc/bytes)。
         Windows 上 scandir 的 entry.is_dir(follow_symlinks=False) 零额外 syscall；
-        只对 symlink 目录查 realpath 成环（普通目录不成环，省掉每目录一次 resolve）。"""
+        只对 symlink 目录查 realpath 成环（普通目录不成环，省掉每目录一次 resolve）。
+        2026-10-21 小杨 - 三堂会审修复：统计口径与返回树对齐（dc 只计实际入树目录），
+        并加目录数/条目数上限，超限置 state["truncated"]，不再无限膨胀。"""
         if depth > max_depth:
             return None, 0, 0, 0
         try:
@@ -64,6 +73,10 @@ async def _get_directory_tree(
         fc = dc = ts = 0
         with ctx:
             for entry in ctx:
+                state["entries"] += 1
+                if state["entries"] > _MAX_ENTRIES:
+                    state["truncated"] = True
+                    break
                 if not include_hidden and entry.name.startswith('.'):
                     continue
                 try:
@@ -77,10 +90,18 @@ async def _get_directory_tree(
                             pass
                 except (PermissionError, OSError):
                     continue
-        dir_entries.sort(key=_mtime_key if sort_by == "mtime" else _name_key)
+        # 2026-10-21 小杨 - 三堂会审修复：mtime 语义是"最近修改优先"（前端排序习惯），
+        #   原实现升序 → 最旧的在最前；工具契约与用例均要求最新在前。
+        dir_entries.sort(
+            key=_mtime_key if sort_by == "mtime" else _name_key,
+            reverse=(sort_by == "mtime"),
+        )
 
         children: list = []
         for entry in dir_entries:
+            if state["dirs"] >= _MAX_DIRS:
+                state["truncated"] = True
+                break
             if entry.is_symlink():
                 try:
                     real = os.path.realpath(entry.path, strict=False)
@@ -98,7 +119,8 @@ async def _get_directory_tree(
                 fc += c_fc
                 dc += c_dc
                 ts += c_ts
-            dc += 1
+                dc += 1                      # 只统计真正入树的目录（原实现把被跳过/截断的也计入，与 tree 不一致）
+                state["dirs"] += 1
 
         node: Dict[str, Any] = {
             "name": os.path.basename(dir_str.rstrip('\\/')) or dir_str,
@@ -116,10 +138,13 @@ async def _get_directory_tree(
     tree, fc, dc, ts = await asyncio.to_thread(_run)
     if tree is None:
         return {"error_detail": "查询目录树失败", "params": {"path": dir_path}}
-    return {
+    result: Dict[str, Any] = {
         "tree": tree,
         "statistics": {"file_count": fc, "dir_count": dc, "total_size": ts},
     }
+    if state["truncated"]:
+        result["truncated"] = True
+    return result
 
 
 
@@ -128,6 +153,7 @@ def _build_tree_llm_data(
     dir_path: str = "", total: int = 0, detail: str = "", hint: str = "",
     user_include_hidden: Optional[bool] = None, user_sort_by: str = "",
     file_count: int = 0, dir_count: int = 0,
+    truncated: bool = False,
 ) -> Dict[str, Any]:
     """tree的llm_data构建函数 — 小沈 2026-07-03 — 小沈 2026-07-05 新增hint参数 — 小欧 2026-07-07 summary加file/dir明细"""
     _act_params = {"path": dir_path}
@@ -143,10 +169,11 @@ def _build_tree_llm_data(
             "duration_ms": duration_ms,
             "metrics": {},
         }
+    _trunc = "（目录节点数超限，已截断）" if truncated else ""
     return {
-        "summary": f"列目录{dir_path}，成功：{file_count}个文件，{dir_count}个目录",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列目录) — 小欧-2026-10-14
+        "summary": f"列目录{dir_path}，成功：{file_count}个文件，{dir_count}个目录{_trunc}",  # 2026-10-14 小欧 - summary 统一口径: 动词用 tool_zh(列目录) — 小欧-2026-10-14
         "action": {"tool": "tree", "tool_zh": "列目录", "params": _act_params},
-        "status": {"exec_code": "success", "message": f"成功：{file_count}个文件，{dir_count}个目录", "code": "", "detail": "", "hint": ""},
+        "status": {"exec_code": "success", "message": f"成功：{file_count}个文件，{dir_count}个目录{_trunc}", "code": "", "detail": "", "hint": ""},
         "duration_ms": duration_ms,
         "metrics": {"total": {"value": total, "text": f"{total}项"}},
     }
@@ -196,7 +223,7 @@ async def tree(
         file_count = tree_result["statistics"]["file_count"]
         dir_count = tree_result["statistics"]["dir_count"]
         total = file_count + dir_count
-        llm_data = _build_tree_llm_data("success", duration_ms, dir_path=dir_path, total=total, file_count=file_count, dir_count=dir_count, user_include_hidden=include_hidden, user_sort_by=sort_by)
+        llm_data = _build_tree_llm_data("success", duration_ms, dir_path=dir_path, total=total, file_count=file_count, dir_count=dir_count, user_include_hidden=include_hidden, user_sort_by=sort_by, truncated=bool(tree_result.get("truncated")))
         # ---- observation_formatter route -------------------------------------------
         # branch: #12 tree
         # trigger: "tree" in data and isinstance(data.get("tree"), dict)

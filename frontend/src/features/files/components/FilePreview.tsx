@@ -1,5 +1,7 @@
 // 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.10 + 9.8 新建：预览区（文本/图片/选区/过期检测） — 小杨-2026-10-21
 //   2026-10-21 小杨 - 文档[28]§9.8(O1/O2)：refresh 单请求化（mtime 同源同拍）+ 体量分段提示（token 数） — 小杨-2026-10-21
+//   2026-10-21 小杨 - 三堂会审修复：刷新改为"重载+提示"（旧 stale 横幅与自动重载自相矛盾）、
+//     图片补工具栏/新鲜字节数、空文件 0 行、行号列横向滚动时粘左、引用体传统一为字节 - 小杨-2026-10-21
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -9,7 +11,7 @@
  * O1（单请求刷新）：`/files/read` 现在一次带回正文与 mtime（同源同拍），
  *   刷新时比对新旧 mtime 即可判"可能已被修改"，**不再绕道再拉一次 tree**。
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Button,
@@ -33,17 +35,29 @@ import { Colors, Spacing } from '@/utils/stepStyles';
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
 import { highlightLine, langOf } from './highlight';
 
+/** 预览工具栏（文本/图片共用，避免两套头部样式漂移） */
+const TOOLBAR_STYLE: React.CSSProperties = {
+  marginBottom: Spacing.MD,
+  flexShrink: 0,
+  color: Colors.TEXT.SECONDARY,
+  display: 'flex',
+  alignItems: 'center',
+  gap: Spacing.SM,
+  flexWrap: 'wrap',
+};
+
 export interface FilePreviewProps {
   node: FileNode | null;
   /** 深链行号（&line=start-end），打开时滚动并高亮 */
   lineRange?: { start: number; end: number } | null;
-  /** 发送到输入框（F4） */
-  onSendFile: (content: string, node: FileNode) => void;
+  /** 发送到输入框（F4）—— size 为字节数（与 recent/tree 同口径） */
+  onSendFile: (content: string, node: FileNode, size: number) => void;
   /** 引用选区（F8） */
   onSendSelection: (
     content: string,
     node: FileNode,
-    lineRange: { start: number; end: number }
+    lineRange: { start: number; end: number },
+    size: number
   ) => void;
   /** 暴露给父级的刷新句柄（O10 三同刷用） */
   refreshRef?: React.MutableRefObject<(() => void) | null>;
@@ -58,10 +72,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
 }) => {
   const [text, setText] = useState<ReadResponse | null>(null);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
-  const [stale, setStale] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<{ start: number; end: number } | null>(null);
   const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  /** 2026-10-21 小杨 - 三堂会审修复：图片体量取本轮 blob 的字节数（原用树节点 size，刷新后不更新） */
+  const [imgBytes, setImgBytes] = useState<number | null>(null);
   /** 长行是否折行（默认关＝横向滚动，保住代码/路径的 token 结构；偏好持久化） */
   const [wrap, setWrap] = useState(
     () => localStorage.getItem('file_preview_wrap') === '1'
@@ -72,10 +87,29 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   };
   /** 2026-10-21 小杨 - md 双模（北京老陈拍板）：md 默认**美显**，头部右侧可切「文本」看源码 */
   const [mdBeauty, setMdBeauty] = useState(true);
-  // 切文件复位到美显（用户的源码态应只对当前这份文件生效）
+  // 2026-10-21 小杨 - 三堂会审 R5 修复（md 深链定位断裂）：深链 @md:12 带行号
+  //   打开必须落在**文本模式**（美显走 MarkdownSlot 无 preRef，行高亮静默失效）；
+  //   无行号打开才复位美显。lineRange 每次打开动作都是新引用 → 重复深链同口径
+  //   重新落位；用户手动切 Segmented 不动 lineRange，切换不受打扰。
   useEffect(() => {
-    setMdBeauty(true);
-  }, [node?.key]);
+    setMdBeauty(!lineRange);
+  }, [node?.key, lineRange]);
+  // 2026-10-21 小杨 - 三堂会审 R4 修复（逐行高亮无缓存）：原实现 hljs.highlight
+  //   在 render 内对每行调，任何 state 变化（选区/折行/stale）都全文件重算，
+  //   万行文件秒级卡。收敛到 useMemo：行数组与高亮 HTML 只随 (content, lang) 重算，
+  //   render 只查表。
+  const isMd = !!node && /\.(md|markdown)$/i.test(node.name);
+  const lang = node ? langOf(node.name) : null;
+  // 2026-10-21 小杨 - 三堂会审修复：空文件 '' 曾 split 出 [''] → 头部写 0 行却渲染出 1 行行号
+  const textContent = text?.content ?? '';
+  const lines = useMemo(
+    () => (textContent !== '' ? textContent.split('\n') : []),
+    [textContent]
+  );
+  const htmlLines = useMemo(
+    () => (lang ? lines.map((l) => (l ? highlightLine(l, lang) : '')) : null),
+    [lines, lang]
+  );
   const preRef = useRef<HTMLPreElement | null>(null);
   /** 上一次高亮的行元素（切换定位/刷新时先清掉，防"旧行永久黄底"） */
   const highlightedRef = useRef<HTMLElement | null>(null);
@@ -91,6 +125,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     //   （原实现只换内容：上一张图的像素尺寸会残留到新图加载前；上一份的选区也带着走）
     setSel(null);
     setImgSize(null);
+    setImgBytes(null);
     try {
       if (target.preview === 'text') {
         const r = await fileApi.readFile(target.key);
@@ -98,7 +133,6 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         setText(r);
         releaseImage(); // 2026-10-21 小杨 - 审计修复：切走时**必须 revoke**（原 setImgUrl(null) 直接丢 URL 字符串 → 泄漏）
         openedMtime.current = r.mtime;
-        setStale(false);
       } else if (target.preview === 'image') {
         const blob = await fileApi.loadImageBlob(target.key);
         if (seq !== reqSeq.current) return;
@@ -106,8 +140,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           if (old) URL.revokeObjectURL(old);
           return URL.createObjectURL(blob);
         });
+        setImgBytes(blob.size);
         setText(null);
-        setStale(false);
       } else {
         setText(null);
         releaseImage();
@@ -115,7 +149,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     } catch (e) {
       if (seq !== reqSeq.current) return;
       if (e instanceof ImageUnchanged) {
-        setStale(false); // 图片未变化（304）不算失败，保留旧图
+        // 图片未变化（304）不算失败，保留旧图
       } else {
         setErr(e instanceof Error ? e.message : '加载失败');
       }
@@ -147,8 +181,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     if (!node) {
       setText(null);
       releaseImage();
-      setStale(false);
       setErr(null);
+      setSel(null);
       return;
     }
     void load(node);
@@ -165,23 +199,27 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       if (node.preview === 'text') {
         const r = await fileApi.readFile(node.key);
         if (seq !== reqSeq.current) return; // 已被更新的请求取代
-        if (r.mtime && r.mtime !== openedMtime.current) setStale(true);
-        else setStale(false);
+        // 2026-10-21 小杨 - 三堂会审修复：内容既然已重载，就不再挂"可能已被修改"横幅
+        //   （旧实现一边换正文一边让横幅永久停留，自相矛盾）。变化用一次性提示告知。
+        const changed = !!r.mtime && r.mtime !== openedMtime.current;
         if (r.mtime) openedMtime.current = r.mtime;
         setText(r);
-      } else {
+        setSel(null); // 行号可能已变，旧选区作废
+        if (changed) showSuccess('文件已更新，已重新加载');
+      } else if (node.preview === 'image') {
         const blob = await fileApi.loadImageBlob(node.key);
         if (seq !== reqSeq.current) return;
         setImgUrl((old) => {
           if (old) URL.revokeObjectURL(old);
           return URL.createObjectURL(blob);
         });
-        setStale(false);
+        setImgBytes(blob.size);
       }
     } catch (e) {
       if (seq !== reqSeq.current) return;
-      if (e instanceof ImageUnchanged) setStale(false);
-      else setErr(e instanceof Error ? e.message : '刷新失败');
+      if (!(e instanceof ImageUnchanged)) {
+        setErr(e instanceof Error ? e.message : '刷新失败');
+      }
     }
   };
 
@@ -229,6 +267,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return () => window.clearTimeout(timer);
   }, [lineRange, text]);
 
+  /** 复制相对路径（三处复用：文本头 / 图片头 / 不可预览提示） */
+  const copyPath = (target: FileNode) => {
+    void copyTextToClipboard(target.key).then((r) => {
+      if (r.ok) showSuccess('路径已复制');
+      else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
+    });
+  };
+
   if (!node) {
     return <Empty description="从左侧选择一个文件" />;
   }
@@ -237,7 +283,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       <Alert
         type="error"
         showIcon
-        message={err}
+        message={`「${node.name}」${err}`}
         action={
           <Button size="small" onClick={() => void load(node)}>
             重试
@@ -247,42 +293,60 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     );
   }
   if (node.preview === 'image') {
-    return imgUrl ? (
-      <div style={{ textAlign: 'center' }}>
-        <img
-          src={imgUrl}
-          /* 2026-10-21 小杨 - 体验审计（#5）：高图撑爆预览区 → 限高 + contain */
-          style={{
-            maxWidth: '100%',
-            maxHeight: '70vh',
-            objectFit: 'contain',
-          }}
-          alt={node.name}
-          onLoad={(e) =>
-            setImgSize({
-              w: e.currentTarget.naturalWidth,
-              h: e.currentTarget.naturalHeight,
-            })
-          }
-        />
-        {/* 2026-10-21 小杨 - 体验审计：补**像素尺寸**（设计稿 2.4.3 要求，原实现缺失） */}
-        {imgSize && (
-          <div
-            style={{
-              color: Colors.TEXT.SECONDARY,
-              fontSize: chatTokens.fontSM,
-              marginTop: 4,
-            }}
+    /* 2026-10-21 小杨 - 三堂会审修复：图片原先没有工具栏（复制路径/刷新只能在文本下用），
+       且体量用树节点旧 size；现与文本共用同一头部与刷新链路 */
+    return (
+      <>
+        <div style={TOOLBAR_STYLE}>
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => copyPath(node)}
           >
-            {imgSize.w} × {imgSize.h} px · {formatBytes(node.size)}
+            复制路径
+          </Button>
+          <span style={{ color: Colors.TEXT.TERTIARY }}>
+            {/* 图片拿不到"本次读取"的 mtime（blob 无该字段），不展示树里的旧值以免误导 */}
+            {imgBytes != null ? formatBytes(imgBytes) : formatBytes(node.size)}
+            {imgSize ? ` · ${imgSize.w} × ${imgSize.h} px` : ''}
+          </span>
+          <span style={{ flex: 1 }} />
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            onClick={() => void refresh()}
+          >
+            刷新
+          </Button>
+        </div>
+        {imgUrl ? (
+          <div style={{ textAlign: 'center' }}>
+            <img
+              src={imgUrl}
+              /* 2026-10-21 小杨 - 体验审计（#5）：高图撑爆预览区 → 限高 + contain */
+              style={{
+                maxWidth: '100%',
+                maxHeight: '70vh',
+                objectFit: 'contain',
+              }}
+              alt={node.name}
+              onLoad={(e) =>
+                setImgSize({
+                  w: e.currentTarget.naturalWidth,
+                  h: e.currentTarget.naturalHeight,
+                })
+              }
+            />
+          </div>
+        ) : (
+          /* 2026-10-21 小杨 - 体验审计：图片加载用 Spin（Alert 语义是"需要你注意的问题"，不是"等待"） */
+          <div style={{ textAlign: 'center', padding: Spacing.LG }}>
+            {/* antd Spin 的 tip 仅在 nest/fullscreen 模式生效，裸用时警告且不显示文案；直接渲染说明 */}
+            <Spin />
+            <div style={{ marginTop: Spacing.SM }}>图片加载中…</div>
           </div>
         )}
-      </div>
-    ) : (
-      /* 2026-10-21 小杨 - 体验审计：图片加载用 Spin（Alert 语义是"需要你注意的问题"，不是"等待"） */
-      <div style={{ textAlign: 'center', padding: Spacing.LG }}>
-        <Spin tip="图片加载中…" />
-      </div>
+      </>
     );
   }
   if (node.preview === 'none') {
@@ -294,17 +358,9 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         type="info"
         showIcon
         message={`「${node.name}」暂不支持预览`}
-        description="该类型不在可预览范围（当前支持 .txt / .md 与常见图片）。你可以复制路径，或把它设为会话工作目录后再处理。"
+        description="该文件不是可预览的文本或图片（可能是二进制或无法读取）。你可以复制路径，或把它设为会话工作目录后再处理！"
         action={
-          <Button
-            size="small"
-            onClick={() => {
-              void copyTextToClipboard(node.key).then((r) => {
-                if (r.ok) showSuccess('路径已复制');
-                else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
-              });
-            }}
-          >
+          <Button size="small" onClick={() => copyPath(node)}>
             复制路径
           </Button>
         }
@@ -317,10 +373,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return <Skeleton active paragraph={{ rows: 10 }} title={false} />;
 
   const cost = refCost(text.content.length);
-  // 2026-10-21 小杨 - md 美显判定 + 代码语言判定（未知后缀 = null 落纯文本）
-  const isMd = /\.(md|markdown)$/i.test(node.name);
-  const lang = langOf(node.name);
-  const lines = text.content.split('\n');
+  // 2026-10-21 小杨 - isMd/lang/lines 已上移到 hooks 区（useMemo 依赖），此处只定形态开关
   const showMd = isMd && mdBeauty;
 
   /** 选区取行号：按 pre 内的 [data-ln] 行元素反查起止行 */
@@ -329,13 +382,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     if (!pre) return;
     const selRange = window.getSelection();
     if (!selRange || selRange.isCollapsed) return;
-    const lines = Array.from(
+    const lineEls = Array.from(
       pre.querySelectorAll('[data-ln]')
     ) as HTMLElement[];
-    const startEl = lines.find((l) => selRange.containsNode(l, true)) as
+    const startEl = lineEls.find((l) => selRange.containsNode(l, true)) as
       | HTMLElement
       | undefined;
-    const endEl = [...lines]
+    const endEl = [...lineEls]
       .reverse()
       .find((l) => selRange.containsNode(l, true)) as HTMLElement | undefined;
     if (!startEl || !endEl) return;
@@ -346,31 +399,23 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   };
 
   const selText = sel
-    ? text.content
-        .split('\n')
+    ? // 2026-10-21 小杨 - 三堂会审 R6 修复（\r 残留）：read 侧 newline="" 保真让纸面
+      //   行尾带 \r；**选区引用**只承载行内容语义，统一归一为 \n（整文件引用仍保真）
+      lines
         .slice(sel.start - 1, sel.end)
         .join('\n')
+        .replace(/\r\n/g, '\n')
     : '';
 
   return (
     <>
       {/* 2026-10-21 小杨 - 冗余层砍除（北京老陈拍板）：根 div 的 flex column 是无谓包裹
           （内容本就是 block 纵排，sticky footer 自带 flex:none），改为 Fragment 砍一层 */}
-      <div
-        style={{
-          marginBottom: Spacing.MD,
-          flexShrink: 0, // 2026-10-21 小杨 - flex 链：头部工具行不参与压缩
-          color: Colors.TEXT.SECONDARY,
-          display: 'flex',
-          alignItems: 'center',
-          gap: Spacing.SM,
-          flexWrap: 'wrap',
-        }}
-      >
+      <div style={TOOLBAR_STYLE}>
         {/* 2026-10-21 小杨 - 北京老陈拍板：**按钮在前、行数+时间垫后**（弱信息灰字，不按钮化） */}
         <Button
           size="small"
-          onClick={() => onSendFile(text.content, node)}
+          onClick={() => onSendFile(text.content, node, text.size)}
           title="引用整文件到对话（发送前可再编辑）"
           /* 2026-10-21 小杨 - 北京老陈拍板：引用=主动作，浅蓝底（antd blue-1/blue-3）；警示态保警示色 */
           style={
@@ -388,17 +433,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         <Button
           size="small"
           icon={<CopyOutlined />}
-          onClick={() => {
-            void copyTextToClipboard(node.key).then((r) => {
-              if (r.ok) showSuccess('路径已复制');
-              else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
-            });
-          }}
+          onClick={() => copyPath(node)}
         >
           复制路径
         </Button>
         <span style={{ color: Colors.TEXT.TERTIARY }}>
-          {text.total_lines} 行 · {(text.mtime ?? '').replace('T', ' ')}
+          {text.total_lines} 行 · {text.mtime}
         </span>
         <span style={{ flex: 1 }} />
         {/* 2026-10-21 小杨 - md 双模切换（北京老陈拍板：头部右侧「文本/美显」，md 默认美显）
@@ -433,18 +473,6 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           刷新
         </Button>
       </div>
-      {stale && (
-        <Alert
-          type="warning"
-          message="文件可能已被修改，是否刷新？"
-          style={{ marginBottom: Spacing.SM }}
-          action={
-            <Button size="small" onClick={() => void refresh()}>
-              刷新
-            </Button>
-          }
-        />
-      )}
       {showMd ? (
         // 2026-10-21 小杨 - md 美显（北京老陈拍板）：复用系统唯一 markdown 渲染入口
         //   （聊天/设置页同源 MarkdownSlot），J5 文件引用链接 / 表格 / 代码块全吃到；
@@ -508,6 +536,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
                   paddingRight: `${Math.max(2, String(text.total_lines).length / 2)}ch`,
                   color: Colors.TEXT.TERTIARY,
                   userSelect: 'none',
+                  // 2026-10-21 小杨 - 三堂会审修复：横向滚动时行号会跟着正文滑走，
+                  //   图钉在 pre 左侧（pre 是最近滚动容器），背景与纸面同色避免透字
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 1,
+                  background: Colors.BG.SECONDARY,
                 }}
               >
                 {i + 1}
@@ -522,9 +556,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
                   wordBreak: wrap ? 'break-word' : 'normal',
                 }}
                 dangerouslySetInnerHTML={
-                  lang
-                    ? { __html: ln ? highlightLine(ln, lang) : '' }
-                    : undefined
+                  lang ? { __html: htmlLines?.[i] ?? '' } : undefined
                 }
               >
                 {lang ? undefined : ln}
@@ -557,7 +589,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           <Button
             type="primary"
             size="small"
-            onClick={() => onSendSelection(selText, node, sel)}
+            onClick={() =>
+              onSendSelection(
+                selText,
+                node,
+                sel,
+                new TextEncoder().encode(selText).length
+              )
+            }
           >
             引用选区 L{sel.start}-{sel.end} 到对话
           </Button>

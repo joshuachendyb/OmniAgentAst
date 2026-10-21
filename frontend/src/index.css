@@ -624,3 +624,47 @@
 .hljs-punctuation {
   color: inherit;
 }
+
+/* 2026-10-21 小杨 - 文件树行交互态：行内 inline 背景会压掉 :hover，故状态色统一落 CSS；
+   checked=多选深灰，active=预览浅蓝，hover 只在未选中时变浅灰/浅蓝加深 */
+.files-tree-row {
+  border-left: 2px solid transparent;
+}
+.files-tree-row:hover {
+  background: #f0f0f0;
+}
+.files-tree-row[data-active='1'] {
+  background: #e6f4ff;
+  border-left-color: #1677ff;
+}
+.files-tree-row[data-active='1']:hover {
+  background: #d6e9ff;
+}
+.files-tree-row[data-checked='1'] {
+  background: #4b4b4b;
+  border-left-color: #4b4b4b;
+  color: #fff;
+}
+.files-tree-row[data-checked='1']:hover {
+  background: #4b4b4b;
+}
+.files-tree-row:focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: -2px;
+}
+/* 2026-10-21 小杨 - 分隔条：原 transparent 在浅底上完全不可见（找不到拖拽点），
+   常态画 1px 中线，hover/focus 变实心灰 */
+.files-splitter {
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    #e5e7eb 2px,
+    #e5e7eb 3px,
+    transparent 3px
+  );
+}
+.files-splitter:hover,
+.files-splitter:focus-visible {
+  background: #d9d9d9;
+  outline: none;
+}

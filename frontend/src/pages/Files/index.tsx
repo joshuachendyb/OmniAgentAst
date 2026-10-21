@@ -1,6 +1,8 @@
 // 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.11 + 9.9.2 新建：文件管理页（工具条 + 树 + 预览 + 深链定位） — 小杨-2026-10-21
 //   2026-10-21 小杨 - 文档[28]§9.9.2(O8/O10)：页级兜底（root 失败 → Result + 重试）+ 工具条 ↻ 三同刷（树 + ● + 预览） — 小杨-2026-10-21
 //   2026-10-21 小杨 - 文档[28]§10.2(S1-9)：● 数据改用共享 hook useRecentFiles（与 FT1/FQ1 同源，不再各拉一次） — 小杨-2026-10-21
+//   2026-10-21 小杨 - 三堂会审修复：树三态合为状态机、展开集合唯一真源、定位输入自持状态、
+//     分栏宽度内聚（拖拽不重绘树/预览）、主题常量上提、border-box 消 16px 溢出、引用体量统一字节 - 小杨-2026-10-21
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
@@ -61,6 +63,158 @@ const mergeKids = (
     return n;
   });
 
+/** 2026-10-21 小杨 - 三堂会审修复：树的加载态升级为单一状态机
+ *  （原 treeLoading/treeReady/treeErr 三个布尔可组合出"就绪且加载中且报错"的非法态） */
+type TreeStatus =
+  | { phase: 'loading' }
+  | { phase: 'ready' }
+  | { phase: 'error'; message: string };
+
+const MIN_LEFT_W = 280;
+const MAX_LEFT_W = 600;
+
+/** 2026-10-21 小杨 - 控件规格统一（北京老陈拍板·三堂会审）：设置页同款常量
+ *  —— 提升到模块级，避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算 */
+const PAGE_THEME = {
+  token: {
+    controlHeight: SETTINGS_CONTROL_HEIGHT,
+    controlHeightSM: SETTINGS_CONTROL_HEIGHT,
+    borderRadius: SETTINGS_RADIUS,
+    borderRadiusSM: SETTINGS_RADIUS,
+  },
+} as const;
+
+/** 定位输入（自带草稿与错误态）：输入过程只重绘本组件，不惊动树/预览 */
+const LocateBox: React.FC<{
+  onLocate: (rel: string) => Promise<boolean>;
+}> = ({ onLocate }) => {
+  const [value, setValue] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <>
+      <Input
+        placeholder="定位路径（回车）"
+        value={value}
+        onChange={(e) => {
+          setValue(e.target.value);
+          if (err) setErr(null);
+        }}
+        onPressEnter={() => {
+          const rel = value.trim();
+          if (!rel) return;
+          void onLocate(rel).then((ok) =>
+            setErr(ok ? null : `未找到「${rel}」`)
+          );
+        }}
+        style={{ width: 200 }}
+        aria-label="定位路径"
+      />
+      {err && (
+        <span
+          role="alert"
+          style={{ color: Colors.WARNING, fontSize: chatTokens.fontSM }}
+        >
+          {err}
+        </span>
+      )}
+    </>
+  );
+};
+
+/** 左右分栏（宽度状态内聚）：拖拽只重绘本组件，树/预览 element 引用不变 → React 跳过其子树 */
+const SplitPane: React.FC<{
+  left: React.ReactNode;
+  right: React.ReactNode;
+}> = ({ left, right }) => {
+  const [leftW, setLeftW] = useState(320);
+  const cleanupRef = useRef<(() => void) | null>(null);
+  useEffect(() => () => cleanupRef.current?.(), []);
+
+  const startDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = leftW;
+    const move = (ev: MouseEvent) =>
+      setLeftW(
+        Math.min(MAX_LEFT_W, Math.max(MIN_LEFT_W, w0 + ev.clientX - x0))
+      );
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      cleanupRef.current = null;
+    };
+    cleanupRef.current = up;
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 0,
+        alignItems: 'stretch',
+        flex: 1,
+        minHeight: 0,
+      }}
+    >
+      <div
+        style={{
+          width: leftW,
+          minWidth: MIN_LEFT_W,
+          maxWidth: MAX_LEFT_W,
+          overflow: 'auto',
+          paddingRight: Spacing.SM,
+        }}
+      >
+        {left}
+      </div>
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整目录宽度"
+        aria-valuenow={leftW}
+        aria-valuemin={MIN_LEFT_W}
+        aria-valuemax={MAX_LEFT_W}
+        tabIndex={0}
+        className="files-splitter"
+        onMouseDown={startDrag}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            setLeftW((w) => Math.max(MIN_LEFT_W, w - 16));
+          } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setLeftW((w) => Math.min(MAX_LEFT_W, w + 16));
+          }
+        }}
+        style={{
+          width: 6,
+          cursor: 'col-resize',
+          flexShrink: 0,
+          borderRadius: 3,
+        }}
+      />
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'auto',
+          paddingLeft: Spacing.SM,
+        }}
+      >
+        {right}
+      </div>
+    </div>
+  );
+};
+
 const FilesPage: React.FC = () => {
   const nav = useNavigate();
   const [params] = useSearchParams();
@@ -70,11 +224,13 @@ const FilesPage: React.FC = () => {
   const [projectRoot, setProjectRoot] = useState('');
   const [rootErr, setRootErr] = useState<string | null>(null);
   const [tree, setTree] = useState<FileNode[]>([]);
-  const [treeReady, setTreeReady] = useState(false); // 2026-10-21 小杨 - 深链需等树就绪
-  const [treeLoading, setTreeLoading] = useState(true); // 2026-10-21 小杨 - 三态分离：加载中/空/错
-  const [locateErr, setLocateErr] = useState<string | null>(null); // 定位失败的页内留痕
+  /** 2026-10-21 小杨 - 深链需等树就绪；加载/就绪/错误三态合一 */
+  const [treeStatus, setTreeStatus] = useState<TreeStatus>({
+    phase: 'loading',
+  });
+  /** 深链失败留痕（与定位框自身的草稿/错误无关，互不牵连） */
+  const [linkErr, setLinkErr] = useState<string | null>(null);
   const [narrowTab, setNarrowTab] = useState<'tree' | 'preview'>('tree'); // 窄屏 Tab
-  const [treeErr, setTreeErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<FileNode | null>(null);
   const [lineRange, setLineRange] = useState<{
     start: number;
@@ -82,12 +238,15 @@ const FilesPage: React.FC = () => {
   } | null>(null);
   const [loadedKeys, setLoadedKeys] = useState<string[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [leftW, setLeftW] = useState(320);
-  const [locate, setLocate] = useState('');
   /** 2026-10-21 小杨 - 体验审计：**就地收集**的本地台账（store 为真源，这里只为计数与去重展示） */
   const [collectedKeys, setCollectedKeys] = useState<string[]>([]);
-  /** #12 批量引用：树 multiple 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
+  /** #12 批量引用：树 checked 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
   const [multiFiles, setMultiFiles] = useState<FileNode[]>([]);
+
+  /** 从单一状态机派生的视图布尔（不作为独立 state，避免非法组合） */
+  const treeReady = treeStatus.phase === 'ready';
+  const treeLoading = treeStatus.phase === 'loading';
+  const treeErr = treeStatus.phase === 'error' ? treeStatus.message : null;
 
   /** tree 的 ref 镜像（异步链里读最新值，不能只靠 state 闭包） */
   const treeRef = useRef<FileNode[]>([]);
@@ -116,18 +275,15 @@ const FilesPage: React.FC = () => {
   }, []);
 
   const loadTree = useCallback(async () => {
-    setTreeErr(null);
-    setTreeLoading(true);
+    setTreeStatus({ phase: 'loading' });
     try {
       const r = await fileApi.fetchTree('');
       treeRef.current = r.nodes;
       setTree(r.nodes);
       setLoadedKeys([]);
-      setTreeReady(true); // 2026-10-21 小杨 - 审计修复：深链 effect 需等树就绪
+      setTreeStatus({ phase: 'ready' });
     } catch {
-      setTreeErr('目录加载失败，请重试');
-    } finally {
-      setTreeLoading(false);
+      setTreeStatus({ phase: 'error', message: '目录加载失败，请重试' });
     }
   }, []);
 
@@ -142,8 +298,8 @@ const FilesPage: React.FC = () => {
   const expandToPath = useCallback(
     async (rel: string): Promise<FileNode | null> => {
       const segs = rel.split('/').filter(Boolean);
+      const dirKeys: string[] = [];
       let cur = '';
-      const expanded = [...expandedKeys];
       for (const s of segs) {
         cur = cur ? `${cur}/${s}` : s;
         let hit = findNode(treeRef.current, cur);
@@ -157,12 +313,20 @@ const FilesPage: React.FC = () => {
           hit = findNode(treeRef.current, cur);
           if (!hit) return null;
         }
-        if (!expanded.includes(cur)) expanded.push(cur);
+        if (hit.type === 'dir') dirKeys.push(cur);
       }
-      setExpandedKeys(expanded);
-      return findNode(treeRef.current, rel);
+      const target = findNode(treeRef.current, rel);
+      if (!target) return null;
+      // 2026-10-21 小杨 - 三堂会审修复：展开集合由本页唯一持有（原先树内还有一份
+      //   互不相通的 expanded state → 深链/定位只改页面 state，树纹丝不动）。
+      //   用函数式追加，不依赖闭包里的旧 expandedKeys。
+      setExpandedKeys((prev) => {
+        const add = dirKeys.filter((k) => !prev.includes(k));
+        return add.length > 0 ? [...prev, ...add] : prev;
+      });
+      return target;
     },
-    [expandedKeys]
+    []
   );
 
   /**
@@ -182,7 +346,7 @@ const FilesPage: React.FC = () => {
       if (!hit) return false;
       if (hit.type === 'dir') {
         // 目录：只展开定位（左侧树已展开到该目录），右侧保持上一份内容
-        setSelected(null);
+        // 2026-10-21 小杨 - 三堂会审修复：原实现顺手清空预览，用户定位目录时正在读的文件被无端关掉
         return true;
       }
       setSelected(hit);
@@ -209,8 +373,9 @@ const FilesPage: React.FC = () => {
       );
       if (!ok) {
         // 页内留痕（不只弹一下 toast）：否则用户以为"点了没反应"
-        setLocate(rel);
-        setLocateErr(`未找到「${rel}」，请检查路径或从左侧树中选择`);
+        setLinkErr(`未找到「${rel}」，请检查路径或从左侧树中选择`);
+      } else {
+        setLinkErr(null);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,22 +469,6 @@ const FilesPage: React.FC = () => {
     refreshPreviewRef.current?.();
   }, [loadTree, reloadRecent]);
 
-  /** 左右拖拽（280~600px；窄屏堆叠时关闭） */
-  const startDrag = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const x0 = e.clientX;
-    const w0 = leftW;
-    const move = (ev: MouseEvent) => {
-      setLeftW(Math.min(600, Math.max(280, w0 + ev.clientX - x0)));
-    };
-    const up = () => {
-      window.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', up);
-    };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
   /**
    * 树 / 预览两个**内容单元**（2026-10-21 小杨 - 体验审计）
    *   窄屏作为 Tabs 的 children（单一真源）；宽屏左右分栏。原实现 Tabs 的 children 是 null、
@@ -341,28 +490,26 @@ const FilesPage: React.FC = () => {
     <div
       style={{
         display: 'flex',
-        justifyContent: 'center',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: Spacing.SM,
         padding: Spacing.LG,
+        color: Colors.TEXT.SECONDARY,
       }}
     >
-      <Spin tip="正在加载目录…" />
+      <Spin />
+      <span>正在加载目录…</span>
     </div>
   ) : (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         <FilesTree
           nodes={tree}
-          selectedKey={selected?.key ?? ''}
-          /* #12：预览单选 + 批量勾选共用一套受控键（去重），保证两类选择都有视觉反馈 */
-          selectedKeys={Array.from(
-            new Set(
-              [
-                ...(selected ? [selected.key] : []),
-                ...multiFiles.map((n) => n.key),
-              ].filter(Boolean)
-            )
-          )}
+          activeKey={selected?.key ?? ''}
+          checkedKeys={multiFiles.map((n) => n.key)}
           recentSet={recentSet}
+          expandedKeys={expandedKeys}
+          onExpandedKeys={setExpandedKeys}
           loadedKeys={loadedKeys}
           onLoadedKeys={setLoadedKeys}
           onSelectFile={(n) => {
@@ -401,36 +548,25 @@ const FilesPage: React.FC = () => {
         node={selected}
         lineRange={lineRange}
         refreshRef={refreshPreviewRef}
-        onSendFile={(content, node) =>
-          pushRef('file', node.name, node.key, content, content.length)
+        onSendFile={(content, node, size) =>
+          pushRef('file', node.name, node.key, content, size)
         }
-        onSendSelection={(content, node, range) =>
+        onSendSelection={(content, node, range, size) =>
           pushRef(
             'selection',
             `${node.name} L${range.start}-${range.end}`,
             node.key,
             content,
-            content.length,
+            size,
             range
           )
         }
       />
     );
 
-  /** 2026-10-21 小杨 - 控件规格统一（北京老陈拍板·三堂会审）：设置页同款
-      ConfigProvider 落地——高 28/圆角 4；small 控件同压 28（页内不再 24/32 两档参差） */
-  const pageTheme = {
-    token: {
-      controlHeight: SETTINGS_CONTROL_HEIGHT,
-      controlHeightSM: SETTINGS_CONTROL_HEIGHT,
-      borderRadius: SETTINGS_RADIUS,
-      borderRadiusSM: SETTINGS_RADIUS,
-    },
-  } as const;
-
   if (rootErr) {
     return (
-      <ConfigProvider theme={pageTheme}>
+      <ConfigProvider theme={PAGE_THEME}>
         <Result
           status="error"
           title="工作目录不可用"
@@ -442,7 +578,7 @@ const FilesPage: React.FC = () => {
   }
 
   return (
-    <ConfigProvider theme={pageTheme}>
+    <ConfigProvider theme={PAGE_THEME}>
       <div
         style={{
           padding: Spacing.MD,
@@ -455,6 +591,9 @@ const FilesPage: React.FC = () => {
           //   （真实 chrome=Header43+Content padding10≈53px），改 height:100% 由
           //   Layout Content(flex:1+minHeight:0) 给准高度，贴合到底不空截。
           height: '100%',
+          // 2026-10-21 小杨 - 三堂会审修复：height:100% + padding 在 content-box 下多出
+          //   上下各 8px，整页比可用高度高 16px（底部被裁）；border-box 让 padding 计入高度
+          boxSizing: 'border-box',
           overflow: 'hidden',
         }}
       >
@@ -544,23 +683,7 @@ const FilesPage: React.FC = () => {
             </>
           )}
           <span style={{ flex: 1 }} />
-          <Input
-            placeholder="定位路径（回车）"
-            value={locate}
-            onChange={(e) => {
-              setLocate(e.target.value);
-              if (locateErr) setLocateErr(null);
-            }}
-            onPressEnter={() => {
-              if (!locate.trim()) return;
-              void (async () => {
-                const ok = await openPath(locate.trim());
-                if (!ok) setLocateErr(`未找到「${locate.trim()}」`);
-              })();
-            }}
-            style={{ width: 200 }}
-            aria-label="定位路径"
-          />
+          <LocateBox onLocate={openPath} />
           <Button onClick={refreshAll} title="重新加载目录与足迹">
             重新加载
           </Button>
@@ -610,14 +733,14 @@ const FilesPage: React.FC = () => {
           </div>
         )}
 
-        {locateErr && (
+        {linkErr && (
           <Alert
             type="warning"
             showIcon
-            message={locateErr}
+            message={linkErr}
             style={{ marginBottom: Spacing.SM }}
             action={
-              <Button size="small" onClick={() => setLocateErr(null)}>
+              <Button size="small" onClick={() => setLinkErr(null)}>
                 知道了
               </Button>
             }
@@ -636,79 +759,7 @@ const FilesPage: React.FC = () => {
             style={{ flex: 1, minWidth: 0, minHeight: 0 }}
           />
         ) : (
-          <div
-            style={{
-              display: 'flex',
-              gap: 0,
-              alignItems: 'stretch',
-              flex: 1,
-              minHeight: 0,
-            }}
-          >
-            {/* 左：树 */}
-            <div
-              style={{
-                width: leftW,
-                minWidth: 280,
-                maxWidth: 600,
-                overflow: 'auto',
-                paddingRight: Spacing.SM,
-              }}
-            >
-              {treePane}
-            </div>
-
-            {/* 分隔条：role="separator" + aria-valuenow + 方向键调节（键盘/触屏可达） */}
-            <div
-              role="separator"
-              aria-orientation="vertical"
-              aria-label="调整目录宽度"
-              aria-valuenow={leftW}
-              aria-valuemin={280}
-              aria-valuemax={600}
-              tabIndex={0}
-              onMouseDown={startDrag}
-              onKeyDown={(e) => {
-                if (e.key === 'ArrowLeft') {
-                  e.preventDefault();
-                  setLeftW((w) => Math.max(280, w - 16));
-                } else if (e.key === 'ArrowRight') {
-                  e.preventDefault();
-                  setLeftW((w) => Math.min(600, w + 16));
-                }
-              }}
-              style={{
-                width: 6,
-                cursor: 'col-resize',
-                flexShrink: 0,
-                background: 'transparent',
-                borderRadius: 3,
-                transition: 'background 120ms',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = Colors.BORDER.DEFAULT;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'transparent';
-              }}
-            />
-
-            {/* 右：预览 */}
-            <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                // 2026-10-21 小杨 - 空白根治（北京老陈拍板）：右栏成 flex column，
-                //   FilePreview 的 pre 以 flex:1 吃满剩余高度（滚动在 pre 内）
-                display: 'flex',
-                flexDirection: 'column',
-                overflow: 'auto',
-                paddingLeft: Spacing.SM,
-              }}
-            >
-              {previewPane}
-            </div>
-          </div>
+          <SplitPane left={treePane} right={previewPane} />
         )}
       </div>
     </ConfigProvider>

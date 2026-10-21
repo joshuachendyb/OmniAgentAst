@@ -61,7 +61,8 @@ export interface RecentFile {
   path: string;
   name: string;
   preview: string;
-  last_seen_at: string;
+  /** 文件最后修改时间（后端 mtime；原字段名 last_seen_at 语义错位） */
+  mtime: string;
   /** FT1：该文件在最近窗口内被哪些工具动过（后端注册名，字母序） */
   ops: string[];
 }
@@ -97,7 +98,7 @@ export const fileApi = {
     path = '',
     /** 2026-10-21 小杨 - 北京老陈拍板：首屏 5 层（~0.2s 扫盘+gzip 响应 ~0.4MB 秒开）；展开到深层目录由 Files 页按需 else fetchTree(key,10) 补拉 */
     maxDepth = 5,
-    maxNodes = 100000,
+    maxNodes = 100000
   ): Promise<TreeResponse> =>
     (
       await api.get<TreeResponse>('/files/tree', {
