@@ -1,3 +1,27 @@
+v1.4.1
+更新时间: 2026-10-21 14:15:56 - 小杨-2026-10-21
+## v1.4.0以来 变更汇总(9个commit: feat2/perf1/docs6) - 小杨-2026-10-21
+[2026-10-21 14:15:56 小杨] 范围=v1.4.0以来全部commit(9个); 主线: 文件管理页重构([28]树/预览/批量勾选/控件规范)+后端文件树单遍扫描+文本内容实探闸+gzip+聊天域引用接收与tooltip收敛+doc[41]v1.67~v1.71六条
+
+### 1.4.1 文件管理页重构([28]落地)
+[自写递归树] FilesTree 弃 antd Tree 全量重写: block流递归渲染(无switcher列)+目录点击展开/收起+懒加载短路(children已有/loadedKeys直接记不再网取)+Ctrl逐个/Shift扁平序区间批量勾选(只收文件)+自绘fixed右键菜单(插入引用/设为会话工作目录/复制路径)+选中态深灰#4b4b4b+白字(原BG.TERTIARY太浅看不清, 北京老陈拍板) - 小杨 2026-10-21
+[预览布局] 按钮**前置**行数+时间垫后(引用N tok/复制路径/182行·mtime灰弱文本, 北京老陈两轮拍板顺序)+引用按钮浅蓝底#e6f4ff(主动作标识)+pre撤拍脑袋calc(100vh-320px)限高改flex:1吃满右栏剩余高度(底部大空白根治)+右栏改flex column - 小杨 2026-10-21
+[文本实探扩面] /files/read 后端预览与读类型闸: 已知后缀零IO短路+未知后缀/无后缀文件(Dockerfile/LICENSE)首8KB查NUL实探, /files/read 端撤"后缀白名单"闸改同NUL实探(代码/.py/.ts/无后缀全部可预览可读; 二进制拒绝语义保持) - 小杨 2026-10-21
+[控件规格] Files 页套设置页同款 ConfigProvider: 复用 SETTINGS_CONTROL_HEIGHT=28/SETTINGS_RADIUS=4 令牌(DRY零新常量), controlHeightSM同压28(页内24/32两档参差根除)/borderRadiusSM=4(定位框6px圆角根除, 北京老陈"全系统规范"拍板) - 小杨 2026-10-21
+[页面高度链] Files 根撤calc(100vh-100px)拍脑袋改height:100%由Layout Content(flex:1+minHeight:0)给准高度, 页面底部不再空截 - 小杨 2026-10-21
+
+### 1.4.2 后端性能与闸门
+[树单遍] app/tools/file/tree.py 重写: 单遍os.scandir同步建树+统计(fc/dc/bytes一次成, 删_count_tree_fs二次扫描)+follow_symlinks=False+仅symlink目录realtime查环, 全仓depth10实测776ms/57120节点(原2.4s+) - 小杨 2026-10-21
+[realpath热点] browse_service._scan_dir 逐条realpath越界检查改仅对de.is_symlink()做(搞成E:\test_dir树扫描挂死111s的元凶, py-spy实锤) - 小杨 2026-10-21
+[max_nodes] /files/tree max_nodes 去 le 闸(仅ge=1, 北京老陈令"不许加限制"), MAX_TREE_NODES 5000→100000/MAX_TREE_DEPTH 5→10; 前端file.api.ts maxDepth=5首屏+depth10补拉(childfetch)并 maxNodes=100000 - 小杨 2026-10-21
+[gzip] main.py 挂 GZipMiddleware(minimum_size=2048): depth5HTTP实测3440KB→213KB/467ms - 小杨 2026-10-21
+
+### 1.4.3 聊天域落地与tooltip收敛
+[引用接收] ChatInput/InputCore/SessionLayout/SessionPanelRegistry/useChatPanels/composerRefStore 接收集群(itwTokens并入InputCore后删atTokens)+FileTrailPanel引用列表 - 小杨 2026-10-21
+[双tooltip收敛] Layout侧栏(知识库/Logo/移动菜单钮/对话与任务)/MetricItem/SubmitActions 剥antd Tooltip浮泡只留原生title方框提示(北京老陈拍板"只留方框") - 小杨 2026-10-21
+
+### 1.4.4 docs([41]信任模式 v1.67→v1.71 六条)
+2de5092cf(v1.71 跨章口径收口DDL的scope取值一致) / daa692646(v1.70 第六七章前端逐diff与实施顺序) / fedf0c8b2(v1.69 第4章补4.0后端代码清单) / 474eeddb0(v1.68 第四五章后端逐diff与实施顺序) / 107ef9409(v1.67 第4至7章按新骨架重置) / b15302aeb(v1.66 §2.9与§4.A关系澄清) - 小欧 2026-10-21
 v1.4.0
 更新时间: 2026-10-20 18:13:20 - 小欧-2026-10-20
 ## v1.3.3以来 变更汇总(18个commit: fix4/feat3/docs6/refactor5) - 小欧-2026-10-20
