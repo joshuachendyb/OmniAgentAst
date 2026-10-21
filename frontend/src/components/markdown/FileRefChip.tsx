@@ -1,6 +1,8 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：chip + 预处理 + 形态校验三件同文件；
 //   生成链接的 label 去 📄 emoji（chip 自带图标，防双重图标）；
 //   深链改走 buildFileDeepLink（唯一拼装点）— 小杨-2026-10-21
+// 2026-10-22 小杨 - 预处理增 ~~~ 围栏与行内代码跳过、路径含方括号的惰性匹配与 label 转义；
+//   chip 补键盘可达（role=link + tabIndex + Enter/Space）— 小杨-2026-10-22
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -18,7 +20,7 @@ import { FileOutlined } from '@ant-design/icons';
 import { useNavigate, useInRouterContext } from 'react-router-dom';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
-import { buildFileDeepLink } from '@/utils/fileDeepLink';
+import { buildFileDeepLink, encodePathParam } from '@/utils/fileDeepLink';
 
 export interface FileRefChipProps {
   relPath: string;
@@ -45,7 +47,25 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
 }) => (
   <Tooltip title={relPath}>
     {/* 7.0.3 chip 基线：colorPrimaryBg 底 + BORDER.LIGHT 边 + Radius 6 + SM 内边距 + STRONG 字 */}
-    <span style={chipStyle} onClick={onGo}>
+    <span
+      role="link"
+      tabIndex={0}
+      aria-label={`打开文件 ${relPath}${
+        lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
+      }`}
+      style={{
+        ...chipStyle,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: Spacing.XS,
+      }}
+      onClick={onGo}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        onGo();
+      }}
+    >
       <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} /> {label}
       {lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
     </span>
@@ -109,14 +129,31 @@ export const isViewablePath = isValidRelPath;
 
 const convertRuns = (text: string): string =>
   text.replace(
-    /\[\[文件:([^\]#|]+)(?:#L(\d+)(?:-L?(\d+))?)?\]\]/g,
+    // 路径可含 ']'（如 a[1].md）：用惰性匹配锚定结尾的 ']]'，别把 ']' 当路径终止符
+    /\[\[文件:([^|]+?)(?:#L(\d+)(?:-L?(\d+))?)?\]\]/g,
     (_m, p, a, b) => {
       if (!isValidRelPath(p)) return _m; // 非法即留原文，不造假链接
       const lines = a ? `&line=${a}${b ? `-${b}` : ''}` : '';
+      // label 里的方括号要转义，否则 markdown 链接解析被截断；渲染出来仍是原文件名
+      const label = p.replace(/([[\]])/g, '\\$1');
       // label 不带图标 emoji —— chip 自带 FileOutlined（防双重图标）
-      return `[${p}](/file-ref?path=${encodeURIComponent(p)}${lines})`;
+      return `[${label}](/file-ref?path=${encodePathParam(p)}${lines})`;
     }
   );
+
+/** 行内代码段原样保留，避免把示例里的 [[文件:]] 转成可点链接 */
+const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
+const convertOutsideInline = (line: string): string => {
+  let out = '';
+  let last = 0;
+  INLINE_CODE_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = INLINE_CODE_RE.exec(line)) !== null) {
+    out += convertRuns(line.slice(last, m.index)) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + convertRuns(line.slice(last));
+};
 
 /**
  * 预处理：只转围栏外的标记，块内标记原样保留（代码块内不生效）
@@ -127,19 +164,24 @@ const convertRuns = (text: string): string =>
  *   （`$`）就收尾 → 围栏段只切出 "```" 一行，其后的标记仍落在"非围栏段"里被转换
  *   → **围栏内的 [[文件:]] 照样被转**（"代码块内不生效"这条硬要求失效）。
  *   改为**行级状态机**：逐行判"是否围栏行"，围栏内整行跳过 —— 语义直白、无正则歧义。
+ *   2026-10-21 小杨 - 同时支持 ~~~ 围栏与行内代码；按围栏字符+长度配对关闭 — 小杨-2026-10-21
  */
 export const preprocessFileRefs = (text: string): string => {
   const lines = text.split('\n');
-  let inFence = false;
+  let fence: { char: string; len: number } | null = null;
   return lines
     .map((line) => {
-      if (/^\s*```/.test(line)) {
-        // 围栏行本身不动；一行内 ``` 出现奇数次 = 开关状态翻转一次
-        const marks = (line.match(/```/g) || []).length;
-        if (marks % 2 === 1) inFence = !inFence;
+      const mark = /^\s*(`{3,}|~{3,})/.exec(line);
+      if (fence) {
+        if (mark && mark[1][0] === fence.char && mark[1].length >= fence.len)
+          fence = null;
         return line;
       }
-      return inFence ? line : convertRuns(line);
+      if (mark) {
+        fence = { char: mark[1][0], len: mark[1].length };
+        return line;
+      }
+      return convertOutsideInline(line);
     })
     .join('\n');
 };

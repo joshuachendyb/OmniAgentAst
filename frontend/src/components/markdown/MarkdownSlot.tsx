@@ -56,10 +56,14 @@ const MarkdownSlot: React.FC<MarkdownSlotProps> = ({
   //   ⚠ Hook 必须在所有早退之前 —— 条件调用 Hook 是 React 运行时错误。
   //   用 useDeferredPreprocess（流式期节流），不用裸 useMemo（每 chunk 全量跑正则）。
   const safeText = useDeferredPreprocess(text);
+  // 2026-10-22 小欧 - 框线图归一化(ASCII art)已实现于 ./asciiArt.ts(弹性表格布局重排:
+  //   竖线列全局对齐、每行严格等宽、不改正文文字), 但**暂未接入本渲染层**(北京老陈 2026-10-22 令:
+  //   先不接上、文件留着)。接入点在本行下方(import normalizeMarkdownArt + artText 替换 safeText),
+  //   接入时须同步跑 src/tests/unit/markdown-ascii-art*.test.ts 与 npm run check:full。
   if (!markdown) return <>{text}</>;
   // 2026-10-06 小欧(三堂会审 #5): MD_IMPL=1 的 MarkdownBody 根本不解析表格(无表格支持),
   //   fixedTable 在该分支无处可施。此前无任何说明, 切 MD_IMPL 会让调用方以为生效了。
-  //   显式在此标注该分支的局限, 避免"静默失效"。
+  //   现于此处标注该分支的局限, 避免"静默失效"。
   if (MD_IMPL === 1) return <MarkdownBody text={safeText} />;
   return (
     <React.Suspense fallback={text}>

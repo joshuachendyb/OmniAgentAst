@@ -4,19 +4,19 @@
 //   不套代码块的边框/灰底/限高(靠 node 里的 hast className 判定); ③表格拆出 MdTable 支持
 //   fixedTable(仅安全Tab 分类表用, 聊天侧默认 auto 观感不变); ④th/td 加 overflowWrap。
 //   — 小欧-2026-10-06
-// 编辑历史: 2026-10-05 小欧 - 新增: thought 思考段 Markdown 渲染器(文档[9] §4.1 参考代码落地, v3.7)
+// 编辑历史: 2026-10-05 小欧 - 新增: thought 思考段 Markdown 渲染器(参考代码落地, v3.7)
 //   未闭合围栏尾段按纯文本渲染(避免空 <pre> 容器凭空出现致页面位移), 其余按 Markdown 渲染 — 小欧-2026-10-05
 //   v2.1 自审整改(随参考代码一并落地): ①全部自定义组件显式剥 node 防泄漏到 DOM(react-markdown v9
 //   必传 node, …rest 透传即非法属性, 禁止); ②remark-breaks 保留单换行(与 pre-wrap 现有效果一致);
 //   ③schema 补 input 标签+属性(GFM 任务列表复选框否则被净化剥掉); ④标题保留语义标签只压样式;
 //   ⑤切分与渲染按 text useMemo(防长推理×高频 chunk 重复全量解析) — 小欧-2026-10-05
-//   v3.7 小欧 落地订正(与文档 §4.1 参考代码的两处偏差, 均因参考代码自身笔误/未跑过编译):
+//   v3.7 小欧 落地订正(与参考代码的两处偏差, 均因参考代码自身笔误/未跑过编译):
 //     ①参考代码每个组件写成 ({ node, children }: any) 后又解构 `const { node, children } = p;`
 //        —— `p` 未定义, 直接抄会 ReferenceError; 改为统一 (props: MdProps) + 解构 props。
 //     ②参考代码 SANITIZE_SCHEMA 用 `...(defaultSchema.tagNames ?? [])` 兜空, 实测 defaultSchema.tagNames
 //        恒为数组; 保留 ?? 兜底无副作用, 不改。
 //     ③参考代码未用 FontFamily.MONO 令牌而是硬编码 'Consolas, Monaco, "Courier New", monospace',
-//        与本仓 stepStyles 令牌化铁律(§10 复用优先)冲突 —— 改走 FontFamily.MONO 单一真相源。
+//        与本仓 stepStyles 令牌化要求(复用优先)冲突 —— 改走 FontFamily.MONO 单一真相源。
 //   v3.8 小欧 三堂会审3遍后修 4 项(P4 明确不修, 理由随附):
 //     ①P1 真缺陷: pre 被覆盖成 <>{children}</> + code 靠 className 猜"是否围栏" —— 无语言围栏
 //       (info string 为空时 hast 无 className)整段退化成行内 code, pre 数=0、块级样式全丢。
@@ -50,6 +50,7 @@ import { CopyButton } from './CopyButton';
 // 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
 import { FileRefChip, isValidRelPath } from './FileRefChip';
 import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
+import { decodePathParam } from '@/utils/fileDeepLink';
 
 /**
  * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(§3.5 缺陷 1)。
@@ -274,8 +275,9 @@ const mdComponents = {
       const m = /^\/file-ref\?path=([^&]+)(?:&line=(\d+)(?:-(\d+))?)?$/.exec(
         href
       );
-      const p = m ? decodeURIComponent(m[1]) : '';
-      if (m && isValidRelPath(p)) {
+      // 非法百分号编码（如 %E0%A4%A）不能让整块渲染抛 URIError
+      const p = m ? decodePathParam(m[1]) : null;
+      if (m && p && isValidRelPath(p)) {
         return (
           <FileRefChip
             relPath={p}

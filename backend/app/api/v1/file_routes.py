@@ -14,7 +14,7 @@
 挂载走 main.py 的 _mount()（唯一入口，自动注入 token 鉴权）。
 """
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
@@ -57,9 +57,19 @@ def search_files(
 @router.get("/files/read")
 def get_file_content(
     path: str = Query(..., description="相对项目根的文件路径（.txt / .md）"),
+    offset: Optional[int] = Query(
+        None, ge=1, description="起始行号（1-based）；给了就按行区间读（可翻页到大文件后段）"
+    ),
+    limit: Optional[int] = Query(
+        None, ge=1, le=5000, description="读取行数（配合 offset；默认 2000，上限 5000）"
+    ),
 ) -> Dict[str, Any]:
-    """读文本文件正文（存在性/是目录/类型/大小/编码 五道闸门）。"""
-    return browse.read_text_file(path)
+    """读文本文件正文（存在性/是目录/类型/大小/编码 五道闸门）。
+
+    2026-10-21 小欧 - 加 offset/limit 行号区间：大文件默认只读前 2MB（截断），
+      2MB 之后拿不到；带区间时后端**流式**按行读（内存恒定），可翻页到文件末尾。
+    """
+    return browse.read_text_file(path, offset=offset, limit=limit)
 
 
 @router.get("/files/raw")

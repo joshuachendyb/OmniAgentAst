@@ -1,16 +1,16 @@
 // 编辑历史: 2026-10-06 小欧 - 随 markdown 四件套从 features/chat/components/pipeline/ 整体上移到
 //   components/markdown/ 中立层: 安全Tab 块2 要用 MarkdownSlot, 若留在 chat 下就成了
 //   settings2 → chat 的跨 feature 反向依赖。本文件内容逐字未改, 仅换目录。 — 小欧-2026-10-06
-// 编辑历史: 2026-10-05 小欧 - 新建: thought 块正文 Markdown 渲染(文档[9] 方案设计 §5.8 消费端)
+// 编辑历史: 2026-10-05 小欧 - 新建: thought 块正文 Markdown 渲染(方案设计的消费端)
 //   动因: 设置项 appearance.step_render.thoughtMarkdown(设置页标签「思考排版」)只管 thought 块
 //   (TextStream)正文的显示方式, 与「推理内容」(reasoningVisible → reasoning 块 ThinkingStream 折叠初值)
-//   是两个独立开关, 各自独立互不干涉(北京老陈裁定)
+//   是两个独立开关, 各自独立互不干涉(用户定案)
 //   为何自带极简渲染而不引 react-markdown: 不新增依赖(react-markdown/remark-*/rehype-* 共4包)且
 //     不开 XSS 面 —— 全程不用 dangerouslySetInnerHTML, 一律走 React 文本节点, 标签与属性无法注入
 //   支持子集(首版, 够用即止 YAGNI): 围栏代码块 ``` / 行内代码 ` / 粗体 ** __ / 斜体 * _ /
 //     标题 # ## ### / 无序列表 - * ; 其余(含表格/链接/图片/引用/任务列表)按纯文本原样显示
 //   与打字机的分层: 打字机负责"显示到第几个字"(切片在前), 本组件负责"这些字怎么画"(渲染在后)
-//   编辑历史: 2026-10-05 小欧 - 三堂会审修复: ①斜体/粗体合并分支用 slice(2,-2) 剥标记,
+//   编辑历史: 2026-10-05 小欧 - 复核修复: ①斜体/粗体合并分支用 slice(2,-2) 剥标记,
 //     而单星号定界符只有 1 对, '*强调*' 被切成空串(内容静默丢失, 三堂会审实测复现);
 //     改为按实际定界符长度剥(粗体2/斜体1) ②行级容器补 whiteSpace:pre-wrap, 否则行首缩进
 //     被 HTML 折叠(LLM 输出的 JSON/树/伪代码不可读, 相对旧纯文本属渲染退化)
@@ -31,6 +31,7 @@ import {
 import { CopyButton } from './CopyButton';
 // 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
 import { FileRefChip, isValidRelPath } from './FileRefChip';
+import { decodePathParam } from '@/utils/fileDeepLink';
 
 /**
  * 行内标记: 代码 > 粗体 > 斜体, 按优先级单趟切分(不递归, 免嵌套自匹配)。
@@ -51,8 +52,9 @@ const LINE_STYLE: React.CSSProperties = { whiteSpace: 'pre-wrap' };
 // 2026-10-21 小杨 - 文件引用链接（MD_IMPL=1 分支）
 //   ⚠ 绝不能把它作为**新的捕获组**加进 INLINE_RE —— String.split 会把每个捕获组都当独立片段返回，
 //   多一个组就会多出一片重复渲染。故用独立的 exec 循环（见 renderInline）。
+//   label 允许转义括号（\\] 等）：文件名含 ']' 时 label 会被转义，不放行就识别不到整条链接。
 const FILEREF_MD_RE =
-  /\[([^\]]+)\]\(\/file-ref\?path=([^)\s]+)(?:&line=(\d+)(?:-(\d+))?)?\)/g;
+  /\[((?:\\.|[^\]])*)\]\(\/file-ref\?path=([^)\s]+)(?:&line=(\d+)(?:-(\d+))?)?\)/g;
 
 /** 行内渲染（不含文件引用链接） */
 const renderPlainInline = (text: string, keyBase: string): React.ReactNode[] =>
@@ -123,8 +125,8 @@ const renderInline = (text: string, keyBase: string): React.ReactNode[] => {
         ...renderPlainInline(text.slice(last, m.index), `${keyBase}-p${idx++}`)
       );
     }
-    const rel = decodeURIComponent(m[2]);
-    if (isValidRelPath(rel)) {
+    const rel = decodePathParam(m[2]);
+    if (rel && isValidRelPath(rel)) {
       out.push(
         <FileRefChip
           key={`${keyBase}-fr${idx++}`}
@@ -134,7 +136,7 @@ const renderInline = (text: string, keyBase: string): React.ReactNode[] => {
               ? { start: Number(m[3]), end: m[4] ? Number(m[4]) : Number(m[3]) }
               : undefined
           }
-          label={m[1]}
+          label={m[1].replace(/\\([[\]])/g, '$1')}
         />
       );
     } else {

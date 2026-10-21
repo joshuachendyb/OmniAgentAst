@@ -28,6 +28,7 @@
   3. 不跳过任何目录、不做文件类型黑名单 —— 目录里有什么就返回什么
 """
 
+import codecs
 import hashlib
 import json
 import os
@@ -44,7 +45,6 @@ from app.config import get_config, get_code_root
 from app.db import db
 from app.logger import logger
 from app.file_browse.errors import (
-    FILE_TOO_LARGE,
     IMAGE_TOO_LARGE,
     INVALID_PATH,
     NOT_FOUND,
@@ -102,8 +102,26 @@ IMAGE_MIME = {                      # 显式映射，不用 mimetypes 猜：猜�
 }
 MAX_TEXT_BYTES = 2 * 1024 * 1024        # C1，北京老陈定
 MAX_IMAGE_BYTES = 10 * 1024 * 1024     # C3，北京老陈定
+
+# ══════════════════════════════════════════════════════════════════════
+# ⚠⚠ 严禁新增任何"限制型"闸门（2026-10-21 北京老陈裁定，小欧 记录）
+# ══════════════════════════════════════════════════════════════════════
+# 禁止清单（不要再往里加任何一条）：
+#   ✗ 扫描时间预算（SCAN_TIME_BUDGET / deadline / "超时就停"）—— 被回滚过一次，永不复活
+#   ✗ 节点数截断（把 max_nodes 当硬闸门、"超限即停"式截断）
+#   ✗ 深度硬闸（把 max_depth 当闸门砍子树）
+#   ✗ 按目录数 / 按响应体积 / 按文件数的任何"防大仓"硬限制
+# 理由：这些闸门把"**后端能给多少**"变成"**后端只给这么多**"，
+#   结果是大仓用户直接用不了这个功能 —— 要限量的是**首屏取多少**（前端按需拉取），
+#   不是**后端能给多少**（后端要多少给多少）。
+# 正确做法（已落地）：
+#   · 前端首屏只取**前 3 层**（max_depth=3），点开更深目录时用已有的 loadDir 补拉；
+#   · 后端路由层 max_nodes **不设上界**（只 ge=1），调用方要多少给多少；
+#   · 慢的根因从**成本**上治（后缀零 IO 判定 + 实探并发 + gzip level 1 + 环检测键零 IO），
+#     不用"砍数据"来治。
+# 本行注释是**红线**：任何人想加上面那些闸门，先看这里，再看北京老陈的裁定。
 MAX_TREE_DEPTH = 10                    # 2026-10-21 小杨 - 深度上限 5→10（性能实测达标后放宽）
-MAX_TREE_NODES = 100000                 # 2026-10-21 小杨 - 节点上限 5000→100000（前端虚拟滚动+后端单遍扫描就位后放宽）
+MAX_TREE_NODES = 100000                # 2026-10-21 小杨 - 节点上限 5000→100000；**这是默认值，不是闸门**（路由层不设上界）
 
 # utf-8-sig 必须在 utf-8 之前 —— 2026-10-13 小欧 - 真实缺陷(单测 c03 抓出)：
 #   含 BOM 的文件用 utf-8 解码**也会成功**，只是首字符残留 '\ufeff'，
@@ -323,8 +341,10 @@ def _join_rel(rel: str, name: str) -> str:
     return f"{base}/{name}" if base and base != "." else name
 
 
-def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]], int]:
-    """列一层目录，返回 (条目列表, 跳过条数)。条目已排序。
+def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]], int, Dict[str, Tuple]]:
+    """列一层目录，返回 (条目列表, 跳过条数, 目录名 → 环检测键)。
+
+    环检测键是 **inode 键**（见 _dir_key），不是 realpath 键。
 
     ① 不跳过任何目录、不做类型过滤 —— 目录里有什么就返回什么（v3.4 裁定）
     ② os.scandir 而非 Path.iterdir：DirEntry 复用系统调用，is_dir 近乎免费
@@ -341,15 +361,21 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
        （实测 E:\test_dir：scandir 遍历 2 万项只要 0.21s，而 8KB 实探 4886 个要 1.08s，
        单文件 0.36ms —— 全量 8.9 万节点里 24% 需实探，折算约 7.5s，占总耗时 7.16s 的绝大部分）。
        故：后缀能判的直接判（零 IO），需实探的**批量并发**探（IO 并行）。
+    ⑨ 2026-10-21 小欧 - **目录身份用 (st_dev, st_ino)**（环检测主键，零额外 IO）：
+       realpath 在 Windows 上要查链接链（0.14ms/目录），abspath 认不出 junction
+       （junction 指向祖先时字面路径不同 → 环检不出，实测 test_r03 红）；
+       inode 判定两者兼顾：junction/符号链接/硬链接都指向同一 inode → 必被识别。
+       st_ino 恒 0 的盘（部分网络盘）退化为路径键兜底（此时 junction 环可能漏检，已知取舍）。
     """
     entries: List[Dict[str, Any]] = []
     skipped = 0
     pending: List[Tuple[int, Path]] = []      # (entries 下标, 绝对路径) —— 待实探
+    dir_ids: Dict[str, Tuple] = {}           # 目录名 → 环检测键（_dir_key）
     try:
         it = os.scandir(target)
     except OSError as e:      # 目录不可读：返回空并计数（不静默，否则前端误显"空目录"）
         logger.warning(f"[file_browse] 目录不可读已跳过 rel={rel}: {e}")
-        return entries, 1
+        return entries, 1, dir_ids
     with it:
         for de in it:
             try:
@@ -360,9 +386,10 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
                 continue
             # ⑥ 越界链接不列出。2026-10-21 小杨 - 性能修复：只有**符号链接**才可能越出根，
             #    普通条目不再调 realpath（原实现每条目一次 resolve，5 万条=几分钟级挂死）
-            if de.is_symlink() and _escapes_root(de.path, root):
-                skipped += 1
-                continue
+            if de.is_symlink():
+                if _escapes_root(de.path, root):
+                    skipped += 1
+                    continue
             preview = "none"
             if not is_dir:
                 p = Path(de.path)
@@ -371,6 +398,17 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
                     preview = by_suffix
                 else:
                     pending.append((len(entries), p))   # ⑧ 后缀判不了 → 稍后并发实探
+            else:
+                # ⑨ 目录身份（环检测键）：De.stat(follow_symlinks=True) 对 **Windows junction
+                #   不跟随**（实测返回 st_ino=0 → 键退化 → 环检不出，test_r03 红），
+                #   故 stat 退化时补一次 os.stat（会跟随 junction），成本只落在异常项上。
+                _st = st
+                if getattr(st, "st_ino", 0) <= 0:
+                    try:
+                        _st = os.stat(de.path)
+                    except OSError:
+                        _st = st
+                dir_ids[de.name] = _dir_key(Path(de.path), _st)
             entries.append({
                 "key": _join_rel(rel, de.name),  # key 用相对路径，防同名撞车；口径统一走 _join_rel
                 "name": de.name,
@@ -385,7 +423,7 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
         for (idx, _p), v in zip(pending, verdicts):
             entries[idx]["preview"] = "text" if v is True else "none"
     entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
-    return entries, skipped
+    return entries, skipped, dir_ids
 
 
 def _escapes_root(candidate: str, root: Path) -> bool:
@@ -397,17 +435,29 @@ def _escapes_root(candidate: str, root: Path) -> bool:
     return real != root and root not in real.parents
 
 
-def _dir_id(path: Path) -> Optional[str]:
-    """目录身份（realpath + normcase）—— 环检测键。
+def _dir_key(path: Path, st: Optional[os.stat_result] = None) -> Tuple:
+    """目录身份键（环检测用）—— **inode 优先**，退化路径键。
 
-    2026-10-21 小杨 - 修复：junction/符号链接指向祖先时 realpath 会回到已访问目录，
-    不设 visited 会无限递归（实测 loop/loop/loop）。
-    normcase 消除 Windows 大小写/分隔符差异。
+    2026-10-21 小杨 - 原始需求：junction/符号链接指向祖先时 realpath 会回到已访问目录，
+      不设 visited 会无限递归（实测 loop/loop/loop）。
+    2026-10-21 小欧 - 键从 realpath 改成 inode：
+      realpath 在 Windows 上要查链接链（实测 0.14ms/目录，4450 目录就 0.64s，占扫描耗时一半）；
+      而纯路径键（abspath）认不出 junction（junction 指向祖先时字面路径不同 → 环检不出，
+      实测 test_r03 红）。inode 两者兼顾：junction/符号链接/硬链接都指向同一 inode → 必被识别，
+      且 st 在 _scan_dir 里**已经取过**（de.stat(follow_symlinks=True)）→ 零额外 IO。
+      st_ino 恒 0 的盘（部分网络盘）退化为路径键（此时 junction 环可能漏检，已知取舍）。
     """
     try:
-        return os.path.normcase(os.path.realpath(str(path)))
+        if st is None:
+            st = path.stat()
+        if st.st_ino > 0:
+            return ("ino", st.st_dev, st.st_ino)
     except OSError:
-        return None
+        pass
+    try:
+        return ("path", os.path.normcase(os.path.abspath(str(path))))
+    except OSError:
+        return ("path", str(path))
 
 
 class _ScanResult(NamedTuple):
@@ -451,7 +501,7 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
     """
     if budget <= 0:
         return _ScanResult([], True, False, 0, 0)
-    items, skipped = _scan_dir(root, target, rel)
+    items, skipped, dir_ids = _scan_dir(root, target, rel)
     nodes: List[Dict[str, Any]] = []
     used = 0
     truncated = False
@@ -467,12 +517,11 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
         node = e
         if e["type"] == "dir":
             child_dir = target / e["name"]
-            cid = _dir_id(child_dir)
-            if cid is not None and cid in visited:   # 链回已展开目录：跳过防环
+            cid = dir_ids.get(e["name"]) or _dir_key(child_dir)   # inode 键（junction 也认得出）
+            if cid in visited:                        # 链回已展开目录：跳过防环
                 skipped_cycles += 1                  # 2026-10-21 小欧 - 与"读不了"分计
                 continue
-            if cid is not None:
-                visited.add(cid)
+            visited.add(cid)
             child_rel = _join_rel(rel, e["name"])
             if depth < max_depth:
                 child = _walk(root, child_dir, child_rel, depth + 1,
@@ -524,7 +573,7 @@ def build_tree(rel_path: str = "", max_depth: int = MAX_TREE_DEPTH,
     if not start_dir.is_dir():                # 2026-10-21 小杨 - 文件当树曾返回 200 空树，误导前端
         fail(INVALID_PATH, "该路径不是目录，请使用文本/图片接口")
     base_root = Path(get_config().get_project_root()).resolve()
-    visited = {_dir_id(start_dir)}
+    visited = {_dir_key(start_dir)}
     result = _walk(base_root, start_dir, rel, 1, max_depth, max_nodes, visited)
     return {
         "path": rel,
@@ -566,13 +615,13 @@ def search_files(keyword: str, limit: int = 20,
     # 广度优先：每层是 (目录, 相对路径)。深度用不上 —— _join_rel 已让每层自带完整 rel，
     # 故只按层数循环，不再维护 depth 变量（原变量从未被使用）。
     frontier: List[Tuple[Path, str]] = [(start_dir, rel)]
-    visited = {_dir_id(start_dir)}      # 2026-10-21 小杨 - 环检测：junction/符号链接只展开一次
+    visited = {_dir_key(start_dir)}     # 2026-10-21 小杨 - 环检测：junction/符号链接只展开一次
     for _ in range(max_depth):
         next_frontier: List[Tuple[Path, str]] = []
         for dir_path, dir_rel in frontier:
             # 每层先文件后目录：用户找的通常是文件，早命中早停。
             # (_scan_dir 已按"目录在前"排序，这里只把文件提到前面，不再二次全排序)
-            items, _skipped = _scan_dir(base_root, dir_path, dir_rel)
+            items, _skipped, _dir_ids = _scan_dir(base_root, dir_path, dir_rel)
             for e in sorted(items, key=lambda x: x["type"] == "dir"):
                 scanned += 1
                 if scanned > max_nodes:
@@ -590,7 +639,7 @@ def search_files(keyword: str, limit: int = 20,
                         hit_limit = True
                         break
                 if e["type"] == "dir":
-                    cid = _dir_id(dir_path / e["name"])
+                    cid = _dir_key(dir_path / e["name"])
                     if cid is not None and cid in visited:
                         continue
                     if cid is not None:
@@ -640,7 +689,7 @@ def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     return kept
 
 
-def _count_lines(content: str) -> int:
+def _count_content_lines(content: str) -> int:
     """行数：末尾换行不产生新行（编辑器口径，与前端行号列同源）。
 
     2026-10-21 小欧 - 原式 count("\\n")+1 对 "a\\r\\nb\\r\\n" 得 3（实际 2 行），
@@ -651,7 +700,74 @@ def _count_lines(content: str) -> int:
     return n if content.endswith("\n") else n + 1
 
 
-def read_text_file(rel_path: str) -> Dict[str, Any]:
+def _count_file_lines(target: Path) -> int:
+    """流式数**文件**行数（内存恒定，不把文件读进来）。末尾无换行时多算一行。
+
+    与 _count_content_lines（数已读内容的行数）分清：前者 IO、后者纯字符串。
+    """
+    n = 0
+    last = b""
+    try:
+        with target.open("rb") as fh:
+            while True:
+                chunk = fh.read(1 << 20)
+                if not chunk:
+                    break
+                n += chunk.count(b"\n")
+                last = chunk[-1:]
+    except OSError:
+        return 0
+    if last and last != b"\n":
+        n += 1
+    return n
+
+
+def _read_lines_range(
+    target: Path, enc: str, offset: int, limit: int, errors: str = "strict"
+) -> Tuple[str, int, int]:
+    """流式读第 [offset, offset+limit) 行（1-based）→ (文本, 读到的行数, 原始字节数)。
+
+    2026-10-21 小欧 - 大文件翻页：整文件进内存是 OOM 源头（大仓 500MB 文件直接炸），
+    故按行区间**流式**读：内存只装要的那几行，与文件总大小无关。
+    2026-10-21 小欧 - 逐行迭代用 splitlines（不用"buf = buf[i+1:]"反复切片 → O(n²)）。
+    """
+    dec = codecs.getincrementaldecoder(enc)(errors=errors)
+    out: List[str] = []
+    raw_bytes = 0
+    try:
+        with target.open("rb") as fh:
+            line_no = 0
+            pending = b""
+            while True:
+                chunk = fh.read(1 << 16)
+                if not chunk:
+                    break
+                pending += chunk
+                lines = pending.split(b"\n")
+                pending = lines.pop()          # 最后一段可能是半行，留到下一轮
+                for raw in lines:
+                    line_no += 1
+                    if line_no < offset:
+                        continue
+                    raw_bytes += len(raw) + 1
+                    out.append(dec.decode(raw + b"\n", False))
+                    if len(out) >= limit:
+                        return "".join(out), len(out), raw_bytes
+            if pending:                        # 末行无换行
+                line_no += 1
+                if line_no >= offset and len(out) < limit:
+                    raw_bytes += len(pending)
+                    out.append(dec.decode(pending, True))
+    except OSError:
+        return "", 0, 0
+    return "".join(out), len(out), raw_bytes
+
+
+def read_text_file(
+    rel_path: str,
+    offset: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> Dict[str, Any]:
     """读任意文本正文：存在性 → 是目录 → NUL 实探 → 大小 → 编码 五道闸门。
 
     2026-10-13 小欧 - KISS 修复: 原先类型闸门在前，`is_dir` 分支几乎不可达
@@ -659,6 +775,10 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
     is_dir 提到类型判定之前：先说清"这是目录"，再说"类型不支持"。
     2026-10-21 小杨 - 类型闸从后缀白名单改为首 8KB NUL 实探
     （文本=能解码的；代码/无后缀文件全部可读），二进制拒绝语义保持。
+    2026-10-21 小欧 - **超限不再报错，改为截断读取**（北京老陈：大文件也要能读出来，
+      直接 413 是死路）：超 MAX_TEXT_BYTES 只读前 2MB 并在返回值里带
+      truncated/total_size，如实告知"只加载了前 N"。编码用**增量解码器**，
+      尾部半个多字节字符不会炸（不静默丢字符）。
     """
     target, rel = _resolve_within_root(rel_path)
     if not _exists(target):
@@ -679,23 +799,103 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
         size = st.st_size
     except OSError:
         fail(NOT_FOUND)
-    if size > MAX_TEXT_BYTES:
-        fail(FILE_TOO_LARGE)
 
     content: Optional[str] = None
     used_enc = ""
+    truncated = False
     try:
         with target.open("rb") as fh:
             head = fh.read(4)
     except OSError:
         fail(NOT_FOUND)
+
+    # 2026-10-21 小欧 - **行号区间翻页**（与大文件截断共存）：
+    #   默认路径只读前 MAX_TEXT_BYTES(2MB) → 2MB 之后的内容拿不到（半个死路）；
+    #   带 offset/limit 时按行区间**流式**读：内存恒定，可一路翻到文件末尾。
+    if offset is not None or limit is not None:
+        return _read_range(target, rel, st, head, int(offset or 1), int(limit or 2000))
+
+    return _read_truncated(target, rel, st, head)
+
+
+def _read_result(target: Path, rel: str, st: os.stat_result, content: str, enc: str) -> Dict[str, Any]:
+    """read 两条路径的**公共字段**（避免同一组字段手写两遍 → 改一处漏一处）。"""
+    return {
+        "path": rel,
+        "name": target.name,
+        "size": st.st_size,
+        "content": content,
+        "encoding": enc,
+        "mtime": _fmt_time(st.st_mtime),
+    }
+
+
+def _read_range(
+    target: Path, rel: str, st: os.stat_result, head: bytes, offset: int, limit: int
+) -> Dict[str, Any]:
+    """按行区间读（翻页）：内存恒定，可一路翻到文件末尾。
+
+    2026-10-21 小欧 - 与 _read_truncated 分开（SRP）：一条读"开头截断"，一条读"指定行段"。
+    """
+    off = max(1, offset)
+    lim = max(1, min(limit, 5000))
+    text = ""
+    got = 0
+    raw_bytes = 0
+    used_enc = ""
+    for enc in _encoding_candidates(head):
+        try:
+            text, got, raw_bytes = _read_lines_range(target, enc, off, lim, "strict")
+            used_enc = enc
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if not used_enc:      # 所有编码严格解都失败 → 用首选编码替换符兜底
+        used_enc = _encoding_candidates(head)[0]
+        text, got, raw_bytes = _read_lines_range(target, used_enc, off, lim, "replace")
+    total = _count_file_lines(target)
+    logger.info(
+        f"[file_browse] read_text range rel={rel} bytes={st.st_size} enc={used_enc} "
+        f"offset={off} limit={lim} got={got} total={total}"
+    )
+    out = _read_result(target, rel, st, text, used_enc)
+    out.update({
+        "total_lines": total,
+        "truncated": False,
+        "total_size": st.st_size,
+        # 2026-10-21 小欧 - loaded_size 用**原始字节数**（与 _read_truncated 口径一致，
+        #   不用 len(text.encode()) —— 那是编码后长度，与磁盘字节数不是一个口径）
+        "loaded_size": raw_bytes,
+        # 2026-10-21 小欧 - 区间信息：前端据此续读下一段（翻页）
+        "start_line": off,
+        "end_line": off + got - 1 if got else off - 1,
+        "returned_lines": got,
+        "loaded_lines": got,
+    })
+    return out
+
+
+def _read_truncated(
+    target: Path, rel: str, st: os.stat_result, head: bytes
+) -> Dict[str, Any]:
+    """读文件开头：超 MAX_TEXT_BYTES 截断（不报错），如实告知截了多少。
+
+    2026-10-21 小欧 - 超限不再报错，改为截断读取（北京老陈：大文件也要能读出来，
+      直接 413 是死路）：超限只读前 2MB 并带 truncated/total_size/loaded_size。
+      编码用**增量解码器**，尾部半个多字节字符不会炸（不静默丢字符）。
+    """
+    content: Optional[str] = None
+    used_enc = ""
+    raw = b""
     for enc in _encoding_candidates(head):    # 按 BOM 决定顺序，再逐个试
         try:
-            # newline="" 禁掉通用换行转换 —— 2026-10-13 小欧 真实缺陷(单测 c09 抓出)：
-            #   Path.read_text 默认 universal newlines，会把 '\r\n' 悄悄转成 '\n'，
-            #   导致 .bat/.ps1/.cmd 脚本内容失真（用户看到与磁盘不一致，Agent 按错换行解析）。
-            with target.open("r", encoding=enc, newline="") as fh:
-                content = fh.read()
+            # 二进制读 + 增量解码：① 天然保留 \r\n（不再需要 newline=""），
+            #   ② 截断时尾部半个多字节字符由增量解码器留在缓冲区，不会炸也不丢字符。
+            with target.open("rb") as fh:
+                raw = fh.read(MAX_TEXT_BYTES)
+            truncated = st.st_size > len(raw)
+            dec = codecs.getincrementaldecoder(enc)(errors="strict")
+            content = dec.decode(raw, False)
             used_enc = enc
             break
         except (UnicodeDecodeError, LookupError):
@@ -708,21 +908,29 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
     if "\x00" in content:
         fail(UNSUPPORTED_TYPE)
 
-    logger.info(f"[file_browse] read_text rel={rel} bytes={size} enc={used_enc}")
-    return {
-        "path": rel,
-        "name": target.name,
-        "size": size,
-        "content": content,
-        "encoding": used_enc,
-        # 2026-10-21 小欧 - 行数口径修正: 末尾换行不产生新行（编辑器口径）。
+    logger.info(f"[file_browse] read_text rel={rel} bytes={st.st_size} enc={used_enc}")
+    loaded_lines = _count_content_lines(content)
+    out = _read_result(target, rel, st, content, used_enc)
+    out.update({
+        # 2026-10-21 小欧 - 行数口径: 末尾换行不产生新行（编辑器口径）。
         #   原式 count("\n")+1 让 "a\r\nb\r\n" 算出 3 行 → 行号指到不存在的空行，
         #   且与前端行号列（已同步去掉末段空串）不一致。
-        "total_lines": _count_lines(content),
-        # 2026-10-21 小杨 - 补 mtime：复用上面那次 stat()，零额外 IO。
-        #   口径与 tree 的 mtime 同源（都走 _fmt_time），前端可直接比对判文件是否已变。
-        "mtime": _fmt_time(st.st_mtime),
-    }
+        # 2026-10-21 小欧 - 默认路径**不扫全文件数行**（那是一次 O(文件) 的额外扫描，
+        #   500MB 大仓每次切文件都白扫 0.5s）→ total_lines 即本次已加载行数；
+        #   真实总行数由**区间读**给出（用户点「加载后续内容」时才算）。
+        "total_lines": loaded_lines,
+        "loaded_lines": loaded_lines,
+        "start_line": 1,
+        "end_line": loaded_lines,
+        "returned_lines": loaded_lines,
+        # 2026-10-21 小欧 - 截断如实告知：truncated=True 时 content 只是前 MAX_TEXT_BYTES，
+        #   total_size 是文件真实字节数，loaded_size 是本次实际读到的字节数
+        #   （前端提示用 loaded_size，否则会写成"共 8.4MB，已加载前 8.4MB"这种自相矛盾的话）。
+        "truncated": st.st_size > len(raw),
+        "total_size": st.st_size,
+        "loaded_size": len(raw),
+    })
+    return out
 
 
 def read_image_file(rel_path: str, request: Request) -> Response:

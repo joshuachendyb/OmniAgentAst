@@ -1,6 +1,6 @@
-// 编辑历史: 2026-10-13 小欧 - 新建: 工具参数浮层面板(文档[29] §3.5/DC-05/DC-06/DC-16/DC-19/DC-21/DC-22)
+// 编辑历史: 2026-10-13 小欧 - 新建: 工具参数浮层面板
 //   乙·分组卡片(默认) / 甲·规格表 可切 · 五类语义分组 · 巨型值折叠限高 · 复制为 key=value 逐行 — 小欧 2026-10-13
-// 编辑历史: 2026-10-13 小欧 - 十三轮迭代(北京老陈逐条裁定, 每条均有真实像素截图佐证), 摘要如下:
+// 编辑历史: 2026-10-13 小欧 - 多轮迭代(用户逐条定案, 每条均有真实像素截图佐证), 摘要如下:
 //   ①【折叠铁律】只有**含换行**的值才可折叠(isHugeValue); 对象/数组与超长字符串**一律不折叠** ——
 //     此前把「分类用 isPayload」与「可否折叠用 isHugeValue」合并成一个布尔量, 导致 meta/command 也带折叠箭头(违反), 已拆开;
 //   ②长行**折行完整显示**: PlainValue 与两视图的 key/值列一律 pre-wrap + break-word, 全组件无 ellipsis/nowrap;
@@ -8,17 +8,17 @@
 //   ④空值「(空)」用 TEXT.TERTIARY 与真实值(PRIMARY)分色, 避免与 false/0 混淆;
 //   ⑤分组类渲染顺序改为 路径→开关→编码→正文载荷→其他(原照搬 categorize 的**判定优先级**, 正文载荷跑到了最前);
 //     色条统一 BORDER.STRONG(原 5 档中性灰在 #fafafa 底上 #e8e8e8/#f0f0f0 对比度仅 1.1/1.05:1 等于看不见, 且开关与编码同档);
-//   ⑥规格表 key 列去 textAlign:'right' 改**左对齐**(与 §2.3 示意图一致、且与分组视图 96px key 列口径统一);
+//   ⑥规格表 key 列去 textAlign:'right' 改**左对齐**(与示意图一致、且与分组视图 96px key 列口径统一);
 //   ⑦规格表巨型值**整宽跨行**: 行容器加 flexWrap + ValuePre 的 flexBasis:100%, 展开态由 SpecView 自管 openKeys(Set);
 //     折叠行/代码块/普通值拆成 ValueToggle/ValuePre/PlainValue 三件供两视图复用, 不写两套折叠逻辑(DRY);
-//   ⑧面板外壳: 自带 BG.SECONDARY+BORDER.DEFAULT+Radius.SM 卡片规格(DC-19), 根不挂等宽字体(免污染标题/分类标签),
+//   ⑧面板外壳: 自带 BG.SECONDARY+BORDER.DEFAULT+Radius.SM 卡片规格, 根不挂等宽字体(免污染标题/分类标签),
 //     外壳 maxHeight:calc(100vh-58px) + 内容区滚动 —— 行数一个不裁剪, 但浮层 portal 脱离右栏滚动容器,
 //     完全不限会超出视口不可达;
 //     2026-10-14 小欧 订正: 原写 calc(100vh-32px), 实值已改 58 —— 58 = 留白32 + antd inner padding 24 + 边框2,
 //     详见下方 2026-10-14 编辑历史
 //   ⑨面板头: 分组/规格表(Segmented 24px)、复制(≈20px)、✕(≈16px) 统一包进 24px 居中盒(HEADER_CTRL_BOX)对齐基线;
-//     装饰图标 </> 由 PRIMARY 蓝改 TEXT.SECONDARY 中性灰(蓝在本系统=可点, 装饰用蓝会误导), 工具名去 nowrap 改折行(注: 2026-10-13 23:20 依北京老陈"不许折行"裁定**改回 nowrap**, 见下方编辑历史) — 小欧-2026-10-13
-// 编辑历史: 2026-10-13 小欧 - 文档[29]§6.10 新增第三个视图「结果」(工具原始结果 raw_data):
+//     装饰图标 </> 由 PRIMARY 蓝改 TEXT.SECONDARY 中性灰(蓝在本系统=可点, 装饰用蓝会误导), 工具名去 nowrap 改折行(注: 2026-10-13 23:20 依用户"不许折行"定案**改回 nowrap**, 见下方编辑历史) — 小欧-2026-10-13
+// 编辑历史: 2026-10-13 小欧 - 新增第三个视图「结果」(工具原始结果 raw_data):
 //   ① PARAMS_VIEW_MAP/VIEW_OPTIONS 增第三个标签 result;
 //   ② 值渲染模式抽 ValueMode('param'|'result') 依赖注入(OCP), 默认 'param' 时文本取 fullTextOf、容器样式逐像素不变,
 //      规格表样式不被结果视图污染; 结果模式对象/数组走 NestedRows 递归折叠 + diff 行级增删着色;
@@ -35,12 +35,12 @@
 //   另撤销下划线私有键过滤、补非 dict 防御。
 //   2026-10-14 小欧 订正: 原写「包裹层总高实为视口-6, 差 6px 即上下同时被切」—— 差值应为 26(58-32),
 //   且总高 100vh-6 < 视口, 居中后本不会被切; 真实后果是上下留白由 32px 缩到 3px(视觉贴顶贴底) — 小欧-2026-10-14
-// 编辑历史: 2026-10-14 小欧 - 结果视图**递归折叠渲染**(北京老陈裁定, 独立组件 NestedRows/NestedRow/SpecView 之外):
+// 编辑历史: 2026-10-14 小欧 - 结果视图**递归折叠渲染**(用户定案, 独立组件 NestedRows/NestedRow/SpecView 之外):
 //   病根 tree.children / get_db_schema.tables[].columns[] / read_xlsx.sheets[] 等递归结构原用
 //   JSON.stringify 整块展开, 缩进随深度累积成"斜坡"且行数暴涨。故容器逐层独立折叠、默认全折叠;
 //   数组元素全为对象时下标降为不可点分组标题(纯结构判断, 不猜哪列是标题), 否则要点击才看到一个目录名。
 //   仅 valueMode='result' 生效, 参数视图零影响。
-// 编辑历史: 2026-10-14 小欧 - 默认标签由「分组参数」改为「**TOOL结果**」(北京老陈裁定)。记忆规则不变:
+// 编辑历史: 2026-10-14 小欧 - 默认标签由「分组参数」改为「**TOOL结果**」(用户定案)。记忆规则不变:
 //   result 仍不落盘, 切到分组/规格表才记住。原「不记忆 result」的理由(20 个工具 raw_data 为 {} 会落空白页)
 //   **已不成立** —— 空态现显示「本次工具执行：<summary>」。小欧
 // 编辑历史: 2026-10-21 小杨 - 路径判定抽到 paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）、
@@ -48,7 +48,8 @@
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
 // 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
-import { PATH_KEYS, isPathLike } from './paramCategories';
+import { PATH_KEYS, isPathLike, isPathParam } from './paramCategories';
+import { PathAwareJson } from './PathAwareJson';
 import { PathLink } from './PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Segmented } from 'antd';
@@ -66,11 +67,11 @@ import {
 
 // ==================== 模块级常量(防每次渲染重建, 同 REJECT_LABEL_MAP 范式) ====================
 
-/** 巨型值字符阈值(判定阈值非视觉令牌, 故不入 stepStyles — §3.4.3) */
+/** 巨型值字符阈值(判定阈值非视觉令牌, 故不入 stepStyles) */
 const HUGE_VALUE_CHARS = 200;
 
 /**
- * 2026-10-13 小欧 - 六分类(北京老陈裁定 B 案 + 「重要参数不许进其他」铁律)。
+ * 2026-10-13 小欧 - 六分类(用户定案 B 案 + 「重要参数不许进其他」要求)。
  *   旧版 4 具名 + 「其他」: 用全仓 80+ 工具真实参数实测, 「其他」是最大的桶
  *   (bash 5 个参数 4 个进其他 / http_get 6 个进 4 个 / query_sql 6 个进 4 个), 分组失去意义。
  *   本版据实测把高频参数**显式列入 key 集合**, 使「其他参数」只接真正零散项。
@@ -167,7 +168,7 @@ const FORMAT_KEYS: ReadonlySet<string> = new Set([
   'date_format',
 ]);
 
-// 2026-10-13 23:00 小欧 - 文档[29]§6.10: 第三个标签「结果」渲染工具原始结果(raw_data)
+// 2026-10-13 23:00 小欧 - 第三个标签「结果」渲染工具原始结果(raw_data)
 export const PARAMS_VIEW_MAP = {
   group: '分组参数',
   spec: '规格表参数',
@@ -197,7 +198,7 @@ const HEADER_CTRL_BOX: React.CSSProperties = {
   height: 24,
 };
 
-/** 2026-10-13 小欧 - DC-21: 分类色只用 BORDER 中性灰阶, 语义色(警告/错误/成功)保留给状态 */
+/** 2026-10-13 小欧 - 分类色只用 BORDER 中性灰阶, 语义色(警告/错误/成功)保留给状态 */
 type Category =
   | 'path'
   | 'switch'
@@ -218,8 +219,8 @@ const CATEGORY_META: ReadonlyArray<{
   //     路径置于正文载荷之上: 文件类工具里「改的是哪个文件」是理解一切的锚点, 先看路径再看内容。
   //   ②「其他」→「补充参数」: 原名零信息量; 「补充」表明它是补充项而非主参数, 不误导。
   //   ③色条统一 BORDER.STRONG: 原 5 档中性灰在 #fafafa 底上 #e8e8e8/#f0f0f0 对比度仅 1.1/1.05:1
-  //     等于看不见, 且开关与编码本就同档无区分; 设计 §3.5.2 原文本即写"类名靠文字区分",
-  //     故色条只当分组锚点、不承担分类编码。仍取自 Colors.BORDER.*(DC-21/T30 不违), 不新增颜色
+  //     等于看不见, 且开关与编码本就同档无区分; 原设计即写"类名靠文字区分",
+  //     故色条只当分组锚点、不承担分类编码。仍取自 Colors.BORDER.*, 不新增颜色
   { id: 'path', label: '路径', color: Colors.BORDER.STRONG },
   { id: 'payload', label: '正文载荷', color: Colors.BORDER.STRONG },
   { id: 'exec', label: '执行控制', color: Colors.BORDER.STRONG },
@@ -241,16 +242,16 @@ const CATEGORY_META: ReadonlyArray<{
 
 /**
  * 巨型值判定 = **值含换行**(如 content 的多行代码块)。
- * 2026-10-13 小欧 - 北京老陈裁定: **只有 content 这类巨型参数才允许折叠/展开控制**, 其余参数
+ * 2026-10-13 小欧 - 用户定案: **只有 content 这类巨型参数才允许折叠/展开控制**, 其余参数
  *   一律**不许折叠** —— 长单行值(如 shell command)折行完整显示, 小对象(meta 等)直接展开格式化 JSON。
  *   初稿把「对象/数组」与「>200 字符」也判成巨型, 导致 meta/command 都带折叠箭头(实测截图证据),
- *   违反裁定, 本轮删掉这两条: ①对象不再折叠, 直接 JSON 展示; ②字符阈值已删(长值靠折行不靠折叠)。
+ *   违反定案, 本轮删掉这两条: ①对象不再折叠, 直接 JSON 展示; ②字符阈值已删(长值靠折行不靠折叠)。
  */
 const isHugeValue = (v: unknown): boolean =>
   typeof v === 'string' && v.includes('\n');
 
 /**
- * 「正文载荷」分类判定(§2.3.2 设计原义, 与**折叠**无关):
+ * 「正文载荷」分类判定(设计原义, 与**折叠**无关):
  *   含换行 / 值为 list|dict / 超长字符。对象仍归 payload 类, 只是**不再因此获得折叠能力**。
  */
 const isPayload = (v: unknown): boolean =>
@@ -273,9 +274,11 @@ const isPayload = (v: unknown): boolean =>
  */
 const categorize = (k: string, v: unknown): Category => {
   if (typeof v === 'boolean') return 'switch';
+  // 2026-10-21 小杨 - key 明确是路径时优先归路径组；否则含 path 的长字符串/对象
+  //   会被 isPayload 抢走，分组视图里就只剩纯文本 — 小杨-2026-10-21
+  if (PATH_KEYS.has(k)) return 'path';
   if (isPayload(v) || PAYLOAD_KEYS.has(k)) return 'payload';
-  if (PATH_KEYS.has(k) || (typeof v === 'string' && isPathLike(v)))
-    return 'path';
+  if (typeof v === 'string' && isPathLike(v)) return 'path';
   if (SEARCH_KEYS.has(k)) return 'search';
   if (EXEC_KEYS.has(k)) return 'exec';
   if (FORMAT_KEYS.has(k)) return 'format';
@@ -307,19 +310,19 @@ const fullTextOf = (v: unknown): string => {
   return String(v);
 };
 
-/** DC-16: 浮层复制为 key=value 逐行(非 JSON), 面向人工核对/贴工单 */
+/** 浮层复制为 key=value 逐行(非 JSON), 面向人工核对/贴工单 */
 const toKeyValueText = (params: Record<string, unknown>): string =>
   Object.entries(params)
     // 非巨型值复制**完整内容**(小对象给 JSON, 长字符串给全文), 巨型值给紧凑摘要「共 N 行」
     .map(([k, v]) => `${k} = ${isHugeValue(v) ? summaryOf(v) : fullTextOf(v)}`)
     .join('\n');
 
-// ==================== 结果视图(文档[29] §6.3/§6.2.4) ====================
+// ==================== 结果视图 ====================
 
 /** 2026-10-13 23:00 小欧 - 值渲染模式(依赖注入, OCP): 'param'(默认)= 现有参数视图, 渲染路径与
  *  样式逐像素不变(规格表样式不许改变); 'result' = 结果视图(对象/数组可折叠 + 缩进 JSON + diff 着色)。 */
 /**
- * 结果视图的**递归嵌套渲染**(§6.3, 2026-10-14 小欧 - 北京老陈裁定; 独立组件 SRP)。
+ * 结果视图的**递归嵌套渲染**(2026-10-14 小欧 - 用户定案; 独立组件 SRP)。
  *
  * 病根: 递归结构(`tree.children` / `get_db_schema.tables[].columns[]` / `read_xlsx.sheets[]`)
  *   原用 `JSON.stringify(v, null, 2)` **整块展开** —— 缩进随深度累积, 3 层目录即缩进 8~12 格,
@@ -446,7 +449,7 @@ const NestedRows: React.FC<{ value: unknown; depth: number }> = ({
 
 export type ValueMode = 'param' | 'result';
 
-/** 折叠判定: 参数模式 = 原 isHugeValue(零变化); 结果模式额外让非空对象/数组可折叠(§6.4.3)。 */
+/** 折叠判定: 参数模式 = 原 isHugeValue(零变化); 结果模式额外让非空对象/数组可折叠。 */
 const isFoldable = (v: unknown, mode: ValueMode): boolean =>
   isHugeValue(v) || (mode === 'result' && hasEntries(v));
 
@@ -461,9 +464,9 @@ const RESULT_HIDDEN_KEYS: ReadonlySet<string> = new Set(['base64_data']);
  *   `build_*(data=)` 传入点, 非 dict 字面量 0 个; 真实运行数据 759 条 `原始内容.data` 全为 dict。
  *   仍保留防御: 万一出现 str, `Object.entries("abc")` 会渲染成「0→a / 1→b / 2→c」的字符表;
  *   出现 list 会渲染成「下标→值」—— 两者都是**误导**, 降级为无条目走空态提示。
- *   注: §6.1.3「不兜底」指的是**不回退到 params/data_text**, 与本处的类型防御不冲突。
+ *   注:「不兜底」指的是**不回退到 params/data_text**, 与本处的类型防御不冲突。
  *
- * ②只过滤 `base64_data`(体积原因)。下划线键**全放行** —— 见 §6.2.4.1 撤销说明。
+ * ②只过滤 `base64_data`(体积原因)。下划线键**全放行** —— 撤销说明见下方编辑历史。
  */
 const visibleResultEntries = (result: unknown): Array<[string, unknown]> =>
   result !== null && typeof result === 'object' && !Array.isArray(result)
@@ -490,7 +493,7 @@ const resultTextOf = (v: unknown): string => {
 };
 
 /**
- * 2026-10-14 小欧 - 北京老陈裁定: **默认 = `TOOL结果`, 但三个标签都记忆**。
+ * 2026-10-14 小欧 - 用户定案: **默认 = `TOOL结果`, 但三个标签都记忆**。
  *
  * 语义(前几轮反复读错, 此处定死):
  *   - 无有效记忆时(首次 / 脏值) → 落在 `result`(`TOOL结果` 即**默认标签**);
@@ -539,7 +542,7 @@ const ValueToggle: React.FC<{
   };
   return (
     <span
-      // 2026-10-13 三堂会审 A2: 与树节点、✕ 共用 .params-clickable, 补齐 V8「按钮也要 hover/focus 反馈」
+      // 2026-10-13 复核 A2: 与树节点、✕ 共用 .params-clickable, 补齐「按钮也要 hover/focus 反馈」
       className="params-clickable"
       role="button"
       tabIndex={0}
@@ -570,7 +573,7 @@ const ValueToggle: React.FC<{
   );
 };
 
-/** 2026-10-13 23:00 小欧 - diff 行级着色(§6.6): `@@`蓝 / `+`绿 / `-`红 / 其他走代码块前景色。
+/** 2026-10-13 23:00 小欧 - diff 行级着色: `@@`蓝 / `+`绿 / `-`红 / 其他走代码块前景色。
  *  逐行套 span, 不用 HTML 注入 —— React 文本节点天然转义, 无 XSS 风险。 */
 const diffLineColor = (line: string): string | undefined => {
   if (line.startsWith('@@')) return Colors.PRIMARY;
@@ -597,15 +600,15 @@ const DiffPre: React.FC<{ text: string }> = ({ text }) => (
 
 /**
  * 巨型值展开体(两视图共用): <pre> 显示**全部行数**。
- * 2026-10-13 小欧 - 北京老陈裁定「严禁限制行数, 有多少行显示多少行」:
+ * 2026-10-13 小欧 - 用户定案「严禁限制行数, 有多少行显示多少行」:
  *   初稿在此加了 maxHeight: Size.PARAMS_PANEL_MAX_H(240) + overflowY:auto(限高滚动),
  *   属于截断式隐藏, 已删。底/框/圆角与 MarkdownText 代码块同款(T32)。
- * 2026-10-13 23:00 小欧 - 文档[29]§6.4.3/§6.6: 增可选 valueMode。
+ * 2026-10-13 23:00 小欧 - 增可选 valueMode。
  *   默认 'param' 时文本取 fullTextOf、容器样式逐像素不变(北京老陈明令规格表样式不许改变);
  *   'result' 时取 resultTextOf(缩进 JSON, 使对象/数组可折叠), 且值为 diff 字符串时逐行着色。
  */
 /** 2026-10-13 23:40 小欧 - 判据是**字段名**而非"含换行": 否则 stdout/content 等普通多行文本
- *  的行首 `+`/`-` 会被误染(§6.6 只要求 raw_data.diff 着色)。 */
+ *  的行首 `+`/`-` 会被误染(只要求 raw_data.diff 着色)。 */
 const isDiffKey = (k: string): boolean =>
   k === 'diff' || k.endsWith('_diff') || k.endsWith('Diff');
 
@@ -617,7 +620,7 @@ const ValuePre: React.FC<{
 }> = ({ value, valueMode = 'param', keyName }) => {
   const isResult = valueMode === 'result';
   const text = isResult ? resultTextOf(value) : fullTextOf(value);
-  // 仅结果模式对 diff 键着色; 参数视图的 diff 参数不着色(§6.6 约束)
+  // 仅结果模式对 diff 键着色; 参数视图的 diff 参数不着色
   const asDiff =
     isResult &&
     typeof value === 'string' &&
@@ -648,7 +651,7 @@ const ValuePre: React.FC<{
         color: Colors.TEXT.STRONG,
         whiteSpace: 'pre-wrap',
         wordBreak: 'break-word',
-        // 规格表「巨型值整宽跨行」(§3.5.3): 父行是 flexWrap 容器,
+        // 规格表「巨型值整宽跨行」: 父行是 flexWrap 容器,
         //   flexBasis:100% 让本块换行独占一整行(不再挤在右侧值列里)
         flexBasis: '100%',
         width: '100%',
@@ -660,14 +663,16 @@ const ValuePre: React.FC<{
 };
 
 /**
- * 普通值: 等宽/字号显式声明不靠根继承(A1) + **完整展示不折叠**(2026-10-13 北京老陈裁定)
+ * 普通值: 等宽/字号显式声明不靠根继承(A1) + **完整展示不折叠**(2026-10-13 用户定案)
  *   内容取 `fullTextOf` —— 对象直接给格式化 JSON(不再显示 `{…} N 项` 摘要、更不给折叠箭头),
  *   长单行字符串折行显示全部字符, 空值给 `(空)` 占位。
+ *   2026-10-21 小杨 - 传了 projectRoot 时，对象改走 PathAwareJson：嵌套 path 字段同样可点 — 小杨-2026-10-21
  */
-const PlainValue: React.FC<{ value: unknown; valueMode?: ValueMode }> = ({
-  value,
-  valueMode = 'param',
-}) => (
+const PlainValue: React.FC<{
+  value: unknown;
+  valueMode?: ValueMode;
+  projectRoot?: string;
+}> = ({ value, valueMode = 'param', projectRoot }) => (
   <span
     style={{
       // 2026-10-13 小欧 - 空值用更浅的 TERTIARY: 「(空)」是"没有值", 与真实值(PRIMARY)同色会
@@ -690,20 +695,32 @@ const PlainValue: React.FC<{ value: unknown; valueMode?: ValueMode }> = ({
   >
     {/* 2026-10-13 23:55 小欧 - RC4: 结果模式走 resultTextOf(空串给「(空)」), 参数模式走 fullTextOf。
         结果模式下不会有对象落到这里(对象必可折叠 → 走 ValuePre), 故 RC2/RC3 的容器逻辑不受影响 */}
-    {valueMode === 'result' ? resultTextOf(value) : fullTextOf(value)}
+    {projectRoot !== undefined &&
+    typeof value === 'object' &&
+    value !== null ? (
+      <PathAwareJson value={value} projectRoot={projectRoot} />
+    ) : valueMode === 'result' ? (
+      resultTextOf(value)
+    ) : (
+      fullTextOf(value)
+    )}
   </span>
 );
 
 /**
  * 分组视图用的值渲染: 巨型值在**值列内**竖排展开。
- * 2026-10-13 小欧 - §3.5.3 要求规格表里巨型值「整宽跨行成代码块」, 而 React 无法把 pre 提到
+ * 2026-10-13 小欧 - 规格表里巨型值要求「整宽跨行成代码块」, 而 React 无法把 pre 提到
  *   父级行容器之外, 故这里用 <div> 包裹让 pre 留在本列内(分组视图不要求跨行),
  *   规格表改走自己的「行 + 整宽 pre」两段结构, 三块(ValueToggle/ValuePre/PlainValue)共用不重复(DRY)
  */
-const ParamValue: React.FC<{ value: unknown }> = ({ value }) => {
+const ParamValue: React.FC<{ value: unknown; projectRoot?: string }> = ({
+  value,
+  projectRoot,
+}) => {
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((p) => !p);
-  if (!isHugeValue(value)) return <PlainValue value={value} />;
+  if (!isHugeValue(value))
+    return <PlainValue value={value} projectRoot={projectRoot} />;
   return (
     <div>
       <ValueToggle value={value} open={open} onToggle={toggle} />
@@ -733,7 +750,7 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
     <div>
       {CATEGORY_META.map((c) => {
         const rows = buckets.get(c.id) ?? [];
-        if (rows.length === 0) return null; // 空类不渲染(§3.5.2)
+        if (rows.length === 0) return null; // 空类不渲染
         return (
           <div key={c.id} style={{ marginTop: Spacing.SM }}>
             <div
@@ -778,7 +795,7 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                       fontFamily: FontFamily.MONO,
                       fontSize: FontSize.CODE,
                       color: Colors.TEXT.SECONDARY,
-                      // 2026-10-13 小欧 - 八轮核查: key 列原为 break-all, 与 §2.5 V3「break-all → break-word」
+                      // 2026-10-13 小欧 - 核查: key 列原为 break-all, 与「break-all → break-word」
                       //   及 T13「非 break-all」冲突(值列已改、key 列漏改), 此处统一 break-word
                       wordBreak: 'break-word',
                     }}
@@ -794,11 +811,14 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                       wordBreak: 'break-word',
                     }}
                   >
-                    {/* 2026-10-21 小杨 - 路径类值渲染成可点击链接（直达文件页） */}
-                    {c.id === 'path' && typeof v === 'string' ? (
+                    {/* 2026-10-21 小杨 - 路径值接链接；其余对象走 PathAwareJson，嵌套 path 也可点。
+                        多行值走 ParamValue 折叠体（原文完整展示），不做成整段链接文本 */}
+                    {!isHugeValue(v) &&
+                    typeof v === 'string' &&
+                    isPathParam(k, v) ? (
                       <PathLink value={v} projectRoot={projectRoot} />
                     ) : (
-                      <ParamValue value={v} />
+                      <ParamValue value={v} projectRoot={projectRoot} />
                     )}
                   </span>
                 </div>
@@ -815,13 +835,15 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
 
 /**
  * 甲 · 规格表: 固定两列(key 140px 左对齐 / 值 flex:1), 行间 1px BORDER.LIGHT 分割线;
- * **巨型值整宽跨行成代码块**(§3.5.3) —— 靠行容器 flexWrap + ValuePre 的 flexBasis:100% 实现。
+ * **巨型值整宽跨行成代码块** —— 靠行容器 flexWrap + ValuePre 的 flexBasis:100% 实现。
  * 2026-10-13 小欧: 展开态按 key 记在 Set 里(与 ParamsTree 同范式), 不用布尔数组(删除/新增无需对齐下标)
  */
 const SpecView: React.FC<{
   params: Record<string, unknown>;
   valueMode?: ValueMode;
 }> = ({ params, valueMode = 'param' }) => {
+  // 2026-10-21 小杨 - 规格表此前漏接 PathLink；项目根模块级缓存，多入口共用一次请求
+  const projectRoot = useProjectRoot();
   const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -836,7 +858,7 @@ const SpecView: React.FC<{
   return (
     <div>
       {Object.entries(params).map(([k, v]) => {
-        // 2026-10-13 23:00 小欧 - 文档[29]§6.4.3: 折叠判定随模式变化(结果模式含对象/数组)
+        // 2026-10-13 23:00 小欧 - 折叠判定随模式变化(结果模式含对象/数组)
         const huge = isFoldable(v, valueMode);
         const open = huge && openKeys.has(k);
         return (
@@ -854,10 +876,10 @@ const SpecView: React.FC<{
           >
             <span
               style={{
-                width: 140, // 布局常量: 规格表 key 列定宽(§3.5.3), **左对齐**
+                width: 140, // 布局常量: 规格表 key 列定宽, **左对齐**
                 flexShrink: 0,
-                // 2026-10-13 小欧 - 十二轮自查订正: 原写 textAlign:'right' 是照 §3.5.3 的"右对齐"文字,
-                //   但那与 §2.3 规格表示意图(第 298-303 行, key 从同一左缘起)**自相矛盾**, 且与
+                // 2026-10-13 小欧 - 自查订正: 原写 textAlign:'right' 是照"右对齐"文字,
+                //   但那与规格表示意图(第 298-303 行, key 从同一左缘起)**自相矛盾**, 且与
                 //   GroupView 的 key 列(96px, 未设对齐即左对齐)口径不一 —— 两视图统一左对齐。
                 //   key-value 表右对齐只适用于数字列; 等宽字体下长短 key 右对齐会让扫读起点参差
                 fontFamily: FontFamily.MONO,
@@ -872,15 +894,21 @@ const SpecView: React.FC<{
             {huge ? (
               <>
                 <ValueToggle value={v} open={open} onToggle={() => toggle(k)} />
-                {/* 2026-10-13 23:40 小欧 - 透传字段名 k: 结果模式下只有 diff 字段才逐行增删着色(§6.6);
+                {/* 2026-10-13 23:40 小欧 - 透传字段名 k: 结果模式下只有 diff 字段才逐行增删着色;
                     参数模式 isResult=false, keyName 不参与判定, 行为与改动前逐像素一致 */}
                 {open && (
                   <ValuePre value={v} valueMode={valueMode} keyName={k} />
                 )}
               </>
+            ) : typeof v === 'string' && isPathParam(k, v) ? (
+              <PathLink value={v} projectRoot={projectRoot} />
             ) : (
               /* 2026-10-13 23:55 小欧 - RC4: 透传 valueMode, 结果模式下空串走「(空)」占位 */
-              <PlainValue value={v} valueMode={valueMode} />
+              <PlainValue
+                value={v}
+                valueMode={valueMode}
+                projectRoot={projectRoot}
+              />
             )}
           </div>
         );
@@ -897,14 +925,14 @@ interface ParamsPanelProps {
   /** T15: ✕ / Esc / 点外面关闭; 关闭动作回交 FloatingEntry 的 onOpenChange */
   onClose: () => void;
   /**
-   * 2026-10-13 23:00 小欧 - 文档[29]§6.10: 工具原始结果, 供「结果」标签渲染。
+   * 2026-10-13 23:00 小欧 - 工具原始结果, 供「结果」标签渲染。
    *   OCP: 可选 prop, 既有调用方(只传 params)零影响。
    */
   result?: unknown;
   /**
-   * 2026-10-14 小欧 - 北京老陈裁定: `raw_data` 为空时**不显示空白**, 改显「本次工具执行：<summary>」。
+   * 2026-10-14 小欧 - 用户定案: `raw_data` 为空时**不显示空白**, 改显「本次工具执行：<summary>」。
    *   取值 `llm_data.summary`(后端每条 tool_result 都带, 如"已读取 3 个文件, 2 个跳过")。
-   *   ⚠️ 这**不是** §6.1.3 的「兜底」: 兜底=拿 params/data_text 冒充原始数据; 本条=承认没有原始数据,
+   *   ⚠️ 这**不是**「兜底」: 兜底=拿 params/data_text 冒充原始数据; 本条=承认没有原始数据,
    *   改显一句**如实**的说明, 与空白相比是信息增量而非伪装。
    */
   resultSummary?: string;
@@ -912,7 +940,7 @@ interface ParamsPanelProps {
 
 /**
  * ParamsPanel - 工具参数浮层面板(浮层开合/锚点/a11y/焦点管理全部由 FloatingEntry 承担,
- * 本组件只负责"渲染什么内容"与面板内样式 — SRP, 见 §3.5)
+ * 本组件只负责"渲染什么内容"与面板内样式 — SRP)
  *
  * @author 小欧
  * @since 2026-10-13
@@ -938,9 +966,9 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
       /* 隐私模式/存储禁用: 仅本次会话生效, 不阻断 */
     }
   };
-  // 2026-10-13 23:00 小欧 - 文档[29]§6.3: 结果视图过滤不渲染字段后取其余条目。
+  // 2026-10-13 23:00 小欧 - 结果视图过滤不渲染字段后取其余条目。
   //   ⚠️ 不兜底(铁律): result 为空/未传时 entries 为空数组,
-  //   **绝不**拿 params 冒充原始数据(文档[29]§6.1.3、§6.8)
+  //   **绝不**拿 params 冒充原始数据
   // 2026-10-14 小欧 订正: 原注三处过期 —— ①原写「过滤 base64_data 与下划线私有键」, 下划线过滤已于 v2.12 撤销,
   //   现仅过滤 base64_data(见 RESULT_HIDDEN_KEYS); ②原写「内容区空白」, 现空态改显「本次工具执行：<summary>」
   //   (见下方空态分支); ③原写「绝不回退 params / llm_data / data_text」, 空态确取 llm_data.summary, 但那**不是**
@@ -964,7 +992,7 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
     [view, result, toolName]
   );
   /**
-   * 复制内容按视图分支(§6.10): 参数视图复制 key=value 逐行(DC-16);
+   * 复制内容按视图分支: 参数视图复制 key=value 逐行;
    * 结果视图复制 raw_data 的缩进 JSON(不是过滤后的视图, 复制的是原始数据)。
    */
   const copyText = useMemo(() => {
@@ -991,18 +1019,18 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
     <div
       style={{
         // 2026-10-13 小欧 - 十一轮自查**撤回**原 D-8(误判): 面板外壳**必须**自带卡片规格, 与设计
-        //   §3.5.1 结构图「卡片底 = BG.SECONDARY + BORDER.DEFAULT 1px + Radius.SM 4」、DC-19、T32 三处一致。
+        //   结构图「卡片底 = BG.SECONDARY + BORDER.DEFAULT 1px + Radius.SM 4」三处一致。
         //   误判根源: 拿 G6/G8 的「content 不自绘外框」当依据, 但那两个 content 是纯文本/事件时间轴,
         //   而本方案的浮层内容**本身就是一张卡片** —— 两类 UI 不同, 依据套错。
-        //   防「框中框」: Popover 的 12px 内边距已由 cardStyle.padding=0 归零(见 §4.6.2), 二者不叠加。
+        //   防「框中框」: Popover 的 12px 内边距已由 cardStyle.padding=0 归零, 二者不叠加。
         //   根上不挂 fontFamily: 等宽只给 key/值/pre(免污染面板标题与分类标签)
-        //   行高显式 16px(§2.2/§2.5 V7): antd Popover 默认 line-height 1.5714 → 12px 字会排成
+        //   行高显式 16px: antd Popover 默认 line-height 1.5714 → 12px 字会排成
         //   约 18.9px 且与 pre 的 16px 混排不齐, 故在此统一
         lineHeight: `${FontSize.CODE + Spacing.XS}px`,
         background: Colors.BG.SECONDARY,
         border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
         borderRadius: Radius.SM,
-        // 2026-10-13 小欧 - 北京老陈裁定「严禁限制行数」的正确落法:
+        // 2026-10-13 小欧 - 用户定案「严禁限制行数」的正确落法:
         // 行数不裁剪, 但浮层 portal 到 body 脱离右栏滚动容器, 完全不限高则超视口内容永远够不着。
         //   故限高 + 头部固定 + 仅内容区滚动。58 = 留白32 + antd inner padding 24 + 边框2。
         display: 'flex',
@@ -1030,7 +1058,7 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           style={{
             fontSize: FontSize.CODE,
             color: Colors.TEXT.STRONG,
-            // 2026-10-13 23:20 小欧 - 北京老陈裁定: 标题行**不许换行, 不许折行**。
+            // 2026-10-13 23:20 小欧 - 用户定案: 标题行**不许换行, 不许折行**。
             //   原为 wordBreak:'break-word'(可折行), 三标签后头部固定元素变宽, 标题会被挤成两行。
             //   现改 nowrap + flexShrink:0(不压缩), 并已把 PARAMS_PANEL_MAX_W 加宽 640→720 留出空间。
             //   ⚠️ nowrap 下若标题仍超宽(超长工具名 + 极窄屏), 会溢出而非折行 ——
@@ -1048,14 +1076,14 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           value={view}
           onChange={(v) => onViewChange(v as ParamsView)}
         />
-        {/* DC-20: 面板头用 inline 变体, 否则绝对定位会压住标题。
+        {/* 面板头用 inline 变体, 否则绝对定位会压住标题。
             2026-10-13 小欧 - 三控件基线对齐: Segmented(size=small) 高 24px, 而 CopyButton 高约 20px、
             ✕ 高约 16px, 直接并排会顶端/底端都不齐(实测截图)。统一把后两者包进同高的居中盒 */}
         <span style={HEADER_CTRL_BOX}>
           <CopyButton text={copyText} inline />
         </span>
         <span
-          // 2026-10-13 三堂会审 A2: 共用 .params-clickable, 补齐 V8「按钮也要 hover/focus 反馈」
+          // 2026-10-13 复核 A2: 共用 .params-clickable, 补齐「按钮也要 hover/focus 反馈」
           className="params-clickable"
           role="button"
           tabIndex={0}

@@ -46,6 +46,18 @@ export interface ReadResponse {
   total_lines: number;
   /** 文件最近修改时间（与 tree 的 mtime 同口径字符串），刷新判重用 */
   mtime: string;
+  /** 2026-10-21 小欧 - 超大文件被截断（后端只读前 2MB，不报错）→ 如实告知 */
+  truncated?: boolean;
+  /** 文件真实字节数（truncated 时与 content 的字节数不同） */
+  total_size?: number;
+  /** 本次实际读到的字节数（截断时 < total_size） */
+  loaded_size?: number;
+  /** 2026-10-21 小欧 - 行号区间读时的区间信息（前端据此续读下一段） */
+  start_line?: number;
+  end_line?: number;
+  returned_lines?: number;
+  /** 本次实际返回的行数（截断路径下 = 段内行数） */
+  loaded_lines?: number;
 }
 
 export interface SearchHit {
@@ -121,13 +133,14 @@ export const fileApi = {
 
   readFile: async (
     path: string,
-    cfg?: { signal?: AbortSignal }
+    cfg?: { signal?: AbortSignal; offset?: number; limit?: number }
   ): Promise<ReadResponse> => {
     need(path, '文件路径');
+    const { signal, offset, limit } = cfg ?? {};
     return (
       await api.get<ReadResponse>('/files/read', {
-        params: { path },
-        ...cfg, // 竞态防护：调用方传 AbortSignal
+        params: { path, offset, limit },
+        signal,
       })
     ).data;
   },

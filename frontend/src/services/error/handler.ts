@@ -927,6 +927,20 @@ export function extractErrorMessage(error: unknown): string | undefined {
         if (typeof data.detail === 'string' && data.detail) return data.detail;
       }
       if (typeof data.message === 'string' && data.message) return data.message;
+      // 2026-10-21 小欧 - 本项目后端的错误信封是 {success:false, error:{code,message}, status_code, timestamp}
+      //   （全局 http_exception_handler 把 detail 放进 **error** 键）→ 上面两条都不命中，
+      //   只能落到 axios 造的英文 "Request failed with status code 413"（用户看不懂）。
+      //   故补这条：优先取业务信封里的中文 message。
+      const errObj = data.error as Record<string, unknown> | undefined;
+      if (typeof data.error === 'string' && data.error) return data.error;
+      if (
+        errObj &&
+        typeof errObj === 'object' &&
+        typeof errObj.message === 'string' &&
+        errObj.message
+      ) {
+        return errObj.message;
+      }
     }
   }
   if (typeof e.message === 'string' && e.message) return e.message;

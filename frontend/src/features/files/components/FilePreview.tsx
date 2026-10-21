@@ -6,6 +6,8 @@
 //     菜单都已摘除），继续引导用户去一个不存在的功能 = 制造死路 — 小欧-2026-10-21
 //   2026-10-21 小欧 - 行号去"幽灵行"：split('\n') 末段空串不算一行（编辑器口径），
 //     否则行号多 1（指到不存在的空行）且与后端 total_lines 不一致 — 小欧-2026-10-21
+// 2026-10-22 小杨 - 深链行号按区间整段高亮（原只高亮首行），行号越界在工具条如实提示，
+//     不再静默不定位 — 小杨-2026-10-22
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -30,7 +32,12 @@ import type { FileNode, ReadResponse } from '@/services/api/file.api';
 import { fileApi, ImageUnchanged } from '@/services/api/file.api';
 import { formatBytes } from '@/utils/format';
 import { copyTextToClipboard } from '@/utils/clipboard';
-import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import {
+  showMessage,
+  showSuccess,
+  ErrorType,
+  extractErrorMessage,
+} from '@/services/error/handler';
 import { refCost } from '@/utils/refCost';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
@@ -98,6 +105,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   useEffect(() => {
     setMdBeauty(!lineRange);
   }, [node?.key, lineRange]);
+
+  // 2026-10-21 小欧 - 换文件重置渲染行数；深链指定行若在可视行数之外 → 一次展开到该行
+  useEffect(() => {
+    setVisibleLines((v) =>
+      lineRange && lineRange.end > v ? lineRange.end : 2000
+    );
+  }, [node?.key, lineRange]);
   // 2026-10-21 小杨 - 修复（逐行高亮无缓存）：原实现 hljs.highlight
   //   在 render 内对每行调，任何 state 变化（选区/折行/过期提示）都全文件重算，
   //   万行文件秒级卡。收敛到 useMemo：行数组与高亮 HTML 只随 (content, lang) 重算，
@@ -123,11 +137,71 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   );
   const preRef = useRef<HTMLPreElement | null>(null);
   /** 上一次高亮的行元素（切换定位/刷新时先清掉，防"旧行永久黄底"） */
-  const highlightedRef = useRef<HTMLElement | null>(null);
+  const highlightedRef = useRef<HTMLElement[]>([]);
+  /** 2026-10-21 小杨 - 深链行号越界时如实告知（原来静默不定位，用户以为"点了没反应"）— 小杨-2026-10-21 */
+  const [lineMiss, setLineMiss] = useState(false);
   /** 打开时的 mtime（判文件是否已被改写） */
   const openedMtime = useRef<string | null>(null);
   /** 竞态防护：只认最后一次请求的结果 */
   const reqSeq = useRef(0);
+  /**
+   * 2026-10-21 小欧 - 大文件渲染上限：2MB 文本 ≈ 2 万行，全量渲染会卡死页面。
+   * 故首屏只渲染前 2000 行，点「显示更多」再追加（行号与 data-ln 仍是真实行号）。
+   */
+  const [visibleLines, setVisibleLines] = useState(2000);
+  const shownLines = useMemo(
+    () => lines.slice(0, visibleLines),
+    [lines, visibleLines]
+  );
+  /**
+   * 2026-10-21 小欧 - 大文件"加载后续内容"：默认只读到 2MB（后端截断），
+   * 后面还有内容 → 按行区间向服务端要下一段（后端流式读，内存恒定），追加拼接。
+   * 与「显示更多」（本地渲染上限 2000 行）是两件事，缺一不可。
+   */
+  const [moreLoading, setMoreLoading] = useState(false);
+  const loadedLines = text?.returned_lines ?? 0;
+  /** 美显模式的渲染文本：只取已渲染窗口内的行（与文本模式同一上限，避免 markdown 渲染 2MB 卡死） */
+  const beautyText = useMemo(
+    () => lines.slice(0, visibleLines).join('\n'),
+    [lines, visibleLines]
+  );
+  const beautyTruncated = lines.length > visibleLines;
+  const hasMoreInFile =
+    !!text &&
+    (text.truncated === true || loadedLines < (text.total_lines ?? 0));
+  const loadMore = async () => {
+    if (!node || !text) return;
+    setMoreLoading(true);
+    try {
+      const next = await fileApi.readFile(node.key, {
+        offset: loadedLines + 1,
+        limit: 2000,
+      });
+      if (!next.content) return;
+      setText((prev) => {
+        if (!prev) return prev;
+        // 追加前保证前段以换行结尾：上段可能被字节上限截在行中间 → 直接粘 '\n' 会把两行连成一行（行号错位）
+        const head = prev.content.endsWith('\n')
+          ? prev.content
+          : prev.content + '\n';
+        return {
+          ...prev,
+          content: head + next.content,
+          returned_lines:
+            (prev.returned_lines ?? 0) + (next.returned_lines ?? 0),
+        };
+      });
+      // 渲染窗口同步推进：否则新内容进了已加载集合但视口仍停在前 2000 行 → 点了像没反应
+      setVisibleLines((v) => v + (next.returned_lines ?? 0));
+    } catch (e) {
+      showMessage(
+        ErrorType.FILE_READ,
+        extractErrorMessage(e) ?? '加载后续内容失败'
+      );
+    } finally {
+      setMoreLoading(false);
+    }
+  };
 
   const load = async (target: FileNode) => {
     const seq = ++reqSeq.current;
@@ -162,7 +236,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       if (e instanceof ImageUnchanged) {
         // 图片未变化（304）不算失败，保留旧图
       } else {
-        setErr(e instanceof Error ? e.message : '加载失败');
+        // 2026-10-21 小欧 - 显示后端业务文案（原来只有 axios 英文 "Request failed with status code 413"）
+        setErr(extractErrorMessage(e) ?? '加载失败');
       }
     }
   };
@@ -229,7 +304,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     } catch (e) {
       if (seq !== reqSeq.current) return;
       if (!(e instanceof ImageUnchanged)) {
-        setErr(e instanceof Error ? e.message : '刷新失败');
+        setErr(extractErrorMessage(e) ?? '刷新失败');
       }
     }
   };
@@ -255,25 +330,41 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   useEffect(() => {
     if (!lineRange || !preRef.current) return;
     // 清掉上一次的高亮（DOM 元素会被 React 复用，直接写的 style 不会被回收）
-    if (highlightedRef.current) {
-      highlightedRef.current.style.background = '';
-      highlightedRef.current = null;
+    highlightedRef.current.forEach((node) => {
+      node.style.background = '';
+    });
+    highlightedRef.current = [];
+
+    const start = Math.max(1, Math.min(lineRange.start, lineRange.end));
+    const end = Math.max(lineRange.start, lineRange.end);
+    const nodes = Array.from(
+      preRef.current.querySelectorAll<HTMLElement>('[data-ln]')
+    ).filter((node) => {
+      const n = Number(node.dataset.ln);
+      return Number.isFinite(n) && n >= start && n <= end;
+    });
+    // 行号越界 / 文件为空：保持原文，不伪造高亮
+    if (!nodes.length) {
+      setLineMiss(true);
+      return;
     }
-    const el = preRef.current.querySelector(
-      `[data-ln="${lineRange.start}"]`
-    ) as HTMLElement | null;
-    if (!el) return;
-    el.scrollIntoView({ block: 'center' });
-    el.style.background = Colors.WARNING_BG; // 令牌化（原为裸色 #fffbe6）
-    el.style.borderRadius = '2px';
-    el.setAttribute('tabindex', '-1');
-    el.focus({ preventScroll: true });
-    highlightedRef.current = el;
+    setLineMiss(false);
+
+    nodes[0].scrollIntoView({ block: 'center' });
+    nodes.forEach((node) => {
+      node.style.background = Colors.WARNING_BG; // 令牌化（原为裸色 #fffbe6）
+      node.style.borderRadius = '2px';
+      node.setAttribute('tabindex', '-1');
+    });
+    nodes[0].focus({ preventScroll: true });
+    highlightedRef.current = nodes;
     // 2026-10-21 小杨 - 高亮**有时效**（4s 后淡出）
     //   常驻高亮会让用户误以为"这行有某种持久状态"，而它只是一次性定位提示。
     const timer = window.setTimeout(() => {
-      el.style.background = '';
-      if (highlightedRef.current === el) highlightedRef.current = null;
+      nodes.forEach((node) => {
+        node.style.background = '';
+      });
+      if (highlightedRef.current === nodes) highlightedRef.current = [];
     }, 4000);
     return () => window.clearTimeout(timer);
   }, [lineRange, text]);
@@ -453,6 +544,20 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         <span style={{ color: Colors.TEXT.TERTIARY }}>
           {text.total_lines} 行 · {text.mtime}
         </span>
+        {/* 2026-10-21 小杨 - 行号越界如实告知，不静默吞掉深链定位请求 — 小杨-2026-10-21 */}
+        {lineMiss && lineRange && (
+          <span style={{ color: Colors.WARNING }}>
+            未找到第 {lineRange.start}
+            {lineRange.end !== lineRange.start ? `-${lineRange.end}` : ''} 行
+          </span>
+        )}
+        {/* 2026-10-21 小欧 - 超大文件被截断时如实告知（后端不报错，改截断读取） */}
+        {text.truncated && (
+          <span style={{ color: Colors.WARNING }}>
+            文件共 {formatBytes(text.total_size ?? text.size)}，已加载前{' '}
+            {formatBytes(text.loaded_size ?? text.size)}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         {/* 2026-10-21 小杨 - md 双模切换（头部右侧「文本/美显」，md 默认美显）
             代码/纯文本无此开关 —— 高亮/行号即默认形态 */}
@@ -502,7 +607,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
             padding: Spacing.MD,
           }}
         >
-          <MarkdownSlot text={text.content} markdown />
+          {/* 美显模式同样限行：markdown 渲染 2MB 全文会卡死页面（文本模式已限 2000 行） */}
+          <MarkdownSlot text={beautyText} markdown />
+          {beautyTruncated && (
+            <div style={{ color: Colors.WARNING, fontSize: chatTokens.fontSM }}>
+              美显模式只渲染前 {visibleLines}{' '}
+              行，切换「文本」模式可查看全部已加载内容。
+            </div>
+          )}
         </div>
       ) : (
         /* 文本/代码模式：逐行 flex 行（行号列 + 正文），代码走 prism 高亮 */
@@ -528,7 +640,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
             padding: Spacing.MD,
           }}
         >
-          {lines.map((ln, i) => (
+          {shownLines.map((ln, i) => (
             <div
               key={i}
               data-ln={i + 1}
@@ -576,6 +688,29 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               </span>
             </div>
           ))}
+          {/* 2026-10-21 小欧 - 还有未渲染的行 → 显式按钮继续加载（不做无限滚动，静默截断会骗人） */}
+          {lines.length > shownLines.length && (
+            <Button
+              size="small"
+              onClick={() =>
+                setVisibleLines((v) => Math.min(v + 2000, lines.length))
+              }
+              style={{ marginTop: Spacing.SM }}
+            >
+              显示更多（还有 {lines.length - shownLines.length} 行）
+            </Button>
+          )}
+          {/* 2026-10-21 小欧 - 内容没读完（后端 2MB 截断）→ 向服务端要下一段 */}
+          {hasMoreInFile && (
+            <Button
+              size="small"
+              loading={moreLoading}
+              onClick={() => void loadMore()}
+              style={{ marginTop: Spacing.SM }}
+            >
+              加载后续内容（已读 {loadedLines} 行）
+            </Button>
+          )}
         </pre>
       )}
       {/*

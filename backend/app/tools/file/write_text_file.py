@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 编辑历史:
+# 2026-10-21 - 小欧 - 预读旧内容加闸门 WRITE_INPUT_MAX_BYTES(10MiB)：原为算 diff **整读**旧文件
+#   （几百 MB 文件会 OOM）；旧内容只用于生成 diff（is_unchanged 走哈希缓存不需要它），
+#   超限则不读旧内容 → 不出 diff（写入本身是流式的，不受影响）— 小欧-2026-10-21
 # 2026-07-17 - 小欧 - 早期encoding校验: write()中encoding确定后立即用codecs.lookup()校验，替代等open()才报错
 # 2026-07-20 - 小欧 - 章14 尝试将 content_preview 改为完整内容(3.7/6.4); 用户要求 write 工具不需回显全文, 恢复 _build_content_preview 文首50+文末50 Tool 层预览; schema 入参 max_length 仍依3.6去除
 # 2026-07-20 - 小欧 - 门限复查: 删 diff 生成处 [:2000] 静默截断(违3.7 Tool零截断); diff 由 llm_data["metrics"]["diff"] 改放 llm_data 顶层 "diff", 交 observation_formatter  行×列收口+两态呈现; data 仅留 content_preview(), 严禁与 llm_data 段重复显示
@@ -61,6 +64,7 @@ from typing import Any, Dict, Optional, Tuple
 
 from app.tools.tool_response import build_success, build_error, build_warning, with_artifact_file  # 2026-08-21 小欧 11.6.1: 产出物声明
 from app.tools.tool_constants import WRITE_INER_PREVIEW_CHARS
+from app.tools.tool_constants import WRITE_INPUT_MAX_BYTES
 
 
 def _build_content_preview(content: str) -> str:
@@ -329,8 +333,12 @@ async def write(
         old_content = None
         if not append and Path(to_win_long_path(path)).exists():  # 长路径 — 小欧 2026-08-13
             try:
-                old_raw = Path(to_win_long_path(path)).read_text(encoding=encoding)
-                old_content = old_raw
+                # 2026-10-21 小欧 - 不再**整读**旧文件（几百 MB 文件会 OOM）：
+                #   旧内容只用于生成 diff（is_unchanged 走哈希缓存，不需要旧内容）；
+                #   超过 WRITE_INPUT_MAX_BYTES 就不读 → 不出 diff（写入本身是流式的，不受影响）。
+                _old_size = Path(to_win_long_path(path)).stat().st_size
+                if _old_size <= WRITE_INPUT_MAX_BYTES:
+                    old_content = Path(to_win_long_path(path)).read_text(encoding=encoding)
                 if is_unchanged(file_path, checked_content):
                     record_write(file_path)  # 更新mtime缓存 — 小欧 2026-07-05
                     duration_ms = int((_time_mod.perf_counter() - t0) * 1000)

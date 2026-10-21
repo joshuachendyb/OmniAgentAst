@@ -1,12 +1,12 @@
-// 编辑历史: 2026-10-13 小欧 - 新建: Step 页参数区(文档[29] §2.2/§3.4/DC-04/DC-15/DC-17/DC-19/DC-20)
+// 编辑历史: 2026-10-13 小欧 - 新建: Step 页参数区
 //   顶层键默认折叠(仅含换行的巨型值) · 长行折行完整显示 · 树头复制(格式化 JSON) — 小欧 2026-10-13
 //   其余实现要点: ①nodeKey 只由 entries 下标 idx 构成(不掺参数 key), 参数 key 内含 '/' 也不撞键;
 //   ②key 列限宽 96 与浮层 GroupView 同宽(两载体口径一致);③树头复制按钮用 inline + 中间 flex:1 顶到行尾
 // 编辑历史: 2026-10-21 小杨 - 路径判定抽到 paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）、
 //   路径类值渲染成可点击链接（直达文件页） — 小杨-2026-10-21
 //   (原默认形态 position:absolute 的包含块是树根而非树头, 会压住第一条节点行的值列);
-//   ④行容器 className="params-clickable" 走 CSS hover/focus 反馈(§2.5 V8, 零重渲染);⑤底/框/圆角与 MarkdownText 代码块同款(T32);
-//   ⑥**补底部闭合 `}`**(设计 §2.2/§3.4.1 结构图均有, 初稿代码漏渲染);⑦树根 CircleArrow 显式给 expandedColor=PRIMARY,
+//   ④行容器 className="params-clickable" 走 CSS hover/focus 反馈(零重渲染);⑤底/框/圆角与 MarkdownText 代码块同款;
+//   ⑥**补底部闭合 `}`**(结构图均有, 初稿代码漏渲染);⑦树根 CircleArrow 显式给 expandedColor=PRIMARY,
 //     否则恒展开态会用默认 FOLD_EXPANDED 粉(#ff4d94)—— 粉色在本系统是"可折叠且当前展开"的语义色,
 //     树根不可折叠(no onClick), 用该色属误导, 与「装饰图标不用蓝」同一逻辑 — 小欧 2026-10-13
 // 2026-10-13 小欧 - 十三轮**规则重写**(北京老陈裁定, 违反即打回):
@@ -19,6 +19,7 @@ import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
 // 2026-10-21 小杨 - 路径判定单一真源 + 路径可点击 + 项目根取数
 import { isPathParam } from './paramCategories';
+import { PathAwareJson } from './PathAwareJson';
 import { PathLink } from './PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import {
@@ -78,7 +79,10 @@ const ParamNode: React.FC<ParamNodeProps> = ({
   const open = foldable && isExpanded(nodeKey);
   const summary = foldable
     ? `共 ${String(value).split('\n').length} 行`
-    : displayOf(value);
+    : // 对象值由 PathAwareJson 渲染，这里不再预先 JSON.stringify 一份（大对象白跑一遍）
+      typeof value === 'object' && value !== null
+      ? ''
+      : displayOf(value);
 
   // 2026-10-13 小欧 - 文档[29]§3.4.2/D-1: 此处**不加** e.stopPropagation()。
   //   展开区已移出 role="button" 容器(父级不再是按钮, 无冒泡可阻);
@@ -147,9 +151,20 @@ const ParamNode: React.FC<ParamNodeProps> = ({
             wordBreak: 'break-word',
           }}
         >
-          {isPathParam(label, value) && typeof value === 'string' ? (
-            // 2026-10-21 小杨 - 路径类值渲染成可点击链接（与 ParamsPanel 同一判据）
-            <PathLink value={value} projectRoot={projectRoot} />
+          {/* 2026-10-21 小杨 - 路径值接链接；对象/数组递归渲染，嵌套 path 也可点。
+              多行值走折叠体（原文完整展示），不做成整段链接文本 */}
+          {!foldable &&
+          typeof value === 'string' &&
+          isPathParam(label, value) ? (
+            <>
+              {': '}
+              <PathLink value={value} projectRoot={projectRoot} />
+            </>
+          ) : typeof value === 'object' && value !== null ? (
+            <>
+              {': '}
+              <PathAwareJson value={value} projectRoot={projectRoot} />
+            </>
           ) : (
             `: ${summary}`
           )}

@@ -10,6 +10,7 @@
 //     合并型请求（补拉子树）按键序号丢弃过期响应（不同键并发合法，不能一 abort 了之）— 小欧-2026-10-21
 //   2026-10-21 小欧 - J3「设为会话工作目录」实现：树右键菜单入口 + 先 GET 后 PATCH（全量覆盖语义），
 //     相对→绝对路径走 utils/projectPath.ts，422 的 workspace_rejected 逐条呈现 — 小欧-2026-10-21
+// 2026-10-22 小杨 - 深链路径归一（Windows 反斜杠与 ./ 前缀），否则按 posix 拆分定位必失败 — 小杨-2026-10-22
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -338,7 +339,11 @@ const FilesPage: React.FC = () => {
     const signal = beginTreeReq();
     setTreeStatus({ phase: 'loading' });
     try {
-      const r = await fileApi.fetchTree('', { signal });
+      // 2026-10-21 小欧 - 首屏只取**前 3 层**（max_depth=3）：实测 E:\test_dir 全树 8.9 万节点 /
+      //   19.9MB，服务端 TTFB 9.8 秒（其中 gzip level9 占 4.7s）→ 首屏白屏 10 秒。
+      //   现改为：首屏取 3 层，点开更深目录时用已有的 loadDir 补拉（max_depth=10）。
+      //   **后端不设任何上限**（见 browse_service 常量区红线注释）。
+      const r = await fileApi.fetchTree('', { maxDepth: 3, signal });
       treeRef.current = r.nodes;
       setTree(r.nodes);
       setLoadedKeys([]);
@@ -365,7 +370,13 @@ const FilesPage: React.FC = () => {
   /** 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
   const expandToPath = useCallback(
     async (rel: string): Promise<FileNode | null> => {
-      const segs = rel.split('/').filter(Boolean);
+      // 2026-10-21 小杨 - 工具可能给 Windows 反斜杠或 ./ 前缀；树 key 是 posix，
+      //   不归一化会 100% 找不到目标 — 小杨-2026-10-21
+      const targetKey = rel
+        .replace(/\\/g, '/')
+        .replace(/^\.\/+/, '')
+        .replace(/\/+/g, '/');
+      const segs = targetKey.split('/').filter(Boolean);
       const dirKeys: string[] = [];
       let cur = '';
       for (const s of segs) {
@@ -375,7 +386,8 @@ const FilesPage: React.FC = () => {
         if (hit.type === 'dir' && !hit.children) {
           // 2026-10-21 小欧 - 合并型请求：同键后发者作废先发者（不 abort，不同键并发合法）
           const seq = claimDir(cur);
-          const r = await fileApi.fetchTree(cur);
+          // 2026-10-21 小欧 - 补拉也只取 3 层（点开目录时按需补拉，深了再点再拉）
+          const r = await fileApi.fetchTree(cur, { maxDepth: 3 });
           if (dirSeqRef.current.get(cur) !== seq) return null; // 过期响应丢弃
           const merged = mergeKids(treeRef.current, cur, r.nodes);
           treeRef.current = merged;
@@ -386,7 +398,7 @@ const FilesPage: React.FC = () => {
         }
         if (hit.type === 'dir') dirKeys.push(cur);
       }
-      const target = findNode(treeRef.current, rel);
+      const target = findNode(treeRef.current, targetKey);
       if (!target) return null;
       // 2026-10-21 小杨 - 修复：展开集合由本页唯一持有（原先树内还有一份
       //   互不相通的 expanded state → 深链/定位只改页面 state，树纹丝不动）。
@@ -429,7 +441,8 @@ const FilesPage: React.FC = () => {
 
   /** 深链进入：?path=…&line=… */
   useEffect(() => {
-    const rel = params.get('path');
+    // 2026-10-21 小杨 - 先归一反斜杠，避免 Windows 路径深链在 expandToPath 断链
+    const rel = params.get('path')?.replace(/\\/g, '/');
     // 2026-10-21 小杨 - 修复（阻断）：原 effect 在**树未就绪**时就跑
     //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
     //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
@@ -571,8 +584,8 @@ const FilesPage: React.FC = () => {
       // 2026-10-21 小欧 - 合并型请求：同键后发者作废先发者（不同键并发合法，不能一 abort 了之）
       const seq = claimDir(key);
       try {
-        // 2026-10-21 小杨 - 补拉**到 10 层**（首屏 5 秒开；子树量级可控才补得快）
-        const r = await fileApi.fetchTree(key, { maxDepth: 10 });
+        // 2026-10-21 小杨 - 补拉**到 3 层**（首屏 5 秒开；再深一层由用户点开再拉）
+        const r = await fileApi.fetchTree(key, { maxDepth: 3 });
         if (dirSeqRef.current.get(key) !== seq) return null; // 过期响应丢弃
         return r.nodes;
       } catch {

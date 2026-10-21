@@ -3,6 +3,8 @@
 # 2026-10-19 - 小欧 - 敏感键集合单一真相源移至全局层 secret_utils.SENSITIVE_PARAM_KEYS,
 #   本文件不再另持派生集合; 落盘出口(日志/落库)经 redact_* 遮蔽, SSE/HITL 展示原文。
 # 编辑历史:
+# 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
+#   WRITE_INPUT_MAX_BYTES(10MiB, write 工具预读旧文件做 diff 的上限) — 小欧-2026-10-21
 # 2026-07-14 - 小沈 - OBS_MAX_DISPLAY_ITEMS/MAX_SEARCH_RESULTS 注释更新(grep上限与条目数统一)
 # 2026-07-15 - 小欧 - 常量归一化治理: 新增 B组【系统级】(OBS_SNIPPET/HTML/SYSINFO)与 C组【tool级】(SHELL_OUTPUT/WEB_FETCH/SEARCH_SNIPPET/XLSX/HTTP/DOWNLOAD/WRITE_TEXT), 各常量统一标注【使用对象】便于识别废弃
 # 2026-07-15 - 小欧 - HTTP常量归并: HTTPX_TIMEOUT_DEFAULT+TOOL_BROWSER_UA+TOOL_RETRYABLE_HTTP_CODES 移至网络工具HTTP常量段, 消除散落
@@ -283,6 +285,11 @@ HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES: int = 2 * 1024 * 1024   # 使用对象: htt
 HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS: int = 200 * 1024        # 使用对象: http_request.py(data内联预览字符上限)
 # document/text
 READ_OUTLIMIT_CHARS: int = 500 * 1024             # 使用对象: read_text_file.py(文本内容字符上限, 超则截断)
+READ_INPUT_MAX_BYTES: int = 5 * 1024 * 1024      # 使用对象: read_text_file.py(读进内存的字节上限, 超则按字节截断)
+# 2026-10-21 小欧 - write 工具的**旧内容预读**上限：原实现为算 diff 整读旧文件
+#   （几百 MB 文件直接 OOM）。旧内容只用于生成 diff（is_unchanged 走哈希缓存，不需要它），
+#   故超过此上限就不读旧内容 → 不出 diff（写入本身是流式的，不受影响）。
+WRITE_INPUT_MAX_BYTES: int = 10 * 1024 * 1024    # 使用对象: write_text_file.py(预读旧内容做 diff 的字节上限, 超则跳过 diff)
 READ_DOCX_OUTLIMIT_CHARS: int = 500 * 1024            # 使用对象: read_docx.py(DOCX文本字符上限, 超则截断)
 READ_PPTX_OUTLIMIT_CHARS: int = 500 * 1024            # 使用对象: read_pptx.py(PPTX全部幻灯片文本字符上限, 超则截断)
 # document

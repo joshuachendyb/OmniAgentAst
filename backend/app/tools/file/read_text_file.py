@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 # 2026-10-04 小欧 - obs方案A: 删action.target(params承载目标)+document params file_path→path
 # 2026-10-16 - 小欧 - tool去检查化注释同步: check_for_text_tool 内合法性检查已删(归 路径安全层), 只做类型检查。
+# 编辑历史:
+# 2026-10-21 - 小欧 - 读前闸门：传 max_bytes=READ_INPUT_MAX_BYTES(5MiB) 给公共读取函数
+#   （原为整文件进内存，几百 MB 文件会 OOM）；超限时正文后追加截断标记，
+#   且两个截断原因（读入闸门 / 输出 512KB）**并存**不再互相覆盖 — 小欧-2026-10-21
 """
 F1: read — 读取文本文件
 
@@ -55,7 +59,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from app.tools.tool_response import build_success, build_error, build_warning
-from app.tools.tool_constants import READ_OUTLIMIT_CHARS
+from app.tools.tool_constants import READ_OUTLIMIT_CHARS, READ_INPUT_MAX_BYTES
 from app.tools.tool_constants import ERR_FILE_READ_FAILED
 from app.tools.validate.file_type_checker import check_for_text_tool
 from app.tools.toolhelper.error_hints import hint_for_read_error  # 统一错误提示 - 小欧 2026-07-12
@@ -258,7 +262,12 @@ async def read(
 
         file_size = _p.stat().st_size
 
-        content, used_encoding, error = await _try_read_file_with_encodings(_p, encoding)
+        # 2026-10-21 小欧 - 读前闸门（防 OOM）：原来整文件读进内存（几百 MB 文件会炸），
+        #   现在按 READ_INPUT_MAX_BYTES 截断读取；超限时如实告知 Agent"只读到前 N"。
+        _read_capped = file_size > READ_INPUT_MAX_BYTES
+        content, used_encoding, error = await _try_read_file_with_encodings(
+            _p, encoding, max_bytes=READ_INPUT_MAX_BYTES
+        )
         # 修复: 保存原始content用于record_read — 小欧 2026-08-05 4bug修复
         _original_content = content
         # 修复: 截断前计算真实总行数(必须在if外初始化, 否则翻页/空文件场景NameError) — 小欧 2026-08-05
@@ -273,6 +282,14 @@ async def read(
                 content = content[:READ_OUTLIMIT_CHARS]
                 _outlimit_marker = f"... (内容已截断: 原文{_orig_len}字符, 保留{READ_OUTLIMIT_CHARS}字符) ..."
                 _outlimit_truncated = True
+        # 2026-10-21 小欧 - 读前闸门命中（文件 > READ_INPUT_MAX_BYTES）：只读到前 N 字节，
+        #   如实告知 Agent（否则它会以为读全了 → 结论建立在残缺数据上）。
+        _input_capped_marker = ""
+        if _read_capped:
+            _input_capped_marker = (
+                f"... (文件超过读入上限 {READ_INPUT_MAX_BYTES} 字节, 只读到前 "
+                f"{READ_INPUT_MAX_BYTES} 字节; 建议用 offset/limit 分段读取) ..."
+            )
         if error:
             duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
             llm_data = _build_read_text_file_llm_data("error", duration_ms, file_path=file_path, detail=error, hint=f"文件编码无法识别，请尝试指定 encoding 参数", user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding)
@@ -325,13 +342,23 @@ async def read(
             _data["content"] = add_line_numbers(raw, offset=line_offset)
             if _outlimit_marker:
                 _data["content"] = _data["content"] + "\n" + _outlimit_marker
+            if _input_capped_marker:
+                _data["content"] = _data["content"] + "\n" + _input_capped_marker
 
         _data.pop("start_line", None); _data.pop("end_line", None)
         _data.pop("offset", None); _data.pop("limit", None); _data.pop("tail", None)
         _data.pop("encoding", None)
-        if _outlimit_truncated:
+        if _outlimit_truncated or _read_capped:
+            # 2026-10-21 小欧 - 两个截断原因**并存**（原先后者覆盖前者 → 丢掉"输出也截了"的信息）
+            _reasons = []
+            if _outlimit_truncated:
+                _reasons.append(f"内容超{READ_OUTLIMIT_CHARS}字符已截断(原文{_orig_len}字符)")
+            if _read_capped:
+                _reasons.append(
+                    f"文件超过读入上限{READ_INPUT_MAX_BYTES}字节, 只读到前{READ_INPUT_MAX_BYTES}字节"
+                )
             _data["truncated"] = True
-            _data["truncated_reason"] = f"内容超{READ_OUTLIMIT_CHARS}字符已截断(原文{_orig_len}字符)"
+            _data["truncated_reason"] = "; ".join(_reasons)
         record_read(file_path, _original_content)
 
         # ---- observation_formatter route -------------------------------------------

@@ -2,6 +2,9 @@
 //   新增相对→绝对供 J3 设会话目录用）— 小欧-2026-10-21
 // 2026-10-21 小欧 - toAbsolutePath 改段级拼接：滤掉 '.' 与空段，
 //   不再产出 "F:/proj/./a.md" 这类非规范路径 — 小欧-2026-10-21
+// 2026-10-21 小杨 - toRelativePath 支持工具参数里的相对路径；URL/UNC/越界路径仍返回 null — 小杨-2026-10-21
+// 2026-10-22 小杨 - toRelativePath 增相对路径直转与换行/控制字符拒收（多行参数不拼假 href）；
+//   新增 isAbsolutePath / isLinkableRelPath 供链接层判形态 — 小杨-2026-10-22
 /**
  * 项目根 ⇄ 相对路径 转换（单一真源）
  *
@@ -12,15 +15,49 @@
 const norm = (p: string): string =>
   p.replace(/[/\\]+/g, '/').replace(/\/+$/, '');
 
-/** 绝对 → 相对项目根；不在项目根内返回 null */
+/** Windows 盘符绝对路径（F:/ 或 F:\） */
+export const isAbsolutePath = (p: string): boolean =>
+  /^[A-Za-z]:[\\/]/.test(p) || /^[\\/]/.test(p);
+
+/**
+ * 相对路径是否像一条真路径（含分隔符，或带扩展名）。
+ * 用途：key 命中路径集但值其实是 "user" / "api" 这类普通词时，不做成假链接。
+ */
+export const isLinkableRelPath = (rel: string): boolean =>
+  /[\\/]/.test(rel) || /\.[A-Za-z0-9]{1,8}$/.test(rel);
+
+/**
+ * 任意工具路径 → 相对项目根路径。
+ *
+ * - 相对路径：归一后直接返回（工具可能给 src/main.py、doc\a.md）
+ * - 绝对路径：必须落在项目根内，否则返回 null（不在根内不造假链接）
+ * - URL / UNC / 含 .. 的越界路径：返回 null
+ */
 export const toRelativePath = (
   value: string,
   projectRoot?: string
 ): string | null => {
+  const raw = value.trim();
+  if (!raw) return null;
+  // 含换行/控制字符的值不是路径（多行参数原样显示即可，别拼出带 %0A 的假 href）
+  if (/[\r\n\t\0]/.test(raw)) return null;
+  // URL 不是项目文件路径；file: 等自定义 scheme 同样不接
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(raw)) return null;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw) && !/^[A-Za-z]:[\\/]/.test(raw))
+    return null;
+
+  const v = norm(raw);
+  if (!v) return null;
+
+  if (!isAbsolutePath(raw)) {
+    const segs = v.split('/').filter((s) => s !== '' && s !== '.');
+    if (!segs.length || segs.includes('..')) return null;
+    return segs.join('/');
+  }
+
   if (!projectRoot) return null;
   const root = norm(projectRoot);
-  const v = norm(value);
-  if (!root || !v) return null;
+  if (!root) return null;
   if (!v.toLowerCase().startsWith(root.toLowerCase())) return null;
   // 校验分隔符边界：F:\proj2\a.md 不是 F:\proj 内的 "2/a.md"
   if (v.length > root.length && v[root.length] !== '/') return null;
@@ -37,13 +74,14 @@ export const toAbsolutePath = (
   rel: string,
   projectRoot?: string
 ): string | null => {
-  if (!projectRoot) return null;
-  const segs = norm(rel)
+  const raw = rel.trim();
+  if (!raw || isAbsolutePath(raw)) return null;
+  const segs = norm(raw)
     .split('/')
     .filter((s) => s !== '' && s !== '.');
   if (!segs.length) return null;
   if (segs.includes('..')) return null;
-  const root = norm(projectRoot);
+  const root = norm(projectRoot ?? '');
   if (!root) return null;
   // 段级拼接：'.' 与空段已滤掉，避免产出 "F:/proj/./a.md" 这类非规范路径
   return `${root}/${segs.join('/')}`;

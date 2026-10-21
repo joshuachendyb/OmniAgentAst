@@ -19,7 +19,6 @@ PATH_OUTSIDE_ROOT = "PATH_OUTSIDE_ROOT"          # 403 越出项目根目录
 PATH_FORBIDDEN = "PATH_FORBIDDEN"                # 403 触达代码库根禁区
 NOT_FOUND = "NOT_FOUND"                          # 404 路径不存在
 SESSION_NOT_FOUND = "SESSION_NOT_FOUND"          # 404 会话不存在
-FILE_TOO_LARGE = "FILE_TOO_LARGE"                # 413 文本超 2MB
 IMAGE_TOO_LARGE = "IMAGE_TOO_LARGE"              # 413 图片超 10MB
 UNSUPPORTED_TYPE = "UNSUPPORTED_TYPE"            # 415 类型不在白名单
 UNDECODABLE = "UNDECODABLE_ENCODING"             # 415 文本编码无法识别
@@ -46,7 +45,6 @@ _CATALOG: Dict[str, _Err] = {
     PATH_FORBIDDEN: _Err(403, "路径位于受保护区域"),
     NOT_FOUND: _Err(404, "路径不存在"),
     SESSION_NOT_FOUND: _Err(404, "会话不存在"),
-    FILE_TOO_LARGE: _Err(413, "文件超过 2MB，本期不支持预览"),
     IMAGE_TOO_LARGE: _Err(413, "图片超过 10MB，本期不支持预览"),
     # 2026-10-21 小杨 - 修复：文案还停留在"后缀白名单"时代（实际已放开为
     #   "可解码文本 + 图片"），会误导用户以为 .py/.json/无后缀文件不可读。
