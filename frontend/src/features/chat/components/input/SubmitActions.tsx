@@ -11,7 +11,7 @@
  * @date 2026-10-20
  */
 import React from 'react';
-import { Button, Space, Tooltip } from 'antd';
+import { Button, Space } from 'antd';
 import {
   ArrowUpOutlined,
   PauseOutlined,
@@ -88,27 +88,12 @@ const SubmitActions: React.FC<SubmitActionsProps> = ({
         2026-10-20 小欧 - 受阻态: 置灰走中性灰(BG.TERTIARY)而非 antd primary 默认的半透明蓝,
           贴图灰态; Tooltip 文案按受阻原因分流(与框外常驻提示各司其职: 常驻提示管执行中, 这里管 hover)
       */}
-      {blocked ? (
-        <Tooltip
-          title={sendBlocked ? '任务执行中，暂不可发送' : '输入内容后发送'}
-        >
-          {/* disabled Button 不触发 Tooltip, 用 span 承接 hover(同原 SubmitBar 技巧) */}
-          <span>
-            <Button
-              type="primary"
-              aria-label="发送"
-              icon={<ArrowUpOutlined style={iconSize} />}
-              disabled
-              style={{
-                ...square,
-                background: Colors.BG.TERTIARY,
-                borderColor: 'transparent',
-                color: Colors.TEXT.TERTIARY,
-              }}
-            />
-          </span>
-        </Tooltip>
-      ) : (
+      {/*
+        2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：受阻态的原生 title 已有
+          框外常驻提示（同信息一处即可），antd 浮泡层剥掉 —— 外层 span 承接 hover 失效，
+          disabled Button 直接渲染（提示文案由 aria-label / 常驻提示承载）。
+      */}
+      {blocked ? null : (
         <Button
           type="primary"
           aria-label="发送"

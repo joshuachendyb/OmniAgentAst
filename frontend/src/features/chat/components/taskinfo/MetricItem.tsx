@@ -1,11 +1,11 @@
-// 编辑历史: 2026-09-08 小欧 - 六章6.5: 抽"标签灰 + 数值加粗 + 可选分项/图标"两段式通用组件(DRY, G5/G6 ≥4 处复用)
+﻿// 编辑历史: 2026-09-08 小欧 - 六章6.5: 抽"标签灰 + 数值加粗 + 可选分项/图标"两段式通用组件(DRY, G5/G6 ≥4 处复用)
 //   支持 detail(P/C 中灰)、tone、icon、maxWidth 截断态、tooltip、data-state(测试钩子) — 小欧-2026-09-08
 // 编辑历史: 2026-10-04 小欧 - Tooltip 加 styles.root.whiteSpace='nowrap'(禁行统一由浮层层负责, 调用方不再包 span);
 //   label 改可选(为空则不渲染标签 span, 本轮项只显数值)
 // 编辑历史: 2026-10-10 小欧 三堂会审 10 规范审计 - tertiary 色调注释同步(summary-only 态已下线, 只剩 empty)
 // 编辑历史: 2026-09-09 小欧 - v4.4 修复#1(数值 hover 变 PRIMARY):
 import React from 'react';
-import { Tooltip } from 'antd';
+
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { EllipsisTip } from './EllipsisTip';
 
@@ -73,15 +73,12 @@ export const MetricItem: React.FC<MetricItemProps> = ({
       )}
     </React.Fragment>
   );
+  // 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：外壳 span 的原生 title={tooltip}
+  //   就是用户要的**方框提示**，把它里面再包 antd 浮泡的一层剥掉（真正双叠的根源）。
   const wrapped = maxWidth ? (
     <EllipsisTip text={value} tooltip={tooltip} maxWidth={maxWidth}>
       {body}
     </EllipsisTip>
-  ) : tooltip ? (
-    // 2026-10-04 小欧: tooltip 一律不折行, 禁行由浮层层负责, 调用方不必再包 nowrap span
-    <Tooltip title={tooltip} styles={{ root: { whiteSpace: 'nowrap' } }}>
-      {body}
-    </Tooltip>
   ) : (
     body
   );

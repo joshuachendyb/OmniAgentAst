@@ -35,8 +35,13 @@ interface SessionLayoutProps {
 const LEFTBAR_MINW = 200; // 2026-08-30 小欧 v1.100: 左列宽度随右栏折叠 flex 自适应填充(见 4.3.2), min 全域生效防过窄
 const LEFTBAR_MAXW = 560; // max 防左列过宽——仅右栏展开态生效(防挤占右侧查看区); 右栏收起态左列填满不设 max(11.0 要求③)
 
-const renderSlot = (panels: SessionPanel[], slot: SlotName) =>
-  panels
+/**
+ * 2026-10-21 小杨 - 体验审计（版面决策，替代"同 slot 多面板 → Tabs"）：
+ *   次要面板不再与主面板并列成 tab（主次同权、切换即失去主内容视野），
+ *   改为注册到 `rightBottom` slot —— 右栏下方**可折叠区**，常驻可见且不抢主位。
+ */
+const renderSlot = (panels: SessionPanel[], slot: SlotName) => {
+  const visible = panels
     .filter((p) => p.slot === slot)
     .filter((p) =>
       readPanelVisible(
@@ -44,8 +49,16 @@ const renderSlot = (panels: SessionPanel[], slot: SlotName) =>
         p.defaultVisible ?? true,
         p.persistVisible ?? false
       )
-    )
-    .map((p) => <React.Fragment key={p.key}>{p.component}</React.Fragment>);
+    );
+  if (visible.length === 0) return null;
+  return (
+    <>
+      {visible.map((p) => (
+        <React.Fragment key={p.key}>{p.component}</React.Fragment>
+      ))}
+    </>
+  );
+};
 
 // 2026-08-28 小欧 v1.3: 判空槽, 空则不渲染外层div, 避免空div占gap8致间距翻倍
 const hasVisibleSlot = (panels: SessionPanel[], slot: SlotName): boolean =>
@@ -137,6 +150,23 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
           >
             {renderSlot(panels, 'right')}
           </div>
+          {/* 2026-10-21 小杨 - 体验审计：右栏下方**折叠区**（次要面板的家）
+              —— 与主内容共用右栏、但有独立边界与高度上限，不挤占主内容。 */}
+          {hasVisibleSlot(panels, 'rightBottom') && (
+            <div
+              style={{
+                flex: '0 0 auto',
+                minHeight: 0,
+                maxHeight: '45%',
+                display: 'flex',
+                flexDirection: 'column',
+                borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+                background: Colors.BG.SECONDARY,
+              }}
+            >
+              {renderSlot(panels, 'rightBottom')}
+            </div>
+          )}
         </div>
       ) : (
         <div

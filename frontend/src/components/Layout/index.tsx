@@ -1,4 +1,4 @@
-// 编辑历史: 2026-02-17 小新 - 创建Layout组件(左右分栏+响应式)
+﻿// 编辑历史: 2026-02-17 小新 - 创建Layout组件(左右分栏+响应式)
 // 编辑历史: 2026-02-18 小新 - 添加移动端响应式支持
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: updateConfig改传ai_model_ref结构; serviceStatus的provider/model读取点改经status.model_ref派生
 // 编辑历史: 2026-08-27 小欧 - 修复#31: serviceStatus.success→valid字段名对齐后端返回
@@ -50,7 +50,6 @@ import {
   Menu,
   Avatar,
   Badge,
-  Tooltip,
   Drawer,
   Button,
   Grid,
@@ -427,11 +426,7 @@ const AppLayout: React.FC<LayoutProps> = ({
       key: '/knowledge',
       icon: <BookOutlined />,
       title: '知识库',
-      label: (
-        <Tooltip title="即将上线" placement="right">
-          <span style={{ opacity: 0.6 }}>知识库</span>
-        </Tooltip>
-      ),
+      label: <span style={{ opacity: 0.6 }}>知识库</span>,
       disabled: true,
     },
     { type: 'divider' },
@@ -548,9 +543,10 @@ const AppLayout: React.FC<LayoutProps> = ({
           //   2026-09-15 小欧 - 修复折叠后顶部Logo不显示: 原条件 !collapsed 使折叠态整块不渲染,
           //   容器折叠态 justify-content:center 正好居中展示点阵 — 小欧-2026-09-15
           // 2026-09-15 小欧 - Logo包Tooltip"OmniAgentAst": 折叠态窄栏可识别品牌 — 小欧-2026-09-15
-          <Tooltip title="OmniAgentAst" placement="right">
+          // 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：只留原生方框 title（antd 剥离浮泡）
+          <div title="OmniAgentAst">
             <LogoGridIcon />
-          </Tooltip>
+          </div>
         )}
       </div>
 
@@ -657,21 +653,21 @@ const AppLayout: React.FC<LayoutProps> = ({
           <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
             {/* 移动端菜单按钮 - 前端小新代修改 UX-L02: 增大按钮尺寸，添加tooltip */}
             {isMobile && (
-              <Tooltip title="打开导航菜单">
-                <Button
-                  type="text"
-                  icon={<MenuOutlined />}
-                  onClick={() => setDrawerVisible(true)}
-                  style={{ fontSize: 20, padding: '8px 12px' }}
-                />
-              </Tooltip>
+              <Button
+                type="text"
+                icon={<MenuOutlined />}
+                onClick={() => setDrawerVisible(true)}
+                title="打开导航菜单"
+                style={{ fontSize: 20, padding: '8px 12px' }}
+              />
             )}
             {/* 2026-09-08 小欧 - 标题图标化(北京老陈令): "对话与任务"文字换D三色弧段loader(蓝绿橙),
                 与对比页 title-icon-compare.html 的 D 三色版一致, 1s逆时针常转; Tooltip 保留原标题, 无障碍 — 小欧-2026-09-08
                 2026-09-15 小欧 - 内联SVG抽离至 AnimatedIcons/TitleSpinIcon — 小欧-2026-09-15 */}
-            <Tooltip title="对话与任务" placement="bottom">
+            {/* 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：原生 title 即可 */}
+            <span title="对话与任务">
               <TitleSpinIcon />
-            </Tooltip>
+            </span>
             {/* 2026-09-15 小欧 - 品牌文字移此(北京老陈令): 左侧文字Logo挪到动画圈圈之后, 字号/粗细/色与左侧一致 — 小欧-2026-09-15 */}
             <span className="brand-title-text" aria-label="OmniAgentAst">
               OmniAgentAst.

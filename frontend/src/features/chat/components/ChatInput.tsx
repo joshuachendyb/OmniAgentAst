@@ -59,7 +59,6 @@ import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-21 小杨 - 文档[28] 4.4.6/9.5/9.7：引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
 import { composerRefStore, newRefId } from '../streams/composerRefStore';
 import { useComposerRefs } from '../hooks/useComposerRefs';
-import { stripAtTokens } from '../utils/atTokens';
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';
@@ -124,19 +123,52 @@ const ChatInput: React.FC<ChatInputProps> = ({
   useEffect(() => {
     if (pendingCount === 0) return;
     const incoming = composerRefStore.takeAll();
-    if (incoming.length === 0) return; // StrictMode 双跑：第二次取空，直接返回（否则多拼一个空格）
+    if (incoming.length === 0) return; // StrictMode 双跑：第二次取空，直接返回
+    // 2026-10-21 小杨 - 体验审计最佳改造：**引用是结构化对象，正文不再写 @label**
+    //   原做法把 "@label " 追加进正文 + 再渲染一个 chip = **同一信息两个家** →
+    //   ①删 chip 后正文残留裸 @a.md（模型收到无意义提及）；②选中候选后正文出现 "@查询词 @文件名" 双 @；
+    //   ③发送前还要用 stripAtTokens 反向剥离（边界误伤、压掉用户代码缩进）。
+    //   现在：**chip 是引用的唯一表示，正文只留用户自己写的字** → 上述三族问题一次性消失，
+    //   发送即发 refs + 纯正文（不再需要 stripAtTokens）。
     setRefs((prev) => [...prev, ...incoming]);
-    setDraft(
-      (d) =>
-        `${d}${d ? ' ' : ''}${incoming.map((r) => `@${r.label}`).join(' ')} `
-    );
-  }, [pendingCount, setRefs, setDraft]);
+  }, [pendingCount, setRefs]);
   // 2026-10-21 小杨 - 文档[28]§9.7(O3/O4)：@ 补全状态
   const [atOpen, setAtOpen] = useState(false);
   const [atHits, setAtHits] = useState<SearchHit[]>([]);
+  const [atIndex, setAtIndex] = useState(0); // 2026-10-21 小杨 - 键盘导航：当前高亮项
+  const [atRange, setAtRange] = useState<{ at: number; caret: number } | null>(
+    null
+  ); // 2026-10-21 小杨 - 选中候选时**替换** @查询词 段（而非追加）
   const [picking, setPicking] = useState(false); // O3: @ 补全在途唯一性闸门（防连点）
   const atSeq = useRef(0); // 迟到响应丢弃（debounce 后的旧请求不得覆盖新结果）
+  const atTimer = useRef<number | null>(null); // 2026-10-21 小杨 - 真防抖（每次击键不再真发一次全盘扫描）
+  const inputRef = useRef<HTMLTextAreaElement | null>(null); // 取真实光标位置
   const nav = useNavigate();
+
+  // 卸载时清理定时器（避免卸载后 setState）
+  useEffect(
+    () => () => {
+      if (atTimer.current) window.clearTimeout(atTimer.current);
+    },
+    []
+  );
+  // 2026-10-21 小杨 - 体验审计（#3）：候选浮层**点外部关闭**
+  //   浮层化后（absolute）会压住下方内容，用户点页面其他地方 expect 浮层散开（antd 惯例），
+  //   现实现只有 Esc 能关 → 把内容永久压住。用 rootRef 判定点击是否落在整块输入组件外。
+  useEffect(() => {
+    if (!atOpen) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (
+        rootRef.current &&
+        e.target instanceof Node &&
+        !rootRef.current.contains(e.target)
+      ) {
+        setAtOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onDocMouseDown);
+    return () => window.removeEventListener('mousedown', onDocMouseDown);
+  }, [atOpen]);
   // 2026-10-13 13:45 小欧: 本机最近提交历史(懒初始化一次; 写入只发生在本标签页, 无需跨标签页同步)
   const [recents, setRecents] = useState<RecentInput[]>(loadRecentInputs);
   // 2026-10-13 13:45 小欧: 历史翻动游标(-1 = 未在翻历史); histBackup = 上翻前正在输入的内容, ↓ 翻到底时回填
@@ -229,13 +261,41 @@ const ChatInput: React.FC<ChatInputProps> = ({
       showMessage(ErrorType.FILE_READ, '引用内容仍在载入，请稍候');
       return;
     }
-    // 2026-10-21 小杨 - 文档[28]§9.7.3(M27/O6)：@token 精确剥离（无 refs 时原样发送，@2024 不受影响）
-    const cleanText = refs.length
-      ? stripAtTokens(
-          content,
-          refs.map((r) => r.label)
-        )
-      : content;
+    /**
+     * 2026-10-21 小杨 - 体验审计（#11 引用失效可见，北京老陈拍板）：
+     *   发送前对每个引用**重读一遍**：①a 文件被删/不可读 → 该项标 invalid、阻断发送并点名
+     *   （不再让模型收到失效内容）；②读成功的顺手把 content 换成最新（内容保鲜）。
+     *   校验失败的 refs 同时回写（chip 红底 + "（已失效）"）。
+     */
+    if (refs.length > 0) {
+      const checked = await Promise.all(
+        refs.map(async (r) => {
+          if (!r.path) return r;
+          try {
+            const f = await fileApi.readFile(r.path);
+            return { ...r, content: f.content, size: f.size, invalid: false };
+          } catch {
+            return { ...r, invalid: true };
+          }
+        })
+      );
+      setRefs(checked);
+      const bad = checked.filter((r) => r.invalid);
+      if (bad.length > 0) {
+        showMessage(
+          ErrorType.FILE_READ,
+          `引用已失效：${bad
+            .map((b) => b.label)
+            .join('、')}（文件不存在或不可读），请在引用区移除后再发送`
+        );
+        return;
+      }
+    }
+    // 2026-10-21 小杨 - 体验审计最佳改造：**正文即最终正文**（不再做 stripAtTokens 反向剥离）
+    //   旧模型：正文里塞了 "@label"，发送前再逐个剥 → 边界误伤（吃掉"邮箱 a@b.com"的 b.com）、
+    //   且全文折叠空格会毁掉用户粘贴的代码缩进。
+    //   新模型：引用是**结构化 refs**（chip 唯一表示），正文只有用户写的字 → 直接发，无需剥离。
+    const cleanText = content;
     const backup = draft;
     exitHistory();
     setDraft('');
@@ -264,83 +324,120 @@ const ChatInput: React.FC<ChatInputProps> = ({
    * ⚠️ ②只在光标位于首行行首 / 末行行尾时才劫持: TextArea 里 ↑↓ 默认移动光标,
    *    无条件劫持会导致多行文本无法上下移动光标 = 严重功能退化。
    */
-  const handleInputKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.nativeEvent.isComposing) return;
-      const el = e.currentTarget;
-      // 2026-10-13 14:35 小欧 - 收敛为"是否已在翻动"单一判据。
-      //   旧写法在 ↑ 用 atFirstLine、在 ↓ 用 (atLastLine || histIdx>0), 两者自相矛盾:
-      //   histIdx===0 认光标位置、histIdx>0 又无条件劫持; 且翻动后 caret 已由 rAF 置于末尾,
-      //   atLastLine 恒为 true —— 整个表达式恒等于 histIdx>=0, 是纯死逻辑。
-      //   归一后: 未翻动时严格要求首行行首才启动(保护多行光标编辑); 一旦进入翻动, ↑↓ 一律续翻。
-      const browsing = histIdx >= 0;
-      const atFirstLine = el.selectionStart === 0;
-
-      // 2026-10-13 13:55 小欧 - 修正: 条件放宽为 histIdx>=0 || 光标在首行行首。
-      //   原写法只看 atFirstLine, 但翻出一条后光标已被置于末尾, 第二次 ↑ 因 selectionStart!==0
-      //   而不劫持 → 无法连续往更旧翻(与 bash 习惯不符)。已在翻动态时无条件续翻;
-      //   未进入翻动态时仍严格要求首行行首, 绝不影响多行光标移动。
-      if (
-        e.key === 'ArrowUp' &&
-        recents.length > 0 &&
-        (browsing || atFirstLine)
-      ) {
-        const next = histIdx + 1;
-        if (next >= recents.length) return;
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 2026-10-21 小杨 - 体验审计：@ 候选面板打开时，↑↓/Enter/Esc 归候选面板（不再翻历史）
+    if (atOpen && atHits.length > 0) {
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (histIdx < 0) setHistBackup(draft);
-        setHistIdx(next);
-        setDraft(recents[next].text);
-        requestAnimationFrame(() =>
-          el.setSelectionRange(el.value.length, el.value.length)
-        );
+        moveAtIndex(1);
         return;
       }
-
-      if (e.key === 'ArrowDown' && browsing) {
+      if (e.key === 'ArrowUp') {
         e.preventDefault();
-        const next = histIdx - 1;
-        if (next < 0) {
-          setHistIdx(-1);
-          setDraft(histBackup ?? '');
-          setHistBackup(null);
-        } else {
-          setHistIdx(next);
-          setDraft(recents[next].text);
-        }
-        requestAnimationFrame(() =>
-          el.setSelectionRange(el.value.length, el.value.length)
-        );
+        moveAtIndex(-1);
         return;
       }
-
-      if (e.key === 'Escape' && histIdx >= 0) {
+      if (e.key === 'Enter') {
         e.preventDefault();
+        const hit = atHits[atIndex];
+        if (hit) void pickAtItem(hit);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setAtOpen(false);
+        setAtHits([]);
+        atSeq.current += 1; // 作废在途请求
+        return;
+      }
+    }
+    if (e.nativeEvent.isComposing) return;
+    const el = e.currentTarget;
+    // 2026-10-13 14:35 小欧 - 收敛为"是否已在翻动"单一判据。
+    //   旧写法在 ↑ 用 atFirstLine、在 ↓ 用 (atLastLine || histIdx>0), 两者自相矛盾:
+    //   histIdx===0 认光标位置、histIdx>0 又无条件劫持; 且翻动后 caret 已由 rAF 置于末尾,
+    //   atLastLine 恒为 true —— 整个表达式恒等于 histIdx>=0, 是纯死逻辑。
+    //   归一后: 未翻动时严格要求首行行首才启动(保护多行光标编辑); 一旦进入翻动, ↑↓ 一律续翻。
+    const browsing = histIdx >= 0;
+    const atFirstLine = el.selectionStart === 0;
+
+    // 2026-10-13 13:55 小欧 - 修正: 条件放宽为 histIdx>=0 || 光标在首行行首。
+    //   原写法只看 atFirstLine, 但翻出一条后光标已被置于末尾, 第二次 ↑ 因 selectionStart!==0
+    //   而不劫持 → 无法连续往更旧翻(与 bash 习惯不符)。已在翻动态时无条件续翻;
+    //   未进入翻动态时仍严格要求首行行首, 绝不影响多行光标移动。
+    if (
+      e.key === 'ArrowUp' &&
+      recents.length > 0 &&
+      (browsing || atFirstLine)
+    ) {
+      const next = histIdx + 1;
+      if (next >= recents.length) return;
+      e.preventDefault();
+      if (histIdx < 0) setHistBackup(draft);
+      setHistIdx(next);
+      setDraft(recents[next].text);
+      requestAnimationFrame(() =>
+        el.setSelectionRange(el.value.length, el.value.length)
+      );
+      return;
+    }
+
+    if (e.key === 'ArrowDown' && browsing) {
+      e.preventDefault();
+      const next = histIdx - 1;
+      if (next < 0) {
         setHistIdx(-1);
         setDraft(histBackup ?? '');
         setHistBackup(null);
+      } else {
+        setHistIdx(next);
+        setDraft(recents[next].text);
       }
-    },
-    [recents, histIdx, histBackup, draft, setDraft]
-  );
+      requestAnimationFrame(() =>
+        el.setSelectionRange(el.value.length, el.value.length)
+      );
+      return;
+    }
 
-  /** 手动打字时复位历史游标(否则打完字按 ↑ 会从旧游标继续, 跳错条目) */
+    if (e.key === 'Escape' && histIdx >= 0) {
+      e.preventDefault();
+      setHistIdx(-1);
+      setDraft(histBackup ?? '');
+      setHistBackup(null);
+    }
+  };
+
+  /**
+   * 手动打字时复位历史游标(否则打完字按 ↑ 会从旧游标继续, 跳错条目)
+   *
+   * 2026-10-21 小杨 - 体验审计最佳改造：**@ 补全改为"光标真实位置"驱动 + 真正防抖**
+   *   ① 触发判据用**真实光标位置**（原实现用 v.length 当光标 → 光标不在末尾时误触发/漏触发）；
+   *   ② 触发范围收窄为"路径形态"（`@` 后不得含空白，且含分隔符或扩展名）→ 邮箱 a@b.com 不再误触发；
+   *   ③ **真防抖**（clearTimeout + 卸载清理）→ 每次击键不再真发一次 20000 节点的全盘扫描；
+   *   ④ 关闭候选时**作废在途请求**（原实现不自增序号 → 删掉 @ 后过期响应会把面板凭空弹回）。
+   */
   const handleInputChange = useCallback(
     (v: string) => {
       setDraft(v);
       if (histIdx >= 0) exitHistory();
-      // 2026-10-21 小杨 - 文档[28]§4.4.7/9.7：@ 补全触发（取光标前最后一个 @，其后不得有空白）
-      const caret = v.length;
+      const el = inputRef.current;
+      const caret = el ? (el.selectionStart ?? v.length) : v.length;
       const at = v.lastIndexOf('@', caret - 1);
       const query = at >= 0 ? v.slice(at + 1, caret) : '';
-      const ok = at >= 0 && !/[\s]/.test(query) && query.length > 0;
+      const looksPath = /[\\/]|[\w-]+\.[A-Za-z0-9]{1,8}$/.test(query);
+      const ok =
+        at >= 0 && !/[\s]/.test(query) && query.length > 0 && looksPath;
       if (!ok) {
+        atSeq.current += 1; // 作废在途请求（否则删掉 @ 后过期响应会把面板弹回）
+        if (atTimer.current) window.clearTimeout(atTimer.current);
         setAtOpen(false);
         setAtHits([]);
         return;
       }
+      setAtRange({ at, caret });
       const seq = ++atSeq.current;
-      window.setTimeout(() => {
+      if (atTimer.current) window.clearTimeout(atTimer.current);
+      atTimer.current = window.setTimeout(() => {
         fileApi
           .searchFiles(query, 20)
           .then((r) => {
@@ -354,12 +451,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
             setAtHits([]);
             setAtOpen(false);
           });
-      }, 200);
+      }, 220);
     },
     [histIdx, setDraft, exitHistory]
   );
 
-  /** 2026-10-21 小杨 - 文档[28]§9.7.2(O3/O4)：选中候选 → 现场读正文 → 占位 token → 就位 */
+  /**
+   * 2026-10-21 小杨 - 文档[28]§9.7.2(O3/O4) + 体验审计最佳改造：
+   *   选中候选 → **把 @查询词 段替换掉**（原实现是追加 → 正文出现 "@查询词 @文件名" 双 @），
+   *   同时把该文件作为**结构化引用**注入（chip 是唯一表示，正文不留 @label）。
+   */
   const pickAtItem = async (hit: SearchHit) => {
     if (picking) return; // 防连点
     if (hit.preview !== 'text') return; // 6.7 表第 3 行落点
@@ -376,6 +477,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
         pending: true,
       },
     ]);
+    // 正文里的 "@查询词" 是**检索动作**而非用户想发送的内容 → 选中即移除该段
+    if (atRange) {
+      setDraft((d) => `${d.slice(0, atRange.at)}${d.slice(atRange.caret)}`);
+    }
     try {
       const f = await fileApi.readFile(hit.path);
       setRefs((prev) =>
@@ -385,7 +490,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
             : r
         )
       );
-      setDraft((d) => `${d}${d && !d.endsWith(' ') ? ' ' : ''}@${hit.name} `);
     } catch {
       setRefs((prev) =>
         prev.filter((r) => !(r.pending && r.path === hit.path))
@@ -394,7 +498,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
     } finally {
       setPicking(false);
       setAtOpen(false);
+      setAtHits([]);
+      setAtRange(null);
     }
+  };
+
+  /** 2026-10-21 小杨 - 体验审计：@ 候选的**键盘导航**（↑↓ 移动 / Enter 选中 / Esc 关闭）
+   *  内联在 handleInputKeyDown 内（唯一调用点）——不再单列函数，避免依赖数组失配。 */
+  const moveAtIndex = (delta: number) => {
+    setAtIndex((i) => (i + delta + atHits.length) % atHits.length);
   };
 
   return (
@@ -408,36 +520,68 @@ const ChatInput: React.FC<ChatInputProps> = ({
           style={{
             display: 'flex',
             flexWrap: 'wrap',
-            gap: 4,
+            alignItems: 'center',
+            gap: 6,
             marginBottom: 4,
           }}
         >
+          {/* 2026-10-21 小杨 - 体验审计：给引用区一个**名字与计数**（否则用户不知道那排 chip 是什么） */}
+          <span
+            aria-live="polite"
+            style={{
+              color: Colors.TEXT.SECONDARY,
+              fontSize: chatTokens.fontSM,
+            }}
+          >
+            引用 {refs.length}
+          </span>
           {refs.map((r) => (
             <span
               key={r.id}
-              title={`${r.path ?? ''}（约${(r.content ?? '').length} 字符）`}
+              title={`${r.path ?? ''}${
+                r.lineRange
+                  ? `（第 ${r.lineRange.start}-${r.lineRange.end} 行）`
+                  : ''
+              }`}
               style={{
-                background: chatTokens.colorPrimaryBg,
-                color: '#333333',
-                border: `1px solid ${chatTokens.colorBorder}`,
+                /* 2026-10-21 小杨 - 体验审计（#11）：失效引用红底（与正常蓝底一眼区分） */
+                background: r.invalid
+                  ? Colors.ERROR_BG
+                  : chatTokens.colorPrimaryBg,
+                color: Colors.TEXT.STRONG,
+                border: `1px solid ${r.invalid ? Colors.ERROR_BORDER : chatTokens.colorBorder}`,
                 borderRadius: chatTokens.radius,
-                padding: `0 ${chatTokens.gap / 2}px`,
+                padding: '1px 4px 1px 6px',
                 cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
               }}
               onClick={() =>
                 nav(buildFileDeepLink(r.path ?? '', r.lineRange ?? null))
               }
             >
-              <FileOutlined style={{ color: chatTokens.colorPrimary }} />{' '}
+              <FileOutlined style={{ color: chatTokens.colorPrimary }} />
               {r.label}
-              {r.pending ? '（载入中…）' : ''}
+              {r.pending ? '（载入中…）' : r.invalid ? '（已失效）' : ''}
+              {/* 2026-10-21 小杨 - 体验审计：删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   setRefs((prev) => prev.filter((x) => x.id !== r.id));
                 }}
                 aria-label={`删除引用 ${r.label}`}
-                style={{ marginLeft: 4 }}
+                title="移除该引用"
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                  padding: '0 4px',
+                  fontSize: 14,
+                  lineHeight: '16px',
+                  color: Colors.TEXT.SECONDARY,
+                }}
               >
                 ×
               </button>
@@ -445,66 +589,111 @@ const ChatInput: React.FC<ChatInputProps> = ({
           ))}
         </div>
       )}
+      {refsPending && (
+        <div style={{ color: Colors.WAIT_ACTION, fontSize: chatTokens.fontSM }}>
+          引用内容正在载入，稍候即可发送
+        </div>
+      )}
       {sendBlocked && refs.length > 0 && (
-        <div style={{ color: '#888888', fontSize: chatTokens.fontSM }}>
+        <div style={{ color: Colors.TEXT.WEAK, fontSize: chatTokens.fontSM }}>
           当前正在生成，请等待本轮结束后编辑并发送
         </div>
       )}
-      {/* 2026-10-21 小杨 - 文档[28]§4.4.7：@ 补全候选（只列可读文本类型） */}
-      {atOpen && atHits.length > 0 && (
+      {/* 2026-10-21 小杨 - 体验审计：候选面板改为**浮层**（absolute）
+          原实现是普通文档流 → 每打开一次就把下方内容整体下推，输入区位置跳动。
+          现在锚定在输入框下沿、不参与布局。 */}
+      <div style={{ position: 'relative' }}>
+        <InputCore
+          value={draft}
+          onChange={handleInputChange}
+          onPressEnter={handlePressEnter}
+          onKeyDown={handleInputKeyDown}
+          focusKey={focusKey}
+          inputRef={inputRef}
+          /*
+           * 2026-10-13 18:15 小欧 - 文档[30] §2.5: 不再 disabled。
+           *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中
+           *   连打字/翻历史/存草稿都做不到。执行中不可发是**提交**问题, 由发送按钮置灰(B)与
+           *   常驻提示(C)表达, 不该由禁用来表达。
+           */
+          actions={
+            // 2026-10-20 小欧 - 框内右下角动作按钮组: 两受阻判据均与提交门/提交处理同源, 见 SubmitActions 头注
+            <SubmitActions
+              loading={loading}
+              isReceiving={isReceiving}
+              isPaused={isPaused}
+              sendBlocked={sendBlocked || refsPending}
+              emptyDraft={emptyDraft}
+              onSend={handleSendInternal}
+              onCancel={onCancel}
+              onTogglePause={onTogglePause}
+            />
+          }
+        />
+        {/* 2026-10-21 小杨 - 体验审计最佳改造：@ 候选面板放在**输入框下方**
+            （原实现放在输入框上方 → 遮住引用行，且与"输入框在上、辅助在下"的常规心智相反）；
+            并支持 ↑↓/Enter/Esc 键盘操作 + 当前项高亮。 */}
+        {atOpen && atHits.length > 0 && (
+          <div
+            role="listbox"
+            aria-label="文件候选"
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: 0,
+              right: 0,
+              marginTop: 4,
+              zIndex: 20,
+              border: `1px solid ${chatTokens.colorBorder}`,
+              borderRadius: chatTokens.radius,
+              maxHeight: 200,
+              overflow: 'auto',
+              background: Colors.BG.PRIMARY,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            }}
+          >
+            {atHits.map((h, i) => (
+              <div
+                key={h.path}
+                role="option"
+                aria-selected={i === atIndex}
+                onMouseEnter={() => setAtIndex(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault(); // 保住输入框焦点
+                  void pickAtItem(h);
+                }}
+                style={{
+                  padding: '4px 8px',
+                  cursor: 'pointer',
+                  background: i === atIndex ? Colors.BG.TERTIARY : undefined,
+                }}
+              >
+                <FileOutlined style={{ color: chatTokens.colorPrimary }} />{' '}
+                {h.name}
+                {h.dir ? ` · ${h.dir}` : ''}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* 2026-10-21 小杨 - 体验审计（读屏）：焦点留在输入框，用 live region 播报当前候选
+            （listbox 的 aria-activedescendant 需挂在焦点元素上，本组件结构下用播报更可靠） */}
         <div
+          role="status"
+          aria-live="polite"
           style={{
-            border: `1px solid ${chatTokens.colorBorder}`,
-            borderRadius: chatTokens.radius,
-            maxHeight: 200,
-            overflow: 'auto',
-            background: chatTokens.colorPrimaryBg,
+            position: 'absolute',
+            width: 1,
+            height: 1,
+            overflow: 'hidden',
+            clip: 'rect(0 0 0 0)',
+            whiteSpace: 'nowrap',
           }}
         >
-          {atHits.map((h) => (
-            <div
-              key={h.path}
-              role="option"
-              aria-selected={false}
-              onMouseDown={(e) => {
-                e.preventDefault(); // 保住输入框焦点
-                void pickAtItem(h);
-              }}
-              style={{ padding: '4px 8px', cursor: 'pointer' }}
-            >
-              <FileOutlined style={{ color: chatTokens.colorPrimary }} />{' '}
-              {h.name}
-              {h.dir ? ` · ${h.dir}` : ''}
-            </div>
-          ))}
+          {atOpen && atHits[atIndex]
+            ? `第 ${atIndex + 1} 项，共 ${atHits.length} 项：${atHits[atIndex].name}`
+            : ''}
         </div>
-      )}
-      <InputCore
-        value={draft}
-        onChange={handleInputChange}
-        onPressEnter={handlePressEnter}
-        onKeyDown={handleInputKeyDown}
-        focusKey={focusKey}
-        /*
-         * 2026-10-13 18:15 小欧 - 文档[30] §2.5: 不再 disabled。
-         *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中
-         *   连打字/翻历史/存草稿都做不到。执行中不可发是**提交**问题, 由发送按钮置灰(B)与
-         *   常驻提示(C)表达, 不该由禁用来表达。
-         */
-        actions={
-          // 2026-10-20 小欧 - 框内右下角动作按钮组: 两受阻判据均与提交门/提交处理同源, 见 SubmitActions 头注
-          <SubmitActions
-            loading={loading}
-            isReceiving={isReceiving}
-            isPaused={isPaused}
-            sendBlocked={sendBlocked}
-            emptyDraft={emptyDraft}
-            onSend={handleSendInternal}
-            onCancel={onCancel}
-            onTogglePause={onTogglePause}
-          />
-        }
-      />
+      </div>
       {/*
         2026-10-13 18:40 小欧 - 文档[30] §2.5 C: 「不可发送」的常驻说明。
           ⚠️ 显隐判据必须用 sendBlocked(与发送按钮置灰同源), 早前写成 `isReceiving && !allowInterject`

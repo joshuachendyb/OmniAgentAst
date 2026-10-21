@@ -22,6 +22,12 @@ export type ComposerRef = ChatRefPayload & {
    * ⚠ 该字段**只在前端内存态**，上行前一律剥离（见 chatStreamTransport.buildStreamBody）。
    */
   pending?: boolean;
+  /**
+   * 2026-10-21 小杨 - 体验审计（#11 引用失效可见）：发送前校验失败的标记。
+   *   文件被删/不可读 → 引用项标失效（chip 红底、阻断发送并点名），不再让模型收到废内容。
+   *   ⚠ 前端内存态（同 pending），上行前剥离。
+   */
+  invalid?: boolean;
 };
 
 /**

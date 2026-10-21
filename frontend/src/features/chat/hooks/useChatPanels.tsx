@@ -298,13 +298,14 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       },
       {
         // 2026-10-21 小杨 - 文档[28] 8.2/9.10(FT1)：文件足迹面板注册（加功能不动骨架，4.3.7）
-        //   ⚠ defaultVisible 必须为 true：全仓**没有任何面板显隐的写入方**（readPanelVisible 只读不写），
-        //     persistVisible + defaultVisible:false → 面板永不可见，FT1 整体不可达（审计确证）
-        slot: 'right',
+        // 2026-10-21 小杨 - 体验审计（版面决策）：改挂 rightBottom（右栏下方折叠区）
+        //   —— 放 right 会与主面板 RightViewer 争位/并列成 tab；折叠区常驻可见且不抢主位。
+        //   persistVisible:false：全仓无面板显隐写入方，声明持久化会造成"永不可见"的误判。
+        slot: 'rightBottom',
         key: 'fileTrail',
+        title: '文件足迹', // 面板标题（折叠区头部显示）
         component: <FileTrailPanel sessionId={sessionId} />,
         defaultVisible: true,
-        persistVisible: true, // 开关状态随会话持久化
       },
       {
         slot: 'taskinfo',

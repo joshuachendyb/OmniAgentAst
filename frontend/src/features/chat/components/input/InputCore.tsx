@@ -45,6 +45,12 @@ interface InputCoreProps {
   focusKey?: number;
   /** 2026-10-20 小欧 - 框内右下角动作插槽(发送/停止/暂停); 不传则不渲染挂点且不留 padding — 小欧-2026-10-20 */
   actions?: React.ReactNode;
+  /**
+   * 2026-10-21 小杨 - 外抛 textarea ref（供 @ 补全取**真实光标位置**）。
+   *   体验审计发现：@ 补全原先用 `value.length` 当光标 → 光标不在末尾时误触发/漏触发。
+   *   不传则行为不变（既有调用方零影响）。
+   */
+  inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 }
 
 // 按钮区预留高度: 钮高 34 + 底距 Spacing.MD(8) + 呼吸 Spacing.XS(4); 随 SubmitActions 的 BTN 联动
@@ -57,8 +63,14 @@ const InputCore: React.FC<InputCoreProps> = ({
   onKeyDown,
   focusKey,
   actions,
+  inputRef,
 }) => {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+  // 2026-10-21 小杨 - 外部 ref 同步（@ 补全取真实光标位置用）
+  useEffect(() => {
+    if (!inputRef) return;
+    inputRef.current = taRef.current;
+  }, [inputRef]);
   // 2026-10-13 14:20 小欧: focusKey 自增 → 聚焦
   useEffect(() => {
     if (focusKey === undefined) return;
