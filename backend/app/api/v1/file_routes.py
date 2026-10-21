@@ -4,7 +4,7 @@
 #   v3.8 修正: ① service 改文件顶部一次性 import（原先 6 处函数内 import 是照搬 sessions.py 风格，
 #     但本模块与 api/v1 无依赖关系，不存在循环，重复 import 违反 DRY）；
 #     ② 补全返回类型注解；③ 模块名 service.py → browse_service.py（与 lifecycle/service.py 撞名）。
-#   2026-10-21 小杨 - 文档[28] v5.11 对账修正: ① 文件头"5 个 GET"→ 6 个（v3.8 追加了 /files/search，漏改）；
+#   2026-10-21 小杨 - 对账修正: ① 文件头"5 个 GET"→ 6 个（v3.8 追加了 /files/search，漏改）；
 #     ② get_file_content docstring"四道闸门"→ 五道闸门（实码顺序: 存在性→目录→类型→大小→编码）；
 """file_routes — 文件浏览 API 路由薄壳。
 
@@ -34,7 +34,7 @@ def get_files_root() -> Dict[str, Any]:
 def get_files_tree(
     path: str = Query("", description="子树起点（相对项目根，空=根目录）"),
     max_depth: int = Query(browse.MAX_TREE_DEPTH, ge=1, le=20, description="递归深度上限"),
-    # 2026-10-21 小杨 - 北京老陈拍板：**取消节点数上限**（50000/5000 的 cap 全部移除；慢的根因是 browse_service 老实现，另单另行根治）
+    # 2026-10-21 小杨 - **取消节点数上限**（50000/5000 的 cap 全部移除；慢的根因是 browse_service 老实现，另单另行根治）
     max_nodes: int = Query(browse.MAX_TREE_NODES, ge=1, description="节点总数上限"),
 ) -> Dict[str, Any]:
     """目录树：全量优先 + 自动降级。取任意子树由 path 承担，无独立 list 端点。"""

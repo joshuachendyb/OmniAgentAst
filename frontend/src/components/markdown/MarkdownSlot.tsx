@@ -14,11 +14,11 @@
 //     1 = MarkdownBody.tsx(零依赖手写正则, 6 类子集: 围栏码块/行内码/粗体/斜体/1~3级标题/无序列表)
 //   两文件同在 components/markdown/ 目录, 改这一个数字即切换, 无需改任何调用方。 — 小欧-2026-10-05
 // 编辑历史: 2026-10-06 小欧 - 新增 fixedTable: 表格按固定列宽排(仅安全Tab 分类表用) — 小欧-2026-10-06
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.14/9.6.3(O11)：接入 J5 文件引用预处理（唯一预处理位，两分支共用）
+// 编辑历史: 2026-10-21 小杨 - 接入文件引用预处理（唯一预处理位，两分支共用）
 //   ⚠ Hook 必须在早退之前（条件调用 Hook 会抛 "Rendered fewer hooks than expected"）— 小杨-2026-10-21
 import React from 'react';
 import { MarkdownBody } from './MarkdownBody'; // MD_IMPL=1 分支(零依赖, 静态引入)
-import { useDeferredPreprocess } from './useDeferredPreprocess'; // 2026-10-21 小杨 - 文档[28]§9.6.3(O11)
+import { useDeferredPreprocess } from './useDeferredPreprocess'; // 2026-10-21 小杨 - 文件引用预处理（流式期节流）
 /** MD_IMPL=0 分支: lazy 分块, 避免纯文本用户下载 react-markdown 三件套 */
 const MarkdownText = React.lazy(() => import('./MarkdownText'));
 
@@ -51,10 +51,10 @@ const MarkdownSlot: React.FC<MarkdownSlotProps> = ({
   markdown = false,
   fixedTable = false,
 }) => {
-  // 2026-10-21 小杨 - 文档[28]§4.4.14：J5 预处理**唯一位**（两分支共用，放这里两分支都吃到；
+  // 2026-10-21 小杨 - 文件引用预处理**唯一位**（两分支共用，放这里两分支都吃到；
   //   放进 MarkdownText/MarkdownBody 内部会随 MD_IMPL 开关分叉）。
   //   ⚠ Hook 必须在所有早退之前 —— 条件调用 Hook 是 React 运行时错误。
-  //   O11：用 useDeferredPreprocess（流式期节流），不用裸 useMemo（每 chunk 全量跑正则）。
+  //   用 useDeferredPreprocess（流式期节流），不用裸 useMemo（每 chunk 全量跑正则）。
   const safeText = useDeferredPreprocess(text);
   if (!markdown) return <>{text}</>;
   // 2026-10-06 小欧(三堂会审 #5): MD_IMPL=1 的 MarkdownBody 根本不解析表格(无表格支持),

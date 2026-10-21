@@ -37,6 +37,8 @@
 # 2026-10-15 - 小欧 - 文档[33] 5.18(P5步21): _periodic_cleanup_loop 内加 cleanup_expired_trust(会话信任 TTL 过期回收)。
 #   独立 try: 与 cleanup_expired_tasks 无依赖, 信任表清理挂掉(如锁库)不得连带影响任务清理。
 #   用 db.atxn 回调式(非 async with): 整段 with get_conn 跑在 to_thread 子线, 不占事件循环。— 小欧-2026-10-15
+# 2026-10-21 小杨 - 挂 GZipMiddleware(minimum_size=2048): 文件树大 JSON 响应压缩(3.4MB→~0.4MB),
+#   浏览器自动解压, 零协议改动 — 小杨-2026-10-21
 import sys
 import asyncio
 from typing import Optional
@@ -140,8 +142,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 2026-10-21 小杨 - 北京老陈拍板（文件页大 JSON 降量方案第 ① 步）：
-#   GZipMiddleware 对大响应（树 3.4MB→~0.4MB）压缩 ~10 倍，浏览器自动解压，零协议改动。
+  # 2026-10-21 小杨 - 文件页大 JSON 降量（方案第 ① 步）：
+  #   GZipMiddleware 对大响应（树 3.4MB→~0.4MB）压缩 ~10 倍，浏览器自动解压，零协议改动。
 app.add_middleware(GZipMiddleware, minimum_size=2048)
 
 setup_monitoring(app)

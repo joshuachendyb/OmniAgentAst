@@ -10,6 +10,7 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.6: HistoryLoadResult 补 linkEnabled(会话 link 开关镜像);
 //   ChatRequest 删死字段 context_link_mode(后端 5.7.9 已删该请求字段) 并补 link_enabled(随消息携带的新契约字段) — 小欧-2026-10-03
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.2/§3.6.6: 新增 WorkspaceEntry / UnusableEntry / WorkspacesResponse 三类型（会话使用的目录；不进 SendOpts，前端不携带只调 GET/PATCH）
+// 编辑历史: 2026-10-21 小杨 - 新增 ChatRefPayload（引用条目随消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
 /**
  * 流式API响应类型定义
  *
@@ -258,14 +259,14 @@ export interface ChatRequest {
   // 会话 link 开关值随消息携带(后端新增契约字段)。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
   link_enabled?: boolean;
   allow_interject?: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.3: 请求体随消息携带(后端唯一写入口)
-  // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：引用条目随消息同批上行（搭便车，不单独上传）。
+  // 2026-10-21 小杨 - 引用条目随消息同批上行（搭便车，不单独上传）。
   //   后端 models.py 的 ChatRef 与本类型一一对应；正文当轮即弃，不入库。
   refs?: ChatRefPayload[];
 }
 
 /**
  * 输入框引用条目（前端 → 后端随消息上行的引用载荷）
- * 2026-10-21 小杨 - 文档[28] 4.1.6(M20)/4.4.3 新建
+ * 2026-10-21 小杨 - 新建
  *
  * 语义：kind=file 整文件引用 / kind=selection 行区间引用。
  * ⚠ `content` 是**当轮内存态**（用户选中/读到的正文），发完即弃，不入库、不进历史。
@@ -374,7 +375,7 @@ export interface SendOpts {
   linkEnabled: boolean;
   allowInterject: boolean;
   /**
-   * 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：本轮引用条目（当轮有效，不入库）。
+   * 2026-10-21 小杨 - 本轮引用条目（当轮有效，不入库）。
    * 未传或空数组 = 无引用（body 不带 refs 键，零退化）。
    */
   refs?: ChatRefPayload[];

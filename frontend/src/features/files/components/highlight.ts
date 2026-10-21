@@ -1,4 +1,4 @@
-// 编辑历史: 2026-10-21 小杨 - 新建: 文件预览代码语法高亮单点(北京老陈拍板"代码要显示语法")
+// 编辑历史: 2026-10-21 小杨 - 新建: 文件预览代码语法高亮单点
 // 初版用 prismjs —— 页面实测**不亮**: prism 语言组件是裸全局脚本(`Prism.languages.x=...`),
 //   走 vite bundler 的 global 注册链路时序不可靠, 读到空 grammar 全部退回纯文本。
 //   2026-10-21 小杨 换 highlight.js: lib/core + 逐语言显式 registerLanguage(cjs 干净导出,

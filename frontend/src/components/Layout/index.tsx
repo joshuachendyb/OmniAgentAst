@@ -30,6 +30,7 @@
 //   ②配置验证Tag emoji改WarningOutlined(7.9.4禁emoji); ③#fff/fontSize14/gap12→Colors.BG.PRIMARY/FontSize.PRIMARY/Spacing.LG令牌零视觉差 — 小强-2026-09-21
 // 编辑历史: 2026-09-21 小强 - DRY收口: handleModelChange改经configApi.switchCurrentModel共用切全局模型唯一写链(去本地装配ai_model_ref) — 小强-2026-09-21
 // 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: handleModelChange改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
+// 编辑历史: 2026-10-21 小杨 - 文件管理菜单解禁(/files 去掉 disabled 与"即将上线" Tooltip) + 双 tooltip 收敛(只留原生 title) — 小杨-2026-10-21
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -418,7 +419,7 @@ const AppLayout: React.FC<LayoutProps> = ({
       key: '/files',
       icon: <FolderOutlined />,
       title: '文件管理',
-      // 2026-10-21 小杨 - 文档[28] 4.4.8(S2-1)：/files 解禁（页面已落地）
+      // 2026-10-21 小杨 - /files 解禁（页面已落地）
       //   原为 disabled + "即将上线" Tooltip（与知识库同款），故点菜单进不去 —— 现去掉 disabled 与 Tooltip。
       label: <span>文件管理</span>,
     },
@@ -543,7 +544,7 @@ const AppLayout: React.FC<LayoutProps> = ({
           //   2026-09-15 小欧 - 修复折叠后顶部Logo不显示: 原条件 !collapsed 使折叠态整块不渲染,
           //   容器折叠态 justify-content:center 正好居中展示点阵 — 小欧-2026-09-15
           // 2026-09-15 小欧 - Logo包Tooltip"OmniAgentAst": 折叠态窄栏可识别品牌 — 小欧-2026-09-15
-          // 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：只留原生方框 title（antd 剥离浮泡）
+          // 2026-10-21 小杨 - 双 tooltip 收敛：只留原生方框 title（antd 剥离浮泡）
           <div title="OmniAgentAst">
             <LogoGridIcon />
           </div>
@@ -664,7 +665,7 @@ const AppLayout: React.FC<LayoutProps> = ({
             {/* 2026-09-08 小欧 - 标题图标化(北京老陈令): "对话与任务"文字换D三色弧段loader(蓝绿橙),
                 与对比页 title-icon-compare.html 的 D 三色版一致, 1s逆时针常转; Tooltip 保留原标题, 无障碍 — 小欧-2026-09-08
                 2026-09-15 小欧 - 内联SVG抽离至 AnimatedIcons/TitleSpinIcon — 小欧-2026-09-15 */}
-            {/* 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：原生 title 即可 */}
+            {/* 2026-10-21 小杨 - 双 tooltip 收敛：原生 title 即可 */}
             <span title="对话与任务">
               <TitleSpinIcon />
             </span>

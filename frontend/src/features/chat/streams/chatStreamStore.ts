@@ -54,9 +54,11 @@
 //   供 History 页在跑指示器(SIG-A+B)做唯一对外查询口。各会话仍可独立 subscribe 驱动 UI 重渲染，无新事件、无新接口 — 小欧-2026-10-05
 // 编辑历史: 2026-10-06 小欧 - 取消等帧看门狗并入本单一出口(否则终态释放后残留定时器仍会打 DB);
 //   终态帧到达即撤看门狗并释放全套流资源; 看门狗超时兜底 DB 权威落状态; 终态帧 outcome 不再恒写 completed。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-21 小杨 - 新增引用台账（每会话 ≤50 条，新者前，只存路径不存正文）+
+//   消息可带引用条目（refs 与消息同批上行） — 小杨-2026-10-21
 
 import type { ExecutionStep } from '@/types/execution';
-// 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
+// 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
 import type { ChatRefPayload } from '@/types/chat';
 import type { MutableRefObject } from 'react';
 import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（type-only 不可调用）
@@ -265,7 +267,7 @@ function missingViewsOf(sessionId: string): {
 }
 
 /**
- * BR1 引用台账条目（2026-10-21 小杨 - 文档[28]§9.11.1）
+ * 引用台账条目（2026-10-21 小杨）
  * ⚠ **只存路径不存正文**：正文当轮即弃（M1），路径才是长期有效信息；
  *   点台账 chip 时**现场重读**盘面（恢复引用意图，而不是恢复 2MB 旧快照）。
  */
@@ -292,7 +294,7 @@ export interface ChatStreamSession extends SessionSnapshot {
   linkEnabled: boolean;
   allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.5: 会话快照字段(供 transport 直读)
   /**
-   * BR1 引用台账（2026-10-21 小杨 - 文档[28]§8.4/9.11.1）
+   * 引用台账（2026-10-21 小杨）
    * 语义：**只存路径不存正文**（正文当轮即弃，路径才是长期有效信息），
    *   点击时现场重读盘面（恢复的是"引用意图"，不是 2MB 旧快照）。
    * 落盘口径：随会话 transient 链走，**不入 chatHistory 库**。
@@ -640,7 +642,7 @@ export const chatStreamStore = {
       pendingMessage: null,
       linkEnabled: false,
       allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.5: EMPTY_SNAPSHOT 默认(与 link 同款)
-      sentRefLedger: [], // 2026-10-21 小杨 - 文档[28]§9.11.1(BR1)：引用台账（新者前，≤50 条）
+      sentRefLedger: [], // 2026-10-21 小杨 - 引用台账（新者前，≤50 条）
       hitlWaitingKeys: new Set(),
       abortController: null,
       idleTimeout: null,
@@ -729,7 +731,7 @@ export const chatStreamStore = {
     content: string,
     linkEnabled: boolean = false,
     allowInterject: boolean = false, // 2026-10-07 小欧 - 文档[11] 3.5.5: sendMessage 第4参(唯一调用方在 useChatStreaming:441, 默认 false 保旧调用)
-    // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：本轮引用条目（当轮有效，不入库）
+    // 2026-10-21 小杨 - 本轮引用条目（当轮有效，不入库）
     refs?: ChatRefPayload[]
   ): Promise<ResumeResult> {
     // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
@@ -769,7 +771,7 @@ export const chatStreamStore = {
   },
 
   /**
-   * BR1 引用台账追加（2026-10-21 小杨 - 文档[28]§9.11.1）
+   * 引用台账追加（2026-10-21 小杨）
    *
    * 触发点：发送**成功**后（与 refs 清空同一分支）—— 失败不记（那轮引用还没发出去）。
    * 口径：新者前，≤50 条截断；只存路径不存正文。
@@ -821,7 +823,7 @@ export const chatStreamStore = {
   async interjectMessage(
     sessionId: string,
     content: string,
-    // 2026-10-21 小杨 - 文档[28] 4.1.6：插话也带 refs（漏传 = 插话丢引用）
+    // 2026-10-21 小杨 - 插话也带 refs（漏传 = 插话丢引用）
     refs?: ChatRefPayload[]
   ): Promise<void> {
     if (!sessionId) return;

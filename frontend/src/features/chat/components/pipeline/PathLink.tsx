@@ -1,6 +1,6 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.12 新建：工具参数里的路径可点击直达文件页（J1） — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 新建：工具参数里的路径可点击直达文件页 — 小杨-2026-10-21
 /**
- * PathLink —— 工具参数里的路径 → 可点击直达文件页（J1 深链）
+ * PathLink —— 工具参数里的路径 → 可点击直达文件页（深链）
  *
  * 判定口径（4.2.8 定案）：**前端只做形态校验**，权威判定一律交给后端
  *   （路径是否真在项目根内由 `/files/read` 判界）—— 前端复制一份判据必然随规则演进而漂移。
@@ -32,7 +32,7 @@ export const toRelativePath = (
   const v = norm(value);
   if (!root || !v) return null;
   if (!v.toLowerCase().startsWith(root.toLowerCase())) return null;
-  // 2026-10-21 小杨 - 审计修复：必须校验**分隔符边界**
+  // 2026-10-21 小杨 - 修复：必须校验**分隔符边界**
   //   （否则 F:\proj2\a.md 会被当成 F:\proj 内的 "2/a.md" → 链接指向不存在的文件）
   if (v.length > root.length && v[root.length] !== '/') return null;
   const rel = v.slice(root.length).replace(/^\/+/, '');

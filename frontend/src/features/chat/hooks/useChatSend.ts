@@ -13,6 +13,8 @@
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.11: 第二参 contextLinkMode 改名 linkEnabled: boolean
 //   (值随消息落库, 见 5.7.14), 继续透传至 chatStreamStore; 建会话逻辑(:142-157)不动 — 小欧-2026-10-03
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.5.2: 插话判据改用 sendGate; 补插话在飞单飞(早退路径统一 resetSendFlags, 防永久卡死)
+// 编辑历史: 2026-10-21 小杨 - 消息可带引用条目（首连与插话两条路径都传 refs，正文不承载引用内容）；
+//   发送成功后记引用台账（只存路径不存正文；插话不记） — 小杨-2026-10-21
 /**
  * useChatSend Hook - 消息发送逻辑
  *
@@ -42,9 +44,9 @@ import { API_BASE_URL } from '../../../services/api/client';
 import { logUserSend } from '../../../utils/logStyles';
 import type { Message } from '../../../types/chat';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
-import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 载荷类型
+import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - refs 载荷类型
 import { isInterjectRoute } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
-// 2026-10-21 小杨 - 文档[28]§9.11.1(BR1)：引用台账写入（只存路径不存正文）
+// 2026-10-21 小杨 - 引用台账写入（只存路径不存正文）
 import { chatStreamStore } from '../streams/chatStreamStore';
 
 interface UseChatSendOptions {
@@ -68,7 +70,7 @@ interface UseChatSendOptions {
   //   因 executeSend 的 isSendingRef 防双发与"新任务编排副作用"都不适用于插话(会破坏运行中任务)。
   interjectSend: (
     userMessage: Message,
-    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：插话带引用
+    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 插话带引用
   ) => Promise<void>;
   // 2026-09-30 小欧 - URL 写入的唯一出口（与 useChatSession 同一注入形状）：
   //   自动建会话原先只 setSessionId 不写 URL，导致该会话 id 从不进地址栏，刷新后退回
@@ -192,13 +194,13 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话走独立投递路径(不建 assistant 占位/不清 steps/
         //   不重置取消态——executeSend 的新任务编排副作用会破坏正在跑的任务)。
         if (isInterject) {
-          // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：插话**也带 refs**
+          // 2026-10-21 小杨 - 插话**也带 refs**
           //   （漏传 = 插话丢引用：正文里的 @token 已被剥掉，而正文又没上行 → Agent 收不到任何材料）
           await interjectSend(userMessage, refs);
         } else {
-          // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息上行（正文走 refs，不进 content）
+          // 2026-10-21 小杨 - refs 随消息上行（正文走 refs，不进 content）
           await executeSend(userMessage, { linkEnabled, allowInterject, refs });
-          // 2026-10-21 小杨 - 文档[28]§9.11.1(BR1)：发送成功后记引用台账（只存路径不存正文）
+          // 2026-10-21 小杨 - 发送成功后记引用台账（只存路径不存正文）
           //   失败不记（那轮引用没发出去）；插话不记（插话是追加输入，不是新一轮）。
           //   taskId 此刻尚不存在（后端建任务后才回填）→ 先记空串，由 TaskListPanel 挂到"最近一轮"任务卡上。
           if (refs && refs.length > 0 && currentSessionId) {

@@ -40,6 +40,7 @@
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5: 从 chatState 解构 sessionWorkspaces/setSessionWorkspaces 透传 ChatInput
 //   (徽标数随目录列表变, 故 useMemo 依赖数组同步纳入, 漏=徽标不刷新) — 小欧-2026-10-10
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskInfoBar 透传 taskId=activeTaskId ?? serverTaskId(与组件 key 同源, 不新造标识); 历史态误回填由 TaskInfoBar 内 if (detail) return 承担 — 小欧-2026-10-11
+// 编辑历史: 2026-10-21 小杨 - 挂文件足迹面板（rightBottom 折叠区）+ 透传推荐行/引用台账两项（可选） — 小杨-2026-10-21
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -50,7 +51,7 @@ import ModelPicker from '../components/ModelPicker';
 import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
-// 2026-10-21 小杨 - 文档[28] 8.2/9.10(FT1)：文件足迹面板
+// 2026-10-21 小杨 - 文件足迹面板
 import { FileTrailPanel } from '../components/layout/FileTrailPanel';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
 // 2026-10-06 22:52 小欧 - 取消终态兜底需读 store 快照（getSnapshot 不建条目，安全）
@@ -262,7 +263,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             latestTaskId={latestTaskId}
             latestTaskRef={latestTaskRef}
             rightOpen={rightOpen}
-            // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：新增两项透传（可选，缺省即不渲染那两行）
+            // 2026-10-21 小杨 - 新增两项透传（可选，缺省即不渲染那两行）
             sessionId={sessionId}
             steps={executionSteps}
           />
@@ -297,8 +298,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
         defaultVisible: true,
       },
       {
-        // 2026-10-21 小杨 - 文档[28] 8.2/9.10(FT1)：文件足迹面板注册（加功能不动骨架，4.3.7）
-        // 2026-10-21 小杨 - 体验审计（版面决策）：改挂 rightBottom（右栏下方折叠区）
+        // 2026-10-21 小杨 - 文件足迹面板注册（加功能不动骨架）
+        // 2026-10-21 小杨 - 改挂 rightBottom（右栏下方折叠区）
         //   —— 放 right 会与主面板 RightViewer 争位/并列成 tab；折叠区常驻可见且不抢主位。
         //   persistVisible:false：全仓无面板显隐写入方，声明持久化会造成"永不可见"的误判。
         slot: 'rightBottom',

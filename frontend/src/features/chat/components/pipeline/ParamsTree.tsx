@@ -2,6 +2,8 @@
 //   顶层键默认折叠(仅含换行的巨型值) · 长行折行完整显示 · 树头复制(格式化 JSON) — 小欧 2026-10-13
 //   其余实现要点: ①nodeKey 只由 entries 下标 idx 构成(不掺参数 key), 参数 key 内含 '/' 也不撞键;
 //   ②key 列限宽 96 与浮层 GroupView 同宽(两载体口径一致);③树头复制按钮用 inline + 中间 flex:1 顶到行尾
+// 编辑历史: 2026-10-21 小杨 - 路径判定抽到 paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）、
+//   路径类值渲染成可点击链接（直达文件页） — 小杨-2026-10-21
 //   (原默认形态 position:absolute 的包含块是树根而非树头, 会压住第一条节点行的值列);
 //   ④行容器 className="params-clickable" 走 CSS hover/focus 反馈(§2.5 V8, 零重渲染);⑤底/框/圆角与 MarkdownText 代码块同款(T32);
 //   ⑥**补底部闭合 `}`**(设计 §2.2/§3.4.1 结构图均有, 初稿代码漏渲染);⑦树根 CircleArrow 显式给 expandedColor=PRIMARY,
@@ -15,7 +17,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
-// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径判定单一真源 + 路径可点击 + 项目根取数
+// 2026-10-21 小杨 - 路径判定单一真源 + 路径可点击 + 项目根取数
 import { isPathParam } from './paramCategories';
 import { PathLink } from './PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
@@ -69,7 +71,7 @@ const ParamNode: React.FC<ParamNodeProps> = ({
   isExpanded,
   onToggle,
 }) => {
-  // 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径链接需要项目根（绝对路径→相对路径）
+  // 2026-10-21 小杨 - 路径链接需要项目根（绝对路径→相对路径）
   const projectRoot = useProjectRoot();
   const kind = classify(value);
   const foldable = kind === 'body';
@@ -146,7 +148,7 @@ const ParamNode: React.FC<ParamNodeProps> = ({
           }}
         >
           {isPathParam(label, value) && typeof value === 'string' ? (
-            // 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径类值渲染成可点击链接（与 ParamsPanel 同一判据）
+            // 2026-10-21 小杨 - 路径类值渲染成可点击链接（与 ParamsPanel 同一判据）
             <PathLink value={value} projectRoot={projectRoot} />
           ) : (
             `: ${summary}`

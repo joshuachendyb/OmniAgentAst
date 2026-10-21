@@ -31,6 +31,7 @@
 //   申明订正: 上一条"已加复制按钮"为总结误报, 实际未落盘; 本次才真正落盘并入单测。— 小欧-2026-10-05
 // 编辑历史: 2026-10-06 小欧 - MdTable 加 fontSize 参数(缺省 SECONDARY, 聊天侧零变化),
 //   安全Tab 分类表传 PRIMARY: 该表是设置页正文(周围 14px), 用 12px 会小 2px 层级拉不开。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-21 小杨 - 接入文件引用 chip 与形态校验（与 FileRefChip 同源单一真源） — 小杨-2026-10-21
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -46,7 +47,7 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
-// 2026-10-21 小杨 - 文档[28]§4.4.13/4.4.14(J5)：文件引用 chip + 形态校验（同源单一真源）
+// 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
 import { FileRefChip, isValidRelPath } from './FileRefChip';
 import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
 
@@ -264,7 +265,7 @@ const mdComponents = {
     ) : (
       <PreBlock {...props} />
     ),
-  // 2026-10-21 小杨 - 文档[28]§4.4.14(J5)：文件引用链接分流 —— /file-ref?path=… 渲染成 FileRefChip（App 内跳转）
+  // 2026-10-21 小杨 - 文件引用链接分流 —— /file-ref?path=… 渲染成 FileRefChip（App 内跳转）
   //   ⚠ 绝不能直接复用下面的 <a>：它硬编码 target="_blank" → 文件引用会**新开浏览器标签页**（桌面端灾难）。
   //   故在 a 组件内提前 return，按 href 前缀分流。
   a: (props: MdProps) => {

@@ -26,6 +26,8 @@
 // 编辑历史: 2026-10-20 小欧 - 动作按钮组移入框内右下角(北京老陈指令): 新增 SubmitActions 经 InputCore actions
 //   插槽挂载(发送/停止/暂停三钮方形图标化), SubmitBar 只留左侧控件; 新增 emptyDraft 置灰判据
 //   (与 handleSendInternal 的 !content 同源) 并入发送钮受阻态 — 小欧-2026-10-20
+// 编辑历史: 2026-10-21 小杨 - 引用通道落地: store 订阅 + refs 独立托管 + @token 剥离 + @ 补全
+//   (结构化引用 chip，正文不再写 @label；@ 补全改为光标真实位置驱动 + 真防抖 + 键盘导航) — 小杨-2026-10-21
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -56,7 +58,7 @@ import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - �
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 文档[16] §3.6.6 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
-// 2026-10-21 小杨 - 文档[28] 4.4.6/9.5/9.7：引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
+// 2026-10-21 小杨 - 引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
 import { composerRefStore, newRefId } from '../streams/composerRefStore';
 import { useComposerRefs } from '../hooks/useComposerRefs';
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
@@ -111,9 +113,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
     useInputDraft(sessionId);
-  // 2026-10-21 小杨 - 文档[28]§9.5(O5)：refs 独立托管（不塞进 useInputDraft —— draft 落盘、refs 当轮内存，生命周期不同）
+  // 2026-10-21 小杨 - refs 独立托管（不塞进 useInputDraft —— draft 落盘、refs 当轮内存，生命周期不同）
   const { refs, setRefs, refsPending } = useComposerRefs(sessionId);
-  // 2026-10-21 小杨 - 文档[28]§4.4.6①(M21)：跨页引用通道订阅
+  // 2026-10-21 小杨 - 跨页引用通道订阅
   //   ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载 → 挂载取一次会**静默丢引用**，
   //   故必须 useSyncExternalStore 订阅（store 一有数据即消费）。
   const pendingCount = useSyncExternalStore(
@@ -124,7 +126,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (pendingCount === 0) return;
     const incoming = composerRefStore.takeAll();
     if (incoming.length === 0) return; // StrictMode 双跑：第二次取空，直接返回
-    // 2026-10-21 小杨 - 体验审计最佳改造：**引用是结构化对象，正文不再写 @label**
+    // 2026-10-21 小杨 - **引用是结构化对象，正文不再写 @label**
     //   原做法把 "@label " 追加进正文 + 再渲染一个 chip = **同一信息两个家** →
     //   ①删 chip 后正文残留裸 @a.md（模型收到无意义提及）；②选中候选后正文出现 "@查询词 @文件名" 双 @；
     //   ③发送前还要用 stripAtTokens 反向剥离（边界误伤、压掉用户代码缩进）。
@@ -132,7 +134,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     //   发送即发 refs + 纯正文（不再需要 stripAtTokens）。
     setRefs((prev) => [...prev, ...incoming]);
   }, [pendingCount, setRefs]);
-  // 2026-10-21 小杨 - 文档[28]§9.7(O3/O4)：@ 补全状态
+  // 2026-10-21 小杨 - @ 补全状态
   const [atOpen, setAtOpen] = useState(false);
   const [atHits, setAtHits] = useState<SearchHit[]>([]);
   const [atIndex, setAtIndex] = useState(0); // 2026-10-21 小杨 - 键盘导航：当前高亮项
@@ -152,7 +154,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     },
     []
   );
-  // 2026-10-21 小杨 - 体验审计（#3）：候选浮层**点外部关闭**
+  // 2026-10-21 小杨 - 候选浮层**点外部关闭**
   //   浮层化后（absolute）会压住下方内容，用户点页面其他地方 expect 浮层散开（antd 惯例），
   //   现实现只有 Esc 能关 → 把内容永久压住。用 rootRef 判定点击是否落在整块输入组件外。
   useEffect(() => {
@@ -256,13 +258,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleSendInternal = async () => {
     const content = draft.trim();
     if (!content || sendBlocked) return;
-    // 2026-10-21 小杨 - 文档[28]§9.7.3(O3)：引用正文在途时禁发送（防发出 content:'' 的空引用）
+    // 2026-10-21 小杨 - 引用正文在途时禁发送（防发出 content:'' 的空引用）
     if (refsPending) {
       showMessage(ErrorType.FILE_READ, '引用内容仍在载入，请稍候');
       return;
     }
     /**
-     * 2026-10-21 小杨 - 体验审计（#11 引用失效可见，北京老陈拍板）：
+     * 2026-10-21 小杨 - 引用失效可见：
      *   发送前对每个引用**重读一遍**：①a 文件被删/不可读 → 该项标 invalid、阻断发送并点名
      *   （不再让模型收到失效内容）；②读成功的顺手把 content 换成最新（内容保鲜）。
      *   校验失败的 refs 同时回写（chip 红底 + "（已失效）"）。
@@ -291,7 +293,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         return;
       }
     }
-    // 2026-10-21 小杨 - 体验审计最佳改造：**正文即最终正文**（不再做 stripAtTokens 反向剥离）
+    // 2026-10-21 小杨 - **正文即最终正文**（不再做 stripAtTokens 反向剥离）
     //   旧模型：正文里塞了 "@label"，发送前再逐个剥 → 边界误伤（吃掉"邮箱 a@b.com"的 b.com）、
     //   且全文折叠空格会毁掉用户粘贴的代码缩进。
     //   新模型：引用是**结构化 refs**（chip 唯一表示），正文只有用户写的字 → 直接发，无需剥离。
@@ -302,7 +304,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     // 2026-10-13 小欧: 标记提交中, 使 hook 能区分「建会话回填」与「用户真切会话」
     markSubmitted();
     try {
-      // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息搭同一班便车上行（正文走 refs，不进 content）
+      // 2026-10-21 小杨 - refs 随消息搭同一班便车上行（正文走 refs，不进 content）
       await onSend(cleanText, { linkEnabled, allowInterject, refs }); // 对象参数, 见 3.5.4
       // 2026-10-13 13:45 小欧: **提交成功后**才记历史(onSend 抛错 = 提交失败, 不能记; 流式中途报错不 reject,
       //   故面板文案用「最近提交」而非「发送成功」)
@@ -325,7 +327,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
    *    无条件劫持会导致多行文本无法上下移动光标 = 严重功能退化。
    */
   const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // 2026-10-21 小杨 - 体验审计：@ 候选面板打开时，↑↓/Enter/Esc 归候选面板（不再翻历史）
+    // 2026-10-21 小杨 - @ 候选面板打开时，↑↓/Enter/Esc 归候选面板（不再翻历史）
     if (atOpen && atHits.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -410,7 +412,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   /**
    * 手动打字时复位历史游标(否则打完字按 ↑ 会从旧游标继续, 跳错条目)
    *
-   * 2026-10-21 小杨 - 体验审计最佳改造：**@ 补全改为"光标真实位置"驱动 + 真正防抖**
+   * 2026-10-21 小杨 - **@ 补全改为"光标真实位置"驱动 + 真正防抖**
    *   ① 触发判据用**真实光标位置**（原实现用 v.length 当光标 → 光标不在末尾时误触发/漏触发）；
    *   ② 触发范围收窄为"路径形态"（`@` 后不得含空白，且含分隔符或扩展名）→ 邮箱 a@b.com 不再误触发；
    *   ③ **真防抖**（clearTimeout + 卸载清理）→ 每次击键不再真发一次 20000 节点的全盘扫描；
@@ -457,13 +459,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   );
 
   /**
-   * 2026-10-21 小杨 - 文档[28]§9.7.2(O3/O4) + 体验审计最佳改造：
+   * 2026-10-21 小杨 - @ 补全选中改造：
    *   选中候选 → **把 @查询词 段替换掉**（原实现是追加 → 正文出现 "@查询词 @文件名" 双 @），
    *   同时把该文件作为**结构化引用**注入（chip 是唯一表示，正文不留 @label）。
    */
   const pickAtItem = async (hit: SearchHit) => {
     if (picking) return; // 防连点
-    if (hit.preview !== 'text') return; // 6.7 表第 3 行落点
+    if (hit.preview !== 'text') return; // 只收可预览文本
     setPicking(true);
     // O3: 先渲染"载入中"占位 token（O4 去重保证连点只会替换不会追加）
     setRefs((prev) => [
@@ -503,7 +505,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  /** 2026-10-21 小杨 - 体验审计：@ 候选的**键盘导航**（↑↓ 移动 / Enter 选中 / Esc 关闭）
+  /** 2026-10-21 小杨 - @ 候选的**键盘导航**（↑↓ 移动 / Enter 选中 / Esc 关闭）
    *  内联在 handleInputKeyDown 内（唯一调用点）——不再单列函数，避免依赖数组失配。 */
   const moveAtIndex = (delta: number) => {
     setAtIndex((i) => (i + delta + atHits.length) % atHits.length);
@@ -514,7 +516,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       ref={rootRef}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
-      {/* 2026-10-21 小杨 - 文档[28]§4.4.6②：引用 token 行（一个信息一个家：删 token = 一次 setRefs 过滤） */}
+      {/* 2026-10-21 小杨 - 引用 token 行（一个信息一个家：删 token = 一次 setRefs 过滤） */}
       {refs.length > 0 && (
         <div
           style={{
@@ -525,7 +527,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             marginBottom: 4,
           }}
         >
-          {/* 2026-10-21 小杨 - 体验审计：给引用区一个**名字与计数**（否则用户不知道那排 chip 是什么） */}
+          {/* 2026-10-21 小杨 - 给引用区一个**名字与计数**（否则用户不知道那排 chip 是什么） */}
           <span
             aria-live="polite"
             style={{
@@ -544,7 +546,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   : ''
               }`}
               style={{
-                /* 2026-10-21 小杨 - 体验审计（#11）：失效引用红底（与正常蓝底一眼区分） */
+                /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
                 background: r.invalid
                   ? Colors.ERROR_BG
                   : chatTokens.colorPrimaryBg,
@@ -564,7 +566,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               <FileOutlined style={{ color: chatTokens.colorPrimary }} />
               {r.label}
               {r.pending ? '（载入中…）' : r.invalid ? '（已失效）' : ''}
-              {/* 2026-10-21 小杨 - 体验审计：删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
+              {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
               <button
                 type="button"
                 onClick={(e) => {
@@ -599,7 +601,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           当前正在生成，请等待本轮结束后编辑并发送
         </div>
       )}
-      {/* 2026-10-21 小杨 - 体验审计：候选面板改为**浮层**（absolute）
+      {/* 2026-10-21 小杨 - 候选面板改为**浮层**（absolute）
           原实现是普通文档流 → 每打开一次就把下方内容整体下推，输入区位置跳动。
           现在锚定在输入框下沿、不参与布局。 */}
       <div style={{ position: 'relative' }}>
@@ -630,7 +632,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             />
           }
         />
-        {/* 2026-10-21 小杨 - 体验审计最佳改造：@ 候选面板放在**输入框下方**
+        {/* 2026-10-21 小杨 - @ 候选面板放在**输入框下方**
             （原实现放在输入框上方 → 遮住引用行，且与"输入框在上、辅助在下"的常规心智相反）；
             并支持 ↑↓/Enter/Esc 键盘操作 + 当前项高亮。 */}
         {atOpen && atHits.length > 0 && (
@@ -675,7 +677,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             ))}
           </div>
         )}
-        {/* 2026-10-21 小杨 - 体验审计（读屏）：焦点留在输入框，用 live region 播报当前候选
+        {/* 2026-10-21 小杨 - 读屏：焦点留在输入框，用 live region 播报当前候选
             （listbox 的 aria-activedescendant 需挂在焦点元素上，本组件结构下用播报更可靠） */}
         <div
           role="status"

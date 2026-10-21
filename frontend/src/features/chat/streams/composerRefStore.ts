@@ -1,5 +1,5 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.3 新建：文件页→对话页一次性引用通道（useSyncExternalStore 契约） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28]§9.4(O4/O3)：push 去重（同 path+lineRange 替换而非追加）+ pending 字段 — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 新建：文件页→对话页一次性引用通道（useSyncExternalStore 契约）；
+//   push 去重（同 path+lineRange 替换而非追加）+ pending 字段 — 小杨-2026-10-21
 /**
  * composerRefStore —— 跨页一次性引用投递通道
  *
@@ -8,7 +8,7 @@
  *   与 features/chat/streams/chatStreamStore.ts 同范式。
  *
  * 语义：
- * - push 原样入队，不做体积降级、不限条数、不截断（v3.4 裁定：引用多少发多少）
+ * - push 原样入队，不做体积降级、不限条数、不截断（引用多少发多少）
  * - takeAll 取出并清空（一次性消费）
  * - 快照 = 队列长度（变化即触发消费 effect）
  */
@@ -17,13 +17,13 @@ import type { ChatRefPayload } from '../../../types/chat';
 export type ComposerRef = ChatRefPayload & {
   id: string;
   /**
-   * O3：`@` 补全在途占位（正文尚未读到位，content 为空）。
+   * `@` 补全在途占位（正文尚未读到位，content 为空）。
    * 发送闸门据此阻断（防发出 content:''），token 渲染据此显示"载入中"。
    * ⚠ 该字段**只在前端内存态**，上行前一律剥离（见 chatStreamTransport.buildStreamBody）。
    */
   pending?: boolean;
   /**
-   * 2026-10-21 小杨 - 体验审计（#11 引用失效可见）：发送前校验失败的标记。
+   * 2026-10-21 小杨 - 引用失效可见：发送前校验失败的标记。
    *   文件被删/不可读 → 引用项标失效（chip 红底、阻断发送并点名），不再让模型收到废内容。
    *   ⚠ 前端内存态（同 pending），上行前剥离。
    */
@@ -32,7 +32,7 @@ export type ComposerRef = ChatRefPayload & {
 
 /**
  * 引用 id：调用方生成（后端不认此 id，仅前端去重用）。
- * 2026-10-21 小杨 - 文档[28] v5.12：改用仓库既有约定 crypto.randomUUID()
+ * 2026-10-21 小杨 - 改用仓库既有约定 crypto.randomUUID()
  *   （先例 chatStreamStore.ts:715 clientMessageId），不自造 Date+Math.random 拼接。
  *   jsdom 缺 crypto.randomUUID 时按仓库先例补桩（见 tests/stage1_s8.test.ts）。
  */
@@ -67,7 +67,7 @@ export const composerRefStore = {
     emit();
   },
   /**
-   * 原样入队；同 path + 同 lineRange 视为**同一引用** → 替换而非追加（O4）。
+   * 原样入队；同 path + 同 lineRange 视为**同一引用** → 替换而非追加。
    * 替换而非追加的原因：用户重复引用同一文件时，token 不应出现两个，
    * 且后一次的内容（更接近当前盘面）应覆盖前一次。
    */

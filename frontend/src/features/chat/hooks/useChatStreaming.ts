@@ -48,6 +48,7 @@
 //   并继续透传给 chatStreamStore.sendMessage — 小欧-2026-10-03
 // 编辑历史: 2026-10-05 小欧 - assistant 占位'🤔 AI 正在思考...' 改空串(文档[9] §5.9): 该字段前端零渲染消费(死数据), 思考态视觉已由 reasoning 标题行承担 — 小欧-2026-10-05
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: interjectSend 落库携带 allow_interject=true(否则插话第一条被 409)
+// 编辑历史: 2026-10-21 小杨 - 消息可带引用条目（refs 与消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -74,7 +75,7 @@ import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
-import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 载荷类型
+import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - refs 载荷类型
 // [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
 import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
@@ -156,7 +157,7 @@ export interface UseChatStreamingReturn {
   //   本方法 = 投递一条输入给运行中任务，**刻意不做**上述任何一项(做了会破坏正在跑的任务显示与状态)。
   interjectSend: (
     userMessage: Message,
-    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：插话带引用
+    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 插话带引用
   ) => Promise<void>;
 
   // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
@@ -434,7 +435,7 @@ export const useChatStreaming = (
   // 发送消息函数（包装useSSE的sendMessage）
   const sendMessage = useCallback(
     async (content: string, opts: SendOpts, customSessionId?: string) => {
-      // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息同批上行
+      // 2026-10-21 小杨 - refs 随消息同批上行
       //   ⚠ 不在形参里解构（{ linkEnabled, allowInterject, refs }: SendOpts 单行过长会被 prettier
       //   拆成独立行，而 cancel-root-fix-f1-f5 的源码守卫用**括号配平**扫描 executeSend 函数体 ——
       //   独立的解构行会先减一格致其提前 break（守卫误报）。故解构放函数体首行（同行配平）。
@@ -460,7 +461,7 @@ export const useChatStreaming = (
           content,
           linkEnabled,
           allowInterject, // 2026-10-06 小欧 - 文档[11] 3.5.5: 存会话快照供 transport 直读
-          refs // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：引用随消息同批上行
+          refs // 2026-10-21 小杨 - 引用随消息同批上行
         );
       } catch (error) {
         console.error('发送消息失败:', error);
@@ -611,7 +612,7 @@ export const useChatStreaming = (
       // 2026-08-27 小欧 三堂会审H1: await闭合SSE发送Promise, 防拒绝变unhandled rejection导致占位消息永久悬挂
       await sendMessage(
         userMessage.content,
-        { linkEnabled, allowInterject, refs }, // 2026-10-21 小杨 - 文档[28]：refs 随消息上行
+        { linkEnabled, allowInterject, refs }, // 2026-10-21 小杨 - refs 随消息上行
         currentSessionIdRef.current ?? sessionId ?? undefined
       );
     },
@@ -663,7 +664,7 @@ export const useChatStreaming = (
         replyUserMessageIdRef.current = backendId;
       }
       // 2. 投递(独立路径: 不掐断运行中流, 不改流状态机)
-      // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：插话也带 refs（漏传 = 插话丢引用）
+      // 2026-10-21 小杨 - 插话也带 refs（漏传 = 插话丢引用）
       await chatStreamStore.interjectMessage(sid, userMessage.content, refs);
     },
     [sessionId, setMessages, currentSessionIdRef, replyUserMessageIdRef]

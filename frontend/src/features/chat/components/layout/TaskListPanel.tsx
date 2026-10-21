@@ -25,6 +25,9 @@
 // 编辑历史: 2026-10-05 小欧 - 左列 task 卡 response 接 Markdown: 传 renderExpanded 使展开态排版、折叠态维持原首2行纯文本;
 //   恒 markdown=true 不受设置开关控制(仅受折叠开关控制) — 小欧-2026-10-05
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: 追加注入消息逐条独立成块(原先 marginTop:4 共用一条竖线, 多条连成一串无间隔)
+// 编辑历史: 2026-10-21 小杨 - 新增推荐行与引用台账行（可选，缺省不渲染）：
+//   推荐=本轮被工具动过 ≥2 次且可预览的文件；台账=本任务引用过的文件（现场重读恢复，不存旧快照）；
+//   键口径改与后端一致（绝对→相对 root、反斜杠→正斜杠），否则推荐恒空 — 小杨-2026-10-21
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -54,7 +57,7 @@ import { useProjectRoot } from '@/hooks/useProjectRoot';
 
 /**
  * 路径归一（与后端 `browse_service._resolve_within_root` 同口径）：相对 posix 路径
- * 2026-10-21 小杨 - 文档[28] 审计修复（FQ1 键口径）
+ * 2026-10-21 小杨 - 修复（键口径）
  */
 const normalizeRelPath = (raw: string, projectRoot?: string): string | null => {
   const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -83,7 +86,7 @@ import {
   showMessage,
   ErrorType,
 } from '@/services/error/handler';
-// 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：推荐行 + 引用台账行
+// 2026-10-21 小杨 - 推荐行 + 引用台账行
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { composerRefStore, newRefId } from '../../streams/composerRefStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
@@ -112,7 +115,7 @@ interface TaskListPanelProps {
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
   rightOpen?: boolean;
-  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：新增两项（可选，缺省即不渲染这两行）
+  // 2026-10-21 小杨 - 新增两项（可选，缺省即不渲染这两行）
   /** 会话 id（FQ1 需取 recent-files，BR1 需取台账） */
   sessionId?: string | null;
   /** 本轮 steps（FQ1 计算「被工具动过 ≥2 次」） */
@@ -127,22 +130,22 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   latestTaskId = null,
   latestTaskRef,
   rightOpen = true,
-  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)
+  // 2026-10-21 小杨 - 推荐行 + 引用台账行
   sessionId = null,
   steps = [],
 }) => {
-  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：跳转输入框
+  // 2026-10-21 小杨 - 跳转输入框
   //   ⚠ 用 useOptionalNavigate：TaskListPanel 的既有单测**直接渲染本组件（无 Router 上下文）**，
   //   直接用 useNavigate 会抛 "useNavigate() may be used only in the context of a <Router>" → 整块崩。
   const navigate = useOptionalNavigate();
-  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1)：数据源与规则
+  // 2026-10-21 小杨 - 数据源与规则
   //   ① roundHits = 本轮 steps 里工具动过的 path 计数（tools[].params.path）
-  //   ② 推荐 = 被动过 ≥2 次 且 preview 可预览 的文件，取最近 3 条（与 FT1 同一数据源，走共享 hook）
+  //   ② 推荐 = 被动过 ≥2 次 且 preview 可预览 的文件，取最近 3 条（与足迹面板同一数据源，走共享 hook）
   const { files: recentFiles } = useRecentFiles(sessionId);
-  // 2026-10-21 小杨 - 审计修复（高危）：**键口径必须与后端一致**
+  // 2026-10-21 小杨 - 修复（高危）：**键口径必须与后端一致**
   //   roundHits 原用 tool.params.path 原样值（Windows 上多为 "F:\proj\a.py" 或 "backend\a.py"），
   //   而 recentFiles[].path 是后端归一后的**相对 posix 路径** → 键对不上 → roundHits 恒 miss
-  //   → recommend 恒为空 → **FQ1 推荐行永远不渲染**（功能未交付）。
+  //   → recommend 恒为空 → **推荐行永远不渲染**（功能未交付）。
   //   现用与后端同口径的归一（绝对→相对 root、反斜杠→正斜杠）后再计数。
   const projectRoot = useProjectRoot();
   const roundHits = React.useMemo(() => {
@@ -168,8 +171,8 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
         .slice(0, 3),
     [recentFiles, roundHits]
   );
-  /** BR1 台账：按任务取（store 侧 transient 列表，不入库）
-   *  2026-10-21 小杨 - 审计修复（高危）：原实现用 taskId 空串回落 + "取最新一批"，
+  /** 引用台账：按任务取（store 侧 transient 列表，不入库）
+   *  2026-10-21 小杨 - 修复（高危）：原实现用 taskId 空串回落 + "取最新一批"，
    *   而 getSentRefLedger 的空串是 falsy → **返回整本台账** → 同一批引用被渲染到**每一个**任务卡上
    *   （历史任务的引用归属被凭空伪造）。现改为：只挂到**最新一条任务**卡，且按批次 ts 取全。
    */
@@ -542,9 +545,9 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               </div>
             )}
 
-            {/* 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：本轮引用过的文件两行能力
-                ① FQ1 追问推荐：本轮被工具动过 ≥2 次且可预览的文件（取最近 3 条）
-                ② BR1 引用台账：本任务引用过的文件（现场重读恢复，不存旧快照） */}
+            {/* 2026-10-21 小杨 - 本轮引用过的文件两行能力
+                ① 追问推荐：本轮被工具动过 ≥2 次且可预览的文件（取最近 3 条）
+                ② 引用台账：本任务引用过的文件（现场重读恢复，不存旧快照） */}
             {sessionId && isLatestTaskId(t.task_id) && recommend.length > 0 && (
               <div
                 style={{

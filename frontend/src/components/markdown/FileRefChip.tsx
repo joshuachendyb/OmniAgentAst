@@ -1,8 +1,8 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.13 新建：chip + 预处理 + 形态校验三件同文件 — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28] v5.9：J5 生成链接的 label 去 📄 emoji（chip 自带图标，防双重图标） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28] v5.12：深链改走 buildFileDeepLink（O7 唯一拼装点） — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 新建：chip + 预处理 + 形态校验三件同文件；
+//   生成链接的 label 去 📄 emoji（chip 自带图标，防双重图标）；
+//   深链改走 buildFileDeepLink（唯一拼装点）— 小杨-2026-10-21
 /**
- * FileRefChip —— Agent 输出的文件引用卡片（J5）
+ * FileRefChip —— Agent 输出的文件引用卡片
  *
  * 三件事同文件（DRY）：
  * 1. chip 渲染（不可删除：它是 Agent 的输出，不是用户的引用）
@@ -53,7 +53,7 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
 );
 
 /**
- * FileRefChip —— Agent 输出的文件引用卡片（J5）
+ * FileRefChip —— Agent 输出的文件引用卡片
  *
  * ⚠ 为什么不用 `useNavigate` 直接写：markdown 渲染层**可能不在 Router 上下文内**
  *   （单测直接渲染 MarkdownSlot、设置页安全Tab 独立渲染），此时 useNavigate 会抛
@@ -104,7 +104,7 @@ export function isValidRelPath(p: string): boolean {
   return !p.split(/[\\/]/).includes('..');
 }
 
-/** J5 路径可点击的同一份形态校验（别名，避免两处各写一遍） */
+/** 路径可点击的同一份形态校验（别名，避免两处各写一遍） */
 export const isViewablePath = isValidRelPath;
 
 const convertRuns = (text: string): string =>
@@ -121,11 +121,11 @@ const convertRuns = (text: string): string =>
 /**
  * 预处理：只转围栏外的标记，块内标记原样保留（代码块内不生效）
  *
- * 2026-10-21 小杨 - 文档[28] v5.15 修正（先红后绿抓出的真缺陷）：
+ * 2026-10-21 小杨 - 修复（先红后绿抓出的真缺陷）：
  *   设计稿原用 `text.split(/(^```[\s\S]*?(?:^```|$))/m)` 想"按围栏切段"，
  *   但 **multiline 下的 `$` 匹配的是"任意行尾"**，于是 `[\s\S]*?` 会在第一行行尾
  *   （`$`）就收尾 → 围栏段只切出 "```" 一行，其后的标记仍落在"非围栏段"里被转换
- *   → **围栏内的 [[文件:]] 照样被转**（4.6 B7 的硬要求"代码块内不生效"失效）。
+ *   → **围栏内的 [[文件:]] 照样被转**（"代码块内不生效"这条硬要求失效）。
  *   改为**行级状态机**：逐行判"是否围栏行"，围栏内整行跳过 —— 语义直白、无正则歧义。
  */
 export const preprocessFileRefs = (text: string): string => {

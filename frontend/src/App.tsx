@@ -18,6 +18,7 @@
 // 编辑历史: 2026-09-21 小欧 - 旧设置页(pages/Settings=settings1版)整体退休: 移除 /settings 路由与懒加载, 唯一入口为 /settings2(settings2版)
 // 编辑历史: 2026-09-26 小欧 - 实施: 引入登录页（访问口令输入）
 // 编辑历史: 2026-09-26 小欧 - 实施: 新增 /login 路由（输入访问口令）。
+// 编辑历史: 2026-10-21 小杨 - 新增 /files 路由（文件管理页，懒加载；必须排在 path="*" 兜底之前）— 小杨-2026-10-21
 import React, { Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
@@ -33,7 +34,7 @@ import LoginPage from './pages/LoginPage';
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));
 const Settings2 = lazy(() => import('./pages/Settings2')); // 2026-09-20 小强 - 设置2版（6 Tab + 模型管理）
-// 2026-10-21 小杨 - 文档[28] 4.4.8(S2-1)：文件管理页（项目根目录浏览 + 文本查看）
+// 2026-10-21 小杨 - 文件管理页（项目根目录浏览 + 文本查看）
 const FilesPage = lazy(() => import('./pages/Files'));
 
 // 懒加载加载中组件
@@ -89,8 +90,8 @@ const RouterContent: React.FC = () => {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ChatPage />} />
           <Route path="/history" element={<HistoryPage />} />
-          {/* 2026-10-21 小杨 - 文档[28] 4.4.8(S2-1)：/files 路由
-              ⚠ 必须放在 path="*" 兜底之前 —— 否则被 "*" 吞掉，点菜单回首页（4.4.8 实证） */}
+          {/* 2026-10-21 小杨 - /files 路由
+              ⚠ 必须放在 path="*" 兜底之前 —— 否则被 "*" 吞掉，点菜单回首页 */}
           <Route path="/files" element={<FilesPage />} />
           <Route path="/settings2" element={<Settings2 />} />
           {/* 默认重定向到首页 */}

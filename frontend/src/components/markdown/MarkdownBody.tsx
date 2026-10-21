@@ -17,6 +17,7 @@
 //     ③切分改 split(/\r?\n/) 剥 CRLF 的 \r(否则 Windows 来源文本每行尾部留不可见字符,
 //     且会污染标题正则的 $ 锚点) ④等宽字体改走 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-05
 // 编辑历史: 2026-10-05 小欧 - 第2轮会审修3处内容丢失: 剥标记加闭合+长度守卫(裸*/**、半闭合不再整行消失); 词边界补CJK(中文_测试_不再被吃); 未闭合围栏降级纯文本(不再闪空pre+吞后续正文) — 小欧-2026-10-05
+// 编辑历史: 2026-10-21 小杨 - 接入文件引用 chip 与形态校验（与 FileRefChip 同源单一真源） — 小杨-2026-10-21
 import React from 'react';
 import {
   BorderWidth,
@@ -28,7 +29,7 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
-// 2026-10-21 小杨 - 文档[28]§4.4.13/4.4.14(J5)：文件引用 chip + 形态校验（同源单一真源）
+// 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
 import { FileRefChip, isValidRelPath } from './FileRefChip';
 
 /**
@@ -47,7 +48,7 @@ const INLINE_RE =
 /** 行级容器统一样式: pre-wrap 保留源文本缩进与连续空格(LLM 输出大量缩进结构) */
 const LINE_STYLE: React.CSSProperties = { whiteSpace: 'pre-wrap' };
 
-// 2026-10-21 小杨 - 文档[28]§4.4.14(J5)：文件引用链接（MD_IMPL=1 分支）
+// 2026-10-21 小杨 - 文件引用链接（MD_IMPL=1 分支）
 //   ⚠ 绝不能把它作为**新的捕获组**加进 INLINE_RE —— String.split 会把每个捕获组都当独立片段返回，
 //   多一个组就会多出一片重复渲染。故用独立的 exec 循环（见 renderInline）。
 const FILEREF_MD_RE =
@@ -106,7 +107,7 @@ const renderPlainInline = (text: string, keyBase: string): React.ReactNode[] =>
 
 /**
  * 行内渲染入口：先切出**文件引用链接**（J5），其余段走常规行内解析。
- * 2026-10-21 小杨 - 文档[28]§4.4.14：MD_IMPL=1 分支此前零链接解析，
+ * 2026-10-21 小杨 - MD_IMPL=1 分支此前零链接解析，
  *   切到 MD_IMPL=1 会让 J5 卡片**静默消失**（无任何报错）—— 故两分支都要覆盖。
  */
 const renderInline = (text: string, keyBase: string): React.ReactNode[] => {

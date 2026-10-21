@@ -20,6 +20,7 @@
 //   及同类超时文案改写成"后端响应超时，请重试"。不修根本根因(axios超时仍是超时), 只解决展示 — 小欧-2026-10-05
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.7: 新增 ErrorType.WORKSPACE_REJECTED + ERROR_CONFIG_MAP 条目(severity=warning)
 //   + classifyError 显式提取分支(422 信封体里无 error_type，自映射走不到，须按 error.workspace_rejected 特征识别)
+// 编辑历史: 2026-10-21 小杨 - 新增 ErrorType.FILE_READ（文件/引用正文读取失败）+ 错误配置表对应条目 — 小杨-2026-10-21
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
@@ -159,8 +160,8 @@ export enum ErrorType {
   //   ⚠ 该响应体里没有 error_type 字段，classifyError 必须走显式提取分支（见下）
   WORKSPACE_REJECTED = 'workspace_rejected',
 
-  // 2026-10-21 小杨 - 文档[28] 新增（文件浏览页面）：
-  //   FILE_READ —— 文件/引用正文读取失败（文件页刷新、FT1 hover 引用、FQ1 现场重读共用）
+  // 2026-10-21 小杨 - 新增（文件浏览页面）：
+  //   FILE_READ —— 文件/引用正文读取失败（文件页刷新、足迹面板引用、推荐行现场重读共用）
   FILE_READ = 'file_read',
   //   COPY_FAILED —— 复制到剪贴板失败（非安全上下文 / 权限被拒；须可感知，不静默）
   COPY_FAILED = 'copy_failed',
@@ -694,7 +695,7 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     message: '',
     severity: 'info',
   },
-  // 2026-10-21 小杨 - 文档[28]：新增错误类型**必须同时**登记枚举与本配置表
+  // 2026-10-21 小杨 - 新增错误类型**必须同时**登记枚举与本配置表
   //   （只加枚举不加配置 → getErrorConfig 取不到 → showMessage 静默不弹，比不写更坏）
   [ErrorType.FILE_READ]: {
     retryable: false,

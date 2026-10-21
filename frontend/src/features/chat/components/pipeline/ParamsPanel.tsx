@@ -43,9 +43,11 @@
 // 编辑历史: 2026-10-14 小欧 - 默认标签由「分组参数」改为「**TOOL结果**」(北京老陈裁定)。记忆规则不变:
 //   result 仍不落盘, 切到分组/规格表才记住。原「不记忆 result」的理由(20 个工具 raw_data 为 {} 会落空白页)
 //   **已不成立** —— 空态现显示「本次工具执行：<summary>」。小欧
+// 编辑历史: 2026-10-21 小杨 - 路径判定抽到 paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）、
+//   路径类值渲染成可点击链接（直达文件页，绝对路径经项目根转相对） — 小杨-2026-10-21
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
-// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
+// 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
 import { PATH_KEYS, isPathLike } from './paramCategories';
 import { PathLink } from './PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
@@ -73,7 +75,7 @@ const HUGE_VALUE_CHARS = 200;
  *   (bash 5 个参数 4 个进其他 / http_get 6 个进 4 个 / query_sql 6 个进 4 个), 分组失去意义。
  *   本版据实测把高频参数**显式列入 key 集合**, 使「其他参数」只接真正零散项。
  */
-// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：PATH_KEYS 已抽到 ./paramCategories
+// 2026-10-21 小杨 - PATH_KEYS 已抽到 ./paramCategories
 //   （ParamsPanel 与 ParamsTree 双入口共用同一判据，本文件不再持有副本）。
 
 /** 正文载荷: 主内容字段。**显式列 key** —— 否则短命令(ls / git status)抓不到 payload 判定, 会掉进「其他」 */
@@ -231,10 +233,10 @@ const CATEGORY_META: ReadonlyArray<{
 
 /**
  * 「路径特征」判定已抽到 ./paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）
- * —— 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：两入口若各写一份，改一处忘另一处 →
+ * —— 2026-10-21 小杨 - 两入口若各写一份，改一处忘另一处 →
  *   同一参数在一个视图可点、另一个不可点。PATH_KEYS 同样搬过去了。
  */
-// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：PATH_KEYS / isPathLike 已抽到 ./paramCategories
+// 2026-10-21 小杨 - PATH_KEYS / isPathLike 已抽到 ./paramCategories
 //   （ParamsPanel 与 ParamsTree 双入口共用同一判据，见该文件头注）—— 本文件不再持有副本。
 
 /**
@@ -715,7 +717,7 @@ const ParamValue: React.FC<{ value: unknown }> = ({ value }) => {
 const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
   params,
 }) => {
-  // 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径链接需要项目根（绝对路径→相对路径）
+  // 2026-10-21 小杨 - 路径链接需要项目根（绝对路径→相对路径）
   const projectRoot = useProjectRoot();
   const buckets = useMemo(() => {
     const map = new Map<Category, Array<[string, unknown]>>();
@@ -792,7 +794,7 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                       wordBreak: 'break-word',
                     }}
                   >
-                    {/* 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径类值渲染成可点击链接（直达文件页） */}
+                    {/* 2026-10-21 小杨 - 路径类值渲染成可点击链接（直达文件页） */}
                     {c.id === 'path' && typeof v === 'string' ? (
                       <PathLink value={v} projectRoot={projectRoot} />
                     ) : (

@@ -55,6 +55,7 @@
 // 编辑历史: 2026-10-11 小欧 - onRejected 关窗条件收紧(北京老陈令): 去掉 `!data.confirm_id` 降级分支,
 //   改为必须 id 相等才关窗。原降级分支会把"无 id 的 rejected"(safety 拦截/user 拒绝记忆, 二者本就
 //   无确认流程) 到达时, 此刻开着的无关 HITL 弹窗一并关掉。确认终态现由后端必带 confirm_id — 小欧-2026-10-11
+// 编辑历史: 2026-10-21 小杨 - 消息体支持随消息上行 refs（首连与插话两条 POST 路径一致） — 小杨-2026-10-21
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -67,7 +68,7 @@ import {
 import { sessionTaskApi, taskControlApi } from '@/services/api/task.api';
 import { getAccessToken } from '@/services/api/client';
 import type { ExecutionStep } from '@/types/execution';
-import type { ChatRefPayload } from '@/types/chat'; // 2026-10-21 小杨 - 文档[28] 4.4.4(M20)：refs 随消息上行
+import type { ChatRefPayload } from '@/types/chat'; // 2026-10-21 小杨 - refs 随消息上行
 import type { Dispatch, SetStateAction } from 'react';
 import type { SSEError, SSEMetadata } from '@/types/sse';
 import type {
@@ -170,7 +171,7 @@ function transportError(errorType: string, errorMessage: string): SSEError {
 }
 
 /**
- * 首连 POST / 插话 POST 的 **body 纯构造**（2026-10-21 小杨 - 文档[28] 4.4.4(M20)）
+ * 首连 POST / 插话 POST 的 **body 纯构造**（2026-10-21 小杨）
  *
  * 为什么收口成纯函数：首发（sendStreamRequest）与插话（postInterject）两条 body 原本各写一遍，
  *   加 refs 字段时极易只改一处 → 插话丢引用（4.1.6 的"五处必改"第 4/5 项）。
@@ -301,7 +302,7 @@ export async function postInterject(
         linkEnabled: s.linkEnabled,
         // 插话必然显式置开：前端门已判 allowInterject，这里保证后端落值同语义(None=沿用会误伤)
         allowInterject: true,
-        refs, // 2026-10-21 小杨 - 文档[28] 4.1.6：插话也带 refs（漏传 = 插话丢引用）
+        refs, // 2026-10-21 小杨 - 插话也带 refs（漏传 = 插话丢引用）
       })
     ),
     signal: ctl.signal,
