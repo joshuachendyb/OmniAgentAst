@@ -60,7 +60,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         const r = await fileApi.readFile(target.key);
         if (seq !== reqSeq.current) return; // 已被更新的请求取代
         setText(r);
-        setImgUrl(null);
+        releaseImage(); // 2026-10-21 小杨 - 审计修复：切走时**必须 revoke**（原 setImgUrl(null) 直接丢 URL 字符串 → 泄漏）
         openedMtime.current = r.mtime;
         setStale(false);
       } else if (target.preview === 'image') {
@@ -74,7 +74,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         setStale(false);
       } else {
         setText(null);
-        setImgUrl(null);
+        releaseImage();
       }
     } catch (e) {
       if (seq !== reqSeq.current) return;
@@ -86,10 +86,31 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     }
   };
 
+  /**
+   * 释放当前图片的 objectURL（2026-10-21 小杨 - 审计修复：原实现 setImgUrl(null) 只是丢掉 URL 字符串，
+   * blob 内存不释放 → 反复切图 / 离开页面都会泄漏）。
+   */
+  const releaseImage = () => {
+    setImgUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+  };
+
+  // 卸载时释放（组件消失不留 blob）
+  useEffect(() => {
+    return () => {
+      setImgUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return null;
+      });
+    };
+  }, []);
+
   useEffect(() => {
     if (!node) {
       setText(null);
-      setImgUrl(null);
+      releaseImage();
       setStale(false);
       setErr(null);
       return;
@@ -98,18 +119,23 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node?.key]);
 
-  /** O1：refresh 单请求化 —— 一次 /files/read 同时拿到"新鲜度判定 + 内容重载" */
+  /** O1：refresh 单请求化 —— 一次 /files/read 同时拿到"新鲜度判定 + 内容重载"
+   *  2026-10-21 小杨 - 审计修复：refresh 也要走 reqSeq 守卫
+   *   （原文 refresh 无守卫 → 刷新 A 的请求晚于切到 B 的请求返回 → 头部显示 B、正文却是 A） */
   const refresh = async () => {
     if (!node) return;
+    const seq = ++reqSeq.current;
     try {
       if (node.preview === 'text') {
         const r = await fileApi.readFile(node.key);
+        if (seq !== reqSeq.current) return; // 已被更新的请求取代
         if (r.mtime && r.mtime !== openedMtime.current) setStale(true);
         else setStale(false);
         if (r.mtime) openedMtime.current = r.mtime;
         setText(r);
       } else {
         const blob = await fileApi.loadImageBlob(node.key);
+        if (seq !== reqSeq.current) return;
         setImgUrl((old) => {
           if (old) URL.revokeObjectURL(old);
           return URL.createObjectURL(blob);
@@ -117,6 +143,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         setStale(false);
       }
     } catch (e) {
+      if (seq !== reqSeq.current) return;
       if (e instanceof ImageUnchanged) setStale(false);
       else setErr(e instanceof Error ? e.message : '刷新失败');
     }

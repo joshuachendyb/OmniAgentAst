@@ -19,12 +19,27 @@ export function useComposerRefs(sessionId?: string | null) {
 
   useEffect(() => {
     // 仅"真正切换会话"才清空；发送失败（sessionId 不变）不清（M4）
-    if (sidRef.current !== sessionId) setRefs([]);
+    // 2026-10-21 小杨 - 审计修复：**不在这里 setRefs([])**（effect 晚一帧 → 会把跨页刚注入的引用误杀）；
+    //   旧引用的丢弃由渲染期派生（visibleRefs）承担，真正的 state 清理在下次 setRefs 时自然发生。
     sidRef.current = sessionId;
   }, [sessionId]);
 
-  /** 是否还有引用正文在途（O3：pending 阻断发送，防发出 content:''） */
-  const refsPending = refs.some((r) => r.pending);
+  /**
+   * 2026-10-21 小杨 - 文档[28] 审计修复（高危）：
+   *   原实现把"清空"放在 effect 里 → **晚一帧**，而引用是**跨页注入**的：
+   *   文件页 push → 会话页挂载 → useChatInit 异步建会话 → sessionId 由 '' 变成 'S'
+   *   → effect 触发 setRefs([]) → **刚注入的引用被清空**，而正文里的 @token 还在
+   *   → 发送时 refs 为空 → 正文里的 @a.md 原样发给模型，**文件正文从未上行**（静默丢数据）。
+   *
+   *   改为**渲染期派生**（不在 effect 里清 state）：
+   *   - 会话未变 → 用 state 里的 refs
+   *   - 会话已变 → 视为空（本次渲染不显示旧引用）
+   *   - 真正的"丢弃"发生在下一次 setRefs 时（effect 里只更新 sidRef，不再 setRefs([])）
+   */
+  const visibleRefs = sidRef.current === sessionId ? refs : [];
 
-  return { refs, setRefs, refsPending };
+  /** 是否还有引用正文在途（O3：pending 阻断发送，防发出 content:''） */
+  const refsPending = visibleRefs.some((r) => r.pending);
+
+  return { refs: visibleRefs, setRefs, refsPending };
 }

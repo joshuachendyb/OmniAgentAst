@@ -298,10 +298,12 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       },
       {
         // 2026-10-21 小杨 - 文档[28] 8.2/9.10(FT1)：文件足迹面板注册（加功能不动骨架，4.3.7）
+        //   ⚠ defaultVisible 必须为 true：全仓**没有任何面板显隐的写入方**（readPanelVisible 只读不写），
+        //     persistVisible + defaultVisible:false → 面板永不可见，FT1 整体不可达（审计确证）
         slot: 'right',
         key: 'fileTrail',
         component: <FileTrailPanel sessionId={sessionId} />,
-        defaultVisible: false,
+        defaultVisible: true,
         persistVisible: true, // 开关状态随会话持久化
       },
       {

@@ -62,7 +62,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
         key: n.key,
         isLeaf: n.type === 'file',
         title: (
-          <span>
+          <span data-file-key={n.key}>
             {/* Tooltip 只包文字 span，不包整行（M16，否则与展开箭头打架） */}
             <Tooltip title={`${n.name} · ${formatBytes(n.size)} · ${n.mtime}`}>
               <span
@@ -111,14 +111,16 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
             if (found && found.type === 'file') onSelectFile(found);
           }}
           onContextMenu={(e: React.MouseEvent<HTMLDivElement>) => {
-            // antd 5.12 的 Tree.onContextMenu 是 DOM 风格（只给事件），节点 key 从 DOM 的
-            // data-key 属性取（rc-tree 给每个节点容器打了 data-key）
-            const holder = (e.target as HTMLElement).closest('[data-key]');
-            const key = holder?.getAttribute('data-key');
-            const n = key ? findNode(nodes, key) : null;
-            if (!n) return;
+            // 2026-10-21 小杨 - 审计修复：antd 5.12 的 Tree **未暴露 onNodeContextMenu**
+            //   （rc-tree 有，但被 antd 的 Omit 列表排除），且 rc-tree 的节点 DOM **无 data-key 属性**
+            //   → 原写法 closest('[data-key]') 恒 null → 右键菜单永不弹出。
+            //   现改为取**我们自己渲染的 title 上的 data-file-key**（可控、类型安全）。
+            const holder = (e.target as HTMLElement).closest('[data-file-key]');
+            const key = holder?.getAttribute('data-file-key');
+            const hit = key ? findNode(nodes, key) : null;
+            if (!hit) return;
             e.preventDefault();
-            setCtx({ node: n, x: e.clientX, y: e.clientY });
+            setCtx({ node: hit, x: e.clientX, y: e.clientY });
           }}
         />
       )}

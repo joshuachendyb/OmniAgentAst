@@ -25,6 +25,7 @@ import {
 } from '@/features/chat/streams/composerRefStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { readStoredSessionId } from '@/utils/sessionStorage';
+import { showMessage, ErrorType } from '@/services/error/handler';
 import { Spacing, Colors } from '@/utils/stepStyles';
 
 /** 树归并：按 key（相对路径）把补拉的子节点挂到父下（不可变更新，只改一路祖先） */
@@ -50,6 +51,7 @@ const FilesPage: React.FC = () => {
   const [projectRoot, setProjectRoot] = useState('');
   const [rootErr, setRootErr] = useState<string | null>(null);
   const [tree, setTree] = useState<FileNode[]>([]);
+  const [treeReady, setTreeReady] = useState(false); // 2026-10-21 小杨 - 深链需等树就绪
   const [treeErr, setTreeErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<FileNode | null>(null);
   const [lineRange, setLineRange] = useState<{
@@ -93,6 +95,7 @@ const FilesPage: React.FC = () => {
       treeRef.current = r.nodes;
       setTree(r.nodes);
       setLoadedKeys([]);
+      setTreeReady(true); // 2026-10-21 小杨 - 审计修复：深链 effect 需等树就绪
     } catch {
       setTreeErr('目录加载失败，请重试');
     }
@@ -135,7 +138,11 @@ const FilesPage: React.FC = () => {
   /** 深链进入：?path=…&line=… */
   useEffect(() => {
     const rel = params.get('path');
-    if (!rel) return;
+    // 2026-10-21 小杨 - 审计修复（阻断）：原 effect 在**树未就绪**时就跑
+    //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
+    //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
+    //   现在等 treeReady 后再展开。
+    if (!rel || !treeReady) return;
     void (async () => {
       const hit = await expandToPath(rel);
       if (hit && hit.type === 'file') {
@@ -145,10 +152,12 @@ const FilesPage: React.FC = () => {
           const m = /^(\d+)-(\d+)$/.exec(line);
           if (m) setLineRange({ start: Number(m[1]), end: Number(m[2]) });
         }
+      } else {
+        showMessage(ErrorType.FILE_READ, '路径不存在或不可读');
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params]);
+  }, [params, treeReady]);
 
   /** 三途径统一 push（发送到输入框 / 树右键插入引用 / 引用选区 —— 产物等价） */
   const pushRef = useCallback(

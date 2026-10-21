@@ -50,6 +50,28 @@ import {
   PaperClipOutlined,
 } from '@ant-design/icons';
 import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+import { useProjectRoot } from '@/hooks/useProjectRoot';
+
+/**
+ * 路径归一（与后端 `browse_service._resolve_within_root` 同口径）：相对 posix 路径
+ * 2026-10-21 小杨 - 文档[28] 审计修复（FQ1 键口径）
+ */
+const normalizeRelPath = (raw: string, projectRoot?: string): string | null => {
+  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const v = norm(raw);
+  if (!v) return null;
+  if (projectRoot) {
+    const root = norm(projectRoot);
+    if (v.toLowerCase().startsWith(root.toLowerCase())) {
+      if (v.length > root.length && v[root.length] !== '/') return null; // 兄弟目录（F:\proj2）
+      const rel = v.slice(root.length).replace(/^\/+/, '');
+      return rel || null;
+    }
+  }
+  // 绝对路径但不在项目根内 → 不计入（后端也会丢弃）
+  if (/^[a-zA-Z]:\//.test(v) || v.startsWith('//')) return null;
+  return v.replace(/^\.\//, '');
+};
 
 import type { SessionTaskItem } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '@/types/execution';
@@ -117,17 +139,26 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   //   ① roundHits = 本轮 steps 里工具动过的 path 计数（tools[].params.path）
   //   ② 推荐 = 被动过 ≥2 次 且 preview 可预览 的文件，取最近 3 条（与 FT1 同一数据源，走共享 hook）
   const { files: recentFiles } = useRecentFiles(sessionId);
+  // 2026-10-21 小杨 - 审计修复（高危）：**键口径必须与后端一致**
+  //   roundHits 原用 tool.params.path 原样值（Windows 上多为 "F:\proj\a.py" 或 "backend\a.py"），
+  //   而 recentFiles[].path 是后端归一后的**相对 posix 路径** → 键对不上 → roundHits 恒 miss
+  //   → recommend 恒为空 → **FQ1 推荐行永远不渲染**（功能未交付）。
+  //   现用与后端同口径的归一（绝对→相对 root、反斜杠→正斜杠）后再计数。
+  const projectRoot = useProjectRoot();
   const roundHits = React.useMemo(() => {
     const m = new Map<string, number>();
     for (const s of steps) {
       if (s.type !== 'action') continue;
       for (const tool of s.tools ?? []) {
-        const p = tool.params?.path;
-        if (typeof p === 'string' && p) m.set(p, (m.get(p) ?? 0) + 1);
+        const raw = tool.params?.path;
+        if (typeof raw !== 'string' || !raw) continue;
+        const p = normalizeRelPath(raw, projectRoot);
+        if (!p) continue;
+        m.set(p, (m.get(p) ?? 0) + 1);
       }
     }
     return m;
-  }, [steps]);
+  }, [steps, projectRoot]);
   const recommend = React.useMemo(
     () =>
       recentFiles
@@ -138,18 +169,23 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     [recentFiles, roundHits]
   );
   /** BR1 台账：按任务取（store 侧 transient 列表，不入库）
-   *  发送时后端尚未建任务 → taskId 暂记空串，此处回落到"最近一批"（同一 ts 的一批）。 */
+   *  2026-10-21 小杨 - 审计修复（高危）：原实现用 taskId 空串回落 + "取最新一批"，
+   *   而 getSentRefLedger 的空串是 falsy → **返回整本台账** → 同一批引用被渲染到**每一个**任务卡上
+   *   （历史任务的引用归属被凭空伪造）。现改为：只挂到**最新一条任务**卡，且按批次 ts 取全。
+   */
   const ledgerForTask = React.useCallback(
     (taskId: string) => {
       if (!sessionId) return [];
-      const all = chatStreamStore.getSentRefLedger(sessionId, taskId);
-      if (all.length > 0) return all;
+      const matched = chatStreamStore.getSentRefLedger(sessionId, taskId);
+      if (matched.length > 0) return matched;
+      if (!isLatestTaskId(taskId)) return []; // 非最新任务不回落
       const pending = chatStreamStore.getSentRefLedger(sessionId, '');
       if (pending.length === 0) return [];
       const newestTs = pending[0].ts;
       return pending.filter((e) => e.ts === newestTs);
     },
-    [sessionId]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessionId, latestTaskId]
   );
   /** BR1 恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
   const quoteAfterReread = React.useCallback(

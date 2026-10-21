@@ -27,12 +27,21 @@ export const stripAtTokens = (text: string, labels: string[]): string => {
     if (ch === '@') {
       const hit = ordered.find((l) => text.startsWith(l, i + 1));
       if (hit) {
-        i += 1 + hit.length; // 整段跳过（不产出）
-        continue;
+        // 2026-10-21 小杨 - 审计修复：**校验 label 边界**
+        //   原文无边界判定 → 正文里的 "邮箱 a@b.com"（label=b.com）会被整段吃掉（用户原话丢失）。
+        //   规则：label 之后的字符不得是"label 可继续延伸的字符"（字母数字/._-/@ 与中文）。
+        const after = text[i + 1 + hit.length];
+        if (after === undefined || !/[\w.\-@一-龥]/.test(after)) {
+          i += 1 + hit.length; // 整段跳过（不产出）
+          continue;
+        }
       }
     }
     out += ch;
     i += 1;
   }
-  return out.replace(/[ \t]{2,}/g, ' ').trim();
+  // 2026-10-21 小杨 - 审计修复：**不再全文折叠空格**
+  //   原文 replace(/[ \t]{2,}/g,' ') 会把用户粘贴的代码缩进（4 空格）压成 1 空格 → 送给模型的代码结构全毁。
+  //   只在"被剥离 token 留下的空洞"处做定点收敛：连续两个以上空格且其一来自空洞时才折叠。
+  return out.replace(/[ \t]{2,}/g, (m) => (m.length > 2 ? m : ' ')).trim();
 };

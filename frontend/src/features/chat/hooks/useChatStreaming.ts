@@ -74,6 +74,7 @@ import type { UseChatCallbacksReturn } from './useChatCallbacks';
 import type { ExecutionStep } from '../../../types/execution';
 import type { Message } from '../../../types/chat';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
+import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 载荷类型
 // [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
 import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
@@ -153,7 +154,10 @@ export interface UseChatStreamingReturn {
   // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话发送（执行中追加一条输入；插话必然是开态, 故无需 opts）
   //   与 executeSend 的分工(SRP)：executeSend = 新建任务流(含清 steps/建占位/重置取消态等"新任务"编排)；
   //   本方法 = 投递一条输入给运行中任务，**刻意不做**上述任何一项(做了会破坏正在跑的任务显示与状态)。
-  interjectSend: (userMessage: Message) => Promise<void>;
+  interjectSend: (
+    userMessage: Message,
+    refs?: ChatRefPayload[] // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：插话带引用
+  ) => Promise<void>;
 
   // 2026-09-17 小欧 实施: 心跳等待感知钟面信号透传 — 小欧-2026-09-17
   waitClock: import('@/types/sse').ClockSignals;
@@ -631,7 +635,7 @@ export const useChatStreaming = (
   //   刻意不做(做了即破坏运行中任务): clearSteps / setDeniedEntries / DENIED 键清理 /
   //   cancelInProgressRef 复位 / 等待计时器 / assistant 占位 / isProcessing 与 abortController 改动。
   const interjectSend = useCallback(
-    async (userMessage: Message) => {
+    async (userMessage: Message, refs?: ChatRefPayload[]) => {
       const sid = currentSessionIdRef.current ?? sessionId ?? undefined;
       if (!sid) {
         throw new Error('插话失败：会话 id 缺失');
@@ -659,7 +663,8 @@ export const useChatStreaming = (
         replyUserMessageIdRef.current = backendId;
       }
       // 2. 投递(独立路径: 不掐断运行中流, 不改流状态机)
-      await chatStreamStore.interjectMessage(sid, userMessage.content);
+      // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：插话也带 refs（漏传 = 插话丢引用）
+      await chatStreamStore.interjectMessage(sid, userMessage.content, refs);
     },
     [sessionId, setMessages, currentSessionIdRef, replyUserMessageIdRef]
   );
