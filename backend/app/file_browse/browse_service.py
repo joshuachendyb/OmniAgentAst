@@ -14,6 +14,9 @@
 #   绝大多数是环，说成读取失败是误导；两类分开后前端才能分别措辞 — 小欧-2026-10-21
 # 2026-10-21 小欧 - read 的 total_lines 改 _count_lines：末尾换行不产生新行（编辑器口径），
 #   原式 count("\n")+1 让 "a\r\nb\r\n" 算 3 行 → 行号指到不存在的空行，且与前端行号列不一致 — 小欧-2026-10-21
+# 2026-10-21 小欧 - 树扫描提速（**不加任何节点限制**）：① BINARY_EXTS 明确二进制格式走后缀零 IO；
+#   ② .map/.tsbuildinfo 等进文本后缀表；③ 剩余需实探的走 _probe_pool 并发探测
+#   （实测 8.9 万节点单次 7.16s，其中 8KB 实探占约 7.5s 量级，scandir 遍历本身仅约 1s）— 小欧-2026-10-21
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -29,6 +32,7 @@ import hashlib
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 from urllib.parse import quote
@@ -69,6 +73,21 @@ TEXT_EXTS = {
     # 配置/数据
     ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
     ".env", ".xml", ".properties", ".gradle",
+    # 2026-10-21 小欧 - 补两类"看着不像文本、实则是"的：
+    #   .map = sourcemap（JSON 文本）；.tsbuildinfo = TypeScript 增量信息（JSON 文本）
+    ".map", ".tsbuildinfo", ".plist", ".in", ".lock",
+}
+# 2026-10-21 小欧 - 明确的二进制格式（按后缀直接判 none，**零 IO**）：
+#   这些格式实探必然读到 NUL → 判二进制，实探纯属浪费 IO。
+#   实测：E:\test_dir 前 2 万项里 .docx/.pdf/.xlsx/.zip/.woff2/.pyc 等占实探量的 1/4。
+BINARY_EXTS = {
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp",
+    ".zip", ".gz", ".bz2", ".xz", ".7z", ".rar", ".tar", ".tgz", ".iso", ".cab",
+    ".exe", ".dll", ".so", ".dylib", ".class", ".jar", ".war", ".ear", ".whl", ".egg",
+    ".pyc", ".pyo", ".pyd", ".o", ".obj", ".a", ".lib",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".mp3", ".wav", ".flac", ".ogg", ".mp4", ".avi", ".mov", ".mkv", ".webm", ".wmv",
+    ".db", ".sqlite", ".sqlite3", ".mdb", ".accdb", ".dat", ".bin", ".img", ".iso_img",
 }
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg"}
 IMAGE_MIME = {                      # 显式映射，不用 mimetypes 猜：猜错会把二进制当 text/plain 吐出
@@ -184,6 +203,11 @@ def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
 _PREVIEW_CACHE: Dict[str, Tuple[float, str]] = {}   # path -> (mtime, 't'|'f')
 _PREVIEW_CACHE_MAX = 100000
 
+# 2026-10-21 小欧 - 实探并发池（模块级单例，懒建线程）：
+#   类型探测是树扫描耗时大头（单文件 0.36ms，串行 8.9 万节点里 24% 需实探 ≈ 7.5s）。
+#   IO 型操作（open+read 8KB）并发收益直接；线程数固定 8，避免大目录把磁盘打满。
+_probe_pool = ThreadPoolExecutor(max_workers=8, thread_name_prefix="browse-probe")
+
 
 _TEXT_BOMS = (b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00",
               b"\xef\xbb\xbf", b"\xff\xfe", b"\xfe\xff")
@@ -220,20 +244,35 @@ def _probe_text(path: Path) -> Optional[bool]:
     return verdict == "t"
 
 
-def _preview_of(path: Path) -> str:
-    """返回 text / image / none —— 后缀规则唯一真源（前端不自己判）。
+def _preview_by_suffix(path: Path) -> Optional[str]:
+    """**只按后缀**判定可预览性：text / image / None(=需实探)。
 
-    2026-10-21 小杨 - 文本文件=能解码的：已知文本/图片后缀直接短路（零 IO，树扫描热路径）；
-    未知后缀（含 Dockerfile、LICENSE 等无后缀文件）实探——走唯一探测点 _probe_text（首 8KB 查 NUL），
-    解码/2MB 截断仍由 /files/read 的解码链兜底。
-    """
+    2026-10-21 小欧 - 拆出后缀判定层：让树扫描能**零 IO** 处理绝大多数条目，
+      只把"后缀判不了"的交给实探（并发，见 _scan_dir）。"""
     suffix = path.suffix.lower()
     if suffix in TEXT_EXTS:
         return "text"
     if suffix in IMAGE_EXTS:
         return "image"
+    if suffix in BINARY_EXTS:
+        return "none"          # 明确的二进制格式：实探必然判二进制，纯浪费 IO
+    return None
+
+
+def _preview_of(path: Path) -> str:
+    """返回 text / image / none — **后缀规则唯一真源**（前端不自己判）。
+
+    2026-10-21 小杨 - 文本文件=能解码的：已知文本/图片后缀直接短路（零 IO，树扫描热路径），
+      未知后缀（含 Dockerfile、LICENSE 等无后缀文件）实探——走唯一探测点 _probe_text（首 8KB 看 NUL），
+      解码/2MB 截断仍由 /files/read 的解码链兜底。
+    2026-10-21 小欧 - 二进制格式后缀进 BINARY_EXTS 直接判 none（零 IO）。
+    """
+    by_suffix = _preview_by_suffix(path)
+    if by_suffix is not None:
+        return by_suffix
     r = _probe_text(path)
     return "text" if r is True else "none"
+
 
 
 def _fmt_time(ts: float) -> str:
@@ -298,9 +337,14 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
     ⑦ 文本实探只对文件做，且必须传完整路径（2026-10-21 小杨 - 修复：
        原实现传 Path(de.name) 相对进程 CWD，Dockerfile/LICENSE 等无后缀文件恒探失败；
        目录也不该被探测——dir.md 这类带文本后缀的目录曾被误判为可预览文本）。
+    ⑧ 2026-10-21 小欧 - 实探**并发化**：类型探测是树扫描的耗时大头
+       （实测 E:\test_dir：scandir 遍历 2 万项只要 0.21s，而 8KB 实探 4886 个要 1.08s，
+       单文件 0.36ms —— 全量 8.9 万节点里 24% 需实探，折算约 7.5s，占总耗时 7.16s 的绝大部分）。
+       故：后缀能判的直接判（零 IO），需实探的**批量并发**探（IO 并行）。
     """
     entries: List[Dict[str, Any]] = []
     skipped = 0
+    pending: List[Tuple[int, Path]] = []      # (entries 下标, 绝对路径) —— 待实探
     try:
         it = os.scandir(target)
     except OSError as e:      # 目录不可读：返回空并计数（不静默，否则前端误显"空目录"）
@@ -319,6 +363,14 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
             if de.is_symlink() and _escapes_root(de.path, root):
                 skipped += 1
                 continue
+            preview = "none"
+            if not is_dir:
+                p = Path(de.path)
+                by_suffix = _preview_by_suffix(p)
+                if by_suffix is not None:
+                    preview = by_suffix
+                else:
+                    pending.append((len(entries), p))   # ⑧ 后缀判不了 → 稍后并发实探
             entries.append({
                 "key": _join_rel(rel, de.name),  # key 用相对路径，防同名撞车；口径统一走 _join_rel
                 "name": de.name,
@@ -326,8 +378,12 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
                 "size": None if is_dir else st.st_size,
                 "mtime": _fmt_time(st.st_mtime),
                 # ⑦ 目录不探测；文件传绝对路径（de.path），不得相对 CWD
-                "preview": "none" if is_dir else _preview_of(Path(de.path)),
+                "preview": preview,
             })
+    if pending:
+        verdicts = list(_probe_pool.map(_probe_text, [p for _, p in pending]))
+        for (idx, _p), v in zip(pending, verdicts):
+            entries[idx]["preview"] = "text" if v is True else "none"
     entries.sort(key=lambda e: (e["type"] != "dir", e["name"].lower()))
     return entries, skipped
 
