@@ -15,7 +15,6 @@ import css from 'highlight.js/lib/languages/css';
 import scss from 'highlight.js/lib/languages/scss';
 import less from 'highlight.js/lib/languages/less';
 import yaml from 'highlight.js/lib/languages/yaml';
-import toml from 'highlight.js/lib/languages/toml';
 import ini from 'highlight.js/lib/languages/ini';
 import sql from 'highlight.js/lib/languages/sql';
 import graphql from 'highlight.js/lib/languages/graphql';
@@ -41,7 +40,6 @@ const REGISTRY: Record<string, Parameters<typeof hljs.registerLanguage>[1]> = {
   scss,
   less,
   yaml,
-  toml,
   ini,
   sql,
   graphql,
@@ -81,7 +79,7 @@ const LANG_BY_EXT: Record<string, string> = {
   less: 'less',
   yaml: 'yaml',
   yml: 'yaml',
-  toml: 'toml',
+  toml: 'ini', // hljs 无 toml 语言, ini 语法近似(键=值/节)着色兜底
   ini: 'ini',
   cfg: 'ini',
   conf: 'ini',
