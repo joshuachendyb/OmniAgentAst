@@ -1,184 +1,40 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.9 + 9.9.1 新建：目录树（全量加载 / 降级补拉 / 右键菜单 / 焦点环） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28]§7.0.5(v5.12)：图标映射改用全局单一真源 @/components/fileIcon — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28]§9.9.1(O9)：Tree 增 focusable（键盘可达）；复制失败兜底走公用 copyTextToClipboard — 小杨-2026-10-21
-/**
- * FilesTree —— 项目根目录树（只读浏览）
- *
- * 能力：全量优先（首屏一次 tree 拉满 5 层）+ 降级补拉（incomplete_child 的目录展开时按需补拉，
- *   loadedKeys 记账不重复请求）+ 右键菜单（设为会话工作目录 / 插入引用 / 复制路径）+ 键盘可达（O9）。
- */
+// 编辑历史: 2026-10-21 小杨 - 北京老陈拍板弃用 antd Tree（补丁堆积=选型错，教训遵守）：
+//   自写树（block 流递归渲染，无 antd Tree 的 treenode>indent>switcher 抽象层）：
+//   1) 目录行点击=展开/收起；首屏 5 层全量子级在 nodes.children 本地直接开（零请求）
+//   2) 懒加载只对超深截断目录走 onLoadDir/onPatchNodes/onLoadedKeys
+//   3) Ctrl 逐个 / Shift 区间（扁平序连线段）批量 → onSelectFiles（只收文件，目录不进批量）
+//   4) 右键菜单（插入引用/设为会话工作目录/复制路径）自绘 fixed 浮层
+//   5) antd Tree 特供补丁（files-tree-noswitcher CSS、expandable、multiple 手势）一并作废
 import React, { useMemo, useState } from 'react';
-import { Dropdown, Empty, Tree, Tooltip } from 'antd';
-import type { DataNode } from 'antd/es/tree';
-import { FolderOutlined, PaperClipOutlined } from '@ant-design/icons';
+import { Dropdown, Empty } from 'antd';
+import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
 import type { FileNode } from '@/services/api/file.api';
 import { fileIcon } from '@/components/fileIcon';
-import { copyTextToClipboard } from '@/utils/clipboard';
 import { formatBytes } from '@/utils/format';
-import { Colors, Icon } from '@/utils/stepStyles';
+// 2026-10-21 小杨 - 选中态改深灰 #4b4b4b 直接量，Colors 引用清零（YAGNI）
 import { showMessage, ErrorType } from '@/services/error/handler';
+import { copyTextToClipboard } from '@/utils/clipboard';
 
 export interface FilesTreeProps {
   nodes: FileNode[];
   selectedKey: string;
+  /** #12：受控选中键集合（预览单选 + 批量勾选共用高亮真源） */
+  selectedKeys?: string[];
   /** T3：recent-files 的 path 集合，命中标 ● */
   recentSet: Set<string>;
   loadedKeys: string[];
   onLoadedKeys: (keys: string[]) => void;
   onSelectFile: (node: FileNode) => void;
-  /** F9：树上右键插入引用（可未打开） */
+  onSelectFiles?: (nodes: FileNode[]) => void;
   onInsertRef: (node: FileNode) => void;
-  /** J3（仅目录） */
   onSetWorkspace: (node: FileNode) => void;
-  /** 降级补拉回填 */
   onPatchNodes: (parentKey: string, kids: FileNode[]) => void;
-  /** 补拉一个目录（返回其子节点；已加载则返回 null） */
   onLoadDir: (key: string) => Promise<FileNode[] | null>;
 }
 
-export const FilesTree: React.FC<FilesTreeProps> = (props) => {
-  const {
-    nodes,
-    selectedKey,
-    recentSet,
-    loadedKeys,
-    onLoadedKeys,
-    onSelectFile,
-    onInsertRef,
-    onSetWorkspace,
-    onPatchNodes,
-    onLoadDir,
-  } = props;
-  const [ctx, setCtx] = useState<{
-    node: FileNode;
-    x: number;
-    y: number;
-  } | null>(null);
-
-  /** antd treeData 转换（每渲染重建 → 用 useMemo 缓存，5000 节点下不做无谓重建） */
-  const treeData = useMemo<DataNode[]>(() => {
-    const toData = (list: FileNode[]): DataNode[] =>
-      list.map((n) => ({
-        key: n.key,
-        isLeaf: n.type === 'file',
-        title: (
-          <span data-file-key={n.key}>
-            {/* Tooltip 只包文字 span，不包整行（M16，否则与展开箭头打架） */}
-            <Tooltip title={`${n.name} · ${formatBytes(n.size)} · ${n.mtime}`}>
-              <span
-                style={
-                  n.preview === 'none' && n.type === 'file'
-                    ? { opacity: 0.4 }
-                    : undefined
-                }
-              >
-                {fileIcon(n)} {n.name}
-                {recentSet.has(n.key) ? ' ●' : ''}
-              </span>
-            </Tooltip>
-          </span>
-        ),
-        children: n.children ? toData(n.children) : undefined,
-      }));
-    return toData(nodes);
-  }, [nodes, recentSet]);
-
-  /** 降级补拉：incomplete_child 的目录展开时按需拉子节点（loadedKeys 记账不重复请求） */
-  const onLoadData = async (node: DataNode) => {
-    const key = String(node.key);
-    if (loadedKeys.includes(key)) return;
-    const kids = await onLoadDir(key);
-    if (!kids) return;
-    onPatchNodes(key, kids);
-    onLoadedKeys([...loadedKeys, key]);
-  };
-
-  return (
-    <>
-      {nodes.length === 0 ? (
-        <Empty description="目录为空" />
-      ) : (
-        <Tree
-          treeData={treeData}
-          loadData={onLoadData}
-          showLine
-          focusable // O9：键盘可达（antd Tree 默认 Enter 触发 onSelect）
-          selectedKeys={selectedKey ? [selectedKey] : []}
-          onSelect={(keys) => {
-            const hit = keys[0];
-            if (hit == null) return;
-            const found = findNode(nodes, String(hit));
-            if (found && found.type === 'file') onSelectFile(found);
-          }}
-          onContextMenu={(e: React.MouseEvent<HTMLDivElement>) => {
-            // 2026-10-21 小杨 - 审计修复：antd 5.12 的 Tree **未暴露 onNodeContextMenu**
-            //   （rc-tree 有，但被 antd 的 Omit 列表排除），且 rc-tree 的节点 DOM **无 data-key 属性**
-            //   → 原写法 closest('[data-key]') 恒 null → 右键菜单永不弹出。
-            //   现改为取**我们自己渲染的 title 上的 data-file-key**（可控、类型安全）。
-            const holder = (e.target as HTMLElement).closest('[data-file-key]');
-            const key = holder?.getAttribute('data-file-key');
-            const hit = key ? findNode(nodes, key) : null;
-            if (!hit) return;
-            e.preventDefault();
-            setCtx({ node: hit, x: e.clientX, y: e.clientY });
-          }}
-        />
-      )}
-      {ctx && (
-        <Dropdown
-          open
-          menu={{
-            items: [
-              ...(ctx.node.type === 'dir'
-                ? [
-                    {
-                      key: 'ws',
-                      label: '设为会话工作目录',
-                      onClick: () => onSetWorkspace(ctx.node),
-                    },
-                  ]
-                : []),
-              ...(ctx.node.type === 'file' && ctx.node.preview === 'text'
-                ? [
-                    {
-                      key: 'ref',
-                      label: '插入引用',
-                      icon: (
-                        <PaperClipOutlined style={{ fontSize: Icon.BOX }} />
-                      ),
-                      onClick: () => onInsertRef(ctx.node),
-                    },
-                  ]
-                : []),
-              {
-                key: 'copy',
-                label: '复制路径',
-                onClick: () => {
-                  void copyTextToClipboard(ctx.node.key).then((r) => {
-                    if (!r.ok)
-                      showMessage(
-                        ErrorType.COPY_FAILED,
-                        '复制失败，请手动复制路径'
-                      );
-                  });
-                },
-              },
-            ],
-          }}
-          onOpenChange={(o) => {
-            if (!o) setCtx(null);
-          }}
-        >
-          <span style={{ position: 'fixed', left: ctx.x, top: ctx.y }} />
-        </Dropdown>
-      )}
-    </>
-  );
-};
-
-/** 按 key 在树里找节点（相对路径 key，唯一） */
-export const findNode = (nodes: FileNode[], key: string): FileNode | null => {
-  for (const n of nodes) {
+/** 按 key 深度优先找节点（Files 页仍然引用此工具函数） */
+export const findNode = (ns: FileNode[], key: string): FileNode | null => {
+  for (const n of ns) {
     if (n.key === key) return n;
     if (n.children) {
       const hit = findNode(n.children, key);
@@ -188,8 +44,232 @@ export const findNode = (nodes: FileNode[], key: string): FileNode | null => {
   return null;
 };
 
-/** 目录图标（工具条/标题用，避免各处再 import antd 图标） */
+/** 2026-10-21 小杨 - 兼容旧导出（若有其他引用处）；自写树内不再使用 */
 export const FilesTreeFolderIcon = FolderOutlined;
 
-/** 树标题里的 ● 颜色（与 token 对齐，供外部复用） */
-export const RECENT_DOT_COLOR = Colors.PRIMARY;
+export const FilesTree: React.FC<FilesTreeProps> = (props) => {
+  const {
+    nodes,
+    selectedKey,
+    selectedKeys,
+    recentSet,
+    loadedKeys,
+    onLoadedKeys,
+    onSelectFile,
+    onSelectFiles,
+    onInsertRef,
+    onSetWorkspace,
+    onPatchNodes,
+    onLoadDir,
+  } = props;
+
+  /** 目录展开集合（点击目录名切换；自写树的唯一展开途径） */
+  const [expanded, setExpanded] = useState<string[]>([]);
+  /** Shift 区间选择的起点锚（扁平序 index 由 key 反查） */
+  const [anchor, setAnchor] = useState<string | null>(null);
+  /** 右键菜单上下文 */
+  const [ctx, setCtx] = useState<{
+    node: FileNode;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  /** 树扁平序（Shift 区间选择基于此序计算） */
+  const flat = useMemo<FileNode[]>(() => {
+    const out: FileNode[] = [];
+    const walk = (ns: FileNode[]) => {
+      for (const n of ns) {
+        out.push(n);
+        if (n.children) walk(n.children);
+      }
+    };
+    walk(nodes);
+    return out;
+  }, [nodes]);
+
+  /** 目录点击 = 展开/收起；本地已有子级零请求，只有超深截断目录才补拉 */
+  const toggleExpand = (n: FileNode) => {
+    const willOpen = !expanded.includes(n.key);
+    setExpanded((prev) =>
+      willOpen ? [...prev, n.key] : prev.filter((k) => k !== n.key)
+    );
+    if (willOpen && !loadedKeys.includes(n.key) && !n.children?.length) {
+      void (async () => {
+        try {
+          const kids = await onLoadDir(n.key);
+          if (kids && kids.length > 0) onPatchNodes(n.key, kids);
+          onLoadedKeys([...loadedKeys, n.key]);
+        } catch {
+          showMessage(ErrorType.FILE_READ, `无法加载「${n.name}」的子目录`);
+        }
+      })();
+    }
+  };
+
+  /** 文件点击：无修饰=单选预览（清批量）；Ctrl=toggle；Shift=锚点区间（连线段只收文件） */
+  const fileClick = (n: FileNode, e: React.MouseEvent) => {
+    onSelectFile(n);
+    if (!onSelectFiles) return;
+    if (e.shiftKey && anchor) {
+      const ai = flat.findIndex((x) => x.key === anchor);
+      const ci = flat.findIndex((x) => x.key === n.key);
+      if (ai >= 0 && ci >= 0) {
+        const [s, t] = ai <= ci ? [ai, ci] : [ci, ai];
+        onSelectFiles(flat.slice(s, t + 1).filter((x) => x.type === 'file'));
+      }
+      return;
+    }
+    if (e.ctrlKey) {
+      const keySet = new Set(
+        selectedKeys ?? (selectedKey ? [selectedKey] : [])
+      );
+      if (keySet.has(n.key)) keySet.delete(n.key);
+      else keySet.add(n.key);
+      onSelectFiles(flat.filter((x) => keySet.has(x.key) && x.type === 'file'));
+      return;
+    }
+    setAnchor(n.key);
+    onSelectFiles([]);
+  };
+
+  const renderRow = (n: FileNode, depth: number): React.ReactNode => {
+    const isDir = n.type === 'dir';
+    const isOpen = expanded.includes(n.key);
+    const sel = selectedKeys?.includes(n.key) ?? selectedKey === n.key;
+    /** 已支持预览的文件才给完整信息；预览为 none 的文件降透明度（与旧行为一致） */
+    const dim = !isDir && n.preview === 'none';
+    const meta = `${n.name} · ${formatBytes(n.size)} · ${n.mtime}`;
+    return (
+      <div key={n.key}>
+        <div
+          data-file-key={n.key}
+          role="treeitem"
+          aria-expanded={isDir ? isOpen : undefined}
+          aria-selected={sel}
+          aria-label={meta}
+          tabIndex={0}
+          title={meta}
+          onClick={(e) => (isDir ? toggleExpand(n) : fileClick(n, e))}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              if (isDir) toggleExpand(n);
+              else fileClick(n, e as unknown as React.MouseEvent);
+            }
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setCtx({ node: n, x: e.clientX, y: e.clientY });
+          }}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: `3px 8px 3px ${depth * 16 + 8}px`,
+            cursor: 'pointer',
+            // 2026-10-21 小杨 - 选中底色加深（北京老陈拍板）：BG.TERTIARY 太浅看不清，
+            //   选中行改深灰 #4b4b4b + 白字（图标走 currentColor 同步反白）
+            background: sel ? '#4b4b4b' : undefined,
+            borderLeft: `2px solid ${sel ? '#4b4b4b' : 'transparent'}`,
+            color: sel ? '#fff' : undefined,
+            opacity: dim ? 0.4 : undefined,
+          }}
+        >
+          {isDir ? (
+            isOpen ? (
+              <FolderOpenOutlined />
+            ) : (
+              <FolderOutlined />
+            )
+          ) : (
+            fileIcon(n)
+          )}
+          {/* 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：只留**原生方框** title，
+              antd 浮泡 Tooltip 移除（同一信息两套气泡是噪音） */}
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {n.name}
+            {recentSet.has(n.key) ? ' ●' : ''}
+          </span>
+        </div>
+        {isDir && isOpen && n.children?.map((c) => renderRow(c, depth + 1))}
+      </div>
+    );
+  };
+
+  /** 右键菜单项（自绘 fixed 浮层，无 antd Dropdown 的多层结构） */
+  const menuOpts: {
+    key: string;
+    label: string;
+    disabled?: boolean;
+    act: () => void;
+  }[] = ctx
+    ? [
+        ...(ctx.node.type === 'file'
+          ? [
+              {
+                key: 'ref',
+                label: '插入引用',
+                act: () => onInsertRef(ctx.node),
+              },
+            ]
+          : []),
+        {
+          key: 'ws',
+          label: '设为会话工作目录',
+          disabled: true,
+          act: () => onSetWorkspace(ctx.node),
+        },
+        {
+          key: 'copy',
+          label: '复制路径',
+          act: () => {
+            void copyTextToClipboard(ctx.node.key).catch(() => {
+              showMessage(ErrorType.FILE_READ, '复制失败');
+            });
+          },
+        },
+      ]
+    : [];
+
+  return (
+    <>
+      {nodes.length === 0 ? (
+        <Empty description="目录为空" />
+      ) : (
+        flat.length > 0 && (
+          <div style={{ minWidth: 0 }}>{nodes.map((n) => renderRow(n, 0))}</div>
+        )
+      )}
+      {/* 右键菜单：自绘浮层（跟踪触发点坐标），离开自动收起 */}
+      {ctx && (
+        <Dropdown
+          open
+          onOpenChange={(o) => {
+            if (!o) setCtx(null);
+          }}
+          trigger={['contextMenu']}
+          menu={{
+            items: menuOpts.map(({ key, label, disabled }) => ({
+              key,
+              label,
+              disabled,
+            })),
+            onClick: ({ key, domEvent }) => {
+              domEvent.stopPropagation();
+              const hit = menuOpts.find((o) => o.key === key);
+              setCtx(null);
+              if (hit && !hit.disabled) hit.act();
+            },
+          }}
+        >
+          <span style={{ position: 'fixed', left: ctx.x, top: ctx.y }} />
+        </Dropdown>
+      )}
+    </>
+  );
+};

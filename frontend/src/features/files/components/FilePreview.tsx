@@ -10,10 +10,13 @@
  *   刷新时比对新旧 mtime 即可判"可能已被修改"，**不再绕道再拉一次 tree**。
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Button, Empty } from 'antd';
+import { Alert, Button, Checkbox, Empty, Skeleton, Spin } from 'antd';
+import { CopyOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { FileNode, ReadResponse } from '@/services/api/file.api';
 import { fileApi, ImageUnchanged } from '@/services/api/file.api';
 import { formatBytes } from '@/utils/format';
+import { copyTextToClipboard } from '@/utils/clipboard';
+import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { refCost } from '@/utils/refCost';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
@@ -46,7 +49,18 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   const [stale, setStale] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<{ start: number; end: number } | null>(null);
+  const [imgSize, setImgSize] = useState<{ w: number; h: number } | null>(null);
+  /** 长行是否折行（默认关＝横向滚动，保住代码/路径的 token 结构；偏好持久化） */
+  const [wrap, setWrap] = useState(
+    () => localStorage.getItem('file_preview_wrap') === '1'
+  );
+  const onWrapChange = (v: boolean) => {
+    setWrap(v);
+    localStorage.setItem('file_preview_wrap', v ? '1' : '0');
+  };
   const preRef = useRef<HTMLPreElement | null>(null);
+  /** 上一次高亮的行元素（切换定位/刷新时先清掉，防"旧行永久黄底"） */
+  const highlightedRef = useRef<HTMLElement | null>(null);
   /** 打开时的 mtime（用于"可能已被修改"判定） */
   const openedMtime = useRef<string | null>(null);
   /** 竞态防护（I7）：只认最后一次请求的结果 */
@@ -55,6 +69,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   const load = async (target: FileNode) => {
     const seq = ++reqSeq.current;
     setErr(null);
+    // 2026-10-21 小杨 - 体验审计：切文件必须**重置派生态**
+    //   （原实现只换内容：上一张图的像素尺寸会残留到新图加载前；上一份的选区也带着走）
+    setSel(null);
+    setImgSize(null);
     try {
       if (target.preview === 'text') {
         const r = await fileApi.readFile(target.key);
@@ -161,34 +179,124 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node?.key, refreshRef]);
 
-  /** 深链行号：打开后滚动并高亮（T1） */
+  /** 深链行号：打开后滚动 + 高亮 + **聚焦**（T1）
+   *  2026-10-21 小杨 - 体验审计：
+   *   ① 高亮原来靠 `file-ref-hit` class，而全仓**无该 CSS** → 高亮静默失效（用户定位到了却看不出哪行）
+   *      → 改为**内联样式**（不依赖外部 CSS 文件，天然生效）；
+   *   ② 定位后**焦点不移动** → 键盘/读屏用户失去位置感 → 目标行可聚焦并 focus。
+   */
   useEffect(() => {
     if (!lineRange || !preRef.current) return;
+    // 清掉上一次的高亮（DOM 元素会被 React 复用，直接写的 style 不会被回收）
+    if (highlightedRef.current) {
+      highlightedRef.current.style.background = '';
+      highlightedRef.current = null;
+    }
     const el = preRef.current.querySelector(
       `[data-ln="${lineRange.start}"]`
     ) as HTMLElement | null;
-    if (el) {
-      el.scrollIntoView({ block: 'center' });
-      el.classList.add('file-ref-hit');
-    }
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    el.style.background = Colors.WARNING_BG; // 令牌化（原为裸色 #fffbe6）
+    el.style.borderRadius = '2px';
+    el.setAttribute('tabindex', '-1');
+    el.focus({ preventScroll: true });
+    highlightedRef.current = el;
+    // 2026-10-21 小杨 - 体验审计：高亮**有时效**（4s 后淡出）
+    //   常驻高亮会让用户误以为"这行有某种持久状态"，而它只是一次性定位提示。
+    const timer = window.setTimeout(() => {
+      el.style.background = '';
+      if (highlightedRef.current === el) highlightedRef.current = null;
+    }, 4000);
+    return () => window.clearTimeout(timer);
   }, [lineRange, text]);
 
   if (!node) {
     return <Empty description="从左侧选择一个文件" />;
   }
   if (err) {
-    return <Alert type="error" message={err} showIcon />;
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message={err}
+        action={
+          <Button size="small" onClick={() => void load(node)}>
+            重试
+          </Button>
+        }
+      />
+    );
   }
   if (node.preview === 'image') {
     return imgUrl ? (
       <div style={{ textAlign: 'center' }}>
-        <img src={imgUrl} style={{ maxWidth: '100%' }} alt={node.name} />
+        <img
+          src={imgUrl}
+          /* 2026-10-21 小杨 - 体验审计（#5）：高图撑爆预览区 → 限高 + contain */
+          style={{
+            maxWidth: '100%',
+            maxHeight: '70vh',
+            objectFit: 'contain',
+          }}
+          alt={node.name}
+          onLoad={(e) =>
+            setImgSize({
+              w: e.currentTarget.naturalWidth,
+              h: e.currentTarget.naturalHeight,
+            })
+          }
+        />
+        {/* 2026-10-21 小杨 - 体验审计：补**像素尺寸**（设计稿 2.4.3 要求，原实现缺失） */}
+        {imgSize && (
+          <div
+            style={{
+              color: Colors.TEXT.SECONDARY,
+              fontSize: chatTokens.fontSM,
+              marginTop: 4,
+            }}
+          >
+            {imgSize.w} × {imgSize.h} px · {formatBytes(node.size)}
+          </div>
+        )}
       </div>
     ) : (
-      <Alert type="info" message="图片加载中…" />
+      /* 2026-10-21 小杨 - 体验审计：图片加载用 Spin（Alert 语义是"需要你注意的问题"，不是"等待"） */
+      <div style={{ textAlign: 'center', padding: Spacing.LG }}>
+        <Spin tip="图片加载中…" />
+      </div>
     );
   }
-  if (!text) return <Alert type="info" message="文本加载中…" />;
+  if (node.preview === 'none') {
+    /* 2026-10-21 小杨 - 体验审计（阻断级体验缺陷）：
+       原实现把"不可预览"落到 `!text` 分支 → 显示**"文本加载中…"并永远转圈**（死状态，
+       用户反复点击、以为是网络问题）。现在给出明确说明 + 可执行的替代动作。 */
+    return (
+      <Alert
+        type="info"
+        showIcon
+        message={`「${node.name}」暂不支持预览`}
+        description="该类型不在可预览范围（当前支持 .txt / .md 与常见图片）。你可以复制路径，或把它设为会话工作目录后再处理。"
+        action={
+          <Button
+            size="small"
+            onClick={() => {
+              void copyTextToClipboard(node.key).then((r) => {
+                if (r.ok) showSuccess('路径已复制');
+                else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
+              });
+            }}
+          >
+            复制路径
+          </Button>
+        }
+      />
+    );
+  }
+  if (!text)
+    // 2026-10-21 小杨 - 体验审计：文本加载用**骨架屏**（原 Alert「文本加载中…」=
+    //   把正常等待渲染成"提醒框"，长文件加载时用户会以为出错了）
+    return <Skeleton active paragraph={{ rows: 10 }} title={false} />;
 
   const cost = refCost(text.content.length);
 
@@ -222,27 +330,76 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     : '';
 
   return (
-    <div>
+    <>
+      {/* 2026-10-21 小杨 - 冗余层砍除（北京老陈拍板）：根 div 的 flex column 是无谓包裹
+          （内容本就是 block 纵排，sticky footer 自带 flex:none），改为 Fragment 砍一层 */}
       <div
         style={{
           marginBottom: Spacing.MD,
+          flexShrink: 0, // 2026-10-21 小杨 - flex 链：头部工具行不参与压缩
           color: Colors.TEXT.SECONDARY,
+          display: 'flex',
+          alignItems: 'center',
+          gap: Spacing.SM,
+          flexWrap: 'wrap',
         }}
       >
-        {node.name} · {formatBytes(node.size)} · {text.total_lines} 行 ·{' '}
-        {text.mtime}
+        {/* 2026-10-21 小杨 - 北京老陈拍板：**按钮在前、行数+时间垫后**（弱信息灰字，不按钮化） */}
         <Button
           size="small"
-          onClick={() => void refresh()}
-          style={{ marginLeft: Spacing.MD }}
+          onClick={() => onSendFile(text.content, node)}
+          title="引用整文件到对话（发送前可再编辑）"
+          /* 2026-10-21 小杨 - 北京老陈拍板：引用=主动作，浅蓝底（antd blue-1/blue-3）；警示态保警示色 */
+          style={
+            cost.level !== 'ok'
+              ? { color: Colors.WARNING, borderColor: Colors.WARNING }
+              : { background: '#e6f4ff', borderColor: '#91caff' }
+          }
         >
-          ↻刷新
+          引用{' '}
+          {cost.tokens >= 1024
+            ? `${(cost.tokens / 1024).toFixed(1)}K`
+            : `${cost.tokens}`}{' '}
+          tok
+        </Button>
+        <Button
+          size="small"
+          icon={<CopyOutlined />}
+          onClick={() => {
+            void copyTextToClipboard(node.key).then((r) => {
+              if (r.ok) showSuccess('路径已复制');
+              else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
+            });
+          }}
+        >
+          复制路径
+        </Button>
+        <span style={{ color: Colors.TEXT.TERTIARY }}>
+          {text.total_lines} 行 · {(text.mtime ?? '').replace('T', ' ')}
+        </span>
+        <span style={{ flex: 1 }} />
+        {/* 2026-10-21 小杨 - 体验审计：折行开关（默认横向滚动，保住代码 token 结构） */}
+        <Checkbox
+          checked={wrap}
+          onChange={(e) => onWrapChange(e.target.checked)}
+          style={{ fontSize: chatTokens.fontSM }}
+        >
+          折行
+        </Checkbox>
+        {/* 图标化（原为文本字形「↻刷新」，与全局图标系统不一致） */}
+        <Button
+          size="small"
+          icon={<ReloadOutlined />}
+          onClick={() => void refresh()}
+        >
+          刷新
         </Button>
       </div>
       {stale && (
         <Alert
           type="warning"
           message="文件可能已被修改，是否刷新？"
+          style={{ marginBottom: Spacing.SM }}
           action={
             <Button size="small" onClick={() => void refresh()}>
               刷新
@@ -250,10 +407,33 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           }
         />
       )}
+      {/* 2026-10-21 小杨 - 体验审计（正文可读性，本页核心价值）：
+          原 <pre> 无排版规格（浏览器默认字号/行高）+ pre-wrap+break-word 把长路径、
+          URL、代码 token 从中间撕开换行。现在：等宽字体 + 13px + 1.6 行高 + tab=4，
+          默认横向滚动（保结构），折行由用户显式开启。 */}
       <pre
         ref={preRef}
         onMouseUp={takeSelection}
-        style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        style={{
+          margin: 0,
+          fontFamily:
+            'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+          fontSize: 13,
+          lineHeight: 1.6,
+          tabSize: 4,
+          whiteSpace: wrap ? 'pre-wrap' : 'pre',
+          wordBreak: wrap ? 'break-word' : 'normal',
+          overflowX: 'auto',
+          overflowY: 'auto',
+          // 2026-10-21 小杨 - 底部大空白（北京老陈痛骂）：撤拍脑袋 calc(100vh-320px) 限高，
+          //   pre 改 flex:1 填满右栏剩余高度（右栏已改 flex column），滚动留在 pre 内部
+          flex: 1,
+          minHeight: 0,
+          background: Colors.BG.SECONDARY,
+          border: `1px solid ${Colors.BORDER.LIGHT}`,
+          borderRadius: 4,
+          padding: Spacing.MD,
+        }}
       >
         {text.content.split('\n').map((ln, i) => (
           <span key={i} data-ln={i + 1}>
@@ -262,54 +442,70 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           </span>
         ))}
       </pre>
-      {sel && selText && (
-        <div style={{ marginTop: Spacing.SM }}>
+      {/*
+        2026-10-21 小杨 - 体验审计（主操作可达性）：
+          原实现的主 CTA 在**文件正文之后**——长文件要滚到最底才能引用（本页唯一目的却最难达）。
+          现在改为 **sticky 底部操作条**：滚动时始终可见；主键 primary 表达主次。
+      */}
+      <div
+        style={{
+          position: 'sticky',
+          bottom: 0,
+          zIndex: 2,
+          display: 'flex',
+          alignItems: 'center',
+          gap: Spacing.SM,
+          flexWrap: 'wrap',
+          marginTop: Spacing.MD,
+          padding: `${Spacing.SM}px 0`,
+          background: Colors.BG.PRIMARY,
+          borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+        }}
+      >
+        {sel && selText && (
           <Button
+            type="primary"
             size="small"
             onClick={() => onSendSelection(selText, node, sel)}
           >
-            引用选区 L{sel.start}-{sel.end}
+            引用选区 L{sel.start}-{sel.end} 到对话
           </Button>
-        </div>
-      )}
-      <div style={{ marginTop: Spacing.MD }}>
-        <Button
-          onClick={() => onSendFile(text.content, node)}
-          style={
-            cost.level !== 'ok'
-              ? { color: Colors.WARNING, borderColor: Colors.WARNING }
-              : undefined
-          }
+        )}
+        {/* 2026-10-21 小杨 - 北京老陈拍板：引用整文件/复制路径**均已上移顶部**，底部去除 */}
+        <span
+          style={{
+            color: Colors.TEXT.SECONDARY,
+            fontSize: chatTokens.fontSM,
+            marginLeft: 'auto',
+          }}
         >
-          发送到输入框 · 约
-          {cost.tokens >= 1024
-            ? `${(cost.tokens / 1024).toFixed(1)}K`
-            : `${cost.tokens}`}{' '}
-          token
-        </Button>
+          {sel && selText ? `已选中第 ${sel.start}-${sel.end} 行` : ''}
+        </span>
+        {/* 2026-10-21 小杨 - 体验审计（#7）：警示并入 sticky 条（flex 换行第二行）
+            原实现警示在条外 → 滚到中部时"按钮可见、警示不可见" */}
         {cost.level === 'warn' && (
-          <div
+          <span
             style={{
+              flexBasis: '100%',
               color: Colors.WARNING,
               fontSize: chatTokens.fontSM,
-              marginTop: 2,
             }}
           >
             正文本轮发送后会持续占用后续对话的上下文（不会自动清理）
-          </div>
+          </span>
         )}
         {cost.level === 'suggest' && (
-          <div
+          <span
             style={{
+              flexBasis: '100%',
               color: Colors.INFO,
               fontSize: chatTokens.fontSM,
-              marginTop: 2,
             }}
           >
             体量很大，建议只引用行号范围的选区（框选后点「引用选区」）
-          </div>
+          </span>
         )}
       </div>
-    </div>
+    </>
   );
 };
