@@ -573,3 +573,54 @@
 .doc-body td {
   border: 1px solid #d9d9d9 !important;
 }
+
+/* ════════════════════════════════════════════════════════════════════
+   highlight.js 着色映射 - 2026-10-21 小杨
+   文件预览代码高亮(hljs 只产 class, 颜色在此集中一处)；
+   色系对齐 antd 主题/stepStyles 令牌：#1677ff=Colors.PRIMARY 同源,
+   #52c41a=Colors.SUCCESS 同源, #AD6800=Colors.WARNING 同源；
+   不载 hljs 自带主题 css, 全系统视觉一致性(北京老陈三堂会审口径)
+   ════════════════════════════════════════════════════════════════════ */
+.hljs-keyword,
+.hljs-selector-tag {
+  color: #1677ff;
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-meta .hljs-string {
+  color: #389e0d;
+}
+.hljs-number,
+.hljs-literal {
+  color: #d46b08;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #999999;
+  font-style: italic;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: #6a3fc0;
+}
+.hljs-type,
+.hljs-class .hljs-title,
+.hljs-built_in {
+  color: #c41d7f;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-name {
+  color: #096dd9;
+}
+.hljs-symbol,
+.hljs-bullet,
+.hljs-meta {
+  color: #434343;
+}
+.hljs-subst,
+.hljs-punctuation {
+  color: inherit;
+}
