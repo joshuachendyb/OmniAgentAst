@@ -45,6 +45,8 @@
 //   **已不成立** —— 空态现显示「本次工具执行：<summary>」。小欧
 // 编辑历史: 2026-10-21 小杨 - 路径判定抽到 paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）、
 //   路径类值渲染成可点击链接（直达文件页，绝对路径经项目根转相对） — 小杨-2026-10-21
+// 2026-10-22 小杨 - 规格表补接路径链接（此前漏接）；对象值统一走递归渲染，嵌套 path 字段同样可点；
+//   路径键优先归「路径」组（不被载荷类抢走）；多行值走折叠体不做整段链接 — 小杨-2026-10-22
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
 // 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
@@ -1112,8 +1114,8 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           overflowY: 'auto',
         }}
       >
-        {/* 2026-10-13 23:00 小欧 - 文档[29]§6.10 三视图派发; 结果视图不兜底(§6.8)
-            2026-10-14 小欧 - 北京老陈裁定改: 空态不显示空白, 显「本次工具执行：<summary>」 */}
+        {/* 2026-10-13 23:00 小欧 - 三视图派发; 结果视图不兜底
+            2026-10-14 小欧 - 用户定案改: 空态不显示空白, 显「本次工具执行：<summary>」 */}
         {view === 'result' && resultEntries.length === 0 ? (
           <div
             style={{
@@ -1134,7 +1136,7 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
           <SpecView params={params} valueMode="param" />
         ) : (
           /**
-           * 2026-10-14 北京老陈裁定: `tree` / `listdir` 用**专用渲染**(目录树 / 文件列表),
+           * 2026-10-14 用户定案: `tree` / `listdir` 用**专用渲染**(目录树 / 文件列表),
            * 不走通用 SpecView —— 这两个是有业务语义的结构, 通用 JSON 折叠表达不了层级与列对齐。
            * 派发返回 null(其余工具)时落回通用路径。
            */

@@ -17,12 +17,12 @@
 //        恒为数组; 保留 ?? 兜底无副作用, 不改。
 //     ③参考代码未用 FontFamily.MONO 令牌而是硬编码 'Consolas, Monaco, "Courier New", monospace',
 //        与本仓 stepStyles 令牌化要求(复用优先)冲突 —— 改走 FontFamily.MONO 单一真相源。
-//   v3.8 小欧 三堂会审3遍后修 4 项(P4 明确不修, 理由随附):
+//   v3.8 小欧 复核后修 4 项(有一项明确不修, 理由随附):
 //     ①P1 真缺陷: pre 被覆盖成 <>{children}</> + code 靠 className 猜"是否围栏" —— 无语言围栏
 //       (info string 为空时 hast 无 className)整段退化成行内 code, pre 数=0、块级样式全丢。
 //       改法按语义归位: pre 管块级容器, code 管行内样式, 不加依赖不加插件不留分支。
 //     ②P2 闭围栏长度未校验: 补 CommonMark 规则(闭围栏长度 >= 开围栏长度), 5 行内。
-//     ③P3 wordBreak 与 overflow 语义抵消: 北京老陈裁定二选一, 选**横向滚动**(删折行)。
+//     ③P3 wordBreak 与 overflow 语义抵消: 用户定案二选一, 选**横向滚动**(删折行)。
 //     ④P4 `2*3*4` 渲染成 2<em>3</em>4: **不修**。这是 CommonMark 标准行为(单星号内不为空即成斜体),
 //       旧自研版为防它写的正则属非标准 hack; 修它需再引 remark 插件自造偏离标准的行为, 违
 //       "不自造轮子/KISS"且徒增维护面。如实回归标准并在此登记, 便于日后有人再问时有据可查。
@@ -32,6 +32,7 @@
 // 编辑历史: 2026-10-06 小欧 - MdTable 加 fontSize 参数(缺省 SECONDARY, 聊天侧零变化),
 //   安全Tab 分类表传 PRIMARY: 该表是设置页正文(周围 14px), 用 12px 会小 2px 层级拉不开。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-21 小杨 - 接入文件引用 chip 与形态校验（与 FileRefChip 同源单一真源） — 小杨-2026-10-21
+// 2026-10-22 小杨 - 文件引用链接的路径参数改走安全解码, 非法百分号编码不再抛 URIError — 小杨-2026-10-22
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,7 +54,7 @@ import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
 import { decodePathParam } from '@/utils/fileDeepLink';
 
 /**
- * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(§3.5 缺陷 1)。
+ * react-markdown v9 传给自定义组件的 props: 必含 node(hast 节点), 一律显式剥掉不得透传(缺陷 1)。
  */
 interface MdProps {
   node?: unknown;
@@ -80,11 +81,11 @@ const SANITIZE_SCHEMA = {
 };
 
 // 代码块容器: 显式覆盖父级 whiteSpace:pre-wrap(否则 <pre> 内换行被软化) + 限高滚动
-//   2026-10-05 小欧 P3 二选一(北京老陈裁定): 选**横向滚动** —— 删 wordBreak:'break-word'。
+//   2026-10-05 小欧 P3 二选一(用户定案): 选**横向滚动** —— 删 wordBreak:'break-word'。
 //   原同时写 wordBreak 与 overflow 两者语义抵消(折行后永不出滚动条), 二者只能留一。
 //   选滚动理由: 代码块按代码语义应保列对齐, 折行破坏缩进层级; 且与 GitHub/CommonMark 生态一致。
 //   wordBreak 显式写 normal 而非删净 —— 不依赖祖先继承, 意图可读且防上游将来改 getStreamStyle 串味。
-//   2026-10-05 北京老陈裁定(方案A): 代码块改**四边整框 + 圆角 + 浅底**(此前只有左边一条 2px 竖线、
+//   2026-10-05 用户定案(方案A): 代码块改**四边整框 + 圆角 + 浅底**(此前只有左边一条 2px 竖线、
 //   透明底、直角, 三面无边)。逐项对齐 MarkdownBody 版观感: border 1px #d9d9d9(BorderWidth.DEFAULT ×
 //   Colors.BORDER.DEFAULT)、borderRadius Radius.SM、background Colors.BG.SECONDARY;
 //   **原borderLeft 竖线删除** —— 整框已含左边, 两条并存会叠成双线。
@@ -160,7 +161,7 @@ const LI: React.CSSProperties = {
 //   ⚠️ 不能靠 props.children 判: 实测 react-markdown v9 传给自定义组件的 children
 //      是**普通对象**(constructor.name === 'Object'), React.isValidElement 恒 false。
 //      改用 react-markdown 明确提供的 node(hast 元素): pre > code > properties.className。
-//      node 只用于判断, 绝不透传到 DOM(§3.5 铁律)。
+//      node 只用于判断, 绝不透传到 DOM(禁透传)。
 function isMermaidFence(node: unknown): boolean {
   const pre = node as
     | {
@@ -199,8 +200,8 @@ const MdTable: React.FC<
 );
 
 // Markdown 元素样式映射: 全部走 stepStyles 既有令牌, 零硬编码颜色 — 小欧-2026-10-05
-// 规则: 所有组件必须显式丢弃 node(§3.5 缺陷 1), 禁止 ...rest 透传到 DOM
-// 标题保留语义标签 h1..h6(a11y 大纲不断), 只统一样式压小(§3.5 遗漏 4)
+// 规则: 所有组件必须显式丢弃 node(缺陷 1), 禁止 ...rest 透传到 DOM
+// 标题保留语义标签 h1..h6(a11y 大纲不断), 只统一样式压小(遗漏 4)
 const mdComponents = {
   h1: (props: MdProps) => <h1 style={H1}>{props.children}</h1>,
   h2: (props: MdProps) => <h2 style={H2}>{props.children}</h2>,
@@ -234,7 +235,7 @@ const mdComponents = {
     />
   ),
   // className 原样透传: 围栏语言标记(language-js)是 react-markdown 挂在 code 节点上的唯一可观测
-  //   信息(设计 §4.1 要求保留, SANITIZE_SCHEMA 亦为它放行 className), 丢了就只剩肉眼看不出区别的
+  //   信息(设计要求保留, SANITIZE_SCHEMA 亦为它放行 className), 丢了就只剩肉眼看不出区别的
   //   两种代码块; 行内代码 hast 上无此属性, React 自动省略该属性, 无需条件分支。
   // 2026-10-06 小欧: ```mermaid 围栏交给 MermaidBlock 画流程图, 其余照旧走代码块样式。
   //   className 是 react-markdown 挂在 code 节点上的唯一可观测信息(见上方注释), 故据此分流。
@@ -257,7 +258,7 @@ const mdComponents = {
   //   故 ```\\nplain\\n``` 这类无语言围栏被误判为行内代码, 且 pre 覆盖又把块级容器一并抹掉 →
   //   实测 pre 数=0, 多行代码挤成一行内联、换行压平、左线/限高/等宽块样式全丢(thought 贴代码极常见)。
   // 现按语义归位: pre = 块级容器(本组件), code = 行内样式(不论在不在 pre 内, 前者字体/换行由 pre 管) — 小欧-2026-10-05
-  // 2026-10-06 小欧(三堂会审 #1): mermaid 围栏不走 PreBlock —— 代码块的边框/灰底/400px 限高
+  // 2026-10-06 小欧(复核 #1): mermaid 围栏不走 PreBlock —— 代码块的边框/灰底/400px 限高
   //   会把流程图压成一个带滚动条的代码框, 图还被截断。识别靠 code 组件打的 data-md-fence 标记。
   //   连带修掉 #18: 不再需要 CSS `pre:has(.mermaid-block)` 隐藏复制按钮(老浏览器 :has() 不生效)。
   pre: (props: MdProps) =>
@@ -363,7 +364,7 @@ const mdComponents = {
  * 切分未闭合围栏尾段: 打字机逐字喂入时 ``` 刚出头就成立, 直接渲染会凭空产一个空的 <pre>
  * 容器造成页面位移, 且尾段代码会被当成正文吞进 pre。返回 { closedPart: 可按 Markdown 渲染的前缀,
  * openTail: 未闭合尾段(按纯文本渲染) }。
- * 纯函数 15 行, 实时/历史同一规则通吃(§3.3 已实测)。
+ * 纯函数 15 行, 实时/历史同一规则通吃(已实测)。
  */
 export const findUnclosedFenceTail = (
   text: string
@@ -421,7 +422,7 @@ const PreBlock: React.FC<MdProps> = (props) => {
   );
 };
 
-// 2026-10-06 小欧(三堂会审 #6): 安全Tab 分类表走 fixed + PRIMARY 字号 —— 该表是设置页正文
+// 2026-10-06 小欧(复核 #6): 安全Tab 分类表走 fixed + PRIMARY 字号 —— 该表是设置页正文
 //   (周围都是 14px), 缺省 auto+SECONDARY(12px) 会比周围小 2px 且长路径列独占宽度把窄列压成竖排。
 const fixedTableComponent = (props: MdProps) => (
   <MdTable {...props} layout="fixed" fontSize={FontSize.PRIMARY} />
@@ -437,7 +438,7 @@ const MarkdownText: React.FC<MarkdownTextProps> = ({
   text,
   fixedTable = false,
 }) => {
-  // §3.5 遗漏 5: 切分按 text 缓存, 长推理 × 高频 chunk 不再重复分段
+  // 遗漏 5: 切分按 text 缓存, 长推理 × 高频 chunk 不再重复分段
   const { closedPart, openTail } = useMemo(
     () => findUnclosedFenceTail(text),
     [text]
@@ -461,7 +462,7 @@ const MarkdownText: React.FC<MarkdownTextProps> = ({
     [closedPart, fixedTable]
   );
 
-  // 无折叠分支: thought 长度不定, 阈值无意义(2026-10-05 北京老陈裁定, 详见文件头编辑历史)
+  // 无折叠分支: thought 长度不定, 阈值无意义(2026-10-05 用户定案, 详见文件头编辑历史)
   // 组件内无条件 return, 不存在"hook 数随内容变化"的风险
   return (
     <div style={{ whiteSpace: 'normal' }}>

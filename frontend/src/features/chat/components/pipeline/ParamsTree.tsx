@@ -9,11 +9,13 @@
 //   ⑥**补底部闭合 `}`**(结构图均有, 初稿代码漏渲染);⑦树根 CircleArrow 显式给 expandedColor=PRIMARY,
 //     否则恒展开态会用默认 FOLD_EXPANDED 粉(#ff4d94)—— 粉色在本系统是"可折叠且当前展开"的语义色,
 //     树根不可折叠(no onClick), 用该色属误导, 与「装饰图标不用蓝」同一逻辑 — 小欧 2026-10-13
-// 2026-10-13 小欧 - 十三轮**规则重写**(北京老陈裁定, 违反即打回):
-//   【铁律】只有 content 这类**含换行的巨型值**才允许折叠/展开; 其余所有参数一律不许折叠,
+// 2026-10-13 小欧 - **规则重写**(用户定案, 违反即打回):
+//   【要求】只有 content 这类**含换行的巨型值**才允许折叠/展开; 其余所有参数一律不许折叠,
 //   长行**折行完整显示**, 不截断、不隐藏、不给 title 悬停替代。
 //   本次删掉: ①对象/数组的 branch 折叠(树里 `meta ▾ {…} N 项` 即违反, 已改为直接展开 JSON);
 //             ②字符阈值方案(曾按 >200 字判可折叠, 已删); ③单行省略号 + 行级 title。
+// 编辑历史: 2026-10-22 小杨 - 对象/数组值改递归渲染, 嵌套 path 字段同样可点;
+//   多行值走折叠体不做整段链接; 对象不再预生成 JSON 摘要(大对象省一次字符串化) — 小杨-2026-10-22
 import React, { useCallback, useMemo, useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
@@ -84,7 +86,7 @@ const ParamNode: React.FC<ParamNodeProps> = ({
       ? ''
       : displayOf(value);
 
-  // 2026-10-13 小欧 - 文档[29]§3.4.2/D-1: 此处**不加** e.stopPropagation()。
+  // 2026-10-13 小欧 - 此处**不加** e.stopPropagation()。
   //   展开区已移出 role="button" 容器(父级不再是按钮, 无冒泡可阻);
   //   加了反而使点选/复制节点文字失效, 正是 D-1 要根治的病。
   const toggle = () => onToggle(nodeKey);
@@ -98,7 +100,7 @@ const ParamNode: React.FC<ParamNodeProps> = ({
   return (
     <div>
       <div
-        // 2026-10-13 小欧 - §2.5 V8(解决 B3): 节点 hover / 键盘焦点反馈走 CSS 类
+        // 2026-10-13 小欧 - 节点 hover / 键盘焦点反馈走 CSS 类
         //   (.params-clickable, index.css; 与面板内折叠行/✕ 共用一套规则)
         className="params-clickable"
         role={foldable ? 'button' : undefined}
@@ -143,7 +145,7 @@ const ParamNode: React.FC<ParamNodeProps> = ({
             color: isEmptyValue(value)
               ? Colors.TEXT.TERTIARY
               : Colors.TEXT.STRONG,
-            // 【铁律】长行折行完整显示: 有多少行显示多少行, 不截断、不隐藏、不靠 title 兜底。
+            // 【要求】长行折行完整显示: 有多少行显示多少行, 不截断、不隐藏、不靠 title 兜底。
             //   flex:1 + minWidth:0 保证在本 flex 行内正确折行而不撑破容器
             flex: 1,
             minWidth: 0,
@@ -213,7 +215,7 @@ interface ParamsTreeProps {
  * ParamsTree - 参数区(展开区)
  *
  * 2026-10-13 小欧: 顶层键默认折叠(仅含换行的巨型值), 折叠态高度与参数值体量无关;
- * 单值(含对象)一律折行完整显示, 不折叠、不限高 —— 这是 §1.4 C1/C2 的根治点。
+ * 单值(含对象)一律折行完整显示, 不折叠、不限高 —— 这是"不折叠不限高"的根治点。
  *
  * @author 小欧
  * @since 2026-10-13
@@ -246,7 +248,7 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({ entries }) => {
         marginTop: Spacing.XS,
         padding: Spacing.XS,
         background: Colors.BG.SECONDARY,
-        // 2026-10-13 小欧 - 与 §3.4.3 复用表对齐: 底/框/圆角与 MarkdownText 代码块同款(T32)
+        // 2026-10-13 小欧 - 与参数复用表对齐: 底/框/圆角与 MarkdownText 代码块同款
         border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
         borderRadius: Radius.SM,
         fontFamily: FontFamily.MONO,
@@ -292,7 +294,7 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({ entries }) => {
           />
         );
       })}
-      {/* 2026-10-13 小欧 - 补底部闭合括号: 设计 §2.2/§3.4.1 结构图都有 `}`, 而初稿代码只渲染了
+      {/* 2026-10-13 小欧 - 补底部闭合括号: 结构图都有 `}`, 而初稿代码只渲染了
           开头 `{` 属漏实现(与「示意图左对齐 vs 文字右对齐」同类的示意图-代码脱节)。
           marginLeft = 箭头宽 14 + gap 6 = Icon.BOX + Spacing.XS, 使 `}` 与 `{` 同一 x 起手 */}
       <div
