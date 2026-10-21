@@ -335,16 +335,12 @@ class PathToolSafetyChecker:
             return SafetyResult(blocked=True, message=f"工具未注册: {tool_name}",
                             safety_level=SafetyLevel.BLOCK_UNREGISTERED)
 
-        # [4-范围门] 本模块的**路径判定**只服务路径工具: 非路径工具不查目录名单 — 小欧 2026-10-20
-        #   位置固定在注册判定之后: 未注册仍先硬拦(fail-closed); 用 tool_meta.name(注册规范名)判:
-        #   直调方传别名时 get_tool 已归一等价, 不得用原始入参判(别名不在四表内会漏判)。
-        # 2026-10-22 小欧 修(全量单测 18 failed 追出, 安全回归): 原实现在此**整段放行**,
-        #   连工具级确认(needs_confirmation/confirm_fn)一起跳过 —— 而工具级确认**全库唯本层
-        #   一处消费**(_get_needs_confirmation:472), 致 registry_write/registry_delete/
-        #   create_task/delete_task 等非路径工具(needs_confirmation=True)的确认被静默丢弃:
-        #   不弹框直接执行。范围门只该闸"路径三线"这一段, 工具级确认是全工具通用的确认产地,
-        #   仍由 _get_needs_confirmation 统一分流。
-        _is_path_tool = tool_meta.name in PATH_TOOLS
+        # [4-范围门] 本模块只做路径安全权限判定: 非路径工具放行 — 小欧 2026-10-20
+        #   位置固定在注册判定之后: 未注册仍先硬拦(fail-closed); 已注册的非路径工具不进入路径三线,
+        #   其工具级 needs_confirmation 也不在本层分流(本层确认只服务路径授权与 shell 三线)。
+        #   用 tool_meta.name(注册规范名)判: 直调方传别名时 get_tool 已归一等价, 不得用原始入参判。
+        if tool_meta.name not in PATH_TOOLS:
+            return SafetyResult.pass_result()
 
         # [4-0] 自杀检查(2026-10-16): 提到 _check_known_risks 之前
         #   理由: 自杀与路径/危险等级无关, 且一旦执行后续所有检查皆无意义(实测曾致后端自杀);
@@ -385,9 +381,7 @@ class PathToolSafetyChecker:
 
         # [4-2] 权限三线(按动作分派读/写/删; 唯一入口, delete 亦走此单点) — 小欧 2026-10-17
         #   无条件防线(开关无关): 越权/禁区/delete 判定即便开关 false 也拒绝。
-        #   2026-10-22 小欧: 非路径工具跳过本段(范围门) —— 其 path 参数非文件路径(如注册表键),
-        #     不可当文件路径判; 但工具级确认(下一步)对全工具通用, 不在范围门管辖内。
-        known_risk = self._check_known_risks(tool_name, params or {}) if _is_path_tool else None
+        known_risk = self._check_known_risks(tool_name, params or {})
         if known_risk is not None:
             if known_risk.blocked:
                 log_and_print(f"[PathToolSafetyChecker] 权限硬拦截(危险拒绝执行): tool={tool_name}, {known_risk.message}")
