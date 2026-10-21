@@ -43,6 +43,8 @@ import { logUserSend } from '../../../utils/logStyles';
 import type { Message } from '../../../types/chat';
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 import { isInterjectRoute } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
+// 2026-10-21 小杨 - 文档[28]§9.11.1(BR1)：引用台账写入（只存路径不存正文）
+import { chatStreamStore } from '../streams/chatStreamStore';
 
 interface UseChatSendOptions {
   // 状态
@@ -101,7 +103,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const handleSend = useCallback(
     async (
       messageContent: string,
-      { linkEnabled, allowInterject }: SendOpts
+      { linkEnabled, allowInterject, refs }: SendOpts
     ) => {
       // 2026-10-07 小欧 - 文档[11] 决策 9/13: 插话判定（执行中 + 开关开 = 追加输入, 非新任务）
       const isInterject = isInterjectRoute(isReceiving, allowInterject);
@@ -188,7 +190,14 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         if (isInterject) {
           await interjectSend(userMessage);
         } else {
-          await executeSend(userMessage, { linkEnabled, allowInterject });
+          // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息上行（正文走 refs，不进 content）
+          await executeSend(userMessage, { linkEnabled, allowInterject, refs });
+          // 2026-10-21 小杨 - 文档[28]§9.11.1(BR1)：发送成功后记引用台账（只存路径不存正文）
+          //   失败不记（那轮引用没发出去）；插话不记（插话是追加输入，不是新一轮）。
+          //   taskId 此刻尚不存在（后端建任务后才回填）→ 先记空串，由 TaskListPanel 挂到"最近一轮"任务卡上。
+          if (refs && refs.length > 0 && currentSessionId) {
+            chatStreamStore.pushSentRefs(currentSessionId, '', refs);
+          }
         }
 
         // 9. 发送成功，不需要额外操作（用户消息已在列表中）

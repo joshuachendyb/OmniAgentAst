@@ -67,6 +67,7 @@ import {
 import { sessionTaskApi, taskControlApi } from '@/services/api/task.api';
 import { getAccessToken } from '@/services/api/client';
 import type { ExecutionStep } from '@/types/execution';
+import type { ChatRefPayload } from '@/types/chat'; // 2026-10-21 小杨 - 文档[28] 4.4.4(M20)：refs 随消息上行
 import type { Dispatch, SetStateAction } from 'react';
 import type { SSEError, SSEMetadata } from '@/types/sse';
 import type {
@@ -169,12 +170,50 @@ function transportError(errorType: string, errorMessage: string): SSEError {
 }
 
 /**
+ * 首连 POST / 插话 POST 的 **body 纯构造**（2026-10-21 小杨 - 文档[28] 4.4.4(M20)）
+ *
+ * 为什么收口成纯函数：首发（sendStreamRequest）与插话（postInterject）两条 body 原本各写一遍，
+ *   加 refs 字段时极易只改一处 → 插话丢引用（4.1.6 的"五处必改"第 4/5 项）。
+ *   收口后两条路径共用一份构造，测试直接测这个函数（stream-body.test.tsx）。
+ *
+ * 契约：
+ * - 无 refs → body **不带** `refs` 键（零退化：老后端 extra='ignore' 也不受影响）
+ * - 有 refs → 原样进 body；**上行前一律剥掉前端内存态字段 `pending`**
+ */
+export interface StreamBodyInput {
+  content: string;
+  sessionId: string;
+  linkEnabled: boolean;
+  allowInterject: boolean;
+  /** 本轮引用（可含前端内存态 pending 字段，上行前剥离） */
+  refs?: Array<ChatRefPayload & { pending?: boolean }>;
+}
+
+export const buildStreamBody = (
+  i: StreamBodyInput
+): Record<string, unknown> => {
+  const body: Record<string, unknown> = {
+    messages: [{ role: 'user', content: i.content }],
+    stream: true,
+    session_id: i.sessionId,
+    link_enabled: i.linkEnabled,
+    allow_interject: i.allowInterject,
+  };
+  if (i.refs && i.refs.length > 0) {
+    // 剥 pending：它只是前端"正文在途"标记，后端不认识也不该知道
+    body.refs = i.refs.map(({ pending: _pending, ...r }) => r);
+  }
+  return body;
+};
+
+/**
  * 首连 POST：发消息并读取 SSE 流。taskId 由 start 帧经 storeHandlers.setServerTaskId 落 Store
  * （不另造解析函数，迁自真实 sseParser → handlers.setServerTaskId 链，useSSE.ts:1021）。
  */
 export async function sendStreamRequest(
   s: ChatStreamSession,
-  content: string
+  content: string,
+  refs?: StreamBodyInput['refs']
 ): Promise<void> {
   // 前置状态（迁自 useSSE.ts:791-802：非重连才复位 seq、置接收/连接态）
   s.abortController?.abort(); // 2026-09-29 小欧：断上一条连接（等价 useSSE.ts:796 disconnect(false,...)），防连接泄漏
@@ -212,13 +251,15 @@ export async function sendStreamRequest(
     const res = await fetch(`${cfg.baseURL}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: content }],
-        stream: true,
-        session_id: s.sessionId,
-        link_enabled: s.linkEnabled,
-        allow_interject: s.allowInterject, // 2026-10-06 小欧 - 文档[11] 3.4.4: 随消息携带, 后端 None=沿用会话当前值
-      }),
+      body: JSON.stringify(
+        buildStreamBody({
+          content,
+          sessionId: s.sessionId,
+          linkEnabled: s.linkEnabled,
+          allowInterject: s.allowInterject, // 2026-10-06 小欧 - 文档[11] 3.4.4: 随消息携带, 后端 None=沿用会话当前值
+          refs,
+        })
+      ),
       signal: ctl.signal,
     });
     clearFirstChunkTimer(s);
@@ -246,20 +287,23 @@ export async function sendStreamRequest(
  */
 export async function postInterject(
   s: ChatStreamSession,
-  content: string
+  content: string,
+  refs?: StreamBodyInput['refs']
 ): Promise<void> {
   const ctl = new AbortController();
   const res = await fetch(`${cfg.baseURL}/chat/stream`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({
-      messages: [{ role: 'user', content: content }],
-      stream: true,
-      session_id: s.sessionId,
-      link_enabled: s.linkEnabled,
-      // 插话必然显式置开：前端门已判 allowInterject，这里保证后端落值同语义(None=沿用会误伤)
-      allow_interject: true,
-    }),
+    body: JSON.stringify(
+      buildStreamBody({
+        content,
+        sessionId: s.sessionId,
+        linkEnabled: s.linkEnabled,
+        // 插话必然显式置开：前端门已判 allowInterject，这里保证后端落值同语义(None=沿用会误伤)
+        allowInterject: true,
+        refs, // 2026-10-21 小杨 - 文档[28] 4.1.6：插话也带 refs（漏传 = 插话丢引用）
+      })
+    ),
     signal: ctl.signal,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
@@ -953,7 +997,10 @@ function hitlHandlers(s: ChatStreamSession) {
       commit(s, (d) => {
         // 2026-10-11 小欧 - 必须 id 相等才关窗(北京老陈令): 原 `!id ||` 降级分支会让无 id 的
         //   rejected(safety 拦截/拒绝记忆, 二者本无确认流程) 误关此刻开着的无关弹窗 — 小欧-2026-10-11
-        if (d.pendingAuthorization && d.pendingAuthorization.confirm_id === data.confirm_id) {
+        if (
+          d.pendingAuthorization &&
+          d.pendingAuthorization.confirm_id === data.confirm_id
+        ) {
           d.pendingAuthorization = null;
         }
       });

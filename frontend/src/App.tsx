@@ -33,6 +33,8 @@ import LoginPage from './pages/LoginPage';
 // 路由懒加载 - 减少首屏 bundle 大小
 const HistoryPage = lazy(() => import('./pages/History'));
 const Settings2 = lazy(() => import('./pages/Settings2')); // 2026-09-20 小强 - 设置2版（6 Tab + 模型管理）
+// 2026-10-21 小杨 - 文档[28] 4.4.8(S2-1)：文件管理页（项目根目录浏览 + 文本查看）
+const FilesPage = lazy(() => import('./pages/Files'));
 
 // 懒加载加载中组件
 const LazyLoadingFallback: React.FC = () => (
@@ -87,6 +89,9 @@ const RouterContent: React.FC = () => {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<ChatPage />} />
           <Route path="/history" element={<HistoryPage />} />
+          {/* 2026-10-21 小杨 - 文档[28] 4.4.8(S2-1)：/files 路由
+              ⚠ 必须放在 path="*" 兜底之前 —— 否则被 "*" 吞掉，点菜单回首页（4.4.8 实证） */}
+          <Route path="/files" element={<FilesPage />} />
           <Route path="/settings2" element={<Settings2 />} />
           {/* 默认重定向到首页 */}
           <Route path="*" element={<ChatPage />} />

@@ -429,11 +429,12 @@ export const useChatStreaming = (
 
   // 发送消息函数（包装useSSE的sendMessage）
   const sendMessage = useCallback(
-    async (
-      content: string,
-      { linkEnabled, allowInterject }: SendOpts,
-      customSessionId?: string
-    ) => {
+    async (content: string, opts: SendOpts, customSessionId?: string) => {
+      // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息同批上行
+      //   ⚠ 不在形参里解构（{ linkEnabled, allowInterject, refs }: SendOpts 单行过长会被 prettier
+      //   拆成独立行，而 cancel-root-fix-f1-f5 的源码守卫用**括号配平**扫描 executeSend 函数体 ——
+      //   独立的解构行会先减一格致其提前 break（守卫误报）。故解构放函数体首行（同行配平）。
+      const { linkEnabled, allowInterject, refs } = opts;
       try {
         // 清理之前的流式内容
         streamingContentRef.current = '';
@@ -454,7 +455,8 @@ export const useChatStreaming = (
           customSessionId ?? sessionId ?? '',
           content,
           linkEnabled,
-          allowInterject // 2026-10-06 小欧 - 文档[11] 3.5.5: 存会话快照供 transport 直读
+          allowInterject, // 2026-10-06 小欧 - 文档[11] 3.5.5: 存会话快照供 transport 直读
+          refs // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：引用随消息同批上行
         );
       } catch (error) {
         console.error('发送消息失败:', error);
@@ -480,7 +482,10 @@ export const useChatStreaming = (
   // 【小强 2026-04-22】executeSend - 完整的发送流程
   // 迁移自：NewChatContainer.tsx 的 executeStreamSend 函数
   const executeSend = useCallback(
-    async (userMessage: Message, { linkEnabled, allowInterject }: SendOpts) => {
+    async (userMessage: Message, opts: SendOpts) => {
+      // 同上：不在形参里解构（prettier 会把超长的解构形参拆成独立行，
+      //   而源码守卫 cancel-root-fix-f1-f5 用括号配平扫描函数体 → 独立解构行会致其提前 break）
+      const { linkEnabled, allowInterject, refs } = opts;
       // 2026-09-15 小欧 v1.3: executeSend起点兜底复位 — 极端终态帧丢失时新消息必达
       cancelInProgressRef.current = false;
 
@@ -602,7 +607,7 @@ export const useChatStreaming = (
       // 2026-08-27 小欧 三堂会审H1: await闭合SSE发送Promise, 防拒绝变unhandled rejection导致占位消息永久悬挂
       await sendMessage(
         userMessage.content,
-        { linkEnabled, allowInterject },
+        { linkEnabled, allowInterject, refs }, // 2026-10-21 小杨 - 文档[28]：refs 随消息上行
         currentSessionIdRef.current ?? sessionId ?? undefined
       );
     },

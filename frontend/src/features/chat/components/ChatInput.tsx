@@ -38,16 +38,32 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Space } from 'antd';
+import { FileOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
-import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 框内右下角动作按钮组(自 SubmitBar 拆出)
+import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 框内右下角动作按钮组(与SubmitBar 拆出)
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 文档[16] §3.6.6 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
+// 2026-10-21 小杨 - 文档[28] 4.4.6/9.5/9.7：引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
+import { composerRefStore, newRefId } from '../streams/composerRefStore';
+import { useComposerRefs } from '../hooks/useComposerRefs';
+import { stripAtTokens } from '../utils/atTokens';
+import { fileApi, type SearchHit } from '../../../services/api/file.api';
+import { buildFileDeepLink } from '@/utils/fileDeepLink';
+import { showMessage, ErrorType } from '../../../services/error/handler';
+import { chatTokens } from '@/theme/tokens';
 import {
   loadRecentInputs,
   addRecentInput,
@@ -96,6 +112,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
     useInputDraft(sessionId);
+  // 2026-10-21 小杨 - 文档[28]§9.5(O5)：refs 独立托管（不塞进 useInputDraft —— draft 落盘、refs 当轮内存，生命周期不同）
+  const { refs, setRefs, refsPending } = useComposerRefs(sessionId);
+  // 2026-10-21 小杨 - 文档[28]§4.4.6①(M21)：跨页引用通道订阅
+  //   ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载 → 挂载取一次会**静默丢引用**，
+  //   故必须 useSyncExternalStore 订阅（store 一有数据即消费）。
+  const pendingCount = useSyncExternalStore(
+    composerRefStore.subscribe,
+    composerRefStore.getSnapshot
+  );
+  useEffect(() => {
+    if (pendingCount === 0) return;
+    const incoming = composerRefStore.takeAll();
+    if (incoming.length === 0) return; // StrictMode 双跑：第二次取空，直接返回（否则多拼一个空格）
+    setRefs((prev) => [...prev, ...incoming]);
+    setDraft(
+      (d) =>
+        `${d}${d ? ' ' : ''}${incoming.map((r) => `@${r.label}`).join(' ')} `
+    );
+  }, [pendingCount, setRefs, setDraft]);
+  // 2026-10-21 小杨 - 文档[28]§9.7(O3/O4)：@ 补全状态
+  const [atOpen, setAtOpen] = useState(false);
+  const [atHits, setAtHits] = useState<SearchHit[]>([]);
+  const [picking, setPicking] = useState(false); // O3: @ 补全在途唯一性闸门（防连点）
+  const atSeq = useRef(0); // 迟到响应丢弃（debounce 后的旧请求不得覆盖新结果）
+  const nav = useNavigate();
   // 2026-10-13 13:45 小欧: 本机最近提交历史(懒初始化一次; 写入只发生在本标签页, 无需跨标签页同步)
   const [recents, setRecents] = useState<RecentInput[]>(loadRecentInputs);
   // 2026-10-13 13:45 小欧: 历史翻动游标(-1 = 未在翻历史); histBackup = 上翻前正在输入的内容, ↓ 翻到底时回填
@@ -183,21 +224,36 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const handleSendInternal = async () => {
     const content = draft.trim();
     if (!content || sendBlocked) return;
+    // 2026-10-21 小杨 - 文档[28]§9.7.3(O3)：引用正文在途时禁发送（防发出 content:'' 的空引用）
+    if (refsPending) {
+      showMessage(ErrorType.FILE_READ, '引用内容仍在载入，请稍候');
+      return;
+    }
+    // 2026-10-21 小杨 - 文档[28]§9.7.3(M27/O6)：@token 精确剥离（无 refs 时原样发送，@2024 不受影响）
+    const cleanText = refs.length
+      ? stripAtTokens(
+          content,
+          refs.map((r) => r.label)
+        )
+      : content;
     const backup = draft;
     exitHistory();
     setDraft('');
     // 2026-10-13 小欧: 标记提交中, 使 hook 能区分「建会话回填」与「用户真切会话」
     markSubmitted();
     try {
-      await onSend(content, { linkEnabled, allowInterject }); // 对象参数, 见 3.5.4
+      // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息搭同一班便车上行（正文走 refs，不进 content）
+      await onSend(cleanText, { linkEnabled, allowInterject, refs }); // 对象参数, 见 3.5.4
       // 2026-10-13 13:45 小欧: **提交成功后**才记历史(onSend 抛错 = 提交失败, 不能记; 流式中途报错不 reject,
       //   故面板文案用「最近提交」而非「发送成功」)
-      addRecentInput(content);
+      addRecentInput(cleanText);
       setRecents(loadRecentInputs());
       setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
+      setRefs([]); // 仅成功才清（M4：失败保留 refs，重试仍有内容）
     } catch {
       setDraft(backup);
       cancelSubmitted();
+      // refs 保留（不 setRefs）—— M4：发送失败草稿与引用都还在
     }
   };
 
@@ -273,15 +329,156 @@ const ChatInput: React.FC<ChatInputProps> = ({
     (v: string) => {
       setDraft(v);
       if (histIdx >= 0) exitHistory();
+      // 2026-10-21 小杨 - 文档[28]§4.4.7/9.7：@ 补全触发（取光标前最后一个 @，其后不得有空白）
+      const caret = v.length;
+      const at = v.lastIndexOf('@', caret - 1);
+      const query = at >= 0 ? v.slice(at + 1, caret) : '';
+      const ok = at >= 0 && !/[\s]/.test(query) && query.length > 0;
+      if (!ok) {
+        setAtOpen(false);
+        setAtHits([]);
+        return;
+      }
+      const seq = ++atSeq.current;
+      window.setTimeout(() => {
+        fileApi
+          .searchFiles(query, 20)
+          .then((r) => {
+            if (seq !== atSeq.current) return; // 迟到响应丢弃
+            // 6.7 表第 3 行：@ 候选只列可读文本类型（对齐后端 _preview_of 的 text 判定）
+            setAtHits(r.results.filter((x) => x.preview === 'text'));
+            setAtOpen(true);
+          })
+          .catch(() => {
+            if (seq !== atSeq.current) return;
+            setAtHits([]);
+            setAtOpen(false);
+          });
+      }, 200);
     },
     [histIdx, setDraft, exitHistory]
   );
+
+  /** 2026-10-21 小杨 - 文档[28]§9.7.2(O3/O4)：选中候选 → 现场读正文 → 占位 token → 就位 */
+  const pickAtItem = async (hit: SearchHit) => {
+    if (picking) return; // 防连点
+    if (hit.preview !== 'text') return; // 6.7 表第 3 行落点
+    setPicking(true);
+    // O3: 先渲染"载入中"占位 token（O4 去重保证连点只会替换不会追加）
+    setRefs((prev) => [
+      ...prev,
+      {
+        id: newRefId(),
+        kind: 'file',
+        label: hit.name,
+        path: hit.path,
+        content: '',
+        pending: true,
+      },
+    ]);
+    try {
+      const f = await fileApi.readFile(hit.path);
+      setRefs((prev) =>
+        prev.map((r) =>
+          r.path === hit.path && r.pending
+            ? { ...r, content: f.content, size: f.size, pending: false }
+            : r
+        )
+      );
+      setDraft((d) => `${d}${d && !d.endsWith(' ') ? ' ' : ''}@${hit.name} `);
+    } catch {
+      setRefs((prev) =>
+        prev.filter((r) => !(r.pending && r.path === hit.path))
+      );
+      showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
+    } finally {
+      setPicking(false);
+      setAtOpen(false);
+    }
+  };
 
   return (
     <div
       ref={rootRef}
       style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
     >
+      {/* 2026-10-21 小杨 - 文档[28]§4.4.6②：引用 token 行（一个信息一个家：删 token = 一次 setRefs 过滤） */}
+      {refs.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 4,
+            marginBottom: 4,
+          }}
+        >
+          {refs.map((r) => (
+            <span
+              key={r.id}
+              title={`${r.path ?? ''}（约${(r.content ?? '').length} 字符）`}
+              style={{
+                background: chatTokens.colorPrimaryBg,
+                color: '#333333',
+                border: `1px solid ${chatTokens.colorBorder}`,
+                borderRadius: chatTokens.radius,
+                padding: `0 ${chatTokens.gap / 2}px`,
+                cursor: 'pointer',
+              }}
+              onClick={() =>
+                nav(buildFileDeepLink(r.path ?? '', r.lineRange ?? null))
+              }
+            >
+              <FileOutlined style={{ color: chatTokens.colorPrimary }} />{' '}
+              {r.label}
+              {r.pending ? '（载入中…）' : ''}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRefs((prev) => prev.filter((x) => x.id !== r.id));
+                }}
+                aria-label={`删除引用 ${r.label}`}
+                style={{ marginLeft: 4 }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {sendBlocked && refs.length > 0 && (
+        <div style={{ color: '#888888', fontSize: chatTokens.fontSM }}>
+          当前正在生成，请等待本轮结束后编辑并发送
+        </div>
+      )}
+      {/* 2026-10-21 小杨 - 文档[28]§4.4.7：@ 补全候选（只列可读文本类型） */}
+      {atOpen && atHits.length > 0 && (
+        <div
+          style={{
+            border: `1px solid ${chatTokens.colorBorder}`,
+            borderRadius: chatTokens.radius,
+            maxHeight: 200,
+            overflow: 'auto',
+            background: chatTokens.colorPrimaryBg,
+          }}
+        >
+          {atHits.map((h) => (
+            <div
+              key={h.path}
+              role="option"
+              aria-selected={false}
+              onMouseDown={(e) => {
+                e.preventDefault(); // 保住输入框焦点
+                void pickAtItem(h);
+              }}
+              style={{ padding: '4px 8px', cursor: 'pointer' }}
+            >
+              <FileOutlined style={{ color: chatTokens.colorPrimary }} />{' '}
+              {h.name}
+              {h.dir ? ` · ${h.dir}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
       <InputCore
         value={draft}
         onChange={handleInputChange}

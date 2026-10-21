@@ -56,6 +56,8 @@
 //   终态帧到达即撤看门狗并释放全套流资源; 看门狗超时兜底 DB 权威落状态; 终态帧 outcome 不再恒写 completed。 — 小欧-2026-10-06
 
 import type { ExecutionStep } from '@/types/execution';
+// 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
+import type { ChatRefPayload } from '@/types/chat';
 import type { MutableRefObject } from 'react';
 import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（type-only 不可调用）
 import type { ClockSignals } from '@/types/sse';
@@ -262,6 +264,22 @@ function missingViewsOf(sessionId: string): {
   return v;
 }
 
+/**
+ * BR1 引用台账条目（2026-10-21 小杨 - 文档[28]§9.11.1）
+ * ⚠ **只存路径不存正文**：正文当轮即弃（M1），路径才是长期有效信息；
+ *   点台账 chip 时**现场重读**盘面（恢复引用意图，而不是恢复 2MB 旧快照）。
+ */
+export interface SentRefLedgerEntry {
+  label: string;
+  path: string;
+  lineRange?: { start: number; end: number };
+  taskId: string;
+  ts: number;
+}
+
+/** BR1 台账上限（每会话 50 条，新者前） */
+const SENT_REF_LEDGER_LIMIT = 50;
+
 export interface ChatStreamSession extends SessionSnapshot {
   sessionId: string;
   revision: number;
@@ -273,6 +291,13 @@ export interface ChatStreamSession extends SessionSnapshot {
   } | null;
   linkEnabled: boolean;
   allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.5: 会话快照字段(供 transport 直读)
+  /**
+   * BR1 引用台账（2026-10-21 小杨 - 文档[28]§8.4/9.11.1）
+   * 语义：**只存路径不存正文**（正文当轮即弃，路径才是长期有效信息），
+   *   点击时现场重读盘面（恢复的是"引用意图"，不是 2MB 旧快照）。
+   * 落盘口径：随会话 transient 链走，**不入 chatHistory 库**。
+   */
+  sentRefLedger: SentRefLedgerEntry[];
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
   // 连接与定时器资源句柄（clearAllTimers 五件套：idle/firstChunk/reconnect/saveSteps/intentionalAbort）
@@ -615,6 +640,7 @@ export const chatStreamStore = {
       pendingMessage: null,
       linkEnabled: false,
       allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.5: EMPTY_SNAPSHOT 默认(与 link 同款)
+      sentRefLedger: [], // 2026-10-21 小杨 - 文档[28]§9.11.1(BR1)：引用台账（新者前，≤50 条）
       hitlWaitingKeys: new Set(),
       abortController: null,
       idleTimeout: null,
@@ -702,7 +728,9 @@ export const chatStreamStore = {
     sessionId: string,
     content: string,
     linkEnabled: boolean = false,
-    allowInterject: boolean = false // 2026-10-07 小欧 - 文档[11] 3.5.5: sendMessage 第4参(唯一调用方在 useChatStreaming:441, 默认 false 保旧调用)
+    allowInterject: boolean = false, // 2026-10-07 小欧 - 文档[11] 3.5.5: sendMessage 第4参(唯一调用方在 useChatStreaming:441, 默认 false 保旧调用)
+    // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：本轮引用条目（当轮有效，不入库）
+    refs?: ChatRefPayload[]
   ): Promise<ResumeResult> {
     // 2026-09-30 小欧（H13 修复）：空串短路，禁 ensureSession 造 '' 鬼会话（对照 resume:599/stop:640
     //   已有守卫，本入口补齐对称防御；hook 侧 customSessionId??sessionId??'' 双 null 落空串即由此挡住）
@@ -724,7 +752,7 @@ export const chatStreamStore = {
       const attached = await attachActiveTask(s, content); // 附着分支内部已 resume + 持久化
       if (attached !== null) return attached;
       this.clearSteps(sessionId); // 新请求清旧步骤（真实 useSSE.ts:791-795）
-      await sendStreamRequest(s, content);
+      await sendStreamRequest(s, content, refs);
       commit(s, (d) => {
         if (d.pendingMessage)
           d.pendingMessage = { ...d.pendingMessage, state: 'sent' };
@@ -741,6 +769,46 @@ export const chatStreamStore = {
   },
 
   /**
+   * BR1 引用台账追加（2026-10-21 小杨 - 文档[28]§9.11.1）
+   *
+   * 触发点：发送**成功**后（与 refs 清空同一分支）—— 失败不记（那轮引用还没发出去）。
+   * 口径：新者前，≤50 条截断；只存路径不存正文。
+   */
+  pushSentRefs(
+    sessionId: string,
+    taskId: string,
+    refs: Array<{
+      label: string;
+      path?: string;
+      lineRange?: { start: number; end: number } | null;
+    }>
+  ): void {
+    if (!refs.length) return;
+    const s = this.ensureSession(sessionId);
+    commit(s, (d) => {
+      d.sentRefLedger = [
+        ...refs.map((r) => ({
+          label: r.label,
+          path: r.path ?? '',
+          lineRange: r.lineRange ?? undefined,
+          taskId,
+          ts: Date.now(),
+        })),
+        ...d.sentRefLedger,
+      ].slice(0, SENT_REF_LEDGER_LIMIT);
+    });
+  },
+
+  /** BR1 台账读取（按任务过滤） */
+  getSentRefLedger(sessionId: string, taskId?: string): SentRefLedgerEntry[] {
+    const s = sessions.get(sessionId);
+    if (!s) return [];
+    return taskId
+      ? s.sentRefLedger.filter((e) => e.taskId === taskId)
+      : s.sentRefLedger;
+  },
+
+  /**
    * 插话投递（2026-10-07 小欧 - 文档[11] 决策 9/11）
    *
    * 与 sendMessage 的分工（SRP：新建任务流 vs 给运行中任务追加输入，两件事不混）:
@@ -750,14 +818,19 @@ export const chatStreamStore = {
    *   chatStreamTransport.postInterject 顶部注释：复用 sendStreamRequest 会掐断运行中的流）。
    *   落值：allowInterject 落会话快照（与 link 同款语义），供刷新/重连后仍为开。
    */
-  async interjectMessage(sessionId: string, content: string): Promise<void> {
+  async interjectMessage(
+    sessionId: string,
+    content: string,
+    // 2026-10-21 小杨 - 文档[28] 4.1.6：插话也带 refs（漏传 = 插话丢引用）
+    refs?: ChatRefPayload[]
+  ): Promise<void> {
     if (!sessionId) return;
     const s = this.ensureSession(sessionId);
     commit(s, (d) => {
       d.allowInterject = true; // 插话已发生 → 开关落快照(刷新/重连后仍为开, 与 link 同款语义)
     });
     persistNowOf(sessionId);
-    await postInterject(s, content);
+    await postInterject(s, content, refs);
   },
 
   /**

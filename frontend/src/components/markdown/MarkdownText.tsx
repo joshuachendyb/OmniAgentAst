@@ -46,6 +46,8 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
+// 2026-10-21 小杨 - 文档[28]§4.4.13/4.4.14(J5)：文件引用 chip + 形态校验（同源单一真源）
+import { FileRefChip, isValidRelPath } from './FileRefChip';
 import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
 
 /**
@@ -262,20 +264,49 @@ const mdComponents = {
     ) : (
       <PreBlock {...props} />
     ),
-  a: (props: MdProps) => (
-    <a
-      href={props.href}
-      target="_blank"
-      rel="noopener noreferrer"
-      style={{
-        color: Colors.PRIMARY,
-        textDecoration: 'underline',
-        wordBreak: 'break-all',
-      }}
-    >
-      {props.children}
-    </a>
-  ),
+  // 2026-10-21 小杨 - 文档[28]§4.4.14(J5)：文件引用链接分流 —— /file-ref?path=… 渲染成 FileRefChip（App 内跳转）
+  //   ⚠ 绝不能直接复用下面的 <a>：它硬编码 target="_blank" → 文件引用会**新开浏览器标签页**（桌面端灾难）。
+  //   故在 a 组件内提前 return，按 href 前缀分流。
+  a: (props: MdProps) => {
+    const href = props.href ?? '';
+    if (href.startsWith('/file-ref?')) {
+      const m = /^\/file-ref\?path=([^&]+)(?:&line=(\d+)(?:-(\d+))?)?$/.exec(
+        href
+      );
+      const p = m ? decodeURIComponent(m[1]) : '';
+      if (m && isValidRelPath(p)) {
+        return (
+          <FileRefChip
+            relPath={p}
+            lineRange={
+              m[2]
+                ? {
+                    start: Number(m[2]),
+                    end: m[3] ? Number(m[3]) : Number(m[2]),
+                  }
+                : undefined
+            }
+            label={p}
+          />
+        );
+      }
+      return <>{props.children}</>; // 校验不过 → 退化纯文本，不造假链接
+    }
+    return (
+      <a
+        href={props.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          color: Colors.PRIMARY,
+          textDecoration: 'underline',
+          wordBreak: 'break-all',
+        }}
+      >
+        {props.children}
+      </a>
+    );
+  },
   table: (props: MdProps) => <MdTable {...props} layout="auto" />,
   thead: (props: MdProps) => (
     <thead style={{ background: Colors.BG.TERTIARY }}>{props.children}</thead>

@@ -419,13 +419,9 @@ const AppLayout: React.FC<LayoutProps> = ({
       key: '/files',
       icon: <FolderOutlined />,
       title: '文件管理',
-      // 2026-09-15 小欧 - disabled项统一预留样式(与知识库一致): opacity0.6+Tooltip"即将上线" — 小欧-2026-09-15
-      label: (
-        <Tooltip title="即将上线" placement="right">
-          <span style={{ opacity: 0.6 }}>文件管理</span>
-        </Tooltip>
-      ),
-      disabled: true,
+      // 2026-10-21 小杨 - 文档[28] 4.4.8(S2-1)：/files 解禁（页面已落地）
+      //   原为 disabled + "即将上线" Tooltip（与知识库同款），故点菜单进不去 —— 现去掉 disabled 与 Tooltip。
+      label: <span>文件管理</span>,
     },
     {
       key: '/knowledge',

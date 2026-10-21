@@ -15,6 +15,10 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
+// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径判定单一真源 + 路径可点击 + 项目根取数
+import { isPathParam } from './paramCategories';
+import { PathLink } from './PathLink';
+import { useProjectRoot } from '@/hooks/useProjectRoot';
 import {
   BorderWidth,
   Colors,
@@ -65,6 +69,8 @@ const ParamNode: React.FC<ParamNodeProps> = ({
   isExpanded,
   onToggle,
 }) => {
+  // 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径链接需要项目根（绝对路径→相对路径）
+  const projectRoot = useProjectRoot();
   const kind = classify(value);
   const foldable = kind === 'body';
   const open = foldable && isExpanded(nodeKey);
@@ -139,7 +145,12 @@ const ParamNode: React.FC<ParamNodeProps> = ({
             wordBreak: 'break-word',
           }}
         >
-          : {summary}
+          {isPathParam(label, value) && typeof value === 'string' ? (
+            // 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径类值渲染成可点击链接（与 ParamsPanel 同一判据）
+            <PathLink value={value} projectRoot={projectRoot} />
+          ) : (
+            `: ${summary}`
+          )}
         </span>
       </div>
       {/* 巨型值展开体: <pre> 显示**全部行数**; 底/框/圆角与 MarkdownText 代码块同款(T32) */}

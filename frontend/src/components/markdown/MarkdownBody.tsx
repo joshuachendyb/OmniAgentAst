@@ -28,6 +28,8 @@ import {
   Spacing,
 } from '@/utils/stepStyles';
 import { CopyButton } from './CopyButton';
+// 2026-10-21 小杨 - 文档[28]§4.4.13/4.4.14(J5)：文件引用 chip + 形态校验（同源单一真源）
+import { FileRefChip, isValidRelPath } from './FileRefChip';
 
 /**
  * 行内标记: 代码 > 粗体 > 斜体, 按优先级单趟切分(不递归, 免嵌套自匹配)。
@@ -45,7 +47,14 @@ const INLINE_RE =
 /** 行级容器统一样式: pre-wrap 保留源文本缩进与连续空格(LLM 输出大量缩进结构) */
 const LINE_STYLE: React.CSSProperties = { whiteSpace: 'pre-wrap' };
 
-const renderInline = (text: string, keyBase: string): React.ReactNode[] =>
+// 2026-10-21 小杨 - 文档[28]§4.4.14(J5)：文件引用链接（MD_IMPL=1 分支）
+//   ⚠ 绝不能把它作为**新的捕获组**加进 INLINE_RE —— String.split 会把每个捕获组都当独立片段返回，
+//   多一个组就会多出一片重复渲染。故用独立的 exec 循环（见 renderInline）。
+const FILEREF_MD_RE =
+  /\[([^\]]+)\]\(\/file-ref\?path=([^)\s]+)(?:&line=(\d+)(?:-(\d+))?)?\)/g;
+
+/** 行内渲染（不含文件引用链接） */
+const renderPlainInline = (text: string, keyBase: string): React.ReactNode[] =>
   text
     .split(INLINE_RE)
     .filter((s) => s !== '' && s !== undefined)
@@ -94,6 +103,50 @@ const renderInline = (text: string, keyBase: string): React.ReactNode[] =>
       }
       return <React.Fragment key={key}>{seg}</React.Fragment>;
     });
+
+/**
+ * 行内渲染入口：先切出**文件引用链接**（J5），其余段走常规行内解析。
+ * 2026-10-21 小杨 - 文档[28]§4.4.14：MD_IMPL=1 分支此前零链接解析，
+ *   切到 MD_IMPL=1 会让 J5 卡片**静默消失**（无任何报错）—— 故两分支都要覆盖。
+ */
+const renderInline = (text: string, keyBase: string): React.ReactNode[] => {
+  if (!text.includes('/file-ref?')) return renderPlainInline(text, keyBase);
+  const out: React.ReactNode[] = [];
+  let last = 0;
+  let idx = 0;
+  FILEREF_MD_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = FILEREF_MD_RE.exec(text)) !== null) {
+    if (m.index > last) {
+      out.push(
+        ...renderPlainInline(text.slice(last, m.index), `${keyBase}-p${idx++}`)
+      );
+    }
+    const rel = decodeURIComponent(m[2]);
+    if (isValidRelPath(rel)) {
+      out.push(
+        <FileRefChip
+          key={`${keyBase}-fr${idx++}`}
+          relPath={rel}
+          lineRange={
+            m[3]
+              ? { start: Number(m[3]), end: m[4] ? Number(m[4]) : Number(m[3]) }
+              : undefined
+          }
+          label={m[1]}
+        />
+      );
+    } else {
+      // 校验不过 → 退化为原文（不造假链接）
+      out.push(...renderPlainInline(m[0], `${keyBase}-p${idx++}`));
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) {
+    out.push(...renderPlainInline(text.slice(last), `${keyBase}-p${idx++}`));
+  }
+  return out;
+};
 
 interface MarkdownBodyProps {
   text: string;

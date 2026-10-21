@@ -139,7 +139,12 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue = 'paused' | 'resumed' | 'retrying' | 'installing' | 'summarizing';
+export type StatusValue =
+  | 'paused'
+  | 'resumed'
+  | 'retrying'
+  | 'installing'
+  | 'summarizing';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
@@ -219,8 +224,11 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
   return (
-    msg.type === 'paused' || msg.type === 'retrying' || msg.type === 'resumed' ||
-    msg.type === 'installing' || msg.type === 'summarizing'
+    msg.type === 'paused' ||
+    msg.type === 'retrying' ||
+    msg.type === 'resumed' ||
+    msg.type === 'installing' ||
+    msg.type === 'summarizing'
   );
 }
 
@@ -250,6 +258,26 @@ export interface ChatRequest {
   // 会话 link 开关值随消息携带(后端新增契约字段)。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
   link_enabled?: boolean;
   allow_interject?: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.3: 请求体随消息携带(后端唯一写入口)
+  // 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：引用条目随消息同批上行（搭便车，不单独上传）。
+  //   后端 models.py 的 ChatRef 与本类型一一对应；正文当轮即弃，不入库。
+  refs?: ChatRefPayload[];
+}
+
+/**
+ * 输入框引用条目（前端 → 后端随消息上行的引用载荷）
+ * 2026-10-21 小杨 - 文档[28] 4.1.6(M20)/4.4.3 新建
+ *
+ * 语义：kind=file 整文件引用 / kind=selection 行区间引用。
+ * ⚠ `content` 是**当轮内存态**（用户选中/读到的正文），发完即弃，不入库、不进历史。
+ *   path 才是长期有效信息（Agent 日后可凭 path 重读）。
+ */
+export interface ChatRefPayload {
+  kind: 'file' | 'selection';
+  label: string;
+  path: string;
+  content: string;
+  size?: number;
+  lineRange?: { start: number; end: number } | null;
 }
 
 /**
@@ -345,6 +373,11 @@ export interface HistoryLoadResult {
 export interface SendOpts {
   linkEnabled: boolean;
   allowInterject: boolean;
+  /**
+   * 2026-10-21 小杨 - 文档[28] 4.1.6(M20)：本轮引用条目（当轮有效，不入库）。
+   * 未传或空数组 = 无引用（body 不带 refs 键，零退化）。
+   */
+  refs?: ChatRefPayload[];
 }
 
 /**

@@ -42,12 +42,31 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Empty, Skeleton, Typography } from 'antd';
-import { CopyOutlined, CaretDownOutlined } from '@ant-design/icons';
+import { Empty, Skeleton, Tag, Typography } from 'antd';
+import {
+  CopyOutlined,
+  CaretDownOutlined,
+  FileOutlined,
+  PaperClipOutlined,
+} from '@ant-design/icons';
+import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
+
 import type { SessionTaskItem } from '../../../../services/api/task.api';
+import type { ExecutionStep } from '@/types/execution';
 import { Colors } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
-import { showSuccess, handleError } from '@/services/error/handler';
+import {
+  showSuccess,
+  handleError,
+  showMessage,
+  ErrorType,
+} from '@/services/error/handler';
+// 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：推荐行 + 引用台账行
+import { chatStreamStore } from '../../streams/chatStreamStore';
+import { composerRefStore, newRefId } from '../../streams/composerRefStore';
+import { useRecentFiles } from '@/hooks/useRecentFiles';
+import { fileApi } from '@/services/api/file.api';
+import { chatTokens } from '@/theme/tokens';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
 // 2026-10-05 小欧 北京老陈指令(左列 task 卡 response 接 Markdown): 展开态渲染器, 恒开不受设置开关控制
 //   (用户明示"task 下的 mark 显示不受设置的开关的控制") —— 直接传 markdown={true} 绕过 MD_IMPL 之外的开关
@@ -68,11 +87,14 @@ interface TaskListPanelProps {
   activeTaskId: string | null;
   onSelect: (taskId: string) => void;
   loading?: boolean;
-  // 2026-09-01 小欧 方案C: 最新任务锚点(后端latest_task_id) + 挂到最新任务项的ref(滚动定位用)
   latestTaskId?: string | null;
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
-  // 2026-09-09 小欧: 右侧展开状态, 折叠时模型标签显示provider前缀
   rightOpen?: boolean;
+  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：新增两项（可选，缺省即不渲染这两行）
+  /** 会话 id（FQ1 需取 recent-files，BR1 需取台账） */
+  sessionId?: string | null;
+  /** 本轮 steps（FQ1 计算「被工具动过 ≥2 次」） */
+  steps?: ExecutionStep[];
 }
 
 const TaskListPanel: React.FC<TaskListPanelProps> = ({
@@ -83,7 +105,77 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   latestTaskId = null,
   latestTaskRef,
   rightOpen = true,
+  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)
+  sessionId = null,
+  steps = [],
 }) => {
+  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：跳转输入框
+  //   ⚠ 用 useOptionalNavigate：TaskListPanel 的既有单测**直接渲染本组件（无 Router 上下文）**，
+  //   直接用 useNavigate 会抛 "useNavigate() may be used only in the context of a <Router>" → 整块崩。
+  const navigate = useOptionalNavigate();
+  // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1)：数据源与规则
+  //   ① roundHits = 本轮 steps 里工具动过的 path 计数（tools[].params.path）
+  //   ② 推荐 = 被动过 ≥2 次 且 preview 可预览 的文件，取最近 3 条（与 FT1 同一数据源，走共享 hook）
+  const { files: recentFiles } = useRecentFiles(sessionId);
+  const roundHits = React.useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of steps) {
+      if (s.type !== 'action') continue;
+      for (const tool of s.tools ?? []) {
+        const p = tool.params?.path;
+        if (typeof p === 'string' && p) m.set(p, (m.get(p) ?? 0) + 1);
+      }
+    }
+    return m;
+  }, [steps]);
+  const recommend = React.useMemo(
+    () =>
+      recentFiles
+        .filter(
+          (x) => (roundHits.get(x.path) ?? 0) >= 2 && x.preview !== 'none'
+        )
+        .slice(0, 3),
+    [recentFiles, roundHits]
+  );
+  /** BR1 台账：按任务取（store 侧 transient 列表，不入库）
+   *  发送时后端尚未建任务 → taskId 暂记空串，此处回落到"最近一批"（同一 ts 的一批）。 */
+  const ledgerForTask = React.useCallback(
+    (taskId: string) => {
+      if (!sessionId) return [];
+      const all = chatStreamStore.getSentRefLedger(sessionId, taskId);
+      if (all.length > 0) return all;
+      const pending = chatStreamStore.getSentRefLedger(sessionId, '');
+      if (pending.length === 0) return [];
+      const newestTs = pending[0].ts;
+      return pending.filter((e) => e.ts === newestTs);
+    },
+    [sessionId]
+  );
+  /** BR1 恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
+  const quoteAfterReread = React.useCallback(
+    async (path: string, lineRange?: { start: number; end: number }) => {
+      try {
+        const f = await fileApi.readFile(path);
+        composerRefStore.push({
+          id: newRefId(),
+          kind: lineRange ? 'selection' : 'file',
+          label: path.split('/').pop() ?? path,
+          path,
+          content: f.content,
+          size: f.size,
+          lineRange: lineRange ?? undefined,
+        });
+        navigate(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
+      } catch {
+        showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
+      }
+    },
+    [navigate, sessionId]
+  );
+  /** FQ1 只对"最新 1 条任务"显示（下一任务开始即移除上一条的推荐行） */
+  const isLatestTaskId = (taskId: string) =>
+    !latestTaskId || taskId === latestTaskId;
+
   // 2026-09-09 小欧 复制按钮: 点击复制文本到剪贴板, 显示成功提示
   const handleCopy = useCallback(
     async (text: string, type: '问题' | '回复') => {
@@ -411,6 +503,54 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                 >
                   <CopyOutlined />
                 </button>
+              </div>
+            )}
+
+            {/* 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：本轮引用过的文件两行能力
+                ① FQ1 追问推荐：本轮被工具动过 ≥2 次且可预览的文件（取最近 3 条）
+                ② BR1 引用台账：本任务引用过的文件（现场重读恢复，不存旧快照） */}
+            {sessionId && isLatestTaskId(t.task_id) && recommend.length > 0 && (
+              <div
+                style={{
+                  color: Colors.TEXT.SECONDARY,
+                  fontSize: chatTokens.fontSM,
+                  marginTop: 4,
+                }}
+              >
+                <PaperClipOutlined style={{ marginRight: 4 }} />{' '}
+                本轮涉及的文件，点击作为引用继续追问：
+                {recommend.map((r) => (
+                  <Tag
+                    key={r.path}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void quoteAfterReread(r.path);
+                    }}
+                  >
+                    {r.name}
+                  </Tag>
+                ))}
+              </div>
+            )}
+            {sessionId && ledgerForTask(t.task_id).length > 0 && (
+              <div style={{ fontSize: chatTokens.fontSM, marginTop: 2 }}>
+                ↩ 本轮引用：
+                {ledgerForTask(t.task_id).map((e) => (
+                  <Tag
+                    key={e.path + e.ts}
+                    style={{ cursor: 'pointer' }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      void quoteAfterReread(e.path, e.lineRange);
+                    }}
+                  >
+                    <FileOutlined style={{ marginRight: 4 }} /> {e.label}
+                    {e.lineRange
+                      ? ` L${e.lineRange.start}-${e.lineRange.end}`
+                      : ''}
+                  </Tag>
+                ))}
               </div>
             )}
           </div>

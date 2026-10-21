@@ -458,7 +458,8 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
     if target.suffix.lower() not in TEXT_EXTS:
         fail(UNSUPPORTED_TYPE)
     try:
-        size = target.stat().st_size
+        st = target.stat()
+        size = st.st_size
     except OSError:
         fail(NOT_FOUND)
     if size > MAX_TEXT_BYTES:
@@ -492,6 +493,9 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
         "content": content,
         "encoding": used_enc,
         "total_lines": content.count("\n") + 1 if content else 0,
+        # 2026-10-21 小杨 - 文档[28]§9.2.1(O1): 补 mtime —— 复用上面那次 stat()，零额外 IO。
+        #   口径与 tree 的 mtime 同源（都走 _fmt_time），前端可直接比对做"可能已被修改"判定。
+        "mtime": _fmt_time(st.st_mtime),
     }
 
 
@@ -536,10 +540,11 @@ def read_image_file(rel_path: str, request: Request) -> Response:
 
 
 def recent_files(session_id: str) -> List[Dict[str, Any]]:
-    """本会话 Agent 最近读过的文件（树上的 ● 标记，T3）。
+    """本会话 Agent 最近读过的文件（树上的 ● 标记，T3；FT1 追加 ops 操作徽标）。
 
     数据源：chat_task_steps.step_json 里的 action.tools[].params.path。
     注意 path 是 LLM 原样给的、未做 abspath 归一（M6），故逐条 resolve 后判界。
+    返回项含 ops: 该 path 在扫描窗口内被哪些工具动过（tool 名去重、字母序；FT1）。
     """
     from app.services.chat.workspace_service import session_exists   # 函数内 import 避免循环依赖
     with db.get_conn("chat") as conn:
@@ -553,6 +558,8 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
 
     root = Path(get_config().get_project_root()).resolve()
     seen: Dict[str, Dict[str, Any]] = {}
+    # 2026-10-21 小杨 - 文档[28]§9.2.2(FT1): ops 聚合 —— 该 path 在最近窗口内被哪些工具动过（tool 名去重）
+    ops_by_path: Dict[str, set] = {}
     for row in rows:
         blob = row[0]
         try:
@@ -586,6 +593,10 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
             except Exception:      # noqa: BLE001 —— 越界/禁区/非法一律跳过，不让脏数据中断整个面板
                 continue
             key = str(abs_path)
+            # 2026-10-21 小杨 - 文档[28]§9.2.2(FT1): ops 累加必须在"去重 continue"**之前** ——
+            #   否则同一路径的其它工具操作（同一 path 的第二次/第三次动作）会被 continue 吃掉而漏计。
+            #   tool 名取 tools 元素的 "tool" 字段（action_step.py:5：tools 元素含 tool/target/params）。
+            ops_by_path.setdefault(key, set()).add(str(t.get("tool") or "unknown"))
             if key in seen:
                 continue
             try:
@@ -598,4 +609,9 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
                 "preview": _preview_of(abs_path),
                 "last_seen_at": mtime,
             }
+    # 2026-10-21 小杨 - FT1: ops 统一在循环结束后回填 —— seen[key] 建在"首次出现"处（最新一次动作），
+    #   而 ops_by_path 在其后的旧记录里仍在累加；若在构造时快照 sorted(ops_by_path[key])，
+    #   只会拿到第一个动作的 op（漏计）→ 故此处回填，保证是**全集**。
+    for _k, _v in seen.items():
+        _v["ops"] = sorted(ops_by_path.get(_k, set()))
     return list(seen.values())[:_RECENT_KEEP]

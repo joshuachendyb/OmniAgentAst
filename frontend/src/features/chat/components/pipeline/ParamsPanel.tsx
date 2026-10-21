@@ -45,6 +45,10 @@
 //   **已不成立** —— 空态现显示「本次工具执行：<summary>」。小欧
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
+// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
+import { PATH_KEYS, isPathLike } from './paramCategories';
+import { PathLink } from './PathLink';
+import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Segmented } from 'antd';
 import { CloseOutlined, CodeOutlined } from '@ant-design/icons';
 import { CircleArrow } from '@/components/CircleArrow';
@@ -69,22 +73,8 @@ const HUGE_VALUE_CHARS = 200;
  *   (bash 5 个参数 4 个进其他 / http_get 6 个进 4 个 / query_sql 6 个进 4 个), 分组失去意义。
  *   本版据实测把高频参数**显式列入 key 集合**, 使「其他参数」只接真正零散项。
  */
-const PATH_KEYS: ReadonlySet<string> = new Set([
-  'path',
-  'dir_path',
-  'file_path',
-  'source_path',
-  'dest',
-  'output_path',
-  // 2026-10-13 新增: 旧版漏判导致 cwd/url/source/target 掉进「其他」(实测 bash.cwd、http_get.url)
-  'cwd',
-  'url',
-  'source',
-  'target',
-  'directory',
-  'dir',
-  'sql_file',
-]);
+// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：PATH_KEYS 已抽到 ./paramCategories
+//   （ParamsPanel 与 ParamsTree 双入口共用同一判据，本文件不再持有副本）。
 
 /** 正文载荷: 主内容字段。**显式列 key** —— 否则短命令(ls / git status)抓不到 payload 判定, 会掉进「其他」 */
 const PAYLOAD_KEYS: ReadonlySet<string> = new Set([
@@ -239,12 +229,13 @@ const CATEGORY_META: ReadonlyArray<{
 
 // ==================== 值格式化(纯函数, 可单测) ====================
 
-/** 「路径特征」: 同时含分隔符 **且** 末段有扩展名(§2.3.2 细则, 防误伤 SQL/代码片段) */
-const isPathLike = (v: string): boolean => {
-  if (!/[\\/]/.test(v)) return false;
-  const last = v.split(/[\\/]/).pop() ?? '';
-  return /\.[A-Za-z0-9]{1,8}$/.test(last);
-};
+/**
+ * 「路径特征」判定已抽到 ./paramCategories（单一真源，ParamsPanel/ParamsTree 双入口共用）
+ * —— 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：两入口若各写一份，改一处忘另一处 →
+ *   同一参数在一个视图可点、另一个不可点。PATH_KEYS 同样搬过去了。
+ */
+// 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：PATH_KEYS / isPathLike 已抽到 ./paramCategories
+//   （ParamsPanel 与 ParamsTree 双入口共用同一判据，见该文件头注）—— 本文件不再持有副本。
 
 /**
  * 巨型值判定 = **值含换行**(如 content 的多行代码块)。
@@ -724,6 +715,8 @@ const ParamValue: React.FC<{ value: unknown }> = ({ value }) => {
 const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
   params,
 }) => {
+  // 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径链接需要项目根（绝对路径→相对路径）
+  const projectRoot = useProjectRoot();
   const buckets = useMemo(() => {
     const map = new Map<Category, Array<[string, unknown]>>();
     CATEGORY_META.forEach((c) => map.set(c.id, []));
@@ -799,7 +792,12 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                       wordBreak: 'break-word',
                     }}
                   >
-                    <ParamValue value={v} />
+                    {/* 2026-10-21 小杨 - 文档[28]§4.4.12(J1)：路径类值渲染成可点击链接（直达文件页） */}
+                    {c.id === 'path' && typeof v === 'string' ? (
+                      <PathLink value={v} projectRoot={projectRoot} />
+                    ) : (
+                      <ParamValue value={v} />
+                    )}
                   </span>
                 </div>
               ))}

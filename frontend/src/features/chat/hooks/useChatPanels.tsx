@@ -50,6 +50,8 @@ import ModelPicker from '../components/ModelPicker';
 import { TopbarStats } from '../components/topbar/TopbarStats';
 import { TaskListPanel } from '../components/layout/TaskListPanel';
 import { RightViewer } from '../components/right/RightViewer';
+// 2026-10-21 小杨 - 文档[28] 8.2/9.10(FT1)：文件足迹面板
+import { FileTrailPanel } from '../components/layout/FileTrailPanel';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
 // 2026-10-06 22:52 小欧 - 取消终态兜底需读 store 快照（getSnapshot 不建条目，安全）
 import { chatStreamStore } from '../streams/chatStreamStore';
@@ -260,6 +262,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             latestTaskId={latestTaskId}
             latestTaskRef={latestTaskRef}
             rightOpen={rightOpen}
+            // 2026-10-21 小杨 - 文档[28]§9.11.2(FQ1/BR1)：新增两项透传（可选，缺省即不渲染那两行）
+            sessionId={sessionId}
+            steps={executionSteps}
           />
         ),
         defaultVisible: true,
@@ -290,6 +295,14 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
           />
         ),
         defaultVisible: true,
+      },
+      {
+        // 2026-10-21 小杨 - 文档[28] 8.2/9.10(FT1)：文件足迹面板注册（加功能不动骨架，4.3.7）
+        slot: 'right',
+        key: 'fileTrail',
+        component: <FileTrailPanel sessionId={sessionId} />,
+        defaultVisible: false,
+        persistVisible: true, // 开关状态随会话持久化
       },
       {
         slot: 'taskinfo',
