@@ -1,9 +1,10 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：文件页→对话页一次性引用通道（useSyncExternalStore 契约）；
 //   push 去重（同 path+lineRange 替换而非追加）+ pending 字段 — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 抽出 refKeyOf/mergeRefs，供跨页消费与 @ 选中共用去重 — 小杨-2026-10-21
 /**
  * composerRefStore —— 跨页一次性引用投递通道
  *
- * 存在理由（M21）：对话页 ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载，
+ * 存在理由：对话页 ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载，
  *   挂载时取一次会**静默丢引用**。故必须做成"外部 store + 订阅"（useSyncExternalStore 契约），
  *   与 features/chat/streams/chatStreamStore.ts 同范式。
  *
@@ -37,6 +38,25 @@ export type ComposerRef = ChatRefPayload & {
  *   jsdom 缺 crypto.randomUUID 时按仓库先例补桩（见 tests/stage1_s8.test.ts）。
  */
 export const newRefId = (): string => crypto.randomUUID();
+
+/** 同一文件 + 同一行区间视为同一引用（整文件 lineRange 为空）— 小杨-2026-10-21 */
+export const refKeyOf = (r: Pick<ComposerRef, 'path' | 'lineRange'>): string =>
+  `${r.path ?? ''}|${r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : ''}`;
+
+/** 合并引用：同 key 原位替换（后一次内容覆盖前一次），新 key 追加 — 小杨-2026-10-21 */
+export const mergeRefs = (
+  prev: ComposerRef[],
+  incoming: ComposerRef[]
+): ComposerRef[] => {
+  const out = prev.slice();
+  for (const ref of incoming) {
+    const k = refKeyOf(ref);
+    const i = out.findIndex((r) => refKeyOf(r) === k);
+    if (i >= 0) out[i] = ref;
+    else out.push(ref);
+  }
+  return out;
+};
 
 const queue: ComposerRef[] = [];
 const listeners = new Set<() => void>();
@@ -72,10 +92,8 @@ export const composerRefStore = {
    * 且后一次的内容（更接近当前盘面）应覆盖前一次。
    */
   push(ref: ComposerRef): void {
-    const keyOf = (r: ComposerRef) =>
-      `${r.path ?? ''}|${r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : ''}`;
-    const k = keyOf(ref);
-    const i = queue.findIndex((r) => keyOf(r) === k);
+    const k = refKeyOf(ref);
+    const i = queue.findIndex((r) => refKeyOf(r) === k);
     if (i >= 0) queue.splice(i, 1, ref);
     else queue.push(ref);
     emit();

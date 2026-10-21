@@ -1,12 +1,12 @@
-﻿// 编辑历史: 2026-08-26 小欧 - 8.12 实施: 输入框组合根, 六组件组合, Props兼容父级+modelPickerSlot/onSend二参(8.14 E1)
-// 编辑历史: 2026-08-28 小欧 - ①A/a1: 去孤行+gap8, 指令+续聊并入SubmitBar leftExtra, 外层flex column gap8, 总高≤5行
+﻿// 编辑历史: 2026-08-26 小欧 - 输入框组合根: 六组件组合, Props兼容父级+modelPickerSlot/onSend二参
+// 编辑历史: 2026-08-28 小欧 - 去孤行+gap8, 指令+续聊并入SubmitBar leftExtra, 外层flex column gap8, 总高≤5行
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①CI-01乐观清空(先save后清, onSend失败由父级回补)②CI-02增sessionId入参+useEffect重置draft防跨会话泄漏 — 小欧-2026-09-02
 // 编辑历史: 2026-09-03 小欧 修复: handleSendInternal改async可回补, onSend抛错时还原draft/linked, 杜绝网络/500致输入丢失
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.8: 删本地 linked 自持 state(跨会话泄漏根因), 改受控 linkEnabled+
+// 编辑历史: 2026-10-03 小欧 - 删本地 linked 自持 state(跨会话泄漏根因), 改受控 linkEnabled+
 //   onToggleLink(真源寄存 useChatState); onSend 第二参由 contextLinkMode 改 linkEnabled: boolean;
 //   删发送后 setLinked(false)(违背用户意图的根因行), draft 回补保留 — 小欧 2026-10-03
-// 编辑历史: 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门判据抽 utils/sendGate 单一真源(原裸 loading 挡死开态插话), disabled 与发送门共用
-// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.5/§3.6.6: Props 补 sessionWorkspaces/setSessionWorkspaces;
+// 编辑历史: 2026-10-08 小欧 - 发送门判据抽 utils/sendGate 单一真源(原裸 loading 挡死开态插话), disabled 与发送门共用
+// 编辑历史: 2026-10-10 小欧 - Props 补 sessionWorkspaces/setSessionWorkspaces;
 //   挂载 SessionWorkspacePanel(wsPanelOpen 受控); 传 SubmitBar 的 workspaceCount(现算)与 onOpenWorkspaces
 //   (无会话时不传 → SubmitBar 不渲染入口, GET 空 id 必 422 干脆不显示); 关闭面板时重拉一次同步徽标(失败静默) — 小欧-2026-10-10
 // 编辑历史: 2026-10-13 13:45 小欧 - 草稿持久化+最近提交历史: draft 交 useInputDraft 单一真源(localStorage);
@@ -15,12 +15,12 @@
 //   改为"sessionId 变了就载入", 仅「提交标记+上次无会话+提交后又打字」三条件成立才判为建会话回填而跳过
 // 编辑历史: 2026-10-13 14:20 小欧 - 焦点归还: 复现出点「发送」后焦点停在按钮、↑↓ 到不了 textarea(历史已入库);
 //   InputCore 加 focusKey, 提交成功与"输入框由禁用转可用"两处自增(禁用期 focus() 为空操作, 解锁必须补)
-// 编辑历史: 2026-10-13 14:35 小欧 - 三堂会审整改: ①切会话复位 histIdx(否则按↑跳错条目) ②删 ↓ 的死逻辑 atLastLine
+// 编辑历史: 2026-10-13 14:35 小欧 - 复核整改: ①切会话复位 histIdx(否则按↑跳错条目) ②删 ↓ 的死逻辑 atLastLine
 //   (恒为 true, 条件归一为 histIdx>=0) ③焦点归还加 rootRef.contains 前置条件, 不夺走用户放到别处的焦点
 //   ④面板圆角改走 Radius.SM 令牌
 // 编辑历史: 2026-10-13 14:50 小欧 - 撤回落盘防抖(自纠): 防抖化致刷新丢字(刷新不执行 React 卸载清理, 4 条用例变红);
 //   草稿体量小, 同步写开销可接受, 拿正确性换性能属退化, 退回同步落盘
-// 编辑历史: 2026-10-13 18:15 小欧 - 文档[30] §2.5 B+C: ①输入框不再 disabled(把提交权限误当编辑权限, 执行中打不了字翻不了历史)
+// 编辑历史: 2026-10-13 18:15 小欧 - ①输入框不再 disabled(把提交权限误当编辑权限, 执行中打不了字翻不了历史)
 //   ②C 常驻灰字显隐改用 sendBlocked(与按钮置灰同源, 原用 isReceiving&&!allowInterject 会漏 loading 窗口)
 //   ③提交门被拦不再静默; 实测"弹 toast"反而致执行中无法换行, 改为不可发送时回车照常换行(见 18:40)
 // 编辑历史: 2026-10-20 小欧 - 动作按钮组移入框内右下角(北京老陈指令): 新增 SubmitActions 经 InputCore actions
@@ -28,13 +28,15 @@
 //   (与 handleSendInternal 的 !content 同源) 并入发送钮受阻态 — 小欧-2026-10-20
 // 编辑历史: 2026-10-21 小杨 - 引用通道落地: store 订阅 + refs 独立托管 + @token 剥离 + @ 补全
 //   (结构化引用 chip，正文不再写 @label；@ 补全改为光标真实位置驱动 + 真防抖 + 键盘导航) — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 跨会话保留 + 发送用重读 refs（选区按行切片）+ @ 词边界与去重 + chip 新标签打开 — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 合并 useComposerRefs 到组件内（单消费者，删除空壳 hook）— 小杨-2026-10-21
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
  * 【小欧 2026-08-26 8.12】单体拆分为 InputCore/TaskTypeToggle/CommandPanel/
  * AttachmentArea/SubmitBar 组合；对外 Props 保持 loading/isReceiving/isPaused/
  * onCancel/onTogglePause 兼容父级，新增 modelPickerSlot；chatLink 开关改受控
- * （linkEnabled/onToggleLink，真源在 useChatState；文档[4] 5.8），onSend 第二参为 boolean linkEnabled。
+ * （linkEnabled/onToggleLink，真源在 useChatState），onSend 第二参为 boolean linkEnabled。
  *
  * @author 小欧
  * @date 2026-08-26
@@ -49,18 +51,21 @@ import React, {
 } from 'react';
 import { Space } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
 import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
 import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 框内右下角动作按钮组(与SubmitBar 拆出)
-import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 文档[16] §3.6.6 面板挂载(默认导出)
+import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-21 小杨 - 引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
-import { composerRefStore, newRefId } from '../streams/composerRefStore';
-import { useComposerRefs } from '../hooks/useComposerRefs';
+import {
+  composerRefStore,
+  mergeRefs,
+  newRefId,
+  type ComposerRef,
+} from '../streams/composerRefStore';
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';
@@ -71,9 +76,9 @@ import {
   clearRecentInputs,
   type RecentInput,
 } from '../utils/recentInputs';
-import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
-import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 文档[16]: 关闭面板时重拉徽标数
-import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源
+import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
+import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 关闭面板时重拉徽标数
+import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 import { Colors, FontSize } from '@/utils/stepStyles';
 
 interface ChatInputProps {
@@ -87,9 +92,9 @@ interface ChatInputProps {
   sessionId?: string | null;
   linkEnabled: boolean;
   onToggleLink: (enabled: boolean) => void;
-  allowInterject: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.2
+  allowInterject: boolean; // 2026-10-07 小欧 - 插话开关
   onToggleInterject: (enabled: boolean) => void;
-  // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话使用的目录（徽标数 + 面板回写）
+  // 2026-10-10 小欧 - 会话使用的目录（徽标数 + 面板回写）
   sessionWorkspaces: WorkspaceEntry[];
   setSessionWorkspaces: React.Dispatch<React.SetStateAction<WorkspaceEntry[]>>;
 }
@@ -105,16 +110,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
   sessionId,
   linkEnabled,
   onToggleLink,
-  allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.2
+  allowInterject, // 2026-10-07 小欧 - 插话开关
   onToggleInterject,
-  sessionWorkspaces, // 2026-10-10 小欧 - 文档[16]
+  sessionWorkspaces, // 2026-10-10 小欧 - 会话目录
   setSessionWorkspaces,
 }) => {
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
     useInputDraft(sessionId);
-  // 2026-10-21 小杨 - refs 独立托管（不塞进 useInputDraft —— draft 落盘、refs 当轮内存，生命周期不同）
-  const { refs, setRefs, refsPending } = useComposerRefs(sessionId);
+  // 2026-10-21 小杨 - 引用条目状态：composer 级，跨会话保留（draft 按会话落盘，refs 不落盘）
+  const [refs, setRefs] = useState<ComposerRef[]>([]);
+  const refsPending = refs.some((r) => r.pending);
   // 2026-10-21 小杨 - 跨页引用通道订阅
   //   ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载 → 挂载取一次会**静默丢引用**，
   //   故必须 useSyncExternalStore 订阅（store 一有数据即消费）。
@@ -132,7 +138,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     //   ③发送前还要用 stripAtTokens 反向剥离（边界误伤、压掉用户代码缩进）。
     //   现在：**chip 是引用的唯一表示，正文只留用户自己写的字** → 上述三族问题一次性消失，
     //   发送即发 refs + 纯正文（不再需要 stripAtTokens）。
-    setRefs((prev) => [...prev, ...incoming]);
+    setRefs((prev) => mergeRefs(prev, incoming));
   }, [pendingCount, setRefs]);
   // 2026-10-21 小杨 - @ 补全状态
   const [atOpen, setAtOpen] = useState(false);
@@ -141,11 +147,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [atRange, setAtRange] = useState<{ at: number; caret: number } | null>(
     null
   ); // 2026-10-21 小杨 - 选中候选时**替换** @查询词 段（而非追加）
-  const [picking, setPicking] = useState(false); // O3: @ 补全在途唯一性闸门（防连点）
+  const [picking, setPicking] = useState(false); // @ 补全在途唯一性闸门（防连点）
   const atSeq = useRef(0); // 迟到响应丢弃（debounce 后的旧请求不得覆盖新结果）
   const atTimer = useRef<number | null>(null); // 2026-10-21 小杨 - 真防抖（每次击键不再真发一次全盘扫描）
   const inputRef = useRef<HTMLTextAreaElement | null>(null); // 取真实光标位置
-  const nav = useNavigate();
 
   // 卸载时清理定时器（避免卸载后 setState）
   useEffect(
@@ -176,7 +181,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-13 13:45 小欧: 历史翻动游标(-1 = 未在翻历史); histBackup = 上翻前正在输入的内容, ↓ 翻到底时回填
   const [histIdx, setHistIdx] = useState(-1);
   const [histBackup, setHistBackup] = useState<string | null>(null);
-  // 2026-10-10 小欧 - 文档[16] §3.6.6: 面板挂载点
+  // 2026-10-10 小欧 - 面板挂载点
   const [wsPanelOpen, setWsPanelOpen] = useState(false);
   // 2026-10-10 小欧: 面板关闭时重拉一次徽标数（后端 reconcile/禁区清理可能改行，
   //   前端只在 sessionId 变化时刷新，此处补齐漂移；失败静默（具名 noop 过 no-empty-function 门禁），会话本身可用）
@@ -191,7 +196,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
   };
 
-  // 2026-10-08 小欧 - 文档[11] 3.5.2: 发送门单一真源(2026-10-13 18:15 起只管"提交", 不再兼管输入框禁用)
+  // 2026-10-08 小欧 - 发送门单一真源(2026-10-13 18:15 起只管"提交", 不再兼管输入框禁用)
   const sendBlocked = isSendBlocked(loading, isReceiving, allowInterject);
   // 2026-10-20 小欧 - 空草稿置灰判据, 与 handleSendInternal 的 !content 同判据(单空格也算空, 两处 trim 同步)
   const emptyDraft = draft.trim() === '';
@@ -221,7 +226,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   }, [sendBlocked]);
 
   /**
-   * 2026-10-13 18:40 小欧 - 文档[30] §2.5: 回车语义按「能否发送」分流。
+   * 2026-10-13 18:40 小欧 - 回车语义按「能否发送」分流。
    *   能发送 → preventDefault 并提交; 不能发送(执行中且未开插话) → 不拦截, 回车照常换行,
    *   否则用户打不了多行消息。
    *   刻意不用 useCallback: handleSendInternal 每次渲染重建, 收进依赖数组等于白包一层;
@@ -247,7 +252,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     exitHistory();
   }, [sessionId, exitHistory]);
 
-  // 2026-10-13 18:15 小欧 - 文档[30] §2.5: 提交门被拦时**不做静默**。
+  // 2026-10-13 18:15 小欧 - 提交门被拦时**不做静默**。
   //   注: 最初做成「弹 toast 提示」, 真浏览器实测发现副作用更大 —— 执行中按回车被 preventDefault
   //   拦住, 既不换行也不发送, 用户打不了多行消息(功能退化)。现改为**不可发送时回车照常换行**,
   //   「为什么不能发」由 B(按钮置灰+Tooltip) 与 C(常驻灰字) 表达, 无需回车再弹一次。
@@ -269,12 +274,31 @@ const ChatInput: React.FC<ChatInputProps> = ({
      *   （不再让模型收到失效内容）；②读成功的顺手把 content 换成最新（内容保鲜）。
      *   校验失败的 refs 同时回写（chip 红底 + "（已失效）"）。
      */
+    let refsToSend = refs;
     if (refs.length > 0) {
       const checked = await Promise.all(
         refs.map(async (r) => {
           if (!r.path) return r;
           try {
             const f = await fileApi.readFile(r.path);
+            if (r.lineRange) {
+              const lines = f.content.replace(/\r\n/g, '\n').split('\n');
+              if (
+                r.lineRange.start > lines.length ||
+                r.lineRange.end > lines.length
+              ) {
+                return { ...r, invalid: true };
+              }
+              const content = lines
+                .slice(r.lineRange.start - 1, r.lineRange.end)
+                .join('\n');
+              return {
+                ...r,
+                content,
+                size: new TextEncoder().encode(content).length,
+                invalid: false,
+              };
+            }
             return { ...r, content: f.content, size: f.size, invalid: false };
           } catch {
             return { ...r, invalid: true };
@@ -282,13 +306,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
         })
       );
       setRefs(checked);
+      refsToSend = checked;
       const bad = checked.filter((r) => r.invalid);
       if (bad.length > 0) {
         showMessage(
           ErrorType.FILE_READ,
           `引用已失效：${bad
             .map((b) => b.label)
-            .join('、')}（文件不存在或不可读），请在引用区移除后再发送`
+            .join(
+              '、'
+            )}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
         );
         return;
       }
@@ -305,17 +332,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
     markSubmitted();
     try {
       // 2026-10-21 小杨 - refs 随消息搭同一班便车上行（正文走 refs，不进 content）
-      await onSend(cleanText, { linkEnabled, allowInterject, refs }); // 对象参数, 见 3.5.4
+      await onSend(cleanText, {
+        linkEnabled,
+        allowInterject,
+        refs: refsToSend,
+      }); // 对象参数，避免相邻 boolean 位置参数错位 — 小杨-2026-10-21
       // 2026-10-13 13:45 小欧: **提交成功后**才记历史(onSend 抛错 = 提交失败, 不能记; 流式中途报错不 reject,
       //   故面板文案用「最近提交」而非「发送成功」)
       addRecentInput(cleanText);
       setRecents(loadRecentInputs());
       setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
-      setRefs([]); // 仅成功才清（M4：失败保留 refs，重试仍有内容）
+      setRefs([]); // 仅成功才清（失败保留 refs，重试仍有内容）
     } catch {
       setDraft(backup);
       cancelSubmitted();
-      // refs 保留（不 setRefs）—— M4：发送失败草稿与引用都还在
+      // refs 保留（不 setRefs）—— 发送失败草稿与引用都还在
     }
   };
 
@@ -414,7 +445,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
    *
    * 2026-10-21 小杨 - **@ 补全改为"光标真实位置"驱动 + 真正防抖**
    *   ① 触发判据用**真实光标位置**（原实现用 v.length 当光标 → 光标不在末尾时误触发/漏触发）；
-   *   ② 触发范围收窄为"路径形态"（`@` 后不得含空白，且含分隔符或扩展名）→ 邮箱 a@b.com 不再误触发；
+   *   ② 触发范围：`@` 位于词边界（排除 a@b.com），后续为路径形态或无后缀 ASCII 文件名（Dockerfile）；
    *   ③ **真防抖**（clearTimeout + 卸载清理）→ 每次击键不再真发一次 20000 节点的全盘扫描；
    *   ④ 关闭候选时**作废在途请求**（原实现不自增序号 → 删掉 @ 后过期响应会把面板凭空弹回）。
    */
@@ -426,9 +457,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
       const caret = el ? (el.selectionStart ?? v.length) : v.length;
       const at = v.lastIndexOf('@', caret - 1);
       const query = at >= 0 ? v.slice(at + 1, caret) : '';
+      const prev = at > 0 ? v[at - 1] : '';
+      const atBoundary = !/[A-Za-z0-9._%+-]/.test(prev);
       const looksPath = /[\\/]|[\w-]+\.[A-Za-z0-9]{1,8}$/.test(query);
+      const looksBareName =
+        /^[A-Za-z0-9_.-]+$/.test(query) && !query.includes('.');
       const ok =
-        at >= 0 && !/[\s]/.test(query) && query.length > 0 && looksPath;
+        at >= 0 &&
+        atBoundary &&
+        !/\s/.test(query) &&
+        query.length > 1 &&
+        (looksPath || looksBareName);
       if (!ok) {
         atSeq.current += 1; // 作废在途请求（否则删掉 @ 后过期响应会把面板弹回）
         if (atTimer.current) window.clearTimeout(atTimer.current);
@@ -467,18 +506,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (picking) return; // 防连点
     if (hit.preview !== 'text') return; // 只收可预览文本
     setPicking(true);
-    // O3: 先渲染"载入中"占位 token（O4 去重保证连点只会替换不会追加）
-    setRefs((prev) => [
-      ...prev,
-      {
-        id: newRefId(),
-        kind: 'file',
-        label: hit.name,
-        path: hit.path,
-        content: '',
-        pending: true,
-      },
-    ]);
+    // 先渲染"载入中"占位 token（去重保证连点只会替换不会追加）
+    setRefs((prev) =>
+      mergeRefs(prev, [
+        {
+          id: newRefId(),
+          kind: 'file',
+          label: hit.name,
+          path: hit.path,
+          content: '',
+          pending: true,
+        },
+      ])
+    );
     // 正文里的 "@查询词" 是**检索动作**而非用户想发送的内容 → 选中即移除该段
     if (atRange) {
       setDraft((d) => `${d.slice(0, atRange.at)}${d.slice(atRange.caret)}`);
@@ -535,7 +575,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               fontSize: chatTokens.fontSM,
             }}
           >
-            引用 {refs.length}
+            引用 {refs.length} · 发送到当前会话
           </span>
           {refs.map((r) => (
             <span
@@ -560,7 +600,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 gap: 4,
               }}
               onClick={() =>
-                nav(buildFileDeepLink(r.path ?? '', r.lineRange ?? null))
+                window.open(
+                  buildFileDeepLink(r.path ?? '', r.lineRange ?? null),
+                  '_blank'
+                )
               }
             >
               <FileOutlined style={{ color: chatTokens.colorPrimary }} />
@@ -613,7 +656,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           focusKey={focusKey}
           inputRef={inputRef}
           /*
-           * 2026-10-13 18:15 小欧 - 文档[30] §2.5: 不再 disabled。
+           * 2026-10-13 18:15 小欧 - 不再 disabled。
            *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中
            *   连打字/翻历史/存草稿都做不到。执行中不可发是**提交**问题, 由发送按钮置灰(B)与
            *   常驻提示(C)表达, 不该由禁用来表达。
@@ -697,7 +740,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         </div>
       </div>
       {/*
-        2026-10-13 18:40 小欧 - 文档[30] §2.5 C: 「不可发送」的常驻说明。
+        2026-10-13 18:40 小欧 - 「不可发送」的常驻说明。
           ⚠️ 显隐判据必须用 sendBlocked(与发送按钮置灰同源), 早前写成 `isReceiving && !allowInterject`
           导致 loading=true 而 isReceiving=false 的窗口里按钮灰着却无任何说明, 判据两套互相打架。
           文案按 isReceiving 区分「执行中」与「发送中」两种受阻原因。
@@ -747,14 +790,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
             <TaskTypeToggle checked={linkEnabled} onChange={onToggleLink} />
           </Space>
         }
-        allowInterject={allowInterject} // 2026-10-07 小欧 - 文档[11] 3.5.3: 下传给 SubmitBar(开关落在附件之后)
+        allowInterject={allowInterject} // 2026-10-07 小欧 - 下传给 SubmitBar(开关落在附件之后)
         onToggleInterject={onToggleInterject}
-        // 2026-10-10 小欧 - 文档[16] §3.6.5: 徽标现算(决策72 已作废, 无 dirty 角标)
+        // 2026-10-10 小欧 - 徽标现算(无 dirty 角标)
         // 无会话时不传 onOpenWorkspaces → SubmitBar 不渲染入口（GET 空 id 必 422，不如不显示）
         workspaceCount={sessionWorkspaces.length}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
       />
-      {/* 2026-10-10 小欧 - 文档[16] §3.6.6: 会话使用目录面板(决策70 入口在此打开) */}
+      {/* 2026-10-10 小欧 - 会话使用目录面板入口 */}
       <SessionWorkspacePanel
         sessionId={sessionId ?? ''}
         open={wsPanelOpen}

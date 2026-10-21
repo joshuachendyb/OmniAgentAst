@@ -5,6 +5,7 @@
 //     旧名会让面板误标"最近访问时间"）— 小杨-2026-10-21
 //   2026-10-21 小欧 - 足迹自动刷新：订阅会话快照，步骤数变化即重取（去抖 600ms）；
 //     原实现只在挂载时取一次 → Agent 动过新文件后面板仍停在挂载时刻 — 小欧-2026-10-21
+//   2026-10-21 小杨 - 引用按钮仅文本文件显示（图片由查看器处理，文本通道不读取）— 小杨-2026-10-21
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -267,27 +268,29 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                 >
                   {f.mtime}
                 </span>
-                {/* 键盘目标②：引用（常驻可见，触屏可达） */}
-                <button
-                  type="button"
-                  onClick={() => void sendAsRef(f)}
-                  title="引用到对话"
-                  aria-label={`把 ${f.name} 引用到对话`}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    border: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                    color: Colors.PRIMARY,
-                    fontSize: chatTokens.fontSM,
-                    padding: '2px 4px',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <PaperClipOutlined /> 引用
-                </button>
+                {/* 键盘目标②：引用（仅文本；图片由查看器处理，文本通道不读取）— 小杨-2026-10-21 */}
+                {f.preview === 'text' && (
+                  <button
+                    type="button"
+                    onClick={() => void sendAsRef(f)}
+                    title="引用到对话"
+                    aria-label={`把 ${f.name} 引用到对话`}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      border: 'none',
+                      background: 'transparent',
+                      cursor: 'pointer',
+                      color: Colors.PRIMARY,
+                      fontSize: chatTokens.fontSM,
+                      padding: '2px 4px',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <PaperClipOutlined /> 引用
+                  </button>
+                )}
               </div>
             ))
           )}

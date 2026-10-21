@@ -1,33 +1,34 @@
 // 编辑历史: 2026-10-06 小欧 - MarkdownSlot 上移中立层后改指 @/components/markdown/MarkdownSlot(原 ../pipeline/MarkdownSlot), 内容未改。 — 小欧-2026-10-06
 // 编辑历史: 2026-08-26 小欧 - 修复C3: 左列created_at格式化为月/日 时:分(7.2时间显示)
 // 编辑历史: 2026-08-27 小欧 - 任务项新增response全文显示（设计文档4.8.2要求user_input+response双列）
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
-// 编辑历史: 2026-08-28 小欧 - ③A/a1: 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
-// 编辑历史: 2026-08-28 小欧 - ③B/b1: 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
+// 编辑历史: 2026-08-27 小欧 - 复核修复: 任务项div补role/tabIndex/aria/keyDown无障碍可达; 边距6px8px→8px; 选中蓝#1890ff→#1677ff; 滚动容器加minHeight0/scrollbarWidth; focus浅蓝外晕与选中态隔离
+// 编辑历史: 2026-08-28 小欧 - 去双重滚动(外层保留), 选中去#e6f4ff填色改2px左线透明体系
+// 编辑历史: 2026-08-28 小欧 - 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被滚动容器隐藏修复(北京老陈反馈)。监听latestTaskId变化→scrollIntoView(block:'nearest')将最新任务带进可视区; 仅新任务诞生时触发, 可视区内不动, 不打断用户上翻历史 - 小欧-2026-09-01
-// 编辑历史: 2026-09-01 小欧 - 修复任务完成后左列"跳回第一个任务": 根因=刷新时loading=true使组件切Skeleton(旧列表卸载), 滚动容器内容高度骤降→scrollTop被浏览器clamp归零, 刷新完成列表回归但scrollTop仍停在顶部。修复=仅当"loading且无已有任务"才显Skeleton(首次加载), 否则保留旧列表渲染, 滚动位置不丢失(三堂会审: 不打断刷新中UI, 首次加载行为不变) - 小欧-2026-09-01
+// 编辑历史: 2026-09-01 小欧 - 修复任务完成后左列"跳回第一个任务": 根因=刷新时loading=true使组件切Skeleton(旧列表卸载), 滚动容器内容高度骤降→scrollTop被浏览器clamp归零, 刷新完成列表回归但scrollTop仍停在顶部。修复=仅当"loading且无已有任务"才显Skeleton(首次加载), 否则保留旧列表渲染, 滚动位置不丢失(复核: 不打断刷新中UI, 首次加载行为不变) - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - task005会审修复(北京老陈定案): scrollIntoView 包 requestAnimationFrame——确保 React 提交 DOM(ref挂载)后视口就绪再滚动, 消除 latestTaskId 变化与 render 同批处理时 ref 未更新仍试图滚动的竞态; 不改触发条件/block, 行为不进反退 — 小欧-2026-09-02
-// 编辑历史: 2026-09-02 小欧 - 44case审计修复: TL-01 rAF保存ID+卸载cancel防泄漏 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - rAF保存ID+卸载cancel防泄漏 — 小欧-2026-09-02
 // 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): ①选中态背景#e6f4ff+左侧3px蓝线+微圆角; ②回复区域背景#fafafa+左边框2px; ③元信息行(时间/模型/状态)置顶; ④间距优化: 内边距8→10px, 项间距4→2px; ⑤放弃序号标签(视觉噪音)和Tooltip方案(遮挡凌乱) - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 新增复制按钮(北京老陈定案): 用户输入和回复区域右上角分别添加复制按钮, hover时显示, 点击复制对应文本, message.success提示 - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 修复formatTime导入缺失(formatTime is not defined) + message.success/error改用showSuccess/handleError(lint规范) + t.response非空断言(TS2345) - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 模型标签条件显示provider前缀: rightOpen=true(右侧展开)只显示model, rightOpen=false(右侧折叠)显示provider/model - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 步数标签改轮次标签: total_steps→llm_call_count, "步"→"轮", 与TaskInfoBar一致; 模型/轮次标签颜色TERTIARY(#999)→PRIMARY(#595959)提亮 - 小欧-2026-09-09
-// 编辑历史: 2026-09-28 小欧 - 活跃任务注入(设计文档[76] 6.11): 加merged_inputs折叠块(默认收起,展开看全文) — 小欧-2026-09-28
-// 编辑历史: 2026-09-30 小欧 - [81]v1.4-H18修复: 状态标签按后端 status 字段正确映射
+// 编辑历史: 2026-09-28 小欧 - 活跃任务注入: 加merged_inputs折叠块(默认收起,展开看全文) — 小欧-2026-09-28
+// 编辑历史: 2026-09-30 小欧 - 修复: 状态标签按后端 status 字段正确映射
 //   (completed→已完成/executing→执行中/paused→已暂停/failed→失败/cancelled→已取消)，
 //   原实现`t.status==='failed'?'失败':'成功'`把 executing/paused/cancelled 全标成"成功" — 小欧-2026-09-30
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.18 + 5.10.5 + 5.10.8: 新增上下文链接链号徽标 —— 按
+// 编辑历史: 2026-10-03 小欧 - 新增上下文链接链号徽标 —— 按
 //   context_root_task_id 归链(升序首遇链根递增), 仅链长>1 才编号与渲染(判据合一, 消断号), 配色改
 //   Colors.INFO 达 WCAG AA; 并纠正下方头注释"类型徽标(context_link_mode)"之过时描述(本文件该字段零使用) — 小欧-2026-10-03
 // 编辑历史: 2026-10-03 小欧 - 视觉修正: 链号徽标背景 #e6f4ff 与激活行背景(#e6f4ff)撞色, 激活行上徽标底色融入行背景丢分层
 //   → 徽标背景改 #f5f5f5 与同行轮次标签一致, 字色保留 Colors.INFO(#096dd9 on #f5f5f5 ≈ 4.9:1, 达 WCAG AA) — 小欧-2026-10-03
 // 编辑历史: 2026-10-05 小欧 - 左列 task 卡 response 接 Markdown: 传 renderExpanded 使展开态排版、折叠态维持原首2行纯文本;
 //   恒 markdown=true 不受设置开关控制(仅受折叠开关控制) — 小欧-2026-10-05
-// 编辑历史: 2026-10-08 小欧 - 文档[11]: 追加注入消息逐条独立成块(原先 marginTop:4 共用一条竖线, 多条连成一串无间隔)
+// 编辑历史: 2026-10-08 小欧 - 追加注入消息逐条独立成块(原先 marginTop:4 共用一条竖线, 多条连成一串无间隔)
 // 编辑历史: 2026-10-21 小杨 - 新增推荐行与引用台账行（可选，缺省不渲染）：
 //   推荐=本轮被工具动过 ≥2 次且可预览的文件；台账=本任务引用过的文件（现场重读恢复，不存旧快照）；
 //   键口径改与后端一致（绝对→相对 root、反斜杠→正斜杠），否则推荐恒空 — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 推荐只收文本预览；台账按 taskId 精确取，删最新批次兜底 — 小杨-2026-10-21
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -97,7 +98,7 @@ import { CollapsibleText } from '../pipeline/CollapsibleText';
 //   (用户明示"task 下的 mark 显示不受设置的开关的控制") —— 直接传 markdown={true} 绕过 MD_IMPL 之外的开关
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
 
-// 2026-09-30 小欧 [81]v1.4-H18: 左列任务状态标签——按后端 status 枚举正确显示。
+// 2026-09-30 小欧 - 左列任务状态标签——按后端 status 枚举正确显示。
 //   DB 合法值: completing→completed/executing/paused/failed/cancelled（db_initializer 默认 'executing'）
 const TASK_STATUS_LABEL: Record<string, { name: string; color: string }> = {
   completed: { name: '已完成', color: Colors.TEXT.TERTIARY },
@@ -166,29 +167,18 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     () =>
       recentFiles
         .filter(
-          (x) => (roundHits.get(x.path) ?? 0) >= 2 && x.preview !== 'none'
+          (x) => (roundHits.get(x.path) ?? 0) >= 2 && x.preview === 'text'
         )
         .slice(0, 3),
     [recentFiles, roundHits]
   );
-  /** 引用台账：按任务取（store 侧 transient 列表，不入库）
-   *  2026-10-21 小杨 - 修复（高危）：原实现用 taskId 空串回落 + "取最新一批"，
-   *   而 getSentRefLedger 的空串是 falsy → **返回整本台账** → 同一批引用被渲染到**每一个**任务卡上
-   *   （历史任务的引用归属被凭空伪造）。现改为：只挂到**最新一条任务**卡，且按批次 ts 取全。
-   */
+  /** 引用台账：按任务精确取（store 侧 transient 列表，不入库；start 帧已绑定真实 taskId）— 小杨-2026-10-21 */
   const ledgerForTask = React.useCallback(
     (taskId: string) => {
       if (!sessionId) return [];
-      const matched = chatStreamStore.getSentRefLedger(sessionId, taskId);
-      if (matched.length > 0) return matched;
-      if (!isLatestTaskId(taskId)) return []; // 非最新任务不回落
-      const pending = chatStreamStore.getSentRefLedger(sessionId, '');
-      if (pending.length === 0) return [];
-      const newestTs = pending[0].ts;
-      return pending.filter((e) => e.ts === newestTs);
+      return chatStreamStore.getSentRefLedger(sessionId, taskId);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sessionId, latestTaskId]
+    [sessionId]
   );
   /** BR1 恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
   const quoteAfterReread = React.useCallback(
@@ -372,7 +362,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               )}
 
               {/* 状态标签 */}
-              {/* 2026-09-30 小欧 [81]v1.4-H18: 按 TASK_STATUS_LABEL 映射，未知状态兜底回退展示原始值 */}
+              {/* 2026-09-30 小欧 - 按 TASK_STATUS_LABEL 映射，未知状态兜底回退展示原始值 */}
               {(() => {
                 const st = TASK_STATUS_LABEL[t.status];
                 return (
@@ -486,7 +476,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
                     <div
                       key={i}
                       style={{
-                        // 2026-10-08 小欧 - 文档[11]: 逐条独立成块, 多条不连成串
+                        // 2026-10-08 小欧 - 逐条独立成块, 多条不连成串
                         marginTop: 6,
                         padding: '4px 8px',
                         backgroundColor: '#fafafa',

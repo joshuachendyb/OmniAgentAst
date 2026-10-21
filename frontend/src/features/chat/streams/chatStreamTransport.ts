@@ -1,19 +1,19 @@
-// [63] 5.3：SSE 传输层——POST 首连 / GET after_seq 续传 / 读循环 / 指数退避 /
+// SSE 传输层——POST 首连 / GET after_seq 续传 / 读循环 / 指数退避 /
 //   180s 头超时 / 60s 空闲超时（HITL 等待期暂停）/ 错误分类与轮询观察。
 //   迁移源：useSSE.ts:779-1179（sendMessageInternal/reconnect 读循环链）
 //         + useSSE.ts:121-404（模块级 helper：classifyError/handleSSEError/
 //           ERROR_CONFIG_MAP/calculateReconnectDelay/pollSessionTaskStatus/TASK_POLL_*）
 //   本层不持有任何 React 状态，状态宿主唯一为 Store session（5.4）。
 
-// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: [63] 5.3 SSE 传输层落地(POST/GET 续传/读循环/退避/轮询观察/错误中心，
+// 编辑历史: 2026-09-29 21:37:55 小欧 - 新建: SSE 传输层落地(POST/GET 续传/读循环/退避/轮询观察/错误中心，
 //   迁移自 useSSE.ts:779-1179 + :121-404) — 小欧-2026-09-29 21:37:55
-//   相对 [63] 5.3 原稿的 6 处修正（均为避免功能退化/死代码，非风格改动）——小欧-2026-09-29 21:37:55：
+//   相对原稿的 6 处修正（均为避免功能退化/死代码，非风格改动）——小欧-2026-09-29 21:37:55：
 //   ① onError 业务错误帧不再停泵：后端 event_emitter.py:84-109 在 ReAct 循环内 yield blocked/
 //      user_rejected 等 error 中间帧，Agent 继续执行并最终发 final；原稿 `ERROR_BRANCH[t] ?? 'failed'`
 //      会杀掉读循环、丢掉 final。改按 from_backend(sseParser.ts:654 既有契约) + 恢复类白名单判别。
-//   ② 补 onMerged 接线（sseParser.ts:153/:947，[76] 6.14 注入应答）：原稿 5.3 漏接致提示条/高亮永不触发；
+//   ② 补 onMerged 接线（sseParser 注入应答事件）：原实现漏接致提示条/高亮永不触发；
 //      同步在 5.1 StreamEvent 增 'merged' kind。
-//   ③ scheduleReconnect 只走 GET 续传不回退重 POST：复原 useSSE.ts:813-821 F6/B1 根治口径，
+//   ③ scheduleReconnect 只走 GET 续传不回退重 POST：复原既有根治口径，
 //      原稿 onReconnect → sendStreamRequest 会重新 POST 复活"双任务/僵尸任务"。
 //   ④ ERROR_CONFIG_MAP 复用 @/services/error/handler 的 getErrorConfig（2026-09-27 已收敛的唯一兜底口），
 //      不再原样复制第二份同义表（DRY，且直索引 ERROR_CONFIG_MAP 有白屏前科 handler.ts:14）。
@@ -34,17 +34,17 @@
 //   ③ releaseUnsubscribed（60s 宽限期满）只断流未停轮询 → 同步置 pollSignal.aborted=true，
 //      堵 observeByPolling 空转；
 //   ④ sendStreamRequest 换发消息时旧轮询不退出 → 先 abort 旧连接 + 置位旧 pollSignal 再新建信号；
-//   ⑤ [63] 5.15 归位补漏(BUG-14)：onAuthorizationRequired 覆写 pendingAuthorization 前，先对被顶替的
+//   ⑤ 归位补漏：onAuthorizationRequired 覆写 pendingAuthorization 前，先对被顶替的
 //      旧 confirm_id 发 confirm(false) —— 原实现只在 useAuthorization 的 React effect 里拒旧
 //      pendingRef，同批 commit 的中间帧拿不到 → 中间请求静默泄漏到后端等超时。覆写发生处即本处，
 //      prev 必然可见，是唯一可靠归属点（DRY: 单一 owner，hook 侧同步删重复分支）；
 //      为此 import 增补 taskControlApi（与 sessionTaskApi 同模块）— 小欧-2026-09-30 01:05:17
 // 编辑历史: 2026-09-30 14:30 小欧 - EOF 补收尾接回重连（加终态守卫与上限）；抽 markDisconnected/resetPollSignal；轮询捕获信号对象
-// 编辑历史: 2026-10-01 小欧 - 解 [1] B6/B7：start 帧落 taskId 由 makeSetter 的 commit（仅 5s 落盘防抖）改走
+// 编辑历史: 2026-10-01 小欧 - 修复：start 帧落 taskId 由 makeSetter 的 commit（仅 5s 落盘防抖）改走
 //   chatStreamStore.setServerTaskId（commit 后立即 persistNow）——serverTaskId 是断点续传的唯一锚点，
 //   锚点已换而备份未换即形成"刷新落在防抖窗内 → restore 拿到旧 taskId 或 null"窗口，为本缺陷第二成因；
 //   该方法此前是全仓唯一带 persistNow 的安全写入口却零调用（生产走不到），本次复活 — 小欧-2026-10-01
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.14: body 字段 context_link_mode 改 link_enabled, 删 mode 形参
+// 编辑历史: 2026-10-03 小欧 - body 字段 context_link_mode 改 link_enabled, 删 mode 形参
 //   (值取自已提交的会话快照 s.linkEnabled, 不增形参) — 小欧-2026-10-03
 // 编辑历史: 2026-10-03 小欧 - fre2e_15 红线修复: resumeStreamRequest 里 GET 建连成功即置
 //   isReceiving/isConnected=true(与 POST 首连同语义)。此前续传路从不置接收态, 切路由回来后帧在流但
@@ -56,6 +56,7 @@
 //   改为必须 id 相等才关窗。原降级分支会把"无 id 的 rejected"(safety 拦截/user 拒绝记忆, 二者本就
 //   无确认流程) 到达时, 此刻开着的无关 HITL 弹窗一并关掉。确认终态现由后端必带 confirm_id — 小欧-2026-10-11
 // 编辑历史: 2026-10-21 小杨 - 消息体支持随消息上行 refs（首连与插话两条 POST 路径一致） — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 上行前同时剥离 pending/invalid 前端内存态 — 小杨-2026-10-21
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -64,7 +65,7 @@ import {
   getErrorConfig,
   handleSSEError,
 } from '@/services/error/handler';
-// 2026-09-30 00:52 小欧 - [63] 5.15 归位补漏：taskControlApi 用于"顶替即拒"旧 HITL 请求(BUG-14)
+// 2026-09-30 00:52 小欧 - 归位补漏：taskControlApi 用于"顶替即拒"旧 HITL 请求
 import { sessionTaskApi, taskControlApi } from '@/services/api/task.api';
 import { getAccessToken } from '@/services/api/client';
 import type { ExecutionStep } from '@/types/execution';
@@ -186,8 +187,8 @@ export interface StreamBodyInput {
   sessionId: string;
   linkEnabled: boolean;
   allowInterject: boolean;
-  /** 本轮引用（可含前端内存态 pending 字段，上行前剥离） */
-  refs?: Array<ChatRefPayload & { pending?: boolean }>;
+  /** 本轮引用（可含前端内存态 pending/invalid 字段，上行前剥离）— 小杨-2026-10-21 */
+  refs?: Array<ChatRefPayload & { pending?: boolean; invalid?: boolean }>;
 }
 
 export const buildStreamBody = (
@@ -201,8 +202,10 @@ export const buildStreamBody = (
     allow_interject: i.allowInterject,
   };
   if (i.refs && i.refs.length > 0) {
-    // 剥 pending：它只是前端"正文在途"标记，后端不认识也不该知道
-    body.refs = i.refs.map(({ pending: _pending, ...r }) => r);
+    // 剥前端内存态：pending=正文在途，invalid=发送前校验失败；后端均不消费 — 小杨-2026-10-21
+    body.refs = i.refs.map(
+      ({ pending: _pending, invalid: _invalid, ...r }) => r
+    );
   }
   return body;
 };
@@ -218,7 +221,7 @@ export async function sendStreamRequest(
 ): Promise<void> {
   // 前置状态（迁自 useSSE.ts:791-802：非重连才复位 seq、置接收/连接态）
   s.abortController?.abort(); // 2026-09-29 小欧：断上一条连接（等价 useSSE.ts:796 disconnect(false,...)），防连接泄漏
-  // 2026-09-29 23:52:07 小欧（[63] 5.3 防退化修复 · F9）：换发必须先中止**旧轮询观察**再放行新流。
+  // 2026-09-29 23:52:07 小欧（防退化修复）：换发必须先中止**旧轮询观察**再放行新流。
   //   旧 useSSE.ts.bak:796 disconnect() 走 unmount 路径，会把 pollSignalRef 一并 abort；
   //   5.3 原稿只 abort abortController，而 observeByPolling 只认 pollSignal
   //   （本文件 observeByPolling 首行 `if (s.pollSignal.aborted) return 'aborted'`），
@@ -257,7 +260,7 @@ export async function sendStreamRequest(
           content,
           sessionId: s.sessionId,
           linkEnabled: s.linkEnabled,
-          allowInterject: s.allowInterject, // 2026-10-06 小欧 - 文档[11] 3.4.4: 随消息携带, 后端 None=沿用会话当前值
+          allowInterject: s.allowInterject, // 2026-10-06 小欧 - 随消息携带, 后端 None=沿用会话当前值
           refs,
         })
       ),
@@ -275,7 +278,7 @@ export async function sendStreamRequest(
 }
 
 /**
- * 插话投递（2026-10-07 小欧 - 文档[11] 决策 9/11；独立于 sendStreamRequest）
+ * 插话投递（2026-10-07 小欧 - 独立于 sendStreamRequest）
  *
  * 为什么必须独立（本函数存在的全部理由，勿与 sendStreamRequest 合并）：
  *   sendStreamRequest 开头即 s.abortController?.abort() 并重置 lastSeq/isReceiving/status/
@@ -312,7 +315,7 @@ export async function postInterject(
   await readToEnd(res.body); // 只读到结束，不解析/不派发：merged 帧由目标任务流转发，重复消费会双渲
 }
 
-/** 2026-10-07 小欧 - 文档[11]: 插话响应体只读到结束（不解析），避免与目标任务流重复消费同一帧 */
+/** 2026-10-07 小欧 - 插话响应体只读到结束（不解析），避免与目标任务流重复消费同一帧 */
 async function readToEnd(body: ReadableStream<Uint8Array>): Promise<void> {
   const reader = body.getReader();
   for (;;) {
@@ -323,7 +326,7 @@ async function readToEnd(body: ReadableStream<Uint8Array>): Promise<void> {
 
 /**
  * 恢复状态机 ACTIVE + GET_* 分支（5.4 resume 委派）：按 after_seq 续传同一流态缓冲，绝不重新 POST。
- * 不可重试错误类型不进循环；可重试耗尽后转轮询观察终态（2026-07-12 北京老陈裁定：不自动 cancel）。
+ * 不可重试错误类型不进循环；可重试耗尽后转轮询观察终态（2026-07-12 约定：不自动 cancel）。
  */
 export async function resumeStreamRequest(
   s: ChatStreamSession
@@ -336,7 +339,7 @@ export async function resumeStreamRequest(
   //   换对象不影响在跑的旧轮询（它只看自己那一个），置位则必然被它看到。
   resetPollSignal(s);
   if (!s.serverTaskId) return 'pending_draft';
-  if (s.resumeInFlight) return 'recovering'; // 防双 pump（V4）
+  if (s.resumeInFlight) return 'recovering'; // 防双 pump
   // 2026-09-30 07:58 小欧 - 控制器所有权：读循环在飞时不得抢占 abortController。
   //   下方循环每次 attempt 都 commit d.abortController = ctl，旧流就此失去唯一 abort 句柄——
   //   stop()/clearCompleted() 只能断新流，旧流继续吐帧并继续 emitEvent（双事件 + 连接泄漏）。
@@ -411,7 +414,7 @@ export async function resumeStreamRequest(
           d.reconnectStatus = 'reconnecting';
         });
         if (attempt === MAX_ATTEMPTS - 1) {
-          // 2026-09-29 23:52:07 小欧（[63] 5.3 防退化修复 · 旧 B1【高】）：
+          // 2026-09-29 23:52:07 小欧（防退化修复）：
           //   重连耗尽必须置 reconnectStatus='failed'。旧 useSSE.ts.bak:1155-1159
           //   `if (reconnectAttemptsRef.current >= config.maxAttempts) { setReconnectStatus('failed') }`
           //   明确置位；5.3 原稿直接 observeByPolling，reconnectStatus 一路停在 'reconnecting'
@@ -420,7 +423,7 @@ export async function resumeStreamRequest(
           commit(s, (d) => {
             d.reconnectStatus = 'failed';
           });
-          // 2026-09-29 23:22:19 小欧（[63] 5.3 防退化修复）：重连耗尽必须向用户报一次错。
+          // 2026-09-29 23:22:19 小欧（防退化修复）：重连耗尽必须向用户报一次错。
           //   旧 useSSE 的本地 handleSSEError 包装器（useSSE.ts.bak:303-324）在耗尽时先
           //   console.warn + 转入 pollSessionTaskStatus，随后**必发**一次
           //   onError{error_type, error_message: ERROR_CONFIG_MAP[errorType].showMessage ?? '连接失败'}。
@@ -460,7 +463,7 @@ type TaskEntry = Awaited<
   ReturnType<typeof sessionTaskApi.listTasks>
 >['tasks'][number];
 
-/** 以 chat_tasks 为唯一权威源回读该会话当前 task 的任务条目（DRY，S1）。
+/** 以 chat_tasks 为唯一权威源回读该会话当前 task 的任务条目（DRY）。
  *  2026-09-30 小欧 - 抽此 helper：原先「listTasks → find(task_id)」在 store.stop(STOP_RACE)、
  *  transport.handleGetNotFound、transport.observeByPolling 各写一份，三份口径极易漂移。
  *  只抽"回读"这一重复点；命中终态后的落盘/释放/文案三处语义确有差异，各自保留。 */
@@ -526,7 +529,7 @@ async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
   commit(s, (d) => {
     markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
   });
-  // 2026-09-29 23:22:19 小欧（[63] 5.3 防退化修复）：轮询耗尽事件两处退化，一并复原——
+  // 2026-09-29 23:22:19 小欧（防退化修复）：轮询耗尽事件两处退化，一并复原——
   //   ① 文案：原 useSSE.ts.bak:227 为「连接已断开且任务仍在执行，请手动确认任务状态」，
   //      迁移稿写成「轮询观察超时：任务终态未知」，把"请手动确认"的用户指引整段丢了
   //      （铁规 1.2：功能只能增强/正确，严禁退化）。
@@ -586,7 +589,7 @@ function armIdleWatch(s: ChatStreamSession): void {
  *   （与 5.4 clearCompleted/destroySession 同口径）。否则旧泵 read 抛的 AbortError 落到
  *   handleTransportError:640 非静默分支 → console.error 噪声 + reconnectStatus='failed'/
  *   isReceiving=false + observeByPolling 轮询，与本函数紧随其后的 resumeStreamRequest 并发抢同一会话
- *   （双恢复器）。2026-09-07 北京老陈裁定的 REQUEST-ABORT 静默默认路径正是为此设的标志。
+ *   （双恢复器）。2026-09-07 约定的 REQUEST-ABORT 静默默认路径正是为此设的标志。
  */
 async function recoverFromIdle(s: ChatStreamSession): Promise<void> {
   const idleMs = Date.now() - s.lastDataTime;
@@ -610,7 +613,7 @@ async function recoverFromIdle(s: ChatStreamSession): Promise<void> {
   s.intentionalAbort = true; // 主动断旧读，非连接故障：抑制 AbortError 误判（防并发轮询+续传双恢复）
   s.abortController?.abort();
   if (s.pumpDone) await s.pumpDone.catch(() => undefined);
-  // 2026-09-29 22:47:10 小欧（[63] 5.3 防退化修复）：首响应未到（无 task_id）时不得续传。
+  // 2026-09-29 22:47:10 小欧（防退化修复）：首响应未到（无 task_id）时不得续传。
   //   resumeStreamRequest 开头 `if (!s.serverTaskId) return 'pending_draft'` 只是短路返回，
   //   既不重 POST（正确，避免重复/僵尸任务）也不改 reconnectStatus —— 而 armIdleWatch 已把
   //   状态置为 'reconnecting'，于是 UI 永久卡在"重连中"而实际无任何调度在进行。
@@ -647,7 +650,7 @@ async function pump(
       let buf = '';
       commit(s, (d) => {
         d.lastDataTime = Date.now();
-        // 2026-09-29 22:47:10 小欧（[63] 5.3 防退化修复）：5.3 原稿只重置 lastDataTime，漏了
+        // 2026-09-29 22:47:10 小欧（防退化修复）：原实现只重置 lastDataTime，漏了
         //   lastBizTs。useSSE.ts.bak:936 原文"新一轮流重置业务基线, 防上轮陈旧值致钟面误升档"
         //   ——业务基线只由 onBiz 写，新一轮若首个业务帧迟迟不来，lastBizTs 仍是上一轮的
         //   陈旧值，ClockStopwatch 一开局就显示上轮耗时、静默升档被提前触发。
@@ -688,7 +691,7 @@ async function pump(
             if (mayResume) void scheduleReconnect(s);
             return mayResume ? 'recovering' : 'terminal';
           }
-          // 空流终态（useSSE.ts:986-993 B1：200+空 body 不得永久接收中）
+          // 空流终态（200+空 body 不得永久接收中）
           commit(s, (d) => {
             markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
             d.status = 'failed';
@@ -747,12 +750,12 @@ async function pump(
     } finally {
       commit(s, (d) => {
         d.pumpActive = false;
-        // 2026-09-29 23:22:19 小欧（[63] 5.3 防退化修复）：读循环退出必须 disarm 空闲看门狗。
+        // 2026-09-29 23:22:19 小欧（防退化修复）：读循环退出必须 disarm 空闲看门狗。
         //   原稿只在"正常结束且 lastSeq>=0"这一条路径清了 idleTimeout；流中途抛错(断连)、
         //   被 abort、以及 frame 分流(takeBranch)三条退出路径都会把 60s 定时器留在事件循环里。
         //   后果：断连后重连退避/observeByPolling 正在接管会话时，僵尸看门狗恰好在 60s 触发
         //   recoverFromIdle → 再 abort 再 resume，与既有恢复器抢同一会话（双恢复器），
-        //   并向用户误报"SSE 空闲超时"。实测 sse-reconnect-poll F1~F10 全被此污染。
+        //   并向用户误报"SSE 空闲超时"。实测重连轮询用例全被此污染。
         if (d.idleTimeout !== null) {
           window.clearTimeout(d.idleTimeout);
           d.idleTimeout = null;
@@ -780,7 +783,7 @@ async function pump(
  * @returns hooks 供 processSSEData 调用；takeBranch 读取本轮读循环是否被错误帧短路
  */
 /** Store 写入口工厂：把 React 的 setState 形状适配成 Store 的 commit 写入。
- *  2026-09-30 小欧 - 由 storeHandlers 内部局部 helper 提为模块级（S3 拆分用，逻辑逐字不变）。 */
+ *  2026-09-30 小欧 - 由 storeHandlers 内部局部 helper 提为模块级（拆分用，逻辑逐字不变）。 */
 function makeSetter<T>(
   s: ChatStreamSession,
   read: () => T,
@@ -793,7 +796,7 @@ function makeSetter<T>(
 }
 
 /** lastSeq 双向视图：sseParser 侧按 ref 语义读写，落到 Store 的 lastSeq（取 max，单调不回退）。
- *  2026-09-30 小欧 - 由 storeHandlers 内部局部对象提为模块级（S3 拆分用，逻辑逐字不变）。 */
+ *  2026-09-30 小欧 - 由 storeHandlers 内部局部对象提为模块级（拆分用，逻辑逐字不变）。 */
 function makeSeqRef(s: ChatStreamSession) {
   return {
     get current() {
@@ -833,7 +836,7 @@ function refHandlers(s: ChatStreamSession) {
         });
       },
     },
-    scheduleFlush: () => flushPending(s), // rAF 批量刷新（S12，useSSE.ts:504-509 同构）
+    scheduleFlush: () => flushPending(s), // rAF 批量刷新（useSSE.ts:504-509 同构）
     setCurrentResponse: set(
       () => s.currentResponse,
       (d, v) => {
@@ -856,10 +859,10 @@ function refHandlers(s: ChatStreamSession) {
     //   已随之删除，收尾两字段全链改由 markDisconnected 单一入口承担（DRY）
     // 2026-09-30 小欧 - 删 `disconnect: () => undefined` 空壳：sseParser 侧解构后零使用，
     //   停止语义唯一入口是 chatStreamStore.stop()，断流由 pump() 的 abort() 负责
-    // 2026-10-01 小欧 [1] B6/B7: start 帧落 taskId 改走 chatStreamStore.setServerTaskId。
+    // 2026-10-01 小欧 - start 帧落 taskId 改走 chatStreamStore.setServerTaskId。
     //   原经 makeSetter 的 commit 只走 5s 落盘防抖，而 serverTaskId 是**断点续传的唯一锚点** ——
     //   锚点已换而备份未换，形成"刷新落在防抖窗内 → restore 拿到旧 taskId 或 null"的窗口，
-    //   正是 [1] 缺陷的第二个成因。setServerTaskId 内部 commit 后立即 persistNow(锚点变更即时落盘)，
+    //   正是该缺陷的第二个成因。setServerTaskId 内部 commit 后立即 persistNow(锚点变更即时落盘)，
     //   且它此前是全仓唯一带 persistNow 的安全写入口却零调用(生产走不到)，本次复活。
     setServerTaskId: (v: string) =>
       chatStreamStore.setServerTaskId(s.sessionId, v),
@@ -925,7 +928,7 @@ function broadcastHandlers(s: ChatStreamSession) {
       emitEvent(s, 'complete', { full, meta, steps });
     },
     onMerged: (mergedIntoTaskId: string | null) =>
-      // 2026-09-29 小欧：[76] 6.14 注入应答事件（sseParser.ts:947）——5.3 原稿漏接，漏则提示条/高亮永不触发
+      // 2026-09-29 小欧：注入应答事件（sseParser）——原实现漏接，漏则提示条/高亮永不触发
       emitEvent(s, 'merged', { mergedIntoTaskId }),
     onRetry: (message: string, waitTime?: number) =>
       emitEvent(s, 'retry', { message, waitTime }),
@@ -947,7 +950,7 @@ function broadcastHandlers(s: ChatStreamSession) {
 function hitlHandlers(s: ChatStreamSession) {
   return {
     onAuthorizationRequired: (data: PendingAuthorizationPayload) => {
-      // 2026-09-30 00:52 小欧 - [63] 5.15 归位补漏(BUG-14 退化)：Store 单源化后"顶替即拒"
+      // 2026-09-30 00:52 小欧 - 归位补漏(退化)：Store 单源化后"顶替即拒"
       //   必须落在 Store。原实现只在 useAuthorization 的 React effect 里拒旧 pendingRef，
       //   但同一条 SSE 流内连发多帧（同批 commit）时 React 只渲染末帧 → 中间 confirm_id
       //   从未经 confirm(false)，静默泄漏到后端等到自身超时（原 2026-09-02 修的正是这个）。
@@ -1054,7 +1057,7 @@ function storeHandlers(s: ChatStreamSession) {
   let branch: ResumeResult | null = null;
   return {
     hooks: {
-      // 2026-09-30 小欧 - storeHandlers 瘦身为纯组装器（S3 SLAP）：原 223 行把
+      // 2026-09-30 小欧 - storeHandlers 瘦身为纯组装器（SLAP）：原 223 行把
       //   ref 形状适配 / 帧事件广播 / HITL 业务 / 终态裁决四类职责混在一个函数里，
       //   已按职责拆为四个工厂（实现逐字搬迁，逻辑零改动）：
       //     refHandlers      —— setState 形状 ↔ Store 写入的翻译，不含业务判断
@@ -1072,7 +1075,7 @@ function storeHandlers(s: ChatStreamSession) {
   };
 }
 
-/** flushPending：pendingSteps 批量落 executionSteps（迁自 useSSE.ts:487-509 S12 flush 语义） */
+/** flushPending：pendingSteps 批量落 executionSteps（迁自 useSSE.ts:487-509 flush 语义） */
 function flushPending(s: ChatStreamSession): void {
   if (s.flushScheduled) return;
   commit(s, (d) => {
@@ -1137,7 +1140,7 @@ export async function handleTransportError(
     d.reconnectStatus = 'failed';
     markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
   });
-  // 重试耗尽不自动取消（2026-07-12 北京老陈裁定）：任务可能仍在执行，轮询会话任务列表观察终态
+  // 重试耗尽不自动取消（2026-07-12 约定）：任务可能仍在执行，轮询会话任务列表观察终态
   if (s.serverTaskId) return await observeByPolling(s);
   emitEvent(s, 'error', transportError(t, String(e)));
   return 'failed';
@@ -1146,8 +1149,8 @@ export async function handleTransportError(
 /**
  * 指数退避重连调度（迁自 useSSE.ts:1153-1199 reconnect）。
  * 2026-09-29 小欧：只走 GET after_seq 续传，**绝不重新 POST**——
- *   useSSE.ts:813-821 已根治"重连中尚无 taskId 再 POST → 双任务/僵尸任务"（F6/B1）；
- *   5.3 原稿 onReconnect 回 sendStreamRequest(s, content, mode) 会重新 POST 复活该 bug，故不回退。
+ *   useSSE 已根治"重连中尚无 taskId 再 POST → 双任务/僵尸任务"；
+ *   原实现 onReconnect 回 sendStreamRequest(s, content, mode) 会重新 POST 复活该缺陷，故不回退。
  *   无 taskId（首响应未到）时无续传目标：终止重连，等用户重发。
  */
 function scheduleReconnect(s: ChatStreamSession): void {
