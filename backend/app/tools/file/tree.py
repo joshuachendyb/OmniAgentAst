@@ -39,88 +39,88 @@ async def _get_directory_tree(
     include_hidden: bool = False,
     sort_by: str = "name",
 ) -> Dict[str, Any]:
-    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden — 小欧 2026-07-06 去mtime排序"""
+    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden — 小欧 2026-07-06 去mtime排序 — 小杨 2026-10-21 单遍scandir重写：建树+统计一并完成，IO减半"""
     # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查, 工具只执行
-    path = Path(dir_path)
+    def _name_key(e: os.DirEntry) -> str:
+        return e.name.lower()
 
-    def _count_tree_fs(root: Path, depth: int = 0) -> Tuple[int, int, int]:
-        fc = dc = ts = 0
+    def _mtime_key(e: os.DirEntry) -> float:
         try:
-            for entry in os.scandir(root):
+            return e.stat().st_mtime
+        except OSError:
+            return 0.0
+
+    def _scan_dir(dir_str: str, depth: int, _visited: set) -> Tuple[Optional[Dict[str, Any]], int, int, int]:
+        """单遍扫描：一次 scandir 同时建树+统计(fc/dc/bytes)。
+        Windows 上 scandir 的 entry.is_dir(follow_symlinks=False) 零额外 syscall；
+        只对 symlink 目录查 realpath 成环（普通目录不成环，省掉每目录一次 resolve）。"""
+        if depth > max_depth:
+            return None, 0, 0, 0
+        try:
+            ctx = os.scandir(dir_str)
+        except (PermissionError, OSError):
+            return None, 0, 0, 0
+        dir_entries: list = []
+        fc = dc = ts = 0
+        with ctx:
+            for entry in ctx:
+                if not include_hidden and entry.name.startswith('.'):
+                    continue
                 try:
                     if entry.is_dir(follow_symlinks=False):
-                        if not include_hidden and entry.name.startswith('.'):
-                            continue
-                        dc += 1
-                        if depth < max_depth:  # 与 _build_tree 深度一致 — 小沈 2026-07-08
-                            sub_f, sub_d, sub_s = _count_tree_fs(Path(entry.path), depth + 1)
-                            fc += sub_f; dc += sub_d; ts += sub_s
+                        dir_entries.append(entry)
                     else:
-                        if not include_hidden and entry.name.startswith('.'):
-                            continue
                         fc += 1
-                        ts += entry.stat().st_size
+                        try:
+                            ts += entry.stat().st_size
+                        except OSError:
+                            pass
                 except (PermissionError, OSError):
-                    pass
-        except (PermissionError, OSError):
-            pass
-        return fc, dc, ts
+                    continue
+        dir_entries.sort(key=_mtime_key if sort_by == "mtime" else _name_key)
 
-    def _sort_items(items):
-        """按名称排序目录项 """
-        return sorted(items, key=lambda x: x.name.lower())
-
-    def _sort_items_by_mtime(items):
-        """按修改时间降序排序目录项(最新在前) — 小欧 2026-07-12 补齐sort_by=mtime"""
-        return sorted(items, key=lambda x: x.stat().st_mtime, reverse=True)
-
-    def _build_tree(current_path: Path, depth: int = 0, _visited: Optional[set] = None) -> Optional[Dict[str, Any]]:
-        if _visited is None:
-            _visited = set()
-        resolved = current_path.resolve()
-        if resolved in _visited:
-            logger.warning(f"[tree] 跳过循环符号链接: {current_path}")
-            return None
-        _visited.add(resolved)
-        if depth > max_depth:
-            return None
-        try:
-            current_path.stat()  # 只检查权限，返回值不用
-        except OSError:
-            return None
-        node: Dict[str, Any] = {
-            "name": current_path.name,
-            "path": str(current_path.absolute()),
-            "type": "directory",
-        }
         children: list = []
-        try:
-            items = [item for item in current_path.iterdir() if item.is_dir()]
-            if not include_hidden:
-                items = [item for item in items if not item.name.startswith('.')]
-            _sorter = _sort_items_by_mtime if (sort_by == "mtime") else _sort_items
-            for item in _sorter(items):
-                child = _build_tree(item, depth + 1, _visited)
-                if child:
-                    children.append(child)
-        except (PermissionError, OSError):
-            pass
-        node["children"] = children
-        return node
+        for entry in dir_entries:
+            if entry.is_symlink():
+                try:
+                    real = os.path.realpath(entry.path, strict=False)
+                except OSError:
+                    real = entry.path
+                if real in _visited:
+                    logger.warning(f"[tree] 跳过循环符号链接: {entry.path}")
+                    continue
+                _visited.add(real)
+            else:
+                _visited.add(os.path.normcase(entry.path))
+            child, c_fc, c_dc, c_ts = _scan_dir(entry.path, depth + 1, _visited)
+            if child is not None:
+                children.append(child)
+                fc += c_fc
+                dc += c_dc
+                ts += c_ts
+            dc += 1
 
-    tree = await asyncio.to_thread(_build_tree, path, 0, None)
+        node: Dict[str, Any] = {
+            "name": os.path.basename(dir_str.rstrip('\\/')) or dir_str,
+            "path": os.path.abspath(dir_str),
+            "type": "directory",
+            "children": children,
+        }
+        return node, fc, dc, ts
+
+    def _run() -> Tuple[Optional[Dict[str, Any]], int, int, int]:
+        visited: set = set()
+        visited.add(os.path.normcase(dir_path))
+        return _scan_dir(dir_path, 0, visited)
+
+    tree, fc, dc, ts = await asyncio.to_thread(_run)
     if tree is None:
         return {"error_detail": "查询目录树失败", "params": {"path": dir_path}}
-
-    fc, dc, ts = await asyncio.to_thread(_count_tree_fs, path)
     return {
         "tree": tree,
-        "statistics": {
-            "file_count": fc,
-            "dir_count": dc,
-            "total_size": ts,
-        },
+        "statistics": {"file_count": fc, "dir_count": dc, "total_size": ts},
     }
+
 
 
 def _build_tree_llm_data(
@@ -155,7 +155,7 @@ def _build_tree_llm_data(
 async def tree(
     path: str,
     include_hidden: bool = False,
-    max_depth: int = 5,
+    max_depth: int = 10,
     sort_by: str = "name",
 ) -> Dict[str, Any]:
     """列出目录树 — 小沈 2026-07-03 从list_directory拆分 — 小欧 2026-07-11 路径参数统一为path"""

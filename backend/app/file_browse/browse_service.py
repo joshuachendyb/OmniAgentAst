@@ -43,7 +43,23 @@ from app.file_browse.errors import (
 )
 
 # ── 常量（后缀规则唯一真源，前端不自己判后缀） ──────────────────────────
-TEXT_EXTS = {".txt", ".md"}
+# 2026-10-21 小杨 - 北京老陈拍板：文本文件的真判定在 _preview_of 的**实探**
+#   （首 8KB 查 NUL）；本表只承担"已知后缀零 IO 短路"（树扫描热路径免开文件），
+#   覆盖常用文本/代码/配置后缀，不认识的落实探兜底。
+TEXT_EXTS = {
+    # 文本/文档
+    ".txt", ".md", ".log", ".csv", ".tsv",
+    # 前端
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".html", ".htm", ".css", ".scss", ".less", ".vue", ".svelte",
+    # 脚本/后端语言
+    ".py", ".pyw", ".java", ".go", ".rs", ".c", ".h", ".cpp", ".hpp", ".cc",
+    ".cs", ".php", ".rb", ".sh", ".bat", ".cmd", ".ps1", ".psm1",
+    ".lua", ".r", ".dart", ".swift", ".kt", ".kts", ".sql", ".graphql", ".proto",
+    # 配置/数据
+    ".json", ".jsonc", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".conf",
+    ".env", ".xml", ".properties", ".gradle",
+}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico", ".svg"}
 IMAGE_MIME = {                      # 显式映射，不用 mimetypes 猜：猜错会把二进制当 text/plain 吐出
     ".png": "image/png",
@@ -57,8 +73,8 @@ IMAGE_MIME = {                      # 显式映射，不用 mimetypes 猜：猜�
 }
 MAX_TEXT_BYTES = 2 * 1024 * 1024        # C1，北京老陈定
 MAX_IMAGE_BYTES = 10 * 1024 * 1024     # C3，北京老陈定
-MAX_TREE_DEPTH = 5                     # C2，北京老陈定
-MAX_TREE_NODES = 5000                  # C2，北京老陈定
+MAX_TREE_DEPTH = 10                    # C2 2026-10-21 北京老陈拍板：5→10（性能实测达标后放宽）
+MAX_TREE_NODES = 100000                 # C2 2026-10-21 北京老陈拍板：5000→100000（前端虚拟滚动+后端单遍扫描就位后放宽）
 
 # utf-8-sig 必须在 utf-8 之前 —— 2026-10-13 小欧 - 真实缺陷(单测 c03 抓出)：
 #   含 BOM 的文件用 utf-8 解码**也会成功**，只是首字符残留 '\ufeff'，
@@ -151,13 +167,23 @@ def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
 # ══════════════════════════════════════════════════════════════════════
 
 def _preview_of(path: Path) -> str:
-    """返回 text / image / none —— 后缀规则唯一真源（前端不自己判）。"""
+    """返回 text / image / none —— 后缀规则唯一真源（前端不自己判）。
+
+    2026-10-21 小杨 - 北京老陈拍板"文本文件是能解码的就是"：已知文本/图片后缀
+    直接短路（零 IO，树扫描热路径）；未知后缀（含 Dockerfile、LICENSE 等
+    无后缀文件）**实探**——只读首 8KB 查 NUL 空字节，含 \\x00 即二进制否则文本
+    （git/VSCode 同款廉价判定），解码/2MB 截断仍由 /files/read 的解码链兜底。
+    """
     suffix = path.suffix.lower()
     if suffix in TEXT_EXTS:
         return "text"
     if suffix in IMAGE_EXTS:
         return "image"
-    return "none"
+    try:
+        with open(path, "rb") as f:
+            return "none" if b"\x00" in f.read(8192) else "text"
+    except OSError:
+        return "none"
 
 
 def _fmt_time(ts: float) -> str:
@@ -235,7 +261,9 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
             except OSError:    # ④ 权限不足/坏链接
                 skipped += 1
                 continue
-            if _escapes_root(de.path, root):     # ⑥ 越界链接不列出
+            # ⑥ 越界链接不列出。2026-10-21 小杨 - 性能修复：只有**符号链接**才可能越出根，
+            #    普通条目不再调 realpath（原实现每条目一次 resolve，5 万条=几分钟级挂死）
+            if de.is_symlink() and _escapes_root(de.path, root):
                 skipped += 1
                 continue
             entries.append({
@@ -444,19 +472,28 @@ def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
 
 
 def read_text_file(rel_path: str) -> Dict[str, Any]:
-    """读 .txt / .md 正文：存在性 → 是目录 → 大小 → 类型 → 编码 五道闸门。
+    """读任意文本正文：存在性 → 是目录 → NUL 实探 → 大小 → 编码 五道闸门。
 
     2026-10-13 小欧 - KISS 修复: 原先类型闸门在前，`is_dir` 分支几乎不可达
     （目录通常无 .txt/.md 后缀，会先被类型闸门拦掉 415），属死代码。
     is_dir 提到类型判定之前：先说清"这是目录"，再说"类型不支持"。
+    2026-10-21 小杨 - 北京老陈拍板：类型闸从**后缀白名单**改为 **首 8KB NUL 实探**
+    （文本=能解码的；代码/无后缀文件全部可读），二进制拒绝语义保持。
     """
     target, rel = _resolve_within_root(rel_path)
     if not _exists(target):
         fail(NOT_FOUND)
     if target.is_dir():
         fail(INVALID_PATH, "该路径是目录，请使用目录树接口")
-    if target.suffix.lower() not in TEXT_EXTS:
-        fail(UNSUPPORTED_TYPE)
+    # 2026-10-21 小杨 - 北京老陈拍板（文本文件=能解码的）：撤"后缀白名单"闸门
+    #   （.py/无后缀一律被拒=有后缀表在颠覆语义），改**首 8KB NUL 实探**闸二进制：
+    #   含 \x00 ⇒ 拒（真二进制当文本解码只会吐乱码）；探测用 try/except OSError 兜住 Windows 锁文件。
+    try:
+        with target.open("rb") as fh:
+            if b"\x00" in fh.read(8192):
+                fail(UNSUPPORTED_TYPE)
+    except OSError:
+        fail(NOT_FOUND)
     try:
         st = target.stat()
         size = st.st_size

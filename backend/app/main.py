@@ -51,6 +51,7 @@ if sys.platform == "win32":
 
 from fastapi import Depends, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware  # 2026-10-21 小杨 - 文件页大 JSON 降量（树 3.4MB→~0.4MB）
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -138,6 +139,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 2026-10-21 小杨 - 北京老陈拍板（文件页大 JSON 降量方案第 ① 步）：
+#   GZipMiddleware 对大响应（树 3.4MB→~0.4MB）压缩 ~10 倍，浏览器自动解压，零协议改动。
+app.add_middleware(GZipMiddleware, minimum_size=2048)
 
 setup_monitoring(app)
 
