@@ -4,6 +4,11 @@
 #   （防多处分叉），后者是"安全唯一入口"（五个对外端点全部经它）。
 # 2026-10-13 小欧 - 文件名 service.py → browse_service.py：与既有 app/services/lifecycle/service.py
 #   撞名，且项目主流命名为 *_service.py（8 处）。改名后语义也更精确（非通用 service，是浏览服务）。
+# 2026-10-21 小杨 - 修文件浏览链路的判定与遍历缺陷：未知后缀文件实探改传完整路径（无后缀文件不再恒判不可预览）、
+#   目录不参与文本实探（带 .md 后缀的目录曾被判为可预览文本）、目录环按 realpath+normcase 去重、
+#   子级节点额度扣除目录自身占用（整树产出不再超 max_nodes）、带 BOM 的 UTF-16/UTF-32 文本按文本判定、
+#   解码后含 NUL 的伪文本按二进制拒绝；另：文件当树改报 INVALID_PATH、不可读目录计入 skipped、
+#   UNSUPPORTED_TYPE 文案与实际口径对齐、recent-files 的时间字段按真实语义命名为 mtime — 小杨-2026-10-21
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -43,8 +48,8 @@ from app.file_browse.errors import (
 )
 
 # ── 常量（后缀规则唯一真源，前端不自己判后缀） ──────────────────────────
-# 2026-10-21 小杨 - 北京老陈拍板：文本文件的真判定在 _preview_of 的**实探**
-#   （首 8KB 查 NUL）；本表只承担"已知后缀零 IO 短路"（树扫描热路径免开文件），
+# 2026-10-21 小杨 - 文本文件真判定在 _preview_of 的实探（首 8KB 查 NUL）；
+#   本表只承担"已知后缀零 IO 短路"（树扫描热路径免开文件），
 #   覆盖常用文本/代码/配置后缀，不认识的落实探兜底。
 TEXT_EXTS = {
     # 文本/文档
@@ -73,8 +78,8 @@ IMAGE_MIME = {                      # 显式映射，不用 mimetypes 猜：猜�
 }
 MAX_TEXT_BYTES = 2 * 1024 * 1024        # C1，北京老陈定
 MAX_IMAGE_BYTES = 10 * 1024 * 1024     # C3，北京老陈定
-MAX_TREE_DEPTH = 10                    # C2 2026-10-21 北京老陈拍板：5→10（性能实测达标后放宽）
-MAX_TREE_NODES = 100000                 # C2 2026-10-21 北京老陈拍板：5000→100000（前端虚拟滚动+后端单遍扫描就位后放宽）
+MAX_TREE_DEPTH = 10                    # 2026-10-21 小杨 - 深度上限 5→10（性能实测达标后放宽）
+MAX_TREE_NODES = 100000                 # 2026-10-21 小杨 - 节点上限 5000→100000（前端虚拟滚动+后端单遍扫描就位后放宽）
 
 # utf-8-sig 必须在 utf-8 之前 —— 2026-10-13 小欧 - 真实缺陷(单测 c03 抓出)：
 #   含 BOM 的文件用 utf-8 解码**也会成功**，只是首字符残留 '\ufeff'，
@@ -166,10 +171,10 @@ def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
 # 私有：扫描（唯一实现）
 # ══════════════════════════════════════════════════════════════════════
 
-# 2026-10-21 小杨 - 三堂会审 R4 修复（探测热路径缓存）：
+# 2026-10-21 小杨 - 探测热路径缓存：
 #   _preview_of / recent_files / read_text_file 对 unknown/无后缀文件各探一次
 #   （.git/objects 等大平目录 = 数万次 open），且 read_text_file 重复扫已在树
-#   扫描探过的文件。收敛为**单点** _probe_text（DRY）+ (路径, mtime) 缓存，
+#   扫描探过的文件。收敛为单点 _probe_text（DRY）+ (路径, mtime) 缓存，
 #   mtime 变即失效，打不开(OSError)不缓存（transient 状态不入账）。
 _PREVIEW_CACHE: Dict[str, Tuple[float, str]] = {}   # path -> (mtime, 't'|'f')
 _PREVIEW_CACHE_MAX = 100000
@@ -183,9 +188,8 @@ def _probe_text(path: Path) -> Optional[bool]:
     """首 8KB 查 NUL 空字节判定文本/二进制 —— 全模块唯一实探点。
 
     返回 None=打不开（OSError）；True=无 NUL（文本）；False=含 NUL（二进制）。
-    2026-10-21 小杨 - 三堂会审修复：带文本 BOM 的文件（记事本 UTF-16/UTF-32）
-    首字节必含 NUL，若只看 NUL 会把 UTF-16 误判二进制（实测 "hello world"
-    存 UTF-16 被 415）。BOM 是比 NUL 更强的文本证据，先判 BOM 再走 NUL。
+    2026-10-21 小杨 - 带文本 BOM 的文件（记事本 UTF-16/UTF-32）首字节必含 NUL，
+    只看 NUL 会把 UTF-16 误判二进制。BOM 是比 NUL 更强的文本证据，先判 BOM 再走 NUL。
     语义与 git/VSCode 同款廉价判定；解码与 2MB 截断仍由 read_text_file 兜底。
     """
     key = str(path)
@@ -214,9 +218,8 @@ def _probe_text(path: Path) -> Optional[bool]:
 def _preview_of(path: Path) -> str:
     """返回 text / image / none —— 后缀规则唯一真源（前端不自己判）。
 
-    2026-10-21 小杨 - 北京老陈拍板"文本文件是能解码的就是"：已知文本/图片后缀
-    直接短路（零 IO，树扫描热路径）；未知后缀（含 Dockerfile、LICENSE 等
-    无后缀文件）实探——走唯一探测点 _probe_text（首 8KB 查 NUL），
+    2026-10-21 小杨 - 文本文件=能解码的：已知文本/图片后缀直接短路（零 IO，树扫描热路径）；
+    未知后缀（含 Dockerfile、LICENSE 等无后缀文件）实探——走唯一探测点 _probe_text（首 8KB 查 NUL），
     解码/2MB 截断仍由 /files/read 的解码链兜底。
     """
     suffix = path.suffix.lower()
@@ -287,7 +290,7 @@ def _scan_dir(root: Path, target: Path, rel: str) -> Tuple[List[Dict[str, Any]],
     ⑥ **解析后越出项目根的条目（符号链接）不返回** —— 设计 4.1.3/4.1.4 硬要求：
        树里出现一个点开必然 403 的死条目，比不列出来更糟（用户会反复点）。
        注意与 v3.4「不跳过任何目录」不冲突：这里跳过的**只有越界链接**，普通目录照列。
-    ⑦ 文本实探只对文件做，且必须传**完整路径**（2026-10-21 小杨 - 三堂会审修复：
+    ⑦ 文本实探只对文件做，且必须传完整路径（2026-10-21 小杨 - 修复：
        原实现传 Path(de.name) 相对进程 CWD，Dockerfile/LICENSE 等无后缀文件恒探失败；
        目录也不该被探测——dir.md 这类带文本后缀的目录曾被误判为可预览文本）。
     """
@@ -336,8 +339,8 @@ def _escapes_root(candidate: str, root: Path) -> bool:
 def _dir_id(path: Path) -> Optional[str]:
     """目录身份（realpath + normcase）—— 环检测键。
 
-    2026-10-21 小杨 - 三堂会审修复：junction/符号链接指向祖先时，
-    realpath 会回到已访问目录；不设 visited 会无限递归（实测 loop/loop/loop）。
+    2026-10-21 小杨 - 修复：junction/符号链接指向祖先时 realpath 会回到已访问目录，
+    不设 visited 会无限递归（实测 loop/loop/loop）。
     normcase 消除 Windows 大小写/分隔符差异。
     """
     try:
@@ -365,16 +368,16 @@ def _walk(root: Path, target: Path, rel: str, depth: int, max_depth: int,
           budget: int, visited: set) -> _ScanResult:
     """递归列目录。budget = 剩余节点额度，整棵树共享（M26/C2 节点闸门）。
 
-    2026-10-21 小杨 - 三堂会审 R3 修复（预算穿透）：原先外层闸门只数
-    `len(nodes)`（本层已入库条目），递归 child 内部消费的节点数**不回收**，
+    2026-10-21 小杨 - 修复预算穿透：原先外层闸门只数
+    `len(nodes)`（本层已入库条目），递归 child 内部消费的节点数不回收，
     本层每个目录的 child 都能各自再烧一遍 budget → 总产出上界 K×budget，
-    max_nodes 阈值失真、truncated 标志随之漂移。改为**消费记账**：本层维护
+    max_nodes 阈值失真、truncated 标志随之漂移。改为消费记账：本层维护
     used（已入库条目 + 归还的 child 消费量），判闸与递归还额都走 used，
     全树产出严格 ≤ budget。child 额度须扣掉本目录自身占用的 1 格
     （budget - used - 1）：原式 budget - used 使 child 可拿满剩余额度，
     加上本目录本身后整树必然超 1（实测 max_nodes=2 出 3 个节点）。
 
-    2026-10-21 小杨 - 三堂会审修复（环检测）：visited 存已展开目录的
+    2026-10-21 小杨 - 环检测：visited 存已展开目录的
     realpath+normcase，junction/符号链接绕回祖先时整条目跳过并计 skipped。
     """
     if budget <= 0:
@@ -570,7 +573,7 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
     2026-10-13 小欧 - KISS 修复: 原先类型闸门在前，`is_dir` 分支几乎不可达
     （目录通常无 .txt/.md 后缀，会先被类型闸门拦掉 415），属死代码。
     is_dir 提到类型判定之前：先说清"这是目录"，再说"类型不支持"。
-    2026-10-21 小杨 - 北京老陈拍板：类型闸从**后缀白名单**改为 **首 8KB NUL 实探**
+    2026-10-21 小杨 - 类型闸从后缀白名单改为首 8KB NUL 实探
     （文本=能解码的；代码/无后缀文件全部可读），二进制拒绝语义保持。
     """
     target, rel = _resolve_within_root(rel_path)
@@ -578,9 +581,9 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
         fail(NOT_FOUND)
     if target.is_dir():
         fail(INVALID_PATH, "该路径是目录，请使用目录树接口")
-    # 2026-10-21 小杨 - 北京老陈拍板（文本文件=能解码的）：撤"后缀白名单"闸门
-    #   （.py/无后缀一律被拒=有后缀表在颠覆语义），改**首 8KB NUL 实探**闸二进制；
-    #   2026-10-21 小杨 - 三堂会审 R4/R1：实探收敛到 _probe_text 单点（DRY+缓存），
+    # 2026-10-21 小杨 - 文本文件=能解码的：撤"后缀白名单"闸门
+    #   （.py/无后缀一律被拒=有后缀表在颠覆语义），改首 8KB NUL 实探闸二进制；
+    #   2026-10-21 小杨 - 实探收敛到 _probe_text 单点（DRY+缓存），
     #   关闭方式改 with（原 .open("rb").read(4) 未 close，编码违规）。
     probe = _probe_text(target)
     if probe is None:
@@ -615,7 +618,7 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
             continue
     if content is None:
         fail(UNDECODABLE)
-    # 2026-10-21 小杨 - 三堂会审修复：首 8KB 之外才出现 NUL 的"伪文本"
+    # 2026-10-21 小杨 - 修复：首 8KB 之外才出现 NUL 的"伪文本"
     #   （前段纯 ASCII、后段二进制）能通过探测，却会在预览里渲染成空白/乱码；
     #   解码后已持全文，O(n) 扫描零额外 IO，作为最后一道二进制闸门。
     if "\x00" in content:
@@ -629,8 +632,8 @@ def read_text_file(rel_path: str) -> Dict[str, Any]:
         "content": content,
         "encoding": used_enc,
         "total_lines": content.count("\n") + 1 if content else 0,
-        # 2026-10-21 小杨 - 文档[28]§9.2.1(O1): 补 mtime —— 复用上面那次 stat()，零额外 IO。
-        #   口径与 tree 的 mtime 同源（都走 _fmt_time），前端可直接比对做"可能已被修改"判定。
+        # 2026-10-21 小杨 - 补 mtime：复用上面那次 stat()，零额外 IO。
+        #   口径与 tree 的 mtime 同源（都走 _fmt_time），前端可直接比对判文件是否已变。
         "mtime": _fmt_time(st.st_mtime),
     }
 
@@ -694,7 +697,7 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
 
     root = Path(get_config().get_project_root()).resolve()
     seen: Dict[str, Dict[str, Any]] = {}
-    # 2026-10-21 小杨 - 文档[28]§9.2.2(FT1): ops 聚合 —— 该 path 在最近窗口内被哪些工具动过（tool 名去重）
+    # 2026-10-21 小杨 - ops 聚合：该 path 在最近窗口内被哪些工具动过（tool 名去重）
     ops_by_path: Dict[str, set] = {}
     for row in rows:
         blob = row[0]
@@ -729,7 +732,7 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
             except Exception:      # noqa: BLE001 —— 越界/禁区/非法一律跳过，不让脏数据中断整个面板
                 continue
             key = str(abs_path)
-            # 2026-10-21 小杨 - 文档[28]§9.2.2(FT1): ops 累加必须在"去重 continue"**之前** ——
+            # 2026-10-21 小杨 - ops 累加必须在"去重 continue"之前 ——
             #   否则同一路径的其它工具操作（同一 path 的第二次/第三次动作）会被 continue 吃掉而漏计。
             #   tool 名取 tools 元素的 "tool" 字段（action_step.py:5：tools 元素含 tool/target/params）。
             ops_by_path.setdefault(key, set()).add(str(t.get("tool") or "unknown"))
@@ -743,13 +746,13 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
                 "path": rel,                       # 复用唯一入口归一出的相对路径（口径与 tree 一致）
                 "name": abs_path.name,
                 "preview": _preview_of(abs_path),
-                # 2026-10-21 小杨 - 三堂会审修复：该值一直是文件系统 mtime，
+                # 2026-10-21 小杨 - 修复：该值一直是文件系统 mtime，
                 #   旧名 last_seen_at 会让前端误当"最近访问时间"。按真实语义命名。
                 "mtime": mtime,
             }
-    # 2026-10-21 小杨 - FT1: ops 统一在循环结束后回填 —— seen[key] 建在"首次出现"处（最新一次动作），
+    # 2026-10-21 小杨 - ops 统一在循环结束后回填：seen[key] 建在"首次出现"处（最新一次动作），
     #   而 ops_by_path 在其后的旧记录里仍在累加；若在构造时快照 sorted(ops_by_path[key])，
-    #   只会拿到第一个动作的 op（漏计）→ 故此处回填，保证是**全集**。
+    #   只会拿到第一个动作的 op（漏计）→ 故此处回填，保证是全集。
     for _k, _v in seen.items():
         _v["ops"] = sorted(ops_by_path.get(_k, set()))
     return list(seen.values())[:_RECENT_KEEP]

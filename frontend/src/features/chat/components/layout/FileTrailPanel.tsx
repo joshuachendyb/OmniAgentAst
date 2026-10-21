@@ -1,17 +1,18 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 8.2/9.10 新建：文件足迹面板（FT1） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 体验审计（版面决策）：改为**右栏下方折叠区**（rightBottom slot）；
-//     加载态由 Empty 假冒改 Skeleton；行内嵌 button 的 a11y 冲突修正（行只作鼠标热区，
-//     键盘目标收敛为「文件名=打开」「引用=引用」两个真 button）；引用不再跳页（就地收集）。
+// 编辑历史: 2026-10-21 小杨 - 新建文件足迹面板；改为**右栏下方折叠区**（rightBottom slot）；
+//   加载态由 Empty 假冒改 Skeleton；行内嵌 button 的 a11y 冲突修正（行只作鼠标热区，
+//   键盘目标收敛为「文件名=打开」「引用=引用」两个真 button）；引用不再跳页（就地收集）— 小杨-2026-10-21
+//   2026-10-21 小杨 - 修复：时间字段由 last_seen_at 改用 mtime（后端值一直是文件系统 mtime，
+//     旧名会让面板误标"最近访问时间"）— 小杨-2026-10-21
 /**
- * FileTrailPanel —— 本会话 Agent 动过的文件（FT1）
+ * FileTrailPanel —— 本会话 Agent 动过的文件
  *
- * 与树上的 `●`（T3）**同源同型**：同一份数据（`/files/recent-files`）、同一渲染口径，
+ * 与树上的 `●` 标记**同源同型**：同一份数据（`/files/recent-files`）、同一渲染口径，
  *   区别只是"面板是 ● 的列表化"。
  *
  * 数据取数：走共享 hook `useRecentFiles`（模块级缓存）—— 与文件页的树 ● 同源，
- *   同一 sessionId 只发一次请求（避免同一会话触发 3 次相同请求，见文档[28] 10.2 S1-9）。
+ *   同一 sessionId 只发一次请求（避免同一会话触发多次相同请求）。
  *
- * 只读边界：面板**不落任何写操作**（与文件页 S3 同一常驻表达）。
+ * 只读边界：面板**不落任何写操作**（与文件页同一常驻表达）。
  */
 import React, { useState } from 'react';
 import { Empty, Skeleton, Tooltip } from 'antd';
@@ -66,7 +67,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
   };
 
   /**
-   * 引用到对话：**就地收集**（2026-10-21 小杨 - 体验审计）
+   * 引用到对话：**就地收集**（2026-10-21 小杨）
    *   本面板就在会话页上，ChatInput 通过 composerRefStore 订阅自动消费 → 无需再 nav
    *   （原实现 nav 到同一路由 → query 变化触发会话切换，属无意义的路由扰动）。
    */
@@ -88,7 +89,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
     }
   };
 
-  // 2026-10-21 小杨 - 体验审计：**加载态不用 Empty 假冒**（Empty 语义是"没有内容"，
+  // 2026-10-21 小杨 - **加载态不用 Empty 假冒**（Empty 语义是"没有内容"，
   //   用在加载中会让用户判定"这里没东西"而离开）→ 用骨架屏表达"正在读"。
   if (!sessionId) return <Empty description="无会话" />;
 
@@ -183,7 +184,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                 <Tooltip title={f.path}>
                   <button
                     type="button"
-                    /* 2026-10-21 小杨 - 体验审计（#13）：**新标签打开**
+                    /* 2026-10-21 小杨 - **新标签打开**
                        SPA 跳转会丢会话页的滚动/展开状态；深链路径是 SPA 路由, 新标签直达文件页=定位 */
                     onClick={() =>
                       window.open(buildFileDeepLink(f.path), '_blank')

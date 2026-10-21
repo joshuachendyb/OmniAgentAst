@@ -12,6 +12,9 @@
 # 2026-10-19 小欧 - 入参须为目录: 原实现对文件路径静默产出伪目录节点(iterdir 的
 #   NotADirectoryError 被 _build_tree 当 OSError 吞掉且 node 无条件标 type=directory);
 #   入口补 is_dir 校验, 非目录如实返回错误。
+# 2026-10-21 小杨 - 列目录工具落码：单遍 scandir 同时建树与统计（IO 减半）、
+#   加目录节点数与扫描条目数双闸门（超限置 truncated 并在摘要标注）、
+#   目录计数只统计实际入树的目录、mtime 排序改为最近修改优先 — 小杨-2026-10-21
 """
 tree — 列出目录树 (从list_directory拆分，仅列目录)
 
@@ -33,7 +36,7 @@ from app.tools.tool_constants import ERR_FILE_LIST_DIR_FAILED
 from app.logger import logger
 from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 
-# 2026-10-21 小杨 - 三堂会审修复：max_depth=10 对超大目录不设上限会吃光内存/把
+# 2026-10-21 小杨 - 修复：max_depth=10 对超大目录不设上限会吃光内存/把
 #   Agent 调用拖到超时；给"目录节点数 + 扫描条目数"双闸门，超限如实置 truncated。
 _MAX_DIRS = 20000
 _MAX_ENTRIES = 200000
@@ -44,7 +47,7 @@ async def _get_directory_tree(
     include_hidden: bool = False,
     sort_by: str = "name",
 ) -> Dict[str, Any]:
-    """获取目录树原始数据 — 小欧 2026-06-22 — 小健 2026-06-22 删除helper计时 — 小欧 2026-06-24 修复include_hidden — 小欧 2026-07-06 去mtime排序 — 小杨 2026-10-21 单遍scandir重写：建树+统计一并完成，IO减半"""
+    """获取目录树原始数据（单遍 scandir 同时建树与统计，IO 减半）"""
     # 2026-10-16 小欧 - tool去检查化: 合法性由 路径安全层 唯一检查, 工具只执行
     def _name_key(e: os.DirEntry) -> str:
         return e.name.lower()
@@ -61,7 +64,7 @@ async def _get_directory_tree(
         """单遍扫描：一次 scandir 同时建树+统计(fc/dc/bytes)。
         Windows 上 scandir 的 entry.is_dir(follow_symlinks=False) 零额外 syscall；
         只对 symlink 目录查 realpath 成环（普通目录不成环，省掉每目录一次 resolve）。
-        2026-10-21 小杨 - 三堂会审修复：统计口径与返回树对齐（dc 只计实际入树目录），
+        2026-10-21 小杨 - 修复：统计口径与返回树对齐（dc 只计实际入树目录），
         并加目录数/条目数上限，超限置 state["truncated"]，不再无限膨胀。"""
         if depth > max_depth:
             return None, 0, 0, 0
@@ -90,7 +93,7 @@ async def _get_directory_tree(
                             pass
                 except (PermissionError, OSError):
                     continue
-        # 2026-10-21 小杨 - 三堂会审修复：mtime 语义是"最近修改优先"（前端排序习惯），
+        # 2026-10-21 小杨 - 修复：mtime 语义是"最近修改优先"（前端排序习惯），
         #   原实现升序 → 最旧的在最前；工具契约与用例均要求最新在前。
         dir_entries.sort(
             key=_mtime_key if sort_by == "mtime" else _name_key,
@@ -119,7 +122,7 @@ async def _get_directory_tree(
                 fc += c_fc
                 dc += c_dc
                 ts += c_ts
-                dc += 1                      # 只统计真正入树的目录（原实现把被跳过/截断的也计入，与 tree 不一致）
+                dc += 1                      # 2026-10-21 小杨 - 只统计真正入树的目录（原实现把被跳过/截断的也计入，与 tree 不一致）
                 state["dirs"] += 1
 
         node: Dict[str, Any] = {

@@ -1,13 +1,13 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.11 + 9.9.2 新建：文件管理页（工具条 + 树 + 预览 + 深链定位） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28]§9.9.2(O8/O10)：页级兜底（root 失败 → Result + 重试）+ 工具条 ↻ 三同刷（树 + ● + 预览） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28]§10.2(S1-9)：● 数据改用共享 hook useRecentFiles（与 FT1/FQ1 同源，不再各拉一次） — 小杨-2026-10-21
-//   2026-10-21 小杨 - 三堂会审修复：树三态合为状态机、展开集合唯一真源、定位输入自持状态、
-//     分栏宽度内聚（拖拽不重绘树/预览）、主题常量上提、border-box 消 16px 溢出、引用体量统一字节 - 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 新建文件管理页：工具条 + 树 + 预览 + 深链定位；
+//   页级兜底（root 失败 → Result + 重试）、工具条刷新（树 + 足迹 + 预览共用一次点击）、
+//   足迹数据改用共享 hook useRecentFiles（树 / 足迹面板 / 推荐三处同源同型）— 小杨-2026-10-21
+//   2026-10-21 小杨 - 修复：树三态合为状态机、展开集合唯一真源、定位输入自持状态、
+//     分栏宽度内聚（拖拽不重绘树/预览）、主题常量上提、border-box 消 16px 溢出、引用体量统一字节 — 小杨-2026-10-21
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
- * 只读边界（S3）：本页面**不提供任何写操作**，工具条常驻「🔒 只读浏览」标签。
- * 唯一例外是「设为会话工作目录」（J3）：那是**授权**而非写文件，本期只留骨架。
+ * 只读边界：本页面**不提供任何写操作**，工具条常驻「只读浏览」标签。
+ * 唯一例外是「设为会话工作目录」：那是**授权**而非写文件，本期只留骨架。
  */
 import React, {
   useCallback,
@@ -63,7 +63,7 @@ const mergeKids = (
     return n;
   });
 
-/** 2026-10-21 小杨 - 三堂会审修复：树的加载态升级为单一状态机
+/** 2026-10-21 小杨 - 修复：树的加载态升级为单一状态机
  *  （原 treeLoading/treeReady/treeErr 三个布尔可组合出"就绪且加载中且报错"的非法态） */
 type TreeStatus =
   | { phase: 'loading' }
@@ -73,7 +73,7 @@ type TreeStatus =
 const MIN_LEFT_W = 280;
 const MAX_LEFT_W = 600;
 
-/** 2026-10-21 小杨 - 控件规格统一（北京老陈拍板·三堂会审）：设置页同款常量
+/** 2026-10-21 小杨 - 控件规格统一：设置页同款常量（控件高 28 / 圆角 4）
  *  —— 提升到模块级，避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算 */
 const PAGE_THEME = {
   token: {
@@ -238,9 +238,9 @@ const FilesPage: React.FC = () => {
   } | null>(null);
   const [loadedKeys, setLoadedKeys] = useState<string[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  /** 2026-10-21 小杨 - 体验审计：**就地收集**的本地台账（store 为真源，这里只为计数与去重展示） */
+  /** 2026-10-21 小杨 - **就地收集**的本地台账（store 为真源，这里只为计数与去重展示） */
   const [collectedKeys, setCollectedKeys] = useState<string[]>([]);
-  /** #12 批量引用：树 checked 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
+  /** 批量引用：树 checked 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
   const [multiFiles, setMultiFiles] = useState<FileNode[]>([]);
 
   /** 从单一状态机派生的视图布尔（不作为独立 state，避免非法组合） */
@@ -253,7 +253,7 @@ const FilesPage: React.FC = () => {
   const refreshPreviewRef = useRef<(() => void) | null>(null);
 
   const sessionId = useMemo(() => readStoredSessionId(), []);
-  /** T3 ●：共享 hook（树 / FT1 面板 / FQ1 三处同源同型） */
+  /** 足迹标记：共享 hook（树 / 足迹面板 / 推荐三处同源同型） */
   const { files: recentFiles, reload: reloadRecent } =
     useRecentFiles(sessionId);
   const recentSet = useMemo(
@@ -261,7 +261,7 @@ const FilesPage: React.FC = () => {
     [recentFiles]
   );
 
-  /** O8：页级兜底 —— root 拉不到 → 整页 Result + 重试（不静默空页） */
+  /** 页级兜底 —— root 拉不到 → 整页 Result + 重试（不静默空页） */
   const loadRoot = useCallback(async () => {
     setRootErr(null);
     try {
@@ -269,7 +269,7 @@ const FilesPage: React.FC = () => {
       setProjectRoot(r.project_root);
     } catch {
       setProjectRoot('');
-      // 2026-10-21 小杨 - 体验审计：用户口吻（原「请检查 workspace.project_root 配置」是开发者语言）
+      // 2026-10-21 小杨 - 用户口吻（原「请检查 workspace.project_root 配置」是开发者语言）
       setRootErr('项目根目录不存在或不可访问，请检查「工作目录」设置后重试。');
     }
   }, []);
@@ -294,7 +294,7 @@ const FilesPage: React.FC = () => {
     void loadTree();
   }, [loadTree]);
 
-  /** J2 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
+  /** 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
   const expandToPath = useCallback(
     async (rel: string): Promise<FileNode | null> => {
       const segs = rel.split('/').filter(Boolean);
@@ -303,7 +303,7 @@ const FilesPage: React.FC = () => {
       for (const s of segs) {
         cur = cur ? `${cur}/${s}` : s;
         let hit = findNode(treeRef.current, cur);
-        if (!hit) return null; // 路径不存在 → 调用方给明确提示（J2 失败分支，不静默）
+        if (!hit) return null; // 路径不存在 → 调用方给明确提示（失败分支不静默）
         if (hit.type === 'dir' && !hit.children) {
           const r = await fileApi.fetchTree(cur);
           const merged = mergeKids(treeRef.current, cur, r.nodes);
@@ -317,7 +317,7 @@ const FilesPage: React.FC = () => {
       }
       const target = findNode(treeRef.current, rel);
       if (!target) return null;
-      // 2026-10-21 小杨 - 三堂会审修复：展开集合由本页唯一持有（原先树内还有一份
+      // 2026-10-21 小杨 - 修复：展开集合由本页唯一持有（原先树内还有一份
       //   互不相通的 expanded state → 深链/定位只改页面 state，树纹丝不动）。
       //   用函数式追加，不依赖闭包里的旧 expandedKeys。
       setExpandedKeys((prev) => {
@@ -330,7 +330,7 @@ const FilesPage: React.FC = () => {
   );
 
   /**
-   * 统一的"打开一个路径"入口（2026-10-21 小杨 - 体验审计最佳改造）
+   * 统一的"打开一个路径"入口（2026-10-21 小杨 - 收口改造）
    *
    *   之前有 4 条各自半截的路径（深链 / 定位框 / 树点击 / 外部 chip），彼此不同步：
    *   定位框甚至**返回值被丢弃**（点了没反应）。
@@ -346,7 +346,7 @@ const FilesPage: React.FC = () => {
       if (!hit) return false;
       if (hit.type === 'dir') {
         // 目录：只展开定位（左侧树已展开到该目录），右侧保持上一份内容
-        // 2026-10-21 小杨 - 三堂会审修复：原实现顺手清空预览，用户定位目录时正在读的文件被无端关掉
+        // 2026-10-21 小杨 - 修复：原实现顺手清空预览，用户定位目录时正在读的文件被无端关掉
         return true;
       }
       setSelected(hit);
@@ -359,7 +359,7 @@ const FilesPage: React.FC = () => {
   /** 深链进入：?path=…&line=… */
   useEffect(() => {
     const rel = params.get('path');
-    // 2026-10-21 小杨 - 审计修复（阻断）：原 effect 在**树未就绪**时就跑
+    // 2026-10-21 小杨 - 修复（阻断）：原 effect 在**树未就绪**时就跑
     //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
     //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
     //   现在等 treeReady 后再展开。
@@ -384,7 +384,7 @@ const FilesPage: React.FC = () => {
   /**
    * 三途径统一 push（引用到对话 / 树右键引用 / 引用选区 —— 产物等价）
    *
-   * 2026-10-21 小杨 - 体验审计（**设计模型变更，已获北京老陈批准**）：
+   * 2026-10-21 小杨 - 设计模型变更（就地收集）：
    *   原实现每次引用都 `nav` 到会话页 → 用户读/挑多个文件时被反复踢出工作现场，
    *   且**无法批量**（引 3 个文件 = 3 次离开 + 3 次返回，阅读位置全丢）。
    *   现改为**就地收集**：只入 store + 计数，页面不动；用户点「去对话」时一次带走。
@@ -425,7 +425,7 @@ const FilesPage: React.FC = () => {
     setCollectedKeys([]);
   }, []);
 
-  /** #12 引用所选（批量）：逐个读正文 → 就地收集；全部成功才清空勾选 */
+  /** 引用所选（批量）：逐个读正文 → 就地收集；全部成功才清空勾选 */
   const refSelectedFiles = useCallback(async () => {
     const ok: string[] = [];
     await Promise.all(
@@ -446,7 +446,7 @@ const FilesPage: React.FC = () => {
   const loadDir = useCallback(
     async (key: string): Promise<FileNode[] | null> => {
       try {
-        // 2026-10-21 小杨 - 北京老陈拍板：补拉**到 10 层**（首屏 5 秒开；子树量级可控才补得快）
+        // 2026-10-21 小杨 - 补拉**到 10 层**（首屏 5 秒开；子树量级可控才补得快）
         const r = await fileApi.fetchTree(key, 10);
         return r.nodes;
       } catch {
@@ -462,7 +462,7 @@ const FilesPage: React.FC = () => {
     setTree(merged);
   }, []);
 
-  /** O10：工具条 ↻ 三同刷（树 + ● + 预览共用一次点击） */
+  /** 工具条刷新：树 + 足迹 + 预览共用一次点击 */
   const refreshAll = useCallback(() => {
     void loadTree();
     void reloadRecent();
@@ -470,7 +470,7 @@ const FilesPage: React.FC = () => {
   }, [loadTree, reloadRecent]);
 
   /**
-   * 树 / 预览两个**内容单元**（2026-10-21 小杨 - 体验审计）
+   * 树 / 预览两个**内容单元**（2026-10-21 小杨 - 单一真源）
    *   窄屏作为 Tabs 的 children（单一真源）；宽屏左右分栏。原实现 Tabs 的 children 是 null、
    *   真实内容在 Tabs 外用 display:none 切换 → 标签条与内容区分离，Tab 面板是空壳。
    */
@@ -531,7 +531,7 @@ const FilesPage: React.FC = () => {
             })();
           }}
           onSetWorkspace={() => {
-            /* J3 本期不接线 */
+            /* 设为会话工作目录：本期不接线 */
           }}
           onPatchNodes={patchNodes}
           onLoadDir={loadDir}
@@ -582,16 +582,16 @@ const FilesPage: React.FC = () => {
       <div
         style={{
           padding: Spacing.MD,
-          // 2026-10-21 小杨 - 体验审计（#2）：根改为**flex column + 撑满视口**
+          // 2026-10-21 小杨 - 根改为**flex column + 撑满视口**
           //   原中间区 height:calc(100vh-140px) 是手算 —— 收集条一出现就溢出视口 40px。
           //   现在：工具条/收集条 flexShrink:0，中间区 flex:1 → 多一条内容，树/预览自动让位。
           display: 'flex',
           flexDirection: 'column',
-          // 2026-10-21 小杨 - 底部空白（北京老陈痛骂）：calc(100vh-100px) 的 100 是拍脑袋
+          // 2026-10-21 小杨 - 底部空白修复：calc(100vh-100px) 的 100 是拍脑袋
           //   （真实 chrome=Header43+Content padding10≈53px），改 height:100% 由
           //   Layout Content(flex:1+minHeight:0) 给准高度，贴合到底不空截。
           height: '100%',
-          // 2026-10-21 小杨 - 三堂会审修复：height:100% + padding 在 content-box 下多出
+          // 2026-10-21 小杨 - 修复：height:100% + padding 在 content-box 下多出
           //   上下各 8px，整页比可用高度高 16px（底部被裁）；border-box 让 padding 计入高度
           boxSizing: 'border-box',
           overflow: 'hidden',
@@ -602,13 +602,13 @@ const FilesPage: React.FC = () => {
           style={{
             display: 'flex',
             alignItems: 'center',
-            flexWrap: 'wrap', // 2026-10-21 小杨 - 体验审计（#9）：6 元素一行，1280 以下换行而非溢出
+            flexWrap: 'wrap', // 2026-10-21 小杨 - 6 元素一行，1280 以下换行而非溢出
             gap: Spacing.SM,
             marginBottom: Spacing.MD,
             flexShrink: 0,
           }}
         >
-          {/* 2026-10-21 小杨 - 体验审计最佳改造（工具条重排）：
+          {/* 2026-10-21 小杨 - 工具条重排：
             左=只读标识（图标替代 emoji）｜中=根路径（**截断+tooltip**，不再挤压控件）｜右=操作组
             并新增「当前会话」可见性 —— 跨页引用时用户必须知道引用会进哪个会话。 */}
           <span
@@ -639,7 +639,7 @@ const FilesPage: React.FC = () => {
             <Tag
               color="default"
               style={{ marginInlineEnd: 0 }}
-              // 2026-10-21 小杨 - 体验审计：**不显示 UUID 前 8 位**（不可辨识，等于没有信息）
+              // 2026-10-21 小杨 - **不显示 UUID 前 8 位**（不可辨识，等于没有信息）
               //   完整会话 id 放 tooltip（需要核对时仍可核对）
               title={`引用会加入会话 ${sessionId}`}
             >
@@ -654,7 +654,7 @@ const FilesPage: React.FC = () => {
               新会话
             </Tag>
           )}
-          {/* 2026-10-21 小杨 - 体验反馈（北京老陈）：手势提示**常驻**（勾选前也要看得见）
+          {/* 2026-10-21 小杨 - 手势提示**常驻**（勾选前也要看得见）
             勾选数不重复念 ——「引用所选 N 个」按钮本身已携带数量 */}
           <span
             style={{
@@ -687,7 +687,7 @@ const FilesPage: React.FC = () => {
           <Button onClick={refreshAll} title="重新加载目录与足迹">
             重新加载
           </Button>
-          {/* J3：本期只留骨架（按钮 + 常驻说明），接线等后端 _ws_deny_reason 修完再做 */}
+          {/* 设为会话工作目录：本期只留骨架（按钮 + 常驻说明），接线等后端校验通过后开放 */}
           <Button
             disabled={!sessionId}
             title={
@@ -700,7 +700,7 @@ const FilesPage: React.FC = () => {
           </Button>
         </div>
 
-        {/* 2026-10-21 小杨 - 体验审计（就地收集）：收集条常驻显示"已引用多少 + 何时送走"
+        {/* 2026-10-21 小杨 - 就地收集：收集条常驻显示"已引用多少 + 何时送走"
           —— 引用不再立刻跳页，用户需要一个明确的"我攒了几个、去哪送"的落点。 */}
         {collectedKeys.length > 0 && (
           <div
@@ -710,7 +710,7 @@ const FilesPage: React.FC = () => {
               gap: Spacing.SM,
               marginBottom: Spacing.SM,
               padding: `${Spacing.XS}px ${Spacing.MD}px`,
-              flexShrink: 0, // 2026-10-21 小杨 - 体验审计：flex 根布局下不被压缩
+              flexShrink: 0, // 2026-10-21 小杨 - flex 根布局下不被压缩
               background: Colors.BG.WARNING_LIGHT,
               border: `1px solid ${Colors.BORDER.LIGHT}`,
               borderRadius: 4,

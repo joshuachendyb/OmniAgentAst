@@ -1,10 +1,12 @@
-// 编辑历史: 2026-10-21 小杨 - 文档[28] 4.4.1 新建：文件浏览 API（6 端点 + 图片 blob），同 session.api 范式 — 小杨-2026-10-21
-//   2026-10-21 小杨 - 文档[28] v5.11 对账：recent-files 实码返回包装对象 {session_id, files[]}，
-//     此处按真源解包 .files（照裸数组写会 "items.filter is not a function"） — 小杨-2026-10-21
+// 编辑历史: 2026-10-21 小杨 - 新建文件浏览 API（6 端点 + 图片 blob），同 session.api 范式；
+//   recent-files 后端实码返回包装对象 {session_id, files[]}，此处按真源解包 .files
+//   （照裸数组写会 "items.filter is not a function"）— 小杨-2026-10-21
+//   2026-10-21 小杨 - 修复：RecentFile 的时间字段由 last_seen_at 改名为 mtime（后端值一直是
+//     文件系统 mtime，旧名会让前端误当"最近访问时间"）— 小杨-2026-10-21
 /**
  * 文件浏览 API（只读浏览项目根目录）
  *
- * 契约真源 = 后端 `backend/app/file_browse/`（文档[28] 第五章）：
+ * 契约真源 = 后端 `backend/app/file_browse/`：
  * - 路径参数一律"相对项目根"的 posix 路径（后端只接受相对路径，绝对路径/UNC/`..` 一律 400）
  * - 错误信封取 `error.code`（全局 http_exception_handler 包装后的形状，非 detail.code）
  */
@@ -37,7 +39,7 @@ export interface ReadResponse {
   encoding: string;
   size: number;
   total_lines: number;
-  /** O1：文件最近修改时间（与 tree 的 mtime 同口径字符串），I9 单请求刷新用 */
+  /** 文件最近修改时间（与 tree 的 mtime 同口径字符串），刷新判重用 */
   mtime: string;
 }
 
@@ -96,7 +98,7 @@ export const fileApi = {
 
   fetchTree: async (
     path = '',
-    /** 2026-10-21 小杨 - 北京老陈拍板：首屏 5 层（~0.2s 扫盘+gzip 响应 ~0.4MB 秒开）；展开到深层目录由 Files 页按需 else fetchTree(key,10) 补拉 */
+    /** 2026-10-21 小杨 - 首屏 5 层（~0.2s 扫盘+gzip 响应 ~0.4MB 秒开）；展开到深层目录由 Files 页按需 fetchTree(key,10) 补拉 */
     maxDepth = 5,
     maxNodes = 100000
   ): Promise<TreeResponse> =>
@@ -114,15 +116,15 @@ export const fileApi = {
     return (
       await api.get<ReadResponse>('/files/read', {
         params: { path },
-        ...cfg, // I7 竞态防护：调用方传 AbortSignal
+        ...cfg, // 竞态防护：调用方传 AbortSignal
       })
     ).data;
   },
 
   /**
-   * 输入框 `@` 补全数据源（文档[28] 4.2.1 途径 3）。
+   * 输入框 `@` 补全数据源。
    * 候选过滤（只留可读文本）在调用方做 —— 与后端 `_preview_of()` 的 `text` 判定对齐，
-   * 前端不自立规则（M18）。
+   * 前端不自立规则。
    */
   searchFiles: async (q: string, limit = 20): Promise<SearchResponse> =>
     (await api.get<SearchResponse>('/files/search', { params: { q, limit } }))

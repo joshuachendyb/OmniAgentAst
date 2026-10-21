@@ -1,19 +1,18 @@
-// 编辑历史: 2026-10-21 小杨 - 北京老陈拍板弃用 antd Tree（补丁堆积=选型错，教训遵守）：
+// 编辑历史: 2026-10-21 小杨 - 用自写树替换 antd Tree（antd Tree 的补丁堆积=选型错）：
 //   自写树（block 流递归渲染，无 antd Tree 的 treenode>indent>switcher 抽象层）：
 //   1) 目录行点击=展开/收起；首屏 5 层全量子级在 nodes.children 本地直接开（零请求）
 //   2) 懒加载只对超深截断目录走 onLoadDir/onPatchNodes/onLoadedKeys
 //   3) Ctrl 逐个 / Shift 区间（扁平序连线段）批量 → onSelectFiles（只收文件，目录不进批量）
 //   4) 右键菜单（插入引用/设为会话工作目录/复制路径）自绘 fixed 浮层
 //   5) antd Tree 特供补丁（files-tree-noswitcher CSS、expandable、multiple 手势）一并作废
-//   2026-10-21 小杨 - 三堂会审修复：展开集合改受控（深链定位可见）、多选集与预览集分离
-//     （Ctrl 首次点选不再夹带预览文件）、空目录提示、hover 态落 CSS、复制失败不再静默 - 小杨-2026-10-21
+//   2026-10-21 小杨 - 修复：展开集合改受控（深链定位可见）、多选集与预览集分离
+//     （Ctrl 首次点选不再夹带预览文件）、空目录提示、hover 态落 CSS、复制失败不再静默 — 小杨-2026-10-21
 import React, { useMemo, useState } from 'react';
 import { Dropdown, Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
 import type { FileNode } from '@/services/api/file.api';
 import { fileIcon } from '@/components/fileIcon';
 import { formatBytes } from '@/utils/format';
-// 2026-10-21 小杨 - 选中态改深灰 #4b4b4b 直接量，Colors 引用清零（YAGNI）
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
 
@@ -23,7 +22,7 @@ export interface FilesTreeProps {
   activeKey: string;
   /** 批量勾选的文件（深灰底；Ctrl/Shift 只操作此集合） */
   checkedKeys: string[];
-  /** T3：recent-files 的 path 集合，命中标 ● */
+  /** recent-files 的 path 集合，命中标 ● */
   recentSet: Set<string>;
   /** 展开集合由上层层唯一持有（深链定位与树点击共用同一真源） */
   expandedKeys: string[];
@@ -101,7 +100,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
         try {
           const kids = await onLoadDir(n.key);
           if (kids && kids.length > 0) onPatchNodes(n.key, kids);
-          // 2026-10-21 小杨 - 三堂会审修复：函数式更新，避免并发补拉时
+          // 2026-10-21 小杨 - 修复：函数式更新，避免并发补拉时
           //   闭包里的旧 loadedKeys 覆盖掉其它目录的登记
           onLoadedKeys((prev) =>
             prev.includes(n.key) ? prev : [...prev, n.key]
@@ -118,7 +117,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     onSelectFile(n);
     if (!onSelectFiles) return;
     if (e.shiftKey) {
-      // 2026-10-21 小杨 - 三堂会审修复：首次 Shift 无锚点时以"当前预览文件"
+      // 2026-10-21 小杨 - 修复：首次 Shift 无锚点时以"当前预览文件"
       //   为锚；连预览都没有才退化为单选（原实现直接 return，点了没反应）
       const base = anchor ?? (activeKey || null);
       if (!base) {
@@ -136,7 +135,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
       return;
     }
     if (e.ctrlKey || e.metaKey) {
-      // 2026-10-21 小杨 - 三堂会审修复：多选集只从 checkedKeys 派生。
+      // 2026-10-21 小杨 - 修复：多选集只从 checkedKeys 派生。
       //   原实现把"预览中的文件"并进集合 → 首次 Ctrl 点 B 会连未勾选的 A 一起引用。
       const keySet = new Set(checkedKeys);
       if (keySet.has(n.key)) keySet.delete(n.key);
@@ -155,7 +154,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     const active = activeKey === n.key;
     /** 已支持预览的文件才给完整信息；预览为 none 的文件降透明度（选中/预览中不压暗） */
     const dim = !isDir && n.preview === 'none';
-    // 2026-10-21 小杨 - 三堂会审修复：目录没有字节数，原实现显示「—」像坏数据
+    // 2026-10-21 小杨 - 修复：目录没有字节数，原实现显示「—」像坏数据
     const meta = isDir
       ? `${n.name} · ${n.mtime}`
       : `${n.name} · ${formatBytes(n.size)} · ${n.mtime}`;
@@ -202,7 +201,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           ) : (
             fileIcon(n)
           )}
-          {/* 2026-10-21 小杨 - 双 tooltip 收敛（北京老陈拍板）：只留**原生方框** title，
+          {/* 2026-10-21 小杨 - 双 tooltip 收敛：只留**原生方框** title，
               antd 浮泡 Tooltip 移除（同一信息两套气泡是噪音） */}
           <span
             style={{
@@ -216,7 +215,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           </span>
         </div>
         {isDir && isOpen && n.children?.map((c) => renderRow(c, depth + 1))}
-        {/* 2026-10-21 小杨 - 三堂会审修复：展开的空目录原先只剩一行目录名，
+        {/* 2026-10-21 小杨 - 修复：展开的空目录原先只剩一行目录名，
             看不出"没有子项"还是"加载失败"；补一行弱提示 */}
         {isDir &&
           isOpen &&
@@ -263,7 +262,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           key: 'copy',
           label: '复制路径',
           act: () => {
-            // 2026-10-21 小杨 - 三堂会审修复：copyTextToClipboard 只 resolve {ok}
+            // 2026-10-21 小杨 - 修复：copyTextToClipboard 只 resolve {ok}
             //   从不 reject，原先 `.catch` 是死码 → 复制失败完全静默。
             void copyTextToClipboard(ctx.node.key).then((r) => {
               if (r.ok) showSuccess('路径已复制');
