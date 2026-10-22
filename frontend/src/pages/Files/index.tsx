@@ -20,6 +20,8 @@
 //     抽为 readAndPush 管道；顺带修 pushRef 未 await 的真缺陷（fire-and-forward 导致批量 ok 计数
 //     早于投递完成→勾选残留、异常变 unhandled rejection）。失败文案仍归调用方（批量要能定位
 //     到具体哪个文件）——抽的是数据管道，保留的是场景语义（KISS-DIRECT）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 工具条目录可见性增强：只读浏览旁加「目录: [路径]」，路径名高亮
+//   （跨页引用时一眼看到当前项目根在哪，与「当前会话」标签共同交代引用去向）— 小欧-2026-10-22
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -684,17 +686,21 @@ const FilesPage: React.FC = () => {
             <LockOutlined style={{ fontSize: 12 }} />
             只读浏览
           </span>
-          <span
-            title={projectRoot || '读取中…'}
-            style={{
-              color: Colors.TEXT.SECONDARY,
-              maxWidth: 260,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {projectRoot || '读取中…'}
+          <span style={{ color: Colors.TEXT.SECONDARY }}>
+            目录: [
+            <span
+              title={projectRoot || '读取中…'}
+              style={{
+                color: Colors.PRIMARY,
+                maxWidth: 260,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {projectRoot || '读取中…'}
+            </span>
+            ]
           </span>
           {sessionId ? (
             <Tag
@@ -723,7 +729,7 @@ const FilesPage: React.FC = () => {
               fontSize: chatTokens.fontSM,
             }}
           >
-            多选：Ctrl 逐个 / Shift 连选
+            多选引用：Ctrl+ 逐个 / Shift+ 连选
           </span>
           {multiFiles.length > 0 && (
             <>
