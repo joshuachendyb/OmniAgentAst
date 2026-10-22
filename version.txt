@@ -1,3 +1,22 @@
+v1.4.6
+更新时间: 2026-10-22 21:01:22 - 小欧-2026-10-22
+## v1.4.5以来 变更汇总(3个commit: feat1/style2) - 小欧-2026-10-22
+[2026-10-22 21:01:22 小欧] 范围=v1.4.5以来全部commit(3个); 主线=文件引用域四项增强落码(引用台账落盘与响应式/产出物路径可点化/树上读过与被改写双标记/足迹请求失败不缓存空)+三堂会审十轮整改(样式顺序修正/注释编号合规/编辑历史补齐/依赖补齐)
+
+### 1.4.27 引用域四项增强落码
+[台账落盘] 引用台账入SessionSnapshot并随StreamBackup落盘: EMPTY_SNAPSHOT/bump/SNAPSHOT_KEYS/toBackupOf/restore 五处补齐, 老备份显式给空数组(避免展开式恢复把缺字段带入后 .filter 抛错); 台账类型迁 backupTypes 单一真源, chatStreamStore 侧 re-export 保持 import 路径不断 — 小欧 2026-10-22
+[产出物可点化] 新建 components/FilePathLink.tsx: 路径判界复用 utils/projectPath、深链拼装复用 utils/fileDeepLink, 根外/形态非法/未取到根一律退化为纯文本不造假链接; 产出物列表路径由死文本改可点深链(原先须手抄路径去找) — 小欧 2026-10-22
+[树双标记] 新建 utils/fileOps.ts: MUTATING_FILE_OPS 收 12 个改写类工具(与后端 FILE_OPERATION_TOOLS 同源, 读类不入表) + isMutatedByOps; 树行读过标●、被改写过额外标✎(区分"读过"与"我的文件被覆盖") — 小欧 2026-10-22
+[足迹失败不缓存空] useRecentFiles 请求失败不再 cache.set 空数组: 只删本次在途项(防误删 reload 新请求), 下次请求自动重试; 原实现一次网络抖动即致足迹面板与树上●集体空态至手动刷新 — 小欧 2026-10-22
+[上下文包判空] 引用 chip 点击判 path 非空: 上下文包无单一路径(path=''), 原实现拼空路径深链点了跳空白页, 现空路径仅作展示 — 小欧 2026-10-22
+
+### 1.4.28 三堂会审十轮整改
+[样式修正] FilePathLink 样式 spread 顺序反(纯文本态灰色覆盖链接态主色蓝, 链接呈灰色), 改为 plainStyle 先展开 — 小欧 2026-10-22
+[注释合规] 清理注释中的文档号/章节号与会审裁定流程词(AGENTS.md 禁插文档号章节号与评审裁定序号), 仅留技术说明 — 小欧 2026-10-22
+[编辑历史] 4 个改动文件补头部编辑历史条目(chatStreamStore/chatStreamPersistence/useRecentFiles/ChatInput), 插在板块最下边 — 小欧 2026-10-22
+[依赖补齐] Files 页两处 useCallback 补 setState 依赖(树状态机 hook 化后 eslint 报缺依赖), lint 回到 21 条基线 — 小欧 2026-10-22
+[格式统一] 清理涉及文件统一 prettier(行尾与排版), 格式校验全过 — 小欧 2026-10-22
+
 v1.4.5
 更新时间: 2026-10-22 19:38:24 - 小欧-2026-10-22
 ## v1.4.4以来 变更汇总(28个commit: fix12/refactor6/docs4/feat2/revert1/chore1/test1/style1) - 小欧-2026-10-22
