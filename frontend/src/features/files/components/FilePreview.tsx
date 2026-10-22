@@ -9,6 +9,13 @@
 // 2026-10-22 小杨 - 深链行号按区间整段高亮（原只高亮首行），行号越界在工具条如实提示，
 //     不再静默不定位 — 小杨-2026-10-22
 // 编辑历史: 2026-10-22 小欧 - 复制路径按钮加 Tooltip 显完整路径 + 字体收敛 FontFamily.MONO — 小欧-2026-10-22
+// 2026-10-22 小欧 - 工具栏「引用 tok」按钮前加预览文件标题：文件名超 10 汉字宽度截断 + Tooltip 显完整 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 标题 tip 改显完整相对路径 node.key（文件名+所在目录），tip 单行不折行 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 依用户纠正：tip 仍显**完整文件名** node.name（非路径），单行不折行保留 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 再纠正：tip 需含路径，改为完整绝对路径 toAbsolutePath(node.key) ?? node.key（与复制路径按钮同口径），单行不折行保留 — 小欧-2026-10-22
+// 2026-10-22 小欧 - tip 框自适应包裹完整路径：overlayInnerStyle 加 maxWidth:none + width:max-content（antd 默认限宽会截断长路径）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 复制路径 Tooltip 同处理；两处相同 overlayInnerStyle 抽 PATH_TOOLTIP_INNER_STYLE 常量（10 大规范 DRY）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 图片模式 / 不可预览 Alert 的复制路径 Tooltip 一并统一走 PATH_TOOLTIP_INNER_STYLE（DRY 闭环）— 小欧-2026-10-22
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -64,6 +71,13 @@ const TOOLBAR_STYLE: React.CSSProperties = {
   alignItems: 'center',
   gap: Spacing.SM,
   flexWrap: 'wrap',
+};
+
+/** 路径 Tooltip 弹出层：单行不折行 + 自适应完整包裹（antd 默认限宽会截断长路径）— 小欧-2026-10-22 */
+const PATH_TOOLTIP_INNER_STYLE: React.CSSProperties = {
+  whiteSpace: 'nowrap',
+  maxWidth: 'none',
+  width: 'max-content',
 };
 
 export interface FilePreviewProps {
@@ -416,7 +430,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return (
       <>
         <div style={TOOLBAR_STYLE}>
-          <Tooltip title={toAbsolutePath(node.key, projectRoot) ?? node.key}>
+          <Tooltip
+            title={toAbsolutePath(node.key, projectRoot) ?? node.key}
+            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+          >
             <Button
               size="small"
               icon={<CopyOutlined />}
@@ -482,7 +499,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         message={`「${node.name}」暂不支持预览`}
         description="该文件不是可预览的文本或图片（可能是二进制或无法读取）。你可以复制路径，或引用到对话中再处理。"
         action={
-          <Tooltip title={toAbsolutePath(node.key, projectRoot) ?? node.key}>
+          <Tooltip
+            title={toAbsolutePath(node.key, projectRoot) ?? node.key}
+            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+          >
             <Button size="small" onClick={() => copyPath(node)}>
               复制路径
             </Button>
@@ -537,6 +557,26 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           （内容本就是 block 纵排，sticky footer 自带 flex:none），改为 Fragment 砍一层 */}
       <div style={TOOLBAR_STYLE}>
         {/* 2026-10-21 小杨 - **按钮在前、行数+时间垫后**（弱信息灰字，不按钮化） */}
+        {/* 2026-10-22 小欧 - 预览文件标题：引用按钮前展示当前文件名，超 10 汉字宽度截断 + Tooltip 显完整 — 小欧-2026-10-22 */}
+        <Tooltip
+          title={toAbsolutePath(node.key, projectRoot) ?? node.key}
+          overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+        >
+          <span
+            style={{
+              color: Colors.TEXT.STRONG,
+              fontSize: chatTokens.fontMD,
+              fontWeight: 600,
+              maxWidth: '10em',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {node.name}
+          </span>
+        </Tooltip>
         <Button
           size="small"
           onClick={() => onSendFile(text.content, node, text.size)}
@@ -554,7 +594,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
             : `${cost.tokens}`}{' '}
           tok
         </Button>
-        <Tooltip title={toAbsolutePath(node.key, projectRoot) ?? node.key}>
+        <Tooltip
+          title={toAbsolutePath(node.key, projectRoot) ?? node.key}
+          overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+        >
           <Button
             size="small"
             icon={<CopyOutlined />}
