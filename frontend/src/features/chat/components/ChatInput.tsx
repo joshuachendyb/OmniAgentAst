@@ -63,6 +63,7 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 文档[43] R1/R3：共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
+import { refreshRefs } from '@/features/refs/refresh';
 import { newRefId } from '@/features/refs/store';
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
@@ -254,46 +255,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
      */
     let refsToSend = refs;
     if (refs.length > 0) {
-      const checked = await Promise.all(
-        refs.map(async (r) => {
-          if (!r.path) return r;
-          try {
-            const f = await fileApi.readFile(r.path);
-            if (r.lineRange) {
-              const lines = f.content.replace(/\r\n/g, '\n').split('\n');
-              if (
-                r.lineRange.start > lines.length ||
-                r.lineRange.end > lines.length
-              ) {
-                return { ...r, invalid: true };
-              }
-              const content = lines
-                .slice(r.lineRange.start - 1, r.lineRange.end)
-                .join('\n');
-              return {
-                ...r,
-                content,
-                size: new TextEncoder().encode(content).length,
-                invalid: false,
-              };
-            }
-            return { ...r, content: f.content, size: f.size, invalid: false };
-          } catch {
-            return { ...r, invalid: true };
-          }
-        })
-      );
+      // 2026-10-22 小欧 - 文档[43] R6：校验与保鲜抽成唯一实现（可单测），行为不变
+      const checked = await refreshRefs(refs);
       setAll(checked);
       refsToSend = checked;
       const bad = checked.filter((r) => r.invalid);
       if (bad.length > 0) {
         showMessage(
           ErrorType.FILE_READ,
-          `引用已失效：${bad
-            .map((b) => b.label)
-            .join(
-              '、'
-            )}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
+          `引用已失效：${bad.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
         );
         return;
       }
