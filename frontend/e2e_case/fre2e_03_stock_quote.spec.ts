@@ -90,15 +90,7 @@ test.describe('查股票行情 UI 全链路', () => {
     // ============================================================
     // 通用区 ③ 诊断输出(库 printDiag, 不参与断言, 失败归因用) —— 非特例, 新 case 保留即可
     // ============================================================
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      tail,
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, tail, getCaseId());
     tail
       .split('\n')
       .filter((l) => l.includes('[tool_executor]'))

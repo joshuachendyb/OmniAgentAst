@@ -31,8 +31,8 @@ test.describe('量化交易研究-复杂多步', () => {
     await startNormalUiEnv(FRONTEND_DIR);
 
     const chat = new ChatPage(page);
-    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } =
-      attachStreamDiag(page);
+    const diag = attachStreamDiag(page);
+
 
     await chat.gotoChat();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
@@ -55,15 +55,7 @@ test.describe('量化交易研究-复杂多步', () => {
     try {
       await chat.waitReceiving(120_000);
     } catch (e) {
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, 0),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw e;
     }
 
@@ -111,15 +103,7 @@ test.describe('量化交易研究-复杂多步', () => {
       await chat.waitDone(600_000);
     }
 
-    printDiag(
-      streamReqs,
-      reconnectLogs,
-      sseErrors,
-      consoleAll,
-      readLogSince(BLOG, logBase),
-      allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
 
     await keepBrowserOpenIfRequested(page);
   });

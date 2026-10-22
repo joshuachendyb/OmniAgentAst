@@ -121,7 +121,22 @@ export const proxyLogPath = (): string => {
 
 // 编辑历史: 2026-09-13 小欧 v4 - 新增 ensureDevServer(复用优先起 dev server): 端口已有活服务则直接复用(不kill不冷启动),
 //   无服务才 npmArgs 启动并 poll 就绪 —— 普通功能 case 免白屏冷启动, 复用由探测(~百ms)判定 - 小欧-2026-09-13
-/** 复用优先确保 dev server 就绪: 端口已有活服务(HTTP 2xx-4xx)则直接复用, 否则启动并等就绪。
+// 编辑历史: 2026-10-22 小沈 - 复用判定改严格 HTTP 200 校验(waitPortUp 接受 2xx-4xx, 僵死 vite 进程端口 LISTEN
+//   但 HTTP 拒绝连接时 waitPortUp 仍可能误判); 不健康则 kill 僵死进程重启 - 小沈-2026-10-22
+/** 严格 HTTP 200 健康校验: 仅 200 视为 dev server 真正就绪(区别于 waitPortUp 的 2xx-4xx 宽松判定)。
+ *  用 127.0.0.1 避免 localhost 解析到 IPv6 而 vite 只监听 IPv4 的误判。 */
+const isDevServerHealthy = (port: number): boolean => {
+  try {
+    const out = ps(
+      `try { $r = Invoke-WebRequest http://127.0.0.1:${port} -UseBasicParsing -TimeoutSec 5; $r.StatusCode } catch { 0 }`
+    );
+    return Number(out) === 200;
+  } catch {
+    return false;
+  }
+};
+
+/** 复用优先确保 dev server 就绪: HTTP 200 则直接复用, 否则 kill 僵死进程(端口 LISTEN 但 HTTP 不响应)并重启。
  *  适用: 非强制独占端口的普通会话流 case; 断连 case(须自启 hmr:false 专用config独占5173)不走本函数。 */
 export const ensureDevServer = async (
   port: number,
@@ -129,11 +144,17 @@ export const ensureDevServer = async (
   npmArgs: string,
   envCmd = ''
 ): Promise<void> => {
-  if (waitPortUp(port)) return; // 已活 → 复用(免冷启动白屏)
+  if (isDevServerHealthy(port)) return;
+  killPort(port);
+  const downDeadline = Date.now() + 10_000;
+  while (Date.now() < downDeadline) {
+    if (waitPortDown(port)) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
   startDevServer(projectDir, npmArgs, envCmd);
   const deadline = Date.now() + 60_000;
   while (Date.now() < deadline) {
-    if (waitPortUp(port)) return;
+    if (isDevServerHealthy(port)) return;
     await new Promise((r) => setTimeout(r, 500));
   }
   throw new Error(`[E2E] dev server(:${port}) 就绪超时(ensureDevServer)`);

@@ -164,29 +164,13 @@ test.describe('[1] 17 当前(最近)会话发新任务 · 执行中刷新', () =
     const taskNew = await activeTaskId(page);
     console.log(`[E2E] 新任务: task=${taskNew} 轮次=${roundsBefore.length}`);
     if (!taskNew) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw new Error(
         `[E2E] 读不到新任务的 task_id —— 左侧列表没有 active 项。不当通过处理`
       );
     }
     if (roundsBefore.length < 2) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw new Error(
         `[E2E] 窗口错过: 新任务刷新前仅 ${roundsBefore.length} 轮(<2) —— 任务没进入执行中段, ` +
           `「执行中刷新」无从验证。请重跑 —— 不当通过处理`
@@ -404,15 +388,7 @@ test.describe('[1] 17 当前(最近)会话发新任务 · 执行中刷新', () =
     const stFinal = await pollTaskStatus(sessionOfNew, taskNew, 420_000);
     console.log(`[E2E] 新任务终态 status=${stFinal}`);
     if (stFinal === 'failed' || stFinal === 'cancelled') {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw new Error(
         `[E2E] 新任务终态为 ${stFinal}(本 case 未点停止)。后端日志见上方 DIAG`
       );
@@ -429,15 +405,7 @@ test.describe('[1] 17 当前(最近)会话发新任务 · 执行中刷新', () =
     expect(finalText.trim().length).toBeGreaterThan(30);
     expect(finalText).toContain('深空通信延迟');
 
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      readLogSince(BLOG, logBase),
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });

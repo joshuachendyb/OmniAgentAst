@@ -62,15 +62,7 @@ const pollFrameType = async (
   const frames = diag.consoleAll
     .filter((c) => /\[[\d:.]+\]\s*轮次=\S+\s/.test(c))
     .slice(-30);
-  printDiag(
-    diag.streamReqs,
-    diag.reconnectLogs,
-    diag.sseErrors,
-    diag.consoleAll,
-    '',
-    diag.allFailed,
-    getCaseId()
-  );
+  printDiag(diag, '', getCaseId());
   console.log(
     `[DIAG] === 近段帧日志(${frames.length} 条) ===\n` +
       frames.map((l) => `[DIAG]   ${l.slice(0, 160)}`).join('\n')
@@ -325,15 +317,7 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
         .toBeTruthy();
     } catch (aErr) {
       const curText = await readRightText(page);
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        '',
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, '', getCaseId());
       console.log(`[E2E] aTail=${JSON.stringify(aTail)}`);
       console.log(
         `[E2E] 点击A后 右栏正文 len=${curText.length} head=${JSON.stringify(
@@ -415,15 +399,7 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     // 10) 通用区③ 诊断落盘 + 软监控(全程 action-waiting 采样)
     await monitorActionWaiting(page, t0, 6000);
     await checkWaitingLeftover(page, t0);
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      '',
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, '', getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 
@@ -527,15 +503,7 @@ test.describe('历史/实时任务切换 isCurrentLive/taskActive 语义全链�
     }
 
     // 5) 通用区
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      '',
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, '', getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });

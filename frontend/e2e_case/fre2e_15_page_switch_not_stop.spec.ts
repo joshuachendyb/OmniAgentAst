@@ -122,15 +122,7 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw e;
     }
 
@@ -469,15 +461,7 @@ test.describe('[63] P6 红线 · 切到历史会话页 ≠ 点停止按钮', () 
     console.log(`[E2E] 操作② 新增 cancel 相关请求=${cancels.length}`);
 
     // ③ 通用区
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      readLogSince(BLOG, logBase),
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });

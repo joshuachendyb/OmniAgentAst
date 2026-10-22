@@ -155,15 +155,7 @@ test.describe('[63] P1 实时切页 · step 断点续显/不重初始化', () =>
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw e;
     }
 
@@ -181,15 +173,7 @@ test.describe('[63] P1 实时切页 · step 断点续显/不重初始化', () =>
       return seenRounds(diag.consoleAll, frameBase0);
     })();
     if (roundsAtSwitch.length < 3) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw new Error(
         `[E2E] 窗口错过: 切走前仅收到 ${roundsAtSwitch.length} 轮(<3), 无法验"断点续显"——请重跑以覆盖切走分支`
       );
@@ -318,15 +302,7 @@ test.describe('[63] P1 实时切页 · step 断点续显/不重初始化', () =>
     ).toEqual([]);
 
     // 通用区: 无条件落全量诊断
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      tail,
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });

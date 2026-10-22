@@ -167,15 +167,7 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw e;
     }
 
@@ -191,15 +183,7 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     const taskId = await activeTaskId(page);
     expect(taskId).toBeTruthy();
     if (roundsBefore.length < 3) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw new Error(
         `[E2E] 窗口错过: 刷新前仅 ${roundsBefore.length} 轮(<3)——请重跑以覆盖刷新续传分支`
       );
@@ -296,15 +280,7 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
             `[E2E][DIAG] rawTasks(session=${sidFromKey})=${JSON.stringify(raw)}`
           );
         }
-        printDiag(
-          diag.streamReqs,
-          diag.reconnectLogs,
-          diag.sseErrors,
-          diag.consoleAll,
-          readLogSince(BLOG, logBase),
-          diag.allFailed,
-          getCaseId()
-        );
+        printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
         throw e;
       });
 
@@ -384,15 +360,7 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
       await page.waitForTimeout(1000);
     }
     if (!mReconnect) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        tailAfter,
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, tailAfter, getCaseId());
     }
     expect(
       mReconnect,
@@ -460,15 +428,7 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
       `[E2E] 列表status: 刷新前=${statusBefore} 终态后=${statusAfter} (task=${taskId})`
     );
     if (statusAfter === statusBefore && statusAfter === 'executing') {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        tailAfter,
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, tailAfter, getCaseId());
     }
     // 列表不得停在 executing —— 终态帧已送达却仍显示执行中 = D 组缺陷复现
     expect(
@@ -531,15 +491,7 @@ test.describe('[63] P2 刷新续传 · after_seq 断点', () => {
     ).toBeGreaterThan(0);
 
     // 5) 通用区
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      tailAfter,
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, tailAfter, getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });

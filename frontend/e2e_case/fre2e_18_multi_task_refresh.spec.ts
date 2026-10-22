@@ -164,15 +164,7 @@ test.describe('[1] 18 同会话多任务 · 任务B执行中切走+切回+刷新
       );
     }
     if (roundsAtAway.length < 2) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw new Error(
         `[E2E] 窗口错过: 任务B 动作前仅 ${roundsAtAway.length} 轮(<2) —— 任务没进入执行中段, ` +
           `「切走/刷新时它在飞」无从验证。请重跑 —— 不当通过处理`
@@ -532,15 +524,7 @@ test.describe('[1] 18 同会话多任务 · 任务B执行中切走+切回+刷新
     console.log(`[E2E] 任务B 终态 status=${statusBFinal}`);
     if (statusBFinal === 'failed' || statusBFinal === 'cancelled') {
       const errText = readLogSince(BLOG, logBase);
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        errText,
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, errText, getCaseId());
       throw new Error(
         `[E2E] 任务B 终态为 ${statusBFinal}(本 case 未点停止)。后端日志见上方 DIAG`
       );
@@ -558,15 +542,7 @@ test.describe('[1] 18 同会话多任务 · 任务B执行中切走+切回+刷新
       );
     }
 
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      readLogSince(BLOG, logBase),
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });

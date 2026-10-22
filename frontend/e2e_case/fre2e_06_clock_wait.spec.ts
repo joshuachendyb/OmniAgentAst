@@ -38,8 +38,8 @@ test.describe('心跳等待感知钟面', () => {
     test.setTimeout(600_000);
 
     const chat = new ChatPage(page);
-    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } =
-      attachStreamDiag(page);
+    const diag = attachStreamDiag(page);
+    const { consoleAll } = diag;
 
     // 环境: 进程分离跨域(同 fre2e_01)
     killPort(9000);
@@ -82,15 +82,7 @@ test.describe('心跳等待感知钟面', () => {
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, 0),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw e;
     }
 
@@ -169,15 +161,7 @@ test.describe('心跳等待感知钟面', () => {
     expect(finalText.trim().length).toBeGreaterThan(30);
 
     // 打印全量诊断
-    printDiag(
-      streamReqs,
-      reconnectLogs,
-      sseErrors,
-      consoleAll,
-      readLogSince(BLOG, logBase),
-      allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
 
     await keepBrowserOpenIfRequested(page);
   });

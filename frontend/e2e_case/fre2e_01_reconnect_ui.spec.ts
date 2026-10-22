@@ -49,8 +49,8 @@ test.describe('断线重连 UI 全链路', () => {
     test.setTimeout(600_000);
 
     const chat = new ChatPage(page);
-    const { streamReqs, reconnectLogs, sseErrors, consoleAll, allFailed } =
-      attachStreamDiag(page);
+    const diag = attachStreamDiag(page);
+    const { streamReqs, reconnectLogs, consoleAll } = diag;
 
     // 环境就绪(进程分离-跨origin): 后端代理B(:9000→8000, 页面API/SSE经VITE_API_BASE_URL直连跨域)
     //   + vite A(:5173, hmr:false, 永活服务页面)
@@ -104,15 +104,7 @@ test.describe('断线重连 UI 全链路', () => {
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, 0),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw e;
     }
 
@@ -142,15 +134,7 @@ test.describe('断线重连 UI 全链路', () => {
     //     编辑历史: 2026-09-14 小欧 - 新增: 快模型下任务50s即终态的根因兜底 - 小欧-2026-09-14
     if (isFinalArrived()) {
       // 编辑历史: 2026-09-14 小欧 - 错过窗口时先落全量DIAG再throw(取证本轮console时间线), 便于归因任务时长/帧到达滞后 - 小欧-2026-09-14
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, logBase),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       await chat.waitDone(60_000);
       const ft = await chat.getFinalText();
       expect(ft.trim().length).toBeGreaterThan(30);
@@ -174,15 +158,7 @@ test.describe('断线重连 UI 全链路', () => {
       await page.waitForTimeout(500);
     }
     if (!detectReconnect()) {
-      printDiag(
-        streamReqs,
-        reconnectLogs,
-        sseErrors,
-        consoleAll,
-        readLogSince(BLOG, 0),
-        allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw new Error('[E2E] 前端未进入重连(断线未被感知)');
     }
 
@@ -240,15 +216,7 @@ test.describe('断线重连 UI 全链路', () => {
     }
 
     // [DIAG] 无条件输出网络/重连全量诊断(供失败归因, 不参与断言)
-    printDiag(
-      streamReqs,
-      reconnectLogs,
-      sseErrors,
-      consoleAll,
-      tail,
-      allFailed,
-      getCaseId()
-    );
+    printDiag(diag, tail, getCaseId());
 
     expect(recon).not.toBeNull();
     expect(Number(recon![1])).toBeGreaterThan(0);

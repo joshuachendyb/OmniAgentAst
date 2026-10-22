@@ -129,15 +129,7 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
     try {
       await chat.waitReceiving(90_000);
     } catch (e) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        readLogSince(BLOG, logBase),
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
       throw e;
     }
     const postBaseB = diag.streamReqs.filter(
@@ -397,12 +389,8 @@ test.describe('[1] 关掉页面一段时间后重新打开 · 恢复在跑任务
     expect(finalText).toContain('近地小行星采矿工程');
 
     printDiag(
-      diag2.streamReqs,
-      diag2.reconnectLogs,
-      diag2.sseErrors,
-      diag2.consoleAll,
+      { ...diag2, allFailed: [...diag.allFailed, ...diag2.allFailed] },
       readLogSince(BLOG, logBase),
-      [...diag.allFailed, ...diag2.allFailed],
       getCaseId()
     );
     await keepBrowserOpenIfRequested(page2);

@@ -46,15 +46,7 @@ export const runChatFlow = async (
     return await chat.getFinalText();
   } catch (e) {
     if (diag) {
-      printDiag(
-        diag.streamReqs,
-        diag.reconnectLogs,
-        diag.sseErrors,
-        diag.consoleAll,
-        '',
-        diag.allFailed,
-        getCaseId()
-      );
+      printDiag(diag, '', getCaseId());
     }
     throw e;
   }

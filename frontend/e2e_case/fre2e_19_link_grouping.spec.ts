@@ -253,15 +253,7 @@ test.describe('[4] 19 会话级 link 开关 + 任务链分组(10 任务组合)',
     expect(await badgeOf(page, t9)).toBe(bE);
     expect(await badgeOf(page, t10)).toBe(null);
 
-    printDiag(
-      diag.streamReqs,
-      diag.reconnectLogs,
-      diag.sseErrors,
-      diag.consoleAll,
-      readLogSince(BLOG, logBase),
-      diag.allFailed,
-      getCaseId()
-    );
+    printDiag(diag, readLogSince(BLOG, logBase), getCaseId());
     await keepBrowserOpenIfRequested(page);
   });
 });
