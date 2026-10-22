@@ -20,6 +20,14 @@
     "e2e_front_lib",
     "src/tests/support",
     "src/tests/unit/_chatStateMock.ts",
+    // 2026-10-22 小欧 - 收录 src/tests 下**非 .test.*/.spec.* 命名**的本地工作稿:
+    //   这类文件(输入历史 e2e 工作台 / 参数面板工作台 / 单元工作稿)不在主 tsconfig(排除 src/tests)
+    //   也不在上面的显式清单里 → typescript-eslint 的类型感知 lint 直接报 "parsing error:
+    //   none of those TSConfigs include this file", 等于零检查(实测 4 个文件报红, 卡住 npm run check)。
+    //   收录进本项目后: 既受 tsc 把关(已验证这几个文件零类型错误), 又让 ESLint 能正常解析。
+    //   注: 这些文件随 .gitignore(frontend/src/tests/)不入库, 收录仅为本机 lint/typecheck 通道畅通。
+    "src/tests/e2e-input-history",
+    "src/tests/unit/_*.ts",
     "src/tests/setup.ts",
     "vitest.config.ts",
     "playwright.config.ts"
