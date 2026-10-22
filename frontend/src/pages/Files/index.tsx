@@ -13,6 +13,8 @@
 // 2026-10-22 小杨 - 深链路径归一（Windows 反斜杠与 ./ 前缀），否则按 posix 拆分定位必失败 — 小杨-2026-10-22
 // 2026-10-22 小欧 - 深链/定位命中后树滚动到定位行（reveal 信号 → FilesTree 提交后 effect 自滚，
 //   竞态根治）+ 窄屏深链目标是文件时自动切预览 Tab（与树点击对齐）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook（useFilesTree / useFileSelection），
+//   页面退化为布局壳；mergeKids / buildScanNotices 上提 utils/fileTree — 小欧-2026-10-22
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -48,7 +50,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fileApi, type FileNode } from '@/services/api/file.api';
 import { sessionApi } from '@/services/api/session.api';
 import { toAbsolutePath, samePath } from '@/utils/projectPath';
-import { FilesTree, findNode } from '@/features/files/components/FilesTree';
+import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
 // 2026-10-22 小欧 - 文档[43] R3/R4：引用能力上提共享域；
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
@@ -61,7 +63,6 @@ import {
   showMessage,
   showSuccess,
   ErrorType,
-  isSilentError,
 } from '@/services/error/handler';
 import { Spacing, Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
@@ -72,46 +73,9 @@ import {
   SETTINGS_RADIUS,
 } from '@/theme/settingsTokens';
 
-/** 树归并：按 key（相对路径）把补拉的子节点挂到父下（不可变更新，只改一路祖先） */
-const mergeKids = (
-  nodes: FileNode[],
-  parentKey: string,
-  kids: FileNode[]
-): FileNode[] =>
-  nodes.map((n) => {
-    if (n.key === parentKey)
-      return { ...n, children: kids, incomplete_child: false };
-    if (n.children)
-      return { ...n, children: mergeKids(n.children, parentKey, kids) };
-    return n;
-  });
-
-/**
- * 2026-10-21 小欧 - 扫描不完整提示（truncated / incomplete_depth / skipped / skipped_cycles 四源）：
- *   后端一直在算这几个标志，但前端原先只取 r.nodes 全丢 → 用户以为看到的是完整目录
- *   （大仓下目录被截断而用户毫不知情）。此处如实告知，**几段拼成一行**显示（过长自动折行）。
- *   措辞按后端口径分列：skipped＝真读不到，skipped_cycles＝链接绕回已展开目录被防环拦下。
- */
-const buildScanNotices = (r: {
-  truncated: boolean;
-  incomplete_depth: boolean;
-  skipped: number;
-  skipped_cycles: number;
-}): string[] => {
-  const out: string[] = [];
-  if (r.truncated) out.push('未显示目录在「定位路径」输入路径直达）.');
-  if (r.incomplete_depth) out.push('深层点开时会自动加载.');
-  if (r.skipped > 0) out.push(`${r.skipped} 条目读失败跳过.`);
-  if (r.skipped_cycles > 0) out.push(`${r.skipped_cycles} 个符号链接）`);
-  return out;
-};
-
-/** 2026-10-21 小杨 - 修复：树的加载态升级为单一状态机
- *  （原 treeLoading/treeReady/treeErr 三个布尔可组合出"就绪且加载中且报错"的非法态） */
-type TreeStatus =
-  | { phase: 'loading' }
-  | { phase: 'ready' }
-  | { phase: 'error'; message: string };
+// 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook
+import { useFilesTree } from '@/features/files/hooks/useFilesTree';
+import { useFileSelection } from '@/features/files/hooks/useFileSelection';
 
 const MIN_LEFT_W = 280;
 const MAX_LEFT_W = 600;
@@ -266,23 +230,8 @@ const FilesPage: React.FC = () => {
 
   const [projectRoot, setProjectRoot] = useState('');
   const [rootErr, setRootErr] = useState<string | null>(null);
-  /** 2026-10-21 小欧 - 扫描不完整提示（truncated/incomplete_depth/skipped/skipped_cycles）；空数组＝结果完整 */
-  const [scanNotices, setScanNotices] = useState<string[]>([]);
-  const [tree, setTree] = useState<FileNode[]>([]);
-  /** 2026-10-21 小杨 - 深链需等树就绪；加载/就绪/错误三态合一 */
-  const [treeStatus, setTreeStatus] = useState<TreeStatus>({
-    phase: 'loading',
-  });
   /** 深链失败留痕（与定位框自身的草稿/错误无关，互不牵连） */
   const [linkErr, setLinkErr] = useState<string | null>(null);
-  const [narrowTab, setNarrowTab] = useState<'tree' | 'preview'>('tree'); // 窄屏 Tab
-  const [selected, setSelected] = useState<FileNode | null>(null);
-  const [lineRange, setLineRange] = useState<{
-    start: number;
-    end: number;
-  } | null>(null);
-  const [loadedKeys, setLoadedKeys] = useState<string[]>([]);
-  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   /**
    * 2026-10-22 小欧 - 滚动定位信号：openPath 命中后递增，FilesTree 在提交后的
    *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
@@ -294,39 +243,19 @@ const FilesPage: React.FC = () => {
     composerRefStore.getSnapshot,
     composerRefStore.getSnapshot
   );
-  /** 批量引用：树 checked 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
-  const [multiFiles, setMultiFiles] = useState<FileNode[]>([]);
 
-  /** 从单一状态机派生的视图布尔（不作为独立 state，避免非法组合） */
-  const treeReady = treeStatus.phase === 'ready';
-  const treeLoading = treeStatus.phase === 'loading';
-  const treeErr = treeStatus.phase === 'error' ? treeStatus.message : null;
+  // 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook
+  const {
+    tree, loadedKeys, setLoadedKeys,
+    expandedKeys, setExpandedKeys, scanNotices, treeReady, treeLoading, treeErr,
+    loadTree, loadDir, patchNodes, expandToPath,
+  } = useFilesTree();
+  const {
+    selected, setSelected, multiFiles, setMultiFiles,
+    lineRange, setLineRange, narrowTab, setNarrowTab,
+  } = useFileSelection();
 
-  /** tree 的 ref 镜像（异步链里读最新值，不能只靠 state 闭包） */
-  const treeRef = useRef<FileNode[]>([]);
   const refreshPreviewRef = useRef<(() => void) | null>(null);
-
-  /**
-   * 树请求生命周期（I7）：替换型（整树刷新）独占通道，新请求 abort 旧请求；
-   * 合并型（补拉子树）按键序号丢弃过期响应 —— 不同键并发合法，不能一 abort 了之。
-   */
-  const treeAbortRef = useRef<AbortController | null>(null);
-  const dirSeqRef = useRef<Map<string, number>>(new Map());
-
-  /** 开启一轮替换型树请求：取消上一轮，返回本轮 signal */
-  const beginTreeReq = useCallback((): AbortSignal => {
-    treeAbortRef.current?.abort();
-    const ctl = new AbortController();
-    treeAbortRef.current = ctl;
-    return ctl.signal;
-  }, []);
-
-  /** 合并型请求序号闸门：同键后发者作废先发者 */
-  const claimDir = useCallback((key: string): number => {
-    const seq = (dirSeqRef.current.get(key) ?? 0) + 1;
-    dirSeqRef.current.set(key, seq);
-    return seq;
-  }, []);
 
   const sessionId = useMemo(() => readStoredSessionId(), []);
   /** 足迹标记：共享 hook（树 / 足迹面板 / 推荐三处同源同型） */
@@ -350,83 +279,11 @@ const FilesPage: React.FC = () => {
     }
   }, []);
 
-  const loadTree = useCallback(async () => {
-    const signal = beginTreeReq();
-    setTreeStatus({ phase: 'loading' });
-    try {
-      // 2026-10-21 小欧 - 首屏只取**前 3 层**（max_depth=3）：实测 E:\test_dir 全树 8.9 万节点 /
-      //   19.9MB，服务端 TTFB 9.8 秒（其中 gzip level9 占 4.7s）→ 首屏白屏 10 秒。
-      //   现改为：首屏取 3 层，点开更深目录时用已有的 loadDir 补拉（同样 3 层，深了再点再拉）。
-      //   **后端不设任何上限**（见 browse_service 常量区红线注释）。
-      const r = await fileApi.fetchTree('', { maxDepth: 3, signal });
-      treeRef.current = r.nodes;
-      setTree(r.nodes);
-      setLoadedKeys([]);
-      // 2026-10-21 小欧 - 如实告知"结果是否完整"（原先三个标志全丢，用户以为看到的是完整目录）
-      setScanNotices(buildScanNotices(r));
-      setTreeStatus({ phase: 'ready' });
-    } catch (e) {
-      // 2026-10-21 小欧 - 被新一轮请求取代/组件卸载：静默丢弃，不误报「加载失败」
-      if (isSilentError(e)) return;
-      setTreeStatus({ phase: 'error', message: '目录加载失败，请重试' });
-    }
-  }, [beginTreeReq]);
-
   useEffect(() => {
     void loadRoot();
   }, [loadRoot]);
-  useEffect(() => {
-    void loadTree();
-  }, [loadTree]);
-
-  // 2026-10-21 小欧 - 组件卸载：取消在途树请求（否则卸载后回调仍在写 state）
-  useEffect(() => () => treeAbortRef.current?.abort(), []);
 
   /** 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
-  const expandToPath = useCallback(
-    async (rel: string): Promise<FileNode | null> => {
-      // 2026-10-21 小杨 - 工具可能给 Windows 反斜杠或 ./ 前缀；树 key 是 posix，
-      //   不归一化会 100% 找不到目标 — 小杨-2026-10-21
-      const targetKey = rel
-        .replace(/\\/g, '/')
-        .replace(/^\.\/+/, '')
-        .replace(/\/+/g, '/');
-      const segs = targetKey.split('/').filter(Boolean);
-      const dirKeys: string[] = [];
-      let cur = '';
-      for (const s of segs) {
-        cur = cur ? `${cur}/${s}` : s;
-        let hit = findNode(treeRef.current, cur);
-        if (!hit) return null; // 路径不存在 → 调用方给明确提示（失败分支不静默）
-        if (hit.type === 'dir' && !hit.children) {
-          // 2026-10-21 小欧 - 合并型请求：同键后发者作废先发者（不 abort，不同键并发合法）
-          const seq = claimDir(cur);
-          // 2026-10-21 小欧 - 补拉也只取 3 层（点开目录时按需补拉，深了再点再拉）
-          const r = await fileApi.fetchTree(cur, { maxDepth: 3 });
-          if (dirSeqRef.current.get(cur) !== seq) return null; // 过期响应丢弃
-          const merged = mergeKids(treeRef.current, cur, r.nodes);
-          treeRef.current = merged;
-          setTree(merged);
-          setLoadedKeys((prev) => (prev.includes(cur) ? prev : [...prev, cur]));
-          hit = findNode(treeRef.current, cur);
-          if (!hit) return null;
-        }
-        if (hit.type === 'dir') dirKeys.push(cur);
-      }
-      const target = findNode(treeRef.current, targetKey);
-      if (!target) return null;
-      // 2026-10-21 小杨 - 修复：展开集合由本页唯一持有（原先树内还有一份
-      //   互不相通的 expanded state → 深链/定位只改页面 state，树纹丝不动）。
-      //   用函数式追加，不依赖闭包里的旧 expandedKeys。
-      setExpandedKeys((prev) => {
-        const add = dirKeys.filter((k) => !prev.includes(k));
-        return add.length > 0 ? [...prev, ...add] : prev;
-      });
-      return target;
-    },
-    [claimDir]
-  );
-
   /**
    * 统一的"打开一个路径"入口（2026-10-21 小杨 - 收口改造）
    *
@@ -600,29 +457,6 @@ const FilesPage: React.FC = () => {
     );
     if (ok.length === multiFiles.length) setMultiFiles([]);
   }, [multiFiles, pushRef]);
-
-  /** 补拉一个目录（降级） */
-  const loadDir = useCallback(
-    async (key: string): Promise<FileNode[] | null> => {
-      // 2026-10-21 小欧 - 合并型请求：同键后发者作废先发者（不同键并发合法，不能一 abort 了之）
-      const seq = claimDir(key);
-      try {
-        // 2026-10-21 小杨 - 补拉**到 3 层**（首屏 5 秒开；再深一层由用户点开再拉）
-        const r = await fileApi.fetchTree(key, { maxDepth: 3 });
-        if (dirSeqRef.current.get(key) !== seq) return null; // 过期响应丢弃
-        return r.nodes;
-      } catch {
-        return null;
-      }
-    },
-    [claimDir]
-  );
-
-  const patchNodes = useCallback((parentKey: string, kids: FileNode[]) => {
-    const merged = mergeKids(treeRef.current, parentKey, kids);
-    treeRef.current = merged;
-    setTree(merged);
-  }, []);
 
   /** 工具条刷新：树 + 足迹 + 预览共用一次点击 */
   const refreshAll = useCallback(() => {
