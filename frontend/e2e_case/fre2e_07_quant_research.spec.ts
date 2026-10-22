@@ -33,7 +33,6 @@ test.describe('量化交易研究-复杂多步', () => {
     const chat = new ChatPage(page);
     const diag = attachStreamDiag(page);
 
-
     await chat.gotoChat();
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
 

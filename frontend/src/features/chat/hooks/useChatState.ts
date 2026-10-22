@@ -14,7 +14,7 @@
 //   ② 删除 applySessionState 越界写 currentSessionIdRef(原违反 SLAP);
 //   ③ 删除 messagesRef 的单向 useEffect 同步, 改用 setMessages wrapper 保证一致性 — 小欧-2026-10-05
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.3: 新增 sessionWorkspaces/setSessionWorkspaces(会话使用目录列表, 类型/useState/返回三处,
-  //   照 linkEnabled 同款; 无 dirty 无暂存, PATCH 即时生效, 徽标=本列表长度现算)
+//   照 linkEnabled 同款; 无 dirty 无暂存, PATCH 即时生效, 徽标=本列表长度现算)
 // 编辑历史: 2026-10-08 小欧 - 文档[19] 3.5+3.7 减锁与死状态清理(删 34 行):
 //   ① Refs 删 isLoadingHistoryRef(loading 锁, 与代际守卫职责重复且互斥);
 //   ② UI 态删 retryCount/setRetryCount(写而不读镜像, 真读在 useChatSession 的 sessionRetryRef);

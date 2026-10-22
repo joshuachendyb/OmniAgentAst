@@ -64,12 +64,7 @@ test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定
   await page.waitForTimeout(900);
   const m1 = page.locator('.ant-modal-content');
   await expect(m1.getByText('shell 命令')).toBeVisible();
-  for (const g of [
-    'delete 命令',
-    'HTL 人工确认',
-    '信任',
-    '沙箱与运行限制',
-  ]) {
+  for (const g of ['delete 命令', 'HTL 人工确认', '信任', '沙箱与运行限制']) {
     await expect(m1.getByText(g, { exact: false }).first()).toBeVisible();
   }
   await m1.getByText('沙箱与运行限制').scrollIntoViewIfNeeded();

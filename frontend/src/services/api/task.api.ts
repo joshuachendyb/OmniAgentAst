@@ -147,7 +147,9 @@ export interface TaskDetail {
   // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 事件列表快照条目本体
   //   {kind, text, time}。类型复用 useTaskInfo 的 ProcessEvent(单一真源, 禁手写副本);
   //   用内联 import() 避免 api→hooks 反向依赖(同 history_context_first 写法)。
-  process_events?: import('@/features/chat/hooks/useTaskInfo').ProcessEvent[] | null;
+  process_events?:
+    | import('@/features/chat/hooks/useTaskInfo').ProcessEvent[]
+    | null;
 }
 
 export function adaptTaskDetail(raw: {

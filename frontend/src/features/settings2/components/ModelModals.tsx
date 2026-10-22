@@ -237,7 +237,9 @@ export const ModelModals: React.FC<Props> = (props) => {
   const collectDefaultVal = (key: string): unknown => {
     const preset = PARAM_PRESETS.find((p) => p.key === key);
     return (
-      collected.params[key] ?? sibModels[0]?.default_params?.[key] ?? preset?.default
+      collected.params[key] ??
+      sibModels[0]?.default_params?.[key] ??
+      preset?.default
     );
   };
 
@@ -357,7 +359,10 @@ export const ModelModals: React.FC<Props> = (props) => {
         <Form
           form={mForm}
           layout="horizontal"
-          labelCol={{ span: 5, style: { textAlign: 'left', paddingRight: Spacing.LG } }}
+          labelCol={{
+            span: 5,
+            style: { textAlign: 'left', paddingRight: Spacing.LG },
+          }}
           wrapperCol={{ span: 19 }}
           colon={false}
         >
@@ -406,7 +411,9 @@ export const ModelModals: React.FC<Props> = (props) => {
                   if (grp.kind === 'bool')
                     return (
                       !opts &&
-                      (typeof dv === 'boolean' || dv === 'true' || dv === 'false')
+                      (typeof dv === 'boolean' ||
+                        dv === 'true' ||
+                        dv === 'false')
                     );
                   return !opts && typeof dv !== 'boolean';
                 });
@@ -484,7 +491,10 @@ export const ModelModals: React.FC<Props> = (props) => {
         <Form
           form={pForm}
           layout="horizontal"
-          labelCol={{ span: 7, style: { textAlign: 'left', paddingRight: Spacing.LG } }}
+          labelCol={{
+            span: 7,
+            style: { textAlign: 'left', paddingRight: Spacing.LG },
+          }}
           wrapperCol={{ span: 17 }}
           colon={false}
         >
@@ -493,7 +503,10 @@ export const ModelModals: React.FC<Props> = (props) => {
               「身份 / 连接 / 性能 / 批量模型」是四件事。分块后层级立刻成立。
               块内 Form.Item 一律 marginBottom:0（末项）——此前每项都写 marginBottom:Spacing.LG，
               与 Row 的 gutter 叠加后出现 40/74/74 三种间距（问题#5），现由 ModalSection 内距统一。 */}
-          <ModalSection title="身份" hint="名称即配置文件里的 key，创建后不可改">
+          <ModalSection
+            title="身份"
+            hint="名称即配置文件里的 key，创建后不可改"
+          >
             <Row gutter={Spacing.MD}>
               <Col span={12}>
                 <Form.Item
@@ -517,10 +530,7 @@ export const ModelModals: React.FC<Props> = (props) => {
             </Row>
           </ModalSection>
 
-          <ModalSection
-            title="连接"
-            style={{ marginTop: Spacing.MD }}
-          >
+          <ModalSection title="连接" style={{ marginTop: Spacing.MD }}>
             {/* 小欧 2026-09-26: base_url 必填 — URL 是 Provider 的必要配置，
                 无地址即无法调用；未填不允许提交(与 api_key 的"留空=保持原值"方向相反)
                 2026-10-10 22:35 小欧 - API 地址/API Key 改并排（原上下排把「批量模型」块
@@ -559,7 +569,11 @@ export const ModelModals: React.FC<Props> = (props) => {
                     而 Input.Password 渲染 type="password" 会被 Chrome 密码管理器自动填入已存口令
                     （表现为浅蓝底 + 掩码点，且不察觉直接保存就把浏览器口令写进 config.yaml 当 api_key）。
                     口径与 SecretRevealInput:141 同款 —「新密钥一律不让浏览器自动填充」。 */}
-                <Form.Item name="api_key" label="API Key" style={{ marginBottom: 0 }}>
+                <Form.Item
+                  name="api_key"
+                  label="API Key"
+                  style={{ marginBottom: 0 }}
+                >
                   <Input.Password
                     placeholder="未配置则留空"
                     autoComplete="new-password"
@@ -578,8 +592,16 @@ export const ModelModals: React.FC<Props> = (props) => {
           >
             <Row gutter={Spacing.MD}>
               <Col span={12}>
-                <Form.Item label="timeout(秒)" name="timeout" style={{ marginBottom: 0 }}>
-                  <InputNumber min={1} placeholder="默认60" style={{ width: '100%' }} />
+                <Form.Item
+                  label="timeout(秒)"
+                  name="timeout"
+                  style={{ marginBottom: 0 }}
+                >
+                  <InputNumber
+                    min={1}
+                    placeholder="默认60"
+                    style={{ width: '100%' }}
+                  />
                 </Form.Item>
               </Col>
               <Col span={12}>
@@ -588,7 +610,11 @@ export const ModelModals: React.FC<Props> = (props) => {
                   name="max_retries"
                   style={{ marginBottom: 0 }}
                 >
-                  <InputNumber min={0} placeholder="默认3" style={{ width: '100%' }} />
+                  <InputNumber
+                    min={0}
+                    placeholder="默认3"
+                    style={{ width: '100%' }}
+                  />
                 </Form.Item>
               </Col>
             </Row>
@@ -603,74 +629,76 @@ export const ModelModals: React.FC<Props> = (props) => {
             style={{ marginTop: Spacing.MD }}
           >
             <Space.Compact style={{ width: '100%', marginBottom: Spacing.SM }}>
-            <Input
-              style={{ flex: 1 }}
-              placeholder="输入模型名，回车添加"
-              status={modelErr ? 'error' : undefined}
-              value={modelInput}
-              onChange={(e) => {
-                setModelInput(e.target.value);
-                setModelErr('');
-              }}
-              onPressEnter={() => {
-                const v = modelInput.trim();
-                if (!v) {
-                  setModelErr('请输入模型名');
-                  return;
-                }
-                setModelErr('');
-                setNewModels((ps) => (ps.includes(v) ? ps : [...ps, v]));
-                setModelInput('');
-              }}
-            />
-            <Button
-              icon={<PlusOutlined />}
-              onClick={() => {
-                const v = modelInput.trim();
-                if (!v) {
-                  setModelErr('请输入模型名');
-                  return;
-                }
-                setModelErr('');
-                setNewModels((ps) => (ps.includes(v) ? ps : [...ps, v]));
-                setModelInput('');
-              }}
-              aria-label="添加模型"
-            />
-          </Space.Compact>
-          {modelErr && (
-            <div style={{ fontSize: FontSize.SECONDARY, color: Colors.ERROR }}>
-              {modelErr}
-            </div>
-          )}
-          {newModels.length > 0 && (
-            <List
-              size="small"
-              style={{ marginTop: Spacing.SM }}
-              dataSource={newModels}
-              renderItem={(m) => (
-                <List.Item
-                  actions={[
-                    <Button
-                      key="del"
-                      type="text"
-                      danger
-                      size="small"
-                      icon={<DeleteOutlined />}
-                      onClick={() =>
-                        setNewModels((ps) => ps.filter((x) => x !== m))
-                      }
-aria-label={`移除${m}`}
-                    />
-                  ]}
-                >
-                  <Typography.Text style={{ fontSize: FontSize.SECONDARY }}>
-                    {m}
-                  </Typography.Text>
-                </List.Item>
-              )}
-            />
-          )}
+              <Input
+                style={{ flex: 1 }}
+                placeholder="输入模型名，回车添加"
+                status={modelErr ? 'error' : undefined}
+                value={modelInput}
+                onChange={(e) => {
+                  setModelInput(e.target.value);
+                  setModelErr('');
+                }}
+                onPressEnter={() => {
+                  const v = modelInput.trim();
+                  if (!v) {
+                    setModelErr('请输入模型名');
+                    return;
+                  }
+                  setModelErr('');
+                  setNewModels((ps) => (ps.includes(v) ? ps : [...ps, v]));
+                  setModelInput('');
+                }}
+              />
+              <Button
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  const v = modelInput.trim();
+                  if (!v) {
+                    setModelErr('请输入模型名');
+                    return;
+                  }
+                  setModelErr('');
+                  setNewModels((ps) => (ps.includes(v) ? ps : [...ps, v]));
+                  setModelInput('');
+                }}
+                aria-label="添加模型"
+              />
+            </Space.Compact>
+            {modelErr && (
+              <div
+                style={{ fontSize: FontSize.SECONDARY, color: Colors.ERROR }}
+              >
+                {modelErr}
+              </div>
+            )}
+            {newModels.length > 0 && (
+              <List
+                size="small"
+                style={{ marginTop: Spacing.SM }}
+                dataSource={newModels}
+                renderItem={(m) => (
+                  <List.Item
+                    actions={[
+                      <Button
+                        key="del"
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={() =>
+                          setNewModels((ps) => ps.filter((x) => x !== m))
+                        }
+                        aria-label={`移除${m}`}
+                      />,
+                    ]}
+                  >
+                    <Typography.Text style={{ fontSize: FontSize.SECONDARY }}>
+                      {m}
+                    </Typography.Text>
+                  </List.Item>
+                )}
+              />
+            )}
           </ModalSection>
         </Form>
       </SettingsModal>
@@ -684,11 +712,12 @@ aria-label={`移除${m}`}
         //     （Windows 彩色/安卓彩色/Mac 单色），且与 danger 按钮语义重复；
         //   ③后果文案由单段灰字拆成"逐条列项 + 后果分级"，危险提示不再被淹没在说明里。
         title={
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          >
             <ExclamationCircleFilled style={{ color: Colors.ERROR }} />
             确定要删除
-            <CodeChip tone="danger">{deleteLabel(deleteTarget)}</CodeChip>
-            ？
+            <CodeChip tone="danger">{deleteLabel(deleteTarget)}</CodeChip>？
           </span>
         }
         danger
@@ -697,13 +726,17 @@ aria-label={`移除${m}`}
         okText="删除"
         cancelText="取消"
       >
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+        <div
+          style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+        >
           删除后：
           <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
             <li>若它是当前使用的模型，将自动切换到默认模型</li>
             <li>若是 Provider，将级联删除其下所有模型</li>
           </ul>
-          <span style={{ color: Colors.TEXT.TERTIARY, fontSize: FontSize.SMALL }}>
+          <span
+            style={{ color: Colors.TEXT.TERTIARY, fontSize: FontSize.SMALL }}
+          >
             该操作不可撤销
           </span>
         </div>

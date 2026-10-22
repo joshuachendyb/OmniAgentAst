@@ -140,7 +140,11 @@ export const CurrentModelRefCard: React.FC<Props> = ({
           </Button>
         )}
         {status === 'fallback' && (
-          <Button size="small" type="primary" onClick={() => setSwitchOpen(true)}>
+          <Button
+            size="small"
+            type="primary"
+            onClick={() => setSwitchOpen(true)}
+          >
             去选择
           </Button>
         )}
@@ -170,7 +174,9 @@ export const CurrentModelRefCard: React.FC<Props> = ({
               color: Colors.TEXT.STRONG,
             }}
           >
-            {providerName && modelName ? `${providerName} / ${modelName}` : '（无）'}
+            {providerName && modelName
+              ? `${providerName} / ${modelName}`
+              : '（无）'}
           </span>
           {status === 'normal' && (
             <span
@@ -218,7 +224,10 @@ export const CurrentModelRefCard: React.FC<Props> = ({
               {capabilities.map((c) => (
                 <Tag
                   key={c}
-                  style={{ fontSize: FontSize.SECONDARY, marginRight: Spacing.SM }}
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    marginRight: Spacing.SM,
+                  }}
                 >
                   {c}
                 </Tag>

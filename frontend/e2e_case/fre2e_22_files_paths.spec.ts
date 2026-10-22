@@ -27,15 +27,17 @@ const enc = (p: string) => encodeURIComponent(p);
 /** 打开文件页并等首屏树渲染完成 */
 const gotoFiles = async (page: Page, query = ''): Promise<void> => {
   await page.goto(`/files${query}`);
-  await expect(
-    page.locator('.files-tree-row').first()
-  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator('.files-tree-row').first()).toBeVisible({
+    timeout: 60_000,
+  });
 };
 
 /** 取某文件的行元素背景色（高亮色非空即视为已定位） */
 const bgOf = async (page: Page, line: number): Promise<string> =>
   page.evaluate((ln) => {
-    const el = document.querySelector(`[data-ln="${ln}"]`) as HTMLElement | null;
+    const el = document.querySelector(
+      `[data-ln="${ln}"]`
+    ) as HTMLElement | null;
     return el ? el.style.background : '';
   }, line);
 
@@ -54,8 +56,13 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
     // 首屏必须是"只取有限层"（当前口径 3 层，深层按需补拉）
     expect(treeReqs[0]).toContain('max_depth=3');
     // 首屏阶段不得出现按子目录补拉的请求
-    const subReq = treeReqs.filter((u) => /path=[^&]+/.test(u) && !/path=(&|$)/.test(u));
-    expect(subReq, `首屏不应有子目录补拉请求: ${subReq.join(' | ')}`).toHaveLength(0);
+    const subReq = treeReqs.filter(
+      (u) => /path=[^&]+/.test(u) && !/path=(&|$)/.test(u)
+    );
+    expect(
+      subReq,
+      `首屏不应有子目录补拉请求: ${subReq.join(' | ')}`
+    ).toHaveLength(0);
   });
 
   test('T2 逐层展开：首屏 3 层之外的目录按需补拉（max_depth=10）', async ({
@@ -83,24 +90,35 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
       .first()
       .click();
     await expect(
-      page.locator('[data-file-key="deepseek-harness/docs/cookbook/adding-a-package.md"]').first()
+      page
+        .locator(
+          '[data-file-key="deepseek-harness/docs/cookbook/adding-a-package.md"]'
+        )
+        .first()
     ).toBeVisible({ timeout: 60_000 });
 
     const subReq = treeReqs.find((u) =>
       decodeURIComponent(u).includes('path=deepseek-harness/docs/cookbook')
     );
-    expect(subReq, `未发起 cookbook 的补拉请求: ${treeReqs.join(' | ')}`).toBeTruthy();
+    expect(
+      subReq,
+      `未发起 cookbook 的补拉请求: ${treeReqs.join(' | ')}`
+    ).toBeTruthy();
     // 补拉同样是有限层（当前口径 3 层，深了再点再拉）
     expect(subReq).toContain('max_depth=3');
   });
 
-  test('T3 深链定位：正斜杠多级路径 → 树定位 + 预览出内容', async ({ page }) => {
+  test('T3 深链定位：正斜杠多级路径 → 树定位 + 预览出内容', async ({
+    page,
+  }) => {
     await gotoFiles(page, `?path=${enc(NESTED_FILE)}`);
     const row = page.locator(`[data-file-key="${NESTED_FILE}"]`).first();
     await expect(row).toBeVisible({ timeout: 60_000 });
     await expect(row).toHaveAttribute('data-active', '1');
     // 预览区出现该文件名/内容
-    await expect(page.getByText('agent-lifecycle', { exact: false }).first()).toBeVisible({
+    await expect(
+      page.getByText('agent-lifecycle', { exact: false }).first()
+    ).toBeVisible({
       timeout: 60_000,
     });
   });
@@ -122,14 +140,14 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
     await expect(row).toHaveAttribute('data-active', '1');
   });
 
-  test('T6 深链定位：中文目录 + 中文文件名 → 能定位并出预览', async ({ page }) => {
+  test('T6 深链定位：中文目录 + 中文文件名 → 能定位并出预览', async ({
+    page,
+  }) => {
     await gotoFiles(page, `?path=${enc(DIR_CN)}`);
     const dirRow = page.locator(`[data-file-key="${DIR_CN}"]`).first();
     await expect(dirRow).toBeVisible({ timeout: 60_000 });
     // 目录里的中文文件应出现
-    const cnFile = page
-      .locator('[data-file-key^="' + DIR_CN + '/"]')
-      .first();
+    const cnFile = page.locator('[data-file-key^="' + DIR_CN + '/"]').first();
     await expect(cnFile).toBeVisible({ timeout: 60_000 });
   });
 
@@ -187,7 +205,9 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
       .toBeGreaterThan(before);
   });
 
-  test('T10 超大文件：「显示更多」把渲染窗口从 2000 行推进', async ({ page }) => {
+  test('T10 超大文件：「显示更多」把渲染窗口从 2000 行推进', async ({
+    page,
+  }) => {
     await gotoFiles(page, `?path=${enc(BIG_FILE)}`);
     const showMore = page.getByRole('button', { name: /显示更多/ });
     await expect(showMore).toBeVisible({ timeout: 120_000 });
@@ -198,7 +218,10 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
       .toBeGreaterThan(rowsBefore);
   });
 
-  test('T11 复制路径：剪贴板拿到的是相对项目根路径', async ({ page, context }) => {
+  test('T11 复制路径：剪贴板拿到的是相对项目根路径', async ({
+    page,
+    context,
+  }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     // 用非 md 文件（md 默认美显模式，无行号 DOM）
     await gotoFiles(page, `?path=${enc(NESTED_FILE)}`);
@@ -210,7 +233,9 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
     expect(clip).toContain(NESTED_FILE);
   });
 
-  test('T12 引用到输入框：就地收集 → 去对话后引用进入输入区', async ({ page }) => {
+  test('T12 引用到输入框：就地收集 → 去对话后引用进入输入区', async ({
+    page,
+  }) => {
     await gotoFiles(page, `?path=${enc(NESTED_FILE)}`);
     await expect(page.locator('[data-ln="1"]').first()).toBeVisible({
       timeout: 60_000,
@@ -242,7 +267,9 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
     await reload.click();
     // 等树重新就绪（加载中树会整体替换为 Spin，属设计）
     await expect
-      .poll(async () => page.locator('.files-tree-row').count(), { timeout: 60_000 })
+      .poll(async () => page.locator('.files-tree-row').count(), {
+        timeout: 60_000,
+      })
       .toBeGreaterThan(0);
     await page.waitForTimeout(1500);
     const count1 = await page.locator('.files-tree-row').count();
@@ -276,7 +303,10 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
       if (!m) return NaN;
       const n = Number(m[1]);
       const u = m[2].toUpperCase();
-      return n * (u === 'B' ? 1 : u === 'KB' ? 1024 : u === 'MB' ? 1048576 : 1073741824);
+      return (
+        n *
+        (u === 'B' ? 1 : u === 'KB' ? 1024 : u === 'MB' ? 1048576 : 1073741824)
+      );
     };
     const [total, loaded] = nums.slice(0, 2).map(toBytes);
     expect(Number.isFinite(total)).toBe(true);
@@ -287,7 +317,9 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
   test('T16 md 双模：美显 ⇄ 文本切换真实生效', async ({ page }) => {
     await gotoFiles(page, `?path=${enc(MD_CN)}`);
     // 默认美显（无行号 DOM）
-    await expect(page.locator('[data-ln="1"]')).toHaveCount(0, { timeout: 60_000 });
+    await expect(page.locator('[data-ln="1"]')).toHaveCount(0, {
+      timeout: 60_000,
+    });
     // 切「文本」→ 行号出现
     await page.getByText('文本', { exact: true }).first().click();
     await expect(page.locator('[data-ln="1"]').first()).toBeVisible({
@@ -295,7 +327,9 @@ test.describe('文件页：路径/深链/行号/翻页/竞态（真实浏览器�
     });
     // 切回「美显」→ 行号消失
     await page.getByText('美显', { exact: true }).first().click();
-    await expect(page.locator('[data-ln="1"]')).toHaveCount(0, { timeout: 30_000 });
+    await expect(page.locator('[data-ln="1"]')).toHaveCount(0, {
+      timeout: 30_000,
+    });
   });
 
   test('T17 折行开关：勾选后长行折行（换行位置变化）', async ({ page }) => {

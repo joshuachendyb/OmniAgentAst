@@ -157,12 +157,20 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         />
         文件足迹
         <span
-          style={{ color: Colors.TEXT.SECONDARY, fontSize: chatTokens.fontSM, marginLeft: Spacing.XS }}
+          style={{
+            color: Colors.TEXT.SECONDARY,
+            fontSize: chatTokens.fontSM,
+            marginLeft: Spacing.XS,
+          }}
         >
           本会话中 Agent 读写过的文件 · 点文件名打开，点「引用」加入本轮对话
         </span>
         <span
-          style={{ color: Colors.TEXT.SECONDARY, fontSize: chatTokens.fontSM, marginLeft: Spacing.XS }}
+          style={{
+            color: Colors.TEXT.SECONDARY,
+            fontSize: chatTokens.fontSM,
+            marginLeft: Spacing.XS,
+          }}
         >
           {loading && files.length === 0 ? '' : files.length}
         </span>

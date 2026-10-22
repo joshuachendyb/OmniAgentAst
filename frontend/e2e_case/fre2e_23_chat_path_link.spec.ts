@@ -19,7 +19,10 @@ const TARGET = 'extracted_numbers+2026-09-28_18-31-01.txt';
  * 等一轮真实 LLM 跑完（不等"停止钮/绿圈"——本机响应快，18s 内就 final，
  *   等中间态会误判失败；只等终态 + 工具行出现）
  */
-const runToolRound = async (chat: ChatPage, prompt: string): Promise<string> => {
+const runToolRound = async (
+  chat: ChatPage,
+  prompt: string
+): Promise<string> => {
   await chat.sendPrompt(prompt);
   await chat.waitDone(300_000);
   await chat.waitMs(1500);
@@ -44,7 +47,8 @@ const waitToolCall = async (
     if (ok) return true;
     if (i === 0) {
       await chat.sendPrompt(
-        prompt + '（上一轮你没有调用工具，这次必须先调用 read_text_file 再回答）'
+        prompt +
+          '（上一轮你没有调用工具，这次必须先调用 read_text_file 再回答）'
       );
       await chat.waitDone(300_000);
       await chat.waitMs(1000);
@@ -86,14 +90,19 @@ test.describe('聊天侧：工具参数里的路径可点（真实 LLM + 真实�
     // 切到「分组参数」视图（默认是 TOOL结果，看不到入参）
     await popover.getByText('分组参数').first().click();
     await expect
-      .poll(async () => await popover.locator('a[href^="/files?path="]').count(), {
-        timeout: 30_000,
-      })
+      .poll(
+        async () => await popover.locator('a[href^="/files?path="]').count(),
+        {
+          timeout: 30_000,
+        }
+      )
       .toBeGreaterThan(0);
 
     // 浮层里 path 值必须是深链（a[href^="/files?path="]）
     const link = popover.locator('a[href^="/files?path="]').first();
-    await expect(link, '参数浮层里没有路径深链').toBeVisible({ timeout: 30_000 });
+    await expect(link, '参数浮层里没有路径深链').toBeVisible({
+      timeout: 30_000,
+    });
 
     const href = await link.getAttribute('href');
     expect(href).toBeTruthy();
@@ -134,11 +143,12 @@ test.describe('聊天侧：工具参数里的路径可点（真实 LLM + 真实�
     // 切到「规格表参数」视图
     await popover.getByText('规格表参数').first().click();
     await expect
-      .poll(async () => await popover.locator('a[href^="/files?path="]').count(), {
-        timeout: 30_000,
-      })
+      .poll(
+        async () => await popover.locator('a[href^="/files?path="]').count(),
+        {
+          timeout: 30_000,
+        }
+      )
       .toBeGreaterThan(0);
   });
 });
-
-

@@ -81,7 +81,10 @@ test.describe('断线重连 UI 全链路', () => {
     const PAGE_PORT = 5175;
     killPort(PAGE_PORT);
     await expect
-      .poll(() => waitPortDown(PAGE_PORT), { timeout: 20_000, intervals: [500] })
+      .poll(() => waitPortDown(PAGE_PORT), {
+        timeout: 20_000,
+        intervals: [500],
+      })
       .toBeTruthy();
     startDevServer(
       FRONTEND_DIR,
@@ -110,7 +113,9 @@ test.describe('断线重连 UI 全链路', () => {
           `http://localhost:${PAGE_PORT}/src/services/api/client.ts`
         );
         if (!r.ok()) return false;
-        return (await r.text()).includes('"VITE_API_BASE_URL": "http://localhost:9000"');
+        return (await r.text()).includes(
+          '"VITE_API_BASE_URL": "http://localhost:9000"'
+        );
       } catch {
         return false;
       }
@@ -151,9 +156,7 @@ test.describe('断线重连 UI 全链路', () => {
       await expect
         .poll(
           () =>
-            diag.streamReqs.some((r) =>
-              r.includes(':9000/api/v1/chat/stream')
-            ),
+            diag.streamReqs.some((r) => r.includes(':9000/api/v1/chat/stream')),
           { timeout: 30_000, intervals: [500] }
         )
         .toBeTruthy();
@@ -212,18 +215,31 @@ test.describe('断线重连 UI 全链路', () => {
       .poll(() => waitPortDown(9000), { timeout: 20_000, intervals: [500] })
       .toBeTruthy();
 
-    // 5) 断言前端检测到断线并进入重连(console 出现 "准备重连"/"重连")
-    //    2026-09-13 小欧: 改手动轮询, 失败即打全量诊断(定位"断线未被前端感知"归属: 代理未真断/流未起/vite proxy吞错)
-    const detectReconnect = (): boolean =>
-      reconnectLogs.some((c) => c.includes('重连'));
-    const deadline = Date.now() + 30_000;
-    while (!detectReconnect() && Date.now() < deadline) {
-      await page.waitForTimeout(500);
+    // 5) 断线已被前端感知 → **立刻**重启代理B(:9000, 后端任务存活, API 链路经代理恢复)
+    //    2026-10-22 小欧 - 流程订正(关键): 原实现在此等 console 出现"重连"字样(最长 30s)才重启代理,
+    //      而前端的重连预算只有 3 次(实测 T+18.9/19.7/22.2s 三次全落在代理未恢复的窗口内)
+    //      → 3 次耗尽后前端按设计转"轮询观察", 代理恢复后也不再走 SSE 续传
+    //      → 本 case 永远测不到 after_seq 续传(实测三轮全红, 根因在此)。
+    //      改为: 用**网络层**判据(出现了带 after_seq 的重连请求 = 前端已感知断线)即立刻重启代理,
+    //      让退避内的后续重试正好打在恢复后的代理上。
+    const firstResumeReq = (): boolean =>
+      streamReqs.some(
+        (r) =>
+          r.includes(' REQ ') &&
+          r.includes('/chat/stream/') &&
+          r.includes('after_seq=')
+      );
+    const dl = Date.now() + 20_000;
+    while (!firstResumeReq() && Date.now() < dl) {
+      await page.waitForTimeout(200);
     }
-    if (!detectReconnect()) {
+    if (!firstResumeReq()) {
       printDiag(diag, readLogSince(BLOG, 0), getCaseId());
       throw new Error('[E2E] 前端未进入重连(断线未被感知)');
     }
+    console.log(
+      '[E2E] 前端已发起带 after_seq 的重连请求 → 立刻重启代理, 让退避内的重试打在恢复后的代理上'
+    );
 
     // 6) 重启后端代理B(:9000, 后端任务存活, API 链路经代理恢复)
     //    2026-09-13 小欧: vite A(:5173) 全程未杀, 页面永活 → GET#2/3 退避重连续传不被销毁中断,
@@ -237,12 +253,26 @@ test.describe('断线重连 UI 全链路', () => {
     // 7) 等流结束: "发送"按钮复现(isReceiving=false, done 已处理)
     await chat.waitDone(300_000);
 
-    // 8) 断言至少一次重连且 after_seq 递增续传(轮询等 GET 打进 console)
-    const hasAfterSeq = (): boolean =>
-      reconnectLogs.some((c) => {
-        const m = c.match(/after_seq=(\d+)/);
-        return !!m && Number(m[1]) > 0;
+    // 8) 断言**真有一次带 after_seq 的续传成功**(网络层判据: REQ 带 after_seq>0 且拿到 RES 200)
+    //    2026-10-22 小欧 - 原判据是"console 文本里出现 after_seq=N": console 只打"重连 3 次均失败"这类
+    //    汇总文案、**不含 URL** → 明明发了 after_seq=104 的续传请求也判不出(实测三轮全红)。
+    //    改看网络层(唯一真源): REQ 带 after_seq>0 + 同 URL 有 RES 200。
+    const hasAfterSeq = (): boolean => {
+      const reqs = streamReqs.filter(
+        (r) =>
+          r.includes(' REQ ') &&
+          r.includes('/chat/stream/') &&
+          r.includes('after_seq=')
+      );
+      return reqs.some((r) => {
+        const m = r.match(/after_seq=(\d+)/);
+        if (!m || Number(m[1]) <= 0) return false;
+        const url = r.split(' REQ ')[1]?.trim() ?? '';
+        return streamReqs.some(
+          (x) => x.includes(' RES 200 ') && x.includes(url)
+        );
       });
+    };
     // 2026-10-22 小欧 - 失败即打全量 DIAG(前端是否感知到断线/有没有发重连请求/后端有没有记续传)
     try {
       await expect.poll(hasAfterSeq, { timeout: 60_000 }).toBeTruthy();

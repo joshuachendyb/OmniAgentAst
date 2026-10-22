@@ -1432,10 +1432,9 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       .toBeTruthy();
     // 落盘校验改用 API 读回: 新结构下 YAML 里有多处 'enabled:' 键, 靠子串判不准是哪一项
     await expect
-      .poll(
-        async () => settingValue(await apiGet(request, '/settings'), KEY),
-        { timeout: 20_000 }
-      )
+      .poll(async () => settingValue(await apiGet(request, '/settings'), KEY), {
+        timeout: 20_000,
+      })
       .toBe(!valBefore);
     // 恢复
     await apiPut(request, '/settings', { patch: { [KEY]: valBefore } });

@@ -319,7 +319,8 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           key: 'copyAbs',
           label: '复制绝对路径',
           act: () => {
-            const abs = toAbsolutePath(ctx.node.key, projectRoot) ?? ctx.node.key;
+            const abs =
+              toAbsolutePath(ctx.node.key, projectRoot) ?? ctx.node.key;
             void copyTextToClipboard(abs).then((r) => {
               if (r.ok) showSuccess('绝对路径已复制');
               else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');

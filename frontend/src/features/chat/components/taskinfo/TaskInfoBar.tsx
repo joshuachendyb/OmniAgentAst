@@ -85,7 +85,10 @@ import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames, LiveError } from '@/types/sse';
 // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回传用(仅取 executionApi.saveTaskProcessEvents)
 //   与上方 import type 合并成单条 import(同模块, 避免重复 import 声明)
-import { executionApi, type TaskDetail } from '../../../../services/api/task.api';
+import {
+  executionApi,
+  type TaskDetail,
+} from '../../../../services/api/task.api';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles'; // 硬码数字全令牌化
 import { formatTimeHMS, formatDurationHMS } from '@/utils/time'; // 3.6 时间轴 HH:MM:SS; 2026-09-18 耗时时分秒 — 小欧-2026-09-18
 import { useTaskInfo, type LiveMeta } from '../../hooks/useTaskInfo';
@@ -166,12 +169,12 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
   //   _sentRef 命中即直接 return, 该 effect 实际只在 taskId 变化时执行一次。
   //
   //   ⚠️ detail 非空 = 当前在看**历史任务**(useTaskInfo 历史分支)。此时必须 return:
-//   ①历史快照已在库中, 回填=用空数组覆盖真实数据(数据丢失);
+  //   ①历史快照已在库中, 回填=用空数组覆盖真实数据(数据丢失);
   //     ②steps 传的是实时 executionSteps, 若残留上一实时任务(含final)的 steps,
   //       会把**别的任务的事件写进本任务**(跨任务污染)。
   //     两条都由这一行 `if (detail) return` 一次性挡住。
   //
-//   依赖**刻意不含 info.processEventsSnapshot**: 它每次 useMemo 重算都是新引用, 挂上依赖
+  //   依赖**刻意不含 info.processEventsSnapshot**: 它每次 useMemo 重算都是新引用, 挂上依赖
   //   会让 effect 每次渲染都重跑(靠 _sentRef 拦 POST 是治标, 重渲染开销仍在)。
   //   改用 _latestRef 承载最新快照: effect 内读 ref 拿到的即本次渲染的最新值,
   //   既不需要把它挂进依赖(exhaustive-deps 自然干净, 无需 eslint-disable), 也确实拿到新值。

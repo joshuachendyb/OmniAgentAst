@@ -226,7 +226,10 @@ const SettingsPage: React.FC = () => {
   // 2026-10-18 小欧 - 键名按后端分组前缀跟改: security.hitl_enabled → security.hitl.enabled、
   //   security.confirmDangerousOps → security.system.confirm_dangerous_ops。
   //   三张表(DANGEROUS_KEYS/DANGER_LABELS/DANGER_EFFECTS)同步跟改。
-  const DANGEROUS_KEYS = ['security.hitl.enabled', 'security.system.confirm_dangerous_ops'];
+  const DANGEROUS_KEYS = [
+    'security.hitl.enabled',
+    'security.system.confirm_dangerous_ops',
+  ];
   const dangerousGroup =
     state.activeTab === 'security' &&
     DANGEROUS_KEYS.some((k) => state.dirtyKeys[k]);
@@ -240,25 +243,25 @@ const SettingsPage: React.FC = () => {
     'security.hitl.enabled': '人工确认总开关',
     'security.system.confirm_dangerous_ops': '保存设置时二次确认',
   };
-// 2026-10-11 01:20 小欧 - 后果说明两个方向都给（开与关各挂对应后果）。
-//   原实现只在"关闭"方向挂说明、"开启"方向留空 → 只改一项且是开启方向时，说明区整片空白，
-//   弹框下半部塌陷、左右失衡。改为按 `${key}:${方向}` 取，开与关各有对应后果。
-const DANGER_EFFECTS: Record<string, { on: string[]; off: string[] }> = {
-  'security.hitl.enabled': {
-    on: [
-      '开启后：每次高危操作都会弹窗请你人工确认，不会自动放行',
-      '（更安全，代价是每次操作都要点一次）',
-    ],
-    off: [
-      '关闭后：无需人工确认，无信任，自动延时确认安全检查',
-      '（磁盘根、项目根等删除硬防线仍生效）',
-    ],
-  },
-  'security.confirmDangerousOps': {
-    on: ['开启后：高危操作会额外二次询问，多一步确认'],
-    off: ['关闭后：高危操作将不再二次询问，直接执行'],
-  },
-};
+  // 2026-10-11 01:20 小欧 - 后果说明两个方向都给（开与关各挂对应后果）。
+  //   原实现只在"关闭"方向挂说明、"开启"方向留空 → 只改一项且是开启方向时，说明区整片空白，
+  //   弹框下半部塌陷、左右失衡。改为按 `${key}:${方向}` 取，开与关各有对应后果。
+  const DANGER_EFFECTS: Record<string, { on: string[]; off: string[] }> = {
+    'security.hitl.enabled': {
+      on: [
+        '开启后：每次高危操作都会弹窗请你人工确认，不会自动放行',
+        '（更安全，代价是每次操作都要点一次）',
+      ],
+      off: [
+        '关闭后：无需人工确认，无信任，自动延时确认安全检查',
+        '（磁盘根、项目根等删除硬防线仍生效）',
+      ],
+    },
+    'security.confirmDangerousOps': {
+      on: ['开启后：高危操作会额外二次询问，多一步确认'],
+      off: ['关闭后：高危操作将不再二次询问，直接执行'],
+    },
+  };
   const dangerDirtyKeys = DANGEROUS_KEYS.filter((k) => state.dirtyKeys[k]);
   // 2026-10-11 00:35 小欧 - 两处取值的实际形状与假设相反，均由浏览器实测抓出（不是理论推断）：
   //   dirtyKeys[key] 只是"该键脏了"的布尔标记（useSettings：`dirtyKeys[key] = true`），
@@ -280,14 +283,14 @@ const DANGER_EFFECTS: Record<string, { on: string[]; off: string[] }> = {
     to: readBool(state.values, k) ? '开启' : '关闭',
   }));
   // 后果按变更分组：**开与关两个方向都给说明**（只给关闭方向会导致"改一项且是开启方向"时说明区空白）
-const dangerHintByChange = Object.fromEntries(
-  dangerDirtyKeys.map((k) => {
-    const label = DANGER_LABELS[k] ?? k;
-    const eff = DANGER_EFFECTS[k];
-    const lines = eff ? (readBool(state.values, k) ? eff.on : eff.off) : [];
-    return [label, lines];
-  })
-);
+  const dangerHintByChange = Object.fromEntries(
+    dangerDirtyKeys.map((k) => {
+      const label = DANGER_LABELS[k] ?? k;
+      const eff = DANGER_EFFECTS[k];
+      const lines = eff ? (readBool(state.values, k) ? eff.on : eff.off) : [];
+      return [label, lines];
+    })
+  );
 
   // 2026-09-24 小欧 - 收口：env 接管判定单点（能力行/添加参数/管理选项共用；providerConfig.env
   //   单一真相源——不用 envOverride，其 keys 来自 default_params，无参数模型会是 {} 判不出）
@@ -579,7 +582,12 @@ const dangerHintByChange = Object.fromEntries(
           confirmDanger({
             title: '确定清空 api_key？',
             content: (
-              <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+              <div
+                style={{
+                  fontSize: FontSize.SECONDARY,
+                  color: Colors.TEXT.SECONDARY,
+                }}
+              >
                 清空后：
                 <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
                   <li>
@@ -862,22 +870,29 @@ const dangerHintByChange = Object.fromEntries(
           >
             放弃修改并切换
           </Button>,
-          <Button key="save" type="primary" loading={s.saving} onClick={() => {
-            const jump = pendingJump;
-            if (!jump) return;
-            void s.saveGroup(state.activeTab).then((r) => {
-              if ((r as { ok: boolean }).ok) {
-                s.setActiveTab(jump.tab);
-                if (jump.key) {
-                  s.setHighlightKey(jump.key);
-                  scrollToKey(jump.key);
+          <Button
+            key="save"
+            type="primary"
+            loading={s.saving}
+            onClick={() => {
+              const jump = pendingJump;
+              if (!jump) return;
+              void s.saveGroup(state.activeTab).then((r) => {
+                if ((r as { ok: boolean }).ok) {
+                  s.setActiveTab(jump.tab);
+                  if (jump.key) {
+                    s.setHighlightKey(jump.key);
+                    scrollToKey(jump.key);
+                  }
+                  if (jump.anchor)
+                    requestAnimationFrame(() =>
+                      scrollTo(jump.anchor as string)
+                    );
                 }
-                if (jump.anchor)
-                  requestAnimationFrame(() => scrollTo(jump.anchor as string));
-              }
-              setPendingJump(null);
-            });
-          }}>
+                setPendingJump(null);
+              });
+            }}
+          >
             保存并切换
           </Button>,
         ]}
@@ -885,7 +900,9 @@ const dangerHintByChange = Object.fromEntries(
         {/* 2026-10-11 01:35 小欧 - 文案随之改三行，与三个按钮一一对应（按钮名由按钮承载，
             正文只讲后果，避免复述）。保留"修改不会丢失"的准确语义
             （修正2026-09-21 小强，[设置页UI审计] 问题4）。 */}
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+        <div
+          style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+        >
           当前组有未保存的修改：
           <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
             <li>保存并切换：－改动写入配置文件后跳转</li>

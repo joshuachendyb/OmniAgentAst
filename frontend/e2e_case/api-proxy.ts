@@ -58,8 +58,7 @@ const server = http.createServer((req, res) => {
     const origin = req.headers.origin || '*';
     res.writeHead(204, {
       'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods':
-        'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,PATCH,OPTIONS',
       'Access-Control-Allow-Headers':
         req.headers['access-control-request-headers'] ||
         'Content-Type,Authorization',

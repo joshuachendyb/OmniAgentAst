@@ -4,18 +4,40 @@
 //   （api 模块方法缺失/被 mock 掉/内部同步抛错）异常会绕过 .catch 逃进 useEffect，
 //   React 提交期报错 → 整块消息列表/文件页崩溃；包一层后同步抛出转成 rejection，
 //   由 .catch 统一降级为空根 + 不缓存 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 缓存可失效：改 useSyncExternalStore 订阅式缓存 + 导出 invalidateProjectRoot()。
+//   动因：项目根来自全局配置 workspace.project_root（后端 config.get_project_root()），
+//   设置页改完落盘后前端仍拿旧根做绝对↔相对路径换算 → 链接指向错位置（过期根）。
+//   失效触发：复用既有 SETTINGS_SAVED_EVT 广播（与 useStepRenderPrefs 同款订阅法，
+//   不另立事件名、不在事件里塞 payload —— 与 constants/settingsEvents.ts 的事件语义一致）。
+//   失效时**保留旧根**直到新根取回，避免刷新瞬间所有 chip 闪成相对路径。 — 小欧-2026-10-22
 /**
- * useProjectRoot —— `GET /files/root` 的**唯一**取数入口（模块级缓存）
+ * useProjectRoot —— `GET /files/root` 的**唯一**取数入口（模块级订阅式缓存）
  *
- * 用途：把工具参数里的**绝对路径**转成文件页深链用的**相对路径**（PathLink）。
+ * 用途：把工具参数里的**绝对路径**转成文件页深链用的**相对路径**（PathLink / FileRefChip）。
  * 缓存理由：同一页面可能渲染几十个 path 参数，参数视图与规格表两个入口都要用 ——
  *   每次各拉一次 /files/root 是纯浪费（后端无 IO，但多一次往返）。
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { fileApi } from '@/services/api/file.api';
+import { SETTINGS_SAVED_EVT } from '@/constants/settingsEvents';
 
+/** 缓存快照：root=当前项目根；gen=失效代号（每次失效自增，驱动订阅方重取） */
+type Snapshot = { root: string; gen: number };
+
+let snapshot: Snapshot = { root: '', gen: 0 };
+/** 在途请求（去重：多个组件同时要根只发一次） */
 let cached: Promise<string> | null = null;
-let cachedValue = '';
+const listeners = new Set<() => void>();
+
+const notify = (): void => {
+  listeners.forEach((cb) => cb());
+};
+
+const publish = (root: string): void => {
+  if (snapshot.root === root) return;
+  snapshot = { ...snapshot, root };
+  notify();
+};
 
 const load = (): Promise<string> => {
   if (cached) return cached;
@@ -24,27 +46,50 @@ const load = (): Promise<string> => {
   cached = Promise.resolve()
     .then(() => fileApi.fetchRoot())
     .then((r) => {
-      cachedValue = r.project_root;
-      return cachedValue;
+      publish(r.project_root);
+      return r.project_root;
     })
     .catch(() => {
       cached = null; // 失败不缓存（下次可重试）
+      publish('');
       return '';
     });
   return cached;
 };
 
+const subscribe = (cb: () => void): (() => void) => {
+  listeners.add(cb);
+  return () => {
+    listeners.delete(cb);
+  };
+};
+
+const getSnapshot = (): Snapshot => snapshot;
+
+/**
+ * 失效项目根缓存 —— 项目根改了（设置页改 workspace.project_root 落盘 / 后端配置变更）后调用。
+ * 清掉在途与缓存并自增 gen → 订阅中的 hook 重取真值（与 SETTINGS_SAVED_EVT 订阅方同一套路）。
+ */
+export const invalidateProjectRoot = (): void => {
+  cached = null;
+  snapshot = { ...snapshot, gen: snapshot.gen + 1 };
+  notify();
+};
+
 export const useProjectRoot = (enabled = true): string => {
-  const [root, setRoot] = useState(cachedValue);
+  const { root, gen } = useSyncExternalStore(
+    subscribe,
+    getSnapshot,
+    getSnapshot
+  );
   useEffect(() => {
     if (!enabled) return;
-    let alive = true;
-    load().then((r) => {
-      if (alive) setRoot(r);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [enabled]);
+    void load();
+    // 2026-10-22 小欧 - 设置保存后失效重取（项目根可能刚被改） — 小欧-2026-10-22
+    const onSettingsSaved = () => invalidateProjectRoot();
+    window.addEventListener(SETTINGS_SAVED_EVT, onSettingsSaved);
+    return () =>
+      window.removeEventListener(SETTINGS_SAVED_EVT, onSettingsSaved);
+  }, [enabled, gen]);
   return root;
 };
