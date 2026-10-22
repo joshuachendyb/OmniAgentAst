@@ -11,6 +11,8 @@
 //   2026-10-21 小欧 - J3「设为会话工作目录」实现：树右键菜单入口 + 先 GET 后 PATCH（全量覆盖语义），
 //     相对→绝对路径走 utils/projectPath.ts，422 的 workspace_rejected 逐条呈现 — 小欧-2026-10-21
 // 2026-10-22 小杨 - 深链路径归一（Windows 反斜杠与 ./ 前缀），否则按 posix 拆分定位必失败 — 小杨-2026-10-22
+// 2026-10-22 小欧 - 深链/定位命中后树滚动到定位行（reveal 信号 → FilesTree 提交后 effect 自滚，
+//   竞态根治）+ 窄屏深链目标是文件时自动切预览 Tab（与树点击对齐）— 小欧-2026-10-22
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -279,6 +281,11 @@ const FilesPage: React.FC = () => {
   } | null>(null);
   const [loadedKeys, setLoadedKeys] = useState<string[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  /**
+   * 2026-10-22 小欧 - 滚动定位信号：openPath 命中后递增，FilesTree 在提交后的
+   *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
+   */
+  const [reveal, setReveal] = useState<{ key: string; n: number } | null>(null);
   /** 2026-10-21 小杨 - **就地收集**的本地台账（store 为真源，这里只为计数与去重展示） */
   const [collectedKeys, setCollectedKeys] = useState<string[]>([]);
   /** 批量引用：树 checked 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
@@ -429,6 +436,10 @@ const FilesPage: React.FC = () => {
     ): Promise<boolean> => {
       const hit = await expandToPath(rel);
       if (!hit) return false;
+      // 2026-10-22 小欧 - 滚动定位改信号式（reveal state → FilesTree 提交后 effect 自滚）：
+      //   原单次 rAF 与 React 提交存在竞态（rAF 先跑时行未挂载 → querySelector 为 null 静默跳过，
+      //   实测 5 次仅 1 次成功）；effect 在提交后必然执行，行必然存在，竞态消除 — 小欧-2026-10-22
+      setReveal((prev) => ({ key: hit.key, n: (prev?.n ?? 0) + 1 }));
       if (hit.type === 'dir') {
         // 目录：只展开定位（左侧树已展开到该目录），右侧保持上一份内容
         // 2026-10-21 小杨 - 修复：原实现顺手清空预览，用户定位目录时正在读的文件被无端关掉
@@ -436,9 +447,12 @@ const FilesPage: React.FC = () => {
       }
       setSelected(hit);
       setLineRange(line ?? null);
+      // 2026-10-22 小欧 - 窄屏切预览 Tab（与树点击 onSelectFile 对齐）：否则深链/定位框
+      //   打开文件后仍停在"文件"Tab，用户以为没反应 — 小欧-2026-10-22
+      if (isNarrow) setNarrowTab('preview');
       return true;
     },
-    [expandToPath]
+    [expandToPath, isNarrow]
   );
 
   /** 深链进入：?path=…&line=… */
@@ -668,6 +682,7 @@ const FilesPage: React.FC = () => {
         <FilesTree
           nodes={tree}
           activeKey={selected?.key ?? ''}
+          reveal={reveal}
           checkedKeys={multiFiles.map((n) => n.key)}
           recentSet={recentSet}
           expandedKeys={expandedKeys}

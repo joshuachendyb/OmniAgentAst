@@ -14,6 +14,8 @@
 //   2026-10-21 小欧 - 右键菜单改回**自绘 fixed 浮层**：原用 antd Dropdown + 0×0 空 span 当触发器，
 //     rc-trigger 拿零尺寸矩形对齐 → 弹层被定位到 left:-15000px/top:-9500px（视口外，肉眼不可见，
 //     实测 ant-dropdown-menu 在 DOM 里但画面无菜单）— 小欧-2026-10-21
+//   2026-10-22 小欧 - 滚动定位（reveal prop）：页面命中路径后本组件在提交后 effect
+//     把该行滚入视口（子树内查询，不穿透全局 document）— 小欧-2026-10-22
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
@@ -37,6 +39,12 @@ export interface FilesTreeProps {
   recentSet: Set<string>;
   /** 展开集合由上层层唯一持有（深链定位与树点击共用同一真源） */
   expandedKeys: string[];
+  /**
+   * 2026-10-22 小欧 - 滚动定位信号（深链/定位框命中后由页面递增）：本组件在
+   *   提交后的 effect 里把该行滚入视口——rAF 轮询与 React 提交有竞态（行未挂载
+   *   时 querySelector 为空静默跳过），effect 时行必然已挂载 — 小欧-2026-10-22
+   */
+  reveal?: { key: string; n: number } | null;
   onExpandedKeys: React.Dispatch<React.SetStateAction<string[]>>;
   loadedKeys: string[];
   onLoadedKeys: React.Dispatch<React.SetStateAction<string[]>>;
@@ -68,6 +76,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     checkedKeys,
     recentSet,
     expandedKeys,
+    reveal,
     onExpandedKeys,
     loadedKeys,
     onLoadedKeys,
@@ -90,6 +99,21 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
   } | null>(null);
   /** 菜单浮层 DOM（点外部收起时判定是否点在菜单内） */
   const menuRef = useRef<HTMLDivElement | null>(null);
+  /** 滚动定位用：行容器 ref（查询限于自身子树，不穿透到全局 document） */
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * 2026-10-22 小欧 - 滚动定位信号 effect：reveal 变化即把定位行滚入视口。
+   *   effect 在 React 提交后执行（展开/补拉/选中同批落地，行必然已挂载）；
+   *   block:nearest 行已在视口则不动；CSS.escape 转义 key（存在 [1]xxx.md
+   *   这类带方括号文件名）；树隐藏（窄屏切到预览 Tab）时为无害空操作 — 小欧-2026-10-22
+   */
+  useEffect(() => {
+    if (!reveal) return;
+    rootRef.current
+      ?.querySelector(`[data-file-key="${CSS.escape(reveal.key)}"]`)
+      ?.scrollIntoView({ block: 'nearest' });
+  }, [reveal]);
 
   /** 菜单打开时：点外部 / ESC / 滚动 → 收起（fixed 定位不随滚动，需手动关） */
   useEffect(() => {
@@ -336,7 +360,9 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
         <Empty description="目录为空" />
       ) : (
         flat.length > 0 && (
-          <div style={{ minWidth: 0 }}>{nodes.map((n) => renderRow(n, 0))}</div>
+          <div ref={rootRef} style={{ minWidth: 0 }}>
+            {nodes.map((n) => renderRow(n, 0))}
+          </div>
         )
       )}
       {/* 右键菜单：自绘 fixed 浮层（跟踪触发点坐标），点外部/ESC/滚动 自动收起 */}
