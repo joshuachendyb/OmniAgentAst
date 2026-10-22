@@ -22,6 +22,8 @@ import { fileIcon } from '@/components/fileIcon';
 import { formatBytes } from '@/utils/format';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
+import { toAbsolutePath } from '@/utils/projectPath';
+import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 
@@ -76,6 +78,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     onPatchNodes,
     onLoadDir,
   } = props;
+  const projectRoot = useProjectRoot();
 
   /** Shift 区间选择的起点锚（扁平序 index 由 key 反查） */
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -303,13 +306,22 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
             ]
           : []),
         {
-          key: 'copy',
-          label: '复制路径',
+          key: 'copyRel',
+          label: '复制相对路径',
           act: () => {
-            // 2026-10-21 小杨 - 修复：copyTextToClipboard 只 resolve {ok}
-            //   从不 reject，原先 `.catch` 是死码 → 复制失败完全静默。
             void copyTextToClipboard(ctx.node.key).then((r) => {
-              if (r.ok) showSuccess('路径已复制');
+              if (r.ok) showSuccess('相对路径已复制');
+              else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
+            });
+          },
+        },
+        {
+          key: 'copyAbs',
+          label: '复制绝对路径',
+          act: () => {
+            const abs = toAbsolutePath(ctx.node.key, projectRoot) ?? ctx.node.key;
+            void copyTextToClipboard(abs).then((r) => {
+              if (r.ok) showSuccess('绝对路径已复制');
               else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
             });
           },

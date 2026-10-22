@@ -141,7 +141,6 @@ const renderInline = (text: string, keyBase: string): React.ReactNode[] => {
               ? { start: Number(m[3]), end: m[4] ? Number(m[4]) : Number(m[3]) }
               : undefined
           }
-          label={m[1].replace(/\\([[\]])/g, '$1')}
         />
       );
     } else {

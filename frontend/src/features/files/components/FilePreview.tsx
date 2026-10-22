@@ -673,8 +673,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
               data-ln={i + 1}
               style={{
                 display: 'flex',
-                // 空行也有完整行高（行容器无文字时塌 0；em 与全表 1.6 行高同源）
-                minHeight: '1.6em',
+                // 空行也有完整行高（行容器无文字时塌 0）
+                // 2026-10-22 小欧 - 与 pre 的 lineHeight 同源：原写死 '1.6em'，
+                //   而 pre 行高已改为 MonoLineHeight(1.1) → 空行比正文行高 45%，行距参差 — 小欧-2026-10-22
+                minHeight: `${MonoLineHeight}em`,
               }}
             >
               {/* 2026-10-21 小杨 - 行号列：数字灰弱右对齐 + 禁复制

@@ -1,3 +1,5 @@
+// 编辑历史: 2026-10-22 小欧 - 对齐弹窗/标签改版: 「显示名」字段已删; 安全标签改名
+//   (安全设置→安全模块启用); .or() 两边都命中触发 strict mode violation → 改单一定位器 — 小欧-2026-10-22
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 
@@ -243,12 +245,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
       await page.waitForTimeout(400);
     }
 
-    // 3) 填模型名 + label
+    // 3) 填模型名
+    // 2026-10-22 小欧 - 「显示名」字段已从添加模型弹窗删除(现只有 Provider + 模型名,
+    //   见 ModelModals「Provider/模型名并排；显示名删除」)→ 旧步骤会一直等到超时,
+    //   让用例挂在与断言无关的字段上。删掉该步, POST body 断言本就不含 label。
     const modelInput = modal.getByRole('textbox', { name: /模型名/ });
     await expect(modelInput).toBeVisible({ timeout: 10_000 });
     await modelInput.fill(newModel);
-    const labelInput = modal.getByRole('textbox', { name: /显示名/ });
-    await labelInput.fill(`E2E测试模型-${newModel}`);
 
     // 4) 保存
     await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
@@ -548,13 +551,13 @@ test.describe.serial('设置页全功能 E2E (有头)', () => {
 
     await gotoSettings(page);
     await clickTab(page, /安\s*全/);
-    // 等安全Tab内容出现（"安全设置"组标题或 "危险操作确认" 行）
-    await expect(
-      page
-        .getByText('安全设置')
-        .first()
-        .or(page.getByText('危险操作确认').first())
-    ).toBeVisible({ timeout: 15_000 });
+    // 等安全Tab内容出现
+    // 2026-10-22 小欧 - 旧标签「安全设置」/「危险操作确认」已随 2026-10-18/19 安全层重构改名
+    //   (security.system.enabled=安全模块启用); 且 .or() 两边都命中会触发 strict mode violation
+    //   (解析出两个元素)→ 改用单一定位器。
+    await expect(page.getByText('安全模块启用').first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     // 1) 找 security.enabled 开关（安全Tab第一个 switch）
     const switchEl = page.locator('[role="switch"]').first();

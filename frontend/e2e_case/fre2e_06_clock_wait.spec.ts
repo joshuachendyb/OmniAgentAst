@@ -59,7 +59,9 @@ test.describe('心跳等待感知钟面', () => {
     startDevServer(
       FRONTEND_DIR,
       'run dev -- --config e2e_case/vite.e2e.config.ts',
-      'set "VITE_API_BASE_URL=http://localhost:9000/api/v1" && '
+      // 2026-10-22 小欧 - env 值订正为**纯源**(不带 /api/v1): 前端 client.ts 自己拼 '/api/v1'
+      //   (getApiBaseUrl()+'/api/v1'), 旧值带 /api/v1 会拼出双前缀(靠代理剥一层才通)
+      'set "VITE_API_BASE_URL=http://localhost:9000" && '
     );
     await expect
       .poll(() => waitPortUp(5173), { timeout: 60_000, intervals: [500] })
@@ -71,11 +73,15 @@ test.describe('心跳等待感知钟面', () => {
     const logBase = logBaseOf(BLOG);
 
     // 多步 prompt: 要求工具调用+思考+最终报告，确保流足够长(>10s)
+    // 2026-10-22 小欧 - 报告长度上调(3000→8000 字): 钟面挂在**打字机输出段**(需连续 ≥10s 才亮),
+    //   3000 字在本机模型上常在 10s 内流完 → 钟面按设计不出现 → 断言恒 0(实测连续两轮红)。
+    //   加长正文是让用例**造出它要测的场景**(长文本流式窗口), 不是放宽断言。
     const PROMPT =
-      '请完成以下三步任务并输出结构化报告(3000字以上)：' +
+      '请完成以下三步任务并输出结构化报告(8000字以上，分八个章节，每章不少于800字)：' +
       '①用文件工具读取 frontend/package.json 并列出所有依赖包名;' +
       '②用联网搜索工具查询今天的日期;' +
-      '③基于①②结果撰写一份不少于3000字的技术报告，必须包含方法、证据、风险、结论四个部分。注意请在完成全部研究并充分整理后再输出最终报告。';
+      '③基于①②结果撰写一份不少于8000字的技术报告，必须包含方法、证据、风险、结论四个部分，' +
+      '并补充背景、对比、案例、展望四个章节。注意请在完成全部研究并充分整理后再输出最终报告。';
     await chat.sendPrompt(PROMPT);
 
     // 等流启动

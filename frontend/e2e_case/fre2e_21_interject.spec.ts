@@ -9,11 +9,17 @@
  *   C. 会话真源 allow_interject=true
  *   D. toast 已下线：onMerged 不再弹提示（DOM 计数 = 0）
  *   E. 原任务跑完，答复完整且体现 3 条插话内容
+ *
+ * 编辑历史: 2026-10-22 小欧 - 端口订正 8010→8000; 关态契约对齐(输入框恒可编辑,
+ *   不可发送由按钮置灰表达) — 小欧-2026-10-22
  */
 import { test, expect } from '@playwright/test';
 import { ChatPage } from '../e2e_front_lib';
 
-const BACKEND = 'http://127.0.0.1:8010';
+// 2026-10-22 小欧 - 端口订正: 原写 8010, 但本仓 E2E 约定的真后端是 **:8000**
+//   (AGENTS「后端 C uvicorn :8000」+ 前端 vite proxy /api→8000; 8010 上没有任何进程在跑)
+//   → 直连 8010 恒 ECONNREFUSED, 判据取不到数据(与插话功能无关)。
+const BACKEND = 'http://127.0.0.1:8000';
 const N = 3;
 const mark = (i: number) => `插话标记${i}`;
 const interjectText = (i: number) =>
@@ -83,9 +89,13 @@ async function waitMark(
 const userCount = (d: MsgResp) =>
   d.messages.filter((m) => m.role === 'user').length;
 
-test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下挂回显 / toast已下线', async ({
+test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏回显 / toast已下线', async ({
   page,
 }) => {
+  // 2026-10-22 小欧 - 补超时: 本用例含 3 条插话、每条间隔 20s(等 Agent 吸收上一条),
+  //   默认 30s 超时**必然**在插话循环里挂掉(实测 "Test timeout of 30000ms exceeded"
+  //   落在 page.waitForTimeout 上)→ 显式放宽到 300s。
+  test.setTimeout(300_000);
   const chat = new ChatPage(page);
   const errors: string[] = [];
   page.on('console', (m) => {
@@ -123,15 +133,26 @@ test('插话全链路: 关态锁输入 / 开态连插3条真入库 / 左栏下�
     }).observe(document.body, { childList: true, subtree: true });
   });
 
-  // A. 关态执行中 → 输入框锁死
+  // A. 关态执行中 → **不可发送，但输入框不锁**
+  // 2026-10-22 小欧 - 对齐现行契约: 执行中禁输入会让用户打不了多行消息
+  //   (回车被拦 → 既发不出也换不了行)，故输入框**恒可编辑**；「不可发送」由发送按钮置灰表达
+  //   (SubmitActions: disabled={sendBlocked || emptyDraft})。
+  //   旧断言 toBeDisabled 测的是老契约(输入框随执行中锁死)，已作废。
   await sw.click(); // 先勾开关，让值随首条消息落库（关态判定仍走首条消息）
   await expect(sw).toBeChecked();
   await sw.click(); // 关回，验证关态锁输入
   await expect(sw).not.toBeChecked();
   await chat.sendPrompt(LONG_TASK);
   await expect(stopBtn, '第一条任务应执行中').toHaveCount(1);
-  await expect(input, '关态执行中应锁输入').toBeDisabled();
-  console.log('[验证] 关态执行中：输入框已锁');
+  await expect(
+    input,
+    '关态执行中输入框应仍可编辑(现行契约: 执行中不锁输入, 免得打不了多行消息)'
+  ).toBeEnabled();
+  await expect(
+    page.getByRole('button', { name: '发送' }),
+    '关态执行中发送按钮应禁用(不可发送由按钮置灰表达)'
+  ).toBeDisabled();
+  console.log('[验证] 关态执行中：输入框可编辑 + 发送按钮禁用');
 
   const sid = (await readSession(page)).sid;
   const baseUsers = userCount((await readSession(page)).data);

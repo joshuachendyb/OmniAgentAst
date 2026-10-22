@@ -14,7 +14,7 @@
 //   mermaid 是**全局单例**, initialize 会改它的全局配置。原实现每次 effect 都调,
 //   多个图/重渲染时互相覆盖且重复初始化。现用模块级 Promise 缓存, 首次并发调用也只初始化一次。
 import { useEffect, useId, useRef, useState } from 'react';
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors, FontFamily, FontSize } from '@/utils/stepStyles';
 
 interface MermaidBlockProps {
   /** mermaid 源码(已从 ```mermaid 围栏中剥出) */
@@ -96,7 +96,9 @@ export function MermaidBlock({ chart }: MermaidBlockProps) {
         style={{
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          fontFamily: 'monospace',
+          // 2026-10-22 小欧 - 字体栈收敛到 FontFamily.MONO 令牌(原裸 'monospace' → Windows 上
+          //   实解析为浏览器默认等宽 Courier New, 与全应用其余代码文本两套字形并存) — 小欧-2026-10-22
+          fontFamily: FontFamily.MONO,
           fontSize: FontSize.CODE,
           lineHeight: 1.5,
         }}

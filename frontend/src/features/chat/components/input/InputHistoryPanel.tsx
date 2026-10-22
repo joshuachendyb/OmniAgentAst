@@ -6,7 +6,13 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Empty, Popover, Space } from 'antd';
 import { HistoryOutlined } from '@ant-design/icons';
-import { Colors, FontSize, Radius, Spacing } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  Radius,
+  Spacing,
+} from '@/utils/stepStyles';
 import type { RecentInput } from '../../utils/recentInputs';
 
 interface InputHistoryPanelProps {
@@ -38,7 +44,7 @@ const itemStyle: React.CSSProperties = {
   padding: `${Spacing.XS}px ${Spacing.SM}px`,
   borderRadius: Radius.SM, // 2026-10-13 14:35 小欧: 原为魔法数字 4, 与 Radius.SM 同值但绕过令牌, 违反仓库令牌化约定
   cursor: 'pointer',
-  fontFamily: 'Consolas, Menlo, monospace',
+  fontFamily: FontFamily.MONO,
   fontSize: FontSize.CODE,
   color: Colors.TEXT.PRIMARY,
 };

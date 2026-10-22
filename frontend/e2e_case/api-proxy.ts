@@ -47,7 +47,28 @@ const logLine = (s: string): void => {
 
 const server = http.createServer((req, res) => {
   logLine(`REQ ${req.method} ${req.url} from=${req.socket.remoteAddress}`);
-  // OPTIONS 预检交由后端 CORSMiddleware 处理(其已允许 localhost:5173, 返回正确 ACAO)
+
+  /**
+   * 2026-10-22 小欧 - OPTIONS 预检**本代理自答**(反射 Origin + 放行头/方法):
+   *   交后端 CORSMiddleware 的问题是: 后端只允许 localhost:5173, 页面用别的源
+   *   (如断连 case 的专用页面端口)打开时预检直接失败 → 浏览器拒收 → 整站取不到数据。
+   *   自答避免依赖后端的 CORS 白名单(本代理本就是 E2E 专用件)。
+   */
+  if (req.method === 'OPTIONS') {
+    const origin = req.headers.origin || '*';
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': origin,
+      'Access-Control-Allow-Methods':
+        'GET,POST,PUT,DELETE,PATCH,OPTIONS',
+      'Access-Control-Allow-Headers':
+        req.headers['access-control-request-headers'] ||
+        'Content-Type,Authorization',
+      'Access-Control-Max-Age': '600',
+      Vary: 'Origin',
+    });
+    res.end();
+    return;
+  }
 
   // axios 双前缀归一化: /api/v1/api/v1/... → /api/v1/...
   let path = req.url || '/';
@@ -62,7 +83,22 @@ const server = http.createServer((req, res) => {
       headers: { ...req.headers, host: new URL(TARGET).host },
     },
     (proxyRes) => {
-      res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+      const headers = { ...proxyRes.headers };
+      /**
+       * 2026-10-22 小欧 - CORS 改为**反射请求 Origin**(并删掉后端那份 ACAO):
+       *   页面直连本代理 = 跨域, 后端 CORSMiddleware 只允许 localhost:5173 →
+       *   页面用别的源打开时后端回的 ACAO 不含该 Origin → 浏览器拒收
+       *   (ERR_FAILED + "blocked by CORS policy")→ 整站无数据, 看起来像"用例全红"。
+       *   旧实现"不注入 CORS"(怕与后端 ACAO 重复成 'a, *' 被浏览器拒收)→ 改为**替换**而非追加:
+       *   先删后端的 access-control-allow-origin, 再按本次请求的 Origin 回一个(单值, 不会重复)。
+       */
+      const origin = req.headers.origin;
+      if (origin) {
+        delete headers['access-control-allow-origin'];
+        headers['access-control-allow-origin'] = origin;
+        headers['vary'] = 'Origin';
+      }
+      res.writeHead(proxyRes.statusCode || 502, headers);
       logLine(`RES ${proxyRes.statusCode ?? 502} ${req.method} ${path}`);
       proxyRes.pipe(res);
     }

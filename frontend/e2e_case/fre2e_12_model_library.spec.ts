@@ -1,3 +1,5 @@
+// 编辑历史: 2026-10-22 小欧 - 清理失败 try/catch: 防 context 关闭后 request.delete 抛异常
+//   顶掉真正失败原因(超时点) — 小欧-2026-10-22
 import { test, expect, type Page } from '@playwright/test';
 import * as http from 'http';
 import * as fs from 'fs';
@@ -443,8 +445,19 @@ test.describe('模型库 Tab 全链路 E2E-12 (有头+mock)', () => {
 
       console.log('[E2E] fre2e_12 全链路断言全部通过');
     } finally {
-      const del = await request.delete(`${BASE}/providers/${pname}`);
-      console.log(`[E2E] 清理 删除 Provider ${pname} → ${del.status()}`);
+      // 2026-10-22 小欧 - 清理失败**不得掩盖用例本身的失败**:
+      //   用例超时(300s)时 Playwright 会先关闭 context/page, 此处 request 已失效 →
+      //   request.delete 抛 "Target page, context or browser has been closed" →
+      //   该异常顶掉真正失败原因(超时点), 让人只看到清理报错、看不到用例挂在哪一步。
+      //   故清理包 try/catch: 清理失败只记日志, 原异常照常冒泡。
+      try {
+        const del = await request.delete(`${BASE}/providers/${pname}`);
+        console.log(`[E2E] 清理 删除 Provider ${pname} → ${del.status()}`);
+      } catch (e) {
+        console.log(
+          `[E2E] 清理 删除 Provider ${pname} 失败(不掩盖用例失败): ${String(e)}`
+        );
+      }
     }
   });
 });

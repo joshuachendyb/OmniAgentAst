@@ -7,6 +7,7 @@
 //     原实现只在挂载时取一次 → Agent 动过新文件后面板仍停在挂载时刻 — 小欧-2026-10-21
 //   2026-10-21 小杨 - 引用按钮仅文本文件显示（图片由查看器处理，文本通道不读取）— 小杨-2026-10-21
 //   2026-10-21 小欧 - 导出 OP_LABEL/OP_COLOR：ops 徽标映射口径易被改坏，导出供测试断言 — 小欧-2026-10-21
+//   2026-10-22 小欧 - 将说明文字 "本会话中 Agent 读写过的文件..." 移到标题 "文件足迹" 同一行 — 小欧-2026-10-22
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -156,7 +157,12 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
         />
         文件足迹
         <span
-          style={{ color: Colors.TEXT.SECONDARY, fontSize: chatTokens.fontSM }}
+          style={{ color: Colors.TEXT.SECONDARY, fontSize: chatTokens.fontSM, marginLeft: Spacing.XS }}
+        >
+          本会话中 Agent 读写过的文件 · 点文件名打开，点「引用」加入本轮对话
+        </span>
+        <span
+          style={{ color: Colors.TEXT.SECONDARY, fontSize: chatTokens.fontSM, marginLeft: Spacing.XS }}
         >
           {loading && files.length === 0 ? '' : files.length}
         </span>
@@ -181,15 +187,6 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
             padding: `0 ${Spacing.LG}px ${Spacing.MD}px`,
           }}
         >
-          <div
-            style={{
-              fontSize: chatTokens.fontSM,
-              color: Colors.TEXT.SECONDARY,
-              marginBottom: Spacing.SM,
-            }}
-          >
-            本会话中 Agent 读写过的文件 · 点文件名打开，点「引用」加入本轮对话
-          </div>
           {loading && files.length === 0 ? (
             <Skeleton active paragraph={{ rows: 3 }} title={false} />
           ) : files.length === 0 ? (

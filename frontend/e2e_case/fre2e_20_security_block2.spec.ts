@@ -3,6 +3,8 @@
 //   诊断期的 console 输出已并入断言, 不再保留一次性脚本。
 // 编辑历史: 2026-10-06 小欧 - 增 2 条回归断言: 分类表字号须 14px(设置页正文档),
 //   「目录列表」列不得残留内联 code(灰底碎块)。 — 小欧-2026-10-06
+// 编辑历史: 2026-10-22 小欧 - 标签随后端文案改名对齐(HTL人工开关→人工确认总开关 等);
+//   弹框标题取公共子串断言(抗微调); 八步速查→七步速查 — 小欧-2026-10-22
 import { test, expect } from '@playwright/test';
 
 test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定(mermaid)', async ({
@@ -19,9 +21,14 @@ test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定
   await page.waitForTimeout(2000);
 
   // 块1 四项仍在(原样不动)
-  await expect(page.getByText('HTL人工开关')).toBeVisible();
-  await expect(page.getByText('危险操作确认')).toBeVisible();
-  await expect(page.getByText('自动确认延迟(秒)')).toBeVisible();
+  // 2026-10-22 小欧 - 标签随设置项改名对齐(2026-10-18/19 安全层重构后的**现行标签**):
+  //   HTL人工开关 → 人工确认总开关(security.hitl.enabled)
+  //   危险操作确认 → 保存设置时二次确认(security.system.confirm_dangerous_ops)
+  //   自动确认延迟(秒) → 自动确认倒计时(秒)(security.hitl.auto_confirm_delay)
+  //   人工确认超时(秒) 不变(security.hitl.timeout)
+  await expect(page.getByText('人工确认总开关')).toBeVisible();
+  await expect(page.getByText('保存设置时二次确认')).toBeVisible();
+  await expect(page.getByText('自动确认倒计时(秒)')).toBeVisible();
   await expect(page.getByText('人工确认超时(秒)')).toBeVisible();
 
   // 块2 标题 + 分类表直出(4 列 × 5 数据行)
@@ -50,12 +57,15 @@ test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定
   await expect(btn2).toBeEnabled();
 
   // 弹框1: 五组齐全 + 路径已插值成真实值
+  // 2026-10-22 小欧 - 五组标题随后端文案现行标题校准(文案源在 backend/app/datafile/security_policy.md):
+  //   「一、shell 命令安全规整 / 二、delete 命令安全规整 / 三、HTL 人工确认规整 /
+  //     四、信任安全规整 / 五、沙箱与运行限制安全规整」→ 取公共子串断言(抗标题微调)。
   await btn1.click();
   await page.waitForTimeout(900);
   const m1 = page.locator('.ant-modal-content');
-  await expect(m1.getByText('shell 命令执行')).toBeVisible();
+  await expect(m1.getByText('shell 命令')).toBeVisible();
   for (const g of [
-    'delete 命令执行',
+    'delete 命令',
     'HTL 人工确认',
     '信任',
     '沙箱与运行限制',
@@ -82,7 +92,7 @@ test('安全Tab块2: 分类表直出 + 弹框1策略说明 + 弹框2读写判定
     return pre ? getComputedStyle(pre).maxHeight : 'none';
   });
   expect(boxed).toBe('none');
-  await expect(m2.getByText('八步速查')).toBeVisible();
+  await expect(m2.getByText('七步速查')).toBeVisible();
   await page.screenshot({
     path: 'tests/output/sec-popup2-flow.png',
     fullPage: true,

@@ -15,7 +15,13 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Divider, Empty, Tag } from 'antd';
 import { SettingsModal } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 2个只读弹窗归一到设置页壳
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  FontWeight,
+  Spacing,
+} from '@/utils/stepStyles';
 import { settingsModalWidth } from '@/theme/settingsTokens';
 import { ErrorType, showMessage } from '@/services/error/handler';
 import {
@@ -102,7 +108,7 @@ function endpointTag(endpoint: string, ok: boolean) {
         margin: 0,
         marginLeft: Spacing.XS,
         textAlign: 'center',
-        fontFamily: 'monospace',
+        fontFamily: FontFamily.MONO,
         whiteSpace: 'nowrap',
       }}
     >

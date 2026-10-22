@@ -1,3 +1,4 @@
+// 编辑历史: 2026-10-22 小欧 - 对齐弹窗改版: 标题改「参数模板」+「显示名」字段已删 → 删旧步骤 — 小欧-2026-10-22
 import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 
@@ -130,7 +131,9 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
       .filter({ hasText: PROVIDER })
       .first()
       .click();
-    await expect(modal.getByText('参数模板（勾选即带入新模型）')).toBeVisible({
+    // 2026-10-22 小欧 - 标题随弹窗改版对齐: 现为「参数模板」标题 + 「勾选即带入新模型，不勾则不写入」提示
+    //   (见 ModelModals 的 ModalSection title/hint), 旧标题「参数模板（勾选即带入新模型）」已不存在
+    await expect(modal.getByText('参数模板', { exact: true })).toBeVisible({
       timeout: 15_000,
     });
     await page.waitForTimeout(800); // 观察模板区出现
@@ -168,14 +171,14 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
       .click();
     await page.waitForTimeout(800); // 观察改为 high 后界面
 
-    // 8) 填模型名/label → 保存
+    // 8) 填模型名 → 保存
+    // 2026-10-22 小欧 - 「显示名」字段已从添加模型弹窗删除(现只有 Provider + 模型名)→
+    //   旧步骤等一个不存在的输入框, 会一直等到超时。模型名仍按原样填, 后续落盘断言走模型名。
     const modelInput = modal.getByRole('textbox', { name: /模型名/ });
     await expect(modelInput).toBeVisible({ timeout: 15_000 });
     await modelInput.fill(newModel);
-    const labelInput = modal.getByRole('textbox', { name: /显示名/ });
-    await labelInput.fill('E2E参数模板模型');
     await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
-    console.log('[E2E] 步骤8 已填 模型名/显示名 并点击保存');
+    console.log('[E2E] 步骤8 已填 模型名 并点击保存');
 
     // 9) POST /models body 断言
     await expect
@@ -191,7 +194,9 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
       'high'
     );
     const po = (b.param_options as Record<string, string[]>) ?? {};
-    expect(po.reasoning_effort).toEqual(['low', 'medium', 'high']);
+    // 2026-10-22 小欧 - 选项表随后端 DEFAULT_PARAM_OPTIONS 校准(2026-10-10 增 minimal 档:
+    //   ["minimal","low","medium","high"], 见 backend/app/services/model/model_service.py)
+    expect(po.reasoning_effort).toEqual(['minimal', 'low', 'medium', 'high']);
     console.log(
       `[E2E] 步骤9 POST body 校验通过: provider=${b.provider} model=${b.model} ` +
         `default_params.reasoning_effort=${JSON.stringify((b.default_params as Record<string, unknown>).reasoning_effort)} ` +

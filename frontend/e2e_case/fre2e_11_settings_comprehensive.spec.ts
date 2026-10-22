@@ -17,6 +17,8 @@ import * as fs from 'fs';
  * 编辑历史: 2026-09-25 04:22:42 小健 - API helper 契约强化: 新增 apiResponse<T> 统一校验（HTTP 非 ok 或
  *   body.ok===false 即抛错），apiGet/apiPut/apiPost 泛型化 + deleteIfExists（404 容忍）+
  *   settingValue/expectReadonlyRow 收口抽取 — 小健-2026-09-25
+ * 编辑历史: 2026-10-22 小欧 - 对齐弹窗/标签改版: 「显示名」字段已删(3处); 安全标签改名
+ *   (安全设置→安全模块启用); .or() strict mode violation → 改单一定位器 — 小欧-2026-10-22
  */
 // 2026-09-28 小欧 - 配置隔离铁律落地（本用例 34/36 曾把当前 provider 的 label/api_base 改成
 //   测试值再「改回」，中途被杀就把 https://api.e2e-test.example.com/v1 永久留在真配置，
@@ -274,12 +276,13 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   test('03 安全Tab加载', async ({ page }) => {
     await goto(page);
     await tab(page, /安\s*全/);
-    await expect(
-      page
-        .getByText('安全设置')
-        .first()
-        .or(page.getByText('危险操作确认').first())
-    ).toBeVisible({ timeout: 10_000 });
+    // 2026-10-22 小欧 - 对齐现行标签(2026-10-18/19 安全层重构后):
+    //   「安全设置」/「危险操作确认」已改名 → security.system.enabled=安全模块启用,
+    //   security.system.confirm_dangerous_ops=保存设置时二次确认。
+    //   用单一定位器: .or() 两边都命中会触发 strict mode violation(解析出两个元素)。
+    await expect(page.getByText('安全模块启用').first()).toBeVisible({
+      timeout: 10_000,
+    });
   });
 
   test('04 沙箱Tab加载', async ({ page }) => {
@@ -657,9 +660,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
         await page.waitForTimeout(400);
       }
       await modal.getByRole('textbox', { name: /模型名/ }).fill(newModel);
-      await modal
-        .getByRole('textbox', { name: /显示名/ })
-        .fill(`E2E综合-${newModel}`);
+      // 2026-10-22 小欧 - 「显示名」字段已从添加模型弹窗删除(现只有 Provider + 模型名)→ 旧步骤会一直等一个不存在的输入框
       createAttempted = true;
       const createResponsePromise = page.waitForResponse(
         (response) =>
@@ -728,7 +729,7 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
     await modal.getByRole('textbox', { name: /模型名/ }).fill('glm-4.7-flash'); // 已存在
-    await modal.getByRole('textbox', { name: /显示名/ }).fill('重复模型');
+    // 2026-10-22 小欧 - 「显示名」字段已从添加模型弹窗删除 → 旧步骤会一直等一个不存在的输入框
     await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
     await page.waitForTimeout(2000);
     const stillVisible = await modal.isVisible();
@@ -749,7 +750,8 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
       .click();
     const modal = page.getByRole('dialog', { name: '添加模型' });
     await expect(modal).toBeVisible({ timeout: 10_000 });
-    await modal.getByRole('textbox', { name: /显示名/ }).fill('空模型名');
+    // 2026-10-22 小欧 - 「显示名」字段已从添加模型弹窗删除; 且本用例意图是"模型名为空 → 报错",
+    //   原代码误填「显示名」(复制粘贴残留)→ 改为**不填模型名**, 直接保存触发必填校验。
     await modal.locator('.ant-modal-footer button.ant-btn-primary').click();
     await page.waitForTimeout(1000);
     const stillVisible = await modal.isVisible();
@@ -1379,75 +1381,85 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   });
 
   // ── 安全Tab (51-56) ────────────────────────────────────────
-  test('51 安全 security.enabled读取', async ({ page, request }) => {
+  // 2026-10-22 小欧 - 键名随 2026-10-18 安全层重构改名: security.enabled → security.hitl.enabled
+  //   (标签「人工确认总开关」; 旧键已不存在 → 读到 undefined → typeof 判定必挂)
+  test('51 安全 security.hitl.enabled读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const val = before.groups.security.data['security.enabled'];
-    console.log(`[E2E] 51 security.enabled=${val}`);
+    const val = settingValue(before, 'security.hitl.enabled');
+    console.log(`[E2E] 51 security.hitl.enabled=${val}`);
     expect(typeof val).toBe('boolean');
   });
 
-  test('52 安全 security.enabled编辑→危险确认→保存→落盘', async ({
+  test('52 安全 security.hitl.enabled编辑→危险确认→保存→落盘', async ({
     page,
     request,
   }) => {
+    const KEY = 'security.hitl.enabled';
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const valBefore = before.groups.security.data[
-      'security.enabled'
-    ] as boolean;
+    const valBefore = settingValue(before, KEY) as boolean;
     await goto(page);
     await tab(page, /安\s*全/);
-    await expect(
-      page
-        .getByText('安全设置')
-        .first()
-        .or(page.getByText('危险操作确认').first())
-    ).toBeVisible({ timeout: 10_000 });
-    const sw = page.locator('[role="switch"]').first();
-    if ((await sw.count()) > 0) {
-      await sw.click();
-      await page.waitForTimeout(400);
-      await page.getByRole('button', { name: /保存全部/ }).click();
-      const dangerModal = page.locator('.ant-modal-confirm');
-      await expect(dangerModal).toBeVisible({ timeout: 10_000 });
-      await dangerModal
-        .locator('.ant-btn-dangerous, .ant-btn-primary')
-        .last()
-        .click();
-      await expect
-        .poll(
-          async () => (await page.locator('.ant-message-success').count()) > 0,
-          { timeout: 20_000 }
-        )
-        .toBeTruthy();
-      const expected = valBefore ? 'enabled: false' : 'enabled: true';
-      await expect
-        .poll(() => fs.readFileSync(CONFIG_YAML, 'utf8'), { timeout: 10_000 })
-        .toContain(expected);
-      // 恢复
-      await apiPut(request, '/settings', {
-        patch: { 'security.enabled': valBefore },
-      });
-      console.log('[E2E] 52 security.enabled 编辑→危险确认→保存→落盘 ok');
-    }
+    // 2026-10-22 小欧 - 旧标签「安全设置」/「危险操作确认」已随 2026-10-18/19 安全层重构改名
+    //   (security.system.enabled=安全模块启用); .or() 两边都命中会触发 strict mode violation
+    await expect(page.getByText('安全模块启用').first()).toBeVisible({
+      timeout: 10_000,
+    });
+    // 2026-10-22 小欧 - 开关改按**目标行**定位: 原取"安全Tab第一个 switch",
+    //   在安全层重构后那已是「保存设置时二次确认」, 与本用例的目标项(人工确认总开关)不是同一个
+    //   → 改的开关与断言的键对不上。行锚点用设置行自带的 data-settings-key。
+    const row = page.locator(`[data-settings-key="${KEY}"]`).first();
+    await expect(row).toBeVisible({ timeout: 10_000 });
+    const sw = row.locator('[role="switch"]').first();
+    await expect(sw).toBeVisible({ timeout: 10_000 });
+    await sw.click();
+    await page.waitForTimeout(400);
+    await page.getByRole('button', { name: /保存全部/ }).click();
+    const dangerModal = page.locator('.ant-modal-confirm');
+    await expect(dangerModal).toBeVisible({ timeout: 10_000 });
+    await dangerModal
+      .locator('.ant-btn-dangerous, .ant-btn-primary')
+      .last()
+      .click();
+    await expect
+      .poll(
+        async () => (await page.locator('.ant-message-success').count()) > 0,
+        { timeout: 20_000 }
+      )
+      .toBeTruthy();
+    // 落盘校验改用 API 读回: 新结构下 YAML 里有多处 'enabled:' 键, 靠子串判不准是哪一项
+    await expect
+      .poll(
+        async () => settingValue(await apiGet(request, '/settings'), KEY),
+        { timeout: 20_000 }
+      )
+      .toBe(!valBefore);
+    // 恢复
+    await apiPut(request, '/settings', { patch: { [KEY]: valBefore } });
+    console.log(`[E2E] 52 ${KEY} 编辑→危险确认→保存→落盘 ok`);
   });
 
-  test('53 安全 confirmDangerousOps读取', async ({ page, request }) => {
+  // 2026-10-22 小欧 - 键名随 2026-10-18/19 安全层重构改名(旧键已不存在 → 读到 undefined):
+  //   security.confirmDangerousOps → security.system.confirm_dangerous_ops(保存设置时二次确认)
+  //   security.auto_confirm_delay   → security.hitl.auto_confirm_delay(自动确认倒计时(秒))
+  //   security.hitl_timeout         → security.hitl.timeout(人工确认超时(秒))
+  test('53 安全 confirm_dangerous_ops读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const val = before.groups.security.data['security.confirmDangerousOps'];
-    console.log(`[E2E] 53 confirmDangerousOps=${val}`);
+    const val = settingValue(before, 'security.system.confirm_dangerous_ops');
+    console.log(`[E2E] 53 confirm_dangerous_ops=${val}`);
+    expect(typeof val).toBe('boolean');
   });
 
   test('54 安全 auto_confirm_delay读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const val = before.groups.security.data['security.auto_confirm_delay'];
+    const val = settingValue(before, 'security.hitl.auto_confirm_delay');
     console.log(`[E2E] 54 auto_confirm_delay=${val}`);
     expect(Number(val)).toBeGreaterThanOrEqual(0);
   });
@@ -1458,18 +1470,18 @@ test.describe.serial('设置页100项全功能 E2E (有头)', () => {
   }) => {
     await editSaveVerify(page, request, {
       tabName: /安\s*全/,
-      settingKey: 'security.auto_confirm_delay',
+      settingKey: 'security.hitl.auto_confirm_delay',
       newValue: 15,
       yamlSnippet: 'auto_confirm_delay: 15',
     });
   });
 
-  test('56 安全 hitl_timeout读取', async ({ page, request }) => {
+  test('56 安全 hitl.timeout读取', async ({ page, request }) => {
     const before = (await apiGet(request, '/settings')) as {
       groups: Record<string, { data: Record<string, unknown> }>;
     };
-    const val = before.groups.security.data['security.hitl_timeout'];
-    console.log(`[E2E] 56 hitl_timeout=${val}`);
+    const val = settingValue(before, 'security.hitl.timeout');
+    console.log(`[E2E] 56 hitl.timeout=${val}`);
     expect(Number(val)).toBeGreaterThan(0);
   });
 

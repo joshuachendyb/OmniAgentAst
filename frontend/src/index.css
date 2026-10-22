@@ -37,6 +37,17 @@
  *   依赖 body 不滚动 + FloatingEntry 已关 zoom 动效 — 小欧-2026-10-14 */
 /* 编辑历史: 2026-10-21 小杨 - 新增文件树交互态样式 .files-tree-row(多选深灰/预览浅蓝/hover 与 focus-visible)
  *   与 .files-splitter(常驻 1px 中线, 原 transparent 在浅底上完全不可见, 找不到拖拽点) — 小杨-2026-10-21 */
+/* 编辑历史: 2026-10-22 小欧 - 新增 CSS 变量 --font-mono: **等宽字体栈的唯一真相源**。
+ *   背景: 栈首 Sarasa Mono SC(拉丁 0.5em = 1 格 / 全角 1.0em = 2 格)才能让"CJK 恰好 2 格",
+ *   框线图的边框才能像素级闭合(Cascadia 1.707 格 / Consolas 1.819 格 → 汉字行边框残差)。
+ *   本变量供 .doc-body code 等 CSS 侧消费; TS 侧由 utils/stepStyles.ts 的 FontFamily.MONO
+ *   引用 var(--font-mono, monospace) → 两侧同一份栈, 改一处即全应用生效(DRY) — 小欧-2026-10-22 */
+:root {
+  --font-mono:
+    'Sarasa Mono SC', 'Sarasa Mono TC', 'Cascadia Mono', Consolas, Menlo,
+    monospace;
+}
+
 /* 全局样式：仅保留盒模型，不覆盖 AntD reset.css（避免全站 Card/Settings 被击穿） */
 * {
   box-sizing: border-box;
@@ -552,7 +563,8 @@
 
 /* 行内代码: 浅蓝底 + 左侧品牌色竖线 + 等宽字体, 技术术语从正文里跳出来 */
 .doc-body code {
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  /* 2026-10-22 小欧 - 字体栈改引 CSS 变量 --font-mono(与 TS 侧 FontFamily.MONO 同一份栈, 避免两处各写一套) */
+  font-family: var(--font-mono, monospace);
   font-size: 12px;
   background: #e6f4ff;
   color: #1677ff;

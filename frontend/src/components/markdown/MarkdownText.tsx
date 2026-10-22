@@ -297,7 +297,6 @@ const mdComponents = {
                   }
                 : undefined
             }
-            label={p}
           />
         );
       }
