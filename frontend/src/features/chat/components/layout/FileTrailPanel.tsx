@@ -26,8 +26,9 @@ import {
   FileOutlined,
   PaperClipOutlined,
 } from '@ant-design/icons';
-import { fileApi, type RecentFile } from '@/services/api/file.api';
-import { composerRefStore, newRefId } from '@/features/refs/store';
+import { type RecentFile } from '@/services/api/file.api';
+// 2026-10-22 小欧 - 文档[43] R3/R4：引用入口统一，不再直接调 composerRefStore
+import { quoteFile } from '@/features/refs/quote';
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
@@ -108,21 +109,10 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
    *   （原实现 nav 到同一路由 → query 变化触发会话切换，属无意义的路由扰动）。
    */
   const sendAsRef = async (f: RecentFile) => {
-    try {
-      const r = await fileApi.readFile(f.path);
-      composerRefStore.push({
-        id: newRefId(),
-        kind: 'file',
-        label: f.name,
-        path: f.path,
-        content: r.content,
-        size: r.size,
-      });
-      showSuccess(`已引用「${f.name}」到对话`);
-    } catch {
-      // 10.0.1.1 复用优先/showMessage 统一错误通道：引用失败必须提示，不静默
-      showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
-    }
+    // 2026-10-22 小欧 - 文档[43] R4：引用入口统一（读盘+组装+入队只有一份）
+    const r = await quoteFile(f.path, { label: f.name });
+    if (r.ok) showSuccess(`已引用「${f.name}」到对话`);
+    else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
   };
 
   // 2026-10-21 小杨 - **加载态不用 Empty 假冒**（Empty 语义是"没有内容"，

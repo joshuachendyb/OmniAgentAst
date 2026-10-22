@@ -89,9 +89,9 @@ import {
 } from '@/services/error/handler';
 // 2026-10-21 小杨 - 推荐行 + 引用台账行
 import { chatStreamStore } from '../../streams/chatStreamStore';
-import { composerRefStore, newRefId } from '@/features/refs/store';
+// 2026-10-22 小欧 - 文档[43] R3/R4：引用入口统一（v1.4：选区走 quoteSelection，与文件页口径一致）
+import { quoteFile, quoteSelection } from '@/features/refs/quote';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
-import { fileApi } from '@/services/api/file.api';
 import { chatTokens } from '@/theme/tokens';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
 // 2026-10-05 小欧 北京老陈指令(左列 task 卡 response 接 Markdown): 展开态渲染器, 恒开不受设置开关控制
@@ -183,21 +183,12 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   /** BR1 恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
   const quoteAfterReread = React.useCallback(
     async (path: string, lineRange?: { start: number; end: number }) => {
-      try {
-        const f = await fileApi.readFile(path);
-        composerRefStore.push({
-          id: newRefId(),
-          kind: lineRange ? 'selection' : 'file',
-          label: path.split('/').pop() ?? path,
-          path,
-          content: f.content,
-          size: f.size,
-          lineRange: lineRange ?? undefined,
-        });
-        navigate(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
-      } catch {
-        showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
-      }
+      // 2026-10-22 小欧 - 文档[43] R4：引用入口统一；恢复的是引用意图，不是旧快照 → 现场重读
+      const r = lineRange
+        ? await quoteSelection(path, lineRange, { label: path.split('/').pop() ?? path })
+        : await quoteFile(path, { label: path.split('/').pop() ?? path });
+      if (r.ok) navigate(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
+      else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
     },
     [navigate, sessionId]
   );

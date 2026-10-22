@@ -29,6 +29,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react';
 import {
   Alert,
@@ -49,10 +50,11 @@ import { sessionApi } from '@/services/api/session.api';
 import { toAbsolutePath, samePath } from '@/utils/projectPath';
 import { FilesTree, findNode } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
-import {
-  composerRefStore,
-  newRefId,
-} from '@/features/refs/store';
+// 2026-10-22 小欧 - 文档[43] R3/R4：引用能力上提共享域；
+//   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
+//   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
+import { quoteFile, quoteSelection } from '@/features/refs/quote';
+import { composerRefStore } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { readStoredSessionId } from '@/utils/sessionStorage';
 import {
@@ -286,8 +288,12 @@ const FilesPage: React.FC = () => {
    *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
    */
   const [reveal, setReveal] = useState<{ key: string; n: number } | null>(null);
-  /** 2026-10-21 小杨 - **就地收集**的本地台账（store 为真源，这里只为计数与去重展示） */
-  const [collectedKeys, setCollectedKeys] = useState<string[]>([]);
+  // 2026-10-22 小欧 - 文档[43] R4：订阅 store 队列计数（替代 collectedKeys 双真源）
+  const refCount = useSyncExternalStore(
+    composerRefStore.subscribe,
+    composerRefStore.getSnapshot,
+    composerRefStore.getSnapshot
+  );
   /** 批量引用：树 checked 勾选的文件集合（预览单选仍走 selected，两者语义分开） */
   const [multiFiles, setMultiFiles] = useState<FileNode[]>([]);
 
@@ -545,8 +551,13 @@ const FilesPage: React.FC = () => {
    *   且**无法批量**（引 3 个文件 = 3 次离开 + 3 次返回，阅读位置全丢）。
    *   现改为**就地收集**：只入 store + 计数，页面不动；用户点「去对话」时一次带走。
    */
+  /**
+   * 2026-10-22 小欧 - 文档[43] R4 v1.4：引用入口统一到 features/refs；
+   *   「已收集」不再由页面自记账（双真源）→ 直接读 store 队列计数；
+   *   enqueueRef 已收为域内私有（不 export）→ 正文已在手时走 quote* 的 content/size 覆盖项。
+   */
   const pushRef = useCallback(
-    (
+    async (
       kind: 'file' | 'selection',
       label: string,
       path: string,
@@ -554,18 +565,11 @@ const FilesPage: React.FC = () => {
       size: number,
       range?: { start: number; end: number }
     ) => {
-      composerRefStore.push({
-        id: newRefId(),
-        kind,
-        label,
-        path,
-        content,
-        size,
-        lineRange: range ?? null,
-      });
-      const key = `${path}|${range ? `${range.start}-${range.end}` : ''}`;
-      setCollectedKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
-      showSuccess(`已引用「${label}」`);
+      // v1.4（修 D5）：正文已在调用方读好/切好 → 直传 quote* 的 content/size 覆盖项
+      const r = range
+        ? await quoteSelection(path, range, { label, content, size })
+        : await quoteFile(path, { label, content, size });
+      if (r.ok) showSuccess(`已引用「${label}」`);
     },
     []
   );
@@ -578,7 +582,6 @@ const FilesPage: React.FC = () => {
   /** 清空本次收集（同时清 store —— 否则"清空"只清了界面，引用仍会被带入对话） */
   const clearCollected = useCallback(() => {
     composerRefStore.clear();
-    setCollectedKeys([]);
   }, []);
 
   /** 引用所选（批量）：逐个读正文 → 就地收集；全部成功才清空勾选 */
@@ -868,7 +871,7 @@ const FilesPage: React.FC = () => {
 
         {/* 2026-10-21 小杨 - 就地收集：收集条常驻显示"已引用多少 + 何时送走"
           —— 引用不再立刻跳页，用户需要一个明确的"我攒了几个、去哪送"的落点。 */}
-        {collectedKeys.length > 0 && (
+        {refCount > 0 && (
           <div
             style={{
               display: 'flex',
@@ -884,7 +887,7 @@ const FilesPage: React.FC = () => {
           >
             <PaperClipOutlined style={{ color: Colors.WARNING }} />
             <span style={{ color: Colors.TEXT.STRONG }}>
-              已引用 {collectedKeys.length} 个文件
+              已引用 {refCount} 个文件
             </span>
             <span style={{ color: Colors.TEXT.SECONDARY }}>
               已收集随时可用：从这里离开（含直接进会话页）引用都会带上，发送前可再编辑
