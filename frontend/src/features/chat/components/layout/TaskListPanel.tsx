@@ -55,27 +55,8 @@ import {
 } from '@ant-design/icons';
 import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
-
-/**
- * 路径归一（与后端 `browse_service._resolve_within_root` 同口径）：相对 posix 路径
- * 2026-10-21 小杨 - 修复（键口径）
- */
-const normalizeRelPath = (raw: string, projectRoot?: string): string | null => {
-  const norm = (p: string) => p.replace(/\\/g, '/').replace(/\/+$/, '');
-  const v = norm(raw);
-  if (!v) return null;
-  if (projectRoot) {
-    const root = norm(projectRoot);
-    if (v.toLowerCase().startsWith(root.toLowerCase())) {
-      if (v.length > root.length && v[root.length] !== '/') return null; // 兄弟目录（F:\proj2）
-      const rel = v.slice(root.length).replace(/^\/+/, '');
-      return rel || null;
-    }
-  }
-  // 绝对路径但不在项目根内 → 不计入（后端也会丢弃）
-  if (/^[a-zA-Z]:\//.test(v) || v.startsWith('//')) return null;
-  return v.replace(/^\.\//, '');
-};
+// 2026-10-22 小欧 - 文档[43] R5：路径判据收敛到 utils/projectPath（唯一真源）
+import { toRelativePath } from '@/utils/projectPath';
 
 import type { SessionTaskItem } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '@/types/execution';
@@ -156,7 +137,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
       for (const tool of s.tools ?? []) {
         const raw = tool.params?.path;
         if (typeof raw !== 'string' || !raw) continue;
-        const p = normalizeRelPath(raw, projectRoot);
+        const p = toRelativePath(raw, projectRoot);
         if (!p) continue;
         m.set(p, (m.get(p) ?? 0) + 1);
       }
