@@ -51,6 +51,8 @@ const RULES = [
       const target = spec.match(/features\/([^/]+)\//);
       if (!inFeature || !target) return null;
       if (inFeature[1] === target[1]) return null;
+      // 2026-10-22 小欧 - features/refs 是共享域（文档[43] §3.2），chat 与 files 都可依赖它
+      if (target[1] === 'refs') return null;
       return `跨 feature 引用：${spec}（${inFeature[1]} → ${target[1]}）`;
     },
     exempt: () => false,

@@ -27,7 +27,7 @@ import {
   PaperClipOutlined,
 } from '@ant-design/icons';
 import { fileApi, type RecentFile } from '@/services/api/file.api';
-import { composerRefStore, newRefId } from '../../streams/composerRefStore';
+import { composerRefStore, newRefId } from '@/features/refs/store';
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';

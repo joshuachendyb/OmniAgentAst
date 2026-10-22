@@ -1,6 +1,12 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：文件页→对话页一次性引用通道（useSyncExternalStore 契约）；
 //   push 去重（同 path+lineRange 替换而非追加）+ pending 字段 — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 抽出 refKeyOf/mergeRefs，供跨页消费与 @ 选中共用去重 — 小杨-2026-10-21
+// 编辑历史: 2026-10-22 小欧 - 自 features/chat/streams/composerRefStore.ts 迁入（内容零改动，仅改 import 路径）— 小欧-2026-10-22
+//   迁移理由：文件页（pages/Files）需要引用能力，而 composerRefStore 藏在 chat 的私有
+//   internals（streams/）里 → 形成 pages/Files → features/chat/streams 的反向依赖；
+//   文档[42] 再加"工作区反链"会让它变成双向依赖（环）。上提到共享域 features/refs/ 后，
+//   chat 与 files 各自向下依赖，依赖图单向无环。
+//   迁移按 AGENTS「能复制就复制，不重写」执行：代码逐字搬运，仅改 import 路径。
 /**
  * composerRefStore —— 跨页一次性引用投递通道
  *
@@ -13,7 +19,7 @@
  * - takeAll 取出并清空（一次性消费）
  * - 快照 = 队列长度（变化即触发消费 effect）
  */
-import type { ChatRefPayload } from '../../../types/chat';
+import type { ChatRefPayload } from '../../types/chat';
 
 export type ComposerRef = ChatRefPayload & {
   id: string;
@@ -98,4 +104,20 @@ export const composerRefStore = {
     else queue.push(ref);
     emit();
   },
+};
+
+/**
+ * enqueueRef —— 域内私有入队口（只有 quote.ts 的 quote* 调它；不 export）
+ *
+ * 2026-10-22 小欧 - 文档[43] R3/R4 v1.4（修 D5）：
+ *   v1.3 曾 export enqueueRef 作为"第二入口"，但那样 INV-1（引用只有一个入口）
+ *   名不副实——任何域外 import { enqueueRef } 都能绕过 quote* 投畸形 ref，
+ *   而 G2 守卫查不到（enqueueRef 内部调 push，满足"push 只在 features/refs"）。
+ *   v1.4 处置：不 export（TS 天然禁止域外调用），quoteFile/quoteSelection/
+ *   quotePack 直接调 composerRefStore.push（都在 features/refs 域内，G2 通过）。
+ *   域外（含 pages/Files 选区已有正文）一律经 quote* 的 content/size 覆盖项
+ *   （见 R2），不再需要第二个入口。
+ */
+const enqueueRef = (ref: ComposerRef): void => {
+  composerRefStore.push(ref);
 };

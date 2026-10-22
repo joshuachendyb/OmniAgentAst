@@ -60,12 +60,13 @@ import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-21 小杨 - 引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
+// 2026-10-22 小欧 - 文档[43] R3：引用域归位，import 路径从 streams 改为共享域
 import {
   composerRefStore,
   mergeRefs,
   newRefId,
   type ComposerRef,
-} from '../streams/composerRefStore';
+} from '@/features/refs/store';
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';

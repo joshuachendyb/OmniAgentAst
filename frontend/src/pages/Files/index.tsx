@@ -52,7 +52,7 @@ import { FilePreview } from '@/features/files/components/FilePreview';
 import {
   composerRefStore,
   newRefId,
-} from '@/features/chat/streams/composerRefStore';
+} from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { readStoredSessionId } from '@/utils/sessionStorage';
 import {

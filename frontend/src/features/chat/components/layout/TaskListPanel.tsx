@@ -89,7 +89,7 @@ import {
 } from '@/services/error/handler';
 // 2026-10-21 小杨 - 推荐行 + 引用台账行
 import { chatStreamStore } from '../../streams/chatStreamStore';
-import { composerRefStore, newRefId } from '../../streams/composerRefStore';
+import { composerRefStore, newRefId } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { fileApi } from '@/services/api/file.api';
 import { chatTokens } from '@/theme/tokens';
