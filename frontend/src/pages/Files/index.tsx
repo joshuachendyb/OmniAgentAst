@@ -15,6 +15,10 @@
 //   竞态根治）+ 窄屏深链目标是文件时自动切预览 Tab（与树点击对齐）— 小欧-2026-10-22
 // 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook（useFilesTree / useFileSelection），
 //   页面退化为布局壳；mergeKids / buildScanNotices 上提 utils/fileTree — 小欧-2026-10-22
+//   2026-10-22 小欧 - 文档[43] R7 补：onInsertRef 与 refSelectedFiles 各抄一遍「readFile→pushRef」
+//     抽为 readAndPush 管道；顺带修 pushRef 未 await 的真缺陷（fire-and-forward 导致批量 ok 计数
+//     早于投递完成→勾选残留、异常变 unhandled rejection）。失败文案仍归调用方（批量要能定位
+//     到具体哪个文件）——抽的是数据管道，保留的是场景语义（KISS-DIRECT）— 小欧-2026-10-22
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -431,6 +435,19 @@ const FilesPage: React.FC = () => {
     []
   );
 
+  /**
+   * 读盘 → 投递引用（数据管道，唯一实现）。
+   * 2026-10-22 小欧 - 文档[43] R7 补：原 onInsertRef 与 refSelectedFiles 各抄一遍
+   *   「readFile → pushRef」，且对 async pushRef **不 await**（fire-and-forget → 批量场景
+   *   ok 计数早于投递完成、异常变 unhandled rejection）。抽管道后必须 await（不 await 即
+   *   主动固化该缺陷）。**失败文案仍归调用方**：批量要能定位到具体哪个文件，单发不带名。
+   *   —— 抽的是数据管道，保留的是场景语义（KISS-DIRECT）。— 小欧-2026-10-22
+   */
+  const readAndPush = useCallback(async (n: FileNode): Promise<void> => {
+    const r = await fileApi.readFile(n.key);
+    await pushRef('file', n.name, n.key, r.content, r.size);
+  }, [pushRef]);
+
   /** 去对话：此时才导航，ChatInput 挂载即消费 store 里的引用 */
   const goChat = useCallback(() => {
     nav(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
@@ -447,8 +464,7 @@ const FilesPage: React.FC = () => {
     await Promise.all(
       multiFiles.map(async (n) => {
         try {
-          const r = await fileApi.readFile(n.key);
-          pushRef('file', n.name, n.key, r.content, r.size);
+          await readAndPush(n);
           ok.push(n.key);
         } catch {
           showMessage(ErrorType.FILE_READ, `无法读取「${n.name}」，未引用`);
@@ -456,7 +472,7 @@ const FilesPage: React.FC = () => {
       })
     );
     if (ok.length === multiFiles.length) setMultiFiles([]);
-  }, [multiFiles, pushRef]);
+  }, [multiFiles, readAndPush]);
 
   /** 工具条刷新：树 + 足迹 + 预览共用一次点击 */
   const refreshAll = useCallback(() => {
@@ -536,8 +552,7 @@ const FilesPage: React.FC = () => {
           onInsertRef={(n) => {
             void (async () => {
               try {
-                const r = await fileApi.readFile(n.key);
-                pushRef('file', n.name, n.key, r.content, r.size);
+                await readAndPush(n);
               } catch {
                 // 失败必须可感知（原实现静默吞掉 → 用户不知为何）
                 showMessage(ErrorType.FILE_READ, '无法读取该文件，未能引用');
