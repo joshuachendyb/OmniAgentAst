@@ -128,6 +128,11 @@ test.describe('断线重连 UI 全链路', () => {
     await page.goto(`http://localhost:${PAGE_PORT}/`);
     await expect(chat.input).toBeVisible({ timeout: 60_000 });
 
+    // 2026-10-22 小欧 - 显式新建会话: 裸 URL 会命中 loadLatestHistoryMessages 自动加载
+    //   上一轮残留会话, 若该会话处于"执行中"则 sendBlocked 恒真 → 发送钮 disabled 600s 超时
+    //   (实测 F01C/F01D 两轮全红, 根因在此)。newSession 是真实用户路径, 不改变断连语义。
+    await chat.newSession();
+
     // 本轮日志基线: 只对账本次运行新增日志(防止匹配到以往轮次遗留的重连记录)
     const logBase = logBaseOf(BLOG);
 
