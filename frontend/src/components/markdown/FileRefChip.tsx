@@ -10,6 +10,11 @@
 //   夹带其他文字的行内代码仍原样，避免把示例改成可点链接 — 小欧-2026-10-22
 // 2026-10-22 小欧 - 防过度处理：可转路径须末段字母开头扩展名 + 拒 @/# 开头（npm 包名、锚点不转）；
 //   chip 文字直接显示**完整绝对路径**并删除 tip — 小欧-2026-10-22
+// 2026-10-22 小欧 - 修复三处：① 显式标记字符类误写 [^|\]]+? 断了方括号文件名（a[1].md）
+//   通道 → 恢复 [^|]+? 惰性锚定 ']]'（回归由 path-link-consistency/S23 两测抓出）；
+//   ② 链接构造两份（裸路径/行内代码）抽 toFileRefMarkdown 单一真源（DRY）；
+//   ③ chip 拼展示文案抽 displayPathOf；删死参数 label（chip 文字已恒为绝对路径，YAGNI）— 小欧-2026-10-22
+// 2026-10-22 小沈 - 清除违规注释（删除"三堂会审"等过期裁定字符）— 小沈-2026-10-22
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -28,7 +33,11 @@ import { useNavigate, useInRouterContext } from 'react-router-dom';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
 import { buildFileDeepLink, encodePathParam } from '@/utils/fileDeepLink';
-import { isLinkableRelPath, toAbsolutePath, toRelativePath } from '@/utils/projectPath';
+import {
+  isLinkableRelPath,
+  toAbsolutePath,
+  toRelativePath,
+} from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 
 export interface FileRefChipProps {
@@ -81,7 +90,8 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
         onGo();
       }}
     >
-      <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} /> {fullPath}
+      <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />{' '}
+      {fullPath}
       {lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
     </span>
   );
@@ -137,9 +147,6 @@ export function isValidRelPath(p: string): boolean {
   return !p.split(/[\\/]/).includes('..');
 }
 
-/** 路径可点击的同一份形态校验（别名，避免两处各写一遍） */
-export const isViewablePath = isValidRelPath;
-
 /**
  * 裸路径识别的终止字符：空白、成对符号、引号、反引号、中英文标点。
  * 路径内合法的 `- . _ / \` 均不在内；中文路径段仍可识别。
@@ -180,6 +187,19 @@ interface FileRefTokenGroups {
 /** label 里的方括号与反斜杠要转义，否则 markdown 链接解析被截断 */
 const escapeLabel = (p: string): string => p.replace(/([[\]\\])/g, '\\$1');
 
+/**
+ * 裸路径与行内代码**共用的链接构造**（唯一真源，DRY）：
+ *   @/# 开头（npm 包名 @scope/pkg、锚点 #L12）不是文件路径 → null；
+ *   归一为根内相对路径（utils/projectPath 唯一真源），根外/未取到根/形态不合格 → null；
+ *   调用方拿到 null 一律留原文，不造假链接。
+ */
+const toFileRefMarkdown = (raw: string, projectRoot?: string): string | null => {
+  if (raw.startsWith('@') || raw.startsWith('#')) return null;
+  const rel = toRelativePath(raw, projectRoot);
+  if (!rel || !isValidRelPath(rel) || !isLinkableRelPath(rel)) return null;
+  return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(rel)})`;
+};
+
 const convertRuns = (text: string, projectRoot?: string): string =>
   text.replace(FILE_REF_TOKEN_RE, (whole, ...rest) => {
     const g = rest[rest.length - 1] as FileRefTokenGroups;
@@ -197,26 +217,18 @@ const convertRuns = (text: string, projectRoot?: string): string =>
 
     const raw = g.bareAbs ?? g.bareRel;
     if (!raw) return whole;
-    // npm 包名（@scope/pkg）、锚点（#L12）形态不是文件路径，包名的子段再像路径也不转
-    if (raw.startsWith('@') || raw.startsWith('#')) return whole;
-    // 绝对路径交由 projectPath 判根内；根外/未取到项目根一律留原文
-    const rel = toRelativePath(raw, projectRoot);
-    if (!rel || !isValidRelPath(rel) || !isLinkableRelPath(rel)) return whole;
-    return `${g.lead ?? ''}[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(
-      rel
-    )})`;
+    const link = toFileRefMarkdown(raw, projectRoot);
+    return link ? `${g.lead ?? ''}${link}` : whole;
   });
 
 /**
- * 文件路径的可链接形态：末段必须是**字母开头**的扩展名（`a.md` / `x.json`）。
- * 用途：排除 npm 包名（`@deepseek-ai/dsh-root`）、版本号（`1.2.3`）、锚点（`#L12`）等非路径 token。
+ * 行内代码的**形态**门槛：整段无空白且末段是字母开头扩展名（`a.md` / `x.json`）。
+ * 排除版本号（`1.2.3`）、无扩展名片段（`dsh-root`）；@/# 前缀统一由 toFileRefMarkdown 拒。
  */
 const LAST_SEGMENT_FILE_RE = /\.[A-Za-z][A-Za-z0-9]{0,9}$/;
 const isPathLike = (raw: string): boolean =>
   !!raw &&
   !/\s/.test(raw) &&
-  !raw.startsWith('@') &&
-  !raw.startsWith('#') &&
   LAST_SEGMENT_FILE_RE.test(raw.split(/[\\/]/).pop() || '');
 
 const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
@@ -225,9 +237,7 @@ const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
 const toWholePathLink = (code: string, projectRoot?: string): string | null => {
   const raw = code.trim();
   if (!isPathLike(raw)) return null;
-  const rel = toRelativePath(raw, projectRoot);
-  if (!rel || !isValidRelPath(rel) || !isLinkableRelPath(rel)) return null;
-  return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(rel)})`;
+  return toFileRefMarkdown(raw, projectRoot);
 };
 
 /** 行内代码段按整段路径转换，其余文字走裸路径识别 */

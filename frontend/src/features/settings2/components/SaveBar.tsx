@@ -14,6 +14,7 @@
 //   （cancelButtonProps 隐藏）、discard 关闭语义；Modal.confirm 危险确认保留原样（L49 走 confirmThen，非标准壳范围）。
 // 编辑历史: 2026-10-11 00:55:20 小欧 - 危险确认迁至 SettingsModal.dangerConfirm + 展示「具体变更+后果」: 本文件侧调用改造(传具体变更与后果, 不再只笼统提示); 旧文件头历史块随重构迁移, 详见 git — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 01:24:25 小欧 - dangerHints 扁平数组改 dangerHintByChange(按 label 索引): 多条变更各自成组挂后果 — 小欧-2026-10-11
+// 2026-10-22 小沈 - 清除违规注释（删除"北京老陈审核后批准"等过期裁定字符）— 小沈-2026-10-22
 import React from 'react';
 // 2026-10-11 00:05 小欧 - 危险确认迁至 SettingsModal.dangerConfirm 后，
 //   本文件不再直接用 antd Modal，也不再自己算 480 宽度 —— 一并清掉这两个失效 import。
@@ -60,7 +61,7 @@ export const SaveBar: React.FC<Props> = ({
   /**
    * 2026-10-11 00:05 小欧 - 危险确认改为「具体变更 + 后果」，并收进 SettingsModal 标准壳。
    *
-   * 改前实测的问题（北京老陈审核后批准）：
+   * 改前实测的问题：
    *   ① 双图标重复——antd Modal.confirm 自动加一个矢量图标，title 里又手写了一个 emoji ⚠，
    *      同一意思画两遍；且 emoji 跨平台形态不一（与删除确认弹框早已改掉的是同一毛病，此处漏改）。
    *   ② 只说"涉及危险操作相关配置（HTL人工开关/危险操作确认）"，用户看不出**具体要提交什么**。
@@ -132,7 +133,9 @@ export const SaveBar: React.FC<Props> = ({
         okText="知道了"
         cancelButtonProps={{ style: { display: 'none' } }}
       >
-        <div style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}>
+        <div
+          style={{ fontSize: FontSize.SECONDARY, color: Colors.TEXT.SECONDARY }}
+        >
           以下改动需重启后端生效：
         </div>
         <div
