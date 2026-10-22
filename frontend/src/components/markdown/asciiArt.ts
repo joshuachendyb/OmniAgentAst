@@ -73,6 +73,13 @@
 //      (Ambiguous 按 2 列), 这才与 Sarasa Mono SC 实测(CJK/几何符号/箭头 2 格)一致;
 //      本条为准, 上一条作废。
 //   ② charWidth 逐字符新建选项对象 → 选项提为模块级常量(热路径零分配)。 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 框边定位三处修正:
+//   ① 上下边线宽差容差 ≤1 列: 手绘图顶/底边线常差一横, 严格相等会把整框丢弃。
+//   ② natural 一律裁尾空格: 末个框线字符之后的尾部空格是 padding 非结构间隙,
+//      不裁会让内框变宽并把外框顶胖。
+//   ③ 右边界改两相位认领: 相位①认领左边界时按"下一框目标左列-1"试探认领本框右边界
+//      (防下一框把前框右边线误认作本框左边线); 相位②用精确 cap 重定位右边界,
+//      认领集只含左边界, 避免试探认领污染精确定位。 — 小欧-2026-10-22
 
 import { eastAsianWidth } from 'get-east-asian-width';
 
@@ -253,7 +260,12 @@ function matchBoxes(borders: BorderInfo[], lines: string[]): BoxRegion[] {
     for (let j = i + 1; j < sorted.length; j += 1) {
       if (usedAsBottom.has(j)) continue;
       const bottom = sorted[j] as BorderInfo;
-      if (bottom.leftCol === top.leftCol && bottom.width === top.width) {
+      // 2026-10-22 小欧 - 容忍上下框宽差 ≤1 列: 作者手绘图常见顶/底边线多画少画一横
+      //   (真实文档《[1]系统架构全景解析》记忆框 top=36/bottom=37), 严格相等会把整框丢弃。
+      if (
+        bottom.leftCol === top.leftCol &&
+        Math.abs(bottom.width - top.width) <= 1
+      ) {
         boxes.push({ top, bottom });
         usedAsTop.add(i);
         usedAsBottom.add(j);
@@ -278,11 +290,6 @@ function padOrTrimToWidth(s: string, target: number): string {
     return out;
   }
   return s;
-}
-
-/** 段内是否含框线字符(含 → 段尾空格是结构间隙, 不能当可裁余量) */
-function isStructuralSeg(inner: string): boolean {
-  return /[│┃║┌┐└┘├┤┬┴┼+]/.test(inner);
 }
 
 /** 一行里某框的左右边界定位结果 */
@@ -421,7 +428,6 @@ function locateRightEdge(
 function edgeOf(
   line: string,
   cols: number[],
-  frameRow: boolean,
   leftIdx: number,
   rightIdx: number
 ): BoxEdge {
@@ -431,11 +437,10 @@ function edgeOf(
     rightIdx,
     leftCol: cols[leftIdx] as number,
     rightCol: cols[rightIdx] as number,
-    natural: frameRow
-      ? displayWidth(inner)
-      : isStructuralSeg(inner)
-        ? displayWidth(inner)
-        : displayWidth(inner.replace(/\s+$/, '')),
+    // 2026-10-22 小欧 - natural 一律裁尾: 末个框线字符之后的尾部空格是 padding
+    //   不是结构间隙 → 不裁会把外层框顶宽(嵌套框变宽 → 外层框被顶胖)。
+    //   刚性部分(框线/箭头/三角)都在末个框线字符之前, 裁尾不影响它们。
+    natural: displayWidth(inner.replace(/\s+$/, '')),
   };
 }
 
@@ -477,21 +482,28 @@ function locateRowEdges(
   targetLOf: (box: BoxRegion) => number
 ): Map<BoxRegion, BoxEdge> {
   const cols = displayCols(line);
-  const claimed = new Set<number>();
+  const claimedP1 = new Set<number>();
+  const claimedP2 = new Set<number>();
   const sorted = [...rowBoxes].sort((a, b) => a.top.leftCol - b.top.leftCol);
   const leftIdxOf = new Map<BoxRegion, number>();
-  for (const box of sorted) {
-    const idx = locateLeftEdge(
-      line,
-      cols,
-      isFrameRowOf(box, rowIndex),
-      targetLOf(box),
-      claimed
-    );
+  // 相位①: 认领左边界; 同时按"下一框目标左列-1"试探认领本框右边界,
+  //   防止下一框把前框右边线误当成本框左边线(内容行被刚性内容推右时两者常相邻)。
+  //   ⚠ 试探右只进 claimedP1(供相位①左搜索排除); 相位②右搜索用只含左界的 claimedP2,
+  //   否则各框会把自己的试探右当成已占用 → 右边界找不到 → 整框被跳过。
+  for (let i = 0; i < sorted.length; i += 1) {
+    const box = sorted[i] as BoxRegion;
+    const frameRow = isFrameRowOf(box, rowIndex);
+    const idx = locateLeftEdge(line, cols, frameRow, targetLOf(box), claimedP1);
     if (idx < 0) continue;
-    claimed.add(cols[idx] as number);
+    claimedP1.add(cols[idx] as number);
+    claimedP2.add(cols[idx] as number);
     leftIdxOf.set(box, idx);
+    const next = sorted[i + 1];
+    const provCap = next ? targetLOf(next) - 1 : Number.POSITIVE_INFINITY;
+    const rIdx = locateRightEdge(line, cols, frameRow, idx, provCap, claimedP1);
+    if (rIdx > idx) claimedP1.add(cols[rIdx] as number);
   }
+  // 相位②: 用精确 cap 重定位右边界(认领集只含左边界, 试探认领不污染精确定位)。
   const result = new Map<BoxRegion, BoxEdge>();
   for (let i = 0; i < sorted.length; i += 1) {
     const box = sorted[i] as BoxRegion;
@@ -517,11 +529,11 @@ function locateRowEdges(
       frameRow,
       leftIdx,
       cap,
-      claimed
+      claimedP2
     );
     if (rightIdx < 0 || rightIdx <= leftIdx) continue;
-    claimed.add(cols[rightIdx] as number);
-    result.set(box, edgeOf(line, cols, frameRow, leftIdx, rightIdx));
+    claimedP2.add(cols[rightIdx] as number);
+    result.set(box, edgeOf(line, cols, leftIdx, rightIdx));
   }
   return result;
 }
@@ -734,7 +746,7 @@ function rewriteRow(
   }
   const rightIdx = locateRightEdge(line, cols, frameRow, leftIdx, cap, claimed);
   if (rightIdx < 0 || rightIdx <= leftIdx) return line;
-  const edge = edgeOf(line, cols, frameRow, leftIdx, rightIdx);
+  const edge = edgeOf(line, cols, leftIdx, rightIdx);
   const prefix = line.slice(0, edge.leftIdx);
   const inner = line.slice(edge.leftIdx + 1, edge.rightIdx);
   const suffix = line.slice(edge.rightIdx + 1);

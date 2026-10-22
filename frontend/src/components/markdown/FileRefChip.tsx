@@ -55,21 +55,25 @@ const chipStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+/**
+ * chip 展示文案：项目根 + 相对路径拼**完整绝对路径**；根取不到退相对路径（不造假）；
+ * 根是 Windows 形态时展示统一反斜杠，避免 `E:\root/a.md` 这种混写。
+ */
+const displayPathOf = (relPath: string, projectRoot: string): string => {
+  const abs = toAbsolutePath(relPath, projectRoot);
+  if (!abs) return relPath;
+  return projectRoot.includes('\\') ? abs.replace(/\//g, '\\') : abs;
+};
+
 /** 形态：不可删除（Agent 的输出，不是用户的引用）；校验不过由调用方退化为纯文本，不渲染 chip */
 const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
   relPath,
   lineRange,
   onGo,
 }) => {
-  // 2026-10-22 小欧 - chip 文字直接显示**完整绝对路径**（项目根 + 相对路径），不再靠 tip；
-  //   根取不到时退相对路径（不造假）— 小欧-2026-10-22
+  // 2026-10-22 小欧 - chip 文字直接显示完整绝对路径（含项目根），不再靠 tip — 小欧-2026-10-22
   const projectRoot = useProjectRoot();
-  const abs = toAbsolutePath(relPath, projectRoot);
-  const fullPath = abs
-    ? projectRoot.includes('\\')
-      ? abs.replace(/\//g, '\\') // 根是 Windows 形态时展示统一反斜杠
-      : abs
-    : relPath;
+  const fullPath = displayPathOf(relPath, projectRoot);
   return (
     <span
       role="link"
@@ -193,7 +197,10 @@ const escapeLabel = (p: string): string => p.replace(/([[\]\\])/g, '\\$1');
  *   归一为根内相对路径（utils/projectPath 唯一真源），根外/未取到根/形态不合格 → null；
  *   调用方拿到 null 一律留原文，不造假链接。
  */
-const toFileRefMarkdown = (raw: string, projectRoot?: string): string | null => {
+const toFileRefMarkdown = (
+  raw: string,
+  projectRoot?: string
+): string | null => {
   if (raw.startsWith('@') || raw.startsWith('#')) return null;
   const rel = toRelativePath(raw, projectRoot);
   if (!rel || !isValidRelPath(rel) || !isLinkableRelPath(rel)) return null;
