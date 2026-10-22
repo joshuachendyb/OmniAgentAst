@@ -33,6 +33,8 @@
 //   安全Tab 分类表传 PRIMARY: 该表是设置页正文(周围 14px), 用 12px 会小 2px 层级拉不开。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-21 小杨 - 接入文件引用 chip 与形态校验（与 FileRefChip 同源单一真源） — 小杨-2026-10-21
 // 2026-10-22 小杨 - 文件引用链接的路径参数改走安全解码, 非法百分号编码不再抛 URIError — 小杨-2026-10-22
+// 编辑历史: 2026-10-22 小欧 - 代码块显式行高 1.1: 原继承 1.5, │ 墨迹高 1.12–1.17em 行间留缝 →
+//   框线竖线断成虚线; 行高 ≤1.14 时连成实线 — 小欧-2026-10-22
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -44,6 +46,7 @@ import {
   FontFamily,
   FontSize,
   FontWeight,
+  MonoLineHeight,
   Radius,
   Spacing,
 } from '@/utils/stepStyles';
@@ -96,6 +99,10 @@ const codeBlockStyle: React.CSSProperties = {
   borderRadius: Radius.SM,
   background: Colors.BG.SECONDARY,
   fontSize: FontSize.CODE,
+  // 2026-10-22 小欧 - 显式行高取公用令牌 MonoLineHeight(1.1):
+  //   原继承流水线根容器的"字号+4"(12px 字继承 18px 行高 = 1.5) → │ 字形墨迹高只有 1.12–1.17em,
+  //   行间留缝 → 框线竖线断成**虚线**。行高 ≤1.14 时竖线才连成实线, 取 1.1 两端留余量。
+  lineHeight: MonoLineHeight,
   fontStyle: 'normal',
   fontFamily: FontFamily.MONO,
   whiteSpace: 'pre',

@@ -8,6 +8,7 @@
 //     否则行号多 1（指到不存在的空行）且与后端 total_lines 不一致 — 小欧-2026-10-21
 // 2026-10-22 小杨 - 深链行号按区间整段高亮（原只高亮首行），行号越界在工具条如实提示，
 //     不再静默不定位 — 小杨-2026-10-22
+// 编辑历史: 2026-10-22 小欧 - 复制路径按钮加 Tooltip 显完整路径 + 字体收敛 FontFamily.MONO — 小欧-2026-10-22
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -26,12 +27,15 @@ import {
   Segmented,
   Skeleton,
   Spin,
+  Tooltip,
 } from 'antd';
 import { CopyOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { FileNode, ReadResponse } from '@/services/api/file.api';
 import { fileApi, ImageUnchanged } from '@/services/api/file.api';
 import { formatBytes } from '@/utils/format';
 import { copyTextToClipboard } from '@/utils/clipboard';
+import { toAbsolutePath } from '@/utils/projectPath';
+import { useProjectRoot } from '@/hooks/useProjectRoot';
 import {
   showMessage,
   showSuccess,
@@ -40,7 +44,12 @@ import {
 } from '@/services/error/handler';
 import { refCost } from '@/utils/refCost';
 import { chatTokens } from '@/theme/tokens';
-import { Colors, Spacing } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontFamily,
+  MonoLineHeight,
+  Spacing,
+} from '@/utils/stepStyles';
 // 2026-10-21 小杨 - md 双模与代码高亮：md 复用系统唯一 markdown 渲染入口
 //   （聊天/设置页同源 MarkdownSlot）；代码高亮走同目录 highlight 单点（prismjs）
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
@@ -82,6 +91,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   refreshRef,
 }) => {
   const [text, setText] = useState<ReadResponse | null>(null);
+  const projectRoot = useProjectRoot();
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<{ start: number; end: number } | null>(null);
@@ -374,9 +384,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return () => window.clearTimeout(timer);
   }, [lineRange, text]);
 
-  /** 复制相对路径（三处复用：文本头 / 图片头 / 不可预览提示） */
+  /** 复制绝对路径（三处复用：文本头 / 图片头 / 不可预览提示） */
   const copyPath = (target: FileNode) => {
-    void copyTextToClipboard(target.key).then((r) => {
+    const abs = toAbsolutePath(target.key, projectRoot) ?? target.key;
+    void copyTextToClipboard(abs).then((r) => {
       if (r.ok) showSuccess('路径已复制');
       else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
     });
@@ -405,13 +416,15 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return (
       <>
         <div style={TOOLBAR_STYLE}>
-          <Button
-            size="small"
-            icon={<CopyOutlined />}
-            onClick={() => copyPath(node)}
-          >
-            复制路径
-          </Button>
+          <Tooltip title={toAbsolutePath(node.key, projectRoot) ?? node.key}>
+            <Button
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => copyPath(node)}
+            >
+              复制路径
+            </Button>
+          </Tooltip>
           <span style={{ color: Colors.TEXT.TERTIARY }}>
             {/* 图片拿不到"本次读取"的 mtime（blob 无该字段），不展示树里的旧值以免误导 */}
             {imgBytes != null ? formatBytes(imgBytes) : formatBytes(node.size)}
@@ -469,9 +482,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         message={`「${node.name}」暂不支持预览`}
         description="该文件不是可预览的文本或图片（可能是二进制或无法读取）。你可以复制路径，或引用到对话中再处理。"
         action={
-          <Button size="small" onClick={() => copyPath(node)}>
-            复制路径
-          </Button>
+          <Tooltip title={toAbsolutePath(node.key, projectRoot) ?? node.key}>
+            <Button size="small" onClick={() => copyPath(node)}>
+              复制路径
+            </Button>
+          </Tooltip>
         }
       />
     );
@@ -539,13 +554,15 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
             : `${cost.tokens}`}{' '}
           tok
         </Button>
-        <Button
-          size="small"
-          icon={<CopyOutlined />}
-          onClick={() => copyPath(node)}
-        >
-          复制路径
-        </Button>
+        <Tooltip title={toAbsolutePath(node.key, projectRoot) ?? node.key}>
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => copyPath(node)}
+          >
+            复制路径
+          </Button>
+        </Tooltip>
         <span style={{ color: Colors.TEXT.TERTIARY }}>
           {text.total_lines} 行 · {text.mtime}
         </span>
@@ -628,10 +645,15 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           onMouseUp={takeSelection}
           style={{
             margin: 0,
-            fontFamily:
-              'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+            // 2026-10-22 小欧 - 字体栈收敛到 FontFamily.MONO 令牌(DRY):
+            //   原硬编码 'ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace',
+            //   在 Windows 上 ui-monospace 实解析为浏览器默认等宽(Courier New), 与仓库其余代码文本
+            //   两套字形并存 → 统一到令牌(Sarasa Mono SC 栈首)。 — 小欧-2026-10-22
+            fontFamily: FontFamily.MONO,
             fontSize: 13,
-            lineHeight: 1.6,
+            // 2026-10-22 小欧 - 行高 1.6 → MonoLineHeight(1.1): 原 1.6 时 │ 等框线字符的墨迹高
+            //   (1.12–1.17em)不够, 行间留缝 → 文本模式里的框线竖线断成虚线 — 小欧-2026-10-22
+            lineHeight: MonoLineHeight,
             tabSize: 4,
             overflowX: 'auto',
             overflowY: 'auto',

@@ -28,12 +28,19 @@
 //   ⚠ 后续任何人再以此理由建议加掩码，先读这条，按"已裁定"处理，不要重开讨论 — 小欧-2026-10-10
 // 编辑历史: 2026-10-14 小欧 - 删本地 formatSize 改用公用 @/utils/format 的 formatBytes（DRY）。
 //   可见变化: ≥10MB 的文件由 "1024.0 MB" 改显 "1.0 GB"（原单位封顶 MB，GB 级会显示成没法读的数字）；<10MB 不变。
+// 编辑历史: 2026-10-22 小欧 - CODE_FONT 硬编码 'Consolas, Menlo, monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
 import React, { useCallback, useMemo, useState } from 'react';
 import { Button, Spin } from 'antd';
 import { FileDoneOutlined, FileTextOutlined } from '@ant-design/icons';
 import { configApi } from '@/services/api/config.api';
 import { SettingsModal } from '@/theme/SettingsModal';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  FontWeight,
+  Spacing,
+} from '@/utils/stepStyles';
 // 2026-10-10 22:15 小欧 - 随「只读」badge 删除，同步清 Radius_SM / settingsModalWidth 两个失效 import
 import { settingsRadius } from '@/theme/settingsTokens';
 import { showSuccess } from '@/services/error/handler';
@@ -42,7 +49,8 @@ import { formatBytes } from '@/utils/format';
 
 type FileKind = 'config' | 'version';
 
-const CODE_FONT = 'Consolas, Menlo, monospace';
+// 2026-10-22 小欧 - 字体栈收敛到 FontFamily.MONO 令牌(DRY: 原此处硬编码 'Consolas, Menlo, monospace',
+//   与仓库令牌两套字形并存, 统一到令牌) — 小欧-2026-10-22
 // 2026-09-22 小欧 - DRY 收口：行号栏/正文两处 lineHeight:1.7 → 单常量（杜绝改一处漏一处）
 const CODE_LINE_HEIGHT = 1.7;
 // 2026-09-22 小欧 - 魔数收口：行号栏固定最小宽 48 提取命名常量（代码区等宽布局固有值）
@@ -58,7 +66,7 @@ const GUTTER_CELL: React.CSSProperties = {
   userSelect: 'none',
   fontSize: FontSize.CODE,
   lineHeight: CODE_LINE_HEIGHT,
-  fontFamily: CODE_FONT,
+  fontFamily: FontFamily.MONO,
   minWidth: LINE_NO_MIN_WIDTH,
   borderRight: `1px solid ${Colors.BORDER.VERTICAL}`,
 };
@@ -68,7 +76,7 @@ const CODE_CELL: React.CSSProperties = {
   color: Colors.TEXT.PRIMARY,
   fontSize: FontSize.CODE,
   lineHeight: CODE_LINE_HEIGHT,
-  fontFamily: CODE_FONT,
+  fontFamily: FontFamily.MONO,
   whiteSpace: 'pre-wrap',
   overflowWrap: 'anywhere',
 };

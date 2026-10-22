@@ -21,6 +21,7 @@
 //   sectionStyle marginTop10→Spacing.MD/paddingTop8→MD; 标题 paddingLeft6→SM; 网格 columnGap12→LG/rowGap4→XS/marginTop6→SM;
 //   fontSize11→FontSize.CAPTION×2 处; lineHeight 18/22px→字号+Spacing派生; gap8→MD; marginTop 6/4/2→SM/XS/XS/2 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 修改: 错误项英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled — 小欧-2026-09-17
+// 编辑历史: 2026-10-22 小欧 - 2 处硬编码 'monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -42,11 +43,12 @@ import type { ExecutionStep } from '../../../../types/execution';
 import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 M3c(final_stats帧复合兜底): 折叠区复合兜底数据源 — 小欧-2026-09-11
 import {
   Colors,
+  FontFamily,
   FontSize,
   Spacing,
   formatTokenFull,
   type TokenLayer,
-} from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-09-11
+} from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-10-22(补 FontFamily 收敛字体栈)
 import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 复用省略+Tooltip全文封装 — 小欧-2026-09-15
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复用折叠箭头组件 — 小欧-2026-09-15
 
@@ -295,7 +297,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                         <span
                           style={{
                             color: Colors.TEXT.SECONDARY,
-                            fontFamily: 'monospace',
+                            fontFamily: FontFamily.MONO,
                             whiteSpace: 'nowrap',
                           }}
                         >
@@ -358,7 +360,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 <span
                   style={{
                     color: Colors.TEXT.PRIMARY,
-                    fontFamily: 'monospace',
+                    fontFamily: FontFamily.MONO,
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',

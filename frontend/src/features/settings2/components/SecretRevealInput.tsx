@@ -12,6 +12,7 @@
  *     用户误以为密钥没配而重新输入覆盖。现改为聚焦即可编辑、但在敲下字符前仍显示掩码。
  *   2026-09-27 小欧 - 补「value 清空即退出输入态」effect（父层保存成功置空 value 后，
  *     否则框内空白可编辑，用户会误以为没保存成功）。
+ *   2026-10-22 小欧 - 硬编码 'monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
  *
  * 四条安全约束：①点眼睛先 Modal.confirm 确认才取明文 ②明文 30 秒自动打码+卸载清 timer
  *   ③明文只存内存（不写 localStorage）、明文态 readOnly 且 onChange 直接 return（不当作新值提交）
@@ -21,7 +22,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Modal } from 'antd';
 import { ErrorType, showMessage } from '@/services/error/handler';
 import { modelApi } from '@/services/api/model.api';
-import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
+import { Colors, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
 import { settingsSpacing } from '@/theme/settingsTokens';
 
 /** 明文自动恢复打码的秒数（设计稿已定：30 秒） */
@@ -149,7 +150,7 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
           style={{
             width,
             // 明文态用等宽字体，便于逐字符核对密钥
-            fontFamily: revealed ? 'monospace' : undefined,
+            fontFamily: revealed ? FontFamily.MONO : undefined,
           }}
         />
         {/* 自定义眼睛：查看已保存的明文（未配置时无密钥可看，不显示） */}

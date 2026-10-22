@@ -30,6 +30,9 @@
 //   PARAMS_PANEL_MAX_W 640→720(三标签头部留白)、PARAMS_PANEL_MIN_W 320→460(标题 nowrap 所需下限);
 //   min-width 须由调用侧写成 min(460, 100vw-32) 而非固定 460(CSS min-width 优先于 max-width, 见 ToolCallLine);
 //   文件头概述行仍写旧的 640/320, 本次审计更正 — 小欧-2026-10-13
+// 编辑历史: 2026-10-22 小欧 - FontFamily.MONO 字体栈换 Sarasa Mono SC 栈首(框线/CJK 宽度与
+//   asciiArt.ts 列宽模型对齐); 仓内 5 处硬编码字体栈收敛到本令牌(AboutFiles/StaticStatsBlock 2处/
+//   SecretRevealInput/FilePreview) — 小欧-2026-10-22
 import type { CSSProperties } from 'react';
 /**
  * 步骤样式工具 - 统一管理所有步骤类型的视觉样式
@@ -92,11 +95,32 @@ export const FontSize = {
 } as const;
 
 // 等宽字体族(代码/路径/技术文本) —— 2026-10-05 小欧 新增:
-//   仓内曾有 5 处各写各的字体栈(两种字形并存), 本令牌作为收敛目标; 当前仅 MarkdownText 已切换,
-//   存量待单独一轮统一。新增代码文本一律引用本令牌。 — 小欧-2026-10-05
+//   仓内曾有 5 处各写各的字体栈(两种字形并存), 本令牌作为收敛目标。
+//   2026-10-22 小欧 - 收敛完成: 5 处硬编码(MarkdownText 之外的 AboutFiles / StaticStatsBlock 2 处 /
+//   SecretRevealInput / FilePreview)已全部改引本令牌; 新增代码文本一律引用本令牌。 — 小欧-2026-10-22
 export const FontFamily = {
-  MONO: 'Consolas, Menlo, monospace',
+  // 2026-10-22 小欧 - 字体栈换 **Sarasa Mono SC 栈首**:
+  //   旧栈(Consolas 优先)实测: 框线 1.000 / ▶ 1.567(Consolas 无此字形→回退 CJK 字形)/ CJK 1.819 格
+  //   → ▶ 把右边框顶歪、CJK 按 2 格算却实占 1.819 格 → 汉字行边框残差累积。
+  //   Sarasa 实测: 框线 1 格 / 几何符号·箭头 2 格 / CJK 恰好 2 格 → 与 asciiArt.ts 的列宽模型完全一致,
+  //   边框像素级齐(拉丁 0.5em = 1 格, 全角 1.0em = 2 格)。
+  //   ⚠ 栈首必须是 Sarasa: 落到 Cascadia/Consolas 时 CJK 与几何符号宽度都与模型对不上。
+  //   ⚠ 全应用等宽拉丁字形随之由 Consolas 变为 Sarasa(Iosevka 系) —— 产品级观感变更。
+  //   2026-10-22 小欧 - **栈内容下沉到 CSS 变量** --font-mono(index.css 的 :root):
+  //   CSS 侧(.doc-body code 等)无法 import TS 令牌, 以前只能各写一套字体栈(两处真相源, 必漂移);
+  //   现两侧同引 var(--font-mono) → 改一处即全应用生效(DRY)。
+  //   2026-10-22 小欧 - 存量硬编码字体栈已全部收敛到本令牌(AboutFiles / StaticStatsBlock 2 处 /
+  //   SecretRevealInput / FilePreview / SettingsModal / InputHistoryPanel / ZenVerifyModal /
+  //   MermaidBlock); 原注释里"ToolCallLine 2 处"已失效(该文件现无硬编码字体栈)。 — 小欧-2026-10-22
+  MONO: 'var(--font-mono, monospace)',
 } as const;
+
+/**
+ * 等宽文本行高比(代码块/文件预览统一) —— 2026-10-22 小欧 新增:
+ *   │ 等框线字符的墨迹高只有 1.12–1.17em, 行高大于该值时行间留缝 → 框线竖线断成**虚线**
+ *   (12px 字继承 18px 行高 = 1.5 时必断)。取 1.1 两端都留余量, 竖线连成实线。
+ */
+export const MonoLineHeight = 1.1;
 // 字重规范
 export const FontWeight = {
   BOLD: 600, // 标题、重要标签
@@ -254,7 +278,11 @@ const stepMeta: Record<StepType, StepMeta> = {
   resumed: { label: '▶️ 恢复', priority: 'secondary', layout: 'inline' },
   retrying: { label: '🔄 重试', priority: 'secondary', layout: 'inline' },
   installing: { label: '📦 安装依赖', priority: 'secondary', layout: 'inline' },
-  summarizing: { label: '📝 生成历史摘要', priority: 'secondary', layout: 'inline' },
+  summarizing: {
+    label: '📝 生成历史摘要',
+    priority: 'secondary',
+    layout: 'inline',
+  },
   observation: {
     label: '📋 观察',
     priority: 'secondary',

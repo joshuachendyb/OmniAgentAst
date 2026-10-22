@@ -16,7 +16,14 @@ import type { CSSProperties, ReactNode } from 'react';
 import { Modal } from 'antd';
 import type { ButtonProps } from 'antd';
 import { settingsModalWidth } from './settingsTokens';
-import { Colors, FontSize, FontWeight, Radius, Spacing } from '@/utils/stepStyles';
+import {
+  Colors,
+  FontFamily,
+  FontSize,
+  FontWeight,
+  Radius,
+  Spacing,
+} from '@/utils/stepStyles';
 
 export type SettingsModalWidth = keyof typeof settingsModalWidth;
 
@@ -58,7 +65,8 @@ interface SettingsModalProps {
 }
 
 /** 等宽字体栈：与 AboutFiles 代码区同源（DRY：全设置页机器字只有这一份） */
-const MONO_FONT = 'Consolas, Menlo, monospace';
+// 2026-10-22 小欧 - 本地 MONO_FONT 常量删除, 改用公用令牌 FontFamily.MONO(DRY: 字体栈单一真相源;
+//   原为 'Consolas, Menlo, monospace' 硬编码, 与全应用其余代码文本两套字形并存) — 小欧-2026-10-22
 
 /**
  * CodeChip - 机器键名专用渲染（provider::model / sandbox.enabled 这类结构化标识符）
@@ -79,7 +87,7 @@ export function CodeChip({
   return (
     <code
       style={{
-        fontFamily: MONO_FONT,
+        fontFamily: FontFamily.MONO,
         fontSize: FontSize.CODE,
         lineHeight: '20px',
         padding: '1px 6px',
@@ -125,8 +133,8 @@ export function ModalSection({
         background: Colors.BG.LIGHT,
         border: `1px solid ${Colors.BORDER.LIGHT}`,
         borderRadius: Radius.DEFAULT,
-// 2026-10-10 23:25 小欧 - 竖向内距 12→10→6：北京老陈两轮指出"框框里上下留白还是多了"。
-//   分区靠 bg + border 区分，不靠空白撑开；6px 是不显挤的下限。
+        // 2026-10-10 23:25 小欧 - 竖向内距 12→10→6：框框里上下留白还是多了。
+        //   分区靠 bg + border 区分，不靠空白撑开；6px 是不显挤的下限。
         padding: '6px 12px',
         ...style,
       }}

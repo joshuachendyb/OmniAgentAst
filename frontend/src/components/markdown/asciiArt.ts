@@ -1,533 +1,797 @@
-// ⚠ 工作副本(非正式代码): 2026-10-22 小欧 - 按三堂会审结论整改的候选实现。
-//   测通后回填 asciiArt.ts, 本文件即删。
+// 【模块】Markdown 框线图(ASCII art)对齐器 —— 显示列空间 · 按框局部对齐
+//
+// 【为什么重写】前一版(自制"全局列聚类 + 弹性表格 + 吸附回退", 450 行)属过度设计:
+//   把整张图当一张表做全局列对齐 → 跨框串扰、且会把内容重新居中(改作者原意)。
+//   行业既有实现一致采用**按框局部对齐**:
+//     · ascii-chart-formatter (MIT, MichaelTien8901/ascii-chart-formatter)
+//         "Fixes misaligned right edges in ASCII-art box diagrams caused by LLM character counting errors"
+//     · ascii-box-aligner (PyPI 0.1.0)   同族: 嵌套树 + 后序(先内后外)
+//     · CPIDLE/ascii-tools ascii-align     同族: 宽度表 + 符号处理
+//   本文件 = 该算法移植到 TS, 并做四处针对性改良(见下)。
+//
+// 【算法】(每框独立, 不做全局列)
+//   1) 找"边线段": 角字符 + 横线填充(+T 型接头) + 角字符 → 一行可有多个(并排框)
+//   2) 配对成框: 上下边线 (左列, 宽) 相同; 堆叠框允许"上一框下边线 = 下一框上边线",
+//      但须下一行同列有竖线(证明是内容行, 不是箭头/空行)
+//   3) 加宽: 框内内容显示宽 > 框宽 → 上下边线补填充字符(不压内容)
+//   4) 对齐内容行: 左边线(按显示列就近) → 右边线(按显示列就近, 且不得越过下一框左边界)
+//      → 只把框内内容按显示宽"补空格/裁尾空格"到框内宽(不动内容本身)
+//   5) 顺序: 先内层后外层, 同层从左到右; 加宽后重新识别, 最多 4 轮
+//
+// 【与上游的差异】(均为针对性改良)
+//   a) 宽度用 string-width(行业标准, sindresorhus) 替代上游手写表; Ambiguous 按 1 列。
+//   b) **框几何全部在"显示列"空间**(上游用字符索引): CJK 内容把框线顶偏是**显示列**问题,
+//      按字符数补/裁空格会把整个框右移(上游在"一行多框 + CJK"下会错位)。
+//   c) 本框右边线**不得越过同行下一框的左边线**(上游没这条硬约束 → 切片会吞掉下一框内容)。
+//   d) **不改作者的符号**: 框线/箭头/三角一律原样保留;
+//      显示端的 1 列保证由等宽字体栈提供(Consolas 无 ▶ 字形 → 字体栈需补含 Geometric Shapes 的等宽字体)。
+//   e) 只处理**围栏代码块内部**, 围栏外一律不碰。
+//
+// 【宽度模型 vs 实渲染】(2026-10-22 小欧 实测 Chromium canvas, 本机):
+//   本模块的列宽模型以**栈首字体 Sarasa Mono SC** 为准(拉丁 0.5em = 1 格):
+//     ASCII 1 格 / CJK·全角 2 格 / 框线·块元素 1 格 / 几何形状·箭头 2 格 / Latin-1 1 格。
+//   各候选字体的实测字宽(÷拉丁 advance):
+//     字体            ─      ▶      CJK     │墨迹   结论
+//     Sarasa Mono SC 1.000  2.000  2.000   1.17em  ✅ 模型=实渲染, 边框像素级齐(栈首选)
+//     Cascadia Mono 1.000  1.000  1.707   1.14em  ✗ CJK 非整数格 → 汉字框残差 ~0.29 格/字
+//     Consolas      1.000  1.567  1.819   1.12em  ✗ 缺 ▶ 字形 + CJK 非整数格 → 残差更大
+//   ⚠ 行高: │ 墨迹高 1.12–1.17em → 代码块行高须 ≤1.14 才连成实线(现取 1.1);
+//     竖线"断成虚线"的根因是行高(12px 字继承 18px 行高 = 1.5), 与字体无关。
+//
 // 编辑历史:
-// 2026-10-22 小欧 - 新建: Markdown 框线图(ASCII art)归一化器。
-//   目的: LLM 现场手画的框线图必然"按字符数凑", 各行等宽性无保证; 且部分符号属
-//   East-Asian Ambiguous 宽度(▲▼▶ 等 Consolas 无字形 → 回退 CJK 字体 → 2 倍宽),
-//   渲染宽度随字体/语言环境跳变 → 页面上右边框参差。
-//   本模块在**渲染期**做确定性重排: 把框线图当"弹性表格"布局, 列宽按内容实算,
-//   输出每行严格等宽、竖线列全局对齐, 且**不改动任何正文文字**。
-//   宽度模型: ASCII = 1 列(任何字体恒定); CJK/全角 = 2 列; 框线字符(─│┌┐└┘,
-//   Consolas 内建)= 1 列; Ambiguous 箭头/三角(▲▼▶◀→←↑↓)= **降级为 ASCII** 后按 1 列。
+// 2026-10-22 小欧 - 新建(工作副本): 按 ascii-chart-formatter / ascii-box-aligner 的
+//   "按框局部对齐"算法重写框线图对齐器, 几何改在显示列空间。
+// 2026-10-22 小欧 - 回填正式代码: 工作副本测通后回填本文件(唯一实现), 工作副本 asciiArt.work.ts 已删;
+//   渲染层接入点 = MarkdownSlot.tsx 一行接入(两个渲染分支共用);
+//   analyzeBoxes 由"调试用临时导出"改标注为**测试支撑导出**(单测断言框内右边线列一致性, 生产渲染路径不调用);
+//   头部补【宽度模型 vs 实渲染】实测结论(字体栈必须保证 CJK 恰好 2 格) — 小欧-2026-10-22
+// 2026-10-22 小欧 - 列宽模型改按 **Sarasa Mono SC 实测口径**:
+//   East-Asian Ambiguous 由"1 格"改为"2 格", 仅框线块+块元素(U+2500–259F)与 Latin-1(U+00A0–00FF)例外;
+//   实测 Sarasa: 框线 1 格 / 几何形状·箭头 2 格 / CJK 2 格 → 模型与实渲染完全一致, 边框像素级齐。
+//   ⚠ 依赖 FontFamily.MONO 把 'Sarasa Mono SC' 放在栈首(见 utils/stepStyles.ts)。 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 修正 Ambiguous 宽度选项名: get-east-asian-width 1.7.0 的选项是
+//   `ambiguousAsWide`(实现内默认 false = Ambiguous 按 1 列; 其 .d.ts 写的 "@default true" 与实现不符,
+//   实测 ▲▼▶→ 默认即 1), 原写法 `ambiguousIsNarrow` 非合法选项(多余字段) → TS 报 TS2353 编译不过;
+//   改为显式 `{ ambiguousAsWide: false }`, **运行时行为与原写法一致**(本就按 1 列)。 — 小欧-2026-10-22
+// 2026-10-22 小欧 - **对齐核心换代**:
+//   ① 锚点反转: 原以"边线行"为锚 → 刚性内容(Sarasa 下 ▶ 占 2 格)把内容行整体推右,
+//      边线行没这些刚性字符 → 两行永远对不上(实测越修越歪)。现改为**边线行跟随内容行**:
+//      L = 内容行左边线列的最右者, W = max(边线行宽, 内容行自然宽+2), 边线行按 L/R 重画。
+//   ② 边界认领: 同行左到右逐个认领左边界(排除前框已认领的右边界)→ 不再把前框右边线
+//      误当本框左边线(原为真 bug: 段宽算错 → 框被错误加宽)。
+//   ③ 右边界取法: 取"右邻**兄弟**框左边界 - 1"之前的**最后一个**边界字符(嵌套框不参与 cap);
+//      原"离期望最近者"会误取下一框的左边线。
+//   ④ 边线行只调末尾纯填充字符, 段内接头字符(┬┴┼├┤)原位保留 → 不丢"分支点"语义。
+//   ⑤ 误伤守卫收紧: 判据由"含任意框线字符"改为"含**框角**(或 ASCII 框线整行)"→
+//      时序图(只有竖线+箭头)不再被当框图处理(实测原会挪动生命线)。
+//   ⑥ 定位逻辑抽成 locateRowEdges, 主算法与测试支撑导出 analyzeBoxes 共用(同口径, DRY)。
+//   实测: 真实文档《[1]系统架构全景解析…》58 行架构图 → 14 行全部对齐(外框 0→54,
+//   内框 4→18 / 24→35 / 40→49, 记忆框 4→36); 时序图/树图 0 行改动。 — 小欧-2026-10-22
 
-/** 竖线/转角类字符(算作列锚点) */
-const BORDER_CHARS = new Set([
-  '|',
-  '+',
-  '│',
-  '┃',
-  '║',
-  '┌',
-  '┐',
-  '└',
-  '┘',
-  '├',
-  '┤',
-  '┬',
-  '┴',
-  '┼',
-  '╔',
-  '╗',
-  '╚',
-  '╝',
-  '╠',
-  '╣',
-  '╦',
-  '╩',
-  '╬',
-  '╭',
-  '╮',
-  '╰',
-  '╯',
-  '┏',
-  '┓',
-  '┗',
-  '┛',
-]);
+import { eastAsianWidth } from 'get-east-asian-width';
 
-/** 横向填充字符(成串出现时视为"边线段") */
-const RUN_CHARS = new Set(['-', '─', '━', '═']);
+/** 角字符(框的转角/接头) */
+const CORNER_CHARS = new Set('┌┐└┘├┤┬┴┼╔╗╚╝╠╣╦╩╬╭╮╰╯┏┓┗┛+'.split(''));
+
+/** Unicode 框角(不含 ASCII 的 '+', 那条走"整行"判据) —— 由 CORNER_CHARS 派生, 单一真相源 */
+const UNICODE_CORNER_RE = new RegExp(
+  `[${[...CORNER_CHARS].filter((c) => c !== '+').join('')}]`
+);
+
+/** 横线填充字符 */
+const HORIZONTAL_FILL_CHARS = new Set('─━═-┄┅┈┉');
+
+/** 竖线字符 */
+const VERTICAL_BORDER_CHARS = new Set('│║┃|┆┇┊┋');
 
 /**
- * Ambiguous 宽度符号 → ASCII 等价物(会审 P0-2: 根治宽度模型的不确定性)。
- * Consolas 无 ▲▼▶ 字形 → 浏览器回退 CJK 字体 → 实际渲染 2 倍宽, 与按 1 列计算不符。
- * 降级后恒为 1 列, 任何字体/语言环境下都成立。显示形态由 ▲▼▶ 变为 ^ v >。
+ * 单字符显示宽 —— **按 Sarasa Mono SC 的实测渲染口径**(拉丁 0.5em = 1 格)。
+ * 2026-10-22 实测(Sarasa Mono SC, Chromium canvas, 拉丁宽 40px=20px 即 0.5em):
+ *   ASCII 1 格 / CJK·全角 2 格 / 框线块(U+2500–257F) 1 格 / 块元素(U+2580–259F) 1 格 /
+ *   几何形状(U+25A0–25FF) 2 格 / 箭头(U+2190–21FF) 2 格 / Latin-1(U+00A0–00FF) 实测 1 格。
+ * 即: East-Asian Ambiguous 一律按 **2 格**, 仅两处例外按 1 格(框线+块元素 / Latin-1)。
+ * ⚠ Latin-1 例外是**实测值**(该段字符在 Sarasa 里落到 1 格), 不是"EAW 窄"的推导结论 ——
+ *   改动字体栈时必须重新实测本表, 否则框线会错位。
+ * ⚠ 该口径以"字体栈首字体 Sarasa Mono SC"为准 —— 落到 Consolas/Cascadia 时 CJK(1.819/1.707 格)
+ *   与几何符号(1 格)都和模型对不上, 边框会有残差(实测表见文件头);
+ *   故 FontFamily.MONO 必须把 Sarasa Mono SC 放在**栈首**。
+ * ⚠ 不用 string-width: 它带 emoji 规则, 会把 U+25B6(▶) 当 emoji 算 2 列, 与框线模型打架。
+ * ⚠ get-east-asian-width 的选项名按 1.7.0 实 API 写 `{ ambiguousAsWide: true }`;
+ *   写成 `ambiguousIsNarrow` 不是合法选项(多余字段) → TS 报 TS2353 编译不过。
  */
-const GLYPH_FALLBACK: Readonly<Record<string, string>> = {
-  '▲': '^',
-  '▼': 'v',
-  '▶': '>',
-  '◀': '<',
-  '►': '>',
-  '◄': '<',
-  '→': '>',
-  '←': '<',
-  '↑': '^',
-  '↓': 'v',
-  '⇒': '>',
-  '⇐': '<',
-  '⇑': '^',
-  '⇓': 'v',
-};
-
-/** East-Asian Wide/Fullwidth 区段(2 列) */
-const WIDE_RANGES: ReadonlyArray<[number, number]> = [
-  [0x1100, 0x115f],
-  [0x2e80, 0x303e],
-  [0x3041, 0x33ff],
-  [0x3400, 0x4dbf],
-  [0x4e00, 0x9fff],
-  [0xa000, 0xa4cf],
-  [0xa960, 0xa97f],
-  [0xac00, 0xd7a3],
-  [0xf900, 0xfaff],
-  [0xfe10, 0xfe19],
-  [0xfe30, 0xfe6f],
-  [0xff00, 0xff60],
-  [0xffe0, 0xffe6],
-  [0x1f300, 0x1f64f],
-  [0x1f900, 0x1f9ff],
-  [0x20000, 0x3fffd],
-];
-
-/** 单字符显示宽度: 全角 2 列, 其余 1 列 */
 export function charWidth(ch: string): number {
   const cp = ch.codePointAt(0);
   if (cp === undefined) return 0;
-  for (const [lo, hi] of WIDE_RANGES) {
-    if (cp >= lo && cp <= hi) return 2;
-  }
-  return 1;
+  // Sarasa 实测两例外: 框线块+块元素(U+2500–259F)、Latin-1(U+00A0–00FF)
+  if (cp >= 0x2500 && cp <= 0x259f) return 1;
+  if (cp >= 0x00a0 && cp <= 0x00ff) return 1;
+  return eastAsianWidth(cp, { ambiguousAsWide: true });
 }
 
-/** 字符串显示宽度 */
+/** 字符串显示宽 */
 export function displayWidth(s: string): number {
   let w = 0;
   for (const ch of s) w += charWidth(ch);
   return w;
 }
 
-type Tok =
-  | { kind: 'border'; ch: string; col: number }
-  | { kind: 'run'; ch: string; n: number; col: number }
-  | { kind: 'text'; ch: string; w: number; col: number };
-
-interface ParsedLine {
-  toks: Tok[];
-  /** toks 中 border 的下标(升序) */
-  borders: number[];
+/** 制表符展开为 4 空格 */
+function expandTabs(s: string, size = 4): string {
+  if (!s.includes('\t')) return s;
+  let out = '';
+  for (const ch of s) {
+    if (ch === '\t') {
+      out += ' '.repeat(size - (out.length % size));
+    } else {
+      out += ch;
+    }
+  }
+  return out;
 }
 
-/** 把一行拆成 竖线锚点 / 横向边线段 / 正文 三类 token(箭头/三角先降级为 ASCII) */
-function tokenize(line: string): ParsedLine {
-  const toks: Tok[] = [];
-  const borders: number[] = [];
+/** 一行里每个字符索引对应的显示列(末位追加总宽) */
+function displayCols(line: string): number[] {
+  const cols: number[] = [];
   let col = 0;
+  for (const ch of line) {
+    cols.push(col);
+    col += charWidth(ch);
+  }
+  cols.push(col);
+  return cols;
+}
+
+interface BorderInfo {
+  /** 行下标 */
+  lineIndex: number;
+  /** 左角字符索引 */
+  leftIdx: number;
+  /** 右角字符索引 */
+  rightIdx: number;
+  /** 左角的显示列 */
+  leftCol: number;
+  /** 右角的显示列 */
+  rightCol: number;
+  /** 边线段显示宽(含两角) */
+  width: number;
+}
+
+interface BoxRegion {
+  top: BorderInfo;
+  bottom: BorderInfo;
+}
+
+/** 找出一行里的所有"边线段"(角 + 横线 + 角; 支持 T 型接头, 一行可多段=并排框) */
+function findBorderSegments(line: string, lineIndex: number): BorderInfo[] {
+  const segments: BorderInfo[] = [];
+  const cols = displayCols(line);
   let i = 0;
   while (i < line.length) {
-    const raw = line[i] as string;
-    const ch = GLYPH_FALLBACK[raw] ?? raw;
-    if (BORDER_CHARS.has(ch)) {
-      borders.push(toks.length);
-      toks.push({ kind: 'border', ch, col });
-      col += 1;
+    if (!CORNER_CHARS.has(line[i] as string)) {
       i += 1;
-    } else if (RUN_CHARS.has(ch)) {
-      let n = 0;
-      while (i < line.length) {
-        const c2 = GLYPH_FALLBACK[line[i] as string] ?? (line[i] as string);
-        if (!RUN_CHARS.has(c2)) break;
-        n += 1;
-        i += 1;
+      continue;
+    }
+    const leftIdx = i;
+    let j = i + 1;
+    while (j < line.length) {
+      const ch = line[j] as string;
+      if (HORIZONTAL_FILL_CHARS.has(ch)) {
+        j += 1;
+      } else if (CORNER_CHARS.has(ch)) {
+        // T 型接头(后面紧跟填充)→ 继续; 否则是真右角 → 本段结束
+        if (
+          j + 1 < line.length &&
+          HORIZONTAL_FILL_CHARS.has(line[j + 1] as string)
+        ) {
+          j += 1;
+        } else {
+          j += 1;
+          break;
+        }
+      } else {
+        break;
       }
-      toks.push({ kind: 'run', ch, n, col });
-      col += n;
+    }
+    const rightIdx = j - 1;
+    if (rightIdx > leftIdx + 1 && CORNER_CHARS.has(line[rightIdx] as string)) {
+      segments.push({
+        lineIndex,
+        leftIdx,
+        rightIdx,
+        leftCol: cols[leftIdx] as number,
+        rightCol: cols[rightIdx] as number,
+        width: (cols[rightIdx + 1] as number) - (cols[leftIdx] as number),
+      });
+      i = rightIdx; // 右角可能同时是下一个段的左角
     } else {
-      const w = charWidth(ch);
-      toks.push({ kind: 'text', ch, w, col });
-      col += w;
       i += 1;
     }
   }
-  return { toks, borders };
+  return segments;
 }
 
-/** 该行是否为"纯边线行"(只含竖线/横线/空格) */
-function isFrameRow(line: string): boolean {
-  const t = line.trim();
-  if (t.length === 0) return false;
-  let hasBorder = false;
-  for (const raw of t) {
-    const ch = GLYPH_FALLBACK[raw] ?? raw;
-    if (BORDER_CHARS.has(ch)) {
-      hasBorder = true;
-    } else if (!RUN_CHARS.has(ch) && ch !== ' ') {
-      return false;
+function findBorders(lines: string[]): BorderInfo[] {
+  const out: BorderInfo[] = [];
+  lines.forEach((l, i) => out.push(...findBorderSegments(l, i)));
+  return out;
+}
+
+/** 配对成框: 上下边线 左列相同 + 显示宽相同 */
+function matchBoxes(borders: BorderInfo[], lines: string[]): BoxRegion[] {
+  const usedAsTop = new Set<number>();
+  const usedAsBottom = new Set<number>();
+  const boxes: BoxRegion[] = [];
+  const sorted = [...borders].sort(
+    (a, b) => a.lineIndex - b.lineIndex || a.leftCol - b.leftCol
+  );
+  for (let i = 0; i < sorted.length; i += 1) {
+    if (usedAsTop.has(i)) continue;
+    const top = sorted[i] as BorderInfo;
+    // 已作为下边线的边线, 只有"下一行同列有竖线"才可复用为上边线(堆叠框)
+    if (usedAsBottom.has(i)) {
+      const next = lines[top.lineIndex + 1];
+      if (
+        next === undefined ||
+        top.leftIdx >= next.length ||
+        !VERTICAL_BORDER_CHARS.has(next[top.leftIdx] as string)
+      ) {
+        continue;
+      }
+    }
+    for (let j = i + 1; j < sorted.length; j += 1) {
+      if (usedAsBottom.has(j)) continue;
+      const bottom = sorted[j] as BorderInfo;
+      if (bottom.leftCol === top.leftCol && bottom.width === top.width) {
+        boxes.push({ top, bottom });
+        usedAsTop.add(i);
+        usedAsBottom.add(j);
+        break;
+      }
     }
   }
-  return hasBorder;
+  return boxes;
 }
 
-/** 该行是否含 ≥2 个竖线锚点 */
-function borderCount(line: string): number {
-  let n = 0;
-  for (const raw of line) {
-    const ch = GLYPH_FALLBACK[raw] ?? raw;
-    if (BORDER_CHARS.has(ch)) n += 1;
-  }
-  return n;
-}
-
-/** 该行是否含横向边线段(≥2 连) */
-function hasRun(line: string): boolean {
-  let run = 0;
-  for (const raw of line) {
-    const ch = GLYPH_FALLBACK[raw] ?? raw;
-    if (RUN_CHARS.has(ch)) {
-      run += 1;
-      if (run >= 2) return true;
-    } else {
-      run = 0;
+/** 把字符串补/裁到指定显示宽(只动尾随空格) */
+function padOrTrimToWidth(s: string, target: number): string {
+  const cur = displayWidth(s);
+  if (cur < target) return s + ' '.repeat(target - cur);
+  if (cur > target) {
+    let out = s;
+    let w = cur;
+    while (w > target && out.endsWith(' ')) {
+      out = out.slice(0, -1);
+      w -= 1;
     }
+    return out;
+  }
+  return s;
+}
+
+/** 段内是否含框线字符(含 → 段尾空格是结构间隙, 不能当可裁余量) */
+function isStructuralSeg(inner: string): boolean {
+  return /[│┃║┌┐└┘├┤┬┴┼+]/.test(inner);
+}
+
+/** 一行里某框的左右边界定位结果 */
+interface BoxEdge {
+  /** 左边界字符下标(内容行=竖线, 边线行=角) */
+  leftIdx: number;
+  /** 右边界字符下标 */
+  rightIdx: number;
+  /** 左边界显示列 */
+  leftCol: number;
+  /** 右边界显示列 */
+  rightCol: number;
+  /** 段内正文自然宽(尾随空格已去; 结构段不裁) */
+  natural: number;
+}
+
+/** 框的规范几何(显示列空间) */
+interface BoxGeo {
+  /** 规范左边界列 */
+  L: number;
+  /** 规范宽度(含左右边界) */
+  W: number;
+  /** 规范右边界列 = L + W - 1 */
+  R: number;
+}
+
+/**
+ * 在一行里找左边线: 按**显示列**就近(≤16 列)。
+ * claimed = 同行**已被其它框认领**的边界列, 必须排除:
+ *   内容行里前一个框的**右边线**常离本框规范左列更近(框被刚性内容推右时两者相邻),
+ *   不排除就会把前框的右边线误当本框的左边线 → 段宽算错 → 框被错误加宽(实测越修越歪)。
+ */
+function findLeftBorder(
+  line: string,
+  cols: number[],
+  targetCol: number,
+  claimed: Set<number>
+): number {
+  let best = -1;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let idx = 0; idx < line.length; idx += 1) {
+    const col = cols[idx] as number;
+    const dist = Math.abs(col - targetCol);
+    if (dist > 16) continue;
+    if (claimed.has(col)) continue;
+    if (!VERTICAL_BORDER_CHARS.has(line[idx] as string)) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = idx;
+      if (dist === 0) break;
+    }
+  }
+  return best;
+}
+
+/**
+ * 在一行里找右边线: 取 capCol 之前**最后一个**竖线(不是"离期望最近者")。
+ * 理由: 一个框的右边线恒等于"下一个框的左边线之前的最后一条竖线";
+ *   取"最近者"会在框被刚性内容推右时误取下一个框的左边线 → 把下一框的内容切进本框。
+ */
+function findRightBorder(
+  line: string,
+  cols: number[],
+  from: number,
+  capCol: number,
+  claimed: Set<number>
+): number {
+  let right = -1;
+  for (let idx = from + 1; idx < line.length; idx += 1) {
+    const col = cols[idx] as number;
+    if (col > capCol) break;
+    if (claimed.has(col)) continue;
+    if (!VERTICAL_BORDER_CHARS.has(line[idx] as string)) continue;
+    right = idx;
+  }
+  return right;
+}
+
+/**
+ * 在一行里找角字符(框的转角/接头): 取 capCol 之前**最后一个**角字符(同 findRightBorder 的理由)。
+ */
+function findCornerNear(
+  line: string,
+  cols: number[],
+  from: number,
+  capCol: number,
+  claimed: Set<number>
+): number {
+  let best = -1;
+  for (let idx = from; idx < line.length; idx += 1) {
+    const col = cols[idx] as number;
+    if (col > capCol) break;
+    if (claimed.has(col)) continue;
+    if (!CORNER_CHARS.has(line[idx] as string)) continue;
+    best = idx;
+  }
+  return best;
+}
+
+/**
+ * 定位某框在某行上的**左边界**字符下标(内容行=竖线, 边线行=角字符)。
+ * 按显示列就近, 且不取同行已认领的列。
+ */
+function locateLeftEdge(
+  line: string,
+  cols: number[],
+  frameRow: boolean,
+  targetL: number,
+  claimed: Set<number>
+): number {
+  return frameRow
+    ? findLeftCorner(line, cols, targetL, claimed)
+    : findLeftBorder(line, cols, targetL, claimed);
+}
+
+/**
+ * 定位某框在某行上的**右边界**字符下标: 取 capCol 之前**最后一个**边界字符
+ * (边线行=角字符, 内容行=竖线)。理由: 一个框的右边线恒等于"下一个框的左边线之前的
+ * 最后一个边界字符"; 取"离期望最近者"会在框被刚性内容推右时误取下一框的左边线。
+ */
+function locateRightEdge(
+  line: string,
+  cols: number[],
+  frameRow: boolean,
+  fromIdx: number,
+  capCol: number,
+  claimed: Set<number>
+): number {
+  if (frameRow) {
+    return findCornerNear(line, cols, fromIdx + 1, capCol, claimed);
+  }
+  return findRightBorder(line, cols, fromIdx, capCol, claimed);
+}
+
+/** 由左右边界下标算出该框在本行的段信息 */
+function edgeOf(
+  line: string,
+  cols: number[],
+  frameRow: boolean,
+  leftIdx: number,
+  rightIdx: number
+): BoxEdge {
+  const inner = line.slice(leftIdx + 1, rightIdx);
+  return {
+    leftIdx,
+    rightIdx,
+    leftCol: cols[leftIdx] as number,
+    rightCol: cols[rightIdx] as number,
+    natural: frameRow
+      ? displayWidth(inner)
+      : isStructuralSeg(inner)
+        ? displayWidth(inner)
+        : displayWidth(inner.replace(/\s+$/, '')),
+  };
+}
+
+/** 在一行里找左边角(框的转角): 按显示列就近, 不取已认领列 */
+function findLeftCorner(
+  line: string,
+  cols: number[],
+  targetCol: number,
+  claimed: Set<number>
+): number {
+  let best = -1;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let idx = 0; idx < line.length; idx += 1) {
+    if (!CORNER_CHARS.has(line[idx] as string)) continue;
+    const col = cols[idx] as number;
+    if (claimed.has(col)) continue;
+    const dist = Math.abs(col - targetCol);
+    if (dist > 16) continue;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = idx;
+      if (dist === 0) break;
+    }
+  }
+  return best;
+}
+
+/**
+ * 逐行定位各框的左右边界(**两阶段**, 主算法与测试支撑导出共用, 保证同口径):
+ *   ① 同行左到右逐个认领**左边界**(就近 + 未被认领; 边线行找角字符, 内容行找竖线);
+ *   ② 逐框取**右边界**: 上限 = 同行**兄弟框**(不含嵌套框)中右邻框的左边界 - 1,
+ *      取该上限之前**最后一个**边界字符。
+ *   ⚠ 认领是必须的: 不排除前一个框已认领的右边界, 会把前框的右边线当成本框的左边线。
+ */
+function locateRowEdges(
+  line: string,
+  rowIndex: number,
+  rowBoxes: BoxRegion[],
+  targetLOf: (box: BoxRegion) => number
+): Map<BoxRegion, BoxEdge> {
+  const cols = displayCols(line);
+  const claimed = new Set<number>();
+  const sorted = [...rowBoxes].sort((a, b) => a.top.leftCol - b.top.leftCol);
+  const leftIdxOf = new Map<BoxRegion, number>();
+  for (const box of sorted) {
+    const idx = locateLeftEdge(
+      line,
+      cols,
+      isFrameRowOf(box, rowIndex),
+      targetLOf(box),
+      claimed
+    );
+    if (idx < 0) continue;
+    claimed.add(cols[idx] as number);
+    leftIdxOf.set(box, idx);
+  }
+  const result = new Map<BoxRegion, BoxEdge>();
+  for (let i = 0; i < sorted.length; i += 1) {
+    const box = sorted[i] as BoxRegion;
+    const leftIdx = leftIdxOf.get(box);
+    if (leftIdx === undefined) continue;
+    const boxL = cols[leftIdx] as number;
+    let cap = Number.POSITIVE_INFINITY;
+    for (const other of sorted) {
+      if (other === box) continue;
+      const otherIdx = leftIdxOf.get(other);
+      if (otherIdx === undefined) continue;
+      const otherL = cols[otherIdx] as number;
+      if (otherL <= boxL) continue; // 只管右边的
+      // 嵌套在本框内的框不参与 cap: 否则外框的 cap 会被内框顶掉,
+      // 导致外框找不到自己的右边线(外框的右边线在最右, 不受内框约束)
+      if (isNestedIn(box, other)) continue;
+      cap = Math.min(cap, otherL - 1);
+    }
+    const frameRow = isFrameRowOf(box, rowIndex);
+    const rightIdx = locateRightEdge(
+      line,
+      cols,
+      frameRow,
+      leftIdx,
+      cap,
+      claimed
+    );
+    if (rightIdx < 0 || rightIdx <= leftIdx) continue;
+    claimed.add(cols[rightIdx] as number);
+    result.set(box, edgeOf(line, cols, frameRow, leftIdx, rightIdx));
+  }
+  return result;
+}
+
+/**
+ * 重排一组行(一个围栏块或一个图区) —— 按框局部对齐。
+ *
+ * 【规范几何】(显示列空间)
+ *   L = 该框**内容行**左边线列的最右者; W = max(边线行宽度, 内容行正文自然宽 + 2);
+ *   R = L + W - 1。
+ *   ⚠ 为什么 L 取内容行而不是边线行: 刚性内容(如 Sarasa 下占 2 格的 ▶)会把内容行整体推右,
+ *     而边线行里没有这些刚性字符 → 两行对不上。若以边线行为锚, 框必然错位(实测越修越歪);
+ *     故改为**边线行跟随内容行**: 边线行的角字符按 L/R 重画, 框间空隙用空格吸收差额。
+ *   ⚠ 边线行的角列**不参与** L 的取最大(否则边线行右移 → 反馈回 L → 逐轮右漂)。
+ */
+function fixLines(lines: string[]): string[] {
+  const out = lines.map((l) => expandTabs(l));
+  const geoCache = new Map<string, BoxGeo>();
+  for (let iteration = 0; iteration < 6; iteration += 1) {
+    const borders = findBorders(out);
+    const boxes = matchBoxes(borders, out);
+    if (boxes.length === 0) return out;
+
+    // 框的身份键: 上下边线行号 + 同组内序号(同一对边线行可能有多个并列框, 必须区分)
+    const keys = new Map<BoxRegion, string>();
+    {
+      const groups = new Map<string, BoxRegion[]>();
+      for (const box of boxes) {
+        const k = `${box.top.lineIndex}:${box.bottom.lineIndex}`;
+        const arr = groups.get(k) ?? [];
+        arr.push(box);
+        groups.set(k, arr);
+      }
+      for (const [k, arr] of groups) {
+        arr.sort((a, b) => a.top.leftCol - b.top.leftCol);
+        arr.forEach((b, i) => keys.set(b, `${k}#${i}`));
+      }
+    }
+    const keyOf = (box: BoxRegion): string => keys.get(box) ?? '';
+
+    // ① 逐行定位各框边界(同行左到右, 逐个认领边界列)
+    const edges = new Map<BoxRegion, Map<number, BoxEdge>>();
+    for (const box of boxes) edges.set(box, new Map());
+    const rowBoxes = new Map<number, BoxRegion[]>();
+    for (const box of boxes) {
+      for (let r = box.top.lineIndex; r <= box.bottom.lineIndex; r += 1) {
+        const arr = rowBoxes.get(r) ?? [];
+        arr.push(box);
+        rowBoxes.set(r, arr);
+      }
+    }
+    for (const [rowIndex, arr] of rowBoxes) {
+      const line = out[rowIndex] as string;
+      const rowEdges = locateRowEdges(line, rowIndex, arr, (box) => {
+        const geo = geoCache.get(keyOf(box));
+        return geo ? geo.L : box.top.leftCol;
+      });
+      for (const [box, edge] of rowEdges) {
+        (edges.get(box) as Map<number, BoxEdge>).set(rowIndex, edge);
+      }
+    }
+
+    // ② 逐框算规范几何(左边界只增不减, 保证单调收敛)
+    for (const box of boxes) {
+      const perRow = edges.get(box) as Map<number, BoxEdge>;
+      if (perRow.size === 0) continue;
+      const contentEdges: BoxEdge[] = [];
+      let frameWidth = 0;
+      for (const [rowIndex, e] of perRow) {
+        if (
+          rowIndex === box.top.lineIndex ||
+          rowIndex === box.bottom.lineIndex
+        ) {
+          frameWidth = Math.max(frameWidth, e.natural + 2);
+        } else {
+          contentEdges.push(e);
+        }
+      }
+      let L = contentEdges.length > 0 ? -1 : box.top.leftCol;
+      let W = frameWidth;
+      for (const e of contentEdges) {
+        if (e.leftCol > L) L = e.leftCol;
+        const w = e.natural + 2;
+        if (w > W) W = w;
+      }
+      if (L < 0) L = box.top.leftCol;
+      if (W < 3) W = 3;
+      const prev = geoCache.get(keyOf(box));
+      const mergedL = prev ? Math.max(L, prev.L) : L;
+      const mergedW = prev ? Math.max(W, prev.W) : W;
+      geoCache.set(keyOf(box), {
+        L: mergedL,
+        W: mergedW,
+        R: mergedL + mergedW - 1,
+      });
+    }
+
+    // ③ 逐行重写到规范几何(先边线行角色 → 再内容行角色; 同行左到右)
+    let changed = false;
+    for (const rowIndex of [...rowBoxes.keys()].sort((a, b) => a - b)) {
+      const arr = rowBoxes.get(rowIndex) as BoxRegion[];
+      const frameBoxes = arr
+        .filter(
+          (b) => b.top.lineIndex === rowIndex || b.bottom.lineIndex === rowIndex
+        )
+        .sort((a, b) => a.top.leftCol - b.top.leftCol);
+      const contentBoxes = arr
+        .filter(
+          (b) => b.top.lineIndex < rowIndex && rowIndex < b.bottom.lineIndex
+        )
+        .sort((a, b) => a.top.leftCol - b.top.leftCol);
+      for (const box of [...frameBoxes, ...contentBoxes]) {
+        const geo = geoCache.get(keyOf(box));
+        if (!geo) continue;
+        const before = out[rowIndex] as string;
+        const after = rewriteRow(before, box, rowIndex, geo, {
+          keyOf,
+          geoCache,
+          rowBoxList: arr,
+        });
+        if (after !== before) {
+          out[rowIndex] = after;
+          changed = true;
+        }
+      }
+    }
+    if (!changed) return out;
+  }
+  return out;
+}
+
+/** 该行对某框而言是边线行还是内容行 */
+function isFrameRowOf(box: BoxRegion, rowIndex: number): boolean {
+  return rowIndex === box.top.lineIndex || rowIndex === box.bottom.lineIndex;
+}
+
+/** other 是否嵌套在 box 之内(按边线行的左右角列判定) */
+function isNestedIn(box: BoxRegion, other: BoxRegion): boolean {
+  return (
+    box.top.leftCol <= other.top.leftCol &&
+    other.top.rightCol <= box.top.rightCol
+  );
+}
+
+/**
+ * 重写阶段所需的上下文(规范几何查表 + 同行框清单 + 框身份键映射)。
+ * 收成对象传参: rewriteRow 原为 7 个参数(位置参数超过 5 个已难读, SLAP)。
+ */
+interface RewriteCtx {
+  /** 框身份键(跨轮次稳定) */
+  keyOf: (box: BoxRegion) => string;
+  /** 框的规范几何(按身份键索引) */
+  geoCache: Map<string, BoxGeo>;
+  /** 同行相关的框 */
+  rowBoxList: BoxRegion[];
+}
+
+/**
+ * 把某框在某一行上的片段重写到规范几何。
+ * 边线行: 角字符落在 L/R, 只调末尾纯填充字符(接头字符原位保留); 内容行: 正文补/裁到 W-2 列, 左边线落在 L。
+ * ⚠ 只动空格与边框填充, 不改正文文字; 左边界比规范列靠右时(前缀含刚性内容)放弃本行, 不硬裁。
+ */
+function rewriteRow(
+  line: string,
+  box: BoxRegion,
+  rowIndex: number,
+  geo: BoxGeo,
+  ctx: RewriteCtx
+): string {
+  const cols = displayCols(line);
+  const frameRow = isFrameRowOf(box, rowIndex);
+  const { keyOf, geoCache, rowBoxList } = ctx;
+  // 已处理框的规范列作排除集(绝对列, 不随行内容位移而失效)
+  const claimed = new Set<number>();
+  for (const other of rowBoxList) {
+    if (other === box) continue;
+    const g = geoCache.get(keyOf(other));
+    if (!g) continue;
+    claimed.add(g.L);
+    claimed.add(g.R);
+  }
+  const leftIdx = locateLeftEdge(line, cols, frameRow, geo.L, claimed);
+  if (leftIdx < 0) return line;
+  // 右边线上限: 同行**兄弟框**中右邻框的**当前**左边界列 - 1
+  //   ⚠ 用当前列而非规范列: 兄弟框此刻可能还没被搬到位(规范列更靠右),
+  //   拿规范列当上限会把兄弟框的左角当成本框的右边线。
+  let cap = Number.POSITIVE_INFINITY;
+  for (const other of rowBoxList) {
+    if (other === box) continue;
+    const g = geoCache.get(keyOf(other));
+    const otherL = g ? g.L : other.top.leftCol;
+    if (otherL <= geo.L) continue; // 只管右边的
+    if (isNestedIn(box, other)) continue; // 嵌套框不参与
+    const peekClaimed = new Set<number>();
+    for (const prev of rowBoxList) {
+      const pg = geoCache.get(keyOf(prev));
+      if (!pg || pg.L >= geo.L) continue;
+      peekClaimed.add(pg.L);
+      peekClaimed.add(pg.R);
+    }
+    const idx = locateLeftEdge(
+      line,
+      cols,
+      isFrameRowOf(other, rowIndex),
+      otherL,
+      peekClaimed
+    );
+    const curL = idx >= 0 ? (cols[idx] as number) : otherL;
+    cap = Math.min(cap, curL - 1);
+  }
+  const rightIdx = locateRightEdge(line, cols, frameRow, leftIdx, cap, claimed);
+  if (rightIdx < 0 || rightIdx <= leftIdx) return line;
+  const edge = edgeOf(line, cols, frameRow, leftIdx, rightIdx);
+  const prefix = line.slice(0, edge.leftIdx);
+  const inner = line.slice(edge.leftIdx + 1, edge.rightIdx);
+  const suffix = line.slice(edge.rightIdx + 1);
+  // 前缀比规范左列还宽 → 前缀里有刚性内容(如 ▶), 不能裁 → 放弃本行(下一轮用更大的 L 重试)
+  if (edge.leftCol > geo.L) return line;
+  const newPrefix = prefix + ' '.repeat(geo.L - edge.leftCol);
+  if (frameRow) {
+    // 边线行: **只调末尾的纯填充字符**, 段内的接头字符(┬┴┼├┤…)原位保留。
+    //   ⚠ 接头字符是作者画的"分支点", 抹掉会丢语义; 也不能挪位 ——
+    //     下方竖线分支按它对齐(分支行不属于任何框的内容行 → 不会被重写 → 不会错位)。
+    let fill = '-';
+    for (const ch of inner) {
+      if (HORIZONTAL_FILL_CHARS.has(ch)) {
+        fill = ch;
+        break;
+      }
+    }
+    const target = Math.max(geo.W - 2, 0);
+    const innerW = displayWidth(inner);
+    let newInner = inner;
+    if (innerW < target) {
+      newInner = inner + fill.repeat(target - innerW);
+    } else if (innerW > target) {
+      // 从末尾裁纯填充字符(接头字符不裁); 裁不动(全是接头)时宁可不改, 也不删接头
+      let need = innerW - target;
+      let end = inner.length;
+      while (
+        need > 0 &&
+        end > 0 &&
+        HORIZONTAL_FILL_CHARS.has(inner[end - 1] as string)
+      ) {
+        end -= 1;
+        need -= 1;
+      }
+      newInner = need > 0 ? inner : inner.slice(0, end);
+    }
+    const leftChar = line[edge.leftIdx] as string;
+    const rightChar = line[edge.rightIdx] as string;
+    return newPrefix + leftChar + newInner + rightChar + suffix;
+  }
+  const leftChar = line[edge.leftIdx] as string;
+  const rightChar = line[edge.rightIdx] as string;
+  const newInner = padOrTrimToWidth(inner, Math.max(geo.W - 2, 0));
+  return newPrefix + leftChar + newInner + rightChar + suffix;
+}
+
+/**
+ * 该块是否是"框线图"(可安全归一): 必须有**框角**。
+ *   - Unicode 框角(┌┐└┘├┤┬┴┼…): 判据由 CORNER_CHARS 派生(单一真相源, 免两处各写一套);
+ *   - 或 ASCII 框线的**整行**(如 "+------+" / "+-----+"), 避免把代码里的 '+--+' 误当框。
+ * ⚠ 不用"含任意框线字符"当判据: 时序图(只有竖线+箭头)会被误判 → 生命线被挪位(实测误伤)。
+ */
+function hasBoxFrame(body: string[]): boolean {
+  for (const line of body) {
+    if (UNICODE_CORNER_RE.test(line)) return true;
+    if (/^\s*\+[-+]{2,}\+\s*$/.test(line)) return true;
   }
   return false;
 }
 
 /**
- * 是否是"框线图"代码块 —— 三重判据, 避免误伤普通代码/表格。
- * ① ≥3 非空行; ② ≥2 行"纯边线行"(图的上下边框; Markdown 表格分隔行只有 1 行 → 不触发);
- * ③ ≥60% 的行含 ≥2 个竖线锚点, 且至少含 1 段横向边线。
- */
-export function looksLikeArt(lines: string[]): boolean {
-  const nonEmpty = lines.filter((l) => l.trim().length > 0);
-  if (nonEmpty.length < 3) return false;
-  const frameRows = lines.filter(isFrameRow).length;
-  if (frameRows < 2) return false;
-  const withBorders = nonEmpty.filter((l) => borderCount(l) >= 2).length;
-  if (withBorders < 2) return false;
-  if (!nonEmpty.some(hasRun)) return false;
-  return withBorders / nonEmpty.length >= 0.6;
-}
-
-/** 取出该行的"正文文字"(去掉竖线/横线/空白), 用于重排后的内容守恒校验 */
-function wordsOf(line: string): string {
-  let out = '';
-  for (const raw of line) {
-    const ch = GLYPH_FALLBACK[raw] ?? raw;
-    if (BORDER_CHARS.has(ch) || RUN_CHARS.has(ch) || ch === ' ') continue;
-    out += ch;
-  }
-  return out;
-}
-
-/**
- * 若干列值按容差聚类, 返回每簇的代表列(取簇内最大值)。
- * 链式判定(与"距簇首"相比): 新值与**簇尾**相差 ≤ tol 即并入当前簇。
- *   原因: 同一根竖线在不同行可能相差 1~2 列(如"长文本行"把框右边框顶出去 1 列),
- *   "距簇首"判定会因簇首已占位而把它们劈成两簇 → 同一个框的竖线列不一致 → 还是歪的。
- */
-function clusterCols(cols: number[], tol: number): number[] {
-  if (cols.length === 0) return [];
-  const sorted = [...cols].sort((a, b) => a - b);
-  const out: number[] = [];
-  let start = sorted[0] as number;
-  let max = start;
-  for (let i = 1; i < sorted.length; i += 1) {
-    const v = sorted[i] as number;
-    if (v - max <= tol) {
-      if (v > max) max = v;
-    } else {
-      out.push(max);
-      start = v;
-      max = v;
-    }
-  }
-  out.push(max);
-  return out;
-}
-
-/** 段内内容: 去掉首尾空白后的正文与其显示宽 */
-function segmentContent(
-  toks: Tok[],
-  from: number,
-  to: number
-): { text: string; width: number; isRun: boolean; authored: number } {
-  let text = '';
-  let width = 0;
-  let authored = 0;
-  let isRun = false;
-  let hasText = false;
-  for (let i = from; i < to; i += 1) {
-    const t = toks[i] as Tok;
-    if (t.kind === 'run') {
-      isRun = true;
-      text += t.ch.repeat(t.n);
-      width += t.n;
-      authored += t.n;
-    } else if (t.kind === 'text') {
-      hasText = true;
-      text += t.ch;
-      width += t.w;
-      authored += t.w;
-    }
-  }
-  // 只有"整段全是横线"才算边线段; 段内夹了正文(如 "Short-term / Long-term" 或 "──▶")
-  // 里的连字符不算边线, 否则会把正文当边线铺满整格
-  if (isRun && !hasText) {
-    return { text, width, isRun: true, authored };
-  }
-  const trimmed = text.replace(/^\s+/, '').replace(/\s+$/, '');
-  return { text: trimmed, width: displayWidth(trimmed), isRun: false, authored };
-}
-
-/**
- * 重排框线图: 每行严格等宽, 竖线列全局对齐。
- * 返回 null 表示"不该重排"(非框线图, 或重排会改动正文文字) —— 调用方保留原文。
- */
-export function reflowArt(lines: string[]): string[] | null {
-  if (!looksLikeArt(lines)) return null;
-
-  const parsed = lines.map(tokenize);
-
-  // ① 列锚点: 每行第一个竖线 → 全局最左列; 最后一个竖线 → 全局最右列; 中间竖线 → 聚类
-  let gMin = Number.POSITIVE_INFINITY;
-  let gMax = Number.NEGATIVE_INFINITY;
-  const interiorCols: number[] = [];
-  for (const p of parsed) {
-    if (p.borders.length === 0) continue;
-    const first = p.toks[p.borders[0] as number] as Tok;
-    const last = p.toks[p.borders[p.borders.length - 1] as number] as Tok;
-    gMin = Math.min(gMin, first.col);
-    gMax = Math.max(gMax, last.col);
-    for (let k = 1; k < p.borders.length - 1; k += 1) {
-      interiorCols.push((p.toks[p.borders[k] as number] as Tok).col);
-    }
-  }
-  if (!Number.isFinite(gMin) || !Number.isFinite(gMax)) return null;
-
-  const clusters = clusterCols(interiorCols, 1).filter(
-    (c) => c > gMin && c < gMax
-  );
-
-  // 每个竖线的目标列(第一根→最左列, 最后一根→最右列, 中间→聚类)
-  const rawTarget: number[][] = parsed.map((p) =>
-    p.borders.map((ti, k) => {
-      const t = p.toks[ti] as Tok;
-      if (k === 0) return gMin;
-      if (k === p.borders.length - 1) return gMax;
-      let best = t.col;
-      let bestD = Number.POSITIVE_INFINITY;
-      for (const c of clusters) {
-        const d = Math.abs(c - t.col);
-        if (d < bestD) {
-          bestD = d;
-          best = c;
-        }
-      }
-      return bestD <= 1 ? best : t.col;
-    })
-  );
-
-  // 阶段2(会审 P0-3): 落单竖线吸附。
-  //   症状: 某行的长文字把竖线顶到别处(如记忆框右边框: 上/下边线行在第 35 列,
-  //   文字行被顶到第 36 列) → 同一个框的竖线列不一致 → 框线还是歪的。
-  //   规则: 与"有簇支撑"的列距离 ≤ 左侧格宽的 30% 时吸附过去(格窄说明两根竖线
-  //   本来就是一对, 不能吸到同一列); 吸附后若同一行出现重复列 → 该行放弃吸附。
-  const snappedTarget: number[][] = rawTarget.map((targets, li) => {
-    const p = parsed[li] as ParsedLine;
-    if (p.borders.length < 2) return targets;
-    const out = [...targets];
-    const snapped: number[] = [];
-    for (let k = 1; k < p.borders.length - 1; k += 1) {
-      const t = p.toks[p.borders[k] as number] as Tok;
-      if (targets[k] !== t.col) continue; // 已有簇归属, 不动
-      const prev = p.toks[p.borders[k - 1] as number] as Tok;
-      const leftCell = t.col - prev.col - 1;
-      let best = -1;
-      let bestD = Number.POSITIVE_INFINITY;
-      for (const c of clusters) {
-        const d = Math.abs(c - t.col);
-        if (d < bestD) {
-          bestD = d;
-          best = c;
-        }
-      }
-      if (best < 0) continue;
-      const allow = Math.max(1, Math.floor(leftCell * 0.3));
-      if (bestD <= allow) {
-        out[k] = best;
-        snapped.push(k);
-      }
-    }
-    // 吸附后同一行出现重复列 → 放弃本行全部吸附(宁可保持原样, 不塌框)
-    const seen = new Set<number>();
-    for (let k = 0; k < out.length; k += 1) {
-      if (seen.has(out[k] as number)) {
-        for (const sk of snapped) out[sk] = (rawTarget[li] as number[])[sk] as number;
-        break;
-      }
-      seen.add(out[k] as number);
-    }
-    return out;
-  });
-
-  // 阶段3(会审 P0-4): 同行重复列回退 —— 聚类/吸附可能让同一行的两根竖线落到同一列
-  //   (窄框的两条边只差 1~2 列, 会被并簇) → 框会塌成 0 宽。检出即回退为各自原列。
-  const targetOf: number[][] = snappedTarget.map((targets, li) => {
-    const p = parsed[li] as ParsedLine;
-    const out = [...targets];
-    const count = new Map<number, number>();
-    for (const t of out) count.set(t, (count.get(t) ?? 0) + 1);
-    for (let k = 1; k + 1 < out.length; k += 1) {
-      const t = out[k] as number;
-      if ((count.get(t) ?? 0) > 1) {
-        const own = (p.toks[p.borders[k] as number] as Tok).col;
-        out[k] = own;
-        count.set(t, (count.get(t) as number) - 1);
-        count.set(own, (count.get(own) ?? 0) + 1);
-      }
-    }
-    return out;
-  });
-
-  // ② 全局列序列
-  const canonSet = new Set<number>([gMin, gMax]);
-  for (const arr of targetOf) for (const c of arr) canonSet.add(c);
-  const canon = [...canonSet].sort((a, b) => a - b);
-  const canonIdxOf = new Map<number, number>();
-  canon.forEach((c, i) => canonIdxOf.set(c, i));
-
-  // ③ 弹性列宽: 相邻两列之间, 取所有行"该段内容实需宽度"的最大值
-  const gap = new Array<number>(canon.length - 1).fill(0);
-  const spans: Array<{ a: number; b: number; need: number }> = [];
-  for (let li = 0; li < parsed.length; li += 1) {
-    const p = parsed[li] as ParsedLine;
-    const targets = targetOf[li] as number[];
-    for (let k = 0; k + 1 < p.borders.length; k += 1) {
-      const bi = p.borders[k] as number;
-      const bj = p.borders[k + 1] as number;
-      const ia = canonIdxOf.get(targets[k] as number) as number;
-      const ib = canonIdxOf.get(targets[k + 1] as number) as number;
-      const seg = segmentContent(p.toks, bi + 1, bj);
-      // 纯横线段按"实占宽度"计(它就是那条边线); 含正文的段额外留 1 列呼吸位
-      const need = seg.isRun ? seg.width : seg.width + 2;
-      const base = Math.max(seg.authored, need);
-      if (ib === ia + 1) {
-        gap[ia] = Math.max(gap[ia] as number, base);
-      } else {
-        spans.push({ a: ia, b: ib, need: base });
-      }
-    }
-  }
-
-  // ④ 跨列行(内容横跨多列)内容过长时, 把亏空摊到跨过的列上
-  for (const sp of spans) {
-    let total = 0;
-    for (let i = sp.a; i < sp.b; i += 1) total += (gap[i] as number) + 1;
-    const deficit = sp.need - (total - 1);
-    if (deficit > 0) {
-      const cnt = sp.b - sp.a;
-      const add = Math.ceil(deficit / cnt);
-      for (let i = sp.a; i < sp.b; i += 1) gap[i] = (gap[i] as number) + add;
-    }
-  }
-
-  // ⑤ 列位置
-  const pos: number[] = [gMin];
-  for (let i = 0; i + 1 < canon.length; i += 1) {
-    pos.push((pos[i] as number) + 1 + (gap[i] as number));
-  }
-
-  // ⑥ 逐行输出
-  const out: string[] = [];
-  for (let li = 0; li < parsed.length; li += 1) {
-    const p = parsed[li] as ParsedLine;
-    const targets = targetOf[li] as number[];
-    if (p.borders.length === 0) {
-      out.push(lines[li] as string);
-      continue;
-    }
-    let buf = '';
-    let cur = 0;
-    const emitPad = (to: number) => {
-      const n = to - cur;
-      if (n > 0) {
-        buf += ' '.repeat(n);
-        cur = to;
-      }
-    };
-    // 首竖线之前的内容(通常为空)
-    const lead = segmentContent(p.toks, 0, p.borders[0] as number);
-    buf += lead.text;
-    cur = displayWidth(lead.text);
-    for (let k = 0; k < p.borders.length; k += 1) {
-      const bi = p.borders[k] as number;
-      const bt = p.toks[bi] as Tok;
-      const target = pos[canonIdxOf.get(targets[k] as number) as number] as number;
-      emitPad(Math.max(target, cur));
-      buf += bt.ch;
-      cur = Math.max(target, cur) + 1;
-      // 与下一竖线之间的内容
-      if (k + 1 < p.borders.length) {
-        const bj = p.borders[k + 1] as number;
-        const nextTarget =
-          pos[canonIdxOf.get(targets[k + 1] as number) as number] as number;
-        const seg = segmentContent(p.toks, bi + 1, bj);
-        const region = Math.max(nextTarget - cur, 0);
-        if (seg.isRun) {
-          // 边线段: 铺满整段, 保证同一列在所有行都占同样宽度
-          const fill = Math.max(region, 1);
-          buf += (seg.text[0] ?? '-').repeat(fill);
-          cur += fill;
-        } else if (seg.text.length === 0) {
-          // 空段: 留白, 不推进游标(下一根竖线按 canonical 列落位)
-          emitPad(cur);
-        } else {
-          const left = Math.floor(Math.max(region - seg.width, 0) / 2);
-          emitPad(cur + left);
-          buf += seg.text;
-          cur += seg.width;
-        }
-      }
-    }
-    // 末竖线之后的内容(通常为空)
-    const tail = segmentContent(
-      p.toks,
-      (p.borders[p.borders.length - 1] as number) + 1,
-      p.toks.length
-    );
-    buf += tail.text;
-    out.push(buf);
-  }
-
-  // ⑦ 内容守恒校验: 逐行的"正文文字"必须与原文完全一致(只允许挪动空格与横线)
-  for (let i = 0; i < out.length; i += 1) {
-    if (wordsOf(out[i] as string) !== wordsOf(lines[i] as string)) return null;
-  }
-
-  // ⑧ 等宽校验: 不等宽则补齐到同一宽度; 补不齐说明算法有漏, 宁可不改
-  const widths = out.map((l) => displayWidth(l));
-  const max = Math.max(...widths);
-  const padded = out.map((l, i) => l + ' '.repeat(max - (widths[i] as number)));
-  const w2 = new Set(padded.map((l) => displayWidth(l)));
-  if (w2.size > 1) return null;
-  return padded;
-}
-
-/**
- * 归一化整篇 Markdown 中的围栏代码块(框线图)。
- * 只处理 ``` 围栏块内部, 且仅当该块判定为框线图时重排; 其余内容逐字保留。
+ * 归一化 Markdown 中**围栏代码块内部**的框线图。
+ * 围栏外内容一律不碰(表格/正文/行内代码原样)。
  */
 export function normalizeMarkdownArt(markdown: string): string {
   if (!markdown) return markdown;
-  // 快速否决: 没有围栏 / 没有任何框线字符 → 不可能是框线图, 直接返回(流式性能)
   if (!markdown.includes('```') && !markdown.includes('~~~')) return markdown;
-  if (!/[│|─━═┌┐└┘├┤┬┴┼]/.test(markdown)) return markdown;
-
-  // CRLF 归一: '\r' 会被当成正文, 导致守恒校验必然不等 → 整块放弃重排
   const hadCRLF = markdown.includes('\r\n');
   const src = hadCRLF ? markdown.replace(/\r\n/g, '\n') : markdown;
-
   const lines = src.split('\n');
   const out: string[] = [];
   let i = 0;
@@ -557,11 +821,10 @@ export function normalizeMarkdownArt(markdown: string): string {
     }
     const body = lines.slice(i + 1, closeAt);
     out.push(lines[i] as string);
-    if (info.toLowerCase() === 'mermaid') {
+    if (info.toLowerCase() === 'mermaid' || !hasBoxFrame(body)) {
       out.push(...body);
     } else {
-      const reflowed = reflowArt(body);
-      out.push(...(reflowed ?? body));
+      out.push(...fixLines(body));
     }
     out.push(lines[closeAt] as string);
     i = closeAt + 1;
@@ -570,4 +833,53 @@ export function normalizeMarkdownArt(markdown: string): string {
   return hadCRLF ? result.replace(/\n/g, '\r\n') : result;
 }
 
-export default normalizeMarkdownArt;
+/** 对齐一组行(一个围栏块/图区) —— 供外部调用与测试 */
+export function reflowArt(lines: string[]): string[] {
+  return fixLines(lines);
+}
+
+/**
+ * 测试支撑导出: 每个框每行的右边线显示列(供单测断言"同框各行右边线同列")。
+ * 生产渲染路径不调用本函数。
+ */
+export function analyzeBoxes(lines: string[]): Array<{
+  top: number;
+  bottom: number;
+  rightCols: number[];
+}> {
+  const out = lines.map((l) => expandTabs(l));
+  const borders = findBorders(out);
+  const boxes = matchBoxes(borders, out);
+  // 与主算法同口径: 逐行两阶段定位(逐框认领右边界), 否则内框会误取外框的右边线
+  const rowBoxes = new Map<number, BoxRegion[]>();
+  for (const box of boxes) {
+    for (let r = box.top.lineIndex; r <= box.bottom.lineIndex; r += 1) {
+      const arr = rowBoxes.get(r) ?? [];
+      arr.push(box);
+      rowBoxes.set(r, arr);
+    }
+  }
+  const rightColOf = new Map<BoxRegion, Map<number, number>>();
+  for (const [rowIndex, arr] of rowBoxes) {
+    const line = out[rowIndex] as string;
+    const rowEdges = locateRowEdges(
+      line,
+      rowIndex,
+      arr,
+      (box) => box.top.leftCol
+    );
+    for (const [box, edge] of rowEdges) {
+      const per = rightColOf.get(box) ?? new Map<number, number>();
+      per.set(rowIndex, edge.rightCol);
+      rightColOf.set(box, per);
+    }
+  }
+  return boxes.map((b) => {
+    const per = rightColOf.get(b) ?? new Map<number, number>();
+    const rightCols: number[] = [];
+    for (let li = b.top.lineIndex; li <= b.bottom.lineIndex; li += 1) {
+      rightCols.push(per.get(li) ?? -1);
+    }
+    return { top: b.top.lineIndex, bottom: b.bottom.lineIndex, rightCols };
+  });
+}

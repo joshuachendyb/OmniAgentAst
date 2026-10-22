@@ -20,6 +20,8 @@
 // 编辑历史: 2026-10-21 小杨 - 接入文件引用 chip 与形态校验（与 FileRefChip 同源单一真源） — 小杨-2026-10-21
 // 2026-10-22 小杨 - 文件引用链接的路径参数改走安全解码, 非法百分号编码不再抛 URIError;
 //   label 放行转义方括号(文件名含 ']' 时整条链接仍可识别) — 小杨-2026-10-22
+// 编辑历史: 2026-10-22 小欧 - 代码块显式行高 1.1: 原继承流水线根容器行高 1.5, │ 字形墨迹高
+//   1.12–1.17em 行间留缝 → 框线竖线断成虚线; 行高 ≤1.14 时竖线连成实线 — 小欧-2026-10-22
 import React from 'react';
 import {
   BorderWidth,
@@ -27,6 +29,7 @@ import {
   FontFamily,
   FontSize,
   FontWeight,
+  MonoLineHeight,
   Radius,
   Spacing,
 } from '@/utils/stepStyles';
@@ -189,6 +192,9 @@ const MarkdownBody: React.FC<MarkdownBodyProps> = ({ text }) => {
           style={{
             fontFamily: FontFamily.MONO,
             fontSize: FontSize.CODE,
+            // 2026-10-22 小欧 - 行高取公用令牌 MonoLineHeight(1.1, 与 MarkdownText 代码块一致):
+            //   行高 >1.14 时 │ 字形墨迹高不够, 行间留缝 → 框线竖线断成虚线。 — 小欧-2026-10-22
+            lineHeight: MonoLineHeight,
             background: Colors.BG.SECONDARY,
             border: `${BorderWidth.DEFAULT}px solid ${Colors.BORDER.DEFAULT}`,
             borderRadius: Radius.SM,
