@@ -1,3 +1,50 @@
+v1.4.5
+更新时间: 2026-10-22 19:38:24 - 小欧-2026-10-22
+## v1.4.4以来 变更汇总(28个commit: fix12/refactor6/docs4/feat2/revert1/chore1/test1/style1) - 小欧-2026-10-22
+[2026-10-22 19:38:24 小欧] 范围=v1.4.4以来全部commit(28个); 主线: 前端文件域与引用域KISS化重构落地(R1-R7)+架构守卫arch-check上线与红线取证闭环+路径可点化(裸路径/行内代码识别)+框线图对齐三处修正+会话融合增强与KISS重构设计文档+新增fre2e_22/23全链路覆盖+注释与编辑历史合规整改
+
+### 1.4.20 前端文件域引用域KISS化重构落地(R1-R7)
+[R3域归位] 引用域归一: composerRefStore从chat/streams搬到features/refs/store.ts, 删旧文件改全部import, 交叉守卫G1c归零 - 小欧 2026-10-22
+[R1共享hook] 新建useComposerRefs: ChatInput的7处setRefs全改为hook方法(remove/removeWhere/clear/add/setAll), 状态只经hook进出 - 小欧 2026-10-22
+[R2统一入口] 新建features/refs/quote.ts: quoteFile/quoteSelection/quotePack统一"读盘+组装+入队", 返回{ok,reason}不弹提示(成功失败文案都归调用方); 文件页/足迹面板/任务卡三个调用点改走quote*, 删quoteFileForPreview/quoteAsPack/quoteFromRef/quoteLedgerEntry及3份近似实现 - 小欧 2026-10-22
+[R4双真源] refCount的"键集合"双真源删除: 改useSyncExternalStore订阅composerRefStore.getSnapshot()为唯一真源, 引用状态不再双份维护 - 小欧 2026-10-22
+[R5判据收敛] TaskListPanel删自写的normalizeRelPath(20行), 路径判据收敛到utils/projectPath的toRelativePath唯一真源 - 小欧 2026-10-22
+[R6纯函数] 发送前校验抽纯函数: 新建features/refs/refresh.ts(sliceByLineRange+refreshRefs), ChatInput的46行内联校验替换为await refreshRefs(refs); 失效引用阻断发送(引用可被外部改动后仍照发), 保真不重复切片 - 小欧 2026-10-22
+[R7树状态机] 新建features/files/hooks/useFilesTree(树状态机+expandToPath)与useFileSelection(selected/multiFiles/lineRange/narrowTab); mergeKids/buildScanNotices上提utils/fileTree.ts; 页面层收到编排职责(树加载/展开/选中/预览)交出, 保留openPath与JSX编排层 - 小欧 2026-10-22
+[G-4闸门] 序号闸门抽纯函数withSeqGate: 序号判据与Map读写合并, fetchGated为唯一实现, loadDir/expandToPath改走它, claimDir失去全部消费者被删(改口径不再"改A漏B") - 小欧 2026-10-22
+[管道] readAndPush抽出"读盘→投递引用"唯一管道; 顺带修pushRef未await真缺陷(原fire-and-forget导致批量ok计数早于投递完成、异常变unhandled rejection); 失败文案仍归调用方(批量要能定位到具体哪个文件, 单发不带名) - 小欧 2026-10-22
+
+### 1.4.21 架构守卫arch-check上线与红线取证闭环
+[上线] 新建scripts/arch-check.mjs: G1a(files不引refs非store)/G1b(G3)/G1c(files不直调composerRefStore)/G2(引用入口唯一)/G3(utils/components不直调store)/G3b(file-ref只在FileRefChip)/G4(禁止重造轮子,先查FUNCTIONS.md)七条规则; --strict违规exit 1可接CI门禁; import type与features/refs豁免; 接package.json arch:check/arch:check:strict - 小欧 2026-10-22
+[红线取证] 7条守卫全部具备实证: G1c/G2/G4靠真实重构7→0自然证明, G1a/G1b/G3/G3b靠临时取证文件注入→strict 4处违规exit 1→删净→0处exit 0闭环 - 小欧 2026-10-22
+[漏检修复] 红线取证反查出G1a/G1b/G1c对相对路径导入整类漏检: 本仓import风格相对../占398处vs别名@/占114处, 原正则只匹配features/字面段, 文件页深引features/refs的相对写法判0处(守卫失效比正则写错更隐蔽); 加resolveSpec归一化(@/别名+./../归一成src相对路径, 目录导入补/index), 两写法均命中, 364文件真代码零误报 - 小欧 2026-10-22
+
+### 1.4.22 路径可点化与前端体验
+[裸路径识别] 文件引用预处理增裸路径识别: 答复/思考里Agent直接写的相对路径或项目根内绝对路径也转成/file-ref链接; URL/markdown链接/围栏/行内代码一律原样; 判据复用utils/projectPath不另立一套; 可转路径须末段字母开头扩展名+拒@/#开头(npm包名、锚点不转) - 小欧 2026-10-22
+[行内代码] 行内代码整段就是一个路径时也转链接(Agent普遍把产物路径写成E:\...); 夹带其他文字的行内代码仍原样, 避免把示例改成可点链接 - 小欧 2026-10-22
+[展示收口] chip文字直接显示完整绝对路径并删除tip; 链接构造两份(裸路径/行内代码)抽toFileRefMarkdown单一真源; chip拼展示文案抽displayPathOf; 删死参数label(职责归一) - 小欧 2026-10-22
+[深链增强] 行号深链既支持"起-止"也支持单行"10": 只认区间时用户手敲?line=10会被静默忽略(点了没反应); 深链树滚动定位改信号(reveal→提交后effect)+窄屏切预览Tab - 小杨/小欧 2026-10-22
+[体验收口] 发送钮常驻置灰(pending不再可点)+树右键菜单不误关+深链单值行号加载后续内容如实提示; 字体栈收敛; prettier格式化收口 - 小欧/小沈 2026-10-22
+
+### 1.4.23 框线图对齐三处修正
+[三处] asciiArt框边定位修正: 上下边宽容差对齐、natural统一裁尾、右边界两相位认领; 抽rightCapOf收敛右边界cap; Ambiguous宽度选项说明更正; 热路径分配优化 - 小沈 2026-10-22
+[性能] MarkdownSlot框线图归一化改deferred节流: 避免渲染热路径上反复全量归一化 - 小沈 2026-10-22
+[卫生] 删除临时调试文件(_app-font-check/_dbg-run/_dbg/_regress-check) - 小沈 2026-10-22
+
+### 1.4.24 会话融合增强与KISS重构设计文档
+[新增] 新增[42]会话融合增强优化设计与[43]前端架构优化-文件域引用域KISS化重构设计两份文档, 含执行序表与before/after对照 - 小欧 2026-10-22
+[修订] [43]文档三堂会审修订6缺陷+深链定位拆分, 出v1.4与v1.5两版 - 小欧 2026-10-22
+[索引] 新增10月文档索引, 记录执行序状态与门禁达成情况 - 小欧 2026-10-22
+
+### 1.4.25 E2E覆盖与工程卫生
+[新增] 新增fre2e_22文件页深链(19例)与fre2e_23聊天路径可点(2例): 21例全绿零skip零retry; fre2e_22覆盖树竞态闸门/深链展开(含Windows反斜杠与中文路径)/行号切片/37MB超大文件截断/引用投递管道, fre2e_23走真实LLM+真实工具 - 小沈 2026-10-22
+[E2E加固] printDiag统一为DiagBundle对象+ensureDevServer加HTTP200就绪校验(原先只判端口在监听≠服务活着) - 小沈 2026-10-22
+[用例修正] fre2e_01_reconnect_ui裸URL改显式newSession: 避免自动加载残留会话致sendBlocked超时(用例只用于发现问题, 不固化错误系统逻辑) - 小欧 2026-10-22
+[合规] 注释违规修正(清除"三堂会审"等过期裁定字符)+编辑历史补充+字体度量脚本与tsconfig收录 - 小沈 2026-10-22
+
+### 1.4.26 后端安全层范围门(同日撤回, 净零变更)
+[提出又撤回] 曾把path_tool_safety_checker的范围门改为只闸路径三线并恢复工具级确认(追出全量单测18 failed/复验8596 passed); 随后同日撤回, 恢复J3原设计: 本层只做路径安全权限判定, 非路径工具整体放行, 工具级needs_confirmation不在本层分流 - 小欧 2026-10-22
+
 v1.4.4
 更新时间: 2026-10-22 01:29:05 - 小欧-2026-10-22
 ## v1.4.3以来 变更汇总(11个commit: feat2/fix2/perf1/docs6) - 小欧-2026-10-22
