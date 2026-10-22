@@ -74,17 +74,21 @@ const MarkdownSlot: React.FC<MarkdownSlotProps> = ({
     /(?:^|[^A-Za-z0-9+.-])[A-Za-z]:[\\/]/.test(text)
   );
   const safeText = useDeferredPreprocess(text, projectRoot);
-  // 2026-10-22 小欧 - 框线图(ASCII art)归一化**唯一位**(北京老陈 2026-10-22 审核观感截图后放行):
-  //   用 useMemo 记忆(依赖 safeText) —— 否则父组件每重渲染一次就全量重扫+重排整篇
-  //   (流式期每 chunk 一次) → 长消息 O(n²)。
+  // 2026-10-22 小欧 - 框线图(ASCII art)归一化**唯一位**:
+  //   归一化跑在 **deferred 文本**上: 急迫更新先出(原文), 归一化随后在稳定文本上补齐 ——
+  //   与 useDeferredPreprocess 同款节流思路(DRY: 同一模式), 也顺带修掉下面的失实注释。
+  //   ⚠ 原注释称"用 useMemo 记忆(依赖 safeText) → 免长消息 O(n²)"**不成立**:
+  //     safeText 随流式每个 chunk 变 → memo 每次都重算, 流式期仍是 O(n²);
+  //     且半截框线图(缺下边线)本就归一不了 → 纯白算。流式结束那一版 deferred 追平 → 最终对齐。
   //   ⚠ Hook 必须在所有早退之前(条件调用 Hook 是 React 运行时错误); 纯文本用户的代价仅为
   //   "无围栏即返回"的快速否决(一次字符串扫描)。
   //   两个渲染分支共用同一入口(放进分支内会随 MD_IMPL 开关分叉); 围栏外内容逐字不动, 普通代码块不受影响。
   //   ⚠ 副作用: 复制按钮复制到的是"对齐版"文本(非原文) —— 复制源 = PreBlock 的 children,
   //   而 children 来自 artText(MarkdownText.tsx:426 extractPlainText(props.children)) → 已核实。
+  const deferredSafe = React.useDeferredValue(safeText);
   const artText = React.useMemo(
-    () => normalizeMarkdownArt(safeText),
-    [safeText]
+    () => normalizeMarkdownArt(deferredSafe),
+    [deferredSafe]
   );
   if (!markdown) return <>{text}</>;
   // 2026-10-06 小欧(三堂会审 #5): MD_IMPL=1 的 MarkdownBody 根本不解析表格(无表格支持),
