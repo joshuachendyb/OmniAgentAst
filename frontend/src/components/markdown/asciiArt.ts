@@ -19,12 +19,13 @@
 //   5) 顺序: 先内层后外层, 同层从左到右; 加宽后重新识别, 最多 4 轮
 //
 // 【与上游的差异】(均为针对性改良)
-//   a) 宽度用 string-width(行业标准, sindresorhus) 替代上游手写表; Ambiguous 按 1 列。
+//   a) 宽度用 get-east-asian-width(Unicode EAW) 替代上游手写表; Ambiguous 按 2 列
+//      (框线块 U+2500–259F 与 Latin-1 U+00A0–00FF 例外为 1 列, 见【宽度模型 vs 实渲染】)。
 //   b) **框几何全部在"显示列"空间**(上游用字符索引): CJK 内容把框线顶偏是**显示列**问题,
 //      按字符数补/裁空格会把整个框右移(上游在"一行多框 + CJK"下会错位)。
 //   c) 本框右边线**不得越过同行下一框的左边线**(上游没这条硬约束 → 切片会吞掉下一框内容)。
 //   d) **不改作者的符号**: 框线/箭头/三角一律原样保留;
-//      显示端的 1 列保证由等宽字体栈提供(Consolas 无 ▶ 字形 → 字体栈需补含 Geometric Shapes 的等宽字体)。
+//      显示端的字宽保证由等宽字体栈提供(▶/几何符号按 2 列 → 栈首须为 Sarasa Mono SC, 见【宽度模型 vs 实渲染】)。
 //   e) 只处理**围栏代码块内部**, 围栏外一律不碰。
 //
 // 【宽度模型 vs 实渲染】(2026-10-22 小欧 实测 Chromium canvas, 本机):
@@ -67,6 +68,11 @@
 //   ⑥ 定位逻辑抽成 locateRowEdges, 主算法与测试支撑导出 analyzeBoxes 共用(同口径, DRY)。
 //   实测: 真实文档《[1]系统架构全景解析…》58 行架构图 → 14 行全部对齐(外框 0→54,
 //   内框 4→18 / 24→35 / 40→49, 记忆框 4→36); 时序图/树图 0 行改动。 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 更正上面「Ambiguous 宽度选项」那条历史并收敛热路径分配:
+//   ① 上一条写的 `{ ambiguousAsWide: false }`(按 1 列)与实现不符 —— 实现取 `true`
+//      (Ambiguous 按 2 列), 这才与 Sarasa Mono SC 实测(CJK/几何符号/箭头 2 格)一致;
+//      本条为准, 上一条作废。
+//   ② charWidth 逐字符新建选项对象 → 选项提为模块级常量(热路径零分配)。 — 小欧-2026-10-22
 
 import { eastAsianWidth } from 'get-east-asian-width';
 
@@ -99,13 +105,19 @@ const VERTICAL_BORDER_CHARS = new Set('│║┃|┆┇┊┋');
  * ⚠ get-east-asian-width 的选项名按 1.7.0 实 API 写 `{ ambiguousAsWide: true }`;
  *   写成 `ambiguousIsNarrow` 不是合法选项(多余字段) → TS 报 TS2353 编译不过。
  */
+/**
+ * EAW 选项: Ambiguous 按 2 列(与 Sarasa Mono SC 实测一致)。
+ * 2026-10-22 小欧 - 提为模块级常量: 原先 charWidth 逐字符新建对象(热路径逐字符分配)。 — 小欧-2026-10-22
+ */
+const EAW_AMBIGUOUS_WIDE = { ambiguousAsWide: true };
+
 export function charWidth(ch: string): number {
   const cp = ch.codePointAt(0);
   if (cp === undefined) return 0;
   // Sarasa 实测两例外: 框线块+块元素(U+2500–259F)、Latin-1(U+00A0–00FF)
   if (cp >= 0x2500 && cp <= 0x259f) return 1;
   if (cp >= 0x00a0 && cp <= 0x00ff) return 1;
-  return eastAsianWidth(cp, { ambiguousAsWide: true });
+  return eastAsianWidth(cp, EAW_AMBIGUOUS_WIDE);
 }
 
 /** 字符串显示宽 */
