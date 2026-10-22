@@ -30,6 +30,9 @@
 //   (结构化引用 chip，正文不再写 @label；@ 补全改为光标真实位置驱动 + 真防抖 + 键盘导航) — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 跨会话保留 + 发送用重读 refs（选区按行切片）+ @ 词边界与去重 + chip 新标签打开 — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 合并 useComposerRefs 到组件内（单消费者，删除空壳 hook）— 小杨-2026-10-21
+// 编辑历史: 2026-10-22 小欧 - 文档[43] R1：重建 useComposerRefs 共享 hook（文档[28] 虚报已补上），
+//   refs 状态从组件内 useState 迁入 hook；原 7 处 setRefs 调用点改写为 hook 方法
+//   （setAll/remove/removeWhere/clear/add）；删除 useSyncExternalStore/composerRefStore/mergeRefs 直接依赖 — 小欧-2026-10-22
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -47,7 +50,6 @@ import React, {
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
 } from 'react';
 import { Space } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
@@ -59,14 +61,9 @@ import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - �
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
-// 2026-10-21 小杨 - 引用通道（store 订阅 + refs 独立托管 + @token 剥离 + @补全）
-// 2026-10-22 小欧 - 文档[43] R3：引用域归位，import 路径从 streams 改为共享域
-import {
-  composerRefStore,
-  mergeRefs,
-  newRefId,
-  type ComposerRef,
-} from '@/features/refs/store';
+// 2026-10-22 小欧 - 文档[43] R1/R3：共享 hook + 引用域归位
+import { useComposerRefs } from '@/features/refs/useComposerRefs';
+import { newRefId } from '@/features/refs/store';
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';
@@ -119,35 +116,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
     useInputDraft(sessionId);
-  // 2026-10-21 小杨 - 引用条目状态：composer 级，跨会话保留（draft 按会话落盘，refs 不落盘）
-  const [refs, setRefs] = useState<ComposerRef[]>([]);
-  const refsPending = refs.some((r) => r.pending);
-  // 2026-10-21 小杨 - 跨页引用通道订阅
-  //   ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载 → 挂载取一次会**静默丢引用**，
-  //   故必须 useSyncExternalStore 订阅（store 一有数据即消费）。
-  const pendingCount = useSyncExternalStore(
-    composerRefStore.subscribe,
-    composerRefStore.getSnapshot
-  );
-  useEffect(() => {
-    if (pendingCount === 0) return;
-    const incoming = composerRefStore.takeAll();
-    if (incoming.length === 0) return; // StrictMode 双跑：第二次取空，直接返回
-    // 2026-10-21 小杨 - **引用是结构化对象，正文不再写 @label**
-    //   原做法把 "@label " 追加进正文 + 再渲染一个 chip = **同一信息两个家** →
-    //   ①删 chip 后正文残留裸 @a.md（模型收到无意义提及）；②选中候选后正文出现 "@查询词 @文件名" 双 @；
-    //   ③发送前还要用 stripAtTokens 反向剥离（边界误伤、压掉用户代码缩进）。
-    //   现在：**chip 是引用的唯一表示，正文只留用户自己写的字** → 上述三族问题一次性消失，
-    //   发送即发 refs + 纯正文（不再需要 stripAtTokens）。
-    setRefs((prev) => mergeRefs(prev, incoming));
-  }, [pendingCount, setRefs]);
+  // 2026-10-22 小欧 - 文档[43] R1：引用状态封进共享 hook（订阅+消费+托管唯一点）
+  const { refs, pending: refsPending, remove, removeWhere, clear, add, setAll } = useComposerRefs();
   // 2026-10-21 小杨 - @ 补全状态
   const [atOpen, setAtOpen] = useState(false);
   const [atHits, setAtHits] = useState<SearchHit[]>([]);
   const [atIndex, setAtIndex] = useState(0); // 2026-10-21 小杨 - 键盘导航：当前高亮项
   const [atRange, setAtRange] = useState<{ at: number; caret: number } | null>(
     null
-  ); // 2026-10-21 小杨 - 选中候选时**替换** @查询词 段（而非追加）
+  ); // 2026-10-21 小杨 - 选中候选时**替换** @查询词 段（而非追加）— 小杨-2026-10-21
   const [picking, setPicking] = useState(false); // @ 补全在途唯一性闸门（防连点）
   const atSeq = useRef(0); // 迟到响应丢弃（debounce 后的旧请求不得覆盖新结果）
   const atTimer = useRef<number | null>(null); // 2026-10-21 小杨 - 真防抖（每次击键不再真发一次全盘扫描）
@@ -306,7 +283,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           }
         })
       );
-      setRefs(checked);
+      setAll(checked);
       refsToSend = checked;
       const bad = checked.filter((r) => r.invalid);
       if (bad.length > 0) {
@@ -343,7 +320,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       addRecentInput(cleanText);
       setRecents(loadRecentInputs());
       setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
-      setRefs([]); // 仅成功才清（失败保留 refs，重试仍有内容）
+      clear(); // 仅成功才清（失败保留 refs，重试仍有内容）— 小欧-2026-10-22
     } catch {
       setDraft(backup);
       cancelSubmitted();
@@ -507,36 +484,33 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (picking) return; // 防连点
     if (hit.preview !== 'text') return; // 只收可预览文本
     setPicking(true);
-    // 先渲染"载入中"占位 token（去重保证连点只会替换不会追加）
-    setRefs((prev) =>
-      mergeRefs(prev, [
-        {
-          id: newRefId(),
-          kind: 'file',
-          label: hit.name,
-          path: hit.path,
-          content: '',
-          pending: true,
-        },
-      ])
-    );
+    // 先渲染"载入中"占位 token（去重保证连点只会替换不会追加）— 小欧-2026-10-22 改用 hook.add
+    add({
+      id: newRefId(),
+      kind: 'file',
+      label: hit.name,
+      path: hit.path,
+      content: '',
+      pending: true,
+    });
     // 正文里的 "@查询词" 是**检索动作**而非用户想发送的内容 → 选中即移除该段
     if (atRange) {
       setDraft((d) => `${d.slice(0, atRange.at)}${d.slice(atRange.caret)}`);
     }
     try {
       const f = await fileApi.readFile(hit.path);
-      setRefs((prev) =>
-        prev.map((r) =>
-          r.path === hit.path && r.pending
-            ? { ...r, content: f.content, size: f.size, pending: false }
-            : r
-        )
-      );
+      // 2026-10-22 小欧 - 改用 hook.add（mergeRefs 同 path+lineRange 原位替换 → pending 占位被解析结果覆盖）
+      add({
+        id: newRefId(),
+        kind: 'file',
+        label: hit.name,
+        path: hit.path,
+        content: f.content,
+        size: f.size,
+        pending: false,
+      });
     } catch {
-      setRefs((prev) =>
-        prev.filter((r) => !(r.pending && r.path === hit.path))
-      );
+      removeWhere((r) => r.pending === true && r.path === hit.path); // 小欧-2026-10-22 改用 hook.removeWhere
       showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
     } finally {
       setPicking(false);
@@ -615,7 +589,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  setRefs((prev) => prev.filter((x) => x.id !== r.id));
+                  remove(r.id); // 小欧-2026-10-22 改用 hook.remove
                 }}
                 aria-label={`删除引用 ${r.label}`}
                 title="移除该引用"

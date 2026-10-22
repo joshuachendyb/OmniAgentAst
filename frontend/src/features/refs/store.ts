@@ -105,19 +105,3 @@ export const composerRefStore = {
     emit();
   },
 };
-
-/**
- * enqueueRef —— 域内私有入队口（只有 quote.ts 的 quote* 调它；不 export）
- *
- * 2026-10-22 小欧 - 文档[43] R3/R4 v1.4（修 D5）：
- *   v1.3 曾 export enqueueRef 作为"第二入口"，但那样 INV-1（引用只有一个入口）
- *   名不副实——任何域外 import { enqueueRef } 都能绕过 quote* 投畸形 ref，
- *   而 G2 守卫查不到（enqueueRef 内部调 push，满足"push 只在 features/refs"）。
- *   v1.4 处置：不 export（TS 天然禁止域外调用），quoteFile/quoteSelection/
- *   quotePack 直接调 composerRefStore.push（都在 features/refs 域内，G2 通过）。
- *   域外（含 pages/Files 选区已有正文）一律经 quote* 的 content/size 覆盖项
- *   （见 R2），不再需要第二个入口。
- */
-const enqueueRef = (ref: ComposerRef): void => {
-  composerRefStore.push(ref);
-};
