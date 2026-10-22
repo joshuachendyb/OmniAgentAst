@@ -4,7 +4,7 @@
 // 编辑历史: 2026-10-22 小欧 - 自 features/chat/streams/composerRefStore.ts 迁入（内容零改动，仅改 import 路径）— 小欧-2026-10-22
 //   迁移理由：文件页（pages/Files）需要引用能力，而 composerRefStore 藏在 chat 的私有
 //   internals（streams/）里 → 形成 pages/Files → features/chat/streams 的反向依赖；
-//   文档[42] 再加"工作区反链"会让它变成双向依赖（环）。上提到共享域 features/refs/ 后，
+//   再加"工作区反链"会让它变成双向依赖（环）。上提到共享域 features/refs/ 后，
 //   chat 与 files 各自向下依赖，依赖图单向无环。
 //   迁移按 AGENTS「能复制就复制，不重写」执行：代码逐字搬运，仅改 import 路径。
 /**

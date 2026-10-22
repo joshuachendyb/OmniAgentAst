@@ -1,5 +1,5 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：文件树工具函数（从 pages/Files 抽出）— 小欧-2026-10-22
-//   文档[43] R7：mergeKids / buildScanNotices 上提共享层，供 useFilesTree 与页面共用。
+//   mergeKids / buildScanNotices 上提共享层，供 useFilesTree 与页面共用。
 import type { FileNode } from '@/services/api/file.api';
 
 /** 树归并：按 key（相对路径）把补拉的子节点挂到父下（不可变更新，只改一路祖先） */

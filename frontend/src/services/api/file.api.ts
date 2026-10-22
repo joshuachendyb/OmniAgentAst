@@ -82,7 +82,7 @@ export interface RecentFile {
   preview: string;
   /** 文件最后修改时间（后端 mtime；原字段名 last_seen_at 语义错位） */
   mtime: string;
-  /** FT1：该文件在最近窗口内被哪些工具动过（后端注册名，字母序） */
+  /** 该文件在最近窗口内被哪些工具动过（后端注册名，字母序） */
   ops: string[];
 }
 

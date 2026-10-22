@@ -8,6 +8,7 @@
 //   2026-10-21 小杨 - 引用按钮仅文本文件显示（图片由查看器处理，文本通道不读取）— 小杨-2026-10-21
 //   2026-10-21 小欧 - 导出 OP_LABEL/OP_COLOR：ops 徽标映射口径易被改坏，导出供测试断言 — 小欧-2026-10-21
 //   2026-10-22 小欧 - 将说明文字 "本会话中 Agent 读写过的文件..." 移到标题 "文件足迹" 同一行 — 小欧-2026-10-22
+//   2026-10-22 小欧 - 移除文件名 Tooltip：f.name 仅文件名不含路径，一个文件一行可完整显示，悬停提示冗余 — 小欧-2026-10-22
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -20,14 +21,14 @@
  * 只读边界：面板**不落任何写操作**（与文件页同一常驻表达）。
  */
 import React, { useEffect, useState } from 'react';
-import { Empty, Skeleton, Tooltip } from 'antd';
+import { Empty, Skeleton } from 'antd';
 import {
   CaretRightOutlined,
   FileOutlined,
   PaperClipOutlined,
 } from '@ant-design/icons';
 import { type RecentFile } from '@/services/api/file.api';
-// 2026-10-22 小欧 - 文档[43] R3/R4：引用入口统一，不再直接调 composerRefStore
+// 2026-10-22 小欧 - 引用入口统一，不再直接调 composerRefStore
 import { quoteFile } from '@/features/refs/quote';
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
@@ -109,7 +110,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
    *   （原实现 nav 到同一路由 → query 变化触发会话切换，属无意义的路由扰动）。
    */
   const sendAsRef = async (f: RecentFile) => {
-    // 2026-10-22 小欧 - 文档[43] R4：引用入口统一（读盘+组装+入队只有一份）
+    // 2026-10-22 小欧 - 引用入口统一（读盘+组装+入队只有一份）
     const r = await quoteFile(f.path, { label: f.name });
     if (r.ok) showSuccess(`已引用「${f.name}」到对话`);
     else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
@@ -211,29 +212,27 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                   style={{ color: Colors.PRIMARY, flexShrink: 0 }}
                 />
                 {/* 键盘目标①：文件名 = 打开文件（真 button，避免"行 role=button 内嵌 button"的语义冲突） */}
-                <Tooltip title={f.path}>
-                  <button
-                    type="button"
-                    /* 2026-10-21 小杨 - **新标签打开**
-                       SPA 跳转会丢会话页的滚动/展开状态；深链路径是 SPA 路由, 新标签直达文件页=定位 */
-                    onClick={() =>
-                      window.open(buildFileDeepLink(f.path), '_blank')
-                    }
-                    style={{
-                      border: 'none',
-                      background: 'transparent',
-                      cursor: 'pointer',
-                      padding: 0,
-                      color: Colors.TEXT.PRIMARY,
-                      textAlign: 'left',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {f.name}
-                  </button>
-                </Tooltip>
+                <button
+                  type="button"
+                  /* 2026-10-21 小杨 - **新标签打开**
+                     SPA 跳转会丢会话页的滚动/展开状态；深链路径是 SPA 路由, 新标签直达文件页=定位 */
+                  onClick={() =>
+                    window.open(buildFileDeepLink(f.path), '_blank')
+                  }
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    padding: 0,
+                    color: Colors.TEXT.PRIMARY,
+                    textAlign: 'left',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {f.name}
+                </button>
                 {/* ops 徽标**只显前 2 个**，其余折叠为 +N（真实取值域 16 个工具名） */}
                 {(f.ops ?? []).slice(0, 2).map((op) => (
                   <span

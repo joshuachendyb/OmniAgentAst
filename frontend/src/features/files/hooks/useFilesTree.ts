@@ -1,9 +1,9 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：文件树状态机（纯树域）— 小欧-2026-10-22
-//   文档[43] R7：从 pages/Files 抽出树的全部状态与操作，页面退化为布局壳。
+//   从 pages/Files 抽出树的全部状态与操作，页面退化为布局壳。
 //   收编：tree / treeStatus / loadedKeys / expandedKeys / scanNotices +
 //         beginTreeReq / claimDir / loadTree / loadDir / patchNodes + expandToPath。
 //   不放：openPath（跨 tree+selection 编排，留页面层）；loadRoot / setWorkspace（会话域）。
-//   2026-10-22 小欧 - 文档[43] G-4：claimDir 的「登记序号→取子树→过期判定」抽为纯函数
+//   2026-10-22 小欧 - claimDir 的「登记序号→取子树→过期判定」抽为纯函数
 //     withSeqGate（loadDir / expandToPath 各抄一遍判据，改口径会「改 A 漏 B」；原 claimDir
 //     把纯计算与写 ref 混一个函数，违 SLAP）。claimDir 失去全部消费者被删；
 //     beginTreeReq 不抽（AbortController 是浏览器生命周期 API，抽了即为抽象而抽象）— 小欧-2026-10-22
@@ -21,11 +21,11 @@ export type TreeStatus =
 /**
  * 合并型补拉的序号闸门（纯函数，唯一实现）。
  * 同键后发者作废先发者：登记序号 → 执行 → 响应到达时比对序号，过期返回 null。
- * 2026-10-22 小欧 - 文档[43] G-4：原实现把「算序号」（纯逻辑）与「写 ref」（状态存储）
+ * 2026-10-22 小欧 - 原实现把「算序号」（纯逻辑）与「写 ref」（状态存储）
  *   混在一个回调里（违 SLAP），且 loadDir / expandToPath 各抄一遍（DRY 硬伤，
  *   改判定口径会「改 A 漏 B」）。抽成纯函数后不变量可单测。— 小欧-2026-10-22
  */
-export const withSeqGate = async <T,>(
+export const withSeqGate = async <T>(
   seqs: Map<string, number>,
   key: string,
   run: () => Promise<T>
@@ -47,8 +47,7 @@ export function useFilesTree() {
 
   const treeReady = treeStatus.phase === 'ready';
   const treeLoading = treeStatus.phase === 'loading';
-  const treeErr =
-    treeStatus.phase === 'error' ? treeStatus.message : null;
+  const treeErr = treeStatus.phase === 'error' ? treeStatus.message : null;
 
   const treeRef = useRef<FileNode[]>([]);
   const treeAbortRef = useRef<AbortController | null>(null);
@@ -112,9 +111,7 @@ export function useFilesTree() {
           const merged = mergeKids(treeRef.current, cur, kids);
           treeRef.current = merged;
           setTree(merged);
-          setLoadedKeys((prev) =>
-            prev.includes(cur) ? prev : [...prev, cur]
-          );
+          setLoadedKeys((prev) => (prev.includes(cur) ? prev : [...prev, cur]));
           hit = findNode(treeRef.current, cur);
           if (!hit) return null;
         }

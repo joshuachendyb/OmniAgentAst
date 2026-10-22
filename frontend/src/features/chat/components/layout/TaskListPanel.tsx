@@ -55,7 +55,7 @@ import {
 } from '@ant-design/icons';
 import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
-// 2026-10-22 小欧 - 文档[43] R5：路径判据收敛到 utils/projectPath（唯一真源）
+// 2026-10-22 小欧 - 路径判据收敛到 utils/projectPath（唯一真源）
 import { toRelativePath } from '@/utils/projectPath';
 
 import type { SessionTaskItem } from '../../../../services/api/task.api';
@@ -70,7 +70,7 @@ import {
 } from '@/services/error/handler';
 // 2026-10-21 小杨 - 推荐行 + 引用台账行
 import { chatStreamStore } from '../../streams/chatStreamStore';
-// 2026-10-22 小欧 - 文档[43] R3/R4：引用入口统一（v1.4：选区走 quoteSelection，与文件页口径一致）
+// 2026-10-22 小欧 - 引用入口统一（选区走 quoteSelection，与文件页口径一致）
 import { quoteFile, quoteSelection } from '@/features/refs/quote';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { chatTokens } from '@/theme/tokens';
@@ -98,9 +98,9 @@ interface TaskListPanelProps {
   latestTaskRef?: React.MutableRefObject<HTMLDivElement | null>;
   rightOpen?: boolean;
   // 2026-10-21 小杨 - 新增两项（可选，缺省即不渲染这两行）
-  /** 会话 id（FQ1 需取 recent-files，BR1 需取台账） */
+  /** 会话 id（取 recent-files 与引用台账） */
   sessionId?: string | null;
-  /** 本轮 steps（FQ1 计算「被工具动过 ≥2 次」） */
+  /** 本轮 steps（计算「被工具动过 ≥2 次」） */
   steps?: ExecutionStep[];
 }
 
@@ -161,19 +161,21 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     },
     [sessionId]
   );
-  /** BR1 恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
+  /** 台账恢复：现场重读盘面 → push 引用（恢复的是引用意图，不是旧快照） */
   const quoteAfterReread = React.useCallback(
     async (path: string, lineRange?: { start: number; end: number }) => {
-      // 2026-10-22 小欧 - 文档[43] R4：引用入口统一；恢复的是引用意图，不是旧快照 → 现场重读
+      // 2026-10-22 小欧 - 引用入口统一；恢复的是引用意图，不是旧快照 → 现场重读
       const r = lineRange
-        ? await quoteSelection(path, lineRange, { label: path.split('/').pop() ?? path })
+        ? await quoteSelection(path, lineRange, {
+            label: path.split('/').pop() ?? path,
+          })
         : await quoteFile(path, { label: path.split('/').pop() ?? path });
       if (r.ok) navigate(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
       else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
     },
     [navigate, sessionId]
   );
-  /** FQ1 只对"最新 1 条任务"显示（下一任务开始即移除上一条的推荐行） */
+  /** 推荐行只对"最新 1 条任务"显示（下一任务开始即移除上一条的推荐行） */
   const isLatestTaskId = (taskId: string) =>
     !latestTaskId || taskId === latestTaskId;
 
