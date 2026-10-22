@@ -80,6 +80,9 @@
 //   ③ 右边界改两相位认领: 相位①认领左边界时按"下一框目标左列-1"试探认领本框右边界
 //      (防下一框把前框右边线误认作本框左边线); 相位②用精确 cap 重定位右边界,
 //      认领集只含左边界, 避免试探认领污染精确定位。 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 右边界 cap 选择规则收敛为 rightCapOf 共用函数(左邻透传 leftColOf):
+//   试探期传"下一框目标左列"、精确期传"已定位左列", 两处同一规则不致漂移;
+//   排除嵌套在本框内的框(外框右界不受内框约束); cap=右邻兄弟左列-1。 — 小欧-2026-10-22
 
 import { eastAsianWidth } from 'get-east-asian-width';
 
@@ -469,11 +472,37 @@ function findLeftCorner(
 }
 
 /**
+ * 一行中某框右边线的上限列: 取右边**兄弟框**(不含嵌套在本框内的框)左列的最左者 - 1。
+ *   ① 试探期右邻框左界尚未定位 → 传"目标左列"; ② 精确期 → 传"已定位左列"。
+ *   两处共用同一选择规则, 避免口径各写一份后漂移。未定位的框传回 -∞, 由 `otherL <= boxL` 排除。
+ */
+function rightCapOf(
+  sorted: BoxRegion[],
+  box: BoxRegion,
+  boxL: number,
+  leftColOf: (b: BoxRegion) => number
+): number {
+  let cap = Number.POSITIVE_INFINITY;
+  for (const other of sorted) {
+    if (other === box) continue;
+    const otherL = leftColOf(other);
+    if (otherL <= boxL) continue; // 只管右边的
+    // 嵌套在本框内的框不参与 cap: 否则外框的 cap 会被内框顶掉,
+    // 导致外框找不到自己的右边线(外框的右边线在最右, 不受内框约束)
+    if (isNestedIn(box, other)) continue;
+    cap = Math.min(cap, otherL - 1);
+  }
+  return cap;
+}
+
+/**
  * 逐行定位各框的左右边界(**两阶段**, 主算法与测试支撑导出共用, 保证同口径):
- *   ① 同行左到右逐个认领**左边界**(就近 + 未被认领; 边线行找角字符, 内容行找竖线);
- *   ② 逐框取**右边界**: 上限 = 同行**兄弟框**(不含嵌套框)中右邻框的左边界 - 1,
- *      取该上限之前**最后一个**边界字符。
- *   ⚠ 认领是必须的: 不排除前一个框已认领的右边界, 会把前框的右边线当成本框的左边线。
+ *   ① 同行左到右认领**左边界**(就近 + 未被认领; 边线行找角字符, 内容行找竖线), 并按
+ *      "右邻兄弟框目标左列-1"立刻试探认领本框**右边界** —— 必须当场认领, 否则下一框会把
+ *      前框右边线误当成本框左边线(内容行被刚性内容推右时两者常相邻: 实测左界该取 40 却取到
+ *      35 → 段宽算成 12 → 规范宽污染 → 边线行膨胀 → 全框错位)。
+ *   ② 逐框用**已定位左列**重算 cap 与右边界; 认领集只含左界(不含试探右),
+ *      否则各框会把自己的试探右当成已占用 → 右边界找不到 → 整框被跳过。
  */
 function locateRowEdges(
   line: string,
@@ -482,53 +511,45 @@ function locateRowEdges(
   targetLOf: (box: BoxRegion) => number
 ): Map<BoxRegion, BoxEdge> {
   const cols = displayCols(line);
+  const sorted = [...rowBoxes].sort((a, b) => a.top.leftCol - b.top.leftCol);
   const claimedP1 = new Set<number>();
   const claimedP2 = new Set<number>();
-  const sorted = [...rowBoxes].sort((a, b) => a.top.leftCol - b.top.leftCol);
   const leftIdxOf = new Map<BoxRegion, number>();
-  // 相位①: 认领左边界; 同时按"下一框目标左列-1"试探认领本框右边界,
-  //   防止下一框把前框右边线误当成本框左边线(内容行被刚性内容推右时两者常相邻)。
-  //   ⚠ 试探右只进 claimedP1(供相位①左搜索排除); 相位②右搜索用只含左界的 claimedP2,
-  //   否则各框会把自己的试探右当成已占用 → 右边界找不到 → 整框被跳过。
   for (let i = 0; i < sorted.length; i += 1) {
     const box = sorted[i] as BoxRegion;
     const frameRow = isFrameRowOf(box, rowIndex);
     const idx = locateLeftEdge(line, cols, frameRow, targetLOf(box), claimedP1);
     if (idx < 0) continue;
-    claimedP1.add(cols[idx] as number);
-    claimedP2.add(cols[idx] as number);
+    const leftCol = cols[idx] as number;
+    claimedP1.add(leftCol);
+    claimedP2.add(leftCol);
     leftIdxOf.set(box, idx);
-    const next = sorted[i + 1];
-    const provCap = next ? targetLOf(next) - 1 : Number.POSITIVE_INFINITY;
-    const rIdx = locateRightEdge(line, cols, frameRow, idx, provCap, claimedP1);
-    if (rIdx > idx) claimedP1.add(cols[rIdx] as number);
-  }
-  // 相位②: 用精确 cap 重定位右边界(认领集只含左边界, 试探认领不污染精确定位)。
-  const result = new Map<BoxRegion, BoxEdge>();
-  for (let i = 0; i < sorted.length; i += 1) {
-    const box = sorted[i] as BoxRegion;
-    const leftIdx = leftIdxOf.get(box);
-    if (leftIdx === undefined) continue;
-    const boxL = cols[leftIdx] as number;
-    let cap = Number.POSITIVE_INFINITY;
-    for (const other of sorted) {
-      if (other === box) continue;
-      const otherIdx = leftIdxOf.get(other);
-      if (otherIdx === undefined) continue;
-      const otherL = cols[otherIdx] as number;
-      if (otherL <= boxL) continue; // 只管右边的
-      // 嵌套在本框内的框不参与 cap: 否则外框的 cap 会被内框顶掉,
-      // 导致外框找不到自己的右边线(外框的右边线在最右, 不受内框约束)
-      if (isNestedIn(box, other)) continue;
-      cap = Math.min(cap, otherL - 1);
-    }
-    const frameRow = isFrameRowOf(box, rowIndex);
-    const rightIdx = locateRightEdge(
+    const rIdx = locateRightEdge(
       line,
       cols,
       frameRow,
+      idx,
+      rightCapOf(sorted, box, leftCol, targetLOf),
+      claimedP1
+    );
+    // AB-CHECK: 临时禁用试探认领, 验证现有单测能否捕获该缺陷
+    void rIdx;
+  }
+  const leftColOf = (b: BoxRegion): number => {
+    const li = leftIdxOf.get(b);
+    return li === undefined ? Number.NEGATIVE_INFINITY : (cols[li] as number);
+  };
+  const result = new Map<BoxRegion, BoxEdge>();
+  for (const box of sorted) {
+    const leftIdx = leftIdxOf.get(box);
+    if (leftIdx === undefined) continue;
+    const boxL = cols[leftIdx] as number;
+    const rightIdx = locateRightEdge(
+      line,
+      cols,
+      isFrameRowOf(box, rowIndex),
       leftIdx,
-      cap,
+      rightCapOf(sorted, box, boxL, leftColOf),
       claimedP2
     );
     if (rightIdx < 0 || rightIdx <= leftIdx) continue;

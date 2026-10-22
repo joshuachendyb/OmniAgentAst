@@ -21,7 +21,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "check": "npm run lint && npm run format:check",
-    "check:full": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run lint:e2e && npm run format:check"
+    "check:full": "npm run typecheck && npm run typecheck:e2e && npm run lint && npm run lint:e2e && npm run format:check",
+    "arch:check": "node scripts/arch-check.mjs",
+    "arch:check:strict": "node scripts/arch-check.mjs --strict"
   },
   "dependencies": {
     "antd": "^5.12.0",
