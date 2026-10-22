@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 // 编辑历史: 2026-10-22 小欧 - 新建：前端架构审计（分层/单一真源守卫）— 小欧-2026-10-22
+//   2026-10-22 小欧 - 红线取证（G1a 四选一漏检）：原 G1a/G1b/G1c 只做 spec 字面匹配，
+//     本仓 import 风格混用（相对 ../ 398 处 vs 别名 @/ 114 处），跨域引用写成相对路径时
+//     features/chat → ../files/… 判 0 处、写成 @/features/files/… 才判 1 处 → 整类漏检。
+//     加 resolveSpec 把 @/ 别名与 ../ 相对路径归一成 src 相对路径后再判定 — 小欧-2026-10-22
 /**
  * arch-check —— 前端架构审计（文档[43] 的可执行守卫）
  *
@@ -39,6 +43,36 @@ const PAGE_DOMAIN = {
 /** 归属查表统一走小写（Windows 大小写不敏感，路径登记不应因大小写失配） */
 const ownDomainOf = (rel) => PAGE_DOMAIN[rel.toLowerCase()] ?? null;
 
+/**
+ * 把 import spec 归一成 src 相对路径（消除 @/ 别名与 ../ 相对路径的写法差异）。
+ *
+ * 为什么必须做：本仓两种写法混用，且**相对写法占多数**。原规则直接对 spec 做字面
+ *   `features/…` 匹配 → 相对写法跨不上（features/chat 里写 ../files/… 不含 features 段），
+ *   导致一整类跨域引用被判 0 处。这是"正则写对但匹配面漏了"的守卫失效，比正则写错更隐蔽。
+ * 返回 null = 裸模块名（react / antd），不参与路径判定。
+ */
+const resolveSpec = (rel, spec) => {
+  let segs;
+  if (spec.startsWith('@/')) segs = spec.slice(2).split('/');
+  else if (spec.startsWith('./') || spec.startsWith('../'))
+    segs = rel.split('/').slice(0, -1).concat(spec.split('/'));
+  else return null;
+
+  const out = [];
+  for (const seg of segs) {
+    if (seg === '' || seg === '.') continue;
+    if (seg === '..') {
+      out.pop();
+      continue;
+    }
+    out.push(seg);
+  }
+  // 目录导入（无扩展名）补 /index，保证后续 "features/X/" 形式的匹配一致命中
+  return /\.[a-z]+$/i.test(out[out.length - 1] ?? '')
+    ? out.join('/')
+    : `${out.join('/')}/index`;
+};
+
 const RULES = [
   {
     id: 'G1a',
@@ -47,8 +81,10 @@ const RULES = [
       const m = line.match(/from\s+['"]([^'"]+)['"]/);
       if (!m) return null;
       const spec = m[1];
+      const abs = resolveSpec(rel, spec);
+      if (!abs) return null;
       const inFeature = rel.match(/^features\/([^/]+)\//);
-      const target = spec.match(/features\/([^/]+)\//);
+      const target = abs.match(/^features\/([^/]+)\//);
       if (!inFeature || !target) return null;
       if (inFeature[1] === target[1]) return null;
       // 2026-10-22 小欧 - features/refs 是共享域（文档[43] §3.2），chat 与 files 都可依赖它
@@ -67,7 +103,9 @@ const RULES = [
       if (/^\s*import\s+type\b/.test(line)) return null;
       const m = line.match(/from\s+['"]([^'"]+)['"]/);
       if (!m) return null;
-      if (!/features\/[^/]+\//.test(m[1])) return null;
+      const abs = resolveSpec(rel, m[1]);
+      if (!abs) return null;
+      if (!/^features\/[^/]+\//.test(abs)) return null;
       return `共享层依赖域：${m[1]}（${rel} 属共享层，不得依赖具体域）`;
     },
     exempt: () => false,
@@ -81,9 +119,11 @@ const RULES = [
       const m = line.match(/from\s+['"]([^'"]+)['"]/);
       if (!m) return null;
       const spec = m[1];
-      const target = spec.match(/features\/([^/]+)\//);
+      const abs = resolveSpec(rel, spec);
+      if (!abs) return null;
+      const target = abs.match(/^features\/([^/]+)\//);
       if (!target) return null;
-      if (!/features\/[^/]+\/(streams|services)\//.test(spec)) return null; // 私有实现目录
+      if (!/^features\/[^/]+\/(streams|services)\//.test(abs)) return null; // 私有实现目录
       if (target[1] === own) return null; // 本域页面用本域实现，合法
       return `页面跨域依赖私有实现：${spec}（${own ?? '未登记域'} → ${target[1]}）`;
     },
