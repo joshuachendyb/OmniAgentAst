@@ -10,6 +10,8 @@
 // [63] 5.1：StreamBackup / SessionSnapshot / StreamEvent 唯一定义处（5.4 内存态与 5.2 备份态同源）
 // 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.15: StreamBackup lastContextLinkMode 改名 linkEnabled: boolean
 //   (保留持久化, 非删除) — 小欧-2026-10-03
+// 2026-10-22 小欧 - SentRefLedgerEntry 类型自 chatStreamStore 迁入（备份类型单一真源），
+//   sentRefLedger 入 SessionSnapshot → 随 StreamBackup 落盘 + bump 响应式通知 — 小欧-2026-10-22
 import type { ExecutionStep } from '@/types/execution';
 // 2026-09-29 小欧: 原稿此 import 有两处笔误，本实现按 TS 编译事实修正——
 //   ① TaskMetaFrames 重复 import 两次（文档 v1.29 修订时追加未删旧行）；② SSEError 使用却未 import。
@@ -56,6 +58,23 @@ export type ResumeResult =
   | 'gap'
   | 'degraded';
 
+/**
+ * 引用台账条目
+ *
+ * ⚠ **只存路径不存正文**：正文当轮即弃，路径长期有效；
+ *   点台账 chip 时现场重读文件 —— 恢复的是"引用意图"，不是旧快照。
+ *
+ * 2026-10-22 小欧 - 类型自 chatStreamStore 迁入本文件（备份类型单一真源），
+ *   迁入后随 SessionSnapshot → StreamBackup 一并落盘，恢复侧展开式零改动。
+ */
+export interface SentRefLedgerEntry {
+  label: string;
+  path: string;
+  lineRange?: { start: number; end: number };
+  taskId: string;
+  ts: number;
+}
+
 export interface SessionSnapshot {
   serverTaskId: string | null;
   lastSeq: number; // event_log 已处理偏移，初始 -1
@@ -76,6 +95,16 @@ export interface SessionSnapshot {
    * 心跳是"UI 需要跟着动"的状态，故入快照：心跳到达即 bump revision + 通知订阅者。
    */
   heartbeatTs: number;
+  /**
+   * 引用台账：本会话引用过的文件清单（只存路径）。
+   *
+   * 2026-10-22 小欧 - 入快照有两作用 ——
+   *   ① **响应式**：pushSentRefs 后 bump 能比较出变化 → 订阅者重渲染
+   *      （原先台账不在快照内，变化不触发通知，"↩ 本轮引用"行可能不出现）；
+   *   ② **可落盘**：StreamBackup extends SessionSnapshot，入快照即随备份落盘，
+   *      刷新/崩溃后由 restore() 的展开式自动回填。
+   */
+  sentRefLedger: SentRefLedgerEntry[];
 }
 
 // v1.29 修：原 payload 为 ExecutionStep|string|Record 宽联合——消费方（5.8 分发）按 kind 读 payload

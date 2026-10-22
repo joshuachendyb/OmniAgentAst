@@ -16,6 +16,7 @@
 //     实测 ant-dropdown-menu 在 DOM 里但画面无菜单）— 小欧-2026-10-21
 //   2026-10-22 小欧 - 滚动定位（reveal prop）：页面命中路径后本组件在提交后 effect
 //     把该行滚入视口（子树内查询，不穿透全局 document）— 小欧-2026-10-22
+//   2026-10-22 小欧 - 双标记 ●/✎（读过/被改写过），writtenSet prop — 小欧-2026-10-22
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
@@ -37,6 +38,11 @@ export interface FilesTreeProps {
   checkedKeys: string[];
   /** recent-files 的 path 集合，命中标 ● */
   recentSet: Set<string>;
+  /**
+   * 本会话**被改写过**的文件集合，命中标 ✎
+   * ⚠ 与 recentSet（●=动过/读过）是两个集合：读只标 ●，写标 ●+✎。
+   */
+  writtenSet?: Set<string>;
   /** 展开集合由上层层唯一持有（深链定位与树点击共用同一真源） */
   expandedKeys: string[];
   /**
@@ -75,6 +81,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     activeKey,
     checkedKeys,
     recentSet,
+    writtenSet, // 2026-10-22 小欧 - 改写标记
     expandedKeys,
     reveal,
     onExpandedKeys,
@@ -279,6 +286,9 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           >
             {n.name}
             {recentSet.has(n.key) ? ' ●' : ''}
+            {/* 2026-10-22 小欧 - 改写标记 ✎
+                读过的文件有 ●，被改写过的额外有 ✎（用户最关心"我的文件被覆盖了吗"） */}
+            {writtenSet?.has(n.key) ? ' ✎' : ''}
           </span>
         </div>
         {isDir && isOpen && n.children?.map((c) => renderRow(c, depth + 1))}

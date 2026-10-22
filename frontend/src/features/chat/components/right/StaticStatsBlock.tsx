@@ -22,6 +22,7 @@
 //   fontSize11→FontSize.CAPTION×2 处; lineHeight 18/22px→字号+Spacing派生; gap8→MD; marginTop 6/4/2→SM/XS/XS/2 — 小欧-2026-09-15
 // 编辑历史: 2026-09-17 小欧 - 修改: 错误项英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled — 小欧-2026-09-17
 // 编辑历史: 2026-10-22 小欧 - 2 处硬编码 'monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
+// 2026-10-22 小欧 - 产出物路径改 FilePathLink 可点深链（原死文本须手抄路径）— 小欧-2026-10-22
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -51,6 +52,8 @@ import {
 } from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-10-22(补 FontFamily 收敛字体栈)
 import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 复用省略+Tooltip全文封装 — 小欧-2026-09-15
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复用折叠箭头组件 — 小欧-2026-09-15
+// 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
+import { FilePathLink } from '@/components/FilePathLink';
 
 // 2026-09-12 小欧 修复: 模块级样式常量, 消四处section容器+四处标题完全重复(DRY) — 小欧-2026-09-12
 const sectionStyle: React.CSSProperties = {
@@ -357,17 +360,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 >
                   {a.type}
                 </span>
-                <span
-                  style={{
-                    color: Colors.TEXT.PRIMARY,
-                    fontFamily: FontFamily.MONO,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}
-                >
-                  {a.path}
-                </span>
+                {/* 2026-10-22 小欧 - 路径 → 可点深链
+                    判界（根内/形态）在 FilePathLink 内统一处理，根外路径退化为纯文本 */}
+                <FilePathLink rawPath={a.path} text={a.path} />
               </div>
             ))
           ) : (

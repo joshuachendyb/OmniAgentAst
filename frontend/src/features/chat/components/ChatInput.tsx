@@ -30,9 +30,11 @@
 //   (结构化引用 chip，正文不再写 @label；@ 补全改为光标真实位置驱动 + 真防抖 + 键盘导航) — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 跨会话保留 + 发送用重读 refs（选区按行切片）+ @ 词边界与去重 + chip 新标签打开 — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 合并 useComposerRefs 到组件内（单消费者，删除空壳 hook）— 小杨-2026-10-21
-// 编辑历史: 2026-10-22 小欧 - 文档[43] R1：重建 useComposerRefs 共享 hook（文档[28] 虚报已补上），
+// 编辑历史: 2026-10-22 小欧 - 重建 useComposerRefs 共享 hook（文档[28] 虚报已补上），
 //   refs 状态从组件内 useState 迁入 hook；原 7 处 setRefs 调用点改写为 hook 方法
 //   （setAll/remove/removeWhere/clear/add）；删除 useSyncExternalStore/composerRefStore/mergeRefs 直接依赖 — 小欧-2026-10-22
+// 编辑历史: 2026-10-22 小欧 - 引用 chip 点击判 path 非空：上下文包 chip 无单一路径（path=''），
+//   原实现拼空路径深链点了跳空白页；改为空路径仅作展示不跳转 — 小欧-2026-10-22
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -45,12 +47,7 @@
  * @date 2026-08-26
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Space } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
 import { InputCore } from './input/InputCore';
@@ -61,7 +58,7 @@ import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - �
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
-// 2026-10-22 小欧 - 文档[43] R1/R3：共享 hook + 引用域归位
+// 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
 import { refreshRefs } from '@/features/refs/refresh';
 import { newRefId } from '@/features/refs/store';
@@ -117,8 +114,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
     useInputDraft(sessionId);
-  // 2026-10-22 小欧 - 文档[43] R1：引用状态封进共享 hook（订阅+消费+托管唯一点）
-  const { refs, pending: refsPending, remove, removeWhere, clear, add, setAll } = useComposerRefs();
+  // 2026-10-22 小欧 - 引用状态封进共享 hook（订阅+消费+托管唯一点）
+  const {
+    refs,
+    pending: refsPending,
+    remove,
+    removeWhere,
+    clear,
+    add,
+    setAll,
+  } = useComposerRefs();
   // 2026-10-21 小杨 - @ 补全状态
   const [atOpen, setAtOpen] = useState(false);
   const [atHits, setAtHits] = useState<SearchHit[]>([]);
@@ -255,7 +260,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
      */
     let refsToSend = refs;
     if (refs.length > 0) {
-      // 2026-10-22 小欧 - 文档[43] R6：校验与保鲜抽成唯一实现（可单测），行为不变
+      // 2026-10-22 小欧 - 校验与保鲜抽成唯一实现（可单测），行为不变
       const checked = await refreshRefs(refs);
       setAll(checked);
       refsToSend = checked;
@@ -544,12 +549,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 alignItems: 'center',
                 gap: 4,
               }}
-              onClick={() =>
+              onClick={() => {
+                // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
+                //   不跳文件页（否则点开一个空 path 的死链），仅作展示
+                if (!r.path) return;
                 window.open(
-                  buildFileDeepLink(r.path ?? '', r.lineRange ?? null),
+                  buildFileDeepLink(r.path, r.lineRange ?? null),
                   '_blank'
-                )
-              }
+                );
+              }}
             >
               <FileOutlined style={{ color: chatTokens.colorPrimary }} />
               {r.label}

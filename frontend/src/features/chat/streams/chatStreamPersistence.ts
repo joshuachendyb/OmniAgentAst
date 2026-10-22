@@ -11,6 +11,8 @@
 // 编辑历史: 2026-10-13 18:10 小欧 - 文档[30] §3: 草稿存储 sessionStorage → localStorage(前者关浏览器即销毁);
 //   保留期=跟随会话生命周期+7天孤儿兜底+50条上限(会话删则草稿删经 destroySession→saveDraft(sid,') 自动成立);
 //   值改 {t,ts} 并兼容旧纯字符串; 清理曾挂在每次按键上(全量扫描 localStorage), 已加 5 秒节流
+// 编辑历史: 2026-10-22 小欧 - legacyToBackup 补 sentRefLedger: []（台账入备份后成为必填字段，
+//   legacy 数据无台账，补空数组）— 小欧-2026-10-22
 // [63] 5.2：三窄接口 + 同文件辅助（isAnchorGroupIntact、saveDraft/loadDraft），
 //        不碰 Store 内部字段、不触发 SSE、不改 React 状态
 import type { StreamBackup } from './backupTypes';
@@ -74,6 +76,8 @@ function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
     isConnected: false,
     status: 'idle',
     pendingAuthorization: null,
+    // 2026-10-22 小欧 - legacy 备份无台账（新增必填字段，补空数组）
+    sentRefLedger: [],
   };
 }
 

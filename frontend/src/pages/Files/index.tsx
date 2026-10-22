@@ -13,9 +13,10 @@
 // 2026-10-22 小杨 - 深链路径归一（Windows 反斜杠与 ./ 前缀），否则按 posix 拆分定位必失败 — 小杨-2026-10-22
 // 2026-10-22 小欧 - 深链/定位命中后树滚动到定位行（reveal 信号 → FilesTree 提交后 effect 自滚，
 //   竞态根治）+ 窄屏深链目标是文件时自动切预览 Tab（与树点击对齐）— 小欧-2026-10-22
-// 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook（useFilesTree / useFileSelection），
+// 2026-10-22 小欧 - writtenSet（改写类 ops 判定，树标 ✎）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook（useFilesTree / useFileSelection），
 //   页面退化为布局壳；mergeKids / buildScanNotices 上提 utils/fileTree — 小欧-2026-10-22
-//   2026-10-22 小欧 - 文档[43] R7 补：onInsertRef 与 refSelectedFiles 各抄一遍「readFile→pushRef」
+//   2026-10-22 小欧 - onInsertRef 与 refSelectedFiles 各抄一遍「readFile→pushRef」
 //     抽为 readAndPush 管道；顺带修 pushRef 未 await 的真缺陷（fire-and-forward 导致批量 ok 计数
 //     早于投递完成→勾选残留、异常变 unhandled rejection）。失败文案仍归调用方（批量要能定位
 //     到具体哪个文件）——抽的是数据管道，保留的是场景语义（KISS-DIRECT）— 小欧-2026-10-22
@@ -56,18 +57,16 @@ import { sessionApi } from '@/services/api/session.api';
 import { toAbsolutePath, samePath } from '@/utils/projectPath';
 import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
-// 2026-10-22 小欧 - 文档[43] R3/R4：引用能力上提共享域；
+// 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
 import { quoteFile, quoteSelection } from '@/features/refs/quote';
 import { composerRefStore } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
+// 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
+import { isMutatedByOps } from '@/utils/fileOps';
 import { readStoredSessionId } from '@/utils/sessionStorage';
-import {
-  showMessage,
-  showSuccess,
-  ErrorType,
-} from '@/services/error/handler';
+import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { Spacing, Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
 // 2026-10-21 小杨 - 控件规格统一（北京老陈痛骂"全系统的规范忘记了"）：直接复用
@@ -77,7 +76,7 @@ import {
   SETTINGS_RADIUS,
 } from '@/theme/settingsTokens';
 
-// 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook
+// 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook
 import { useFilesTree } from '@/features/files/hooks/useFilesTree';
 import { useFileSelection } from '@/features/files/hooks/useFileSelection';
 
@@ -241,22 +240,38 @@ const FilesPage: React.FC = () => {
    *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
    */
   const [reveal, setReveal] = useState<{ key: string; n: number } | null>(null);
-  // 2026-10-22 小欧 - 文档[43] R4：订阅 store 队列计数（替代 collectedKeys 双真源）
+  // 2026-10-22 小欧 - 订阅 store 队列计数（替代 collectedKeys 双真源）
   const refCount = useSyncExternalStore(
     composerRefStore.subscribe,
     composerRefStore.getSnapshot,
     composerRefStore.getSnapshot
   );
 
-  // 2026-10-22 小欧 - 文档[43] R7：树状态机 + 选中状态收进域内 hook
+  // 2026-10-22 小欧 - 树状态机 + 选中状态收进域内 hook
   const {
-    tree, loadedKeys, setLoadedKeys,
-    expandedKeys, setExpandedKeys, scanNotices, treeReady, treeLoading, treeErr,
-    loadTree, loadDir, patchNodes, expandToPath,
+    tree,
+    loadedKeys,
+    setLoadedKeys,
+    expandedKeys,
+    setExpandedKeys,
+    scanNotices,
+    treeReady,
+    treeLoading,
+    treeErr,
+    loadTree,
+    loadDir,
+    patchNodes,
+    expandToPath,
   } = useFilesTree();
   const {
-    selected, setSelected, multiFiles, setMultiFiles,
-    lineRange, setLineRange, narrowTab, setNarrowTab,
+    selected,
+    setSelected,
+    multiFiles,
+    setMultiFiles,
+    lineRange,
+    setLineRange,
+    narrowTab,
+    setNarrowTab,
   } = useFileSelection();
 
   const refreshPreviewRef = useRef<(() => void) | null>(null);
@@ -267,6 +282,17 @@ const FilesPage: React.FC = () => {
     useRecentFiles(sessionId);
   const recentSet = useMemo(
     () => new Set(recentFiles.map((f) => f.path)),
+    [recentFiles]
+  );
+  /**
+   * 2026-10-22 小欧 - 被**改写**过的文件（ops 含改写类工具）
+   *   与 recentSet（●=动过）分开：读只标 ●，写标 ●+✎。
+   */
+  const writtenSet = useMemo(
+    () =>
+      new Set(
+        recentFiles.filter((f) => isMutatedByOps(f.ops)).map((f) => f.path)
+      ),
     [recentFiles]
   );
 
@@ -319,7 +345,8 @@ const FilesPage: React.FC = () => {
       if (isNarrow) setNarrowTab('preview');
       return true;
     },
-    [expandToPath, isNarrow]
+    // 2026-10-22 小欧 - 补 setSelected/setLineRange/setNarrowTab 依赖（setState 身份稳定，补入无副作用）
+    [expandToPath, isNarrow, setSelected, setLineRange, setNarrowTab]
   );
 
   /** 深链进入：?path=…&line=… */
@@ -413,7 +440,7 @@ const FilesPage: React.FC = () => {
    *   现改为**就地收集**：只入 store + 计数，页面不动；用户点「去对话」时一次带走。
    */
   /**
-   * 2026-10-22 小欧 - 文档[43] R4 v1.4：引用入口统一到 features/refs；
+   * 2026-10-22 小欧 - 引用入口统一到 features/refs；
    *   「已收集」不再由页面自记账（双真源）→ 直接读 store 队列计数；
    *   enqueueRef 已收为域内私有（不 export）→ 正文已在手时走 quote* 的 content/size 覆盖项。
    */
@@ -437,16 +464,19 @@ const FilesPage: React.FC = () => {
 
   /**
    * 读盘 → 投递引用（数据管道，唯一实现）。
-   * 2026-10-22 小欧 - 文档[43] R7 补：原 onInsertRef 与 refSelectedFiles 各抄一遍
+   * 2026-10-22 小欧 - 原 onInsertRef 与 refSelectedFiles 各抄一遍
    *   「readFile → pushRef」，且对 async pushRef **不 await**（fire-and-forget → 批量场景
    *   ok 计数早于投递完成、异常变 unhandled rejection）。抽管道后必须 await（不 await 即
    *   主动固化该缺陷）。**失败文案仍归调用方**：批量要能定位到具体哪个文件，单发不带名。
    *   —— 抽的是数据管道，保留的是场景语义（KISS-DIRECT）。— 小欧-2026-10-22
    */
-  const readAndPush = useCallback(async (n: FileNode): Promise<void> => {
-    const r = await fileApi.readFile(n.key);
-    await pushRef('file', n.name, n.key, r.content, r.size);
-  }, [pushRef]);
+  const readAndPush = useCallback(
+    async (n: FileNode): Promise<void> => {
+      const r = await fileApi.readFile(n.key);
+      await pushRef('file', n.name, n.key, r.content, r.size);
+    },
+    [pushRef]
+  );
 
   /** 去对话：此时才导航，ChatInput 挂载即消费 store 里的引用 */
   const goChat = useCallback(() => {
@@ -472,7 +502,8 @@ const FilesPage: React.FC = () => {
       })
     );
     if (ok.length === multiFiles.length) setMultiFiles([]);
-  }, [multiFiles, readAndPush]);
+    // 2026-10-22 小欧 - 补 setMultiFiles 依赖（setState 身份稳定，补入无副作用）
+  }, [multiFiles, readAndPush, setMultiFiles]);
 
   /** 工具条刷新：树 + 足迹 + 预览共用一次点击 */
   const refreshAll = useCallback(() => {
@@ -538,6 +569,7 @@ const FilesPage: React.FC = () => {
           reveal={reveal}
           checkedKeys={multiFiles.map((n) => n.key)}
           recentSet={recentSet}
+          writtenSet={writtenSet} // 2026-10-22 小欧
           expandedKeys={expandedKeys}
           onExpandedKeys={setExpandedKeys}
           loadedKeys={loadedKeys}

@@ -1,4 +1,6 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：recent-files 共享 hook（模块级缓存，三处共用） — 小杨-2026-10-21
+// 编辑历史: 2026-10-22 小欧 - 请求失败不再缓存空数组：原实现 catch 后仍 cache.set(空)，
+//   一次网络抖动即致足迹面板与树上 ● 集体空态至手动刷新；改为失败只删在途项，下次请求重试 — 小欧-2026-10-22
 /**
  * useRecentFiles —— `/files/recent-files` 的**唯一**取数入口（共享缓存）
  *
@@ -32,11 +34,20 @@ const load = (sessionId: string): Promise<RecentFile[]> => {
   if (hit) return hit.promise;
   const promise = fileApi
     .fetchRecentFiles(sessionId)
-    .catch(() => [] as RecentFile[]) // 404/失败 → 空态（静默降级）
     .then((files) => {
       cache.set(sessionId, { files, promise: Promise.resolve(files) });
       publish(sessionId, files);
       return files;
+    })
+    .catch(() => {
+      // 2026-10-22 小欧 - 失败**不缓存空**
+      //   原实现 .catch(()=>[]) 之后仍 cache.set(空数组) → 一次网络抖动后足迹面板与
+      //   树上 ● 集体空态直到手动刷新（本 hook 无自动失效）。改法：失败只删本次在途项
+      //   （cur.promise===promise 防误删 reload() 的新请求），下次调用重新请求。
+      const cur = cache.get(sessionId);
+      if (cur && cur.promise === promise) cache.delete(sessionId);
+      publish(sessionId, []);
+      return [] as RecentFile[];
     });
   cache.set(sessionId, { files: [], promise });
   return promise;

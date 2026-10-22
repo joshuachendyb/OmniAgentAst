@@ -57,6 +57,11 @@
 // 编辑历史: 2026-10-21 小杨 - 新增引用台账（每会话 ≤50 条，新者前，只存路径不存正文）+
 //   消息可带引用条目（refs 与消息同批上行） — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 台账改为 start 帧按真实 taskId 绑定（删空串/最新批次兜底） — 小杨-2026-10-21
+// 编辑历史: 2026-10-22 小欧 - 引用台账入快照并随备份落盘：
+//   ① EMPTY_SNAPSHOT/bump/SNAPSHOT_KEYS 补 sentRefLedger（台账变化能触发订阅者重渲染，
+//      否则"↩ 本轮引用"行可能不出现）；② toBackupOf 落盘 sentRefLedger（刷新/崩溃后仍在）；
+//   ③ restore 补 sentRefLedger ?? []（老备份无此字段时显式给空数组，避免 .filter 抛错）；
+//   ④ SentRefLedgerEntry 类型迁至 backupTypes（备份类型单一真源），此处 re-export 保持 import 路径不断 — 小欧-2026-10-22
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -66,6 +71,7 @@ import { emptyMetaFrames } from '@/types/sse'; // 值函数必须值 import（ty
 import type { ClockSignals } from '@/types/sse';
 import type {
   SessionSnapshot,
+  SentRefLedgerEntry, // 2026-10-22 小欧 - 类型自本地迁出 backupTypes，本地引用仍需 import
   StreamBackup,
   StreamEvent,
   StreamStatus,
@@ -156,6 +162,8 @@ const EMPTY_SNAPSHOT: SessionSnapshot = Object.freeze({
   reconnectStatus: 'idle' as const,
   // 2026-09-29 22:47:10 小欧 - 0 = 未收到心跳（与 ZERO_CLOCK 钟面恒 0 同口径）
   heartbeatTs: 0,
+  // 2026-10-22 小欧 - 引用台账入快照（响应式 + 可落盘）
+  sentRefLedger: [],
 });
 
 /** render 期零信号（无 session 不创建；钟面恒 0——真实 heartbeatTs 0=未收到） */
@@ -275,17 +283,10 @@ export interface SentRefInput {
 }
 
 /**
- * 引用台账条目（2026-10-21 小杨）
- * ⚠ **只存路径不存正文**：正文当轮即弃，路径长期有效；
- *   点台账 chip 时重新读取文件（恢复引用意图，不恢复旧快照）。
+ * 引用台账条目 —— 2026-10-22 小欧 - 类型已迁至 backupTypes.ts（备份类型单一真源），
+ *   此处 re-export 保持既有 import 路径不断（chatStreamStore 侧调用方零改动）。
  */
-export interface SentRefLedgerEntry {
-  label: string;
-  path: string;
-  lineRange?: { start: number; end: number };
-  taskId: string;
-  ts: number;
-}
+export type { SentRefLedgerEntry } from './backupTypes';
 
 /** 台账上限（每会话 50 条，新者前）— 小杨-2026-10-21 */
 const SENT_REF_LEDGER_LIMIT = 50;
@@ -414,6 +415,8 @@ function bump(s: ChatStreamSession): void {
     pendingAuthorization: s.pendingAuthorization,
     reconnectStatus: s.reconnectStatus,
     heartbeatTs: s.heartbeatTs,
+    // 2026-10-22 小欧 - 台账入快照（pushSentRefs 后能触发重渲染）
+    sentRefLedger: s.sentRefLedger,
   };
   if (shallowEqualSnapshot(s.snapshot, next)) return; // 快照内容未变：不 revision、不通知
   s.revision += 1;
@@ -434,6 +437,8 @@ const SNAPSHOT_KEYS: (keyof SessionSnapshot)[] = [
   'pendingAuthorization',
   'reconnectStatus',
   'heartbeatTs',
+  // 2026-10-22 小欧 - 台账入比较键（引用变化即视为快照变化）
+  'sentRefLedger',
 ];
 
 function shallowEqualSnapshot(a: SessionSnapshot, b: SessionSnapshot): boolean {
@@ -469,6 +474,9 @@ function toBackupOf(sessionId: string): StreamBackup {
     // 2026-10-01 小欧 - 钟面静默升档基线随备份落盘(刷新后不丢, 见 backupTypes 注释)
     lastBizTs: s.lastBizTs,
     lastDataTime: s.lastDataTime,
+    // 2026-10-22 小欧 - 引用台账随备份落盘（刷新/崩溃后仍在）；
+    //   只存路径不存正文；50 条上限由 pushSentRefs 保证，此处不再二次截断
+    sentRefLedger: [...s.sentRefLedger],
   };
 }
 
@@ -1259,6 +1267,9 @@ export const chatStreamStore = {
         //   若不重置则沿用内存现值，刷新后可能残留 reconnecting/failed 而 UI 一直显示"重连中"
         reconnectStatus: 'idle',
         hitlWaitingKeys: new Set(b.hitlWaitingKeys ?? []),
+        // 2026-10-22 小欧 - 老备份无台账字段 → 显式给空数组，
+        //   避免 getSentRefLedger 对 undefined 调 .filter 抛错（展开式恢复会把缺字段原样带入）
+        sentRefLedger: b.sentRefLedger ?? [],
       })
     );
     return 'ok';
