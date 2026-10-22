@@ -30,7 +30,7 @@
 //   (结构化引用 chip，正文不再写 @label；@ 补全改为光标真实位置驱动 + 真防抖 + 键盘导航) — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 跨会话保留 + 发送用重读 refs（选区按行切片）+ @ 词边界与去重 + chip 新标签打开 — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 合并 useComposerRefs 到组件内（单消费者，删除空壳 hook）— 小杨-2026-10-21
-// 编辑历史: 2026-10-22 小欧 - 重建 useComposerRefs 共享 hook（文档[28] 虚报已补上），
+// 编辑历史: 2026-10-22 小欧 - 重建 useComposerRefs 共享 hook（虚报已补上），
 //   refs 状态从组件内 useState 迁入 hook；原 7 处 setRefs 调用点改写为 hook 方法
 //   （setAll/remove/removeWhere/clear/add）；删除 useSyncExternalStore/composerRefStore/mergeRefs 直接依赖 — 小欧-2026-10-22
 // 编辑历史: 2026-10-22 小欧 - 引用 chip 点击判 path 非空：上下文包 chip 无单一路径（path=''），

@@ -1,7 +1,7 @@
 /**
- * SessionWorkspacePanel - 会话使用的目录面板（文档[16] §3.6.6）
+ * SessionWorkspacePanel - 会话使用的目录面板（）
  *
- * 编辑历史: 2026-10-10 小欧 - 新建（文档[16] §3.1 四条功能需求 + §3.5 UI 视觉规范）
+ * 编辑历史: 2026-10-10 小欧 - 新建（ 四条功能需求 +  UI 视觉规范）
  * 编辑历史: 2026-10-10 小欧 - 修4错：updater外弹框/删空二次确认按后果判/load失败降级/被拒留痕区
  * 编辑历史: 2026-10-10 小欧 - UI优化7项：只读区分行+图标+可复制、路径ellipsis、删除键Tooltip+text danger、
  *   留痕区改中性框、添加按钮只留图标、空态用 Empty、徽标0自动隐藏
@@ -59,14 +59,14 @@ export default function SessionWorkspacePanel({
   const [allowedDirs, setAllowedDirs] = useState<string[]>([]);
   const [input, setInput] = useState('');
   const [inputErr, setInputErr] = useState('');
-  // 2026-10-10 小欧: 被拒条目留痕（§3.1#3"提示"要能回看，toast 一闪而过不够）
+  // 2026-10-10 小欧: 被拒条目留痕（#3"提示"要能回看，toast 一闪而过不够）
   const [rejected, setRejected] = useState<{ path: string; reason: string }[]>(
     []
   );
   const [saving, setSaving] = useState(false);
 
   /** 打开即重拉（无暂存：关闭即丢，决策75作废 / 76修订）
-   *  ⚠ 失败必须降级为空列表并提示，不能让面板空白无反馈（§3.1#1 展示是基本要求） */
+   *  ⚠ 失败必须降级为空列表并提示，不能让面板空白无反馈（#1 展示是基本要求） */
   const load = async () => {
     try {
       const r = await sessionApi.getWorkspaces(sessionId);
@@ -322,7 +322,7 @@ export default function SessionWorkspacePanel({
         </Typography.Text>
       )}
 
-      {/* 被拒留痕（§3.1#3）：自动清除的条目在此可回看，不靠一闪而过的 toast
+      {/* 被拒留痕（#3）：自动清除的条目在此可回看，不靠一闪而过的 toast
           2026-10-10 小欧 UI优化：中性虚线框（colorBorder）降噪，标题行保留 colorError */}
       {rejected.length > 0 && (
         <div

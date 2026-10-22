@@ -1,6 +1,6 @@
 /* eslint-disable react/prop-types */
 // 编辑历史: 2026-08-26 小欧 - 参与改造: 错误详情组件(任务信息条错误展示)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
+// 编辑历史: 2026-08-27 小欧 - 修复: 引入formatSafeTimestamp; formatErrorType提顶层; 来源/上下文注释澄清
 // 编辑历史: 2026-08-27 小欧 - 修复chat-E: errorType 形如 network_error 需对齐配色键(network 等), 剥离 _error 后缀查表(BUG-E)
 // 编辑历史: 2026-08-28 小强 - 修复: errorContext.step=0误用真值, 改为!=null兼容0 - 小强-2026-08-28
 // 编辑历史: 2026-09-17 小欧 - 修改: 中文标签映射表导出并补 10 条(配额超限/响应超时/已取消/参数有误/服务繁忙/未知错误/服务暂不可用/调用出错/未知响应/智能体异常), 既有 10 条不动 — 小欧-2026-09-17
@@ -30,15 +30,15 @@ interface ErrorDetailProps {
   };
 }
 
-// ========== 错误类型格式化纯函数（模块顶层，2026-08-27 小欧 三堂会审） ==========
-// 2026-08-27 小欧 三堂会审: 提到模块顶层保持纯函数, 与上方常量同区, 便于复用与测试
+// ========== 错误类型格式化纯函数（模块顶层，2026-08-27 小欧 ） ==========
+// 2026-08-27 小欧 : 提到模块顶层保持纯函数, 与上方常量同区, 便于复用与测试
 // 2026-09-17 小欧 修改: formatErrorType/ERROR_TYPE_LABELS 导出供 PipelineRenderer/StaticStatsBlock 复用(DRY), 不另起映射表 — 小欧-2026-09-17
 export const formatErrorType = (type?: string): string => {
   return ERROR_TYPE_LABELS[type || ''] || type || '未知';
 };
 
 // ========== Step 2: 外部颜色配置常量 ==========
-// 2026-08-27 小欧 三堂会审B36: codeBackground纳入配置, 消除三元嵌套散落
+// 2026-08-27 小欧 B36: codeBackground纳入配置, 消除三元嵌套散落
 const ERROR_COLORS_MAP: Record<
   string,
   {
@@ -314,7 +314,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(
           )}
 
           {/* 来源 */}
-          {/* 2026-08-27 小欧 三堂会审: 顶层model/provider = 错误来源展示(顶层上下文) */}
+          {/* 2026-08-27 小欧 : 顶层model/provider = 错误来源展示(顶层上下文) */}
           {(model || provider) && (
             <div
               style={{
@@ -342,7 +342,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = memo(
               {errorContext.step != null && (
                 <div style={contentBoxStyle}>步骤: {errorContext.step}</div>
               )}
-              {/* 2026-08-27 小欧 三堂会审: errorContext.model/provider = 出错步骤内的上下文(非顶层来源) */}
+              {/* 2026-08-27 小欧 : errorContext.model/provider = 出错步骤内的上下文(非顶层来源) */}
               {errorContext.model && (
                 <div style={contentBoxStyle}>模型: {errorContext.model}</div>
               )}

@@ -2,14 +2,14 @@
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 新增 SessionModelOverride 接口; HistoryLoadResult model_override→sessionModel
 // 编辑历史: 2026-08-22 小欧 - model结构化归一: SessionModelOverride 补 api_base
 // 编辑历史: 2026-08-26 小欧 - 8.4.7 移除安全校验旧字段、ActionToolMessage→ActionMessage、新增 StartInfoMessage/StartMessage.content
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 新增ModelListItem接口(模型列表项结构)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从./execution(断类型环)
+// 编辑历史: 2026-08-27 小欧 - 修复: 新增ModelListItem接口(模型列表项结构)
+// 编辑历史: 2026-08-27 小欧 - 8.6: ExecutionStep导入改从./execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 修复base-4: 补isStartInfoMessage守卫并将StartInfoMessage纳入StreamMessage联合
 // 编辑历史: 2026-09-01 小欧 - prettier格式统一: 修复函数签名多行→单行(行长度超80字符), 防止格式再次出错
 // 编辑历史: 2026-09-07 小欧 - 4.4.1旧case清零: 删StatusValue/StatusMessage的cancelled分支与isStatusMessage的cancelled判断(取消收尾单一由final+cancelled承担)
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.6: HistoryLoadResult 补 linkEnabled(会话 link 开关镜像);
+// 编辑历史: 2026-10-03 小欧 - HistoryLoadResult 补 linkEnabled(会话 link 开关镜像);
 //   ChatRequest 删死字段 context_link_mode(后端 5.7.9 已删该请求字段) 并补 link_enabled(随消息携带的新契约字段) — 小欧-2026-10-03
-// 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.2/§3.6.6: 新增 WorkspaceEntry / UnusableEntry / WorkspacesResponse 三类型（会话使用的目录；不进 SendOpts，前端不携带只调 GET/PATCH）
+// 编辑历史: 2026-10-10 小欧 - /: 新增 WorkspaceEntry / UnusableEntry / WorkspacesResponse 三类型（会话使用的目录；不进 SendOpts，前端不携带只调 GET/PATCH）
 // 编辑历史: 2026-10-21 小杨 - 新增 ChatRefPayload（引用条目随消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
 /**
  * 流式API响应类型定义
@@ -85,7 +85,7 @@ export interface ActionMessage {
 }
 
 /**
- * 2026-10-04 小欧 文档[8]§4.1.4 死契约清理(禁 backward, 不留兼容壳): 删 ObservationData 与 ObservationMessage ——
+ * 2026-10-04 小欧  死契约清理(禁 backward, 不留兼容壳): 删 ObservationData 与 ObservationMessage ——
  *   二者描述的是后端 08-18 之前的旧 observation 消息契约(parallel_results/tool_params/return_direct/
  *   execution_status 等键后端从不下发), 全仓零生产消费(仅本文件 StreamMessage 联合成员 + 一个无人调用的
  *   类型守卫 isObservationMessage); 现行契约由 sseParser 解析进 ExecutionStep, 载体是 tool_result 数组。
@@ -258,7 +258,7 @@ export interface ChatRequest {
   session_id?: string;
   // 会话 link 开关值随消息携带(后端新增契约字段)。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
   link_enabled?: boolean;
-  allow_interject?: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.3: 请求体随消息携带(后端唯一写入口)
+  allow_interject?: boolean; // 2026-10-06 小欧 - 请求体随消息携带(后端唯一写入口)
   // 2026-10-21 小杨 - 引用条目随消息同批上行（搭便车，不单独上传）。
   //   后端 models.py 的 ChatRef 与本类型一一对应；正文当轮即弃，不入库。
   refs?: ChatRefPayload[];
@@ -345,7 +345,7 @@ export interface SessionModelOverride {
   display_name?: string;
 }
 
-// 2026-08-27 小欧 三堂会审: 模型列表项结构, 与后端/config/models返回对齐
+// 2026-08-27 小欧 : 模型列表项结构, 与后端/config/models返回对齐
 export interface ModelListItem {
   provider: string;
   model: string;
@@ -364,11 +364,11 @@ export interface HistoryLoadResult {
   sessionModel?: SessionModelOverride | null;
   // 会话级 link 开关镜像(后端真源, 随会话加载下发)
   linkEnabled?: boolean;
-  allowInterject?: boolean; // 2026-10-06 小欧 - 文档[11] 3.4.6: 历史读取结果镜像
+  allowInterject?: boolean; // 2026-10-06 小欧 - 历史读取结果镜像
 }
 
 /**
- * 发送选项（对象参数 — 文档[11] 决策 14: 两个相邻 boolean 位置参数 TS 拦不住错位；
+ * 发送选项（对象参数 — 决策 14: 两个相邻 boolean 位置参数 TS 拦不住错位；
  * 集中单点定义，消费方 import，不散在各处写字面量（DRY）。
  */
 export interface SendOpts {
@@ -383,7 +383,7 @@ export interface SendOpts {
 
 /**
  * 会话使用的目录（后端 chat_session_workspaces 表）
- * 2026-10-10 小欧 - 文档[16] §3.6.2 新增
+ * 2026-10-10 小欧 -  新增
  * ⚠ 不进 SendOpts：前端不携带目录列表，只调 GET/PATCH 端点（独立端点，决策77简化）
  */
 export interface WorkspaceEntry {
@@ -392,7 +392,7 @@ export interface WorkspaceEntry {
 
 /**
  * 不可用目录（禁区/非法/非目录），后端 classify_workspace_rows 判定
- * 2026-10-10 小欧 - 文档[16] §3.6.2 新增
+ * 2026-10-10 小欧 -  新增
  * kind 与后端 unusable 项的机器可读分类一一对应（reconcile 按 kind 行事）
  */
 export interface UnusableEntry {
@@ -403,7 +403,7 @@ export interface UnusableEntry {
 
 /**
  * GET /sessions/{id}/workspaces 响应
- * 2026-10-10 小欧 - 文档[16] §3.6.1/3.6.6
+ * 2026-10-10 小欧 - /3.6.6
  * project_root/allowed_dirs 为只读字段（决策82），只展示不提交
  */
 export interface WorkspacesResponse {

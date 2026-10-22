@@ -91,7 +91,7 @@ const MarkdownSlot: React.FC<MarkdownSlotProps> = ({
     [deferredSafe]
   );
   if (!markdown) return <>{text}</>;
-  // 2026-10-06 小欧(三堂会审 #5): MD_IMPL=1 的 MarkdownBody 根本不解析表格(无表格支持),
+  // 2026-10-06 小欧( #5): MD_IMPL=1 的 MarkdownBody 根本不解析表格(无表格支持),
   //   fixedTable 在该分支无处可施。此前无任何说明, 切 MD_IMPL 会让调用方以为生效了。
   //   现于此处标注该分支的局限, 避免"静默失效"。
   if (MD_IMPL === 1) return <MarkdownBody text={artText} />;

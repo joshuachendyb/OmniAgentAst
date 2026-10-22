@@ -6,9 +6,9 @@
 //   b.pendingMessage === null` 改为"按已发/待发区分"（sent = pendingMessage 非 null 且 state !== 'queued'
 //   时才要求 taskId 非空）。原判据在"待发草稿落盘"窗口（sendMessage 先 commit pendingMessage.state='queued'
 //   + persistNow，而 start 帧尚未到达、taskId 仍是上一任务旧值或 null）会整份判废 → 待发草稿与已发意图全丢 — 小欧-2026-10-01
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.16: legacyToBackup lastContextLinkMode 改名 linkEnabled
+// 编辑历史: 2026-10-03 小欧 - legacyToBackup lastContextLinkMode 改名 linkEnabled
 //   (与 backupTypes 同步) — 小欧-2026-10-03
-// 编辑历史: 2026-10-13 18:10 小欧 - 文档[30] §3: 草稿存储 sessionStorage → localStorage(前者关浏览器即销毁);
+// 编辑历史: 2026-10-13 18:10 小欧 - : 草稿存储 sessionStorage → localStorage(前者关浏览器即销毁);
 //   保留期=跟随会话生命周期+7天孤儿兜底+50条上限(会话删则草稿删经 destroySession→saveDraft(sid,') 自动成立);
 //   值改 {t,ts} 并兼容旧纯字符串; 清理曾挂在每次按键上(全量扫描 localStorage), 已加 5 秒节流
 // 编辑历史: 2026-10-22 小欧 - legacyToBackup 补 sentRefLedger: []（台账入备份后成为必填字段，
@@ -64,7 +64,7 @@ function legacyToBackup(sessionId: string, parsed: unknown): StreamBackup {
     hitlWaitingKeys: [],
     pendingMessage: null,
     linkEnabled: false,
-    allowInterject: false, // 2026-10-07 小欧 - 文档[11] 3.5.6: legacy 迁移默认
+    allowInterject: false, // 2026-10-07 小欧 - legacy 迁移默认
     updatedAt: Date.now(),
     // 2026-09-29 22:47:10 小欧 [63] 5.6：legacy 数据无心跳信息，按"未收到"给 0
     heartbeatTs: 0,
@@ -129,7 +129,7 @@ export function remove(sessionId: string): void {
 /**
  * 输入草稿 per-session 持久化：视图卸载不丢草稿，与流快照 key 分离
  *
- * 2026-10-13 18:10 小欧 - 文档[30] §3: sessionStorage → localStorage。
+ * 2026-10-13 18:10 小欧 - : sessionStorage → localStorage。
  *   病根: sessionStorage 按浏览器会话隔离, 关掉标签页/浏览器即整体销毁 —— 草稿全丢。
  *   改 localStorage 后, 关浏览器/崩溃/换标签页都能恢复。
  *   保留期策略(北京老陈定案「C」): 跟随会话生命周期 + 7 天孤儿兜底

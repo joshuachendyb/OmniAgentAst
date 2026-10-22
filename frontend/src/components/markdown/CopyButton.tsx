@@ -3,7 +3,7 @@
 //   本文件内容逐字未改, 仅换目录。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-05 小欧 - 新增: 代码块右上角"复制"小按钮共用组件(老陈指令)。
 //   原MarkdownText的PreBlock与MarkdownBody各写了一份同款逻辑(violation: DRY重复), 抽为单一来源 — 小欧-2026-10-05
-// 编辑历史: 2026-10-13 小欧 - 文档[29]§3.5.1/D-9: 新增可选 prop inline?: boolean(默认 false, 禁 backward):
+// 编辑历史: 2026-10-13 小欧 - /D-9: 新增可选 prop inline?: boolean(默认 false, 禁 backward):
 //   默认 false 时 position/top/right 原样保留, 既有 2 处调用(MarkdownText.tsx:384 / MarkdownBody.tsx:144)行为零变化;
 //   true 时取消绝对定位, 供浮层面板头等常规流内位置使用(否则按钮脱离文档流压住标题) — 小欧-2026-10-13
 import React, { useState } from 'react';
@@ -13,7 +13,7 @@ interface CopyButtonProps {
   /** 点击复制的原文(必须由调用方保证不含按钮自身的文本) */
   text: string;
   /**
-   * 2026-10-13 小欧 - 文档[29]§3.5.1: 行内模式(浮层面板头)。默认 false 保持绝对定位
+   * 2026-10-13 小欧 - : 行内模式(浮层面板头)。默认 false 保持绝对定位
    * (代码块右上角用法); true 时取消绝对定位, 用于面板头等常规流内位置。
    * 既有 2 处调用零变化(禁 backward: MarkdownText.tsx:384 / MarkdownBody.tsx:144)。
    */
@@ -38,7 +38,7 @@ const CopyButton: React.FC<CopyButtonProps> = ({ text, inline = false }) => {
       onClick={onCopy}
       aria-label={copied ? '已复制' : '复制代码'}
       style={{
-        // 2026-10-13 小欧 - 文档[29]§3.5.1: 定位按 inline 分支, 避免面板头内脱离文档流压住标题
+        // 2026-10-13 小欧 - : 定位按 inline 分支, 避免面板头内脱离文档流压住标题
         ...(inline
           ? {}
           : {

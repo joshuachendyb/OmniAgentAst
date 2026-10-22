@@ -1,8 +1,8 @@
 // 编辑历史: 2026-07-16 小欧 - parseMessage 解析 thought 字段
 // 编辑历史: 2026-08-22 小欧 - sessionModel 结构化: 两返回点字段 model_override→sessionModel
-// 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep改从types/execution导入; 删execution_steps camel兼容分支(后端仅发snake); 删装饰性console.log
+// 编辑历史: 2026-08-27 小欧 - 8.6: ExecutionStep改从types/execution导入; 删execution_steps camel兼容分支(后端仅发snake); 删装饰性console.log
 // 编辑历史: 2026-09-30 14:30 小欧 - 查会话改判 404 返回 null 其余冒泡（原吞异常致"不存在"与"取不到"不可区分）；debounce 加 flush()
-// 编辑历史: 2026-10-03 小欧 - 文档[4] 5.8.5 + 5.10.3(a)(a′): ①两个后端返回点(空会话/有消息)补
+// 编辑历史: 2026-10-03 小欧 - + 5.10.3(a)(a′): ①两个后端返回点(空会话/有消息)补
 //   linkEnabled(源 sessionData.link_enabled); ②缓存读侧返回补 linkEnabled: state.linkEnabled === true
 //   (生产构建命中缓存即 return, 不补则镜像恒 false —— dev 因 DEBUG_LOAD_FROM_API 短路不可达, 故 dev 全绿 prod 假绿);
 //   ③写入点 saveSessionToCache 补 linkEnabled(3 处写入点中的第 1 处)。 — 小欧-2026-10-03
@@ -68,7 +68,7 @@ export interface ChatCacheState {
   isReceiving?: boolean;
   /** 会话 link 续聊开关(2026-10-03 补) */
   linkEnabled?: boolean;
-  allowInterject?: boolean; // 2026-10-07 小欧 - 文档[11] 3.5.6: 插话开关镜像
+  allowInterject?: boolean; // 2026-10-07 小欧 - 插话开关镜像
   /** 乐观锁版本号(读侧回填 sessionVersion, 缺则调用方回落 1) */
   sessionVersion?: number;
   /**
@@ -162,7 +162,7 @@ export const debounce = <T extends (...args: Parameters<T>) => void>(
  */
 export const parseMessage = (rawMessage: unknown): Message => {
   const msg = rawMessage as Record<string, unknown>;
-  // 2026-08-27 小欧 三堂会审: 后端仅发 snake_case execution_steps(ApiMessage.execution_steps), 删 camel 兼容分支
+  // 2026-08-27 小欧 : 后端仅发 snake_case execution_steps(ApiMessage.execution_steps), 删 camel 兼容分支
   let executionSteps: ExecutionStep[] = [];
   if (msg.execution_steps && Array.isArray(msg.execution_steps)) {
     executionSteps = msg.execution_steps as ExecutionStep[];
@@ -226,7 +226,7 @@ export const loadHistoryMessages = async (
             //   否则刷新命中缓存后选择器拿不到覆盖值而显示"跟随全局"(老陈 2026-10-05 报)
             sessionModel: state.sessionModel ?? null,
             linkEnabled: state.linkEnabled === true,
-            allowInterject: state.allowInterject === true, // 2026-10-07 小欧 - 文档[11] 3.5.6: 写入点②(读侧还原)
+            allowInterject: state.allowInterject === true, // 2026-10-07 小欧 - 写入点②(读侧还原)
           };
         }
       }
@@ -247,7 +247,7 @@ export const loadHistoryMessages = async (
           title_locked: sessionData.title_locked, // 2026-08-27 小欧 修复#34: 空会话分支补title_locked(与有消息分支结构对齐)
           sessionModel: sessionData.sessionModel ?? null,
           linkEnabled: sessionData.link_enabled ?? false,
-          allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.6(空会话分支)
+          allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - (空会话分支)
         };
       }
       return null;
@@ -267,7 +267,7 @@ export const loadHistoryMessages = async (
       title_locked: sessionData.title_locked,
       sessionModel: sessionData.sessionModel ?? null,
       linkEnabled: sessionData.link_enabled ?? false,
-      allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - 文档[11] 3.5.6(有消息分支)
+      allowInterject: sessionData.allow_interject ?? false, // 2026-10-07 小欧 - (有消息分支)
     };
   } catch (error) {
     // 2026-09-30 小欧 - null 语义收窄为"确实不存在"（仅 404）。原 catch 吞全部异常统一
@@ -313,7 +313,7 @@ export const saveSessionToCache = (
   messages: Message[],
   sessionTitle: string,
   linkEnabled: boolean = false,
-  allowInterject: boolean = false, // 2026-10-07 小欧 - 文档[11] 3.5.6
+  allowInterject: boolean = false, // 2026-10-07 小欧 -
   sessionModel?: SessionModelOverride | null,
   sessionVersion?: number
 ): void => {
@@ -327,7 +327,7 @@ export const saveSessionToCache = (
         messages,
         sessionTitle,
         linkEnabled,
-        allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.6: 写入点①
+        allowInterject, // 2026-10-07 小欧 - 写入点①
         sessionModel: sessionModel ?? null,
         sessionVersion,
         timestamp: Date.now(),

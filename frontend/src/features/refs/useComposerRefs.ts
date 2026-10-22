@@ -4,7 +4,7 @@
  *
  * 存在理由：
  * - ChatInput 常驻不卸载，同路由仅 query 变化时 React 不重挂载 → "挂载时取一次"
- *   的写法会静默丢引用（文档[28] M21）。故必须订阅外部 store。
+ *   的写法会静默丢引用（M21）。故必须订阅外部 store。
  * - 本 hook 是唯一消费端（takeAll + merge 的实现只此一处），
  *   任何第二个消费方（引用历史面板、待发引用预览）都应复用本 hook，不再自写订阅。
  *
@@ -14,11 +14,7 @@
  * - 发送成功由调用方清（refs 保留在 store 台账里是另一件事，见 chatStreamStore.pushSentRefs）。
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import {
-  composerRefStore,
-  mergeRefs,
-  type ComposerRef,
-} from './store';
+import { composerRefStore, mergeRefs, type ComposerRef } from './store';
 
 export interface UseComposerRefsResult {
   /** 当前待发引用 */

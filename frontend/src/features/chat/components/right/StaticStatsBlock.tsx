@@ -1,7 +1,7 @@
 // 编辑历史: 2026-08-26 小欧 - 8.5 实施: 任务结束静态统计块7项+token终值, 历史C1/当前final_stats(4.5.1)
 // 编辑历史: 2026-08-27 小欧 - 修复#8: 工具汇总空对象{}时显'-'而非空白(实测失败用例转绿)
-// 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.2 抽STATUS_COLOR_MAP查表替嵌套三元
-// 编辑历史: 2026-08-27 小欧 - 三堂会审去框/边距: 去卡片双框留上分割线(borderTop#f0f0f0,去#fafafa+radius+padding覆盖), marginTop8→12 paddingTop8→padding12, 仅留终止语义锚点
+// 编辑历史: 2026-08-27 小欧 - 修复: 8.4.2 抽STATUS_COLOR_MAP查表替嵌套三元
+// 编辑历史: 2026-08-27 小欧 - 去框/边距: 去卡片双框留上分割线(borderTop#f0f0f0,去#fafafa+radius+padding覆盖), marginTop8→12 paddingTop8→padding12, 仅留终止语义锚点
 // 编辑历史: 2026-08-27 小欧 - 修复chat-H: accumulated_usage 空对象{}时 token 字段缺失显'-'而非 undefined
 // 编辑历史: 2026-08-28 小强 - 修复: token字段缺失显undefined, 用?? '-'兜底 - 小强-2026-08-28
 // 编辑历史: 2026-08-30 小欧 - 修复工具汇总null×4: 工具汇总过滤tool_name为null的条目(根因: SQL取错key致全归null); 删除步骤/轮次行(TaskInfoBar已展示)
@@ -13,8 +13,8 @@
 // 编辑历史: 2026-09-02 小欧 - 整个板块可折叠(北京老陈定案): 默认折叠只显标题行(任务统计+Tag+运行时间+▼), 点击展开显示完整统计内容; 与内层工具调用链折叠独立互不影响
 // 编辑历史: 2026-09-11 小欧 - DB滞后兜底: detail.status为executing但有duration(>0)或updated_at时覆盖为completed, 防SSE final后DB未及时更新致状态残留 - 小欧-2026-09-11
 // 编辑历史: 2026-09-11 小欧 - M3c(标题行析出+折叠状态提升): 标题行(title 段)析出至 TitleBlock, 折叠状态提升父级受控; finalStats 帧复合兜底(tool_stats/artifacts/llm/步数), DB 失败也渲染折叠区 — 小欧-2026-09-11
-// 编辑历史: 2026-09-11 小欧 - 三堂会审修复: fmtTime块体补return(原缺return恒返undefined TS2322×2); props复用TokenLayer消重复私有形状(DRY), import TokenLayer — 小欧-2026-09-11
-// 编辑历史: 2026-09-12 小欧 - 三堂会审修复: 抽sectionStyle/sectionTitleStyle模块级常量消4处容器+4处标题重复(DRY); 全部硬编码灰阶收敛至Colors.TEXT三档, fontSize:12收敛至FontSize.SECONDARY(复用优先) — 小欧-2026-09-12
+// 编辑历史: 2026-09-11 小欧 - 修复: fmtTime块体补return(原缺return恒返undefined TS2322×2); props复用TokenLayer消重复私有形状(DRY), import TokenLayer — 小欧-2026-09-11
+// 编辑历史: 2026-09-12 小欧 - 修复: 抽sectionStyle/sectionTitleStyle模块级常量消4处容器+4处标题重复(DRY); 全部硬编码灰阶收敛至Colors.TEXT三档, fontSize:12收敛至FontSize.SECONDARY(复用优先) — 小欧-2026-09-12
 // 编辑历史: 2026-09-15 小欧 - 第一阶段: S6错误警示条#fff1f0/#ffa39e→Colors.ERROR_BG/ERROR_BORDER;
 //   S7二级折叠▲▼→CircleArrow(20px 静止animated=false, 复用组件); A1/A2参数slice(0,80)硬截→省略号+复用EllipsisTip悬停全文 — 小欧-2026-09-15
 // 编辑历史: 2026-09-15 小欧 - 历史补记(工作区已落地改动核查补齐): 全板块间距/字号令牌化收敛——
@@ -49,7 +49,7 @@ import {
   Spacing,
   formatTokenFull,
   type TokenLayer,
-} from '@/utils/stepStyles'; // 2026-09-11 小欧 三堂会审修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-10-22(补 FontFamily 收敛字体栈)
+} from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-10-22(补 FontFamily 收敛字体栈)
 import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 复用省略+Tooltip全文封装 — 小欧-2026-09-15
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复用折叠箭头组件 — 小欧-2026-09-15
 // 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
@@ -74,7 +74,7 @@ interface StaticStatsProps {
   chainSteps?: ExecutionStep[];
   // 小欧 2026-09-11 M3c(final_stats帧复合兜底): final_stats 帧复合兜底——DB 缺失/失败时折叠区字段不空(三者复合) — 小欧-2026-09-11
   finalStats?: FinalStatsFrame | null;
-  // 2026-09-11 小欧 三堂会审修复: TokenLayer 复用(stepStyles.ts 公用), 与 RightViewer props 同契约, 消除必选/可选形状不一致(TS2322) — 小欧-2026-09-11
+  // 2026-09-11 小欧 修复: TokenLayer 复用(stepStyles.ts 公用), 与 RightViewer props 同契约, 消除必选/可选形状不一致(TS2322) — 小欧-2026-09-11
   sessionTokens?: TokenLayer;
   chainTokens?: TokenLayer;
 }
@@ -103,7 +103,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
   const stepCount = detail?.total_steps ?? finalStats?.step_count;
   const fmtTime = (v: string | null | undefined) => {
     /* 小欧 2026-09-11 M3c⑭: detail?.xxx 返回 undefined 而非 null，参数类型必须兼容 — 小欧-2026-09-11 */
-    // 2026-09-11 小欧 三堂会审修复: 块体补 return——原缺 return 恒返 undefined, 开始/结束时间永远'-'(TS2322 void) — 小欧-2026-09-11
+    // 2026-09-11 小欧 修复: 块体补 return——原缺 return 恒返 undefined, 开始/结束时间永远'-'(TS2322 void) — 小欧-2026-09-11
     return v ? v.slice(0, 19).replace('T', ' ') : '-';
   };
   const chain = (chainSteps ?? []).filter((s) => s.type === 'action');

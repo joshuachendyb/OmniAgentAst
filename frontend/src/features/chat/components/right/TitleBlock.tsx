@@ -1,8 +1,8 @@
 // 编辑历史: 2026-09-11 小欧 - M3b(title段独立组件): 新增 TitleBlock——任务统计 title 段独立组件,
 //   数据源=final 帧(outcome/duration/model/provider/token), 绝不读 DB; 两行排版视觉优先 — 小欧-2026-09-11
 // 2026-09-11 小欧 - 修: 去 as 强转(DRY/类型安全), 复用 formatTokenCompact 公用函数; 第一行=状态+时长+模型, 第二行=4组token
-// 2026-09-11 小欧 - 三堂会审修复: 删??null(与TokenLayer number|undefined对齐, TS2322归零); 模型顺序统一provider/model(站点惯例+StaticStatsBlock一致); cancelled归default(非error红语义) — 小欧-2026-09-11
-// 2026-09-12 小欧 - 三堂会审修复: 抽renderToken()消4组token包裹渲染重复(DRY); 原IIFE三连Typography.Text改4行直线调用 — 小欧-2026-09-12
+// 2026-09-11 小欧 - 修复: 删??null(与TokenLayer number|undefined对齐, TS2322归零); 模型顺序统一provider/model(站点惯例+StaticStatsBlock一致); cancelled归default(非error红语义) — 小欧-2026-09-11
+// 2026-09-12 小欧 - 修复: 抽renderToken()消4组token包裹渲染重复(DRY); 原IIFE三连Typography.Text改4行直线调用 — 小欧-2026-09-12
 // 2026-09-13 小欧 - 用CircleArrow/PillBadge可复用组件替换Tag和▲▼; 间距: pill↔time=12px time↔model=15px — 小欧-2026-09-13
 // 2026-09-15 小欧 - 第一阶段: 标题13→14(FontSize.PRIMARY); 间距12/15→Spacing(LG/XL,15无档取XL16收敛);
 //   S3字号11→常量; S4 pill三态色令牌化; ④时长/模型灰字改TEXT.PRIMARY+12px;
@@ -53,7 +53,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
         {text}
       </Typography.Text>
     ) : null;
-  // 2026-09-11 小欧 三堂会审修复: 删 ?? null——TokenLayer 字段类型 number|undefined, 传 null 违 TS2322；此处语义完全等价保留 — 小欧-2026-09-11
+  // 2026-09-11 小欧 修复: 删 ?? null——TokenLayer 字段类型 number|undefined, 传 null 违 TS2322；此处语义完全等价保留 — 小欧-2026-09-11
   const prompt =
     finalStep.prompt_tokens ?? finalStep.accumulated_usage?.prompt_tokens;
   const completion =
@@ -117,7 +117,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
                 whiteSpace: 'nowrap',
               }}
             >
-              {/* 2026-09-11 小欧 三堂会审修复: 统一 provider/model——与站点惯例(useChatPanels L191 provider (model))及 StaticStatsBlock 一致 — 小欧-2026-09-11 */}
+              {/* 2026-09-11 小欧 修复: 统一 provider/model——与站点惯例(useChatPanels L191 provider (model))及 StaticStatsBlock 一致 — 小欧-2026-09-11 */}
               {provider ?? '-'} / {model ?? '-'}
             </Typography.Text>
           </>

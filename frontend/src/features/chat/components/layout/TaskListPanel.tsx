@@ -6,7 +6,7 @@
 // 编辑历史: 2026-08-28 小欧 - 补user_input双列+Tag→点+Text轻量化, 字阶11→12, 截断lineClamp2
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被滚动容器隐藏修复(北京老陈反馈)。监听latestTaskId变化→scrollIntoView(block:'nearest')将最新任务带进可视区; 仅新任务诞生时触发, 可视区内不动, 不打断用户上翻历史 - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 修复任务完成后左列"跳回第一个任务": 根因=刷新时loading=true使组件切Skeleton(旧列表卸载), 滚动容器内容高度骤降→scrollTop被浏览器clamp归零, 刷新完成列表回归但scrollTop仍停在顶部。修复=仅当"loading且无已有任务"才显Skeleton(首次加载), 否则保留旧列表渲染, 滚动位置不丢失(复核: 不打断刷新中UI, 首次加载行为不变) - 小欧-2026-09-01
-// 编辑历史: 2026-09-02 小欧 - task005会审修复(北京老陈定案): scrollIntoView 包 requestAnimationFrame——确保 React 提交 DOM(ref挂载)后视口就绪再滚动, 消除 latestTaskId 变化与 render 同批处理时 ref 未更新仍试图滚动的竞态; 不改触发条件/block, 行为不进反退 — 小欧-2026-09-02
+// 编辑历史: 2026-09-02 小欧 - task005修复(北京老陈定案): scrollIntoView 包 requestAnimationFrame——确保 React 提交 DOM(ref挂载)后视口就绪再滚动, 消除 latestTaskId 变化与 render 同批处理时 ref 未更新仍试图滚动的竞态; 不改触发条件/block, 行为不进反退 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - rAF保存ID+卸载cancel防泄漏 — 小欧-2026-09-02
 // 编辑历史: 2026-09-09 小欧 - UI视觉优化(北京老陈定案): ①选中态背景#e6f4ff+左侧3px蓝线+微圆角; ②回复区域背景#fafafa+左边框2px; ③元信息行(时间/模型/状态)置顶; ④间距优化: 内边距8→10px, 项间距4→2px; ⑤放弃序号标签(视觉噪音)和Tooltip方案(遮挡凌乱) - 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 新增复制按钮(北京老陈定案): 用户输入和回复区域右上角分别添加复制按钮, hover时显示, 点击复制对应文本, message.success提示 - 小欧-2026-09-09
@@ -216,7 +216,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     if (!latestTaskId) return;
     if (prevLatestIdRef.current === latestTaskId) return; // 非新任务, 不滚动
     prevLatestIdRef.current = latestTaskId;
-    // 2026-09-02 小欧 task005会审(北京老陈定案): rAF 确保React提交DOM(ref挂载)后滚动, 消 latestTaskId 与 render 同批处理时 ref 未更新竞态 — 小欧 2026-09-02
+    // 2026-09-02 小欧 task005修复(北京老陈定案): rAF 确保React提交DOM(ref挂载)后滚动, 消 latestTaskId 与 render 同批处理时 ref 未更新竞态 — 小欧 2026-09-02
     rafIdRef.current = requestAnimationFrame(() => {
       // scrollIntoView 沿祖先滚动链自动定位到最近滚动容器(SessionLayout左列overflowY:auto), 无需改布局骨架
       anchorRef.current?.scrollIntoView({ block: 'nearest' });
