@@ -35,6 +35,8 @@
 // 2026-10-22 小杨 - 文件引用链接的路径参数改走安全解码, 非法百分号编码不再抛 URIError — 小杨-2026-10-22
 // 编辑历史: 2026-10-22 小欧 - 代码块显式行高 1.1: 原继承 1.5, │ 墨迹高 1.12–1.17em 行间留缝 →
 //   框线竖线断成虚线; 行高 ≤1.14 时连成实线 — 小欧-2026-10-22
+// 2026-10-22 小欧 - 文件引用分流放开外部路径：isValidRelPath 或 isExternalAbsPath（根外盘符绝对）
+//   都渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -53,6 +55,7 @@ import {
 import { CopyButton } from './CopyButton';
 // 2026-10-21 小杨 - 文件引用 chip + 形态校验（同源单一真源）
 import { FileRefChip, isValidRelPath } from './FileRefChip';
+import { isDriveAbsPath } from '@/utils/projectPath';
 import { MermaidBlock } from '@/components/mermaid/MermaidBlock';
 import { decodePathParam } from '@/utils/fileDeepLink';
 
@@ -285,7 +288,8 @@ const mdComponents = {
       );
       // 非法百分号编码（如 %E0%A4%A）不能让整块渲染抛 URIError
       const p = m ? decodePathParam(m[1]) : null;
-      if (m && p && isValidRelPath(p)) {
+      // 2026-10-22 小欧 - 外部盘符绝对路径（不在项目根内）同样渲染 FileRefChip（chip 内部分流外部预览）— 小欧-2026-10-22
+      if (m && p && (isValidRelPath(p) || isDriveAbsPath(p))) {
         return (
           <FileRefChip
             relPath={p}

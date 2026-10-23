@@ -5,6 +5,8 @@
 // 2026-10-21 小杨 - toRelativePath 支持工具参数里的相对路径；URL/UNC/越界路径仍返回 null — 小杨-2026-10-21
 // 2026-10-22 小杨 - toRelativePath 增相对路径直转与换行/控制字符拒收（多行参数不拼假 href）；
 //   新增 isAbsolutePath / isLinkableRelPath 供链接层判形态 — 小杨-2026-10-22
+// 2026-10-22 小欧 - 外部文件判据：新增 isDriveAbsPath（盘符绝对路径，与后端 _is_abs_drive_path 口径）
+//   与 isExternalAbsPath（盘符绝对路径且归一到不了项目根内 = 外部；根内绝对不算外部）— 小欧-2026-10-22
 /**
  * 项目根 ⇄ 相对路径 转换（单一真源）
  *
@@ -18,6 +20,12 @@ const norm = (p: string): string =>
 /** Windows 盘符绝对路径（F:/ 或 F:\） */
 export const isAbsolutePath = (p: string): boolean =>
   /^[A-Za-z]:[\\/]/.test(p) || /^[\\/]/.test(p);
+
+/**
+ * 盘符绝对路径（C:\x / D:/x）—— 外部文件判据；UNC/斜杠路径不算。
+ * 2026-10-22 小欧 - 与后端 browse_service._is_abs_drive_path 口径对齐（外部只读端点只收盘符绝对路径）。— 小欧-2026-10-22
+ */
+export const isDriveAbsPath = (p: string): boolean => /^[A-Za-z]:[\\/]/.test(p);
 
 /**
  * 相对路径是否像一条真路径（含分隔符，或带扩展名）。
@@ -64,6 +72,18 @@ export const toRelativePath = (
   const rel = v.slice(root.length).replace(/^\/+/, '');
   return rel || null;
 };
+
+/**
+ * 外部文件判据：盘符绝对路径 **且归一到不了项目根内**。
+ * 2026-10-22 小欧 - 项目根内的绝对路径不是外部（先归一成相对走普通深链），
+ * 只有根外绝对路径才算外部。根未知时返回 false（信息不足，调用方保持原文，
+ * 不造假链接）——否则首帧根未取回时，根内绝对路径会被误标"外部"并生成外部深链。
+ * 2026-10-22 小欧 - 与后端 _is_abs_drive_path 口径：只认盘符绝对路径。— 小欧-2026-10-22
+ */
+export const isExternalAbsPath = (
+  p: string,
+  projectRoot?: string
+): boolean => !!projectRoot && isDriveAbsPath(p) && !toRelativePath(p, projectRoot);
 
 /**
  * 相对项目根 → 绝对路径；形态不合法（已是绝对路径 / 含 ..）或缺项目根返回 null。

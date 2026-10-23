@@ -6,6 +6,8 @@
 #     ② 补全返回类型注解；③ 模块名 service.py → browse_service.py（与 lifecycle/service.py 撞名）。
 #   2026-10-21 小杨 - 对账修正: ① 文件头"5 个 GET"→ 6 个（v3.8 追加了 /files/search，漏改）；
 #     ② get_file_content docstring"四道闸门"→ 五道闸门（实码顺序: 存在性→目录→类型→大小→编码）；
+# 2026-10-22 小欧 - 新增 /files/external/read：读项目根外文本文件（只读、审计；用户主动点击会话里
+#   外部文件链接时使用；仅盘符绝对路径，exists/is_file/类型/大小闸门复用根内读管道）— 小欧-2026-10-22
 """file_routes — 文件浏览 API 路由薄壳。
 
 按项目分层约定（tool_routes.py:9-10）：API 层只做参数解包与错误转译，
@@ -70,6 +72,24 @@ def get_file_content(
       2MB 之后拿不到；带区间时后端**流式**按行读（内存恒定），可翻页到文件末尾。
     """
     return browse.read_text_file(path, offset=offset, limit=limit)
+
+
+@router.get("/files/external/read")
+def get_external_file_content(
+    path: str = Query(..., description="项目根**外**文件的绝对路径（仅盘符绝对路径，只读文本）"),
+    offset: Optional[int] = Query(
+        None, ge=1, description="起始行号（1-based）；给了就按行区间读"
+    ),
+    limit: Optional[int] = Query(
+        None, ge=1, le=5000, description="读取行数（配合 offset；默认 2000，上限 5000）"
+    ),
+) -> Dict[str, Any]:
+    """读项目根外的文本文件（只读、审计；用户主动点击会话里的外部文件链接时使用）。
+
+    2026-10-22 小欧 - 安全：只接受盘符绝对路径；exists/is_file/类型/大小闸门与根内
+    完全一致（复用 read_external_file 的读管道）；不碰写/工具边界。— 小欧-2026-10-22
+    """
+    return browse.read_external_file(path, offset=offset, limit=limit)
 
 
 @router.get("/files/raw")

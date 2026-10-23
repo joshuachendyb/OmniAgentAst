@@ -16,6 +16,9 @@
 // 2026-10-22 小欧 - tip 框自适应包裹完整路径：overlayInnerStyle 加 maxWidth:none + width:max-content（antd 默认限宽会截断长路径）— 小欧-2026-10-22
 // 2026-10-22 小欧 - 复制路径 Tooltip 同处理；两处相同 overlayInnerStyle 抽 PATH_TOOLTIP_INNER_STYLE 常量（10 大规范 DRY）— 小欧-2026-10-22
 // 2026-10-22 小欧 - 图片模式 / 不可预览 Alert 的复制路径 Tooltip 一并统一走 PATH_TOOLTIP_INNER_STYLE（DRY 闭环）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 外部文件形态（项目根外只读预览）：external prop 直读 /files/external/read；
+//   文件名红色框框 + 黄色提示条「项目目录外，已直接预览（只读）」；引用/复制路径/翻页/刷新
+//   复用现有管道；node 恒 null 时跳过 image/none 形态分支 — 小欧-2026-10-22
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -93,6 +96,10 @@ export interface FilePreviewProps {
     lineRange: { start: number; end: number },
     size: number
   ) => void;
+  /** 外部文件（项目根外，绝对路径直读只读预览）— 小欧-2026-10-22 */
+  external?: { path: string } | null;
+  /** 外部文件整文件引用（content 已读回，path 为绝对路径）— 小欧-2026-10-22 */
+  onSendExternal?: (content: string, absPath: string, size: number) => void;
   /** 暴露给父级的刷新句柄（父级工具条刷新复用） */
   refreshRef?: React.MutableRefObject<(() => void) | null>;
 }
@@ -102,6 +109,8 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   lineRange,
   onSendFile,
   onSendSelection,
+  external,
+  onSendExternal,
   refreshRef,
 }) => {
   const [text, setText] = useState<ReadResponse | null>(null);
@@ -140,8 +149,11 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   //   在 render 内对每行调，任何 state 变化（选区/折行/过期提示）都全文件重算，
   //   万行文件秒级卡。收敛到 useMemo：行数组与高亮 HTML 只随 (content, lang) 重算，
   //   render 只查表。
-  const isMd = !!node && /\.(md|markdown)$/i.test(node.name);
-  const lang = node ? langOf(node.name) : null;
+  const isExternal = !!external;
+  // 2026-10-22 小欧 - 显示名：外部模式用 text.name（ReadResponse 自带），node 恒 null — 小欧-2026-10-22
+  const displayName = isExternal ? (text?.name ?? '') : (node?.name ?? '');
+  const isMd = /\.(md|markdown)$/i.test(displayName);
+  const lang = displayName ? langOf(displayName) : null;
   // 2026-10-21 小杨 - 修复：空文件 '' 曾 split 出 [''] → 头部写 0 行却渲染出 1 行行号
   const textContent = text?.content ?? '';
   const lines = useMemo(
@@ -194,13 +206,20 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     !!text &&
     (text.truncated === true || loadedLines < (text.total_lines ?? 0));
   const loadMore = async () => {
-    if (!node || !text) return;
+    // 2026-10-22 小欧 - 外部模式走 readExternalFile（绝对路径直读）— 小欧-2026-10-22
+    const srcKey = isExternal ? external?.path : node?.key;
+    if (!srcKey || !text) return;
     setMoreLoading(true);
     try {
-      const next = await fileApi.readFile(node.key, {
-        offset: loadedLines + 1,
-        limit: 2000,
-      });
+      const next = isExternal
+        ? await fileApi.readExternalFile(srcKey, {
+            offset: loadedLines + 1,
+            limit: 2000,
+          })
+        : await fileApi.readFile(srcKey, {
+            offset: loadedLines + 1,
+            limit: 2000,
+          });
       if (!next.content) {
         // 2026-10-22 小杨 - 到文件末尾时**如实告知**：此前静默 return，
         //   用户点了「加载后续内容」却毫无反馈（与"点了没反应"同一种病）— 小杨-2026-10-22
@@ -293,6 +312,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   }, []);
 
   useEffect(() => {
+    if (external) return; // 外部模式由 external effect 负责（下一条）
     if (!node) {
       setText(null);
       releaseImage();
@@ -302,12 +322,55 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     }
     void load(node);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node?.key]);
+  }, [node?.key, external?.path]);
+
+  /** 外部文件加载：绝对路径直读（项目根外，只读预览）— 小欧-2026-10-22 */
+  useEffect(() => {
+    if (!external) return;
+    const seq = ++reqSeq.current;
+    setErr(null);
+    setSel(null);
+    setText(null);
+    (async () => {
+      try {
+        const r = await fileApi.readExternalFile(external.path);
+        if (seq !== reqSeq.current) return;
+        setText(r);
+        openedMtime.current = r.mtime;
+      } catch (e) {
+        if (seq !== reqSeq.current) return;
+        setErr(extractErrorMessage(e) ?? '加载失败');
+      }
+    })();
+    // 依赖 external?.path 而非 external 对象：父级每次 render 新建 {path} 对象，
+    // 依赖对象引用会无限循环。path 变化才重载 — 小欧-2026-10-22
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [external?.path]);
 
   /** refresh 单请求化 —— 一次 /files/read 同时拿到"新鲜度判定 + 内容重载"
    *  2026-10-21 小杨 - 修复：refresh 也要走 reqSeq 守卫
    *   （原实现 refresh 无守卫 → 刷新 A 的请求晚于切到 B 的请求返回 → 头部显示 B、正文却是 A） */
   const refresh = async () => {
+    // 2026-10-22 小欧 - 外部模式单独分支（readExternalFile 直读）— 小欧-2026-10-22
+    if (isExternal) {
+      if (!external) return;
+      const seq = ++reqSeq.current;
+      try {
+        const r = await fileApi.readExternalFile(external.path);
+        if (seq !== reqSeq.current) return;
+        const changed = !!r.mtime && r.mtime !== openedMtime.current;
+        if (r.mtime) openedMtime.current = r.mtime;
+        setText(r);
+        setSel(null);
+        if (changed) showSuccess('文件已更新，已重新加载');
+      } catch (e) {
+        if (seq !== reqSeq.current) return;
+        if (!(e instanceof ImageUnchanged)) {
+          setErr(extractErrorMessage(e) ?? '刷新失败');
+        }
+      }
+      return;
+    }
     if (!node) return;
     const seq = ++reqSeq.current;
     try {
@@ -348,7 +411,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       refreshRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node?.key, refreshRef]);
+  }, [node?.key, external?.path, refreshRef]);
 
   /** 深链行号：打开后滚动 + 高亮 + **聚焦**
    *  2026-10-21 小杨 - 修复：
@@ -398,33 +461,39 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return () => window.clearTimeout(timer);
   }, [lineRange, text]);
 
-  /** 复制绝对路径（三处复用：文本头 / 图片头 / 不可预览提示） */
-  const copyPath = (target: FileNode) => {
-    const abs = toAbsolutePath(target.key, projectRoot) ?? target.key;
+  /** 复制绝对路径（三处复用：文本头 / 图片头 / 不可预览提示；外部模式直接复制原绝对路径） */
+  const copyPath = (target: FileNode | string) => {
+    const abs =
+      typeof target === 'string'
+        ? target
+        : (toAbsolutePath(target.key, projectRoot) ?? target.key);
     void copyTextToClipboard(abs).then((r) => {
       if (r.ok) showSuccess('路径已复制');
       else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
     });
   };
 
-  if (!node) {
+  if (!node && !external) {
     return <Empty description="从左侧选择一个文件" />;
   }
   if (err) {
+    // 2026-10-22 小欧 - 外部模式加载失败：无 node，独立提示（重试由刷新页承担）— 小欧-2026-10-22
+    if (isExternal) return <Alert type="error" showIcon message={err} />;
     return (
       <Alert
         type="error"
         showIcon
-        message={`「${node.name}」${err}`}
+        message={`「${node!.name}」${err}`}
         action={
-          <Button size="small" onClick={() => void load(node)}>
+          <Button size="small" onClick={() => void load(node!)}>
             重试
           </Button>
         }
       />
     );
   }
-  if (node.preview === 'image') {
+  // 2026-10-22 小欧 - 外部文件只读文本：跳过 image / none 形态分支（node 恒 null）— 小欧-2026-10-22
+  if (!isExternal && node && node.preview === 'image') {
     /* 2026-10-21 小杨 - 修复：图片原先没有工具栏（复制路径/刷新只能在文本下用），
        且体量用树节点旧 size；现与文本共用同一头部与刷新链路 */
     return (
@@ -486,7 +555,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       </>
     );
   }
-  if (node.preview === 'none') {
+  if (!isExternal && node && node.preview === 'none') {
     /* 2026-10-21 小杨 - 修复阻断级缺陷：
        原实现把"不可预览"落到 `!text` 分支 → 显示**"文本加载中…"并永远转圈**（死状态，
        用户反复点击、以为是网络问题）。现在给出明确说明 + 可执行的替代动作。
@@ -553,33 +622,72 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
 
   return (
     <>
+      {/* 2026-10-22 小欧 - 外部文件黄色提示条：明确"项目目录外，只读预览" — 小欧-2026-10-22 */}
+      {isExternal && (
+        <Alert
+          type="warning"
+          showIcon
+          message={`该文件在项目目录外，已直接预览（只读）：${external?.path ?? ''}`}
+          style={{ marginBottom: Spacing.SM }}
+        />
+      )}
       {/* 2026-10-21 小杨 - 冗余层砍除：根 div 的 flex column 是无谓包裹
           （内容本就是 block 纵排，sticky footer 自带 flex:none），改为 Fragment 砍一层 */}
       <div style={TOOLBAR_STYLE}>
         {/* 2026-10-21 小杨 - **按钮在前、行数+时间垫后**（弱信息灰字，不按钮化） */}
         {/* 2026-10-22 小欧 - 预览文件标题：引用按钮前展示当前文件名，超 10 汉字宽度截断 + Tooltip 显完整 — 小欧-2026-10-22 */}
-        <Tooltip
-          title={toAbsolutePath(node.key, projectRoot) ?? node.key}
-          overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
-        >
-          <span
-            style={{
-              color: Colors.TEXT.STRONG,
-              fontSize: chatTokens.fontMD,
-              fontWeight: 600,
-              maxWidth: '10em',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-            }}
+        {isExternal ? (
+          /* 2026-10-22 小欧 - 外部文件标题：文件名**红色框框**（与根内文件明显区分）— 小欧-2026-10-22 */
+          <Tooltip
+            title={external?.path ?? ''}
+            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
           >
-            {node.name}
-          </span>
-        </Tooltip>
+            <span
+              style={{
+                color: Colors.ERROR,
+                fontSize: chatTokens.fontMD,
+                fontWeight: 600,
+                border: `1px solid ${Colors.ERROR}`,
+                borderRadius: 4,
+                padding: '1px 8px',
+                maxWidth: '10em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {text.name}
+            </span>
+          </Tooltip>
+        ) : (
+          <Tooltip
+            title={toAbsolutePath(node!.key, projectRoot) ?? node!.key}
+            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
+          >
+            <span
+              style={{
+                color: Colors.TEXT.STRONG,
+                fontSize: chatTokens.fontMD,
+                fontWeight: 600,
+                maxWidth: '10em',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+              }}
+            >
+              {node!.name}
+            </span>
+          </Tooltip>
+        )}
         <Button
           size="small"
-          onClick={() => onSendFile(text.content, node, text.size)}
+          onClick={() =>
+            isExternal
+              ? onSendExternal?.(text.content, external?.path ?? '', text.size)
+              : onSendFile(text.content, node!, text.size)
+          }
           title="引用整文件到对话（发送前可再编辑）"
           /* 2026-10-21 小杨 - 引用=主动作，浅蓝底（antd blue-1/blue-3）；警示态保警示色 */
           style={
@@ -595,13 +703,19 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           tok
         </Button>
         <Tooltip
-          title={toAbsolutePath(node.key, projectRoot) ?? node.key}
+          title={
+            isExternal
+              ? (external?.path ?? '')
+              : (toAbsolutePath(node!.key, projectRoot) ?? node!.key)
+          }
           overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
         >
           <Button
             size="small"
             icon={<CopyOutlined />}
-            onClick={() => copyPath(node)}
+            onClick={() =>
+              copyPath(isExternal ? (external?.path ?? '') : node!)
+            }
           >
             复制路径
           </Button>
@@ -805,14 +919,14 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
         }}
       >
-        {sel && selText && (
+        {!isExternal && sel && selText && (
           <Button
             type="primary"
             size="small"
             onClick={() =>
               onSendSelection(
                 selText,
-                node,
+                node!,
                 sel,
                 new TextEncoder().encode(selText).length
               )

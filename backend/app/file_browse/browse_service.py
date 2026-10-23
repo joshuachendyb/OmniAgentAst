@@ -17,6 +17,10 @@
 # 2026-10-21 小欧 - 树扫描提速（**不加任何节点限制**）：① BINARY_EXTS 明确二进制格式走后缀零 IO；
 #   ② .map/.tsbuildinfo 等进文本后缀表；③ 剩余需实探的走 _probe_pool 并发探测
 #   （实测 8.9 万节点单次 7.16s，其中 8KB 实探占约 7.5s 量级，scandir 遍历本身仅约 1s）— 小欧-2026-10-21
+# 2026-10-22 小欧 - 外部只读（北京老陈批准）：新增 read_external_file（盘符绝对路径单文件只读文本，
+#   复用 _probe_text/_read_truncated/_read_range 读管道 + 审计日志，不碰写/工具边界）；
+#   新增 _is_abs_drive_path 判据（read_external_file 与 sanitize_refs 共用）；
+#   sanitize_refs 对绝对盘符路径放行（用户主动引用的外部文件），相对路径校验口径不变 — 小欧-2026-10-22
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -162,6 +166,17 @@ def _code_root_conflicts(root: Path) -> bool:
     """project_root 是否落在代码库根子树内 → 决定禁区是否生效（S6 消解规则）。"""
     cr = _code_root()
     return bool(cr) and (cr == root or cr in root.parents)
+
+
+def _is_abs_drive_path(p: str) -> bool:
+    """盘符绝对路径（C:\\x / D:/x）—— 外部文件引用判据；UNC/斜杠路径/相对路径一律不算。
+
+    2026-10-22 小欧 - 外部只读（read_external_file）与引用放行（sanitize_refs）两处共用，
+    避免口径漂移。— 小欧-2026-10-22
+    """
+    if p.startswith(("\\\\", "\\", "/")):
+        return False
+    return bool(Path(p).is_absolute())
 
 
 def _resolve_within_root(rel_path: str) -> Tuple[Path, str]:
@@ -680,11 +695,15 @@ def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
             continue
         path = (ref.get("path") or "").strip()
         if path:
-            try:
-                _resolve_within_root(path)
-            except Exception as e:     # noqa: BLE001 —— fail() 抛的是业务错误类型，此处一律按越界丢弃
-                logger.warning("[file_browse] 丢弃越界的引用路径 path=%s (%s)", path, e)
-                continue
+            # 2026-10-22 小欧 - 绝对盘符路径 = 外部文件引用（用户主动引用；存在性由前端
+            #   预览时经 read_external_file 校验，此处只做"是否外部"的放行判定，不重复 IO）。
+            #   相对路径仍走 _resolve_within_root（项目内口径不变）— 小欧-2026-10-22
+            if not _is_abs_drive_path(path):
+                try:
+                    _resolve_within_root(path)
+                except Exception as e:     # noqa: BLE001 —— fail() 抛的是业务错误类型，此处一律按越界丢弃
+                    logger.warning("[file_browse] 丢弃越界的引用路径 path=%s (%s)", path, e)
+                    continue
         kept.append(ref)
     return kept
 
@@ -763,6 +782,71 @@ def _read_lines_range(
     return "".join(out), len(out), raw_bytes
 
 
+def _read_file_body(
+    target: Path,
+    rel: str,
+    offset: Optional[int] = None,
+    limit: Optional[int] = None,
+    nontext_msg: Optional[str] = None,
+) -> Dict[str, Any]:
+    """文本正文读取公共段（根内 / 外部只读共用）：NUL 实探 → 大小 → 编码闸门 → 区间分派。
+
+    2026-10-22 小欧 - 三堂会审抽出的共用段：read_text_file 与 read_external_file 此前
+    各写一遍 exists/probe/stat/head/区间分派（约 20 行），闸门语义改动必漏一处。
+    唯一保留差异：非文本文案（外部只读需说明"仅支持文本预览"）。
+    路径解析（根内 _resolve_within_root / 外部盘符判定）与类型闸门留在调用方。— 小欧-2026-10-22
+    """
+    probe = _probe_text(target)
+    if probe is None:
+        fail(NOT_FOUND)
+    if probe is False:
+        fail(UNSUPPORTED_TYPE, nontext_msg)
+    try:
+        st = target.stat()
+    except OSError:
+        fail(NOT_FOUND)
+    try:
+        with target.open("rb") as fh:
+            head = fh.read(4)
+    except OSError:
+        fail(NOT_FOUND)
+
+    # 2026-10-21 小欧 - **行号区间翻页**（与大文件截断共存）：
+    #   默认路径只读前 MAX_TEXT_BYTES(2MB) → 2MB 之后的内容拿不到（半个死路）；
+    #   带 offset/limit 时按行区间**流式**读：内存恒定，可一路翻到文件末尾。
+    if offset is not None or limit is not None:
+        return _read_range(target, rel, st, head, int(offset or 1), int(limit or 2000))
+    return _read_truncated(target, rel, st, head)
+
+
+def read_external_file(
+    abs_path: str,
+    offset: Optional[int] = None,
+    limit: Optional[int] = None,
+) -> Dict[str, Any]:
+    """读项目根**外**的文本文件（只读，用户主动点击的外部文件链接）。
+
+    2026-10-22 小欧 - 需求：会话里 Agent 引用的文件可能不在当前项目根内。
+    安全模型：只读单文件；绝对盘符路径必须 is_file；类型/大小/编码闸门与根内共用
+    _read_file_body（闸门改动只改一处）；写审计日志。
+    不触碰任何写/工具边界，不改 project_root 语义。
+    第一版只支持文本（非文本即拒），外部图片预览留待后续。— 小欧-2026-10-22
+    """
+    raw = (abs_path or "").strip()
+    if not _is_abs_drive_path(raw):
+        fail(INVALID_PATH)                     # 只接受盘符绝对路径；相对/UNC/斜杠路径拒绝
+    target = Path(raw)
+    if not _exists(target):
+        fail(NOT_FOUND)
+    if not target.is_file():
+        fail(INVALID_PATH, "该路径不是文件")
+
+    # 审计：外部读取必须留痕（根内读只记相对路径，绝对路径读取单独记录）
+    logger.info(f"[file_browse] external read abs={raw}")
+
+    return _read_file_body(target, raw, offset, limit, "外部文件仅支持文本预览")
+
+
 def read_text_file(
     rel_path: str,
     offset: Optional[int] = None,
@@ -785,37 +869,7 @@ def read_text_file(
         fail(NOT_FOUND)
     if target.is_dir():
         fail(INVALID_PATH, "该路径是目录，请使用目录树接口")
-    # 2026-10-21 小杨 - 文本文件=能解码的：撤"后缀白名单"闸门
-    #   （.py/无后缀一律被拒=有后缀表在颠覆语义），改首 8KB NUL 实探闸二进制；
-    #   2026-10-21 小杨 - 实探收敛到 _probe_text 单点（DRY+缓存），
-    #   关闭方式改 with（原 .open("rb").read(4) 未 close，编码违规）。
-    probe = _probe_text(target)
-    if probe is None:
-        fail(NOT_FOUND)
-    if probe is False:
-        fail(UNSUPPORTED_TYPE)
-    try:
-        st = target.stat()
-        size = st.st_size
-    except OSError:
-        fail(NOT_FOUND)
-
-    content: Optional[str] = None
-    used_enc = ""
-    truncated = False
-    try:
-        with target.open("rb") as fh:
-            head = fh.read(4)
-    except OSError:
-        fail(NOT_FOUND)
-
-    # 2026-10-21 小欧 - **行号区间翻页**（与大文件截断共存）：
-    #   默认路径只读前 MAX_TEXT_BYTES(2MB) → 2MB 之后的内容拿不到（半个死路）；
-    #   带 offset/limit 时按行区间**流式**读：内存恒定，可一路翻到文件末尾。
-    if offset is not None or limit is not None:
-        return _read_range(target, rel, st, head, int(offset or 1), int(limit or 2000))
-
-    return _read_truncated(target, rel, st, head)
+    return _read_file_body(target, rel, offset, limit)
 
 
 def _read_result(target: Path, rel: str, st: os.stat_result, content: str, enc: str) -> Dict[str, Any]:

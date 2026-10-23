@@ -15,6 +15,9 @@
 //   ② 链接构造两份（裸路径/行内代码）抽 toFileRefMarkdown 单一真源（DRY）；
 //   ③ chip 拼展示文案抽 displayPathOf；删死参数 label（chip 文字已恒为绝对路径，YAGNI）— 小欧-2026-10-22
 // 2026-10-22 小沈 - 清除违规注释（删除""等过期定案字符）— 小沈-2026-10-22
+// 2026-10-22 小欧 - 根外文件可点：toFileRefMarkdown/markPath 对根外盘符绝对路径生成外部链接
+//   （/file-ref?path=绝对路径，chip 内部分流外部预览）；外部判据 isExternalAbsPath =
+//   盘符绝对路径且归一到不了项目根内（根内绝对先归一相对走普通链接，不算外部）— 小欧-2026-10-22
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -32,8 +35,13 @@ import { FileOutlined } from '@ant-design/icons';
 import { useNavigate, useInRouterContext } from 'react-router-dom';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
-import { buildFileDeepLink, encodePathParam } from '@/utils/fileDeepLink';
 import {
+  buildExternalDeepLink,
+  buildFileDeepLink,
+  encodePathParam,
+} from '@/utils/fileDeepLink';
+import {
+  isExternalAbsPath,
   isLinkableRelPath,
   toAbsolutePath,
   toRelativePath,
@@ -60,6 +68,8 @@ const chipStyle: React.CSSProperties = {
  * 根是 Windows 形态时展示统一反斜杠，避免 `E:\root/a.md` 这种混写。
  */
 const displayPathOf = (relPath: string, projectRoot: string): string => {
+  // 2026-10-22 小欧 - 外部文件（盘符绝对路径且归一到不了根内）直接展示原样，不走根内换算 — 小欧-2026-10-22
+  if (isExternalAbsPath(relPath, projectRoot)) return relPath;
   const abs = toAbsolutePath(relPath, projectRoot);
   if (!abs) return relPath;
   return projectRoot.includes('\\') ? abs.replace(/\//g, '\\') : abs;
@@ -73,12 +83,14 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
 }) => {
   // 2026-10-22 小欧 - chip 文字直接显示完整绝对路径（含项目根），不再靠 tip — 小欧-2026-10-22
   const projectRoot = useProjectRoot();
+  // 2026-10-22 小欧 - 外部判据：盘符绝对路径且归一到不了根内（根内绝对不算外部）— 小欧-2026-10-22
+  const isExternal = isExternalAbsPath(relPath, projectRoot);
   const fullPath = displayPathOf(relPath, projectRoot);
   return (
     <span
       role="link"
       tabIndex={0}
-      aria-label={`打开文件 ${fullPath}${
+      aria-label={`${isExternal ? '外部文件 ' : ''}打开文件 ${fullPath}${
         lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
       }`}
       style={{
@@ -95,6 +107,18 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
       }}
     >
       <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />{' '}
+      {/* 2026-10-22 小欧 - 外部文件标识：提示该路径在当前项目目录外，点击走外部只读预览 — 小欧-2026-10-22 */}
+      {isExternal && (
+        <span
+          style={{
+            color: Colors.WARNING,
+            fontSize: 10,
+            fontWeight: 600,
+          }}
+        >
+          外部{' '}
+        </span>
+      )}
       {fullPath}
       {lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
     </span>
@@ -112,7 +136,12 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
  */
 export const FileRefChip: React.FC<FileRefChipProps> = (props) => {
   const inRouter = useInRouterContext();
-  const url = buildFileDeepLink(props.relPath, props.lineRange ?? null);
+  // 2026-10-22 小欧 - 外部判据与 ChipBody 同一纯函数（根内绝对 → 普通深链，根外 → 外部深链）— 小欧-2026-10-22
+  const projectRoot = useProjectRoot();
+  const isExternal = isExternalAbsPath(props.relPath, projectRoot);
+  const url = isExternal
+    ? buildExternalDeepLink(props.relPath, props.lineRange ?? null)
+    : buildFileDeepLink(props.relPath, props.lineRange ?? null);
   if (inRouter) {
     return <ChipWithRouter {...props} url={url} />;
   }
@@ -203,8 +232,15 @@ const toFileRefMarkdown = (
 ): string | null => {
   if (raw.startsWith('@') || raw.startsWith('#')) return null;
   const rel = toRelativePath(raw, projectRoot);
-  if (!rel || !isValidRelPath(rel) || !isLinkableRelPath(rel)) return null;
-  return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(rel)})`;
+  if (rel && isValidRelPath(rel) && isLinkableRelPath(rel)) {
+    return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(rel)})`;
+  }
+  // 2026-10-22 小欧 - 根外盘符绝对路径（归一到不了根内，非根内相对/绝对误判）→ 外部文件链接。
+  //   根内绝对路径已被 toRelativePath 归一走普通链接，不会落到这里。— 小欧-2026-10-22
+  if (isExternalAbsPath(raw, projectRoot)) {
+    return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(raw)})`;
+  }
+  return null;
 };
 
 const convertRuns = (text: string, projectRoot?: string): string =>
@@ -212,11 +248,21 @@ const convertRuns = (text: string, projectRoot?: string): string =>
     const g = rest[rest.length - 1] as FileRefTokenGroups;
 
     if (g.markPath) {
-      if (!isValidRelPath(g.markPath)) return whole; // 非法即留原文，不造假链接
+      // 2026-10-22 小欧 - 先归一：根内绝对路径 → 相对（根内文件不标外部）；
+      //   归一失败且是根外盘符绝对路径 → 外部链接；否则留原文（不造假链接）— 小欧-2026-10-22
+      const rel = toRelativePath(g.markPath, projectRoot);
+      if (rel && isValidRelPath(rel)) {
+        const lines = g.markFrom
+          ? `&line=${g.markFrom}${g.markTo ? `-${g.markTo}` : ''}`
+          : '';
+        return `[${escapeLabel(g.markPath)}](/file-ref?path=${encodePathParam(
+          rel
+        )}${lines})`;
+      }
+      if (!isExternalAbsPath(g.markPath, projectRoot)) return whole;
       const lines = g.markFrom
         ? `&line=${g.markFrom}${g.markTo ? `-${g.markTo}` : ''}`
         : '';
-      // label 不带图标 emoji —— chip 自带 FileOutlined（防双重图标）
       return `[${escapeLabel(g.markPath)}](/file-ref?path=${encodePathParam(
         g.markPath
       )}${lines})`;

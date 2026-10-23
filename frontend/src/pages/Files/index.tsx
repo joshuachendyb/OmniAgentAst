@@ -20,6 +20,11 @@
 //     抽为 readAndPush 管道；顺带修 pushRef 未 await 的真缺陷（fire-and-forward 导致批量 ok 计数
 //     早于投递完成→勾选残留、异常变 unhandled rejection）。失败文案仍归调用方（批量要能定位
 //     到具体哪个文件）——抽的是数据管道，保留的是场景语义（KISS-DIRECT）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 外部文件预览：ext=1 深链（chip 外部链接）/ 定位框根外绝对路径 → 直开外部
+//   只读预览；判据 isExternalAbsPath（盘符绝对且归一到不了根内，根内绝对先归一走树定位）— 小欧-2026-10-22
+// 2026-10-22 小欧 - 三堂会审阻断修复：external 态只有置值无清零 → 先开外部再点树内文件时
+//   FilePreview 停在上一份外部文件（点树像没反应）。深链与树点击两个出口收口为 selectTreeFile
+//   （先清外部态再选中），判定只写一处 — 小欧-2026-10-22
 // 2026-10-22 小欧 - 工具条目录可见性增强：只读浏览旁加「目录: [路径]」，路径名高亮
 //   （跨页引用时一眼看到当前项目根在哪，与「当前会话」标签共同交代引用去向）— 小欧-2026-10-22
 
@@ -56,7 +61,13 @@ import { LockOutlined, PaperClipOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fileApi, type FileNode } from '@/services/api/file.api';
 import { sessionApi } from '@/services/api/session.api';
-import { toAbsolutePath, samePath } from '@/utils/projectPath';
+import {
+  toAbsolutePath,
+  samePath,
+  toRelativePath,
+  isExternalAbsPath,
+} from '@/utils/projectPath';
+import { decodePathParam } from '@/utils/fileDeepLink';
 import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
 // 2026-10-22 小欧 - 引用能力上提共享域；
@@ -276,6 +287,9 @@ const FilesPage: React.FC = () => {
     setNarrowTab,
   } = useFileSelection();
 
+  /** 外部文件（项目根外）绝对路径：ext=1 深链 / 定位框绝对路径 → 直开外部只读预览 — 小欧-2026-10-22 */
+  const [externalPath, setExternalPath] = useState<string | null>(null);
+
   const refreshPreviewRef = useRef<(() => void) | null>(null);
 
   const sessionId = useMemo(() => readStoredSessionId(), []);
@@ -317,6 +331,24 @@ const FilesPage: React.FC = () => {
 
   /** 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
   /**
+   * 选中树内文件：必须同时**退出外部预览态**。
+   * 2026-10-22 小欧 - 修复阻断缺陷：先开外部文件再点树内文件时 external 仍非空 →
+   *   FilePreview 停在外部分支（node effect 被 external 挡回、external.path 未变不重载）
+   *   → 右侧永远显示上一份外部文件，点树像没反应。深链与树点击两个出口共用此处，
+   *   清外部态只写一次（DRY，避免两处各写一行漏一处）。— 小欧-2026-10-22
+   */
+  const selectTreeFile = useCallback(
+    (n: FileNode, line?: { start: number; end: number } | null) => {
+      setExternalPath(null);
+      setSelected(n);
+      setLineRange(line ?? null);
+      // 2026-10-22 小欧 - 窄屏切预览 Tab：否则打开文件后仍停在"文件"Tab，用户以为没反应
+      if (isNarrow) setNarrowTab('preview');
+    },
+    [isNarrow, setExternalPath, setSelected, setLineRange, setNarrowTab]
+  );
+
+  /**
    * 统一的"打开一个路径"入口（2026-10-21 小杨 - 收口改造）
    *
    *   之前有 4 条各自半截的路径（深链 / 定位框 / 树点击 / 外部 chip），彼此不同步：
@@ -340,37 +372,73 @@ const FilesPage: React.FC = () => {
         // 2026-10-21 小杨 - 修复：原实现顺手清空预览，用户定位目录时正在读的文件被无端关掉
         return true;
       }
-      setSelected(hit);
-      setLineRange(line ?? null);
-      // 2026-10-22 小欧 - 窄屏切预览 Tab（与树点击 onSelectFile 对齐）：否则深链/定位框
-      //   打开文件后仍停在"文件"Tab，用户以为没反应 — 小欧-2026-10-22
-      if (isNarrow) setNarrowTab('preview');
+      selectTreeFile(hit, line);
       return true;
     },
-    // 2026-10-22 小欧 - 补 setSelected/setLineRange/setNarrowTab 依赖（setState 身份稳定，补入无副作用）
-    [expandToPath, isNarrow, setSelected, setLineRange, setNarrowTab]
+    // 2026-10-22 小欧 - selectTreeFile 收口了 setSelected/setLineRange/setNarrowTab（身份稳定）
+    [expandToPath, selectTreeFile, setReveal]
   );
 
-  /** 深链进入：?path=…&line=… */
+  /** 定位框统一入口：根外绝对路径 → 外部只读预览；根内/相对 → 树内定位 — 小欧-2026-10-22 */
+  const openPathOrExternal = useCallback(
+    async (input: string): Promise<boolean> => {
+      const raw = input.trim();
+      if (!raw) return false;
+      // 2026-10-22 小欧 - 外部判据：盘符绝对路径且归一到不了根内（根内绝对先归一走树定位）— 小欧-2026-10-22
+      if (isExternalAbsPath(raw, projectRoot)) {
+        setExternalPath(raw);
+        setLineRange(null);
+        setLinkErr(null);
+        if (isNarrow) setNarrowTab('preview');
+        return true;
+      }
+      const rel = toRelativePath(raw, projectRoot);
+      if (!rel) return false;
+      return openPath(rel);
+    },
+    [
+      openPath,
+      isNarrow,
+      projectRoot,
+      setExternalPath,
+      setLineRange,
+      setNarrowTab,
+    ]
+  );
+
+  /** 深链进入：?path=…&line=…（ext=1 时 path 为项目根外的绝对路径，直开外部只读预览） */
   useEffect(() => {
+    const rawPath = params.get('path');
+    if (!rawPath) return;
+    const line = params.get('line');
+    // 2026-10-22 小杨 - 行号深链既支持"起-止"也支持单行"10"：
+    //   只认区间时，用户手敲 ?line=10 会被静默忽略（点了没反应）— 小杨-2026-10-22
+    const m = line ? /^(\d+)(?:-(\d+))?$/.exec(line) : null;
+    const lineRange = m
+      ? { start: Number(m[1]), end: m[2] ? Number(m[2]) : Number(m[1]) }
+      : null;
+    // 2026-10-22 小欧 - 外部文件（ext=1）：path 是盘符绝对路径，直开外部只读预览，
+    //   不走树定位（外部文件不在项目根树内，expandToPath 必失败）。— 小欧-2026-10-22
+    if (params.get('ext') === '1') {
+      const p = decodePathParam(rawPath);
+      if (p && isExternalAbsPath(p, projectRoot)) {
+        setExternalPath(p);
+        setLineRange(lineRange);
+        setLinkErr(null);
+      } else {
+        setLinkErr(`未找到「${rawPath}」`);
+      }
+      return;
+    }
     // 2026-10-21 小杨 - 先归一反斜杠，避免 Windows 路径深链在 expandToPath 断链
-    const rel = params.get('path')?.replace(/\\/g, '/');
+    const rel = rawPath.replace(/\\/g, '/');
     // 2026-10-21 小杨 - 修复（阻断）：原 effect 在**树未就绪**时就跑
     //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
     //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
     //   现在等 treeReady 后再展开。
-    if (!rel || !treeReady) return;
+    if (!treeReady) return;
     void (async () => {
-      const line = params.get('line');
-      // 2026-10-22 小杨 - 行号深链既支持"起-止"也支持单行"10"：
-      //   只认区间时，用户手敲 ?line=10 会被静默忽略（点了没反应）— 小杨-2026-10-22
-      const m = line ? /^(\d+)(?:-(\d+))?$/.exec(line) : null;
-      const ok = await openPath(
-        rel,
-        m
-          ? { start: Number(m[1]), end: m[2] ? Number(m[2]) : Number(m[1]) }
-          : null
-      );
+      const ok = await openPath(rel, lineRange);
       if (!ok) {
         // 页内留痕（不只弹一下 toast）：否则用户以为"点了没反应"
         setLinkErr(`未找到「${rel}」，请检查路径或从左侧树中选择`);
@@ -379,7 +447,7 @@ const FilesPage: React.FC = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params, treeReady]);
+  }, [params, treeReady, projectRoot]);
 
   /**
    * J3：把目录设为当前会话的工作目录（Agent 产物落点）。
@@ -576,12 +644,7 @@ const FilesPage: React.FC = () => {
           onExpandedKeys={setExpandedKeys}
           loadedKeys={loadedKeys}
           onLoadedKeys={setLoadedKeys}
-          onSelectFile={(n) => {
-            setSelected(n);
-            setLineRange(null);
-            // 窄屏点文件后**自动切到预览**（否则用户点了却"什么都没发生"）
-            if (isNarrow) setNarrowTab('preview');
-          }}
+          onSelectFile={selectTreeFile}
           onSelectFiles={setMultiFiles}
           onInsertRef={(n) => {
             void (async () => {
@@ -609,6 +672,7 @@ const FilesPage: React.FC = () => {
     ) : (
       <FilePreview
         node={selected}
+        external={externalPath ? { path: externalPath } : undefined}
         lineRange={lineRange}
         refreshRef={refreshPreviewRef}
         onSendFile={(content, node, size) =>
@@ -622,6 +686,15 @@ const FilesPage: React.FC = () => {
             content,
             size,
             range
+          )
+        }
+        onSendExternal={(content, absPath, size) =>
+          pushRef(
+            'file',
+            absPath.split(/[\\/]/).pop() || absPath,
+            absPath,
+            content,
+            size
           )
         }
       />
@@ -750,7 +823,7 @@ const FilesPage: React.FC = () => {
             </>
           )}
           <span style={{ flex: 1 }} />
-          <LocateBox onLocate={openPath} />
+          <LocateBox onLocate={openPathOrExternal} />
           <Button onClick={refreshAll} title="重新加载目录与足迹">
             重新加载
           </Button>

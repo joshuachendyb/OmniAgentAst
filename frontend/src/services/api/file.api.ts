@@ -7,6 +7,7 @@
 //     （后端原先混在一个 skipped 里，提示说成"无法读取"是误导）— 小欧-2026-10-21
 //   2026-10-21 小欧 - fetchTree 位置参数改选项对象 {maxDepth,maxNodes,signal}：
 //     传 signal 免填空位；signal 交 axios 取消在途请求（I7 竞态防护）— 小欧-2026-10-21
+// 2026-10-22 小欧 - 增 readExternalFile：读项目根外文本文件（/files/external/read，只读）— 小欧-2026-10-22
 /**
  * 文件浏览 API（只读浏览项目根目录）
  *
@@ -141,6 +142,20 @@ export const fileApi = {
       await api.get<ReadResponse>('/files/read', {
         params: { path, offset, limit },
         signal,
+      })
+    ).data;
+  },
+
+  /** 读项目根外的文本文件（只读；外部文件链接直开预览）— 小欧-2026-10-22 */
+  readExternalFile: async (
+    absPath: string,
+    cfg?: { offset?: number; limit?: number }
+  ): Promise<ReadResponse> => {
+    need(absPath, '文件路径');
+    const { offset, limit } = cfg ?? {};
+    return (
+      await api.get<ReadResponse>('/files/external/read', {
+        params: { path: absPath, offset, limit },
       })
     ).data;
   },
