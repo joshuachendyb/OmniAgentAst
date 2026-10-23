@@ -1,6 +1,8 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：路径 → 文件页深链的可点链接（产出物/工作目录共用）— 小欧-2026-10-22
 // 2026-10-23 小欧 - 根外盘符绝对路径（文件）也生成 ext=1 外部只读预览深链（与正文 chip 同口径），
 //   不再静默退化纯文本；根内绝对仍归一走普通深链；根未取回时盘符绝对路径归属未定 → 不出链接。— 小欧-2026-10-23
+// 2026-10-23 小欧 - 根外目录（尾分隔符）也生成 ext=1 深链（挂外部树 __ext__），
+//   external 条件放宽 isFileLikePath || isDirPath；目录态 aria-label 改「打开目录」— 小欧-2026-10-23
 /**
  * FilePathLink —— 把"任意来源的路径"渲染成可点的文件页深链
  *
@@ -9,11 +11,13 @@
  *   底层判界复用 utils/projectPath、深链复用 utils/fileDeepLink（单一真源，不另立第二套）。
  *
  * 判界不过（根外/未取到根/形态非法）一律退化为纯文本，不造假链接（与 FileRefChip 同口径）。
+ * 根外目录（尾分隔符）走 ext=1 挂外部树；根外文件走 ext=1 外部只读预览。
  */
 import React from 'react';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
 import {
+  isDirPath,
   isDriveAbsPath,
   isFileLikePath,
   isLinkableRelPath,
@@ -50,18 +54,19 @@ const plainStyle: React.CSSProperties = {
 };
 
 /** Router 内的形态（单独一层，保证 useNavigate 只在有 Router 时被调用） */
-const RouterLink: React.FC<{ url: string; title: string; text: string }> = ({
-  url,
-  title,
-  text,
-}) => {
+const RouterLink: React.FC<{
+  url: string;
+  title: string;
+  text: string;
+  isDir?: boolean;
+}> = ({ url, title, text, isDir }) => {
   const nav = useNavigate();
   return (
     <span
       role="link"
       tabIndex={0}
       title={title}
-      aria-label={`打开文件 ${title}`}
+      aria-label={`${isDir ? '打开目录' : '打开文件'} ${title}`}
       style={{ ...plainStyle, ...linkStyle }}
       onClick={() => nav(url)}
       onKeyDown={(e) => {
@@ -83,16 +88,20 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
   const inRouter = useInRouterContext();
   const projectRoot = useProjectRoot();
   const rel = toRelativePath(rawPath, projectRoot);
-  // 根外盘符绝对路径且带文件扩展名 → ext=1 外部只读预览（与正文 chip 同口径）；
+  // 根外盘符绝对路径（文件有扩展名 / 目录尾分隔符）→ ext=1 外部深链（与正文 chip 同口径）；
   // 根未取回时盘符绝对路径归属未定 → 不出链接（等根取回后重算）；
-  // 目录/无扩展名路径不按文件打开 — 小欧-2026-10-23
+  // 无尾分隔符且无扩展名的根外路径前端无法区分文件/目录 → 不出链接（不造假）。
   const external =
-    !!projectRoot && isDriveAbsPath(rawPath) && !rel && isFileLikePath(rawPath);
+    !!projectRoot &&
+    isDriveAbsPath(rawPath) &&
+    !rel &&
+    (isFileLikePath(rawPath) || isDirPath(rawPath));
+  const dir = external && isDirPath(rawPath);
   const linkable = !!rel && isLinkableRelPath(rel);
   const label = text ?? rawPath;
 
   if (external) {
-    const url = buildExternalDeepLink(rawPath, lineRange);
+    const url = buildExternalDeepLink(rawPath, dir ? null : lineRange);
     if (!inRouter) {
       // 无 Router 上下文 → 退化为整页跳转（与 FileRefChip 同款）
       return (
@@ -101,7 +110,7 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
         </a>
       );
     }
-    return <RouterLink url={url} title={rawPath} text={label} />;
+    return <RouterLink url={url} title={rawPath} text={label} isDir={dir} />;
   }
 
   if (!linkable || !rel) {

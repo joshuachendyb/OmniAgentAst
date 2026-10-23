@@ -7,6 +7,8 @@
 // 2026-10-23 小欧 - 根外盘符绝对路径（文件）也生成 ext=1 外部只读预览深链（与正文 chip 同口径），
 //   不再拦死为纯文本；根内绝对仍归一走普通深链；根未取回时盘符绝对路径归属未定 → 不出链接
 //   （等根取回后重算，与正文 chip 同口径）。— 小欧-2026-10-23
+// 2026-10-23 小欧 - 根外目录（尾分隔符）也生成 ext=1 深链（挂外部树 __ext__），
+//   external 条件放宽 isFileLikePath || isDirPath；LinkInner 目录态换 FolderOutlined 图标 — 小欧-2026-10-23
 /**
  * PathLink —— 工具参数里的路径 → 可点击直达文件页（深链）
  *
@@ -14,15 +16,16 @@
  *   （路径是否真在项目根内由 `/files/read` 判界）—— 前端复制一份判据必然随规则演进而漂移。
  *
  * 相对路径：工具可能给 `src/main.py` / `doc\a.md`，归一后直接进深链；
- *   根内绝对路径归一成相对走普通深链；**根外盘符绝对路径走 ext=1 外部只读预览**；
- *   仅非盘符绝对且形态非法（UNC/斜杠/穿越/无扩展名）才退纯文本。
+ *   根内绝对路径归一成相对走普通深链；**根外盘符绝对路径（文件/目录）走 ext=1 外部深链**；
+ *   仅非盘符绝对且形态非法（UNC/斜杠/穿越/无扩展名且无尾分隔符）才退纯文本。
  */
 import React from 'react';
-import { FileOutlined } from '@ant-design/icons';
+import { FileOutlined, FolderOutlined } from '@ant-design/icons';
 import { Tooltip } from 'antd';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 import { isValidRelPath } from '@/components/markdown/FileRefChip';
 import {
+  isDirPath,
   isDriveAbsPath,
   isFileLikePath,
   isLinkableRelPath,
@@ -38,16 +41,17 @@ export interface PathLinkProps {
 }
 
 /** 可点击形态（Router 内）：原生 <a> 保底，点击/键盘都可达 */
-const LinkInner: React.FC<{ value: string; url: string }> = ({
-  value,
-  url,
-}) => {
+const LinkInner: React.FC<{
+  value: string;
+  url: string;
+  isDir?: boolean;
+}> = ({ value, url, isDir }) => {
   const nav = useNavigate();
   return (
     <Tooltip title={value}>
       <a
         href={url}
-        aria-label={`打开文件 ${value}`}
+        aria-label={`${isDir ? '打开目录' : '打开文件'} ${value}`}
         style={{
           display: 'inline-flex',
           alignItems: 'baseline',
@@ -78,7 +82,11 @@ const LinkInner: React.FC<{ value: string; url: string }> = ({
           nav(url);
         }}
       >
-        <FileOutlined aria-hidden style={{ flexShrink: 0, fontSize: 12 }} />
+        {isDir ? (
+          <FolderOutlined aria-hidden style={{ flexShrink: 0, fontSize: 12 }} />
+        ) : (
+          <FileOutlined aria-hidden style={{ flexShrink: 0, fontSize: 12 }} />
+        )}
         {value}
       </a>
     </Tooltip>
@@ -93,13 +101,19 @@ const LinkInner: React.FC<{ value: string; url: string }> = ({
 export const PathLink: React.FC<PathLinkProps> = ({ value, projectRoot }) => {
   const inRouter = useInRouterContext();
   const rel = toRelativePath(value, projectRoot);
-  // 根外盘符绝对路径且带文件扩展名 → ext=1 外部只读预览深链（与正文 chip 同口径）；
-  // 根未取回时盘符绝对路径归属未定 → 不出链接（等根取回后重算，与正文 chip 同口径）；
-  // 目录/无扩展名路径不按文件打开（目录展示走外部树，下一步）— 小欧-2026-10-23
+  // 根外盘符绝对路径（文件有扩展名 / 目录尾分隔符）→ ext=1 外部深链（与正文 chip 同口径）；
+  // 根未取回时盘符绝对路径归属未定 → 不出链接（等根取回后重算）；
+  // 无尾分隔符且无扩展名的根外路径前端无法区分文件/目录 → 不出链接（不造假）。
   const external =
-    !!projectRoot && isDriveAbsPath(value) && !rel && isFileLikePath(value);
+    !!projectRoot &&
+    isDriveAbsPath(value) &&
+    !rel &&
+    (isFileLikePath(value) || isDirPath(value));
+  const dir = external && isDirPath(value);
   if (external && inRouter) {
-    return <LinkInner value={value} url={buildExternalDeepLink(value)} />;
+    return (
+      <LinkInner value={value} url={buildExternalDeepLink(value)} isDir={dir} />
+    );
   }
   if (rel && isValidRelPath(rel) && isLinkableRelPath(rel) && inRouter) {
     return <LinkInner value={value} url={buildFileDeepLink(rel)} />;
