@@ -80,10 +80,8 @@ export const toRelativePath = (
  * 不造假链接）——否则首帧根未取回时，根内绝对路径会被误标"外部"并生成外部深链。
  * 2026-10-22 小欧 - 与后端 _is_abs_drive_path 口径：只认盘符绝对路径。— 小欧-2026-10-22
  */
-export const isExternalAbsPath = (
-  p: string,
-  projectRoot?: string
-): boolean => !!projectRoot && isDriveAbsPath(p) && !toRelativePath(p, projectRoot);
+export const isExternalAbsPath = (p: string, projectRoot?: string): boolean =>
+  !!projectRoot && isDriveAbsPath(p) && !toRelativePath(p, projectRoot);
 
 /**
  * 相对项目根 → 绝对路径；形态不合法（已是绝对路径 / 含 ..）或缺项目根返回 null。

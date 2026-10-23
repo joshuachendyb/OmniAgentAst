@@ -26,7 +26,7 @@ export const quoteFile = async (
   path: string,
   opts?: { label?: string; content?: string; size?: number }
 ): Promise<QuoteResult> => {
-  const label = opts?.label ?? (path.split('/').pop() ?? path);
+  const label = opts?.label ?? path.split('/').pop() ?? path;
   try {
     const content = opts?.content ?? (await fileApi.readFile(path)).content;
     composerRefStore.push({
@@ -50,7 +50,7 @@ export const quoteSelection = async (
   range: { start: number; end: number },
   opts?: { label?: string; content?: string; size?: number }
 ): Promise<QuoteResult> => {
-  const label = opts?.label ?? (path.split('/').pop() ?? path);
+  const label = opts?.label ?? path.split('/').pop() ?? path;
   try {
     const content = opts?.content ?? (await fileApi.readFile(path)).content;
     composerRefStore.push({
