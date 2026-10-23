@@ -9,6 +9,8 @@
 //   2026-10-21 小欧 - 导出 OP_LABEL/OP_COLOR：ops 徽标映射口径易被改坏，导出供测试断言 — 小欧-2026-10-21
 //   2026-10-22 小欧 - 将说明文字 "本会话中 Agent 读写过的文件..." 移到标题 "文件足迹" 同一行 — 小欧-2026-10-22
 //   2026-10-22 小欧 - 移除文件名 Tooltip：f.name 仅文件名不含路径，一个文件一行可完整显示，悬停提示冗余 — 小欧-2026-10-22
+//   2026-10-23 小欧 - 行内改显全路径 f.path（北京老陈要求）：不截断、超宽折行（wordBreak+pre-wrap），
+//     去 ellipsis/nowrap；同名不同目录的文件靠路径可区分 — 小欧-2026-10-23
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -154,7 +156,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
             marginLeft: Spacing.XS,
           }}
         >
-          本会话中 Agent 读写过的文件 · 点文件名打开，点「引用」加入本轮对话
+          本会话中 Agent 读写过的文件 · 点文件路径打开，点「引用」加入本轮对话
         </span>
         <span
           style={{
@@ -203,7 +205,9 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                 key={f.path}
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
+                  /* 2026-10-23 小欧 - 路径折多行时 center 会让图标/徽标/时间/引用悬在行中间
+                     错开首行 → flex-start 对齐首行（单行时两者等价） — 小欧-2026-10-23 */
+                  alignItems: 'flex-start',
                   gap: Spacing.SM,
                   padding: `${Spacing.XS}px 0`,
                 }}
@@ -211,7 +215,7 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                 <FileOutlined
                   style={{ color: Colors.PRIMARY, flexShrink: 0 }}
                 />
-                {/* 键盘目标①：文件名 = 打开文件（真 button，避免"行 role=button 内嵌 button"的语义冲突） */}
+                {/* 键盘目标①：文件路径 = 打开文件（真 button，避免"行 role=button 内嵌 button"的语义冲突） */}
                 <button
                   type="button"
                   /* 2026-10-21 小杨 - **新标签打开**
@@ -226,12 +230,14 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                     padding: 0,
                     color: Colors.TEXT.PRIMARY,
                     textAlign: 'left',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    flex: 1,
+                    minWidth: 0,
+                    /* 2026-10-23 小欧 - 全路径不截断、超宽折行（去 ellipsis/nowrap） — 小欧-2026-10-23 */
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-all',
                   }}
                 >
-                  {f.name}
+                  {f.path}
                 </button>
                 {/* ops 徽标**只显前 2 个**，其余折叠为 +N（真实取值域 16 个工具名） */}
                 {(f.ops ?? []).slice(0, 2).map((op) => (
