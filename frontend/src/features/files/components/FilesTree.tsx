@@ -17,6 +17,8 @@
 //   2026-10-22 小欧 - 滚动定位（reveal prop）：页面命中路径后本组件在提交后 effect
 //     把该行滚入视口（子树内查询，不穿透全局 document）— 小欧-2026-10-22
 //   2026-10-22 小欧 - 双标记 ●/✎（读过/被改写过），writtenSet prop — 小欧-2026-10-22
+//   2026-10-23 小欧 - 定位行短暂高亮（reveal 驱动，与选中态分离）：目录引用跳转后
+//     用户能一眼看到"定位到哪了"，右侧预览不动 — 小欧-2026-10-23
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
@@ -108,18 +110,24 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
   const menuRef = useRef<HTMLDivElement | null>(null);
   /** 滚动定位用：行容器 ref（查询限于自身子树，不穿透到全局 document） */
   const rootRef = useRef<HTMLDivElement | null>(null);
+  /** 2026-10-23 小欧 - 定位高亮 key（与 activeKey 选中态分离：目录定位不能改预览）— 小欧-2026-10-23 */
+  const [locatedKey, setLocatedKey] = useState('');
 
   /**
    * 2026-10-22 小欧 - 滚动定位信号 effect：reveal 变化即把定位行滚入视口。
    *   effect 在 React 提交后执行（展开/补拉/选中同批落地，行必然已挂载）；
    *   block:nearest 行已在视口则不动；CSS.escape 转义 key（存在 [1]xxx.md
    *   这类带方括号文件名）；树隐藏（窄屏切到预览 Tab）时为无害空操作 — 小欧-2026-10-22
+   *   2026-10-23 小欧 - 同时短暂高亮定位行（1.5s 后消退），供目录定位反馈 — 小欧-2026-10-23
    */
   useEffect(() => {
     if (!reveal) return;
     rootRef.current
       ?.querySelector(`[data-file-key="${CSS.escape(reveal.key)}"]`)
       ?.scrollIntoView({ block: 'nearest' });
+    setLocatedKey(reveal.key);
+    const timer = window.setTimeout(() => setLocatedKey(''), 1500);
+    return () => window.clearTimeout(timer);
   }, [reveal]);
 
   /** 菜单打开时：点外部 / ESC / 滚动 → 收起（fixed 定位不随滚动，需手动关） */
@@ -238,6 +246,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           data-file-key={n.key}
           data-checked={checked ? '1' : undefined}
           data-active={active && !checked ? '1' : undefined}
+          data-located={locatedKey === n.key ? '1' : undefined}
           className="files-tree-row"
           role="treeitem"
           aria-expanded={isDir ? isOpen : undefined}
@@ -264,6 +273,8 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
             padding: `3px 8px 3px ${depth * 16 + 8}px`,
             cursor: 'pointer',
             opacity: dim && !checked && !active ? 0.4 : undefined,
+            background:
+              locatedKey === n.key ? chatTokens.colorPrimaryBg : undefined,
           }}
         >
           {isDir ? (

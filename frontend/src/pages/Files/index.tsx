@@ -27,6 +27,10 @@
 //   （先清外部态再选中），判定只写一处 — 小欧-2026-10-22
 // 2026-10-22 小欧 - 工具条目录可见性增强：只读浏览旁加「目录: [路径]」，路径名高亮
 //   （跨页引用时一眼看到当前项目根在哪，与「当前会话」标签共同交代引用去向）— 小欧-2026-10-22
+// 2026-10-23 小欧 - 深链入口归一：path 可为正文原文（盘符绝对或相对）。根外绝对 → 外部只读预览；
+//   根内绝对 → 归一为相对后树定位；根未取回先等。目录命中只定位（右侧预览不动）— 小欧-2026-10-23
+// 2026-10-23 小欧 - 深链未命中提示收口为 PathNotFoundPane（右侧预览区内），linkErr 改存 {path} 结构化；
+//   目录扫描提示（scanNotices）从树顶移到工具条「多选引用」行内 — 小欧-2026-10-23
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -65,11 +69,13 @@ import {
   toAbsolutePath,
   samePath,
   toRelativePath,
+  isDriveAbsPath,
   isExternalAbsPath,
 } from '@/utils/projectPath';
 import { decodePathParam } from '@/utils/fileDeepLink';
 import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
+import { PathNotFoundPane } from '@/features/files/components/PathNotFoundPane';
 // 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
@@ -247,7 +253,7 @@ const FilesPage: React.FC = () => {
   const [projectRoot, setProjectRoot] = useState('');
   const [rootErr, setRootErr] = useState<string | null>(null);
   /** 深链失败留痕（与定位框自身的草稿/错误无关，互不牵连） */
-  const [linkErr, setLinkErr] = useState<string | null>(null);
+  const [linkErr, setLinkErr] = useState<{ path: string } | null>(null);
   /**
    * 2026-10-22 小欧 - 滚动定位信号：openPath 命中后递增，FilesTree 在提交后的
    *   effect 里把该行滚入视口（n 自增保证同 key 重复定位也触发）— 小欧-2026-10-22
@@ -342,10 +348,19 @@ const FilesPage: React.FC = () => {
       setExternalPath(null);
       setSelected(n);
       setLineRange(line ?? null);
+      // 2026-10-23 小欧 - 用户重新选中文件即退出「未找到」态，避免旧提示压住正常预览 — 小欧-2026-10-23
+      setLinkErr(null);
       // 2026-10-22 小欧 - 窄屏切预览 Tab：否则打开文件后仍停在"文件"Tab，用户以为没反应
       if (isNarrow) setNarrowTab('preview');
     },
-    [isNarrow, setExternalPath, setSelected, setLineRange, setNarrowTab]
+    [
+      isNarrow,
+      setExternalPath,
+      setSelected,
+      setLineRange,
+      setNarrowTab,
+      setLinkErr,
+    ]
   );
 
   /**
@@ -426,22 +441,41 @@ const FilesPage: React.FC = () => {
         setLineRange(lineRange);
         setLinkErr(null);
       } else {
-        setLinkErr(`未找到「${rawPath}」`);
+        setLinkErr({ path: rawPath });
+        setNarrowTab('preview');
       }
       return;
     }
-    // 2026-10-21 小杨 - 先归一反斜杠，避免 Windows 路径深链在 expandToPath 断链
-    const rel = rawPath.replace(/\\/g, '/');
+    // 2026-10-23 小欧 - 深链 path 可能是**正文原文**（盘符绝对或相对）：
+    //   根未取回时绝对路径归属未定 → 等根；根外绝对 → 外部只读预览；根内绝对 → 归一为相对后树定位。
+    //   chip 不再补根，归一职责只在文件页入口这一处。— 小欧-2026-10-23
+    if (isDriveAbsPath(rawPath)) {
+      if (!projectRoot) return;
+      if (isExternalAbsPath(rawPath, projectRoot)) {
+        setExternalPath(rawPath);
+        setLineRange(lineRange);
+        setLinkErr(null);
+        if (isNarrow) setNarrowTab('preview');
+        return;
+      }
+    }
     // 2026-10-21 小杨 - 修复（阻断）：原 effect 在**树未就绪**时就跑
     //   （loadTree 是 void 发起，同步段只走到第一个 await → treeRef.current 仍是 []）
     //   → findNode 恒 null → 深链 100% 失效（预览空白、树不定位、无任何提示）。
     //   现在等 treeReady 后再展开。
     if (!treeReady) return;
+    const rel = toRelativePath(rawPath, projectRoot);
+    if (!rel) {
+      setLinkErr({ path: rawPath });
+      setNarrowTab('preview');
+      return;
+    }
     void (async () => {
       const ok = await openPath(rel, lineRange);
       if (!ok) {
         // 页内留痕（不只弹一下 toast）：否则用户以为"点了没反应"
-        setLinkErr(`未找到「${rel}」，请检查路径或从左侧树中选择`);
+        setLinkErr({ path: rel });
+        setNarrowTab('preview');
       } else {
         setLinkErr(null);
       }
@@ -616,23 +650,8 @@ const FilesPage: React.FC = () => {
   ) : (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-        {/* 2026-10-21 小欧 - 扫描不完整提示（结果不全必须让用户看见，不能静默给残缺目录）；
-            2026-10-21 小欧 - 按要求**拼接成一行**显示（原先每段各占一行） */}
-        {scanNotices.length > 0 && (
-          <div
-            role="status"
-            style={{
-              fontSize: chatTokens.fontSM,
-              color: Colors.WARNING,
-              lineHeight: 1.5,
-              whiteSpace: 'normal',
-              wordBreak: 'break-word',
-              padding: `0 ${Spacing.SM}px ${Spacing.XS}px`,
-            }}
-          >
-            {scanNotices.join('')}
-          </div>
-        )}
+        {/* 2026-10-23 小欧 - 目录加载提示（scanNotices）已移至工具条「多选引用」提示之后同一行，
+            不再占用树顶空间 — 小欧-2026-10-23 */}
         <FilesTree
           nodes={tree}
           activeKey={selected?.key ?? ''}
@@ -666,8 +685,17 @@ const FilesPage: React.FC = () => {
     </div>
   );
 
+  /**
+   * 2026-10-23 小欧 - 深链未命中提示收口 PathNotFoundPane：标题 + 路径块 + 说明 + 底部操作，
+   *   路径在目录分隔符后可换行，文件名不硬切。点「知道了」或重新选中文件即退出该态。— 小欧-2026-10-23
+   */
+  const linkErrPane = linkErr ? (
+    <PathNotFoundPane path={linkErr.path} onDismiss={() => setLinkErr(null)} />
+  ) : null;
+
   const previewPane =
-    tree.length === 0 && !treeErr && !treeLoading ? (
+    linkErrPane ??
+    (tree.length === 0 && !treeErr && !treeLoading ? (
       <Empty description="目录为空" />
     ) : (
       <FilePreview
@@ -698,7 +726,7 @@ const FilesPage: React.FC = () => {
           )
         }
       />
-    );
+    ));
 
   if (rootErr) {
     return (
@@ -804,6 +832,21 @@ const FilesPage: React.FC = () => {
           >
             多选引用：Ctrl+ 逐个 / Shift+ 连选
           </span>
+          {/* 2026-10-23 小欧 - 目录扫描提示随工具条行内排布（挂「多选引用」之后，不另起独立提示块） — 小欧-2026-10-23 */}
+          {scanNotices.length > 0 && (
+            <span
+              role="status"
+              style={{
+                color: Colors.WARNING,
+                fontSize: chatTokens.fontSM,
+                lineHeight: 1.5,
+                whiteSpace: 'normal',
+                wordBreak: 'break-word',
+              }}
+            >
+              {scanNotices.join('')}
+            </span>
+          )}
           {multiFiles.length > 0 && (
             <>
               <Button
@@ -860,20 +903,6 @@ const FilesPage: React.FC = () => {
               去对话
             </Button>
           </div>
-        )}
-
-        {linkErr && (
-          <Alert
-            type="warning"
-            showIcon
-            message={linkErr}
-            style={{ marginBottom: Spacing.SM }}
-            action={
-              <Button size="small" onClick={() => setLinkErr(null)}>
-                知道了
-              </Button>
-            }
-          />
         )}
 
         {isNarrow ? (

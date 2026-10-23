@@ -18,6 +18,10 @@
 // 2026-10-22 小欧 - 根外文件可点：toFileRefMarkdown/markPath 对根外盘符绝对路径生成外部链接
 //   （/file-ref?path=绝对路径，chip 内部分流外部预览）；外部判据 isExternalAbsPath =
 //   盘符绝对路径且归一到不了项目根内（根内绝对先归一相对走普通链接，不算外部）— 小欧-2026-10-22
+// 2026-10-23 小欧 - 正文引用改**原文保真**：chip 显示正文原路径，不再用项目根补全（删 displayPathOf）；
+//   目录（盘符绝对 + 尾分隔符）生成「目录」chip，外部目录只加标识不跳转；裸文件名不再生成链接。
+//   链接 href 统一存原文，由文件页入口归一（绝对根内→相对、根外→外部预览）— 小欧-2026-10-23
+//   2026-10-23 小欧 - 徽标文案「外部」改「根外」，与 project_root（项目根）概念对齐 — 小欧-2026-10-23
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -31,7 +35,7 @@
  *   校验不过的链接**退化为纯文本**，不造假链接。
  */
 import React from 'react';
-import { FileOutlined } from '@ant-design/icons';
+import { FileOutlined, FolderOutlined } from '@ant-design/icons';
 import { useNavigate, useInRouterContext } from 'react-router-dom';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
@@ -41,9 +45,9 @@ import {
   encodePathParam,
 } from '@/utils/fileDeepLink';
 import {
+  isDriveAbsPath,
   isExternalAbsPath,
   isLinkableRelPath,
-  toAbsolutePath,
   toRelativePath,
 } from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
@@ -63,16 +67,13 @@ const chipStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-/**
- * chip 展示文案：项目根 + 相对路径拼**完整绝对路径**；根取不到退相对路径（不造假）；
- * 根是 Windows 形态时展示统一反斜杠，避免 `E:\root/a.md` 这种混写。
- */
-const displayPathOf = (relPath: string, projectRoot: string): string => {
-  // 2026-10-22 小欧 - 外部文件（盘符绝对路径且归一到不了根内）直接展示原样，不走根内换算 — 小欧-2026-10-22
-  if (isExternalAbsPath(relPath, projectRoot)) return relPath;
-  const abs = toAbsolutePath(relPath, projectRoot);
-  if (!abs) return relPath;
-  return projectRoot.includes('\\') ? abs.replace(/\//g, '\\') : abs;
+/** 目录形态判据：尾分隔符是唯一可靠信号（不猜扩展名，历史上误判过带 .md 的目录） */
+const isDirPath = (p: string): boolean => /[\\/]$/.test(p);
+
+/** 徽标样式（目录/根外共用一个规格，避免两处漂移） */
+const badgeStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
 };
 
 /** 形态：不可删除（Agent 的输出，不是用户的引用）；校验不过由调用方退化为纯文本，不渲染 chip */
@@ -81,46 +82,61 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
   lineRange,
   onGo,
 }) => {
-  // 2026-10-22 小欧 - chip 文字直接显示完整绝对路径（含项目根），不再靠 tip — 小欧-2026-10-22
+  // 2026-10-23 小欧 - 文案恒为原文（不补项目根）：正文写什么就显示什么 — 小欧-2026-10-23
   const projectRoot = useProjectRoot();
-  // 2026-10-22 小欧 - 外部判据：盘符绝对路径且归一到不了根内（根内绝对不算外部）— 小欧-2026-10-22
+  const isDir = isDirPath(relPath);
   const isExternal = isExternalAbsPath(relPath, projectRoot);
-  const fullPath = displayPathOf(relPath, projectRoot);
+  // 2026-10-23 小欧 - 绝对目录在根未取回时归属未定 → 不可点；外部目录本阶段仅标识 — 小欧-2026-10-23
+  const navigable =
+    !isDir || !isDriveAbsPath(relPath) || (!!projectRoot && !isExternal);
+  const label = isDir
+    ? navigable
+      ? `打开目录 ${relPath}`
+      : `根外目录 ${relPath}，查看功能将在后续版本支持`
+    : `${isExternal ? '根外文件 ' : ''}打开文件 ${relPath}${
+        lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
+      }`;
   return (
     <span
-      role="link"
-      tabIndex={0}
-      aria-label={`${isExternal ? '外部文件 ' : ''}打开文件 ${fullPath}${
-        lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
-      }`}
+      role={navigable ? 'link' : undefined}
+      tabIndex={navigable ? 0 : undefined}
+      aria-label={label}
+      aria-disabled={navigable ? undefined : true}
+      title={navigable ? undefined : '根外目录查看将在后续版本支持'}
       style={{
         ...chipStyle,
         display: 'inline-flex',
         alignItems: 'center',
         gap: Spacing.XS,
+        cursor: navigable ? 'pointer' : 'default',
       }}
-      onClick={onGo}
-      onKeyDown={(e) => {
-        if (e.key !== 'Enter' && e.key !== ' ') return;
-        e.preventDefault();
-        onGo();
-      }}
+      onClick={navigable ? onGo : undefined}
+      onKeyDown={
+        navigable
+          ? (e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              onGo();
+            }
+          : undefined
+      }
     >
-      <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />{' '}
-      {/* 2026-10-22 小欧 - 外部文件标识：提示该路径在当前项目目录外，点击走外部只读预览 — 小欧-2026-10-22 */}
-      {isExternal && (
-        <span
-          style={{
-            color: Colors.WARNING,
-            fontSize: 10,
-            fontWeight: 600,
-          }}
-        >
-          外部{' '}
+      {isDir ? (
+        <FolderOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
+      ) : (
+        <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
+      )}
+      {isDir && (
+        <span style={{ ...badgeStyle, color: Colors.TEXT.SECONDARY }}>
+          目录
         </span>
       )}
-      {fullPath}
-      {lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
+      {/* 2026-10-23 小欧 - 根外标识：提示该路径在当前项目根之外 — 小欧-2026-10-23 */}
+      {isExternal && (
+        <span style={{ ...badgeStyle, color: Colors.WARNING }}>根外</span>
+      )}
+      {relPath}
+      {!isDir && lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
     </span>
   );
 };
@@ -139,9 +155,12 @@ export const FileRefChip: React.FC<FileRefChipProps> = (props) => {
   // 2026-10-22 小欧 - 外部判据与 ChipBody 同一纯函数（根内绝对 → 普通深链，根外 → 外部深链）— 小欧-2026-10-22
   const projectRoot = useProjectRoot();
   const isExternal = isExternalAbsPath(props.relPath, projectRoot);
-  const url = isExternal
-    ? buildExternalDeepLink(props.relPath, props.lineRange ?? null)
-    : buildFileDeepLink(props.relPath, props.lineRange ?? null);
+  // 2026-10-23 小欧 - 目录走普通深链（文件页按真实节点类型定位），外部目录由 ChipBody 禁止点击 — 小欧-2026-10-23
+  const lines = isDirPath(props.relPath) ? null : (props.lineRange ?? null);
+  const url =
+    isExternal && !isDirPath(props.relPath)
+      ? buildExternalDeepLink(props.relPath, lines)
+      : buildFileDeepLink(props.relPath, lines);
   if (inRouter) {
     return <ChipWithRouter {...props} url={url} />;
   }
@@ -189,13 +208,20 @@ const PATH_EXT = '\\.[A-Za-z0-9]{1,10}';
 const PATH_ABS = `[A-Za-z]:[\\\\/][^${PATH_STOP}]*${PATH_EXT}`;
 /** 相对路径必须含分隔符；排除 `:` 防把 `路径:E:\\a.md` 的中文前缀并进路径 */
 const PATH_REL = `[^${PATH_STOP}:\\\\/][^${PATH_STOP}:]*[\\\\/][^${PATH_STOP}:]*${PATH_EXT}`;
+/**
+ * 盘符绝对目录：尾分隔符收尾（`F:\a\b\`）。
+ * 负向前瞻保证不把 `F:\a\b\c.md` 的前缀当目录（否则文件被截成目录 + 残余文件名）。
+ * 相对目录不自动识别（正文里的“答复/思考”不是路径）。
+ */
+const PATH_SEG = `[^${PATH_STOP}:\\\\/]+`;
+const PATH_ABS_DIR = `[A-Za-z]:[\\\\/](?:${PATH_SEG}[\\\\/])+(?![^${PATH_STOP}:\\\\/])`;
 
 /**
  * 单趟识别三类 token（顺序即优先级，替换结果不会被二次扫描）：
  *   ① 显式标记 `[[文件:path#L1-L2]]`
  *   ② 已有 markdown 链接/图片 —— 原样保留，防二次转换
  *   ③ URL —— 原样保留（早于裸路径，防 `https://x/a.md` 被当成相对路径）
- *   ④ 裸绝对路径（盘符）或裸相对路径 —— 根内才转链接，其余原样
+ *   ④ 裸绝对路径（盘符）/绝对目录/含目录的相对路径 —— 转链接（href 存原文），其余原样
  */
 const FILE_REF_TOKEN_RE = new RegExp(
   // 2026-10-22 小欧 - markPath 允许含 ']'（此前排除 ']' 导致 `[[文件:a[1].md]]` 整条匹配不上，
@@ -204,7 +230,7 @@ const FILE_REF_TOKEN_RE = new RegExp(
   '\\[\\[文件:(?<markPath>[^|\\n]+?)(?:#L(?<markFrom>\\d+)(?:-L?(?<markTo>\\d+))?)?\\]\\]' +
     '|!?\\[[^\\]]*\\]\\([^)]*\\)' +
     '|(?:https?|ftp|file):\\/\\/[^\\s<>()]+' +
-    `|(?<lead>^|[\\s（(【，,;；:：=*])(?:(?<bareAbs>${PATH_ABS})|(?<bareRel>${PATH_REL}))`,
+    `|(?<lead>^|[\\s（(【，,;；:：=*])(?:(?<bareDirAbs>${PATH_ABS_DIR})|(?<bareAbs>${PATH_ABS})|(?<bareRel>${PATH_REL}))`,
   'gu'
 );
 
@@ -213,6 +239,7 @@ interface FileRefTokenGroups {
   markFrom?: string;
   markTo?: string;
   lead?: string;
+  bareDirAbs?: string;
   bareAbs?: string;
   bareRel?: string;
 }
@@ -220,27 +247,42 @@ interface FileRefTokenGroups {
 /** label 里的方括号与反斜杠要转义，否则 markdown 链接解析被截断 */
 const escapeLabel = (p: string): string => p.replace(/([[\]\\])/g, '\\$1');
 
+/** 形态/安全门槛：控制字符与 `..` 穿越不是可链接路径（绝对路径同样适用） */
+const isBadPath = (p: string): boolean =>
+  !p || /[\r\n\t\0]/.test(p) || p.split(/[\\/]/).includes('..');
+
 /**
- * 裸路径与行内代码**共用的链接构造**（唯一真源，DRY）：
+ * 裸路径、行内代码、显式标记**共用的链接构造**（唯一真源，DRY）：
  *   @/# 开头（npm 包名 @scope/pkg、锚点 #L12）不是文件路径 → null；
- *   归一为根内相对路径（utils/projectPath 唯一真源），根外/未取到根/形态不合格 → null；
+ *   href **存原文**（chip 显示原文，由文件页入口归一绝对/相对，不在此处重拼根）；
+ *   裸文件名（无目录）不自动转（无从精确定位）；显式标记允许无目录；
+ *   相对目录不自动识别；盘符绝对目录等根取回再出 chip（归属未定）。
  *   调用方拿到 null 一律留原文，不造假链接。
  */
 const toFileRefMarkdown = (
   raw: string,
-  projectRoot?: string
+  projectRoot?: string,
+  explicit = false,
+  lines = ''
 ): string | null => {
+  if (isBadPath(raw)) return null;
   if (raw.startsWith('@') || raw.startsWith('#')) return null;
-  const rel = toRelativePath(raw, projectRoot);
-  if (rel && isValidRelPath(rel) && isLinkableRelPath(rel)) {
-    return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(rel)})`;
+  const dir = isDirPath(raw);
+  const abs = isDriveAbsPath(raw);
+  if (dir) {
+    // 绝对目录：根未取回时分不清内/外，等根（宁可晚一拍，也不给错归属）
+    if (abs && !projectRoot) return null;
+    // 相对目录：仅显式标记可点（正文里的“答复/思考”不是路径）
+    if (!abs && !explicit) return null;
+    if (!abs && !isValidRelPath(raw)) return null;
+  } else if (!abs) {
+    const rel = toRelativePath(raw, projectRoot);
+    if (!rel) return null;
+    // 2026-10-23 小欧 - 判“有没有目录”看原文（`./a.md` 显式带当前目录，不算裸文件名）— 小欧-2026-10-23
+    if (!explicit && !/[\\/]/.test(raw)) return null;
+    if (!isValidRelPath(rel) || !isLinkableRelPath(rel)) return null;
   }
-  // 2026-10-22 小欧 - 根外盘符绝对路径（归一到不了根内，非根内相对/绝对误判）→ 外部文件链接。
-  //   根内绝对路径已被 toRelativePath 归一走普通链接，不会落到这里。— 小欧-2026-10-22
-  if (isExternalAbsPath(raw, projectRoot)) {
-    return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(raw)})`;
-  }
-  return null;
+  return `[${escapeLabel(raw)}](/file-ref?path=${encodePathParam(raw)}${lines})`;
 };
 
 const convertRuns = (text: string, projectRoot?: string): string =>
@@ -248,27 +290,16 @@ const convertRuns = (text: string, projectRoot?: string): string =>
     const g = rest[rest.length - 1] as FileRefTokenGroups;
 
     if (g.markPath) {
-      // 2026-10-22 小欧 - 先归一：根内绝对路径 → 相对（根内文件不标外部）；
-      //   归一失败且是根外盘符绝对路径 → 外部链接；否则留原文（不造假链接）— 小欧-2026-10-22
-      const rel = toRelativePath(g.markPath, projectRoot);
-      if (rel && isValidRelPath(rel)) {
-        const lines = g.markFrom
+      // 2026-10-23 小欧 - 显式标记是 Agent 的明确引用：允许无目录相对名；href 存原文 — 小欧-2026-10-23
+      const lines =
+        g.markFrom && !isDirPath(g.markPath)
           ? `&line=${g.markFrom}${g.markTo ? `-${g.markTo}` : ''}`
           : '';
-        return `[${escapeLabel(g.markPath)}](/file-ref?path=${encodePathParam(
-          rel
-        )}${lines})`;
-      }
-      if (!isExternalAbsPath(g.markPath, projectRoot)) return whole;
-      const lines = g.markFrom
-        ? `&line=${g.markFrom}${g.markTo ? `-${g.markTo}` : ''}`
-        : '';
-      return `[${escapeLabel(g.markPath)}](/file-ref?path=${encodePathParam(
-        g.markPath
-      )}${lines})`;
+      const link = toFileRefMarkdown(g.markPath, projectRoot, true, lines);
+      return link ?? whole;
     }
 
-    const raw = g.bareAbs ?? g.bareRel;
+    const raw = g.bareDirAbs ?? g.bareAbs ?? g.bareRel;
     if (!raw) return whole;
     const link = toFileRefMarkdown(raw, projectRoot);
     return link ? `${g.lead ?? ''}${link}` : whole;
@@ -279,10 +310,12 @@ const convertRuns = (text: string, projectRoot?: string): string =>
  * 排除版本号（`1.2.3`）、无扩展名片段（`dsh-root`）；@/# 前缀统一由 toFileRefMarkdown 拒。
  */
 const LAST_SEGMENT_FILE_RE = /\.[A-Za-z][A-Za-z0-9]{0,9}$/;
-const isPathLike = (raw: string): boolean =>
-  !!raw &&
-  !/\s/.test(raw) &&
-  LAST_SEGMENT_FILE_RE.test(raw.split(/[\\/]/).pop() || '');
+const isPathLike = (raw: string): boolean => {
+  if (!raw || /\s/.test(raw)) return false;
+  // 2026-10-23 小欧 - 行内代码里的目录只认盘符绝对（相对目录不自动识别）— 小欧-2026-10-23
+  if (isDirPath(raw)) return isDriveAbsPath(raw);
+  return LAST_SEGMENT_FILE_RE.test(raw.split(/[\\/]/).pop() || '');
+};
 
 const INLINE_CODE_RE = /(`+)([^`]*?)\1/g;
 
@@ -309,9 +342,9 @@ const convertOutsideInline = (line: string, projectRoot?: string): string => {
 
 /**
  * 预处理：只转围栏外的标记，块内标记原样保留（代码块内不生效）
- *   2026-10-22 小欧 - 除显式 `[[文件:]]` 外，也识别 Agent 直接写的裸路径：
- *     相对路径原样；绝对路径按 projectRoot 归一为相对路径；根外/非法原样。
- *     判据复用 utils/projectPath，前端不另立一套根内规则。
+ *   2026-10-23 小欧 - 除显式 `[[文件:]]` 外，也识别 Agent 直接写的裸路径：
+ *     含目录的相对路径、盘符绝对文件、盘符绝对目录转链接（href 存原文）；
+ *     裸文件名、相对目录、非法形态原样。判据复用 utils/projectPath。— 小欧-2026-10-23
  *
  * 2026-10-21 小杨 - 修复（先红后绿抓出的真缺陷）：
  *   设计稿原用 `text.split(/(^```[\s\S]*?(?:^```|$))/m)` 想"按围栏切段"，
