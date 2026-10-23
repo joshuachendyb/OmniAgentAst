@@ -8,6 +8,9 @@
 #     ② get_file_content docstring"四道闸门"→ 五道闸门（实码顺序: 存在性→目录→类型→大小→编码）；
 # 2026-10-22 小欧 - 新增 /files/external/read：读项目根外文本文件（只读、审计；用户主动点击会话里
 #   外部文件链接时使用；仅盘符绝对路径，exists/is_file/类型/大小闸门复用根内读管道）— 小欧-2026-10-22
+# 2026-10-23 小欧 - 新增 /files/external/tree：列项目根外目录树（只读、审计；外部目录链接跳文件页
+#   挂左侧树展开时使用；仅盘符绝对路径，扫描管道复用 _walk/_scan_dir 唯一实现，节点 key 为
+#   相对该外部根的 posix 路径，响应多带 external_root 供前端识别）— 小欧-2026-10-23
 """file_routes — 文件浏览 API 路由薄壳。
 
 按项目分层约定（tool_routes.py:9-10）：API 层只做参数解包与错误转译，
@@ -90,6 +93,21 @@ def get_external_file_content(
     完全一致（复用 read_external_file 的读管道）；不碰写/工具边界。— 小欧-2026-10-22
     """
     return browse.read_external_file(path, offset=offset, limit=limit)
+
+
+@router.get("/files/external/tree")
+def get_external_tree(
+    path: str = Query(..., description="项目根**外**目录的绝对路径（仅盘符绝对路径，只读列目录）"),
+    max_depth: int = Query(browse.MAX_TREE_DEPTH, ge=1, le=20, description="递归深度上限"),
+    max_nodes: int = Query(browse.MAX_TREE_NODES, ge=1, description="节点总数上限"),
+) -> Dict[str, Any]:
+    """列项目根外的目录树（只读、审计；外部目录链接跳文件页挂左侧树展开时使用）。
+
+    2026-10-23 小欧 - 安全边界与 /files/external/read 同口径：仅盘符绝对路径，仅只读；
+    节点 key 为相对该外部根目录的 posix 路径，响应多带 external_root 供前端识别。
+    不碰写/工具边界。— 小欧-2026-10-23
+    """
+    return browse.build_external_tree(path, max_depth=max_depth, max_nodes=max_nodes)
 
 
 @router.get("/files/raw")

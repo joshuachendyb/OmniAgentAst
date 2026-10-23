@@ -122,3 +122,10 @@ export const isFileLikePath = (p: string): boolean => {
       .pop() ?? '';
   return /\.[A-Za-z0-9]{1,8}$/.test(last);
 };
+
+/**
+ * 目录形态判据：尾分隔符是唯一可靠信号（不猜扩展名，历史上误判过带 .md 的目录）。
+ * 2026-10-23 小欧 - 由 FileRefChip 提到 projectPath 单点（Files 页 ext=1 目录分支 / 定位框
+ *   根外目录开放共用，避免「目录=尾分隔符」判据两处各自写一次漂移）。— 小欧-2026-10-23
+ */
+export const isDirPath = (p: string): boolean => /[\\/]$/.test(p);

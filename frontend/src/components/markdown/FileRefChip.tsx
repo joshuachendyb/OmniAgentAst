@@ -46,6 +46,7 @@ import {
 } from '@/utils/fileDeepLink';
 import {
   isDriveAbsPath,
+  isDirPath,
   isExternalAbsPath,
   isLinkableRelPath,
   toRelativePath,
@@ -67,9 +68,6 @@ const chipStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
-/** 目录形态判据：尾分隔符是唯一可靠信号（不猜扩展名，历史上误判过带 .md 的目录） */
-const isDirPath = (p: string): boolean => /[\\/]$/.test(p);
-
 /** 徽标样式（目录/根外共用一个规格，避免两处漂移） */
 const badgeStyle: React.CSSProperties = {
   fontSize: 10,
@@ -86,13 +84,13 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
   const projectRoot = useProjectRoot();
   const isDir = isDirPath(relPath);
   const isExternal = isExternalAbsPath(relPath, projectRoot);
-  // 2026-10-23 小欧 - 绝对目录在根未取回时归属未定 → 不可点；外部目录本阶段仅标识 — 小欧-2026-10-23
-  const navigable =
-    !isDir || !isDriveAbsPath(relPath) || (!!projectRoot && !isExternal);
+  // 2026-10-23 小欧 - 可点判据：文件恒可点；根内相对目录可点；盘符绝对目录（根内/根外）
+  //   根已取回即可点（根外目录走 ext=1 挂外部树），仅根未取回时归属未定 → 不可点。
+  const navigable = !isDir || !isDriveAbsPath(relPath) || !!projectRoot;
   const label = isDir
     ? navigable
       ? `打开目录 ${relPath}`
-      : `根外目录 ${relPath}，查看功能将在后续版本支持`
+      : `根外目录 ${relPath}，项目根尚未加载`
     : `${isExternal ? '根外文件 ' : ''}打开文件 ${relPath}${
         lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
       }`;
@@ -102,7 +100,7 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
       tabIndex={navigable ? 0 : undefined}
       aria-label={label}
       aria-disabled={navigable ? undefined : true}
-      title={navigable ? undefined : '根外目录查看将在后续版本支持'}
+      title={navigable ? undefined : '项目根尚未加载，暂时无法打开'}
       style={{
         ...chipStyle,
         display: 'inline-flex',
@@ -155,12 +153,12 @@ export const FileRefChip: React.FC<FileRefChipProps> = (props) => {
   // 2026-10-22 小欧 - 外部判据与 ChipBody 同一纯函数（根内绝对 → 普通深链，根外 → 外部深链）— 小欧-2026-10-22
   const projectRoot = useProjectRoot();
   const isExternal = isExternalAbsPath(props.relPath, projectRoot);
-  // 2026-10-23 小欧 - 目录走普通深链（文件页按真实节点类型定位），外部目录由 ChipBody 禁止点击 — 小欧-2026-10-23
+  // 2026-10-23 小欧 - 目录：根内目录走普通深链（树定位），根外目录（盘符绝对+尾分隔符）
+  //   走 ext=1 外部深链（文件页挂外部树 __ext__ 展开）。目录不带行号。
   const lines = isDirPath(props.relPath) ? null : (props.lineRange ?? null);
-  const url =
-    isExternal && !isDirPath(props.relPath)
-      ? buildExternalDeepLink(props.relPath, lines)
-      : buildFileDeepLink(props.relPath, lines);
+  const url = isExternal
+    ? buildExternalDeepLink(props.relPath, lines)
+    : buildFileDeepLink(props.relPath, lines);
   if (inRouter) {
     return <ChipWithRouter {...props} url={url} />;
   }

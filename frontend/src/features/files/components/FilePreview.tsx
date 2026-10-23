@@ -19,6 +19,8 @@
 // 2026-10-22 小欧 - 外部文件形态（项目根外只读预览）：external prop 直读 /files/external/read；
 //   文件名红色框框 + 黄色提示条「项目目录外，已直接预览（只读）」；引用/复制路径/翻页/刷新
 //   复用现有管道；node 恒 null 时跳过 image/none 形态分支 — 小欧-2026-10-22
+// 2026-10-23 小欧 - 外部文件选区引用：onSendExternalSelection prop（与根内选区同能力，path 为绝对路径）；
+//   外部提示条文案缩短为「根外File:」— 小欧-2026-10-23
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -101,6 +103,13 @@ export interface FilePreviewProps {
   external?: { path: string } | null;
   /** 外部文件整文件引用（content 已读回，path 为绝对路径）— 小欧-2026-10-22 */
   onSendExternal?: (content: string, absPath: string, size: number) => void;
+  /** 外部文件选区引用（2026-10-23 小欧 - 与根内选区同能力，path 为绝对路径）— 小欧-2026-10-23 */
+  onSendExternalSelection?: (
+    content: string,
+    absPath: string,
+    lineRange: { start: number; end: number },
+    size: number
+  ) => void;
   /** 暴露给父级的刷新句柄（父级工具条刷新复用） */
   refreshRef?: React.MutableRefObject<(() => void) | null>;
 }
@@ -112,6 +121,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
   onSendSelection,
   external,
   onSendExternal,
+  onSendExternalSelection,
   refreshRef,
 }) => {
   const [text, setText] = useState<ReadResponse | null>(null);
@@ -325,7 +335,9 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node?.key, external?.path]);
 
-  /** 外部文件加载：绝对路径直读（项目根外，只读预览）— 小欧-2026-10-22 */
+  /** 外部文件加载：绝对路径直读（项目根外，只读预览）— 小欧-2026-10-22
+   *  2026-10-23 小欧 - 行号区间读与根内同源：带 lineRange 时按 offset/limit 流式读该区间，
+   *   而非只读首段 2MB（大文件外部的「第 N 行」深链也能定位到）— 小欧-2026-10-23 */
   useEffect(() => {
     if (!external) return;
     const seq = ++reqSeq.current;
@@ -334,7 +346,10 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     setText(null);
     (async () => {
       try {
-        const r = await fileApi.readExternalFile(external.path);
+        const r = await fileApi.readExternalFile(external.path, {
+          offset: lineRange?.start,
+          limit: lineRange ? lineRange.end - lineRange.start + 1 : undefined,
+        });
         if (seq !== reqSeq.current) return;
         setText(r);
         openedMtime.current = r.mtime;
@@ -343,10 +358,9 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         setErr(extractErrorMessage(e) ?? '加载失败');
       }
     })();
-    // 依赖 external?.path 而非 external 对象：父级每次 render 新建 {path} 对象，
-    // 依赖对象引用会无限循环。path 变化才重载 — 小欧-2026-10-22
+    // 依赖 external?.path 与 lineRange（行号区间变化才重读）；path 变化才重载 — 小欧-2026-10-22/23
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [external?.path]);
+  }, [external?.path, lineRange?.start, lineRange?.end]);
 
   /** refresh 单请求化 —— 一次 /files/read 同时拿到"新鲜度判定 + 内容重载"
    *  2026-10-21 小杨 - 修复：refresh 也要走 reqSeq 守卫
@@ -610,12 +624,13 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
 
   return (
     <>
-      {/* 2026-10-22 小欧 - 外部文件黄色提示条：明确"项目目录外，只读预览" — 小欧-2026-10-22 */}
+      {/* 2026-10-22 小欧 - 外部文件黄色提示条：明确"项目目录外，只读预览" — 小欧-2026-10-22
+          2026-10-23 小欧 - 文案缩短：原"该文件在项目目录外，已直接预览（只读）"→"根外File:" — 小欧-2026-10-23 */}
       {isExternal && (
         <Alert
           type="warning"
           showIcon
-          message={`该文件在项目目录外，已直接预览（只读）：${external?.path ?? ''}`}
+          message={`根外File: ${external?.path ?? ''}`}
           style={{ marginBottom: Spacing.SM }}
         />
       )}
@@ -907,18 +922,24 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
           borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
         }}
       >
-        {!isExternal && sel && selText && (
+        {/* 2026-10-23 小欧 - 选区引用根内/外部统一可用（原 !isExternal 门槛挡死了外部选区）— 小欧-2026-10-23 */}
+        {sel && selText && (
           <Button
             type="primary"
             size="small"
-            onClick={() =>
-              onSendSelection(
-                selText,
-                node!,
-                sel,
-                new TextEncoder().encode(selText).length
-              )
-            }
+            onClick={() => {
+              const size = new TextEncoder().encode(selText).length;
+              if (isExternal) {
+                onSendExternalSelection?.(
+                  selText,
+                  external?.path ?? '',
+                  sel,
+                  size
+                );
+              } else {
+                onSendSelection(selText, node!, sel, size);
+              }
+            }}
           >
             引用选区 L{sel.start}-{sel.end} 到对话
           </Button>

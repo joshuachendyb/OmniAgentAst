@@ -21,6 +21,10 @@
 #   复用 _probe_text/_read_truncated/_read_range 读管道 + 审计日志，不碰写/工具边界）；
 #   新增 _is_abs_drive_path 判据（read_external_file 与 sanitize_refs 共用）；
 #   sanitize_refs 对绝对盘符路径放行（用户主动引用的外部文件），相对路径校验口径不变 — 小欧-2026-10-22
+# 2026-10-23 小欧 - recent_files 加存在性校验（北京老陈裁定）：原实现只判"在项目根内"、不判"真实存在"，
+#   而 resolve 对不存在的相对路径也会成功 → 非文件工具的参数被当成文件收进足迹面板
+#   （实测脏数据：searchweb 查询词 91 条 / bash 命令串 53 条 / timenow 15 条 / fetchpage URL 12 条）。
+#   现复用 _exists 单点收口：路径不存在即丢弃，只留 Agent 真实动过的路径 — 小欧-2026-10-23
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -847,6 +851,46 @@ def read_external_file(
     return _read_file_body(target, raw, offset, limit, "外部文件仅支持文本预览")
 
 
+def build_external_tree(
+    abs_path: str,
+    max_depth: int = MAX_TREE_DEPTH,
+    max_nodes: int = MAX_TREE_NODES,
+) -> Dict[str, Any]:
+    """列项目根**外**的目录树（只读，用户主动点击外部目录链接时使用）。
+
+    2026-10-23 小欧 - 外部目录树（北京老陈批准 D2 根外目录落地）：
+    安全模型与 read_external_file 完全一致 —— 只读、仅盘符绝对路径、审计日志；
+    不触碰写/工具边界。节点 key = 相对该外部根目录的 posix 路径（与 /files/tree 同形状），
+    响应多带 external_root 字段，前端据此识别「这是外部树」、把绝对路径拼给
+    read_external_file 用。扫描管道复用 _walk/_scan_dir 唯一实现（DRY），
+    只是把 base_root 从项目根换成该外部目录本身。— 小欧-2026-10-23
+    """
+    raw = (abs_path or "").strip()
+    if not _is_abs_drive_path(raw):
+        fail(INVALID_PATH, "只接受盘符绝对路径")
+    start_dir = Path(raw)
+    if not _exists(start_dir):
+        fail(NOT_FOUND)
+    if not start_dir.is_dir():
+        fail(INVALID_PATH, "该路径不是目录，请使用外部文件读取接口")
+
+    # 审计：外部目录列取必须留痕（与 external read 同口径）
+    logger.info(f"[file_browse] external tree abs={raw}")
+
+    visited = {_dir_key(start_dir)}
+    result = _walk(start_dir, start_dir, ".", 1, max_depth, max_nodes, visited)
+    return {
+        "path": ".",
+        "project_root": str(start_dir),
+        "external_root": raw,
+        "nodes": result.nodes,
+        "truncated": result.truncated,
+        "incomplete_depth": result.incomplete_depth,
+        "skipped": result.skipped,
+        "skipped_cycles": result.skipped_cycles,
+    }
+
+
 def read_text_file(
     rel_path: str,
     offset: Optional[int] = None,
@@ -1079,6 +1123,12 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
             try:
                 _target, rel = _resolve_within_root(rel_in)
             except Exception:      # noqa: BLE001 —— 越界/禁区/非法一律跳过，不让脏数据中断整个面板
+                continue
+            # 2026-10-23 小欧 - 存在性校验（北京老陈裁定）：判界只认"在项目根内"、不认"真实存在"，
+            #   而 resolve 对不存在的相对路径也会成功 → 非文件工具的参数被当成文件收进足迹：
+            #   searchweb 查询词(91)/bash 命令串(53)/timenow(15)/fetchpage URL(12) 实测脏数据。
+            #   这类值解析后落在项目根内但磁盘上不存在 → 一律丢弃，只留真实动过的路径。
+            if not _exists(abs_path):
                 continue
             key = str(abs_path)
             # 2026-10-21 小杨 - ops 累加必须在"去重 continue"之前 ——

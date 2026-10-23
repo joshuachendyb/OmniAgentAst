@@ -31,6 +31,13 @@
 //   根内绝对 → 归一为相对后树定位；根未取回先等。目录命中只定位（右侧预览不动）— 小欧-2026-10-23
 // 2026-10-23 小欧 - 深链未命中提示收口为 PathNotFoundPane（右侧预览区内），linkErr 改存 {path} 结构化；
 //   目录扫描提示（scanNotices）从树顶移到工具条「多选引用」行内 — 小欧-2026-10-23
+// 2026-10-23 小欧 - 外部目录树：fetchExternalTree 后端端点 + __ext__ 合成根挂主树顶兄弟位，
+//   loadExternalDir/openExternalDir/handleLoadDir 懒加载管道，treeNodes 子节点 key 递归加 __ext__/ 前缀
+//   （selectTreeFile/handleLoadDir 据此识别外部文件，原未加前缀→外部文件走根内 readFile→路径不存在）— 小欧-2026-10-23
+// 2026-10-23 小欧 - isDirPath 复用 projectPath 单点（selectTreeFile + handleLoadDir 两处内联正则替换）— 小欧-2026-10-23
+// 2026-10-23 小欧 - readAndPush 外部文件改调 readExternalFile（原调 readFile 走根内 API→路径不存在）；
+//   externalBase 去尾分隔符防双斜杠（selectTreeFile + handleLoadDir 两处）；
+//   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -70,12 +77,15 @@ import {
   samePath,
   toRelativePath,
   isDriveAbsPath,
+  isDirPath,
   isExternalAbsPath,
 } from '@/utils/projectPath';
 import { decodePathParam } from '@/utils/fileDeepLink';
 import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
 import { PreviewNoticeCard } from '@/features/files/components/PreviewNoticeCard';
+// 2026-10-23 小欧 - 外部目录挂树：合成根 __ext__ + mergeKids 合并外部子层 — 小欧-2026-10-23
+import { mergeKids } from '@/utils/fileTree';
 // 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
@@ -101,6 +111,8 @@ import { useFileSelection } from '@/features/files/hooks/useFileSelection';
 
 const MIN_LEFT_W = 280;
 const MAX_LEFT_W = 600;
+// 2026-10-23 小欧 - 外部目录树合成根 key（项目根树与外部树各一个顶层根，__ext__ 为外部分组）— 小欧-2026-10-23
+const EXT_KEY = '__ext__';
 
 /** 2026-10-21 小杨 - 控件规格统一：设置页同款常量（控件高 28 / 圆角 4）
  *  —— 提升到模块级，避免每次 render 新建 theme 对象触发 ConfigProvider 全树重算 */
@@ -296,6 +308,16 @@ const FilesPage: React.FC = () => {
   /** 外部文件（项目根外）绝对路径：ext=1 深链 / 定位框绝对路径 → 直开外部只读预览 — 小欧-2026-10-22 */
   const [externalPath, setExternalPath] = useState<string | null>(null);
 
+  /**
+   * 2026-10-23 小欧 - 外部目录树状态（D2 根外目录落地）：
+   * ext=1 目录深链进入时 fetchExternalTree 拉该目录子树，合成根节点 `__ext__` 插主树顶；
+   * 点其下文件 → externalPath = externalBase + node.key 走外部只读预览；
+   * 展开其下子目录 → onLoadDir 识别 `__ext__` 前缀 key 走 fetchExternalTree 补拉。
+   */
+  const [externalBase, setExternalBase] = useState<string | null>(null);
+  const [externalNodes, setExternalNodes] = useState<FileNode[]>([]);
+  const externalSeqRef = useRef<Map<string, number>>(new Map());
+
   const refreshPreviewRef = useRef<(() => void) | null>(null);
 
   const sessionId = useMemo(() => readStoredSessionId(), []);
@@ -318,6 +340,78 @@ const FilesPage: React.FC = () => {
     [recentFiles]
   );
 
+  /** 外部目录树懒加载：按绝对路径拉子层，key 为相对外部根的 posix — 小欧-2026-10-23
+   *  2026-10-23 三堂会审 - absDir 作参数传入（不依赖闭包 externalBase，修 openExternalDir
+   *    setExternalBase 后立即调用时闭包仍是旧值的时序 bug）；relKey 传 '.'=整树赋值，否则 merge。 */
+  const loadExternalDir = useCallback(
+    async (absDir: string, relKey?: string): Promise<FileNode[] | null> => {
+      const seq = (externalSeqRef.current.get(absDir) ?? 0) + 1;
+      externalSeqRef.current.set(absDir, seq);
+      try {
+        const r = await fileApi.fetchExternalTree(absDir, { maxDepth: 3 });
+        if (externalSeqRef.current.get(absDir) !== seq) return null;
+        setExternalNodes((prev) => {
+          if (!relKey || relKey === '.') return r.nodes;
+          return mergeKids(prev, relKey, r.nodes);
+        });
+        return r.nodes;
+      } catch {
+        return null;
+      }
+    },
+    []
+  );
+
+  /**
+   * 2026-10-23 小欧 - 打开外部目录（ext=1 深链 / 定位框）：拉子树 + 合成 __ext__ 根插主树顶，
+   *   右侧预览不动（目录只定位不预览）。— 小欧-2026-10-23
+   */
+  const openExternalDir = useCallback(
+    async (absDir: string): Promise<void> => {
+      setExternalBase(absDir);
+      setExpandedKeys((prev) =>
+        prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
+      );
+      const kids = await loadExternalDir(absDir, '.');
+      if (kids)
+        setLoadedKeys((prev) =>
+          prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
+        );
+      setLinkErr(null);
+      if (isNarrow) setNarrowTab('preview');
+    },
+    [loadExternalDir, isNarrow, setExpandedKeys, setLoadedKeys, setNarrowTab]
+  );
+
+  /**
+   * 2026-10-23 小欧 - 主树 + 外部分组（__ext__）合并为单一 nodes 给 FilesTree：
+   *   外部目录 ext=1 深链进来时拉一次 fetchExternalTree，挂成主树顶兄弟根（带「根外」标识）。
+   *   其子层懒加载走 onLoadDir 的 __ext__ 前缀分支。— 小欧-2026-10-23
+   */
+  const treeNodes = useMemo<FileNode[]>(() => {
+    if (!externalBase) return tree;
+    // 2026-10-23 小欧 - 子节点 key 递归加 __ext__/ 前缀：selectTreeFile/handleLoadDir
+    //   据此识别外部文件。原未加前缀 → 外部文件走根内 readFile → "路径不存在"。
+    //   嵌套子目录的 key 也需前缀（__ext__/sub/...），否则懒加载找不到父节点。— 小欧-2026-10-23
+    const prefixKids = (kids: FileNode[]): FileNode[] =>
+      kids.map((k) => ({
+        ...k,
+        key: `${EXT_KEY}/${k.key}`,
+        children: k.children ? prefixKids(k.children) : undefined,
+      }));
+    const extRoot: FileNode = {
+      key: EXT_KEY,
+      name: externalBase,
+      type: 'dir',
+      size: null,
+      mtime: '',
+      preview: 'none',
+      children: prefixKids(externalNodes),
+      incomplete_child: false,
+    };
+    return [extRoot, ...tree];
+  }, [tree, externalBase, externalNodes]);
+
   /** 页级兜底 —— root 拉不到 → 整页 Result + 重试（不静默空页） */
   const loadRoot = useCallback(async () => {
     setRootErr(null);
@@ -335,7 +429,26 @@ const FilesPage: React.FC = () => {
     void loadRoot();
   }, [loadRoot]);
 
-  /** 深链定位：读 ?path=（逐级补拉）+ &line=（交 FilePreview 高亮） */
+  /**
+   * 2026-10-23 小欧 - onLoadDir 统一入口：__ext__ 前缀 key 走外部树补拉（fetchExternalTree），
+   *   其余走项目根树补拉（loadDir）。合成根 __ext__ 自身点展开时拉外部根首层。
+   *   2026-10-23 三堂会审 - 补 externalBase 依赖：absDir 由外部根拼出，依赖缺失时外部根
+   *   变化后回调仍持旧闭包值。— 小欧-2026-10-23
+   */
+  const handleLoadDir = useCallback(
+    async (key: string): Promise<FileNode[] | null> => {
+      if (key === EXT_KEY)
+        return externalBase ? loadExternalDir(externalBase, '.') : null;
+      if (key.startsWith(`${EXT_KEY}/`)) {
+        const relKey = key.slice(EXT_KEY.length + 1);
+        const base = externalBase?.replace(/[\\/]$/, '') ?? '';
+        return base ? loadExternalDir(`${base}/${relKey}`, relKey) : null;
+      }
+      return loadDir(key);
+    },
+    [loadDir, loadExternalDir, externalBase]
+  );
+
   /**
    * 选中树内文件：必须同时**退出外部预览态**。
    * 2026-10-22 小欧 - 修复阻断缺陷：先开外部文件再点树内文件时 external 仍非空 →
@@ -345,6 +458,18 @@ const FilesPage: React.FC = () => {
    */
   const selectTreeFile = useCallback(
     (n: FileNode, line?: { start: number; end: number } | null) => {
+      // 2026-10-23 小欧 - 外部目录（__ext__ 前缀）文件：拼绝对路径走外部只读预览，
+      //   保留 externalBase，不清外部态（树内文件才清 externalPath）— 小欧-2026-10-23
+      if (n.key.startsWith(`${EXT_KEY}/`) && externalBase) {
+        const relInExt = n.key.slice(EXT_KEY.length + 1);
+        const base = externalBase.replace(/[\\/]$/, '');
+        setExternalPath(`${base}/${relInExt}`);
+        setSelected(null);
+        setLineRange(line ?? null);
+        setLinkErr(null);
+        if (isNarrow) setNarrowTab('preview');
+        return;
+      }
       setExternalPath(null);
       setSelected(n);
       setLineRange(line ?? null);
@@ -360,6 +485,7 @@ const FilesPage: React.FC = () => {
       setLineRange,
       setNarrowTab,
       setLinkErr,
+      externalBase,
     ]
   );
 
@@ -394,17 +520,26 @@ const FilesPage: React.FC = () => {
     [expandToPath, selectTreeFile, setReveal]
   );
 
-  /** 定位框统一入口：根外绝对路径 → 外部只读预览；根内/相对 → 树内定位 — 小欧-2026-10-22 */
+  /**
+   * 定位框统一入口（2026-10-23 小欧 - 根外目录也开放）：
+   * 根外盘符绝对路径：目录 → 挂外部树（openExternalDir），文件 → 外部只读预览；
+   * 根内/相对 → 树内定位。— 小欧-2026-10-23
+   */
   const openPathOrExternal = useCallback(
     async (input: string): Promise<boolean> => {
       const raw = input.trim();
       if (!raw) return false;
       // 2026-10-22 小欧 - 外部判据：盘符绝对路径且归一到不了根内（根内绝对先归一走树定位）— 小欧-2026-10-22
       if (isExternalAbsPath(raw, projectRoot)) {
-        setExternalPath(raw);
-        setLineRange(null);
-        setLinkErr(null);
-        if (isNarrow) setNarrowTab('preview');
+        // 2026-10-23 小欧 - 根外目录（尾分隔符）挂外部树，不预览；根外文件直开外部只读预览 — 小欧-2026-10-23
+        if (isDirPath(raw)) {
+          void openExternalDir(raw);
+        } else {
+          setExternalPath(raw);
+          setLineRange(null);
+          setLinkErr(null);
+          if (isNarrow) setNarrowTab('preview');
+        }
         return true;
       }
       const rel = toRelativePath(raw, projectRoot);
@@ -413,6 +548,7 @@ const FilesPage: React.FC = () => {
     },
     [
       openPath,
+      openExternalDir,
       isNarrow,
       projectRoot,
       setExternalPath,
@@ -434,11 +570,18 @@ const FilesPage: React.FC = () => {
       : null;
     // 2026-10-22 小欧 - 外部文件（ext=1）：path 是盘符绝对路径，直开外部只读预览，
     //   不走树定位（外部文件不在项目根树内，expandToPath 必失败）。— 小欧-2026-10-22
+    // 2026-10-23 小欧 - ext=1 目录（尾分隔符）改挂外部树：fetchExternalTree 拉子层 + 合成 __ext__ 根，
+    //   右侧预览不动；ext=1 文件维持 setExternalPath 外部只读预览。— 小欧-2026-10-23
     if (params.get('ext') === '1') {
       const p = decodePathParam(rawPath);
       if (p && isExternalAbsPath(p, projectRoot)) {
-        setExternalPath(p);
-        setLineRange(lineRange);
+        if (isDirPath(p)) {
+          // 根外目录：挂外部树（不清 externalPath，保持上一份预览；目录只定位不预览）
+          void openExternalDir(p);
+        } else {
+          setExternalPath(p);
+          setLineRange(lineRange);
+        }
         setLinkErr(null);
       } else {
         setLinkErr({ path: rawPath });
@@ -573,13 +716,21 @@ const FilesPage: React.FC = () => {
    *   ok 计数早于投递完成、异常变 unhandled rejection）。抽管道后必须 await（不 await 即
    *   主动固化该缺陷）。**失败文案仍归调用方**：批量要能定位到具体哪个文件，单发不带名。
    *   —— 抽的是数据管道，保留的是场景语义（KISS-DIRECT）。— 小欧-2026-10-22
+   *   2026-10-23 小欧 - 外部文件（__ext__/ 前缀）走 readExternalFile，ref path 存绝对路径 — 小欧-2026-10-23
    */
   const readAndPush = useCallback(
     async (n: FileNode): Promise<void> => {
-      const r = await fileApi.readFile(n.key);
-      await pushRef('file', n.name, n.key, r.content, r.size);
+      if (n.key.startsWith('__ext__/') && externalBase) {
+        const relInExt = n.key.slice('__ext__/'.length);
+        const absPath = `${externalBase.replace(/[\\/]$/, '')}/${relInExt}`;
+        const r = await fileApi.readExternalFile(absPath);
+        await pushRef('file', n.name, absPath, r.content, r.size);
+      } else {
+        const r = await fileApi.readFile(n.key);
+        await pushRef('file', n.name, n.key, r.content, r.size);
+      }
     },
-    [pushRef]
+    [pushRef, externalBase]
   );
 
   /** 去对话：此时才导航，ChatInput 挂载即消费 store 里的引用 */
@@ -653,7 +804,7 @@ const FilesPage: React.FC = () => {
         {/* 2026-10-23 小欧 - 目录加载提示（scanNotices）已移至工具条「多选引用」提示之后同一行，
             不再占用树顶空间 — 小欧-2026-10-23 */}
         <FilesTree
-          nodes={tree}
+          nodes={treeNodes}
           activeKey={selected?.key ?? ''}
           reveal={reveal}
           checkedKeys={multiFiles.map((n) => n.key)}
@@ -665,6 +816,7 @@ const FilesPage: React.FC = () => {
           onLoadedKeys={setLoadedKeys}
           onSelectFile={selectTreeFile}
           onSelectFiles={setMultiFiles}
+          externalBase={externalBase}
           onInsertRef={(n) => {
             void (async () => {
               try {
@@ -679,7 +831,7 @@ const FilesPage: React.FC = () => {
             void setWorkspace(d);
           }}
           onPatchNodes={patchNodes}
-          onLoadDir={loadDir}
+          onLoadDir={handleLoadDir}
         />
       </div>
     </div>
@@ -728,6 +880,17 @@ const FilesPage: React.FC = () => {
             absPath,
             content,
             size
+          )
+        }
+        // 2026-10-23 小欧 - 外部文件选区引用（与根内选区同能力，走 pushRef('selection', ...)）— 小欧-2026-10-23
+        onSendExternalSelection={(content, absPath, range, size) =>
+          pushRef(
+            'selection',
+            `${absPath.split(/[\\/]/).pop() || absPath} L${range.start}-${range.end}`,
+            absPath,
+            content,
+            size,
+            range
           )
         }
       />

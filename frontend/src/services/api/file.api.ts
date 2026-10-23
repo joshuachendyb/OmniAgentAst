@@ -8,6 +8,8 @@
 //   2026-10-21 小欧 - fetchTree 位置参数改选项对象 {maxDepth,maxNodes,signal}：
 //     传 signal 免填空位；signal 交 axios 取消在途请求（I7 竞态防护）— 小欧-2026-10-21
 // 2026-10-22 小欧 - 增 readExternalFile：读项目根外文本文件（/files/external/read，只读）— 小欧-2026-10-22
+// 2026-10-23 小欧 - 增 fetchExternalTree：列项目根外目录树（/files/external/tree，只读；
+//   响应多带 external_root 供前端识别外部树，节点 key 为相对该外部根的 posix 路径）— 小欧-2026-10-23
 /**
  * 文件浏览 API（只读浏览项目根目录）
  *
@@ -36,6 +38,12 @@ export interface TreeResponse {
   incomplete_depth: boolean; // 深度到顶（前端据此补拉）
   skipped: number; // 本次扫描跳过的坏条目数（读不了/越界/坏链接）
   skipped_cycles: number; // 环检测拦下的条目数（链接绕回已展开目录）
+}
+
+/** 外部目录树（项目根外）：与 TreeResponse 同形状，多带 external_root — 小欧-2026-10-23 */
+export interface ExternalTreeResponse extends TreeResponse {
+  /** 该外部树的绝对根（盘符路径），前端据此把节点 key（相对 posix）拼成绝对路径走 readExternalFile */
+  external_root: string;
 }
 
 export interface ReadResponse {
@@ -156,6 +164,21 @@ export const fileApi = {
     return (
       await api.get<ReadResponse>('/files/external/read', {
         params: { path: absPath, offset, limit },
+      })
+    ).data;
+  },
+
+  /** 列项目根外的目录树（只读；外部目录挂左侧树展开时用）— 小欧-2026-10-23 */
+  fetchExternalTree: async (
+    absPath: string,
+    opts?: { maxDepth?: number; maxNodes?: number; signal?: AbortSignal }
+  ): Promise<ExternalTreeResponse> => {
+    need(absPath, '目录路径');
+    const { maxDepth = 5, maxNodes = 100000, signal } = opts ?? {};
+    return (
+      await api.get<ExternalTreeResponse>('/files/external/tree', {
+        params: { path: absPath, max_depth: maxDepth, max_nodes: maxNodes },
+        signal,
       })
     ).data;
   },

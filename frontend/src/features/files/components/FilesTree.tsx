@@ -19,6 +19,10 @@
 //   2026-10-22 小欧 - 双标记 ●/✎（读过/被改写过），writtenSet prop — 小欧-2026-10-22
 //   2026-10-23 小欧 - 定位行短暂高亮（reveal 驱动，与选中态分离）：目录引用跳转后
 //     用户能一眼看到"定位到哪了"，右侧预览不动 — 小欧-2026-10-23
+// 2026-10-23 小欧 - externalBase prop：__ext__ 外部节点右键复制相对/绝对路径按外部根计算
+//   （原用 toAbsolutePath 按项目根拼→路径错误）；外部目录不出现「设为会话工作目录」菜单项（只读，后端会拒）— 小欧-2026-10-23
+// 2026-10-23 小欧 - 外部目录图标琥珀金（Colors.WARNING #AD6800），与根内蓝色文件夹视觉区分；
+//   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty } from 'antd';
 import { FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
@@ -63,6 +67,8 @@ export interface FilesTreeProps {
   onSetWorkspace?: (dir: FileNode) => void;
   onPatchNodes: (parentKey: string, kids: FileNode[]) => void;
   onLoadDir: (key: string) => Promise<FileNode[] | null>;
+  /** 外部树根目录绝对路径（__ext__ 节点右键复制全路径用）— 小欧-2026-10-23 */
+  externalBase?: string | null;
 }
 
 /** 按 key 深度优先找节点（Files 页仍然引用此工具函数） */
@@ -95,6 +101,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
     onSetWorkspace,
     onPatchNodes,
     onLoadDir,
+    externalBase,
   } = props;
   const projectRoot = useProjectRoot();
 
@@ -277,11 +284,24 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
               locatedKey === n.key ? chatTokens.colorPrimaryBg : undefined,
           }}
         >
+          {/* 2026-10-23 小欧 - 外部目录（__ext__/）图标琥珀金，与根内蓝色文件夹视觉区分 — 小欧-2026-10-23 */}
           {isDir ? (
             isOpen ? (
-              <FolderOpenOutlined />
+              <FolderOpenOutlined
+                style={
+                  n.key.startsWith('__ext__')
+                    ? { color: Colors.WARNING }
+                    : undefined
+                }
+              />
             ) : (
-              <FolderOutlined />
+              <FolderOutlined
+                style={
+                  n.key.startsWith('__ext__')
+                    ? { color: Colors.WARNING }
+                    : undefined
+                }
+              />
             )
           ) : (
             fileIcon(n)
@@ -324,6 +344,14 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
   };
 
   /** 右键菜单项（自绘 fixed 浮层，无 antd Dropdown 的多层结构） */
+  // 2026-10-23 小欧 - __ext__/ 前缀的外部节点：相对路径/绝对路径均按外部根计算 — 小欧-2026-10-23
+  const isExtNode = ctx?.node.key.startsWith('__ext__/') ?? false;
+  const extRel = !ctx
+    ? ''
+    : isExtNode
+      ? ctx.node.key.slice('__ext__/'.length)
+      : ctx.node.key;
+
   const menuOpts: {
     key: string;
     label: string;
@@ -341,7 +369,8 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
             ]
           : []),
         // J3：目录 → 会话工作目录（Agent 产物落点）；仅目录有，未接入时不出现该项
-        ...(ctx.node.type === 'dir' && onSetWorkspace
+        // 2026-10-23 小欧 - 外部目录（__ext__/）不能设为工作目录（只读，后端会拒），不出现该项 — 小欧-2026-10-23
+        ...(ctx.node.type === 'dir' && onSetWorkspace && !isExtNode
           ? [
               {
                 key: 'setWorkspace',
@@ -354,7 +383,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           key: 'copyRel',
           label: '复制相对路径',
           act: () => {
-            void copyTextToClipboard(ctx.node.key).then((r) => {
+            void copyTextToClipboard(extRel).then((r) => {
               if (r.ok) showSuccess('相对路径已复制');
               else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
             });
@@ -365,7 +394,9 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           label: '复制绝对路径',
           act: () => {
             const abs =
-              toAbsolutePath(ctx.node.key, projectRoot) ?? ctx.node.key;
+              isExtNode && externalBase
+                ? `${externalBase.replace(/[\\/]$/, '')}/${extRel}`
+                : (toAbsolutePath(ctx.node.key, projectRoot) ?? ctx.node.key);
             void copyTextToClipboard(abs).then((r) => {
               if (r.ok) showSuccess('绝对路径已复制');
               else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
