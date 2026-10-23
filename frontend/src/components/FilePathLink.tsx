@@ -1,4 +1,6 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：路径 → 文件页深链的可点链接（产出物/工作目录共用）— 小欧-2026-10-22
+// 2026-10-23 小欧 - 根外盘符绝对路径（文件）也生成 ext=1 外部只读预览深链（与正文 chip 同口径），
+//   不再静默退化纯文本；根内绝对仍归一走普通深链；根未取回时盘符绝对路径归属未定 → 不出链接。— 小欧-2026-10-23
 /**
  * FilePathLink —— 把"任意来源的路径"渲染成可点的文件页深链
  *
@@ -10,8 +12,13 @@
  */
 import React from 'react';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
-import { buildFileDeepLink } from '@/utils/fileDeepLink';
-import { isLinkableRelPath, toRelativePath } from '@/utils/projectPath';
+import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
+import {
+  isDriveAbsPath,
+  isFileLikePath,
+  isLinkableRelPath,
+  toRelativePath,
+} from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Colors, FontFamily, FontSize } from '@/utils/stepStyles';
 
@@ -76,11 +83,29 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
   const inRouter = useInRouterContext();
   const projectRoot = useProjectRoot();
   const rel = toRelativePath(rawPath, projectRoot);
+  // 根外盘符绝对路径且带文件扩展名 → ext=1 外部只读预览（与正文 chip 同口径）；
+  // 根未取回时盘符绝对路径归属未定 → 不出链接（等根取回后重算）；
+  // 目录/无扩展名路径不按文件打开 — 小欧-2026-10-23
+  const external =
+    !!projectRoot && isDriveAbsPath(rawPath) && !rel && isFileLikePath(rawPath);
   const linkable = !!rel && isLinkableRelPath(rel);
   const label = text ?? rawPath;
 
+  if (external) {
+    const url = buildExternalDeepLink(rawPath, lineRange);
+    if (!inRouter) {
+      // 无 Router 上下文 → 退化为整页跳转（与 FileRefChip 同款）
+      return (
+        <a href={url} title={rawPath} style={{ ...plainStyle, ...linkStyle }}>
+          {label}
+        </a>
+      );
+    }
+    return <RouterLink url={url} title={rawPath} text={label} />;
+  }
+
   if (!linkable || !rel) {
-    // 判界不过（根外/形态非法/未取到根）→ 原样纯文本，不造假链接
+    // 判界不过（根内归一失败/形态非法/未取到根）→ 原样纯文本，不造假链接
     return (
       <span title={rawPath} style={plainStyle}>
         {label}

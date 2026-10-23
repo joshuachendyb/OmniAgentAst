@@ -75,7 +75,7 @@ import {
 import { decodePathParam } from '@/utils/fileDeepLink';
 import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
-import { PathNotFoundPane } from '@/features/files/components/PathNotFoundPane';
+import { PreviewNoticeCard } from '@/features/files/components/PreviewNoticeCard';
 // 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
@@ -686,11 +686,16 @@ const FilesPage: React.FC = () => {
   );
 
   /**
-   * 2026-10-23 小欧 - 深链未命中提示收口 PathNotFoundPane：标题 + 路径块 + 说明 + 底部操作，
-   *   路径在目录分隔符后可换行，文件名不硬切。点「知道了」或重新选中文件即退出该态。— 小欧-2026-10-23
+   * 2026-10-23 小欧 - 深链未命中提示收口 PreviewNoticeCard（预览区整块提示统一规格）：
+   *   标题 + 路径块 + 说明 + 底部操作，路径在目录分隔符后可换行，文件名不硬切。
+   *   点「知道了」或重新选中文件即退出该态。— 小欧-2026-10-23
    */
   const linkErrPane = linkErr ? (
-    <PathNotFoundPane path={linkErr.path} onDismiss={() => setLinkErr(null)} />
+    <PreviewNoticeCard
+      kind="notfound"
+      path={linkErr.path}
+      onDismiss={() => setLinkErr(null)}
+    />
   ) : null;
 
   const previewPane =

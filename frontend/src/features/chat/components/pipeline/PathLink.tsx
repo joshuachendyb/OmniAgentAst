@@ -4,6 +4,9 @@
 // 2026-10-21 小杨 - 支持相对路径；补图标/键盘/根外原因提示；<a> 原生 href 保底 — 小杨-2026-10-21
 // 2026-10-22 小杨 - 改原生 <a> + 文件图标 + 键盘可达（Enter/Space）；不可链接时用 Tooltip 说明原因
 //   （不用 title 属性，避免参数树出现"截断兜底"节点）— 小杨-2026-10-22
+// 2026-10-23 小欧 - 根外盘符绝对路径（文件）也生成 ext=1 外部只读预览深链（与正文 chip 同口径），
+//   不再拦死为纯文本；根内绝对仍归一走普通深链；根未取回时盘符绝对路径归属未定 → 不出链接
+//   （等根取回后重算，与正文 chip 同口径）。— 小欧-2026-10-23
 /**
  * PathLink —— 工具参数里的路径 → 可点击直达文件页（深链）
  *
@@ -11,7 +14,8 @@
  *   （路径是否真在项目根内由 `/files/read` 判界）—— 前端复制一份判据必然随规则演进而漂移。
  *
  * 相对路径：工具可能给 `src/main.py` / `doc\a.md`，归一后直接进深链；
- *   绝对路径只接项目根内，根外路径不造假链接，用 Tooltip 说明原因。
+ *   根内绝对路径归一成相对走普通深链；**根外盘符绝对路径走 ext=1 外部只读预览**；
+ *   仅非盘符绝对且形态非法（UNC/斜杠/穿越/无扩展名）才退纯文本。
  */
 import React from 'react';
 import { FileOutlined } from '@ant-design/icons';
@@ -19,11 +23,12 @@ import { Tooltip } from 'antd';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
 import { isValidRelPath } from '@/components/markdown/FileRefChip';
 import {
-  isAbsolutePath,
+  isDriveAbsPath,
+  isFileLikePath,
   isLinkableRelPath,
   toRelativePath,
 } from '@/utils/projectPath';
-import { buildFileDeepLink } from '@/utils/fileDeepLink';
+import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
 import { Colors, Spacing } from '@/utils/stepStyles';
 
 export interface PathLinkProps {
@@ -33,16 +38,15 @@ export interface PathLinkProps {
 }
 
 /** 可点击形态（Router 内）：原生 <a> 保底，点击/键盘都可达 */
-const LinkInner: React.FC<PathLinkProps & { rel: string }> = ({
+const LinkInner: React.FC<{ value: string; url: string }> = ({
   value,
-  rel,
+  url,
 }) => {
   const nav = useNavigate();
-  const href = buildFileDeepLink(rel);
   return (
     <Tooltip title={value}>
       <a
-        href={href}
+        href={url}
         aria-label={`打开文件 ${value}`}
         style={{
           display: 'inline-flex',
@@ -65,13 +69,13 @@ const LinkInner: React.FC<PathLinkProps & { rel: string }> = ({
           )
             return;
           e.preventDefault();
-          nav(href);
+          nav(url);
         }}
         onKeyDown={(e) => {
           // <a> 原生 Enter 已可跳转；补 Space，和系统内其他 role=link 一致
           if (e.key !== ' ') return;
           e.preventDefault();
-          nav(href);
+          nav(url);
         }}
       >
         <FileOutlined aria-hidden style={{ flexShrink: 0, fontSize: 12 }} />
@@ -82,25 +86,34 @@ const LinkInner: React.FC<PathLinkProps & { rel: string }> = ({
 };
 
 /**
- * PathLink —— 形态不合格（根外/UNC/URL/穿越）时保留纯文本，并用 Tooltip 说明原因；
- * 不造假链接，也不让用户面对“点了没反应”。
+ * PathLink —— 可链接（根内归一 / 根外盘符绝对）进深链；
+ * 仅非盘符绝对且形态非法（UNC/斜杠/穿越/无扩展名）时保留纯文本 + Tooltip 说明原因，
+ * 不造假链接，也不让用户面对"点了没反应"。
  */
 export const PathLink: React.FC<PathLinkProps> = ({ value, projectRoot }) => {
   const inRouter = useInRouterContext();
   const rel = toRelativePath(value, projectRoot);
+  // 根外盘符绝对路径且带文件扩展名 → ext=1 外部只读预览深链（与正文 chip 同口径）；
+  // 根未取回时盘符绝对路径归属未定 → 不出链接（等根取回后重算，与正文 chip 同口径）；
+  // 目录/无扩展名路径不按文件打开（目录展示走外部树，下一步）— 小欧-2026-10-23
+  const external =
+    !!projectRoot && isDriveAbsPath(value) && !rel && isFileLikePath(value);
+  if (external && inRouter) {
+    return <LinkInner value={value} url={buildExternalDeepLink(value)} />;
+  }
   if (rel && isValidRelPath(rel) && isLinkableRelPath(rel) && inRouter) {
-    return <LinkInner value={value} rel={rel} />;
+    return <LinkInner value={value} url={buildFileDeepLink(rel)} />;
   }
 
   let reason = '路径形态不合法，无法在文件页打开';
   if (!inRouter) {
     reason = '当前页面不支持应用内跳转';
-  } else if (isAbsolutePath(value)) {
+  } else if (rel && !isLinkableRelPath(rel)) {
+    reason = '不是可识别的文件路径（无分隔符与扩展名），未做链接';
+  } else if (isDriveAbsPath(value)) {
     reason = projectRoot
       ? '路径不在项目根内，无法在文件页打开'
       : '项目根尚未加载，暂时无法打开';
-  } else if (rel && !isLinkableRelPath(rel)) {
-    reason = '不是可识别的文件路径（无分隔符与扩展名），未做链接';
   }
   // 用 Tooltip 讲原因而不用 title 属性：树视图铁律「不靠 title 兜底」，
   //   title 会让整棵树出现 [title] 节点、破坏「全文直显」契约。

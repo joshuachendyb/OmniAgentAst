@@ -64,6 +64,7 @@ import {
 //   （聊天/设置页同源 MarkdownSlot）；代码高亮走同目录 highlight 单点（prismjs）
 import { MarkdownSlot } from '@/components/markdown/MarkdownSlot';
 import { highlightLine, langOf } from './highlight';
+import { PreviewNoticeCard } from './PreviewNoticeCard';
 
 /** 预览工具栏（文本/图片共用，避免两套头部样式漂移） */
 const TOOLBAR_STYLE: React.CSSProperties = {
@@ -477,18 +478,16 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     return <Empty description="从左侧选择一个文件" />;
   }
   if (err) {
-    // 2026-10-22 小欧 - 外部模式加载失败：无 node，独立提示（重试由刷新页承担）— 小欧-2026-10-22
-    if (isExternal) return <Alert type="error" showIcon message={err} />;
+    // 2026-10-23 小欧 - 加载失败统一收口 PreviewNoticeCard（kind=failed，重试+复制）— 小欧-2026-10-23
     return (
-      <Alert
-        type="error"
-        showIcon
-        message={`「${node!.name}」${err}`}
-        action={
-          <Button size="small" onClick={() => void load(node!)}>
-            重试
-          </Button>
-        }
+      <PreviewNoticeCard
+        kind="failed"
+        path={isExternal ? (external?.path ?? '') : (node?.key ?? '')}
+        description={err}
+        onRetry={() => {
+          if (isExternal) void refresh();
+          else if (node) void load(node);
+        }}
       />
     );
   }
@@ -556,27 +555,16 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     );
   }
   if (!isExternal && node && node.preview === 'none') {
-    /* 2026-10-21 小杨 - 修复阻断级缺陷：
-       原实现把"不可预览"落到 `!text` 分支 → 显示**"文本加载中…"并永远转圈**（死状态，
-       用户反复点击、以为是网络问题）。现在给出明确说明 + 可执行的替代动作。
-       2026-10-21 小欧 - 文案去掉"设为会话工作目录"：该入口已下线（工具条与右键菜单都已摘除），
-       继续引导用户去一个不存在的功能 = 制造死路。替代动作只留"复制路径"。 */
+    // 2026-10-21 小杨 - 修复阻断级缺陷：
+    //   原实现把"不可预览"落到 `!text` 分支 → 显示"文本加载中…"并永远转圈（死状态，
+    //   用户反复点击、以为是网络问题）。现在给出明确说明 + 可执行的替代动作。
+    // 2026-10-21 小欧 - 文案去掉"设为会话工作目录"：该入口已下线（工具条与右键菜单都已摘除），
+    //   继续引导用户去一个不存在的功能 = 制造死路。替代动作只留"复制路径"。
+    // 2026-10-23 小欧 - 暂不支持预览统一收口 PreviewNoticeCard（kind=unsupported，复制路径）— 小欧-2026-10-23
     return (
-      <Alert
-        type="info"
-        showIcon
-        message={`「${node.name}」暂不支持预览`}
-        description="该文件不是可预览的文本或图片（可能是二进制或无法读取）。你可以复制路径，或引用到对话中再处理。"
-        action={
-          <Tooltip
-            title={toAbsolutePath(node.key, projectRoot) ?? node.key}
-            overlayInnerStyle={PATH_TOOLTIP_INNER_STYLE}
-          >
-            <Button size="small" onClick={() => copyPath(node)}>
-              复制路径
-            </Button>
-          </Tooltip>
-        }
+      <PreviewNoticeCard
+        kind="unsupported"
+        path={toAbsolutePath(node.key, projectRoot) ?? node.key}
       />
     );
   }

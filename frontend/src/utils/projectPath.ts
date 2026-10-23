@@ -108,3 +108,17 @@ export const toAbsolutePath = (
 /** 同路径判定（大小写不敏感 + 分隔符归一） */
 export const samePath = (a: string, b: string): boolean =>
   norm(a).toLowerCase() === norm(b).toLowerCase();
+
+/**
+ * 末段是否像文件（带扩展名）—— 外部文件深链判据：
+ * 根外盘符绝对路径「只有带扩展名才按文件打开外部只读预览」；目录/无扩展名路径不误判成文件。
+ * 2026-10-23 小欧 - 新增（PathLink / FilePathLink 共用，避免两处各自写一次判据漂移）。— 小欧-2026-10-23
+ */
+export const isFileLikePath = (p: string): boolean => {
+  const last =
+    p
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() ?? '';
+  return /\.[A-Za-z0-9]{1,8}$/.test(last);
+};
