@@ -47,10 +47,17 @@
 //   路径类值渲染成可点击链接（直达文件页，绝对路径经项目根转相对） — 小杨-2026-10-21
 // 2026-10-22 小杨 - 规格表补接路径链接（此前漏接）；对象值统一走递归渲染，嵌套 path 字段同样可点；
 //   路径键优先归「路径」组（不被载荷类抢走）；多行值走折叠体不做整段链接 — 小杨-2026-10-22
+// 2026-10-23 小欧 - dirHintKeys（isDirToolPath 单一判定）贯穿分组视图/规格表/PlainValue/PathAwareJson；
+//   结果视图不接（raw_data 回显路径不属工具参数声明域）— 小欧-2026-10-23
 import React, { useMemo, useState } from 'react';
 import { pickResultView } from './ResultSpecialViews';
 // 2026-10-21 小杨 - 路径判定单一真源（双入口共用）+ 路径可点击 + 项目根取数
-import { PATH_KEYS, isPathLike, isPathParam } from './paramCategories';
+import {
+  isDirToolPath,
+  PATH_KEYS,
+  isPathLike,
+  isPathParam,
+} from './paramCategories';
 import { PathAwareJson } from './PathAwareJson';
 import { PathLink } from './PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
@@ -674,7 +681,9 @@ const PlainValue: React.FC<{
   value: unknown;
   valueMode?: ValueMode;
   projectRoot?: string;
-}> = ({ value, valueMode = 'param', projectRoot }) => (
+  /** 2026-10-23 小欧 - 目录类工具的 path 值：对象值走 PathAwareJson 时按目录渲染 */
+  isDirHint?: boolean;
+}> = ({ value, valueMode = 'param', projectRoot, isDirHint }) => (
   <span
     style={{
       // 2026-10-13 小欧 - 空值用更浅的 TERTIARY: 「(空)」是"没有值", 与真实值(PRIMARY)同色会
@@ -700,7 +709,11 @@ const PlainValue: React.FC<{
     {projectRoot !== undefined &&
     typeof value === 'object' &&
     value !== null ? (
-      <PathAwareJson value={value} projectRoot={projectRoot} />
+      <PathAwareJson
+        value={value}
+        projectRoot={projectRoot}
+        isDirHint={isDirHint}
+      />
     ) : valueMode === 'result' ? (
       resultTextOf(value)
     ) : (
@@ -715,14 +728,22 @@ const PlainValue: React.FC<{
  *   父级行容器之外, 故这里用 <div> 包裹让 pre 留在本列内(分组视图不要求跨行),
  *   规格表改走自己的「行 + 整宽 pre」两段结构, 三块(ValueToggle/ValuePre/PlainValue)共用不重复(DRY)
  */
-const ParamValue: React.FC<{ value: unknown; projectRoot?: string }> = ({
-  value,
-  projectRoot,
-}) => {
+const ParamValue: React.FC<{
+  value: unknown;
+  projectRoot?: string;
+  /** 2026-10-23 小欧 - 目录类工具的 path 值，透传至 PlainValue → PathAwareJson */
+  isDirHint?: boolean;
+}> = ({ value, projectRoot, isDirHint }) => {
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((p) => !p);
   if (!isHugeValue(value))
-    return <PlainValue value={value} projectRoot={projectRoot} />;
+    return (
+      <PlainValue
+        value={value}
+        projectRoot={projectRoot}
+        isDirHint={isDirHint}
+      />
+    );
   return (
     <div>
       <ValueToggle value={value} open={open} onToggle={toggle} />
@@ -733,9 +754,11 @@ const ParamValue: React.FC<{ value: unknown; projectRoot?: string }> = ({
 
 // ==================== 乙 · 分组卡片(默认) ====================
 
-const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
-  params,
-}) => {
+const GroupView: React.FC<{
+  params: Record<string, unknown>;
+  /** 2026-10-23 小欧 - 按目录渲染的参数键（目录类工具的 path；仅参数视图传入） */
+  dirHintKeys?: ReadonlySet<string>;
+}> = ({ params, dirHintKeys }) => {
   // 2026-10-21 小杨 - 路径链接需要项目根（绝对路径→相对路径）
   const projectRoot = useProjectRoot();
   const buckets = useMemo(() => {
@@ -818,9 +841,17 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
                     {!isHugeValue(v) &&
                     typeof v === 'string' &&
                     isPathParam(k, v) ? (
-                      <PathLink value={v} projectRoot={projectRoot} />
+                      <PathLink
+                        value={v}
+                        projectRoot={projectRoot}
+                        isDirHint={dirHintKeys?.has(k) === true}
+                      />
                     ) : (
-                      <ParamValue value={v} projectRoot={projectRoot} />
+                      <ParamValue
+                        value={v}
+                        projectRoot={projectRoot}
+                        isDirHint={dirHintKeys?.has(k) === true}
+                      />
                     )}
                   </span>
                 </div>
@@ -843,7 +874,12 @@ const GroupView: React.FC<{ params: Record<string, unknown> }> = ({
 const SpecView: React.FC<{
   params: Record<string, unknown>;
   valueMode?: ValueMode;
-}> = ({ params, valueMode = 'param' }) => {
+  /** 2026-10-23 小欧 - 按目录渲染的参数键；仅 valueMode='param' 生效
+   *   （结果视图的 raw_data 含 search_dir/命中路径等回显，不属工具参数声明域，不接） */
+  dirHintKeys?: ReadonlySet<string>;
+}> = ({ params, valueMode = 'param', dirHintKeys }) => {
+  const dirHint = (k: string) =>
+    valueMode === 'param' && dirHintKeys?.has(k) === true;
   // 2026-10-21 小杨 - 规格表此前漏接 PathLink；项目根模块级缓存，多入口共用一次请求
   const projectRoot = useProjectRoot();
   const [openKeys, setOpenKeys] = useState<ReadonlySet<string>>(
@@ -903,13 +939,18 @@ const SpecView: React.FC<{
                 )}
               </>
             ) : typeof v === 'string' && isPathParam(k, v) ? (
-              <PathLink value={v} projectRoot={projectRoot} />
+              <PathLink
+                value={v}
+                projectRoot={projectRoot}
+                isDirHint={dirHint(k)}
+              />
             ) : (
               /* 2026-10-13 23:55 小欧 - RC4: 透传 valueMode, 结果模式下空串走「(空)」占位 */
               <PlainValue
                 value={v}
                 valueMode={valueMode}
                 projectRoot={projectRoot}
+                isDirHint={dirHint(k)}
               />
             )}
           </div>
@@ -979,6 +1020,18 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
     () => (result ? visibleResultEntries(result) : []),
     [result]
   );
+  /**
+   * 2026-10-23 小欧 - 目录类工具（isDirToolPath）按目录渲染的参数键集合。
+   * 仅参数视图消费（结果视图 raw_data 不属工具参数声明域）；工具名声明在此算一次，
+   * 下游只传键集合，避免每个值渲染点各判一遍。
+   */
+  const dirHintKeys = useMemo(() => {
+    const s = new Set<string>();
+    Object.entries(params).forEach(([k, v]) => {
+      if (isDirToolPath(toolName, k, v)) s.add(k);
+    });
+    return s;
+  }, [params, toolName]);
   /**
    * 2026-10-14 小欧 - `tree`/`listdir` 的专用渲染节点(目录树 / 文件列表)。
    *   仅结果视图; 由 `pickResultView` 按工具名+结构双判据派发, 不匹配返回 null。
@@ -1131,9 +1184,13 @@ const ParamsPanel: React.FC<ParamsPanelProps> = ({
             本次工具执行：{resultSummary || '无结果数据'}
           </div>
         ) : view === 'group' ? (
-          <GroupView params={params} />
+          <GroupView params={params} dirHintKeys={dirHintKeys} />
         ) : view === 'spec' ? (
-          <SpecView params={params} valueMode="param" />
+          <SpecView
+            params={params}
+            valueMode="param"
+            dirHintKeys={dirHintKeys}
+          />
         ) : (
           /**
            * 2026-10-14 用户定案: `tree` / `listdir` 用**专用渲染**(目录树 / 文件列表),

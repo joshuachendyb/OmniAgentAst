@@ -16,11 +16,12 @@
 //             ②字符阈值方案(曾按 >200 字判可折叠, 已删); ③单行省略号 + 行级 title。
 // 编辑历史: 2026-10-22 小杨 - 对象/数组值改递归渲染, 嵌套 path 字段同样可点;
 //   多行值走折叠体不做整段链接; 对象不再预生成 JSON 摘要(大对象省一次字符串化) — 小杨-2026-10-22
+// 2026-10-23 小欧 - 透传 tool 名：目录类工具（isDirToolPath）的 path 按目录渲染 — 小欧-2026-10-23
 import React, { useCallback, useMemo, useState } from 'react';
 import { CircleArrow } from '@/components/CircleArrow';
 import { CopyButton } from '@/components/markdown/CopyButton';
 // 2026-10-21 小杨 - 路径判定单一真源 + 路径可点击 + 项目根取数
-import { isPathParam } from './paramCategories';
+import { isDirToolPath, isPathParam } from './paramCategories';
 import { PathAwareJson } from './PathAwareJson';
 import { PathLink } from './PathLink';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
@@ -64,6 +65,8 @@ interface ParamNodeProps {
   value: unknown;
   isExpanded: (key: string) => boolean;
   onToggle: (key: string) => void;
+  /** 2026-10-23 小欧 - 所属工具名：供 isDirToolPath 判目录渲染（PathLink isDirHint） */
+  tool?: string;
 }
 
 /** 2026-10-13 小欧 - 单节点: 只有巨型值可折叠; 单值恒完整折行显示 */
@@ -73,9 +76,12 @@ const ParamNode: React.FC<ParamNodeProps> = ({
   value,
   isExpanded,
   onToggle,
+  tool,
 }) => {
   // 2026-10-21 小杨 - 路径链接需要项目根（绝对路径→相对路径）
   const projectRoot = useProjectRoot();
+  // 2026-10-23 小欧 - 目录类工具的 path 值按目录渲染，一次判定供链接与递归共用
+  const dirHint = tool ? isDirToolPath(tool, label, value) : false;
   const kind = classify(value);
   const foldable = kind === 'body';
   const open = foldable && isExpanded(nodeKey);
@@ -160,12 +166,20 @@ const ParamNode: React.FC<ParamNodeProps> = ({
           isPathParam(label, value) ? (
             <>
               {': '}
-              <PathLink value={value} projectRoot={projectRoot} />
+              <PathLink
+                value={value}
+                projectRoot={projectRoot}
+                isDirHint={dirHint}
+              />
             </>
           ) : typeof value === 'object' && value !== null ? (
             <>
               {': '}
-              <PathAwareJson value={value} projectRoot={projectRoot} />
+              <PathAwareJson
+                value={value}
+                projectRoot={projectRoot}
+                isDirHint={dirHint}
+              />
             </>
           ) : (
             `: ${summary}`
@@ -209,6 +223,8 @@ const ParamNode: React.FC<ParamNodeProps> = ({
 
 interface ParamsTreeProps {
   entries: Array<[string, unknown]>;
+  /** 2026-10-23 小欧 - 所属工具名：目录类工具按目录渲染其 path（isDirToolPath） */
+  tool?: string;
 }
 
 /**
@@ -220,7 +236,7 @@ interface ParamsTreeProps {
  * @author 小欧
  * @since 2026-10-13
  */
-const ParamsTree: React.FC<ParamsTreeProps> = ({ entries }) => {
+const ParamsTree: React.FC<ParamsTreeProps> = ({ entries, tool }) => {
   const [expandedKeys, setExpandedKeys] = useState<ReadonlySet<string>>(
     () => new Set()
   );
@@ -291,6 +307,7 @@ const ParamsTree: React.FC<ParamsTreeProps> = ({ entries }) => {
             value={v}
             isExpanded={isExpanded}
             onToggle={onToggle}
+            tool={tool}
           />
         );
       })}

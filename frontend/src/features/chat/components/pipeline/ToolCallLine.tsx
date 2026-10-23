@@ -64,6 +64,7 @@
 // 编辑历史: 2026-10-14 小欧 - 浮层改纵向居中(北京老陈裁定): FloatingEntry 传 centered, 横向仍贴按钮;
 //   另订正 D-11 注释的事实错误 —— 卡片 padding:0 **去不掉** .ant-popover-inner 的 12px(外层元素),
 //   残留 24px 外壳开销改由 ParamsPanel 的 maxHeight 扣除 — 小欧-2026-10-14
+// 2026-10-23 小欧 - 参数树传 tool 名（ParamsTree 的 tool prop），目录类工具的 path 按目录渲染 — 小欧-2026-10-23
 /**
  * ToolCallLine - 工具调用内联弱化行 + HITL 高亮边框
  *
@@ -477,7 +478,9 @@ const ToolCallLine: React.FC<ToolCallLineProps> = ({
                   {/* 2026-10-13 小欧 - 文档[29]§4.6.7/§2.7 I1 + D-1: 参数区**移出** role="button",
                       点节点不再误折叠整行(B1 结构性根治), 故无需 stopPropagation 补丁;
                       顶层键默认折叠 → 高度恒 (键数+1)×16px(C1/C2 根治) — 小欧 2026-10-13 */}
-                  {isOpen && <ParamsTree entries={paramEntries} />}
+                  {isOpen && (
+                    <ParamsTree entries={paramEntries} tool={t.tool} />
+                  )}
                   {/* 展开区：该工具完整 observation */}
                   {isOpen && (
                     <div

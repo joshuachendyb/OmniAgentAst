@@ -9,6 +9,12 @@
 //   （等根取回后重算，与正文 chip 同口径）。— 小欧-2026-10-23
 // 2026-10-23 小欧 - 根外目录（尾分隔符）也生成 ext=1 深链（挂外部树 __ext__），
 //   external 条件放宽 isFileLikePath || isDirPath；LinkInner 目录态换 FolderOutlined 图标 — 小欧-2026-10-23
+// 2026-10-23 小欧 - isDirHint：工具语义声明该 path 必为目录（listdir/tree/find，见
+//   paramCategories.isDirToolPath）——根内顶层目录名（无扩展名无分隔符，如 src）豁免
+//   isLinkableRelPath 门放行深链 + 目录图标；根外目录并入 external 条件走 ext=1。
+//   显示文本维持原文不补尾，目录性由图标/链接分支表达（数据层与 step/DB 零接触）— 小欧-2026-10-23
+// 2026-10-23 小欧 - 目录 ext=1 深链改走 buildExternalDirDeepLink（补尾分隔符，文件页
+//   isDirPath 判据所需）；目录声明不对"根自身"生效（否则把项目根当外部根挂 __ext__ 树）— 小欧-2026-10-23
 /**
  * PathLink —— 工具参数里的路径 → 可点击直达文件页（深链）
  *
@@ -29,15 +35,23 @@ import {
   isDriveAbsPath,
   isFileLikePath,
   isLinkableRelPath,
+  samePath,
   toRelativePath,
 } from '@/utils/projectPath';
-import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
+import {
+  buildExternalDeepLink,
+  buildExternalDirDeepLink,
+  buildFileDeepLink,
+} from '@/utils/fileDeepLink';
 import { Colors, Spacing } from '@/utils/stepStyles';
 
 export interface PathLinkProps {
   value: string;
   /** 项目根（来自 GET /files/root）；用于把绝对路径转成相对路径 */
   projectRoot?: string;
+  /** 该路径按工具语义必为目录（listdir/tree/find 的 path，isDirToolPath 判定）：
+   *   根内顶层目录名放行深链 + 目录图标；根外并入 external 走 ext=1 深链 — 小欧 2026-10-23 */
+  isDirHint?: boolean;
 }
 
 /** 可点击形态（Router 内）：原生 <a> 保底，点击/键盘都可达 */
@@ -98,25 +112,41 @@ const LinkInner: React.FC<{
  * 仅非盘符绝对且形态非法（UNC/斜杠/穿越/无扩展名）时保留纯文本 + Tooltip 说明原因，
  * 不造假链接，也不让用户面对"点了没反应"。
  */
-export const PathLink: React.FC<PathLinkProps> = ({ value, projectRoot }) => {
+export const PathLink: React.FC<PathLinkProps> = ({
+  value,
+  projectRoot,
+  isDirHint,
+}) => {
   const inRouter = useInRouterContext();
   const rel = toRelativePath(value, projectRoot);
-  // 根外盘符绝对路径（文件有扩展名 / 目录尾分隔符）→ ext=1 外部深链（与正文 chip 同口径）；
-  // 根未取回时盘符绝对路径归属未定 → 不出链接（等根取回后重算）；
-  // 无尾分隔符且无扩展名的根外路径前端无法区分文件/目录 → 不出链接（不造假）。
+  // 2026-10-23 小欧 - 根自身（如 listdir path=F:/proj）：rel 归一为空、isDirPath 判不出目录，
+  //   放行会把项目根当外部根挂 __ext__ 树 → 目录声明不对根自身生效（仅约束 isDirHint 子句）
+  const rootSelf =
+    !!projectRoot && isDriveAbsPath(value) && samePath(value, projectRoot);
+  // 2026-10-23 小欧 - 根外盘符绝对路径（文件有扩展名 / 目录尾分隔符 / 工具声明目录）
+  // → ext=1 外部深链（与正文 chip 同口径）；根未取回时归属未定 → 不出链接（等根取回后重算）；
+  // 无尾分隔符且无扩展名且无工具声明 → 前端无法区分文件/目录 → 不出链接（不造假）。
   const external =
     !!projectRoot &&
     isDriveAbsPath(value) &&
     !rel &&
-    (isFileLikePath(value) || isDirPath(value));
-  const dir = external && isDirPath(value);
+    (isFileLikePath(value) || isDirPath(value) || (isDirHint && !rootSelf));
+  const dir = (external && isDirPath(value)) || isDirHint;
   if (external && inRouter) {
-    return (
-      <LinkInner value={value} url={buildExternalDeepLink(value)} isDir={dir} />
-    );
+    // 目录深链必须带尾分隔符：文件页 ext=1 分支用 isDirPath（尾分隔符）分目录与文件，
+    // 无尾分隔符的目录会被当文件走外部只读预览而打不开 — 小欧-2026-10-23
+    const url = dir
+      ? buildExternalDirDeepLink(value)
+      : buildExternalDeepLink(value);
+    return <LinkInner value={value} url={url} isDir={dir} />;
   }
-  if (rel && isValidRelPath(rel) && isLinkableRelPath(rel) && inRouter) {
-    return <LinkInner value={value} url={buildFileDeepLink(rel)} />;
+  if (
+    rel &&
+    isValidRelPath(rel) &&
+    (isLinkableRelPath(rel) || isDirHint) &&
+    inRouter
+  ) {
+    return <LinkInner value={value} url={buildFileDeepLink(rel)} isDir={dir} />;
   }
 
   let reason = '路径形态不合法，无法在文件页打开';

@@ -1,6 +1,8 @@
 // 编辑历史: 2026-10-21 小杨 - 新建：参数「路径类」判定单一真源（ParamsPanel/ParamsTree 双入口共用） — 小杨-2026-10-21
 // 2026-10-22 小杨 - PATH_KEYS 按后端参数别名表补齐（目录/裸文件名/无扩展名文件同样按路径处理）；
 //   isPathLike 放宽为绝对盘符/尾斜杠/末段扩展名三选一，并排除 URL — 小杨-2026-10-22
+// 2026-10-23 小欧 - 增 DIR_TOOLS + isDirToolPath：目录类工具（listdir/tree/find）的路径参数
+//   按目录渲染（顶层目录名也放行深链）；键判定沿用 PATH_KEYS 以覆盖后端别名键 — 小欧-2026-10-23
 /**
  * 路径类参数判定 —— **单一真源**
  *
@@ -118,3 +120,14 @@ export const PATH_KEYS: ReadonlySet<string> = new Set([
 /** 该参数是否按「路径」处理（双入口共用同一判据） */
 export const isPathParam = (k: string, v: unknown): boolean =>
   PATH_KEYS.has(k) || (typeof v === 'string' && isPathLike(v));
+
+// ── 2026-10-23 小欧 - 目录类工具路径声明（渲染层单点判定） ─────────────
+// 注册名对齐 backend/app/tools/file/file_register.py：listdir/tree/find 的路径参数
+// 按 schema 语义必为目录（顶层目录名如 src 无扩展名无分隔符也放行跳转）。
+// 键判定沿用 PATH_KEYS 而非 'path'：别名键（dir/dir_path/search_dir/search_path，
+// 后端 tools_alias_mapper 才映射到 path）在前端是 LLM 原始键名，限 'path' 完全不命中。
+export const DIR_TOOLS = new Set(['listdir', 'tree', 'find']);
+
+/** 该工具的该参数是否按目录渲染（DIR_TOOLS 的路径类键；结果视图回显路径不在此列）— 小欧 2026-10-23 */
+export const isDirToolPath = (tool: string, k: string, v: unknown): boolean =>
+  DIR_TOOLS.has(tool) && PATH_KEYS.has(k) && typeof v === 'string';
