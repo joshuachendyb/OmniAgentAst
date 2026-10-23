@@ -33,7 +33,8 @@
 //   目录扫描提示（scanNotices）从树顶移到工具条「多选引用」行内 — 小欧-2026-10-23
 // 2026-10-23 小欧 - 外部目录树：fetchExternalTree 后端端点 + __ext__ 合成根挂主树顶兄弟位，
 //   loadExternalDir/openExternalDir/handleLoadDir 懒加载管道，treeNodes 子节点 key 递归加 __ext__/ 前缀
-//   （selectTreeFile/handleLoadDir 据此识别外部文件，原未加前缀→外部文件走根内 readFile→路径不存在）— 小欧-2026-10-23
+//   （selectTreeFile/handleLoadDir 据此识别外部文件，原未加前缀→外部文件走根内 readFile→路径不存在）；
+//   openExternalDir 命中目录时顺带展开第一层子目录 — 小欧-2026-10-23
 // 2026-10-23 小欧 - isDirPath 复用 projectPath 单点（selectTreeFile + handleLoadDir 两处内联正则替换）— 小欧-2026-10-23
 // 2026-10-23 小欧 - readAndPush 外部文件改调 readExternalFile（原调 readFile 走根内 API→路径不存在）；
 //   externalBase 去尾分隔符防双斜杠（selectTreeFile + handleLoadDir 两处）；
@@ -364,7 +365,7 @@ const FilesPage: React.FC = () => {
 
   /**
    * 2026-10-23 小欧 - 打开外部目录（ext=1 深链 / 定位框）：拉子树 + 合成 __ext__ 根插主树顶，
-   *   右侧预览不动（目录只定位不预览）。— 小欧-2026-10-23
+   *   右侧预览不动（目录只定位不预览）；命中目录时再展开第一层子目录。— 小欧-2026-10-23
    */
   const openExternalDir = useCallback(
     async (absDir: string): Promise<void> => {
@@ -373,10 +374,20 @@ const FilesPage: React.FC = () => {
         prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
       );
       const kids = await loadExternalDir(absDir, '.');
-      if (kids)
+      if (kids) {
+        const firstLayerDirKeys = kids
+          .filter((k) => k.type === 'dir')
+          .map((k) => `${EXT_KEY}/${k.key}`);
         setLoadedKeys((prev) =>
           prev.includes(EXT_KEY) ? prev : [...prev, EXT_KEY]
         );
+        setExpandedKeys((prev) => {
+          const next = new Set(prev);
+          next.add(EXT_KEY);
+          for (const k of firstLayerDirKeys) next.add(k);
+          return Array.from(next);
+        });
+      }
       setLinkErr(null);
       if (isNarrow) setNarrowTab('preview');
     },

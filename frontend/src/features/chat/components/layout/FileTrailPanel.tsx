@@ -11,6 +11,7 @@
 //   2026-10-22 小欧 - 移除文件名 Tooltip：f.name 仅文件名不含路径，一个文件一行可完整显示，悬停提示冗余 — 小欧-2026-10-22
 //   2026-10-23 小欧 - 行内改显全路径 f.path（北京老陈要求）：不截断、超宽折行（wordBreak+pre-wrap），
 //     去 ellipsis/nowrap；同名不同目录的文件靠路径可区分 — 小欧-2026-10-23
+//   2026-10-23 小欧 - 目录深链补尾分隔符：Files 页以尾分隔符判定目录，避免外部目录被误当文件预览 — 小欧-2026-10-23
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -27,6 +28,7 @@ import { Empty, Skeleton } from 'antd';
 import {
   CaretRightOutlined,
   FileOutlined,
+  FolderOutlined,
   PaperClipOutlined,
 } from '@ant-design/icons';
 import { type RecentFile } from '@/services/api/file.api';
@@ -34,7 +36,8 @@ import { type RecentFile } from '@/services/api/file.api';
 import { quoteFile } from '@/features/refs/quote';
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
-import { buildFileDeepLink } from '@/utils/fileDeepLink';
+import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
+import { isDriveAbsPath } from '@/utils/projectPath';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
@@ -69,6 +72,18 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
 }) => {
   const { files, loading, reload } = useRecentFiles(sessionId);
   const [expanded, setExpanded] = useState(readExpanded);
+
+  const buildTrailPath = (f: RecentFile): string => {
+    const target =
+      f.type === 'dir'
+        ? /[\\/]$/.test(f.path)
+          ? f.path
+          : `${f.path}/`
+        : f.path;
+    return isDriveAbsPath(target)
+      ? buildExternalDeepLink(target)
+      : buildFileDeepLink(target);
+  };
 
   /**
    * 2026-10-21 小欧 - 足迹**自动刷新**：
@@ -212,17 +227,21 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                   padding: `${Spacing.XS}px 0`,
                 }}
               >
-                <FileOutlined
-                  style={{ color: Colors.PRIMARY, flexShrink: 0 }}
-                />
+                {f.type === 'dir' ? (
+                  <FolderOutlined
+                    style={{ color: Colors.PRIMARY, flexShrink: 0 }}
+                  />
+                ) : (
+                  <FileOutlined
+                    style={{ color: Colors.PRIMARY, flexShrink: 0 }}
+                  />
+                )}
                 {/* 键盘目标①：文件路径 = 打开文件（真 button，避免"行 role=button 内嵌 button"的语义冲突） */}
                 <button
                   type="button"
                   /* 2026-10-21 小杨 - **新标签打开**
                      SPA 跳转会丢会话页的滚动/展开状态；深链路径是 SPA 路由, 新标签直达文件页=定位 */
-                  onClick={() =>
-                    window.open(buildFileDeepLink(f.path), '_blank')
-                  }
+                  onClick={() => window.open(buildTrailPath(f), '_blank')}
                   style={{
                     border: 'none',
                     background: 'transparent',

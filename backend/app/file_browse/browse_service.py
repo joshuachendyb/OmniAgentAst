@@ -40,6 +40,7 @@ import codecs
 import hashlib
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -1090,7 +1091,6 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
 
     root = Path(get_config().get_project_root()).resolve()
     seen: Dict[str, Dict[str, Any]] = {}
-    # 2026-10-21 小杨 - ops 聚合：该 path 在最近窗口内被哪些工具动过（tool 名去重）
     ops_by_path: Dict[str, set] = {}
     for row in rows:
         blob = row[0]
@@ -1107,51 +1107,55 @@ def recent_files(session_id: str) -> List[Dict[str, Any]]:
             raw = params.get("path") or t.get("target")
             if not raw or not isinstance(raw, str):
                 continue
-            # 2026-10-13 小欧 - 单测 j02 抓出的真 BUG（源自文档 4.1.7 的示例代码）：
-            #   原写作 `Path(raw).resolve()`，而 LLM 给的绝大多数是**相对项目根**的路径，
-            #   它会被解析到**进程 CWD**（backend/）而非项目根 → 判界失败整条丢弃
-            #   → 「最近文件」面板对相对路径永远空白（只有绝对路径能用）。
-            #   绝对路径仍要支持，故先归一到"相对项目根"再送 _resolve_within_root 收口
-            #   （它只接受相对路径，绝对路径会判 INVALID_PATH；连带享受代码库根禁区与
-            #   符号链接消解，前后端及 tree/search 口径完全一致）。
-            try:
-                cand = Path(raw)
-                abs_path = cand.resolve() if cand.is_absolute() else (root / cand).resolve()
-                rel_in = abs_path.relative_to(root).as_posix()   # 不在 root 下 → ValueError → 丢弃
-            except (OSError, ValueError):
+
+            norm = str(raw).strip()
+            if not norm or norm in {".", "/"}:
                 continue
-            try:
-                _target, rel = _resolve_within_root(rel_in)
-            except Exception:      # noqa: BLE001 —— 越界/禁区/非法一律跳过，不让脏数据中断整个面板
+            # 只保留真实路径：空值、`.`、`/` 以及 URL/UNC 直接丢弃；
+            # 相对路径一律按项目根解析；绝对盘符路径允许根外保留。
+            if (
+                re.search(r"\r\n\t", norm)
+                or norm.startswith(("http://", "https://", "file://", "ftp://", "ftps://"))
+                or norm.startswith(("\\\\", "/"))
+            ):
                 continue
-            # 2026-10-23 小欧 - 存在性校验（北京老陈裁定）：判界只认"在项目根内"、不认"真实存在"，
-            #   而 resolve 对不存在的相对路径也会成功 → 非文件工具的参数被当成文件收进足迹：
-            #   searchweb 查询词(91)/bash 命令串(53)/timenow(15)/fetchpage URL(12) 实测脏数据。
-            #   这类值解析后落在项目根内但磁盘上不存在 → 一律丢弃，只留真实动过的路径。
+
+            cand = Path(norm)
+            abs_path = cand.resolve() if cand.is_absolute() else (root / cand).resolve()
+            is_dir = abs_path.is_dir() if _exists(abs_path) else False
+            if abs_path == root:
+                continue
             if not _exists(abs_path):
                 continue
-            key = str(abs_path)
-            # 2026-10-21 小杨 - ops 累加必须在"去重 continue"之前 ——
-            #   否则同一路径的其它工具操作（同一 path 的第二次/第三次动作）会被 continue 吃掉而漏计。
-            #   tool 名取 tools 元素的 "tool" 字段（action_step.py:5：tools 元素含 tool/target/params）。
+
+            if cand.is_absolute() and _is_abs_drive_path(norm):
+                shown_path = norm
+                key = str(abs_path)
+            else:
+                try:
+                    _target, rel = _resolve_within_root(abs_path.relative_to(root).as_posix())
+                    shown_path = rel
+                    key = str(abs_path)
+                except Exception:      # noqa: BLE001 —— 越界/禁区/非法一律跳过，不让脏数据中断整个面板
+                    continue
+
             ops_by_path.setdefault(key, set()).add(str(t.get("tool") or "unknown"))
             if key in seen:
                 continue
+
             try:
-                mtime = _fmt_time(abs_path.stat().st_mtime)
+                st = abs_path.stat()
+                mtime = _fmt_time(st.st_mtime)
             except OSError:
                 mtime = ""
             seen[key] = {
-                "path": rel,                       # 复用唯一入口归一出的相对路径（口径与 tree 一致）
+                "path": shown_path,
                 "name": abs_path.name,
-                "preview": _preview_of(abs_path),
-                # 2026-10-21 小杨 - 修复：该值一直是文件系统 mtime，
-                #   旧名 last_seen_at 会让前端误当"最近访问时间"。按真实语义命名。
+                "type": "dir" if is_dir else "file",
+                "preview": "none" if is_dir else _preview_of(abs_path),
                 "mtime": mtime,
+                "deleted": False,
             }
-    # 2026-10-21 小杨 - ops 统一在循环结束后回填：seen[key] 建在"首次出现"处（最新一次动作），
-    #   而 ops_by_path 在其后的旧记录里仍在累加；若在构造时快照 sorted(ops_by_path[key])，
-    #   只会拿到第一个动作的 op（漏计）→ 故此处回填，保证是全集。
     for _k, _v in seen.items():
         _v["ops"] = sorted(ops_by_path.get(_k, set()))
     return list(seen.values())[:_RECENT_KEEP]

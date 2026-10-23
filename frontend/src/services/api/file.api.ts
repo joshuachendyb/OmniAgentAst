@@ -88,9 +88,12 @@ export interface SearchResponse {
 export interface RecentFile {
   path: string;
   name: string;
+  type?: 'file' | 'dir';
   preview: string;
   /** 文件最后修改时间（后端 mtime；原字段名 last_seen_at 语义错位） */
   mtime: string;
+  /** 路径曾出现在会话足迹中但当前已删除 */
+  deleted?: boolean;
   /** 该文件在最近窗口内被哪些工具动过（后端注册名，字母序） */
   ops: string[];
 }

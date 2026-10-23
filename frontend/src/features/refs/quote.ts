@@ -13,6 +13,7 @@
  * - 读失败不静默：只返回 reason，不弹提示——成功与失败文案都归调用方。
  */
 import { fileApi } from '@/services/api/file.api';
+import { isDriveAbsPath } from '@/utils/projectPath';
 import { composerRefStore, newRefId } from './store';
 
 export interface QuoteResult {
@@ -28,7 +29,11 @@ export const quoteFile = async (
 ): Promise<QuoteResult> => {
   const label = opts?.label ?? path.split('/').pop() ?? path;
   try {
-    const content = opts?.content ?? (await fileApi.readFile(path)).content;
+    const content =
+      opts?.content ??
+      (isDriveAbsPath(path)
+        ? (await fileApi.readExternalFile(path)).content
+        : (await fileApi.readFile(path)).content);
     composerRefStore.push({
       id: newRefId(),
       kind: 'file',
