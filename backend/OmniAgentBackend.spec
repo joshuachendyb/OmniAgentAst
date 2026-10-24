@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 # ============================================================================
-# OmniAgentAst 后端 exe 打包 spec(onedir, 带控制台) — 小欧 2026-09-19(北京老陈驱动)
+# OmniAgentAst 后端 exe 打包 spec(onedir, 无控制台) — 小欧 2026-10-24
 # 构建: cd backend; E:\Appsw\python31311\Scripts\pyinstaller.exe OmniAgentBackend.spec
 # 构建后收尾(必需, onedir禁止datas目标".."只能拷):
 #   copy ..\version.txt dist\OmniAgentBackend\
@@ -10,6 +10,7 @@
 #   exe旁自带: version.txt / config.yaml.example / config/ / logs(运行生成)
 # 注意: playwright浏览器需用户机另装(playwright install chromium);
 #   tesseract/pycorrector模型等外部依赖行为与源码运行一致, 不随包走。
+#   无控制台模式: 日志落 dist/OmniAgentBackend/logs/app_YYYY-MM-DD.log, 可通过该文件查日志。
 # ============================================================================
 import sys
 from pathlib import Path
@@ -59,6 +60,7 @@ a = Analysis(
     datas=[
         (str(REPO / "version.txt"), "."),
         (str(BACKEND / "config.yaml.example"), "."),
+        (str(REPO / "OmniAgent.md"), "."),  # 项目规则文件 — 小欧 2026-10-24
     ] + _datas,
     hiddenimports=[
         "aiosqlite",

@@ -14,6 +14,12 @@
 #     fail-closed（deps._is_trusted_localhost）三道防线。
 #   2026-10-11 小欧 - 北京老陈令「打包版默认 8500」(--port 默认值 8000→常量 DEFAULT_PORT=8500;
 #     打包配套文件非 app/ 系统代码, 可改; 配套删 pyi_rthook_default_port, 单一机制)。
+#   2026-10-24 小欧 - FIX: 新增 _deploy_resources() 自动部署必备文件 + _ensure_config 提前到 import app.main 之前。
+#     根因: PyInstaller onedir 模式下 datas 只落到 _internal/，但程序运行时期望这些文件在 exe 同级。
+#     修复: 启动时自动从 _internal/ 拷贝 version.txt / config.yaml.example / OmniAgent.md 到 exe 同级 — 小欧-2026-10-24
+#     根因2: app/logger/config.py:30 在模块级调用 get_config() → Config._load_config()
+#     → _check_config_exists() 抛 FileNotFoundError，此时 _ensure_config 尚未执行。
+#     修复2: _deploy_resources() 先部署文件，再 _ensure_config() 生成 config.yaml，最后才 import app.main — 小欧-2026-10-24
 # ============================================================================
 import argparse
 import shutil
@@ -42,6 +48,32 @@ def _exe_dir() -> Path:
         sys.path.insert(0, sys._MEIPASS)
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
+
+
+def _deploy_resources(base: Path) -> None:
+    """打包后资源部署: 把 _internal/ 里的必备文件拷到 exe 同级 — 小欧 2026-10-24
+    
+    PyInstaller onedir 模式下 datas 只落到 _internal/，但程序运行时期望这些文件在 exe 同级。
+    本函数在启动时自动完成部署，无需手动收尾拷贝。
+    """
+    src_base = base / "_internal"
+    if not src_base.exists():
+        return
+    # version.txt — 必须存在，否则 get_version() 返回 "0.0.0"
+    src = src_base / "version.txt"
+    dst = base / "version.txt"
+    if src.exists() and not dst.exists():
+        shutil.copy2(src, dst)
+    # config.yaml.example — 必须存在，否则 _ensure_config 无法生成 config.yaml
+    src = src_base / "config.yaml.example"
+    dst = base / "config.yaml.example"
+    if src.exists() and not dst.exists():
+        shutil.copy2(src, dst)
+    # OmniAgent.md — 项目规则文件，缺失时程序会自动建空文件，这里也拷贝
+    src = src_base / "OmniAgent.md"
+    dst = base / "OmniAgent.md"
+    if src.exists() and not dst.exists():
+        shutil.copy2(src, dst)
 
 
 def _ensure_config(base: Path) -> None:
@@ -78,7 +110,8 @@ def main() -> None:
               "客户端可伪造来源 IP。为安全起见，本机回环将不再自动豁免鉴权。", flush=True)
 
     base = _exe_dir()
-    _ensure_config(base)
+    _deploy_resources(base)   # 自动部署 version.txt/config.yaml.example/OmniAgent.md 到 exe 同级
+    _ensure_config(base)      # 确保 config/config.yaml 存在，再导入 app.* 模块
 
     import app.main  # noqa: F401 — 供PyInstaller静态收集业务第三方依赖, 运行期仍由uvicorn按名加载
     # 小欧 - 2026-09-27：把 forwarded_allow_ips 注入应用层。
