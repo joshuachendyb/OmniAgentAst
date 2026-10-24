@@ -39,6 +39,14 @@
 // 2026-10-23 小欧 - readAndPush 外部文件改调 readExternalFile（原调 readFile 走根内 API→路径不存在）；
 //   externalBase 去尾分隔符防双斜杠（selectTreeFile + handleLoadDir 两处）；
 //   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
+// 2026-10-24 小欧 - 外部目录深层懒加载路径修复：loadExternalDir 懒加载子目录时后端返回的 key
+//   相对于被请求子目录（如 models），原 mergeKids 直接挂入导致 key 丢失中间目录（如 backend/app/db/）
+//   → 第 5 级及以下文件预览路径拼接错误（F:\OmniAgentAs-01/models/chat_models.py 而非
+//   F:\OmniAgentAs-01/backend/app/db/models/chat_models.py）。现用 prefixKeys 重定位为外部根相对路径。
+//   同时 treeNodes 的 prefixKids 内联函数改用 prefixKeys 共用（DRY）。— 小欧-2026-10-24
+// 2026-10-24 小欧 - 路径分隔符统一：externalBase 是 Windows 反斜杠（F:\x），后端 key 是 posix
+//   正斜杠（backend/app/db/...），原直接拼出 F:\x/y/z 混合路径。新增 joinAbsPath 工具函数统一
+//   转为 Windows 风格（F:\x\y\z），selectTreeFile/readAndPush/handleLoadDir 三处收敛调用。— 小欧-2026-10-24
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -86,7 +94,7 @@ import { FilesTree } from '@/features/files/components/FilesTree';
 import { FilePreview } from '@/features/files/components/FilePreview';
 import { PreviewNoticeCard } from '@/features/files/components/PreviewNoticeCard';
 // 2026-10-23 小欧 - 外部目录挂树：合成根 __ext__ + mergeKids 合并外部子层 — 小欧-2026-10-23
-import { mergeKids } from '@/utils/fileTree';
+import { mergeKids, prefixKeys, joinAbsPath } from '@/utils/fileTree';
 // 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
@@ -343,7 +351,10 @@ const FilesPage: React.FC = () => {
 
   /** 外部目录树懒加载：按绝对路径拉子层，key 为相对外部根的 posix — 小欧-2026-10-23
    *  2026-10-23 三堂会审 - absDir 作参数传入（不依赖闭包 externalBase，修 openExternalDir
-   *    setExternalBase 后立即调用时闭包仍是旧值的时序 bug）；relKey 传 '.'=整树赋值，否则 merge。 */
+   *    setExternalBase 后立即调用时闭包仍是旧值的时序 bug）；relKey 传 '.'=整树赋值，否则 merge。
+   *  2026-10-24 小欧 - 懒加载子目录时，后端返回的 key 相对于被请求子目录（如 models），
+   *    需要 prefixKeys(r.nodes, relKey) 拼成外部根相对路径（如 backend/app/db/models），
+   *    否则 mergeKids 挂入后 key 丢失中间目录 → 第 5 级及以下文件预览路径拼接错误。— 小欧-2026-10-24 */
   const loadExternalDir = useCallback(
     async (absDir: string, relKey?: string): Promise<FileNode[] | null> => {
       const seq = (externalSeqRef.current.get(absDir) ?? 0) + 1;
@@ -353,7 +364,7 @@ const FilesPage: React.FC = () => {
         if (externalSeqRef.current.get(absDir) !== seq) return null;
         setExternalNodes((prev) => {
           if (!relKey || relKey === '.') return r.nodes;
-          return mergeKids(prev, relKey, r.nodes);
+          return mergeKids(prev, relKey, prefixKeys(r.nodes, relKey));
         });
         return r.nodes;
       } catch {
@@ -404,12 +415,7 @@ const FilesPage: React.FC = () => {
     // 2026-10-23 小欧 - 子节点 key 递归加 __ext__/ 前缀：selectTreeFile/handleLoadDir
     //   据此识别外部文件。原未加前缀 → 外部文件走根内 readFile → "路径不存在"。
     //   嵌套子目录的 key 也需前缀（__ext__/sub/...），否则懒加载找不到父节点。— 小欧-2026-10-23
-    const prefixKids = (kids: FileNode[]): FileNode[] =>
-      kids.map((k) => ({
-        ...k,
-        key: `${EXT_KEY}/${k.key}`,
-        children: k.children ? prefixKids(k.children) : undefined,
-      }));
+    // 2026-10-24 小欧 - 改用 prefixKeys 共用函数（DRY：原 prefixKids 与 prefixKeys 逻辑完全一致）
     const extRoot: FileNode = {
       key: EXT_KEY,
       name: externalBase,
@@ -417,7 +423,7 @@ const FilesPage: React.FC = () => {
       size: null,
       mtime: '',
       preview: 'none',
-      children: prefixKids(externalNodes),
+      children: prefixKeys(externalNodes, EXT_KEY),
       incomplete_child: false,
     };
     return [extRoot, ...tree];
@@ -452,8 +458,7 @@ const FilesPage: React.FC = () => {
         return externalBase ? loadExternalDir(externalBase, '.') : null;
       if (key.startsWith(`${EXT_KEY}/`)) {
         const relKey = key.slice(EXT_KEY.length + 1);
-        const base = externalBase?.replace(/[\\/]$/, '') ?? '';
-        return base ? loadExternalDir(`${base}/${relKey}`, relKey) : null;
+        return externalBase ? loadExternalDir(joinAbsPath(externalBase, relKey), relKey) : null;
       }
       return loadDir(key);
     },
@@ -473,8 +478,7 @@ const FilesPage: React.FC = () => {
       //   保留 externalBase，不清外部态（树内文件才清 externalPath）— 小欧-2026-10-23
       if (n.key.startsWith(`${EXT_KEY}/`) && externalBase) {
         const relInExt = n.key.slice(EXT_KEY.length + 1);
-        const base = externalBase.replace(/[\\/]$/, '');
-        setExternalPath(`${base}/${relInExt}`);
+        setExternalPath(joinAbsPath(externalBase, relInExt));
         setSelected(null);
         setLineRange(line ?? null);
         setLinkErr(null);
@@ -733,7 +737,7 @@ const FilesPage: React.FC = () => {
     async (n: FileNode): Promise<void> => {
       if (n.key.startsWith('__ext__/') && externalBase) {
         const relInExt = n.key.slice('__ext__/'.length);
-        const absPath = `${externalBase.replace(/[\\/]$/, '')}/${relInExt}`;
+        const absPath = joinAbsPath(externalBase, relInExt);
         const r = await fileApi.readExternalFile(absPath);
         await pushRef('file', n.name, absPath, r.content, r.size);
       } else {

@@ -21,6 +21,10 @@
 //     用户能一眼看到"定位到哪了"，右侧预览不动 — 小欧-2026-10-23
 // 2026-10-23 小欧 - externalBase prop：__ext__ 外部节点右键复制相对/绝对路径按外部根计算
 //   （原用 toAbsolutePath 按项目根拼→路径错误）；外部目录不出现「设为会话工作目录」菜单项（只读，后端会拒）— 小欧-2026-10-23
+// 2026-10-25 小欧 - 右键复制路径分隔符统一为 Windows \：
+//   ① 绝对路径（外部节点）原 ${externalBase}/${extRel} 混用 \ 和 /，改用 joinAbsPath 统一为 \；
+//   ② 相对路径原直接复制 posix 风格 extRel（backend/app/...），现 .replace(/\//g,'\\') 转 \；
+//   ③ 非外部绝对路径由 toAbsolutePath 返回（projectPath.ts 已同步改为 \ 风格）— 小欧-2026-10-25
 // 2026-10-23 小欧 - 外部目录图标琥珀金（Colors.WARNING #AD6800），与根内蓝色文件夹视觉区分；
 //   slice 偏移修正（'__ext__/.length=8 非 9，原 +1 多切一字符致文件名首字丢失）— 小欧-2026-10-23
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -32,6 +36,7 @@ import { formatBytes } from '@/utils/format';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { copyTextToClipboard } from '@/utils/clipboard';
 import { toAbsolutePath } from '@/utils/projectPath';
+import { joinAbsPath } from '@/utils/fileTree';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
 import { Colors } from '@/utils/stepStyles';
 import { chatTokens } from '@/theme/tokens';
@@ -383,7 +388,8 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           key: 'copyRel',
           label: '复制相对路径',
           act: () => {
-            void copyTextToClipboard(extRel).then((r) => {
+            // 2026-10-25 小欧 - 树 key 是 posix 正斜杠，Windows 下复制应统一为 \ — 小欧-2026-10-25
+            void copyTextToClipboard(extRel.replace(/\//g, '\\')).then((r) => {
               if (r.ok) showSuccess('相对路径已复制');
               else showMessage(ErrorType.COPY_FAILED, '复制失败，请手动复制');
             });
@@ -393,9 +399,10 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           key: 'copyAbs',
           label: '复制绝对路径',
           act: () => {
+            // 2026-10-25 小欧 - 外部节点用 joinAbsPath 统一 \ 分隔符（原 ${externalBase}/${extRel} 混用 \ 和 /）— 小欧-2026-10-25
             const abs =
               isExtNode && externalBase
-                ? `${externalBase.replace(/[\\/]$/, '')}/${extRel}`
+                ? joinAbsPath(externalBase, extRel)
                 : (toAbsolutePath(ctx.node.key, projectRoot) ?? ctx.node.key);
             void copyTextToClipboard(abs).then((r) => {
               if (r.ok) showSuccess('绝对路径已复制');

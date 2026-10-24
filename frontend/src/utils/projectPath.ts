@@ -2,6 +2,8 @@
 //   新增相对→绝对供 J3 设会话目录用）— 小欧-2026-10-21
 // 2026-10-21 小欧 - toAbsolutePath 改段级拼接：滤掉 '.' 与空段，
 //   不再产出 "F:/proj/./a.md" 这类非规范路径 — 小欧-2026-10-21
+// 2026-10-25 小欧 - toAbsolutePath 返回 Windows 风格反斜杠：原 norm 统一为 / 后拼出
+//   F:/proj/... 正斜杠，Windows 下应输出 F:\proj\... — 小欧-2026-10-25
 // 2026-10-21 小杨 - toRelativePath 支持工具参数里的相对路径；URL/UNC/越界路径仍返回 null — 小杨-2026-10-21
 // 2026-10-22 小杨 - toRelativePath 增相对路径直转与换行/控制字符拒收（多行参数不拼假 href）；
 //   新增 isAbsolutePath / isLinkableRelPath 供链接层判形态 — 小杨-2026-10-22
@@ -101,8 +103,9 @@ export const toAbsolutePath = (
   if (segs.includes('..')) return null;
   const root = norm(projectRoot ?? '');
   if (!root) return null;
-  // 段级拼接：'.' 与空段已滤掉，避免产出 "F:/proj/./a.md" 这类非规范路径
-  return `${root}/${segs.join('/')}`;
+  // 段级拼接：'.' 与空段已滤掉，避免产出 "F:\proj\.\a.md" 这类非规范路径
+  // 2026-10-25 小欧 - norm 归一化后直接拼，最终转回 \ 保证 Windows 风格 — 小欧-2026-10-25
+  return `${root}/${segs.join('/')}`.replace(/\//g, '\\');
 };
 
 /** 同路径判定（大小写不敏感 + 分隔符归一） */
