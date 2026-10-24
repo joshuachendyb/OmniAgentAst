@@ -24,6 +24,8 @@ tool_executor — 工具执行逻辑
 #   注入压缩摘要同源 call_llm_text_task 闭包到 tools/context 的 _current_text_task ContextVar(hooks 同款
 #   try/finally reset 管道); 工具层守护禁 tools→app.services, 故工具内只经 get_current_text_task 消费回调,
 #   零越层。agent 无 llm_client 不注入(工具自降级); 并行/顺序两分支统一覆盖。
+# 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
+#   _emit_installing 文案不变, 调用点3处统一迁移 — 小欧-2026-10-25
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -120,26 +122,17 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
 
 
 async def _emit_installing(agent, tool_name: str, pkgs: List[str]) -> None:
-    """装包前播一条 MetaStep(installing) 给前端 —— 小欧 2026-10-19
+    """装包前播一条 notice(kind=installing, phase=start) 给前端 —— 小欧 2026-10-19
 
     pip 装包常需数十秒, 期间 SSE 无任何帧, 用户只看到转圈, 与"卡死"无法区分。
     装包已 to_thread 卸载, 事件循环空着, 这条消息才发得出去 —— 二者是同一处改动的两面。
 
-    文案三要素: 为哪个工具 / 装哪些包 / 进行中。只报事实不猜成败 —— 装不上随缺库错误体
-    走 observation, 此处若先说"正在安装"却最终没装上, 由那条负责交代。
-    不带安装指令: 这条是给用户看的, 用户不执行命令; 要执行的 LLM 走错误体 hint, 那里才有完整指令。
+    文案三要素: 为哪个工具 / 装哪些包 / 进行中。
     """
     if not pkgs:
         return
-    try:
-        from app.services.agent.steps import MetaStep
-        from app.services.task.task_state import get_stream_buffer
-        step = agent._step_emitter.emit(MetaStep(
-            step=len(agent.steps), type="installing",
-            content=f"正在为 {tool_name} 安装依赖 {', '.join(pkgs)}"))
-        await get_stream_buffer(agent.task_id).publish(step.to_dict())
-    except Exception as e:        # 播报失败不得影响工具执行本身
-        logger.warning(f"[tool_executor] installing 事件播报失败: {e}")
+    await agent._step_emitter.emit_notice("installing", "start",
+                       f"正在为 {tool_name} 安装依赖 {', '.join(pkgs)}")
 
 
 async def _missing_dep_guard(agent, tool_name: str) -> Optional[Dict[str, Any]]:
@@ -170,7 +163,11 @@ async def _missing_dep_guard(agent, tool_name: str) -> Optional[Dict[str, Any]]:
     # pip 是同步阻塞 IO, 必须离开事件循环线程
     still = await asyncio.to_thread(tool_registry.heal_missing_deps, tool_name)
     if tool_registry.apply_heal_result(tool_name, still):
+        await agent._step_emitter.emit_notice("installing", "done",
+                           f"{tool_name} 依赖安装完成")
         return None
+    await agent._step_emitter.emit_notice("installing", "failed",
+                       f"{tool_name} 依赖安装失败")
     return build_missing_dep_error(tool_name, still)
 
 

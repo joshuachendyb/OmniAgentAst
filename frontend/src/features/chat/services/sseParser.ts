@@ -112,6 +112,8 @@
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: case 'rejected' 在 onRejected 回调外补 pushAndFlush 入 executionSteps(透传 reject_type/tool_name), 使 useTaskInfo 能从 steps 派生 rejected 过程事件; 改前只调回调不入流, 事件列表永无 rejected — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 小欧 - rejected 帧补传 confirm_id(北京老陈令): 原不传致 onRejected 拿不到 id,
 //   关窗分支不成立, 确认作废后弹窗永留屏幕(实测 e95d2ceb) — 小欧-2026-10-11
+// 编辑历史: 2026-10-25 小欧 - 通知信封收敛: KNOWN_EVENT_TYPES 删 'installing'/'summarizing', 补 'notice';
+//   case 'notice' 解析 notice_kind/notice_phase 字段透传给 useTaskInfo — 小欧-2026-10-25
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -174,8 +176,7 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'paused',
   'resumed',
   'retrying',
-  'installing', // 2026-10-19 小欧: 缺库自愈装包中(后端 MetaStep), 与 retrying 同为进行态帧
-  'summarizing', // 2026-10-19 小欧: start 阶段生成历史摘要中(后端 MetaStep)
+  'notice', // 2026-10-25 小欧: 通知信封(事前/事后统一)
   'merged',
 ]);
 
@@ -1013,6 +1014,18 @@ const processSSEData = (
         pushAndFlush(handlers, step);
         onStep?.(step);
         handlers.onMerged?.((rawData.merged_into_task_id as string) ?? null);
+        step.timestamp = timestampValue;
+        break;
+      }
+      // 2026-10-25 小欧: 通知信封 — 解析层只 push 到 executionSteps, 渲染由 useTaskInfo 按 kind+phase 查表
+      case 'notice': {
+        logTypeArrival(rawData.type, step.step);
+        step.type = rawData.type as ExecutionStep['type'];
+        step.content = rawData.content || '';
+        step.notice_kind = (rawData.kind as string) || '';
+        step.notice_phase = (rawData.phase as 'start' | 'done' | 'failed') || 'start';
+        pushAndFlush(handlers, step);
+        onStep?.(step);
         step.timestamp = timestampValue;
         break;
       }

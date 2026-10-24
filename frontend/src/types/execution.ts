@@ -26,6 +26,8 @@
 // 2026-10-09 小欧: 引 ConvContextFrame/InjectContextFrame(DRY, 不各写一套); sse.ts 零 import 无循环依赖
 // 编辑历史: 2026-10-10 小欧 - 结构定稿, ExecutionStep 只保留 conv_context/
 // inject_context 双分组, 不携带任何旧扁平字段(禁止backward)
+// 编辑历史: 2026-10-25 小欧 - 通知信封收敛: type 成员 'installing'/'summarizing' 统一为 'notice';
+//   新增 notice_kind/notice_phase 可选字段, 供 useTaskInfo 按 kind+phase 查表渲染 — 小欧-2026-10-25
 import type { ConvContextFrame, InjectContextFrame } from './sse';
 
 export interface ExecutionStep {
@@ -52,8 +54,7 @@ export interface ExecutionStep {
     | 'paused'
     | 'resumed'
     | 'retrying'
-    | 'installing' // 2026-10-19 小欧: 缺库自愈正在装依赖(后端 MetaStep type=installing), 与 retrying 同为进行态 meta
-    | 'summarizing' // 2026-10-19 小欧: start 阶段调 LLM 生成历史摘要中(后端 MetaStep type=summarizing)
+    | 'notice' // 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派
     | 'rejected'
     | 'merged' // 2026-09-28 小欧: 注入应答(已并入运行中任务), meta 类; 不进 liveMeta 错误位, 仅提示条+左侧高亮
     | 'heartbeat'; // 2026-09-19 小欧: 心跳事件记录到事件列表(后端":ping" SSE注释帧) — 驱动
@@ -62,6 +63,9 @@ export interface ExecutionStep {
   //   sseParser 已把该帧 push 进 executionSteps, 故上方"不入步骤流"注释自本次起失效。
   //   reject_type 承载拒绝归因(safety/user/timeout/sandbox), 供 useTaskInfo 生成事件文案前缀。
   reject_type?: string;
+  // 2026-10-25 小欧: 通知信封字段(type='notice' 时有效)
+  notice_kind?: string; // 通知种类: summarizing/installing/...
+  notice_phase?: 'start' | 'done' | 'failed'; // 阶段: start(事前)/done(成功)/failed(失败)
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
   // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：
   //   后端 content_items 对象数组，与 content 同源同序；前端现阶段只透传保存 — 小欧-2026-10-12

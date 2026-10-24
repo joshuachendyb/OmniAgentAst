@@ -21,6 +21,8 @@ Author: 小沈 - 2026-05-31
 # 2026-09-11 小欧 - 方案: emit_final_with_stats 返回一元组(final,); final_stats 移出循环链由 runner 延后单发 — 小欧-2026-09-11
 # 2026-09-11 小欧 - 修复: emit() 注入 model/provider(任务快照优先) + duration(now - telemetry._run_start_ts),
 #   根因: emit_completed_final/emit_failed_final 未传 final_model/duration 致 DB step_json 三字段 null — 小欧-2026-09-11
+# 2026-10-25 小欧 - 通知信封收敛: 新增 emit_notice() 统一发射器(三堂会审 DRY), 消除 start_step/tool_executor 重复实现;
+#   信封结构 type="notice" + kind + phase + content, 仅 SSE 不落库(走 SSE_ONLY_TYPES) — 小欧-2026-10-25
 """
 
 from typing import Any, Dict, Optional
@@ -94,6 +96,25 @@ class StepEmitter:
             step=step, response=response, outcome="failed",
             error_type=error_type, error_message=error_message, reasoning=reasoning,
         ))
+
+    async def emit_notice(self, kind: str, phase: str, content: str) -> None:
+        """通知信封统一发射器(事前/事后) — 小欧 2026-10-25 三堂会审
+
+        信封结构: type="notice" + kind(通知种类) + phase(start/done/failed) + content(文案)
+        事前(phase=start)与事后(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
+        buffer 判空: get_stream_buffer 可能返回 None(任务尚未建 buffer), 直接 publish 会 AttributeError。
+        """
+        try:
+            from app.services.agent.steps import MetaStep
+            from app.services.task.task_state import get_stream_buffer
+            step = self.emit(MetaStep(
+                step=len(self.agent.steps), type="notice",
+                content=content, kind=kind, phase=phase))
+            _buf = get_stream_buffer(self.agent.task_id)
+            if _buf is not None:
+                await _buf.publish(step.to_dict())
+        except Exception as e:        # 播报失败不得影响主链
+            logger.warning(f"[StepEmitter] notice 事件播报失败(kind={kind} phase={phase}): {e}")
 
     def _get_tracker(self):
         """获取task_tracker — 小健 2026-06-18 DRY提取, 任务ID直接用 agent.task_id — 小欧 2026-07-16"""

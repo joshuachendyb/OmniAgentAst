@@ -16,6 +16,7 @@
 // 编辑历史: 2026-10-09 小欧[20] - ContextSource 复用帧类型; mapStatus 判据改 content; EVENT_ICON_MAP 加 context_compressed
 // 编辑历史: 2026-10-10 小欧[20] - 删 summary-only 态(4态→3态): 历史任务无 conv_context,
 // 单分组判据必然落进"有内容无计数", 自造的"摘要·无计数"漏进 UI。mapStatus 改双分组真值性
+// 编辑历史: 2026-10-25 小欧 - 通知信封图标映射: 新增 NOTICE_CONFIG(kind+phase → antd SVG), summarizing/installing 三态(start/done/failed)各配 Spin/Check/Warning 图标; EVENT_ICON_MAP.notice 保留为回退 — 小欧-2026-10-25
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -99,10 +100,8 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   paused: <PauseCircleOutlined />, // 现状 ⏸️ → SVG
   resumed: <PlayCircleOutlined />, // 现状 ▶️ → SVG
   retrying: <ReloadOutlined />, // 现状 🔁 → SVG
-  // 2026-10-19 小欧: 装依赖中(缺库自愈), 与 retrying 同为进行态 — 复用旋转图标不新增图形
-  installing: <SyncOutlined spin />,
-  // 2026-10-19 小欧: 生成历史摘要中(start 阶段调 LLM), 同为进行态
-  summarizing: <SyncOutlined spin />,
+  // 2026-10-25 小欧: 通知信封(事前/事后统一), 按 kind+phase 查表渲染
+  notice: <SyncOutlined spin />,
   error: <WarningOutlined />, // 2026-09-17 小欧: 错误事件 - 小欧-2026-09-17
   rejected: <StopOutlined />, // 2026-09-17 小欧: 拒绝事件 - 小欧-2026-09-17
   cancelled: <CloseCircleOutlined />, // 2026-09-17 小欧: 取消事件 - 小欧-2026-09-17
@@ -112,6 +111,20 @@ export const EVENT_ICON_MAP: Record<ProcessEvent['kind'], ReactNode> = {
   context_trimmed: <WarningOutlined />,
   // 2026-10-09 北京老陈令[20]: 压缩事件图标, 与裁剪同级(压缩改变历史原貌, 值得警示)
   context_compressed: <WarningOutlined />, // 需与 useTaskInfo ProcessEvent kind 同步
+};
+
+// ---------- NOTICE_CONFIG（通知信封 kind+phase 图标映射） ----------
+// 2026-10-25 小欧: 通知信封按 kind+phase 查表渲染, 与 EVENT_ICON_MAP 的 kind 级映射互补
+// 前端渲染时: 先查 NOTICE_CONFIG[`${kind}_${phase}`], 未命中则回退 EVENT_ICON_MAP['notice']
+export const NOTICE_CONFIG: Record<string, ReactNode> = {
+  // summarizing(摘要生成)
+  summarizing_start: <SyncOutlined spin />,
+  summarizing_done: <CheckCircleOutlined />,
+  summarizing_failed: <WarningOutlined />,
+  // installing(依赖安装)
+  installing_start: <SyncOutlined spin />,
+  installing_done: <CheckCircleOutlined />,
+  installing_failed: <WarningOutlined />,
 };
 
 // ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------

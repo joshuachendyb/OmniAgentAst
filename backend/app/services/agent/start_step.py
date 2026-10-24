@@ -60,6 +60,8 @@
 # 2026-10-12 小欧 - 摘要调 LLM 前补 log-print（北京老陈令）: 入口无日志则长等待无据可查 — 小欧-2026-10-12
 # 2026-10-14 小欧 - linked 增量摘要: 抽 _strip_history_msgs(全量/delta 共用, delta 保留末条 user 防断链) + _assemble_anchor_delta(锚点命中只压新增段: 小则复用零 LLM, 超限调 generate_chunked_summary 增量压缩, 失败回退旧摘要+delta) — 小欧-2026-10-14
 # 2026-10-24 小欧 - 修复: _build_injected_history 调用 _strip_history_msgs 传 drop_last_user=False, 防丢弃链1 user_input。_load_previous_messages 已用 upper_message_id 排除本轮 user 消息, drop_last_user=True 会错误丢弃上一轮(链1)的 user_input, 致 LLM 不知"继续"指何事(实测链1 秒挂 HTTP 401, 注入历史仅 55 tokens "任务执行失败", LLM 探索共享目录执行旧任务)。— 小欧-2026-10-24
+# 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
+#   _emit_summarizing 文案不变, 调用点5处统一迁移 — 小欧-2026-10-25
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -196,25 +198,17 @@ def _maybe_compact_injected_history(agent) -> None:
 
 
 async def _emit_summarizing(agent, scope: str, count: int) -> None:
-    """摘要调 LLM 前播一条 MetaStep(summarizing) 给前端 —— 小欧 2026-10-19
+    """摘要调 LLM 前播一条 notice(kind=summarizing, phase=start) 给前端 —— 小欧 2026-10-19
 
     背景与 tool_executor 的 installing 同源: 长耗时外部调用期间 SSE 无任何帧, 用户只见转圈,
     与"卡死"无法区分。摘要动辄数十秒, 且发生在 start 阶段(用户刚发出消息, 期待最强)——
     此处静默比装包更让人不安。
 
     scope 取 '增量'/'全量', 区分两条路径: 增量=同链只压新增段(旧摘要作底), 全量=首轮压缩整段历史。
-    count 为本次送进 LLM 的条数, 供用户判断耗时量级。文案只报事实, 不承诺成败 ——
-    失败回退路径各有各的日志, 成功与否由随后的 history_context 帧交代。
+    count 为本次送进 LLM 的条数, 供用户判断耗时量级。
     """
-    try:
-        from app.services.agent.steps import MetaStep
-        from app.services.task.task_state import get_stream_buffer
-        step = agent._step_emitter.emit(MetaStep(
-            step=len(agent.steps), type="summarizing",
-            content=f"正在生成历史摘要({scope} {count} 条)"))
-        await get_stream_buffer(agent.task_id).publish(step.to_dict())
-    except Exception as e:        # 播报失败不得影响摘要主链
-        logger.warning(f"[start_step] summarizing 事件播报失败: {e}")
+    await agent._step_emitter.emit_notice("summarizing", "start",
+                       f"正在生成历史摘要({scope} {count} 条)")
 
 
 async def _compact_injected_history(agent) -> str:
@@ -284,6 +278,11 @@ async def _compact_injected_history(agent) -> str:
         summary_text = ""
     if summary_text:
         logger.debug(f"[start_step] 锚定摘要生成完成 (len={len(summary_text)})")
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           f"历史摘要生成完成({len(summary_text)} 字符)")
+    else:
+        await agent._step_emitter.emit_notice("summarizing", "failed",
+                           "历史摘要生成失败，已回退使用完整历史")
     agent._needs_compact = False
     return summary_text
 
@@ -360,10 +359,14 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         agent._start_summary = new_summary
         agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
         logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           f"增量摘要生成完成({len(new_summary)} 字符)")
     else:
         # 失败回退: 旧锚点摘要 + 全量 delta(比老路的全量历史更省, 语义等价: 老历史已被摘要代表)
         agent._start_summary = anchor_summary
         logger.info("[start_step] 增量摘要未产出, 回退「锚点摘要 + 全量 delta」")
+        await agent._step_emitter.emit_notice("summarizing", "failed",
+                           "增量摘要生成失败，已回退使用锚点摘要")
     return True
 
 

@@ -52,6 +52,7 @@
 //   memo 每帧重算致事件时间每帧漂移。
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: 恢复 case 'rejected'(2026-09-17 删除的两个理由已解除: sseParser 已 pushAndFlush 入流; 不落库仍成立但实时链路不再依赖落库), 文案带归因前缀, 归因词复用 ToolCallLine.REJECT_LABEL_MAP(DRY, 已核无循环引用); 与 pipeline 点名条双写共存 — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 返回值补 processEventsSnapshot(排除 heartbeat, 全链路唯一过滤); 历史分支改读 detail.process_events(快照条目直接铺列表, 不进 switch 防 badge 被覆写); 实时分支删 slice(-20) 上限(北京老陈令「不能限制」, 溢出由 TaskInfoBar 浮层滚动承载) — 小欧-2026-10-11
+// 编辑历史: 2026-10-25 小欧 - 通知信封接入: ProcessEvent 接口新增 notice_kind/notice_phase 可选字段; notice case 透传两字段供 NOTICE_CONFIG 按 kind+phase 查表渲染 — 小欧-2026-10-25
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -95,8 +96,7 @@ export interface ProcessEvent {
     | 'paused'
     | 'resumed'
     | 'retrying'
-    | 'installing' // 2026-10-19 小欧: 缺库自愈正在装依赖
-    | 'summarizing' // 2026-10-19 小欧: start 阶段正在生成历史摘要
+    | 'notice' // 2026-10-25 小欧: 通知信封(事前/事后统一)
     | 'error'
     | 'rejected'
     | 'cancelled'
@@ -109,6 +109,9 @@ export interface ProcessEvent {
     | 'context_compressed';
   text: string;
   time: number;
+  // 2026-10-25 小欧: 通知信封字段(仅 kind='notice' 时有效), 供 NOTICE_CONFIG 按 kind+phase 查表渲染
+  notice_kind?: string;
+  notice_phase?: 'start' | 'done' | 'failed';
 }
 
 // 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级);
@@ -274,24 +277,18 @@ export const useTaskInfo = (
             requestLevel: false, // 2026-09-08 小欧 6.3.4: 过程事件恒执行级 — 小欧-2026-09-08
           };
           break;
-        case 'installing':
-          // 2026-10-19 小欧: 装依赖中, 只进事件列表不进位4(位4只收 retrying/error/truncated)。
-          // 装完要么工具跑起来(自愈成功, 本条自然被后续步骤盖过), 要么走缺库错误体走 observation。
+        case 'notice': {
+          // 2026-10-25 小欧: 通知信封 — 只进事件列表不进位4, kind+phase 透传供 NOTICE_CONFIG 查表
+          const noticeText = s.content || '通知';
           processEvents.push({
-            kind: 'installing',
-            text: s.content || '正在安装依赖',
+            kind: 'notice',
+            text: noticeText,
             time: s.timestamp,
+            notice_kind: s.notice_kind || '',
+            notice_phase: s.notice_phase || 'start',
           });
           break;
-        case 'summarizing':
-          // 2026-10-19 小欧: 摘要生成中, 同 installing 只进事件列表。成败由随后的
-          // history_context 帧交代(生成成功才有该帧), 本条不预告结果。
-          processEvents.push({
-            kind: 'summarizing',
-            text: s.content || '正在生成历史摘要',
-            time: s.timestamp,
-          });
-          break;
+        }
 
         case 'final':
           if (s.outcome === 'cancelled') {

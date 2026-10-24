@@ -11,6 +11,8 @@
 //   ChatRequest 删死字段 context_link_mode(后端 5.7.9 已删该请求字段) 并补 link_enabled(随消息携带的新契约字段) — 小欧-2026-10-03
 // 编辑历史: 2026-10-10 小欧 - /: 新增 WorkspaceEntry / UnusableEntry / WorkspacesResponse 三类型（会话使用的目录；不进 SendOpts，前端不携带只调 GET/PATCH）
 // 编辑历史: 2026-10-21 小杨 - 新增 ChatRefPayload（引用条目随消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
+// 编辑历史: 2026-10-25 小欧 - 通知信封收敛: StatusValue/StatusMessage 统一 'installing'/'summarizing' → 'notice'
+//   isStatusMessage 守卫同步更新 — 小欧-2026-10-25
 /**
  * 流式API响应类型定义
  *
@@ -144,8 +146,7 @@ export type StatusValue =
   | 'paused'
   | 'resumed'
   | 'retrying'
-  | 'installing'
-  | 'summarizing';
+  | 'notice';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）
@@ -153,7 +154,7 @@ export type StatusValue =
  * 【北京老陈 2026-07-13 小欧】incident_value 已废弃，直接用 type 表示终态/生命周期
  */
 export interface StatusMessage {
-  type: 'paused' | 'retrying' | 'resumed' | 'installing' | 'summarizing';
+  type: 'paused' | 'retrying' | 'resumed' | 'notice';
   message: string;
   timestamp: string; // 必填，时间戳
   confirm_id?: string; // 仅 paused(HITL) 时可选
@@ -228,8 +229,7 @@ export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
     msg.type === 'paused' ||
     msg.type === 'retrying' ||
     msg.type === 'resumed' ||
-    msg.type === 'installing' ||
-    msg.type === 'summarizing'
+    msg.type === 'notice'
   );
 }
 

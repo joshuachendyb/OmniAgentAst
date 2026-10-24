@@ -60,6 +60,7 @@
 //   新增「占窗率 = 本轮P/窗口」置于「任务」前(缺窗口不显); 断点门统一 isNarrow, 删 isMid
 // 编辑历史: 2026-10-06 小欧 - 增 storeStatus 入参(useTaskInfo 补第 5 参), 用于取消终态帧没送达时的徽标兜底。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 taskId prop(取值与组件 key 同源 activeTaskId ?? serverTaskId, 不新造标识); final 到达时调 saveTaskProcessEvents 回传快照(_sentRef 幂等只发一次, _latestRef 读最新值避 exhaustive-deps, effect 首行 if (detail) return 防历史态误回填覆盖/跨任务污染; 失败只 console.warn 不阻断) — 小欧-2026-10-11
+// 编辑历史: 2026-10-25 小欧 - 通知信封图标映射启用: import NOTICE_CONFIG; 事件时间轴渲染 notice 条目时按 kind+phase 查 NOTICE_CONFIG, 未命中回退 EVENT_ICON_MAP.notice — 小欧-2026-10-25
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -100,6 +101,7 @@ import { FloatingEntry } from './FloatingEntry'; // v4.2: G6/G8 双浮层入口�
 import {
   BADGE_MAP,
   EVENT_ICON_MAP,
+  NOTICE_CONFIG,
   TABULAR_NUMS,
   formatTokenK,
 } from './infoMaps';
@@ -283,7 +285,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             <span style={{ color: Colors.BORDER.LIGHT }}>│</span>
             {/* 右列: antd SVG 图标 + 文本; 图标即 3.6 "● 节点", 不另加 ● 文本符 */}
             <span style={{ color: Colors.TEXT.TERTIARY, minWidth: 0 }}>
-              {EVENT_ICON_MAP[e.kind]}
+              {e.kind === 'notice'
+                ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
+                : EVENT_ICON_MAP[e.kind]}
               <span style={{ marginLeft: Spacing.XS }}>{e.text}</span>
             </span>
           </div>
