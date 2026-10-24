@@ -20,6 +20,12 @@
 #     根因2: app/logger/config.py:30 在模块级调用 get_config() → Config._load_config()
 #     → _check_config_exists() 抛 FileNotFoundError，此时 _ensure_config 尚未执行。
 #     修复2: _deploy_resources() 先部署文件，再 _ensure_config() 生成 config.yaml，最后才 import app.main — 小欧-2026-10-24
+#   2026-10-24 小欧 - FIX2: _deploy_resources 改按 mtime 判定刷新(源新于目标则覆盖), 并加 刷新/跳过/失败 三类日志。
+#     根因: 原判据 `not dst.exists()` 只创建不更新 —— 升级打包版本后 _internal/ 内
+#     version.txt / OmniAgent.md 已更新, 但 exe 同级旧文件已存在 → 永不刷新 →
+#     版本号显示旧值、项目规则不随升级生效, 且全程无报错(静默失效)。
+#     修复: 抽出 _deploy_one() 单份部署, 三文件同一判据 src.stat().st_mtime > dst.stat().st_mtime;
+#     config.yaml.example 刷新无害(_ensure_config 仅在 config/config.yaml 缺失时复制它)。
 # ============================================================================
 import argparse
 import shutil
@@ -50,30 +56,44 @@ def _exe_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def _deploy_one(src: Path, dst: Path, name: str) -> None:
+    """单份资源部署: 缺失则创建, 源 mtime 新于目标则刷新 — 小欧 2026-10-24
+
+    判据用 mtime 而非 exists(): 升级打包版本后 _internal/ 内的源文件已更新,
+    若只判 exists(), exe 同级旧文件会永不刷新 → version.txt 显示旧版本号、
+    OmniAgent.md 规则不随升级生效, 且全程无报错(静默失效)。
+    """
+    if not src.exists():
+        return
+    try:
+        if not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
+            shutil.copy2(src, dst)
+            print(f"[run_server] _deploy_resources: refreshed {name} -> {dst}", flush=True)
+        else:
+            print(f"[run_server] _deploy_resources: skipped {name} (dst >= src)", flush=True)
+    except OSError as e:
+        print(f"[run_server] ⚠️ _deploy_resources: FAILED {name} -> {dst}: {e}", flush=True)
+
+
 def _deploy_resources(base: Path) -> None:
     """打包后资源部署: 把 _internal/ 里的必备文件拷到 exe 同级 — 小欧 2026-10-24
     
     PyInstaller onedir 模式下 datas 只落到 _internal/，但程序运行时期望这些文件在 exe 同级。
     本函数在启动时自动完成部署，无需手动收尾拷贝。
+
+    刷新判据: 源 mtime 新于目标则覆盖(见 _deploy_one), 三份文件同一判据。
+    config.yaml.example 刷新无害 —— _ensure_config 仅在 config/config.yaml 缺失时
+    才从 example 复制, 用户已生成的 config.yaml 不受影响。
     """
     src_base = base / "_internal"
     if not src_base.exists():
         return
-    # version.txt — 必须存在，否则 get_version() 返回 "0.0.0"
-    src = src_base / "version.txt"
-    dst = base / "version.txt"
-    if src.exists() and not dst.exists():
-        shutil.copy2(src, dst)
-    # config.yaml.example — 必须存在，否则 _ensure_config 无法生成 config.yaml
-    src = src_base / "config.yaml.example"
-    dst = base / "config.yaml.example"
-    if src.exists() and not dst.exists():
-        shutil.copy2(src, dst)
-    # OmniAgent.md — 项目规则文件，缺失时程序会自动建空文件，这里也拷贝
-    src = src_base / "OmniAgent.md"
-    dst = base / "OmniAgent.md"
-    if src.exists() and not dst.exists():
-        shutil.copy2(src, dst)
+    # version.txt — 必须存在且为最新, 否则 get_version() 返回旧版本号或 "0.0.0"
+    _deploy_one(src_base / "version.txt", base / "version.txt", "version.txt")
+    # config.yaml.example — 必须存在, 否则 _ensure_config 无法生成 config.yaml
+    _deploy_one(src_base / "config.yaml.example", base / "config.yaml.example", "config.yaml.example")
+    # OmniAgent.md — 项目规则文件注入 System Prompt; 缺失时程序只建空文件 → 规则不生效
+    _deploy_one(src_base / "OmniAgent.md", base / "OmniAgent.md", "OmniAgent.md")
 
 
 def _ensure_config(base: Path) -> None:
