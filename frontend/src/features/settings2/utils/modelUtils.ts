@@ -15,6 +15,8 @@
 //   AddParamForm（勾选添加参数）与 ModelModals（新建模型参数模板）双消费，组件间互引数据是分层异味。
 //   同步：reasoning_effort options 加 minimal 档（与后端 DEFAULT_PARAM_OPTIONS 同步，校验只认后端那张表，
 //   漏同步则存 minimal 报"非法选项"；fre2e_08 用自带列表，不受影响） — 小欧-2026-10-10
+// 2026-10-24 小欧 - reasoning_effort options 移除 minimal: OpenAI 官方文档 "Not all reasoning models
+//   support every value"，minimal 是少数派值，全局兜底只留 low/medium/high — 小欧-2026-10-24
 import type { SettingSchemaItem } from '@/services/api/settings.api';
 import type { RemoteModelItem } from '@/services/api/model.api';
 
@@ -215,7 +217,9 @@ export const PARAM_PRESETS = [
     key: 'reasoning_effort',
     type: 'enum' as const,
     default: 'medium',
-    options: ['minimal', 'low', 'medium', 'high'],
+    // 全局兜底只放所有推理模型都支持的三个核心值；少数派值(none/minimal/xhigh/max)
+    //   各模型支持不同，放全局会导致切模型时HTTP 400。模型私有值走 per-model param_options — 小欧-2026-10-24
+    options: ['low', 'medium', 'high'],
     label: '推理深度',
     desc: '推理深度模式选择,，仅推理模型有效',
   },

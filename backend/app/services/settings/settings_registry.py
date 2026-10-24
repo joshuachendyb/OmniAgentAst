@@ -64,9 +64,12 @@ key 全局唯一，加载自检重复直接拒启。
     forbidden_non_system_path_block / white_list_block / shell_danger_block / shell_risk_block;
     security.hitl 段 4 项(确认类): write_confirm / delete_confirm / dual_path_confirm / shell_path_confirm。
     全部 bool 默认 True(缺键按"开", fail-closed 方向); 键名按前缀自动归入「系统 / HTL人工确认」两节, 前端零改动。
-  2026-10-20 小欧 - 新增路径工具四类归类名单只读展示(security.hitl.tool_lists.read/write/delete/dual):
-    紧随 shell_readonly_prefixes; readonly=True, 取值直接来自 tool_constants 判定名单(展示与实判同源),
-    设置页显示为可复制文本、不可编辑; 改动归类仍须改代码, 避免配置面改写安全判定口径。
+   2026-10-20 小欧 - 新增路径工具四类归类名单只读展示(security.hitl.tool_lists.read/write/delete/dual):
+     紧随 shell_readonly_prefixes; readonly=True, 取值直接来自 tool_constants 判定名单(展示与实判同源),
+     设置页显示为可复制文本、不可编辑; 改动归类仍须改代码, 避免配置面改写安全判定口径。
+   2026-10-24 小欧 - reasoning_effort options 移除 minimal: OpenAI 官方文档明确 "Not all reasoning
+     models support every value"，minimal 是少数派值(agnes-2.5-flash 不认→HTTP 400)，全局兜底只留
+     low/medium/high 三个所有推理模型都支持的核心值；notice 同步更新说明少数派值需 per-model 配置 — 小欧-2026-10-24
 """
 from typing import Any, Dict, List, Optional
 
@@ -131,8 +134,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         _item("llm.sampling.enable_thinking", "bool", "思考开关", True,
               notice="全局思考开关默认值（单个模型没单独配置时用这个）：开=模型先思考再回答；关=直接回答。单模型可在模型参数里单独覆盖"),
         _item("llm.sampling.reasoning_effort", "select", "推理深度", "medium",
-              options=["minimal", "low", "medium", "high"],
-              notice="全局推理深度默认值（单个模型没单独配置时用这个）：minimal最省，high最深。单模型可在模型参数里单独覆盖"),
+              options=["low", "medium", "high"],
+              notice="全局推理深度默认值，只列所有推理模型都支持的三个核心值(low/medium/high)。"
+                     "少数派值(none/minimal/xhigh/max)各模型支持不同，放全局会导致切模型时HTTP 400，"
+                     "需在模型参数里单独配置"),
         _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
               notice="模型一次能记住的内容总量默认值（单个模型没单独配置时用这个），约 25.6 万 token"),
     ]},

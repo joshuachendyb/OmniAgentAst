@@ -151,6 +151,9 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-10-11 - 小欧 - Moonshot supports_* 布尔组归并(表上能力/模态列全空)：_merge_supports_modalities
 #   (image_in/video_in→input_modalities) + _merge_supports_features(reasoning/dynamic_tools→
 #   supported_features 的 reasoning/tools)，与 _merge_capabilities 同模式(True 才追加，去重) — 小欧-2026-10-11
+# 2026-10-24 - 小欧 - DEFAULT_PARAM_OPTIONS.reasoning_effort 移除 minimal: OpenAI 官方文档明确
+#   "Not all reasoning models support every value"，minimal 是少数派值(agnes-2.5-flash 不认→HTTP 400)，
+#   全局兜底只留 low/medium/high 三个所有推理模型都支持的核心值；少数派值走 per-model param_options — 小欧-2026-10-24
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -175,8 +178,11 @@ from app.services.model.config_helpers import (
 RESERVED_AI_KEYS = {"provider", "model", "model_ref"}
 
 # v1.1：仅全局兜底默认，不同模型3/4/5个选项走config覆盖，不写死（小欧 2026-09-22）
+# 全局兜底只放所有推理模型都支持的核心值；少数派值(none/minimal/xhigh/max)各模型支持不同，
+#   放全局会导致切模型时HTTP 400（2026-10-24 实测：agnes-3.0-flash认minimal，agnes-2.5-flash不认）。
+#   模型私有值走 per-model param_options 配置 — 小欧-2026-10-24
 DEFAULT_PARAM_OPTIONS: Dict[str, List[str]] = {
-    "reasoning_effort": ["minimal", "low", "medium", "high"],
+    "reasoning_effort": ["low", "medium", "high"],
 }
 
 # 动态参数元数据表（小欧 2026-09-22）

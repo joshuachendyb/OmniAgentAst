@@ -194,9 +194,9 @@ test.describe('添加模型参数模板全链路 E2E-01 (有头)', () => {
       'high'
     );
     const po = (b.param_options as Record<string, string[]>) ?? {};
-    // 2026-10-22 小欧 - 选项表随后端 DEFAULT_PARAM_OPTIONS 校准(2026-10-10 增 minimal 档:
-    //   ["minimal","low","medium","high"], 见 backend/app/services/model/model_service.py)
-    expect(po.reasoning_effort).toEqual(['minimal', 'low', 'medium', 'high']);
+    // 全局兜底只放所有推理模型都支持的三个核心值(low/medium/high)；
+    //   少数派值(none/minimal/xhigh/max)各模型支持不同，走 per-model param_options — 小欧-2026-10-24
+    expect(po.reasoning_effort).toEqual(['low', 'medium', 'high']);
     console.log(
       `[E2E] 步骤9 POST body 校验通过: provider=${b.provider} model=${b.model} ` +
         `default_params.reasoning_effort=${JSON.stringify((b.default_params as Record<string, unknown>).reasoning_effort)} ` +

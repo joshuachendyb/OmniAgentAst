@@ -59,6 +59,7 @@
 #   改由注入源取最近一条历史提问, 语义才成立。 — 小欧-2026-10-08
 # 2026-10-12 小欧 - 摘要调 LLM 前补 log-print（北京老陈令）: 入口无日志则长等待无据可查 — 小欧-2026-10-12
 # 2026-10-14 小欧 - linked 增量摘要: 抽 _strip_history_msgs(全量/delta 共用, delta 保留末条 user 防断链) + _assemble_anchor_delta(锚点命中只压新增段: 小则复用零 LLM, 超限调 generate_chunked_summary 增量压缩, 失败回退旧摘要+delta) — 小欧-2026-10-14
+# 2026-10-24 小欧 - 修复: _build_injected_history 调用 _strip_history_msgs 传 drop_last_user=False, 防丢弃链1 user_input。_load_previous_messages 已用 upper_message_id 排除本轮 user 消息, drop_last_user=True 会错误丢弃上一轮(链1)的 user_input, 致 LLM 不知"继续"指何事(实测链1 秒挂 HTTP 401, 注入历史仅 55 tokens "任务执行失败", LLM 探索共享目录执行旧任务)。— 小欧-2026-10-24
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -153,7 +154,7 @@ def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
       合法输入输出与原实现 100% 一致。
     """
     prev = context.get("previous_messages") if isinstance(context, dict) else None
-    agent._injected_history_msgs = _strip_history_msgs(prev)
+    agent._injected_history_msgs = _strip_history_msgs(prev, drop_last_user=False)
 
 
 def _maybe_compact_injected_history(agent) -> None:
