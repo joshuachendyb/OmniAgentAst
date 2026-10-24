@@ -57,6 +57,8 @@
 # 2026-10-20 小欧 - 预算跳过回归修复: _trim_to_budget 原「超预算即 break」在最新一轮超大+紧预算时
 #   返回空 → LLM 丢失全部 FC 历史(fuzz 17% 场景; 旧实现对超预算 tool 对是跳过继续扫更早)。
 #   改 break→continue: 超预算单元整体跳过, 继续尝试更早单元, 单元原子性保证不留半对。
+# 2026-10-24 小欧 - 新增 get_last_tool_summary() 读方法: 返回末条 role:tool 消息摘要(_summary 优先, 回退 content 截200字),
+#   供 react_inference._warn_same_tool_loop 纠偏注入让 LLM 看到上一次工具返回; SRP(message_builder 拥有 conversation_history 读写) — 小欧-2026-10-24
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -348,6 +350,17 @@ class MessageBuilder:
     def add_observation(self, observation_text: str, fc_context: Dict) -> None:
         """添加observation — 裁剪统一在 _process_single_step — 小欧 2026-07-01"""
         self._append_observation(observation_text, fc_context)
+
+    def get_last_tool_summary(self) -> str:
+        """返回末条 role:tool 消息的摘要(_summary 优先, 回退 content 截200字) — 小欧 2026-10-24
+        供死循环纠偏注入: 让 LLM 看到上一次工具的具体返回, 判断为何不应再调同一工具。"""
+        for msg in reversed(self.conversation_history):
+            if msg.get("role") == "tool":
+                summary = msg.get("_summary") or msg.get("content", "")
+                if len(summary) > 200:
+                    summary = summary[:200] + "..."
+                return summary
+        return ""
 
     def add_assistant_message(self, content: str) -> AssistantMessage:
         """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口

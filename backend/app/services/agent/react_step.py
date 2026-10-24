@@ -36,7 +36,7 @@
 #          (write写同一diff_tool.py), 每次工具均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具
 #          调用"空转, 本模式漏检, 致死循环直抵max_steps=10000。
 #   【方案】_tool_call_signature计算action调用签名(含并行pending); _check_same_tool_loop返回int连续计数(count=第N次),
-#           双阈值: count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)注入assistant role纠偏消息尝试唤醒, count>=5硬终止failed;
+#           双阈值: count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)注入user role纠偏消息尝试唤醒, count>=5硬终止failed;
 #           签名变化重置count=1+清纠偏标记; 正常任务签名各异零误伤, 增强不退化。
 # 2026-08-08 小欧 v1.6 双阈值实施: 单阈值(bool终止)升级为双阈值(3纠偏+5硬终止), 新增_warn_same_tool_loop
 # 2026-08-08 小欧 v1.7 双阈值调整(北京老陈 2026-08-08 指示"第2次就发纠偏; 2/3/4次发, >=5结束"):
@@ -176,6 +176,7 @@
 #   裁剪轮/每5轮的水位更新条件不变。
 # 2026-10-13 小欧 截断分支 tool_result 补 raw_data:None, 与 observation_builder 的 tool_result 契约保持同构(每元素自包含),
 #   前端按 raw_data 渲染时不会读到 undefined; data_text 不变(LLM 与 history_loader 回放的唯一文本源) — 小欧-2026-10-13
+# 2026-10-24 小欧 - 死循环纠偏注释修正(北京老陈令): 场景F 注释 "assistant role" 改 "user role"(实现本为 user, 注释写错) — 小欧-2026-10-24
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -586,7 +587,7 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     #          致死循环直抵max_steps=10000(约40+分钟)。
     #   【方案】对action响应计算工具调用签名(tool_name+规范化tool_params, 含并行pending),
     #          _check_same_tool_loop返回int连续计数(count=第N次), 双阈值:
-    #          count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)各注入assistant role纠偏消息(尝试唤醒调整, 最多3条);
+    #          count==2/3/4(_SAME_TOOL_WARN_ROUNDS起)各注入user role纠偏消息(尝试唤醒调整, 最多3条);
     #          count>=5(_MAX_CONSECUTIVE_SAME_TOOL_CALLS)判定死循环硬终止failed。
     #          正常任务LLM每轮工具/参数各异或需新信息, 签名必不同, count重置, 零误伤(增强不退化)。
     if llm_response.get("type") == "action":

@@ -12,6 +12,7 @@
 //   2026-10-23 小欧 - 行内改显全路径 f.path（北京老陈要求）：不截断、超宽折行（wordBreak+pre-wrap），
 //     去 ellipsis/nowrap；同名不同目录的文件靠路径可区分 — 小欧-2026-10-23
 //   2026-10-23 小欧 - 目录深链补尾分隔符：Files 页以尾分隔符判定目录，避免外部目录被误当文件预览 — 小欧-2026-10-23
+//   2026-10-24 小欧 - 点文件路径改 SPA 导航（useOptionalNavigate），不再新标签页打开；与正文 PathLink/FileRefChip 对齐 — 小欧-2026-10-24
 /**
  * FileTrailPanel —— 本会话 Agent 动过的文件
  *
@@ -38,6 +39,7 @@ import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
 import { isDriveAbsPath } from '@/utils/projectPath';
+import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
@@ -72,6 +74,9 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
 }) => {
   const { files, loading, reload } = useRecentFiles(sessionId);
   const [expanded, setExpanded] = useState(readExpanded);
+  // 2026-10-24 小欧 - SPA 导航（与正文 PathLink/FileRefChip 对齐），不再新标签页打开；
+  //   useOptionalNavigate 无 Router 上下文时整页跳兜底 — 小欧-2026-10-24
+  const nav = useOptionalNavigate();
 
   const buildTrailPath = (f: RecentFile): string => {
     const target =
@@ -239,9 +244,9 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
                 {/* 键盘目标①：文件路径 = 打开文件（真 button，避免"行 role=button 内嵌 button"的语义冲突） */}
                 <button
                   type="button"
-                  /* 2026-10-21 小杨 - **新标签打开**
-                     SPA 跳转会丢会话页的滚动/展开状态；深链路径是 SPA 路由, 新标签直达文件页=定位 */
-                  onClick={() => window.open(buildTrailPath(f), '_blank')}
+                  /* 2026-10-24 小欧 - SPA 导航（与正文 PathLink/FileRefChip 对齐），不再新标签页打开；
+                     useOptionalNavigate 无 Router 上下文时整页跳兜底 — 小欧-2026-10-24 */
+                  onClick={() => nav(buildTrailPath(f))}
                   style={{
                     border: 'none',
                     background: 'transparent',

@@ -7,6 +7,9 @@
 # 2026-10-11 小欧 - 同签名死循环纠偏文案补第3条出路(北京老陈令): 注入文本原只给"换工具/换参数/直接结束"两条,
 #   受保护路径被拒时 LLM 误读为"工具慢"而原样重试同一路径, 连撞3次被判死胡同(实测 2026-10-11 zen_verify.py)。
 #   新增第3条: 点名"可能是未获授权/被拦截", 令其换工具换路径或在结论中说明需人工授权。原两条不变 - 小欧-2026-10-11
+# 2026-10-24 小欧 - 纠偏消息修正(北京老陈令): ①文案"你的上一次操作无效"改"上一次调用工具执行完成:{summary}",
+#   经 message_builder.get_last_tool_summary() 取末条 role:tool 摘要注入(SRP: 读走 message_builder 不裸扫);
+#   ②注释/docstring "assistant role" 改 "user role"(实现本为 user, 注释写错) — 小欧-2026-10-24
 
 """react_inference — 状态推断基元(常量 + 守卫判定函数群)
 
@@ -26,7 +29,7 @@ from app.services.agent.steps import MetaStep
 _MAX_CONSECUTIVE_TRUNCATIONS = 3
 
 # 相同工具调用死循环防御(双阈值纠偏/硬终止): LLM连续调用完全相同工具+相同参数时,
-# 第2次(count==2)、第3次(count==3)、第4次(count==4)各注入一条assistant role纠偏消息尝试唤醒调整(共3条);
+# 第2次(count==2)、第3次(count==3)、第4次(count==4)各注入一条user role纠偏消息尝试唤醒调整(共3条);
 # count>=5(第5次)判定死循环硬终止。
 # 2026-08-08 - 小欧 - 文件不存在超时根因: LLM连续40+步逐字重复同一Thought并反复调用
 #   相同write(diff_tool.py), 每次均success, 现有_consecutive_reasoning_only仅拦"纯推理无工具"
@@ -134,15 +137,17 @@ def _check_same_tool_loop(agent, llm_response: Dict) -> int:
 
 def _warn_same_tool_loop(agent, llm_response: Dict, count: int) -> None:
     """注入纠偏提醒(带_temp_same_tool_warn标记, 终态统一清理) — 小欧 2026-08-08
-    连续相同调用达count==2/3/4(第2/3/4次)时各注入一条assistant role观察消息尝试唤醒LLM调整;
+    连续相同调用达count==2/3/4(第2/3/4次)时各注入一条user role纠偏消息尝试唤醒LLM调整;
     最多注入3条(第2/3/4次, _warned_same_tool_loop为int计数), 标记供pop_temp_messages
     弹掉防止持久化污染。原布尔幂等→int计数(北京老陈 2026-08-08 指示"第2次就发纠偏")。"""
     if getattr(agent, "_warned_same_tool_loop", 0) >= _SAME_TOOL_WARN_MAX:
         return  # 最多警告3次(第2/3/4次) — 小欧 2026-08-08
     _tool = llm_response.get("tool_name", "") or ""
     _sig = _tool_call_signature(llm_response)
+    _last_summary = agent.message_builder.get_last_tool_summary()
     obs_text = (
-        f"[Warning] 你的上一次操作无效: 已连续 {count} 次调用相同的工具 {_tool} 且参数**完全相同**, "
+        f"[Warning] 上一次调用工具执行完成: {_last_summary}. "
+        f"已连续 {count} 次调用相同的工具 {_tool} 且参数**完全相同**, "
         f"签名={_sig[:80]}..., 并未获得任何新信息。这是较严重的重复循环。"
         "请立即根据以下提示调整, 否则系统将强制终止本次任务: "
         "1) 改用其他工具或不同的参数; 2) 若确无新进展, 请直接给出结论结束任务, 不要再次重复调用同一工具。"
