@@ -91,6 +91,7 @@ from app.monitoring import storage  # 落库层（独立，storage 内部惰性�
 SSE_ONLY_TYPES = frozenset({          # 维度1: 仅 SSE 下发, 不落 chat_task_steps
     "chunk", "thought-start", "error", "usage", "paused",
     "resumed", "retrying", "cancelled", "rejected",
+    "notice",  # 2026-10-25 小欧: 通知信封(事前/事后), 仅SSE不落库
 })
 PERSISTED_NON_BIZ_TYPES = frozenset({ # 维度2: 落库(需回放)但不计业务步
     "start", "stats", "history_context", "final_stats", "authorization_required",  # 2026-10-04 小欧: context_overview 改名 history_context

@@ -63,6 +63,7 @@ ALL_STEP_TYPES = frozenset({
     "error", "usage", "paused", "resumed", "retrying",
     "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
     "rejected", "truncated",
+    "notice",  # 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派, 仅SSE不落库
     # 2026-10-04 小欧 - 订正: stats/history_context 实际属"落库需回放"(见 agent_telemetry.PERSISTED_NON_BIZ_TYPES,
     #   agent_runner 落库路由以 SSE_ONLY_TYPES 为排除集, 二者不在其中即落库), 原被误列在仅SSE 段 — 小欧 2026-10-04
     "stats", "history_context",
@@ -70,5 +71,15 @@ ALL_STEP_TYPES = frozenset({
     "thought",
     # 防御性保留(当前无独立发射源)
     "cancelled",
+})
+
+# ============================================================
+# 通知信封 kind 登记源(唯一登记处) — 小欧-2026-10-25
+# 纪律: 新增通知类型必须先在此登记, 前端 execution.ts NoticeKind 同步。
+# 信封结构: type="notice" + kind(通知种类) + phase(阶段: start/done/failed) + content(文案)
+# 事前通知(phase=start)与事后通知(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
+NOTICE_KINDS = frozenset({
+    "summarizing",  # 摘要生成(start 阶段调 LLM 压缩历史)
+    "installing",   # 依赖安装(缺库自愈 pip install)
 })
 
