@@ -41,6 +41,7 @@
 //   (徽标数随目录列表变, 故 useMemo 依赖数组同步纳入, 漏=徽标不刷新) — 小欧-2026-10-10
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskInfoBar 透传 taskId=activeTaskId ?? serverTaskId(与组件 key 同源, 不新造标识); 历史态误回填由 TaskInfoBar 内 if (detail) return 承担 — 小欧-2026-10-11
 // 编辑历史: 2026-10-21 小杨 - 挂文件足迹面板（rightBottom 折叠区）+ 透传推荐行/引用台账两项（可选） — 小杨-2026-10-21
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: ModelPickerSlot 删透传 sessionTitle(不再需要) - 小欧-2026-10-24
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -359,7 +360,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             modelPickerSlot={
               <ModelPicker
                 sessionId={sessionId}
-                sessionTitle={sessionTitle}
                 sessionVersion={sessionVersion}
                 sessionModelOverride={sessionModelOverride}
                 setSessionModelOverride={setSessionModelOverride}

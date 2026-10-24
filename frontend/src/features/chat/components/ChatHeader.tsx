@@ -8,6 +8,7 @@
 // 编辑历史: 2026-09-13 小欧 - 常量抽提名(替代裸露字面量10, 与生成端口径解耦) - 小欧-2026-09-13
 // 编辑历史: 2026-09-17 小沈 - 截断字数 10→20→15, 顶栏标题截断15字 - 小沈-2026-09-17
 // 编辑历史: 2026-08-28 小欧 - 修复卸载触发blur双发: 保存成功后标记本次编辑已落库, 拦截Input卸载时的blur二度保存 - 小欧-2026-08-28
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: handleSaveTitle改调updateSessionTitle(只发title+version), 与切模型解耦 - 小欧-2026-10-24
 /**
  * ChatHeader 组件 - 会话标题展示与编辑
  *
@@ -91,11 +92,11 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
     savingRef.current = true;
     try {
       // 保存标题到后端
-      const res = await sessionApi.updateSession(
+      const res = await sessionApi.updateSessionTitle(
         sessionId,
         titleInput.trim(),
         sessionVersion
-      );
+      ); // 2026-10-24 小欧 - SRP拆分: 只发 title+version, 不发 sessionModel
       // 2026-08-27 小欧 三堂会审H3: 写后回填version, 杜绝二次编辑必409冲突
       if (res && res.version) {
         setSessionVersion(res.version);

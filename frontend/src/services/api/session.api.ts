@@ -7,6 +7,7 @@
 //   ——值随消息落库, PATCH 端点前端零调用方, 按 YAGNI 不引入 — 小欧-2026-10-03
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.1: 新增 getWorkspaces(读会话目录, 含 project_root/allowed_dirs 只读字段) + patchWorkspaces(全量覆盖写, [] = 清空)
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: updateSession拆为updateSessionTitle(只改标题)+updateSessionModel(只改模型), 消除"改标题"与"切模型"耦合(长标题触发422根因) - 小欧-2026-10-24
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';
@@ -201,20 +202,36 @@ export const sessionApi = {
     return response.data;
   },
 
-  updateSession: async (
+  // 编辑历史: 2026-10-24 小欧 - SRP拆分: 原 updateSession 把"改标题"和"切会话模型"两个独立业务耦合在一个函数,
+  //   title 是必传位置参数致 ModelPicker 被迫传标题, 长标题(>200字符)触发后端 422 校验失败(模型切换失效)。
+  //   拆为 updateSessionTitle(只改标题) + updateSessionModel(只改模型), 各自单一职责, 后端 exclude_unset 天然兼容。
+  updateSessionTitle: async (
     sessionId: string,
     title: string,
-    version: number,
-    sessionModel?: SessionModelOverride | null
+    version: number
   ): Promise<UpdateSessionResponse> => {
     const body: Record<string, unknown> = {
       title,
       version,
       updated_by: 'user',
     };
-    if (sessionModel !== undefined) {
-      body.sessionModel = sessionModel;
-    }
+    const response = await api.put<UpdateSessionResponse>(
+      `/sessions/${sessionId}`,
+      body
+    );
+    return response.data;
+  },
+
+  updateSessionModel: async (
+    sessionId: string,
+    sessionModel: SessionModelOverride | null,
+    version: number
+  ): Promise<UpdateSessionResponse> => {
+    const body: Record<string, unknown> = {
+      version,
+      updated_by: 'user',
+      sessionModel,
+    };
     const response = await api.put<UpdateSessionResponse>(
       `/sessions/${sessionId}`,
       body

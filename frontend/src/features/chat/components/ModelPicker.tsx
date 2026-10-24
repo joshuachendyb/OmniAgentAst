@@ -7,6 +7,7 @@
 //     → openai (gpt-4) (openai) 双 provider, 改直接用 display_name;
 //   (2) 列框自适应: popupMatchSelectWidth=false 弹层宽度由最长选项决定(原默认=选中框 180 截断),
 //     nowrap 防换行; 选中框保持 minWidth:180 — 小欧-2026-09-25
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: 删sessionTitle入参, 改调updateSessionModel(只发sessionModel+version), 消除"切模型"被迫传标题的耦合 - 小欧-2026-10-24
 /**
  * ModelPicker 组件 - 会话级模型覆盖(L2)选择器
  *
@@ -33,7 +34,6 @@ import {
 
 interface ModelPickerProps {
   sessionId: string | null;
-  sessionTitle: string;
   sessionVersion: number;
   sessionModelOverride: SessionModelOverride | null;
   setSessionModelOverride: (v: SessionModelOverride | null) => void;
@@ -44,7 +44,6 @@ const FOLLOW_GLOBAL = '__follow_global__';
 
 const ModelPicker: React.FC<ModelPickerProps> = ({
   sessionId,
-  sessionTitle,
   sessionVersion,
   sessionModelOverride,
   setSessionModelOverride,
@@ -91,12 +90,11 @@ const ModelPicker: React.FC<ModelPickerProps> = ({
     const prev = sessionModelOverride;
     setLoading(true);
     try {
-      const res = await sessionApi.updateSession(
+      const res = await sessionApi.updateSessionModel(
         sessionId,
-        sessionTitle,
-        sessionVersion,
-        next
-      ); // 2026-08-27 小欧 修复#11: 移除'新会话'字面量回退, 切L2模型不应污染后端会话标题
+        next,
+        sessionVersion
+      ); // 2026-10-24 小欧 - SRP拆分: 只发 sessionModel+version, 不发标题(长标题触发422的根因)
       if (res.version) setSessionVersion(res.version);
       setSessionModelOverride(next);
     } catch (err: unknown) {

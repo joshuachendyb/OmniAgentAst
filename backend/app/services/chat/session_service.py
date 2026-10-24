@@ -39,6 +39,7 @@
 #   北京老陈定案: "切换开关 发到后端只能和消息一起发出, 严禁独立去影响后端的任何东西"。
 #   该端点前端零调用, 即零消费死端点, 与 5.7.5/5.7.6 同类同判据(YAGNI)。写入口收敛为唯一一条:
 #   消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
+# 2026-10-24 - 小欧 - create_session 标题截断200字符: useChatSend 把完整消息内容当标题, SessionCreate.title 无长度限制致超长标题入库, 后续 update_session 的 SessionUpdate.title max_length=200 校验必422。在此截断根治。
 """
 session_service — 会话业务服务(services/chat)
 
@@ -90,6 +91,8 @@ def create_session(session_create):
     """创建会话 — 自 api/v1/sessions.py 迁入"""
     session_id = str(uuid.uuid4())
     title = session_create.title if session_create and session_create.title else f"新会话 {now_str('%Y-%m-%d %H:%M')}"
+    # 2026-10-24 小欧 - 标题截断200字符: useChatSend传完整消息内容做标题, 超长触发后续SessionUpdate 422
+    title = title[:200]
     is_valid = session_create.is_valid if session_create and session_create.is_valid is not None else False
     local_time = get_local_iso_timestamp()
 

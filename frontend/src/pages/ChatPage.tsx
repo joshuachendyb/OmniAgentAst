@@ -48,6 +48,7 @@
 //   改 linkEnabled: boolean; 新增 handleToggleLink 为纯本地态(setLinkEnabled, 不发请求) — 小欧 2026-10-03
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: 注入 onTasksChanged(ref 中转 refreshTasks, 插话并入后左栏「追加N条」才刷新)
 // 编辑历史: 2026-10-20 07:42:12 小欧 - 底部留白压缩(北京老陈令): 容器padding底8→2px, 与Layout Content底距(10→4)合计18→6px — 小欧-2026-10-20
+// 编辑历史: 2026-10-24 小欧 - SRP拆分: useModelLayer调用删sessionTitle(不再需要) - 小欧-2026-10-24
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -110,7 +111,6 @@ const ChatPage: React.FC = () => {
   refreshTasksRef.current = refreshTasks;
   const { effective } = useModelLayer({
     sessionId,
-    sessionTitle: chatState.sessionTitle,
     sessionVersion: chatState.sessionVersion,
     setSessionVersion: chatState.setSessionVersion,
     sessionModelOverride: chatState.sessionModelOverride,
