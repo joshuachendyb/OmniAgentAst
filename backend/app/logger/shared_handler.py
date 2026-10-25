@@ -14,6 +14,9 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 # 2026-10-25 - 小欧 - 新增 setup_uvicorn_loggers(): uvicorn 三 logger(uvicorn/error/access) 接入共享文件
 #   handler(落盘) + ConsoleMirrorHandler(非阻塞上屏)。uvicorn 本体 logger 由自身 dictConfig 装配, 不在
 #   setup_logger 管辖内, 须单独收口; 须配合 run_server 传 log_config=None, 否则被覆盖。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - 截断阈值 100/120 收敛为单一 _CONSOLE_MAX_MSG=500: 原实现 101~120 字符的消息
+#   触发截断但截不到, 提示出现负数(如"截断-9字符"), uvicorn 访问日志高频轮询刷屏; 阈值抬高后访问日志
+#   不再触发, 提示数恒正。  小欧-2026-10-25
 
 import logging
 from contextvars import ContextVar
@@ -58,13 +61,18 @@ def _get_shared_handler() -> SafeRotatingFileHandler:
 
 
 # ---- Console 截断 Formatter --------------------------------------------
+# console 消息体截断阈值: 超此长度才截断并提示。取 500 兼顾两诉求 —
+# uvicorn 访问日志(约130字符)完整上屏不刷屏, 同时长日志(如工具原始返回)仍被收敛不撑爆控制台。
+
+_CONSOLE_MAX_MSG = 500
+
 
 class _TruncateConsoleFormatter(logging.Formatter):
     """console 日志截断 Formatter — 只截断消息体%(message)s，前缀不动 — 小欧 2026-07-11"""
     def format(self, record):
         raw = record.getMessage()
-        if len(raw) > 100:
-            record.msg = raw[:120] + f"...(截断{len(raw)-120}字符)"
+        if len(raw) > _CONSOLE_MAX_MSG:
+            record.msg = raw[:_CONSOLE_MAX_MSG] + f"...(截断{len(raw)-_CONSOLE_MAX_MSG}字符)"
             record.args = None
         return super().format(record)
 
