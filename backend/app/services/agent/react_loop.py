@@ -59,6 +59,7 @@
 #   原第1轮 LLM 响应后那次由 react_step 移除(裁剪轮/每5轮的水位更新不变)。
 # 2026-10-14 小欧 - linked 增量摘要: 有摘要时补注入 delta 原文 + 摘要落库到覆盖上界任务行(下次锚点), 写回失败仅告警 — 小欧-2026-10-14
 # 2026-10-14 小欧 - 文档[33] 4.1连带表: :363 clear_temp_auth 改从 app.safety.temp_auth 导入
+# 2026-10-25 小欧 - 增量注入顺序修复(北京老陈令): 原两次 inject_history 把 delta 插到 summary 前面, 顺序错(应为 summary 在前 delta 在后); 合并为一次调用 — 小欧-2026-10-25
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -165,13 +166,15 @@ async def run_react_cycle(
         refs=(getattr(agent, "_start_meta", None) or {}).get("refs"),
     )
     # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"), 后跟 delta 原文; 无摘要则注全量历史。— 小欧 2026-10-14
+    # 2026-10-25 小欧 修复(北京老陈令): 原两次 inject_history(delta 插到 summary 前面, 顺序错); 合并为一次, summary 在前 delta 在后
     _summary = getattr(agent, "_start_summary", "") or ""
     if _summary:
-        agent.message_builder.inject_history([{"role": "assistant", "content": _summary}])
         _delta = getattr(agent, "_injected_delta_msgs", None) or []
+        _injected = [{"role": "assistant", "content": _summary}]
         if _delta:
-            agent.message_builder.inject_history(_delta)
-            log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {len(_delta)}条")
+            _injected = _injected + _delta
+        agent.message_builder.inject_history(_injected)
+        log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {len(_delta)}条")
     else:
         agent.message_builder.inject_history(getattr(agent, "_injected_history_msgs", None) or [])
     _tele_hc = getattr(agent, "telemetry", None)

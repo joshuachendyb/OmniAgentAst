@@ -60,6 +60,7 @@
 # 2026-10-12 小欧 - 摘要调 LLM 前补 log-print（北京老陈令）: 入口无日志则长等待无据可查 — 小欧-2026-10-12
 # 2026-10-14 小欧 - linked 增量摘要: 抽 _strip_history_msgs(全量/delta 共用, delta 保留末条 user 防断链) + _assemble_anchor_delta(锚点命中只压新增段: 小则复用零 LLM, 超限调 generate_chunked_summary 增量压缩, 失败回退旧摘要+delta) — 小欧-2026-10-14
 # 2026-10-24 小欧 - 修复: _build_injected_history 调用 _strip_history_msgs 传 drop_last_user=False, 防丢弃链1 user_input。_load_previous_messages 已用 upper_message_id 排除本轮 user 消息, drop_last_user=True 会错误丢弃上一轮(链1)的 user_input, 致 LLM 不知"继续"指何事(实测链1 秒挂 HTTP 401, 注入历史仅 55 tokens "任务执行失败", LLM 探索共享目录执行旧任务)。— 小欧-2026-10-24
+# 2026-10-25 小欧 - 增量摘要冗余消除(北京老陈令): delta 超阈值压缩产出 new_summary 时, delta 内容已含在 summary 中; 原代码仍注入原始 delta(冗余+顺序错), 改为 _injected_delta_msgs=None 阻止注入 — 小欧-2026-10-25
 # 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
 #   _emit_summarizing 文案不变, 调用点5处统一迁移 — 小欧-2026-10-25
 """
@@ -360,6 +361,7 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         new_summary = ""
     if new_summary:
         agent._start_summary = new_summary
+        agent._injected_delta_msgs = None  # delta 已压缩进 summary, 不再单独注入(冗余) — 小欧 2026-10-25
         agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
         logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
         await agent._step_emitter.emit_notice("summarizing", "done",

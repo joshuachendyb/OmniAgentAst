@@ -59,6 +59,13 @@
 #   改 break→continue: 超预算单元整体跳过, 继续尝试更早单元, 单元原子性保证不留半对。
 # 2026-10-24 小欧 - 新增 get_last_tool_summary() 读方法: 返回末条 role:tool 消息摘要(_summary 优先, 回退 content 截200字),
 #   供 react_inference._warn_same_tool_loop 纠偏注入让 LLM 看到上一次工具返回; SRP(message_builder 拥有 conversation_history 读写) — 小欧-2026-10-24
+# 2026-10-25 小欧 - _rebuild_and_validate 末条 user 位置修复(北京老陈令): 原 system+user+trimmed 把全部 user
+#   推到 trimmed 前面, 末条 user(本轮 task 提问)被 FC 对盖住; link 长链 trim 后 LLM 看不到新任务提问(实测复现)。
+#   改为 system+other_users+trimmed+last_user, 末条 user 始终在尾部 — 小欧-2026-10-25
+# 2026-10-25 小欧 - _rebuild_and_validate 交错序修复(北京老陈令): 上条只把末条 user 移到尾部, other_users
+#   仍全堆在 trimmed 前, 多 user 注入(delta D1/D3 / 全量 B 路径)trim 后 user/assistant/tool 交错丢失。
+#   改为 other_users+trimmed 按 original_order 合并排序保交错; trim_history 传 original_order 入参。
+#   无 other_users 时退化为原逻辑(零退化) — 小欧-2026-10-25
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -486,7 +493,7 @@ class MessageBuilder:
             available_budget = max(1, self.MAX_CONTEXT_TOKENS - self._compaction_buffer - always_keep_tokens)
             trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
 
-            rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed)
+            rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed, original_order)
             if rebuilt is not None:
                 self.conversation_history = rebuilt
                 self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧 2026-08-20
@@ -544,9 +551,22 @@ class MessageBuilder:
         kept_units.reverse()
         return [msg for unit in kept_units for msg in unit]
 
-    def _rebuild_and_validate(self, system_msgs, user_msgs, trimmed_msgs):
-        """重组消息列表并验证FC配对完整性 — 2026-06-25 小欧 D-1修复: user_msgs在system和trimmed之间"""
-        rebuilt = system_msgs + user_msgs + trimmed_msgs
+    def _rebuild_and_validate(self, system_msgs, user_msgs, trimmed_msgs, original_order=None):
+        """重组消息列表并验证FC配对完整性 — 2026-06-25 小欧
+        2026-10-25 小欧 修复(北京老陈令): 末条 user(本轮 task 提问)必须在尾部, 否则 LLM
+          看不到当前问题; 原实现 system+user+trimmed 把全部 user 推到 trimmed 前面,
+          末条 user 被 FC 对盖住, link 长链 trim 后 LLM 不响应新任务(实测复现)。
+        2026-10-25 小欧 交错序修复(北京老陈令): other_users 与 trimmed 按 original_order
+          合并排序, 保 user/assistant/tool 交错; 原分桶重组把前序 user 全堆 FC 对前, 多 user
+          注入(delta/全量路径)trim 后交错丢失。无 other_users 或无 original_order 时退化为原逻辑。"""
+        last_user = user_msgs[-1:] if user_msgs else []
+        other_users = user_msgs[:-1] if len(user_msgs) > 1 else []
+        if original_order is not None and other_users:
+            interleaved = sorted(other_users + trimmed_msgs,
+                                 key=lambda m: original_order.get(id(m), 0))
+        else:
+            interleaved = other_users + trimmed_msgs
+        rebuilt = system_msgs + interleaved + last_user
         rebuilt = self._trim_fc_pairs(rebuilt)
         if len(rebuilt) >= 2:
             return rebuilt
