@@ -5,6 +5,9 @@
 //   读屏/键盘用户以为发送功能没了，e2e 等终态判据（等"发送"钮出现）也永远等不到 — 小杨-2026-10-22
 // 2026-10-25 小欧 - 位置回迁(北京老陈指令): 动作按钮组由 InputCore 框内右下角迁至 SubmitBar 行右端;
 //   组件自身零改动(纯展示, 落位由调用方决定), 仅头注描述同步 — 小欧-2026-10-25
+// 2026-10-25 小欧 - 三钮间距收紧(北京老陈令): Space size Spacing.SM(6)→1。回迁按钮行后 34 见方钮与
+//   24px small 控件并列显大, 6px 缝让整组显松散; 1px 留一线分隔避免相邻边框粘连(0 会叠成 2px 粗线);
+//   连带删 Spacing import(已无引用)与 ACTION_RESERVE 过时注释(InputCore 该常量已随框内挂点删除) — 小欧-2026-10-25
 /**
  * SubmitActions - 提交行右端动作按钮组: 发送(常驻) + 停止/暂停·继续(执行中渲染)
  *
@@ -23,7 +26,7 @@ import {
   PlayCircleOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import { Colors, Icon, Radius, Spacing } from '@/utils/stepStyles';
+import { Colors, Icon, Radius } from '@/utils/stepStyles';
 
 interface SubmitActionsProps {
   loading: boolean;
@@ -38,8 +41,7 @@ interface SubmitActionsProps {
   onTogglePause: () => void;
 }
 
-// 方形动作钮统一规格: 34 见方贴图样式(图标 16 = Icon.BOX 行首图标同规格); InputCore 的按钮区
-//   预留高度 ACTION_RESERVE 随本值联动, 改钮规格须两处同步
+// 方形动作钮统一规格: 34 见方贴图样式(图标 16 = Icon.BOX 行首图标同规格)
 const BTN = 34;
 const square: React.CSSProperties = {
   width: BTN,
@@ -66,7 +68,7 @@ const SubmitActions: React.FC<SubmitActionsProps> = ({
   const iconSize = { fontSize: Icon.BOX };
 
   return (
-    <Space size={Spacing.SM}>
+    <Space size={1}>
       {loading || isReceiving ? (
         <>
           <Button
