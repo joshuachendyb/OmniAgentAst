@@ -10,6 +10,7 @@
 # 2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（is_debug_mode/get_log_level 读键同步）
 # 2026-10-25 - 小欧 - LogConfig 方法改调 get_config() 取实时值, 删导入期类属性快照:
 #   get_config() 内置 mtime 缓存未变则直接返回, 零额外成本; 配置改动无需重启即被读取感知。 - 小欧-2026-10-25
+# 2026-10-25 - 小欧 - get_log_level 单次 get_config() 提 cfg 局部变量(会审缺陷2): 消双重 stat。 - 小欧-2026-10-25
 
 import logging
 import logging.handlers
@@ -39,9 +40,10 @@ class LogConfig:
 
     @classmethod
     def get_log_level(cls) -> str:
-        if get_config().get('logging.debug', False):
+        cfg = get_config()
+        if cfg.get('logging.debug', False):
             return "DEBUG"
-        return get_config().get('logging.level', 'INFO')
+        return cfg.get('logging.level', 'INFO')
 
     @classmethod
     def get_max_bytes(cls) -> int:

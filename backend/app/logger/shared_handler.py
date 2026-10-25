@@ -21,6 +21,9 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 #   无价值却高频刷屏, 控制台只留 log_and_print 与应用 WARNING+ 日志。  小欧-2026-10-25
 # 2026-10-25 - 小欧 - 日志级别热重载: 新增 _managed_loggers 登记表 + refresh_log_levels() 幂等重刷;
 #   setup_logger/setup_uvicorn_loggers 装配时登记, 供 main.py 周期 watcher 调用。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - refresh 补 formatter 刷新(会审缺陷1): 只改级别不改格式串, debug 切换后 lineno 字段
+#   与模式脱节; 现同步重设共享 file handler 的 _build_formatter 与各 console 的 _TruncateConsoleFormatter。
+#   get_log_level 单次 get_config()(会审缺陷2)。  小欧-2026-10-25
 
 import logging
 from contextvars import ContextVar
@@ -183,13 +186,23 @@ def setup_uvicorn_loggers() -> None:
 
 
 def refresh_log_levels() -> None:
-    """按当前配置重刷所有已装配 logger 与共享文件 handler 的级别 — 小欧 2026-10-25
-    幂等: 级别未变则零操作。供周期 watcher 调用, 使 config.yaml 的 debug/level 改动免重启生效。
+    """按当前配置重刷所有已装配 logger 与共享文件 handler 的级别与格式 — 小欧 2026-10-25
+    幂等: 配置未变则结果不变。供周期 watcher 调用, 使 config.yaml 的 debug/level 改动免重启生效。
     """
     log_level = _get_log_level()
+    is_debug = LogConfig.is_debug_mode()
+
+    file_handler = _get_shared_handler()
+    file_handler.setFormatter(_build_formatter(is_debug))
+    file_handler.setLevel(log_level)
+
     for name in list(_managed_loggers):
         lg = logging.getLogger(name)
         if lg.level != log_level:
             lg.setLevel(log_level)
-    _get_shared_handler().setLevel(log_level)
+        for h in lg.handlers:
+            if isinstance(h, ConsoleMirrorHandler):
+                h.setFormatter(
+                    _TruncateConsoleFormatter(fmt=_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
+                )
 
