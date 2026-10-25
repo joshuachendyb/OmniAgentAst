@@ -1,3 +1,40 @@
+v1.4.8
+更新时间: 2026-10-25 15:44:33 - 小欧-2026-10-25
+## v1.4.7以来 变更汇总(41个commit: fix14/feat1/refactor5/docs13/其他2) - 小欧-2026-10-25
+[2026-10-25 15:44:33 小欧] 范围=v1.4.7以来全部commit(41个); 主线=taskinfo事件时间轴文案压缩(≤15汉字,后端生成完整串+前端13字截断+rejected去拼接)+注入压缩流程3处修复(注入顺序/摘要冗余消除/交错序)+通知信封协议(installing/summarizing合并为notice统一事前事后)+信任管理设计文档[47]第3版全章重写+打包部署(uvicorn日志非阻塞化+资源自动部署)+前端UI调整(SubmitActions按钮组回迁/tooltip双重显示修复/执行中插话提示)
+
+### 1.4.34 taskinfo文案压缩(≤15汉字)
+[后端文案] summarizing/installing/retrying/error/rejected notice文案去冗余词压缩到≤15汉字; rejected后端生成完整串(含工具名+原因) — 小欧 2026-10-25
+[前端去拼接] useTaskInfo rejected case去掉_label·工具名拼接, 直接用后端content; 删REJECT_LABEL_MAP导入 — 小欧 2026-10-25
+[13字截断] TaskInfoBar事件时间轴text统一13字截断(slice(0,13)+'…'), 动态err/notice防撑爆布局 — 小欧 2026-10-25
+
+### 1.4.35 注入压缩流程3处修复
+[注入顺序] react_loop原两次inject_history把delta插summary前面(顺序错), 合并为一次summary在前delta在后 — 小欧 2026-10-25
+[摘要冗余消除] start_step delta压缩进summary后置_injected_delta_msgs=None阻止重复注入 — 小欧 2026-10-25
+[交错序] message_builder _rebuild_and_validate原把前序user全堆FC对前(交错丢失), 改按original_order合并排序保交错 — 小欧 2026-10-25
+
+### 1.4.36 通知信封协议(notice统一)
+[信封收敛] agent_telemetry installing/summarizing合并为notice(type=notice, kind+phase分派); emit_notice补log_and_print; 增量摘要复用路径补发notice(done) — 小欧 2026-10-25
+
+### 1.4.37 信任管理设计文档[47]第3版
+[全章重写] §三需求分析(数据表/页面/导入)+§四UI设计(5触点全景+13张示意图)+§五后端详细设计(5.1-5.15落本地代码行号)+5.16复查订正8处+§5.7代码块订正 — 小欧 2026-10-23~24
+
+### 1.4.38 打包部署与工程
+[uvicorn日志非阻塞化] log_config=None+setup_uvicorn_loggers治打包版stdout阻塞卡死事件循环 — 小欧 2026-10-25
+[资源自动部署] run_server.py _deploy_resources按mtime判定刷新+spec加OmniAgent.md datas — 小欧 2026-10-24
+[手册修正] 前端/后端打包手册路径修正+tree_sitter补录 — 小欧 2026-10-24
+
+### 1.4.39 前端UI调整
+[SubmitActions] 按钮组由输入框内右下角回迁SubmitBar行右端+钮高34→24+间距6→1+minRows1→2 — 小欧 2026-10-25
+[tooltip修复] Layout移除左侧菜单item的title属性修tooltip双重显示 — 小欧 2026-10-25
+[执行中插话提示] 执行中追加橘红色插话提示 — 小欧 2026-10-25
+
+### 1.4.40 其他修复
+[路径分隔符] 路径分隔符混用+深层懒加载路径丢失修复 — 小欧 2026-10-24
+[死循环纠偏] react_inference死循环纠偏加工具返回summary+FileTrailPanel改SPA导航 — 小欧 2026-10-24
+[session.api] SRP拆分updateSession为updateSessionTitle+updateSessionModel消耦合 — 小欧 2026-10-24
+[reasoning_effort] 移除全局兜底minimal档仅留low/medium/high — 小欧 2026-10-24
+
 v1.4.7
 更新时间: 2026-10-23 22:24:07 - 小欧-2026-10-23
 ## v1.4.6以来 变更汇总(18个commit: feat8/docs4/fix1/refactor1/style1/chore1/docs-cleanup1) - 小欧-2026-10-23
