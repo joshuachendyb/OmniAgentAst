@@ -330,6 +330,9 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         agent._start_summary = anchor_summary
         logger.info(
             f"[start_step] 增量路径: delta {_delta_tokens}tok < 阈值 {_threshold}, 复用锚点摘要(零 LLM 调用)")
+        # 2026-10-25 小欧: 复用路径也发 notice(done), 前端需感知摘要状态 — 小欧-2026-10-25
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           "复用锚点摘要(增量未超阈值)")
         return True
     # 超阈值 → 只对 delta 做增量压缩(旧摘要作底), 生成后落"覆盖上界任务行"
     logger.info(
