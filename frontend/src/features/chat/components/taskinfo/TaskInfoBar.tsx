@@ -115,6 +115,7 @@ const LIVE_META_TEXT_MAX = 60;
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
 //   点用淡蓝 BORDER.ACCENT(明显但不抢, 避开绿=成功/红=失败语义色), 字符取真圆点"•"、字号 SECONDARY,
 //   原"·"+CAPTION 10px 太小看不见(北京老陈令)
+// 2026-10-25 小欧: 事件时间轴 text 统一 13 字截断(动态 err/notice 防撑爆布局) — 小欧-2026-10-25
 const DOT_STYLE: CSSProperties = {
   fontSize: FontSize.SECONDARY,
   color: Colors.BORDER.ACCENT,
@@ -288,7 +289,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               {e.kind === 'notice'
                 ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
-              <span style={{ marginLeft: Spacing.XS }}>{e.text}</span>
+              <span style={{ marginLeft: Spacing.XS }}>{e.text.length > 13 ? e.text.slice(0, 13) + '…' : e.text}</span>
             </span>
           </div>
         ))}
