@@ -26,6 +26,7 @@ tool_executor — 工具执行逻辑
 #   零越层。agent 无 llm_client 不注入(工具自降级); 并行/顺序两分支统一覆盖。
 # 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
 #   _emit_installing 文案不变, 调用点3处统一迁移 — 小欧-2026-10-25
+# 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): installing notice 去冗余词, 工具名移括号 — 小欧-2026-10-25
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -132,7 +133,7 @@ async def _emit_installing(agent, tool_name: str, pkgs: List[str]) -> None:
     if not pkgs:
         return
     await agent._step_emitter.emit_notice("installing", "start",
-                       f"正在为 {tool_name} 安装依赖 {', '.join(pkgs)}")
+                       f"装{tool_name}依赖中({', '.join(pkgs)})")
 
 
 async def _missing_dep_guard(agent, tool_name: str) -> Optional[Dict[str, Any]]:

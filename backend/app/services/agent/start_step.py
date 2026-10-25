@@ -63,6 +63,7 @@
 # 2026-10-25 小欧 - 增量摘要冗余消除(北京老陈令): delta 超阈值压缩产出 new_summary 时, delta 内容已含在 summary 中; 原代码仍注入原始 delta(冗余+顺序错), 改为 _injected_delta_msgs=None 阻止注入 — 小欧-2026-10-25
 # 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
 #   _emit_summarizing 文案不变, 调用点5处统一迁移 — 小欧-2026-10-25
+# 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): summarizing notice 去冗余词(历史/生成重复), 失败文案缩到10字 — 小欧-2026-10-25
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -209,7 +210,7 @@ async def _emit_summarizing(agent, scope: str, count: int) -> None:
     count 为本次送进 LLM 的条数, 供用户判断耗时量级。
     """
     await agent._step_emitter.emit_notice("summarizing", "start",
-                       f"正在生成历史摘要({scope} {count} 条)")
+                       f"生成摘要中({scope}{count}条)")
 
 
 async def _compact_injected_history(agent) -> str:
@@ -280,10 +281,10 @@ async def _compact_injected_history(agent) -> str:
     if summary_text:
         logger.debug(f"[start_step] 锚定摘要生成完成 (len={len(summary_text)})")
         await agent._step_emitter.emit_notice("summarizing", "done",
-                           f"历史摘要生成完成({len(summary_text)} 字符)")
+                           f"摘要完成({len(summary_text)}字)")
     else:
         await agent._step_emitter.emit_notice("summarizing", "failed",
-                           "历史摘要生成失败，已回退使用完整历史")
+                           "摘要失败，回退完整历史")
     agent._needs_compact = False
     return summary_text
 
@@ -365,13 +366,13 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
         logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
         await agent._step_emitter.emit_notice("summarizing", "done",
-                           f"增量摘要生成完成({len(new_summary)} 字符)")
+                           f"增量摘要完成({len(new_summary)}字)")
     else:
         # 失败回退: 旧锚点摘要 + 全量 delta(比老路的全量历史更省, 语义等价: 老历史已被摘要代表)
         agent._start_summary = anchor_summary
         logger.info("[start_step] 增量摘要未产出, 回退「锚点摘要 + 全量 delta」")
         await agent._step_emitter.emit_notice("summarizing", "failed",
-                           "增量摘要生成失败，已回退使用锚点摘要")
+                           "增量摘要失败，回退锚点")
     return True
 
 

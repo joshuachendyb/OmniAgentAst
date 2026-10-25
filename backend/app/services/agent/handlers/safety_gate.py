@@ -56,6 +56,7 @@
 # 2026-10-20 小欧 - 范围门删除: 删循环入口 `if _cn not in PATH_TOOLS: continue` 及其 import。
 #   范围门下沉 PathToolSafetyChecker._check_before_execute(注册判定之后自守), 归线判定收口单一层,
 #   避免 gate 与 checker 两处名单各判一遍而漂移; 非路径工具照常进检查器后立即放行, 不再有双层判断。
+# 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): rejected content 去工具名(前端已拼_label·工具名), 去详情err — 小欧-2026-10-25
 """safety_gate — 安全检查+HITL确认门禁 — 小健 2026-09-05
 
 自 action_handler 拆出: check_safety_and_confirm 整函数, 门禁=安全+HITL+沙箱三合一。
@@ -220,7 +221,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
             if _pre_err is not None:
                 _events.append(agent._step_emitter.emit(MetaStep(
                     step=step, type="rejected",
-                    content=f"工具 {_cn} 路径不合法: {_pre_err}",
+                    content=f"工具 {_cn}路径{_pre_err}不合法",
                     reject_type="safety", tool_name=_cn
                 )))
                 _denied.append((_cn, f"工具 {_cn} 路径不合法: {_pre_err}", call))
@@ -250,7 +251,7 @@ async def check_safety_and_confirm(agent, all_calls: List[Dict], step: int, _out
                 logger.warning(f"[action] step={step} blocked: tool={_cn} reason={safety_result.message}")
                 _events.append(agent._step_emitter.emit(MetaStep(
                     step=step, type="rejected",
-                    content=f"工具 {_cn} 被安全策略拦截: {safety_result.message}",
+                    content=f"工具 {_cn}拦截:{safety_result.message}",
                     reject_type="safety",
                     tool_name=_cn
                 )))

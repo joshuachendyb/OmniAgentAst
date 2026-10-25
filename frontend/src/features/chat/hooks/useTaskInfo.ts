@@ -76,13 +76,6 @@ import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小�
 import type { TaskDetail } from '../../../services/api/task.api';
 // 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(结构定稿, 只读双分组)
 import { pickConv, pickInject } from '@/utils/contextFrame';
-// 2026-10-11 小欧 北京老陈令(拒绝事件同时上 taskInfo 事件列表): 复用 pipeline 点名条的拒绝归因映射,
-//   零复制定义(DRY)——同一 reject_type 在两处必须译出同一文案, 各写一份迟早分叉。
-//   已核 ToolCallLine 不反向依赖本文件, 无循环引用。
-import {
-  REJECT_LABEL_MAP,
-  REJECT_DEFAULT_LABEL,
-} from '../components/pipeline/ToolCallLine';
 
 /** 卡死预警阈值：llm_call_count ≥ step_count×STUCK_RATIO 视为疑似死循环（待定案） */
 export const STUCK_RATIO = 3;
@@ -329,14 +322,11 @@ export const useTaskInfo = (
         //     ①"sseParser rejected 分支不入 executionSteps" → 已改为 pushAndFlush 入流(sseParser:803);
         //     ②"rejected 不落库" → 仍成立(本轮只做实时, 历史回放另开一轮), 但实时链路不再依赖落库。
         //   与 pipeline 点名条并存(北京老陈定: 双写)——两处受众不同: 点名条看执行流程, 事件列表看时间线。
-        //   文案带归因前缀(如「安全 · 工具X未注册」), 归因词取自 REJECT_LABEL_MAP 与点名条同源。
+        // 2026-10-25 小欧: 后端 rejected content 已含工具名+原因(完整合规), 前端直接用不拼接。
         case 'rejected': {
-          const _label =
-            REJECT_LABEL_MAP[s.reject_type ?? ''] ?? REJECT_DEFAULT_LABEL;
-          const _tool = s.tool_name ? `工具${s.tool_name}` : '';
           processEvents.push({
             kind: 'rejected',
-            text: `${_label} · ${_tool}${s.content ? '：' + s.content : ''}`,
+            text: s.content || '已拒绝',
             time: s.timestamp,
           });
           break;
