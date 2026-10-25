@@ -19,11 +19,12 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 #   不再触发, 提示数恒正。  小欧-2026-10-25
 # 2026-10-25 - 小欧 - uvicorn 三 logger 去掉 ConsoleMirrorHandler, 只保留文件 handler: 访问日志对排障
 #   无价值却高频刷屏, 控制台只留 log_and_print 与应用 WARNING+ 日志。  小欧-2026-10-25
-# 2026-10-25 - 小欧 - 日志级别热重载: 新增 _managed_loggers 登记表 + refresh_log_levels() 幂等重刷;
-#   setup_logger/setup_uvicorn_loggers 装配时登记, 供 main.py 周期 watcher 调用。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - 日志级别热重载: 新增 refresh_log_levels(), 供 main.py 周期 watcher 调用。  小欧-2026-10-25
 # 2026-10-25 - 小欧 - refresh 补 formatter 刷新(会审缺陷1): 只改级别不改格式串, debug 切换后 lineno 字段
 #   与模式脱节; 现同步重设共享 file handler 的 _build_formatter 与各 console 的 _TruncateConsoleFormatter。
 #   get_log_level 单次 get_config()(会审缺陷2)。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - 去掉 _managed_loggers 自维护登记表(会审: 与 logging.loggerDict 重复, 违 DRY),
+#   refresh 改按 app./uvicorn 前缀遍历全局 loggerDict, 第三方 logger 不动。  小欧-2026-10-25
 
 import logging
 from contextvars import ContextVar
@@ -98,10 +99,6 @@ class SessionFilter(logging.Filter):
 
 # ---- 公共工具 -----------------------------------------------------
 
-# 已装配 logger 名单: setup_logger/setup_uvicorn_loggers 装配时登记, 供热重载遍历 — 小欧 2026-10-25
-_managed_loggers: set = set()
-
-
 def _get_log_level() -> int:
     """读取配置日志级别 — 小欧 2026-10-25 抽函数(setup_logger 与 setup_uvicorn_loggers 共用)"""
     return getattr(logging, LogConfig.get_log_level().upper())
@@ -154,7 +151,6 @@ def setup_logger(name: str) -> logging.Logger:
     logger.addHandler(console_handler)
     logger.setLevel(log_level)
     logger.propagate = False
-    _managed_loggers.add(name)
 
     return logger
 
@@ -182,12 +178,13 @@ def setup_uvicorn_loggers() -> None:
         lg.addHandler(file_handler)
         lg.setLevel(_get_log_level())
         lg.propagate = False
-        _managed_loggers.add(name)
 
 
 def refresh_log_levels() -> None:
-    """按当前配置重刷所有已装配 logger 与共享文件 handler 的级别与格式 — 小欧 2026-10-25
-    幂等: 配置未变则结果不变。供周期 watcher 调用, 使 config.yaml 的 debug/level 改动免重启生效。
+    """按当前配置重刷 logger 级别与格式 — 小欧 2026-10-25
+    遍历 logging 全局 loggerDict, 只处理 app./uvicorn 前缀(本项目的 logger),
+    第三方 logger(httpx/asyncio/fastapi 等)不动。幂等: 配置未变则结果不变。
+    供 main.py 周期 watcher 调用, 使 config.yaml 的 debug/level 改动免重启生效。
     """
     log_level = _get_log_level()
     is_debug = LogConfig.is_debug_mode()
@@ -196,11 +193,14 @@ def refresh_log_levels() -> None:
     file_handler.setFormatter(_build_formatter(is_debug))
     file_handler.setLevel(log_level)
 
-    for name in list(_managed_loggers):
-        lg = logging.getLogger(name)
-        if lg.level != log_level:
-            lg.setLevel(log_level)
-        for h in lg.handlers:
+    for name, obj in logging.Logger.manager.loggerDict.items():
+        if not isinstance(obj, logging.Logger):
+            continue
+        if not name.startswith(("app.", "uvicorn")):
+            continue
+        if obj.level != log_level:
+            obj.setLevel(log_level)
+        for h in obj.handlers:
             if isinstance(h, ConsoleMirrorHandler):
                 h.setFormatter(
                     _TruncateConsoleFormatter(fmt=_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
