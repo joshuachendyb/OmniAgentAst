@@ -43,6 +43,9 @@
 #         线程输出, 事件循环永不被占; 队列满则丢弃(控制台仅镜像, 权威留文件), 与既有语义一致。
 #   规范: 复用优先(复用既有 console_put 队列与 worker, 零新通道零新线程) / SRP(投递通道归本模块,
 #         shared_handler 只做装配) / KISS-DIRECT(一个 Handler 子类) / 禁 backward(直替 StreamHandler)。
+# 2026-10-25 - 小欧 - 无窗口/无 console 模式加固: 导入期 _probe_console() 探测 stdout, 不可用
+#   (PyInstaller --noconsole 时 stdout=None)则 _CONSOLE_OK=False, console_put/worker 静默旁路,
+#   不入队不空转; 文件日志走 SafeRotatingFileHandler 不受影响。
 """
 console_writer — 控制台镜像输出(事件循环线程零同步 stdout 写)
 编写人 小欧 2026-08-30
@@ -57,14 +60,25 @@ from typing import Optional
 _console_queue: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=512)
 
 
+def _probe_console() -> bool:
+    """探测 stdout 是否有效; PyInstaller --noconsole 时 stdout=None 则 False — 小欧 2026-10-25"""
+    out = sys.stdout
+    return out is not None and callable(getattr(out, "write", None))
+
+
+# 控制台镜像总开关: 无窗口/无 console 模式置 False — 小欧 2026-10-25
+_CONSOLE_OK = _probe_console()
+
+
 def _console_worker() -> None:
-    """daemon 消费线程: 从队列取消息写 sys.stdout, 单条异常不杀线程 — 小欧 2026-08-30
-    2026-09-24 小欧: 改 sys.stdout.buffer.write(utf-8) 字节镜像, 编码确定性对齐日志 UTF-8,
-    根治 Windows 控制台代码页(GBK)污染 pytest 全局捕获(全量单测 9267 假 errors)。"""
+    """daemon 消费线程: 队列取消息写 sys.stdout, 单条异常不杀线程 — 小欧 2026-08-30
+    2026-09-24 UTF-8 字节写(根治 GBK 污染 pytest 捕获); 2026-10-25 无窗口时直接退出。"""
+    if not _CONSOLE_OK:
+        return
     while True:
         msg = _console_queue.get()
         try:
-            # 2026-09-25 小健 - 双换行修复: console_put 入队已带 \n, 此处不再重加(原 msg+"\n" 致每条镜像多一空行)
+            # 2026-09-25 小健 - 双换行修复: console_put 入队已带 \n, 此处不再重加
             data = msg.encode("utf-8")
             w = sys.stdout.buffer if hasattr(sys.stdout, "buffer") else None
             if w is not None:
@@ -86,9 +100,11 @@ _console_thread.start()
 
 
 def console_put(msg: str) -> None:
-    """控制台镜像写(非阻塞): stdout 阻塞时队列满则丢弃新消息, 绝不阻塞调用线程 — 小欧 2026-08-30
-    语义对齐原 print(): msg 追加换行写进程 stdout; 文件日志留痕走 logger, 两者互不阻塞.
-    """
+    """控制台镜像写(非阻塞), 队列满则丢弃, 绝不阻塞调用线程 — 小欧 2026-08-30
+    语义对齐原 print(); 文件日志留痕走 logger, 两者互不阻塞。
+    2026-10-25 无窗口/无 console(_CONSOLE_OK=False)时直接旁路。"""
+    if not _CONSOLE_OK:
+        return
     try:
         _console_queue.put_nowait(msg + "\n")
     except queue.Full:

@@ -11,6 +11,9 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 # 2026-07-26 - 小欧 - setup_logger.py → shared_handler.py 改名（名实相符: 核心是共享 handler 而非 setup_logger 函数）
 # 2026-07-30 - 小沈 - 从 task_context.py 迁入 session_id ContextVar: 新增 _session_id_var + set_session_id(); SessionFilter 改为直接引用 _session_id_var 消除延迟导入
 # 2026-09-29 - 小欧 - 控制台 handler 换掉同步 logging.StreamHandler(直写 stderr), 改用 ConsoleMirrorHandler(投递队列, 非阻塞): 同一病根第二个入口, 同步写 stderr 阻塞时持 handler 锁连带冻结事件循环线程  小欧-2026-09-29
+# 2026-10-25 - 小欧 - 新增 setup_uvicorn_loggers(): uvicorn 三 logger(uvicorn/error/access) 接入共享文件
+#   handler(落盘) + ConsoleMirrorHandler(非阻塞上屏)。uvicorn 本体 logger 由自身 dictConfig 装配, 不在
+#   setup_logger 管辖内, 须单独收口; 须配合 run_server 传 log_config=None, 否则被覆盖。  小欧-2026-10-25
 
 import logging
 from contextvars import ContextVar
@@ -78,6 +81,25 @@ class SessionFilter(logging.Filter):
         return True
 
 
+# ---- 公共工具 -----------------------------------------------------
+
+def _get_log_level() -> int:
+    """读取配置日志级别 — 小欧 2026-10-25 抽函数(setup_logger 与 setup_uvicorn_loggers 共用)"""
+    return getattr(logging, LogConfig.get_log_level().upper())
+
+
+def _build_fmt(is_debug: bool) -> str:
+    """文件/控制台统一格式串 — 小欧 2026-10-25 抽函数复用"""
+    if is_debug:
+        return '%(asctime)s - %(levelname)s - %(session_id)s - %(filename)s:%(lineno)d - %(message)s'
+    return '%(asctime)s - %(levelname)s - %(session_id)s - %(filename)s - %(message)s'
+
+
+def _build_formatter(is_debug: bool) -> logging.Formatter:
+    """文件/控制台统一 formatter — 小欧 2026-10-25"""
+    return logging.Formatter(_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
+
+
 # ---- setup_logger -----------------------------------------------------
 
 def setup_logger(name: str) -> logging.Logger:
@@ -91,15 +113,10 @@ def setup_logger(name: str) -> logging.Logger:
     if logger.handlers:
         return logger
 
-    log_level = getattr(logging, LogConfig.get_log_level().upper())
+    log_level = _get_log_level()
     is_debug = LogConfig.is_debug_mode()
 
-    # formatter — 文件 handler 和 console handler 共用
-    if is_debug:
-        _fmt = '%(asctime)s - %(levelname)s - %(session_id)s - %(filename)s:%(lineno)d - %(message)s'
-    else:
-        _fmt = '%(asctime)s - %(levelname)s - %(session_id)s - %(filename)s - %(message)s'
-    formatter = logging.Formatter(_fmt, datefmt='%Y-%m-%d %H:%M:%S')
+    formatter = _build_formatter(is_debug)
 
     # 文件 handler — 全局共享
     file_handler = _get_shared_handler()
@@ -107,14 +124,11 @@ def setup_logger(name: str) -> logging.Logger:
     file_handler.setLevel(log_level)
 
     # console handler — 2026-09-29 小欧 换掉 logging.StreamHandler(直写 stderr):
-    #   原写法与 app/logger/console_writer.py 的 console_put 是两条并行控制台通道, 后者非阻塞前者阻塞;
-    #   阻塞型 stderr(满管道/控制台被选中)会让 emit() 永久阻塞, 而 Handler.handle() 持 handler 锁,
-    #   连带把事件循环线程一起锁死 —— 实证 py-spy dump: 事件循环线程阻塞在 Handler.handle() 等锁,
-    #   纯内存不碰 DB 的 /metrics/health 也 12s 超时。同一根根因 2026-08-30 已在 print 通道修过一次
-    #   (console_writer 诞生), 本次补上漏网的 logging 通道。级别仍 WARNING, 控制台仅镜像, 权威在文件。
+    #   同步写 stderr 遇阻塞型 stderr 时 emit() 永久阻塞, 而 Handler.handle() 持 handler 锁,
+    #   连带冻结事件循环线程。改投 ConsoleMirrorHandler 队列, 级别 WARNING, 控制台仅镜像。
     console_handler = ConsoleMirrorHandler(level=logging.WARNING)
     console_handler.setFormatter(
-        _TruncateConsoleFormatter(fmt=_fmt, datefmt='%Y-%m-%d %H:%M:%S')
+        _TruncateConsoleFormatter(fmt=_build_fmt(is_debug), datefmt='%Y-%m-%d %H:%M:%S')
     )
 
     logger.addHandler(file_handler)
@@ -123,4 +137,35 @@ def setup_logger(name: str) -> logging.Logger:
     logger.propagate = False
 
     return logger
+
+
+# ---- setup_uvicorn_loggers -------------------------------------------------
+# uvicorn 本体 logger 由自身 dictConfig 装配, 不在 setup_logger 管辖内, 单独收口。
+# 须配合 run_server 传 log_config=None, 否则被 uvicorn 默认 dictConfig 覆盖。
+
+def setup_uvicorn_loggers() -> None:
+    """把 uvicorn 三个本体 logger 接入共享文件 handler + 非阻塞 console 镜像 — 小欧 2026-10-25
+    幂等: 重复调用先清空 handlers 再装配, 防 dictConfig/重复启动遗留旧 handler。
+    """
+    is_debug = LogConfig.is_debug_mode()
+    formatter = _build_formatter(is_debug)
+    console_template = _build_fmt(is_debug)
+
+    file_handler = _get_shared_handler()
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(_get_log_level())
+
+    # 镜像取 INFO: 访问日志是 INFO 级, WARNING 会把它挡下屏(应用 logger 仍 WARNING, 互不影响)。
+    console_handler = ConsoleMirrorHandler(level=logging.INFO)
+    console_handler.setFormatter(
+        _TruncateConsoleFormatter(fmt=console_template, datefmt='%Y-%m-%d %H:%M:%S')
+    )
+
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        lg = logging.getLogger(name)
+        lg.handlers.clear()
+        lg.addHandler(file_handler)
+        lg.addHandler(console_handler)
+        lg.setLevel(_get_log_level())
+        lg.propagate = False
 

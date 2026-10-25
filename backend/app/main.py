@@ -45,6 +45,9 @@
 #   level1 只要 0.09 秒且体积 1.5MB（13 倍压缩率已足够）—— 大 JSON 场景 level9 是纯亏 — 小欧-2026-10-21
 # 2026-10-21 小欧 - GZipMiddleware 显式 compresslevel=1（Starlette 默认 9）：文件树 20MB 响应
 #   实测 level9 压 4~5 秒、level1 压 0.09 秒（体积 1.5MB vs 1.4MB，差别可忽略）— 小欧-2026-10-21
+# 2026-10-25 小欧 - 删模块级 uvicorn.access setLevel(WARNING) 与 import logging:
+#   该句与 setup_uvicorn_loggers 冲突(访问日志须保留), 且被其无条件覆盖成死代码。
+#   日志级别唯一 owner 收敛到 LogConfig。 — 小欧-2026-10-25
 import sys
 import asyncio
 from typing import Optional
@@ -69,7 +72,6 @@ from app.tools import ensure_tools_registered
 from app.config import get_config, get_code_root, env_flag
 from pathlib import Path
 import os
-import logging
 
 from app.api.v1 import health, sessions, messages, metrics
 from app.api.v1.config_routes import router as config_router
@@ -92,8 +94,6 @@ from app.services.task.task_registry import cleanup_expired_tasks
 from app.safety.trust_db import cleanup_expired_trust  # 2026-10-15 小欧 - 文档[33] 5.18: 过期会话信任回收(TTL)
 from app.services.chat.storage import reconcile_orphaned_tasks  # L0 启动期僵尸任务收尾(chat_tasks 状态单一 owner) — 小欧 2026-09-29
 from app.db import db
-
-logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 
 def get_version() -> str:

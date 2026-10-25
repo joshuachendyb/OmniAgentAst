@@ -26,6 +26,9 @@
 #     版本号显示旧值、项目规则不随升级生效, 且全程无报错(静默失效)。
 #     修复: 抽出 _deploy_one() 单份部署, 三文件同一判据 src.stat().st_mtime > dst.stat().st_mtime;
 #     config.yaml.example 刷新无害(_ensure_config 仅在 config/config.yaml 缺失时复制它)。
+#   2026-10-25 小欧 - uvicorn 日志非阻塞化: 启动前调 setup_uvicorn_loggers(), uvicorn.run 传 log_config=None。
+#     根因: 默认 dictConfig 把 uvicorn.access/error 指到同步 StreamHandler, 阻塞型 stdout 时冻结事件循环线程。
+#     log_config=None 阻断 uvicorn 覆盖本配置, 否则装配无效。 — 小欧-2026-10-25
 # ============================================================================
 import argparse
 import shutil
@@ -140,9 +143,13 @@ def main() -> None:
     #   并顺带修掉"命令行传 * 时应用层检测不到、fail-closed 失效"的盲区。
     from app.api.v1.deps import set_forwarded_allow_ips
     set_forwarded_allow_ips(args.forwarded_allow_ips)
+    # uvicorn 日志非阻塞化(2026-10-25): 须在 uvicorn.run 之前装配, 且传 log_config=None
+    # 防 uvicorn 默认 dictConfig 覆盖。 — 小欧-2026-10-25
+    from app.logger.shared_handler import setup_uvicorn_loggers
+    setup_uvicorn_loggers()
     import uvicorn
     uvicorn.run("app.main:app", host=args.host, port=args.port, log_level="info",
-                forwarded_allow_ips=args.forwarded_allow_ips)
+                log_config=None, forwarded_allow_ips=args.forwarded_allow_ips)
 
 
 if __name__ == "__main__":
