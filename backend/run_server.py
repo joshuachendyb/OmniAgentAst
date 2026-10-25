@@ -26,9 +26,11 @@
 #     版本号显示旧值、项目规则不随升级生效, 且全程无报错(静默失效)。
 #     修复: 抽出 _deploy_one() 单份部署, 三文件同一判据 src.stat().st_mtime > dst.stat().st_mtime;
 #     config.yaml.example 刷新无害(_ensure_config 仅在 config/config.yaml 缺失时复制它)。
-#   2026-10-25 小欧 - uvicorn 日志非阻塞化: 启动前调 setup_uvicorn_loggers(), uvicorn.run 传 log_config=None。
+#   2026-10-25 小欧 - uvicorn 日志接管: 启动前调 setup_uvicorn_loggers(), uvicorn.run 传 log_config=None。
 #     根因: 默认 dictConfig 把 uvicorn.access/error 指到同步 StreamHandler, 阻塞型 stdout 时冻结事件循环线程。
 #     log_config=None 阻断 uvicorn 覆盖本配置, 否则装配无效。 — 小欧-2026-10-25
+#     补充: uvicorn 三 logger 只挂共享文件 handler 落盘, 不挂 console 镜像(访问日志高频刷屏且无排障价值),
+#     事件循环线程彻底零同步 stdout/stderr 写。 — 小欧-2026-10-25
 # ============================================================================
 import argparse
 import shutil

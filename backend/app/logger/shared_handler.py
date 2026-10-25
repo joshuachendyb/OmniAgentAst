@@ -17,6 +17,8 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 # 2026-10-25 - 小欧 - 截断阈值 100/120 收敛为单一 _CONSOLE_MAX_MSG=500: 原实现 101~120 字符的消息
 #   触发截断但截不到, 提示出现负数(如"截断-9字符"), uvicorn 访问日志高频轮询刷屏; 阈值抬高后访问日志
 #   不再触发, 提示数恒正。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - uvicorn 三 logger 去掉 ConsoleMirrorHandler, 只保留文件 handler: 访问日志对排障
+#   无价值却高频刷屏, 控制台只留 log_and_print 与应用 WARNING+ 日志。  小欧-2026-10-25
 
 import logging
 from contextvars import ContextVar
@@ -149,31 +151,25 @@ def setup_logger(name: str) -> logging.Logger:
 
 # ---- setup_uvicorn_loggers -------------------------------------------------
 # uvicorn 本体 logger 由自身 dictConfig 装配, 不在 setup_logger 管辖内, 单独收口。
+# 只挂共享文件 handler(落盘), 不挂 console 镜像: 访问日志高频轮询刷屏且无排障价值。
 # 须配合 run_server 传 log_config=None, 否则被 uvicorn 默认 dictConfig 覆盖。
 
 def setup_uvicorn_loggers() -> None:
-    """把 uvicorn 三个本体 logger 接入共享文件 handler + 非阻塞 console 镜像 — 小欧 2026-10-25
+    """把 uvicorn 三个本体 logger 接入共享文件 handler, 只落盘不上屏 — 小欧 2026-10-25
     幂等: 重复调用先清空 handlers 再装配, 防 dictConfig/重复启动遗留旧 handler。
+    访问日志是高频轮询噪音, 对定位问题无帮助, 故不挂 console 镜像; 需查时看文件日志即可。
     """
     is_debug = LogConfig.is_debug_mode()
     formatter = _build_formatter(is_debug)
-    console_template = _build_fmt(is_debug)
 
     file_handler = _get_shared_handler()
     file_handler.setFormatter(formatter)
     file_handler.setLevel(_get_log_level())
 
-    # 镜像取 INFO: 访问日志是 INFO 级, WARNING 会把它挡下屏(应用 logger 仍 WARNING, 互不影响)。
-    console_handler = ConsoleMirrorHandler(level=logging.INFO)
-    console_handler.setFormatter(
-        _TruncateConsoleFormatter(fmt=console_template, datefmt='%Y-%m-%d %H:%M:%S')
-    )
-
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         lg = logging.getLogger(name)
         lg.handlers.clear()
         lg.addHandler(file_handler)
-        lg.addHandler(console_handler)
         lg.setLevel(_get_log_level())
         lg.propagate = False
 
