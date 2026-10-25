@@ -91,6 +91,7 @@ from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER, CHARS_PER_TOKEN, DEFAULT_CONTEXT_LIMIT, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
+    TOOLS_TOKEN_RESERVE,
 )
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
@@ -197,6 +198,7 @@ class MessageBuilder:
         self._max_rounds: int = get_config().get_max_rounds()  # 最多保留FC轮数(默认100) — 小欧 2026-07-08
         self._trim_trigger_ratio: float = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))  # 小欧 2026-09-23 trim配置化
         self._compaction_buffer: int = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))  # 小欧 2026-09-23 trim配置化
+        self._tools_token_reserve: int = int(get_config().get('tuning.trim.tools_token_reserve', TOOLS_TOKEN_RESERVE))  # 2026-10-25 小欧 预算预留tools定义token
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
         self._msg_id_counter: int = 0  # 自增计数器(文件B 去重单点化) — 小欧 2026-08-23
         # B组(锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
@@ -488,9 +490,11 @@ class MessageBuilder:
                 obs_list = [m for m in kept_fc if m.get("role") == "tool"]
                 assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
 
-            # 条件2: budget = context - 裁剪缓冲 - system/user 占用量 — 小欧 2026-09-23 trim配置化
+            # 条件2: budget = context - 裁剪缓冲 - tools定义预留 - system/user 占用量 — 小欧 2026-09-23 trim配置化
+            #   2026-10-25 小欧 补 tools 定义预留(北京老陈令): tools schema 占输入窗口, 不扣则 messages+tools 撞满 262144→400
             always_keep_tokens = self._estimate_tokens(system_msgs) + self._estimate_tokens(user_msgs)
-            available_budget = max(1, self.MAX_CONTEXT_TOKENS - self._compaction_buffer - always_keep_tokens)
+            available_budget = max(1, self.MAX_CONTEXT_TOKENS - self._compaction_buffer
+                                   - self._tools_token_reserve - always_keep_tokens)
             trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
 
             rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed, original_order)

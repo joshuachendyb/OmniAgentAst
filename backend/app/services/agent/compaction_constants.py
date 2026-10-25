@@ -53,6 +53,10 @@ START_TRIGGER_RATIO = 0.5
 TRIM_TRIGGER_RATIO = 0.75
 # 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
 COMPACTION_BUFFER = 20000
+# 意义: tools 定义(schema)token 预留——trim_history 按预算裁 messages 时, tools 定义也占输入窗口,
+#   不预留会致 messages 裁到 242K + tools 定义 20K+ ≈ 撞满 262144 → 上游 400(实测 Agents-A1 201条仍400)。
+#   17个工具schema 约 20K~30K tok, 取 30K 保守值, 可经 tuning.trim.tools_token_reserve 覆盖。 — 小欧 2026-10-25
+TOOLS_TOKEN_RESERVE = 30000
 # 意义: chars→token 换算系数
 # 2026-10-04 小欧: 4→1.8→2.5(北京老陈定)。中文 1 字真实约 1~2 token(OpenAI≈2/DeepSeek≈0.6), 4 严重低估致撞窗,
 #   1.8 偏保守过多致提前裁剪徒丢上下文; 2.5 居中, 少算 28% 使裁剪更晚。改浮点后取整写法 int(x/c) 不可回退 — 小欧 2026-10-04

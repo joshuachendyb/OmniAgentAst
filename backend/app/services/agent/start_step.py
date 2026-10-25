@@ -66,6 +66,9 @@
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): summarizing notice 去冗余词(历史/生成重复), 失败文案缩到10字 — 小欧-2026-10-25
 # 2026-10-25 小欧 - notice 调用点 log-print 补齐(三堂会审): 全量摘要成功路径 logger.debug→info(可观测);
 #   失败(else)路径补 logger.info(与增量路径 373 行同模式, 互补不冗余) — 小欧-2026-10-25
+# 2026-10-25 小欧 - 摘要失败降级(北京老陈令): 摘要校验失败不再直接回退全量原历史(超窗必400), 按"离得远价值低、
+#   离得近价值大"时间衰减序 split_history_window 切 old_head(远)+tail(近), prune_tool_output_keeping_tail
+#   清零 old_head 旧 tool 输出释放大头 token, 保尾原样; 接起闲置的 split_history_window — 小欧-2026-10-25
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -288,6 +291,26 @@ async def _compact_injected_history(agent) -> str:
         logger.info("[start_step] 锚定摘要未产出(非异常), 回退完整历史")
         await agent._step_emitter.emit_notice("summarizing", "failed",
                            "摘要失败，回退完整历史")
+        # 2026-10-25 小欧 摘要失败降级(北京老陈令): 不直接回退全量原历史(超窗必400)。按"离得远价值低、离得近价值大"
+        #   的时间衰减序: split_history_window 切 old_head(远)+tail(近), prune_tool_output_keeping_tail 清零
+        #   old_head 的旧 tool 输出(释放大头 token, 保尾原样); 接起此前闲置的 split_history_window。— 小欧-2026-10-25
+        _injected = list(getattr(agent, "_injected_history_msgs", None) or [])
+        if _injected:
+            try:
+                from app.services.agent.compaction.assembler import split_history_window
+                from app.services.agent.compaction_constants import COMPACTION_BUFFER
+                from app.services.agent.compaction.prune import prune_tool_output_keeping_tail
+                _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
+                if _ctx > 0:
+                    _old_head, _tail, _ = split_history_window(_injected, _ctx, COMPACTION_BUFFER)
+                    _cleared, _released = prune_tool_output_keeping_tail(_injected, len(_old_head))
+                    agent._injected_history_msgs = _cleared
+                    logger.info(
+                        f"[start_step] 摘要失败降级(远清零近保留): 旧段{len(_old_head)}条清零tool输出, "
+                        f"释放 {_released} tok, 保尾{len(_tail)}条原样")
+                    log_and_print(f"[start_step] 摘要失败降级: 释放 {_released} tok")
+            except Exception as _de:
+                logger.warning(f"[start_step] 摘要失败降级异常(回退全量原历史): {type(_de).__name__}: {_de!r}")
     agent._needs_compact = False
     return summary_text
 
