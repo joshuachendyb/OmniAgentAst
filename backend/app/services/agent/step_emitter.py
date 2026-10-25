@@ -23,13 +23,14 @@ Author: 小沈 - 2026-05-31
 #   根因: emit_completed_final/emit_failed_final 未传 final_model/duration 致 DB step_json 三字段 null — 小欧-2026-09-11
 # 2026-10-25 小欧 - 通知信封收敛: 新增 emit_notice() 统一发射器(三堂会审 DRY), 消除 start_step/tool_executor 重复实现;
 #   信封结构 type="notice" + kind + phase + content, 仅 SSE 不落库(走 SSE_ONLY_TYPES) — 小欧-2026-10-25
+# 2026-10-25 小欧 - emit_notice 内补 log_and_print(北京老陈令): 统一出口记控制台日志, 所有 notice(压缩/装包×start/done/failed)一处覆盖(DRY) — 小欧-2026-10-25
 """
 
 from typing import Any, Dict, Optional
 import time
 
 from app.services.agent.steps import FinalStep
-from app.logger import logger
+from app.logger import logger, log_and_print
 
 
 class StepEmitter:
@@ -104,6 +105,7 @@ class StepEmitter:
         事前(phase=start)与事后(phase=done/failed)共用同一 kind, 前端按 kind+phase 查表渲染。
         buffer 判空: get_stream_buffer 可能返回 None(任务尚未建 buffer), 直接 publish 会 AttributeError。
         """
+        log_and_print(f"[StepEmit] notice {kind}/{phase}: {content[:80]}")
         try:
             from app.services.agent.steps import MetaStep
             from app.services.task.task_state import get_stream_buffer
