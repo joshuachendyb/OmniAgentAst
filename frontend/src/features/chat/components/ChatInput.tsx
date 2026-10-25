@@ -38,6 +38,8 @@
 // 2026-10-25 小欧 - 动作按钮组回迁 SubmitBar 行右端(北京老陈指令): InputCore 删 actions 插槽(死代码清零,
 //   不留兼容层), SubmitBar 新增 rightActions 接收 SubmitActions; 两受阻判据(sendBlocked/emptyDraft)与
 //   提交门同源不变 — 小欧-2026-10-25
+// 2026-10-25 小欧 - 新增 executingHint 传 InputCore(北京老陈令): 执行中且输入框为空时 placeholder 区
+//   追加橘红色 "任务执行中…开启插话开关可追加输入"; 非执行中/非空态自动消失 — 小欧-2026-10-25
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -611,6 +613,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onKeyDown={handleInputKeyDown}
           focusKey={focusKey}
           inputRef={inputRef}
+          executingHint={isReceiving ? '任务执行中…开启插话开关可追加输入' : undefined}
           /*
            * 2026-10-13 18:15 小欧 - 不再 disabled。
            *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中

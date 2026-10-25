@@ -18,6 +18,8 @@
 // 2026-10-25 小欧 - minRows 3→1 回调(北京老陈令): 三行空态在仅 1 行文字时空出两行, 与 SubmitBar 间
 //   留白叠加致"输入框底线到按钮组"视觉距离过大; 回调 1 行起步恢复 2026-10-20 空态高度, maxRows=4 不变 — 小欧-2026-10-25
 // 2026-10-25 小欧 - minRows 1→2 定案(北京老陈令): 1 行起步过扁, 2 行起步留一行输入余量更显舒展, 仍远低于 3 行的框内空白 — 小欧-2026-10-25
+// 2026-10-25 小欧 - 新增 executingHint 可选 prop(北京老陈令): 执行中且输入框为空时, placeholder 区追加橘红色提示
+//   (overlay 绝对定位, 隐藏原生 placeholder, 灰+橘红双层渲染); 不传/非空态行为不变 — 小欧-2026-10-25
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -55,6 +57,12 @@ interface InputCoreProps {
    *   不传则行为不变（既有调用方零影响）。
    */
   inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
+  /**
+   * 2026-10-25 小欧 - 执行中追加提示（输入框为空时以橘红色显示在 placeholder 下方）。
+   *   不传/传 undefined 时行为不变；传入时输入框为空 → 隐藏原生 placeholder、
+   *   显示灰+橘红双层 overlay；输入框非空 → overlay 自动消失。
+   */
+  executingHint?: string;
 }
 
 const InputCore: React.FC<InputCoreProps> = ({
@@ -64,6 +72,7 @@ const InputCore: React.FC<InputCoreProps> = ({
   onKeyDown,
   focusKey,
   inputRef,
+  executingHint,
 }) => {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   // 2026-10-21 小杨 - 外部 ref 同步（@ 补全取真实光标位置用）
@@ -77,21 +86,45 @@ const InputCore: React.FC<InputCoreProps> = ({
     taRef.current?.focus();
   }, [focusKey]);
 
+  // 2026-10-25 小欧 - 执行中且输入为空 → 橘红 overlay 提示（隐藏原生 placeholder 避免重复）
+  const showHint = !!executingHint && value.trim() === '';
+
   return (
-    <TextArea
-      ref={taRef}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onKeyDown={onKeyDown}
-      onPressEnter={onPressEnter}
-      placeholder="输入消息，Shift+Enter 换行"
-      autoSize={{ minRows: 2, maxRows: 4 }}
-      style={{
-        borderColor: Colors.BORDER.LIGHT,
-        borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
-        borderRadius: Radius.SM,
-      }}
-    />
+    <div style={{ position: 'relative' }}>
+      <TextArea
+        ref={taRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onPressEnter={onPressEnter}
+        placeholder={showHint ? '' : '输入消息，Shift+Enter 换行'}
+        autoSize={{ minRows: 2, maxRows: 4 }}
+        style={{
+          borderColor: Colors.BORDER.LIGHT,
+          borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
+          borderRadius: Radius.SM,
+        }}
+      />
+      {showHint && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 6,
+            left: 11,
+            pointerEvents: 'none',
+            userSelect: 'none',
+            lineHeight: 1.4,
+          }}
+        >
+          <div style={{ color: Colors.TEXT.WEAK, fontSize: 14 }}>
+            输入消息，Shift+Enter 换行
+          </div>
+          <div style={{ color: Colors.ORANGE_RED, fontSize: 12 }}>
+            {executingHint}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
