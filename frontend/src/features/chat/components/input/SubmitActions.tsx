@@ -8,6 +8,8 @@
 // 2026-10-25 小欧 - 三钮间距收紧(北京老陈令): Space size Spacing.SM(6)→1。回迁按钮行后 34 见方钮与
 //   24px small 控件并列显大, 6px 缝让整组显松散; 1px 留一线分隔避免相邻边框粘连(0 会叠成 2px 粗线);
 //   连带删 Spacing import(已无引用)与 ACTION_RESERVE 过时注释(InputCore 该常量已随框内挂点删除) — 小欧-2026-10-25
+// 2026-10-25 小欧 - 钮高对齐(北京老陈令): BTN 34→24, 与 SubmitBar 行内 small 控件(24 高)齐平消除
+//   并列突兀; 24 内图标 16 留白 4px 紧凑不空 — 小欧-2026-10-25
 /**
  * SubmitActions - 提交行右端动作按钮组: 发送(常驻) + 停止/暂停·继续(执行中渲染)
  *
@@ -41,8 +43,9 @@ interface SubmitActionsProps {
   onTogglePause: () => void;
 }
 
-// 方形动作钮统一规格: 34 见方贴图样式(图标 16 = Icon.BOX 行首图标同规格)
-const BTN = 34;
+// 方形动作钮统一规格: 24 见方, 与 SubmitBar 行内 antd Button size=small(24 高)齐平
+//   (图标 16 = Icon.BOX, 四周留白 4px); 原 34 与 small 控件并列显突兀
+const BTN = 24;
 const square: React.CSSProperties = {
   width: BTN,
   height: BTN,

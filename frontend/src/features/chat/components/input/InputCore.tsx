@@ -15,11 +15,13 @@
 // 2026-10-25 小欧 - 删 actions 插槽(北京老陈指令): 动作按钮组回迁 SubmitBar 行右端, 框内不再需要
 //   actions 挂点/paddingBottom/relative 容器, 连带删 ACTION_RESERVE 与 Spacing import; minRows 1→3 复原
 //   (按钮区不再叠加框内, 原压行理由消失, 空态总高回归改造前 68px) — 小欧-2026-10-25
+// 2026-10-25 小欧 - minRows 3→1 回调(北京老陈令): 三行空态在仅 1 行文字时空出两行, 与 SubmitBar 间
+//   留白叠加致"输入框底线到按钮组"视觉距离过大; 回调 1 行起步恢复 2026-10-20 空态高度, maxRows=4 不变 — 小欧-2026-10-25
 /**
  * InputCore - 输入框本体（多行）
  *
- * 【小欧 2026-08-26 8.12】4.3.6 整体高度默认 3 行、最高 5 行(含底部功能按钮行)：
- * 输入框 autoSize minRows=3 / maxRows=4,加 SubmitBar 1 行 = 整体 ≤5;
+ * 【小欧 2026-08-26 8.12】4.3.6 整体高度最高 5 行(含底部功能按钮行)：
+ * 输入框 autoSize minRows=1 / maxRows=4(1 行起步, 文字多自动增行),加 SubmitBar 1 行 = 整体 ≤5;
  * 超 5 行输入框内部滚动（滚动非截断）。
  *
  * @author 小欧
@@ -82,7 +84,7 @@ const InputCore: React.FC<InputCoreProps> = ({
       onKeyDown={onKeyDown}
       onPressEnter={onPressEnter}
       placeholder="输入消息，Shift+Enter 换行"
-      autoSize={{ minRows: 3, maxRows: 4 }}
+      autoSize={{ minRows: 1, maxRows: 4 }}
       style={{
         borderColor: Colors.BORDER.LIGHT,
         borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
