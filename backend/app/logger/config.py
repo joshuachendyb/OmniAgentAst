@@ -8,6 +8,8 @@
 # 2026-08-30 - 小欧 - 控制台写离线化(case09挂起根治): _check_and_rotate_by_date 轮转提示 print→console_put(日志emit路径零同步stdout写)
 # 2026-09-19 - 小欧 - exe打包frozen支持: LOG_DIR frozen时改走exe所在目录/logs(源码保持backend/logs不变) - 小欧-2026-09-19
 # 2026-09-21 - 小欧 - v4.20 键名按域收敛: app.debug → logging.debug（is_debug_mode/get_log_level 读键同步）
+# 2026-10-25 - 小欧 - LogConfig 方法改调 get_config() 取实时值, 删导入期类属性快照:
+#   get_config() 内置 mtime 缓存未变则直接返回, 零额外成本; 配置改动无需重启即被读取感知。 - 小欧-2026-10-25
 
 import logging
 import logging.handlers
@@ -25,28 +27,29 @@ LOG_DIR.mkdir(exist_ok=True)
 # ============================================================
 
 class LogConfig:
-    """日志配置 — 委托至 app.config.Config — 小欧 2026-07-11"""
-
-    _config = get_config()
+    """日志配置 — 委托至 app.config.Config — 小欧 2026-07-11
+    2026-10-25 小欧 - 方法改调 get_config() 取实时值(其内 mtime 缓存, 未变则直接返回, 零额外成本):
+    不再在导入期绑定类属性快照, 配置文件改动后无需重启即被后续读取感知。
+    """
 
     @classmethod
     def is_debug_mode(cls) -> bool:
         # 2026-09-21 小欧 v4.20 键名按域收敛: app.debug → logging.debug
-        return cls._config.get('logging.debug', False)
+        return get_config().get('logging.debug', False)
 
     @classmethod
     def get_log_level(cls) -> str:
-        if cls._config.get('logging.debug', False):
+        if get_config().get('logging.debug', False):
             return "DEBUG"
-        return cls._config.get('logging.level', 'INFO')
+        return get_config().get('logging.level', 'INFO')
 
     @classmethod
     def get_max_bytes(cls) -> int:
-        return cls._config.get('logging.max_file_size', 10 * 1024 * 1024)
+        return get_config().get('logging.max_file_size', 10 * 1024 * 1024)
 
     @classmethod
     def get_backup_count(cls) -> int:
-        return cls._config.get('logging.backup_count', 5)
+        return get_config().get('logging.backup_count', 5)
 
 
 # ============================================================

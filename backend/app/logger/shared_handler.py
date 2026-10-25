@@ -19,6 +19,8 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 #   不再触发, 提示数恒正。  小欧-2026-10-25
 # 2026-10-25 - 小欧 - uvicorn 三 logger 去掉 ConsoleMirrorHandler, 只保留文件 handler: 访问日志对排障
 #   无价值却高频刷屏, 控制台只留 log_and_print 与应用 WARNING+ 日志。  小欧-2026-10-25
+# 2026-10-25 - 小欧 - 日志级别热重载: 新增 _managed_loggers 登记表 + refresh_log_levels() 幂等重刷;
+#   setup_logger/setup_uvicorn_loggers 装配时登记, 供 main.py 周期 watcher 调用。  小欧-2026-10-25
 
 import logging
 from contextvars import ContextVar
@@ -93,6 +95,10 @@ class SessionFilter(logging.Filter):
 
 # ---- 公共工具 -----------------------------------------------------
 
+# 已装配 logger 名单: setup_logger/setup_uvicorn_loggers 装配时登记, 供热重载遍历 — 小欧 2026-10-25
+_managed_loggers: set = set()
+
+
 def _get_log_level() -> int:
     """读取配置日志级别 — 小欧 2026-10-25 抽函数(setup_logger 与 setup_uvicorn_loggers 共用)"""
     return getattr(logging, LogConfig.get_log_level().upper())
@@ -145,6 +151,7 @@ def setup_logger(name: str) -> logging.Logger:
     logger.addHandler(console_handler)
     logger.setLevel(log_level)
     logger.propagate = False
+    _managed_loggers.add(name)
 
     return logger
 
@@ -172,4 +179,17 @@ def setup_uvicorn_loggers() -> None:
         lg.addHandler(file_handler)
         lg.setLevel(_get_log_level())
         lg.propagate = False
+        _managed_loggers.add(name)
+
+
+def refresh_log_levels() -> None:
+    """按当前配置重刷所有已装配 logger 与共享文件 handler 的级别 — 小欧 2026-10-25
+    幂等: 级别未变则零操作。供周期 watcher 调用, 使 config.yaml 的 debug/level 改动免重启生效。
+    """
+    log_level = _get_log_level()
+    for name in list(_managed_loggers):
+        lg = logging.getLogger(name)
+        if lg.level != log_level:
+            lg.setLevel(log_level)
+    _get_shared_handler().setLevel(log_level)
 

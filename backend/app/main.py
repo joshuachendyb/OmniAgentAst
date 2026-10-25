@@ -48,6 +48,9 @@
 # 2026-10-25 小欧 - 删模块级 uvicorn.access setLevel(WARNING) 与 import logging:
 #   该句与 setup_uvicorn_loggers 冲突(访问日志须保留), 且被其无条件覆盖成死代码。
 #   日志级别唯一 owner 收敛到 LogConfig。 — 小欧-2026-10-25
+# 2026-10-25 小欧 - 日志级别热重载: 新增 _log_level_watcher_loop(10s 周期) + _start_log_level_watcher,
+#   startup 起、shutdown cancel(同 _cleanup_task_ref 生命周期); refresh_log_levels 幂等重刷已装配 logger。
+#   — 小欧-2026-10-25
 import sys
 import asyncio
 from typing import Optional
@@ -284,7 +287,6 @@ def _start_journal_retention_task() -> None:
     """Journal 保留期清理：独立后台任务，绝不进请求链路 — 小欧 2026-09-29"""
     global _journal_retention_ref
     from app.services.chat.stream_event_journal import checkpoint_wal, retention_cleanup
-
     async def _loop() -> None:
         while True:
             try:
@@ -304,6 +306,29 @@ def _start_journal_retention_task() -> None:
             await asyncio.sleep(3600)
     _journal_retention_ref = asyncio.create_task(_loop())   # 存引用防 GC（同 _cleanup_task_ref 模式）
     logger.info("Journal 保留期清理任务已启动")
+
+
+async def _log_level_watcher_loop() -> None:
+    """日志级别热重载: 周期检查 config 并重刷已装配 logger 级别 — 小欧 2026-10-25
+    config.yaml 的 logging.debug / logging.level 改动后, 最迟一个周期内生效, 免重启。
+    get_config() 内置 mtime 缓存, 未变则零成本; refresh_log_levels 幂等, 未变则零操作。
+    """
+    from app.logger.shared_handler import refresh_log_levels
+    while True:
+        await asyncio.sleep(10)
+        try:
+            refresh_log_levels()
+        except Exception as e:
+            logger.error(f"[Logger] 级别热重载失败: {e}")
+
+
+_log_watcher_ref: Optional[asyncio.Task] = None  # 同 _cleanup_task_ref 模式, 供 shutdown cancel
+
+
+def _start_log_level_watcher() -> None:
+    """启动日志级别热重载后台任务 — 小欧 2026-10-25"""
+    global _log_watcher_ref
+    _log_watcher_ref = asyncio.create_task(_log_level_watcher_loop())
 
 
 @app.on_event("startup")
@@ -329,6 +354,7 @@ async def startup_event():
     _start_cleanup_task()
     logger.info(f"[启动耗时] _start_cleanup_task: {_time.time()-_t2:.3f}s")
     _start_journal_retention_task()   # [63] 3.6.7：Journal 保留期清理；保留期读 tuning.live_front 配置
+    _start_log_level_watcher()   # 2026-10-25 小欧: 日志级别热重载, config 改动免重启
     # 2026-10-03 小欧 - 启动期一次性对账 Journal(③) vs chat_task_steps(②), 只告警不自动补 — 文档[5] 5.3 D2
     _t4 = _time.time()
     try:
@@ -360,6 +386,8 @@ async def shutdown_event():
         _cleanup_task_ref.cancel()
     if _journal_retention_ref is not None and not _journal_retention_ref.done():   # [63] 3.6.7 关联：新增任务与 _cleanup_task_ref 同生命周期
         _journal_retention_ref.cancel()
+    if _log_watcher_ref is not None and not _log_watcher_ref.done():   # 2026-10-25 小欧: 日志级别热重载任务同生命周期
+        _log_watcher_ref.cancel()
     # 停机收口(小欧 2026-09-25): 换代归还 + 等退休代共享池 lease 归零关闭(超时放行)
     from app.services.lifecycle import shutdown
     await shutdown()
