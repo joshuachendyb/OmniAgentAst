@@ -10,8 +10,11 @@
 // 编辑历史: 2026-10-20 小欧 - 右侧动作按钮组(发送/停止/暂停)拆出为 SubmitActions 并移入输入框内右下角(北京老陈
 //   指令), 本组件只留左侧控件; loading/isReceiving/isPaused/sendBlocked/onSend/onCancel/onTogglePause 七项
 //   props 随迁(唯一调用方 ChatInput 同步, 不留兼容层) — 小欧-2026-10-20
+// 2026-10-25 小欧 - 动作按钮组回迁至本行右端(北京老陈指令): 新增 rightActions 插槽, 布局由 Space 改 flex
+//   容器, 左控件靠左、动作组 marginLeft:auto 贴右; SubmitActions 由 ChatInput 直接构造传入(纯 ReactNode,
+//   本组件零业务) — 小欧-2026-10-25
 /**
- * SubmitBar - 底部功能行：模型按钮(ModelPicker) + 附件等左侧控件(动作按钮组已迁 InputCore actions 插槽)
+ * SubmitBar - 底部功能行：左侧控件(历史/指令/类型/模型/附件/插话/会话事务空间) + 右端动作按钮组
  *
  * 【小欧 2026-08-26 8.12】4.3.6 底部一行；与附件按钮同一行，位于输入区底部。
  * ModelPicker 为既有组件（7.13 L2 落库已实施），此处原位引用。
@@ -31,6 +34,8 @@ interface SubmitBarProps {
   // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话事务空间入口(决策70: 插话开关之后、发送按钮之前)
   workspaceCount?: number;
   onOpenWorkspaces?: () => void;
+  /** 2026-10-25 小欧 - 右端动作按钮组(发送/停止/暂停); 不传则不渲染, 整行仅左控件靠左 — 小欧-2026-10-25 */
+  rightActions?: React.ReactNode;
 }
 
 const SubmitBar: React.FC<SubmitBarProps> = ({
@@ -40,30 +45,35 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
   onToggleInterject,
   workspaceCount, // 2026-10-10 小欧 - 文档[16] §3.6.5
   onOpenWorkspaces,
+  rightActions, // 2026-10-25 小欧 - 右端动作按钮组插槽
 }) => (
-  <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
-    {leftExtra}
-    {modelPickerSlot}
-    {/* 2026-10-06 小欧 - 北京老陈指令: 附件按钮不再隐藏, 显示+置灰占位（上传仍暂缓） */}
-    <AttachmentArea visible disabled />
-    {/* 插话开关: 附件之后(2026-10-06 北京老陈定); 复用 TaskTypeToggle 邻位 Checkbox 样式不新造组件 */}
-    {onToggleInterject && (
-      <Checkbox
-        checked={!!allowInterject}
-        onChange={(e) => onToggleInterject(e.target.checked)}
-      >
-        插话开关
-      </Checkbox>
-    )}
-    {/* 2026-10-10 小欧 - 文档[16] §3.6.5: 会话事务空间入口(决策70 位置) */}
-    {onOpenWorkspaces && (
-      <Badge count={workspaceCount ?? 0} size="small">
-        <Button size="small" onClick={onOpenWorkspaces}>
-          会话事务空间
-        </Button>
-      </Badge>
-    )}
-  </Space>
+  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <Space size={8} style={{ display: 'inline-flex', alignItems: 'center' }}>
+      {leftExtra}
+      {modelPickerSlot}
+      {/* 2026-10-06 小欧 - 北京老陈指令: 附件按钮不再隐藏, 显示+置灰占位（上传仍暂缓） */}
+      <AttachmentArea visible disabled />
+      {/* 插话开关: 附件之后(2026-10-06 北京老陈定); 复用 TaskTypeToggle 邻位 Checkbox 样式不新造组件 */}
+      {onToggleInterject && (
+        <Checkbox
+          checked={!!allowInterject}
+          onChange={(e) => onToggleInterject(e.target.checked)}
+        >
+          插话开关
+        </Checkbox>
+      )}
+      {/* 2026-10-10 小欧 - 文档[16] §3.6.5: 会话事务空间入口(决策70 位置) */}
+      {onOpenWorkspaces && (
+        <Badge count={workspaceCount ?? 0} size="small">
+          <Button size="small" onClick={onOpenWorkspaces}>
+            会话事务空间
+          </Button>
+        </Badge>
+      )}
+    </Space>
+    {/* 2026-10-25 小欧 - marginLeft:auto 贴最右: 左控件组与动作组分居两端 */}
+    {rightActions && <div style={{ marginLeft: 'auto' }}>{rightActions}</div>}
+  </div>
 );
 
 export { SubmitBar };

@@ -12,11 +12,14 @@
 // 编辑历史: 2026-10-20 小欧 - minRows 3→1(北京老陈拍板): 按钮区 46px 纯新增叠加在原 3 行上致空态 118px
 //   (比改造前 68px 多约 2.3 行视觉), 框外左侧控件行未省; 文字区起步压回 1 行使空态总高与改造前持平
 //   (1行22+按钮区46+边框≈68px), maxRows=4 打字空间不变 — 小欧-2026-10-20
+// 2026-10-25 小欧 - 删 actions 插槽(北京老陈指令): 动作按钮组回迁 SubmitBar 行右端, 框内不再需要
+//   actions 挂点/paddingBottom/relative 容器, 连带删 ACTION_RESERVE 与 Spacing import; minRows 1→3 复原
+//   (按钮区不再叠加框内, 原压行理由消失, 空态总高回归改造前 68px) — 小欧-2026-10-25
 /**
  * InputCore - 输入框本体（多行）
  *
  * 【小欧 2026-08-26 8.12】4.3.6 整体高度默认 3 行、最高 5 行(含底部功能按钮行)：
- * 输入框 autoSize minRows=1 / maxRows=4(2026-10-20 起步 1 行, 按钮区入框后空态总高原对齐)，加 SubmitBar 1 行 = 整体 ≤5；
+ * 输入框 autoSize minRows=3 / maxRows=4,加 SubmitBar 1 行 = 整体 ≤5;
  * 超 5 行输入框内部滚动（滚动非截断）。
  *
  * @author 小欧
@@ -25,7 +28,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Input } from 'antd';
-import { Colors, Radius, Spacing } from '@/utils/stepStyles';
+import { Colors, Radius } from '@/utils/stepStyles';
 
 const { TextArea } = Input;
 
@@ -43,8 +46,6 @@ interface InputCoreProps {
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   /** 自增即把焦点拉回输入框; 不传则不做任何聚焦(既有调用方行为不变) */
   focusKey?: number;
-  /** 2026-10-20 小欧 - 框内右下角动作插槽(发送/停止/暂停); 不传则不渲染挂点且不留 padding — 小欧-2026-10-20 */
-  actions?: React.ReactNode;
   /**
    * 2026-10-21 小杨 - 外抛 textarea ref（供 @ 补全取**真实光标位置**）。
    *   体验审计发现：@ 补全原先用 `value.length` 当光标 → 光标不在末尾时误触发/漏触发。
@@ -53,16 +54,12 @@ interface InputCoreProps {
   inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
 }
 
-// 按钮区预留高度: 钮高 34 + 底距 Spacing.MD(8) + 呼吸 Spacing.XS(4); 随 SubmitActions 的 BTN 联动
-const ACTION_RESERVE = 34 + 8 + 4;
-
 const InputCore: React.FC<InputCoreProps> = ({
   value,
   onChange,
   onPressEnter,
   onKeyDown,
   focusKey,
-  actions,
   inputRef,
 }) => {
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -78,39 +75,20 @@ const InputCore: React.FC<InputCoreProps> = ({
   }, [focusKey]);
 
   return (
-    // 2026-10-20 小欧: relative 容器承载框内右下角动作挂点; 无 actions 时为透传 div 不改视觉
-    <div style={{ position: 'relative' }}>
-      <TextArea
-        ref={taRef}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        onPressEnter={onPressEnter}
-        placeholder="输入消息，Shift+Enter 换行"
-        // 2026-10-20 小欧 - minRows 1: 起步 1 行, 加 46px 按钮区后空态总高与改造前(3行无按钮区)持平; maxRows 4 不变
-        autoSize={{ minRows: 1, maxRows: 4 }}
-        style={{
-          borderColor: Colors.BORDER.LIGHT,
-          borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
-          borderRadius: Radius.SM,
-          // 2026-10-20 小欧: 仅 actions 存在时预留, 防文字流到按钮底下
-          ...(actions ? { paddingBottom: ACTION_RESERVE } : null),
-        }}
-      />
-      {actions && (
-        <div
-          style={{
-            position: 'absolute',
-            right: Spacing.MD,
-            bottom: Spacing.MD,
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
-          {actions}
-        </div>
-      )}
-    </div>
+    <TextArea
+      ref={taRef}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
+      onPressEnter={onPressEnter}
+      placeholder="输入消息，Shift+Enter 换行"
+      autoSize={{ minRows: 3, maxRows: 4 }}
+      style={{
+        borderColor: Colors.BORDER.LIGHT,
+        borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
+        borderRadius: Radius.SM,
+      }}
+    />
   );
 };
 

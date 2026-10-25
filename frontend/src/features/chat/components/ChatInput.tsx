@@ -35,6 +35,9 @@
 //   （setAll/remove/removeWhere/clear/add）；删除 useSyncExternalStore/composerRefStore/mergeRefs 直接依赖 — 小欧-2026-10-22
 // 编辑历史: 2026-10-22 小欧 - 引用 chip 点击判 path 非空：上下文包 chip 无单一路径（path=''），
 //   原实现拼空路径深链点了跳空白页；改为空路径仅作展示不跳转 — 小欧-2026-10-22
+// 2026-10-25 小欧 - 动作按钮组回迁 SubmitBar 行右端(北京老陈指令): InputCore 删 actions 插槽(死代码清零,
+//   不留兼容层), SubmitBar 新增 rightActions 接收 SubmitActions; 两受阻判据(sendBlocked/emptyDraft)与
+//   提交门同源不变 — 小欧-2026-10-25
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -54,7 +57,7 @@ import { InputCore } from './input/InputCore';
 import { TaskTypeToggle } from './input/TaskTypeToggle';
 import { CommandPanel } from './input/CommandPanel';
 import { SubmitBar } from './input/SubmitBar';
-import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 框内右下角动作按钮组(与SubmitBar 拆出)
+import { SubmitActions } from './input/SubmitActions'; // 2026-10-20 小欧 - 动作按钮组(与 SubmitBar 拆出; 2026-10-25 回迁 SubmitBar 行右端)
 import SessionWorkspacePanel from './input/SessionWorkspacePanel'; // 2026-10-10 小欧 - 面板挂载(默认导出)
 import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
@@ -614,19 +617,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
            *   连打字/翻历史/存草稿都做不到。执行中不可发是**提交**问题, 由发送按钮置灰(B)与
            *   常驻提示(C)表达, 不该由禁用来表达。
            */
-          actions={
-            // 2026-10-20 小欧 - 框内右下角动作按钮组: 两受阻判据均与提交门/提交处理同源, 见 SubmitActions 头注
-            <SubmitActions
-              loading={loading}
-              isReceiving={isReceiving}
-              isPaused={isPaused}
-              sendBlocked={sendBlocked || refsPending}
-              emptyDraft={emptyDraft}
-              onSend={handleSendInternal}
-              onCancel={onCancel}
-              onTogglePause={onTogglePause}
-            />
-          }
         />
         {/* 2026-10-21 小杨 - @ 候选面板放在**输入框下方**
             （原实现放在输入框上方 → 遮住引用行，且与"输入框在上、辅助在下"的常规心智相反）；
@@ -749,6 +739,22 @@ const ChatInput: React.FC<ChatInputProps> = ({
         // 无会话时不传 onOpenWorkspaces → SubmitBar 不渲染入口（GET 空 id 必 422，不如不显示）
         workspaceCount={sessionWorkspaces.length}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
+        /*
+         * 2026-10-25 小欧 - 动作按钮组回迁本行右端(北京老陈指令): 原在 InputCore 框内右下角;
+         *   两受阻判据(sendBlocked/emptyDraft)与提交门/提交处理同源, 见 SubmitActions 头注
+         */
+        rightActions={
+          <SubmitActions
+            loading={loading}
+            isReceiving={isReceiving}
+            isPaused={isPaused}
+            sendBlocked={sendBlocked || refsPending}
+            emptyDraft={emptyDraft}
+            onSend={handleSendInternal}
+            onCancel={onCancel}
+            onTogglePause={onTogglePause}
+          />
+        }
       />
       {/* 2026-10-10 小欧 - 会话使用目录面板入口 */}
       <SessionWorkspacePanel
