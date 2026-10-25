@@ -67,9 +67,13 @@ key 全局唯一，加载自检重复直接拒启。
    2026-10-20 小欧 - 新增路径工具四类归类名单只读展示(security.hitl.tool_lists.read/write/delete/dual):
      紧随 shell_readonly_prefixes; readonly=True, 取值直接来自 tool_constants 判定名单(展示与实判同源),
      设置页显示为可复制文本、不可编辑; 改动归类仍须改代码, 避免配置面改写安全判定口径。
-   2026-10-24 小欧 - reasoning_effort options 移除 minimal: OpenAI 官方文档明确 "Not all reasoning
-     models support every value"，minimal 是少数派值(agnes-2.5-flash 不认→HTTP 400)，全局兜底只留
-     low/medium/high 三个所有推理模型都支持的核心值；notice 同步更新说明少数派值需 per-model 配置 — 小欧-2026-10-24
+    2026-10-24 小欧 - reasoning_effort options 移除 minimal: OpenAI 官方文档明确 "Not all reasoning
+      models support every value"，minimal 是少数派值(agnes-2.5-flash 不认→HTTP 400)，全局兜底只留
+      low/medium/high 三个所有推理模型都支持的核心值；notice 同步更新说明少数派值需 per-model 配置 — 小欧-2026-10-24
+   2026-10-25 小欧 - tuning.trim 3 键→5 键: keep_recent_rounds(int,5-20,默认5,裁剪时最近 N 个 FC 工具步
+      不参与裁剪)、tools_token_reserve(int,5000-80000,默认30000,tools schema 输入 token 预留防超窗 400);
+      同批同步 config.yaml.example(trim 块) 与 config/config.yaml(本地副本); 并立 _item 前铁规注释:
+      加参数必须先同步 config.yaml.example, 严禁只在 registry 加 — 小欧-2026-10-25
 """
 from typing import Any, Dict, List, Optional
 
@@ -88,6 +92,21 @@ from app.tools.tool_constants import (
     DELETE_PATH_TOOLS as _DELETE_PATH_TOOLS,
     DUAL_PATH_TOOLS as _DUAL_PATH_TOOLS,
 )
+
+
+# ============================================================
+# !! 铁规（北京老陈 2026-10-25 令）：新增 _item 必须同步 config.yaml.example
+# !!
+# !! 步骤（缺一不可）：
+# !!   1. backend/config.yaml.example  — git 跟踪的唯一模板（必须）
+# !!   2. settings_registry.py         — 本文件（必须）
+# !!   3. config/config.yaml           — 本地运行时副本（gitignore，仅本机生效）
+# !!
+# !! 严禁只在本文件加 _item 而不同步 config.yaml.example：代码兜底默认值虽能生效，
+# !! 但模板缺键即配置面永久缺失该参数、发版后新装机不可见；registry 与 example
+# !! 脱节无法被任何自检捕获。
+# !! 严禁只加 config/config.yaml（本地副本）而漏 template 与本文件。
+# ============================================================
 
 
 def _item(key: str, type_: str, label: str, default: Any = None,
@@ -363,13 +382,17 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # --- agent: Agent 循环参数（1 键）---
         _item("tuning.agent.max_chunks_without_promote", "int", "卡死保护上限", 50, range_=[10, 200],
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
-        # --- trim: 裁剪 3 键（每轮循环自动执行）---
+        # --- trim: 裁剪 5 键（loop 每轮评估）— 小欧-2026-10-25
         _item("tuning.trim.max_rounds", "int", "裁剪历史触发轮", 100, range_=[1, 10000],
-              notice="超过 N 轮后执行历史对话信息裁剪，更早的自动忘掉；调大=保留更多的原始信息但更费 token，调小=省钱但会忘更早的事"),
-        _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.75, range_=[0.1, 0.95],
-              notice="对话占到模型记忆容量的百分之多少时开始自动删旧内容（0.75=占到四分之三就删）；调小=删得勤、腾地方快，调大=多记一会但快满时才动手"),
+              notice="历史轮数上限，超出即触发裁剪；调大保留更多原始信息，调小更早裁旧"),
+        _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.9, range_=[0.5, 0.95],
+              notice="粗估 token 达可用内容预算(context_limit-compaction_buffer-tools_token_reserve)此比例即触发裁剪；调小更早触发，调大占用更高才裁"),
         _item("tuning.trim.compaction_buffer", "int", "上下文预留空间", 20000, range_=[1000, 100000],
-              notice="删旧内容时故意不删满，给模型写这次回答预留这么多容量，防止删完一点空都没有、模型没地方写"),
+              notice="裁剪预算中扣除的输出预留；不足则裁完 messages 已逼近 context_limit"),
+        _item("tuning.trim.keep_recent_rounds", "int", "最近轮硬保护", 5, range_=[5, 20],
+              notice="裁剪时最近 N 个 FC 工具步(assistant.tool_calls+tool)不参与裁剪，第 N+1 步起按预算整轮裁"),
+        _item("tuning.trim.tools_token_reserve", "int", "tools 定义预留", 30000, range_=[5000, 80000],
+              notice="tools schema 占用的输入 token 预留；不足则 messages 裁至预算仍会超 context_limit 致LLM报400错误"),
         # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）---
         _item("tuning.compaction.start_enabled", "bool", "开局压缩开关", True,
               notice="任务刚开始如果发现以前的对话太长装不下，先自动压成一段摘要再开始干活；关掉则不压、直接硬删"),

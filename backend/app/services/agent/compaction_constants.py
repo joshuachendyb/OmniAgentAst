@@ -38,6 +38,11 @@
   2026-10-05 小欧 报告 P7: 现值 2.5 仍低估约 4.8 倍, 改值须先有 E2E 基线, 值由测试钉桩。
   2026-10-08 小欧 新增 SUMMARY_PRUNE_TOOL_OUTPUT(摘要前降本开关, 北京老陈裁定接入): True=保尾区 tool 原样 +
     更早的清零, 真实 205 条实测省 48890 tok(36%)且摘要保住可核对数字/签名/时间戳; False=全量喂回退。
+  2026-10-25 小欧 新增 TOOLS_TOKEN_RESERVE(=30000) + KEEP_RECENT_ROUNDS(=5): 前者=trim 预算扣除的
+    tools schema 输入 token 预留(实测 Agents-A1 201 条无预留仍 400); 后者=loop 裁剪最近 N 个 FC 工具步
+    不参与裁剪(触发/预算计算不变, 配置 tuning.trim.keep_recent_rounds, 5-20 默认 5)。
+  2026-10-25 23:09 小欧 CHARS_PER_TOKEN 2.5→2.25: 10 真实会话标定 17,252,839 chars/7,299,735 精确 tok=2.363 字/token(2.5 低估5.5%=0.945x, 2.55 更差7.3%, 2.25 MAE13.0% 候选最优), 订正 2026-10-05 条「4.8倍」无实测出处结论
+  2026-10-25 23:09 小欧 TRIM_TRIGGER_RATIO 0.75→0.9(北京老陈定): 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
@@ -48,19 +53,21 @@ DEFAULT_CONTEXT_LIMIT = 262144   # = 256K
 # 意义: start 超窗触发比例(=上下文×1/2, 北京老陈 2026-08-17 定案)——start 一次性注入历史更保守, 门限更低
 #       (start 超窗于此比例即置 _needs_compact 触发 C4 锚定摘要)
 START_TRIGGER_RATIO = 0.5
-# 意义: loop 执行中裁剪触发比例(=上下文×3/4, 北京老陈 2026-08-17 定案)——渐进增长允许更高占用,
-#       历史占满此比例才触发 trim_history / CompactionTrigger 绝对值安全网
-TRIM_TRIGGER_RATIO = 0.75
+# 意义: loop 裁剪触发水位, 作用于可用内容预算(context_limit-compaction_buffer-tools_token_reserve), 粗估超过 预算×水位 触发绝对值安全网; 触发线与裁剪预算同源单口径 — 小欧 2026-10-25
+TRIM_TRIGGER_RATIO = 0.9
 # 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
 COMPACTION_BUFFER = 20000
 # 意义: tools 定义(schema)token 预留——trim_history 按预算裁 messages 时, tools 定义也占输入窗口,
 #   不预留会致 messages 裁到 242K + tools 定义 20K+ ≈ 撞满 262144 → 上游 400(实测 Agents-A1 201条仍400)。
 #   17个工具schema 约 20K~30K tok, 取 30K 保守值, 可经 tuning.trim.tools_token_reserve 覆盖。 — 小欧 2026-10-25
 TOOLS_TOKEN_RESERVE = 30000
-# 意义: chars→token 换算系数
-# 2026-10-04 小欧: 4→1.8→2.5(北京老陈定)。中文 1 字真实约 1~2 token(OpenAI≈2/DeepSeek≈0.6), 4 严重低估致撞窗,
-#   1.8 偏保守过多致提前裁剪徒丢上下文; 2.5 居中, 少算 28% 使裁剪更晚。改浮点后取整写法 int(x/c) 不可回退 — 小欧 2026-10-04
-CHARS_PER_TOKEN = 2.5
+# 意义: loop 裁剪"最近 N 个 FC 工具轮硬保护"轮数(北京老陈 2026-10-25 定案): 最近 N 个工具轮
+#   (assistant(tool_calls)+其全部 tool 结果) 不进裁剪列表, 第 N+1 轮起才允许按 token 预算裁;
+#   防 loop 进行中裁掉当前推理的直接上下文(上一步调了什么/得到什么)致推理断裂, 亦防裁剪抖动。
+#   配置 tuning.trim.keep_recent_rounds, 取值范围 5-20, 默认 5。 — 小欧 2026-10-25
+KEEP_RECENT_ROUNDS = 5
+# 意义: chars→token 换算系数, 10 真实会话标定加权均值 2.363 字/token; 系数越大→估算越小→越低估→裁得越晚→越易撞窗 400 — 小欧 2026-10-25
+CHARS_PER_TOKEN = 2.25
 # 意义: 临时历史字符上限
 TEMP_HISTORY_CHAR_LIMIT = 50000
 

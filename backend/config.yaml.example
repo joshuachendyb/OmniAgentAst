@@ -27,6 +27,10 @@
 #     trust.ttl_days                          会话信任天数
 #     原先 hitl_enabled / confirmDangerousOps / hitl_timeout 平铺写法作废, 读取端已全部改嵌套取值, 不保留旧键。
 #   2026-10-18 小欧 - 补 hitl.shell_readonly_prefixes: 原为代码内硬编码, 收紧须发版; 留空即回退内置名单。
+#   2026-10-25 小欧 - tuning.trim 3 键→5 键: 加 keep_recent_rounds=5(裁剪时最近 N 个 FC 工具步不裁, 5-20)、
+#     tools_token_reserve=30000(tools schema 输入 token 预留, 防裁完仍超窗 400); 与 settings_registry 同批注册。
+#   2026-10-25 23:09 小欧 - tuning.trim.trigger_ratio 0.75→0.9: 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径; 与 settings_registry 同批改。
+#
 #
 # 严禁事项 — 小欧 2026-09-21
 #   禁止新增任何 openai / gpt 相关 provider 或模型（如 openai、gpt-4、gpt-3.5）
@@ -293,10 +297,13 @@ tuning:
     max_chunks_without_promote: 50 # 一直吐零碎字却不给完整回答,累计N次判卡死强制结束(防白烧配额)
 
   # 裁剪（3 键，每轮循环自动执行）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
+  # 裁剪（5 键，loop 每轮评估）— 小欧-2026-10-25
   trim:
-    max_rounds: 100                # 只记得最近N轮问答,更早自动忘;大=记得久费token,小=省钱忘得快
-    trigger_ratio: 0.75            # 对话占记忆容量75%时开始删旧;小=删得勤,大=多记会
-    compaction_buffer: 20000       # 删旧时故意留这么多容量给本次回答,防删完没地方写
+    max_rounds: 100                # 历史轮数上限, 超出即触发裁剪
+    trigger_ratio: 0.9             # 粗估 token / 可用内容预算 达此比例触发裁剪; 预算=window-compaction_buffer-tools_token_reserve
+    compaction_buffer: 20000       # 增量触发阈值, 亦从裁剪预算中扣除
+    keep_recent_rounds: 5          # 裁剪时最近 N 个 FC 工具步不参与裁剪, 范围 5-20
+    tools_token_reserve: 30000     # tools schema 占用输入 token, 从裁剪预算扣除防超窗 400
 
   # 压缩（4 键，开局超容时压成摘要）— 注释 2026-09-23 去开发术语重写 — 小欧-2026-09-23
   compaction:

@@ -4,6 +4,12 @@
 #   2026-08-17 小健 补全: 各函数 docstring 补全适用场景/使用方法/前置条件/输入输出(043ed9c54)
 #   2026-08-17 小健 改名: split_half_turn→truncate_oversized_message(名符其实); 模块函数引用同步
 #   2026-08-17 小健 常量归属迁移(北京老陈驱动): 压缩/裁剪常量权威迁至 agent 层根 compaction_constants.py, 本模块导入路径由 compaction.compaction_constants 改为 app.services.agent.compaction_constants
+# 2026-10-25 小欧 - find_tail_start 增 align_turn 参数(北京老陈令): True=切点对齐 user 边界, 整轮不拆
+#   (user 与其回答同进退), 供 loop 裁剪杜绝"user 在旧段被丢、回答留保尾"的悬空; 默认 False, 压缩/降本
+#   调用点(split_history_window / start_step 摘要前降本)行为不变 — 小欧-2026-10-25
+# 2026-10-25 小欧 - 新增 find_recent_rounds_start(北京老陈令): 触发/预算计算不变, 仅裁剪发生时最近 N 个
+#   FC 工具轮(assistant(tool_calls)+其 tool 结果)硬保护, 第 N+1 步起才按预算整轮裁; N 由
+#   tuning.trim.keep_recent_rounds 配置(5-20, 默认 5), 不足 N 轮返回 len(messages)=不裁 — 小欧-2026-10-25
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -37,12 +43,15 @@ def preserve_recent_budget(usable_tokens: int) -> int:
     return min(TAIL_TOKEN_MAX, max(TAIL_TOKEN_MIN, int(usable_tokens * TAIL_TOKEN_RATIO)))
 
 
-def find_tail_start(messages: List[Dict], budget_tokens: int) -> int:
+def find_tail_start(messages: List[Dict], budget_tokens: int,
+                    align_turn: bool = False) -> int:
     """定位尾部窗口起始下标, 满足 token 预算且不拆散 FC 对 — 小健 2026-08-17
 
     适用场景: 压缩前确定保尾区的起点下标(该下标之后原样保留)。
     使用方法: 传消息列表 + 保尾预算, 返回尾部起点下标(供切片 messages[:start]/[start:])。
-    输入: messages 消息列表; budget_tokens 保尾 token 预算。
+    输入: messages 消息列表; budget_tokens 保尾 token 预算;
+          align_turn 2026-10-25 小欧(北京老陈令): True=切点对齐到 user 边界(整轮不拆,
+          user 与其回答同进退), loop 裁剪用; False=原行为(压缩/降本调用点不变)。
     输出: int 保尾起点下标; 空列表返回 0。
     前置条件: 无; 保尾三原则——system 恒保留(下标头不可动); 遇 assistant(tool_calls) 该对整体保留;
               倒序累计超预算即停; 保底返回 system 之后下标。
@@ -68,7 +77,51 @@ def find_tail_start(messages: List[Dict], budget_tokens: int) -> int:
         tail_start = i
         if messages[i].get("role") == "assistant" and messages[i].get("tool_calls"):
             continue
+    # 2026-10-25 小欧 align_turn: 切点须落在一轮起点(user), 整轮不拆 — loop 裁剪用(北京老陈令)
+    if align_turn and tail_start > prefix and messages[tail_start].get("role") != "user":
+        j = tail_start
+        while j > prefix and messages[j].get("role") != "user":
+            j -= 1
+        if messages[j].get("role") == "user":
+            extra = MessageBuilder._estimate_tokens(messages[j:tail_start])
+            if used + extra <= budget_tokens:
+                tail_start = j  # 回退到该轮 user 起点, 整轮保留
+            else:
+                k = tail_start
+                while k < len(messages) and messages[k].get("role") != "user":
+                    k += 1
+                tail_start = k if k < len(messages) else j  # 超预算丢整轮; 无下轮则回退保本轮
     return tail_start
+
+
+def find_recent_rounds_start(messages: List[Dict], n_rounds: int) -> int:
+    """最近 n_rounds 个 FC 工具轮的起点下标(该下标及其之后为保护区) — 小欧 2026-10-25(北京老陈令)
+
+    FC 工具轮 = 一次工具调用步: assistant(tool_calls) 及其全部 tool 结果。
+    loop 裁剪发生时最近 N 步硬保护(裁剪切点不得侵入本区), 第 N+1 步起才允许按预算整轮裁。
+    user 消息不参与轮数定义(loop 中 user 就 1~5 条, 必保是另一层职责)。
+
+    输入: messages 消息列表; n_rounds 保护轮数(规范 5-20, 默认 5, 经
+          tuning.trim.keep_recent_rounds 配置)。
+    输出: 从后往前数第 n_rounds 个 assistant(tool_calls) 的下标; 工具轮总数不足 n_rounds
+          时返回 len(messages)(保护区覆盖全部, 即不裁)。
+    """
+    if not messages:
+        return 0
+    prefix = 0
+    for msg in messages:
+        if msg.get("role") == "system":
+            prefix += 1
+        else:
+            break
+    count = 0
+    for i in range(len(messages) - 1, prefix - 1, -1):
+        m = messages[i]
+        if m.get("role") == "assistant" and m.get("tool_calls"):
+            count += 1
+            if count >= n_rounds:
+                return i
+    return len(messages)
 
 
 def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:

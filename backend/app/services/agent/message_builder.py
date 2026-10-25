@@ -66,6 +66,11 @@
 #   仍全堆在 trimmed 前, 多 user 注入(delta D1/D3 / 全量 B 路径)trim 后 user/assistant/tool 交错丢失。
 #   改为 other_users+trimmed 按 original_order 合并排序保交错; trim_history 传 original_order 入参。
 #   无 other_users 时退化为原逻辑(零退化) — 小欧-2026-10-25
+# 2026-10-25 小欧 - trim_history 重构为轮次级滑动(北京老陈令, 复用优先不自造): 删自写的
+#   _split_into_turns/_trim_by_turn_sliding; 改调 compaction.find_tail_start(align_turn=True,
+#   切点对齐 user 边界整轮不拆) + remove_dangling_tool_calls(剪劈开半轮孤儿); 替代原"分桶裁剪
+#   (user 永保只裁 FC 对)"导致的悬空 user 堆积(实测 39 任务会话裁后 14 user 连续悬空); 局部 import 防循环依赖 — 小欧-2026-10-25
+# 2026-10-25 23:09 小欧 - trim_history 触发线改预算口径(北京老陈定): 绝对值触发由 MAX_CONTEXT_TOKENS×TRIM_TRIGGER_RATIO 改 budget_base×TRIM_TRIGGER_RATIO(budget_base=MAX_CONTEXT_TOKENS-_compaction_buffer-_tools_token_reserve, 与裁剪预算同源单口径), 水位默认 0.75→0.9, 预算单点计算供触发与 find_tail_start 共用删重复 _budget — 小欧-2026-10-25
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -91,12 +96,11 @@ from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER, CHARS_PER_TOKEN, DEFAULT_CONTEXT_LIMIT, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
-    TOOLS_TOKEN_RESERVE,
+    TOOLS_TOKEN_RESERVE, KEEP_RECENT_ROUNDS,
 )
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
     message_to_dict, dict_to_message,
-    fc_atomic_units,
 )
 
 # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用渲染为「【引用】」区块。
@@ -199,6 +203,8 @@ class MessageBuilder:
         self._trim_trigger_ratio: float = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))  # 小欧 2026-09-23 trim配置化
         self._compaction_buffer: int = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))  # 小欧 2026-09-23 trim配置化
         self._tools_token_reserve: int = int(get_config().get('tuning.trim.tools_token_reserve', TOOLS_TOKEN_RESERVE))  # 2026-10-25 小欧 预算预留tools定义token
+        self._keep_recent_rounds: int = max(5, min(20, int(get_config().get(  # 2026-10-25 小欧 最近N工具步硬保护(北京老陈令), 5-20 默认5
+            'tuning.trim.keep_recent_rounds', KEEP_RECENT_ROUNDS))))
         self.last_total_tokens: Optional[int] = None  # 上一轮 LLM 返回的精确 total_tokens（Provider 返回），用于增量触发 — 小欧 2026-07-22
         self._msg_id_counter: int = 0  # 自增计数器(文件B 去重单点化) — 小欧 2026-08-23
         # B组(锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
@@ -454,13 +460,16 @@ class MessageBuilder:
 
     def trim_history(self) -> None:
         """对话历史裁剪 — 增量+绝对值双条件 — 小欧 2026-07-22
+        2026-10-25 小欧 重构为轮次级滑动(北京老陈令): user 与回答同轮同进退, 杜绝悬空 user 堆积。
 
         裁剪策略:
+        - 可用内容预算 budget_base = MAX_CONTEXT_TOKENS - _compaction_buffer - _tools_token_reserve
         - 触发条件A(增量): 本轮粗估 - 上轮精确(last_total_tokens) > COMPACTION_BUFFER
-        - 触发条件B(绝对值): 历史 > MAX_CONTEXT_TOKENS × TRIM_TRIGGER_RATIO(上下文×3/4, 北京老陈 2026-08-17 定案)
+        - 触发条件B(绝对值): 历史 > budget_base × TRIM_TRIGGER_RATIO(默认0.9), 触发线与裁剪预算同源单口径 — 北京老陈 2026-10-25 定案
         - 第1轮无 last_total_tokens → 只走绝对值
-        - system+user 消息永保，剩余可用全给 _trim_to_budget
-        - 配对不完整的 FC 对由 _trim_fc_pairs 清理
+        - 触发后走 compaction 组合: find_tail_start(align_turn=True) 切点对齐 user 边界整轮不拆 + remove_dangling_tool_calls 兜底剪孤儿
+        - 最近 N 个 FC 工具步硬保护(tuning.trim.keep_recent_rounds, 5-20 默认5), 第 N+1 步起才允许被裁 — 北京老陈 2026-10-25 定案
+        - 使用方式: 超窗才裁一次, 裁后替换 conversation_history, 后续轮次在裁好的上面继续累积, 再超再裁(不是每轮都裁)
         """
         self._trimmed_this_round = False            # 11.3 瞬时标志（每轮重置）— 小欧 2026-08-20
         self._trimmed_tokens_this_round = 0         # 11.3 裁剪 token 数（每轮重置，随 _trimmed_this_round 一并提供）— 小欧 2026-08-20
@@ -471,112 +480,59 @@ class MessageBuilder:
             if msg_count <= 5:
                 return
 
-            # 增量触发: 本轮粗估 - 上轮精确 > 裁剪缓冲 → 膨胀明显 — 小欧 2026-09-23 trim配置化读 tuning.trim.compaction_buffer
+            # 可用内容预算: 触发线与裁剪预算同源单口径, 不各算各的 — 小欧 2026-10-25
+            budget_base = self.MAX_CONTEXT_TOKENS - self._compaction_buffer - self._tools_token_reserve
+
+            # 增量触发: 本轮粗估 - 上轮精确 > 裁剪缓冲 — 小欧 2026-09-23 trim配置化
             delta_trigger = (self.last_total_tokens is not None and
                              rough_current - self.last_total_tokens > self._compaction_buffer)
-            # 绝对值安全网 — 小欧 2026-09-23 trim配置化读 tuning.trim.trigger_ratio
-            abs_trigger = rough_current > self.MAX_CONTEXT_TOKENS * self._trim_trigger_ratio
+            # 绝对值安全网: 预算×水位(默认0.9) — 小欧 2026-10-25
+            abs_trigger = rough_current > budget_base * self._trim_trigger_ratio
 
             if not (delta_trigger or abs_trigger) and msg_count <= self._max_rounds * 2 + 5:
                 return
 
-            system_msgs, user_msgs, obs_list, assistant_msgs = self._classify_messages()
-            original_order = {id(m): i for i, m in enumerate(self.conversation_history)}
+            # 复用 compaction 现成函数; 局部 import 防循环依赖(compaction 依赖 message_builder) — 小欧 2026-10-25
+            from app.services.agent.compaction.split_turn import find_tail_start, find_recent_rounds_start
+            from app.services.agent.compaction.assembler import remove_dangling_tool_calls
 
-            # 条件1: 轮次太多 → 保留最近 self._max_rounds 轮FC完整对
-            if msg_count > self._max_rounds * 2 + 2:
-                all_fc = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
-                kept_fc = all_fc[-(self._max_rounds * 2):]
-                obs_list = [m for m in kept_fc if m.get("role") == "tool"]
-                assistant_msgs = [m for m in kept_fc if m.get("role") == "assistant"]
-
-            # 条件2: budget = context - 裁剪缓冲 - tools定义预留 - system/user 占用量 — 小欧 2026-09-23 trim配置化
-            #   2026-10-25 小欧 补 tools 定义预留(北京老陈令): tools schema 占输入窗口, 不扣则 messages+tools 撞满 262144→400
-            always_keep_tokens = self._estimate_tokens(system_msgs) + self._estimate_tokens(user_msgs)
-            available_budget = max(1, self.MAX_CONTEXT_TOKENS - self._compaction_buffer
-                                   - self._tools_token_reserve - always_keep_tokens)
-            trimmed = self._trim_to_budget(obs_list, assistant_msgs, available_budget)
-
-            rebuilt = self._rebuild_and_validate(system_msgs, user_msgs, trimmed, original_order)
-            if rebuilt is not None:
-                self.conversation_history = rebuilt
-                self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧 2026-08-20
-                _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧 2026-08-20
-                self._trimmed_tokens_this_round = int(_trimmed_now)
-                trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
-                logger.info(f"[trim_history] 裁剪: {msg_count}条({rough_current} tokens) "
-                            f"→ {len(rebuilt)}条(触发: {trigger_reason})")
+            hist = self.conversation_history
+            prefix = 0
+            while prefix < len(hist) and hist[prefix].get("role") == "system":
+                prefix += 1
+            # 最近 N 个 FC 工具步硬保护, 切点不得侵入 — 小欧 2026-10-25
+            budget_start = find_tail_start(hist, budget_base, align_turn=True)
+            keep_from = find_recent_rounds_start(hist, self._keep_recent_rounds)
+            tail_start = max(budget_start, keep_from)
+            if tail_start > prefix and tail_start < len(hist) \
+                    and hist[tail_start].get("role") != "user":
+                # 整轮不拆: 切点回退到最近 user 边界, 防"某 user 的回答被切断"悬空
+                j = tail_start
+                while j > prefix and hist[j].get("role") != "user":
+                    j -= 1
+                if j > prefix and hist[j].get("role") == "user":
+                    tail_start = j
+            if tail_start > prefix:
+                rebuilt = hist[:prefix] + hist[tail_start:]
+                rebuilt = remove_dangling_tool_calls(rebuilt)
+                if len(rebuilt) >= 2:
+                    self.conversation_history = rebuilt
+                    self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧 2026-08-20
+                    _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧 2026-08-20
+                    self._trimmed_tokens_this_round = int(_trimmed_now)
+                    trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
+                    logger.info(f"[trim_history] 轮次滑动裁剪: {msg_count}条({rough_current} tokens) "
+                                f"→ {len(rebuilt)}条(触发: {trigger_reason})")
             else:
-                logger.warning(f"[trim_history] 裁剪跳过: {msg_count}条({rough_current} tokens) "
-                              f"重建失败，保留原历史")
+                logger.info(f"[trim_history] 无旧轮可裁或预算不足, 保留原历史({msg_count}条/{rough_current} tokens)")
         except Exception:
             logger.warning(f"[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
 
-    def _classify_messages(self):
-        """将消息分类为 system / user / observation(tool) / assistant 四组 — 2026-06-25 小欧 D-1修复"""
-        system_msgs = []
-        user_msgs = []
-        obs_list = []
-        assistant_msgs = []
-        for msg in self.conversation_history:
-            role = msg.get("role", "")
-            if role == "assistant":
-                assistant_msgs.append(msg)
-            elif self._is_observation_role(msg):
-                obs_list.append(msg)
-            elif role == "user":
-                user_msgs.append(msg)
-            else:
-                system_msgs.append(msg)
-        return system_msgs, user_msgs, obs_list, assistant_msgs
-
-    def _trim_to_budget(self, obs_list, assistant_msgs, budget_tokens):
-        """FC-only: 以 FC 原子单元为单位, 从新到旧按预算保留 — 小欧 2026-10-20 重写
-
-        单元划分复用 fc_message_types.fc_atomic_units(唯一真源): assistant(tool_calls) 与其 tool 响应
-        同组, 其余消息各自成组。单元整体保留或整体丢弃, 组内按原始顺序升序展开, 保证 assistant 恒在
-        其全部 tool 之前(FC 协议顺序要求)。原逐条反向收集 + 扁平 reverse 在 N≥2 并行 tool_calls 时
-        会把首个 tool 甩到 assistant 之前, 触发上游 400。
-        超预算单元整体跳过并继续尝试更早单元(单元是 FC 原子: 整组留/整组丢, 不留半对) —
-        单轮超大不会吃掉全部预算而丢掉所有历史 — 小欧 2026-10-20 修 break→continue。
-        """
-        original_order = {id(msg): i for i, msg in enumerate(self.conversation_history)}
-        all_msgs = sorted(obs_list + assistant_msgs, key=lambda m: original_order.get(id(m), 0))
-
-        kept_units: List[List[Dict]] = []
-        used_tokens = 0
-        for unit_idx in reversed(fc_atomic_units(all_msgs)):
-            unit = [all_msgs[i] for i in sorted(unit_idx)]
-            need_tokens = self._estimate_tokens(unit)
-            if used_tokens + need_tokens > budget_tokens:
-                continue
-            kept_units.append(unit)
-            used_tokens += need_tokens
-        kept_units.reverse()
-        return [msg for unit in kept_units for msg in unit]
-
-    def _rebuild_and_validate(self, system_msgs, user_msgs, trimmed_msgs, original_order=None):
-        """重组消息列表并验证FC配对完整性 — 2026-06-25 小欧
-        2026-10-25 小欧 修复(北京老陈令): 末条 user(本轮 task 提问)必须在尾部, 否则 LLM
-          看不到当前问题; 原实现 system+user+trimmed 把全部 user 推到 trimmed 前面,
-          末条 user 被 FC 对盖住, link 长链 trim 后 LLM 不响应新任务(实测复现)。
-        2026-10-25 小欧 交错序修复(北京老陈令): other_users 与 trimmed 按 original_order
-          合并排序, 保 user/assistant/tool 交错; 原分桶重组把前序 user 全堆 FC 对前, 多 user
-          注入(delta/全量路径)trim 后交错丢失。无 other_users 或无 original_order 时退化为原逻辑。"""
-        last_user = user_msgs[-1:] if user_msgs else []
-        other_users = user_msgs[:-1] if len(user_msgs) > 1 else []
-        if original_order is not None and other_users:
-            interleaved = sorted(other_users + trimmed_msgs,
-                                 key=lambda m: original_order.get(id(m), 0))
-        else:
-            interleaved = other_users + trimmed_msgs
-        rebuilt = system_msgs + interleaved + last_user
-        rebuilt = self._trim_fc_pairs(rebuilt)
-        if len(rebuilt) >= 2:
-            return rebuilt
-        if len(self.conversation_history) > 10:
-            return self.conversation_history[:2] + self.conversation_history[-8:]
-        return None
+    # 2026-10-25 小欧 删除三个旧裁剪方法(北京老陈令, 禁止backward 死代码):
+    #   _classify_messages / _trim_to_budget / _rebuild_and_validate 是"分桶 + user 永保 +
+    #   只裁 FC 对"的错误设计(实测致悬空 user 堆积: 39 任务会话裁后 14 user 连续有问无答)。
+    #   trim_history 已改调 compaction.find_tail_start(align_turn=True) +
+    #   remove_dangling_tool_calls(整轮滑动), 这三个方法生产路径零调用, 删除。— 小欧-2026-10-25
 
     # =========================================================================
     # 第四组:observation 辅助
@@ -597,52 +553,10 @@ class MessageBuilder:
             return text
         return f"[Observation] {text}"
 
-    @staticmethod
-    def _is_observation_role(msg: Dict) -> bool:
-        """FC-only: observation只有role=tool一种形式 — 重构 2026-06-11 小沈"""
-        return msg.get("role") == "tool"
-
-    @staticmethod
-    def _trim_fc_pairs(messages: List[Dict]) -> List[Dict]:
-        """FC协议配对裁剪:确保role:tool与role:assistant(tool_calls)严格配对
-
-        OpenAI要求:assistant消息中每个tool_call.id都必须有对应role:tool(tool_call_id),
-        role:tool的tool_call_id也必须有对应assistant(tool_calls)。
-        任一端缺失则双方都移除。顺序非法(assistant 声明出现在 tool 响应之后)的对同样双侧移除,
-        防上游 strict 校验报 "tool result's tool id ... not found"(2026-10-20 小欧 增顺序判定)。
-        """
-        assistant_pos: Dict[str, int] = {}
-        tool_pos: Dict[str, int] = {}
-        for i, msg in enumerate(messages):
-            if msg.get("role") == "assistant":
-                for tc in msg.get("tool_calls") or []:
-                    if tc.get("id"):
-                        assistant_pos.setdefault(tc["id"], i)
-            elif msg.get("role") == "tool":
-                if msg.get("tool_call_id"):
-                    tool_pos.setdefault(msg["tool_call_id"], i)
-        # 顺序合法性: assistant 的 tool_call 声明必须位于其 tool 响应之前 — 小欧 2026-10-20
-        paired_ids = {tid for tid in (assistant_pos.keys() & tool_pos.keys())
-                      if assistant_pos[tid] < tool_pos[tid]}
-        result = []
-        for msg in messages:
-            if msg.get("role") == "assistant":
-                tcs = msg.get("tool_calls") or []
-                kept_tcs = [tc for tc in tcs if tc.get("id") in paired_ids]
-                if not kept_tcs and tcs:
-                    continue
-                new_msg = dict(msg)
-                new_msg["tool_calls"] = kept_tcs
-                result.append(new_msg)
-            elif msg.get("role") == "tool":
-                # 丢弃 tool_call_id 为空/无配对 assistant 的孤儿 tool 消息(否则发给 LLM 触发 400) — 小沈 2026-08-29
-                if msg.get("tool_call_id") in paired_ids:
-                    result.append(msg)
-                else:
-                    logger.debug(f"[_trim_fc_pairs] 丢弃孤儿tool消息: tool_call_id={msg.get('tool_call_id')!r}")
-            else:
-                result.append(msg)
-        return result
+    # 2026-10-25 小欧 删除 _is_observation_role / _trim_fc_pairs(北京老陈令):
+    #   _is_observation_role 唯一调用方 _classify_messages 已删(分桶错误设计);
+    #   _trim_fc_pairs 功能由 compaction.remove_dangling_tool_calls 承接(trim_history 改调它),
+    #   生产路径零调用, 删除。— 小欧-2026-10-25
 
     @staticmethod
     def _total_chars(messages: List[Dict]) -> int:
