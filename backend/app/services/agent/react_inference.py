@@ -48,6 +48,7 @@ _MAX_CONSECUTIVE_SAME_TOOL_CALLS = 5   # 硬终止阈值: count>=5(第5次相同
 #   引导自相矛盾; 纳入可恢复后由 _deny_counts 累计>=3 才 FAILED(与 user_rejected 同语义)。
 # 2026-08-24 - 小欧 - 后端卡死修复: 每轮 token 累计落库(update_task_accumulation/update_session_accumulation)与任务启动 token 基线读取(query_session/query_chain_accumulation)
 #   经 db.atxn 进子线程 offload 出事件循环, loop 不再被同步 sqlite3 I/O + time.sleep 锁重试独占, 根治 /health 超时/console 冻结; storage.* 与连接管理零改动复用
+# 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): error content 加"出错:"前缀 — 小欧-2026-10-25
 _RECOVERABLE_ERRORS = {"rejected", "blocked", "timeout"}
 
 
@@ -56,7 +57,7 @@ def handle_react_error(agent, error, step):
     _last_error由step_emitter.emit统一出口记录, 守卫读此填充final"""
     error_type = SystemErrorClassifier.classify_error(error).name.lower()
     logger.error(f"[ErrorHandler] 错误类型={error_type}: {error}")
-    return MetaStep(step=step, type="error", content=str(error), error_type=error_type, severity="warn")
+    return MetaStep(step=step, type="error", content=f"出错:{error}", error_type=error_type, severity="warn")
 
 
 def _is_recoverable_error(error) -> bool:

@@ -82,6 +82,7 @@ from app.services.chat import storage
 from app.services.task.task_state import get_stream_buffer
 # 2026-09-08 小欧 循环依赖回归修复: cancel_terminal_text 移除顶层 import(改D路径局部import),
 #   否则 task包冷启动(import task_runtime/task_registry)踩 load-time 循环 — 小欧-2026-09-08
+# 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): retrying content 去冗余词(请求LLM重试) — 小欧-2026-10-25
 
 def _finalize_cycle(agent):
     """循环后收尾: 状态回调+任务追踪 — 小健 2026-06-17 从finally提取"""
@@ -291,7 +292,7 @@ async def run_react_cycle(
                     await _publish(agent._step_emitter.emit(MetaStep(
                         type="retrying",
                         step=agent.llm_call_count,
-                        content=f"LLM请求异常，准备重试: {_step_err}",
+                        content=f"请求LLM重试: {_step_err}",
                         severity="info",
                     )).to_dict())
                     # 2026-08-13 - 小欧 - 三堂会审修复#36: 此处不再 set RETRYING(计数已在上方+1),
