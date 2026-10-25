@@ -30,6 +30,9 @@
 //   ②配置验证Tag emoji改WarningOutlined(7.9.4禁emoji); ③#fff/fontSize14/gap12→Colors.BG.PRIMARY/FontSize.PRIMARY/Spacing.LG令牌零视觉差 — 小强-2026-09-21
 // 编辑历史: 2026-09-21 小强 - DRY收口: handleModelChange改经configApi.switchCurrentModel共用切全局模型唯一写链(去本地装配ai_model_ref) — 小强-2026-09-21
 // 编辑历史: 2026-09-24 19:15:07 小欧 - DRY收口: handleModelChange改经AppContext.switchAndRefreshModel(API+刷新收口), 删configApi直调与手动refreshAfterModelChange — 小欧-2026-09-24
+// 编辑历史: 2026-10-25 小欧 - 修复左侧菜单tooltip双重显示: 移除所有menu item的title属性,
+//   展开时原生title触发tooltip + 折叠时antd自带tooltip = 双重显示;
+//   移除后展开无tooltip, 折叠由antd自动从label提取文本显示 — 小欧-2026-10-25
 // 编辑历史: 2026-10-21 小杨 - 文件管理菜单解禁(/files 去掉 disabled 与"即将上线" Tooltip) + 双 tooltip 收敛(只留原生 title) — 小杨-2026-10-21
 /**
  * Layout组件 - 应用主布局（响应式版）
@@ -406,9 +409,6 @@ const AppLayout: React.FC<LayoutProps> = ({
     {
       key: '/',
       icon: <MessageOutlined />,
-      // 2026-09-15 小欧 - 折叠态Tooltip文字修复: label为JSX(Badge包裹)AntD取不到字符串→黑框无字,
-      //   显式title兜底(折叠自动tooltip用title文本) — 小欧-2026-09-15
-      title: '对话任务',
       label: (
         <Badge size="small" offset={[6, -4]}>
           <span>对话任务</span>
@@ -418,7 +418,6 @@ const AppLayout: React.FC<LayoutProps> = ({
     {
       key: '/files',
       icon: <FolderOutlined />,
-      title: '文件管理',
       // 2026-10-21 小杨 - /files 解禁（页面已落地）
       //   原为 disabled + "即将上线" Tooltip（与知识库同款），故点菜单进不去 —— 现去掉 disabled 与 Tooltip。
       label: <span>文件管理</span>,
@@ -426,7 +425,6 @@ const AppLayout: React.FC<LayoutProps> = ({
     {
       key: '/knowledge',
       icon: <BookOutlined />,
-      title: '知识库',
       label: <span style={{ opacity: 0.6 }}>知识库</span>,
       disabled: true,
     },
@@ -434,7 +432,6 @@ const AppLayout: React.FC<LayoutProps> = ({
     {
       key: '/history',
       icon: <HistoryOutlined />,
-      title: '历史会话',
       label: (
         <Badge
           count={sessionCount}
@@ -449,15 +446,13 @@ const AppLayout: React.FC<LayoutProps> = ({
     {
       key: '/shortcuts',
       icon: <ThunderboltOutlined />,
-      title: '快捷指令',
       label: '快捷指令',
     },
     { type: 'divider' },
     {
       key: '/settings2',
       icon: <SettingOutlined />,
-      title: '设置2版',
-      label: '设置2版',
+      label: '设置页面',
     },
   ];
 
