@@ -64,6 +64,8 @@
 # 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
 #   _emit_summarizing 文案不变, 调用点5处统一迁移 — 小欧-2026-10-25
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): summarizing notice 去冗余词(历史/生成重复), 失败文案缩到10字 — 小欧-2026-10-25
+# 2026-10-25 小欧 - notice 调用点 log-print 补齐(三堂会审): 全量摘要成功路径 logger.debug→info(可观测);
+#   失败(else)路径补 logger.info(与增量路径 373 行同模式, 互补不冗余) — 小欧-2026-10-25
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -279,10 +281,11 @@ async def _compact_injected_history(agent) -> str:
         logger.warning(f"[start_step] 锚定摘要失败, 返回空(调用方零退化装配原历史): {type(e).__name__}: {e!r}")
         summary_text = ""
     if summary_text:
-        logger.debug(f"[start_step] 锚定摘要生成完成 (len={len(summary_text)})")
+        logger.info(f"[start_step] 锚定摘要生成完成 (len={len(summary_text)})")
         await agent._step_emitter.emit_notice("summarizing", "done",
                            f"摘要完成({len(summary_text)}字)")
     else:
+        logger.info("[start_step] 锚定摘要未产出(非异常), 回退完整历史")
         await agent._step_emitter.emit_notice("summarizing", "failed",
                            "摘要失败，回退完整历史")
     agent._needs_compact = False

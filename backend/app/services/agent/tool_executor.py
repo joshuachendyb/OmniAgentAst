@@ -27,6 +27,8 @@ tool_executor — 工具执行逻辑
 # 2026-10-25 小欧 - 通知信封收敛(三堂会审 DRY): 删除模块级 _emit_notice 重复实现, 改调 agent._step_emitter.emit_notice();
 #   _emit_installing 文案不变, 调用点3处统一迁移 — 小欧-2026-10-25
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): installing notice 去冗余词, 工具名移括号 — 小欧-2026-10-25
+# 2026-10-25 小欧 - notice 调用点 log-print 补齐(三堂会审): 装包事前/成功补 logger.info, 失败补 logger.warning;
+#   业务层日志提供模块级上下文(工具名+缺失包列表), 与 emit_notice 基础设施级 log_and_print 互补不冗余 — 小欧-2026-10-25
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -160,13 +162,16 @@ async def _missing_dep_guard(agent, tool_name: str) -> Optional[Dict[str, Any]]:
     _last_heal_attempt[tool_name] = now
     _pending = registry_pending_deps(tool_name)
     if _pending:
+        logger.info(f"[tool_executor] 开始自愈装包: {tool_name} 缺失 {_pending}")
         await _emit_installing(agent, tool_name, _pending)
     # pip 是同步阻塞 IO, 必须离开事件循环线程
     still = await asyncio.to_thread(tool_registry.heal_missing_deps, tool_name)
     if tool_registry.apply_heal_result(tool_name, still):
+        logger.info(f"[tool_executor] {tool_name} 依赖安装完成")
         await agent._step_emitter.emit_notice("installing", "done",
                            f"{tool_name} 依赖安装完成")
         return None
+    logger.warning(f"[tool_executor] {tool_name} 依赖安装失败, 缺失: {still}")
     await agent._step_emitter.emit_notice("installing", "failed",
                        f"{tool_name} 依赖安装失败")
     return build_missing_dep_error(tool_name, still)
