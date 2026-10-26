@@ -207,6 +207,14 @@
 # 2026-10-10 - 小欧 - [20]  取链内序号注入 _start_meta.context_link_index
 #   (第几个 link 任务, telemetry 只读不算); 查询失败降级为 0 不拖死任务(序号仅供前缀文案)。
 # 2026-10-14 小欧 - linked 增量摘要: db_ops 增 load_chain_summary 闭包 + load_previous 透传下界(缺省 None=老行为) — 小欧-2026-10-14
+# 2026-10-26 - 北京老陈 - 会话工作目录注入块定案(单层标签+文案重写):
+#   _append_ws_suffix 移除外层 <system-reminder>, 只留 <会话工作目录> 单层——本块语义是
+#   "目录告知"而非系统级指令, 双层标签叠加徒增 LLM 解析噪音; 文案重写为定案版
+#   "本次任务新增会话工作目录：{路径列表}\n要求你临时/中间文件优先写入会话工作目录.";
+#   修 f 前缀遗漏(原该行缺 f, "{lines}" 为字面量, 路径列表未注入, 测试断言落空);
+#   清 </会话工作目录> 前多余空行。测试同步(本仓库 tests/ 被 gitignore 不入库):
+#   test_injection_uses_both_tags → test_injection_uses_session_workspace_tag,
+#   断言改为不含 <system-reminder>; 23 passed。
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -380,9 +388,7 @@ async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot
 def _append_ws_suffix(user_input: str) -> str:
     """拼 user 尾注入块（非空才拼）。独立成函数，编排器内联即 SLAP 违规。
 
-    两层标签都用（定案）：
-      外层 <system-reminder> —— 这是系统级指令，语义上就该由 system-reminder 框住；
-      内层 <会话工作目录>   —— 块名保留, 与"项目根目录"构成全系统两个目录术语。
+    单层标签：<会话工作目录> —— 块名保留, 与"项目根目录"构成全系统两个目录术语。
 
     2026-10-20 小欧 术语与口径统一(): 目录术语全系统只留两个 — 项目根目录
       (整体工作根)与会话工作目录(本目录); 白名单是并集, 本目录只是默认落点。
@@ -394,12 +400,10 @@ def _append_ws_suffix(user_input: str) -> str:
         return user_input                    # 空/无快照不追加，不污染 prompt
     lines = "\n".join(f"  - {p}" for p in sorted(snap.all_paths))
     return (
-        f"{user_input}\n\n<system-reminder>\n"
-        "<会话工作目录>\n"
-        "本次任务的临时/中间文件默认优先写入以下会话工作目录：\n"
-        "用户在任务中明确指定的路径，按用户指定的路径执行；路径是否可写由安全矩阵统一裁决，系统盘与禁区一律拦截。\n"
-        f"{lines}\n</会话工作目录>\n"
-        "</system-reminder>"
+        f"{user_input}\n\n<会话工作目录>\n"
+        f"本次任务新增会话工作目录：\n{lines}\n"
+        "要求你临时/中间文件优先写入会话工作目录.\n"
+        "</会话工作目录>\n"
     )
 
 
