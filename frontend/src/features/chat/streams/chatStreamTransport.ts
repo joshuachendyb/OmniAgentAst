@@ -57,6 +57,13 @@
 //   无确认流程) 到达时, 此刻开着的无关 HITL 弹窗一并关掉。确认终态现由后端必带 confirm_id — 小欧-2026-10-11
 // 编辑历史: 2026-10-21 小杨 - 消息体支持随消息上行 refs（首连与插话两条 POST 路径一致） — 小杨-2026-10-21
 // 编辑历史: 2026-10-21 小杨 - 上行前同时剥离 pending/invalid 前端内存态 — 小杨-2026-10-21
+// 编辑历史: 2026-10-26 小欧 - 持续连接策略: 有taskId永不failed(全局"后端在跑前端不放弃")
+//   ① 超帧跳过 → 跳过帧+继续读+报事件"单帧超长已跳过，流继续"
+//   ② 不可重试+有taskId → 降级observeByPolling+报事件"连接中断，转轮询待恢复"
+//   ③ 轮询耗尽 → recovering不markDisconnected+报事件"轮询超时，任务仍在执行", 窗口30→60
+//   ④ 字符串错误 → 报事件"帧解析异常，流继续"不终止流
+//   ⑤ 无taskId请求失败 → 按会话回查listTasks找活跃任务, 找到则续传, 否则"请求失败，请重试"
+//   文案规则: ≤14汉字, 精准说明问题+待重连/流继续; 所有报事件用transportError包装渲染到taskinfo
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -105,7 +112,7 @@ const MAX_ATTEMPTS = 3; // 重连次数上限（useSSE reconnectAttemptsRef 口�
 const MAX_SSE_FRAME_BYTES = 8 * 1024 * 1024;
 const RECONNECT = { maxAttempts: 3, baseDelay: 1000, maxDelay: 10_000 }; // useSSE.ts:543-547 原值
 const TASK_POLL_INTERVAL = 5000; // ┐ 迁移自 useSSE.ts:179-181（pollSessionTaskStatus 配套常量）
-const TASK_POLL_MAX = 30; // │ 5s×30≈2.5 分钟
+const TASK_POLL_MAX = 60; // │ 60×5s=5 分钟（原30，后端任务可能仍在执行，延长观察窗口）
 
 /** 2026-09-29 小欧：重连退避 sleep（真实 useSSE.ts:1192-1193 setTimeout 等价，Promise 化后便于 await 串接） */
 function sleep(ms: number): Promise<void> {
@@ -401,11 +408,19 @@ export async function resumeStreamRequest(
         if (ctl.signal.aborted) return 'aborted';
         const t = classifyError(e);
         if (!getErrorConfig(t).retryable) {
-          // 不可重试类直接失败，不空转 3 次（useSSE.ts:292-297 口径）
+          // 2026-10-26 小欧 - 不可重试+有taskId → 降级轮询+报事件(原: 直接failed不重连)
+          //   有taskId=后端任务存在, 不应因客户端分类放弃; 无taskId=硬限制无法恢复
+          if (s.serverTaskId) {
+            console.warn(
+              `[SSE] 不可重试错误(${t})但任务仍在执行, 降级轮询 task=${s.serverTaskId}`
+            );
+            emitEvent(s, 'error', transportError('server', '连接中断，转轮询待恢复'));
+            return await observeByPolling(s);
+          }
           commit(s, (d) => {
             d.reconnectStatus = 'failed';
             d.status = 'failed';
-            markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+            markDisconnected(d);
           });
           emitEvent(s, 'error', transportError(t, String(e)));
           return 'failed';
@@ -526,25 +541,20 @@ async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
       /* 单次轮询失败不中断，下一轮重试 */
     }
   }
+  // 2026-10-26 小欧 - 轮询耗尽改 status='recovering' 不 markDisconnected+报事件(原: markDisconnected+failed)
+  //   有taskId=后端任务存在, 轮询耗尽不代表任务结束; 不markDisconnected=用户可手动重连
   commit(s, (d) => {
-    markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+    d.status = 'recovering';
   });
-  // 2026-09-29 23:22:19 小欧（防退化修复）：轮询耗尽事件两处退化，一并复原——
-  //   ① 文案：原 useSSE.ts.bak:227 为「连接已断开且任务仍在执行，请手动确认任务状态」，
-  //      迁移稿写成「轮询观察超时：任务终态未知」，把"请手动确认"的用户指引整段丢了
-  //      （铁规 1.2：功能只能增强/正确，严禁退化）。
-  //   ② 结构：原为 SSEError 全结构（type/error_type/error_message/timestamp），
-  //      迁移稿 emitEvent 传裸字符串，消费侧读 error_type/error_message 恒 undefined，
-  //      与 5.1「error 事件恒为 SSEError 全结构」契约冲突。error_type 沿用原 'server'。
   console.warn(
-    `[SSE] 轮询 ${TASK_POLL_MAX} 次任务仍在执行, 提示用户手动确认 task=${taskId}`
+    `[SSE] 轮询 ${TASK_POLL_MAX} 次任务仍在执行, 保持可恢复状态 task=${taskId}`
   );
   emitEvent(
     s,
     'error',
-    transportError('server', '连接已断开且任务仍在执行，请手动确认任务状态')
+    transportError('server', '轮询超时，任务仍在执行')
   );
-  return 'failed';
+  return 'recovering';
 }
 
 /**
@@ -706,29 +716,16 @@ async function pump(
         }
         buf += decoder.decode(value, { stream: true });
         // 2026-09-30 小欧 - 残包长度护栏（内存无界增长的唯一出口在此）。
-        //   残包只按 '\n' 切分、末段留作下次拼接，全程无上限——任何不含换行的字节流
-        //   （代理改写去换行、超大 observation）都会无界追加直到标签页 OOM。
-        //   超限即判帧损坏：报错 + 断本轮读循环 + 落 failed（宁可不显示该帧，不静默丢弃）。
+        // 2026-10-26 小欧 - 超限改为跳过该帧+继续读循环+报事件(原: 判帧损坏杀连接+failed)
+        //   根因: grep matched 含 5.3MB 单行 JSON 致 observation 帧超 8MB
+        //   找最后 \n\n 保留其后完整帧, 无边界则清 buf; 报事件但不置 failed
         if (buf.length > MAX_SSE_FRAME_BYTES) {
-          console.error(
-            `[SSE] 单帧超长（${buf.length} > ${MAX_SSE_FRAME_BYTES} 字节），判定帧损坏并终止本轮流`
+          console.warn(
+            `[SSE] 单帧超长（${buf.length} > ${MAX_SSE_FRAME_BYTES} 字节），跳过该帧并继续`
           );
-          try {
-            await reader.cancel();
-          } catch {
-            /* 已结束 */
-          }
-          commit(s, (d) => {
-            markDisconnected(d);
-            d.status = 'failed';
-            d.reconnectStatus = 'idle';
-          });
-          emitEvent(
-            s,
-            'error',
-            transportError('server', 'SSE 单帧超长（帧损坏），已终止本轮连接')
-          );
-          return 'failed';
+          emitEvent(s, 'error', transportError('server', '单帧超长已跳过，流继续'));
+          const lastSep = buf.lastIndexOf('\n\n');
+          buf = lastSep >= 0 ? buf.slice(lastSep + 2) : '';
         }
         const lines = buf.split('\n');
         buf = lines.pop() ?? '';
@@ -1026,12 +1023,10 @@ function errorHandlers(
   return {
     onError: (e: SSEError | string) => {
       if (typeof e === 'string') {
-        setBranch('failed');
-        commit(s, (d) => {
-          d.status = 'failed';
-          markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
-        });
-        emitEvent(s, 'error', e);
+        // 2026-10-26 小欧 - 字符串错误不终止流+报事件(原: setBranch+failed+markDisconnected)
+        //   字符串错误通常是 SSE 解析异常(帧格式问题), 不应杀掉读循环
+        console.warn(`[SSE] 字符串错误(非终态,流继续): ${e}`);
+        emitEvent(s, 'error', transportError('server', '帧解析异常，流继续'));
         return;
       }
       const recovery = RECOVERY_ERROR_BRANCH[e.error_type];
@@ -1142,7 +1137,24 @@ export async function handleTransportError(
   });
   // 重试耗尽不自动取消（2026-07-12 约定）：任务可能仍在执行，轮询会话任务列表观察终态
   if (s.serverTaskId) return await observeByPolling(s);
-  emitEvent(s, 'error', transportError(t, String(e)));
+  // 2026-10-26 小欧 - 无taskId时按会话回查活跃任务(原: 直接failed)
+  //   POST失败但服务端可能已创建任务; 回查listTasks找到则续传, 否则friendly提示
+  try {
+    const resp = await sessionTaskApi.listTasks(s.sessionId);
+    const active = resp.tasks.filter((t) => !isTerminalStatus(t.status));
+    const last = active[active.length - 1];
+    if (last) {
+      commit(s, (d) => {
+        d.serverTaskId = last.task_id;
+      });
+      console.warn(`[SSE] POST失败但回查找到活跃任务 task=${last.task_id}, 转轮询`);
+      emitEvent(s, 'error', transportError('server', '连接中断，转轮询待恢复'));
+      return await observeByPolling(s);
+    }
+  } catch {
+    /* 回查失败, 走friendly提示 */
+  }
+  emitEvent(s, 'error', transportError(t, '请求失败，请重试'));
   return 'failed';
 }
 

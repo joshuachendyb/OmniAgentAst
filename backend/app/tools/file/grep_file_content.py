@@ -27,6 +27,9 @@
 # 2026-10-12 小欧 - tool_zh改短名词: 内容搜索→搜内容
 # 2026-10-16 - 小欧 - tool去检查化: 删 validate_path 合法性检查(归 路径安全层); 文件/目录分支是执行路由, 保留。
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-26 - 小欧 - grep matched 字段截断: 正则匹配原文超 GREP_OUTLIMIT_MATCHED_CHARS=500 尾部截断
+#    修复 observation 帧因 matched 含 5.3MB 单行 JSON(.pytest_cache/conv_hist) 导致 SSE 单帧超 8MB 前端判帧损坏断连
+#    同时 GREP_OUTLIMIT_MATCH_CONTENT_CHARS 2000→1000(content/before/after 同宽收窄, 与 display 行宽 OBS_GREP_MAX_ROW_CHARS=150 更协调)
 """
 F7: grep_file_content — 搜索文件内容
 
@@ -49,6 +52,7 @@ from app.tools.tool_response import build_success, build_error, build_warning
 from app.tools.tool_constants import (
     TOOL_TIMEOUTS, ERR_FILE_CONTENT_SEARCH_FAILED, BINARY_EXTENSIONS, SKIP_DIRS,
     GREP_OUTLIMIT_MATCHES_MAX, GREP_OUTLIMIT_MATCH_CONTENT_CHARS,
+    GREP_OUTLIMIT_MATCHED_CHARS,
 )
 
 
@@ -352,6 +356,15 @@ async def grep(
                         _new_ctx.append(_c)
                     _nm[_ctx_key] = _new_ctx
             _matched = _nm.get("matched", [])
+            if isinstance(_matched, list):
+                _new_matched = []
+                for _mt in _matched:
+                    if isinstance(_mt, str) and len(_mt) > GREP_OUTLIMIT_MATCHED_CHARS:
+                        _mt = _mt[:GREP_OUTLIMIT_MATCHED_CHARS] + "...(截断)"
+                        _tool_trunc = _trunc_content = True
+                    _new_matched.append(_mt)
+                _nm["matched"] = _new_matched
+                _matched = _new_matched
             _real_total += len(_matched) if isinstance(_matched, list) else 1
             _out.append(_nm)
         _real_files = len({m.get("file", "") for m in _out if m.get("file")})

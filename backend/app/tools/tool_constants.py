@@ -271,27 +271,28 @@ CLIPBOARD_INPUT_MAX_CHARS: int = 200 * 1024          # 使用对象: clipboard_c
 
 # —— 输出截断 {TOOL}_OUTLIMIT_* ——
 # shell
-SHELL_OUTLIMIT_STDOUT_MAX_CHARS: int = 50000          # 使用对象: execute_shell_command.py(shell stdout 输出字符上限, 超则截断)
+SHELL_OUTLIMIT_STDOUT_MAX_CHARS: int = 20000          # 使用对象: execute_shell_command.py(shell stdout 输出字符上限, 超则截断; 原50000, 与OBS_SHELL_MAX_ROW_CHARS=1000×20行协调)
 SHELL_OUTLIMIT_STDERR_MAX_CHARS: int = 20000          # 使用对象: execute_shell_command.py(shell stderr 输出字符上限, 超则截断)
 # xlsx
 XLSX_OUTLIMIT_ROWS_MAX: int = 1000                    # 使用对象: read_xlsx.py(读取 Excel 行数上限, 超此截断)
 XLSX_OUTLIMIT_CELL_CHARS: int = 500                   # 使用对象: read_xlsx.py(单格字符串字符上限, 超此截断)
 # grep
 GREP_OUTLIMIT_MATCHES_MAX: int = 2000                 # 使用对象: grep_file_content.py(匹配条目数上限, 超此截断)
-GREP_OUTLIMIT_MATCH_CONTENT_CHARS: int = 2000         # 使用对象: grep_file_content.py(单条匹配 content/before/after 字符串字符上限, 超此截断)
+GREP_OUTLIMIT_MATCH_CONTENT_CHARS: int = 1000         # 使用对象: grep_file_content.py(单条匹配 content/before/after 字符串字符上限, 超此截断)
+GREP_OUTLIMIT_MATCHED_CHARS: int = 500                # 使用对象: grep_file_content.py(单条匹配 matched 字符串字符上限, 超此截断; matched 只是关键词, 500 足够)
 # network
 FETCHPAGE_OUTLIMIT_BODY_BYTES: int = 2 * 1024 * 1024 # 使用对象: fetch_webpage.py(流式读取正文上限, 超则截断)
-HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES: int = 2 * 1024 * 1024   # 使用对象: http_request.py(JSON body 预览截断)
-HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS: int = 200 * 1024        # 使用对象: http_request.py(data内联预览字符上限)
+HTTPGET_OUTLIMIT_JSON_PREVIEW_BYTES: int = 500 * 1024   # 使用对象: http_request.py(JSON body 预览截断; 原2MB, 500KB够看结构)
+HTTPGET_OUTLIMIT_DATA_PREVIEW_CHARS: int = 50 * 1024        # 使用对象: http_request.py(data内联预览字符上限; 原200KB, 50KB够看)
 # document/text
-READ_OUTLIMIT_CHARS: int = 500 * 1024             # 使用对象: read_text_file.py(文本内容字符上限, 超则截断)
+READ_OUTLIMIT_CHARS: int = 200 * 1024             # 使用对象: read_text_file.py(文本内容字符上限, 超则截断; 原500KB, 200KB够读)
 READ_INPUT_MAX_BYTES: int = 5 * 1024 * 1024      # 使用对象: read_text_file.py(读进内存的字节上限, 超则按字节截断)
 # 2026-10-21 小欧 - write 工具的**旧内容预读**上限：原实现为算 diff 整读旧文件
 #   （几百 MB 文件直接 OOM）。旧内容只用于生成 diff（is_unchanged 走哈希缓存，不需要它），
 #   故超过此上限就不读旧内容 → 不出 diff（写入本身是流式的，不受影响）。
 WRITE_INPUT_MAX_BYTES: int = 10 * 1024 * 1024    # 使用对象: write_text_file.py(预读旧内容做 diff 的字节上限, 超则跳过 diff)
-READ_DOCX_OUTLIMIT_CHARS: int = 500 * 1024            # 使用对象: read_docx.py(DOCX文本字符上限, 超则截断)
-READ_PPTX_OUTLIMIT_CHARS: int = 500 * 1024            # 使用对象: read_pptx.py(PPTX全部幻灯片文本字符上限, 超则截断)
+READ_DOCX_OUTLIMIT_CHARS: int = 200 * 1024            # 使用对象: read_docx.py(DOCX文本字符上限, 超则截断; 原500KB, 200KB够读)
+READ_PPTX_OUTLIMIT_CHARS: int = 200 * 1024            # 使用对象: read_pptx.py(PPTX全部幻灯片文本字符上限, 超则截断; 原500KB, 200KB够读)
 # document
 READ_PDF_OUTLIMIT_DEFAULT_PAGES: int = 200            # 使用对象: read_pdf.py(未传page时的默认读取页数, 超则截断)
 # sql
