@@ -7,6 +7,7 @@
 # 2026-07-25 - 小欧 - description去冗余: url/body/method/headers/extract_format 参数名自明前缀精简, body去内部细节
 # 2026-07-25 - 小欧 - DownloadFileInput.dest 补充路径限制说明(不支持绝对路径/../)
 # 2026-10-18 - 小欧 - DownloadFileInput.dest 描述订正: 支持绝对路径(原样使用), 相对路径相对下载目录, 两者均禁止 ../
+# 2026-10-26 - 小沈 - FetchWebpageInput新增save_to字段; extract_format描述加MD守护说明; timeout默认30→60。
 """
 Network Schema - 网络工具参数模型
 
@@ -77,16 +78,19 @@ class FetchWebpageInput(BaseModel):
         default=None, description="提取指令。未指定时返回完整页面内容,指定时精准提取"
     )
     extract_format: Literal["markdown", "html", "text"] = Field(
-        default="markdown", description="提取格式:推荐用markdown(保留结构)/html(原始)/text(纯文本)。仅对网页文本生效,URL指向图片/PDF时自动返回Base64编码"
+        default="markdown", description="提取格式:推荐用markdown(保留结构/表格/代码块,守护性最强)/html(原始)/text(纯文本)。仅对网页文本生效,URL指向图片/PDF时自动返回Base64编码"
     )
     js_render: bool = Field(
         default=False, description="是否启用JS渲染(处理动态页面)"
     )
     timeout: int = Field(
-        default=30, ge=1, le=120, description="超时时间(秒)"
+        default=60, ge=1, le=120, description="超时时间(秒)"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理地址,如 http://127.0.0.1:8080"
+    )
+    save_to: Optional[str] = Field(
+        default=None, description="保存路径: 指定时提取结果自动写入该路径文件; 不填则只返回内容不落盘。支持绝对路径和相对路径(相对于下载目录)"
     )
 
 

@@ -14,14 +14,16 @@ Author: 小沈 - 2026-05-29
 # 2026-08-12 - 小欧 - 新增公用函数 is_ssrf_blocked_error: 识别httpx.InvalidURL(SSRF重定向拦截)并返回统一结构化错误信息,
 #   供 httpget/fetch_webpage/download 三个网络工具复用(原各自手写isinstance分支, DRY统一)
 # 2026-08-12 - 小欧 - _validate_redirect 新增 InvalidURL 抛出的文案标识前缀 "重定向目标被拦截", 供 is_ssrf_blocked_error 语义识别
+# 2026-10-26 - 小沈 - download方法增强: 支持headers/content_type/大小限制/清理, 合并download_file._stream_download重复逻辑(DRY)
 
 import os
-from typing import Optional
+from typing import Any, Dict, Optional, Tuple
 
 from urllib.parse import urljoin
 
 import httpx
 from app.tools.validate.url_validator import validate_url
+from app.logger import logger  # 2026-10-26 小沈 - download 清理失败日志
 
 
 # 常量已迁移到 tool_constants.py — 北京老陈 2026-05-30
@@ -136,32 +138,53 @@ class HTTPClient:
         self,
         url: str,
         save_path: str,
+        headers: Optional[Dict[str, str]] = None,
         chunk_size: int = 8192,
-    ) -> int:
-        """
-        流式下载文件
-
-        【设计说明】download() 返回 int(下载字节数),消费者无法像 get()/post() 那样
-        在调用后检查 response.status_code。因此内部必须调用 raise_for_status(),
-        让 httpx 异常(HTTPStatusError)传播给消费者统一处理。
-        这与 SDK "不做自定义错误处理"的原则不矛盾 — raise_for_status() 是 httpx 内置行为。
+        max_bytes: int = 0,
+    ) -> Tuple[int, str, int]:
+        """流式下载文件到本地
 
         Args:
             url: 下载地址
             save_path: 保存路径
+            headers: HTTP请求头(可选)
             chunk_size: 分块大小
+            max_bytes: 最大字节数限制(0=无限制)
 
         Returns:
-            下载的字节数
+            (下载的字节数, content_type, 总字节数)
+
+        2026-10-26 小沈: 增强(原仅返回int, 无headers/大小限制/清理);
+            download_file._stream_download 重复逻辑统一收口至此(DRY)。
         """
         bytes_downloaded = 0
-        async with self._client.stream("GET", url) as response:
+        content_type = ""
+        total_bytes = 0
+        async with self._client.stream("GET", url, headers=headers) as response:
             response.raise_for_status()
-            with open(save_path, "wb") as f:
-                async for chunk in response.aiter_bytes(chunk_size):
-                    f.write(chunk)
-                    bytes_downloaded += len(chunk)
-        return bytes_downloaded
+            content_type = response.headers.get("content-type", "")
+            raw_total = response.headers.get("content-length")
+            try:
+                total_bytes = int(raw_total) if raw_total else 0
+            except ValueError:
+                total_bytes = 0
+            if max_bytes and total_bytes > max_bytes:
+                raise ValueError(f"文件过大: {total_bytes}字节, 限制: {max_bytes}字节")
+            try:
+                with open(save_path, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size):
+                        bytes_downloaded += len(chunk)
+                        if max_bytes and bytes_downloaded > max_bytes:
+                            raise ValueError(f"下载超过大小限制({max_bytes}字节)")
+                        f.write(chunk)
+            except Exception:
+                try:
+                    if os.path.exists(save_path):
+                        os.remove(save_path)
+                except Exception:
+                    logger.warning(f"[http_client_sdk] download 清理失败: {save_path}")
+                raise
+        return bytes_downloaded, content_type, total_bytes if raw_total else bytes_downloaded
 
 
 def create_http_client(

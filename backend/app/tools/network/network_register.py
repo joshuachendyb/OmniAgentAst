@@ -143,6 +143,7 @@ NETWORK_TOOL_EXAMPLES = {
     "fetchpage": [
         {"url": "https://example.com", "extract_format": "markdown"},
         {"url": "https://docs.python.org/3/library/asyncio.html", "prompt": "提取asyncio的主要功能和使用示例"},
+        {"url": "https://discovery.intern-ai.org.cn/token-plan/home?tabIndex=3&dockey=02-list-models.md", "extract_format": "markdown", "prompt": "提取完整的模型列表、API参数说明", "save_to": "model_list.md"},
     ],
     "searchweb": [
         {"query": "OpenAI function calling"},

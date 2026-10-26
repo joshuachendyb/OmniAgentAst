@@ -29,6 +29,8 @@ tool_executor — 工具执行逻辑
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): installing notice 去冗余词, 工具名移括号 — 小欧-2026-10-25
 # 2026-10-25 小欧 - notice 调用点 log-print 补齐(三堂会审): 装包事前/成功补 logger.info, 失败补 logger.warning;
 #   业务层日志提供模块级上下文(工具名+缺失包列表), 与 emit_notice 基础设施级 log_and_print 互补不冗余 — 小欧-2026-10-25
+# 2026-10-26 小沈 - 注入notice回调(同text_task模式): 持agent注入emit_notice闭包到_current_notice_callback ContextVar;
+#   工具经get_current_notice_callback消费, 未注入返None降级。
 import asyncio
 import time
 from typing import Any, Callable, Dict, List, Optional, Set
@@ -39,7 +41,8 @@ from app.logger import logger
 from app.services.agent.tool_cache_manager import invalidate_tool_cache, patch_search_desc
 from app.safety.default_hooks import DefaultToolSecurityHooks  # A1: 默认 hooks 转发壳 — 小欧 2026-08-12
 from app.tools.context import set_current_hooks, reset_current_hooks, \
-    set_current_text_task, reset_current_text_task  # A1 安全hooks + 2026-10-20 纯文本LLM回调 — 小欧
+    set_current_text_task, reset_current_text_task, \
+    set_current_notice_callback, reset_current_notice_callback  # A1 安全hooks + 2026-10-20 纯文本LLM回调 + 2026-10-26 notice回调 — 小欧/小沈
 from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 小欧 通用纯文本调用(全系统发起LLM调用唯一入口层, llm_call.py)
 
 #: 缺库自愈冷却窗(秒): 装不上时窗内不再重复起 pip, 直接回缺库契约。
@@ -98,6 +101,14 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         return await call_llm_text_task(agent, messages)
 
     _text_token = set_current_text_task(_invoke_text_task) if _llm_connected else None
+
+    # 2026-10-26 小沈 - 注入notice消息回调(同 text_task 模式), 工具经 get_current_notice_callback 消费
+    _has_emitter = hasattr(agent, '_step_emitter') and agent._step_emitter is not None
+
+    async def _invoke_notice(kind: str, phase: str, content: str):
+        await agent._step_emitter.emit_notice(kind, phase, content)
+
+    _notice_token = set_current_notice_callback(_invoke_notice) if _has_emitter else None
     try:
         if parallel:
             # 并行分支：一次执行不重试，失败信息直接返回给LLM决策
@@ -113,6 +124,8 @@ async def execute_tool(agent, tool_name: str, tool_params: Dict[str, Any],
         reset_current_hooks(_hook_token)
         if _text_token is not None:  # 2026-10-20 小欧 回调 token 采 get 置于 hooks 同一 finally, 零泄漏
             reset_current_text_task(_text_token)
+        if _notice_token is not None:  # 2026-10-26 小沈 notice回调token同finally reset
+            reset_current_notice_callback(_notice_token)
     elapsed = time.time() - start
     
     # 小健 2026-06-26: 使用is_success函数判断状态，而非错误的result.get("code")

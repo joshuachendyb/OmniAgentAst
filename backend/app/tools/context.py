@@ -14,6 +14,9 @@
 #   (同压缩摘要 call_llm_text_task 一源的封装闭包)。工具层守护禁 tools→app.services, 故不像 hooks 一样预置实现,
 #   而由 tool_executor 持 agent 在入口注入; 工具(如 fetchpage prompt提取)经 get_current_text_task 消费,
 #   未注入时返回 None 由工具自行降级(零越层、零预设) — 小欧-2026-10-20
+# 2026-10-26 小沈 - 新增 _current_notice_callback ContextVar(get/set/reset): 承载入口层注入的"notice消息回调"
+#   (同 _current_text_task 模式, tool_executor 持 agent 注入 emit_notice 包装闭包)。
+#   工具经 get_current_notice_callback 消费, 未注入时返回 None 由工具自行降级(零越层) — 小沈-2026-10-26
 """
 tools/context — 工具层运行上下文
 
@@ -30,6 +33,8 @@ _current_task_id: ContextVar[Optional[str]] = ContextVar("tool_task_id", default
 _current_hooks: ContextVar[Optional[ToolSecurityHooks]] = ContextVar("current_hooks", default=None)
 # "纯文本任务LLM调用回调": 入口层(tool_executor)持 agent 注入, 签名 async (messages: List[Dict]) -> str — 小欧 2026-10-20
 _current_text_task: ContextVar[Optional[object]] = ContextVar("current_text_task", default=None)
+# "notice消息回调": 入口层(tool_executor)持 agent 注入, 签名 async (kind: str, phase: str, content: str) -> None — 小沈 2026-10-26
+_current_notice_callback: ContextVar[Optional[object]] = ContextVar("current_notice_callback", default=None)
 
 def get_current_task_id() -> Optional[str]:
     """获取当前任务的 taskId — 小沈 2026-07-30(迁自 task_context)"""
@@ -88,3 +93,21 @@ def set_current_text_task(callable_text_task):
 def reset_current_text_task(token) -> None:
     """恢复上一个纯文本任务回调 — 小欧 2026-10-20"""
     _current_text_task.reset(token)
+
+
+def get_current_notice_callback() -> Optional[object]:
+    """获取当前作用域的notice消息回调(入口层注入) — 小沈 2026-10-26
+    返回 None 表示未注入(直接调工具/无agent场景), 由工具自行降级。
+    签名: async (kind: str, phase: str, content: str) -> None
+    """
+    return _current_notice_callback.get()
+
+
+def set_current_notice_callback(callback):
+    """设置当前作用域的notice消息回调, 返回 token 供 reset — 小沈 2026-10-26"""
+    return _current_notice_callback.set(callback)
+
+
+def reset_current_notice_callback(token) -> None:
+    """恢复上一个notice回调 — 小沈 2026-10-26"""
+    _current_notice_callback.reset(token)
