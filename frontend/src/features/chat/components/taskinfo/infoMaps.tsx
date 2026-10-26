@@ -17,6 +17,7 @@
 // 编辑历史: 2026-10-10 小欧[20] - 删 summary-only 态(4态→3态): 历史任务无 conv_context,
 // 单分组判据必然落进"有内容无计数", 自造的"摘要·无计数"漏进 UI。mapStatus 改双分组真值性
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射: 新增 NOTICE_CONFIG(kind+phase → antd SVG), summarizing/installing 三态(start/done/failed)各配 Spin/Check/Warning 图标; EVENT_ICON_MAP.notice 保留为回退 — 小欧-2026-10-25
+// 编辑历史: 2026-10-26 小沈 - NOTICE_CONFIG新增extracting三态(start/done/failed), 复用Spin/Check/Warning图标 — 小沈-2026-10-26
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -125,6 +126,10 @@ export const NOTICE_CONFIG: Record<string, ReactNode> = {
   installing_start: <SyncOutlined spin />,
   installing_done: <CheckCircleOutlined />,
   installing_failed: <WarningOutlined />,
+  // extracting(内容提取) — 小沈 2026-10-26
+  extracting_start: <SyncOutlined spin />,
+  extracting_done: <CheckCircleOutlined />,
+  extracting_failed: <WarningOutlined />,
 };
 
 // ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------

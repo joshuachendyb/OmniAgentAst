@@ -53,6 +53,8 @@
 // 编辑历史: 2026-10-11 08:59:04 小欧 - 北京老陈令「拒绝事件同时上 taskInfo 事件列表」: 恢复 case 'rejected'(2026-09-17 删除的两个理由已解除: sseParser 已 pushAndFlush 入流; 不落库仍成立但实时链路不再依赖落库), 文案带归因前缀, 归因词复用 ToolCallLine.REJECT_LABEL_MAP(DRY, 已核无循环引用); 与 pipeline 点名条双写共存 — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 返回值补 processEventsSnapshot(排除 heartbeat, 全链路唯一过滤); 历史分支改读 detail.process_events(快照条目直接铺列表, 不进 switch 防 badge 被覆写); 实时分支删 slice(-20) 上限(北京老陈令「不能限制」, 溢出由 TaskInfoBar 浮层滚动承载) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封接入: ProcessEvent 接口新增 notice_kind/notice_phase 可选字段; notice case 透传两字段供 NOTICE_CONFIG 按 kind+phase 查表渲染 — 小欧-2026-10-25
+// 编辑历史: 2026-10-26 小沈 - notice双渲染: LiveMeta扩展notice字段; latestProcessEvent支持notice;
+//   start/failed设位4, done清除; final success时candidates全清(badge==='completed'→空数组) — 小沈-2026-10-26
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -110,10 +112,13 @@ export interface ProcessEvent {
 // 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级);
 // 2026-09-08 小欧 6.3.4: 补 requestLevel(位4图标分层——error 请求级⛔/执行级红圆底白×; retrying/truncated 恒执行级false) — 小欧-2026-09-08
 export interface LiveMeta {
-  kind: 'retrying' | 'error' | 'truncated';
+  kind: 'retrying' | 'error' | 'truncated' | 'notice';
   text: string;
   time: number;
   requestLevel: boolean;
+  // 2026-10-26 小沈: notice 专用字段(仅 kind='notice' 时有效)
+  notice_kind?: string;
+  notice_phase?: 'start' | 'done' | 'failed';
 }
 
 export type TaskBadge =
@@ -221,12 +226,23 @@ export const useTaskInfo = (
     const processEvents: ProcessEvent[] = [];
     // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
     // 2026-09-08 小欧 6.3.4: retrying 恒执行级(requestLevel=false) — 小欧-2026-09-08
-    let latestProcessEvent: {
-      kind: 'retrying';
-      text: string;
-      time: number;
-      requestLevel: false;
-    } | null = null;
+    // 2026-10-26 小沈: 扩展支持 notice 事件进位4
+    let latestProcessEvent: (
+      | {
+          kind: 'retrying';
+          text: string;
+          time: number;
+          requestLevel: false;
+        }
+      | {
+          kind: 'notice';
+          text: string;
+          time: number;
+          requestLevel: false;
+          notice_kind: string;
+          notice_phase: 'start' | 'failed';
+        }
+    ) | null = null;
     // 2026-09-03 小欧 修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
     let _badgeRecovered = false;
     // 2026-10-04 小欧: 历史对话裁剪只留首条事件(裁剪可连续多轮触发, 每轮一条会刷屏并挤掉有效事件, 事件列表仅存最近20条)
@@ -271,15 +287,31 @@ export const useTaskInfo = (
           };
           break;
         case 'notice': {
-          // 2026-10-25 小欧: 通知信封 — 只进事件列表不进位4, kind+phase 透传供 NOTICE_CONFIG 查表
+          // 2026-10-25 小欧: 通知信封 — 事件列表 + 位4 双渲染, kind+phase 透传供 NOTICE_CONFIG/renderLiveMeta 查表
+          // 2026-10-26 小沈: 位4 逻辑: start/failed=设置 latestProcessEvent, done=清除 latestProcessEvent(位4清空)
           const noticeText = s.content || '通知';
+          const noticePhase = s.notice_phase || 'start';
           processEvents.push({
             kind: 'notice',
             text: noticeText,
             time: s.timestamp,
             notice_kind: s.notice_kind || '',
-            notice_phase: s.notice_phase || 'start',
+            notice_phase: noticePhase,
           });
+          // 位4: start/failed 设置 latestProcessEvent, done 清除(位4 清空)
+          if (noticePhase === 'start' || noticePhase === 'failed') {
+            latestProcessEvent = {
+              kind: 'notice',
+              text: noticeText,
+              time: s.timestamp,
+              requestLevel: false,
+              notice_kind: s.notice_kind || '',
+              notice_phase: noticePhase,
+            };
+          } else {
+            // done: 清除位4(notice 完成, 不再显示)
+            latestProcessEvent = null;
+          }
           break;
         }
 
@@ -306,6 +338,7 @@ export const useTaskInfo = (
               text: s.content || '任务已完成',
               time: s.timestamp,
             });
+            // 2026-10-26 小沈: 任务成功完成时位4全清(candidates 判 badge==='completed' 时返回空数组)
           }
           break;
         case 'error':
@@ -467,29 +500,33 @@ export const useTaskInfo = (
     //   G4 新信号被遮(退化); 且 startTimestamp 为 0 时 `??` 不穿透。末条步骤时间恒 ≥ latestProcessEvent 时间,
     //   新信号 candidates 前置保序, 与现状 winner 等价 — 小欧-2026-09-09
     //   2026-10-10 小欧[20] 审计 B4: now 已上提至事件段之前算一次(DRY), 此处不再重复声明
-    const candidates: LiveMeta[] = [
-      ...(liveError
-        ? [
-            {
-              kind: 'error' as const,
-              text: liveError.text,
-              time: now,
-              requestLevel: liveError.requestLevel, // 位4 图标分层:S2 请求级 step=0 判定打标(S3 判定来源转"后端业务错误"再取) — 小欧-2026-09-08
-            },
-          ]
-        : []),
-      ...(frames.truncated?.content
-        ? [
-            {
-              kind: 'truncated' as const,
-              text: frames.truncated.content,
-              time: now,
-              requestLevel: false, // 截断提示恒执行级 — 小欧-2026-09-08
-            },
-          ]
-        : []),
-      ...(latestProcessEvent ? [latestProcessEvent] : []),
-    ];
+    // 2026-10-26 小沈: 任务成功完成时位4全清(notice/retry/error/truncated 均不进 candidates)
+    const candidates: LiveMeta[] =
+      badge === 'completed'
+        ? [] // 成功完成: 位4 全清
+        : [
+            ...(liveError
+              ? [
+                  {
+                    kind: 'error' as const,
+                    text: liveError.text,
+                    time: now,
+                    requestLevel: liveError.requestLevel, // 位4 图标分层:S2 请求级 step=0 判定打标(S3 判定来源转"后端业务错误"再取) — 小欧-2026-09-08
+                  },
+                ]
+              : []),
+            ...(frames.truncated?.content
+              ? [
+                  {
+                    kind: 'truncated' as const,
+                    text: frames.truncated.content,
+                    time: now,
+                    requestLevel: false, // 截断提示恒执行级 — 小欧-2026-09-08
+                  },
+                ]
+              : []),
+            ...(latestProcessEvent ? [latestProcessEvent] : []),
+          ];
     const liveMeta = candidates.sort((a, b) => b.time - a.time)[0] ?? null;
 
     return {

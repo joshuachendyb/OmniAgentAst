@@ -61,6 +61,7 @@
 // 编辑历史: 2026-10-06 小欧 - 增 storeStatus 入参(useTaskInfo 补第 5 参), 用于取消终态帧没送达时的徽标兜底。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 taskId prop(取值与组件 key 同源 activeTaskId ?? serverTaskId, 不新造标识); final 到达时调 saveTaskProcessEvents 回传快照(_sentRef 幂等只发一次, _latestRef 读最新值避 exhaustive-deps, effect 首行 if (detail) return 防历史态误回填覆盖/跨任务污染; 失败只 console.warn 不阻断) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射启用: import NOTICE_CONFIG; 事件时间轴渲染 notice 条目时按 kind+phase 查 NOTICE_CONFIG, 未命中回退 EVENT_ICON_MAP.notice — 小欧-2026-10-25
+// 编辑历史: 2026-10-26 小沈 - renderLiveMeta支持notice: start=SyncOutlined spinner+橙色, failed=WarningOutlined+红色; 位4双渲染完成 — 小沈-2026-10-26
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -324,12 +325,20 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             ? m.requestLevel
               ? Colors.TEXT.SECONDARY // 请求级: StopOutlined 灰
               : Colors.ERROR // 执行级: CloseCircleFilled 红
-            : Colors.WARNING, // retrying/truncated: #AD6800 (对比度≥4.5:1)
+            : m.kind === 'notice' && m.notice_phase === 'failed'
+              ? Colors.ERROR // notice failed: 红色
+              : Colors.WARNING, // retrying/truncated/notice-start: #AD6800 (对比度≥4.5:1)
         marginLeft: Spacing.XS,
       }}
     >
       {m.kind === 'retrying' ? (
         <SyncOutlined spin /> // 🔁 → SyncOutlined spin
+      ) : m.kind === 'notice' ? (
+        m.notice_phase === 'start' ? (
+          <SyncOutlined spin /> // notice start: spinner
+        ) : (
+          <WarningOutlined /> // notice failed: warning
+        )
       ) : m.kind === 'error' ? (
         m.requestLevel ? (
           <StopOutlined /> // ⛔ → StopOutlined
@@ -339,7 +348,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           />
         )
       ) : (
-        <WarningOutlined /> // ⚠ → WarningOutlined
+        <WarningOutlined /> // ⚠ → WarningOutlined (truncated)
       )}{' '}
       {briefMeta(m).text}
     </span>
