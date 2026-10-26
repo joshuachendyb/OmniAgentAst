@@ -141,7 +141,7 @@ from app.safety.safety_result import SafetyLevel, SafetyResult  # 契约: 安全
 from app.safety.path_dir_lists import directory_lists_scope, format_path
 from app.tools.tool_constants import PATH_TOOLS  # 2026-10-19 小欧 - 入口格式化范围门: 仅路径工具改写 path/dest
 from app.safety.safety_switch import safety_enabled, safety_switch  # 2026-10-20 小欧 - 总闸 + 各独立开关唯一读取口
-from app.utils.path_utils import absolutize_path, get_download_dir  # 2026-10-19 小欧 - 入口相对值绝对化(基准=project_root)+下载目录基准; 均为工具层公用, 不反向依赖工具
+from app.utils.path_utils import absolutize_path  # 2026-10-19 小欧 - 入口相对值绝对化(基准=project_root); 2026-10-26 小沈 - 移除 get_download_dir, download 特判取消
 
 _READONLY_SQL_FIRST = {"select", "show", "describe", "desc", "explain", "values", "table"}
 
@@ -253,8 +253,8 @@ def _format_tool_paths(tool_name: str, params: Optional[Dict]) -> None:
     唯一接入点: 非 shell 路径工具到此已过合法性初查, 在此把参数值就地绝对化 + format_path;
     下游读/写/删/dual 各线与执行层拿到的已是绝对且统一格式, 不再各自解析(解析双源已删)。
     · 绝对 → 原样; 相对 → 按基准绝对化(公用 absolutize_path(value, base))。
-    · 基准缺省 = tool 工作区(project_root); 工具专属语义(下载目录 / rename 源父目录)仅在此一声明:
-        download.dest → 下载目录 + 原值; rename.dest → 源父目录 + 新文件名(basename, 与工具 Path(dest).name 一致)。
+    · 基准 = tool 工作区(project_root); 工具专属语义仅在此声明:
+        rename.dest → 源父目录 + 新文件名(basename, 与工具 Path(dest).name 一致)。
     · 最终统一 format_path; 不做路径穿越处理(交安全线/工具自持判定)。
     · shell 工具无 path/dest 键, 天然不命中。
     """
@@ -265,9 +265,7 @@ def _format_tool_paths(tool_name: str, params: Optional[Dict]) -> None:
         if not isinstance(value, str) or not value.strip():
             continue
         base = get_config().get_project_root()
-        if tool_name == "download" and key == "dest":
-            base = get_download_dir()
-        elif tool_name == "rename" and key == "dest":
+        if tool_name == "rename" and key == "dest":
             src = params.get("path")
             if isinstance(src, str) and src:
                 base, value = os.path.dirname(src), os.path.basename(value)

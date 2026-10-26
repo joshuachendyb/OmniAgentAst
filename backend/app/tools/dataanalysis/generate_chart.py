@@ -28,18 +28,12 @@ from typing import Dict, Any, Optional, Union, Literal
 from app.utils.time_utils import timestamp_for_filename
 from app.tools.tool_response import build_success, build_error, with_artifact_file
 from app.tools.tool_fc_helper import _check_module
-from app.utils.path_utils import validate_path_for_write  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层
+from app.utils.path_utils import validate_path_for_write, get_output_dir  # 2026-10-16 小欧 - 仅业务警告, 合法性归路径安全层; 2026-10-26 小沈 - 输出目录改用公用 get_output_dir
 from app.tools.toolhelper.error_hints import hint_for_data_error
 from app.logger import logger
 from app.utils.path_utils import OpCategory, check_path_four_level  # 2026-10-17 小欧 - 路径四级合法性总入口
 from app.tools.tool_constants import ERR_DOC_CHART_GENERATE, GENERATE_CHART_OUTPARM_LIMIT_DATA
 from app.tools.dataanalysis.data_loader import load_data_to_df
-
-
-def _get_output_dir() -> str:
-    """获取项目输出目录 — 优先从配置读取project_root，子目录output — 小欧 2026-07-09"""
-    from app.config import get_config
-    return os.path.join(get_config().get_project_root(), "output")
 
 
 def _validate_chart_data(chart_data: dict) -> dict:
@@ -215,7 +209,7 @@ def generate_chart(data: Union[str, Dict[str, Any]], chart_type: Literal["bar", 
 
         if dest is None:
             timestamp = timestamp_for_filename()
-            dest = os.path.join(_get_output_dir(), f"chart_{timestamp}.png")
+            dest = os.path.join(get_output_dir(), f"chart_{timestamp}.png")
 
         fig, ax = plt.subplots(figsize=(10, 6))
         chart_type_lower = chart_type.lower()

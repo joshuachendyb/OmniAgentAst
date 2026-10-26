@@ -28,6 +28,8 @@
 #   原第三元素恒为旧 category 字面量 "system", 目录数组化后它已无对应枚举; 安全三线把"非法输入"一律
 #   归 SCOPE_FORBIDDEN_SYSTEM 是各线各自的策略, 不应由本工具函数越位代言。调用方改
 #   `reject_reason_empty_path(fp) or check_preconditions(fp)` 组合取原因; 归归属由 safety 层定。
+# 2026-10-26 小沈 - 新增has_path_traversal(路径穿越轻量判定,工具层专用,按\和/切分任一段==".."即命中,纯内存不做realpath);
+#   新增get_output_dir(输出目录=project_root/output); 汇集散落各处的..穿越检查(DRY)。
 """
 path_utils — 路径处理通用工具
 
@@ -74,14 +76,14 @@ def absolutize_path(path: str, base: str) -> str:
     return os.path.abspath(os.path.join(base, p.lstrip("/\\")))
 
 
-def get_download_dir() -> str:
-    r"""下载目录(工具层公用) — 小欧 2026-10-19
+def get_output_dir() -> str:
+    r"""输出目录(工具层公用) — 小沈 2026-10-26
 
-    = `get_config().get_project_root()/download`(未配 project_root 时 get_project_root 回落用户主目录)。
-    download 工具与安全入口 _format_tool_paths 共用同一基准(单源), 不各自拼接。
+    = `get_config().get_project_root()/output`(未配 project_root 时回落用户主目录)。
+    generate_chart 等输出工具共用同一基准(单源), 不各自拼接。
     """
     from app.config import get_config
-    return os.path.join(get_config().get_project_root(), "download")
+    return os.path.join(get_config().get_project_root(), "output")
 
 
 # 2026-10-19 小欧 - 目录名单收口: get_allowed_roots 迁 app/safety/path_dir_lists
@@ -274,6 +276,21 @@ def _syntax_exists_check(op: OpCategory, path: str, **options: Any) -> Tuple[boo
     return True, None
 
 
+def has_path_traversal(path: str) -> bool:
+    """路径穿越轻量判定 — 小沈 2026-10-26
+
+    工具层专用: 统一汇集散落各处的 ".." 分段检查。
+    判定逻辑: 路径按 \\ 和 / 切分后任一段 == ".." 即命中。
+    与 check_preconditions 区别: 不做 realpath 解析(轻量/纯内存), 适合工具入口快速拦截;
+    安全线仍用 check_preconditions(含 realpath 抓符号链接穿越)。
+
+    小沈 2026-10-26
+    """
+    if not path:
+        return False
+    return any(p == ".." for p in path.replace("\\", "/").split("/"))
+
+
 def check_preconditions(file_path: str) -> Optional[str]:
     """路径穿越判定 — 小欧 2026-10-15 建 / 2026-10-17 迁入 / 2026-10-19 返回契约归一
 
@@ -319,8 +336,9 @@ def check_path_four_level(
     return True, None
 
 
-__all__ = ["to_win_long_path", "absolutize_path", "get_download_dir",
+__all__ = ["to_win_long_path", "absolutize_path", "get_output_dir",
            "path_has_reserved_char", "path_has_reserved_name", "path_has_extra_drive",
            "validate_str_param",
            "OpCategory", "check_path_syntax_and_exists", "check_preconditions",
-           "reject_reason_empty_path", "check_path_four_level"]
+           "reject_reason_empty_path", "check_path_four_level",
+           "has_path_traversal"]

@@ -8,6 +8,7 @@
 # 2026-08-06 - 小欧 - 核查8-05/8-06日志: url=None 在非ASCII转码块 url.encode 抛AttributeError落入catch-all记"意外错误"; 入口加url=None显式拦截(fetch_webpage/httpget同模式, 三网络工具统一), 返回ERR_INVALID_URL结构化错误, 不再落入catch-all
 # 2026-08-10 - 小欧 - 注释更正: 下载目录未配置project_root时=用户主目录(不再是代码位置), 子目录download — 步骤1实施
 # 2026-08-12 - 小欧 - 补漏: download 与 httpget 同病根(重定向到内网被SSRF防护拦截抛httpx.InvalidURL落入catch-all记ERROR);
+# 2026-10-26 - 小沈 - DRY: _stream_download 合并至 HTTPClient.download(SDK增强版, 消除流式下载重复实现)
 #   用 http_client_sdk.is_ssrf_blocked_error 公用函数统一识别(httpget/fetch_webpage/download三工具一致), 返回ERR_INVALID_URL+warning
 # 2026-08-13 - 小欧 - A5职责拆分: hint_* 错误提示函数/导入源改 app.tools.toolhelper.error_hints
 # 2026-08-13 - 小欧 - 修复修复: _stream_download抛的ValueError(文件过大/超过大小限制)落入catch-all归ERR_NET_UNKNOWN
@@ -38,18 +39,19 @@ N2: download — 下载文件到本地
 # 【铁规3】计时(duration_ms计算)只能在tool的主函数中，严禁在子函数/helper中计时。
 import os
 import time as _time_mod
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 from urllib.parse import urlparse
 
 import httpx
 
 from app.tools.tool_response import build_success, build_error, with_artifact_file
-from app.tools.network.http_client_sdk import create_http_client, HTTPClient, is_ssrf_blocked_error
+from app.tools.network.http_client_sdk import create_http_client, is_ssrf_blocked_error
 from app.tools.network.network_register import check_network
 from app.tools.validate.url_validator import validate_url, validate_proxy, transcode_url
 from app.tools.validate.timeout_validator import validate_timeout
-from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write, absolutize_path, get_download_dir  # 2026-10-17 小欧 - 路径四级合法性总入口; 仅业务警告, 合法性归路径安全层
-# 2026-10-19 小欧 - dest 绝对化改调公用 absolutize_path(value, base)(基准=get_download_dir, 与安全入口同源); get_download_dir 上移 path_utils(单源)
+from app.utils.path_utils import OpCategory, check_path_four_level, validate_path_for_write, absolutize_path, get_output_dir, has_path_traversal
+from app.config import get_config  # 用户指定路径基准 get_project_root()
+# 2026-10-26 小沈 - 默认输出目录改用 get_output_dir()(project_root/output), 用户指定路径仍用 project_root
 from app.tools.toolhelper.error_hints import hint_for_write_error
 
 from app.logger import logger
@@ -127,40 +129,7 @@ def _map_network_error(url: str, timeout: int, e: Exception, dest_path: str = ""
     return {"error_detail": str(e), "params": {"url": url, "dest": dest_path, "timeout": timeout}, "err_code": ERR_NET_UNKNOWN, "detail": str(e)}
 
 
-async def _stream_download(client: HTTPClient, url: str, dest_path: str,
-                           headers: dict, chunk_size: int = 8192) -> Tuple[int, str, int]:
-    """流式下载文件到本地 — 小欧 2026-06-22 — 小欧 2026-06-24 增加大小限制+清理"""
-    async with client.stream("GET", url, headers=headers) as response:
-        response.raise_for_status()
-        content_type = response.headers.get("content-type", "")
-        raw_total = response.headers.get("content-length")
-        # 2026-10-20 小欧 - FIX: int(raw_total) 对非数字头(代理注入/异常服务器)抛 ValueError,
-        #   落入外层 except ValueError 被误归类为"文件超过下载大小限制"; 非数字=无法预判,
-        #   置 0 交流式累计口径(流内超限仍逐块拦截) — 小欧-2026-10-20
-        try:
-            total_bytes = int(raw_total) if raw_total else 0
-        except ValueError:
-            total_bytes = 0
-
-        if raw_total and total_bytes > DOWNLOAD_INPUT_MAX_BYTES:
-            raise ValueError(f"文件过大: {raw_total}字节, 限制: {DOWNLOAD_INPUT_MAX_BYTES}字节")
-
-        downloaded = 0
-        try:
-            with open(dest_path, "wb") as f:
-                async for chunk in response.aiter_bytes(chunk_size=chunk_size):
-                    downloaded += len(chunk)
-                    if downloaded > DOWNLOAD_INPUT_MAX_BYTES:
-                        raise ValueError(f"下载超过大小限制({DOWNLOAD_INPUT_MAX_BYTES}字节)")
-                    f.write(chunk)
-        except Exception:
-            try:
-                if os.path.exists(dest_path):
-                    os.remove(dest_path)
-            except Exception:
-                logger.warning(f"[download] 清理失败: {dest_path}")
-            raise
-        return downloaded, content_type, total_bytes if raw_total else downloaded
+# _stream_download 已合并至 HTTPClient.download(SDK增强版, DRY) — 小沈 2026-10-26
 
 
 async def download(
@@ -188,13 +157,13 @@ async def download(
         if not isinstance(dest, str) or not dest.strip():
             llm_data = _build_download_file_llm_data("error", 0, url, dest_path="", err_code=ERR_NETWORK_INVALID_PATH, detail="dest不能为空", hint="请填写目标路径或留空自动命名", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
-        if any(p == ".." for p in dest.replace("\\", "/").split("/")):
+        if has_path_traversal(dest):
             llm_data = _build_download_file_llm_data("error", 0, url, dest_path=dest, err_code=ERR_NETWORK_INVALID_PATH, detail="dest不允许路径遍历", hint="请使用合法文件名", timeout=timeout, proxy=proxy, headers=headers)
             return build_error(data={}, llm_data=llm_data)
-        dest_path = absolutize_path(dest, get_download_dir())
+        dest_path = absolutize_path(dest, get_config().get_project_root())
     else:
         filename = os.path.basename(urlparse(url).path) or f"download_{hash(url) & 0xFFFFFFFF}"
-        dest_path = absolutize_path(filename, get_download_dir())
+        dest_path = os.path.join(get_output_dir(), filename)
     # 2026-10-16 小欧 - tool去检查化: 合法性由路径安全层唯一检查(dest 经 resolve 得绝对路径), 此处仅业务警告
     _, _, path_warn = validate_path_for_write(dest_path)
     if path_warn:
@@ -248,7 +217,7 @@ async def download(
             return build_error(data={}, llm_data=llm_data)
 
         async with create_http_client(timeout_sec=timeout, proxy=proxy) as client:
-            downloaded, content_type, total_bytes = await _stream_download(client, url, dest_path, req_headers)
+            downloaded, content_type, total_bytes = await client.download(url, dest_path, headers=req_headers, max_bytes=DOWNLOAD_INPUT_MAX_BYTES)
 
         duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
         # =============================================================================

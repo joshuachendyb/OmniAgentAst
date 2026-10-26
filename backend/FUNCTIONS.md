@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-15 06:07:40
-**最近更新**: 2026-10-15 06:07:40 小欧 路径订正(§4.4/§八 去已删旧址) + §4.4 补登记五个信任函数与会话信任 TTL。详见版本历史 v5.8
+**最后更新时间**: 2026-10-26 12:27:19
+**最近更新**: 2026-10-26 12:27:19 小沈 §4.2 新登记 save_text_to_file(fetchpage._save_to_file 抽取至 toolhelper/tool_utils.py 公用); DRY: download_file._stream_download 合并至 HTTPClient.download(SDK增强版)
 
 ---
 
@@ -134,6 +134,7 @@
 | `path_has_reserved_name` | 路径任一分段是 Windows 保留名则返回该分段，否则 None；纯拼写零IO | file_path: str | Optional[str] |
 | `path_has_extra_drive` | 路径尾部含多余盘符则返回原因，否则 None；纯拼写零IO | file_path: str | Optional[str] |
 | `validate_str_param` | 字符串参数基础校验（非路径通用参数用；路径非空由 SA1 覆盖）；None/非str/空串返回错误信息 | value: Any, param_name: str | Optional[str] |
+| `get_output_dir` | 输出目录(project_root/output)，generate_chart/download 默认输出基准 | 无 | str |
 
 > 注：备份(operation_backup)与回收站维护(operation_maintenance)链路统一使用本函数，保证深嵌套备份能写入亦能清理。
 
@@ -365,6 +366,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `line_pager.py` | 行分页/截断工具 `select_lines`(按 offset/limit/tail 选取行, 供 read_text_file/read_docx 复用, Tool 层零限制, 字符截断收口于 observation_formatter) |
 | `syntax_validator.py` | 语法护栏(多语言语法校验, 详见 七、语法护栏章节) |
 | `error_hints.py` | 工具结果解释层错误提示: `permission_error_hint`(写入权限不足) / `hint_for_write_error`(写入异常按 errno/类型精准提示) / `hint_for_read_error`(读取异常) / `sql_error_hint`(SQL异常, 覆盖 no column/table/UNIQUE/多语句/语法等) / `hint_for_data_error`(数据处理异常, 含 pandas/sqlite3 分支) |
+| `tool_utils.py` | 工具通用辅助: `save_text_to_file`(调 write 工具落盘, 基准 project_root, 完整安全链路) |
 
 ### 4.3 基础工具（app/tools/fundamental/）
 
@@ -486,6 +488,7 @@ def my_parse_json(json_str):
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `check_preconditions` | 路径穿越硬拦前置：路径含 `..` 或 realpath 解析出穿越 → 命中返回原因文案，通过返回 None（空值先由 `reject_reason_empty_path` 判；归属由 safety 层定） | file_path: str | Optional[str] |
+| `has_path_traversal` | 路径穿越轻量判定（工具层专用）：按 `\` 和 `/` 切分后任一段 == `..` 即 True；纯内存/无 realpath，适合工具入口快速拦截 | path: str | bool |
 | `check_whitelist` | 白名单前缀匹配（含盘根特例） | file_path: str, allowed_paths: List[Path] | bool |
 | `resolve_allowed_paths` | 白名单取值：显式传入优先，否则取 `path_scope.get_default_allowed_paths()` | allowed_paths: Optional[List[Path]] | List[Path] |
 
@@ -642,6 +645,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.14 | 2026-10-26 12:27:19 | **§1.10 新登记 `get_output_dir` + §4.2 新登记 `save_text_to_file`**(小沈): ①`get_output_dir()`(project_root/output) 从 generate_chart._get_output_dir 抽取至 path_utils.py 公用, download/generate_chart 默认输出统一 output/; ②`save_text_to_file` 从 fetch_webpage._save_to_file 抽取至 toolhelper/tool_utils.py, 调 write 工具走完整安全链路; ③DRY: download_file._stream_download 合并至 HTTPClient.download(SDK 增强版) | 小沈 |
 | v5.13 | 2026-10-20 16:03:19 | **§3.5→§3.7 登记迁移**(小欧, 三堂会审账实不符修正): `call_llm_text_task` 函数体宿主按北京老陈裁定自 `compaction/summary.py` 原样迁至 `services/agent/llm_call.py`(全系统"发起LLM调用"唯一入口层, SRP 归位; summary 改薄引用, 逻辑零变化), 清单条目新立 **§3.7 LLM 调用层** 承接(§3.5 压缩清单条目移除); v5.12 条目描述的 §3.5 位置按本条目作废以 §3.7 为准 | 小欧 |
 | v5.12 | 2026-10-20 15:45:50 | **§3.5 新登记 `call_llm_text_task`**(北京老陈令, 小欧): 压缩摘要私有 `_extract_response_content` 纯改名升格公用(逻辑零变化), fetchpage prompt 提取复用——工具层守护禁 tools→app.services, 故 tools/context 新增 `_current_text_task` ContextVar, 由 `tool_executor.execute_tool` 注入闭包, `fetch_webpage._extract_by_prompt` 经 `get_current_text_task` 消费(A1 hooks 同款管道); 同批修复 #1 searchweb 域名过滤(见 search_web.py 编辑历史) | 小欧 |
 | v5.11 | 2026-10-19 21:02:35 | **路径格式化收口**(小欧): §8.9 新登记 `format_path`(全系统唯一真源: 名单构建/查询判定/安全入口三处共用) 与 `classify_path`; `normalize_path` 删除(同口径重复实现, DRY); 安全入口 `check_before_execute` 在 directory_lists_scope 内对非 shell 工具的 path/dest 值就地格式化(键名不变, 只格式化绝对值, 相对值交各工具 resolve_path_param); 术语由"归一化"改"格式化" | 小欧 |
