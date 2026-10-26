@@ -40,7 +40,7 @@ import re
 from typing import List, Dict, Optional
 
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.summary_feed_max_chars
-from app.logger import logger, log_and_print  # 2026-10-12 小欧 - 校验拒绝改 log-print（北京老陈令）: 只写日志文件则控制台无据可查；logger 保留供 L56 老分支 — 小欧-2026-10-12
+from app.logger import log_and_print  # 2026-10-12 小欧 - 校验拒绝改 log-print（北京老陈令）: 只写日志文件则控制台无据可查 — 小欧-2026-10-12
 from app.services.agent.compaction_constants import SUMMARY_FEED_MAX_CHARS
 from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 16:2x 小欧 通用纯文本调用迁至 llm_call(SRP归位, 北京老陈裁定), 本模块改薄引用

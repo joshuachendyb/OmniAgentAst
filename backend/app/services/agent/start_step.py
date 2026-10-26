@@ -364,7 +364,6 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
     agent._injected_effective_tokens = 0
     # 补偿: 无 delta 且锚点摘要可用 → 零 LLM 直接复用
     if not delta_msgs:
-        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
         agent._injected_effective_count = 1   # [摘要] 1 条
         # 2026-10-26 小欧: 锚点路径 previous_messages 为空, _injected_context.estimated_tokens=0;
         #   注入源=[摘要 assistant 消息], 此处算好真实 token 供 telemetry 压缩率计算
