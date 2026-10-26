@@ -58,6 +58,7 @@
     路由按报告名取文件，经服务层路径校验拦截目录穿越。原行内注释已按规矩上提归并至本板块底部
    2026-10-11 07:33:47 - 小欧 - RemoteModelItem 增 publish_time(zenmux 真发布时间, created 全假不可用; 不下发则 None, 与 free/stability 同政策; 字段内联已记 2026-10-10) — 小欧 2026-10-11
    2026-10-11 - 小欧 - RemoteModelItem 增 effort_levels/effort_default(DeepSeek 实测下发, 此前被静默丢弃; 非 DeepSeek 不返回 → 空列表/None; 北京老陈令两个都加) — 小欧 2026-10-11
+   2026-10-26 18:45:00 - 小欧 - ProviderModelSelection 增 max_output_length（与 context_length 同策略：Optional[int]，空值不发送；解析层已归一，此处只承接）。前端 replaceModels 同步扩展。
     """
 import os  # 小欧 2026-09-26: env 接管判定（拒绝返回明文）
 from typing import Any, Dict, List, Optional
@@ -207,7 +208,11 @@ class ProviderModelSelection(BaseModel):
     """单灯保留模型名 + 顺手持久化的静态元数据（北京老陈 2026-10-05 指令：上下文/输入模态要落配置）"""
     id: str
     context_length: Optional[int] = None
+    max_output_length: Optional[int] = None
     input_modalities: Optional[List[str]] = None
+    output_modalities: Optional[List[str]] = None
+    supported_parameters: Optional[List[str]] = None
+    supported_features: Optional[List[str]] = None
 
 
 class ProviderModelsReplaceRequest(BaseModel):

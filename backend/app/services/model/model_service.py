@@ -154,6 +154,9 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-10-24 - 小欧 - DEFAULT_PARAM_OPTIONS.reasoning_effort 移除 minimal: OpenAI 官方文档明确
 #   "Not all reasoning models support every value"，minimal 是少数派值(agnes-2.5-flash 不认→HTTP 400)，
 #   全局兜底只留 low/medium/high 三个所有推理模型都支持的核心值；少数派值走 per-model param_options — 小欧-2026-10-24
+# 2026-10-26 18:45:00 - 小欧 - replace_provider_models 增 max_output_length 落 model_meta（与 context_length
+#   同策略：isinstance(int) 且非 bool 才写，空值不覆盖已有值）。前端 replaceModels 同步扩展。
+# _models_of 增 max_output_length（从 model_meta 读取，供 LLM 调用链设置 max_tokens 上限）— 小欧-2026-10-26
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -254,6 +257,7 @@ def _models_of(ai: Dict[str, Any], provider: str) -> List[Dict[str, Any]]:
             "range": meta.get("range") or {},
             "capabilities": meta.get("capabilities") or [],
             "param_options": _resolve_param_options(ai, provider, m, params, meta),
+            "max_output_length": meta.get("max_output_length"),  # 模型最大输出长度，供 LLM 调用链设置 max_tokens 上限
         })
     return out
 
@@ -740,6 +744,71 @@ def _canon_item(item: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _extract_modalities(modalities: Any) -> List[str]:
+    """Intern InkStone 式嵌套模态拍平：[{'type':'text', ...}] → ['text']。"""
+    out: List[str] = []
+    if not isinstance(modalities, list):
+        return out
+    for entry in modalities:
+        if isinstance(entry, str):
+            if entry not in out:
+                out.append(entry)
+        elif isinstance(entry, dict):
+            t = entry.get("type")
+            if isinstance(t, str) and t not in out:
+                out.append(t)
+    return out
+
+
+def _extract_context_length(item: Dict[str, Any]) -> Optional[int]:
+    """Intern InkStone 上下文长度提取：优先顶层，其次 input_modalities[*].supported_inputs.max_context_length.value。"""
+    ctx = item.get("context_length")
+    if isinstance(ctx, int) and not isinstance(ctx, bool):
+        return ctx
+    for entry in item.get("input_modalities") or []:
+        if not isinstance(entry, dict):
+            continue
+        supported = entry.get("supported_inputs")
+        if not isinstance(supported, dict):
+            continue
+        node = supported.get("max_context_length")
+        if isinstance(node, dict):
+            val = node.get("value")
+            if isinstance(val, int) and not isinstance(val, bool):
+                return val
+    return None
+
+
+def _extract_max_output_length(item: Dict[str, Any]) -> Optional[int]:
+    """Intern InkStone 输出上限提取：优先顶层，其次 output_modalities[*].max_length.value。"""
+    max_out = item.get("max_output_length")
+    if isinstance(max_out, int) and not isinstance(max_out, bool):
+        return max_out
+    for entry in item.get("output_modalities") or []:
+        if not isinstance(entry, dict):
+            continue
+        node = entry.get("max_length")
+        if isinstance(node, dict):
+            val = node.get("value")
+            if isinstance(val, int) and not isinstance(val, bool):
+                return val
+    return None
+
+
+def _extract_supported_parameters(item: Dict[str, Any]) -> List[str]:
+    """Intern InkStone 参数名提取：从 output_modalities[*].supported_parameters 的键名归一。"""
+    out: List[str] = []
+    for entry in item.get("output_modalities") or []:
+        if not isinstance(entry, dict):
+            continue
+        params = entry.get("supported_parameters")
+        if isinstance(params, dict):
+            for key in params.keys():
+                if isinstance(key, str) and key not in out:
+                    out.append(key)
+    return out
+
+
 def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
     """响应解析层 → (models, err)；HTTP>=400/非JSON/非数组 → err — 小欧 2026-09-24"""
     if resp.status_code >= 400:
@@ -782,12 +851,11 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         #   7 字段就地降级为 DTO 声明类型: 路由已挂 response_model，错型会 500 掉整个模型库。
         #   非字符串不转 str(会产出 "{'x': 1}" 伪值)；bool 需排除(isinstance(True,int) 为真)。
         owned_by, name, desc = item.get("owned_by"), item.get("name"), item.get("description")
-        ctx, pricing, architecture = item.get("context_length"), item.get("pricing"), item.get("architecture")
+        pricing, architecture = item.get("pricing"), item.get("architecture")
         # 2026-10-10 小欧 - pricing 形状分流（键名已由 _canon_item 归一）：老厂商扁平 dict 原样用；
         #   zenmux 式复数嵌套才走 _flatten_pricings 拍平（只取 perMTokens，perCount 跳过）。
         if isinstance(pricing, dict) and any(isinstance(v, list) for v in pricing.values()):
             pricing = _flatten_pricings(pricing)
-# 2026-10-03 - 小欧 - 增补 free/stability（AMD 实测下发，此前被静默丢弃）。非 AMD 不返回 → None。
         free, stability = item.get("free"), item.get("stability")
         arch = architecture if isinstance(architecture, dict) else {}
         # 2026-10-05 22:16:38 - 小欧 - 厂商字段别名归一（SenseNova 实抓 9 模型 16 字段后补，丢弃 11 个）：
@@ -795,17 +863,15 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
         #     → {**arch, **item} 合成单一查找视图，顶层优先、嵌套兜底，替掉按厂商写if 分支（KISS-DIRECT）。
         #   ②命名不统一（同义键多名）→ 2026-10-10 起走入口 _canon_item 中央别名表（_first_alias 已退役删除）。
         merged = {**arch, **item}
-        max_out = item.get("max_output_length")
-        # 2026-10-10 小欧 - zenmux publish_time 透传（created 全假，publish_time 如 2026-09-03 才是真发布时间）。
+        # Intern InkStone 嵌套结构：上下文/输出上限/参数名都藏在模态对象里，先归一再进 DTO。
+        ctx = _extract_context_length(item)
+        max_out = _extract_max_output_length(item)
+        input_modalities = _merge_supports_modalities(_extract_modalities(merged.get("input_modalities")), item)
+        output_modalities = _extract_modalities(merged.get("output_modalities"))
+        supported_parameters = _extract_supported_parameters(item)
+        if not supported_parameters:
+            supported_parameters = _str_list(item.get("supported_parameters"))
         _pub = item.get("publish_time")
-        # 2026-10-11 小欧 - DeepSeek effort 透传（实测下发，此前被静默丢弃）：
-        #   effort.supported_levels（如 low/high/max）是推理强度档位，
-        #   effort.default_level 是默认值；非 DeepSeek 不返回 → 空列表/None。
-        #   北京老陈令：两个都加。
-        # 2026-10-11 小欧 - Moonshot 子键兼容：其形状为 valid_efforts/default_effort
-        #   （顶层 think_efforts/reasoning_efforts 已由 _KEY_ALIASES 归一到 effort）。
-        #   用 or 兜底而非 is None 判断 —— 与本文件 params_block.get(m) or {} 同款惯用法；
-        #   显式空列表属异常形态，回落另一键可接受。
         _eff = item.get("effort") if isinstance(item.get("effort"), dict) else {}
         _eff_levels = _eff.get("supported_levels") or _eff.get("valid_efforts")
         _eff_d = _eff.get("default_level") or _eff.get("default_effort")
@@ -814,28 +880,17 @@ def _parse_remote_models_body(resp: Any) -> Tuple[Optional[List[Dict[str, Any]]]
             "owned_by": owned_by if isinstance(owned_by, str) else None,
             "name": name if isinstance(name, str) else None,
             "description": desc if isinstance(desc, str) else None,
-            "context_length": ctx if isinstance(ctx, int) and not isinstance(ctx, bool) else None,
-            # 与 context_length 常差 8~16 倍（SenseNova 实测 glm-5.2 输出上限 131072 / 上下文 1048576），
-            # 只给上下文会让用户误以为单次也能输出 1M → 必须同屏可比（2026-10-05 小欧）。
-            "max_output_length": max_out if isinstance(max_out, int) and not isinstance(max_out, bool) else None,
+            "context_length": ctx,
+            "max_output_length": max_out,
             "pricing": pricing if isinstance(pricing, dict) else {},
             "architecture": arch,
-            # 图像生成模型 vs 对话模型的唯一判据（SenseNova u1/u1.5 输出模态为 image，其余为 text）
-            # 2026-10-11 小欧 - Moonshot supports_image_in/video_in 并入（同 _merge_capabilities 模式）。
-            "input_modalities": _merge_supports_modalities(_str_list(merged.get("input_modalities")), item),
-            "output_modalities": _str_list(merged.get("output_modalities")),
-            # 别名链已收敛到入口 _canon_item（OpenRouter/AMD supported_parameters、
-            #   SenseNova supported_sampling_parameters 在此已是同一键）：直读即可。
-            "supported_parameters": _str_list(item.get("supported_parameters")),
-            # 实测含 tools/json_mode/reasoning，直接决定"能不能挂工具"，与 sampling 参数不同语义故分列
-            # 2026-10-10 小欧 - zenmux 别名 capabilities:{reasoning:bool} 对象 → 并入列表（去重追加）。
-            # 2026-10-11 小欧 - Moonshot supports_reasoning/dynamic_tools 并入（同模式，见 _merge_supports_features）。
+            "input_modalities": input_modalities,
+            "output_modalities": output_modalities,
+            "supported_parameters": supported_parameters,
             "supported_features": _merge_supports_features(_merge_capabilities(_str_list(merged.get("supported_features")),
                                                       merged.get("capabilities")), item),
-            # free 用 bool 收（isinstance(True,int) 为真，按 int 收会吞掉 1/0）
             "free": free if isinstance(free, bool) else None,
             "stability": stability if isinstance(stability, str) and stability.strip() else None,
-            # 2026-10-10 小欧 - zenmux publish_time 透传（见上）。
             "publish_time": _pub if isinstance(_pub, str) and _pub.strip() else None,
             "effort_levels": _str_list(_eff_levels),
             "effort_default": _eff_d if isinstance(_eff_d, str) and _eff_d.strip() else None,
@@ -939,6 +994,41 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
     }
 
 
+def _persist_model_meta(
+    node: Dict[str, Any],
+    meta_by_id: Dict[str, Dict[str, Any]],
+    valid_ids: List[str],
+) -> None:
+    """把勾选模型的静态元数据持久化到 model_meta — 小欧 2026-10-26
+
+    字段分两组（新增字段只需在对应元组加一行，不碰逻辑）：
+      - INT_FIELDS：int 值（排除 bool），空值不写（防覆盖已有值）
+      - LIST_FIELDS：list 值（过滤非 str 成员），空数组也写（显式声明"无"）
+
+    仅对 valid_ids 中的模型写入，merge_nested_patch 负责与既有 model_meta 块合并。
+    """
+    # 2026-10-26 18:45:00 - 小欧 - 字段配置表（OCP：新增字段只加表行，不改逻辑）
+    INT_FIELDS = ("context_length", "max_output_length")
+    LIST_FIELDS = ("input_modalities", "output_modalities", "supported_parameters", "supported_features")
+    valid_set = set(valid_ids)
+    for mid, md in meta_by_id.items():
+        if mid not in valid_set or not isinstance(md, dict):
+            continue
+        leaf: Dict[str, Any] = {}
+        # int 字段组：isinstance(int) 且非 bool 才写，空值不覆盖已有值
+        for key in INT_FIELDS:
+            val = md.get(key)
+            if isinstance(val, int) and not isinstance(val, bool):
+                leaf[key] = val
+        # list 字段组：isinstance(list) 就写，空数组也写（显式声明"无"）
+        for key in LIST_FIELDS:
+            val = md.get(key)
+            if isinstance(val, list):
+                leaf[key] = [v for v in val if isinstance(v, str)]
+        if leaf:
+            node.setdefault("model_meta", {}).setdefault(mid, {}).update(leaf)
+
+
 def replace_provider_models(name: str, models: List[Dict[str, Any]]) -> Dict[str, Any]:
     """替换式写入 ai.{provider}.models + 差集孤儿清理 — 小欧 2026-09-24
 
@@ -947,6 +1037,10 @@ def replace_provider_models(name: str, models: List[Dict[str, Any]]) -> Dict[str
     同步落 ai.{provider}.model_meta.{model}（北京老陈指令——它们是模型自身属性，此前只在页面展示、
     重新拉取即丢，现在持久化到配置，离线/重启后仍可见）。removed 模型的 model_params/model_meta 块
     仍按既有差集孤儿清理整块置 None。
+
+    2026-10-26 18:45:00 - 小欧 - 三堂会审重构：
+      - 提取 _persist_model_meta 独立函数（SRP：编排 vs 细节分离）
+      - 用字段配置表 + 循环替代 6 个 if 块（DRY/KISS-DIRECT/OCP）
     """
     ai = _raw_ai()
     if name not in _provider_names(ai):
@@ -990,18 +1084,7 @@ def replace_provider_models(name: str, models: List[Dict[str, Any]]) -> Dict[str
         orphans = {m: None for m in removed if m in meta_block}
         if orphans:
             node["model_meta"] = orphans
-    # 2026-10-05 22:16:38 小欧 - 把勾选模型的「上下文/输入模态」静态元数据持久化到 model_meta：
-    #   它们此前只在页面展示、重新拉取即丢，北京老陈指令要随保存一并落配置。仅对 payload 中
-    #   非 None 的字段写入（防用空值改写远端数据），merge_nested_patch 负责与既有 model_meta 块合并。
-    for mid, md in meta_by_id.items():
-        if mid not in new_list or not isinstance(md, dict):
-            continue
-        leaf: Dict[str, Any] = {}
-        if isinstance(md.get("context_length"), int) and not isinstance(md.get("context_length"), bool):
-            leaf["context_length"] = md.get("context_length")
-        if isinstance(md.get("input_modalities"), list):
-            leaf["input_modalities"] = [v for v in md["input_modalities"] if isinstance(v, str)]
-        if leaf:
-            node.setdefault("model_meta", {}).setdefault(mid, {}).update(leaf)
+    # 2026-10-05 22:16:38 小欧 - 把勾选模型的「上下文/输入模态」静态元数据持久化到 model_meta
+    _persist_model_meta(node, meta_by_id, new_list)
     merge_nested_patch(tree, scope="model")
     return {"ok": True, "mtime": _config_mtime(), "added": added, "removed": removed}

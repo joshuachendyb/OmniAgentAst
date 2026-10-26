@@ -36,6 +36,8 @@
 //   不加超时。本板块行内注释已按规矩上提归并 — 小欧-2026-10-10
 // 编辑历史: 2026-10-11 07:33:53 小欧 - 对齐后端 DTO publish_time: 增 publish_time?: string | null(真发布时间, created 全假不可用; 不下发则 undefined) — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 小欧 - 对齐后端 DTO effort_levels/effort_default: 增 effort_levels?: string[](推理强度档位)/effort_default?: string | null(默认值); 非 DeepSeek 不返回 → 空数组/undefined; 北京老陈令两个都加 — 小欧-2026-10-11
+// 2026-10-26 18:45:00 - 小欧 - replaceModels 类型 Pick 增 max_output_length（对齐后端 DTO，保存时一并持久化输出上限）。
+// ModelEntry 增 max_output_length（从 model_meta 读取，供 LLM 调用链设置 max_tokens 上限）— 小欧-2026-10-26
 import api from './client';
 import type { SessionModelOverride } from '@/types/chat';
 
@@ -46,6 +48,8 @@ export interface ModelEntry {
   param_options?: Record<string, string[]>;
   range: Record<string, { min: number; max: number }>;
   capabilities: string[];
+  /** 模型最大输出 token 数。后端未下发 → undefined，由 LLM 调用链回退到全局默认值。 — 小欧-2026-10-26 */
+  max_output_length?: number | null;
 }
 
 export interface ProviderEntry {
@@ -351,7 +355,16 @@ export const modelApi = {
   replaceModels: async (
     provider: string,
     models: Array<
-      Pick<RemoteModelItem, 'id' | 'context_length' | 'input_modalities'>
+      Pick<
+        RemoteModelItem,
+        | 'id'
+        | 'context_length'
+        | 'max_output_length'
+        | 'input_modalities'
+        | 'output_modalities'
+        | 'supported_parameters'
+        | 'supported_features'
+      >
     >
   ): Promise<ReplaceModelsResult> => {
     const response = await api.put<ReplaceModelsResult>(

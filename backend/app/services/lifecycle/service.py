@@ -33,6 +33,9 @@
 #     (_current_model_ref 早被 reset_instance 清空, 字段无效且误导), 真实旧代身份改由 reset_instance 承担
 #     (唯一能在清空前取到它的位置); cleanup_old_instance 的"建新代"行与 _attach_scope"建代"重复, 已删;
 #   ④新增 _ref_str() 供三处换代日志统一格式化 model_ref(None 安全), 避免各写各的 — 小欧 2026-09-25
+# 2026-10-26 - 小欧 - create_service_instance 增 max_tokens 上限：从 model_meta 读 max_output_length，
+#   与用户设置值取较小值（用户未设则用模型上限，模型未设则用全局默认）；
+#   提取 _resolve_max_tokens 独立函数（SRP/SLAP）— 小欧-2026-10-26
 """
 service — 服务创建与获取
 
@@ -213,6 +216,21 @@ def _resolve_api_base(model_ref: ModelRef, provider_config: dict) -> str:
     return (model_ref.api_base or "").strip() or (provider_config.get("api_base") or "").strip()
 
 
+def _resolve_max_tokens(provider_config: dict, model: str) -> Optional[int]:
+    """解析 max_tokens 上限：从 model_meta 读 max_output_length，与用户值取较小值 — 小欧-2026-10-26"""
+    meta_block = provider_config.get("model_meta")
+    if not isinstance(meta_block, dict):
+        meta_block = {}
+    model_meta = meta_block.get(model)
+    if not isinstance(model_meta, dict):
+        model_meta = {}
+    max_output_length = model_meta.get("max_output_length")
+    user_max_tokens = provider_config.get("max_tokens")
+    if user_max_tokens is not None and max_output_length is not None:
+        return min(user_max_tokens, max_output_length)
+    return user_max_tokens if user_max_tokens is not None else max_output_length
+
+
 def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseAIService:
     """创建服务实例 — 小沈 2026-06-08; 2026-06-17 去除_前缀+透传层; 小欧 2026-07-09 新增model_params透传;
     小健 2026-08-17 DEFAULT_CONTEXT_LIMIT 迁 agent.compaction_constants;
@@ -220,6 +238,7 @@ def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseA
     api_base 来源 provider_config(设计要求3纳入 ModelRef); 2026-09-01 小欧 params 解析改复用 parse_model_params(DRY);
     2026-09-26 小欧 签名收归 ModelRef(禁散参数拆解, KISS-DIRECT)+api_base 解析收归 _resolve_api_base(DRY)"""
     extra_body_params, context_limit = parse_model_params(provider_config, model_ref.model)
+    max_tokens = _resolve_max_tokens(provider_config, model_ref.model)
     return BaseAIService(
         api_key=(provider_config.get("api_key") or "").strip(),
         # 【编辑历史 — 最新在下】
@@ -244,7 +263,7 @@ def create_service_instance(provider_config: dict, model_ref: ModelRef) -> BaseA
         llm_model=model_ref.model_copy(update={"api_base": _resolve_api_base(model_ref, provider_config)}),
         timeout=provider_config.get("timeout"),  # None=未设，BaseAIService 回落到 tuning>常量 — 小欧
         max_retries=provider_config.get("max_retries"),  # None=未设，BaseAIService 回落到 tuning>常量3 — 小欧
-        max_tokens=provider_config.get("max_tokens"),
+        max_tokens=max_tokens,  # 与模型 max_output_length 取较小值 — 小欧-2026-10-26
         temperature=provider_config.get("temperature"),  # ✅ v1.8 死键复活：去 float(...,0.7)恒非 None，改可 None — 小欧 2026-09-23
         top_p=provider_config.get("top_p"),  # 新增 — 小欧 2026-09-23
         frequency_penalty=provider_config.get("frequency_penalty"),  # 新增 — 小欧 2026-09-23

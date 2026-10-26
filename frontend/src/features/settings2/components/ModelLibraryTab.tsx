@@ -34,6 +34,8 @@
 //   系统 opencodeZenAdapter)，结果写 ZenVerifyModal 弹框；耗时按后端 5 并发估 2-3 分钟，按钮
 //   loading 期间不给假进度文案(无真实进度可报)，只锁重复点击。错误提示走 showMessage(ErrorType.WARNING)
 //   而非 antd message —— 后者被项目 lint 规则 no-restricted-syntax 禁用 — 小欧-2026-10-10
+// 2026-10-26 18:45:00 - 小欧 - saveModels 增 max_output_length 上送（与 context_length 同策略：?? undefined，
+//   空值不发送，后端不覆盖已有值）。
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -441,7 +443,11 @@ export const ModelLibraryTab: React.FC<Props> = ({
               ? {
                   id,
                   context_length: m.context_length ?? undefined,
+                  max_output_length: m.max_output_length ?? undefined,
                   input_modalities: m.input_modalities ?? [],
+                  output_modalities: m.output_modalities ?? [],
+                  supported_parameters: m.supported_parameters ?? [],
+                  supported_features: m.supported_features ?? [],
                 }
               : { id };
           });
