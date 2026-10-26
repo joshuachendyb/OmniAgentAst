@@ -20,6 +20,8 @@
 // 2026-10-25 小欧 - minRows 1→2 定案(北京老陈令): 1 行起步过扁, 2 行起步留一行输入余量更显舒展, 仍远低于 3 行的框内空白 — 小欧-2026-10-25
 // 2026-10-25 小欧 - 新增 executingHint 可选 prop(北京老陈令): 执行中且输入框为空时, placeholder 区追加橘红色提示
 //   (overlay 绝对定位, 隐藏原生 placeholder, 灰+橘红双层渲染); 不传/非空态行为不变 — 小欧-2026-10-25
+// 2026-10-26 小欧 - overlay 内层 div 加 data-testid="receiving-hint"(保 H3/H9/H10 e2e 定位);
+//   加在内层而非外层 wrapper —— 外层含 placeholder 灰字+橘红提示两行, toHaveText 会取全文导致 H3 断言不匹配 — 小欧-2026-10-26
 /**
  * InputCore - 输入框本体（多行）
  *
@@ -119,7 +121,8 @@ const InputCore: React.FC<InputCoreProps> = ({
           <div style={{ color: Colors.TEXT.WEAK, fontSize: 14 }}>
             输入消息，Shift+Enter 换行
           </div>
-          <div style={{ color: Colors.ORANGE_RED, fontSize: 12 }}>
+          {/* 2026-10-26 小欧 - testid 保 H3/H9/H10 e2e 定位(原 B 块已删, 此处为唯一挂载点) */}
+          <div data-testid="receiving-hint" style={{ color: Colors.ORANGE_RED, fontSize: 12 }}>
             {executingHint}
           </div>
         </div>

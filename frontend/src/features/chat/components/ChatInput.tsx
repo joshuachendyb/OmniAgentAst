@@ -40,6 +40,9 @@
 //   提交门同源不变 — 小欧-2026-10-25
 // 2026-10-25 小欧 - 新增 executingHint 传 InputCore(北京老陈令): 执行中且输入框为空时 placeholder 区
 //   追加橘红色 "任务执行中…开启插话开关可追加输入"; 非执行中/非空态自动消失 — 小欧-2026-10-25
+// 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案原样搬移
+//   B 的原话(执行中/提交中两段), 删输入框下方 B 块(原 694-707)消除双提示并存; testid 保 overlay 内层
+//   以保 H3/H9/H10 e2e 不断 — 小欧-2026-10-26
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -80,7 +83,7 @@ import {
 import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 关闭面板时重拉徽标数
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
-import { Colors, FontSize } from '@/utils/stepStyles';
+import { Colors } from '@/utils/stepStyles';
 
 interface ChatInputProps {
   loading: boolean;
@@ -613,7 +616,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onKeyDown={handleInputKeyDown}
           focusKey={focusKey}
           inputRef={inputRef}
-          executingHint={isReceiving ? '任务执行中…开启插话开关可追加输入' : undefined}
+          executingHint={sendBlocked
+            ? (isReceiving
+                ? '任务执行中，可开启「插话开关」后追加输入，或等待完成后发送'
+                : '正在提交，请稍候')
+            : undefined}
           /*
            * 2026-10-13 18:15 小欧 - 不再 disabled。
            *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中
@@ -685,26 +692,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
             : ''}
         </div>
       </div>
-      {/*
-        2026-10-13 18:40 小欧 - 「不可发送」的常驻说明。
-          ⚠️ 显隐判据必须用 sendBlocked(与发送按钮置灰同源), 早前写成 `isReceiving && !allowInterject`
-          导致 loading=true 而 isReceiving=false 的窗口里按钮灰着却无任何说明, 判据两套互相打架。
-          文案按 isReceiving 区分「执行中」与「发送中」两种受阻原因。
-      */}
-      {sendBlocked && (
-        <div
-          data-testid="receiving-hint"
-          style={{
-            fontSize: FontSize.CAPTION,
-            color: Colors.TEXT.SECONDARY,
-            marginTop: -2,
-          }}
-        >
-          {isReceiving
-            ? '任务执行中，可开启「插话开关」后追加输入，或等待完成后发送'
-            : '正在提交，请稍候'}
-        </div>
-      )}
+
       <SubmitBar
         modelPickerSlot={modelPickerSlot ?? null}
         leftExtra={
