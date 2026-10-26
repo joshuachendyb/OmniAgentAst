@@ -343,6 +343,10 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="推理内容折叠开关：开=每段思考进来就展开；关=新出现的推理段默认只显示标题行，点标题行的箭头可单独展开/收起"),
         _item("appearance.step_render.thoughtMarkdown", "bool", "思考排版", True,
               notice="思考内容(thought)用 Markdown 语法渲染的开关：开=按标题/加粗/列表/代码等语法渲染，关=按纯文本实时显示（效果同加粗）"),
+        _item("appearance.step_render.contentRender", "bool", "Content渲染", True,
+              notice="步骤内容(content)渲染开关：开=正常渲染步骤内容，关=隐藏步骤内容"),
+        _item("appearance.step_render.diffRender", "bool", "Diff渲染", True,
+              notice="Diff渲染开关：开=显示代码变更对比，关=隐藏Diff视图"),
     ]},
     # 2026-09-24 小欧 - 模型库：items 空（schema 仅提供 label 供 Tab 渲染），内容走专用组件分支
     "model_library": {"label": "模型库", "items": []},

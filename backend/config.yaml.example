@@ -197,11 +197,17 @@ app:
 #       (标题/粗体/列表/代码; 关掉则按纯文本实时显示)
 #   step_render.reasoningVisible = 「推理内容」: reasoning 块每段的折叠初值
 #       (开=每段进来就展开; 关=每段进来只留标题行, 点标题行的箭头可单独展开/收起)
-# 两个开关互不干涉: 前者只管 thought 块怎么画, 后者只管 reasoning 块初始折叠态 — 小欧-2026-10-05
+#   step_render.contentRender = 「Content渲染」: 步骤内容(content)渲染开关
+#       (开=正常渲染步骤内容; 关=隐藏步骤内容)
+#   step_render.diffRender = 「Diff渲染」: Diff渲染开关
+#       (开=显示代码变更对比; 关=隐藏Diff视图)
+# 四个开关互不干涉: 各自控制独立渲染维度 — 小欧-2026-10-26
 appearance:
   step_render:
     thoughtMarkdown: true
     reasoningVisible: true
+    contentRender: true
+    diffRender: true
 
 # 工作区配置（项目根=tool工作区; 未配置(空)时缺省=用户主目录 — 小欧 2026-08-10）
 workspace:
