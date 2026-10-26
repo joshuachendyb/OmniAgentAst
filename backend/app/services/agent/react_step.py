@@ -177,6 +177,7 @@
 # 2026-10-13 小欧 截断分支 tool_result 补 raw_data:None, 与 observation_builder 的 tool_result 契约保持同构(每元素自包含),
 #   前端按 raw_data 渲染时不会读到 undefined; data_text 不变(LLM 与 history_loader 回放的唯一文本源) — 小欧-2026-10-13
 # 2026-10-24 小欧 - 死循环纠偏注释修正(北京老陈令): 场景F 注释 "assistant role" 改 "user role"(实现本为 user, 注释写错) — 小欧-2026-10-24
+# 2026-10-25 小欧 - 信号计算外移: trim_history 调用前加 _trim_signal() 判信号, 信号触发后才调 trim_history(信号计算与裁剪逻辑分离, 调用方控制流程) — 小欧-2026-10-25
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 
@@ -324,7 +325,8 @@ async def _process_single_step(agent, chunk_buffer) -> List:
     #   [KISS] 单一吸收点(所有轮共用 _absorb_inbox 这一处), 无积压则零开销跳过;
     #   置于 trim_history 之前: 新消息参与本轮 prepare 前的一致性组装, 不滞留尾部跨轮 — 小欧-2026-09-20
     await _absorb_inbox(agent)
-    agent.message_builder.trim_history()  # 唯一裁剪入口 — 小欧 2026-07-01
+    if agent.message_builder._trim_signal():  # 信号触发后才裁剪 — 小欧 2026-10-25
+        agent.message_builder.trim_history()
     agent.telemetry.on_trim(
         getattr(agent.message_builder, "_trimmed_this_round", False),
         getattr(agent.message_builder, "_trimmed_tokens_this_round", 0),

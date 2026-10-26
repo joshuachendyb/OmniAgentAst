@@ -384,9 +384,9 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="模型一直往外吐零碎字却始终不给完整回答，累计吐够这么多次就判定卡死、强制结束任务（防止白白烧配额）"),
         # --- trim: 裁剪 5 键（loop 每轮评估）— 小欧-2026-10-25
         _item("tuning.trim.max_rounds", "int", "裁剪历史触发轮", 100, range_=[1, 10000],
-              notice="历史轮数上限，超出即触发裁剪；调大保留更多原始信息，调小更早裁旧"),
-        _item("tuning.trim.trigger_ratio", "float", "裁剪触发水位", 0.9, range_=[0.5, 0.95],
-              notice="粗估 token 达可用内容预算(context_limit-compaction_buffer-tools_token_reserve)此比例即触发裁剪；调小更早触发，调大占用更高才裁"),
+              notice="用于计算消息数上限(msg_ceiling=max_rounds×2+5)，超出即触发裁剪；调大保留更多原始信息，调小更早裁旧"),
+        _item("tuning.trim.trigger_ratio", "float", "裁剪阈值调节系数", 0.8, range_=[0.5, 0.95],
+              notice="裁剪入口阈值=budget_base×系数(一次方)；裁剪出口队列预算=budget_base×系数²(二次方)；调小更早触发且队列预算更小，调大更晚触发且队列预算更大"),
         _item("tuning.trim.compaction_buffer", "int", "上下文预留空间", 20000, range_=[1000, 100000],
               notice="裁剪预算中扣除的输出预留；不足则裁完 messages 已逼近 context_limit"),
         _item("tuning.trim.keep_recent_rounds", "int", "最近轮硬保护", 5, range_=[5, 20],

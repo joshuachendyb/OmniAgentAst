@@ -300,7 +300,7 @@ tuning:
   # 裁剪（5 键，loop 每轮评估）— 小欧-2026-10-25
   trim:
     max_rounds: 100                # 历史轮数上限, 超出即触发裁剪
-    trigger_ratio: 0.9             # 粗估 token / 可用内容预算 达此比例触发裁剪; 预算=window-compaction_buffer-tools_token_reserve
+    trigger_ratio: 0.8             # 裁剪入口阈值=budget_base×系数(一次方); 裁剪出口队列预算=budget_base×系数²(二次方); 预算=window-compaction_buffer-tools_token_reserve
     compaction_buffer: 20000       # 增量触发阈值, 亦从裁剪预算中扣除
     keep_recent_rounds: 5          # 裁剪时最近 N 个 FC 工具步不参与裁剪, 范围 5-20
     tools_token_reserve: 30000     # tools schema 占用输入 token, 从裁剪预算扣除防超窗 400

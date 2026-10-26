@@ -53,8 +53,11 @@ DEFAULT_CONTEXT_LIMIT = 262144   # = 256K
 # 意义: start 超窗触发比例(=上下文×1/2, 北京老陈 2026-08-17 定案)——start 一次性注入历史更保守, 门限更低
 #       (start 超窗于此比例即置 _needs_compact 触发 C4 锚定摘要)
 START_TRIGGER_RATIO = 0.5
-# 意义: loop 裁剪触发水位, 作用于可用内容预算(context_limit-compaction_buffer-tools_token_reserve), 粗估超过 预算×水位 触发绝对值安全网; 触发线与裁剪预算同源单口径 — 小欧 2026-10-25
-TRIM_TRIGGER_RATIO = 0.9
+# 意义: loop 裁剪阈值调节系数, 作用于裁剪预算(context_limit-compaction_buffer-tools_token_reserve):
+#       ① 裁剪入口阈值=预算×系数(一次方), 粗估超过此阈值触发绝对值安全网
+#       ② 裁剪出口队列预算=预算×系数²(二次方), 队列只能用此预算
+#       与裁剪预算同源单口径 — 小欧 2026-10-25
+TRIM_TRIGGER_RATIO = 0.8
 # 意义: 输出预留缓冲区(OpenCode 式, 用于增量触发和预算裁剪)
 COMPACTION_BUFFER = 20000
 # 意义: tools 定义(schema)token 预留——trim_history 按预算裁 messages 时, tools 定义也占输入窗口,

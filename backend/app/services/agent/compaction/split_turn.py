@@ -9,7 +9,11 @@
 #   调用点(split_history_window / start_step 摘要前降本)行为不变 — 小欧-2026-10-25
 # 2026-10-25 小欧 - 新增 find_recent_rounds_start(北京老陈令): 触发/预算计算不变, 仅裁剪发生时最近 N 个
 #   FC 工具轮(assistant(tool_calls)+其 tool 结果)硬保护, 第 N+1 步起才按预算整轮裁; N 由
-#   tuning.trim.keep_recent_rounds 配置(5-20, 默认 5), 不足 N 轮返回 len(messages)=不裁 — 小欧-2026-10-25
+#   tuning.trim.keep_recent_rounds 配置(5-20, 默认 5), 不足 N 轮返回 prefix=不裁 — 小欧-2026-10-25
+# 2026-10-26 小欧 - 三堂会审修复(北京老陈令): find_recent_rounds_start 不足N轮返回 prefix 修复(原 len(messages)
+#   致保护区为空照裁); 新增 count_system_prefix 消除 prefix 计算三处重复(DRY) — 小欧-2026-10-26
+# 2026-10-26 小欧 - 队列预算公式改(北京老陈令): budget_for_queue = budget_base × trigger_ratio² - 保护区token,
+#   docstring 保护区/预算链说明同步更新 — 小欧-2026-10-26
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -43,6 +47,17 @@ def preserve_recent_budget(usable_tokens: int) -> int:
     return min(TAIL_TOKEN_MAX, max(TAIL_TOKEN_MIN, int(usable_tokens * TAIL_TOKEN_RATIO)))
 
 
+def count_system_prefix(messages: List[Dict]) -> int:
+    """统计消息列表头部连续 system 消息数量 — 小欧 2026-10-26"""
+    prefix = 0
+    for msg in messages:
+        if msg.get("role") == "system":
+            prefix += 1
+        else:
+            break
+    return prefix
+
+
 def find_tail_start(messages: List[Dict], budget_tokens: int,
                     align_turn: bool = False) -> int:
     """定位尾部窗口起始下标, 满足 token 预算且不拆散 FC 对 — 小健 2026-08-17
@@ -59,12 +74,7 @@ def find_tail_start(messages: List[Dict], budget_tokens: int,
     """
     if not messages:
         return 0
-    prefix = 0
-    for msg in messages:
-        if msg.get("role") == "system":
-            prefix += 1
-        else:
-            break
+    prefix = count_system_prefix(messages)
     if prefix and MessageBuilder._estimate_tokens(messages[:prefix]) > budget_tokens:
         return prefix
     used = 0
@@ -101,19 +111,35 @@ def find_recent_rounds_start(messages: List[Dict], n_rounds: int) -> int:
     loop 裁剪发生时最近 N 步硬保护(裁剪切点不得侵入本区), 第 N+1 步起才允许按预算整轮裁。
     user 消息不参与轮数定义(loop 中 user 就 1~5 条, 必保是另一层职责)。
 
+    保护区构成:
+      hist[keep_from:] = 倒数第N个 asst(tool_calls) + 其 tool 结果
+                      + 倒数第N-1个 asst(tool_calls) + 其 tool 结果
+                      + ... + 倒数第1个 asst(tool_calls) + 其 tool 结果
+                      + 末条 final answer(如有)
+
+    保护区 token 用途:
+      budget_for_queue = budget_base × trigger_ratio² - estimate_tokens(保护区)
+      队列只能用触发阈值再乘系数后的剩余预算; 保护区超预算则不裁队列(budget_for_queue<0)
+
+    示例(N=5):
+      [system] [user] ... [asst(tool)] [tool] [asst(tool)] [tool] ... [asst(tool)] [tool] [asst(final)]
+                    ↑ prefix              ↑ keep_from
+                    |                     |
+                    |-- 队列(可裁) --|--- 保护区(不裁) ---|
+      保护区 = 倒数第5个 asst(tool) 起至末尾, 含其 tool 结果 + 末条 final answer
+
+    边界情况:
+      保护区 token > budget_base → budget_for_queue<0 → 不裁队列, 只保保护区
+      工具轮 < N → keep_from=prefix → 保护区=全部非system → 队列空 → 不裁
+
     输入: messages 消息列表; n_rounds 保护轮数(规范 5-20, 默认 5, 经
           tuning.trim.keep_recent_rounds 配置)。
     输出: 从后往前数第 n_rounds 个 assistant(tool_calls) 的下标; 工具轮总数不足 n_rounds
-          时返回 len(messages)(保护区覆盖全部, 即不裁)。
+          时返回 prefix(system 之后下标, 保护区覆盖全部非 system 消息, 即不裁)。
     """
     if not messages:
         return 0
-    prefix = 0
-    for msg in messages:
-        if msg.get("role") == "system":
-            prefix += 1
-        else:
-            break
+    prefix = count_system_prefix(messages)
     count = 0
     for i in range(len(messages) - 1, prefix - 1, -1):
         m = messages[i]
@@ -121,7 +147,8 @@ def find_recent_rounds_start(messages: List[Dict], n_rounds: int) -> int:
             count += 1
             if count >= n_rounds:
                 return i
-    return len(messages)
+    # 工具轮不足 N: 返回 prefix → 保护区=全部非 system → 队列=空 → 不裁
+    return prefix
 
 
 def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:
