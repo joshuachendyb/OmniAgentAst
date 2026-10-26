@@ -29,6 +29,8 @@
  *   (只封顶 maxHeight 不够, 位置仍贴触发器生长, 近满屏高时会被 rc-trigger 上推过头切掉顶部);
  *   ②cardStyle 补 maxHeight:'calc(100vh - 58px)' + overflowY:'auto', 高度由内容定但封顶不超屏;
  *   58 = 留白32 + antd inner padding 24 + 边框2(卡片设 padding:0 去不掉 inner 的 padding) — 小欧-2026-10-14
+ * 编辑历史: 2026-10-26 小沈 - 浮层顶部行(北京老陈令): 加粗显示 timestamp+content(后端首帧写入 userinput[10]+压缩情况),
+ *   下接 2px 分隔线与下方信息明显区隔; 「对话上下文」「历史上下文」两个 SectionHead 标题后各带 timestamp — 小沈-2026-10-26
  */
 import React, { useState } from 'react';
 import type { ContextOverviewFrame } from '@/types/sse';
@@ -241,16 +243,45 @@ export const ContextOverviewCard: React.FC<Props> = ({
       }}
       content={
         <>
+          {/* 2026-10-26 小沈: 顶部行(北京老陈令) — timestamp+content, 加粗, 与下方信息分隔 */}
+          {overview?.content && (
+            <>
+              <div
+                style={{
+                  fontWeight: FontWeight.BOLD,
+                  color: Colors.TEXT.PRIMARY,
+                  fontSize: FontSize.SECONDARY,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {overview?.timestamp ? `${overview.timestamp} ` : ''}
+                {overview.content}
+              </div>
+              <div
+                style={{
+                  borderTop: `2px solid ${Colors.BORDER.LIGHT}`,
+                  marginBottom: Spacing.XS,
+                }}
+              />
+            </>
+          )}
           {/* 2026-10-09: 对话上下文段仅实时任务可见 —— conv 是逐轮水位, 历史任务不定格显示 */}
           {isLiveContext && (
             <>
               {/* 2026-10-10 小欧 本段身份标识读 conv 组 —— 与历史段各读各的, 不再显同一句 */}
               <SectionHead dotColor={Colors.PRIMARY} title="对话上下文">
+                {overview?.timestamp && (
+                  <span style={{ color: Colors.TEXT.TERTIARY, whiteSpace: 'nowrap' }}>
+                    {overview.timestamp}
+                  </span>
+                )}
                 {convContentText && (
                   <div
                     style={{
                       color: Colors.TEXT.TERTIARY,
                       whiteSpace: 'nowrap',
+                      marginLeft: overview?.timestamp ? Spacing.MD : 0,
                     }}
                   >
                     {convContentText}
@@ -296,8 +327,13 @@ export const ContextOverviewCard: React.FC<Props> = ({
             {/* 2026-10-10 小欧: 本段右侧 = content_link_mode(身份) + compressed(压缩情况),
                 同行顺序直显(同一 div 内并排, 不被容器 gap 撑开), 均 nowrap 不折行 */}
             <div style={{ display: 'flex', whiteSpace: 'nowrap' }}>
-              {linkModeText && (
+              {overview?.timestamp && (
                 <span style={{ color: Colors.TEXT.TERTIARY }}>
+                  {overview.timestamp}
+                </span>
+              )}
+              {linkModeText && (
+                <span style={{ color: Colors.TEXT.TERTIARY, marginLeft: overview?.timestamp ? Spacing.MD : 0 }}>
                   {linkModeText}
                 </span>
               )}
@@ -305,7 +341,7 @@ export const ContextOverviewCard: React.FC<Props> = ({
                 <span
                   style={{
                     color: Colors.TEXT.SECONDARY,
-                    marginLeft: linkModeText ? Spacing.MD : 0,
+                    marginLeft: linkModeText || overview?.timestamp ? Spacing.MD : 0,
                   }}
                 >
                   {compressedText}

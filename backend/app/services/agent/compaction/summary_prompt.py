@@ -2,6 +2,7 @@
 # 编辑历史:
 #   2026-08-16 小欧 新增: 锚定摘要固定结构模板(借鉴 opencode SUMMARY_TEMPLATE)
 #   2026-08-17 小健 对齐设计文档 14.9.4①: 模板六段固定结构, 供 C4 generate_anchored_summary/generate_chunked_summary 复用
+# 2026-10-26 小沈 - 段名与顺序对齐 opencode: Critical Context→Important Details(改名), Progress 子项 Done→Completed, 删 Next Steps, 增 Summary(成功/失败情况); Goal/Key Decisions/Relevant Files 保留 — 小沈-2026-10-26
 """compaction.summary_prompt — C4 摘要模板 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「锚定摘要固定结构模板」。不包含任何压缩/裁剪业务逻辑。
@@ -12,13 +13,13 @@ SUMMARY_TEMPLATE = """你是专业的汇总分析助手。
 根据**历史对话数据**。
 铁规:严格按照下面的格式顺序输出六段 Markdown 摘要. 
 
-- Goal: 当前任务目标
+- Goal: [one or two brief sentences describing what the user is trying to accomplish]
 - Key Decisions: 关键决策与结论
-- Critical Context: 不可或缺的上下文(文件路径/关键数据)
-- Relevant Files: 涉及文件清单
-- Progress: 已完成(Done)/进行中(InProgress)/受阻(Blocked)
- [1]Done--完成了什么认为
- [2]InProgress-当前进展情况如何
- [3]Blocked-遇到什么阻碍和问题
-- Next Steps: 下一步计划
+- Important Details: [constraints/preferences, decisions and why, important facts/assumptions, exact context needed to continue, or "(none)"]
+- Progress:
+  [1] Completed: [finished work, verified facts, or changes made; otherwise "(none)"]
+  [2] InProgress: [current work, partial changes, or investigation state; otherwise "(none)"]
+  [3] Blocked: [blockers, failing commands, or unknowns; otherwise "(none)"]
+- Summary: 前一段工作总结(成功情况/失败情况)
+- Relevant Files: [file or directory path: why it matters, or "(none)"]
 若已有 previousSummary, 请增量合并(保留已有结论, 追加新发现), 不重复不遗漏。"""

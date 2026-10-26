@@ -23,6 +23,8 @@
 // 编辑历史: 2026-10-04 小欧 - TaskMetaFrames 加 contextWindow(运行时上下文窗口, 来自 usage 帧), emptyMetaFrames 同步置 null
 // 编辑历史: 2026-10-08 小欧 - ContextOverviewFrame: 删 injected_ratio(>1 才代表压缩生效, 标签"压缩比"方向相反),
 //   改 compressed(是否压缩) + compress_saved_pct(省了多少%); 字段契约须与后端 build_context_overview 同步。
+// 编辑历史: 2026-10-26 小沈 - ContextOverviewFrame 恢复顶层 timestamp/content: 浮层顶部行(北京老陈令)显示
+//   timestamp+content(后端首帧写入 userinput[10]+压缩情况), 标题行后各带 timestamp; 原 2026-10-10 删的顶层回落读法不适用此处(非回落, 是新用途) — 小沈-2026-10-26
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
@@ -57,10 +59,14 @@ export interface FinalStatsFrame {
   llm_call_count?: number;
 }
 export interface ContextOverviewFrame {
-  // 2026-10-10 小欧: 结构定稿, 只认这两个分组(禁 backward: 不再加其他形状)
+  // 浮层上下文卡片数据源 — 双分组(对话/历史) + 顶层 timestamp/content(顶部行显示)
+  //   conv_context/inject_context 各段身份标识读各的(content/content_link_mode), 不互相回落
   conv_context?: ConvContextFrame;
   inject_context?: InjectContextFrame;
-  // 2026-10-10 小欧 顶层 content 已删 —— 身份标识按段拆进两分组(见下), 禁顶层回落读法
+  // 顶层 timestamp/content: 后端首帧写入, 浮层顶部行加粗显示 timestamp+content
+  //   content = userinput[10] + 压缩情况(无历史/直接注入/压缩模型[provider/model]) — 小沈-2026-10-26
+  timestamp?: string;
+  content?: string;
 }
 // 2026-10-09 小欧: conv 侧独立成 interface —— 「对话上下文」段只读这一个, 不越界
 // 2026-10-10 小欧: 补 content —— 本段身份标识, 「对话上下文」段标题右侧显示

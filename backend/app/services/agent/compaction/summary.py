@@ -26,6 +26,7 @@
 # 2026-10-25 小欧 段标记校验放宽(北京老陈令): Agents-A1 用 ## 段名 格式(无冒号), 原 "段名:" 子串匹配
 #   失败致摘要被误弃→零退化回退原历史超窗→上游400; 改双重校验: ①段名去冒号子串匹配 ②正则容忍 ##/段名:/**段名:**
 #   三种形式; 六段全中即过 — 小欧-2026-10-25
+# 2026-10-26 小沈 - _SUMMARY_SECTIONS 段名同步(与 summary_prompt.py 模板同源): Critical Context→Important Details, 删 Next Steps, 增 Summary, Progress 保留; 段名变更必同步此处, 否则校验恒判"缺段标记"→摘要被弃→压缩失效 — 小沈-2026-10-26
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -49,8 +50,9 @@ _SUMMARY_TAIL_USER = "以上是历史对话数据。请按 system 指定格式�
 # 六段标记(与 SUMMARY_TEMPLATE 同源, 改模板即改此处) — 小欧 2026-10-12
 # 2026-10-25 小欧 段名去冒号(北京老陈令): Agents-A1 用 ## 段名 格式(无冒号), 原 "段名:" 子串匹配失败致摘要被误弃;
 #   段名列表去冒号, 既供正则匹配, 也供子串兜底 — 小欧-2026-10-25
-_SUMMARY_SECTIONS = ("Goal", "Key Decisions", "Critical Context",
-                     "Relevant Files", "Progress", "Next Steps")
+# 2026-10-26 小沈: 段名对齐 opencode 描述(Critical Context→Important Details, 删 Next Steps, 增 Summary), 与 summary_prompt.py 同源 — 小沈-2026-10-26
+_SUMMARY_SECTIONS = ("Goal", "Key Decisions", "Important Details",
+                     "Progress", "Summary", "Relevant Files")
 _SUMMARY_MIN_CHARS = 200  # 缺省; 优先读 tuning.compaction.summary_min_chars（与本文件配置化口径一致）
 _REFUSAL_PREFIXES = ("抱歉", "对不起", "很抱歉")
 

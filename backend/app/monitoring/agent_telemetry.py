@@ -61,6 +61,8 @@
 #   形态的空串键集, 前端按缺字段读出空 UI 如实显示。补单测 tests/test_history_context_frame.py(19 例)。
 # 2026-10-10 - 小欧 _inject_frame 空模板四键→五键(增 content_link_mode): 该键随双字段拆分一并入库,
 #   保持"未发首帧就发后续帧"时返回形状与"无注入"同形, 不靠调用方分支(DRY)。
+# 2026-10-26 小沈 - build_history_context_step 增顶层 content 构造(北京老陈令): 首帧算 content=userinput[10]+压缩情况
+#   (无历史/直接注入/压缩模型[provider/model] 三态), 存槽 _first_frame_content, 后续帧从槽读保持不变; 槽位随 telemetry 实例每任务新建(天然隔离)。 — 小沈-2026-10-26
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
 
 设计定位（北京老陈 2026-08-20 指示：监控代码独立放 app/monitoring/）：
@@ -177,6 +179,8 @@ class TaskTelemetry:
         #   帧内展示同源(首帧口径)。原落库用终态快照喂同一公式, 终态含全部工具结果,
         #   conv 远大于 inj → 百分比被夹逼成 0.0, 与前端显示的数对不上账。
         self._first_frame_conv_tokens: Optional[int] = None
+        # 2026-10-26 小沈: 首帧 content 存槽(userinput[10]+压缩情况), 后续帧从槽读保持不变
+        self._first_frame_content: Optional[str] = None
         self._trim_count = 0
         self._trim_tokens = 0
         self._artifacts: List[Dict[str, str]] = []   # 任务产出物收集（内存态，终态随 final_stats / update_task 下发）— 小欧 2026-08-21
@@ -420,6 +424,7 @@ class TaskTelemetry:
         适用场景: ① react_loop 装配完 conv 后、emit start 之前发首帧(压缩与不压缩都发);
                   ② react_step 裁剪轮/每5轮发水位更新。
         输出: MetaStep(type="history_context"); telemetry 未挂载时返回 None(调用方跳过)。
+        2026-10-26 小沈: 首帧 content=userinput[10]+压缩情况(无历史/直接注入/压缩模型[provider/model] 三态), 后续帧从槽读保持不变。
         """
         _emitter = getattr(self.agent, "_step_emitter", None)
         if _emitter is None:
@@ -427,8 +432,26 @@ class TaskTelemetry:
         from app.services.agent.steps import MetaStep
         _meta = getattr(self.agent, "_start_meta", None) or {}
         _frame = self._build_history_context_frame(step, _meta)
+        # 2026-10-26 小沈: content 构造 — 首帧算好存槽, 后续帧从槽读
+        if step == 0 or self._first_frame_content is None:
+            _user_preview = getattr(self.agent, "_user_input_preview", "") or ""
+            _content = _user_preview
+            _summary = getattr(self.agent, "_start_summary", "") or ""
+            if _summary:
+                _m = getattr(self.agent, "_task_llm_model", None) or getattr(getattr(self.agent, "llm_client", None), "llm_model", None)
+                _provider = getattr(_m, "provider", "") or ""
+                _model = getattr(_m, "model", "") or ""
+                _content += f"* 压缩模型[{_provider}/{_model}]"
+            else:
+                # 有历史注入但无摘要 = 直接注入; 无注入则不追加 — 小沈-2026-10-26
+                _inj = getattr(self.agent, "_injected_history_msgs", None) or []
+                if _inj:
+                    _content += "* 直接注入"
+            self._first_frame_content = _content
+        else:
+            _content = self._first_frame_content
         return _emitter.emit(MetaStep(
-            step=step, type="history_context", severity="info", **_frame,
+            step=step, type="history_context", severity="info", content=_content, **_frame,
         ))
 
     # ── 终态聚合 + 落库 ─────────────────────────────────

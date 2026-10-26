@@ -60,6 +60,7 @@
 # 2026-10-14 小欧 - linked 增量摘要: 有摘要时补注入 delta 原文 + 摘要落库到覆盖上界任务行(下次锚点), 写回失败仅告警 — 小欧-2026-10-14
 # 2026-10-14 小欧 - 文档[33] 4.1连带表: :363 clear_temp_auth 改从 app.safety.temp_auth 导入
 # 2026-10-25 小欧 - 增量注入顺序修复(北京老陈令): 原两次 inject_history 把 delta 插到 summary 前面, 顺序错(应为 summary 在前 delta 在后); 合并为一次调用 — 小欧-2026-10-25
+# 2026-10-26 小沈 - 首帧 content 的 userinput 预览: 发 history_context 首帧前设 agent._user_input_preview=(task or "")[:10], 供 telemetry 读构造 content(截断10字符) — 小沈-2026-10-26
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -180,6 +181,8 @@ async def run_react_cycle(
         agent.message_builder.inject_history(getattr(agent, "_injected_history_msgs", None) or [])
     _tele_hc = getattr(agent, "telemetry", None)
     if _tele_hc is not None:
+        # 2026-10-26 小沈: 首帧 content 的 userinput 预览(截断10字符), 供 history_context 首帧读取
+        agent._user_input_preview = (task or "")[:10]
         _hc_first = _tele_hc.build_history_context_step(step=0)
         if _hc_first is not None:
             await _publish(_hc_first.to_dict())

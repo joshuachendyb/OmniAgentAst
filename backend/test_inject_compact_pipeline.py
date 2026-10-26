@@ -53,18 +53,19 @@ CTX_LIMIT = 243736
 SUMMARY_OUT = r"F:\OmniAgentAs-repair\backend\summary_out.txt"  # 摘要留档
 
 # 六段字段名(中英等价) — 模型输出中文字段名同样算合规汇总
-FIELDS = ["Goal", "Key Decisions", "Next Steps",
-          "Critical Context", "Relevant Files", "Progress"]
+# 2026-10-26 小沈: 对齐 summary_prompt.py 新模板(Critical Context→Important Details, 删 Next Steps, 增 Summary) — 小沈-2026-10-26
+FIELDS = ["Goal", "Key Decisions", "Important Details",
+          "Progress", "Summary", "Relevant Files"]
 
 # 2026-10-08 小欧 - 配置覆盖的"键原本不存在"哨兵(区别于值为 None)
 _MISSING = object()
 ALIASES = {
     "Goal": ["Goal", "目标"],
     "Key Decisions": ["Key Decisions", "关键决策", "关键结论"],
-    "Next Steps": ["Next Steps", "下一步", "后续", "计划"],
-    "Critical Context": ["Critical Context", "关键上下文", "上下文", "关键背景"],
-    "Relevant Files": ["Relevant Files", "相关文件", "涉及文件", "文件清单"],
+    "Important Details": ["Important Details", "重要细节", "重要上下文", "关键细节"],
     "Progress": ["Progress", "进展", "进度", "已完成"],
+    "Summary": ["Summary", "工作总结", "总结", "成功失败"],
+    "Relevant Files": ["Relevant Files", "相关文件", "涉及文件", "文件清单"],
 }
 
 
