@@ -55,6 +55,7 @@
 // 编辑历史: 2026-10-25 小欧 - 通知信封接入: ProcessEvent 接口新增 notice_kind/notice_phase 可选字段; notice case 透传两字段供 NOTICE_CONFIG 按 kind+phase 查表渲染 — 小欧-2026-10-25
 // 编辑历史: 2026-10-26 小沈 - notice双渲染: LiveMeta扩展notice字段; latestProcessEvent支持notice;
 //   start/failed设位4, done清除; final success时candidates全清(badge==='completed'→空数组) — 小沈-2026-10-26
+// 编辑历史: 2026-10-26 小沈 - 卡死预警接入liveMeta: LiveMeta.kind补'warning'; stuckWarning命中时以kind='warning'/'疑似卡死'进入位2候选; 删除stuckWarning返回值(不再独立渲染, 由TaskInfoBar位2动态状态承载) — 小沈-2026-10-26
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -112,7 +113,7 @@ export interface ProcessEvent {
 // 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级);
 // 2026-09-08 小欧 6.3.4: 补 requestLevel(位4图标分层——error 请求级⛔/执行级红圆底白×; retrying/truncated 恒执行级false) — 小欧-2026-09-08
 export interface LiveMeta {
-  kind: 'retrying' | 'error' | 'truncated' | 'notice';
+  kind: 'retrying' | 'error' | 'truncated' | 'warning' | 'notice';
   text: string;
   time: number;
   requestLevel: boolean;
@@ -217,7 +218,6 @@ export const useTaskInfo = (
         processEventCount: (detail.process_events ?? []).length,
         // 2026-10-11: 历史态不回传(快照已在库中), 置空数组保持返回结构同构, 供调用方无脑取用
         processEventsSnapshot: [],
-        stuckWarning: false,
         liveMeta: null, // 小欧 2026-09-02: 历史回放位4置空不占位(无实时源)
       };
     }
@@ -525,6 +525,16 @@ export const useTaskInfo = (
                   },
                 ]
               : []),
+            ...(stuckWarning
+              ? [
+                  {
+                    kind: 'warning' as const,
+                    text: '疑似卡死',
+                    time: now,
+                    requestLevel: false,
+                  },
+                ]
+              : []),
             ...(latestProcessEvent ? [latestProcessEvent] : []),
           ];
     const liveMeta = candidates.sort((a, b) => b.time - a.time)[0] ?? null;
@@ -562,7 +572,6 @@ export const useTaskInfo = (
       processEventsSnapshot: processEvents.filter(
         (e) => e.kind !== 'heartbeat'
       ),
-      stuckWarning,
       liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
   }, [steps, frames, detail, liveError, storeStatus]);

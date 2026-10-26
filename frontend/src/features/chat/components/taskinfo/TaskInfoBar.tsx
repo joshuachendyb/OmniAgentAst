@@ -27,7 +27,7 @@
 //   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(定时器防每帧重置去抖, 见:122注释),
 //   加eslint-disable+理由注释 — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - 位4错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(60)截断加…,
+// 编辑历史: 2026-09-09 小欧 - 位4错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(20)截断加…,
 //   宽/中屏超长时 Tooltip 全文(窄屏沿用 G4 EllipsisTip maxWidth200, 不叠双层Tooltip), 杜绝超长 error_message 撑爆第一行;
 //   G6上下文卡片标签"上下文详情"→"历史上下文"(ariaLabel+卡片标题同步, 北京老陈令), 摘要移除 slice(0,60) 截断改完整显示 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行 G6 上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
@@ -62,6 +62,12 @@
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 taskId prop(取值与组件 key 同源 activeTaskId ?? serverTaskId, 不新造标识); final 到达时调 saveTaskProcessEvents 回传快照(_sentRef 幂等只发一次, _latestRef 读最新值避 exhaustive-deps, effect 首行 if (detail) return 防历史态误回填覆盖/跨任务污染; 失败只 console.warn 不阻断) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射启用: import NOTICE_CONFIG; 事件时间轴渲染 notice 条目时按 kind+phase 查 NOTICE_CONFIG, 未命中回退 EVENT_ICON_MAP.notice — 小欧-2026-10-25
 // 编辑历史: 2026-10-26 小沈 - renderLiveMeta支持notice: start=SyncOutlined spinner+橙色, failed=WarningOutlined+红色; 位4双渲染完成 — 小沈-2026-10-26
+// 编辑历史: 2026-10-26 小沈 - 卡死预警接入位2动态状态: LIVE_META_TEXT_MAX 60→20, 事件时间轴截断 13→20, 事件浮层宽 520→220; stuckWarning 不再独立渲染, 由 liveMeta(kind='warning')承载; 新增11位置对照表 — 小沈-2026-10-26
+// 11位置对照表(当前实际布局, 从左到右):
+//   1 徽标      2 动态状态(含卡死预警 warning)
+//   3 轮次      4 本轮token 5 步数
+//   6 占窗率    7 任务token 8 上下文
+//   9 耗时     10 信任    11 事件
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -111,12 +117,12 @@ import {
 import { ContextOverviewCard } from './ContextOverviewCard';
 
 // 2026-09-09 小欧 - 位4 liveMeta 文本字符上限: 超长 error/truncated 文案截断加…, 全文进 Tooltip — 小欧-2026-09-09
-const LIVE_META_TEXT_MAX = 60;
+const LIVE_META_TEXT_MAX = 20;
 
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
 //   点用淡蓝 BORDER.ACCENT(明显但不抢, 避开绿=成功/红=失败语义色), 字符取真圆点"•"、字号 SECONDARY,
 //   原"·"+CAPTION 10px 太小看不见(北京老陈令)
-// 2026-10-25 小欧: 事件时间轴 text 统一 13 字截断(动态 err/notice 防撑爆布局) — 小欧-2026-10-25
+// 2026-10-25 小欧: 事件时间轴 text 统一 20 字截断(动态 err/notice 防撑爆布局) — 小欧-2026-10-25
 const DOT_STYLE: CSSProperties = {
   fontSize: FontSize.SECONDARY,
   color: Colors.BORDER.ACCENT,
@@ -290,7 +296,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               {e.kind === 'notice'
                 ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
-              <span style={{ marginLeft: Spacing.XS }}>{e.text.length > 13 ? e.text.slice(0, 13) + '…' : e.text}</span>
+              <span style={{ marginLeft: Spacing.XS }}>{e.text.length > 20 ? e.text.slice(0, 20) + '…' : e.text}</span>
             </span>
           </div>
         ))}
@@ -327,7 +333,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               : Colors.ERROR // 执行级: CloseCircleFilled 红
             : m.kind === 'notice' && m.notice_phase === 'failed'
               ? Colors.ERROR // notice failed: 红色
-              : Colors.WARNING, // retrying/truncated/notice-start: #AD6800 (对比度≥4.5:1)
+              : Colors.WARNING, // retrying/truncated/warning/notice-start: #AD6800 (对比度≥4.5:1)
         marginLeft: Spacing.XS,
       }}
     >
@@ -348,7 +354,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           />
         )
       ) : (
-        <WarningOutlined /> // ⚠ → WarningOutlined (truncated)
+        <WarningOutlined /> // ⚠ → WarningOutlined (truncated/warning)
       )}{' '}
       {briefMeta(m).text}
     </span>
@@ -396,9 +402,13 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexShrink: 0,
           }}
         >
+          {/* ── 左组: 1徽标 2动态状态(含卡死预警 warning) ── */}
+          {/* 1-徽标(状态指示) */}
           <Badge status={b.status} text={b.text} />
 
+          {/* 2-动态状态: 位置固定, 收 retrying/error/truncated/warning/notice, 无优先级; warning=卡死预警 */}
           {/* 小欧 2026-09-02: 第一行位4(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
+
           {/* 3.9 断点矩阵: wide/mid 完整显示, narrow/xsmall 省略(maxWidth 200 + ellipsis + Tooltip 全文) — v4.4 修复#3 */}
           {info.liveMeta &&
             (isNarrow ? (
@@ -417,13 +427,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             ) : (
               renderLiveMeta(info.liveMeta)
             ))}
-          {info.stuckWarning && (
-            <span
-              style={{ fontSize: FontSize.SECONDARY, color: Colors.WARNING }}
-            >
-              · 疑似卡死
-            </span>
-          )}
+
         </div>
         <div
           style={{
@@ -436,9 +440,12 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexWrap: 'wrap',
           }}
         >
+          {/* ── 中组: 3轮次 4本轮token 5步数 6占窗率 7任务token 8上下文 ── */}
+          {/* 3-轮次 */}
           {/* G3 步轮: 2026-10-04 小欧 拆为轮/步两段独立 span, 删 xsmall "耗时·轮·步" 合并串(北京老陈: 不要纠缠在一起) */}
           <span style={STAT_STYLE}>轮:{info.llmCallCount}</span>
           <span style={DOT_STYLE}>•</span>
+          {/* 4-本轮token(P/C/T) — G5: P加粗+C/T中灰, 序P/C/T, 折K(M); narrow起C/T收进tooltip; 无数据显示– */}
           {/* G5 本轮/任务: P 加粗 + C/T 中灰, 序 P/C/T, 折 K(M); narrow 起 C/T 收进 tooltip; 无数据显示 –;
               本轮项不显标签(北京老陈令), 轮已前移至其前 — 小欧 2026-10-04 */}
           <MetricItem
@@ -451,8 +458,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / C ${info.roundUsage?.completion ?? 0} / T ${info.roundUsage?.total ?? 0}`}
           />
           <span style={DOT_STYLE}>•</span>
+          {/* 5-步数 */}
           <span style={STAT_STYLE}>步:{info.stepCount}</span>
           <span style={DOT_STYLE}>•</span>
+          {/* 6-占窗率 — G8: 本轮P/上下文窗口, 恒≤100%(单轮受压缩裁剪约束), 分子不用任务累计 */}
           {/* G8 占窗率: 本轮 P / 当前任务模型上下文窗口(usage 帧带来, 见 react_step context_window);
               恒 ≤100%(单轮受压缩裁剪约束), 分子不用任务累计 —— 累计是多轮相加会超 100%(北京老陈 2026-10-04 定) */}
           {windowUsePct != null && (
@@ -465,6 +474,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               <span style={DOT_STYLE}>•</span>
             </>
           )}
+          {/* 7-任务token(P/C/T累计) — 标签"任务"(原"累计") */}
           <MetricItem
             label="任务" // 2026-09-18 小欧: 北京老陈令 "累计"→"任务" — 小欧-2026-09-18
             value={`P ${formatTokenK(
@@ -479,6 +489,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             tooltip={`任务 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
           />
           <span style={DOT_STYLE}>•</span>
+          {/* 8-上下文 — G6: 浮层①入口锚点, 内容抽至ContextOverviewCard */}
           {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试。
               2026-10-04 小欧: 浮层内容抽至 ContextOverviewCard */}
           <ContextOverviewCard
@@ -496,6 +507,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
+          {/* ── 右组: 9耗时 10信任 11事件 ── */}
+          {/* 9-耗时 — G2: 时分秒格式, 各档常显 */}
           {/* G2 耗时(独立小组, 位置未动): 2026-10-04 小欧 去掉 !isXSmall 门 —— 原为与步轮合并成"耗时·轮·步"让位,
               步轮独立迁至中组后, 若仍隐藏则极窄屏丢失耗时, 故改为各档常显 — 小欧 2026-10-04 */}
           <span
@@ -508,8 +521,10 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           >
             耗时 {formatDurationHMS(shownElapsed)}
           </span>
+          {/* 10-信任 — G7: TrustPanel触发按钮, 窄档仅计数 */}
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
           <TrustPanel sessionId={sessionId} compact={isNarrow} />
+          {/* 11-事件 — G8: 浮层②事件卡片, 热区32×32, 开合唯一真源=trigger+onOpenChange */}
           {/* G8 事件入口(v4.1/v4.2, v4.2 经 FloatingEntry 实现): 浮层② 事件卡片, 热区 32×32, hover 规格 2, 3.8 键盘 */}
           {/* v4.2 双写修复: 删 onClick 手动 setEventsOpen toggle(与 antd trigger click 双重写入), 开合唯一真源为 trigger + onOpenChange, 与 G6 对齐 */}
           <FloatingEntry
@@ -518,7 +533,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             placement="bottomRight" // v4.1: 右缘对齐 G8, 向左展开(3.9)(antd 真值, 见 FloatingEntry)
             cardId="taskinfo-events-card"
             ariaLabel="事件序列"
-            cardStyle={{ width: 520, maxWidth: '90vw' }}
+            cardStyle={{ width: 220, maxWidth: '90vw' }}
             content={eventsTimeline} // 6.5.3.10 移入: role="log" + aria-live + maxHeight 40vh 内滚
           >
             <span style={{ fontSize: FontSize.CAPTION }}>
