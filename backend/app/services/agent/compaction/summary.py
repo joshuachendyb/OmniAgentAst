@@ -27,6 +27,8 @@
 #   失败致摘要被误弃→零退化回退原历史超窗→上游400; 改双重校验: ①段名去冒号子串匹配 ②正则容忍 ##/段名:/**段名:**
 #   三种形式; 六段全中即过 — 小欧-2026-10-25
 # 2026-10-26 小沈 - _SUMMARY_SECTIONS 段名同步(与 summary_prompt.py 模板同源): Critical Context→Important Details, 删 Next Steps, 增 Summary, Progress 保留; 段名变更必同步此处, 否则校验恒判"缺段标记"→摘要被弃→压缩失效 — 小沈-2026-10-26
+# 2026-10-27 小欧 - 方案B: 往次摘要改为 assistant 消息注入(去 system 拼接); previousSummary 标签废弃, 与 summary_prompt.py 文案统一
+# 2026-10-27 小欧 - _SUMMARY_TAIL_USER 文案润色: "以上"改"以下"并收紧表述, 与历史数据实际位置一致
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -44,7 +46,7 @@ from app.services.agent.compaction.summary_prompt import SUMMARY_TEMPLATE
 from app.services.agent.llm_call import call_llm_text_task  # 2026-10-20 16:2x 小欧 通用纯文本调用迁至 llm_call(SRP归位, 北京老陈裁定), 本模块改薄引用
 
 # 摘要收尾指令(防"半截对话→续写", 见文件头编辑历史)
-_SUMMARY_TAIL_USER = "以上是历史对话数据。请按 system 指定格式输出六段摘要。"
+_SUMMARY_TAIL_USER = "以下是本次需要摘要的历史对话内容。请按 system 指定格式输出六段摘要。"
 
 
 # 六段标记(与 SUMMARY_TEMPLATE 同源, 改模板即改此处) — 小欧 2026-10-12
@@ -110,14 +112,12 @@ def _valid_summary_or_empty(text: str, src_len: int = 0) -> str:
     return t
 
 
-async def generate_anchored_summary(llm_agent, messages: List[Dict],
-                                    previous_summary: Optional[str] = None) -> str:
+async def generate_anchored_summary(llm_agent, messages: List[Dict]) -> str:
     """一次 LLM 调用产出锚定摘要 — 小欧 2026-08-16
 
     适用场景: C4 锚定摘要压缩(当前唯一接入主链路); 长任务跨多轮/续聊需保决策链, 且已放开 R4 零 LLM 原则。
     使用方法: 由 react_cycle._compact_injected_history await 调用(传 agent + 对话历史); 也可独立对任意消息列表调用。
-    输入: llm_agent Agent 对象(须含 .llm_client, 用于发起流式调用); messages 对话消息列表;
-          previous_summary 可选上一轮摘要文本(用于增量锚定)。
+    输入: llm_agent Agent 对象(须含 .llm_client, 用于发起流式调用); messages 对话消息列表。
     输出: str 锚定摘要文本(SUMMARY_TEMPLATE 六段 Markdown); 为空表示未产出(上层原样保留历史, 零退化)。
     前置条件: 由 react_cycle._compact_injected_history await 调用(仅在 start 超窗判定后), 不放宽安全门;
               tools=None 走 Text 模式不触发工具; 首参必须是 agent 对象而非 llm_client
@@ -130,15 +130,14 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict],
             feed.append({**msg, "content": c})
         else:
             feed.append(msg)
-    prompt = SUMMARY_TEMPLATE + (f"\npreviousSummary:\n{previous_summary}" if previous_summary else "")
-    feed = [{"role": "system", "content": prompt}, *feed, {"role": "user", "content": _SUMMARY_TAIL_USER}]
+    feed = [{"role": "system", "content": SUMMARY_TEMPLATE}, *feed, {"role": "user", "content": _SUMMARY_TAIL_USER}]
     _src_len = sum(len(str(m.get("content") or "")) for m in messages)
     return _valid_summary_or_empty(await call_llm_text_task(llm_agent, feed), _src_len)
 
 
 async def generate_chunked_summary(llm_agent, new_block: List[Dict],
                                    previous_summary: Optional[str] = None) -> str:
-    """只把新增块喂 LLM, 与 previousSummary 合并 — 小欧 2026-08-16
+    """只把新增块喂 LLM, 与 [往次摘要] 合并 — 小欧 2026-08-16
 
     适用场景: C4 降本变体(备选); 长任务且会多次压缩时, 只摘要"新增块"避免全量重算, 成本随压缩次数线性。
     使用方法: 传 llm_agent + 新增块消息列表 + 可选上一轮摘要, await 返回摘要文本。
@@ -146,11 +145,11 @@ async def generate_chunked_summary(llm_agent, new_block: List[Dict],
           previous_summary 可选上一轮摘要。
     输出: str 增量合并后的摘要文本。
     前置条件: 同 generate_anchored_summary(须放开 R4、首参 agent 对象); 与 C4 区别仅在不重喂全量历史,
-          只 new_block(tool 输出截断 2000) + previousSummary。
+          只 new_block(tool 输出截断 2000) + [往次摘要]。
     """
     feed: List[Dict] = [{"role": "system", "content": SUMMARY_TEMPLATE}]
     if previous_summary:
-        feed.append({"role": "user", "content": f"已有摘要:\n{previous_summary}"})
+        feed.append({"role": "assistant", "content": f"[往次摘要]: {previous_summary}"})
     _feed_max2 = int(get_config().get('tuning.compaction.summary_feed_max_chars', SUMMARY_FEED_MAX_CHARS))  # 小欧 2026-09-23 compaction配置化
     for msg in new_block:
         c = str(msg.get("content", ""))[:_feed_max2] if msg.get("role") == "tool" else str(msg.get("content", ""))

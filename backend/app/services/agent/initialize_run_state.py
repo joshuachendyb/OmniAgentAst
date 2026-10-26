@@ -33,6 +33,9 @@
 # 2026-10-10 - 小欧 -  新增 _start_summary / _compact_attempted
 #   每轮初始化(替代 start_step 内重复清零), 二者被 telemetry 读以区分"未超窗"与"压缩失败"。
 # 2026-10-14 小欧 - linked 增量摘要标记每轮清零(_injected_delta_msgs/_pending_chain_summary_cover, 防跨任务串味) — 小欧-2026-10-14
+
+# 2026-10-26 小欧 三堂会审 YAGNI: 删 _start_summary_anchor_task_id 清零(全库0消费, 死字段)
+
 # 2026-10-26 小沈 - 补 _injected_history_msgs 每轮清零(与 _injected_delta_msgs 同款, 防跨任务串味); 原仅清零 delta 未清 history,
 #   agent 复用且本次无 context 任务时残留上一轮注入历史 → telemetry 误判"直接注入"(content 串味); 同批统一
 #   _pending_chain_summary_cover 清零值 False→None(对齐 start_step:340 三态 None/True, 消除类型不一致) — 小沈-2026-10-26
@@ -80,6 +83,10 @@ def initialize_run_state(
     agent._injected_history_msgs = None
     agent._injected_delta_msgs = None
     agent._pending_chain_summary_cover = None
+    # 2026-10-26 小欧: 新增事实状态清零 —— 防 agent 复用跨任务残留(与 _injected_delta_msgs 同款)
+    agent._injected_effective_count = 0
+    agent._injected_effective_tokens = 0
+    agent._compressed_source_tokens = 0
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
         try:

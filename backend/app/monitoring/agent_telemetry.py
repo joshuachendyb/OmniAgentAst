@@ -61,6 +61,9 @@
 #   形态的空串键集, 前端按缺字段读出空 UI 如实显示。补单测 tests/test_history_context_frame.py(19 例)。
 # 2026-10-10 - 小欧 _inject_frame 空模板四键→五键(增 content_link_mode): 该键随双字段拆分一并入库,
 #   保持"未发首帧就发后续帧"时返回形状与"无注入"同形, 不靠调用方分支(DRY)。
+
+# 2026-10-26 小欧 三堂会审 DRY: _inj_count/_inj_tokens 抽取为 _get_injected_facts 方法(原两处重复 getattr+or 链)
+
 # 2026-10-26 小沈 - build_history_context_step 增顶层 content 构造(北京老陈令): 首帧算 content=userinput[10]+压缩情况
 #   (无历史/直接注入/压缩模型[provider/model] 三态), 存槽 _first_frame_content, 后续帧从槽读保持不变; 槽位随 telemetry 实例每任务新建(天然隔离)。 — 小沈-2026-10-26
 """任务级遥测采集（独立模块，收敛全部监控状态/计算/产出）—— 小欧 2026-08-20
@@ -337,6 +340,25 @@ class TaskTelemetry:
         """
         return max(0.0, round((1 - conv_tokens / inj_tokens) * 100, 1)) if inj_tokens else 0.0
 
+    def _get_injected_facts(self) -> tuple:
+        """注入事实数(条数+token) —— 锚点路径优先读 start_step 算好的事实数, 老路 fallback 到 set_injected_context
+
+        2026-10-26 小欧 三堂会审 DRY: 原在 _build_history_context_frame 与 finalize 各写一遍 getattr+or 链,
+          收敛为本方法, 单一真源防分叉。
+        """
+        _inj = self._injected_context or {}
+        _count = int(getattr(self.agent, "_injected_effective_count", 0) or _inj.get("message_count", 0) or 0)
+        _tokens = int(getattr(self.agent, "_injected_effective_tokens", 0) or _inj.get("estimated_tokens", 0) or 0)
+        return _count, _tokens
+
+    def _get_compressed_source_tokens(self) -> int:
+        """压缩率分母(原始内容 token) —— 仅压缩成功路径使用, 与显示用 _injected_effective_tokens 分离
+
+        2026-10-26 小欧 三堂会审: BUG-6/BUG-7 语义拆分, 压缩率分母与前端展示/落库展示 token 不再共用字段。
+        """
+        _inj = self._injected_context or {}
+        return int(getattr(self.agent, "_compressed_source_tokens", 0) or _inj.get("estimated_tokens", 0) or 0)
+
     def _build_history_context_frame(self, step: int, meta: Dict[str, Any]) -> Dict[str, Any]:
         """组装 history_context 整帧 —— conv/inject 双分组一次成型([20] §3.1.1)
 
@@ -382,14 +404,12 @@ class TaskTelemetry:
             # 首帧 conv token 定稿存槽, 供落库 compress_saved_pct 与帧内同源(审计 B2)
             self._first_frame_conv_tokens = _conv_tokens
             if _linked:
-                _inj = self._injected_context or {}
-                _inj_count = int(_inj.get("message_count", 0) or 0)
-                _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
+                _inj_count, _inj_tokens = self._get_injected_facts()
                 _summary = str(getattr(self.agent, "_start_summary", "") or "").strip()
                 if not _inj_count:
                     _compressed = "无历史上下文注入"
                 elif _summary:
-                    _compressed = f"本次注入历史信息压缩率= {self._compress_pct(_conv_tokens, _inj_tokens)}%"
+                    _compressed = f"本次注入历史信息压缩率= {self._compress_pct(_conv_tokens, self._get_compressed_source_tokens())}%"
                 elif getattr(self.agent, "_compact_attempted", False):
                     # 尝试压缩却无摘要 = 失败/取消, 如实上报; 未触发则空串
                     _compressed = "本次注入历史信息压缩失败"
@@ -489,9 +509,7 @@ class TaskTelemetry:
         # 2026-10-10 小欧[20]: 落库快照自取数字(不再调 build_context_overview, 该函数已随双分组改造删除)
         _snap_count = len(_mb.conversation_history) if _mb is not None else 0
         _snap_tokens = MessageBuilder._estimate_tokens(_mb.conversation_history) if _mb is not None else 0
-        _inj = self._injected_context or {}
-        _inj_count = int(_inj.get("message_count", 0) or 0)
-        _inj_tokens = int(_inj.get("estimated_tokens", 0) or 0)
+        _inj_count, _inj_tokens = self._get_injected_facts()
         _snap_summary = str(getattr(_agent, "_start_summary", "") or "").strip()
         _llm_client = getattr(_agent, "llm_client", None)
         _meta = getattr(_agent, "_start_meta", None)
@@ -535,7 +553,7 @@ class TaskTelemetry:
                 self._compress_pct(
                     self._first_frame_conv_tokens
                     if self._first_frame_conv_tokens is not None else _snap_tokens,
-                    _inj_tokens,
+                    self._get_compressed_source_tokens(),
                 ) if _snap_summary else 0.0),
             "trim_count": self._trim_count,     # C1修复(复核确认): 原 on_trim 采集数据不进 finalize, 裁剪遥测死链路 — 小欧 2026-08-20
             "trim_tokens": self._trim_tokens,

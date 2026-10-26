@@ -66,6 +66,12 @@
 # 2026-10-25 小欧 - taskinfo 文案压缩(≤15汉字): summarizing notice 去冗余词(历史/生成重复), 失败文案缩到10字 — 小欧-2026-10-25
 # 2026-10-25 小欧 - notice 调用点 log-print 补齐(三堂会审): 全量摘要成功路径 logger.debug→info(可观测);
 #   失败(else)路径补 logger.info(与增量路径 373 行同模式, 互补不冗余) — 小欧-2026-10-25
+
+# 2026-10-26 小欧 三堂会审修复: ① YAGNI删 _start_summary_anchor_task_id(全库0消费);
+#   ② 路径①补 emit_notice(与②③④一致); ③ DRY: telemetry _inj_count/_inj_tokens 抽取为 _get_injected_facts
+#   ④ 路径③ count 改实际注入条数(1条新摘要), 原显示原始条数(1+len(delta))但实际只注入1条, 前端误导
+#   ⑤ 老路压缩成功路径补 _injected_effective_count=1(与 linked 路径③同口径), 防 telemetry fallback 成 len(previous_messages)
+
 # 2026-10-25 小欧 - 摘要失败降级(北京老陈令): 摘要校验失败不再直接回退全量原历史(超窗必400), 按"离得远价值低、
 #   离得近价值大"时间衰减序 split_history_window 切 old_head(远)+tail(近), prune_tool_output_keeping_tail
 #   清零 old_head 旧 tool 输出释放大头 token, 保尾原样; 接起闲置的 split_history_window — 小欧-2026-10-25
@@ -88,6 +94,20 @@ from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
 from app.logger import logger, log_and_print
+
+# 2026-10-26 小欧 - _start_summary 来源前缀: 让前端/日志一眼区分摘要来源
+#   往次摘要=复用锚点；本次摘要=本轮新压
+SUMMARY_PREFIX_PREVIOUS = "[往次摘要]: "
+SUMMARY_PREFIX_CURRENT = "[本次摘要]: "
+
+
+def _prefix_summary(summary: str, prefix: str) -> str:
+    """给摘要文本加来源前缀，且避免重复前缀。"""
+    if not summary:
+        return summary
+    if summary.startswith(prefix):
+        return summary
+    return prefix + summary
 
 
 def _strip_history_msgs(prev: List[Dict[str, Any]], drop_last_user: bool = True) -> List[Dict[str, Any]]:
@@ -338,10 +358,24 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
     delta_msgs = _strip_history_msgs(delta_raw, drop_last_user=False)
     agent._injected_delta_msgs = delta_msgs
     agent._pending_chain_summary_cover = None   # 默认无处可落; 真产生新摘要时才填(react_loop 消费)
+    # 2026-10-26 小欧: 事实状态初始化 —— 4 条路径各自覆写, telemetry 纯观察不推断
+    #   _injected_effective_count: 本次实际注入条数([摘要] + delta 或 [新摘要] 或 len(history))
+    agent._injected_effective_count = 0
+    agent._injected_effective_tokens = 0
     # 补偿: 无 delta 且锚点摘要可用 → 零 LLM 直接复用
     if not delta_msgs:
-        agent._start_summary = anchor_summary
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_count = 1   # [摘要] 1 条
+        # 2026-10-26 小欧: 锚点路径 previous_messages 为空, _injected_context.estimated_tokens=0;
+        #   注入源=[摘要 assistant 消息], 此处算好真实 token 供 telemetry 压缩率计算
+        from app.services.agent.message_builder import MessageBuilder
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": agent._start_summary}])
         logger.info(f"[start_step] 增量路径: delta 为空, 直接复用锚点摘要(anchor={anchor.get('task_id')})")
+        # 2026-10-26 小欧 三堂会审: 路径①补 notice(与路径②③④一致, 前端需感知摘要状态)
+        await agent._step_emitter.emit_notice("summarizing", "done",
+                           "复用锚点摘要(无增量)")
         return True
     try:
         from app.services.agent.compaction_constants import START_TRIGGER_RATIO
@@ -355,7 +389,10 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         _delta_tokens, _threshold = 1, 0
     if _delta_tokens < _threshold:
         # B门(与老路同尺): delta 未超阈值 → 不调 LLM, 摘要直接复用(常态, 启动零等待)
-        agent._start_summary = anchor_summary
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_count = 1 + len(delta_msgs)   # [摘要] + delta
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)}] + delta_msgs)
         logger.info(
             f"[start_step] 增量路径: delta {_delta_tokens}tok < 阈值 {_threshold}, 复用锚点摘要(零 LLM 调用)")
         # 2026-10-25 小欧: 复用路径也发 notice(done), 前端需感知摘要状态 — 小欧-2026-10-25
@@ -387,15 +424,25 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
             f"[start_step] 增量摘要失败, 回退复用锚点摘要: {type(e).__name__}: {e!r}")
         new_summary = ""
     if new_summary:
-        agent._start_summary = new_summary
+        agent._start_summary = _prefix_summary(new_summary, SUMMARY_PREFIX_CURRENT)
         agent._injected_delta_msgs = None  # delta 已压缩进 summary, 不再单独注入(冗余) — 小欧 2026-10-25
         agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
+        # 2026-10-26 小欧 三堂会审: count=实际注入条数(1条新摘要), tokens=实际注入摘要token(前端展示);
+        #   原 count=1+len(delta) 显示原始条数, 但实际只注入1条新摘要(delta已压缩进摘要), 前端误导
+        agent._injected_effective_count = 1   # 实际注入条数 = [新摘要]（delta 已压缩进摘要）
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": _prefix_summary(new_summary, SUMMARY_PREFIX_CURRENT)}])  # 实际注入摘要 token（前端展示）
+        agent._compressed_source_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": anchor_summary}] + delta_msgs)  # 原始内容 token（压缩率分母）
         logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
         await agent._step_emitter.emit_notice("summarizing", "done",
                            f"增量摘要完成({len(new_summary)}字)")
     else:
         # 失败回退: 旧锚点摘要 + 全量 delta(比老路的全量历史更省, 语义等价: 老历史已被摘要代表)
-        agent._start_summary = anchor_summary
+        agent._start_summary = _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)
+        agent._injected_effective_count = 1 + len(delta_msgs)   # [摘要] + delta
+        agent._injected_effective_tokens = MessageBuilder._estimate_tokens(
+            [{"role": "assistant", "content": _prefix_summary(anchor_summary, SUMMARY_PREFIX_PREVIOUS)}] + delta_msgs)
         logger.info("[start_step] 增量摘要未产出, 回退「锚点摘要 + 全量 delta」")
         await agent._step_emitter.emit_notice("summarizing", "failed",
                            "增量摘要失败，回退锚点")
@@ -470,10 +517,17 @@ async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["Start
             # 2026-10-09  语义=确实调用了摘要生成(非"判定超窗"), 故置执行分支内,
             #   供 telemetry 区分"未触发压缩"与"压缩失败"; 每轮清零已移至 initialize_run_state
             agent._compact_attempted = True
-            agent._start_summary = await _compact_injected_history(agent)
+            agent._start_summary = _prefix_summary(await _compact_injected_history(agent), SUMMARY_PREFIX_CURRENT)
             # 老路摘要同样落"上一个任务行"(下次锚点), 否则增量永无锚点。— 小欧 2026-10-14
             if getattr(agent, "_start_summary", ""):
                 agent._pending_chain_summary_cover = True
+                # 2026-10-26 小欧 三堂会审: 老路压缩成功后实际只注入1条摘要,
+                #   与 linked 路径③同口径置 count=1, 防止 telemetry fallback 成 len(previous_messages)
+                agent._injected_effective_count = 1
+                agent._injected_effective_tokens = agent.message_builder._estimate_tokens(
+                    [{"role": "assistant", "content": agent._start_summary}])
+                agent._compressed_source_tokens = agent.message_builder._estimate_tokens(
+                    getattr(agent, "_injected_history_msgs", None) or [])
     # 11.3-A 跨任务注入基线快照（独立模块 TaskTelemetry 存储，固定不漂移）— 小欧 2026-08-20
     _tele = getattr(agent, "telemetry", None)
     if _tele is not None:
