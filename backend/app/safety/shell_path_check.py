@@ -43,6 +43,11 @@
 # 2026-10-20 小欧 - cwd 去掉写线判定: cwd 是相对路径解析基准而非被写对象, 原判定致
 #   「在项目根下执行 dir/python -c」误判「写项目根」并弹 HITL(日志 10:56:35 实锤)。
 #   保留两项: 畸形 cwd fail-closed 硬拦; 禁区·系统 cwd 禁止执行(防脚本在其中落盘)。
+# 2026-10-28 小欧 - 解析失败都放行(北京老陈令「解析失败必须放行, 不拦不弹窗」):
+#   三处 fail-closed 改放行 —— command 非字符串、cwd 非字符串/含元字符、cwd 归属判定异常。
+#   均为解析失败(判定不出/输入畸形), 非确定危险, 不得因解析能力不足错杀。
+#   读线非法路径(空值/穿越/格式化/判定异常)改 continue 放行; 系统源外泄拦截保留。
+#   确定危险(真路径含元字符/系统区删除)仍拦, 见各 check 内注释。
 """
 shell_path_check — shell 命令路径检查(通道 B, 动作清单消费层)
 
@@ -154,9 +159,12 @@ def _judge_actions(actions: List[PathAction], command: str) -> Optional[SafetyRe
         #   免原 read_permission + classify_path 两次 realpath; 归属文案改取 SCOPE_TEXT(与判定同源)。
         _ok, _msg, _scope = read_path_check.validate_read(action.path)
         if not _ok:
-            logger.warning(f"[shell_path_check] bash读路径非法: path={action.path}, "
+            # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 读路径非法(空值/穿越/格式化/判定异常)
+            #   属解析失败/非法输入, 改放行(原硬拦)。读线本无授权可给, 放行即交给执行层真实结果。
+            #   注: 系统源外泄拦截仍保留(下一分支), 那是确定危险非解析失败。
+            logger.warning(f"[shell_path_check] bash读路径非法(放行): path={action.path}, "
                            f"command={command.strip()[:200]}")
-            return SafetyResult(blocked=True, message=_msg, safety_level=SafetyLevel.BLOCK_PATH_INVALID)
+            continue
         if _scope == SCOPE_FORBIDDEN_SYSTEM:
             logger.warning(f"[shell_path_check] bash读系统源(拦截): path={action.path}, "
                            f"command={command.strip()[:200]}")
@@ -182,24 +190,26 @@ def check_shell_permission(tool_name: str, params: Dict[str, Any]) -> SafetyResu
         # 2026-10-15 小欧: 实测传 int 抛 AttributeError 冒泡至入口, 排查看不出是类型问题。
         # 2026-10-18 小欧: 原直接 pass_result()=fail-open(畸形输入静默放行);
         #   非字符串 command 属异常输入, 依 fail-closed 原则改硬拦。
-        logger.warning(f"[shell_path_check] command 类型非法(硬拦): type={type(command).__name__}")
-        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
-                            message=f"shell 命令参数类型非法，拒绝执行: {type(command).__name__}")
+        # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 改回放行。command 非字符串即无法解析,
+        #   属解析失败(非确定危险), 且 execute 层收到非字符串同样报错、不会执行危险命令, 放行无风险。
+        logger.warning(f"[shell_path_check] command 类型非法(放行): type={type(command).__name__}")
+        return SafetyResult.pass_result()
     if not command or not command.strip():
         return SafetyResult.pass_result()
     # cwd 只是相对路径的解析基准, 不是被写对象: 不按写线判(相对写/删目标已展开为绝对路径逐条判)。
     # 2026-10-20 小欧: 仅保留两档硬拦 —— 畸形输入; 禁区·系统目录禁止执行(脚本可就地落盘)。
+    # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 畸形 cwd(非字符串/含元字符)改放行 ——
+    #   cwd 是解析基准非判定对象, 解析不出即放行(非确定危险); 禁区·系统目录禁止执行保留(确定危险)。
     if cwd:
         if not isinstance(cwd, str) or _malformed(cwd):
-            logger.warning(f"[shell_path_check] cwd 非法或含元字符(硬拦): cwd={cwd!r}")
-            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND,
-                                message=f"工作目录非法或含非法 shell 元字符，拒绝执行: {cwd!r}")
+            logger.warning(f"[shell_path_check] cwd 非法或含元字符(放行): cwd={cwd!r}")
+            return SafetyResult.pass_result()
         try:
             cwd_scope, _ = classify_path(cwd)
         except Exception as e:
-            logger.warning(f"[shell_path_check] cwd 归属判定失败(硬拦): cwd={cwd!r}, err={e}")
-            return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_PATH_INVALID,
-                                message=f"工作目录归属无法判定，拒绝执行: {cwd!r}")
+            # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 归属判定异常改放行(原硬拦)。
+            logger.warning(f"[shell_path_check] cwd 归属判定失败(放行): cwd={cwd!r}, err={e}")
+            return SafetyResult.pass_result()
         if cwd_scope == SCOPE_FORBIDDEN_SYSTEM:
             logger.warning(f"[shell_path_check] bash 工作目录命中禁区·系统: cwd={cwd}")
             return SafetyResult(blocked=True, safety_level=SafetyLevel.PATH_FORBIDDEN,

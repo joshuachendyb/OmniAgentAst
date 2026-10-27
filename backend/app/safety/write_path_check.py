@@ -30,6 +30,10 @@
 # 2026-10-19 小欧 - 修复写线非法输入回归(空路径/`..`穿越降级为"确认"): 非法输入分支返回的归属由旧
 #   category 字面量 "system" 改为 SCOPE_FORBIDDEN_SYSTEM, 与 write_permission 的比较口径一致 → 硬拦。
 #   旧口径下 "system" != SCOPE_FORBIDDEN_SYSTEM(=forbidden_system), 会落入确认分支(可被临时授权放行)。
+# 2026-10-28 小欧 - 解析失败都放行(北京老陈令「解析失败必须放行, 不拦不弹窗」):
+#   归属判定异常(classify_path 抛异常)原归类 system 永不授权硬拦, 改放行。
+#   判定失败≠确定危险, 不能因解析能力不足错杀; 确定危险(系统区写入/`..`穿越)仍拦。
+#   修改点: validate_write 异常分支 → 放行(True, None, None)。
 # 2026-10-19 小欧 - 去冗余: check_write_permission 删死参 tool_name(本口只按参数键判路径, 不用工具名);
 #   router 调用点同步改单参。
 r"""write_path_check — 写操作路径检查(写线)
@@ -106,8 +110,10 @@ def validate_write(file_path: str) -> Tuple[bool, Optional[str], Optional[str]]:
             return True, None, scope
         return False, f"路径位于{SCOPE_TEXT[scope]}: {file_path}", scope
     except Exception as e:
-        # 2026-08-11 小欧 fix D1: 异常路径归类为system(永不授权硬拦), 与读/删线异常处理口径一致
-        return False, f"路径验证失败: {str(e)}", SCOPE_FORBIDDEN_SYSTEM
+        # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 归属判定异常(名单/格式化失败)属解析失败,
+        #   改放行(原归类 system 永不授权硬拦)。理由: 判定失败≠确定危险, 不能因解析能力不足错杀。
+        logger.warning(f"[write_path_check] 写线判定异常(放行): {file_path!r} ({e})")
+        return True, None, None
 
 
 def write_permission(path: str) -> SafetyResult:

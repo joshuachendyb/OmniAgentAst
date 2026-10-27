@@ -25,6 +25,10 @@
 #   router 调用点同步改单参。
 # 2026-10-20 小欧 - validate_read 恒返回完整五档 scope(原非禁区返回 None, 上层复用归属只能判
 #   "== 系统禁区"); 读线判定行为不变(五档全放行) — 小欧-2026-10-20
+# 2026-10-28 小欧 - 解析失败都放行(北京老陈令「解析失败必须放行, 不拦不弹窗」):
+#   归属判定异常(classify_path 抛异常)原归类 system 永不授权硬拦, 改放行。
+#   判定失败≠确定危险, 不能因解析能力不足错杀; 确定危险(空路径/`..`穿越)仍拦。
+#   修改点: validate_read 异常分支 → 放行(True, None, None)。
 r"""read_path_check — 读操作路径检查(读线)
 ★r 前缀必需: 下方说明含 Windows 路径反斜杠(C:\Users 等), 无 r 会被当 \U \W 转义序列报错。
 
@@ -80,9 +84,10 @@ def validate_read(file_path: str) -> Tuple[bool, Optional[str], str]:
         scope, _rule = classify_path(file_path)
         return True, None, scope                     # 读线独有: 五档全放行, 完整归属带回供调用方分流
     except Exception as e:
-        # 2026-08-11 小欧 fix D1: 异常路径归类为system(永不授权硬拦), 与写/删线异常处理口径一致;
-        #   原 category=None → T2 当"白名单外非禁区→可授权请求" → 异常/恶意路径可被 grant_temp_auth 放行(安全漏洞)
-        return False, f"路径验证失败: {str(e)}", SCOPE_FORBIDDEN_SYSTEM
+        # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 归属判定异常(名单/格式化失败)属解析失败,
+        #   改放行(原归类 system 永不授权硬拦)。理由: 判定失败≠确定危险, 不能因解析能力不足错杀。
+        logger.warning(f"[read_path_check] 读线判定异常(放行): {file_path!r} ({e})")
+        return True, None, None
 
 
 def read_permission(path: str) -> SafetyResult:

@@ -30,6 +30,10 @@
 # 2026-10-19 小欧 - 修复删线 `..`穿越回归 + 死代码清理: 非法输入(空值/`..`穿越)判定补回 check_delete_risk 入口
 #   (原由 validate_delete 承担, 删该步后失效 → `..`被当"白名单外确认"而非硬拦); validate_delete 全库零调用,
 #   连同其导出与 import 一并删除; check_delete_risk 格式化死变量 p 随之清理, 两处 fail-closed 兜底合一。
+# 2026-10-28 小欧 - 解析失败都放行(北京老陈令「解析失败必须放行, 不拦不弹窗」):
+#   归属判定异常(classify_path 抛异常)与格式化失败原 fail-closed 硬拦, 改放行。
+#   均为解析失败(判不出是否禁区), 非确定危险; 确定危险(系统区删除/`..`穿越)仍拦。
+#   修改点: check_delete_risk classify_path 异常 → 放行; guard_forbidden_delete 判定异常 → 放行。
 # 2026-10-19 小欧 - 去冗余: delete_permission 原先调 guard_forbidden_delete 再调 check_delete_risk,
 #   两者同走 classify_path(每次删两次 realpath)且禁区结论一致(矩阵删格即 DENY)—— guard 一步移除,
 #   禁区拦截由 check_delete_risk 单点承担; guard_forbidden_delete 保留为删工具执行层自持底线。
@@ -108,10 +112,11 @@ def check_delete_risk(params: dict) -> SafetyResult:
     try:
         scope, _ = classify_path(path)
     except Exception as e:
-        # fail-closed: 格式化异常或名单读不出时若继续判, outside 恒成立 → 全部路径误判范围外, 语义翻转
-        logger.warning(f"[delete_path_check] 删除安全判定不可用, 按拒绝处理: {path!r} ({e})")
-        return SafetyResult(blocked=True, needs_confirm=False,
-                            message=f"删除安全判定不可用: {e}", safety_level=SafetyLevel.BLOCK_PATH_INVALID)
+        # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 归属判定异常(名单读不出/格式化失败)属解析失败,
+        #   改放行(原 fail-closed 硬拦)。理由: 判定失败≠确定危险, 不能因解析能力不足而错杀;
+        #   若真需收紧只能提升 classify_path 解析能力, 不得回退"判定不出即拒"。
+        logger.warning(f"[delete_path_check] 删除安全判定不可用, 按放行处理: {path!r} ({e})")
+        return SafetyResult(blocked=False, needs_confirm=False, message="")
 
     # 权限矩阵取删线两格(普通 / 递归), 五档归属统一出口
     action = permission_of(scope, LINE_DELETE_RECURSIVE if recursive else LINE_DELETE)
@@ -146,8 +151,9 @@ def guard_forbidden_delete(file_path: str) -> Optional[str]:
     try:
         scope, _ = classify_path(file_path)
     except Exception as e:
-        # 格式化/判定失败即 fail-closed: 判不出是否禁区 → 不放行
-        return f"路径非法: 路径解析失败({e})"
+        # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 格式化/判定失败属解析失败, 改放行(原 fail-closed)。
+        logger.warning(f"[delete_path_check] 删除路径解析失败(放行): {file_path!r} ({e})")
+        return None
     if scope in (SCOPE_FORBIDDEN_SYSTEM, SCOPE_FORBIDDEN_NON_SYSTEM):
         return f"禁止删除{SCOPE_TEXT[scope]}: {file_path}"
     return None

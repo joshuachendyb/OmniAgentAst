@@ -24,6 +24,11 @@
 #   同一语义入枚举(检查过程异常属命令层硬拦, 与具体路径禁区区分)。七步路由顺序与各线直调关系零变更。
 # 2026-10-19 小欧 - 去冗余: 三线工具级封装口(check_read/write/delete_permission)删死参 tool_name,
 #   本层三处调用点同步改单参 params。路由顺序与判定零变更。
+# 2026-10-28 小欧 - 解析失败都放行(北京老陈令「解析失败必须放行, 不拦不弹窗」):
+#   顶层 try/except 单点兜底原 fail-closed 归 blocked, 改放行。
+#   任一线判定抛异常 = 解析失败, 非确定危险, 不得因解析能力不足错杀;
+#   确定危险(系统区删除等)在各自 check_*_permission 内部正常返回 blocked, 不走异常。
+#   修改点: 分派段异常兜底 → SafetyResult.pass_result()。
 """
 path_legality_router — [4-2] 路径层(读/写/删/dual 分派, 产出 SafetyResult)
 
@@ -144,8 +149,11 @@ def check_tool_path_permission(tool_name: str, params: Dict[str, Any]) -> Safety
         if _line == LINE_SHELL:
             return shell_path_check.check_shell_permission(tool_name, params)
     except Exception as e:
-        # fail-closed 单点兜底(接替已删除的 check_tool_paths 内 try/except): 异常归 blocked 永不授权
-        return SafetyResult(blocked=True, safety_level=SafetyLevel.BLOCK_COMMAND, message=f"路径安全检查异常: {e}")
+        # 2026-10-28 小欧 - 北京老陈令「解析失败都放行」: 单点兜底改放行(原 fail-closed 归 blocked)。
+        #   全局任一线判定抛异常 = 解析失败, 非确定危险, 不得因解析能力不足错杀。
+        #   注: 确定危险(系统区删除等)在各自 check_*_permission 内部正常返回 blocked, 不走异常。
+        logger.warning(f"[path_legality_router] 路径安全检查异常(放行): {e}")
+        return SafetyResult.pass_result()
 
     # [7] 返回
     return SafetyResult.pass_result()

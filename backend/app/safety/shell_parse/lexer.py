@@ -31,6 +31,11 @@ r"""shell_parse.lexer — shell 命令词法/预处理层(零权限判定) — �
 2026-10-20 - 小欧 - 重定向识别收口 _iter_file_redirects(单一扫描器): 排除 fd 复制
   (`2>&1`/`>&2`/`>&-`)与空设备(nul //dev/null / $null); 支持 `>&file`(bash 真文件)、
   `&>file`、`>|file`; has_file_redirect / redirect_targets 同源, 删/写两侧口径一致。
+2026-10-28 - 小欧 - 误杀整改(北京老陈令「确定的才拦截, 搞不定的解析去掉, 不能错杀」):
+  相对路径候选含 shell 元字符(> < |, Windows 路径保留字符)即非路径, 必是 grep/sed/awk
+  正则模式串或解析污染。三处判据(_relative_tokens/pathish/refpath_like)对相对候选排除之,
+  防拼 cwd 出假路径被 _malformed 误拦(实测 5 起 grep 交替正则全部误拦)。
+  绝对路径(盘符开头)不排除 —— 真路径含污染(如 del "C:\Windows\a|b")保留交 _malformed 兜底硬拦。
 """
 import os
 import re
@@ -56,6 +61,14 @@ BASH = "bash"
 SHELLS = (PS7, PS5, CMD, BASH)
 
 _DRIVE_ABS_RE = re.compile(r"^[a-zA-Z]:[\\/]")
+
+# 2026-10-28 小欧 - 误杀整改(北京老陈令「确定的才拦截, 搞不定的解析去掉, 不能错杀」):
+#   shell 元字符(> < |)是 Windows 路径保留字符, 合法路径永不含 —— 含任一即非路径,
+#   必是 grep/sed/awk 正则模式串或切词粘连的解析污染, 不得当相对路径候选(否则拼 cwd 出假路径,
+#   被 shell_path_check._malformed 硬拦, 实测 5 起 grep 交替模式全部误拦)。
+#   注: 仅用于「相对路径候选」判据; 绝对路径(盘符开头)不在此排除 —— 真路径含污染(如
+#   带引号的系统目录删除)须保留交 _malformed 兜底硬拦(安全侧, 不可因改而漏拦)。
+_PATH_UNLIKELY_CHARS = (">", "<", "|")
 
 # 壳识别线索(动词识别取三壳并集, 识别偏差不影响取全)
 #   2026-10-18 小欧 订正: 原注释称"仅用于 flags 语义与 origin 标注"不实; origin 由各解析器硬编码
@@ -188,11 +201,18 @@ def _relative_tokens(statement: str) -> List[str]:
 
     2026-10-18 小欧: 版本号(3.11.4)/纯数字点串原被当相对路径, 造出 cwd 下假路径;
     改为要求含分隔符, 或含点但非 `[\\d.]+` 形态(如 file.txt 保留)。
+    2026-10-28 小欧 - 误杀整改: 含 shell 元字符(> < |)的词条非路径(Windows 保留字符),
+    必是模式串/解析污染, 不当相对路径候选 —— 原把 grep 交替正则当路径拼出假路径被误拦。
+    绝对路径(盘符开头)不在此函数处理(由 shell_extract_abs_win_paths 抽取, 真路径含污染保留兜底)。
     """
     out: List[str] = []
     for tok in tokenize(statement):
         if not tok or tok[0] in "-/":
             continue
+        if _DRIVE_ABS_RE.match(tok):
+            continue  # 绝对路径交给 shell_extract_abs_win_paths, 本函数只做相对候选
+        if any(ch in tok for ch in _PATH_UNLIKELY_CHARS):
+            continue  # 含 ><| 非路径(模式串/污染), 排除防假路径误拦
         if "\\" in tok or "/" in tok:
             out.append(tok)
         elif "." in tok and not re.fullmatch(r"[\d.]+", tok):
@@ -296,11 +316,16 @@ def extract_paths(statement: str, cwd: Optional[str]) -> List[str]:
 
 
 def pathish(token: str, cwd: Optional[str]) -> bool:
-    """词条是否像路径: 盘符绝对, 或 cwd 已知时的相对路径候选 — 小欧 2026-10-18"""
+    """词条是否像路径: 盘符绝对, 或 cwd 已知时的相对路径候选 — 小欧 2026-10-18
+    2026-10-28 小欧 - 误杀整改: 相对候选含 shell 元字符(> < |)非路径(模式串/污染),
+    排除防假路径误拦; 绝对路径(盘符开头)保留 —— 真路径含污染须交 _malformed 兜底硬拦。
+    """
     if not token or token[0] in "-/":
         return False
     if _DRIVE_ABS_RE.match(token):
         return True
+    if any(ch in token for ch in _PATH_UNLIKELY_CHARS):
+        return False
     return bool(cwd) and ("\\" in token or "/" in token or "." in token)
 
 
@@ -313,10 +338,13 @@ def refpath_like(token: str) -> bool:
     pathish 对"相对路径"要求 cwd 已知, 故 cwd 缺失时 `a.txt` 这类源被整条跳过,
     导致其后唯一解析出的绝对路径被当成**源**(`Copy-Item a.txt C:\\Windows\\b.txt`
     → 目标被判成读 → 写系统目录漏拦)。本函数专用于识别"本应解析出源却因缺 cwd 落空"的词条。
+    2026-10-28 小欧 - 误杀整改: 相对候选含 shell 元字符(> < |)非路径(模式串/污染), 排除。
     """
     if not token or token[0] in "-/":
         return False
     if _DRIVE_ABS_RE.match(token):
+        return False
+    if any(ch in token for ch in _PATH_UNLIKELY_CHARS):
         return False
     return bool(_REFPATH_RE.match(token)) and ("." in token or "\\" in token or "/" in token)
 
