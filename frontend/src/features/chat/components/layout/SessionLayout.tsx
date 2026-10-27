@@ -105,11 +105,10 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
 
     {/* ② 中部：左列 + 右侧查看区（中间无主列；窄屏可收缩）
         2026-10-27 小欧 - 改用 SplitPane 组件，支持拖动分割线调整宽度
-        2026-10-27 小欧 - v1.1: 根据 rightOpen 状态调整默认宽度（折叠 240px/展开 280px） */}
+        2026-10-27 小欧 - v1.1: 默认宽度固定为 30%（与右侧展开/折叠状态无关） */}
     <div style={{ flex: 1, display: 'flex', minHeight: 0, gap: 8 }}>
       <SplitPane
         left={renderSlot(panels, 'left')}
-        rightOpen={rightOpen}
         right={
           rightOpen ? (
             <div
