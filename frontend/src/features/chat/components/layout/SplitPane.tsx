@@ -36,6 +36,12 @@
 //   ⑦Bug-6/Bug-10: 测试增强——补拖动/ResizeObserver用例, 键盘→断言改为 >300(修复Bug-3后)
 // 编辑历史: 2026-10-28 小欧 - 左面板补 scrollbarGutter:'stable': 防 fail/cancel 时 taskinfo-bar 换行撑高
 //   → 中部行压矮 → 左栏纵向滚动条出现/消失 → 内容宽度跳变(CLS弹动); 与右栏 SessionLayout.tsx:153 同款根治 — 小欧-2026-10-28
+// 编辑历史: 2026-10-28 小欧 - 修复横向溢出失控(实证: 容器 ResizeObserver 突变52次/scrollWidth 超 clientWidth +307px):
+//   根因: 根容器与右面板两级 flex item 均未设 min-width, 取默认 automatic minimum size(min-width:auto),
+//     被 step 长行/左栏长文本的 min-content 横向撑破, 且 overflow:visible 不裁剪 → 容器撑破视口;
+//     ResizeObserver 见容器变宽按比例放大 leftW, 形成正反馈(左框宽度弹动/折叠按钮移出视口/横向溢出)。
+//   修复: 根容器补 minWidth:0+overflow:hidden、右面板补 minWidth:0(允许收缩至 flex 分配宽度, 解除 auto 最小尺寸)。
+//   容器宽度自此只随视口缩放, 不随内容/拖动变化。功能逻辑(拖动/双击默认/持久化)零改动。
 
 //   @author 小欧
 //   @date 2026-10-27
@@ -296,6 +302,13 @@ const SplitPane: React.FC<SplitPaneProps> = ({
         alignItems: 'stretch',
         flex: 1,
         minHeight: 0,
+        // 2026-10-28 小欧 - 修复横向溢出失控(实证: 容器 ResizeObserver 突变52次/scrollWidth 超 clientWidth +307px):
+        //   本容器是中部行的 flex item, 未设 min-width → 取默认 automatic minimum size(min-width:auto),
+        //   内容(step 长行/左栏长文本)撑大其 min-content, 且 overflow:visible 不裁剪 → 容器被横向撑破;
+        //   ResizeObserver 据此放大 leftW 形成正反馈。修复: minWidth:0(允许收缩至 flex 分配宽度, 解除 auto 最小尺寸),
+        //   overflow:hidden(建立 BFC 裁剪溢出)。容器宽度自此只随视口缩放, 不随内容/拖动变化。
+        minWidth: 0,
+        overflow: 'hidden',
       }}
     >
       {/* 左侧面板 */}
@@ -361,6 +374,10 @@ const SplitPane: React.FC<SplitPaneProps> = ({
           //   修复: fullLeft 时右面板 flex:'0 0 auto'(仅按钮条), 左面板填满剩余空间
           flex: fullLeft ? '0 0 auto' : 1,
           minHeight: 0,
+          // 2026-10-28 小欧 - 修复横向溢出: 右面板未设 min-width → 默认 min-width:auto, step 长行/长文本
+          //   撑大其 min-content 致面板被顶出视口(absolute 定位的折叠按钮随其右边缘一同移出可视区);
+          //   补 minWidth:0 允许收缩至 flex 分配宽度, 右边缘约束在容器内。
+          minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           // 2026-10-27 小欧 修复(审计): overflow auto → hidden——消除意外滚动容器

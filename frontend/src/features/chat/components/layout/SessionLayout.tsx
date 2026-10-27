@@ -7,6 +7,9 @@
 // 编辑历史: 2026-10-27 小欧 - v1.7: 改用 SplitPane 组件，支持拖动分割线调整左右面板宽度，默认左侧 1/3；删除 LEFTBAR_MINW/MAXW 常量（SplitPane 内部管理） — 小欧-2026-10-27
 // 编辑历史: 2026-10-28 小欧 - 根治「展开任务统计→右栏宽度突变+晃动」(CLS): 右栏滚动容器
 //   加 scrollbar-gutter:stable 防滚动条出现致内容宽跳变 — 小欧-2026-10-28
+// 编辑历史: 2026-10-28 小欧 - 修复横向溢出: 中部行未设 min-width/overflow → 默认 min-width:auto,
+//   被 SplitPane 内容横向撑破, 右面板(含 absolute 折叠按钮/滚动条)随之移出视口;
+//   补 minWidth:0+overflow:hidden, 右边缘约束在屏幕内(与 SplitPane.tsx 根容器/右面板同款修复) — 小欧-2026-10-28
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -108,7 +111,9 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
     {/* ② 中部：左列 + 右侧查看区（中间无主列；窄屏可收缩）
         2026-10-27 小欧 - 改用 SplitPane 组件，支持拖动分割线调整宽度
         2026-10-27 小欧 - v1.1: 默认宽度固定为 30%（与右侧展开/折叠状态无关） */}
-    <div style={{ flex: 1, display: 'flex', minHeight: 0, gap: 8 }}>
+    {/* 2026-10-28 小欧 - 修复横向溢出: 中部行未设 min-width/overflow → 默认 min-width:auto, 被 SplitPane
+        内容横向撑破, 右面板(含 absolute 折叠按钮/滚动条)随之移出视口; 补 minWidth:0+overflow:hidden, 右边缘约束在屏幕内 */}
+    <div style={{ flex: 1, display: 'flex', minHeight: 0, minWidth: 0, overflow: 'hidden', gap: 8 }}>
       <SplitPane
         left={renderSlot(panels, 'left')}
         // 2026-10-27 小欧 修复(审计): 折叠态传 fullLeft——右栏收起时左列填满整个宽度
