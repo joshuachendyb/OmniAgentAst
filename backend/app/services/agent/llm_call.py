@@ -48,6 +48,10 @@
 #   同类); 逻辑逐行复制未改(仅删同模块内对 call_llm_with_fallback 的冗余 lazy import), get_provider_adapter 升级为
 #   顶部正式 import。fetchpage prompt提取(tool_executor 经 _current_text_task ContextVar 注入回调)与
 #   session 摘要在内的所有调用方语义零变化
+# 2026-10-28 小欧 - L2分流元组移除"rate_limit": RATE_LIMIT(429限流)已改为可重试(缓刑), L1已按次数上限重试,
+#   到 L2 阶段不再放行式直接 return 也不进入 L2 重试放大(防 404 式重试放大回归); 配额耗尽(quota_exceeded)、
+#   超时(idle_timeout)、客户端错(client)、取消(cancelled)仍直接放行致死 — 小欧-2026-10-28
+# 2026-10-28 小欧 - L2退避裸30→_D_BACKOFF_CAP(与L1共用RETRY_BACKOFF_CAP=120, 用户裁定统一; DRY消魔数, 两层封顶一套) — 小欧-2026-10-28
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -76,7 +80,7 @@ from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5�
     _resolve_chunk_model,          # 小健 2026-09-06: 路径2 出口统一取模型 ModelRef(复用2.5.2, 防二次重复)
     _yield_error_response,
 )
-from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RETRIES as _D_RETRIES, LLM_TOOL_CHOICE as _D_TOOL_CHOICE
+from app.constants import LLM_RESPONSE_FALLBACK as _D_FALLBACK, LLM_RESPONSE_RETRIES as _D_RETRIES, LLM_TOOL_CHOICE as _D_TOOL_CHOICE, RETRY_BACKOFF_CAP as _D_BACKOFF_CAP
 from app.config import get_config
 from app.llm.adapters import get_provider_adapter  # 2026-10-20 小欧 call_llm_text_task 迁入(原 summary.py 内 lazy 导入)
 from app.llm.core import LLMResponseError, StreamChunk, create_payload_chunk, create_cancelled_chunk  # 小欧 2026-09-02: L1 retry_notice 检测判据(类型拦 MagicMock); 小欧 2026-09-06 +create_payload_chunk(出口统一构造); 小欧 2026-09-20 修复 +create_cancelled_chunk(降级前取消短路收尾)
@@ -253,8 +257,9 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                     # 2026-09-01 小欧 L2去放大: 按error_type分流, 传输/限流类(L1已处理)直接放行不重试, 其它保持L2重试 — 小欧 2026-09-01
                     # 2026-09-02 小欧 task005会审(北京老陈定案): "server"(500/502/503)移出放行元组——瞬时/过载错误应走L2重试(否则本可恢复任务永久失败), 重试耗尽仍由外层FC降级/error兜底, 不退化 — 小欧 2026-09-02
                     # 2026-09-02 小欧 严谨修复404重试放大: 4xx配错(CLIENT→code=client)一律L1已判定不重试, L2亦直接放行不重试不降级, 杜绝404 Text降级再L1×3放大 — 小欧 2026-09-02
+                    # 2026-10-28 小欧: L2分流元组移除"rate_limit"(RATE_LIMIT改可重试缓刑后, L1已重试至上限, 不再放行直接return, 防重试放大回归) — 小欧-2026-10-28
                     err_type = resp.get("error_type", "")
-                    if err_type in ("quota_exceeded", "rate_limit", "idle_timeout", "client", "cancelled"):
+                    if err_type in ("quota_exceeded", "idle_timeout", "client", "cancelled"):
                         yield item
                         return
                     raise LLMResponseError(message=resp.get("content", "LLM流式错误"))
@@ -276,7 +281,7 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
         except LLMResponseError as e:
             last_error = e
             logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{_retries}次: {e}")
-            wait_time = min(0.5 * (2 ** attempt), 30)
+            wait_time = min(0.5 * (2 ** attempt), _D_BACKOFF_CAP)  # 2026-10-28 小欧: 裸30→_D_BACKOFF_CAP(与L1共用RETRY_BACKOFF_CAP, DRY消魔数)
             # 小欧 2026-09-02: L2 重试事件透传发前端
             yield create_payload_chunk(_resolve_chunk_model(agent), {
                 "type": "retrying",

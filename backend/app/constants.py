@@ -47,6 +47,10 @@
     2026-10-18 小欧 - 开关键名随设置项分组前缀跟改: security.hitl_timeout → security.hitl.timeout、
       security.hitl_enabled → security.hitl.enabled(与 config.yaml/registry/path_tool_safety_checker 同键);
       HITL_TIMEOUT 取值与兜底逻辑零变更。同批精简注释冗余标注, 技术说明原样保留。
+    2026-10-28 小欧 - 新增重试退避参数: RETRY_BACKOFF_BASE=3(L1既有3^n常量化消魔数)、
+      RETRY_BACKOFF_CAP=120(L1 429分支+L2 llm_call:283裸30合并共用DRY; 用户裁定统一120)、RATE_LIMIT_BACKOFF_JITTER=0.2(429 ±20%抖动) — 小欧-2026-10-28
+    2026-10-28 小欧 - 三堂会审删除 RATE_LIMIT_MAX_RETRIES/RATE_LIMIT_TOTAL_WINDOW(全仓零引用 YAGNI):
+      重试次数已由既有 max_retries 路径覆盖, 总窗口累计逻辑未实现(注释承诺与事实不符) — 小欧-2026-10-28
 """
 
 import re
@@ -75,6 +79,13 @@ MAX_CHUNKS_WITHOUT_PROMOTE = 50  # 【系统级】使用对象: Agent 循环无 
 LLM_TEMPERATURE = 0.7  # 【系统级】使用对象: LLM 客户端采样温度
 LLM_TOOL_CHOICE = "auto"  # 【系统级】使用对象: LLM 客户端 tool_choice 模式
 LLM_STREAM_MAX_RETRIES = 3  # 【系统级】使用对象: LLM 流式最大重试次数
+# ============ 重试退避参数(L1通用+L2共用) — 小欧 2026-10-28 ============
+# L1(HTTP层,base_service) 429 缺省 Retry-After 时用 3^n 指数退避+抖动, 非429同为 3^n;
+# L2(响应层,llm_call) 0.5*2^n。两层封顶共用 RETRY_BACKOFF_CAP=120(L2原裸30,按用户裁定统一为120)。
+# 重试次数由既有 self.max_retries / LLM_RESPONSE_RETRIES 控制; 配额耗尽(insufficient_quota)不重试直接打死。
+RETRY_BACKOFF_BASE = 3          # 【系统级】使用对象: L1 重试退避基数(3^n, base_service 通用+429分支共用) — 小欧-2026-10-28
+RETRY_BACKOFF_CAP = 120         # 【系统级】使用对象: 重试退避上限(秒), L1 429分支 + L2(llm_call:283) 共用; 120=L1既有3+9+27+81累计量级的单次封顶 — 小欧-2026-10-28
+RATE_LIMIT_BACKOFF_JITTER = 0.2 # 【系统级】使用对象: L1 429 退避抖动比例(±20% 随机化, 防并发撞同一限流窗口) — 小欧-2026-10-28
 LLM_RESPONSE_FALLBACK = True  # 【系统级】使用对象: LLM响应错误降级开关(FC模式错误→Text降级) — 小沈 2026-07-17
 LLM_RESPONSE_RETRIES = 2  # 【系统级】使用对象: LLM响应错误最大重试次数(如空/无效响应) — 小沈 2026-07-17
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)

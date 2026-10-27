@@ -76,6 +76,13 @@
 #   llm.sampling.enable_thinking，通用 Tab 可配，默认 True 由 __init__ 内联兜底，全仓已无该常量引用);
 #   __init__ 合并改三层=全局键作底 → extra_body_params(模型级)覆盖 → chat_template_kwargs 深合并;
 #   缺省值与改前一致(开关True/深度medium)，模型级配置不受影响 — 小欧-2026-10-10
+# 2026-10-28 小欧 429限流重试精细化(缓刑vs打死二级判据落地):
+#   ①request_stream 429重试耗尽出口按细分给准确文案——QUOTA_EXCEEDED(配额/余额耗尽,打死)给"配额已用尽";
+#     RATE_LIMIT(瞬态限流,缓刑可重试)给"模型限流请稍后再试", 不再一刀切误报"配额用尽";
+#   ②_retry_wait_seconds 缺省 Retry-After 时 429 退避改 3^n 封顶 RETRY_BACKOFF_CAP(120,用户裁定统一)+±20%抖动(防并发撞限流窗口);
+#     非429保持原3^n; 新增 random 导入; RATE_LIMIT_* 参数自 app.constants — 小欧-2026-10-28
+# 2026-10-28 小欧 三堂会审复核: _retry_wait_seconds 首行裸魔法数3→_D_RATE_BASE 常量引用(DRY消魔数, 与429分支同基数);
+#   常量改通用名 RETRY_BACKOFF_BASE/CAP(L2 llm_call:283 裸30 合并共用) — 小欧-2026-10-28
 """
 LLM 核心模块 — BaseAIService
 
@@ -86,6 +93,7 @@ FC-only: tool_calls原生yield,不走JSON roundtrip - 小沈 2026-06-12
 
 import asyncio
 import time
+import random  # 2026-10-28 小欧: 429 退避抖动(±jitter)防并发撞限流窗口
 import json as _json
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 
@@ -99,9 +107,9 @@ from app.llm.core import ChatResponse, LLMResponseError, StreamChunk, _resolve_e
 from app.llm.core import create_cancelled_chunk
 from app.llm.client_sdk import create_llm_client, SharedClientLease  # client_lease 注解 — 小欧-2026-09-25
 from app.llm.reasoning import extract_reasoning_from_chunk, extract_reasoning_from_message
-from app.llm.error_classifier import SystemErrorClassifier
+from app.llm.error_classifier import SystemErrorClassifier, SystemErrorCategory  # SystemErrorCategory — 小欧 2026-10-28
 
-from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS
+from app.constants import DEFAULT_READ_TIMEOUT as _D_READ_TIMEOUT, LLM_TEMPERATURE as _D_TEMPERATURE, LLM_STREAM_MAX_RETRIES as _D_STREAM_MAX_RETRIES, STREAM_TOTAL_TIMEOUT as _D_STREAM_TOTAL_TIMEOUT, LLM_MAX_TOKENS as _D_MAX_TOKENS, RETRY_BACKOFF_BASE as _D_RATE_BASE, RETRY_BACKOFF_CAP as _D_RATE_CAP, RATE_LIMIT_BACKOFF_JITTER as _D_RATE_JITTER  # 重试退避参数 — 小欧 2026-10-28
 from app.config import get_config
 
 class BaseAIService:
@@ -588,13 +596,21 @@ class BaseAIService:
                         return
                     continue
                 else:
-                    # 检出 429 重试耗尽 → 明确"配额/限流"提示, 非泛化"服务器错误" — 小欧 2026-07-17
+                    # 429 重试耗尽后出口: 按细分给准确文案(限流缓刑 vs 配额打死), 非一刀切"配额用尽" — 小欧 2026-07-17 / 2026-10-28
                     if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
-                        yield StreamChunk(
-                            content="", chunk_model=self.llm_model, is_done=True,
-                            stream_error="模型接口调用配额已用尽（HTTP 429），请稍后重试或升级配额",
-                            stream_error_type="quota_exceeded",
-                        )
+                        _cat = SystemErrorClassifier.classify_error(e)
+                        if _cat == SystemErrorCategory.QUOTA_EXCEEDED:
+                            yield StreamChunk(
+                                content="", chunk_model=self.llm_model, is_done=True,
+                                stream_error="模型配额/余额已用尽（HTTP 429），请升级配额后重试",
+                                stream_error_type="quota_exceeded",
+                            )
+                        else:
+                            yield StreamChunk(
+                                content="", chunk_model=self.llm_model, is_done=True,
+                                stream_error="模型限流（HTTP 429），请稍后再试",
+                                stream_error_type="rate_limit",
+                            )
                         return
                     yield self._create_stream_error_chunk(e)
                     return
@@ -711,10 +727,11 @@ class BaseAIService:
 
     @staticmethod
     def _retry_wait_seconds(e: Exception, retry_count: int) -> int:
-        """重试等待秒数: 429 优先尊重服务端 Retry-After, 否则 3^n 指数退避 — 小欧 2026-08-11
+        """重试等待秒数: 429 优先尊重服务端 Retry-After, 否则 3^n 指数退避+抖动+上限; 非 429 保持 3^n — 小欧 2026-08-11
         2026-09-30 小欧: 从 request_stream 内联块抽为共用静态方法(DRY 单一出口), 供非流式 request 复用
-        """
-        wait_time = 3 ** retry_count
+        2026-10-28 小欧: 429 退避精细化——缺省 Retry-After 时用 RETRY_BACKOFF_BASE^n 封顶于
+        RETRY_BACKOFF_CAP, 并叠加 ±RATE_LIMIT_BACKOFF_JITTER 抖动(防并发撞同一限流窗口)。"""
+        wait_time = _D_RATE_BASE ** retry_count  # 2026-10-28 小欧: 裸魔法数3→常量引用(DRY, 与429分支同基数)
         if isinstance(e, httpx.HTTPStatusError) and e.response.status_code == 429:
             _ra = e.response.headers.get("Retry-After")
             if _ra:
@@ -731,6 +748,13 @@ class BaseAIService:
                         wait_time = max(int(_dt.timestamp() - time.time()), 1)
                     except Exception:
                         pass
+            else:
+                # 2026-10-28 小欧: 缺省 Retry-After → 指数退避+上限+抖动(防并发撞限流窗口) — 小欧-2026-10-28
+                _base = _D_RATE_BASE
+                _cap = _D_RATE_CAP
+                _jit = _D_RATE_JITTER
+                wait_time = min(int(_base ** retry_count), _cap)
+                wait_time = max(int(wait_time * (1 + random.uniform(-_jit, _jit))), 1)
         return wait_time
 
     async def close(self):

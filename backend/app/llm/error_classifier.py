@@ -32,8 +32,12 @@
      2026-09-01 小欧 新增RATE_LIMIT枚举: 429限流单列为不可重试(RATE_LIMIT), 补to_status/description/SYSTEM_ERROR_TYPE_TO_MESSAGE四处映射, 429不再进L1重试直接走quota_exceeded快速失败 — 小欧 2026-09-01
      2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省): _check_http_status_errors 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试,      杜绝404配错黑名单兜底误判SERVER导致L1×3→L2×2→FC降级×3=12次120秒放大 — 小欧 2026-09-02
      2026-09-17 小欧 修改2用户可见文案通顺化: SYSTEM_ERROR_TYPE_TO_MESSAGE 7条message改流畅中文+标准英文术语括号标注(配额/限流分开表述, idle_timeout去不准确数字); code/路由/重试语义一字不动 — 小欧-2026-09-17
+     2026-10-28 小欧 429限流细分(缓刑vs打死): 新增QUOTA_EXCEEDED枚举(配额/余额耗尽→不可重试打死); RATE_LIMIT改可重试(429限流RPM/TPM瞬态→缓刑);
+       429分类读服务商错误体error.type/code细分(rate_limit_error→RATE_LIMIT可重试, insufficient_quota/credit_balance_exhausted→QUOTA_EXCEEDED打死),
+       修正"限流被误报配额用尽且一刀切不重试"的根因 — 小欧-2026-10-28
 """
 
+import json
 import re
 from enum import Enum
 from typing import Optional, Tuple, Dict, Any
@@ -55,14 +59,19 @@ class SystemErrorCategory(Enum):
     EMPTY_RESPONSE = "empty_response"
     IDLE_TIMEOUT = "idle_timeout"
     RATE_LIMIT = "rate_limit"
+    QUOTA_EXCEEDED = "quota_exceeded"  # 配额/余额耗尽(账务性问题, 重试必再失败) — 小欧 2026-10-28
 
     @property
     def is_retryable(self) -> bool:
-        """判断系统错误是否可重试"""
+        """判断系统错误是否可重试
+        2026-10-28 小欧: RATE_LIMIT(429限流RPM/TPM瞬态)改可重试; QUOTA_EXCEEDED(配额/余额耗尽)不可重试致死 —
+        修正"限流被误当配额用尽一刀切不重试"根因(缓刑 vs 打死二级判据)"""
         retryable_categories = {
             SystemErrorCategory.IDLE_TIMEOUT,
             SystemErrorCategory.SERVER,
-            # CLIENT(4xx客户端错) 不在可重试集合：400/401/403 确定性失败，重发必再失败
+            SystemErrorCategory.RATE_LIMIT,   # 429限流瞬态可恢复 → 缓刑(可重试) — 小欧 2026-10-28
+            # CLIENT(4xx客户端错) / QUOTA_EXCEEDED(配额余额耗尽) 不在可重试集合：
+            #   确定性失败(400/401/403)或账务性问题(重发必再失败) → 打死(不可重试)
         }
         return self in retryable_categories
 
@@ -77,6 +86,7 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.EMPTY_RESPONSE: "empty_response",
             SystemErrorCategory.IDLE_TIMEOUT: "idle_timeout",
             SystemErrorCategory.RATE_LIMIT: "rate_limit",
+            SystemErrorCategory.QUOTA_EXCEEDED: "quota_exceeded",  # — 小欧 2026-10-28
         }
         return mapping.get(self, "error")
 
@@ -90,13 +100,27 @@ class SystemErrorCategory(Enum):
             SystemErrorCategory.UNKNOWN: "未知错误",
             SystemErrorCategory.EMPTY_RESPONSE: "空响应",
             SystemErrorCategory.IDLE_TIMEOUT: "空闲超时",
-            SystemErrorCategory.RATE_LIMIT: "接口限流/配额",
+            SystemErrorCategory.RATE_LIMIT: "接口限流(RPM/TPM瞬态)",   # 文案与配额分离 — 小欧 2026-10-28
+            SystemErrorCategory.QUOTA_EXCEEDED: "接口配额/余额已用尽",  # 新增 — 小欧 2026-10-28
         }
         return mapping.get(self, "未知错误")
 
 
+# 429 细分 token → 分类(缓刑 vs 打死 二级判据) — 小欧 2026-10-28
+def _subcategory_for_token(token: str) -> Optional[SystemErrorCategory]:
+    """按服务商 error.type/error.code 判定 429 细分: 配额/余额耗尽→QUOTA_EXCEEDED(打死),
+    限流/过载→RATE_LIMIT(缓刑); 无法识别返回 None(由调用方走裸429保守可重试) — 小欧-2026-10-28"""
+    _t = (token or "").lower()
+    if _t in ("insufficient_quota", "credit_balance_exhausted", "quota_exceeded", "billing_error"):
+        return SystemErrorCategory.QUOTA_EXCEEDED
+    if _t in ("rate_limit_error", "overloaded_error", "requests_limit", "tokens_limit", "tpm_limit", "rpm_limit"):
+        return SystemErrorCategory.RATE_LIMIT
+    return None
+
+
 # HTTP状态码到错误类型的映射
-# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流归 RATE_LIMIT 不可重试 — 小欧 2026-09-01
+# 4xx 客户端错(400/401/403)归 CLIENT 不可重试；429 限流归 RATE_LIMIT(可重试兜底, 分类时再按错误体 error.type 细分,
+#   见 _extract_429_subcategory) — 小欧 2026-09-01 / 2026-10-28
 HTTP_STATUS_TO_ERROR_TYPE: Dict[int, SystemErrorCategory] = {
     400: SystemErrorCategory.CLIENT,
     401: SystemErrorCategory.CLIENT,
@@ -116,7 +140,8 @@ SYSTEM_ERROR_TYPE_TO_MESSAGE: Dict[SystemErrorCategory, Tuple[str, str]] = {
     SystemErrorCategory.UNKNOWN: ("unknown", "模型处理返回异常（Unknown Error），请稍后重试"),
     SystemErrorCategory.EMPTY_RESPONSE: ("empty_response", "模型没有返回内容（Empty Response），请稍后重试"),
     SystemErrorCategory.IDLE_TIMEOUT: ("idle_timeout", "模型响应超时（Idle Timeout），请换个问法或稍后重试"),
-    SystemErrorCategory.RATE_LIMIT: ("rate_limit", "模型限流（Rate Limit），请稍后再试"),
+    SystemErrorCategory.RATE_LIMIT: ("rate_limit", "模型限流（Rate Limit），请稍后再试"),   # 瞬态可重试 — 小欧 2026-10-28
+    SystemErrorCategory.QUOTA_EXCEEDED: ("quota_exceeded", "模型配额/余额已用尽（Quota Exceeded），请升级配额后重试"),  # 账务性打死 — 小欧 2026-10-28
 }
 
 
@@ -153,12 +178,64 @@ class SystemErrorClassifier:
         return None
 
     @staticmethod
+    def _extract_429_subcategory(error: Exception) -> SystemErrorCategory:
+        """429 限流细分(缓刑 vs 打死二级判据) — 小欧 2026-10-28
+        读服务商错误体 error.type/error.code:
+          - insufficient_quota / credit_balance_exhausted → QUOTA_EXCEEDED(配额/余额耗尽, 打死不可重试)
+          - rate_limit_error / overloaded_error → RATE_LIMIT(瞬态限流, 缓刑可重试)
+          - 裸 429(无头无 type) → RATE_LIMIT(保守可重试, 交给重试层按次数上限收敛)
+        修正根因: 服务商返回 {"error":{"type":"rate_limit_error","code":"429003"}}(RPM/TPM限流)
+        此前被 HTTP 状态码硬编码误报为"配额用尽"且一刀切不重试。"""
+        _resp = getattr(error, "response", None)
+        # 优先: client_sdk 已在异常对象上附加 error.type/error.code(_raise_http_error 解包) — 小欧 2026-10-28
+        _et = getattr(error, "error_type", "") or ""
+        _ec = getattr(error, "error_code", "") or ""
+        _token = str(_et or _ec or "").lower()
+        if _token:
+            _cat = _subcategory_for_token(_token)
+            if _cat is not None:
+                logger.debug(f"[ErrorClassifier] HTTP 429 异常error_type/code={_token} → {_cat}")
+                return _cat
+        # 兜底: 读响应体 JSON 信封 error.type/error.code(测试桩/非 SDK 抛错时无附加属性)
+        _body = None
+        if _resp is not None:
+            # httpx.Response: .text 触发 body 读取(已读则走缓存); 测试桩可能仅暴露 text/content/_content
+            for _attr in ("text", "content", "_content"):
+                _val = getattr(_resp, _attr, None)
+                if _val:
+                    _body = _val if isinstance(_val, str) else _val.decode("utf-8", "ignore")
+                    break
+        if not _body:
+            # 退化: 从异常文本抠 error.type
+            _body = str(error)
+        if _body:
+            try:
+                _data = json.loads(_body)
+                _err = _data.get("error") if isinstance(_data, dict) else None
+                _et2 = (_err or {}).get("type") if isinstance(_err, dict) else None
+                _ec2 = (_err or {}).get("code") if isinstance(_err, dict) else None
+                _token = str(_et2 or _ec2 or "").lower()
+                if _token:
+                    _cat = _subcategory_for_token(_token)
+                    if _cat is not None:
+                        logger.debug(f"[ErrorClassifier] HTTP 429 错误体 type/code={_token} → {_cat}")
+                        return _cat
+            except (ValueError, TypeError):
+                pass
+        # 裸 429(无头无 type) → 保守可重试, 重试层按次数上限收敛 — 小欧 2026-10-28
+        logger.debug(f"[ErrorClassifier] HTTP 429 无细分判据(裸429), 保守归 RATE_LIMIT(可重试)")
+        return SystemErrorCategory.RATE_LIMIT
+
+    @staticmethod
     def _check_http_status_errors(error: Exception) -> Optional[SystemErrorCategory]:
         """检查HTTP状态码错误 — 小沈 2026-08-29 修复#14: 优先用真实响应状态码, 正则仅作文本补充
         2026-09-02 小欧 严谨修复404重试放大(北京老陈:三思三省不误伤不滥用): 未枚举4xx(404/405/422等)按HTTP语义一律CLIENT不重试, 未枚举5xx一律SERVER可重试, 杜绝黑名单兜底误判SERVER导致404配错重试12次"""
         # 优先: 直接从异常对象取真实 HTTP 状态码(如 httpx.HTTPStatusError), 规避 str(error) 无语境致正则失配
         status_code = SystemErrorClassifier._extract_http_status(error)
         if status_code is not None:
+            if status_code == 429:
+                # 429 限流细分: 读错误体 error.type 区分"缓刑(可重试)"与"打死(配额耗尽)" — 小欧 2026-10-28
+                return SystemErrorClassifier._extract_429_subcategory(error)
             _cat = HTTP_STATUS_TO_ERROR_TYPE.get(status_code)
             if _cat is not None:
                 logger.debug(f"[ErrorClassifier] 真实HTTP状态码={status_code}, 分类={_cat}")
@@ -177,6 +254,8 @@ class SystemErrorClassifier:
         m = SystemErrorClassifier._STATUS_CTX_RE.search(str(error).lower())
         if m:
             _code = int(m.group(1))
+            if _code == 429:
+                return SystemErrorClassifier._extract_429_subcategory(error)
             _cat = HTTP_STATUS_TO_ERROR_TYPE.get(_code)
             if _cat is not None:
                 return _cat

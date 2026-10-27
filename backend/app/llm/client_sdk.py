@@ -52,6 +52,9 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
   空就是空不瞎兜底(配置缺失直接报错原则); ④新增 fastapi.HTTPException 导入;
   ⑤原 :267-268 兜底注释保留在 __init__ 内作为历史记录(注明撤销理由), 文件头 docstring :18/:21 的旧描述按
   "编辑历史不删"铁律保留不动 — 小欧 2026-09-26
+编辑历史: 2026-10-28 小欧 - _extract_server_error_message 扩展返回 (message, error_type, error_code) 三要素,
+  供 429 限流细分(rate_limit_error/insufficient_quota 等 error.type 判据)与诊断留痕; _raise_http_error 调用点同步解包 —
+  小欧-2026-10-28
 """
 
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
@@ -236,22 +239,28 @@ def _build_request_body(
     return body
 
 
-def _extract_server_error_message(body_text: str) -> str:
-    """从LLM服务商错误响应体提取真实错误(OpenAI兼容信封 {"error":{"message":...}}) — 小欧 2026-07-16"""
+def _extract_server_error_message(body_text: str) -> tuple:
+    """从LLM服务商错误响应体提取真实错误(OpenAI兼容信封 {"error":{...}}) — 小欧 2026-07-16
+    2026-10-28 小欧: 扩展返回 (message, error_type, error_code) 三要素——
+      message: 服务商真实错误文案; error_type: 信封 error.type; error_code: 信封 error.code。
+    供 429 限流细分(rate_limit_error/insufficient_quota/credit_balance_exhausted 等 error.type 判据)与诊断留痕。
+    空信封返回 ("", "", "") — 小欧-2026-10-28"""
     if not body_text:
-        return ""
+        return ("", "", "")
     try:
         data = json.loads(body_text)
         err = data.get("error") if isinstance(data, dict) else None
         if isinstance(err, dict):
             msg = err.get("message")
-            if msg:
-                return str(msg)[:500]
+            _et = err.get("type")
+            _ec = err.get("code")
+            _msg = str(msg)[:500] if msg else ""
+            return (_msg, str(_et or ""), str(_ec or ""))
         if isinstance(err, str):
-            return err[:500]
+            return (err[:500], "", "")
     except (ValueError, TypeError):
         pass
-    return body_text[:500]
+    return (body_text[:500], "", "")
 
 
 _soft_pool_semaphore = None  # 2026-09-20 小欧 软配额: 延迟初始化, 绑定首次使用时的 event loop — 小欧-2026-09-20
@@ -353,20 +362,25 @@ class LLMClient:
     def _raise_http_error(self, response: httpx.Response, body_text: str) -> None:
         """>=400 错误响应体记录 + 服务商真实错误提取 + 抛错(request/request_stream 共用) — 小欧 2026-09-24 v3.7.1
         函数化(DRY: 两处 4xx/5xx 处理重复): 可重试状态(429限流/5xx服务端瞬时)记 WARNING 交 base_service L1 重试,
-        仅不可重试客户端错误(400/401/403等)记 ERROR, 避免 check_logs/测试误判 FAIL。"""
+        仅不可重试客户端错误(400/401/403等)记 ERROR, 避免 check_logs/测试误判 FAIL。
+        2026-10-28 小欧: 解包三要素, error_type/error_code 附加到异常对象(供错误分类器读 error.type 细分 429 限流/配额)。"""
         if response.status_code >= 400:
             if response.status_code in _RETRYABLE_STATUS:
                 logger.warning(f"[LLM] HTTP {response.status_code} 响应体(可重试, 交 base_service L1 重试): {body_text}")
             else:
                 logger.error(f"[LLM] HTTP {response.status_code} 响应体: {body_text}")
-            server_msg = _extract_server_error_message(body_text)
+            server_msg, _et, _ec = _extract_server_error_message(body_text)  # 2026-10-28 解包三要素
             # 适配层错误消息映射消费(zen 403/426 友好文案; 默认空 dict=不干预, 走全局分类) — 小欧 2026-09-17
             _adapter_msg = self._adapter.error_message_map().get(response.status_code)
             if _adapter_msg:
                 server_msg = f"{_adapter_msg}（服务端: {server_msg}）" if server_msg else _adapter_msg
-            raise httpx.HTTPStatusError(
+            _exc = httpx.HTTPStatusError(
                 f"HTTP {response.status_code} 错误: {server_msg or '（服务商未返回错误详情）'}",
                 request=response.request, response=response)
+            # 2026-10-28 附加 error.type/code 到异常对象, 供 error_classifier._extract_429_subcategory 直接读取细分 — 小欧-2026-10-28
+            _exc.error_type = _et
+            _exc.error_code = _ec
+            raise _exc
 
     async def request(
         self,
