@@ -34,6 +34,8 @@
 //   ⑤Bug-15: 拖动 move 实时读 containerWRef 计算 maxW, 拖动中窗口resize用最新值
 //   ⑥Bug-13: borderRight 条件化——fullLeft 折叠态不显示视觉分隔线
 //   ⑦Bug-6/Bug-10: 测试增强——补拖动/ResizeObserver用例, 键盘→断言改为 >300(修复Bug-3后)
+// 编辑历史: 2026-10-28 小欧 - 左面板补 scrollbarGutter:'stable': 防 fail/cancel 时 taskinfo-bar 换行撑高
+//   → 中部行压矮 → 左栏纵向滚动条出现/消失 → 内容宽度跳变(CLS弹动); 与右栏 SessionLayout.tsx:153 同款根治 — 小欧-2026-10-28
 
 //   @author 小欧
 //   @date 2026-10-27
@@ -304,6 +306,8 @@ const SplitPane: React.FC<SplitPaneProps> = ({
           minWidth: SPLIT_LEFT_MIN_PX,
           overflow: 'auto',
           overflowX: 'hidden',
+          // 2026-10-28 小欧 - 防 fail/cancel 时左栏高度变化致纵向滚动条出现/消失→内容宽度跳变(CLS弹动), 与右栏 SessionLayout.tsx:153 同款根治 — 小欧-2026-10-28
+          scrollbarGutter: 'stable',
           // 2026-10-27 小欧 修复(审计): 恢复 borderRight 视觉分隔——原布局左列有 borderRight,
           //   新 SplitPane 分割线默认透明(仅 hover 显示), 导致左列与右侧无可见分隔
           // 2026-10-27 小欧 - v1.6 修复(Bug-13): borderRight 条件化——fullLeft 折叠态不显示分隔线
