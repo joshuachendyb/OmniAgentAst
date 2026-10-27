@@ -53,6 +53,11 @@ app_tree = Tree(
     excludes=["__pycache__", "*.pyc"],
 )
 
+# 前端 dist → _internal/web/（双击exe完整应用）— 小欧 2026-10-27
+# 需先 npm run build 生成 frontend/dist/，否则跳过（main.py 会 _HAS_WEB=False 不 mount）
+_frontend_dist = REPO / "frontend" / "dist"
+_frontend_datas = [(str(_frontend_dist), "web")] if _frontend_dist.is_dir() else []
+
 a = Analysis(
     [str(BACKEND / "run_server.py")],
     pathex=[str(BACKEND)],
@@ -61,7 +66,7 @@ a = Analysis(
         (str(REPO / "version.txt"), "."),
         (str(BACKEND / "config.yaml.example"), "."),
         (str(REPO / "OmniAgent.md"), "."),  # 项目规则文件 — 小欧 2026-10-24
-    ] + _datas,
+    ] + _frontend_datas + _datas,
     hiddenimports=[
         "aiosqlite",
         "sqlalchemy.dialects.sqlite.aiosqlite",

@@ -51,6 +51,9 @@
 # 2026-10-25 小欧 - 日志级别热重载: 新增 _log_level_watcher_loop(10s 周期) + _start_log_level_watcher,
 #   startup 起、shutdown cancel(同 _cleanup_task_ref 生命周期); refresh_log_levels 幂等重刷已装配 logger。
 #   — 小欧-2026-10-25
+# 2026-10-27 小欧 - 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/, main.py 加
+#   StaticFiles mount /assets + SPA catch-all fallback → 浏览器访问 http://127.0.0.1:8500 直接出前端页面,
+#   /api/v1 同源无需 CORS, 一个端口搞定。源码调试模式读 ../frontend/dist/。
 import sys
 import asyncio
 from typing import Optional
@@ -251,6 +254,23 @@ _mount(token_usage_router, "token-usage")  # S2(10.1.7②-6) — 小欧 2026-08-
 _mount(auth_router, "auth")
 
 
+# ── 前端静态文件服务（2026-10-27 小欧 双击exe完整应用）──
+# frozen: _internal/web/ (spec datas 塞入 frontend/dist 内容)
+# 源码调试: ../frontend/dist/ (npm run build 产物)
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+_WEB_DIR = (
+    Path(sys._MEIPASS) / "web"
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+)
+_HAS_WEB = _WEB_DIR.is_dir()
+
+if _HAS_WEB:
+    logger.info(f"前端静态目录已定位: {_WEB_DIR}")
+
+
 _cleanup_task_ref: Optional[asyncio.Task] = None  # 后台清理循环 task 引用, 供 shutdown 时 cancel
 _journal_retention_ref: Optional[asyncio.Task] = None  # [63] 3.6.7 Journal 清理 task 引用, 供 shutdown 时 cancel（同 _cleanup_task_ref 模式）
 
@@ -395,6 +415,8 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
+    if _HAS_WEB:
+        return FileResponse(str(_WEB_DIR / "index.html"))
     # 2026-09-27 小欧 - docs 键随 _ENABLE_DOCS 条件化：默认关闭时无条件返回即对外广播一个必 404 的地址
     return {
         "message": "OmniAgentAst API",
@@ -407,3 +429,15 @@ async def root():
 async def favicon():
     # 浏览器自动请求 favicon 时返回 204，避免 main.py:87 全局异常处理器记录 404 噪声 — 小欧 2026-07-13
     return Response(status_code=204)
+
+
+# ── SPA fallback: 非 /api 非 /assets 路径全部返回 index.html（React Router 接管）──
+# 注册在所有精确路由之后，API 请求先被精确匹配，不会误入此 handler。
+# 2026-10-27 小欧 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/
+if _HAS_WEB:
+    app.mount("/assets", StaticFiles(directory=str(_WEB_DIR / "assets")), name="static-assets")
+
+    @app.get("/{path:path}", include_in_schema=False)
+    async def spa_fallback(path: str):
+        """前端 SPA catch-all: 浏览器路由(/chat /files /settings 等)统一返回 index.html"""
+        return FileResponse(str(_WEB_DIR / "index.html"))
