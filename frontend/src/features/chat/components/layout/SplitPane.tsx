@@ -36,11 +36,6 @@
 //   ⑦Bug-6/Bug-10: 测试增强——补拖动/ResizeObserver用例, 键盘→断言改为 >300(修复Bug-3后)
 // 编辑历史: 2026-10-28 小欧 - 左面板补 scrollbarGutter:'stable': 防 fail/cancel 时 taskinfo-bar 换行撑高
 //   → 中部行压矮 → 左栏纵向滚动条出现/消失 → 内容宽度跳变(CLS弹动); 与右栏 SessionLayout.tsx:153 同款根治 — 小欧-2026-10-28
-// 编辑历史: 2026-10-28 小欧 - 根治展开/收起右栏晃动(4项功能退化, 测试预期从未落地):
-//   ①左面板加 width 过渡动画 / 右面板加 flex 过渡动画(原零过渡→展开收起瞬间跳变晃动); 拖动中用 dragging state 禁用过渡(跟手);
-//   ②收起态左面板 flex:'1 1 0'→width:calc(100%-48px)(原随按钮条内容宽浮动, 宽度不稳定);
-//   ③收起态右面板 flex:'0 0 auto'→flexGrow0+flexBasis:48px(固定 48px 按钮条, 与①②对称);
-//   ④过渡与固定宽度配合, 消除展开/收起右栏的结构跳变(CLS晃动) — 小欧-2026-10-28
 
 //   @author 小欧
 //   @date 2026-10-27
@@ -143,8 +138,6 @@ const SplitPane: React.FC<SplitPaneProps> = ({
   const [maxW, setMaxW] = useState<number>(() =>
     Math.round((typeof window !== 'undefined' ? window.innerWidth : 1024) * SPLIT_LEFT_MAX_RATIO)
   );
-  // 2026-10-28 小欧 - 拖动中标记: 拖动中禁用 width/flex 过渡动画(跟手即时), 松手后恢复过渡(展开/收起平滑)
-  const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
   // 2026-10-27 小欧 - v1.6 修复(Bug-8): leftWRef 同步最新 leftW, 供 startDrag 稳定引用(读 ref 而非闭包)
@@ -216,7 +209,6 @@ const SplitPane: React.FC<SplitPaneProps> = ({
 
   const startDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    setDragging(true); // 2026-10-28 小欧: 拖动中禁用过渡动画(跟手即时)
     const x0 = e.clientX;
     // v1.6 修复(Bug-8): 读 leftWRef 而非闭包 leftW —— 依赖改 [] 后 startDrag 稳定引用,
     //   闭包不再捕获旧 leftW, 拖动中其他操作改 leftW 不产生竞态
@@ -242,7 +234,6 @@ const SplitPane: React.FC<SplitPaneProps> = ({
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
       cleanupRef.current = null;
-      setDragging(false); // 2026-10-28 小欧: 松手恢复过渡动画(展开/收起平滑)
       // 2026-10-27 小欧 - 拖动结束, 持久化最终宽度(读 ref 而非 state, 避免异步旧值)
       writeStoredWidth(lastWidthRef.current);
     };
@@ -310,13 +301,8 @@ const SplitPane: React.FC<SplitPaneProps> = ({
       {/* 左侧面板 */}
       <div
         style={{
-          // 2026-10-28 小欧 - 收起态宽度稳定化: fullLeft 用固定 calc(100% - 48px) 替代 flex:'1 1 0'
-          //   (原 flex:1 1 0 随右栏按钮条内容宽浮动→左列宽度不稳定/晃动), 展开态用 leftW;
-          //   48px=右栏按钮条固定宽(Button small≈24px + padding 左右各 8px = 40px, 取整 48 留白)
-          width: fullLeft ? 'calc(100% - 48px)' : leftW ?? undefined,
-          flex: fullLeft ? 'none' : undefined,
-          // 2026-10-28 小欧 - 展开/收起右栏时宽度平滑过渡(消除晃动); 拖动中禁用(跟手即时) — 小欧-2026-10-28
-          transition: dragging ? 'none' : 'width 0.2s ease',
+          width: fullLeft ? undefined : leftW ?? undefined,
+          flex: fullLeft ? '1 1 0' : undefined,
           minWidth: SPLIT_LEFT_MIN_PX,
           overflow: 'auto',
           overflowX: 'hidden',
@@ -373,12 +359,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({
           //   原 SplitPane 右面板: 始终 flex:1, 折叠态下与左面板(flex:'1 1 0')平分空间,
           //   导致左列只占一半, 右侧留白(功能分支退化)
           //   修复: fullLeft 时右面板 flex:'0 0 auto'(仅按钮条), 左面板填满剩余空间
-          // 2026-10-28 小欧 - 取代 10-27 的 flex:'0 0 auto'(按钮条内容宽浮动→不稳定): 收起态固定 48px
-          //   (与左面板 calc(100% - 48px) 对称), 展开态 flexGrow1/flexBasis0%(=flex:1 填满剩余); 平滑过渡, 拖动中禁用
-          flexGrow: fullLeft ? 0 : 1,
-          flexShrink: fullLeft ? 0 : 1,
-          flexBasis: fullLeft ? '48px' : '0%',
-          transition: dragging ? 'none' : 'flex-grow 0.2s ease, flex-basis 0.2s ease',
+          flex: fullLeft ? '0 0 auto' : 1,
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
