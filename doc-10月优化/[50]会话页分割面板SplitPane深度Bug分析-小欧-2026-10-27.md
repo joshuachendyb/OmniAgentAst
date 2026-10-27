@@ -1,4 +1,4 @@
-# 会话页分割面板(SplitPane)Bug深度分析与修复方案
+﻿# 会话页分割面板(SplitPane)Bug深度分析与修复方案
 
 | 版本 | 时间 | 签名 | 修改简介 |
 |------|------|------|---------|
@@ -7,6 +7,9 @@
 | v1.2 | 2026-10-27 17:20 | 小欧 | 复核结论(3遍)：确认12个真实Bug、7个非Bug/可选；新增Bug-19(getInitialWidth containerW=0+stored返回0)；合并Bug-12→Bug-3 |
 | v1.3 | 2026-10-27 17:31 | 小欧 | 修复双击语义(方案A)+Bug-19：双击改"设为新默认"写回localStorage不跳回；删除死代码clearStoredWidth；getInitialWidth containerW<=0返回偏好值；测试17/17通过 |
 | v1.4 | 2026-10-27 17:47 | 小欧 | 默认值双向管理(设计文档[51])：双击=存储新默认，Shift+双击=返回出厂默认；重新引入clearStoredWidth；提示文案更新；测试19/19通过 |
+| v1.6 | 2026-10-27 19:40 | 小欧 | 用户确认 **Bug-1(rightOpen调整默认宽度) 非Bug**：删除 Bug-1 及 Bug-16(其详细版)章节；同步文档[49]v1.3 修正为实际行为(固定30%)；未解决真实Bug调整为8个 |
+| v1.7 | 2026-10-27 20:02 | 小欧 | **修复全部8个真实Bug(Bug-2/3/5/6/8/10/13/15)**：SplitPane v1.6 + 测试 v1.7；测试 **21/21 通过**；tsc 0 错误 |
+| v1.5 | 2026-10-27 19:25 | 小欧 | 检查Bug解决状态：确认已解决Bug-19+8.5双击语义；未解决Bug-1/2/3/5/6/8/10/13/15/16(11个)，Bug-11待产品确认 |
 
 编写人：小欧
 
@@ -26,97 +29,6 @@
 ---
 
 ## 二、Bug清单（按严重程度排序）
-
-### Bug-1 [严重] 文档v1.1功能未实现：根据rightOpen调整默认宽度
-
-**问题描述**：
-设计文档 `[49]` 明确描述 v1.1 优化："根据 rightOpen 状态调整默认宽度（折叠 240px/展开 280px）"，并给出了带 `rightOpen` 参数的实现：
-
-```typescript
-// 文档中描述的 v1.1 实现
-const getInitialWidth = (containerW: number, rightOpen: boolean): number => {
-  if (containerW === 0) {
-    return rightOpen ? 280 : 240;
-  }
-  if (rightOpen) {
-    return Math.min(280, Math.round(containerW * 0.22));
-  }
-  return Math.min(240, Math.round(containerW * 0.18));
-};
-```
-
-**实际代码**（`SplitPane.tsx:71-83`）：
-```typescript
-const getInitialWidth = (containerW: number): number => {
-  const stored = readStoredWidth();
-  if (stored !== null) {
-    const maxW = Math.round(containerW * SPLIT_LEFT_MAX_RATIO);
-    return Math.min(stored, maxW);
-  }
-  if (containerW === 0) {
-    return 300;  // ← 硬编码300，没有rightOpen参数
-  }
-  return Math.round(containerW * SPLIT_LEFT_DEFAULT_RATIO);  // ← 始终30%
-};
-```
-
-**违反规范**：
-- **YAGNI**：设计文档描述了用户需求（右侧折叠时左侧更窄），但未实现
-- **关联检查**：SessionLayout 已传递 `fullLeft={!rightOpen}` 给 SplitPane，但 SplitPane 忽略了 rightOpen 对默认宽度的影响
-
-**根因**：
-v1.1 设计时考虑了 rightOpen 调整，但实现时改为固定30%，文档未同步更新。
-
-**修复方案**：
-
-方案A（推荐）：恢复 rightOpen 调整逻辑
-```typescript
-// SplitPane.tsx 接口扩展
-interface SplitPaneProps {
-  left: React.ReactNode;
-  right: React.ReactNode;
-  fullLeft?: boolean;
-  // 新增：右侧展开状态，用于调整默认宽度
-  rightOpen?: boolean;
-}
-
-// getInitialWidth 增加 rightOpen 参数
-const getInitialWidth = (containerW: number, rightOpen: boolean): number => {
-  const stored = readStoredWidth();
-  if (stored !== null) {
-    const maxW = Math.round(containerW * SPLIT_LEFT_MAX_RATIO);
-    return Math.min(stored, maxW);
-  }
-  if (containerW === 0) {
-    // 容器未布局完成：折叠态240px，展开态280px
-    return rightOpen ? 280 : 240;
-  }
-  // 展开态：22%容器宽，最大280px
-  // 折叠态：18%容器宽，最大240px
-  const ratio = rightOpen ? 0.22 : 0.18;
-  const maxPX = rightOpen ? 280 : 240;
-  return Math.min(maxPX, Math.round(containerW * ratio));
-};
-
-// SessionLayout.tsx 透传 rightOpen
-<SplitPane
-  left={renderSlot(panels, 'left')}
-  fullLeft={!rightOpen}
-  rightOpen={rightOpen}  // ← 新增
-  right={...}
-/>
-```
-
-方案B（保守）：保持固定30%，更新文档
-- 删除文档中 v1.1 关于 rightOpen 的描述
-- 在代码注释中说明"为何不根据 rightOpen 调整"
-
-**选择方案A的理由**：
-- 用户需求真实（左侧菜单栏在右侧折叠时需要更窄）
-- 改动极小（仅增加一个prop和getInitialWidth参数）
-- 符合 YAGNI（需求驱动，不预设未来）
-
----
 
 ### Bug-2 [中等] ResizeObserver比例计算分母不一致
 
@@ -154,7 +66,7 @@ containerWRef.current = newContainerW;
 const leftRatioRef = useRef<number>(SPLIT_LEFT_DEFAULT_RATIO);
 // ...
 setLeftW((prev) => {
-  if (prev === null) return getInitialWidth(newContainerW, rightOpen);
+  if (prev === null) return getInitialWidth(newContainerW);
   // prev 是像素值，转换为比例后再应用新容器宽度
   const ratio = prev / (containerWRef.current || 1);
   containerWRef.current = newContainerW;
@@ -262,9 +174,9 @@ const handleDoubleClick = useCallback(() => {
   clearStoredWidth();
   const container = containerRef.current;
   if (container) {
-    setLeftW(getInitialWidth(container.offsetWidth, rightOpen));
+    setLeftW(getInitialWidth(container.offsetWidth));
   }
-}, [fullLeft, rightOpen]);  // ← 补充依赖
+}, [fullLeft]);
 ```
 
 ---
@@ -282,15 +194,14 @@ if (containerW === 0) {
 **问题**：
 - 300 是哪里来的？没有注释
 - 与 SPLIT_LEFT_DEFAULT_RATIO=0.30 不一致（300px 对应 1000px 容器的 30%）
-- 文档说 v1.1 改为 240/280，但代码仍是 300
+- 实际实现为固定 300（对应 SPLIT_LEFT_DEFAULT_RATIO=0.30 的 1000px 容器），未按 rightOpen 调整（见文档[49]v1.3 修正）
 
 **修复方案**：
 ```typescript
 if (containerW === 0) {
   // 容器未布局完成时的安全默认值
   // 与 SPLIT_LEFT_DEFAULT_RATIO=0.30 对应（1000px容器→300px）
-  // v1.1: 根据 rightOpen 调整为 240/280（见Bug-1）
-  return rightOpen ? 280 : 240;
+  return 300;
 }
 ```
 
@@ -459,11 +370,10 @@ useLayoutEffect(() => {
 **问题**：
 - 当 `fullLeft` 从 `false` 变为 `true`（右侧折叠）时，`useLayoutEffect` 直接 `return`
 - `leftW` 和 `maxW` 保留了展开时的值
-- 当用户再次展开右侧（`fullLeft` 变回 `false`），会重新计算宽度，但如果 localStorage 有值，会使用存储的旧值而非根据 `rightOpen` 调整
+- 当用户再次展开右侧（`fullLeft` 变回 `false`），会重新计算宽度，但如果 localStorage 有值，会使用存储的旧值而非重新按容器比例计算
 
 **实际影响**：
-- 用户折叠右侧后，再展开，左侧宽度可能不符合设计文档 v1.1 的预期（240px/280px）
-- 这是 Bug-1 的连锁反应
+- 用户折叠右侧后，再展开，左侧宽度可能不是最新的容器比例宽度（实际实现为固定 30%，见文档[49]v1.3 修正）
 
 **修复方案**：
 ```typescript
@@ -477,10 +387,10 @@ useLayoutEffect(() => {
   const container = containerRef.current;
   if (container) {
     const totalW = container.offsetWidth;
-    setLeftW(getInitialWidth(totalW, rightOpen));  // ← 传入rightOpen
+    setLeftW(getInitialWidth(totalW));
     setMaxW(Math.round(totalW * SPLIT_LEFT_MAX_RATIO));
   }
-}, [fullLeft, rightOpen]);  // ← 增加rightOpen依赖
+}, [fullLeft]);
 ```
 
 ---
@@ -748,48 +658,6 @@ const move = (ev: MouseEvent) => {
 
 ---
 
-### Bug-16 [信息] 设计文档v1.1与实际代码脱节
-
-**问题位置**：设计文档 `[49]` vs 实际代码 `SplitPane.tsx`
-
-**文档描述**（`[49]` 第179-191行）：
-```typescript
-const getInitialWidth = (containerW: number, rightOpen: boolean): number => {
-  if (containerW === 0) {
-    return rightOpen ? 280 : 240;
-  }
-  if (rightOpen) {
-    return Math.min(280, Math.round(containerW * 0.22));
-  }
-  return Math.min(240, Math.round(containerW * 0.18));
-};
-```
-
-**实际代码**（`SplitPane.tsx:71-83`）：
-```typescript
-const getInitialWidth = (containerW: number): number => {
-  const stored = readStoredWidth();
-  if (stored !== null) {
-    const maxW = Math.round(containerW * SPLIT_LEFT_MAX_RATIO);
-    return Math.min(stored, maxW);
-  }
-  if (containerW === 0) {
-    return 300;  // ← 硬编码300，没有rightOpen参数
-  }
-  return Math.round(containerW * SPLIT_LEFT_DEFAULT_RATIO);  // ← 始终30%
-};
-```
-
-**问题**：
-- 文档明确描述 v1.1 实现了 rightOpen 调整，但代码实际没有
-- 这是 Bug-1 的详细版本，但单独列出是因为文档本身也是问题源
-- 文档中的代码示例与实际实现不一致，会误导后续维护者
-
-**修复方案**：
-- 方案A：实现文档描述的功能（推荐）
-- 方案B：更新文档，说明实际行为是固定30%
-
----
 
 ### Bug-17 [低] 缺少触摸事件支持
 
@@ -910,7 +778,6 @@ const getInitialWidth = (containerW: number): number => {
 
 | 优先级 | Bug | 影响 | 修复难度 |
 |--------|-----|------|---------|
-| P0 | Bug-1 文档功能未实现 | 用户需求未满足 | 低 |
 | P1 | Bug-2 ResizeObserver比例计算 | 窗口缩放精度 | 中 |
 | P1 | Bug-3 maxW初始值0 | 极端竞态 | 低 |
 | P2 | Bug-4 handleDoubleClick防护 | 代码健壮性 | 低 |
@@ -925,20 +792,17 @@ const getInitialWidth = (containerW: number): number => {
 ### 5.1 SplitPane.tsx 修复
 
 ```typescript
-// ===== 修复1: getInitialWidth增加rightOpen参数 (Bug-1, Bug-5) =====
-const getInitialWidth = (containerW: number, rightOpen: boolean = true): number => {
+// ===== 修复1: getInitialWidth 固定30% (Bug-5) =====
+const getInitialWidth = (containerW: number): number => {
   const stored = readStoredWidth();
   if (stored !== null) {
     const maxW = Math.round(containerW * SPLIT_LEFT_MAX_RATIO);
     return Math.min(stored, maxW);
   }
   if (containerW === 0) {
-    // 容器未布局完成：折叠态240px，展开态280px
-    return rightOpen ? 280 : 240;
+    return 300;  // 容器未布局完成时固定偏好值，对应30%的1000px容器
   }
-  const ratio = rightOpen ? 0.22 : 0.18;
-  const maxPX = rightOpen ? 280 : 240;
-  return Math.min(maxPX, Math.round(containerW * ratio));
+  return Math.round(containerW * SPLIT_LEFT_DEFAULT_RATIO);  // 固定30%
 };
 
 // ===== 修复2: maxW初始值 (Bug-3) =====
@@ -958,7 +822,7 @@ useEffect(() => {
     if (newContainerW <= 0) return;
     setMaxW(Math.round(newContainerW * SPLIT_LEFT_MAX_RATIO));
     setLeftW((prev) => {
-      if (prev === null) return getInitialWidth(newContainerW, rightOpen);
+      if (prev === null) return getInitialWidth(newContainerW);
       const ratio = prev / (containerWRef.current || 1);
       containerWRef.current = newContainerW;
       const maxW = Math.round(newContainerW * SPLIT_LEFT_MAX_RATIO);
@@ -967,7 +831,7 @@ useEffect(() => {
   });
   ro.observe(container);
   return () => ro.disconnect();
-}, [fullLeft, rightOpen]);
+}, [fullLeft]);
 
 // ===== 修复4: handleDoubleClick防护 (Bug-4) =====
 const handleDoubleClick = useCallback(() => {
@@ -975,29 +839,9 @@ const handleDoubleClick = useCallback(() => {
   clearStoredWidth();
   const container = containerRef.current;
   if (container) {
-    setLeftW(getInitialWidth(container.offsetWidth, rightOpen));
+    setLeftW(getInitialWidth(container.offsetWidth));
   }
-}, [fullLeft, rightOpen]);
-
-// ===== 修复5: 接口扩展 (Bug-1) =====
-interface SplitPaneProps {
-  left: React.ReactNode;
-  right: React.ReactNode;
-  fullLeft?: boolean;
-  rightOpen?: boolean;  // 新增
-}
-```
-
-### 5.2 SessionLayout.tsx 修复
-
-```typescript
-// ===== 修复: 透传rightOpen (Bug-1) =====
-<SplitPane
-  left={renderSlot(panels, 'left')}
-  fullLeft={!rightOpen}
-  rightOpen={rightOpen}  // 新增
-  right={...}
-/>
+}, [fullLeft]);
 ```
 
 ### 5.3 测试补充（Bug-6）
@@ -1014,7 +858,7 @@ interface SplitPaneProps {
 | DRY | ✅ | 拖动逻辑只写一次，复用 Files 页模式 |
 | KISS-DIRECT | ⚠️ | Bug-2 修复后更直线 |
 | SLAP | ✅ | UI层与业务层分离 |
-| YAGNI | ⚠️ | Bug-1 修复后需求驱动 |
+| YAGNI | ✅ | 不预设未确认需求（rightOpen 调整经用户确认为非需求） |
 | 禁止backward | ✅ | 无向后兼容代码 |
 | OCP | ✅ | 配置常量化支持扩展 |
 | LSP | ✅ | 无继承体系 |
@@ -1025,14 +869,13 @@ interface SplitPaneProps {
 
 ## 七、后续行动
 
-1. **P0**: 实现 Bug-1 修复（rightOpen 调整默认宽度）
-2. **P1**: 实现 Bug-2 修复（ResizeObserver比例计算）
-3. **P1**: 实现 Bug-3 修复（maxW初始值）+ 更新 Bug-10 测试断言
-4. **P1**: 实现 Bug-8 修复（startDrag闭包陷阱）
-5. **P1**: 实现 Bug-9 修复（fullLeft状态残留）
-6. **P2**: 实现 Bug-4、Bug-5、Bug-11、Bug-12、Bug-13、Bug-14、Bug-15 修复
-7. **P3**: 考虑实现 Bug-17、Bug-18（触摸支持、CSS动画）
-8. **文档**: 更新 `[49]` 文档，同步代码实际行为
+1. **P1**: 实现 Bug-2 修复（ResizeObserver比例计算）
+2. **P1**: 实现 Bug-3 修复（maxW初始值）+ 更新 Bug-10 测试断言
+3. **P1**: 实现 Bug-8 修复（startDrag闭包陷阱）
+4. **P1**: 实现 Bug-9 修复（fullLeft状态残留）
+5. **P2**: 实现 Bug-4、Bug-5、Bug-11、Bug-12、Bug-13、Bug-14、Bug-15 修复
+6. **P3**: 考虑实现 Bug-17、Bug-18（触摸支持、CSS动画）
+7. **文档**: 更新 `[49]` 文档，同步代码实际行为（已完成 v1.3，见文档[49]）
 
 ---
 
@@ -1045,8 +888,6 @@ interface SplitPaneProps {
 
 | 编号 | 严重性 | 复核结论 | 关键证据（源码/测试/文档） |
 |------|--------|---------|--------------------------|
-| Bug-1 | **P0 严重** | ✅ **真实** | 文档[49]v1.1第181行有`getInitialWidth(containerW, rightOpen)`(240/280)，但`SplitPane.tsx:71-83`只有单参数返回固定30%/300；`SessionLayout.tsx:115`传`fullLeft={!rightOpen}`但**未传rightOpen** |
-| Bug-16 | P1 | ✅ **真实** | 文档[49]v1.1描述rightOpen调整，代码无此参数——文档与代码脱节（Bug-1根因） |
 | Bug-2 | P1 | ✅ **真实** | `SplitPane.tsx:140` ratio分母用`container.offsetWidth`，分子用`entry.contentRect.width`——两个不同来源尺寸混用，有border/滚动条时比例失真 |
 | Bug-6 | P1 | ✅ **真实** | 测试`SplitPane.test.tsx`无拖动(mousedown/move/up)用例、无ResizeObserver用例；双击只验证localStorage清除(第206行)未验证宽度重置 |
 | Bug-10 | P1 | ⚠️ **部分修复** | v1.4键盘断言已增强为验证localStorage写入(第97-102行)，但**仍未验证DOM实际宽度**；且键盘→测试写死`expect(finalVal).toBe(0)`(第133行)——Bug-3记录性测试，修复Bug-3后必失败 |
@@ -1072,7 +913,7 @@ interface SplitPaneProps {
 
 ### 8.3 复核后结论
 
-- **确认真实Bug：12个**（Bug-1/2/3/5/6/8/10/13/15/16/19，其中Bug-11为设计权衡、Bug-10部分修复）
+- **确认真实Bug：10个**（Bug-2/3/5/6/8/10/13/15/19，其中Bug-11为设计权衡、Bug-10部分修复）
 - **非Bug/可选：7个**（Bug-4/7/9/12/14/17/18，其中Bug-4/14为防御性、Bug-12合并入Bug-3）
 - **新增遗漏：Bug-19**（getInitialWidth在containerW=0且有用户偏好时返回0，逻辑缺陷）
 - **优先级调整**：Bug-3从P1降为P2（客户端首帧同步，用户几乎不可触发）；Bug-8从P1降为P2（正常拖动无害）；Bug-17/18维持"可选"不入修复队列
@@ -1151,13 +992,109 @@ const handleDoubleClick = useCallback(() => {
 
 ### 8.4 后续行动更新
 
-1. **P0**: 实现 Bug-1 修复（rightOpen 调整默认宽度）+ 同步 Bug-16 文档
-2. **P1**: 实现 Bug-2 修复（ResizeObserver 比例计算统一来源）
-3. **P1**: 实现 Bug-6/Bug-10 测试增强（补拖动/RO/双击宽度用例；Bug-3修复后更新键盘→断言为>300）
-4. **P2**: 实现 Bug-3/Bug-5/Bug-8/Bug-13/Bug-15/Bug-19 修复（maxW安全默认、300常量化、容器宽实时读、borderRight条件化、containerW=0+stored返回偏好）
-5. **P3**: Bug-11 设计权衡——与产品确认右侧最小空间需求后再定
-6. **可选**: Bug-17/Bug-18（触摸/动画）作为后续增强，不入当前修复队列
+1. **P1**: 实现 Bug-2 修复（ResizeObserver 比例计算统一来源）
+2. **P1**: 实现 Bug-6/Bug-10 测试增强（补拖动/RO/双击宽度用例；Bug-3修复后更新键盘→断言为>300）
+3. **P2**: 实现 Bug-3/Bug-5/Bug-8/Bug-13/Bug-15/Bug-19 修复（maxW安全默认、300常量化、容器宽实时读、borderRight条件化、containerW=0+stored返回偏好）
+4. **P3**: Bug-11 设计权衡——与产品确认右侧最小空间需求后再定
+5. **可选**: Bug-17/Bug-18（触摸/动画）作为后续增强，不入当前修复队列
+
+---
+
+## 九、Bug 解决状态检查（2026-10-27 19:25）
+
+> 检查人：小欧 · 方法：对照 8.1 复核总表逐项核对当前 `SplitPane.tsx`(336行) / `SplitPane.test.tsx`(343行) / `SessionLayout.tsx` 实际代码。
+> 测试验证：`npx vitest run SplitPane.test.tsx` → **19/19 通过**。
+
+### 9.1 已解决
+
+| 编号 | 解决方式 | 证据 |
+|------|---------|------|
+| Bug-19 | ✅ v1.4 | `getInitialWidth` Line 91：`if (containerW <= 0) return stored;`（containerW<=0 返回偏好值而非 0） |
+| 8.5 双击语义 | ✅ v1.4+v1.5 | `handleDoubleClick` Line 237-250：双击=存储新默认写入 localStorage；Shift+双击=返回出厂默认 |
+
+### 9.2 未解决（确认真实 Bug，按优先级）
+
+| 编号 | 严重性 | 未解决证据（当前代码） |
+|------|--------|----------------------|
+| Bug-2 | P1 | Line 158：`const ratio = prev / (container.offsetWidth || 1);` 分母用 `offsetWidth`，分子用 `entry.contentRect.width`——两个来源混用 |
+| Bug-6 | P1 | 测试仍**无拖动(mousedown/move/up)用例**、**无 ResizeObserver 用例**；双击只验证 localStorage 写入 |
+| Bug-10 | P1(部分) | Line 142：键盘→测试写死 `expect(finalVal).toBe(0)`（Bug-3 记录性测试）；仍未验证 DOM 实际宽度 |
+| Bug-3 | P2 | Line 124：`const [maxW, setMaxW] = useState<number>(0);` 仍为 0（键盘→首帧受限） |
+| Bug-5 | P2 | Line 98：`return 300;` 仍硬编码 300，无注释说明来源 |
+| Bug-8 | P2 | Line 176-208：`startDrag` 依赖 `[leftW]`，闭包捕获 `w0`(Line 179) 和 `maxW`(Line 185) |
+| Bug-13 | P3 | Line 273：`borderRight` 始终渲染，`fullLeft` 折叠态也显示；测试 Line 340 断言与建议矛盾 |
+| Bug-15 | P3 | Line 184-185：`maxW` 在 mousedown 时计算并捕获到闭包，拖动中窗口 resize 用旧值 |
+
+### 9.3 待产品确认
+
+| 编号 | 说明 |
+|------|------|
+| Bug-11 | MAX_RATIO=0.80（左侧最大 80%）是否过宽，需产品确认右侧最小空间需求 |
+
+### 9.4 不需要解决（非Bug/可选）
+
+Bug-7（设计如此）、Bug-9（降级代码质量）、Bug-12（=Bug-3 重复）、Bug-4/Bug-14（防御性低）、Bug-17/Bug-18（可选增强）
+
+### 9.5 结论
+
+- **已解决：2 项**（Bug-19、8.5 双击语义）
+- **未解决：8 个真实 Bug**（Bug-2/3/5/6/8/10/13/15），其中 **Bug-2 为 P1 最高优先级**（ResizeObserver 比例计算）
+- **待产品确认：1 个**（Bug-11）
+- 测试 19/19 通过，但 Bug-3 未修复导致键盘→测试写死 `toBe(0)`，**修复 Bug-3 后必须更新该断言**
 
 ---
 
 *编写人：小欧 · 2026-10-27 17:05*
+
+
+## 十、8个真实Bug修复完成（2026-10-27 20:02）
+
+> 修复人：小欧 · 方法：按10大规范（尤其 KISS-DIRECT）逐项修复，三堂会审（合规/合理/关联）复核。
+> 测试验证：`npx vitest run SplitPane.test.tsx` → **21/21 通过**（原19 + 新增2）；`npx tsc --noEmit` → **0 错误**。
+
+### 10.1 修复对照表
+
+| 编号 | 严重性 | 修复方式 | 关键证据（修复后代码） |
+|------|--------|---------|----------------------|
+| Bug-2 | P1 | 统一尺寸来源 | `SplitPane.tsx:184`：`const oldContainerW = containerWRef.current \|\| newContainerW;` 先读缓存旧宽度再更新 ref，分母/分子来源一致（原混用 offsetWidth 导致比例重算失效） |
+| Bug-6 | P1 | 测试增强 | `SplitPane.test.tsx` 新增 2 用例：拖动测试（宽度300→400+localStorage写入）、ResizeObserver测试（缩放1000→800按比例300→240） |
+| Bug-10 | P1(部分) | 断言更新 | `SplitPane.test.tsx:142` 键盘→断言从 `toBe(0)` 改为 `toBeGreaterThan(300)`（Bug-3 修复后 maxW 初始安全值，键盘→生效） |
+| Bug-3 | P2 | 安全初始值 | `SplitPane.tsx:136-138`：maxW 初始 `Math.round(window.innerWidth * MAX_RATIO)`；`useLayoutEffect` 在 `totalW>0` 时才覆盖（防 offsetWidth=0 时覆盖安全值） |
+| Bug-5 | P2 | 注释说明 | `SplitPane.tsx:106`：`return 300` 补注释"对应 SPLIT_LEFT_DEFAULT_RATIO=0.30 的 1000px 容器" |
+| Bug-8 | P2 | 闭包消除 | `SplitPane.tsx:141-143`：`leftWRef` 同步 leftW；`startDrag:213` 读 `leftWRef.current`；依赖改 `[]`（稳定引用） |
+| Bug-13 | P3 | 条件化 | `SplitPane.tsx:312`：`borderRight: fullLeft ? 'none' : \`1px solid ...\``；测试断言改为 `not.toContain('border-right: 1px solid')` |
+| Bug-15 | P3 | 实时读取 | `SplitPane.tsx:221-223`：`move` 实时读 `containerWRef.current \|\| container.offsetWidth` 计算 maxW（原 mousedown 时捕获旧值） |
+
+### 10.2 三堂会审结论
+
+**合规检查（10大规范）**：
+- SRP ✅：SplitPane 仍只负责分割面板，未引入新职责
+- DRY ✅：拖动逻辑只写一次，复用 constants/layout.ts
+- KISS-DIRECT ✅：Bug-2 统一尺寸来源（ref 缓存）、Bug-8 读 ref 稳定引用、Bug-15 实时读 ref，逻辑直线无绕弯
+- SLAP ✅：UI 层与业务层分离，无混搭
+- YAGNI ✅：未引入新依赖/抽象/接口
+- 禁止backward ✅：无向后兼容代码
+- OCP/LSP/ISP/复用优先 ✅：配置常量化、无继承、无接口、复用常量
+
+**合理检查**：
+- Bug-2：先读 `containerWRef.current`（旧宽）再更新为新宽，分母/分子同源，比例重算正确
+- Bug-3：maxW 初始安全值 + `totalW>0` 才覆盖，SSR/首帧不误伤
+- Bug-8：`startDrag` 依赖 `[]`，稳定引用，拖动中 leftW 变化不产生竞态
+- Bug-15：`move` 实时读 ref，拖动中窗口 resize 用最新值
+- Bug-13：折叠态 borderRight 隐藏，与分割线隐藏逻辑一致
+
+**关联检查**：
+- `leftWRef` 渲染期同步 leftW，startDrag 消费正确
+- `containerWRef` 在 useLayoutEffect 初始化，ResizeObserver/startDrag 统一读取
+- Bug-13 修复同步更新测试断言（原断言与修复矛盾，已改）
+- Bug-3 修复同步更新 Bug-10 断言（原 `toBe(0)` 固化 Bug-3，已改 `toBeGreaterThan(300)`）
+
+### 10.3 修复后状态
+
+- **8个真实 Bug 全部修复**（Bug-2/3/5/6/8/10/13/15）
+- 测试 **21/21 通过**（原 19 + 新增 2：拖动、ResizeObserver）
+- `npx tsc --noEmit` **0 错误**
+- 待产品确认：Bug-11（MAX_RATIO=0.80 设计权衡，不属代码缺陷）
+- 非Bug/可选：Bug-7（设计如此）、Bug-9（代码质量）、Bug-12（=Bug-3）、Bug-4/14（防御性）、Bug-17/18（可选增强）
+
+---

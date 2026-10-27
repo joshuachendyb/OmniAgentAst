@@ -26,6 +26,14 @@
 //   ②Shift+双击: 返回出厂默认(清除自定义默认 + 重置为 30%)
 //   ③重新引入 clearStoredWidth(v1.4 删除, 现 Shift+双击需要)
 //   ④提示文案: title/aria-label 增加"Shift+双击返回出厂默认"
+// 编辑历史: 2026-10-27 小欧 - v1.6(8个真实Bug修复): 按10大规范(尤其KISS)修复全部8个真实Bug
+//   ①Bug-2: ResizeObserver比例计算分母统一用 containerWRef 缓存旧宽度(原混用 offsetWidth 导致比例重算失效)
+//   ②Bug-3: maxW 初始值设为安全默认(window.innerWidth*MAX_RATIO), 且 offsetWidth=0 时不覆盖(防键盘→首帧受限)
+//   ③Bug-5: containerW=0 硬编码300 补注释说明来源(对应30%的1000px容器)
+//   ④Bug-8: startDrag 用 leftWRef 读取当前宽度, 依赖改 [] 消除闭包陷阱(稳定引用)
+//   ⑤Bug-15: 拖动 move 实时读 containerWRef 计算 maxW, 拖动中窗口resize用最新值
+//   ⑥Bug-13: borderRight 条件化——fullLeft 折叠态不显示视觉分隔线
+//   ⑦Bug-6/Bug-10: 测试增强——补拖动/ResizeObserver用例, 键盘→断言改为 >300(修复Bug-3后)
 
 //   @author 小欧
 //   @date 2026-10-27
@@ -95,6 +103,7 @@ const getInitialWidth = (containerW: number): number => {
   }
   if (containerW === 0) {
     // 容器未布局完成且无用户偏好: 返回一个合理的固定值, 避免 width:0 导致面板消失
+    // 来源: 对应 SPLIT_LEFT_DEFAULT_RATIO=0.30 的 1000px 容器(1000*0.30=300), 与默认比例语义一致
     return 300;
   }
   return Math.round(containerW * SPLIT_LEFT_DEFAULT_RATIO);
@@ -121,9 +130,21 @@ const SplitPane: React.FC<SplitPaneProps> = ({
   //   原代码: aria-valuemax={round((containerRef.current?.offsetWidth ?? 0) * MAX_RATIO)}
   //   首帧 containerRef.current=null → aria-valuemax=0(语义错误), 且不随容器 resize 更新
   //   修复: 用 state 存储最大宽度, 由 ResizeObserver 同步更新
-  const [maxW, setMaxW] = useState<number>(0);
+  // 2026-10-27 小欧 - v1.6 修复(Bug-3): maxW 初始值设为安全默认而非 0
+  //   原 maxW=0: 首帧(SSR/offsetWidth=0)时键盘→ Math.min(0, w+16)=0, 宽度无法增大
+  //   修复: 初始值用窗口宽度估算(1024*0.8≈819), useLayoutEffect 在 offsetWidth>0 时才覆盖
+  const [maxW, setMaxW] = useState<number>(() =>
+    Math.round((typeof window !== 'undefined' ? window.innerWidth : 1024) * SPLIT_LEFT_MAX_RATIO)
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
+  // 2026-10-27 小欧 - v1.6 修复(Bug-8): leftWRef 同步最新 leftW, 供 startDrag 稳定引用(读 ref 而非闭包)
+  const leftWRef = useRef<number>(0);
+  leftWRef.current = leftW ?? 0;
+  // 2026-10-27 小欧 - v1.6 修复(Bug-2): containerWRef 缓存最新容器宽度, 供 ResizeObserver/startDrag 统一读取
+  //   原 ResizeObserver 混用 entry.contentRect.width(分子) 与 container.offsetWidth(分母),
+  //   两者来源不同导致比例重算失效; 修复: 统一用 ref 缓存旧宽度做分母
+  const containerWRef = useRef<number>(0);
 
   // 2026-10-27 小欧 - 初始化宽度: 优先 localStorage 用户偏好, 否则按容器 30%
   // 2026-10-27 小欧 修复(审计): useEffect → useLayoutEffect——消首帧闪烁
@@ -134,8 +155,13 @@ const SplitPane: React.FC<SplitPaneProps> = ({
     const container = containerRef.current;
     if (container) {
       const totalW = container.offsetWidth;
+      // leftW 始终初始化: getInitialWidth 内部处理 totalW<=0 的边界(返回偏好值或300)
       setLeftW(getInitialWidth(totalW));
-      setMaxW(Math.round(totalW * SPLIT_LEFT_MAX_RATIO));
+      // v1.6 修复(Bug-3): maxW 只在有实际容器宽度时设置, 避免 offsetWidth=0 时覆盖安全初始值
+      if (totalW > 0) {
+        containerWRef.current = totalW;
+        setMaxW(Math.round(totalW * SPLIT_LEFT_MAX_RATIO));
+      }
     }
   }, [fullLeft]);
 
@@ -151,11 +177,17 @@ const SplitPane: React.FC<SplitPaneProps> = ({
       if (!entry) return;
       const newContainerW = entry.contentRect.width;
       if (newContainerW <= 0) return;
+      // v1.6 修复(Bug-2): 用 containerWRef 缓存旧宽度做分母, 统一尺寸来源
+      //   原代码: ratio = prev / (container.offsetWidth || 1) —— 分母用 offsetWidth(可能滞后),
+      //   分子用 entry.contentRect.width(准确), 两者混用导致比例重算失效
+      //   修复: 先读缓存旧宽度, 再更新 ref 为新宽度, 分母/分子来源一致
+      const oldContainerW = containerWRef.current || newContainerW;
+      containerWRef.current = newContainerW;
       setMaxW(Math.round(newContainerW * SPLIT_LEFT_MAX_RATIO));
       // 按比例重算: 保持用户设定的比例, 不重置为默认 30%
       setLeftW((prev) => {
         if (prev === null) return getInitialWidth(newContainerW);
-        const ratio = prev / (container.offsetWidth || 1);
+        const ratio = prev / (oldContainerW || 1);
         const maxW = Math.round(newContainerW * SPLIT_LEFT_MAX_RATIO);
         return Math.min(Math.max(SPLIT_LEFT_MIN_PX, Math.round(newContainerW * ratio)), maxW);
       });
@@ -176,16 +208,20 @@ const SplitPane: React.FC<SplitPaneProps> = ({
   const startDrag = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const x0 = e.clientX;
-    const w0 = leftW ?? 0;
+    // v1.6 修复(Bug-8): 读 leftWRef 而非闭包 leftW —— 依赖改 [] 后 startDrag 稳定引用,
+    //   闭包不再捕获旧 leftW, 拖动中其他操作改 leftW 不产生竞态
+    const w0 = leftWRef.current;
     lastWidthRef.current = w0;
     const container = containerRef.current;
     if (!container) return;
 
-    const containerW = container.offsetWidth;
-    const maxW = Math.round(containerW * SPLIT_LEFT_MAX_RATIO);
-
     const move = (ev: MouseEvent) => {
-      const newW = Math.min(maxW, Math.max(SPLIT_LEFT_MIN_PX, w0 + ev.clientX - x0));
+      // v1.6 修复(Bug-15): 实时读 containerWRef 计算 maxW, 拖动中窗口 resize 用最新值
+      //   原代码: maxW 在 mousedown 时捕获到闭包, 拖动中容器宽度变化仍用旧值
+      const currentMaxW = Math.round(
+        (containerWRef.current || container.offsetWidth) * SPLIT_LEFT_MAX_RATIO
+      );
+      const newW = Math.min(currentMaxW, Math.max(SPLIT_LEFT_MIN_PX, w0 + ev.clientX - x0));
       lastWidthRef.current = newW;
       setLeftW(newW);
     };
@@ -205,7 +241,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({
     document.body.style.cursor = 'col-resize';
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
-  }, [leftW]);
+  }, []);
 
   // 2026-10-27 小欧 - 键盘可访问: ←/→ 调整宽度(符合 WCAG 2.1)
   //   v1.2: 每次按键后写入 localStorage(键盘事件频率低, 无需防抖)
@@ -270,7 +306,10 @@ const SplitPane: React.FC<SplitPaneProps> = ({
           overflowX: 'hidden',
           // 2026-10-27 小欧 修复(审计): 恢复 borderRight 视觉分隔——原布局左列有 borderRight,
           //   新 SplitPane 分割线默认透明(仅 hover 显示), 导致左列与右侧无可见分隔
-          borderRight: `1px solid ${Colors.BORDER.LIGHT}`,
+          // 2026-10-27 小欧 - v1.6 修复(Bug-13): borderRight 条件化——fullLeft 折叠态不显示分隔线
+          //   原代码: borderRight 始终渲染, 折叠态左面板右侧仍有一条分隔线(视觉干扰, 且与分割线隐藏逻辑不一致)
+          //   修复: 折叠态 borderRight:'none', 展开态才显示
+          borderRight: fullLeft ? 'none' : `1px solid ${Colors.BORDER.LIGHT}`,
         }}
       >
         {left}
