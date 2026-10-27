@@ -361,7 +361,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({
           flexDirection: 'column',
           // 2026-10-27 小欧 修复(审计): overflow auto → hidden——消除意外滚动容器
           //   原 overflow:auto 在右栏容器缺 min-height:0 时成为实际滚动容器,
-          //   导致文件足迹随 step 滚动(粘连)、概览展开不可见
+          //   导致文件足迹随 step 滚动(粘连)、任务统计展开不可见
           //   修复: 右面板不滚动, 滚动由内层 div(overflowY:auto) 承担
           overflow: 'hidden',
         }}

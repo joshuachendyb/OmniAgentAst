@@ -5,6 +5,8 @@
 // 编辑历史: 2026-08-30 小欧 - v1.100设计语义澄清修正: 收起态左列填满不设maxWidth(max560仅约束展开态), 展开态左列flex'1 1 25%'+max560; 实测收起态左≈1351px@容器1424 - 小欧-2026-08-30
 // 编辑历史: 2026-10-20 小欧 - 展开态»折叠钮去独占行(北京老陈令): 原钮独占一行致step窗口顶部空出24px空行, 改absolute悬浮右上角(容器position:relative, 钮白底zIndex10防内容文字穿透) — 小欧-2026-10-20
 // 编辑历史: 2026-10-27 小欧 - v1.7: 改用 SplitPane 组件，支持拖动分割线调整左右面板宽度，默认左侧 1/3；删除 LEFTBAR_MINW/MAXW 常量（SplitPane 内部管理） — 小欧-2026-10-27
+// 编辑历史: 2026-10-28 小欧 - 根治「展开任务统计→右栏宽度突变+晃动」(CLS): 右栏滚动容器
+//   加 scrollbar-gutter:stable 防滚动条出现致内容宽跳变 — 小欧-2026-10-28
 /**
  * SessionLayout - 会话页插槽化骨架（纯展示组件）
  *
@@ -147,6 +149,8 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
                   minHeight: 0,
                   overflowY: 'auto',
                   overflowX: 'hidden',
+                  // 2026-10-28 小欧 - 防展开「任务统计」滚动条出现致右栏宽度突变(CLS): 始终预留 gutter — 小欧-2026-10-28
+                  scrollbarGutter: 'stable',
                   padding: '0 12px 8px',
                 }}
               >
