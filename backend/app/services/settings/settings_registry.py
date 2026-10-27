@@ -313,7 +313,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # --- 网络（1 键，自 tuning 组迁入；键名 network.cors_origins 顶层，main.py 消费方同步）---
         _item("network.cors_origins", "url", "允许访问的页面地址",
               "http://localhost:5173,http://127.0.0.1:5173",
-              notice="允许访问本服务的页面地址白名单，多个用逗号隔开；换了前端地址或端口要加上新地址，否则页面会被浏览器拦住。默认两个是本机开发地址，一般不用改"),
+              notice="仅跨域部署时生效（如前端独立CDN、E2E代理）；打包版同源运行无需配置"),
         # --- 关于（2 只读） ---
         _item("config_path", "readonly", "配置文件路径", None, readonly=True),
         _item("version", "readonly", "当前版本", None, readonly=True),
