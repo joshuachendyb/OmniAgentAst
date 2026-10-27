@@ -138,7 +138,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
         tabIndex={0}
         aria-expanded={expanded}
         aria-label={
-          expanded ? '任务统计，点击收起详情' : '任务统计，点击展开详情'
+          expanded ? '概览，点击收起详情' : '概览，点击展开详情'
         }
         title={expanded ? '点击收起统计详情' : '点击展开统计详情'}
         onClick={onToggle}
@@ -164,7 +164,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
             paddingLeft: Spacing.SM,
           }}
         >
-          任务统计
+          概览
         </Typography.Text>
         <PillBadge text={outcome ?? '-'} color={pillColor} />
         {/* 2026-10-27 小欧 - 新增时间范围显示：startTimestamp + duration 计算结束时间，
