@@ -622,12 +622,12 @@ def _fix_encoding(text: str) -> str:
 
 
 # 注意: OBS_SHELL_MAX_ROWS×OBS_SHELL_MAX_ROW_CHARS=200K
-#       展示上限, tool截断50K目前保守对齐,
-#       试用后再视需调整(2026-07-23)
+#       展示上限, tool截断10K(stdout)/2K(stderr)保守对齐,
+#       试用后再视需调整(2026-07-23; 2026-10-27 stdout 50K→10K, stderr 20K→2K)
 def _truncate_shell_field(text: str, max_chars: int) -> tuple[str, bool]:
     """shell 工具输出截断(head-only+行边界): 超 max_chars 保留文首至最近行尾, 末尾追加截断说明 — 小欧 2026-07-23
     注意: OBS_SHELL_MAX_ROWS(200)×OBS_SHELL_MAX_ROW_CHARS(1000)=200K 是formatter展示上限;
-          tool截断50K(stdout)/20K(stderr)为存储保护值, 低于展示上限; 试用后按需调整(2026-07-23)"""
+          tool截断10K(stdout)/2K(stderr)为存储保护值, 低于展示上限; 试用后按需调整(2026-07-23; 2026-10-27 stdout 50K→10K, stderr 20K→2K)"""
     if len(text) <= max_chars:
         return text, False
     cut = text[:max_chars].rfind('\n')

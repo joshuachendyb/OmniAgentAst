@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 # 2026-10-19 - 小欧 - 敏感键集合单一真相源移至全局层 secret_utils.SENSITIVE_PARAM_KEYS,
 #   本文件不再另持派生集合; 落盘出口(日志/落库)经 redact_* 遮蔽, SSE/HITL 展示原文。
+# 2026-10-27 - 小欧 - SHELL_OUTLIMIT_STDOUT_MAX_CHARS 50000→10000, SHELL_OUTLIMIT_STDERR_MAX_CHARS 20000→2000(成功10K/失败2K不对称设计: 成功输出可能长需大空间, 失败信息本来就短); 同步订正 execute_shell_command.py 注释
+
 # 编辑历史:
 # 2026-10-21 - 小欧 - 新增两个读入内存闸门常量：READ_INPUT_MAX_BYTES(5MiB, read 工具读前截断)、
 #   WRITE_INPUT_MAX_BYTES(10MiB, write 工具预读旧文件做 diff 的上限) — 小欧-2026-10-21
@@ -271,8 +273,8 @@ CLIPBOARD_INPUT_MAX_CHARS: int = 200 * 1024          # 使用对象: clipboard_c
 
 # —— 输出截断 {TOOL}_OUTLIMIT_* ——
 # shell
-SHELL_OUTLIMIT_STDOUT_MAX_CHARS: int = 20000          # 使用对象: execute_shell_command.py(shell stdout 输出字符上限, 超则截断; 原50000, 与OBS_SHELL_MAX_ROW_CHARS=1000×20行协调)
-SHELL_OUTLIMIT_STDERR_MAX_CHARS: int = 20000          # 使用对象: execute_shell_command.py(shell stderr 输出字符上限, 超则截断)
+SHELL_OUTLIMIT_STDOUT_MAX_CHARS: int = 10000          # 使用对象: execute_shell_command.py(shell 成功输出字符上限, 超则截断; 原50000→20000→10000) — 小欧-2026-10-27
+SHELL_OUTLIMIT_STDERR_MAX_CHARS: int = 2000           # 使用对象: execute_shell_command.py(shell 失败输出字符上限, 超则截断; 原20000→2000) — 小欧-2026-10-27
 # xlsx
 XLSX_OUTLIMIT_ROWS_MAX: int = 1000                    # 使用对象: read_xlsx.py(读取 Excel 行数上限, 超此截断)
 XLSX_OUTLIMIT_CELL_CHARS: int = 500                   # 使用对象: read_xlsx.py(单格字符串字符上限, 超此截断)
