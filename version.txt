@@ -1,3 +1,43 @@
+v1.4.9
+更新时间: 2026-10-27 08:21:45 - 小欧-2026-10-27
+## v1.4.8以来 变更汇总(22个commit: feat5/fix6/refactor7/其他4) - 小欧-2026-10-27
+[2026-10-27 08:21:45 小欧] 范围=v1.4.8以来全部commit(22个); 主线=会话压缩重构(trim_history 轮次级滑动/摘要降级/prune清零工具输出)+日志级别热重载(改debug/level免重启)+uvicorn日志非阻塞化(访问日志去镜像防刷屏)+打包部署完善(run_server日志配置)+安全确认链(TrustInfoBar卡死预警/信任状态动态接入)+前端UI调整(SubmitActions按钮组回迁/tooltip双重显示修复/执行中插话提示)+doc[48] 任务统计右侧栏视觉配套(PILL胶囊色/标题栏hover+focus/子标题色条降级)+summary/start_step摘要前缀清理; 注:本批为既有体系内缺陷修复与治理收口,无MAJOR级架构变更,对外契约零新增,按PATCH记v1.4.9
+### 1.4.41 会话压缩重构与摘要降级
+[trim_history轮次滑动] refactor f2b2fb317 轮次级滑动重构:调compaction find_tail_start/align_turn+find_recent_rounds_start,删旧分桶裁剪3方法;触发线改预算口径budget_base×ratio(单源DRY删重复_budget);CHARS_PER_TOKEN 2.5→2.25(10真实会话标定加权均值2.363);TRIM_TRIGGER_RATIO 0.75→0.9;删CompactionTrigger死代码(公式与trim_history分叉);trim 5键配置化 - 小欧 2026-10-25
+[trim系数通知] refactor 0948ba953 明确入口/出口用法(一次方/二次方);TRIM_TRIGGER_RATIO 0.9→0.8调小更早触发 - 小欧 2026-10-26
+[摘要降级接split] fix 70635d408 摘要失败降级接split_history_window+prune清零旧tool输出(远清近留);trim_history预算预留tools定义防撞窗400(北京老陈令) - 小欧 2026-10-25
+[summary段标记放宽] fix d8965526a 段标记校验放宽双重校验(去冒号子串+正则容忍##/段名:/段名:**三形式),修Agents-A1摘要被误弃致超窗400(北京老陈令) - 小欧 2026-10-25
+[摘要前缀清理] fix fe6e41bfa+e25977da1 summary+start_step 摘要前缀清理和锚点注入逻辑精简;删除过期doc月度实施文件 - 小欧 2026-10-27
+### 1.4.42 日志级别热重载与uvicorn日志非阻塞化
+[热重载] feat 07fc304f7 main.py+shared_handler.py+config.py 日志级别热重载:LogConfig改读get_config实时值(删导入期类属性快照)+_managed_loggers登记表+refresh_log_levels幂等重刷+main起10s周期watcher(config.yaml改debug/level免重启生效) - 小欧 2026-10-25
+[登记表DRY化] refactor fbf738034 shared_handler.py 去掉_managed_loggers自维护登记表(与logging.loggerDict重复违DRY),refresh_log_levels改按app./uvicorn前缀遍历全局loggerDict - 小欧 2026-10-25
+[会审修补] fix 743e24aee shared_handler.py+config.py 会审修补:refresh_log_levels补formatter刷新(debug切换后lineno字段与模式脱节)+get_log_level双重get_config收敛为单次cfg局部变量 - 小欧 2026-10-25
+[访问日志去镜像] fix 1fe774176 shared_handler.py+run_server.py uvicorn三logger去掉ConsoleMirrorHandler只保留文件handler落盘,访问日志高频刷屏且无排障价值,控制台只留log_and_print与应用WARNING以上 - 小欧 2026-10-25
+[截断阈值统一] fix 9df6c90b6 shared_handler.py 截断阈值100/120收敛为单一_CONSOLE_MAX_MSG=500,修101~120字符消息触发截断但截不到却显示负数提示(截断-9字符)致uvicorn访问日志高频刷屏 - 小欧 2026-10-25
+### 1.4.43 安全确认链与卡死预警
+[卡死预警] fix 982fd81c6 TaskInfoBar 卡死预警接入位2动态状态+事件浮层收窄 - 小沈 2026-10-26
+[执行中提示归一] fix e6b75eb2f chat 执行中提示归一——判据 isReceiving→sendBlocked + 文案原样搬移 + 删双提示并存 - 小欧 2026-10-26
+### 1.4.44 前端UI调整
+[SubmitActions回迁] feat SubmitActions按钮组由输入框内右下角回迁SubmitBar行右端+钮高34→24+间距6→1+minRows1→2 - 小欧 2026-10-25
+[tooltip修复] fix Layout移除左侧菜单item的title属性修tooltip双重显示 - 小欧 2026-10-25
+[执行中插话提示] feat 执行中追加橘红色插话提示 - 小欧 2026-10-25
+### 1.4.45 doc[48] 任务统计右侧栏视觉配套
+[PILL胶囊色] feat 61624b38f stepStyles.ts 新增 PILL_SUCCESS(#237804)/PILL_ERROR(#a8071a)/PILL_CANCELLED(#595959)三态专用色; 原SUCCESS/ERROR/BORDER.STRONG配白字对比度2.27/3.27/1.84:1全不达标AA(4.5:1),取AntD深一档green-8/red-8+TEXT.PRIMARY灰实测5.59/7.75/7.00:1均达AA; 新增非改值隔离语义 - 小欧 2026-10-27
+[标题栏交互] index.css 新增 .title-block-header:hover(#f0f0f0)+.title-block-header:focus-visible(2px #0c6aec, outline-offset:-1px); 原TitleBlock整行role=button+tabIndex=0无hover无焦点反馈,键盘用户不可定位当前所在行 - 小欧 2026-10-27
+[子标题色条降级] StaticStatsBlock.tsx sectionTitleStyle borderLeft PRIMARY→BORDER.STRONG; 主标题蓝条后子标题若同色则层级倒挂,降级浅灰条后主标题(蓝条+14px+600)>子标题(灰条+12px+500)层级清晰 - 小欧 2026-10-27
+[空格修复] TitleBlock.tsx token计数「总计:X[tok]」修正为「总计:X [tok]」 - 小欧 2026-10-27
+[接口透传] RightViewer.tsx StatBlock 传入 startTimestamp={frames?.startTimestamp} - 小欧 2026-10-27
+### 1.4.46 其他修复
+[SSE断连修复] fix 11651343c grep_file_content+tool_constants+chatStreamTransport SSE断连修复(grep matched截断+5处断开路径持续连接)+输出宽度优化(shell/httpget/read/docx/pptx收窄) - 小欧 2026-10-26
+[持久化模型修复] fix bf5c8d3b7 持久化模型 max_output_length 截断 max_tokens 修复 - 小欧 2026-10-26
+[appearance开关] feat effd1630a appearance 新增 contentRender/diffRender 两个渲染开关配置参数(默认皆开) - 小欧 2026-10-26
+[会话工作目录注入] refactor 337df3630 会话工作目录注入块定案:单层标签+文案重写(去外层system-reminder),修f前缀遗漏{lines}字面量bug,清多余空行 - 北京老陈 2026-10-26
+[fetch_webpage完善] feat cdfc90ed4 fetch_webpage notice回调注入+Jina优先+save_to落盘+timeout精确+BUG修复 - 小沈 2026-10-26
+[path_utils DRY] refactor 9674272b5 path_utils has_path_traversal+get_output_dir DRY+save_text_to_file抽取+BUG修复 - 小沈 2026-10-26
+[agent_telemetry对齐] feat 42895952b agent_telemetry.py history_context顶层content+浮层顶部行,摘要模板对齐opencode - 小沈 2026-10-26
+[TaskInfoBar notice双渲染] feat dbeff38fc TaskInfoBar notice双渲染+位4全清+extracting图标 - 小沈 2026-10-26
+[TitleBlock v1.6三堂会审] feat 1312dd985 TitleBlock v1.6 三堂会审 - DRY 提取 InlineText 组件 + 修复注释错误 + 补充编辑历史 - 小欧 2026-10-27
+
 v1.4.8
 更新时间: 2026-10-25 15:44:33 - 小欧-2026-10-25
 ## v1.4.7以来 变更汇总(41个commit: fix14/feat1/refactor5/docs13/其他2) - 小欧-2026-10-25
