@@ -82,6 +82,19 @@
 // 编辑历史: 2026-09-30 14:30 小欧 - 传 ToolCallLine 的 deniedEntries 过滤 tool 存在者（无名条目会渲染 undefined 点名行）
 // 编辑历史: 2026-10-05 小欧 - 接「思考排版」「推理内容」两开关(文档[9] §5.8); 三堂会审: thinking段key 去文本切片(流式前16字内每chunk换key致折叠态被弹回); 等待期把标题行提到绿圈上一行(§5.14.2) — 小欧-2026-10-05
 // 编辑历史: 2026-10-05 小欧 - 第2轮会审: 段key改「下标+步号」双因子(修切任务折叠态/打字机串味); 撤ready门控(致正文消失、打破waiting-segment-442断言); 等待段传text=" "不传cursor(去多余▍与误打CURSOR T) — 小欧-2026-10-05
+// 编辑历史: 2026-10-28 小欧 - P2 前端懒渲染优化(5477步DOM冻结根治):
+//   ①useMemo 包裹 buildSegments/toolStepSet/lastThink,lastText,thinkEndIdx(steps引用不变时复用,消每次渲染重算)
+//   ②渐进式渲染: 抽 useLazyRender hook(分批调度职责单一, IO 细情封装在 hook 内, 不混入渲染层);
+//     非流式模式分批渲染, IntersectionObserver 哨兵进入视口400px预加载下一批80段;
+//     流式模式全量渲染(打字机/等待图标依赖末段位); 派生值仍基于全量 segs 计算(末段判定不受分批影响)
+//   ③segs.length-1 → visibleSegs.length-1(3处: waiting/thinking/text 末段判定, 基于实际渲染段而非全量)
+//   ④RightViewer splitSteps 同步 useMemo 包裹(确保 steps 引用稳定, 使 PipelineRenderer useMemo 生效)
+//   三堂会审修复(复核3遍):
+//     #1 SRP: 渐进式加载职责从渲染器抽出 → useLazyRender hook;
+//     #2 SLAP: IntersectionObserver DOM 细节下沉 hook, 组件体只调三件套;
+//     #3 KISS-DIRECT: 消除 isLazyMode/effectiveVisibleCount 等多余中间变量, streaming 分支收敛到 hook;
+//     #4 复用优先: useLazyRender 独立文件入库(与 useStepRenderPrefs 同范式), 可被其他列表组件复用;
+//     #5 全局逻辑: visibleCount 重置从 useEffect(渲染后执行→一帧闪现) 改为 hook 内 prevItemsRef 渲染期同步重置 — 小欧-2026-10-28
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -93,7 +106,7 @@
  * @date 2026-08-26
  */
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskBadge } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: waiting 取 badge 权威派生
 import { CloseCircleFilled, StopOutlined } from '@ant-design/icons'; // 2026-09-17 小欧 修改: 失败/取消行 emoji 改 antd SVG 内联图标 — 小欧-2026-09-17
@@ -115,6 +128,7 @@ import {
   stepMargin,
 } from '@/utils/stepStyles';
 import { computeTaskActive } from '@/utils/viewState'; // 2026-09-14 小欧 改动点④(方案A): taskActive 判定提纯复用 — 小欧-2026-09-14
+import { useLazyRender } from './useLazyRender'; // 2026-10-28 小欧 - P2: 渐进式渲染 hook(分批调度职责单一, IO 细情封装在 hook 内) — 小欧-2026-10-28
 
 export type PipelineSegment =
   | { kind: 'thinking'; text: string; sameStep?: boolean; step?: number } // sameStep: 同 step 内部(13.6 reasoning+thought)→compact SM(6); step: 2026-10-05 小欧 段归属步号(合并条件用, 使折叠粒度=每步)
@@ -324,7 +338,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
   waitClock, // 2026-09-17 小欧 实施
 }) => {
-  const segs = buildSegments(steps);
+  // 2026-10-28 小欧 - P2: useMemo 包裹 buildSegments, 避免每次渲染重算(steps 引用不变时复用)
+  const segs = useMemo(() => buildSegments(steps), [steps]);
   const taskActive = computeTaskActive(highlightToolName, badge);
   // 2026-10-05 小欧 - step 渲染显示偏好(文档[9] 方案设计 §5.8 / 北京老陈裁定「两个独立开关」):
   //   hook 顶层调一次取值(Rules of Hooks: 严禁写在 segs.map 回调内), 经 prop 各下其位:
@@ -338,25 +353,43 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   //   行为一致, 无闪), 真值到达后由 ThinkingStream/TextStream 的跟随逻辑一次性纠正 — 小欧-2026-10-05
   const { thoughtMarkdown, reasoningVisible } = useStepRenderPrefs();
   // 2026-09-04 小欧 - observation 去重：已消费孤儿抑制（单/多工具并行时孤儿与 ToolCallLine 重复）
-  const toolStepSet = new Set(
-    segs
-      .filter(
-        (s): s is Extract<PipelineSegment, { kind: 'tool' }> =>
-          s.kind === 'tool'
-      )
-      .map((s) => s.action.step)
+  // 2026-10-28 小欧 - P2: useMemo 包裹 toolStepSet, 避免每次渲染重建 Set(segs 不变时复用)
+  const toolStepSet = useMemo(
+    () =>
+      new Set(
+        segs
+          .filter(
+            (s): s is Extract<PipelineSegment, { kind: 'tool' }> =>
+              s.kind === 'tool'
+          )
+          .map((s) => s.action.step)
+      ),
+    [segs]
   );
   // 2026-10-07 小欧 - 单趟扫描同时取三个下标(原为两次同型 reduce, 属 DRY 欠账且多扫一遍):
   //   lastThink 打字机光标位(末段 thinking, 2026-08-27 三堂会审: 消除map内自增副作用与额外filter)
   //   lastText  正文打字机位(13.8: 最后一个 text 段为实时累积段, 前序已完成段静态呈现)
   //   thinkEndIdx 推理图标停转位(北京老陈 2026-10-07: 下标大于它的 thinking/waiting 段即仍在转) — 小欧-2026-10-07
-  const { lastThink, lastText, thinkEndIdx } = segs.reduce(
-    (acc, s, i) => ({
-      lastThink: s.kind === 'thinking' ? i : acc.lastThink,
-      lastText: s.kind === 'text' ? i : acc.lastText,
-      thinkEndIdx: THINK_END_KINDS.has(s.kind) ? i : acc.thinkEndIdx,
-    }),
-    { lastThink: -1, lastText: -1, thinkEndIdx: -1 }
+  // 2026-10-28 小欧 - P2: useMemo 包裹 reduce, 避免每次渲染重扫(segs 不变时复用)
+  const { lastThink, lastText, thinkEndIdx } = useMemo(
+    () =>
+      segs.reduce(
+        (acc, s, i) => ({
+          lastThink: s.kind === 'thinking' ? i : acc.lastThink,
+          lastText: s.kind === 'text' ? i : acc.lastText,
+          thinkEndIdx: THINK_END_KINDS.has(s.kind) ? i : acc.thinkEndIdx,
+        }),
+        { lastThink: -1, lastText: -1, thinkEndIdx: -1 }
+      ),
+    [segs]
+  );
+  // 2026-10-28 小欧 - P2 渐进式渲染: hook 封装分批调度(visibleCount state + IO + 渲染期同步重置),
+  //   组件体只拿 visibleItems/sentinelRef/hasMore 三件套, IO 细节不混入渲染层(SRP/SLAP);
+  //   流式模式(streaming=true→enabled=false) → hook 全量返回, 打字机/等待图标末段位不受影响;
+  //   派生值(toolStepSet/lastThink/thinkEndIdx)仍基于全量 segs 计算, 不受分批影响
+  const { visibleItems: visibleSegs, sentinelRef, hasMore } = useLazyRender(
+    segs,
+    !streaming
   );
   return (
     <div
@@ -369,11 +402,12 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       }}
     >
       {headerNode}
-      {segs.map((seg, i) => {
+      {/* 2026-10-28 小欧 - P2: 可见段渲染(visibleSegs), 哨兵 div 在末尾触发加载下一批 */}
+      {visibleSegs.map((seg, i) => {
         if (seg.kind === 'waiting') {
           // 4.4.2(2026-09-07 小欧): thinking段首列亮ThoughtWaitingIcon; 仅"末段+taskActive"才显示,
           //   final/error/停止后非末段自动灭, 杜绝常驻
-          if (i !== segs.length - 1 || !taskActive) return null;
+          if (i !== visibleSegs.length - 1 || !taskActive) return null;
           return (
             <React.Fragment key={`waiting-${i}`}>
               {/* 2026-10-05 小欧（北京老陈裁定 §5.14.2）: 「推理内容...」标题行排在等待绿圈的上一行,
@@ -397,7 +431,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
-          const cursor = streaming && i === lastThink && i === segs.length - 1;
+          const cursor = streaming && i === lastThink && i === visibleSegs.length - 1;
           return (
             <ThinkingStream
               // 2026-10-05 小欧 三堂会审修复: key 去掉文本切片(原 `thinking-${i}-${seg.text.slice(0,16)}`)。
@@ -417,7 +451,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         if (seg.kind === 'text') {
           // 2026-09-02 小欧: 限定末段, 与 thinking 光标同策略
-          const isLive = streaming && i === lastText && i === segs.length - 1;
+          const isLive = streaming && i === lastText && i === visibleSegs.length - 1;
           return (
             <TextStream
               // 2026-10-05 小欧 三堂会审修复(与 thinking 段同类缺陷, 此前只修了一半):
@@ -546,6 +580,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           />
         );
       })}
+      {/* 2026-10-28 小欧 - P2: 渐进式渲染哨兵——hasMore 时挂载, IntersectionObserver 观察其进入视口触发加载下一批 */}
+      {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
     </div>
   );
 };

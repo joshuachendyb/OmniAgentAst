@@ -138,6 +138,7 @@
 //   ③清2个只写不读的死变量 prevIsCurrentLiveRef / _prevSrcRef;
 //   验证: tsc 0 / eslint 0 / AS 7绿 / 真实浏览器带工具长任务 894 采样 longestDist>120=0(全程贴底) — 小欧-2026-09-18
 // 编辑历史: 2026-09-30 14:30 小欧 - deniedEntries 透传类型 tool/reason 转可选，以承载 tool 缺失的拒绝记录
+// 编辑历史: 2026-10-28 小欧 - P2 前端懒渲染优化: useMemo 包裹 splitSteps, 确保 business 步骤引用稳定(使 PipelineRenderer 内部 useMemo 生效) — 小欧-2026-10-28
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -149,7 +150,7 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Spin, Empty, Typography } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复定义 — 小欧-2026-09-11
@@ -533,6 +534,12 @@ const RightViewer: React.FC<RightViewerProps> = ({
   //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读DB — 小欧-2026-09-11
   const finalStep = displaySteps.find((s) => s.type === 'final');
   const hasSteps = displaySteps.length > 0;
+  // 2026-10-28 小欧 - P2: useMemo 包裹 splitSteps, 确保 business 步骤引用稳定
+  //   使 PipelineRenderer 内部 useMemo(buildSegments) 生效(displaySteps 不变时不重算)
+  const businessSteps = useMemo(
+    () => splitSteps(displaySteps).business,
+    [displaySteps]
+  );
 
   return (
     <Spin spinning={loading && !isCurrentLive}>
@@ -558,7 +565,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
             />
           ) : (
             <PipelineRenderer
-              steps={splitSteps(displaySteps).business}
+              steps={businessSteps}
               streaming={isCurrentLive}
               highlightToolName={highlightToolName}
               badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
