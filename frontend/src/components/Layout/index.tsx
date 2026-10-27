@@ -34,6 +34,13 @@
 //   展开时原生title触发tooltip + 折叠时antd自带tooltip = 双重显示;
 //   移除后展开无tooltip, 折叠由antd自动从label提取文本显示 — 小欧-2026-10-25
 // 编辑历史: 2026-10-21 小杨 - 文件管理菜单解禁(/files 去掉 disabled 与"即将上线" Tooltip) + 双 tooltip 收敛(只留原生 title) — 小杨-2026-10-21
+// 编辑历史: 2026-10-27 小欧 - 侧边栏宽度优化(北京老陈令): 支持宽/窄菜单切换;
+//   宽菜单: 展开=180px, 折叠=80px (适合大屏, 显示更多内容);
+//   窄菜单: 展开=120px, 折叠=48px (适合小屏, 节省空间);
+//   顶栏添加漂亮的视觉切换图标(用户头像前), localStorage 持久化用户选择;
+//   窄菜单模式下修复文字截断: <style>从Menu内部移到外部(AntD 5.x Menu不渲染非菜单项children);
+//   CSS属性从padding-left/right改为逻辑属性padding-inline-start/end + margin-inline-start/end;
+//   补充覆盖.ant-menu-item-icon的margin-inline-end和.ant-menu-title-content的overflow — 小欧-2026-10-27
 /**
  * Layout组件 - 应用主布局（响应式版）
  *
@@ -127,6 +134,98 @@ interface LayoutProps {
  * @since 2026-02-17
  * @update 2026-02-18 集成React Router导航 - by 小新
  */
+// 2026-10-27 小欧 - 侧边栏宽度优化: 定义两套参数(宽菜单/窄菜单), 支持设置页切换
+//   宽菜单: 展开=180px, 折叠=80px (适合大屏, 显示更多内容)
+//   窄菜单: 展开=120px, 折叠=48px (适合小屏, 节省空间)
+//   localStorage 键: omni.sidebar.mode (值: 'wide' | 'narrow')
+const SIDEBAR_MODES = {
+  wide: { expanded: 180, collapsed: 80 },
+  narrow: { expanded: 120, collapsed: 48 },
+} as const;
+
+const SIDEBAR_MODE_KEY = 'omni.sidebar.mode';
+
+// 2026-10-27 小欧 - 读取用户选择的侧边栏模式(默认宽菜单)
+const readSidebarMode = (): 'wide' | 'narrow' => {
+  try {
+    const mode = localStorage.getItem(SIDEBAR_MODE_KEY);
+    if (mode === 'wide' || mode === 'narrow') return mode;
+  } catch {
+    // 隐私模式静默失败
+  }
+  return 'wide'; // 默认宽菜单
+};
+
+// 2026-10-27 小欧 - 写入用户选择的侧边栏模式
+const writeSidebarMode = (mode: 'wide' | 'narrow'): void => {
+  try {
+    localStorage.setItem(SIDEBAR_MODE_KEY, mode);
+  } catch {
+    // 隐私模式静默失败
+  }
+};
+
+// 2026-10-27 小欧 - 获取当前模式对应的宽度参数
+const getSidebarWidths = (mode: 'wide' | 'narrow') => SIDEBAR_MODES[mode];
+
+// 2026-10-27 小欧 - 菜单宽度切换组件(顶栏用, 漂亮的视觉设计)
+// 设计: 简洁的图标按钮, 宽菜单显示三竖条, 窄菜单显示单竖条, 点击切换
+const SidebarModeSwitcher: React.FC = () => {
+  const [mode, setMode] = useState<'wide' | 'narrow'>(readSidebarMode);
+
+  const handleModeChange = () => {
+    const newMode = mode === 'wide' ? 'narrow' : 'wide';
+    setMode(newMode);
+    writeSidebarMode(newMode);
+    // 触发自定义事件, 让 Layout 组件感知模式变化
+    window.dispatchEvent(new CustomEvent('sidebar-mode-change', { detail: { mode: newMode } }));
+  };
+
+  // 2026-10-27 小欧 - 宽菜单图标(三个竖条, 宽度较大)
+  const renderWideIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="3" width="3" height="10" rx="1" fill="currentColor" />
+      <rect x="6.5" y="3" width="3" height="10" rx="1" fill="currentColor" />
+      <rect x="11" y="3" width="3" height="10" rx="1" fill="currentColor" />
+    </svg>
+  );
+
+  // 2026-10-27 小欧 - 窄菜单图标(一个竖条, 宽度较小)
+  const renderNarrowIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="6" y="3" width="4" height="10" rx="1" fill="currentColor" />
+    </svg>
+  );
+
+  return (
+    <Button
+      type="text"
+      size="small"
+      icon={mode === 'wide' ? renderWideIcon() : renderNarrowIcon()}
+      onClick={handleModeChange}
+      title={mode === 'wide' ? '切换到窄菜单' : '切换到宽菜单'}
+      style={{
+        color: '#666',
+        padding: '4px 8px',
+        borderRadius: 4,
+        transition: 'all 0.2s',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.color = '#1677ff';
+        e.currentTarget.style.background = 'rgba(22, 119, 255, 0.1)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.color = '#666';
+        e.currentTarget.style.background = 'transparent';
+      }}
+    >
+      <span style={{ fontSize: 12, marginLeft: 4 }}>
+        {mode === 'wide' ? '宽' : '窄'}
+      </span>
+    </Button>
+  );
+};
+
 const AppLayout: React.FC<LayoutProps> = ({
   children,
   activeKey = '/',
@@ -137,6 +236,19 @@ const AppLayout: React.FC<LayoutProps> = ({
   // 导航折叠状态
   // 2026-09-15 小欧 - 默认折叠(北京老陈令): useState初始true, 用户可手动展开 — 小欧-2026-09-15
   const [collapsed, setCollapsed] = useState(true);
+  // 2026-10-27 小欧 - 侧边栏模式(宽/窄菜单), 从 localStorage 读取
+  const [sidebarMode, setSidebarMode] = useState<'wide' | 'narrow'>(readSidebarMode);
+  // 2026-10-27 小欧 - 监听侧边栏模式变化事件(设置页切换时触发)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const mode = (e as CustomEvent<{ mode: 'wide' | 'narrow' }>).detail.mode;
+      setSidebarMode(mode);
+    };
+    window.addEventListener('sidebar-mode-change', handler);
+    return () => window.removeEventListener('sidebar-mode-change', handler);
+  }, []);
+  // 2026-10-27 小欧 - 获取当前模式的宽度参数
+  const sidebarWidths = getSidebarWidths(sidebarMode);
   // 移动端抽屉显示状态
   const [drawerVisible, setDrawerVisible] = useState(false);
   // 快捷指令面板显示状态
@@ -546,6 +658,29 @@ const AppLayout: React.FC<LayoutProps> = ({
         )}
       </div>
 
+      {/* 2026-10-27 小欧 - 窄菜单模式下注入 CSS 覆盖: 必须放在 Menu 外部,
+          Ant Design 5.x Menu 不渲染非菜单项 children; 且用逻辑属性 padding-inline-start/end 覆盖 */}
+      {sidebarMode === 'narrow' && !collapsed && (
+        <style>{`
+          .ant-menu-inline .ant-menu-item,
+          .ant-menu-inline .ant-menu-submenu-title {
+            padding-inline-start: 8px !important;
+            padding-inline-end: 8px !important;
+            margin-inline-start: 0 !important;
+            margin-inline-end: 0 !important;
+          }
+          .ant-menu-inline .ant-menu-item .ant-menu-item-icon,
+          .ant-menu-inline .ant-menu-submenu-title .ant-menu-item-icon {
+            margin-inline-end: 4px !important;
+          }
+          .ant-menu-inline .ant-menu-item .ant-menu-title-content,
+          .ant-menu-inline .ant-menu-submenu-title .ant-menu-title-content {
+            overflow: visible !important;
+            white-space: nowrap !important;
+          }
+        `}</style>
+      )}
+
       {/* 导航菜单 */}
       <Menu
         mode="inline"
@@ -566,7 +701,8 @@ const AppLayout: React.FC<LayoutProps> = ({
           bottom: 0,
           left: 0,
           right: 0,
-          padding: '16px 20px',
+          // 2026-10-27 小欧 - 窄菜单模式下减少左右 padding, 防止文字被截断
+          padding: sidebarMode === 'narrow' ? '16px 8px' : '16px 20px',
           borderTop: '1px solid #e8e8e8',
           fontSize: 13,
           color: '#666',
@@ -615,8 +751,10 @@ const AppLayout: React.FC<LayoutProps> = ({
         </Drawer>
       ) : (
         /* 桌面端：左侧导航栏 - 前端小新代修改 VIS-L02: 220px→180px */
+        /* 2026-10-27 小欧 - 侧边栏宽度优化: 支持宽/窄菜单切换, 从 localStorage 读取 */
         <Sider
-          width={180}
+          width={sidebarWidths.expanded}
+          collapsedWidth={sidebarWidths.collapsed}
           theme="light"
           collapsible
           collapsed={collapsed}
@@ -728,6 +866,8 @@ const AppLayout: React.FC<LayoutProps> = ({
             >
               检查服务
             </Button>
+            {/* 2026-10-27 小欧 - 菜单宽度切换(宽/窄菜单, 漂亮的视觉设计) */}
+            <SidebarModeSwitcher />
             <Avatar size="small" icon={<DesktopOutlined />} />
             {/* 2026-09-21 小强 - 令牌零视觉差：fontSize 14=FontSize.PRIMARY */}
             <span style={{ color: '#666', fontSize: FontSize.PRIMARY }}>
@@ -917,3 +1057,4 @@ const AppLayout: React.FC<LayoutProps> = ({
 };
 
 export default AppLayout;
+export { SidebarModeSwitcher };

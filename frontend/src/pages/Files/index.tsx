@@ -47,6 +47,8 @@
 // 2026-10-24 小欧 - 路径分隔符统一：externalBase 是 Windows 反斜杠（F:\x），后端 key 是 posix
 //   正斜杠（backend/app/db/...），原直接拼出 F:\x/y/z 混合路径。新增 joinAbsPath 工具函数统一
 //   转为 Windows 风格（F:\x\y\z），selectTreeFile/readAndPush/handleLoadDir 三处收敛调用。— 小欧-2026-10-24
+// 编辑历史: 2026-10-27 小欧 - 侧边栏宽度优化(北京老陈令): MIN_LEFT_W 280→200, MAX_LEFT_W 600→360
+//   (拖拽范围更合理, 与主侧边栏展开宽度 200 对齐) — 小欧-2026-10-27
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -118,8 +120,9 @@ import {
 import { useFilesTree } from '@/features/files/hooks/useFilesTree';
 import { useFileSelection } from '@/features/files/hooks/useFileSelection';
 
-const MIN_LEFT_W = 280;
-const MAX_LEFT_W = 600;
+// 2026-10-27 小欧 - 侧边栏宽度优化: MIN_LEFT_W 280→200, MAX_LEFT_W 600→360(拖拽范围更合理)
+const MIN_LEFT_W = 200;
+const MAX_LEFT_W = 360;
 // 2026-10-23 小欧 - 外部目录树合成根 key（项目根树与外部树各一个顶层根，__ext__ 为外部分组）— 小欧-2026-10-23
 const EXT_KEY = '__ext__';
 
