@@ -17,6 +17,15 @@
 //   ④useEffect → useLayoutEffect, 消首帧闪烁(绘制后设宽导致布局跳动)
 //   ⑤ResizeObserver 监听容器尺寸, 窗口缩放按比例重算左列宽度(修复比例失真)
 //   ⑥恢复 borderRight 视觉分隔; 折叠态右面板 flex:'0 0 auto'; overflow auto → hidden
+// 编辑历史: 2026-10-27 小欧 - v1.4(用户实测反馈): 双击语义修复(方案A)
+//   原实现: 双击清除 localStorage → 跳回 30% 出厂默认(与用户期望"把当前位置设为默认"相反)
+//   修复: 双击把当前宽度写入 localStorage 作为新默认, 保持当前宽度不跳回
+//   同步: title/aria-label 文案"双击重置为默认"→"双击设为默认宽度", 依赖 [leftW]
+// 编辑历史: 2026-10-27 小欧 - v1.5(设计文档[51]): 默认值双向管理
+//   ①双击: 存储新默认(当前宽度写入 localStorage, 不跳回) —— 保持 v1.4 行为
+//   ②Shift+双击: 返回出厂默认(清除自定义默认 + 重置为 30%)
+//   ③重新引入 clearStoredWidth(v1.4 删除, 现 Shift+双击需要)
+//   ④提示文案: title/aria-label 增加"Shift+双击返回出厂默认"
 
 //   @author 小欧
 //   @date 2026-10-27
@@ -54,12 +63,15 @@ const writeStoredWidth = (w: number): void => {
   }
 };
 
-// 2026-10-27 小欧 - 清除 localStorage(双击重置用)
+// 2026-10-27 小欧 - v1.4 删除 clearStoredWidth: 双击语义改为"设为新默认"后无调用点, 按 YAGNI 删除
+//   (原实现"双击清除 localStorage → 跳回30%"已废弃, 见头部编辑历史 v1.4)
+// 2026-10-27 小欧 - v1.5 重新引入: Shift+双击"返回出厂默认"需要清除自定义默认值
+//   设计见 doc-10月优化/[51]分割线默认值管理设计
 const clearStoredWidth = (): void => {
   try {
     localStorage.removeItem(SPLIT_PREFS_KEY);
   } catch {
-    // 同上, 静默
+    // 隐私模式/配额满时静默失败, 不影响本次会话
   }
 };
 
@@ -68,9 +80,15 @@ const clearStoredWidth = (): void => {
 // 2026-10-27 小欧 修复(审计): ①删死代码——原 Math.min(W*0.8, W*0.3) 恒等于 W*0.3,
 //   MAX_RATIO 在此处完全无效, 简化为直接乘 DEFAULT_RATIO;
 //   ②补越界防护——localStorage 值 clamp 到容器 MAX_RATIO(防大屏拖宽换小屏时左列超出容器)
+// 2026-10-27 小欧 - v1.4 修复(Bug-19): containerW<=0 且有 stored 时返回偏好值而非 0
+//   原代码: Math.min(stored, 0*0.8)=0 → 首帧容器未布局(offsetWidth=0)时把左宽设为 0,
+//   与无 stored 返回 300 不一致, 且双击"设为新默认"时写回 0 而非当前宽度
+//   修复: containerW<=0 时无法 clamp, 直接返回 stored(注释已声明"不依赖容器", 实现补齐)
 const getInitialWidth = (containerW: number): number => {
   const stored = readStoredWidth();
   if (stored !== null) {
+    // 容器未布局完成(首帧 offsetWidth=0): 无法 clamp, 直接返回偏好值
+    if (containerW <= 0) return stored;
     // 用户偏好: clamp 到容器最大宽度(跨屏换小屏时防越界)
     const maxW = Math.round(containerW * SPLIT_LEFT_MAX_RATIO);
     return Math.min(stored, maxW);
@@ -210,15 +228,26 @@ const SplitPane: React.FC<SplitPaneProps> = ({
     }
   }, [maxW]);
 
-  // 2026-10-27 小欧 - 双击分割线: 重置为默认 30%(清除 localStorage)
-  //   用途: 用户拖坏了/想回到初始状态, 一键回滚, 不用清浏览器数据
-  const handleDoubleClick = useCallback(() => {
-    clearStoredWidth();
+  // 2026-10-27 小欧 - 双击分割线: 默认值双向管理(设计文档 [51])
+  //   用户实测反馈(2026-10-27 17:25): 原实现"清除 localStorage → 跳回 30% 出厂默认",
+  //   与用户期望"双击=把当前位置设为默认值"相反, 故按方案A修复:
+  //   ①双击: 存储新默认——当前宽度写入 localStorage, 不跳回
+  //   ②Shift+双击: 返回出厂默认——清除自定义默认 + 重置为 30%
+  //   依赖: [leftW] —— 需要当前宽度做新默认值
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     const container = containerRef.current;
-    if (container) {
-      setLeftW(getInitialWidth(container.offsetWidth));
+    if (!container) return;
+    if (e.shiftKey) {
+      // Shift+双击: 返回出厂默认(清除自定义默认 + 重置为 30%)
+      clearStoredWidth();
+      setLeftW(getInitialWidth(container.offsetWidth)); // 清除后 getInitialWidth 返回 30%
+      return;
     }
-  }, []);
+    // 双击: 存储新默认(当前宽度写入 localStorage, 不跳回)
+    const cur = leftW ?? getInitialWidth(container.offsetWidth);
+    writeStoredWidth(cur); // ① 写回 localStorage 作为新的持久化默认
+    setLeftW(cur);         // ② 保持当前宽度, 不跳回 30%
+  }, [leftW]);
 
   return (
     <div
@@ -253,7 +282,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-label="调整面板宽度(双击重置为默认)"
+          aria-label="调整面板宽度(双击设为默认宽度, Shift+双击返回出厂默认)"
           aria-valuenow={leftW ?? 0}
           aria-valuemin={SPLIT_LEFT_MIN_PX}
           aria-valuemax={maxW}
@@ -261,7 +290,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({
           onMouseDown={startDrag}
           onKeyDown={handleKeyDown}
           onDoubleClick={handleDoubleClick}
-          title="拖动调整宽度; 双击重置为默认"
+          title="拖动调整宽度; 双击设为默认宽度; Shift+双击返回出厂默认"
           style={{
             width: 6,
             cursor: 'col-resize',
