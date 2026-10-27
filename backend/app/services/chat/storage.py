@@ -129,6 +129,9 @@
 #   落盘出口遮蔽, SSE/HITL 展示仍原文 —— 小欧-2026-10-19
 # 2026-10-20 - 小欧 - _warn_oversize_step_dict 列表超大告警 error→warning(与同函数字符串支对称;
 #   listdir 自 2026-07-20 起有意全量返回(Tool层不截断, Format层缩展示), >1000 项必触发 error 污染 E2E 日志判定) —— 小欧-2026-10-20
+# 2026-10-27 - 小欧 - P1-① 消除 N+1: 新增 load_execution_steps_batch(批量加载步骤, 一次查询替代 N 次
+#   load_execution_steps; 按 ai_message_id 聚合 task 集合动态 OR 分批 _BULK_CHUNK=500 防 SQLite
+#   "Expression tree too large"; 返回结构与单查一致 _strip_thought_content) — 小欧-2026-10-27
 """
 storage — 会话存储业务逻辑
 从 conversation_storage.py 移入
@@ -357,6 +360,68 @@ def load_execution_steps(conn: Connection, ai_message_id: int, task_id: Optional
     if rows:
         return _strip_thought_content([parse_json(r["step_json"], label="step_json") for r in rows])
     return []
+
+
+def load_execution_steps_batch(conn: Connection, keys: list) -> dict:
+    """批量加载步骤（P1-① 消除 N+1）— 小欧 2026-10-27
+
+    一次查询替代 N 次 load_execution_steps：对会话消息加载场景，避免对每个
+    (ai_message_id, task_id) 单独发 SQL。实测 86 次 → 1 次（目标会话）。
+
+    keys: list[tuple[int, Optional[str]]]，每项 (ai_message_id, task_id)，
+          task_id 可为 None（退化按 ai_message_id 跨任务混读，与单查语义一致）。
+    返回: dict[(ai_message_id, task_id), list[step_dict]]，每个请求键独立正确取值：
+          - 精确键 (ai, task) → 该 ai 下 task_id=task 的步骤
+          - None 键 (ai, None) → 该 ai 全部 task 步骤（对齐单查 task_id=None 跨任务全读）
+          混合键（同 ai 同时传 None 与精确键）两键各自独立正确，互不吞没。
+    未命中（无步骤）的键补 []。
+
+    与 load_execution_steps 的返回结构/thought 收口完全一致（_strip_thought_content）。
+    健壮性：按 ai_message_id 聚合 task 集合，动态 OR 分批（_BULK_CHUNK），
+    防大 keys 触发 SQLite "Expression tree too large"（>~1000 个 OR 条件）。
+    """
+    if not keys:
+        return {}
+    seen = list(dict.fromkeys(keys))
+
+    # 按 ai_message_id 聚合需要的 task 集合；None 表示该 ai 全读(覆盖其精确键)
+    need: dict = {}
+    for _ai, _tid in seen:
+        need.setdefault(_ai, set()).add(_tid)
+
+    _BULK_CHUNK = 500   # 每批 ai 数; 防动态 OR 表达式树超深(实测 ~1000 条件 SQLite 报 "Expression tree too large")
+    result: dict = {}
+    _ai_all = list(need)
+    for _i in range(0, len(_ai_all), _BULK_CHUNK):
+        _chunk = _ai_all[_i:_i + _BULK_CHUNK]
+        conds, params = [], []
+        for _ai in _chunk:
+            _tids = need[_ai]
+            if None in _tids:
+                conds.append("(ai_message_id=?)")          # 全读已覆盖该 ai 的精确键行
+                params.append(_ai)
+            else:
+                _ph = ",".join("?" * len(_tids))
+                conds.append(f"(ai_message_id=? AND task_id IN ({_ph}))")
+                params.extend([_ai] + list(_tids))
+        sql = ("SELECT ai_message_id, task_id, step_json FROM chat_task_steps "
+               "WHERE " + " OR ".join(conds) + " ORDER BY ai_message_id, step_index ASC")
+        rows = conn.execute(sql, params).fetchall()
+
+        # 按实际 (ai, task) 分组; None 键取该 ai 全部 task 行再按 step_index 归并(对齐单查跨任务全局序)
+        by_actual: dict = {}
+        for r in rows:
+            by_actual.setdefault((r["ai_message_id"], r["task_id"]), []).append(
+                parse_json(r["step_json"], label="step_json"))
+        for _ai in _chunk:
+            for _tid in need[_ai]:
+                if _tid is None:
+                    _vals = [s for (_a, _t), _lst in by_actual.items() if _a == _ai for s in _lst]
+                    _vals.sort(key=lambda s: s.get("step_index", 0))
+                else:
+                    _vals = by_actual.get((_ai, _tid), [])
+                result[(_ai, _tid)] = _strip_thought_content(_vals)
+    return result
 
 
 

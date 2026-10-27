@@ -34,6 +34,9 @@
 # 2026-10-01 小欧 - 解 [1] E3/E4/E11: ①消息对象补 task_id 字段(取 p["pair_task_id"], 归属以 LEFT JOIN 配对结果为准, cum.task_id 是消息侧原值、起始消息可能为 NULL); ②load_execution_steps 调用补传该 task_id(同 ai_message_id 可挂多任务, 不传则跨任务混读); ③thought 取键改 thought/reasoning(content 已被 _strip_thought_content 剥除, 且 reasoning-only 分支正文落在 thought 键上, 原式两键皆空致消息级 thought 退化为 None、历史回放推理区空白); ④删 get_user_message_id 导入(随 E8 空壳退役)
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项13: get_session_messages 响应补 link_enabled(前端读真源主路径)
 # 2026-10-08 - 小欧 - 文档[11] 3.4.5.2: save_message 改调 resolve_session_interject(携带值先落库再判 409, 破插话死锁)
+# 2026-10-27 - 小欧 - P1-① 消除 N+1: get_session_messages 批量预加载步骤——import 改 load_execution_steps_batch,
+#   一次查询替代循环内 N 次 load_execution_steps(keys 取 carrier 渲染载体), 改从 _steps_cache 取值未命中兜底 [];
+#   单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用 — 小欧-2026-10-27
 """
 message_service — 消息业务服务(services/chat)
 
@@ -50,7 +53,7 @@ from app.config import get_config
 from app.utils.time_utils import ensure_timestamp_milliseconds, get_local_iso_timestamp, to_local_iso, format_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.db import db
 from app.db.models.chat_models import MessageResponse
-from app.services.chat.storage import track_user_message, load_execution_steps
+from app.services.chat.storage import track_user_message, load_execution_steps_batch  # P1-① 小欧 2026-10-27: 批量加载替代 N+1(单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用)
 from app.services.chat.storage import insert_user_message  # v2.0 改动2: user消息同步写chat_user_message — 小欧 2026-08-19
 from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
 from app.utils.display_utils import extract_display_name_from_steps, build_display_name
@@ -110,6 +113,15 @@ def get_session_messages(session_id: str):
         for _aid, _i in _first_row.items():
             _carrier.setdefault(_aid, _i)
 
+        # P1-① 消除 N+1（小欧 2026-10-27）：批量预加载所有 (ai_message_id, task_id) 的步骤，
+        #   一次查询替代循环内 N 次 load_execution_steps。keys 直接取自 carrier 渲染载体
+        #   （{ai_id: index}，仅实际渲染 assistant 气泡的 ai_id），经 pairs[index] 取 task_id。
+        _batch_keys = [
+            (_aid, pairs[_i].get("pair_task_id"))
+            for _aid, _i in _carrier.items()
+        ]
+        _steps_cache = load_execution_steps_batch(conn, _batch_keys)
+
         messages = []
         for _i, p in enumerate(pairs):
             # 2026-10-01 小欧: 任务归属以 pair_task_id 为准(LEFT JOIN 配对结果, 注入行与起始行已归一,
@@ -129,7 +141,10 @@ def get_session_messages(session_id: str):
             # 从 chat_task_steps 表读取步骤列表 — 小欧 2026-07-14; v2.0 表改名 chat_task_steps — 2026-08-19
             # 2026-10-01 小欧: 补传 task_id(解 [1] E3)——同 ai_message_id 可挂多个 task
             #   (同任务多行兼容), 不传则退化为"该 ai_id 的全部步骤"跨任务混读。
-            steps = load_execution_steps(conn, ai_id, _p_tid)
+            # P1-① 小欧 2026-10-27: 改从批量预加载 _steps_cache 取值(键=(ai_id, task_id)),
+            #   未命中(该 ai_id 无步骤)兜底 []，行为与 load_execution_steps 一致。
+            _s_key = (ai_id, _p_tid)
+            steps = _steps_cache.get(_s_key, [])
             display_name = build_display_name(p['provider'], p['model']) if p['provider'] or p['model'] else None
             if not display_name and steps:
                 display_name = extract_display_name_from_steps(steps)
