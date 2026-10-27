@@ -70,12 +70,12 @@ describe('SplitPane - 可拖动分割面板', () => {
     expect(separator).toBeInTheDocument();
   });
 
-  it('支持自定义初始比例', () => {
+  it('支持 rightOpen 属性控制默认宽度', () => {
     render(
       <SplitPane
         left={<div>左</div>}
         right={<div>右</div>}
-        initialRatio={0.5}
+        rightOpen={true}
       />
     );
     expect(screen.getByText('左')).toBeInTheDocument();

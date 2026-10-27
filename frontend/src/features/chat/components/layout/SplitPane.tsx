@@ -3,38 +3,59 @@
 //   设计：复用 Files 页的拖动模式（mousedown/mousemove/mouseup），符合 KISS-DIRECT
 //   规范：DRY（拖动逻辑只写一次）、YAGNI（不引入第三方库）、禁止 backward
 //   默认：左侧 1/3 宽度，可拖动调整，键盘可访问（←/→）
+// 编辑历史: 2026-10-27 小欧 - v1.1: 根据 rightOpen 状态调整默认宽度和边界
+//   右侧折叠时：左侧更窄（240px），因为右侧不需要空间
+//   右侧展开时：左侧稍宽（280px），给右侧更多空间
 //   @author 小欧
 //   @date 2026-10-27
 import React, { useCallback, useRef, useState } from 'react';
 
-const MIN_LEFT_W = 200; // 最小宽度，防止内容挤压
-const MAX_LEFT_W = 800; // 最大宽度，防止挤压右侧
+const MIN_LEFT_W = 180; // 最小宽度，防止内容挤压（原 200，减小给右侧更多空间）
+const MAX_LEFT_W = 500; // 最大宽度，防止挤压右侧（原 800，减小给右侧更多空间）
+
+// 2026-10-27 小欧 - 根据 rightOpen 状态计算默认宽度
+//   右侧折叠时：左侧 240px（约 18%），更窄
+//   右侧展开时：左侧 280px（约 22%），稍宽但给右侧更多空间
+//   注意：当 containerW 为 0（初始渲染）时，返回固定值而非比例计算
+const getInitialWidth = (containerW: number, rightOpen: boolean): number => {
+  if (containerW === 0) {
+    // 初始渲染时容器宽度为 0，返回固定默认值
+    return rightOpen ? 280 : 240;
+  }
+  if (rightOpen) {
+    return Math.min(280, Math.round(containerW * 0.22));
+  }
+  return Math.min(240, Math.round(containerW * 0.18));
+};
 
 interface SplitPaneProps {
   left: React.ReactNode;
   right: React.ReactNode;
-  initialRatio?: number; // 初始比例，默认 1/3
+  initialRatio?: number; // 初始比例，默认 1/3（已废弃，改用 rightOpen）
+  rightOpen?: boolean; // 右侧是否展开，影响默认宽度
 }
 
 const SplitPane: React.FC<SplitPaneProps> = ({
   left,
   right,
-  initialRatio = 1 / 3,
+  rightOpen = true,
 }) => {
   // 2026-10-27 小欧 - 使用 useState 管理左侧宽度，初始值在 useEffect 中根据容器宽度计算
   const [leftW, setLeftW] = useState<number | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
 
-  // 2026-10-27 小欧 - 初始化宽度：根据容器宽度计算 1/3
+  // 2026-10-27 小欧 - 初始化宽度：根据 rightOpen 状态计算默认宽度
+  //   右侧折叠时：左侧 240px（约 18%），更窄
+  //   右侧展开时：左侧 280px（约 22%），稍宽但给右侧更多空间
   //   使用 useEffect 确保容器已渲染，获取真实宽度
   React.useEffect(() => {
     const container = containerRef.current;
     if (container) {
       const totalW = container.offsetWidth;
-      setLeftW(Math.round(totalW * initialRatio));
+      setLeftW(getInitialWidth(totalW, rightOpen));
     }
-  }, [initialRatio]);
+  }, [rightOpen]);
 
   // 2026-10-27 小欧 - 组件卸载时清理事件监听器
   React.useEffect(() => () => cleanupRef.current?.(), []);

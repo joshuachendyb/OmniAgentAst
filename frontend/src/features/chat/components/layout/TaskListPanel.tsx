@@ -270,7 +270,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
         display: 'flex',
         flexDirection: 'column',
         gap: 2, // 2026-09-09 小欧 优化: 项间距4→2px，紧凑但不拥挤
-        padding: '4px 0',
+        padding: '2px 0', // 2026-10-27 小欧 v1.1: 4px→2px，更紧凑
       }}
     >
       {tasks.map((t) => {
@@ -293,7 +293,7 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               }
             }}
             style={{
-              padding: '10px 12px', // 2026-09-09 小欧 优化: 内边距8→10px/12px，呼吸感适中
+              padding: '8px 10px', // 2026-10-27 小欧 v1.1: 10px/12px→8px/10px，更紧凑
               cursor: 'pointer',
               backgroundColor: active ? '#e6f4ff' : 'transparent', // 2026-09-09 小欧 优化: 选中态浅蓝背景
               borderLeft: active
@@ -311,8 +311,8 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
               style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
-                marginBottom: 6, // 与问题区域间距
+                gap: 6, // 2026-10-27 小欧 v1.1: 8→6，更紧凑
+                marginBottom: 4, // 2026-10-27 小欧 v1.1: 6→4，更紧凑
                 flexWrap: 'wrap', // 窄屏时换行
               }}
             >
