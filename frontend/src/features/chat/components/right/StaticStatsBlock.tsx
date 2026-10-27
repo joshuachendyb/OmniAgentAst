@@ -23,6 +23,9 @@
 // 编辑历史: 2026-09-17 小欧 - 修改: 错误项英文枚举经 formatErrorType 转中文标签(方括号去掉)+图标换 CloseCircleFilled — 小欧-2026-09-17
 // 编辑历史: 2026-10-22 小欧 - 2 处硬编码 'monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
 // 2026-10-22 小欧 - 产出物路径改 FilePathLink 可点深链（原死文本须手抄路径）— 小欧-2026-10-22
+// 2026-10-27 小欧 - doc[48] N6 配套([40] H3 同批决策): sectionTitleStyle 色条 PRIMARY→BORDER.STRONG——
+//   TitleBlock 主标题「任务统计」加 PRIMARY 蓝色条后, 五节子标题若同色即层级倒挂(子标题视觉权重 ≥ 主标题)。
+//   降级浅灰条后主标题(蓝条+14px+600) > 子标题(灰条+12px+500); 顺带 fontWeight 500 裸写→FontWeight.MEDIUM(DRY) — 小欧-2026-10-27
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -45,6 +48,7 @@ import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 M3c(fin
 import {
   Colors,
   FontFamily,
+  FontWeight,
   FontSize,
   Spacing,
   formatTokenFull,
@@ -63,9 +67,13 @@ const sectionStyle: React.CSSProperties = {
 };
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: FontSize.SECONDARY,
-  fontWeight: 500,
+  fontWeight: FontWeight.MEDIUM,
   color: Colors.TEXT.PRIMARY,
-  borderLeft: `2px solid ${Colors.PRIMARY}`,
+  // 2026-10-27 小欧 - 色条 PRIMARY→BORDER.STRONG(doc[48] N6 + [40] H3 同批决策): 主标题「任务统计」
+  //   已加 PRIMARY 蓝色条, 五节子标题若同色则层级倒挂(蓝条子标题 ≥ 蓝条主标题)。降级浅灰条后:
+  //   主标题(蓝条+14px+600) > 子标题(灰条+12px+500), 层级清晰。BORDER.STRONG 是既有令牌, 不新增(DC-19);
+  //   fontWeight 500 裸写→FontWeight.MEDIUM(DRY) — 小欧-2026-10-27
+  borderLeft: `2px solid ${Colors.BORDER.STRONG}`,
   paddingLeft: Spacing.SM,
 };
 

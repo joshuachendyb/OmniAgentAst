@@ -318,6 +318,22 @@
   outline-offset: -1px; /* 负内缩, 紧贴元素边框, 不影响布局 */
 }
 
+/* 2026-10-27 小欧 - 文档[48] N3/N4: 任务统计标题栏可点行 hover / 键盘焦点反馈。
+   原 TitleBlock 整行 role=button+tabIndex=0 却两者皆无——系统内 4 处同类可点元素
+   (.taskinfo-entry / .params-clickable / .task-list-item / .files-tree-row) 均已实现, 唯独此缺失;
+   键盘用户 Tab 进入时焦点不可见, 无法定位当前所在行。
+   规格与上方字面对齐(hover #f0f0f0 / focus-visible 2px #1677ff), 沿用既有色值不新增颜色令牌(DC-19)。
+   **不加 border-radius**: 标题栏是通栏元素(自带 borderTop 通栏分割线), 圆角背景会与通栏分割线不齐;
+   .params-clickable 是块内元素故有 4px 圆角, 此处形态不同故不加。
+   outline-offset 取 -1px 负内缩(同 .params-clickable), 避免整行 outline 外溢撑破右栏布局。 */
+.title-block-header:hover {
+  background: #f0f0f0;
+}
+.title-block-header:focus-visible {
+  outline: 2px solid #0c6aec;
+  outline-offset: -1px;
+}
+
 /* 2026-10-13 小欧 - 浮层纵向居中(北京老陈裁定)。调用方两处: 工具行参数浮层(bottomRight, 右缘贴按钮)
    + 上下文概览浮层(bottomLeft, 左缘贴按钮)。
    横向**故意不接管**: 不写 left/translateX, 让 rc-trigger 的内联坐标继续按 placement 横向锚定。

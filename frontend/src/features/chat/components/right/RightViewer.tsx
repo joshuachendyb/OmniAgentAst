@@ -577,6 +577,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
               finalStep={finalStep}
               expanded={statsExpanded}
               onToggle={() => setStatsExpanded((v) => !v)}
+              startTimestamp={frames?.startTimestamp}
             />
             {statsExpanded && (
               <StaticStatsBlock

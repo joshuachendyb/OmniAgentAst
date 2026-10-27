@@ -204,7 +204,7 @@ const TitleBlock: React.FC<TitleBlockProps> = ({
           <>
             <span style={{ display: 'inline-block', width: Spacing.LG }} />
             <InlineText color={Colors.TEXT.PRIMARY} fontWeight={FontWeight.BOLD}>
-              输入:{prompt != null ? formatTokenK(prompt) : '-'} 输出:{completion != null ? formatTokenK(completion) : '-'} 总计:{formatTokenK(total)}[tok]
+              输入:{prompt != null ? formatTokenK(prompt) : '-'} 输出:{completion != null ? formatTokenK(completion) : '-'} 总计:{formatTokenK(total)} [tok]
             </InlineText>
           </>
         )}

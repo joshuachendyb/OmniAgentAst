@@ -203,6 +203,16 @@ export const Colors = {
   PRIMARY: '#1677ff', // 主色调 - 蓝色
   SUCCESS: '#52c41a', // 成功状态 - 绿色
   ERROR: '#ff4d4f', // 错误状态 - 红色
+
+  // 2026-10-27 小欧 - PILL_* 三态胶囊专用色(doc[48] N1): 原 SUCCESS/ERROR/BORDER.STRONG 配白字
+  //   实测对比度 2.27/3.27/1.84:1, 全不达 WCAG AA 4.5:1(cancelled 灰底白字几乎不可读)。
+  //   取 AntD 深一档(green-8/red-8) + TEXT.PRIMARY 灰, 实测 5.59/7.75/7.00:1 均达 AA。
+  //   **新增而非改值**: SUCCESS/ERROR 是全站功能色(状态点/边框/图标/警示条), 改值会波及所有引用处;
+  //   胶囊是独立视觉语言(彩底白字), 专用令牌隔离语义 — 小欧-2026-10-27
+  PILL_SUCCESS: '#237804', // 胶囊 completed 底(green-8, 白字 5.59:1)
+  PILL_ERROR: '#a8071a', // 胶囊 failed 底(red-8, 白字 7.75:1)
+  PILL_CANCELLED: '#595959', // 胶囊 cancelled 底(=TEXT.PRIMARY, 白字 7.00:1)
+
   ERROR_BG: '#fff1f0', // 错误浅底(错误警示条背景, 第一阶段令牌化) — 小欧-2026-09-15
   ERROR_BORDER: '#ffa39e', // 错误浅框(错误警示条边框, 第一阶段令牌化) — 小欧-2026-09-15
   FOLD_COLLAPSED: '#4096ff', // 主折叠箭头-收起态蓝(2026-09-13定案, 第一阶段令牌化) — 小欧-2026-09-15
