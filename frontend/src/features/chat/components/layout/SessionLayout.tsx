@@ -109,12 +109,20 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
     <div style={{ flex: 1, display: 'flex', minHeight: 0, gap: 8 }}>
       <SplitPane
         left={renderSlot(panels, 'left')}
+        // 2026-10-27 小欧 修复(审计): 折叠态传 fullLeft——右栏收起时左列填满整个宽度
+        //   旧布局折叠态: 左列 flex:'1 1 0'(填满≈95%), 右列仅按钮宽条
+        //   原 SplitPane 折叠态: 左列固定 30%, 右侧 70% 空白(功能分支丢失)
+        fullLeft={!rightOpen}
         right={
           rightOpen ? (
             <div
               style={{
                 flex: 1,
                 minWidth: 0,
+                // 2026-10-27 小欧 修复(审计): 补 minHeight:0——消 flexbox min-height:auto 陷阱
+                //   右栏容器在 SplitPane 右面板(flex 列容器)内缺 min-height:0,
+                //   导致长到内容高度, 内层滚动 div 无溢出, Step 自动滚动失效
+                minHeight: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 position: 'relative', // 2026-10-20 小欧: »钮悬浮定位锚点 — 小欧-2026-10-20
