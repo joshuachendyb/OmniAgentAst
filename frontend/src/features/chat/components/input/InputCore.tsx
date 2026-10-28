@@ -22,12 +22,17 @@
 //   (overlay 绝对定位, 隐藏原生 placeholder, 灰+橘红双层渲染); 不传/非空态行为不变 — 小欧-2026-10-25
 // 2026-10-26 小欧 - overlay 内层 div 加 data-testid="receiving-hint"(保 H3/H9/H10 e2e 定位);
 //   加在内层而非外层 wrapper —— 外层含 placeholder 灰字+橘红提示两行, toHaveText 会取全文导致 H3 断言不匹配 — 小欧-2026-10-26
+// 2026-10-28 小欧 - ① maxRows 4→3(北京老陈令: 输入框最高 3 行, 整体含 SubmitBar ≤4);
+//   ② minRows/maxRows 字面量改用 layout.ts INPUT_MIN_ROWS/INPUT_MAX_ROWS(消除内部字面量, 唯一定义点);
+//   ③ 字面量令牌化: borderTop 1px→BorderWidth.THIN, overlay top 6→Spacing.SM,
+//   fontSize 14→FontSize.PRIMARY / 12→FontSize.SECONDARY;
+//   ④ 新增局部常量 HINT_LEFT_PX(=11, 对齐 AntD TextArea 水平 padding)/HINT_LINE_HEIGHT(=1.4, 普通文本行高)
 /**
  * InputCore - 输入框本体（多行）
  *
- * 【小欧 2026-08-26 8.12】4.3.6 整体高度最高 5 行(含底部功能按钮行)：
- * 输入框 autoSize minRows=2 / maxRows=4(2 行起步, 文字多自动增行),加 SubmitBar 1 行 = 整体 ≤5;
- * 超 5 行输入框内部滚动（滚动非截断）。
+ * 【小欧 2026-08-26 8.12】4.3.6 整体高度最高 4 行(含底部功能按钮行)：
+ * 输入框 autoSize minRows=2 / maxRows=3(2 行起步, 文字多自动增行),加 SubmitBar 1 行 = 整体 ≤4;
+ * 超 3 行输入框内部滚动（滚动非截断）。
  *
  * @author 小欧
  * @date 2026-08-26
@@ -35,9 +40,16 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Input } from 'antd';
-import { Colors, Radius } from '@/utils/stepStyles';
+import { Colors, Radius, BorderWidth, Spacing, FontSize } from '@/utils/stepStyles';
+import { INPUT_MIN_ROWS, INPUT_MAX_ROWS } from '@/constants/layout';
 
 const { TextArea } = Input;
+
+// 2026-10-28 小欧 - placeholder 提示 overlay 定位/行高(仅本组件使用, 局部常量):
+//   left=11 与 AntD TextArea 默认水平 padding 对齐(overlay 文字与框内文字左缘一致);
+//   lineHeight=1.4 为普通文本行高(非等宽, 不引 MonoLineHeight)。
+const HINT_LEFT_PX = 11;
+const HINT_LINE_HEIGHT = 1.4;
 
 interface InputCoreProps {
   value: string;
@@ -100,10 +112,10 @@ const InputCore: React.FC<InputCoreProps> = ({
         onKeyDown={onKeyDown}
         onPressEnter={onPressEnter}
         placeholder={showHint ? '' : '输入消息，Shift+Enter 换行'}
-        autoSize={{ minRows: 2, maxRows: 4 }}
+        autoSize={{ minRows: INPUT_MIN_ROWS, maxRows: INPUT_MAX_ROWS }}
         style={{
           borderColor: Colors.BORDER.LIGHT,
-          borderTop: `1px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
+          borderTop: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`, // 定案 B: 顶部分隔线归属 input 区上沿
           borderRadius: Radius.SM,
         }}
       />
@@ -111,18 +123,18 @@ const InputCore: React.FC<InputCoreProps> = ({
         <div
           style={{
             position: 'absolute',
-            top: 6,
-            left: 11,
+            top: Spacing.SM,
+            left: HINT_LEFT_PX,
             pointerEvents: 'none',
             userSelect: 'none',
-            lineHeight: 1.4,
+            lineHeight: HINT_LINE_HEIGHT,
           }}
         >
-          <div style={{ color: Colors.TEXT.WEAK, fontSize: 14 }}>
+          <div style={{ color: Colors.TEXT.WEAK, fontSize: FontSize.PRIMARY }}>
             输入消息，Shift+Enter 换行
           </div>
           {/* 2026-10-26 小欧 - testid 保 H3/H9/H10 e2e 定位(原 B 块已删, 此处为唯一挂载点) */}
-          <div data-testid="receiving-hint" style={{ color: Colors.ORANGE_RED, fontSize: 12 }}>
+          <div data-testid="receiving-hint" style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}>
             {executingHint}
           </div>
         </div>
