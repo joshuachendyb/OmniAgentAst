@@ -26,6 +26,12 @@
 // 2026-10-27 小欧 - doc[48] N6 配套([40] H3 同批决策): sectionTitleStyle 色条 PRIMARY→BORDER.STRONG——
 //   TitleBlock 主标题「任务统计」加 PRIMARY 蓝色条后, 五节子标题若同色即层级倒挂(子标题视觉权重 ≥ 主标题)。
 //   降级浅灰条后主标题(蓝条+14px+600) > 子标题(灰条+12px+500); 顺带 fontWeight 500 裸写→FontWeight.MEDIUM(DRY) — 小欧-2026-10-27
+// 2026-10-28 小欧 - 展开区域优化(用户定案): ①修数据重复——"事件"与"步数"同显 total_steps 删"事件"行,
+//   Token 任务级重复(accumulated_usage 与 task_accumulated_tokens)合并——主值用 accumulated_usage(K/M 单位
+//   对齐 TitleBlock), task_accumulated_tokens 已由 adaptTaskDetail 兜底并入 usage 不再单独显; ②布局分组
+//   5 碎片节→2 大语义组(任务元信息=基本信息+Token / 执行结果=工具汇总+产出物), 错误低频独立贴边保留;
+//   ③截断一致——工具调用链参数 slice(0,80) 硬截改 EllipsisTip+CSS 宽度省略(对齐 TaskInfoBar 位2 做法);
+//   ④基本信息去"开始/结束"(用户令), grid 4列→2列; 工具汇总单行·连接改 flex 换行 chip — 小欧-2026-10-28
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -55,6 +61,7 @@ import {
   type TokenLayer,
 } from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复私有形状(DRY) — 小欧-2026-10-22(补 FontFamily 收敛字体栈)
 import { EllipsisTip } from '../taskinfo/EllipsisTip'; // 2026-09-15 小欧 复用省略+Tooltip全文封装 — 小欧-2026-09-15
+import { formatTokenK } from '../taskinfo/infoMaps'; // 2026-10-28 小欧 - 展开区域 Token 主值用 K/M 单位(对齐 TitleBlock) — 小欧-2026-10-28
 import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复用折叠箭头组件 — 小欧-2026-09-15
 // 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
 import { FilePathLink } from '@/components/FilePathLink';
@@ -109,11 +116,6 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
       : (finalStats?.artifacts ?? detail?.artifacts ?? []);
   const llmCallCount = detail?.llm_call_count ?? finalStats?.llm_call_count;
   const stepCount = detail?.total_steps ?? finalStats?.step_count;
-  const fmtTime = (v: string | null | undefined) => {
-    /* 小欧 2026-09-11 M3c⑭: detail?.xxx 返回 undefined 而非 null，参数类型必须兼容 — 小欧-2026-09-11 */
-    // 2026-09-11 小欧 修复: 块体补 return——原缺 return 恒返 undefined, 开始/结束时间永远'-'(TS2322 void) — 小欧-2026-09-11
-    return v ? v.slice(0, 19).replace('T', ' ') : '-';
-  };
   const chain = (chainSteps ?? []).filter((s) => s.type === 'action');
   const chainSeq =
     chain.flatMap((s) => (s.tools ?? []).map((t) => t.tool)).join(' -> ') ||
@@ -131,43 +133,28 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
     >
       {/* 展开内容（title 段已由父级 TitleBlock 渲染，此处从"基本信息"开始）— 小欧 2026-09-11 第七章 M3c */}
       <>
-        {/* 2026-09-12 修复: 基本信息 section 容器/标题复用 sectionStyle/sectionTitleStyle, 字号12→FontSize.SECONDARY, 标签色#8c8c8c→Colors.TEXT.SECONDARY, 值色#262626→Colors.TEXT.STRONG — 小欧-2026-09-12 */}
+        {/* 2026-10-28 小欧 - 布局分组: 5 碎片节→2 大语义组。组1「任务元信息」= 基本信息(去开始/结束/事件)
+            + Token(主值 K/M 对齐 TitleBlock, 任务级重复已并入 usage 不再单显) — 小欧-2026-10-28 */}
         <div style={sectionStyle}>
-          <Typography.Text style={sectionTitleStyle}>基本信息</Typography.Text>
+          <Typography.Text style={sectionTitleStyle}>任务元信息</Typography.Text>
+          {/* 基本信息: 去"开始/结束"(用户令)/"事件"(与步数重复), grid 4列→2列(标签左值右) — 小欧-2026-10-28 */}
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '72px 1fr 72px 1fr',
+              gridTemplateColumns: '72px 1fr',
               columnGap: Spacing.LG,
               rowGap: Spacing.XS,
               marginTop: Spacing.SM,
               fontSize: FontSize.SECONDARY,
             }}
           >
-            <span style={{ color: Colors.TEXT.SECONDARY }}>开始</span>
-            <span style={{ color: Colors.TEXT.STRONG, whiteSpace: 'nowrap' }}>
-              {fmtTime(detail?.created_at)}{' '}
-              {/* 小欧 2026-09-11 M3c⑭: detail 可能 null(DB 失败+finalStats 兜底)，加可选链防 TypeError — 小欧-2026-09-11 */}
-            </span>
-            <span style={{ color: Colors.TEXT.SECONDARY }}>结束</span>
-            <span style={{ color: Colors.TEXT.STRONG, whiteSpace: 'nowrap' }}>
-              {fmtTime(detail?.updated_at)}{' '}
-              {/* 小欧 2026-09-11 M3c⑭: 同上 — 小欧-2026-09-11 */}
-            </span>
-            <span style={{ color: Colors.TEXT.SECONDARY }}>事件</span>
+            <span style={{ color: Colors.TEXT.SECONDARY }}>步数</span>
             <span style={{ color: Colors.TEXT.STRONG }}>
-              {stepCount ?? '-'}{' '}
-              {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
+              {stepCount ?? '-'}
             </span>
             <span style={{ color: Colors.TEXT.SECONDARY }}>LLM</span>
             <span style={{ color: Colors.TEXT.STRONG }}>
-              {llmCallCount ?? '-'}{' '}
-              {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
-            </span>
-            <span style={{ color: Colors.TEXT.SECONDARY }}>步数</span>
-            <span style={{ color: Colors.TEXT.STRONG }}>
-              {stepCount ?? '-'}{' '}
-              {/* 小欧 2026-09-11 M3c: DB 优先 final_stats 兜底 — 小欧-2026-09-11 */}
+              {llmCallCount ?? '-'}
             </span>
             <span style={{ color: Colors.TEXT.SECONDARY }}>模型</span>
             <span
@@ -178,62 +165,84 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                 textOverflow: 'ellipsis',
               }}
             >
-              {detail?.provider ?? '-'} / {detail?.model ?? '-'}{' '}
-              {/* 小欧 2026-09-11 M3c⑭: 同上 — 小欧-2026-09-11 */}
+              {detail?.provider ?? '-'} / {detail?.model ?? '-'}
             </span>
           </div>
-        </div>
-        {/* 2026-09-12 修复: Token section 容器/标题复用常量, 字号12→FontSize.SECONDARY — 小欧-2026-09-12 */}
-        <div style={sectionStyle}>
-          <Typography.Text style={sectionTitleStyle}>Token</Typography.Text>
-          <Typography.Text
+          {/* Token 主值: 任务级 P/C/T, K/M 单位对齐 TitleBlock; task_accumulated_tokens 已由 adaptTaskDetail
+              兜底并入 accumulated_usage, 不再单显(修任务级重复) — 小欧-2026-10-28 */}
+          <div
             style={{
+              marginTop: Spacing.SM,
               fontSize: FontSize.SECONDARY,
-              display: 'block',
-              marginTop: Spacing.XS,
             }}
           >
-            {formatTokenFull(detail?.accumulated_usage)}
-          </Typography.Text>
+            <Typography.Text style={{ color: Colors.TEXT.SECONDARY }}>
+              Token{' '}
+            </Typography.Text>
+            <Typography.Text
+              style={{
+                color: Colors.TEXT.PRIMARY,
+                fontWeight: FontWeight.MEDIUM,
+              }}
+            >
+              {detail?.accumulated_usage
+                ? `P ${formatTokenK(detail.accumulated_usage.prompt_tokens)} / C ${formatTokenK(detail.accumulated_usage.completion_tokens)} / T ${formatTokenK(detail.accumulated_usage.total_tokens)} [tok]`
+                : '-'}
+            </Typography.Text>
+          </div>
+          {/* 会话级/链级 次要行(任务级已并入主值) — 小欧-2026-10-28 */}
           {(() => {
-            const t = detail?.task_accumulated_tokens;
             const s = sessionTokens;
             const c = chainTokens;
-            const hasAny = t || s || c;
-            if (!hasAny) return null;
+            if (!s && !c) return null;
             return (
               <div
                 style={{
-                  marginTop: Spacing.SM,
+                  marginTop: Spacing.XS,
                   fontSize: FontSize.CAPTION,
                   color: Colors.TEXT.SECONDARY,
                   lineHeight: `${FontSize.CAPTION + Spacing.XS}px`,
                 }}
               >
-                {t && <div>任务级: {formatTokenFull(t)}</div>}
                 {s && <div>会话级: {formatTokenFull(s)}</div>}
                 {c && <div>链级: {formatTokenFull(c)}</div>}
               </div>
             );
           })()}
         </div>
-        {/* 2026-09-12 修复: 工具汇总 section 复用常量, 字号12→FontSize.SECONDARY; 次级#8c8c8c→SECONDARY, 工具名#595959→PRIMARY — 小欧-2026-09-12 */}
+        {/* 2026-10-28 小欧 - 布局分组: 组2「执行结果」= 工具汇总+产出物 — 小欧-2026-10-28 */}
         <div style={sectionStyle}>
-          <Typography.Text style={sectionTitleStyle}>工具汇总</Typography.Text>
-          <Typography.Text
+          <Typography.Text style={sectionTitleStyle}>执行结果</Typography.Text>
+          {/* 工具汇总: 单行·连接改 flex 换行 chip — 小欧-2026-10-28 */}
+          <div
             style={{
-              fontSize: FontSize.SECONDARY,
-              display: 'block',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: Spacing.SM,
               marginTop: Spacing.XS,
+              fontSize: FontSize.SECONDARY,
             }}
           >
             {toolStats && Object.keys(toolStats).length > 0
               ? Object.entries(toolStats)
                   .filter(([k]) => k !== 'null')
-                  .map(([k, v]) => `${k}×${v}`)
-                  .join(' · ')
+                  .map(([k, v]) => (
+                    <span
+                      key={k}
+                      style={{
+                        color: Colors.TEXT.PRIMARY,
+                        background: Colors.BG.LIGHT,
+                        border: `1px solid ${Colors.BORDER.LIGHT}`,
+                        borderRadius: 2,
+                        padding: `0 ${Spacing.XS}px`,
+                        lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
+                      }}
+                    >
+                      {k}×{v}
+                    </span>
+                  ))
               : '-'}
-          </Typography.Text>
+          </div>
           {/* 折叠规范(小欧 2026-09-01): 三角统一▲▼、大小14(PRIMARY)、颜色PRIMARY#595959、位置数量后、方法role=button/aria-expanded/tabIndex/onKeyDown - 北京老陈定案，全页统一 */}
           <div
             role="button"
@@ -279,9 +288,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               </Typography.Text>
               {chain.flatMap((s, sIdx) =>
                 (s.tools ?? []).map((t, tIdx) => {
-                  // 2026-09-15 小欧: 提取paramText, slice(0,80)硬截→加省略号+EllipsisTip悬停全文兜底 — 小欧-2026-09-15
+                  // 2026-10-28 小欧: slice(0,80) 硬截改 EllipsisTip+CSS 宽度省略(对齐 TaskInfoBar 位2 做法) — 小欧-2026-10-28
                   const paramText = JSON.stringify(t.params ?? {});
-                  const truncated = paramText.length > 80;
                   return (
                     <div
                       key={`${sIdx}-${tIdx}`}
@@ -302,18 +310,16 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       </span>
                       <EllipsisTip
                         text={paramText}
-                        tooltip={truncated ? paramText : undefined}
+                        tooltip={paramText}
                         maxWidth={320}
                       >
                         <span
                           style={{
                             color: Colors.TEXT.SECONDARY,
                             fontFamily: FontFamily.MONO,
-                            whiteSpace: 'nowrap',
                           }}
                         >
-                          {paramText.slice(0, 80)}
-                          {truncated ? '…' : ''}
+                          {paramText}
                         </span>
                       </EllipsisTip>
                     </div>
