@@ -106,6 +106,8 @@
 //   DANGER_EFFECTS 三处同步(只改键名字面, 判定与文案结构零变更)。
 //   触发原因: 键名与后端 registry 不一致时 dangerousDirty 恒 false = 改了高危开关不进二次确认, 属静默失效。
 // 2026-10-18 小欧 - 注释精简冗余标注, 技术说明原样保留。
+// 2026-10-29 小欧 - 修 Bug2: 清空 api_key 成功后立即本地更新 providerConfig(configured=false, masked='')，
+//   不等 reloadProviderCache 异步返回——否则期间 SecretRevealInput 回填旧掩码串 — 小欧-2026-10-29
 import React, { useState } from 'react';
 import {
   Button,
@@ -608,7 +610,20 @@ const SettingsPage: React.FC = () => {
                 showSuccess('api_key 已清空');
                 // 2026-09-27 小欧 - 修 F7：清空是 api_key 的第二个写入口，须同清草稿，
                 //   否则用户接着点保存会把刚清空的密钥写回。ProviderConfig 的 apiKey 由 masked 变化自动复位。
-                s.patchModel({ providerDraft: {} });
+                // 2026-10-29 小欧 - 修 Bug2: 立即更新本地 providerConfig 的 api_key(configured=false, masked='')，
+                //   不等 reloadProviderCache 异步返回——否则期间 masked 仍为旧掩码, SecretRevealInput 回填旧串;
+                //   reload 返回后会再次覆盖(此时值已一致, 无副作用) — 小欧-2026-10-29
+                const prevCfg = state.model.providerConfig[state.model.selectedProvider];
+                s.patchModel({
+                  providerConfig: {
+                    ...state.model.providerConfig,
+                    [state.model.selectedProvider]: {
+                      ...prevCfg,
+                      api_key: { configured: false, masked: '' },
+                    },
+                  },
+                  providerDraft: {},
+                });
                 await afterModelSaved(r.mtime);
               } catch (e) {
                 handleApiError(e);

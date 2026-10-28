@@ -13,6 +13,10 @@
  *   2026-09-27 小欧 - 补「value 清空即退出输入态」effect（父层保存成功置空 value 后，
  *     否则框内空白可编辑，用户会误以为没保存成功）。
  *   2026-10-22 小欧 - 硬编码 'monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
+ *   2026-10-29 小欧 - 修清空 api_key 后输入框残留/死锁三 Bug:
+ *     Bug1 displayValue: configured=false 时恒空, 不回填旧 masked(即使时序未更新);
+ *     Bug2(在 SettingsPage.tsx) 清空成功后立即本地更新 providerConfig, 不等异步 reload;
+ *     Bug3 displayReadOnly+useEffect: configured=false 时恒可编辑 + 不复位 focused — 小欧-2026-10-29
  *
  * 四条安全约束：①点眼睛先 Modal.confirm 确认才取明文 ②明文 30 秒自动打码+卸载清 timer
  *   ③明文只存内存（不写 localStorage）、明文态 readOnly 且 onChange 直接 return（不当作新值提交）
@@ -67,10 +71,12 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   );
 
   // 2026-09-27 - 小欧 - value 被清空即退出输入态：父层保存成功会置空 value，若焦点仍在则 isTyping 仍为 true，
-  // 框内显示空白且可编辑，用户看不到"已配置"打码提示会误以为没保存成功。case: settings2-after-save-mask
+  //   框内显示空白且可编辑，用户看不到"已配置"打码提示会误以为没保存成功。case: settings2-after-save-mask
+  // 2026-10-29 小欧 - 修 Bug3: 仅 configured 时才复位 focused——清空 api_key 后 configured=false,
+  //   不复位 focused 保持可编辑态; 且 masked 已空不会回填旧串 — 小欧-2026-10-29
   useEffect(() => {
-    if (value === '') setFocused(false);
-  }, [value]);
+    if (value === '' && configured) setFocused(false);
+  }, [value, configured]);
 
   /** 眼睛点击：需二次确认，确认后才调接口取明文；再次点击立即清除明文。 */
   const onToggleReveal = async () => {
@@ -112,9 +118,13 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   // 2026-09-27 小欧 - 修 F1：isTyping 由「值非空」驱动而非 focused。原先点一下/Tab 一下即进输入态，
   //   掩码被抹成空白并翻 password，用户误以为密钥没配而重输覆盖。现在聚焦即可编辑、敲字符前仍显掩码。
   const isTyping = !revealed && value !== '';
-  const displayValue = revealed ? plainKey : isTyping ? value : masked;
-  // 只读：①明文态恒只读（安全约束③）②未聚焦即只读，防误改已保存 key
-  const displayReadOnly = revealed || !focused;
+  // 2026-10-29 小欧 - 修 Bug1: configured=false 时 displayValue 恒空——清空 api_key 后
+  //   configured=false, 不再回填旧 masked(即使 masked 因时序尚未更新); configured=true 时
+  //   未输入仍回显掩码(F1: 聚焦可编辑但敲字符前显掩码, 示意"有 key 可覆盖") — 小欧-2026-10-29
+  const displayValue = revealed ? plainKey : isTyping ? value : (configured ? masked : '');
+  // 只读：①明文态恒只读（安全约束③）②configured 且未聚焦时只读（防误改已保存 key）;
+  //   configured=false 时恒可编辑（无保存 key 可保护, 清空后立即可输入新 key） — 小欧-2026-10-29
+  const displayReadOnly = revealed || (configured && !focused);
   const inputType = isTyping ? 'password' : 'text';
 
   const startOverwrite = (next: string) => {
