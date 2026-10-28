@@ -7,6 +7,10 @@
 //   resolveChipUrl 实时取 getCurrentProjectRoot() 最新根重算 ext=1 vs 普通），渲染 href
 //   保留供中键新标签/复制链接（旧根 href 由 Files 页 ext=1 降级兜底）；行号截断由
 //   resolveChipUrl 内部 isDirPath 统一判，调用处不再重复 `dir ? null`（消冗余）。— 小欧-2026-10-28
+// 2026-10-28 小欧 - 链接旁增「别针」引用入口（与文件足迹同款，北京老陈令）：withPin 承载壳
+//   把链接 + QuoteButton 包为 inline-flex 兄弟位（四个链接返回形态共用一份，minWidth:0
+//   承接原链接 span 的 flex 压缩、保内层 ellipsis 不破坏）；外部目录不包（目录不引用）；
+//   判界不过的纯文本分支不出别针。别针调 features/refs/QuoteButton（quote.ts 唯一实现）。— 小欧-2026-10-28
 /**
  * FilePathLink —— 把"任意来源的路径"渲染成可点的文件页深链
  *
@@ -32,6 +36,8 @@ import {
   toRelativePath,
 } from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
+// 2026-10-28 小欧 - 链接旁「别针」引用按钮（quote.ts 唯一实现的共用 UI 单点）— 小欧-2026-10-28
+import { QuoteButton } from '@/features/refs/QuoteButton';
 import { Colors, FontFamily, FontSize } from '@/utils/stepStyles';
 
 export interface FilePathLinkProps {
@@ -111,11 +117,30 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
   const linkable = !!rel && isLinkableRelPath(rel);
   const label = text ?? rawPath;
 
+  /**
+   * 2026-10-28 小欧 - 链接 + 别针 的承载壳：四个链接返回形态共用一份（DRY，不在四处
+   *   各包一次 JSX）。minWidth:0 由壳承接原链接 span 的 flex 压缩职责（内层 overflow
+   *   hidden 的 flex 项最小尺寸归零），ellipsis 行为不变。— 小欧-2026-10-28
+   */
+  const withPin = (linkEl: React.ReactNode): React.ReactNode => (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        minWidth: 0,
+      }}
+    >
+      {linkEl}
+      <QuoteButton path={rawPath} lineRange={lineRange} />
+    </span>
+  );
+
   if (external) {
     const url = buildExternalDeepLink(rawPath, dir ? null : lineRange);
     if (!inRouter) {
       // 无 Router 上下文 → 退化为整页跳转（与 FileRefChip 同款）
-      return (
+      const link = (
         <a
           href={url}
           title={rawPath}
@@ -136,8 +161,9 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
           {label}
         </a>
       );
+      return dir ? link : withPin(link);
     }
-    return (
+    const link = (
       <RouterLink
         url={url}
         title={rawPath}
@@ -146,10 +172,11 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
         resolveUrl={() => resolveChipUrl(rawPath, lineRange)}
       />
     );
+    return dir ? link : withPin(link);
   }
 
   if (!linkable || !rel) {
-    // 判界不过（根内归一失败/形态非法/未取到根）→ 原样纯文本，不造假链接
+    // 判界不过（根内归一失败/形态非法/未取到根）→ 原样纯文本，不造假链接（不出别针）
     return (
       <span title={rawPath} style={plainStyle}>
         {label}
@@ -160,7 +187,7 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
   const url = buildFileDeepLink(rel, lineRange);
   if (!inRouter) {
     // 无 Router 上下文（单测/非路由容器）→ 退化为整页跳转（与 FileRefChip 同款）
-    return (
+    const link = (
       <a
         href={url}
         title={rawPath}
@@ -181,8 +208,9 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
         {label}
       </a>
     );
+    return withPin(link);
   }
-  return (
+  return withPin(
     <RouterLink
       url={url}
       title={rawPath}

@@ -27,6 +27,10 @@
 //   resolveChipUrl 实时取 getCurrentProjectRoot() 最新根算 ext=1 vs 普通深链；删渲染期
 //   url 计算（含 buildExternalDeepLink/buildFileDeepLink 死 import）。ChipBody 仍用
 //   useProjectRoot 算 navigable/根外徽标（显示用，点击不依赖）。— 小欧-2026-10-28
+// 2026-10-28 小欧 - chip 增「别针」引用入口（与文件足迹同款，北京老陈令）：ChipBody 改双层
+//   结构——外层 span 承担 chip 视觉，内层内容 span 承担 role=link/tabIndex/跳转，别针按钮
+//   平铺兄弟位（role=link 内不放 button，防键盘/读屏语义冲突）；别针调 features/refs/
+//   QuoteButton（quote.ts 唯一实现），仅文件 chip 出现、目录不出（引用只对文本文件）。— 小欧-2026-10-28
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -53,6 +57,8 @@ import {
   toRelativePath,
 } from '@/utils/projectPath';
 import { useProjectRoot } from '@/hooks/useProjectRoot';
+// 2026-10-28 小欧 - chip 内「别针」引用按钮（quote.ts 唯一实现的共用 UI 单点）— 小欧-2026-10-28
+import { QuoteButton } from '@/features/refs/QuoteButton';
 
 export interface FileRefChipProps {
   relPath: string;
@@ -66,7 +72,6 @@ const chipStyle: React.CSSProperties = {
   border: `1px solid ${Colors.BORDER.LIGHT}`,
   borderRadius: chatTokens.radius,
   padding: `0 ${Spacing.SM}px`,
-  cursor: 'pointer',
 };
 
 /** 徽标样式（目录/根外共用一个规格，避免两处漂移） */
@@ -96,46 +101,61 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
         lineRange ? ` 第 ${lineRange.start} 至 ${lineRange.end} 行` : ''
       }`;
   return (
+    // 2026-10-28 小欧 - 双层结构：外层 span 只承担 chip 视觉；链接语义（role=link +
+    //   tabIndex + onGo）收在内层内容 span，别针 button 平铺兄弟位 —— role=link 内不放
+    //   button（内嵌可交互元素会键盘/读屏双语义冲突，FileTrailPanel L244 教训）。
+    //   别针只对文件 chip 出现（目录不引用，与足迹 preview==='text' 口径一致）。— 小欧-2026-10-28
     <span
-      role={navigable ? 'link' : undefined}
-      tabIndex={navigable ? 0 : undefined}
-      aria-label={label}
-      aria-disabled={navigable ? undefined : true}
-      title={navigable ? undefined : '项目根尚未加载，暂时无法打开'}
       style={{
         ...chipStyle,
         display: 'inline-flex',
         alignItems: 'center',
         gap: Spacing.XS,
-        cursor: navigable ? 'pointer' : 'default',
       }}
-      onClick={navigable ? onGo : undefined}
-      onKeyDown={
-        navigable
-          ? (e) => {
-              if (e.key !== 'Enter' && e.key !== ' ') return;
-              e.preventDefault();
-              onGo();
-            }
-          : undefined
-      }
     >
-      {isDir ? (
-        <FolderOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
-      ) : (
-        <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
+      <span
+        role={navigable ? 'link' : undefined}
+        tabIndex={navigable ? 0 : undefined}
+        aria-label={label}
+        aria-disabled={navigable ? undefined : true}
+        title={navigable ? undefined : '项目根尚未加载，暂时无法打开'}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: Spacing.XS,
+          cursor: navigable ? 'pointer' : 'default',
+        }}
+        onClick={navigable ? onGo : undefined}
+        onKeyDown={
+          navigable
+            ? (e) => {
+                if (e.key !== 'Enter' && e.key !== ' ') return;
+                e.preventDefault();
+                onGo();
+              }
+            : undefined
+        }
+      >
+        {isDir ? (
+          <FolderOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
+        ) : (
+          <FileOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
+        )}
+        {isDir && (
+          <span style={{ ...badgeStyle, color: Colors.TEXT.SECONDARY }}>
+            目录
+          </span>
+        )}
+        {/* 2026-10-23 小欧 - 根外标识：提示该路径在当前项目根之外 — 小欧-2026-10-23 */}
+        {isExternal && (
+          <span style={{ ...badgeStyle, color: Colors.WARNING }}>根外</span>
+        )}
+        {relPath}
+        {!isDir && lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
+      </span>
+      {!isDir && navigable && (
+        <QuoteButton path={relPath} lineRange={lineRange ?? null} />
       )}
-      {isDir && (
-        <span style={{ ...badgeStyle, color: Colors.TEXT.SECONDARY }}>
-          目录
-        </span>
-      )}
-      {/* 2026-10-23 小欧 - 根外标识：提示该路径在当前项目根之外 — 小欧-2026-10-23 */}
-      {isExternal && (
-        <span style={{ ...badgeStyle, color: Colors.WARNING }}>根外</span>
-      )}
-      {relPath}
-      {!isDir && lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
     </span>
   );
 };
