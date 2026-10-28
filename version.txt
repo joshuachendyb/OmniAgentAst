@@ -8,10 +8,11 @@ v1.5.1
 [窄右栏token不可见] fix 31ee38daf 原整行flex nowrap容器380px/内容576px时token段197px仅33px可见;内容包flexWrap:'wrap'组+箭头移出组外flexShrink:0;删三处固定宽span间隔符 - 小欧 2026-10-28
 [实时终态token兜底] fix 31ee38daf 后端X2终态短信号只发五键token被剥离,final未带token时取本会话usage帧的任务累计(metaFrames.taskAccumulated与TaskInfoBar同源),同一条final校验(引用相等或timestamp+step),历史任务REST另建对象永不命中 - 小欧 2026-10-28
 [useSessionTasks终态回复消失] fix 31ee38daf refresh原无条件清空response,onSuccess+final_stats两次refresh均在updateTaskResponse之后→刚写入的final.response被抹掉;改按taskId保留已写入值(finalResponsesRef);final.response为空时取SSE chunk正文兜底(liveTaskAnswer,只认本会话当前任务+终态,排除is_reasoning) - 小欧 2026-10-28
-### 1.5.1.3 清空api_key输入框残留/死锁三Bug根治
+### 1.5.1.3 清空api_key输入框残留/死锁四Bug根治
 [displayValue回填] fix 178c5cffa Bug1:configured=false时displayValue恒空,不再回填旧masked(原:value=''时displayValue=masked,旧掩码串回填导致残留) - 小欧 2026-10-29
 [清空时序窗口] fix 178c5cffa Bug2:SettingsPage清空成功后立即本地更新providerConfig(configured=false,masked=''),不等reloadProviderCache异步返回(原:异步期间masked仍为旧值) - 小欧 2026-10-29
-[focused复位+只读锁] fix 178c5cffa Bug3:configured=false时不复位focused且恒可编辑(原:value=''时setFocused(false)+displayReadOnly=!focused→输入框变只读死锁) - 小欧 2026-10-29
+[focused复位+只读锁] fix cb3d34492 Bug3:configured=false时不复位focused且恒可编辑(原:value=''时setFocused(false)+displayReadOnly=!focused→输入框变只读死锁) - 小欧 2026-10-29
+[明文态清空死锁] fix cb3d34492 Bug4:明文态(revealed=true)下点清空api_key,configured变false但revealed/plainKey未复位→旧明文残留+只读+眼睛按钮消失死锁;补effect强制退出明文态(清plainKey+revealed+定时器) - 小欧 2026-10-29
 ### 1.5.1.4 代码治理与文档
 [prettier格式化] refactor 01e94d5aa frontend全量prettier格式化(补HEAD基线欠账) - 小欧 2026-10-29
 [死参数清理] refactor d955860ab fileDeepLink/FileRefChip/Files删chip跳转死参数source与死判据 - 小欧 2026-10-29
