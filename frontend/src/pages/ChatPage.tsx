@@ -49,6 +49,8 @@
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: 注入 onTasksChanged(ref 中转 refreshTasks, 插话并入后左栏「追加N条」才刷新)
 // 编辑历史: 2026-10-20 07:42:12 小欧 - 底部留白压缩(北京老陈令): 容器padding底8→2px, 与Layout Content底距(10→4)合计18→6px — 小欧-2026-10-20
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: useModelLayer调用删sessionTitle(不再需要) - 小欧-2026-10-24
+// 编辑历史: 2026-10-28 小欧 - onSuccess 补 refreshTasks 兜底: 任务完成(final帧)刷新左栏 status(executing→completed),
+//   根治 final_stats 帧丢失竞态致 refresh 不触发→左栏永久卡 executing; 经 refreshTasksRef 调用(解闭包陈旧), 见 L97 区块 — 小欧-2026-10-28
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
@@ -88,7 +90,16 @@ const ChatPage: React.FC = () => {
     sessionId: urlSessionId ?? undefined, // 未解析出真实 sessionId 时不 ensureSession（5.4 约束）
     onError: (liveError: LiveError) => setLiveError(liveError),
     // 2026-09-19 小欧: 任务成功完成(终态非failed)清liveError, 避免error后恢复完成仍残留错误指示 — 北京老陈驱动
-    onSuccess: () => setLiveError(null),
+    // 2026-10-28 小欧 - 补 refreshTasks 兜底: 任务完成后刷新左栏任务状态(executing→completed)。
+    //   根因: refresh 原只靠 useChainTokens 的 hasFinalStats(final_stats 帧)信号触发, 但 final_stats 帧
+    //   在前端存在丢失竞态(final 先到 onComplete 触发、final_stats 后到可能已断流)→ hasFinalStats 恒 false
+    //   → refresh 不触发 → 左栏状态永久卡 executing。onSuccess 是流结束的可靠信号(final 帧在后端 DB
+    //   落库后补发, onComplete 时 DB 已落 status), 此处兜底 refresh 拉最新 status。refresh 幂等, 与
+    //   finalStats 路径重复无害。经 ref 调用避免闭包陈旧。
+    onSuccess: () => {
+      setLiveError(null);
+      void refreshTasksRef.current();
+    },
     // 2026-10-08 小欧 - 文档[11]: 插话被后端并入后重取左栏, 否则「追加N条」停在旧快照不出现
     onTasksChanged: () => refreshTasksRef.current(),
     // 2026-09-30 小欧 - URL 写入唯一出口：本页是唯一与 Router 接触处。原生 pushState 不派发

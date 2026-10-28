@@ -31,6 +31,8 @@
 // 编辑历史: 2026-10-21 小杨 - 推荐只收文本预览；台账按 taskId 精确取，删最新批次兜底 — 小杨-2026-10-21
 // 编辑历史: 2026-10-23 小欧 - 推荐行 Tag 改显 r.path 全路径：与足迹面板口径一致（同源三处：树●/足迹/推荐），
 //   推荐行无目录上下文，同名不同目录文件靠文件名无法区分 — 小欧-2026-10-23
+// 编辑历史: 2026-10-28 小欧 - 插话并入滚动定位+自动展开(方案A, 北京老陈反馈): 监听 task_merged 事件, 插话并入现有任务时
+//   滚动到该任务并自动展开其追加块(上方滚动守卫只认 latestTaskId 变化, 并入不产生新任务→条纹丝不动), 见 L231 区块 — 小欧-2026-10-28
 /**
  * TaskListPanel - 左侧任务清单面板（left slot，4.3.2）
  *
@@ -226,6 +228,32 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
     return () => {
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
+  }, [latestTaskId, anchorRef]);
+
+  // 2026-10-28 小欧 - 插话并入滚动定位+自动展开(方案A, 北京老陈反馈):
+  //   插话并入现有任务不产生新任务 → latestTaskId 不变 → 上方滚动守卫(非新任务不滚动)拦截 → 滚动条纹丝不动。
+  //   改监听 useChatCallbacks.onMerged 派发的 task_merged 事件(精确信号, 唯一在插话并入瞬间触发,
+  //   非历史加载/会话切换), 事件 detail.taskId = 被并入的目标任务; 触发后滚动到该任务并自动展开其追加块,
+  //   使用户即时看到插话内容(默认收起 → 展开并入的追加输入)。复用 rAF + scrollIntoView(nearest) 机制。
+  useEffect(() => {
+    const onTaskMerged = (e: Event) => {
+      const taskId = (e as CustomEvent<{ taskId: string | null }>).detail?.taskId;
+      const targetId = taskId ?? latestTaskId;
+      if (!targetId) return;
+      // 自动展开该任务追加块(插话内容即时可见)
+      setExpandedTasks((prev) => {
+        if (prev.has(targetId)) return prev;
+        const next = new Set(prev);
+        next.add(targetId);
+        return next;
+      });
+      // 滚动到最新任务锚点(anchorRef 挂在 isLatest 任务项); nearest 已在可视区则不动, 不打扰上翻
+      requestAnimationFrame(() => {
+        anchorRef.current?.scrollIntoView({ block: 'nearest' });
+      });
+    };
+    window.addEventListener('task_merged', onTaskMerged);
+    return () => window.removeEventListener('task_merged', onTaskMerged);
   }, [latestTaskId, anchorRef]);
   if (loading && tasks.length === 0) {
     return (
