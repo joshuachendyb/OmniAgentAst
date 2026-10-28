@@ -31,6 +31,9 @@
 //   结构——外层 span 承担 chip 视觉，内层内容 span 承担 role=link/tabIndex/跳转，别针按钮
 //   平铺兄弟位（role=link 内不放 button，防键盘/读屏语义冲突）；别针调 features/refs/
 //   QuoteButton（quote.ts 唯一实现），仅文件 chip 出现、目录不出（引用只对文本文件）。— 小欧-2026-10-28
+// 2026-10-29 小欧 - 删两处 resolveChipUrl 的 { source: 'chat' } 实参：该参数两支返回值相同（死参数，
+//   同文件改动见 utils/fileDeepLink.ts），传了不产生任何差异；同时导航 state 只留 internal: true —
+//   internal 已完整表达"站内跳转", source 是同一次跳转里恒真的重复判据(Files 页已按 DRY 收敛) — 小欧-2026-10-29
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -184,7 +187,7 @@ export const FileRefChip: React.FC<FileRefChipProps> = (props) => {
     <ChipBody
       {...props}
       onGo={() => {
-        window.location.assign(resolveChipUrl(props.relPath, props.lineRange, { source: 'chat' }));
+        window.location.assign(resolveChipUrl(props.relPath, props.lineRange));
       }}
     />
   );
@@ -198,7 +201,7 @@ const ChipWithRouter: React.FC<FileRefChipProps> = ({ relPath, lineRange }) => {
       relPath={relPath}
       lineRange={lineRange}
       onGo={() => {
-        nav(resolveChipUrl(relPath, lineRange, { source: 'chat' }), { state: { internal: true, source: 'chat' } });
+        nav(resolveChipUrl(relPath, lineRange), { state: { internal: true } });
       }}
     />
   );

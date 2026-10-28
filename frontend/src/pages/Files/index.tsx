@@ -56,6 +56,9 @@
 //   修复: ext=1 分支, isExternal=false(路径在当前根内)时不 setLinkErr, 降级走下面的
 //   isDriveAbsPath→toRelativePath→openPath 树定位。一处修复覆盖所有 chip 来源(正文/参数区/统计块/
 //   文件足迹, 均在 Files 页入口收敛)。复用既有树定位管道(DRY), 不引入新机制(YAGNI)。— 小欧-2026-10-28
+// 2026-10-29 小欧 - 深链入口 isInternal 判据收敛：删 state.source === 'chat' 半边。全仓唯一写入方
+//   FileRefChip 已只传 { internal: true }（source 半边由 resolveChipUrl 死参数一并删除），此判据
+//   恒 false 成死代码；保留会使后续读码者误以为站内跳转有两条并行标记来源。— 小欧-2026-10-29
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -588,7 +591,8 @@ const FilesPage: React.FC = () => {
   /** 深链进入：?path=…&line=…（ext=1 时 path 为项目根外的绝对路径，直开外部只读预览） */
   useEffect(() => {
     const state = (window.history.state as any)?.usr || (window.history.state as any) || null;
-    const isInternal = !!(state && (state.internal === true || state.source === 'chat'));
+    // 2026-10-29 小欧 - 站内跳转唯一标记是 internal: true（source 标记已删，勿再引入并行判据）— 小欧-2026-10-29
+    const isInternal = state?.internal === true;
     const rawPath = params.get('path');
     if (!rawPath) return;
     const line = params.get('line');

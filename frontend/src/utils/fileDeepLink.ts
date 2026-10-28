@@ -6,6 +6,10 @@
 // 2026-10-28 小欧 - 增 resolveChipUrl：chip 点击时实时取最新项目根(getCurrentProjectRoot)算
 //   ext=1 vs 普通深链，不依赖渲染时 useProjectRoot 快照（项目根切换后时序窗口内快照持旧根
 //   → 误判外部 → ext=1 URL → Files 页 linkErr）。FileRefChip/FilePathLink 的 onClick 共用本函数(DRY)。— 小欧-2026-10-28
+// 2026-10-29 小欧 - 删 resolveChipUrl 的 opts.source 参数与 ChipNavSource/ResolveChipUrlOptions：
+//   该参数两支返回值完全相同(isExternalAbsPath(rawPath, root) 求值两次), 调用方传它不产生任何
+//   行为差异 —— 死参数(违反 YAGNI/KISS-DIRECT), 且让读代码的人误以为站内/站外有两条解析路径。
+//   站内/站外分流实际由 Files 页的 location.state.internal 决定, 与 URL 拼装无关 — 小欧-2026-10-29
 /**
  * buildFileDeepLink —— `/files?path=…&line=…` 的**唯一**拼装点
  *
@@ -75,12 +79,6 @@ export const decodePathParam = (value: string): string | null => {
   }
 };
 
-export type ChipNavSource = 'chat' | 'url';
-
-export interface ResolveChipUrlOptions {
-  source?: ChipNavSource;
-}
-
 /**
  * chip 点击时实时算文件页深链 URL（不依赖渲染时 useProjectRoot 快照）。
  * 2026-10-28 小欧 - 取当前最新项目根(getCurrentProjectRoot)判 isExternal：
@@ -88,18 +86,17 @@ export interface ResolveChipUrlOptions {
  *   目录不带行号。FileRefChip/FilePathLink 的 onClick 共用本函数。— 小欧-2026-10-28
  * 2026-10-28 小欧 - 增加 source 标记：站内聊天卡片（chat）走内部渲染优先用项目根解析，
  *   外部直链（url）保留现有行为。两种场景分流，避免上次外部目录状态覆盖相对路径。— 小欧-2026-10-28
+ * 2026-10-29 小欧 - 上一条已撤销：两支返回值完全相同，source 标记从未产生分流效果，故删除 —
+ *   小欧-2026-10-29
  */
 export const resolveChipUrl = (
   rawPath: string,
-  lineRange?: { start: number; end: number } | null,
-  opts?: ResolveChipUrlOptions
+  lineRange?: { start: number; end: number } | null
 ): string => {
   const root = getCurrentProjectRoot();
   const isDir = isDirPath(rawPath);
   const lines = isDir ? null : (lineRange ?? null);
-  const source = opts?.source ?? 'url';
-  // 站内聊天引用：优先用项目根判定，避免外部目录状态干扰相对路径解析
-  const isExternal = source === 'chat' ? isExternalAbsPath(rawPath, root) : isExternalAbsPath(rawPath, root);
+  const isExternal = isExternalAbsPath(rawPath, root);
   return isExternal
     ? buildExternalDeepLink(rawPath, lines)
     : buildFileDeepLink(rawPath, lines);
