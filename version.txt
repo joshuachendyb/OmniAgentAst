@@ -1,3 +1,55 @@
+v1.5.0
+更新时间: 2026-10-28 21:46:39 - 小欧-2026-10-28
+## v1.4.9以来 变更汇总(39个commit: feat8/fix14/refactor3/perf2/docs9/审计修复1/Revert1/test1) - 小欧-2026-10-28
+[2026-10-28 21:46:39 小欧] 范围=v1.4.9以来全部commit(39个); 主线=任务统计右侧栏概览优化(StaticStatsBlock 5碎片节→2大语义组/修数据重复/截断一致/去开始结束+去魔法数字令牌化)+SplitPane分割面板系列(v1.1~v1.7 可拖动/持久化/双击重置/横向溢出根治/CLS弹动根治)+站内文件引用深链(FileRefChip内部渲染/别针引用入口/项目根解析)+打包部署(双击exe完整应用serve SPA/Tauri/同源SPA)+性能优化(message_service P1消除N+1/PipelineRenderer P2懒渲染)+沙箱安全与限流(lexer/shell_path_check放行/沙箱拦截截断/LLM 429二级判据)+插话滚动定位+文档规范(OmniAgent.md头条铁规/设计文档[49][52][54][55][56]); 注:含8个feat(双击exe打包部署/SplitPane可拖动/文件深链/插话滚动定位等新能力),按MINOR记v1.5.0
+### 1.5.1 任务统计右侧栏概览优化
+[StaticStatsBlock展开区域优化] refactor c9820e17d 5碎片节→2大语义组(任务元信息=基本信息+Token/执行结果=工具汇总+产出物)+修数据重复(删事件行同显total_steps/token任务级重复并入usage)+截断一致(工具调用链参数slice(0,80)硬截改EllipsisTip宽度省略)+去开始/结束(用户令)+grid 4列→2列+token K/M单位+工具汇总flex换行chip - 小欧 2026-10-28
+[StaticStatsBlock去魔法数字] refactor 49e86094c 展开区数字字面量全部令牌化/常量化(复用Spacing.LG/Radius.SM/BorderWidth.THIN/THICK既有令牌+8个模块级局部常量LABEL_COL_W/ARROW_SIZE/CHIP_RADIUS/CHAIN_ROW_GAP/SEQ_COL_W/PARAM_MAX_W/ART_INDEX_W/ERR_PAD_Y),纯样式零逻辑改动视觉零变化 - 小欧 2026-10-28
+[title-block正名] fix 3b08ca773 任务统计→概览+修复token显示测试 - 小欧 2026-10-28
+[补交测试] test 12f80f5fc title-block测试文件(被.gitignore误忽略,强制添加) - 小欧 2026-10-28
+[InputCore令牌化补记] fix(doc) 5d8c76265 补齐InputCore maxRows=3+令牌化变更的编辑历史与JSDoc一致性 - 小欧 2026-10-28
+### 1.5.2 SplitPane分割面板系列
+[可拖动分割面板] feat 4e65b0cdf SessionLayout v1.7 会话页可拖动分割面板-支持拖动调整左右宽度,默认左侧1/3 - 小欧 2026-10-28
+[左侧菜单栏宽度] feat 3b6fd8d10 SplitPane v1.1 优化左侧菜单栏宽度-根据rightOpen状态调整默认宽度 - 小欧 2026-10-28
+[持久化+双击重置] feat 9a6b9a357 split-pane v1.2 加localStorage持久化+配置常量化+双击重置 - 小欧 2026-10-28
+[文档v1.1] docs 8d7c1ca53 (49) v1.1 更新文档-添加宽度优化详细说明 - 小欧 2026-10-28
+[双击语义] fix aa51b2369 SplitPane双击语义v1.4→v1.5(设为新默认+Shift双击返回出厂默认)+Bug分析与默认值管理设计文档 - 小欧 2026-10-27
+[8个真实Bug] fix f7c784146 SplitPane v1.6修复8个真实Bug(Bug-2/3/5/8/13/15)+Bug分析文档更新 - 小欧 2026-10-27
+[晃动根治] fix 256d9ba21 SplitPane根治展开/收起右栏晃动4项功能退化(补width/flex过渡动画+收起态固定48px按钮条+拖动中禁用过渡) - 小欧 2026-10-28
+[撤回过渡方案] Revert 8cd7b8ea5 撤回"SplitPane根治展开/收起右栏晃动4项功能退化" - 小欧 2026-10-28
+[CLS弹动根治] fix bde04d5cd SplitPane左面板补scrollbarGutter:stable根治fail/cancel时左侧task区域CLS弹动(滚动条出现/消失→内容宽跳变) - 小欧 2026-10-28
+[横向溢出根治] fix afabbfbb5 SplitPane根容器/右面板+SessionLayout中部行补min-width:0+overflow:hidden根治横向溢出失控(flex auto min-size被长内容撑破→ResizeObserver正反馈);同步撤回48px/过渡方案并修正对应4条测试case - 小欧 2026-10-28
+[右栏CLS根治] fix f9dccaf71 SessionLayout右栏scrollbar-gutter:stable根治展开任务统计致CLS(滚动条出现→右栏宽度突变+晃动);SplitPane注释正名概览→任务统计 - 小欧 2026-10-28
+[审计修复] 审计修复 b96548845 SplitPane组件+取消测试代码跟踪 - 小欧 2026-10-28
+### 1.5.3 站内文件引用深链
+[文件引用深链] feat 47b755dda 站内聊天文件引用深链走内部渲染优先用项目根解析-FileRefChip交互承接外层span+QuoteButton隔离pointerEvents;resolveChipUrl增source标记(chat/url分流);Files页internal跳转优先项目根树定位不被外部目录状态覆盖 - 小欧 2026-10-28
+[别针引用入口] feat 4d42fafd8 chip/路径链接增别针引用入口+设计文档v5定稿 - 小欧 2026-10-28
+[时序窗口误判] feat bb873f6b9 chip点击用最新项目根治时序窗口误判+设计文档v4 - 小欧 2026-10-28
+### 1.5.4 打包部署
+[双击exe完整应用] feat 797fd7112 双击exe完整应用-后端serve前端SPA(main.py+spec) - 小欧 2026-10-28
+[Tauri打包部署] docs bc912cf78 新增Tauri桌面打包与部署说明文档 - 小杨 2026-10-27
+[同源SPA打包] docs 045eccdd2 新增同源SPA打包与部署说明文档 - 小杨 2026-10-27
+[cors_origins说明] docs 9dce96bb3 cors_origins notice改为'仅跨域部署时生效;打包版同源运行无需配置' - 小杨 2026-10-27
+### 1.5.5 性能优化
+[N+1消除] perf 70770532c message_service+storage P1消除N+1批量加载步骤(load_execution_steps_batch) - 小欧 2026-10-27
+[懒渲染优化] perf 034555165 PipelineRenderer P2前端懒渲染优化(useLazyRender渐进式分批渲染+useMemo派生值) - 小欧 2026-10-28
+### 1.5.6 沙箱安全与限流
+[解析失败放行] fix 9c2617fdf lexer/shell_path_check解析失败都放行 - 小欧 2026-10-28
+[沙箱拦截截断] fix 388c36df2 沙箱危险型拦截rejected content去[:140]字符截断-原按140字符硬切致140英文仅占约70汉字宽剩空白且原因>140字符时全文永久丢失,改去[:140]仅保留split去stderr英文tail,全文进前端由TaskInfoBar事件列表CSS ellipsis按显示宽度省略;denied_list仍用完整blocked_reason喂LLM自纠 - 小欧 2026-10-28
+[事件列表截断] fix 80032f85d TaskInfoBar位2动态状态+事件列表文本截断改显示宽度省略-原按20字符slice截断致20英文仅占约一半显示宽剩空白,改CSS text-overflow:ellipsis按真实渲染宽度截断;位2宽屏maxWidth=20*FontSize.SECONDARY≈240px窄屏200px;删briefMeta/LIVE_META_TEXT_MAX/未用Tooltip import - 小欧 2026-10-28
+[编辑历史位置] fix 585653a49 编辑历史位置修正-新编辑历史移到代码头部板块最下边(严禁中间插入),代码内联注释精简为简短就近说明;涉及sandbox_gate.py+TaskInfoBar.tsx - 小欧 2026-10-28
+[LLM 429二级判据] fix df009df4c LLM 429限流二级判据细分(QUOTA_EXCEEDED打死不可重试/RATE_LIMIT缓刑可重试)修正限流误报配额用尽+指数退避封顶120±20%抖动+L1/L2统一RETRY_BACKOFF_CAP常量 - 小欧 2026-10-28
+[shell输出截断] refactor 76167cf8a shell工具输出截断调整stdout 50K→10K,stderr 20K→2K+注释订正 - 小欧 2026-10-28
+[窄菜单文字截断] fix b670913b9 修复窄菜单文字截断+清理死代码注释/导入 - 小欧 2026-10-28
+### 1.5.7 插话与任务流
+[插话滚动定位] feat 5e35ddf2f 插话并入滚动定位+自动展开(task_merged事件驱动TaskListPanel)&onSuccess补refreshTasks兜底(根治final_stats帧丢失竞态致左栏卡executing);补齐两文件头部编辑历史登记 - 小欧 2026-10-28
+### 1.5.8 文档与规范
+[头条铁规更新] docs a782716c7 OmniAgent.md补打tag规则(version.txt版本汇总+升级tag)/代码编辑禁令(严禁脚本操作代码编辑致编码错误)/注释编辑历史规范(技术术语逻辑信息,禁文档号bug序号,最新编辑历史板块最下边)/提交标题格式(type:代码名 desc - 签名-日期,禁commit测试case) - 小欧 2026-10-28
+[设计文档54/55] docs 620470cb6 [54]会话事务空间目录读写分区与备注全链路设计实施v8定稿(实施代码改写为完整真实代码+各层真实行号标注+新增§十一代码清单23项);[55]默认会话工作区创建逻辑分析与建议v3定稿(方案D完整代码+§五代码清单6项);reconcile消除伪代码省略号补全禁区清库/缺目录mkdir/重读重判 - 小欧 2026-10-28
+[设计文档56] docs 467d0a187 [56]附件与上下文物件设计文档v7定稿,新增[55]默认会话工作区创建逻辑分析与建议 - 小欧 2026-10-28
+[设计文档52] docs 7dfa9db6a [52]PipelineRenderer前端懒渲染优化问题分析报告(10处问题汇总+优化策略方案) - 小欧 2026-10-28
+[设计文档49修正] docs c17c1c3df [49]v1.3修正rightOpen描述-经用户确认为非需求,文档同步实际行为 - 小欧 2026-10-27
+
 v1.4.9
 更新时间: 2026-10-27 08:21:45 - 小欧-2026-10-27
 ## v1.4.8以来 变更汇总(22个commit: feat5/fix6/refactor7/其他4) - 小欧-2026-10-27
