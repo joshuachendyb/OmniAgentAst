@@ -17,6 +17,7 @@
  *     Bug1 displayValue: configured=false 时恒空, 不回填旧 masked(即使时序未更新);
  *     Bug2(在 SettingsPage.tsx) 清空成功后立即本地更新 providerConfig, 不等异步 reload;
  *     Bug3 displayReadOnly+useEffect: configured=false 时恒可编辑 + 不复位 focused — 小欧-2026-10-29
+ *     Bug4 明文态清空: revealed=true时configured变false,补effect强制退出明文态(清plainKey+revealed+定时器) — 小欧-2026-10-29
  *
  * 四条安全约束：①点眼睛先 Modal.confirm 确认才取明文 ②明文 30 秒自动打码+卸载清 timer
  *   ③明文只存内存（不写 localStorage）、明文态 readOnly 且 onChange 直接 return（不当作新值提交）
@@ -74,9 +75,20 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   //   框内显示空白且可编辑，用户看不到"已配置"打码提示会误以为没保存成功。case: settings2-after-save-mask
   // 2026-10-29 小欧 - 修 Bug3: 仅 configured 时才复位 focused——清空 api_key 后 configured=false,
   //   不复位 focused 保持可编辑态; 且 masked 已空不会回填旧串 — 小欧-2026-10-29
+  // 2026-10-29 小欧 - 修 Bug4: 明文态(revealed=true)下清空 api_key 时 configured 变 false,
+  //   但 revealed/plainKey 未复位 → displayValue 仍显示旧明文 + displayReadOnly 恒 true(死锁) +
+  //   眼睛按钮 {configured && ...} 消失无法手动关闭明文态; 补 effect: configured 变 false 时
+  //   强制退出明文态(清 plainKey + revealed + 定时器) — 小欧-2026-10-29
   useEffect(() => {
     if (value === '' && configured) setFocused(false);
   }, [value, configured]);
+  useEffect(() => {
+    if (!configured && revealed) {
+      setPlainKey('');
+      setRevealed(false);
+      if (revealTimer.current) clearTimeout(revealTimer.current);
+    }
+  }, [configured, revealed]);
 
   /** 眼睛点击：需二次确认，确认后才调接口取明文；再次点击立即清除明文。 */
   const onToggleReveal = async () => {
@@ -121,7 +133,13 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
   // 2026-10-29 小欧 - 修 Bug1: configured=false 时 displayValue 恒空——清空 api_key 后
   //   configured=false, 不再回填旧 masked(即使 masked 因时序尚未更新); configured=true 时
   //   未输入仍回显掩码(F1: 聚焦可编辑但敲字符前显掩码, 示意"有 key 可覆盖") — 小欧-2026-10-29
-  const displayValue = revealed ? plainKey : isTyping ? value : (configured ? masked : '');
+  const displayValue = revealed
+    ? plainKey
+    : isTyping
+      ? value
+      : configured
+        ? masked
+        : '';
   // 只读：①明文态恒只读（安全约束③）②configured 且未聚焦时只读（防误改已保存 key）;
   //   configured=false 时恒可编辑（无保存 key 可保护, 清空后立即可输入新 key） — 小欧-2026-10-29
   const displayReadOnly = revealed || (configured && !focused);

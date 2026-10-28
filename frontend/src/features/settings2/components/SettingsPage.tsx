@@ -613,7 +613,8 @@ const SettingsPage: React.FC = () => {
                 // 2026-10-29 小欧 - 修 Bug2: 立即更新本地 providerConfig 的 api_key(configured=false, masked='')，
                 //   不等 reloadProviderCache 异步返回——否则期间 masked 仍为旧掩码, SecretRevealInput 回填旧串;
                 //   reload 返回后会再次覆盖(此时值已一致, 无副作用) — 小欧-2026-10-29
-                const prevCfg = state.model.providerConfig[state.model.selectedProvider];
+                const prevCfg =
+                  state.model.providerConfig[state.model.selectedProvider];
                 s.patchModel({
                   providerConfig: {
                     ...state.model.providerConfig,
