@@ -32,6 +32,14 @@
 //   5 碎片节→2 大语义组(任务元信息=基本信息+Token / 执行结果=工具汇总+产出物), 错误低频独立贴边保留;
 //   ③截断一致——工具调用链参数 slice(0,80) 硬截改 EllipsisTip+CSS 宽度省略(对齐 TaskInfoBar 位2 做法);
 //   ④基本信息去"开始/结束"(用户令), grid 4列→2列; 工具汇总单行·连接改 flex 换行 chip — 小欧-2026-10-28
+// 2026-10-28 小欧 - 去魔法数字(三堂会审): 展开区遗留数字字面量全部令牌化/常量化——
+//   复用现有令牌: 12px→Spacing.LG(容器padding), 1px→BorderWidth.THIN(section/chip/错误条边框),
+//   2px→BorderWidth.THICK(sectionTitle色条), 4→Radius.SM(错误条圆角);
+//   无现成令牌提模块级局部常量(命名沿用 ParamsPanel NESTED_INDENT_PX 先例):
+//   LABEL_COL_W=72(基本信息标签列宽)/ARROW_SIZE=20(链折叠箭头直径)/CHIP_RADIUS=2(chip圆角,Radius.SM=4偏大)/
+//   CHAIN_ROW_GAP=Spacing.XS/2(链行间距)/SEQ_COL_W=20(链序号列宽)/PARAM_MAX_W=320(参数省略最大宽)/
+//   ART_INDEX_W=16(产出物序号列宽)/ERR_PAD_Y=2(错误条纵向内边距,横向用Spacing.SM)。
+//   纯样式令牌化零逻辑改动, 视觉零变化; 三堂会审通过(合规/合理/关联) — 小欧-2026-10-28
 /**
  * StaticStatsBlock - 任务结束静态统计块（右侧查看区底部）
  *
@@ -52,10 +60,12 @@ import type { TaskDetail } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '../../../../types/execution';
 import type { FinalStatsFrame } from '@/types/sse'; // 2026-09-11 小欧 M3c(final_stats帧复合兜底): 折叠区复合兜底数据源 — 小欧-2026-09-11
 import {
+  BorderWidth,
   Colors,
   FontFamily,
   FontWeight,
   FontSize,
+  Radius,
   Spacing,
   formatTokenFull,
   type TokenLayer,
@@ -66,10 +76,23 @@ import { CircleArrow } from '@/components/CircleArrow'; // 2026-09-15 小欧 复
 // 2026-10-22 小欧 - 产出物路径改可点深链（原先是死文本，必须手抄路径）
 import { FilePathLink } from '@/components/FilePathLink';
 
+// ==================== 展开区局部尺寸常量 ====================
+// 2026-10-28 小欧 - 去魔法数字: 本组件专属尺寸(无现成令牌)提模块级常量;
+//   能复用现有令牌(Spacing/Radius/BorderWidth/FontSize)一律用令牌, 不重造(DRY/复用优先)。
+//   命名沿用项目先例(ParamsPanel NESTED_INDENT_PX / InputHistoryPanel PANEL_W 等局部常量) — 小欧-2026-10-28
+const LABEL_COL_W = 72; // 基本信息 grid 标签列宽(标签左值右)
+const ARROW_SIZE = 20; // 工具调用链折叠箭头直径(标题行 CircleArrow 24 属另一组件, 各自局部)
+const CHIP_RADIUS = 2; // 工具汇总 chip 圆角(Radius.SM=4 偏大, chip 用更小)
+const CHAIN_ROW_GAP = Spacing.XS / 2; // 工具调用链行间距(Spacing.XS 半档)
+const SEQ_COL_W = 20; // 工具调用链序号列宽
+const PARAM_MAX_W = 320; // 工具调用链参数省略最大宽(对齐 TaskInfoBar 位2 收窄口径)
+const ART_INDEX_W = 16; // 产出物序号列宽
+const ERR_PAD_Y = 2; // 错误警示条纵向内边距
+
 // 2026-09-12 小欧 修复: 模块级样式常量, 消四处section容器+四处标题完全重复(DRY) — 小欧-2026-09-12
 const sectionStyle: React.CSSProperties = {
   marginTop: Spacing.MD,
-  borderTop: `1px solid ${Colors.BORDER.LIGHT}`,
+  borderTop: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
   paddingTop: Spacing.MD,
 };
 const sectionTitleStyle: React.CSSProperties = {
@@ -80,7 +103,7 @@ const sectionTitleStyle: React.CSSProperties = {
   //   已加 PRIMARY 蓝色条, 五节子标题若同色则层级倒挂(蓝条子标题 ≥ 蓝条主标题)。降级浅灰条后:
   //   主标题(蓝条+14px+600) > 子标题(灰条+12px+500), 层级清晰。BORDER.STRONG 是既有令牌, 不新增(DC-19);
   //   fontWeight 500 裸写→FontWeight.MEDIUM(DRY) — 小欧-2026-10-27
-  borderLeft: `2px solid ${Colors.BORDER.STRONG}`,
+  borderLeft: `${BorderWidth.THICK}px solid ${Colors.BORDER.STRONG}`,
   paddingLeft: Spacing.SM,
 };
 
@@ -124,7 +147,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
     <div
       style={{
         marginTop: 0, // 2026-09-11 小欧 M3c: title 段已移至 TitleBlock，此 div 仅承载折叠区内容，去掉标题行 margin — 小欧-2026-09-11
-        padding: '0 12px 12px', // 2026-09-11 小欧 M3c: 上方 padding 清零，与 TitleBlock 下边缘自然衔接 — 小欧-2026-09-11
+        padding: `0 ${Spacing.LG}px ${Spacing.LG}px`, // 2026-09-11 小欧 M3c: 上方 padding 清零，与 TitleBlock 下边缘自然衔接 — 小欧-2026-09-11
         background: 'transparent',
         border: 'none',
         borderRadius: 0,
@@ -141,7 +164,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '72px 1fr',
+              gridTemplateColumns: `${LABEL_COL_W}px 1fr`,
               columnGap: Spacing.LG,
               rowGap: Spacing.XS,
               marginTop: Spacing.SM,
@@ -232,8 +255,8 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       style={{
                         color: Colors.TEXT.PRIMARY,
                         background: Colors.BG.LIGHT,
-                        border: `1px solid ${Colors.BORDER.LIGHT}`,
-                        borderRadius: 2,
+                        border: `${BorderWidth.THIN}px solid ${Colors.BORDER.LIGHT}`,
+                        borderRadius: CHIP_RADIUS,
                         padding: `0 ${Spacing.XS}px`,
                         lineHeight: `${FontSize.SECONDARY + Spacing.XS}px`,
                       }}
@@ -273,7 +296,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
             </span>
             {/* 2026-09-15 小欧: ▲▼→CircleArrow(20px/PRIMARY#595959/静止animated=false), 复用组件消双三角符号 — 小欧-2026-09-15 */}
             <CircleArrow
-              size={20}
+              size={ARROW_SIZE}
               color={Colors.TEXT.PRIMARY}
               expandedColor={Colors.TEXT.PRIMARY}
               expanded={chainOpen}
@@ -297,11 +320,11 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                         fontSize: FontSize.SECONDARY,
                         display: 'flex',
                         gap: Spacing.MD,
-                        marginTop: Spacing.XS / 2,
+                        marginTop: CHAIN_ROW_GAP,
                       }}
                     >
                       <span
-                        style={{ color: Colors.TEXT.SECONDARY, minWidth: 20 }}
+                        style={{ color: Colors.TEXT.SECONDARY, minWidth: SEQ_COL_W }}
                       >
                         {sIdx + 1}.{tIdx + 1}
                       </span>
@@ -311,7 +334,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       <EllipsisTip
                         text={paramText}
                         tooltip={paramText}
-                        maxWidth={320}
+                        maxWidth={PARAM_MAX_W}
                       >
                         <span
                           style={{
@@ -359,7 +382,7 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                   lineHeight: `${FontSize.SECONDARY + Spacing.SM}px`,
                 }}
               >
-                <span style={{ color: Colors.TEXT.SECONDARY, minWidth: 16 }}>
+                <span style={{ color: Colors.TEXT.SECONDARY, minWidth: ART_INDEX_W }}>
                   {i + 1}
                 </span>
                 <span style={{ color: Colors.TEXT.PRIMARY }}>
@@ -396,9 +419,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
               style={{
                 fontSize: FontSize.SECONDARY,
                 background: Colors.ERROR_BG,
-                border: `1px solid ${Colors.ERROR_BORDER}`,
-                borderRadius: 4,
-                padding: '2px 6px',
+                border: `${BorderWidth.THIN}px solid ${Colors.ERROR_BORDER}`,
+                borderRadius: Radius.SM,
+                padding: `${ERR_PAD_Y}px ${Spacing.SM}px`,
                 display: 'inline-block',
               }}
             >
