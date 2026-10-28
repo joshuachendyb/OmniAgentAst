@@ -1,9 +1,4 @@
-﻿// 编辑历史: 2026-10-28 小欧 - 位2动态状态+事件列表文本截断改**显示宽度**省略(北京老陈令):
-//   原按 20 字符 slice 截断——20 个英文仅占约一半显示宽(英文半角≈0.5汉字宽), 剩一半空白严重不合理;
-//   改 CSS text-overflow:ellipsis 按真实渲染宽度截断, 中/英/数字各填满, 自动省略号, 全文 hover/Tooltip 可见;
-//   位2 宽屏 maxWidth=20×FontSize.SECONDARY≈240px(20汉字), 窄屏 200px; 事件列表 flex 收缩省略;
-//   删 briefMeta/LIVE_META_TEXT_MAX, 删未用 Tooltip import — 小欧-2026-10-28
-// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
+﻿// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框/边距: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
@@ -68,6 +63,11 @@
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射启用: import NOTICE_CONFIG; 事件时间轴渲染 notice 条目时按 kind+phase 查 NOTICE_CONFIG, 未命中回退 EVENT_ICON_MAP.notice — 小欧-2026-10-25
 // 编辑历史: 2026-10-26 小沈 - renderLiveMeta支持notice: start=SyncOutlined spinner+橙色, failed=WarningOutlined+红色; 位4双渲染完成 — 小沈-2026-10-26
 // 编辑历史: 2026-10-26 小沈 - 卡死预警接入位2动态状态: LIVE_META_TEXT_MAX 60→20, 事件时间轴截断 13→20, 事件浮层宽 520→220; stuckWarning 不再独立渲染, 由 liveMeta(kind='warning')承载; 新增11位置对照表 — 小沈-2026-10-26
+// 编辑历史: 2026-10-28 小欧 - 位2动态状态+事件列表文本截断改**显示宽度**省略(北京老陈令):
+//   原按 20 字符 slice 截断——20 个英文仅占约一半显示宽(英文半角≈0.5汉字宽), 剩一半空白严重不合理;
+//   改 CSS text-overflow:ellipsis 按真实渲染宽度截断, 中/英/数字各填满, 自动省略号, 全文 hover/Tooltip 可见;
+//   位2 宽屏 maxWidth=20×FontSize.SECONDARY≈240px(20汉字), 窄屏 200px; 事件列表 flex 收缩省略;
+//   删 briefMeta/LIVE_META_TEXT_MAX, 删未用 Tooltip import — 小欧-2026-10-28
 // 11位置对照表(当前实际布局, 从左到右):
 //   1 徽标      2 动态状态(含卡死预警 warning)
 //   3 轮次      4 本轮token 5 步数
@@ -121,11 +121,7 @@ import {
 //   (FloatingEntry 仍在, G8 事件浮层在用)
 import { ContextOverviewCard } from './ContextOverviewCard';
 
-// 2026-10-28 小欧 - 位2 动态状态文本**显示宽度**上限(按像素, 非字符数):
-//   显示区域按"约20个汉字宽"预留(20 × FontSize.SECONDARY=12px ≈ 240px)。
-//   原按 20 字符 slice 截断——20 个英文仅占约一半宽度(英文半角≈0.5汉字宽),
-//   剩一半空白严重不合理。改 CSS text-overflow:ellipsis 按真实渲染宽度截断,
-//   中文/英文/数字各按实际宽度填满区域, 自动省略号, 不留空白(北京老陈令) — 小欧-2026-10-28
+// 2026-10-28 小欧 - 位2 动态状态文本**显示宽度**上限(按像素, 非字符数): 20 × FontSize.SECONDARY=12px ≈ 240px(20汉字宽) — 小欧-2026-10-28
 const LIVE_META_MAX_W = 20 * FontSize.SECONDARY; // 20 汉字宽 ≈ 240px
 
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
@@ -313,8 +309,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               {e.kind === 'notice'
                 ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
-              {/* 2026-10-28 小欧 - 事件文本改 CSS 像素级省略(原 e.text.slice(0,20) 字符截断:
-                  20 英文仅占一半宽剩空白, 改按真实渲染宽度省略, 中英文各填满, 全文 hover 可见) — 小欧-2026-10-28 */}
+              {/* 2026-10-28 小欧 - 事件文本改 CSS 像素级省略(原 slice(0,20) 字符截断) — 小欧-2026-10-28 */}
               <span
                 style={{
                   marginLeft: Spacing.XS,
@@ -344,9 +339,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       </div>
     );
 
-  // renderLiveMeta(3.9 重用 + 2026-10-28 显示宽度截断): 文本不再按字符 slice 截断,
-  //   统一由 EllipsisTip(CSS text-overflow:ellipsis + maxWidth)按真实渲染宽度省略,
-  //   中文/英文/数字各按实际宽度填满, 自动省略号, 全文进 Tooltip(见调用处) — 小欧-2026-10-28
+  // renderLiveMeta(3.9 重用 + 2026-10-28 显示宽度截断): 文本统一由 EllipsisTip 按真实渲染宽度省略, 全文进 Tooltip — 小欧-2026-10-28
   const renderLiveMeta = (m: LiveMeta) => (
     <span
       style={{
@@ -435,8 +428,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           {/* 2-动态状态: 位置固定, 收 retrying/error/truncated/warning/notice, 无优先级; warning=卡死预警 */}
           {/* 小欧 2026-09-02: 第一行位4(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
 
-          {/* 3.9 断点矩阵: 各档统一 EllipsisTip 按显示宽度省略(2026-10-28 小欧: 原 narrow 用 200 / 
-              宽屏用 JS 字符截断——20 英文仅占一半宽剩空白, 改统一 CSS 像素级省略, 全文 Tooltip) — 小欧-2026-10-28 */}
+          {/* 3.9 断点矩阵: 各档统一 EllipsisTip 按显示宽度省略(2026-10-28 小欧: 原窄屏 200/宽屏 JS 字符截断, 改统一 CSS 像素级省略) — 小欧-2026-10-28 */}
           {info.liveMeta && (
             <EllipsisTip
               text={info.liveMeta.text}

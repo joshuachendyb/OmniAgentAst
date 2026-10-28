@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-10-28 小欧 - 危险型拦截 rejected content 去 [:140] 字符截断(北京老陈令, 与 TaskInfoBar 显示宽度省略同批):
-#   [病根] content=pre.blocked_reason.split(" | ",1)[0][:140] 按 140 字符硬切——140 个英文(半角≈0.5汉字宽)
-#          仅占约 70 汉字宽, 剩一半空白严重不合理; 且原因>140字符时全文永久丢失(后端已硬切, 前端 hover/Tooltip 也看不到全文)。
-#   [改法] 去 [:140], 仅保留 split(" | ",1)[0] 去 stderr 英文 tail(人话原因完整保留)——
-#          全文进前端由 TaskInfoBar 事件列表 CSS text-overflow:ellipsis 按真实渲染宽度省略, 中/英/数字各填满, 全文 hover/Tooltip 可见;
-#          denied_list 仍用完整 pre.blocked_reason(含 stderr tail) 喂 LLM 自纠, 前后端/LLM 职责分离不变 — 小欧-2026-10-28
 # 2026-08-25 小欧 沙箱闸门逻辑从 action_handler 拆分(合规重构, 非重写):
 #   [病根] action_handler.py 内以嵌套闭包 _sandbox_precheck/_sandbox_resolve 实现沙箱预检闸门,
 #          违反 1.3 公用函数规范(分层存放/先查后建/登记FUNCTIONS.md) 与 KISS-DIRECT(隐式捕获约10个外层变量)。
@@ -72,6 +66,12 @@
 #   原 path_auth 把沙箱裁决错标成路径授权, 会让前端挂上"临时授权仅本任务有效"的说明 —— 而此处并未授予任何路径权限
 #   (本就不传 auth_path/trust_impact)。新增 SafetyLevel 顶层 import: 属 app.safety 单向依赖, 不构成 safety→services 反向越层。
 #   弹窗文案与"不传 trust_impact"的口径一律不变。
+# 2026-10-28 小欧 - 危险型拦截 rejected content 去 [:140] 字符截断(北京老陈令, 与 TaskInfoBar 显示宽度省略同批):
+#   [病根] content=pre.blocked_reason.split(" | ",1)[0][:140] 按 140 字符硬切——140 个英文(半角≈0.5汉字宽)
+#          仅占约 70 汉字宽, 剩一半空白严重不合理; 且原因>140字符时全文永久丢失(后端已硬切, 前端 hover/Tooltip 也看不到全文)。
+#   [改法] 去 [:140], 仅保留 split(" | ",1)[0] 去 stderr 英文 tail(人话原因完整保留)——
+#          全文进前端由 TaskInfoBar 事件列表 CSS text-overflow:ellipsis 按真实渲染宽度省略, 中/英/数字各填满, 全文 hover/Tooltip 可见;
+#          denied_list 仍用完整 pre.blocked_reason(含 stderr tail) 喂 LLM 自纠, 前后端/LLM 职责分离不变 — 小欧-2026-10-28
 """沙箱执行闸门: 将 destructive 级工具调用的沙箱预检与结果处置集中在 Agent 编排层。
 
 本模块只编排, 不实现沙箱能力(能力在 app/safety/sandbox/executor.SandboxExecutor)。
@@ -139,13 +139,12 @@ async def sandbox_resolve(agent, step, call, tool_name, params, pre, safety_resu
         # 2026-09-17 小欧 会审V3(#11): 去"沙箱安全检查未通过:"前缀(结果语义已含"沙箱内执行失败",
         #   且 blocked_reason 现附 stderr 尾部供 LLM 自纠, 前缀只会重复冗长; denied_list 喂 LLM 与 content
         #   进前端同源同文, 不再双源不同长) — 小欧-2026-09-17
-        # 2026-10-28 小欧: 去 [:140] 字符硬切——全文进前端由 TaskInfoBar 事件列表 CSS ellipsis 按显示宽度省略
-        #   (中/英/数字各填满, 全文 hover/Tooltip 可见), 不再按字符数留半宽空白/丢全文 — 小欧-2026-10-28
+        # 2026-10-28 小欧: 去 [:140] 字符硬切, 全文进前端按显示宽度省略 — 小欧-2026-10-28
         logger.warning(f"[sandbox] 危险型拦截拒绝: tool={tool_name}, reason={pre.blocked_reason[:200]}")
         denied_list.append((tool_name, pre.blocked_reason, call))
         return False, [agent._step_emitter.emit(MetaStep(
             step=step, type="rejected",
-            content=pre.blocked_reason.split(" | ", 1)[0],  # 7.3.1-B4精化: 去stderr尾部(_attach_stderr_tail的" | 英文tail"仅随denied_list供LLM自纠, content只展示人话原因; 2026-10-28 去[:140]字符截断, 全文进前端按显示宽度省略) — 小欧-2026-10-28
+            content=pre.blocked_reason.split(" | ", 1)[0],  # 7.3.1-B4精化: 去stderr尾部供LLM自纠, content只展示人话原因; 2026-10-28 去[:140]字符截断 — 小欧-2026-10-28
             reject_type="sandbox",
             tool_name=tool_name))]
     # needs_ruling: 改走网关(唯一暂停源头)。网关内统一:
