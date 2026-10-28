@@ -68,6 +68,10 @@
 //   改 CSS text-overflow:ellipsis 按真实渲染宽度截断, 中/英/数字各填满, 自动省略号, 全文 hover/Tooltip 可见;
 //   位2 宽屏 maxWidth=20×FontSize.SECONDARY≈240px(20汉字), 窄屏 200px; 事件列表 flex 收缩省略;
 //   删 briefMeta/LIVE_META_TEXT_MAX, 删未用 Tooltip import — 小欧-2026-10-28
+// 编辑历史: 2026-10-29 小欧 - 位2动态状态宽度+事件浮层加宽+事件文本折行+两处宽度拆分:
+//   位2与事件浮层原共用 LIVE_META_MAX_W, 拆为两个独立常量各管各的:
+//   LIVE_META_MAX_W=20 汉字宽(240px) 位2截断专用(EllipsisTip+ellipsis);
+//   EVENT_CARD_W=40 汉字宽(480px) 事件浮层宽度专用, 事件文本折行不截断(whiteSpace:normal+wordBreak:break-word) — 小欧-2026-10-29
 // 11位置对照表(当前实际布局, 从左到右):
 //   1 徽标      2 动态状态(含卡死预警 warning)
 //   3 轮次      4 本轮token 5 步数
@@ -122,7 +126,10 @@ import {
 import { ContextOverviewCard } from './ContextOverviewCard';
 
 // 2026-10-28 小欧 - 位2 动态状态文本**显示宽度**上限(按像素, 非字符数): 20 × FontSize.SECONDARY=12px ≈ 240px(20汉字宽) — 小欧-2026-10-28
-const LIVE_META_MAX_W = 20 * FontSize.SECONDARY; // 20 汉字宽 ≈ 240px
+//   2026-10-29 小欧 - 位2与事件浮层宽度拆分(原共用 LIVE_META_MAX_W): 位2截断恢复 20 汉字宽(240px);
+//   事件浮层独立用 EVENT_CARD_W=40 汉字宽(480px) + 文本折行不截断, 两处各管各的 — 小欧-2026-10-29
+const LIVE_META_MAX_W = 20 * FontSize.SECONDARY; // 位2 截断: 20 汉字宽 ≈ 240px
+const EVENT_CARD_W = 40 * FontSize.SECONDARY; // 事件浮层宽: 40 汉字宽 ≈ 480px
 
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
 //   点用淡蓝 BORDER.ACCENT(明显但不抢, 避开绿=成功/红=失败语义色), 字符取真圆点"•"、字号 SECONDARY,
@@ -309,14 +316,14 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               {e.kind === 'notice'
                 ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
-              {/* 2026-10-28 小欧 - 事件文本改 CSS 像素级省略(原 slice(0,20) 字符截断) — 小欧-2026-10-28 */}
+              {/* 2026-10-29 小欧 - 事件文本改折行显示(原 nowrap+ellipsis 截断): 浮层加宽到 350px 后
+                  长文本折行完整可见, 不再省略; wordBreak 确保长英文/路径可断 — 小欧-2026-10-29 */}
               <span
                 style={{
                   marginLeft: Spacing.XS,
                   minWidth: 0,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  whiteSpace: 'normal',
+                  wordBreak: 'break-word',
                 }}
                 title={e.text}
               >
@@ -544,7 +551,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             placement="bottomRight" // v4.1: 右缘对齐 G8, 向左展开(3.9)(antd 真值, 见 FloatingEntry)
             cardId="taskinfo-events-card"
             ariaLabel="事件序列"
-            cardStyle={{ width: 220, maxWidth: '90vw' }}
+            cardStyle={{ width: EVENT_CARD_W, maxWidth: '90vw' }}
             content={eventsTimeline} // 6.5.3.10 移入: role="log" + aria-live + maxHeight 40vh 内滚
           >
             <span style={{ fontSize: FontSize.CAPTION }}>
