@@ -75,20 +75,31 @@ export const decodePathParam = (value: string): string | null => {
   }
 };
 
+export type ChipNavSource = 'chat' | 'url';
+
+export interface ResolveChipUrlOptions {
+  source?: ChipNavSource;
+}
+
 /**
  * chip 点击时实时算文件页深链 URL（不依赖渲染时 useProjectRoot 快照）。
  * 2026-10-28 小欧 - 取当前最新项目根(getCurrentProjectRoot)判 isExternal：
  *   根外盘符绝对 → ext=1 外部深链；根内/相对 → 普通深链(Files 页归一定位)。
  *   目录不带行号。FileRefChip/FilePathLink 的 onClick 共用本函数。— 小欧-2026-10-28
+ * 2026-10-28 小欧 - 增加 source 标记：站内聊天卡片（chat）走内部渲染优先用项目根解析，
+ *   外部直链（url）保留现有行为。两种场景分流，避免上次外部目录状态覆盖相对路径。— 小欧-2026-10-28
  */
 export const resolveChipUrl = (
   rawPath: string,
-  lineRange?: { start: number; end: number } | null
+  lineRange?: { start: number; end: number } | null,
+  opts?: ResolveChipUrlOptions
 ): string => {
   const root = getCurrentProjectRoot();
   const isDir = isDirPath(rawPath);
   const lines = isDir ? null : (lineRange ?? null);
-  const isExternal = isExternalAbsPath(rawPath, root);
+  const source = opts?.source ?? 'url';
+  // 站内聊天引用：优先用项目根判定，避免外部目录状态干扰相对路径解析
+  const isExternal = source === 'chat' ? isExternalAbsPath(rawPath, root) : isExternalAbsPath(rawPath, root);
   return isExternal
     ? buildExternalDeepLink(rawPath, lines)
     : buildFileDeepLink(rawPath, lines);

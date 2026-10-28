@@ -278,6 +278,9 @@ const SplitPane: React.FC<{
 const FilesPage: React.FC = () => {
   const nav = useNavigate();
   const [params] = useSearchParams();
+  const locationState = (nav as any) ? undefined : undefined; // keep simple; read from history state via window if needed is heavy
+  // 2026-10-28 小欧 - 站内聊天跳转传 internal 标记（优先用项目根解析），外部直链不走此逻辑
+  const navState = (typeof window !== 'undefined' && (window.history.state as any)?.usr) || null;
   const { md } = Grid.useBreakpoint(); // antd 5.12 未从 'antd' 顶层导出 useBreakpoint，走 Grid 命名空间
   const isNarrow = md === false;
 
@@ -584,6 +587,8 @@ const FilesPage: React.FC = () => {
 
   /** 深链进入：?path=…&line=…（ext=1 时 path 为项目根外的绝对路径，直开外部只读预览） */
   useEffect(() => {
+    const state = (window.history.state as any)?.usr || (window.history.state as any) || null;
+    const isInternal = !!(state && (state.internal === true || state.source === 'chat'));
     const rawPath = params.get('path');
     if (!rawPath) return;
     const line = params.get('line');
@@ -597,6 +602,23 @@ const FilesPage: React.FC = () => {
     //   不走树定位（外部文件不在项目根树内，expandToPath 必失败）。— 小欧-2026-10-22
     // 2026-10-23 小欧 - ext=1 目录（尾分隔符）改挂外部树：fetchExternalTree 拉子层 + 合成 __ext__ 根，
     //   右侧预览不动；ext=1 文件维持 setExternalPath 外部只读预览。— 小欧-2026-10-23
+    // 2026-10-28 小欧 - 站内聊天跳转（internal=true）：优先用项目根解析相对路径，不被外部目录状态覆盖
+    if (isInternal && !isDriveAbsPath(rawPath) && projectRoot) {
+      const rel = toRelativePath(rawPath, projectRoot);
+      if (rel && treeReady) {
+        void (async () => {
+          const ok = await openPath(rel, lineRange);
+          if (ok) {
+            setLinkErr(null);
+            setExternalPath(null);
+            return;
+          }
+          setLinkErr({ path: rel });
+          setNarrowTab('preview');
+        })();
+        return;
+      }
+    }
     if (params.get('ext') === '1') {
       const p = decodePathParam(rawPath);
       if (p && isExternalAbsPath(p, projectRoot)) {

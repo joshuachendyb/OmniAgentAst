@@ -106,35 +106,36 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
     //   button（内嵌可交互元素会键盘/读屏双语义冲突，FileTrailPanel L244 教训）。
     //   别针只对文件 chip 出现（目录不引用，与足迹 preview==='text' 口径一致）。— 小欧-2026-10-28
     <span
+      role={navigable ? 'link' : undefined}
+      tabIndex={navigable ? 0 : undefined}
+      aria-label={label}
+      aria-disabled={navigable ? undefined : true}
+      title={navigable ? undefined : '项目根尚未加载，暂时无法打开'}
       style={{
         ...chipStyle,
         display: 'inline-flex',
         alignItems: 'center',
         gap: Spacing.XS,
+        cursor: navigable ? 'pointer' : 'default',
       }}
+      onClick={navigable ? onGo : undefined}
+      onKeyDown={
+        navigable
+          ? (e) => {
+              if (e.key !== 'Enter' && e.key !== ' ') return;
+              e.preventDefault();
+              onGo();
+            }
+          : undefined
+      }
     >
       <span
-        role={navigable ? 'link' : undefined}
-        tabIndex={navigable ? 0 : undefined}
-        aria-label={label}
-        aria-disabled={navigable ? undefined : true}
-        title={navigable ? undefined : '项目根尚未加载，暂时无法打开'}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
           gap: Spacing.XS,
-          cursor: navigable ? 'pointer' : 'default',
+          pointerEvents: 'none',
         }}
-        onClick={navigable ? onGo : undefined}
-        onKeyDown={
-          navigable
-            ? (e) => {
-                if (e.key !== 'Enter' && e.key !== ' ') return;
-                e.preventDefault();
-                onGo();
-              }
-            : undefined
-        }
       >
         {isDir ? (
           <FolderOutlined style={{ color: Colors.PRIMARY, flexShrink: 0 }} />
@@ -154,7 +155,9 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
         {!isDir && lineRange ? `#L${lineRange.start}-L${lineRange.end}` : ''}
       </span>
       {!isDir && navigable && (
-        <QuoteButton path={relPath} lineRange={lineRange ?? null} />
+        <span style={{ pointerEvents: 'auto' }}>
+          <QuoteButton path={relPath} lineRange={lineRange ?? null} />
+        </span>
       )}
     </span>
   );
@@ -181,7 +184,7 @@ export const FileRefChip: React.FC<FileRefChipProps> = (props) => {
     <ChipBody
       {...props}
       onGo={() => {
-        window.location.assign(resolveChipUrl(props.relPath, props.lineRange));
+        window.location.assign(resolveChipUrl(props.relPath, props.lineRange, { source: 'chat' }));
       }}
     />
   );
@@ -195,7 +198,7 @@ const ChipWithRouter: React.FC<FileRefChipProps> = ({ relPath, lineRange }) => {
       relPath={relPath}
       lineRange={lineRange}
       onGo={() => {
-        nav(resolveChipUrl(relPath, lineRange));
+        nav(resolveChipUrl(relPath, lineRange, { source: 'chat' }), { state: { internal: true, source: 'chat' } });
       }}
     />
   );
