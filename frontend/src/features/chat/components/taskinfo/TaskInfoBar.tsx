@@ -1,4 +1,9 @@
-﻿// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
+﻿// 编辑历史: 2026-10-28 小欧 - 位2动态状态+事件列表文本截断改**显示宽度**省略(北京老陈令):
+//   原按 20 字符 slice 截断——20 个英文仅占约一半显示宽(英文半角≈0.5汉字宽), 剩一半空白严重不合理;
+//   改 CSS text-overflow:ellipsis 按真实渲染宽度截断, 中/英/数字各填满, 自动省略号, 全文 hover/Tooltip 可见;
+//   位2 宽屏 maxWidth=20×FontSize.SECONDARY≈240px(20汉字), 窄屏 200px; 事件列表 flex 收缩省略;
+//   删 briefMeta/LIVE_META_TEXT_MAX, 删未用 Tooltip import — 小欧-2026-10-28
+// 编辑历史: 2026-08-26 小欧 - 修复A3(接受detail派生历史任务动态信息/7.6+4.5.1)+B2(执行中实时计时/7.6②)+C2(上下文截断文字/7.9)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审修复: 8.4.4 useRef仅首次锚定start, 去frames.startTimestamp防抖动, 切换复位
 // 编辑历史: 2026-08-27 小欧 - 三堂会审8.6: ExecutionStep导入改从types/execution(断类型环)
 // 编辑历史: 2026-08-27 小欧 - 三堂会审去框/边距: 去整框留淡底(border→none,background#fafafa,radius6,padding8px); 内层过程区加滚动细线borderTop#f5f5f5+scrollbarWidth; 外层gap2→8主节奏
@@ -81,7 +86,7 @@
 
 import type { CSSProperties } from 'react';
 import React, { useEffect, useState, useRef } from 'react';
-import { Badge, Tooltip } from 'antd';
+import { Badge } from 'antd';
 import {
   CloseCircleFilled,
   DownOutlined,
@@ -116,8 +121,12 @@ import {
 //   (FloatingEntry 仍在, G8 事件浮层在用)
 import { ContextOverviewCard } from './ContextOverviewCard';
 
-// 2026-09-09 小欧 - 位4 liveMeta 文本字符上限: 超长 error/truncated 文案截断加…, 全文进 Tooltip — 小欧-2026-09-09
-const LIVE_META_TEXT_MAX = 20;
+// 2026-10-28 小欧 - 位2 动态状态文本**显示宽度**上限(按像素, 非字符数):
+//   显示区域按"约20个汉字宽"预留(20 × FontSize.SECONDARY=12px ≈ 240px)。
+//   原按 20 字符 slice 截断——20 个英文仅占约一半宽度(英文半角≈0.5汉字宽),
+//   剩一半空白严重不合理。改 CSS text-overflow:ellipsis 按真实渲染宽度截断,
+//   中文/英文/数字各按实际宽度填满区域, 自动省略号, 不留空白(北京老陈令) — 小欧-2026-10-28
+const LIVE_META_MAX_W = 20 * FontSize.SECONDARY; // 20 汉字宽 ≈ 240px
 
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
 //   点用淡蓝 BORDER.ACCENT(明显但不抢, 避开绿=成功/红=失败语义色), 字符取真圆点"•"、字号 SECONDARY,
@@ -292,11 +301,32 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             </span>
             <span style={{ color: Colors.BORDER.LIGHT }}>│</span>
             {/* 右列: antd SVG 图标 + 文本; 图标即 3.6 "● 节点", 不另加 ● 文本符 */}
-            <span style={{ color: Colors.TEXT.TERTIARY, minWidth: 0 }}>
+            <span
+              style={{
+                color: Colors.TEXT.TERTIARY,
+                minWidth: 0,
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
               {e.kind === 'notice'
                 ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
-              <span style={{ marginLeft: Spacing.XS }}>{e.text.length > 20 ? e.text.slice(0, 20) + '…' : e.text}</span>
+              {/* 2026-10-28 小欧 - 事件文本改 CSS 像素级省略(原 e.text.slice(0,20) 字符截断:
+                  20 英文仅占一半宽剩空白, 改按真实渲染宽度省略, 中英文各填满, 全文 hover 可见) — 小欧-2026-10-28 */}
+              <span
+                style={{
+                  marginLeft: Spacing.XS,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={e.text}
+              >
+                {e.text}
+              </span>
             </span>
           </div>
         ))}
@@ -314,13 +344,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       </div>
     );
 
-  // renderLiveMeta(3.9 重用 + 2026-09-09 位4字符级截断): 文本超 LIVE_META_TEXT_MAX 截断加…,
-  //   briefMeta() 一次性返回 {text(截断后), truncated(是否超长)}, renderLiveMeta 渲染截断文本,
-  //   宽/中屏由调用处据 truncated 决定是否包 Tooltip 全文, 窄屏外层 EllipsisTip(maxWidth 200) — 小欧-2026-09-09
-  const briefMeta = (m: LiveMeta): { text: string; truncated: boolean } =>
-    m.text.length > LIVE_META_TEXT_MAX
-      ? { text: `${m.text.slice(0, LIVE_META_TEXT_MAX)}…`, truncated: true }
-      : { text: m.text, truncated: false };
+  // renderLiveMeta(3.9 重用 + 2026-10-28 显示宽度截断): 文本不再按字符 slice 截断,
+  //   统一由 EllipsisTip(CSS text-overflow:ellipsis + maxWidth)按真实渲染宽度省略,
+  //   中文/英文/数字各按实际宽度填满, 自动省略号, 全文进 Tooltip(见调用处) — 小欧-2026-10-28
   const renderLiveMeta = (m: LiveMeta) => (
     <span
       style={{
@@ -356,7 +382,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
       ) : (
         <WarningOutlined /> // ⚠ → WarningOutlined (truncated/warning)
       )}{' '}
-      {briefMeta(m).text}
+      {m.text}
     </span>
   );
 
@@ -409,24 +435,17 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           {/* 2-动态状态: 位置固定, 收 retrying/error/truncated/warning/notice, 无优先级; warning=卡死预警 */}
           {/* 小欧 2026-09-02: 第一行位4(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
 
-          {/* 3.9 断点矩阵: wide/mid 完整显示, narrow/xsmall 省略(maxWidth 200 + ellipsis + Tooltip 全文) — v4.4 修复#3 */}
-          {info.liveMeta &&
-            (isNarrow ? (
-              <EllipsisTip
-                text={info.liveMeta.text}
-                tooltip={info.liveMeta.text}
-                maxWidth={200}
-              >
-                {renderLiveMeta(info.liveMeta)}
-              </EllipsisTip>
-            ) : briefMeta(info.liveMeta).truncated ? (
-              // 2026-09-09 小欧: 宽/中屏文本超长也截断(renderLiveMeta 内部按字符上限), 全文包 Tooltip 兜底可读 — 小欧-2026-09-09
-              <Tooltip title={info.liveMeta.text}>
-                {renderLiveMeta(info.liveMeta)}
-              </Tooltip>
-            ) : (
-              renderLiveMeta(info.liveMeta)
-            ))}
+          {/* 3.9 断点矩阵: 各档统一 EllipsisTip 按显示宽度省略(2026-10-28 小欧: 原 narrow 用 200 / 
+              宽屏用 JS 字符截断——20 英文仅占一半宽剩空白, 改统一 CSS 像素级省略, 全文 Tooltip) — 小欧-2026-10-28 */}
+          {info.liveMeta && (
+            <EllipsisTip
+              text={info.liveMeta.text}
+              tooltip={info.liveMeta.text}
+              maxWidth={isNarrow ? 200 : LIVE_META_MAX_W}
+            >
+              {renderLiveMeta(info.liveMeta)}
+            </EllipsisTip>
+          )}
 
         </div>
         <div
