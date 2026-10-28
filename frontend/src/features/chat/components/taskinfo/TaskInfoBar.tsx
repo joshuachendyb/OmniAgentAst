@@ -134,7 +134,6 @@ const EVENT_CARD_W = 40 * FontSize.SECONDARY; // 事件浮层宽: 40 汉字宽 �
 // 2026-10-04 小欧: 分隔点与轮/步两段共用样式(DRY, 原为 5 份逐字重复的对象字面量);
 //   点用淡蓝 BORDER.ACCENT(明显但不抢, 避开绿=成功/红=失败语义色), 字符取真圆点"•"、字号 SECONDARY,
 //   原"·"+CAPTION 10px 太小看不见(北京老陈令)
-// 2026-10-25 小欧: 事件时间轴 text 统一 20 字截断(动态 err/notice 防撑爆布局) — 小欧-2026-10-25
 const DOT_STYLE: CSSProperties = {
   fontSize: FontSize.SECONDARY,
   color: Colors.BORDER.ACCENT,
@@ -317,7 +316,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ??
                   EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
-              {/* 2026-10-29 小欧 - 事件文本改折行显示(原 nowrap+ellipsis 截断): 浮层加宽到 350px 后
+              {/* 2026-10-29 小欧 - 事件文本改折行显示(原 nowrap+ellipsis 截断): 浮层加宽到 480px(EVENT_CARD_W) 后
                   长文本折行完整可见, 不再省略; wordBreak 确保长英文/路径可断 — 小欧-2026-10-29 */}
               <span
                 style={{

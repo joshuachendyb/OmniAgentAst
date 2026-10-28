@@ -13,7 +13,7 @@
  *   2026-09-27 小欧 - 补「value 清空即退出输入态」effect（父层保存成功置空 value 后，
  *     否则框内空白可编辑，用户会误以为没保存成功）。
  *   2026-10-22 小欧 - 硬编码 'monospace' 收敛到 FontFamily.MONO 令牌(DRY) — 小欧-2026-10-22
- *   2026-10-29 小欧 - 修清空 api_key 后输入框残留/死锁三 Bug:
+ *   2026-10-29 小欧 - 修清空 api_key 后输入框残留/死锁四 Bug:
  *     Bug1 displayValue: configured=false 时恒空, 不回填旧 masked(即使时序未更新);
  *     Bug2(在 SettingsPage.tsx) 清空成功后立即本地更新 providerConfig, 不等异步 reload;
  *     Bug3 displayReadOnly+useEffect: configured=false 时恒可编辑 + 不复位 focused — 小欧-2026-10-29
