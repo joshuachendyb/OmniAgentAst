@@ -22,6 +22,11 @@
 //   目录（盘符绝对 + 尾分隔符）生成「目录」chip，外部目录只加标识不跳转；裸文件名不再生成链接。
 //   链接 href 统一存原文，由文件页入口归一（绝对根内→相对、根外→外部预览）— 小欧-2026-10-23
 //   2026-10-23 小欧 - 徽标文案「外部」改「根外」，与 project_root（项目根）概念对齐 — 小欧-2026-10-23
+// 2026-10-28 小欧 - 点击用最新根：URL 不在渲染时固定（渲染时 useProjectRoot 快照在根切换后
+//   时序窗口内持旧根 → 误判外部 → ext=1 URL）。FileRefChip/ChipWithRouter 的 onGo 改调
+//   resolveChipUrl 实时取 getCurrentProjectRoot() 最新根算 ext=1 vs 普通深链；删渲染期
+//   url 计算（含 buildExternalDeepLink/buildFileDeepLink 死 import）。ChipBody 仍用
+//   useProjectRoot 算 navigable/根外徽标（显示用，点击不依赖）。— 小欧-2026-10-28
 /**
  * FileRefChip —— Agent 输出的文件引用卡片
  *
@@ -39,11 +44,7 @@ import { FileOutlined, FolderOutlined } from '@ant-design/icons';
 import { useNavigate, useInRouterContext } from 'react-router-dom';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
-import {
-  buildExternalDeepLink,
-  buildFileDeepLink,
-  encodePathParam,
-} from '@/utils/fileDeepLink';
+import { encodePathParam, resolveChipUrl } from '@/utils/fileDeepLink';
 import {
   isDriveAbsPath,
   isDirPath,
@@ -150,41 +151,31 @@ const ChipBody: React.FC<FileRefChipProps & { onGo: () => void }> = ({
  */
 export const FileRefChip: React.FC<FileRefChipProps> = (props) => {
   const inRouter = useInRouterContext();
-  // 2026-10-22 小欧 - 外部判据与 ChipBody 同一纯函数（根内绝对 → 普通深链，根外 → 外部深链）— 小欧-2026-10-22
-  const projectRoot = useProjectRoot();
-  const isExternal = isExternalAbsPath(props.relPath, projectRoot);
-  // 2026-10-23 小欧 - 目录：根内目录走普通深链（树定位），根外目录（盘符绝对+尾分隔符）
-  //   走 ext=1 外部深链（文件页挂外部树 __ext__ 展开）。目录不带行号。
-  const lines = isDirPath(props.relPath) ? null : (props.lineRange ?? null);
-  const url = isExternal
-    ? buildExternalDeepLink(props.relPath, lines)
-    : buildFileDeepLink(props.relPath, lines);
+  // 2026-10-28 小欧 - URL 不在渲染时固定(项目根切换后 useProjectRoot 快照时序窗口内持旧根
+  //   → 误判外部 → ext=1 URL)。改为 onClick 时 resolveChipUrl 实时取最新根(getCurrentProjectRoot)算。
+  //   ChipBody 仍用 useProjectRoot 算 navigable/根外徽标(显示用, 点击不依赖)。— 小欧-2026-10-28
   if (inRouter) {
-    return <ChipWithRouter {...props} url={url} />;
+    return <ChipWithRouter {...props} />;
   }
   return (
     <ChipBody
       {...props}
       onGo={() => {
-        window.location.assign(url);
+        window.location.assign(resolveChipUrl(props.relPath, props.lineRange));
       }}
     />
   );
 };
 
 /** Router 内的形态（单独一层组件，保证 useNavigate 只在有 Router 时被调用） */
-const ChipWithRouter: React.FC<FileRefChipProps & { url: string }> = ({
-  relPath,
-  lineRange,
-  url,
-}) => {
+const ChipWithRouter: React.FC<FileRefChipProps> = ({ relPath, lineRange }) => {
   const nav = useNavigate();
   return (
     <ChipBody
       relPath={relPath}
       lineRange={lineRange}
       onGo={() => {
-        nav(url);
+        nav(resolveChipUrl(relPath, lineRange));
       }}
     />
   );

@@ -3,13 +3,19 @@
 //   非法百分号编码解码为 null 而不是抛 URIError — 小杨-2026-10-22
 // 2026-10-22 小欧 - 增 buildExternalDeepLink：外部文件深链 /files?ext=1&path=<绝对路径>（复用唯一拼装点）— 小欧-2026-10-22
 // 2026-10-23 小欧 - 增 buildExternalDirDeepLink：外部目录深链补尾分隔符（文件页 isDirPath 判据所需），仍复用同一拼装点 — 小欧-2026-10-23
+// 2026-10-28 小欧 - 增 resolveChipUrl：chip 点击时实时取最新项目根(getCurrentProjectRoot)算
+//   ext=1 vs 普通深链，不依赖渲染时 useProjectRoot 快照（项目根切换后时序窗口内快照持旧根
+//   → 误判外部 → ext=1 URL → Files 页 linkErr）。FileRefChip/FilePathLink 的 onClick 共用本函数(DRY)。— 小欧-2026-10-28
 /**
  * buildFileDeepLink —— `/files?path=…&line=…` 的**唯一**拼装点
  *
  * 为什么收口：同一份深链格式散落在 ChatInput token、PathLink、FileRefChip 三处，
  *   改一处忘另两处 → 深链形态分叉（用户点 A 进不去、点 B 能进）。
- * 落码纪律：全仓 `?path=` 拼装只允许出现在本文件内，后续改动以 grep 校验。
+ *   落码纪律：全仓 `?path=` 拼装只允许出现在本文件内，后续改动以 grep 校验。
  */
+
+import { getCurrentProjectRoot } from '@/hooks/useProjectRoot';
+import { isExternalAbsPath, isDirPath } from '@/utils/projectPath';
 
 /**
  * @param relPath 相对项目根的 posix 路径
@@ -67,4 +73,23 @@ export const decodePathParam = (value: string): string | null => {
   } catch {
     return null;
   }
+};
+
+/**
+ * chip 点击时实时算文件页深链 URL（不依赖渲染时 useProjectRoot 快照）。
+ * 2026-10-28 小欧 - 取当前最新项目根(getCurrentProjectRoot)判 isExternal：
+ *   根外盘符绝对 → ext=1 外部深链；根内/相对 → 普通深链(Files 页归一定位)。
+ *   目录不带行号。FileRefChip/FilePathLink 的 onClick 共用本函数。— 小欧-2026-10-28
+ */
+export const resolveChipUrl = (
+  rawPath: string,
+  lineRange?: { start: number; end: number } | null
+): string => {
+  const root = getCurrentProjectRoot();
+  const isDir = isDirPath(rawPath);
+  const lines = isDir ? null : (lineRange ?? null);
+  const isExternal = isExternalAbsPath(rawPath, root);
+  return isExternal
+    ? buildExternalDeepLink(rawPath, lines)
+    : buildFileDeepLink(rawPath, lines);
 };

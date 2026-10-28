@@ -15,6 +15,9 @@
 //   显示文本维持原文不补尾，目录性由图标/链接分支表达（数据层与 step/DB 零接触）— 小欧-2026-10-23
 // 2026-10-23 小欧 - 目录 ext=1 深链改走 buildExternalDirDeepLink（补尾分隔符，文件页
 //   isDirPath 判据所需）；目录声明不对"根自身"生效（否则把项目根当外部根挂 __ext__ 树）— 小欧-2026-10-23
+// 2026-10-28 小欧 - 点击用最新根：external/dir/rel 判定曾散在渲染分支与两处 onClick 闭包共 4 份
+//   （rootSelf 内联重写、dir 形态漂移），收敛为模块级纯函数 resolvePathLinkUrl —— 渲染传 prop 根、
+//   点击传 getCurrentProjectRoot() 最新根，同一份判据两态调用（DRY/KISS-DIRECT）。— 小欧-2026-10-28
 /**
  * PathLink —— 工具参数里的路径 → 可点击直达文件页（深链）
  *
@@ -43,6 +46,7 @@ import {
   buildExternalDirDeepLink,
   buildFileDeepLink,
 } from '@/utils/fileDeepLink';
+import { getCurrentProjectRoot } from '@/hooks/useProjectRoot';
 import { Colors, Spacing } from '@/utils/stepStyles';
 
 export interface PathLinkProps {
@@ -59,8 +63,10 @@ const LinkInner: React.FC<{
   value: string;
   url: string;
   isDir?: boolean;
-}> = ({ value, url, isDir }) => {
+  resolveUrl?: () => string;
+}> = ({ value, url, isDir, resolveUrl }) => {
   const nav = useNavigate();
+  const go = () => nav(resolveUrl ? resolveUrl() : url);
   return (
     <Tooltip title={value}>
       <a
@@ -87,13 +93,13 @@ const LinkInner: React.FC<{
           )
             return;
           e.preventDefault();
-          nav(url);
+          go();
         }}
         onKeyDown={(e) => {
           // <a> 原生 Enter 已可跳转；补 Space，和系统内其他 role=link 一致
           if (e.key !== ' ') return;
           e.preventDefault();
-          nav(url);
+          go();
         }}
       >
         {isDir ? (
@@ -108,6 +114,59 @@ const LinkInner: React.FC<{
 };
 
 /**
+ * PathLink 的「判定 + URL 拼装」单点：渲染与点击两态共用同一函数。
+ * 2026-10-28 小欧 - 渲染传 prop 根调一次；点击闭包传 getCurrentProjectRoot() 最新根
+ *   调**同一个函数** —— 判据只此一份，杜绝判据复制漂移（DRY）。— 小欧-2026-10-28
+ */
+interface PathLinkResolution {
+  /** 可链接（根外盘符绝对 或 根内 rel 合法） */
+  linked: boolean;
+  /** 根外盘符绝对（ext=1 外部深链域） */
+  external: boolean;
+  /** 目录态（尾分隔符目录 / isDirHint 声明） */
+  dir: boolean;
+  /** 项目根归一结果（根未取回或不在根内 → null） */
+  rel: string | null;
+  /** linked=true 时的深链 URL */
+  url: string;
+}
+
+const resolvePathLinkUrl = (
+  value: string,
+  isDirHint: boolean,
+  projectRoot: string
+): PathLinkResolution => {
+  const rel = toRelativePath(value, projectRoot || undefined);
+  // 根自身（如 listdir path=F:/proj）：rel 归一为空、isDirPath 判不出目录，
+  //   目录声明不对根自身生效（仅约束 isDirHint 子句）— 小欧-2026-10-23
+  const rootSelf =
+    !!projectRoot && isDriveAbsPath(value) && samePath(value, projectRoot);
+  // 根外盘符绝对路径（文件有扩展名 / 目录尾分隔符 / 工具声明目录）
+  // → ext=1 外部深链；根未取回时归属未定 → 不出链接；
+  // 无尾分隔符且无扩展名且无工具声明 → 前端无法区分文件/目录 → 不出链接（不造假）。
+  const external =
+    !!projectRoot &&
+    isDriveAbsPath(value) &&
+    !rel &&
+    (isFileLikePath(value) || isDirPath(value) || (isDirHint && !rootSelf));
+  const dir = (external && isDirPath(value)) || isDirHint;
+  if (external) {
+    // 目录深链必须带尾分隔符：文件页 ext=1 分支用 isDirPath（尾分隔符）分目录与文件 — 小欧-2026-10-23
+    return {
+      linked: true,
+      external,
+      dir,
+      rel,
+      url: dir ? buildExternalDirDeepLink(value) : buildExternalDeepLink(value),
+    };
+  }
+  if (rel && isValidRelPath(rel) && (isLinkableRelPath(rel) || isDirHint)) {
+    return { linked: true, external, dir, rel, url: buildFileDeepLink(rel) };
+  }
+  return { linked: false, external, dir, rel, url: '' };
+};
+
+/**
  * PathLink —— 可链接（根内归一 / 根外盘符绝对）进深链；
  * 仅非盘符绝对且形态非法（UNC/斜杠/穿越/无扩展名）时保留纯文本 + Tooltip 说明原因，
  * 不造假链接，也不让用户面对"点了没反应"。
@@ -118,41 +177,29 @@ export const PathLink: React.FC<PathLinkProps> = ({
   isDirHint,
 }) => {
   const inRouter = useInRouterContext();
-  const rel = toRelativePath(value, projectRoot);
-  // 2026-10-23 小欧 - 根自身（如 listdir path=F:/proj）：rel 归一为空、isDirPath 判不出目录，
-  //   放行会把项目根当外部根挂 __ext__ 树 → 目录声明不对根自身生效（仅约束 isDirHint 子句）
-  const rootSelf =
-    !!projectRoot && isDriveAbsPath(value) && samePath(value, projectRoot);
-  // 2026-10-23 小欧 - 根外盘符绝对路径（文件有扩展名 / 目录尾分隔符 / 工具声明目录）
-  // → ext=1 外部深链（与正文 chip 同口径）；根未取回时归属未定 → 不出链接（等根取回后重算）；
-  // 无尾分隔符且无扩展名且无工具声明 → 前端无法区分文件/目录 → 不出链接（不造假）。
-  const external =
-    !!projectRoot &&
-    isDriveAbsPath(value) &&
-    !rel &&
-    (isFileLikePath(value) || isDirPath(value) || (isDirHint && !rootSelf));
-  const dir = (external && isDirPath(value)) || isDirHint;
-  if (external && inRouter) {
-    // 目录深链必须带尾分隔符：文件页 ext=1 分支用 isDirPath（尾分隔符）分目录与文件，
-    // 无尾分隔符的目录会被当文件走外部只读预览而打不开 — 小欧-2026-10-23
-    const url = dir
-      ? buildExternalDirDeepLink(value)
-      : buildExternalDeepLink(value);
-    return <LinkInner value={value} url={url} isDir={dir} />;
-  }
-  if (
-    rel &&
-    isValidRelPath(rel) &&
-    (isLinkableRelPath(rel) || isDirHint) &&
-    inRouter
-  ) {
-    return <LinkInner value={value} url={buildFileDeepLink(rel)} isDir={dir} />;
+  const dirHint = !!isDirHint;
+  // 渲染判定用 prop 根；点击时用最新根调同一纯函数（判据单源，不复制）— 小欧-2026-10-28
+  const res = resolvePathLinkUrl(value, dirHint, projectRoot ?? '');
+  const resolveUrl = (): string => {
+    const fresh = resolvePathLinkUrl(value, dirHint, getCurrentProjectRoot());
+    // 边缘回落：仅最新根未取回('')时 fresh 判不过 → 用渲染值（Files 页 ext=1 降级兜底）
+    return fresh.linked ? fresh.url : res.url;
+  };
+  if (res.linked && inRouter) {
+    return (
+      <LinkInner
+        value={value}
+        url={res.url}
+        isDir={res.dir}
+        resolveUrl={resolveUrl}
+      />
+    );
   }
 
   let reason = '路径形态不合法，无法在文件页打开';
   if (!inRouter) {
     reason = '当前页面不支持应用内跳转';
-  } else if (rel && !isLinkableRelPath(rel)) {
+  } else if (res.rel && !isLinkableRelPath(res.rel)) {
     reason = '不是可识别的文件路径（无分隔符与扩展名），未做链接';
   } else if (isDriveAbsPath(value)) {
     reason = projectRoot

@@ -49,6 +49,13 @@
 //   转为 Windows 风格（F:\x\y\z），selectTreeFile/readAndPush/handleLoadDir 三处收敛调用。— 小欧-2026-10-24
 // 编辑历史: 2026-10-27 小欧 - 侧边栏宽度优化(北京老陈令): MIN_LEFT_W 280→200, MAX_LEFT_W 600→360
 //   (拖拽范围更合理, 与主侧边栏展开宽度 200 对齐) — 小欧-2026-10-27
+// 2026-10-28 小欧 - ext=1 深链降级(北京老陈令): chip(FileRefChip/PathLink/FilePathLink)渲染时用
+//   useProjectRoot 模块级缓存判 isExternal, 当缓存持过期旧根(项目根切换后未失效/失效时序窗口内
+//   snapshot 保留旧根)时, 新根内的绝对路径被误判为"外部" → 生成 ext=1 外部深链。Files 页用最新根
+//   判定该路径在根内 → ext=1 与 isExternal=false 矛盾 → setLinkErr("不认识的路径")。
+//   修复: ext=1 分支, isExternal=false(路径在当前根内)时不 setLinkErr, 降级走下面的
+//   isDriveAbsPath→toRelativePath→openPath 树定位。一处修复覆盖所有 chip 来源(正文/参数区/统计块/
+//   文件足迹, 均在 Files 页入口收敛)。复用既有树定位管道(DRY), 不引入新机制(YAGNI)。— 小欧-2026-10-28
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -601,11 +608,14 @@ const FilesPage: React.FC = () => {
           setLineRange(lineRange);
         }
         setLinkErr(null);
-      } else {
-        setLinkErr({ path: rawPath });
-        setNarrowTab('preview');
+        return;
       }
-      return;
+      // 2026-10-28 小欧 - ext=1 但 isExternal=false（路径在当前根内）：chip 渲染时用了过期
+      //   useProjectRoot 把根内路径误判成"外部"生成 ext=1 深链，Files 页用最新根判为根内，
+      //   ext=1 与根内矛盾 → 此处不 setLinkErr，穿透到下方普通深链管道
+      //   （isDriveAbsPath→toRelativePath→openPath 树定位）。同口径如实说明：
+      //   ext=1 + 解码失败 / ext=1 + 相对路径也一并穿透，由下方管道按形态统一定位或
+      //   如实报错，不在本分支另造第二种失败面；仅"根外"在上方显式 return 处理。— 小欧-2026-10-28
     }
     // 2026-10-23 小欧 - 深链 path 可能是**正文原文**（盘符绝对或相对）：
     //   根未取回时绝对路径归属未定 → 等根；根外绝对 → 外部只读预览；根内绝对 → 归一为相对后树定位。

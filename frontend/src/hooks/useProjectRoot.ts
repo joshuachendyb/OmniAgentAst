@@ -67,6 +67,15 @@ const subscribe = (cb: () => void): (() => void) => {
 const getSnapshot = (): Snapshot => snapshot;
 
 /**
+ * 取当前项目根（非 hook，供事件处理函数/onClick 实时调用）。
+ * 2026-10-28 小欧 - chip 点击时需用最新根决定 ext=1 vs 普通深链，不能依赖渲染时
+ *   useProjectRoot 的快照（项目根切换后 invalidate 到 fetch 返回的时序窗口内
+ *   snapshot.root 仍是旧根）。本函数读模块级 snapshot.root，hook 订阅方重取后
+ *   snapshot 更新，本函数随即返回新值。— 小欧-2026-10-28
+ */
+export const getCurrentProjectRoot = (): string => snapshot.root;
+
+/**
  * 失效项目根缓存 —— 项目根改了（设置页改 workspace.project_root 落盘 / 后端配置变更）后调用。
  * 清掉在途与缓存并自增 gen → 订阅中的 hook 重取真值（与 SETTINGS_SAVED_EVT 订阅方同一套路）。
  */

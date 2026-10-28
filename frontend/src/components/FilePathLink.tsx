@@ -3,6 +3,10 @@
 //   不再静默退化纯文本；根内绝对仍归一走普通深链；根未取回时盘符绝对路径归属未定 → 不出链接。— 小欧-2026-10-23
 // 2026-10-23 小欧 - 根外目录（尾分隔符）也生成 ext=1 深链（挂外部树 __ext__），
 //   external 条件放宽 isFileLikePath || isDirPath；目录态 aria-label 改「打开目录」— 小欧-2026-10-23
+// 2026-10-28 小欧 - 点击用最新根：RouterLink 增 resolveUrl 回调（点击/键盘时调
+//   resolveChipUrl 实时取 getCurrentProjectRoot() 最新根重算 ext=1 vs 普通），渲染 href
+//   保留供中键新标签/复制链接（旧根 href 由 Files 页 ext=1 降级兜底）；行号截断由
+//   resolveChipUrl 内部 isDirPath 统一判，调用处不再重复 `dir ? null`（消冗余）。— 小欧-2026-10-28
 /**
  * FilePathLink —— 把"任意来源的路径"渲染成可点的文件页深链
  *
@@ -15,7 +19,11 @@
  */
 import React from 'react';
 import { useInRouterContext, useNavigate } from 'react-router-dom';
-import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
+import {
+  buildExternalDeepLink,
+  buildFileDeepLink,
+  resolveChipUrl,
+} from '@/utils/fileDeepLink';
 import {
   isDirPath,
   isDriveAbsPath,
@@ -59,8 +67,11 @@ const RouterLink: React.FC<{
   title: string;
   text: string;
   isDir?: boolean;
-}> = ({ url, title, text, isDir }) => {
+  /** 点击时用最新根重新计算 URL（项目根切换后时序窗口兜底） */
+  resolveUrl?: () => string;
+}> = ({ url, title, text, isDir, resolveUrl }) => {
   const nav = useNavigate();
+  const go = () => nav(resolveUrl ? resolveUrl() : url);
   return (
     <span
       role="link"
@@ -68,11 +79,11 @@ const RouterLink: React.FC<{
       title={title}
       aria-label={`${isDir ? '打开目录' : '打开文件'} ${title}`}
       style={{ ...plainStyle, ...linkStyle }}
-      onClick={() => nav(url)}
+      onClick={go}
       onKeyDown={(e) => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
         e.preventDefault();
-        nav(url);
+        go();
       }}
     >
       {text}
@@ -105,12 +116,36 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
     if (!inRouter) {
       // 无 Router 上下文 → 退化为整页跳转（与 FileRefChip 同款）
       return (
-        <a href={url} title={rawPath} style={{ ...plainStyle, ...linkStyle }}>
+        <a
+          href={url}
+          title={rawPath}
+          style={{ ...plainStyle, ...linkStyle }}
+          onClick={(e) => {
+            if (
+              e.button !== 0 ||
+              e.metaKey ||
+              e.ctrlKey ||
+              e.shiftKey ||
+              e.altKey
+            )
+              return;
+            e.preventDefault();
+            window.location.assign(resolveChipUrl(rawPath, lineRange));
+          }}
+        >
           {label}
         </a>
       );
     }
-    return <RouterLink url={url} title={rawPath} text={label} isDir={dir} />;
+    return (
+      <RouterLink
+        url={url}
+        title={rawPath}
+        text={label}
+        isDir={dir}
+        resolveUrl={() => resolveChipUrl(rawPath, lineRange)}
+      />
+    );
   }
 
   if (!linkable || !rel) {
@@ -126,10 +161,33 @@ export const FilePathLink: React.FC<FilePathLinkProps> = ({
   if (!inRouter) {
     // 无 Router 上下文（单测/非路由容器）→ 退化为整页跳转（与 FileRefChip 同款）
     return (
-      <a href={url} title={rawPath} style={{ ...plainStyle, ...linkStyle }}>
+      <a
+        href={url}
+        title={rawPath}
+        style={{ ...plainStyle, ...linkStyle }}
+        onClick={(e) => {
+          if (
+            e.button !== 0 ||
+            e.metaKey ||
+            e.ctrlKey ||
+            e.shiftKey ||
+            e.altKey
+          )
+            return;
+          e.preventDefault();
+          window.location.assign(resolveChipUrl(rawPath, lineRange));
+        }}
+      >
         {label}
       </a>
     );
   }
-  return <RouterLink url={url} title={rawPath} text={label} />;
+  return (
+    <RouterLink
+      url={url}
+      title={rawPath}
+      text={label}
+      resolveUrl={() => resolveChipUrl(rawPath, lineRange)}
+    />
+  );
 };
