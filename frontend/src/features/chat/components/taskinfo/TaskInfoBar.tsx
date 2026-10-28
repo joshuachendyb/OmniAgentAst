@@ -314,7 +314,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               }}
             >
               {e.kind === 'notice'
-                ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ?? EVENT_ICON_MAP.notice)
+                ? (NOTICE_CONFIG[`${e.notice_kind}_${e.notice_phase}`] ??
+                  EVENT_ICON_MAP.notice)
                 : EVENT_ICON_MAP[e.kind]}
               {/* 2026-10-29 小欧 - 事件文本改折行显示(原 nowrap+ellipsis 截断): 浮层加宽到 350px 后
                   长文本折行完整可见, 不再省略; wordBreak 确保长英文/路径可断 — 小欧-2026-10-29 */}
@@ -445,7 +446,6 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
               {renderLiveMeta(info.liveMeta)}
             </EllipsisTip>
           )}
-
         </div>
         <div
           style={{

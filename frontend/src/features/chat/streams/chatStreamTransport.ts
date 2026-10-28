@@ -414,7 +414,11 @@ export async function resumeStreamRequest(
             console.warn(
               `[SSE] 不可重试错误(${t})但任务仍在执行, 降级轮询 task=${s.serverTaskId}`
             );
-            emitEvent(s, 'error', transportError('server', '连接中断，转轮询待恢复'));
+            emitEvent(
+              s,
+              'error',
+              transportError('server', '连接中断，转轮询待恢复')
+            );
             return await observeByPolling(s);
           }
           commit(s, (d) => {
@@ -549,11 +553,7 @@ async function observeByPolling(s: ChatStreamSession): Promise<ResumeResult> {
   console.warn(
     `[SSE] 轮询 ${TASK_POLL_MAX} 次任务仍在执行, 保持可恢复状态 task=${taskId}`
   );
-  emitEvent(
-    s,
-    'error',
-    transportError('server', '轮询超时，任务仍在执行')
-  );
+  emitEvent(s, 'error', transportError('server', '轮询超时，任务仍在执行'));
   return 'recovering';
 }
 
@@ -723,7 +723,11 @@ async function pump(
           console.warn(
             `[SSE] 单帧超长（${buf.length} > ${MAX_SSE_FRAME_BYTES} 字节），跳过该帧并继续`
           );
-          emitEvent(s, 'error', transportError('server', '单帧超长已跳过，流继续'));
+          emitEvent(
+            s,
+            'error',
+            transportError('server', '单帧超长已跳过，流继续')
+          );
           const lastSep = buf.lastIndexOf('\n\n');
           buf = lastSep >= 0 ? buf.slice(lastSep + 2) : '';
         }
@@ -1147,7 +1151,9 @@ export async function handleTransportError(
       commit(s, (d) => {
         d.serverTaskId = last.task_id;
       });
-      console.warn(`[SSE] POST失败但回查找到活跃任务 task=${last.task_id}, 转轮询`);
+      console.warn(
+        `[SSE] POST失败但回查找到活跃任务 task=${last.task_id}, 转轮询`
+      );
       emitEvent(s, 'error', transportError('server', '连接中断，转轮询待恢复'));
       return await observeByPolling(s);
     }

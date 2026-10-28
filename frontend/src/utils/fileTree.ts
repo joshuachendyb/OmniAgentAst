@@ -24,10 +24,7 @@ export const mergeKids = (
  *   需要拼上父路径前缀才能与整棵树中其他节点的 key 对齐（外部根相对路径）。
  *   也用于合成 __ext__ 根时给外部子树加 EXT_KEY 前缀。
  */
-export const prefixKeys = (
-  nodes: FileNode[],
-  prefix: string
-): FileNode[] =>
+export const prefixKeys = (nodes: FileNode[], prefix: string): FileNode[] =>
   nodes.map((n) => ({
     ...n,
     key: `${prefix}/${n.key}`,

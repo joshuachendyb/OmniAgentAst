@@ -15,13 +15,13 @@
 //   @date 2026-10-27
 
 /** 左侧面板默认宽度占容器比例(拖动前的初始值; 用户拖动后由 localStorage 覆盖, 不再回退到本值) */
-export const SPLIT_LEFT_DEFAULT_RATIO = 0.30;
+export const SPLIT_LEFT_DEFAULT_RATIO = 0.3;
 
 /** 左侧面板最小宽度(px); 防止内容被挤压到不可读 */
 export const SPLIT_LEFT_MIN_PX = 180;
 
 /** 拖动时左侧最大宽度占容器比例; 保留右侧最小可操作空间 */
-export const SPLIT_LEFT_MAX_RATIO = 0.80;
+export const SPLIT_LEFT_MAX_RATIO = 0.8;
 
 /** localStorage 持久化键; 值格式为像素数值字符串(如 "342")
  *  键名带版本号 v1, 未来结构变更可平滑迁移到 v2 */

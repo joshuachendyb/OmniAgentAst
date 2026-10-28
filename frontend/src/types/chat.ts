@@ -142,11 +142,7 @@ export interface ErrorMessage {
 /**
  * status类型值
  */
-export type StatusValue =
-  | 'paused'
-  | 'resumed'
-  | 'retrying'
-  | 'notice';
+export type StatusValue = 'paused' | 'resumed' | 'retrying' | 'notice';
 
 /**
  * status类型 - 执行状态（生命周期 Step 统一约定 v3.2）

@@ -283,7 +283,9 @@ const FilesPage: React.FC = () => {
   const [params] = useSearchParams();
   const locationState = (nav as any) ? undefined : undefined; // keep simple; read from history state via window if needed is heavy
   // 2026-10-28 小欧 - 站内聊天跳转传 internal 标记（优先用项目根解析），外部直链不走此逻辑
-  const navState = (typeof window !== 'undefined' && (window.history.state as any)?.usr) || null;
+  const navState =
+    (typeof window !== 'undefined' && (window.history.state as any)?.usr) ||
+    null;
   const { md } = Grid.useBreakpoint(); // antd 5.12 未从 'antd' 顶层导出 useBreakpoint，走 Grid 命名空间
   const isNarrow = md === false;
 
@@ -474,7 +476,9 @@ const FilesPage: React.FC = () => {
         return externalBase ? loadExternalDir(externalBase, '.') : null;
       if (key.startsWith(`${EXT_KEY}/`)) {
         const relKey = key.slice(EXT_KEY.length + 1);
-        return externalBase ? loadExternalDir(joinAbsPath(externalBase, relKey), relKey) : null;
+        return externalBase
+          ? loadExternalDir(joinAbsPath(externalBase, relKey), relKey)
+          : null;
       }
       return loadDir(key);
     },
@@ -590,7 +594,10 @@ const FilesPage: React.FC = () => {
 
   /** 深链进入：?path=…&line=…（ext=1 时 path 为项目根外的绝对路径，直开外部只读预览） */
   useEffect(() => {
-    const state = (window.history.state as any)?.usr || (window.history.state as any) || null;
+    const state =
+      (window.history.state as any)?.usr ||
+      (window.history.state as any) ||
+      null;
     // 2026-10-29 小欧 - 站内跳转唯一标记是 internal: true（source 标记已删，勿再引入并行判据）— 小欧-2026-10-29
     const isInternal = state?.internal === true;
     const rawPath = params.get('path');

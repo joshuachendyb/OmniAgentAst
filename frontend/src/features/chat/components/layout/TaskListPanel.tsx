@@ -237,7 +237,8 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   //   使用户即时看到插话内容(默认收起 → 展开并入的追加输入)。复用 rAF + scrollIntoView(nearest) 机制。
   useEffect(() => {
     const onTaskMerged = (e: Event) => {
-      const taskId = (e as CustomEvent<{ taskId: string | null }>).detail?.taskId;
+      const taskId = (e as CustomEvent<{ taskId: string | null }>).detail
+        ?.taskId;
       const targetId = taskId ?? latestTaskId;
       if (!targetId) return;
       // 自动展开该任务追加块(插话内容即时可见)

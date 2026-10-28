@@ -387,10 +387,11 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   //   组件体只拿 visibleItems/sentinelRef/hasMore 三件套, IO 细节不混入渲染层(SRP/SLAP);
   //   流式模式(streaming=true→enabled=false) → hook 全量返回, 打字机/等待图标末段位不受影响;
   //   派生值(toolStepSet/lastThink/thinkEndIdx)仍基于全量 segs 计算, 不受分批影响
-  const { visibleItems: visibleSegs, sentinelRef, hasMore } = useLazyRender(
-    segs,
-    !streaming
-  );
+  const {
+    visibleItems: visibleSegs,
+    sentinelRef,
+    hasMore,
+  } = useLazyRender(segs, !streaming);
   return (
     <div
       style={{
@@ -431,7 +432,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
-          const cursor = streaming && i === lastThink && i === visibleSegs.length - 1;
+          const cursor =
+            streaming && i === lastThink && i === visibleSegs.length - 1;
           return (
             <ThinkingStream
               // 2026-10-05 小欧 三堂会审修复: key 去掉文本切片(原 `thinking-${i}-${seg.text.slice(0,16)}`)。
@@ -451,7 +453,8 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         if (seg.kind === 'text') {
           // 2026-09-02 小欧: 限定末段, 与 thinking 光标同策略
-          const isLive = streaming && i === lastText && i === visibleSegs.length - 1;
+          const isLive =
+            streaming && i === lastText && i === visibleSegs.length - 1;
           return (
             <TextStream
               // 2026-10-05 小欧 三堂会审修复(与 thinking 段同类缺陷, 此前只修了一半):

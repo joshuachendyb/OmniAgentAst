@@ -1023,7 +1023,8 @@ const processSSEData = (
         step.type = rawData.type as ExecutionStep['type'];
         step.content = rawData.content || '';
         step.notice_kind = (rawData.kind as string) || '';
-        step.notice_phase = (rawData.phase as 'start' | 'done' | 'failed') || 'start';
+        step.notice_phase =
+          (rawData.phase as 'start' | 'done' | 'failed') || 'start';
         pushAndFlush(handlers, step);
         onStep?.(step);
         step.timestamp = timestampValue;

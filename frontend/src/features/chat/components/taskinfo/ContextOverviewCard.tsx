@@ -272,7 +272,12 @@ export const ContextOverviewCard: React.FC<Props> = ({
               {/* 2026-10-10 小欧 本段身份标识读 conv 组 —— 与历史段各读各的, 不再显同一句 */}
               <SectionHead dotColor={Colors.PRIMARY} title="对话上下文">
                 {overview?.timestamp && (
-                  <span style={{ color: Colors.TEXT.TERTIARY, whiteSpace: 'nowrap' }}>
+                  <span
+                    style={{
+                      color: Colors.TEXT.TERTIARY,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
                     {overview.timestamp}
                   </span>
                 )}
@@ -333,7 +338,12 @@ export const ContextOverviewCard: React.FC<Props> = ({
                 </span>
               )}
               {linkModeText && (
-                <span style={{ color: Colors.TEXT.TERTIARY, marginLeft: overview?.timestamp ? Spacing.MD : 0 }}>
+                <span
+                  style={{
+                    color: Colors.TEXT.TERTIARY,
+                    marginLeft: overview?.timestamp ? Spacing.MD : 0,
+                  }}
+                >
                   {linkModeText}
                 </span>
               )}
@@ -341,7 +351,8 @@ export const ContextOverviewCard: React.FC<Props> = ({
                 <span
                   style={{
                     color: Colors.TEXT.SECONDARY,
-                    marginLeft: linkModeText || overview?.timestamp ? Spacing.MD : 0,
+                    marginLeft:
+                      linkModeText || overview?.timestamp ? Spacing.MD : 0,
                   }}
                 >
                   {compressedText}

@@ -83,9 +83,7 @@ export const useLazyRender = <T>(
       (entries) => {
         if (entries[0]?.isIntersecting) {
           setTimeout(() => {
-            setVisibleCount((prev) =>
-              Math.min(prev + loadBatch, items.length)
-            );
+            setVisibleCount((prev) => Math.min(prev + loadBatch, items.length));
           }, 0);
         }
       },

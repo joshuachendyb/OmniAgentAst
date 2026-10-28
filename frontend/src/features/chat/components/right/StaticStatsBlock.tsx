@@ -159,7 +159,9 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
         {/* 2026-10-28 小欧 - 布局分组: 5 碎片节→2 大语义组。组1「任务元信息」= 基本信息(去开始/结束/事件)
             + Token(主值 K/M 对齐 TitleBlock, 任务级重复已并入 usage 不再单显) — 小欧-2026-10-28 */}
         <div style={sectionStyle}>
-          <Typography.Text style={sectionTitleStyle}>任务元信息</Typography.Text>
+          <Typography.Text style={sectionTitleStyle}>
+            任务元信息
+          </Typography.Text>
           {/* 基本信息: 去"开始/结束"(用户令)/"事件"(与步数重复), grid 4列→2列(标签左值右) — 小欧-2026-10-28 */}
           <div
             style={{
@@ -324,7 +326,10 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                       }}
                     >
                       <span
-                        style={{ color: Colors.TEXT.SECONDARY, minWidth: SEQ_COL_W }}
+                        style={{
+                          color: Colors.TEXT.SECONDARY,
+                          minWidth: SEQ_COL_W,
+                        }}
                       >
                         {sIdx + 1}.{tIdx + 1}
                       </span>
@@ -382,7 +387,12 @@ const StaticStatsBlock: React.FC<StaticStatsProps> = ({
                   lineHeight: `${FontSize.SECONDARY + Spacing.SM}px`,
                 }}
               >
-                <span style={{ color: Colors.TEXT.SECONDARY, minWidth: ART_INDEX_W }}>
+                <span
+                  style={{
+                    color: Colors.TEXT.SECONDARY,
+                    minWidth: ART_INDEX_W,
+                  }}
+                >
                   {i + 1}
                 </span>
                 <span style={{ color: Colors.TEXT.PRIMARY }}>

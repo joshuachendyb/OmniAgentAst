@@ -45,7 +45,13 @@
 
 //   @author 小欧
 //   @date 2026-10-27
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   SPLIT_LEFT_DEFAULT_RATIO,
   SPLIT_LEFT_MAX_RATIO,
@@ -142,7 +148,10 @@ const SplitPane: React.FC<SplitPaneProps> = ({
   //   原 maxW=0: 首帧(SSR/offsetWidth=0)时键盘→ Math.min(0, w+16)=0, 宽度无法增大
   //   修复: 初始值用窗口宽度估算(1024*0.8≈819), useLayoutEffect 在 offsetWidth>0 时才覆盖
   const [maxW, setMaxW] = useState<number>(() =>
-    Math.round((typeof window !== 'undefined' ? window.innerWidth : 1024) * SPLIT_LEFT_MAX_RATIO)
+    Math.round(
+      (typeof window !== 'undefined' ? window.innerWidth : 1024) *
+        SPLIT_LEFT_MAX_RATIO
+    )
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanupRef = useRef<(() => void) | null>(null);
@@ -197,7 +206,10 @@ const SplitPane: React.FC<SplitPaneProps> = ({
         if (prev === null) return getInitialWidth(newContainerW);
         const ratio = prev / (oldContainerW || 1);
         const maxW = Math.round(newContainerW * SPLIT_LEFT_MAX_RATIO);
-        return Math.min(Math.max(SPLIT_LEFT_MIN_PX, Math.round(newContainerW * ratio)), maxW);
+        return Math.min(
+          Math.max(SPLIT_LEFT_MIN_PX, Math.round(newContainerW * ratio)),
+          maxW
+        );
       });
     });
     ro.observe(container);
@@ -229,7 +241,10 @@ const SplitPane: React.FC<SplitPaneProps> = ({
       const currentMaxW = Math.round(
         (containerWRef.current || container.offsetWidth) * SPLIT_LEFT_MAX_RATIO
       );
-      const newW = Math.min(currentMaxW, Math.max(SPLIT_LEFT_MIN_PX, w0 + ev.clientX - x0));
+      const newW = Math.min(
+        currentMaxW,
+        Math.max(SPLIT_LEFT_MIN_PX, w0 + ev.clientX - x0)
+      );
       lastWidthRef.current = newW;
       setLeftW(newW);
     };
@@ -253,24 +268,27 @@ const SplitPane: React.FC<SplitPaneProps> = ({
 
   // 2026-10-27 小欧 - 键盘可访问: ←/→ 调整宽度(符合 WCAG 2.1)
   //   v1.2: 每次按键后写入 localStorage(键盘事件频率低, 无需防抖)
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      setLeftW((w) => {
-        const next = Math.max(SPLIT_LEFT_MIN_PX, (w ?? 0) - 16);
-        writeStoredWidth(next);
-        return next;
-      });
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      setLeftW((w) => {
-        // 2026-10-27 小欧 修复(审计): 用 maxW state 替代渲染期读 containerRef.current
-        const next = Math.min(maxW, (w ?? 0) + 16);
-        writeStoredWidth(next);
-        return next;
-      });
-    }
-  }, [maxW]);
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        setLeftW((w) => {
+          const next = Math.max(SPLIT_LEFT_MIN_PX, (w ?? 0) - 16);
+          writeStoredWidth(next);
+          return next;
+        });
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        setLeftW((w) => {
+          // 2026-10-27 小欧 修复(审计): 用 maxW state 替代渲染期读 containerRef.current
+          const next = Math.min(maxW, (w ?? 0) + 16);
+          writeStoredWidth(next);
+          return next;
+        });
+      }
+    },
+    [maxW]
+  );
 
   // 2026-10-27 小欧 - 双击分割线: 默认值双向管理(设计文档 [51])
   //   用户实测反馈(2026-10-27 17:25): 原实现"清除 localStorage → 跳回 30% 出厂默认",
@@ -278,20 +296,23 @@ const SplitPane: React.FC<SplitPaneProps> = ({
   //   ①双击: 存储新默认——当前宽度写入 localStorage, 不跳回
   //   ②Shift+双击: 返回出厂默认——清除自定义默认 + 重置为 30%
   //   依赖: [leftW] —— 需要当前宽度做新默认值
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    const container = containerRef.current;
-    if (!container) return;
-    if (e.shiftKey) {
-      // Shift+双击: 返回出厂默认(清除自定义默认 + 重置为 30%)
-      clearStoredWidth();
-      setLeftW(getInitialWidth(container.offsetWidth)); // 清除后 getInitialWidth 返回 30%
-      return;
-    }
-    // 双击: 存储新默认(当前宽度写入 localStorage, 不跳回)
-    const cur = leftW ?? getInitialWidth(container.offsetWidth);
-    writeStoredWidth(cur); // ① 写回 localStorage 作为新的持久化默认
-    setLeftW(cur);         // ② 保持当前宽度, 不跳回 30%
-  }, [leftW]);
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      const container = containerRef.current;
+      if (!container) return;
+      if (e.shiftKey) {
+        // Shift+双击: 返回出厂默认(清除自定义默认 + 重置为 30%)
+        clearStoredWidth();
+        setLeftW(getInitialWidth(container.offsetWidth)); // 清除后 getInitialWidth 返回 30%
+        return;
+      }
+      // 双击: 存储新默认(当前宽度写入 localStorage, 不跳回)
+      const cur = leftW ?? getInitialWidth(container.offsetWidth);
+      writeStoredWidth(cur); // ① 写回 localStorage 作为新的持久化默认
+      setLeftW(cur); // ② 保持当前宽度, 不跳回 30%
+    },
+    [leftW]
+  );
 
   return (
     <div
@@ -314,7 +335,7 @@ const SplitPane: React.FC<SplitPaneProps> = ({
       {/* 左侧面板 */}
       <div
         style={{
-          width: fullLeft ? undefined : leftW ?? undefined,
+          width: fullLeft ? undefined : (leftW ?? undefined),
           flex: fullLeft ? '1 1 0' : undefined,
           minWidth: SPLIT_LEFT_MIN_PX,
           overflow: 'auto',

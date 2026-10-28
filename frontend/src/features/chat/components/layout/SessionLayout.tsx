@@ -113,7 +113,16 @@ const SessionLayout: React.FC<SessionLayoutProps> = ({
         2026-10-27 小欧 - v1.1: 默认宽度固定为 30%（与右侧展开/折叠状态无关） */}
     {/* 2026-10-28 小欧 - 修复横向溢出: 中部行未设 min-width/overflow → 默认 min-width:auto, 被 SplitPane
         内容横向撑破, 右面板(含 absolute 折叠按钮/滚动条)随之移出视口; 补 minWidth:0+overflow:hidden, 右边缘约束在屏幕内 */}
-    <div style={{ flex: 1, display: 'flex', minHeight: 0, minWidth: 0, overflow: 'hidden', gap: 8 }}>
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        minHeight: 0,
+        minWidth: 0,
+        overflow: 'hidden',
+        gap: 8,
+      }}
+    >
       <SplitPane
         left={renderSlot(panels, 'left')}
         // 2026-10-27 小欧 修复(审计): 折叠态传 fullLeft——右栏收起时左列填满整个宽度

@@ -178,12 +178,20 @@ const SidebarModeSwitcher: React.FC = () => {
     setMode(newMode);
     writeSidebarMode(newMode);
     // 触发自定义事件, 让 Layout 组件感知模式变化
-    window.dispatchEvent(new CustomEvent('sidebar-mode-change', { detail: { mode: newMode } }));
+    window.dispatchEvent(
+      new CustomEvent('sidebar-mode-change', { detail: { mode: newMode } })
+    );
   };
 
   // 2026-10-27 小欧 - 宽菜单图标(三个竖条, 宽度较大)
   const renderWideIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <rect x="2" y="3" width="3" height="10" rx="1" fill="currentColor" />
       <rect x="6.5" y="3" width="3" height="10" rx="1" fill="currentColor" />
       <rect x="11" y="3" width="3" height="10" rx="1" fill="currentColor" />
@@ -192,7 +200,13 @@ const SidebarModeSwitcher: React.FC = () => {
 
   // 2026-10-27 小欧 - 窄菜单图标(一个竖条, 宽度较小)
   const renderNarrowIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <rect x="6" y="3" width="4" height="10" rx="1" fill="currentColor" />
     </svg>
   );
@@ -237,7 +251,9 @@ const AppLayout: React.FC<LayoutProps> = ({
   // 2026-09-15 小欧 - 默认折叠(北京老陈令): useState初始true, 用户可手动展开 — 小欧-2026-09-15
   const [collapsed, setCollapsed] = useState(true);
   // 2026-10-27 小欧 - 侧边栏模式(宽/窄菜单), 从 localStorage 读取
-  const [sidebarMode, setSidebarMode] = useState<'wide' | 'narrow'>(readSidebarMode);
+  const [sidebarMode, setSidebarMode] = useState<'wide' | 'narrow'>(
+    readSidebarMode
+  );
   // 2026-10-27 小欧 - 监听侧边栏模式变化事件(设置页切换时触发)
   useEffect(() => {
     const handler = (e: Event) => {

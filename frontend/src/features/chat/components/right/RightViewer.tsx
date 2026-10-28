@@ -150,7 +150,13 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Spin, Empty, Typography } from 'antd';
 import type { ExecutionStep } from '../../../../types/execution';
 import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-11 小欧 修复: 复用公用 TokenLayer 消重复定义 — 小欧-2026-09-11

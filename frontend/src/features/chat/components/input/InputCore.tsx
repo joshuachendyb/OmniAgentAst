@@ -40,7 +40,13 @@
 
 import React, { useEffect, useRef } from 'react';
 import { Input } from 'antd';
-import { Colors, Radius, BorderWidth, Spacing, FontSize } from '@/utils/stepStyles';
+import {
+  Colors,
+  Radius,
+  BorderWidth,
+  Spacing,
+  FontSize,
+} from '@/utils/stepStyles';
 import { INPUT_MIN_ROWS, INPUT_MAX_ROWS } from '@/constants/layout';
 
 const { TextArea } = Input;
@@ -134,7 +140,10 @@ const InputCore: React.FC<InputCoreProps> = ({
             输入消息，Shift+Enter 换行
           </div>
           {/* 2026-10-26 小欧 - testid 保 H3/H9/H10 e2e 定位(原 B 块已删, 此处为唯一挂载点) */}
-          <div data-testid="receiving-hint" style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}>
+          <div
+            data-testid="receiving-hint"
+            style={{ color: Colors.ORANGE_RED, fontSize: FontSize.SECONDARY }}
+          >
             {executingHint}
           </div>
         </div>

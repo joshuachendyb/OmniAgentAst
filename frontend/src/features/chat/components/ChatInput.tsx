@@ -616,11 +616,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           onKeyDown={handleInputKeyDown}
           focusKey={focusKey}
           inputRef={inputRef}
-          executingHint={sendBlocked
-            ? (isReceiving
+          executingHint={
+            sendBlocked
+              ? isReceiving
                 ? '任务执行中，可开启「插话开关」后追加输入，或等待完成后发送'
-                : '正在提交，请稍候')
-            : undefined}
+                : '正在提交，请稍候'
+              : undefined
+          }
           /*
            * 2026-10-13 18:15 小欧 - 不再 disabled。
            *   病根: 输入框曾与提交门共用 sendBlocked, 把「提交权限」误当「编辑权限」, 导致执行中

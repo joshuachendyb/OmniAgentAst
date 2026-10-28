@@ -227,22 +227,24 @@ export const useTaskInfo = (
     // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
     // 2026-09-08 小欧 6.3.4: retrying 恒执行级(requestLevel=false) — 小欧-2026-09-08
     // 2026-10-26 小沈: 扩展支持 notice 事件进位4
-    let latestProcessEvent: (
-      | {
-          kind: 'retrying';
-          text: string;
-          time: number;
-          requestLevel: false;
-        }
-      | {
-          kind: 'notice';
-          text: string;
-          time: number;
-          requestLevel: false;
-          notice_kind: string;
-          notice_phase: 'start' | 'failed';
-        }
-    ) | null = null;
+    let latestProcessEvent:
+      | (
+          | {
+              kind: 'retrying';
+              text: string;
+              time: number;
+              requestLevel: false;
+            }
+          | {
+              kind: 'notice';
+              text: string;
+              time: number;
+              requestLevel: false;
+              notice_kind: string;
+              notice_phase: 'start' | 'failed';
+            }
+        )
+      | null = null;
     // 2026-09-03 小欧 修复: 标记badge是否已从failed回推running, 防post-loop liveErrorText再次覆盖
     let _badgeRecovered = false;
     // 2026-10-04 小欧: 历史对话裁剪只留首条事件(裁剪可连续多轮触发, 每轮一条会刷屏并挤掉有效事件, 事件列表仅存最近20条)
