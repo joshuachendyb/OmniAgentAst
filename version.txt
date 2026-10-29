@@ -1,7 +1,7 @@
 v1.5.2
 更新时间: 2026-10-29 10:02:37 - 小欧-2026-10-29
-## v1.5.1以来 变更汇总(4个commit: fix2/feat1/docs1) - 小欧-2026-10-29
-[2026-10-29 10:02:37 小欧] 范围=v1.5.1以来全部commit(4个); 主线=重试事件文案统一(L1/L2同走_format_retry_payload消双错误,类名/标签归一,429去HTTP前缀)+访问日志噪音过滤(UvicornAccessFilter 5精确+3正则挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+清空api_key四Bug注释补记+文档索引v1.2与[57]登记; 注:含1个feat,按MINOR记v1.5.2
+## v1.5.1以来 变更汇总(6个commit: fix2/feat1/docs3) - 小欧-2026-10-29
+[2026-10-29 10:02:37 小欧] 范围=v1.5.1以来全部commit(6个); 主线=重试事件文案统一(L1/L2同走_format_retry_payload消双错误,类名/标签归一,429去HTTP前缀)+访问日志噪音过滤(UvicornAccessFilter 5精确+3正则挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+清空api_key四Bug注释补记+文档索引v1.2~v1.3与[57]登记(含[57]升版v1.2读取权收归后端); 注:含1个feat,按MINOR记v1.5.2
 ### 1.5.2.1 重试事件文案统一
 [L1/L2统一] fix 323777b7a+9d22400fa llm_call.py L1/L2重试文案统一走_format_retry_payload([调用]/[响应]标签)+核心类名末尾(原为错误:[类名]msg类名在前)+消双错误(HTTP拆码+非HTTP中文映射); 429文案去HTTP前缀; core.py StreamChunk新增retry_wait/retry_error_type字段(默认None零行为变化); base_service.py L1重试透传新字段 - 小欧 2026-10-29
 ### 1.5.2.2 访问日志噪音过滤
