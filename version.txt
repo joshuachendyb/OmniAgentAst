@@ -1,7 +1,7 @@
 v1.5.1
 更新时间: 2026-10-29 10:15:02 - 小欧-2026-10-29
-## v1.5.0以来 变更汇总(24个commit: fix6/feat1/refactor2/docs14/Merge1) - 小欧-2026-10-29
-[2026-10-29 10:15:02 小欧] 范围=v1.5.0以来全部commit(24个); 主线=TaskInfoBar事件浮层宽度拆分与文本折行+TitleBlock窄右栏token不可见与实时终态token兜底+useSessionTasks终态回复消失根治+清空api_key输入框残留/死锁四Bug根治+重试事件文案统一(L1/L2同走_format_retry_payload消双错误)+访问日志噪音过滤(UvicornAccessFilter挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+前端全量prettier格式化+文件深链死参数清理+设计文档[54][56]定稿+文档索引v1.2~v1.4与[57]登记及升版v2.1(读取权收归后端+三堂会审整改+补分批口径); 注:含1个feat(噪音过滤),按MINOR记v1.5.1
+## v1.5.0以来 变更汇总(26个commit: fix6/feat1/refactor2/docs15/Merge1) - 小欧-2026-10-29
+[2026-10-29 10:15:02 小欧] 范围=v1.5.0以来全部commit(26个); 主线=TaskInfoBar事件浮层宽度拆分与文本折行+TitleBlock窄右栏token不可见与实时终态token兜底+useSessionTasks终态回复消失根治+清空api_key输入框残留/死锁四Bug根治+重试事件文案统一(L1/L2同走_format_retry_payload消双错误)+访问日志噪音过滤(UvicornAccessFilter挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+前端全量prettier格式化+文件深链死参数清理+设计文档[54][56]定稿+文档索引v1.2~v1.4与[57]登记及升版v2.1(读取权收归后端+三堂会审整改+补分批口径); 注:含1个feat(噪音过滤),按MINOR记v1.5.1
 ### 1.5.1.1 TaskInfoBar事件浮层宽度拆分+文本折行
 [位2与事件浮层宽度拆分] fix eff3146f1 位2与事件浮层原共用LIVE_META_MAX_W,拆为两个独立常量:LIVE_META_MAX_W=20汉字宽(240px)位2截断专用(EllipsisTip+ellipsis);EVENT_CARD_W=40汉字宽(480px)事件浮层宽度专用(原220→350→480);事件时间轴文本nowrap+ellipsis改折行显示(whiteSpace:normal+wordBreak:break-word),长文本折行完整可见不再省略 - 小欧 2026-10-29
 ### 1.5.1.2 TitleBlock窄右栏token不可见+实时终态token兜底
