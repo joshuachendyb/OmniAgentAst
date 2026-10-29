@@ -83,6 +83,8 @@
 #     非429保持原3^n; 新增 random 导入; RATE_LIMIT_* 参数自 app.constants — 小欧-2026-10-28
 # 2026-10-28 小欧 三堂会审复核: _retry_wait_seconds 首行裸魔法数3→_D_RATE_BASE 常量引用(DRY消魔数, 与429分支同基数);
 #   常量改通用名 RETRY_BACKOFF_BASE/CAP(L2 llm_call:283 裸30 合并共用) — 小欧-2026-10-28
+# 2026-10-29 小欧 重试事件文案统一: ①L1重试事件透传retry_wait/retry_error_type(等N秒+异常类名);
+#   ②429重试耗尽出口文案去HTTP前缀("模型限流（429）"/"模型配额/余额已用尽（429）"); 重试判定/退避逻辑零改动 — 小欧-2026-10-29
 """
 LLM 核心模块 — BaseAIService
 
@@ -584,6 +586,7 @@ class BaseAIService:
                     yield StreamChunk(
                         content="", chunk_model=self.llm_model, is_done=False,
                         retry_notice=str(e) or type(e).__name__, retry_attempt=retry_count, retry_total=max_retries,
+                        retry_wait=wait_time, retry_error_type=type(e).__name__,  # 小欧 2026-10-29: 事件透传退避秒数+异常类名(统一文案)
                     )
                     # 2026-10-05 小欧: 退避改为可被 cancel 唤醒的等待 —— 取消立即唤醒, 不再空转满退避时长(5fe9ecc76倒退修复)
                     try:
@@ -602,13 +605,13 @@ class BaseAIService:
                         if _cat == SystemErrorCategory.QUOTA_EXCEEDED:
                             yield StreamChunk(
                                 content="", chunk_model=self.llm_model, is_done=True,
-                                stream_error="模型配额/余额已用尽（HTTP 429），请升级配额后重试",
+                                stream_error="模型配额/余额已用尽（429），请升级配额后重试",
                                 stream_error_type="quota_exceeded",
                             )
                         else:
                             yield StreamChunk(
                                 content="", chunk_model=self.llm_model, is_done=True,
-                                stream_error="模型限流（HTTP 429），请稍后再试",
+                                stream_error="模型限流（429），请稍后再试",
                                 stream_error_type="rate_limit",
                             )
                         return

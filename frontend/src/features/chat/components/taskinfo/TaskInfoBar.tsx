@@ -72,11 +72,16 @@
 //   位2与事件浮层原共用 LIVE_META_MAX_W, 拆为两个独立常量各管各的:
 //   LIVE_META_MAX_W=20 汉字宽(240px) 位2截断专用(EllipsisTip+ellipsis);
 //   EVENT_CARD_W=40 汉字宽(480px) 事件浮层宽度专用, 事件文本折行不截断(whiteSpace:normal+wordBreak:break-word) — 小欧-2026-10-29
+// 编辑历史: 2026-10-29 小欧 - 北京老陈令「上下文挪至耗时后、信任前」: 上下文(ContextOverviewCard)自中组末尾
+//   迁至右组耗时后、信任前(位号 8→9 对调, 耗时 9→8); 中组删其前分隔点(7任务token收尾), 右组耗时后补分隔点;
+//   11位置对照表同步。 小欧-2026-10-29
+// 编辑历史: 2026-10-29 小欧 - 北京老陈令「占窗率挪至上下文后、信任前」: 占窗率(G8)自中组迁至右组上下文后、
+//   信任前; 序号同步 任务token6/耗时7/上下文8/占窗率9; 11位置对照表同步。 小欧-2026-10-29
 // 11位置对照表(当前实际布局, 从左到右):
 //   1 徽标      2 动态状态(含卡死预警 warning)
 //   3 轮次      4 本轮token 5 步数
-//   6 占窗率    7 任务token 8 上下文
-//   9 耗时     10 信任    11 事件
+//   6 任务token
+//   7 耗时     8 上下文  9 占窗率  10 信任    11 事件
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -457,7 +462,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             flexWrap: 'wrap',
           }}
         >
-          {/* ── 中组: 3轮次 4本轮token 5步数 6占窗率 7任务token 8上下文 ── */}
+          {/* ── 中组: 3轮次 4本轮token 5步数 6任务token ── */}
           {/* 3-轮次 */}
           {/* G3 步轮: 2026-10-04 小欧 拆为轮/步两段独立 span, 删 xsmall "耗时·轮·步" 合并串(北京老陈: 不要纠缠在一起) */}
           <span style={STAT_STYLE}>轮:{info.llmCallCount}</span>
@@ -478,22 +483,9 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           {/* 5-步数 */}
           <span style={STAT_STYLE}>步:{info.stepCount}</span>
           <span style={DOT_STYLE}>•</span>
-          {/* 6-占窗率 — G8: 本轮P/上下文窗口, 恒≤100%(单轮受压缩裁剪约束), 分子不用任务累计 */}
-          {/* G8 占窗率: 本轮 P / 当前任务模型上下文窗口(usage 帧带来, 见 react_step context_window);
-              恒 ≤100%(单轮受压缩裁剪约束), 分子不用任务累计 —— 累计是多轮相加会超 100%(北京老陈 2026-10-04 定) */}
-          {windowUsePct != null && (
-            <>
-              <MetricItem
-                label="占窗率"
-                value={`${windowUsePct}%`}
-                tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / 窗口 ${info.contextWindow ?? 0} = ${windowUsePct}%`}
-              />
-              <span style={DOT_STYLE}>•</span>
-            </>
-          )}
-          {/* 7-任务token(P/C/T累计) — 标签"任务"(原"累计") */}
+          {/* 6-任务token(P/C/T累计) — 标签"任务" */}
           <MetricItem
-            label="任务" // 2026-09-18 小欧: 北京老陈令 "累计"→"任务" — 小欧-2026-09-18
+            label="任务"
             value={`P ${formatTokenK(
               info.taskAccumulated?.prompt_tokens ?? info.usage.prompt
             )}`}
@@ -502,17 +494,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
                 ? undefined
                 : `/ C ${formatTokenK(info.taskAccumulated?.completion_tokens ?? info.usage.completion)} / T ${formatTokenK(info.taskAccumulated?.total_tokens ?? info.usage.total)}`
             }
-            // 原为占位死串"任务 P/C/T", 收窄档 tooltip 是唯一明细源 — 小欧 2026-10-04
+            // 收窄档 tooltip 是唯一明细源 — 小欧-2026-10-29
             tooltip={`任务 P ${info.taskAccumulated?.prompt_tokens ?? info.usage.prompt} / C ${info.taskAccumulated?.completion_tokens ?? info.usage.completion} / T ${info.taskAccumulated?.total_tokens ?? info.usage.total}`}
-          />
-          <span style={DOT_STYLE}>•</span>
-          {/* 8-上下文 — G6: 浮层①入口锚点, 内容抽至ContextOverviewCard */}
-          {/* G6 上下文(v4.1): 基础行 MetricItem 为浮层① 入口锚点, data-state 供测试。
-              2026-10-04 小欧: 浮层内容抽至 ContextOverviewCard */}
-          <ContextOverviewCard
-            overview={info.overview}
-            isLiveContext={info.isLiveContext}
-            contextWindow={info.contextWindow}
           />
         </div>
         <div
@@ -524,10 +507,8 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
             marginLeft: 'auto',
           }}
         >
-          {/* ── 右组: 9耗时 10信任 11事件 ── */}
-          {/* 9-耗时 — G2: 时分秒格式, 各档常显 */}
-          {/* G2 耗时(独立小组, 位置未动): 2026-10-04 小欧 去掉 !isXSmall 门 —— 原为与步轮合并成"耗时·轮·步"让位,
-              步轮独立迁至中组后, 若仍隐藏则极窄屏丢失耗时, 故改为各档常显 — 小欧 2026-10-04 */}
+          {/* ── 右组: 7耗时 8上下文 9占窗率 10信任 11事件 ── */}
+          {/* 7-耗时 — G2: 时分秒格式, 各档常显 */}
           <span
             style={{
               fontSize: FontSize.SECONDARY,
@@ -538,6 +519,25 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           >
             耗时 {formatDurationHMS(shownElapsed)}
           </span>
+          {/* 8-上下文 — G6: 浮层①入口锚点, 内容抽至ContextOverviewCard */}
+          <span style={DOT_STYLE}>•</span>
+          <ContextOverviewCard
+            overview={info.overview}
+            isLiveContext={info.isLiveContext}
+            contextWindow={info.contextWindow}
+          />
+          {/* 9-占窗率 — G8: 本轮P/窗口, 恒≤100%; DOT 在条件内, null 时不渲染防悬空 */}
+          {windowUsePct != null && (
+            <>
+              <span style={DOT_STYLE}>•</span>
+              <MetricItem
+                label="占窗率"
+                value={`${windowUsePct}%`}
+                tooltip={`本轮 P ${info.roundUsage?.prompt ?? 0} / 窗口 ${info.contextWindow ?? 0} = ${windowUsePct}%`}
+              />
+              <span style={DOT_STYLE}>•</span>
+            </>
+          )}
           {/* 10-信任 — G7: TrustPanel触发按钮, 窄档仅计数 */}
           {/* G7 信任: 内为 TrustPanel 触发按钮(6.5.4.3 改 Drawer 打开), 不承担折叠; 3.9 窄档仅计数 */}
           <TrustPanel sessionId={sessionId} compact={isNarrow} />

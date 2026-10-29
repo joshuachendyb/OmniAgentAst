@@ -52,6 +52,12 @@
 #   到 L2 阶段不再放行式直接 return 也不进入 L2 重试放大(防 404 式重试放大回归); 配额耗尽(quota_exceeded)、
 #   超时(idle_timeout)、客户端错(client)、取消(cancelled)仍直接放行致死 — 小欧-2026-10-28
 # 2026-10-28 小欧 - L2退避裸30→_D_BACKOFF_CAP(与L1共用RETRY_BACKOFF_CAP=120, 用户裁定统一; DRY消魔数, 两层封顶一套) — 小欧-2026-10-28
+# 2026-10-29 小欧 重试事件文案统一: ①L1/L2重试事件content统一为"[调用/响应]重试 n/N等w秒, 错误: [类名] msg"
+#   (标签前置; L1透传retry_wait/retry_error_type自StreamChunk新字段); ②L2重试日志补"等待X秒"
+#   (wait_time计算前移1行, 值不变); FC降级事件保持独立; 重试判定逻辑零改动 — 小欧-2026-10-29
+# 2026-10-29 小欧 重试错误载荷修正(老陈裁定, 消双"错误"): client_sdk 构造 str(e)="HTTP {code} 错误: {server_msg}"
+#   自带"错误:", 原模板再拼"错误: [...]"叠成双"错误"; 新增 _format_retry_payload——HTTP 拆出"(code)msg",
+#   非 HTTP str(e) 英文按类名映射中文(_CN_MSG, 防英文名词与类名重复), 类名统一末尾: "错误: {payload} [ExcType]"。 小欧-2026-10-29
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -71,6 +77,7 @@ llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发�
 
 import asyncio
 import json
+import re
 import time
 
 from app.services.agent.llm_response_builder import (  # 2026-09-05 小健 8.5拆分: builder成员同模块内互调, 原builders家族
@@ -88,6 +95,32 @@ from app.utils.text_utils import extract_tool_call_xml
 from app.utils.astream import aclose_stream  # 2026-10-08 小欧 - 提前退出时关上游异步流(防连接池泄漏) — 小欧-2026-10-08
 from app.logger import logger
 from app.logger.prompt_logger import get_prompt_logger
+
+
+# 重试错误载荷格式化 — 小欧 2026-10-29
+# ① HTTP 错误: client_sdk 构造 str(e)="HTTP {code} 错误: {server_msg}", 拆出 (code)+msg, 消除"双错误";
+# ② 非 HTTP 错误: str(e) 英文短语按类名映射中文(防英文名词与类名重复, 老陈裁定);
+# ③ 类名统一末尾: "错误: {payload} [ExcType]"
+_CN_MSG = {
+    "ReadTimeout": "读取超时",
+    "ConnectTimeout": "连接超时",
+    "ConnectError": "连接失败",
+    "RemoteProtocolError": "协议错误",
+    "TimeoutException": "超时",
+    "NetworkError": "网络错误",
+    "PoolTimeout": "连接池等待超时",
+}
+
+
+def _format_retry_payload(notice: str, exc_type: str) -> str:
+    """重试错误载荷: HTTP→(code)msg; 非HTTP→中文(防英文重复) — 小欧 2026-10-29"""
+    _t = (notice or "").strip()
+    _m = re.match(r"HTTP (\d+) 错误: (.+)", _t)
+    if _m:
+        return f"({_m.group(1)}){_m.group(2)}"
+    if exc_type in _CN_MSG:
+        return _CN_MSG[exc_type]
+    return _t or (exc_type or "Exception")
 
 
 async def call_llm_stream(agent, messages: list, openai_tools: list = None):
@@ -119,8 +152,11 @@ async def call_llm_stream(agent, messages: list, openai_tools: list = None):
                 # 由 react_step/summary 消费转 MetaStep(type="retrying")
                 yield create_payload_chunk(_resolve_chunk_model(agent), {
                     "type": "retrying",
-                    "content": f"LLM请求重试 {chunk.retry_attempt}/{chunk.retry_total}: {chunk.retry_notice}",
-                    "wait_time": None,
+                    "content": f"[调用]重试 {chunk.retry_attempt}/{chunk.retry_total}"
+                                f"等{chunk.retry_wait or 0}秒, "
+                                f"错误: {_format_retry_payload(chunk.retry_notice, chunk.retry_error_type or 'Exception')} "
+                                f"[{chunk.retry_error_type or 'Exception'}]",
+                    "wait_time": chunk.retry_wait,  # 小欧 2026-10-29: 透传退避秒数(原None, 前端只读展示)
                 })
                 continue
 
@@ -280,12 +316,13 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             raise
         except LLMResponseError as e:
             last_error = e
-            logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{_retries}次: {e}")
             wait_time = min(0.5 * (2 ** attempt), _D_BACKOFF_CAP)  # 2026-10-28 小欧: 裸30→_D_BACKOFF_CAP(与L1共用RETRY_BACKOFF_CAP, DRY消魔数)
+            logger.warning(f"[Retry][L2] LLM响应错误 第{attempt+1}/{_retries}次, 等待{wait_time}秒: {e}")
             # 小欧 2026-09-02: L2 重试事件透传发前端
             yield create_payload_chunk(_resolve_chunk_model(agent), {
                 "type": "retrying",
-                "content": f"LLM响应重试 {attempt+1}/{_retries}: {e.message}",
+                "content": f"[响应]重试 {attempt+1}/{_retries}等{wait_time}秒, "
+                            f"错误: [LLMResponseError] {e.message or 'LLMResponseError'}",
                 "wait_time": wait_time,
             })
             await asyncio.sleep(wait_time)

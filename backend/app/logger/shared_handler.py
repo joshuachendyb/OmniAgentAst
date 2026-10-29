@@ -25,8 +25,14 @@ shared_handler — 全局共享一个 SafeRotatingFileHandler 实例
 #   get_log_level 单次 get_config()(会审缺陷2)。  小欧-2026-10-25
 # 2026-10-25 - 小欧 - 去掉 _managed_loggers 自维护登记表(会审: 与 logging.loggerDict 重复, 违 DRY),
 #   refresh 改按 app./uvicorn 前缀遍历全局 loggerDict, 第三方 logger 不动。  小欧-2026-10-25
+# 2026-10-29 - 小欧 - 访问日志噪音过滤: 新增 UvicornAccessFilter + install_access_noise_filter()。
+#   过滤范围: 探活(/health /v1/models /api/v1/health) + 状态刷新高频轮询(recent-files / token-usage 精确 +
+#   sessions/{id}/tasks / task/{id} / task/{id}/steps 正则); SSE process-events 保留(发消息核心链路)。
+#   Filter 挂 logger 级: 噪音拦下不进任何 handler(console+文件都不要, 老陈改裁定案); 文件 handler 保留(业务+SSE落盘)。
+#   args 索引修正: uvicorn 0.46 path 在 args[2] 非 args[1](原读错致过滤失效)。幂等安装。 小欧-2026-10-29
 
 import logging
+import re
 from contextvars import ContextVar
 from typing import Optional
 
@@ -178,6 +184,69 @@ def setup_uvicorn_loggers() -> None:
         lg.addHandler(file_handler)
         lg.setLevel(_get_log_level())
         lg.propagate = False
+
+
+class UvicornAccessFilter(logging.Filter):
+    """过滤 uvicorn 访问日志噪音: 探活(/health /v1/models /api/v1/health) + 状态刷新高频轮询
+    (recent-files / token-usage / sessions/{id}/tasks / task/{id} / task/{id}/steps), 零排障价值 — 小欧 2026-10-29
+    uvicorn.access 每请求一行, 这些端点固定路径+固定200+高频重复, 纯刷屏; 探活失败/僵死由
+    uvicorn.error 与 /health 超时告警负责, 不依赖 access log。SSE process-events 保留(发消息核心链路)。
+    挂 logger 级: 噪音记录拦下不进任何 handler(console+文件都不要) — 老陈 2026-10-29 改裁。
+    """
+    _NOISE_PATHS = (
+        "/health", "/v1/models", "/api/v1/health",
+        "/api/v1/files/recent-files", "/api/v1/token-usage",
+    )
+    # 路径带变量(会话/任务 id)的轮询端点: 精确匹配不了, 走正则 — 小欧 2026-10-29
+    _NOISE_PATTERNS_RE = (
+        re.compile(r"^/api/v1/sessions/[^/]+/tasks$"),
+        re.compile(r"^/api/v1/chat/execution/task/[^/]+$"),
+        re.compile(r"^/api/v1/chat/execution/task/[^/]+/steps$"),
+    )
+
+    def filter(self, record):
+        try:
+            _args = record.args
+            # uvicorn 0.46 AccessLogMiddleware: args=(client_addr, method, path_with_query, http_version, status_code)
+            #  path 在 args[2](含query), 非 args[1](那是 method) — 小欧 2026-10-29 修正
+            if isinstance(_args, (tuple, list)) and len(_args) > 2:
+                _path = str(_args[2]).split("?")[0]  # 去 query 串
+                if _path in self._NOISE_PATHS:
+                    return False
+                # 路径带变量(会话/任务 id)的轮询端点, 正则匹配 — 小欧 2026-10-29
+                for _pat in self._NOISE_PATTERNS_RE:
+                    if _pat.match(_path):
+                        return False
+        except Exception:
+            pass
+        return True
+
+
+def install_access_noise_filter() -> None:
+    """给 uvicorn.access 挂噪音过滤: 探活 + 状态刷新高频轮询彻底不要(console+文件都滤) — 小欧 2026-10-29
+    ① 确保共享文件 handler 在 uvicorn.access: 业务端点 + SSE process-events 落盘(排障可查);
+    ② UvicornAccessFilter 挂 logger 级: 噪音记录被拦不进任何 handler(console+文件都不要) — 老陈 2026-10-29 改裁。
+    幂等: 重复调用先摘旧实例再挂, 防 reload 重复挂载; 同时清 console handler 残留旧 filter(迁移自挂 console 版)。
+    """
+    _lg = logging.getLogger("uvicorn.access")
+    # ① 文件 handler: 业务 + SSE 落盘(噪音被 logger 级 filter 拦, 不落)
+    _fh = _get_shared_handler()
+    if _fh not in _lg.handlers:
+        _lg.addHandler(_fh)
+    _fh.setFormatter(_build_formatter(LogConfig.is_debug_mode()))
+    _fh.setLevel(_get_log_level())
+    # ② 噪音 filter 挂 logger 级: 拦住的记录不进任何 handler, 彻底不要(console+文件) — 老陈 2026-10-29
+    for _f in list(_lg.filters):
+        if isinstance(_f, UvicornAccessFilter):
+            _lg.removeFilter(_f)
+    _lg.addFilter(UvicornAccessFilter())
+    # ③ 清 console handler 残留旧 filter(旧版挂 console handler, 迁移到 logger 级, 防双滤残留)
+    for _h in list(_lg.handlers):
+        if isinstance(_h, SafeRotatingFileHandler):
+            continue
+        for _f in list(_h.filters):
+            if isinstance(_f, UvicornAccessFilter):
+                _h.removeFilter(_f)
 
 
 def refresh_log_levels() -> None:

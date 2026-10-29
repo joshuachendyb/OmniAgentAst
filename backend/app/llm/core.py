@@ -6,6 +6,8 @@
 #   (L1重试通知承载, 默认None零行为变化; llm_stream消费转MetaStep(retrying)发前端位4🔁)
 # 2026-09-06 小欧 元事件载荷通道落码: StreamChunk新增payload:Optional[Dict]载荷通道(元事件统一载体),
 #   create_payload_chunk工厂与取消/错误族同列(单行构造), 默认None零行为变化
+# 2026-10-29 小欧 重试事件文案统一: StreamChunk新增retry_wait/retry_error_type字段
+#   (L1重试事件透传退避秒数+异常类名, 默认None零行为变化)
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
@@ -99,6 +101,8 @@ class StreamChunk:
                  retry_notice: Optional[str] = None,   # 小欧 2026-09-02: L1重试通知(第N/M次+错误), llm_stream 消费转 MetaStep(retrying)
                  retry_attempt: Optional[int] = None,  # 小欧 2026-09-02: 当前第几次重试
                  retry_total: Optional[int] = None,    # 小欧 2026-09-02: 最大重试次数
+                 retry_wait: Optional[int] = None,     # 小欧 2026-10-29: L1重试退避秒数(事件透传"等{w}秒")
+                 retry_error_type: Optional[str] = None,  # 小欧 2026-10-29: L1重试异常类名(事件透传"[ExcType]")
                  payload: Optional[Dict] = None):      # 小欧 2026-09-06: 元事件载荷通道(默认None零行为变化)
         self.content = content
         self.chunk_model = chunk_model   # 前导+model; 补 provider(F8 不留 self.model 兼容别名)
@@ -115,6 +119,8 @@ class StreamChunk:
         self.retry_notice = retry_notice                # 小欧 2026-09-02
         self.retry_attempt = retry_attempt              # 小欧 2026-09-02
         self.retry_total = retry_total                  # 小欧 2026-09-02
+        self.retry_wait = retry_wait                    # 小欧 2026-10-29
+        self.retry_error_type = retry_error_type        # 小欧 2026-10-29
         self.payload = payload                          # 元事件载荷通道, 默认None零行为变化 — 小欧 2026-09-06
 
 

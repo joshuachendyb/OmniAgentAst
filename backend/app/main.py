@@ -54,6 +54,8 @@
 # 2026-10-27 小欧 - 双击exe完整应用: 前端 dist 由 spec datas 塞入 _internal/web/, main.py 加
 #   StaticFiles mount /assets + SPA catch-all fallback → 浏览器访问 http://127.0.0.1:8500 直接出前端页面,
 #   /api/v1 同源无需 CORS, 一个端口搞定。源码调试模式读 ../frontend/dist/。
+# 2026-10-29 小欧 - 访问日志噪音过滤: startup_event 调 install_access_noise_filter(),
+#   探活+状态刷新高频轮询 access log 不再上屏落盘(零排障价值); dev/exe 两模式生效。 — 小欧-2026-10-29
 import sys
 import asyncio
 from typing import Optional
@@ -93,6 +95,7 @@ from app.api.v1.deps import verify_token, warn_startup_checks
 # 2026-09-26 小欧 - 访问口令设置路由（首次设置豁免在 deps.verify_token 内）
 from app.api.v1.auth_routes import router as auth_router
 from app.logger import logger
+from app.logger.shared_handler import install_access_noise_filter  # 2026-10-29 小欧: /health + /v1/models 访问日志噪音过滤
 from app.monitoring import setup_monitoring
 from app.constants import DEFAULT_CORS_ORIGINS as _D_CORS
 from app.config import get_config
@@ -356,6 +359,8 @@ async def startup_event():
     """应用启动时注册工具 + 启动后台任务 — 小健 2026-06-18 内联透传函数"""
     import time as _time
     _t0 = _time.time()
+    # 2026-10-29 小欧: /health 探活 + /v1/models 模型列表高频轮询访问日志去噪(零排障价值, dev/exe 两模式生效)
+    install_access_noise_filter()
     # 进程启动时刻（ISO）：L0 僵尸收尾的归属判据，只收尾 start_time 早于本值的残行，
     # 只收尾"本进程启动之前创建"的行：防御性护栏，防有人误起第二个后端进程时误伤对方任务 — 小欧 2026-09-29
     _boot_iso = get_local_iso_timestamp()
