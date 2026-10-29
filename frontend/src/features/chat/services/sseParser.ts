@@ -114,6 +114,9 @@
 //   关窗分支不成立, 确认作废后弹窗永留屏幕(实测 e95d2ceb) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封收敛: KNOWN_EVENT_TYPES 删 'installing'/'summarizing', 补 'notice';
 //   case 'notice' 解析 notice_kind/notice_phase 字段透传给 useTaskInfo — 小欧-2026-10-25
+// 编辑历史: 2026-10-30 06:47:26 小欧 - observation tool_result 契约注释订正: 元素字段补 raw_data
+//   (后端 2026-10-13 新增的原始 data, 供「结果」视图; edit 的 diff 即 raw_data.diff),
+//   原注释只列 tool_name/llm_data/data_text/other_data, 与后端契约不符易误导排查 — 小欧-2026-10-30
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -903,7 +906,9 @@ const processSSEData = (
         //   execution_result 虽曾被 ToolResultRenderer 当兜底, 但它只在 tool_result 非空分支内赋值, 该兜底永不可达。
         //   连带删仅服务于 execution_result 的 JSON.parse(data_text)(实测 0/2306 可解析, 解析必失败)。
         if (Array.isArray(rawData.tool_result) && rawData.tool_result.length) {
-          // 新契约: tool_result数组在rawData顶层, 每元素自包含{tool_name,llm_data,data_text,other_data}
+          // 新契约: tool_result数组在rawData顶层, 每元素自包含
+          //   {tool_name,llm_data,data_text,raw_data,other_data} — 2026-10-30 小欧 补 raw_data:
+          //   它是工具返回的原始 data(edit 的 diff 在 raw_data.diff, 「结果」视图据此渲染), 整数组透传不裁字段
           const tr = rawData.tool_result as Array<Record<string, unknown>>;
           step.tool_result = tr; // 供ToolResultRenderer与工具子行按下标配对读取
           const el = (tr[0] || {}) as Record<string, unknown>;
