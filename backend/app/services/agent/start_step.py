@@ -84,6 +84,13 @@
 #   (组装单点, react_loop 共用, DRY)。— 小欧-2026-10-29
 # 2026-10-29 小欧 - 删 :531 重复的"增量摘要生成完成"日志行(三堂会审发现, 同文案连打两行属冗余, DRY);
 #   仅去重日志, 零逻辑变更。— 小欧-2026-10-29
+# 2026-10-29 小欧 - 尾部轮数改单一解析(北京老陈令断案"系统路径整体最佳"): 注入件尾部轮数删写死常量 SUMMARY_TAIL_ROUNDS,
+#   改调 split_turn.resolve_protect_rounds() 与运行时裁剪保护区同源单一真源(tuning.trim.keep_recent_rounds, clamp
+#   5~20, 默认 5=5 零行为变化); 同批在 _extract_summary_tail 落设计边界声明: 注入件尾部轮(3键重载体)无 _summary 对
+#   use_tool_summary 免疫属设计内——附件随附同源覆盖摘要, 整轮裁掉时语义仍由摘要承载, 不加 DB 查询回灌(YAGNI)。
+#   — 小欧-2026-10-29
+# 2026-10-29 小欧 - 魔法数字清账(北京老陈令): _extract_summary_tail 解析失败兜底 _tail_n=5 写死改 KEEP_RECENT_ROUNDS
+#   常量引用(与解析函数缺省同源), 代码零行为变化。— 小欧-2026-10-29
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -105,6 +112,7 @@ from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-09-23 compaction配置化读 tuning.compaction.*
 from app.logger import logger, log_and_print
+from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS  # 2026-10-29 小欧: 尾部轮数解析失败兜底常量(魔法数字清账, 与 split_turn.resolve_protect_rounds 同源)
 
 # 2026-10-26 小欧 - _start_summary 来源前缀: 让前端/日志一眼区分摘要来源
 #   往次摘要=复用锚点；本次摘要=本轮新压
@@ -121,21 +129,22 @@ def _prefix_summary(summary: str, prefix: str) -> str:
     return prefix + summary
 
 
-# 2026-10-29 北京老陈令: 新摘要注入件的尾部轮数常量(写死 5, 不配置化)
-SUMMARY_TAIL_ROUNDS = 5
-
-
 def _extract_summary_tail(src_msgs: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
-    """提取新摘要注入附件: 摘要源数组的「末条 user + 倒数 SUMMARY_TAIL_ROUNDS 个 FC 工具轮」— 小欧 2026-10-29
+    """提取新摘要注入附件: 摘要源数组的「末条 user + 尾部 _tail_n 个 FC 工具轮」— 小欧-2026-10-29
 
     适用场景: 本轮新产生摘要(增量③/老路④)时, 除摘要外再注入"产生摘要的那份 conv 历史数组
-      的最后5轮 + 最后任务的 usermessage"(北京老陈令); 复用锚点摘要不走本函数。
+      的最后几轮 + 最后任务的 usermessage"(北京老陈令); 复用锚点摘要不走本函数。
     使用方法: 传摘要源数组(增量=delta_msgs, 老路=_injected_history_msgs), 返回 {last_user, tail_rounds}。
     输出: last_user=倒数第一条有内容的 user 消息(链式任务下即上一任务的任务输入);
-          tail_rounds=源数组倒数第 5 个 assistant(tool_calls) 起至末尾(含 tool 结果与末条 final answer)。
-    关联逻辑: 轮次切分复用 find_recent_rounds_start(split_turn, DRY)——FC 配对天然不拆散;
-      聚合工具轮不足 5 时返回起点=数组开头(整段即"最后几轮", 与需求一致); user 切片内
-      重复照注不去重(北京老陈确认, 保持简单直线)。切分原语异常时附件为空, 注入件退化为纯摘要(零退化)。
+          tail_rounds=源数组倒数第 _tail_n 个 assistant(tool_calls) 起至末尾(含 tool 结果与末条 final answer)。
+    关联逻辑: 轮数 _tail_n 调 split_turn.resolve_protect_rounds() 取值(与运行时裁剪保护区同源单一真源,
+      默认 5); 轮次切分复用 find_recent_rounds_start(split_turn, DRY)——FC 配对天然不拆散; 聚合工具轮
+      不足 _tail_n 时返回起点=数组开头(整段即"最后几轮", 与需求一致); user 切片内重复照注不去重
+      (北京老陈确认, 保持简单直线)。切分原语异常时附件为空, 注入件退化为纯摘要(零退化)。
+    设计边界(三堂会审判定, 北京老陈令断案"系统路径整体最佳"): 注入件尾部轮为 3 键重载消息, 无 _summary,
+      对 use_tool_summary(换一行语义摘要)免疫属设计内——附件与摘要同源同批注入(摘要是从含尾部轮的源数组
+      压出来的), 即使后续运行中整轮裁掉这些尾部轮, 其语义仍由摘要承载, 保真无净损失; 因此不为它们加
+      "逐 tool 行查库回灌 _summary"的降级通道(数据管道加宽+逐轮查库, 低概率高成本, YAGNI)。
     """
     msgs = [m for m in (src_msgs or []) if isinstance(m, dict)]
     if not msgs:
@@ -145,11 +154,13 @@ def _extract_summary_tail(src_msgs: Optional[List[Dict[str, Any]]]) -> Dict[str,
         if m.get("role") == "user" and m.get("content"):
             last_user = {"role": "user", "content": m["content"]}
             break
+    _tail_n = KEEP_RECENT_ROUNDS   # 解析失败兜底(常量与解析函数缺省同源, 非内联数)
     try:
-        from app.services.agent.compaction.split_turn import find_recent_rounds_start
-        _start = find_recent_rounds_start(msgs, SUMMARY_TAIL_ROUNDS)
+        from app.services.agent.compaction.split_turn import find_recent_rounds_start, resolve_protect_rounds
+        _tail_n = resolve_protect_rounds()
+        _start = find_recent_rounds_start(msgs, _tail_n)
     except Exception as e:  # noqa: BLE001 - 切分失败零退化: 附件只保留 user, 注入件= user+摘要
-        logger.warning(f"[start_step] 尾部{SUMMARY_TAIL_ROUNDS}轮切分失败(注入退化为user+摘要): {type(e).__name__}: {e!r}")
+        logger.warning(f"[start_step] 尾部{_tail_n}轮切分失败(注入退化为user+摘要): {type(e).__name__}: {e!r}")
         return {"last_user": last_user, "tail_rounds": []}
     return {"last_user": last_user, "tail_rounds": [dict(m) for m in msgs[_start:]]}
 

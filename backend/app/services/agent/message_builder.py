@@ -76,6 +76,8 @@
 # 2026-10-26 小欧 - 三堂会审修复(北京老陈令): ①删 backward 兼容(信号计算回退) trim_history 只读信号不算信号(禁止backward); ②user 边界对齐移入 fallback 分支(原在两分支后是死代码); ③protected 删重复计算; ④count_system_prefix 消除 prefix 三处重复(DRY); ⑤"头部保护区"→"头部"(术语修正); ⑥_trim_signal docstring 删错误初始值版(矛盾信息) — 小欧-2026-10-26
 # 2026-10-26 小欧 - 队列预算公式改(北京老陈令): budget_for_queue = budget_base × trigger_ratio² - 保护区token(原 budget_base - 保护区token), 队列只能用触发阈值再乘系数后的剩余预算; 保护区/预算链注释同步更新 — 小欧-2026-10-26
 # 2026-10-29 小欧 - trim_history 队列幸存者语义替换收口(北京老陈令"接上吧"): 保留旧轮 tool 消息 _summary 换一行真摘要, 同日三堂会审终态修订: ①新换条数对比 swap 前旗数只计本轮(上一轮旧旗不再谎报"换摘要N条"); ②无裁剪且零新换保留原历史直接返回(不重建/不动裁剪旗/不复位冷却, 杜绝幻影重建); ③未裁剪分支不跑 remove_dangling_tool_calls("保留原历史"下禁止静默动刀, 实测孤儿 assistant 被无声删除); swap 门槛 USE_SUMMARY_MIN_CHARS=300 归 compaction_constants — 小欧-2026-10-29
+# 2026-10-29 小欧 - 保护区轮数改唯一解析(北京老陈令断案"系统路径整体最佳"): _keep_recent_rounds 由原地夹取算式改调 split_turn.resolve_protect_rounds(), 与 start_step 注入件尾部轮数同源单一真源(tuning.trim.keep_recent_rounds, clamp 5~20, 默认5=5零行为变化); KEEP_RECENT_ROUNDS 本域导入摘除(解析下沉 split_turn, 死导入清除) — 小欧-2026-10-29
+# 2026-10-29 小欧 - 魔法数字清账(北京老陈令): get_last_tool_summary 纠偏预览截长 200→TOOL_SUMMARY_PREVIEW_CHARS, _trim_signal 过短历史下限 5→TRIM_MIN_MESSAGES, trim 兜底上限 _max_rounds*2+5→*TRIM_CEILING_ROUND_FACTOR+TRIM_CEILING_ROUNDS_MARGIN(常量归 compaction_constants), 各值原内联字面量直迁零行为变化 — 小欧-2026-10-29
 # 2026-10-29 小欧 - trim_history 队列剩余段接 C2 use_tool_summary(北京老陈令"接上吧"): 裁剪后仍保留的旧轮里, tool 消息有 _summary 且 content 更长者整条换一行语义摘要(原文存_raw); 逐条浅拷贝隔离(mutate 原地字典, 防污染 conversation_history 与保护区引用); 保护区(最近N轮)零接触保保真; 与保头截断同批共存(先截后换兼容: _truncated 不阻塞 swap, _compressed 才跳过); 跨任务重载历史无 _summary 属已知边界不重灌 — 小欧-2026-10-29
 """
 MessageBuilder — conversation_history 状态管理器
@@ -102,7 +104,11 @@ from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
     COMPACTION_BUFFER, CHARS_PER_TOKEN, COOLDOWN_ROUNDS, DEFAULT_CONTEXT_LIMIT, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
-    TOOLS_TOKEN_RESERVE, KEEP_RECENT_ROUNDS,
+    TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
+    TOOLS_TOKEN_RESERVE,
+    TRIM_CEILING_ROUND_FACTOR,      # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)
+    TRIM_CEILING_ROUNDS_MARGIN,
+    TRIM_MIN_MESSAGES,
 )
 from app.services.agent.fc_message_types import (
     FcMessage, SystemMessage, UserMessage, AssistantMessage, ToolResultMessage, ToolCall,
@@ -209,8 +215,9 @@ class MessageBuilder:
         self._trim_trigger_ratio: float = float(get_config().get('tuning.trim.trigger_ratio', TRIM_TRIGGER_RATIO))  # 小欧 2026-09-23 trim配置化
         self._compaction_buffer: int = int(get_config().get('tuning.trim.compaction_buffer', COMPACTION_BUFFER))  # 小欧 2026-09-23 trim配置化
         self._tools_token_reserve: int = int(get_config().get('tuning.trim.tools_token_reserve', TOOLS_TOKEN_RESERVE))  # 2026-10-25 小欧 预算预留tools定义token
-        self._keep_recent_rounds: int = max(5, min(20, int(get_config().get(  # 2026-10-25 小欧 最近N工具步硬保护(北京老陈令), 5-20 默认5
-            'tuning.trim.keep_recent_rounds', KEEP_RECENT_ROUNDS))))
+        # 2026-10-29 小欧 保护区轮数改唯一解析(北京老陈令断案): 与 start_step 注入件尾部轮数同源单一真源(split_turn.resolve_protect_rounds), 原地夹取算式收敛
+        from app.services.agent.compaction.split_turn import resolve_protect_rounds  # 局部 import 防循环依赖(split_turn 顶层依赖本模块)
+        self._keep_recent_rounds: int = resolve_protect_rounds()  # 最近N工具步硬保护(北京老陈令), 5-20 默认5
         # 重复触发抑制: 触发后 rough≤budget_base 时 find_tail_start 无可裁, cooldown 抑制 N 轮内重复进入 — 小欧 2026-10-25
         from app.services.agent.compaction.trigger import CompactionCooldown  # 局部 import 防循环依赖(compaction 依赖 message_builder)
         self._trim_cooldown = CompactionCooldown(cooldown_rounds=COOLDOWN_ROUNDS)
@@ -384,8 +391,8 @@ class MessageBuilder:
         for msg in reversed(self.conversation_history):
             if msg.get("role") == "tool":
                 summary = msg.get("_summary") or msg.get("content", "")
-                if len(summary) > 200:
-                    summary = summary[:200] + "..."
+                if len(summary) > TOOL_SUMMARY_PREVIEW_CHARS:
+                    summary = summary[:TOOL_SUMMARY_PREVIEW_CHARS] + "..."
                 return summary
         return ""
 
@@ -524,7 +531,7 @@ class MessageBuilder:
         msg_count = len(self.conversation_history)
         self._trimmed_this_round = False            # 每轮重置(主流程 _trim_signal 必调, 信号不触发时标志不泄漏)
         self._trimmed_tokens_this_round = 0
-        if msg_count <= 5:
+        if msg_count <= TRIM_MIN_MESSAGES:
             self._trim_signal_result = (False, 0, 0, False, False)
             return False
         rough_current = self._estimate_tokens(self.conversation_history)
@@ -534,7 +541,7 @@ class MessageBuilder:
         delta_trigger = (self.last_total_tokens is not None and
                          rough_current - self.last_total_tokens > self._compaction_buffer)
         abs_trigger = rough_current > budget_base * self._trim_trigger_ratio
-        msg_ceiling = self._max_rounds * 2 + 5
+        msg_ceiling = self._max_rounds * TRIM_CEILING_ROUND_FACTOR + TRIM_CEILING_ROUNDS_MARGIN
         signal = delta_trigger or abs_trigger or msg_count > msg_ceiling
         self._trim_signal_result = (signal, rough_current, budget_base, delta_trigger, abs_trigger)
         return signal

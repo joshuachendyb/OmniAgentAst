@@ -24,6 +24,8 @@
 #   2026-10-29 小欧 三堂会审两修(北京老陈令, 未提交先修): ①use_tool_summary 增 _raw 保长守卫(truncate 已存的全量
 #     原文不得被截断头覆盖, 保住原文尾部); ②增最小长度门槛 USE_SUMMARY_MIN_CHARS=300——短小观察(文件清单/命中数/
 #     行数, 40~80字)信息密集, 换一行模板摘要在 token 收益趋零下灭失信息, 仅长文本才值得整条换取真摘要 — 小欧-2026-10-29
+#   2026-10-29 小欧 魔法数字清账(北京老陈令): _value_weight 六权重值与 clear_tool_outputs 头部截长 [:120] 迁
+#     compaction_constants.VALUE_WEIGHT_*/TOOL_SUMMARY_HEAD_CHARS 常量域, 代码零行为变化 — 小欧-2026-10-29
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -46,7 +48,14 @@ from app.services.agent.compaction_constants import (
     CHARS_PER_TOKEN,
     PRUNE_MINIMUM_TOKENS,
     PRUNE_PROTECT_TOKENS,
-    USE_SUMMARY_MIN_CHARS,   # 2026-10-29 小欧: use_tool_summary 最小参与长度门槛(三堂会审修复)
+    TOOL_SUMMARY_HEAD_CHARS,          # 2026-10-29 小欧: 原文摘要头部截长(魔法数字清账)
+    USE_SUMMARY_MIN_CHARS,            # 2026-10-29 小欧: use_tool_summary 最小参与长度门槛(三堂会审修复)
+    VALUE_WEIGHT_ASSISTANT,           # 2026-10-29 小欧: 消息价值权重族(魔法数字清账, 原内联权重值直迁)
+    VALUE_WEIGHT_HISTORY_MEM,
+    VALUE_WEIGHT_OTHER,
+    VALUE_WEIGHT_SYSTEM,
+    VALUE_WEIGHT_TOOL,
+    VALUE_WEIGHT_TOOL_CALL_DECISION,
 )
 from app.services.agent.message_builder import MessageBuilder  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
 from app.services.agent.fc_message_types import fc_atomic_units  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
@@ -154,7 +163,7 @@ def compress_long_tool_output(messages: List[Dict],
         release = _released_tokens(raw)
         if release < min_release:
             continue                          # 释放不足 PRUNE_MINIMUM_TOKENS 跳过(防抖动, 借鉴 OPENCODE)
-        head = " ".join(raw.split())[:120]
+        head = " ".join(raw.split())[:TOOL_SUMMARY_HEAD_CHARS]
         msg["_raw"] = raw
         msg["content"] = f"[tool-summary] {head}…({len(raw)}字符)"
         msg["_compressed"] = True
@@ -182,16 +191,16 @@ def _value_weight(msg: Dict) -> int:
     """消息语义价值权重(越高越优先保留) — 小欧 2026-08-16"""
     role = msg.get("role")
     if msg.get("_history_mem"):
-        return 100          # History Memory 最高
+        return VALUE_WEIGHT_HISTORY_MEM         # History Memory 最高
     if role == "system":
-        return 90
+        return VALUE_WEIGHT_SYSTEM
     if role == "assistant" and msg.get("tool_calls"):
-        return 80          # 决策: 调了什么工具
+        return VALUE_WEIGHT_TOOL_CALL_DECISION  # 决策: 调了什么工具
     if role == "assistant":
-        return 70          # thought/answer
+        return VALUE_WEIGHT_ASSISTANT           # thought/answer
     if role == "tool":
-        return 10          # 纯输出, 价值最低, 先删
-    return 50
+        return VALUE_WEIGHT_TOOL                # 纯输出, 价值最低, 先删
+    return VALUE_WEIGHT_OTHER
 
 
 def _msg_cost(msg: Dict) -> int:

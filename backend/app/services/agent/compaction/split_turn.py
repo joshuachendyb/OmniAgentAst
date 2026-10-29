@@ -14,6 +14,12 @@
 #   致保护区为空照裁); 新增 count_system_prefix 消除 prefix 计算三处重复(DRY) — 小欧-2026-10-26
 # 2026-10-26 小欧 - 队列预算公式改(北京老陈令): budget_for_queue = budget_base × trigger_ratio² - 保护区token,
 #   docstring 保护区/预算链说明同步更新 — 小欧-2026-10-26
+# 2026-10-29 小欧 - 新增 resolve_protect_rounds(北京老陈令断案"系统路径整体最佳"): 保护区轮数与启动摘要注入件尾部
+#   轮数收敛为单一真源(tuning.trim.keep_recent_rounds, clamp 5~20), 杜绝两处各自定5在调参时语义分裂(增强: 同一
+#   保真哲学一个旋钮; 默认 5=5 零行为变化) — 小欧-2026-10-29
+# 2026-10-29 小欧 - 魔法数字清账(北京老陈令): resolve_protect_rounds 夹取字面量 5/20 迁 PROTECT_ROUNDS_MIN/MAX
+#   常量; preserve_recent_budget docstring 公式漂移订正为 TAIL_TOKEN_* 常量名(代码 2026-08-17 已用常量, 仅文档滞后)
+#   — 小欧-2026-10-29
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -35,7 +41,7 @@ from app.services.agent.message_builder import MessageBuilder
 
 
 def preserve_recent_budget(usable_tokens: int) -> int:
-    """保尾 token 预算 = min(8000, max(2000, usable*0.25)) — 小健 2026-08-17
+    """保尾 token 预算 = min(TAIL_TOKEN_MAX, max(TAIL_TOKEN_MIN, usable*TAIL_TOKEN_RATIO)) — 小健 2026-08-17
 
     适用场景: 任何需要"保尾 token 预算"处的统一计算(如 split_history_window 算保尾窗口)。
     使用方法: 传可用预算 token 数, 返回夹取后的保尾预算。
@@ -149,6 +155,21 @@ def find_recent_rounds_start(messages: List[Dict], n_rounds: int) -> int:
                 return i
     # 工具轮不足 N: 返回 prefix → 保护区=全部非 system → 队列=空 → 不裁
     return prefix
+
+
+def resolve_protect_rounds() -> int:
+    """保护区/注入件尾部轮数唯一解析(单一真源): tuning.trim.keep_recent_rounds, 夹取 5~20 — 小欧-2026-10-29
+
+    适用场景: 运行时裁剪保护区(message_builder._keep_recent_rounds)与启动摘要注入件尾部轮数
+      (start_step._extract_summary_tail)共用同一保真哲学("最近 N 个 FC 工具轮不许 degrade"),
+      必须同源同值——两处各自定 5 会在运维调参时语义分裂(调保护区 10 而注入件仍 5)。
+    使用方法: 直接调用, 返回轮数; 消费方(find_recent_rounds_start / 附件提取)持返回值走流程。
+    输出: int, clamp 到 [PROTECT_ROUNDS_MIN, PROTECT_ROUNDS_MAX], 默认 KEEP_RECENT_ROUNDS。
+    关联逻辑: 与 message_builder 旧夹取表达式同式(收敛后该处改调本函数, 全域只此一处算式)。
+    """
+    from app.config import get_config   # app.config 零业务依赖, 不入循环
+    from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS, PROTECT_ROUNDS_MIN, PROTECT_ROUNDS_MAX
+    return max(PROTECT_ROUNDS_MIN, min(PROTECT_ROUNDS_MAX, int(get_config().get('tuning.trim.keep_recent_rounds', KEEP_RECENT_ROUNDS))))
 
 
 def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:

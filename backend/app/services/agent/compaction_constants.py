@@ -43,6 +43,7 @@
     不参与裁剪(触发/预算计算不变, 配置 tuning.trim.keep_recent_rounds, 5-20 默认 5)。
   2026-10-25 23:09 小欧 CHARS_PER_TOKEN 2.5→2.25: 10 真实会话标定 17,252,839 chars/7,299,735 精确 tok=2.363 字/token(2.5 低估5.5%=0.945x, 2.55 更差7.3%, 2.25 MAE13.0% 候选最优), 订正 2026-10-05 条「4.8倍」无实测出处结论
   2026-10-25 23:09 小欧 TRIM_TRIGGER_RATIO 0.75→0.9(北京老陈定): 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径
+  2026-10-29 小欧 新增一组魔法数字清账常量(北京老陈令): USE_SUMMARY_MIN_CHARS/swap 最小参与长度门槛 + VALUE_WEIGHT_*/消息价值权重族 + TOOL_SUMMARY_HEAD_CHARS/TOOL_SUMMARY_PREVIEW_CHARS/摘要截长 + TRIM_MIN_MESSAGES/TRIM_CEILING_ROUND_FACTOR/TRIM_CEILING_ROUNDS_MARGIN/裁剪信号结构阈值 + PROTECT_ROUNDS_MIN/PROTECT_ROUNDS_MAX/保护区轮数夹取上下限——各值由原消费点内联字面量直迁, 零行为变化
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健
@@ -97,6 +98,32 @@ KEEP_TAIL_ROUNDS = 3      # 保尾轮数(T1: 保留最近 3 轮完整 FC 对, 5.
 # 可选范围: 越小越激进(更易触发剪枝); 过小(如 <5K)易反复裁剪抖动, 过大(如 >100K)则剪枝失效。
 PRUNE_MINIMUM_TOKENS = 20000   # 剪枝/T1 最少需释放 token, 否则跳过(借鉴 OpenCode PRUNE_MINIMUM, 设计文档)
 PRUNE_PROTECT_TOKENS = 40000   # prune 保护近期工具输出细节的 token 阈值(14.3.3; prune.py 引用 _TOKENS 权威名)
+
+# ---- 消息价值权重与摘要截长(魔法数字清账归常量域 — 小欧-2026-10-29) ——————————————————————
+# 意义: VALUE_WEIGHT_*/keep_valuable_messages 消息语义价值权重(越高越优先保留);
+#       TOOL_SUMMARY_HEAD_CHARS/clear_tool_outputs 换摘要时原文头部截取长度;
+#       TOOL_SUMMARY_PREVIEW_CHARS/get_last_tool_summary 死循环纠偏注入预览截长;
+#       TRIM_MIN_MESSAGES/_trim_signal 对过短历史不评估裁剪的结构下限;
+#       TRIM_CEILING_ROUND_FACTOR+TRIM_CEILING_ROUNDS_MARGIN/裁剪兜底上限 = max_rounds×factor+margin;
+#       PROTECT_ROUNDS_MIN/PROTECT_ROUNDS_MAX/resolve_protect_rounds 对 tuning.trim.keep_recent_rounds 的夹取上下限。
+# 默认值依据: 权重大小序=历史记忆>system>tool_calls决策>assistant正文>其他兜底>tool纯输出(原 _value_weight 内联值直迁);
+#       截长 120≈一行摘要可读长度、200≈纠偏预览够 LLM 判断末次工具行为; TRIM_MIN_MESSAGES=防小历史裁剪抖动的结构下限;
+#       factor=2/margin=5 为 max_rounds 二倍量级+安全余量(兜底上限, 非精细控制); PROTECT_ROUNDS 范围=KEEP_RECENT_ROUNDS
+#       配置既定取值区间(2026-10-25 北京老陈定案)。
+# 可选范围: 权重 0~100 须保持既定大小序; 截长 100~500; TRIM_MIN_MESSAGES 建议 3~10; PROTECT_ROUNDS 建议 3~30。
+VALUE_WEIGHT_HISTORY_MEM = 100            # _history_mem 消息权重(历史记忆直注, 最高)
+VALUE_WEIGHT_SYSTEM = 90                  # system 消息权重(对话身份/规则载体)
+VALUE_WEIGHT_TOOL_CALL_DECISION = 80      # assistant(tool_calls) 决策消息权重(调了什么工具)
+VALUE_WEIGHT_ASSISTANT = 70               # assistant 正文权重(thought/answer)
+VALUE_WEIGHT_OTHER = 50                   # 其余角色兜底权重
+VALUE_WEIGHT_TOOL = 10                    # tool 纯输出权重(价值最低, 先删)
+TOOL_SUMMARY_HEAD_CHARS = 120             # clear_tool_outputs 换摘要时原文头部截取长度
+TOOL_SUMMARY_PREVIEW_CHARS = 200          # get_last_tool_summary 死循环纠偏预览截长
+TRIM_MIN_MESSAGES = 5                     # 历史条数<=此值不评估裁剪(防小历史抖动)
+TRIM_CEILING_ROUND_FACTOR = 2             # 裁剪兜底上限 = max_rounds × 此系数 + 余量
+TRIM_CEILING_ROUNDS_MARGIN = 5            # 裁剪兜底上限安全余量(轮)
+PROTECT_ROUNDS_MIN = 5                    # keep_recent_rounds 配置夹取下限(2026-10-25 北京老陈定案范围)
+PROTECT_ROUNDS_MAX = 20                   # keep_recent_rounds 配置夹取上限(2026-10-25 北京老陈定案范围)
 
 # ---- Hermes Pass3 参数截断(T1 步骤2, 5.2/设计文档) ————————————————————
 # 状态: 以备后用（2026-09-23 小欧核查：Pass3 代码尚未落地，暂无消费方，保留阈值定义供后续接线，禁止删除）
