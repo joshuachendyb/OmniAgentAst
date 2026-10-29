@@ -3,6 +3,11 @@
 # 2026-09-04 小健 第3阶段拆分: 从 action_handler 完整复制 build_observation + ObservationContext + _add_denial_feedback; [背景] build_observation 职责远超"构建观察", 实为观察反馈构建层(写LLM历史+record_operation+编排决策收集); [改法] 先复制后修改: 本文件保留原名完整复制(逻辑零改动), 仅迁移存放位置; [效果] action_handler 920→~596行纯编排调度层, 本文件与 observation_formatter 同层(LLM交互反馈层); [YAGNI] _add_denial_feedback(19行)与 build_observation 同层配套, 并入本文件(不单拆 feedback_writer.py)
 # 2026-10-13 小欧 tool_result 增 raw_data(原始data)供前端raw展示: 原改动把 data_text 改名为 raw_data 属语义替换(data_text 是格式化可读文本且为 LLM tool message 与 history_loader 回放的唯一来源, raw_data 是原始dict), 改名致回放空白+LLM content 类型错+丢 warning; 改为纯增量: data_text 保留, 另加 raw_data — 小欧-2026-10-13
 # 2026-10-17 小欧 - _add_denial_feedback 删死参 fc_context(函数体零使用, YAGNI)。
+# 2026-10-29 小欧 - 通电 _summary stash(北京老陈令): build_observation 主循环把工具层 llm_data.summary
+#   经 add_tool_result 第三参 stash 为 tool 消息独立字段 _summary, 供 compaction.use_tool_summary
+#   语义替换原 content(此前生产端6处调用点均未传 summary=, 消费端 use_tool_summary 恒空转);
+#   异常分支无 llm_data 置空串安全(空值不 stash); _add_denial_feedback 为拒答提示语无摘要维持不传;
+#   发送前由 prepare_messages_for_llm 剥离, 不进 LLM wire; 跨任务历史重载经 _strip_history_msgs 不保留属预期。 — 小欧-2026-10-29
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -105,13 +110,18 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
         if repair_warning:
             obs_text = f"Observation: {repair_warning}\n{obs_text}"
             logger.warning(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")
+        # 2026-10-29 小欧 - 通电 _summary stash: 工具摘要独立字段随 tool 消息 tuck(北京老陈令);
+        #   异常分支( result=Exception )无 llm_data → 空串 → add_tool_result 不 stash(空值安全) — 小欧-2026-10-29
+        _stash_summary = ""
+        if isinstance(result, dict):
+            _stash_summary = str((result.get("llm_data") or {}).get("summary", "") or "")
         try:
             tc_id = call.get("_tool_call_id", "")
-            ctx.agent.message_builder.add_tool_result(tc_id, obs_text)
+            ctx.agent.message_builder.add_tool_result(tc_id, obs_text, summary=_stash_summary)
         except Exception as e:
             logger.warning(f"[action_handler] add_tool_result异常: {type(e).__name__}: {e!r}")
             try:
-                ctx.agent.message_builder.add_tool_result("", obs_text)
+                ctx.agent.message_builder.add_tool_result("", obs_text, summary=_stash_summary)
             except Exception as e2:
                 logger.warning(f"[action_handler] add_tool_result最终异常: {type(e2).__name__}: {e2!r}")
 
