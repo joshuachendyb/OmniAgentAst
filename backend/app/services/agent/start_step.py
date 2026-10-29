@@ -166,7 +166,8 @@ def _extract_summary_tail(src_msgs: Optional[List[Dict[str, Any]]]) -> Dict[str,
 
 
 def _build_summary_injection(summary: str, extras: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """新摘要注入件组装(顺序=北京老陈令): usermessage + 摘要 + 摘要源数组倒数5轮 — 小欧 2026-10-29
+    """新摘要注入件组装(顺序=北京老陈令): usermessage + 摘要 + 摘要源数组尾部 N 轮(_tail_n 由
+    split_turn.resolve_protect_rounds 解析, 缺省 5) — 小欧 2026-10-29
 
     单一组装点(DRY): start_step 算 telemetry 事实数与 react_loop 装配注入共用同一份, 防两处口径分叉。
     extras 为空/缺失时自动退化为纯摘要(零退化)。
@@ -176,7 +177,7 @@ def _build_summary_injection(summary: str, extras: Optional[Dict[str, Any]]) -> 
     if extras.get("last_user"):
         inj.append(extras["last_user"])                     # ① 最后任务的 usermessage
     inj.append({"role": "assistant", "content": summary})   # ② 摘要(assistant 身份, 代表"之前发生的事")
-    inj += list(extras.get("tail_rounds") or [])            # ③ 摘要源数组倒数5轮
+    inj += list(extras.get("tail_rounds") or [])            # ③ 摘要源数组尾部 N 轮
     return inj
 
 
@@ -202,7 +203,7 @@ def _build_injected_msgs(agent) -> List[Dict[str, Any]]:
 
     适用场景: react_loop 装配 conv 时取注入消息; 测试复刻装配同样调用本函数(防两处逻辑分叉)。
     规则(北京老陈令, 唯一触发条件=本轮新摘要成功):
-      ① 本轮新摘要(信号 _pending_chain_summary_cover is True) → usermessage + 摘要 + 源数组倒数5轮;
+      ① 本轮新摘要(信号 _pending_chain_summary_cover is True) → usermessage + 摘要 + 源数组尾部 N 轮;
       ② 复用锚点摘要/失败回退(信号 None) → 摘要 + delta 原文;
       ③ 无摘要 → 全量注入历史(_injected_history_msgs)。
     """
@@ -451,7 +452,7 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
     输出: bool —— True=锚点路径已处理完; False=装配失败(调用方按无锚点老路全量处理, 零退化)。
     语义契约: 注入内容 = [摘要 assistant 消息] + delta 段(react_loop 装配);
       即"摘要顶掉已压缩的老历史, 原文只保留新增部分", 每段原文至多被压一次, 保真度不低于全量重压。
-      2026-10-29 北京老陈令: 本轮产出新摘要时注入件=最后任务usermessage + 新摘要 + delta 段倒数5轮
+      2026-10-29 北京老陈令: 本轮产出新摘要时注入件=最后任务usermessage + 新摘要 + delta 段尾部 N 轮
       (delta 整体不注入); 复用/失败回退仍为 [摘要] + delta。
     关联逻辑: 阈值与老路同尺(START_TRIGGER_RATIO × ctx, 北京老陈 2026-10-14 纠正: 不用
       COMPACTION_BUFFER —— 它是"输出预留缓冲", 语义不符); 增量压缩复用 generate_chunked_summary;
@@ -533,10 +534,10 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
     if new_summary:
         _pref = _prefix_summary(new_summary, SUMMARY_PREFIX_CURRENT)
         agent._start_summary = _pref
-        agent._injected_delta_msgs = None  # delta 整体不单独注入(已压进 summary); 仅倒数5轮按新令作附件注入 — 2026-10-29
+        agent._injected_delta_msgs = None  # delta 整体不单独注入(已压进 summary); 仅尾部 N 轮按新令作附件注入 — 2026-10-29
         agent._pending_chain_summary_cover = True   # True=需由 react_loop 问覆盖上界任务并写回
         # 2026-10-29 北京老陈令: 新摘要附加注入件 —— 产生摘要的那份 conv 数组(delta_msgs)的
-        #   最后任务usermessage + 倒数5轮; 组装与 telemetry 事实数同源(DRY, _apply_injection_facts)
+        #   最后任务usermessage + 尾部 N 轮; 组装与 telemetry 事实数同源(DRY, _apply_injection_facts)
         agent._summary_tail_extras = _extract_summary_tail(delta_msgs)
         _apply_injection_facts(agent, _pref, agent._summary_tail_extras,
                                [{"role": "assistant", "content": anchor_summary}] + delta_msgs)
@@ -628,7 +629,7 @@ async def assemble_start_step(agent, context: Optional[Dict]) -> Optional["Start
             if getattr(agent, "_start_summary", ""):
                 agent._pending_chain_summary_cover = True
                 # 2026-10-29 北京老陈令(唯一触发条件=新摘要成功): 老路新摘要附加注入件 ——
-                #   产生摘要的那份conv数组(_injected_history_msgs)的最后任务usermessage + 倒数5轮;
+                #   产生摘要的那份conv数组(_injected_history_msgs)的最后任务usermessage + 尾部 N 轮;
                 #   组装与 telemetry 事实数同源(DRY, _apply_injection_facts)
                 agent._summary_tail_extras = _extract_summary_tail(
                     getattr(agent, "_injected_history_msgs", None) or [])

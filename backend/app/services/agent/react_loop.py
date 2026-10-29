@@ -176,7 +176,7 @@ async def run_react_cycle(
     # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"); 无摘要则注全量历史。— 小欧 2026-10-14
     # 2026-10-25 小欧 修复(北京老陈令): 合并为一次注入, summary 在前 delta 在后
     # 2026-10-29 北京老陈令(唯一触发条件=本轮新摘要成功): 注入件决策收口 start_step._build_injected_msgs
-    #   (新摘要=usermessage+摘要+源数组倒数5轮; 复用=摘要+delta; 无摘要=全量), 本处只做注入与日志。— 小欧-2026-10-29
+    #   (新摘要=usermessage+摘要+源数组尾部 N 轮; 复用=摘要+delta; 无摘要=全量), 本处只做注入与日志。— 小欧-2026-10-29
     _summary = getattr(agent, "_start_summary", "") or ""
     _injected = _build_injected_msgs(agent)
     agent.message_builder.inject_history(_injected)

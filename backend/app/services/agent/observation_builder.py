@@ -8,6 +8,9 @@
 #   语义替换原 content(此前生产端6处调用点均未传 summary=, 消费端 use_tool_summary 恒空转);
 #   异常分支无 llm_data 置空串安全(空值不 stash); _add_denial_feedback 为拒答提示语无摘要维持不传;
 #   发送前由 prepare_messages_for_llm 剥离, 不进 LLM wire; 跨任务历史重载经 _strip_history_msgs 不保留属预期。 — 小欧-2026-10-29
+# 2026-10-30 小欧 - 三堂会审修复(北京老陈令): _summary stash 前补 isinstance(llm_data, dict) 守卫 ——
+#   原式对非 dict 的非空 llm_data 抛 AttributeError, 且位于 try 之外会中断整轮观察构建;
+#   _summary 仍只服务 get_last_tool_summary(死循环纠偏), 不再用于改写 tool content — 小欧-2026-10-30
 from itertools import zip_longest
 from dataclasses import dataclass
 from typing import Dict, List, Any
@@ -112,9 +115,13 @@ async def build_observation(ctx: ObservationContext) -> "tuple[List, Dict]":
             logger.warning(f"[action_handler] step={ctx.step}, {_tool} 参数截断修复: {repair_warning}")
         # 2026-10-29 小欧 - 通电 _summary stash: 工具摘要独立字段随 tool 消息 tuck(北京老陈令);
         #   异常分支( result=Exception )无 llm_data → 空串 → add_tool_result 不 stash(空值安全) — 小欧-2026-10-29
+        # 2026-10-30 小欧 - 三堂会审修复: llm_data 加 isinstance 守卫(与上方 :92/:136 同口径) ——
+        #   原式 (result.get("llm_data") or {}).get(...) 在 llm_data 为非 dict 非空值时抛 AttributeError,
+        #   且本行在 try 之外会炸掉整个 build_observation(工具实现不规范时整轮观察全丢) — 小欧-2026-10-30
         _stash_summary = ""
         if isinstance(result, dict):
-            _stash_summary = str((result.get("llm_data") or {}).get("summary", "") or "")
+            _stash_llm = result.get("llm_data") if isinstance(result.get("llm_data"), dict) else {}
+            _stash_summary = str(_stash_llm.get("summary", "") or "")
         try:
             tc_id = call.get("_tool_call_id", "")
             ctx.agent.message_builder.add_tool_result(tc_id, obs_text, summary=_stash_summary)

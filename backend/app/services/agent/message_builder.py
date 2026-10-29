@@ -79,6 +79,12 @@
 # 2026-10-29 小欧 - 保护区轮数改唯一解析(北京老陈令断案"系统路径整体最佳"): _keep_recent_rounds 由原地夹取算式改调 split_turn.resolve_protect_rounds(), 与 start_step 注入件尾部轮数同源单一真源(tuning.trim.keep_recent_rounds, clamp 5~20, 默认5=5零行为变化); KEEP_RECENT_ROUNDS 本域导入摘除(解析下沉 split_turn, 死导入清除) — 小欧-2026-10-29
 # 2026-10-29 小欧 - 魔法数字清账(北京老陈令): get_last_tool_summary 纠偏预览截长 200→TOOL_SUMMARY_PREVIEW_CHARS, _trim_signal 过短历史下限 5→TRIM_MIN_MESSAGES, trim 兜底上限 _max_rounds*2+5→*TRIM_CEILING_ROUND_FACTOR+TRIM_CEILING_ROUNDS_MARGIN(常量归 compaction_constants), 各值原内联字面量直迁零行为变化 — 小欧-2026-10-29
 # 2026-10-29 小欧 - trim_history 队列剩余段接 C2 use_tool_summary(北京老陈令"接上吧"): 裁剪后仍保留的旧轮里, tool 消息有 _summary 且 content 更长者整条换一行语义摘要(原文存_raw); 逐条浅拷贝隔离(mutate 原地字典, 防污染 conversation_history 与保护区引用); 保护区(最近N轮)零接触保保真; 与保头截断同批共存(先截后换兼容: _truncated 不阻塞 swap, _compressed 才跳过); 跨任务重载历史无 _summary 属已知边界不重灌 — 小欧-2026-10-29
+# 2026-10-30 小欧 - 三堂会审撤销接线(北京老陈令, 实测取证后裁定): 队列幸存者语义替换(use_tool_summary)从 trim_history 摘除。
+#   取证: 全库工具 llm_data.summary 均为一行状态/计数(read_text_file.py:142 "读文件X，成功：40行，2048字节"、
+#   search_files.py:105 命中数、read_docx.py:74 段数字符数), 不含正文; 实测 1898 字符观察(含 40 行文件正文)
+#   被换成 48 字符状态行, 正文本轮内不可见且留"读过了"误导痕迹。保留 c2 的另三处修复: 无裁剪即保留原历史
+#   (不重建/不动裁剪旗/不复位冷却)、未裁剪不跑 remove_dangling_tool_calls、裁剪分支照旧。_summary stash
+#   继续保留(get_last_tool_summary 死循环纠偏消费), 不再用于改写 tool content — 小欧-2026-10-30
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -558,8 +564,8 @@ class MessageBuilder:
         3. 分区: 保护区=倒数1~N轮(不进裁剪队列), 队列=倒数第N+1及更早(传入find_tail_start), 队列预算=budget_base×系数²−保护区token
         4. 裁剪走 compaction 组合: find_tail_start(align_turn=True) 切点对齐 user 边界整轮不拆 + remove_dangling_tool_calls 清理孤儿 FC 对
         5. 保护区超出预算时仅保留保护区(硬保护, 容忍窗口溢出)
-        6. 队列幸存者语义替换: 保留旧轮中 tool 消息有 _summary 且 content 达 USE_SUMMARY_MIN_CHARS 门槛者换一行真摘要(原文存 _raw);
-           新换条数只计本轮; 无裁剪且零新换时保留原历史直接返回(不重建/不动裁剪旗/不复位冷却); 未裁剪不跑 dangling 清理 — 小欧-2026-10-29
+        6. 无旧轮可裁/预算不足时保留原历史直接返回(不重建/不动裁剪旗/不复位冷却); 仅裁剪分支跑 dangling 清理
+           (未裁剪时 FC 配对本完整, "保留原历史"语义下禁止静默动刀) — 小欧-2026-10-30
 
         使用方式: 超阈值时裁剪一次, 裁后替换 conversation_history, 后续轮次在裁后历史基础上累积, 再次超阈值则再次裁剪(非每轮触发)
         """
@@ -604,42 +610,23 @@ class MessageBuilder:
             #   保护区   = hist[keep_from:]              倒数N轮(保留)
             #   裁剪区   = hist[prefix:tail_start]      旧消息(丢弃)
             #   rebuilt = 头部 + 队列剩余 + 保护区
-            # 队列幸存者统一收口: 有裁剪=切后剩余; 无裁剪/预算不足=旧轮整段(仍做语义降本) — 小欧-2026-10-29
-            if tail_start > prefix:
-                queue_survivors = hist[tail_start:keep_from]
-                _cut = True
-            else:
-                queue_survivors = hist[prefix:keep_from]
-                _cut = False
-            # 2026-10-29 小欧 - 队列幸存者语义替换(北京老陈令): 保留旧轮中 tool 消息有 _summary 且 content 达
-            #   长度门槛者换一行真摘要(原文存 _raw); 先逐条浅拷贝隔离(use_tool_summary 原地改字典, 防污染
-            #   conversation_history 同源引用与保护区引用); 保护区不在本段, 保真零接触
-            # 2026-10-29 小欧 - 三堂会审修复(北京老陈令, 未提交先修): ①新换条数对比 swap 前旗数只计本轮——
-            #   上一轮旧旗不再计入, 杜绝"换摘要N条"谎报; ②幻影守卫: 无裁剪且零新换时保留原历史直接返回, 不重建/
-            #   不动裁剪旗/不复位冷却, 杜绝无实质变化的每轮重复重建; ③未裁剪分支不跑 remove_dangling_tool_calls
-            #   ——FC 配对在未裁剪时本就完整, "保留原历史"语义下禁止静默动刀(实测孤儿 assistant 无声被删) — 小欧-2026-10-29
-            from app.services.agent.compaction.prune import use_tool_summary   # 局部 import 防循环依赖(compaction 依赖 message_builder) — 小欧-2026-10-29
-            _pre_swapped = sum(1 for m in queue_survivors if m.get("_compressed"))   # swap 前已有旗(上一轮旧旗)
-            queue_survivors = use_tool_summary([dict(m) for m in queue_survivors])
-            _swapped = sum(1 for m in queue_survivors if m.get("_compressed")) - _pre_swapped   # 只计本轮新换
-            if not _cut and not _swapped:
-                logger.info(f"[trim_history] 无旧轮可裁且无新摘要可换, 保留原历史({msg_count}条/{rough_current} tokens)")
+            # 2026-10-30 小欧 三堂会审撤销接线(北京老陈令): 队列幸存者语义替换(use_tool_summary)已摘除——
+            #   实测工具 _summary 只是一行状态/计数, 替换会把长观察正文换成"读文件成功", 信息灭失;
+            #   trim 回归"只裁剪、不改写保留消息"的原语义 — 小欧-2026-10-30
+            if tail_start <= prefix:
+                logger.info(f"[trim_history] 无旧轮可裁或预算不足, 保留原历史({msg_count}条/{rough_current} tokens)")
                 return
-            rebuilt = hist[:prefix] + queue_survivors + protected
-            if _cut:
-                rebuilt = remove_dangling_tool_calls(rebuilt)   # 仅裁剪后清孤儿(只有裁剪才可能拆散配对)
+            rebuilt = hist[:prefix] + hist[tail_start:keep_from] + protected
+            rebuilt = remove_dangling_tool_calls(rebuilt)   # 仅裁剪后清孤儿(只有裁剪才可能拆散配对)
             if len(rebuilt) >= 2:
                 self.conversation_history = rebuilt
                 self._trim_cooldown.mark_compacted()  # 裁剪成功复位冷却计数, 下 N 轮抑制重复触发 — 小欧 2026-10-25
-                self._trimmed_this_round = True     # 11.3 实际裁剪/语义替换置真 — 小欧-2026-08-20
+                self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧-2026-08-20
                 _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧-2026-08-20
                 self._trimmed_tokens_this_round = int(_trimmed_now)
-                if _swapped:
-                    logger.info(f"[trim_history] 队列幸存者语义替换: {_swapped}条tool换一行摘要(use_tool_summary)")
-                if _cut:
-                    trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
-                    logger.info(f"[trim_history] 轮次滑动裁剪: {msg_count}条({rough_current} tokens) "
-                                f"→ {len(rebuilt)}条(触发: {trigger_reason})")
+                trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
+                logger.info(f"[trim_history] 轮次滑动裁剪: {msg_count}条({rough_current} tokens) "
+                            f"→ {len(rebuilt)}条(触发: {trigger_reason})")
             else:
                 logger.info(f"[trim_history] 重建后不足2条, 保留原历史({msg_count}条/{rough_current} tokens)")
         except Exception:
