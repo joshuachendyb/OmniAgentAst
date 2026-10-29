@@ -1,7 +1,7 @@
 v1.5.1
 更新时间: 2026-10-29 10:15:02 - 小欧-2026-10-29
-## v1.5.0以来 变更汇总(22个commit: fix6/feat1/refactor2/docs12/Merge1) - 小欧-2026-10-29
-[2026-10-29 10:15:02 小欧] 范围=v1.5.0以来全部commit(22个); 主线=TaskInfoBar事件浮层宽度拆分与文本折行+TitleBlock窄右栏token不可见与实时终态token兜底+useSessionTasks终态回复消失根治+清空api_key输入框残留/死锁四Bug根治+重试事件文案统一(L1/L2同走_format_retry_payload消双错误)+访问日志噪音过滤(UvicornAccessFilter挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+前端全量prettier格式化+文件深链死参数清理+设计文档[54][56]定稿+文档索引v1.2~v1.3与[57]登记及升版v2.0(读取权收归后端+三堂会审整改); 注:含1个feat(噪音过滤),按MINOR记v1.5.1
+## v1.5.0以来 变更汇总(24个commit: fix6/feat1/refactor2/docs14/Merge1) - 小欧-2026-10-29
+[2026-10-29 10:15:02 小欧] 范围=v1.5.0以来全部commit(24个); 主线=TaskInfoBar事件浮层宽度拆分与文本折行+TitleBlock窄右栏token不可见与实时终态token兜底+useSessionTasks终态回复消失根治+清空api_key输入框残留/死锁四Bug根治+重试事件文案统一(L1/L2同走_format_retry_payload消双错误)+访问日志噪音过滤(UvicornAccessFilter挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+前端全量prettier格式化+文件深链死参数清理+设计文档[54][56]定稿+文档索引v1.2~v1.4与[57]登记及升版v2.1(读取权收归后端+三堂会审整改+补分批口径); 注:含1个feat(噪音过滤),按MINOR记v1.5.1
 ### 1.5.1.1 TaskInfoBar事件浮层宽度拆分+文本折行
 [位2与事件浮层宽度拆分] fix eff3146f1 位2与事件浮层原共用LIVE_META_MAX_W,拆为两个独立常量:LIVE_META_MAX_W=20汉字宽(240px)位2截断专用(EllipsisTip+ellipsis);EVENT_CARD_W=40汉字宽(480px)事件浮层宽度专用(原220→350→480);事件时间轴文本nowrap+ellipsis改折行显示(whiteSpace:normal+wordBreak:break-word),长文本折行完整可见不再省略 - 小欧 2026-10-29
 ### 1.5.1.2 TitleBlock窄右栏token不可见+实时终态token兜底
@@ -28,7 +28,7 @@ v1.5.1
 [死参数清理] refactor d955860ab fileDeepLink/FileRefChip/Files删chip跳转死参数source与死判据 - 小欧 2026-10-29
 [设计文档54] docs ba074f428+21c54fe62 [54]会话工作区目录合并[55]为单一重构文档-role改名workspace_property+术语收口会话工作区+创建时机定稿+兜底read_write;清理为非设计方案(删三堂会审/归档说明/决策记录/版本流水账/文档号注释)+修4处设计矛盾 - 小欧 2026-10-28
 [设计文档56] docs a3b7e8aff [56]附件与上下文物件设计文档v7定稿,新增[55]默认会话工作区创建逻辑分析与建议 - 小欧 2026-10-28
-[文档57] docs ad8591a1a+159380486+7812fac39 文档索引v1.2补登[47]~[56](v1.1后新增未登记10份)+登记[57]输入框引用全链路-缺陷分析与设计重构方案(10项缺陷+体积闸门设计,读取权收归后端)+索引v1.3同步[57]升版v1.2+[57]升版v2.0(三堂会审整改:修11处自相矛盾+6处与实码不符,结构单线重排) - 小欧 2026-10-29
+[文档57] docs ad8591a1a+159380486+7812fac39+105ac6e18 文档索引v1.2补登[47]~[56](v1.1后新增未登记10份)+登记[57]输入框引用全链路-缺陷分析与设计重构方案(10项缺陷+体积闸门设计,读取权收归后端)+索引v1.3同步[57]升版v1.2+[57]升版v2.0(三堂会审整改:修11处自相矛盾+6处与实码不符,结构单线重排)+[57]升版v2.1(补分批口径:回执接入批次/第1批sanitize_refs保持现签名)+索引v1.4同步 - 小欧 2026-10-29
 
 v1.5.0
 更新时间: 2026-10-28 21:46:39 - 小欧-2026-10-28
