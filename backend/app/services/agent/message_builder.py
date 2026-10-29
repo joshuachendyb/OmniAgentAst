@@ -89,6 +89,9 @@
 #   一行状态/计数, 优先它会让死循环纠偏提示失去"上次到底返回了什么"的判据, 改回改造前实际生效行为(content
 #   为空才回退 _summary); ②新增 keep_full_raw 单点(DRY): prune 两处与 split_turn 一处的"原文存 _raw"
 #   同构写入收口, 统一"只保留最长者"守卫(split_turn 二次截断原会把全文 _raw 吃成截断头, 违反其 docstring) — 小欧-2026-10-30
+# 2026-10-30 小欧 - 三堂会审二轮(北京老陈令"坐实问题再修"): trim_history 队列预算不足分支修复 —— 原 else 在
+#   "未溢窗但 阈值×系数² 预算不够"时直接 tail_start=keep_from 走"丢光队列", 与本文档第 6 条"预算不足保留原历史"
+#   相反(实测 12 个旧轮一次清空/51 条→只留保护区); 拆为 溢窗分支(行为不变, 注释订正) + 退回硬剩余预算判定 — 小欧-2026-10-30
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -583,6 +586,8 @@ class MessageBuilder:
         5. 保护区超出预算时仅保留保护区(硬保护, 容忍窗口溢出)
         6. 无旧轮可裁/预算不足时保留原历史直接返回(不重建/不动裁剪旗/不复位冷却); 仅裁剪分支跑 dangling 清理
            (未裁剪时 FC 配对本完整, "保留原历史"语义下禁止静默动刀) — 小欧-2026-10-30
+           2026-10-30 细化(三堂会审修复): "预算不足"只对未溢窗成立; 粗估已超 budget_base 的真溢窗场景,
+           队列整体让位保保护区(只额外留保护区那轮的提问 user) — 小欧-2026-10-30
 
         使用方式: 超阈值时裁剪一次, 裁后替换 conversation_history, 后续轮次在裁后历史基础上累积, 再次超阈值则再次裁剪(非每轮触发)
         """
@@ -610,17 +615,28 @@ class MessageBuilder:
             keep_from = find_recent_rounds_start(hist, self._keep_recent_rounds)  # 倒数第 N 轮起点(保护区起点)
             protected = hist[keep_from:]  # 倒数 1~N 轮, 不裁
             queue = hist[prefix:keep_from]  # 倒数第 N+1 及更早, 传入裁剪函数
-            # 队列预算 = budget_base×系数² - 保护区已占用; 保护区超预算时 budget_for_queue<0, 走 else 不裁队列
-            budget_for_queue = budget_base * self._trim_trigger_ratio * self._trim_trigger_ratio - self._estimate_tokens(protected)
+            # 队列预算 = budget_base×系数² - 保护区已占用; 保护区超预算时 budget_for_queue<0, 走 else 分支
+            protected_tokens = self._estimate_tokens(protected)
+            budget_for_queue = budget_base * self._trim_trigger_ratio * self._trim_trigger_ratio - protected_tokens
             if budget_for_queue > 0 and queue:
                 tail_start = prefix + find_tail_start(queue, budget_for_queue, align_turn=True)
-            else:
+            elif rough_current > budget_base and queue:
+                # 2026-10-30 小欧 溢窗分支(原 else 的一半, 行为不变, 注释订正): 粗估已超裁剪预算, 属真溢窗,
+                #   队列整体让位保保护区 —— 只额外保留"保护区那轮的提问 user", 防有答无问 — 小欧-2026-10-30
                 tail_start = keep_from
                 j = tail_start
                 while j > prefix and hist[j].get("role") != "user":
                     j -= 1
                 if j > prefix and hist[j].get("role") == "user":
                     tail_start = j
+            else:
+                # 2026-10-30 小欧 修复(三堂会审发现, 实测 12 个旧轮被一次清空): 未溢窗、只是"阈值×系数²"
+                #   这个偏保守的队列预算不够 → 原 else 直接按"丢光队列"处理, 与本文档第 6 条"预算不足时
+                #   保留原历史直接返回"相反, 属过度裁剪。改为退回硬剩余预算(budget_base - 保护区)再判:
+                #   留得下就留, 仍留不下才 tail_start=prefix(早退保留原历史) — 小欧-2026-10-30
+                remaining = budget_base - protected_tokens
+                tail_start = (prefix + find_tail_start(queue, remaining, align_turn=True)
+                              if queue and remaining > 0 else prefix)
             # 三段结构:
             #   头部     = hist[:prefix]                 system 消息(保留)
             #   队列剩余 = hist[tail_start:keep_from]   裁剪区后的队列消息(保留)

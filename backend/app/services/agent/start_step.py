@@ -91,6 +91,12 @@
 #   — 小欧-2026-10-29
 # 2026-10-29 小欧 - 魔法数字清账(北京老陈令): _extract_summary_tail 解析失败兜底 _tail_n=5 写死改 KEEP_RECENT_ROUNDS
 #   常量引用(与解析函数缺省同源), 代码零行为变化。— 小欧-2026-10-29
+# 2026-10-30 小欧 - 三堂会审二轮两修(北京老陈令"坐实问题再修"):
+#   ①_strip_history_msgs 末尾统一剪 FC 孤儿 —— 上方剥离畸形 tool_calls 后其 tool 结果失去调用方, 而注入历史
+#     全链路从不调用 remove_dangling_tool_calls(唯一调用点在 trim 裁剪分支), 孤儿直达 provider 首帧 400
+#     (实测注入件 tool 1 条/有调用方 0 条);
+#   ②摘要来源标签归一 —— 落库带"[本次摘要]: ", 读回锚点再标"[往次摘要]: "成双层(实测), 且该串还作为
+#     "已有摘要"喂给下一次压缩; 新增 _strip_summary_labels 单点, 读锚点与 _prefix_summary 两侧统一剥净 — 小欧-2026-10-30
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -120,13 +126,30 @@ SUMMARY_PREFIX_PREVIOUS = "[往次摘要]: "
 SUMMARY_PREFIX_CURRENT = "[本次摘要]: "
 
 
+def _strip_summary_labels(text: str) -> str:
+    """剥掉摘要正文开头的来源标签(可多层), 返回纯正文 — 小欧 2026-10-30
+
+    摘要落库时带来源标签("[本次摘要]: "), 读回锚点后再标"[往次摘要]: "就成了双层标签
+    (实测 "[往次摘要]: [本次摘要]: 正文"), 且该串还作为"已有摘要"喂给下一次压缩的 LLM。
+    标签是给人和日志看的装饰, 不属于正文, 故读写两侧统一过本函数归一。
+    """
+    if not text:
+        return text
+    changed = True
+    while changed:
+        changed = False
+        for _p in (SUMMARY_PREFIX_PREVIOUS, SUMMARY_PREFIX_CURRENT):
+            if text.startswith(_p):
+                text = text[len(_p):]
+                changed = True
+    return text
+
+
 def _prefix_summary(summary: str, prefix: str) -> str:
-    """给摘要文本加来源前缀，且避免重复前缀。"""
+    """给摘要文本加来源前缀, 全文只留一个来源标签 — 小欧 2026-10-24 / 2026-10-30 归一"""
     if not summary:
         return summary
-    if summary.startswith(prefix):
-        return summary
-    return prefix + summary
+    return prefix + _strip_summary_labels(summary)
 
 
 def _extract_summary_tail(src_msgs: Optional[List[Dict[str, Any]]]) -> Dict[str, Any]:
@@ -274,7 +297,12 @@ def _strip_history_msgs(prev: List[Dict[str, Any]], drop_last_user: bool = True)
             history_msgs.append({"role": "user", "content": msg["content"]})
         elif role == "system" and msg.get("content"):
             history_msgs.append({"role": "system", "content": msg["content"]})
-    return history_msgs
+    # 2026-10-30 小欧 - 修复(三堂会审发现, 实测复现): 上方剥离畸形 tool_calls 后, 其 tool 结果失去调用方
+    #   成孤儿; 原实现原样返回, 而注入历史全链路(全量/增量 delta)从不调用 remove_dangling_tool_calls
+    #   (唯一调用点在 trim 裁剪分支) → 孤儿直达 provider(实测注入件 tool 1 条, 有调用方 0 条)。
+    #   收口在本函数末尾统一剪孤儿(全量/delta 两路径同源, DRY), 顺带剪掉"有调用无结果"的残缺决策。
+    from app.services.agent.compaction.assembler import remove_dangling_tool_calls
+    return remove_dangling_tool_calls(history_msgs)
 
 
 def _build_injected_history(agent, context: Optional[Dict[str, Any]]) -> None:
@@ -459,7 +487,9 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
       失败(取消/异常/校验拒收)回退"旧锚点摘要 + 全量 delta", 比老路的全量历史更省, 链不断。 — 小欧-2026-10-14
     """
     anchor = (context.get("chain_summary_anchor") if isinstance(context, dict) else None) or {}
-    anchor_summary = anchor.get("summary") or ""
+    # 2026-10-30 小欧: 锚点摘要先剥来源标签再当"纯正文"用(落库时带标签, 不清会层层叠加且污染
+    #   喂给 generate_chunked_summary 的"已有摘要"输入) — 小欧-2026-10-30
+    anchor_summary = _strip_summary_labels(anchor.get("summary") or "")
     delta_raw = (context.get("chain_delta_messages") if isinstance(context, dict) else None) or []
     if not anchor_summary:
         return False   # 锚点无摘要(异常数据) → 老路
