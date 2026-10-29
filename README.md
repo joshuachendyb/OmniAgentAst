@@ -644,7 +644,7 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 | 资产 | 位置 |
 |------|------|
-| 后端执行手册（用例/铁律/数据结构，v2.16） | `backend/e2etests/全链路E2E测试手册-小健-2026-05-23.md` |
+| 后端执行手册（用例/铁律/数据结构，v2.18） | `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md` |
 | 后端核心 helper（所有通用逻辑） | `backend/e2etests/e2emodel/e2e_helpers.py` |
 | 后端 case 模板（四类） | `backend/e2etests/e2emodel/model-test_e2e_0*.py` |
 | 前端 E2E 公共库（POM/进程/诊断） | `frontend/e2e_front_lib/` |
@@ -666,7 +666,6 @@ E2E（端到端）用**真实环境**模拟真实用户操作，验证系统全�
 
 ```
 backend/e2etests/
-├── 全链路E2E测试手册-小健-2026-05-23.md   # 总手册：用例/铁律/数据结构/标题命名
 ├── e2emodel/                              # 后端 E2E 公共库
 │   ├── e2e_helpers.py                     #  全部通用逻辑（计时/SSE解析/DB校验/日志检查/测试记录）
 │   ├── conftest.py                        #  pytest fixtures
@@ -674,6 +673,8 @@ backend/e2etests/
 ├── test_e2e_*.py                          # 实际 case（P0-P5/PAR/重连 ）+ com-* 
 └── reports/                               # 报告输出（按需生成）
 ```
+
+> 总手册《全链路E2E测试手册》已迁至 `doc-打包与E2E/`（见 8.1 配套文档表），本目录只留用例与公共库。
 
 **后端执行落盘**（`backend/` 下）：
 
