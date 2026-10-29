@@ -125,7 +125,7 @@ npm run test -- --run <name>  # single test
 
 ## E2E 全链路测试（核心要点）
 
-> 后端完整流程见 `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md`（v2.18）。前端 E2E 见第八章。本节抽取每次 E2E 必读要点。
+> 后端完整流程见 `doc-打包与E2E/全链路E2E测试手册-小健-2026-05-23.md`（v2.19）。前端 E2E 见第八章。本节抽取每次 E2E 必读要点。
 
 **配置隔离铁律**：任何测试**严禁写 `config/config.yaml`**，一律经 `app/config.py` 的 `get_config_path()` 读写；`backend/tests/conftest.py` 的会话级 `isolated_config_dir` 已把全链指向临时副本，测试代码只可惰性调 `get_config_path()`，**禁止硬编码配置路径**（曾实测污染真配置 2 次：进程被杀时 teardown 不执行，还原不可靠；根治靠"够不到"而非"事后还原"）
 - **数据隔离铁律（2026-09-30 修订）**：上一条只管住了 `config.yaml`，**管不到 SQLite** —— `app/db/database.py` 原在 `__init__` 硬编码 `Path.home()/".omniagent"`，且 `db=DatabaseManager()` 在导入期即构造、路径被冻结，故任何裸用 `db.get_conn()` 的测试都直写真库（实测污染真库：空会话 / `hello` / `v2` 垃圾会话，每跑一次全量单测多几个）。**修订**：
