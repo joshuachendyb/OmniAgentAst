@@ -85,6 +85,10 @@
 #   被换成 48 字符状态行, 正文本轮内不可见且留"读过了"误导痕迹。保留 c2 的另三处修复: 无裁剪即保留原历史
 #   (不重建/不动裁剪旗/不复位冷却)、未裁剪不跑 remove_dangling_tool_calls、裁剪分支照旧。_summary stash
 #   继续保留(get_last_tool_summary 死循环纠偏消费), 不再用于改写 tool content — 小欧-2026-10-30
+# 2026-10-30 小欧 - 三堂会审收尾(北京老陈令): ①get_last_tool_summary 改 content 优先 —— 工具 _summary 只是
+#   一行状态/计数, 优先它会让死循环纠偏提示失去"上次到底返回了什么"的判据, 改回改造前实际生效行为(content
+#   为空才回退 _summary); ②新增 keep_full_raw 单点(DRY): prune 两处与 split_turn 一处的"原文存 _raw"
+#   同构写入收口, 统一"只保留最长者"守卫(split_turn 二次截断原会把全文 _raw 吃成截断头, 违反其 docstring) — 小欧-2026-10-30
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -392,15 +396,28 @@ class MessageBuilder:
         self._append_observation(observation_text, fc_context)
 
     def get_last_tool_summary(self) -> str:
-        """返回末条 role:tool 消息的摘要(_summary 优先, 回退 content 截200字) — 小欧 2026-10-24
-        供死循环纠偏注入: 让 LLM 看到上一次工具的具体返回, 判断为何不应再调同一工具。"""
+        """返回末条 role:tool 消息的摘要(content 优先, 回退 _summary, 截 TOOL_SUMMARY_PREVIEW_CHARS) — 小欧 2026-10-24 / 2026-10-30 改序
+        供死循环纠偏注入: 让 LLM 看到上一次工具的具体返回, 判断为何不应再调同一工具。
+        2026-10-30 小欧: 原 _summary 优先是反的 —— 全库工具 llm_data.summary 均为一两行状态/计数
+        ("读文件X,成功:40行"), 优先它等于让纠偏提示只说"成功"、丢掉"到底返回了什么"这一判据,
+        故改为 content 优先、content 为空才回退 _summary(即改造前实际生效行为)。"""
         for msg in reversed(self.conversation_history):
             if msg.get("role") == "tool":
-                summary = msg.get("_summary") or msg.get("content", "")
+                summary = msg.get("content") or msg.get("_summary") or ""
                 if len(summary) > TOOL_SUMMARY_PREVIEW_CHARS:
                     summary = summary[:TOOL_SUMMARY_PREVIEW_CHARS] + "..."
                 return summary
         return ""
+
+    @staticmethod
+    def keep_full_raw(msg: Dict[str, Any], raw: str) -> None:
+        """把被裁剪/压缩前的原文写入 msg["_raw"], 只保留最长者 — 小欧 2026-10-30
+
+        压缩/裁剪链路上多处都会写 `_raw`(prune 语义替换与保头截断、split_turn 超长截断),
+        若逐处只写不判, 同一条消息被二次处理时 `_raw` 会被后一次的"已截断文本"覆盖, 全文丢失。
+        收口为单点: 已有更长的 `_raw` 则不动。"""
+        if raw and len(raw) > len(msg.get("_raw") or ""):
+            msg["_raw"] = raw
 
     def add_assistant_message(self, content: str) -> AssistantMessage:
         """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口

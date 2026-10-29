@@ -26,6 +26,9 @@
 #     行数, 40~80字)信息密集, 换一行模板摘要在 token 收益趋零下灭失信息, 仅长文本才值得整条换取真摘要 — 小欧-2026-10-29
 #   2026-10-29 小欧 魔法数字清账(北京老陈令): _value_weight 六权重值与 clear_tool_outputs 头部截长 [:120] 迁
 #     compaction_constants.VALUE_WEIGHT_*/TOOL_SUMMARY_HEAD_CHARS 常量域, 代码零行为变化 — 小欧-2026-10-29
+#   2026-10-30 小欧 三堂会审收尾(北京老陈令): ①use_tool_summary/compress_long_tool_output 两处 _raw 写入改调
+#     MessageBuilder.keep_full_raw 单点(原 use_tool_summary 内联"已有更长不覆盖"守卫, 与其他两处同构重复, DRY);
+#     ②use_tool_summary docstring 补"当前无生产调用点"警示(trim 语义替换已实测撤销, 接线前须坐实 summary 含正文) — 小欧-2026-10-30
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -114,6 +117,9 @@ def use_tool_summary(messages: List[Dict]) -> List[Dict]:
     依据本地真实代码: observation_formatter.py:603/627 已将 summary 拼进 content 文本, tool 消息字典本身只有
     role/tool_call_id/content, 无独立 summary 字段 —— 复用已 stash 的 _summary(去臆测 msg["summary"])。
     不写 per-tool 模板(DRY, 消除 14.3 指出的 C1 逐工具模板过度设计)。
+    ⚠ 当前无生产调用点(2026-10-30 小欧): trim_history 的语义替换已实测撤销——全库 llm_data.summary 均为一两行
+      状态/计数, 换掉后正文本轮不可见。保留本函数仅作"确实带正文摘要"的工具接入预备, 接线前须先坐实该工具
+      summary 含正文, 否则必然灭失信息。
     """
     for msg in messages:
         if msg.get("role") == "tool" and not msg.get("_compressed"):
@@ -123,11 +129,9 @@ def use_tool_summary(messages: List[Dict]) -> List[Dict]:
             #   换一行模板摘要 token 收益趋零而信息全失, 仅达门槛的长文本才参与; 门槛值归
             #   compaction_constants.USE_SUMMARY_MIN_CHARS(权威常量域, 与其他压缩阈值同源) — 小欧-2026-10-29
             if summ and raw and len(str(raw)) >= USE_SUMMARY_MIN_CHARS and len(str(raw)) > len(str(summ)):
-                # 2026-10-29 小欧 - _raw 保长守卫: _raw 须承载最长原文——已有 _raw 更长(如 trim 先 truncate
-                #   存全量再走到此处)时不得被截断头覆盖, 保住原文尾部; 短/同长才更新 — 小欧-2026-10-29
-                _prev_raw = msg.get("_raw")
-                if not _prev_raw or len(str(_prev_raw)) < len(str(raw)):
-                    msg["_raw"] = raw
+                # 2026-10-30 小欧 - _raw 保长守卫收口 MessageBuilder.keep_full_raw(DRY): 原内联
+                #   "已有更长 _raw 不覆盖"逻辑在本文件两处 + split_turn 一处重复, 统一走单点 — 小欧-2026-10-30
+                MessageBuilder.keep_full_raw(msg, raw)
                 msg["content"] = f"[tool-summary] {summ}"
                 msg["_compressed"] = True
     return messages
@@ -164,7 +168,7 @@ def compress_long_tool_output(messages: List[Dict],
         if release < min_release:
             continue                          # 释放不足 PRUNE_MINIMUM_TOKENS 跳过(防抖动, 借鉴 OPENCODE)
         head = " ".join(raw.split())[:TOOL_SUMMARY_HEAD_CHARS]
-        msg["_raw"] = raw
+        MessageBuilder.keep_full_raw(msg, raw)   # 2026-10-30 小欧: _raw 写入收口 message_builder 单点
         msg["content"] = f"[tool-summary] {head}…({len(raw)}字符)"
         msg["_compressed"] = True
         released += release

@@ -64,6 +64,8 @@
 # 2026-10-29 小欧 - 新摘要注入件升级(北京老陈令, 唯一触发条件=本轮新摘要成功, 信号 _pending_chain_summary_cover is True):
 #   注入件由"纯摘要"升级为「最后任务usermessage + 摘要 + 产生摘要素材conv数组倒数5轮」;
 #   复用锚点摘要(信号为 None)维持现状(summary+delta), 无摘要维持全量注入 — 小欧-2026-10-29
+# 2026-10-30 小欧 - 三堂会审收尾(北京老陈令): 摘要落库三态判定默认值 False→None, 与注入日志分支的
+#   `is True` 同口径——未设置态不等于"明确否", 两处对同一信号用两种默认值属自相矛盾 — 小欧-2026-10-30
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -194,7 +196,8 @@ async def run_react_cycle(
             await _publish(_hc_first.to_dict())
 
     # 摘要落库到"上一个任务行"(=下次锚点); 失败仅告警, 下次走老路。— 小欧 2026-10-14
-    if getattr(agent, "_pending_chain_summary_cover", False) and _summary:
+    # 2026-10-30 小欧: 三态判定默认值 False→None 与上方注入日志分支的 `is True` 对齐(未设置态不得等同"明确否")
+    if getattr(agent, "_pending_chain_summary_cover", None) is True and _summary:
         _cover_root = (getattr(agent, "_start_meta", None) or {}).get("context_root_task_id") or ""
         if _cover_root:
             try:

@@ -20,6 +20,10 @@
 # 2026-10-29 小欧 - 魔法数字清账(北京老陈令): resolve_protect_rounds 夹取字面量 5/20 迁 PROTECT_ROUNDS_MIN/MAX
 #   常量; preserve_recent_budget docstring 公式漂移订正为 TAIL_TOKEN_* 常量名(代码 2026-08-17 已用常量, 仅文档滞后)
 #   — 小欧-2026-10-29
+# 2026-10-30 小欧 - 三堂会审收尾(北京老陈令): ①truncate_oversized_message 的 _raw 写入改调
+#   MessageBuilder.keep_full_raw —— 原裸写使二次截断把已存全文覆盖成本次截断头(实测 6000→4013), 与其
+#   docstring"_raw 原内容"承诺相违; ②PROTECT_ROUNDS_MIN/MAX/KEEP_RECENT_ROUNDS 三常量 import 上提模块顶,
+#   删 resolve_protect_rounds 函数内重复 import(每次调用重解析) — 小欧-2026-10-30
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -32,6 +36,9 @@ absolute_start 供 assembler 定位 new_block(对应 generate_chunked_summary �
 from typing import List, Dict, Tuple
 
 from app.services.agent.compaction_constants import (
+    KEEP_RECENT_ROUNDS,               # 2026-10-30 小欧: 保护区轮数默认值(原函数内重复 import, 上提模块顶)
+    PROTECT_ROUNDS_MAX,               # 2026-10-30 小欧: 保护区轮数夹取上限(同上)
+    PROTECT_ROUNDS_MIN,               # 2026-10-30 小欧: 保护区轮数夹取下限(同上)
     SPLIT_TURN_MAX_ASSISTANT_CHARS,
     TAIL_TOKEN_MAX,
     TAIL_TOKEN_MIN,
@@ -168,7 +175,6 @@ def resolve_protect_rounds() -> int:
     关联逻辑: 与 message_builder 旧夹取表达式同式(收敛后该处改调本函数, 全域只此一处算式)。
     """
     from app.config import get_config   # app.config 零业务依赖, 不入循环
-    from app.services.agent.compaction_constants import KEEP_RECENT_ROUNDS, PROTECT_ROUNDS_MIN, PROTECT_ROUNDS_MAX
     return max(PROTECT_ROUNDS_MIN, min(PROTECT_ROUNDS_MAX, int(get_config().get('tuning.trim.keep_recent_rounds', KEEP_RECENT_ROUNDS))))
 
 
@@ -190,7 +196,9 @@ def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:
             raw = str(msg.get("content", "") or "")
             if len(raw) > SPLIT_TURN_MAX_ASSISTANT_CHARS:
                 m = dict(msg)
-                m["_raw"] = raw
+                # 2026-10-30 小欧: _raw 写入收口 MessageBuilder.keep_full_raw(DRY) —— 原裸写会在二次
+                #   截断时把已存的全文覆盖成本次的截断头, 与 docstring"_raw 原内容"承诺相违
+                MessageBuilder.keep_full_raw(m, raw)
                 m["content"] = raw[:SPLIT_TURN_MAX_ASSISTANT_CHARS] + "…[split_turn]"
                 m["_truncated"] = True
                 result.append(m)
