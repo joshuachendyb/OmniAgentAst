@@ -47,6 +47,14 @@
 #   原 :254(配置查找失败) 与 :312(读会话失败) 两处逐字重复"派生快照→标记→返回"，且曾因独立
 #   evolve 漏加一处专属异常上抛(即设计文档要消灭的行为 B)。日志分工: 调用方只报原因(reason)，
 #   _default_snapshot 统一报"降级到哪个模型"，消除两条重叠 warning。
+# 2026-10-29 - 小欧 - 修"快照丢 provider 定制值"遗留(场景齐全, 老陈三堂会审): resolve_session_client 跨 provider 快照
+#   补传 max_retries/timeout/max_tokens/temperature/top_p/frequency_penalty/presence_penalty/seed + inherit_missing=_same_pv;
+#   原快照沿用全局 agnes=3/120 致会话切 sensenova 后重试次数仍显 3、超时误用 120(老陈实测 max_retries=4 不生效)。 小欧-2026-10-29
+# 2026-10-29 - 小欧 - KISS 审查(老陈裁定全部修复): 调用侧 8 次"(_pv_cfg or {}).get(...)"收敛为一次
+#   _cfg = _pv_cfg or {}（同 provider 时 _pv_cfg=None 防炸, 跨 provider 到 snapshot 处已非 None）。 小欧-2026-10-29
+# 2026-10-29 - 小欧 - 修测试发现的真实回归: _resolve_max_tokens 原为跨 provider 分支内局部导入,
+#   但 snapshot 调用在分支外也用它 → 同 provider 换模型时 UnboundLocalError(被外层 except 降级回全局
+#   模型, 换模型 100% 失效); 已把导入提到分支入口, 删分支内重复导入。 小欧-2026-10-29
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -224,6 +232,7 @@ async def resolve_session_client(scope, session_id):
             # 2026-09-01 小欧: L2 切跨 provider 模型, api_base/api_key/model_params(含 context_limit)
             # 均按目标 provider+model 从 config.yaml 查出(后端内部, 不落库、不出前端);
             # api_base 必须用目标 provider 的, 而非 _ov.api_base or 全局(全局=agnes 地址, 仍 503)
+            from app.services.lifecycle.service import parse_model_params, _resolve_max_tokens  # 2026-10-29 小欧: 提到分支入口——_resolve_max_tokens 在 snapshot(分支外)也用, 原仅在跨 provider 分支内导入, 致同 provider 换模型 UnboundLocalError(测试发现)
             _pv_cfg = None
             _pv_key = None
             _pv_ebp = None
@@ -245,7 +254,6 @@ async def resolve_session_client(scope, session_id):
                             f"请先在设置页填写，或设置环境变量 {_ov.provider.upper()}_API_KEY"
                         )
                     # model_params 解析复用 service.parse_model_params(DRY 唯一权威, 与全局实例同逻辑)
-                    from app.services.lifecycle.service import parse_model_params
                     _pv_ebp, _pv_ctx = parse_model_params(_pv_cfg, _ov.model or "")
                 except ProviderKeyMissingError:
                     raise   # 专属异常必须冒泡: 被下方 except Exception 降级即等于用全局 key 继续跑
@@ -275,11 +283,21 @@ async def resolve_session_client(scope, session_id):
                 ),
                 display_name=_ov.display_name or ai_service.llm_model.display_name,
             )
+            _cfg = _pv_cfg or {}  # 2026-10-29 小欧 KISS: 收敛 8 处重复"or {}"(同 provider 时 _pv_cfg=None 防炸, 跨 provider 到此处已非 None)
             session_client = ai_service.snapshot(
                 override_ref,
                 api_key=_pv_key,
                 extra_body_params=_pv_ebp,
                 context_limit=_pv_ctx,
+                max_retries=_cfg.get("max_retries"),  # 2026-10-29 小欧: 跨 provider 用目标 provider 定制值(sensenova=4)
+                timeout=_cfg.get("timeout"),  # 2026-10-29 小欧: 跨 provider 用目标 provider 定制值(sensenova=200)
+                max_tokens=_resolve_max_tokens(_cfg, _ov.model or ""),  # 2026-10-29 小欧: 场景齐全——跨 provider 按目标 provider+model 解析(model_meta.max_output_length), 未配回落默认
+                temperature=_cfg.get("temperature"),  # 2026-10-29 小欧: 场景齐全——跨 provider 一律按目标 provider 取参, 未配回落默认, 绝不沿用全局(agnes)
+                top_p=_cfg.get("top_p"),
+                frequency_penalty=_cfg.get("frequency_penalty"),
+                presence_penalty=_cfg.get("presence_penalty"),
+                seed=_cfg.get("seed"),
+                inherit_missing=_same_pv,  # 跨 provider(False)未配项回落默认, 同 provider(True)沿用 self 定制值 — 小欧-2026-10-29
                 shared_client=(lease.client if _same_pv else None),  # 同 provider 复用本代共享池; 跨 provider 独占新池 — 小欧-2026-09-25
                 client_lease=(lease if _same_pv else None),  # lease 与池成对: 同 provider 接管(close 归还), 跨 provider 不接 — 小欧-2026-09-25
             )

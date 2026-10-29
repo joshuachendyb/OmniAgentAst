@@ -85,6 +85,14 @@
 #   常量改通用名 RETRY_BACKOFF_BASE/CAP(L2 llm_call:283 裸30 合并共用) — 小欧-2026-10-28
 # 2026-10-29 小欧 重试事件文案统一: ①L1重试事件透传retry_wait/retry_error_type(等N秒+异常类名);
 #   ②429重试耗尽出口文案去HTTP前缀("模型限流（429）"/"模型配额/余额已用尽（429）"); 重试判定/退避逻辑零改动 — 小欧-2026-10-29
+# 2026-10-29 小欧 修"快照丢 provider 定制值"遗留(场景齐全, 老陈三堂会审): snapshot 增 max_retries/timeout/max_tokens/
+#   temperature/top_p/frequency_penalty/presence_penalty/seed + inherit_missing 参数——跨 provider(inherit_missing=False)
+#   未配项回落默认, 同 provider/无覆盖(True)沿用 self(兼容); resolver 跨 provider 传目标 provider 全量参数
+#   (sensenova=4/200, max_tokens 经 _resolve_max_tokens); 原快照固定沿用全局 agnes=3/120 致会话切 sensenova 后
+#   重试次数仍显 3、超时误用 120(老陈实测 max_retries=4 不生效)。 小欧-2026-10-29
+# 2026-10-29 小欧 KISS 审查(老陈裁定全部修复): ①snapshot 提取 _inherit 静态方法收敛 10 处同模式三元(DRY);
+#   ②extra_body_params/context_limit 统一走 inherit_missing(原"if is not None else self"未走 inherit,
+#   跨 provider 未配时仍沿用全局 agnes 的 extra_body_params, 违反"没设置的没有"——已修)。 小欧-2026-10-29
 """
 LLM 核心模块 — BaseAIService
 
@@ -206,12 +214,29 @@ class BaseAIService:
         self._shared_client = self._llm_sdk.client
         return self._shared_client
 
+    @staticmethod
+    def _inherit(cur, new, flag):
+        """snapshot 参数继承(DRY 收敛 10 处同模式三元) — 小欧 2026-10-29
+        flag=True(同 provider/无覆盖): new 为 None 则沿用 cur(兼容, 零退化);
+        flag=False(跨 provider): 一律用 new, 未配(None)回落默认, 绝不沿用 cur(老陈"没设置的没有")。
+        """
+        return cur if (new is None and flag) else new
+
     def snapshot(self, model_ref: Optional[ModelRef] = None,
                  api_key: Optional[str] = None,
                  extra_body_params: Optional[Dict] = None,
                  context_limit: Optional[int] = None,
                  shared_client: Optional["httpx.AsyncClient"] = None,
-                 client_lease: Optional[SharedClientLease] = None) -> "BaseAIService":  # 与 shared_client 成对注入 — 小欧-2026-09-25
+                 client_lease: Optional[SharedClientLease] = None,
+                 max_retries: Optional[int] = None,
+                 timeout: Optional[int] = None,
+                 max_tokens: Optional[int] = None,
+                 temperature: Optional[float] = None,
+                 top_p: Optional[float] = None,
+                 frequency_penalty: Optional[float] = None,
+                 presence_penalty: Optional[float] = None,
+                 seed: Optional[int] = None,
+                 inherit_missing: bool = True) -> "BaseAIService":  # 2026-10-29 小欧: 加 max_retries/timeout 及全量参数覆盖; inherit_missing=False(跨 provider)未配项回落默认, True(同 provider/无覆盖)沿用 self
         """构造本实例的独立副本(携带 model_ref 或当前模型), 与进程级共享单例解耦 — 小沈 2026-08-29
         病根修复: sessionModel 覆盖此前直接改进程单例 llm_model + reset_sdk(全局副作用), 单例还原时序竞态
         导致"断连时后台任务误用旧模型"与"后续无覆盖会话串用错误模型"两类退化。改为后台任务/会话持有自身
@@ -225,18 +250,16 @@ class BaseAIService:
         snap = BaseAIService(
             api_key=api_key or self.api_key,
             llm_model=model_ref if model_ref is not None else self.llm_model,
-            timeout=self.timeout,
-            max_retries=self.max_retries,  # 快照常切跨 provider 模型，不传则丢 provider 定制值 — 小欧 2026-09-22
-            max_tokens=self.max_tokens,
-            temperature=self.temperature,
-            top_p=self.top_p,  # 新增 — 小欧 2026-09-23
-            frequency_penalty=self.frequency_penalty,  # 新增 — 小欧 2026-09-23
-            presence_penalty=self.presence_penalty,  # 新增 — 小欧 2026-09-23
-            seed=self.seed,
-            extra_body_params=extra_body_params
-            if extra_body_params is not None else self.extra_body_params,
-            context_limit=context_limit
-            if context_limit is not None else self.context_limit,
+            timeout=self._inherit(self.timeout, timeout, inherit_missing),
+            max_retries=self._inherit(self.max_retries, max_retries, inherit_missing),
+            max_tokens=self._inherit(self.max_tokens, max_tokens, inherit_missing),
+            temperature=self._inherit(self.temperature, temperature, inherit_missing),
+            top_p=self._inherit(self.top_p, top_p, inherit_missing),
+            frequency_penalty=self._inherit(self.frequency_penalty, frequency_penalty, inherit_missing),
+            presence_penalty=self._inherit(self.presence_penalty, presence_penalty, inherit_missing),
+            seed=self._inherit(self.seed, seed, inherit_missing),
+            extra_body_params=self._inherit(self.extra_body_params, extra_body_params, inherit_missing),
+            context_limit=self._inherit(self.context_limit, context_limit, inherit_missing),
             shared_client=shared_client,  # C1: 共享与否由调用方(resolver)按 provider 判据定, 构造期定论
             client_lease=client_lease,  # 与 shared_client 成对: 同 provider 快照接管池 lease — 小欧-2026-09-25
         )

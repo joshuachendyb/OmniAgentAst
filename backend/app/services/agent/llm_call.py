@@ -58,6 +58,8 @@
 # 2026-10-29 小欧 重试错误载荷修正(老陈裁定, 消双"错误"): client_sdk 构造 str(e)="HTTP {code} 错误: {server_msg}"
 #   自带"错误:", 原模板再拼"错误: [...]"叠成双"错误"; 新增 _format_retry_payload——HTTP 拆出"(code)msg",
 #   非 HTTP str(e) 英文按类名映射中文(_CN_MSG, 防英文名词与类名重复), 类名统一末尾: "错误: {payload} [ExcType]"。 小欧-2026-10-29
+# 2026-10-29 小欧 KISS 审查(老陈裁定全部修复): L2 重试事件文案统一——原"错误: [LLMResponseError] {msg}"类名在前
+#   且未走 _format_retry_payload, 与 L1 格式不一致; 改 _format_retry_payload(清洗 HTTP 前缀/英文转中文) + 类名末尾。 小欧-2026-10-29
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
@@ -322,7 +324,8 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             yield create_payload_chunk(_resolve_chunk_model(agent), {
                 "type": "retrying",
                 "content": f"[响应]重试 {attempt+1}/{_retries}等{wait_time}秒, "
-                            f"错误: [LLMResponseError] {e.message or 'LLMResponseError'}",
+                            f"错误: {_format_retry_payload(e.message or '', type(e).__name__)} "
+                            f"[{type(e).__name__}]",  # 2026-10-29 小欧: L2 文案统一 _format_retry_payload + 类名末尾(与 L1 一致, 原为"错误: [类名] msg"类名在前)
                 "wait_time": wait_time,
             })
             await asyncio.sleep(wait_time)
