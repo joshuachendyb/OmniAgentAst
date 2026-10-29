@@ -61,6 +61,9 @@
 # 2026-10-14 小欧 - 文档[33] 4.1连带表: :363 clear_temp_auth 改从 app.safety.temp_auth 导入
 # 2026-10-25 小欧 - 增量注入顺序修复(北京老陈令): 原两次 inject_history 把 delta 插到 summary 前面, 顺序错(应为 summary 在前 delta 在后); 合并为一次调用 — 小欧-2026-10-25
 # 2026-10-26 小沈 - 首帧 content 的 userinput 预览: 发 history_context 首帧前设 agent._user_input_preview=(task or "")[:10], 供 telemetry 读构造 content(截断10字符) — 小沈-2026-10-26
+# 2026-10-29 小欧 - 新摘要注入件升级(北京老陈令, 唯一触发条件=本轮新摘要成功, 信号 _pending_chain_summary_cover is True):
+#   注入件由"纯摘要"升级为「最后任务usermessage + 摘要 + 产生摘要素材conv数组倒数5轮」;
+#   复用锚点摘要(信号为 None)维持现状(summary+delta), 无摘要维持全量注入 — 小欧-2026-10-29
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -75,7 +78,10 @@ from app.config import get_config
 from app.services.agent.steps import FinalStep, MetaStep  # 4.4.2 ThoughtStartStep 首发射点已于 2026-10-07 前移 agent_runner
 from app.services.agent.status_table import AgentStatus, set_status, set_failed, set_cancelled
 from app.services.agent.initialize_run_state import initialize_run_state
-from app.services.agent.start_step import assemble_start_step as _assemble_start_step
+from app.services.agent.start_step import (
+    assemble_start_step as _assemble_start_step,
+    _build_injected_msgs,   # 2026-10-29 北京老陈令: 装配段注入件决策唯一真源(start_step 共用, DRY) — 小欧-2026-10-29
+)
 from app.services.agent.react_step import _process_single_step
 from app.services.agent.react_inference import handle_react_error, _is_recoverable_error
 from app.db import db
@@ -167,18 +173,18 @@ async def run_react_cycle(
         task or "",
         refs=(getattr(agent, "_start_meta", None) or {}).get("refs"),
     )
-    # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"), 后跟 delta 原文; 无摘要则注全量历史。— 小欧 2026-10-14
-    # 2026-10-25 小欧 修复(北京老陈令): 原两次 inject_history(delta 插到 summary 前面, 顺序错); 合并为一次, summary 在前 delta 在后
+    # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"); 无摘要则注全量历史。— 小欧 2026-10-14
+    # 2026-10-25 小欧 修复(北京老陈令): 合并为一次注入, summary 在前 delta 在后
+    # 2026-10-29 北京老陈令(唯一触发条件=本轮新摘要成功): 注入件决策收口 start_step._build_injected_msgs
+    #   (新摘要=usermessage+摘要+源数组倒数5轮; 复用=摘要+delta; 无摘要=全量), 本处只做注入与日志。— 小欧-2026-10-29
     _summary = getattr(agent, "_start_summary", "") or ""
+    _injected = _build_injected_msgs(agent)
+    agent.message_builder.inject_history(_injected)
     if _summary:
-        _delta = getattr(agent, "_injected_delta_msgs", None) or []
-        _injected = [{"role": "assistant", "content": _summary}]
-        if _delta:
-            _injected = _injected + _delta
-        agent.message_builder.inject_history(_injected)
-        log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {len(_delta)}条")
-    else:
-        agent.message_builder.inject_history(getattr(agent, "_injected_history_msgs", None) or [])
+        if getattr(agent, "_pending_chain_summary_cover", None) is True:
+            log_and_print(f"[start_summary] 新摘要注入: usermessage+摘要+尾部轮次 共{len(_injected)}条")
+        else:
+            log_and_print(f"[start_summary] 增量路径注入: 摘要1条 + delta {max(len(_injected) - 1, 0)}条")
     _tele_hc = getattr(agent, "telemetry", None)
     if _tele_hc is not None:
         # 2026-10-26 小沈: 首帧 content 的 userinput 预览(截断10字符), 供 history_context 首帧读取

@@ -39,6 +39,7 @@
 # 2026-10-26 小沈 - 补 _injected_history_msgs 每轮清零(与 _injected_delta_msgs 同款, 防跨任务串味); 原仅清零 delta 未清 history,
 #   agent 复用且本次无 context 任务时残留上一轮注入历史 → telemetry 误判"直接注入"(content 串味); 同批统一
 #   _pending_chain_summary_cover 清零值 False→None(对齐 start_step:340 三态 None/True, 消除类型不一致) — 小沈-2026-10-26
+# 2026-10-29 小欧 - 补 _summary_tail_extras 每轮清零(新摘要注入附件, 与 _pending_chain_summary_cover 同款防复用残留) — 小欧-2026-10-29
 """
 _initialize_run_state — 每次运行前初始化Agent状态
 
@@ -86,6 +87,7 @@ def initialize_run_state(
     # 2026-10-26 小欧: 新增事实状态清零 —— 防 agent 复用跨任务残留(与 _injected_delta_msgs 同款)
     agent._injected_effective_count = 0
     agent._injected_effective_tokens = 0
+    agent._summary_tail_extras = None   # 2026-10-29 小欧: 新摘要注入附件同款清零(随 _pending_chain_summary_cover 三态) — 小欧-2026-10-29
     agent._compressed_source_tokens = 0
     # 【#42修复】更新tracker任务描述为实际task内容 — chendyg 2026-06-26
     if task and agent._task_tracker and agent.task_id:
