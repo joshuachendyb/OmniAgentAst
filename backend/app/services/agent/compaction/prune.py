@@ -21,6 +21,9 @@
 #   2026-10-20 小欧 FC 单元划分迁协议层: 删除本地 _fc_atomic_units, 复用 fc_message_types.fc_atomic_units
 #     (message_builder 裁剪也需同一划分, 而 prune 顶层 import message_builder, 反向导入必成环;
 #      迁至零依赖协议模块即解环, 两边共用一份真源)。行为不变。 — 小欧-2026-10-20
+#   2026-10-29 小欧 三堂会审两修(北京老陈令, 未提交先修): ①use_tool_summary 增 _raw 保长守卫(truncate 已存的全量
+#     原文不得被截断头覆盖, 保住原文尾部); ②增最小长度门槛 USE_SUMMARY_MIN_CHARS=300——短小观察(文件清单/命中数/
+#     行数, 40~80字)信息密集, 换一行模板摘要在 token 收益趋零下灭失信息, 仅长文本才值得整条换取真摘要 — 小欧-2026-10-29
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -43,6 +46,7 @@ from app.services.agent.compaction_constants import (
     CHARS_PER_TOKEN,
     PRUNE_MINIMUM_TOKENS,
     PRUNE_PROTECT_TOKENS,
+    USE_SUMMARY_MIN_CHARS,   # 2026-10-29 小欧: use_tool_summary 最小参与长度门槛(三堂会审修复)
 )
 from app.services.agent.message_builder import MessageBuilder  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
 from app.services.agent.fc_message_types import fc_atomic_units  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
@@ -94,6 +98,8 @@ def use_tool_summary(messages: List[Dict]) -> List[Dict]:
     使用方法: 对消息列表调用, 原地替换 content 为 `[tool-summary] {_summary}`, 返回同一列表。
     输入: messages 消息列表。
     输出: 处理后的同一列表; 被替换的 tool 消息带 `_raw`(原 content) 与 `_compressed=True` 标记。
+    门槛(2026-10-29 三堂会审修复): content 长度 ≥ USE_SUMMARY_MIN_CHARS 才参与替换——短小观察
+                   信息密度高(文件清单/命中数/行数), 换模板摘要得不偿失; 未达标原样跳过。
     前置条件(必做): tool 消息构造时必须先 stash `_summary`(见 message_builder.add_tool_result 的 summary 形参);
                    否则无 _summary 时函数空转安全(仅跳过不报错)。
     依据本地真实代码: observation_formatter.py:603/627 已将 summary 拼进 content 文本, tool 消息字典本身只有
@@ -104,8 +110,15 @@ def use_tool_summary(messages: List[Dict]) -> List[Dict]:
         if msg.get("role") == "tool" and not msg.get("_compressed"):
             summ = msg.get("_summary")
             raw = msg.get("content", "")
-            if summ and raw and len(str(raw)) > len(str(summ)):
-                msg["_raw"] = raw
+            # 2026-10-29 小欧 - 三堂会审修复: 增最小长度门槛——短小观察(文件清单/命中数/行数)信息密集,
+            #   换一行模板摘要 token 收益趋零而信息全失, 仅达门槛的长文本才参与; 门槛值归
+            #   compaction_constants.USE_SUMMARY_MIN_CHARS(权威常量域, 与其他压缩阈值同源) — 小欧-2026-10-29
+            if summ and raw and len(str(raw)) >= USE_SUMMARY_MIN_CHARS and len(str(raw)) > len(str(summ)):
+                # 2026-10-29 小欧 - _raw 保长守卫: _raw 须承载最长原文——已有 _raw 更长(如 trim 先 truncate
+                #   存全量再走到此处)时不得被截断头覆盖, 保住原文尾部; 短/同长才更新 — 小欧-2026-10-29
+                _prev_raw = msg.get("_raw")
+                if not _prev_raw or len(str(_prev_raw)) < len(str(raw)):
+                    msg["_raw"] = raw
                 msg["content"] = f"[tool-summary] {summ}"
                 msg["_compressed"] = True
     return messages

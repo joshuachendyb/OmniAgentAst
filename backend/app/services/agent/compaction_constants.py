@@ -140,6 +140,13 @@ TAIL_TOKEN_MIN = 2000        # 保尾预算下限(14.3.2 select: max(2000, usabl
 TAIL_TOKEN_MAX = 8000        # 保尾预算上限(14.3.2 select: min(8000, ...))
 SPLIT_TURN_MAX_ASSISTANT_CHARS = 4000  # 半轮劈分: 单条消息内容超此上限则截断(14.9.2 splitTurn)
 
+# ---- 语义替换(use_tool_summary 门槛) ————————————————————
+# 意义: USE_SUMMARY_MIN_CHARS/tool 消息参与"换一行语义摘要"的最小 content 长度门槛。
+# 默认值依据: 300字≈133tok(CHARS_PER_TOKEN=2.25)。低于此长度的观察信息密度高(文件清单/命中数/行数细节),
+#   换成一行模板摘要 token 收益趋零而信息全失(三堂会审实测: 40~80字搜索/读取观察被换成十余字状态行)。
+# 可选范围: 200~800(过低重现信息灭失, 过高使替换通道大面积空转)。
+USE_SUMMARY_MIN_CHARS = 300  # use_tool_summary 最小参与长度门槛(三堂会审修复, 北京老陈定案 2026-10-29)
+
 # ---- 装配线(Assembler) ————————————————————————————
 # 状态: 以备后用（2026-09-23 小欧核查：assembler 装配函数尚未接入主链路，暂无消费方，保留供后续接线，禁止删除；运行时保尾数以 tuning.compaction.keep_tail 配置为准）
 # 意义: ASSEMBLE_KEEP_TAIL/注入摘要后保留的尾部最新消息条数(防摘要顶掉最新 task)。

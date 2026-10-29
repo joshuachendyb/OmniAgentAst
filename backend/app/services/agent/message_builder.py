@@ -75,6 +75,8 @@
 # 2026-10-25 小欧 - 信号计算与裁剪逻辑分离: ①_trim_signal() 抽为独立函数返回 bool, 结果存 _trim_signal_result; ②信号计算移至调用方(react_step: 先 _trim_signal 判信号, 触发后调 trim_history); ③trim_history 仅读信号结果做裁剪不再算信号; ④术语统一(水位→阈值调节系数/倒挂→重复触发抑制/空转→无可裁/溢窗→窗口溢出/拦→抑制/强裁→强制裁剪; budget_base=裁剪预算, TRIM_TRIGGER_RATIO=阈值调节系数, 乘积=触发阈值) — 小欧-2026-10-25
 # 2026-10-26 小欧 - 三堂会审修复(北京老陈令): ①删 backward 兼容(信号计算回退) trim_history 只读信号不算信号(禁止backward); ②user 边界对齐移入 fallback 分支(原在两分支后是死代码); ③protected 删重复计算; ④count_system_prefix 消除 prefix 三处重复(DRY); ⑤"头部保护区"→"头部"(术语修正); ⑥_trim_signal docstring 删错误初始值版(矛盾信息) — 小欧-2026-10-26
 # 2026-10-26 小欧 - 队列预算公式改(北京老陈令): budget_for_queue = budget_base × trigger_ratio² - 保护区token(原 budget_base - 保护区token), 队列只能用触发阈值再乘系数后的剩余预算; 保护区/预算链注释同步更新 — 小欧-2026-10-26
+# 2026-10-29 小欧 - trim_history 队列幸存者语义替换收口(北京老陈令"接上吧"): 保留旧轮 tool 消息 _summary 换一行真摘要, 同日三堂会审终态修订: ①新换条数对比 swap 前旗数只计本轮(上一轮旧旗不再谎报"换摘要N条"); ②无裁剪且零新换保留原历史直接返回(不重建/不动裁剪旗/不复位冷却, 杜绝幻影重建); ③未裁剪分支不跑 remove_dangling_tool_calls("保留原历史"下禁止静默动刀, 实测孤儿 assistant 被无声删除); swap 门槛 USE_SUMMARY_MIN_CHARS=300 归 compaction_constants — 小欧-2026-10-29
+# 2026-10-29 小欧 - trim_history 队列剩余段接 C2 use_tool_summary(北京老陈令"接上吧"): 裁剪后仍保留的旧轮里, tool 消息有 _summary 且 content 更长者整条换一行语义摘要(原文存_raw); 逐条浅拷贝隔离(mutate 原地字典, 防污染 conversation_history 与保护区引用); 保护区(最近N轮)零接触保保真; 与保头截断同批共存(先截后换兼容: _truncated 不阻塞 swap, _compressed 才跳过); 跨任务重载历史无 _summary 属已知边界不重灌 — 小欧-2026-10-29
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -549,6 +551,8 @@ class MessageBuilder:
         3. 分区: 保护区=倒数1~N轮(不进裁剪队列), 队列=倒数第N+1及更早(传入find_tail_start), 队列预算=budget_base×系数²−保护区token
         4. 裁剪走 compaction 组合: find_tail_start(align_turn=True) 切点对齐 user 边界整轮不拆 + remove_dangling_tool_calls 清理孤儿 FC 对
         5. 保护区超出预算时仅保留保护区(硬保护, 容忍窗口溢出)
+        6. 队列幸存者语义替换: 保留旧轮中 tool 消息有 _summary 且 content 达 USE_SUMMARY_MIN_CHARS 门槛者换一行真摘要(原文存 _raw);
+           新换条数只计本轮; 无裁剪且零新换时保留原历史直接返回(不重建/不动裁剪旗/不复位冷却); 未裁剪不跑 dangling 清理 — 小欧-2026-10-29
 
         使用方式: 超阈值时裁剪一次, 裁后替换 conversation_history, 后续轮次在裁后历史基础上累积, 再次超阈值则再次裁剪(非每轮触发)
         """
@@ -593,22 +597,44 @@ class MessageBuilder:
             #   保护区   = hist[keep_from:]              倒数N轮(保留)
             #   裁剪区   = hist[prefix:tail_start]      旧消息(丢弃)
             #   rebuilt = 头部 + 队列剩余 + 保护区
+            # 队列幸存者统一收口: 有裁剪=切后剩余; 无裁剪/预算不足=旧轮整段(仍做语义降本) — 小欧-2026-10-29
             if tail_start > prefix:
-                header = hist[:prefix]
-                queue_remainder = hist[tail_start:keep_from]
-                rebuilt = header + queue_remainder + protected
-                rebuilt = remove_dangling_tool_calls(rebuilt)
-                if len(rebuilt) >= 2:
-                    self.conversation_history = rebuilt
-                    self._trim_cooldown.mark_compacted()  # 裁剪成功复位冷却计数, 下 N 轮抑制重复触发 — 小欧 2026-10-25
-                    self._trimmed_this_round = True     # 11.3 实际裁剪置真 — 小欧 2026-08-20
-                    _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧 2026-08-20
-                    self._trimmed_tokens_this_round = int(_trimmed_now)
+                queue_survivors = hist[tail_start:keep_from]
+                _cut = True
+            else:
+                queue_survivors = hist[prefix:keep_from]
+                _cut = False
+            # 2026-10-29 小欧 - 队列幸存者语义替换(北京老陈令): 保留旧轮中 tool 消息有 _summary 且 content 达
+            #   长度门槛者换一行真摘要(原文存 _raw); 先逐条浅拷贝隔离(use_tool_summary 原地改字典, 防污染
+            #   conversation_history 同源引用与保护区引用); 保护区不在本段, 保真零接触
+            # 2026-10-29 小欧 - 三堂会审修复(北京老陈令, 未提交先修): ①新换条数对比 swap 前旗数只计本轮——
+            #   上一轮旧旗不再计入, 杜绝"换摘要N条"谎报; ②幻影守卫: 无裁剪且零新换时保留原历史直接返回, 不重建/
+            #   不动裁剪旗/不复位冷却, 杜绝无实质变化的每轮重复重建; ③未裁剪分支不跑 remove_dangling_tool_calls
+            #   ——FC 配对在未裁剪时本就完整, "保留原历史"语义下禁止静默动刀(实测孤儿 assistant 无声被删) — 小欧-2026-10-29
+            from app.services.agent.compaction.prune import use_tool_summary   # 局部 import 防循环依赖(compaction 依赖 message_builder) — 小欧-2026-10-29
+            _pre_swapped = sum(1 for m in queue_survivors if m.get("_compressed"))   # swap 前已有旗(上一轮旧旗)
+            queue_survivors = use_tool_summary([dict(m) for m in queue_survivors])
+            _swapped = sum(1 for m in queue_survivors if m.get("_compressed")) - _pre_swapped   # 只计本轮新换
+            if not _cut and not _swapped:
+                logger.info(f"[trim_history] 无旧轮可裁且无新摘要可换, 保留原历史({msg_count}条/{rough_current} tokens)")
+                return
+            rebuilt = hist[:prefix] + queue_survivors + protected
+            if _cut:
+                rebuilt = remove_dangling_tool_calls(rebuilt)   # 仅裁剪后清孤儿(只有裁剪才可能拆散配对)
+            if len(rebuilt) >= 2:
+                self.conversation_history = rebuilt
+                self._trim_cooldown.mark_compacted()  # 裁剪成功复位冷却计数, 下 N 轮抑制重复触发 — 小欧 2026-10-25
+                self._trimmed_this_round = True     # 11.3 实际裁剪/语义替换置真 — 小欧-2026-08-20
+                _trimmed_now = max(0, rough_current - self._estimate_tokens(rebuilt))  # 11.3 裁剪释放的 token 数 — 小欧-2026-08-20
+                self._trimmed_tokens_this_round = int(_trimmed_now)
+                if _swapped:
+                    logger.info(f"[trim_history] 队列幸存者语义替换: {_swapped}条tool换一行摘要(use_tool_summary)")
+                if _cut:
                     trigger_reason = "delta" if delta_trigger else "abs" if abs_trigger else "msg_count"
                     logger.info(f"[trim_history] 轮次滑动裁剪: {msg_count}条({rough_current} tokens) "
                                 f"→ {len(rebuilt)}条(触发: {trigger_reason})")
             else:
-                logger.info(f"[trim_history] 无旧轮可裁或预算不足, 保留原历史({msg_count}条/{rough_current} tokens)")
+                logger.info(f"[trim_history] 重建后不足2条, 保留原历史({msg_count}条/{rough_current} tokens)")
         except Exception:
             logger.warning(f"[trim_history] 异常, 跳过裁剪保留原历史", exc_info=True)
 
@@ -666,7 +692,7 @@ class MessageBuilder:
 
     @staticmethod
     def _estimate_tokens(messages: List[Dict]) -> int:
-        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(2.5, 中文主导), 零外部依赖
+        """纯数学估算 token 数 — chars/CHARS_PER_TOKEN(2.25, 中文主导, 2026-10-25 真实会话标定), 零外部依赖
 
         对标 OpenCode Token.estimate / Hermes estimate_tokens_rough
         2026-10-04 小欧: 系数 4→1.8→2.5(当日两次); 浮点系数下 // 返回 float, 故恒用 int(x / c) 显式取整
