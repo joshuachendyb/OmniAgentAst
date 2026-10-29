@@ -1,3 +1,20 @@
+v1.5.2
+更新时间: 2026-10-29 10:02:37 - 小欧-2026-10-29
+## v1.5.1以来 变更汇总(4个commit: fix2/feat1/docs1) - 小欧-2026-10-29
+[2026-10-29 10:02:37 小欧] 范围=v1.5.1以来全部commit(4个); 主线=重试事件文案统一(L1/L2同走_format_retry_payload消双错误,类名/标签归一,429去HTTP前缀)+访问日志噪音过滤(UvicornAccessFilter 5精确+3正则挂logger级幂等安装)+快照丢provider定制值根治(snapshot增全量参数+inherit_missing,resolver跨provider补传)+TaskInfoBar上下文/占窗率重排与DOT防悬空+清空api_key四Bug注释补记+文档索引v1.2与[57]登记; 注:含1个feat,按MINOR记v1.5.2
+### 1.5.2.1 重试事件文案统一
+[L1/L2统一] fix 323777b7a+9d22400fa llm_call.py L1/L2重试文案统一走_format_retry_payload([调用]/[响应]标签)+核心类名末尾(原为错误:[类名]msg类名在前)+消双错误(HTTP拆码+非HTTP中文映射); 429文案去HTTP前缀; core.py StreamChunk新增retry_wait/retry_error_type字段(默认None零行为变化); base_service.py L1重试透传新字段 - 小欧 2026-10-29
+### 1.5.2.2 访问日志噪音过滤
+[噪音过滤] feat 323777b7a shared_handler.py UvicornAccessFilter噪音过滤(5精确+3正则,挂logger级,幂等安装)+args索引修正(args[2]非args[1]); main.py startup_event挂载噪音过滤器(探活+状态刷新高频轮询) - 小欧 2026-10-29
+### 1.5.2.3 快照丢provider定制值根治
+[snapshot扩展] fix 9d22400fa base_service.py snapshot增全量参数(max_retries/timeout/max_tokens/temperature/top_p/frequency_penalty/presence_penalty/seed)+inherit_missing; _inherit静态方法收敛10处同模式三元(DRY): flag=True沿用self(兼容零退化), flag=False用new未配回落默认; extra_body_params/context_limit统一走_inherit - 小欧 2026-10-29
+[跨provider补传] fix 9d22400fa resolver.py 跨provider快照补传全量参数(max_retries/timeout/max_tokens经_resolve_max_tokens等)+inherit_missing=_same_pv; 8处(_pv_cfg or {}).get()收敛为一次_cfg=_pv_cfg or {}(KISS) - 小欧 2026-10-29
+### 1.5.2.4 TaskInfoBar重排与防悬空
+[位置重排] fix 323777b7a+93087532b TaskInfoBar.tsx 上下文+占窗率从中组迁至右组(位号调整); 占窗率DOT移入条件块防null悬空; 事件浮层宽度350px→480px - 小欧 2026-10-29
+### 1.5.2.5 注释合规与文档
+[注释补记] fix 93087532b SecretRevealInput三Bug→四Bug注释补记; 删过期20字截断注释 - 小欧 2026-10-29
+[文档57] docs ad8591a1a 文档索引v1.2补登[47]~[56](v1.1后新增未登记10份)+登记[57]输入框引用全链路-缺陷分析与设计重构方案(10项缺陷+体积闸门设计,读取权收归后端) - 小欧 2026-10-29
+
 v1.5.1
 更新时间: 2026-10-29 00:54:30 - 小欧-2026-10-29
 ## v1.5.0以来 变更汇总(8个commit: fix3/refactor2/docs3) - 小欧-2026-10-29
