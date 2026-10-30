@@ -10,6 +10,9 @@
 #   逐字复制含L97 logger.warning; 随迁REPEAT_*三常量与Counter/logger import) - 小健-2026-09-05
 # 2026-09-27 小欧 - 本轮无逻辑改动。曾把 to_int_or 放在本文件，因本文件模块级 import app.logger
 #   → app.logger.config → app.config 成环，app.config 无法复用，已移至无依赖的 app/utils/type_utils.py。
+# 2026-10-30 小欧 - 新增公用 count_lines(编辑器口径数行数: 末尾换行不产生新行): 文件页
+#   (browse_service._count_content_lines)与引用压缩(refs.budget)共用本函数, 避免 "a\n" 一处算 1 行、
+#   一处算 2 行导致回执行数虚高; _count_content_lines 改委托本函数(DRY) — 小欧-2026-10-30
 """
 文本处理工具函数 — 小沈 2026-06-09
 

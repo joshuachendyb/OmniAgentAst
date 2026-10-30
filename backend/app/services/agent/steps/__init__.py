@@ -19,6 +19,8 @@ Date: 2026-04-15
 Updated: 2026-06-22 SRP拆分：ActionStep(action_tool) + ObservationStep(observation)
 Updated: 2026-08-18 小欧 - 步骤结构: 废action_tool改action, 新增ThoughtStartStep, ObservationStep仅tool_result, FinalStep删冗余加reasoning
 Updated: 2026-09-11 小欧 - 接线①: 导出 FinalStatsStep 子类(打字法显式写成定案的 final_stats 终态) — 小欧 2026-09-11
+Updated: 2026-10-30 小欧 - 批2序12: ALL_STEP_TYPES 登记 "refs_notice"(引用回执, 仅SSE不落库, 与 "merged" 同类)——
+  定义与组帧在 services/refs/notice.py, 此处为唯一登记点, 转发表由它推导(不存在双登记) — 小欧 2026-10-30
 """
 from .base import ReasoningStep, MetaStep
 from .action_step import ActionStep

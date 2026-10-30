@@ -44,6 +44,10 @@
   2026-10-25 23:09 小欧 CHARS_PER_TOKEN 2.5→2.25: 10 真实会话标定 17,252,839 chars/7,299,735 精确 tok=2.363 字/token(2.5 低估5.5%=0.945x, 2.55 更差7.3%, 2.25 MAE13.0% 候选最优), 订正 2026-10-05 条「4.8倍」无实测出处结论
   2026-10-25 23:09 小欧 TRIM_TRIGGER_RATIO 0.75→0.9(北京老陈定): 触发基准由 context_limit 改可用内容预算(window-compaction_buffer-tools_token_reserve), 与裁剪预算同源单口径
   2026-10-29 小欧 新增一组魔法数字清账常量(北京老陈令): USE_SUMMARY_MIN_CHARS/swap 最小参与长度门槛 + VALUE_WEIGHT_*/消息价值权重族 + TOOL_SUMMARY_HEAD_CHARS/TOOL_SUMMARY_PREVIEW_CHARS/摘要截长 + TRIM_MIN_MESSAGES/TRIM_CEILING_ROUND_FACTOR/TRIM_CEILING_ROUNDS_MARGIN/裁剪信号结构阈值 + PROTECT_ROUNDS_MIN/PROTECT_ROUNDS_MAX/保护区轮数夹取上下限——各值由原消费点内联字面量直迁, 零行为变化
+
+  2026-10-30 小欧 引用摘录比例常量(REF_AVG_LINE_CHARS/REF_HEAD_RATIO/REF_TAIL_RATIO/REF_MIN_KEEP_LINES)迁出
+                        至 app/constants.py 第4节: 本文件为压缩/裁剪专属域, 引用摘录比例非其职责; 单一真源
+                        归系统层常量, resolver/clip/budget 改从 app.constants 导入 — 小欧-2026-10-30
 """
 # ============================================================
 # A. 压缩/裁剪核心阈值(自 app/constants.py 第4节迁入, 2026-08-17) — 小健

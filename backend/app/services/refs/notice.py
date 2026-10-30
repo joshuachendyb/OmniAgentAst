@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-30 小欧 新建: 引用回执 DTO + reason→level 唯一裁决 + SSE 组帧 — 小欧-2026-10-30
+# 2026-10-30 小欧 批3: ①_LEVEL_RANK 序号表由 _LEVEL_ORDER 元组派生(单一真源, 原手写 dict 与元组易分叉);
+#   ②新增 describe_items(去重后的 label/path 点名文案, 首发与插话阻断提示共用, 原两条路径各写一遍拼串) — 小欧-2026-10-30
 
 """services.refs.notice — 引用回执(SSE refs_notice)的 DTO 与组帧
 

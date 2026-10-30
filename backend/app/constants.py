@@ -55,6 +55,10 @@
     2026-10-29 小欧 新增输入框引用摘录比例常量: REF_AVG_LINE_CHARS(=80, 行均字符估算用) +
                         REF_HEAD_RATIO(=0.6) + REF_TAIL_RATIO(=0.2) + REF_MIN_KEEP_LINES(=10, 头尾摘录
                         保底行数)——供 services/refs/resolver 头尾摘录与行数估算消费, 单一真源 — 小欧-2026-10-29
+    2026-10-30 小欧 批2/批3: ①REF_* 使用对象随实现迁移更正 —— REF_HEAD_RATIO/REF_TAIL_RATIO 归
+                        services/refs/clip(头尾摘录), REF_MIN_KEEP_LINES 归 services/refs/budget(C 档压缩),
+                        REF_AVG_LINE_CHARS 归 resolver(行均估算); ②新增 REF_KINDS 来源白名单(单一真源,
+                        编排入口 sanitize_refs 与渲染期 render_refs_block 共用, 防入口放行/渲染静默丢弃分叉) — 小欧-2026-10-30
 
 """
 
