@@ -1,5 +1,7 @@
 // 编辑历史: 2026-10-30 小欧 - 新建：SSE refs_notice → chip 状态唯一映射 — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 批3: 增 chipToneOf(5 态→3 色系的唯一映射), 组件只查表不写嵌套三元 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 R9: chipStateText 接收整条回执 —— degraded 拼 detail(省略行数/字符数),
+//   dropped 拼中文 reason; 新增 noticeOf/noticeDetailText 供组件标题与文案共用 — 小欧-2026-10-30
 /**
  * notice —— 引用回执 → chip 状态机(5 态)唯一映射
  *
@@ -53,21 +55,68 @@ export const noticeStateOf = (notice: {
  */
 export const chipStateOf = (r: ComposerRef, notices?: NoticeMap): ChipState => {
   if (r.invalid) return 'invalid';
-  if (notices) {
-    const hit = notices.get(normalizePath(r.path ?? ''));
-    const rc = hit ? noticeStateOf(hit) : null;
+  const hit = noticeOf(r, notices);
+  if (hit) {
+    const rc = noticeStateOf(hit);
     if (rc) return rc; // 回执态优先于 checking(回执是已定结论)
   }
   if (r.pending) return 'checking';
   return 'idle';
 };
 
-/** chip 状态 → 文案(5 态, 4.9)。 */
-export const chipStateText = (state: ChipState): string => {
+/** 取一条引用的回执(按归一 path) — 2026-10-30 小欧 R9: chip 文案/标题与状态判定共用同一查表 */
+export const noticeOf = (
+  r: ComposerRef,
+  notices?: NoticeMap
+): NoticeItem | undefined => notices?.get(normalizePath(r.path ?? ''));
+
+/** 后端 dropped reason → 中文原因(4.9「红标 + 原因」的渲染落点) — 小欧-2026-10-30 */
+const DROP_REASON_TEXT: Record<string, string> = {
+  missing: '文件不存在',
+  unsupported: '不支持的文件类型',
+  out_of_root: '路径超出允许范围',
+  range_out: '选区超出文件范围',
+  timeout: '读取超时',
+  no_path: '缺少文件路径',
+  rejected: '整批被拒（超出预算）',
+};
+
+/**
+ * 回执 → 人类可读结论(唯一实现) — 2026-10-30 小欧 R9
+ *
+ * 为何需要: 后端为每条回执算好了 detail("已省略 1234 行")与 reason(missing/range_out/
+ *   rejected…), 原实现只按 5 态给固定四字文案, 这些信息全链无渲染落点 —— 用户分不清
+ *   "文件不存在""选区越界"还是"整批被拒", 也不知道省略了多少。
+ */
+export const noticeDetailText = (notice?: NoticeItem): string => {
+  if (!notice) return '';
+  if (notice.reason === 'truncated') return notice.detail || '内容超长已省略';
+  if (notice.reason === 'compressed') return notice.detail || '已压缩'; // detail="已省略 N 行"
+  if (notice.reason === 'range_clipped') return '选区超出文件尾';
+  const known = DROP_REASON_TEXT[notice.reason];
+  if (known) return known;
+  return notice.detail || notice.reason;
+};
+
+/**
+ * chip 状态 → 文案(5 态, 4.9)。
+ * 2026-10-30 小欧 R9: degraded 拼 detail(省略行数/字符数), dropped 拼中文原因;
+ *   无回执信息时回退原固定文案(内存态 checking/invalid 不涉及回执)。
+ */
+export const chipStateText = (
+  state: ChipState,
+  notice?: NoticeItem
+): string => {
   if (state === 'checking') return '（载入中…）';
   if (state === 'invalid') return '（已失效）';
-  if (state === 'dropped') return '（已丢弃）';
-  if (state === 'degraded') return '（已省略）';
+  if (state === 'dropped') {
+    const t = noticeDetailText(notice);
+    return t ? `（已丢弃：${t}）` : '（已丢弃）';
+  }
+  if (state === 'degraded') {
+    const t = noticeDetailText(notice);
+    return t ? `（${t}）` : '（已省略）';
+  }
   return '';
 };
 

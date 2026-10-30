@@ -19,6 +19,11 @@
 //   单一真源(只搬不改), 本文件改导入; 新增 refNoticeStore 承载 chip 回执态(5.4.6) — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 批3: push 两趟扫描收成一趟(上限判定与查找共用一次 findIndex);
 //   refNoticeStore 增 clearPath(重新引用同一文件时清掉上一轮的黄/红标) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 R5-1/S4-1: ①push 上限判据改"已入队 chip 快照(setLive 发布) + 队列新条目",
+//   原判 queue.length 恒为 0/1(每次渲染都被 takeAll 清空), 第 21 条照收 → 后端 422;
+//   ②回声动作从 useComposerRefs.mergeIncoming 迁到 push 与 hook.add(新意图单点), 并新增
+//   restore() 通道给 refs_blocked 台账重建用 —— 重建时必须保留刚下发的 refs_notice, 否则
+//   chip 无黄/红标; 且重建的是已上行过的条目, 不再重判配额(满额 20 条时会被自己占位挡掉) — 小欧-2026-10-30
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -34,7 +39,7 @@
  */
 import type { ChatRefPayload } from '../../types/chat';
 import { normalizePath, refKeyOf } from './identity'; // 身份函数单一真源(5.4.2)
-import type { NoticeItem, NoticeMap } from './notice';
+import type { NoticeMap } from './notice';
 
 // 2026-10-29 小欧 - 引用条数上限: 与 services/refs/limits.py:MAX_REFS 同值(单一真源, 双保险 L1)
 export const MAX_REFS = 20;
@@ -78,8 +83,32 @@ export const newRefId = (): string => crypto.randomUUID();
  */
 
 const queue: ComposerRef[] = [];
+/**
+ * 已入队 chip 的最新快照 —— 由 useComposerRefs 发布(setLive)。
+ * 2026-10-30 小欧 R5-1: 上限真源。原判据只看 queue.length, 而队列是"待 takeAll 的一次性投递
+ *   通道", 每次渲染即被清空 → 计数恒为 0/1, MAX_REFS 实际从未生效(第 21 条照样入队, 后端 DTO 422)。
+ */
+let live: ComposerRef[] = [];
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((cb) => cb());
+
+/** 入队(不判上限): 同 key 原位替换, 新 key 追加 — 2026-10-30 小欧 */
+function place(ref: ComposerRef): void {
+  const k = refKeyOf(ref);
+  const i = queue.findIndex((r) => refKeyOf(r) === k);
+  if (i >= 0) queue.splice(i, 1, ref);
+  else queue.push(ref);
+  emit();
+}
+
+/** 当前占用条数 = 已入队 chips + 队列里尚未消费的**新 key** 条目 — 2026-10-30 小欧 R5-1 */
+function occupancy(): number {
+  const liveKeys = new Set(live.map(refKeyOf));
+  return (
+    live.length +
+    queue.reduce((n, r) => n + (liveKeys.has(refKeyOf(r)) ? 0 : 1), 0)
+  );
+}
 
 export const composerRefStore = {
   /** useSyncExternalStore 订阅入口 */
@@ -92,6 +121,13 @@ export const composerRefStore = {
   /** 快照 = 待消费数量（变化即触发消费 effect） */
   getSnapshot(): number {
     return queue.length;
+  },
+  /**
+   * 发布已入队 chips(上限判定真源) — 2026-10-30 小欧 R5-1
+   * 只做记账, 不通知订阅者(避免无谓重渲染)。
+   */
+  setLive(refs: ComposerRef[]): void {
+    live = refs;
   },
   /** 取出全部并清空（一次性消费） */
   takeAll(): ComposerRef[] {
@@ -109,17 +145,31 @@ export const composerRefStore = {
    * 入队；同 path + 同 lineRange 视为**同一引用** → 替换而非追加。
    * 2026-10-29 小欧 - 限 MAX_REFS：超限返回 false 不 throw（调用方判真值提示"一次最多引用 20 项"，
    *   quote.ts / @补全 / Files 三调用方同批消费返回值）。
+   * 2026-10-30 小欧 R5-1/S4-1: 上限按"真 chip 数 + 队列"判; 新引用按 path 清上一轮回执(新意图)。
    */
   push(ref: ComposerRef): boolean {
-    // 2026-10-30 小欧 批3 A18: 一次扫描收口 —— 原实现"上限判定 some + findIndex"两趟,
-    //   20 条待发时一次 push 要拼约 41 次 key; 现在就一趟(找到即可替换, 未找到才判上限)。
     const k = refKeyOf(ref);
-    const i = queue.findIndex((r) => refKeyOf(r) === k);
-    if (i < 0 && queue.length >= MAX_REFS) return false;
-    if (i >= 0) queue.splice(i, 1, ref);
-    else queue.push(ref);
-    emit();
+    // 同 key 已在 chips/队列里 → 是替换, 不占新配额
+    const known =
+      live.some((r) => refKeyOf(r) === k) ||
+      queue.some((r) => refKeyOf(r) === k);
+    if (!known && occupancy() >= MAX_REFS) return false;
+    place(ref);
+    if (ref.path) refNoticeStore.clearPath(ref.path);
     return true;
+  },
+  /**
+   * 台账重建(refs_blocked 专用): 只入队, **不**清回执、**不**判上限 — 2026-10-30 小欧 S4-1
+   *
+   * 为何独立: 真实帧序是 refs_notice(点名 missing, warn/error) → error(refs_blocked),
+   *   前端刚把回执落到 refNoticeStore, 紧接着重建 chips; 若重建走 push(会 clearPath),
+   *   刚下发的回执被抹掉 → chip 查不到 notice → 无黄/红标(4.8 失效)。
+   * 为何不判上限: 重建的是**本轮已通过上限校验并已上行**的引用, 此刻 chips 占位尚未释放
+   *   (输入框在 sendMessage 返回后才按 id 移除); 若再计一次配额, 满额(20 条)场景会一条都重建不回来。
+   */
+  restore(refs: ComposerRef[]): number {
+    for (const r of refs) place(r);
+    return refs.length;
   },
 };
 
