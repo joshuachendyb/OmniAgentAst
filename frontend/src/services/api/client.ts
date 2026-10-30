@@ -16,7 +16,7 @@
  *   改法：API_BASE_URL 统一为 `${getApiBaseUrl()}/api/v1`（复用既有 getApiBaseUrl，与 axios baseURL
  *   完全同源），并删掉重复定义的一份 VITE_ENV。dev 未设 env 时仍得 '/api/v1'，走 Vite proxy，
  *   调试行为零变化。
- * 2026-10-30 小欧 - 文档[58] P0/P1/P2: 请求计时与诊断、超时探活文案、_silent 静默与幂等 GET 单次重试；
+ * 2026-10-30 小欧 - 请求计时与诊断、超时探活文案、_silent 静默与幂等 GET 单次重试；
  *   新增 HEAVY_READ_TIMEOUT_MS 供重读接口放宽到 120s。
  */
 import axios from 'axios';
@@ -27,8 +27,8 @@ import type {
   InternalAxiosRequestConfig,
 } from 'axios';
 import { handleApiError } from '../error/handler';
-import type { RequestDiagnostics } from '../error/handler'; // 2026-10-30 小欧 - 文档[58] P0: 诊断上下文类型(6.4 定义)
-// 2026-10-30 小欧 - 文档[58] P1: 超时探活复用既有 /health 检查(3s 超时), 不另写探测
+import type { RequestDiagnostics } from '../error/handler'; // 2026-10-30 小欧 - 诊断上下文类型
+// 2026-10-30 小欧 - 超时探活复用既有 /health 检查(3s 超时), 不另写探测
 import { checkNetworkConnection } from '../../utils/network';
 
 /** Vite 注入的环境变量（测试环境无 import.meta.env 时的类型兜底）。 */
@@ -62,11 +62,11 @@ export interface ApiRequestConfig extends AxiosRequestConfig {
    * 验真查询不带此标记、照常附带（两次查询的分工）。
    */
   _skipAuth?: boolean;
-  /** 2026-10-30 小欧 - 文档[58] P1: true = 调用方已自行提示, 本请求失败不弹全局 toast */
+  /** 2026-10-30 小欧 - true = 调用方已自行提示, 本请求失败不弹全局 toast */
   _silent?: boolean;
-  /** 2026-10-30 小欧 - 文档[58] P2: true = 已做过一次静默重试, 防无限重试 */
+  /** 2026-10-30 小欧 - true = 已做过一次静默重试, 防无限重试 */
   _retried?: boolean;
-  /** 2026-10-30 小欧 - 文档[58] P0: 请求发出时刻(performance.now), 响应侧据此算真实耗时 */
+  /** 2026-10-30 小欧 - 请求发出时刻(performance.now), 响应侧据此算真实耗时 */
   _startedAt?: number;
 }
 
@@ -153,16 +153,28 @@ export function setAccessToken(token: string | null): void {
 /** 慢请求留痕阈值 — 小欧 2026-10-30: 原实现只有失败才打日志, "慢但没超时"完全不可见 */
 const SLOW_LOG_THRESHOLD_MS = 5000;
 
+/** 取一个响应头的字符串值 — 小欧 2026-10-30
+ *  AxiosHeaders 的键名取决于服务端原始大小写(未命中已有键时按原名存),
+ *  下标直取只在浏览器把小写名回传时才成立 → 优先用 .get()(大小写无关), 再退回下标。 */
+const headerValue = (h: unknown, name: string): string | undefined => {
+  const get = (h as { get?: (k: string) => unknown })?.get;
+  const v =
+    typeof get === 'function'
+      ? get.call(h, name)
+      : (h as Record<string, string> | undefined)?.[name];
+  return typeof v === 'string' && v ? v : undefined;
+};
+
 /** 取本请求的可诊断上下文(URL/耗时/请求ID), 只进 console — 小欧 2026-10-30
  *  入参可以是 AxiosResponse(成功) 或 axios error(失败): 两者都带 config, 请求ID 分别在
  *  顶层 headers 与 response.headers。
  *  注意: 超时失败没有 response, requestId 为 undefined —— 此时与后端对账只能靠
- *  URL + 耗时 + 时间窗(见 6.5 的已知限制), 本函数照实返回空值, 不猜。 */
+ *  URL + 耗时 + 时间窗, 本函数照实返回空值, 不猜。 */
 const describeRequest = (src: unknown): RequestDiagnostics => {
   const s = src as {
     config?: ApiRequestConfig;
-    headers?: Record<string, string>;
-    response?: { headers?: Record<string, string> };
+    headers?: unknown;
+    response?: { headers?: unknown };
   };
   const cfg = s?.config;
   return {
@@ -172,7 +184,8 @@ const describeRequest = (src: unknown): RequestDiagnostics => {
         ? Math.round(performance.now() - cfg._startedAt)
         : undefined,
     requestId:
-      s?.response?.headers?.['x-request-id'] ?? s?.headers?.['x-request-id'],
+      headerValue(s?.response?.headers, 'x-request-id') ??
+      headerValue(s?.headers, 'x-request-id'),
   };
 };
 
@@ -201,8 +214,11 @@ const api: AxiosInstance = axios.create({
 
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    // 2026-10-30 小欧 - 文档[58] P0: 记发出时刻(含排队), 响应侧算真实耗时
-    (config as ApiRequestConfig)._startedAt = performance.now();
+    // 2026-10-30 小欧 - 记发出时刻(含排队), 响应侧算真实耗时;
+    //   重试请求沿用首次尝试的起点(否则 [SlowReq] 只记重试那一段, 低估用户实际等待)
+    if ((config as ApiRequestConfig)._startedAt === undefined) {
+      (config as ApiRequestConfig)._startedAt = performance.now();
+    }
     // _skipAuth 的请求不附带 Authorization。专供登录页"入口查询"：
     //   默认附带的旧口令已作废时会把引导查询打成 401/403；验真查询不带此标记、照常附带口令。
     if ((config as ApiRequestConfig)._skipAuth) return config;
@@ -216,16 +232,23 @@ api.interceptors.request.use(
 );
 
 /** 超时提示: 后端活着(排队/慢) — 小欧 2026-10-30
- *  措辞不承诺"原请求在处理": /health 通只证明进程活着(见文档[58] §6.6 "探活结果的可信度") */
+ *  措辞不承诺"原请求在处理": /health 通只证明进程活着, 不证明该请求在被处理 */
 const TIMEOUT_HINT_BUSY = '后端仍在处理，请稍候重试';
 /** 超时提示: 后端未响应 — 小欧 2026-10-30
  *  探测 false 有三种成因(进程不在/重启中/本页连接被占满), 文案列全、不下断言 */
 const TIMEOUT_HINT_DOWN =
   '后端未响应：可能服务未运行或连接被占满，请稍后重试或检查服务';
 
-/** 是否超时(axios 超时=ECONNABORTED; 部分环境只有 message 含 timeout) — 小欧 2026-10-30 */
+/** 是否超时(axios 超时=ECONNABORTED; 部分环境只有 message 含 timeout) — 小欧 2026-10-30
+ *  加 `!response` 守卫 —— 超时的定义就是**后端没答**,
+ *  有 response 的失败必须保留后端原文(如 detail 含 "timeout" 的业务报错), 不能被探活文案覆盖。 */
 const isTimeoutError = (error: unknown): boolean => {
-  const e = error as { code?: string; message?: string };
+  const e = error as {
+    code?: string;
+    message?: string;
+    response?: unknown;
+  };
+  if (e?.response) return false;
   return e?.code === 'ECONNABORTED' || /timeout/i.test(e?.message ?? '');
 };
 
@@ -249,7 +272,7 @@ const RETRYABLE_NET_CODES = [
  *       同时给已经饱和的后端再压一份负载 —— 重试放大, 是雪崩的加速器;
  *    ② 用户视角更差: 原本 60s 就有明确文案, 重试后要干等两倍时间才知道结果;
  *    ③ 真正能靠重试自愈的是「请求根本没到后端」的链路抖动, 那类失败**立即**返回, 重试成本极低。
- *  故本函数只认连接层失败, 超时一律交给 6.6 的探活 + 文案分支。 */
+ *  故本函数只认连接层失败, 超时一律交给探活 + 文案分支。 */
 const canRetryOnce = (error: unknown, cfg?: ApiRequestConfig): boolean => {
   if (!cfg || cfg._retried) return false;
   if ((cfg.method ?? 'get').toLowerCase() !== 'get') return false;
@@ -265,11 +288,11 @@ const canRetryOnce = (error: unknown, cfg?: ApiRequestConfig): boolean => {
 
 api.interceptors.response.use(
   (response: AxiosResponse) => {
-    // 2026-10-30 小欧 - 文档[58] P0: 成功的慢请求也要留痕(原实现只有失败才打日志)
+    // 2026-10-30 小欧 - 成功的慢请求也要留痕(原实现只有失败才打日志)
     logIfSlow(describeRequest(response));
     return response;
   },
-  // 2026-10-30 小欧 - 文档[58] P1: 错误回调改 async —— 超时分支要 await /health 探测
+  // 2026-10-30 小欧 - 错误回调改 async —— 超时分支要 await /health 探测
   async (error) => {
     const cfg = error.config as ApiRequestConfig | undefined;
     const skip401 = cfg?._skip401;
@@ -300,11 +323,11 @@ api.interceptors.response.use(
         }
       }
     }
-    // 2026-10-30 小欧 - 文档[58] P0: 诊断上下文(URL/耗时/请求ID), 不改变控制流
+    // 2026-10-30 小欧 - 诊断上下文(URL/耗时/请求ID), 不改变控制流
     const diag = describeRequest(error);
     logIfSlow(diag);
 
-    // 2026-10-30 小欧 - 文档[58] P2: 幂等 GET「连接层失败」单次静默重试(重试成功则用户无感)
+    // 2026-10-30 小欧 - 幂等 GET「连接层失败」单次静默重试(重试成功则用户无感)
     //   放在 _silent 判定**之前**: 静默请求同样值得自愈(如 @ 搜索), 重试仍失败会继续落到下面
     //   的 _silent 分支(不弹 toast), 语义不变。超时/写请求/有响应/已取消 一律不重试(见 canRetryOnce)
     if (canRetryOnce(error, cfg)) {
@@ -312,13 +335,13 @@ api.interceptors.response.use(
       return api.request({ ...cfg, _retried: true } as ApiRequestConfig);
     }
 
-    // 2026-10-30 小欧 - 文档[58] P1: 调用方已自行提示(_silent) 或 预期内 401(_skip401) → 不弹全局 toast
+    // 2026-10-30 小欧 - 调用方已自行提示(_silent) 或 预期内 401(_skip401) → 不弹全局 toast
     if (skip401 || cfg?._silent) {
       handleApiError(error, { showError: false, diag });
       return Promise.reject(error);
     }
 
-    // 2026-10-30 小欧 - 文档[58] P1: 超时探一次 /health, 结果只用来选文案(措辞见 §6.6)
+    // 2026-10-30 小欧 - 超时探一次 /health, 结果只用来选文案(不下"服务已停止"的断言)
     //   传 API_BASE_URL(含 /api/v1): network.ts 内部拼 `${base}/health`, 与 useChatSend.ts:146 同款传参
     if (isTimeoutError(error)) {
       const alive = await checkNetworkConnection(API_BASE_URL);
