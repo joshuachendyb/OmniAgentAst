@@ -13,7 +13,10 @@
 
 // 2026-10-29 小欧 - 增 statFile：GET /files/stat 轻端点(只取存在/size/mtime, 不读正文),
 //   供发送前预检(存在性/mtime 本地比对"内容已更新") — 小欧-2026-10-29
-// 2026-10-30 小欧 - 文档[58] P1/P2: fetchTree/searchFiles 走 _silent；fetchTree/readFile/fetchExternalTree 放宽到 HEAVY_READ_TIMEOUT_MS
+// 2026-10-30 小欧 - 慢读端点统一放宽到 HEAVY_READ_TIMEOUT_MS(120s):
+//   fetchTree/readFile/readExternalFile/fetchExternalTree —— 这四类天生可能慢(网络盘/大仓/2MB 正文)
+// 2026-10-30 小欧 - _silent 分两种: fetchTree/searchFiles 由端点自己置(页面另有局部提示);
+//   readFile/readExternalFile 由调用方传 silent(只有调用方知道自己有没有局部反馈)
 
 /**
  * 文件浏览 API（只读浏览项目根目录）
@@ -27,7 +30,7 @@ import api, {
   API_BASE_URL,
   HEAVY_READ_TIMEOUT_MS,
 } from './client'; // api 只有默认导出（session.api.ts 同款），具名解构必红
-// 2026-10-30 小欧 - 文档[58] P1: _silent 走类型载体, 避免字面量多属性报错
+// 2026-10-30 小欧 - _silent 走类型载体, 避免字面量多属性报错
 import type { ApiRequestConfig } from './client';
 
 export interface FileNode {
@@ -80,7 +83,7 @@ export interface ReadResponse {
   loaded_lines?: number;
 }
 
-/** 2026-10-30 小欧 - /files/stat 预检响应：只回存在性/mtime/size，不读正文(5.4.1) */
+/** 2026-10-30 小欧 - /files/stat 预检响应：只回存在性/mtime/size，不读正文 */
 export interface StatResponse {
   ok: boolean;
   size?: number;
@@ -155,47 +158,69 @@ export const fileApi = {
     opts?: { maxDepth?: number; maxNodes?: number; signal?: AbortSignal }
   ): Promise<TreeResponse> => {
     const { maxDepth = 5, maxNodes = 100000, signal } = opts ?? {};
-    // 2026-10-30 小欧 - 文档[58] P1: 页面自己给「目录加载失败」局部提示(useFilesTree:83-86),
-    //   全局 toast 属重复且更含糊, 故本请求静默(唯一置 _silent 的端点, 见 §6.8 逐端点决定表)
+    // 2026-10-30 小欧 - 页面自己给「目录加载失败」局部提示(useFilesTree:83-86),
+    //   全局 toast 属重复且更含糊, 故本请求静默
     const cfg: ApiRequestConfig = {
       params: { path, max_depth: maxDepth, max_nodes: maxNodes },
       signal,
       _silent: true,
-      timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 文档[58] P2: 天生慢读, 60s→120s
+      timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 天生慢读, 60s→120s
     };
     return (await api.get<TreeResponse>('/files/tree', cfg)).data;
   },
 
   readFile: async (
     path: string,
-    cfg?: { signal?: AbortSignal; offset?: number; limit?: number }
+    cfg?: {
+      signal?: AbortSignal;
+      offset?: number;
+      limit?: number;
+      /** 调用方自己已有局部错误反馈时才置 true（先有反馈，再关全局） — 小欧 2026-10-30 */
+      silent?: boolean;
+    }
   ): Promise<ReadResponse> => {
     need(path, '文件路径');
-    const { signal, offset, limit } = cfg ?? {};
-    return (
-      await api.get<ReadResponse>('/files/read', {
-        params: { path, offset, limit },
-        signal,
-        timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 文档[58] P2: 2MB 级正文读取，同属慢读
-      })
-    ).data;
+    const { signal, offset, limit, silent } = cfg ?? {};
+    // 2026-10-30 小欧 - 静默权交回调用方 ——
+    //   FilePreview 有 setErr/showMessage(局部可见) → 传 silent; probeRef 的失败**没有任何**
+    //   可见反馈(chip 的"未校验"只存在于注释, 无渲染代码) → 不传, 保留全局 toast。
+    //   只靠端点级一刀切无法区分这些调用方, 只有调用方知道自己有没有局部反馈。
+    const reqCfg: ApiRequestConfig = {
+      params: { path, offset, limit },
+      signal,
+      _silent: silent,
+      timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 2MB 级正文读取，同属慢读
+    };
+    return (await api.get<ReadResponse>('/files/read', reqCfg)).data;
   },
 
   /** 读项目根外的文本文件（只读；外部文件链接直开预览）— 小欧-2026-10-22 */
   readExternalFile: async (
     absPath: string,
-    cfg?: { offset?: number; limit?: number }
+    cfg?: {
+      offset?: number;
+      limit?: number;
+      silent?: boolean;
+      /** 调用方自设取消(如探引用要独立超时, 不跟随本端点的 120s) — 小欧 2026-10-30 */
+      signal?: AbortSignal;
+    }
   ): Promise<ReadResponse> => {
     need(absPath, '文件路径');
-    const { offset, limit } = cfg ?? {};
-    return (
-      await api.get<ReadResponse>('/files/external/read', {
-        params: { path: absPath, offset, limit },
-      })
-    ).data;
+    const { offset, limit, silent, signal } = cfg ?? {};
+    // 2026-10-30 小欧 - 静默权同 readFile 交调用方;
+    //   超时与 readFile 对齐 —— 外部盘/网络盘只会更慢, 没道理反而更紧
+    const reqCfg: ApiRequestConfig = {
+      params: { path: absPath, offset, limit },
+      signal,
+      _silent: silent,
+      timeout: HEAVY_READ_TIMEOUT_MS,
+    };
+    return (await api.get<ReadResponse>('/files/external/read', reqCfg)).data;
   },
 
-  /** 2026-10-30 小欧 - 引用预检：存在性/mtime/size，O(1) 不读正文(5.4.1 precheckRefs 唯一数据源) */
+  /** 2026-10-30 小欧 - 引用预检：存在性/mtime/size，O(1) 不读正文(precheckRefs 唯一数据源)
+   *   本端点**保持不静默** —— 唯一调用方是用户点发送时的 precheckRefs,
+   *   属明确用户动作且调用链没有局部错误提示, 超时/失败必须让用户看到(否则表现为"点了发送没反应")。 */
   statFile: async (path: string): Promise<StatResponse> => {
     need(path, '文件路径');
     return (await api.get<StatResponse>('/files/stat', { params: { path } }))
@@ -213,7 +238,7 @@ export const fileApi = {
       await api.get<ExternalTreeResponse>('/files/external/tree', {
         params: { path: absPath, max_depth: maxDepth, max_nodes: maxNodes },
         signal,
-        timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 文档[58] P2: 外部目录树同 fetchTree
+        timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 外部目录树同 fetchTree
       })
     ).data;
   },
@@ -224,7 +249,7 @@ export const fileApi = {
    * 前端不自立规则。
    */
   searchFiles: async (q: string, limit = 20): Promise<SearchResponse> => {
-    // 2026-10-30 小欧 - 文档[58] P1: 唯一调用方 ChatInput 在 catch 里自提示，全局 toast 与其重复且文案无关
+    // 2026-10-30 小欧 - 唯一调用方 ChatInput 在 catch 里自提示，全局 toast 与其重复且文案无关
     const cfg: ApiRequestConfig = {
       params: { q, limit },
       _silent: true,
