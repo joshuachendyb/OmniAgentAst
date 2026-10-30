@@ -21,6 +21,8 @@
 //   复用现有管道；node 恒 null 时跳过 image/none 形态分支 — 小欧-2026-10-22
 // 2026-10-23 小欧 - 外部文件选区引用：onSendExternalSelection prop（与根内选区同能力，path 为绝对路径）；
 //   外部提示条文案缩短为「根外File:」— 小欧-2026-10-23
+// 2026-10-30 小欧 - 6 处 readFile/readExternalFile 调用传 silent:true：这些路径失败时本组件已用
+//   setErr/showMessage 给出局部可见提示，全局 toast 属重复且文案更含糊；probeRef 不传（无局部反馈）— 小欧-2026-10-30
 /**
  * FilePreview —— 选中文件的预览区（只读）
  *
@@ -226,10 +228,12 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         ? await fileApi.readExternalFile(srcKey, {
             offset: loadedLines + 1,
             limit: 2000,
+            silent: true, // 局部 catch 已 showMessage(见下) — 小欧 2026-10-30
           })
         : await fileApi.readFile(srcKey, {
             offset: loadedLines + 1,
             limit: 2000,
+            silent: true,
           });
       if (!next.content) {
         // 2026-10-22 小杨 - 到文件末尾时**如实告知**：此前静默 return，
@@ -272,7 +276,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     setImgBytes(null);
     try {
       if (target.preview === 'text') {
-        const r = await fileApi.readFile(target.key);
+        const r = await fileApi.readFile(target.key, { silent: true }); // 失败由下方 setErr 渲染 — 小欧 2026-10-30
         if (seq !== reqSeq.current) return; // 已被更新的请求取代
         setText(r);
         releaseImage(); // 2026-10-21 小杨 - 修复：切走时**必须 revoke**（原 setImgUrl(null) 直接丢 URL 字符串 → 泄漏）
@@ -349,6 +353,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
         const r = await fileApi.readExternalFile(external.path, {
           offset: lineRange?.start,
           limit: lineRange ? lineRange.end - lineRange.start + 1 : undefined,
+          silent: true, // 局部 catch 已 setErr — 小欧 2026-10-30
         });
         if (seq !== reqSeq.current) return;
         setText(r);
@@ -371,7 +376,9 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
       if (!external) return;
       const seq = ++reqSeq.current;
       try {
-        const r = await fileApi.readExternalFile(external.path);
+        const r = await fileApi.readExternalFile(external.path, {
+          silent: true, // 局部 catch 已 setErr — 小欧 2026-10-30
+        });
         if (seq !== reqSeq.current) return;
         const changed = !!r.mtime && r.mtime !== openedMtime.current;
         if (r.mtime) openedMtime.current = r.mtime;
@@ -390,7 +397,7 @@ export const FilePreview: React.FC<FilePreviewProps> = ({
     const seq = ++reqSeq.current;
     try {
       if (node.preview === 'text') {
-        const r = await fileApi.readFile(node.key);
+        const r = await fileApi.readFile(node.key, { silent: true }); // 局部 catch 已 setErr — 小欧 2026-10-30
         if (seq !== reqSeq.current) return; // 已被更新的请求取代
         // 2026-10-21 小杨 - 修复：内容既然已重载，就不再挂"可能已被修改"横幅
         //   （旧实现一边换正文一边让横幅永久停留，自相矛盾）。变化用一次性提示告知。
