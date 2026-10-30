@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-26 12:27:19
-**最近更新**: 2026-10-26 12:27:19 小沈 §4.2 新登记 save_text_to_file(fetchpage._save_to_file 抽取至 toolhelper/tool_utils.py 公用); DRY: download_file._stream_download 合并至 HTTPClient.download(SDK增强版)
+**最后更新时间**: 2026-10-30 20:21:41
+**最近更新**: 2026-10-30 20:21:41 小欧 §3.5 新登记 estimate_tokens(chars→token 唯一实现, 收口 prune._released_tokens 与 refs.budget._tokens_of 两份同款单行); 新增 §3.8 引用处置观测(summarize_refs/report_refs/build_refs_ready_notice 等, 日志与 SSE notice 共用同一份数字)
 
 ---
 
@@ -283,6 +283,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `fc_atomic_units` | 把 assistant(tool_calls) 与其 tool 结果编成 FC 原子单元（整组取舍，永不拆散）。**唯一真源**：`fc_message_types.fc_atomic_units`（2026-10-20 小欧 由 compaction/prune 私有实现迁至协议层——prune 顶层 import message_builder，反向导入必成环；迁中立层后 message_builder 裁剪与 prune 价值保留共用一份）。调用方须按组整体取舍、组内升序展开，保证 assistant 恒在 tool 之前 | messages: List[Dict] | List[List[int]] |
 | `_msg_cost` | 单条消息的预算占用 token，复用 `MessageBuilder._estimate_tokens` 同一真源（原 `len(content)/CHARS_PER_TOKEN` 自算漏算 tool_calls 结构开销，实测决策消息 0 vs 41，致 budget 约束不准） | msg: Dict | int |
 | `_valid_summary_or_empty` | C4 摘要结构校验（单函数，两摘要函数共用）：空响应/长度下限/六段齐全/拒绝开头/压缩比，任一不过返空串走零退化；阈值优先读 `tuning.compaction.summary_min_chars`（缺省 200） | text: str, src_len: int = 0 | str（有效原文/空串） |
+| `estimate_tokens` | **chars→token 估算唯一实现**（`services/agent/token_estimate.py`，与系数真源 `compaction_constants.CHARS_PER_TOKEN` 同域）：`int(len(str(content))/CHARS_PER_TOKEN)`。2026-10-30 收口 `prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行（DRY）；口径只算文本，不算消息列表的 tool_calls 结构开销（那属 `MessageBuilder._estimate_tokens`） | content: Any（None/空 → 0） | int |
 
 > 落点说明(2026-10-08 小欧): 真实 205 条实测，未降本 feed 135362 tok；本策略降至 86472 tok（省 36%）且摘要保住可核对的具体数字/签名/时间戳（纯全清零版 83673 tok 但摘要仅 1521 字符且失掉证据）。开关见 `compaction_constants.SUMMARY_PRUNE_TOOL_OUTPUT`，置 False 即刻回退全量喂。
 > 2026-10-20 小欧: `fc_atomic_units` 唯一真源已迁至 `services/agent/fc_message_types.py`（协议层，零依赖），本模块 `keep_valuable_messages` 与 `message_builder` 裁剪复用；本表保留于 3.5 节以示与降本链路的关系。
@@ -315,6 +316,20 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
 | `call_llm_text_task` | 通用「纯文本任务」LLM 调用: 先问 provider 适配器 `callTextForTask` 接管(zen 免费层经此补 `GATE_STUBS` 门禁), 未接管回落 `call_llm_with_fallback`(openai_tools 恒 None 纯文本）。摘要主链与工具层共享(fetchpage prompt 提取经 `tool_executor` 注入 `app.tools.context._current_text_task` ContextVar 回调消费——工具层禁 import app.services 的守护合规管道), 任何 provider/model 通用。不抛异常, 失败/错误响应返回空串由调用方自定降级 | llm_agent: Agent 对象(须含 .llm_client / _task_llm_model), feed: List[Dict](任意 role) | str（最终正文/空串） |
+
+### 3.8 引用处置观测（`services/refs/notice.py`）(2026-10-30 新增 §, 小欧)
+
+引用在 `services.refs.pipeline.prepare_refs` 裁决完成后、进入 loop 之前的一段可观测链路。核心纪律：**`summarize_refs` 是日志与 SSE notice 的唯一数字源**（两通道逐项可对账）；**引用正文永不落日志**（正文只留在 `agent._start_meta["refs"]`，日志只有条数/路径/行区间/字符/token/reason）。
+
+| 函数名 | 功能 | 参数 | 返回值 |
+|--------|------|------|--------|
+| `summarize_refs` | 处置汇总（唯一数字源）：`files` 去重路径数（整份与区间同 path 只算 1）、`fragments` 带 lineRange 条目数、`items` 实际进入 prompt 条目数、`tokens` 进入正文的 `estimate_tokens` 合计、`rejected` 回执条目数 | final_refs: List[Dict], notices: List[Dict] | Dict[str, int] |
+| `refs_counts_text` | 计数文案：无片段→`N 个文件`；有片段→`N 个文件、M 个行片段（共 K 项）`（片段与文件不可相加，故显式给总项数） | summary: Dict[str, int] | str |
+| `report_refs` | 落日志：1 行汇总（`log_and_print`，行首 `OK`/`BLOCKED`，`paths=` ≤5 条、单条截 60 字符）进控制台+文件；明细 ≤5 行（进入项给 span/chars/tokens/path，未进入项给 reason/detail/label）仅进文件，超出写"明细另 N 条已省略"。调用方只在 `refs` 非空时调 | scope: str, summary, final_refs, notices | None |
+| `build_refs_ready_notice` | 组 `refs_ready` 通知载荷（走既有 `notice` 信封，无结构化 refs 字段）：`items>0` → `phase=done`（`引用进入本轮：…` / 插话前缀 `插话引用进入：`）；否则 `phase=failed`（`引用全部不可用：N 项未能进入本轮，请求已阻断`）。token 文案 <1000 显原值、≥1000 折 k 一位 | scope: str, summary | Dict（type/kind/phase/content/step） |
+| `create_refs_ready_event` | 组 `refs_ready` 的 SSE 帧（首发 `yield`；插话取 `build_refs_ready_notice` 载荷经 `_emit_to_target` → 目标任务 buffer publish 下发，新 POST 流前端只 `readToEnd` 收不到 `yield`） | scope: str, summary | str（SSE 帧） |
+
+> 载体纪律（与 `refs_notice` 同）：首发路径是新建任务流，前端 pump 直接消费，`yield` 即可见；插话路径帧发在新 POST 流上，必须经目标任务 buffer 下发才能到前端。`refs_ready` 只发 `done`/`failed`、不发 `start`（`start` 会占位4 抢主任务提示）；对应前端位4 的 `notice done` 已收紧为"只清自己 kind"（`useTaskInfo.ts`），避免插话的 `refs_ready_done` 抹掉主任务"生成摘要中"。登记点：`NOTICE_KINDS`（`services/agent/steps/__init__.py`）与 `execution.ts` 通名同步。
 
 ---
 
@@ -645,6 +660,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.15 | 2026-10-30 20:21:41 | **§3.5 新登记 `estimate_tokens` + 新增 §3.8 引用处置观测**(小欧): ①`services/agent/token_estimate.py` 成为 chars→token 唯一实现, 收口 `compaction.prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行(DRY, 5 处调用点改公共函数); ②§3.8 登记 `summarize_refs`/`refs_counts_text`/`report_refs`/`build_refs_ready_notice`/`create_refs_ready_event`——引用进 loop 前 1 行汇总日志(log_and_print)+≤5 行明细+SSE `notice(kind=refs_ready)` 三通道共用同一份数字, 引用正文永不落日志 | 小欧 |
 | v5.14 | 2026-10-26 12:27:19 | **§1.10 新登记 `get_output_dir` + §4.2 新登记 `save_text_to_file`**(小沈): ①`get_output_dir()`(project_root/output) 从 generate_chart._get_output_dir 抽取至 path_utils.py 公用, download/generate_chart 默认输出统一 output/; ②`save_text_to_file` 从 fetch_webpage._save_to_file 抽取至 toolhelper/tool_utils.py, 调 write 工具走完整安全链路; ③DRY: download_file._stream_download 合并至 HTTPClient.download(SDK 增强版) | 小沈 |
 | v5.13 | 2026-10-20 16:03:19 | **§3.5→§3.7 登记迁移**(小欧, 三堂会审账实不符修正): `call_llm_text_task` 函数体宿主按北京老陈裁定自 `compaction/summary.py` 原样迁至 `services/agent/llm_call.py`(全系统"发起LLM调用"唯一入口层, SRP 归位; summary 改薄引用, 逻辑零变化), 清单条目新立 **§3.7 LLM 调用层** 承接(§3.5 压缩清单条目移除); v5.12 条目描述的 §3.5 位置按本条目作废以 §3.7 为准 | 小欧 |
 | v5.12 | 2026-10-20 15:45:50 | **§3.5 新登记 `call_llm_text_task`**(北京老陈令, 小欧): 压缩摘要私有 `_extract_response_content` 纯改名升格公用(逻辑零变化), fetchpage prompt 提取复用——工具层守护禁 tools→app.services, 故 tools/context 新增 `_current_text_task` ContextVar, 由 `tool_executor.execute_tool` 注入闭包, `fetch_webpage._extract_by_prompt` 经 `get_current_text_task` 消费(A1 hooks 同款管道); 同批修复 #1 searchweb 域名过滤(见 search_web.py 编辑历史) | 小欧 |

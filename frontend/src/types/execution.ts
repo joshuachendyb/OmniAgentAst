@@ -28,6 +28,7 @@
 // inject_context 双分组, 不携带任何旧扁平字段(禁止backward)
 // 编辑历史: 2026-10-25 小欧 - 通知信封收敛: type 成员 'installing'/'summarizing' 统一为 'notice';
 //   新增 notice_kind/notice_phase 可选字段, 供 useTaskInfo 按 kind+phase 查表渲染 — 小欧-2026-10-25
+// 编辑历史: 2026-10-30 小欧 - notice_kind 注释补 refs_ready(引用处置汇总), 与后端 NOTICE_KINDS 同步 — 小欧-2026-10-30
 import type { ConvContextFrame, InjectContextFrame } from './sse';
 
 export interface ExecutionStep {
@@ -64,7 +65,7 @@ export interface ExecutionStep {
   //   reject_type 承载拒绝归因(safety/user/timeout/sandbox), 供 useTaskInfo 生成事件文案前缀。
   reject_type?: string;
   // 2026-10-25 小欧: 通知信封字段(type='notice' 时有效)
-  notice_kind?: string; // 通知种类: summarizing/installing/...
+  notice_kind?: string; // 通知种类: summarizing/installing/extracting/refs_ready
   notice_phase?: 'start' | 'done' | 'failed'; // 阶段: start(事前)/done(成功)/failed(失败)
   content?: string; // 前端显示用：根据type使用不同字段填充小查修复202
   // 2026-10-12 小欧 - observation 结构化载体透传（只存不用，渲染方案待定）：

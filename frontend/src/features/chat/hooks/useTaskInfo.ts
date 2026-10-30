@@ -59,6 +59,8 @@
 // 编辑历史: 2026-10-30 小欧 - 位4 取消后清空(与成功完成同语义): 原仅 badge==='completed' 清 candidates,
 //   取消落在重试退避中/压缩摘要中时, "重试 x/y""摘要中"等过程事件的 done 帧随 agent 协程被取消打断永不达,
 //   位4 会永久挂转圈/过期文案与"已取消"徽标冲突; 判据加 badge==='cancelled' — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 位4 的 notice done 收紧为只清自己的 kind: 原无条件清空, 插话的
+//   refs_ready_done 会把主任务"生成摘要中"等位4提示误抹(任务仍在跑却看不出在干什么) — 小欧-2026-10-30
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -303,7 +305,8 @@ export const useTaskInfo = (
             notice_kind: s.notice_kind || '',
             notice_phase: noticePhase,
           });
-          // 位4: start/failed 设置 latestProcessEvent, done 清除(位4 清空)
+          // 位4: start/failed 设置 latestProcessEvent, done 只清除**自己 kind** 的条目 — 小欧-2026-10-30
+          //   (原 done 无条件清空: 插话的 refs_ready_done 会把主任务"生成摘要中"等提示一并抹掉)
           if (noticePhase === 'start' || noticePhase === 'failed') {
             latestProcessEvent = {
               kind: 'notice',
@@ -313,8 +316,10 @@ export const useTaskInfo = (
               notice_kind: s.notice_kind || '',
               notice_phase: noticePhase,
             };
-          } else {
-            // done: 清除位4(notice 完成, 不再显示)
+          } else if (
+            latestProcessEvent?.kind === 'notice' &&
+            latestProcessEvent.notice_kind === (s.notice_kind || '')
+          ) {
             latestProcessEvent = null;
           }
           break;

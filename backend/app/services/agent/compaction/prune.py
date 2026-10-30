@@ -29,6 +29,8 @@
 #   2026-10-30 小欧 三堂会审收尾(北京老陈令): ①use_tool_summary/compress_long_tool_output 两处 _raw 写入改调
 #     MessageBuilder.keep_full_raw 单点(原 use_tool_summary 内联"已有更长不覆盖"守卫, 与其他两处同构重复, DRY);
 #     ②use_tool_summary docstring 补"当前无生产调用点"警示(trim 语义替换已实测撤销, 接线前须坐实 summary 含正文) — 小欧-2026-10-30
+#   2026-10-30 小欧 观测/DRY 收口: 删除私有 _released_tokens, clear_tool_outputs/compress_long_tool_output
+#     两处调用改公共 estimate_tokens(与 refs.budget 原 _tokens_of 同一实现收口, 原两份同款单行) — 小欧-2026-10-30
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -61,6 +63,7 @@ from app.services.agent.compaction_constants import (
     VALUE_WEIGHT_TOOL_CALL_DECISION,
 )
 from app.services.agent.message_builder import MessageBuilder  # 2026-10-08 小欧: 预算口径与 split_turn/message_builder 统一(DRY) — 小欧-2026-10-08
+from app.services.agent.token_estimate import estimate_tokens  # 2026-10-30 小欧: chars→token 唯一实现(原私有 _released_tokens, DRY)
 from app.services.agent.fc_message_types import fc_atomic_units  # 2026-10-20 小欧: FC 单元划分唯一源迁协议层(解循环, message_builder 裁剪共用)
 
 logger = logging.getLogger(__name__)
@@ -68,12 +71,6 @@ logger = logging.getLogger(__name__)
 # 2026-10-08 小欧 - 无条件保留的权重门槛: 仅 system(90)/_history_mem(100) 属结构性必需
 #   (丢掉 system 等于丢掉系统约束, agent 不可用), 其余一律受 budget 约束 — 小欧-2026-10-08
 _WEIGHT_ALWAYS_KEEP = 90
-
-
-def _released_tokens(content: str) -> int:
-    """按 CHARS_PER_TOKEN 估算释放 token(与 MessageBuilder._estimate_tokens 同款纯数学, 零依赖) — 小健 2026-08-17"""
-    # 2026-10-04 小欧: 系数 4→1.8 后 `// float` 返回 float, 改显式取整保 int 契约
-    return int(len(str(content)) / CHARS_PER_TOKEN)
 
 
 # ---- C3 策略实现: clear_tool_outputs 通用清零(14.9.3②) ————————————————————————————————
@@ -94,7 +91,7 @@ def clear_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
             content = msg.pop("content", None)
             if content:
-                released += _released_tokens(content)
+                released += estimate_tokens(content)
             msg.update({"_pruned": True, "content": ""})
         pruned.append(msg)
     return pruned, released
@@ -164,7 +161,7 @@ def compress_long_tool_output(messages: List[Dict],
         raw = str(msg.get("content", "") or "")
         if len(raw) <= protect_tokens * CHARS_PER_TOKEN:   # 近期/短输出受保护, 不压缩(防小输出反向膨胀)
             continue
-        release = _released_tokens(raw)
+        release = estimate_tokens(raw)
         if release < min_release:
             continue                          # 释放不足 PRUNE_MINIMUM_TOKENS 跳过(防抖动, 借鉴 OPENCODE)
         head = " ".join(raw.split())[:TOOL_SUMMARY_HEAD_CHARS]

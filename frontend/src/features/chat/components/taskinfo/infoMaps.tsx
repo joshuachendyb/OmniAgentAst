@@ -18,6 +18,7 @@
 // 单分组判据必然落进"有内容无计数", 自造的"摘要·无计数"漏进 UI。mapStatus 改双分组真值性
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射: 新增 NOTICE_CONFIG(kind+phase → antd SVG), summarizing/installing 三态(start/done/failed)各配 Spin/Check/Warning 图标; EVENT_ICON_MAP.notice 保留为回退 — 小欧-2026-10-25
 // 编辑历史: 2026-10-26 小沈 - NOTICE_CONFIG新增extracting三态(start/done/failed), 复用Spin/Check/Warning图标 — 小沈-2026-10-26
+// 编辑历史: 2026-10-30 小欧 - NOTICE_CONFIG新增refs_ready_done/refs_ready_failed(引用处置汇总, 无start态) — 小欧-2026-10-30
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -130,6 +131,10 @@ export const NOTICE_CONFIG: Record<string, ReactNode> = {
   extracting_start: <SyncOutlined spin />,
   extracting_done: <CheckCircleOutlined />,
   extracting_failed: <WarningOutlined />,
+  // refs_ready(引用处置汇总) — 小欧 2026-10-30: 只发 done(进入本轮)/failed(全部不可用),
+  // 无 start(start 不进本轮链路, 且 start 会占位4 抢主任务提示)
+  refs_ready_done: <CheckCircleOutlined />,
+  refs_ready_failed: <WarningOutlined />,
 };
 
 // ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------

@@ -5,6 +5,8 @@
 #   REF_MIN_KEEP_LINES 行, 不迭代), 压后仍超拒绝线才拒绝 — 小欧-2026-10-30
 # 2026-10-30 小欧 批3收尾: ①行数改 count_lines(与文件页/回执同口径, 末尾换行不算新行, 原 count("\n")+1 虚高);
 #   ②clip_lines 的 keep_lines 即"最终保留行数", 删目标行数折算(原按 0.8 反推, 与 clip 新语义重复) — 小欧-2026-10-30
+# 2026-10-30 小欧 观测收口: 删除本文件私有 _tokens_of, 改用公共 estimate_tokens(与 compaction.prune
+#   _released_tokens 同一实现, 原两份单行同款实现 DRY 违反) — 小欧-2026-10-30
 
 """services.refs.budget — 引用合计体积裁决(纯计算, 零 IO)
 
@@ -21,15 +23,10 @@
 from typing import Any, Dict, List, Tuple
 
 from app.constants import REF_MIN_KEEP_LINES
-from app.services.agent.compaction_constants import CHARS_PER_TOKEN
+from app.services.agent.token_estimate import estimate_tokens  # chars→token 唯一实现(原私有 _tokens_of)
 from app.services.refs.clip import clip_lines
 from app.services.refs.limits import RefLimits
 from app.utils.text_utils import count_lines
-
-
-def _tokens_of(content: str) -> int:
-    """估算 token: 字符数 / CHARS_PER_TOKEN(唯一真源 compaction_constants, DRY)。"""
-    return int(len(content or "") / CHARS_PER_TOKEN)
 
 
 def _reject_all(resolved: List[Dict[str, Any]], detail: str) -> List[Dict[str, str]]:
@@ -56,12 +53,12 @@ def budget_refs(
     notices: List[Dict[str, str]] = []
     if not resolved:
         return [], notices
-    total = sum(_tokens_of(r.get("content") or "") for r in resolved)
+    total = sum(estimate_tokens(r.get("content")) for r in resolved)
 
     # 插话: 单条与合计同值 5%, 任一超限即整批拒绝(不降级, 4.7.4)
     if scope == "interject":
         cap = limits.interject_cap_tokens
-        if total > cap or any(_tokens_of(r.get("content") or "") > cap for r in resolved):
+        if total > cap or any(estimate_tokens(r.get("content")) > cap for r in resolved):
             return [], _reject_all(resolved, "插话引用过大, 请改用行片段, 或等当前任务结束后再发")
         return resolved, notices
 
@@ -94,6 +91,6 @@ def budget_refs(
         })
 
     # 拒绝线兜底: 压缩后仍超 60%(断言式, 正常由 MAX_REFS/单条上限提前杜绝)
-    if sum(_tokens_of(r.get("content") or "") for r in kept) > limits.reject_tokens:
+    if sum(estimate_tokens(r.get("content")) for r in kept) > limits.reject_tokens:
         return [], _reject_all(resolved, "引用体积超出模型窗口, 请减少引用或改用行片段")
     return kept, notices

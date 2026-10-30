@@ -21,6 +21,7 @@ Updated: 2026-08-18 小欧 - 步骤结构: 废action_tool改action, 新增Though
 Updated: 2026-09-11 小欧 - 接线①: 导出 FinalStatsStep 子类(打字法显式写成定案的 final_stats 终态) — 小欧 2026-09-11
 Updated: 2026-10-30 小欧 - 批2序12: ALL_STEP_TYPES 登记 "refs_notice"(引用回执, 仅SSE不落库, 与 "merged" 同类)——
   定义与组帧在 services/refs/notice.py, 此处为唯一登记点, 转发表由它推导(不存在双登记) — 小欧 2026-10-30
+Updated: 2026-10-30 小欧 - NOTICE_KINDS 补 "refs_ready"(引用处置汇总, 走既有 notice 信封, 无新增事件类型) — 小欧 2026-10-30
 """
 from .base import ReasoningStep, MetaStep
 from .action_step import ActionStep
@@ -86,5 +87,6 @@ ALL_STEP_TYPES = frozenset({
 NOTICE_KINDS = frozenset({
     "summarizing",  # 摘要生成(start 阶段调 LLM 压缩历史)
     "installing",   # 依赖安装(缺库自愈 pip install)
+    "refs_ready",   # 输入框引用处置汇总(引用进入本轮/全部不可用) — 小欧 2026-10-30
 })
 

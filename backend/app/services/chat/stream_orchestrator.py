@@ -231,6 +231,9 @@
 # 2026-10-30 小欧 - 三堂会审收口: 首发/插话共用 refs.pipeline.prepare_refs(插话此前漏 resolver dropped,
 #   读不出的文件不进回执也不进点名); 点名文案统一 notice.describe_items; 插话带引用时调
 #   message_builder.ensure_file_ref_rules() 幂等补注格式约定; refs 相关 import 全上提模块级。 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 引用进 loop 前可观测: 首发/插话各在 prepare_refs 之后 summarize_refs → report_refs
+#   (1 行汇总 log_and_print + ≤5 行明细 logger.info) → refs_ready notice(事件列表可见, 数字同源);
+#   删除原两处只在有回执时打点的 "[refs] first/interject resolved=..." info(成功路径零痕迹)。 — 小欧-2026-10-30
 
 """
 stream_orchestrator — 聊天流编排器(services 层)
@@ -249,7 +252,16 @@ from app.file_browse import browse_service as browse  # 引用 path 越界过滤
 # 引用链路 4 口(首发/插话共用, 原两处函数内 import 上提) — 小欧 2026-10-30
 from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT   # 生效窗口缺失时的兜底
 from app.services.refs.limits import resolve_limits                        # 按生效窗口算三档阈值
-from app.services.refs.notice import build_notice, create_refs_notice_event, describe_items  # 回执
+# 回执 + 观测(汇总/日志/refs_ready notice, 两通道共用同一份数字) — 小欧 2026-10-30
+from app.services.refs.notice import (
+    build_notice,
+    build_refs_ready_notice,
+    create_refs_notice_event,
+    create_refs_ready_event,
+    describe_items,
+    report_refs,
+    summarize_refs,
+)
 from app.services.refs.pipeline import prepare_refs                        # 解析→裁决→回执汇集唯一流水线
 from app.services.refs.render import render_refs_block                     # 引用正文前置区块(零 IO)
 from app.services.model.resolver import (
@@ -595,12 +607,25 @@ async def chat_stream_orchestrator(
                 logger.warning(f"[Journal] 插话引用回执降级直发(目标任务缓冲已回收): target={_active_tid}")
                 return format_agent_sse(payload)
 
-            if refs and not _ifinal:
-                # 阻断(4.8): 先回执点名(error 级), 再发 refs_blocked 错误帧
-                _names = describe_items(_iall_notices)
-                _frame = await _emit_to_target(build_notice("error", "interject", _iall_notices))
+            _isum = summarize_refs(_ifinal, _iall_notices)
+            if refs:
+                # 2026-10-30 小欧: 插话引用处置落日志(1 行汇总 + ≤5 行明细), 数字与下方 notice 同一份
+                report_refs("interject", _isum, _ifinal, _iall_notices)
+            _blocked = bool(refs) and not _ifinal
+            if _iall_notices:
+                # 部分不可用/被压缩: 只回执点名, 不中断任务(与首发同权, 4.8);
+                # 整批阻断属拒绝类, 回执强制 error 级(原分两条路径, 合并后按 _blocked 取级)
+                _frame = await _emit_to_target(
+                    build_notice("error" if _blocked else None, "interject", _iall_notices))
                 if _frame:
                     yield _frame
+            if refs:
+                # 引用进入本轮(done)/全部不可用(failed): 经目标任务缓冲下发(新 POST 流前端只 readToEnd)
+                _frame = await _emit_to_target(build_refs_ready_notice("interject", _isum))
+                if _frame:
+                    yield _frame
+            if _blocked:
+                _names = describe_items(_iall_notices)
                 _frame = await _emit_to_target({
                     "type": "error",
                     "error_type": "refs_blocked",
@@ -609,16 +634,6 @@ async def chat_stream_orchestrator(
                 if _frame:
                     yield _frame
                 return
-            if _iall_notices:
-                # 部分不可用/被压缩: 只回执点名, 不中断任务(与首发同权, 4.8)
-                _frame = await _emit_to_target(build_notice(None, "interject", _iall_notices))
-                if _frame:
-                    yield _frame
-            logger.info(
-                "[refs] interject resolved=%d notices=%s",
-                len(_ifinal),
-                [f"{n.get('label')}:{n.get('reason')}" for n in _iall_notices],
-            )
             if _ifinal and _tgt_agent is not None:
                 # 插话带引用: 目标任务 system 消息早已建好, 补注入"文件引用格式约定"(幂等, 已注入则跳过)
                 #   — 2026-10-30 小欧. 不补则模型看到引用正文却不知道 [[文件:...]] 输出约定。
@@ -838,20 +853,23 @@ async def chat_stream_orchestrator(
         #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。
         _final_refs, _notices = await prepare_refs(
             _start_kept, limits=_limits, scope="first", sanitized_dropped=_s_dropped)
-        # 2026-10-30 小欧 A9: 解析结果落日志(失败/截断/压缩无据可查的历史已修)
+        # 2026-10-30 小欧 引用进 loop 前可观测(北京老陈令): 汇总/日志/notice 共用一份数字。
+        #   原只在 _notices 非空时打一行 info(无 notices 的成功路径零痕迹, 查错无从下手),
+        #   现改为"有引用就留痕": 1 行汇总(控制台+文件) + ≤5 行明细(文件) + SSE notice。
+        _sum = summarize_refs(_final_refs, _notices)
+        if refs:
+            report_refs("first", _sum, _final_refs, _notices)
         if _notices:
-            logger.info(
-                "[refs] first resolved=%d notices=%s",
-                len(_final_refs),
-                [f"{n.get('label')}:{n.get('reason')}" for n in _notices],
-            )
             # 回执下发(有则发): 首发流是新建任务流, 前端 pump 直接消费, yield 即可见
             yield create_refs_notice_event("first", _notices)
-        if refs and not _final_refs:
-            _names = describe_items(_notices)
-            yield create_error_response(error_type="refs_blocked",
-                                        error_message=f"引用全部不可用({_names}), 请移除后重发")
-            return
+        if refs:
+            # 引用进入本轮(done)/全部不可用(failed): 事件列表可见, 数字与日志汇总行同源
+            yield create_refs_ready_event("first", _sum)
+            if not _final_refs:
+                _names = describe_items(_notices)
+                yield create_error_response(error_type="refs_blocked",
+                                            error_message=f"引用全部不可用({_names}), 请移除后重发")
+                return
         agent._start_meta = {
             "user_input": user_input,
             "session_id": session_id,
