@@ -11,6 +11,7 @@
 // 编辑历史: 2026-10-29 小欧 - 引用条数上限与预检时间戳: 新增 MAX_REFS=20(与 services/refs/limits.py
 //   同值, 单一真源双保险); ComposerRef 增 mtime/updated(预检本地留存, 上行前剥离, 供"内容已更新"比对);
 //   push 改返回 boolean(入队成功/超上限被拒, 调用方据此点名) — 小欧-2026-10-29
+// 编辑历史: 2026-10-30 小欧 - 取消链路批量格式化顺带换行(按项目 prettier 重排 push 长条件), 零逻辑改动 — 小欧-2026-10-30
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -116,7 +117,10 @@ export const composerRefStore = {
    *   quote.ts / @补全 / Files 三调用方同批消费返回值）。
    */
   push(ref: ComposerRef): boolean {
-    if (queue.length >= MAX_REFS && !queue.some((r) => refKeyOf(r) === refKeyOf(ref))) {
+    if (
+      queue.length >= MAX_REFS &&
+      !queue.some((r) => refKeyOf(r) === refKeyOf(ref))
+    ) {
       return false;
     }
     const k = refKeyOf(ref);
