@@ -37,7 +37,7 @@
 # 2026-10-27 - 小欧 - P1-① 消除 N+1: get_session_messages 批量预加载步骤——import 改 load_execution_steps_batch,
 #   一次查询替代循环内 N 次 load_execution_steps(keys 取 carrier 渲染载体), 改从 _steps_cache 取值未命中兜底 [];
 #   单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用 — 小欧-2026-10-27
-# 2026-10-30 - 小欧 - 文档[58] P3: save_message 的 DB 段改走 await db.atxn(子线程), 不再在事件循环
+# 2026-10-30 - 小欧 - save_message 的 DB 段改走 await db.atxn(子线程), 不再在事件循环
 #   主线程同步跑 sqlite3 与 get_conn 锁重试 time.sleep; 409 门拆两段(只读判据 + 写入), await 移出连接上下文;
 #   同时删死变量 display_name_to_save、非 user 角色不查开关(409 门只拦 user, 免一次无用 DB 往返)
 """
@@ -216,7 +216,10 @@ def _save_message_txn(conn, session_id: str, message, carried):
     from fastapi import HTTPException
     cursor = conn.cursor()
     # 2026-10-08 小欧 - 文档[11] 3.4.5.2: 携带值先落会话开关(位置与原实现一致, 仍是本事务第一步)
-    resolve_session_interject(conn, session_id, carried)
+    # 2026-10-30 小欧: carried 为 None 时 resolve 只会转调 get_session_interject
+    #   白做一次 SELECT, 而 assistant/system 消息恒为 None(每条流式回复都走这里) → 仅携带值存在时落开关。
+    if carried is not None:
+        resolve_session_interject(conn, session_id, carried)
 
     cursor.execute(
         "SELECT id, title, COALESCE(title_locked, 0) as title_locked "
@@ -254,30 +257,28 @@ def _save_message_txn(conn, session_id: str, message, carried):
 async def save_message(session_id: str, message):
     """保存消息到会话 — 小健 2026-05-25 重构 — 自 api/v1/messages.py 迁入
 
-    2026-10-30 小欧 - 文档[58] P3: DB 段落改走 await db.atxn(...) 在子线程执行。
+    2026-10-30 小欧 - DB 段落改走 await db.atxn(...) 在子线程执行。
       原实现是 async 函数里同步跑 `with db.get_conn(...)`(sqlite3 + 锁重试 time.sleep),
       直接占住事件循环 → 1GB 库写放大时 loop 被独占, 前端并发 REST 集体撞 60s 超时。
       同时把 has_active_task_in_session 的 await 移出连接上下文(原在 with 内 await)。
-      409 门必须在落库前判, 故拆两段: 先取开关生效值(只读), 判活跃任务, 最后写消息。
+      409 门必须在落库前判, 故拆两段: 先判活跃任务(纯内存), 命中才取开关生效值(只读), 最后写消息。
     """
     from fastapi import HTTPException
     carried = getattr(message, "allow_interject", None) if message.role == "user" else None
-    # 409 门判据: 携带值优先, 否则读会话当前值。只读不落库 —— 被 409 拒绝时不留副作用(与原事务回滚等价)
-    # 2026-10-30 小欧: 409 门只拦 user, 非 user 角色不查开关(免一次无用 DB 往返)
-    eff_allow = False
-    if message.role == "user":
-        eff_allow = (
-            carried
-            if carried is not None
-            else await db.atxn("chat", _read_interject_txn, session_id)
-        )
 
     # ── 插话开关: 关态且同会话有活跃任务 → 409(落库之前, 消息不入库) ──
     #   2026-10-07 小欧 - 文档[11] 3.4.5: 方案①"门口就拦"。前端 error/handler.ts
     #   已有 409 处理分支, 本方案零新增前端错误分支。
     #   2026-10-07 小欧 三堂会审补：仅拦 user 角色。save_message 同承 assistant/system 直存
     #   （内部流转），一律拦会把任务体系内部写入误伤成 409。
+    #   2026-10-30 小欧 - 先判活跃任务(纯内存)再读开关: 无活跃任务时不必开一次 DB 往返。
     if message.role == "user" and await has_active_task_in_session(session_id):
+        # 409 门判据: 携带值优先, 否则读会话当前值。只读不落库 —— 被 409 拒绝时不留副作用(与原事务回滚等价)
+        eff_allow = (
+            carried
+            if carried is not None
+            else await db.atxn("chat", _read_interject_txn, session_id)
+        )
         if not eff_allow:
             raise HTTPException(
                 status_code=409,
