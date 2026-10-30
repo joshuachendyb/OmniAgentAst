@@ -220,6 +220,11 @@
 #   (并发4/超时5s/同path合并, 失败分类标记), 结果经 _start_meta["refs"] 注入 assemble_start_step;
 #   首发合计超拒绝线时发 refs_blocked 错误帧(不落库, 不启动后台任务) — 小欧-2026-10-29
 
+# 2026-10-30 小欧 - 取消改为任务级取消: bg_task 创建后 await set_agent_task(task_id, bg_task) 登记句柄,
+#   供 cancel_task 直接 cancel 该协程(flag/关连接打不断 TTFB 等待); 强引用仍由本层 _agent_tasks 持有。
+#   配套 R4: _stream_with_control 把 buffer 传入 task_cancel_check_and_yield, 已有真实终态时不再合成
+#   (原合成后 return 会截断真实 final 与其后 final_stats)。 — 小欧-2026-10-30
+
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -243,6 +248,7 @@ from app.logger import logger, log_and_print
 from app.services.chat.sse_events import create_error_response
 from app.services.task.task_registry import (
     register_task,
+    set_agent_task,               # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
     has_active_task_in_session,   # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
     inject_message_to_task,
     cleanup_task,                 # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
@@ -833,6 +839,9 @@ async def chat_stream_orchestrator(
             db_ops=_db_ops, ai_message_id=_ai_message_id))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)
+        # 2026-10-30 小欧 - 登记 agent 协程句柄供取消直达: 取消必须能打断"响应头未到"(TTFB)的在飞等待,
+        #   flag/关连接都做不到, 只有 cancel() 能。句柄由本层 _agent_tasks 持强引用, 登记表只借引用。
+        await set_agent_task(task_id, bg_task)
         # 交接完成: 快照关闭责任移交 runner finally, orchestrator 不再归还 — 小欧-2026-09-25
         _snapshot_handed_to_runner = True
 
@@ -952,7 +961,7 @@ async def _stream_with_control(buffer, task_id: str, session_id: str,
         async for pause_event in task_pause_check_and_yield(task_id):
             yield pause_event
         cancelled_sse = await task_cancel_check_and_yield(
-            task_id, execution_steps)
+            task_id, execution_steps, buffer)
         if cancelled_sse:
             yield cancelled_sse
             return

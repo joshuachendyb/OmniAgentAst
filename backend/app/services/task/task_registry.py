@@ -31,6 +31,13 @@
 #      (stream_orchestrator `if _reg_res:` 假值分支) 误判为"注册成功" → 同一 task_id 启动第二个
 #      agent 共享旧 inbox/pause_event/状态, 比修复前的"覆盖丢消息"失败模式更坏。
 #   故删除守卫恢复原行为, 不留半吊子防御(禁止 backward / KISS-DIRECT)。 — 小欧-2026-09-28
+# 2026-10-30 小欧 - 新增 set_agent_task: 登记 agent 协程句柄(编排层 create_task 创建, 与 SSE 请求任务不同一个),
+#   供 cancel_task 直接 cancel 该协程 —— flag+关连接打不断"响应头未到"(TTFB)的等待, 只有任务取消能在任意
+#   await 点立即生效。只登记句柄, 生命周期/强引用仍归编排层(_agent_tasks)。 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 新增 claim_agent_task_for_cancel: 原子"首次领取取消权"(锁内判 agent_cancel_claimed
+#   并置位), 首次返回 agent 协程句柄, 其后恒 None —— 堵 cancel_task 重复调用时二次 cancel 打断
+#   agent_runner finally 收尾(final_stats 丢失 / done 不置位 / SSE 等约 60s)。判据刻意不用
+#   task["cancelled"](它可能在协程登记前已置位, 会误丢唯一一次打断机会)。 — 小欧-2026-10-30
 """
 task_registry — running_tasks 数据层唯一入口
 
@@ -274,6 +281,34 @@ async def set_cancelled(task_id: str, **extra) -> bool:
         task["status"] = "cancelled"
         task.update(extra)
         return True
+
+
+async def set_agent_task(task_id: str, agent_task) -> None:
+    """登记 agent 协程句柄(创建于编排层, 与 SSE 请求任务不同一个) — 小欧 2026-10-30
+    用途: 取消时直接 cancel 该协程, 在任意 await 点立即生效; 仅登记, 不做生命周期管理(强引用由编排层持有)。"""
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
+        if task is not None:
+            task["agent_task"] = agent_task
+
+
+async def claim_agent_task_for_cancel(task_id: str):
+    """原子领取"取消 agent 协程"的权利: 首次返回句柄, 其后恒 None — 小欧 2026-10-30
+
+    用途: cancel_task 可能被重复调用(用户连点 / 前端异常路径复位后再次点击 / 取消期间删会话),
+    第二次 cancel() 会打断 agent_runner finally 内正在跑的收尾 —— _publish_final_stats 无 shield、
+    done.set() 在其后, 结果是终态统计丢失 + SSE 要等 journal 判死约 60s 才关。
+    幂等判据用"首次实际领取"(本函数置位并用掉一次), 不用 task["cancelled"]: 该标记可能在 agent
+    协程登记之前就被置位, 拿它当判据会丢掉唯一一次打断 in-flight await 的机会。"""
+    async with running_tasks_lock:
+        task = running_tasks.get(task_id)
+        if task is None or task.get("agent_cancel_claimed"):
+            return None
+        agent_task = task.get("agent_task")
+        if agent_task is None or agent_task.done():
+            return None
+        task["agent_cancel_claimed"] = True
+        return agent_task
 
 
 async def set_paused(task_id: str) -> dict:

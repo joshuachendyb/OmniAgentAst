@@ -93,6 +93,10 @@
 # 2026-10-29 小欧 KISS 审查(老陈裁定全部修复): ①snapshot 提取 _inherit 静态方法收敛 10 处同模式三元(DRY);
 #   ②extra_body_params/context_limit 统一走 inherit_missing(原"if is not None else self"未走 inherit,
 #   跨 provider 未配时仍沿用全局 agnes 的 extra_body_params, 违反"没设置的没有"——已修)。 小欧-2026-10-29
+# 2026-10-30 小欧 - request_stream 调用前取消裸 return 修复(北京老陈实测: 重试中取消等约2分钟、无 cancel 终态):
+#   原 `if self._cancelled: return` 不产 chunk, 上层 call_llm_stream 把零 chunk 当空 answer, agent 层按空响应
+#   重试后才收尾, 期间前端无任何取消反馈。改为 yield create_cancelled_chunk(stream_error_type="cancelled"),
+#   经 llm_call stream_error 分支转 error_type=cancelled → handle_answer 产 final(cancelled)。 小欧-2026-10-30
 """
 LLM 核心模块 — BaseAIService
 
@@ -420,8 +424,13 @@ class BaseAIService:
         """流式请求 — FC-only: tool_calls原生yield,不走JSON roundtrip — 小沈 2026-06-12; 小健 2026-06-17 新增usage"""
         self.reset_cancel()
         # 修复(小欧 2026-09-20): reset_cancel不清_cancelled, 若已取消则直接返回, 跳过无效HTTP请求
+        # 2026-10-30 小欧 缺陷修复: 原为裸 return(不产 chunk) — 上层 call_llm_stream 会把"零 chunk"
+        #   当空 answer 返回, agent 层按空响应重试(用户实测等约2分钟后仍无 cancel 终态)。调用前检测到
+        #   取消必须立即终止并产出取消帧: yield create_cancelled_chunk(stream_error_type="cancelled"),
+        #   经 llm_call 的 stream_error 分支转 error_type=cancelled → handle_answer 产 final(cancelled)。
         if self._cancelled:
             logger.info("[request_stream] 已标记cancelled, 跳过流式请求")
+            yield create_cancelled_chunk(self.llm_model)
             return
         self._cancel_signal().clear()  # 2026-10-05 小欧: 新流式调用开始, 复位唤醒信号(上次的cancel是给旧任务的)
         self._ensure_client()

@@ -40,6 +40,22 @@
 #   _PAUSE_AUTO_RESUME_TIMEOUT(DRY 消魔数); ②wait_for_resume 默认改该常量(口径一致); ③超时分支改真恢复
 #   (复用 set_resumed: 清paused+置running+set事件, 双路径一同醒来继续), 暂停期间已取消则不自动恢复。
 #   compliance: KISS-DIRECT/DRY/SRP/禁止backward
+# 2026-10-30 - 小欧 - 取消=任务级取消(北京老陈: 重试中取消必须立即收敛): 置flag+关连接打不断
+#   "请求已发出、响应头未到"(TTFB)的等待 —— 本机实测(client_sdk 直连不响应服务端): cancel() 时
+#   _current_response 为 None, 取消后仍需等满 provider read_timeout 才结束(6s 超时实测 5.01s;
+#   生产 120~200s 即用户所见"约2分钟无cancel终态")。修复: cancel_task 追加 agent_task.cancel(),
+#   CancelledError 在任意 await 点立即生效; 终态由 agent_runner 既有 CancelledError 分支+finally
+#   守卫产出(唯一生产者, 落库与SSE同源)。配套: task_cancel_check_and_yield 仅在 agent 任务已结束
+#   时才合成取消终态(防与 agent 终态重复)。compliance: KISS-DIRECT/DRY/SRP
+# 2026-10-30 - 小欧 - R4修复(buffer 已有真实终态时不再合成): task_cancel_check_and_yield 新增 task_buffer 参数,
+#   取消分支先扫 buffer.event_log 是否已含 type=final —— 已含则返回 None 继续转发。病根: 合成后调用方 return,
+#   会把手上这帧(可能正是真实 final)与其后 final_stats 一并截断, 前端拿不到统计/DB 与 SSE 口径分叉。
+#   只在取消分支扫描(低频), 不做逐帧 O(n)。compliance: KISS-DIRECT/DRY/SRP
+# 2026-10-30 - 小欧 - 取消幂等(cancel_task 重复调用防线): 改用 task_registry.claim_agent_task_for_cancel
+#   原子领取"首次打断权", 只有首次真正 cancel agent 协程, 后续重复取消仅落标记。病根: 第二次 cancel()
+#   会打断 agent_runner finally 内正在跑的收尾(_publish_final_stats 无 shield、done.set() 在其后),
+#   致终态统计丢失、SSE 需等 journal 判死约 60s 才关。判据不用 task["cancelled"](它可能在 agent 协程
+#   登记前就被置位, 拿它当判据会丢掉唯一一次打断 in-flight await 的机会)。compliance: KISS-DIRECT/SRP
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -58,10 +74,12 @@ from app.utils.response_utils import api_success, api_failure
 from app.services.task.task_state import (
     check_cancelled, check_paused, check_was_paused,
     get_task_field, get_pause_event, running_tasks_lock, running_tasks,
+    StreamBuffer,  # 2026-10-30 小欧 - R4: 取消检查需读 buffer.event_log 判"是否已有真实终态"
 )
 from app.services.task.task_registry import (
     set_cancelled, pop_task_field,
     set_was_paused, set_resumed, build_step_dict,   # 2026-10-30 小欧 P1: 超时自动恢复复用 set_resumed(DRY)
+    claim_agent_task_for_cancel,                    # 2026-10-30 小欧: 取消幂等(首次才打断 agent 协程)
 )
 
 from app.services.agent.status_table import set_status, AgentStatus
@@ -137,6 +155,20 @@ async def cancel_task(task_id: str, session_id=None, source: str = "user_request
     _cancel_target = None
     if _agent is not None:
         _cancel_target = getattr(_agent, "llm_client", None)
+    # 2026-10-30 小欧 - 取消=任务级取消: flag 与关连接都打不断"请求已发出、响应头未到"(TTFB)的等待,
+    #   agent 只能等 provider read_timeout(120~200s)才收敛 → 前端等帧看门狗 5s 先到期, 取消终态帧无通道。
+    #   task.cancel() 在任意 await 点立即生效; 终态由 agent_runner 的 CancelledError 分支+finally 守卫产出
+    #   (唯一生产者, 落库与 SSE 同源), 不另造终态链路。
+    #   注意取 agent_task 而非 _task: register_task 在 SSE 请求协程内执行, _task 是 SSE 请求任务(取消它只断
+    #   连接、agent 照跑); agent_task 才是编排层 create_task 出来的 agent 协程(stream_orchestrator 注册)。
+    #   2026-10-30 小欧 - 幂等: 用 claim_agent_task_for_cancel 只在"首次实际打断"时 cancel, 重复取消仅落标记
+    #   (第二次 cancel 会打断 agent_runner finally 的收尾: final_stats 丢失 + done 不置位, SSE 等约 60s)。
+    _agent_task = await claim_agent_task_for_cancel(task_id)
+    if _agent_task is not None:
+        _agent_task.cancel()
+        logger.info(f"[Task Cancelled] 任务 {task_id} agent 协程已取消(立即打断在飞 await)")
+    else:
+        logger.info(f"[Task Cancelled] 任务 {task_id} 无待打断的 agent 协程(已打断过/未登记/已结束), 仅落标记")
     if _cancel_target is not None:
         try:
             await _cancel_target.cancel()
@@ -155,7 +187,7 @@ async def cancel_task(task_id: str, session_id=None, source: str = "user_request
 # ============================================================
 
 async def task_cancel_check_and_yield(
-    task_id: str, current_execution_steps: list
+    task_id: str, current_execution_steps: list, task_buffer: StreamBuffer
 ) -> Optional[str]:
     # 小健 2026-08-17 三堂会审收敛(KISS-DIRECT): 删死参数 session_id/current_content(函数体从未使用, 调用点白算)
     # 小欧 2026-08-18 删 next_step: 步号统一 _current_step(task_id)
@@ -174,6 +206,24 @@ async def task_cancel_check_and_yield(
             logger.info(f"[CancelCheck] 任务 {task_id} 本连接已下发cancelled终态,跳过")
             return None
         logger.info(f"[CancelCheck] 任务 {task_id} 取消状态: True")
+        # 2026-10-30 小欧 - buffer 已有真实终态(final)时不再合成: 合成后调用方会 return,
+        #   把手上这帧(可能正是真实 final)和其后的 final_stats 一起截断, DB/SSE 口径分叉。
+        #   只在取消分支扫描(取消是低频事件, 不做逐帧 O(n)); 判据是事件类型不是 offset ——
+        #   真实终态一旦产出, 本连接后续必然转发到, 无需二次合成; 重连同理(after_seq 之前已消费)。
+        if any(
+            (e or {}).get("type") == "final"
+            for e in task_buffer.event_log
+        ):
+            logger.info(f"[CancelCheck] 任务 {task_id} 已有真实终态帧, 不合成(避免截断 final_stats)")
+            return None
+        # 2026-10-30 小欧 - 终态单生产者: 取消已升级为任务级取消, agent 协程在任意 await 点立即抛出,
+        #   由其 agent_runner 的 finally 守卫发布唯一 final(cancelled)(落库+SSE同源)。此处再合成一个会让
+        #   同一任务出现两个终态, 且合成帧不落库(DB/SSE 口径分叉)。仅当 agent 任务确已结束(或未注册)时
+        #   才由消费侧兜底合成。
+        _task_handle = running_tasks.get(task_id, {}).get("agent_task")
+        if _task_handle is not None and not _task_handle.done():
+            logger.info(f"[CancelCheck] 任务 {task_id} 取消中, agent 仍在收敛, 不合成终态(等其唯一终态帧)")
+            return None
         _cancel_source = running_tasks.get(task_id, {}).get("cancel_source")  # 方案五: source 随落库值带出 — 小欧 2026-09-08
         step_dict = _cancel_final_dict(task_id, _cancel_source)
         logger.info(f"[Step] 发送 final(cancelled) 步骤")
