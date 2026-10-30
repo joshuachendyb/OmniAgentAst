@@ -184,7 +184,7 @@ export default function SessionWorkspacePanel({
       //   按钮不再有"转圈到超时"的中间态（关闭由本地一次点击立即完成）
       // 2026-10-30 小欧 - 未拿到服务端清单(listing 未就绪)一律不许覆盖写
       okButtonProps={{ disabled: loadState !== 'ready' }}
-      title="会话事务空间"
+      title="事项工作区"
       onOk={confirm}
       onCancel={onClose}
       okText="确定"

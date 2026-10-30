@@ -379,7 +379,7 @@ export const FilesTree: React.FC<FilesTreeProps> = (props) => {
           ? [
               {
                 key: 'setWorkspace',
-                label: '设为会话工作目录',
+                label: '设为事项目录',
                 act: () => onSetWorkspace(ctx.node),
               },
             ]

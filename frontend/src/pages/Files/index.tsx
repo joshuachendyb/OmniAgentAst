@@ -707,7 +707,7 @@ const FilesPage: React.FC = () => {
       if (!sessionId) {
         showMessage(
           ErrorType.WARNING,
-          '尚无会话：请先在对话页发起一次对话，再设置会话工作目录。'
+          '尚无会话：请先在事项页发起一次对话，再设置事项目录。'
         );
         return;
       }
@@ -720,11 +720,11 @@ const FilesPage: React.FC = () => {
         const cur = await sessionApi.getWorkspaces(sessionId);
         const paths = cur.workspaces.map((w) => w.path);
         if (paths.some((p) => samePath(p, abs))) {
-          showSuccess(`「${dir.name}」已是会话工作目录`);
+          showSuccess(`「${dir.name}」已是事项目录`);
           return;
         }
         await sessionApi.patchWorkspaces(sessionId, [...paths, abs]);
-        showSuccess(`已设为会话工作目录：${dir.name}`);
+        showSuccess(`已设为事项目录：${dir.name}`);
       } catch (e: unknown) {
         // 422 信封：{success:false, error:{workspace_rejected:[{path,reason}]}}（全局异常处理器包装）
         const rejected =

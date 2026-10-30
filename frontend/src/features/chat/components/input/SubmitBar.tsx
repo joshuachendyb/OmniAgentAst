@@ -66,7 +66,7 @@ const SubmitBar: React.FC<SubmitBarProps> = ({
       {onOpenWorkspaces && (
         <Badge count={workspaceCount ?? 0} size="small">
           <Button size="small" onClick={onOpenWorkspaces}>
-            会话事务空间
+            事项工作区
           </Button>
         </Badge>
       )}
