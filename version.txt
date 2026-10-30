@@ -1,3 +1,86 @@
+v1.5.2
+更新时间: 2026-10-30 20:57:33 - 小欧-2026-10-30
+## v1.5.1以来 变更汇总(73个commit: fix25/feat12/refactor7/docs26/perf1/test1/chore1) - 小欧-2026-10-30
+[2026-10-30 20:57:33 小欧] 范围=v1.5.1以来全部commit(73个); 主线=输入框引用全链路[57]实施与三堂会审整改(读取权收归后端+chip5态+refs_notice回执+体积裁决)+取消链路[59]根治(任务级取消+终态防重+start阶段摘要压缩不生效)+前端提示与后端响应超时[58](Toast日志补URL耗时请求ID+慢只读端点放宽120s+请求耗时诊断+每响应X-Request-Id)+消息压缩裁剪与摘要注入件(魔法数字清账+队列幸存者语义替换+_summary stash通电+新摘要注入件升级)+会话工作区目录[54]重构(弹窗关闭与保存解耦+独立store单一真源+术语统一化)+性能稳定性(409门先判活跃任务+loop_watchdog双证据+save_message落库移出事件循环+atxn专用事务池); 注:含12个feat(引用链路/取消/超时诊断等新能力),用户裁定按PATCH记v1.5.2
+### 1.5.2.1 输入框引用全链路（[57] 实施与三堂会审整改）
+[读取权收归后端批1实施] feat 7ff850f05 refs 输入框引用读取权收归后端批1实施 - 小欧 2026-10-30
+[批2/批3前端接线] feat 4ffa9575e refs 批2/批3 前端接线 chip5态+refNoticeStore+refs_notice解析+台账重建 - 小欧 2026-10-30
+[引用进loop前可观测+estimate_tokens DRY收口] feat f6513fc74 refs 引用进loop前可观测+estimate_tokens DRY收口 — summarize_refs/report_refs/refs_ready notice三通道同源+prune._released_tokens与budget._tokens_of合并公共函数+插话回执分支合并+位4notice done精确清除kind - 小欧 2026-10-30
+[引用全链路三堂会审整改] refactor 83ae01595 refs 引用全链路三堂会审整改 — limits比例钳制+resolver异常映射+同path去重前移+新增budget/clip/notice/render子模块+前端联动 - 小欧 2026-10-30
+[后端引用链路三堂会审整改] refactor 03c1fa277 refs 后端引用链路三堂会审整改(流水线收口/行数唯一口径/回执完备) - 小欧 2026-10-30
+[前端引用链路三堂会审整改] refactor 9fb32e424 refs 前端引用链路三堂会审整改(wire投影收口/提示唯一实现/chip色调) - 小欧 2026-10-30
+[第1批差异整改] fix 9175f9827 refs第1批差异整改(D4 Files去双探pushRef去mtime死参、D3 quote删死try-catch、D5 ChatInput@限流前置占位前、D6 probeRef失败reason细分) - 小欧 2026-10-30
+[区间引用补体积复核] fix 79485c82e refs-resolver 区间引用补体积复核与truncated回执 - 小欧 2026-10-30
+[上限真源改已入队快照] fix 10018a32f refs-store 上限真源改已入队快照、新增台账重建通道 - 小欧 2026-10-30
+[预检按id合并] fix 8db9906d9 chat-input 预检按id合并、阻断后草稿保留、请求级错误终止流 - 小欧 2026-10-30
+[probeRef独立60s上限] fix 9b0f69280 probeRef 加独立60s上限并细分失败reason - 小欧 2026-10-30
+[FilePreview 6处读文件传silent] fix 66d4e3e57 FilePreview 6处读文件传silent由局部setErr与showMessage呈现 - 小欧 2026-10-30
+[@搜索失败改页面自提示] fix b77a39c50 ChatInput @搜索失败改页面自提示(配合searchFiles静默) - 小欧 2026-10-30
+[57 升版v2.4 第五章重写为详细设计] docs 8d959c4eb [57]输入框引用全链路 升版v2.4 第五章重写为详细设计(北京老陈令):原缺陷→方案对照降为4.12并入第四章;新增第五章=后端代码清单B1~B12+后端每文件一小节5.2.1~5.2.12(含新增代码与diff,真实可落盘)+前端代码清单F1~F11+前端每文件一小节5.4.1~5.4.11(含新增代码与diff) - 小欧 2026-10-29
+[57 升版v2.5 三轮三堂会审修复] docs 4c0397900 [57]输入框引用全链路 升版v2.5 三轮三堂会审修复(阻断5+建议7直接落盘修正) - 小欧 2026-10-29
+[57 第3章5处证据按代码核实修正] docs 1b6783228 [57]输入框引用全链路 第3章5处证据按代码核实修正(B1去MAX_REFS/D3截断窗口径/3处行号) - 小欧 2026-10-30
+[57 第4章设计审查整改] docs 0cde4b5b8 [57]输入框引用全链路 第4章设计审查整改(R1插话载体/R2去wire mtime/R3stat端点/R4级别聚合/R5拒绝线收敛/R6 clear推迟/R7同批交付/R8登记归属) - 小欧 2026-10-30
+[57 第5章详细设计审查整改] docs bd5cfeb04 [57]输入框引用全链路 第5章详细设计审查整改(sanitize双返回/notices level单一裁决/B档摘录分块/stat端点5.2.13/chip回执链refNoticeStore/R6台账恢复/refresh.ts删除/updated消费找回) - 小欧 2026-10-30
+[57 第6章实施顺序审查整改] docs 21855e17c [57]输入框引用全链路 第6章实施顺序审查整改(批1补stat端点+B11前置件+Files页+ChatInput闸门/store.push布尔提前/批2先改sanitize双返回/桥接口径补budget与notice/依赖图回滚口径更正) - 小欧 2026-10-30
+[57 第1批实施审计整改] docs af08ae46d [57] 第1批实施审计整改(D1 REF_*真源校正app.constants/B11+5.2.2+5.2.3+5.2.11同步、D4 F11/5.4.11 readAndPush单探去预探) - 小欧 2026-10-30
+[57 v3.1批2/批3全量落盘对账] docs 298dfb80e [57] v3.1 批2/批3全量落盘对账 6.1~6.3状态改已落 实码同步 - 小欧 2026-10-30
+[refs补零逻辑编辑历史] docs 230bf0333 refs 补零逻辑编辑历史(批2/批3 已落地改动) - 小欧 2026-10-30
+[引用链路真实场景缺陷猎手报告] docs 5984540a0 refs 引用链路真实场景缺陷猎手报告(批2/批3落盘对账) - 小欧 2026-10-30
+[60 引用链路真实场景缺陷猎手报告 编号化改名] docs 4811a7fbd [60]引用链路真实场景缺陷猎手报告 文件编号化改名 - 小欧 2026-10-30
+### 1.5.2.2 取消链路（[59]）
+[取消升级任务级] fix a70dfe1f0 task_runtime 取消升级任务级(agent协程cancel) 终态防重与取消幂等 - 小欧 2026-10-30
+[取消等帧不再自断通道] fix d9dcded99 chatStreamStore 取消等帧不再自断通道 终态帧放行与徽标兜底 - 小欧 2026-10-30
+[取消start阶段摘要压缩不生效+暂停超时卡死修复] fix 8e6515328 react_loop 取消在start阶段摘要压缩不生效及暂停超时卡死修复 - 小欧 2026-10-30
+[重试/FC降级阶段取消不产cancelled final step] fix 745bf98eb llm_call 重试/FC降级阶段取消不产cancelled final step修复 - 小欧 2026-10-30
+[取消链路prettier换行] refactor 074024cf5 useChatTaskControl 取消链路顺带prettier换行 零逻辑 - 小欧 2026-10-30
+[59 取消链路文档升级v1.2] docs e3c5ab2d8 [59]取消链路文档升级v1.2 补可取消性矩阵与三处收尾缺陷修复 - 小欧 2026-10-30
+### 1.5.2.3 前端提示与后端响应超时（[58]）
+[Toast日志补URL耗时请求ID] feat aa7978605 handler Toast日志补URL耗时请求ID并透传覆盖文案 - 小欧 2026-10-30
+[慢只读端点放宽120s并静默] feat cd0367b02 file_api 慢只读端点放宽120s并对有局部反馈的端点静默 - 小欧 2026-10-30
+[慢只读端点放宽120s+外部读补signal] feat 49f53c56a file_api 慢只读端点放宽120s 静默有局部反馈的端点 外部读补signal - 小欧 2026-10-30
+[请求耗时诊断+连接层单次重试] feat 8d266160d client 补请求耗时诊断与超时探活文案+静默与连接层单次重试 - 小欧 2026-10-30
+[请求耗时诊断+重试沿用首次起点] feat 175bfffdc client 补请求耗时诊断与超时探活文案 重试沿用首次起点 - 小欧 2026-10-30
+[每响应回X-Request-Id+slow日志] feat a1bb0003c main 每响应回X-Request-Id并对超3s请求落slow日志 - 小欧 2026-10-30
+[58 调查报告全文三堂会审修正35项] docs 48a276ced [58]前端提示-后端响应超时请重试-产生条件与优化调查报告 全文三堂会审就地修正35项 - 小欧 2026-10-30
+[58 新增调查报告v1.1] docs 5b91f25ab [58]前端提示-后端响应超时请重试-产生条件与优化调查报告 新增调查报告v1.1 - 小欧 2026-10-30
+[58 第六章13项落地同步v1.3+第七章v1.4] docs 231e231f7 [58]前端提示-后端响应超时 第六章13项落地同步v1.3+新增第七章错误定位与系统级优化v1.4 - 小欧 2026-10-30
+[58 调查报告更新至v1.6] docs 456c47fb8 [58]前端提示-后端响应超时 调查报告更新至v1.6 - 小欧 2026-10-30
+[58 7.7补真实后端启动与落库实测7项] docs 59d500426 [58] 7.7补真实后端启动与落库实测7项 明确仍未验证5项 - 小欧 2026-10-30
+[58 补记ChatInput成对文件 计数改12文件] docs 36d3b0b79 [58]前端提示 补记ChatInput成对文件 计数改12文件并按基线重算行数 - 小欧 2026-10-30
+[handler清除注释文档号章节号] docs d1e3dca30 handler 清除注释中的文档号与章节号 - 小欧 2026-10-30
+[database清除注释文档号章节号] docs 251e38aab database 清除注释中的文档号与章节号 - 小欧 2026-10-30
+### 1.5.2.4 消息压缩/裁剪与摘要注入件
+[_summary stash通电] feat e4069b3db observation_builder _summary stash通电(北京老陈令) 工具层llm_data.summary经add_tool_result第三参stash为tool消息独立字段_summary(生产端唯一真实调用点接线),compaction.use_tool_summary与get_last_tool_summary(死循环纠偏摘要)由此读到语义摘要; 发送前prepare_messages_for_llm剥离(_COMPACTION_TEMP_KEYS)不进LLM wire; 异常分支无llm_data置空串安全 - 小欧 2026-10-29
+[新摘要注入件升级] feat 13eff797f start_step,react_loop,initialize_run_state 新摘要注入件升级(北京老陈令) 本轮新摘要成功时注入件由纯摘要升级为「最后任务usermessage+摘要+摘要源数组倒数5轮」(SUMMARY_TAIL_ROUNDS=5,切分复用find_recent_rounds_start,FC配对不拆散,切分失败退化为user+摘要零退化); 注入决策收口start_step._build_injected_msgs单一真源(react_loop直取,删除本地拼接分支),telemetry事实数与注入件同源算数(_apply_injection_facts) - 小欧 2026-10-29
+[三堂会审修复: 撤销trim语义替换接线+isinstance守卫] fix 9673accf5 message_builder,observation_builder,start_step,react_loop 三堂会审修复: 撤销trim语义替换接线(实测工具_summary仅状态行,长观察正文被换成一行状态行致本轮信息灭失)+observation_builder补llm_data isinstance守卫(非dict时AttributeError炸整轮观察) - 小欧 2026-10-30
+[队列幸存者语义替换] fix bd20b61e2 message_builder,prune,compaction_constants 队列幸存者语义替换三堂会审修复(北京老陈令) 新换条数对比swap前旗数只计本轮+幻影守卫(无裁剪且零新换保留原历史直接返回)+未裁剪分支不跑remove_dangling_tool_calls+swap增最小长度门槛USE_SUMMARY_MIN_CHARS=300+use_tool_summary增_raw保长守卫+修正_estimate_tokens注释2.5→2.25 - 小欧 2026-10-29
+[三堂会审收尾] fix 88182fd2a message_builder,compaction 三堂会审收尾(_raw收口单点、纠偏摘要改content优先、三态默认值对齐) - 小欧 2026-10-30
+[二轮审查三处真实缺陷] fix 83596e145 start_step,message_builder 二轮审查三处真实缺陷(注入孤儿tool/摘要标签叠加/裁剪过度) - 小欧 2026-10-30
+[魔法数字清账] refactor 6fd9eebb9 message_builder,prune,split_turn,compaction_constants,start_step 魔法数字清账(北京老陈令) ①_extract_summary_tail兜底_n=5写死改KEEP_RECENT_ROUNDS; ②resolve_protect_rounds夹取5/20迁PROTECT_ROUNDS_MIN/MAX; ③prune六权重迁VALUE_WEIGHT_*+截长[:120]迁TOOL_SUMMARY_HEAD_CHARS; ④纠偏预览截长200迁TOOL_SUMMARY_PREVIEW_CHARS+trim下限5迁TRIM_MIN_MESSAGES+兜底_max_rounds*2+5迁TRIM_CEILING_*; ⑤split_turn docstring公式订正TAIL_TOKEN_*; 零行为变化,py_compile五文件通过,终版回归11项全绿 - 小欧 2026-10-29
+[取消跟踪本地测试用例] test 5308ec236 test_inject_compact_pipeline 取消跟踪本地测试用例, 本地文件保留 - 小欧 2026-10-29
+### 1.5.2.5 会话工作区目录（[54] 重构）
+[会话工作区目录全链路重构] refactor d320eb10a session 会话工作区目录全链路重构 弹窗关闭与保存解耦+独立store单一真源+代际守卫+盲写防护(loadState三态/dirtyRef)+目录移出巨型面板memo - 小欧 2026-10-30
+[术语统一化UI文案] refactor 027ce7af2 术语统一化 UI文案 会话工作区→事项工作区/会话工作区目录→事项目录(面板标题+SubmitBar入口+FilesTree右键+Files三处toast) - 小欧 2026-10-30
+[54 行号刷新v14+术语口径升级v15] docs 8f24fb368 [54]会话工作区目录 行号刷新(v14)+术语口径升级v15(技术词会话≡日常用语事项matter/UI会话工作区→事项工作区/会话工作区目录→事项目录/新变量get_matter_default_workspace/技术层保留会话工作区) - 小欧 2026-10-30
+[54 结构去重+代码清单移入3.6/3.7] docs 7e0f3995a [54]会话工作区目录 结构去重+代码清单移入3.6/3.7+is_default消费方补全(方案D定稿) - 小欧 2026-10-29
+### 1.5.2.6 性能与稳定性
+[409门先判活跃任务] perf 833731279 message_service 409门先判活跃任务再读插话开关 省热路径DB往返 - 小欧 2026-10-30
+[心跳协程异常续跑] fix 7a1f90614 loop_watchdog 心跳协程异常续跑避免判据静默失效 - 小欧 2026-10-30
+[停摆判据改双证据] fix 98c2b36e5 loop_watchdog 停摆判据改双证据reader beat+loop心跳 消除背压误dump - 小欧 2026-10-30
+[计时中间件改纯ASGI] fix 3794bbaec main 计时中间件改纯ASGI并保证异常穿出必落error日志 - 小欧 2026-10-30
+[save_message落库移出事件循环] fix 4373f4e89 message_service save_message落库移出事件循环并拆两段事务 - 小欧 2026-10-30
+[atxn改投专用事务池] fix 591dd9761 database atxn改投专用事务池并copy_context 与工具池隔离 - 小欧 2026-10-30
+[resume链补catch降级idle] fix 048401c1b useChatInit resume链补catch降级idle 避免半初始化与未处理拒绝 - 小欧 2026-10-30
+[refresh补catch收口] fix 6afd04bb8 useSessionTasks refresh补catch收口 失败保留上次列表 - 小欧 2026-10-30
+[PipelineRenderer尾部窗口+taskKey复位] fix b7ae389ed PipelineRenderer 尾部窗口+taskKey复位 根治完成瞬间答复段消失 - 小欧 2026-10-30
+[listTasks置静默] feat 9615c8965 task_api listTasks置静默 后台轮询失败不弹全局toast - 小欧 2026-10-30
+[E2E手册第四章章节号纠错] fix 296c6183a 全链路E2E测试手册 第四章章节号纠错(P5子节4.5.1~3改为4.6.1~3,P7/P8顺延4.8/4.9,消除4.7重号与缺4.9),AGENTS/README版本号同步v2.19 - 小欧 2026-10-29
+[start_e2e.bat硬编码旧路径改相对] fix 271b7adb5 start_e2e.bat 硬编码旧路径 G:\OmniAgentAs-desk 改为相对路径 cd /d %~dp0,随仓库位置自适应 - 小欧 2026-10-29
+[E2E手册两份分叉副本合并为唯一正本] docs 2779c59a2 全链路E2E测试手册 两份分叉副本合并为唯一正本(回填6.1.1按端口杀铁律+保留第十章PAR专项),删除backend/e2etests副本,6处引用与可执行路径统一改指doc-打包与E2E及F:\OmniAgentAs-01 - 小欧 2026-10-29
+[同源SPA部署说明补记部署目录] docs e553d4051 同源SPA打包与部署说明 补记本机实际部署目录G:\OmniAgent-SPA(升版V1.0.1) - 小欧 2026-10-30
+[llm_call补记重试/FC降级取消修复编辑历史] docs 4de3060a3 llm_call 补记重试/FC降级取消修复编辑历史 - 小欧 2026-10-30
+[sseParser.ts tool_result契约注释订正] docs c297a3e7b sseParser.ts tool_result契约注释订正补raw_data字段(后端2026-10-13新增原始data,edit的diff即raw_data.diff,原注释仅列4字段与后端契约不符) - 小欧 2026-10-30
+[gitignore忽略根目录测试动态输出] chore 14802bcdc gitignore 忽略根目录测试动态输出 _*.txt(vitest/pytest 生成 _after*/_suite* 进程占用不入库) - 小欧 2026-10-30
 v1.5.1
 更新时间: 2026-10-29 10:15:02 - 小欧-2026-10-29
 ## v1.5.0以来 变更汇总(28个commit: fix6/feat1/refactor2/docs17/Merge1) - 小欧-2026-10-29
