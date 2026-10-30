@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-30 20:21:41
-**最近更新**: 2026-10-30 20:21:41 小欧 §3.5 新登记 estimate_tokens(chars→token 唯一实现, 收口 prune._released_tokens 与 refs.budget._tokens_of 两份同款单行); 新增 §3.8 引用处置观测(summarize_refs/report_refs/build_refs_ready_notice 等, 日志与 SSE notice 共用同一份数字)
+**最后更新时间**: 2026-10-30 21:12:41
+**最近更新**: 2026-10-30 21:12:41 小欧 §3.8 `report_refs` 口径修正: `paths=` 路径与行区间一律完整不截断(删原 60 字符右截断, 避免同文件整份/片段截后变成同一串), 行长度只由 5 条上限+"另N条"控制
 
 ---
 
@@ -325,7 +325,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 |--------|------|------|--------|
 | `summarize_refs` | 处置汇总（唯一数字源）：`files` 去重路径数（整份与区间同 path 只算 1）、`fragments` 带 lineRange 条目数、`items` 实际进入 prompt 条目数、`tokens` 进入正文的 `estimate_tokens` 合计、`rejected` 回执条目数 | final_refs: List[Dict], notices: List[Dict] | Dict[str, int] |
 | `refs_counts_text` | 计数文案：无片段→`N 个文件`；有片段→`N 个文件、M 个行片段（共 K 项）`（片段与文件不可相加，故显式给总项数） | summary: Dict[str, int] | str |
-| `report_refs` | 落日志：1 行汇总（`log_and_print`，行首 `OK`/`BLOCKED`，`paths=` ≤5 条、单条截 60 字符）进控制台+文件；明细 ≤5 行（进入项给 span/chars/tokens/path，未进入项给 reason/detail/label）仅进文件，超出写"明细另 N 条已省略"。调用方只在 `refs` 非空时调 | scope: str, summary, final_refs, notices | None |
+| `report_refs` | 落日志：1 行汇总（`log_and_print`，行首 `OK`/`BLOCKED`，`paths=` ≤5 条、**路径与行区间完整不截断**，超条数以"另N条"计数）进控制台+文件；明细 ≤5 行（进入项给 span/chars/tokens/path，未进入项给 reason/detail/label）仅进文件，超出写"明细另 N 条已省略"。调用方只在 `refs` 非空时调 | scope: str, summary, final_refs, notices | None |
 | `build_refs_ready_notice` | 组 `refs_ready` 通知载荷（走既有 `notice` 信封，无结构化 refs 字段）：`items>0` → `phase=done`（`引用进入本轮：…` / 插话前缀 `插话引用进入：`）；否则 `phase=failed`（`引用全部不可用：N 项未能进入本轮，请求已阻断`）。token 文案 <1000 显原值、≥1000 折 k 一位 | scope: str, summary | Dict（type/kind/phase/content/step） |
 | `create_refs_ready_event` | 组 `refs_ready` 的 SSE 帧（首发 `yield`；插话取 `build_refs_ready_notice` 载荷经 `_emit_to_target` → 目标任务 buffer publish 下发，新 POST 流前端只 `readToEnd` 收不到 `yield`） | scope: str, summary | str（SSE 帧） |
 
@@ -660,6 +660,7 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.16 | 2026-10-30 21:12:41 | **§3.8 `report_refs` 口径修正：`paths=` 不截断**(小欧, 北京老陈令): 删 `_paths_text` 的 60 字符右截断与常量 `REF_LOG_PATH_MAX_CHARS` —— 右截断会连 `:start-end` 与文件名一起切掉, 同一文件的"整份"与"行片段"在汇总行变成完全相同的字符串, 定位信息丢失; 现给完整路径, 行长度只由 5 条上限 + "另N条"计数控制 | 小欧 |
 | v5.15 | 2026-10-30 20:21:41 | **§3.5 新登记 `estimate_tokens` + 新增 §3.8 引用处置观测**(小欧): ①`services/agent/token_estimate.py` 成为 chars→token 唯一实现, 收口 `compaction.prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行(DRY, 5 处调用点改公共函数); ②§3.8 登记 `summarize_refs`/`refs_counts_text`/`report_refs`/`build_refs_ready_notice`/`create_refs_ready_event`——引用进 loop 前 1 行汇总日志(log_and_print)+≤5 行明细+SSE `notice(kind=refs_ready)` 三通道共用同一份数字, 引用正文永不落日志 | 小欧 |
 | v5.14 | 2026-10-26 12:27:19 | **§1.10 新登记 `get_output_dir` + §4.2 新登记 `save_text_to_file`**(小沈): ①`get_output_dir()`(project_root/output) 从 generate_chart._get_output_dir 抽取至 path_utils.py 公用, download/generate_chart 默认输出统一 output/; ②`save_text_to_file` 从 fetch_webpage._save_to_file 抽取至 toolhelper/tool_utils.py, 调 write 工具走完整安全链路; ③DRY: download_file._stream_download 合并至 HTTPClient.download(SDK 增强版) | 小沈 |
 | v5.13 | 2026-10-20 16:03:19 | **§3.5→§3.7 登记迁移**(小欧, 三堂会审账实不符修正): `call_llm_text_task` 函数体宿主按北京老陈裁定自 `compaction/summary.py` 原样迁至 `services/agent/llm_call.py`(全系统"发起LLM调用"唯一入口层, SRP 归位; summary 改薄引用, 逻辑零变化), 清单条目新立 **§3.7 LLM 调用层** 承接(§3.5 压缩清单条目移除); v5.12 条目描述的 §3.5 位置按本条目作废以 §3.7 为准 | 小欧 |

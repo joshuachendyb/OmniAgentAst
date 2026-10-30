@@ -7,6 +7,9 @@
 #   build_refs_ready_notice/create_refs_ready_event —— 每请求 1 行汇总(log_and_print, 控制台+文件)
 #   + ≤5 行明细(仅文件) + SSE notice(kind=refs_ready), 两通道共用 summarize_refs 同一份数字可对账;
 #   token 走公共 estimate_tokens(不新造第 4 份实现) — 小欧-2026-10-30
+# 2026-10-30 小欧 北京老陈令「路径不许截断」: 删 _paths_text 的 60 字符右截断(连同
+#   REF_LOG_PATH_MAX_CHARS) —— 右截断会连 `:start-end` 与文件名一起切掉, 同文件整份与片段
+#   在汇总行变成同一字符串; 现给完整路径, 行长度只由 5 条上限 + "另N条" 控制 — 小欧-2026-10-30
 
 """services.refs.notice — 引用回执(SSE refs_notice)的 DTO 与组帧
 
@@ -35,7 +38,6 @@ from app.utils.sse_formatter import format_sse_event
 
 # 日志体量上限(引用正文永不落日志, 只留可追溯的路径/行区间/计数) — 小欧-2026-10-30
 REF_LOG_PATHS_MAX = 5        # 汇总行 paths= 列出条数上限
-REF_LOG_PATH_MAX_CHARS = 60  # 单条路径截断长度
 REF_LOG_DETAIL_MAX = 5       # 明细行条数上限(仅写文件, 不上控制台)
 
 # reason → level 映射(单一裁决点, 落地 4.8 判定表; resolver/budget 只产 reason 不碰 level):
@@ -159,7 +161,12 @@ def _span_text(ref: Dict[str, Any]) -> str:
 
 
 def _paths_text(final_refs: List[Dict[str, Any]]) -> str:
-    """汇总行 paths=: ≤5 条进入引用的路径(带行区间), 单条截 60 字符, 超出另计。"""
+    """汇总行 paths=: ≤5 条进入引用的**完整路径**(带行区间), 超出另计条数。
+
+    2026-10-30 小欧 北京老陈令「不许截断」: 原按 60 字符右截断, 会把 `:start-end` 与文件名
+      一起切掉 —— 同一文件的整份与片段在日志里变成同一个字符串, 定位信息全丢。现一律给全文;
+      行长度由条数上限(5 条 + "另N条")控制, 不靠切路径。
+    """
     segs: List[str] = []
     seen = set()
     for r in final_refs:
@@ -171,10 +178,7 @@ def _paths_text(final_refs: List[Dict[str, Any]]) -> str:
         if key in seen:
             continue
         seen.add(key)
-        seg = path if span == "整份" else f"{path}:{span}"
-        if len(seg) > REF_LOG_PATH_MAX_CHARS:
-            seg = seg[:REF_LOG_PATH_MAX_CHARS] + "…"
-        segs.append(seg)
+        segs.append(path if span == "整份" else f"{path}:{span}")
     if not segs:
         return "-"
     more = len(segs) - REF_LOG_PATHS_MAX
