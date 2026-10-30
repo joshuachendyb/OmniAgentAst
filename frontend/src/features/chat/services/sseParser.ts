@@ -117,6 +117,8 @@
 // 编辑历史: 2026-10-30 06:47:26 小欧 - observation tool_result 契约注释订正: 元素字段补 raw_data
 //   (后端 2026-10-13 新增的原始 data, 供「结果」视图; edit 的 diff 即 raw_data.diff),
 //   原注释只列 tool_name/llm_data/data_text/other_data, 与后端契约不符易误导排查 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 批2序12: 新增 refs_notice 事件(登记 KNOWN_EVENT_TYPES + case 分派
+//   onRefsNotice, 只投回调不进步骤列表) — 小欧-2026-10-30
 import type { ExecutionStep } from '@/types/execution';
 import type { SSEMetadata, SSEError, TaskMetaFrames } from '@/types/sse';
 import { formatDebugTime } from '@/utils/time'; // 2026-09-14 小欧 DRY: 时间戳格式化复用 — 小欧-2026-09-14
@@ -180,6 +182,7 @@ const KNOWN_EVENT_TYPES: ReadonlySet<string> = new Set([
   'resumed',
   'retrying',
   'notice', // 2026-10-25 小欧: 通知信封(事前/事后统一)
+  'refs_notice', // 2026-10-30 小欧: 引用回执(仅 SSE, 不落库; 消费方 chip 5 态)
   'merged',
 ]);
 
@@ -217,6 +220,17 @@ const processSSEData = (
     onResumed?: (confirmId?: string) => void;
     // 2026-09-28 小欧: 注入应答回调(merged_into_task_id 供前端高亮目标任务)
     onMerged?: (mergedIntoTaskId: string | null) => void;
+    // 2026-10-30 小欧: 引用回执(部分不可用/压缩/拒绝点名) — 只投事件, 不进步骤列表/不落库
+    onRefsNotice?: (data: {
+      level: string;
+      scope: string;
+      items: {
+        level: string;
+        reason: string;
+        detail?: string;
+        path?: string;
+      }[];
+    }) => void;
     onRetry?: (message: string, waitTime?: number) => void;
     onAuthorizationRequired?: (data: {
       confirm_id: string;
@@ -1019,6 +1033,23 @@ const processSSEData = (
         pushAndFlush(handlers, step);
         onStep?.(step);
         handlers.onMerged?.((rawData.merged_into_task_id as string) ?? null);
+        step.timestamp = timestampValue;
+        break;
+      }
+      // 2026-10-30 小欧: 引用回执 — 只投回调(chip 5 态), 不进执行步骤列表、不落库(与 error 收敛同口径)
+      case 'refs_notice': {
+        logTypeArrival(rawData.type, step.step);
+        handlers.onRefsNotice?.({
+          level: (rawData.level as string) || 'info',
+          scope: (rawData.scope as string) || 'first',
+          items:
+            (rawData.items as {
+              level: string;
+              reason: string;
+              detail?: string;
+              path?: string;
+            }[]) || [],
+        });
         step.timestamp = timestampValue;
         break;
       }

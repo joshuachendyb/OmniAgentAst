@@ -15,6 +15,8 @@
 // 编辑历史: 2026-10-30 小欧 三堂会审整改(A11/A12/A18): ①refKeyOf 先归一 path(盘符小写 + \→/),
 //   同文件不同写法不再各占一条; ②删死字段 updated(实际用预检返回的独立数组); ③push 只算一次
 //   refKeyOf(原 20 条约 41 次); ④新增 refLimitText() 供三处"超上限"提示复用 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 批3序14: 身份函数(refKeyOf/mergeRefs/normalizePath)迁 identity.ts
+//   单一真源(只搬不改), 本文件改导入; 新增 refNoticeStore 承载 chip 回执态(5.4.6) — 小欧-2026-10-30
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -29,6 +31,8 @@
  * - 快照 = 队列长度（变化即触发消费 effect）
  */
 import type { ChatRefPayload } from '../../types/chat';
+import { refKeyOf } from './identity'; // 身份函数单一真源(5.4.2)
+import type { NoticeItem, NoticeMap } from './notice';
 
 // 2026-10-29 小欧 - 引用条数上限: 与 services/refs/limits.py:MAX_REFS 同值(单一真源, 双保险 L1)
 export const MAX_REFS = 20;
@@ -66,36 +70,10 @@ export const refLimitText = (): string => `一次最多引用 ${MAX_REFS} 项`;
 export const newRefId = (): string => crypto.randomUUID();
 
 /**
- * 同 key 归一口径：盘符统一小写 + 反斜杠转正斜杠（设计 4.5/5.4.2）。
+ * 同 key 归一口径迁 identity.ts(单一真源), 此处仅按需复用。
  * 不归一的话 `C:\a\b.txt` 与 `c:/a/b.txt` 会被当成两条引用，分别占用 MAX_REFS 配额、
  * 后端也会按不同 path 各读一次。
  */
-const normalizeRefPath = (path?: string): string => {
-  if (!path) return '';
-  const s = path.replace(/\\/g, '/');
-  return /^[a-zA-Z]:/.test(s) ? s[0].toLowerCase() + s.slice(1) : s;
-};
-
-/** 同一文件 + 同一行区间视为同一引用（整文件 lineRange 为空）— 小杨-2026-10-21 */
-export const refKeyOf = (r: Pick<ComposerRef, 'path' | 'lineRange'>): string =>
-  `${normalizeRefPath(r.path)}|${
-    r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : ''
-  }`;
-
-/** 合并引用：同 key 原位替换（后一次内容覆盖前一次），新 key 追加 — 小杨-2026-10-21 */
-export const mergeRefs = (
-  prev: ComposerRef[],
-  incoming: ComposerRef[]
-): ComposerRef[] => {
-  const out = prev.slice();
-  for (const ref of incoming) {
-    const k = refKeyOf(ref);
-    const i = out.findIndex((r) => refKeyOf(r) === k);
-    if (i >= 0) out[i] = ref;
-    else out.push(ref);
-  }
-  return out;
-};
 
 const queue: ComposerRef[] = [];
 const listeners = new Set<() => void>();
@@ -142,5 +120,36 @@ export const composerRefStore = {
     else queue.push(ref);
     emit();
     return true;
+  },
+};
+
+/**
+ * refNoticeStore —— chip 回执态外部 store(5.4.6/5.4.9)。
+ * 写入方: SSE refs_notice 帧 → setMap(noticeMapByPath(items));
+ * 订阅方: useComposerRefs 经 useSyncExternalStore 取 map → chipStateOf(r, notices);
+ * 清理口: 新发送(sendMessage)与 refs_blocked 台账重建时 clear(), 防陈旧黄/红标。
+ */
+const _noticeListeners = new Set<() => void>();
+let _noticeMap: NoticeMap = new Map();
+const _emitNotice = () => _noticeListeners.forEach((cb) => cb());
+
+export const refNoticeStore = {
+  subscribe(cb: () => void): () => void {
+    _noticeListeners.add(cb);
+    return () => {
+      _noticeListeners.delete(cb);
+    };
+  },
+  /** setMap 换 Map 引用即触发重渲染(useSyncExternalStore 快照契约) */
+  getSnapshot(): NoticeMap {
+    return _noticeMap;
+  },
+  setMap(next: NoticeMap): void {
+    _noticeMap = next;
+    _emitNotice();
+  },
+  clear(): void {
+    _noticeMap = new Map();
+    _emitNotice();
   },
 };

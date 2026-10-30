@@ -68,6 +68,9 @@
 //   （120~200s），故 5s 必先到期 → final(cancelled) 永远进不来，且兜底不写 steps → UI 无任何反应。
 //   现改为: ①看门狗到期只落状态(不清连接)，由帧到达(settleCancelByFrame)或连接自然结束释放资源;
 //   ②settleCancelByFrame 判据由"timer 非空"改为"status 已取消"，晚到帧仍能走释放分支。 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 批2/批3: ①带 refs 时禁用附着(D8: 引用属当轮任务);
+//   ②发送台账改 wire 投影(toWireRef, 含 kind/size), 供 refs_blocked 重建 chips;
+//   ③新增 restoreSentRefs(延后一拍重建, 避开输入框 clear) — 小欧-2026-10-30
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -95,7 +98,13 @@ import {
   resumeStreamRequest,
   readAuthoritativeTask,
   postInterject, // 2026-10-07 小欧 - 插话投递(独立于 sendStreamRequest, 不掐断运行中流)
+  toWireRef, // 2026-10-30 小欧 批3序14: wire 投影单一实现(transport 与发送台账共用)
 } from './chatStreamTransport';
+import {
+  composerRefStore,
+  newRefId,
+  refNoticeStore,
+} from '@/features/refs/store';
 import { taskControlApi, sessionTaskApi } from '@/services/api/task.api';
 import type { SessionTaskItem } from '@/services/api/task.api';
 
@@ -315,8 +324,9 @@ export interface ChatStreamSession extends SessionSnapshot {
    * 落盘口径：随会话 transient 链走，**不入 chatHistory 库**。
    */
   sentRefLedger: SentRefLedgerEntry[];
-  /** 本次发送携带的引用；start 帧拿到 taskId 后写入台账并清空（transient，不入备份）— 小杨-2026-10-21 */
-  pendingSentRefs: SentRefInput[] | null;
+  /** 本次发送携带的引用(wire 形态; start 帧拿到 taskId 后写入台账并清空)。
+   *  2026-10-30 小欧: 由 wire 投影承载(kind/label/path/lineRange/size), refs_blocked 时原样重建 chips。*/
+  pendingSentRefs: ChatRefPayload[] | null;
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
   // 连接与定时器资源句柄（clearAllTimers 五件套：idle/firstChunk/reconnect/saveSteps/intentionalAbort）
@@ -773,23 +783,22 @@ export const chatStreamStore = {
       };
       d.linkEnabled = linkEnabled; // 记录本次开关值, 续传/回放沿用(transport 直读本字段)
       d.allowInterject = allowInterject; // 2026-10-06 小欧 - 存会话快照, 续传/回放沿用(transport 直读本字段)
-      d.pendingSentRefs = refs?.length
-        ? refs.map(({ label, path, lineRange }) => ({
-            label,
-            path,
-            lineRange,
-          }))
-        : null;
+      // 2026-10-30 小欧(B4): 台账随发送带 refs(wire 投影, mtime 不进 wire), 插话被拒时可原样重建 chips
+      d.pendingSentRefs = refs?.length ? refs.map(toWireRef) : null;
     });
+    refNoticeStore.clear(); // 2026-10-30 小欧: 新发货清旧回执(防上一轮黄/红标残留)
     this.persistNow(sessionId);
     try {
-      const attached = await attachActiveTask(s, content); // 附着分支内部已 resume + 持久化
-      if (attached !== null) {
-        // 附着分支不投递 refs，避免把未上行的引用记到活动任务台账 — 小杨-2026-10-21
-        commit(s, (d) => {
-          d.pendingSentRefs = null;
-        });
-        return attached;
+      // 2026-10-30 小欧(D8/批2序11): 带 refs 时禁用附着 —— 引用是当轮材料, 必须属于当轮任务,
+      //   附着到旧任务会让引用无处可去(refs 不随附着上行)。
+      if (!refs?.length) {
+        const attached = await attachActiveTask(s, content); // 附着分支内部已 resume + 持久化
+        if (attached !== null) {
+          commit(s, (d) => {
+            d.pendingSentRefs = null;
+          });
+          return attached;
+        }
       }
       this.clearSteps(sessionId); // 新请求清旧步骤（真实 useSSE.ts:791-795）
       await sendStreamRequest(s, content, refs);
@@ -845,6 +854,28 @@ export const chatStreamStore = {
   },
 
   /**
+   * refs_blocked 回执恢复(5.4.9 R6): 本轮引用未参与, chips 会随发送成功被清 →
+   * 用发送台账(wire 形态)原样重建到 composerRefStore, 用户删减后可重发。返回重建条数。
+   *
+   * 为何延迟一拍: 恢复请求在 SSE error 回调里发出, 而输入框的 clear() 在 onSend 落地后执行;
+   *   同步 push 会被随后的 clear 立刻抹掉(实测顺序: 回调 → send 返回 → clear)。
+   *   0ms 宏任务排在 clear 之后, 重建才真的留在引用区。
+   */
+  restoreSentRefs(sessionId: string): number {
+    const s = sessions.get(sessionId);
+    const pending = s?.pendingSentRefs ?? [];
+    if (!s || pending.length === 0) return 0;
+    commit(s, (d) => {
+      d.pendingSentRefs = null;
+    });
+    window.setTimeout(() => {
+      for (const r of pending) composerRefStore.push({ id: newRefId(), ...r });
+      refNoticeStore.clear();
+    }, 0);
+    return pending.length;
+  },
+
+  /**
    * 插话投递（2026-10-07 小欧）
    *
    * 与 sendMessage 的分工（SRP：新建任务流 vs 给运行中任务追加输入，两件事不混）:
@@ -864,9 +895,18 @@ export const chatStreamStore = {
     const s = this.ensureSession(sessionId);
     commit(s, (d) => {
       d.allowInterject = true; // 插话已发生 → 开关落快照(刷新/重连后仍为开, 与 link 同款语义)
+      // 2026-10-30 小欧: 插话被引用阻断时同样需要台账重建(chips 会在发送成功后清空)
+      d.pendingSentRefs = refs?.length ? refs.map(toWireRef) : null;
     });
     persistNowOf(sessionId);
-    await postInterject(s, content, refs);
+    refNoticeStore.clear(); // 新发货清旧回执, 后续 refs_notice 重新落态
+    try {
+      await postInterject(s, content, refs);
+    } finally {
+      commit(s, (d) => {
+        d.pendingSentRefs = null;
+      });
+    }
   },
 
   /**

@@ -1,4 +1,6 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：引用（refs）共享 hook —— 订阅投递通道 + 托管待发引用 — 小欧-2026-10-22
+// 编辑历史: 2026-10-30 小欧 - 批2序12(F13): 订阅 refNoticeStore 透传 notices, 供 chip 5 态消费;
+//   身份函数改从 identity.ts 导入(批3序14) — 小欧-2026-10-30
 /**
  * useComposerRefs —— 引用（refs）的唯一状态托管点
  *
@@ -14,11 +16,15 @@
  * - 发送成功由调用方清（refs 保留在 store 台账里是另一件事，见 chatStreamStore.pushSentRefs）。
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import { composerRefStore, mergeRefs, type ComposerRef } from './store';
+import { composerRefStore, refNoticeStore, type ComposerRef } from './store';
+import { mergeRefs } from './identity';
+import type { NoticeMap } from './notice';
 
 export interface UseComposerRefsResult {
   /** 当前待发引用 */
   refs: ComposerRef[];
+  /** 当前回执表(按 path 键控, chip 5 态的外部输入) — 小欧-2026-10-30 */
+  notices: NoticeMap;
   /** 有条目正在载入（发送闸门据此阻断） */
   pending: boolean;
   /** 有条目已失效（文件被删/不可读） */
@@ -41,6 +47,12 @@ export const useComposerRefs = (): UseComposerRefsResult => {
     composerRefStore.subscribe,
     composerRefStore.getSnapshot,
     composerRefStore.getSnapshot
+  );
+  // chip 回执态: 唯一写入口是 SSE refs_notice(见 chatStreamTransport), 本 hook 只读
+  const notices = useSyncExternalStore(
+    refNoticeStore.subscribe,
+    refNoticeStore.getSnapshot,
+    refNoticeStore.getSnapshot
   );
 
   useEffect(() => {
@@ -68,6 +80,7 @@ export const useComposerRefs = (): UseComposerRefsResult => {
 
   return {
     refs,
+    notices,
     pending: refs.some((r) => r.pending),
     invalid: refs.some((r) => r.invalid),
     remove,

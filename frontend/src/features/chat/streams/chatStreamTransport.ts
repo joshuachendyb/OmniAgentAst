@@ -71,6 +71,8 @@
 //   取消等帧看门狗到期只落 status='cancelled' 不再 abort, 此时 status 已是终态; 旧守卫一律 return 会挡掉
 //   后端真正发布的 final(cancelled) → settleCancelByFrame 不执行、complete 事件不投递。放行条件收紧为
 //   "outcome==='cancelled' && status==='cancelled' && 未 intentionalAbort", 其余终态/主动卸载照旧挡。 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 批2序12: 接 refs_notice 帧(→refNoticeStore) 与 refs_blocked 错误
+//   (→restoreSentRefs 重建 chips) — 小欧-2026-10-30
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -99,6 +101,8 @@ import {
   isTerminalStatus,
   type ChatStreamSession,
 } from './chatStreamStore';
+import { refNoticeStore } from '@/features/refs/store';
+import { noticeMapByPath, type NoticeItem } from '@/features/refs/notice';
 
 const HEADER_TIMEOUT = 180_000; // 请求头超时（fetch 返回即清除，useSSE.ts:831-834/882-885 同口径）
 
@@ -223,14 +227,10 @@ export const buildStreamBody = (
 };
 
 /** wire 投影(F6): 契约字段白名单, 只留 kind/label/path/lineRange/size——
- *  content(正文由后端读, I1)、mtime(前端本地比对态, R2)、pending/invalid(内存态)均不进 wire。 */
-export const toWireRef = (r: {
-  kind: string;
-  label: string;
-  path: string;
-  lineRange?: { start: number; end: number } | null;
-  size?: number;
-}) => ({
+ *  content(正文由后端读, I1)、mtime(前端本地比对态, R2)、pending/invalid(内存态)均不进 wire。
+ *  2026-10-30 小欧 批3序14: 入参类型收到 ChatRefPayload, 返回值即 wire 形态(台账重建)
+ *  可直接当 ChatRefPayload 用 —— transport 与 store 两条投影共用本实现。 */
+export const toWireRef = (r: ChatRefPayload) => ({
   kind: r.kind,
   label: r.label,
   path: r.path,
@@ -915,6 +915,15 @@ function broadcastHandlers(s: ChatStreamSession) {
       emitEvent(s, 'step', { step, isReasoning }),
     onChunk: (chunk: string, isReasoning?: boolean) =>
       emitEvent(s, 'chunk', { chunk, isReasoning }),
+    // 2026-10-30 小欧 批2序12: 引用回执帧 → refNoticeStore(chip 5 态唯一写入口)。
+    //   按 path 键控: chips 归 useComposerRefs 本地态, per-ref 直改够不到(5.4.6 裁定)。
+    onRefsNotice: (data: {
+      level: string;
+      scope: string;
+      items: NoticeItem[];
+    }) => {
+      refNoticeStore.setMap(noticeMapByPath(data.items));
+    },
     // 2026-09-29 小欧：metadata 类型对齐 sseParser.ts:136 真实契约
     //   （string | SSEMetadata），非 unknown——unknown 会在 5.1 载荷类型处断裂成断言
     onComplete: (
@@ -1066,6 +1075,11 @@ function errorHandlers(
         console.warn(`[SSE] 字符串错误(非终态,流继续): ${e}`);
         emitEvent(s, 'error', transportError('server', '帧解析异常，流继续'));
         return;
+      }
+      // 2026-10-30 小欧 批2序12: 引用阻断 → 用发送台账重建 chips(否则引用被清空后只能从零重选);
+      //   帧本身仍按业务错误正常投递(下方 from_backend 分支)。
+      if (e.error_type === 'refs_blocked') {
+        chatStreamStore.restoreSentRefs(s.sessionId);
       }
       const recovery = RECOVERY_ERROR_BRANCH[e.error_type];
       // 2026-09-29 小欧：业务错误帧（blocked/timeout/user_rejected 等）**不终止流**——

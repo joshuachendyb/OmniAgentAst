@@ -48,6 +48,8 @@
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
 //   (轻量探 size/mtime, 不再切片读正文); 引用条数限 MAX_REFS(超限拦截点名) — 小欧-2026-10-29
 // 2026-10-30 小欧 - @搜索失败改由页面自提示，配合 searchFiles 静默，避免弹出与本操作无关的全局超时文案
+// 2026-10-30 小欧 - 批2序12: chip 改 chipStateOf(r, refNotices) 5 态渲染(黄=已省略/红=已丢弃|已失效),
+//   订阅 refNoticeStore(经 useComposerRefs 透传), 回执一到达 chip 即变色 — 小欧-2026-10-30
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -74,6 +76,7 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
+import { chipStateOf, chipStateText } from '@/features/refs/notice'; // chip 5 态唯一映射(5.4.3)
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检(5.4.1)
 import {
   newRefId,
@@ -136,6 +139,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   // 2026-10-22 小欧 - 引用状态封进共享 hook（订阅+消费+托管唯一点）
   const {
     refs,
+    notices: refNotices,
     pending: refsPending,
     remove,
     removeWhere,
@@ -589,64 +593,79 @@ const ChatInput: React.FC<ChatInputProps> = ({
           >
             引用 {refs.length} · 发送到当前会话
           </span>
-          {refs.map((r) => (
-            <span
-              key={r.id}
-              title={`${r.path ?? ''}${
-                r.lineRange
-                  ? `（第 ${r.lineRange.start}-${r.lineRange.end} 行）`
-                  : ''
-              }`}
-              style={{
-                /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
-                background: r.invalid
-                  ? Colors.ERROR_BG
-                  : chatTokens.colorPrimaryBg,
-                color: Colors.TEXT.STRONG,
-                border: `1px solid ${r.invalid ? Colors.ERROR_BORDER : chatTokens.colorBorder}`,
-                borderRadius: chatTokens.radius,
-                padding: '1px 4px 1px 6px',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-              }}
-              onClick={() => {
-                // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
-                //   不跳文件页（否则点开一个空 path 的死链），仅作展示
-                if (!r.path) return;
-                window.open(
-                  buildFileDeepLink(r.path, r.lineRange ?? null),
-                  '_blank'
-                );
-              }}
-            >
-              <FileOutlined style={{ color: chatTokens.colorPrimary }} />
-              {r.label}
-              {r.pending ? '（载入中…）' : r.invalid ? '（已失效）' : ''}
-              {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  remove(r.id); // 小欧-2026-10-22 改用 hook.remove
-                }}
-                aria-label={`删除引用 ${r.label}`}
-                title="移除该引用"
+          {refs.map((r) => {
+            /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
+               红=dropped/invalid, 黄=degraded(已省略), 常规=idle/checking */
+            const state = chipStateOf(r, refNotices);
+            const bad = state === 'invalid' || state === 'dropped';
+            const degraded = state === 'degraded';
+            return (
+              <span
+                key={r.id}
+                title={`${r.path ?? ''}${
+                  r.lineRange
+                    ? `（第 ${r.lineRange.start}-${r.lineRange.end} 行）`
+                    : ''
+                }`}
                 style={{
-                  border: 'none',
-                  background: 'transparent',
+                  /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
+                  background: bad
+                    ? Colors.ERROR_BG
+                    : degraded
+                      ? Colors.WARNING_BG
+                      : chatTokens.colorPrimaryBg,
+                  color: Colors.TEXT.STRONG,
+                  border: `1px solid ${
+                    bad
+                      ? Colors.ERROR_BORDER
+                      : degraded
+                        ? Colors.WARNING
+                        : chatTokens.colorBorder
+                  }`,
+                  borderRadius: chatTokens.radius,
+                  padding: '1px 4px 1px 6px',
                   cursor: 'pointer',
-                  padding: '0 4px',
-                  fontSize: 14,
-                  lineHeight: '16px',
-                  color: Colors.TEXT.SECONDARY,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+                onClick={() => {
+                  // 2026-10-22 小欧 - 上下文包无单一路径（path=''）→
+                  //   不跳文件页（否则点开一个空 path 的死链），仅作展示
+                  if (!r.path) return;
+                  window.open(
+                    buildFileDeepLink(r.path, r.lineRange ?? null),
+                    '_blank'
+                  );
                 }}
               >
-                ×
-              </button>
-            </span>
-          ))}
+                <FileOutlined style={{ color: chatTokens.colorPrimary }} />
+                {r.label}
+                {chipStateText(state)}
+                {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    remove(r.id); // 小欧-2026-10-22 改用 hook.remove
+                  }}
+                  aria-label={`删除引用 ${r.label}`}
+                  title="移除该引用"
+                  style={{
+                    border: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                    padding: '0 4px',
+                    fontSize: 14,
+                    lineHeight: '16px',
+                    color: Colors.TEXT.SECONDARY,
+                  }}
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
       {refsPending && (
