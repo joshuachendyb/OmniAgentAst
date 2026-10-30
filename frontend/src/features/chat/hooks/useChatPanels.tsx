@@ -46,6 +46,10 @@
 //   ①两处原内联 chatStreamStore.getSnapshot(status) 且未入 useMemo 依赖, status 变化而其余依赖不变时不重算,
 //   取消兜底永远看不到新状态; ②顺带删 chatStreamStore 直接导入(本文件不再直读 store)。
 //   RightViewer 新增传 storeStatus: 取消终态帧未送达时右栏徽标兜底, 不再只有 taskinfo 有。 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 18:42:49 小欧 - 会话目录移出本 memo(解构/透传/依赖三处删净, 依赖 53→52 项):
+//   原路径把目录列表塞进这个组装 7 个面板的巨型 useMemo, 任一项变化都会让整个数组重建、7 个面板
+//   全部重新 render(right.viewer 的 RightViewer 最重), 而保存动作正落在流式出帧最密的一刻。
+//   面板只消费一个徽标数字, 该数字改由 ChatInput 内部订阅 workspaceStore 得到 — 小欧-2026-10-30
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -152,9 +156,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
   } = opts;
 
   const {
-    // 2026-10-10 小欧 - 文档[16] §3.6.5: 会话使用目录(徽标数 + 面板回写), 取自 chatState 真源
-    sessionWorkspaces,
-    setSessionWorkspaces,
     sessionId,
     sessionTitle,
     titleLocked,
@@ -360,9 +361,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             onToggleLink={onToggleLink}
             allowInterject={allowInterject}
             onToggleInterject={onToggleInterject}
-            // 2026-10-10 小欧 - 文档[16] §3.6.5: 目录列表透传(徽标现算 + 面板回写)
-            sessionWorkspaces={sessionWorkspaces}
-            setSessionWorkspaces={setSessionWorkspaces}
+            // 2026-10-30 18:42:49 小欧 - 会话目录不再经此处透传：ChatInput 内部直接订阅
+            //   workspaceStore（只取 list.length），本 memo 依赖不再含目录数据，
+            //   一次目录保存不再让右栏 RightViewer 等 7 个面板连带重算。
             modelPickerSlot={
               <ModelPicker
                 sessionId={sessionId}
@@ -420,7 +421,6 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       linkEnabled,
       allowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.4: ChatInput 渲染依赖(漏=开关值变后面板不刷新)
       onToggleInterject,
-      sessionWorkspaces, // 2026-10-10 小欧 - 文档[16] §3.6.5: 徽标数随目录列表变(漏=徽标不刷新)
       handleCancel,
       handleTogglePause,
       liveError,

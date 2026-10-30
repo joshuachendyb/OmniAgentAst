@@ -286,6 +286,9 @@ export const sessionApi = {
 
   // 2026-10-10 小欧 - 文档[16] §3.6.1 新增：会话使用的目录写口
   //   body 即全量覆盖写（[] = 清空）；命中禁区整单 422，detail 落在 error.workspace_rejected
+  // 2026-10-30 18:36:36 小欧 - 单独收窄超时(60s→20s)：本请求已改为「后台提交」，
+  //   全局 60s 会让一次排队/后端占满要干等一分钟才给反馈；写库只有两条 SQL，
+  //   20s 未答即按"未确认"处理，随后由 workspaceStore 对账拉回库真值（见 store 头注）。
   patchWorkspaces: async (
     sessionId: string,
     sessionWorkspaces: string[]
@@ -298,7 +301,8 @@ export const sessionApi = {
     }
     const response = await api.patch<{ success: boolean; session_id: string }>(
       `/sessions/${encodeURIComponent(sessionId)}/workspaces`,
-      { session_workspaces: sessionWorkspaces }
+      { session_workspaces: sessionWorkspaces },
+      { timeout: 20_000 }
     );
     return response.data;
   },

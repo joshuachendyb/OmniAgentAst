@@ -51,6 +51,8 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { Message, SessionModelOverride } from '../../../types/chat';
 import type { UseChatStateReturn } from './useChatState';
 import { sessionApi } from '../../../services/api/session.api';
+// 2026-10-30 18:42:49 小欧 - 会话目录取数收口到独立 store（唯一真源 + 唯一写口）
+import { workspaceStore } from '../services/sessionWorkspaceStore';
 // 2026-09-30 小欧 - 标题生成已迁出本 hook（S4：纯文案拼装不属生命周期编排）
 import { generateNewSessionTitle } from '@/utils/sessionTitle';
 // [63] 5.18：stop/clearSteps + 代际守卫（G3 病根修复）
@@ -192,7 +194,6 @@ export const useChatSession = (
     setSessionModelOverride,
     setLinkEnabled,
     setAllowInterject, // 2026-10-07 小欧 - 文档[11] 3.5.7: 复位/切换用
-    setSessionWorkspaces, // 2026-10-10 小欧 - 文档[16] §3.6.4: 会话目录 GET 灌入
     setMessages,
     currentSessionIdRef,
   } = state;
@@ -288,25 +289,12 @@ export const useChatSession = (
   //     实读 applySessionState 有 10+ 调用点，逐点塞必漏（违 DRY）；改用**单点 useEffect**
   //     跟随 sessionId，一处覆盖全部场景，且天然带竞态守卫（sessionId 变才跑）。
   //   语义与决策77简化一致：一切走 GET，不读本地（无暂存可读）。
+  // 2026-10-30 18:42:49 小欧 - 取数改交 workspaceStore.loadSession：会话目录已是独立 store 的
+  //   真源（徽标/面板都从那里订阅），本 hook 不再持有 sessionWorkspaces state；竞态守卫内移到
+  //   store 的代际号（切会话/重复触发只认最后一次），这里只留"跟随 sessionId 触发"一件职责。
   useEffect(() => {
-    if (!sessionId) {
-      setSessionWorkspaces([]); // 清空会话 → 列表置空
-      return;
-    }
-    let cancelled = false;
-    sessionApi
-      .getWorkspaces(sessionId)
-      .then((r) => {
-        if (!cancelled) setSessionWorkspaces(r.workspaces);
-      })
-      .catch(() => {
-        // GET 404/500：置空不断链，会话本身照常可用
-        if (!cancelled) setSessionWorkspaces([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, setSessionWorkspaces]);
+    void workspaceStore.loadSession(sessionId ?? '');
+  }, [sessionId]);
 
   /**
    * loadSession - 加载会话历史

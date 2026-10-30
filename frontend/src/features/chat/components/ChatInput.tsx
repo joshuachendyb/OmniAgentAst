@@ -57,6 +57,12 @@
 //   在途删掉的引用被复活并随本条上行, 在途新加的引用凭空消失); ②@ 探测写回前复核占位 chip 是否还在
 //   (在途删掉后不再"复活"); ③refs_blocked 后经一次性信号把草稿填回输入框(仅当前为空时);
 //   ④chip 文案拼回执 detail/中文原因, 标题也带原因 — 小欧-2026-10-30
+// 2026-10-30 18:24:09 小欧 - 删面板关闭时的二次 GET(与保存回执争同一份徽标数, 关闭动画期多一次全量面板重建),
+//   徽标数以 onSaved 的权威列表为准; 顺带删只服务该请求的 noop 与 sessionApi 导入 — 小欧-2026-10-30
+// 2026-10-30 18:36:36 小欧 - 会话目录搬出巨型面板 memo: 徽标数改 useSyncExternalStore 订阅
+//   workspaceStore(只取 list.length), Props 删 sessionWorkspaces/setSessionWorkspaces。原路径让一次保存
+//   触发 useChatPanels(50+ 依赖)整体重建 6 个面板, 恰好撞上流式出帧最密的一刻; 目录是低频元数据,
+//   不该寄生在高频渲染链上, 写口统一收敛到 services/sessionWorkspaceStore — 小欧-2026-10-30
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -97,6 +103,8 @@ import {
   noticeDetailText,
 } from '@/features/refs/notice'; // chip 5 态 + 色调 + 回执细节唯一映射(5.4.3)
 import { refsBlockedDraftStore } from '../utils/refsBlockedDraft'; // refs_blocked 草稿回填信号 — 小欧-2026-10-30
+// 2026-10-30 18:42:49 小欧 - 会话使用目录的唯一真源(徽标只订阅其 list.length) — 小欧-2026-10-30
+import { workspaceStore } from '../services/sessionWorkspaceStore';
 import type { ChipTone } from '@/features/refs/notice';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检(5.4.1)
 import {
@@ -115,8 +123,7 @@ import {
   clearRecentInputs,
   type RecentInput,
 } from '../utils/recentInputs';
-import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
-import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 关闭面板时重拉徽标数
+import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - SendOpts 对象参数（避免相邻 boolean 位置参数错位）
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 import { Colors } from '@/utils/stepStyles';
 
@@ -140,9 +147,6 @@ interface ChatInputProps {
   onToggleLink: (enabled: boolean) => void;
   allowInterject: boolean; // 2026-10-07 小欧 - 插话开关
   onToggleInterject: (enabled: boolean) => void;
-  // 2026-10-10 小欧 - 会话使用的目录（徽标数 + 面板回写）
-  sessionWorkspaces: WorkspaceEntry[];
-  setSessionWorkspaces: React.Dispatch<React.SetStateAction<WorkspaceEntry[]>>;
 }
 
 const ChatInput: React.FC<ChatInputProps> = ({
@@ -158,8 +162,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   onToggleLink,
   allowInterject, // 2026-10-07 小欧 - 插话开关
   onToggleInterject,
-  sessionWorkspaces, // 2026-10-10 小欧 - 会话目录
-  setSessionWorkspaces,
 }) => {
   // 2026-10-13 13:45 小欧: 草稿单一真源(内存 + sessionStorage 持久化), 取代原自持 useState + 无条件清空 effect
   const { draft, setDraft, markSubmitted, cancelSubmitted } =
@@ -218,17 +220,17 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [histBackup, setHistBackup] = useState<string | null>(null);
   // 2026-10-10 小欧 - 面板挂载点
   const [wsPanelOpen, setWsPanelOpen] = useState(false);
-  // 2026-10-10 小欧: 面板关闭时重拉一次徽标数（后端 reconcile/禁区清理可能改行，
-  //   前端只在 sessionId 变化时刷新，此处补齐漂移；失败静默（具名 noop 过 no-empty-function 门禁），会话本身可用）
-  const noop = () => undefined;
+  // 2026-10-30 18:42:49 小欧 - 徽标数直接订阅独立 store（只取原始值 number）：
+  //   目录列表引用变了但数量没变时 React 直接跳过；数量真变也只重渲染本组件，
+  //   不再牵动 useChatPanels 那个组装 7 个面板的巨型 memo（原路径 = 一次保存 7 个面板全重算）。
+  const workspaceCount = useSyncExternalStore(
+    workspaceStore.subscribe,
+    () => workspaceStore.getSnapshot().list.length
+  );
+  // 2026-10-30 小欧 - 关闭只做一件事：收起面板。库已由 workspaceStore.commit 独立提交并裁决，
+  //   关闭时再 GET 一次只会在动画期多写一遍徽标数，且与服务端回执争同一份数据。取消关闭没改库，无需刷新。
   const handleWsClose = () => {
     setWsPanelOpen(false);
-    if (sessionId) {
-      sessionApi
-        .getWorkspaces(sessionId)
-        .then((r) => setSessionWorkspaces(r.workspaces))
-        .catch(noop);
-    }
   };
 
   // 2026-10-08 小欧 - 发送门单一真源(2026-10-13 18:15 起只管"提交", 不再兼管输入框禁用)
@@ -860,7 +862,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
         onToggleInterject={onToggleInterject}
         // 2026-10-10 小欧 - 徽标现算(无 dirty 角标)
         // 无会话时不传 onOpenWorkspaces → SubmitBar 不渲染入口（GET 空 id 必 422，不如不显示）
-        workspaceCount={sessionWorkspaces.length}
+        // 2026-10-30 18:42:49 小欧 - workspaceCount 改由 workspaceStore 订阅得到(见上)
+        workspaceCount={workspaceCount}
         onOpenWorkspaces={sessionId ? () => setWsPanelOpen(true) : undefined}
         /*
          * 2026-10-25 小欧 - 动作按钮组回迁本行右端(北京老陈指令): 原在 InputCore 框内右下角;
@@ -879,12 +882,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           />
         }
       />
-      {/* 2026-10-10 小欧 - 会话使用目录面板入口 */}
+      {/* 2026-10-10 小欧 - 会话使用目录面板入口
+          2026-10-30 18:42:49 小欧 - 删 onSaved：保存改交 workspaceStore 后台提交，
+            面板关闭后不再回写本组件，徽标走订阅 */}
       <SessionWorkspacePanel
         sessionId={sessionId ?? ''}
         open={wsPanelOpen}
         onClose={handleWsClose}
-        onSaved={setSessionWorkspaces}
       />
     </div>
   );

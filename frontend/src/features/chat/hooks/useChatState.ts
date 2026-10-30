@@ -21,6 +21,10 @@
 //   ③ UI 态删 sessionJumpLoading/setSessionJumpLoading 与 isRenderingMessages/setIsRenderingMessages
 //      (生产零读取的死旗); isMessageListLoading 有真实消费者(useChatFacade showWaitTime)故保留;
 //   ④ 类型 / useState 定义 / 返回对象三处同步删净, 不留兼容层 — 小欧-2026-10-08
+// 编辑历史: 2026-10-30 18:42:49 小欧 - 会话使用目录移出本 state(类型/useState/返回三处删净):
+//   改由 features/chat/services/sessionWorkspaceStore 单向持有(徽标 useSyncExternalStore 订阅,
+//   面板经 store 提交)。原实现让一次保存就使 useChatPanels 的巨型 memo 失效, 7 个面板连带重算,
+//   恰撞流式出帧最密的时刻 —— 故不留在 session 状态里 — 小欧-2026-10-30
 /**
  * useChatState Hook - 统一状态管理
  *
@@ -41,11 +45,7 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import type {
-  Message,
-  SessionModelOverride,
-  WorkspaceEntry,
-} from '../../../types/chat';
+import type { Message, SessionModelOverride } from '../../../types/chat';
 
 // ============================================================================
 // 类型定义
@@ -106,10 +106,9 @@ export interface UseChatStateReturn {
   setLinkEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   allowInterject: boolean; // 2026-10-06 小欧 - 文档[11] 3.5: 与会话同生命周期
   setAllowInterject: React.Dispatch<React.SetStateAction<boolean>>;
-  // 2026-10-10 小欧 - 文档[16] §3.6.3 新增：会话使用的目录列表（徽标现算源）
-  //   无 dirty 无暂存：PATCH 即时生效，徽标 = 本列表长度
-  sessionWorkspaces: WorkspaceEntry[];
-  setSessionWorkspaces: React.Dispatch<React.SetStateAction<WorkspaceEntry[]>>;
+  // 2026-10-30 18:42:49 小欧 - 会话使用目录已移出本 state：改由 services/sessionWorkspaceStore
+  //   单向持有（徽标 useSyncExternalStore 订阅、面板经 store 提交）。原字段让一次保存就使
+  //   useChatPanels 巨型 memo 失效并重算 7 个面板，恰撞流式出帧最密的时刻。
 
   // 标题编辑状态
   editingTitle: boolean;
@@ -219,10 +218,6 @@ export const useChatState = (): UseChatStateReturn => {
     useState<SessionModelOverride | null>(null);
   const [linkEnabled, setLinkEnabled] = useState<boolean>(false);
   const [allowInterject, setAllowInterject] = useState<boolean>(false); // 2026-10-06 小欧 - 文档[11] 3.5:
-  // 2026-10-10 小欧 - 文档[16] §3.6.3: 会话使用的目录列表（无 dirty，PATCH 即时生效）
-  const [sessionWorkspaces, setSessionWorkspaces] = useState<WorkspaceEntry[]>(
-    []
-  ); // 与会话同生命周期
 
   // 标题编辑状态
   const [editingTitle, setEditingTitle] = useState(false);
@@ -359,8 +354,6 @@ export const useChatState = (): UseChatStateReturn => {
     setLinkEnabled,
     allowInterject,
     setAllowInterject, // 2026-10-06 小欧 - 文档[11] 3.5: 与 linkEnabled/setLinkEnabled 同组返回
-    sessionWorkspaces,
-    setSessionWorkspaces, // 2026-10-10 小欧 - 文档[16] §3.6.3
 
     editingTitle,
     setEditingTitle,
