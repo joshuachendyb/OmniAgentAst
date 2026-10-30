@@ -47,6 +47,7 @@
 // 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
 //   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
 //   (轻量探 size/mtime, 不再切片读正文); 引用条数限 MAX_REFS(超限拦截点名) — 小欧-2026-10-29
+// 2026-10-30 小欧 - @搜索失败改由页面自提示，配合 searchFiles 静默，避免弹出与本操作无关的全局超时文案
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -475,6 +476,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
             if (seq !== atSeq.current) return;
             setAtHits([]);
             setAtOpen(false);
+            // 2026-10-30 小欧 - 页面自提示，走 30s 去重防连打 @ 刷屏
+            showMessage(ErrorType.UNKNOWN, '搜索失败，请重试');
           });
       }, 220);
     },
