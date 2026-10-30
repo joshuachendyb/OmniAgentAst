@@ -141,6 +141,13 @@
 // 编辑历史: 2026-10-28 小欧 - P2 前端懒渲染优化: useMemo 包裹 splitSteps, 确保 business 步骤引用稳定(使 PipelineRenderer 内部 useMemo 生效) — 小欧-2026-10-28
 // 编辑历史: 2026-10-30 小欧 - 新增 storeStatus(必填, StreamStatus)并作为 useTaskInfo 第5参: 取消终态帧未送达时
 //   右栏徽标由 store 终态兜底; 取值同源 chatStreaming.status(useChatPanels 传入)。 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 展示源提为单一真源(displaySource) + 分批判据改"冷历史回放":
+//   ①原分批判据 !streaming 把"刚完成的本任务"也纳入分批, 而完成链路必然重物化 steps(终态快照/REST 回填),
+//     被分批 hook 误判为切任务 → 裁回首批 80 段 → 尾部 response/final 段消失或延后出现(北京老陈实测);
+//   ②现 displaySource 一次判定同时给出渲染数据与 isHistorySource, PipelineRenderer 的 lazy 只认后者;
+//   ③PipelineRenderer 以 taskKey=activeTaskId 绑定任务 —— 分批窗口是任务级视图状态, 切任务即复位窗口,
+//     不再用"数组引用变化"猜任务切换; 不用 React key 重挂载(会令 useStepRenderPrefs 重拉设置,
+//     reasoningVisible/thoughtMarkdown 闪回默认值) — 小欧-2026-10-30
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -542,15 +549,24 @@ const RightViewer: React.FC<RightViewerProps> = ({
   //   消除塌陷帧; 非当前任务一律走 historySteps, 跨任务语义不变 — 小欧-2026-09-18
   //   切历史A时 activeTaskId!==serverTaskId, 必走 historySteps, 不会误用 liveSteps(B残留),
   //   因为 liveSteps fallback 仅在 activeTaskId===serverTaskId 分支内生效 — 小欧-2026-09-18
-  const displaySteps = isCurrentLive
-    ? liveSteps
+  // 2026-10-30 小欧 - 展示源单一真源: 一次判定同时产出渲染数据与"是否冷历史回放"(分批判据)。
+  //   分支语义与改动前完全一致(live/settled/live 兜底/history 四路), 只是把嵌套三选一显式化, 使
+  //   "分批只服务 REST 历史整表装载"有唯一出处, 不再从 !streaming 推断(那会把刚完成的本任务误当历史)。 — 小欧-2026-10-30
+  const displaySource: 'live' | 'settled' | 'history' = isCurrentLive
+    ? 'live'
     : activeTaskId != null && activeTaskId === serverTaskId
       ? settledSteps.length > 0
-        ? settledSteps
+        ? 'settled'
         : liveSteps.length > 0
-          ? liveSteps
-          : historySteps
-      : historySteps;
+          ? 'live'
+          : 'history'
+      : 'history';
+  const displaySteps =
+    displaySource === 'live'
+      ? liveSteps
+      : displaySource === 'settled'
+        ? settledSteps
+        : historySteps;
   // 小欧 2026-09-11 M3a(title段数据源=final帧): title 段数据源=final 帧——实时=settledSteps 快照(final 已入 ref 快照),
   //   历史回放=historySteps 的 final step; final 到达即可渲染, 绝不读DB — 小欧-2026-09-11
   const finalStep = displaySteps.find((s) => s.type === 'final');
@@ -586,8 +602,14 @@ const RightViewer: React.FC<RightViewerProps> = ({
             />
           ) : (
             <PipelineRenderer
+              // 2026-10-30 小欧 - 分批窗口是任务级视图状态: 以 taskKey 绑任务(切任务即复位窗口)。
+              //   此处不用 React key 重挂载 —— 重挂载会让 useStepRenderPrefs 重新拉 appearance 设置,
+              //   切任务瞬间 reasoningVisible/thoughtMarkdown 闪回默认值(关联审查发现的回归) — 小欧-2026-10-30
+              taskKey={activeTaskId ?? 'none'}
               steps={businessSteps}
               streaming={isCurrentLive}
+              // 2026-10-30 小欧 - 分批只用于冷历史回放(REST 整表装载), 其余一律全量
+              lazy={displaySource === 'history'}
               highlightToolName={highlightToolName}
               badge={isCurrentLive ? liveBadge : undefined} // 2026-09-02 小欧: live才传badge, 历史回放不显示等待圈
               deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06

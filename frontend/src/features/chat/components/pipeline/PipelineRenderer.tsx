@@ -98,6 +98,11 @@
 // 编辑历史: 2026-10-30 小欧 - 取消来源中文化: 新增 CANCEL_SOURCE_TEXT(5 个枚举键→中文, 未知键原样),
 //   final(cancelled) 第二行原直出后端枚举键(user_requested 等), 后端 CANCEL_SOURCE_TERMINAL_TEXT
 //   只服务 response 正文 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 分批渲染改为"仅冷历史回放 + 尾部窗口"(根治完成瞬间尾部 response/final 段消失):
+//   ①新增 lazy prop: 分批只由"数据来自 REST 历史回放"驱动, 不再由 !streaming 驱动 —— 刚完成的本任务
+//     内容本已全量挂在 DOM 上, 再分批只会裁掉尾部(答复段), 属纯退化; streaming 仍是"全量"的硬门(打字机末段位);
+//   ②useLazyRender 改为尾部窗口, 哨兵移到列表**开头**(上翻加载更早段), 与右栏"自动滚到内容末端"一致;
+//   ③段位判定/段 key 改用绝对下标(startIndex+i), 使向上扩批次时既有段 key 不漂移(不重挂载、折叠态不丢) — 小欧-2026-10-30
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -331,6 +336,19 @@ const CANCEL_SOURCE_TEXT: Record<string, string> = {
 interface PipelineRendererProps {
   steps: ExecutionStep[];
   streaming?: boolean; // 实时流进行中（思考流尾随光标）
+  /**
+   * 2026-10-30 小欧 - 是否分批渲染(尾部窗口, 上翻加载更早段)。
+   *   只对**冷历史回放**(steps 来自 REST/DB 整表装载)置 true; 实时任务与其刚完成的终态一律 false(全量) ——
+   *   后者内容本已全量挂载, 分批只会裁掉尾部答复段。streaming 为 true 时恒全量(打字机/等待图标依赖末段位)。
+   */
+  lazy?: boolean;
+  /**
+   * 2026-10-30 小欧 - 任务身份(如 activeTaskId), 只用于分批窗口复位:
+   *   窗口大小是任务级视图状态, 切换任务必须归零; 用任务标识而非 steps 引用判定,
+   *   避免"完成链路重物化 steps(同内容新数组)"被误判为切任务。
+   *   不传则恒为同一身份, 窗口在一次挂载内不复位。
+   */
+  taskKey?: string;
   highlightToolName?: string | null; // HITL 弹窗联动高亮（4.7）
   headerNode?: React.ReactNode; // 头部·模型标识
   badge?: TaskBadge; // 2026-09-02 小欧: 任务活跃徽标(running/paused=任务仍进行), 撑起三个 waiting 丢失窗口
@@ -345,6 +363,8 @@ interface PipelineRendererProps {
 const PipelineRenderer: React.FC<PipelineRendererProps> = ({
   steps,
   streaming = false,
+  lazy = false, // 2026-10-30 小欧: 分批仅用于冷历史回放(默认全量, 与改动前行为一致) — 小欧-2026-10-30
+  taskKey = 'default', // 2026-10-30 小欧: 分批窗口复位键(缺省恒同一身份 → 不额外复位) — 小欧-2026-10-30
   highlightToolName = null,
   headerNode,
   badge, // 2026-09-02 小欧: 非 live 历史回放不传 → undefined → 不显示圈
@@ -397,15 +417,17 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       ),
     [segs]
   );
-  // 2026-10-28 小欧 - P2 渐进式渲染: hook 封装分批调度(visibleCount state + IO + 渲染期同步重置),
-  //   组件体只拿 visibleItems/sentinelRef/hasMore 三件套, IO 细节不混入渲染层(SRP/SLAP);
-  //   流式模式(streaming=true→enabled=false) → hook 全量返回, 打字机/等待图标末段位不受影响;
-  //   派生值(toolStepSet/lastThink/thinkEndIdx)仍基于全量 segs 计算, 不受分批影响
+  // 2026-10-28 小欧 - P2 渐进式渲染: hook 封装分批调度, 组件体只拿 visibleItems/sentinelRef/hasMore 三件套,
+  //   IO 细节不混入渲染层(SRP/SLAP); 派生值(toolStepSet/lastThink/thinkEndIdx)仍基于全量 segs 计算, 不受分批影响
+  // 2026-10-30 小欧 - 分批只服务冷历史回放: lazy 由消费方按"数据来源=historySteps"给出;
+  //   streaming 为 true 时恒全量(打字机/等待图标/末段光标依赖最后一段位, 分批会破坏该判定);
+  //   窗口复位只认 taskKey(任务身份), 不认 steps 引用 —— 完成链路会重物化同内容 steps — 小欧-2026-10-30
   const {
     visibleItems: visibleSegs,
     sentinelRef,
     hasMore,
-  } = useLazyRender(segs, !streaming);
+    startIndex,
+  } = useLazyRender(segs, lazy && !streaming, taskKey);
   return (
     <div
       style={{
@@ -417,14 +439,18 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
       }}
     >
       {headerNode}
-      {/* 2026-10-28 小欧 - P2: 可见段渲染(visibleSegs), 哨兵 div 在末尾触发加载下一批 */}
+      {/* 2026-10-30 小欧 - 尾部窗口: 哨兵在列表开头(更早段方向), 进入预加载圈即向上扩一批 */}
+      {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
       {visibleSegs.map((seg, i) => {
+        // 2026-10-30 小欧 - 绝对段位: 窗口从尾部起算, i 只是窗口内相对位; key 与光标/图标判定必须用绝对位,
+        //   否则向上扩批时既有段下标整体漂移 → key 变化 → 组件重挂载(折叠态/打字机进度丢失) — 小欧-2026-10-30
+        const gi = startIndex + i;
         if (seg.kind === 'waiting') {
           // 4.4.2(2026-09-07 小欧): thinking段首列亮ThoughtWaitingIcon; 仅"末段+taskActive"才显示,
           //   final/error/停止后非末段自动灭, 杜绝常驻
           if (i !== visibleSegs.length - 1 || !taskActive) return null;
           return (
-            <React.Fragment key={`waiting-${i}`}>
+            <React.Fragment key={`waiting-${gi}`}>
               {/* 2026-10-05 小欧（北京老陈裁定 §5.14.2）: 「推理内容...」标题行排在等待绿圈的上一行,
                   且等待期就先出现(首个推理文本到达前), 不再"先冒一个孤零零绿圈、文本到达后整行替换"。
                   绿圈本身的下沿逻辑(末段+taskActive 门控 / 挂钟面)一字未动。
@@ -435,7 +461,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
                 text=" "
                 compact
                 defaultExpanded={reasoningVisible}
-                running={i > thinkEndIdx} // 2026-10-07 小欧 - 转: 尚无 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
+                running={gi > thinkEndIdx} // 2026-10-07 小欧 - 转: 尚无 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
               />
               <div style={{ margin: stepMargin(false) }}>
                 <ThoughtWaitingIcon waitClock={waitClock} />{' '}
@@ -447,7 +473,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         if (seg.kind === 'thinking') {
           // 2026-09-02 小欧 · 北京老陈定案: 光标仅亮在"最后一段"(打字机末段), 旧 thinking 段完成即灭
           const cursor =
-            streaming && i === lastThink && i === visibleSegs.length - 1;
+            streaming && gi === lastThink && i === visibleSegs.length - 1;
           return (
             <ThinkingStream
               // 2026-10-05 小欧 三堂会审修复: key 去掉文本切片(原 `thinking-${i}-${seg.text.slice(0,16)}`)。
@@ -456,19 +482,19 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               //   段身份由下标 i 唯一确定(流式只追加段, 不前插, i 稳定); 换段即换 key 天然重建。
               //   第2轮会审再修: 纯下标 key 切任务时会串味(RightViewer 不加 key → 实例复用, i=0 被
               //   新任务复用), 折叠态跨任务残留。改用 下标+段归属步号 双因子(与 text 段同构)。
-              key={`thinking-${i}-${seg.step ?? i}`}
+              key={`thinking-${gi}-${seg.step ?? gi}`}
               text={seg.text}
               cursor={cursor}
               compact={seg.sameStep}
               defaultExpanded={reasoningVisible} // 2026-10-05 小欧: 「推理内容」折叠初值(文档[9] §5.5) — 小欧-2026-10-05
-              running={i > thinkEndIdx} // 2026-10-07 小欧 - 停: 下标之后已有 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
+              running={gi > thinkEndIdx} // 2026-10-07 小欧 - 停: 下标之后已有 text/工具/终态段(北京老陈裁定) — 小欧-2026-10-07
             />
           );
         }
         if (seg.kind === 'text') {
           // 2026-09-02 小欧: 限定末段, 与 thinking 光标同策略
           const isLive =
-            streaming && i === lastText && i === visibleSegs.length - 1;
+            streaming && gi === lastText && i === visibleSegs.length - 1;
           return (
             <TextStream
               // 2026-10-05 小欧 三堂会审修复(与 thinking 段同类缺陷, 此前只修了一半):
@@ -477,7 +503,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               //   完全没有打字机效果)。段身份同样由下标 i 唯一确定。 — 小欧-2026-10-05
               //   第2轮会审再修: 纯下标 key 在**切任务**时会串味(RightViewer 不加 key → 组件实例复用,
               //   i=0 被新任务复用), 表现为折叠态与打字机进度跨任务残留。改用 下标+段归属步号 双因子。
-              key={`text-${i}-${seg.step ?? i}`}
+              key={`text-${gi}-${seg.step ?? gi}`}
               text={seg.text}
               typing={isLive}
               cursor={isLive}
@@ -498,7 +524,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           const isFailed = seg.step.outcome === 'failed';
           const isCancelled = seg.step.outcome === 'cancelled';
           return (
-            <React.Fragment key={`final-${i}-${seg.step.step ?? i}`}>
+            <React.Fragment key={`final-${gi}-${seg.step.step ?? gi}`}>
               {reasoning && (
                 /* 2026-10-05 小欧: 终态回放(无 chunks, final 是唯一载体)的 reasoning 原走裸 div,
                    不经过 ThinkingStream → 「推理内容」开关与标题行在此形态下完全失效(同一开关
@@ -553,7 +579,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
             (seg.candidateCount ?? seg.action.tools?.length ?? 0);
           return (
             <ToolCallLine
-              key={`tool-${i}-${seg.action.step ?? i}`}
+              key={`tool-${gi}-${seg.action.step ?? gi}`}
               action={seg.action}
               observations={toolObs}
               interrupted={toolObs.length === 0 && allDenied}
@@ -579,7 +605,7 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
           if (toolStepSet.has(seg.step.step as number)) return null;
           return (
             <div
-              key={`obs-${i}-${seg.step.step ?? i}`}
+              key={`obs-${gi}-${seg.step.step ?? gi}`}
               style={{
                 color: Colors.SUCCESS,
                 fontSize: FontSize.TERTIARY,
@@ -594,13 +620,12 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
         }
         return (
           <StatusLine
-            key={`status-${i}-${seg.step.step ?? i}`}
+            key={`status-${gi}-${seg.step.step ?? gi}`}
             step={seg.step}
           />
         );
       })}
-      {/* 2026-10-28 小欧 - P2: 渐进式渲染哨兵——hasMore 时挂载, IntersectionObserver 观察其进入视口触发加载下一批 */}
-      {hasMore && <div ref={sentinelRef} style={{ height: 1 }} />}
+      {/* 2026-10-30 小欧 - 哨兵已移至列表开头(尾部窗口向上加载); 此处不再挂载末尾哨兵 */}
     </div>
   );
 };

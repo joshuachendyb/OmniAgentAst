@@ -7,6 +7,7 @@
 |------|------|------|---------|
 | v1.0 | 2026-10-28 03:20 | 小欧 | 新建：汇总 P2 前端懒渲染优化发现的问题（三堂会审 5 处 + 复核 2 处 + 注释核查 3 处，共 10 处），含根因分析与修复落点 |
 | v1.1 | 2026-10-28 03:30 | 小欧 | 补充第二章「优化策略与方案」（目标/总体策略/关键设计决策/数据流/hook 接口），章节编号顺延 |
+| v1.2 | 2026-10-30 18:00 | 小欧 | 追加第六章：完成链路尾部 response/final 段丢失的回归缺陷排查与根治（场景矩阵 10 项、case 改前 4 红 / 改后 10 绿、三堂会审、KISS 重设计）；原第六章结论顺延为第七章 |
 
 ---
 
@@ -205,7 +206,92 @@ const { visibleItems, sentinelRef, hasMore } = useLazyRender(
 
 ---
 
-## 六、结论
+## 六、v1.2 完成链路尾部丢失缺陷（全局复核与根治）
+
+> 本章为 v1.1 之后的新增缺陷闭环。**核实三遍**：①逐行读码（含数据源三选一、终态快照、REST 回填、自动滚底三处联动）；②hook 级 case；③组件级 case（真实 `PipelineRenderer`，91 段真实段结构）。
+
+### 6.1 现象
+
+北京老陈 2026-10-30 实测：任务**完成瞬间**，流水线里属于最终答复的正文段（尾部 `text` 段与 `final` 段）有时**不显示**，或要"过好一阵"才出现；任务越长命中率越高。
+
+### 6.2 场景矩阵（改前/改后）
+
+| # | 场景 | 应有行为 | 改前实测 | 改后实测 |
+|---|------|---------|---------|---------|
+| 1 | 流式中（打字机/等待图标） | 全量 | 全量 ✅ | 全量 ✅ |
+| 2 | final 当帧（streaming 翻 false + 追加 final） | 尾部答复可见 | 可见 ✅ | 可见 ✅ |
+| 3 | 终态快照 settledSteps（同内容新数组） | 尾部答复仍在 | **裁到 80，答复消失 ❌** | 仍在 ✅ |
+| 4 | REST historySteps 回填（同内容新数组） | 尾部答复仍在 | **再次裁到 80 ❌** | 仍在 ✅ |
+| 5 | 取消终态（无 final_stats，不拉 REST） | 答复 + 取消来源行 | **裁到 80 ❌** | 都在 ✅ |
+| 6 | 失败终态（error_type/error_message 行） | 答复 + 原因行 | **裁到 80 ❌** | 都在 ✅ |
+| 7 | 冷历史回放 >80 段 | 看末端、上翻再加载 | 从**头部**挂 80，自动滚底后逐批拉全 | 挂**末尾** 80，上翻再扩 ✅ |
+| 8 | 冷历史回放 ≤80 段 | 全量 | 全量 ✅ | 全量 ✅ |
+| 9 | 任务切换 | 窗口复位 | 复位（引用比对，碰巧正确） | 复位（`taskKey` 变更即复位，语义正确）✅ |
+| 10 | 同任务重物化（已上翻扩批到全量） | 窗口不回缩 | 引用比对 → **回缩到 80 ❌** | 不回缩 ✅ |
+
+### 6.3 根因链（改前代码）
+
+1. 分批判据 `useLazyRender(segs, !streaming)`：`streaming = isCurrentLive`，而 `computeIsCurrentLive` 含 `!hasFinal`（`viewState.ts:39-52`）→ **final 一到就进入分批模式**；
+2. 完成链路必然把同一任务的 steps **重物化两次**：`RightViewer.tsx:318-328` 终态快照 `setSettledSteps`、`:501-504` REST 回填 `setHistorySteps`（内容相同、**数组引用变新**）；
+3. `useLazyRender.ts:63-73` 把"引用变化"当"任务切换"：`itemsChanged → setVisibleCount(initialBatch=80)`；
+4. 尾部（第 81 段起，含 final 答复段）从 DOM 移除；恢复只能靠末尾哨兵 + `IntersectionObserver`；
+5. 而 `RightViewer.tsx:362-367` 的 `scrollToBottomNow()` 在 `userScrolledUpRef===true` 时**直接早退** → 用户（长任务里几乎必然）上翻过就**永久不补**；未上翻则被 RO 反复滚底+扩批，表现为"一截一截往回长"（即"过好一阵才显示"）。
+
+`wasEnabled && !enabled` 的"保持全量"保护只覆盖**翻牌那一帧**，挡不住紧随其后的两次重物化——这是原始设计（`useLazyRender.ts:59-62` 注释）与完成链路真实时序的错配。
+
+### 6.4 为什么算功能退化
+
+P2 的目标是"历史回放别一次性挂几千段"。但判据用了 `!streaming`，把"**刚完成的本任务**"也算成历史回放：这些段在流式期间**本来就已全量挂在 DOM 上**，完成后分批只会裁掉尾部——收益为零，代价是答复段消失。
+
+### 6.5 全局重设计（KISS，不做局部堵洞）
+
+四条不变式，替代原来的"引用比对猜意图"：
+
+| 不变式 | 内容 | 落地 |
+|--------|------|------|
+| I1 尾部零丢失 | 热任务（实时/刚完成/终态快照/REST 回填）任何时刻都全量渲染，答复段不可能被裁 | `lazy` 只由数据来源决定；`streaming` 恒全量 |
+| I2 分批只服务冷装载 | 分批判据 = "steps 来自 REST/DB 整表装载"，与流状态解耦 | `RightViewer` 新增 `displaySource` 单一真源，`lazy={displaySource==='history'}` |
+| I3 窗口状态属于任务，不属于数组 | 复位判据 = 任务身份 `resetKey`（`taskKey`），**删除**引用比对与 enabled 翻转两套重置；且**不用** React `key` 重挂载（会令 `useStepRenderPrefs` 重拉设置、`reasoningVisible/thoughtMarkdown` 闪回默认值） | `<PipelineRenderer taskKey={activeTaskId ?? 'none'}>` → hook 内渲染期比较复位 |
+| I4 窗口方向与"看末端"一致 | 右栏恒自动滚到内容末端，分批必须锚定**尾部**、向上加载 | 窗口 = 末尾 N 段；哨兵移到列表**开头** |
+
+10 大规范对照：SRP（hook 只做窗口调度）、KISS-DIRECT（三条比对判定整体消失，数据流直线：`displaySource → lazy → 尾部窗口`）、SLAP（IO 细节仍在 hook 内）、YAGNI（不上虚拟列表/反向虚拟化）、复用优先（沿用既有 hook）、**禁止 backward**（旧判据整体删除，不留开关）。
+
+### 6.6 改动落点
+
+| 文件 | 改动 |
+|------|------|
+| `useLazyRender.ts` | 改为尾部窗口（`startIndex = items.length - visibleCount`）；删除 `prevItemsRef/prevEnabledRef/wasEnabled` 全部引用比对；新增 `resetKey` 参数（渲染期比较、变更才复位到首批）；返回四件套 `visibleItems/sentinelRef/hasMore/startIndex` |
+| `PipelineRenderer.tsx` | 新增 `lazy` prop（分批只认冷历史）与 `taskKey` prop（窗口复位身份，缺省 `'default'` 恒不复位）；哨兵移至列表开头；段 key 与光标/推理图标判定改用**绝对段位** `gi = startIndex + i`（上翻扩批时既有段 key 不漂移、折叠态不丢） |
+| `RightViewer.tsx` | `displaySource` 单一真源（分支语义与改前逐字等价）；`lazy={displaySource==='history'}`；`taskKey={activeTaskId ?? 'none'}` 绑定任务（**不用** `key` 重挂载） |
+
+### 6.7 case 验证（改前红 / 改后绿）
+
+10 个组件级 case（真实 `PipelineRenderer`，90~201 段正文 + final；覆盖完成三帧、历史尾部窗口/上翻扩批、≤80 段全量、流式全量、取消/失败终态、`taskKey` 复位判据（同内容新数组不复位 / 换任务才复位）、热转冷同任务不裁切）：
+
+- 首轮 7 case：改前 **4 红 3 绿**（M1 完成链路、M2 历史尾部锚定、M5 取消/失败终态全红）→ 改后 **7 绿**；
+- 补 `taskKey` 复位判据后共 10 case：**10 绿**（新增 M6 两组、M7）；
+- 另以 hook 级双 case 复现裁切本质：`A 完成帧 201/201` → `B 快照/REST 后 80/201（hasMore=true）`；
+- 临时用例跑完即删（遵铁律：**不提交任何测试 case**），本文只留结论与断言语义。
+
+### 6.8 三堂会审（合规 / 合理 / 关联）
+
+- **合规**：无新增抽象、无兼容垫片；删除的旧逻辑不留开关；注释均带署名+日期，编辑历史追加于板块最下。
+- **合理**：窗口语义与"自动滚末端"统一；复位判据从"数组引用"改为"任务身份"，不存在"何时重置"的第三种猜测；完成链路所有分支（completed/failed/cancelled/重连恢复/切任务/会话切换）同一套不变式覆盖。
+- **关联（放弃 `key` 重挂载）**：改用 `key={activeTaskId}` 虽能复位窗口，但会重挂载 `PipelineRenderer` → `useStepRenderPrefs` 重新拉 `appearance` 设置 → 切任务瞬间 `reasoningVisible/thoughtMarkdown` 闪回默认值（关推理折叠、关 markdown）。改用 `taskKey` 保留组件实例，既复位窗口又不打断设置读取。
+- **关联**：`hasMore` 只在 `enabled && startIndex>0` 成立，流式/热任务恒 false（无哨兵、无 IO）；`toolStepSet`/`threshold` 等派生值仍基于全量 `segs`，分批不影响；`TextStream`/`ThinkingStream` 的末段光标在热任务 `startIndex=0` 下与改前逐字等价；`taskKey` 变化只影响窗口大小，不改渲染内容与滚动逻辑。
+
+### 6.9 验证与提交
+
+| 验证项 | 结果 |
+|--------|------|
+| `npm run check:full` | 0 errors（59 warnings 均为既有）；Prettier 全通过 ✅ |
+| 渲染链相关 18 个测试文件 | 全绿 ✅ |
+| 全量前端套件 | 1867/1870；3 处失败与本改动无依赖：`trust-panel` 单独跑通过（套件负载超时）、`refs-real R4` 与 `settings2 P0` 隔离仍红且均不 import 渲染链（属并行改动） |
+| 提交 | `fix:PipelineRenderer 尾部窗口+taskKey复位 根治完成瞬间答复段消失 - 小欧-2026-10-30` |
+
+---
+
+## 七、结论
 
 本次 P2 前端懒渲染优化累计发现 **10 处问题**，覆盖**架构违规（SRP/SLAP）**、**编码违规（KISS-DIRECT）**、**复用违规（复用优先）**、**时序缺陷（全局逻辑）**、**性能瓶颈**、**UX 回归**、**规范缺失（编辑历史/注释）** 七个维度。
 
@@ -214,3 +300,4 @@ const { visibleItems, sentinelRef, hasMore } = useLazyRender(
 ---
 
 > 编写/更新人：小欧 | 签名：SenseNova 6.8 Flash Lite | 时间：2026-10-28
+> 更新人（v1.2）：小欧 | 签名：DeepSeek V4.1 Flash Free | 时间：2026-10-30 18:00
