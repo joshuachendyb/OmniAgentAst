@@ -34,6 +34,12 @@
 # 2026-10-01 - 小欧 - 删任务级 _cancel_sent 标记: 它把 cancelled 终态去重从连接级提升为任务级, 令同一任务的
 #   后到连接(重连/新标签页恢复)永远收不到终态、界面停在"执行中"。去重改回只认本连接 execution_steps 列表 ——
 #   该列表每连接专属(首连/重连各传本连接对象), 天然只对本连接去重。compliance: KISS-DIRECT/YAGNI/SRP
+# 2026-10-30 - 小欧 - P1修复(暂停双路径超时口径一致, 北京老陈调查): 后台 wait_for_resume(timeout=None) 与前端
+#   task_pause_check_and_yield(timeout=300) 口径不一; 且 _pause_core 超时分支仅清 _was_paused 不清 paused 不 set 事件,
+#   300s 后后台路径仍无限等、前端路径醒来即空转, 任务真实卡在 SUSPENDED 永不结束。修复: ①常量
+#   _PAUSE_AUTO_RESUME_TIMEOUT(DRY 消魔数); ②wait_for_resume 默认改该常量(口径一致); ③超时分支改真恢复
+#   (复用 set_resumed: 清paused+置running+set事件, 双路径一同醒来继续), 暂停期间已取消则不自动恢复。
+#   compliance: KISS-DIRECT/DRY/SRP/禁止backward
 """
 task_runtime — 运行态任务管理（内存）
 
@@ -55,10 +61,14 @@ from app.services.task.task_state import (
 )
 from app.services.task.task_registry import (
     set_cancelled, pop_task_field,
-    set_was_paused, build_step_dict,
+    set_was_paused, set_resumed, build_step_dict,   # 2026-10-30 小欧 P1: 超时自动恢复复用 set_resumed(DRY)
 )
 
 from app.services.agent.status_table import set_status, AgentStatus
+
+# 暂停自动恢复超时(秒): 前端 SSE 消费路径(task_pause_check_and_yield)与后台 wait_for_resume 同口径 —
+# 暂停最多等该时长, 超时自动恢复继续(防任务永久卡 SUSPENDED 的状态漂移) — 小欧 2026-10-30
+_PAUSE_AUTO_RESUME_TIMEOUT = 300.0
 
 # ============================================================
 # 取消/暂停操作（从 task_cancel 迁入）
@@ -224,7 +234,16 @@ async def _pause_core(
             await pause_event.wait()
     except asyncio.TimeoutError:
         logger.warning(f"[task_pause_check] 任务{task_id}暂停超时({timeout}s),自动恢复")
-        await set_was_paused(task_id, False)
+        # 2026-10-30 小欧 P1: 超时=真恢复(复用 set_resumed, DRY): 清 paused+置 running+set 事件,
+        #   让后台 wait_for_resume 与前端消费路径一同醒来继续 —— 原实现仅清 _was_paused 不清 paused
+        #   不 set 事件, 后台路径仍无限等, 任务永久卡 SUSPENDED/乒乓。暂停期间已取消则不自动恢复
+        #   (取消终态由循环顶处理), 仅清 _was_paused。
+        if not await check_cancelled(task_id):
+            await set_resumed(task_id)
+            if emit_sse:
+                yield _emit_step_sse(_current_step(task_id), "resumed", '任务已恢复')
+        else:
+            await set_was_paused(task_id, False)
         return
     if await check_cancelled(task_id):
         return
@@ -239,9 +258,11 @@ async def _pause_core(
         yield _emit_step_sse(step_value, "resumed", '任务已恢复')
 
 
-async def wait_for_resume(task_id: str, timeout: Optional[float] = None) -> None:
+async def wait_for_resume(task_id: str, timeout: Optional[float] = _PAUSE_AUTO_RESUME_TIMEOUT) -> None:
     """仅阻塞等待暂停恢复(不产出SSE)。react_cycle 后台编排路径用 — 小欧 2026-08-09
-    SSE 上报统一由前端消费路径 task_pause_check 负责, 后台路径不再产出死路事件。"""
+    SSE 上报统一由前端消费路径 task_pause_check 负责, 后台路径不再产出死路事件。
+    2026-10-30 小欧 P1: 默认 timeout 与前端消费路径(task_pause_check_and_yield)同口径,
+    防"前端300s自动恢复、后台无限等"双路径状态漂移致任务永久卡死。"""
     async for _ in _pause_core(task_id, timeout, emit_sse=False):
         pass
 
@@ -259,5 +280,5 @@ async def task_pause_check(
 async def task_pause_check_and_yield(
     task_id: str,
 ) -> AsyncGenerator[str, None]:
-    async for event in task_pause_check(task_id, timeout=300):
+    async for event in task_pause_check(task_id, timeout=_PAUSE_AUTO_RESUME_TIMEOUT):  # 2026-10-30 小欧 P1: 常量 DRY(消魔数300)
         yield event

@@ -9,6 +9,8 @@
 //   STOP_RACE 回读权威终态 + clearCompleted 释放); callCancelApi 与 Options.functions.disconnect 整删
 //   (前者唯一调用点已迁, 后者为 useSSE 遗留死代码); 倒计时清理保留(本 hook 的 UI 计时器) — 小欧-2026-09-29 21:37:55
 // 编辑历史: 2026-09-30 14:30 小欧 - 删 hasReceivedCancelEventRef 入参与 deps（handleCancel 函数体零引用，useSSE 时代残留）
+// 编辑历史: 2026-10-30 小欧 - P2(体验, 纯展示层零后端改动): 暂停为轮边界挂起语义(本轮LLM完成后才真正挂起),
+//   showTaskResultMessage('pause') 提示补齐排队说明「当前步骤完成后生效」, 避免"已暂停但内容仍在流式输出"体感困惑 — 小欧-2026-10-30
 /**
  * useChatTaskControl Hook - 任务取消与暂停控制
  *
@@ -244,8 +246,10 @@ export const useChatTaskControl = (
         setIsPaused(true);
         isPausedRef.current = true;
 
+        // 2026-10-30 小欧 P2(体验, 纯展示层零后端改动): 暂停=轮边界挂起语义(本轮 LLM 完成后才真正挂起),
+        //   提示补齐排队说明, 避免"已暂停但内容仍在流式输出"的体感困惑 — 小欧-2026-10-30
         // 显示后端返回的具体消息
-        showTaskResultMessage('pause', result.message);
+        showTaskResultMessage('pause', `${result.message || '任务已暂停'}（当前步骤完成后生效）`);
       } else {
         // 继续：发送恢复请求
         const result = await taskControlApi.resume(

@@ -66,6 +66,10 @@
 #   复用锚点摘要(信号为 None)维持现状(summary+delta), 无摘要维持全量注入 — 小欧-2026-10-29
 # 2026-10-30 小欧 - 三堂会审收尾(北京老陈令): 摘要落库三态判定默认值 False→None, 与注入日志分支的
 #   `is True` 同口径——未设置态不等于"明确否", 两处对同一信号用两种默认值属自相矛盾 — 小欧-2026-10-30
+# 2026-10-30 小欧 - start阶段摘要压缩取消严重事故修复(北京老陈实测): 摘要LLM调用前/响应后检出取消仅跳过摘要
+#   继续装配不发终态帧, 任务卡"压缩进行中"无取消反馈。修复: _assemble_start_step 返回后立即检取消, 命中即
+#   产final+cancelled终态帧终止(不发start帧不进while); 循环顶取消终止收敛 _terminate_cancelled 统一收口(DRY)。
+#   compliance: KISS-DIRECT/DRY/SRP/禁止backward — 小欧-2026-10-30
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -99,6 +103,25 @@ def _finalize_cycle(agent):
     agent._on_after_loop()
     agent._step_emitter.complete_task(agent.status == AgentStatus.COMPLETED)
 
+
+async def _terminate_cancelled(agent, task_id, _publish) -> bool:
+    """取消终止统一收口(DRY) — 小欧 2026-10-30: 检测到取消→产 final+cancelled 终态帧→置 CANCELLED, 返回 True=已终止。
+    start 装配后与循环顶两处共用(KISS-DIRECT: 单一取消终止逻辑, 消除重复)。取消来源读 agent._cancel_source
+    (A/B 经 cancel_task 写回, 循环顶 D 被动继承), 文案按来源出, FinalStep 带 source 落库。"""
+    from app.services.task.task_runtime import check_cancelled, cancel_terminal_text  # 局部 import(防 task包冷启动 load-time 循环) — 小欧-2026-10-30
+    if not await check_cancelled(task_id):
+        return False
+    cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
+    log_and_print(f"{time.strftime('%H:%M:%S')} [run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled")  # 双写(console可见) — 小欧-2026-10-30
+    _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
+        # 首轮前取消(llm_call_count 尚未+1=0)时, step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号 — 小健 2026-08-17
+        step=agent.llm_call_count or 1,
+        response=cancel_terminal_text(cancel_source), outcome="cancelled",
+        cancel_source=cancel_source,
+    ))
+    await _publish(_fs[0].to_dict())
+    set_cancelled(agent)
+    return True
 
 
 async def run_react_cycle(
@@ -166,6 +189,16 @@ async def run_react_cycle(
     #   运行元数据由 orchestrator 注入 agent._start_meta(chat 层纯数据捕获), assemble_start_step 读齐装配。
     #   落库: start 作为首个事件 yield → agent_runner 事件流分配 ai_message_id 并 append_step。 — 小欧/小健 2026-08-17
     _start_step = await _assemble_start_step(agent, context)  # 构建→判定→摘要→契约
+
+    # 2026-10-30 小欧 严重事故修复(北京老陈实测): start 阶段摘要压缩 LLM 调用前/响应后检测到取消时,
+    #   旧实现仅跳过摘要继续装配(不发终态帧), 任务卡"压缩进行中"无任何取消反馈 —— 取消后必须立即终止。
+    #   _assemble_start_step 返回后立即查取消, 命中即产终态帧终止(不发 start 帧、不进 while, 走 _finalize_cycle),
+    #   覆盖增量(_assemble_anchor_delta)与全量(_compact_injected_history)两路摘要的"调用前/调用后取消"。
+    #   摘要 LLM 调用进行中的取消仍按"请求中不中断"既有语义(摘要自然结束, 响应后此处检出)。— 小欧-2026-10-30
+    if task_id:
+        if await _terminate_cancelled(agent, task_id, _publish):
+            _finalize_cycle(agent)
+            return
 
     # 装配 conv → 发 history_context 首帧 → 再发 start(压缩与未压缩都发首帧)
     # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 取自 agent._start_meta(orchestrator 透传),
@@ -252,21 +285,9 @@ async def run_react_cycle(
             # 注: 原 react_cycle 场景B 依赖 llm_client._cancelled, 该属性全局从未赋值(死代码),
             # 曾导致用户取消误走 empty_response→ErrorStep(failed)。 — 小沈 2026-07-13
             if task_id:
-                from app.services.task.task_runtime import check_cancelled, wait_for_resume
-                if await check_cancelled(task_id):
-                    # 2026-09-08 小欧 方案五 D路径: 来源读 agent._cancel_source(A/B 经 cancel_task 写回, D 被动继承),
-                    #   文案按来源出, FinalStep 带 source 落库 — 北京老陈 2026-09-08
-                    cancel_source = getattr(agent, "_cancel_source", None) or "user_requested"
-                    log_and_print(f"{time.strftime('%H:%M:%S')} [run_react_cycle] 检测到任务取消(task_id={task_id}, source={cancel_source}), 终止为 cancelled")  # 2026-09-08 小欧: 双写(console可见) — 小欧-2026-09-08
-                    _fs = agent._step_emitter.emit_final_with_stats(FinalStep(
-                        # 2026-08-17 - 小健 - 三堂会审-S4修复: 首轮前取消(llm_call_count 尚未+1=0)时,
-                        #   step=0 与 start(step=0)双 step0(与 S4"start占0,业务从1起"矛盾); or 1 接续唯一步号
-                        step=agent.llm_call_count or 1,
-                        response=cancel_terminal_text(cancel_source), outcome="cancelled",
-                        cancel_source=cancel_source,  # 方案五 D路径 source — 小欧 2026-09-08
-                    ))
-                    await _publish(_fs[0].to_dict())
-                    set_cancelled(agent)
+                from app.services.task.task_runtime import wait_for_resume
+                # 2026-10-30 小欧 DRY: 取消终止统一收敛 _terminate_cancelled(与 start 装配后同口径, 消除重复) — 小欧-2026-10-30
+                if await _terminate_cancelled(agent, task_id, _publish):
                     break
                 # 用户暂停检测(循环粒度, 阻塞等待恢复) — 小欧 2026-07-13
                 # 符合人类认知: 你喊暂停, 助手原地等(真BLOCK), 不空转、不误判为取消/完成。
