@@ -24,6 +24,19 @@
  *   行内编辑(增/删/改三态); 新增区两行(路径+属性AutoComplete+备注); 属性localStorage自定义值持久化。
  *   保留 store 架构(loadState/dirtyRef/loadSeqRef/notice/本地立即关闭+后台提交)。
  *   — 小欧-2026-10-30
+ * 编辑历史: 2026-10-30 23:49:48 小欧 - 三堂会审 B(定案A): 默认行(is_default)的路径改只读,
+ *   属性/备注仍可改、删除仍允许 —— 默认区路径由系统按项目根生成(PATCH 不带 is_default,
+ *   后端按 path 继承), UI 再提供"改默认路径"就是个改了也会被 reconcile 降级重建的空操作。
+ *   清空确认文案同步改为"下一条消息会重建默认工作区"(与 reconcile 实际行为一致)。
+ *   — 小欧-2026-10-30
+ * 编辑历史: 2026-10-31 00:06:17 小欧 - 顶部只读区两行标签去掉"只读"字样: 项目根/授权目录
+ *   是全局配置(workspace.project_root / workspace.allowed_dirs, 见设置→通用), 本弹窗只展示
+ *   不可改,"只读"会误导用户以为"这里就是不能改的属性"; 改标"在设置→通用中配置"指向真实入口。
+ *   — 小欧-2026-10-31
+ * 编辑历史: 2026-10-31 00:19:05 小欧 - 北京老陈令「默认工作区系统内不可删」: 默认行(is_default)
+ *   不渲染删除按钮 + remove() 防御兜底(默认行 no-op)。删除只能系统外(资源管理器)手动删目录,
+ *   下次建任务 reconcile 按 [54] 规则2 重建; 列表条目系统内部不提供删除。
+ *   — 小欧-2026-10-31
  */
 import {
   useCallback,
@@ -59,6 +72,13 @@ import { sessionApi } from '@/services/api/session.api';
 import { handleError } from '@/services/error/handler';
 import { workspaceStore } from '../../services/sessionWorkspaceStore';
 import type { UnusableEntry } from '@/types/chat';
+import {
+  DEFAULT_WS_PROP,
+  PROP_COLORS,
+  WS_PROP_PRESETS,
+  wsPropLabel as propLabel,
+  wsPropValue as propValue,
+} from '@/utils/wsProp';
 
 interface Props {
   sessionId: string;
@@ -77,39 +97,8 @@ type WsDraft = {
   is_default: boolean;
 };
 
-/** 属性三档预设：机器值 + 中文标签 */
-const WS_PROP_PRESETS = [
-  { value: 'read_only', label: '读取工作区' },
-  { value: 'read_write', label: '读写工作区' },
-  { value: 'write', label: '写工作区' },
-] as const;
-const DEFAULT_WS_PROP = 'read_write';
 const CUSTOM_PROPS_KEY = 'ws_custom_props';
 const MAX_CUSTOM_PROPS = 16;
-
-/** 属性 Tag 颜色：预设三档 + 自定义灰 */
-const PROP_COLORS: Record<string, string> = {
-  read_only: 'green',
-  read_write: 'blue',
-  write: 'orange',
-};
-
-/** 属性展示唯一源：机器值 → 中文标签；自定义原样；缺失 → 读写工作区 */
-function propLabel(raw?: string | null): string {
-  const v = (raw || '').trim();
-  if (!v) return '读写工作区';
-  const hit = WS_PROP_PRESETS.find((p) => p.value === v || p.label === v);
-  return hit ? hit.label : v;
-}
-
-/** 属性入库唯一源：缺失/空 → read_write；中文标签 → 机器值；自定义原样 */
-function propValue(raw?: string | null): string {
-  const v = (raw || '').trim();
-  if (!v) return DEFAULT_WS_PROP;
-  if (WS_PROP_PRESETS.some((p) => p.value === v)) return v;
-  const byLabel = WS_PROP_PRESETS.find((p) => p.label === v);
-  return byLabel ? byLabel.value : v;
-}
 
 /** 读自定义属性列表（localStorage，失败降级空数组） */
 function loadCustomProps(): string[] {
@@ -169,9 +158,14 @@ export default function SessionWorkspacePanel({
 
   /** AutoComplete options = 预设 + localStorage 自定义（去重），新增区/编辑区共享 */
   const propOptions = useMemo(() => {
-    const base = WS_PROP_PRESETS.map((p) => ({ value: p.value, label: p.label }));
+    const base = WS_PROP_PRESETS.map((p) => ({
+      value: p.value,
+      label: p.label,
+    }));
     const extra = loadCustomProps()
-      .filter((c) => !WS_PROP_PRESETS.some((p) => p.value === c || p.label === c))
+      .filter(
+        (c) => !WS_PROP_PRESETS.some((p) => p.value === c || p.label === c)
+      )
       .map((c) => ({ value: c, label: c }));
     return [...base, ...extra];
   }, []);
@@ -239,7 +233,10 @@ export default function SessionWorkspacePanel({
               ? { ...e, workspace_property: p, memo: m }
               : e
           )
-        : [...es, { path: v, workspace_property: p, memo: m, is_default: false }]
+        : [
+            ...es,
+            { path: v, workspace_property: p, memo: m, is_default: false },
+          ]
     );
     setInput('');
     setPropInput(DEFAULT_WS_PROP);
@@ -288,12 +285,16 @@ export default function SessionWorkspacePanel({
 
   /** 删除（删空二次确认，确认框在 updater 外） */
   const remove = (path: string) => {
+    /* 默认工作区系统内不可删：目录只能系统外手动删，下次任务 reconcile 重建。
+       此处防御兜底（UI 已不渲染默认行删除按钮）。 */
+    const target = entries.find((e) => e.path === path);
+    if (target?.is_default) return;
     const willEmpty = entries.length === 1 && entries[0].path === path;
     if (willEmpty) {
       Modal.confirm({
         title: '清空目录列表？',
         content:
-          '清空后本会话不再有使用目录，产物将退回项目根。磁盘目录不会被删除。',
+          '清空后本会话暂时没有使用目录，下一条消息会重新生成一个默认工作区。磁盘目录不会被删除。',
         okText: '清空',
         cancelText: '取消',
         onOk: () => {
@@ -356,7 +357,7 @@ export default function SessionWorkspacePanel({
               flexShrink: 0,
             }}
           >
-            项目根（只读）
+            项目根（在设置→通用中配置）
           </Typography.Text>
           <Typography.Text
             ellipsis={{ tooltip: projectRoot || '-' }}
@@ -375,7 +376,7 @@ export default function SessionWorkspacePanel({
               flexShrink: 0,
             }}
           >
-            授权目录（只读）
+            授权目录（在设置→通用中配置）
           </Typography.Text>
           <Typography.Text
             ellipsis={{ tooltip: allowedDirs.join('；') || '（未配置）' }}
@@ -425,7 +426,14 @@ export default function SessionWorkspacePanel({
               actions={
                 e
                   ? [
-                      <Tooltip key="edit" title="编辑该目录">
+                      <Tooltip
+                        key="edit"
+                        title={
+                          e.is_default
+                            ? '编辑属性/备注（默认工作区路径由系统生成）'
+                            : '编辑该目录'
+                        }
+                      >
                         <Button
                           type="text"
                           size="small"
@@ -433,25 +441,32 @@ export default function SessionWorkspacePanel({
                           onClick={() => startEdit(e)}
                         />
                       </Tooltip>,
-                      <Tooltip key="del" title="移除该目录">
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={() => remove(e.path)}
-                        />
-                      </Tooltip>,
+                      /* 默认工作区系统内不可删除：删目录只能去系统外（资源管理器）手动删，
+                         下次建任务 reconcile 会按 [54] 规则2 重建。列表条目不提供删除入口。 */
+                      ...(e.is_default
+                        ? []
+                        : [
+                            <Tooltip key="del" title="移除该目录">
+                              <Button
+                                type="text"
+                                size="small"
+                                danger
+                                icon={<DeleteOutlined />}
+                                onClick={() => remove(e.path)}
+                              />
+                            </Tooltip>,
+                          ]),
                     ]
                   : undefined
               }
             >
               {editing && e ? (
-                /* 编辑态：path + 属性 + memo 三字段全可改 */
+                /* 编辑态：path + 属性 + memo 三字段；默认行 path 只读（系统生成），属性/备注可改 */
                 <div style={{ width: '100%' }}>
                   <Input
                     value={editPath}
                     placeholder="目录路径"
+                    disabled={e.is_default}
                     status={editErr ? 'error' : undefined}
                     onChange={(ev) => {
                       setEditPath(ev.target.value);
@@ -459,8 +474,19 @@ export default function SessionWorkspacePanel({
                     }}
                     onPressEnter={saveEdit}
                   />
+                  {e.is_default && (
+                    <Typography.Text
+                      type="secondary"
+                      style={{ fontSize: FontSize.SECONDARY }}
+                    >
+                      默认工作区的路径由系统按项目根生成，不可修改；如需换落点请新增目录。
+                    </Typography.Text>
+                  )}
                   {editErr && (
-                    <Typography.Text type="danger" style={{ fontSize: FontSize.SECONDARY }}>
+                    <Typography.Text
+                      type="danger"
+                      style={{ fontSize: FontSize.SECONDARY }}
+                    >
                       {editErr}
                     </Typography.Text>
                   )}
@@ -499,7 +525,11 @@ export default function SessionWorkspacePanel({
                     {e.path}
                   </Typography.Text>
                   {e.is_default && <Tag color="gold">默认</Tag>}
-                  <Tag color={PROP_COLORS[propValue(e.workspace_property)] || 'default'}>
+                  <Tag
+                    color={
+                      PROP_COLORS[propValue(e.workspace_property)] || 'default'
+                    }
+                  >
                     {propLabel(e.workspace_property)}
                   </Tag>
                   {e.memo && (
@@ -525,7 +555,10 @@ export default function SessionWorkspacePanel({
                   </Typography.Text>
                   <Typography.Text
                     type="secondary"
-                    style={{ marginLeft: Spacing.XS, fontSize: FontSize.SECONDARY }}
+                    style={{
+                      marginLeft: Spacing.XS,
+                      fontSize: FontSize.SECONDARY,
+                    }}
                   >
                     {it.reason}
                   </Typography.Text>

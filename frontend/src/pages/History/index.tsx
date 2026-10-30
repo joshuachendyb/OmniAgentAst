@@ -83,6 +83,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 import { formatDate } from '@/utils/time'; // 2026-08-28 小欧 合并time模块: formatTime统一至utils/time.ts
+import { wsPropLabel } from '@/utils/wsProp'; // 2026-10-30 小欧 - [54]三堂会审F: 属性展示统一走共享单一真源
 
 // 配置dayjs
 dayjs.extend(relativeTime);
@@ -684,7 +685,7 @@ const HistoryPage: React.FC = () => {
                           const display = wsList.slice(0, 2);
                           const extra = wsList.length - display.length;
                           const tooltipText = wsList.map((w) =>
-                            `${w.path}${w.is_default ? ' (默认)' : ''} [${w.workspace_property || 'read_write'}]${w.memo ? ` ${w.memo}` : ''}`
+                            `${w.path}${w.is_default ? ' (默认)' : ''} [${wsPropLabel(w.workspace_property)}]${w.memo ? ` ${w.memo}` : ''}`
                           ).join('\n');
                           return (
                             <div

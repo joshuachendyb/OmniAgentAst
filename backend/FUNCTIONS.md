@@ -2,8 +2,8 @@
 
 **创建时间**: 2026-05-29 07:50:00
 **维护人**: 小沈
-**最后更新时间**: 2026-10-30 21:12:41
-**最近更新**: 2026-10-30 21:12:41 小欧 §3.8 `report_refs` 口径修正: `paths=` 路径与行区间一律完整不截断(删原 60 字符右截断, 避免同文件整份/片段截后变成同一串), 行长度只由 5 条上限+"另N条"控制
+**最后更新时间**: 2026-10-31 00:42:00
+**最近更新**: 2026-10-31 00:42:00 小欧 §3.6 `[54]` 三堂会审整改(修正): 撤 `_ws_apply` 首条兜底(B定案A)、改 `_backfill_ws_default` 为一次性迁移 `_backfill_ws_default_legacy`(门控防复活)、注入块文案定稿(纯路径无标注)
 
 ---
 
@@ -312,6 +312,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 
 > 落点说明(2026-10-10 小欧): ①判据接全局 `validate_path` 是会审关键修正。②**10轮会审20bug已修**(v5.5)：过滤收敛到 classify 单一真源（删 `load_effective_workspaces` 死函数、删 `(path,恒0)` 裸 tuple）；`is_dir()` 拒文件；上限前置；NULL 用 COALESCE；宽根 fail-closed；存值保大小写 + 库级 NOCASE；快照 build 去嵌套。（BUG-13"目录名前4位重名"系误报已撤回：验证场景系人为构造，真实概率可忽略，恢复 [:4] 原设计。）常量 `MAX_WORKSPACES=64` / `MAX_PATH_CHARS=240` 同文件定义。
 > 2026-10-28 小欧 - [54]全链路重构: 新增 `ws_prop_value`/`ws_prop_label`/`_normalize_ws_meta`（属性归一化唯一源）；全链路四元组化(prop/memo/is_default)；reconcile 重写为始终创建默认工作区(项目根感知+旧默认降级)。标注字段不参与安全判定。
+> 2026-10-30 小欧 - [54]三堂会审整改: ①`_ws_apply` 默认标志按 path 继承, 不做"首条顶上"兜底(定案A/B: 兜底会把用户目录误标为默认区, 破坏"删除后重建"); ②`_backfill_ws_default_legacy` 存量库一次性识别老默认目录并置 is_default=1(门控: 仅 is_default 列本次新加才跑, 防复活已删默认行); ③`_verify_ws_columns` 启动期 fail-loud 校验三标注列; ④新增常量 `MAX_WS_INJECT_CHARS=4096`(prompt注入块体积上限)。
 
 ### 3.7 LLM 调用层（`services/agent/llm_call.py`）(2026-10-20 新增 §, 小欧)
 
@@ -664,6 +665,8 @@ def my_parse_json(json_str):
 
 | version | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
+| v5.17 | 2026-10-30 23:20:00 | **§3.6 `[54]` 三堂会审整改**(小欧): ①`_ws_apply` 不变量兜底——旧默认行被编辑/删除时默认标志继承给新列表首条(维持"默认工作区始终存在"系统不变量, 防 PATCH 后零默认行→下次建任务新建时间戳目录); ②`_backfill_ws_default` 存量库一次性回填——无 is_default=1 行的会话把最后一条置 1(防 342 个老会话下次建任务各建一个垃圾目录); ③`_verify_ws_columns` 启动期 fail-loud 复核三标注列(仿 `_verify_acc_columns` 先例, 防 `_ensure_column` 隐性失败致运行期 SELECT 隐性 OperationalError); ④新增常量 `MAX_WS_INJECT_CHARS=4096`——prompt 注入块总字符上限(防 64 目录×500 字符≈30KB 撑爆, 超限只保留前若干行+省略提示) | 小欧 |
+| v5.18 | 2026-10-31 00:42:00 | **§3.6 `[54]` 三堂会审整改(修正)**(小欧): ①撤 `_ws_apply` "首条顶上"兜底(B定案A): 默认标志只按 path 继承, 默认行被删/改名时不继承, 交 reconcile 按规则2重建; ②`_backfill_ws_default` 改名 `_backfill_ws_default_legacy`, 改造为"存量库一次性识别老默认目录并置 is_default=1"(正则匹配路径中内嵌会话ID前4位, 门控: 仅 is_default 列本次新加才跑, 防复活已删默认行破坏规则2); ③`_append_ws_suffix` 注入块文案定稿: 删属性/memo/默认标注, 目录行纯路径, 首行"本次任务新增会话工作目录", 尾行统一"会话工作目录" | 小欧 |
 | v5.16 | 2026-10-30 21:12:41 | **§3.8 `report_refs` 口径修正：`paths=` 不截断**(小欧, 北京老陈令): 删 `_paths_text` 的 60 字符右截断与常量 `REF_LOG_PATH_MAX_CHARS` —— 右截断会连 `:start-end` 与文件名一起切掉, 同一文件的"整份"与"行片段"在汇总行变成完全相同的字符串, 定位信息丢失; 现给完整路径, 行长度只由 5 条上限 + "另N条"计数控制 | 小欧 |
 | v5.15 | 2026-10-30 20:21:41 | **§3.5 新登记 `estimate_tokens` + 新增 §3.8 引用处置观测**(小欧): ①`services/agent/token_estimate.py` 成为 chars→token 唯一实现, 收口 `compaction.prune._released_tokens` 与 `refs.budget._tokens_of` 两份同款单行(DRY, 5 处调用点改公共函数); ②§3.8 登记 `summarize_refs`/`refs_counts_text`/`report_refs`/`build_refs_ready_notice`/`create_refs_ready_event`——引用进 loop 前 1 行汇总日志(log_and_print)+≤5 行明细+SSE `notice(kind=refs_ready)` 三通道共用同一份数字, 引用正文永不落日志 | 小欧 |
 | v5.14 | 2026-10-26 12:27:19 | **§1.10 新登记 `get_output_dir` + §4.2 新登记 `save_text_to_file`**(小沈): ①`get_output_dir()`(project_root/output) 从 generate_chart._get_output_dir 抽取至 path_utils.py 公用, download/generate_chart 默认输出统一 output/; ②`save_text_to_file` 从 fetch_webpage._save_to_file 抽取至 toolhelper/tool_utils.py, 调 write 工具走完整安全链路; ③DRY: download_file._stream_download 合并至 HTTPClient.download(SDK 增强版) | 小沈 |

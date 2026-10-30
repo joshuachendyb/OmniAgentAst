@@ -88,6 +88,9 @@
 
 # 2026-10-30 小欧 - [54]全链路重构: chat_session_workspaces 增 workspace_property/memo/is_default 三列
 #   (CREATE TABLE + COLLATE 迁移块同步, 再 _ensure_column 幂等补存量库; 三者均为标注类字段, 不参与安全判定) — 小欧-2026-10-30
+# 2026-10-31 小欧 - 北京老陈令"旧数据需要处理": 存量库一次性识别老默认目录并置 is_default=1
+#   (目录名 <YYYYMMDD-HHMMSS>-<会话ID前4位> 内嵌会话ID前4位, 精确识别不依赖 project_root;
+#   _ensure_column 改返回"列是否新加"作一次性门控, 防每次启动复活已删默认行破坏规则2) — 小欧-2026-10-31
 
 """
 db_initializer — 数据库初始化
@@ -97,6 +100,7 @@ db_initializer — 数据库初始化
 """
 import sqlite3
 import json as _json
+import re
 from app.logger import logger
 
 
@@ -267,9 +271,18 @@ def init_chat_db(get_conn):
         #   幂等补列, 老库安全。三者均为标注类字段, 不参与安全判定。
         _ensure_column(conn, "chat_session_workspaces", "workspace_property", "TEXT DEFAULT 'read_write'")
         _ensure_column(conn, "chat_session_workspaces", "memo", "TEXT DEFAULT NULL")
-        _ensure_column(conn, "chat_session_workspaces", "is_default", "INTEGER DEFAULT 0")
-
-
+        _ws_is_default_added = _ensure_column(conn, "chat_session_workspaces", "is_default", "INTEGER DEFAULT 0")
+        # 2026-10-30 小欧 - 三标注列必须真实落库(仿 _verify_acc_columns, fail-loud);
+        #   缺失显式抛出, 防 _ensure_column 隐性失败致运行期 SELECT/UPDATE 报错。
+        _verify_ws_columns(conn)
+        # 2026-10-31 小欧 - 存量库一次性识别老默认目录并置 is_default=1(北京老陈指令:
+        #   "旧数据需要处理"——老系统每会话自动建一个 <root>\<YYYYMMDD-HHMMSS>-<会话ID前4位>
+        #   默认目录, 目录名内嵌会话ID前4位, 据此精确识别, 不依赖 project_root)。
+        #   仅当 is_default 列**本次新加**才跑(一次性): 若每次启动都跑, 用户删掉默认行后
+        #   下次重启会把老默认目录复活成默认, 永久破坏 [54] 规则2「删除后可重建」。
+        #   未识别到(纯用户目录/老目录已删)保持 0, 交首次 reconcile 按规则2 补建。
+        if _ws_is_default_added:
+            _backfill_ws_default_legacy(conn)
         _ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
         _ensure_column(conn, "chat_sessions", "is_deleted", "BOOLEAN DEFAULT FALSE")
         _ensure_column(conn, "chat_sessions", "is_valid", "BOOLEAN DEFAULT FALSE")
@@ -618,16 +631,18 @@ def init_task_tracker_db(get_conn):
         conn.execute("DROP TABLE IF EXISTS chat_messages")
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str):
-    """确保字段存在(添加异常处理,失败不中断init)"""
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, col_type: str) -> bool:
+    """确保字段存在(添加异常处理,失败不中断init)。返回 True=本次新加(可做一次性迁移门控) — 小欧 2026-10-31"""
     try:
         rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
         col_names = {row["name"].lower() for row in rows}
         if column.lower() not in col_names:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
             logger.info(f"Added column {column} to table {table}")
+            return True
     except Exception as e:
         logger.warning(f"Ensure column failed [{table}.{column}]: {e}")
+    return False
 
 
 def _verify_acc_columns(conn: sqlite3.Connection) -> None:
@@ -673,6 +688,57 @@ def _verify_model_ref_columns(conn: sqlite3.Connection) -> None:
         _rows = conn.execute(f"PRAGMA table_info({_t})").fetchall()
         if _c.lower() not in {r["name"].lower() for r in _rows}:
             raise RuntimeError(f"model 归一列缺失(迁移失败): {_t}.{_c}")
+
+
+def _verify_ws_columns(conn: sqlite3.Connection) -> None:
+    """复核会话工作区三标注列确已落库(仿 _verify_acc_columns 先例 fail-loud) — 小欧 2026-10-30"""
+    _checks = [("workspace_property",), ("memo",), ("is_default",)]
+    _rows = conn.execute("PRAGMA table_info(chat_session_workspaces)").fetchall()
+    _names = {r["name"].lower() for r in _rows}
+    for (_c,) in _checks:
+        if _c not in _names:
+            raise RuntimeError(f"会话工作区标注列缺失(迁移失败): chat_session_workspaces.{_c}")
+
+
+def _backfill_ws_default_legacy(conn: sqlite3.Connection) -> None:
+    """存量库一次性识别老默认目录并置 is_default=1(仅在 is_default 列本次新加时调用) — 小欧 2026-10-31
+
+    背景(北京老陈指令"旧数据需要处理"): 老系统每个会话自动建一个默认目录
+    <项目根>\\<YYYYMMDD-HHMMSS>-<会话ID前4位>, 目录名**内嵌会话ID前4位**,
+    据此精确识别老默认行, 不依赖 project_root(迁移期配置未必就绪)。
+    实测 342 会话: 333 个恰命中 1 条, 0 冲突; 唯一多行会话的默认目录也精确命中,
+    用户目录(如 F:\\OmniAgentAs-01)不受影响。
+    未命中(纯用户目录 / 老目录已被系统外删除)保持 0, 交首次 reconcile 按 [54] 规则2 补建。
+    同会话命中多条(理论上仅同名前缀巧合)取最小 id(最早创建)。
+    幂等/一次性由调用方"列刚加"门控保证: 不在此重复判断, 防用户删默认行后重启复活。
+    """
+    try:
+        _rows = conn.execute(
+            "SELECT id, session_id, path FROM chat_session_workspaces ORDER BY session_id, id"
+        ).fetchall()
+    except Exception as _e:
+        logger.warning(f"[ws迁移] 读取存量工作区失败(跳过默认识别): {_e}")
+        return
+    _pat = re.compile(r"[\\/](\d{8})-(\d{6})-([0-9a-fA-F]{4})$")
+    _by_session: dict[str, list] = {}
+    for _r in _rows:
+        _by_session.setdefault(_r["session_id"], []).append(_r)
+    _n = 0
+    for _sid, _rs in _by_session.items():
+        _hits = [
+            _r for _r in _rs
+            if (_m := _pat.search(_r["path"]))
+            and _m.group(3).casefold() == _sid[:4].casefold()
+        ]
+        if not _hits:
+            continue
+        _pick = min(_hits, key=lambda _r: _r["id"])
+        _upd = conn.execute(
+            "UPDATE chat_session_workspaces SET is_default = 1 WHERE id = ? AND is_default = 0",
+            (_pick["id"],))
+        _n += _upd.rowcount
+    if _n:
+        logger.info(f"[ws迁移] 存量老默认目录已识别置默认: {_n} 行")
 
 
 def _migrate_model_ref_columns(conn: sqlite3.Connection) -> None:

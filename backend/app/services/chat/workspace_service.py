@@ -6,6 +6,10 @@
 # 2026-10-28 小欧 - [54]全链路重构: workspace_property/memo/is_default 三标注字段。
 #   常量+归一化唯一源; get/select/apply/set/classify/load/reconcile 全链路四元组化;
 #   reconcile 始终创建默认工作区(项目根感知+旧默认降级)。标注字段不参与安全判定。
+# 2026-10-30 小欧 - 三堂会审 B(定案A): _ws_apply 撤回"未命中默认行→首条兜底"。
+#   默认标志只按 path 继承; 默认行被删/被改名 → 不继承, 交 reconcile 按 [54] 规则2
+#   重建。兜底会把用户目录误标为默认区, 并让"删除后重建"永远不触发。默认区的路径
+#   由系统按项目根生成, 面板已禁止改默认行路径, 故 path 继承即完备。
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -40,6 +44,7 @@ WS_PROP_LABELS = {
 }
 DEFAULT_WS_PROP = WS_PROP_READ_WRITE           # 兜底：缺失一律回落 read_write
 DEFAULT_MEMO = "本事项工作区默认读写区域"       # 默认目录专用备注（UI/界面口径：事项工作区）
+MAX_WS_INJECT_CHARS = 4096                     # prompt 注入块总字符上限(防 64 目录×500字符撑爆)
 
 
 def ws_prop_value(raw) -> str:
@@ -167,7 +172,13 @@ def _ws_apply(conn, session_id: str, entries: list[tuple[str, str, Optional[str]
 
     ⚠ is_default 由系统维护，前端 PATCH 无权携带：写库前先读旧默认行，
     覆盖时按 path（大小写不敏感）原样继承。否则用户每点一次「确定」都会把
-    默认标志抹成 0，下次建任务再建一个新时间戳目录，历史产物被拆散。"""
+    默认标志抹成 0，下次建任务再建一个新时间戳目录，历史产物被拆散。
+
+    默认行被删除或被改名时，旧 path 不在新列表 → 不继承，该会话本轮零默认行；
+    下次建任务 reconcile 按 [54] 规则2 重建默认区。这里**不做**"把首条顶上"的
+    兜底：默认区是系统按项目根创建的隔离区，把用户目录标成 default 会让
+    reconcile 误判"默认已存在"，反而废掉"删除后重建"。默认行路径在面板已锁定，
+    "改名"只剩程序调用方一种来源，重建即正确语义。"""
     _old_defaults = {
         r["path"].casefold()
         for r in conn.execute(

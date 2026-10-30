@@ -238,6 +238,11 @@
 # 2026-10-30 小欧 - [54]全链路重构: _load_ws_snapshot 解包四元组(path, prop, memo, is_default);
 #   _append_ws_suffix 拼标注(属性Tag+memo+默认标注+写工作区尾句), 首行明确"引导参考不改变可写性判定"。 — 小欧-2026-10-30
 
+# 2026-10-31 小欧 - 注入块文案定稿(用户确认): 删属性/memo/默认标注, 目录行纯路径;
+#   首行改为"本次任务新增会话工作目录", 尾行统一"会话工作目录"与标签语义一致;
+#   docstring 同步精简, 移除 ws_prop_label/WS_PROP_WRITE import。 — 小欧-2026-10-31
+
+
 
 """
 stream_orchestrator — 聊天流编排器(services 层)
@@ -431,36 +436,36 @@ async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot
 def _append_ws_suffix(user_input: str) -> str:
     """拼 user 尾注入块（非空才拼）。单层标签：<会话工作目录>。
 
-    目录行升级为 `path  [属性标签]  memo`。
-    属性是**文字标签**，不是权限声明 —— 首行文案明确写"引导"，避免 LLM 把
-    [读取工作区] 误当成"不可写"的硬约束（本系统无只读区域设置，
-    可写性一律由安全矩阵裁决）。
-    is_default=1 的默认工作区行追加 `(默认工作区)` 标注，
-    让 LLM 明确"这是本会话自动创建的隔离区，临时/中间文件优先落这里"。"""
+    目录行纯路径，无属性/memo/默认标注——避免干扰 LLM 对安全矩阵的认知。
+    首行"本次任务新增会话工作目录"描述本次任务落盘区域，尾行统一"会话工作目录"
+    与标签语义一致。
+
+    体积上限(2026-10-30 三堂会审 E 修复): MAX_WORKSPACES=64 × path 240
+    最坏约 16KB/轮, 超限只保留前若干行 + 末尾省略提示, 不静默丢信息。"""
     snap = get_ws_snapshot()
     if not snap or not snap.all_paths:
         return user_input                    # 空/无快照不追加，不污染 prompt
 
-    from app.services.chat.workspace_service import ws_prop_label, WS_PROP_WRITE
+    from app.services.chat.workspace_service import MAX_WS_INJECT_CHARS
     _lines = []
     for e in sorted(snap.entries, key=lambda x: x.path):
-        _line = f"  - {e.path}    [{ws_prop_label(e.workspace_property)}]"
-        if e.memo:
-            _line += f"  {e.memo}"
-        if e.is_default:
-            _line += "  (默认工作区)"
-        _lines.append(_line)
-    lines = "\n".join(_lines)
-
-    _has_write = any(e.workspace_property == WS_PROP_WRITE for e in snap.entries)
-    _tail = ("要求你临时/中间文件优先写入[写工作区]目录."
-             if _has_write else
-             "要求你临时/中间文件优先写入事项工作区.")
+        _lines.append(f"  - {e.path}")
+    # 体积上限: 逐行累计, 超限截断 + 省略提示(保留"至少一条"的完整性)
+    _kept, _total, _skipped = [], 0, 0
+    for _l in _lines:
+        if _total + len(_l) > MAX_WS_INJECT_CHARS and _kept:
+            _skipped += 1
+            continue
+        _kept.append(_l)
+        _total += len(_l)
+    if _skipped:
+        _kept.append(f"  ...(其余 {_skipped} 条省略)")
+    lines = "\n".join(_kept)
 
     return (
         f"{user_input}\n\n<会话工作目录>\n"
-        f"本次任务事项工作区及属性标注（引导参考，不改变可写性判定）：\n{lines}\n"
-        f"{_tail}\n"
+        f"本次任务新增会话工作目录：\n{lines}\n"
+        f"要求你临时/中间文件优先写入会话工作目录.\n"
         "</会话工作目录>\n"
     )
 
