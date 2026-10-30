@@ -21,6 +21,7 @@
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.7: 新增 ErrorType.WORKSPACE_REJECTED + ERROR_CONFIG_MAP 条目(severity=warning)
 //   + classifyError 显式提取分支(422 信封体里无 error_type，自映射走不到，须按 error.workspace_rejected 特征识别)
 // 编辑历史: 2026-10-21 小杨 - 新增 ErrorType.FILE_READ（文件/引用正文读取失败）+ 错误配置表对应条目 — 小杨-2026-10-21
+// 编辑历史: 2026-10-30 小欧 - 文档[58] P0/P1: RequestDiagnostics 诊断上下文与 handleApiError 的 message/diag 透传，补 URL/耗时/请求ID 日志
 /**
  * 统一错误处理中心：分类、提示风格、重试、错误去重。
  *
@@ -835,14 +836,28 @@ const sanitizeDisplayMessage = (raw: unknown): string | undefined => {
   return raw;
 };
 
+// 2026-10-30 小欧 - 文档[58] P0: 诊断上下文接口(供 client.ts describeRequest 返回)
+/**
+ * 一次失败请求的可诊断上下文 — 小欧 2026-10-30
+ * 为什么需要: 原 [Toast] 日志只有「类型: 文案」, 出事无法回答
+ *   "哪个接口、等了多久、请求有没有到后端"; 补上 URL/耗时/请求ID 才能与后端 [slow] 日志对账。
+ */
+export interface RequestDiagnostics {
+  url?: string;
+  elapsedMs?: number;
+  requestId?: string;
+}
+
 /**
  * 统一显示错误/警告/成功提示
  * @param errorType 错误类型
  * @param customMessage 可选的自定义消息
+ * @param diag 可选诊断上下文(URL/耗时/请求ID), 只进 console
  */
 export function showMessage(
   errorType: ErrorType,
-  customMessage?: string
+  customMessage?: string,
+  diag?: RequestDiagnostics
 ): void {
   const config = getErrorConfig(errorType);
 
@@ -860,7 +875,11 @@ export function showMessage(
   }
 
   // 2026-09-08 小欧 实证打点: 每次 toast 上弹前打印 errorType 与最终文案, 「xx 60000」再次出现时据此反查来源 — 小欧-2026-09-08
-  console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}`);
+  // 2026-10-30 小欧 - 文档[58] P0: 补 URL/耗时/请求ID, 与后端 [slow] 日志对账
+  const _diagTxt = diag
+    ? ` | ${diag.url ?? '-'} ${diag.elapsedMs ?? '-'}ms req=${diag.requestId ?? '-'}`
+    : '';
+  console.info(`[Toast] ${errorType}: ${displayMessage ?? ''}${_diagTxt}`);
 
   // 2026-08-27 小欧 修复: 空文案(如RETRY_WARNING)不弹空toast
   if (!displayMessage) {
@@ -1204,6 +1223,10 @@ export function handleApiError(
   options?: {
     onRetry?: () => void;
     showError?: boolean;
+    /** 覆盖上屏文案(超时探活后按探测结果选一句, 见 6.6 文案表) — 小欧 2026-10-30 */
+    message?: string;
+    /** 可诊断上下文, 只进 console — 小欧 2026-10-30 */
+    diag?: RequestDiagnostics;
   }
 ): ActionResult {
   if (isSilentError(error)) {
@@ -1219,7 +1242,13 @@ export function handleApiError(
   if (options?.showError !== false) {
     ErrorHandlerSelf.showMessage(
       errorType,
-      typeof rawMsg === 'string' ? rawMsg : undefined
+      // 显式覆盖 > 后端原文 > 不传(回退该类型的固定文案)
+      typeof options?.message === 'string'
+        ? options.message
+        : typeof rawMsg === 'string'
+          ? rawMsg
+          : undefined,
+      options?.diag
     );
   }
 
