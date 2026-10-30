@@ -58,6 +58,8 @@
 #   探活+状态刷新高频轮询 access log 不再上屏落盘(零排障价值); dev/exe 两模式生效。 — 小欧-2026-10-29
 import sys
 import asyncio
+import time
+import uuid
 from typing import Optional
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -160,6 +162,31 @@ app.add_middleware(
   # 2026-10-21 小杨 - 文件页大 JSON 降量（方案第 ① 步）：
   #   GZipMiddleware 对大响应（树 3.4MB→~0.4MB）压缩 ~10 倍，浏览器自动解压，零协议改动。
 app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=1)
+
+# 2026-10-30 小欧 - 文档[58] P0: 请求耗时埋点 + X-Request-Id 前后端对账
+#   为什么: 前端 60s 超时提示原无法归因 —— 后端只记 4xx/5xx, 成功的慢请求(如 12s 的
+#   /files/tree)零痕迹, 出事只能靠猜。本中间件给每个响应回 X-Request-Id, 且只对 >3s
+#   的请求落一条 [slow] 日志(不刷屏)。
+#   已知限制: call_next 返回后才写响应头, 挂到前端超时的请求收不到该头 —— req= 只对
+#   4xx/5xx 与成功请求可用, 超时场景靠 URL+耗时+时间窗对账(见文档[58] §6.4 已知限制)。
+#   为什么挂最外层: 只有包住 CORS/GZip 才量得到客户端真实等待时间(含压缩耗时)。
+_SLOW_REQUEST_SECONDS = 3.0
+_REQUEST_ID_LEN = 12
+
+
+@app.middleware("http")
+async def request_timing_middleware(request: Request, call_next):
+    rid = uuid.uuid4().hex[:_REQUEST_ID_LEN]
+    _t0 = time.perf_counter()
+    response = await call_next(request)
+    _elapsed = time.perf_counter() - _t0
+    response.headers["X-Request-Id"] = rid
+    if _elapsed >= _SLOW_REQUEST_SECONDS:
+        logger.warning(
+            f"[slow] {request.method} {request.url.path} {response.status_code} "
+            f"{_elapsed:.1f}s req={rid}"
+        )
+    return response
 
 setup_monitoring(app)
 
