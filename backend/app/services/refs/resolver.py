@@ -11,6 +11,10 @@
 #   ③A13 同 path 去重提前到读取前, 整份+区间并存时区间不再白读; ④A14 删区间分支无效 size 回写 — 小欧-2026-10-30
 # 2026-10-30 小欧 批3收尾: 字符级头尾摘录迁 services/refs/clip.clip_text(与预算压缩共用,
 #   杜绝两处口径分叉) — 小欧-2026-10-30
+# 2026-10-30 小欧 批3: resolve_refs 放行条目统一追加(原实现 elif/else 两条分支各写一次 resolved.append,
+#   同一语句两处, 收口为循环尾单点) — 小欧-2026-10-30
+# 2026-10-30 小欧 B1: 区间分支出口补 clip_text + truncated 回执 —— 原实现直接返回, 长区间
+#   绕过单条上限(4.6.2)且回执为空 — 小欧-2026-10-30
 
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
@@ -119,9 +123,18 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
             # 2026-10-29 小欧 - range_clipped 回执(F2): 请求区间超出文件尾时如实告知,
             #   不再静默(4.6.1 注); 未越尾则 note 空 → resolve_refs 走放行分支。
             #   2026-10-30 小欧 A14: 删 `"size": ref.get("size")` —— 与 {**ref} 重复, 空操作。
+            # 2026-10-30 小欧 B1: 区间分支原样返回, 完全绕过单条上限(4.6.2) —— 一条长区间
+            #   (实测 56,000 tok > 单条 42,428) 直入 prompt 且回执为空。与整份分支同走
+            #   clip_text 复核: 超限则头尾摘录 + truncated 回执; 区间越尾同时给出说明。
+            content, _omitted_chars = clip_text(content, limits.read_max_bytes)
+            truncated = bool(_omitted_chars)
+            if truncated:
+                note = f"已省略 {_omitted_chars} 字符" + ("；区间超出文件尾" if clipped else "")
+            else:
+                note = "range_clipped" if clipped else ""
             return ResolvedRef(ref={**ref, "content": content},
-                               truncated=False,
-                               note="range_clipped" if clipped else "")
+                               truncated=truncated,
+                               note=note)
         # 无区间: 先整份直读(_read_truncated, ≤2MB, 零全扫)
         reader = browse.read_external_file if is_ext else browse.read_text_file
         r = await asyncio.to_thread(reader, path)
