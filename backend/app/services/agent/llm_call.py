@@ -286,6 +286,10 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
     _retries = get_config().get("tuning.llm.response_retries", _D_RETRIES)
 
     for attempt in range(_retries):
+        # 2026-10-30 小欧: 重试循环顶查取消——已取消不再发请求/重试, 产 cancelled error 由 handle_answer 转终态
+        if getattr(agent.llm_client, '_cancelled', False):
+            yield _yield_error_response("LLM调用因用户取消而中断", agent, exc_type="cancelled")
+            return
         try:
             async for item in call_llm_stream(agent, messages, openai_tools):
                 # 流式error响应(type:"error")会绕过L2重试直抵set_failed使agent失败;此处转LLMResponseError交给上层重试 — 小欧 2026-07-15
@@ -328,7 +332,15 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                             f"[{type(e).__name__}]",  # 2026-10-29 小欧: L2 文案统一 _format_retry_payload + 类名末尾(与 L1 一致, 原为"错误: [类名] msg"类名在前)
                 "wait_time": wait_time,
             })
-            await asyncio.sleep(wait_time)
+            # 2026-10-30 小欧: L2重试退避改为可被 cancel 唤醒(原 asyncio.sleep 不响应 cancel, 取消后要等 sleep 完成);
+            #   唤醒后查 _cancelled, 已取消则短路产 cancelled error 由 handle_answer 转终态, 不继续重试/降级
+            try:
+                await asyncio.wait_for(agent.llm_client._cancel_signal().wait(), timeout=wait_time)
+            except asyncio.TimeoutError:
+                pass  # 退避时长到了, 继续重试
+            if getattr(agent.llm_client, '_cancelled', False):
+                yield _yield_error_response("LLM调用因用户取消而中断", agent, exc_type="cancelled")
+                return
             continue
 
     if get_config().get("tuning.llm.response_fallback", _D_FALLBACK):
@@ -349,7 +361,9 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
                 _stopped = False
             if _stopped:
                 logger.info("[FC降级] 任务已取消, 短路取消收尾(不再发降级请求)")
-                yield create_cancelled_chunk(_resolve_chunk_model(agent))
+                # 2026-10-30 小欧: 改 _yield_error_response(而非 create_cancelled_chunk)——后者 stream_error 无 payload,
+                #   react_step 当空 chunk → llm_response 为 None → set_failed 覆盖 cancelled, 不产 cancelled final step
+                yield _yield_error_response("LLM调用因用户取消而中断", agent, exc_type="cancelled")
                 return
         # 小欧 2026-09-02: FC降级事件透传发前端（用户需知"FC失败已降级Text"）
         yield create_payload_chunk(_resolve_chunk_model(agent), {
@@ -357,6 +371,11 @@ async def call_llm_with_fallback(agent, messages, openai_tools):
             "content": f"FC模式{_retries}次重试均失败，降级到Text模式重试",
             "wait_time": None,
         })
+        # 2026-10-30 小欧: FC降级 LLM 调用前查取消, 已取消则短路产 cancelled error 由 handle_answer 转终态,
+        #   防 FC 降级 LLM 调用不响应 cancel 要等响应自然结束(可能几分钟)
+        if getattr(agent.llm_client, '_cancelled', False):
+            yield _yield_error_response("LLM调用因用户取消而中断", agent, exc_type="cancelled")
+            return
         try:
             async for item in call_llm_stream(agent, messages, openai_tools=None):
                 yield item
