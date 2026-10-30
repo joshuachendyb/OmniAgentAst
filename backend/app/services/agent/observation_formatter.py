@@ -31,6 +31,9 @@
 #   read_docx 的 hint 去「共 N 行」防统计段双出(单通道)
 # 2026-10-14 - 小欧 - _format_searchtool_results: 每项渲染为"工具名: 能力描述", 不带分类(分类对LLM无意义);
 #   搜到几个组织几个(≤TOOL_SEARCH_INER_RESULTS_TOP)。data.matches 仍保留 category, 注入链路依赖它。
+# 2026-10-30 - 小欧 - _format_read_result 补 truncated_by_tool 入参(#2 raw str handler 透传 data["truncated"]):
+#   工具层截断(READ_OUTLIMIT_CHARS / 5MiB 读入闸门)此前只在正文尾部留标记, 截断后剩余行数 < OBS_READ_MAX_ROWS 时
+#   页脚仍打 "✓ 无截断-完整", 与正文标记矛盾(内容看起来完整) —— 页脚判定纳入工具层截断。
 """
 observation_formatter — 工具结果格式化为LLM observation文本
 
@@ -272,7 +275,7 @@ def format_data_detail(data: Any, llm_data: dict = None) -> str:
             if _tool == "fetchpage":
                 return _format_fetchpage_result(data["content"], llm_data)
             if _tool == "read":
-                return _format_read_result(data["content"], llm_data)
+                return _format_read_result(data["content"], llm_data, bool(data.get("truncated")))
             content = data["content"]
             if len(content) > OBS_MAX_STRING_LENGTH:
                 content = content[:OBS_MAX_STRING_LENGTH] + _truncation_msg(llm_data)
@@ -1431,11 +1434,16 @@ def _format_fetchpage_result(content: str, llm_data: dict = None) -> str:
     return "\n".join(lines)
 
 
-def _format_read_result(content: str, llm_data: dict = None) -> str:
-    """read 文件内容 — 2026-07-20 门限治理(章11.4): 专属行×列 OBS_READ_MAX_ROWS/CHARS + 两态说明"""
+def _format_read_result(content: str, llm_data: dict = None, truncated_by_tool: bool = False) -> str:
+    """read 文件内容 — 2026-07-20 门限治理(章11.4): 专属行×列 OBS_READ_MAX_ROWS/CHARS + 两态说明
+
+    2026-10-30 小欧 - 补 truncated_by_tool: 工具层截断(READ_OUTLIMIT_CHARS/读入闸门)此前只有
+    正文尾部的标记说明, 若截断后剩余行数 < OBS_READ_MAX_ROWS, 页脚仍会打 "✓ 无截断-完整",
+    与正文标记自相矛盾(读到的内容看起来完整)。现由调用方透传 data["truncated"] 参与页脚判定。
+    """
     _path = _tool_target(llm_data)
     lines = [f"── 文件内容 ── {_path}"]
-    truncated = False
+    truncated = bool(truncated_by_tool)
     content_lines = content.split("\n")
     total_lines = len(content_lines)
     if total_lines > OBS_READ_MAX_ROWS:

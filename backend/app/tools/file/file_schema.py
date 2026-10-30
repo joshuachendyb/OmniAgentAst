@@ -49,11 +49,12 @@ from app.tools.tool_constants import OBS_READ_MAX_ROWS
 class ReadInput(BaseModel):
     """
      不支持office类型.docx/.xlsx/.pptx/.PDF文件和媒体文件读取和编辑
-    【四种模式】
+    【五种模式】
     1. 读全文: 不传offset/limit/tail
     2. 前N行: 只传limit（如limit=100读前100行）。建议limit不超过{}行，超出需用offset+limit分页
     3. 尾部N行: 只传tail（如tail=20读最后20行）
     4. 分页: offset+limit（如offset=10, limit=20读第10-29行）
+    5. 从某行读到文件尾: 只传offset（如offset=500读第500行到末尾，超长会被截断并标记）
 
     【互斥规则】
     - tail不能与offset/limit同时使用
@@ -61,6 +62,7 @@ class ReadInput(BaseModel):
     【示例】
     - 不传参数: 读全文
     - limit=100: 读前100行
+    - offset=500: 读第500行到文件尾
     - tail=20: 读最后20行
     - offset=10, limit=20: 读第10-29行"""
     __doc__ = __doc__.format(OBS_READ_MAX_ROWS)
@@ -70,9 +72,10 @@ class ReadInput(BaseModel):
     offset: Optional[int] = Field(
         default=None,
         ge=1,
-        description="""起始行号(1-indexed)，必须配合limit使用。
+        description="""起始行号(1-indexed)。不传limit时读到文件尾（超长会被截断并标记）。
 
 【示例】
+- offset=500: 读第500行到文件尾
 - offset=1, limit=100: 读第1-100行
 - offset=10, limit=20: 读第10-29行"""
     )

@@ -53,6 +53,11 @@ F1: read — 读取文本文件
 # 2026-10-12 小欧 - 成功message去_ps参数段: 成功:{_ps}第X-Y行 → 成功:从第X-Y行,
 #   参数交content句子(message与params去重); summary仍带_ps供LLM — 小欧 2026-10-12
 # 2026-10-17 小欧 - 接入 path_utils.check_path_four_level 四级合法性总入口(读类用 EXISTS)
+# 2026-10-30 小欧 - offset 单独给 = 读到文件尾(取消"必须配合limit"报错):
+#   原报错是在替一个真漏洞挡枪——READ_OUTLIMIT_CHARS 输出闸门只在"无任何翻页参数"时生效,
+#   带 offset 的区间读全靠它挡不住, 删校验直接放开会让 offset 之后全部内容绕开闸门灌进上下文。
+#   现改为: 闸门移到"窗口选定之后", 覆盖"无上界窗口(全文读 / 只给offset)", 截断后重算 line_count 防谎报;
+#   limit/tail 由用户参数定上界, 不在闸门内。
 
 import time as _time_mod
 from pathlib import Path
@@ -134,7 +139,7 @@ def _build_read_text_file_llm_data(
         hint_text = "请调整offset/limit参数"
     elif line_count < total_lines:
         msg = f"成功：从第{start_line}-{end_line}行"
-        hint_text = "可使用offset+limit继续读取后续内容"
+        hint_text = "可使用offset+limit继续读取后续内容" if end_line < total_lines else ""
     else:
         msg = f"成功：从第{start_line}-{end_line}行"
         hint_text = ""
@@ -159,8 +164,8 @@ async def read(
     encoding: Optional[str] = None,
 ) -> Dict[str, Any]:
     """读取文本文件 — 小沈 2026-05-25 重构拆分 — 小欧 2026-06-22 独立文件 — 小健 2026-06-24 增加文件类型前置检查 — 小欧 2026-06-28 新增tail参数替代offset负数 — 小欧 2026-07-11 路径参数统一为path
-    offset: 起始行号(正数，必须配合limit)
-    limit: 读取行数
+    offset: 起始行号(正数); 不传limit时读到文件尾(超过输出上限则截断并标记)
+    limit: 读取行数(1-1000)
     tail: 读取尾部N行（不能与offset/limit同时使用）"""
     # 路径参数统一为path,桥接到内部变量file_path — 小欧 2026-07-11
     file_path = path
@@ -247,16 +252,6 @@ async def read(
                     user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
                 )
                 return build_error(data={}, llm_data=llm_data)
-            
-            if limit is None:
-                duration_ms = int((_time_mod.perf_counter() - t0) * 1000)
-                llm_data = _build_read_text_file_llm_data(
-                    "error", duration_ms, file_path=file_path,
-                    detail=f"offset参数必须同时提供limit参数，当前offset={offset}，示例：offset=10,limit=20读取第10-29行",
-                    hint="请提供limit参数配合offset",
-                    user_offset=offset, user_limit=limit, user_tail=tail, user_encoding=encoding,
-                )
-                return build_error(data={}, llm_data=llm_data)
 
         _p = Path(file_path)
 
@@ -272,16 +267,10 @@ async def read(
         _original_content = content
         # 修复: 截断前计算真实总行数(必须在if外初始化, 否则翻页/空文件场景NameError) — 小欧 2026-08-05
         _real_total_lines = len(content.splitlines()) if content else 0
-        # outlimit: 仅全量读取(无翻页参数)截断, 翻页由用户参数控制
+        # outlimit: 无上界窗口(全文读 / 只给offset读到文件尾)在窗口选定后统一截断 — 小欧-2026-10-30
+        #   limit/tail 有用户给定上界, 不入此闸门。
         _outlimit_truncated = False
         _outlimit_marker = ""
-        if content and offset is None and limit is None and tail is None:
-            _orig_len = len(content)
-            if _orig_len > READ_OUTLIMIT_CHARS:
-                # 修复: 截断标记与正文分离, 编号后再追加(避免标记被编入行号) — 小欧 2026-08-05
-                content = content[:READ_OUTLIMIT_CHARS]
-                _outlimit_marker = f"... (内容已截断: 原文{_orig_len}字符, 保留{READ_OUTLIMIT_CHARS}字符) ..."
-                _outlimit_truncated = True
         # 2026-10-21 小欧 - 读前闸门命中（文件 > READ_INPUT_MAX_BYTES）：只读到前 N 字节，
         #   如实告知 Agent（否则它会以为读全了 → 结论建立在残缺数据上）。
         _input_capped_marker = ""
@@ -297,6 +286,19 @@ async def read(
 
         lines = content.splitlines(keepends=False)
         _data = select_lines(lines, offset, limit, tail)
+        # 2026-10-30 小欧 - 输出闸门移到"窗口选定之后", 覆盖无上界窗口:
+        #   无参数(全文) 或 只给 offset(读到文件尾) 才是无上界; limit/tail 有用户上界不截。
+        #   截断后必须重算 line_count, 否则 summary/metrics 报的行数与正文实际内容不符(谎报)。
+        if limit is None and tail is None:
+            _win = _data.get("content", "")
+            _orig_len = len(_win)
+            if _orig_len > READ_OUTLIMIT_CHARS:
+                # 修复: 截断标记与正文分离, 编号后再追加(避免标记被编入行号) — 小欧 2026-08-05
+                _win = _win[:READ_OUTLIMIT_CHARS]
+                _data["content"] = _win
+                _data["line_count"] = len(_win.splitlines())
+                _outlimit_marker = f"... (内容已截断: 原文{_orig_len}字符, 保留{READ_OUTLIMIT_CHARS}字符) ..."
+                _outlimit_truncated = True
         _data["encoding"] = used_encoding
         # =============================================================================
         # 数据设计：line_count/total_lines 从 data pop 出，通过 llm_data.metrics 传给 summary

@@ -4,6 +4,8 @@
 - 2026-07-20 小欧 新建: 从 read_text_file._select_lines 抽取共享行分页逻辑(DRY)
 - 2026-07-20 小欧 修复: content 拼接由 "".join 改为 "\\n".join, 否则丢失行/段落分隔符(导致 read_text_file/read_docx roundtrip 失败)
 - 2026-08-05 小欧 修复: select_lines双换行bug - splitlines(keepends=True) + "\\n".join导致空行翻倍(三堂会审)
+- 2026-10-30 小欧 offset 分支支持 limit=None(切到末尾, 供 read 的"offset 单独给=读到文件尾"使用);
+  负/零 offset 改显式 warning(原负索引静默返回文件尾部内容)
 行分页/截断工具 — 小欧 2026-07-20
 
 #10 去噪专用: 将已完整读入内存的文本内容, 按 行号窗口(offset/limit/tail) 选取子集,
@@ -26,7 +28,7 @@ def select_lines(
 ) -> Dict[str, Any]:
     """按行号窗口选取并返回 _data 字典 — 小欧 2026-07-20 从 read_text_file._select_lines 抽取
 
-    offset: 起始行号(正数, 必须配合 limit)
+    offset: 起始行号(正数); limit 为 None 时切到列表末尾(上界由调用方闸门控制)
     limit:  读取行数
     tail:   读取尾部 N 行
 
@@ -57,7 +59,15 @@ def select_lines(
             n = len(selected)
             params = {"tail": tail, "start_line": start_idx + 1, "end_line": total}
     elif offset is not None:
-        if total == 0:
+        if offset < 1:
+            # 2026-10-30 小欧 - 非法行号显式拒绝: 负 offset 落到 Python 负索引会静默返回文件尾部
+            #   (offset=-1 -> lines[-2:]), 调用方拿到的不是它要的行且无从察觉; 与"越界返回
+            #   warning 由上层工具决定呈现"同口径。
+            warning = f"offset={offset}无效(行号从1开始),返回空内容"
+            selected = []
+            n = 0
+            params = {"offset": offset, "limit": limit, "start_line": 0, "end_line": 0}
+        elif total == 0:
             warning = "空文件无法使用offset参数(文件共0行)"
             selected = []
             n = 0
@@ -66,7 +76,12 @@ def select_lines(
             start_idx = offset - 1
             if start_idx >= total:
                 warning = f"offset={offset}超出文件范围(共{total}行),返回空内容"
-            selected = lines[start_idx : start_idx + limit]
+            # 2026-10-30 小欧 - limit 允许 None: 表示"切到列表末尾"(调用方 read 已把
+            #   "offset 单独给" 定义为读到文件尾, 输出上界由调用方闸门控制)。
+            #   原实现无条件 start_idx + limit, limit=None 直接 TypeError, 故工具层曾用
+            #   "offset 必须配合 limit" 报错挡着。
+            stop_idx = None if limit is None else start_idx + limit
+            selected = lines[start_idx:stop_idx]
             n = len(selected)
             params = {
                 "offset": offset,

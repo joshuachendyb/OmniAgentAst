@@ -130,6 +130,7 @@ FILE_TOOL_EXAMPLES = {
     "read": [
         {"path": "D:/project/main.py"},                               # 全文
         {"path": "D:/logs/app.log", "tail": 50},                     # 末50行(看日志尾部)
+        {"path": "D:/logs/app.log", "offset": 500},                  # 从第500行读到文件尾(超长截断并标记)
         {"path": "D:/project/main.py", "offset": 1, "limit": 200},  # 分页
     ],
     "write": [
