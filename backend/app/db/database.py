@@ -48,9 +48,14 @@ Author: 小沈 - 2026-05-28
 # 2026-09-29 20:42:06 小欧 - atxn 增 retry_locked(默认0=旧调用逐字不变): 补 body 执行期 locked 有限重试(退避0.5/1/2s),
 #   仅捕 sqlite3.OperationalError 且含 "locked", 非锁错误/耗尽一律原样抛出 — 根治并发起跑事务体撞写锁 — 小欧-2026-09-29
 # 2026-10-06 - 小欧 - ①: get_conn 增就绪自证(判据表缺失即就地幂等建表, 复用当前连接避免递归, 失败仅告警不阻断)
+# 2026-10-30 - 小欧 - 文档[58] P3: atxn 改投 _DB_TXN_POOL(4 worker, db-txn) 并 copy_context,
+#   与同步工具(loop 默认池)隔离; run_in_executor 不复制 context, 不显式 copy 会丢 session_id 与目录白名单判据
 """
 
 import asyncio
+import contextvars
+import functools
+from concurrent.futures import ThreadPoolExecutor
 import os
 import sqlite3
 from pathlib import Path
@@ -72,6 +77,13 @@ _INIT_BY_DB = {
     "task_tracker": init_task_tracker_db,
     "monitoring": init_monitoring_db,
 }
+
+
+# 2026-10-30 小欧 - 文档[58] P3: DB 事务专用线程池
+#   为什么: atxn 原走 asyncio.to_thread → loop 默认池, 与同步工具(bash/grep/树扫描/文件读写)共用。
+#   长工具占满池时落库排队, 延迟反压到 SSE 与 REST。DB 写本就被 SQLite 文件锁串行化,
+#   池开大只空转, 故单独给 4 个 worker(够并发起跑的多会话排队, 又不与工具抢池)。
+_DB_TXN_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="db-txn")
 
 
 class _ParamSafeConnection:
@@ -343,7 +355,16 @@ class DatabaseManager:
         _delay = 0.5
         for _attempt in range(retry_locked + 1):
             try:
-                return await asyncio.to_thread(self._run_txn, db_name, fn, *args, **kwargs)
+                # 2026-10-30 小欧 - 文档[58] P3: 改投专用池, 不再与工具共享 loop 默认池
+                # 必须 copy_context: asyncio.to_thread 会复制 context, run_in_executor 不会。
+                #   丢了 context 则事务体内日志失去 session_id, 且 path_dir_lists 的
+                #   _current_directory_lists ContextVar 变空 → 目录白名单判据失效(fail-closed 抛错)。
+                _loop = asyncio.get_running_loop()
+                _ctx = contextvars.copy_context()
+                return await _loop.run_in_executor(
+                    _DB_TXN_POOL,
+                    functools.partial(_ctx.run, self._run_txn, db_name, fn, *args, **kwargs),
+                )
             except sqlite3.OperationalError as _lock_e:
                 if "locked" not in str(_lock_e) or _attempt >= retry_locked:
                     raise
