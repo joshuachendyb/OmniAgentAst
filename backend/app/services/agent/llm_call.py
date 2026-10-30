@@ -60,6 +60,13 @@
 #   非 HTTP str(e) 英文按类名映射中文(_CN_MSG, 防英文名词与类名重复), 类名统一末尾: "错误: {payload} [ExcType]"。 小欧-2026-10-29
 # 2026-10-29 小欧 KISS 审查(老陈裁定全部修复): L2 重试事件文案统一——原"错误: [LLMResponseError] {msg}"类名在前
 #   且未走 _format_retry_payload, 与 L1 格式不一致; 改 _format_retry_payload(清洗 HTTP 前缀/英文转中文) + 类名末尾。 小欧-2026-10-29
+# 2026-10-30 小欧 - 重试/FC降级阶段取消不产 cancelled final step 修复(北京老陈实测: 重试中取消等约2分钟,
+#   toast 有取消提示但 step 无 final). 4 处: ①L2 重试循环顶查 _cancelled, 已取消不再发请求→yield
+#   _yield_error_response(exc_type="cancelled"); ②L2 退避 asyncio.sleep → wait_for(_cancel_signal().wait(), timeout),
+#   退避可被 cancel 唤醒, 唤醒后复查 _cancelled 短路; ③FC 降级取消短路由 create_cancelled_chunk 改
+#   _yield_error_response — 前者 stream_error 无 payload, react_step 当空 chunk 致 llm_response=None →
+#   set_failed 覆盖 cancelled 且不产 cancelled final step(病根), 后者带 error payload 由 handle_answer 转终态;
+#   ④FC 降级 LLM 调用前查 _cancelled 短路。取消语义不变(请求中不打断, 调用前/响应后必终止) — 小欧-2026-10-30
 """
 llm_call — LLM流式调用入口(从llm_stream改名, 8.5拆分后专注"发起调用+重试+降级")
 
