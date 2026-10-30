@@ -18,14 +18,11 @@
 """
 from typing import Any, Dict, List, Tuple
 
-from app.constants import REF_HEAD_RATIO, REF_MIN_KEEP_LINES, REF_TAIL_RATIO
+from app.constants import REF_MIN_KEEP_LINES
 from app.services.agent.compaction_constants import CHARS_PER_TOKEN
 from app.services.refs.clip import clip_lines
 from app.services.refs.limits import RefLimits
-
-# clip_lines 只保留 keep_lines 的头 REF_HEAD_RATIO / 尾 REF_TAIL_RATIO(合计 80%),
-#   故要落到"目标行数"需按该比例反推入参
-_CLIP_KEEP_RATIO = REF_HEAD_RATIO + REF_TAIL_RATIO
+from app.utils.text_utils import count_lines
 
 
 def _tokens_of(content: str) -> int:
@@ -75,13 +72,14 @@ def budget_refs(
     kept: List[Dict[str, Any]] = []
     for r in resolved:
         content = r.get("content") or ""
-        n_lines = content.count("\n") + 1
+        n_lines = count_lines(content)          # 与文件页/回执同口径(末尾换行不算新行)
         if n_lines <= REF_MIN_KEEP_LINES:
             # 行数已到下限, 再摘就不可读 — 原样保留, 超限由下方拒绝线兜底
             kept.append(r)
             continue
         target = max(REF_MIN_KEEP_LINES, int(n_lines * factor))
-        new_content, omitted = clip_lines(content, int(target / _CLIP_KEEP_RATIO))
+        # clip_lines 的 keep_lines 就是"最终保留行数", 无需折算(2026-10-30 小欧 修正)
+        new_content, omitted = clip_lines(content, target)
         if not omitted:
             kept.append(r)
             continue

@@ -228,6 +228,9 @@
 # 2026-10-30 小欧 - 批2/批3 补齐: ①sanitize_refs 双返回, 越界/无 path 条目进回执;
 #   ②首发 resolve→budget→refs_notice→阻断/放行 全链接入; ③插话同口径(预算 5%), 回执与拒绝帧
 #   经目标任务 buffer publish 下发(新 POST 流前端只 readToEnd 不解析); ④_start_meta["refs"] 取裁决后结果。 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 三堂会审收口: 首发/插话共用 refs.pipeline.prepare_refs(插话此前漏 resolver dropped,
+#   读不出的文件不进回执也不进点名); 点名文案统一 notice.describe_items; 插话带引用时调
+#   message_builder.ensure_file_ref_rules() 幂等补注格式约定; refs 相关 import 全上提模块级。 — 小欧-2026-10-30
 
 """
 stream_orchestrator — 聊天流编排器(services 层)
@@ -243,6 +246,12 @@ from typing import Optional, AsyncGenerator, Dict, List
 
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
+# 引用链路 4 口(首发/插话共用, 原两处函数内 import 上提) — 小欧 2026-10-30
+from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT   # 生效窗口缺失时的兜底
+from app.services.refs.limits import resolve_limits                        # 按生效窗口算三档阈值
+from app.services.refs.notice import build_notice, create_refs_notice_event, describe_items  # 回执
+from app.services.refs.pipeline import prepare_refs                        # 解析→裁决→回执汇集唯一流水线
+from app.services.refs.render import render_refs_block                     # 引用正文前置区块(零 IO)
 from app.services.model.resolver import (
     ProviderKeyMissingError,
     get_ai_config_resolver,
@@ -566,25 +575,14 @@ async def chat_stream_orchestrator(
             #   (超限即拒, 不降级)。解析/裁决失败与首发同语义显式阻断, 不静默吞引用。
             #   2026-10-30 小欧 批2/3: 回执(refs_notice)与拒绝帧都经**目标任务缓冲**下发 ——
             #   插话的新 POST 流前端只 readToEnd 不解析, 直 yield 用户收不到(载体纪律见 notice 模块)。
-            from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT
-            from app.services.refs.budget import budget_refs
-            from app.services.refs.limits import resolve_limits
-            from app.services.refs.notice import build_notice
-            from app.services.refs.render import render_refs_block
-            from app.services.refs.resolver import resolve_refs
-
+            #   2026-10-30 小欧 批3: 与首发走同一流水线(prepare_refs) —— 原插话分支自己拼 notices
+            #   漏了 resolver 的 dropped, 读不出来的文件既不在回执里也不在"全部不可用"点名里。
             _tgt_agent = await get_task_field(_active_tid, "agent")
             _tgt_ctx = int(getattr(getattr(_tgt_agent, "llm_client", None),
                                    "context_limit", None) or DEFAULT_CONTEXT_LIMIT)
             _ilimits = resolve_limits(_tgt_ctx, "interject")
-            _iresolved, _idropped, _inotices = await resolve_refs(_start_kept, limits=_ilimits)
-            _ifinal, _ibnotices = budget_refs(_iresolved, limits=_ilimits, scope="interject")
-            # 三源 dropped 全链汇集: 越界/无 path(sanitize) + 读取失败(resolver) + 超限(budget)
-            _iall_notices = _inotices + _ibnotices + [
-                {"label": d.get("label") or d.get("path") or "", "path": d.get("path") or "",
-                 "reason": d.get("reason") or "out_of_root"}
-                for d in _s_dropped
-            ]
+            _ifinal, _iall_notices = await prepare_refs(
+                _start_kept, limits=_ilimits, scope="interject", sanitized_dropped=_s_dropped)
             _ibuf = get_stream_buffer(_active_tid)
 
             async def _emit_to_target(payload: dict):
@@ -599,8 +597,7 @@ async def chat_stream_orchestrator(
 
             if refs and not _ifinal:
                 # 阻断(4.8): 先回执点名(error 级), 再发 refs_blocked 错误帧
-                _names = "、".join(dict.fromkeys(
-                    n.get("label") or n.get("path") or "未命名" for n in _iall_notices)) or "未知"
+                _names = describe_items(_iall_notices)
                 _frame = await _emit_to_target(build_notice("error", "interject", _iall_notices))
                 if _frame:
                     yield _frame
@@ -618,11 +615,14 @@ async def chat_stream_orchestrator(
                 if _frame:
                     yield _frame
             logger.info(
-                "[refs] interject resolved=%d dropped=%s notices=%s",
+                "[refs] interject resolved=%d notices=%s",
                 len(_ifinal),
-                [f"{d.get('label')}:{d.get('reason')}" for d in _idropped],
                 [f"{n.get('label')}:{n.get('reason')}" for n in _iall_notices],
             )
+            if _ifinal and _tgt_agent is not None:
+                # 插话带引用: 目标任务 system 消息早已建好, 补注入"文件引用格式约定"(幂等, 已注入则跳过)
+                #   — 2026-10-30 小欧. 不补则模型看到引用正文却不知道 [[文件:...]] 输出约定。
+                _tgt_agent.message_builder.ensure_file_ref_rules()
             _injected_ok = await inject_message_to_task(
                 _active_tid, render_refs_block(_ifinal) + user_input, _user_msg_id)
             if _injected_ok:
@@ -829,20 +829,15 @@ async def chat_stream_orchestrator(
         #   agent_runner.py 对 message_builder.MAX_CONTEXT_TOKENS 的覆盖发生在 create_task
         #   之后的后台协程里, 此处读到的是构造默认值(恒 DEFAULT_CONTEXT_LIMIT),
         #   切小窗口模型时引用预算会被放大数倍。llm_client 是会话覆盖后的生效快照, 唯一真源。
-        #   2026-10-30 小欧 批2/3: resolve → budget → 回执(refs_notice) → 处置(放行/阻断)。
-        from app.services.refs.budget import budget_refs
-        from app.services.refs.limits import resolve_limits
-        from app.services.refs.notice import create_refs_notice_event
-        from app.services.refs.resolver import resolve_refs
-
+        #   2026-10-30 小欧 批2/3: resolve → budget → 回执(refs_notice) → 处置(放行/阻断),
+        #   已收口到 services.refs.pipeline.prepare_refs(与插话共用同一顺序与实现)。
         _ctx_limit = int(getattr(agent.llm_client, "context_limit", None)
                          or agent.message_builder.MAX_CONTEXT_TOKENS)
         _limits = resolve_limits(_ctx_limit, "first")
-        _resolved, _r_dropped, _r_notices = await resolve_refs(_start_kept, limits=_limits)
-        _final_refs, _b_notices = budget_refs(_resolved, limits=_limits, scope="first")
-        # 回执条目全链汇集: 越界/无 path(sanitize) + 读取失败/截断(resolver) + 压缩/拒绝(budget)。
+        # 回执条目全链汇集: 读取失败/截断(resolver) + 压缩/拒绝(budget) + 越界/无 path(sanitize)。
         #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。
-        _notices = _r_dropped + _r_notices + _b_notices + _s_dropped
+        _final_refs, _notices = await prepare_refs(
+            _start_kept, limits=_limits, scope="first", sanitized_dropped=_s_dropped)
         # 2026-10-30 小欧 A9: 解析结果落日志(失败/截断/压缩无据可查的历史已修)
         if _notices:
             logger.info(
@@ -853,8 +848,7 @@ async def chat_stream_orchestrator(
             # 回执下发(有则发): 首发流是新建任务流, 前端 pump 直接消费, yield 即可见
             yield create_refs_notice_event("first", _notices)
         if refs and not _final_refs:
-            _names = "、".join(dict.fromkeys(
-                n.get("label") or n.get("path") or "未命名" for n in _notices)) or "未知"
+            _names = describe_items(_notices)
             yield create_error_response(error_type="refs_blocked",
                                         error_message=f"引用全部不可用({_names}), 请移除后重发")
             return

@@ -38,6 +38,18 @@ def truncate_text(text: str, max_chars: int, suffix: Optional[str] = None) -> tu
     return text[:max_chars] + tail, True
 
 
+def count_lines(text: str) -> int:
+    """按编辑器口径数行数: 末尾换行不产生新行(与前端行号列一致) — 小欧 2026-10-30
+
+    唯一口径: 文件页行数(browse_service._count_content_lines)与引用压缩行数(refs.budget)
+    共用本函数, 避免 "a\\n" 一处算 1 行、一处算 2 行导致回执行数虚高。
+    """
+    if not text:
+        return 0
+    n = text.count("\n")
+    return n if text.endswith("\n") else n + 1
+
+
 def add_line_numbers(content: str, offset: int = 1) -> str:
     """给文本内容添加行号前缀 — 小欧 2026-07-05"""
     if not content:

@@ -63,7 +63,7 @@ router.include_router(task_execution_router, tags=["task-execution"])  # v2.0 C1
 async def chat_stream_endpoint(request: ChatRequest):
     # DTO 在 API 层解包，避免 services 层反向依赖 api/v1 — 方案4.7.3 DTO边界约定
     # link_enabled 用关键字传, 防与编排器后续新增形参错位 — 小欧 2026-10-03
-# 2026-10-13 小欧 - 文档[28] 4.1.6: refs 同样关键字透传，禁位置传参。
+    # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 同样关键字透传，禁位置传参。
     #   必须在 API 层 model_dump 成 dict —— message_builder._render_refs_block 收 dict，
     #   直接透传 pydantic ChatRef 对象会被 isinstance(data, dict) 判定**整条丢弃**，
     #   功能表面接通实则全程空转（真实 BUG：单测喂自造 dict，全链路从未跑过）。

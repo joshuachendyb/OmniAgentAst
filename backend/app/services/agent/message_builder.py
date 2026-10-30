@@ -92,6 +92,9 @@
 # 2026-10-30 小欧 - 三堂会审二轮(北京老陈令"坐实问题再修"): trim_history 队列预算不足分支修复 —— 原 else 在
 #   "未溢窗但 阈值×系数² 预算不够"时直接 tail_start=keep_from 走"丢光队列", 与本文档第 6 条"预算不足保留原历史"
 #   相反(实测 12 个旧轮一次清空/51 条→只留保护区); 拆为 溢窗分支(行为不变, 注释订正) + 退回硬剩余预算判定 — 小欧-2026-10-30
+# 2026-10-30 小欧 - 新增 ensure_file_ref_rules(): 插话带引用时 system 消息早已建好, 需幂等补注
+#   【文件引用】格式约定(否则模型看到引用正文却不知 [[文件:...]] 输出约定); 标记位 _file_ref_rules_injected
+#   由 init_history/reset_per_run 同步维护, 保证整个会话内规则最多出现一次 — 小欧-2026-10-30
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -202,6 +205,8 @@ class MessageBuilder:
         # B组(锚演进 2026-09-20 小欧): user_message_id 锚单点——合成计数器(未传时自减负id, 与DB正id不冲突) + 当前锚
         self._synth_user_msg_id: int = 0
         self._current_user_msg_id: Optional[int] = None
+        # 文件引用格式约定是否已进 system 消息(插话补注去重标记) — 小欧 2026-10-30
+        self._file_ref_rules_injected: bool = False
 
     @property
     def current_user_msg_id(self) -> Optional[int]:
@@ -218,6 +223,7 @@ class MessageBuilder:
         self.last_total_tokens = None  # 2026-07-22 - 小欧 - 修复: 清除上一轮残留, 增量裁剪从零开始
         self._trim_cooldown.mark_compacted()  # 2026-10-25 小欧 每 run 重置冷却计数, 新 run 不继承上轮冷却状态
         self._trim_signal_result = None  # 新 run 信号结果清空, 下次 _trim_signal() 重算 — 小欧 2026-10-25
+        self._file_ref_rules_injected = False  # history 清空后标记位失效, 下次 init_history 重新判定 — 小欧 2026-10-30
 
     # =========================================================================
     # 第一组:conversation_history 写操作(统一入口)
@@ -303,11 +309,30 @@ class MessageBuilder:
         """
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
+        self._file_ref_rules_injected = bool(refs)   # 与 ensure_file_ref_rules 共用标记, 防插话重复注入 — 小欧 2026-10-30
         if refs:
             sys_prompt = f"{sys_prompt}\n\n{_FILE_REF_RULES}"
         self.conversation_history = []
         self.add_system_message(sys_prompt)
         self.add_user_message(render_refs_block(refs) + task_prompt)
+
+    def ensure_file_ref_rules(self) -> None:
+        """幂等把【文件引用】格式约定补进当前 system 消息(已注入过则跳过) — 小欧 2026-10-30
+
+        为什么需要: 首轮由 init_history 按 refs 条件注入; 中途插话(interject)带引用时
+        system 消息早已建好, 既不能重发整份 sys_prompt, 也不能每插一次追加一遍规则。
+        故以标记位收口, 保证整个会话内规则最多出现一次。
+        无 system 消息时(极端历史形态)插到最前, 保持"行为准则属于 system 角色"的约定。
+        """
+        if self._file_ref_rules_injected:
+            return
+        for msg in self.conversation_history:
+            if msg.get("role") == "system":
+                msg["content"] = f"{msg.get('content') or ''}\n\n{_FILE_REF_RULES}"
+                self._file_ref_rules_injected = True
+                return
+        self.conversation_history.insert(0, {"role": "system", "content": _FILE_REF_RULES})
+        self._file_ref_rules_injected = True
 
     def inject_history(self, history_msgs: List[Dict]) -> None:
         """注入多轮对话历史到 system 和 task 之间 — 小欧 2026-07-02

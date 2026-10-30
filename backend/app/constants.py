@@ -134,11 +134,16 @@ PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则�
 ACTION_LOG_RESULT_MAX_CHARS = 5000  # 【系统级】使用对象: action_handler.py(日志 tool_result 截断长度, 防 MemoryError)
 
 
-# 输入框引用摘录比例(2026-10-29 小欧): 引用链路头尾摘录与行数估算 — 供 services/refs/resolver 消费
+# 输入框引用摘录比例(2026-10-29 小欧): 引用链路头尾摘录与行数估算 —
+#   消费方: services/refs/{resolver,clip,budget}(摘录) + services/refs/render(来源白名单)
 REF_AVG_LINE_CHARS = 80   # 【系统级】使用对象: services/refs/resolver(行均字符估算, 头尾摘录行数)
-REF_HEAD_RATIO = 0.6      # 【系统级】使用对象: services/refs/resolver(头尾摘录: 头 60% 行)
-REF_TAIL_RATIO = 0.2      # 【系统级】使用对象: services/refs/resolver(头尾摘录: 尾 20% 行)
-REF_MIN_KEEP_LINES = 10   # 【系统级】使用对象: services/refs/resolver(C 档压缩最低保留行数)
+REF_HEAD_RATIO = 0.6      # 【系统级】使用对象: services/refs/clip(头尾摘录: 头 60%)
+REF_TAIL_RATIO = 0.2      # 【系统级】使用对象: services/refs/clip(头尾摘录: 尾 20%)
+REF_MIN_KEEP_LINES = 10   # 【系统级】使用对象: services/refs/budget(C 档压缩最低保留行数)
+
+# 引用来源白名单(2026-10-30 小欧): 唯一真源 —— 编排入口过滤(browse_service.sanitize_refs)
+#   与渲染期过滤(refs.render)共用, 防止"入口放行、渲染静默丢弃"的两套口径分叉
+REF_KINDS = frozenset({"file", "selection", "log", "message"})
 
 
 # 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;

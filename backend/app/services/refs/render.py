@@ -15,12 +15,11 @@
 """
 from typing import List, Optional
 
-# 已知来源白名单: 白名单外的条目直接忽略(不把未知来源塞进上下文)
-REF_KINDS = frozenset({"file", "selection", "log", "message"})
+from app.constants import REF_KINDS  # 来源白名单唯一真源(与 sanitize_refs 共用) — 小欧 2026-10-30
 
-# 块尾重读约定(4.10): 引用正文只随本条消息出现在上下文中, 后续轮次可能被压缩/裁剪掉;
-#   提示模型需要时重读, 而不是凭记忆复述 — 2026-10-30 小欧
-_TAIL_REMINDER = "（以上引用正文仅本轮可见；后续轮次如需依据，请用 read_text_file 按 path 重新读取。）"
+# 块尾重读约定(4.10): 引用正文随本条消息进入上下文, 但后续轮次可能被压缩/裁剪掉;
+#   提示"被裁掉时再重读", 而不是"仅本轮可见"(后者会让模型多轮无谓重读) — 2026-10-30 小欧
+_TAIL_REMINDER = "（以上引用正文随本条消息进入上下文；若后续轮次已被压缩或裁剪，请用 read_text_file 按 path 重新读取。）"
 
 
 def render_refs_block(refs: Optional[list]) -> str:

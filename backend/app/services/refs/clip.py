@@ -17,6 +17,9 @@ from typing import Tuple
 
 from app.constants import REF_HEAD_RATIO, REF_TAIL_RATIO
 
+# 头尾合计比例(恒>0): 把 keep_lines 按 0.6:0.2 归一分配, 两者相加恒等于 keep_lines — 小欧 2026-10-30
+_HEAD_TAIL_SUM = max(1e-6, REF_HEAD_RATIO + REF_TAIL_RATIO)
+
 
 def _excerpt(head: str, tail: str, omitted: int, unit: str) -> str:
     """头 + 省略标记 + 尾。省略标记唯一格式(两入口共用, 前端/日志解析口径一致)。"""
@@ -37,17 +40,29 @@ def clip_text(text: str, cap_chars: int) -> Tuple[str, int]:
 
 
 def clip_lines(text: str, keep_lines: int) -> Tuple[str, int]:
-    """按**行**头尾摘录: 保留头 REF_HEAD_RATIO / 尾 REF_TAIL_RATIO 比例的行。
+    """按**行**头尾摘录: 结果**恰好** keep_lines 行(头尾按 REF 比例分配)。
 
     返回 (文本, 省略行数); 行数不足以摘录(≤ keep_lines)时原样返回且省略数为 0。
-    调用方(budget)负责把"目标保留行数"折算到本函数的 keep_lines。
+    keep_lines 是"最终可见行数", **省略标记行也算一行** —— 否则压缩后行数比目标多 1,
+    调用方(预算档)再按字符估算就会超出合计上限。
+
+    2026-10-30 小欧 三堂会审修正: 头 = (keep−1)×头/(头+尾), 尾 = (keep−1)−头, 标记占 1 行,
+      两头相加 + 标记 = 恰好 keep_lines(原实现头尾各取比例, 合计只有 0.8×keep,
+      调用方还得反推折算, 且 10 行档实留 9 行)。行数按编辑器口径算(末尾换行不算新行),
+      摘录后补回原末尾换行。
     """
+    trailing_newline = text.endswith("\n")
     lines = text.split("\n")
-    if keep_lines <= 0 or len(lines) <= keep_lines:
+    if trailing_newline:
+        lines = lines[:-1]
+    if keep_lines < 3 or len(lines) <= keep_lines:
+        # <3 行时分不出"头+标记+尾"三段, 不做摘录(调用方最低档 REF_MIN_KEEP_LINES=10)
         return text, 0
-    head_n = max(1, int(keep_lines * REF_HEAD_RATIO))
-    tail_n = max(1, int(keep_lines * REF_TAIL_RATIO))
+    budget = keep_lines - 1                     # 省略标记自身占一行
+    head_n = max(1, int(budget * REF_HEAD_RATIO / _HEAD_TAIL_SUM))
+    tail_n = max(1, budget - head_n)
     omitted = len(lines) - head_n - tail_n
     if omitted <= 0:
         return text, 0
-    return _excerpt("\n".join(lines[:head_n]), "\n".join(lines[-tail_n:]), omitted, "行"), omitted
+    body = _excerpt("\n".join(lines[:head_n]), "\n".join(lines[-tail_n:]), omitted, "行")
+    return (body + "\n") if trailing_newline else body, omitted

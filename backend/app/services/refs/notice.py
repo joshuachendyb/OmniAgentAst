@@ -33,9 +33,9 @@ REASON_LEVELS: Dict[str, str] = {
     "compressed": "warn", "rejected": "error",
 }
 
-# 级别序(越靠后越严重), worst_level 取最高
+# 级别序(越靠后越严重), worst_level 取最高; 序号表由元组派生(单一真源) — 小欧 2026-10-30
 _LEVEL_ORDER = ("info", "warn", "error")
-_LEVEL_RANK = {"info": 0, "warn": 1, "error": 2}
+_LEVEL_RANK = {level: rank for rank, level in enumerate(_LEVEL_ORDER)}
 
 
 def _level_of(item: Dict[str, Any]) -> str:
@@ -55,6 +55,17 @@ def worst_level(items: List[Dict[str, Any]]) -> str:
     for it in items or []:
         rank = max(rank, _LEVEL_RANK[_level_of(it)])
     return _LEVEL_ORDER[rank]
+
+
+def describe_items(items: List[Dict[str, Any]]) -> str:
+    """回执点名文案: 去重后的 label/path, 空则"未命名"; 全空返回"未知"。
+
+    首发与插话的阻断提示共用本函数(原两条路径各写一遍 dict.fromkeys 拼串) — 小欧 2026-10-30
+    """
+    names = dict.fromkeys(
+        (it.get("label") or it.get("path") or "未命名") for it in items or []
+    )
+    return "、".join(names) or "未知"
 
 
 def build_notice(level: Optional[str], scope: str,

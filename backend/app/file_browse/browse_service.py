@@ -33,6 +33,9 @@
 # 编辑历史:
 # 2026-10-30 小欧 新增: 引用预检 stat 数据源(存在性/mtime/size, 不读正文全文) — 小欧-2026-10-30
 # 2026-10-30 小欧 A17: 更正注释——非 O(1) 零读: _probe_text 仍读首 8KB 判文本, 只是不读全文 — 小欧-2026-10-30
+# 2026-10-30 小欧 批3: sanitize_refs 补 kind 白名单(与 refs.render 共用 constants.REF_KINDS),
+#   入口即拦未知来源, 回执可见; stat_file 的 is_ext 提到 try 前只算一次;
+#   _count_content_lines 委托 text_utils.count_lines(与引用压缩同行数口径) — 小欧-2026-10-30
 
 """文件浏览服务：项目根目录内的只读浏览。
 
@@ -60,8 +63,10 @@ from fastapi import Request, Response
 from fastapi.responses import FileResponse
 
 from app.config import get_config, get_code_root
+from app.constants import REF_KINDS      # 引用来源白名单唯一真源(与 refs.render 共用) — 小欧 2026-10-30
 from app.db import db
 from app.logger import logger
+from app.utils.text_utils import count_lines   # 行数唯一口径(文件页/引用压缩共用) — 小欧 2026-10-30
 from app.file_browse.errors import (
     IMAGE_TOO_LARGE,
     INVALID_PATH,
@@ -708,6 +713,9 @@ def sanitize_refs(
     2026-10-30 小欧 批2 序10: 改双返回 —— 原单值接收把越界条目静默丢掉, 用户看不到
       "哪条没进去"; dropped 与 resolver/budget 的回执同形(reason 区分 out_of_root/no_path),
       由编排层汇入 refs_notice 统一点名。
+    2026-10-30 小欧 批3 序14: 补 kind 白名单 —— 原先只在渲染期(render_refs_block)筛, 入口放行
+      未知来源后再被静默丢弃, 回执上不出现; 现入口即拦(reason="unsupported"), 两处共用
+      constants.REF_KINDS 单一真源。缺省 kind 按 file(与 render 同口径)。
     """
     if not refs:
         return [], []
@@ -715,6 +723,15 @@ def sanitize_refs(
     dropped: List[Dict[str, str]] = []
     for ref in refs:
         if not isinstance(ref, dict):
+            continue
+        kind = ref.get("kind") or "file"          # 与 render_refs_block 同口径: 缺省按 file
+        if kind not in REF_KINDS:
+            logger.warning("[file_browse] 丢弃未知来源的引用条目 kind=%s label=%s", kind, ref.get("label"))
+            dropped.append({
+                "label": (ref.get("label") or ref.get("path") or ""),
+                "path": (ref.get("path") or ""),
+                "reason": "unsupported",
+            })
             continue
         path = (ref.get("path") or "").strip()
         if not path:
@@ -753,10 +770,13 @@ def stat_file(path: str) -> Dict[str, Any]:
     成本口径: 文本判定走 _probe_text(首 8KB 查 NUL, 与 _preview_of 同判定), 不读全文,
     故 10MB 与 10KB 文件的 stat 耗时同量级; 不是零 IO, 勿按 O(1) 理解。
     """
+    # 2026-10-30 小欧 批3: 外部判据只算一次(原两个 except 分支各调一次 _is_abs_drive_path),
+    #   且提到 try 之前 —— 它只做字符串判定, 与 _resolve_within_root 的成败无关。
+    is_ext = _is_abs_drive_path(path)
     try:
         target, _rel = _resolve_within_root(path)
     except Exception:
-        if not _is_abs_drive_path(path):
+        if not is_ext:
             return {"ok": False, "reason": "missing"}     # 越界/非路径: 一律 missing
         target = Path(path)
     try:
@@ -776,11 +796,11 @@ def _count_content_lines(content: str) -> int:
     """行数：末尾换行不产生新行（编辑器口径，与前端行号列同源）。
 
     2026-10-21 小欧 - 原式 count("\\n")+1 对 "a\\r\\nb\\r\\n" 得 3（实际 2 行），
-    行号会指到不存在的空行。"""
-    if not content:
-        return 0
-    n = content.count("\n")
-    return n if content.endswith("\n") else n + 1
+    行号会指到不存在的空行。
+    2026-10-30 小欧 - 实现在 text_utils.count_lines：引用压缩(refs.budget)按同一口径算行数，
+      两处各写一份必然分叉（回执行数与文件页行数对不上），故委托。
+    """
+    return count_lines(content)
 
 
 def _count_file_lines(target: Path) -> int:

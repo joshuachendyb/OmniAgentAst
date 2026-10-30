@@ -208,13 +208,15 @@ async def resolve_refs(
                 "reason": _reason,          # 4.6.4 分类: missing/unsupported/range_out
                 "detail": _exc,             # 异常名, 定位用
             })
-        elif rr.note in ("timeout", "no_path"):
+            continue
+        if rr.note in ("timeout", "no_path"):
             dropped.append({
                 "label": (rr.ref.get("label") or rr.ref.get("path") or ""),
                 "path": rr.ref.get("path") or "",
                 "reason": rr.note,
             })
-        elif rr.truncated or rr.note == "range_clipped":
+            continue
+        if rr.truncated or rr.note == "range_clipped":
             # 2026-10-29 小欧 - range_clipped 与 truncated 同类: 非阻断, 放行 + 回执点名
             notices.append({
                 "label": (rr.ref.get("label") or rr.ref.get("path") or ""),
@@ -222,21 +224,20 @@ async def resolve_refs(
                 "reason": "truncated" if rr.truncated else "range_clipped",
                 "detail": rr.note,
             })
-            resolved.append(rr.ref)
-        else:
-            resolved.append(rr.ref)
+        # 放行条目统一在此追加(原实现 elif/else 两条分支各写一次, 同一语句两处 — 2026-10-30 小欧)
+        resolved.append(rr.ref)
     # 同 path 已在读取前去重(A13), 此处不再二次合并
     return resolved, dropped, notices
 
 
-def _merge_same_path(resolved: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _merge_same_path(refs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """同 path 去重(读取前调用): 同一请求内同一文件整份只读一次; 不同区间各读一次。
 
     整份(lineRange 空)优先: 若已有整份, 丢弃所有该 path 的区间条目; 否则按 lineRange 保序。
     """
     by_path: Dict[str, List[Dict[str, Any]]] = {}
     order: List[str] = []
-    for r in resolved:
+    for r in refs:
         p = r.get("path") or ""
         if p not in by_path:
             by_path[p] = []
