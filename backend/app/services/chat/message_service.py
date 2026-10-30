@@ -37,6 +37,9 @@
 # 2026-10-27 - 小欧 - P1-① 消除 N+1: get_session_messages 批量预加载步骤——import 改 load_execution_steps_batch,
 #   一次查询替代循环内 N 次 load_execution_steps(keys 取 carrier 渲染载体), 改从 _steps_cache 取值未命中兜底 [];
 #   单查 load_execution_steps 仍供 execution_stream/history_loader 回放使用 — 小欧-2026-10-27
+# 2026-10-30 - 小欧 - 文档[58] P3: save_message 的 DB 段改走 await db.atxn(子线程), 不再在事件循环
+#   主线程同步跑 sqlite3 与 get_conn 锁重试 time.sleep; 409 门拆两段(只读判据 + 写入), await 移出连接上下文;
+#   同时删死变量 display_name_to_save、非 user 角色不查开关(409 门只拦 user, 免一次无用 DB 往返)
 """
 message_service — 消息业务服务(services/chat)
 
@@ -58,7 +61,7 @@ from app.services.chat.storage import insert_user_message  # v2.0 改动2: user�
 from app.services.chat.storage import fetch_session_user_message_pairs, parse_session_model  # 北京老陈 2026-08-22: 替代 chat_messages 读取(只写铁律) + 结构化 sessionModel 统一解析(DRY)
 from app.utils.display_utils import extract_display_name_from_steps, build_display_name
 from app.services.task.task_registry import has_active_task_in_session   # 2026-10-07 小欧 - 文档[11] 3.4.5.1
-from app.services.chat.storage import resolve_session_interject         # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数)
+from app.services.chat.storage import resolve_session_interject, get_session_interject  # 2026-10-08 小欧 - 文档[11] 3.4.5.2 单一真源(取+落同函数); 2026-10-30 加 get_session_interject 供 409 门只读判据
 
 
 # 消息模块共享的 display_name 缓存(A7 迁移边界: 归 message_service 独占) — 小欧 2026-08-13
@@ -203,67 +206,83 @@ def _track_user_message(session_id: str, message_id: str) -> None:
     logger.info(f"[save_message] 记录user消息ID: {message_id}, 会话: {session_id}")
 
 
-async def save_message(session_id: str, message):
-    """保存消息到会话 — 小健 2026-05-25 重构 — 自 api/v1/messages.py 迁入"""
+def _read_interject_txn(conn, session_id: str) -> bool:
+    """atxn 事务体: 只读会话插话开关(409 门判据) — 小欧 2026-10-30"""
+    return get_session_interject(conn, session_id)
+
+
+def _save_message_txn(conn, session_id: str, message, carried):
+    """atxn 事务体: 携带值落库 + 会话校验 + user 权威写 + updated_at + 自愈 — 小欧 2026-10-30"""
     from fastapi import HTTPException
-    with db.get_conn("chat") as conn:
-        cursor = conn.cursor()
-# 2026-10-08 小欧 - 文档[11] 3.4.5.2: 携带值先落会话开关再做下方 409 判定(死锁: 值原先只由
-        #   orchestrator 落, 而 409 门读会话当前值 → 插话第一条必被拒)。只拦 user(开关随用户消息携带)。
-        _eff_allow = resolve_session_interject(
+    cursor = conn.cursor()
+    # 2026-10-08 小欧 - 文档[11] 3.4.5.2: 携带值先落会话开关(位置与原实现一致, 仍是本事务第一步)
+    resolve_session_interject(conn, session_id, carried)
+
+    cursor.execute(
+        "SELECT id, title, COALESCE(title_locked, 0) as title_locked "
+        "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
+    session = cursor.fetchone()
+    if not session:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    local_time = get_local_iso_timestamp()
+
+    message_id = None
+    if message.role == "user":
+        # 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 权威源 chat_user_message
+        # 先落库, id 由本表 AUTOINCREMENT 原生自增分配; 权威写失败即保存失败 fail-loud — 小欧 2026-08-23
+        message_id = insert_user_message(
             conn,
-            session_id,
-            getattr(message, "allow_interject", None) if message.role == "user" else None,
+            session_id=session_id,
+            content=message.content,
+            client_os=message.client_os,
+            browser=message.browser,
+            device=message.device,
+            network=message.network,
         )
-        # ── 插话开关: 关态且同会话有活跃任务 → 409(落库之前, 消息不入库) ──
-        #   2026-10-07 小欧 - 文档[11] 3.4.5: 方案①"门口就拦"。前端 error/handler.ts
-        #   已有 409 处理分支, 本方案零新增前端错误分支; 若改在 SSE 生成器内则无法转 409(见 3.3)。
-        #   2026-10-07 小欧 三堂会审补：仅拦 user 角色。save_message 同承 assistant/system 直存
-        #   （内部流转），一律拦会把任务体系内部写入误伤成 409。
-        if message.role == "user" and await has_active_task_in_session(session_id):
-            if not _eff_allow:   # 携带值优先, 否则读会话当前值(同 conn 直读, 不另开 atxn)
-                raise HTTPException(
-                    status_code=409,
-                    detail="任务执行中，插话开关未开启；请等待完成或先取消",  # 与编排器兜底 error_message、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
-                )
+        _track_user_message(session_id, message_id)
 
-        cursor.execute(
-            "SELECT id, title, COALESCE(title_locked, 0) as title_locked "
-            "FROM chat_sessions WHERE id = ? AND is_deleted = FALSE", (session_id,))
-        session = cursor.fetchone()
-        if not session:
-            raise HTTPException(status_code=404, detail="会话不存在")
+    # 只刷 updated_at(列表按其排序), 计数器已退役 — 小欧 2026-09-30
+    cursor.execute(
+        "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
+        (local_time, session_id))
 
-        local_time = get_local_iso_timestamp()
+    _try_mark_valid(cursor, session_id)
+    return message_id
 
-        display_name_to_save = message.display_name
-        if message.role == "assistant" and not display_name_to_save:
-            display_name_to_save = display_name_cache.get(session_id)
 
-        message_id = None
-        if message.role == "user":
-            # 锚迁移(北京老陈 2026-08-23 裁定"chat_messages 写保留当空气"): 权威源 chat_user_message
-            # 先落库, id 由本表 AUTOINCREMENT 原生自增分配(不再取 chat_messages.lastrowid 一对一贯通);
-            # 权威写失败即保存失败 fail-loud(杜绝旧路径"镜像成功但权威缺行→历史回放丢消息"的假成功) — 小欧 2026-08-23
-            message_id = insert_user_message(
-                conn,
-                session_id=session_id,
-                content=message.content,
-                client_os=message.client_os,
-                browser=message.browser,
-                device=message.device,
-                network=message.network,
+async def save_message(session_id: str, message):
+    """保存消息到会话 — 小健 2026-05-25 重构 — 自 api/v1/messages.py 迁入
+
+    2026-10-30 小欧 - 文档[58] P3: DB 段落改走 await db.atxn(...) 在子线程执行。
+      原实现是 async 函数里同步跑 `with db.get_conn(...)`(sqlite3 + 锁重试 time.sleep),
+      直接占住事件循环 → 1GB 库写放大时 loop 被独占, 前端并发 REST 集体撞 60s 超时。
+      同时把 has_active_task_in_session 的 await 移出连接上下文(原在 with 内 await)。
+      409 门必须在落库前判, 故拆两段: 先取开关生效值(只读), 判活跃任务, 最后写消息。
+    """
+    from fastapi import HTTPException
+    carried = getattr(message, "allow_interject", None) if message.role == "user" else None
+    # 409 门判据: 携带值优先, 否则读会话当前值。只读不落库 —— 被 409 拒绝时不留副作用(与原事务回滚等价)
+    # 2026-10-30 小欧: 409 门只拦 user, 非 user 角色不查开关(免一次无用 DB 往返)
+    eff_allow = False
+    if message.role == "user":
+        eff_allow = (
+            carried
+            if carried is not None
+            else await db.atxn("chat", _read_interject_txn, session_id)
+        )
+
+    # ── 插话开关: 关态且同会话有活跃任务 → 409(落库之前, 消息不入库) ──
+    #   2026-10-07 小欧 - 文档[11] 3.4.5: 方案①"门口就拦"。前端 error/handler.ts
+    #   已有 409 处理分支, 本方案零新增前端错误分支。
+    #   2026-10-07 小欧 三堂会审补：仅拦 user 角色。save_message 同承 assistant/system 直存
+    #   （内部流转），一律拦会把任务体系内部写入误伤成 409。
+    if message.role == "user" and await has_active_task_in_session(session_id):
+        if not eff_allow:
+            raise HTTPException(
+                status_code=409,
+                detail="任务执行中，插话开关未开启；请等待完成或先取消",  # 与编排器兜底 error_message、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
             )
-            _track_user_message(session_id, message_id)
-            # 镜像写点 W1-user(INSERT chat_messages) 已随 chat_messages 表退役整体移除 — 小欧 2026-08-27
-        # 镜像写点 W1-assistant(legacy 助手直存 INSERT chat_messages) 已随 chat_messages 表退役整体移除;
-        # assistant 消息现由任务/步骤体系(chat_tasks.ai_message_id / chat_task_steps)管理 — 小欧 2026-08-27
 
-        # 只刷 updated_at(列表按其排序), 计数器已退役 — 小欧 2026-09-30
-        cursor.execute(
-            "UPDATE chat_sessions SET updated_at = ? WHERE id = ?",
-            (local_time, session_id))
-
-        _try_mark_valid(cursor, session_id)
-
+    message_id = await db.atxn("chat", _save_message_txn, session_id, message, carried)
     return {"success": True, "message_id": message_id}
