@@ -5,6 +5,13 @@
 # 2026-10-29 小欧 修正: 摘录比例常量 REF_* 改从 app.constants 导入——compaction_constants 为
 #   压缩/裁剪专属域, 引用摘录比例非其职责; 单一真源迁至系统层常量第4节 — 小欧-2026-10-29
 
+# 2026-10-30 小欧 三堂会审整改: ①A2 捕获 browse.fail() 的 HTTPException 并按 code 映射
+#   unsupported/missing; 区间读中途文件消失由 isfile 复核判 missing, 不再误判 range_out;
+#   ②A3 读后按实际字符复核(read_max_bytes), 补行数门槛挡不住的"行少单行极长"与 2MB 截断线;
+#   ③A13 同 path 去重提前到读取前, 整份+区间并存时区间不再白读; ④A14 删区间分支无效 size 回写 — 小欧-2026-10-30
+# 2026-10-30 小欧 批3收尾: 字符级头尾摘录迁 services/refs/clip.clip_text(与预算压缩共用,
+#   杜绝两处口径分叉) — 小欧-2026-10-30
+
 """services.refs.resolver — 按引用标识读正文(唯一 IO 点)
 
 为何独立: 读取分流在 quote.ts:34-36(有外部/根内分流)与 refresh.ts:35(没有)的历史
@@ -12,11 +19,16 @@
 复用既有实现(DRY): read_text_file / read_external_file / _read_range, 不新写读盘逻辑。
 """
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from fastapi import HTTPException
+
 from app.file_browse import browse_service as browse
+from app.file_browse.errors import UNDECODABLE, UNSUPPORTED_TYPE
 from app.constants import REF_AVG_LINE_CHARS, REF_HEAD_RATIO, REF_TAIL_RATIO  # 摘录比例单一真源(5.2.11)
+from app.services.refs.clip import clip_text   # 2026-10-30 小欧: 字符级头尾摘录公共实现(与 budget 共用)
 from app.services.refs.limits import RefLimits
 
 # 单条读取超时(外部盘/网络盘慢时不拖死编排)
@@ -51,6 +63,11 @@ async def _read_blocks(path: str, is_ext: bool, offset: int, limit: int,
         r = await asyncio.to_thread(reader, path, cur, n, count_total=count_total)
         content = r.get("content") or ""
         if not content:
+            # 2026-10-30 小欧 A2: _read_lines_range 吞 OSError 返回空串, 若文件在区间读中途
+            #   被删/被移走, 原地 break 会被上层误判为 range_out。此处按盘面复核区分:
+            #   已不存在 → 抛 FileNotFoundError 走 missing; 仍存在(区间起点在文件尾后) → 正常 break。
+            if not await asyncio.to_thread(os.path.isfile, path):
+                raise FileNotFoundError(path)
             break
         parts.append(content)
         got = int(r.get("loaded_lines") or 0)
@@ -101,13 +118,17 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
                 return ResolvedRef(ref=ref, truncated=False, note="err:range_out:_read_blocks")
             # 2026-10-29 小欧 - range_clipped 回执(F2): 请求区间超出文件尾时如实告知,
             #   不再静默(4.6.1 注); 未越尾则 note 空 → resolve_refs 走放行分支。
-            return ResolvedRef(ref={**ref, "content": content, "size": ref.get("size")},
+            #   2026-10-30 小欧 A14: 删 `"size": ref.get("size")` —— 与 {**ref} 重复, 空操作。
+            return ResolvedRef(ref={**ref, "content": content},
                                truncated=False,
                                note="range_clipped" if clipped else "")
         # 无区间: 先整份直读(_read_truncated, ≤2MB, 零全扫)
         reader = browse.read_external_file if is_ext else browse.read_text_file
         r = await asyncio.to_thread(reader, path)
-        if r.get("truncated") or int(r.get("size") or 0) > limits.read_max_bytes:
+        content = r.get("content") or ""
+        truncated = bool(r.get("truncated"))
+        note = "仅读取前 N 行" if truncated else ""
+        if truncated or int(r.get("size") or 0) > limits.read_max_bytes:
             # 超单条上限 → 头尾摘录(4.6.3): 全扫一次取 total_lines(仅此一次), 头/尾各分块读
             probe = await asyncio.to_thread(reader, path, 1, 1, count_total=True)
             total = int(probe.get("total_lines") or 0)
@@ -118,14 +139,27 @@ async def _read_one(ref: Dict[str, Any], limits: RefLimits) -> ResolvedRef:
                 tail, _ = await _read_blocks(path, is_ext, total - tail_lines + 1, tail_lines)
                 _omitted = total - head_lines - tail_lines
                 content = f"{head}\n…[引用超长, 已省略 {_omitted} 行]\n{tail}"
-                return ResolvedRef(ref={**ref, "content": content, "size": r.get("size")},
-                                   truncated=True,
-                                   note=f"已省略 {_omitted} 行")
-        return ResolvedRef(ref={**ref, "content": r["content"], "size": r["size"]},
-                           truncated=bool(r.get("truncated")),
-                           note="仅读取前 N 行" if r.get("truncated") else "")
+                truncated = True
+                note = f"已省略 {_omitted} 行"
+        # 2026-10-30 小欧 A3: 行数门槛之后再按实际字符复核。行少但单行极长(160KB/800 行)
+        #   与 2MB 单行截断文件都从原实现的 `total <= head+tail` 缺口直出全文, 现统一收口。
+        content, _omitted_chars = clip_text(content, limits.read_max_bytes)
+        if _omitted_chars:
+            truncated = True
+            note = f"已省略 {_omitted_chars} 字符"
+        return ResolvedRef(ref={**ref, "content": content, "size": r.get("size")},
+                           truncated=truncated,
+                           note=note)
     except asyncio.TimeoutError:
         raise   # 外层 _guarded 统一超时落点(dropped reason=timeout)
+    except HTTPException as e:
+        # 2026-10-30 小欧 A2: browse 的唯一抛错出口是 fail()(HTTPException, detail={code,message})。
+        #   原实现被下方 Exception 兜成 missing, 415(UNSUPPORTED_TYPE/UNDECODABLE) 永远到不了
+        #   unsupported。此处按 code 精确映射, 其余(404/400/403/413)归 missing。
+        _code = e.detail.get("code") if isinstance(e.detail, dict) else None
+        _reason = "unsupported" if _code in (UNSUPPORTED_TYPE, UNDECODABLE) else "missing"
+        return ResolvedRef(ref=ref, truncated=False,
+                           note=f"err:{_reason}:{_code or 'HTTPException'}")
     except FileNotFoundError as e:
         return _fail(ref, "missing", e)
     except PermissionError as e:
@@ -149,6 +183,10 @@ async def resolve_refs(
     notice.build_notice 统一查 REASON_LEVELS 补齐(单一裁决点, resolver/budget 不碰 level)。
     """
     sem = asyncio.Semaphore(REF_READ_CONCURRENCY)
+
+    # 2026-10-30 小欧 A13: 同 path 去重提前到**读取前**(整份优先, 同 path 的区间条目直接丢弃)。
+    #   原实现在全部读完后再合并 → 整份+区间并存时区间白读一次(磁盘 IO 与超时预算都浪费)。
+    refs = _merge_same_path(list(refs))
 
     async def _guarded(ref: Dict[str, Any]) -> ResolvedRef:
         async with sem:
@@ -187,12 +225,12 @@ async def resolve_refs(
             resolved.append(rr.ref)
         else:
             resolved.append(rr.ref)
-    # 同 path 合并: 整份优先, 否则区间并集(见 4.6.2 去重)
-    return _merge_same_path(resolved), dropped, notices
+    # 同 path 已在读取前去重(A13), 此处不再二次合并
+    return resolved, dropped, notices
 
 
 def _merge_same_path(resolved: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """同 path 去重: 同一请求内同一文件整份只读一次; 不同区间各读一次(区间不合并正文)。
+    """同 path 去重(读取前调用): 同一请求内同一文件整份只读一次; 不同区间各读一次。
 
     整份(lineRange 空)优先: 若已有整份, 丢弃所有该 path 的区间条目; 否则按 lineRange 保序。
     """

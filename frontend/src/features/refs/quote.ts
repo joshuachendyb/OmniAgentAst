@@ -14,11 +14,13 @@
  * 语义约定：
  * - 就地收集：只入队不导航（用户在文件页读/挑多个文件时不该被反复踢走）；
  *   需要跳回对话页时由调用方决定（文件页有「去对话」按钮）。
- * - 正文当轮即弃：content 只存在队列里，上行后由后端组装；台账只存路径。
+ * - 正文不在前端：只入队标识（路径 / 行区间 / 大小），正文由后端按标识读取，前端不留副本。
  * - 读失败不静默：只返回 reason，不弹提示——成功与失败文案都归调用方。
+ *   2026-10-30 小欧 A12 更正: 原写"正文当轮即弃(content 只存在队列里)"——正文已不由前端读,
+ *   队列里只有标识(路径/行区间/size/mtime), 不存在 content 副本。
  */
 import { composerRefStore, newRefId } from './store';
-import { probeRef } from './probe'; // 读盘唯一入口(5.4.1)
+import { probeRef } from './probe'; // 探测唯一入口(stat, 5.4.1)
 
 export interface QuoteResult {
   ok: boolean;

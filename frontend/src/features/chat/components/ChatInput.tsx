@@ -74,8 +74,13 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import { probeRef, precheckRefs } from '@/features/refs/probe'; // 读盘唯一入口 + 发送前预检(5.4.1)
-import { newRefId, MAX_REFS, type ComposerRef } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限)
+import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检(5.4.1)
+import {
+  newRefId,
+  MAX_REFS,
+  refLimitText,
+  type ComposerRef,
+} from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限) + 超限文案单一真源
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';
@@ -272,6 +277,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (refs.length === 0)
       return { refsToSend: refs, blocked: false, updated: [] };
     const { checked, invalid, updated } = await precheckRefs(refs);
+    // 2026-10-30 小欧 A5: checked 含失效条目(invalid:true), 回写后 chip 保留红底可移除;
+    //   原实现回写"仅有效条目", 失效引用从界面消失, 提示却让用户"移除后再发送"。
     setAll(checked);
     if (invalid.length > 0) {
       showMessage(
@@ -294,8 +301,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
     /**
      * 2026-10-30 小欧 - 闸门抽成可单测函数(F7); 数据源 stat 端点(R3);
      *   旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
+     *   2026-10-30 小欧 A6: 预检异常必须可见 —— 本函数由回车 `void handleSendInternal()` 调用,
+     *   原实现让 statFile 抛错变成 unhandled rejection, 用户只看到"点了发送没反应"。
      */
-    const { refsToSend, blocked, updated } = await precheckOrBlock(refs);
+    let refsToSend: ComposerRef[];
+    let blocked: boolean;
+    let updated: ComposerRef[];
+    try {
+      ({ refsToSend, blocked, updated } = await precheckOrBlock(refs));
+    } catch {
+      showMessage(
+        ErrorType.FILE_READ,
+        '引用校验失败（网络或服务异常），请稍后重试'
+      );
+      return;
+    }
     if (blocked) return; // 已点名(内部 showMessage), 不产生任何 LLM 调用
     // 2026-10-30 小欧(阻断级修正): 原 precheckRefs 产出 updated 无消费落点, "内容已更新"
     //   功能分支丢失(4.5/R2)。发送前点名提示——后端按标识必读最新, 不阻断、不改 chip 态。
@@ -496,7 +516,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     //   超限 return 后占位 chip 残留(pending:true) → refsPending=true 卡死发送闸门
     //   "引用内容仍在载入"; 设计 5.4.7"在入队前同限"由此达成(占位也是入队, 必须一并拦)。
     if (refs.length >= MAX_REFS) {
-      showMessage(ErrorType.FILE_READ, `一次最多引用 ${MAX_REFS} 项`);
+      showMessage(ErrorType.FILE_READ, refLimitText());
       return;
     }
     setPicking(true);

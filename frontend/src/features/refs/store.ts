@@ -12,6 +12,9 @@
 //   同值, 单一真源双保险); ComposerRef 增 mtime/updated(预检本地留存, 上行前剥离, 供"内容已更新"比对);
 //   push 改返回 boolean(入队成功/超上限被拒, 调用方据此点名) — 小欧-2026-10-29
 // 编辑历史: 2026-10-30 小欧 - 取消链路批量格式化顺带换行(按项目 prettier 重排 push 长条件), 零逻辑改动 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 三堂会审整改(A11/A12/A18): ①refKeyOf 先归一 path(盘符小写 + \→/),
+//   同文件不同写法不再各占一条; ②删死字段 updated(实际用预检返回的独立数组); ③push 只算一次
+//   refKeyOf(原 20 条约 41 次); ④新增 refLimitText() 供三处"超上限"提示复用 — 小欧-2026-10-30
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -21,7 +24,7 @@
  *   与 features/chat/streams/chatStreamStore.ts 同范式。
  *
  * 语义：
- * - push 原样入队，不做体积降级、不限条数、不截断（引用多少发多少）
+ * - push 按同 key 原位替换入队，上限 MAX_REFS，不做体积降级、不截断（引用多少发多少）
  * - takeAll 取出并清空（一次性消费）
  * - 快照 = 队列长度（变化即触发消费 effect）
  */
@@ -49,12 +52,10 @@ export type ComposerRef = ChatRefPayload & {
    *   ⚠ 前端内存态（同 pending/invalid），上行前剥离（不进 wire）。
    */
   mtime?: string;
-  /**
-   * 2026-10-29 小欧 - 预检发现盘面已更新（mtime 不一致）的非阻断标记，供发送前点名。
-   *   ⚠ 前端内存态（同 mtime），上行前剥离。
-   */
-  updated?: boolean;
 };
+
+/** 超上限的统一提示文案（@补全 / 文件页 / 引用按钮三处共用，避免各写一份）— 小欧-2026-10-30 */
+export const refLimitText = (): string => `一次最多引用 ${MAX_REFS} 项`;
 
 /**
  * 引用 id：调用方生成（后端不认此 id，仅前端去重用）。
@@ -64,9 +65,22 @@ export type ComposerRef = ChatRefPayload & {
  */
 export const newRefId = (): string => crypto.randomUUID();
 
+/**
+ * 同 key 归一口径：盘符统一小写 + 反斜杠转正斜杠（设计 4.5/5.4.2）。
+ * 不归一的话 `C:\a\b.txt` 与 `c:/a/b.txt` 会被当成两条引用，分别占用 MAX_REFS 配额、
+ * 后端也会按不同 path 各读一次。
+ */
+const normalizeRefPath = (path?: string): string => {
+  if (!path) return '';
+  const s = path.replace(/\\/g, '/');
+  return /^[a-zA-Z]:/.test(s) ? s[0].toLowerCase() + s.slice(1) : s;
+};
+
 /** 同一文件 + 同一行区间视为同一引用（整文件 lineRange 为空）— 小杨-2026-10-21 */
 export const refKeyOf = (r: Pick<ComposerRef, 'path' | 'lineRange'>): string =>
-  `${r.path ?? ''}|${r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : ''}`;
+  `${normalizeRefPath(r.path)}|${
+    r.lineRange ? `${r.lineRange.start}-${r.lineRange.end}` : ''
+  }`;
 
 /** 合并引用：同 key 原位替换（后一次内容覆盖前一次），新 key 追加 — 小杨-2026-10-21 */
 export const mergeRefs = (
@@ -117,13 +131,12 @@ export const composerRefStore = {
    *   quote.ts / @补全 / Files 三调用方同批消费返回值）。
    */
   push(ref: ComposerRef): boolean {
-    if (
-      queue.length >= MAX_REFS &&
-      !queue.some((r) => refKeyOf(r) === refKeyOf(ref))
-    ) {
+    // 2026-10-30 小欧 A18: 只算一次 key —— 原实现上限判定/查找/替换各算一次,
+    //   20 条待发时一次 push 要做约 41 次 key 拼接。
+    const k = refKeyOf(ref);
+    if (queue.length >= MAX_REFS && !queue.some((r) => refKeyOf(r) === k)) {
       return false;
     }
-    const k = refKeyOf(ref);
     const i = queue.findIndex((r) => refKeyOf(r) === k);
     if (i >= 0) queue.splice(i, 1, ref);
     else queue.push(ref);

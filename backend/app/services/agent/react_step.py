@@ -227,8 +227,10 @@ async def _absorb_inbox(agent) -> int:
         已校验元组, 故 _uids 必非空且全为正整数(YAGNI 已删)。
     2026-09-28 小欧(设计文档[76] 6.2): ①inbox 已是(内容,uid)元组, 删 str 兼容分支(禁 backward);
       ②uid 随消息同行 → 删 insert_user_message 重落库(原双重落库是 uid 丢失的派生后果, 落库权责归一至 API 入口);
-      ③_merged 超长尾部截断(5.6); ④无锚写回块 — 锚演进单点在 add_user_message(user_message_id=),
-      并入末条天然不动旧锚(P1「并入末条覆盖旧锚」缺陷由此消亡, 见 5.0.2)。"""
+      ③_merged 超长保留尾部(5.6); ④无锚写回块 — 锚演进单点在 add_user_message(user_message_id=),
+      并入末条天然不动旧锚(P1「并入末条覆盖旧锚」缺陷由此消亡, 见 5.0.2)。
+    2026-10-30 小欧 A19: ③的截断方向修正为**保尾部**——插话正文前可能拼引用区块,
+      切头部会先丢引用、再丢用户消息开头; 保尾部才能留下用户真正写的话。"""
     from app.services.task.task_registry import drain_inbox
     _injected = await drain_inbox(agent.task_id)
     if not _injected:
@@ -237,11 +239,13 @@ async def _absorb_inbox(agent) -> int:
     _contents = [m[0] for m in _injected]
     _uids = [m[1] for m in _injected]
     _merged = "\n".join(_contents)
-    # 2026-09-28 小欧: 超长尾部截断(设计[76] 5.6); 上限与 message_builder._cap_temp_history 同键(DRY)
+    # 2026-09-28 小欧: 超长保留尾部(设计[76] 5.6); 上限与 message_builder._cap_temp_history 同键(DRY)
+    #   2026-10-30 小欧 A19: 原 `[:_max_chars]` 切掉的是尾部 → 插话拼在前的引用区块与用户正文一起被反序丢弃。
+    #   refs 在前、user_input 在后, 保尾部 = 保用户真话, 截断处留显式标记。
     _max_chars = int(get_config().get('tuning.content.temp_history_char_limit', TEMP_HISTORY_CHAR_LIMIT))
     if len(_merged) > _max_chars:
-        logger.warning(f"[B] 注入合并超长({len(_merged)}>{_max_chars}), 尾部截断")
-        _merged = _merged[:_max_chars]
+        logger.warning(f"[B] 注入合并超长({len(_merged)}>{_max_chars}), 保留尾部")
+        _merged = "…[注入前文过长, 已截断]\n" + _merged[-_max_chars:]
     # 落库权责归一至 API 入口(前端 POST /sessions/{id}/messages), 此处不再 insert_user_message;
     # uid 取自 inbox 元组。锚取**最后一条**(设计[30] §4.5 B-5 明文"锚取最后一条 uid"):
     #   终态 update_user_message_final 只回填锚所在那一行 → 刷新后 carrier 把 assistant 渲在该行,

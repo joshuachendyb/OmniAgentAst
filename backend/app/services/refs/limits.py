@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # 编辑历史:
 # 2026-10-29 小欧 新建: 输入框引用阈值单一真源(从 DTO/resolver/budget/前端散落收口) — 小欧-2026-10-29
+# 2026-10-30 小欧 三堂会审 A16: 配置比例钳制到 (0,1], 越界回落默认值(0/负数=全拒, >1=全放, 皆破坏预算) — 小欧-2026-10-30
 """services.refs.limits — 引用预算阈值的唯一真源
 
 职责(单一职责): 由「本次生效模型的 context_limit」派生出引用链路需要的全部阈值:
@@ -12,6 +13,7 @@
 from dataclasses import dataclass
 
 from app.config import get_config
+from app.logger import logger
 from app.services.agent.compaction_constants import (
     CHARS_PER_TOKEN, COMPACTION_BUFFER, TOOLS_TOKEN_RESERVE,
 )
@@ -41,6 +43,24 @@ def budget_base_of(context_limit: int) -> int:
     return int(context_limit) - COMPACTION_BUFFER - TOOLS_TOKEN_RESERVE
 
 
+def _ratio_of(cfg: dict, key: str, default: float) -> float:
+    """取配置比例并钳制: 必须落在 (0,1], 否则回落默认值。
+
+    0/负数会让整条预算归零(全拒), >1 会让上限超过窗口(全放), 两者都破坏
+    "引用不挤占上下文"的约束, 故非法值一律回落默认并留 warning 可查。
+    """
+    raw = cfg.get(key, default)
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        logger.warning("[refs] 阈值比例非法(%s=%r), 回落默认 %s", key, raw, default)
+        return default
+    if not 0 < value <= 1:
+        logger.warning("[refs] 阈值比例越界(%s=%s), 回落默认 %s", key, value, default)
+        return default
+    return value
+
+
 def resolve_limits(context_limit: int, scope: str = "first") -> RefLimits:
     """派发阈值。scope: first | interject。预算反推, 不写死字节数。
 
@@ -48,10 +68,10 @@ def resolve_limits(context_limit: int, scope: str = "first") -> RefLimits:
     插话: 单条与合计同值 5%, 不降级(超限直接拒绝)。
     """
     cfg = get_config().get("tuning.refs", {}) or {}
-    _single_r = float(cfg.get("single_ratio", 0.20))
-    _total_r = float(cfg.get("total_ratio", 0.40))
-    _reject_r = float(cfg.get("reject_ratio", 0.60))
-    _interject_r = float(cfg.get("interject_ratio", 0.05))
+    _single_r = _ratio_of(cfg, "single_ratio", 0.20)
+    _total_r = _ratio_of(cfg, "total_ratio", 0.40)
+    _reject_r = _ratio_of(cfg, "reject_ratio", 0.60)
+    _interject_r = _ratio_of(cfg, "interject_ratio", 0.05)
     base = budget_base_of(context_limit)
     single_t = int(base * _single_r)
     if scope == "interject":

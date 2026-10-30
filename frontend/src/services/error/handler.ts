@@ -79,6 +79,9 @@ export enum ErrorType {
   // 2026-10-06 小欧 - 文档[11] 决策 19: 会话有活跃任务且插话开关关 → 后端 message_service.save_message 落库前 409。
   //   必与 SESSION_CONFLICT(版本冲突)分开: 后者"请刷新页面重试"对本场景是错误引导。
   SESSION_BUSY = 'session_busy',
+  // 2026-10-30 小欧 A8: 引用全部不可用(后端编排早退 error_type=refs_blocked)。
+  //   必须登记, 否则 getErrorConfig 取不到 → toast 落到 UNKNOWN「发生未知错误」。
+  REFS_BLOCKED = 'refs_blocked',
   SESSION_NOT_FOUND = 'session_not_found',
   VERSION_CONFLICT = 'version_conflict',
   CONTENT_TOO_LONG = 'content_too_long',
@@ -298,6 +301,14 @@ export const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
     // 2026-10-07 小欧: 本 message 仅兜底; 真源是后端 detail/error_message(handleError 经 extractErrorMessage 已优先使用)。改文案须三处同步。
     message: '任务执行中，插话开关未开启；请等待完成或先取消',
     severity: 'warning', // 非 critical: 这是"现在不方便"而非"故障"
+  },
+  [ErrorType.REFS_BLOCKED]: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    // 真源是后端 error_message(点名哪几条不可用, handleSSEError 已透传); 本 message 仅兜底
+    message: '引用不可用，请移除后重发',
+    severity: 'warning',
   },
   [ErrorType.SESSION_NOT_FOUND]: {
     retryable: false,
@@ -1328,7 +1339,11 @@ export function handleSSEError(
     return { handled: true, errorType };
   }
 
-  ErrorHandlerSelf.showMessage(errorType);
+  // 2026-10-30 小欧 A8: 后端 error_message 才是明细真源(如 refs_blocked 点名哪几条不可用)。
+  //   原实现只 showMessage(type) → toast 只能取配置兜底文案, 后端明细只在 assistant 气泡里出现。
+  //   透传后 toast 与气泡同一句话; 未带该字段的错误不受影响(showMessage 回落配置文案)。
+  const _detail = (error as { error_message?: string } | null)?.error_message;
+  ErrorHandlerSelf.showMessage(errorType, _detail);
 
   return {
     handled: true,

@@ -11,7 +11,9 @@
  *   「调 quote* + 弹提示」这一件事；再开第二份提示文案就是分叉。
  *
  * 交互口径（与足迹面板完全一致）：
- * - 成功 toast `已引用「末段名」到对话`；失败 `showMessage(FILE_READ, '引用内容读取失败，请重试')`。
+ * - 成功 toast `已引用「末段名」到对话`；失败按 reason 分支（2026-10-30 小欧 A7）：
+ *   too_many → "一次最多引用 20 项"；其余 → "引用内容读取失败，请重试"。
+ *   原实现把超限也报成"读取失败"，用户会去检查一个根本没坏的文件。
  * - 行区间语义：带 lineRange 走 quoteSelection 引选区（与足迹/任务卡口径一致）。
  * - 就地收集不导航：composerRefStore 由 ChatInput 订阅自动消费（同页无路由扰动）。
  * - stopPropagation：按钮与链接同处一个行内容器，防误触发外层 chip 跳转。
@@ -21,6 +23,7 @@
 import React from 'react';
 import { PaperClipOutlined } from '@ant-design/icons';
 import { quoteFile, quoteSelection } from './quote';
+import { refLimitText } from './store';
 import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { Colors } from '@/utils/stepStyles';
 
@@ -41,6 +44,8 @@ const QuoteButton: React.FC<QuoteButtonProps> = ({
       ? await quoteSelection(path, lineRange, { label })
       : await quoteFile(path, { label });
     if (r.ok) showSuccess(`已引用「${label}」到对话`);
+    else if (r.reason === 'too_many')
+      showMessage(ErrorType.FILE_READ, refLimitText());
     else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
   };
   return (

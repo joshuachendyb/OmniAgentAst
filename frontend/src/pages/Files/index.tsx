@@ -62,6 +62,8 @@
 
 // 2026-10-29 小欧 - 读取权收归后端: readAndPush 删外部/根内分叉改调 probeRef(轻量探 size/mtime);
 //   pushRef 删 content 传参加 mtime(入队只存标识) — 小欧-2026-10-29
+// 2026-10-30 小欧 A12/A7: 删剩余死参(_content/kind), 更正"content/size 覆盖项"的过时说明;
+//   pushRef/readAndPush 改返回 boolean, 超限走统一文案且批量不再把"被拒"计成成功 — 小欧-2026-10-30
 
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
@@ -111,11 +113,11 @@ import { PreviewNoticeCard } from '@/features/files/components/PreviewNoticeCard
 // 2026-10-23 小欧 - 外部目录挂树：合成根 __ext__ + mergeKids 合并外部子层 — 小欧-2026-10-23
 import { mergeKids, prefixKeys, joinAbsPath } from '@/utils/fileTree';
 // 2026-10-22 小欧 - 引用能力上提共享域；
-//   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
+//   v1.4（修 D5）：正文已在调用方读好时仍只把 size 传给 quote*，正文由后端读（不传 content）。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
 import { quoteFile, quoteSelection } from '@/features/refs/quote';
 // 2026-10-30 小欧(D4): probeRef import 删除——readAndPush 不再预探, 单探收敛 quoteFile 内部
-import { composerRefStore } from '@/features/refs/store';
+import { composerRefStore, refLimitText } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 // 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
 import { isMutatedByOps } from '@/utils/fileOps';
@@ -754,22 +756,27 @@ const FilesPage: React.FC = () => {
   /**
    * 2026-10-22 小欧 - 引用入口统一到 features/refs；
    *   「已收集」不再由页面自记账（双真源）→ 直接读 store 队列计数；
-   *   enqueueRef 已收为域内私有（不 export）→ 正文已在手时走 quote* 的 content/size 覆盖项。
+   *   enqueueRef 已收为域内私有（不 export）→ 正文已在手时走 quote* 的 size 覆盖项。
+   * 2026-10-30 小欧 A12/A7: 删死参 `_content`(正文由后端读) 与 `kind`(quote* 按入口固定);
+   *   返回 boolean 供批量统计, 超限不再静默(A7)。
    */
   const pushRef = useCallback(
     async (
-      kind: 'file' | 'selection',
       label: string,
       path: string,
-      _content: string, // 2026-10-29 小欧: 正文由后端读, 前端不再传正文(占位保留兼容调用方)
       size?: number,
       range?: { start: number; end: number }
-    ) => {
-      // v1.4（修 D5）：正文已在调用方读好/切好 → 直传 quote* 的 size(正文由后端读, 不再传 content)
+    ): Promise<boolean> => {
       const r = range
         ? await quoteSelection(path, range, { label, size })
         : await quoteFile(path, { label, size });
-      if (r.ok) showSuccess(`已引用「${label}」`);
+      if (r.ok) {
+        showSuccess(`已引用「${label}」`);
+        return true;
+      }
+      if (r.reason === 'too_many')
+        showMessage(ErrorType.FILE_READ, refLimitText());
+      return false;
     },
     []
   );
@@ -784,7 +791,7 @@ const FilesPage: React.FC = () => {
    *   2026-10-23 小欧 - 外部文件（__ext__/ 前缀）走 readExternalFile，ref path 存绝对路径 — 小欧-2026-10-23
    */
   const readAndPush = useCallback(
-    async (n: FileNode): Promise<void> => {
+    async (n: FileNode): Promise<boolean> => {
       // 2026-10-30 小欧(D4): 删预探——readAndPush 不再 probeRef, 单探收敛到 quoteFile 内部
       //   (原实现预探 + quoteFile 内部又探 = 每次引用 2 次 IO, 且预探 mtime 经 pushRef→quoteFile
       //   无接收位成死参); quoteFile 内部 probeRef 一次取 size/mtime, 失败仍入队"未校验"(4.11)。
@@ -792,7 +799,7 @@ const FilesPage: React.FC = () => {
         n.key.startsWith('__ext__/') && externalBase
           ? joinAbsPath(externalBase, n.key.slice('__ext__/'.length))
           : n.key;
-      await pushRef('file', n.name, path, ''); // 正文由后端读, 单探收敛 quoteFile 内部
+      return pushRef(n.name, path); // 正文由后端读, 单探收敛 quoteFile 内部
     },
     [pushRef, externalBase]
   );
@@ -813,8 +820,7 @@ const FilesPage: React.FC = () => {
     await Promise.all(
       multiFiles.map(async (n) => {
         try {
-          await readAndPush(n);
-          ok.push(n.key);
+          if (await readAndPush(n)) ok.push(n.key);
         } catch {
           showMessage(ErrorType.FILE_READ, `无法读取「${n.name}」，未引用`);
         }
@@ -924,35 +930,23 @@ const FilesPage: React.FC = () => {
         external={externalPath ? { path: externalPath } : undefined}
         lineRange={lineRange}
         refreshRef={refreshPreviewRef}
-        onSendFile={(content, node, size) =>
-          pushRef('file', node.name, node.key, content, size)
-        }
-        onSendSelection={(content, node, range, size) =>
+        onSendFile={(_, node, size) => pushRef(node.name, node.key, size)}
+        onSendSelection={(_, node, range, size) =>
           pushRef(
-            'selection',
             `${node.name} L${range.start}-${range.end}`,
             node.key,
-            content,
             size,
             range
           )
         }
-        onSendExternal={(content, absPath, size) =>
-          pushRef(
-            'file',
-            absPath.split(/[\\/]/).pop() || absPath,
-            absPath,
-            content,
-            size
-          )
+        onSendExternal={(_, absPath, size) =>
+          pushRef(absPath.split(/[\\/]/).pop() || absPath, absPath, size)
         }
-        // 2026-10-23 小欧 - 外部文件选区引用（与根内选区同能力，走 pushRef('selection', ...)）— 小欧-2026-10-23
-        onSendExternalSelection={(content, absPath, range, size) =>
+        // 2026-10-23 小欧 - 外部文件选区引用（与根内选区同能力，走 pushRef(..., range)）— 小欧-2026-10-23
+        onSendExternalSelection={(_, absPath, range, size) =>
           pushRef(
-            'selection',
             `${absPath.split(/[\\/]/).pop() || absPath} L${range.start}-${range.end}`,
             absPath,
-            content,
             size,
             range
           )

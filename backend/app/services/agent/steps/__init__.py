@@ -64,6 +64,9 @@ ALL_STEP_TYPES = frozenset({
     "merged",  # 2026-09-28 小欧: 注入应答(仅SSE, 不落库)
     "rejected", "truncated",
     "notice",  # 2026-10-25 小欧: 通知信封(事前/事后统一), kind+phase 分派, 仅SSE不落库
+    # 2026-10-30 小欧: 引用回执(部分不可用/压缩/拒绝点名), 仅SSE不落库, 与 "merged" 同类;
+    #   定义与组帧在 services/refs/notice.py, 此处为唯一登记点(转发表自动推导)
+    "refs_notice",
     # 2026-10-04 小欧 - 订正: stats/history_context 实际属"落库需回放"(见 agent_telemetry.PERSISTED_NON_BIZ_TYPES,
     #   agent_runner 落库路由以 SSE_ONLY_TYPES 为排除集, 二者不在其中即落库), 原被误列在仅SSE 段 — 小欧 2026-10-04
     "stats", "history_context",

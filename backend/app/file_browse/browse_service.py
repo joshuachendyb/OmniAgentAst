@@ -30,6 +30,9 @@
 #   "是否含越界引用"供 resolver 标记 note); _read_range 增 count_total 透传(读区间免二次全量计数,
 #   count_total=False 时 total_lines=None 并补 range_clipped=实读行数<请求行数, 供回执"range_clipped");
 #   新增 stat_file(单文件 stat, 供 GET /files/stat 轻端点, 只取存在/size/mtime 不读正文) — 小欧-2026-10-29
+# 编辑历史:
+# 2026-10-30 小欧 新增: 引用预检 stat 数据源(存在性/mtime/size, 不读正文全文) — 小欧-2026-10-30
+# 2026-10-30 小欧 A17: 更正注释——非 O(1) 零读: _probe_text 仍读首 8KB 判文本, 只是不读全文 — 小欧-2026-10-30
 
 """文件浏览服务：项目根目录内的只读浏览。
 
@@ -686,8 +689,10 @@ def search_files(keyword: str, limit: int = 20,
     }
 
 
-def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    """过滤输入框引用条目中的越界 path（chat 链路专用）。
+def sanitize_refs(
+    refs: Optional[List[Dict[str, Any]]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """过滤输入框引用条目中的越界 path（chat 链路专用），返回 (kept, dropped)。
 
     为什么在这里：判定「路径是否在项目根内」的知识只有本模块有（_resolve_within_root
     含代码库根禁区），若在 message_builder 里另写一份判定，必然与本模块分叉口径 ——
@@ -696,39 +701,57 @@ def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     会让更内层的模块依赖更外层。故校验前移到编排入口，**渲染期零 IO**。
 
     越界条目整条丢弃（含 content）：不给模型任何指向项目外的线索。
-    无 path 的条目（纯 label 引用）不校验，放行。
+    无 path 的条目一律丢弃（2026-10-30 小欧 A15）：resolver 对无 path 必判 no_path 丢弃，
+    此处若放行只是把同一裁决晚一步做，还会让"入 prompt 的条数"与"可解析条数"对不上；
+    收口到唯一入口后，上层看到的 refs 全部带 path。
+
+    2026-10-30 小欧 批2 序10: 改双返回 —— 原单值接收把越界条目静默丢掉, 用户看不到
+      "哪条没进去"; dropped 与 resolver/budget 的回执同形(reason 区分 out_of_root/no_path),
+      由编排层汇入 refs_notice 统一点名。
     """
     if not refs:
-        return []
+        return [], []
     kept: List[Dict[str, Any]] = []
+    dropped: List[Dict[str, str]] = []
     for ref in refs:
         if not isinstance(ref, dict):
             continue
         path = (ref.get("path") or "").strip()
-        if path:
-            # 2026-10-22 小欧 - 绝对盘符路径 = 外部文件引用（用户主动引用；存在性由前端
-            #   预览时经 read_external_file 校验，此处只做"是否外部"的放行判定，不重复 IO）。
-            #   相对路径仍走 _resolve_within_root（项目内口径不变）— 小欧-2026-10-22
-            if not _is_abs_drive_path(path):
-                try:
-                    _resolve_within_root(path)
-                except Exception as e:     # noqa: BLE001 —— fail() 抛的是业务错误类型，此处一律按越界丢弃
-                    logger.warning("[file_browse] 丢弃越界的引用路径 path=%s (%s)", path, e)
-                    continue
+        if not path:
+            logger.warning("[file_browse] 丢弃无 path 的引用条目 label=%s", ref.get("label"))
+            dropped.append({
+                "label": (ref.get("label") or ""),
+                "path": "",
+                "reason": "no_path",
+            })
+            continue
+        # 2026-10-22 小欧 - 绝对盘符路径 = 外部文件引用（用户主动引用；存在性由前端
+        #   预览时经 read_external_file 校验，此处只做"是否外部"的放行判定，不重复 IO）。
+        #   相对路径仍走 _resolve_within_root（项目内口径不变）— 小欧-2026-10-22
+        if not _is_abs_drive_path(path):
+            try:
+                _resolve_within_root(path)
+            except Exception as e:     # noqa: BLE001 —— fail() 抛的是业务错误类型，此处一律按越界丢弃
+                logger.warning("[file_browse] 丢弃越界的引用路径 path=%s (%s)", path, e)
+                dropped.append({
+                    "label": (ref.get("label") or path),
+                    "path": path,
+                    "reason": "out_of_root",
+                })
+                continue
         kept.append(ref)
-    return kept
+    return kept, dropped
 
-
-# 编辑历史:
-# 2026-10-30 小欧 新增: 引用预检 stat 数据源(存在性/mtime/size, 不读正文, O(1)) — 小欧-2026-10-30
 
 def stat_file(path: str) -> Dict[str, Any]:
-    """引用预检数据源(4.11): 只回存在性/mtime/size, 不读盘正文。
+    """引用预检数据源(4.11): 只回存在性/mtime/size, 不读正文全文。
 
     根内: _resolve_within_root 校验(越界/UNC 拒绝, 与 build_tree 同口径);
     外部: _is_abs_drive_path 校验(仅盘符绝对路径, 与 read_external_file 同口径);
     不存在/不可访问 → ok=False + reason(missing/unsupported), 不抛 404
     (失败语义交调用方组 chip 回执, 与 4.6.4 "失败不抛给用户"同纪律)。
+    成本口径: 文本判定走 _probe_text(首 8KB 查 NUL, 与 _preview_of 同判定), 不读全文,
+    故 10MB 与 10KB 文件的 stat 耗时同量级; 不是零 IO, 勿按 O(1) 理解。
     """
     try:
         target, _rel = _resolve_within_root(path)

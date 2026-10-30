@@ -84,12 +84,14 @@ def get_file_content(
 
 
 # 编辑历史:
-# 2026-10-30 小欧 新增: /files/stat 引用预检轻端点(只读, 不读正文) — 小欧-2026-10-30
+# 2026-10-30 小欧 新增: /files/stat 引用预检轻端点(只读, 不读正文全文) — 小欧-2026-10-30
 
 @router.get("/files/stat")
 def stat_file_endpoint(path: str):
-    """引用预检: 存在性/mtime/size, O(1) 不读正文(5.4.1 precheckRefs 唯一数据源)。
+    """引用预检: 存在性/mtime/size, 不读正文全文(5.4.1 precheckRefs 唯一数据源)。
 
+    成本口径: 文本判定要读首 8KB(与 /files/read 同判定), 不是零 IO;
+    与 read 的差别是"不读全文", 不是"不读盘"(A17)。
     安全边界与 /files/read 同口径: 只读、越界拒绝、审计日志; 无新增写操作。
     """
     if not (path or "").strip():

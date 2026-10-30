@@ -202,7 +202,9 @@ async def run_react_cycle(
 
     # 装配 conv → 发 history_context 首帧 → 再发 start(压缩与未压缩都发首帧)
     # 2026-10-13 小欧 - 文档[28] 4.1.6: refs 取自 agent._start_meta(orchestrator 透传),
-    #   在 message_builder 内拼为 user 消息前置区块 → 首发与插话同一路径, 覆盖两处。
+    #   在 message_builder 内拼为 user 消息前置区块。
+    # 2026-10-30 小欧 A19 更正: 此处只覆盖**首发**。插话不走 init_history——其 refs 由
+    #   orchestrator 插话分支解析并渲染进注入正文(经 drain_inbox 并入), 原"覆盖两处"不实。
     agent.message_builder.init_history(
         getattr(agent, "_sys_prompt", "") or "",
         task or "",

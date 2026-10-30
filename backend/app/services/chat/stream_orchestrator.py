@@ -225,6 +225,10 @@
 #   配套 R4: _stream_with_control 把 buffer 传入 task_cancel_check_and_yield, 已有真实终态时不再合成
 #   (原合成后 return 会截断真实 final 与其后 final_stats)。 — 小欧-2026-10-30
 
+# 2026-10-30 小欧 - 批2/批3 补齐: ①sanitize_refs 双返回, 越界/无 path 条目进回执;
+#   ②首发 resolve→budget→refs_notice→阻断/放行 全链接入; ③插话同口径(预算 5%), 回执与拒绝帧
+#   经目标任务 buffer publish 下发(新 POST 流前端只 readToEnd 不解析); ④_start_meta["refs"] 取裁决后结果。 — 小欧-2026-10-30
+
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -251,6 +255,7 @@ from app.services.task.task_registry import (
     set_agent_task,               # 2026-10-30 小欧 取消直达 agent 协程 — 小欧-2026-10-30
     has_active_task_in_session,   # 2026-09-20 小欧 活跃任务注入入口 — 小欧-2026-09-20
     inject_message_to_task,
+    get_task_field,               # 2026-10-30 小欧 A19 插话取目标任务生效模型 context_limit — 小欧-2026-10-30
     cleanup_task,                 # 2026-09-26 小欧 config_error 早退需注销任务，避免会话被死任务占死 — 小欧-2026-09-26
 )
 from app.services.task.task_runtime import (
@@ -459,7 +464,8 @@ async def chat_stream_orchestrator(
     #   判定复用 file_browse 的唯一入口（_resolve_within_root，含代码库根禁区）。
     #   放这里而非 message_builder： 层次正确（本层 → app.file_browse 是同层横向依赖，
     #   反向会让 agent 层依赖更外层）； 渲染期零 IO（原先每条 ref 都要 resolve 一次）。
-    refs = browse.sanitize_refs(refs)
+    #   2026-10-30 小欧 批2 序10: 双返回, 越界/无 path 条目汇入回执点名(不再静默丢失)。
+    _start_kept, _s_dropped = browse.sanitize_refs(refs)
     user_input = messages[-1].content or ""
     if not user_input.strip():
         # 2026-08-28 小欧 yield日志审计: 输入校验失败日志(KISS)
@@ -554,7 +560,71 @@ async def chat_stream_orchestrator(
                     error_message="任务执行中，插话开关未开启；请等待完成或先取消",  # 与 messages 409 detail、前端 ERROR_CONFIG_MAP 同文案, 改须三处同步(2026-10-07 小欧)
                 )
                 return
-            _injected_ok = await inject_message_to_task(_active_tid, user_input, _user_msg_id)
+            # 2026-10-30 小欧 A19(设计 6.2 序 11): 插话必须与首发同路带引用。
+            #   原实现只注入 user_input, 前端 postInterject 仍上行 refs → 插话引用全丢。
+            #   预算取**目标任务**生效模型的 context_limit(运行中 agent 已持有); 插话档 5%
+            #   (超限即拒, 不降级)。解析/裁决失败与首发同语义显式阻断, 不静默吞引用。
+            #   2026-10-30 小欧 批2/3: 回执(refs_notice)与拒绝帧都经**目标任务缓冲**下发 ——
+            #   插话的新 POST 流前端只 readToEnd 不解析, 直 yield 用户收不到(载体纪律见 notice 模块)。
+            from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT
+            from app.services.refs.budget import budget_refs
+            from app.services.refs.limits import resolve_limits
+            from app.services.refs.notice import build_notice
+            from app.services.refs.render import render_refs_block
+            from app.services.refs.resolver import resolve_refs
+
+            _tgt_agent = await get_task_field(_active_tid, "agent")
+            _tgt_ctx = int(getattr(getattr(_tgt_agent, "llm_client", None),
+                                   "context_limit", None) or DEFAULT_CONTEXT_LIMIT)
+            _ilimits = resolve_limits(_tgt_ctx, "interject")
+            _iresolved, _idropped, _inotices = await resolve_refs(_start_kept, limits=_ilimits)
+            _ifinal, _ibnotices = budget_refs(_iresolved, limits=_ilimits, scope="interject")
+            # 三源 dropped 全链汇集: 越界/无 path(sanitize) + 读取失败(resolver) + 超限(budget)
+            _iall_notices = _inotices + _ibnotices + [
+                {"label": d.get("label") or d.get("path") or "", "path": d.get("path") or "",
+                 "reason": d.get("reason") or "out_of_root"}
+                for d in _s_dropped
+            ]
+            _ibuf = get_stream_buffer(_active_tid)
+
+            async def _emit_to_target(payload: dict):
+                """回执帧下发: 目标缓冲在则 publish(经 Journal 落 seq 随目标任务流转),
+                已回收则打 persistence_degraded 标后返回直发副本(无 seq, 不抢目标任务序号)。"""
+                if _ibuf:
+                    await _ibuf.publish(payload)
+                    return None
+                payload["persistence_degraded"] = True
+                logger.warning(f"[Journal] 插话引用回执降级直发(目标任务缓冲已回收): target={_active_tid}")
+                return format_agent_sse(payload)
+
+            if refs and not _ifinal:
+                # 阻断(4.8): 先回执点名(error 级), 再发 refs_blocked 错误帧
+                _names = "、".join(dict.fromkeys(
+                    n.get("label") or n.get("path") or "未命名" for n in _iall_notices)) or "未知"
+                _frame = await _emit_to_target(build_notice("error", "interject", _iall_notices))
+                if _frame:
+                    yield _frame
+                _frame = await _emit_to_target({
+                    "type": "error",
+                    "error_type": "refs_blocked",
+                    "error_message": f"引用全部不可用({_names}), 请移除后重发",
+                })
+                if _frame:
+                    yield _frame
+                return
+            if _iall_notices:
+                # 部分不可用/被压缩: 只回执点名, 不中断任务(与首发同权, 4.8)
+                _frame = await _emit_to_target(build_notice(None, "interject", _iall_notices))
+                if _frame:
+                    yield _frame
+            logger.info(
+                "[refs] interject resolved=%d dropped=%s notices=%s",
+                len(_ifinal),
+                [f"{d.get('label')}:{d.get('reason')}" for d in _idropped],
+                [f"{n.get('label')}:{n.get('reason')}" for n in _iall_notices],
+            )
+            _injected_ok = await inject_message_to_task(
+                _active_tid, render_refs_block(_ifinal) + user_input, _user_msg_id)
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
                 await _bind_task_id(_active_tid, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28(设计文档[76] 6.6)
@@ -754,19 +824,37 @@ async def chat_stream_orchestrator(
             )
         except Exception as _e:  # noqa: BLE001 - 序号仅供文案, 失败降级不阻断任务
             logger.warning(f"[chat] 取链内序号失败(session={session_id}), 序号默认0: {_e}")
-        # ── 新增: 建 agent 之后(agent_runner 已把 context_limit 写进 MAX_CONTEXT_TOKENS) ──
-        #   位置约束(4.3): resolve 必须落在建 agent 之后、_start_meta 注入之前,
-        #   因为 context_limit 由 agent_runner.py:627 运行时覆盖, 之前取不到运行时值。
-        #   批1桥接(6.1 口径注): budget 缺位(resolve 全量放行注入 _start_meta, 大引用 400
-        #   留到批3序13); refs_notice/chip 状态机批1不建(解析失败走既有阻断错误 refs_blocked)。
+        # ── 引用解析+体积裁决(设计 4.3/4.7): 建 agent 之后、_start_meta 注入之前 ─────
+        #   2026-10-30 小欧 A1: 运行时窗口取 agent.llm_client.context_limit。
+        #   agent_runner.py 对 message_builder.MAX_CONTEXT_TOKENS 的覆盖发生在 create_task
+        #   之后的后台协程里, 此处读到的是构造默认值(恒 DEFAULT_CONTEXT_LIMIT),
+        #   切小窗口模型时引用预算会被放大数倍。llm_client 是会话覆盖后的生效快照, 唯一真源。
+        #   2026-10-30 小欧 批2/3: resolve → budget → 回执(refs_notice) → 处置(放行/阻断)。
+        from app.services.refs.budget import budget_refs
         from app.services.refs.limits import resolve_limits
+        from app.services.refs.notice import create_refs_notice_event
         from app.services.refs.resolver import resolve_refs
 
-        _limits = resolve_limits(agent.message_builder.MAX_CONTEXT_TOKENS, "first")
-        _final_refs, _r_dropped, _r_notices = await resolve_refs(refs, limits=_limits)
+        _ctx_limit = int(getattr(agent.llm_client, "context_limit", None)
+                         or agent.message_builder.MAX_CONTEXT_TOKENS)
+        _limits = resolve_limits(_ctx_limit, "first")
+        _resolved, _r_dropped, _r_notices = await resolve_refs(_start_kept, limits=_limits)
+        _final_refs, _b_notices = budget_refs(_resolved, limits=_limits, scope="first")
+        # 回执条目全链汇集: 越界/无 path(sanitize) + 读取失败/截断(resolver) + 压缩/拒绝(budget)。
+        #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。
+        _notices = _r_dropped + _r_notices + _b_notices + _s_dropped
+        # 2026-10-30 小欧 A9: 解析结果落日志(失败/截断/压缩无据可查的历史已修)
+        if _notices:
+            logger.info(
+                "[refs] first resolved=%d notices=%s",
+                len(_final_refs),
+                [f"{n.get('label')}:{n.get('reason')}" for n in _notices],
+            )
+            # 回执下发(有则发): 首发流是新建任务流, 前端 pump 直接消费, yield 即可见
+            yield create_refs_notice_event("first", _notices)
         if refs and not _final_refs:
             _names = "、".join(dict.fromkeys(
-                n.get("label") or n.get("path") or "未命名" for n in _r_dropped)) or "未知"
+                n.get("label") or n.get("path") or "未命名" for n in _notices)) or "未知"
             yield create_error_response(error_type="refs_blocked",
                                         error_message=f"引用全部不可用({_names}), 请移除后重发")
             return
@@ -780,7 +868,7 @@ async def chat_stream_orchestrator(
             "warning": _model_warning,
             # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用透传, 供 message_builder.init_history 拼入
             #   LLM 消息。纯数据携带, 不参与 user_input(入库/历史不受影响)。
-            #   2026-10-29 小欧: 已解析(读盘)+批1未裁决(budget 批3接入), 供 init_history 渲染。
+            #   2026-10-30 小欧 批3: 已解析(读盘)+已裁决(budget), 此处只放行通过的条目。
             "refs": _final_refs or [],
         }
         # ── 编排落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) —— 小健 2026-08-17
