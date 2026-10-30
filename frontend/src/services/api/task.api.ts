@@ -7,7 +7,11 @@
 // 编辑历史: 2026-10-10 小欧 (- TaskDetail 加 history_context_first
 //   (历史任务回显首帧); 其类型复用 ContextOverviewFrame 单一真源, 禁在本文件手写窄类型副本(禁 backward)
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskDetail 补 process_events(事件列表快照条目本体, 类型复用 useTaskInfo.ProcessEvent 单一真源, 内联 import() 避 api→hooks 反向依赖); adaptTaskDetail 同款透传(Array.isArray 守卫, 存量 null 兜底); executionApi 新增 saveTaskProcessEvents(POST /chat/execution/task/{id}/process-events, 失败只 reject 不抛业务链) — 小欧-2026-10-11
+// 编辑历史: 2026-10-30 小欧 - 现场证据(北京老陈): 任务运行期间前端每 5s 轮询 listTasks,
+//   用户没做任何操作却弹「后端响应超时，请重试」; 后台轮询不是用户动作(他不知道、也无法"重试"),
+//   故本端点置 _silent 不弹全局 toast, 失败由各调用方自行收口自愈 — 小欧-2026-10-30
 import api from './client';
+import type { ApiRequestConfig } from './client';
 
 // ============================================================
 // 【小新重构2026-03-09】ReAct任务控制API
@@ -221,8 +225,14 @@ export function adaptTaskDetail(raw: {
 }
 
 export const sessionTaskApi = {
-  listTasks: (sessionId: string): Promise<SessionTasksResponse> =>
-    api.get(`/sessions/${sessionId}/tasks`).then((r) => r.data),
+  // 2026-10-30 小欧 - 补第三类: 「无用户动作的后台轮询」不该弹"请重试"。
+  //   本端点是唯一后台轮询入口(observeByPolling 每 5s / useSessionTasks.refresh / findLiveTask),
+  //   超时属"后端忙"的瞬时表现, 下次触发自愈; 弹窗只会让用户以为系统出故障。
+  //   静默 ≠ 无痕迹: client.ts 的 [SlowReq] 与 logIfSlow 照旧打 URL+耗时, 取证不丢。
+  listTasks: (sessionId: string): Promise<SessionTasksResponse> => {
+    const cfg: ApiRequestConfig = { _silent: true };
+    return api.get(`/sessions/${sessionId}/tasks`, cfg).then((r) => r.data);
+  },
 };
 
 export const executionApi = {
