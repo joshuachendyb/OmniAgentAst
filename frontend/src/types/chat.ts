@@ -13,6 +13,9 @@
 // 编辑历史: 2026-10-21 小杨 - 新增 ChatRefPayload（引用条目随消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
 // 编辑历史: 2026-10-25 小欧 - 通知信封收敛: StatusValue/StatusMessage 统一 'installing'/'summarizing' → 'notice'
 //   isStatusMessage 守卫同步更新 — 小欧-2026-10-25
+
+// 编辑历史: 2026-10-29 小欧 - 输入框引用读取权收归后端: ChatRefPayload 删 content 字段
+//   (前端不再上行正文, wire 只带标识; 正文由后端 resolver 读盘拼装) — 小欧-2026-10-29
 /**
  * 流式API响应类型定义
  *
@@ -265,14 +268,13 @@ export interface ChatRequest {
  * 2026-10-21 小杨 - 新建
  *
  * 语义：kind=file 整文件引用 / kind=selection 行区间引用。
- * ⚠ `content` 是**当轮内存态**（用户选中/读到的正文），发完即弃，不入库、不进历史。
- *   path 才是长期有效信息（Agent 日后可凭 path 重读）。
+ * ⚠ `content` 已删除：读取权收归后端，wire 只承载标识（path/lineRange），正文由后端按标识读盘
+ *   （见 2.3-8）。path 才是长期有效信息（Agent 日后可凭 path 重读）。
  */
 export interface ChatRefPayload {
   kind: 'file' | 'selection';
   label: string;
   path: string;
-  content: string;
   size?: number;
   lineRange?: { start: number; end: number } | null;
 }

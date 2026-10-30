@@ -11,6 +11,10 @@
 # 2026-10-23 小欧 - 新增 /files/external/tree：列项目根外目录树（只读、审计；外部目录链接跳文件页
 #   挂左侧树展开时使用；仅盘符绝对路径，扫描管道复用 _walk/_scan_dir 唯一实现，节点 key 为
 #   相对该外部根的 posix 路径，响应多带 external_root 供前端识别）— 小欧-2026-10-23
+
+# 2026-10-29 小欧 - 新增 GET /files/stat：单文件 stat 轻端点(只取存在/size/mtime, 不读正文),
+#   供前端发送前预检(存在性/mtime 本地比对"内容已更新"), 真源 browse_service.stat_file — 小欧-2026-10-29
+
 """file_routes — 文件浏览 API 路由薄壳。
 
 按项目分层约定（tool_routes.py:9-10）：API 层只做参数解包与错误转译，
@@ -25,6 +29,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 
 from app.file_browse import browse_service as browse
+from app.logger import logger
 
 router = APIRouter()
 
@@ -75,6 +80,23 @@ def get_file_content(
       2MB 之后拿不到；带区间时后端**流式**按行读（内存恒定），可翻页到文件末尾。
     """
     return browse.read_text_file(path, offset=offset, limit=limit)
+
+
+
+# 编辑历史:
+# 2026-10-30 小欧 新增: /files/stat 引用预检轻端点(只读, 不读正文) — 小欧-2026-10-30
+
+@router.get("/files/stat")
+def stat_file_endpoint(path: str):
+    """引用预检: 存在性/mtime/size, O(1) 不读正文(5.4.1 precheckRefs 唯一数据源)。
+
+    安全边界与 /files/read 同口径: 只读、越界拒绝、审计日志; 无新增写操作。
+    """
+    if not (path or "").strip():
+        return {"ok": False, "reason": "missing"}
+    logger.info("[file_browse] stat path=%s", path)          # 审计日志(与 read 端点同款)
+    return browse.stat_file(path.strip())
+
 
 
 @router.get("/files/external/read")

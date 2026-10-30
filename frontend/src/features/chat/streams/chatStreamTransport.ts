@@ -65,6 +65,10 @@
 //   ⑤ 无taskId请求失败 → 按会话回查listTasks找活跃任务, 找到则续传, 否则"请求失败，请重试"
 //   文案规则: ≤14汉字, 精准说明问题+待重连/流继续; 所有报事件用transportError包装渲染到taskinfo
 
+// 编辑历史: 2026-10-29 小欧 - 上行 refs 加 wire 投影: 新增 toWireRef(白名单投影, 剥 content/mtime/
+//   pending/invalid 前端内存态), 首连与插话两处 refs 序列化统一走它(防内存字段泄漏上行) — 小欧-2026-10-29
+
+
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
   classifyError,
@@ -209,13 +213,23 @@ export const buildStreamBody = (
     allow_interject: i.allowInterject,
   };
   if (i.refs && i.refs.length > 0) {
-    // 剥前端内存态：pending=正文在途，invalid=发送前校验失败；后端均不消费 — 小杨-2026-10-21
-    body.refs = i.refs.map(
-      ({ pending: _pending, invalid: _invalid, ...r }) => r
-    );
+    // 2026-10-29 小欧: wire 投影两处(transport + store 台账)统一为 toWireRef(F6)。
+    body.refs = i.refs.map(toWireRef);
   }
   return body;
 };
+
+/** wire 投影(F6): 契约字段白名单, 只留 kind/label/path/lineRange/size——
+ *  content(正文由后端读, I1)、mtime(前端本地比对态, R2)、pending/invalid(内存态)均不进 wire。 */
+export const toWireRef = (r: { kind: string; label: string; path: string;
+                               lineRange?: { start: number; end: number } | null;
+                               size?: number }) => ({
+  kind: r.kind,
+  label: r.label,
+  path: r.path,
+  lineRange: r.lineRange ?? null,
+  size: r.size,
+});
 
 /**
  * 首连 POST：发消息并读取 SSE 流。taskId 由 start 帧经 storeHandlers.setServerTaskId 落 Store

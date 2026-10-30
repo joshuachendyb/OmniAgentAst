@@ -51,6 +51,11 @@
       RETRY_BACKOFF_CAP=120(L1 429分支+L2 llm_call:283裸30合并共用DRY; 用户裁定统一120)、RATE_LIMIT_BACKOFF_JITTER=0.2(429 ±20%抖动) — 小欧-2026-10-28
     2026-10-28 小欧 - 三堂会审删除 RATE_LIMIT_MAX_RETRIES/RATE_LIMIT_TOTAL_WINDOW(全仓零引用 YAGNI):
       重试次数已由既有 max_retries 路径覆盖, 总窗口累计逻辑未实现(注释承诺与事实不符) — 小欧-2026-10-28
+
+    2026-10-29 小欧 新增输入框引用摘录比例常量: REF_AVG_LINE_CHARS(=80, 行均字符估算用) +
+                        REF_HEAD_RATIO(=0.6) + REF_TAIL_RATIO(=0.2) + REF_MIN_KEEP_LINES(=10, 头尾摘录
+                        保底行数)——供 services/refs/resolver 头尾摘录与行数估算消费, 单一真源 — 小欧-2026-10-29
+
 """
 
 import re
@@ -127,6 +132,14 @@ DEFAULT_CORS_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"  # 【系�
 # 系统级长度常量(2026-07-15 归一化治理): 项目规则文件(OmniAgent.md)注入字符上限 — 小欧
 PROJECT_CONTEXT_MAX_CHARS = 10000   # 【系统级】使用对象: 项目规则文件(OmniAgent.md)注入 Prompt 字符上限
 ACTION_LOG_RESULT_MAX_CHARS = 5000  # 【系统级】使用对象: action_handler.py(日志 tool_result 截断长度, 防 MemoryError)
+
+
+# 输入框引用摘录比例(2026-10-29 小欧): 引用链路头尾摘录与行数估算 — 供 services/refs/resolver 消费
+REF_AVG_LINE_CHARS = 80   # 【系统级】使用对象: services/refs/resolver(行均字符估算, 头尾摘录行数)
+REF_HEAD_RATIO = 0.6      # 【系统级】使用对象: services/refs/resolver(头尾摘录: 头 60% 行)
+REF_TAIL_RATIO = 0.2      # 【系统级】使用对象: services/refs/resolver(头尾摘录: 尾 20% 行)
+REF_MIN_KEEP_LINES = 10   # 【系统级】使用对象: services/refs/resolver(C 档压缩最低保留行数)
+
 
 # 注: 原 DEFAULT_*(11个) 经验证均为死常量(零引用), 已于 2026-07-15 删除;
 #     工具相关长度上限已统一迁至 app/tools/tool_constants.py (OBS_*/SHELL_*/WEB_*/XLSX_*/HTTP_*/DOWNLOAD_*/WRITE_TEXT_*)

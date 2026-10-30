@@ -60,6 +60,10 @@
 //   FileRefChip 已只传 { internal: true }（source 半边由 resolveChipUrl 死参数一并删除），此判据
 //   恒 false 成死代码；保留会使后续读码者误以为站内跳转有两条并行标记来源。— 小欧-2026-10-29
 
+// 2026-10-29 小欧 - 读取权收归后端: readAndPush 删外部/根内分叉改调 probeRef(轻量探 size/mtime);
+//   pushRef 删 content 传参加 mtime(入队只存标识) — 小欧-2026-10-29
+
+
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
@@ -111,6 +115,7 @@ import { mergeKids, prefixKeys, joinAbsPath } from '@/utils/fileTree';
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
 import { quoteFile, quoteSelection } from '@/features/refs/quote';
+import { probeRef } from '@/features/refs/probe';   // 2026-10-29 小欧 - 唯一读盘点(5.4.1)
 import { composerRefStore } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 // 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
@@ -757,14 +762,15 @@ const FilesPage: React.FC = () => {
       kind: 'file' | 'selection',
       label: string,
       path: string,
-      content: string,
-      size: number,
+      _content: string,   // 2026-10-29 小欧: 正文由后端读, 前端不再传正文(占位保留兼容调用方)
+      size?: number,
+      mtime?: string,
       range?: { start: number; end: number }
     ) => {
-      // v1.4（修 D5）：正文已在调用方读好/切好 → 直传 quote* 的 content/size 覆盖项
+      // v1.4（修 D5）：正文已在调用方读好/切好 → 直传 quote* 的 size(正文由后端读, 不再传 content)
       const r = range
-        ? await quoteSelection(path, range, { label, content, size })
-        : await quoteFile(path, { label, content, size });
+        ? await quoteSelection(path, range, { label, size })
+        : await quoteFile(path, { label, size });
       if (r.ok) showSuccess(`已引用「${label}」`);
     },
     []
@@ -781,15 +787,12 @@ const FilesPage: React.FC = () => {
    */
   const readAndPush = useCallback(
     async (n: FileNode): Promise<void> => {
-      if (n.key.startsWith('__ext__/') && externalBase) {
-        const relInExt = n.key.slice('__ext__/'.length);
-        const absPath = joinAbsPath(externalBase, relInExt);
-        const r = await fileApi.readExternalFile(absPath);
-        await pushRef('file', n.name, absPath, r.content, r.size);
-      } else {
-        const r = await fileApi.readFile(n.key);
-        await pushRef('file', n.name, n.key, r.content, r.size);
-      }
+      // 2026-10-29 小欧(F9): 删外部/根内分叉, 统一调 probeRef(唯一"选接口"点)。
+      const path = n.key.startsWith('__ext__/') && externalBase
+        ? joinAbsPath(externalBase, n.key.slice('__ext__/'.length))
+        : n.key;
+      const pr = await probeRef(path);
+      await pushRef('file', n.name, path, '', pr.size, pr.mtime);   // 正文由后端读, 不传
     },
     [pushRef, externalBase]
   );
@@ -931,6 +934,7 @@ const FilesPage: React.FC = () => {
             node.key,
             content,
             size,
+            undefined,
             range
           )
         }
@@ -951,6 +955,7 @@ const FilesPage: React.FC = () => {
             absPath,
             content,
             size,
+            undefined,
             range
           )
         }

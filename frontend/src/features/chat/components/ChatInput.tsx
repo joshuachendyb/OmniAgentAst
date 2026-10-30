@@ -43,6 +43,11 @@
 // 2026-10-26 小欧 - 执行中提示归一: 判据 isReceiving→sendBlocked(与按钮置灰同源), 文案原样搬移
 //   B 的原话(执行中/提交中两段), 删输入框下方 B 块(原 694-707)消除双提示并存; testid 保 overlay 内层
 //   以保 H3/H9/H10 e2e 不断 — 小欧-2026-10-26
+
+// 编辑历史: 2026-10-29 小欧 - 发送闸门与 @ 补全改走 probeRef: 发送前校验由 refreshRefs 改
+//   precheckOrBlock(precheckRefs 三元组, 失效阻断+updated 点名"内容已更新"); @ 补全改调 probeRef
+//   (轻量探 size/mtime, 不再切片读正文); 引用条数限 MAX_REFS(超限拦截点名) — 小欧-2026-10-29
+
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
  *
@@ -68,8 +73,8 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import { refreshRefs } from '@/features/refs/refresh';
-import { newRefId } from '@/features/refs/store';
+import { probeRef, precheckRefs } from '@/features/refs/probe';   // 读盘唯一入口 + 发送前预检(5.4.1)
+import { newRefId, MAX_REFS, type ComposerRef } from '@/features/refs/store';   // @ 补全入队限流(与 push 同一上限)
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';
@@ -252,6 +257,26 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
   // 2026-09-03 小欧 修复: 乐观清空改可回补 — 备份draft, onSend失败时回填防输入永久丢失 - 小欧-2026-09-03
   // linked 不再复位(违背用户粘性意图), 开关真源在 useChatState.linkEnabled
+  /**
+   * 发送前预检(F7): stat 预检 → 筛 → 点名 → return。返回 refsToSend / blocked / updated。
+   * 2026-10-30 小欧 - 闸门抽成可单测函数; 数据源 stat 端点(R3); 旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
+   */
+  const precheckOrBlock = async (
+    refs: ComposerRef[]
+  ): Promise<{ refsToSend: ComposerRef[]; blocked: boolean; updated: ComposerRef[] }> => {
+    if (refs.length === 0) return { refsToSend: refs, blocked: false, updated: [] };
+    const { checked, invalid, updated } = await precheckRefs(refs);
+    setAll(checked);
+    if (invalid.length > 0) {
+      showMessage(
+        ErrorType.FILE_READ,
+        `引用已失效：${invalid.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
+      );
+      return { refsToSend: refs, blocked: true, updated };
+    }
+    return { refsToSend: checked, blocked: false, updated };
+  };
+
   const handleSendInternal = async () => {
     const content = draft.trim();
     if (!content || sendBlocked) return;
@@ -261,25 +286,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
       return;
     }
     /**
-     * 2026-10-21 小杨 - 引用失效可见：
-     *   发送前对每个引用**重读一遍**：①a 文件被删/不可读 → 该项标 invalid、阻断发送并点名
-     *   （不再让模型收到失效内容）；②读成功的顺手把 content 换成最新（内容保鲜）。
-     *   校验失败的 refs 同时回写（chip 红底 + "（已失效）"）。
+     * 2026-10-30 小欧 - 闸门抽成可单测函数(F7); 数据源 stat 端点(R3);
+     *   旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
      */
-    let refsToSend = refs;
-    if (refs.length > 0) {
-      // 2026-10-22 小欧 - 校验与保鲜抽成唯一实现（可单测），行为不变
-      const checked = await refreshRefs(refs);
-      setAll(checked);
-      refsToSend = checked;
-      const bad = checked.filter((r) => r.invalid);
-      if (bad.length > 0) {
-        showMessage(
-          ErrorType.FILE_READ,
-          `引用已失效：${bad.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
-        );
-        return;
-      }
+    const { refsToSend, blocked, updated } = await precheckOrBlock(refs);
+    if (blocked) return;   // 已点名(内部 showMessage), 不产生任何 LLM 调用
+    // 2026-10-30 小欧(阻断级修正): 原 precheckRefs 产出 updated 无消费落点, "内容已更新"
+    //   功能分支丢失(4.5/R2)。发送前点名提示——后端按标识必读最新, 不阻断、不改 chip 态。
+    if (updated.length > 0) {
+      showMessage(ErrorType.FILE_READ,
+        `以下引用在盘上已有更新：${updated.map((u) => u.label).join('、')}（将按最新内容解析）`);
     }
     // 2026-10-21 小杨 - **正文即最终正文**（不再做 stripAtTokens 反向剥离）
     //   旧模型：正文里塞了 "@label"，发送前再逐个剥 → 边界误伤（吃掉"邮箱 a@b.com"的 b.com）、
@@ -473,7 +489,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
       kind: 'file',
       label: hit.name,
       path: hit.path,
-      content: '',
       pending: true,
     });
     // 正文里的 "@查询词" 是**检索动作**而非用户想发送的内容 → 选中即移除该段
@@ -481,15 +496,21 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setDraft((d) => `${d.slice(0, atRange.at)}${d.slice(atRange.caret)}`);
     }
     try {
-      const f = await fileApi.readFile(hit.path);
+      // 2026-10-30 小欧: @ 补全不经 composerRefStore.push(直接写本地 refs 状态),
+      //   store 内 MAX_REFS 拦截够不到此入口 → 在入队前同限(同一常量), 消除绕过得掉的入口。
+      if (refs.length >= MAX_REFS) {
+        showMessage(ErrorType.FILE_READ, `一次最多引用 ${MAX_REFS} 项`);
+        return;
+      }
+      const pr = await probeRef(hit.path);             // 现: 唯一读盘点
       // 2026-10-22 小欧 - 改用 hook.add（mergeRefs 同 path+lineRange 原位替换 → pending 占位被解析结果覆盖）
       add({
         id: newRefId(),
         kind: 'file',
         label: hit.name,
         path: hit.path,
-        content: f.content,
-        size: f.size,
+        size: pr.size,
+        mtime: pr.mtime,                               // probe 失败也为 undefined, 仍入队(4.11 "未校验")
         pending: false,
       });
     } catch {

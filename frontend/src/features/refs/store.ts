@@ -7,6 +7,11 @@
 //   再加"工作区反链"会让它变成双向依赖（环）。上提到共享域 features/refs/ 后，
 //   chat 与 files 各自向下依赖，依赖图单向无环。
 //   迁移按 AGENTS「能复制就复制，不重写」执行：代码逐字搬运，仅改 import 路径。
+
+// 编辑历史: 2026-10-29 小欧 - 引用条数上限与预检时间戳: 新增 MAX_REFS=20(与 services/refs/limits.py
+//   同值, 单一真源双保险); ComposerRef 增 mtime/updated(预检本地留存, 上行前剥离, 供"内容已更新"比对);
+//   push 改返回 boolean(入队成功/超上限被拒, 调用方据此点名) — 小欧-2026-10-29
+
 /**
  * composerRefStore —— 跨页一次性引用投递通道
  *
@@ -20,6 +25,9 @@
  * - 快照 = 队列长度（变化即触发消费 effect）
  */
 import type { ChatRefPayload } from '../../types/chat';
+
+// 2026-10-29 小欧 - 引用条数上限: 与 services/refs/limits.py:MAX_REFS 同值(单一真源, 双保险 L1)
+export const MAX_REFS = 20;
 
 export type ComposerRef = ChatRefPayload & {
   id: string;
@@ -35,6 +43,16 @@ export type ComposerRef = ChatRefPayload & {
    *   ⚠ 前端内存态（同 pending），上行前剥离。
    */
   invalid?: boolean;
+  /**
+   * 2026-10-29 小欧 - 预检取到的时间戳（probeRef/precheckRefs 本地留存，仅供「内容已更新」比对）。
+   *   ⚠ 前端内存态（同 pending/invalid），上行前剥离（不进 wire）。
+   */
+  mtime?: string;
+  /**
+   * 2026-10-29 小欧 - 预检发现盘面已更新（mtime 不一致）的非阻断标记，供发送前点名。
+   *   ⚠ 前端内存态（同 mtime），上行前剥离。
+   */
+  updated?: boolean;
 };
 
 /**
@@ -93,15 +111,19 @@ export const composerRefStore = {
     emit();
   },
   /**
-   * 原样入队；同 path + 同 lineRange 视为**同一引用** → 替换而非追加。
-   * 替换而非追加的原因：用户重复引用同一文件时，token 不应出现两个，
-   * 且后一次的内容（更接近当前盘面）应覆盖前一次。
+   * 入队；同 path + 同 lineRange 视为**同一引用** → 替换而非追加。
+   * 2026-10-29 小欧 - 限 MAX_REFS：超限返回 false 不 throw（调用方判真值提示"一次最多引用 20 项"，
+   *   quote.ts / @补全 / Files 三调用方同批消费返回值）。
    */
-  push(ref: ComposerRef): void {
+  push(ref: ComposerRef): boolean {
+    if (queue.length >= MAX_REFS && !queue.some((r) => refKeyOf(r) === refKeyOf(ref))) {
+      return false;
+    }
     const k = refKeyOf(ref);
     const i = queue.findIndex((r) => refKeyOf(r) === k);
     if (i >= 0) queue.splice(i, 1, ref);
     else queue.push(ref);
     emit();
+    return true;
   },
 };

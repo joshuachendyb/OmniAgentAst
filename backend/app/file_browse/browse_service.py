@@ -25,6 +25,12 @@
 #   而 resolve 对不存在的相对路径也会成功 → 非文件工具的参数被当成文件收进足迹面板
 #   （实测脏数据：searchweb 查询词 91 条 / bash 命令串 53 条 / timenow 15 条 / fetchpage URL 12 条）。
 #   现复用 _exists 单点收口：路径不存在即丢弃，只留 Agent 真实动过的路径 — 小欧-2026-10-23
+
+# 2026-10-29 小欧 - 输入框引用读取权收归后端: sanitize_refs 改返回双元组(原仅路径清单, 现补回传
+#   "是否含越界引用"供 resolver 标记 note); _read_range 增 count_total 透传(读区间免二次全量计数,
+#   count_total=False 时 total_lines=None 并补 range_clipped=实读行数<请求行数, 供回执"range_clipped");
+#   新增 stat_file(单文件 stat, 供 GET /files/stat 轻端点, 只取存在/size/mtime 不读正文) — 小欧-2026-10-29
+
 """文件浏览服务：项目根目录内的只读浏览。
 
 对外五个函数：
@@ -713,6 +719,36 @@ def sanitize_refs(refs: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
     return kept
 
 
+# 编辑历史:
+# 2026-10-30 小欧 新增: 引用预检 stat 数据源(存在性/mtime/size, 不读正文, O(1)) — 小欧-2026-10-30
+
+def stat_file(path: str) -> Dict[str, Any]:
+    """引用预检数据源(4.11): 只回存在性/mtime/size, 不读盘正文。
+
+    根内: _resolve_within_root 校验(越界/UNC 拒绝, 与 build_tree 同口径);
+    外部: _is_abs_drive_path 校验(仅盘符绝对路径, 与 read_external_file 同口径);
+    不存在/不可访问 → ok=False + reason(missing/unsupported), 不抛 404
+    (失败语义交调用方组 chip 回执, 与 4.6.4 "失败不抛给用户"同纪律)。
+    """
+    try:
+        target, _rel = _resolve_within_root(path)
+    except Exception:
+        if not _is_abs_drive_path(path):
+            return {"ok": False, "reason": "missing"}     # 越界/非路径: 一律 missing
+        target = Path(path)
+    try:
+        if not target.is_file():
+            return {"ok": False, "reason": "missing"}
+        st = target.stat()
+    except OSError:
+        return {"ok": False, "reason": "missing"}
+    if _probe_text(target) is False:
+        return {"ok": False, "reason": "unsupported"}     # 非文本(brief 与 _preview_of 同判定)
+    return {"ok": True, "size": st.st_size,
+            "mtime": _fmt_time(st.st_mtime)}              # 与 _read_result mtime 同源同格式
+
+
+
 def _count_content_lines(content: str) -> int:
     """行数：末尾换行不产生新行（编辑器口径，与前端行号列同源）。
 
@@ -793,6 +829,7 @@ def _read_file_body(
     offset: Optional[int] = None,
     limit: Optional[int] = None,
     nontext_msg: Optional[str] = None,
+    count_total: bool = True,     # 2026-10-29 小欧: 透传 _read_range(F2)
 ) -> Dict[str, Any]:
     """文本正文读取公共段（根内 / 外部只读共用）：NUL 实探 → 大小 → 编码闸门 → 区间分派。
 
@@ -820,7 +857,8 @@ def _read_file_body(
     #   默认路径只读前 MAX_TEXT_BYTES(2MB) → 2MB 之后的内容拿不到（半个死路）；
     #   带 offset/limit 时按行区间**流式**读：内存恒定，可一路翻到文件末尾。
     if offset is not None or limit is not None:
-        return _read_range(target, rel, st, head, int(offset or 1), int(limit or 2000))
+        return _read_range(target, rel, st, head, int(offset or 1), int(limit or 2000),
+                           count_total=count_total)
     return _read_truncated(target, rel, st, head)
 
 
@@ -828,6 +866,7 @@ def read_external_file(
     abs_path: str,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
+    count_total: bool = True,     # 2026-10-29 小欧: 透传 _read_file_body(F2)
 ) -> Dict[str, Any]:
     """读项目根**外**的文本文件（只读，用户主动点击的外部文件链接）。
 
@@ -849,7 +888,7 @@ def read_external_file(
     # 审计：外部读取必须留痕（根内读只记相对路径，绝对路径读取单独记录）
     logger.info(f"[file_browse] external read abs={raw}")
 
-    return _read_file_body(target, raw, offset, limit, "外部文件仅支持文本预览")
+    return _read_file_body(target, raw, offset, limit, "外部文件仅支持文本预览", count_total)
 
 
 def build_external_tree(
@@ -896,6 +935,7 @@ def read_text_file(
     rel_path: str,
     offset: Optional[int] = None,
     limit: Optional[int] = None,
+    count_total: bool = True,     # 2026-10-29 小欧: 透传 _read_file_body(F2)
 ) -> Dict[str, Any]:
     """读任意文本正文：存在性 → 是目录 → NUL 实探 → 大小 → 编码 五道闸门。
 
@@ -914,7 +954,7 @@ def read_text_file(
         fail(NOT_FOUND)
     if target.is_dir():
         fail(INVALID_PATH, "该路径是目录，请使用目录树接口")
-    return _read_file_body(target, rel, offset, limit)
+    return _read_file_body(target, rel, offset, limit, count_total=count_total)
 
 
 def _read_result(target: Path, rel: str, st: os.stat_result, content: str, enc: str) -> Dict[str, Any]:
@@ -930,7 +970,9 @@ def _read_result(target: Path, rel: str, st: os.stat_result, content: str, enc: 
 
 
 def _read_range(
-    target: Path, rel: str, st: os.stat_result, head: bytes, offset: int, limit: int
+    target: Path, rel: str, st: os.stat_result, head: bytes, offset: int, limit: int,
+    count_total: bool = True,     # 2026-10-29 小欧: 区间读默认要 total_lines(向后兼容),
+                                  #   resolve_refs 传 False 关闭全扫(F2)
 ) -> Dict[str, Any]:
     """按行区间读（翻页）：内存恒定，可一路翻到文件末尾。
 
@@ -952,14 +994,14 @@ def _read_range(
     if not used_enc:      # 所有编码严格解都失败 → 用首选编码替换符兜底
         used_enc = _encoding_candidates(head)[0]
         text, got, raw_bytes = _read_lines_range(target, used_enc, off, lim, "replace")
-    total = _count_file_lines(target)
+    total = _count_file_lines(target) if count_total else 0   # 关闭全扫时 total 置 0
     logger.info(
         f"[file_browse] read_text range rel={rel} bytes={st.st_size} enc={used_enc} "
         f"offset={off} limit={lim} got={got} total={total}"
     )
     out = _read_result(target, rel, st, text, used_enc)
     out.update({
-        "total_lines": total,
+        "total_lines": total if count_total else None,        # None=未知, 前端不显示
         "truncated": False,
         "total_size": st.st_size,
         # 2026-10-21 小欧 - loaded_size 用**原始字节数**（与 _read_truncated 口径一致，
@@ -970,6 +1012,9 @@ def _read_range(
         "end_line": off + got - 1 if got else off - 1,
         "returned_lines": got,
         "loaded_lines": got,
+        # 2026-10-29 小欧 - range_clipped 回执(F2): 请求区间超出文件尾时如实告知,
+        #   got < lim 即"实际返回行数 < 请求行数" → 尾部被截断, 不再静默。
+        "range_clipped": got < lim,
     })
     return out
 

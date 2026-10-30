@@ -1,4 +1,9 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：引用入口唯一实现（读盘 + 组装 + 入队）— 小欧-2026-10-22
+
+// 编辑历史: 2026-10-29 小欧 - 读取权收归后端: quoteFile/quoteSelection 改调 probeRef(轻量探
+//   size/mtime, 不再读正文), 删 opts.content 参数与正文组装; 删 quotePack(无调用方死代码);
+//   清未用 import — 小欧-2026-10-29
+
 /**
  * quote —— 「把文件送进对话」的唯一入口
  *
@@ -12,9 +17,8 @@
  * - 正文当轮即弃：content 只存在队列里，上行后由后端组装；台账只存路径。
  * - 读失败不静默：只返回 reason，不弹提示——成功与失败文案都归调用方。
  */
-import { fileApi } from '@/services/api/file.api';
-import { isDriveAbsPath } from '@/utils/projectPath';
 import { composerRefStore, newRefId } from './store';
+import { probeRef } from './probe';           // 读盘唯一入口(5.4.1)
 
 export interface QuoteResult {
   ok: boolean;
@@ -22,91 +26,57 @@ export interface QuoteResult {
   reason?: string;
 }
 
-/** 引用整个文件（正文可由调用方预读后直传，避免文件页预览已有内容再读一遍） */
+/** 引用整个文件（正文由后端读，前端只入队标识；probe 轻量探 size/mtime） */
 export const quoteFile = async (
   path: string,
-  opts?: { label?: string; content?: string; size?: number }
+  opts?: { label?: string; size?: number }
 ): Promise<QuoteResult> => {
   const label = opts?.label ?? path.split('/').pop() ?? path;
   try {
-    const content =
-      opts?.content ??
-      (isDriveAbsPath(path)
-        ? (await fileApi.readExternalFile(path)).content
-        : (await fileApi.readFile(path)).content);
-    composerRefStore.push({
+    // 2026-10-29 小欧: 入队只存标识, 不再读正文(正文由后端读, 读取权收归后端)。
+    //   probe 轻量探(取 size/mtime), 失败仍允许入队(chip 标"未校验", 4.11)。
+    const probe = await probeRef(path);
+    return composerRefStore.push({
       id: newRefId(),
       kind: 'file',
       label,
       path,
-      content,
-      size: opts?.size ?? content.length,
+      size: opts?.size ?? probe.size,
+      mtime: probe.mtime,
       lineRange: null,
-    });
-    return { ok: true };
+    })
+      ? { ok: true }
+      : { ok: false, reason: 'too_many' };
   } catch {
     return { ok: false, reason: 'read_failed' };
   }
 };
 
-/** 引用一段行区间（选区引用）；正文可由调用方预切后直传（文件页选区已切好行） */
+/** 引用一段行区间（选区引用）；正文由后端读，前端只入队标识 */
 export const quoteSelection = async (
   path: string,
   range: { start: number; end: number },
-  opts?: { label?: string; content?: string; size?: number }
+  opts?: { label?: string; size?: number }
 ): Promise<QuoteResult> => {
   const label = opts?.label ?? path.split('/').pop() ?? path;
   try {
-    const content = opts?.content ?? (await fileApi.readFile(path)).content;
-    composerRefStore.push({
+    const probe = await probeRef(path);
+    return composerRefStore.push({
       id: newRefId(),
       kind: 'selection',
       label,
       path,
-      content,
-      size: opts?.size ?? content.length,
+      size: opts?.size ?? probe.size,
+      mtime: probe.mtime,
       lineRange: range,
-    });
-    return { ok: true };
+    })
+      ? { ok: true }
+      : { ok: false, reason: 'too_many' };
   } catch {
     return { ok: false, reason: 'read_failed' };
   }
 };
 
-/**
- * 引用一组文件为一个包（上下文包）。
- * ⚠ 包内无 path → 后端 sanitize_refs 放行（"无 path 的条目不校验"），
- *   _render_refs_block 以 label 作锚 —— 不需要任何后端改动。
- */
-export const quotePack = async (
-  files: { path: string; label?: string }[],
-  opts?: { max?: number }
-): Promise<QuoteResult> => {
-  const max = opts?.max ?? 10;
-  if (files.length === 0) return { ok: false, reason: 'empty' };
-  if (files.length > max) {
-    return { ok: false, reason: 'too_many' };
-  }
-  const parts: string[] = [
-    `【文件清单】\n${files.map((f) => f.path).join('\n')}`,
-  ];
-  for (const f of files) {
-    try {
-      const r = await fileApi.readFile(f.path);
-      parts.push(`【文件】${f.path}\n${r.content}`);
-    } catch {
-      parts.push(`【文件】${f.path}\n（读取失败，已跳过）`);
-    }
-  }
-  const content = parts.join('\n\n');
-  composerRefStore.push({
-    id: newRefId(),
-    kind: 'file',
-    label: `${files.length} 个文件`,
-    path: '',
-    content,
-    size: content.length,
-    lineRange: null,
-  });
-  return { ok: true };
-};
+// 2026-10-29 小欧: quotePack 整段删除(D6, YAGNI) — 全仓无调用方(grep 确认), 入队 path=''
+//   造伪引用, refreshRefs 首行 `if (!r.path) return r` 永不重读、永不判失效(refresh.ts:33 已删)。
+//   删除后不再造 path='' 条目(读取权收归后端, 正文不再由前端拼包)。

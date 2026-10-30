@@ -215,6 +215,11 @@
 #   清 </会话工作目录> 前多余空行。测试同步(本仓库 tests/ 被 gitignore 不入库):
 #   test_injection_uses_both_tags → test_injection_uses_session_workspace_tag,
 #   断言改为不含 <system-reminder>; 23 passed。
+
+# 2026-10-29 小欧 - 输入框引用读取权收归后端: 建 agent 后调 resolver.resolve_refs 读齐全部引用正文
+#   (并发4/超时5s/同path合并, 失败分类标记), 结果经 _start_meta["refs"] 注入 assemble_start_step;
+#   首发合计超拒绝线时发 refs_blocked 错误帧(不落库, 不启动后台任务) — 小欧-2026-10-29
+
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -743,6 +748,22 @@ async def chat_stream_orchestrator(
             )
         except Exception as _e:  # noqa: BLE001 - 序号仅供文案, 失败降级不阻断任务
             logger.warning(f"[chat] 取链内序号失败(session={session_id}), 序号默认0: {_e}")
+        # ── 新增: 建 agent 之后(agent_runner 已把 context_limit 写进 MAX_CONTEXT_TOKENS) ──
+        #   位置约束(4.3): resolve 必须落在建 agent 之后、_start_meta 注入之前,
+        #   因为 context_limit 由 agent_runner.py:627 运行时覆盖, 之前取不到运行时值。
+        #   批1桥接(6.1 口径注): budget 缺位(resolve 全量放行注入 _start_meta, 大引用 400
+        #   留到批3序13); refs_notice/chip 状态机批1不建(解析失败走既有阻断错误 refs_blocked)。
+        from app.services.refs.limits import resolve_limits
+        from app.services.refs.resolver import resolve_refs
+
+        _limits = resolve_limits(agent.message_builder.MAX_CONTEXT_TOKENS, "first")
+        _final_refs, _r_dropped, _r_notices = await resolve_refs(refs, limits=_limits)
+        if refs and not _final_refs:
+            _names = "、".join(dict.fromkeys(
+                n.get("label") or n.get("path") or "未命名" for n in _r_dropped)) or "未知"
+            yield create_error_response(error_type="refs_blocked",
+                                        error_message=f"引用全部不可用({_names}), 请移除后重发")
+            return
         agent._start_meta = {
             "user_input": user_input,
             "session_id": session_id,
@@ -753,7 +774,8 @@ async def chat_stream_orchestrator(
             "warning": _model_warning,
             # 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用透传, 供 message_builder.init_history 拼入
             #   LLM 消息。纯数据携带, 不参与 user_input(入库/历史不受影响)。
-            "refs": refs or [],
+            #   2026-10-29 小欧: 已解析(读盘)+批1未裁决(budget 批3接入), 供 init_history 渲染。
+            "refs": _final_refs or [],
         }
         # ── 编排落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) —— 小健 2026-08-17
         # -1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) 小欧 2026-08-16

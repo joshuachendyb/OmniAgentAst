@@ -5,6 +5,11 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7 项6: ChatRequest 删 context_link_mode(真源上移至会话 link 开关)
 # 2026-10-03 - 小欧 - 文档[4] 5.7.14 单元1: ChatRequest 增 link_enabled(会话 link 开关值随消息到达),
 #   None=未携带沿用会话当前值。禁复用 context_link_mode(旧"临时模式"通道, 复活即双通道)。
+
+# 2026-10-29 小欧 - 输入框引用读取权收归后端: ChatRef 删 content 字段(wire 不承载正文, 正文由
+#   resolver 在编排层读盘); 删 MAX_REF_CONTENT_CHARS 常量(字符上限改由 services/refs/limits 按预算
+#   反推, DTO 不再设); ChatRequest.refs 增 max_length=MAX_REFS(条数上限, 与 limits 单一真源双保险) — 小欧-2026-10-29
+
 """
 models — 从 chat_router.py 拷出
 
@@ -14,9 +19,10 @@ models — 从 chat_router.py 拷出
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
-# 2026-10-13 小欧 - 文档[28] 4.1.6: 引用正文上限，与 browse_service 的 2MB 文本闸门同源。
-#   放在 DTO 层而非 renderer：越限在入口就被 422 拦掉，不占内存、不进 prompt。
-MAX_REF_CONTENT_CHARS = 2_000_000
+# 2026-10-29 小欧 - MAX_REF_CONTENT_CHARS 已删除(YAGNI): 读取权收归后端, wire 不承载正文,
+#   引用正文上限由 services/refs/limits 按预算反推, DTO 不再设字符上限; 条数上限 MAX_REFS
+#   由 services/refs/limits.py 单一真源, 前端入队即拦、后端 DTO 再拦(双保险)。
+from app.services.refs.limits import MAX_REFS
 
 
 class ChatMessage(BaseModel):
@@ -28,17 +34,13 @@ class ChatMessage(BaseModel):
 class ChatRef(BaseModel):
     """输入框引用条目 — 2026-10-13 小欧 - 文档[28] 4.1.6
 
-    user content 只带 `@文件名` 提及，**正文随本字段上行**且不入库、不进历史
-    （chat_user_message.content 保持干净），由 message_builder 在组装 LLM 消息时拼入。
+    user content 只带 `@文件名` 提及，**正文由后端按标识读盘**且不入库、不进历史
+    （chat_user_message.content 保持干净），由 resolver 在编排层读盘后拼入。
+    2026-10-29 小欧 - 读取权收归后端: content 字段删除(wire 不承载正文, 见 2.3-8)。
     """
     kind: str = Field(default="file", description="来源类型: file/selection/log/message")
     label: str = Field(default="", description="展示名（文件名 / 选区说明）")
     path: Optional[str] = Field(default=None, description="相对项目根的路径")
-    #   content 上限 = read_text_file 的 2MB 文本闸门（同一份文件不该因入口不同而额度不同）。
-    #   正文从请求体直达 prompt，若不设限，100MB 的 content 可直接进内存并拼进 LLM 消息（OOM 风险）。
-    #   超出由 Pydantic 拦成 422，不进业务逻辑。— 小欧 2026-10-13
-    content: str = Field(default="", max_length=MAX_REF_CONTENT_CHARS,
-                         description="引用正文(当轮消费, 不持久化)")
     size: Optional[int] = Field(default=None, description="字节数（仅展示）")
     lineRange: Optional[Dict[str, int]] = Field(default=None, description="行号区间 {start,end}")
 
@@ -63,4 +65,5 @@ class ChatRequest(BaseModel):
     #   当轮消费（message_builder 拼入 LLM 消息）且不落库 → user content 保持干净、compaction 不受污染。
     #   ⚠️ 本 DTO 未设 model_config，Pydantic v2 默认 extra='ignore' → 前后端必须同批交付，
     #   否则 refs 被静默丢弃（引用卡片显示了但 Agent 收不到，且无任何报错）— 同 link_enabled 注释的教训。
-    refs: Optional[List[ChatRef]] = Field(default=None, description="输入框引用条目列表(当轮有效, 不入库)")
+    refs: Optional[List[ChatRef]] = Field(default=None, max_length=MAX_REFS,
+                                          description="输入框引用条目列表(当轮有效, 不入库; 上限 20 条)")

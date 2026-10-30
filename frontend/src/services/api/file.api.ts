@@ -10,6 +10,10 @@
 // 2026-10-22 小欧 - 增 readExternalFile：读项目根外文本文件（/files/external/read，只读）— 小欧-2026-10-22
 // 2026-10-23 小欧 - 增 fetchExternalTree：列项目根外目录树（/files/external/tree，只读；
 //   响应多带 external_root 供前端识别外部树，节点 key 为相对该外部根的 posix 路径）— 小欧-2026-10-23
+
+// 2026-10-29 小欧 - 增 statFile：GET /files/stat 轻端点(只取存在/size/mtime, 不读正文),
+//   供发送前预检(存在性/mtime 本地比对"内容已更新") — 小欧-2026-10-29
+
 /**
  * 文件浏览 API（只读浏览项目根目录）
  *
@@ -68,6 +72,16 @@ export interface ReadResponse {
   /** 本次实际返回的行数（截断路径下 = 段内行数） */
   loaded_lines?: number;
 }
+
+/** 2026-10-30 小欧 - /files/stat 预检响应：只回存在性/mtime/size，不读正文(5.4.1) */
+export interface StatResponse {
+  ok: boolean;
+  size?: number;
+  mtime?: string;
+  /** ok=false 时的失败原因(missing/unsupported) */
+  reason?: string;
+}
+
 
 export interface SearchHit {
   path: string;
@@ -169,6 +183,12 @@ export const fileApi = {
         params: { path: absPath, offset, limit },
       })
     ).data;
+  },
+
+  /** 2026-10-30 小欧 - 引用预检：存在性/mtime/size，O(1) 不读正文(5.4.1 precheckRefs 唯一数据源) */
+  statFile: async (path: string): Promise<StatResponse> => {
+    need(path, '文件路径');
+    return (await api.get<StatResponse>('/files/stat', { params: { path } })).data;
   },
 
   /** 列项目根外的目录树（只读；外部目录挂左侧树展开时用）— 小欧-2026-10-23 */
