@@ -49,6 +49,9 @@
 // 编辑历史: 2026-10-05 小欧 - assistant 占位'🤔 AI 正在思考...' 改空串(文档[9] §5.9): 该字段前端零渲染消费(死数据), 思考态视觉已由 reasoning 标题行承担 — 小欧-2026-10-05
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: interjectSend 落库携带 allow_interject=true(否则插话第一条被 409)
 // 编辑历史: 2026-10-21 小杨 - 消息可带引用条目（refs 与消息同批上行，正文不承载引用内容） — 小杨-2026-10-21
+// 编辑历史: 2026-10-30 小欧 - 对外契约补 status(Store 快照原值只读透传): 取消终态帧未送达时, TaskInfoBar/
+//   RightViewer 的徽标兜底需要 store 终态判据; 原 useChatPanels 内联 getSnapshot 且未入 useMemo 依赖,
+//   status 变化面板不重算(兜底永不生效)。本 hook 已是该快照的消费方, 补透传比消费方二次直读 store 更直。 — 小欧-2026-10-30
 /**
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
@@ -79,7 +82,10 @@ import type { ChatRefPayload } from '../../../types/chat'; // 2026-10-21 小杨 
 // [63] 5.8：useSSE 已删（5.6）——订阅桥接 Store，事件走 StreamEvent 单入口
 import { useChatStreamSession } from '@/features/chat/streams/useChatStreamSession';
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
-import type { StreamEvent } from '@/features/chat/streams/backupTypes';
+import type {
+  StreamEvent,
+  StreamStatus,
+} from '@/features/chat/streams/backupTypes';
 import { sessionApi } from '../../../services/api/session.api';
 import { getClientInfo } from '../../../utils/clientInfo';
 import {
@@ -110,6 +116,10 @@ export interface SSEConfig {
 export interface UseChatStreamingReturn {
   // 流式接收状态（[63] 5.8：状态宿主已移交 Store，本层只读快照，不再暴露 setter）
   isReceiving: boolean;
+
+  // 2026-10-30 小欧 - 会话流状态(Store 快照原值): 取消终态帧未送达时, 徽标/兜底需要它做权威判据。
+  //   只读透传, 与 isReceiving 同源同层, 不新造状态。
+  status: StreamStatus;
 
   // 执行步骤
   executionSteps: ExecutionStep[];
@@ -367,6 +377,7 @@ export const useChatStreaming = (
   // 2026-09-30 小欧 - 本 hook 改直连 chatStreamStore，桥接触敛为纯订阅（理由见 useChatStreamSession.ts 文件头编辑历史）
   const {
     isReceiving,
+    status, // 2026-10-30 小欧 - 取消终态兜底判据(只读快照透传)
     executionSteps,
     executionStepsRef, // 推导视图（5.4 getExecutionStepsRef），非第二真源
     currentResponse,
@@ -673,6 +684,7 @@ export const useChatStreaming = (
   return {
     // 流式状态
     isReceiving,
+    status, // 2026-10-30 小欧 - 会话流状态透传(useTaskInfo 取消兜底)
     executionSteps,
     currentResponse,
 

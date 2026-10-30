@@ -139,6 +139,8 @@
 //   验证: tsc 0 / eslint 0 / AS 7绿 / 真实浏览器带工具长任务 894 采样 longestDist>120=0(全程贴底) — 小欧-2026-09-18
 // 编辑历史: 2026-09-30 14:30 小欧 - deniedEntries 透传类型 tool/reason 转可选，以承载 tool 缺失的拒绝记录
 // 编辑历史: 2026-10-28 小欧 - P2 前端懒渲染优化: useMemo 包裹 splitSteps, 确保 business 步骤引用稳定(使 PipelineRenderer 内部 useMemo 生效) — 小欧-2026-10-28
+// 编辑历史: 2026-10-30 小欧 - 新增 storeStatus(必填, StreamStatus)并作为 useTaskInfo 第5参: 取消终态帧未送达时
+//   右栏徽标由 store 终态兜底; 取值同源 chatStreaming.status(useChatPanels 传入)。 — 小欧-2026-10-30
 /**
  * RightViewer - 右侧查看区（right slot，当前锚定任务流水线 + 静态统计块）
  *
@@ -173,6 +175,9 @@ import { useTaskInfo } from '../../hooks/useTaskInfo'; // 2026-09-02 小欧: bad
 import { computeIsCurrentLive } from '@/utils/viewState'; // 2026-09-14 小欧 改动点③(方案A): isCurrentLive 判定提纯复用 — 小欧-2026-09-14
 import type { TaskMetaFrames, ClockSignals } from '@/types/sse'; // 2026-09-17 小欧 实施: 钟面信号类型 — 小欧-2026-09-17
 import { emptyMetaFrames } from '@/types/sse';
+// 2026-10-30 小欧 - storeStatus 用 Store 的状态枚举(backupTypes 唯一定义处), 不再退化成裸 string:
+//   裸 string 只能"看得见任何值", 拼错也编译通过; 这里要的是"必须传且合法"。
+import type { StreamStatus } from '@/features/chat/streams/backupTypes';
 
 // 2026-09-12 小欧 修复: 业务步骤类型集合提升模块级, 消组件体每次渲染重建 Set(性能+DRY) — 小欧-2026-09-12
 const BUSINESS_TYPES = new Set<ExecutionStep['type']>([
@@ -198,6 +203,10 @@ interface RightViewerProps {
   executionStepsRef?: React.MutableRefObject<ExecutionStep[]>; // 小欧 2026-09-10 S13: 同步 ref，final 到达时快照用
   highlightToolName: string | null;
   frames: TaskMetaFrames; // 2026-09-02 小欧: useTaskInfo badge 派生输入(startInfo 判定 running)
+  // 2026-10-30 小欧 - storeStatus: 会话流状态(chatStreaming.status, 即 Store 快照原值), 取消终态帧未送达时
+  //   badge 的兜底判据。**必填且用 StreamStatus**: 唯一调用点已恒定可给(空会话快照为 'idle'),
+  //   不留"不传就行为不变"的可选垫片; 与 useTaskInfo 第5参(string)赋值兼容。
+  storeStatus: StreamStatus;
   deniedSteps: ReadonlyMap<number, number>; // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮聚合(step→denied计数), 透传 PipelineRenderer 停齿轮 — 小欧-2026-09-06
   deniedEntries: ReadonlyMap<
     number,
@@ -220,6 +229,7 @@ const RightViewer: React.FC<RightViewerProps> = ({
   executionStepsRef, // 小欧 2026-09-10 S13: 同步 ref
   highlightToolName,
   frames,
+  storeStatus, // 2026-10-30 小欧 - 取消终态兜底判据 → useTaskInfo 第5参
   deniedSteps,
   deniedEntries, // 2026-09-06 小欧 B2(6.4)
   waitClock, // 2026-09-17 小欧 实施: 钟面信号
@@ -267,9 +277,14 @@ const RightViewer: React.FC<RightViewerProps> = ({
 
   // 2026-09-02 小欧: badge 权威派生——live 任务才取, 非live历史回放不传(不显示等待圈)
   // 2026-09-14 小欧 改动点①(方案A, 北京老陈批准): 签名删 receiving, 断连窗由 startinfo 门承接 — 小欧-2026-09-14
+  // 2026-10-30 小欧 - 补传 storeStatus(第5参): 取消终态帧没送到时, badge 由 store 终态兜底,
+  //   不再只靠 TaskInfoBar; 否则右栏徽标永久 running(北京老陈实测"点停止无任何反应")。
   const { badge: liveBadge } = useTaskInfo(
     liveSteps,
-    frames ?? emptyMetaFrames()
+    frames ?? emptyMetaFrames(),
+    undefined,
+    undefined,
+    storeStatus
   );
   // 2026-09-03 小欧 12.6修复: 若liveSteps已含final终态, 不再判live(及时切历史拉取), 防final丢失前永久卡live
   const _hasFinal = liveSteps.some((s) => s.type === 'final');

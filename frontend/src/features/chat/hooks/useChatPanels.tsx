@@ -42,6 +42,10 @@
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: TaskInfoBar 透传 taskId=activeTaskId ?? serverTaskId(与组件 key 同源, 不新造标识); 历史态误回填由 TaskInfoBar 内 if (detail) return 承担 — 小欧-2026-10-11
 // 编辑历史: 2026-10-21 小杨 - 挂文件足迹面板（rightBottom 折叠区）+ 透传推荐行/引用台账两项（可选） — 小杨-2026-10-21
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: ModelPickerSlot 删透传 sessionTitle(不再需要) - 小欧-2026-10-24
+// 编辑历史: 2026-10-30 小欧 - RightViewer/TaskInfoBar 的 storeStatus 统一改读 chatStreaming.status(局部变量):
+//   ①两处原内联 chatStreamStore.getSnapshot(status) 且未入 useMemo 依赖, status 变化而其余依赖不变时不重算,
+//   取消兜底永远看不到新状态; ②顺带删 chatStreamStore 直接导入(本文件不再直读 store)。
+//   RightViewer 新增传 storeStatus: 取消终态帧未送达时右栏徽标兜底, 不再只有 taskinfo 有。 — 小欧-2026-10-30
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -55,8 +59,8 @@ import { RightViewer } from '../components/right/RightViewer';
 // 2026-10-21 小杨 - 文件足迹面板
 import { FileTrailPanel } from '../components/layout/FileTrailPanel';
 import { TaskInfoBar } from '../components/taskinfo/TaskInfoBar';
-// 2026-10-06 22:52 小欧 - 取消终态兜底需读 store 快照（getSnapshot 不建条目，安全）
-import { chatStreamStore } from '../streams/chatStreamStore';
+// 2026-10-30 小欧 - 删 chatStreamStore 直接导入: storeStatus 改由 chatStreaming.status 传入(同一快照,
+//   且已入 useMemo 依赖), 本文件不再直读 store。
 import { Colors, type TokenLayer } from '@/utils/stepStyles'; // 2026-09-12 小欧: 复用TokenLayer消opts重复私有形状 — 小欧-2026-09-12
 import type {
   TaskDetail,
@@ -178,6 +182,9 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
     deniedSteps, // 2026-09-06 小欧 B2(方案C): 拒绝/拦截/超时执行轮集合透传 RightViewer → PipelineRenderer — 小欧-2026-09-06
     deniedEntries, // 2026-09-06 小欧 B2(6.4): 被拒工具点名条透传 RightViewer → ToolCallLine — 小欧-2026-09-06
     waitClock, // 2026-09-17 小欧 实施: 钟面信号透传 RightViewer → PipelineRenderer — 小欧-2026-09-17
+    // 2026-10-30 小欧 - 会话流状态提为局部变量(唯一读取点): 原 TaskInfoBar 内联 getSnapshot 只读一次却
+    //   不在 useMemo 依赖里, status 变化而其余依赖不变时面板不重算 → 取消兜底永远看不到新状态。
+    status: streamStatus,
   } = chatStreaming;
   const { handleCancel, handleTogglePause } = chatTaskControl;
 
@@ -286,6 +293,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
               authorizationPending?.toolName ?? recentConfirmedTool ?? null
             }
             frames={metaFrames} // 2026-09-02 小欧: badge 派生输入(startInfo 判定 running)
+            // 2026-10-30 小欧 - 与下方 TaskInfoBar 同源(chatStreaming.status): 取消终态帧未送达时右栏 badge 兜底
+            storeStatus={streamStatus}
             deniedSteps={deniedSteps} // 2026-09-06 小欧 B2(方案C): 停齿轮判定 — 小欧-2026-09-06
             deniedEntries={deniedEntries} // 2026-09-06 小欧 B2(6.4): 被拒工具点名条 — 小欧-2026-09-06
             waitClock={waitClock} // 2026-09-17 小欧 实施: 钟面信号 — 小欧-2026-09-17
@@ -324,11 +333,8 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             liveError={liveError} // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
             // 2026-10-06 22:52 小欧 - 取消终态兜底：store 已确认的终态透给徽标派生
             //   （终态帧未送达时靠它脱离"执行中"）。取快照不建条目，故不会凭空造会话。
-            storeStatus={
-              sessionId
-                ? chatStreamStore.getSnapshot(sessionId).status
-                : undefined
-            }
+            // 2026-10-30 小欧 - 改读 chatStreaming.status 局部变量(同源快照, 已入 useMemo 依赖)
+            storeStatus={streamStatus}
             // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填端点需 task_id,
             //   取值与上方 key 同源(activeTaskId ?? serverTaskId), 不新造任务标识状态。
             //   历史态误回填的防护在 TaskInfoBar 内(effect 首行 `if (detail) return`):
@@ -405,6 +411,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
       deniedSteps, // 2026-09-06 小欧 B2(方案C): state 变化需触发面板重渲 — 小欧-2026-09-06
       deniedEntries, // 2026-09-06 小欧 B2(6.4): state 变化需触发面板重渲 — 小欧-2026-09-06
       waitClock, // 2026-09-17 小欧 实施: heartbeatTs 变化需触发面板重渲 — 小欧-2026-09-17
+      streamStatus, // 2026-10-30 小欧 - 取消终态兜底依赖(漏=status 变化面板不重算, 兜底永不生效)
       selectedDetail,
       loading,
       isPaused,

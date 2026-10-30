@@ -56,6 +56,9 @@
 // 编辑历史: 2026-10-26 小沈 - notice双渲染: LiveMeta扩展notice字段; latestProcessEvent支持notice;
 //   start/failed设位4, done清除; final success时candidates全清(badge==='completed'→空数组) — 小沈-2026-10-26
 // 编辑历史: 2026-10-26 小沈 - 卡死预警接入liveMeta: LiveMeta.kind补'warning'; stuckWarning命中时以kind='warning'/'疑似卡死'进入位2候选; 删除stuckWarning返回值(不再独立渲染, 由TaskInfoBar位2动态状态承载) — 小沈-2026-10-26
+// 编辑历史: 2026-10-30 小欧 - 位4 取消后清空(与成功完成同语义): 原仅 badge==='completed' 清 candidates,
+//   取消落在重试退避中/压缩摘要中时, "重试 x/y""摘要中"等过程事件的 done 帧随 agent 协程被取消打断永不达,
+//   位4 会永久挂转圈/过期文案与"已取消"徽标冲突; 判据加 badge==='cancelled' — 小欧-2026-10-30
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -503,9 +506,12 @@ export const useTaskInfo = (
     //   新信号 candidates 前置保序, 与现状 winner 等价 — 小欧-2026-09-09
     //   2026-10-10 小欧[20] 审计 B4: now 已上提至事件段之前算一次(DRY), 此处不再重复声明
     // 2026-10-26 小沈: 任务成功完成时位4全清(notice/retry/error/truncated 均不进 candidates)
+    // 2026-10-30 小欧 - 取消同样全清(与成功完成同语义): 取消可能落在重试退避中/压缩摘要中, 此刻
+    //   executionSteps 里留着"重试 2/3 等 1 秒…""摘要中"等过程事件, 其 done 帧随 agent 协程被取消打断
+    //   而永不到达 → 位4 永久挂着转圈/过期文案, 与"已取消"徽标语义冲突。— 小欧-2026-10-30
     const candidates: LiveMeta[] =
-      badge === 'completed'
-        ? [] // 成功完成: 位4 全清
+      badge === 'completed' || badge === 'cancelled'
+        ? [] // 成功完成/已取消: 位4 全清
         : [
             ...(liveError
               ? [

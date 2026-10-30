@@ -77,6 +77,8 @@
 //   11位置对照表同步。 小欧-2026-10-29
 // 编辑历史: 2026-10-29 小欧 - 北京老陈令「占窗率挪至上下文后、信任前」: 占窗率(G8)自中组迁至右组上下文后、
 //   信任前; 序号同步 任务token6/耗时7/上下文8/占窗率9; 11位置对照表同步。 小欧-2026-10-29
+// 编辑历史: 2026-10-30 小欧 - storeStatus 改必填 StreamStatus(取消终态帧未送达时的徽标兜底判据):
+//   唯一调用点(useChatPanels)恒传 chatStreaming.status, 不留可选垫片; 与 RightViewer 同口径。 — 小欧-2026-10-30
 // 11位置对照表(当前实际布局, 从左到右):
 //   1 徽标      2 动态状态(含卡死预警 warning)
 //   3 轮次      4 本轮token 5 步数
@@ -105,6 +107,8 @@ import {
 } from '@ant-design/icons'; // G4/G8 全 antd SVG
 import type { ExecutionStep } from '../../../../types/execution';
 import type { TaskMetaFrames, LiveError } from '@/types/sse';
+// 2026-10-30 小欧 - storeStatus 用 Store 状态枚举(唯一定义处), 类型收窄到合法值
+import type { StreamStatus } from '@/features/chat/streams/backupTypes';
 // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回传用(仅取 executionApi.saveTaskProcessEvents)
 //   与上方 import type 合并成单条 import(同模块, 避免重复 import 声明)
 import {
@@ -158,7 +162,8 @@ interface TaskInfoBarProps {
   sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
   liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
   // 2026-10-06 22:52 小欧 - storeStatus：chatStreamStore 会话状态，取消终态帧未送达时的 badge 兜底
-  storeStatus?: string;
+  // 2026-10-30 小欧 - 改必填且用 StreamStatus(与 RightViewer 同口径): 唯一调用点恒可给, 不留可选垫片
+  storeStatus: StreamStatus;
   // 2026-10-11 小欧 北京老陈令「final 的时候回填事件列表」: 回填端点需要 task_id。
   //   历史态为 null(快照已在库中, 无需回填); 实时态由 useChatPanels 传 activeTaskId ?? serverTaskId,
   //   与本组件 key 同源(useChatPanels:300), 不新造任务标识状态。

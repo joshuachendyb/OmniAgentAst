@@ -67,7 +67,10 @@
 
 // 编辑历史: 2026-10-29 小欧 - 上行 refs 加 wire 投影: 新增 toWireRef(白名单投影, 剥 content/mtime/
 //   pending/invalid 前端内存态), 首连与插话两处 refs 序列化统一走它(防内存字段泄漏上行) — 小欧-2026-10-29
-
+// 编辑历史: 2026-10-30 小欧 - onComplete 终态守卫放行"取消终态帧"幂等重放(北京老陈: 前端收不到后端取消事件):
+//   取消等帧看门狗到期只落 status='cancelled' 不再 abort, 此时 status 已是终态; 旧守卫一律 return 会挡掉
+//   后端真正发布的 final(cancelled) → settleCancelByFrame 不执行、complete 事件不投递。放行条件收紧为
+//   "outcome==='cancelled' && status==='cancelled' && 未 intentionalAbort", 其余终态/主动卸载照旧挡。 — 小欧-2026-10-30
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -221,9 +224,13 @@ export const buildStreamBody = (
 
 /** wire 投影(F6): 契约字段白名单, 只留 kind/label/path/lineRange/size——
  *  content(正文由后端读, I1)、mtime(前端本地比对态, R2)、pending/invalid(内存态)均不进 wire。 */
-export const toWireRef = (r: { kind: string; label: string; path: string;
-                               lineRange?: { start: number; end: number } | null;
-                               size?: number }) => ({
+export const toWireRef = (r: {
+  kind: string;
+  label: string;
+  path: string;
+  lineRange?: { start: number; end: number } | null;
+  size?: number;
+}) => ({
   kind: r.kind,
   label: r.label,
   path: r.path,
@@ -927,7 +934,20 @@ function broadcastHandlers(s: ChatStreamSession) {
       //   （已收 chunk 仍在 UI，取消态文案由 stop() 返回值经 showTaskResultMessage 呈现）。
       // 2026-10-06 22:52 小欧 - 该守卫只挡"真卸载/另一次终态"，**不再挡取消后的正常终态帧**：
       //   stop() 成功路径已改为不置 intentionalAbort、不提前落终态，故取消帧能进到这里。
-      if (s.intentionalAbort || isTerminalStatus(s.status)) return;
+      // 2026-10-30 小欧 - 幂等放行"取消终态帧"：取消等帧看门狗(5s)到期时 settleCancelByDb
+      //   只落 status='cancelled'、不再 abort 通道，此时 s.status 已是终态；若照旧一律 return，
+      //   后端真正发布的 final(cancelled) 会被挡在门外 → settleCancelByFrame 不执行、complete
+      //   事件不投递（订阅方据此刷任务列表/回填回复）。放行条件收紧到"确为取消帧 + 未主动卸载"，
+      //   真卸载、已完成、已失败照旧挡住（无第二次终态写入：上面 status 已是 cancelled，commit 幂等）。
+      const isCancelFinalReplay =
+        outcome === 'cancelled' &&
+        s.status === 'cancelled' &&
+        !s.intentionalAbort;
+      if (
+        !isCancelFinalReplay &&
+        (s.intentionalAbort || isTerminalStatus(s.status))
+      )
+        return;
       commit(s, (d) => {
         d.status =
           outcome === 'cancelled'

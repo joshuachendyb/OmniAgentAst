@@ -95,6 +95,9 @@
 //     #3 KISS-DIRECT: 消除 isLazyMode/effectiveVisibleCount 等多余中间变量, streaming 分支收敛到 hook;
 //     #4 复用优先: useLazyRender 独立文件入库(与 useStepRenderPrefs 同范式), 可被其他列表组件复用;
 //     #5 全局逻辑: visibleCount 重置从 useEffect(渲染后执行→一帧闪现) 改为 hook 内 prevItemsRef 渲染期同步重置 — 小欧-2026-10-28
+// 编辑历史: 2026-10-30 小欧 - 取消来源中文化: 新增 CANCEL_SOURCE_TEXT(5 个枚举键→中文, 未知键原样),
+//   final(cancelled) 第二行原直出后端枚举键(user_requested 等), 后端 CANCEL_SOURCE_TERMINAL_TEXT
+//   只服务 response 正文 — 小欧-2026-10-30
 /**
  * PipelineRenderer - 消息流水线渲染器
  *
@@ -314,6 +317,17 @@ const terminalDetailStyle = (color: string): React.CSSProperties => ({
   margin: stepMargin(false),
 });
 
+// 2026-10-30 小欧 - 取消来源枚举→中文: 后端 CANCEL_SOURCE_TERMINAL_TEXT 只用于 response 正文,
+//   第二行"✕ 取消来源: xxx"原先直出后端枚举键(用户看到 user_requested 这类英文标识符)。
+//   未知键原样显示, 不吞来源(与后端 cancel_terminal_text 未知来源兜底同哲学)。— 小欧-2026-10-30
+const CANCEL_SOURCE_TEXT: Record<string, string> = {
+  user_requested: '用户取消',
+  client_disconnect_timeout: '连接中断超时',
+  config_limit: '达到最大步数限制',
+  status_inconsistency: '执行状态异常',
+  orchestrator_error: '服务内部异常',
+};
+
 interface PipelineRendererProps {
   steps: ExecutionStep[];
   streaming?: boolean; // 实时流进行中（思考流尾随光标）
@@ -502,7 +516,9 @@ const PipelineRenderer: React.FC<PipelineRendererProps> = ({
               {isCancelled && seg.step.cancel_source && (
                 <div style={terminalDetailStyle(Colors.ORANGE_RED)}>
                   <StopOutlined style={{ color: Colors.ORANGE_RED }} />{' '}
-                  取消来源: {seg.step.cancel_source}
+                  取消来源:{' '}
+                  {CANCEL_SOURCE_TEXT[seg.step.cancel_source] ??
+                    seg.step.cancel_source}
                 </div>
               )}
               {isFailed && (seg.step.error_message || seg.step.error_type) && (
