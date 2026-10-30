@@ -97,6 +97,9 @@
 #     (实测注入件 tool 1 条/有调用方 0 条);
 #   ②摘要来源标签归一 —— 落库带"[本次摘要]: ", 读回锚点再标"[往次摘要]: "成双层(实测), 且该串还作为
 #     "已有摘要"喂给下一次压缩; 新增 _strip_summary_labels 单点, 读锚点与 _prefix_summary 两侧统一剥净 — 小欧-2026-10-30
+# 2026-10-31 小欧 - 术语订正(北京老陈令): 0.5 是「限制系数」(limit ratio, 压缩摘要专用, 固定值), 不是「调节系数」;
+#   调节系数是 tuning.trim.trigger_ratio(0.9), 只服务 loop 裁剪触发阈值。本模块 _threshold=ctx×限制系数 的语义为
+#   「压缩摘要 limit」, 不是门槛, 也不是 loop 的触发阈值。仅订正注释, 零逻辑变更。— 小欧-2026-10-31
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -328,14 +331,15 @@ def _maybe_compact_injected_history(agent) -> None:
     输入: agent 含 _injected_history_msgs(由 _build_injected_history 构建留存; 不读 conversation_history)。
     输出: 无(置 agent._needs_compact 布尔标记)。
     前置条件: _build_injected_history 已执行。
-    关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 门限=运行时上下文窗口 × START_TRIGGER_RATIO(北京老陈 2026-08-17 定案, start 超窗=上下文×1/2)。
+    关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 压缩摘要 limit=运行时上下文窗口 × 限制系数
+      (START_LIMIT_RATIO, 北京老陈 2026-08-17 定案, start 超窗=上下文×1/2; 限制系数≠调节系数, 后者服务 loop 裁剪)。
     2026-10-07 北京老陈: 数据源由 conversation_history 改 _injected_history_msgs(判定口径=注入历史,
       不含 system/task; init_history 已推迟到 react_loop 装配段, 此刻 conversation_history 为空)。
     """
     agent._needs_compact = False
     from app.services.agent.compaction_constants import (  # 小健 2026-08-17: 常量权威迁 agent/compaction_constants(局部导入防包级依赖)
         START_COMPACTION_ENABLED,
-        START_TRIGGER_RATIO,
+        START_LIMIT_RATIO,
     )
     _start_enabled = bool(get_config().get('tuning.compaction.start_enabled', START_COMPACTION_ENABLED))  # 小欧 2026-09-23 compaction配置化
     if not _start_enabled:
@@ -350,8 +354,11 @@ def _maybe_compact_injected_history(agent) -> None:
     # 上下文窗口基准 = 运行时 context_limit(agent_runner 已覆盖 message_builder.MAX_CONTEXT_TOKENS, 与 loop 同基准);
     # MessageBuilder 构造自带默认无需兜底 — 小健 2026-08-17
     _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
-    _start_ratio = float(get_config().get('tuning.compaction.start_trigger_ratio', START_TRIGGER_RATIO))  # 小欧 2026-09-23 compaction配置化
-    _threshold = int(_ctx * _start_ratio)
+    # 2026-10-31 小欧 术语订正(北京老陈令): _start_ratio 是「限制系数」(limit ratio, 压缩摘要专用, 固定 0.5),
+    #   不是「调节系数」(调节系数=tuning.trim.trigger_ratio=0.9, 只服务 loop 裁剪)。
+    #   下面乘积的语义是「压缩摘要 limit」, 不是门槛, 也不是 loop 触发阈值。
+    _start_ratio = float(get_config().get('tuning.compaction.start_limit_ratio', START_LIMIT_RATIO))  # 限制系数(缺省 0.5; 配置读取仅测试可覆盖)
+    _threshold = int(_ctx * _start_ratio)   # 压缩摘要 limit
     rough = MessageBuilder._estimate_tokens(history)
     if rough > _threshold:
         agent._needs_compact = True
@@ -482,7 +489,7 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
       即"摘要顶掉已压缩的老历史, 原文只保留新增部分", 每段原文至多被压一次, 保真度不低于全量重压。
       2026-10-29 北京老陈令: 本轮产出新摘要时注入件=最后任务usermessage + 新摘要 + delta 段尾部 N 轮
       (delta 整体不注入); 复用/失败回退仍为 [摘要] + delta。
-    关联逻辑: 阈值与老路同尺(START_TRIGGER_RATIO × ctx, 北京老陈 2026-10-14 纠正: 不用
+    关联逻辑: 压缩摘要 limit 与老路同尺(START_LIMIT_RATIO × ctx, 北京老陈 2026-10-14 纠正: 不用
       COMPACTION_BUFFER —— 它是"输出预留缓冲", 语义不符); 增量压缩复用 generate_chunked_summary;
       失败(取消/异常/校验拒收)回退"旧锚点摘要 + 全量 delta", 比老路的全量历史更省, 链不断。 — 小欧-2026-10-14
     """
@@ -516,11 +523,11 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
                            "复用锚点摘要(无增量)")
         return True
     try:
-        from app.services.agent.compaction_constants import START_TRIGGER_RATIO
+        from app.services.agent.compaction_constants import START_LIMIT_RATIO
         from app.services.agent.message_builder import MessageBuilder
         from app.services.task.task_runtime import check_cancelled
         _ctx = agent.message_builder.MAX_CONTEXT_TOKENS
-        _threshold = int(_ctx * float(get_config().get('tuning.compaction.start_trigger_ratio', START_TRIGGER_RATIO)))
+        _threshold = int(_ctx * float(get_config().get('tuning.compaction.start_limit_ratio', START_LIMIT_RATIO)))
         _delta_tokens = MessageBuilder._estimate_tokens(delta_msgs)
     except Exception as e:
         logger.warning(f"[start_step] 增量路径阈值估算失败, 按超窗处理: {type(e).__name__}: {e!r}")

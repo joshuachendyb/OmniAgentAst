@@ -400,12 +400,12 @@ GROUPS: Dict[str, Dict[str, Any]] = {
         # --- compaction: 压缩 4 键（开局超容时把旧对话压成摘要）---
         _item("tuning.compaction.start_enabled", "bool", "开局压缩开关", True,
               notice="任务刚开始如果发现以前的对话太长装不下，先自动压成一段摘要再开始干活；关掉则不压、直接硬删"),
-        _item("tuning.compaction.start_trigger_ratio", "float", "开局压缩水位", 0.5, range_=[0.1, 0.95],
-              notice="开局时旧对话占到记忆容量百分之多少才值得压（0.5=占到一半就压）；只管任务开头这一次，任务跑起来后归上面的「裁剪」管"),
+        _item("tuning.compaction.start_limit_ratio", "float", "压缩摘要限制系数", 0.5, range_=[0.1, 0.95],
+              notice="压缩摘要的限制系数（0.5=占到一半就压）：开局时旧对话占到记忆容量这个比例才值得压；只管任务开头这一次，任务跑起来后归上面的「裁剪」管"),
         _item("tuning.compaction.summary_feed_max_chars", "int", "单条截断(字符)", 2000, range_=[100, 10000],
               notice="压成摘要前，单条工具结果超过这么多字先砍掉再给模型看（防超长输出把摘要过程撑爆）；调大=摘要更全但更费"),
         _item("tuning.compaction.keep_tail", "int", "免压缩原始对话数", 1, range_=[0, 5],
-              notice="压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
+              notice="[暂时无用]压成摘要后，再原样保留最近几条消息不压（保住最新对话细节不被摘要抹平）；0=全压成摘要、不留原话"),
         # --- live_front: 连接保活/任务清理/缓存/事件流水保留（5 键；原名 stream_task，改名防与 tuning.llm.stream_* 混淆）---
         _item("tuning.live_front.heartbeat_interval", "float", "保活间隔(秒)", 25.0, range_=[5, 60],
               notice="任务执行中如果一会儿没新内容，每隔这么多秒主动给页面发一个「我还活着」的信号，防止页面误以为断了自动重连；必须明显小于页面的 60 秒断线判定，否则白保活"),

@@ -55,9 +55,11 @@
 # 意义: LLM 上下文窗口默认上限(未在 model_params.context_limit 配置时兜底)
 #       自 app/services/lifecycle/service.py:74 迁入; 压缩/裁剪以运行时 context_limit(配置优先, 否则本默认)作基准 — 小健 2026-08-17
 DEFAULT_CONTEXT_LIMIT = 262144   # = 256K
-# 意义: start 超窗触发比例(=上下文×1/2, 北京老陈 2026-08-17 定案)——start 一次性注入历史更保守, 门限更低
-#       (start 超窗于此比例即置 _needs_compact 触发 C4 锚定摘要)
-START_TRIGGER_RATIO = 0.5
+# 意义: 压缩摘要限制系数(=上下文×1/2, 北京老陈 2026-08-17 定案; 2026-10-31 由 START_TRIGGER_RATIO 改名)——
+#       start 一次性注入历史更保守, 限制更低; 超于此即置 _needs_compact 触发 C4 锚定摘要。
+#       术语: 本值是「限制系数」(limit ratio), 只服务压缩摘要; 「调节系数」是 TRIM_TRIGGER_RATIO, 只服务 loop 裁剪。
+#       配置键 tuning.compaction.start_limit_ratio(2026-10-31 由 start_trigger_ratio 改名)。
+START_LIMIT_RATIO = 0.5
 # 意义: loop 裁剪阈值调节系数, 作用于裁剪预算(context_limit-compaction_buffer-tools_token_reserve):
 #       ① 裁剪入口阈值=预算×系数(一次方), 粗估超过此阈值触发绝对值安全网
 #       ② 裁剪出口队列预算=预算×系数²(二次方), 队列只能用此预算

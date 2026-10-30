@@ -594,7 +594,7 @@ location /api/ {
 | 并发配额 | `tuning.concurrency.` | 2 | soft_pool_wait_timeout, shell_pool_max_per_type |
 | Agent 循环参数 | `tuning.agent.` | 1 | max_chunks_without_promote |
 | 裁剪 | `tuning.trim.` | 3 | max_rounds, trigger_ratio, compaction_buffer |
-| 压缩 | `tuning.compaction.` | 4 | start_enabled, start_trigger_ratio, summary_feed_max_chars, keep_tail |
+| 压缩 | `tuning.compaction.` | 4 | start_enabled, start_limit_ratio, summary_feed_max_chars, keep_tail |
 | 前后端之间的流/任务/缓存 | `tuning.live_front.` | 4 | heartbeat_interval, task_timeout_hours, tool_cache_ttl, max_cache_size |
 | 人工确认 | `tuning.hitl.` | 4 | hitl_confirm_lead, bypass_auto_lead, hitl_min_confirm_timeout, max_pending_confirmations |
 | 内容截断 | `tuning.content.` | 3 | project_context_max_chars, action_log_result_max_chars, temp_history_char_limit |
