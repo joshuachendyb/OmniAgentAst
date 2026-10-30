@@ -31,6 +31,15 @@
 #     log_config=None 阻断 uvicorn 覆盖本配置, 否则装配无效。 — 小欧-2026-10-25
 #     补充: uvicorn 三 logger 只挂共享文件 handler 落盘, 不挂 console 镜像(访问日志高频刷屏且无排障价值),
 #     事件循环线程彻底零同步 stdout/stderr 写。 — 小欧-2026-10-25
+#   2026-10-30 小欧 - version.txt 强制复制覆盖: _deploy_one 增 force 参数;
+#     version.txt 部署改 force=True 不判 mtime 无条件覆盖(版本号必须与包内最新一致,
+#     防目标 mtime 更新/被外部改动后跳过刷新致旧版本号); config.yaml.example/OmniAgent.md
+#     保持原 mtime 判据不变。 — 小欧-2026-10-30
+#   2026-10-30 小欧 - --forwarded-allow-ips 默认加 ::1 覆盖 IPv6 回环(原只 127.0.0.1,
+#     部分系统 localhost 优先解析 ::1, 走 IPv6 时本机访问被误判 fail-closed);
+#     help 文案精简为"可信反向代理 IP(逗号分隔,含 IPv6)…"; ⚠ 警告文案同步精简。
+#     注: 不能写 localhost —— uvicorn 按 TCP 对端 IP 匹配(proxy_headers.py),
+#     DNS 已把 localhost 解析成 IP, 字面量永不匹配。 — 小欧-2026-10-30
 # ============================================================================
 import argparse
 import shutil
@@ -61,17 +70,21 @@ def _exe_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-def _deploy_one(src: Path, dst: Path, name: str) -> None:
+def _deploy_one(src: Path, dst: Path, name: str, force: bool = False) -> None:
     """单份资源部署: 缺失则创建, 源 mtime 新于目标则刷新 — 小欧 2026-10-24
 
     判据用 mtime 而非 exists(): 升级打包版本后 _internal/ 内的源文件已更新,
     若只判 exists(), exe 同级旧文件会永不刷新 → version.txt 显示旧版本号、
     OmniAgent.md 规则不随升级生效, 且全程无报错(静默失效)。
+
+    force=True: 无条件复制覆盖(不判 mtime)。version.txt 专用 —— 版本号必须
+    与包内最新一致, 即便目标 mtime 更新/被外部改动, 也强制用包内最新覆盖。
+    — 小欧-2026-10-30
     """
     if not src.exists():
         return
     try:
-        if not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
+        if force or not dst.exists() or src.stat().st_mtime > dst.stat().st_mtime:
             shutil.copy2(src, dst)
             print(f"[run_server] _deploy_resources: refreshed {name} -> {dst}", flush=True)
         else:
@@ -89,12 +102,15 @@ def _deploy_resources(base: Path) -> None:
     刷新判据: 源 mtime 新于目标则覆盖(见 _deploy_one), 三份文件同一判据。
     config.yaml.example 刷新无害 —— _ensure_config 仅在 config/config.yaml 缺失时
     才从 example 复制, 用户已生成的 config.yaml 不受影响。
+
+    version.txt 例外: 强制复制覆盖(force=True), 版本号必须与包内最新一致,
+    不因目标 mtime 更新而跳过 —— 北京老陈令 2026-10-30。
     """
     src_base = base / "_internal"
     if not src_base.exists():
         return
-    # version.txt — 必须存在且为最新, 否则 get_version() 返回旧版本号或 "0.0.0"
-    _deploy_one(src_base / "version.txt", base / "version.txt", "version.txt")
+    # version.txt — 必须存在且为最新(强制覆盖, 不判 mtime), 否则 get_version() 返回旧版本号或 "0.0.0"
+    _deploy_one(src_base / "version.txt", base / "version.txt", "version.txt", force=True)
     # config.yaml.example — 必须存在, 否则 _ensure_config 无法生成 config.yaml
     _deploy_one(src_base / "config.yaml.example", base / "config.yaml.example", "config.yaml.example")
     # OmniAgent.md — 项目规则文件注入 System Prompt; 缺失时程序只建空文件 → 规则不生效
@@ -122,17 +138,16 @@ def main() -> None:
     #   配套删 pyi_rthook_default_port(同一目的不再留两套机制) — 小欧-2026-10-11
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument(
-        "--forwarded-allow-ips", default="127.0.0.1",
-        help="信任哪些对端的 X-Forwarded-For。默认仅本机反代。"
-             "⚠️ 填 * 会让任意客户端伪造 client.host（可伪造 127.0.0.1 免口令访问），"
-             "确需信任内网反代时只列该反代的 IP。")
+        "--forwarded-allow-ips", default="127.0.0.1,::1",
+        help="可信反向代理 IP（逗号分隔，含 IPv6）。默认只信任本机。"
+             "非可信反代环境请勿改动，填 * 会信任任意来源（危险）。")
     args = parser.parse_args()
 
     if args.forwarded_allow_ips.strip() == "*":
         # 不是禁止启动（部署者可能知情），但必须让风险可见 —— 应用层会因无法区分
         # 真回环与伪造而取消回环豁免（deps._is_trusted_localhost），即本机也要输口令。
-        print("[run_server] ⚠️ 警告：--forwarded-allow-ips=* 信任任意来源的 X-Forwarded-For，"
-              "客户端可伪造来源 IP。为安全起见，本机回环将不再自动豁免鉴权。", flush=True)
+        print("[run_server] ⚠️ 警告：--forwarded-allow-ips=* 会信任所有来源，"
+              "客户端可伪造来源 IP，本机访问将不再自动豁免口令。", flush=True)
 
     base = _exe_dir()
     _deploy_resources(base)   # 自动部署 version.txt/config.yaml.example/OmniAgent.md 到 exe 同级
