@@ -2,7 +2,7 @@
 # 2026-10-04 - 小欧 - 治理观测(文档[7] §4.4): 事件循环心跳看门狗 — 独立daemon线程检测SSE心跳(:ping)连续缺失,
 #   即自动 py-spy dump 全PID落盘留证, 把卡死取证从事后人工变实时; py-spy缺失/无权限时降级为告警(含PID清单+手动命令),
 #   不阻断监测线程。挂点: stream_orchestrator 的 stream_reader/journal_reader(activate/beat/deactivate)。
-# 2026-10-30 - 小欧 - 文档[58] P3: 停摆判据改用"事件循环独立心跳"(见 _loop_ticker) — 原判据只认 reader 的
+# 2026-10-30 - 小欧 - 停摆判据改用"事件循环独立心跳"(见 _loop_ticker) — 原判据只认 reader 的
 #   beat, 客户端背压(reader 卡在 yield)时 beat 同样缺失, 会被误判成停摆并 dump 出无证据的栈;
 #   全局"写阻塞计数"方案已否决: 一个僵死客户端会让看门狗对所有 reader 永久失效。
 """
@@ -91,18 +91,23 @@ def _ensure_ticker() -> None:
 
 async def _loop_ticker() -> None:
     """事件循环存活心跳: 每秒推进一次; loop 真停摆时本协程同样得不到调度 — 小欧 2026-10-30"""
-    global _loop_alive_at
-    try:
-        while True:
+    # 2026-10-30 小欧: 必须同时声明 _dumped —— 漏声明时它在本函数内被判为局部名,
+    #   首拍读即 UnboundLocalError, 协程当场死掉 → 双证据判据退化成只看 reader beat(等于没改),
+    #   且无任何日志痕迹。
+    global _loop_alive_at, _dumped
+    while True:
+        try:
             with _lock:
                 _loop_alive_at = time.time()
                 if _dumped:
                     _dumped = False   # 循环已恢复, 允许下次真停摆再留证
                 if _active <= 0:
                     return            # 无活跃 reader 时退出, 下次 activate 重启
-            await asyncio.sleep(_LOOP_TICK_INTERVAL)
-    except asyncio.CancelledError:
-        raise
+        except asyncio.CancelledError:
+            raise
+        except Exception as _e:  # noqa: BLE001 - 心跳协程静默死亡=判据静默退化, 必须留痕并续跑
+            logger.warning(f"[观测] loop 心跳异常(协程继续): {type(_e).__name__}: {_e}")
+        await asyncio.sleep(_LOOP_TICK_INTERVAL)
 
 
 def _threshold() -> float:
@@ -128,7 +133,7 @@ def _watch_loop() -> None:
                     if stale < thr:
                         _backpressure_logged = False   # reader 已恢复推进
                         _action = "fresh"
-                    # 2026-10-30 小欧 - 文档[58] P3: reader 心跳缺失但事件循环仍在调度(独立心跳新鲜)
+                    # 2026-10-30 小欧 - reader 心跳缺失但事件循环仍在调度(独立心跳新鲜)
                     #   → 客户端背压(reader 挂在 yield 写), 不是停摆, 不 dump 误导证据
                     elif _loop_alive_at > 0 and (_now - _loop_alive_at) < thr:
                         _action = "backpressure"
