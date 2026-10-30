@@ -23,6 +23,11 @@
 //   文案复用 ErrorDetail.ERROR_TYPE_LABELS（4 个 error_type 中文标签已存在，不另写一份以免漂移）；
 //   ResumeResult↔error_type 的对应关系见 chatStreamTransport.RECOVERY_ERROR_BRANCH。
 // 编辑历史: 2026-09-30 14:30 小欧 - URL 回填加幂等守卫；删 No-op 入参 onMessageListLoadingStart
+// 编辑历史: 2026-10-30 小欧 - 两处 resume() 链补 catch 降级为 idle。
+//   背景: listTasks 已置 _silent(后台轮询不再弹「后端响应超时，请重试」), resume 链上的
+//   DB 回读失败因此失去全局 toast 兜底; 而原 .then 无 .catch, 一抛就整段跳过 ——
+//   页面停在半初始化、用户零提示。降级为 idle 即"查不到可恢复任务就正常初始化", 下一次
+//   refresh 自愈; 不再产生未处理拒绝。 — 小欧-2026-10-30
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
@@ -90,6 +95,12 @@ export function useChatInit(opts: {
     //   loadSession（F7：不重新 POST、不重建任务）；idle → 原 initializeSession 三场景原样执行
     void chatStreamStore
       .resume(opts.urlSessionId ?? undefined)
+      // 2026-10-30 小欧 - 查询失败降级为 idle, 照旧走 initializeSession
+      //   (否则整条 .then 被跳过, 页面停在半初始化且零提示)
+      .catch((e) => {
+        console.warn('[useChatInit] resume 查询失败, 按 idle 正常初始化:', e);
+        return 'idle' as ResumeResult;
+      })
       .then(async (r) => {
         if (r !== 'idle' && opts.urlSessionId) {
           // 2026-09-30 08:34:56 小欧 - 恢复不完整必须让用户看见（先提示再补历史，不等 loadSession）。
@@ -168,10 +179,17 @@ export function useChatInit(opts: {
     // URL 已带会话 → 交给上方预调用（[63] 5.17 契约：非 idle 时只补历史），此处不重复介入
     if (opts.urlSessionId) return;
     if (!adoptedSessionId) return;
-    void chatStreamStore.resume(adoptedSessionId).then((r) => {
-      const notice = RESUME_NOTICE[r];
-      if (notice) showWarning(notice);
-    });
+    void chatStreamStore
+      .resume(adoptedSessionId)
+      // 2026-10-30 小欧 - 同上, 查询失败降级 idle(不弹提示、不冒未处理拒绝)
+      .catch((e) => {
+        console.warn('[useChatInit] resume 查询失败(切会话):', e);
+        return 'idle' as ResumeResult;
+      })
+      .then((r) => {
+        const notice = RESUME_NOTICE[r];
+        if (notice) showWarning(notice);
+      });
   }, [opts.urlSessionId, adoptedSessionId]);
 
   // 组件卸载时清理 loading + message
