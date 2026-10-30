@@ -13,6 +13,7 @@
 
 // 2026-10-29 小欧 - 增 statFile：GET /files/stat 轻端点(只取存在/size/mtime, 不读正文),
 //   供发送前预检(存在性/mtime 本地比对"内容已更新") — 小欧-2026-10-29
+// 2026-10-30 小欧 - 文档[58] P1/P2: fetchTree/searchFiles 走 _silent；fetchTree/readFile/fetchExternalTree 放宽到 HEAVY_READ_TIMEOUT_MS
 
 /**
  * 文件浏览 API（只读浏览项目根目录）
@@ -21,7 +22,13 @@
  * - 路径参数一律"相对项目根"的 posix 路径（后端只接受相对路径，绝对路径/UNC/`..` 一律 400）
  * - 错误信封取 `error.code`（全局 http_exception_handler 包装后的形状，非 detail.code）
  */
-import api, { getAccessToken, API_BASE_URL } from './client'; // api 只有默认导出（session.api.ts 同款），具名解构必红
+import api, {
+  getAccessToken,
+  API_BASE_URL,
+  HEAVY_READ_TIMEOUT_MS,
+} from './client'; // api 只有默认导出（session.api.ts 同款），具名解构必红
+// 2026-10-30 小欧 - 文档[58] P1: _silent 走类型载体, 避免字面量多属性报错
+import type { ApiRequestConfig } from './client';
 
 export interface FileNode {
   key: string;
@@ -81,7 +88,6 @@ export interface StatResponse {
   /** ok=false 时的失败原因(missing/unsupported) */
   reason?: string;
 }
-
 
 export interface SearchHit {
   path: string;
@@ -149,12 +155,15 @@ export const fileApi = {
     opts?: { maxDepth?: number; maxNodes?: number; signal?: AbortSignal }
   ): Promise<TreeResponse> => {
     const { maxDepth = 5, maxNodes = 100000, signal } = opts ?? {};
-    return (
-      await api.get<TreeResponse>('/files/tree', {
-        params: { path, max_depth: maxDepth, max_nodes: maxNodes },
-        signal,
-      })
-    ).data;
+    // 2026-10-30 小欧 - 文档[58] P1: 页面自己给「目录加载失败」局部提示(useFilesTree:83-86),
+    //   全局 toast 属重复且更含糊, 故本请求静默(唯一置 _silent 的端点, 见 §6.8 逐端点决定表)
+    const cfg: ApiRequestConfig = {
+      params: { path, max_depth: maxDepth, max_nodes: maxNodes },
+      signal,
+      _silent: true,
+      timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 文档[58] P2: 天生慢读, 60s→120s
+    };
+    return (await api.get<TreeResponse>('/files/tree', cfg)).data;
   },
 
   readFile: async (
@@ -167,6 +176,7 @@ export const fileApi = {
       await api.get<ReadResponse>('/files/read', {
         params: { path, offset, limit },
         signal,
+        timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 文档[58] P2: 2MB 级正文读取，同属慢读
       })
     ).data;
   },
@@ -188,7 +198,8 @@ export const fileApi = {
   /** 2026-10-30 小欧 - 引用预检：存在性/mtime/size，O(1) 不读正文(5.4.1 precheckRefs 唯一数据源) */
   statFile: async (path: string): Promise<StatResponse> => {
     need(path, '文件路径');
-    return (await api.get<StatResponse>('/files/stat', { params: { path } })).data;
+    return (await api.get<StatResponse>('/files/stat', { params: { path } }))
+      .data;
   },
 
   /** 列项目根外的目录树（只读；外部目录挂左侧树展开时用）— 小欧-2026-10-23 */
@@ -202,6 +213,7 @@ export const fileApi = {
       await api.get<ExternalTreeResponse>('/files/external/tree', {
         params: { path: absPath, max_depth: maxDepth, max_nodes: maxNodes },
         signal,
+        timeout: HEAVY_READ_TIMEOUT_MS, // 2026-10-30 小欧 - 文档[58] P2: 外部目录树同 fetchTree
       })
     ).data;
   },
@@ -211,9 +223,14 @@ export const fileApi = {
    * 候选过滤（只留可读文本）在调用方做 —— 与后端 `_preview_of()` 的 `text` 判定对齐，
    * 前端不自立规则。
    */
-  searchFiles: async (q: string, limit = 20): Promise<SearchResponse> =>
-    (await api.get<SearchResponse>('/files/search', { params: { q, limit } }))
-      .data,
+  searchFiles: async (q: string, limit = 20): Promise<SearchResponse> => {
+    // 2026-10-30 小欧 - 文档[58] P1: 唯一调用方 ChatInput 在 catch 里自提示，全局 toast 与其重复且文案无关
+    const cfg: ApiRequestConfig = {
+      params: { q, limit },
+      _silent: true,
+    };
+    return (await api.get<SearchResponse>('/files/search', cfg)).data;
+  },
 
   fetchRecentFiles: async (sessionId: string): Promise<RecentFile[]> => {
     need(sessionId, '会话ID');
