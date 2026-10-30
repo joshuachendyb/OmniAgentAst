@@ -56,6 +56,9 @@
 #   /api/v1 同源无需 CORS, 一个端口搞定。源码调试模式读 ../frontend/dist/。
 # 2026-10-29 小欧 - 访问日志噪音过滤: startup_event 调 install_access_noise_filter(),
 #   探活+状态刷新高频轮询 access log 不再上屏落盘(零排障价值); dev/exe 两模式生效。 — 小欧-2026-10-29
+# 2026-10-30 小欧 - 请求耗时埋点+ X-Request-Id 中间件(_RequestTimingMiddleware, 纯 ASGI),
+#   给"前端 60s 超时"提供后端侧对账依据; 改后用纯 ASGI(不用 BaseHTTPMiddleware)并补异常穿出日志
+#   reqId 日志 —— 理由见中间件定义处注释。 — 小欧-2026-10-30
 import sys
 import asyncio
 import time
@@ -76,6 +79,7 @@ from fastapi.middleware.gzip import GZipMiddleware  # 2026-10-21 小杨 - 文件
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.datastructures import MutableHeaders  # 2026-10-30 小欧: 纯 ASGI 计时中间件回写响应头
 import traceback
 from app.utils.time_utils import get_local_iso_timestamp  # 小欧 2026-08-08 全程统一本地时区
 from app.tools import ensure_tools_registered
@@ -163,30 +167,72 @@ app.add_middleware(
   #   GZipMiddleware 对大响应（树 3.4MB→~0.4MB）压缩 ~10 倍，浏览器自动解压，零协议改动。
 app.add_middleware(GZipMiddleware, minimum_size=2048, compresslevel=1)
 
-# 2026-10-30 小欧 - 文档[58] P0: 请求耗时埋点 + X-Request-Id 前后端对账
+# 2026-10-30 小欧 - 请求耗时埋点 + X-Request-Id 前后端对账
 #   为什么: 前端 60s 超时提示原无法归因 —— 后端只记 4xx/5xx, 成功的慢请求(如 12s 的
 #   /files/tree)零痕迹, 出事只能靠猜。本中间件给每个响应回 X-Request-Id, 且只对 >3s
 #   的请求落一条 [slow] 日志(不刷屏)。
-#   已知限制: call_next 返回后才写响应头, 挂到前端超时的请求收不到该头 —— req= 只对
-#   4xx/5xx 与成功请求可用, 超时场景靠 URL+耗时+时间窗对账(见文档[58] §6.4 已知限制)。
-#   为什么挂最外层: 只有包住 CORS/GZip 才量得到客户端真实等待时间(含压缩耗时)。
+#   已知限制: 响应头只能在 response.start 时写, 超时/断连的请求前端收不到该头 —— req=
+#   只对 4xx/5xx 与成功请求可用, 超时场景靠 URL+耗时+时间窗对账。
+#   两处修正(2026-10-30 小欧):
+#     ① 不能用 @app.middleware("http")(BaseHTTPMiddleware): 它会为每个请求再起一个任务、
+#       用内存流搬运 body, 而本应用的 SSE 断连清理完全依赖 client-disconnect 传到 reader
+#       生成器(GeneratorExit → deactivate); 多一层搬运等于给这条链加不确定延迟, 且长连接
+#       会长期占住这层的内存流。改成纯 ASGI(只包 send, 零缓冲零额外任务), 写法同
+#       monitoring/middleware.py(DRY/KISS-DIRECT)。
+#     ② 补"异常逃出 app"的路径: 路由内异常本就被 general_exception_handler 转成正常 500 响应
+#       (头照写、[slow] 照记); 但中间件自身或流式 body 迭代期抛的异常会直接穿出本层 —— 无论
+#       响应头是否已发, 都落一条带 reqId+耗时的 [error] 日志(head= 标明头是否已发出), 再原样
+#       抛出(异常处理权仍归外层, 不吞)。
+#   计时口径: 量到 response.start(TTFB)即停 —— SSE 连接可能挂数小时, 按总时长落 [slow] 会把
+#     每条长连接都记成慢请求(纯噪声); 排障要看的本来就是"客户端等了多久才见首字节"。
 _SLOW_REQUEST_SECONDS = 3.0
 _REQUEST_ID_LEN = 12
 
 
-@app.middleware("http")
-async def request_timing_middleware(request: Request, call_next):
-    rid = uuid.uuid4().hex[:_REQUEST_ID_LEN]
-    _t0 = time.perf_counter()
-    response = await call_next(request)
-    _elapsed = time.perf_counter() - _t0
-    response.headers["X-Request-Id"] = rid
-    if _elapsed >= _SLOW_REQUEST_SECONDS:
-        logger.warning(
-            f"[slow] {request.method} {request.url.path} {response.status_code} "
-            f"{_elapsed:.1f}s req={rid}"
-        )
-    return response
+class _RequestTimingMiddleware:
+    """响应头回 X-Request-Id + 首字节耗时留痕(纯 ASGI) — 小欧 2026-10-30"""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        rid = uuid.uuid4().hex[:_REQUEST_ID_LEN]
+        method = scope.get("method", "-")
+        path = scope.get("path", "-")   # 只记 path, 不记 query(可能含凭据)
+        _t0 = time.perf_counter()
+        _logged = False
+
+        async def _send(message):
+            nonlocal _logged
+            if message["type"] == "http.response.start" and not _logged:
+                _logged = True
+                _elapsed = time.perf_counter() - _t0
+                MutableHeaders(scope=message)["X-Request-Id"] = rid
+                if _elapsed >= _SLOW_REQUEST_SECONDS:
+                    logger.warning(
+                        f"[slow] {method} {path} {message['status']} "
+                        f"{_elapsed:.1f}s req={rid}"
+                    )
+            await send(message)
+
+        try:
+            await self.app(scope, receive, _send)
+        except Exception as _e:
+            # 只有异常**穿出** app 时才会到这里(路由内异常已被 general_exception_handler 转成 500 响应):
+            #   响应头可能已发(流式 body 迭代期抛), 也可能未发 —— 两种情况都必须留一条带 reqId 的日志,
+            #   否则最需要 reqId 的"SSE 中途炸"反而留白。head= 标明头是否已发出, 供前端按时间窗对账。
+            logger.error(
+                f"[error] {method} {path} {type(_e).__name__}: {_e} "
+                f"{time.perf_counter() - _t0:.1f}s "
+                f"head={'sent' if _logged else 'none'} req={rid}"
+            )
+            raise
+
+
+app.add_middleware(_RequestTimingMiddleware)
 
 setup_monitoring(app)
 
