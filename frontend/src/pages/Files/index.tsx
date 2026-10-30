@@ -115,9 +115,10 @@ import { mergeKids, prefixKeys, joinAbsPath } from '@/utils/fileTree';
 // 2026-10-22 小欧 - 引用能力上提共享域；
 //   v1.4（修 D5）：正文已在调用方读好时仍只把 size 传给 quote*，正文由后端读（不传 content）。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
-import { quoteFile, quoteSelection } from '@/features/refs/quote';
+// 2026-10-30 小欧: 引用改调 quoteWithToast(提示三分支唯一实现), quote* 与 refLimitText 不再直接用
+import { quoteWithToast } from '@/features/refs/quoteToast';
 // 2026-10-30 小欧(D4): probeRef import 删除——readAndPush 不再预探, 单探收敛 quoteFile 内部
-import { composerRefStore, refLimitText } from '@/features/refs/store';
+import { composerRefStore } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 // 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
 import { isMutatedByOps } from '@/utils/fileOps';
@@ -767,16 +768,13 @@ const FilesPage: React.FC = () => {
       size?: number,
       range?: { start: number; end: number }
     ): Promise<boolean> => {
-      const r = range
-        ? await quoteSelection(path, range, { label, size })
-        : await quoteFile(path, { label, size });
-      if (r.ok) {
-        showSuccess(`已引用「${label}」`);
-        return true;
-      }
-      if (r.reason === 'too_many')
-        showMessage(ErrorType.FILE_READ, refLimitText());
-      return false;
+      const r = await quoteWithToast(path, range, {
+        label,
+        size,
+        // 文件页停在原地(不导航), 成功文案与"到对话"版区分开 — 2026-10-30 小欧
+        successText: `已引用「${label}」`,
+      });
+      return r.ok;
     },
     []
   );

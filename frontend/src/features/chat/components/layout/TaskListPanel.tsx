@@ -66,16 +66,12 @@ import type { SessionTaskItem } from '../../../../services/api/task.api';
 import type { ExecutionStep } from '@/types/execution';
 import { Colors } from '@/utils/stepStyles';
 import { formatTime } from '@/utils/time';
-import {
-  showSuccess,
-  handleError,
-  showMessage,
-  ErrorType,
-} from '@/services/error/handler';
+import { showSuccess, handleError } from '@/services/error/handler';
 // 2026-10-21 小杨 - 推荐行 + 引用台账行
 import { chatStreamStore } from '../../streams/chatStreamStore';
 // 2026-10-22 小欧 - 引用入口统一（选区走 quoteSelection，与文件页口径一致）
-import { quoteFile, quoteSelection } from '@/features/refs/quote';
+import { quoteWithToast } from '@/features/refs/quoteToast';
+import { labelOf } from '@/features/refs/identity';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { chatTokens } from '@/theme/tokens';
 import { CollapsibleText } from '../pipeline/CollapsibleText';
@@ -169,13 +165,13 @@ const TaskListPanel: React.FC<TaskListPanelProps> = ({
   const quoteAfterReread = React.useCallback(
     async (path: string, lineRange?: { start: number; end: number }) => {
       // 2026-10-22 小欧 - 引用入口统一；恢复的是引用意图，不是旧快照 → 现场重读
-      const r = lineRange
-        ? await quoteSelection(path, lineRange, {
-            label: path.split('/').pop() ?? path,
-          })
-        : await quoteFile(path, { label: path.split('/').pop() ?? path });
+      // 2026-10-30 小欧: 提示统一走 quoteWithToast; 成功不弹(随后直接导航, 原页 toast 无意义),
+      //   失败由它统一点名(含"超上限", 原实现漏该分支误报"读取失败")
+      const r = await quoteWithToast(path, lineRange, {
+        label: labelOf(path),
+        successText: '',
+      });
       if (r.ok) navigate(`/?session_id=${encodeURIComponent(sessionId ?? '')}`);
-      else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
     },
     [navigate, sessionId]
   );

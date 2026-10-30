@@ -50,6 +50,9 @@
 // 2026-10-30 小欧 - @搜索失败改由页面自提示，配合 searchFiles 静默，避免弹出与本操作无关的全局超时文案
 // 2026-10-30 小欧 - 批2序12: chip 改 chipStateOf(r, refNotices) 5 态渲染(黄=已省略/红=已丢弃|已失效),
 //   订阅 refNoticeStore(经 useComposerRefs 透传), 回执一到达 chip 即变色 — 小欧-2026-10-30
+// 2026-10-30 小欧 - 批3收尾: ①chip 配色改查 CHIP_TONE_STYLE(状态→色调的裁决在 notice.chipToneOf,
+//   原背景/边框各写一遍三层嵌套三元); ②发送成功后按 id 精确移除本轮条目(不再 clear 整表) ——
+//   refs_blocked 回执会在发送途中把台账重建回引用区(新 id), 整表清空会把刚恢复的 chips 抹掉 — 小欧-2026-10-30
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -76,7 +79,8 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import { chipStateOf, chipStateText } from '@/features/refs/notice'; // chip 5 态唯一映射(5.4.3)
+import { chipStateOf, chipStateText, chipToneOf } from '@/features/refs/notice'; // chip 5 态 + 色调唯一映射(5.4.3)
+import type { ChipTone } from '@/features/refs/notice';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检(5.4.1)
 import {
   newRefId,
@@ -98,6 +102,13 @@ import type { SendOpts, WorkspaceEntry } from '../../../types/chat'; // 2026-10-
 import { sessionApi } from '../../../services/api/session.api'; // 2026-10-10 小欧 - 关闭面板时重拉徽标数
 import { isSendBlocked } from '../utils/sendGate'; // 2026-10-08 小欧 - 发送门单一真源
 import { Colors } from '@/utils/stepStyles';
+
+/** chip 色调 → 具体色值(组件侧唯一色表, 状态→色调的裁决在 notice.chipToneOf) — 2026-10-30 小欧 */
+const CHIP_TONE_STYLE: Record<ChipTone, { bg: string; border: string }> = {
+  danger: { bg: Colors.ERROR_BG, border: Colors.ERROR_BORDER },
+  warn: { bg: Colors.WARNING_BG, border: Colors.WARNING },
+  normal: { bg: chatTokens.colorPrimaryBg, border: chatTokens.colorBorder },
+};
 
 interface ChatInputProps {
   loading: boolean;
@@ -143,7 +154,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     pending: refsPending,
     remove,
     removeWhere,
-    clear,
     add,
     setAll,
   } = useComposerRefs();
@@ -351,7 +361,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
       addRecentInput(cleanText);
       setRecents(loadRecentInputs());
       setFocusKey((k) => k + 1); // 焦点还给输入框, 否则 ↑↓ 翻历史事件到不了 textarea
-      clear(); // 仅成功才清（失败保留 refs，重试仍有内容）— 小欧-2026-10-22
+      // 2026-10-30 小欧 批3: 只移除**本轮已发送**的条目(按 id), 不再 clear() ——
+      //   refs_blocked 回执会在发送途中把台账原样重建回引用区(新 id), clear() 会把
+      //   刚恢复的 chips 一起抹掉; 按 id 移除后两条路径互不干扰, 恢复不必再延后一拍。
+      const sentIds = new Set(refsToSend.map((r) => r.id));
+      removeWhere((r) => sentIds.has(r.id));
     } catch {
       setDraft(backup);
       cancelSubmitted();
@@ -595,10 +609,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
           </span>
           {refs.map((r) => {
             /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
-               红=dropped/invalid, 黄=degraded(已省略), 常规=idle/checking */
+               红=dropped/invalid, 黄=degraded(已省略), 常规=idle/checking;
+               批3: 配色改查色表(原背景/边框各写一遍三层嵌套三元, 6 处分支) */
             const state = chipStateOf(r, refNotices);
-            const bad = state === 'invalid' || state === 'dropped';
-            const degraded = state === 'degraded';
+            const tone = CHIP_TONE_STYLE[chipToneOf(state)];
             return (
               <span
                 key={r.id}
@@ -609,19 +623,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
                 }`}
                 style={{
                   /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
-                  background: bad
-                    ? Colors.ERROR_BG
-                    : degraded
-                      ? Colors.WARNING_BG
-                      : chatTokens.colorPrimaryBg,
+                  background: tone.bg,
                   color: Colors.TEXT.STRONG,
-                  border: `1px solid ${
-                    bad
-                      ? Colors.ERROR_BORDER
-                      : degraded
-                        ? Colors.WARNING
-                        : chatTokens.colorBorder
-                  }`,
+                  border: `1px solid ${tone.border}`,
                   borderRadius: chatTokens.radius,
                   padding: '1px 4px 1px 6px',
                   cursor: 'pointer',

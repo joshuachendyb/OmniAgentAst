@@ -71,6 +71,9 @@
 // 编辑历史: 2026-10-30 小欧 - 批2/批3: ①带 refs 时禁用附着(D8: 引用属当轮任务);
 //   ②发送台账改 wire 投影(toWireRef, 含 kind/size), 供 refs_blocked 重建 chips;
 //   ③新增 restoreSentRefs(延后一拍重建, 避开输入框 clear) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 批3收尾: ①interject 不再 finally 清 pendingSentRefs(只 throw 时清,
+//   否则 refs_blocked 帧异步到达时台账已空, chips 丢失); ②restoreSentRefs 去 0ms 延迟(输入框改按
+//   id 精确移除, 重建条目是新 id 不会被踩); ③toWireRef 改从 refs/identity 导入(投影归 refs 域) — 小欧-2026-10-30
 
 import type { ExecutionStep } from '@/types/execution';
 // 2026-10-21 小杨 - refs 随消息上行（类型来自 types/chat，勿在本文件另立形状）
@@ -98,8 +101,8 @@ import {
   resumeStreamRequest,
   readAuthoritativeTask,
   postInterject, // 2026-10-07 小欧 - 插话投递(独立于 sendStreamRequest, 不掐断运行中流)
-  toWireRef, // 2026-10-30 小欧 批3序14: wire 投影单一实现(transport 与发送台账共用)
 } from './chatStreamTransport';
+import { toWireRef } from '@/features/refs/identity'; // wire 投影(与 transport 共用, 归 refs 域) — 小欧 2026-10-30
 import {
   composerRefStore,
   newRefId,
@@ -857,9 +860,9 @@ export const chatStreamStore = {
    * refs_blocked 回执恢复(5.4.9 R6): 本轮引用未参与, chips 会随发送成功被清 →
    * 用发送台账(wire 形态)原样重建到 composerRefStore, 用户删减后可重发。返回重建条数。
    *
-   * 为何延迟一拍: 恢复请求在 SSE error 回调里发出, 而输入框的 clear() 在 onSend 落地后执行;
-   *   同步 push 会被随后的 clear 立刻抹掉(实测顺序: 回调 → send 返回 → clear)。
-   *   0ms 宏任务排在 clear 之后, 重建才真的留在引用区。
+   * 2026-10-30 小欧 批3: 删"延后 0ms"补丁 —— 它原本是为绕开输入框的 `clear()`(会把刚恢复的
+   *   chips 一起抹掉)。现输入框改为按本次发送的 id 精确移除(removeWhere), 而这里重建的条目是
+   *   **新 id**, 两条路径不再互相踩, 同步重建即可(少一层定时器, 也就没有"组件卸载后迟到写入")。
    */
   restoreSentRefs(sessionId: string): number {
     const s = sessions.get(sessionId);
@@ -868,10 +871,8 @@ export const chatStreamStore = {
     commit(s, (d) => {
       d.pendingSentRefs = null;
     });
-    window.setTimeout(() => {
-      for (const r of pending) composerRefStore.push({ id: newRefId(), ...r });
-      refNoticeStore.clear();
-    }, 0);
+    for (const r of pending) composerRefStore.push({ id: newRefId(), ...r });
+    refNoticeStore.clear();
     return pending.length;
   },
 
@@ -902,10 +903,15 @@ export const chatStreamStore = {
     refNoticeStore.clear(); // 新发货清旧回执, 后续 refs_notice 重新落态
     try {
       await postInterject(s, content, refs);
-    } finally {
+    } catch (e) {
+      // 2026-10-30 小欧 批3(竞态修复): 只在**投递失败**时清台账 —— 插话的新 POST 流前端只
+      //   readToEnd 不解析, 引用被拒的 refs_blocked 帧是经**目标任务流**异步到达的; 原实现
+      //   finally 立即清, 早于该帧到达, chips 就再也重建不回来(实测: 阻断提示弹出但引用区空了)。
+      //   正常返回则保留台账, 等 refs_blocked 帧到达时由 restoreSentRefs 消费(并清)。
       commit(s, (d) => {
         d.pendingSentRefs = null;
       });
+      throw e;
     }
   },
 

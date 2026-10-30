@@ -3,6 +3,8 @@
 // 2026-10-28 小欧 - 三堂会审整改（YAGNI）：删无人使用的 name?: string 可选 prop（两个调用方
 //   全走缺省分支），label 固定取路径末段（与足迹 f.name 同口径）；props 收敛为 path+lineRange
 //   两项（ISP：接口只留真实使用的形状）。— 小欧-2026-10-28
+// 2026-10-30 小欧 - 提示改调 quoteWithToast(成功/超限/读取失败三分支唯一实现), label 取 labelOf
+//   (兼容 `\` 路径) — 小欧-2026-10-30
 /**
  * QuoteButton —— 行内 chip / 链接旁的引用按钮（icon-only 别针）
  *
@@ -22,9 +24,8 @@
  */
 import React from 'react';
 import { PaperClipOutlined } from '@ant-design/icons';
-import { quoteFile, quoteSelection } from './quote';
-import { refLimitText } from './store';
-import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
+import { quoteWithToast } from './quoteToast'; // 提示三分支唯一实现(成功/超限/读取失败)
+import { labelOf } from './identity';
 import { Colors } from '@/utils/stepStyles';
 
 export interface QuoteButtonProps {
@@ -38,15 +39,10 @@ const QuoteButton: React.FC<QuoteButtonProps> = ({
   path,
   lineRange = null,
 }) => {
-  const label = path.split(/[\\/]/).pop() ?? path;
+  const label = labelOf(path);
   const quote = async (): Promise<void> => {
-    const r = lineRange
-      ? await quoteSelection(path, lineRange, { label })
-      : await quoteFile(path, { label });
-    if (r.ok) showSuccess(`已引用「${label}」到对话`);
-    else if (r.reason === 'too_many')
-      showMessage(ErrorType.FILE_READ, refLimitText());
-    else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
+    // 2026-10-30 小欧: 提示统一由 quoteWithToast 给出(此处节奏: 失败也是同一套文案, 不再各写一份)
+    await quoteWithToast(path, lineRange, { label });
   };
   return (
     <button

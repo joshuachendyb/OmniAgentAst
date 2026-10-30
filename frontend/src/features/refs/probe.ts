@@ -5,6 +5,8 @@
 // 编辑历史: 2026-10-30 小欧 三堂会审整改(A4/A5/A6): ①precheckRefs 回写 mtime, 同一变更不再每次都报
 //   "内容已更新"; ②checked 保留失效条目(invalid:true)供 chip 标红, 不再被 setAll 抹掉;
 //   ③预检改并行且不吞错(异常交调用方转成可见提示) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 批3: 抽 statRef(端点唯一调用口, 业务失败归 reason/传输异常上抛) 供
+//   probeRef 与 precheckRefs 共用; 超时码补 ETIMEDOUT, 文案匹配改大小写不敏感 — 小欧-2026-10-30
 
 /**
  * probe —— 前端对引用的唯一读盘点
@@ -30,29 +32,44 @@ export interface ProbeResult {
   reason?: 'missing' | 'unsupported' | 'timeout';
 }
 
+/**
+ * stat 端点唯一调用口(2026-10-30 小欧): 业务失败(ok:false)归一成 reason, 传输异常**原样抛出**。
+ *
+ * 为何这样切: probeRef 与 precheckRefs 对传输异常的策略相反 —— 前者"失败仍允许入队", 要把异常
+ *   转成 reason; 后者"预检失败必须可见"(A6), 要上抛给调用方提示。策略归各自, 只有"调端点 +
+ *   把 ok:false 归一成 reason"这段是共用的, 收在这里(原先两处各写一遍, 后端加一个 reason 要改两处)。
+ */
+export const statRef = async (path: string): Promise<ProbeResult> => {
+  const st = await fileApi.statFile(path); // 传输异常自然上抛, 由调用方决定处置
+  if (!st.ok) {
+    // 后端 reason 只有 missing/unsupported；其余过渡值一律按 missing(从严, 允许入队"未校验")
+    return {
+      ok: false,
+      reason: st.reason === 'unsupported' ? 'unsupported' : 'missing',
+    };
+  }
+  return { ok: true, size: st.size, mtime: st.mtime };
+};
+
+/** 传输层异常 → reason(唯一分类实现): 415→unsupported, 超时→timeout, 其余→missing。 */
+const reasonOfError = (e: unknown): 'missing' | 'unsupported' | 'timeout' => {
+  const status = (e as { response?: { status?: number } })?.response?.status;
+  const code = (e as { code?: string })?.code;
+  const msg = (e as { message?: string })?.message ?? '';
+  if (status === 415) return 'unsupported';
+  // ETIMEDOUT 是 Node/socket 层超时码, ECONNABORTED 是 axios 自设超时码, 两者都要认 — 小欧 2026-10-30
+  if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || /timeout/i.test(msg))
+    return 'timeout';
+  return 'missing';
+};
+
 /** 探一条引用：stat 轻端点取 size/mtime；失败给 reason 供 chip 标"未校验"。 */
 export const probeRef = async (path: string): Promise<ProbeResult> => {
   try {
-    const st = await fileApi.statFile(path);
-    if (!st.ok) {
-      // 后端 reason 只有 missing/unsupported；其余过渡值一律按 missing(从严, 允许入队"未校验")
-      return {
-        ok: false,
-        reason: st.reason === 'unsupported' ? 'unsupported' : 'missing',
-      };
-    }
-    return { ok: true, size: st.size, mtime: st.mtime };
+    return await statRef(path);
   } catch (e) {
-    // 2026-10-30 小欧: stat 端点失败码细分(接口枚举 missing/unsupported/timeout):
-    //   415(UNSUPPORTED_TYPE/UNDECODABLE)→unsupported; 超时→timeout; 404/400/403/网络→missing。
-    //   失败仍允许入队"未校验", reason 供 chip 文案分支。
-    const status = (e as { response?: { status?: number } })?.response?.status;
-    const code = (e as { code?: string })?.code;
-    const msg = (e as { message?: string })?.message ?? '';
-    if (status === 415) return { ok: false, reason: 'unsupported' };
-    if (code === 'ECONNABORTED' || msg.includes('timeout'))
-      return { ok: false, reason: 'timeout' };
-    return { ok: false, reason: 'missing' };
+    // 失败仍允许入队"未校验", reason 供 chip 文案分支。
+    return { ok: false, reason: reasonOfError(e) };
   }
 };
 
@@ -72,7 +89,7 @@ export const precheckRefs = async <
   //   原实现只回有效条目, 失效 chip 被抹掉, 红底/「已失效」/阻断派生值全成死分支。
   const results = await Promise.all(
     refs.map(async (r) => {
-      const st = await fileApi.statFile(r.path); // GET /files/stat, 真源 browse_service
+      const st = await statRef(r.path); // 唯一调用口: 传输异常上抛, 业务失败给 reason
       if (!st.ok) {
         return {
           ref: { ...r, invalid: true } as T,

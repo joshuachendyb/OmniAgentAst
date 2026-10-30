@@ -34,13 +34,12 @@ import {
 } from '@ant-design/icons';
 import { type RecentFile } from '@/services/api/file.api';
 // 2026-10-22 小欧 - 引用入口统一，不再直接调 composerRefStore
-import { quoteFile } from '@/features/refs/quote';
+import { quoteWithToast } from '@/features/refs/quoteToast'; // 引用提示三分支唯一实现 — 小欧 2026-10-30
 import { chatStreamStore } from '../../streams/chatStreamStore';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 import { buildExternalDeepLink, buildFileDeepLink } from '@/utils/fileDeepLink';
 import { isDriveAbsPath } from '@/utils/projectPath';
 import { useOptionalNavigate } from '@/hooks/useOptionalNavigate';
-import { showMessage, showSuccess, ErrorType } from '@/services/error/handler';
 import { chatTokens } from '@/theme/tokens';
 import { Colors, Spacing } from '@/utils/stepStyles';
 
@@ -133,9 +132,8 @@ export const FileTrailPanel: React.FC<FileTrailPanelProps> = ({
    */
   const sendAsRef = async (f: RecentFile) => {
     // 2026-10-22 小欧 - 引用入口统一（读盘+组装+入队只有一份）
-    const r = await quoteFile(f.path, { label: f.name });
-    if (r.ok) showSuccess(`已引用「${f.name}」到对话`);
-    else showMessage(ErrorType.FILE_READ, '引用内容读取失败，请重试');
+    // 2026-10-30 小欧 - 提示也统一(quoteWithToast): 原实现漏 too_many 分支, 超上限被报成"读取失败"
+    await quoteWithToast(f.path, null, { label: f.name });
   };
 
   // 2026-10-21 小杨 - **加载态不用 Empty 假冒**（Empty 语义是"没有内容"，

@@ -3,6 +3,7 @@
 // 编辑历史: 2026-10-29 小欧 - 读取权收归后端: quoteFile/quoteSelection 改调 probeRef(轻量探
 //   size/mtime, 不再读正文), 删 opts.content 参数与正文组装; 删 quotePack(无调用方死代码);
 //   清未用 import — 小欧-2026-10-29
+// 编辑历史: 2026-10-30 小欧 批3: label 改调 identity.labelOf(唯一实现, 兼容 `\` 路径) — 小欧-2026-10-30
 
 /**
  * quote —— 「把文件送进对话」的唯一入口
@@ -20,6 +21,7 @@
  *   队列里只有标识(路径/行区间/size/mtime), 不存在 content 副本。
  */
 import { composerRefStore, newRefId } from './store';
+import { labelOf } from './identity'; // 展示名唯一实现(兼容 `\`) — 小欧 2026-10-30
 import { probeRef } from './probe'; // 探测唯一入口(stat, 5.4.1)
 
 export interface QuoteResult {
@@ -33,7 +35,7 @@ export const quoteFile = async (
   path: string,
   opts?: { label?: string; size?: number }
 ): Promise<QuoteResult> => {
-  const label = opts?.label ?? path.split('/').pop() ?? path;
+  const label = opts?.label ?? labelOf(path);
   // 2026-10-30 小欧(D3): 删死 try/catch——probeRef 内部自捕错(失败返 {ok:false} 不 throw),
   //   push 返回布尔不 throw, 原 try/catch 是死分支(YAGNI, 设计 5.4.4 裁定)。
   //   2026-10-29 小欧: 入队只存标识, 不再读正文(正文由后端读, 读取权收归后端)。
@@ -58,7 +60,7 @@ export const quoteSelection = async (
   range: { start: number; end: number },
   opts?: { label?: string; size?: number }
 ): Promise<QuoteResult> => {
-  const label = opts?.label ?? path.split('/').pop() ?? path;
+  const label = opts?.label ?? labelOf(path);
   // 2026-10-30 小欧(D3): 同 quoteFile——删死 try/catch(YAGNI)。
   const probe = await probeRef(path);
   return composerRefStore.push({

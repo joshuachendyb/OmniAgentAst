@@ -17,6 +17,8 @@
 //   refKeyOf(原 20 条约 41 次); ④新增 refLimitText() 供三处"超上限"提示复用 — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 批3序14: 身份函数(refKeyOf/mergeRefs/normalizePath)迁 identity.ts
 //   单一真源(只搬不改), 本文件改导入; 新增 refNoticeStore 承载 chip 回执态(5.4.6) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 批3: push 两趟扫描收成一趟(上限判定与查找共用一次 findIndex);
+//   refNoticeStore 增 clearPath(重新引用同一文件时清掉上一轮的黄/红标) — 小欧-2026-10-30
 
 /**
  * composerRefStore —— 跨页一次性引用投递通道
@@ -31,7 +33,7 @@
  * - 快照 = 队列长度（变化即触发消费 effect）
  */
 import type { ChatRefPayload } from '../../types/chat';
-import { refKeyOf } from './identity'; // 身份函数单一真源(5.4.2)
+import { normalizePath, refKeyOf } from './identity'; // 身份函数单一真源(5.4.2)
 import type { NoticeItem, NoticeMap } from './notice';
 
 // 2026-10-29 小欧 - 引用条数上限: 与 services/refs/limits.py:MAX_REFS 同值(单一真源, 双保险 L1)
@@ -109,13 +111,11 @@ export const composerRefStore = {
    *   quote.ts / @补全 / Files 三调用方同批消费返回值）。
    */
   push(ref: ComposerRef): boolean {
-    // 2026-10-30 小欧 A18: 只算一次 key —— 原实现上限判定/查找/替换各算一次,
-    //   20 条待发时一次 push 要做约 41 次 key 拼接。
+    // 2026-10-30 小欧 批3 A18: 一次扫描收口 —— 原实现"上限判定 some + findIndex"两趟,
+    //   20 条待发时一次 push 要拼约 41 次 key; 现在就一趟(找到即可替换, 未找到才判上限)。
     const k = refKeyOf(ref);
-    if (queue.length >= MAX_REFS && !queue.some((r) => refKeyOf(r) === k)) {
-      return false;
-    }
     const i = queue.findIndex((r) => refKeyOf(r) === k);
+    if (i < 0 && queue.length >= MAX_REFS) return false;
     if (i >= 0) queue.splice(i, 1, ref);
     else queue.push(ref);
     emit();
@@ -145,6 +145,20 @@ export const refNoticeStore = {
     return _noticeMap;
   },
   setMap(next: NoticeMap): void {
+    _noticeMap = next;
+    _emitNotice();
+  },
+  /**
+   * 清掉单条 path 的回执(重新引用同一文件时用) — 2026-10-30 小欧
+   *
+   * 为何需要: 用户把"已省略/已丢弃"的文件移除后重新引用, 若不回声, 新 chip 一入队就带着
+   *   上一轮的黄/红标, 用户以为新引用也坏了。map 是新建的(不原地改快照, useSyncExternalStore 契约)。
+   */
+  clearPath(path: string): void {
+    const k = normalizePath(path);
+    if (!_noticeMap.has(k)) return;
+    const next = new Map(_noticeMap);
+    next.delete(k);
     _noticeMap = next;
     _emitNotice();
   },

@@ -103,6 +103,7 @@ import {
 } from './chatStreamStore';
 import { refNoticeStore } from '@/features/refs/store';
 import { noticeMapByPath, type NoticeItem } from '@/features/refs/notice';
+import { toWireRef } from '@/features/refs/identity'; // wire 投影唯一实现(refs 域) — 小欧 2026-10-30
 
 const HEADER_TIMEOUT = 180_000; // 请求头超时（fetch 返回即清除，useSSE.ts:831-834/882-885 同口径）
 
@@ -225,18 +226,6 @@ export const buildStreamBody = (
   }
   return body;
 };
-
-/** wire 投影(F6): 契约字段白名单, 只留 kind/label/path/lineRange/size——
- *  content(正文由后端读, I1)、mtime(前端本地比对态, R2)、pending/invalid(内存态)均不进 wire。
- *  2026-10-30 小欧 批3序14: 入参类型收到 ChatRefPayload, 返回值即 wire 形态(台账重建)
- *  可直接当 ChatRefPayload 用 —— transport 与 store 两条投影共用本实现。 */
-export const toWireRef = (r: ChatRefPayload) => ({
-  kind: r.kind,
-  label: r.label,
-  path: r.path,
-  lineRange: r.lineRange ?? null,
-  size: r.size,
-});
 
 /**
  * 首连 POST：发消息并读取 SSE 流。taskId 由 start 帧经 storeHandlers.setServerTaskId 落 Store

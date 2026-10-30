@@ -1,4 +1,5 @@
 // 编辑历史: 2026-10-30 小欧 - 新建：SSE refs_notice → chip 状态唯一映射 — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 批3: 增 chipToneOf(5 态→3 色系的唯一映射), 组件只查表不写嵌套三元 — 小欧-2026-10-30
 /**
  * notice —— 引用回执 → chip 状态机(5 态)唯一映射
  *
@@ -68,6 +69,18 @@ export const chipStateText = (state: ChipState): string => {
   if (state === 'dropped') return '（已丢弃）';
   if (state === 'degraded') return '（已省略）';
   return '';
+};
+
+/** chip 色调(状态的视觉投影): 5 态 → 3 色系 — 2026-10-30 小欧
+ *
+ * 为何放这里: 状态判定归本模块; 配色若在组件里按 state 现算, 背景与边框就要各写一遍三层
+ * 嵌套三元(实测 6 处分支), 改一档颜色要同时对两处。具体色值仍归组件(本模块不依赖主题 token)。 */
+export type ChipTone = 'danger' | 'warn' | 'normal';
+
+export const chipToneOf = (state: ChipState): ChipTone => {
+  if (state === 'invalid' || state === 'dropped') return 'danger';
+  if (state === 'degraded') return 'warn';
+  return 'normal';
 };
 
 /** refs_notice items → 归一 path 键控的回执表(chatStreamStore/transport 写入 refNoticeStore)。 */

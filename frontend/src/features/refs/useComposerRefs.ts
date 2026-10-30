@@ -1,6 +1,9 @@
 // 编辑历史: 2026-10-22 小欧 - 新建：引用（refs）共享 hook —— 订阅投递通道 + 托管待发引用 — 小欧-2026-10-22
 // 编辑历史: 2026-10-30 小欧 - 批2序12(F13): 订阅 refNoticeStore 透传 notices, 供 chip 5 态消费;
 //   身份函数改从 identity.ts 导入(批3序14) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 批3: 入队/并入时按 path 清掉上一轮回执(mergeIncoming 单点,
+//   store 投递与 @ 补全共用); 删 clear()(唯一调用方改为按 id 精确移除本轮条目, 整表清空会
+//   抹掉 refs_blocked 回执重建的 chips) — 小欧-2026-10-30
 /**
  * useComposerRefs —— 引用（refs）的唯一状态托管点
  *
@@ -31,10 +34,8 @@ export interface UseComposerRefsResult {
   invalid: boolean;
   /** 移除一条（token 上的 ×，按 id） */
   remove: (id: string) => void;
-  /** 按谓词移除（@ 补全失败时按 path 删占位，无 id 可用） */
+  /** 按谓词移除（@ 补全失败时按 path 删占位；发送成功后按 id 精确移除本轮条目） */
   removeWhere: (pred: (r: ComposerRef) => boolean) => void;
-  /** 全部清空（发送成功后） */
-  clear: () => void;
   /** 直接并入一条（@ 补全插 pending 占位，不经 store） */
   add: (ref: ComposerRef) => void;
   /** 整体替换（refreshRefs 回写校验结果） */
@@ -55,12 +56,22 @@ export const useComposerRefs = (): UseComposerRefsResult => {
     refNoticeStore.getSnapshot
   );
 
+  /**
+   * 并入引用 + 清对应 path 回执 — 2026-10-30 小欧
+   *   重新引用同一文件是"新意图", 不该继承上一轮的黄/红标(否则新 chip 一入队就显示"已省略"),
+   *   故入队时按 path 清单点清。store 投递与 @ 补全两条入口共用本函数(DRY)。
+   */
+  const mergeIncoming = useCallback((incoming: ComposerRef[]) => {
+    for (const r of incoming) if (r.path) refNoticeStore.clearPath(r.path);
+    setRefs((prev) => mergeRefs(prev, incoming));
+  }, []);
+
   useEffect(() => {
     if (count === 0) return;
     const incoming = composerRefStore.takeAll();
     if (incoming.length === 0) return;
-    setRefs((prev) => mergeRefs(prev, incoming));
-  }, [count]);
+    mergeIncoming(incoming);
+  }, [count, mergeIncoming]);
 
   const remove = useCallback((id: string) => {
     setRefs((prev) => prev.filter((x) => x.id !== id));
@@ -70,11 +81,10 @@ export const useComposerRefs = (): UseComposerRefsResult => {
     setRefs((prev) => prev.filter((r) => !pred(r)));
   }, []);
 
-  const clear = useCallback(() => setRefs([]), []);
-
-  const add = useCallback((ref: ComposerRef) => {
-    setRefs((prev) => mergeRefs(prev, [ref]));
-  }, []);
+  const add = useCallback(
+    (ref: ComposerRef) => mergeIncoming([ref]),
+    [mergeIncoming]
+  );
 
   const setAll = useCallback((next: ComposerRef[]) => setRefs(next), []);
 
@@ -85,7 +95,6 @@ export const useComposerRefs = (): UseComposerRefsResult => {
     invalid: refs.some((r) => r.invalid),
     remove,
     removeWhere,
-    clear,
     add,
     setAll,
   };
