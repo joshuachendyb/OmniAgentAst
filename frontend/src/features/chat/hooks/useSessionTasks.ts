@@ -17,6 +17,9 @@
 //   → 实时任务无正文可写。补一路同源兜底: 本会话当前任务终态时取它在 SSE 里流过来的正文 chunk(排除推理),
 //   写进 updateTaskResponse 的缓存/state——与 useChatCallbacks 既有「finalResponse || streamingContentRef」
 //   同一口径; 数据源是内存实时流, 不读 DB, DB 的 chat_tasks.response 依旧永不显示 — 小欧-2026-10-28
+// 编辑历史: 2026-10-30 小欧 - refresh 的 listTasks 已置静默(后台轮询不弹全局 toast), 故本处补 catch 收口:
+//   原实现只有 finally, 失败冒成 unhandledrejection(调用方全是 void refresh()/事件回调, 无人接 reject);
+//   现只 console.warn 并保留上一次列表, 下次触发自然自愈 — 小欧-2026-10-30
 /**
  * useSessionTasks - 会话任务清单 Hook（消费 6.1.9 B1 接口）
  *
@@ -96,6 +99,11 @@ export const useSessionTasks = (sessionId: string | null) => {
       );
       setTotal(res.total);
       setLatestTaskId(res.latest_task_id ?? null); // 2026-08-30 小欧 v1.103: 后端 null 兜底
+    } catch (e) {
+      // 2026-10-30 小欧 - 后台轮询端点已置 _silent(不弹全局 toast),
+      //   这里必须收口 —— 原实现只有 finally, 失败会冒成 unhandledrejection(控制台红字),
+      //   且调用方全是 void refresh()/事件回调, 没人接这个 reject。列表保持上一次结果, 下次 refresh 自愈。
+      console.warn('[useSessionTasks] refresh 失败(保留上次列表):', e);
     } finally {
       setLoading(false);
     }
