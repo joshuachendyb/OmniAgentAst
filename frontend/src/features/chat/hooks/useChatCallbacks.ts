@@ -66,6 +66,10 @@
 // 编辑历史: 2026-09-30 14:30 小欧 - 切会话复位会话级 ref；onResumed 依赖改稳定 ref；返回值 memo 化
 // 编辑历史: 2026-10-05 小欧 - 占位'🤔 AI 正在思考...' 两处改空串(文档[9] §5.10); 连带修 hooks-chat-send-bug.test.ts:87 孤儿断言假绿(谓词写死旧文案恒不匹配, 改与文案解耦) — 小欧-2026-10-05
 // 编辑历史: 2026-10-08 小欧 - 文档[11]: onMerged 删 showInfo 提示条(左栏已承担回显), 改调 pageCallbacks.onTasksChanged 刷左栏
+// 编辑历史: 2026-10-30 小欧 R7-1: 请求级终止错误(refs_blocked/invalid_request/config_error/router_error)
+//   到达时复位 loading —— 这类错误后端 yield 后直接 return, 永不会有 final, 而 from_backend 分支
+//   原先只清 refs 就 return, loading 恒 true → 发送钮永久禁用; 复位动作抽 resetLoadingState 单点
+//   (与 session_busy 分支、尾部清理三处共用) — 小欧-2026-10-30
 /**
  * useChatCallbacks Hook - 统一回调管理
  *
@@ -92,6 +96,17 @@ import type { ExecutionStep } from '../../../types/execution';
 import type { UseChatStateReturn } from './useChatState';
 import { handleSSEError } from '@/services/error/handler';
 import { logAIComplete, logAIError } from '../../../utils/logStyles';
+
+/**
+ * 请求级终止错误 —— 后端 yield 该帧后直接 return，不建任务、不发 final。
+ * 2026-10-30 小欧 R7-1: 与 transport 的 REQUEST_TERMINAL_ERRORS 同集合（两个消费端各判各的终态）。
+ */
+const BACKEND_TERMINAL_ERRORS = new Set([
+  'refs_blocked',
+  'invalid_request',
+  'config_error',
+  'router_error',
+]);
 
 // 2026-08-27 小欧 三堂会审A2修复: SSEError/SSEMetadata从sse.ts导入, 消除重复定义
 import type { SSEError, SSEMetadata } from '@/types/sse';
@@ -599,6 +614,18 @@ export const useChatCallbacks = (
         return o.error_message || o.message || '未知错误';
       };
 
+      // 2026-10-30 小欧 R7-1: 收尾三件套单点(loading/计时器/重试态)—— 请求级终止、session_busy、
+      //   尾部清理三处口径一致, 原先各写一遍容易漏(实测 from_backend 早退就漏了 loading)。
+      const resetLoadingState = () => {
+        setLoading(false);
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
+        setWaitTime(0);
+        setIsRetrying(false);
+      };
+
       // 2026-09-08 小欧 分道: 后端业务错误(from_backend=true)只进页面级错误提示——不弹窗/不替换消息/不进缓冲/不停计时,
       //   仅清三refs准备下一轮(最终终态由随后 final 承担); 页面级错误显示由 useChatFacade 包装器(6.3.4)无条件写入 — 小欧-2026-09-08
       if (errorObj.from_backend === true) {
@@ -610,6 +637,11 @@ export const useChatCallbacks = (
         // A1(2026-09-09 小欧): from_backend 错误后会话终止, 同步清空任务内指纹Set——查漏补洞:
         //   防"错误后异常断链(无 final/无 onComplete)致 Set 残留, 下一任务同 step 同 content 被误拦" — 小欧-2026-09-09
         onStepFingerprintRef.current.clear();
+        // 2026-10-30 小欧 R7-1: 请求级终止错误是本轮结论(后端已 return, 不会再有 final),
+        //   必须在此复位 loading —— 原实现一路 return, 发送钮永久禁用。
+        if (BACKEND_TERMINAL_ERRORS.has(errorObj.error_type)) {
+          resetLoadingState();
+        }
         return;
       }
 
@@ -642,14 +674,8 @@ export const useChatCallbacks = (
         );
         // 2026-10-07 小欧 三省补: 本分支提前 return 会跳过 onError 尾部"清理状态"块(原 :694-709)。
         //   该 SSE 流后端已 return 关闭, 不补清理则 loading 恒 true → 发送钮永久禁用。
-        //   必须镜像既有清理: loading/计时器/ref(与主流程同款, 重复两行优于漏清卡死)。
-        setLoading(false);
-        if (waitTimerRef.current) {
-          clearInterval(waitTimerRef.current);
-          waitTimerRef.current = null;
-        }
-        setWaitTime(0);
-        setIsRetrying(false);
+        //   2026-10-30 小欧 R7-1: 清理动作收口为 resetLoadingState(与请求级终止/尾部同一实现)。
+        resetLoadingState();
         streamingContentRef.current = '';
         onStepFingerprintRef.current.clear();
         return;
@@ -722,13 +748,7 @@ export const useChatCallbacks = (
       });
 
       // 清理状态
-      setLoading(false);
-      if (waitTimerRef.current) {
-        clearInterval(waitTimerRef.current);
-        waitTimerRef.current = null;
-      }
-      setWaitTime(0);
-      setIsRetrying(false);
+      resetLoadingState();
 
       // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
       logAIError(pickMsg(errorObj)); // 2026-08-27 小欧 三堂会审: 统一取错误消息

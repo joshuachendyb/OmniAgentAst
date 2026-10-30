@@ -108,6 +108,7 @@ import {
   newRefId,
   refNoticeStore,
 } from '@/features/refs/store';
+import { refsBlockedDraftStore } from '../utils/refsBlockedDraft'; // refs_blocked 草稿回填通道 — 小欧-2026-10-30
 import { taskControlApi, sessionTaskApi } from '@/services/api/task.api';
 import type { SessionTaskItem } from '@/services/api/task.api';
 
@@ -330,6 +331,9 @@ export interface ChatStreamSession extends SessionSnapshot {
   /** 本次发送携带的引用(wire 形态; start 帧拿到 taskId 后写入台账并清空)。
    *  2026-10-30 小欧: 由 wire 投影承载(kind/label/path/lineRange/size), refs_blocked 时原样重建 chips。*/
   pendingSentRefs: ChatRefPayload[] | null;
+  /** refs_blocked 时回填给输入框的正文(仅首发路径写入; 插话路径置 null, 免得把首条消息填回输入框)
+   *  —— 2026-10-30 小欧 R6-1 */
+  pendingSentRefsDraft: string | null;
   /** HITL 待确认请求属流状态，保证非激活视图/多 Tab 下弹窗与 confirmId 归属正确 */
   hitlWaitingKeys: Set<string>;
   // 连接与定时器资源句柄（clearAllTimers 五件套：idle/firstChunk/reconnect/saveSteps/intentionalAbort）
@@ -681,6 +685,7 @@ export const chatStreamStore = {
       allowInterject: false, // 2026-10-07 小欧 - EMPTY_SNAPSHOT 默认(与 link 同款)
       sentRefLedger: [], // 2026-10-21 小杨 - 引用台账（新者前，≤50 条）
       pendingSentRefs: null,
+      pendingSentRefsDraft: null,
       hitlWaitingKeys: new Set(),
       abortController: null,
       idleTimeout: null,
@@ -788,6 +793,8 @@ export const chatStreamStore = {
       d.allowInterject = allowInterject; // 2026-10-06 小欧 - 存会话快照, 续传/回放沿用(transport 直读本字段)
       // 2026-10-30 小欧(B4): 台账随发送带 refs(wire 投影, mtime 不进 wire), 插话被拒时可原样重建 chips
       d.pendingSentRefs = refs?.length ? refs.map(toWireRef) : null;
+      // 2026-10-30 小欧 R6-1: 阻断后草稿回填源(仅首发路径; 插话路径显式置 null)
+      d.pendingSentRefsDraft = refs?.length ? content : null;
     });
     refNoticeStore.clear(); // 2026-10-30 小欧: 新发货清旧回执(防上一轮黄/红标残留)
     this.persistNow(sessionId);
@@ -799,6 +806,7 @@ export const chatStreamStore = {
         if (attached !== null) {
           commit(s, (d) => {
             d.pendingSentRefs = null;
+            d.pendingSentRefsDraft = null;
           });
           return attached;
         }
@@ -809,6 +817,7 @@ export const chatStreamStore = {
         if (d.pendingMessage)
           d.pendingMessage = { ...d.pendingMessage, state: 'sent' };
         d.pendingSentRefs = null;
+        d.pendingSentRefsDraft = null;
         // 2026-09-30 10:35 小欧 - 删原 `idle||recovering → active` 死分支：active 兜底已移入
         //   sendStreamRequest 开篇，本行执行时机在其后 → 守卫恒 false（约定删除不可达分支）
       });
@@ -817,6 +826,7 @@ export const chatStreamStore = {
     } catch (e) {
       commit(s, (d) => {
         d.pendingSentRefs = null;
+        d.pendingSentRefsDraft = null;
       });
       throw e;
     } finally {
@@ -863,17 +873,24 @@ export const chatStreamStore = {
    * 2026-10-30 小欧 批3: 删"延后 0ms"补丁 —— 它原本是为绕开输入框的 `clear()`(会把刚恢复的
    *   chips 一起抹掉)。现输入框改为按本次发送的 id 精确移除(removeWhere), 而这里重建的条目是
    *   **新 id**, 两条路径不再互相踩, 同步重建即可(少一层定时器, 也就没有"组件卸载后迟到写入")。
+   * 2026-10-30 小欧 S4-1/R6-1: ①改走 store.restore(入队不清回执) —— 真实帧序是
+   *   refs_notice → error(refs_blocked), 原实现重建后 `refNoticeStore.clear()` 把刚下发的
+   *   回执抹掉, chip 无黄/红标(4.8 失效); ②首发路径把正文投给草稿回填通道(4.8 草稿保留)。
    */
   restoreSentRefs(sessionId: string): number {
     const s = sessions.get(sessionId);
     const pending = s?.pendingSentRefs ?? [];
     if (!s || pending.length === 0) return 0;
+    const draft = s.pendingSentRefsDraft;
     commit(s, (d) => {
       d.pendingSentRefs = null;
+      d.pendingSentRefsDraft = null;
     });
-    for (const r of pending) composerRefStore.push({ id: newRefId(), ...r });
-    refNoticeStore.clear();
-    return pending.length;
+    const n = composerRefStore.restore(
+      pending.map((r) => ({ id: newRefId(), ...r }))
+    );
+    if (draft) refsBlockedDraftStore.signal(draft);
+    return n;
   },
 
   /**
@@ -898,6 +915,8 @@ export const chatStreamStore = {
       d.allowInterject = true; // 插话已发生 → 开关落快照(刷新/重连后仍为开, 与 link 同款语义)
       // 2026-10-30 小欧: 插话被引用阻断时同样需要台账重建(chips 会在发送成功后清空)
       d.pendingSentRefs = refs?.length ? refs.map(toWireRef) : null;
+      // 2026-10-30 小欧 R6-1: 插话阻断不回填草稿(那是任务首条消息, 不属于本次输入)
+      d.pendingSentRefsDraft = null;
     });
     persistNowOf(sessionId);
     refNoticeStore.clear(); // 新发货清旧回执, 后续 refs_notice 重新落态
@@ -1176,6 +1195,7 @@ export const chatStreamStore = {
     commit(s, (d) => {
       d.serverTaskId = taskId;
       d.pendingSentRefs = null;
+      d.pendingSentRefsDraft = null;
     });
     if (pending?.length) this.pushSentRefs(sessionId, taskId, pending);
     this.persistNow(sessionId);

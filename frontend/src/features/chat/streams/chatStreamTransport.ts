@@ -73,6 +73,12 @@
 //   "outcome==='cancelled' && status==='cancelled' && 未 intentionalAbort", 其余终态/主动卸载照旧挡。 — 小欧-2026-10-30
 // 编辑历史: 2026-10-30 小欧 - 批2序12: 接 refs_notice 帧(→refNoticeStore) 与 refs_blocked 错误
 //   (→restoreSentRefs 重建 chips) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 批3序14: toWireRef 迁至 features/refs/identity(纯投影归 refs 域,
+//   transport 与发送台账共用, 本文件删定义改导入) — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 S1-1: 请求级终止错误帧(refs_blocked/invalid_request/config_error/router_error)
+//   改判终止读循环 —— 后端 yield 后直接 return, 既不建任务也不发 final; 原实现当"业务中间帧"放行,
+//   流随即 EOF 且 lastSeq 仍为 -1 → 再叠一条"空响应"假错误(用户看到两个错)。同时按"是否收到过数据帧"
+//   区分 EOF: 收到过帧但无 seq 的流不再误报空响应、不再自动重连 — 小欧-2026-10-30
 
 import { processSSEData } from '@/features/chat/services/sseParser';
 import {
@@ -664,6 +670,14 @@ async function pump(
   });
   const done = (async (): Promise<ResumeResult> => {
     const h = storeHandlers(s);
+    // 2026-10-30 小欧 S1-1: 记录本轮是否收到过数据帧。
+    //   请求级终止帧(refs_blocked 等)后端不建任务、不带 seq, EOF 时 lastSeq 仍是 -1;
+    //   原判据只看 lastSeq 就会把"有帧但无 seq"当空流, 再报一条假错误。
+    let gotFrame = false;
+    const feed = (line: string) => {
+      if (line.trimStart().startsWith('data:')) gotFrame = true;
+      processSSEData(line, h.hooks);
+    };
     try {
       const reader = res.body!.getReader();
       const decoder = new TextDecoder('utf-8');
@@ -682,8 +696,7 @@ async function pump(
         const { done: eof, value } = await reader.read();
         if (eof) {
           buf += decoder.decode(); // 吐出残留多字节字符（useSSE.ts:942-943）
-          if (buf.trim())
-            for (const line of buf.split('\n')) processSSEData(line, h.hooks);
+          if (buf.trim()) for (const line of buf.split('\n')) feed(line);
           const branch0 = h.takeBranch();
           if (branch0) return branch0;
           if (s.lastSeq >= 0) {
@@ -710,6 +723,18 @@ async function pump(
             // 只走 GET after_seq，绝不 POST；重连次数上限由 scheduleReconnect 统一把关
             if (mayResume) void scheduleReconnect(s);
             return mayResume ? 'recovering' : 'terminal';
+          }
+          if (gotFrame) {
+            // 2026-10-30 小欧 S1-1: 有数据帧但无 seq —— 后端未建任务的收尾
+            //   (请求级终止帧的错误已由 errorHandlers 上报)。只收尾: 不报"空响应"、不自动重连,
+            //   否则用户会看到"引用不可用"紧跟一条"空响应"的假错误。
+            console.warn('[SSE] 流已结束但无终态帧（收到过数据帧），不再重连');
+            commit(s, (d) => {
+              markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+              if (!isTerminalStatus(d.status)) d.status = 'failed';
+              d.reconnectStatus = 'idle';
+            });
+            return 'terminal';
           }
           // 空流终态（200+空 body 不得永久接收中）
           commit(s, (d) => {
@@ -743,7 +768,7 @@ async function pump(
         }
         const lines = buf.split('\n');
         buf = lines.pop() ?? '';
-        for (const line of lines) processSSEData(line, h.hooks);
+        for (const line of lines) feed(line);
         const branch = h.takeBranch();
         if (branch) {
           // 恢复类错误帧到达即停泵分流，不当普通帧消费
@@ -1070,6 +1095,18 @@ function errorHandlers(
       if (e.error_type === 'refs_blocked') {
         chatStreamStore.restoreSentRefs(s.sessionId);
       }
+      // 2026-10-30 小欧 S1-1: 请求级终止错误 —— 后端 yield 后直接 return, 不建任务、不发 final。
+      //   这类错误是"本轮到此为止"的结论(与 blocked/timeout 等循环内中间帧本质不同), 必须终止读循环:
+      //   否则流 EOF 时会再叠一条"空响应"假错误。status 置 failed 供 loading 复位取终态。
+      if (REQUEST_TERMINAL_ERRORS.has(e.error_type)) {
+        setBranch('failed');
+        commit(s, (d) => {
+          d.status = 'failed';
+          markDisconnected(d); // 2026-09-30 小欧 - 收尾两字段收敛到唯一写入口
+        });
+        emitEvent(s, 'error', e);
+        return;
+      }
       const recovery = RECOVERY_ERROR_BRANCH[e.error_type];
       // 2026-09-29 小欧：业务错误帧（blocked/timeout/user_rejected 等）**不终止流**——
       //   后端 event_emitter.py:84-109 在 ReAct 循环内 yield，Agent 继续执行并最终发 final；
@@ -1127,6 +1164,17 @@ function flushPending(s: ChatStreamSession): void {
     });
   });
 }
+
+/**
+ * 请求级终止错误 → 本轮流到此结束（后端 yield 后直接 return，不建任务/不发 final）。
+ * 2026-10-30 小欧 S1-1: 与 RECOVERY_ERROR_BRANCH(可恢复) 和循环内中间帧(流继续) 三者互斥。
+ */
+const REQUEST_TERMINAL_ERRORS = new Set([
+  'refs_blocked',
+  'invalid_request',
+  'config_error',
+  'router_error',
+]);
 
 /** 后端 3.7 恢复类错误 → 恢复分支（走 HTTP 200 分块到达，由 storeHandlers.onError 分流） */
 const RECOVERY_ERROR_BRANCH: Record<string, ResumeResult> = {

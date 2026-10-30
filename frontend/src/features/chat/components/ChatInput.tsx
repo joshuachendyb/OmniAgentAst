@@ -53,6 +53,10 @@
 // 2026-10-30 小欧 - 批3收尾: ①chip 配色改查 CHIP_TONE_STYLE(状态→色调的裁决在 notice.chipToneOf,
 //   原背景/边框各写一遍三层嵌套三元); ②发送成功后按 id 精确移除本轮条目(不再 clear 整表) ——
 //   refs_blocked 回执会在发送途中把台账重建回引用区(新 id), 整表清空会把刚恢复的 chips 抹掉 — 小欧-2026-10-30
+// 2026-10-30 小欧 R1-2/R2-1/R3-1/R6-1/R9: ①预检结果改按 id 合并到最新 chips(原 setAll(checked) 整体覆盖:
+//   在途删掉的引用被复活并随本条上行, 在途新加的引用凭空消失); ②@ 探测写回前复核占位 chip 是否还在
+//   (在途删掉后不再"复活"); ③refs_blocked 后经一次性信号把草稿填回输入框(仅当前为空时);
+//   ④chip 文案拼回执 detail/中文原因, 标题也带原因 — 小欧-2026-10-30
 
 /**
  * ChatInput - 输入框组合根（8.12 六组件组合）
@@ -66,7 +70,13 @@
  * @date 2026-08-26
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Space } from 'antd';
 import { FileOutlined } from '@ant-design/icons';
 import { InputCore } from './input/InputCore';
@@ -79,7 +89,14 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import { chipStateOf, chipStateText, chipToneOf } from '@/features/refs/notice'; // chip 5 态 + 色调唯一映射(5.4.3)
+import {
+  chipStateOf,
+  chipStateText,
+  chipToneOf,
+  noticeOf,
+  noticeDetailText,
+} from '@/features/refs/notice'; // chip 5 态 + 色调 + 回执细节唯一映射(5.4.3)
+import { refsBlockedDraftStore } from '../utils/refsBlockedDraft'; // refs_blocked 草稿回填信号 — 小欧-2026-10-30
 import type { ChipTone } from '@/features/refs/notice';
 import { probeRef, precheckRefs } from '@/features/refs/probe'; // 探测唯一入口 + 发送前预检(5.4.1)
 import {
@@ -152,6 +169,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
     refs,
     notices: refNotices,
     pending: refsPending,
+    getRefs,
     remove,
     removeWhere,
     add,
@@ -242,6 +260,24 @@ const ChatInput: React.FC<ChatInputProps> = ({
     setFocusKey((k) => k + 1);
   }, [sendBlocked]);
 
+  // 2026-10-30 小欧 R6-1: refs_blocked 后草稿回填(4.8「阻断时草稿保留」)。
+  //   阻断是 SSE 错误帧 —— onSend/sendMessage 正常 resolve, 发送时的乐观清空不会再被 catch 回补,
+  //   用户只能重打正文。信号是一次性的(transport 投递 → 此处消费), 仅当输入框当前为空时填入,
+  //   不覆盖用户已重新输入的内容。
+  const blockedDraft = useSyncExternalStore(
+    refsBlockedDraftStore.subscribe,
+    refsBlockedDraftStore.getSnapshot,
+    refsBlockedDraftStore.getSnapshot
+  );
+  useEffect(() => {
+    if (blockedDraft === null) return;
+    const text = refsBlockedDraftStore.consume();
+    if (text === null) return;
+    cancelSubmitted(); // 提交已由后端拒绝, 撤销标记(否则切会话载入逻辑仍当"提交在飞")
+    setDraft((cur) => (cur.trim() === '' ? text : cur));
+    setFocusKey((k) => k + 1);
+  }, [blockedDraft, setDraft, cancelSubmitted]);
+
   /**
    * 2026-10-13 18:40 小欧 - 回车语义按「能否发送」分流。
    *   能发送 → preventDefault 并提交; 不能发送(执行中且未开插话) → 不拦截, 回车照常换行,
@@ -280,6 +316,11 @@ const ChatInput: React.FC<ChatInputProps> = ({
   /**
    * 发送前预检(F7): stat 预检 → 筛 → 点名 → return。返回 refsToSend / blocked / updated。
    * 2026-10-30 小欧 - 闸门抽成可单测函数; 数据源 stat 端点(R3); 旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
+   * 2026-10-30 小欧 R1-2/R2-1: 预检结果是**异步窗口**里的旧快照, 不得整体覆盖最新 chips ——
+   *   原 setAll(checked) 会让"在途删掉的引用"复活并随本条上行(模型读到用户已删的文件),
+   *   同时抹掉"在途新加的引用"。改为按 id 把校验结果合到最新 chips:
+   *   - 快照有、最新没有 → 用户已删, 不回写、不上行;
+   *   - 快照没有、最新有 → 在途新加, 保留并随本条上行(未预检, 由后端正向兜底)。
    */
   const precheckOrBlock = async (
     refs: ComposerRef[]
@@ -293,15 +334,19 @@ const ChatInput: React.FC<ChatInputProps> = ({
     const { checked, invalid, updated } = await precheckRefs(refs);
     // 2026-10-30 小欧 A5: checked 含失效条目(invalid:true), 回写后 chip 保留红底可移除;
     //   原实现回写"仅有效条目", 失效引用从界面消失, 提示却让用户"移除后再发送"。
-    setAll(checked);
-    if (invalid.length > 0) {
+    const checkedById = new Map(checked.map((c) => [c.id, c]));
+    const merged = getRefs().map((r) => checkedById.get(r.id) ?? r);
+    setAll(merged);
+    const invalidIds = new Set(invalid.map((b) => b.id));
+    const stillInvalid = merged.filter((r) => invalidIds.has(r.id));
+    if (stillInvalid.length > 0) {
       showMessage(
         ErrorType.FILE_READ,
-        `引用已失效：${invalid.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
+        `引用已失效：${stillInvalid.map((b) => b.label).join('、')}（文件不存在、不可读或选区已不存在），请在引用区移除后再发送`
       );
-      return { refsToSend: refs, blocked: true, updated };
+      return { refsToSend: merged, blocked: true, updated };
     }
-    return { refsToSend: checked, blocked: false, updated };
+    return { refsToSend: merged, blocked: false, updated };
   };
 
   const handleSendInternal = async () => {
@@ -539,8 +584,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
     }
     setPicking(true);
     // 先渲染"载入中"占位 token（去重保证连点只会替换不会追加）— 小欧-2026-10-22 改用 hook.add
+    const placeholderId = newRefId();
     add({
-      id: newRefId(),
+      id: placeholderId,
       kind: 'file',
       label: hit.name,
       path: hit.path,
@@ -554,6 +600,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       // 2026-10-30 小欧(D5): 限流已前置到占位前(见上), 此处不再重复判。
       //   store 内 MAX_REFS 拦截够不到此入口 → 在入队前同限(同一常量), 消除绕过得掉的入口。
       const pr = await probeRef(hit.path); // 现: 唯一读盘点
+      // 2026-10-30 小欧 R3-1: 探测是异步窗口, 用户可能在此期间删掉了占位 chip ——
+      //   原实现无条件写回解析结果, 被删掉的引用"复活"。占位已不在则放弃写回。
+      if (!getRefs().some((r) => r.id === placeholderId)) return;
       // 2026-10-22 小欧 - 改用 hook.add（mergeRefs 同 path+lineRange 原位替换 → pending 占位被解析结果覆盖）
       add({
         id: newRefId(),
@@ -610,9 +659,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           {refs.map((r) => {
             /* 2026-10-30 小欧 批2序12: chip 5 态由 chipStateOf 唯一裁决(内存态 + 回执态),
                红=dropped/invalid, 黄=degraded(已省略), 常规=idle/checking;
-               批3: 配色改查色表(原背景/边框各写一遍三层嵌套三元, 6 处分支) */
+               批3: 配色改查色表(原背景/边框各写一遍三层嵌套三元, 6 处分支)
+               R9: 文案拼回执 detail(省略多少)/中文原因, 标题同样带原因 —— 用户能分清
+               "文件不存在""选区越界""整批被拒" — 小欧-2026-10-30 */
             const state = chipStateOf(r, refNotices);
+            const notice = noticeOf(r, refNotices);
             const tone = CHIP_TONE_STYLE[chipToneOf(state)];
+            const detail = noticeDetailText(notice);
             return (
               <span
                 key={r.id}
@@ -620,7 +673,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                   r.lineRange
                     ? `（第 ${r.lineRange.start}-${r.lineRange.end} 行）`
                     : ''
-                }`}
+                }${detail ? `｜${detail}` : ''}`}
                 style={{
                   /* 2026-10-21 小杨 - 失效引用红底（与正常蓝底一眼区分） */
                   background: tone.bg,
@@ -645,7 +698,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               >
                 <FileOutlined style={{ color: chatTokens.colorPrimary }} />
                 {r.label}
-                {chipStateText(state)}
+                {chipStateText(state, notice)}
                 {/* 2026-10-21 小杨 - 删除按钮放大到可点面积 + 键盘可达（原来是裸 × 字符） */}
                 <button
                   type="button"
