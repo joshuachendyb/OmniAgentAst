@@ -63,7 +63,6 @@
 // 2026-10-29 小欧 - 读取权收归后端: readAndPush 删外部/根内分叉改调 probeRef(轻量探 size/mtime);
 //   pushRef 删 content 传参加 mtime(入队只存标识) — 小欧-2026-10-29
 
-
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
@@ -115,7 +114,7 @@ import { mergeKids, prefixKeys, joinAbsPath } from '@/utils/fileTree';
 //   v1.4（修 D5）：正文已在手时走 quote* 的 content/size 覆盖项，不再直接 push。
 //   composerRefStore 仍用于 clearCollected 与 getSnapshot（读队列计数）。
 import { quoteFile, quoteSelection } from '@/features/refs/quote';
-import { probeRef } from '@/features/refs/probe';   // 2026-10-29 小欧 - 唯一读盘点(5.4.1)
+// 2026-10-30 小欧(D4): probeRef import 删除——readAndPush 不再预探, 单探收敛 quoteFile 内部
 import { composerRefStore } from '@/features/refs/store';
 import { useRecentFiles } from '@/hooks/useRecentFiles';
 // 2026-10-22 小欧 - 改写类 ops 判定（与足迹面板同源）
@@ -762,9 +761,8 @@ const FilesPage: React.FC = () => {
       kind: 'file' | 'selection',
       label: string,
       path: string,
-      _content: string,   // 2026-10-29 小欧: 正文由后端读, 前端不再传正文(占位保留兼容调用方)
+      _content: string, // 2026-10-29 小欧: 正文由后端读, 前端不再传正文(占位保留兼容调用方)
       size?: number,
-      mtime?: string,
       range?: { start: number; end: number }
     ) => {
       // v1.4（修 D5）：正文已在调用方读好/切好 → 直传 quote* 的 size(正文由后端读, 不再传 content)
@@ -787,12 +785,14 @@ const FilesPage: React.FC = () => {
    */
   const readAndPush = useCallback(
     async (n: FileNode): Promise<void> => {
-      // 2026-10-29 小欧(F9): 删外部/根内分叉, 统一调 probeRef(唯一"选接口"点)。
-      const path = n.key.startsWith('__ext__/') && externalBase
-        ? joinAbsPath(externalBase, n.key.slice('__ext__/'.length))
-        : n.key;
-      const pr = await probeRef(path);
-      await pushRef('file', n.name, path, '', pr.size, pr.mtime);   // 正文由后端读, 不传
+      // 2026-10-30 小欧(D4): 删预探——readAndPush 不再 probeRef, 单探收敛到 quoteFile 内部
+      //   (原实现预探 + quoteFile 内部又探 = 每次引用 2 次 IO, 且预探 mtime 经 pushRef→quoteFile
+      //   无接收位成死参); quoteFile 内部 probeRef 一次取 size/mtime, 失败仍入队"未校验"(4.11)。
+      const path =
+        n.key.startsWith('__ext__/') && externalBase
+          ? joinAbsPath(externalBase, n.key.slice('__ext__/'.length))
+          : n.key;
+      await pushRef('file', n.name, path, ''); // 正文由后端读, 单探收敛 quoteFile 内部
     },
     [pushRef, externalBase]
   );
@@ -934,7 +934,6 @@ const FilesPage: React.FC = () => {
             node.key,
             content,
             size,
-            undefined,
             range
           )
         }
@@ -955,7 +954,6 @@ const FilesPage: React.FC = () => {
             absPath,
             content,
             size,
-            undefined,
             range
           )
         }

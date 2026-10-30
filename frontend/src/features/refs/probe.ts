@@ -43,7 +43,16 @@ export const probeRef = async (path: string): Promise<ProbeResult> => {
       truncated: r.truncated,
       loaded_lines: r.loaded_lines,
     };
-  } catch {
+  } catch (e) {
+    // 2026-10-30 小欧(D6): 按后端 read 端点失败码细分 reason(接口枚举 missing/unsupported/timeout,
+    //   原实现一律 missing 粗化): 415(UNSUPPORTED_TYPE/UNDECODABLE)→unsupported; 超时→timeout;
+    //   404/400/403/其余网络→missing。失败仍允许入队"未校验"(4.11), reason 供 chip 文案分支。
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    const code = (e as { code?: string })?.code;
+    const msg = (e as { message?: string })?.message ?? '';
+    if (status === 415) return { ok: false, reason: 'unsupported' };
+    if (code === 'ECONNABORTED' || msg.includes('timeout'))
+      return { ok: false, reason: 'timeout' };
     return { ok: false, reason: 'missing' };
   }
 };

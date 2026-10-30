@@ -18,7 +18,7 @@
  * - 读失败不静默：只返回 reason，不弹提示——成功与失败文案都归调用方。
  */
 import { composerRefStore, newRefId } from './store';
-import { probeRef } from './probe';           // 读盘唯一入口(5.4.1)
+import { probeRef } from './probe'; // 读盘唯一入口(5.4.1)
 
 export interface QuoteResult {
   ok: boolean;
@@ -32,24 +32,22 @@ export const quoteFile = async (
   opts?: { label?: string; size?: number }
 ): Promise<QuoteResult> => {
   const label = opts?.label ?? path.split('/').pop() ?? path;
-  try {
-    // 2026-10-29 小欧: 入队只存标识, 不再读正文(正文由后端读, 读取权收归后端)。
-    //   probe 轻量探(取 size/mtime), 失败仍允许入队(chip 标"未校验", 4.11)。
-    const probe = await probeRef(path);
-    return composerRefStore.push({
-      id: newRefId(),
-      kind: 'file',
-      label,
-      path,
-      size: opts?.size ?? probe.size,
-      mtime: probe.mtime,
-      lineRange: null,
-    })
-      ? { ok: true }
-      : { ok: false, reason: 'too_many' };
-  } catch {
-    return { ok: false, reason: 'read_failed' };
-  }
+  // 2026-10-30 小欧(D3): 删死 try/catch——probeRef 内部自捕错(失败返 {ok:false} 不 throw),
+  //   push 返回布尔不 throw, 原 try/catch 是死分支(YAGNI, 设计 5.4.4 裁定)。
+  //   2026-10-29 小欧: 入队只存标识, 不再读正文(正文由后端读, 读取权收归后端)。
+  //   probe 轻量探(取 size/mtime), 失败仍允许入队(chip 标"未校验", 4.11)。
+  const probe = await probeRef(path);
+  return composerRefStore.push({
+    id: newRefId(),
+    kind: 'file',
+    label,
+    path,
+    size: opts?.size ?? probe.size,
+    mtime: probe.mtime,
+    lineRange: null,
+  })
+    ? { ok: true }
+    : { ok: false, reason: 'too_many' };
 };
 
 /** 引用一段行区间（选区引用）；正文由后端读，前端只入队标识 */
@@ -59,22 +57,19 @@ export const quoteSelection = async (
   opts?: { label?: string; size?: number }
 ): Promise<QuoteResult> => {
   const label = opts?.label ?? path.split('/').pop() ?? path;
-  try {
-    const probe = await probeRef(path);
-    return composerRefStore.push({
-      id: newRefId(),
-      kind: 'selection',
-      label,
-      path,
-      size: opts?.size ?? probe.size,
-      mtime: probe.mtime,
-      lineRange: range,
-    })
-      ? { ok: true }
-      : { ok: false, reason: 'too_many' };
-  } catch {
-    return { ok: false, reason: 'read_failed' };
-  }
+  // 2026-10-30 小欧(D3): 同 quoteFile——删死 try/catch(YAGNI)。
+  const probe = await probeRef(path);
+  return composerRefStore.push({
+    id: newRefId(),
+    kind: 'selection',
+    label,
+    path,
+    size: opts?.size ?? probe.size,
+    mtime: probe.mtime,
+    lineRange: range,
+  })
+    ? { ok: true }
+    : { ok: false, reason: 'too_many' };
 };
 
 // 2026-10-29 小欧: quotePack 整段删除(D6, YAGNI) — 全仓无调用方(grep 确认), 入队 path=''

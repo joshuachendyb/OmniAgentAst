@@ -73,8 +73,8 @@ import { InputHistoryPanel } from './input/InputHistoryPanel';
 import { useInputDraft } from '../hooks/useInputDraft';
 // 2026-10-22 小欧 - 共享 hook + 引用域归位
 import { useComposerRefs } from '@/features/refs/useComposerRefs';
-import { probeRef, precheckRefs } from '@/features/refs/probe';   // 读盘唯一入口 + 发送前预检(5.4.1)
-import { newRefId, MAX_REFS, type ComposerRef } from '@/features/refs/store';   // @ 补全入队限流(与 push 同一上限)
+import { probeRef, precheckRefs } from '@/features/refs/probe'; // 读盘唯一入口 + 发送前预检(5.4.1)
+import { newRefId, MAX_REFS, type ComposerRef } from '@/features/refs/store'; // @ 补全入队限流(与 push 同一上限)
 import { fileApi, type SearchHit } from '../../../services/api/file.api';
 import { buildFileDeepLink } from '@/utils/fileDeepLink';
 import { showMessage, ErrorType } from '../../../services/error/handler';
@@ -263,8 +263,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
    */
   const precheckOrBlock = async (
     refs: ComposerRef[]
-  ): Promise<{ refsToSend: ComposerRef[]; blocked: boolean; updated: ComposerRef[] }> => {
-    if (refs.length === 0) return { refsToSend: refs, blocked: false, updated: [] };
+  ): Promise<{
+    refsToSend: ComposerRef[];
+    blocked: boolean;
+    updated: ComposerRef[];
+  }> => {
+    if (refs.length === 0)
+      return { refsToSend: refs, blocked: false, updated: [] };
     const { checked, invalid, updated } = await precheckRefs(refs);
     setAll(checked);
     if (invalid.length > 0) {
@@ -290,12 +295,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
      *   旧 refreshRefs 路径随 refresh.ts 删除(5.4.5)。
      */
     const { refsToSend, blocked, updated } = await precheckOrBlock(refs);
-    if (blocked) return;   // 已点名(内部 showMessage), 不产生任何 LLM 调用
+    if (blocked) return; // 已点名(内部 showMessage), 不产生任何 LLM 调用
     // 2026-10-30 小欧(阻断级修正): 原 precheckRefs 产出 updated 无消费落点, "内容已更新"
     //   功能分支丢失(4.5/R2)。发送前点名提示——后端按标识必读最新, 不阻断、不改 chip 态。
     if (updated.length > 0) {
-      showMessage(ErrorType.FILE_READ,
-        `以下引用在盘上已有更新：${updated.map((u) => u.label).join('、')}（将按最新内容解析）`);
+      showMessage(
+        ErrorType.FILE_READ,
+        `以下引用在盘上已有更新：${updated.map((u) => u.label).join('、')}（将按最新内容解析）`
+      );
     }
     // 2026-10-21 小杨 - **正文即最终正文**（不再做 stripAtTokens 反向剥离）
     //   旧模型：正文里塞了 "@label"，发送前再逐个剥 → 边界误伤（吃掉"邮箱 a@b.com"的 b.com）、
@@ -482,6 +489,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const pickAtItem = async (hit: SearchHit) => {
     if (picking) return; // 防连点
     if (hit.preview !== 'text') return; // 只收可预览文本
+    // 2026-10-30 小欧(D5): 限流必须在 add(pending 占位) 之前——原实现先 add 占位再限流,
+    //   超限 return 后占位 chip 残留(pending:true) → refsPending=true 卡死发送闸门
+    //   "引用内容仍在载入"; 设计 5.4.7"在入队前同限"由此达成(占位也是入队, 必须一并拦)。
+    if (refs.length >= MAX_REFS) {
+      showMessage(ErrorType.FILE_READ, `一次最多引用 ${MAX_REFS} 项`);
+      return;
+    }
     setPicking(true);
     // 先渲染"载入中"占位 token（去重保证连点只会替换不会追加）— 小欧-2026-10-22 改用 hook.add
     add({
@@ -496,13 +510,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
       setDraft((d) => `${d.slice(0, atRange.at)}${d.slice(atRange.caret)}`);
     }
     try {
-      // 2026-10-30 小欧: @ 补全不经 composerRefStore.push(直接写本地 refs 状态),
+      // 2026-10-30 小欧(D5): 限流已前置到占位前(见上), 此处不再重复判。
       //   store 内 MAX_REFS 拦截够不到此入口 → 在入队前同限(同一常量), 消除绕过得掉的入口。
-      if (refs.length >= MAX_REFS) {
-        showMessage(ErrorType.FILE_READ, `一次最多引用 ${MAX_REFS} 项`);
-        return;
-      }
-      const pr = await probeRef(hit.path);             // 现: 唯一读盘点
+      const pr = await probeRef(hit.path); // 现: 唯一读盘点
       // 2026-10-22 小欧 - 改用 hook.add（mergeRefs 同 path+lineRange 原位替换 → pending 占位被解析结果覆盖）
       add({
         id: newRefId(),
@@ -510,7 +520,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         label: hit.name,
         path: hit.path,
         size: pr.size,
-        mtime: pr.mtime,                               // probe 失败也为 undefined, 仍入队(4.11 "未校验")
+        mtime: pr.mtime, // probe 失败也为 undefined, 仍入队(4.11 "未校验")
         pending: false,
       });
     } catch {
