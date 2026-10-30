@@ -101,3 +101,6 @@ frontend/.auth-state.json
 
 # tsc 构建产物: 小欧 2026-09-13
 *.tsbuildinfo
+
+# 根目录测试运行动态输出日志(vitest/pytest 生成 _after*/_suite* 等, 进程占用不入库): 小欧 2026-10-30
+/_*.txt
