@@ -85,6 +85,10 @@
 #   (CREATE TABLE 新建 + v1.5 重建分支 + _ensure_column 幂等补存量库, 三处同源不漏), 并加 idx_trust_expires
 #   索引(与 idx_trust_session 并列, 供 cleanup_expired_trust 扫描)。无 DEFAULT: 历史行读出 NULL
 #   = 不过期, 存量信任行为与改动前一致不被误杀。— 小欧-2026-10-15
+
+# 2026-10-30 小欧 - [54]全链路重构: chat_session_workspaces 增 workspace_property/memo/is_default 三列
+#   (CREATE TABLE + COLLATE 迁移块同步, 再 _ensure_column 幂等补存量库; 三者均为标注类字段, 不参与安全判定) — 小欧-2026-10-30
+
 """
 db_initializer — 数据库初始化
 
@@ -222,9 +226,12 @@ def init_chat_db(get_conn):
             -- 2026-10-10 小欧 - 文档[16]: path 列 COLLATE NOCASE。Windows 大小写不敏感是"比较规则"，
             --   `C:/A` 与 `c:/a` 是同一目录，库级必须判重；存储本身保大小写(面板可读)。
             CREATE TABLE IF NOT EXISTS chat_session_workspaces (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT    NOT NULL,
-                path       TEXT    NOT NULL COLLATE NOCASE,
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id         TEXT    NOT NULL,
+                path               TEXT    NOT NULL COLLATE NOCASE,
+                workspace_property TEXT    DEFAULT 'read_write',
+                memo               TEXT    DEFAULT NULL,
+                is_default         INTEGER DEFAULT 0,
                 UNIQUE(session_id, path),
                 FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
             );
@@ -239,9 +246,12 @@ def init_chat_db(get_conn):
             conn.execute("ALTER TABLE chat_session_workspaces RENAME TO chat_session_workspaces_old")
             conn.execute(
                 """CREATE TABLE chat_session_workspaces (
-                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT    NOT NULL,
-                    path       TEXT    NOT NULL COLLATE NOCASE,
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    session_id         TEXT    NOT NULL,
+                    path               TEXT    NOT NULL COLLATE NOCASE,
+                    workspace_property TEXT    DEFAULT 'read_write',
+                    memo               TEXT    DEFAULT NULL,
+                    is_default         INTEGER DEFAULT 0,
                     UNIQUE(session_id, path),
                     FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
                 )""")
@@ -251,6 +261,14 @@ def init_chat_db(get_conn):
             conn.execute("DROP TABLE chat_session_workspaces_old")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_csw_session ON chat_session_workspaces(session_id)")
+
+        # 2026-10-28 小欧 - chat_session_workspaces 增
+        #   workspace_property(工作区属性文字标签)/memo(备注)/is_default(默认工作区标志)。
+        #   幂等补列, 老库安全。三者均为标注类字段, 不参与安全判定。
+        _ensure_column(conn, "chat_session_workspaces", "workspace_property", "TEXT DEFAULT 'read_write'")
+        _ensure_column(conn, "chat_session_workspaces", "memo", "TEXT DEFAULT NULL")
+        _ensure_column(conn, "chat_session_workspaces", "is_default", "INTEGER DEFAULT 0")
+
 
         _ensure_column(conn, "chat_sessions", "message_count", "INTEGER DEFAULT 0")
         _ensure_column(conn, "chat_sessions", "is_deleted", "BOOLEAN DEFAULT FALSE")

@@ -3,6 +3,9 @@
 # 2026-10-14 小欧: 路径校验导入改从 app.safety.path_safe_check(路径校验已升系统层)
 # 2026-10-21 小欧 - J3: _ws_deny_reason 准入口径 = 只拒禁区·系统档(forbidden_system),
 #   forbidden_non_system 档(代码目录/允许根)放行, 修常见配置整单 422 — 小欧-2026-10-21
+# 2026-10-28 小欧 - [54]全链路重构: workspace_property/memo/is_default 三标注字段。
+#   常量+归一化唯一源; get/select/apply/set/classify/load/reconcile 全链路四元组化;
+#   reconcile 始终创建默认工作区(项目根感知+旧默认降级)。标注字段不参与安全判定。
 """会话使用的目录：存储与落值（独立模块，不进 storage.py）
 
 本模块只管**会话使用的目录**（= 本次任务产物落在这里）。
@@ -23,6 +26,51 @@ MAX_PATH_CHARS = 240       # 显式长度上限(Windows MAX_PATH 260 留余量),
                            # 撤回(2026-10-10)：240→200 系无实证收紧 ——
                            #   从未有真实路径因此失败，且会拒绝原本合法的 200~240 字符路径。
                            #   恢复 240 原值；要收紧必须先有真实失败 case。
+
+# 2026-10-28 小欧 - 属性/备注常量与标签映射（单一真源）
+MAX_PROP_CHARS = 32
+MAX_MEMO_CHARS = 256
+WS_PROP_READ_ONLY = "read_only"
+WS_PROP_READ_WRITE = "read_write"
+WS_PROP_WRITE = "write"
+WS_PROP_LABELS = {
+    WS_PROP_READ_ONLY: "读取工作区",
+    WS_PROP_READ_WRITE: "读写工作区",
+    WS_PROP_WRITE: "写工作区",
+}
+DEFAULT_WS_PROP = WS_PROP_READ_WRITE           # 兜底：缺失一律回落 read_write
+DEFAULT_MEMO = "本事项工作区默认读写区域"       # 默认目录专用备注（UI/界面口径：事项工作区）
+
+
+def ws_prop_value(raw) -> str:
+    """属性归一化唯一源（入库值）：None/空/全空白 → read_write；
+    中文标签 → 对应机器值；其余（自定义文本）原样保留。
+    纯文字标签, 不做任何权限判定。"""
+    _v = (raw or "").strip()[:MAX_PROP_CHARS]
+    if not _v:
+        return DEFAULT_WS_PROP
+    if _v in WS_PROP_LABELS:
+        return _v
+    for _k, _label in WS_PROP_LABELS.items():
+        if _v == _label:
+            return _k
+    return _v                                   # 自定义文本标签，原样存
+
+
+def ws_prop_label(raw) -> str:
+    """属性展示/注入唯一源：机器值 → 中文标签；自定义值原样返回；缺失 → 读写工作区。"""
+    _v = ws_prop_value(raw)
+    return WS_PROP_LABELS.get(_v, _v)
+
+
+def _normalize_ws_meta(prop, memo) -> tuple[str, Optional[str]]:
+    """属性/备注归一化唯一源：trim → 空归默认 → 超长截断 → memo 换行转空格。
+
+    属性是文字标签不是权限开关，故非法值一律**放行**（不 reject），
+    只做长度与空白处理 —— 拒单会让整条 PATCH 失败，代价远大于收益。
+    memo 禁换行：注入时按行拼接，换行会破坏 <会话工作目录> 块结构。"""
+    _m = (memo or "").strip().replace("\r", " ").replace("\n", " ")[:MAX_MEMO_CHARS]
+    return ws_prop_value(prop), (_m or None)
 
 
 def _ws_warn(msg: str) -> None:
@@ -52,9 +100,9 @@ def _normalize_ws_path(p: str) -> str:
 
 
 def get_session_workspaces(conn, session_id: str) -> list:
-    """读该会话使用的全部目录行。ORDER BY rowid = 加入顺序。"""
+    """读该会话使用的全部目录行（含属性/备注/默认标志）。ORDER BY rowid = 加入顺序。"""
     return conn.execute(
-        "SELECT path FROM chat_session_workspaces "
+        "SELECT path, workspace_property, memo, is_default FROM chat_session_workspaces "
         "WHERE session_id = ? ORDER BY rowid",
         (session_id,),
     ).fetchall()
@@ -110,70 +158,86 @@ def _ws_precheck(paths: list[str]) -> list[dict]:
     return rejected
 
 
-def _ws_apply(conn, session_id: str, paths: list[str]) -> None:
+def _ws_apply(conn, session_id: str, entries: list[tuple[str, str, Optional[str]]]) -> None:
     """覆盖写 —— PATCH 的唯一写库实现（懒建占行不走这里）。
-    先读旧路径 → DELETE 全删 → executemany INSERT。"""
+
+    DELETE 全删 → executemany INSERT(path, workspace_property, memo, is_default)。
+    全删全插天然支持编辑：前端改了某条 path/属性/memo 后整批提交，
+    后端不需要区分"新增/修改/删除"——全量覆盖即可。
+
+    ⚠ is_default 由系统维护，前端 PATCH 无权携带：写库前先读旧默认行，
+    覆盖时按 path（大小写不敏感）原样继承。否则用户每点一次「确定」都会把
+    默认标志抹成 0，下次建任务再建一个新时间戳目录，历史产物被拆散。"""
+    _old_defaults = {
+        r["path"].casefold()
+        for r in conn.execute(
+            "SELECT path FROM chat_session_workspaces "
+            "WHERE session_id = ? AND is_default = 1", (session_id,)).fetchall()
+    }
     conn.execute("DELETE FROM chat_session_workspaces WHERE session_id = ?", (session_id,))
-    if not paths:
+    if not entries:
         return
     conn.executemany(
-        "INSERT INTO chat_session_workspaces(session_id, path) VALUES (?, ?)",
-        [(session_id, p) for p in paths])
+        "INSERT INTO chat_session_workspaces"
+        "(session_id, path, workspace_property, memo, is_default) "
+        "VALUES (?, ?, ?, ?, ?)",
+        [(session_id, p, r, m, 1 if p.casefold() in _old_defaults else 0)
+         for p, r, m in entries])
 
 
-def set_session_workspaces(conn, session_id: str, raw_paths: list[str]) -> list[dict]:
+def set_session_workspaces(conn, session_id: str, items: list[dict]) -> list[dict]:
     """PATCH 唯一写入口：数量先拦 → 归一化 → 去重 → 预检 → 写库。
     返回被拒清单；非空即调用方返 422，空即 200。
-    归一化单条失败（OSError/ValueError，含空串/相对路径/超长）归入 rejected 一并报出，不 500。
-    ⚠ 只改数据库行，**绝不删除磁盘目录** —— 面板移除条目 = 目录留在磁盘由用户自行处置。
 
-    订正：数量检查必须在归一化之前。归一化每条都做磁盘 resolve，
-    超量请求先归一化后拒绝等于先吃全部 IO 再说不(实测 3000 条 209ms)。
-    订正：去重键用 casefold，存值保大小写(Windows 大小写不敏感，
-    `C:\\A` 与 `c:\\a` 是同一目录，去重后只留一条；库级再有 COLLATE NOCASE 兜底)。"""
-    if len(raw_paths) > MAX_WORKSPACES:
-        return [{"path": f"({len(raw_paths)} 条)", "reason": f"目录数超上限({MAX_WORKSPACES})"}]
-    paths, rejected, _seen = [], [], set()
-    for p in raw_paths:
+    入参固定 list[dict]（{"path", "workspace_property", "memo"}），与 WorkspaceItem 一对一。
+    **不接收 list[str]**：API 层已收单形态，前后端同版本发布，没有旧形态需要兼容；
+    保留分支会让"路径数组"与"三字段对象"两套语义长期并存（违反禁止 backward）。
+    属性/memo **不参与预检**（不是路径，与安全判定无关）。
+    前端编辑（改 path/属性/memo）后整批提交，本函数不区分新增/编辑——全量覆盖。"""
+    if len(items) > MAX_WORKSPACES:
+        return [{"path": f"({len(items)} 条)", "reason": f"目录数超上限({MAX_WORKSPACES})"}]
+
+    entries, rejected, _seen = [], [], set()
+    for it in items:
+        _p = it.get("path", "")
         try:
-            _n = _normalize_ws_path(p)
+            _n = _normalize_ws_path(_p)
         except (OSError, ValueError) as _e:
-            rejected.append({"path": p, "reason": f"路径非法: {type(_e).__name__}: {_e}"})
+            rejected.append({"path": _p, "reason": f"路径非法: {type(_e).__name__}: {_e}"})
             continue
         _k = _n.casefold()
-        if _k not in _seen:                  # 去重(大小写不敏感)，存值保大小写
-            _seen.add(_k)
-            paths.append(_n)
+        if _k in _seen:                      # 去重(大小写不敏感)，存值保大小写
+            continue
+        _seen.add(_k)
+        _prop, _memo = _normalize_ws_meta(it.get("workspace_property"), it.get("memo"))
+        entries.append((_n, _prop, _memo))
     if rejected:
         return rejected                      # 归一化失败即整单 422，不再写库
-    rejected = _ws_precheck(paths)
+
+    rejected = _ws_precheck([p for p, _r, _m in entries])
     if rejected:
         return rejected
-    _ws_apply(conn, session_id, paths)
-    logger.info(f"[workspace] 会话使用目录已更新: session={session_id} 数量={len(paths)}")
+
+    _ws_apply(conn, session_id, entries)
+    logger.info(f"[workspace] 会话工作区已更新: session={session_id} 数量={len(entries)}")
     return []
 
 
 def classify_workspace_rows(rows) -> tuple[list, list]:
-    """行 → (有效路径集, 不可用清单)：**会话目录过滤唯一真源**。
-    入参是行而非 conn，故调用方可在关闭 DB 连接之后再做磁盘判定。
-    不在此处打日志：调用方按场景决定要不要告警（运行时必须告警）。
+    """行 → (有效条目集, 不可用清单)：**会话工作区过滤唯一真源**。
+
+    返回值：effective 为 list[tuple[str, str, Optional[str], bool]]
+    = [(path, workspace_property, memo, is_default)]。
+    属性/备注/默认标志只**透传**，不参与任何裁决 ——
+    归一化/禁区/宽根/存在性判定全部只看 path，安全语义零变化。
+
+    ⚠ 本函数只判定不落盘：面板 GET 走这里，因此打开面板永不创建目录。
 
     裁决顺序（禁区判定必须先于存在判定）：
        归一化失败 → 不可用（优雅跳过，绝不抛；调用方整单不崩）
        `_ws_deny_reason` 全套判据 → 不可用（禁区/系统保护/宽根）
        非目录（不存在，或是个文件）→ 不可用
        通过 → 有效
-
-    根因订正：此前运行时过滤只调半套 `classify_forbidden_path`，
-    与写入判据两套标准、且 exists 跑在禁区之前。此处改调全套 `_ws_deny_reason`，
-    与 PATCH 预检同一把尺子；脏行一律归入 unusable，调用方永不被抛异常掀翻。
-    订正：`exists()` 改为 `is_dir()`。文件不是目录，不能进白名单。
-    订正：返回 `list[str]`。`(path, 恒0)` 裸 tuple 是 is_default 死后残留，
-    全链路无人读第二项。
-    说明（非缺陷）：此处对已归一路径再 resolve 一次是**故意的**——
-    入库 resolve 防重，运行 resolve 防 TOCTOU（两次调用之间符号链接可被替换）。
-    单行约 0.09ms，64 行约 6ms，相对 LLM 秒级延迟可忽略；缓存反而引入失效复杂度(YAGNI)。
 
     unusable 每项带机器可读 `kind`（reconcile 按 kind 行事，不匹配 reason 字符串）：
       illegal（归一化失败）/ denied（禁区/系统保护/宽根）/ missing（非目录或不存在）"""
@@ -192,66 +256,93 @@ def classify_workspace_rows(rows) -> tuple[list, list]:
         if not Path(p).is_dir():             # 必须是目录：不存在/是文件都不收
             unusable.append({"path": p, "reason": "不是目录或不存在", "kind": "missing"})
             continue
-        effective.append(p)
+        _prop, _memo = _normalize_ws_meta(r["workspace_property"], r["memo"])
+        _is_def = bool(r["is_default"])
+        effective.append((p, _prop, _memo, _is_def))
     return effective, unusable
 
 
-def _load_workspaces_conn(conn, session_id: str) -> list[str]:
+def _load_workspaces_conn(conn, session_id: str) -> list[tuple[str, str, Optional[str], bool]]:
     """任务快照源：读行 → 过滤（复用 classify_workspace_rows 单一真源）。
-    conn 由调用方经 db.atxn 传入，本函数内禁自建连接。空会话/无行 → []。
+    返回 [(path, workspace_property, memo, is_default)] 四元组，供 _load_ws_snapshot 构造。
 
     不可用行必须告警：目录被改名、移动或盘符没挂时若静默跳过，徽标显示 N 而运行时生效 0，
     且行还在、进入会话时也不会补建，错位会一直持续。"""
     effective, unusable = classify_workspace_rows(get_session_workspaces(conn, session_id))
     for u in unusable:
-        _ws_warn(f"会话目录本轮不生效({u['reason']}): {u['path']}")
+        _ws_warn(f"会话工作区本轮不生效({u['reason']}): {u['path']}")
     return effective
 
 
-def reconcile_session_workspaces(conn, session_id: str) -> list[str]:
-    """进入会话·建立一条规则（唯一真源）：空则造默认目录 → 逐条裁决 →
-    禁区行清库 / 不存在则建目录 / 可用则留 → 返回有效路径集。
+def reconcile_session_workspaces(conn, session_id: str) -> list[tuple[str, str, Optional[str], bool]]:
+    """创建新 Task 并绑定该会话时的唯一落盘入口。
 
-    根因订正：此前编排器自写一套循环，归一化无 try，一条脏行抛异常
-    掀翻整个任务。此处复用 `classify_workspace_rows` 做全部裁决（脏行只进
-    unusable 不抛），本函数只做 classify 干不了的两件事：造默认目录、建目录/清行。
-    ⚠ 只删数据库行，**绝不删除磁盘目录**。"""
+    默认工作区始终存在（先添加目录也建）→ 逐条裁决（禁区行清库 / 缺目录则建 / 可用则留）
+    → 返回有效条目集。用户目录同样在此懒建（面板 GET 不建，只此处建）。
+    返回 [(path, workspace_property, memo, is_default)] 四元组。
+
+    ⚠ 只删数据库行，绝不删除磁盘目录。"""
+    from app.config import get_config
     rows = get_session_workspaces(conn, session_id)
-    if not rows:
+    current_root = get_config().get_project_root()
+
+    # ── 默认工作区是否需创建/重建 ──
+    # 需要（任一）：a) 无任何 is_default=1 行（首次，或用户删了默认行）
+    #               b) 默认行不在当前项目根下（项目根变了）
+    need_new_default = True
+    for r in rows:
+        if r["is_default"] and Path(r["path"]).parent == Path(current_root):
+            need_new_default = False
+            break
+
+    if need_new_default:
         d = _build_default_workspace_dir(session_id)
         if d:
             try:
+                _p = _normalize_ws_path(d)
+                # 先登记/升级新默认（同路径已存在则原地置 1），再降级其余默认行 ——
+                # 顺序不可颠倒：先降后插一旦插入失败，会话将没有任何默认工作区
                 conn.execute(
-                    "INSERT OR IGNORE INTO chat_session_workspaces(session_id, path) VALUES (?, ?)",
-                    (session_id, _normalize_ws_path(d)),
-                )
+                    "INSERT INTO chat_session_workspaces"
+                    "(session_id, path, workspace_property, memo, is_default) "
+                    "VALUES (?, ?, ?, ?, 1) "
+                    "ON CONFLICT(session_id, path) DO UPDATE SET "
+                    "workspace_property = excluded.workspace_property, "
+                    "memo = excluded.memo, is_default = 1",
+                    (session_id, _p, DEFAULT_WS_PROP, DEFAULT_MEMO))
+                # 旧默认目录降为普通目录（保留历史产物，用户可自行处置）
+                conn.execute(
+                    "UPDATE chat_session_workspaces SET is_default = 0 "
+                    "WHERE session_id = ? AND is_default = 1 AND path <> ?",
+                    (session_id, _p))
+                logger.info(f"[chat] 默认工作区已就绪: session={session_id} path={_p}")
             except Exception as _e:
-                logger.warning(f"[chat] 默认目录登记失败（降级走项目根）: {_e}")
+                logger.warning(f"[chat] 默认工作区登记失败（本轮无默认区，下次再试）: {_e}")
         rows = get_session_workspaces(conn, session_id)
 
-    _effective, unusable = classify_workspace_rows(rows)
+    _, unusable = classify_workspace_rows(rows)
     for u in unusable:
         if u["kind"] != "denied":
-            continue                             # 脏行/缺目录：本轮跳过，下次再看
-        try:                                     # 禁区行：从表里清掉（只删库行）
+            continue                                     # 脏行/缺目录：本轮跳过，下次再看
+        try:                                             # 禁区行：从表里清掉（只删库行）
             conn.execute(
                 "DELETE FROM chat_session_workspaces WHERE session_id = ? AND path = ?",
                 (session_id, u["path"]))
-        except Exception as _de:                 # 订正：失败就只报失败，
+        except Exception as _de:
             logger.warning(f"[chat] 禁区目录清理失败(本轮仍不放行): {u['path']} - {_de}")
-            continue                             #   不再无条件打"已清理"
-        logger.warning(f"[chat] 会话目录已落入禁区, 已从列表清理: {u['path']}")
+            continue
+        logger.warning(f"[chat] 会话工作区已落入禁区, 已从列表清理: {u['path']}")
 
-    for u in unusable:                           # 缺目录：建出来（禁区/脏行不建）
+    for u in unusable:                                   # 缺目录：建出来（禁区/脏行不建）
         if u["kind"] != "missing":
             continue
         try:
             Path(u["path"]).mkdir(parents=True, exist_ok=True)
-            logger.info(f"[chat] 会话目录不存在, 已自动建立: {u['path']}")
+            logger.info(f"[chat] 会话工作区目录不存在, 已自动建立: {u['path']}")
         except Exception as _e:
-            logger.warning(f"[chat] 会话目录建立失败(本轮不生效, 下次再试): {u['path']} - {_e}")
+            logger.warning(f"[chat] 会话工作区目录建立失败(本轮不生效, 下次再试): {u['path']} - {_e}")
 
-    return _load_workspaces_conn(conn, session_id)   # 重读重判：刚建好的目录本轮即生效
+    return _load_workspaces_conn(conn, session_id)       # 重读重判：刚建好的目录本轮即生效
 
 
 def _build_default_workspace_dir(session_id: str):

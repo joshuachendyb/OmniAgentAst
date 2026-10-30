@@ -1,5 +1,5 @@
 /**
- * SessionWorkspacePanel - 会话使用的目录面板（）
+ * SessionWorkspacePanel - 事项工作区面板
  *
  * 编辑历史: 2026-10-10 小欧 - 新建（ 四条功能需求 +  UI 视觉规范）
  * 编辑历史: 2026-10-10 小欧 - 修4错：updater外弹框/删空二次确认按后果判/load失败降级/被拒留痕区
@@ -20,10 +20,15 @@
  *   ③load 不再 setInput('')/覆盖用户已编辑草稿(dirtyRef);
  *   ④被拒留痕改由 store 承载并跨关闭存活(提交与关闭解耦后组件内部 state 活不到下一次打开)。
  *   — 小欧-2026-10-30
+ * 编辑历史: 2026-10-28 小欧 - [54]全链路重构: 草稿升 WsDraft[](path+属性+memo+is_default只读);
+ *   行内编辑(增/删/改三态); 新增区两行(路径+属性AutoComplete+备注); 属性localStorage自定义值持久化。
+ *   保留 store 架构(loadState/dirtyRef/loadSeqRef/notice/本地立即关闭+后台提交)。
+ *   — 小欧-2026-10-30
  */
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -37,12 +42,15 @@ import {
   Space,
   Empty,
   Tooltip,
+  AutoComplete,
+  Tag,
 } from 'antd';
 import {
   DeleteOutlined,
   PlusOutlined,
   FolderOutlined,
   LockOutlined,
+  EditOutlined,
 } from '@ant-design/icons';
 import { settingsModalWidth } from '@/theme/settingsTokens';
 import { Spacing, FontSize } from '@/utils/stepStyles';
@@ -61,33 +69,112 @@ interface Props {
 /** 只做绝对路径格式校验；存在性与禁区交后端判（决策74，避免前端造禁区表） */
 const isAbsolute = (p: string) => /^[A-Za-z]:[\\/]/.test(p) || /^\\\\/.test(p);
 
+/** 面板内部草稿：path + 属性 + memo + 默认标志（is_default 只读展示，PATCH 不携带） */
+type WsDraft = {
+  path: string;
+  workspace_property: string;
+  memo: string;
+  is_default: boolean;
+};
+
+/** 属性三档预设：机器值 + 中文标签 */
+const WS_PROP_PRESETS = [
+  { value: 'read_only', label: '读取工作区' },
+  { value: 'read_write', label: '读写工作区' },
+  { value: 'write', label: '写工作区' },
+] as const;
+const DEFAULT_WS_PROP = 'read_write';
+const CUSTOM_PROPS_KEY = 'ws_custom_props';
+const MAX_CUSTOM_PROPS = 16;
+
+/** 属性 Tag 颜色：预设三档 + 自定义灰 */
+const PROP_COLORS: Record<string, string> = {
+  read_only: 'green',
+  read_write: 'blue',
+  write: 'orange',
+};
+
+/** 属性展示唯一源：机器值 → 中文标签；自定义原样；缺失 → 读写工作区 */
+function propLabel(raw?: string | null): string {
+  const v = (raw || '').trim();
+  if (!v) return '读写工作区';
+  const hit = WS_PROP_PRESETS.find((p) => p.value === v || p.label === v);
+  return hit ? hit.label : v;
+}
+
+/** 属性入库唯一源：缺失/空 → read_write；中文标签 → 机器值；自定义原样 */
+function propValue(raw?: string | null): string {
+  const v = (raw || '').trim();
+  if (!v) return DEFAULT_WS_PROP;
+  if (WS_PROP_PRESETS.some((p) => p.value === v)) return v;
+  const byLabel = WS_PROP_PRESETS.find((p) => p.label === v);
+  return byLabel ? byLabel.value : v;
+}
+
+/** 读自定义属性列表（localStorage，失败降级空数组） */
+function loadCustomProps(): string[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_PROPS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** 存自定义属性（预设不存、已有不存、FIFO 淘汰、失败静默） */
+function saveCustomProp(prop: string): void {
+  if (WS_PROP_PRESETS.some((p) => p.value === prop || p.label === prop)) return;
+  const list = loadCustomProps();
+  if (list.includes(prop)) return;
+  list.push(prop);
+  if (list.length > MAX_CUSTOM_PROPS) list.shift();
+  try {
+    localStorage.setItem(CUSTOM_PROPS_KEY, JSON.stringify(list));
+  } catch {
+    /* 隐私模式/配额满：静默降级，不影响主流程 */
+  }
+}
+
 export default function SessionWorkspacePanel({
   sessionId,
   open,
   onClose,
 }: Props) {
-  const [paths, setPaths] = useState<string[]>([]);
+  const [entries, setEntries] = useState<WsDraft[]>([]);
   const [unusable, setUnusable] = useState<UnusableEntry[]>([]);
   const [projectRoot, setProjectRoot] = useState('');
   const [allowedDirs, setAllowedDirs] = useState<string[]>([]);
+  // 新增区
   const [input, setInput] = useState('');
+  const [propInput, setPropInput] = useState(DEFAULT_WS_PROP);
+  const [memoInput, setMemoInput] = useState('');
   const [inputErr, setInputErr] = useState('');
-  // 2026-10-10 小欧: 被拒条目留痕（#3"提示"要能回看，toast 一闪而过不够）
-  // 2026-10-30 18:36:36 小欧 - 留痕上移到 workspaceStore.notice：提交已与关闭解耦，
-  //   组件内部 state 活不到下一次打开（面板 destroyOnHidden），只能存在组件之外。
+  // 编辑态
+  const [editingPath, setEditingPath] = useState<string | null>(null);
+  const [editPath, setEditPath] = useState('');
+  const [editProp, setEditProp] = useState(DEFAULT_WS_PROP);
+  const [editMemo, setEditMemo] = useState('');
+  const [editErr, setEditErr] = useState('');
+
   const wsSnapshot = useSyncExternalStore(
     workspaceStore.subscribe,
     workspaceStore.getSnapshot
   );
   const rejected = wsSnapshot.sessionId === sessionId ? wsSnapshot.notice : [];
-  // 2026-10-30 小欧 - 服务端清单装载态: 只有 ready 才允许「确定」覆盖写(其余状态写库=盲写)
   const [loadState, setLoadState] = useState<
     'idle' | 'loading' | 'ready' | 'failed'
   >('idle');
-  // 2026-10-30 小欧 - 用户是否已改动草稿: 改动后, 迟到的 GET 结果不许覆盖列表
   const dirtyRef = useRef(false);
-  // 2026-10-30 小欧 - 代际守卫: 关闭/切会话/重试即作废在飞请求, 迟到结果不许写回
   const loadSeqRef = useRef(0);
+
+  /** AutoComplete options = 预设 + localStorage 自定义（去重），新增区/编辑区共享 */
+  const propOptions = useMemo(() => {
+    const base = WS_PROP_PRESETS.map((p) => ({ value: p.value, label: p.label }));
+    const extra = loadCustomProps()
+      .filter((c) => !WS_PROP_PRESETS.some((p) => p.value === c || p.label === c))
+      .map((c) => ({ value: c, label: c }));
+    return [...base, ...extra];
+  }, []);
 
   /** 打开即重拉（无暂存：关闭即丢，决策75作废 / 76修订）
    *  ⚠ 失败必须降级并提示，不能让面板空白无反馈（#1 展示是基本要求）
@@ -97,53 +184,111 @@ export default function SessionWorkspacePanel({
     setLoadState('loading');
     try {
       const r = await sessionApi.getWorkspaces(sessionId);
-      if (seq !== loadSeqRef.current) return; // 已被关闭/重试作废
-      // 用户已动过草稿就不再灌入(否则刚添加的目录被冲掉); 只读区/不可用列表是服务端事实, 照常更新
-      if (!dirtyRef.current) setPaths(r.workspaces.map((w) => w.path));
+      if (seq !== loadSeqRef.current) return;
+      if (!dirtyRef.current) {
+        setEntries(
+          r.workspaces.map((w) => ({
+            path: w.path,
+            workspace_property: propValue(w.workspace_property),
+            memo: w.memo || '',
+            is_default: Boolean(w.is_default),
+          }))
+        );
+      }
       setUnusable(r.unusable);
-      setProjectRoot(r.project_root); // 只读区（决策82）
-      setAllowedDirs(r.allowed_dirs); // 只读区（决策82）
+      setProjectRoot(r.project_root);
+      setAllowedDirs(r.allowed_dirs);
       setInputErr('');
+      setEditingPath(null);
       setLoadState('ready');
     } catch {
       if (seq !== loadSeqRef.current) return;
       setUnusable([]);
       setProjectRoot('');
       setAllowedDirs([]);
+      setEditingPath(null);
       setLoadState('failed');
       handleError(new Error('读取会话目录失败'));
     }
   }, [sessionId]);
 
-  // 2026-10-30 小欧 - 取数只认 open/sessionId: 不再依赖开启动画回调(动画回调在重负载下不可靠)
   useEffect(() => {
     if (!open || !sessionId) return;
-    dirtyRef.current = false; // 每次打开以服务端为基线
+    dirtyRef.current = false;
     void load();
     return () => {
-      loadSeqRef.current += 1; // 关闭/切换: 作废在飞请求
+      loadSeqRef.current += 1;
     };
   }, [open, sessionId, load]);
 
-  const addInput = () => {
+  /** 新增（同路径覆盖属性/memo，不产生重复行） */
+  const addEntry = () => {
     const v = input.trim();
     if (!v || !isAbsolute(v)) {
       setInputErr('请输入绝对路径');
       return;
     }
-    setInputErr('');
+    const p = propValue(propInput);
+    const m = memoInput.trim();
+    saveCustomProp(p);
     dirtyRef.current = true;
-    setPaths((ps) => (ps.includes(v) ? ps : [...ps, v]));
+    setEntries((es) =>
+      es.some((e) => e.path.toLowerCase() === v.toLowerCase())
+        ? es.map((e) =>
+            e.path.toLowerCase() === v.toLowerCase()
+              ? { ...e, workspace_property: p, memo: m }
+              : e
+          )
+        : [...es, { path: v, workspace_property: p, memo: m, is_default: false }]
+    );
     setInput('');
+    setPropInput(DEFAULT_WS_PROP);
+    setMemoInput('');
+    setInputErr('');
   };
 
-  /** 删除条目（决策78 的本意是"语义突变的操作要确认"：删空列表会退回项目根兜底）
-   *  ⚠ v2.0 已删 is_default 字段，后端不告知"哪条是默认目录"，不按行猜测，
-   *    改按**操作后果**判定。⚠ 确认框必须在 updater 之外（StrictMode 双调用 updater，
-   *    放里面会弹两次；updater 必须是纯函数） */
-  const remove = (p: string) => {
-    // 先读后写：事件处理函数里读 paths 是安全的（updater 里读才有竞态）
-    const willEmpty = paths.length === 1 && paths[0] === p;
+  /** 进入编辑态 */
+  const startEdit = (e: WsDraft) => {
+    setEditingPath(e.path);
+    setEditPath(e.path);
+    setEditProp(e.workspace_property);
+    setEditMemo(e.memo);
+    setEditErr('');
+  };
+
+  /** 保存编辑：绝对路径 + 同列表去重（改到别的行已占用的路径必须拦住） */
+  const saveEdit = () => {
+    if (!editingPath) return;
+    const v = editPath.trim();
+    if (!v || !isAbsolute(v)) {
+      setEditErr('请输入绝对路径');
+      return;
+    }
+    const clash = entries.some(
+      (e) => e.path !== editingPath && e.path.toLowerCase() === v.toLowerCase()
+    );
+    if (clash) {
+      setEditErr('该目录已在列表中');
+      return;
+    }
+    const p = propValue(editProp);
+    saveCustomProp(p);
+    dirtyRef.current = true;
+    setEntries((es) =>
+      es.map((e) =>
+        e.path === editingPath
+          ? { ...e, path: v, workspace_property: p, memo: editMemo.trim() }
+          : e
+      )
+    );
+    setEditingPath(null);
+  };
+
+  const cancelEdit = () => setEditingPath(null);
+
+  /** 删除（删空二次确认，确认框在 updater 外） */
+  const remove = (path: string) => {
+    const willEmpty = entries.length === 1 && entries[0].path === path;
     if (willEmpty) {
       Modal.confirm({
         title: '清空目录列表？',
@@ -153,24 +298,28 @@ export default function SessionWorkspacePanel({
         cancelText: '取消',
         onOk: () => {
           dirtyRef.current = true;
-          setPaths([]);
+          setEntries([]);
+          setEditingPath(null);
         },
       });
-      return; // 确认前不真的清空
+      return;
     }
     dirtyRef.current = true;
-    setPaths((ps) => ps.filter((x) => x !== p));
+    setEntries((es) => es.filter((e) => e.path !== path));
+    if (editingPath === path) setEditingPath(null);
   };
 
-  /** 确定 → 关闭与保存彻底分离（三条路，见 services/sessionWorkspaceStore 头注）
-   *  2026-10-30 18:36:36 小欧 - 原实现 `await patchWorkspaces()` 成功才 onClose：一次请求排队 /
-   *  后端被在跑任务占满，弹窗就一直转圈不消失（axios 60s 超时后仍停在原地）。
-   *  改为：本地立即关闭，列表交 workspaceStore 后台提交并裁决结果（200=落地 / 422=逐条点名+留痕 /
-   *  其他=全局错误通道+对账），失败也不回弹面板（不制造"弹窗自己弹回来"）。 */
+  /** 确定 → 本地立即关闭 + 后台提交（不可 await） */
   const confirm = () => {
-    // 没拿到服务端清单就覆盖写 = 用空列表清空会话目录，直接拦（不静默丢数据）
     if (loadState !== 'ready') return;
-    void workspaceStore.commit(sessionId, paths);
+    void workspaceStore.commit(
+      sessionId,
+      entries.map((e) => ({
+        path: e.path,
+        workspace_property: propValue(e.workspace_property),
+        memo: e.memo.trim() || null,
+      }))
+    );
     onClose();
   };
 
@@ -180,9 +329,6 @@ export default function SessionWorkspacePanel({
       width={settingsModalWidth.display}
       destroyOnHidden
       maskClosable
-      // 2026-10-30 18:36:36 小欧 - 去掉 confirmLoading：保存已不在弹窗内等待，
-      //   按钮不再有"转圈到超时"的中间态（关闭由本地一次点击立即完成）
-      // 2026-10-30 小欧 - 未拿到服务端清单(listing 未就绪)一律不许覆盖写
       okButtonProps={{ disabled: loadState !== 'ready' }}
       title="事项工作区"
       onOk={confirm}
@@ -190,8 +336,7 @@ export default function SessionWorkspacePanel({
       okText="确定"
       cancelText="取消"
     >
-      {/* ① 只读区：项目根 + 授权目录，仅显示无增删（决策82）
-       *  2026-10-10 小欧 UI优化：分行独立 + 长路径省略可复制，不挤版 */}
+      {/* ① 只读区：项目根 + 授权目录，仅显示无增删（决策82） */}
       <div
         style={{
           background: chatTokens.colorPrimaryBg,
@@ -249,7 +394,6 @@ export default function SessionWorkspacePanel({
         style={{ marginTop: Spacing.MD }}
         loading={loadState === 'loading'}
         locale={{
-          // 2026-10-10 小欧 UI优化：空态用 Empty 组件（有图标有留白，不空空白框）
           emptyText: (
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -258,68 +402,141 @@ export default function SessionWorkspacePanel({
           ),
         }}
         dataSource={[
-          ...paths.map((p) => ({ key: p, path: p, reason: '' })),
+          ...entries.map((e) => ({
+            key: e.path,
+            kind: 'ok' as const,
+            path: e.path,
+            draft: e,
+            reason: '',
+          })),
           ...unusable.map((u) => ({
             key: `u_${u.path}`,
+            kind: 'bad' as const,
             path: u.path,
+            draft: null as WsDraft | null,
             reason: u.reason,
           })),
         ]}
         renderItem={(it) => {
-          const isUnusable = it.reason !== '';
+          const e = it.draft;
+          const editing = !!e && editingPath === e.path;
           return (
             <List.Item
               actions={
-                isUnusable
-                  ? undefined // 不可用项不给删除键，防误操作
-                  : [
-                      // 2026-10-10 小欧 UI优化：Tooltip hover 反馈 + text 按钮原生 hover 态
+                e
+                  ? [
+                      <Tooltip key="edit" title="编辑该目录">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={() => startEdit(e)}
+                        />
+                      </Tooltip>,
                       <Tooltip key="del" title="移除该目录">
                         <Button
                           type="text"
-                          danger
                           size="small"
+                          danger
                           icon={<DeleteOutlined />}
-                          onClick={() => remove(it.path)}
+                          onClick={() => remove(e.path)}
                         />
                       </Tooltip>,
                     ]
+                  : undefined
               }
             >
-              <List.Item.Meta
-                title={
-                  // 2026-10-10 小欧 UI优化：长路径省略 + hover 现全路径，× 不会被挤掉
-                  <Typography.Text
-                    ellipsis={{ tooltip: it.path }}
-                    style={{
-                      fontSize: FontSize.SECONDARY,
-                      color: isUnusable
-                        ? chatTokens.colorTextSecondary
-                        : chatTokens.colorText,
+              {editing && e ? (
+                /* 编辑态：path + 属性 + memo 三字段全可改 */
+                <div style={{ width: '100%' }}>
+                  <Input
+                    value={editPath}
+                    placeholder="目录路径"
+                    status={editErr ? 'error' : undefined}
+                    onChange={(ev) => {
+                      setEditPath(ev.target.value);
+                      setEditErr('');
                     }}
+                    onPressEnter={saveEdit}
+                  />
+                  {editErr && (
+                    <Typography.Text type="danger" style={{ fontSize: FontSize.SECONDARY }}>
+                      {editErr}
+                    </Typography.Text>
+                  )}
+                  <Space.Compact style={{ width: '100%', marginTop: 6 }}>
+                    <AutoComplete
+                      value={editProp}
+                      options={propOptions}
+                      onChange={setEditProp}
+                      style={{ flex: 1 }}
+                      placeholder="工作区属性"
+                    />
+                    <Input
+                      value={editMemo}
+                      placeholder="备注（可选）"
+                      onChange={(ev) => setEditMemo(ev.target.value)}
+                      onPressEnter={saveEdit}
+                      style={{ flex: 1 }}
+                    />
+                  </Space.Compact>
+                  <Space style={{ marginTop: 6 }}>
+                    <Button type="primary" size="small" onClick={saveEdit}>
+                      保存
+                    </Button>
+                    <Button size="small" onClick={cancelEdit}>
+                      取消
+                    </Button>
+                  </Space>
+                </div>
+              ) : e ? (
+                /* 展示态：path + 属性 Tag + memo + 默认标记 */
+                <Space size={Spacing.XS} style={{ width: '100%' }}>
+                  <Typography.Text
+                    ellipsis={{ tooltip: e.path }}
+                    style={{ fontSize: FontSize.SECONDARY, flex: 1 }}
+                  >
+                    {e.path}
+                  </Typography.Text>
+                  {e.is_default && <Tag color="gold">默认</Tag>}
+                  <Tag color={PROP_COLORS[propValue(e.workspace_property)] || 'default'}>
+                    {propLabel(e.workspace_property)}
+                  </Tag>
+                  {e.memo && (
+                    <Typography.Text
+                      type="secondary"
+                      ellipsis={{ tooltip: e.memo }}
+                      style={{ fontSize: FontSize.SECONDARY }}
+                    >
+                      {e.memo}
+                    </Typography.Text>
+                  )}
+                </Space>
+              ) : (
+                /* 不可用项：原 path + 原因，置灰，无编辑/删除 */
+                <>
+                  <Typography.Text
+                    type="secondary"
+                    delete
+                    ellipsis={{ tooltip: it.path }}
+                    style={{ fontSize: FontSize.SECONDARY }}
                   >
                     {it.path}
                   </Typography.Text>
-                }
-                description={
-                  // 2026-10-10 小欧: v2.0 已删 is_default 字段，后端不告知"哪条是默认目录"，
-                  //   故不渲染"默认"标签（原先用 paths[0] 猜是错的，会随排序失效）
-                  isUnusable ? (
-                    <Typography.Text
-                      type="secondary"
-                      style={{ fontSize: FontSize.SECONDARY }}
-                    >
-                      {it.reason}
-                    </Typography.Text>
-                  ) : null
-                }
-              />
+                  <Typography.Text
+                    type="secondary"
+                    style={{ marginLeft: Spacing.XS, fontSize: FontSize.SECONDARY }}
+                  >
+                    {it.reason}
+                  </Typography.Text>
+                </>
+              )}
             </List.Item>
           );
         }}
       />
 
-      {/* 2026-10-30 小欧 - 取数失败: 明确告知"暂不能保存"并给重试入口, 不放任盲写 */}
+      {/* 取数失败: 明确告知"暂不能保存"并给重试入口 */}
       {loadState === 'failed' && (
         <div
           style={{
@@ -341,9 +558,8 @@ export default function SessionWorkspacePanel({
         </div>
       )}
 
-      {/* ④ 输入区：格式校验在前，不发请求
-          2026-10-10 小欧 UI优化：按钮只留图标（不挤），输入框独占余宽 */}
-      <Space.Compact style={{ width: '100%' }}>
+      {/* 新增输入区：两行 = 路径 + 属性AutoComplete / 备注 + 添加按钮 */}
+      <Space.Compact style={{ width: '100%', marginTop: Spacing.SM }}>
         <Input
           style={{ flex: 1 }}
           placeholder="添加已有目录…（绝对路径）"
@@ -353,13 +569,31 @@ export default function SessionWorkspacePanel({
             setInput(e.target.value);
             setInputErr('');
           }}
-          onPressEnter={addInput}
+          onPressEnter={addEntry}
+        />
+        <AutoComplete
+          value={propInput}
+          options={propOptions}
+          onChange={setPropInput}
+          style={{ width: 130 }}
+          placeholder="属性"
+        />
+      </Space.Compact>
+      <Space.Compact style={{ width: '100%', marginTop: 4 }}>
+        <Input
+          style={{ flex: 1 }}
+          placeholder="备注（可选，如：后端源码、产物输出、别碰 legacy）"
+          value={memoInput}
+          onChange={(e) => setMemoInput(e.target.value)}
+          onPressEnter={addEntry}
         />
         <Button
           icon={<PlusOutlined />}
-          onClick={addInput}
+          onClick={addEntry}
           aria-label="添加目录"
-        />
+        >
+          添加
+        </Button>
       </Space.Compact>
       {inputErr && (
         <Typography.Text
@@ -369,8 +603,7 @@ export default function SessionWorkspacePanel({
         </Typography.Text>
       )}
 
-      {/* 被拒留痕（#3）：自动清除的条目在此可回看，不靠一闪而过的 toast
-          2026-10-10 小欧 UI优化：中性虚线框（colorBorder）降噪，标题行保留 colorError */}
+      {/* 被拒留痕：自动清除的条目在此可回看 */}
       {rejected.length > 0 && (
         <div
           style={{

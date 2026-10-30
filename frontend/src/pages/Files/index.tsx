@@ -67,6 +67,10 @@
 // 2026-10-30 小欧 - 引用提示统一走 quoteWithToast(成功/超限/读取失败三分支唯一实现): 原实现漏 too_many 分支,
 //   超上限被报成"读取失败", 用户会去检查一个根本没坏的文件 — 小欧-2026-10-30
 
+// 2026-10-30 小欧 - [54]全链路重构: 「设为会话工作目录」PATCH 全量覆盖必须携带既有三字段
+//   (path/workspace_property/memo), 防属性/备注被清空; 读回时按 path 匹配旧值回填。 — 小欧-2026-10-30
+
+
 /**
  * /files —— 文件管理页（项目根目录浏览 + 文本查看）
  *
@@ -718,12 +722,19 @@ const FilesPage: React.FC = () => {
       }
       try {
         const cur = await sessionApi.getWorkspaces(sessionId);
-        const paths = cur.workspaces.map((w) => w.path);
-        if (paths.some((p) => samePath(p, abs))) {
+        const items = cur.workspaces.map((w) => ({
+          path: w.path,
+          workspace_property: w.workspace_property || 'read_write',
+          memo: w.memo || null,
+        }));
+        if (items.some((p) => samePath(p.path, abs))) {
           showSuccess(`「${dir.name}」已是事项目录`);
           return;
         }
-        await sessionApi.patchWorkspaces(sessionId, [...paths, abs]);
+        await sessionApi.patchWorkspaces(sessionId, [
+          ...items,
+          { path: abs, workspace_property: 'read_write', memo: null },
+        ]);
         showSuccess(`已设为事项目录：${dir.name}`);
       } catch (e: unknown) {
         // 422 信封：{success:false, error:{workspace_rejected:[{path,reason}]}}（全局异常处理器包装）

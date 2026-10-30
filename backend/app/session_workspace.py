@@ -6,6 +6,10 @@
 # 2026-10-10 - 小欧 - 概念订正: 删 is_default / manual_paths —— 本快照只装"会话使用的目录",
 #   表里没有"授权目录"可供区分(授权归全局 config), 故无需分档。
 # 2026-10-15 北京老陈裁定(分层) - 自 app/tools/context.py 迁入: 本组被 safety(3处)/tools(1处)/services(1处) 四方共用, 寄居 tools 层使 safety 必然越层; app 根是本项目既有中立层(config/constants 六层全 import), 迁此四方依赖方向全合法。业务逻辑逐字搬迁不改。
+
+# 2026-10-30 小欧 - [54]全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
+#   (标注类, 不参与安全判定; build 零改动, 字段由构造方填充) — 小欧-2026-10-30
+
 """
 session_workspace — 会话工作区任务级快照
 
@@ -25,8 +29,15 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class WorkspaceEntry:
-    """单条会话使用的目录。frozen: 快照只读, 消费方只读不写"""
+    """单条会话使用的目录。frozen: 快照只读, 消费方只读不写。
+
+    workspace_property/memo/is_default 是标注类字段（给人看、给 LLM 看），
+    **不参与任何安全裁决** —— WorkspaceSnapshot.all_paths 只由 path 构成，
+    安全判定链路看不到它们。"""
     path: str
+    workspace_property: str = "read_write"   # 工作区属性（read_only/read_write/write/自定义）
+    memo: Optional[str] = None               # 目录备注说明（可选）
+    is_default: bool = False                 # 是否本会话默认工作区
 
 
 @dataclass(frozen=True)

@@ -39,6 +39,10 @@
 // 编辑历史: 2026-08-28 老杨 - setPagination使用函数式更新避免闭包陈旧
 // 编辑历史: 2026-08-28 老杨 - catch中使用ref.current避免闭包陈旧值
 // 编辑历史: 2026-10-11 11:38:21 小欧 - 北京老陈令「会话卡片加会话事务目录」: 卡片第2/3行之间插独立目录行(FolderOutlined 图标 + 路径, 只取 workspaces 用户工作目录, 不取 project_root/allowed_dirs 配置字段); 0 个不渲染, 多个取前 2 +N, 超长省略 + Tooltip 全文; 列表加载后 Promise.all 并发取各会话 workspaces(单个失败降级空数组) — 小欧-2026-10-11
+
+// 编辑历史: 2026-10-30 小欧 - [54]全链路重构: workspaceMap 升级为 WorkspaceEntry[](含属性/memo/is_default);
+//  卡片目录行展示默认 Tag + 属性 Tag + memo Tooltip。 — 小欧-2026-10-30
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Card,
@@ -68,6 +72,7 @@ import {
   FolderOutlined,
 } from '@ant-design/icons';
 import { sessionApi, type Session } from '../../services/api/session.api';
+import type { WorkspaceEntry } from '@/types/chat';
 // [63] 5.19 v1.30：删除会话确认后清理 Store（4.6.2 语义，destroySession 见 5.4）
 import { chatStreamStore } from '@/features/chat/streams/chatStreamStore';
 import { getActiveSessionStatusList } from '@/features/chat/streams/chatStreamStore';
@@ -101,9 +106,9 @@ const HistoryPage: React.FC = () => {
   // 2026-10-11 小欧 北京老陈令「会话卡片加会话事务目录」: 每个会话的工作目录列表
   //   只取 workspaces(用户可增删的工作目录), 不取 project_root/allowed_dirs(配置决定的只读字段,
   //   已在设置页展示, 卡片是"会话卡片"不是"配置卡片", 避免信息过载)。0 个不显示, 多个截断+Tooltip。
-  const [workspaceMap, setWorkspaceMap] = useState<Map<string, string[]>>(
-    new Map()
-  );
+  const [workspaceMap, setWorkspaceMap] = useState<
+    Map<string, WorkspaceEntry[]>
+  >(new Map());
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
   const keywordRef = useRef(keyword);
@@ -167,9 +172,14 @@ const HistoryPage: React.FC = () => {
           response.sessions.map(async (s) => {
             try {
               const r = await sessionApi.getWorkspaces(s.session_id);
-              return [s.session_id, r.workspaces.map((w) => w.path)] as const;
+              return [s.session_id, r.workspaces.map((w) => ({
+                path: w.path,
+                workspace_property: w.workspace_property || 'read_write',
+                memo: w.memo || null,
+                is_default: Boolean(w.is_default),
+              })) as WorkspaceEntry[]] as const;
             } catch {
-              return [s.session_id, [] as string[]] as const;
+              return [s.session_id, [] as WorkspaceEntry[]] as const;
             }
           })
         ).then((entries) => setWorkspaceMap(new Map(entries)));
@@ -666,12 +676,16 @@ const HistoryPage: React.FC = () => {
                           </Space>
                         </div>
 
-                        {/* 2026-10-11 小欧 北京老陈令「会话事务目录」: 独立行, 0个不显示, 多个截断+Tooltip */}
+                        {/* 2026-10-11 小欧 北京老陈令「会话事务目录」: 独立行, 0个不显示, 多个截断+Tooltip
+                            2026-10-28 小欧 - [54] 升级为 WorkspaceEntry[]：展示 path + 属性 Tag + memo + 默认标记 */}
                         {(() => {
-                          const paths = workspaceMap.get(session.session_id);
-                          if (!paths || paths.length === 0) return null;
-                          const display = paths.slice(0, 2);
-                          const extra = paths.length - display.length;
+                          const wsList = workspaceMap.get(session.session_id);
+                          if (!wsList || wsList.length === 0) return null;
+                          const display = wsList.slice(0, 2);
+                          const extra = wsList.length - display.length;
+                          const tooltipText = wsList.map((w) =>
+                            `${w.path}${w.is_default ? ' (默认)' : ''} [${w.workspace_property || 'read_write'}]${w.memo ? ` ${w.memo}` : ''}`
+                          ).join('\n');
                           return (
                             <div
                               style={{
@@ -688,7 +702,7 @@ const HistoryPage: React.FC = () => {
                                   flexShrink: 0,
                                 }}
                               />
-                              <Tooltip title={paths.join('\n')}>
+                              <Tooltip title={tooltipText}>
                                 <Typography.Text
                                   style={{
                                     fontSize: 12,
@@ -697,10 +711,13 @@ const HistoryPage: React.FC = () => {
                                   }}
                                   ellipsis
                                 >
-                                  {display.join(' · ')}
+                                  {display.map((w) => w.path).join(' · ')}
                                   {extra > 0 && ` +${extra}`}
                                 </Typography.Text>
                               </Tooltip>
+                              {wsList.some((w) => w.is_default) && (
+                                <Tag color="gold" style={{ fontSize: 11 }}>默认</Tag>
+                              )}
                             </div>
                           );
                         })()}

@@ -19,6 +19,10 @@
 # 2026-10-03 - 小欧 - 文档[4] 5.7.7/5.7.8 废止: 删除 PATCH /sessions/{id}/link 端点(北京老陈定案开关只准随消息发出, 严禁独立影响后端; 前端零调用)。写入口收敛为唯一一条: 消息体 link_enabled -> stream_orchestrator -> storage.set_session_link_conn。
 # 2026-10-10 - 小欧 - 新增会话 Workspace 读写端点(GET/PATCH /sessions/{id}/workspaces), 写口唯一,
 #   body 即全量覆盖; 禁区整单 422, 会话不存在 404。
+
+# 2026-10-30 小欧 - [54]全链路重构: WorkspaceItem/WorkspaceUpdate 收单形态(list[WorkspaceItem], 不收 list[str]);
+#   GET 返回四字段(path/workspace_property/memo/is_default); PATCH 传 dict 三元组。 — 小欧-2026-10-30
+
 """
 sessions — 会话API路由薄壳 (A7 后路由+DTO 调 session_service)
 """
@@ -125,9 +129,26 @@ def get_session_detail_endpoint(session_id: str):
     return get_session_info(session_id)
 
 
+class WorkspaceItem(BaseModel):
+    """PATCH 单条目录：path + workspace_property(属性文字标签) + memo(备注)。
+
+    属性/memo 是标注类字段，不参与安全判定。
+    DTO 层**不做长度上限**：超长由 service 的 _normalize_ws_meta 截断放行，
+    在此拦会让整单 422，与"属性乱填不拒单"的设计前提冲突。"""
+    path: str = Field(..., description="目录绝对路径")
+    workspace_property: str = Field(
+        "read_write", description="工作区属性（read_only/read_write/write/自定义），缺失/空 → read_write")
+    memo: Optional[str] = Field(
+        None, description="目录备注说明（可选，≤256字符，禁换行；超长由 service 截断）")
+
+
 class WorkspaceUpdate(BaseModel):
-    """PATCH body 即全量覆盖写: 传完整新数组, 空数组=显式清空, 不存在 null 语义"""
-    session_workspaces: list[str] = Field(..., description="会话事务目录列表（全量覆盖；[] = 清空）")
+    """PATCH body 即全量覆盖写：传完整新数组，空数组 = 显式清空。
+
+    固定 list[WorkspaceItem] 单一形态。API 与前端同版本发布，不收 list[str]；
+    归一（属性/备注缺省、截断）在 service 一处做，DTO 层不重复。"""
+    session_workspaces: list[WorkspaceItem] = Field(
+        ..., description="会话工作区目录列表（全量覆盖；[] = 清空）")
 
 
 @router.get("/sessions/{session_id}/workspaces")
@@ -153,7 +174,8 @@ def get_session_workspaces_endpoint(session_id: str):
     _cfg = get_config()
     return {
         "session_id": session_id,
-        "workspaces": [{"path": p} for p in effective],
+        "workspaces": [{"path": p, "workspace_property": r, "memo": m, "is_default": bool(d)}
+                       for p, r, m, d in effective],
         "unusable": unusable,
         "project_root": _cfg.get_project_root(),
         "allowed_dirs": list(_cfg.get_allowed_dirs() or []),
@@ -166,7 +188,7 @@ def set_session_workspaces_endpoint(session_id: str, body: WorkspaceUpdate):
     命中禁区整单 422, 只拒本次 PATCH, 不牵连任何消息。
     会话不存在/已删 → 404, 先于写库(FK=ON 下免 sqlite3.IntegrityError→500)。
     ⚠ 只改数据库行: **不删除磁盘目录** —— 面板移除条目, 目录留在磁盘由用户自行处置。
-    元素类型由 WorkspaceUpdate: list[str] 兜底, 路径非法(空串/相对路径)由
+    元素类型由 WorkspaceUpdate: list[WorkspaceItem] 单一形态, 路径非法(空串/相对路径)由
     _normalize_ws_path 单一真源归入 rejected, 此处不重复校验。"""
     from app.services.chat.workspace_service import (
         set_session_workspaces,
@@ -176,7 +198,10 @@ def set_session_workspaces_endpoint(session_id: str, body: WorkspaceUpdate):
     with db.get_conn("chat") as conn:
         if not session_exists(conn, session_id):
             raise HTTPException(status_code=404, detail="会话不存在")
-        rejected = set_session_workspaces(conn, session_id, body.session_workspaces)
+        rejected = set_session_workspaces(
+            conn, session_id,
+            [{"path": i.path, "workspace_property": i.workspace_property, "memo": i.memo}
+             for i in body.session_workspaces])
     if rejected:
         raise HTTPException(
             status_code=422,

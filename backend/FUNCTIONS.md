@@ -294,20 +294,24 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 
 | 函数名 | 功能 | 参数 | 返回值 |
 |--------|------|------|--------|
-| `get_session_workspaces` | 读该会话使用的目录行（`ORDER BY rowid`） | conn, session_id | list[Row] |
-| `_normalize_ws_path` | **归一化唯一源**：空串/非绝对/超长硬拒 → resolve + 去尾分隔符，**保大小写入库**（去重键 casefold + 库级 NOCASE，存储无损）。⚠ 空串必须硬拒；仍可能抛 OSError/ValueError，调用方必须捕获 | p: str | str |
+| `ws_prop_value` | **属性归一化唯一源（入库值）**：None/空→read_write；中文标签→机器值；自定义原样保留。纯文字标签不做权限判定 | raw | str |
+| `ws_prop_label` | **属性展示/注入唯一源**：机器值→中文标签；自定义原样；缺失→读写工作区 | raw | str |
+| `_normalize_ws_meta` | **属性/备注归一化唯一源**：trim→空归默认→超长截断→memo换行转空格。非法值放行不拒单 | prop, memo | tuple[str, Optional[str]] |
+| `get_session_workspaces` | 读该会话使用的目录行（含属性/备注/默认标志，`ORDER BY rowid`） | conn, session_id | list[Row] |
+| `_normalize_ws_path` | **归一化唯一源**：空串/非绝对/超长硬拒 → resolve + 去尾分隔符，**保大小写入库**。⚠ 空串必须硬拒；仍可能抛 OSError/ValueError，调用方必须捕获 | p: str | str |
 | `_ws_deny_reason` | 会话目录**合法性判据**：`_is_forbidden_path` **串联** `validate_path(mode="write")` 的 `category=="system"` + 宽根规则 | p: str | Optional[str] |
 | `_is_broad_root` | 宽根判据：家目录本身及其上级禁；家目录**之内**不拦。**fail-closed**：解析异常按宽根拒绝 + 告警 | p: str | bool |
 | `_ws_precheck` | 逐条走合法性判据，返回被拒清单（不抛异常，调用方整单 422） | paths: list[str] | list[dict] |
-| `set_session_workspaces` | **PATCH 唯一写入口**：数量先拦 → 归一化 → 去重(casefold 键) → 预检 → 写库。⚠ **只改数据库行，绝不删除磁盘目录** | conn, session_id, raw_paths | list[dict] |
-| `_ws_apply` | 覆盖写（PATCH 唯一写库实现）：DELETE 全删 → executemany INSERT | conn, session_id, paths | None |
-| `classify_workspace_rows` | **过滤唯一真源**：行→(有效路径集 `list[str]`, 不可用清单)。禁区判定先于存在判定；`is_dir()`（文件不收）；unusable 带机器可读 `kind`(illegal/denied/missing) | rows | Tuple[list, list] |
-| `reconcile_session_workspaces` | **进入会话唯一真源**：空则造默认目录 → classify 裁决 → 禁区行清库 / 缺目录建目录 → 返回有效路径集 | conn, session_id | list[str] |
-| `_load_workspaces_conn` | 任务快照源：读行→过滤，不可用行告警；conn 由调用方经 db.atxn 传入 | conn, session_id | list[str] |
+| `set_session_workspaces` | **PATCH 唯一写入口**：数量先拦 → 归一化 → 去重(casefold 键) → 预检 → 写库。入参固定 list[dict]（path/workspace_property/memo），不收 list[str]。⚠ **只改数据库行，绝不删除磁盘目录** | conn, session_id, items: list[dict] | list[dict] |
+| `_ws_apply` | 覆盖写（PATCH 唯一写库实现）：DELETE 全删 → executemany INSERT(path, prop, memo, is_default)。is_default 按 path 继承旧默认行 | conn, session_id, entries: list[tuple] | None |
+| `classify_workspace_rows` | **过滤唯一真源**：行→(有效条目集 `list[tuple]`, 不可用清单)。属性/备注/默认标志只透传不参与裁决；禁区判定先于存在判定；`is_dir()`；unusable 带机器可读 `kind` | rows | Tuple[list, list] |
+| `reconcile_session_workspaces` | **创建新Task唯一落盘入口**：默认工作区始终存在（项目根感知+旧默认降级）→ classify 裁决 → 禁区行清库 / 缺目录建目录 → 返回四元组 | conn, session_id | list[tuple[str, str, Optional[str], bool]] |
+| `_load_workspaces_conn` | 任务快照源：读行→过滤（复用 classify），不可用行告警；返回四元组供 _load_ws_snapshot 构造 | conn, session_id | list[tuple[str, str, Optional[str], bool]] |
 | `_build_default_workspace_dir` | 默认目录名 = `{项目根}\{时间}-{会话标识前4位}`（编排器下沉至此；BUG-13 撤回：完整 session_id 属过度工程，已恢复 [:4]） | session_id: str | Optional[str] |
 | `session_exists` | 会话存在且未删才放行（`COALESCE(is_deleted,FALSE)`，NULL 按未删）；否则端点返 404 | conn, session_id | bool |
 
-> 落点说明(2026-10-10 小欧): ①判据接全局 `validate_path` 是会审关键修正。②**10轮会审20bug已修**(v5.5)：过滤收敛到 classify 单一真源（删 `load_effective_workspaces` 死函数、删 `(path,恒0)` 裸 tuple）；`is_dir()` 拒文件；上限前置；NULL 用 COALESCE；宽根 fail-closed；存值保大小写 + 库级 NOCASE；上限 200；快照 build 去嵌套。（BUG-13“目录名前4位重名”系误报已撤回：验证场景系人为构造，真实概率可忽略，恢复 [:4] 原设计。）常量 `MAX_WORKSPACES=64` / `MAX_PATH_CHARS=200` 同文件定义。
+> 落点说明(2026-10-10 小欧): ①判据接全局 `validate_path` 是会审关键修正。②**10轮会审20bug已修**(v5.5)：过滤收敛到 classify 单一真源（删 `load_effective_workspaces` 死函数、删 `(path,恒0)` 裸 tuple）；`is_dir()` 拒文件；上限前置；NULL 用 COALESCE；宽根 fail-closed；存值保大小写 + 库级 NOCASE；快照 build 去嵌套。（BUG-13"目录名前4位重名"系误报已撤回：验证场景系人为构造，真实概率可忽略，恢复 [:4] 原设计。）常量 `MAX_WORKSPACES=64` / `MAX_PATH_CHARS=240` 同文件定义。
+> 2026-10-28 小欧 - [54]全链路重构: 新增 `ws_prop_value`/`ws_prop_label`/`_normalize_ws_meta`（属性归一化唯一源）；全链路四元组化(prop/memo/is_default)；reconcile 重写为始终创建默认工作区(项目根感知+旧默认降级)。标注字段不参与安全判定。
 
 ### 3.7 LLM 调用层（`services/agent/llm_call.py`）(2026-10-20 新增 §, 小欧)
 

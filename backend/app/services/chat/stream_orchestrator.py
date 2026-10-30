@@ -235,6 +235,10 @@
 #   (1 行汇总 log_and_print + ≤5 行明细 logger.info) → refs_ready notice(事件列表可见, 数字同源);
 #   删除原两处只在有回执时打点的 "[refs] first/interject resolved=..." info(成功路径零痕迹)。 — 小欧-2026-10-30
 
+# 2026-10-30 小欧 - [54]全链路重构: _load_ws_snapshot 解包四元组(path, prop, memo, is_default);
+#   _append_ws_suffix 拼标注(属性Tag+memo+默认标注+写工作区尾句), 首行明确"引导参考不改变可写性判定"。 — 小欧-2026-10-30
+
+
 """
 stream_orchestrator — 聊天流编排器(services 层)
 
@@ -388,9 +392,9 @@ async def validate_chat_config():
         }
 
 
-def _ensure_and_load_workspaces(conn, session_id: str) -> list[str]:
+def _ensure_and_load_workspaces(conn, session_id: str) -> list[tuple[str, str, Optional[str], bool]]:
     """进入会话·建立一条规则 —— 委托 `workspace_service.reconcile_session_workspaces`
-    （过滤唯一真源）。本函数只剩 atxn 回调壳。
+    （过滤唯一真源）。本函数只剩 atxn 回调壳。返回四元组 [(path, prop, memo, is_default)]。
 
     ⚠ 必须是**同步 def**：本函数是 db.atxn 回调，在 to_thread worker 内执行，
       atxn→_run_txn 只 return fn(conn)、**不会 await** —— 写成 async def 则 lambda
@@ -407,8 +411,8 @@ def _ensure_and_load_workspaces(conn, session_id: str) -> list[str]:
 async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot], bool]:
     """取本任务 workspace 快照(懒建+读库一体)。**失败一律降级为 (None, False), 绝不抛出**。
 
-    独立成函数(SLAP): 编排器只负责"拿到就设、没拿到就跳过", 异常边界集中在此一处,
-    可被单测直接驱动(旧实现内联在编排器里, 只能靠源码字符串断言, 等于没测)。
+    rows 现为 (path, workspace_property, memo, is_default) 四元组，
+    解包构造带三字段的 WorkspaceEntry。
 
     retry_locked=2: atxn 默认 0(database.py:321 明示"不传即零重试"), 而 busy_timeout=500ms
     + WAL 单写者下, 多会话并发起跑撞锁概率上升; 有限重试是本仓既有惯例。
@@ -416,30 +420,47 @@ async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot
     try:
         rows = await db.atxn("chat", lambda c: _ensure_and_load_workspaces(c, session_id),
                              retry_locked=2)
-        return WorkspaceSnapshot.build([WorkspaceEntry(path=p) for p in rows]), True
+        return WorkspaceSnapshot.build(
+            [WorkspaceEntry(path=p, workspace_property=r, memo=m, is_default=bool(d))
+             for p, r, m, d in rows]), True
     except Exception as _wse:
         logger.warning(f"[chat] workspace 快照构建失败, 本任务按无 workspace 兜底运行: {_wse}")
         return None, False
 
 
 def _append_ws_suffix(user_input: str) -> str:
-    """拼 user 尾注入块（非空才拼）。独立成函数，编排器内联即 SLAP 违规。
+    """拼 user 尾注入块（非空才拼）。单层标签：<会话工作目录>。
 
-    单层标签：<会话工作目录> —— 块名保留, 与"项目根目录"构成全系统两个目录术语。
-
-    2026-10-20 小欧 术语与口径统一(): 目录术语全系统只留两个 — 项目根目录
-      (整体工作根)与会话工作目录(本目录); 白名单是并集, 本目录只是默认落点。
-      口径单源: 路径是否可写一律由安全矩阵与确认层裁决, prompt 不再预言
-      "未列明目录需临时授权"(旧文案会让 LLM 把用户明确指定的路径误判为需授权,
-      实测诱发盘根写弹窗后自搬目录到会话工作区, 测试断言落空)。"""
+    目录行升级为 `path  [属性标签]  memo`。
+    属性是**文字标签**，不是权限声明 —— 首行文案明确写"引导"，避免 LLM 把
+    [读取工作区] 误当成"不可写"的硬约束（本系统无只读区域设置，
+    可写性一律由安全矩阵裁决）。
+    is_default=1 的默认工作区行追加 `(默认工作区)` 标注，
+    让 LLM 明确"这是本会话自动创建的隔离区，临时/中间文件优先落这里"。"""
     snap = get_ws_snapshot()
     if not snap or not snap.all_paths:
         return user_input                    # 空/无快照不追加，不污染 prompt
-    lines = "\n".join(f"  - {p}" for p in sorted(snap.all_paths))
+
+    from app.services.chat.workspace_service import ws_prop_label, WS_PROP_WRITE
+    _lines = []
+    for e in sorted(snap.entries, key=lambda x: x.path):
+        _line = f"  - {e.path}    [{ws_prop_label(e.workspace_property)}]"
+        if e.memo:
+            _line += f"  {e.memo}"
+        if e.is_default:
+            _line += "  (默认工作区)"
+        _lines.append(_line)
+    lines = "\n".join(_lines)
+
+    _has_write = any(e.workspace_property == WS_PROP_WRITE for e in snap.entries)
+    _tail = ("要求你临时/中间文件优先写入[写工作区]目录."
+             if _has_write else
+             "要求你临时/中间文件优先写入事项工作区.")
+
     return (
         f"{user_input}\n\n<会话工作目录>\n"
-        f"本次任务新增会话工作目录：\n{lines}\n"
-        "要求你临时/中间文件优先写入会话工作目录.\n"
+        f"本次任务事项工作区及属性标注（引导参考，不改变可写性判定）：\n{lines}\n"
+        f"{_tail}\n"
         "</会话工作目录>\n"
     )
 

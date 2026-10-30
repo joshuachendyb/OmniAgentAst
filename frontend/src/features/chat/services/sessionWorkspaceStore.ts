@@ -27,7 +27,11 @@
  *
  * @author 小欧
  * @date 2026-10-30
+ *
+ * 编辑历史: 2026-10-30 小欧 - [54]全链路重构: commit 入参升级为 WorkspacePatchItem[]
+ *   ({path, workspace_property, memo}), 不再收 string[]; 属性/备注随行上行。 — 小欧-2026-10-30
  */
+
 import { sessionApi } from '@/services/api/session.api';
 import { handleError, showMessage, ErrorType } from '@/services/error/handler';
 import type { WorkspaceEntry } from '@/types/chat';
@@ -37,6 +41,12 @@ export interface WorkspaceRejection {
   path: string;
   reason: string;
 }
+
+/** 提交载荷：只有三个可写字段；is_default 由后端 reconcile / _ws_apply 维护 */
+export type WorkspacePatchItem = Pick<
+  WorkspaceEntry,
+  'path' | 'workspace_property' | 'memo'
+>;
 
 interface WorkspaceState {
   /** 当前所属会话；异步结果回来时与它比对，不同即丢弃（切会话竞态） */
@@ -119,14 +129,18 @@ const loadSession = async (sessionId: string): Promise<void> => {
  *  成功：以请求列表为权威落位（后端 422 是整单拒绝，200 即库中全部有效行）；
  *  422：逐条点名 + 留痕入 store + 对账；
  *  其他：全局错误通道 + 对账。 */
-const commit = async (sessionId: string, paths: string[]): Promise<void> => {
+const commit = async (
+  sessionId: string,
+  items: WorkspacePatchItem[]
+): Promise<void> => {
   const seq = ++commitSeq;
   try {
-    await sessionApi.patchWorkspaces(sessionId, paths);
+    await sessionApi.patchWorkspaces(sessionId, items);
     if (seq !== commitSeq || state.sessionId !== sessionId) return;
     setState({
       sessionId,
-      list: paths.map((p) => ({ path: p })),
+      // 成功即以请求列表为权威落位：三字段原样保留，禁止退化成 { path }
+      list: items.map((i) => ({ ...i })),
       notice: [],
     });
   } catch (e: unknown) {

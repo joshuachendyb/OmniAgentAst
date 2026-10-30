@@ -8,6 +8,10 @@
 // 编辑历史: 2026-10-08 小欧 - 文档[11] 3.4.5.2: saveMessage 入参加 allow_interject(开关随消息携带)
 // 编辑历史: 2026-10-10 小欧 - 文档[16] §3.6.1: 新增 getWorkspaces(读会话目录, 含 project_root/allowed_dirs 只读字段) + patchWorkspaces(全量覆盖写, [] = 清空)
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: updateSession拆为updateSessionTitle(只改标题)+updateSessionModel(只改模型), 消除"改标题"与"切模型"耦合(长标题触发422根因) - 小欧-2026-10-24
+
+// 编辑历史: 2026-10-30 小欧 - [54]全链路重构: patchWorkspaces 入参改对象数组
+//   ({path, workspace_property, memo}[]), 不再收 string[]; GET 响应含四字段。 — 小欧-2026-10-30
+
 import api from './client';
 import type { ExecutionStep } from '@/types/execution';
 import type { SessionModelOverride, WorkspacesResponse } from '@/types/chat';
@@ -291,7 +295,11 @@ export const sessionApi = {
   //   20s 未答即按"未确认"处理，随后由 workspaceStore 对账拉回库真值（见 store 头注）。
   patchWorkspaces: async (
     sessionId: string,
-    sessionWorkspaces: string[]
+    sessionWorkspaces: {
+      path: string;
+      workspace_property?: string;
+      memo?: string | null;
+    }[]
   ): Promise<{ success: boolean; session_id: string }> => {
     if (!sessionId || !sessionId.trim()) {
       throw new Error('会话ID不能为空');

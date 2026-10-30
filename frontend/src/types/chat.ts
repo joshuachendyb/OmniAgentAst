@@ -16,6 +16,10 @@
 
 // 编辑历史: 2026-10-29 小欧 - 输入框引用读取权收归后端: ChatRefPayload 删 content 字段
 //   (前端不再上行正文, wire 只带标识; 正文由后端 resolver 读盘拼装) — 小欧-2026-10-29
+
+// 编辑历史: 2026-10-30 小欧 - [54]全链路重构: WorkspaceEntry 增 workspace_property/memo/is_default 三字段
+//   (标注类, 不参与安全判定; 前端只读展示) — 小欧-2026-10-30
+
 /**
  * 流式API响应类型定义
  *
@@ -386,6 +390,12 @@ export interface SendOpts {
  */
 export interface WorkspaceEntry {
   path: string;
+  /** 工作区属性文字标签（read_only/read_write/write/自定义），默认 read_write */
+  workspace_property?: string;
+  /** 目录备注说明，null/undefined = 无备注 */
+  memo?: string | null;
+  /** 是否本会话默认工作区（后端 reconcile 维护，前端只读） */
+  is_default?: boolean;
 }
 
 /**
