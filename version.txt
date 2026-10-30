@@ -1,14 +1,3 @@
-v1.5.3
-更新时间: 2026-10-30 23:07:51 - 小欧-2026-10-30
-## v1.5.2以来 变更汇总(3个commit: feat1/fix1/docs1) - 小欧-2026-10-30
-[2026-10-30 23:07:51 小欧] 范围=v1.5.2以来全部commit(3个); 主线=会话工作区目录[54]全链路四元组化重构实施(workspace_property/memo/is_default三标注字段DB→Service→Snapshot→Prompt→API→前端全链一致+reconcile始终创建默认工作区+属性归一化唯一源+面板草稿升级行内编辑)+read_text_file offset读取修正+[54]一致性核查v17文档; 用户裁定按PATCH记v1.5.3
-### 1.5.3.1 会话工作区四元组化重构（[54] 实施）
-[全链路四元组化重构] feat 9407a95d9 [54]会话工作区目录全链路四元组化重构(workspace_property/memo/is_default三标注字段DB→Service→Snapshot→Prompt→API→前端全链一致+reconcile始终创建默认工作区+属性归一化唯一源+面板草稿升级行内编辑) - 小欧 2026-10-30
-[read_text_file offset修正] fix b3baf8c44 read_text_file offset单独给=读到文件尾, 输出闸门覆盖无上界窗口 - 小欧-2026-10-30
-[54一致性核查v17] docs 94c462d7c [54]会话工作区目录 一致性核查v17(行号刷新/§H改为store架构增量/删backward兼容与YAGNI函数/新增§九10大规范审查) - 小欧-2026-10-30
-
----
-
 v1.5.2
 更新时间: 2026-10-30 20:57:33 - 小欧-2026-10-30
 ## v1.5.1以来 变更汇总(73个commit: fix25/feat12/refactor7/docs26/perf1/test1/chore1) - 小欧-2026-10-30
