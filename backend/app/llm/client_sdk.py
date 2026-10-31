@@ -55,6 +55,11 @@ FC-only重构: 删除mode参数, tools不为None时始终注入 — 小沈 2026-
 编辑历史: 2026-10-28 小欧 - _extract_server_error_message 扩展返回 (message, error_type, error_code) 三要素,
   供 429 限流细分(rate_limit_error/insufficient_quota 等 error.type 判据)与诊断留痕; _raise_http_error 调用点同步解包 —
   小欧-2026-10-28
+编辑历史: 2026-10-31 小欧 - 上线前消息契约归一(真机实测驱动, 非推断): 新增 _normalize_wire_messages/_wire_arguments,
+  由 _build_request_body 单点调用(主链/摘要 feed/纯文本任务全部经此出网, 杜绝各组装处各修一遍)。实测 agnes-2.5-flash
+  与 deepseek-chat 对以下历史消息必 400/422: tool_calls 为对象非数组、tool_calls 元素缺 function/缺 name/缺 type、
+  arguments 为对象或空串或非 JSON 文本、assistant.content=None 且无 tool_calls。归一后请求得以发出去, 而非整轮 400。
+  零改动时原样返回入参对象(不复制不改入参), 常态路径零行为变化 — 小欧-2026-10-31
 """
 
 import asyncio  # 2026-09-20 小欧 软配额信号量 — 小欧-2026-09-20
@@ -188,6 +193,116 @@ class SharedClientLease:
             await self._pool.close()
 
 
+def _wire_arguments(fn_args) -> str:
+    """把 tool_calls.function.arguments 归一成 provider 要求的「非空 + 合法 JSON」字符串 — 小欧-2026-10-31
+
+    存在理由(真机实测, 非推断): agnes-2.5-flash 对 arguments 是对象/空串/纯文本非 JSON 一律 400
+    ("Assistant tool call arguments must be valid JSON"), DeepSeek 对非字符串 422("expected a string")。
+    历史消息里的 arguments 只供模型回看自己当时调了什么, 不会被重新执行, 故此处只归形状不改语义:
+      - 结构体(dict/list)/数字/布尔 → JSON 文本
+      - None / 空串 / 纯空白 → "{}"(模型无参调用的常态形态)
+      - 文本但不是合法 JSON → 包成 {"_raw_args": <原文>}, 原文不丢且请求能发出去
+    输入: fn_args 原始值(任意类型); 输出: 合法 JSON 文本(字符串)。
+    """
+    if isinstance(fn_args, str):
+        if not fn_args.strip():
+            return "{}"
+        try:
+            json.loads(fn_args)
+            return fn_args
+        except (ValueError, TypeError):
+            return json.dumps({"_raw_args": fn_args}, ensure_ascii=False)
+    if fn_args is None:
+        return "{}"
+    try:
+        return json.dumps(fn_args, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return "{}"
+
+
+def _normalize_wire_messages(messages: List[Dict]) -> List[Dict]:
+    """上线前把 assistant.tool_calls 归一成 provider 硬契约形状(不改工具语义) — 小欧-2026-10-31
+
+    适用场景: 请求体构建唯一出口(_build_request_body 调用), 覆盖 FC 主链、压缩摘要 feed、纯文本任务等全部出网请求;
+      单点收口, 不在 message_builder/summary 等各组装处重复实现(DRY)。
+    真机实测(agnes-2.5-flash / deepseek-chat, 逐形态取证)以下历史消息**必被拒**, 故必须在上线前归一:
+      - tool_calls 为对象而非数组            → DeepSeek 422(actual type: map), agnes 容忍
+      - tool_calls 元素缺 function / 缺 name / 缺 type → 两者全部报错
+      - function.arguments 为对象/空串/非 JSON 文本   → 见 _wire_arguments
+      - assistant.content=None 且无 tool_calls       → DeepSeek 400(content or tool_calls must be set)
+    规则(能补则补, 补不了摘除, 绝不留孤儿):
+      ① tool_calls 对象→单元素数组; 非 dict 元素剔除(它没有 id, 不可能有 tool 结果指向它);
+      ② type 缺失→"function"; function 缺失/非 dict→{}; name 缺失→按同 id 的 tool 消息 name 补,
+         补不到(无法判定是哪个工具)→该调用连同其 tool 结果一并摘除;
+      ③ arguments 交 _wire_arguments; ④ content=None 且无 tool_calls→""(两 provider 实测均 200)。
+    输入: messages 待发消息列表。输出: 无需改动时返回**原对象**(零拷贝、常态路径零行为变化);
+      有改动时返回新列表, 入参不被修改(上游可能复用同一列表)。
+    """
+    if not isinstance(messages, list):
+        return messages
+    # tool 消息的 tool_call_id → name: 唯一可用于补 tool_call 缺失 name 的现场证据
+    _name_by_id: Dict[str, str] = {}
+    for _m in messages:
+        if isinstance(_m, dict) and _m.get("role") == "tool":
+            _id, _nm = _m.get("tool_call_id"), _m.get("name")
+            if _id and _nm:
+                _name_by_id[str(_id)] = str(_nm)
+    out: List[Dict] = []
+    _dropped = set()
+    changed = False
+    for _m in messages:
+        if not isinstance(_m, dict) or _m.get("role") != "assistant":
+            out.append(_m)
+            continue
+        _calls = _m.get("tool_calls")
+        if _calls is None:
+            if _m.get("content") is None:
+                out.append({**_m, "content": ""})
+                changed = True
+            else:
+                out.append(_m)
+            continue
+        _src = [_calls] if isinstance(_calls, dict) else (_calls if isinstance(_calls, list) else [])
+        _fixed: List[Dict] = []
+        for _tc in _src:
+            if not isinstance(_tc, dict):
+                changed = True
+                continue
+            _fn_raw = _tc.get("function")
+            _fn = dict(_fn_raw) if isinstance(_fn_raw, dict) else {}
+            _name = _fn.get("name")
+            if not (isinstance(_name, str) and _name.strip()):
+                _name = _name_by_id.get(str(_tc.get("id") or ""), "")
+                if not _name:
+                    _dropped.add(str(_tc.get("id") or ""))
+                    changed = True
+                    continue
+            _new = {**_tc, "type": _tc.get("type") or "function",
+                    "function": {**_fn, "name": _name, "arguments": _wire_arguments(_fn.get("arguments"))}}
+            if _new != _tc:
+                changed = True
+            _fixed.append(_new)
+        if _fixed:
+            _msg = {**_m, "tool_calls": _fixed}
+            if _msg != _m:
+                changed = True
+            out.append(_msg)
+        else:
+            # 调用全被摘(或原本就是空/畸形容器): 该条退化为普通 assistant, content 不能留 None
+            changed = True
+            _msg = {k: v for k, v in _m.items() if k != "tool_calls"}
+            if _msg.get("content") is None:
+                _msg["content"] = ""
+            out.append(_msg)
+    if _dropped:
+        _kept = [m for m in out if not (isinstance(m, dict) and m.get("role") == "tool"
+                                        and str(m.get("tool_call_id") or "") in _dropped)]
+        if len(_kept) != len(out):
+            changed = True
+        out = _kept
+    return out if changed else messages
+
+
 def _build_request_body(
     messages: List[Dict],
     model: str,
@@ -204,8 +319,9 @@ def _build_request_body(
     stream_options: Optional[Dict] = None,
     extra_body: Optional[Dict] = None,
 ) -> Dict:
-    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11; 小沈 2026-06-17 新增parallel_tool_calls; 小健 2026-06-17 新增stream_options; 小欧 2026-07-09 新增extra_body"""
-    body = {"model": model, "messages": messages}
+    """统一构建 LLM 请求体 — FC-only: 无mode参数 — 小沈 2026-06-11; 小沈 2026-06-17 新增parallel_tool_calls; 小健 2026-06-17 新增stream_options; 小欧 2026-07-09 新增extra_body
+    2026-10-31 小欧: messages 出网前经 _normalize_wire_messages 归一(失真历史数据不再整请求 400) — 小欧-2026-10-31"""
+    body = {"model": model, "messages": _normalize_wire_messages(messages)}
     if max_tokens is not None:
         body["max_tokens"] = max_tokens
     if temperature is not None:

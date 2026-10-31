@@ -29,6 +29,13 @@
 #   按 feed 应为 14 条/6981 tok, 即白丢 8 条本可容纳的尾部上下文); ②truncate_tool_call_args 由 assembler 迁入
 #   —— 与 truncate_oversized_message 同为"单条消息超长就截"的切分原语, 装配线只编排不持原语;
 #   ③其原文改存 _args_raw(keep_full_raw 带 key), 不再与 content 原文抢 _raw 同一字段 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 实测修正(北京老陈令): 原"从 JSON 文本中间切"会让 arguments 变成非法 JSON, 真机 provider
+#   agnes 直接 400 "Assistant tool call arguments must be valid JSON"(DeepSeek 不校验, 故不能靠猜), 与"截参数是
+#   防 400 的最后防线"初衷相反; 现改结构化裁剪 _fit_args_json(解析→长字符串值保首→重序列化, 键名/短值/层级
+#   全保留), 非法原文退化为合法 JSON 信封; 顺带修 fn 非 dict 的 TypeError、arguments 为结构体时 str(dict)
+#   产出 Python repr 的问题。 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 无 user 边界的 delta 段改判当前轮: 原默认 last_turn=len(messages) 把整段当旧轮(参数只保 500,
+#   实测 361 字), 模型认不出自己刚写的文件; 改取最后一轮 FC 决策起点作当前轮(仅它按 4000), 其余仍按 500。— 小欧-2026-10-31
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -42,6 +49,8 @@ absolute_start 供 assembler 定位 new_block(对应 generate_chunked_summary �
   一律可按调用方口径(estimator)传入, 保证"按什么尺判就按什么尺裁"。— 小欧-2026-10-31
 """
 from typing import List, Dict, Tuple
+
+import json
 
 from app.logger import logger
 from app.services.agent.compaction_constants import (
@@ -222,6 +231,51 @@ def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:
     return result
 
 
+def _clip_json_strings(node, budget: int):
+    """递归把 JSON 结构里超长的字符串值截到 budget 字(保首), 键名/短值/层级原样 — 小欧 2026-10-31
+
+    存在理由: tool_calls.arguments 在 wire 上必须是**合法 JSON 字符串**(实测 agnes 直接 400
+    "Assistant tool call arguments must be valid JSON"), 所以体积只能从"字符串值"里省, 不能从
+    JSON 文本中间切。
+    """
+    if isinstance(node, str):
+        return node if len(node) <= budget else node[:budget] + "…[split_turn]"
+    if isinstance(node, list):
+        return [_clip_json_strings(x, budget) for x in node]
+    if isinstance(node, dict):
+        return {k: _clip_json_strings(v, budget) for k, v in node.items()}
+    return node
+
+
+def _fit_args_json(args_text: str, limit: int) -> str:
+    """把超长 arguments 压成「合法 JSON + 保首 + 尽量留结构」, 总长不超 limit 量级 — 小欧 2026-10-31
+
+    两种策略(先优后劣):
+      ① 能解析成 dict/list → 逐级收紧"单个字符串值预算"(limit → 2/3 → 1/2 → 1/3 → 1/4 → 64),
+         取第一个整体 <= limit 的结果 —— 键名/短值(如 path)/嵌套层级全保留, 只砍长正文;
+      ② 原文本身不是合法 JSON(历史坏数据) 或结构本身(键名)就超预算 → 退化为合法 JSON 信封
+         {"_truncated":true,"_original_chars":N,"_head":"<首段>"}, 头部可读性仍保留。
+    输出必为合法 JSON —— 这是 provider 的硬要求, 比"多留几个字"重要(不合法 = 整请求 400)。
+    """
+    try:
+        parsed = json.loads(args_text)
+    except Exception:
+        parsed = None
+    if isinstance(parsed, (dict, list)):
+        for _b in (limit, limit * 2 // 3, limit // 2, limit // 3, limit // 4, 64):
+            text = json.dumps(_clip_json_strings(parsed, _b), ensure_ascii=False)
+            if len(text) <= limit:
+                return text
+    env = {"_truncated": True, "_original_chars": len(args_text), "_head": ""}
+    head = args_text[: max(1, limit // 2)]
+    while True:
+        env["_head"] = head
+        text = json.dumps(env, ensure_ascii=False)
+        if len(text) <= limit or not head:
+            return text
+        head = head[: len(head) * 2 // 3]
+
+
 def truncate_tool_call_args(messages: List[Dict]) -> List[Dict]:
     """截断 assistant tool_calls.arguments 超长参数, 保首段 + 留原文 — 小欧 2026-10-31
 
@@ -229,26 +283,37 @@ def truncate_tool_call_args(messages: List[Dict]) -> List[Dict]:
       (截 content / 清 tool 输出)对它空转(参数不在 content 里), 不截就只能靠丢整轮, 那是拿整段对话换体积。
     使用方法: 传消息列表, 返回参数已截断的新列表(无超长参数则原样返回元素, 不拷贝)。
     输入: messages 消息列表。
-    输出: List[Dict]; 超长 arguments 截为 首段 + "…[split_turn]", 原文经 MessageBuilder.keep_full_raw
-          存 _args_raw(与 content 的 _raw 分字段), 置 _truncated=True(与第1级同一标记, 请求前随
-          _COMPACTION_TEMP_KEYS 剥离)。
+    输出: List[Dict]; 超长 arguments 压成合法 JSON(长字符串值保首 + "…[split_turn]"), 原文经
+          MessageBuilder.keep_full_raw 存 _args_raw(与 content 的 _raw 分字段), 置 _truncated=True
+          (与第1级同一标记, 请求前随 _COMPACTION_TEMP_KEYS 剥离)。
     保首门限(复用既有常量, 不新增参数):
       - 最后一条 user 之前的旧轮: TOOL_SUMMARY_HEAD_CHARS(= SPLIT_TURN_MAX_ASSISTANT_CHARS/8, 500 字)——
         旧轮参数只为摘要/回看"当时写了哪个文件、开头写了什么", 与第2级 tool 输出保首同一把尺。
       - 当前轮(最后一条 user 起): SPLIT_TURN_MAX_ASSISTANT_CHARS(4000 字)——与第1级对 content 的截断同门限;
         当前轮不设成"一点不动", 因为走到这一级时已别无他法(不截 → 请求 400 全盘皆输), 4000 字足以让模型
         认出自己写过什么, 而 90 万字参数照样能压到 2.1k tok。
+      - 无 user 边界(链中途切出的 delta 段): 取最后一轮 FC 决策起点作当前轮, 仅它保 4000, 其余按旧轮
+        500(2026-10-31 小欧: 原默认整段按旧轮, 实测把当前轮参数压到 361 字)。
     前置条件: 无; 不动 tool_calls 的 id/name 与 tool 消息, FC 配对关系不变。
     关联逻辑: 全链路唯一处理 arguments 体积的位置(PASS3_ARGS_* 两个常量至今无消费方);
-      arguments 为字符串, 截断后不再是合法 JSON——历史侧仅回显不再解析, 且真值可由 _args_raw 还原。
+      **截后必须仍是合法 JSON**(实测 agnes 400 "arguments must be valid JSON", DeepSeek 不校验)——
+      故按结构化裁剪(见 _fit_args_json), 不走"从文本中间切"; 真值可由 _args_raw 还原。
     位置: 2026-10-31 小欧 由 assembler 迁入(北京老陈令): 与 truncate_oversized_message 同为"单条超长就截"
       的切分原语, assembler 只做装配编排(层级一致), 不持原语。 — 小欧-2026-10-31
     """
-    last_turn = len(messages)
+    last_turn = 0
     for i in range(len(messages) - 1, -1, -1):
         if messages[i].get("role") == "user":
             last_turn = i
             break
+    else:
+        # 2026-10-31 小欧: 链中途切出的 delta 段没有 user 边界, 原默认 len(messages) 把**整段**当旧轮
+        #   (参数只保 500 字, 实测 361 字), 把模型正在处理的最后一轮当成"回看摘要", 认不出自己写过什么。
+        #   改取最后一轮 FC 决策的起点作当前轮: 仅它享受 4000, 其余仍按旧轮 500(压缩力度不退化)。
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "assistant" and messages[i].get("tool_calls"):
+                last_turn = i
+                break
     result: List[Dict] = []
     hit = 0
     for idx, msg in enumerate(messages):
@@ -261,12 +326,16 @@ def truncate_tool_call_args(messages: List[Dict]) -> List[Dict]:
         raw_args = ""
         for tc in calls:
             if isinstance(tc, dict):
-                fn = tc.get("function") or {}
-                args = str(fn.get("arguments") or "")
-                if len(args) > limit:
-                    if len(args) > len(raw_args):
-                        raw_args = args
-                    tc = {**tc, "function": {**fn, "arguments": args[:limit] + "…[split_turn]"}}
+                # 2026-10-31 小欧: function 非 dict 视为缺失(原 {**fn} 直接 TypeError, 畸形落库数据会整轮崩);
+                #   arguments 可能是结构体(provider/上游差异), 统一转 JSON 文本再按体积判断, 不 str(dict) 出 Python repr
+                fn_raw = tc.get("function")
+                fn = fn_raw if isinstance(fn_raw, dict) else {}
+                _a = fn.get("arguments")
+                args_text = json.dumps(_a, ensure_ascii=False) if isinstance(_a, (dict, list)) else str(_a or "")
+                if len(args_text) > limit:
+                    if len(args_text) > len(raw_args):
+                        raw_args = args_text
+                    tc = {**tc, "function": {**fn, "arguments": _fit_args_json(args_text, limit)}}
                     hit += 1
             new_calls.append(tc)
         if raw_args:
