@@ -29,6 +29,9 @@
 # 2026-10-26 小沈 - _SUMMARY_SECTIONS 段名同步(与 summary_prompt.py 模板同源): Critical Context→Important Details, 删 Next Steps, 增 Summary, Progress 保留; 段名变更必同步此处, 否则校验恒判"缺段标记"→摘要被弃→压缩失效 — 小沈-2026-10-26
 # 2026-10-27 小欧 - 方案B: 往次摘要改为 assistant 消息注入(去 system 拼接); previousSummary 标签废弃, 与 summary_prompt.py 文案统一
 # 2026-10-27 小欧 - _SUMMARY_TAIL_USER 文案润色: "以上"改"以下"并收紧表述, 与历史数据实际位置一致
+# 2026-10-31 小欧 - 新增 _build_feed + estimate_feed_tokens: 原截断循环在两个摘要函数各写一份,
+#   收口为单一截断口径; 门限判定改用它估"实际喂进去的体积"(tool content 按 feed_max 截断后),
+#   治"拿未截断原文估→tool-heavy 历史虚报→误触发白裁旧轮" — 小欧-2026-10-31
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -112,6 +115,44 @@ def _valid_summary_or_empty(text: str, src_len: int = 0) -> str:
     return t
 
 
+def _build_feed(messages: List[Dict], feed_max: int) -> List[Dict]:
+    """按「喂摘要 LLM」的截断口径复制消息: 仅 tool 的 content 截到 feed_max — 小欧 2026-10-31
+
+    适用场景: 两个摘要函数构造 feed + estimate_feed_tokens 估请求体积, 三处同一截断口径。
+    使用方法: 传消息列表 + 单条 tool 截断上限, 返回新列表(元素浅拷贝, 不改入参)。
+    输入: messages 消息列表; feed_max 单条 tool content 的字符上限。
+    输出: List[Dict] —— tool 的 content 截断, 其余角色 content 归一为 str(空值→空串)。
+    关联逻辑: 原截断循环在 generate_anchored_summary / generate_chunked_summary 各写一份(同规则),
+      现收口此处(DRY); 门限判定必须同口径, 否则原文估大→误判超窗→白裁早段轮次。
+    """
+    out: List[Dict] = []
+    for msg in messages:
+        c = str(msg.get("content", ""))
+        if msg.get("role") == "tool":
+            c = c[:feed_max]
+        out.append({**msg, "content": c})
+    return out
+
+
+def estimate_feed_tokens(messages: List[Dict],
+                         feed_max: Optional[int] = None) -> int:
+    """摘要请求的真实体积(token): 按喂 LLM 的截断口径估算 — 小欧 2026-10-31
+
+    适用场景: start 两条压缩路径进入阶梯裁剪前的门限判定(替代"拿未截断原文估"的旧口径)。
+    使用方法: 传消息列表, 返回该列表喂给摘要 LLM 时的 token 估算。
+    输入: messages 消息列表; feed_max 缺省读 tuning.compaction.summary_feed_max_chars。
+    输出: int —— _build_feed 后的 token 估算(复用 MessageBuilder._estimate_tokens 单点)。
+    前置条件: 无。
+    关联逻辑: 与 generate_* 的构造口径同源; tool 输出占历史体积九成以上(实测 93.86%),
+      原文估会远超 feed, 用原文做门限必虚报 → 误触发 → 白丢早段轮次。
+    """
+    from app.services.agent.message_builder import MessageBuilder   # 局部 import 防循环
+    if feed_max is None:
+        feed_max = int(get_config().get('tuning.compaction.summary_feed_max_chars',
+                                        SUMMARY_FEED_MAX_CHARS))
+    return MessageBuilder._estimate_tokens(_build_feed(messages, feed_max))
+
+
 async def generate_anchored_summary(llm_agent, messages: List[Dict]) -> str:
     """一次 LLM 调用产出锚定摘要 — 小欧 2026-08-16
 
@@ -124,12 +165,8 @@ async def generate_anchored_summary(llm_agent, messages: List[Dict]) -> str:
     """
     feed: List[Dict] = []
     _feed_max = int(get_config().get('tuning.compaction.summary_feed_max_chars', SUMMARY_FEED_MAX_CHARS))  # 小欧 2026-09-23 compaction配置化
-    for msg in messages:
-        if msg.get("role") == "tool":
-            c = str(msg.get("content", ""))[:_feed_max]
-            feed.append({**msg, "content": c})
-        else:
-            feed.append(msg)
+    # 2026-10-31 小欧: 截断循环收口 _build_feed(与增量函数/门限估算同一口径) — 小欧-2026-10-31
+    feed = _build_feed(messages, _feed_max)
     feed = [{"role": "system", "content": SUMMARY_TEMPLATE}, *feed, {"role": "user", "content": _SUMMARY_TAIL_USER}]
     _src_len = sum(len(str(m.get("content") or "")) for m in messages)
     return _valid_summary_or_empty(await call_llm_text_task(llm_agent, feed), _src_len)
@@ -151,9 +188,8 @@ async def generate_chunked_summary(llm_agent, new_block: List[Dict],
     if previous_summary:
         feed.append({"role": "assistant", "content": f"[往次摘要]: {previous_summary}"})
     _feed_max2 = int(get_config().get('tuning.compaction.summary_feed_max_chars', SUMMARY_FEED_MAX_CHARS))  # 小欧 2026-09-23 compaction配置化
-    for msg in new_block:
-        c = str(msg.get("content", ""))[:_feed_max2] if msg.get("role") == "tool" else str(msg.get("content", ""))
-        feed.append({**msg, "content": c})
+    # 2026-10-31 小欧: 截断循环收口 _build_feed(与全量函数/门限估算同一口径) — 小欧-2026-10-31
+    feed += _build_feed(new_block, _feed_max2)
     feed.append({"role": "user", "content": _SUMMARY_TAIL_USER})
     _src_len = sum(len(str(m.get("content") or "")) for m in new_block)
     if previous_summary:

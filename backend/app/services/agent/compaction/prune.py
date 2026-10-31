@@ -31,6 +31,9 @@
 #     ②use_tool_summary docstring 补"当前无生产调用点"警示(trim 语义替换已实测撤销, 接线前须坐实 summary 含正文) — 小欧-2026-10-30
 #   2026-10-30 小欧 观测/DRY 收口: 删除私有 _released_tokens, clear_tool_outputs/compress_long_tool_output
 #     两处调用改公共 estimate_tokens(与 refs.budget 原 _tokens_of 同一实现收口, 原两份同款单行) — 小欧-2026-10-30
+#   2026-10-31 小欧 clear_tool_outputs 增 _compressed 守卫(北京老陈令): 已按首段压过的 tool 消息不得再被清零,
+#     供 shrink_to_budget 第2级"保首 + 清零"两步串联(先 compress_long_tool_output 再清剩余);
+#     此前该函数只服务"远段全清零", 无 _compressed 来源, 故旧调用方行为不变 — 小欧-2026-10-31
 """compaction.prune — C3 剪枝压缩 + use_tool_summary + 价值优先保留 — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 仅承载「同一窗口内的消息级压缩/剪枝取舍」, 不含触发判定(归 trigger)与语义摘要(归 summary)。
@@ -49,8 +52,9 @@
 import logging
 from typing import List, Dict
 
+# 2026-10-31 小欧: CHARS_PER_TOKEN 迁至 agent_utils(与 token 估算代码同址), 改从此处导入 — 小欧-2026-10-31
+from app.services.agent.agent_utils import CHARS_PER_TOKEN
 from app.services.agent.compaction_constants import (
-    CHARS_PER_TOKEN,
     PRUNE_MINIMUM_TOKENS,
     PRUNE_PROTECT_TOKENS,
     TOOL_SUMMARY_HEAD_CHARS,          # 2026-10-29 小欧: 原文摘要头部截长(魔法数字清账)
@@ -84,11 +88,16 @@ def clear_tool_outputs(messages: List[Dict]) -> tuple[List[Dict], int]:
     输入: messages 消息列表(含 role/tool_call_id/content 等字段)。
     输出: (处理后消息列表, 释放的 token 估算 int)。被清 tool 打 `_pruned=True` 标记。
     前置条件: 无; 只清 role=tool 且有 tool_call_id 的消息的 content, 保留结构与 tool_call 参数。
+    2026-10-31 小欧: 带 `_compressed` 的 tool 消息跳过(已被 compress_long_tool_output 压成首段摘要,
+      再清等于把刚留下的首段抹掉); 供 shrink_to_budget 第2级"保首 + 清零"串联使用。— 小欧-2026-10-31
     """
     released = 0
     pruned = []
     for msg in messages:
         if msg.get("role") == "tool" and msg.get("tool_call_id"):
+            if msg.get("_compressed"):
+                pruned.append(msg)          # 已压首段, 保留
+                continue
             content = msg.pop("content", None)
             if content:
                 released += estimate_tokens(content)

@@ -7,6 +7,18 @@
 #   2026-10-08 小欧 - remove_dangling_tool_calls 双向剪孤儿: 原 tool 侧判据恒真(seen_ids 由同一份 messages 的
 #     tool 收集, "该 id 在 seen_ids"永远成立)→ tool 侧从未真被剪过, 连缺 tool_call_id 的也因 None in seen_ids 留下,
 #     与函数名/文档承诺不符; 现 tool 侧改比对调用方 id 集合(assistant.tool_calls), 双向各剪一次, 不改结构与入参。 — 小欧-2026-10-08
+#   2026-10-31 小欧 - 新增 shrink_to_budget(北京老陈令): 阶梯循环收缩到 token 预算(截单条→清远段 tool→丢远轮次
+#     保60%→只保25%), 每级后复检、达标即停、纯本地零 LLM; 原 start_step._compact_injected_history 内联四段
+#     迁入本模块, 调用方只给目标预算。— 小欧-2026-10-31
+#   2026-10-31 小欧 - shrink_to_budget 两项升级(北京老陈令): ①第2级由"远段全清零"改为"保首+清零"——
+#     长 tool 输出留 TOOL_SUMMARY_HEAD_CHARS(=SPLIT_TURN_MAX_ASSISTANT_CHARS/8, 500) 首段, 短条仍清零
+#     (保首对短条几乎零释放且模板撑大); ②新增 estimator 形参(缺省原文口径)让"门限判定"与"裁剪"共用一把尺,
+#     摘要路径传 estimate_feed_tokens, 治"按 feed 判该裁、按原文裁到 0.755ctx"的过裁。— 小欧-2026-10-31
+#   2026-10-31 小欧 - 新增 truncate_tool_call_args + 阶梯补到五级(北京老陈令): 实测 write 90 万字参数(484,992 tok)
+#     旧四级跑完一点未减——参数不在 content、单轮无轮可丢, 阶梯对它全空转, 该场景必 400; 现截 assistant
+#     tool_calls.arguments(旧轮 TOOL_SUMMARY_HEAD_CHARS=500 字 / 当前轮 SPLIT_TURN_MAX_ASSISTANT_CHARS=4000 字,
+#     全部复用既有门限, 不新增常量), 原文存 _raw, id/name/tool 结果不动保 FC 配对; 该级排在"丢远轮"之前
+#     (截参数保全部轮次, 丢轮丢整段对话, 前者破坏性小得多; 且早/中轮巨参数若不先截, 丢轮会把那一整轮丢掉)。— 小欧-2026-10-31
 """compaction.assembler — 装配适配(保尾区保留 + 压缩消息注入 + 配对修剪) — 小健 2026-08-17
 
 职责(SRP): 仅承载「装配」三步:
@@ -18,10 +30,23 @@
 装配只编排注入/保留, 摘要生成归 summary; K3 复用既有 _trim_fc_pairs 思路(不重造);
 old_head 原样保留(不破坏原库), 摘要仅运行时回填(list 组合新列表, 不改入参);
 remove_dangling_tool_calls 与 keep_valuable_messages(C3 prune 删 tool)协同闭环保配对。
+2026-10-31 小欧 增 shrink_to_budget: 把"缩到预算"的阶梯循环收口为本模块公用函数(start 压缩前清洗的
+  编排逻辑), 复用 split_turn/prune 原语, 不新增切分算法; 调用方只给目标 token 预算。第2级为
+  「长 tool 输出保首段 + 短条清零」, 并支持自定义体积估算函数(摘要路径按实际 feed 口径估)。— 小欧-2026-10-31
+2026-10-31 小欧 增 truncate_tool_call_args: 第3级, 截 assistant tool_calls.arguments 保首段(旧轮 500 /
+  当前轮 4000), 专治单轮巨型参数对第1/2级免疫的场景 — 小欧-2026-10-31
 """
 from typing import List, Dict, Tuple
 
-from app.services.agent.compaction.split_turn import find_tail_start, preserve_recent_budget
+from app.logger import logger
+from app.services.agent.agent_utils import CHARS_PER_TOKEN   # 2026-10-31 小欧: 系数唯一真源(与估算函数同址)
+from app.services.agent.compaction_constants import (
+    SPLIT_TURN_MAX_ASSISTANT_CHARS,   # 2026-10-31 小欧: 第3级当前轮参数保首门限(与第1级 content 截断同值)
+    TOOL_SUMMARY_HEAD_CHARS,
+)
+from app.services.agent.compaction.split_turn import (
+    count_system_prefix, find_tail_start, preserve_recent_budget, truncate_oversized_message,
+)
 
 
 def split_history_window(messages: List[Dict], context_limit: int,
@@ -113,3 +138,144 @@ def remove_dangling_tool_calls(messages: List[Dict]) -> List[Dict]:
             continue
         result.append(m)
     return result
+
+
+def truncate_tool_call_args(messages: List[Dict]) -> List[Dict]:
+    """截断 assistant tool_calls.arguments 超长参数, 保首段 + 留原文 — 小欧 2026-10-31
+
+    适用场景: shrink_to_budget 第3级——「单轮/中段塞进巨型 tool 参数」(如 write 90 万字正文), 第1/2级
+      (截 content / 清 tool 输出)对它空转(参数不在 content 里), 不截就只能靠丢整轮, 那是拿整段对话换体积。
+    使用方法: 传消息列表, 返回参数已截断的新列表(无超长参数则原样返回元素, 不拷贝)。
+    输入: messages 消息列表。
+    输出: List[Dict]; 超长 arguments 截为 首段 + "…[split_turn]", 原文经 MessageBuilder.keep_full_raw 存 _raw,
+          置 _truncated=True(与第1级同一标记, 请求前随 _COMPACTION_TEMP_KEYS 剥离)。
+    保首门限(复用既有常量, 不新增参数):
+      - 最后一条 user 之前的旧轮: TOOL_SUMMARY_HEAD_CHARS(= SPLIT_TURN_MAX_ASSISTANT_CHARS/8, 500 字)——
+        旧轮参数只为摘要/回看"当时写了哪个文件、开头写了什么", 与第2级 tool 输出保首同一把尺。
+      - 当前轮(最后一条 user 起): SPLIT_TURN_MAX_ASSISTANT_CHARS(4000 字)——与第1级对 content 的截断同门限;
+        当前轮不设成"一点不动", 因为走到这一级时已别无他法(不截 → 请求 400 全盘皆输), 4000 字足以让模型
+        认出自己写过什么, 而 90 万字参数照样能压到 2.1k tok。
+    前置条件: 无; 不动 tool_calls 的 id/name 与 tool 消息, FC 配对关系不变。
+    关联逻辑: 全链路唯一处理 arguments 体积的位置(PASS3_ARGS_* 两个常量至今无消费方);
+      arguments 为字符串, 截断后不再是合法 JSON——历史侧仅回显不再解析, 且真值可由 _raw 还原。
+    """
+    from app.services.agent.message_builder import MessageBuilder   # 局部 import 防循环(compaction ↔ message_builder)
+
+    last_turn = len(messages)
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            last_turn = i
+            break
+    result: List[Dict] = []
+    hit = 0
+    for idx, msg in enumerate(messages):
+        calls = msg.get("tool_calls")
+        if msg.get("role") != "assistant" or not calls:
+            result.append(msg)
+            continue
+        limit = SPLIT_TURN_MAX_ASSISTANT_CHARS if idx >= last_turn else TOOL_SUMMARY_HEAD_CHARS
+        new_calls: List[Dict] = []
+        raw_args = ""
+        for tc in calls:
+            if isinstance(tc, dict):
+                fn = tc.get("function") or {}
+                args = str(fn.get("arguments") or "")
+                if len(args) > limit:
+                    if len(args) > len(raw_args):
+                        raw_args = args
+                    tc = {**tc, "function": {**fn, "arguments": args[:limit] + "…[split_turn]"}}
+                    hit += 1
+            new_calls.append(tc)
+        if raw_args:
+            m = dict(msg)
+            m["tool_calls"] = new_calls
+            m["_truncated"] = True
+            MessageBuilder.keep_full_raw(m, raw_args)
+            result.append(m)
+            continue
+        result.append(msg)
+    if hit:
+        logger.info(f"[shrink] 第3级截 tool_call 参数: {hit} 个调用"
+                    f"(旧轮 {TOOL_SUMMARY_HEAD_CHARS} 字 / 当前轮 {SPLIT_TURN_MAX_ASSISTANT_CHARS} 字)")
+    return result
+
+
+def shrink_to_budget(messages: List[Dict], limit_tokens: int,
+                     allow_prune: bool = True, estimator=None) -> List[Dict]:
+    """阶梯循环收缩: 逐级收紧, 直到估算 <= limit_tokens — 小欧 2026-10-31
+
+    适用场景: 「要送进 LLM 的消息列表本身超窗」的入口(如 start 压缩前清洗)——先裁到预算内再调 LLM,
+      否则压缩请求自己就会撞窗 400。
+    使用方法: 传消息列表 + 目标 token 预算, 返回收缩后的列表; 已达标则原样返回同一对象(零拷贝)。
+    输入: messages 消息列表; limit_tokens 目标 token 上限(如 trim_conv_threshold(ctx));
+          allow_prune 是否允许第2级动远段 tool 输出(对应 tuning.compaction.summary_prune_tool_output);
+          estimator 体积估算函数, 缺省 MessageBuilder._estimate_tokens(原文口径)。
+          摘要路径必须传 estimate_feed_tokens —— 判断与裁剪要用同一把尺, 否则"按 feed 判该裁、
+          按原文裁到 0.755ctx"会过裁; loop 裁剪不传即维持原行为。
+    输出: List[Dict] —— 收缩后的消息列表(各级均为新列表, 不修改入参元素内容以外的结构)。
+    前置条件: limit_tokens > 0; messages 元素为 dict。
+    阶梯(每级动作不同、结果单调变小, 每级后复检, 达标立即返回):
+      1. truncate_oversized_message                       单条 content >4000 字符截断(原文存 _raw)
+      2. 保首 + 清零                                        保尾不动; 更早的"长" tool 输出保留首段
+        (TOOL_SUMMARY_HEAD_CHARS=500, 4000 的 1/8), 短的(<520 字)清零
+      3. truncate_tool_call_args                          截 assistant tool_calls.arguments(旧轮 500 字 /
+        当前轮 4000 字); 排在丢轮之前——截参数保全部轮次, 丢轮丢整段对话, 前者破坏性小得多;
+        也是"单轮巨型参数"的唯一出路(第1/2级不碰参数, 第4/5级对单轮空转)
+      4. find_tail_start(align_turn=True)                 丢远轮次, 只保 60% 预算
+      5. find_tail_start(align_turn=True)                 只保 25% 预算(最近 1~2 轮)
+      五级后仍超: 记 ERROR 并返回当前结果(调用方放行, 不阻塞主链)。
+    边界: 头部连续 system 恒保留(各级切轮次都不动头部); find_tail_start 返回 <=prefix 表示无可再丢,
+      该级空转; 五级动作互不相同, 不会死循环。
+    设计边界: 只负责「缩到预算」, 不判断「要不要缩」(门限判定归调用方), 全程零 LLM 调用。
+    2026-10-31 小欧 第2级由"全清零"升级为"保首+清零"(北京老陈令): 原 clear_tool_outputs 把远段 tool
+      全抹成空串, 摘要 LLM 只看得到空白; 改为超长条留可读首段、短条仍清零(短条保首几乎零释放反撑大)。— 小欧-2026-10-31
+    2026-10-31 小欧 补参数截断层(北京老陈令): 实测 write 90 万字参数(484,992 tok)旧四级跑完一点未减,
+      日志"四级后仍超 ... 放行并留证"——参数全链路无截断路径, 该场景必 400; 复用 500/4000 两个既有门限。— 小欧-2026-10-31
+    """
+    from app.services.agent.compaction.prune import (
+        compress_long_tool_output, prune_tool_output_keeping_tail,
+    )
+    from app.services.agent.message_builder import MessageBuilder   # 局部 import 防循环(compaction ↔ message_builder)
+
+    if not messages:
+        return list(messages)
+    limit_tokens = int(limit_tokens)
+    if limit_tokens <= 0:
+        return list(messages)
+    est = estimator or MessageBuilder._estimate_tokens
+    cur = est(messages)
+    if cur <= limit_tokens:
+        return messages
+    prefix = count_system_prefix(messages)
+    for level in range(1, 6):
+        if level == 1:
+            messages = truncate_oversized_message(messages)
+        elif level == 2:
+            if allow_prune:
+                tail = find_tail_start(messages, preserve_recent_budget(limit_tokens))
+                far = [dict(m) for m in messages[:tail]]   # compress 原地改 dict, 先拷一层防污染入参
+                rest = [dict(m) for m in messages[tail:]]
+                _before = est(far)
+                # protect_tokens: 只压"比保首还长"的(≈520 字), 短条保首几乎零释放且模板反撑大
+                far, _ = compress_long_tool_output(
+                    far, min_release=0,
+                    protect_tokens=int((TOOL_SUMMARY_HEAD_CHARS + 20) / CHARS_PER_TOKEN))
+                far, _ = prune_tool_output_keeping_tail(far, len(far))  # 短条清零(已压条靠 _compressed 守卫跳过)
+                messages = far + rest
+                logger.info(f"[shrink] 第2级保首{TOOL_SUMMARY_HEAD_CHARS}字+清零: "
+                            f"释放 {_before - est(far)} tok, 保尾 {len(rest)} 条")
+        elif level == 3:
+            # 2026-10-31 小欧 排在"丢轮"之前(北京老陈令): 截参数保留全部轮次, 丢轮丢整段对话, 前者破坏性小得多;
+            #   且早/中轮的巨参数若不先截, 第4/5级会把那一整轮直接丢掉 — 小欧-2026-10-31
+            messages = truncate_tool_call_args(messages)
+        else:
+            ratio = 0.6 if level == 4 else 0.25
+            start = find_tail_start(messages, int(limit_tokens * ratio), align_turn=True)
+            if start > 0:
+                messages = remove_dangling_tool_calls(messages[:prefix] + messages[start:])
+        cur = est(messages)
+        logger.info(f"[shrink] 第{level}级后: {cur} tok / 目标 {limit_tokens}")
+        if cur <= limit_tokens:
+            return messages
+    logger.error(f"[shrink] 五级后仍超 {cur} > {limit_tokens}, 放行并留证")
+    return messages
