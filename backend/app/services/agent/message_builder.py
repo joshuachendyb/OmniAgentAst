@@ -95,6 +95,8 @@
 # 2026-10-30 小欧 - 新增 ensure_file_ref_rules(): 插话带引用时 system 消息早已建好, 需幂等补注
 #   【文件引用】格式约定(否则模型看到引用正文却不知 [[文件:...]] 输出约定); 标记位 _file_ref_rules_injected
 #   由 init_history/reset_per_run 同步维护, 保证整个会话内规则最多出现一次 — 小欧-2026-10-30
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 导入源改 app.constants(常量自 compaction_constants 迁入系统层,
+#   单一真源), 值与行为零变化 — 小欧-2026-10-31
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -118,8 +120,9 @@ from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-07-08
 from app.logger import logger  # 小欧 2026-07-01: 裁剪日志
+from app.constants import DEFAULT_CONTEXT_LIMIT  # 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源), 自 compaction_constants 迁出
 from app.services.agent.compaction_constants import (  # 2026-08-17 小健: 压缩/裁剪常量权威迁本域, 改自 app.constants 导入
-    COMPACTION_BUFFER, CHARS_PER_TOKEN, COOLDOWN_ROUNDS, DEFAULT_CONTEXT_LIMIT, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
+    COMPACTION_BUFFER, CHARS_PER_TOKEN, COOLDOWN_ROUNDS, TEMP_HISTORY_CHAR_LIMIT, TRIM_TRIGGER_RATIO,
     TOOL_SUMMARY_PREVIEW_CHARS,     # 2026-10-29 小欧: 死循环纠偏预览截长(魔法数字清账)
     TOOLS_TOKEN_RESERVE,
     TRIM_CEILING_ROUND_FACTOR,      # 2026-10-29 小欧: 裁剪兜底上限公式系数(魔法数字清账)

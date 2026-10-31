@@ -241,6 +241,10 @@
 # 2026-10-31 小欧 - 注入块文案定稿(用户确认): 删属性/memo/默认标注, 目录行纯路径;
 #   首行改为"本次任务新增会话工作目录", 尾行统一"会话工作目录"与标签语义一致;
 #   docstring 同步精简, 移除 ws_prop_label/WS_PROP_WRITE import。 — 小欧-2026-10-31
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 导入源改 app.constants(常量自 compaction_constants 迁入系统层,
+#   单一真源), 值与行为零变化 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 877 行首发兜底口径统一: or agent.message_builder.MAX_CONTEXT_TOKENS(绕行取构造默认)
+#   改 or DEFAULT_CONTEXT_LIMIT, 与 622 插话兜底同源同写法, 消 DRY/KISS-DIRECT 违反; 兜底同值零行为变化 — 小欧-2026-10-31
 
 
 
@@ -259,7 +263,7 @@ from typing import Optional, AsyncGenerator, Dict, List
 from app.services import get_scope  # 唯一所有者入口(经 get_service 惰性建代) — 小欧-2026-09-25
 from app.file_browse import browse_service as browse  # 引用 path 越界过滤(唯一判定点) — 小欧-2026-10-13
 # 引用链路 4 口(首发/插话共用, 原两处函数内 import 上提) — 小欧 2026-10-30
-from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT   # 生效窗口缺失时的兜底
+from app.constants import DEFAULT_CONTEXT_LIMIT   # 生效窗口缺失时的兜底; 2026-10-31 小欧: 常量迁系统层 app/constants.py(单一真源)
 from app.services.refs.limits import resolve_limits                        # 按生效窗口算三档阈值
 # 回执 + 观测(汇总/日志/refs_ready notice, 两通道共用同一份数字) — 小欧 2026-10-30
 from app.services.refs.notice import (
@@ -867,13 +871,15 @@ async def chat_stream_orchestrator(
             logger.warning(f"[chat] 取链内序号失败(session={session_id}), 序号默认0: {_e}")
         # ── 引用解析+体积裁决(设计 4.3/4.7): 建 agent 之后、_start_meta 注入之前 ─────
         #   2026-10-30 小欧 A1: 运行时窗口取 agent.llm_client.context_limit。
-        #   agent_runner.py 对 message_builder.MAX_CONTEXT_TOKENS 的覆盖发生在 create_task
-        #   之后的后台协程里, 此处读到的是构造默认值(恒 DEFAULT_CONTEXT_LIMIT),
         #   切小窗口模型时引用预算会被放大数倍。llm_client 是会话覆盖后的生效快照, 唯一真源。
         #   2026-10-30 小欧 批2/3: resolve → budget → 回执(refs_notice) → 处置(放行/阻断),
         #   已收口到 services.refs.pipeline.prepare_refs(与插话共用同一顺序与实现)。
+        #   2026-10-31 小欧: 兜底或 DEFAULT_CONTEXT_LIMIT —— 与插话分支兜底同源同写法, 消
+        #   message_builder.MAX_CONTEXT_TOKENS 绕行取值(该构造默认值本就是同一数, KISS-DIRECT);
+        #   正常链路 llm_client.context_limit 恒有值(parse_model_params 三级兜底), 本兜底仅防
+        #   llm_client 缺失边沿 —— 插话/首发两兜底单口径(DRY)。 — 小欧-2026-10-31
         _ctx_limit = int(getattr(agent.llm_client, "context_limit", None)
-                         or agent.message_builder.MAX_CONTEXT_TOKENS)
+                         or DEFAULT_CONTEXT_LIMIT)
         _limits = resolve_limits(_ctx_limit, "first")
         # 回执条目全链汇集: 读取失败/截断(resolver) + 压缩/拒绝(budget) + 越界/无 path(sanitize)。
         #   条目只带 label/path/reason/detail, 级别由 build_notice 统一裁决(4.8)。

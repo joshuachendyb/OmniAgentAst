@@ -36,6 +36,10 @@
 # 2026-10-26 - 小欧 - create_service_instance 增 max_tokens 上限：从 model_meta 读 max_output_length，
 #   与用户设置值取较小值（用户未设则用模型上限，模型未设则用全局默认）；
 #   提取 _resolve_max_tokens 独立函数（SRP/SLAP）— 小欧-2026-10-26
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 局部导入源改 app.constants(常量自 compaction_constants 迁入系统层,
+#   单一真源), 取值顺序不变(配置 model_params.context_limit 优先, 否则 llm.context_limit_default, 最终本常量兜底) — 小欧-2026-10-31
+# 2026-10-31 小欧 - DEFAULT_CONTEXT_LIMIT 局部导入上提至模块顶部(与 stream_orchestrator:264 风格统一,
+#   KISS-DIRECT 无函数内藏 import); app/constants 纯叶子模块无循环导入风险, 零行为变化 — 小欧-2026-10-31
 """
 service — 服务创建与获取
 
@@ -52,6 +56,7 @@ from app.db.models.chat_models import ModelRef
 from app.services.lifecycle.lifecycle import close_instance_sync
 from app.services.lifecycle.connection_scope import ConnectionScope  # 唯一所有者 — 小欧-2026-09-25
 from app.config import get_config  # 新增 — 小欧 2026-09-23
+from app.constants import DEFAULT_CONTEXT_LIMIT  # 2026-10-31 小欧: 自 parse_model_params 函数内局部导入上提(与 stream_orchestrator 顶部导入风格统一); app/constants 纯叶子模块无循环导入风险; 常量权威在 app/constants.py(自 compaction_constants 迁入)
 
 logger = setup_logger(__name__)
 
@@ -194,7 +199,6 @@ def parse_model_params(provider_config: dict, model: str) -> Tuple[Optional[dict
     stream_orchestrator(L2 跨 provider 快照), 双份漂移风险; 归一为本函数唯一权威, 两处同用。
     行为: 取目标 model 专属 dict, pop context_limit(配置优先否则 llm.context_limit_default 全局兜底),
     余量作 extra_body_params(无则 None)。与历史行为完全一致(仅去重, 不改逻辑)。"""
-    from app.services.agent.compaction_constants import DEFAULT_CONTEXT_LIMIT  # 小健 2026-08-17: 常量权威归一 agent/compaction_constants
     model_params = (provider_config or {}).get("model_params", {}) or {}
     specific_params = dict(model_params.get(model, {})) if model_params else {}
     # ✅ pop 缺省改读全局兜底 — 小欧 2026-09-23

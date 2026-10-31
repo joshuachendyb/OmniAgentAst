@@ -74,11 +74,16 @@ key 全局唯一，加载自检重复直接拒启。
       不参与裁剪)、tools_token_reserve(int,5000-80000,默认30000,tools schema 输入 token 预留防超窗 400);
       同批同步 config.yaml.example(trim 块) 与 config/config.yaml(本地副本); 并立 _item 前铁规注释:
       加参数必须先同步 config.yaml.example, 严禁只在 registry 加 — 小欧-2026-10-25
+   2026-10-31 小欧 - llm.context_limit_default 默认值 262144 魔法数字改引 app.constants.DEFAULT_CONTEXT_LIMIT
+      (常量自 compaction_constants 迁入 app/constants.py, 设置项默认值与 runtime 兜底同一真源, 值不变) — 小欧-2026-10-31
 """
 from typing import Any, Dict, List, Optional
 
 # 注入清单在 app.config（最底层，不能反向依赖本包），一致性由 _build_index 自检
 from app.config import ENV_INJECTED_KEYS
+# 2026-10-31 小欧 - llm.context_limit_default 默认值引系统级常量(单一真源, 消魔法数字 262144):
+#   与 runtime 兜底(lifecycle/service.parse_model_params)同源, 改值只改一处
+from app.constants import DEFAULT_CONTEXT_LIMIT
 
 # 只读免确认白名单的**默认展示值**取自安全层内置清单(services→safety 依赖方向合法, 与本包
 # security_docs 引 SYSTEM_PROTECTED_DIR_NAMES 同款)。取内置而非空串: 该清单命中即免弹窗+免沙箱,
@@ -157,7 +162,7 @@ GROUPS: Dict[str, Dict[str, Any]] = {
               notice="全局推理深度默认值，只列所有推理模型都支持的三个核心值(low/medium/high)。"
                      "少数派值(none/minimal/xhigh/max)各模型支持不同，放全局会导致切模型时HTTP 400，"
                      "需在模型参数里单独配置"),
-        _item("llm.context_limit_default", "int", "默认上下文窗口", 262144, range_=[200000, 2000000],
+        _item("llm.context_limit_default", "int", "默认上下文窗口", DEFAULT_CONTEXT_LIMIT, range_=[200000, 2000000],
               notice="模型一次能记住的内容总量默认值（单个模型没单独配置时用这个），约 25.6 万 token"),
     ]},
     # 4.2 模型（model，结构化语义；CRUD 由 model_service 承接，见 9.1.3）

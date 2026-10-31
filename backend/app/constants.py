@@ -59,6 +59,11 @@
                         services/refs/clip(头尾摘录), REF_MIN_KEEP_LINES 归 services/refs/budget(C 档压缩),
                         REF_AVG_LINE_CHARS 归 resolver(行均估算); ②新增 REF_KINDS 来源白名单(单一真源,
                         编排入口 sanitize_refs 与渲染期 render_refs_block 共用, 防入口放行/渲染静默丢弃分叉) — 小欧-2026-10-30
+    2026-10-31 小欧 新增 DEFAULT_CONTEXT_LIMIT=262144(256K, 自 compaction_constants:57 迁入):
+                        LLM 上下文窗口默认上限(配置优先否则兜底, 见常量注释)——settings_registry
+                        llm.context_limit_default 设置项默认值由魔法数字 262144 改引本常量;
+                        引用方(lifecycle/service/message_builder/stream_orchestrator)导入路径同步改
+                        app.constants, compaction_constants 不再定义 — 小欧-2026-10-31
 
 """
 
@@ -99,6 +104,12 @@ LLM_RESPONSE_FALLBACK = True  # 【系统级】使用对象: LLM响应错误降�
 LLM_RESPONSE_RETRIES = 2  # 【系统级】使用对象: LLM响应错误最大重试次数(如空/无效响应) — 小沈 2026-07-17
 TOOL_CACHE_TTL = 300  # 【系统级】使用对象: 工具结果缓存 TTL(秒)
 LLM_MAX_TOKENS = 16384  # 【系统级】使用对象: LLM 单次调用最大输出 token 数(None=不限)
+
+# 意义: LLM 上下文窗口默认上限 = 256K(未在 model_params.context_limit 配置时的兜底, 取值顺序:
+#       配置 model_params.context_limit 优先 → llm.context_limit_default 全局默认 → 本常量最终兜底)
+# 来源: 自 app/services/agent/compaction_constants.py 迁入(2026-10-31)——settings_registry
+#       「llm.context_limit_default」设置项默认值与本兜底收敛为同一系统级真源(消魔法数字, DRY) — 小欧-2026-10-31
+DEFAULT_CONTEXT_LIMIT = 262144  # 【系统级】使用对象: settings_registry(llm.context_limit_default 默认值) + lifecycle/service.parse_model_params(兜底) + message_builder(构造默认) + stream_orchestrator(生效窗口缺失兜底)
 
 # ============================================================
 # 3. 网络与超时
