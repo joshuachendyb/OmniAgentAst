@@ -157,6 +157,8 @@ current_model_ref 单源为结构化 ai.model_ref（2026-09-21 小欧 v4.20 收�
 # 2026-10-26 18:45:00 - 小欧 - replace_provider_models 增 max_output_length 落 model_meta（与 context_length
 #   同策略：isinstance(int) 且非 bool 才写，空值不覆盖已有值）。前端 replaceModels 同步扩展。
 # _models_of 增 max_output_length（从 model_meta 读取，供 LLM 调用链设置 max_tokens 上限）— 小欧-2026-10-26
+# 2026-10-31 - 小欧 - fetch_remote_models 删本地"空 key 摘 Authorization"实现, 收口到
+#   ProviderAdapter.auth_headers 单点: 同一条规则写多处必然漂移, 且探测链与真对话链口径必须一致。 — 小欧 2026-10-31
 """
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -951,13 +953,9 @@ async def fetch_remote_models(name: str, probe_key: Optional[str] = None) -> Dic
     api_key = (probe_key.strip() if not is_blank_secret(probe_key)
                else os.environ.get(f"{name.upper()}_API_KEY") or str(p.get("api_key") or ""))
     headers = get_provider_adapter(name).static_headers(api_key)
-    # 2026-10-05 22:16:38 - 小欧 - 有key 才发 Authorization（三级取key 见上，取不到就不带）。
-    #   基类 static_headers 无条件返回 "Bearer {api_key}"，key 空白时会发出值为空的畸形头
-    #   ("Authorization: Bearer ")，严格校验的无鉴权自建端点（Ollama/vLLM 类）会直接 400。
-    #   只摘 Authorization 一项，其余定制头（opencodeZen 的 UA/session 族，其免费层正是靠 UA 身份
-    #   而非 key 通过）原样保留 —— 故不在基类里改，避免波及 LLM 主链 7 个走默认基类的 provider。
-    if is_blank_secret(api_key):
-        headers.pop("Authorization", None)
+    # 2026-10-31 - 小欧 - 空 key 不携带 Authorization 已收口到 ProviderAdapter.auth_headers(基类与
+    #   zen 覆写版共用同一实现)。本处原有 pop 兜底删除: 同一条规则写两处必然漂移, 且探测链与
+    #   真实对话链口径必须一致(否则"测试连接通过、真对话 400")。
     configured = [m for m in (p.get("models") or []) if isinstance(m, str)]
     ref = get_current_ref(ai)
     current_model = ref["model"] if ref["provider"] == name else None

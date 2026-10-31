@@ -7,6 +7,7 @@
 # 编辑历史: 2026-09-23 小欧 新建
 # 编辑历史: 2026-09-24 小欧 注释清理: 删注释/docstring 中 identifier.ts/session-id.ts/v1/session.ts 外部源码路径与 opencode.ai/session 等痕迹; 保留正式代码(URL/_ZEN_USER_AGENT/x-opencode-* header 键/类名/注册键/error_message_map 用户文案)零改动
 # 编辑历史: 2026-09-24 北京老陈 方案1: 删GATE_STUBS假tool与missing注入逻辑, ensure_gate_body只保留stream:true强制
+# 编辑历史: 2026-10-31 小欧 鉴权头改复用基类 auth_headers(空 api_key 不带 Authorization) — 小欧-2026-10-31
 
 import os
 import time
@@ -96,7 +97,9 @@ class OpencodeZenAdapter(ProviderAdapter):
 
     @staticmethod
     def static_headers(api_key: str) -> Dict[str, str]:
-        headers = {"Authorization": f"Bearer {api_key}"}
+        # 2026-10-31 小欧 - 鉴权头复用基类 auth_headers(空 key 不带 Authorization),
+        #   其余 zen 专属头(UA/session 族)原样保留 —— 免费层正是靠 UA 身份而非 key 通过。
+        headers = dict(ProviderAdapter.auth_headers(api_key))
         headers.update({
             "User-Agent": _ZEN_USER_AGENT,
             "x-opencode-client": "cli",

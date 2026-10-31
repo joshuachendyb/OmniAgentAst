@@ -55,6 +55,9 @@
 # 2026-10-29 - 小欧 - 修测试发现的真实回归: _resolve_max_tokens 原为跨 provider 分支内局部导入,
 #   但 snapshot 调用在分支外也用它 → 同 provider 换模型时 UnboundLocalError(被外层 except 降级回全局
 #   模型, 换模型 100% 失效); 已把导入提到分支入口, 删分支内重复导入。 小欧-2026-10-29
+# 2026-10-31 - 小欧 - 跨 provider 空 api_key 不再抛 ProviderKeyMissingError 拦死: 留空即"不带
+#   Authorization 头"(本机 Ollama/vLLM 等无鉴权端点), 交由 ProviderAdapter.auth_headers 单点判空;
+#   仍不回落全局默认 key(跨 provider 绝不用他人凭据)。 小欧-2026-10-31
 """
 AI配置解析器 — 直接读配置,无效就报错
 
@@ -245,14 +248,13 @@ async def resolve_session_client(scope, session_id):
                     #   is_blank_secret（与 lifecycle/validation.py 同一权威，杜绝第三份不一致写法）
                     _pv_key = (None if is_blank_secret(_pv_cfg.get("api_key"))
                                else str(_pv_cfg["api_key"]).strip())
-                    # 跨 provider 但目标 key 空白 => 明确报错，不再偷用全局默认 key（设计文档行为 B）。
-                    # 情况 A(同 provider)不进本分支、用单例 key 属正常，严禁一并"修掉"。
+                    # 跨 provider 时绝不用别人的凭据, 也绝不因"目标 provider 没填 key"就拦死请求。
+                    # 2026-10-31 - 小欧 - api_key 留空 = 不带 Authorization 头(本机 Ollama/vLLM 等
+                    #   无鉴权端点本就该这么配)。此处显式给空串, 交由 ProviderAdapter.auth_headers
+                    #   判空后不发该头; 此前在这里抛 ProviderKeyMissingError 把空 key 当故障,
+                    #   等于"系统不支持空 api_key"; 仍不回落全局默认 key(隔离语义不变)。
                     # env 安全性: get_service_config 的 cfg 已过 _apply_env_overrides，env key 已入配置。
-                    if not _pv_key:
-                        raise ProviderKeyMissingError(
-                            f"会话切换到 provider {_ov.provider}，但该 provider 未配置 api_key，"
-                            f"请先在设置页填写，或设置环境变量 {_ov.provider.upper()}_API_KEY"
-                        )
+                    _pv_key = "" if _pv_key is None else _pv_key
                     # model_params 解析复用 service.parse_model_params(DRY 唯一权威, 与全局实例同逻辑)
                     _pv_ebp, _pv_ctx = parse_model_params(_pv_cfg, _ov.model or "")
                 except ProviderKeyMissingError:

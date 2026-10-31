@@ -33,6 +33,8 @@
 //   buildDiff 基线改用原值比较，使带空格的历史脏值 api_base 能被清理。
 // 2026-09-27 07:38 小欧 - 修 F3/F7：后端 masked 变化即复位本地 api_key。原先只在 doSave 清，而底部保存栏走
 //   saveProviderDraft 不经 doSave → 落盘后本地仍留明文、且被 buildDiff 重新算成脏（底栏存不干净）。
+// 2026-10-31 小欧 - api_key 行下补语义说明：留空=不带 Authorization 头（无鉴权端点直接留空），
+//   留空保存不改动已存密钥、要清掉走「清空 api_key」。不引入任何额外开关，判定只有 key 空不空一条。
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { Button, Input, InputNumber, Switch } from 'antd';
@@ -182,6 +184,9 @@ export const ProviderConfig: React.FC<Props> = ({
     }
   };
 
+  // 2026-10-31 - 小欧 - 已保存的密钥要清空，走 ④ 操作区的「清空 api_key」（既有功能，含二次确认）。
+  //   本组件只负责"回显状态 + 说明留空语义"，不另开第二个清空入口。
+
   if (isEnv)
     return (
       <div>
@@ -259,7 +264,9 @@ export const ProviderConfig: React.FC<Props> = ({
       </div>
 
       {/* api_key —— 明文查看已迁入 SecretRevealInput（父组件不持有明文）；env 接管时整块只读，
-          由 isEnv 早退分支处理。打码串由后端生成，本组件只传 masked 原样下传。 */}
+          由 isEnv 早退分支处理。打码串由后端生成，本组件只传 masked 原样下传。
+          2026-10-31 - 小欧 - 右侧补「清空」：api_key 留空保存按约定是"不修改"，要真正清空只有
+          clear:true 一条路；入口此前重构中丢失，导致"把 key 设成空"在界面上无法完成。 */}
       <div style={settingsRowStyle}>
         <span style={settingsLabelStyle}>api_key</span>
         <SecretRevealInput
@@ -270,6 +277,24 @@ export const ProviderConfig: React.FC<Props> = ({
           masked={config.api_key.masked}
           width={settingsControl.apiKeyWidth}
         />
+        {/* 2026-10-31 - 小欧 - 状态必须看得见：这一行右侧直接写当前状态，
+            用户不必去读下面的说明才知道这个 Provider 带不带密钥。
+            清空动作不在此处 —— 统一走 ④ 操作区的「清空 api_key」，避免两套清空入口。 */}
+        <span
+          style={{
+            marginLeft: Spacing.SM,
+            color: Colors.TEXT.SECONDARY,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {config.api_key.configured ? '已配置' : '未配置 = 不带密钥'}
+        </span>
+      </div>
+      {/* 2026-10-31 - 小欧 - 空 api_key 的语义说明：留空不是"配置错误"，而是"不带鉴权头"。
+          本机 Ollama / vLLM 等无鉴权端点直接留空即可；判断依据只有 key 空不空，没有额外开关。 */}
+      <div style={EXTRA_STYLE}>
+        留空 = 请求不携带 Authorization 头（本机 Ollama / vLLM
+        等无鉴权端点无需填写）
       </div>
 
       {/* base_url */}

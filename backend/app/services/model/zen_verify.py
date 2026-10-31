@@ -22,6 +22,7 @@
     否则失去"先在外部更新配方"的意义) 与 Authorization 空 key 时去掉畸形 Bearer 头 — 小欧-2026-10-10
 
   2026-10-11 小欧 - _verify_by_adapter 删硬编码 opencodeZen 键名, 由传入 name 解析; 加 ProviderAdapter 基类守卫(无适配器 provider 返回明确错误而非假绿) — 小欧-2026-10-11
+  2026-10-31 小欧 - 删本地重复的"空 key 摘 Authorization"实现, 收口到 ProviderAdapter.auth_headers 单点 — 小欧-2026-10-31
 
 """
 import asyncio
@@ -123,11 +124,8 @@ async def _verify_by_adapter(model: str, name: str, api_base: str, api_key: str,
     body = adapter.ensure_gate_body(body)             # 强制 stream:true
     headers = dict(adapter.static_headers(api_key))
     headers.update(adapter.per_request_headers())
-    # 空 key 摘掉 Authorization: 基类无条件造 "Bearer " 畸形头, httpx 发请求前就抛
-    # IllegalProtocolError(adapter 路一个模型都验不到)。与 fetch_remote_models 同口径 ——
-    # 免费层靠 UA 身份而非 key 通过, 无 key 是正常场景不是配置错误。
-    if not api_key.strip():
-        headers.pop("Authorization", None)
+    # 2026-10-31 - 小欧 - 空 key 不带 Authorization 已收口到 ProviderAdapter.auth_headers,
+    #   本处原有 pop 是同一规则的第三份实现, 删除 (DRY)。
     headers["Content-Type"] = "application/json"
     async with sem:
         try:

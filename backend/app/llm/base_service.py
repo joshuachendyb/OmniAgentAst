@@ -253,7 +253,10 @@ class BaseAIService:
         extra_body_params 由 __init__ 权威合并(顶层键用户优先, chat_template_kwargs 深合并,
         保 enable_thinking:True 兜底), 此处仅直传不重复合并(DRY+KISS-DIRECT)。"""
         snap = BaseAIService(
-            api_key=api_key or self.api_key,
+            # 2026-10-31 - 小欧 - 原为 `api_key or self.api_key`: 空串被 or 成 self 的 key, 于是
+            #   "目标 provider 没填 key"会静默拿全局默认 provider 的 key 去打别人的端点(凭据泄漏)。
+            #   改为仅 None 表示"沿用本代 key", "" 表示"明确不带鉴权头"(交由适配层不发 Authorization)。
+            api_key=api_key if api_key is not None else self.api_key,
             llm_model=model_ref if model_ref is not None else self.llm_model,
             timeout=self._inherit(self.timeout, timeout, inherit_missing),
             max_retries=self._inherit(self.max_retries, max_retries, inherit_missing),

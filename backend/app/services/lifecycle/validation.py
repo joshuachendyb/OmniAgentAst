@@ -9,6 +9,8 @@
 #   同一判定写两遍（DRY），且两套文案同指"没有可用 api_key"。详见 validate_credentials 内注释。
 # 2026-09-27 - 小欧 - 订正空 api_base 警示文案（原文"将使用默认值"撒谎：已删 client_sdk
 #   兜底，空 URL 调用即 400）。改为如实告知"调用时会报错，请到设置页填写完整地址" — 小欧 2026-09-27
+# 2026-10-31 - 小欧 - 空 api_key 由 error 降为 warning：留空即"不带 Authorization 头"，
+#   本机 Ollama/vLLM 等无鉴权端点应当能这样配，硬拦等于"系统不支持空 api_key" — 小欧-2026-10-31
 """
 validation — 配置验证
 
@@ -56,10 +58,14 @@ def validate_credentials(ai_config: dict, final_provider: str) -> Tuple[list, li
     api_key = selected_provider_config.get("api_key")
     # 2026-09-26 - 小欧 - 判空收口 is_blank_secret（缺失/空串/纯空白/类型非法统一为"未配置"），
     #   文案带出实际类型与值，便于定位 YAML 手误。详见文件头「三堂会审后修正·二」
+    # 2026-10-31 - 小欧 - 空 key 由 error 降为 warning: api_key 留空就是"不带鉴权头",
+    #   本机 Ollama / vLLM 等无鉴权端点应当能这么配, 硬拦等于"系统不支持空 api_key"。
+    #   降级不等于不提示 —— 仍明确告知"不会携带 Authorization 头", 免得忘填 key 时完全无感。
     if is_blank_secret(api_key):
-        errors.append(
-            f"provider '{final_provider}' 未配置可用的 api_key"
-            f"（缺失/空串/纯空白，或类型非法：{type(api_key).__name__}={api_key!r}）"
+        warnings.append(
+            f"provider '{final_provider}' 未配置 api_key"
+            f"（缺失/空串/纯空白，或类型非法：{type(api_key).__name__}={api_key!r}），"
+            f"请求将不携带 Authorization 头；若该 Provider 需要密钥请先填写"
         )
     api_base = selected_provider_config.get("api_base")
     if not api_base:
