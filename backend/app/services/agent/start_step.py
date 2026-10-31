@@ -120,12 +120,16 @@
 # 2026-10-31 小欧 - 函数改名(北京老陈令): start_compress_summary_threshold → compress_summary_threshold,
 #   去掉 start 前缀(该口径=窗口×限制系数, 非 start 阶段专用, 其他调用方同样可用); 本模块 import 与两处调用、
 #   文档引用同步改名, 零行为变更。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 三堂会审整改(北京老陈令): 老路/增量路两段约 35 行重复的"超判定线→阶梯裁到 trim 门限→
+#   失败降级"收口为 _shrink_before_summary(判定/裁剪/保尾同传 estimate_feed_tokens, 异常降级返回入参),
+#   两路各一行调用; 并补注"两把尺各管一段"(触发判定原文口径 vs 裁剪 feed 口径), 防后人误改成一致。— 小欧-2026-10-31
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
 职责(SRP): 仅承载「start 前置装配环节」全部业务——
   - _build_injected_history: 构建注入历史并存 agent._injected_history_msgs(不写 conversation_history)
   - _maybe_compact_injected_history: 超窗判定(C4, 读 _injected_history_msgs, 置 _needs_compact 标记)
+  - _shrink_before_summary: 摘要前窗口闸(超判定线→阶梯裁到 trim 门限, 两条压缩路共用)
   - _compact_injected_history: C4 锚定摘要生成(超窗时产出摘要文本, 不装配 conv)
   - _build_start_contract: 契约构造(context_summary 快照 + StartStep, 自 sse_events 迁入)
   - assemble_start_step: 唯一对外入口(async; 构建注入历史 → 判定 → 摘要 → 契约)
@@ -354,6 +358,9 @@ def _maybe_compact_injected_history(agent) -> None:
     前置条件: _build_injected_history 已执行。
     关联逻辑: 估算复用 MessageBuilder._estimate_tokens(DRY); 压缩摘要 limit=运行时上下文窗口 × 限制系数
       (START_LIMIT_RATIO, 北京老陈 2026-08-17 定案, start 超窗=上下文×1/2; 限制系数≠调节系数, 后者服务 loop 裁剪)。
+    2026-10-31 小欧 口径说明(三堂会审整改, 防误改): 本函数用**原文**体积判"要不要压缩"(原文 vs 压缩摘要 limit),
+      与 _shrink_before_summary 的 **feed** 口径(实际喂进去的体积 vs 判定线)是两个不同问题、两把尺, 各管一段;
+      原文口径下本函数关心"历史真实有多大, 值不值得压", 压缩请求能否塞进去由那道闸负责 —— 不要"统一"成一致。— 小欧-2026-10-31
     2026-10-07 北京老陈: 数据源由 conversation_history 改 _injected_history_msgs(判定口径=注入历史,
       不含 system/task; init_history 已推迟到 react_loop 装配段, 此刻 conversation_history 为空)。
     """
@@ -398,6 +405,58 @@ async def _emit_summarizing(agent, scope: str, count: int) -> None:
                        f"生成摘要中({scope}{count}条)")
 
 
+def _shrink_before_summary(agent, messages: List[Dict[str, Any]],
+                           scope: str) -> List[Dict[str, Any]]:
+    """摘要前窗口闸: 超判定线则阶梯裁剪到 trim 门限(判/裁同一把尺) — 小欧 2026-10-31
+
+    适用场景: start 两条压缩路径(全量 _compact_injected_history / 增量 _assemble_anchor_delta)在调摘要
+      LLM 前统一过的同一道闸 —— 保证"压缩请求自己"不会先撞窗 400。
+    使用方法: 传 agent + 待压缩消息 + scope('全量'/'增量', 仅日志区分), 返回可安全送 LLM 的列表。
+    输入: agent(取 MAX_CONTEXT_TOKENS); messages 待压缩消息; scope 路径名。
+    输出: List —— 未超判定线返回入参本身(零拷贝, 行为与改造前一致); 超则返回阶梯裁剪后的新列表;
+          任何异常降级返回入参(裁剪是纯优化, 不得影响摘要主链)。
+    前置条件: messages 非空。
+    两种口径各管一段(防后人误改, 北京老陈令):
+      - 判"要不要压缩" = _maybe_compact_injected_history 的原文口径(原文体积 vs 压缩摘要 limit) —— 那一处
+        关心的是"历史真实有多大, 值不值得压", 用原文才对。
+      - 判"压缩请求塞不塞得进去" = 本函数 feed 口径(实际喂进去的体积 vs 判定线) —— 压缩时 tool 输出会被
+        截到 summary_feed_max_chars, 用原文判会虚报(实测 174 条样本虚报 325%)→ 误触发 → 白丢早段轮次。
+      故两处口径**不同是设计**; 但同一处内"判定/裁剪/保尾边界"必须同尺(estimator 三处同传)。
+    """
+    if not messages:
+        return messages
+    try:
+        from app.services.agent.compaction_constants import SUMMARY_PRUNE_TOOL_OUTPUT
+        from app.services.agent.agent_utils import conv_threshold, trim_conv_threshold
+        from app.services.agent.compaction.assembler import shrink_to_budget
+        from app.services.agent.compaction.summary import estimate_feed_tokens
+
+        _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
+        _ctx_threshold = conv_threshold(_ctx)       # 判定线: 窗口 × 调节系数
+        _cur = estimate_feed_tokens(messages)
+        if _cur <= _ctx_threshold:
+            logger.debug(f"[start_step] {scope}未超判定线({_cur} <= {_ctx_threshold}), 不裁直接压缩")
+            return messages
+        _target = trim_conv_threshold(_ctx)         # 目标线: trim 门限
+        logger.info(f"[start_step] {scope}超判定线({_cur} > {_ctx_threshold}), 阶梯裁剪到 trim 门限 {_target}")
+        out = shrink_to_budget(
+            messages, _target,
+            allow_prune=bool(get_config().get('tuning.compaction.summary_prune_tool_output',
+                                              SUMMARY_PRUNE_TOOL_OUTPUT)),
+            estimator=estimate_feed_tokens)
+        _after = estimate_feed_tokens(out)
+        if _after > _target:
+            logger.error(f"[start_step] {scope}阶梯裁剪后仍超 {_after} > {_target}, 放行并留证")
+        else:
+            logger.info(f"[start_step] {scope}阶梯裁剪完成: {_after} <= 目标 {_target}"
+                        f" (判定线 {_ctx_threshold})")
+        return out
+    except Exception as e:
+        # 裁剪是纯优化, 失败不得影响摘要主链(降级为原样喂)
+        logger.warning(f"[start_step] {scope}摘要前超窗裁剪失败, 降级为原样喂: {type(e).__name__}: {e!r}")
+        return messages
+
+
 async def _compact_injected_history(agent) -> str:
     """C4 锚定摘要生成(10.1.7⑤/10.1.8 S5) — 小健 2026-08-17
 
@@ -428,40 +487,9 @@ async def _compact_injected_history(agent) -> str:
         agent._needs_compact = False
         return ""
     # 2026-10-31 小欧 超窗前置裁剪(北京老陈令): 进入压缩前先判 conv 是否超判定线(窗口×调节系数),
-    #   超了调 compaction.assembler.shrink_to_budget 阶梯裁到 trim 门限(目标线)以内再压缩, 保证压缩请求
-    #   本身不撞窗; 未超判定线保持原行为(不裁直接压缩, 零变化)。裁算法归 compaction 域, 本模块只管门限判定。
-    try:
-        from app.services.agent.compaction_constants import SUMMARY_PRUNE_TOOL_OUTPUT
-        from app.services.agent.agent_utils import conv_threshold, trim_conv_threshold
-        from app.services.agent.compaction.assembler import shrink_to_budget
-        from app.services.agent.compaction.summary import estimate_feed_tokens
-
-        _ctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
-        _ctx_threshold = conv_threshold(_ctx)       # 判定线: 窗口 × 调节系数
-        _target = trim_conv_threshold(_ctx)         # 目标线: trim 门限
-        _allow_prune = bool(get_config().get('tuning.compaction.summary_prune_tool_output',
-                                             SUMMARY_PRUNE_TOOL_OUTPUT))
-        # 2026-10-31 小欧 体积口径(北京老陈令): 用 estimate_feed_tokens(实际喂进去的体积)判与裁,
-        #   不用 _estimate_tokens(原文)——原文把 tool 输出按全长算, 而 feed 会把每条 tool 截到
-        #   summary_feed_max_chars; tool 占历史体积九成以上, 用原文判必虚报→误触发→白丢早段轮次。
-        #   判与裁同传同一函数(estimator), 防"按 feed 判、按原文裁"过裁。
-        _cur = estimate_feed_tokens(_hist_for_summary)
-        if _cur > _ctx_threshold:
-            logger.info(f"[start_step] 超判定线({_cur} > {_ctx_threshold}), 阶梯裁剪到 trim 门限 {_target}")
-            _hist_for_summary = shrink_to_budget(_hist_for_summary, _target,
-                                                 allow_prune=_allow_prune,
-                                                 estimator=estimate_feed_tokens)
-            _cur = estimate_feed_tokens(_hist_for_summary)
-            if _cur > _target:
-                logger.error(f"[start_step] 阶梯裁剪后仍超 {_cur} > {_target}, 放行并留证")
-            else:
-                logger.info(f"[start_step] 阶梯裁剪完成: {_cur} <= 目标 {_target}"
-                            f" (判定线 {_ctx_threshold})")
-        else:
-            logger.debug(f"[start_step] 未超判定线({_cur} <= {_ctx_threshold}), 不裁直接压缩")
-    except Exception as e:
-        # 裁剪是纯优化, 失败不得影响摘要主链(降级为全量喂)
-        logger.warning(f"[start_step] 摘要前超窗裁剪失败, 降级为全量喂: {type(e).__name__}: {e!r}")
+    #   超了由 _shrink_before_summary 阶梯裁到 trim 门限(目标线)以内再压缩, 保证压缩请求本身不撞窗;
+    #   未超判定线保持原行为(不裁直接压缩, 零变化)。判定/裁剪/降级口径统一在该函数(增量路共用同一道闸)。
+    _hist_for_summary = _shrink_before_summary(agent, _hist_for_summary, "全量")
     try:
         _task_id = getattr(agent, "task_id", None)
         if _task_id:
@@ -574,35 +602,12 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
     logger.info(
         f"[start_step] 增量路径: delta {_delta_tokens}tok ≥ 阈值 {_threshold}, 调 LLM 增量压缩"
         f"(anchor={anchor.get('task_id')}, delta {len(delta_msgs)}条)")
-    # 2026-10-31 小欧 增量路补窗口闸(北京老陈令): 与老路同尺——按 feed 实际口径判是否超判定线
-    #   (窗口×调节系数), 超了阶梯裁到 trim 门限再调压缩; 否则 chunked 摘要请求本身无任何体积兜底
+    # 2026-10-31 小欧 增量路窗口闸(北京老陈令): 与老路同一道闸(_shrink_before_summary) —— 按 feed 实际口径判
+    #   是否超判定线(窗口×调节系数), 超了阶梯裁到 trim 门限再调压缩; 否则 chunked 摘要请求本身无任何体积兜底
     #   (它只把每条 tool 截到 2000 字, 不拆批), 超窗即 400。裁后同步 _injected_delta_msgs,
     #   使失败回退注入的是收缩副本而非原样整段。— 小欧-2026-10-31
-    try:
-        from app.services.agent.agent_utils import conv_threshold, trim_conv_threshold
-        from app.services.agent.compaction.assembler import shrink_to_budget
-        from app.services.agent.compaction.summary import estimate_feed_tokens
-        from app.services.agent.compaction_constants import SUMMARY_PRUNE_TOOL_OUTPUT
-
-        _dctx = int(getattr(agent.message_builder, "MAX_CONTEXT_TOKENS", 0) or 0)
-        _d_threshold = conv_threshold(_dctx)
-        _d_feed = estimate_feed_tokens(delta_msgs)
-        if _d_feed > _d_threshold:
-            _d_target = trim_conv_threshold(_dctx)
-            logger.info(f"[start_step] 增量超判定线({_d_feed} > {_d_threshold}), 阶梯裁剪到 trim 门限 {_d_target}")
-            delta_msgs = shrink_to_budget(
-                delta_msgs, _d_target,
-                allow_prune=bool(get_config().get('tuning.compaction.summary_prune_tool_output',
-                                                  SUMMARY_PRUNE_TOOL_OUTPUT)),
-                estimator=estimate_feed_tokens)
-            agent._injected_delta_msgs = delta_msgs
-            logger.info(f"[start_step] 增量阶梯裁剪完成: {estimate_feed_tokens(delta_msgs)} tok"
-                        f" (判定线 {_d_threshold})")
-        else:
-            logger.debug(f"[start_step] 增量未超判定线({_d_feed} <= {_d_threshold}), 不裁直接压缩")
-    except Exception as e:
-        # 裁剪是纯优化, 失败不得影响摘要主链(降级为原样喂)
-        logger.warning(f"[start_step] 增量摘要前裁剪失败, 降级为原样喂: {type(e).__name__}: {e!r}")
+    delta_msgs = _shrink_before_summary(agent, delta_msgs, "增量")
+    agent._injected_delta_msgs = delta_msgs
     agent._compact_attempted = True
     new_summary = ""
     try:

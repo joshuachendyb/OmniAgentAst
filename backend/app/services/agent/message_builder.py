@@ -104,6 +104,9 @@
 #   trim_budget_base ②队列预算 trim_base×ratio² 改调 trim_queue_budget(trim_history 内联算式删除)
 #   ③删 _tools_token_reserve 属性 —— trim_budget_base 已单点读 tuning.trim.tools_token_reserve,
 #   该属性生产侧零读取(仅测试读)。预算链数值不变 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 三堂会审整改(北京老陈令): ①keep_full_raw 增可选 key 形参(缺省 "_raw"), 参数原文可存
+#   _args_raw 而不与 content 原文抢同一字段(同条消息既截 content 又截参数时, 后写者会把前者覆盖掉);
+#   ②_COMPACTION_TEMP_KEYS 补 _args_raw, 请求前随其余内部标记一并剥离, 防泄漏进 wire — 小欧-2026-10-31
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -414,14 +417,19 @@ class MessageBuilder:
         return ""
 
     @staticmethod
-    def keep_full_raw(msg: Dict[str, Any], raw: str) -> None:
-        """把被裁剪/压缩前的原文写入 msg["_raw"], 只保留最长者 — 小欧 2026-10-30
+    def keep_full_raw(msg: Dict[str, Any], raw: str, key: str = "_raw") -> None:
+        """把被裁剪/压缩前的原文写入 msg[key], 只保留最长者 — 小欧 2026-10-30
 
         压缩/裁剪链路上多处都会写 `_raw`(prune 语义替换与保头截断、split_turn 超长截断),
         若逐处只写不判, 同一条消息被二次处理时 `_raw` 会被后一次的"已截断文本"覆盖, 全文丢失。
-        收口为单点: 已有更长的 `_raw` 则不动。"""
-        if raw and len(raw) > len(msg.get("_raw") or ""):
-            msg["_raw"] = raw
+        收口为单点: 已有更长的 `_raw` 则不动。
+
+        2026-10-31 小欧 - key 形参(北京老陈令): 缺省 "_raw" 保持全部既有调用点行为不变; 传 "_args_raw" 时
+          存的是 tool_calls.arguments 原文 —— 与 content 原文分开两字段, 同一条 assistant 消息既被第1级截
+          content、又被第3级截参数时互不覆盖(两处原都写 _raw, 先写的被后写的顶掉)。
+        """
+        if raw and len(raw) > len(msg.get(key) or ""):
+            msg[key] = raw
 
     def add_assistant_message(self, content: str) -> AssistantMessage:
         """追加assistant最终回答到conversation_history — 2026-06-25 小欧 J-1修复: 封装统一入口
@@ -477,7 +485,8 @@ class MessageBuilder:
         #   统一在此浅拷贝后清空, 防泄漏 LLM 请求/污染 wire(对齐 14.9.3③/14.9.6 C2 剥离要求)。纯剥离不存在的字段零影响。
         # 2026-09-20 - 小欧 - B组(锚演进): 一并剥离 user_message_id(锚), conversation_history 源保留锚供 assistant 回复配对落库,
         #   wire 层不携带该内部锚(对齐 __all__ 同源锚演进)。自检: 剥离后 message 纯 payload 无内部锚 — SRP(锚=状态域, wire=传输域)
-        _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_truncated", "user_message_id")
+        # 2026-10-31 小欧: 补 _args_raw —— tool_calls.arguments 原文(与 content 的 _raw 分字段存), 同属内部标记
+        _COMPACTION_TEMP_KEYS = ("_summary", "_pruned", "_compressed", "_raw", "_args_raw", "_truncated", "user_message_id")
         # 2026-10-05 - 小欧 - wire 推理字段去冲突: 内部字段 reasoning 提升为 API 标准 reasoning_content(单次改名,
         #   同 message_to_dict 规则)后删除; 空 reasoning_content 不上线。服务商拒绝同一消息并存两个推理字段(见文件头)。
         for msg in messages:

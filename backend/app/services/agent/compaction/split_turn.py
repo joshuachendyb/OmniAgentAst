@@ -24,6 +24,11 @@
 #   MessageBuilder.keep_full_raw —— 原裸写使二次截断把已存全文覆盖成本次截断头(实测 6000→4013), 与其
 #   docstring"_raw 原内容"承诺相违; ②PROTECT_ROUNDS_MIN/MAX/KEEP_RECENT_ROUNDS 三常量 import 上提模块顶,
 #   删 resolve_protect_rounds 函数内重复 import(每次调用重解析) — 小欧-2026-10-30
+# 2026-10-31 小欧 - 三堂会审整改(北京老陈令): ①find_tail_start 增 estimator 形参(缺省原文口径) —— 摘要路径
+#   按 feed 口径判"该裁", 保尾边界也必须按 feed 算, 否则判与裁两把尺(实测预算 8000 时现役保尾 6 条/2648 tok,
+#   按 feed 应为 14 条/6981 tok, 即白丢 8 条本可容纳的尾部上下文); ②truncate_tool_call_args 由 assembler 迁入
+#   —— 与 truncate_oversized_message 同为"单条消息超长就截"的切分原语, 装配线只编排不持原语;
+#   ③其原文改存 _args_raw(keep_full_raw 带 key), 不再与 content 原文抢 _raw 同一字段 — 小欧-2026-10-31
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
@@ -32,9 +37,13 @@
 切分只做位置/预算计算, 注入与摘要归 assembler/summary; token 估算复用 MessageBuilder._estimate_tokens(DRY);
 system 恒保留, 切分保 FC 配对(保留 assistant(tool_calls) 必带其 tool);
 absolute_start 供 assembler 定位 new_block(对应 generate_chunked_summary 增量块)。
+2026-10-31 小欧: 本模块两类原语 —— 位置/预算计算(find_tail_start 等) + 单条超长截断
+  (truncate_oversized_message 截 content / truncate_tool_call_args 截 tool_calls.arguments), 体积估算
+  一律可按调用方口径(estimator)传入, 保证"按什么尺判就按什么尺裁"。— 小欧-2026-10-31
 """
 from typing import List, Dict, Tuple
 
+from app.logger import logger
 from app.services.agent.compaction_constants import (
     KEEP_RECENT_ROUNDS,               # 2026-10-30 小欧: 保护区轮数默认值(原函数内重复 import, 上提模块顶)
     PROTECT_ROUNDS_MAX,               # 2026-10-30 小欧: 保护区轮数夹取上限(同上)
@@ -43,6 +52,7 @@ from app.services.agent.compaction_constants import (
     TAIL_TOKEN_MAX,
     TAIL_TOKEN_MIN,
     TAIL_TOKEN_RATIO,
+    TOOL_SUMMARY_HEAD_CHARS,          # 2026-10-31 小欧: 旧轮 tool 输出/工具参数保首门限(4000 的 1/8, 迁入用)
 )
 from app.services.agent.message_builder import MessageBuilder
 
@@ -72,7 +82,7 @@ def count_system_prefix(messages: List[Dict]) -> int:
 
 
 def find_tail_start(messages: List[Dict], budget_tokens: int,
-                    align_turn: bool = False) -> int:
+                    align_turn: bool = False, estimator=None) -> int:
     """定位尾部窗口起始下标, 满足 token 预算且不拆散 FC 对 — 小健 2026-08-17
 
     适用场景: 压缩前确定保尾区的起点下标(该下标之后原样保留)。
@@ -80,6 +90,10 @@ def find_tail_start(messages: List[Dict], budget_tokens: int,
     输入: messages 消息列表; budget_tokens 保尾 token 预算;
           align_turn 2026-10-25 小欧(北京老陈令): True=切点对齐到 user 边界(整轮不拆,
           user 与其回答同进退), loop 裁剪用; False=原行为(压缩/降本调用点不变)。
+          estimator 2026-10-31 小欧: 体积估算函数, 缺省 MessageBuilder._estimate_tokens(原文口径)。
+          **必须与调用方判定所用的尺一致** —— 摘要路径按 feed 体积判"该裁", 此处也要按 feed 算预算,
+          否则同一份预算在 feed 口径下能装 2 倍以上的尾部消息, 会白丢尾部上下文(实测 6 条 vs 14 条);
+          loop 裁剪不传即维持原行为。
     输出: int 保尾起点下标; 空列表返回 0。
     前置条件: 无; 保尾三原则——system 恒保留(下标头不可动); 遇 assistant(tool_calls) 该对整体保留;
               倒序累计超预算即停; 保底返回 system 之后下标。
@@ -87,13 +101,14 @@ def find_tail_start(messages: List[Dict], budget_tokens: int,
     """
     if not messages:
         return 0
+    estimate = estimator or MessageBuilder._estimate_tokens
     prefix = count_system_prefix(messages)
-    if prefix and MessageBuilder._estimate_tokens(messages[:prefix]) > budget_tokens:
+    if prefix and estimate(messages[:prefix]) > budget_tokens:
         return prefix
     used = 0
     tail_start = prefix
     for i in range(len(messages) - 1, prefix - 1, -1):
-        cost = MessageBuilder._estimate_tokens([messages[i]])
+        cost = estimate([messages[i]])
         if used + cost > budget_tokens:
             break
         used += cost
@@ -106,7 +121,7 @@ def find_tail_start(messages: List[Dict], budget_tokens: int,
         while j > prefix and messages[j].get("role") != "user":
             j -= 1
         if messages[j].get("role") == "user":
-            extra = MessageBuilder._estimate_tokens(messages[j:tail_start])
+            extra = estimate(messages[j:tail_start])
             if used + extra <= budget_tokens:
                 tail_start = j  # 回退到该轮 user 起点, 整轮保留
             else:
@@ -204,4 +219,65 @@ def truncate_oversized_message(tool_msgs: List[Dict]) -> List[Dict]:
                 result.append(m)
                 continue
         result.append(msg)
+    return result
+
+
+def truncate_tool_call_args(messages: List[Dict]) -> List[Dict]:
+    """截断 assistant tool_calls.arguments 超长参数, 保首段 + 留原文 — 小欧 2026-10-31
+
+    适用场景: shrink_to_budget 第3级——「单轮/中段塞进巨型 tool 参数」(如 write 90 万字正文), 第1/2级
+      (截 content / 清 tool 输出)对它空转(参数不在 content 里), 不截就只能靠丢整轮, 那是拿整段对话换体积。
+    使用方法: 传消息列表, 返回参数已截断的新列表(无超长参数则原样返回元素, 不拷贝)。
+    输入: messages 消息列表。
+    输出: List[Dict]; 超长 arguments 截为 首段 + "…[split_turn]", 原文经 MessageBuilder.keep_full_raw
+          存 _args_raw(与 content 的 _raw 分字段), 置 _truncated=True(与第1级同一标记, 请求前随
+          _COMPACTION_TEMP_KEYS 剥离)。
+    保首门限(复用既有常量, 不新增参数):
+      - 最后一条 user 之前的旧轮: TOOL_SUMMARY_HEAD_CHARS(= SPLIT_TURN_MAX_ASSISTANT_CHARS/8, 500 字)——
+        旧轮参数只为摘要/回看"当时写了哪个文件、开头写了什么", 与第2级 tool 输出保首同一把尺。
+      - 当前轮(最后一条 user 起): SPLIT_TURN_MAX_ASSISTANT_CHARS(4000 字)——与第1级对 content 的截断同门限;
+        当前轮不设成"一点不动", 因为走到这一级时已别无他法(不截 → 请求 400 全盘皆输), 4000 字足以让模型
+        认出自己写过什么, 而 90 万字参数照样能压到 2.1k tok。
+    前置条件: 无; 不动 tool_calls 的 id/name 与 tool 消息, FC 配对关系不变。
+    关联逻辑: 全链路唯一处理 arguments 体积的位置(PASS3_ARGS_* 两个常量至今无消费方);
+      arguments 为字符串, 截断后不再是合法 JSON——历史侧仅回显不再解析, 且真值可由 _args_raw 还原。
+    位置: 2026-10-31 小欧 由 assembler 迁入(北京老陈令): 与 truncate_oversized_message 同为"单条超长就截"
+      的切分原语, assembler 只做装配编排(层级一致), 不持原语。 — 小欧-2026-10-31
+    """
+    last_turn = len(messages)
+    for i in range(len(messages) - 1, -1, -1):
+        if messages[i].get("role") == "user":
+            last_turn = i
+            break
+    result: List[Dict] = []
+    hit = 0
+    for idx, msg in enumerate(messages):
+        calls = msg.get("tool_calls")
+        if msg.get("role") != "assistant" or not calls:
+            result.append(msg)
+            continue
+        limit = SPLIT_TURN_MAX_ASSISTANT_CHARS if idx >= last_turn else TOOL_SUMMARY_HEAD_CHARS
+        new_calls: List[Dict] = []
+        raw_args = ""
+        for tc in calls:
+            if isinstance(tc, dict):
+                fn = tc.get("function") or {}
+                args = str(fn.get("arguments") or "")
+                if len(args) > limit:
+                    if len(args) > len(raw_args):
+                        raw_args = args
+                    tc = {**tc, "function": {**fn, "arguments": args[:limit] + "…[split_turn]"}}
+                    hit += 1
+            new_calls.append(tc)
+        if raw_args:
+            m = dict(msg)
+            m["tool_calls"] = new_calls
+            m["_truncated"] = True
+            MessageBuilder.keep_full_raw(m, raw_args, "_args_raw")   # 2026-10-31 小欧: 参数原文独立字段, 不与 content 的 _raw 互覆
+            result.append(m)
+            continue
+        result.append(msg)
+    if hit:
+        logger.info(f"[shrink] 第3级截 tool_call 参数: {hit} 个调用"
+                    f"(旧轮 {TOOL_SUMMARY_HEAD_CHARS} 字 / 当前轮 {SPLIT_TURN_MAX_ASSISTANT_CHARS} 字)")
     return result
