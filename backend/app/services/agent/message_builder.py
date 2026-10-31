@@ -108,8 +108,8 @@
 #   _args_raw 而不与 content 原文抢同一字段(同条消息既截 content 又截参数时, 后写者会把前者覆盖掉);
 #   ②_COMPACTION_TEMP_KEYS 补 _args_raw, 请求前随其余内部标记一并剥离, 防泄漏进 wire — 小欧-2026-10-31
 # 2026-10-31 小欧 - 注入装配单一化(设计[61]): 新增 build_user_turn_text(纯装配, 引用块+目录块+用户原话)
-#   与 build_interject_text(插话侧: 快照未变不重复注入, 变了就地作废旧块); init_history 改为调前者,
-#   目录块渲染统一走 workspace_block.render_workspace_block — 小欧-2026-10-31
+#   与 build_interject_text(插话侧: 快照未变不重复注入, 变了就地作废旧块); init_history 改为调前者;
+#   目录块渲染当时放本层(render_workspace_block), 同日下条已改为编排层渲染 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块改由编排层渲染并传文本(init_history/build_interject_text 收 ws_text),
 #   本层不再自取快照渲染 —— 注入/日志/回执同取一份, 不再各算一遍 — 小欧-2026-10-31
 """

@@ -328,8 +328,8 @@ from app.session_workspace import (  # 会话 Workspace 任务级快照(中立�
     reset_current_session_workspaces,
     set_current_session_workspaces,
 )
-# 2026-10-31 小欧 - 注入装配单一化(设计[61]): 目录块渲染与 user 正文装配统一在 agent 层,
-#   编排层只在"取不到目标任务 agent"的降级路径上直接调用装配函数(无法走 build_interject_text) — 小欧-2026-10-31
+# 2026-10-31 小欧 - 注入装配单一化(设计[61]): 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
+#   user 正文装配归 message_builder; 编排层只在"取不到目标任务 agent"的降级路径直接调 build_user_turn_text — 小欧-2026-10-31
 from app.services.agent.message_builder import build_user_turn_text
 from app.services.agent.workspace_block import (  # 2026-10-31 小欧 设计[61] 5.6/D4: 目录块渲染/日志/提示三合一
     build_ws_notice, render_workspace_block, report_ws_block,
