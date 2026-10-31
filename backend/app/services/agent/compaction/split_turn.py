@@ -36,13 +36,14 @@
 #   产出 Python repr 的问题。 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 无 user 边界的 delta 段改判当前轮: 原默认 last_turn=len(messages) 把整段当旧轮(参数只保 500,
 #   实测 361 字), 模型认不出自己刚写的文件; 改取最后一轮 FC 决策起点作当前轮(仅它按 4000), 其余仍按 500。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 删 find_tail_start 循环尾空 continue; docstring 订正 FC 配对来源(align_turn + 调用方剪孤儿)。— 小欧-2026-10-31
 """compaction.split_turn — 保尾切分原语(tail_start + 半轮劈分) — 小健 2026-08-17
 
 职责(SRP): 仅承载「保尾 token 预算 + 半轮劈分」的切分原语, 供 assembler 装配线切分历史窗口。
 设计文档: [4] 14.9.2 splitTurn / 14.3.2 select() / 10.1.8 S5 compaction 全模块。
 
 切分只做位置/预算计算, 注入与摘要归 assembler/summary; token 估算复用 MessageBuilder._estimate_tokens(DRY);
-system 恒保留, 切分保 FC 配对(保留 assistant(tool_calls) 必带其 tool);
+system 恒保留; FC 配对: align_turn 对齐 user 边界(整轮不拆), 非 align_turn 可能切在配对中间, 由调用方剪孤儿。
 absolute_start 供 assembler 定位 new_block(对应 generate_chunked_summary 增量块)。
 2026-10-31 小欧: 本模块两类原语 —— 位置/预算计算(find_tail_start 等) + 单条超长截断
   (truncate_oversized_message 截 content / truncate_tool_call_args 截 tool_calls.arguments), 体积估算
@@ -104,8 +105,9 @@ def find_tail_start(messages: List[Dict], budget_tokens: int,
           否则同一份预算在 feed 口径下能装 2 倍以上的尾部消息, 会白丢尾部上下文(实测 6 条 vs 14 条);
           loop 裁剪不传即维持原行为。
     输出: int 保尾起点下标; 空列表返回 0。
-    前置条件: 无; 保尾三原则——system 恒保留(下标头不可动); 遇 assistant(tool_calls) 该对整体保留;
-              倒序累计超预算即停; 保底返回 system 之后下标。
+    前置条件: 无; 保尾三原则——system 恒保留(下标头不可动); 倒序逐条累计, 超预算即停;
+              保底返回 system 之后下标。FC 配对不在本函数保证, 由 align_turn 对齐 user 边界,
+              非 align_turn 时切点可能落在配对中间, 由调用方剪孤儿。
     设计文档: [4] 14.3.2 select()(从最新往前逐轮累计, 预算内整轮保留)。
     """
     if not messages:
@@ -122,8 +124,6 @@ def find_tail_start(messages: List[Dict], budget_tokens: int,
             break
         used += cost
         tail_start = i
-        if messages[i].get("role") == "assistant" and messages[i].get("tool_calls"):
-            continue
     # 2026-10-25 小欧 align_turn: 切点须落在一轮起点(user), 整轮不拆 — loop 裁剪用(北京老陈令)
     if align_turn and tail_start > prefix and messages[tail_start].get("role") != "user":
         j = tail_start

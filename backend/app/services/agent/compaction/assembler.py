@@ -22,6 +22,7 @@
 #   2026-10-31 小欧 - 三堂会审整改(北京老陈令): ①truncate_tool_call_args 迁出至 split_turn(与 truncate_oversized
 #     _message 同为单条超长截断原语), 本模块只做装配编排; ②第2/4/5级 find_tail_start 一律传 estimator —— 保尾边界
 #     与超预算判定必须同一把尺(feed 口径下预算 8000 可保 14 条/6981 tok, 原文口径只保 6 条/2648 tok, 白丢 8 条)。— 小欧-2026-10-31
+#   2026-10-31 小欧 - 补 _args_raw 字段口径注记; 第2级日志分列压缩/清零释放; 第4/5级判据改 start>prefix。— 小欧-2026-10-31
 """compaction.assembler — 装配适配(保尾区保留 + 压缩消息注入 + 配对修剪) — 小健 2026-08-17
 
 职责(SRP): 仅承载「装配」三步:
@@ -34,6 +35,7 @@
 装配只编排注入/保留, 摘要生成归 summary; K3 复用既有 _trim_fc_pairs 思路(不重造);
 old_head 原样保留(不破坏原库), 摘要仅运行时回填(list 组合新列表, 不改入参);
 remove_dangling_tool_calls 与 keep_valuable_messages(C3 prune 删 tool)协同闭环保配对。
+
 2026-10-31 小欧 增 shrink_to_budget: 把"缩到预算"的阶梯循环收口为本模块公用函数(start 压缩前清洗的
   编排逻辑), 复用 split_turn/prune 原语, 不新增切分算法; 调用方只给目标 token 预算。第2级为
   「长 tool 输出保首段 + 短条清零」, 并支持自定义体积估算函数(摘要路径按实际 feed 口径估)。— 小欧-2026-10-31
@@ -41,6 +43,8 @@ remove_dangling_tool_calls 与 keep_valuable_messages(C3 prune 删 tool)协同�
   当前轮 4000), 专治单轮巨型参数对第1/2级免疫的场景 — 小欧-2026-10-31
 2026-10-31 小欧 三堂会审整改: truncate_tool_call_args 迁至 split_turn(单条超长截断原语与 content 截断同域),
   本模块只留装配编排; 保尾边界统一按调用方 estimator 计(见 shrink_to_budget)。— 小欧-2026-10-31
+
+字段名口径(以代码为准): tool_calls 参数原文存 `_args_raw`(编辑历史早期写作 `_raw`, 系迁移前旧名)。
 """
 from typing import List, Dict, Tuple
 
@@ -209,13 +213,15 @@ def shrink_to_budget(messages: List[Dict], limit_tokens: int,
                 rest = [dict(m) for m in messages[tail:]]
                 _before = est(far)
                 # protect_tokens: 只压"比保首还长"的(≈520 字), 短条保首几乎零释放且模板反撑大
-                far, _ = compress_long_tool_output(
+                far, _rel_compress = compress_long_tool_output(
                     far, min_release=0,
                     protect_tokens=int((TOOL_SUMMARY_HEAD_CHARS + 20) / CHARS_PER_TOKEN))
-                far, _ = prune_tool_output_keeping_tail(far, len(far))  # 短条清零(已压条靠 _compressed 守卫跳过)
+                far, _rel_prune = prune_tool_output_keeping_tail(far, len(far))  # 短条清零(已压条靠 _compressed 守卫跳过)
                 messages = far + rest
+                # 分列两块释放量(压缩/清零), 原只报合并总数 — 小欧-2026-10-31
                 logger.info(f"[shrink] 第2级保首{TOOL_SUMMARY_HEAD_CHARS}字+清零: "
-                            f"释放 {_before - est(far)} tok, 保尾 {len(rest)} 条")
+                            f"压缩释放 {_rel_compress} tok / 清零释放 {_rel_prune} tok / "
+                            f"本级共释放 {_before - est(far)} tok, 保尾 {len(rest)} 条")
         elif level == 3:
             # 2026-10-31 小欧 排在"丢轮"之前(北京老陈令): 截参数保留全部轮次, 丢轮丢整段对话, 前者破坏性小得多;
             #   且早/中轮的巨参数若不先截, 第4/5级会把那一整轮直接丢掉 — 小欧-2026-10-31
@@ -225,7 +231,8 @@ def shrink_to_budget(messages: List[Dict], limit_tokens: int,
         else:
             ratio = 0.6 if level == 4 else 0.25
             start = find_tail_start(messages, int(limit_tokens * ratio), align_turn=True, estimator=est)
-            if start > 0:
+            # 判据用 >prefix: 切点落回 system 区时本轮未丢条目, 免白跑一次剪孤儿 — 小欧-2026-10-31
+            if start > prefix:
                 messages = remove_dangling_tool_calls(messages[:prefix] + messages[start:])
         cur = est(messages)
         logger.info(f"[shrink] 第{level}级后: {cur} tok / 目标 {limit_tokens}")

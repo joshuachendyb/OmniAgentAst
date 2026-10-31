@@ -32,6 +32,7 @@
 # 2026-10-31 小欧 - 新增 _build_feed + estimate_feed_tokens: 原截断循环在两个摘要函数各写一份,
 #   收口为单一截断口径; 门限判定改用它估"实际喂进去的体积"(tool content 按 feed_max 截断后),
 #   治"拿未截断原文估→tool-heavy 历史虚报→误触发白裁旧轮" — 小欧-2026-10-31
+# 2026-10-31 小欧 - estimate_feed_tokens docstring 声明"不含 SUMMARY_TEMPLATE/_SUMMARY_TAIL_USER 固定开销", 算法未动。— 小欧-2026-10-31
 """compaction.summary — C4: 锚定摘要压缩 + 增量块式锚定摘要(降本变体) — 小欧 2026-08-16 / 小健 2026-08-17
 
 职责(单一职责): 本文件仅承载「锚定/增量块摘要引擎」(调 LLM, 产出摘要文本, 不破坏原库)。
@@ -143,6 +144,7 @@ def estimate_feed_tokens(messages: List[Dict],
     输入: messages 消息列表; feed_max 缺省读 tuning.compaction.summary_feed_max_chars。
     输出: int —— _build_feed 后的 token 估算(复用 MessageBuilder._estimate_tokens 单点)。
     前置条件: 无。
+    口径边界: 不含 SUMMARY_TEMPLATE/_SUMMARY_TAIL_USER 固定开销(保守偏差, 判定略偏低→略晚触发)。 — 小欧-2026-10-31
     关联逻辑: 与 generate_* 的构造口径同源; tool 输出占历史体积九成以上(实测 93.86%),
       原文估会远超 feed, 用原文做门限必虚报 → 误触发 → 白丢早段轮次。
     """

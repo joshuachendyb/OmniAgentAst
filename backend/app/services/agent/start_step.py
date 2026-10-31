@@ -123,6 +123,8 @@
 # 2026-10-31 小欧 - 三堂会审整改(北京老陈令): 老路/增量路两段约 35 行重复的"超判定线→阶梯裁到 trim 门限→
 #   失败降级"收口为 _shrink_before_summary(判定/裁剪/保尾同传 estimate_feed_tokens, 异常降级返回入参),
 #   两路各一行调用; 并补注"两把尺各管一段"(触发判定原文口径 vs 裁剪 feed 口径), 防后人误改成一致。— 小欧-2026-10-31
+# 2026-10-31 小欧 - 上条"两条路门限统一用 feed"限定范围: 仅指 _shrink_before_summary 的窗口门限; 增量 B 门
+#   仍按原文口径 _estimate_tokens, 两把尺不同是设计, 勿统一。另: 增量路压缩率分母改用收缩前 delta(_pre_shrink_delta)。— 小欧-2026-10-31
 """
 start_step — start 任务输入装配完整过程(单一模块, 一个入口)
 
@@ -606,6 +608,8 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
     #   是否超判定线(窗口×调节系数), 超了阶梯裁到 trim 门限再调压缩; 否则 chunked 摘要请求本身无任何体积兜底
     #   (它只把每条 tool 截到 2000 字, 不拆批), 超窗即 400。裁后同步 _injected_delta_msgs,
     #   使失败回退注入的是收缩副本而非原样整段。— 小欧-2026-10-31
+    # 压缩率分母用收缩前 delta: shrink_to_budget 各级生成新列表、不改元素 dict, 原列表仍完整。— 小欧-2026-10-31
+    _pre_shrink_delta = delta_msgs
     delta_msgs = _shrink_before_summary(agent, delta_msgs, "增量")
     agent._injected_delta_msgs = delta_msgs
     agent._compact_attempted = True
@@ -636,8 +640,9 @@ async def _assemble_anchor_delta(agent, context: Optional[Dict[str, Any]]) -> bo
         # 2026-10-29 北京老陈令: 新摘要附加注入件 —— 产生摘要的那份 conv 数组(delta_msgs)的
         #   最后任务usermessage + 尾部 N 轮; 组装与 telemetry 事实数同源(DRY, _apply_injection_facts)
         agent._summary_tail_extras = _extract_summary_tail(delta_msgs)
+        # 压缩率分母用收缩前 delta, 注入件/条数仍按收缩后实际值。— 小欧-2026-10-31
         _apply_injection_facts(agent, _pref, agent._summary_tail_extras,
-                               [{"role": "assistant", "content": anchor_summary}] + delta_msgs)
+                               [{"role": "assistant", "content": anchor_summary}] + _pre_shrink_delta)
         logger.info(f"[start_step] 增量摘要生成完成 (len={len(new_summary)})")
         await agent._step_emitter.emit_notice("summarizing", "done",
                            f"增量摘要完成({len(new_summary)}字)")
