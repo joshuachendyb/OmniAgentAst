@@ -245,6 +245,9 @@
 #   单一真源), 值与行为零变化 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 877 行首发兜底口径统一: or agent.message_builder.MAX_CONTEXT_TOKENS(绕行取构造默认)
 #   改 or DEFAULT_CONTEXT_LIMIT, 与 622 插话兜底同源同写法, 消 DRY/KISS-DIRECT 违反; 兜底同值零行为变化 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 注入装配单一化(设计[61] 5.1): 删 _append_ws_suffix, 目录块渲染迁
+#   agent/workspace_block.render_workspace_block; 首发改传干净 user_input, 插话改调
+#   message_builder.build_interject_text(与首发同源, 快照未变不重复注入) — 小欧-2026-10-31
 
 
 
@@ -319,10 +322,13 @@ from app.services.chat.session_service import create_session  # 未带 session_i
 from app.session_workspace import (  # 会话 Workspace 任务级快照(中立层 ContextVar) — 小欧 2026-10-10
     WorkspaceEntry,
     WorkspaceSnapshot,
-    get_ws_snapshot,
     reset_current_session_workspaces,
     set_current_session_workspaces,
 )
+# 2026-10-31 小欧 - 注入装配单一化(设计[61]): 目录块渲染与 user 正文装配统一在 agent 层,
+#   编排层只在"取不到目标任务 agent"的降级路径上直接调用装配函数(无法走 build_interject_text) — 小欧-2026-10-31
+from app.services.agent.message_builder import build_user_turn_text
+from app.services.agent.workspace_block import render_workspace_block
 from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
 from app.monitoring import loop_watchdog  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
 
@@ -435,43 +441,6 @@ async def _load_ws_snapshot(session_id: str) -> tuple[Optional[WorkspaceSnapshot
     except Exception as _wse:
         logger.warning(f"[chat] workspace 快照构建失败, 本任务按无 workspace 兜底运行: {_wse}")
         return None, False
-
-
-def _append_ws_suffix(user_input: str) -> str:
-    """拼 user 尾注入块（非空才拼）。单层标签：<会话工作目录>。
-
-    目录行纯路径，无属性/memo/默认标注——避免干扰 LLM 对安全矩阵的认知。
-    首行"本次任务新增会话工作目录"描述本次任务落盘区域，尾行统一"会话工作目录"
-    与标签语义一致。
-
-    体积上限(2026-10-30 三堂会审 E 修复): MAX_WORKSPACES=64 × path 240
-    最坏约 16KB/轮, 超限只保留前若干行 + 末尾省略提示, 不静默丢信息。"""
-    snap = get_ws_snapshot()
-    if not snap or not snap.all_paths:
-        return user_input                    # 空/无快照不追加，不污染 prompt
-
-    from app.services.chat.workspace_service import MAX_WS_INJECT_CHARS
-    _lines = []
-    for e in sorted(snap.entries, key=lambda x: x.path):
-        _lines.append(f"  - {e.path}")
-    # 体积上限: 逐行累计, 超限截断 + 省略提示(保留"至少一条"的完整性)
-    _kept, _total, _skipped = [], 0, 0
-    for _l in _lines:
-        if _total + len(_l) > MAX_WS_INJECT_CHARS and _kept:
-            _skipped += 1
-            continue
-        _kept.append(_l)
-        _total += len(_l)
-    if _skipped:
-        _kept.append(f"  ...(其余 {_skipped} 条省略)")
-    lines = "\n".join(_kept)
-
-    return (
-        f"{user_input}\n\n<会话工作目录>\n"
-        f"本次任务新增会话工作目录：\n{lines}\n"
-        f"要求你临时/中间文件优先写入会话工作目录.\n"
-        "</会话工作目录>\n"
-    )
 
 
 @dataclass
@@ -668,8 +637,18 @@ async def chat_stream_orchestrator(
                 # 插话带引用: 目标任务 system 消息早已建好, 补注入"文件引用格式约定"(幂等, 已注入则跳过)
                 #   — 2026-10-30 小欧. 不补则模型看到引用正文却不知道 [[文件:...]] 输出约定。
                 _tgt_agent.message_builder.ensure_file_ref_rules()
+            # 2026-10-31 小欧 - 设计[61] 5.1/D1: 插话与首发共用同一装配函数, 目录块不再漏注;
+            #   快照取本次请求实时值(_ws_snap, 上面按 session 从 DB 取), 变更即生效 — 小欧-2026-10-31
+            _builder = getattr(_tgt_agent, "message_builder", None)
+            if _builder is not None:
+                _inject_text = _builder.build_interject_text(user_input, _ifinal, _ws_snap)
+            else:
+                # 目标任务 agent 已不可达(注册表回收): 无历史可判重, 直接全量装配
+                logger.warning(f"[chat] 插话取不到目标任务 agent, 目录块按无历史装配: target={_active_tid}")
+                _inject_text = build_user_turn_text(
+                    user_input, _ifinal, render_workspace_block(_ws_snap)[0])
             _injected_ok = await inject_message_to_task(
-                _active_tid, render_refs_block(_ifinal) + user_input, _user_msg_id)
+                _active_tid, _inject_text, _user_msg_id)
             if _injected_ok:
                 logger.info(f"[chat] 同会话运行中注入(session={session_id}, 目标task={_active_tid}, 新task={task_id}作废)")
                 await _bind_task_id(_active_tid, _user_msg_id)  # 执行期归属 — 小欧 2026-09-28(设计文档[76] 6.6)
@@ -966,8 +945,9 @@ async def chat_stream_orchestrator(
         except Exception as _writer_e:
             logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
+        # 2026-10-31 小欧 - 设计[61]: 交干净 user_input, 注入块由 message_builder.init_history 统一装配 — 小欧-2026-10-31
         bg_task = asyncio.create_task(run_agent_in_background(
-            agent, task_id, _append_ws_suffix(user_input), None, session_id, state, _task_start_time,
+            agent, task_id, user_input, None, session_id, state, _task_start_time,
             db_ops=_db_ops, ai_message_id=_ai_message_id))
         _agent_tasks.add(bg_task)
         bg_task.add_done_callback(_agent_tasks.discard)

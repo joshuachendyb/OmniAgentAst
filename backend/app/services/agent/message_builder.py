@@ -107,6 +107,9 @@
 # 2026-10-31 小欧 - 三堂会审整改(北京老陈令): ①keep_full_raw 增可选 key 形参(缺省 "_raw"), 参数原文可存
 #   _args_raw 而不与 content 原文抢同一字段(同条消息既截 content 又截参数时, 后写者会把前者覆盖掉);
 #   ②_COMPACTION_TEMP_KEYS 补 _args_raw, 请求前随其余内部标记一并剥离, 防泄漏进 wire — 小欧-2026-10-31
+# 2026-10-31 小欧 - 注入装配单一化(设计[61]): 新增 build_user_turn_text(纯装配, 引用块+目录块+用户原话)
+#   与 build_interject_text(插话侧: 快照未变不重复注入, 变了就地作废旧块); init_history 改为调前者,
+#   目录块渲染统一走 workspace_block.render_workspace_block — 小欧-2026-10-31
 """
 MessageBuilder — conversation_history 状态管理器
 
@@ -126,6 +129,7 @@ MessageBuilder 实例生命周期必须与 Agent 实例强绑定,
 """
 
 import json
+import re
 from typing import Any, Dict, List, Optional
 
 from app.config import get_config  # 小欧 2026-07-08
@@ -143,6 +147,10 @@ from app.services.agent.fc_message_types import (
     message_to_dict, dict_to_message,
 )
 from app.services.refs.render import render_refs_block  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧 设计[61]: 目录块渲染迁 agent 层, 首发/插话共用
+    WS_INVALIDATED, WS_TAG_CLOSE, WS_TAG_OPEN, render_workspace_block,
+)
+from app.session_workspace import get_ws_snapshot  # 2026-10-31 小欧: 任务级快照(中立层 ContextVar)
 # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
 from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
@@ -166,6 +174,22 @@ _FILE_REF_RULES = """【文件引用】
   [[文件:<相对路径>]] —— 整份引用
   [[文件:<相对路径>#L12-L20]] —— 引用某一段(行号区间)
   不要写成裸路径或 markdown 链接，前端会把它渲染成可点击的卡片。"""
+
+# 2026-10-31 小欧 - 注入块装配单一化(设计[61] 5.1): 两块前置、用户原话永远最后一段。
+#   原两条通道(refs 在 agent 层前置、目录块在编排层尾置)造成插话漏注目录块(D1);
+#   装配下沉本层后, 首发与插话共用同一份顺序与格式。 — 小欧-2026-10-31
+_WS_BLOCK_RE = re.compile(
+    re.escape(WS_TAG_OPEN) + r".*?" + re.escape(WS_TAG_CLOSE), re.S)
+
+
+def build_user_turn_text(user_input: str, refs: Optional[list] = None,
+                         ws_text: str = "") -> str:
+    """装配本轮 user 消息正文: [引用块][事项目录块][用户原话] — 小欧-2026-10-31
+
+    纯装配(零 IO / 零状态): 块文本由调用方渲染好传入, 用户原话恒为末段
+    (末位权重最高, 应留给真正的任务)。空块自动省略, 两块皆空时与原文逐字节一致。
+    """
+    return "".join(p for p in (render_refs_block(refs), ws_text) if p) + user_input
 
 
 class MessageBuilder:
@@ -323,15 +347,60 @@ class MessageBuilder:
 
         同批：文件引用格式约定按 refs **条件注入本轮 sys_prompt**（不常驻，见 _FILE_REF_RULES 注释）。
         无 refs 时 sys_prompt 与改造前逐字节一致。
+
+        2026-10-31 小欧 - 设计[61] 5.1: 目录块与引用块统一经 build_user_turn_text 装配,
+          两块前置、用户原话末段; 快照由本层自取(ContextVar), 签名不变。
         """
         if not task_prompt or not task_prompt.strip():
             raise ValueError("task_prompt不能为空")
         self._file_ref_rules_injected = bool(refs)   # 与 ensure_file_ref_rules 共用标记, 防插话重复注入 — 小欧 2026-10-30
         if refs:
             sys_prompt = f"{sys_prompt}\n\n{_FILE_REF_RULES}"
+        ws_text, ws_skipped = render_workspace_block(get_ws_snapshot())
+        if ws_skipped:
+            logger.info(f"[message_builder] 事项目录注入截断: 跳过 {ws_skipped} 条(超出块体积上限)")
         self.conversation_history = []
         self.add_system_message(sys_prompt)
-        self.add_user_message(render_refs_block(refs) + task_prompt)
+        self.add_user_message(build_user_turn_text(task_prompt, refs, ws_text))
+
+    def build_interject_text(self, user_input: str, refs: Optional[list] = None,
+                             snapshot=None) -> str:
+        """插话侧装配: 与首发同源, 按历史决定目录块是否重复注入 — 小欧-2026-10-31
+
+        设计[61] 5.5 多块并存语义(块不落库, 只在本进程历史里):
+          ① 历史中已有**同内容**目录块(快照未变) → 只带引用块, 不重复注入;
+          ② 历史中有旧块但内容已变 → 注入新块, 并把旧块正文就地作废;
+          ③ 历史中已无有效块(被裁剪) → 直接注入。
+        就地作废只改内存, 不动 DB; 作废块保留标签, 让模型看得到"这里曾有一份旧清单"。
+        """
+        ws_text, ws_skipped = render_workspace_block(snapshot)
+        if ws_skipped:
+            logger.info(f"[message_builder] 插话目录块截断: 跳过 {ws_skipped} 条(超出块体积上限)")
+        if not ws_text:
+            return build_user_turn_text(user_input, refs)
+        current = ws_text.rstrip("\n")
+        existing = [m.group(0) for msg in self.conversation_history
+                    if msg.get("role") == "user" and isinstance(msg.get("content"), str)
+                    for m in _WS_BLOCK_RE.finditer(msg["content"])]
+        if current in existing:
+            logger.info("[message_builder] 插话目录块: 快照未变且历史中已有有效块, 不重复注入")
+            return build_user_turn_text(user_input, refs)
+        if existing:
+            self._invalidate_ws_blocks(len(existing))
+        return build_user_turn_text(user_input, refs, ws_text)
+
+    def _invalidate_ws_blocks(self, count: int) -> None:
+        """把历史中的旧目录块正文就地替换为作废文案(只改内存) — 小欧-2026-10-31
+
+        多份同类清单并存时模型没有可靠的版本比较能力, 最常见的失败是按第一份执行;
+        故全任务只留一份有效清单, 旧块保留标签但清空正文。
+        """
+        dead = f"{WS_TAG_OPEN}\n{WS_INVALIDATED}\n{WS_TAG_CLOSE}"
+        for msg in self.conversation_history:
+            content = msg.get("content")
+            if msg.get("role") == "user" and isinstance(content, str) and WS_TAG_OPEN in content:
+                msg["content"] = _WS_BLOCK_RE.sub(dead, content)
+        logger.info(f"[message_builder] 插话目录块: 快照已变, 作废旧块 {count} 处")
 
     def ensure_file_ref_rules(self) -> None:
         """幂等把【文件引用】格式约定补进当前 system 消息(已注入过则跳过) — 小欧 2026-10-30
