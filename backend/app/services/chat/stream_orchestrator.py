@@ -248,6 +248,9 @@
 # 2026-10-31 小欧 - 注入装配单一化(设计[61] 5.1): 删 _append_ws_suffix, 目录块渲染迁
 #   agent/workspace_block.render_workspace_block; 首发改传干净 user_input, 插话改调
 #   message_builder.build_interject_text(与首发同源, 快照未变不重复注入) — 小欧-2026-10-31
+# 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块在编排层渲染一次, 汇总日志(report_ws_block)与
+#   超限轻提示(build_ws_notice, 复用 notice 信封)取同一份数字; 文本经 _start_meta.ws_block 交
+#   init_history 装配 —— 注入/日志/回执不再各算一遍 — 小欧-2026-10-31
 
 
 
@@ -298,7 +301,7 @@ from app.services.task.task_registry import (
 from app.services.task.task_runtime import (
     task_cancel_check, task_pause_check_and_yield, task_cancel_check_and_yield,
 )
-from app.utils.sse_formatter import format_agent_sse  # 消费转发并回本模块(SSE格式化) — 小健 2026-09-05
+from app.utils.sse_formatter import format_agent_sse, format_sse_event  # format_sse_event: 目录块超限 notice 组帧 — 小欧-2026-10-31
 from app.services.agent.agent_runner import run_agent_in_background
 from app.services.agent.steps import ALL_STEP_TYPES  # SSE 转发表推导源(见 _SSE_FORWARD_TYPES)— 小欧 2026-10-03
 from app.services.agent.universal_agent import UniversalAgent
@@ -328,7 +331,9 @@ from app.session_workspace import (  # 会话 Workspace 任务级快照(中立�
 # 2026-10-31 小欧 - 注入装配单一化(设计[61]): 目录块渲染与 user 正文装配统一在 agent 层,
 #   编排层只在"取不到目标任务 agent"的降级路径上直接调用装配函数(无法走 build_interject_text) — 小欧-2026-10-31
 from app.services.agent.message_builder import build_user_turn_text
-from app.services.agent.workspace_block import render_workspace_block
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧 设计[61] 5.6/D4: 目录块渲染/日志/提示三合一
+    build_ws_notice, render_workspace_block, report_ws_block,
+)
 from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
 from app.monitoring import loop_watchdog  # 治理观测§4.4: 心跳看门狗挂点(activate/beat/deactivate) — 小欧 2026-10-04
 
@@ -639,14 +644,22 @@ async def chat_stream_orchestrator(
                 _tgt_agent.message_builder.ensure_file_ref_rules()
             # 2026-10-31 小欧 - 设计[61] 5.1/D1: 插话与首发共用同一装配函数, 目录块不再漏注;
             #   快照取本次请求实时值(_ws_snap, 上面按 session 从 DB 取), 变更即生效 — 小欧-2026-10-31
+            # 2026-10-31 小欧 - 5.6/D4: 目录块在此渲染一次, 汇总日志/超限提示/装配共用同一份 — 小欧-2026-10-31
+            _ws_block = render_workspace_block(_ws_snap)
             _builder = getattr(_tgt_agent, "message_builder", None)
             if _builder is not None:
-                _inject_text = _builder.build_interject_text(user_input, _ifinal, _ws_snap)
+                _inject_text, _ws_action = _builder.build_interject_text(
+                    user_input, _ifinal, _ws_block.text)
             else:
                 # 目标任务 agent 已不可达(注册表回收): 无历史可判重, 直接全量装配
                 logger.warning(f"[chat] 插话取不到目标任务 agent, 目录块按无历史装配: target={_active_tid}")
-                _inject_text = build_user_turn_text(
-                    user_input, _ifinal, render_workspace_block(_ws_snap)[0])
+                _inject_text = build_user_turn_text(user_input, _ifinal, _ws_block.text)
+                _ws_action = "inject"
+            report_ws_block("interject", _ws_block, _ws_snap, _ws_action)
+            if _ws_block.skipped:
+                _frame = await _emit_to_target(build_ws_notice("interject", _ws_block))
+                if _frame:
+                    yield _frame
             _injected_ok = await inject_message_to_task(
                 _active_tid, _inject_text, _user_msg_id)
             if _injected_ok:
@@ -881,6 +894,13 @@ async def chat_stream_orchestrator(
                 yield create_error_response(error_type="refs_blocked",
                                             error_message=f"引用全部不可用({_names}), 请移除后重发")
                 return
+        # 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块在编排层渲染一次(文本交 init_history 装配),
+        #   汇总日志与超限提示取同一份数字; 放在阻断判定之后 —— 请求被拒时不说"已注入" — 小欧-2026-10-31
+        _ws_block = render_workspace_block(_ws_snap)
+        report_ws_block("first", _ws_block, _ws_snap,
+                        "inject" if _ws_block.text else "skip_none")
+        if _ws_block.skipped:
+            yield format_sse_event("notice", 0, build_ws_notice("first", _ws_block))
         agent._start_meta = {
             "user_input": user_input,
             "session_id": session_id,
@@ -893,6 +913,8 @@ async def chat_stream_orchestrator(
             #   LLM 消息。纯数据携带, 不参与 user_input(入库/历史不受影响)。
             #   2026-10-30 小欧 批3: 已解析(读盘)+已裁决(budget), 此处只放行通过的条目。
             "refs": _final_refs or [],
+            # 2026-10-31 小欧 - 设计[61] 5.1: 目录块文本(已渲染)透传, 首发装配唯一样本 — 小欧-2026-10-31
+            "ws_block": _ws_block.text,
         }
         # ── 编排落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) —— 小健 2026-08-17
         # -1 落点：建 agent 后、后台运行前 INSERT 任务行(provider/model 取 agent.llm_client) 小欧 2026-08-16

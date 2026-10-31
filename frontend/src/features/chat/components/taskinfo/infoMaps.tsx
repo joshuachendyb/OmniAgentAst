@@ -135,6 +135,9 @@ export const NOTICE_CONFIG: Record<string, ReactNode> = {
   // 无 start(start 不进本轮链路, 且 start 会占位4 抢主任务提示)
   refs_ready_done: <CheckCircleOutlined />,
   refs_ready_failed: <WarningOutlined />,
+  // ws_inject(事项目录块超限省略) — 小欧 2026-10-31: 只发 done(本轮目录已装配、有省略),
+  // 语义非失败; 用警示图标与"成功进入"的 refs_ready_done 区分
+  ws_inject_done: <WarningOutlined />,
 };
 
 // ---------- token 格式化（3.2：行内折 K/M；tooltip 用原始值） ----------

@@ -70,6 +70,7 @@
 #   继续装配不发终态帧, 任务卡"压缩进行中"无取消反馈。修复: _assemble_start_step 返回后立即检取消, 命中即
 #   产final+cancelled终态帧终止(不发start帧不进while); 循环顶取消终止收敛 _terminate_cancelled 统一收口(DRY)。
 #   compliance: KISS-DIRECT/DRY/SRP/禁止backward — 小欧-2026-10-30
+# 2026-10-31 小欧 - 设计[61] 5.6/D4: init_history 补传 ws_text(编排层渲染的目录块), 本层不再取快照 — 小欧-2026-10-31
 """react_loop — ReAct 循环核心(薄调度)
 
 职责: 循环调度 + 状态推进，业务逻辑在 handlers/(action_handler/answer_handler)
@@ -209,6 +210,9 @@ async def run_react_cycle(
         getattr(agent, "_sys_prompt", "") or "",
         task or "",
         refs=(getattr(agent, "_start_meta", None) or {}).get("refs"),
+        # 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块由编排层渲染(ws_block)后透传,
+        #   与日志/回执同一份文本, 本层不重复渲染 — 小欧-2026-10-31
+        ws_text=(getattr(agent, "_start_meta", None) or {}).get("ws_block") or "",
     )
     # 摘要以 assistant 身份入列(顶在最前, 代表"之前发生的事"); 无摘要则注全量历史。— 小欧 2026-10-14
     # 2026-10-25 小欧 修复(北京老陈令): 合并为一次注入, summary 在前 delta 在后
