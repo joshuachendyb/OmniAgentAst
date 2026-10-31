@@ -107,10 +107,10 @@
 # 2026-10-31 小欧 - 三堂会审整改(北京老陈令): ①keep_full_raw 增可选 key 形参(缺省 "_raw"), 参数原文可存
 #   _args_raw 而不与 content 原文抢同一字段(同条消息既截 content 又截参数时, 后写者会把前者覆盖掉);
 #   ②_COMPACTION_TEMP_KEYS 补 _args_raw, 请求前随其余内部标记一并剥离, 防泄漏进 wire — 小欧-2026-10-31
-# 2026-10-31 小欧 - 注入装配单一化(设计[61]): 新增 build_user_turn_text(纯装配, 引用块+目录块+用户原话)
+# 2026-10-31 小欧 - 注入装配单一化: 新增 build_user_turn_text(纯装配, 引用块+目录块+用户原话)
 #   与 build_interject_text(插话侧: 快照未变不重复注入, 变了就地作废旧块); init_history 改为调前者;
 #   目录块渲染当时放本层(render_workspace_block), 同日下条已改为编排层渲染 — 小欧-2026-10-31
-# 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块改由编排层渲染并传文本(init_history/build_interject_text 收 ws_text),
+# 2026-10-31 小欧 - 目录块改由编排层渲染并传文本(init_history/build_interject_text 收 ws_text),
 #   本层不再自取快照渲染 —— 注入/日志/回执同取一份, 不再各算一遍 — 小欧-2026-10-31
 """
 MessageBuilder — conversation_history 状态管理器
@@ -149,7 +149,7 @@ from app.services.agent.fc_message_types import (
     message_to_dict, dict_to_message,
 )
 from app.services.refs.render import render_refs_block  # 2026-10-30 小欧 A19: 渲染区块迁 refs 域, 首发/插话共用
-from app.services.agent.workspace_block import (  # 2026-10-31 小欧 设计[61]: 块标志与作废文案单一真源
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 块标志与作废文案单一真源
     WS_INVALIDATED, WS_TAG_CLOSE, WS_TAG_OPEN,
 )
 # 2026-10-31 小欧: 裁剪预算基准/触发阈值/队列预算唯一真源; CHARS_PER_TOKEN 迁至 agent_utils(与估算代码同址)
@@ -176,8 +176,8 @@ _FILE_REF_RULES = """【文件引用】
   [[文件:<相对路径>#L12-L20]] —— 引用某一段(行号区间)
   不要写成裸路径或 markdown 链接，前端会把它渲染成可点击的卡片。"""
 
-# 2026-10-31 小欧 - 注入块装配单一化(设计[61] 5.1): 两块前置、用户原话永远最后一段。
-#   原两条通道(refs 在 agent 层前置、目录块在编排层尾置)造成插话漏注目录块(D1);
+# 2026-10-31 小欧 - 注入块装配单一化: 两块前置、用户原话永远最后一段。
+#   原两条通道(refs 在 agent 层前置、目录块在编排层尾置)造成插话漏注目录块;
 #   装配下沉本层后, 首发与插话共用同一份顺序与格式。 — 小欧-2026-10-31
 _WS_BLOCK_RE = re.compile(
     re.escape(WS_TAG_OPEN) + r".*?" + re.escape(WS_TAG_CLOSE), re.S)
@@ -349,10 +349,10 @@ class MessageBuilder:
         同批：文件引用格式约定按 refs **条件注入本轮 sys_prompt**（不常驻，见 _FILE_REF_RULES 注释）。
         无 refs 时 sys_prompt 与改造前逐字节一致。
 
-        2026-10-31 小欧 - 设计[61] 5.1: 目录块与引用块统一经 build_user_turn_text 装配,
+        2026-10-31 小欧 - 目录块与引用块统一经 build_user_turn_text 装配,
           两块前置、用户原话末段。
 
-        2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块文本改由编排层渲染后传入(ws_text),
+        2026-10-31 小欧 - 目录块文本改由编排层渲染后传入(ws_text),
           本层不再自取快照、不再渲染 —— 注入的文本与日志/回执是同一份, 不会各算一遍。
         """
         if not task_prompt or not task_prompt.strip():
@@ -368,13 +368,13 @@ class MessageBuilder:
                              ws_text: str = "") -> Tuple[str, str]:
         """插话侧装配: 与首发同源, 按历史决定目录块是否重复注入 — 小欧-2026-10-31
 
-        设计[61] 5.5 多块并存语义(块不落库, 只在本进程历史里):
+        多块并存语义(块不落库, 只在本进程历史里):
           ① 历史中已有**同内容**目录块(快照未变) → 只带引用块, 不重复注入;
           ② 历史中有旧块但内容已变 → 注入新块, 并把旧块正文就地作废;
           ③ 历史中已无有效块(被裁剪) → 直接注入。
         就地作废只改内存, 不动 DB; 作废块保留标签, 让模型看得到"这里曾有一份旧清单"。
 
-        2026-10-31 小欧 - 5.6/D4: ws_text 由编排层渲染后传入(与日志/回执同一份),
+        2026-10-31 小欧 - ws_text 由编排层渲染后传入(与日志/回执同一份),
           本层只做历史判重与作废; 返回 (正文, 动作) —— 动作由编排层写进唯一一行汇总日志
           (inject 注入 / skip_dup 未变不重复 / invalidate 变了并作废旧块)。
         """

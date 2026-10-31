@@ -245,10 +245,10 @@
 #   单一真源), 值与行为零变化 — 小欧-2026-10-31
 # 2026-10-31 小欧 - 877 行首发兜底口径统一: or agent.message_builder.MAX_CONTEXT_TOKENS(绕行取构造默认)
 #   改 or DEFAULT_CONTEXT_LIMIT, 与 622 插话兜底同源同写法, 消 DRY/KISS-DIRECT 违反; 兜底同值零行为变化 — 小欧-2026-10-31
-# 2026-10-31 小欧 - 注入装配单一化(设计[61] 5.1): 删 _append_ws_suffix, 目录块渲染迁
+# 2026-10-31 小欧 - 注入装配单一化: 删 _append_ws_suffix, 目录块渲染迁
 #   agent/workspace_block.render_workspace_block; 首发改传干净 user_input, 插话改调
 #   message_builder.build_interject_text(与首发同源, 快照未变不重复注入) — 小欧-2026-10-31
-# 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块在编排层渲染一次, 汇总日志(report_ws_block)与
+# 2026-10-31 小欧 - 目录块在编排层渲染一次, 汇总日志(report_ws_block)与
 #   超限轻提示(build_ws_notice, 复用 notice 信封)取同一份数字; 文本经 _start_meta.ws_block 交
 #   init_history 装配 —— 注入/日志/回执不再各算一遍 — 小欧-2026-10-31
 
@@ -328,10 +328,10 @@ from app.session_workspace import (  # 会话 Workspace 任务级快照(中立�
     reset_current_session_workspaces,
     set_current_session_workspaces,
 )
-# 2026-10-31 小欧 - 注入装配单一化(设计[61]): 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
+# 2026-10-31 小欧 - 注入装配单一化: 目录块渲染留在编排层(首发/插话各一次, 便于同批写日志与提示),
 #   user 正文装配归 message_builder; 编排层只在"取不到目标任务 agent"的降级路径直接调 build_user_turn_text — 小欧-2026-10-31
 from app.services.agent.message_builder import build_user_turn_text
-from app.services.agent.workspace_block import (  # 2026-10-31 小欧 设计[61] 5.6/D4: 目录块渲染/日志/提示三合一
+from app.services.agent.workspace_block import (  # 2026-10-31 小欧: 目录块渲染/日志/提示三合一
     build_ws_notice, render_workspace_block, report_ws_block,
 )
 from app.monitoring.agent_telemetry import _log_task_end  # 收尾日志归遥测(统计同类) — 小健 2026-09-05
@@ -642,9 +642,9 @@ async def chat_stream_orchestrator(
                 # 插话带引用: 目标任务 system 消息早已建好, 补注入"文件引用格式约定"(幂等, 已注入则跳过)
                 #   — 2026-10-30 小欧. 不补则模型看到引用正文却不知道 [[文件:...]] 输出约定。
                 _tgt_agent.message_builder.ensure_file_ref_rules()
-            # 2026-10-31 小欧 - 设计[61] 5.1/D1: 插话与首发共用同一装配函数, 目录块不再漏注;
+            # 2026-10-31 小欧 - 插话与首发共用同一装配函数, 目录块不再漏注;
             #   快照取本次请求实时值(_ws_snap, 上面按 session 从 DB 取), 变更即生效 — 小欧-2026-10-31
-            # 2026-10-31 小欧 - 5.6/D4: 目录块在此渲染一次, 汇总日志/超限提示/装配共用同一份 — 小欧-2026-10-31
+            # 2026-10-31 小欧 - 目录块在此渲染一次, 汇总日志/超限提示/装配共用同一份 — 小欧-2026-10-31
             _ws_block = render_workspace_block(_ws_snap)
             _builder = getattr(_tgt_agent, "message_builder", None)
             if _builder is not None:
@@ -894,7 +894,7 @@ async def chat_stream_orchestrator(
                 yield create_error_response(error_type="refs_blocked",
                                             error_message=f"引用全部不可用({_names}), 请移除后重发")
                 return
-        # 2026-10-31 小欧 - 设计[61] 5.6/D4: 目录块在编排层渲染一次(文本交 init_history 装配),
+        # 2026-10-31 小欧 - 目录块在编排层渲染一次(文本交 init_history 装配),
         #   汇总日志与超限提示取同一份数字; 放在阻断判定之后 —— 请求被拒时不说"已注入" — 小欧-2026-10-31
         _ws_block = render_workspace_block(_ws_snap)
         report_ws_block("first", _ws_block, _ws_snap,
@@ -913,7 +913,7 @@ async def chat_stream_orchestrator(
             #   LLM 消息。纯数据携带, 不参与 user_input(入库/历史不受影响)。
             #   2026-10-30 小欧 批3: 已解析(读盘)+已裁决(budget), 此处只放行通过的条目。
             "refs": _final_refs or [],
-            # 2026-10-31 小欧 - 设计[61] 5.1: 目录块文本(已渲染)透传, 首发装配唯一样本 — 小欧-2026-10-31
+            # 2026-10-31 小欧 - 目录块文本(已渲染)透传, 首发装配唯一样本 — 小欧-2026-10-31
             "ws_block": _ws_block.text,
         }
         # ── 编排落库任务行 + 建后台 agent 任务(asyncio.create_task 独立运行) —— 小健 2026-08-17
@@ -967,7 +967,7 @@ async def chat_stream_orchestrator(
         except Exception as _writer_e:
             logger.warning(f"[chat] 任务文件writer创建失败(task={task_id}): {_writer_e}")
         # 持有强引用，防 GC 回收导致任务被取消→打断 DB 保存(问题2修复) — 小欧 2026-07-13
-        # 2026-10-31 小欧 - 设计[61]: 交干净 user_input, 注入块由 message_builder.init_history 统一装配 — 小欧-2026-10-31
+        # 2026-10-31 小欧 - 交干净 user_input, 注入块由 message_builder.init_history 统一装配 — 小欧-2026-10-31
         bg_task = asyncio.create_task(run_agent_in_background(
             agent, task_id, user_input, None, session_id, state, _task_start_time,
             db_ops=_db_ops, ai_message_id=_ai_message_id))

@@ -3,7 +3,7 @@
 # 2026-10-31 小欧 - 新建: 事项目录注入块唯一渲染实现(原 stream_orchestrator._append_ws_suffix 迁入);
 #   截断按「默认工作区 > 带 memo/非 read_write 属性 > 其余」排序 + 默认工作区保留位;
 #   标签与块内用语统一为「事项目录」 — 小欧-2026-10-31
-# 2026-10-31 小欧 - 设计[61] 5.6/D4 补齐: 渲染结果改 WsBlock(text/kept/skipped), 渲染一次即得
+# 2026-10-31 小欧 - 渲染与观测补全: 渲染结果改 WsBlock(text/kept/skipped), 渲染一次即得
 #   观测数字; 新增 report_ws_block(注入汇总日志) 与 build_ws_notice(超限轻提示, 复用 notice 信封) — 小欧-2026-10-31
 """services.agent.workspace_block — 事项目录注入块(渲染 + 观测)
 
@@ -23,7 +23,7 @@
 截断纪律: MAX_WORKSPACES=64 × 路径长度最坏约 16KB/轮, 超 WS_INJECT_MAX_CHARS
   只保留优先级高的若干条 + 末尾省略提示; 默认工作区恒保留, 超限则截路径不截整条。
 
-观测纪律(5.6/D4): 渲染一次即得 kept/skipped 数字, 日志(report_ws_block)与 SSE 提示
+观测纪律: 渲染一次即得 kept/skipped 数字, 日志(report_ws_block)与 SSE 提示
   (build_ws_notice)都取自同一份, 两通道可逐项对账; 提示只报省略条数, 不阻断本轮。
 """
 from dataclasses import dataclass
@@ -122,7 +122,7 @@ def report_ws_block(scope: str, block: WsBlock, snapshot, action: str) -> None:
 
     action: inject=注入本轮 / invalidate=内容已变, 注入新块并作废旧块 /
             skip_dup=内容未变, 不重复注入 / skip_none=无目录快照, 本轮无块。
-    设计[61] 5.6「正常注入一行日志」的落点, 与 build_ws_notice 取同一份数字。
+    正常注入汇总日志的落点, 与 build_ws_notice 取同一份数字。
     """
     logger.info(f"[ws] scope={scope} action={action} kept={block.kept} "
                 f"skipped={block.skipped} source={ws_source(snapshot)}")

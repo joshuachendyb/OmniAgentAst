@@ -209,7 +209,7 @@ from app.db import db
 from app.services.chat import storage
 from app.config import get_config  # 2026-09-28 小欧: 注入截断读 tuning.content 配置(与 message_builder._cap_temp_history 同键, DRY)
 from app.services.agent.compaction_constants import TEMP_HISTORY_CHAR_LIMIT  # 2026-09-28 小欧: 同上, 默认值兜底
-# 2026-10-31 小欧 - 设计[61] 5.6: 超长插话保尾部时前置注入块会被切掉, 按块标志点名打日志 — 小欧-2026-10-31
+# 2026-10-31 小欧 - 超长插话保尾部时前置注入块会被切掉, 按块标志点名打日志 — 小欧-2026-10-31
 from app.services.refs.render import REF_TAG_OPEN
 from app.services.agent.workspace_block import WS_TAG_OPEN
 
@@ -250,7 +250,7 @@ async def _absorb_inbox(agent) -> int:
     #   refs 在前、user_input 在后, 保尾部 = 保用户真话, 截断处留显式标记。
     _max_chars = int(get_config().get('tuning.content.temp_history_char_limit', TEMP_HISTORY_CHAR_LIMIT))
     if len(_merged) > _max_chars:
-        # 2026-10-31 小欧 - 设计[61] 5.6: 保尾必然牺牲前置块, 按块标志点名, 不静默 — 小欧-2026-10-31
+        # 2026-10-31 小欧 - 保尾必然牺牲前置块, 按块标志点名, 不静默 — 小欧-2026-10-31
         _dropped = _merged[:-_max_chars]
         _cut = [name for tag, name in ((WS_TAG_OPEN, "事项目录块"), (REF_TAG_OPEN, "引用块"))
                 if tag in _dropped]
