@@ -1,7 +1,7 @@
 
 # -*- coding: utf-8 -*-
 # 编辑历史:
-# 2026-07-13 - 小欧 - #2 add_tool_result构造失败兜底追加最小tool消息防结果丢失
+# 2026-07-13 - 小欧 - add_tool_result构造失败兜底追加最小tool消息防结果丢失
 # 2026-07-19 - 小欧 - add_assistant_tool_call/_append_observation新增reasoning参数传递
 # 2026-07-19 - 小欧 - 推理空转不持久化(Hermes字面): ①新增pop_temp_messages()弹掉所有_temp_reasoning标记消息(改更早仅尾部→全表,防B3穿插隔开); ②prepare_messages_for_llm浅拷贝[dict()]隔离篡改+strip _temp_reasoning防泄漏wire。逻辑: 好的reasoning注入时带标记, 终端路径pop弹掉后再持久化; 坏的不注入故无需清理
 # 2026-07-22 - 小欧 - MAX_CONTEXT_CHARS→MAX_CONTEXT_TOKENS 命名统一（值200000不变），构造参数+self属性+3处使用同步更新
@@ -9,7 +9,7 @@
 # 2026-07-22 - 小欧 - 修复: reset_per_run 补充 self.last_total_tokens = None, 清除跨run残留
 # 2026-07-22 - 小欧 - 修复: trim_history 日志路径未覆盖 _rebuild_and_validate 返回 None 的情况，将日志移入 if 分支 + else warning
 # 2026-07-22 - 小欧 - 补充 assistant 消息四种存储形态类注释(源自对话梳理: action轮只存tool_calls, answer/reasoning-only/异常才存content)
-# 2026-07-23 - 小欧 - #13 react_cycle崩溃修复: trim_history 加 try/except 防御性保护(message_builder状态退化时跳过裁剪保留原历史, 不抛异常到 react_cycle 导致循环崩溃)
+# 2026-07-23 - 小欧 - react_cycle崩溃修复: trim_history 加 try/except 防御性保护(message_builder状态退化时跳过裁剪保留原历史, 不抛异常到 react_cycle 导致循环崩溃)
 # 2026-08-08 - 小欧 - v1.6双阈值扩展: ①pop_temp_messages判断条件由_temp_reasoning改为通用_temp_*前缀(兼容_temp_same_tool_warn, 绝后新增标记漏清理); ②prepare_messages_for_llm剥离_temp_*内部标记防泄漏LLM
 # 2026-08-09 - 小欧 - v1.7发送即清(北京老陈 2026-08-09 指示): prepare_messages_for_llm浅拷贝messages后, 由conversation_history源中
 #   立即剔除本轮已发送的_temp_*临时消息(纠偏/推理仅活"本轮发送这一次"), 防死循环长历史中残留/重复携带/污染压缩与持久化;
@@ -34,7 +34,7 @@
 #   原估0 token, 严重低估导致上下文越界); _estimate_tokens 复用 _total_chars 自动生效, 最小侵入。compliance: SRP/DRY/KISS
 # 2026-09-23 - 小欧 - trim配置化: __init__ 新增 _trim_trigger_ratio/_compaction_buffer 读 tuning.trim.* 兜底常量; trim_history 增量/绝对值/budget 三处改用实例值
 # 2026-09-23 - 小欧 - wiring假保存修复: _cap_temp_history 改读 tuning.content.temp_history_char_limit 兜底常量（此前设置页可改实际不生效）
-# 2026-09-28 - 小欧 - 锚属性名修复(设计文档[76] 6.3): 新增只读 property current_user_msg_id(读私有 _current_user_msg_id)。
+# 2026-09-28 - 小欧 - 锚属性名修复: 新增只读 property current_user_msg_id(读私有 _current_user_msg_id)。
 #   根因: agent_runner 用 getattr(mb, 'current_user_msg_id', None) 读锚恒 None(私有/公开名不匹配), 9-20 锚回填与
 #   D-1 两修复因此从未生效 → 注入消息 task_id 恒 NULL。补公开只读口修根因, 封装禁外部直读私有。compliance: SRP/KISS
 # 2026-10-04 小欧 - _estimate_tokens 取整方式: 系数改浮点(1.8)后 `chars // c` 返回 float, 改 int(chars / c) 保 int 契约
@@ -44,7 +44,7 @@
 #   sensenova 拒绝 reasoning 与 reasoning_content 并存 → HTTP 400 "inference request is invalid", 且被 error_classifier
 #   误分类 CLIENT(重试无用) → B3 空转后必然 400。实测: 单字段任一 200 / 双字段 400 / 修后形状 200。
 #   收口在唯一出站边界, 覆盖全部生产者(含未来新增), 不改写入点。compliance: SRP/DRY/KISS-DIRECT/禁backward
-# 2026-10-13 小欧 - 文档[28] 4.1.6: init_history 增 refs 形参, 输入框引用正文拼入 user 消息**前置**区块。
+# 2026-10-13 小欧 - init_history 增 refs 形参, 输入框引用正文拼入 user 消息**前置**区块。
 #   入库/历史保持干净(user_input 在 orchestrator:433 已定格为用户原文, 不含 refs),
 #   拼进 content 字符串可规避 prepare_messages_for_llm 的内部键剥离清单(_COMPACTION_TEMP_KEYS)。
 # 2026-10-20 - 小欧 - 裁剪顺序缺陷修复(线上 400 实证, 2026-10-20 15:41 E2E P0-04a):
@@ -63,7 +63,7 @@
 #   推到 trimmed 前面, 末条 user(本轮 task 提问)被 FC 对盖住; link 长链 trim 后 LLM 看不到新任务提问(实测复现)。
 #   改为 system+other_users+trimmed+last_user, 末条 user 始终在尾部 — 小欧-2026-10-25
 # 2026-10-25 小欧 - _rebuild_and_validate 交错序修复(北京老陈令): 上条只把末条 user 移到尾部, other_users
-#   仍全堆在 trimmed 前, 多 user 注入(delta D1/D3 / 全量 B 路径)trim 后 user/assistant/tool 交错丢失。
+#   仍全堆在 trimmed 前, 多 user 注入(增量注入 / 全量路径)trim 后 user/assistant/tool 交错丢失。
 #   改为 other_users+trimmed 按 original_order 合并排序保交错; trim_history 传 original_order 入参。
 #   无 other_users 时退化为原逻辑(零退化) — 小欧-2026-10-25
 # 2026-10-25 小欧 - trim_history 重构为轮次级滑动(北京老陈令, 复用优先不自造): 删自写的
@@ -90,7 +90,7 @@
 #   为空才回退 _summary); ②新增 keep_full_raw 单点(DRY): prune 两处与 split_turn 一处的"原文存 _raw"
 #   同构写入收口, 统一"只保留最长者"守卫(split_turn 二次截断原会把全文 _raw 吃成截断头, 违反其 docstring) — 小欧-2026-10-30
 # 2026-10-30 小欧 - 三堂会审二轮(北京老陈令"坐实问题再修"): trim_history 队列预算不足分支修复 —— 原 else 在
-#   "未溢窗但 阈值×系数² 预算不够"时直接 tail_start=keep_from 走"丢光队列", 与本文档第 6 条"预算不足保留原历史"
+#   "未溢窗但 阈值×系数² 预算不够"时直接 tail_start=keep_from 走"丢光队列", 与"预算不足保留原历史"原则
 #   相反(实测 12 个旧轮一次清空/51 条→只留保护区); 拆为 溢窗分支(行为不变, 注释订正) + 退回硬剩余预算判定 — 小欧-2026-10-30
 # 2026-10-30 小欧 - 新增 ensure_file_ref_rules(): 插话带引用时 system 消息早已建好, 需幂等补注
 #   【文件引用】格式约定(否则模型看到引用正文却不知 [[文件:...]] 输出约定); 标记位 _file_ref_rules_injected
@@ -157,14 +157,14 @@ from app.services.agent.agent_utils import (
     trim_budget_base, trim_conv_threshold, trim_queue_budget, CHARS_PER_TOKEN,
 )
 
-# 2026-10-13 小欧 - 文档[28] 4.1.6: 输入框引用渲染为「【引用】」区块。
+# 2026-10-13 小欧 - 输入框引用渲染为「【引用】」区块。
 #   设计要点：
 #   ① 显式标注「以下为不可信数据」边界(S7/prompt injection 防护)：文件内容里的文字
 #      一律当材料看，不得当指令执行；
 #   ② 每条带来源/路径/行号，Agent 才可能回答"依据是第几行"；
 #   ③ kind 白名单外的条目直接忽略(不把未知来源塞进上下文)；
-#   ④ 正文原样透传，**不截断不降级**(v3.4 裁定：引用多少发多少)。
-#   2026-10-30 小欧 A19: 渲染实现已迁 services/refs/render.py(首发/插话共用), 本模块只调用。
+#   ④ 正文原样透传，**不截断不降级**(引用多少发多少)。
+#   2026-10-30 小欧: 渲染实现已迁 services/refs/render.py(首发/插话共用), 本模块只调用。
 
 # 2026-10-13 小欧 - 北京老陈裁定：文件引用格式约定**条件注入系统提示**，禁止常驻。
 #   实测常驻成本 88 token，占整份系统提示 70.3%（125 token 中占 70）。改为：
