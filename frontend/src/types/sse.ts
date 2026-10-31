@@ -7,7 +7,7 @@
 // 编辑历史: 2026-09-06 小欧 - B2方案C(6.4): SSEError 补可选 tool_name(被拒工具名)——blocked/timeout 错误
 //   携带, 供 sseOnError 聚合被拒工具点名条(deniedEntries: tool+reason)承灰字链路数据源 — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.1(回归总原则): SSEError 补可选 from_backend(后端业务错误来源标记,
-//   useChatCallbacks 据此分道只进页面级错误提示不弹窗); 6.3.4 补可选 request_level(请求级step=0标记, 位4图标分层);
+//   useChatCallbacks 据此分道只进页面级错误提示不弹窗); 6.3.4 补可选 request_level(请求级step=0标记, 位置2图标分层);
 //   新增 LiveError 接口(页面级错误数据源对象形态) — 小欧-2026-09-08
 // 编辑历史: 2026-09-10 小欧 - 阶段一S1清死代码: ReconnectConfig接口删enabled字段; 阶段二S2提前实施:
 //   UseSSEReturn新增executionStepsRef可选字段(供外部直接读取ref) — 小欧-2026-09-10
@@ -25,6 +25,7 @@
 //   改 compressed(是否压缩) + compress_saved_pct(省了多少%); 字段契约须与后端 build_context_overview 同步。
 // 编辑历史: 2026-10-26 小沈 - ContextOverviewFrame 恢复顶层 timestamp/content: 浮层顶部行(北京老陈令)显示
 //   timestamp+content(后端首帧写入 userinput[10]+压缩情况), 标题行后各带 timestamp; 原 2026-10-10 删的顶层回落读法不适用此处(非回落, 是新用途) — 小沈-2026-10-26
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
 // ===== 任务元信息帧（小欧 2026-08-26 8.4.14）=====
 export interface StartInfoFrame {
@@ -159,14 +160,14 @@ export interface SSEError {
     thought_content?: string;
   };
   from_backend?: boolean; // 2026-09-08 小欧 6.3.1: 后端业务错误来源标记(sseParser onError 无条件 true), useChatCallbacks 据此分道只进页面级错误提示不弹窗 — 小欧-2026-09-08
-  request_level?: boolean; // 2026-09-08 小欧 6.3.4: 请求级错误标记(sseParser 读原始 step===0), 位4图标请求级⛔区分执行级红圆底白× — 小欧-2026-09-08
+  request_level?: boolean; // 2026-09-08 小欧 6.3.4: 请求级错误标记(sseParser 读原始 step===0), 位置2图标请求级⛔区分执行级红圆底白× — 小欧-2026-09-08
 }
 
 /**
  * 页面级实时错误数据源对象形态
  * 文档：前端消息分类处理分析及设计 6.3.4（2026-09-08 裁定）
  * useChatFacade onError 包装器不再把 SSEError 压成 string, 改构 LiveError{text, requestLevel} 上抛;
- * 前端本地错误(string) 缺 requestLevel → false, 位4 沿用执行级样式。
+ * 前端本地错误(string) 缺 requestLevel → false, 位置2 沿用执行级样式。
  */
 export interface LiveError {
   text: string;

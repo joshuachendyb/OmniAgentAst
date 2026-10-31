@@ -28,6 +28,7 @@
 //   DB 回读失败因此失去全局 toast 兜底; 而原 .then 无 .catch, 一抛就整段跳过 ——
 //   页面停在半初始化、用户零提示。降级为 idle 即"查不到可恢复任务就正常初始化", 下一次
 //   refresh 自愈; 不再产生未处理拒绝。 — 小欧-2026-10-30
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 import { useEffect } from 'react';
 import { useLoadingMessage } from '../../../hooks/useLoadingMessage';
 import { getMessage } from '../../../lib/antd/bridge';
@@ -48,7 +49,7 @@ const RESUME_NOTICE: Partial<Record<ResumeResult, string>> = {
 //   pending_draft                 草稿本就在客户端（adoptLiveTaskOrDraft 语义），非异常；
 //   aborted                       用户主动停，非故障；
 //   polling                       轮询观察中，reconnectStatus 已在 UI 呈现；
-//   failed                        已走 error 通道 → TaskInfoBar 位4（"error 实时显示唯一位置"定案），再提示即双显示；
+//   failed                        已走 error 通道 → TaskInfoBar 位置2（"error 实时显示唯一位置"定案），再提示即双显示；
 //   not_found                     resumeStreamRequest 无终态短路，任务行被归档的**常见良性场景**同样命中，
 //                                 发提示会对每次切回旧会话误报。
 

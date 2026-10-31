@@ -4,8 +4,8 @@
 // 编辑历史: 2026-09-01 小欧 - 方案C: 新任务被隐藏修复。新增可选入参latestTaskId/latestTaskRef并透传给TaskListPanel(左列滚动定位) - 小欧-2026-09-01
 // 编辑历史: 2026-09-01 小欧 - 顶栏token双口径(北京老陈定案): 入参新增sessionTokens(会话累计3字段), 解构并透传TopbarStats; chainTokens由number改3字段结构; sessionTokens加入useMemo依赖(否则实时/静态更新不重算是栏不刷新) - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): TaskInfoBar 增传
-//   liveErrorText(位4 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
-//   liveErrorText 传参(error 唯一位置收口, 防右栏+位4双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
+//   liveErrorText(位置2 🛑 数据源, error 实时显示唯一位置=taskinfo 第一行——北京老陈定案) + RightViewer 收回
+//   liveErrorText 传参(error 唯一位置收口, 防右栏+位置2双显示); :79 解构/:304 依赖数组既有保留, 零新依赖 - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - RightViewer 增传 frames=metaFrames(useTaskInfo badge 派生输入): 等待圈三处丢失根治,
 //   waiting 依赖由 streaming 单源改 streaming/highlight/badge 三源, badge runner/paused 撑住首屏/空闲超时/confirm空隙 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ChatInput增传sessionId(CI-02跨会话草稿泄漏)+useChatPanels依赖同步 — 小欧-2026-09-02
@@ -50,6 +50,7 @@
 //   原路径把目录列表塞进这个组装 7 个面板的巨型 useMemo, 任一项变化都会让整个数组重建、7 个面板
 //   全部重新 render(right.viewer 的 RightViewer 最重), 而保存动作正落在流式出帧最密的一刻。
 //   面板只消费一个徽标数字, 该数字改由 ChatInput 内部订阅 workspaceStore 得到 — 小欧-2026-10-30
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 import { useMemo } from 'react';
 import { Typography } from 'antd';
 import type { SessionPanel } from '../components/layout/SessionPanelRegistry';
@@ -72,7 +73,7 @@ import type {
 } from '../../../services/api/task.api';
 import type { EffectiveModel } from './useModelLayer';
 import type { AuthorizationRequest } from '../../../components/AuthorizationModal';
-import type { LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
+import type { LiveError } from '../../../types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位置2数据源对象形态 — 小欧-2026-09-08
 import type { SendOpts } from '../../../types/chat'; // 2026-10-07 小欧 - 文档[11] 3.5.4(决策 14 对象参数)
 import type { UseChatFacadeReturn } from './useChatFacade';
 
@@ -81,7 +82,7 @@ interface UseChatPanelsOptions {
   chatStreaming: UseChatFacadeReturn['chatStreaming'];
   chatTaskControl: UseChatFacadeReturn['chatTaskControl'];
   chatSend: UseChatFacadeReturn['chatSend'];
-  liveError: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态) — 小欧-2026-09-08
+  liveError: LiveError | null; // 小欧 2026-09-02+09-08: 位置2 error 实时源(LiveError 对象形态) — 小欧-2026-09-08
   authorizationPending: AuthorizationRequest | null;
   // 2026-09-06 小欧 B1: 「已放行」短时高亮工具名(确认后 2s)→RightViewer highlightToolName 合源 — 小欧-2026-09-06
   recentConfirmedTool?: string | null;
@@ -331,7 +332,7 @@ export function useChatPanels(opts: UseChatPanelsOptions): SessionPanel[] {
             frames={metaFrames}
             detail={selectedDetail}
             sessionId={sessionId}
-            liveError={liveError} // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
+            liveError={liveError} // 小欧 2026-09-02+09-08: 位置2 error 实时源(LiveError 对象形态, error 实时显示唯一位置=taskinfo 第一行, 北京老陈定案) — 小欧-2026-09-08
             // 2026-10-06 22:52 小欧 - 取消终态兜底：store 已确认的终态透给徽标派生
             //   （终态帧未送达时靠它脱离"执行中"）。取快照不建条目，故不会凭空造会话。
             // 2026-10-30 小欧 - 改读 chatStreaming.status 局部变量(同源快照, 已入 useMemo 依赖)

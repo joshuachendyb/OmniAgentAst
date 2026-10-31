@@ -10,7 +10,7 @@
 // 编辑历史: 2026-09-03 小欧 - 简化重构: AuthorizationModal加key={confirmId}强制重建, 新请求=新组件实例, 彻底消除countdown/autoHandledRef等跨请求残留 - 小欧-2026-09-03
 // 编辑历史: 2026-09-06 小欧 - B1「已放行」短时高亮: useAuthorization 解构 recentConfirmedTool 并透传 useChatPanels —— 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): liveErrorText✗ string 改 liveError(LiveError|null 对象形态,
-//   onError 升为 (liveError: LiveError)=>void 接收 位4/类型分层字段) + setter/一处消费(if(liveError)refreshTasks,
+//   onError 升为 (liveError: LiveError)=>void 接收 位置2/类型分层字段) + setter/一处消费(if(liveError)refreshTasks,
 //   暂用对象真值判空)与 useChatPanels 透传同步 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-A类: 去chatSession/chatPersistence解构(死解构, eslint@typescript-eslint/no-unused-vars) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 透传rightOpen状态给useChatPanels, 控制TaskListPanel模型标签provider前缀条件显示 - 小欧-2026-09-09
@@ -51,9 +51,10 @@
 // 编辑历史: 2026-10-24 小欧 - SRP拆分: useModelLayer调用删sessionTitle(不再需要) - 小欧-2026-10-24
 // 编辑历史: 2026-10-28 小欧 - onSuccess 补 refreshTasks 兜底: 任务完成(final帧)刷新左栏 status(executing→completed),
 //   根治 final_stats 帧丢失竞态致 refresh 不触发→左栏永久卡 executing; 经 refreshTasksRef 调用(解闭包陈旧), 见 L97 区块 — 小欧-2026-10-28
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位4数据源对象形态 — 小欧-2026-09-08
+import type { LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4 位置2数据源对象形态 — 小欧-2026-09-08
 import { API_BASE_URL } from '../services/api/client';
 import { useChatFacade } from '../features/chat/hooks/useChatFacade';
 import { useSessionTasks } from '../features/chat/hooks/useSessionTasks';
@@ -77,7 +78,7 @@ const ChatPage: React.FC = () => {
   // 2026-09-10 小欧: thought重复根治(三堂会审定案): 传稳定urlSessionId字符串给useChatInit,
   //   effect依赖它(非全局searchParams对象引用), 流式期间session_id不变即不重跑initializeSession。 — 小欧-2026-09-10
   const urlSessionId = searchParams.get('session_id');
-  const [liveError, setLiveError] = useState<LiveError | null>(null); // 2026-09-08 小欧 6.3.4: 对象形态(位4 类型+分层字段) — 小欧-2026-09-08
+  const [liveError, setLiveError] = useState<LiveError | null>(null); // 2026-09-08 小欧 6.3.4: 对象形态(位置2 类型+分层字段) — 小欧-2026-09-08
   const [rightOpen, setRightOpen] = useState(true);
   // 2026-09-01 小欧 方案C: 左列最新任务锚点ref(常驻, 传入useChatPanels→TaskListPanel滚动定位)
   const latestTaskRef = useRef<HTMLDivElement | null>(null);

@@ -43,7 +43,7 @@
 #   病根)。三参缺省 None 时回退 self, 快照不重复合并(个性参数权威合并仍由 __init__ 兜底 enable_thinking:True)
 # 2026-09-02 - 小欧 - 设计文档v1.21落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
 #   L1 重试分支(:414 logger后、sleep前) yield StreamChunk(retry_notice/retry_attempt/retry_total)——实时重试事件透出,
-#   llm_stream 消费转 ("meta",retrying) → react_cycle 转 MetaStep → 前端第一行位4🔁; 不设 stream_error 不触发读方 break
+#   llm_stream 消费转 ("meta",retrying) → react_cycle 转 MetaStep → 前端第一行位置2🔁; 不设 stream_error 不触发读方 break
 # 2026-09-08 - 小欧 - 修复: L1 retry_notice 空串被真值判定静默丢弃(前端永不收重试通知)。
 #   根因: asyncio 读超时抛无参 TimeoutError() → httpcore/httpx map_exceptions 逐层包装 → httpx.ReadTimeout(""),
 #   str(e)==""→llm_call.py:93 真值判定丢弃。修复: retry_notice=str(e) or type(e).__name__ 兜底为类型名;
@@ -97,6 +97,7 @@
 #   原 `if self._cancelled: return` 不产 chunk, 上层 call_llm_stream 把零 chunk 当空 answer, agent 层按空响应
 #   重试后才收尾, 期间前端无任何取消反馈。改为 yield create_cancelled_chunk(stream_error_type="cancelled"),
 #   经 llm_call stream_error 分支转 error_type=cancelled → handle_answer 产 final(cancelled)。 小欧-2026-10-30
+# 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 """
 LLM 核心模块 — BaseAIService
 

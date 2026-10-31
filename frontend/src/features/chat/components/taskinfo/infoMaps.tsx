@@ -19,6 +19,7 @@
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射: 新增 NOTICE_CONFIG(kind+phase → antd SVG), summarizing/installing 三态(start/done/failed)各配 Spin/Check/Warning 图标; EVENT_ICON_MAP.notice 保留为回退 — 小欧-2026-10-25
 // 编辑历史: 2026-10-26 小沈 - NOTICE_CONFIG新增extracting三态(start/done/failed), 复用Spin/Check/Warning图标 — 小沈-2026-10-26
 // 编辑历史: 2026-10-30 小欧 - NOTICE_CONFIG新增refs_ready_done/refs_ready_failed(引用处置汇总, 无start态) — 小欧-2026-10-30
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
 import type { CSSProperties, ReactNode } from 'react';
 import {
@@ -132,7 +133,7 @@ export const NOTICE_CONFIG: Record<string, ReactNode> = {
   extracting_done: <CheckCircleOutlined />,
   extracting_failed: <WarningOutlined />,
   // refs_ready(引用处置汇总) — 小欧 2026-10-30: 只发 done(进入本轮)/failed(全部不可用),
-  // 无 start(start 不进本轮链路, 且 start 会占位4 抢主任务提示)
+  // 无 start(start 不进本轮链路, 且 start 会占住位置2 抢主任务提示)
   refs_ready_done: <CheckCircleOutlined />,
   refs_ready_failed: <WarningOutlined />,
   // ws_inject(事项目录块超限省略) — 小欧 2026-10-31: 只发 done(本轮目录已装配、有省略),

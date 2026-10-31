@@ -122,7 +122,7 @@
 # 2026-08-28 小欧 - KISS修正(三堂会审yield链审查): 5处 emit_final_with_stats 调用点 async for→for(配合 step_emitter.emit_final_with_stats 改 sync 返回 (final, stats) 二元组); 原 async 体内零await, 纯伪异步包装; 行为等价无backward
 # 2026-09-02 - 小欧 - 设计文档v1.21落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): _process_single_step
 #   :435 async for 内拆包前拦截 ("meta", {...}) → yield MetaStep(type=retrying, step=llm_call_count, severity=info,
-#   wait_time) 走 StepEmitter 与既有 retrying 同路径发前端位4🔁; 命中即 continue(未命中照旧拆包走既有分支);
+#   wait_time) 走 StepEmitter 与既有 retrying 同路径发前端位置2🔁; 命中即 continue(未命中照旧拆包走既有分支);
 #   LLM底层 L1/L2/FC降级重试通知全链落点收口
 # 2026-09-05 小健 8.4拆分(react_cycle.py拆四): 常量+守卫群→react_inference.py, _dispatch_handler(含状态推断)→react_dispatch.py,
 #   run_react_cycle+_finalize_cycle→react_loop.py; 本文件由 react_cycle.py git mv 改名(历史/blame不断),
@@ -180,6 +180,7 @@
 # 2026-10-25 小欧 - 信号计算外移: trim_history 调用前加 _trim_signal() 判信号, 信号触发后才调 trim_history(信号计算与裁剪逻辑分离, 调用方控制流程) — 小欧-2026-10-25
 # 2026-10-30 小欧 - 批2序11 A19: _absorb_inbox 注入合并超长截断方向修正为**保尾部** —— 插话正文前可能拼引用区块,
 #   原 `[:_max_chars]` 切尾部会先丢引用、再丢用户消息开头; 保尾部才能留下用户真正写的话, 截断处留显式标记 — 小欧-2026-10-30
+# 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
 """react_step — 单步ReAct调度(react_cycle.py 余部改名, 8.4拆分后专注"单步编排")
 

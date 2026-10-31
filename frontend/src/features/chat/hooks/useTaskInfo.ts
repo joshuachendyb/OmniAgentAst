@@ -7,7 +7,7 @@
 //   记录最近一次paused下标, 其后出现业务推进step(thought/action/observation)⇒badge推导回running,
 //   兜底后端部分恢复路径不发resumed引发的badge卡paused(耗时秒表被掐死失实时); 真HITL挂起仍paused - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 设计文档v1.21落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
-//   新增 LiveMeta 类型(位4只收 retrying/error/truncated 无优先级) + 签名五参(liveErrorText 位4 error 实时源)
+//   新增 LiveMeta 类型(位置2只收 retrying/error/truncated 无优先级) + 签名五参(liveErrorText 位置2 error 实时源)
 //   + 历史 detail 分支补 liveMeta:null(不占位不串味) + latestProcessEvent 记最近 retrying + return 前
 //   candidates.sort(time 大者胜)合成 liveMeta(新覆盖旧) + deps 补 liveErrorText - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: ①HP-04 Date.now提出useMemo外防闪变②HP-05 recentEvents补slice(0,20)防21条越界 — 小欧-2026-09-02
@@ -25,7 +25,7 @@
 //   每次重算把 badge 压回 idle 致 RightViewer.isCurrentLive(:125-129)翻 false(streaming=false 停齿轮 +
 //   displaySteps 切历史视图 + liveSteps 静默压栈 + 重连整批回放); 2026-09-02 三态并集修复被击穿的根治 — 小欧-2026-09-08
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈裁定): 第5参 liveErrorText✗ string 改 liveError?: LiveError|null
-//   (页面级错误数据源对象形态) + LiveMeta 补 requestLevel(位4图标分层用; retrying/truncated 恒执行级false) +
+//   (页面级错误数据源对象形态) + LiveMeta 补 requestLevel(位置2图标分层用; retrying/truncated 恒执行级false) +
 //   detail分支/兜底/candidates/依赖同步改造 — 小欧-2026-09-08
 // 编辑历史: 2026-09-11 小欧 - 契约化(method2, 北京老陈 2026-09-11 定案): thought=仅历史回显事件(DB
 //   executionSteps), 实时 SSE 永不发(后端 _SSE_EXCLUDE_TYPES 过滤)。badge 派生"业务step到达即证执行中"
@@ -54,13 +54,13 @@
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 返回值补 processEventsSnapshot(排除 heartbeat, 全链路唯一过滤); 历史分支改读 detail.process_events(快照条目直接铺列表, 不进 switch 防 badge 被覆写); 实时分支删 slice(-20) 上限(北京老陈令「不能限制」, 溢出由 TaskInfoBar 浮层滚动承载) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封接入: ProcessEvent 接口新增 notice_kind/notice_phase 可选字段; notice case 透传两字段供 NOTICE_CONFIG 按 kind+phase 查表渲染 — 小欧-2026-10-25
 // 编辑历史: 2026-10-26 小沈 - notice双渲染: LiveMeta扩展notice字段; latestProcessEvent支持notice;
-//   start/failed设位4, done清除; final success时candidates全清(badge==='completed'→空数组) — 小沈-2026-10-26
+//   start/failed设位置2, done清除; final success时candidates全清(badge==='completed'→空数组) — 小沈-2026-10-26
 // 编辑历史: 2026-10-26 小沈 - 卡死预警接入liveMeta: LiveMeta.kind补'warning'; stuckWarning命中时以kind='warning'/'疑似卡死'进入位2候选; 删除stuckWarning返回值(不再独立渲染, 由TaskInfoBar位2动态状态承载) — 小沈-2026-10-26
-// 编辑历史: 2026-10-30 小欧 - 位4 取消后清空(与成功完成同语义): 原仅 badge==='completed' 清 candidates,
+// 编辑历史: 2026-10-30 小欧 - 位置2 取消后清空(与成功完成同语义): 原仅 badge==='completed' 清 candidates,
 //   取消落在重试退避中/压缩摘要中时, "重试 x/y""摘要中"等过程事件的 done 帧随 agent 协程被取消打断永不达,
-//   位4 会永久挂转圈/过期文案与"已取消"徽标冲突; 判据加 badge==='cancelled' — 小欧-2026-10-30
-// 编辑历史: 2026-10-30 小欧 - 位4 的 notice done 收紧为只清自己的 kind: 原无条件清空, 插话的
-//   refs_ready_done 会把主任务"生成摘要中"等位4提示误抹(任务仍在跑却看不出在干什么) — 小欧-2026-10-30
+//   位置2 会永久挂转圈/过期文案与"已取消"徽标冲突; 判据加 badge==='cancelled' — 小欧-2026-10-30
+// 编辑历史: 2026-10-30 小欧 - 位置2 的 notice done 收紧为只清自己的 kind: 原无条件清空, 插话的
+//   refs_ready_done 会把主任务"生成摘要中"等位置2提示误抹(任务仍在跑却看不出在干什么) — 小欧-2026-10-30
 /**
  * useTaskInfo - 任务信息条数据派生 Hook
  *
@@ -77,10 +77,11 @@
  * @date 2026-08-26
  */
 // 编辑历史: 2026-08-28 小欧 - 修复: ExecutionStep统一从types/execution导入
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
 import { useMemo } from 'react';
 import type { ExecutionStep } from '../../../types/execution'; // 2026-08-28 小欧 - 修复: ExecutionStep统一从types/execution导入
-import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位4数据源对象形态 — 小欧-2026-09-08
+import type { TaskMetaFrames, LiveError } from '@/types/sse'; // 2026-09-08 小欧 6.3.4: LiveError 位置2数据源对象形态 — 小欧-2026-09-08
 import type { TaskDetail } from '../../../services/api/task.api';
 // 2026-10-10 北京老陈裁定[20]: 帧读侧唯一真源(结构定稿, 只读双分组)
 import { pickConv, pickInject } from '@/utils/contextFrame';
@@ -104,7 +105,7 @@ export interface ProcessEvent {
     | 'final'
     | 'heartbeat'
     // 2026-10-04 小欧: 历史对话裁剪事件(北京老陈令改名 context_trimmed): 原 truncated 一名三义
-    //   (输出截断帧类型 / 位4 输出截断 / 本事件), 视觉上无法与 error 区分
+    //   (输出截断帧类型 / 位置2 输出截断 / 本事件), 视觉上无法与 error 区分
     | 'context_trimmed'
     // 2026-10-09 小欧[20]: kind 加 context_compressed(历史注入压缩事件, 与裁剪同级)
     | 'context_compressed';
@@ -115,8 +116,8 @@ export interface ProcessEvent {
   notice_phase?: 'start' | 'done' | 'failed';
 }
 
-// 小欧 2026-09-02: 位4 数据准予类型(只收三类, 无优先级);
-// 2026-09-08 小欧 6.3.4: 补 requestLevel(位4图标分层——error 请求级⛔/执行级红圆底白×; retrying/truncated 恒执行级false) — 小欧-2026-09-08
+// 小欧 2026-09-02: 位置2 数据准予类型(只收三类, 无优先级);
+// 2026-09-08 小欧 6.3.4: 补 requestLevel(位置2图标分层——error 请求级⛔/执行级红圆底白×; retrying/truncated 恒执行级false) — 小欧-2026-09-08
 export interface LiveMeta {
   kind: 'retrying' | 'error' | 'truncated' | 'warning' | 'notice';
   text: string;
@@ -139,7 +140,7 @@ export const useTaskInfo = (
   steps: ExecutionStep[],
   frames: TaskMetaFrames,
   detail?: TaskDetail | null,
-  // 小欧 2026-09-02+09-08: 位4 error 实时源(页面级错误数据源对象形态; undefined 时 candidates 不含 error)
+  // 小欧 2026-09-02+09-08: 位置2 error 实时源(页面级错误数据源对象形态; undefined 时 candidates 不含 error)
   liveError?: LiveError | null,
   // 2026-10-06 22:52 小欧 - 补第5参 storeStatus（chatStreamStore 的会话状态）：
   //   取消终态帧没送达时的兜底判据（见下方 startinfo 门后的注释）。可选=不传则行为与从前逐字一致。
@@ -223,15 +224,15 @@ export const useTaskInfo = (
         processEventCount: (detail.process_events ?? []).length,
         // 2026-10-11: 历史态不回传(快照已在库中), 置空数组保持返回结构同构, 供调用方无脑取用
         processEventsSnapshot: [],
-        liveMeta: null, // 小欧 2026-09-02: 历史回放位4置空不占位(无实时源)
+        liveMeta: null, // 小欧 2026-09-02: 历史回放位置2置空不占位(无实时源)
       };
     }
 
     let badge: TaskBadge = 'idle';
     const processEvents: ProcessEvent[] = [];
-    // 小欧 2026-09-02: 位4 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
+    // 小欧 2026-09-02: 位置2 最近一条 retrying(新覆盖旧); 窄化 kind 直入 LiveMeta[] 合成, 免 TS 联合类型报错
     // 2026-09-08 小欧 6.3.4: retrying 恒执行级(requestLevel=false) — 小欧-2026-09-08
-    // 2026-10-26 小沈: 扩展支持 notice 事件进位4
+    // 2026-10-26 小沈: 扩展支持 notice 事件进位置2
     let latestProcessEvent:
       | (
           | {
@@ -285,7 +286,7 @@ export const useTaskInfo = (
             text: s.content || '正在重试',
             time: s.timestamp,
           });
-          // 小欧 2026-09-02: 位4 回填(仅 retrying; paused/resumed 不进位4, 状态走徽标 - 北京老陈 2026-09-02
+          // 小欧 2026-09-02: 位置2 回填(仅 retrying; paused/resumed 不进位置2, 状态走徽标 - 北京老陈 2026-09-02
           latestProcessEvent = {
             kind: 'retrying',
             text: s.content || '正在重试',
@@ -294,8 +295,8 @@ export const useTaskInfo = (
           };
           break;
         case 'notice': {
-          // 2026-10-25 小欧: 通知信封 — 事件列表 + 位4 双渲染, kind+phase 透传供 NOTICE_CONFIG/renderLiveMeta 查表
-          // 2026-10-26 小沈: 位4 逻辑: start/failed=设置 latestProcessEvent, done=清除 latestProcessEvent(位4清空)
+          // 2026-10-25 小欧: 通知信封 — 事件列表 + 位置2 双渲染, kind+phase 透传供 NOTICE_CONFIG/renderLiveMeta 查表
+          // 2026-10-26 小沈: 位置2 逻辑: start/failed=设置 latestProcessEvent, done=清除 latestProcessEvent(位置2清空)
           const noticeText = s.content || '通知';
           const noticePhase = s.notice_phase || 'start';
           processEvents.push({
@@ -305,7 +306,7 @@ export const useTaskInfo = (
             notice_kind: s.notice_kind || '',
             notice_phase: noticePhase,
           });
-          // 位4: start/failed 设置 latestProcessEvent, done 只清除**自己 kind** 的条目 — 小欧-2026-10-30
+          // 位置2: start/failed 设置 latestProcessEvent, done 只清除**自己 kind** 的条目 — 小欧-2026-10-30
           //   (原 done 无条件清空: 插话的 refs_ready_done 会把主任务"生成摘要中"等提示一并抹掉)
           if (noticePhase === 'start' || noticePhase === 'failed') {
             latestProcessEvent = {
@@ -348,7 +349,7 @@ export const useTaskInfo = (
               text: s.content || '任务已完成',
               time: s.timestamp,
             });
-            // 2026-10-26 小沈: 任务成功完成时位4全清(candidates 判 badge==='completed' 时返回空数组)
+            // 2026-10-26 小沈: 任务成功完成时位置2全清(candidates 判 badge==='completed' 时返回空数组)
           }
           break;
         case 'error':
@@ -501,7 +502,7 @@ export const useTaskInfo = (
     //   processEventCount 取 processEvents.length 全量真值(本就未截断), 徽标与列表恒一致。
     const recentEvents = processEvents;
 
-    // 小欧 2026-09-02: 位4 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
+    // 小欧 2026-09-02: 位置2 liveMeta 合成(无优先级: retrying/error/truncated 各自到达即更新, 最后收到者胜, 新覆盖旧)
     // 2026-09-08 小欧 6.3.4: detail 分支直接入 candidates(旧文本丢入 meta, 语义]]), wait 2026年:
     //   error 项用 liveError(LiveError 对象) 携带 requestLevel; truncated/retrying 恒执行级(false) — 小欧-2026-09-08
     // 小欧 2026-09-09 修复: 时间源改从末条步骤/帧取(useMemo 幂等), 不再依赖 Date.now()
@@ -510,13 +511,13 @@ export const useTaskInfo = (
     //   G4 新信号被遮(退化); 且 startTimestamp 为 0 时 `??` 不穿透。末条步骤时间恒 ≥ latestProcessEvent 时间,
     //   新信号 candidates 前置保序, 与现状 winner 等价 — 小欧-2026-09-09
     //   2026-10-10 小欧[20] 审计 B4: now 已上提至事件段之前算一次(DRY), 此处不再重复声明
-    // 2026-10-26 小沈: 任务成功完成时位4全清(notice/retry/error/truncated 均不进 candidates)
+    // 2026-10-26 小沈: 任务成功完成时位置2全清(notice/retry/error/truncated 均不进 candidates)
     // 2026-10-30 小欧 - 取消同样全清(与成功完成同语义): 取消可能落在重试退避中/压缩摘要中, 此刻
     //   executionSteps 里留着"重试 2/3 等 1 秒…""摘要中"等过程事件, 其 done 帧随 agent 协程被取消打断
-    //   而永不到达 → 位4 永久挂着转圈/过期文案, 与"已取消"徽标语义冲突。— 小欧-2026-10-30
+    //   而永不到达 → 位置2 永久挂着转圈/过期文案, 与"已取消"徽标语义冲突。— 小欧-2026-10-30
     const candidates: LiveMeta[] =
       badge === 'completed' || badge === 'cancelled'
-        ? [] // 成功完成/已取消: 位4 全清
+        ? [] // 成功完成/已取消: 位置2 全清
         : [
             ...(liveError
               ? [
@@ -524,7 +525,7 @@ export const useTaskInfo = (
                     kind: 'error' as const,
                     text: liveError.text,
                     time: now,
-                    requestLevel: liveError.requestLevel, // 位4 图标分层:S2 请求级 step=0 判定打标(S3 判定来源转"后端业务错误"再取) — 小欧-2026-09-08
+                    requestLevel: liveError.requestLevel, // 位置2 图标分层:S2 请求级 step=0 判定打标(S3 判定来源转"后端业务错误"再取) — 小欧-2026-09-08
                   },
                 ]
               : []),
@@ -585,7 +586,7 @@ export const useTaskInfo = (
       processEventsSnapshot: processEvents.filter(
         (e) => e.kind !== 'heartbeat'
       ),
-      liveMeta, // 小欧 2026-09-02: 位4(历史 detail 分支已置 null, 此字段恒在实时分支产出)
+      liveMeta, // 小欧 2026-09-02: 位置2(历史 detail 分支已置 null, 此字段恒在实时分支产出)
     };
   }, [steps, frames, detail, liveError, storeStatus]);
 };

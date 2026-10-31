@@ -340,7 +340,7 @@ C4 锚定摘要与 C3 剪枝的公用原语（2026-10-08 摘要前降本接线�
 | `build_refs_ready_notice` | 组 `refs_ready` 通知载荷（走既有 `notice` 信封，无结构化 refs 字段）：`items>0` → `phase=done`（`引用进入本轮：…` / 插话前缀 `插话引用进入：`）；否则 `phase=failed`（`引用全部不可用：N 项未能进入本轮，请求已阻断`）。token 文案 <1000 显原值、≥1000 折 k 一位 | scope: str, summary | Dict（type/kind/phase/content/step） |
 | `create_refs_ready_event` | 组 `refs_ready` 的 SSE 帧（首发 `yield`；插话取 `build_refs_ready_notice` 载荷经 `_emit_to_target` → 目标任务 buffer publish 下发，新 POST 流前端只 `readToEnd` 收不到 `yield`） | scope: str, summary | str（SSE 帧） |
 
-> 载体纪律（与 `refs_notice` 同）：首发路径是新建任务流，前端 pump 直接消费，`yield` 即可见；插话路径帧发在新 POST 流上，必须经目标任务 buffer 下发才能到前端。`refs_ready` 只发 `done`/`failed`、不发 `start`（`start` 会占位4 抢主任务提示）；对应前端位4 的 `notice done` 已收紧为"只清自己 kind"（`useTaskInfo.ts`），避免插话的 `refs_ready_done` 抹掉主任务"生成摘要中"。登记点：`NOTICE_KINDS`（`services/agent/steps/__init__.py`）与 `execution.ts` 通名同步。
+> 载体纪律（与 `refs_notice` 同）：首发路径是新建任务流，前端 pump 直接消费，`yield` 即可见；插话路径帧发在新 POST 流上，必须经目标任务 buffer 下发才能到前端。`refs_ready` 只发 `done`/`failed`、不发 `start`（`start` 会占住位置2 抢主任务提示）；对应前端位置2 的 `notice done` 已收紧为"只清自己 kind"（`useTaskInfo.ts`），避免插话的 `refs_ready_done` 抹掉主任务"生成摘要中"。登记点：`NOTICE_KINDS`（`services/agent/steps/__init__.py`）与 `execution.ts` 通名同步。
 
 ---
 

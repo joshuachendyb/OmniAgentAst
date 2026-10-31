@@ -9,8 +9,8 @@
 // 编辑历史: 2026-09-01 小欧 - TaskInfoBar一线三组最佳重排: 左主节奏(状态/耗时/步轮·重试) 中Token合一T(P/C) 右信任/收起 gap12/8 减半宽 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 去尾部"收起/展开"文字按钮(北京老陈驱动: 冒泡至整行onClick致setCollapsed两次切换抵消=点了没反应; 且与整行点击重复): 面板折叠仅保留整行点击(:139), 信任独立三角stopPropagation - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md): Props六参补
-//   liveErrorText(位4 error 实时源) + 组件解构同步 + useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计(:163-168,
-//   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位4) + 位4渲染段(🔁/🛑/⚠
+//   liveErrorText(位置2 error 实时源) + 组件解构同步 + useTaskInfo 五参调用 + 第一行去掉旧"· 重试N"累计(:163-168,
+//   来源stats.retry_count, 无内容看不懂——北京老陈质疑)与截断独立段(:174-178, 并入位置2) + 位置2渲染段(🔁/🛑/⚠
 //   图标映射, 置于 步骤/轮次 之后、·疑似卡死 之前; 新覆盖旧无优先级) - 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 44case审计修复: TB-02 revokeTrust加try/catch防unhandledrejection上浮 — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 会话信任功能修复 v1.5⑤⑥(北京老陈定案"tool+path才是准确对象", 后端定案): TrustedTool带path升级一行一变——
@@ -19,7 +19,7 @@
 //   receiving&&!detail(实时流在就走表, 错误信号不再清零停表/业务恢复不再回跳); shownElapsed实时态一律liveElapsed, 非实时/历史回退elapsedSec;
 //   else分支原样保留(归零+startRef复位, 保终态duration显示与新任务归零) — 小欧-2026-09-06
 // 编辑历史: 2026-09-08 小欧 - 六章6.3.4(北京老陈定案): prop 第7位 liveErrorText✗ string 改 liveError?: LiveError|null
-//   (数据源对象形态, useChatPanels 透传) + 位4 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
+//   (数据源对象形态, useChatPanels 透传) + 位置2 图标分层——执行级 error 用 CloseCircleFilled(红圆底白×,
 //   替原🛑, ·/着色 Colors.ERROR) + 请求级 error 用 ⛔(后端业务错误如"消息列表为空"); retrying🔁/truncated⚠ 不变 — 小欧-2026-09-08
 // 编辑历史: 2026-09-09 小欧 - v4.1+v4.2: 探针删除/折叠态机删除(信息带恒定1行)/图标全antd SVG/对比度分级/ Token两段式MetricItem/上下文4态/换行/分隔线归属input/令牌化/事件时间轴/徽标迁infoMaps/耗时等宽/G6上下文+G8事件双浮层经FloatingEntry复用(G8双写修复) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - v4.4 修复: 断点矩阵落地(useInfoBreakpoint 1280/960/768)——G2/G3 xsmall 合并(G3 含耗时段)、
@@ -27,7 +27,7 @@
 //   G7 narrow/xsmall 仅计数(TrustPanel compact)、G6/G8 恒完整(FloatingEntry 基础行数字+▸+明细进浮层① 已满足矩阵) — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 存量warning清零-B2: 秒表interval的frames.startTimestamp有意不入依赖数组(定时器防每帧重置去抖, 见:122注释),
 //   加eslint-disable+理由注释 — 小欧-2026-09-09
-// 编辑历史: 2026-09-09 小欧 - 位4错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(20)截断加…,
+// 编辑历史: 2026-09-09 小欧 - 位置2错误信息字符级截断(北京老陈令): renderLiveMeta 文本超 LIVE_META_TEXT_MAX(20)截断加…,
 //   宽/中屏超长时 Tooltip 全文(窄屏沿用 G4 EllipsisTip maxWidth200, 不叠双层Tooltip), 杜绝超长 error_message 撑爆第一行;
 //   G6上下文卡片标签"上下文详情"→"历史上下文"(ariaLabel+卡片标题同步, 北京老陈令), 摘要移除 slice(0,60) 截断改完整显示 — 小欧-2026-09-09
 // 编辑历史: 2026-09-09 小欧 - 北京老陈纠正定案: 第一行 G6 上下文标签"上下文"→"历史上下文"(隐藏于 FloatingEntry 的 MetricItem label),
@@ -61,7 +61,7 @@
 // 编辑历史: 2026-10-06 小欧 - 增 storeStatus 入参(useTaskInfo 补第 5 参), 用于取消终态帧没送达时的徽标兜底。 — 小欧-2026-10-06
 // 编辑历史: 2026-10-11 10:13:16 小欧 - 北京老陈令「final 的时候回填事件列表」: 新增 taskId prop(取值与组件 key 同源 activeTaskId ?? serverTaskId, 不新造标识); final 到达时调 saveTaskProcessEvents 回传快照(_sentRef 幂等只发一次, _latestRef 读最新值避 exhaustive-deps, effect 首行 if (detail) return 防历史态误回填覆盖/跨任务污染; 失败只 console.warn 不阻断) — 小欧-2026-10-11
 // 编辑历史: 2026-10-25 小欧 - 通知信封图标映射启用: import NOTICE_CONFIG; 事件时间轴渲染 notice 条目时按 kind+phase 查 NOTICE_CONFIG, 未命中回退 EVENT_ICON_MAP.notice — 小欧-2026-10-25
-// 编辑历史: 2026-10-26 小沈 - renderLiveMeta支持notice: start=SyncOutlined spinner+橙色, failed=WarningOutlined+红色; 位4双渲染完成 — 小沈-2026-10-26
+// 编辑历史: 2026-10-26 小沈 - renderLiveMeta支持notice: start=SyncOutlined spinner+橙色, failed=WarningOutlined+红色; 位置2双渲染完成 — 小沈-2026-10-26
 // 编辑历史: 2026-10-26 小沈 - 卡死预警接入位2动态状态: LIVE_META_TEXT_MAX 60→20, 事件时间轴截断 13→20, 事件浮层宽 520→220; stuckWarning 不再独立渲染, 由 liveMeta(kind='warning')承载; 新增11位置对照表 — 小沈-2026-10-26
 // 编辑历史: 2026-10-28 小欧 - 位2动态状态+事件列表文本截断改**显示宽度**省略(北京老陈令):
 //   原按 20 字符 slice 截断——20 个英文仅占约一半显示宽(英文半角≈0.5汉字宽), 剩一半空白严重不合理;
@@ -84,6 +84,7 @@
 //   3 轮次      4 本轮token 5 步数
 //   6 任务token
 //   7 耗时     8 上下文  9 占窗率  10 信任    11 事件
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 /**
  * TaskInfoBar - 输入框上方任务信息条（taskinfo slot，当前任务动态实时唯一位置）
  *
@@ -160,7 +161,7 @@ interface TaskInfoBarProps {
   frames: TaskMetaFrames; // 统计类元信息帧（8.4.14）
   detail?: TaskDetail | null; // 【A3】选中历史任务时由其详情派生动态信息
   sessionId?: string | null; // 13.14 TrustPanel第一行尾部需会话ID
-  liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位4 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
+  liveError?: LiveError | null; // 小欧 2026-09-02+09-08: 位置2 error 实时源(LiveError 对象, useChatPanels 透传) — 小欧-2026-09-08
   // 2026-10-06 22:52 小欧 - storeStatus：chatStreamStore 会话状态，取消终态帧未送达时的 badge 兜底
   // 2026-10-30 小欧 - 改必填且用 StreamStatus(与 RightViewer 同口径): 唯一调用点恒可给, 不留可选垫片
   storeStatus: StreamStatus;
@@ -443,7 +444,7 @@ const TaskInfoBar: React.FC<TaskInfoBarProps> = ({
           <Badge status={b.status} text={b.text} />
 
           {/* 2-动态状态: 位置固定, 收 retrying/error/truncated/warning/notice, 无优先级; warning=卡死预警 */}
-          {/* 小欧 2026-09-02: 第一行位4(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
+          {/* 小欧 2026-09-02: 第一行位置2(位置固定, 新覆盖旧; 只收 retrying/error/truncated 无优先级; 去旧"重试N"累计与截断独立段) - 北京老陈拍板 */}
 
           {/* 3.9 断点矩阵: 各档统一 EllipsisTip 按显示宽度省略(2026-10-28 小欧: 原窄屏 200/宽屏 JS 字符截断, 改统一 CSS 像素级省略) — 小欧-2026-10-28 */}
           {info.liveMeta && (

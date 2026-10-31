@@ -8,9 +8,9 @@
 //   (仅匹配内联样式, 改CSS类即失效且不报错)→改 getComputedStyle 沿祖先上溯找 overflowY auto/scroll, 稳健且语义等价 — 小欧-2026-09-02
 // 编辑历史: 2026-09-01 小欧 - 任务统计增强v0.8: StaticStatsBlock透传chainSteps=historySteps，复用C2步骤数据作工具调用链源 - 小欧-2026-09-01
 // 编辑历史: 2026-09-02 小欧 - 设计文档落码(工具结果显示与taskinfo显示分析与设计-小欧-2026-09-01.md):
-//   error 实时显示唯一位置收口=TaskInfoBar 位4(北京老陈定案): 删 Props :49 liveErrorText 声明 + 解构 :60 +
+//   error 实时显示唯一位置收口=TaskInfoBar 位置2(北京老陈定案): 删 Props :49 liveErrorText 声明 + 解构 :60 +
 //   空态条件去 !liveErrorText :172 + 删 error Alert 段 :194-207(其后 :208 StaticStatsBlock 原样保留) + 收回
-//   useChatPanels :222 传参(已随同提交) + 同步删 import Alert(未用即 ESLint 报错); 防 error 双显示(右栏+位4) — 小欧-2026-09-02
+//   useChatPanels :222 传参(已随同提交) + 同步删 import Alert(未用即 ESLint 报错); 防 error 双显示(右栏+位置2) — 小欧-2026-09-02
 // 编辑历史: 2026-09-02 小欧 - 修复实时auto-scroll滚动慢/最新被盖住(北京老陈反馈):
 //   ①弃 scrollIntoView(smooth)——流式逐chunk增长下smooth动画反复被打断重起追赶不及, 改 scrollTop=scrollHeight 即时到底;
 //   ②驱动由 liveSteps.length 改 ResizeObserver 监听流水线内容高度——打字机段逐字增长length不变旧逻辑不触发, 内容增高即滚底;
@@ -158,6 +158,7 @@
  * @author 小欧
  * @date 2026-08-26
  */
+// 编辑历史: 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 
 import React, {
   useCallback,

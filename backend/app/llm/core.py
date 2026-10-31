@@ -3,11 +3,12 @@
 # 2026-07-18 小欧 修复: StreamChunk新增truncated字段
 # 2026-07-19 小欧 StreamChunk新增finish_reason字段(OpenAI兼容API终结原因:stop/length/tool_calls/content_filter)
 # 2026-09-02 小欧 设计文档v1.21落码: StreamChunk新增retry_notice/retry_attempt/retry_total字段
-#   (L1重试通知承载, 默认None零行为变化; llm_stream消费转MetaStep(retrying)发前端位4🔁)
+#   (L1重试通知承载, 默认None零行为变化; llm_stream消费转MetaStep(retrying)发前端位置2🔁)
 # 2026-09-06 小欧 元事件载荷通道落码: StreamChunk新增payload:Optional[Dict]载荷通道(元事件统一载体),
 #   create_payload_chunk工厂与取消/错误族同列(单行构造), 默认None零行为变化
 # 2026-10-29 小欧 重试事件文案统一: StreamChunk新增retry_wait/retry_error_type字段
 #   (L1重试事件透传退避秒数+异常类名, 默认None零行为变化)
+# 2026-10-31 小欧 - 注释订正(北京老陈指正): 第一行动态状态位是位置2, 原注释序号写错(2026-09-17 重排前是第4位), 全文统一为"位置2" — 小欧-2026-10-31
 """
 LLM核心数据类与辅助函数 — SRP拆分自llm_core.py — 小健 2026-05-27
 
