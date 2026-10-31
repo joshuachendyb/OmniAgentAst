@@ -35,9 +35,16 @@
 //   saveProviderDraft 不经 doSave → 落盘后本地仍留明文、且被 buildDiff 重新算成脏（底栏存不干净）。
 // 2026-10-31 小欧 - api_key 行下补语义说明：留空=不带 Authorization 头（无鉴权端点直接留空），
 //   留空保存不改动已存密钥、要清掉走「清空 api_key」。不引入任何额外开关，判定只有 key 空不空一条。
+// 2026-11-01 小欧 - 状态贴两态定稿（北京老陈拍板）：删「修改中 · N 项未保存」分支（计数归底栏专管，
+//   消页面双报数）；未设密钥态文案按用户逐字口述落盘；贴子紧贴眼睛图标——SecretRevealInput 根
+//   span 去 flex:1 后不再顶贴到行最右 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 未设密钥态文案二次修订（北京老陈给定）：「密码Key未设置: 空key(不携带认证头);
+//   无需输入. 非空Key, 必须输入新密码并保存」，较前稿短约 130px、窄屏不再折行 — 小欧-2026-11-01
+// 2026-11-01 小欧 - 未设密钥态贴颜色二次修订（北京老陈选型）：中性灰 → antd 橙 Tag（与旧
+//   「有 N 项未保存」角标同款）；空 key 是需用户注意的状态，灰不醒目 — 小欧-2026-11-01
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Button, Input, InputNumber, Switch } from 'antd';
+import { Button, Input, InputNumber, Switch, Tag } from 'antd';
 import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
 import { SecretRevealInput } from './SecretRevealInput';
 import { TestConnectionProbe } from './TestConnectionProbe';
@@ -209,8 +216,8 @@ export const ProviderConfig: React.FC<Props> = ({
         </div>
         <EnvTag />
         <span style={{ color: Colors.TEXT.SECONDARY }}>
-          该 Provider 配置被 {name.toUpperCase()}_API_KEY
-          环境变量接管，页面只读。如需解除，请删除该环境变量后重启后端。
+          本 Provider 由 {name.toUpperCase()}_API_KEY
+          环境变量接管（此处只读）。解除：删除该环境变量后重启后端。
         </span>
       </div>
     );
@@ -277,25 +284,21 @@ export const ProviderConfig: React.FC<Props> = ({
           masked={config.api_key.masked}
           width={settingsControl.apiKeyWidth}
         />
-        {/* 2026-10-31 - 小欧 - 状态必须看得见：这一行右侧直接写当前状态，
-            用户不必去读下面的说明才知道这个 Provider 带不带密钥。
-            清空动作不在此处 —— 统一走 ④ 操作区的「清空 api_key」，避免两套清空入口。 */}
-        <span
-          style={{
-            marginLeft: Spacing.SM,
-            color: Colors.TEXT.SECONDARY,
-            whiteSpace: 'nowrap',
-          }}
+        {/* 2026-11-01 小欧 - 两态状态贴（北京老陈拍板）：紧贴眼睛图标后，未保存计数归底栏专管；
+            已存=success 绿。2026-11-01 二次修订（北京老陈选型）：未设密钥态灰改**橙 Tag**
+            （antd orange，与旧「有 N 项未保存」角标同款）——空 key 是需要用户注意的状态，
+            灰不醒目；文案按用户逐字口述定稿（短版 ~450px 不折行）— 小欧-2026-11-01 */}
+        <Tag
+          style={{ marginLeft: Spacing.SM, whiteSpace: 'nowrap' }}
+          color={config.api_key.configured ? 'success' : 'orange'}
         >
-          {config.api_key.configured ? '已配置' : '未配置 = 不带密钥'}
-        </span>
+          {config.api_key.configured
+            ? '密钥已保存 · 请求自动携带'
+            : '密码Key未设置: 空key(不携带认证头);无需输入. 非空Key, 必须输入新密码并保存'}
+        </Tag>
       </div>
-      {/* 2026-10-31 - 小欧 - 空 api_key 的语义说明：留空不是"配置错误"，而是"不带鉴权头"。
-          本机 Ollama / vLLM 等无鉴权端点直接留空即可；判断依据只有 key 空不空，没有额外开关。 */}
-      <div style={EXTRA_STYLE}>
-        留空 = 请求不携带 Authorization 头（本机 Ollama / vLLM
-        等无鉴权端点无需填写）
-      </div>
+      {/* 2026-10-31 - 小欧 - 空 api_key 的语义说明收口到 SecretRevealInput 单一出处，
+          本处原第二份说明与它矛盾（"留空"一词两义把操作路径搅浑），删除 — 小欧-2026-11-01 */}
 
       {/* base_url */}
       <div style={settingsRowStyle}>
@@ -317,8 +320,8 @@ export const ProviderConfig: React.FC<Props> = ({
         }}
       >
         {baseUrl.trim() === ''
-          ? '⚠️ URL 为空，此 Provider 无法调用（错误状态）'
-          : 'URL 为 Provider 的必要配置，不能为空'}
+          ? 'API 地址为空：无法调用该 Provider。'
+          : 'API 地址（base_url）必填；为空时无法调用该 Provider。'}
       </div>
 
       {/* 显示名 */}
@@ -332,7 +335,9 @@ export const ProviderConfig: React.FC<Props> = ({
           />
         </span>
       </div>
-      <div style={EXTRA_STYLE}>Provider 显示名称，留空=保持原值</div>
+      <div style={EXTRA_STYLE}>
+        此名称仅用于界面显示；为空时沿用现有显示名。
+      </div>
 
       {/* timeout */}
       <div style={settingsRowStyle}>

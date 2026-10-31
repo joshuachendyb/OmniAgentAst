@@ -18,6 +18,8 @@
  *     Bug2(在 SettingsPage.tsx) 清空成功后立即本地更新 providerConfig, 不等异步 reload;
  *     Bug3 displayReadOnly+useEffect: configured=false 时恒可编辑 + 不复位 focused — 小欧-2026-10-29
  *     Bug4 明文态清空: revealed=true时configured变false,补effect强制退出明文态(清plainKey+revealed+定时器) — 小欧-2026-10-29
+ *   2026-11-01 小欧 - 说明行两态文案按北京老陈逐字口述定稿 + 说明行独占整行（flex-basis 100% +
+ *     order:99，不再挤状态贴孤悬）；根 span 去 flex:1（状态贴贴着眼睛，不再右对齐） — 小欧-2026-11-01
  *
  * 四条安全约束：①点眼睛先 Modal.confirm 确认才取明文 ②明文 30 秒自动打码+卸载清 timer
  *   ③明文只存内存（不写 localStorage）、明文态 readOnly 且 onChange 直接 return（不当作新值提交）
@@ -25,6 +27,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Input, Modal } from 'antd';
+import { EyeInvisibleOutlined, EyeOutlined } from '@ant-design/icons';
 import { ErrorType, showMessage } from '@/services/error/handler';
 import { modelApi } from '@/services/api/model.api';
 import { Colors, FontFamily, FontSize, Spacing } from '@/utils/stepStyles';
@@ -153,7 +156,10 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
 
   return (
     <>
-      <span style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+      {/* 2026-11-01 小欧 - 去 flex:1（北京老陈钉的：状态贴被顶到行最右，中间一大段空洞很丑）：
+          根 span 改回内容宽，输入框(360)+眼睛后直接跟 ProviderConfig 的状态贴；本组件唯一
+          使用点即 api_key 行，无其他布局依赖此撑满 — 小欧-2026-11-01 */}
+      <span style={{ display: 'flex', alignItems: 'center' }}>
         {/* 常驻单个 Input：type 只在 text/password 间切换，DOM 节点不重建（修丢焦点） */}
         <Input
           type={inputType}
@@ -168,12 +174,13 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
           onBlur={() => setFocused(false)}
           // 新密钥一律不让浏览器自动填充（防把已保存口令填进覆盖框）
           autoComplete="new-password"
+          /* 2026-11-01 小欧 - 稳定定位锚点：测试与屏幕阅读器都按此定位输入框，
+              与界面文案措辞零耦合（文案可随时改，测试不爆）— 小欧-2026-11-01 */
+          aria-label={`${providerName} api_key`}
           placeholder={
-            isTyping
-              ? '输入新密钥以覆盖'
-              : configured
-                ? '已配置，留空保持原值'
-                : '未配置'
+            isTyping || configured
+              ? '输入新密钥，替换已保存的密钥'
+              : '输入 API Key；免密钥服务可不填'
           }
           style={{
             width,
@@ -190,21 +197,33 @@ export const SecretRevealInput: React.FC<SecretRevealInputProps> = ({
             onClick={() => void onToggleReveal()}
             style={{ marginLeft: Spacing.XS }}
           >
-            {revealed ? '🙈' : '👁'}
+            {/* 2026-11-01 小欧 - 眼睛由 emoji('👁'/'🙈') 改 antd 矢量图标：项目规范禁 emoji
+                （跨平台形态不一），icon 语义不变，aria-label 保持同一对 — 小欧-2026-11-01 */}
+            {revealed ? <EyeInvisibleOutlined /> : <EyeOutlined />}
           </Button>
         )}
       </span>
       <div
         style={{
-          marginLeft: settingsSpacing.labelWidth,
+          // 2026-11-01 小欧 - 说明行独占整行且排到行末（flex-basis 100% + order）：该 div 是
+          // api_key 行的 flex 直接子元素，换行按 DOM 顺序分派——原先 ProviderConfig 的状态贴
+          // <Tag> 被本说明挤到第三行孤悬左下（宽屏截图实证）。order 调末后行第一线 =
+          // label+输入框+眼睛+状态贴，第二线 = 本说明 — 小欧-2026-11-01
+          order: 99,
+          flex: '0 0 100%',
+          boxSizing: 'border-box',
+          paddingLeft: settingsSpacing.labelWidth,
           fontSize: FontSize.SECONDARY,
           color: Colors.TEXT.SECONDARY,
           paddingTop: Spacing.XS,
         }}
       >
+        {/* 2026-11-01 小欧 - 文案定稿（北京老陈逐字给定，按更新密钥/设置密钥为空值两分支写）：
+            分支一 = 设置密钥为空值，唯一路径是 ④ 区「清空 api_key」（clear:true，后端契约
+            空串保存=不修改、不带头）；分支二 = 更新密钥，输入新值走「保存 Provider 配置」— 小欧-2026-11-01 */}
         {configured
-          ? '留空=保持原值（上方为已保存密钥的掩码）'
-          : '未配置，留空=保持原值'}
+          ? '更新密钥或者设置密钥为空值：点下方「清空 api_key」。空值 = 请求不携带 Authorization 头。更新密钥：输入新值，点「保存 Provider 配置」。'
+          : '更新密钥：输入后点「保存 Provider 配置」。空值 = 请求不携带 Authorization 头（本机 Ollama、vLLM 等免密钥服务不填即可用）。'}
       </div>
     </>
   );

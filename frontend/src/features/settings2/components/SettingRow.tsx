@@ -14,6 +14,8 @@
 //   连同「即时生效」一起挤出可视区，用户看不到范围。配套后端 registry 键 range_→range 统一
 //   （此前 DTO range 恒 null，提示压根不渲染）。type=range 走滑块不重复文字。— 小欧-2026-09-28
 // 编辑历史: 2026-10-11 00:18:37 小欧 - 设置页视觉密度统一: TextArea rows 3→2(72px→50px; 全项目仅授权目录/IP白名单两项用此控件且内容不长, resize 保留用户可自行拉大) — 小欧-2026-10-11
+// 2026-11-01 小欧 - secret 行 chip 文案精准化：「已配置/未配置」→「已保存/未保存」——chip 对象是
+//   密钥状态，与 ③ 区状态贴「密钥已保存」同一术语族，不再借用「配置」一词 — 小欧-2026-11-01
 import React, { useState } from 'react';
 import { Button, Grid, Input, InputNumber, Select, Slider, Switch } from 'antd';
 import { FontSize, Colors, Spacing } from '@/utils/stepStyles';
@@ -157,7 +159,8 @@ export const SettingRow: React.FC<Props> = ({
       if (!editingSecret) {
         return (
           <span>
-            {cfg ? `已配置 ${shown}` : '未配置'}
+            {/* 2026-11-01 小欧 - 文案精准化：chip 对象是密钥（已保存/未保存），不再用"已配置" — 小欧-2026-11-01 */}
+            {cfg ? `已保存 ${shown}` : '未保存'}
             <Button
               type="link"
               disabled={source === 'env'}

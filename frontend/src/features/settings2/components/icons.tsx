@@ -4,6 +4,8 @@
 // 2026-09-21 小强 - 删死图标 SettingIcon.chat：后端注册表已删 chat 组（TabKey 收敛 6 组），Record<TabKey> 同步收敛
 // 2026-09-21 小欧 - 渲染: 新增 DefaultTag（后端缺省 source='default'，灰色 Tag 与 env 橙区分）
 // 2026-09-24 小欧 - 模型库：SettingIcon 加 model_library + CloudDownloadOutlined — 小欧-2026-09-24
+// 2026-11-01 小欧 - 新增 TabDirtyDot（Tab 组级脏点，北京老陈批准主案）：沿用 DirtyDot 的 6px 圆点规格，
+//   亮=ORANGE_RED（功能色，与行级 PRIMARY 点区分层级）；不带文字——组级只报方位，计数归保存按钮 — 小欧-2026-11-01
 import React from 'react';
 import {
   ApiOutlined,
@@ -57,6 +59,21 @@ export const DirtyDot: React.FC = () => (
       已修改
     </span>
   </span>
+);
+
+/** Tab 组级脏点（2026-11-01 小欧）：常显占位圆点——亮=该组有未保存修改，灭=透明占位，
+ *  Tab 行零跳变；间距（marginLeft）做在自身，占位态一并保留，label 侧零感知。 */
+export const TabDirtyDot: React.FC<{ on: boolean }> = ({ on }) => (
+  <span
+    style={{
+      width: 6,
+      height: 6,
+      marginLeft: Spacing.XS,
+      borderRadius: '50%',
+      background: on ? Colors.ORANGE_RED : 'transparent',
+      display: 'inline-block',
+    }}
+  />
 );
 
 /** env 接管标注（9.2.3）。 */

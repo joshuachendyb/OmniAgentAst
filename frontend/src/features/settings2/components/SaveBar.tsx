@@ -15,11 +15,17 @@
 // 编辑历史: 2026-10-11 00:55:20 小欧 - 危险确认迁至 SettingsModal.dangerConfirm + 展示「具体变更+后果」: 本文件侧调用改造(传具体变更与后果, 不再只笼统提示); 旧文件头历史块随重构迁移, 详见 git — 小欧-2026-10-11
 // 编辑历史: 2026-10-11 01:24:25 小欧 - dangerHints 扁平数组改 dangerHintByChange(按 label 索引): 多条变更各自成组挂后果 — 小欧-2026-10-11
 // 2026-10-22 小沈 - 清除违规注释（删除"北京老陈审核后批准"等过期裁定字符）— 小沈-2026-10-22
+// 编辑历史: 2026-11-01 小欧 - 三保存入口分工说明行（北京老陈批准方案A）：按钮右侧同行常显小字，
+//   讲清三种提交粒度（Provider 字段→本组→全部）各归哪个按钮——三入口本是一链三种粒度非重复，
+//   病在粒度不可见；零逻辑改动、常显不随脏态跳变 — 小欧-2026-11-01
+// 编辑历史: 2026-11-01 小欧 - 会审整改：按钮组改 flex 行（说明同行居中对齐、窄屏折行）+ 清除
+//   历史遗留未用 import FontWeight（三堂会审合规）— 小欧-2026-11-01
 import React from 'react';
 // 2026-10-11 00:05 小欧 - 危险确认迁至 SettingsModal.dangerConfirm 后，
 //   本文件不再直接用 antd Modal，也不再自己算 480 宽度 —— 一并清掉这两个失效 import。
 import { Button } from 'antd';
-import { Colors, FontSize, FontWeight, Spacing } from '@/utils/stepStyles';
+// 会审整改（2026-11-01 小欧）：FontWeight 历史遗留未用 import，清除；见头部历史块
+import { Colors, FontSize, Spacing } from '@/utils/stepStyles';
 import { settingsShadow } from '@/theme/settingsTokens';
 import { SettingsModal, CodeChip, dangerConfirm } from '@/theme/SettingsModal'; // 2026-10-10 小欧: 归一到设置页弹窗壳; 22:15 补 CodeChip; 10-11 补 dangerConfirm
 
@@ -106,22 +112,42 @@ export const SaveBar: React.FC<Props> = ({
         zIndex: 10,
       }}
     >
-      <Button
-        disabled={!canSaveGroup || saving}
-        loading={saving}
-        onClick={() => confirmThen(onSaveGroup, dangerousGroup, dangerChanges)}
-      >
-        保存本组{groupDirtyCount > 0 ? `（${groupDirtyCount} 项）` : ''}
-      </Button>
-      <Button
-        type="primary"
-        disabled={!canSaveAll || saving}
-        loading={saving}
-        style={{ marginLeft: Spacing.MD }}
-        onClick={() => confirmThen(onSaveAll, dangerousAll, dangerChanges)}
-      >
-        保存全部{dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
-      </Button>
+      {/* 2026-11-01 小欧 - flex 行：按钮 + 分工说明同行（说明不压按钮基线）；说明常显，
+          无脏时也留位，杜绝凭空出现/消失；窄屏 flexWrap 自然折行 — 小欧-2026-11-01 */}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+        <Button
+          disabled={!canSaveGroup || saving}
+          loading={saving}
+          onClick={() =>
+            confirmThen(onSaveGroup, dangerousGroup, dangerChanges)
+          }
+        >
+          保存本组{groupDirtyCount > 0 ? `（${groupDirtyCount} 项）` : ''}
+        </Button>
+        <Button
+          type="primary"
+          disabled={!canSaveAll || saving}
+          loading={saving}
+          style={{ marginLeft: Spacing.MD }}
+          onClick={() => confirmThen(onSaveAll, dangerousAll, dangerChanges)}
+        >
+          保存全部{dirtyCount > 0 ? `（${dirtyCount} 项）` : ''}
+        </Button>
+        {/* 2026-11-01 小欧 - 分工说明行（方案A，北京老陈批准）：三入口=同一链的三种提交粒度
+            （Provider 子集/本组/全部，useSettings saveProviderDraft 注释「两入口同一链」），
+            故只讲清范围归属、不动任何按钮逻辑；措辞沿用用户已接受的分支句式 — 小欧-2026-11-01 */}
+        <span
+          style={{
+            marginLeft: Spacing.MD,
+            fontSize: FontSize.SECONDARY,
+            color: Colors.TEXT.SECONDARY,
+          }}
+        >
+          分工：Provider 字段用③区「保存 Provider
+          配置」（立即生效）；本组的其他改动用
+          「保存本组」；所有分组的改动用「保存全部」。任一入口提交的都是同一份数据。
+        </span>
+      </div>
       <SettingsModal
         open={restartKeys.length > 0}
         width="confirm"

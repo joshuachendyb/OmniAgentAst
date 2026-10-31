@@ -108,6 +108,12 @@
 // 2026-10-18 小欧 - 注释精简冗余标注, 技术说明原样保留。
 // 2026-10-29 小欧 - 修 Bug2: 清空 api_key 成功后立即本地更新 providerConfig(configured=false, masked='')，
 //   不等 reloadProviderCache 异步返回——否则期间 SecretRevealInput 回填旧掩码串 — 小欧-2026-10-29
+// 2026-11-01 小欧 - 组级脏点（北京老陈批准主案）：撤头部「有 N 项未保存」橙贴——未保存信息行级点
+//   与底栏保存按钮两处已答，头部属第三报且凭空出现会顶开内容；改 Tab 标签内常显组级圆点
+//   （亮=该组有未保存），改哪组一眼定位、页面零跳变 — 小欧-2026-11-01
+// 2026-11-01 小欧 - #4 条件按钮常显（北京老陈拍板）：②参数区「管理推理深度」「重置为默认」不再凭空
+//   出现消失——判据提取 hasManagementOptions/hasModelParams 常算，无数据时按钮常显禁用 + Tooltip
+//   说明原因；三按钮等宽组位置恒定（disabled 元素 span 包裹系 antd 官方约束）— 小欧-2026-11-01
 import React, { useState } from 'react';
 import {
   Button,
@@ -118,6 +124,8 @@ import {
   Skeleton,
   Tabs,
   Tag,
+  // 2026-11-01 小欧 - ②参数区按钮常显化（北京老陈拍板 #4）：不可用原因用 Tooltip 说明 — 小欧-2026-11-01
+  Tooltip,
 } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { Colors, FontSize, Spacing, FontWeight } from '@/utils/stepStyles';
@@ -133,8 +141,7 @@ import { useSettings } from '../hooks/useSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SearchBox } from './SearchBox';
 import { SaveBar } from './SaveBar';
-import { DirtyBadge } from './DirtyBadge';
-import { SettingIcon, DirtyDot } from './icons';
+import { SettingIcon, DirtyDot, TabDirtyDot } from './icons';
 import { ModelSelector } from './ModelSelector';
 import { ModelParams } from './ModelParams';
 import { ProviderConfig } from './ProviderConfig';
@@ -388,284 +395,312 @@ const SettingsPage: React.FC = () => {
     </div>
   );
 
-  const renderModelTab = () => (
-    <div>
-      <div data-section="selector">
-        {/* 修正(2026-09-21 小强)：删除「当前系统全局使用模型」冗余小字——该信息已由
+  const renderModelTab = () => {
+    // 2026-11-01 小欧 - #4 常显化判据：原条件渲染的布尔量提取，一次计算两处引用 — 小欧-2026-11-01
+    const hasManagementOptions =
+      Object.keys(state.model.paramOptions).length > 0;
+    const hasModelParams = Object.keys(state.model.params).length > 0;
+    return (
+      <div>
+        <div data-section="selector">
+          {/* 修正(2026-09-21 小强)：删除「当前系统全局使用模型」冗余小字——该信息已由
             通用 Tab CurrentModelRefCard 完整展示（标题+卡内文案），此处重复（[设置页UI审计] 问题17） */}
-        <SectionTitle title="── ① 选择器 ──" />
-        <ModelSelector
-          providers={state.model.providers}
-          selectedProvider={state.model.selectedProvider}
-          selectedModel={state.model.selectedModel}
-          onSelectProvider={s.selectProvider}
-          onSelectModel={s.selectModel}
-          onAddModel={() => s.patchModel({ addModelModalOpen: true })}
-          onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
-        />
-      </div>
-      {/* ②标题行 = 三列 grid：标题左 | 三按钮等宽组居中 | 右 1fr 空列对称 */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr auto 1fr',
-          alignItems: 'center',
-        }}
-      >
-        <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
-        {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（消 width:120×3）
+          <SectionTitle title="── ① 选择器 ──" />
+          <ModelSelector
+            providers={state.model.providers}
+            selectedProvider={state.model.selectedProvider}
+            selectedModel={state.model.selectedModel}
+            onSelectProvider={s.selectProvider}
+            onSelectModel={s.selectModel}
+            onAddModel={() => s.patchModel({ addModelModalOpen: true })}
+            onAddProvider={() => s.patchModel({ addProviderModalOpen: true })}
+          />
+        </div>
+        {/* ②标题行 = 三列 grid：标题左 | 三按钮等宽组居中 | 右 1fr 空列对称 */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr',
+            alignItems: 'center',
+          }}
+        >
+          <SectionTitle title="── ② 参数区（跟随当前模型） ──" />
+          {/* 三按钮组：同款默认 Button + settingsControl.actionBtnWidth 等长（消 width:120×3）
             + gap SM 紧挨，整组居中；
             添加参数 = 管 model_params，管理选项 = 管 param_options，重置 = 回默认值 */}
-        <div style={{ display: 'flex', gap: Spacing.SM }}>
-          <Button
-            icon={<PlusOutlined />}
-            style={{ width: settingsControl.actionBtnWidth }}
-            // 2026-09-24 小欧 - env 接管禁添加（后端拒保存）+ 保存中禁（防保存期间改 state）— 小欧-2026-09-24
-            disabled={s.saving || envManaged}
-            onClick={() => s.patchModel({ addParamFormOpen: true })}
-          >
-            添加模型参数
-          </Button>
-          {/* 管理推理深度：仅当前模型有 param_options 时显示（2026-09-25 06:20:25 小欧
-          「管理选项」→「管理推理深度」，语义直指 reasoning_effort 档位表，宽度沿用 120 三按钮等宽）*/}
-          {Object.keys(state.model.paramOptions).length > 0 && (
+          <div style={{ display: 'flex', gap: Spacing.SM }}>
             <Button
+              icon={<PlusOutlined />}
               style={{ width: settingsControl.actionBtnWidth }}
-              // 2026-09-24 小欧：env 接管与保存中均禁（后端拒保存/防并发写）— 小欧-2026-09-24
+              // 2026-09-24 小欧 - env 接管禁添加（后端拒保存）+ 保存中禁（防保存期间改 state）— 小欧-2026-09-24
               disabled={s.saving || envManaged}
-              onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
+              onClick={() => s.patchModel({ addParamFormOpen: true })}
             >
-              管理推理深度
+              添加模型参数
             </Button>
-          )}
-          {/* 重置为默认：无 params 隐藏、无脏态 disabled；仅清参数脏，能力脏保留（十遍会审 F1 见 resetParams） */}
-          {Object.keys(state.model.params).length > 0 && (
-            <Button
-              style={{ width: settingsControl.actionBtnWidth }}
-              // 2026-09-24 小欧：保存中禁重置（防保存期间改 state 致快照错位）— 小欧-2026-09-24
-              disabled={!state.model.isDirty || s.saving}
-              onClick={() => {
-                Modal.confirm({
-                  title: (
-                    <span
-                      style={{
-                        fontSize: FontSize.PRIMARY,
-                        fontWeight: FontWeight.BOLD,
-                      }}
-                    >
-                      ⚠ 重置为默认
-                    </span>
-                  ),
-                  content: (
-                    <span style={{ color: Colors.TEXT.SECONDARY }}>
-                      将恢复该模型全部参数为默认值，当前修改将丢失。
-                    </span>
-                  ),
-                  okText: '确认重置',
-                  okButtonProps: { danger: true },
-                  cancelText: '取消',
-                  width: settingsModalWidth.confirm,
-                  onOk: () => {
-                    // 2026-09-24 小欧 - 闭环：保存进行中确认重置竞态守卫（防 resetParams 覆写保存中快照）
-                    if (s.saving) return;
-                    s.resetParams();
-                  },
-                });
-              }}
+            {/* 2026-11-01 小欧 - 常显化（北京老陈拍板 #4 反感凭空出现消失）：按钮不再整个消失，
+              无数据时禁用置灰 + Tooltip 说明原因，三按钮位置恒定不跳位。
+              disabled 元素不响应鼠标事件，Tooltip 需 span 包裹（antd 官方约束）— 小欧-2026-11-01 */}
+            <Tooltip
+              title={
+                !hasManagementOptions
+                  ? '当前模型没有可管理的参数选项'
+                  : undefined
+              }
             >
-              重置为默认
-            </Button>
-          )}
+              <span style={{ display: 'inline-flex' }}>
+                <Button
+                  style={{ width: settingsControl.actionBtnWidth }}
+                  // 2026-09-24 小欧：env 接管与保存中均禁（后端拒保存/防并发写）— 小欧-2026-09-24
+                  disabled={s.saving || envManaged || !hasManagementOptions}
+                  onClick={() => s.patchModel({ paramOptionsModalOpen: true })}
+                >
+                  管理推理深度
+                </Button>
+              </span>
+            </Tooltip>
+            {/* 2026-11-01 小欧 - 常显化（同「管理推理深度」#4）：不再因无参数/无修改消失，
+              disabled+Tooltip 说明原因；仍仅清参数脏、能力脏保留（十遍会审 F1 见 resetParams）— 小欧-2026-11-01 */}
+            <Tooltip
+              title={
+                !hasModelParams
+                  ? '当前模型没有参数'
+                  : !state.model.isDirty
+                    ? '参数无修改'
+                    : undefined
+              }
+            >
+              <span style={{ display: 'inline-flex' }}>
+                <Button
+                  style={{ width: settingsControl.actionBtnWidth }}
+                  // 2026-09-24 小欧：保存中禁重置（防保存期间改 state 致快照错位）— 小欧-2026-09-24
+                  disabled={!state.model.isDirty || s.saving}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: (
+                        <span
+                          style={{
+                            fontSize: FontSize.PRIMARY,
+                            fontWeight: FontWeight.BOLD,
+                          }}
+                        >
+                          ⚠ 重置为默认
+                        </span>
+                      ),
+                      content: (
+                        <span style={{ color: Colors.TEXT.SECONDARY }}>
+                          将恢复该模型全部参数为默认值，当前修改将丢失。
+                        </span>
+                      ),
+                      okText: '确认重置',
+                      okButtonProps: { danger: true },
+                      cancelText: '取消',
+                      width: settingsModalWidth.confirm,
+                      onOk: () => {
+                        // 2026-09-24 小欧 - 闭环：保存进行中确认重置竞态守卫（防 resetParams 覆写保存中快照）
+                        if (s.saving) return;
+                        s.resetParams();
+                      },
+                    });
+                  }}
+                >
+                  重置为默认
+                </Button>
+              </span>
+            </Tooltip>
+          </div>
         </div>
-      </div>
-      {/* 2026-09-23 小欧 - 「+ 添加参数」内联表单（勾选多个循环 onAdd，批量完调 onCancel 统一关） */}
-      {state.model.addParamFormOpen && (
-        <AddParamForm
-          existingKeys={Object.keys(state.model.params)}
-          onAdd={(key, value, meta) => {
-            s.addParam(key, value, meta);
-          }}
-          onCancel={() => s.patchModel({ addParamFormOpen: false })}
-          // 2026-09-24 小欧 - 闭环：保存中禁用表单确认 — 小欧-2026-09-24
+        {/* 2026-09-23 小欧 - 「+ 添加参数」内联表单（勾选多个循环 onAdd，批量完调 onCancel 统一关） */}
+        {state.model.addParamFormOpen && (
+          <AddParamForm
+            existingKeys={Object.keys(state.model.params)}
+            onAdd={(key, value, meta) => {
+              s.addParam(key, value, meta);
+            }}
+            onCancel={() => s.patchModel({ addParamFormOpen: false })}
+            // 2026-09-24 小欧 - 闭环：保存中禁用表单确认 — 小欧-2026-09-24
+            disabled={s.saving}
+          />
+        )}
+        <ModelParams
+          params={state.model.params}
+          defaults={state.model.defaults}
+          ranges={state.model.ranges}
+          options={state.model.paramOptions}
+          envOverride={state.model.envOverride}
+          onChange={s.setParam}
+          // 2026-09-24 小欧 - 接 removeParam：行尾 × 点即删（env 接管键组件内 disabled）- 小欧-2026-09-24
+          onDelete={s.removeParam}
+          // 2026-09-24 小欧 - 保存中(saving) 锁定参数区全部控件+×按钮，防闭包快照错位 — 小欧-2026-09-24
           disabled={s.saving}
         />
-      )}
-      <ModelParams
-        params={state.model.params}
-        defaults={state.model.defaults}
-        ranges={state.model.ranges}
-        options={state.model.paramOptions}
-        envOverride={state.model.envOverride}
-        onChange={s.setParam}
-        // 2026-09-24 小欧 - 接 removeParam：行尾 × 点即删（env 接管键组件内 disabled）- 小欧-2026-09-24
-        onDelete={s.removeParam}
-        // 2026-09-24 小欧 - 保存中(saving) 锁定参数区全部控件+×按钮，防闭包快照错位 — 小欧-2026-09-24
-        disabled={s.saving}
-      />
-      {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
+        {/* 2026-09-23 小欧 - 模型能力多选行（capabilities → model_meta 通道，与「+ 添加参数」并存）；
           env 接管按 providerConfig.env 禁用（后端 _raise_if_env_takeover 拒保存；不用 envOverride——
           其 keys 来自 default_params，无参数模型会是 {} 判不出）；脏判定走 isCapsDirty → DirtyDot */}
-      <div style={settingsRowStyle}>
-        <span style={settingsLabelStyle}>模型能力</span>
-        <span style={{ flex: 1 }}>
-          <Checkbox.Group
-            value={state.model.capabilities}
-            // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原内联 providerConfig env 判定重复表达式）
-            disabled={envManaged}
-            options={CAPABILITY_OPTIONS}
-            onChange={(v) => s.setCapabilities(v as string[])}
-          />
-          {/* 2026-09-23 小欧 - 未知能力值灰色只读 Tag（不可关、cursor:not-allowed）——
+        <div style={settingsRowStyle}>
+          <span style={settingsLabelStyle}>模型能力</span>
+          <span style={{ flex: 1 }}>
+            <Checkbox.Group
+              value={state.model.capabilities}
+              // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原内联 providerConfig env 判定重复表达式）
+              disabled={envManaged}
+              options={CAPABILITY_OPTIONS}
+              onChange={(v) => s.setCapabilities(v as string[])}
+            />
+            {/* 2026-09-23 小欧 - 未知能力值灰色只读 Tag（不可关、cursor:not-allowed）——
               yaml 手写非 5 枚举值看得见、本页不提供增删；有未知值才渲染，空则零开销 */}
-          {state.model.capabilities
-            .filter((v) => !KNOWN_CAPABILITY_VALUES.has(v))
-            .map((v) => (
-              <Tag
-                key={v}
-                style={{
-                  cursor: 'not-allowed',
-                  marginLeft: Spacing.XS,
-                  color: Colors.TEXT.SECONDARY,
-                }}
-              >
-                {v}
-              </Tag>
-            ))}
-        </span>
-        {/* 2026-09-23 小欧 - && 写法（与 ModelParams 脏点同款，原三元异款） */}
-        {isCapsDirty(
-          state.model.capabilities,
-          state.model.capabilitiesBaseline
-        ) && <DirtyDot />}
-      </div>
-      <div data-section="provider-config">
-        {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中） */}
-        <ProviderConfig
-          key={state.model.selectedProvider}
-          name={state.model.selectedProvider}
-          config={
-            state.model.providerConfig[state.model.selectedProvider] ?? {
-              // 2026-09-27 小欧 - 掩码契约 {configured, masked}，与 model.api.ts ProviderEntry /
-              // ProviderConfig.config / settings2/types.ts 保持同一契约（缺 masked 键 tsc 直接报错）
-              api_key: { configured: false, masked: '' },
-              base_url: '',
-              label: '',
-              timeout: 150, // 缺省 fallback 与后端常量对齐（原 60≠运行时 150）
-              max_retries: 3,
-              env: false,
+            {state.model.capabilities
+              .filter((v) => !KNOWN_CAPABILITY_VALUES.has(v))
+              .map((v) => (
+                <Tag
+                  key={v}
+                  style={{
+                    cursor: 'not-allowed',
+                    marginLeft: Spacing.XS,
+                    color: Colors.TEXT.SECONDARY,
+                  }}
+                >
+                  {v}
+                </Tag>
+              ))}
+          </span>
+          {/* 2026-09-23 小欧 - && 写法（与 ModelParams 脏点同款，原三元异款） */}
+          {isCapsDirty(
+            state.model.capabilities,
+            state.model.capabilitiesBaseline
+          ) && <DirtyDot />}
+        </div>
+        <div data-section="provider-config">
+          {/* 2026-09-24 小欧 - SectionTitle 移入 ProviderConfig（标题+保存按钮同行居中） */}
+          <ProviderConfig
+            key={state.model.selectedProvider}
+            name={state.model.selectedProvider}
+            config={
+              state.model.providerConfig[state.model.selectedProvider] ?? {
+                // 2026-09-27 小欧 - 掩码契约 {configured, masked}，与 model.api.ts ProviderEntry /
+                // ProviderConfig.config / settings2/types.ts 保持同一契约（缺 masked 键 tsc 直接报错）
+                api_key: { configured: false, masked: '' },
+                base_url: '',
+                label: '',
+                timeout: 150, // 缺省 fallback 与后端常量对齐（原 60≠运行时 150）
+                max_retries: 3,
+                env: false,
+              }
             }
+            onSave={async (patch) => {
+              // 2026-09-27 小欧 - 收口统一落盘链：自带按钮与底部保存栏同走 saveProviderDraft
+              //   （updateProvider→syncMtime→reloadProviderCache→清草稿；成功 toast/失败提示在 hook 内），
+              //   失败 rethrow 保留 ProviderConfig 输入（原 [设置页UI审计] 问题6 语义不变）- 小欧-2026-09-27
+              const r = await s.saveProviderDraft(patch);
+              if (!r.ok) throw new Error('provider-config-save-failed');
+            }}
+            // 2026-09-27 小欧 - 字段 diff 上报：底部保存栏计数/亮起的数据源（空 diff=干净）- 小欧-2026-09-27
+            onDraftChange={s.setProviderDraft}
+          />
+        </div>
+        <SectionTitle title="── ④ 操作区 ──" />
+        <ModelActions
+          configured={
+            state.model.providerConfig[state.model.selectedProvider]?.api_key
+              ?.configured ?? false
           }
-          onSave={async (patch) => {
-            // 2026-09-27 小欧 - 收口统一落盘链：自带按钮与底部保存栏同走 saveProviderDraft
-            //   （updateProvider→syncMtime→reloadProviderCache→清草稿；成功 toast/失败提示在 hook 内），
-            //   失败 rethrow 保留 ProviderConfig 输入（原 [设置页UI审计] 问题6 语义不变）- 小欧-2026-09-27
-            const r = await s.saveProviderDraft(patch);
-            if (!r.ok) throw new Error('provider-config-save-failed');
+          // A3(2026-09-22 小强)：env 接管 provider 隐藏「清空 api_key」（后端拒 clear）
+          // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原独立 `?? false` 表达式与能力行重复）
+          envManaged={envManaged}
+          onClearApiKey={async () => {
+            // 2026-10-11 01:50 小欧 - 补二次确认（删除类危险操作原无二次确认）。
+            // 查证：三个危险按钮里「删除此模型」「删除此 Provider」都走 deleteConfirmOpen 有确认，
+            // 只有「清空 api_key」直调 updateProvider({clear:true}) 一步到位 —— 危险度却最高：
+            // 密钥一清空该 Provider 全部调用立即失败，且不可撤销、只能重新配置才能恢复。
+            // 统一走 dangerConfirm 口径（与删除确认同一套壳/危险键），文案说明后果。
+            confirmDanger({
+              title: '确定清空 api_key？',
+              content: (
+                <div
+                  style={{
+                    fontSize: FontSize.SECONDARY,
+                    color: Colors.TEXT.SECONDARY,
+                  }}
+                >
+                  清空后：
+                  <ul
+                    style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}
+                  >
+                    <li>
+                      「{state.model.selectedProvider}」的密钥被抹除，不可撤销
+                    </li>
+                    <li>该 Provider 的全部模型将立即无法调用</li>
+                    <li>需重新填写 api_key 才能恢复使用</li>
+                  </ul>
+                </div>
+              ),
+              okText: '确认清空',
+              onOk: async () => {
+                try {
+                  const r = await modelApi.updateProvider(
+                    state.model.selectedProvider,
+                    { clear: true }
+                  );
+                  showSuccess('api_key 已清空');
+                  // 2026-09-27 小欧 - 修 F7：清空是 api_key 的第二个写入口，须同清草稿，
+                  //   否则用户接着点保存会把刚清空的密钥写回。ProviderConfig 的 apiKey 由 masked 变化自动复位。
+                  // 2026-10-29 小欧 - 修 Bug2: 立即更新本地 providerConfig 的 api_key(configured=false, masked='')，
+                  //   不等 reloadProviderCache 异步返回——否则期间 masked 仍为旧掩码, SecretRevealInput 回填旧串;
+                  //   reload 返回后会再次覆盖(此时值已一致, 无副作用) — 小欧-2026-10-29
+                  const prevCfg =
+                    state.model.providerConfig[state.model.selectedProvider];
+                  s.patchModel({
+                    providerConfig: {
+                      ...state.model.providerConfig,
+                      [state.model.selectedProvider]: {
+                        ...prevCfg,
+                        api_key: { configured: false, masked: '' },
+                      },
+                    },
+                    providerDraft: {},
+                  });
+                  await afterModelSaved(r.mtime);
+                } catch (e) {
+                  handleApiError(e);
+                }
+              },
+            });
           }}
-          // 2026-09-27 小欧 - 字段 diff 上报：底部保存栏计数/亮起的数据源（空 diff=干净）- 小欧-2026-09-27
-          onDraftChange={s.setProviderDraft}
+          onDeleteModel={() =>
+            s.patchModel({
+              deleteConfirmOpen: true,
+              deleteTarget: `model:${state.model.selectedProvider}::${state.model.selectedModel}`,
+            })
+          }
+          onDeleteProvider={() =>
+            s.patchModel({
+              deleteConfirmOpen: true,
+              deleteTarget: `provider:${state.model.selectedProvider}`,
+            })
+          }
+        />
+        {/* 2026-09-22 小欧 - 管理选项弹窗（②区标题行「管理选项」入口；保存后
+          refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
+        <ParamOptionsModal
+          open={state.model.paramOptionsModalOpen}
+          provider={state.model.selectedProvider}
+          model={state.model.selectedModel}
+          paramOptions={state.model.paramOptions}
+          defaults={state.model.defaults}
+          onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
+          // 2026-09-24 小欧 - 闭环：保存中禁用弹窗提交 — 小欧-2026-09-24
+          disabled={s.saving}
+          onSaved={async () => {
+            if (state.model.selectedProvider && state.model.selectedModel)
+              await s.refreshModels({
+                provider: state.model.selectedProvider,
+                model: state.model.selectedModel,
+              });
+          }}
         />
       </div>
-      <SectionTitle title="── ④ 操作区 ──" />
-      <ModelActions
-        configured={
-          state.model.providerConfig[state.model.selectedProvider]?.api_key
-            ?.configured ?? false
-        }
-        // A3(2026-09-22 小强)：env 接管 provider 隐藏「清空 api_key」（后端拒 clear）
-        // 2026-09-24 小欧 - 收口：复用 envManaged 单点（原独立 `?? false` 表达式与能力行重复）
-        envManaged={envManaged}
-        onClearApiKey={async () => {
-          // 2026-10-11 01:50 小欧 - 补二次确认（删除类危险操作原无二次确认）。
-          // 查证：三个危险按钮里「删除此模型」「删除此 Provider」都走 deleteConfirmOpen 有确认，
-          // 只有「清空 api_key」直调 updateProvider({clear:true}) 一步到位 —— 危险度却最高：
-          // 密钥一清空该 Provider 全部调用立即失败，且不可撤销、只能重新配置才能恢复。
-          // 统一走 dangerConfirm 口径（与删除确认同一套壳/危险键），文案说明后果。
-          confirmDanger({
-            title: '确定清空 api_key？',
-            content: (
-              <div
-                style={{
-                  fontSize: FontSize.SECONDARY,
-                  color: Colors.TEXT.SECONDARY,
-                }}
-              >
-                清空后：
-                <ul style={{ margin: `${Spacing.SM}px 0 0`, paddingLeft: 20 }}>
-                  <li>
-                    「{state.model.selectedProvider}」的密钥被抹除，不可撤销
-                  </li>
-                  <li>该 Provider 的全部模型将立即无法调用</li>
-                  <li>需重新填写 api_key 才能恢复使用</li>
-                </ul>
-              </div>
-            ),
-            okText: '确认清空',
-            onOk: async () => {
-              try {
-                const r = await modelApi.updateProvider(
-                  state.model.selectedProvider,
-                  { clear: true }
-                );
-                showSuccess('api_key 已清空');
-                // 2026-09-27 小欧 - 修 F7：清空是 api_key 的第二个写入口，须同清草稿，
-                //   否则用户接着点保存会把刚清空的密钥写回。ProviderConfig 的 apiKey 由 masked 变化自动复位。
-                // 2026-10-29 小欧 - 修 Bug2: 立即更新本地 providerConfig 的 api_key(configured=false, masked='')，
-                //   不等 reloadProviderCache 异步返回——否则期间 masked 仍为旧掩码, SecretRevealInput 回填旧串;
-                //   reload 返回后会再次覆盖(此时值已一致, 无副作用) — 小欧-2026-10-29
-                const prevCfg =
-                  state.model.providerConfig[state.model.selectedProvider];
-                s.patchModel({
-                  providerConfig: {
-                    ...state.model.providerConfig,
-                    [state.model.selectedProvider]: {
-                      ...prevCfg,
-                      api_key: { configured: false, masked: '' },
-                    },
-                  },
-                  providerDraft: {},
-                });
-                await afterModelSaved(r.mtime);
-              } catch (e) {
-                handleApiError(e);
-              }
-            },
-          });
-        }}
-        onDeleteModel={() =>
-          s.patchModel({
-            deleteConfirmOpen: true,
-            deleteTarget: `model:${state.model.selectedProvider}::${state.model.selectedModel}`,
-          })
-        }
-        onDeleteProvider={() =>
-          s.patchModel({
-            deleteConfirmOpen: true,
-            deleteTarget: `provider:${state.model.selectedProvider}`,
-          })
-        }
-      />
-      {/* 2026-09-22 小欧 - 管理选项弹窗（②区标题行「管理选项」入口；保存后
-          refreshModels 重拉 param_options + defaults，与添加模型后回显同通道） */}
-      <ParamOptionsModal
-        open={state.model.paramOptionsModalOpen}
-        provider={state.model.selectedProvider}
-        model={state.model.selectedModel}
-        paramOptions={state.model.paramOptions}
-        defaults={state.model.defaults}
-        onClose={() => s.patchModel({ paramOptionsModalOpen: false })}
-        // 2026-09-24 小欧 - 闭环：保存中禁用弹窗提交 — 小欧-2026-09-24
-        disabled={s.saving}
-        onSaved={async () => {
-          if (state.model.selectedProvider && state.model.selectedModel)
-            await s.refreshModels({
-              provider: state.model.selectedProvider,
-              model: state.model.selectedModel,
-            });
-        }}
-      />
-    </div>
-  );
+    );
+  };
 
   return (
     <div
@@ -786,16 +821,18 @@ const SettingsPage: React.FC = () => {
               tabBarStyle={{ marginBottom: 0 }}
               items={s.GROUP_ORDER.map((g) => ({
                 key: g,
+                // 2026-11-01 小欧 - 组级脏点常显占位（北京老陈批准主案）：亮=该组有未保存，
+                //   灭=透明占位保持列宽零跳变；「有 N 项未保存」计数归底部保存按钮 — 小欧-2026-11-01
                 label: (
-                  <span>
+                  <span
+                    style={{ display: 'inline-flex', alignItems: 'center' }}
+                  >
                     {SettingIcon[g]} {state.schema[g]?.label ?? g}
+                    <TabDirtyDot on={s.isGroupDirty(g)} />
                   </span>
                 ),
               }))}
             />
-            <span style={{ marginLeft: Spacing.MD }}>
-              <DirtyBadge count={s.dirtyCount} />
-            </span>
           </span>
           <SearchBox schema={state.schema} onJump={jumpTo} />
         </div>
